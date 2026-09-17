@@ -15,13 +15,16 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROUTE = path.join(__dirname, '..', 'src', 'routes', 'quoteRoutes.js');
 const SRC = fs.readFileSync(ROUTE, 'utf8');
+// 0220 — 재고 예약은 **공용 조립기**로 옮겼다(화면과 CRM 수신 창구가 같은 것을 써야 하므로).
+//   여기서도 그 파일에서 그대로 뽑는다 — 검증 대상은 언제나 배포되는 코드다.
+const BUILD = fs.readFileSync(path.join(__dirname, '..', 'src', 'quoteBuild.js'), 'utf8');
 
 // ---- 운영 소스에서 그대로 뽑아온다 ----------------------------------
 function extractAssignReservations() {
-  const m = SRC.match(/async function assignReservations\(c, quoteId\) \{[\s\S]*?\n  \}\n/);
+  const m = BUILD.match(/export async function assignReservations\(c, quoteId\) \{[\s\S]*?\n\}\n/);
   assert.ok(m, 'assignReservations 를 소스에서 찾지 못했습니다 (이름·시그니처가 바뀌었나요?)');
   // eslint-disable-next-line no-new-func
-  return new Function(`return (${m[0].trim()})`)();
+  return new Function(`return (${m[0].trim().replace(/^export /, '')})`)();
 }
 function extractLineSql() {
   const m = SRC.match(/const LINE_SQL = `([\s\S]*?)`;/);

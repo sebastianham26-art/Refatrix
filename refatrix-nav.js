@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260911survey loaded (+ 고객 설문 분석 · 외부 서비스 키 메뉴 복구)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260917cotiz loaded (+ 웹카달록 견적요청 팝업)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -922,6 +922,162 @@
   }
   window.__rnavLeadCheck=function(){ checkWebLead({silent:true}); };
 
+  // =====================================================================
+  //  🧾 웹카달록 견적요청 전역 팝업 (0220)
+  //     가입 신청 팝업과 **같은 규칙**이다:
+  //       · 디렉터는 전부 보고 담당자를 지정한다.
+  //       · 직원은 자기에게 지정된 건(+알림 대상이면 미배정 건)만 본다.
+  //       · 임시로 닫아도 30분 뒤 다시 뜨고, **견적을 확정·전환·취소해야** 사라진다.
+  //     ⚠ 알림 대상 표를 가입 신청과 따로 쓴다 — 새 고객을 맞는 사람과 견적을 처리하는
+  //       사람은 같지 않다. 같은 표를 쓰면 언젠가 한쪽이 틀린 사람에게 간다.
+  // =====================================================================
+  var CQ_SEEN_KEY='refatrix_crmquote_seen', CQ_DIS_KEY='refatrix_crmquote_dismissed';
+  var __cqTimer=null, __cqCanAssign=false, __cqAssignees=[];
+  function cqSeen(){ try{ return JSON.parse(sessionStorage.getItem(CQ_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
+  function cqSaveSeen(a){ try{ sessionStorage.setItem(CQ_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
+  function cqDismissed(){
+    try{ var t=Number(sessionStorage.getItem(CQ_DIS_KEY)||0); return !!t && (Date.now()-t) < LEAD_SNOOZE_MS; }
+    catch(e){ return false; }
+  }
+  function cqMoney(n){ try{ return '$'+Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:2}); }catch(e){ return '$'+(n||0); } }
+
+  function cqEnsureModal(){
+    var m=document.getElementById('rnavQuoteModal');
+    if(m) return m;
+    m=document.createElement('div');
+    m.id='rnavQuoteModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:10050;align-items:flex-start;justify-content:center;padding:56px 16px;overflow:auto';
+    m.innerHTML=''
+      +'<div style="background:#fff;border-radius:14px;max-width:660px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34);font-family:inherit">'
+      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#0F6E56">🧾 웹카달록 — 견적 요청</div>'
+      +'<div id="rnavQuoteMsg" style="font-size:12.5px;color:#6F6A60;margin-top:4px"></div></div>'
+      +'<div style="padding:12px 16px"><div id="rnavQuoteList" style="max-height:52vh;overflow:auto"></div></div>'
+      +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      +'<button type="button" onclick="__rnavQuoteDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>'
+      +'<button type="button" onclick="__rnavQuoteGo()" style="border:none;background:#0F6E56;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">견적 목록으로 →</button>'
+      +'</div></div>';
+    (document.body||document.documentElement).appendChild(m);
+    return m;
+  }
+  window.__rnavQuoteDismiss=function(){
+    try{ sessionStorage.setItem(CQ_DIS_KEY, String(Date.now())); }catch(e){}
+    var m=document.getElementById('rnavQuoteModal'); if(m) m.style.display='none';
+  };
+  window.__rnavQuoteGo=function(){
+    var m=document.getElementById('rnavQuoteModal'); if(m) m.style.display='none';
+    try{ nav('quotelist'); }catch(e){}
+  };
+  window.__rnavQuoteAssign=function(id){
+    var sel=document.getElementById('rnavQuoteSel'+id);
+    var uid=sel?sel.value:'';
+    if(!uid){ alert('담당할 직원을 고르세요.'); return; }
+    var s=getSession(); if(!s||!s.token) return;
+    var a=(s.api||'').replace(/\/+$/,'');
+    fetch(a+'/api/crm-quotes/'+id+'/assign',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
+      body:JSON.stringify({user_id:Number(uid)})})
+      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+      .then(function(r){
+        if(!r.ok){ alert((r.d&&r.d.note)||'지정 실패'); return; }
+        alert(((r.d&&r.d.assigned_to_name)||'담당자')+' 님에게 지정했습니다.\n\n'
+          +'그분 화면에 이 견적이 뜨기 시작하고, 견적을 확정할 때까지 계속 상기됩니다.');
+        checkCrmQuote({silent:true});
+      }).catch(function(){});
+  };
+  function cqRender(items){
+    var msg=document.getElementById('rnavQuoteMsg'), list=document.getElementById('rnavQuoteList');
+    if(!msg||!list) return;
+    msg.innerHTML = __cqCanAssign
+      ? '처리 대기 견적 요청 <b>'+items.length+'건</b>. <b>담당 직원을 지정</b>하면 그 직원 화면에 뜹니다 — '
+        +'담당자가 내용을 확인해 <b>견적을 확정</b>하면 이 알림이 사라집니다.'
+      : '나에게 지정된 견적 요청 <b>'+items.length+'건</b>. 내용을 확인하고 <b>견적을 확정</b>하세요 — '
+        +'확정할 때까지 이 알림은 계속 뜹니다.';
+    var opts=__cqAssignees.map(function(u){
+      return '<option value="'+u.id+'">'+cregEsc(u.name)+' · '+cregEsc(u.role)+'</option>'; }).join('');
+    list.innerHTML=items.map(function(r){
+      var who=r.assigned_to_name
+        ? '<span style="color:#0F6E56;font-weight:700">담당 '+cregEsc(r.assigned_to_name)+'</span>'
+        : '<span style="color:#B23A2E;font-weight:700">담당 미지정</span>';
+      // ⚠ 문제 줄은 **가장 먼저** 보여야 한다 — 그게 이 견적을 확정 못 하는 이유다.
+      var warn=r.issue_count
+        ? '<div style="margin-top:6px;background:#F6E7E4;color:#B23A2E;border-radius:8px;padding:6px 9px;font-size:11.5px">'
+          +'⚠ 확인이 필요한 줄 <b>'+r.issue_count+'개</b> — 못 찾은 코드이거나 판매중단 제품입니다. '
+          +'고치거나 지우기 전에는 <b>확정되지 않습니다</b>.</div>' : '';
+      var act='';
+      if(__cqCanAssign){
+        act='<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+          +'<select id="rnavQuoteSel'+r.id+'" style="padding:6px 8px;border:1px solid #e6e1d6;border-radius:7px;font-size:12px;font-family:inherit">'
+          +'<option value="">담당 직원 선택…</option>'+opts+'</select>'
+          +'<button type="button" onclick="__rnavQuoteAssign('+r.id+')" style="border:none;background:#0F6E56;color:#fff;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px;font-weight:700">'
+          +(r.assigned_to_name?'담당 변경':'담당 지정')+'</button>'
+          +'</div>';
+      }
+      return '<div style="border:1px solid #e6e1d6;border-radius:11px;padding:12px 13px;margin-bottom:9px">'
+        +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
+          +'<b style="font-size:14px">'+cregEsc(r.quote_no||'')+'</b>'
+          +'<span style="font-size:12.5px">'+cregEsc(r.customer_code||'')+' '+cregEsc(r.customer_name||'')+'</span>'
+          +'<span style="margin-left:auto;font-size:11.5px">'+who+'</span>'
+        +'</div>'
+        +warn
+        +'<div style="margin-top:6px;font-size:12.5px;color:#4a4740">'
+          +'SKU <b>'+(r.sku_count||0)+'</b> · 수량 <b>'+(r.total_qty||0)+'</b> · 합계 <b>'+cqMoney(r.total_mxn)+'</b>'
+          +(r.external_quote_no?(' · 포털 '+cregEsc(r.external_quote_no)):'')
+        +'</div>'
+        +(r.memo?('<div style="margin-top:5px;font-size:12px;color:#6F6A60;word-break:break-word">'+cregEsc(r.memo)+'</div>'):'')
+        +act+'</div>';
+    }).join('');
+  }
+  function checkCrmQuote(opts){
+    var silent=!!(opts&&opts.silent);
+    var s=getSession(); if(!s||!s.token) return;
+    var a=(s.api||'').replace(/\/+$/,'');
+    fetch(a+'/api/portal/quote-alert',{headers:{'Authorization':'Bearer '+s.token}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[];
+        __cqCanAssign=!!(d&&d.can_assign); __cqAssignees=(d&&d.assignees)||[];
+        var m=cqEnsureModal();
+        if(!items.length){
+          m.style.display='none';
+          try{ sessionStorage.removeItem(CQ_DIS_KEY); }catch(e){}
+          cqSaveSeen([]);
+          return;
+        }
+        cqRender(items);
+        var seen=cqSeen();
+        var fresh=items.filter(function(x){ return seen.indexOf(Number(x.id))<0; });
+        // 견적 화면을 보고 있는 동안은 방해하지 않는다(그 목록이 이미 떠 있다).
+        if(curScreen()==='quotelist'||curScreen()==='quote'){
+          cqSaveSeen(items.map(function(x){ return Number(x.id); }));
+          m.style.display='none';
+          return;
+        }
+        if(fresh.length){
+          cqSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
+          try{ sessionStorage.removeItem(CQ_DIS_KEY); }catch(e){}
+          m.style.display='flex';
+          if(!silent) cregChime();
+        }else{
+          m.style.display = cqDismissed() ? 'none' : 'flex';
+        }
+      }).catch(function(){});
+  }
+  function startCrmQuoteAlert(){
+    if(__cqTimer) return;
+    checkCrmQuote({silent:true});
+    __cqTimer=setInterval(function(){
+      if(document.hidden) return;
+      checkCrmQuote({silent:false});
+    }, 60000);
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if(document.visibilityState==='visible') checkCrmQuote({silent:false});
+      });
+    }catch(e){}
+  }
+  window.__rnavQuoteCheck=function(){ checkCrmQuote({silent:true}); };
+
   function boot(){
     var nv=document.getElementById('rnav'); if(!nv) return;
     applyEnvFlag();
@@ -959,6 +1115,7 @@
       if(!window.__rnavPresTimer) window.__rnavPresTimer=setInterval(updatePresenceBadge, 30000);
       startCustRegAlert();   // 🔒 신규 고객 등록 승인 대기 전역 팝업(디렉터·60초)
       startWebLeadAlert();   // 🌐 웹카달록 회원가입 신청 전역 팝업(대상자·60초)
+      startCrmQuoteAlert();  // 🧾 웹카달록 견적요청 전역 팝업(대상자·60초)
     }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
   window.__rnavReload=boot;

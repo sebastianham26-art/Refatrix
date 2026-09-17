@@ -114,6 +114,51 @@ export function mapLead(body) {
   };
 }
 
+/**
+ * 견적요청 수신 본문 → ERP 내부 형태 (0220)
+ *
+ *   ⚠ 고객은 **RFC 또는 CRM 고객코드**로만 받는다. 숫자 id 는 일부러 읽지 않는다 —
+ *     예전에 CRM 이 자기 시스템의 고객번호를 보내서 ERP 의 **남의 고객(NAJAR)** 에
+ *     견적이 붙었다. 숫자는 두 시스템에서 뜻이 다르므로 열쇠로 쓸 수 없다.
+ */
+export function mapQuote(body) {
+  const f = flattenBody(body);
+  const rawLines = pick(f, ['lineas', 'lines', 'items', 'partidas', 'detalle', 'productos', 'renglones']);
+  const lines = (Array.isArray(rawLines) ? rawLines : []).map((raw) => {
+    const l = flattenBody(raw);
+    return {
+      code: S(pick(l, ['codigo', 'code', 'sku', 'clave', 'claveProducto', 'numeroParte', 'partNumber', 'ctr', 'codigoCtr'])),
+      qty: N(pick(l, ['cantidad', 'qty', 'quantity', 'cant', 'piezas', 'unidades'])),
+    };
+  });
+  return {
+    crmQuoteNo: S(pick(f, ['cotizacionCrm', 'cotizacion', 'folio', 'folioCotizacion', 'quoteNo',
+      'numeroCotizacion', 'idCotizacion', 'cotizacionId'])),
+    rfc: S(pick(f, ['rfc', 'RFC', 'rfcCliente', 'taxId'])),
+    crmCustomerCode: S(pick(f, ['clienteCrm', 'crmCustomerCode', 'customerCode', 'codigoCliente', 'clienteCodigo'])),
+    fecha: S(pick(f, ['fecha', 'fechaCotizacion', 'quoteDate', 'fechaSolicitud', 'solicitadoEn'])),
+    comentario: S(pick(f, ['comentario', 'comentarios', 'mensaje', 'nota', 'notas', 'observaciones'])),
+    solicitante: S(pick(f, ['solicitante', 'usuario', 'contacto', 'correo', 'email', 'nombre'])),
+    lines,
+  };
+}
+
+/** 견적일자로 쓸 수 있는가 — 아니면 오늘로 둔다(상대 형식 때문에 접수를 막지 않는다). */
+export function quoteDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || '').trim());
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+/** 줄 검증 — 코드가 없거나 수량이 0 이하면 상대가 고쳐야 한다(우리가 추측하지 않는다). */
+export function badQuoteLines(lines) {
+  const out = [];
+  (Array.isArray(lines) ? lines : []).forEach((l, i) => {
+    if (!l.code) out.push({ linea: i + 1, motivo: 'codigo_requerido' });
+    else if (!(Number(l.qty) > 0)) out.push({ linea: i + 1, codigo: l.code, motivo: 'cantidad_invalida' });
+  });
+  return out;
+}
+
 // 가입 신청의 필수값 — 이 다섯이 없으면 영업사원이 연락할 방법도, 회사를 특정할 방법도 없다.
 export const LEAD_REQUIRED = ['empresa', 'nombre', 'telefono', 'correo', 'rfc'];
 

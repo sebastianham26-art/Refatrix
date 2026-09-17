@@ -17,6 +17,7 @@ export const CUSTOMER_KEY = 'customer_commercial';
  */
 export const INBOUND_KEY_FALLBACK = {
   crm_web_lead: 'crm_customer_registration',
+  crm_quote_request: 'crm_customer_registration',
 };
 
 // ⚠ 준비 여부는 **긍정만 영구 캐시**한다. 예전에는 처음 한 번 확인하고 끝이라,

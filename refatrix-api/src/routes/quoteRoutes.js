@@ -2,7 +2,9 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
-import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 } from '../quotes.js';
+import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
+// 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
+import { resolveCode, inactiveTargets, assignReservations, nextQuoteNo, buildLines } from '../quoteBuild.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
@@ -64,61 +66,6 @@ export default async function quoteRoutes(app) {
     return { ok: true };
   });
 
-  // ============ 코드 해석 (CTR 또는 SYD) ============
-  // 입력 코드 하나를 받아 매칭 후보를 반환. CTR 정확매칭 우선, 없으면 SYD 역검색.
-  // 반환: { matches: [{product_id, ctr_code, list_price, app, name, syd_codes[]}], source:'ctr'|'syd'|'none' }
-  async function resolveCode(code) {
-    const c = String(code || '').trim();
-    if (!c) return { matches: [], source: 'none' };
-    // 1) CTR 정확매칭
-    const ctr = (await query(
-      `SELECT id, code, name, app, list_price, is_active FROM products WHERE deleted_at IS NULL AND code=$1`, [c])).rows;
-    let rows = ctr, source = 'ctr';
-    if (!rows.length) {
-      // 2) SYD 역검색
-      rows = (await query(
-        `SELECT p.id, p.code, p.name, p.app, p.list_price, p.is_active
-           FROM product_syd_codes s JOIN products p ON p.id=s.product_id AND p.deleted_at IS NULL
-          WHERE s.syd_code=$1`, [c])).rows;
-      source = rows.length ? 'syd' : 'none';
-    }
-    if (!rows.length) return { matches: [], source: 'none' };
-    const ids = rows.map((r) => r.id);
-    const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
-    const sydByPid = {};
-    for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
-    return {
-      source,
-      matches: rows.map((r) => ({
-        product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
-        list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
-        // 0179 — 비활성(판매중단) SKU 는 화면에 표시는 하되 신규 라인 저장에서 막는다.
-        is_active: r.is_active !== false,
-      })),
-    };
-  }
-
-  // 0179 · 저장하려는 라인 중 「비활성 SKU」를 골라낸다(신규 사용 차단).
-  //   allowedIds = 이미 그 견적에 들어 있던 product_id 집합 —
-  //   비활성 전에 만들어진 기존 견적을 계속 수정·정리할 수 있어야 하므로 예외로 둔다.
-  async function inactiveTargets(inputLines, allowedIds = null) {
-    const hits = [];
-    for (const ln of (Array.isArray(inputLines) ? inputLines : [])) {
-      let pid = Number(ln.product_id) || null;
-      if (!pid) {
-        const res = await resolveCode(ln.code);
-        if (res.matches.length === 1) pid = res.matches[0].product_id;
-      }
-      if (!pid) continue;
-      if (allowedIds && allowedIds.has(Number(pid))) continue;
-      const p = (await query(
-        `SELECT id, code, name FROM products WHERE id=$1 AND deleted_at IS NULL AND NOT is_active`, [pid])).rows[0];
-      if (p && !hits.some((h) => h.product_id === Number(p.id))) {
-        hits.push({ product_id: Number(p.id), code: p.code, name: p.name });
-      }
-    }
-    return hits;
-  }
 
   // 단건 코드 조회 (화면에서 SYD 다중매칭 후보 표시용)
   app.get('/api/quotes/resolve-code', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
@@ -225,35 +172,6 @@ export default async function quoteRoutes(app) {
     return { discountRate, ivaRate, lines: out, totals };
   });
 
-  // ============ 재고 예약(블럭) · 만료(무효화) 공통 ============
-  // 가용재고 = 현재고 − 타 미결·미만료 견적의 reserved_qty 합. 물리 stock_qty는 예약으로 안 건드림.
-  // 한 견적의 매칭 라인들을 제품별로 묶어 생성순(line_no)으로 선착순 greedy 배분한다.
-  //  · 같은 트랜잭션(c) 안에서 product 행을 FOR UPDATE 로 잠가, 동시 저장이 같은 재고를 중복 예약하지 못하게 직렬화.
-  //  · '타 견적' 합은 이미 커밋된 reserved_qty 만 보이므로(잠금 대기 후 읽음) 선착순이 보장된다.
-  async function assignReservations(c, quoteId) {
-    const lines = (await c.query(
-      `SELECT id, product_id, qty FROM quote_lines
-        WHERE quote_id=$1 AND product_id IS NOT NULL ORDER BY product_id, line_no, id`, [quoteId])).rows;
-    const byProd = {};
-    for (const l of lines) { (byProd[Number(l.product_id)] ||= []).push(l); }
-    for (const pid of Object.keys(byProd)) {
-      const p = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [Number(pid)])).rows[0];
-      const physical = p && p.stock_qty != null ? Number(p.stock_qty) : 0;
-      const other = (await c.query(
-        `SELECT COALESCE(SUM(ql.reserved_qty),0) AS s
-           FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
-          WHERE ql.product_id=$1 AND q.id<>$2 AND q.status IN ('draft','confirmed')
-            AND (q.reserve_expires_at > now() OR q.packing_printed_at IS NOT NULL)
-            AND q.deleted_at IS NULL`, [Number(pid), quoteId])).rows[0];
-      let remaining = Math.max(0, physical - (Number(other.s) || 0));
-      for (const l of byProd[pid]) {
-        const want = Number(l.qty) || 0;
-        const give = Math.max(0, Math.min(want, remaining));
-        remaining -= give;
-        await c.query(`UPDATE quote_lines SET reserved_qty=$1 WHERE id=$2`, [give, l.id]);
-      }
-    }
-  }
 
   // 만료 처리: 24h 지난 미결견적을 'expired'로 무효화 + 부족/개발 demand 백로그 적재.
   //  · 정확히 1회: status 플립을 RETURNING 으로 선점한 트랜잭션만 백로그를 쓴다(스위퍼 중복 무해).
@@ -328,43 +246,7 @@ export default async function quoteRoutes(app) {
     finalizeExpiredQuotes().catch(() => {});
   }
 
-  // ============ 견적 저장/수정 ============
-  async function nextQuoteNo(c, year) {
-    const r = (await c.query(`SELECT COUNT(*)::int AS n FROM quotes WHERE quote_no LIKE $1`, [`Q-${year}-%`])).rows[0];
-    return formatQuoteNo(year, (r.n || 0) + 1);
-  }
 
-  // 라인 입력 → 계산 후 저장용 행 생성
-  async function buildLines(customerDiscount, ivaRate, inputLines) {
-    const rows = [];
-    let lineNo = 0;
-    for (const ln of inputLines) {
-      lineNo++;
-      const qty = Number(ln.qty) || 0;
-      let prod = null;
-      if (ln.product_id) prod = (await query(`SELECT id, code, name, app, list_price, stock_qty FROM products WHERE id=$1 AND deleted_at IS NULL`, [Number(ln.product_id)])).rows[0] || null;
-      else {
-        const res = await resolveCode(ln.code);
-        if (res.matches.length === 1) prod = (await query(`SELECT id, code, name, app, list_price, stock_qty FROM products WHERE id=$1`, [res.matches[0].product_id])).rows[0];
-        // 다중매칭은 저장 단계에서 product_id가 와야 함(화면에서 선택). 여기선 미매칭 처리.
-      }
-      if (!prod) {
-        rows.push({ line_no: lineNo, product_id: null, input_code: ln.code || null, ctr_code: null, syd_codes: null, product_name: null, app_text: null, qty, list_price: 0, discount_rate: customerDiscount, final_price: 0, line_subtotal: 0, line_iva: 0, line_total: 0, avail_stock: null, stock_flag: 'not_found' });
-        continue;
-      }
-      const sydRows = (await query(`SELECT syd_code FROM product_syd_codes WHERE product_id=$1`, [prod.id])).rows.map((x) => x.syd_code);
-      const calc = computeQuoteLine({ listPrice: prod.list_price, discountRate: customerDiscount, qty, ivaRate });
-      const avail = prod.stock_qty != null ? Number(prod.stock_qty) : null;
-      rows.push({
-        line_no: lineNo, product_id: prod.id, input_code: ln.code || prod.code, ctr_code: prod.code,
-        syd_codes: sydRows.join(' / '), product_name: prod.name, app_text: prod.app, qty,
-        list_price: round2(prod.list_price), discount_rate: customerDiscount,
-        final_price: calc.finalPrice, line_subtotal: calc.lineSubtotal, line_iva: calc.lineIva, line_total: calc.lineTotal,
-        avail_stock: avail, stock_flag: stockFlag({ matched: true, qty, availStock: avail }),
-      });
-    }
-    return rows;
-  }
 
   app.post('/api/quotes', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const b = req.body || {};
@@ -485,6 +367,24 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT status FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted' });
+    // 0220 · **문제 줄이 있는 견적은 확정할 수 없다.**
+    //   CRM 에서 들어온 견적에는 「못 찾은 코드·판매중단 SKU」가 섞일 수 있다. 그런 줄은
+    //   단가 0 으로 들어가고 합계에서도 빠진다 — 그대로 확정하면 **0원짜리 줄이 붙은 견적**이
+    //   고객에게 나간다. 사람이 그 줄을 고치거나 지울 때까지 여기서 막는다.
+    //   (화면에서 만든 견적에는 issue 가 비어 있으므로 예전과 똑같이 동작한다)
+    if (st === 'confirmed') {
+      let bad = [];
+      try {
+        bad = (await query(
+          `SELECT line_no, input_code, issue FROM quote_lines
+            WHERE quote_id=$1 AND issue IS NOT NULL ORDER BY line_no`, [id])).rows;
+      } catch (_) { bad = []; }   // 0220 전 DB — 그 칼럼이 없다
+      if (bad.length) {
+        return reply.code(409).send({ error: 'quote_has_issues',
+          note: `확인이 필요한 줄이 ${bad.length}개 있습니다 — 고치거나 지운 뒤 확정하세요.`,
+          items: bad.map((r) => ({ line_no: Number(r.line_no), code: r.input_code, issue: r.issue })) });
+      }
+    }
     await query(`UPDATE quotes SET status=$1, updated_by=$2, updated_at=now() WHERE id=$3`, [st, req.ctx.perm.userId, id]);
     return { ok: true, status: st };
   });

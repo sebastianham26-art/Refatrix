@@ -126,8 +126,12 @@ test('C5. 고객 화면의 목록은 요약 표이고 자세히는 접혀 있다
 test('C6. 알림 대상은 관리 화면에서 사람 단위로 고른다', () => {
   const g = read(join(REPO, 'refatrix-integrations.html'));
   assert.ok(g.includes('boxNotify'));
-  assert.ok(g.includes('/api/crm-leads/notify-targets'));
-  assert.ok(g.includes("CUR.key==='crm_web_lead'"), '다른 연동에서는 이 설정이 보이면 안 된다');
+  // 0220 — 견적요청 창구도 같은 화면을 쓴다. 창구별 주소는 **표 한 곳**에만 있어야 한다
+  //   (화면 코드를 두 벌로 만들면 한쪽이 조용히 낡는다).
+  assert.ok(/NOTIFY_BASE\s*=\s*\{[^}]*crm_web_lead:\s*'\/api\/crm-leads'/.test(g),
+    '가입 신청 창구의 알림 대상 주소가 표에 있어야 한다');
+  assert.ok(/NOTIFY_BASE\[CUR\.key\]/.test(g),
+    '팝업이 없는 연동에서는 이 설정이 보이면 안 된다(표에 있는 창구에서만 뜬다)');
 });
 
 test('C7. 팝업은 고객이 보낸 값을 전부 편다', () => {
