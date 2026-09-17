@@ -15,10 +15,11 @@ import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { getEndpoint, invalidateEndpointCache, envTokenColsReady } from '../integrations.js';
+import { getEndpoint, invalidateEndpointCache, envTokenColsReady, maskSecret, activeToken,
+         INBOUND_KEY_FALLBACK } from '../integrations.js';
 import { writeInboundLog, inboundLogReady } from '../crmInboundLog.js';
 import { mapInbound, missingRequired, readInboundKey, verifyInboundKey, scrubPayload,
-         errBody } from '../crmInbound.js';
+         errBody, keyFailNote } from '../crmInbound.js';
 import { validateRfcOptional, normalizeClaimKey, computeBaselineDiscount,
          MAX_DISCOUNT_PCT } from '../customerClaim.js';
 import { computeNextCode } from '../customerCode.js';
@@ -121,9 +122,13 @@ export default async function crmInboundRoutes(app) {
       const body = errBody('ERR_API_KEY', v.reason === 'no_key_configured'
         ? 'El ERP aún no tiene una API key emitida para esta integración.'
         : 'API key faltante o inválida.');
+      // ⚠ 이력에는 **무엇과 대조했는지**까지 남긴다(세 수신 창구가 같은 규칙을 쓴다).
+      v.expectHint = maskSecret(activeToken(ep) || ep?.auth_token_prod || ep?.auth_token_test);
       await writeLog({ remote_ip: ip, auth_in: where, auth_ok: false, http_status: 401,
         rfc: String(raw.rfc || raw.RFC || '') || null,
-        codigo_error: body.codigoError, mensaje: body.mensaje, payload: safe, result: 'rejected' });
+        codigo_error: body.codigoError,
+        mensaje: keyFailNote(v, token, { ownLabel: ep.label || ep.key, fallbackLabel: null, mask: maskSecret }),
+        payload: safe, result: 'rejected' });
       return reply.code(401).send(body);
     }
     if (ep.enabled === false) {
@@ -380,5 +385,43 @@ export default async function crmInboundRoutes(app) {
       detail: { inbound_key_issued: env } });
     return { ok: true, env, token,
       note: '이 키는 지금 한 번만 보입니다. CRM 개발자에게 안전한 경로로 전달하세요.' };
+  });
+
+  /**
+   * 전용 수신 키를 **지운다** — 공용 키(다른 수신 창구의 키)로 되돌리기 위해서다.
+   *
+   *   ⚠ 이게 없어서 실제로 막혔다. 창구마다 전용 키를 발급할 수 있게만 해 두고 지울 방법을
+   *     두지 않으면, 실수로 한 번 발급한 순간 **공용 키로는 영원히 들어오지 못한다.**
+   *     상대는 「키는 같은 걸 쓴다」고 하는데 우리는 401 을 주고, 되돌릴 버튼이 없다.
+   *     만들 수 있는 것은 되돌릴 수도 있어야 한다.
+   */
+  app.delete('/api/integrations/:key/inbound-key', guard, async (req, reply) => {
+    const key = String(req.params.key || '');
+    const ep = await getEndpoint(key);
+    if (!ep) return reply.code(404).send({ error: 'not_found' });
+    if (ep.direction !== 'in') {
+      return reply.code(400).send({ error: 'not_inbound',
+        note: '수신 창구에서만 쓸 수 있습니다. 전송 창구의 키는 연결 설정에서 고치세요.' });
+    }
+    const fb = INBOUND_KEY_FALLBACK[key];
+    await query(
+      `UPDATE integration_endpoints
+          SET auth_token_test=NULL, auth_token_prod=NULL, auth_token=NULL,
+              updated_by=$2, updated_at=now()
+        WHERE key=$1`, [key, req.ctx.perm.userId || null]);
+    try {
+      await query(
+        `INSERT INTO integration_endpoint_changes (endpoint_id, changed_by, changes)
+         SELECT id, $2, $3::jsonb FROM integration_endpoints WHERE key=$1`,
+        [key, req.ctx.perm.userId || null,
+         JSON.stringify({ inbound_key: { old: '(전용 키)', new: fb ? '(공용 키로 되돌림)' : '(지움)' } })]);
+    } catch (_) { /* 이력 실패가 삭제를 되돌리지 않는다 */ }
+    invalidateEndpointCache(key);
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `integration:${key}`,
+      detail: { inbound_key_cleared: true, fallback_to: fb || null } });
+    return { ok: true, fallback_to: fb || null,
+      note: fb
+        ? '전용 키를 지웠습니다 — 이제 다른 창구의 키로 들어오는 요청을 받습니다.'
+        : '전용 키를 지웠습니다. 이 창구는 이제 어떤 키로도 인증되지 않습니다 — 새로 발급하세요.' };
   });
 }

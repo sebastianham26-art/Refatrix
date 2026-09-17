@@ -295,6 +295,34 @@ export function verifyInboundKey(ep, token) {
 }
 
 /**
+ * 401 이 났을 때 **무엇과 무엇을 대조했는지** 한 줄로 적는다 (수신 이력 전용).
+ *
+ *   「API key faltante o inválida」만 남기면 두 경우가 구분되지 않는다:
+ *     ⓐ 이 창구에 전용 키가 있고, 상대가 **다른 키**(예: 신규고객 등록 키)를 보냈다
+ *     ⓑ 전용 키가 없어 다른 창구 키로 대조했는데 그것도 안 맞았다
+ *   둘은 고치는 방법이 정반대다 — ⓐ는 이 창구 키를 주거나 전용 키를 지워야 하고,
+ *   ⓑ는 상대가 가진 키 자체가 틀렸다. 화면이 말해 주지 않으면 추측으로 시간을 쓴다.
+ *   (연동 관리는 디렉터 전용 화면이므로 앞뒤 4글자까지는 보여 준다 — 대조에 그만큼은 필요하다)
+ *
+ *   @param mask  키를 가리는 함수(integrations.maskSecret) — 값이 통째로 남지 않게 한다
+ */
+export function keyFailNote(v, token, { ownLabel, fallbackLabel, mask }) {
+  const got = token ? `recibida ${mask(token)}` : 'no llegó ninguna llave';
+  if (v.reason === 'missing' || !token) {
+    return `No llegó la API key (revisar el encabezado x-api-key). ${got}.`;
+  }
+  if (v.reason === 'no_key_configured') {
+    return 'El ERP no tiene ninguna llave emitida para esta integración'
+      + (fallbackLabel ? ` ni en «${fallbackLabel}»` : '') + `. ${got}.`;
+  }
+  const against = v.checkedFallback && fallbackLabel
+    ? `la llave de «${fallbackLabel}» (esta integración no tiene llave propia)`
+    : `la llave propia de «${ownLabel}»`;
+  return `La llave no coincide con ${against}. ${got}`
+    + (v.expectHint ? `, esperada ${v.expectHint}` : '') + '.';
+}
+
+/**
  * 이력에 남길 본문 — **키 값을 지운다.**
  *   상대가 키를 본문에 실어 보낼 수 있게 열어 뒀으므로(readInboundKey), 원문을 그대로
  *   저장하면 수신 이력 화면과 DB 백업에 우리 키가 평문으로 남는다. 이력의 목적은

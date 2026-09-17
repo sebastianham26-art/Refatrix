@@ -18,10 +18,10 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { getEndpoint, INBOUND_KEY_FALLBACK } from '../integrations.js';
+import { getEndpoint, INBOUND_KEY_FALLBACK, maskSecret, activeToken } from '../integrations.js';
 import { writeInboundLog } from '../crmInboundLog.js';
 import { mapQuote, quoteDate, badQuoteLines, folioAsQuoteNo, readInboundKey, verifyInboundKey,
-         scrubPayload, errBody } from '../crmInbound.js';
+         scrubPayload, errBody, keyFailNote } from '../crmInbound.js';
 import { computeQuoteTotals } from '../quotes.js';
 // ⚠ 화면과 **같은 조립기**를 쓴다. 두 벌로 두면 코드 해석 규칙이 갈라진다.
 import { buildLines, nextQuoteNo, assignReservations } from '../quoteBuild.js';
@@ -155,17 +155,23 @@ export default async function crmQuoteRoutes(app) {
     }
     // 전용 키를 발급하지 않았으면 신규고객 등록 수신과 **같은 키**를 받아 준다.
     let v = verifyInboundKey(ep, token);
+    let keyEp = ep;                     // 실제로 대조한 창구(진단에 쓴다)
     if (!v.ok && v.reason === 'no_key_configured') {
       const fb = INBOUND_KEY_FALLBACK[QUOTE_KEY];
       const regEp = fb ? await getEndpoint(fb) : null;
-      if (regEp) v = verifyInboundKey(regEp, token);
+      if (regEp) { v = verifyInboundKey(regEp, token); keyEp = regEp; v.checkedFallback = true; }
     }
     if (!v.ok) {
       const body = errBody('ERR_API_KEY', v.reason === 'no_key_configured'
         ? 'El ERP aún no tiene una API key emitida para esta integración.'
         : 'API key faltante o inválida.');
+      // ⚠ 이력에는 **무엇과 대조했는지**까지 남긴다. 「키가 틀렸다」만으로는
+      //   「우리 전용 키와 다르다」인지 「상대 키 자체가 틀렸다」인지 알 수 없다.
+      v.expectHint = maskSecret(activeToken(keyEp) || keyEp?.auth_token_prod || keyEp?.auth_token_test);
       await writeLog({ ...base, auth_ok: false, http_status: 401, result: 'rejected',
-        codigo_error: body.codigoError, mensaje: body.mensaje });
+        codigo_error: body.codigoError,
+        mensaje: keyFailNote(v, token, { ownLabel: ep.label || ep.key,
+          fallbackLabel: keyEp === ep ? null : (keyEp.label || keyEp.key), mask: maskSecret }) });
       return reply.code(401).send(body);
     }
     if (ep.enabled === false) {

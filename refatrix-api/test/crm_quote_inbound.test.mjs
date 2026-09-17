@@ -221,6 +221,7 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     headers: { authorization: 'Bearer ' + dirToken } });
 
   const madeQuotes = [];
+  let firstQuoteId = null;      // 「정상 접수」로 만든 견적 — 멱등 시험이 이걸 되찾아야 한다
   t.after(async () => {
     for (const id of madeQuotes) {
       await query(`DELETE FROM quote_lines WHERE quote_id=$1`, [id]);
@@ -241,10 +242,42 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     assert.equal(r.statusCode, 401);
     assert.equal(r.json().codigoError, 'ERR_API_KEY');
     const log = (await query(
-      `SELECT result, http_status FROM crm_inbound_log
+      `SELECT result, http_status, mensaje FROM crm_inbound_log
         WHERE endpoint_key='crm_quote_request' ORDER BY id DESC LIMIT 1`)).rows[0];
     assert.equal(log.result, 'rejected');
     assert.equal(Number(log.http_status), 401);
+    // ⚠ 「키가 틀렸다」만으로는 고칠 수 없다 — **무엇과 대조했는지**가 있어야 한다.
+    assert.match(log.mensaje, /llave propia/, '이 창구의 전용 키와 대조했다고 말해야 한다');
+    assert.match(log.mensaje, /recibida/, '상대가 보낸 키의 앞뒤 글자를 보여 줘야 대조가 된다');
+    assert.equal(log.mensaje.includes(KEY), false, '우리 키가 통째로 남으면 안 된다');
+  });
+
+  await t.test('전용 키가 없으면 「신규고객 등록 키와 대조했다」고 말한다', async () => {
+    // 실제로 겪은 상황: 개발자가 등록용 키를 보냈는데 401 이 났다. 원인이
+    // ⓐ 이 창구에 전용 키가 따로 있어서인지 ⓑ 상대 키 자체가 틀려서인지
+    // 화면이 말해 주지 않으면 추측으로 시간을 쓴다.
+    await query(`UPDATE integration_endpoints SET auth_token_test=NULL, auth_token_prod=NULL
+                  WHERE key='crm_quote_request'`);
+    await query(`UPDATE integration_endpoints SET auth_token_test=$1
+                  WHERE key='crm_customer_registration'`, ['rfx_test_reg_key_for_0220']);
+    invalidateEndpointCache();
+    const bad = await post({ rfc: rfcOk, lineas: [{ codigo: 'QTEST01', cantidad: 1 }] }, 'otra-llave');
+    assert.equal(bad.statusCode, 401);
+    const log = (await query(
+      `SELECT mensaje FROM crm_inbound_log WHERE endpoint_key='crm_quote_request'
+        ORDER BY id DESC LIMIT 1`)).rows[0];
+    assert.match(log.mensaje, /no tiene llave propia/, '어느 창구 키로 대조했는지 말해야 한다');
+
+    // 그리고 **등록용 키를 보내면 실제로 통과한다**(같은 키를 쓰게 해 둔 설계).
+    const ok = await post({ cotizacionCrm: 'COT-T-FB01', rfc: rfcOk,
+      lineas: [{ codigo: 'QTEST01', cantidad: 1 }] }, 'rfx_test_reg_key_for_0220');
+    assert.equal(ok.statusCode, 200, '전용 키가 없으면 등록용 키로 들어와야 한다');
+    madeQuotes.push(ok.json().quoteId);
+
+    // 원상복구 — 이후 시험은 전용 키를 쓴다.
+    await query(`UPDATE integration_endpoints SET auth_token_test=$1 WHERE key='crm_quote_request'`, [KEY]);
+    await query(`UPDATE integration_endpoints SET auth_token_test=NULL WHERE key='crm_customer_registration'`);
+    invalidateEndpointCache();
   });
 
   await t.test('정상 접수 — 견적이 만들어지고 고객은 RFC 로 붙는다', async () => {
@@ -257,6 +290,7 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     assert.equal(b.cotizacionErp, 'COT-T-0001');
     assert.deepEqual(b.lineasConProblema, []);
     madeQuotes.push(b.quoteId);
+    firstQuoteId = b.quoteId;
 
     const q = (await query(
       `SELECT customer_id, origin, quote_no, external_quote_no, quote_date::text, status, memo, total_qty
@@ -282,7 +316,7 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
       lineas: [{ codigo: 'QTEST01', cantidad: 3 }] });
     assert.equal(r.statusCode, 200);
     const b = r.json();
-    assert.equal(b.quoteId, madeQuotes[0], '기존 견적 번호를 그대로 돌려줘야 한다');
+    assert.equal(b.quoteId, firstQuoteId, '기존 견적 번호를 그대로 돌려줘야 한다');
     const n = (await query(
       `SELECT count(*)::int AS n FROM quotes WHERE external_quote_no='COT-T-0001'`)).rows[0].n;
     assert.equal(Number(n), 1);
