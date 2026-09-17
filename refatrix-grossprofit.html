@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 매출총이익 · build gp-0917f1</title>
+<title>Refatrix ERP · 매출총이익</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -90,8 +90,6 @@
   .star{color:var(--gold)}
   .chip{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:5px}
   .chip-imp{background:#fbf3df;color:#8a6512;border:1px solid #ecd9a0}
-  /* 운반비 셀 아래 작은 비율 표기(열 너비 변화 없음) */
-  .frp{display:block;font-size:10px;font-weight:700;line-height:1.1;margin-top:2px;color:var(--muted);font-variant-numeric:tabular-nums}
   .nores{font-size:13px;color:var(--muted);padding:8px 2px}
   .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
   /* 자재내역 드릴다운(행 펼치기) */
@@ -249,7 +247,6 @@
             <span class="hint" id="custMeta"></span>
           </div>
           <div id="custResult"></div>
-          <div class="hint" style="margin-top:8px"><b>운반비</b> 칸 아래 작은 숫자 = <b>운반비율 = 운반비 ÷ 매출(ex-IVA) × 100</b>. 매출은 이미 IVA 불포함 금액이므로 따로 뺄 것이 없습니다. 운반비는 <b>거래등록에 입력한 금액 그대로</b>(IVA 구분 없음) 쓰이므로, IVA 포함으로 입력된 건은 비율이 최대 16%까지 높게 보일 수 있습니다. 숫자에 마우스를 올리면 직접·배분 내역과 계산식이 표시됩니다.</div>
         </div>
       </div><!-- /custView -->
 
@@ -638,11 +635,7 @@
       const tk=tierOf(c.margin_pct);
       const imp=impSet.has(c.id);
       const isOpen=custOpen.has(c.id);
-      // 운반비율 = 운반비 ÷ 매출(ex-IVA) × 100. 매출 0이거나 운반비 0이면 표기 생략(행 노이즈 방지).
-      const frRate=(c.revenue>0 && Number(c.freight||0)!==0) ? (c.freight/c.revenue*100) : null;
-      const frTitle='직접 '+fmt(c.freight_direct||0)+' + 배분 '+fmt(c.freight_alloc||0)
-        +(frRate==null?'':('\n운반비율 '+pct(frRate)+' = 운반비 '+fmt(c.freight)+' ÷ 매출(ex-IVA) '+fmt(c.revenue)
-          +'\n※ 운반비는 거래등록 입력금액 그대로(IVA 구분 없음)'));
+      const frTitle='직접 '+fmt(c.freight_direct||0)+' + 배분 '+fmt(c.freight_alloc||0);
       h+='<tr class="'+(tk?('r-'+tk):'')+'">'
         +'<td class="l drillcell" data-cid="'+c.id+'"><span class="bdrill">'+(isOpen?'▾':'▸')+'</span>'+esc(c.name)+(imp?'<span class="chip chip-imp" title="파레토 상위 20%: 매출총이익 금액 상위 20% 고객">★ 상위20%</span>':'')+'</td>'
         +'<td class="n">'+fmt(c.inv_count)+'</td>'
@@ -653,8 +646,7 @@
         +'<td class="n">'+fmt(c.profit)+'</td>'
         +'<td class="n mg">'+(c.margin_pct==null?'<span style="color:var(--muted)">—</span>':pct(c.margin_pct))+'</td>'
         +'<td class="n">'+fmt(c.commission||0)+'</td>'
-        +'<td class="n" title="'+frTitle+'">'+fmt(c.freight||0)
-          +(frRate==null?'':'<span class="frp">'+pct(frRate)+'</span>')+'</td>'
+        +'<td class="n" title="'+frTitle+'">'+fmt(c.freight||0)+'</td>'
         +'<td class="n" style="font-weight:800;'+((c.contribution||0)<0?'color:var(--t4)':'color:var(--brand)')+'">'+fmt(c.contribution||0)+'</td>'
         +'<td class="n">'+(c.contrib_pct==null?'<span style="color:var(--muted)">—</span>':pct(c.contrib_pct))+'</td>'
         +'<td class="n" style="color:var(--muted)">'+(c.last_date||'—')+'</td>'
