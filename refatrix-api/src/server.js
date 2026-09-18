@@ -58,6 +58,7 @@ import crmSyncRoutes from './routes/crmSyncRoutes.js';
 import integrationRoutes from './routes/integrationRoutes.js';
 import productSyncRoutes from './routes/productSyncRoutes.js';
 import crmInboundRoutes from './routes/crmInboundRoutes.js';
+import catalogApiRoutes from './routes/catalogApiRoutes.js';
 import crmLeadRoutes from './routes/crmLeadRoutes.js';
 import crmQuoteRoutes from './routes/crmQuoteRoutes.js';
 import secretRoutes from './routes/secretRoutes.js';    // 외부 서비스 키 화면(0209) — 라이브 server.js 에서 등록이 빠져 있던 것을 복구
@@ -142,6 +143,7 @@ export function buildApp() {
   app.register(integrationRoutes);
   app.register(productSyncRoutes);
   app.register(crmInboundRoutes);   // CRM → ERP 수신(웹카달록 신규고객)
+  app.register(catalogApiRoutes);   // 고객 → ERP 조회(카탈로그 풀 API · 0221)
   app.register(crmLeadRoutes);      // CRM → ERP 수신(웹 가입 신청 알림) + 팝업·이력
   app.register(crmQuoteRoutes);     // CRM → ERP 수신(견적요청) + 팝업·담당자 지정
   app.register(secretRoutes);       // 관리 → 외부 서비스 키 (Anthropic·OpenAI·WhatsApp)
