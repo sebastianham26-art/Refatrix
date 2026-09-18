@@ -249,27 +249,19 @@ export default async function quoteRoutes(app) {
 
 
 
-  /**
-   * 0224 · 이 견적에 「판매중단(비활성)」 표시가 붙은 줄 — 다음 단계로 못 넘어가는 이유.
-   *
-   *   표시는 **중단 이후에 들어온 요청**에만 붙는다(quoteRoutes 의 저장·수정 규칙 참고).
-   *   그래서 이 검사는 비활성 **전에** 만들어진 예전 오더의 포장·인보이스 발행을
-   *   막지 않는다 — 0179 가 견적→매출 전환을 일부러 열어 둔 것과 같은 선이다.
-   */
-  async function inactiveLinesOf(quoteId) {
-    try {
-      return (await query(
-        `SELECT line_no, input_code, ctr_code, product_name FROM quote_lines
-          WHERE quote_id=$1 AND issue='inactive' ORDER BY line_no`, [quoteId])).rows;
-    } catch (_) { return []; }   // issue 칼럼이 없는 옛 DB
-  }
-  const inactiveBlock = (rows, what) => ({
-    error: 'inactive_product_lines',
-    note: `판매중단(비활성) 제품이 ${rows.length}줄 들어 있어 ${what} 단계로 넘길 수 없습니다 — `
-      + `해당 줄을 지우거나, 제품·마케팅 > 제품검색에서 판매재개한 뒤 진행하세요. `
-      + `(요청이 들어왔다는 기록은 그대로 남습니다)`,
-    items: rows.map((r) => ({ line_no: Number(r.line_no), code: r.ctr_code || r.input_code, name: r.product_name })),
-  });
+  // 0224b · 판매중단 줄 안내는 **스페인어**로 돌려준다 — 이 응답을 읽는 사람은 영업사원이다.
+  //   막는 말이 아니다: 견적은 그대로 진행되고, 그 줄이 어디에 기록으로 남는지를 알려 준다.
+  const esInactiveNote = (rows) =>
+    `Productos descontinuados (inactivos) en esta cotización: ${rows.length} `
+    + `(${rows.map((x) => x.code).filter(Boolean).join(', ')}). La cotización sigue su curso normal; `
+    + `estas líneas quedan registradas como demanda del producto en Productos y Marketing > `
+    + `Búsqueda de productos (ficha del SKU · «Solicitudes tras descontinuar»), para evaluar reactivar su venta.`;
+
+  // 0224b · **판매중단 줄은 흐름을 세우지 않는다.**
+  //   처음엔 포장·매출 전환까지 409 로 막았다가 되돌렸다(디렉터 지시, 2026-09-18):
+  //   즉시 출고 가능한 20개 SKU 가 단종 1줄 때문에 통째로 멈추는 것이 훨씬 비싸다.
+  //   남는 것은 **표시와 기록**이다 — 줄의 issue='inactive', 목록의 건수 배지, 그리고
+  //   제품 화면의 수요 집계. 확정(POST /:id/status)만 0220 규칙대로 잠긴다.
 
   app.post('/api/quotes', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const b = req.body || {};
@@ -355,9 +347,7 @@ export default async function quoteRoutes(app) {
       .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
     return { id: result.id, quote_no: result.quote_no, customer_id: customerId || null, auto_customer: autoCustomer,
       inactive_lines: inactiveLines,
-      inactive_note: inactiveLines.length
-        ? `판매중단(비활성) 제품 ${inactiveLines.length}건이 포함돼 있습니다. 요청 기록은 남지만 이 견적은 확정할 수 없습니다 — 해당 줄을 지우거나 제품을 판매재개한 뒤 확정하세요.`
-        : null };
+      inactive_note: inactiveLines.length ? esInactiveNote(inactiveLines) : null };
   });
 
   // 견적 수정(draft/confirmed만) — 라인 전체 교체
@@ -411,9 +401,7 @@ export default async function quoteRoutes(app) {
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}` });
     return { ok: true, inactive_lines: flagged,
-      inactive_note: flagged.length
-        ? `판매중단(비활성) 제품 ${flagged.length}건이 포함돼 있습니다. 요청 기록은 남지만 이 견적은 확정할 수 없습니다.`
-        : null };
+      inactive_note: flagged.length ? esInactiveNote(flagged) : null };
   });
 
   // 견적 상태 변경: confirmed / cancelled / draft
@@ -424,27 +412,23 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT status FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted' });
-    // 0220 · **문제 줄이 있는 견적은 확정할 수 없다.**
-    //   CRM 에서 들어온 견적에는 「못 찾은 코드·판매중단 SKU」가 섞일 수 있다. 그런 줄은
-    //   단가 0 으로 들어가고 합계에서도 빠진다 — 그대로 확정하면 **0원짜리 줄이 붙은 견적**이
-    //   고객에게 나간다. 사람이 그 줄을 고치거나 지울 때까지 여기서 막는다.
-    //   (화면에서 만든 견적에는 issue 가 비어 있으므로 예전과 똑같이 동작한다)
+    // 0220/0224b · **확정을 막는 것은 「해석 못 한 줄」뿐이다.**
+    //   못 찾은 코드(not_found)·다중매칭(multi_match) 은 단가 0 으로 들어가고 합계에서도
+    //   빠진다 — 그대로 확정하면 0원짜리 줄이 붙은 견적이 고객에게 나간다. 그건 계속 막는다.
+    //   **판매중단(inactive) 줄은 막지 않는다**(디렉터 지시, 2026-09-18): 단가가 정상으로
+    //   들어가 있고, 그 한 줄 때문에 나머지 품목의 흐름이 멈추면 손해가 훨씬 크다.
+    //   그 줄은 기록으로 남아 제품 화면의 수요 집계에 잡힌다.
     if (st === 'confirmed') {
       let bad = [];
       try {
         bad = (await query(
           `SELECT line_no, input_code, issue FROM quote_lines
-            WHERE quote_id=$1 AND issue IS NOT NULL ORDER BY line_no`, [id])).rows;
+            WHERE quote_id=$1 AND issue IS NOT NULL AND issue <> 'inactive' ORDER BY line_no`, [id])).rows;
       } catch (_) { bad = []; }   // 0220 전 DB — 그 칼럼이 없다
       if (bad.length) {
-        // 0224 — 이제 화면 견적에도 '판매중단' 줄이 붙을 수 있다. 어느 쪽인지 말해 줘야
-        //   사람이 무엇을 해야 할지 안다(줄을 지운다 / 제품을 판매재개한다 / 코드를 고친다).
-        const inact = bad.filter((r) => r.issue === 'inactive');
-        const note = inact.length === bad.length
-          ? `판매중단(비활성) 제품이 ${inact.length}줄 들어 있어 확정할 수 없습니다 — 그 줄을 지우거나, 제품·마케팅 > 제품검색에서 판매재개한 뒤 확정하세요. (요청 기록은 그대로 남습니다)`
-          : `확인이 필요한 줄이 ${bad.length}개 있습니다${inact.length ? `(그중 판매중단 ${inact.length}개)` : ''} — 고치거나 지운 뒤 확정하세요.`;
-        return reply.code(409).send({ error: 'quote_has_issues', note,
-          inactive_count: inact.length,
+        return reply.code(409).send({ error: 'quote_has_issues',
+          note: `Hay ${bad.length} línea(s) que el ERP no pudo identificar (código no encontrado o ambiguo) `
+            + `y entrarían con importe 0. Corrija o elimine esas líneas antes de confirmar.`,
           items: bad.map((r) => ({ line_no: Number(r.line_no), code: r.input_code, issue: r.issue })) });
       }
     }
@@ -953,13 +937,10 @@ export default async function quoteRoutes(app) {
     const id = Number(req.params.id);
     const q = (await query(`SELECT id, customer_id, quote_no, packing_printed_at, packing_due_at FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
-    // 0224 — 판매중단 줄이 남아 있으면 포장으로 넘기지 않는다.
-    //   포장지시서가 나가면 창고가 집기 시작하고 예약이 고정된다 — 단종품이 그 흐름에
-    //   들어가면 되돌리기가 비싸다. 여기서 세우는 편이 싸다.
-    {
-      const bad = await inactiveLinesOf(id);
-      if (bad.length) return reply.code(409).send(inactiveBlock(bad, '포장'));
-    }
+    // 0224b — **포장은 막지 않는다**(디렉터 지시, 2026-09-18).
+    //   한 견적에 즉시 출고 가능한 SKU 가 20개인데 단종 1줄 때문에 지시서가 안 나가면
+    //   그 20개가 통째로 멈춘다. 단종 줄은 재고가 없어 어차피 피킹 목록에 안 들어가므로,
+    //   여기서 세울 이유가 없다. 요청 기록(issue='inactive')은 그대로 남는다.
     // 포장 시각/기한은 "최초 출력"에만 고정(재출력해도 기한이 밀리지 않음 — 전진 전용 원칙).
     let printedAt = q.packing_printed_at;
     let dueAt = q.packing_due_at;
@@ -990,13 +971,10 @@ export default async function quoteRoutes(app) {
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', invoice_id: q.invoice_id });
     if (!q.packing_printed_at && (q.status === 'expired' || (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date())))
       return reply.code(409).send({ error: 'quote_expired', note: '예약 24시간이 지나 무효화된 견적입니다. 전환할 수 없습니다. 견적을 복제해 새로 진행하세요.' });
-    // 0224 — 판매중단 줄이 남아 있으면 매출로 전환하지 않는다.
-    //   ⚠ 이 검사는 **중단 이후에 들어온 요청**에만 걸린다. 비활성 전에 확정된 오더는
-    //     표시가 없으므로 예전처럼 그대로 인보이스가 나간다(0179 의 결정을 지킨다).
-    {
-      const bad = await inactiveLinesOf(id);
-      if (bad.length) return reply.code(409).send(inactiveBlock(bad, '매출 전환'));
-    }
+    // 0224b — **매출 전환도 막지 않는다**(포장과 같은 이유).
+    //   전환은 재고가 있는 줄만 인보이스로 만들고 나머지는 부족분으로 기록한다.
+    //   단종 줄을 이유로 전환 전체를 세우면 팔 수 있는 물건까지 멈춘다.
+    //   (0179 도 견적→매출 전환은 일부러 열어 두었다)
     // 포장 게이트: 전량 가용(피킹 대상) 라인이 있으면 서명 스캔본 업로드가 선행돼야 전환 가능
     const pickable = (await query(
       `SELECT 1 FROM quote_lines ql JOIN products p ON p.id=ql.product_id
@@ -1215,8 +1193,6 @@ export default async function quoteRoutes(app) {
       .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
     return { id: result.id, quote_no: result.quote_no, customer_id: customerId,
       inactive_lines: cloneInactive,
-      inactive_note: cloneInactive.length
-        ? `판매중단(비활성) 제품 ${cloneInactive.length}건이 포함돼 있습니다. 복제는 됐지만 확정할 수 없습니다.`
-        : null };
+      inactive_note: cloneInactive.length ? esInactiveNote(cloneInactive) : null };
   });
 }

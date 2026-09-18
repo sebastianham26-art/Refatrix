@@ -2,8 +2,8 @@
 // 판매중단 후 견적요청(수요) UI — jsdom (0224)
 //   운영 HTML 을 그대로 로드하고 fetch 만 스텁해서 검증한다.
 //     · 제품검색: 비활성 행에 「요청 N건」 배지, 드릴다운을 열면 수요 표가 자동으로 뜬다
-//     · 견적 화면: 비활성 SKU 를 **담을 수 있고**(막히지 않고) 확정 불가 경고가 뜬다
-//     · 견적 목록: 판매중단 줄 표시, 매출 전환 거절 메시지
+//     · 견적 화면: 비활성 SKU 를 **담을 수 있고**, 스페인어로 「진행은 되며 수요로 기록된다」고 알린다
+//     · 견적 목록: 판매중단 줄 표시(막지 않는다 — 포장·전환은 그대로)
 //
 //   왜 UI 까지 시험하나: 서버가 기록을 남겨도 화면이 예전처럼 「담을 수 없습니다」로
 //   막아 버리면 요청은 여전히 사라진다. 두 쪽이 같이 바뀌어야 의미가 있다.
@@ -171,13 +171,17 @@ test('견적 화면 — 비활성 SKU 를 담을 수 있다 (jsdom)', { skip: SK
     await tick(200);
     const msg = d.getElementById('lineMsg');
     assert.equal(msg.className, 'msg warn', '막는 빨간 오류가 아니라 경고여야 한다');
-    assert.match(msg.textContent, /판매중단/);
-    assert.match(msg.textContent, /확정할 수 없습니다/);
+    // 이 화면을 쓰는 사람은 영업사원이다 — 안내는 스페인어.
+    assert.match(msg.textContent, /descontinuado/i);
+    assert.match(msg.textContent, /sigue su curso/, '진행은 된다고 말한다');
+    assert.match(msg.textContent, /demanda/, '어디에 기록으로 남는지 말한다');
+    assert.match(msg.textContent, /Búsqueda de productos/, '기록 위치를 짚어 준다');
+    assert.equal(/확정할 수 없습니다/.test(msg.textContent), false, '막는다고 말하면 안 된다');
     // 줄이 실제로 들어갔는지 — 미리보기 호출에 그 코드가 실려야 한다.
     assert.match(d.getElementById('linesWrap').textContent, /CE0536R/, '줄이 담겼다');
   });
 
-  await t.test('⑤ 저장 후 「기록은 남지만 확정 불가」를 알린다', async () => {
+  await t.test('⑤ 저장 후 「진행되며 수요로 기록된다」를 스페인어로 알린다', async () => {
     const { w, d } = await bootQuote();
     pickCustomer(w, d);
     await tick(60);
@@ -188,8 +192,10 @@ test('견적 화면 — 비활성 SKU 를 담을 수 있다 (jsdom)', { skip: SK
     await tick(150);
     const m = d.getElementById('saveMsg');
     assert.match(m.textContent, /저장됨/, '저장은 된다');
-    assert.match(m.textContent, /판매중단 1건/);
-    assert.match(m.textContent, /확정할 수 없습니다/);
+    assert.match(m.textContent, /Descontinuados: 1/);
+    assert.match(m.textContent, /CE0536R/);
+    assert.match(m.textContent, /sigue su curso/);
+    assert.match(m.textContent, /demanda/);
     assert.equal(m.className, 'msg warn');
   });
 });
@@ -200,11 +206,12 @@ test('견적 화면 — 「담을 수 없습니다」 로 막는 코드가 남�
   assert.ok(/msg warn/.test(s), '대신 경고로 알린다');
 });
 
-test('견적 목록 — 판매중단 줄 표시와 전환 거절 안내가 있다', { skip: SKIP }, () => {
+test('견적 목록 — 표시만 하고 흐름은 막지 않는다', { skip: SKIP }, () => {
   const s = readFileSync(L_HTML, 'utf-8');
   assert.ok(/inactive_cnt/.test(s), '목록에 판매중단 줄 수 표시');
-  assert.ok(/inactive_product_lines/.test(s), '전환·포장 거절을 사람 말로 안내');
-  // 포장지시서는 거절되면 **아예 뽑지 않아야** 한다 — 뽑아 놓고 막으면 창고가 움직인다.
-  const blk = s.slice(s.indexOf("packing-printed"), s.indexOf("packing-printed") + 900);
-  assert.ok(/inactive_product_lines/.test(blk) && /return;/.test(blk), '출력 전에 세운다');
+  assert.ok(/Descontinuado/.test(s), '표시는 스페인어');
+  // ⚠ 포장 흐름을 중단시키는 코드가 있으면 안 된다(2026-09-18 지시).
+  const blk = s.slice(s.indexOf('packing-printed'), s.indexOf('packing-printed') + 900);
+  assert.equal(/inactive_product_lines/.test(blk), false, '포장 출력을 세우면 안 된다');
+  assert.ok(/포장은 그대로 진행/.test(blk), '왜 안 막는지 코드에 적어 둔다');
 });

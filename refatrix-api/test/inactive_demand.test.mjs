@@ -1,14 +1,16 @@
-// 판매중단(비활성) SKU 견적요청 — 접수 · 확정 잠금 · 수요 집계 (0224)
+// 판매중단(비활성) SKU 견적요청 — 접수 · 기록 · 수요 집계 (0224b)
 //
 //   왜 이 시험이 있나
 //     0179 는 비활성 SKU 가 담긴 새 견적을 409 로 거절했다. 거절은 **아무 기록도
 //     남기지 않는다** — 고객이 단종 부품을 계속 찾고 있다는 사실이 ERP 에서 사라져
 //     판매재개를 감으로 판단해야 했다. 디렉터 지시(2026-09-18):
 //     「다음 단계로 넘어가지 않아도, 견적이 들어왔다는 기록은 있어야 한다.」
+//     이어진 지시: 「**포장할 수 있게** 해달라. 다음 단계로 넘어가되 inactivo 제품은 기록에 남겨라.」
 //
 //   그래서 여기서 잠그는 것은 셋이다.
 //     ① 비활성 SKU 가 있어도 **저장된다**(요청이 사라지지 않는다)
-//     ② 그래도 **확정은 못 한다**(0원/단종 줄이 고객에게 나가지 않는다)
+//     ② 흐름은 **멈추지 않는다** — 확정·포장·매출 전환 전부 그대로 (2026-09-18 지시).
+//        단종 1줄 때문에 즉시 출고 가능한 나머지 SKU 가 멈추는 것이 훨씬 비싸다.
 //     ③ 중단 **이후** 요청만 수요로 센다(과거 판매이력을 수요로 착각하지 않는다)
 //
 //   실행: TEST_PG_URL=postgres://... node --test test/inactive_demand.test.mjs
@@ -27,11 +29,13 @@ test('매출등록은 여전히 비활성 SKU 를 막는다', () => {
     '매출등록의 비활성 차단이 사라지면 단종품이 그대로 팔린다');
 });
 
-test('견적 저장 경로에서 409 거절이 사라졌다', () => {
+test('견적 흐름 어디에서도 판매중단으로 거절하지 않는다', () => {
   const q = readFileSync(new URL('../src/routes/quoteRoutes.js', import.meta.url), 'utf8');
-  assert.equal(/error: 'inactive_product'/.test(q), false,
-    '거절하면 요청 기록이 다시 사라진다');
-  assert.ok(/screenIssue/.test(q), '대신 줄에 표시를 남겨 확정을 잠근다');
+  assert.equal(/error: 'inactive_product'/.test(q), false, '거절하면 요청 기록이 다시 사라진다');
+  assert.equal(/inactive_product_lines/.test(q), false, '포장·전환도 막지 않는다(2026-09-18 지시)');
+  assert.ok(/screenIssue/.test(q), '대신 줄에 표시를 남겨 수요로 집계한다');
+  // 확정 게이트는 「해석 못 한 줄」만 본다.
+  assert.ok(/issue <> 'inactive'/.test(q), '판매중단 줄은 확정도 막지 않는다');
 });
 
 test('화면 경로는 inactive 만 저장한다', async () => {
@@ -47,7 +51,7 @@ test('화면 경로는 inactive 만 저장한다', async () => {
 // ── ② 실 DB 종단 ───────────────────────────────────────────────
 const dbTest = PG ? test : test.skip;
 
-dbTest('접수 · 확정 잠금 · 수요 집계 (실 DB)', async (t) => {
+dbTest('접수 · 흐름 유지 · 수요 집계 (실 DB)', async (t) => {
   const { query } = await import('../src/db.js');
   const Fastify = (await import('fastify')).default;
   const fastifyJwt = (await import('@fastify/jwt')).default;
@@ -126,33 +130,32 @@ dbTest('접수 · 확정 잠금 · 수요 집계 (실 DB)', async (t) => {
   const qAfter = after.json();
   assert.equal(qAfter.inactive_lines.length, 1, '어느 줄이 문제인지 화면에 돌려준다');
   assert.equal(qAfter.inactive_lines[0].code, 'IDT-OFF');
-  assert.match(qAfter.inactive_note, /확정할 수 없습니다/);
+  assert.match(qAfter.inactive_note, /descontinuados/i, '안내는 스페인어(영업사원이 읽는다)');
+  assert.match(qAfter.inactive_note, /demanda/, '어디에 기록으로 남는지 말해 준다');
   const linesAfter = (await query(
     `SELECT product_id, issue FROM quote_lines WHERE quote_id=$1 ORDER BY line_no`, [qAfter.id])).rows;
   assert.equal(linesAfter[0].issue, 'inactive', '비활성 줄만 표시');
   assert.equal(linesAfter[1].issue, null, '정상 줄은 깨끗하게');
 
-  // ── ⓓ 그래도 확정은 못 한다
+  // ── ⓓ 그래도 **흐름은 멈추지 않는다** (디렉터 지시, 2026-09-18)
+  //    단종 1줄 때문에 나머지 품목까지 멈추는 것이 훨씬 비싸다. 확정도 그대로 된다.
   const conf = await call('POST', `/api/quotes/${qAfter.id}/status`, { status: 'confirmed' });
-  assert.equal(conf.statusCode, 409);
-  assert.equal(conf.json().error, 'quote_has_issues');
-  assert.equal(conf.json().inactive_count, 1);
-  assert.match(conf.json().note, /판매중단/);
-  assert.match(conf.json().note, /요청 기록은 그대로 남습니다/);
+  assert.equal(conf.statusCode, 200, '판매중단 줄은 확정을 막지 않는다');
 
-  // ── ⓔ 문제 줄을 지우면 확정된다
-  const fix = await call('PUT', `/api/quotes/${qAfter.id}`,
-    { customer_id: c1, memo: 'IDTEST-after', lines: [{ product_id: pOn, qty: 2 }] });
-  assert.equal(fix.statusCode, 200);
-  assert.equal((fix.json().inactive_lines || []).length, 0);
-  const conf2 = await call('POST', `/api/quotes/${qAfter.id}/status`, { status: 'confirmed' });
-  assert.equal(conf2.statusCode, 200, '고치면 넘어간다');
-  // 되돌려 놓는다(아래 수요 집계가 이 견적을 세야 한다)
+  // ── ⓔ 반면 **해석 못 한 줄**(코드 없음)은 여전히 확정을 막는다 — 0원 줄이 고객에게 나가면 안 된다.
+  await query(`UPDATE quote_lines SET issue='not_found' WHERE quote_id=$1 AND product_id=$2`, [qAfter.id, pOn]);
+  const confBad = await call('POST', `/api/quotes/${qAfter.id}/status`, { status: 'confirmed' });
+  assert.equal(confBad.statusCode, 409);
+  assert.equal(confBad.json().error, 'quote_has_issues');
+  assert.match(confBad.json().note, /importe 0/, '스페인어로 안내한다');
+  await query(`UPDATE quote_lines SET issue=NULL WHERE quote_id=$1 AND product_id=$2`, [qAfter.id, pOn]);
+
+  // 수정해도 판매중단 표시는 유지된다 — 기록이 수정 한 번에 사라지면 안 된다.
   await call('PUT', `/api/quotes/${qAfter.id}`,
     { customer_id: c1, memo: 'IDTEST-after', lines: [{ product_id: pOff, qty: 5 }, { product_id: pOn, qty: 2 }] });
   const reflag = (await query(
     `SELECT issue FROM quote_lines WHERE quote_id=$1 AND product_id=$2`, [qAfter.id, pOff])).rows[0];
-  assert.equal(reflag.issue, 'inactive', '중단 후 만들어진 견적은 수정해도 잠금이 풀리지 않는다');
+  assert.equal(reflag.issue, 'inactive', '중단 후 만들어진 견적은 수정해도 표시가 남는다');
 
   // ── ⓕ 중단 **전**에 만든 견적은 수정해도 표시가 붙지 않는다 (예전 오더를 계속 정리할 수 있어야 한다)
   const editOld = await call('PUT', `/api/quotes/${beforeId}`,
@@ -170,21 +173,18 @@ dbTest('접수 · 확정 잠금 · 수요 집계 (실 DB)', async (t) => {
   assert.equal(clone.json().inactive_lines.length, 1, '새 견적이므로 표시는 붙는다');
   await query(`UPDATE quotes SET memo='IDTEST-clone' WHERE id=$1`, [clone.json().id]);
 
-  // ── ⓖ-2 다음 단계(포장·매출 전환)도 막힌다 — 「확정」은 화면에 버튼이 없으므로
-  //      실제로 흐름을 세우는 지점은 여기다. 여기를 안 막으면 확정 잠금은 형식일 뿐이다.
+  // ── ⓖ-2 **포장은 그대로 된다** — 이번 요구의 핵심.
+  //    즉시 출고 가능한 SKU 가 20개인데 단종 1줄 때문에 지시서가 안 나가면 그 20개가 멈춘다.
   const pack = await call('POST', `/api/quotes/${qAfter.id}/packing-printed`);
-  assert.equal(pack.statusCode, 409);
-  assert.equal(pack.json().error, 'inactive_product_lines');
-  assert.match(pack.json().note, /포장/);
-  assert.equal(pack.json().items[0].code, 'IDT-OFF');
+  assert.equal(pack.statusCode, 200, '판매중단 줄이 있어도 포장으로 넘어가야 한다');
+  assert.ok(pack.json().packing_printed_at, '포장 시각이 찍힌다');
+  // 매출 전환도 판매중단 줄을 이유로는 막지 않는다(다른 이유로 막힐 수는 있다).
   const conv = await call('POST', `/api/quotes/${qAfter.id}/convert`, {});
-  assert.equal(conv.statusCode, 409);
-  assert.equal(conv.json().error, 'inactive_product_lines');
-  assert.match(conv.json().note, /매출 전환/);
+  assert.notEqual(conv.json().error, 'inactive_product_lines', '판매중단 때문에 전환이 막히면 안 된다');
 
-  // 중단 **전**에 만든 견적은 그대로 포장으로 넘어간다(예전 오더의 흐름을 막지 않는다).
+  // 중단 **전**에 만든 견적도 당연히 그대로 넘어간다.
   const packOld = await call('POST', `/api/quotes/${beforeId}/packing-printed`);
-  assert.equal(packOld.statusCode, 200, '비활성 전 오더의 포장·인보이스 경로는 열려 있어야 한다');
+  assert.equal(packOld.statusCode, 200);
 
   // ── ⓖ-3 견적 목록에도 「판매중단 N줄」이 실린다 — 왜 안 넘어가는지 목록에서 보여야 한다.
   const list = await call('GET', '/api/quotes?open=1');

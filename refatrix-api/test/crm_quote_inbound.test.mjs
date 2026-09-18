@@ -386,7 +386,7 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     assert.match(r.json().mensaje, /RFC/);
   });
 
-  await t.test('못 찾은 코드·판매중단 SKU 는 접수하되 표시하고 확정을 잠근다', async () => {
+  await t.test('못 찾은 코드·판매중단 SKU 는 접수하되 표시한다 (확정은 못 찾은 줄만 잠근다)', async () => {
     const r = await post({ cotizacionCrm: 'COT-T-0006', rfc: rfcOk, lineas: [
       { codigo: 'QTEST01', cantidad: 2 },
       { codigo: 'NO-EXISTE-99', cantidad: 1 },
@@ -405,17 +405,23 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     assert.equal(rows[1].issue, 'not_found');
     assert.equal(rows[2].issue, 'inactive');
 
-    // 확정 잠금 — 0원짜리 줄이 붙은 견적이 고객에게 나가면 안 된다.
+    // 확정 잠금 — **0원짜리 줄**(코드를 해석 못 한 줄)이 붙은 견적이 고객에게 나가면 안 된다.
+    //   0224b · 판매중단 줄은 단가가 정상으로 들어가므로 **잠그지 않는다**(디렉터 지시 2026-09-18):
+    //   단종 1줄 때문에 나머지 품목의 흐름이 멈추는 것이 훨씬 비싸다. 표시와 수요 기록만 남는다.
     //   ⚠ 진짜 가드(authGuard + 견적 편집 권한)를 그대로 태워서 시험한다. 가드를 건너뛰면
     //     "테스트는 통과하는데 실제로는 401" 인 상태를 못 잡는다.
     const res = await asDirector('POST', `/api/quotes/${b.quoteId}/status`, { status: 'confirmed' });
     assert.equal(res.statusCode, 409);
     assert.equal(res.json().error, 'quote_has_issues');
-    assert.equal(res.json().items.length, 2);
-    // 문제 줄을 지우면 확정된다.
-    await query(`DELETE FROM quote_lines WHERE quote_id=$1 AND issue IS NOT NULL`, [b.quoteId]);
+    assert.equal(res.json().items.length, 1, '못 찾은 줄 하나만 확정을 막는다');
+    assert.equal(res.json().items[0].issue, 'not_found');
+    // 못 찾은 줄만 지우면 — 판매중단 줄이 남아 있어도 — 확정된다.
+    await query(`DELETE FROM quote_lines WHERE quote_id=$1 AND issue='not_found'`, [b.quoteId]);
     const ok = await asDirector('POST', `/api/quotes/${b.quoteId}/status`, { status: 'confirmed' });
-    assert.equal(ok.statusCode, 200);
+    assert.equal(ok.statusCode, 200, '판매중단 줄은 흐름을 세우지 않는다');
+    const stillFlagged = (await query(
+      `SELECT issue FROM quote_lines WHERE quote_id=$1 AND issue='inactive'`, [b.quoteId])).rows;
+    assert.equal(stillFlagged.length, 1, '확정됐어도 요청 기록(표시)은 남아 있다');
   });
 
   await t.test('번호가 제대로 들어가면 군더더기 경고를 붙이지 않는다', async () => {
