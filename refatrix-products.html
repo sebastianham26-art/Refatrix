@@ -83,6 +83,18 @@
   .pdel .pdrow input{font-size:13px;padding:7px 9px}
   .pdel .btn.del{background:var(--expense);color:#fff;border:none}
   .pdel .note{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+  /* 수정할 제품 검색 결과 행(2026-09-18) — 창이 좁아도 버튼이 절대 잘리지 않게.
+     제품명·SyD 는 한 줄로 줄여 보여 주고(전체 문장은 마우스를 올리면 뜬다),
+     버튼 칸은 줄바꿈을 허용해 아래로 흘린다. 그래도 넘치면 목록 자체가 가로 스크롤된다. */
+  #peQList{overflow-x:auto}
+  .peqt{table-layout:fixed}
+  .peqt td{vertical-align:middle}
+  .peqt td.c-code{width:104px}
+  .peqt td.c-name,.peqt td.c-syd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .peqt td.c-act{width:136px;white-space:normal;text-align:right}
+  .peqt td.c-act .btn{margin:2px 0 2px 3px;white-space:nowrap}
+  @media (min-width:900px){ .peqt td.c-act{width:292px} }
+  @media (max-width:760px){ .peqt td.c-syd{display:none} }
   /* 📜 제품 이력(ph-0824b) */
   #histCard select,#histCard input[type=date]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
   #histCard tr.ph-row:hover td{background:#f7f4ec}
@@ -1236,19 +1248,21 @@
 
   // ── 수정할 제품 검색(업로드 탭) ──
   let peQTimer=null;
-  function peQRender(items){
+  function peQRender(items, note){
     const box=$('peQList'); if(!box) return;
-    if(!items.length){ box.innerHTML=''; return; }
+    if(!items.length){ box.innerHTML = note ? ('<div class="hint" style="margin-top:4px">'+escP(note)+'</div>') : ''; return; }
     const isDirQ=session&&session.user&&session.user.role==='director';
-    box.innerHTML='<table style="margin-top:4px"><tbody>'+items.map(p=>
-      '<tr data-prow="'+p.id+'"><td class="code" style="width:130px">'+escP(p.code)+'</td>'
-      +'<td style="font-size:12px">'+escP(p.name||'—')+'</td>'
-      +'<td style="font-size:11px;color:#6f6a60">'+escP((p.scode||'').replace(/\s*\/\/\s*/g,' · ').slice(0,60))+'</td>'
-      +'<td style="width:250px;text-align:right;white-space:nowrap">'
+    box.innerHTML='<table class="peqt" style="margin-top:4px"><tbody>'+items.map(p=>{
+      const syd=(p.scode||'').replace(/\s*\/\/\s*/g,' · ');
+      return '<tr data-prow="'+p.id+'"><td class="code c-code">'+escP(p.code)+'</td>'
+      +'<td class="c-name" style="font-size:12px" title="'+escP(p.name||'')+'">'+escP(p.name||'—')+'</td>'
+      +'<td class="c-syd" style="font-size:11px;color:#6f6a60" title="'+escP(syd)+'">'+escP(syd)+'</td>'
+      +'<td class="c-act">'
       +'<button class="btn ghost sm pe-edit" data-pid="'+p.id+'" type="button">✎ 수정</button> '
       +'<button class="btn ghost sm pe-ref-new" data-pid="'+p.id+'" type="button" title="이 제품의 내용을 그대로 불러와 새 코드로 등록합니다">📄 이 코드로 신규</button>'
       +(isDirQ?(' <button class="btn ghost sm pe-del" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-name="'+escP(p.name||'')+'" type="button" title="판매·구매 기록이 전혀 없는 제품만 영구 삭제할 수 있습니다 (디렉터 PIN 필요)">🗑 삭제</button>'):'')
-      +'</td></tr>').join('')
+      +'</td></tr>';
+    }).join('')
       +'</tbody></table>';
     box.querySelectorAll('.pe-edit').forEach(b=>b.addEventListener('click',()=>openProductEditor(Number(b.getAttribute('data-pid')))));
     box.querySelectorAll('.pe-ref-new').forEach(b=>b.addEventListener('click',()=>openProductEditor(null, Number(b.getAttribute('data-pid')))));
@@ -1362,11 +1376,18 @@
   }
   async function peQSearch(){
     const q=$('peQ').value.trim();
-    if(q.length<2){ peQRender([]); return; }
+    if(q.length<2){ peQRender([], q.length?'두 글자 이상 입력하세요.':''); return; }
     try{
-      const d=await fetch(session.api+'/api/products?q='+encodeURIComponent(q)+'&limit=8',{headers:auth()}).then(x=>x.json());
-      peQRender(d.items||[]);
-    }catch(e){ peQRender([]); }
+      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(q)+'&limit=8',{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){
+        // 조용히 빈 목록을 그리면 「결과 없음」과 구분이 안 된다 — 이유를 보여 준다.
+        const em=(res.status===401||res.status===403)?'로그인이 만료되었거나 권한이 없습니다. 다시 로그인하세요.':('조회 실패: '+(d.detail||d.error||res.status));
+        peQRender([], em); return;
+      }
+      const items=d.items||[];
+      peQRender(items, items.length?'':'검색 결과가 없습니다 — 코드·바코드·제품명·SyD코드·적용차종에서 찾습니다.');
+    }catch(e){ peQRender([], '서버 연결 실패 — 네트워크나 API 주소를 확인하세요.'); }
   }
 
   // ── 제품 변경 이력(업로드 탭 하단) ──
@@ -1948,7 +1969,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build pd-0917a (제품 영구 삭제 · 디렉터 PIN)'); }catch(e){}
+  try{ console.log('[refatrix-products] build pd-0918a (제품 영구 삭제 · 검색행 버튼 잘림 수정)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
