@@ -103,7 +103,7 @@ export default async function productRoutes(app) {
       stockval: canCost ? `(p.stock_qty * COALESCE(p.avg_cost,0)) ${dir}, p.code` : null,
     };
     const sortKey = String(req.query.sort || '').toLowerCase();
-    const orderBy = SORTS[sortKey] || 'p.code ASC';
+    let orderBy = SORTS[sortKey] || 'p.code ASC';
 
     const params = [];
     let where = 'p.deleted_at IS NULL';
@@ -150,6 +150,25 @@ export default async function productRoutes(app) {
     else if (['0', 'false', 'no', 'off', 'inactive'].includes(activeRaw)) where += ' AND NOT p.is_active';
     // 전체 건수용 파라미터(검색 조건만) — 팀/limit/offset 추가 전에 스냅샷.
     const countParams = params.slice();
+
+    // 검색 관련도 정렬(2026-09-18) — 검색어가 있고 사용자가 정렬을 고르지 않았을 때만.
+    //   기존 기본값은 코드순이라, 'pro' 처럼 **적용차종에도 흔히 들어가는 문자열**(RAM PROMASTER)로
+    //   찾으면 코드가 PRO 로 시작하는 제품이 알파벳 순서에 밀려 limit 밖으로 사라졌다.
+    //   → 코드 정확일치 → 코드 접두 → 코드 포함 → SyD → 제품명 → 그 외(적용차종 등) 순으로 세운다.
+    //   같은 등급 안에서는 종전대로 코드순. 정렬 헤더를 누르면(sort=) 이 규칙은 적용되지 않는다.
+    if (q && !SORTS[sortKey]) {
+      params.push(q);
+      const rk = params.length;
+      orderBy = `CASE
+                   WHEN upper(p.code) = upper($${rk}) THEN 0
+                   WHEN p.code ILIKE $${rk} || '%' THEN 1
+                   WHEN p.code ILIKE '%' || $${rk} || '%' THEN 2
+                   WHEN COALESCE(p.ean,'') ILIKE $${rk} || '%' THEN 3
+                   WHEN COALESCE(p.scode,'') ILIKE '%' || $${rk} || '%' THEN 4
+                   WHEN COALESCE(p.name,'') ILIKE '%' || $${rk} || '%' THEN 5
+                   ELSE 6
+                 END, p.code ASC`;
+    }
     // 누적 판매수량을 영업팀 가시성으로 제한 — 담당 외 고객 판매수량이 합산되지 않도록.
     //   디렉터·영업지원(vis=null)은 전체 집계, 그 외는 소속/부여팀 고객만 집계.
     const vis = visibleTeamIds(perm);

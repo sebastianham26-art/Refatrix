@@ -168,7 +168,7 @@ test('제품 영구 삭제 UI — jsdom', { skip: SKIP }, async (t) => {
     assert.match(del.url, /\/api\/products\/77$/);
     assert.deepEqual(del.body, { pin: '1234', code: 'CB-DEL', reason: '코드 오등록' });
     assert.equal(d.getElementById('pdelRow'), null, '패널 닫힘');
-    assert.equal(d.querySelector('tr[data-prow="77"]'), null, '행 제거');
+    assert.equal(d.querySelector('[data-prow="77"]'), null, '행 제거');
     assert.match(d.getElementById('peDelMsg').textContent, /삭제 완료 — CB-DEL/);
   });
 
@@ -181,7 +181,7 @@ test('제품 영구 삭제 UI — jsdom', { skip: SKIP }, async (t) => {
     d.getElementById('pdelGo').dispatchEvent(new w.Event('click', { bubbles: true }));
     await tick(120);
     assert.match(d.getElementById('pdelMsg').textContent, /PIN이 올바르지 않습니다/);
-    assert.ok(d.querySelector('tr[data-prow="77"]'), '행 유지');
+    assert.ok(d.querySelector('[data-prow="77"]'), '행 유지');
   });
 
   await t.test('⑨ 같은 버튼을 다시 누르면 패널이 접힌다', async () => {
@@ -194,6 +194,20 @@ test('제품 영구 삭제 UI — jsdom', { skip: SKIP }, async (t) => {
     btn.dispatchEvent(new w.Event('click', { bubbles: true }));
     await tick(40);
     assert.equal(d.getElementById('pdelRow'), null);
+  });
+
+  await t.test('⑨-b 후보가 잘리면 「전체 N건 중…」 안내가 붙고, 조회는 12건까지 요청한다', async () => {
+    const many = { items: Array.from({ length: 12 }, (_, i) => ({ id: 200 + i, code: 'PRO-' + i, name: 'X', scode: '' })), total: 57 };
+    const { w, d, calls } = await boot({ found: many });
+    await search(w, d);
+    assert.ok(calls.some((c) => c.url.includes('/api/products?q=') && c.url.includes('limit=12')), 'limit=12 로 조회');
+    assert.match(d.getElementById('peQList').textContent, /전체 57건 중 가까운 12건만 표시/);
+  });
+
+  await t.test('⑨-c 결과가 딱 맞으면 안내가 붙지 않는다', async () => {
+    const { w, d } = await boot();                       // total 1 · items 1
+    await search(w, d);
+    assert.doesNotMatch(d.getElementById('peQList').textContent, /건만 표시/);
   });
 
   await t.test('⑩ XSS — 서버가 준 문자열은 실행되지 않는다', async () => {
