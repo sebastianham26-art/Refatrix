@@ -83,18 +83,21 @@
   .pdel .pdrow input{font-size:13px;padding:7px 9px}
   .pdel .btn.del{background:var(--expense);color:#fff;border:none}
   .pdel .note{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
-  /* 수정할 제품 검색 결과 행(2026-09-18) — 창이 좁아도 버튼이 절대 잘리지 않게.
-     제품명·SyD 는 한 줄로 줄여 보여 주고(전체 문장은 마우스를 올리면 뜬다),
-     버튼 칸은 줄바꿈을 허용해 아래로 흘린다. 그래도 넘치면 목록 자체가 가로 스크롤된다. */
-  #peQList{overflow-x:auto}
-  .peqt{table-layout:fixed}
-  .peqt td{vertical-align:middle}
-  .peqt td.c-code{width:104px}
-  .peqt td.c-name,.peqt td.c-syd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .peqt td.c-act{width:136px;white-space:normal;text-align:right}
-  .peqt td.c-act .btn{margin:2px 0 2px 3px;white-space:nowrap}
-  @media (min-width:900px){ .peqt td.c-act{width:292px} }
-  @media (max-width:760px){ .peqt td.c-syd{display:none} }
+  /* 수정할 제품 검색 결과 행(2026-09-18) — 표 대신 flex.
+     표(table-layout:fixed)에서는 좁은 화면에서 컬럼 폭 계산이 깨져 버튼 칸이 화면 밖으로 나갔고,
+     모바일 셸이 body 가로 스크롤을 막아 버튼에 닿을 수 없었다. flex + min-width:0 이면
+     어떤 폭에서도 버튼이 아래로 접힐 뿐 사라지지 않는다. */
+  .peqrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
+          padding:8px 2px;border-bottom:1px solid var(--line)}
+  .peqrow:last-child{border-bottom:none}
+  .peqmain{flex:1 1 200px;min-width:0}
+  .peqmain .code{display:inline-block;margin-right:8px}
+  .peqmain .nm{font-size:12px}
+  .peqmain .sy{display:block;font-size:11px;color:#6f6a60;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .peqmain .nm{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .peqacts{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
+  .peqacts .btn{white-space:nowrap}
+  .peqpanel{flex:1 1 100%;min-width:0;order:99}
   /* 📜 제품 이력(ph-0824b) */
   #histCard select,#histCard input[type=date]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
   #histCard tr.ph-row:hover td{background:#f7f4ec}
@@ -1252,18 +1255,21 @@
     const box=$('peQList'); if(!box) return;
     if(!items.length){ box.innerHTML = note ? ('<div class="hint" style="margin-top:4px">'+escP(note)+'</div>') : ''; return; }
     const isDirQ=session&&session.user&&session.user.role==='director';
-    box.innerHTML='<table class="peqt" style="margin-top:4px"><tbody>'+items.map(p=>{
+    box.innerHTML='<div style="margin-top:4px">'+items.map(p=>{
       const syd=(p.scode||'').replace(/\s*\/\/\s*/g,' · ');
-      return '<tr data-prow="'+p.id+'"><td class="code c-code">'+escP(p.code)+'</td>'
-      +'<td class="c-name" style="font-size:12px" title="'+escP(p.name||'')+'">'+escP(p.name||'—')+'</td>'
-      +'<td class="c-syd" style="font-size:11px;color:#6f6a60" title="'+escP(syd)+'">'+escP(syd)+'</td>'
-      +'<td class="c-act">'
-      +'<button class="btn ghost sm pe-edit" data-pid="'+p.id+'" type="button">✎ 수정</button> '
+      return '<div class="peqrow" data-prow="'+p.id+'">'
+      +'<div class="peqmain">'
+      +'<span class="code">'+escP(p.code)+'</span>'
+      +'<span class="nm" title="'+escP(p.name||'')+'">'+escP(p.name||'—')+'</span>'
+      +(syd?('<span class="sy" title="'+escP(syd)+'">'+escP(syd)+'</span>'):'')
+      +'</div>'
+      +'<div class="peqacts">'
+      +'<button class="btn ghost sm pe-edit" data-pid="'+p.id+'" type="button">✎ 수정</button>'
       +'<button class="btn ghost sm pe-ref-new" data-pid="'+p.id+'" type="button" title="이 제품의 내용을 그대로 불러와 새 코드로 등록합니다">📄 이 코드로 신규</button>'
-      +(isDirQ?(' <button class="btn ghost sm pe-del" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-name="'+escP(p.name||'')+'" type="button" title="판매·구매 기록이 전혀 없는 제품만 영구 삭제할 수 있습니다 (디렉터 PIN 필요)">🗑 삭제</button>'):'')
-      +'</td></tr>';
+      +(isDirQ?('<button class="btn ghost sm pe-del" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-name="'+escP(p.name||'')+'" type="button" title="판매·구매 기록이 전혀 없는 제품만 영구 삭제할 수 있습니다 (디렉터 PIN 필요)">🗑 삭제</button>'):'')
+      +'</div></div>';
     }).join('')
-      +'</tbody></table>';
+      +'</div>';
     box.querySelectorAll('.pe-edit').forEach(b=>b.addEventListener('click',()=>openProductEditor(Number(b.getAttribute('data-pid')))));
     box.querySelectorAll('.pe-ref-new').forEach(b=>b.addEventListener('click',()=>openProductEditor(null, Number(b.getAttribute('data-pid')))));
     box.querySelectorAll('.pe-del').forEach(b=>b.addEventListener('click',()=>peDelOpen(b)));
@@ -1282,11 +1288,11 @@
     const cur=document.getElementById('pdelRow');
     if(cur && Number(cur.getAttribute('data-pid'))===pid){ peDelClose(); return; }   // 같은 행 다시 누르면 접기
     peDelClose();
-    const tr=btn.closest('tr'); if(!tr||!tr.parentNode) return;
-    const nr=document.createElement('tr');
-    nr.id='pdelRow'; nr.setAttribute('data-pid',String(pid));
-    nr.innerHTML='<td colspan="4"><div class="pdel" id="pdelBox">점검 중…</div></td>';
-    tr.parentNode.insertBefore(nr, tr.nextSibling);
+    const row=btn.closest('[data-prow]'); if(!row) return;
+    const nr=document.createElement('div');
+    nr.id='pdelRow'; nr.className='peqpanel'; nr.setAttribute('data-pid',String(pid));
+    nr.innerHTML='<div class="pdel" id="pdelBox">점검 중…</div>';
+    row.appendChild(nr);                       // 같은 행 안에서 전폭(order:99)으로 펼쳐진다
     peDelCheck(pid, code, name);
   }
   function peDelNum(n){ try{ return Number(n).toLocaleString('es-MX'); }catch(e){ return String(n); } }
@@ -1361,7 +1367,7 @@
         return;
       }
       peDelClose();
-      const row=document.querySelector('tr[data-prow="'+pid+'"]'); if(row) row.remove();
+      const row=document.querySelector('[data-prow="'+pid+'"]'); if(row) row.remove();
       const pm=$('peDelMsg');
       if(pm){ pm.className='msg ok'; pm.style.display='block';
         pm.textContent='삭제 완료 — '+(d.code||code)+' 제품을 영구 삭제했습니다.'+(d.removed?(' (함께 정리: '+d.removed+')'):''); }
@@ -1969,7 +1975,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build pd-0918a (제품 영구 삭제 · 검색행 버튼 잘림 수정)'); }catch(e){}
+  try{ console.log('[refatrix-products] build pd-0918b (제품 영구 삭제 · 검색행 반응형 수정)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
