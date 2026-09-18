@@ -11,6 +11,80 @@ import { query } from './db.js';
 import { computeQuoteLine, stockFlag, formatQuoteNo, round2 } from './quotes.js';
 
 
+// ============ 고객 PO번호(Orden de compra) 정리 — 0225 ============
+//
+//   화면 입력과 CRM 수신이 **같은 규칙**을 쓰게 한 곳에 둔다.
+//   두 벌로 두면 「화면에서 넣은 4471」과 「웹에서 온 4471 」이 다른 값이 되어
+//   검색이 한쪽만 걸린다 — 이 프로젝트에서 이미 여러 번 겪은 실패 방식이다.
+//
+//   하는 일은 셋뿐이다. 번호를 **고치지 않는다**:
+//     · 앞뒤 공백과 내부 연속 공백만 정리한다(붙여넣기로 딸려 오는 것들)
+//     · 60자 상한 — 번호칸이지 메모칸이 아니다. 패킹리스트 한 줄에 들어가야 한다
+//     · 빈 문자열은 null 로 — DB 에 ''(빈칸)과 NULL 이 섞이면 검색 조건이 두 배로 늘어난다
+//   대소문자·하이픈·0 채움은 **손대지 않는다.** 고객이 준 번호 그대로 인쇄돼야 한다.
+export const PO_MAX_LEN = 60;
+export function normalizePoNo(v) {
+  if (v === undefined || v === null) return null;
+  const s = String(v).replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  return s.slice(0, PO_MAX_LEN);
+}
+
+// ── 반쪽배포 안전장치 (0220 의 quoteColsReady 와 같은 방식) ─────────────
+//
+//   Railway 는 배포 뒤 **사람이 콘솔에서 `npm run migrate` 를 돌린다.** 그 사이에는
+//   새 코드가 아직 없는 칼럼을 읽으려 든다. 그대로 두면 견적 저장·목록 조회가 통째로
+//   죽는다 — PO번호 하나 때문에 회사가 멈추는 것은 말이 안 된다.
+//   그래서 칼럼이 생길 때까지는 **PO 기능만 조용히 쉬고**, 나머지는 예전처럼 돈다.
+//   긍정은 영구 캐시(재시작 없이 인식), 없을 때만 30초마다 다시 본다.
+let poReadyFlag = false; let poProbeAt = 0;
+export async function poColumnReady() {
+  if (poReadyFlag) return true;
+  if (Date.now() - poProbeAt < 30000) return false;
+  poProbeAt = Date.now();
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name='quotes' AND column_name='customer_po_no' LIMIT 1`);
+    poReadyFlag = r.rows.length > 0;
+  } catch (_) { poReadyFlag = false; }
+  return poReadyFlag;
+}
+/** 시험용 — 스키마 조회를 흉내 내지 못하는 러너(pg-mem 등)에서 상태를 직접 세운다. */
+export function setPoColumnReady(v) { poReadyFlag = !!v; poProbeAt = Date.now(); }
+
+/**
+ * SELECT 목록에 끼워 넣을 PO 칼럼 조각.
+ * 마이그레이션 전이면 `NULL` 을 같은 이름으로 돌려준다 — **호출부의 모양이 바뀌지 않는다.**
+ */
+export function poSelectFrag(ready, alias = 'q') {
+  return ready ? `${alias}.customer_po_no` : `NULL::text`;
+}
+
+/**
+ * 검색 한 줄 — 견적번호 · 고객명 · 고객 PO 를 **한 칸에서** 찾는다.
+ *
+ *   사람이 「4471」 을 들고 오는지 「Refaccionaria …」 를 들고 오는지 미리 알 수 없다.
+ *   칸을 셋으로 나누면 매번 어느 칸인지 고르게 되고, 고르다 틀리면 「없다」가 나온다.
+ *   그래서 **하나로 받아 셋을 본다.** 대소문자 무시 부분일치.
+ *
+ *   `args` 에 값을 밀어 넣고 조건문을 돌려준다(호출부가 파라미터 번호를 세지 않게).
+ *   `custExpr` 는 화면마다 고객 이름이 오는 자리가 달라서 받는다(불특정 고객은 guest_name).
+ */
+export function quoteSearchClause(kw, args, { quoteAlias = 'q', custExpr = "COALESCE(c.name, q.guest_name)", poReady = false } = {}) {
+  const s = String(kw || '').trim();
+  if (!s) return null;
+  args.push('%' + s.toLowerCase() + '%');
+  const i = args.length;
+  const parts = [
+    `lower(COALESCE(${quoteAlias}.quote_no,'')) LIKE $${i}`,
+    `lower(COALESCE(${custExpr},'')) LIKE $${i}`,
+  ];
+  if (poReady) parts.push(`lower(COALESCE(${quoteAlias}.customer_po_no,'')) LIKE $${i}`);
+  return '(' + parts.join(' OR ') + ')';
+}
+
+
 // ============ 코드 해석 (CTR 또는 SYD) ============
 // 입력 코드 하나를 받아 매칭 후보를 반환. CTR 정확매칭 우선, 없으면 SYD 역검색.
 // 반환: { matches: [{product_id, ctr_code, list_price, app, name, syd_codes[]}], source:'ctr'|'syd'|'none' }

@@ -24,7 +24,7 @@ import { mapQuote, quoteDate, badQuoteLines, folioAsQuoteNo, readInboundKey, ver
          scrubPayload, errBody, keyFailNote, keyFailMensaje } from '../crmInbound.js';
 import { computeQuoteTotals } from '../quotes.js';
 // ⚠ 화면과 **같은 조립기**를 쓴다. 두 벌로 두면 코드 해석 규칙이 갈라진다.
-import { buildLines, nextQuoteNo, assignReservations } from '../quoteBuild.js';
+import { buildLines, nextQuoteNo, assignReservations, normalizePoNo, poColumnReady } from '../quoteBuild.js';
 
 export const QUOTE_KEY = 'crm_quote_request';
 
@@ -105,8 +105,11 @@ async function assignableUsers() {
   } catch (_) { return []; }
 }
 
-const SELECT_Q = `
+// 0225 · PO 칼럼은 마이그레이션 전이면 없다. 팝업·목록이 그것 때문에 죽으면 안 되므로
+//   조회 시점에 한 번 물어보고 없으면 NULL 을 같은 이름으로 돌려준다(모양 불변).
+const selectQ = (poReady) => `
   SELECT q.id, q.quote_no, q.external_quote_no, q.quote_date, q.memo, q.status,
+         ${poReady ? 'q.customer_po_no' : 'NULL::text'} AS customer_po_no,
          q.total_mxn, q.total_qty, q.sku_count, q.created_at,
          q.assigned_to, q.assigned_at,
          u.name AS assigned_to_name, ab.name AS assigned_by_name,
@@ -143,6 +146,7 @@ function qRow(r) {
     assigned_to: r.assigned_to ? Number(r.assigned_to) : null,
     assigned_to_name: r.assigned_to_name || null, assigned_at: r.assigned_at || null,
     assigned_by_name: r.assigned_by_name || null,
+    customer_po_no: r.customer_po_no || null,     // 0225 · 고객 PO(O.C.)
     issue_count: Number(r.issue_count) || 0,
   };
 }
@@ -204,6 +208,8 @@ export default async function crmQuoteRoutes(app) {
 
     // ── 멱등: 같은 COT 가 다시 오면 **기존 견적을 그대로 돌려준다.**
     //    고객이 버튼을 두 번 누르거나 CRM 이 재시도해도 견적이 둘 생기면 안 된다.
+    const poReady = await poColumnReady();
+    const poNo = normalizePoNo(m.ordenCompraCliente);
     if (m.crmQuoteNo) {
       const dup = (await query(
         // 0221 이후로는 포털 번호가 곧 견적번호이므로 두 칸 다 본다
@@ -212,8 +218,22 @@ export default async function crmQuoteRoutes(app) {
           WHERE (external_quote_no=$1 OR quote_no=$1) AND deleted_at IS NULL LIMIT 1`,
         [m.crmQuoteNo])).rows[0];
       if (dup) {
-        const body = errBody('0', 'Cotización ya recibida anteriormente.',
-          { cotizacionErp: dup.quote_no, quoteId: Number(dup.id), lineasConProblema: [] });
+        // 0225 · 재전송에 **PO번호만 새로 붙어 오는** 경우가 실제로 있다.
+        //   고객이 웹에서 견적을 먼저 띄우고, PO 를 발행한 뒤 같은 화면에서 다시 보낸다.
+        //   그래서 「비어 있을 때만 채운다」 — 견적은 여전히 하나이고(멱등), 사람이 ERP 에서
+        //   직접 넣어 둔 번호는 웹이 덮어쓰지 못한다(현장 입력이 늘 더 정확했다).
+        let poFilled = false;
+        if (poReady && poNo) {
+          const r = await query(
+            `UPDATE quotes SET customer_po_no=$1, updated_at=now()
+              WHERE id=$2 AND COALESCE(customer_po_no,'')='' RETURNING id`, [poNo, dup.id]);
+          poFilled = r.rows.length > 0;
+        }
+        const extra = { cotizacionErp: dup.quote_no, quoteId: Number(dup.id), lineasConProblema: [] };
+        if (poFilled) extra.ordenCompraCliente = poNo;
+        const body = errBody('0',
+          poFilled ? 'Cotización ya recibida anteriormente. Se registró la orden de compra del cliente.'
+                   : 'Cotización ya recibida anteriormente.', extra);
         await writeLog({ ...logBase, http_status: 200, result: 'updated',
           erp_code: dup.quote_no, codigo_error: '0', mensaje: body.mensaje });
         return reply.code(200).send(body);
@@ -283,12 +303,16 @@ export default async function crmQuoteRoutes(app) {
         const q = (await c.query(
           `INSERT INTO quotes (quote_no, customer_id, quote_date, discount_rate, iva_rate, memo, status,
                                subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count,
-                               external_quote_no, origin, reserve_expires_at)
+                               external_quote_no, origin, reserve_expires_at${poReady ? ', customer_po_no' : ''})
            VALUES ($1,$2,COALESCE($3::date,CURRENT_DATE),$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12,'crm',
-                   now() + interval '24 hours') RETURNING id, quote_no`,
-          [quoteNo, cust.id, qdate, discountRate, ivaRate, memo,
-           totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount,
-           m.crmQuoteNo || null])).rows[0];
+                   now() + interval '24 hours'${poReady ? ', $13' : ''}) RETURNING id, quote_no`,
+          (() => {
+            const a = [quoteNo, cust.id, qdate, discountRate, ivaRate, memo,
+              totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount,
+              m.crmQuoteNo || null];
+            if (poReady) a.push(poNo);
+            return a;
+          })())).rows[0];
         for (const l of lines) {
           await c.query(
             `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes,
@@ -314,6 +338,8 @@ export default async function crmQuoteRoutes(app) {
 
       const extra = { cotizacionErp: result.q.quote_no, quoteId: Number(result.q.id),
         lineasConProblema: problems };
+      // 0225 · 받은 PO 를 **되돌려 준다.** 개발자가 「보냈는데 들어갔나」를 응답만으로 확인할 수 있게.
+      if (poReady && poNo) extra.ordenCompraCliente = poNo;
       // 번호가 포털 것과 갈렸으면 **응답에도** 적는다 — 개발자가 바로 알아채야 한다.
       if (numberNote) extra.avisoFolio = numberNote;
       const body = errBody('0',
@@ -370,7 +396,7 @@ export default async function crmQuoteRoutes(app) {
         if (!target) return empty;          // 알림 대상이 아니면 아무것도 뜨지 않는다
       }
       const rows = (await query(
-        `${SELECT_Q} WHERE ${OPEN_WHERE} ORDER BY q.created_at DESC LIMIT 30`)).rows;
+        `${selectQ(await poColumnReady())} WHERE ${OPEN_WHERE} ORDER BY q.created_at DESC LIMIT 30`)).rows;
       return { count: rows.length, items: rows.map(qRow) };
     } catch (_) { return empty; }
   });
@@ -395,7 +421,7 @@ export default async function crmQuoteRoutes(app) {
       where.push(`q.status='${status}'`);
     }
     const rows = (await query(
-      `${SELECT_Q} WHERE ${where.join(' AND ')} ORDER BY q.created_at DESC LIMIT $1`, [limit])).rows;
+      `${selectQ(await poColumnReady())} WHERE ${where.join(' AND ')} ORDER BY q.created_at DESC LIMIT $1`, [limit])).rows;
     const sum = (await query(
       `SELECT status, count(*)::int AS n FROM quotes
         WHERE origin='crm' AND deleted_at IS NULL GROUP BY 1`)).rows;
@@ -419,7 +445,7 @@ export default async function crmQuoteRoutes(app) {
     if (!r) return reply.code(404).send({ error: 'not_found_or_closed' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`,
       detail: { op: 'assign', to: uid } });
-    const row = (await query(`${SELECT_Q} WHERE q.id=$1`, [id])).rows[0];
+    const row = (await query(`${selectQ(await poColumnReady())} WHERE q.id=$1`, [id])).rows[0];
     return { ok: true, assigned_to_name: u.name, quote: qRow(row) };
   });
 
@@ -431,7 +457,7 @@ export default async function crmQuoteRoutes(app) {
         WHERE id=$1 AND origin='crm' AND status='draft' AND deleted_at IS NULL RETURNING id`, [id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found_or_closed' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { op: 'unassign' } });
-    const row = (await query(`${SELECT_Q} WHERE q.id=$1`, [id])).rows[0];
+    const row = (await query(`${selectQ(await poColumnReady())} WHERE q.id=$1`, [id])).rows[0];
     return { ok: true, quote: qRow(row) };
   });
 

@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부 · build 0703fo</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 0918po1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -119,6 +119,9 @@
   let invFilesCache={};   // 인보이스별 첨부파일 메타 캐시(재렌더 시 복원)
   let invCompany=null, stmtInvId=null;
   let immOwner='', immTeam='';
+  // 0225 · 매출 확정 목록 한 칸 검색 — 견적번호 · 고객명 · 고객 PO번호 · SAT.
+  //   검색어가 있으면 서버가 **전 기간**에서 찾는다(상단 요약 박스는 선택한 월 기준 그대로).
+  let immSearch='';
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -238,7 +241,7 @@
       + '</div>';
   }
   async function loadImmediate(){
-    const qp='months='+mq()+(immTeam?('&team_id='+immTeam):'')+(immOwner?('&owner_id='+immOwner):'');
+    const qp='months='+mq()+(immTeam?('&team_id='+immTeam):'')+(immOwner?('&owner_id='+immOwner):'')+(immSearch?('&q='+encodeURIComponent(immSearch)):'');
     const d=await fetch(session.api+'/api/dashboard/funnel/immediate?'+qp,{headers:auth()}).then(r=>r.json());
     const able=d.able||[], done=d.done||[];
     let h='';
@@ -258,31 +261,56 @@
     } else if(d.can_filter===false){
       h+='<div class="hint" style="margin-bottom:8px">본인 담당 매출만 표시됩니다.</div>';
     }
+    h+=immSearchBox(d);
     h+='<div class="grp">인보이스 발행 가능 (재고 충분·미전환 견적)</div>';
     if(!able.length) h+='<div class="hint">발행 가능한 미전환 견적이 없습니다.</div>';
     else{ h+='<div class="hint">견적 후 경과일이 길수록 팔로업이 시급합니다 (오래된 순). <span style="color:var(--expense);font-weight:700">7일↑ 주의 · 14일↑ 위험</span></div>';
-      h+='<table data-sort="funnel:able"><thead><tr><th>견적번호</th><th>견적일</th><th class="r">경과일</th><th>고객</th><th class="r">즉시 SKU</th><th class="r">즉시 수량</th></tr></thead><tbody>';
+      h+='<table data-sort="funnel:able"><thead><tr><th>견적번호</th><th>고객 PO</th><th>견적일</th><th class="r">경과일</th><th>고객</th><th class="r">즉시 SKU</th><th class="r">즉시 수량</th></tr></thead><tbody>';
       able.forEach(a=>{
         const age=a.age_days==null?null:Number(a.age_days);
         let ageCell='-';
         if(age!=null){ const col = age>=14?'var(--expense)':(age>=7?'#9a6512':'var(--muted)'); const warn = age>=14?' ⚠':(age>=7?' ⚑':''); ageCell='<b style="color:'+col+'">'+age+'일'+warn+'</b>'; }
-        h+='<tr><td><b>'+esc(a.quote_no||'')+'</b></td><td>'+esc(a.qdate||'')+'</td><td class="r">'+ageCell+'</td><td>'+esc(a.customer_name||'')+'</td><td class="r">'+a.ok_sku+'</td><td class="r okv">'+nf(a.ok_qty)+'</td></tr>';
+        h+='<tr><td><b>'+esc(a.quote_no||'')+'</b></td><td>'+poCell(a.customer_po_no)+'</td><td>'+esc(a.qdate||'')+'</td><td class="r">'+ageCell+'</td><td>'+esc(a.customer_name||'')+'</td><td class="r">'+a.ok_sku+'</td><td class="r okv">'+nf(a.ok_qty)+'</td></tr>';
       });
       h+='</tbody></table>'; }
     h+='<div class="grp" style="margin-top:16px">이미 발행 (인보이스 생성됨)</div>';
     if(!done.length) h+='<div class="hint">발행된 인보이스가 없습니다.</div>';
-    else{ h+='<div class="hint">인보이스를 클릭하면 SKU 라인이 펼쳐집니다. <b>임시(SAT 미입력) 매출도 표시</b>되며, 행을 클릭해 SAT 번호를 입력하면 정식 확정됩니다. <b>표 제목을 클릭하면 그 열로 정렬</b>됩니다(한 번 더 클릭 = 반대 방향).</div><table data-sort="funnel:done"><thead><tr><th>견적</th><th data-type="date">인보이스일</th><th>SAT</th><th>고객</th><th>담당</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액</th></tr></thead><tbody>';
+    else{ h+='<div class="hint">인보이스를 클릭하면 SKU 라인이 펼쳐집니다. <b>임시(SAT 미입력) 매출도 표시</b>되며, 행을 클릭해 SAT 번호를 입력하면 정식 확정됩니다. <b>표 제목을 클릭하면 그 열로 정렬</b>됩니다(한 번 더 클릭 = 반대 방향).</div><table data-sort="funnel:done"><thead><tr><th>견적</th><th>고객 PO</th><th data-type="date">인보이스일</th><th>SAT</th><th>고객</th><th>담당</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액</th></tr></thead><tbody>';
       done.forEach(o=>{
         const satCell = o.temp_sat
           ? '<span style="background:#fde7c9;color:#9a6512;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:700">임시 · 클릭해 SAT 입력</span>'
           : esc(o.sat_no||'');
-        h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+esc(o.inv_date||'')+'</td><td>'+satCell+'</td><td>'+esc(o.customer_name||'')+'</td><td>'+(o.owner_name?('<b>'+esc(o.owner_name)+'</b>'):'<span class="hint">미지정</span>')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+'</td></tr>';
-        if(openRows['i'+o.invoice_id]) h+='<tr class="sub"><td colspan="8">'+(openRows['i'+o.invoice_id]==='loading'?'불러오는 중…':openRows['i'+o.invoice_id])+'</td></tr>';
+        h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+poCell(o.customer_po_no)+'</td><td>'+esc(o.inv_date||'')+'</td><td>'+satCell+'</td><td>'+esc(o.customer_name||'')+'</td><td>'+(o.owner_name?('<b>'+esc(o.owner_name)+'</b>'):'<span class="hint">미지정</span>')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+'</td></tr>';
+        if(openRows['i'+o.invoice_id]) h+='<tr class="sub"><td colspan="9">'+(openRows['i'+o.invoice_id]==='loading'?'불러오는 중…':openRows['i'+o.invoice_id])+'</td></tr>';
       });
       h+='</tbody></table>'; }
     setBody(h);
     renderAllInvFiles();   // 열린 인보이스 첨부 목록을 캐시에서 복원(재렌더 대비)
   }
+  // ===== 0225 · 매출 확정 목록 검색 =====
+  //
+  //   「PO 4471 인보이스 나갔나요?」 라는 전화에 몇 월인지 되물을 수 없다. 그래서 검색 중에는
+  //   서버가 **기간을 무시하고 전 기간**에서 찾는다. 대신 그 사실을 화면이 분명히 말해 준다
+  //   (상단 요약 박스는 선택한 월 실적 그대로다 — 두 숫자가 다른 이유를 사람이 알아야 한다).
+  function poCell(po){
+    if(!po) return '<span class="hint">—</span>';
+    return '<b style="color:#8a6a1f">'+esc(po)+'</b>';
+  }
+  function immSearchBox(d){
+    const on=!!immSearch;
+    return '<div class="hint" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      +'<span style="font-weight:700">검색</span>'
+      +'<input id="immQ" type="text" value="'+esc(immSearch)+'" placeholder="견적번호 · 고객명 · 고객 PO · SAT" '
+      +'style="font-size:12px;padding:4px 8px;width:240px" '
+      +'onkeydown="if(event.key===\'Enter\'){event.preventDefault();runImmSearch();}">'
+      +'<button class="lnk" style="cursor:pointer" onclick="runImmSearch()">찾기</button>'
+      +(on?' <a class="lnk" style="cursor:pointer" onclick="clearImmSearch()">검색 해제</a>':'')
+      +(on?('<span style="color:#9a6512;font-weight:700">🔎 "'+esc(immSearch)+'" — 기간 선택을 무시하고 전 기간에서 찾았습니다 '
+          +'(발행가능 '+((d.able||[]).length)+'건 · 발행됨 '+((d.done||[]).length)+'건). 위 요약 박스는 선택한 월 기준입니다.</span>'):'')
+      +'</div>';
+  }
+  function runImmSearch(){ const el=document.getElementById('immQ'); immSearch=el?String(el.value||'').trim():''; loadImmediate(); }
+  function clearImmSearch(){ immSearch=''; loadImmediate(); }
   function setImmFilter(kind,val){
     if(kind==='clear'){ immTeam=''; immOwner=''; }
     else if(kind==='team'){ immTeam=val||''; }

@@ -142,8 +142,17 @@ export function mapQuote(body) {
     'numeroCotizacion', 'idCotizacion', 'cotizacionId']))
     || folioFromText(comentario)
     || folioAnywhere(body);
+  // 0225 · 고객이 발행한 PO(Orden de compra) 번호.
+  //   개발자에게 부탁한 정식 이름은 **`ordenCompraCliente`** 다(계약서 v1.3).
+  //   나머지는 「이름이 조금 다르다는 이유로 번호를 통째로 잃는」 사고를 막기 위한 그물이다 —
+  //   이 창구가 처음부터 써 온 방식과 같다(필드 이름 하나에 기능이 매달리면 안 된다).
+  //   ⚠ 여기에 **cotizacionCrm 계열은 넣지 않는다.** 우리 견적번호와 고객 PO 는 다른 것이고,
+  //      섞이면 패킹리스트에 같은 번호가 두 번 찍혀 대조가 무의미해진다.
+  const ordenCompraCliente = S(pick(f, ['ordenCompraCliente', 'poCliente', 'ordenCompra', 'oc',
+    'ordenDeCompra', 'numeroOrdenCompra', 'noOrdenCompra', 'purchaseOrder', 'purchaseOrderNo', 'poNumber', 'po']));
   return {
     crmQuoteNo,
+    ordenCompraCliente,
     rfc: S(pick(f, ['rfc', 'RFC', 'rfcCliente', 'taxId'])),
     crmCustomerCode: S(pick(f, ['clienteCrm', 'crmCustomerCode', 'customerCode', 'codigoCliente', 'clienteCodigo'])),
     fecha: S(pick(f, ['fecha', 'fechaCotizacion', 'quoteDate', 'fechaSolicitud', 'solicitadoEn'])),

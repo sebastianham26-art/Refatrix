@@ -5,6 +5,8 @@ import { bizMinutes } from '../businessHours.js';
 import { maybeMarkPacked } from '../packedGate.js';
 import { summarizeSla } from '../stageSla.js';
 import { buildStageCohorts, getSlaKpi } from '../stageCohorts.js';
+// 0225 · 고객 PO(O.C.) — 견적 화면과 같은 마이그레이션 판정기를 쓴다.
+import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
 
 // =====================================================================
 // Refatrix ERP · warehouseRoutes.js  (창고 모듈)
@@ -27,8 +29,10 @@ export default async function warehouseRoutes(app) {
 
   // ---------- 포장 대기 목록 (오더목록처럼) ----------
   app.get('/api/warehouse/packing-queue', { preHandler: [authGuard, requirePage('warehouse')] }, async () => {
+    const poReady = await poColumnReady();
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.customer_id, q.guest_name,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               c.name AS customer_name,
               q.packing_printed_at, q.packing_due_at,
               q.total_qty, q.sku_count, q.total_mxn,
@@ -46,6 +50,7 @@ export default async function warehouseRoutes(app) {
     const items = rows.map((r) => ({
       quote_id: Number(r.id),
       quote_no: r.quote_no || null,
+      customer_po_no: r.customer_po_no || null,
       customer: r.customer_name || r.guest_name || '—',
       is_guest: r.customer_id == null,
       printed_at: r.packing_printed_at,
@@ -74,8 +79,10 @@ export default async function warehouseRoutes(app) {
   // ---------- 드릴다운: 포장할 품목 (즉시재고 라인만) ----------
   app.get('/api/warehouse/packing-queue/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
     const id = Number(req.params.id);
+    const poReady = await poColumnReady();
     const q = (await query(
       `SELECT q.id, q.quote_no, q.customer_id, q.guest_name, c.name AS customer_name,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               q.packing_printed_at, q.packing_due_at, q.status, q.invoice_id
          FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
         WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
@@ -111,6 +118,7 @@ export default async function warehouseRoutes(app) {
     return {
       quote_id: Number(q.id),
       quote_no: q.quote_no || null,
+      customer_po_no: q.customer_po_no || null,     // 0225
       customer: q.customer_name || q.guest_name || '—',
       printed_at: q.packing_printed_at,
       due_at: q.packing_due_at,
@@ -185,8 +193,10 @@ export default async function warehouseRoutes(app) {
   // ---------- 패킹 상태(재개용 전체 스냅샷) ----------
   app.get('/api/warehouse/packing/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
     const id = Number(req.params.id);
+    const poReady = await poColumnReady();
     const q = (await query(
       `SELECT q.id, q.quote_no, q.customer_id, q.guest_name, c.name AS customer_name,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               q.packing_printed_at, q.packing_due_at, q.status, q.invoice_id
          FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
         WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
@@ -235,6 +245,7 @@ export default async function warehouseRoutes(app) {
 
     return {
       quote_id: Number(q.id), quote_no: q.quote_no || null,
+      customer_po_no: q.customer_po_no || null,
       customer: q.customer_name || q.guest_name || '—',
       printed_at: q.packing_printed_at,
       elapsed_biz_sec: q.packing_printed_at ? Math.floor(bizMinutes(q.packing_printed_at, new Date()) * 60) : 0,
@@ -479,8 +490,10 @@ export default async function warehouseRoutes(app) {
     const status = (req.query && req.query.status === 'shipped') ? 'shipped' : 'pending';
     const shipCond = status === 'shipped' ? 'AND q.shipped_at IS NOT NULL' : 'AND q.shipped_at IS NULL';
     const shipOrder = status === 'shipped' ? 'q.shipped_at DESC' : 'q.packed_at DESC';
+    const poReady = await poColumnReady();
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.packed_at, q.total_qty, q.sku_count, q.quote_date, q.invoice_id,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               COALESCE(c.name, q.guest_name, '\u2014') AS customer_name, c.code AS customer_code,
               si.sat_no, si.inv_date::text AS inv_date, si.total_mxn, q.shipped_at::text AS shipped_at,
               (SELECT COUNT(*)::int FROM packing_box pb WHERE pb.quote_id=q.id) AS box_count
@@ -496,6 +509,7 @@ export default async function warehouseRoutes(app) {
       const realSat = r.invoice_id && r.sat_no && String(r.sat_no) !== '' && !String(r.sat_no).startsWith('TMP-');
       return {
         quote_id: Number(r.id), quote_no: r.quote_no || ('#' + r.id),
+        customer_po_no: r.customer_po_no || null,
         customer: r.customer_name, customer_code: r.customer_code || null,
         sat_no: realSat ? r.sat_no : null, has_sat: !!realSat, inv_date: r.inv_date,
         box_count: Number(r.box_count) || 0,
@@ -526,8 +540,10 @@ export default async function warehouseRoutes(app) {
 
   app.get('/api/warehouse/ship/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
     const id = Number(req.params.id);
+    const poReady = await poColumnReady();
     const q = (await query(
       `SELECT q.id, q.quote_no, q.quote_date::text AS quote_date, q.packed_at, q.total_qty, q.sku_count, q.invoice_id,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               COALESCE(c.name, q.guest_name, '\u2014') AS customer_name, c.code AS customer_code, c.rfc AS customer_rfc,
               c.ship_address,
               si.sat_no, si.inv_date::text AS inv_date, si.total_mxn
@@ -559,6 +575,8 @@ export default async function warehouseRoutes(app) {
     });
     return {
       quote_id: Number(q.id), quote_no: q.quote_no || ('#' + q.id), quote_date: q.quote_date,
+      // 0225 · 패킹리스트·라벨의 「Pedido」 는 **우리 번호 / 고객 PO** 두 개를 같이 찍는다.
+      customer_po_no: q.customer_po_no || null,
       customer: q.customer_name, customer_code: q.customer_code || null, customer_rfc: q.customer_rfc || null,
       ship_address: q.ship_address || null,
       sat_no: realSat ? q.sat_no : null, has_sat: !!realSat, inv_date: q.inv_date, total_mxn: q.total_mxn != null ? Number(q.total_mxn) : null,

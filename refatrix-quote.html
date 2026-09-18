@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-0918dem2</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-0918po1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -98,8 +98,13 @@
         <div id="guestNameWrap" class="hidden"><label>Nombre del cliente (mostrar en cotización)</label><input id="guestName" type="text" placeholder="Ej: Taller López" style="width:180px"></div>
         <div><label>견적일</label><input id="qDate" type="date"></div>
         <div style="min-width:90px"><label>할인율</label><input id="discShow" type="text" readonly style="width:90px;background:#faf8f3" oninput="onDiscInput()"></div>
+        <!-- 0225 · 고객 PO(O.C.) — 고객이 자기 시스템에서 관리하는 오더번호.
+             패킹리스트의 Pedido 칸에 「우리번호 / 고객PO」로 같이 인쇄되고, 목록에서 이 번호로 찾을 수 있다. -->
+        <div style="min-width:190px"><label>고객 PO번호 <span class="hint" style="font-weight:500">(O.C. del cliente · 선택)</span></label>
+          <input id="custPo" type="text" maxlength="60" placeholder="예: 4471 / OC-2026-118" style="width:190px" autocomplete="off"></div>
       </div>
       <div class="hint" style="margin-top:6px" id="custHint">고객을 선택하면 할인율이 자동 적용됩니다. 불특정 고객은 할인율을 직접 입력합니다.</div>
+      <div class="hint" style="margin-top:4px">고객 PO번호는 나중에 견적 목록 → 상세에서도 넣거나 고칠 수 있습니다(매출 전환 후에도 가능). 패킹리스트에는 <b>Pedido: 우리번호 / 고객PO</b> 로 인쇄됩니다.</div>
     </div>
 
     <!-- 품목 입력 -->
@@ -1382,7 +1387,9 @@
   function closeCand(){ $('candModal').style.display='none'; pendingCand=null; }
 
   function removeLine(i){ lines.splice(i,1); recalc(); }
-  function clearLines(){ lines=[]; recalc(); }
+  // 0225 · 전체 비우기는 「다음 견적」 을 시작하는 버튼이다 — 앞 고객의 PO 가 남아 있으면
+  //   다른 고객 오더에 그대로 따라붙는다. 패킹리스트까지 가서야 드러나므로 여기서 같이 지운다.
+  function clearLines(){ lines=[]; var po=$('custPo'); if(po) po.value=''; recalc(); }
 
   // 미리보기 계산(서버) → 표 렌더
   async function recalc(){
@@ -1516,9 +1523,10 @@
     if(!valid.length){m.className='msg err';m.textContent='품목을 추가하세요.';return;}
     $('saveBtn').disabled=true;
     try{
+      const poNo=($('custPo')&&$('custPo').value||'').replace(/\s+/g,' ').trim().slice(0,60);
       const body=isGuest
-        ? {guest:true,guest_name:$('guestName').value.trim(),discount_rate:curDisc,quote_date:$('qDate').value||null,lines}
-        : {customer_id:Number(cid),quote_date:$('qDate').value||null,lines};
+        ? {guest:true,guest_name:$('guestName').value.trim(),discount_rate:curDisc,quote_date:$('qDate').value||null,customer_po_no:poNo||null,lines}
+        : {customer_id:Number(cid),quote_date:$('qDate').value||null,customer_po_no:poNo||null,lines};
       const res=await fetch(session.api+'/api/quotes',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){
@@ -1543,6 +1551,9 @@
       const inact=(d.inactive_lines||[]);
       m.className=inact.length?'msg warn':'msg ok';
       m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · 기존 고객 연결: '+esc(d.auto_customer.name)):'')
+        +(d.customer_po_no?(' · 고객 PO: '+d.customer_po_no):'')
+        // 마이그레이션 전이면 PO 는 저장되지 않았다 — 조용히 넘기지 않는다.
+        +(d.po_pending_migration?('  ⚠ 고객 PO번호는 아직 저장되지 않았습니다(서버 마이그레이션 0225 대기). 견적 상세에서 다시 넣어 주세요.'):'')
         +(inact.length?('  ⚠ Descontinuados: '+inact.length+' ('+inact.map(x=>x.code).join(', ')
           +'). La cotización sigue su curso; estas líneas quedan registradas como demanda en '+ES_INACT_WHERE+'.'):'');
       if(d.auto_customer){ loadCustomers(); }

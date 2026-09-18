@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0918dem2</title>
+<title>Refatrix ERP · 견적 목록 · ql-0918po1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -98,8 +98,19 @@
             <div class="chips" id="monthChips" style="margin:0"></div>
           </div>
         </div>
+        <!-- 0225 · 한 칸 검색. 고객이 전화로 대는 번호가 우리 견적번호인지 자기 PO인지
+             미리 알 수 없으므로 칸을 나누지 않는다. 검색 중에는 기간 선택을 무시하고 전 기간을 본다. -->
+        <div style="min-width:260px">
+          <label>검색 <span class="hint" style="font-weight:500">— 견적번호 · 고객명 · 고객 PO번호</span></label>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <input id="qSearch" type="text" placeholder="예: 4471 · COT-2026… · Refaccionaria" style="width:220px" autocomplete="off">
+            <button class="btn ghost sm" id="qSearchGo" title="전 기간에서 찾습니다">찾기</button>
+            <button class="btn ghost sm" id="qSearchClear" title="검색 해제">✕</button>
+          </div>
+        </div>
         <div style="margin-left:auto"><a href="refatrix-quote.html" style="text-decoration:none"><button class="btn ghost">＋ 새 견적</button></a></div>
       </div>
+      <div class="hint" id="qSearchNote" style="margin-top:8px;display:none"></div>
       <div class="chips" id="chips" style="margin-top:12px"></div>
       <div class="chips" id="clsChips" style="margin-top:8px"></div>
       <div class="msg" id="msg"></div>
@@ -158,7 +169,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-0918dem2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-0918po1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -261,12 +272,32 @@
     renderChips();
   }
 
+  // 0225 · 검색어가 있으면 **기간·상태 칩을 모두 무시하고 전 기간**에서 찾는다.
+  //   「4471 언제 나가요?」 라고 물어 온 사람에게 몇 월인지 되물을 수는 없다.
+  let searchKw='';
+  function currentSearch(){ const el=$('qSearch'); return el?String(el.value||'').trim():''; }
+  function runSearch(){ searchKw=currentSearch(); load(); }
+  function clearSearch(){ const el=$('qSearch'); if(el) el.value=''; searchKw=''; load(); }
+  // 검색 중이라는 사실을 **화면이 말해 준다.** 안 그러면 「9월인데 7월 건이 왜 나오지」가 된다.
+  function renderSearchNote(kw,n){
+    const el=$('qSearchNote'); if(!el) return;
+    if(!kw){ el.style.display='none'; el.innerHTML=''; return; }
+    el.style.display='';
+    el.innerHTML='🔎 <b>"'+esc(kw)+'"</b> 검색 결과 <b>'+n+'건</b> — 견적번호 · 고객명 · 고객 PO번호에서 찾았습니다. '
+      +'<span style="color:#9a6512;font-weight:700">기간·상태 선택은 무시하고 전 기간을 봅니다.</span> '
+      +'<a id="qSearchOff" style="cursor:pointer;text-decoration:underline;color:var(--brand);font-weight:700">검색 해제</a>';
+    const off=$('qSearchOff'); if(off) off.addEventListener('click',clearSearch);
+  }
+
   async function load(){
     await loadCounts();
     const m=$('msg');m.className='msg';
     const rng=monthRange();                          // null = 전체기간
-    let qs='from='+(rng?rng.from:'')+'&to='+(rng?rng.to:'');
-    if(filter==='open')qs+='&open=1';
+    const kw=searchKw;
+    let qs=kw ? ('from=&to=&q='+encodeURIComponent(kw))
+              : ('from='+(rng?rng.from:'')+'&to='+(rng?rng.to:''));
+    if(kw){ /* 검색 중에는 상태·기간 필터를 걸지 않는다 — 찾는 건이 어느 상태인지도 모른다 */ }
+    else if(filter==='open')qs+='&open=1';
     else if(filter==='guest')qs+='&guest=1';
     else if(filter==='converted')qs+='&status=converted';
     else if(filter==='pricelist')qs+='&status=pricelist';
@@ -275,10 +306,10 @@
     try{
       const d=await fetch(session.api+'/api/quotes?'+qs,{headers:auth()}).then(r=>r.json());
       let items=d.items||[];
-      // 선택된 연도×월 조합만 정확히 남김(비연속·다년 조합 지원)
-      const eff=effectiveYMs();
-      if(eff) items=items.filter(q=>eff.has(String(q.quote_date||'').slice(0,7)));
+      // 선택된 연도×월 조합만 정확히 남김(비연속·다년 조합 지원) — 검색 중에는 거르지 않는다.
+      if(!kw){ const eff=effectiveYMs(); if(eff) items=items.filter(q=>eff.has(String(q.quote_date||'').slice(0,7))); }
       lastItems=items;
+      renderSearchNote(kw, items.length);
       applyAndRender();
     }catch(e){ $('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
@@ -428,6 +459,12 @@
     }catch(e){ alert('복제 중 오류'); }
   }
 
+  // 0225 · 견적번호 아래 한 줄짜리 고객 PO 배지. 없으면 아무것도 그리지 않는다
+  //   (「—」 를 찍으면 PO 를 안 쓰는 고객의 목록이 전부 대시로 덮인다).
+  function poSmall(po){
+    if(!po) return '';
+    return '<div style="margin-top:2px;font-size:10.5px;font-weight:700;color:#8a6a1f;white-space:nowrap" title="고객이 발행한 PO(O.C.) 번호 — 패킹리스트에 「우리번호 / 이 번호」로 인쇄됩니다">PO '+esc(po)+'</div>';
+  }
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적',expired:'만료'};
@@ -447,7 +484,10 @@
       else if(expd) action+=' <button class="btn ghost sm" onclick=\'cloneQuote('+JSON.stringify(q.id)+')\' title="만료된 견적을 복제해 새 24시간 예약으로 진행">복제</button>';
       else if(conv) action+=' <span class="hint">전환완료</span>';
       html+='<tr'+(expd?' class="qexp"':'')+'>'
-        +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b></td>'
+        // 0225 · 고객 PO 는 **견적번호 바로 아래에 작게.** 두 번호가 같은 칸에 붙어 있어야
+        //   전화를 받으면서 한눈에 대조된다(칼럼을 따로 만들면 가로 스크롤 밖으로 밀린다).
+        +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b>'
+          +poSmall(q.customer_po_no)+'</td>'
         +'<td>'+esc(q.quote_date||'')+'</td>'
         +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+(q.from_field_survey?'<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:800;color:#0F6E56;background:#E4F0EB;border-radius:10px;padding:1px 7px;white-space:nowrap">📍현장</span>':'')+'</td>'
         +'<td>'+esc(q.creator_name||'—')+'</td>'
@@ -600,6 +640,8 @@
       +qrBox
       +'<div class="title"><h2>COTIZACIÓN</h2><div class="qn">No. '+esc(q.quote_no||'')+'</div></div></div>'
       +'<div class="meta"><b>Cliente:</b> '+esc(custName)+(custMeta.length?' &nbsp; <span style="color:#666">('+custMeta.join(' · ')+')</span>':'')+'<br>'
+      // 0225 · 고객이 자기 PO번호로 대조할 수 있게 견적서에도 실어 보낸다. 없으면 줄 자체가 없다.
+      +(q.customer_po_no?('<b>Su orden de compra (O.C.):</b> '+esc(q.customer_po_no)+'<br>'):'')
       +'<b>Fecha:</b> '+esc(date)+' &nbsp;&nbsp; <b>Atendió:</b> '+esc(issuerLabel(q))
       +(q.customer_owner_name?' &nbsp;&nbsp; <b>Vendedor asignado:</b> '+esc(q.customer_owner_name):'')+'</div>'
       +'<div class="wanote">📱 '+waNote+'</div>'
@@ -843,7 +885,51 @@
     table+='</tbody></table></div>';
 
     const revalBox = dtReval ? ('<div id="revalBox" style="margin:0 0 10px">'+dtReval.html+'</div>') : '';
-    $('dtBody').innerHTML = hint + actions + '<div id="delForm" style="margin:0 0 10px"></div>' + revalBox + summary + table;
+    $('dtBody').innerHTML = hint + poBoxHtml(q) + actions + '<div id="delForm" style="margin:0 0 10px"></div>' + revalBox + summary + table;
+    bindPoBox();
+  }
+
+  // ===== 고객 PO번호(O.C.) — 상세에서 언제든 넣고 고친다 (0225) =====
+  //
+  //   **전환된 견적에서도 열어 둔다.** 고객이 PO 를 매출 전환 뒤에 발행하는 일이 흔하고,
+  //   그때는 이미 창고가 패킹리스트를 찍기 직전이다. 「전환됐으니 못 고칩니다」 는 답이 안 된다.
+  //   금액·라인은 건드리지 않는 전용 엔드포인트(POST /api/quotes/:id/customer-po)를 쓴다.
+  function poBoxHtml(q){
+    const po=q.customer_po_no||'';
+    return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#faf7ef;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px">'
+      +'<span style="font-weight:800;color:#8a6a1f;font-size:12.5px">고객 PO번호 <span class="hint" style="font-weight:500">(O.C. del cliente)</span></span>'
+      +'<input id="poInput" type="text" maxlength="60" value="'+esc(po)+'" placeholder="예: 4471 / OC-2026-118" style="width:210px">'
+      +'<button class="btn sm" id="poSave">저장</button>'
+      +'<span class="msg" id="poMsg" style="margin:0"></span>'
+      +'<span class="hint" style="margin-left:auto;font-size:11px">패킹리스트 Pedido 칸: <b>'+esc(q.quote_no||'')+(po?(' / '+esc(po)):'')+'</b></span>'
+      +'</div>';
+  }
+  function bindPoBox(){
+    const b=$('poSave'); if(!b) return;
+    b.addEventListener('click',savePo);
+    const i=$('poInput'); if(i) i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); savePo(); } });
+  }
+  async function savePo(){
+    const m=$('poMsg'), i=$('poInput'), b=$('poSave');
+    if(!m||!i||!dtId) return;
+    const val=String(i.value||'').replace(/\s+/g,' ').trim().slice(0,60);
+    m.className='msg'; m.textContent='저장 중…'; b.disabled=true;
+    const id=dtId;
+    try{
+      const res=await fetch(session.api+'/api/quotes/'+id+'/customer-po',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_po_no:val||null})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){
+        m.className='msg err';
+        m.textContent = d.error==='migration_required'
+          ? 'PO번호 기능은 서버 마이그레이션(0225) 후에 쓸 수 있습니다.'
+          : ('저장 실패: '+(d.note||d.error||res.status));
+        return;
+      }
+      if(dtData&&dtData.quote) dtData.quote.customer_po_no=d.customer_po_no||null;
+      m.className='msg ok'; m.textContent=d.customer_po_no?('저장됨 — Pedido: '+(dtData&&dtData.quote?dtData.quote.quote_no:'')+' / '+d.customer_po_no):'PO번호를 비웠습니다.';
+      load();          // 목록의 견적번호 아래 표시도 갱신
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ if(b) b.disabled=false; }
   }
   function startEdit(){ dtEdit=true; renderDetail(); }
   function renderEdit(){
@@ -1286,6 +1372,10 @@
   $('go').addEventListener('click',login);
   $('cvScanFile').addEventListener('change',onScanFilePicked);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  // 0225 · 검색칸 — Enter 로도 찾는다(창고·영업은 마우스를 잡고 있지 않다)
+  $('qSearchGo').addEventListener('click',runSearch);
+  $('qSearchClear').addEventListener('click',clearSearch);
+  $('qSearch').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); runSearch(); } });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>

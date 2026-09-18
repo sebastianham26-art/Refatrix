@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0826pda</title>
+<title>Refatrix · 창고 포장 · build 0918po1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -414,7 +414,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0826pda — PDA 컴팩트 모드 + 언어토글 위치 수정'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0918po1 — Pedido 칸에 고객 PO(O.C.) 병기'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -700,7 +700,7 @@
           : '<button class="doship" data-id="'+it.quote_id+'">\u2713 출고완료</button>';
       }
       return '<div class="scard" data-id="'+it.quote_id+'">'
-        +'<div class="srow"><div><div class="no">'+esc(it.quote_no)+'</div><div class="cu">'+esc(it.customer)+'</div>'+shipdt+'</div>'+satHtml+'</div>'
+        +'<div class="srow"><div><div class="no">'+esc(it.quote_no)+poBadge(it.customer_po_no)+'</div><div class="cu">'+esc(it.customer)+'</div>'+shipdt+'</div>'+satHtml+'</div>'
         +'<div class="meta2">박스 '+it.box_count+' \u00b7 SKU '+(it.sku_count==null?'\u2014':it.sku_count)+' \u00b7 총 '+(it.total_qty==null?'\u2014':it.total_qty)+'피스 \u00b7 '+esc(it.inv_date||'')+'</div>'
         +'<div class="sbtns"><button class="pl" data-id="'+it.quote_id+'">\ud83d\udce6 라벨</button><button class="pk" data-id="'+it.quote_id+'">\ud83d\udcc4 패킹리스트</button><button class="op" data-id="'+it.quote_id+'">상세</button>'+actBtn+'</div>'
         +'</div>';
@@ -726,7 +726,7 @@
     }).catch(function(){ alert('불러오기 실패(통신)'); });
   }
   function renderShipDetail(d){
-    $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">'+(d.has_sat?('No. factura '+esc(d.sat_no)):'\u26a0 SAT 번호를 넣으세요')+' \u00b7 박스 '+d.box_count+' \u00b7 '+d.total_qty+'피스</span>'
+    $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+poBadge(d.customer_po_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">'+(d.has_sat?('No. factura '+esc(d.sat_no)):'\u26a0 SAT 번호를 넣으세요')+' \u00b7 박스 '+d.box_count+' \u00b7 '+d.total_qty+'피스</span>'
       +(d.ship_address
         ?'<div class="shipadr">\ud83d\udccd '+esc(d.ship_address)+'</div>'
         :'<div class="shipadr none">\ud83d\udccd 배송지 미입력 — 고객마스터(고객 수정)에서 배송지를 입력하면 라벨에 인쇄됩니다</div>');
@@ -767,6 +767,23 @@
     w.document.open(); w.document.write(html); w.document.close(); w.focus();
     setTimeout(function(){ try{ w.print(); }catch(e){} }, 400);
   }
+  // ===== 0225 · Pedido = 「우리 오더번호 / 고객 PO번호」 =====
+  //
+  //   고객 창고에서 종이를 받아 든 사람은 **자기 PO번호로 대조한다.** Q-2026-#### 만 찍혀
+  //   있으면 그 종이는 그쪽 시스템에서 아무것도 가리키지 않는다 — 그래서 둘을 같이 찍는다.
+  //   형식(디렉터 지정): 우리번호 뒤에 구분자 `/`, 그 뒤에 한 칸 띄고 고객 PO.
+  //   PO 가 없으면 구분자도 찍지 않는다 — 빈 슬래시는 「뭔가 빠졌나」로 읽힌다.
+  // 화면용 작은 PO 배지 — 창고가 고객 PO 로 오더를 찾을 수 있게 목록·헤더에 같이 보인다.
+  function poBadge(po){
+    if(!po) return '';
+    return '<span style="display:inline-block;margin-left:6px;font-size:10.5px;font-weight:800;color:#8a6a1f;background:#FBF3E0;border:1px solid #E7D5A8;border-radius:8px;padding:0 6px;white-space:nowrap" title="Orden de compra del cliente">PO '+esc(po)+'</span>';
+  }
+  function pedidoText(d){
+    var ours=String((d&&d.quote_no)||'');
+    var po=String((d&&d.customer_po_no)||'').trim();
+    return po ? (ours+'/ '+po) : ours;
+  }
+
   function buildLabelsHTML(d){
     var M=d.box_count;
     var pages=d.boxes.map(function(b){
@@ -776,7 +793,7 @@
         +'<div class="cust">'+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</div>'
         +'<div class="meta"><b>No. de factura:</b> '+esc(d.sat_no||'PENDIENTE')+'</div>'
         +(d.ship_address?'<div class="shipto"><span class="stl">ENTREGAR EN:</span><br>'+esc(d.ship_address)+'</div>':'')
-        +'<div class="meta"><b>Pedido:</b> '+esc(d.quote_no)+' &nbsp; SKU: '+b.box_sku+' &nbsp; Pzas: '+b.box_qty+'</div>'
+        +'<div class="meta"><b>Pedido:</b> '+esc(pedidoText(d))+' &nbsp; SKU: '+b.box_sku+' &nbsp; Pzas: '+b.box_qty+'</div>'
         +'<div class="bc">'+bc+'</div>'
         +'<table class="lt"><thead><tr><th>CTR</th><th>Competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></section>';
     }).join('');
@@ -811,7 +828,7 @@
       }
       return '<section class="pg">'+cohead+'<div class="top"><div class="title">LISTA DE EMPAQUE</div><div class="cp">'+tag+'</div></div>'
         +'<table class="hd"><tr><td><b>Cliente:</b> '+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</td><td><b>No. de factura:</b> '+esc(d.sat_no||'PENDIENTE')+'</td></tr>'
-        +'<tr><td><b>RFC:</b> '+esc(d.customer_rfc||'-')+'</td><td><b>Pedido:</b> '+esc(d.quote_no)+'</td></tr>'
+        +'<tr><td><b>RFC:</b> '+esc(d.customer_rfc||'-')+'</td><td><b>Pedido:</b> '+esc(pedidoText(d))+'</td></tr>'
         +'<tr><td><b>Fecha:</b> '+esc(d.inv_date||d.quote_date||'')+'</td><td><b>Cajas:</b> '+d.box_count+' \u00b7 <b>SKU:</b> '+d.sku_count+' \u00b7 <b>Piezas:</b> '+d.total_qty+'</td></tr>'
         +(d.ship_address?'<tr><td colspan="2"><b>Entregar en (direcci\u00f3n de env\u00edo):</b> '+esc(d.ship_address)+'</td></tr>':'')
         +'</table>'
@@ -910,8 +927,14 @@
       adrL=doc.splitTextToSize(String(d.ship_address), W-2*M-1);
       if(adrL.length>16) adrL=adrL.slice(0,16);        // 안전상한(실주소는 도달 불가) — 기하 보장용
     }
+    // 0225 · 고객 PO 가 있으면 Pedido 줄을 **두 줄로 나눈다.**
+    //   라벨 폭은 92mm 뿐이라 「Pedido: Q-2026-0431/ OC-2026-118    SKU: 12    Pzas: 340」 을
+    //   한 줄에 밀어 넣으면 끝이 잘린다 — 번호가 잘리면 라벨을 붙인 의미가 없다.
+    //   그래서 번호 줄과 수량 줄을 분리하고, 늘어난 3.5mm 를 헤더 높이에 반영해
+    //   품목 표 행수를 자동으로 한 줄 줄인다(라벨 밖으로 넘치지 않게).
+    var poStr=String((d&&d.customer_po_no)||'').trim();
     // 헤더 총높이(표 머리글까지) = 고정부 + 고객명 줄수 + 주소 줄수 (아래 그리기 코드와 동일 수치)
-    var headH=(M+6)+2.5+6 + (custL.length*5+1.5) + 4.6 + (adrL?(3.6+adrL.length*3.8+1.6):0) + 3.5 + 17.5 + 6;
+    var headH=(M+6)+2.5+6 + (custL.length*5+1.5) + 4.6 + (adrL?(3.6+adrL.length*3.8+1.6):0) + 3.5 + (poStr?3.5:0) + 17.5 + 6;
     var LIMIT=(PITCH-3)-3;                             // 라벨 본체 끝에서 3mm 여유
     var MAXROWS=Math.min(14, Math.max(3, Math.floor((LIMIT-headH)/5.4)));  // 주소 길면 행수 자동 축소
     var first=true;
@@ -942,9 +965,16 @@
         doc.setFont('helvetica','normal'); doc.setFontSize(9);
         var sLines=lines.slice(sh*MAXROWS, (sh+1)*MAXROWS);
         var bSku=lines.length, bQty=lines.reduce(function(a,l){ return a+(Number(l.qty)||0); },0);
-        var ped='Pedido: '+String(d.quote_no||'')+'    SKU: '+bSku+'    Pzas: '+bQty;
-        if(sheets>1) ped+='    Hoja '+(sh+1)+'/'+sheets;
-        doc.text(ped, M, y); y+=3.5;
+        // 번호 줄(우리번호 / 고객PO) → 수량 줄. PO 가 없으면 예전처럼 한 줄이다.
+        var qtyPart='SKU: '+bSku+'    Pzas: '+bQty+(sheets>1?('    Hoja '+(sh+1)+'/'+sheets):'');
+        if(poStr){
+          doc.setFont('helvetica','bold');
+          doc.text('Pedido: '+pedidoText(d), M, y); y+=3.5;
+          doc.setFont('helvetica','normal');
+          doc.text(qtyPart, M, y); y+=3.5;
+        } else {
+          doc.text('Pedido: '+String(d.quote_no||'')+'    '+qtyPart, M, y); y+=3.5;
+        }
         var bc=labelBarcodePNG(String(d.quote_no||d.quote_id)+'-B'+b.box_no);
         if(bc){ var bh=15; doc.addImage(bc,'PNG', M, y, W-2*M, bh); y+=bh+2.5; }
         // ===== 표 헤더(검정 바) — 매 라벨 반복. 열: No | CTR | Competidor | Cant =====
@@ -989,7 +1019,7 @@
     if(!items.length){ box.innerHTML='<div class="empty">대기 중인 포장지시가 없습니다.</div>'; return; }
     box.innerHTML=items.map(function(it){
       return '<div class="qcard'+(it.overdue?' overdue':'')+'" data-id="'+it.quote_id+'">'
-        +'<div class="no">'+esc(it.quote_no||('#'+it.quote_id))+'</div>'
+        +'<div class="no">'+esc(it.quote_no||('#'+it.quote_id))+poBadge(it.customer_po_no)+'</div>'
         +'<div class="cu">'+esc(it.customer)+'</div>'
         +'<div class="meta"><span><span class="lab">포장지시</span> <span class="val">'+fmtDT(it.printed_at)+'</span></span>'
         +'<span class="elap"><span class="lab">경과(업무)</span> <span class="t">'+fmtHoursDec(it.elapsed_biz_sec)+'</span>'
@@ -1122,7 +1152,7 @@
   }
   function renderPacking(){
     var d=PK;
-    $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</span><span class="cu">'+esc(d.customer)+'</span>'
+    $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+poBadge(d.customer_po_no)+'</span><span class="cu">'+esc(d.customer)+'</span>'
       +'<span class="el" id="pEl">경과 '+fmtHoursDec(drillElapsedSec)+' (업무시간 기준)</span>';
     var pct=d.required_total? Math.round(d.scanned_total/d.required_total*100):0;
     $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
@@ -1364,6 +1394,16 @@
 
   initLangBtn(); initShipTabs(); pdaInit(); startI18n();
   if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
+
+  // 테스트 훅 — 운영 동작에는 영향 없음(jsdom 에서 인쇄물 생성 함수를 그대로 검증하기 위한 창구).
+  //   패킹리스트·라벨은 **종이로만 확인되는** 코드라 화면 조작으로는 회귀를 잡을 수 없다.
+  //   refatrix-relocate.html 의 window.__REL__ 과 같은 방식.
+  try{
+    window.__WH__={
+      pedidoText:pedidoText, poBadge:poBadge,
+      buildPackingListHTML:buildPackingListHTML, buildLabelsHTML:buildLabelsHTML
+    };
+  }catch(e){}
 })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>

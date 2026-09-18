@@ -5,7 +5,8 @@ import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
 import { resolveCode, assignReservations, nextQuoteNo, buildLines,
-         screenIssue, inactiveSinceMap } from '../quoteBuild.js';
+         screenIssue, inactiveSinceMap,
+         normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause } from '../quoteBuild.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
@@ -312,15 +313,20 @@ export default async function quoteRoutes(app) {
     //
     //   그래서 줄에 issue='inactive' 를 박아 **확정(POST /:id/status)만 잠근다.**
     //   포털 수신 창구(0220)가 이미 쓰는 규칙과 같다 — 두 경로가 갈리면 안 된다.
+    // 0225 · 고객 PO번호 — 마이그레이션 전이면 조용히 건너뛴다(견적 저장 자체는 막지 않는다).
+    const poNo = normalizePoNo(b.customer_po_no);
+    const poReady = await poColumnReady();
     const result = await withTx(async (c) => {
       const year = (b.quote_date ? String(b.quote_date).slice(0, 4) : String(new Date().getFullYear()));
       const quoteNo = await nextQuoteNo(c, year);
       const lines = await buildLines(discountRate, ivaRate, Array.isArray(b.lines) ? b.lines : []);
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
       const q = (await c.query(
-        `INSERT INTO quotes (quote_no, customer_id, guest_name, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at)
-         VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13, now() + interval '24 hours') RETURNING id, quote_no`,
-        [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
+        `INSERT INTO quotes (quote_no, customer_id, guest_name, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at${poReady ? ', customer_po_no' : ''})
+         VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13, now() + interval '24 hours'${poReady ? ', $14' : ''}) RETURNING id, quote_no`,
+        poReady
+          ? [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, poNo]
+          : [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
       for (const l of lines) {
         await c.query(
           `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag, issue)
@@ -346,6 +352,9 @@ export default async function quoteRoutes(app) {
     const inactiveLines = (result.lines || []).filter((l) => l.issue === 'inactive')
       .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
     return { id: result.id, quote_no: result.quote_no, customer_id: customerId || null, auto_customer: autoCustomer,
+      customer_po_no: poReady ? poNo : null,
+      // 마이그레이션 전에 PO 를 보냈다면 **말해 준다.** 조용히 버리면 영업사원은 넣은 줄 안다.
+      po_pending_migration: (!poReady && !!poNo) || undefined,
       inactive_lines: inactiveLines,
       inactive_note: inactiveLines.length ? esInactiveNote(inactiveLines) : null };
   });
@@ -370,6 +379,7 @@ export default async function quoteRoutes(app) {
     const existingIds = new Set((await query(
       `SELECT DISTINCT product_id FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id]))
       .rows.map((r) => Number(r.product_id)));
+    const poReady = await poColumnReady();
     const flagged = await withTx(async (c) => {
       const hit = [];
       const lines = await buildLines(discountRate, ivaRate, Array.isArray(b.lines) ? b.lines : []);
@@ -385,8 +395,14 @@ export default async function quoteRoutes(app) {
         return false;                                              // 중단 전부터 있던 줄 — 그대로 둔다
       };
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
-      await c.query(`UPDATE quotes SET customer_id=$1, discount_rate=$2, memo=$3, subtotal_mxn=$4, iva_mxn=$5, total_mxn=$6, total_qty=$7, sku_count=$8, updated_by=$9, updated_at=now() WHERE id=$10`,
-        [customerId, discountRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, id]);
+      // 0225 · PO번호는 **보내 왔을 때만** 건드린다. 화면이 키를 안 보내면 기존 값을 지키는 것이
+      //   맞다 — SKU·수량만 고치는 편집이 PO 를 지워 버리면 그 사실을 아무도 눈치채지 못한다.
+      const touchPo = poReady && Object.prototype.hasOwnProperty.call(b, 'customer_po_no');
+      await c.query(
+        `UPDATE quotes SET customer_id=$1, discount_rate=$2, memo=$3, subtotal_mxn=$4, iva_mxn=$5, total_mxn=$6, total_qty=$7, sku_count=$8, updated_by=$9, updated_at=now()${touchPo ? ', customer_po_no=$11' : ''} WHERE id=$10`,
+        touchPo
+          ? [customerId, discountRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, id, normalizePoNo(b.customer_po_no)]
+          : [customerId, discountRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, id]);
       await c.query(`DELETE FROM quote_lines WHERE quote_id=$1`, [id]);
       for (const l of lines) {
         const iss = (l.issue === 'inactive' && l.product_id && flagInactive(l.product_id)) ? 'inactive' : null;
@@ -434,6 +450,31 @@ export default async function quoteRoutes(app) {
     }
     await query(`UPDATE quotes SET status=$1, updated_by=$2, updated_at=now() WHERE id=$3`, [st, req.ctx.perm.userId, id]);
     return { ok: true, status: st };
+  });
+
+  // ============ 고객 PO번호(O.C.) 단독 수정 — 0225 ============
+  //
+  //   **왜 별도 엔드포인트인가.** PUT /api/quotes/:id 는 라인을 통째로 갈아 끼우고
+  //   `converted`(매출 전환된) 견적은 아예 거절한다. 그런데 현장의 순서는 반대다 —
+  //   고객이 PO 를 **확정·전환 뒤에** 발행하는 일이 흔하고, 그때는 이미 창고가 패킹리스트를
+  //   찍기 직전이다. 그 상황에서 「전환됐으니 못 고칩니다」 는 답이 될 수 없다.
+  //
+  //   그래서 이 길은 **PO 칸 하나만** 건드린다. 금액·라인·재고 예약은 손대지 않으므로
+  //   전환된 견적에도 열어 둔다. 바꾼 사실은 감사로그에 남는다(이전값 포함).
+  app.post('/api/quotes/:id/customer-po', { preHandler: [authGuard, requirePageEditAny(['quote', 'sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!(await poColumnReady())) {
+      return reply.code(503).send({ error: 'migration_required', migration: '0225',
+        note: '고객 PO번호 칼럼이 아직 없습니다. Railway 콘솔에서 `npm run migrate` 를 실행하세요.' });
+    }
+    const q = (await query(`SELECT id, quote_no, customer_po_no FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    const po = normalizePoNo(req.body?.customer_po_no);
+    await query(`UPDATE quotes SET customer_po_no=$1, updated_by=$2, updated_at=now() WHERE id=$3`,
+      [po, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`,
+      detail: { customer_po_no: { from: q.customer_po_no || null, to: po } } });
+    return { ok: true, customer_po_no: po };
   });
 
   // ============ 목록 / 상세 ============
@@ -496,6 +537,11 @@ export default async function quoteRoutes(app) {
     if (['draft', 'confirmed', 'converted', 'cancelled', 'pricelist', 'expired'].includes(status)) { args.push(status); conds.push(`q.status=$${args.length}`); }
     if (req.query.open === '1') conds.push(`q.status IN ('draft','confirmed')`);          // 견적후 미결
     if (req.query.guest === '1') conds.push(`q.customer_id IS NULL AND q.status IN ('draft','confirmed')`); // 불특정·미등록
+    // 0225 · 한 칸 검색 — 견적번호 · 고객명 · 고객 PO번호.
+    //   고객이 전화로 대는 번호가 우리 번호인지 자기 PO 인지 모르는 채로 받으므로 칸을 나누지 않는다.
+    const poReady = await poColumnReady();
+    const kwClause = quoteSearchClause(req.query.q, args, { poReady });
+    if (kwClause) conds.push(kwClause);
     // 팀 가시성: 디렉터/영업지원=전체. 그 외=자기 팀 고객 견적 + 본인이 만든 불특정 견적만.
     const ta = teamArr(req.ctx.perm);
     if (ta) {
@@ -506,6 +552,7 @@ export default async function quoteRoutes(app) {
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
               q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               c.name AS customer_name, c.team_id,
               uc.name AS creator_name,
               (EXISTS(SELECT 1 FROM field_surveys fs WHERE fs.quote_id=q.id AND fs.deleted_at IS NULL)) AS from_field_survey,
@@ -547,6 +594,7 @@ export default async function quoteRoutes(app) {
         sale_total: (r.status === 'converted') ? Number(r.sale_total || 0) : null,
         shortage_cnt: Number(r.shortage_cnt || 0),
         is_guest: r.customer_id == null,
+        customer_po_no: r.customer_po_no || null,          // 0225 · 고객이 관리하는 오더번호
         party_name: r.customer_id == null ? (r.guest_name || '불특정 고객') : r.customer_name,
         creator_name: r.creator_name || null,
         from_field_survey: !!r.from_field_survey,
@@ -1154,7 +1202,12 @@ export default async function quoteRoutes(app) {
   //  · 부족분 정보는 복제 시점 현재고/타 예약으로 재산정(과거 스냅샷 복사 아님).
   app.post('/api/quotes/:id/clone', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const srcId = Number(req.params.id);
-    const src = (await query(`SELECT id, customer_id, quote_no, memo FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];
+    // 0225 · 복제는 「같은 오더를 다시 진행」하는 것이므로 고객 PO 도 따라간다.
+    //   만료된 견적을 살리는 경로인데 PO 만 사라지면 창고가 다시 대조를 못 한다.
+    const poReady = await poColumnReady();
+    const src = (await query(
+      `SELECT id, customer_id, quote_no, memo, ${poSelectFrag(poReady)} AS customer_po_no
+         FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];
     if (!src) return reply.code(404).send({ error: 'not_found' });
     const customerId = src.customer_id;
     if (!customerId) return reply.code(409).send({ error: 'customer_required', note: '고객이 지정된 견적만 복제할 수 있습니다.' });
@@ -1175,10 +1228,14 @@ export default async function quoteRoutes(app) {
       const lines = await buildLines(discountRate, ivaRate, inputLines);
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
       const q = (await c.query(
-        `INSERT INTO quotes (quote_no, customer_id, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at)
-         VALUES ($1,$2,CURRENT_DATE,$3,16,$4,'draft',$5,$6,$7,$8,$9,$10, now() + interval '24 hours') RETURNING id, quote_no`,
-        [quoteNo, customerId, discountRate, src.memo ? `${src.memo} (복제 ${src.quote_no})` : `복제 ${src.quote_no}`,
-         totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
+        `INSERT INTO quotes (quote_no, customer_id, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at${poReady ? ', customer_po_no' : ''})
+         VALUES ($1,$2,CURRENT_DATE,$3,16,$4,'draft',$5,$6,$7,$8,$9,$10, now() + interval '24 hours'${poReady ? ', $11' : ''}) RETURNING id, quote_no`,
+        (() => {
+          const a = [quoteNo, customerId, discountRate, src.memo ? `${src.memo} (복제 ${src.quote_no})` : `복제 ${src.quote_no}`,
+            totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId];
+          if (poReady) a.push(src.customer_po_no || null);
+          return a;
+        })())).rows[0];
       for (const l of lines) {
         await c.query(
           `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag, issue)

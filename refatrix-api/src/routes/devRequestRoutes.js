@@ -8,6 +8,8 @@ import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
 import { groupDemand, attachVehicleVio, sortDemand, normCode, DEV_CAT_KEYS } from '../devDemand.js';
 import { sweepDevRequestMatches, pushDevDemandAndOffer } from '../devMatchSweep.js';
+// 0225 · 고객 PO(O.C.) — 견적 화면과 **같은 판정·같은 검색 규칙**을 쓴다.
+import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function daysBetween(a, b) {
@@ -626,27 +628,55 @@ export default async function devRequestRoutes(app) {
     let ownerId = req.query.owner_id ? Number(req.query.owner_id) : null;
     let teamId = req.query.team_id ? Number(req.query.team_id) : null;
     if (!isDirector) { ownerId = Number(perm.userId); teamId = null; }
+    // 0225 · 한 칸 검색 — 견적번호 · 고객명 · 고객 PO번호.
+    //
+    //   **검색 중에는 기간 제한을 풀어 준다.** 고객이 전화로 「PO 4471」 을 대면 그게 몇 월
+    //   건인지 모르는 채로 찾아야 한다. 월을 맞혀 가며 다시 누르게 하면 그건 검색이 아니다.
+    //   (상단 요약 박스는 선택한 월 기준 그대로 둔다 — 그건 「이번 달 실적」을 보는 칸이다)
+    const poReady = await poColumnReady();
+    const kw = String(req.query.q || '').trim();
+    const like = kw ? '%' + kw.toLowerCase() + '%' : null;
+
     // 발행 가능: 미전환 + 즉시(ok) 라인이 있는 견적 (+ 견적 후 경과일) — 팀 스코프(디렉터/영업지원=전체)
     const aargs = [months];
     const aTeam = teamFilterClause(perm, aargs);
+    let aSearch = '';
+    if (like) {
+      aargs.push(like); const ai = aargs.length;
+      aSearch = ` AND (lower(COALESCE(q.quote_no,'')) LIKE $${ai}`
+        + ` OR lower(COALESCE(c.name, q.guest_name, '')) LIKE $${ai}`
+        + (poReady ? ` OR lower(COALESCE(q.customer_po_no,'')) LIKE $${ai}` : '')
+        + ')';
+    }
     const able = (await query(
       `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate,
               (CURRENT_DATE - q.quote_date)::int AS age_days,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               c.name AS customer_name, q.guest_name, q.customer_id,
               COUNT(*) FILTER (WHERE ql.stock_flag='ok')::int AS ok_sku,
               COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='ok'),0)::numeric AS ok_qty
          FROM quotes q JOIN quote_lines ql ON ql.quote_id=q.id LEFT JOIN customers c ON c.id=q.customer_id
-        WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed') AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${aTeam}
-        GROUP BY q.id, q.quote_no, q.quote_date, c.name, q.guest_name, q.customer_id
+        WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed')
+              AND (to_char(q.quote_date,'YYYY-MM') = ANY($1) OR ${like ? 'TRUE' : 'FALSE'})${aTeam}${aSearch}
+        GROUP BY q.id, q.quote_no, q.quote_date, ${poReady ? 'q.customer_po_no, ' : ''}c.name, q.guest_name, q.customer_id
         HAVING COUNT(*) FILTER (WHERE ql.stock_flag='ok') > 0
         ORDER BY q.quote_date ASC`, aargs)).rows;   // 오래된 것 먼저(팔로업 우선)
     // 이미 발행: 전환된(인보이스 생성) 견적 — 담당자/팀 필터 적용
     const dargs = [months]; const dconds = [];
     if (ownerId) { dargs.push(ownerId); dconds.push(`c.owner_id = $${dargs.length}`); }
     if (teamId) { dargs.push(teamId); dconds.push(`c.team_id = $${dargs.length}`); }
+    if (like) {
+      dargs.push(like); const di = dargs.length;
+      dconds.push(`(lower(COALESCE(q.quote_no,'')) LIKE $${di}`
+        + ` OR lower(COALESCE(c.name,'')) LIKE $${di}`
+        + ` OR lower(COALESCE(i.sat_no,'')) LIKE $${di}`
+        + (poReady ? ` OR lower(COALESCE(q.customer_po_no,'')) LIKE $${di}` : '')
+        + ')');
+    }
     const done = (await query(
       `SELECT i.id AS invoice_id, q.quote_no, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, i.sat_no,
               (i.sat_no IS NULL OR i.sat_no = '' OR i.sat_no LIKE 'TMP-%') AS temp_sat,
+              ${poSelectFrag(poReady)} AS customer_po_no,
               c.id AS customer_id, c.name AS customer_name,
               i.total_mxn, cu.name AS cust_owner_name,
               (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_sku,
@@ -655,7 +685,8 @@ export default async function devRequestRoutes(app) {
               JOIN customers c ON c.id=i.customer_id
               LEFT JOIN quotes q ON q.invoice_id=i.id AND q.deleted_at IS NULL
               LEFT JOIN users cu ON cu.id=c.owner_id
-        WHERE i.deleted_at IS NULL AND i.status='posted' AND to_char(i.inv_date,'YYYY-MM') = ANY($1)
+        WHERE i.deleted_at IS NULL AND i.status='posted'
+              AND (to_char(i.inv_date,'YYYY-MM') = ANY($1) OR ${like ? 'TRUE' : 'FALSE'})
               ${dconds.length ? 'AND ' + dconds.join(' AND ') : ''}
         ORDER BY i.inv_date DESC, i.id DESC`, dargs)).rows;
     // 디렉터용 필터 옵션(팀·담당자)
@@ -682,8 +713,10 @@ export default async function devRequestRoutes(app) {
     const summary = { label: months.length === 1 ? '전월 대비' : ('직전 ' + months.length + '개월 대비'), cur: curM, prev: prevM, delta: sdelta, pct: spct, prev_months: prevMonths };
     return {
       months, can_filter: isDirector, applied: { owner_id: ownerId, team_id: teamId }, filters: filterOpts, summary,
-      able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
-      done: done.map((o) => ({ id: o.invoice_id, quote_no: o.quote_no || '(직접)', invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no || '', temp_sat: !!o.temp_sat, customer_name: o.customer_name, owner_name: o.cust_owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
+      // 검색어가 있으면 목록은 **전 기간**에서 찾은 결과다 — 화면이 그 사실을 알려 줘야 한다.
+      search: kw || null, search_all_periods: !!kw,
+      able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_po_no: o.customer_po_no || null, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
+      done: done.map((o) => ({ id: o.invoice_id, quote_no: o.quote_no || '(직접)', invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no || '', temp_sat: !!o.temp_sat, customer_po_no: o.customer_po_no || null, customer_name: o.customer_name, owner_name: o.cust_owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
     };
   });
 
