@@ -127,7 +127,7 @@ const viewText = (doc, id) => doc.getElementById(id).textContent.replace(/\s+/g,
   {
     const { w, doc } = mkDom();
     await sleep(30);
-    ok('build 태그 sc0827spot2', /build sc0827spot2/.test(fs.readFileSync(FILE, 'utf8')));
+    ok('build 태그 sc0918promo', /build sc0918promo/.test(fs.readFileSync(FILE, 'utf8')));
     ok('스팟점검 화면이 있다', !!doc.getElementById('spotView'));
     ok('점검 이력 화면이 있다', !!doc.getElementById('spotHistView'));
     ok('새 실사 모달에 방식 선택 2개', !!doc.getElementById('modeFull') && !!doc.getElementById('modeSpot'));

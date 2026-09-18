@@ -1,4 +1,4 @@
-// stockCountRoutes.js · rev 20260827spot2 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260918promo (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
@@ -25,7 +25,7 @@ import { splitRacks } from './zoneRoutes.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260827spot2"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260918promo"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -1089,4 +1089,232 @@ export default async function stockCountRoutes(app) {
     await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `promo_item:${id}`, detail: {} });
     return { ok: true };
   });
+
+  // ================= 프로모션 품목 = 제품마스터(PRO) 등록 =================
+  // 디렉터 결정 2026-09-18:
+  //   · 프로모션(판촉물)도 **제품조회에 나와야 하고 견적·매출에서 선택**할 수 있어야 한다.
+  //   · 그래서 신규 프로모션 품목은 promo_items 가 아니라 **products 에 PRO 코드로** 등록한다.
+  //     (제품조회에는 이미 「🎁 마케팅 상품(PRO)」 필터가 있다 — 화면 변경 없이 바로 걸린다.)
+  //   · 코드는 기존 PRO 숫자코드의 **다음 번호를 자동 제안**한다(PRO001 · 3자리).
+  //   · 등록 시 입력한 초기 수량은 **stock_movements(adjust) 원장을 통해서만** 반영한다.
+  //     products.stock_qty 를 직접 써넣는 경로는 만들지 않는다(기존 원칙 유지 — 수량은 언제나 원장과 일치).
+  //   · 기존 promo_items 데이터는 건드리지 않는다(신규만 products). 화면에서 구분해 보여준다.
+  //
+  //   권한: 창고(warehouse) 편집. 제품마스터 신규 등록은 원래 디렉터 전용이지만,
+  //   **PRO 접두사 코드에 한해서만** 창고 담당이 등록할 수 있게 연 예외다.
+  //   아래 모든 경로가 `assertPro` 로 PRO 코드가 아닌 제품을 거부한다(부품 마스터 보호).
+  // =====================================================================
+  const PRO_RE = /^PRO/i;
+  const isProCode = (c) => PRO_RE.test(String(c || '').trim());
+
+  // 제품마스터 변경 이력(product_change_log) — productRoutes 와 동일 원칙으로 방어적 기록.
+  async function logProductChangeSafe(exec, { productId = null, code = null, action, changes = null, userId = null }) {
+    try {
+      await exec(
+        `INSERT INTO product_change_log (product_id, code, action, source, changes, changed_by)
+         VALUES ($1,$2,$3,'manual',$4,$5)`,
+        [productId, code, action, changes ? JSON.stringify(changes) : null, userId]);
+    } catch (e) {
+      try { console.error('[product_change_log] promo failed:', action, e.message); } catch (_) {}
+    }
+  }
+
+  // 다음 PRO 코드 제안 — `PRO` + 숫자 형태만 번호로 본다(PRO-CAP·PROGORRA 같은 문자 코드는 무시).
+  //   · 최댓값 +1 에서 시작해 **이미 쓰인 코드는 건너뛴다**(삭제된 제품도 UNIQUE 를 점유하므로 포함).
+  //   · 자릿수 3(PRO001). 999 를 넘으면 자연스럽게 4자리가 된다.
+  async function nextProCode(exec) {
+    // PRO 로 시작하는 코드를 한 번에 읽고 번호 판정은 JS 에서 한다(정규식을 SQL 에 넣지 않는다).
+    const rows = (await exec(`SELECT UPPER(code) AS code FROM products WHERE code ILIKE 'PRO%'`, [])).rows;
+    let max = 0;
+    const taken = new Set();
+    for (const r of rows) {
+      const c = String(r.code || '').toUpperCase();
+      taken.add(c);
+      if (!/^PRO[0-9]+$/.test(c)) continue;          // PRO-CAP·PROGORRA 같은 문자 코드는 번호로 보지 않는다
+      const n = Number(c.slice(3));
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    let n = max + 1;
+    let code = `PRO${String(n).padStart(3, '0')}`;
+    while (taken.has(code) && n < 100000) { n += 1; code = `PRO${String(n).padStart(3, '0')}`; }
+    return code;
+  }
+
+  // PRO 제품 1건 조회 + 가드. 부품 마스터는 이 경로로 절대 수정되지 않는다.
+  async function assertPro(exec, id) {
+    const p = (await exec(
+      `SELECT id, code, name, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return { error: 'not_found' };
+    if (!isProCode(p.code)) return { error: 'not_promo_product', code: p.code };
+    return { p };
+  }
+
+  const numOrNull = (v) => {
+    if (v == null || v === '') return null;
+    const n = Number(String(v).replace(/[, ]/g, ''));
+    return Number.isFinite(n) ? n : null;
+  };
+  const strOrNull = (v) => {
+    const s = String(v == null ? '' : v).trim();
+    return s === '' ? null : s;
+  };
+
+  // 목록 — 제품마스터에 등록된 PRO 제품.
+  app.get('/api/promo-products', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+    const showCost = canSeeValue(req);
+    const rows = (await query(
+      `SELECT id, code, name, ean, rack_location, stock_qty, list_price, iva_rate, sat_code, is_active, avg_cost
+         FROM products
+        WHERE deleted_at IS NULL AND code ILIKE 'PRO%'
+        ORDER BY code`, [])).rows;
+    return {
+      items: rows.map((r) => ({
+        id: Number(r.id), code: r.code, name: r.name, ean: r.ean || '',
+        rack_location: r.rack_location || '', stock_qty: num(r.stock_qty),
+        list_price: r.list_price == null ? null : num(r.list_price),
+        iva_rate: r.iva_rate == null ? null : num(r.iva_rate),
+        sat_code: r.sat_code || '', is_active: r.is_active !== false,
+        avg_cost: showCost && r.avg_cost != null ? num(r.avg_cost) : null,
+      })),
+    };
+  });
+
+  // 다음 코드 제안 (화면이 모달을 열 때 호출)
+  app.get('/api/promo-products/next-code', { preHandler: [authGuard, requirePage('warehouse')] }, async () => {
+    return { code: await nextProCode(query) };
+  });
+
+  // 신규 등록 — 제품마스터 1행 + (수량>0 이면) 초기수량 조정 이동 1행.
+  //   body: { code?, name*, ean, rack_location, list_price, iva_rate, sat_code, stock_qty, unit_cost, note }
+  app.post('/api/promo-products', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const b = req.body || {};
+    const uid = req.ctx.perm.userId;
+    const name = strOrNull(b.name);
+    if (!name) return reply.code(400).send({ error: 'name_required' });
+    let code = strOrNull(b.code);
+    if (code) {
+      code = code.toUpperCase();
+      if (!isProCode(code)) return reply.code(400).send({ error: 'pro_prefix_required' });
+    }
+    const qty = Math.max(0, round2(numOrNull(b.stock_qty) || 0));
+    const unitCost = numOrNull(b.unit_cost);
+    const values = {
+      name,
+      ean: strOrNull(b.ean),
+      rack_location: strOrNull(b.rack_location),
+      list_price: numOrNull(b.list_price),
+      iva_rate: numOrNull(b.iva_rate),
+      sat_code: strOrNull(b.sat_code),
+      origin: strOrNull(b.origin),
+    };
+
+    const out = await withTx(async (c) => {
+      const exec = c.query.bind(c);
+      const finalCode = code || (await nextProCode(exec));
+      // 코드 유니크 — 삭제된 제품도 UNIQUE 를 점유하므로 같이 본다.
+      const dup = (await exec(`SELECT id, deleted_at FROM products WHERE UPPER(code)=UPPER($1)`, [finalCode])).rows[0];
+      if (dup) return { error: dup.deleted_at ? 'code_used_by_deleted' : 'code_exists', code: finalCode };
+
+      const cols = ['code']; const vals = [finalCode]; const ph = ['$1'];
+      for (const [k, v] of Object.entries(values)) {
+        if (v == null) continue;
+        vals.push(v); cols.push(k); ph.push(`$${vals.length}`);
+      }
+      if (unitCost != null && unitCost > 0) { vals.push(unitCost); cols.push('avg_cost'); ph.push(`$${vals.length}`); }
+      vals.push(uid);
+      const ins = (await exec(
+        `INSERT INTO products (${cols.join(',')}, created_by, updated_by)
+         VALUES (${ph.join(',')}, $${vals.length}, $${vals.length}) RETURNING id`, vals)).rows[0];
+      const pid = Number(ins.id);
+
+      // 초기 수량 — 반드시 원장을 통해서. 여기서만 stock_qty 를 올린다.
+      if (qty > 0) {
+        await exec(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [qty, uid, pid]);
+        const eventNo = Number((await exec(`SELECT nextval('stock_event_seq') AS n`, [])).rows[0].n);
+        const note = '프로모션 품목 초기등록' + (strOrNull(b.note) ? ` · ${strOrNull(b.note)}` : '');
+        await exec(
+          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, note, source, moved_at, event_no, created_by)
+           VALUES ($1,'adjust',$2,$3,$4,$5,'manual', now(), $6, $7)`,
+          [pid, qty, unitCost != null && unitCost > 0 ? unitCost : null, `promo:init:${finalCode}`, note, eventNo, uid]);
+      }
+
+      const changes = { code: { from: null, to: finalCode } };
+      for (const [k, v] of Object.entries(values)) if (v != null) changes[k] = { from: null, to: v };
+      if (qty > 0) changes.stock_qty = { from: 0, to: qty };
+      await logProductChangeSafe(exec, { productId: pid, code: finalCode, action: 'create', changes, userId: uid });
+      return { ok: true, id: pid, code: finalCode, stock_qty: qty };
+    });
+
+    if (out.error) return reply.code(out.error === 'code_exists' || out.error === 'code_used_by_deleted' ? 409 : 400).send(out);
+    await logEvent({ userId: uid, action: 'create', target: `product_promo:${out.code}`, detail: { code: out.code, name, qty } });
+    return out;
+  });
+
+  // 수정 — 수량은 여기서 못 바꾼다(아래 /adjust 로만).
+  app.patch('/api/promo-products/:id', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const uid = req.ctx.perm.userId;
+    const g = await assertPro(query, id);
+    if (g.error) return reply.code(g.error === 'not_found' ? 404 : 403).send(g);
+
+    const sets = []; const args = []; const changes = {};
+    const add = (col, val) => { args.push(val); sets.push(`${col}=$${args.length}`); changes[col] = { to: val }; };
+    if (b.name != null) { const v = strOrNull(b.name); if (!v) return reply.code(400).send({ error: 'name_required' }); add('name', v); }
+    if (b.ean != null) add('ean', strOrNull(b.ean));
+    if (b.rack_location != null) add('rack_location', strOrNull(b.rack_location));
+    if (b.list_price != null) add('list_price', numOrNull(b.list_price));
+    if (b.iva_rate != null) add('iva_rate', numOrNull(b.iva_rate));
+    if (b.sat_code != null) add('sat_code', strOrNull(b.sat_code));
+    if (b.is_active != null) add('is_active', !!b.is_active);
+    if (!sets.length) return { ok: true };
+    args.push(uid); sets.push(`updated_by=$${args.length}`);
+    args.push(id);
+    const r = (await query(
+      `UPDATE products SET ${sets.join(', ')} WHERE id=$${args.length} AND deleted_at IS NULL RETURNING id`, args)).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logProductChangeSafe(query, { productId: id, code: g.p.code, action: 'update', changes, userId: uid });
+    await logEvent({ userId: uid, action: 'update', target: `product_promo:${g.p.code}`, detail: {} });
+    return { ok: true };
+  });
+
+  // 수량 조정 — 실물 수량을 목표값으로 맞추고 차이를 조정 이동으로 남긴다. 사유 필수.
+  //   body: { target_qty*, reason* }
+  app.post('/api/promo-products/:id/adjust', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const uid = req.ctx.perm.userId;
+    const target = numOrNull(b.target_qty);
+    const reason = strOrNull(b.reason);
+    if (target == null || target < 0) return reply.code(400).send({ error: 'bad_qty' });
+    if (!reason) return reply.code(400).send({ error: 'reason_required' });
+
+    const out = await withTx(async (c) => {
+      const exec = c.query.bind(c);
+      const p = (await exec(
+        `SELECT id, code, name, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!p) return { error: 'not_found' };
+      if (!isProCode(p.code)) return { error: 'not_promo_product', code: p.code };
+      const cur = num(p.stock_qty);
+      const next = round2(target);
+      const delta = round2(next - cur);
+      if (delta === 0) return { ok: true, code: p.code, before: cur, after: cur, changed: false };
+      await exec(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [next, uid, id]);
+      const eventNo = Number((await exec(`SELECT nextval('stock_event_seq') AS n`, [])).rows[0].n);
+      await exec(
+        `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, note, source, moved_at, event_no, created_by)
+         VALUES ($1,'adjust',$2,$3,$4,$5,'manual', now(), $6, $7)`,
+        [id, delta, p.avg_cost || null, `promo:adjust:${p.code}`, `프로모션 수량조정 · ${reason}`, eventNo, uid]);
+      await logProductChangeSafe(exec, {
+        productId: id, code: p.code, action: 'update',
+        changes: { stock_qty: { from: cur, to: next }, reason: { to: reason } }, userId: uid });
+      return { ok: true, code: p.code, before: cur, after: next, changed: true };
+    });
+    if (out.error) return reply.code(out.error === 'not_found' ? 404 : 403).send(out);
+    await logEvent({ userId: uid, action: 'update', target: `product_promo:${out.code}`, detail: { adjust: out.after - out.before, reason } });
+    return out;
+  });
+
 }

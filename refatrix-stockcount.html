@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0827spot2</title>
+<title>재고실사 · Refatrix · build sc0918promo</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -84,7 +84,7 @@
   .rackchip.on{background:var(--green);color:#fff;border-color:var(--green)}
   .rackchip b{font-weight:800}
 
-  /* ===== SKU 스팟점검 (sc0827spot2) =====================================
+  /* ===== SKU 스팟점검 (sc0918promo) =====================================
      현장 흐름: 제품 스캔 → 시스템 수량·위치를 크게 → 랙 스캔(맞음) / [틀림] */
   .modepill{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:800;margin-left:6px}
   .m-full{background:#eef3f7;color:#3a6ea5} .m-spot{background:#fdf3e3;color:#9A6512}
@@ -320,13 +320,24 @@
 <div id="promoView" class="wrap hidden">
   <div class="card">
     <div class="row" style="justify-content:space-between">
-      <h2 style="margin:0">프로모션 품목</h2>
+      <h2 style="margin:0">프로모션 품목 <span class="mut" style="font-size:12px;font-weight:400">· 제품마스터 PRO</span></h2>
       <div class="row">
-        <button class="btn brass sm" onclick="openPromoEdit()">＋ 품목 추가</button>
+        <button class="btn brass sm" onclick="openProNew()">＋ 품목 추가</button>
         <button class="btn ghost sm" onclick="backHome()">← 목록</button>
       </div>
     </div>
-    <div class="mut" style="margin-bottom:8px">장갑·티셔츠·모자 등. 자동차부품 마스터와 분리되어 견적·매출에 영향 없음.</div>
+    <div class="mut" style="margin-bottom:8px">장갑·티셔츠·모자 등 판촉물. <b>제품마스터에 PRO 코드로 등록</b>되므로 제품조회(🎁 마케팅 상품 필터)·견적·매출에서 그대로 쓸 수 있습니다.
+      수량은 <b>이동내역(조정)</b>을 통해서만 바뀝니다 — 등록 시 초기수량, 이후에는 [수량조정] 또는 전체 재고실사 반영.</div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>코드</th><th>품명</th><th>바코드(EAN)</th><th>랙</th><th class="num">판매정가</th><th class="num">재고수량</th><th></th></tr></thead>
+        <tbody id="proBody"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 4px;font-size:14px">구 프로모션 품목 <span class="mut" style="font-size:12px;font-weight:400">· 제품마스터 미등록</span></h2>
+    <div class="mut" style="margin-bottom:8px">제품마스터 전환(2026-09-18) 전에 등록된 항목입니다. <b>제품조회·견적에는 나오지 않고</b> 재고실사에서만 잡힙니다.
+      수량은 종전대로 여기서 수정하거나 전체 재고실사 반영으로 맞춥니다.</div>
     <div class="tbl-wrap">
       <table><thead><tr><th>코드</th><th>품명</th><th>바코드</th><th>랙</th><th class="num">시스템수량</th><th></th></tr></thead>
         <tbody id="promoBody"></tbody></table>
@@ -359,7 +370,7 @@
 
 <!-- 프로모 편집 모달 -->
 <div class="modal" id="promoModal"><div class="box">
-  <h2 style="margin:0 0 10px" id="pmTitle">프로모션 품목</h2>
+  <h2 style="margin:0 0 10px" id="pmTitle">구 프로모션 품목</h2>
   <input type="hidden" id="pmId">
   <label>코드 *</label><input id="pmCode" placeholder="예: PROMO-GUANTE">
   <label>품명 *</label><input id="pmName" placeholder="예: 작업용 장갑">
@@ -369,6 +380,45 @@
   <div class="row" style="margin-top:12px;justify-content:space-between">
     <button class="btn red sm" id="pmDel" onclick="deletePromo()">삭제</button>
     <div class="row"><button class="btn ghost sm" onclick="closeModal('promoModal')">취소</button><button class="btn" onclick="savePromo()">저장</button></div>
+  </div>
+</div></div>
+
+<!-- 프로모션 제품(PRO) 편집 모달 -->
+<div class="modal" id="proModal"><div class="box">
+  <h2 style="margin:0 0 10px" id="prTitle">프로모션 품목</h2>
+  <input type="hidden" id="prId">
+  <label>제품코드 * <span class="mut" id="prCodeHint" style="font-weight:400"></span></label>
+  <input id="prCode" placeholder="PRO001">
+  <label>품명 *</label><input id="prName" placeholder="예: 작업용 장갑 (GUANTE)">
+  <div class="row"><div style="flex:1"><label>바코드(EAN)</label><input id="prEan"></div><div style="flex:1"><label>랙 위치</label><input id="prRack"></div></div>
+  <div class="row">
+    <div style="flex:1"><label>판매정가 MXN <span class="mut" style="font-weight:400">· 견적 단가 기준</span></label><input id="prPrice" type="number" min="0" step="0.01" value="0"></div>
+    <div style="flex:1"><label>IVA %</label><input id="prIva" type="number" min="0" step="0.01" value="16"></div>
+  </div>
+  <label>SAT 코드 <span class="mut" style="font-weight:400">· 청구서 발행용(모르면 비워 두세요)</span></label><input id="prSat">
+  <div class="row" id="prNewOnly">
+    <div style="flex:1"><label>초기 수량</label><input id="prQty" type="number" min="0" step="1" value="0"></div>
+    <div style="flex:1"><label>참고 원가(MXN)</label><input id="prCost" type="number" min="0" step="0.01" value="0"></div>
+  </div>
+  <div id="prActiveWrap" class="hidden"><label>상태</label>
+    <select id="prActive"><option value="1">활성 (견적·매출 사용 가능)</option><option value="0">비활성 (신규 사용 차단)</option></select></div>
+  <div class="msg err" id="prMsg"></div>
+  <div class="row" style="margin-top:12px;justify-content:flex-end">
+    <button class="btn ghost sm" onclick="closeModal('proModal')">취소</button><button class="btn" onclick="saveProProduct()">저장</button>
+  </div>
+</div></div>
+
+<!-- 프로모션 수량조정 모달 -->
+<div class="modal" id="proQtyModal"><div class="box">
+  <h2 style="margin:0 0 10px">수량 조정</h2>
+  <input type="hidden" id="pqId">
+  <div class="mut" id="pqInfo" style="margin-bottom:8px"></div>
+  <label>조정 후 수량 *</label><input id="pqQty" type="number" min="0" step="1">
+  <label>사유 * <span class="mut" style="font-weight:400">· 이동내역에 남습니다</span></label>
+  <input id="pqReason" placeholder="예: 엑스포 배포 30개 / 실물 확인 차이">
+  <div class="msg err" id="pqMsg"></div>
+  <div class="row" style="margin-top:12px;justify-content:flex-end">
+    <button class="btn ghost sm" onclick="closeModal('proQtyModal')">취소</button><button class="btn" onclick="saveProQty()">조정 저장</button>
   </div>
 </div></div>
 
@@ -962,25 +1012,117 @@ function exportXlsx(){
 }
 
 // ================= 프로모션 =================
-async function showPromo(){ show('promoView'); loadPromo(); }
+// 2026-09-18 — 신규 프로모션 품목은 promo_items 가 아니라 **제품마스터(products) 에 PRO 코드**로 등록한다.
+//   디렉터 결정: 제품조회에 나와야 하고 견적·매출에서도 쓸 수 있어야 한다.
+//   수량은 화면이 직접 쓰지 않는다 — 서버가 stock_movements(조정) 로만 바꾼다.
+let PROLIST=[];
+async function showPromo(){ show('promoView'); loadPro(); loadPromo(); }
+
+
+async function loadPro(){
+  const r=await api('/api/promo-products'); if(!r.ok){ toast('불러오기 실패'); return; }
+  PROLIST=r.items||[];
+  $('proBody').innerHTML=PROLIST.map((p,i)=>{
+    const inactive=p.is_active===false;
+    const price=(p.list_price==null||Number(p.list_price)===0)
+      ? '<span class="pill p-over" title="판매정가가 없으면 견적 금액이 0 으로 잡힙니다">미설정</span>' : money(p.list_price);
+    return '<tr'+(inactive?' style="opacity:.55"':'')+'><td>'+p.code+(inactive?' <span class="pill">비활성</span>':'')+'</td><td>'+p.name+'</td><td>'
+      +(p.ean||'—')+'</td><td>'+(p.rack_location||'—')+'</td><td class="num">'+price+'</td><td class="num">'+fmt(p.stock_qty)+'</td>'
+      +'<td><a class="link" onclick="openProEdit('+i+')">편집</a> · <a class="link" onclick="openProQty('+i+')">수량조정</a></td></tr>';
+  }).join('')||'<tr><td colspan="7" class="mut" style="text-align:center;padding:14px">등록된 프로모션 품목이 없습니다. [＋ 품목 추가] 로 등록하세요.</td></tr>';
+}
+
+async function openProNew(){
+  $('prMsg').textContent=''; $('prTitle').textContent='프로모션 품목 추가';
+  $('prId').value=''; $('prCode').disabled=false; $('prName').value=''; $('prEan').value=''; $('prRack').value='';
+  $('prPrice').value=0; $('prIva').value=16; $('prSat').value=''; $('prQty').value=0; $('prCost').value=0;
+  $('prNewOnly').classList.remove('hidden'); $('prActiveWrap').classList.add('hidden');
+  $('prCode').value=''; $('prCodeHint').textContent='· 코드 제안 중…';
+  $('proModal').classList.add('on');
+  const r=await api('/api/promo-products/next-code');
+  if(r.ok&&r.code){ $('prCode').value=r.code; $('prCodeHint').textContent='· 자동 제안 '+r.code+' (수정 가능 · PRO 로 시작해야 함)'; }
+  else { $('prCodeHint').textContent='· 코드를 직접 입력하세요 (PRO 로 시작)'; }
+}
+
+function openProEdit(i){
+  const p=PROLIST[i]; if(!p) return;
+  $('prMsg').textContent=''; $('prTitle').textContent='프로모션 품목 편집 — '+p.code;
+  $('prId').value=p.id; $('prCode').value=p.code; $('prCode').disabled=true; $('prCodeHint').textContent='· 코드 변경은 제품마스터 화면에서';
+  $('prName').value=p.name; $('prEan').value=p.ean||''; $('prRack').value=p.rack_location||'';
+  $('prPrice').value=p.list_price==null?0:p.list_price; $('prIva').value=p.iva_rate==null?16:p.iva_rate; $('prSat').value=p.sat_code||'';
+  $('prNewOnly').classList.add('hidden'); $('prActiveWrap').classList.remove('hidden');
+  $('prActive').value=p.is_active===false?'0':'1';
+  $('proModal').classList.add('on');
+}
+
+async function saveProProduct(){
+  const id=$('prId').value;
+  const code=$('prCode').value.trim().toUpperCase();
+  const name=$('prName').value.trim();
+  if(!name){ $('prMsg').textContent='품명은 필수입니다.'; return; }
+  if(!id&&!/^PRO/.test(code)){ $('prMsg').textContent='제품코드는 PRO 로 시작해야 합니다.'; return; }
+  const body={ name:name, ean:$('prEan').value.trim(), rack_location:$('prRack').value.trim(),
+    list_price:Number($('prPrice').value)||0, iva_rate:Number($('prIva').value)||0, sat_code:$('prSat').value.trim() };
+  let r;
+  if(id){ body.is_active=$('prActive').value==='1'; r=await api('/api/promo-products/'+id,{method:'PATCH',body:JSON.stringify(body)}); }
+  else {
+    body.code=code; body.stock_qty=Number($('prQty').value)||0; body.unit_cost=Number($('prCost').value)||0;
+    r=await api('/api/promo-products',{method:'POST',body:JSON.stringify(body)});
+  }
+  if(!r.ok){
+    $('prMsg').textContent = r.error==='code_exists' ? '이미 있는 제품코드입니다.'
+      : r.error==='code_used_by_deleted' ? '삭제된 제품이 이 코드를 쓰고 있습니다. 다른 번호를 쓰세요.'
+      : r.error==='pro_prefix_required' ? '제품코드는 PRO 로 시작해야 합니다.'
+      : r.error==='name_required' ? '품명은 필수입니다.'
+      : r.error==='not_promo_product' ? 'PRO 제품이 아닙니다 — 제품마스터 화면에서 수정하세요.'
+      : '저장 실패';
+    return;
+  }
+  closeModal('proModal');
+  toast(id?'저장했습니다':'등록했습니다 — 제품조회에서 바로 보입니다');
+  loadPro();
+}
+
+function openProQty(i){
+  const p=PROLIST[i]; if(!p) return;
+  $('pqMsg').textContent=''; $('pqId').value=p.id;
+  $('pqInfo').innerHTML=p.code+' · '+p.name+' — 현재 수량 <b>'+fmt(p.stock_qty)+'</b>';
+  $('pqQty').value=p.stock_qty; $('pqReason').value='';
+  $('proQtyModal').classList.add('on');
+}
+
+async function saveProQty(){
+  const id=$('pqId').value; if(!id) return;
+  const q=Number($('pqQty').value);
+  const reason=$('pqReason').value.trim();
+  if(!isFinite(q)||q<0){ $('pqMsg').textContent='수량이 올바르지 않습니다.'; return; }
+  if(!reason){ $('pqMsg').textContent='사유는 필수입니다 (이동내역에 남습니다).'; return; }
+  const r=await api('/api/promo-products/'+id+'/adjust',{method:'POST',body:JSON.stringify({target_qty:q,reason:reason})});
+  if(!r.ok){ $('pqMsg').textContent=r.error==='reason_required'?'사유는 필수입니다.':(r.error==='bad_qty'?'수량이 올바르지 않습니다.':'조정 실패'); return; }
+  closeModal('proQtyModal');
+  toast(r.changed===false?'변동 없음':'조정 완료 '+fmt(r.before)+' → '+fmt(r.after));
+  loadPro();
+}
+
+// ---- 구 프로모션 품목(promo_items) — 신규 등록은 막고 기존 건만 유지 ----
 async function loadPromo(){
   const r=await api('/api/promo-items'); if(!r.ok){ toast('불러오기 실패'); return; }
-  $('promoBody').innerHTML=(r.items||[]).map(p=>'<tr><td>'+p.code+'</td><td>'+p.name+'</td><td>'+(p.barcode||'—')+'</td><td>'+(p.rack_location||'—')+'</td><td class="num">'+fmt(p.stock_qty)+'</td><td><a class="link" onclick=\'openPromoEdit('+JSON.stringify(p)+')\'>편집</a></td></tr>').join('')||'<tr><td colspan="6" class="mut" style="text-align:center;padding:14px">등록된 프로모션 품목이 없습니다.</td></tr>';
+  $('promoBody').innerHTML=(r.items||[]).map(p=>'<tr><td>'+p.code+'</td><td>'+p.name+'</td><td>'+(p.barcode||'—')+'</td><td>'+(p.rack_location||'—')+'</td><td class="num">'+fmt(p.stock_qty)+'</td><td><a class="link" onclick=\'openPromoEdit('+JSON.stringify(p)+')\'>편집</a></td></tr>').join('')||'<tr><td colspan="6" class="mut" style="text-align:center;padding:14px">구 프로모션 품목이 없습니다.</td></tr>';
 }
 function openPromoEdit(p){
+  if(!p||!p.id) return;
   $('pmMsg').textContent='';
-  if(p&&p.id){ $('pmTitle').textContent='프로모션 품목 편집'; $('pmId').value=p.id; $('pmCode').value=p.code; $('pmCode').disabled=true; $('pmName').value=p.name; $('pmBar').value=p.barcode||''; $('pmRack').value=p.rack_location||''; $('pmQty').value=p.stock_qty; $('pmCost').value=p.unit_cost||0; $('pmDel').classList.remove('hidden'); }
-  else { $('pmTitle').textContent='프로모션 품목 추가'; $('pmId').value=''; $('pmCode').value=''; $('pmCode').disabled=false; $('pmName').value=''; $('pmBar').value=''; $('pmRack').value=''; $('pmQty').value=0; $('pmCost').value=0; $('pmDel').classList.add('hidden'); }
+  $('pmTitle').textContent='구 프로모션 품목 편집'; $('pmId').value=p.id; $('pmCode').value=p.code; $('pmCode').disabled=true;
+  $('pmName').value=p.name; $('pmBar').value=p.barcode||''; $('pmRack').value=p.rack_location||''; $('pmQty').value=p.stock_qty; $('pmCost').value=p.unit_cost||0;
+  $('pmDel').classList.remove('hidden');
   $('promoModal').classList.add('on');
 }
 async function savePromo(){
-  const id=$('pmId').value;
-  const body={code:$('pmCode').value.trim(),name:$('pmName').value.trim(),barcode:$('pmBar').value.trim(),rack_location:$('pmRack').value.trim(),stock_qty:Number($('pmQty').value)||0,unit_cost:Number($('pmCost').value)||0};
-  if(!body.code||!body.name){ $('pmMsg').textContent='코드와 품명은 필수'; return; }
-  let r;
-  if(id) r=await api('/api/promo-items/'+id,{method:'PATCH',body:JSON.stringify(body)});
-  else r=await api('/api/promo-items',{method:'POST',body:JSON.stringify(body)});
-  if(!r.ok){ $('pmMsg').textContent=r.error==='duplicate_code'?'이미 있는 코드':'저장 실패'; return; }
+  const id=$('pmId').value; if(!id){ $('pmMsg').textContent='신규 등록은 위쪽 [＋ 품목 추가] 를 쓰세요.'; return; }
+  const body={name:$('pmName').value.trim(),barcode:$('pmBar').value.trim(),rack_location:$('pmRack').value.trim(),stock_qty:Number($('pmQty').value)||0,unit_cost:Number($('pmCost').value)||0};
+  if(!body.name){ $('pmMsg').textContent='품명은 필수'; return; }
+  const r=await api('/api/promo-items/'+id,{method:'PATCH',body:JSON.stringify(body)});
+  if(!r.ok){ $('pmMsg').textContent='저장 실패'; return; }
   closeModal('promoModal'); loadPromo();
 }
 async function deletePromo(){
@@ -991,7 +1133,7 @@ async function deletePromo(){
 }
 
 /* =====================================================================
-   SKU 스팟점검 (build sc0827spot2)
+   SKU 스팟점검 (build sc0918promo)
    현장 흐름 — 디렉터 지시 2026-08-27:
      ① 제품 바코드 스캔 → 시스템 수량·위치가 화면에 크게 뜬다
      ② 실물을 세어 맞으면 **랙 바코드를 스캔** → 맞음 확정
@@ -1362,7 +1504,7 @@ function spotHistXlsx(){
 
 // ================= 부트스트랩 =================
 (function(){
-  try{ console.log('[refatrix-stockcount] build sc0827spot2'); }catch(e){}
+  try{ console.log('[refatrix-stockcount] build sc0918promo'); }catch(e){}
   const ps=portalSession();
   if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||'https://refatrix-production.up.railway.app'}; afterLogin(); }
   else { show('loginView'); }

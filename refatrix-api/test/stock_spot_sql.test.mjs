@@ -18,11 +18,14 @@ const ok = (n, c, x) => {
 /* ---------- ① 정적 가드 (DB 없이도 항상 돈다) ---------- */
 const SRC = fs.readFileSync(path.join(API, 'src/routes/stockCountRoutes.js'), 'utf8');
 console.log('\n① 정적 가드 — 스팟점검은 재고를 바꾸지 않는다');
-ok('rev 마커 갱신', /loaded rev 20260827spot2/.test(SRC));
+ok('rev 마커 갱신', /loaded rev 20260918promo/.test(SRC));
 ok('세션 모드 2종만 허용', /const MODES = \['full', 'spot'\]/.test(SRC));
 ok('스팟 세션 코드 접두사 SP', /mode === 'spot' \? 'SP' : 'SC'/.test(SRC));
 // 재고를 바꾸는 문장은 기존 apply 경로에만 있어야 한다(스팟 추가로 늘어나지 않았는지)
-ok('stock_qty 를 쓰는 UPDATE 는 딱 1곳(기존 apply)', (SRC.match(/UPDATE products SET stock_qty=/g) || []).length === 1);
+// 2026-09-18 프로모션 품목이 제품마스터(PRO)로 들어오면서 수량을 바꾸는 경로가 2곳 늘었다
+// (프로모 초기등록 · 프로모 수량조정). 둘 다 stock_movements 를 함께 남긴다 —
+// 그 1:1 은 promo_products_sql.test.mjs 가 지킨다. 여기서는 개수만 고정한다.
+ok('stock_qty 를 쓰는 UPDATE 는 3곳(실사 apply + 프로모 등록·조정)', (SRC.match(/UPDATE products SET stock_qty=/g) || []).length === 3);
 ok('promo stock_qty UPDATE 도 1곳(기존 apply)', (SRC.match(/UPDATE promo_items SET stock_qty=/g) || []).length === 1);
 ok('rack_location UPDATE 는 기존 apply 2곳뿐', (SRC.match(/SET rack_location=/g) || []).length === 2);
 const spotBlock = SRC.slice(SRC.indexOf('SKU 스팟점검 (mode='), SRC.indexOf('================= 대조(reconcile)'));
@@ -50,7 +53,7 @@ ok('part/promo 짝 CHECK 존재', /scsc_item_chk/.test(MIG));
 ok('재실행 안전(IF NOT EXISTS/DO 가드)', /ADD COLUMN IF NOT EXISTS/.test(MIG) && /CREATE TABLE IF NOT EXISTS/.test(MIG));
 
 const FRONT = fs.readFileSync(path.resolve(API, '..', 'refatrix-stockcount.html'), 'utf8');
-ok('프런트 build 태그 갱신', /build sc0827spot2/.test(FRONT));
+ok('프런트 build 태그 갱신', /build sc0918promo/.test(FRONT));
 
 /* ---------- ③ 실 DB 파트 ---------- */
 const URL = process.env.TEST_PG_URL || process.env.DATABASE_URL;
