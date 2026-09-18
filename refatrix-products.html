@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ph-0824b</title>
+<title>Refatrix ERP · 제품 조회 · pd-0918dem</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -568,7 +568,8 @@
         h+='<tr class="prow'+(act?'':' inact')+'" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" data-name="'+escP(p.name||'')+'" data-active="'+(act?'1':'0')+'" style="cursor:pointer">'
           +(isDir?('<td class="selc"><input type="checkbox" class="stChk" data-pid="'+p.id+'"'+(stSel.has(Number(p.id))?' checked':'')+'></td>'):'')
           +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
-          +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+'</td>'
+          // 0224 · 비활성 SKU 는 「중단 후 요청 N건」이 배지 옆에 붙는다(아래 dmdDecorate 가 채운다).
+          +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+(act?'':'<span class="dmdtag" data-pid="'+p.id+'"></span>')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+cnBadgeHtml(p.app)+(app||'—')+'</td>'
           +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
@@ -596,6 +597,7 @@
       if(np) np.addEventListener('click',()=>{ if(prodOffset+prodLimit<prodTotal){ prodOffset+=prodLimit; loadProducts(); }});
       if(pp) pp.addEventListener('click',()=>{ if(prodOffset>0){ prodOffset=Math.max(0,prodOffset-prodLimit); loadProducts(); }});
       r.querySelectorAll('.prow').forEach(tr=>{ tr.addEventListener('click',()=>toggleDrill(tr, Number(tr.getAttribute('data-pid')), colN)); });
+      dmdDecorate(r);   // 0224 · 비활성 행에 「중단 후 요청 N건」 표시
       // 0179 — 선택 체크박스(행 클릭 드릴다운과 분리)
       r.querySelectorAll('.stChk').forEach(cb=>{
         cb.addEventListener('click',e=>e.stopPropagation());
@@ -1734,13 +1736,100 @@
       +'<span class="hint" style="margin:0">'+(act
         ? '비활성으로 바꾸면 새 견적·새 매출등록·오퍼시트에서 이 SKU 를 쓸 수 없습니다. 이미 진행 중인 건과 과거 내역은 그대로 유지됩니다.'
         : '활성화하면 판매를 재개합니다. 아래에서 대기 중인 부족분·오퍼시트·개발요청을 확인하세요.')+'</span>'
-      +'</div><div class="stbody" id="stb'+pid+'"></div></div>';
+      +'</div>'
+      // 0224 · 판매중단 이후 들어온 견적요청 = 판매재개 판단의 근거. 비활성일 때만 뜬다.
+      +(act?'':'<div class="dmdbox" id="dmd'+pid+'"></div>')
+      +'<div class="stbody" id="stb'+pid+'"></div></div>';
   }
   function stBindPanel(dr, pid, d){
     const pipe=dr.querySelector('.stPipe'), tog=dr.querySelector('.stTog');
     if(pipe) pipe.addEventListener('click',function(e){ e.stopPropagation(); stLoadPipeline(pid); });
     if(tog) tog.addEventListener('click',function(e){ e.stopPropagation();
       stToggleOne(pid, (d&&d.product&&d.product.code)||'', tog.getAttribute('data-to')==='1'); });
+    // 비활성 SKU 는 열자마자 수요를 보여 준다 — 버튼을 한 번 더 눌러야 보이면 아무도 안 본다.
+    if(d && d.product && d.product.is_active===false) dmdLoad(pid, (d.product.code)||'');
+  }
+
+  // ── 0224 · 판매중단 후 견적요청(수요) ───────────────────────────────
+  //   0179 는 비활성 SKU 가 담긴 새 견적을 거절했고, 거절은 아무 기록도 남기지 않았다.
+  //   이제 그 요청은 견적으로 저장되고(확정만 잠김) 여기 모인다.
+  const dmdCache={};
+
+  /** 목록의 비활성 행에 「중단 후 요청 N건」을 채운다 — 한 번의 호출로 그 페이지 전부. */
+  async function dmdDecorate(root){
+    const tags=[...root.querySelectorAll('.dmdtag')];
+    if(!tags.length) return;
+    const ids=tags.map(t=>Number(t.getAttribute('data-pid'))).filter(Boolean);
+    try{
+      const d=await fetch(session.api+'/api/products/inactive-demand?ids='+ids.join(','),{headers:auth()}).then(r=>r.json());
+      const by={}; (d.items||[]).forEach(x=>{ by[Number(x.product_id)]=x; });
+      tags.forEach(t=>{
+        const x=by[Number(t.getAttribute('data-pid'))]; if(!x||!x.req_n) return;
+        t.innerHTML=' <span style="display:inline-block;font-size:10px;font-weight:800;color:#8A5A12;'
+          +'background:#FBF0DA;border-radius:10px;padding:1px 7px;white-space:nowrap" '
+          +'title="판매중단 이후 들어온 견적요청입니다. 행을 열면 고객·수량·날짜를 볼 수 있습니다.">'
+          +'📈 요청 '+x.req_n+'건·'+Number(x.req_qty||0)+'개</span>';
+      });
+    }catch(_){ /* 수요 표시는 부가정보 — 실패해도 목록은 그대로 */ }
+  }
+
+  async function dmdLoad(pid, code){
+    const box=$('dmd'+pid); if(!box) return;
+    box.innerHTML='<div class="hint" style="margin:6px 0 0">판매중단 이후 요청 확인 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/products/'+pid+'/inactive-demand',{headers:auth()}).then(r=>r.json());
+      dmdCache[pid]={code:code||(d&&d.code)||'', data:d};
+      box.innerHTML=dmdHtml(d);
+      const b=box.querySelector('.dmdXlsx');
+      if(b) b.addEventListener('click',function(e){ e.stopPropagation(); dmdXlsx(pid); });
+    }catch(e){ box.innerHTML='<div class="hint" style="margin:6px 0 0">요청 내역 조회 실패</div>'; }
+  }
+  function dmdHtml(d){
+    const items=(d&&d.items)||[];
+    const since=(d&&d.since_at)?String(d.since_at).slice(0,10):null;
+    if(!items.length){
+      return '<div class="hint" style="margin:6px 0 0">판매중단'+(since?(' ('+escP(since)+')'):'')
+        +' 이후 들어온 견적요청이 <b>없습니다</b> — 지금은 판매재개를 요구하는 수요 신호가 없습니다.</div>';
+    }
+    const qty=items.reduce(function(a,x){ return a+Number(x.qty||0); },0);
+    const custs={}; items.forEach(function(x){ custs[x.customer||'(고객 미지정)']=true; });
+    const web=items.filter(function(x){ return x.origin==='web'; }).length;
+    let h='<div style="margin:8px 0 0;border:1px solid #E0C07A;background:#FDF7EA;border-radius:10px;padding:10px 12px">'
+      +'<div style="font-weight:800;color:#8A5A12">📈 판매중단 후 견적요청 '
+      +'<b>'+items.length+'건</b> · <b>'+qty+'개</b> · 고객 <b>'+Object.keys(custs).length+'곳</b>'
+      +(web?(' <span class="hint" style="margin:0">(그중 웹 요청 '+web+'건)</span>'):'')+'</div>'
+      +'<div class="hint" style="margin:2px 0 8px">'+(since?('판매중단 '+escP(since)+' 이후'):'판매중단 이후')
+      +' 접수된 요청입니다. 확정은 잠겨 있지만 요청 자체는 기록으로 남습니다 — 판매재개 판단에 쓰세요.</div>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
+      +'<th style="text-align:left">요청일</th><th style="text-align:left">견적번호</th><th style="text-align:left">고객</th>'
+      +'<th style="text-align:right">수량</th><th style="text-align:left">출처</th><th style="text-align:left">작성자</th><th style="text-align:left">상태</th>'
+      +'</tr></thead><tbody>';
+    const stLblQ={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',expired:'만료'};
+    items.forEach(function(x){
+      h+='<tr><td>'+escP(x.quote_date||String(x.created_at||'').slice(0,10))+'</td>'
+        +'<td>'+escP(x.quote_no||'')+'</td>'
+        +'<td>'+escP(x.customer||'(고객 미지정)')+'</td>'
+        +'<td style="text-align:right">'+Number(x.qty||0)+'</td>'
+        +'<td>'+(x.origin==='web'?'🌐 웹':'🧑‍💼 영업')+'</td>'
+        +'<td>'+escP(x.creator||'—')+'</td>'
+        +'<td>'+escP(stLblQ[x.status]||x.status||'')+'</td></tr>';
+    });
+    h+='</tbody></table>'
+      +'<div style="margin-top:8px"><button class="btn ghost sm dmdXlsx" type="button">⬇ 엑셀</button></div></div>';
+    return h;
+  }
+  function dmdXlsx(pid){
+    const c=dmdCache[pid]; if(!c||!c.data) return;
+    const rows=[['제품코드','판매중단일','요청일','견적번호','고객','수량','출처','작성자','견적상태']];
+    const since=c.data.since_at?String(c.data.since_at).slice(0,10):'';
+    (c.data.items||[]).forEach(function(x){
+      rows.push([c.code||c.data.code||'', since, x.quote_date||String(x.created_at||'').slice(0,10),
+        x.quote_no||'', x.customer||'', Number(x.qty||0),
+        x.origin==='web'?'웹':'영업', x.creator||'', x.status||'']);
+    });
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '판매중단후요청');
+    XLSX.writeFile(wb, 'SKU_판매중단후요청_'+(c.code||pid)+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
   }
   async function stLoadPipeline(pid){
     const box=$('stb'+pid); if(!box) return;
@@ -1983,7 +2072,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build pd-0918c (제품 영구 삭제 · 검색 관련도 정렬)'); }catch(e){}
+  try{ console.log('[refatrix-products] build pd-0918dem (판매중단 후 견적요청 수요)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);

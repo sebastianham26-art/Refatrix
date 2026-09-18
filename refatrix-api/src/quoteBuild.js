@@ -45,6 +45,42 @@ export async function resolveCode(code) {
   };
 }
 
+/**
+ * 화면(ERP) 경로가 **저장하는** issue 값 — 비활성만 남긴다.
+ *
+ *   buildLines 는 `not_found`·`multi_match`·`inactive` 세 가지를 붙인다.
+ *   그중 화면 경로가 DB 에 남기는 것은 **`inactive` 하나뿐**이다.
+ *   코드를 못 찾은 줄(not_found)은 예전부터 그대로 저장·확정돼 왔고, 여기서 같이
+ *   막으면 이번 요구(판매중단 SKU 수요 기록)와 상관없는 동작이 조용히 바뀐다.
+ *   포털 수신 창구(0220)는 지금처럼 **세 가지 전부** 저장한다 — 남이 보낸 견적은
+ *   0원짜리 줄이 섞여도 사람이 볼 때까지 아무도 모르기 때문이다.
+ */
+export const screenIssue = (issue) => (issue === 'inactive' ? 'inactive' : null);
+
+/**
+ * 비활성 SKU 별 **판매중단 시각** — Map(product_id → Date|null).
+ *
+ *   견적 수정 때 「이 줄이 중단 전부터 있던 줄인가, 중단 후에 새로 들어온 요청인가」를
+ *   가르는 데 쓴다. 중단 **전에** 만들어진 견적은 예전처럼 확정·인보이스 발행이 가능해야
+ *   하고(0179 가 견적→매출 전환을 막지 않은 것과 같은 이유), 중단 **후에** 들어온 요청은
+ *   수요로 기록하되 확정이 잠겨야 한다.
+ */
+export async function inactiveSinceMap(productIds) {
+  const ids = [...new Set((productIds || []).map(Number).filter((x) => Number.isFinite(x) && x > 0))];
+  const map = new Map();
+  if (!ids.length) return map;
+  const rows = (await query(
+    `SELECT p.id,
+            COALESCE(
+              (SELECT max(l.changed_at) FROM product_status_log l
+                WHERE l.product_id = p.id AND l.action = 'deactivate'),
+              p.status_changed_at) AS since_at
+       FROM products p
+      WHERE p.id = ANY($1::bigint[]) AND p.deleted_at IS NULL AND p.is_active = FALSE`, [ids])).rows;
+  for (const r of rows) map.set(Number(r.id), r.since_at || null);
+  return map;
+}
+
 // 0179 · 저장하려는 라인 중 「비활성 SKU」를 골라낸다(신규 사용 차단).
 //   allowedIds = 이미 그 견적에 들어 있던 product_id 집합 —
 //   비활성 전에 만들어진 기존 견적을 계속 수정·정리할 수 있어야 하므로 예외로 둔다.

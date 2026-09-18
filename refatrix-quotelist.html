@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록</title>
+<title>Refatrix ERP · 견적 목록 · ql-0918dem</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -158,7 +158,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='rack-0826c';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-0918dem';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -440,6 +440,9 @@
       const expd=isExpiredRow(q);
       const canConvert = (q.status==='draft' || q.status==='confirmed') && !expd;
       let action='<button class="btn ghost sm" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>상세</button>';
+      // 0224 · 판매중단(비활성) 줄이 있으면 왜 안 넘어가는지 그 자리에서 보여 준다.
+      //   요청 자체는 기록으로 남는다 — 지우라는 뜻이 아니라 「이 줄을 정리해야 넘어간다」는 안내다.
+      if((q.inactive_cnt||0)>0) action+=' <span class="hint" style="color:#8A5A12;font-weight:700" title="판매중단(비활성) 제품이 포함된 줄입니다. 그 줄을 지우거나 제품을 판매재개해야 포장·매출 전환으로 넘어갑니다. 요청 기록은 그대로 남습니다.">⛔ 판매중단 '+(q.inactive_cnt||0)+'줄</span>';
       if(canConvert) action+=' <button class="btn sm" onclick=\'openConvert('+JSON.stringify(q.id)+','+JSON.stringify(q.is_guest)+','+JSON.stringify(q.party_name||'')+')\'>매출 전환</button>';
       else if(expd) action+=' <button class="btn ghost sm" onclick=\'cloneQuote('+JSON.stringify(q.id)+')\' title="만료된 견적을 복제해 새 24시간 예약으로 진행">복제</button>';
       else if(conv) action+=' <span class="hint">전환완료</span>';
@@ -543,7 +546,10 @@
       if(showTransit) extra+='<td class="r">'+(tq>0?fmtq(tq)+(teta?'<br><span class="transit">ETA '+esc(teta)+'</span>':''):'—')+'</td>';
       if(showBack) extra+='<td class="r">'+(bo>0?fmtq(bo):'—')+'</td>';
       return '<tr>'
-        +'<td>'+esc(l.ctr_code||l.input_code||'—')+'</td>'
+        // 0224 · 판매중단(비활성) 줄 — 이 줄 때문에 포장·매출 전환이 막힌다.
+        +'<td>'+esc(l.ctr_code||l.input_code||'—')
+        +(l.issue==='inactive'?' <span style="font-size:10px;font-weight:800;color:#8A5A12;background:#FBF0DA;border-radius:8px;padding:1px 5px" title="판매중단(비활성) 제품입니다. 요청 기록은 남지만, 이 줄을 지우거나 제품을 판매재개해야 다음 단계로 넘어갑니다.">판매중단</span>':'')
+        +'</td>'
         +'<td>'+esc(l.syd_codes||'—')+'</td>'
         +'<td class="l">'+esc(l.product_name||'(미등록)')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td class="r">'+fmtq(l.qty)+'</td>'
@@ -1080,6 +1086,12 @@
     if(cvId){
       try{
         const pr=await fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}).then(r=>r.json()).catch(()=>null);
+        // 0224 — 판매중단 줄이 남아 있으면 포장으로 넘어가지 않는다. 지시서를 뽑지 않고 세운다.
+        if(pr&&pr.error==='inactive_product_lines'){
+          alert((pr.note||'판매중단 제품이 포함돼 포장으로 넘길 수 없습니다.')
+            +'\n\n'+(pr.items||[]).map(x=>'· '+x.code+(x.name?(' ('+x.name+')'):'')).join('\n'));
+          return;
+        }
         if(pr){ packDueAt=pr.packing_due_at||null; if(pr.packing_printed_at&&qRowsById[cvId]) qRowsById[cvId].packing_printed_at=pr.packing_printed_at; }
       }catch(_){}
     }
@@ -1253,6 +1265,9 @@
         // 0193 · 매출 전환도 RFC 가 있어야 한다(견적 단계까지는 RFC 없이 진행 가능).
         else if(d.error==='customer_rfc_required')msg=(d.note||'RFC 가 없는 고객입니다. 영업>고객등록에서 RFC 를 먼저 입력하세요.')+(d.customer_name?(' ('+d.customer_name+')'):'');
         else if(d.error==='sale_failed')msg='매출 생성 실패: '+JSON.stringify(d.detail||{});
+        // 0224 · 판매중단(비활성) SKU 가 든 줄 — 요청 기록은 남기되 매출로는 못 넘어간다.
+        else if(d.error==='inactive_product_lines')msg=(d.note||'판매중단 제품이 포함돼 있습니다.')
+          +' [ '+(d.items||[]).map(x=>x.code).join(', ')+' ]';
         m.className='msg err';m.textContent='전환 실패: '+msg;return;
       }
       m.className='msg ok';

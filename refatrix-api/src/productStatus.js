@@ -10,6 +10,7 @@
 // 새 판단 기준을 만들지 않는다 — 화면끼리 숫자가 어긋나면 안 되므로.
 // =====================================================================
 import { query } from './db.js';
+import { demandRows } from './inactiveDemand.js';
 
 const n = (v) => (v == null ? 0 : Number(v));
 const PARTY_PURCHASE = '(구매·발주)';
@@ -39,6 +40,8 @@ export const BUCKETS = [
   { key: 'inbound', label: '수입 입고 진행중' },
   { key: 'batch', label: '수입원가 미승인' },
   { key: 'stock', label: '보유 재고', info: true },
+  // 0224 — 판매중단 **이후** 들어온 견적요청. 미결이 아니라 「다시 팔까?」의 근거다.
+  { key: 'demand', label: '판매중단 후 견적요청(수요)', info: true },
 ];
 const BUCKET_LABEL = Object.fromEntries(BUCKETS.map((b) => [b.key, b.label]));
 const BUCKET_INFO = new Set(BUCKETS.filter((b) => b.info).map((b) => b.key));
@@ -283,6 +286,25 @@ export async function productOpenItems(productId, exec = query) {
       ref: '입고 마감분(원가 승인 전)', ref_id: null, stage: '가등록', qty: n(pr.prestock_qty),
       date: null, link: 'refatrix-import.html',
     });
+  }
+
+  // ⑪ 판매중단 후 견적요청(참고) — 판매재개 판단의 근거.
+  //    비활성 SKU 일 때만 의미가 있다(활성 SKU 는 "중단 이후"라는 기준 자체가 없다).
+  //    조회가 실패해도 점검 화면 전체가 죽으면 안 되므로 조용히 건너뛴다.
+  if (pr.is_active === false) {
+    try {
+      const dem = await demandRows(id, exec);
+      for (const d of dem.items) {
+        push('demand', d.customer, {
+          ref: d.quote_no || `Q#${d.quote_id}`,
+          ref_id: d.quote_id,
+          stage: d.origin === 'web' ? '웹 요청' : '영업 요청',
+          qty: n(d.qty),
+          date: d.quote_date || null,
+          link: 'refatrix-quotelist.html',
+        });
+      }
+    } catch (_) { /* issue 칼럼이 없는 옛 DB — 수요는 표시하지 않는다 */ }
   }
 
   // ── 집계 ──────────────────────────────────────────────────────────

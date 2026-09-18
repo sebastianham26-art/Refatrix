@@ -4,7 +4,8 @@ import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
-import { resolveCode, inactiveTargets, assignReservations, nextQuoteNo, buildLines } from '../quoteBuild.js';
+import { resolveCode, assignReservations, nextQuoteNo, buildLines,
+         screenIssue, inactiveSinceMap } from '../quoteBuild.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
@@ -248,6 +249,28 @@ export default async function quoteRoutes(app) {
 
 
 
+  /**
+   * 0224 · 이 견적에 「판매중단(비활성)」 표시가 붙은 줄 — 다음 단계로 못 넘어가는 이유.
+   *
+   *   표시는 **중단 이후에 들어온 요청**에만 붙는다(quoteRoutes 의 저장·수정 규칙 참고).
+   *   그래서 이 검사는 비활성 **전에** 만들어진 예전 오더의 포장·인보이스 발행을
+   *   막지 않는다 — 0179 가 견적→매출 전환을 일부러 열어 둔 것과 같은 선이다.
+   */
+  async function inactiveLinesOf(quoteId) {
+    try {
+      return (await query(
+        `SELECT line_no, input_code, ctr_code, product_name FROM quote_lines
+          WHERE quote_id=$1 AND issue='inactive' ORDER BY line_no`, [quoteId])).rows;
+    } catch (_) { return []; }   // issue 칼럼이 없는 옛 DB
+  }
+  const inactiveBlock = (rows, what) => ({
+    error: 'inactive_product_lines',
+    note: `판매중단(비활성) 제품이 ${rows.length}줄 들어 있어 ${what} 단계로 넘길 수 없습니다 — `
+      + `해당 줄을 지우거나, 제품·마케팅 > 제품검색에서 판매재개한 뒤 진행하세요. `
+      + `(요청이 들어왔다는 기록은 그대로 남습니다)`,
+    items: rows.map((r) => ({ line_no: Number(r.line_no), code: r.ctr_code || r.input_code, name: r.product_name })),
+  });
+
   app.post('/api/quotes', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const b = req.body || {};
     const isGuest = !b.customer_id && (b.guest_name || b.guest === true || b.discount_rate != null);
@@ -288,9 +311,15 @@ export default async function quoteRoutes(app) {
       discountRate = Number(cust.discount) || 0;
     }
     const ivaRate = 16;
-    // 0179 — 비활성(판매중단) SKU 는 새 견적에 담을 수 없다. 저장 전에 걸러 사유를 알려준다.
-    const blocked = await inactiveTargets(b.lines);
-    if (blocked.length) return reply.code(409).send({ error: 'inactive_product', items: blocked });
+    // 0224 — 비활성(판매중단) SKU 가 섞여 있어도 **거절하지 않고 접수한다.**
+    //
+    //   0179 는 여기서 409 로 막았다. 그런데 거절은 **아무 기록도 남기지 않는다** —
+    //   고객이 단종된 부품을 계속 찾고 있다는 사실이 ERP 어디에도 안 남아서,
+    //   판매재개 여부를 감으로 판단해야 했다. 「다음 단계로 못 가더라도 요청이
+    //   들어왔다는 기록은 있어야 한다」는 것이 디렉터 지시(2026-09-18)다.
+    //
+    //   그래서 줄에 issue='inactive' 를 박아 **확정(POST /:id/status)만 잠근다.**
+    //   포털 수신 창구(0220)가 이미 쓰는 규칙과 같다 — 두 경로가 갈리면 안 된다.
     const result = await withTx(async (c) => {
       const year = (b.quote_date ? String(b.quote_date).slice(0, 4) : String(new Date().getFullYear()));
       const quoteNo = await nextQuoteNo(c, year);
@@ -302,12 +331,12 @@ export default async function quoteRoutes(app) {
         [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
       for (const l of lines) {
         await c.query(
-          `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-          [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag]);
+          `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag, issue)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, screenIssue(l.issue)]);
       }
       await assignReservations(c, q.id);   // 선착순 재고 예약(블럭)
-      return q;
+      return { ...q, lines };
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}` });
     if (customerId) {
@@ -320,43 +349,71 @@ export default async function quoteRoutes(app) {
         : `자동: 견적서 작성 (${result.quote_no}) · 견적 단계`;
       try { await autoStage({ customerId, targetSort, onDate: b.quote_date || null, userId: req.ctx.perm.userId, note }); } catch (_) { /* best-effort */ }
     }
-    return { id: result.id, quote_no: result.quote_no, customer_id: customerId || null, auto_customer: autoCustomer };
+    // 0224 — 판매중단 SKU 가 들어간 줄을 화면에 돌려준다.
+    //   저장은 됐지만 **확정은 못 한다**는 것을 사람이 바로 알아야 하므로, 목록으로 준다.
+    const inactiveLines = (result.lines || []).filter((l) => l.issue === 'inactive')
+      .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
+    return { id: result.id, quote_no: result.quote_no, customer_id: customerId || null, auto_customer: autoCustomer,
+      inactive_lines: inactiveLines,
+      inactive_note: inactiveLines.length
+        ? `판매중단(비활성) 제품 ${inactiveLines.length}건이 포함돼 있습니다. 요청 기록은 남지만 이 견적은 확정할 수 없습니다 — 해당 줄을 지우거나 제품을 판매재개한 뒤 확정하세요.`
+        : null };
   });
 
   // 견적 수정(draft/confirmed만) — 라인 전체 교체
   app.put('/api/quotes/:id', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const b = req.body || {};
-    const q = (await query(`SELECT status, customer_id FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const q = (await query(`SELECT status, customer_id, created_at FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted' });
     const customerId = Number(b.customer_id) || q.customer_id;
     const cust = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0];
     const discountRate = cust ? Number(cust.discount) || 0 : 0;
     const ivaRate = 16;
-    // 0179 — 이미 이 견적에 들어 있던 SKU 는 비활성이어도 그대로 수정·정리할 수 있게 허용하고,
-    //        새로 추가하는 비활성 SKU 만 막는다.
+    // 0179/0224 — 이미 이 견적에 들어 있던 SKU 는 비활성이어도 **그대로** 둔다.
+    //   비활성 전에 확정된 오더를 계속 정리할 수 있어야 하므로, 그 줄에는 issue 를 달지
+    //   않는다(달면 확정이 잠겨 예전 오더의 인보이스 발행이 막힌다 — 0179 가 견적→매출
+    //   전환을 일부러 막지 않은 것과 같은 이유다).
+    //   **새로 추가하는** 비활성 SKU 만 issue='inactive' 로 표시해 확정을 잠근다.
+    //   (0224 전에는 여기서 409 로 거절했다 — 요청 기록이 사라지는 것이 문제였다)
     const existingIds = new Set((await query(
       `SELECT DISTINCT product_id FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id]))
       .rows.map((r) => Number(r.product_id)));
-    const blockedEdit = await inactiveTargets(b.lines, existingIds);
-    if (blockedEdit.length) return reply.code(409).send({ error: 'inactive_product', items: blockedEdit });
-    await withTx(async (c) => {
+    const flagged = await withTx(async (c) => {
+      const hit = [];
       const lines = await buildLines(discountRate, ivaRate, Array.isArray(b.lines) ? b.lines : []);
+      // 중단 시각과 견적 생성 시각을 비교한다. 「원래 있던 줄」이라도 견적 자체가
+      // 중단 **이후**에 만들어졌다면(포털 수신 견적 등) 표시를 유지해야 한다 —
+      // 안 그러면 수정 한 번으로 0원짜리 줄의 확정 잠금이 풀린다.
+      const sinceMap = await inactiveSinceMap(lines.map((l) => l.product_id));
+      const qCreated = q.created_at ? new Date(q.created_at) : null;
+      const flagInactive = (pid) => {
+        const since = sinceMap.get(Number(pid));
+        if (!existingIds.has(Number(pid))) return true;             // 새로 추가된 비활성 SKU
+        if (since && qCreated && qCreated >= new Date(since)) return true;  // 중단 후 만들어진 견적
+        return false;                                              // 중단 전부터 있던 줄 — 그대로 둔다
+      };
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
       await c.query(`UPDATE quotes SET customer_id=$1, discount_rate=$2, memo=$3, subtotal_mxn=$4, iva_mxn=$5, total_mxn=$6, total_qty=$7, sku_count=$8, updated_by=$9, updated_at=now() WHERE id=$10`,
         [customerId, discountRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, id]);
       await c.query(`DELETE FROM quote_lines WHERE quote_id=$1`, [id]);
       for (const l of lines) {
+        const iss = (l.issue === 'inactive' && l.product_id && flagInactive(l.product_id)) ? 'inactive' : null;
+        if (iss) hit.push({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name });
         await c.query(
-          `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-          [id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag]);
+          `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag, issue)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          [id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, iss]);
       }
       await assignReservations(c, id);   // 라인 교체 후 예약 재배분(만료시각은 생성 기준 유지)
+      return hit;
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}` });
-    return { ok: true };
+    return { ok: true, inactive_lines: flagged,
+      inactive_note: flagged.length
+        ? `판매중단(비활성) 제품 ${flagged.length}건이 포함돼 있습니다. 요청 기록은 남지만 이 견적은 확정할 수 없습니다.`
+        : null };
   });
 
   // 견적 상태 변경: confirmed / cancelled / draft
@@ -380,8 +437,14 @@ export default async function quoteRoutes(app) {
             WHERE quote_id=$1 AND issue IS NOT NULL ORDER BY line_no`, [id])).rows;
       } catch (_) { bad = []; }   // 0220 전 DB — 그 칼럼이 없다
       if (bad.length) {
-        return reply.code(409).send({ error: 'quote_has_issues',
-          note: `확인이 필요한 줄이 ${bad.length}개 있습니다 — 고치거나 지운 뒤 확정하세요.`,
+        // 0224 — 이제 화면 견적에도 '판매중단' 줄이 붙을 수 있다. 어느 쪽인지 말해 줘야
+        //   사람이 무엇을 해야 할지 안다(줄을 지운다 / 제품을 판매재개한다 / 코드를 고친다).
+        const inact = bad.filter((r) => r.issue === 'inactive');
+        const note = inact.length === bad.length
+          ? `판매중단(비활성) 제품이 ${inact.length}줄 들어 있어 확정할 수 없습니다 — 그 줄을 지우거나, 제품·마케팅 > 제품검색에서 판매재개한 뒤 확정하세요. (요청 기록은 그대로 남습니다)`
+          : `확인이 필요한 줄이 ${bad.length}개 있습니다${inact.length ? `(그중 판매중단 ${inact.length}개)` : ''} — 고치거나 지운 뒤 확정하세요.`;
+        return reply.code(409).send({ error: 'quote_has_issues', note,
+          inactive_count: inact.length,
           items: bad.map((r) => ({ line_no: Number(r.line_no), code: r.input_code, issue: r.issue })) });
       }
     }
@@ -465,7 +528,7 @@ export default async function quoteRoutes(app) {
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
               cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty,
-              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt
+              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt, cls.inact_cnt
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uc ON uc.id=q.created_by
@@ -482,7 +545,9 @@ export default async function quoteRoutes(app) {
              COALESCE(SUM( LEAST(COALESCE(ql.reserved_qty,0), ql.qty)::numeric / NULLIF(ql.qty,0) * ql.line_subtotal ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS ok_sub,
              COALESCE(SUM( GREATEST(ql.qty - COALESCE(ql.reserved_qty,0), 0)::numeric / NULLIF(ql.qty,0) * ql.line_subtotal ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS short_sub,
              COALESCE(SUM( LEAST(COALESCE(ql.reserved_qty,0), ql.qty)::numeric / NULLIF(ql.qty,0) * ql.line_total ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS ok_amt,
-             COALESCE(SUM( GREATEST(ql.qty - COALESCE(ql.reserved_qty,0), 0)::numeric / NULLIF(ql.qty,0) * ql.line_total ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS short_amt
+             COALESCE(SUM( GREATEST(ql.qty - COALESCE(ql.reserved_qty,0), 0)::numeric / NULLIF(ql.qty,0) * ql.line_total ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS short_amt,
+             -- 0224 · 판매중단(비활성) 줄 수 — 목록에서 「왜 안 넘어가는지」가 바로 보여야 한다.
+             COUNT(*) FILTER (WHERE ql.issue = 'inactive')::int AS inact_cnt
            FROM quote_lines ql
            WHERE ql.quote_id = q.id
          ) cls ON TRUE
@@ -504,6 +569,7 @@ export default async function quoteRoutes(app) {
         open: ['draft', 'confirmed'].includes(r.status),
         reserve_expires_at: r.reserve_expires_at || null,
         packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
+        inactive_cnt: Number(r.inact_cnt || 0),             // 0224 · 판매중단 줄(다음 단계 차단 사유)
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {
           ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
@@ -887,6 +953,13 @@ export default async function quoteRoutes(app) {
     const id = Number(req.params.id);
     const q = (await query(`SELECT id, customer_id, quote_no, packing_printed_at, packing_due_at FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
+    // 0224 — 판매중단 줄이 남아 있으면 포장으로 넘기지 않는다.
+    //   포장지시서가 나가면 창고가 집기 시작하고 예약이 고정된다 — 단종품이 그 흐름에
+    //   들어가면 되돌리기가 비싸다. 여기서 세우는 편이 싸다.
+    {
+      const bad = await inactiveLinesOf(id);
+      if (bad.length) return reply.code(409).send(inactiveBlock(bad, '포장'));
+    }
     // 포장 시각/기한은 "최초 출력"에만 고정(재출력해도 기한이 밀리지 않음 — 전진 전용 원칙).
     let printedAt = q.packing_printed_at;
     let dueAt = q.packing_due_at;
@@ -917,6 +990,13 @@ export default async function quoteRoutes(app) {
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', invoice_id: q.invoice_id });
     if (!q.packing_printed_at && (q.status === 'expired' || (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date())))
       return reply.code(409).send({ error: 'quote_expired', note: '예약 24시간이 지나 무효화된 견적입니다. 전환할 수 없습니다. 견적을 복제해 새로 진행하세요.' });
+    // 0224 — 판매중단 줄이 남아 있으면 매출로 전환하지 않는다.
+    //   ⚠ 이 검사는 **중단 이후에 들어온 요청**에만 걸린다. 비활성 전에 확정된 오더는
+    //     표시가 없으므로 예전처럼 그대로 인보이스가 나간다(0179 의 결정을 지킨다).
+    {
+      const bad = await inactiveLinesOf(id);
+      if (bad.length) return reply.code(409).send(inactiveBlock(bad, '매출 전환'));
+    }
     // 포장 게이트: 전량 가용(피킹 대상) 라인이 있으면 서명 스캔본 업로드가 선행돼야 전환 가능
     const pickable = (await query(
       `SELECT 1 FROM quote_lines ql JOIN products p ON p.id=ql.product_id
@@ -1109,9 +1189,8 @@ export default async function quoteRoutes(app) {
     const inputLines = srcLines.map((l) => (l.product_id
       ? { product_id: l.product_id, qty: Number(l.qty) }
       : { code: l.input_code, qty: Number(l.qty) }));
-    // 0179 — 복제는 "새 견적"이므로 비활성 SKU 가 섞여 있으면 막고 어느 품목인지 알려준다.
-    const blockedDup = await inactiveTargets(inputLines);
-    if (blockedDup.length) return reply.code(409).send({ error: 'inactive_product', items: blockedDup });
+    // 0224 — 복제는 "새 견적"이다. 비활성 SKU 가 섞여 있어도 막지 않고 접수하되,
+    //   그 줄을 표시해 확정을 잠근다(새 견적 저장과 같은 규칙).
     const result = await withTx(async (c) => {
       const year = String(new Date().getFullYear());
       const quoteNo = await nextQuoteNo(c, year);
@@ -1124,14 +1203,20 @@ export default async function quoteRoutes(app) {
          totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
       for (const l of lines) {
         await c.query(
-          `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-          [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag]);
+          `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag, issue)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, screenIssue(l.issue)]);
       }
       await assignReservations(c, q.id);
-      return q;
+      return { ...q, lines };
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}`, detail: { cloned_from: srcId } });
-    return { id: result.id, quote_no: result.quote_no, customer_id: customerId };
+    const cloneInactive = (result.lines || []).filter((l) => l.issue === 'inactive')
+      .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
+    return { id: result.id, quote_no: result.quote_no, customer_id: customerId,
+      inactive_lines: cloneInactive,
+      inactive_note: cloneInactive.length
+        ? `판매중단(비활성) 제품 ${cloneInactive.length}건이 포함돼 있습니다. 복제는 됐지만 확정할 수 없습니다.`
+        : null };
   });
 }

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt0901veh2</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-0918dem</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -31,6 +31,8 @@
   .btn:disabled{opacity:.5;cursor:default}
   .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
   .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}.msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  /* 0224 — 「막지는 않지만 알아야 하는」 상태(판매중단 SKU 를 요청 기록용으로 담았을 때) */
+  .msg.warn{display:block;background:#FBF0DA;color:#8A5A12;border:1px solid #E0C07A}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
   .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
   table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;table-layout:fixed}
@@ -289,11 +291,11 @@
   function hideAc(){ $('acBox').classList.add('hidden'); acItems=[]; acSel=-1; }
   function pickAc(i){
     const it=acItems[i]; if(!it)return;
-    // 0179 — 비활성(판매중단) SKU 는 새 견적에 담을 수 없다(서버에서도 차단됨).
+    // 0224 — 비활성(판매중단) SKU 도 **담을 수 있다.** 고객이 그 부품을 찾았다는
+    //   사실이 남아야 판매재개를 판단할 수 있기 때문이다. 대신 이 견적은 확정되지 않는다.
     if(it.is_active===false){
-      const m=$('lineMsg'); if(m){ m.className='msg err';
-        m.textContent=it.ctr_code+' 은(는) 비활성(판매중단) 제품이라 새 견적에 담을 수 없습니다. 제품/마케팅 > 제품검색에서 활성화 후 사용하세요.'; }
-      hideAc(); return;
+      const m=$('lineMsg'); if(m){ m.className='msg warn';
+        m.textContent=it.ctr_code+' 은(는) 판매중단(비활성) 제품입니다. 요청 기록용으로 담을 수는 있지만 이 견적은 확정할 수 없습니다 — 판매재개는 제품·마케팅 > 제품검색에서.'; }
     }
     pickedProduct=it;                       // 선택만 해두고 추가는 '추가' 버튼에서
     $('inCode').value=it.ctr_code;
@@ -1343,9 +1345,9 @@
         lines.push({code,qty}); // 미매칭(not_found) 줄로 추가됨
       } else if(matches.length===1){
         if(matches[0].is_active===false){
-          m.className='msg err';
-          m.textContent=matches[0].ctr_code+' 은(는) 비활성(판매중단) 제품이라 새 견적에 담을 수 없습니다.';
-          return;
+          // 0224 — 담되, 확정이 잠긴다는 것을 알린다(요청 기록은 남아야 한다).
+          m.className='msg warn';
+          m.textContent=matches[0].ctr_code+' 은(는) 판매중단(비활성) 제품입니다 — 요청 기록으로 담았지만 이 견적은 확정할 수 없습니다.';
         }
         lines.push({code,product_id:matches[0].product_id,qty});
       } else {
@@ -1368,9 +1370,12 @@
     $('candModal').style.display='flex';
   }
   function pickCand(pid, inactive){
-    if(inactive){ alert('비활성(판매중단) 제품이라 새 견적에 담을 수 없습니다.'); return; }
     if(pendingCand){ lines.push({code:pendingCand.code,product_id:pid,qty:pendingCand.qty}); pendingCand=null; }
     closeCand();$('inCode').value='';$('inQty').value='1';$('inCode').focus();recalc();
+    if(inactive){
+      const m=$('lineMsg'); if(m){ m.className='msg warn';
+        m.textContent='판매중단(비활성) 제품을 담았습니다 — 요청 기록은 남지만 이 견적은 확정할 수 없습니다.'; }
+    }
   }
   function closeCand(){ $('candModal').style.display='none'; pendingCand=null; }
 
@@ -1529,8 +1534,11 @@
       const LP=(lastPreview&&lastPreview.lines)||[];
       const matched=LP.filter(l=>l.matched).length;
       const unmatched=LP.length-matched;
-      m.className='msg ok';
-      m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · 기존 고객 연결: '+esc(d.auto_customer.name)):'');
+      // 0224 — 판매중단 SKU 가 들어갔으면 **저장은 됐지만 확정은 못 한다**는 것을 크게 알린다.
+      const inact=(d.inactive_lines||[]);
+      m.className=inact.length?'msg warn':'msg ok';
+      m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · 기존 고객 연결: '+esc(d.auto_customer.name)):'')
+        +(inact.length?('  ⛔ 판매중단 '+inact.length+'건('+inact.map(x=>x.code).join(', ')+') — 요청 기록은 남았지만 이 견적은 확정할 수 없습니다.'):'');
       if(d.auto_customer){ loadCustomers(); }
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('saveBtn').disabled=false;}

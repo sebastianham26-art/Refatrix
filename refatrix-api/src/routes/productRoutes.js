@@ -7,6 +7,7 @@ import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS
 import { visibleTeamIds } from '../teams.js';
 import { sweepDevRequestMatches } from '../devMatchSweep.js';
 import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js';
+import { demandSummary, demandRows } from '../inactiveDemand.js';
 import { changeParts, describeRow, sydForRow, signedQty, stockAtChange } from '../productHistory.js';
 import { refColumns, scanReferences, buildDeleteCheck, purgeReferences, describeCleanup } from '../productDelete.js';
 
@@ -1527,6 +1528,32 @@ export default async function productRoutes(app) {
   //   매출·매출총이익·원가 내역은 비활성 이후에도 그대로 조회된다.
   //   전환 자체는 막지 않고, 걸려 있는 항목을 업체별로 정리해 보여준 뒤 진행한다.
   // ===================================================================
+
+  // ===================================================================
+  //  0224 · 판매중단 SKU 에 **중단 이후** 들어온 견적요청 = 「판매재개 판단용 수요」
+  //
+  //   0179 는 비활성 SKU 가 담긴 새 견적을 409 로 거절했다. 거절은 기록을 남기지
+  //   않으므로, 고객이 그 부품을 계속 찾는다는 사실이 ERP 에서 사라졌다.
+  //   이제 견적은 접수되고 확정만 잠기며(quote_lines.issue='inactive'),
+  //   그 줄들을 SKU 별로 모아 여기서 보여준다 — 판매재개 판단의 근거다.
+  // ===================================================================
+
+  // 비활성 SKU 전체의 수요 요약 — 목록 배지·「판매중단 SKU 수요」 표.
+  app.get('/api/products/inactive-demand', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const ids = String(req.query?.ids || '').split(',').map(Number).filter((x) => Number.isFinite(x) && x > 0);
+    try {
+      const items = await demandSummary({ productIds: ids.length ? ids : null });
+      return { items, total_req: items.reduce((a, x) => a + x.req_n, 0) };
+    } catch (_) { return { items: [], total_req: 0 }; }   // issue 칼럼이 없는 옛 DB
+  });
+
+  // 한 SKU 의 요청 내역(견적 1건 = 1줄) — 드릴다운·엑셀.
+  app.get('/api/products/:id/inactive-demand', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_product' });
+    try { return await demandRows(id); }
+    catch (_) { return { since_at: null, items: [] }; }
+  });
 
   // 이 SKU 가 지금 걸려 있는 미결 항목(업체별) — 전환 전 확인용.
   app.get('/api/products/:id/pipeline', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
