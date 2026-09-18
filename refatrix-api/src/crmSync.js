@@ -66,9 +66,72 @@ export function isSuccess(httpStatus, body, okCode = '0') {
 }
 
 // 전송 본문을 만들 때 필요한 고객 값 — create 는 신원(상호·연락처·배송지)까지 쓴다.
-const CUSTOMER_COLS = `SELECT id, code, name, rfc, contact, phone, ship_address,
+const CUSTOMER_COLS = `SELECT id, code, name, rfc, contact, phone, ship_address, customer_type,
          discount, credit_days, approval_status, deleted_at
     FROM customers`;
+
+/**
+ * 20260918tier · 회사 종류(TIER A~D) → CRM 의 businessTypeId.
+ *   상대 카탈로그의 실제 숫자를 아직 받지 못했다. 기본값은 화면 순서 그대로 A=1·B=2·C=3·D=4 이고,
+ *   다르면 **코드를 고치지 말고** 환경변수로 덮어쓴다:
+ *       CRM_BUSINESS_TYPE_IDS="A=10,B=11,C=12,D=13"
+ *   A~D 가 아닌 예전 값(refraccionaria 등)이면 undefined 를 돌려준다 —
+ *   모르는 값을 지어내 보내면 CRM 쪽에 엉뚱한 분류가 박힌다.
+ */
+export function businessTypeId(tier) {
+  const t = String(tier == null ? '' : tier).trim().toUpperCase().charAt(0);
+  if (!t || 'ABCD'.indexOf(t) < 0) return undefined;
+  const map = { A: 1, B: 2, C: 3, D: 4 };
+  const raw = String(process.env.CRM_BUSINESS_TYPE_IDS || '').trim();
+  if (raw) {
+    for (const part of raw.split(',')) {
+      const kv = part.split('=');
+      const k = String(kv[0] || '').trim().toUpperCase().charAt(0);
+      const v = String(kv[1] || '').trim();
+      if (k && v && 'ABCD'.indexOf(k) >= 0) map[k] = /^-?\d+$/.test(v) ? Number(v) : v;
+    }
+  }
+  return map[t];
+}
+
+/**
+ * 20260918tier · CRM 이 새 RFC 에 요구하는 신원 4종.
+ *   razonSocial · contactEmail · contactPhone · businessTypeId.
+ *   기존 이름(nombre·telefono·correo)도 **같이** 보낸다 — 상대가 어느 쪽을 읽도록
+ *   구현돼 있든 통과하고, 이름을 갈아치웠다가 지금 되는 것까지 깨뜨리는 위험을 없앤다.
+ *
+ *   ⚠ **빈 값은 키 자체를 뺀다.** null·빈문자를 보내면 상대가 그 값으로 덮어쓸 수 있다 —
+ *     전체 동기화(scope=all)에는 이메일이 비어 있는 레거시 고객이 섞여 나가므로,
+ *     이 규칙이 없으면 CRM 에 제대로 들어 있던 연락처를 우리가 지워 버린다.
+ */
+function identityFields(c) {
+  const name = String(c.name || '').trim();
+  const phone = String(c.phone || '').trim();
+  const mail = String(c.contact || '').trim();
+  const tier = String(c.customer_type || '').trim();
+  return {
+    nombre: name || undefined,
+    razonSocial: name || undefined,
+    telefono: phone || undefined,
+    contactPhone: phone || undefined,
+    correo: mail || undefined,
+    contactEmail: mail || undefined,
+    businessType: tier || undefined,
+    businessTypeId: businessTypeId(tier),
+  };
+}
+
+/**
+ * 20260918tier · 상거래정보 창구(upsert)에도 신원을 함께 보낼지.
+ *   기본은 **보낸다**(디렉터 지시). 상대 창구가 모르는 필드를 거절하면 전송이 줄줄이 실패하므로,
+ *   **재배포 없이** 되돌릴 수 있는 스위치를 둔다 — Railway 변수:
+ *       CRM_UPSERT_IDENTITY=0     (또는 off / false / no)
+ *   끄면 upsert 본문이 예전 다섯 개(rfc·discountPercent·paymentDays·transactionUser·estatus)로 돌아간다.
+ */
+export function upsertIdentityOn() {
+  const v = String(process.env.CRM_UPSERT_IDENTITY ?? '').trim().toLowerCase();
+  return !(v === '0' || v === 'off' || v === 'false' || v === 'no');
+}
 
 /** 고객 계약 본문 — 여기서 정한 이름이 곧 계약서다. */
 export function buildPayload(op, c, transactionUser, reason) {
@@ -88,10 +151,8 @@ export function buildPayload(op, c, transactionUser, reason) {
   if (op === 'create') {
     const out = {
       rfc,
-      nombre: String(c.name || '').trim(),
+      ...identityFields(c),
       erpCustomerCode: String(c.code || '').trim() || undefined,
-      telefono: String(c.phone || '').trim() || undefined,
-      correo: String(c.contact || '').trim() || undefined,
       direccion: String(c.ship_address || '').trim() || undefined,
       discountPercent: c.discount == null ? 0 : Number(c.discount),
       paymentDays: c.credit_days == null ? 0 : Number(c.credit_days),
@@ -102,8 +163,13 @@ export function buildPayload(op, c, transactionUser, reason) {
     for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
     return out;
   }
-  return {
+  // 20260918tier · 상거래정보 갱신에도 신원을 함께 보낸다(디렉터 지시 2026-09-18).
+  //   이미 CRM 에 있는 고객의 이메일·전화·TIER 가 ERP 에서 바뀌어도 CRM 이 모르던 문제를 닫는다.
+  //   빈 값은 키가 아예 빠지므로 **레거시 고객이 CRM 의 멀쩡한 값을 지우지 않는다.**
+  //   상대가 거절하면 CRM_UPSERT_IDENTITY=0 으로 즉시 되돌린다(⑦ 참고).
+  const up = {
     rfc,
+    ...(upsertIdentityOn() ? identityFields(c) : {}),
     discountPercent: c.discount == null ? 0 : Number(c.discount),
     paymentDays: c.credit_days == null ? 0 : Number(c.credit_days),
     transactionUser,
@@ -114,6 +180,8 @@ export function buildPayload(op, c, transactionUser, reason) {
     //     섞여 나갈 수 있고, 그때 승인됐다고 알리면 CRM 이 잘못된 상태를 갖게 된다.
     estatus: crmEstatus(c.approval_status),
   };
+  for (const k of Object.keys(up)) if (up[k] === undefined) delete up[k];
+  return up;
 }
 
 /** ERP 승인 상태 → CRM 이 쓰는 스페인어 상태값. */

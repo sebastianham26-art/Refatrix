@@ -1,4 +1,6 @@
-// build 20260901claim — 고객 등록 디렉터 승인 + **RFC 선점**(0188) + 기준품목 할인율 제안 (0185)
+// build 20260918tier — 고객 등록 디렉터 승인 + **RFC 선점**(0188) + 기준품목 할인율 제안 (0185)
+//   20260918tier: CRM 이 새 RFC 에 요구하는 4종(razonSocial·contactEmail·contactPhone·businessTypeId)을
+//         ERP 등록 입구에서 필수로 만든다. 이메일은 **수정에서도** 필수. 엑셀 일괄등록은 대상이 아니다.
 //   0188: 선점 조건이 CONSTANCIA → RFC 로 바뀌었다. CONSTANCIA 번호·PDF 는 선택 증빙.
 //   0193: **RFC 도 선택 입력**이 되었다. 대신 RFC 가 채워지는 순간 선점이 성립하고,
 //         남의 RFC-없는 고객에 내 RFC 를 넣어 가져오는 「선점 이관」은 디렉터 승인을 탄다.
@@ -165,7 +167,27 @@ function rfcHolderNote(h) {
       + '같은 고객이 맞다면 디렉터에게 문의하세요.';
 }
 
+// ── 20260918tier · 신규 고객 필수값 ───────────────────────────────────
+//   CRM(웹 카달록)은 새 RFC 를 받을 때 razonSocial · contactEmail · contactPhone ·
+//   businessTypeId 를 요구한다. ERP 에서 비워 둔 채 등록하면 승인 직후 전송이 상대 쪽에서
+//   거절되고, 그 사실은 연동 아웃박스를 들여다봐야만 알게 된다. 그래서 입구에서 막는다.
+//   프런트(custform)에서도 막지만 **서버가 최종 관문**이다 — 캐시된 구버전 화면으로도 못 뚫는다.
+export const BUSINESS_TIERS = {
+  A: 'Distribuidor mayorista / cliente estratégico',
+  B: 'Distribuidor medio / refaccionaria grande',
+  C: 'Refaccionaria / taller establecido',
+  D: 'Cliente nuevo / pequeño volumen',
+};
+export function isEmailAddr(v) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v == null ? '' : v).trim());
+}
+export const CONTACT_REQUIRED_NOTE =
+  '이메일 주소를 입력해야 저장됩니다 — 청구서(팩투라)와 오퍼시트가 이 주소로 나갑니다.';
+export const CONTACT_INVALID_NOTE =
+  '이메일 주소 형식이 올바르지 않습니다. (예: ejemplo@correo.com)';
+
 export default async function customerRoutes(app) {
+  try { app.log?.info?.('[customerRoutes] loaded rev 20260918tier'); } catch (_) { /* 로깅 실패는 무시 */ }
   // 팀 목록(고객 배정·필터용 = 영업팀만)
   app.get('/api/teams', { preHandler: [authGuard, requirePage('customers')] }, async () => {
     const rows = (await query(`SELECT id, name, sort_order FROM sales_teams WHERE deleted_at IS NULL AND is_sales=true ORDER BY sort_order, id`)).rows;
@@ -1178,6 +1200,21 @@ export default async function customerRoutes(app) {
         note: '고객 등록 고도화(0185) 마이그레이션이 아직 적용되지 않았습니다. 디렉터에게 문의하세요.' });
     }
     if (!b.name) return reply.code(400).send({ error: 'missing_fields' });
+
+    // ── 20260918tier · CRM 이 새 RFC 에 요구하는 4종 ──────────────────
+    //   razonSocial = name(위에서 검사) · contactEmail · contactPhone · businessTypeId = customer_type.
+    //   ⚠ 엑셀 일괄등록(POST /api/customers/import/commit)과 CRM 수신 창구는 이 경로를 타지 않는다.
+    const contactIn = String(b.contact == null ? '' : b.contact).trim();
+    const phoneIn = String(b.phone == null ? '' : b.phone).trim();
+    const tierIn = String(b.customer_type == null ? '' : b.customer_type).trim();
+    if (!contactIn) return reply.code(400).send({ error: 'contact_required', note: CONTACT_REQUIRED_NOTE });
+    if (!isEmailAddr(contactIn)) return reply.code(400).send({ error: 'contact_invalid', note: CONTACT_INVALID_NOTE });
+    if (!phoneIn) return reply.code(400).send({ error: 'phone_required',
+      note: '전화번호를 입력해야 고객을 등록할 수 있습니다 — CRM 이 새 RFC 에 요구하는 항목입니다.' });
+    if (!tierIn) return reply.code(400).send({ error: 'business_type_required',
+      note: '회사 종류(TIER A~D)를 선택해야 고객을 등록할 수 있습니다 — CRM 의 businessTypeId 로 나갑니다.' });
+    b.contact = contactIn; b.phone = phoneIn; b.customer_type = tierIn;
+
     const teamId = b.team_id ? Number(b.team_id) : (perm.teamId || null);
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
     if (!canEditTeam(perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
@@ -2391,6 +2428,16 @@ export default async function customerRoutes(app) {
     const crossTeam = !canEditTeam(perm, c.team_id);
     if (crossTeam && !canRequestCrossTeam(perm)) return reply.code(403).send({ error: 'forbidden_team' });
     const b = req.body || {};
+    // ── 20260918tier · 이메일은 **수정에서도** 필수다 ──────────────────
+    //   다만 «본문에 contact 가 실려 온 경우»에만 본다. 배송지 즉시저장처럼 일부 항목만
+    //   보내는 경로까지 이메일을 요구하면 일상 업무가 멈춘다.
+    //   전화·TIER 는 여기서 막지 않는다 — 기존 고객 정리는 목록의 ⚠ 배지로 유도한다.
+    if (b.contact !== undefined) {
+      const v = String(b.contact == null ? '' : b.contact).trim();
+      if (!v) return reply.code(400).send({ error: 'contact_required', note: CONTACT_REQUIRED_NOTE });
+      if (!isEmailAddr(v)) return reply.code(400).send({ error: 'contact_invalid', note: CONTACT_INVALID_NOTE });
+      b.contact = v;
+    }
     // 팀 이동 권한 체크(디렉터/양팀 편집권).
     //   타팀 수정요청은 "이관 요청" 그 자체이므로 목적지 팀 편집권을 요구하지 않는다
     //   — 어차피 제안일 뿐이고 디렉터 승인에서 최종 판단한다.

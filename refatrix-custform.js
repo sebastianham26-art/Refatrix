@@ -35,13 +35,13 @@
     +'</div>'
     +'<div class="rcf-row">'
       +'<div class="rcf-f"><label>RFC(세금번호)<span id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none"> — 선택 · 입력하면 그 순간 선점</span></label><input id="rcf-rfc" type="text" placeholder="예: ABC010203XY1"><div id="rcf-rfcmsg" style="font-size:11px;margin-top:3px"></div></div>'
-      +'<div class="rcf-f"><label>회사 종류</label><select id="rcf-type"><option value="">미지정</option><option>refraccionaria</option><option>Mayoreo</option><option>Flotia</option><option>taller</option><option>publico</option></select></div>'
+      +'<div class="rcf-f rcf-grow"><label>회사 종류 · TIER *<span id="rcf-typewarn" style="color:#B23A2E;font-weight:700;display:none"> ⚠ 미지정</span></label><select id="rcf-type"><option value="">Sin seleccionar</option><option value="A">A · Distribuidor mayorista / cliente estratégico</option><option value="B">B · Distribuidor medio / refaccionaria grande</option><option value="C">C · Refaccionaria / taller establecido</option><option value="D">D · Cliente nuevo / pequeño volumen</option></select></div>'
       +'<div class="rcf-f"><label>담당자</label><select id="rcf-owner"><option value="">미지정</option></select></div>'
       +'<div class="rcf-f"><label>단계</label><select id="rcf-stage"><option value="">미지정</option></select></div>'
     +'</div>'
     +'<div class="rcf-row">'
-      +'<div class="rcf-f"><label>이메일 주소</label><input id="rcf-contact" type="email" placeholder="ejemplo@correo.com"></div>'
-      +'<div class="rcf-f"><label>전화 (인보이스 수신)</label><input id="rcf-phone" type="text"></div>'
+      +'<div class="rcf-f"><label>이메일 주소 *</label><input id="rcf-contact" type="email" placeholder="ejemplo@correo.com" required></div>'
+      +'<div class="rcf-f"><label>전화 (인보이스 수신) *</label><input id="rcf-phone" type="text" placeholder="예: 81 1234 5678"></div>'
       +'<div class="rcf-f"><label>구매결정권자 이름</label><input id="rcf-buyername" type="text" placeholder="오퍼시트 수신인"></div>'
       +'<div class="rcf-f"><label>구매결정권자 전화(WhatsApp)</label><input id="rcf-buyerphone" type="text" placeholder="없으면 기본 전화로 발송"></div>'
       +'<div class="rcf-f"><label>기본 할인(%)</label><input id="rcf-discount" type="number" step="0.01" value="0"></div>'
@@ -141,6 +141,22 @@
 
   // ===== 기본 할인(%)·외상일 변경 통제 =====
   function validEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
+  // 0918tier · CRM 이 새 RFC 에 요구하는 businessTypeId 와 맞물리는 값. A~D 만 유효하다.
+  var TIER_KEYS=['A','B','C','D'];
+  function isTier(v){ return TIER_KEYS.indexOf(String(v==null?'':v).trim().toUpperCase())>=0; }
+  // 예전 값(refraccionaria·Mayoreo·Flotia·taller·publico)으로 저장된 고객이 많다.
+  //   그 값을 조용히 지우면 수정 저장 한 번에 분류가 통째로 날아간다 —
+  //   그래서 «기존 값» 항목을 임시로 끼워 넣어 그대로 보이게 하고, 바꾸는 건 사람이 한다.
+  function ensureTypeOption(v){
+    var sel=$('rcf-type'); if(!sel) return;
+    var old=sel.querySelector('option[data-legacy="1"]'); if(old) old.remove();
+    var s=String(v==null?'':v).trim();
+    if(!s||isTier(s)) return;
+    var o=document.createElement('option');
+    o.value=s; o.textContent=s+' (기존 값 — TIER 미지정)'; o.setAttribute('data-legacy','1');
+    sel.appendChild(o);
+  }
+  function focusField(id){ var e=$(id); if(e){ try{ e.focus(); }catch(err){} } }
   // 수정 모드에서 할인/외상일이 원래 값과 달라졌는지 + 어떤 변경인지
   function termsDiff(){
     if(!editingId||!origTerms) return null;
@@ -456,7 +472,9 @@
     if($('rcf-ship')) $('rcf-ship').value=c.ship_address||'';
     if($('rcf-shipsave')) $('rcf-shipsave').style.display='';
     setShipMsg('','');
-    if($('rcf-team')) $('rcf-team').value=c.team_id||''; if($('rcf-type')) $('rcf-type').value=c.customer_type||'';
+    if($('rcf-team')) $('rcf-team').value=c.team_id||'';
+    if($('rcf-type')){ ensureTypeOption(c.customer_type); $('rcf-type').value=c.customer_type||''; }
+    if($('rcf-typewarn')) $('rcf-typewarn').style.display=isTier(c.customer_type)?'none':'';
     ensureOwnerOption(c.owner_id,c.owner_name);
     if($('rcf-owner')) $('rcf-owner').value=c.owner_id||''; if($('rcf-stage')) $('rcf-stage').value=c.stage_id||'';
     if($('rcf-discount')) $('rcf-discount').value=(c.discount!=null?c.discount:0);
@@ -489,9 +507,21 @@
 
   async function save(){
     var b=readBody();
-    if(!b.name){ setMsg('err','고객명을 입력하세요.'); return; }
+    if(!b.name){ setMsg('err','고객명(razón social)을 입력하세요.'); focusField('rcf-name'); return; }
     if(!b.team_id){ setMsg('err','팀을 선택하세요.'); return; }
-    if(b.contact&&!validEmail(b.contact)){ setMsg('err','이메일 주소 형식이 올바르지 않습니다. (예: ejemplo@correo.com)'); return; }
+
+    // ===== 0918tier · CRM 이 새 RFC 에 요구하는 4종 =====
+    //   razonSocial(고객명) · contactEmail(이메일) · contactPhone(전화) · businessTypeId(TIER).
+    //   비워 둔 채 등록하면 디렉터 승인 직후 CRM 전송이 상대 쪽에서 거절되고,
+    //   그 사실은 연동 아웃박스를 들여다봐야만 알게 된다 — 그래서 입구에서 막는다.
+    //   **이메일은 수정에서도 필수**(디렉터 지시). 전화·TIER 는 신규 등록에서만 막고,
+    //   기존 고객 수정에서는 경고만 띄운다 — 막으면 전화번호 한 줄 고치려는 사람이 멈춘다.
+    if(!b.contact){ setMsg('err','⛔ 이메일 주소를 입력해야 저장됩니다 — 청구서(팩투라)와 오퍼시트가 이 주소로 나갑니다.'); focusField('rcf-contact'); return; }
+    if(!validEmail(b.contact)){ setMsg('err','이메일 주소 형식이 올바르지 않습니다. (예: ejemplo@correo.com)'); focusField('rcf-contact'); return; }
+    if(!editingId){
+      if(!b.phone){ setMsg('err','⛔ 전화번호를 입력해야 등록이 진행됩니다 — CRM 이 새 RFC 에 요구하는 항목입니다.'); focusField('rcf-phone'); return; }
+      if(!b.customer_type){ setMsg('err','⛔ 회사 종류(TIER A~D)를 선택해야 등록이 진행됩니다 — CRM 의 businessTypeId 로 나갑니다.'); focusField('rcf-type'); return; }
+    }
 
     // ===== 0193 · 신규 등록 필수값 =====
     //   RFC 는 **선택**(넣으면 형식은 엄격히 검사 + 그 순간 선점).
@@ -640,5 +670,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260909docs3 loaded (+ 서류 3종 등록화면 업로드 → 독점 + 외상 30일)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260918tier loaded (+ 이메일 필수(등록·수정) · 전화/TIER 신규 필수)'); }catch(e){}
 })();
