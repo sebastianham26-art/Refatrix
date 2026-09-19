@@ -236,7 +236,7 @@ export default async function catalogApiRoutes(app) {
   const EDITABLE = ['label', 'customer_id', 'enabled', 'window_enforced', 'window_dow',
     'window_start_hour', 'window_end_hour', 'syncs_per_period', 'max_calls', 'page_limit',
     'stock_mode', 'img_base_url', 'brands', 'include_inactive', 'ip_allow', 'note',
-    'exclude_prefixes'];
+    'exclude_prefixes', 'ref_source'];
 
   app.patch('/api/catalog/admin/clients/:id', guard, async (req, reply) => {
     if (!(await catalogTablesReady())) return reply.code(503).send({ error: 'migration_required' });
@@ -410,6 +410,8 @@ export function validatePatch(patch) {
   }
   if ('stock_mode' in patch && patch.stock_mode != null
       && !['qty', 'range'].includes(String(patch.stock_mode))) bad.push('stock_mode_invalid');
+  if ('ref_source' in patch && patch.ref_source != null
+      && !['scode', 'xref', 'both'].includes(String(patch.ref_source))) bad.push('ref_source_invalid');
   if ('exclude_prefixes' in patch && patch.exclude_prefixes) {
     const bad2 = String(patch.exclude_prefixes).split(',').map((x) => x.trim())
       .filter((x) => x && !/^[A-Za-z0-9._-]+$/.test(x));
@@ -449,6 +451,7 @@ export function publicClient(r) {
     img_base_url: r.img_base_url || '',
     brands: r.brands || '',
     exclude_prefixes: r.exclude_prefixes == null ? 'PRO' : r.exclude_prefixes,
+    ref_source: r.ref_source || 'scode',
     include_inactive: r.include_inactive !== false,
     ip_allow: r.ip_allow || '',
     note: r.note || '',

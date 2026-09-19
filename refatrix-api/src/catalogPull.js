@@ -225,7 +225,7 @@ export function notaOf(appText) {
 
 // ─────────────────────────── 조회 (DB) ───────────────────────────
 
-const PRODUCT_COLS = `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty,
+const PRODUCT_COLS = `SELECT p.id, p.code, p.name, p.app, p.scode, p.list_price, p.stock_qty,
                              p.is_active, p.iva_rate, p.material, p.updated_at
                         FROM products p
                        WHERE p.deleted_at IS NULL AND p.code IS NOT NULL AND p.code <> ''`;
@@ -290,6 +290,35 @@ function excludeSql(client, params) {
   return ` AND upper(p.code) NOT LIKE ALL($${params.length}::text[])`;
 }
 
+/**
+ * 대응품번을 어디서 가져오는가 (디렉터 결정 2026-09-19).
+ *   'scode' (기본) — products.scode. **제품/마케팅 화면의 「경쟁사 코드」와 같은 값**이다.
+ *                    ' // ' 로 여러 개, 전부 marca 'SYD'.
+ *   'xref'         — product_xref_codes (BAW·GROB·VASLO·KYB·MOOG·YOKOMITSU…).
+ *                    그 표는 「아무 경쟁사 코드나 입력해도 CTR 제품을 찾는」 역매칭용으로 쌓은 것이라
+ *                    화면이 보여 주는 목록과 다르다.
+ *   'both'         — 둘을 합치고 같은 코드는 한 번만.
+ */
+export function refSource(client) {
+  const v = client && client.ref_source != null ? String(client.ref_source).trim().toLowerCase() : '';
+  return ['scode', 'xref', 'both'].includes(v) ? v : 'scode';
+}
+
+/** products.scode → [{brand:'SYD', xref_code}] · ' // ' 구분, 빈 값 제거, 중복 제거. */
+export function scodeRefs(scode) {
+  const seen = new Set();
+  return String(scode == null ? '' : scode)
+    .split(/\s*\/\/\s*/)
+    .map((x) => x.trim())
+    .filter((x) => {
+      if (!x) return false;
+      const k = x.toUpperCase();
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    })
+    .map((x) => ({ brand: 'SYD', xref_code: x }));
+}
+
 function brandFilter(client) {
   const raw = String(client.brands || '').trim();
   if (!raw) return null;
@@ -342,13 +371,31 @@ export async function countProducts(client) {
 
 /** 공개 중인 대응품번 브랜드 목록. */
 export async function listBrands(client) {
-  const only = brandFilter(client);
-  const rows = (await query(
-    `SELECT COALESCE(NULLIF(btrim(brand),''),'SIN MARCA') AS marca, count(*)::int AS n
-       FROM product_xref_codes GROUP BY 1 ORDER BY 1`)).rows;
-  return rows
-    .filter((r) => !only || only.includes(String(r.marca).toUpperCase()))
-    .map((r) => ({ marca: r.marca, productos: Number(r.n) }));
+  const src = refSource(client);
+  const acc = new Map();
+  const add = (marca, n) => acc.set(marca, (acc.get(marca) || 0) + Number(n || 0));
+
+  // 실제로 내보내는 출처만 센다 — 목록에는 있는데 응답에는 없는 브랜드가 생기면 안 된다.
+  if (src === 'scode' || src === 'both') {
+    const params = [];
+    let sql = `SELECT count(*)::int AS n FROM products p
+                WHERE p.deleted_at IS NULL AND COALESCE(btrim(p.scode),'') <> ''`;
+    if (!client.include_inactive) sql += ` AND p.is_active IS NOT FALSE`;
+    sql += excludeSql(client, params);
+    add('SYD', (await query(sql, params)).rows[0].n);
+  }
+  if (src === 'xref' || src === 'both') {
+    const only = brandFilter(client);
+    const rows = (await query(
+      `SELECT COALESCE(NULLIF(btrim(brand),''),'SIN MARCA') AS marca, count(*)::int AS n
+         FROM product_xref_codes GROUP BY 1 ORDER BY 1`)).rows;
+    for (const r of rows) {
+      if (only && !only.includes(String(r.marca).toUpperCase())) continue;
+      add(r.marca, r.n);
+    }
+  }
+  return [...acc.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([marca, productos]) => ({ marca, productos }));
 }
 
 /** 제품 줄들에 대응품번·적용차종을 붙여 계약서 모양으로 만든다(N+1 질의를 피한다). */
@@ -356,13 +403,17 @@ async function decorate(client, rows) {
   if (!rows.length) return [];
   const ids = rows.map((r) => Number(r.id));
   const only = brandFilter(client);
+  const src = refSource(client);
 
-  const refParams = [ids];
-  let refSql = `SELECT product_id, xref_code, COALESCE(NULLIF(btrim(brand),''),'SIN MARCA') AS brand
-                  FROM product_xref_codes WHERE product_id = ANY($1::bigint[])`;
-  if (only) { refParams.push(only); refSql += ` AND upper(COALESCE(brand,'SIN MARCA')) = ANY($2::text[])`; }
-  refSql += ` ORDER BY brand, xref_code`;
-  const refs = (await query(refSql, refParams)).rows;
+  let refs = [];
+  if (src === 'xref' || src === 'both') {
+    const refParams = [ids];
+    let refSql = `SELECT product_id, xref_code, COALESCE(NULLIF(btrim(brand),''),'SIN MARCA') AS brand
+                    FROM product_xref_codes WHERE product_id = ANY($1::bigint[])`;
+    if (only) { refParams.push(only); refSql += ` AND upper(COALESCE(brand,'SIN MARCA')) = ANY($2::text[])`; }
+    refSql += ` ORDER BY brand, xref_code`;
+    refs = (await query(refSql, refParams)).rows;
+  }
 
   const apps = (await query(
     `SELECT product_id, app_text, maker, model, year_from, year_to
@@ -374,6 +425,20 @@ async function decorate(client, rows) {
     const k = Number(r.product_id);
     if (!byRef.has(k)) byRef.set(k, []);
     byRef.get(k).push(r);
+  }
+  // 화면과 같은 출처(products.scode) — 'both' 면 xref 와 합치되 같은 코드는 한 번만.
+  if (src === 'scode' || src === 'both') {
+    for (const row of rows) {
+      const k = Number(row.id);
+      if (!byRef.has(k)) byRef.set(k, []);
+      const bucket = byRef.get(k);
+      const seen = new Set(bucket.map((x) => String(x.xref_code).toUpperCase()));
+      for (const r of scodeRefs(row.scode)) {
+        if (seen.has(r.xref_code.toUpperCase())) continue;
+        seen.add(r.xref_code.toUpperCase());
+        bucket.push({ product_id: k, ...r });
+      }
+    }
   }
   for (const a of apps) {
     const k = Number(a.product_id);

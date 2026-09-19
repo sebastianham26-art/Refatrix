@@ -11,7 +11,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 const {
   windowState, purchasePrice, usedDiscount, posicionMontaje, stockValue, catalogStockRange,
-  excludePrefixes,
+  excludePrefixes, refSource, scodeRefs,
   encodeCursor, decodeCursor, pageLimit, normCode, notaOf, buildProducto, mxIso,
 } = await import('../src/catalogPull.js');
 
@@ -106,6 +106,22 @@ test('제외 접두어 — 기본은 PRO', () => {
   assert.deepEqual(excludePrefixes({ exclude_prefixes: 'pro, kit ' }), ['PRO', 'KIT'], '대문자·공백 정리');
   assert.deepEqual(excludePrefixes({ exclude_prefixes: '' }), [], '빈 값 = 제외 없음');
   assert.deepEqual(excludePrefixes({ exclude_prefixes: null }), [], '사람이 지웠으면 전부 내보낸다');
+});
+
+test('대응품번 출처 — 기본은 화면과 같은 scode', () => {
+  assert.equal(refSource({}), 'scode', '설정이 없으면 화면과 같은 출처');
+  assert.equal(refSource({ ref_source: 'xref' }), 'xref');
+  assert.equal(refSource({ ref_source: 'BOTH' }), 'both');
+  assert.equal(refSource({ ref_source: '이상한값' }), 'scode', '이상한 값은 안전한 기본으로');
+});
+
+test('scode 를 대응품번 배열로 쪼갠다 — 화면이 보여 주는 그 값', () => {
+  assert.deepEqual(scodeRefs('1603005 // 1516049'),
+    [{ brand: 'SYD', xref_code: '1603005' }, { brand: 'SYD', xref_code: '1516049' }]);
+  assert.deepEqual(scodeRefs('6Q0-407-365-A'), [{ brand: 'SYD', xref_code: '6Q0-407-365-A' }]);
+  assert.deepEqual(scodeRefs(' 1603005 //  1603005 '), [{ brand: 'SYD', xref_code: '1603005' }], '중복 제거');
+  assert.deepEqual(scodeRefs(''), []);
+  assert.deepEqual(scodeRefs(null), []);
 });
 
 test('적용차종 주석만 뽑아 nota 로 싣는다', () => {
@@ -213,11 +229,12 @@ if (!PG) {
 
   for (let i = 1; i <= 6; i++) {
     const pid = Number((await query(
-      `INSERT INTO products (code, name, app, list_price, stock_qty, is_active, material)
-       VALUES ($1,$2,$3,$4,$5,true,'Acero') RETURNING id`,
-      [`K02210${i}`, `ROTULA INFERIOR ${i}`, 'NISSAN Frontier 4X2 1998-2004', 1000, 7])).rows[0].id);
+      `INSERT INTO products (code, name, app, scode, list_price, stock_qty, is_active, material)
+       VALUES ($1,$2,$3,$4,$5,$6,true,'Acero') RETURNING id`,
+      [`K02210${i}`, `ROTULA INFERIOR ${i}`, 'NISSAN Frontier 4X2 1998-2004',
+       `SYD-K${i} // SYD-B${i}`, 1000, 7])).rows[0].id);
     await query(`INSERT INTO product_xref_codes (product_id, xref_code, norm_code, brand)
-                 VALUES ($1,$2,$2,'SYD')`, [pid, `160300${i}`]);
+                 VALUES ($1,$2,$2,'MOOG')`, [pid, `MOOG-X${i}`]);
     await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to)
                  VALUES ($1,'NISSAN Frontier 4X2 1998-2004','NISSAN','Frontier 4X2',1998,2004)`, [pid]);
   }
@@ -277,10 +294,24 @@ if (!PG) {
     assert.equal(p.existencia, '6-10', '재고 7 → 구간 6-10');
     assert.equal(p.caracteristicas.posicionMontaje, 'Inferior');
     assert.equal(p.referencias[0].marca, 'SYD');
+    assert.deepEqual(p.referencias.map((x) => x.codigo), ['SYD-K1', 'SYD-B1'],
+      '화면이 보여 주는 scode 그대로');
+    assert.equal(p.referencias.some((x) => x.marca === 'MOOG'), false,
+      '교차참조표(MOOG)는 기본 설정에서 나가지 않는다');
     assert.equal(p.aplicaciones[0].marca, 'NISSAN');
     assert.equal(d.cursor, null, '한 페이지에 다 들어갔으면 커서는 null');
     assert.equal(d.productos.some((x) => x.codigo.startsWith('PRO')), false,
       'PRO 로 시작하는 제품은 고객에게 나가지 않는다');
+  });
+
+  test('★ 출처를 교차참조표로 바꾸면 MOOG 가 나온다 — 되돌릴 수 있다', async () => {
+    await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
+      headers: bearer(dirId), payload: { ref_source: 'xref' } });
+    const d = (await app.inject({ method: 'GET', url: '/api/catalog/v1/products/K022101',
+      headers: { 'x-api-key': KEY } })).json();
+    assert.equal(d.producto.referencias.some((x) => x.marca === 'MOOG'), true);
+    await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
+      headers: bearer(dirId), payload: { ref_source: 'scode' } });
   });
 
   test('★ PRO 제품은 단건 조회로도 안 나온다 — 404', async () => {
@@ -339,7 +370,10 @@ if (!PG) {
     const r = await app.inject({ method: 'GET', url: '/api/catalog/v1/brands',
       headers: { 'x-api-key': KEY } });
     assert.equal(r.statusCode, 200);
-    assert.ok(r.json().marcas.some((m) => m.marca === 'SYD'));
+    const marcas = r.json().marcas;
+    assert.ok(marcas.some((m) => m.marca === 'SYD'), '기본 출처(scode)는 SYD 하나다');
+    assert.equal(marcas.some((m) => m.marca === 'MOOG'), false,
+      '내보내지 않는 브랜드가 목록에 뜨면 안 된다');
   });
 
   test('접속창 밖이면 403 + proximaVentana', async () => {
