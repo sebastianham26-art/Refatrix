@@ -423,6 +423,36 @@ if (!PG) {
     assert.equal(after, before, '미리보기는 호출 이력을 남기지 않는다');
   });
 
+  test('★ 엑셀용 전체 내보내기 — 고객이 받을 것과 같고, 접속창·회차를 건드리지 않는다', async () => {
+    const beforeCalls = (await query(`SELECT count(*)::int AS n FROM catalog_api_calls`)).rows[0].n;
+    const beforeRuns = (await query(`SELECT count(*)::int AS n FROM catalog_api_runs`)).rows[0].n;
+
+    const r = await app.inject({ method: 'GET', url: `/api/catalog/admin/clients/${clientId}/export`,
+      headers: bearer(dirId) });
+    assert.equal(r.statusCode, 200);
+    const d = r.json();
+    assert.equal(d.total, d.productos.length, 'total 과 실제 건수가 같아야 한다');
+    assert.ok(d.productos.length >= 6);
+    assert.equal(d.productos.some((p) => p.codigo.startsWith('PRO')), false, 'PRO 는 여기에도 없다');
+
+    const p1 = d.productos.find((x) => x.codigo === 'K022101');
+    assert.equal(p1.precio.precioCompra, 800, '가격이 고객이 받을 값과 같다');
+    assert.equal(p1.existencia, '6-10', '재고도 고객이 받을 구간 그대로');
+    assert.deepEqual(p1.referencias.map((x) => x.codigo), ['SYD-K1', 'SYD-B1']);
+
+    assert.equal((await query(`SELECT count(*)::int AS n FROM catalog_api_calls`)).rows[0].n,
+      beforeCalls, '호출 이력을 남기지 않는다');
+    assert.equal((await query(`SELECT count(*)::int AS n FROM catalog_api_runs`)).rows[0].n,
+      beforeRuns, '주간 회차를 소모하지 않는다');
+  });
+
+  test('전체 내보내기는 디렉터만', async () => {
+    assert.equal((await app.inject({ method: 'GET',
+      url: `/api/catalog/admin/clients/${clientId}/export` })).statusCode, 401);
+    assert.equal((await app.inject({ method: 'GET',
+      url: `/api/catalog/admin/clients/${clientId}/export`, headers: bearer(salesId) })).statusCode, 403);
+  });
+
   test('호출 1건 = 이력 1행 — 실패한 호출도 남는다', async () => {
     const d = (await app.inject({ method: 'GET', url: `/api/catalog/admin/clients/${clientId}/calls`,
       headers: bearer(dirId) })).json();

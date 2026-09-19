@@ -47,6 +47,7 @@
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .mono{font-family:Consolas,monospace}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
@@ -159,6 +160,7 @@
         <input id="fPvCode" type="text" placeholder="제품코드(비우면 앞 3건)" style="width:220px">
         <button class="btn sm ghost" id="btnPv2">미리보기</button>
         <button class="btn sm ghost" id="btnCalls">호출 이력</button>
+        <button class="btn sm" id="btnXlsx">엑셀 다운로드 — 고객이 받을 전체</button>
       </div>
       <div id="outWrap"></div>
     </div>
@@ -392,6 +394,74 @@
     }catch(e){ $('outWrap').innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }
   }
 
+  // 고객이 받게 될 전체 카탈로그를 엑셀로 받는다 — 디렉터가 직접 검증하기 위한 것.
+  //   접속창·주 1회 제한·호출 이력을 건드리지 않는다(우리 확인이지 고객 호출이 아니다).
+  async function downloadXlsx(){
+    if(!CUR) return;
+    const btn=$('btnXlsx'); const old=btn.textContent;
+    btn.disabled=true; btn.textContent='만드는 중…';
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id+'/export',{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ show('edMsg','err','내보내기 실패: '+(d.error||r.status)); return; }
+      const P=d.productos||[], c0=d.cliente||{};
+
+      // ① 제품 — 1행 = 1제품
+      const prod=P.map(p=>({
+        'codigo (CTR)':p.codigo,
+        'descripcion':p.descripcion,
+        'activo':p.activo?'SI':'NO (단종)',
+        'referencias (대응품번)':(p.referencias||[]).map(x=>x.codigo).join(' // '),
+        'marcas':[...new Set((p.referencias||[]).map(x=>x.marca))].join(', '),
+        '대응품번 수':(p.referencias||[]).length,
+        'aplicacionesTexto (적용차종 원문)':p.aplicacionesTexto,
+        '적용차종 수':(p.aplicaciones||[]).length,
+        'precioLista (정가)':p.precio?p.precio.precioLista:null,
+        'precioCompra (구매단가)':p.precio?p.precio.precioCompra:null,
+        'moneda':p.precio?p.precio.moneda:'',
+        'ivaPorcentaje':p.precio?p.precio.ivaPorcentaje:null,
+        'existencia (재고구간)':p.existencia,
+        'material (재질)':p.caracteristicas?p.caracteristicas.material:null,
+        'posicionMontaje (장착위치)':p.caracteristicas?p.caracteristicas.posicionMontaje:null,
+        'imagenUrl (사진)':p.imagenUrl,
+        'actualizado':p.actualizado
+      }));
+
+      // ② 적용차종 — 1행 = 1차종(분해된 값 검증용)
+      const apps=[];
+      for(const p of P) for(const a of (p.aplicaciones||[]))
+        apps.push({'codigo (CTR)':p.codigo,'marca':a.marca,'modelo':a.modelo,
+          'anioDesde':a.anioDesde,'anioHasta':a.anioHasta,'nota':a.nota});
+
+      // ③ 설정 — 이 파일이 어떤 설정으로 뽑힌 것인지 같이 남긴다
+      const REF={scode:'제품찾기 화면과 같음 (SYD)',xref:'교차참조표 (BAW·GROB·MOOG…)',both:'둘 다 합침'};
+      const cfg=[
+        {'항목':'생성 시각(멕시코)','값':d.generado},
+        {'항목':'고객사','값':c0.label||''},
+        {'항목':'연결 고객','값':(c0.customer_name||'(연결 안 함)')+' / 할인율 '+(c0.descuento_aplicado)+'%'},
+        {'항목':'제품 수','값':d.total},
+        {'항목':'대응품번 출처','값':REF[c0.ref_source]||c0.ref_source},
+        {'항목':'재고 표기','값':c0.stock_mode==='qty'?'수량 그대로(숫자)':'구간(문자열)'},
+        {'항목':'제외 접두어','값':c0.exclude_prefixes||'(없음)'},
+        {'항목':'단종품','값':c0.include_inactive?'포함 (activo=NO 로 표시)':'제외'},
+        {'항목':'사진 주소 규칙','값':c0.img_base_url||'(제품전송 설정 물려받음)'},
+        {'항목':'대응품번 없는 제품 수','값':prod.filter(x=>!x['referencias (대응품번)']).length},
+        {'항목':'사진 없는 제품 수','값':prod.filter(x=>!x['imagenUrl (사진)']).length},
+        {'항목':'재질 미입력 제품 수','값':prod.filter(x=>!x['material (재질)']).length},
+        {'항목':'적용차종 없는 제품 수','값':prod.filter(x=>!x['적용차종 수']).length}
+      ];
+
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cfg),'설정·요약');
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(prod),'제품');
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(apps),'적용차종');
+      const safe=String(c0.label||'cliente').replace(/[^\w가-힣]+/g,'_').slice(0,30);
+      XLSX.writeFile(wb,'catalogo_'+safe+'_'+String(d.generado||'').slice(0,10)+'.xlsx');
+      show('edMsg','ok','제품 '+prod.length+'건 · 적용차종 '+apps.length+'건을 내려받았습니다.');
+    }catch(e){ show('edMsg','err','서버 연결 실패'); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+
   async function calls(){
     if(!CUR) return;
     try{
@@ -433,6 +503,7 @@
   $('btnPreview').addEventListener('click',preview);
   $('btnPv2').addEventListener('click',preview);
   $('btnCalls').addEventListener('click',calls);
+  $('btnXlsx').addEventListener('click',downloadXlsx);
   $('fCustSearch').addEventListener('input',(e)=>loadCustomers(e.target.value));
   document.addEventListener('click',(e)=>{
     const ed=e.target.closest('[data-edit]');

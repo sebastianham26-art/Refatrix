@@ -1,129 +1,110 @@
-# 카탈로그 조회 API (0221) — 배포 안내
+# 카탈로그 조회 API — 엑셀 다운로드 (검증용) · 2026-09-19
 
-고객사가 **우리 카탈로그를 가져가는** 창구다. 계약서 `Contrato_API_Catalogo_Multimarca_v1.0` 의 내용을
-그대로 구현한 것이다.
+고객에게 **실제로 나가는 그 카탈로그**를 디렉터가 직접 엑셀로 받아 검증하는 기능입니다.
+미리보기(50건)가 아니라 **전 건**을, 고객이 받는 것과 **똑같은 값**으로 내려받습니다.
 
 ---
 
-## 1. 이 묶음에 든 것
+## 1. 무엇이 들어 있나
 
-### 새 파일 — 그대로 복사한다 (기존 파일과 겹치지 않는다)
+| 파일 | 성격 | 설명 |
+|---|---|---|
+| `refatrix-api/src/routes/catalogApiRoutes.js` | 교체 | `GET /clients/:id/export` 추가 |
+| `refatrix-api/src/catalogPull.js` | 교체 | 대응품번 출처(`ref_source`)·제외 접두어·재고 구간 |
+| `refatrix-api/test/catalog_pull.test.mjs` | 교체 | 시험 41건 (내보내기 2건 포함) |
+| `refatrix-catalog-api.html` | 교체 | 「엑셀 다운로드」 단추 + 3개 시트 생성 |
+| `migrations/0222_catalog_stock_range.sql` | 신규 | 재고를 구간으로 |
+| `migrations/0223_catalog_exclude_prefixes.sql` | 신규 | PRO 제외 |
+| `migrations/0224_catalog_ref_source.sql` | 신규 | 대응품번 출처 = 화면과 같은 `scode` |
 
-```
-refatrix-api/migrations/0221_catalog_pull_api.sql
-refatrix-api/src/catalogPull.js
-refatrix-api/src/routes/catalogApiRoutes.js
-refatrix-api/test/catalog_pull.test.mjs
-refatrix-catalog-api.html                 ← 관리 화면(신규)
-```
-
-### 고쳐 넣는 것 — **덮어쓰지 않는다**
-
-```
-refatrix-api/src/server.js     (2줄 추가)
-refatrix-nav.js                (3군데 추가)
-```
-
-이 두 파일은 「견적요청 (수신)」 같은 다른 작업도 함께 고치는 파일이다.
-통째로 덮으면 그 기능이 **조용히 사라진다.** 그래서 필요한 줄만 끼워 넣는 스크립트를 같이 넣었다.
+`server.js` · `refatrix-nav.js` 는 **건드리지 않습니다**. 이미 `apply_catalog_api.mjs` 로 연결해 두셨습니다.
 
 ---
 
 ## 2. 배포 순서
 
-**① 새 파일 복사 + 스크립트 실행** (레포 최상위 = `refatrix-api` 폴더가 보이는 곳)
-
 ```bash
-node apply_catalog_api.mjs
+# ① 백엔드 파일 교체 (위 4개 + migrations 3개를 같은 경로에 덮어쓰기)
+git add -A && git commit -m "feat(catalog): 카탈로그 엑셀 내보내기 + 대응품번 출처 설정"
+git push          # ← 푸시는 디렉터님이
+
+# ② Railway 배포 뒤 마이그레이션
+#    (서버가 기동하며 자동 적용됩니다. 수동 확인용:)
+psql "$DATABASE_URL" -f refatrix-api/migrations/0222_catalog_stock_range.sql
+psql "$DATABASE_URL" -f refatrix-api/migrations/0223_catalog_exclude_prefixes.sql
+psql "$DATABASE_URL" -f refatrix-api/migrations/0224_catalog_ref_source.sql
+
+# ③ 프런트 (GitHub Pages) — refatrix-catalog-api.html 교체
 ```
 
-스크립트가 하는 일 세 가지:
-
-1. `server.js` 에 라우트 등록 2줄
-2. `refatrix-nav.js` 에 메뉴·권한 3군데
-3. **모든 화면의 메뉴 캐시 토큰**을 `20260917catalog` 로 올린다
-   (토큰을 안 올리면 직원 브라우저가 **예전 메뉴를 계속 써서** 새 메뉴가 안 보인다)
-
-- 무엇을 넣었는지 화면에 찍는다. **두 번 실행해도 안전하다**(이미 있으면 건너뛴다).
-- 자리를 못 찾으면 손으로 넣을 줄을 그대로 알려 준다.
-
-> **견적요청 수신(0220)과 충돌하지 않는다.** 배포된 `origin/main`(견적수신_04) 의 실제 파일로
-> 시험해서 확인했다: `crmQuoteRoutes` 등록과 견적 팝업이 그대로 살아남고, 마이그레이션도
-> `0220_crm_quote_inbound.sql` / `0221_catalog_pull_api.sql` 로 번호가 겹치지 않는다.
-
-**② 커밋 · 푸시** → Railway 자동 배포
-
-**③ 마이그레이션**
-
-```bash
-npm run migrate        # 0221_catalog_pull_api 적용
-```
-
-**④ 프론트 배포** (`refatrix-catalog-api.html`, `refatrix-nav.js`) → **Ctrl+Shift+R**
-
-포털 → 관리 그룹에 **「카탈로그 조회 API」** 가 보이면 성공이다.
-탭 제목 끝에 `build 20260915catalogpull` 이 찍힌다.
-
-> 순서를 바꾸면(프론트 먼저) 화면은 뜨는데 표가 없어 비어 보인다. 백엔드 → 마이그레이션 → 프론트다.
+백엔드 → 마이그레이션 → 프런트 순서를 지켜 주십시오.
 
 ---
 
-## 3. 배포 직후 화면에서 할 일
+## 3. 쓰는 법
 
-「카탈로그 조회 API」 → **「+ 고객사 추가」**
+1. **연동관리 → 카탈로그 조회 API** 로 들어간다
+2. 고객사(예: 멀티브랜드 비교 고객)를 고른다
+3. **「엑셀 다운로드 — 고객이 받을 전체」** 를 누른다
+4. `catalogo_<고객사>_2026-09-19.xlsx` 가 내려온다
 
-| 칸 | 넣을 값 |
+---
+
+## 4. 엑셀 시트 3개
+
+**① 설정·요약** — 이 파일이 *어떤 설정으로* 뽑힌 것인지 함께 남깁니다.
+
+- 생성 시각(멕시코) · 고객사 · 연결 고객 + 적용 할인율 · 제품 수
+- 대응품번 출처 / 재고 표기 / 제외 접두어 / 단종품 정책 / 사진 주소 규칙
+- 검증용 집계: 대응품번 없는 제품 수, 사진 없는 제품 수, 재질 미입력 수, 적용차종 없는 제품 수
+
+**② 제품** — 1행 = 1제품
+`codigo(CTR) · descripcion · activo · referencias(대응품번) · marcas · 대응품번 수 ·
+aplicacionesTexto · 적용차종 수 · precioLista · precioCompra · moneda · ivaPorcentaje ·
+existencia(재고구간) · material · posicionMontaje · imagenUrl · actualizado`
+
+**③ 적용차종** — 1행 = 1차종 (분해가 제대로 됐는지 보는 시트)
+`codigo(CTR) · marca · modelo · anioDesde · anioHasta · nota`
+
+---
+
+## 5. 안전장치 — 확인해 두실 점
+
+- **디렉터 전용**입니다. 다른 권한으로는 403.
+- 이 내려받기는 고객의 **접속창(토요일 05–09시)·주 1회 회차·호출 이력을 전혀 건드리지 않습니다.**
+  즉, 평일 아무 때나 몇 번을 받아도 고객의 토요일 동기화에 영향이 없습니다.
+- 감사 기록(`audit_log`)에는 `export` 로 남습니다 — 누가 언제 몇 건을 받았는지.
+- 고객 키는 이 화면 어디에도 나오지 않습니다.
+- 안전 상한 20만 건(1,000건 × 200쪽).
+
+---
+
+## 6. 무엇을 봐 주시면 되나
+
+| 시트 | 보실 곳 |
 |---|---|
-| 이름 | 예: `Comparador Multimarca` |
-| **연결 고객** | 그 고객사의 ERP 고객 마스터 — 옆에 뜨는 **할인율이 맞는지 확인**. 이 값으로 구매단가가 계산된다 |
-| 접속창 | 요일 `토요일` · 시작 `5` · 종료 `9` (종료는 **미만**) |
-| **사진 주소 규칙** | 아래 값을 **반드시** 넣는다 |
-
-```
-https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/{code}/{code}_1.webp
-```
-
-> ⚠ 이 칸을 비워 두면 제품전송 연동의 설정을 물려받는다. 그건 `.jpg` 규칙이라
-> **계약서에 적은 주소와 다른 값이 고객에게 나간다.** 이번 배포에서 유일하게 조용히 틀릴 수 있는 지점이다.
-
-그다음:
-
-1. **「미리보기 — 고객이 받을 값」** → `imagenUrl` 과 `precioCompra` 가 계약서대로 나오는지 눈으로 확인
-2. **테스트 키 발급** → 개발자에게 전달 (테스트 키는 접속창을 받지 않아 평일에도 붙어 볼 수 있다)
-3. 검수 끝나면 **운영 키 발급** → 전달. 키는 **발급 직후 한 번만** 보인다
+| 설정·요약 | 「대응품번 출처」가 **제품찾기 화면과 같음 (SYD)** 인지 |
+| 설정·요약 | 「제외 접두어」가 **PRO** 인지 → 제품 시트에 PRO 로 시작하는 코드가 한 건도 없어야 함 |
+| 제품 | `marcas` 칸에 **BAW · MOOG · GROB 가 없어야** 함 (SYD 계열만) |
+| 제품 | `precioCompra` = `precioLista × (1 − 할인율)` — 설정·요약의 할인율로 검산 |
+| 제품 | `existencia` 가 `0 / 1-5 / 6-10 / 11-20 / 21-50 / 51-100 / 101+` 중 하나인지 |
+| 제품 | `activo = NO (단종)` 인 것이 섞여 있는지 (계약대로 포함이 맞습니다) |
+| 제품 | `imagenUrl` 을 하나 눌러 사진이 실제로 열리는지 |
 
 ---
 
-## 4. 가격이 어떻게 나가는가 (확인용)
+## 7. 검증 결과
 
 ```
-precioCompra = 반올림2( products.list_price × (1 − customers.discount / 100) )
+node --test test/catalog_pull.test.mjs   →  41 통과 / 0 실패
+  38  ★ 엑셀용 전체 내보내기 — 고객이 받을 것과 같고, 접속창·회차를 건드리지 않는다
+  39  전체 내보내기는 디렉터만
 ```
-
-조회가 들어온 **그 순간** 계산한다. 고객 마스터의 할인율을 바꾸면 **다음 호출부터** 바뀐 가격이
-나간다 — 재배포도 재적재도 필요 없다. 공식은 청구서가 단가를 만드는 공식과 같다.
-
-할인율이 비어 있거나 0이면 0% 로 보고 **정가가 그대로** 나간다.
-고객을 연결하지 않은 고객사는 목록에 「정가만 나갑니다」로 붉게 표시된다.
+실제 PostgreSQL 16 으로 돌린 결과입니다.
 
 ---
 
-## 5. 시험
+## 8. 아직 남은 일 (디렉터님 결정 대기)
 
-```bash
-# 순수 로직만 (DB 없이)
-node --test --test-concurrency=1 test/catalog_pull.test.mjs
-
-# 실 DB 까지 (32개 전부)
-TEST_PG_URL=postgres://... node --test --test-concurrency=1 test/catalog_pull.test.mjs
-```
-
-이 저장소의 HTTP 스위트는 끝난 뒤 프로세스가 스스로 종료되지 않는다(서버 백그라운드 감시자 때문).
-결과는 다 나오므로 `timeout 100 node --test …` 로 감싸면 된다. 기존부터 그랬다.
-
----
-
-## 6. 되돌리려면
-
-- 화면에서 그 고객사를 **「중지」**로 바꾸거나 **키를 폐기**하면 즉시 막힌다(배포 되돌릴 필요 없음).
-- 표를 지울 필요는 없다. 0221 은 **새 표 3개만 만들고 기존 표는 건드리지 않는다.**
+- `check_referencias.sql` 을 운영 DB 에서 한 번 돌려 두 출처의 규모 차이를 확인
+- **웹카달록(CRM 제품 전송)** 에는 아직 PRO 제외가 걸려 있지 않습니다. 걸까요?

@@ -327,6 +327,36 @@ export default async function catalogApiRoutes(app) {
     };
   });
 
+  /**
+   * 검증용 전체 내보내기 — **고객이 받게 될 것과 똑같은 값**을 한 번에 돌려준다.
+   *   디렉터 전용. 접속창·주 1회 제한·호출 이력을 건드리지 않는다(우리 확인이지 고객 호출이 아니다).
+   *   화면이 이 응답으로 엑셀을 만든다.
+   */
+  app.get('/api/catalog/admin/clients/:id/export', guard, async (req, reply) => {
+    if (!(await catalogTablesReady())) return reply.code(503).send({ error: 'migration_required' });
+    const c = await clientById(Number(req.params.id));
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+
+    // 고객이 cursor 로 도는 것과 **같은 경로**로 모은다 — 다른 질의를 쓰면 검증이 의미를 잃는다.
+    const productos = [];
+    let afterId = null;
+    for (let page = 0; page < 200; page++) {       // 200 × 1000 = 20만 건 안전장치
+      const r = await fetchPage(c, { afterId, limit: 1000 });
+      productos.push(...r.productos);
+      if (r.productos.length < 1000 || r.lastId == null) break;
+      afterId = r.lastId;
+    }
+    await safeLog({ userId: req.ctx.perm.userId, action: 'export',
+      target: `catalog_client:${c.id}`, detail: { op: 'catalog_export', items: productos.length } });
+    return {
+      ok: true,
+      generado: nowMxIso(),
+      cliente: publicClient(c),
+      total: productos.length,
+      productos,
+    };
+  });
+
   /** 호출 이력 — 상대가 "우리는 호출했다"고 할 때 답할 수 있어야 한다. */
   app.get('/api/catalog/admin/clients/:id/calls', guard, async (req, reply) => {
     if (!(await catalogTablesReady())) return reply.code(503).send({ error: 'migration_required' });
