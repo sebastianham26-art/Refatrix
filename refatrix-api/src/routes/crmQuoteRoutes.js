@@ -25,7 +25,8 @@ import { mapQuote, quoteDate, badQuoteLines, folioAsQuoteNo, readInboundKey, ver
 import { computeQuoteTotals } from '../quotes.js';
 // ⚠ 화면과 **같은 조립기**를 쓴다. 두 벌로 두면 코드 해석 규칙이 갈라진다.
 import { buildLines, nextQuoteNo, assignReservations, normalizePoNo, poColumnReady } from '../quoteBuild.js';
-import { reserveExpiresAt } from '../quoteExpiry.js';   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
+import { reserveExpiresAt } from '../quoteExpiry.js';
+import { recordQuoteDevDemand } from '../quoteDevDemand.js';   // 2026-09-21 · 포털로 온 미등록 코드도 즉시 개발요청 대장에   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 
 export const QUOTE_KEY = 'crm_quote_request';
 
@@ -326,6 +327,8 @@ export default async function crmQuoteRoutes(app) {
              l.line_iva, l.line_total, l.avail_stock, l.stock_flag, l.issue || null]);
         }
         await assignReservations(c, q.id);
+        // 2026-09-21 · 카탈로그에 없는 코드는 받는 즉시 개발요청 대장에 적는다(화면 견적과 같은 규칙).
+        await recordQuoteDevDemand(c, q.id, { userId: null });
         return { q, lines };
       });
 

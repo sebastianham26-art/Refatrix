@@ -7,11 +7,11 @@ import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quot
 import { resolveCode, assignReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
          normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause } from '../quoteBuild.js';
-import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
 import { packingDeadline } from '../workingHours.js';
-import { reserveExpiresAt } from '../quoteExpiry.js';   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
+import { reserveExpiresAt } from '../quoteExpiry.js';
+import { recordQuoteDevDemand, quoteDevLines, esDevNote } from '../quoteDevDemand.js';   // 2026-09-21 · 미등록 코드는 저장 즉시 개발요청 대장에   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 import { maybeMarkPacked } from '../packedGate.js';
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
@@ -215,29 +215,10 @@ export default async function quoteRoutes(app) {
               [l.product_id, won.customer_id, qty, short, shAmount, today, id,
                `견적 ${won.quote_no} 만료(미확정) — 부족 수요신호`, won.created_by || null]);
           }
-          // 미매칭 라인: 제품개발요청 적재(전환 로직과 동일 — source_quote_id+input_code 중복가드 + 담당 알림)
-          const ulines = (await c.query(
-            `SELECT input_code, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NULL`, [id])).rows;
-          const custName = won.customer_id
-            ? ((await c.query(`SELECT name FROM customers WHERE id=$1`, [won.customer_id])).rows[0]?.name || '')
-            : '';
-          for (const u of ulines) {
-            const dup = (await c.query(
-              `SELECT 1 FROM product_dev_requests
-                WHERE source_quote_id=$1 AND input_code IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
-              [id, u.input_code || null])).rows[0];
-            if (dup) continue;
-            await c.query(
-              `INSERT INTO product_dev_requests
-                 (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
-               VALUES ($1,$2,$3,$4,$5,'received',$6)`,
-              [u.input_code || null, won.customer_id, Number(u.qty) || null, today, id, won.created_by || null]);
-            await notifyProductMarketing(c, {
-              title: `개발검토 요청: ${u.input_code || ''}`,
-              detail: `${custName ? custName + ' 고객 ' : ''}견적 ${won.quote_no}(만료)에서 미등록 코드 ${u.input_code || '-'} 개발 검토가 필요합니다.`,
-              createdBy: won.created_by || null,
-            });
-          }
+          // 미매칭 라인: 제품개발요청 — 2026-09-21 부터는 저장 시점에 이미 적혀 있다.
+          //   여기서는 **안전망**으로 한 번 더 부른다(배포 전 견적·예외 경로). 같은 견적·같은 코드는 중복되지 않는다.
+          //   (status 를 방금 expired 로 바꿨으므로 취소 판정에 걸리지 않는다)
+          await recordQuoteDevDemand(c, id, { userId: won.created_by || null });
           await logEvent({ userId: won.created_by || null, action: 'update', target: `quote:${id}`, detail: { expired: true } });
         });
       } catch (_) { /* best-effort; 다음 틱에서 재시도 */ }
@@ -336,7 +317,10 @@ export default async function quoteRoutes(app) {
           [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, screenIssue(l.issue)]);
       }
       await assignReservations(c, q.id);   // 선착순 재고 예약(블럭)
-      return { ...q, lines };
+      // 2026-09-21 · 카탈로그에 없는 코드는 **지금** 개발요청 대장에 적는다(전환·만료를 기다리지 않는다).
+      await recordQuoteDevDemand(c, q.id, { userId: req.ctx.perm.userId });
+      const devLines = await quoteDevLines(c, q.id);
+      return { ...q, lines, devLines };
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}` });
     if (customerId) {
@@ -358,7 +342,9 @@ export default async function quoteRoutes(app) {
       // 마이그레이션 전에 PO 를 보냈다면 **말해 준다.** 조용히 버리면 영업사원은 넣은 줄 안다.
       po_pending_migration: (!poReady && !!poNo) || undefined,
       inactive_lines: inactiveLines,
-      inactive_note: inactiveLines.length ? esInactiveNote(inactiveLines) : null };
+      inactive_note: inactiveLines.length ? esInactiveNote(inactiveLines) : null,
+      dev_lines: result.devLines || [],
+      dev_note: (result.devLines || []).length ? esDevNote(result.devLines) : null };
   });
 
   // 견적 수정(draft/confirmed만) — 라인 전체 교체
@@ -415,11 +401,16 @@ export default async function quoteRoutes(app) {
           [id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, iss]);
       }
       await assignReservations(c, id);   // 라인 교체 후 예약 재배분(만료시각은 생성 기준 유지)
+      // 2026-09-21 · 수정으로 새로 들어온 미등록 코드도 바로 적는다(같은 견적·같은 코드는 한 줄).
+      await recordQuoteDevDemand(c, id, { userId: req.ctx.perm.userId });
+      hit.devLines = await quoteDevLines(c, id);
       return hit;
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}` });
-    return { ok: true, inactive_lines: flagged,
-      inactive_note: flagged.length ? esInactiveNote(flagged) : null };
+    const devLines = flagged.devLines || [];
+    return { ok: true, inactive_lines: [...flagged],
+      inactive_note: flagged.length ? esInactiveNote(flagged) : null,
+      dev_lines: devLines, dev_note: devLines.length ? esDevNote(devLines) : null };
   });
 
   // 견적 상태 변경: confirmed / cancelled / draft
@@ -1098,7 +1089,6 @@ export default async function quoteRoutes(app) {
 
     // 미확보 부족분 백로그 + 미등록 개발요청 + 견적 종료(converted) — 한 트랜잭션
     const devIds = [];
-    const custName = (await query(`SELECT name FROM customers WHERE id=$1`, [customerId])).rows[0]?.name || '';
     await withTx(async (c) => {
       for (const s of shortRows) {
         await c.query(
@@ -1109,22 +1099,14 @@ export default async function quoteRoutes(app) {
           [s.product_id, customerId, invoiceId || null, s.requested, s.fulfilled, s.shortage,
            s.amount_mxn || 0, invDate, id, `견적 ${q.quote_no} 전환 — 미확보 부족분`, req.ctx.perm.userId]);
       }
-      for (const u of unmatched) {
-        // 재전환 시 동일 견적·코드의 개발요청 중복 생성 방지
-        const dup = (await c.query(
-          `SELECT 1 FROM product_dev_requests WHERE source_quote_id=$1 AND input_code IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
-          [id, u.input_code || null])).rows[0];
-        if (dup) continue;
-        const r = (await c.query(
-          `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
-           VALUES ($1,$2,$3,$4,$5,'received',$6) RETURNING id`,
-          [u.input_code || null, customerId, Number(u.qty) || null, invDate, id, req.ctx.perm.userId])).rows[0];
-        devIds.push(r.id);
-        await notifyProductMarketing(c, {
-          title: `개발검토 요청: ${u.input_code || ''}`,
-          detail: `${custName ? custName + ' 고객 ' : ''}견적 ${q.quote_no}에서 미등록 코드 ${u.input_code || '-'} 개발 검토가 필요합니다.`,
-          createdBy: req.ctx.perm.userId,
-        });
+      // 미등록 코드 → 개발요청(2026-09-21 부터는 저장 시점에 이미 적혀 있다 — 여기는 안전망).
+      //   불특정 견적을 전환하며 고객을 지정했다면 그 고객을 요청에 붙인다.
+      const dev = await recordQuoteDevDemand(c, id, { customerId, userId: req.ctx.perm.userId });
+      for (const d of dev.created) devIds.push(d.id);
+      if (!q.customer_id && customerId) {
+        await c.query(
+          `UPDATE product_dev_requests SET customer_id=$1, updated_at=now()
+            WHERE source_quote_id=$2 AND customer_id IS NULL AND deleted_at IS NULL`, [customerId, id]);
       }
       await c.query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`,
         [invoiceId || null, customerId, req.ctx.perm.userId, id]);
@@ -1249,13 +1231,17 @@ export default async function quoteRoutes(app) {
           [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, screenIssue(l.issue)]);
       }
       await assignReservations(c, q.id);
-      return { ...q, lines };
+      await recordQuoteDevDemand(c, q.id, { userId: req.ctx.perm.userId });   // 2026-09-21
+      const devLines = await quoteDevLines(c, q.id);
+      return { ...q, lines, devLines };
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}`, detail: { cloned_from: srcId } });
     const cloneInactive = (result.lines || []).filter((l) => l.issue === 'inactive')
       .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
     return { id: result.id, quote_no: result.quote_no, customer_id: customerId,
       inactive_lines: cloneInactive,
-      inactive_note: cloneInactive.length ? esInactiveNote(cloneInactive) : null };
+      inactive_note: cloneInactive.length ? esInactiveNote(cloneInactive) : null,
+      dev_lines: result.devLines || [],
+      dev_note: (result.devLines || []).length ? esDevNote(result.devLines) : null };
   });
 }

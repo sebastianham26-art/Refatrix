@@ -208,6 +208,9 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
   const rfcOk = 'QIN010203AA1';
   const rfcPend = 'QIN010203BB2';
   // 앞선 실패 실행이 남긴 찌꺼기를 먼저 치운다(시험은 몇 번을 돌려도 같아야 한다).
+  // 2026-09-21 · 못 찾은 코드는 수신 즉시 개발요청 대장에 적히므로 그것부터 치운다.
+  await query(`DELETE FROM product_dev_requests WHERE source_quote_id IN (
+                 SELECT id FROM quotes WHERE external_quote_no LIKE 'COT-T%' OR quote_no LIKE 'COT-T%')`);
   await query(`DELETE FROM quote_lines WHERE quote_id IN (
                  SELECT id FROM quotes WHERE external_quote_no LIKE 'COT-T%' OR quote_no LIKE 'COT-T%')`);
   await query(`DELETE FROM quotes WHERE external_quote_no LIKE 'COT-T%' OR quote_no LIKE 'COT-T%'`);
@@ -252,6 +255,7 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
   let firstQuoteId = null;      // 「정상 접수」로 만든 견적 — 멱등 시험이 이걸 되찾아야 한다
   t.after(async () => {
     for (const id of madeQuotes) {
+      await query(`DELETE FROM product_dev_requests WHERE source_quote_id=$1`, [id]);
       await query(`DELETE FROM quote_lines WHERE quote_id=$1`, [id]);
       await query(`DELETE FROM quotes WHERE id=$1`, [id]);
     }
@@ -404,6 +408,12 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     assert.equal(rows[0].issue, null);
     assert.equal(rows[1].issue, 'not_found');
     assert.equal(rows[2].issue, 'inactive');
+    // 2026-09-21 · 못 찾은 코드는 받는 순간 개발요청 대장에 한 줄 남는다(판매중단 줄은 대상 아님).
+    const dev = (await query(
+      `SELECT input_code, requested_qty, status FROM product_dev_requests
+        WHERE source_quote_id=$1 AND deleted_at IS NULL`, [b.quoteId])).rows;
+    assert.deepEqual(dev.map((x) => x.input_code), ['NO-EXISTE-99'], '포털 견적의 미등록 코드도 즉시 기록');
+    assert.equal(dev[0].status, 'received');
 
     // 확정 잠금 — **0원짜리 줄**(코드를 해석 못 한 줄)이 붙은 견적이 고객에게 나가면 안 된다.
     //   0224b · 판매중단 줄은 단가가 정상으로 들어가므로 **잠그지 않는다**(디렉터 지시 2026-09-18):

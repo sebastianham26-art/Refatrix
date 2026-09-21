@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-0918po1</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-0921dev1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -298,6 +298,7 @@
   // 0224b · 판매중단(비활성) SKU 안내 — **스페인어**(이 화면을 쓰는 사람이 영업사원이다).
   //   막는 메시지가 아니다: 견적은 그대로 진행되고, 그 줄이 「고객이 단종품을 찾았다」는
   //   기록으로 남아 제품 화면의 수요 집계에 잡힌다는 것을 알려 준다.
+  const ES_DEV_WHERE='Ventas > 개발 요청 (Solicitudes de desarrollo)';   // 2026-09-21
   const ES_INACT_WHERE='Productos y Marketing > Búsqueda de productos (ficha del SKU · «Solicitudes tras descontinuar»)';
   function warnInactive(code){
     const m=$('lineMsg'); if(!m) return;
@@ -1549,13 +1550,17 @@
       // 0224b — 판매중단 SKU 가 들어갔으면 **어디에 기록으로 남는지**를 스페인어로 알린다.
       //   견적은 정상 진행된다(포장·매출 전환 모두). 막는 안내가 아니다.
       const inact=(d.inactive_lines||[]);
-      m.className=inact.length?'msg warn':'msg ok';
+      // 2026-09-21 · 카탈로그에 없는 코드는 저장과 동시에 「개발 요청」 대장에 기록된다 — 어디에 남았는지 알려 준다.
+      const devl=(d.dev_lines||[]);
+      m.className=(inact.length||devl.length)?'msg warn':'msg ok';
       m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · 기존 고객 연결: '+esc(d.auto_customer.name)):'')
         +(d.customer_po_no?(' · 고객 PO: '+d.customer_po_no):'')
         // 마이그레이션 전이면 PO 는 저장되지 않았다 — 조용히 넘기지 않는다.
         +(d.po_pending_migration?('  ⚠ 고객 PO번호는 아직 저장되지 않았습니다(서버 마이그레이션 0225 대기). 견적 상세에서 다시 넣어 주세요.'):'')
         +(inact.length?('  ⚠ Descontinuados: '+inact.length+' ('+inact.map(x=>x.code).join(', ')
-          +'). La cotización sigue su curso; estas líneas quedan registradas como demanda en '+ES_INACT_WHERE+'.'):'');
+          +'). La cotización sigue su curso; estas líneas quedan registradas como demanda en '+ES_INACT_WHERE+'.'):'')
+        +(devl.length?('  📝 Fuera de catálogo: '+devl.length+' ('+devl.map(x=>x.code).join(', ')
+          +'). Quedan registrados como solicitud de desarrollo en '+ES_DEV_WHERE+'.'):'');
       if(d.auto_customer){ loadCustomers(); }
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('saveBtn').disabled=false;}
