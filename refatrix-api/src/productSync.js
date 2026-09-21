@@ -209,11 +209,35 @@ export function chunk(list, size) {
   return out;
 }
 
+/**
+ * 2026-09-21 · 디렉터 지시: **PRO 로 시작하는 제품은 CRM 에 보내지 않는다.**
+ *   대소문자·앞 공백과 무관하게(`pro-01`, ` PRO123` 도 제외). 전체 전송·시험 전송·미리보기·
+ *   연결 테스트·화면 건수가 모두 이 한 조건을 쓴다 — 한 곳이라도 빠지면 시험은 안 나가는데
+ *   실전에서 나가는 식의 어긋남이 생긴다.
+ *   ⚠ LIKE 의 `_`·`%` 가 섞이지 않도록 접두어는 영문/숫자만 허용한다.
+ */
+export const EXCLUDED_PREFIXES = ['PRO'];
+
+/** 이 코드는 보내지 않는가(JS 쪽 방어선 — SQL 조건과 같은 규칙). */
+export function isExcludedCode(code) {
+  const c = String(code == null ? '' : code).trim().toUpperCase();
+  return EXCLUDED_PREFIXES.some((p) => c.startsWith(p));
+}
+
+/** SQL 조건 조각 — `products` 의 code 컬럼 기준. 접두어는 상수라 바인딩이 필요 없다. */
+export const EXCLUDE_SQL = EXCLUDED_PREFIXES
+  .filter((p) => /^[A-Z0-9]+$/.test(p))
+  .map((p) => ` AND upper(btrim(code)) NOT LIKE '${p}%'`)
+  .join('');
+
+/** 전송 대상 제품 조건(삭제 안 됨 · 코드 있음 · 제외 접두어 아님). 건수 집계도 이걸 쓴다. */
+export const SENDABLE_WHERE = `deleted_at IS NULL AND code IS NOT NULL AND code <> ''${EXCLUDE_SQL}`;
+
 const PRODUCT_COLS = `SELECT code, name, app, scode, list_price, stock_qty, is_active,
                              sat_code, origin, iva_rate, ean, location,
                              list_price_syd, price_customer_ctr
                         FROM products
-                       WHERE deleted_at IS NULL AND code IS NOT NULL AND code <> ''`;
+                       WHERE ${SENDABLE_WHERE}`;
 
 export async function fetchProducts({ limit = null, code = null } = {}) {
   if (code) {
@@ -259,7 +283,9 @@ export async function runCatalogSync({
 
     const { ymd } = mxNowParts();
     const isTest = mode === 'test';
-    const rows = await fetchProducts({ limit: isTest ? (Number(limit) || 5) : null });
+    // SQL 이 이미 PRO* 를 거르지만, 조건이 바뀌어도 새지 않도록 한 번 더 거른다.
+    const rows = (await fetchProducts({ limit: isTest ? (Number(limit) || 5) : null }))
+      .filter((r) => !isExcludedCode(r.code));
     if (!rows.length) return { error: 'no_products' };
 
     const imgBase = ep.img_base_url || '';

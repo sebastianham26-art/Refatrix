@@ -8,6 +8,7 @@ import { logEvent } from '../audit.js';
 import {
   PRODUCT_KEY, runCatalogSync, listRuns, productTablesReady,
   fetchProducts, buildProduct, buildLote, chunk, mxNowParts, autoRanToday,
+  SENDABLE_WHERE, EXCLUDED_PREFIXES,
 } from '../productSync.js';
 
 const ERR_NOTE = {
@@ -25,16 +26,22 @@ export default async function productSyncRoutes(app) {
     const ep = await getEndpoint(PRODUCT_KEY);
     const pub = ep ? publicEndpoint(ep) : null;
     const ready = await productTablesReady();
-    let counts = { total: 0, activos: 0, inactivos: 0 };
+    let counts = { total: 0, activos: 0, inactivos: 0, excluidos: 0 };
     try {
+      // 건수는 **실제로 보낼 제품**만 센다(PRO* 제외) — 묶음 수 예상이 실전과 같아야 한다.
       const r = (await query(
         `SELECT COUNT(*)::int AS total,
                 SUM(CASE WHEN is_active THEN 1 ELSE 0 END)::int AS activos
+           FROM products WHERE ${SENDABLE_WHERE}`)).rows[0];
+      const x = (await query(
+        `SELECT COUNT(*)::int AS n
            FROM products WHERE deleted_at IS NULL AND code IS NOT NULL AND code <> ''`)).rows[0];
+      const total = Number(r.total) || 0;
       counts = {
-        total: Number(r.total) || 0,
+        total,
         activos: Number(r.activos) || 0,
-        inactivos: (Number(r.total) || 0) - (Number(r.activos) || 0),
+        inactivos: total - (Number(r.activos) || 0),
+        excluidos: Math.max(0, (Number(x.n) || 0) - total),
       };
     } catch (_) { /* products 조회 실패는 화면을 죽이지 않는다 */ }
 
@@ -55,6 +62,7 @@ export default async function productSyncRoutes(app) {
       blocked_reason: !ep ? 'endpoint_missing'
         : (!activeUrl(ep) ? 'url_missing' : (!ep.enabled ? 'endpoint_disabled' : null)),
       products: counts,
+      excluded_prefixes: EXCLUDED_PREFIXES,          // 보내지 않는 코드 접두어(2026-09-21 · PRO)
       estimated_lotes: (ep && ep.body_shape === 'item')
         ? counts.total                               // 1건씩이면 요청 수 = 제품 수
         : Math.max(1, Math.ceil(counts.total / batch)),
