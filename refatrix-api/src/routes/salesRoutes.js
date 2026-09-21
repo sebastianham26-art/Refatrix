@@ -8,6 +8,7 @@ import { logEvent } from '../audit.js';
 import { autoStage } from '../stageAuto.js';
 import { allocateShortagesOnSale, reverseInvoiceResolutions, scanResolveShortages } from '../shortageResolve.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
+import { isInternalCall } from '../internalCall.js';   // 0224c · 견적 전환 내부 호출 식별
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -20,14 +21,26 @@ export default async function salesRoutes(app) {
       return reply.code(400).send({ error: 'customer_date_lines_required' });
     }
     const userId = req.ctx.perm.userId;
-    // 0179 — 비활성(판매중단) SKU 는 새 매출 등록에 담을 수 없다.
-    //   견적 → 매출 전환(/api/quotes/:id/convert)은 이 경로를 타지 않으므로,
-    //   비활성 전에 확정된 기존 오더는 그대로 인보이스 발행된다.
+    // 0179 — 비활성(판매중단) SKU 는 **직접** 매출등록에 담을 수 없다.
+    // 0224c (2026-09-21) — 단, 견적 → 매출 전환(/api/quotes/:id/convert)은 이 경로를
+    //   app.inject 로 **내부 호출**한다(예전 주석의 「이 경로를 타지 않는다」는 틀렸다).
+    //   그래서 판매중단 SKU 에 재고가 남아 있으면 전환 전체가 sale_failed 로 멈췄다.
+    //   디렉터 지시: 「inactivo 이후 오더는 기록하되, 그 오더가 포함된 견적은 매출확정이 되게 하라.」
+    //   → 내부 전환 호출(난수 토큰 헤더)이고, 그 SKU 가 **해당 견적의 줄**일 때만 통과시킨다.
+    //     수요 기록은 quote_lines.issue='inactive' 로 이미 남아 있다(전환 후에도 유지).
     const chkIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean))];
     if (chkIds.length) {
-      const bad = (await query(
+      let bad = (await query(
         `SELECT id, code, name FROM products
           WHERE id = ANY($1) AND deleted_at IS NULL AND NOT is_active`, [chkIds])).rows;
+      const srcQuoteId = Number(req.body?.source_quote_id) || null;
+      if (bad.length && srcQuoteId && isInternalCall(req)) {
+        const ok = new Set((await query(
+          `SELECT DISTINCT ql.product_id FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+            WHERE q.id = $1 AND q.deleted_at IS NULL AND q.status NOT IN ('converted','cancelled','pricelist')
+              AND ql.product_id IS NOT NULL`, [srcQuoteId])).rows.map((r) => Number(r.product_id)));
+        bad = bad.filter((p) => !ok.has(Number(p.id)));
+      }
       if (bad.length) {
         return reply.code(409).send({
           error: 'inactive_product',

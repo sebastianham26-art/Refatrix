@@ -15,6 +15,7 @@ import { reserveExpiresAt } from '../quoteExpiry.js';   // 2026-09-21 · 근무�
 import { maybeMarkPacked } from '../packedGate.js';
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
+import { internalHeaders } from '../internalCall.js';   // 0224c · /api/sales 내부 호출 표식
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -1082,10 +1083,12 @@ export default async function quoteRoutes(app) {
         customer_id: customerId, inv_date: invDate, allow_partial: true,
         lines: shipLines,
         memo: `견적 ${q.quote_no} 전환`,
+        // 0224c · 판매중단 SKU 가 섞여 있어도 이 견적의 줄이면 매출확정된다(salesRoutes 참조).
+        source_quote_id: id,
       };
       const res = await app.inject({
         method: 'POST', url: '/api/sales',
-        headers: { authorization: req.headers.authorization, 'content-type': 'application/json' },
+        headers: { authorization: req.headers.authorization, 'content-type': 'application/json', ...internalHeaders() },
         payload: JSON.stringify(payload),
       });
       if (res.statusCode !== 200) return reply.code(res.statusCode).send({ error: 'sale_failed', detail: res.json() });
@@ -1209,7 +1212,7 @@ export default async function quoteRoutes(app) {
     const poReady = await poColumnReady();
     const src = (await query(
       `SELECT id, customer_id, quote_no, memo, ${poSelectFrag(poReady)} AS customer_po_no
-         FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];
+         FROM quotes q WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];   // 0224c · 별칭 q 누락 → 복제 500 (poSelectFrag 는 q.customer_po_no)
     if (!src) return reply.code(404).send({ error: 'not_found' });
     const customerId = src.customer_id;
     if (!customerId) return reply.code(409).send({ error: 'customer_required', note: '고객이 지정된 견적만 복제할 수 있습니다.' });
