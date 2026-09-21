@@ -404,6 +404,44 @@ if (!PG) {
       headers: bearer(dirId), payload: { window_enforced: false } });
   });
 
+  test('★ 테스트 키로 다 받아 가도 동기화 회차에 남는다 — 그리고 몇 번이든 다시 받을 수 있다', async () => {
+    const tk = (await app.inject({ method: 'POST', url: `/api/catalog/admin/clients/${clientId}/key`,
+      headers: bearer(dirId), payload: { env: 'test' } })).json().token;
+    const pullAll = async () => {
+      let cursor = null, n = 0, pages = 0;
+      do {
+        const r = await app.inject({ method: 'GET',
+          url: '/api/catalog/v1/products?limit=10' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''),
+          headers: { 'x-api-key': tk } });
+        assert.equal(r.statusCode, 200, '테스트 키는 막히지 않는다');
+        const b = r.json(); n += b.productos.length; pages++; cursor = b.cursor;
+      } while (cursor && pages < 50);
+      return { n, pages };
+    };
+    const before = (await query(
+      `SELECT count(*)::int AS n FROM catalog_api_runs WHERE client_id=$1 AND env='test'`, [clientId])).rows[0].n;
+    const a = await pullAll();
+    const b = await pullAll();
+    const runs = (await query(
+      `SELECT * FROM catalog_api_runs WHERE client_id=$1 AND env='test' ORDER BY id DESC LIMIT 2`, [clientId])).rows;
+    const after = (await query(
+      `SELECT count(*)::int AS n FROM catalog_api_runs WHERE client_id=$1 AND env='test'`, [clientId])).rows[0].n;
+    assert.equal(after - before, 2, '받을 때마다 회차 한 줄');
+    for (const r of runs) {
+      assert.ok(r.closed_at, '끝까지 받았으면 완료로 닫힌다');
+      assert.equal(Number(r.productos), a.n);
+      assert.equal(Number(r.pages), a.pages);
+    }
+    assert.equal(b.n, a.n);
+    const d = (await app.inject({ method: 'GET', url: `/api/catalog/admin/clients/${clientId}/calls`,
+      headers: bearer(dirId) })).json();
+    assert.ok(d.runs.some((r) => r.env === 'test' && r.closed_at), '화면의 동기화 회차에 보인다');
+    const list = (await app.inject({ method: 'GET', url: '/api/catalog/admin/clients',
+      headers: bearer(dirId) })).json();
+    const me = list.items.find((x) => x.id === clientId);
+    assert.ok(me.last_test_sync, '목록에 테스트 마지막 동기화가 보인다');
+  });
+
   test('설정 검증 — 끝 시각이 시작보다 빠르면 저장 자체가 막힌다', async () => {
     const r = await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
       headers: bearer(dirId), payload: { window_start_hour: 9, window_end_hour: 5 } });

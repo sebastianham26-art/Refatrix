@@ -456,10 +456,12 @@ async function decorate(client, rows) {
 /**
  * 이번 접속창의 회차를 연다(없으면 만든다).
  *   @returns {{ok:boolean, run:object|null, reason:string|null}}
- *   테스트 키는 회차를 소모하지 않는다 — 평일에도 몇 번이든 붙어 볼 수 있어야 한다.
+ *   테스트 키도 회차를 「기록」한다 — 화면의 동기화 회차에 보여야 하므로.
+ *   다만 테스트는 막지 않는다: 주 1회 제한 없이, 처음부터(cursor 없이) 부를 때마다 새 회차다.
+ *   (2026-09-21: 고객이 테스트 키로 받아 갔는데 동기화 회차가 비어 보인 문제)
  */
-export async function openRun(client, periodKey, env) {
-  if (env === 'test') return { ok: true, run: null, reason: null };
+export async function openRun(client, periodKey, env, opt = {}) {
+  if (env === 'test') return openTestRun(client, periodKey, !!opt.fresh);
   const existing = (await query(
     `SELECT * FROM catalog_api_runs WHERE client_id=$1 AND period_key=$2 AND env=$3`,
     [client.id, periodKey, env])).rows[0];
@@ -471,6 +473,28 @@ export async function openRun(client, periodKey, env) {
     `INSERT INTO catalog_api_runs (client_id, period_key, env) VALUES ($1,$2,$3) RETURNING *`,
     [client.id, periodKey, env])).rows[0];
   return { ok: true, run, reason: null };
+}
+
+/** 테스트 회차 — 기록만 하고 막지 않는다. 기록 실패가 응답을 막지도 않는다. */
+async function openTestRun(client, periodKey, fresh) {
+  try {
+    if (!fresh) {
+      const open = (await query(
+        `SELECT * FROM catalog_api_runs
+          WHERE client_id=$1 AND env='test' AND closed_at IS NULL
+          ORDER BY id DESC LIMIT 1`, [client.id])).rows[0];
+      if (open) return { ok: true, run: open, reason: null };
+    }
+    // period_key 는 (client, period_key, env) 로 유일해야 하므로 멕시코 시각을 초·밀리초까지 붙인다.
+    const hms = new Date(Date.now() + MX_OFFSET_MIN * 60000).toISOString().slice(11, 23);
+    const run = (await query(
+      `INSERT INTO catalog_api_runs (client_id, period_key, env) VALUES ($1,$2,'test')
+       ON CONFLICT DO NOTHING RETURNING *`,
+      [client.id, `${periodKey} ${hms}`])).rows[0];
+    return { ok: true, run: run || null, reason: null };
+  } catch (_) {
+    return { ok: true, run: null, reason: null };
+  }
 }
 
 /** 페이지를 하나 보냈다. 마지막 페이지(done)면 그 자리에서 회차를 닫는다. */

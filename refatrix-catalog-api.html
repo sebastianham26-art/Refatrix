@@ -242,7 +242,7 @@
         +'<td>'+esc(ventanaText(c))+'</td>'
         +'<td>'+(c.stock_mode==='qty'?'수량':'구간')+'</td>'
         +'<td>'+fecha(c.last_call)+'</td>'
-        +'<td>'+fecha(c.last_sync)+'</td>'
+        +'<td>'+(c.last_sync?fecha(c.last_sync):(c.last_test_sync?'<span class="tag off">테스트</span> '+fecha(c.last_test_sync):fecha(null)))+'</td>'
         +'<td>'+(c.enabled?'<span class="tag on">사용</span>':'<span class="tag off">중지</span>')+'</td>'
         +'<td><button class="btn sm ghost" data-edit="'+c.id+'">설정</button></td></tr>';
     }).join('');
@@ -466,7 +466,8 @@
     if(!CUR) return;
     try{
       const d=await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id+'/calls',{headers:auth()}).then(r=>r.json());
-      const runs=(d.runs||[]).map(r=>'<tr><td>'+esc(r.period_key)+'</td><td>'+esc(r.env)+'</td><td>'+fecha(r.started_at)+'</td>'
+      const envTag=e=>e==='prod'?'<span class="tag on">운영</span>':'<span class="tag off">테스트</span>';
+      const runs=(d.runs||[]).map(r=>'<tr><td>'+esc(r.period_key)+'</td><td>'+envTag(r.env)+'</td><td>'+fecha(r.started_at)+'</td>'
         +'<td>'+(r.closed_at?fecha(r.closed_at):'<span class="tag off">미완료</span>')+'</td><td>'+r.pages+'</td><td>'+r.productos+'</td></tr>').join('');
       const rows=(d.calls||[]).map(c=>'<tr><td>'+fecha(c.created_at)+'</td><td>'+esc(c.remote_ip||'')+'</td><td>'+esc(c.env||'')+'</td>'
         +'<td class="mono">'+esc(c.path||'')+'</td><td>'+c.http_status+'</td>'
@@ -475,6 +476,7 @@
       $('outWrap').innerHTML='<div class="card-h" style="margin-top:14px">동기화 회차</div>'
         +'<table><thead><tr><th>기간</th><th>환경</th><th>시작</th><th>완료</th><th>페이지</th><th>제품</th></tr></thead><tbody>'
         +(runs||'<tr><td colspan="6" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>'
+        +'<div class="hint" style="margin-top:4px">운영 키 = 토요일 접속창 안에서 주 1회. 테스트 키 = 제한 없이 받을 때마다 한 줄씩 남습니다(2026-09-21 이전 테스트 호출은 회차 없이 아래 호출 이력에만 있습니다).</div>'
         +'<div class="card-h" style="margin-top:14px">호출 이력</div>'
         +'<table><thead><tr><th>시각</th><th>IP</th><th>환경</th><th>경로</th><th>HTTP</th><th>오류</th><th>건수</th><th>소요</th></tr></thead><tbody>'
         +(rows||'<tr><td colspan="8" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>';

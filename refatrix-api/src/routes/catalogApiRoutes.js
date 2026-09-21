@@ -114,7 +114,8 @@ async function gate(req, reply, { needsRun }) {
 
   let run = null;
   if (needsRun) {
-    const r = await openRun(client, win.periodKey, client.env);
+    const r = await openRun(client, win.periodKey, client.env,
+      { fresh: !(req.query && req.query.cursor) });
     if (!r.ok) {
       return { stop: await fail(429, 'ERR_YA_SINCRONIZADO',
         'La sincronizacion de este periodo ya se completo.',
@@ -212,7 +213,8 @@ export default async function catalogApiRoutes(app) {
     const rows = (await query(
       `SELECT c.*, cu.name AS customer_name, cu.code AS customer_code, cu.discount AS customer_discount,
               (SELECT max(created_at) FROM catalog_api_calls l WHERE l.client_id=c.id) AS last_call,
-              (SELECT max(closed_at)  FROM catalog_api_runs  r WHERE r.client_id=c.id) AS last_sync
+              (SELECT max(closed_at)  FROM catalog_api_runs  r WHERE r.client_id=c.id AND r.env='prod') AS last_sync,
+              (SELECT max(closed_at)  FROM catalog_api_runs  r WHERE r.client_id=c.id AND r.env='test') AS last_test_sync
          FROM catalog_api_clients c
          LEFT JOIN customers cu ON cu.id=c.customer_id AND cu.deleted_at IS NULL
         ORDER BY c.id`)).rows;
@@ -487,5 +489,6 @@ export function publicClient(r) {
     note: r.note || '',
     last_call: r.last_call || null,
     last_sync: r.last_sync || null,
+    last_test_sync: r.last_test_sync || null,
   };
 }
