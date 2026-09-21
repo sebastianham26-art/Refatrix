@@ -11,6 +11,7 @@ import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
 import { packingDeadline } from '../workingHours.js';
+import { reserveExpiresAt } from '../quoteExpiry.js';   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 import { maybeMarkPacked } from '../packedGate.js';
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
@@ -323,10 +324,10 @@ export default async function quoteRoutes(app) {
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
       const q = (await c.query(
         `INSERT INTO quotes (quote_no, customer_id, guest_name, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at${poReady ? ', customer_po_no' : ''})
-         VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13, now() + interval '24 hours'${poReady ? ', $14' : ''}) RETURNING id, quote_no`,
+         VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13, $${poReady ? 15 : 14}::timestamptz${poReady ? ', $14' : ''}) RETURNING id, quote_no`,
         poReady
-          ? [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, poNo]
-          : [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
+          ? [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, poNo, reserveExpiresAt(new Date())]
+          : [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, reserveExpiresAt(new Date())])).rows[0];
       for (const l of lines) {
         await c.query(
           `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag, issue)
@@ -551,7 +552,7 @@ export default async function quoteRoutes(app) {
     }
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
-              q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at,
+              q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at, q.created_at,
               ${poSelectFrag(poReady)} AS customer_po_no,
               c.name AS customer_name, c.team_id,
               uc.name AS creator_name,
@@ -600,6 +601,7 @@ export default async function quoteRoutes(app) {
         from_field_survey: !!r.from_field_survey,
         open: ['draft', 'confirmed'].includes(r.status),
         reserve_expires_at: r.reserve_expires_at || null,
+        created_at: r.created_at || null,                   // 2026-09-21 · 접수 시각(견적일 아래 표시)
         packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
         inactive_cnt: Number(r.inact_cnt || 0),             // 0224 · 판매중단 줄(다음 단계 차단 사유)
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
@@ -1229,11 +1231,12 @@ export default async function quoteRoutes(app) {
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
       const q = (await c.query(
         `INSERT INTO quotes (quote_no, customer_id, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at${poReady ? ', customer_po_no' : ''})
-         VALUES ($1,$2,CURRENT_DATE,$3,16,$4,'draft',$5,$6,$7,$8,$9,$10, now() + interval '24 hours'${poReady ? ', $11' : ''}) RETURNING id, quote_no`,
+         VALUES ($1,$2,CURRENT_DATE,$3,16,$4,'draft',$5,$6,$7,$8,$9,$10, $${poReady ? 12 : 11}::timestamptz${poReady ? ', $11' : ''}) RETURNING id, quote_no`,
         (() => {
           const a = [quoteNo, customerId, discountRate, src.memo ? `${src.memo} (복제 ${src.quote_no})` : `복제 ${src.quote_no}`,
             totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId];
           if (poReady) a.push(src.customer_po_no || null);
+          a.push(reserveExpiresAt(new Date()));   // 2026-09-21 · 근무시간 기산
           return a;
         })())).rows[0];
       for (const l of lines) {

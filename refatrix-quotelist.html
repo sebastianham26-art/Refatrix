@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0918po1</title>
+<title>Refatrix ERP · 견적 목록 · ql-0921rcv1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -169,7 +169,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-0918po1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-0921rcv1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -459,6 +459,39 @@
     }catch(e){ alert('복제 중 오류'); }
   }
 
+  // 2026-09-21 · 접수 시각 — 견적일 아래 작게. 근무시간(월~금 07:30~17:00, 법정공휴일 제외) 밖에
+  //   접수돼 24시간 기산이 다음 근무일 07:30 으로 밀린 견적은 「기산」 시각을 함께 보여 준다.
+  //   기산 시각 = 서버가 정한 만료시각 − 24h (규칙을 화면에서 다시 계산하지 않는다 — 공휴일 표가 한 곳에만 있게).
+  const MX_TZ='America/Monterrey';
+  function mxParts(iso){
+    try{
+      const d=new Date(iso); if(isNaN(d)) return null;
+      const f=new Intl.DateTimeFormat('en-GB',{timeZone:MX_TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false}).formatToParts(d);
+      const o={}; f.forEach(p=>{o[p.type]=p.value;}); if(o.hour==='24') o.hour='00';
+      return o;
+    }catch(e){ return null; }
+  }
+  const WD_KO={Mon:'월',Tue:'화',Wed:'수',Thu:'목',Fri:'금',Sat:'토',Sun:'일'};
+  function recvInfo(q){
+    if(!q||!q.created_at) return null;
+    const r=mxParts(q.created_at); if(!r) return null;
+    const out={recv:r.month+'-'+r.day+' '+r.hour+':'+r.minute+' ('+(WD_KO[r.weekday]||'')+')', start:null};
+    if(q.reserve_expires_at && q.status!=='pricelist'){
+      const st=new Date(q.reserve_expires_at).getTime()-24*3600000;
+      const gap=st-new Date(q.created_at).getTime();
+      if(gap>60000 && gap<5*86400000){ const s2=mxParts(st); if(s2) out.start=(WD_KO[s2.weekday]||'')+' '+s2.month+'-'+s2.day+' '+s2.hour+':'+s2.minute; }
+    }
+    return out;
+  }
+  function recvSmall(q){
+    const i=recvInfo(q); if(!i) return '';
+    return '<div style="margin-top:2px;font-size:10.5px;color:#6b6b6b;white-space:nowrap" title="접수 시각(멕시코 시각)">접수 '+esc(i.recv)+'</div>'
+      +(i.start?'<div style="font-size:10px;color:#8a6a1f;white-space:nowrap" title="근무시간(월~금 07:30~17:00) 밖 접수 — 24시간 예약은 이 시각부터 계산됩니다">⏱ 기산 '+esc(i.start)+'</div>':'');
+  }
+  function recvText(q){
+    const i=recvInfo(q); if(!i) return '';
+    return ' · 접수 '+esc(i.recv)+(i.start?(' · <span style="color:#8a6a1f">⏱ 24h 기산 '+esc(i.start)+'</span>'):'');
+  }
   // 0225 · 견적번호 아래 한 줄짜리 고객 PO 배지. 없으면 아무것도 그리지 않는다
   //   (「—」 를 찍으면 PO 를 안 쓰는 고객의 목록이 전부 대시로 덮인다).
   function poSmall(po){
@@ -488,7 +521,7 @@
         //   전화를 받으면서 한눈에 대조된다(칼럼을 따로 만들면 가로 스크롤 밖으로 밀린다).
         +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b>'
           +poSmall(q.customer_po_no)+'</td>'
-        +'<td>'+esc(q.quote_date||'')+'</td>'
+        +'<td data-sv="'+esc(q.quote_date||'')+'">'+esc(q.quote_date||'')+recvSmall(q)+'</td>'
         +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+(q.from_field_survey?'<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:800;color:#0F6E56;background:#E4F0EB;border-radius:10px;padding:1px 7px;white-space:nowrap">📍현장</span>':'')+'</td>'
         +'<td>'+esc(q.creator_name||'—')+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':(q.sku_count||0))+'</td>'
@@ -799,7 +832,7 @@
     const editable = (q.status==='draft' || q.status==='confirmed') && !expd;
     if(dtEdit){ renderEdit(); return; }
     // ── 사용자 친화 배치: 액션 버튼·요약을 상단으로, 라인표는 내부 스크롤 ──
-    const hint='<div class="hint" style="margin-bottom:10px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+(q.packing_printed_at?(' · <span style="color:#2f6b54;font-weight:700">📦 포장작업지시서 출력 — 유효 고정(시간 무관)</span>'):((q.status==='draft'||q.status==='confirmed')&&q.reserve_expires_at?(' · '+(expd?'<span style="color:#9a3a3a;font-weight:700">⏳ 재고 예약 만료</span>':'<span style="color:#2f6b54;font-weight:700">⏳ 재고 예약 잔여 '+(function(){var r=new Date(q.reserve_expires_at).getTime()-Date.now();var h=Math.floor(r/3600000),m=Math.floor((r%3600000)/60000);return h>0?(h+'시간'+(m>0?(' '+m+'분'):'')):(m+'분');})()+'</span>')):''))+'</div>';
+    const hint='<div class="hint" style="margin-bottom:10px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+recvText(q)+(q.memo?(' · 메모: '+esc(q.memo)):'')+(q.packing_printed_at?(' · <span style="color:#2f6b54;font-weight:700">📦 포장작업지시서 출력 — 유효 고정(시간 무관)</span>'):((q.status==='draft'||q.status==='confirmed')&&q.reserve_expires_at?(' · '+(expd?'<span style="color:#9a3a3a;font-weight:700">⏳ 재고 예약 만료</span>':'<span style="color:#2f6b54;font-weight:700">⏳ 재고 예약 잔여 '+(function(){var r=new Date(q.reserve_expires_at).getTime()-Date.now();var h=Math.floor(r/3600000),m=Math.floor((r%3600000)/60000);return h>0?(h+'시간'+(m>0?(' '+m+'분'):'')):(m+'분');})()+'</span>')):''))+'</div>';
 
     // 액션 버튼 (상단)
     let actions='<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';

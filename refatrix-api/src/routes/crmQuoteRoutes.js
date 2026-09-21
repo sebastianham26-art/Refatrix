@@ -25,6 +25,7 @@ import { mapQuote, quoteDate, badQuoteLines, folioAsQuoteNo, readInboundKey, ver
 import { computeQuoteTotals } from '../quotes.js';
 // ⚠ 화면과 **같은 조립기**를 쓴다. 두 벌로 두면 코드 해석 규칙이 갈라진다.
 import { buildLines, nextQuoteNo, assignReservations, normalizePoNo, poColumnReady } from '../quoteBuild.js';
+import { reserveExpiresAt } from '../quoteExpiry.js';   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 
 export const QUOTE_KEY = 'crm_quote_request';
 
@@ -305,12 +306,13 @@ export default async function crmQuoteRoutes(app) {
                                subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count,
                                external_quote_no, origin, reserve_expires_at${poReady ? ', customer_po_no' : ''})
            VALUES ($1,$2,COALESCE($3::date,CURRENT_DATE),$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12,'crm',
-                   now() + interval '24 hours'${poReady ? ', $13' : ''}) RETURNING id, quote_no`,
+                   $${poReady ? 14 : 13}::timestamptz${poReady ? ', $13' : ''}) RETURNING id, quote_no`,
           (() => {
             const a = [quoteNo, cust.id, qdate, discountRate, ivaRate, memo,
               totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount,
               m.crmQuoteNo || null];
             if (poReady) a.push(poNo);
+            a.push(reserveExpiresAt(new Date()));   // 2026-09-21 · 근무시간 기산
             return a;
           })())).rows[0];
         for (const l of lines) {
