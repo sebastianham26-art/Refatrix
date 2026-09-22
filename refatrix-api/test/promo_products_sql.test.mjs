@@ -28,7 +28,7 @@ const inSrc = (sql) => squash(SRC).includes(squash(sql));
 
 /* ───────────────────────── ① 정적 가드 ───────────────────────── */
 console.log('\n① 정적 가드 — 부품 마스터는 이 경로로 절대 안 바뀐다');
-ok('rev 마커 갱신', /loaded rev 20260918promo/.test(SRC));
+ok('rev 마커 갱신', /loaded rev 20260922proapply/.test(SRC));
 ok('PRO 접두사 판정 함수 존재', /const isProCode = \(c\) => PRO_RE\.test/.test(SRC));
 ok('코드 미지정 시 자동 제안', /const finalCode = code \|\| \(await nextProCode\(exec\)\)/.test(SRC));
 ok('PRO 아닌 코드로 등록 거부', /pro_prefix_required/.test(SRC));
@@ -40,13 +40,20 @@ ok('프로모 등록/조정은 창고 편집권한',
 ok('프로모 조회는 창고 읽기권한',
   (SRC.match(/'\/api\/promo-products(\/next-code)?', \{ preHandler: \[authGuard, requirePage\('warehouse'\)\] \}/g) || []).length === 2);
 
-// 재고를 바꾸는 문장 = 실사 apply(1) + 프로모 초기등록(1) + 프로모 수량조정(1) = 3곳.
+// 재고를 바꾸는 문장 = 실사 apply(1) + 프로모 초기등록(1) + 프로모 수량조정(1) + 실사 PRO만 반영(1) = 4곳. (2026-09-22)
 const stockUpdates = (SRC.match(/UPDATE products SET stock_qty=/g) || []).length;
-ok('products.stock_qty UPDATE 는 정확히 3곳', stockUpdates === 3, stockUpdates);
+ok('products.stock_qty UPDATE 는 정확히 4곳', stockUpdates === 4, stockUpdates);
 ok('promo_items.stock_qty UPDATE 는 종전 1곳(실사 apply)', (SRC.match(/UPDATE promo_items SET stock_qty=/g) || []).length === 1);
-// 그 3곳 모두 원장을 남긴다 — stock_movements INSERT 도 3곳이어야 한다.
+// 그 4곳 모두 원장을 남긴다 — stock_movements INSERT 도 4곳이어야 한다.
 const moveInserts = (SRC.match(/INSERT INTO stock_movements/g) || []).length;
-ok('stock_movements INSERT 도 3곳 (수량 변경과 1:1)', moveInserts === 3, moveInserts);
+ok('stock_movements INSERT 도 4곳 (수량 변경과 1:1)', moveInserts === 4, moveInserts);
+// PRO만 반영 경로는 PRO 코드만 받는다(부품 가드)
+const proApply = SRC.slice(SRC.indexOf('프로모션(PRO) 품목만 실물 반영'), SRC.indexOf('반영 내역(디렉터 검토 결과·코멘트) 조회'));
+ok('PRO만 반영: 대상 = 검토목록 중 PRO 코드 부품', /it\.kind === 'part' && isProCodeStr\(it\.code\)/.test(proApply));
+ok('PRO만 반영: 요청 품목이 PRO 대기목록에 없으면 거부', /not_promo_item/.test(proApply) && /if \(!byId\.has\(Number\(r\.product_id\)\)\)/.test(proApply));
+ok('PRO만 반영: 본인 PIN 재인증', /verifyPin\(pin, me\.pin_hash\)/.test(proApply));
+ok('PRO만 반영: 창고 편집권한', /'\/api\/stock-counts\/:id\/promo-apply', \{ preHandler: \[authGuard, requirePageEdit\('warehouse'\)\] \}/.test(proApply));
+ok('PRO만 반영: promo_items 는 손대지 않음', !/promo_items/.test(proApply.replace(/구 promo_items 는 제외/,'')));
 // 스팟점검 블록은 여전히 재고를 안 건드린다(기존 규칙 회귀)
 const spotBlock = SRC.slice(SRC.indexOf('SKU 스팟점검 (mode='), SRC.indexOf('================= 대조(reconcile)'));
 ok('스팟 블록은 여전히 products UPDATE 없음', spotBlock.length > 1000 && !/UPDATE\s+products/.test(spotBlock));

@@ -1,4 +1,4 @@
-/* 프로모션 화면 — 작업버튼 노출 + 실사 반영 대기 표시 (build sc0922promo2)
+/* 프로모션 화면 — 작업버튼 노출 + 실사 반영 대기 표시 (build sc0922proapply)
    실행:  node test/promo_pending_ui.test.js   (REPO 환경변수로 다른 경로 지정 가능) */
 'use strict';
 const fs = require('fs');
@@ -37,7 +37,16 @@ const LINES = {
   23: [{ item_kind: 'part', product_id: 1721, counted_qty: 1 }],
 };
 
+const PA = {
+  20: { count_id: 20, code: 'SC-2026-0011', status: 'submitted', can_apply: true, other_pending: 0,
+        items: [{ kind: 'part', product_id: 1711, code: 'PRO015', name: 'CALCETINAS', system_qty: 16, counted_qty: 18, delta: 2, rack_scanned: 'E3-2', master_rack: '', rack_diff: true }] },
+  24: { count_id: 24, code: 'SC-2026-0012', status: 'submitted', can_apply: true, other_pending: 2,
+        items: [{ kind: 'part', product_id: 1712, code: 'PRO016', name: 'LLAVEROS', system_qty: 31, counted_qty: 31, delta: 0, rack_scanned: 'E3-1', master_rack: '', rack_diff: true },
+                { kind: 'part', product_id: 1715, code: 'PRO_019', name: 'Bolsa', system_qty: 0, counted_qty: 88, delta: 88, rack_scanned: '', master_rack: '', rack_diff: false }] },
+};
+let sentPA = [], paReply = null;
 function mkDom({ sessions = SESSIONS } = {}) {
+  sentPA = []; paReply = null;
   const html = fs.readFileSync(FILE, 'utf8').replace(/<script src="refatrix-nav\.js[^"]*"><\/script>/, '');
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://x.test/refatrix-stockcount.html', pretendToBeVisual: true });
   const w = dom.window;
@@ -49,7 +58,12 @@ function mkDom({ sessions = SESSIONS } = {}) {
     calls.push({ u, method });
     let out = {};
     let m;
-    if (/\/api\/promo-products/.test(u)) out = { items: PRO };
+    if ((m = u.match(/\/api\/stock-counts\/(\d+)\/promo-apply/))) {
+      if (method === 'POST') { sentPA.push({ cid: Number(m[1]), body: JSON.parse(opt.body) });
+        out = paReply || { ok: true, applied: 1, rack_saved: 1, closed: true, remaining: 0 }; }
+      else out = PA[m[1]] || { count_id: Number(m[1]), code: 'X', status: 'submitted', can_apply: true, items: [], other_pending: 0 };
+    }
+    else if (/\/api\/promo-products/.test(u)) out = { items: PRO };
     else if (/\/api\/promo-items/.test(u)) out = { items: LEGACY };
     else if ((m = u.match(/\/api\/stock-counts\/(\d+)\/reconcile/))) out = { count: { id: Number(m[1]), code: 'X', status: 'submitted' }, can_apply: false, summary: { match: 0, short: 0, over: 0, uncounted: 0, unknown: 0, diff_qty_total: 0 }, rows: [] };
     else if ((m = u.match(/\/api\/stock-counts\/(\d+)$/))) out = { id: Number(m[1]), status: 'submitted', lines: LINES[m[1]] || [] };
@@ -58,7 +72,7 @@ function mkDom({ sessions = SESSIONS } = {}) {
   };
   w.HTMLElement.prototype.scrollIntoView = () => {};
   w.eval(lastScript(html));
-  return { w, doc: w.document, calls };
+  return { w, doc: w.document, calls, sentPA: () => sentPA, setReply: (r) => { paReply = r; } };
 }
 const rowOf = (doc, body, code) => [...doc.getElementById(body).rows].find((r) => r.cells[1] && r.cells[1].textContent.trim().startsWith(code));
 
@@ -121,8 +135,8 @@ const rowOf = (doc, body, code) => [...doc.getElementById(body).rows].find((r) =
     const bar = doc.getElementById('proPendBar').textContent;
     ok('상단 안내: 반영 대기 3건', /반영 대기 중인 재고실사 3건/.test(bar), bar);
     // 대조·반영 링크 → 해당 세션 대조 화면
-    rowOf(doc, 'proBody', 'PRO015').cells[4].querySelector('[data-act="recon"]').click(); await sleep(30);
-    ok('[대조·반영 ▸] → SC 20 대조 호출', calls.some((c) => /stock-counts\/20\/reconcile/.test(c.u)));
+    doc.querySelector('#proPendBar [data-act="recon"][data-cid="20"]').click(); await sleep(30);
+    ok('[대조 보기] → SC 20 대조 호출', calls.some((c) => /stock-counts\/20\/reconcile/.test(c.u)));
     ok('대조 화면으로 전환', !doc.getElementById('reconView').classList.contains('hidden') && doc.getElementById('promoView').classList.contains('hidden'));
   }
 
@@ -134,6 +148,62 @@ const rowOf = (doc, body, code) => [...doc.getElementById(body).rows].find((r) =
     ok('모든 행 —', [...doc.getElementById('proBody').rows].every((r) => r.cells[4].textContent.trim() === '—'));
   }
 
+
+  console.log('\n⑤ 프로모션만 반영 (sc0922proapply)');
+  {
+    const { w, doc, calls, sentPA, setReply } = mkDom();
+    await w.showPromo(); await sleep(40);
+    const btns = [...doc.querySelectorAll('#proPendBar button[data-act="proapply"]')].map((b) => b.getAttribute('data-cid'));
+    ok('안내 바에 세션별 [✔ 프로모션만 반영] 버튼 3개', btns.length === 3 && ['24', '20', '18'].every((c) => btns.includes(c)), btns);
+    ok('행의 링크는 [반영 ▸]', /반영 ▸/.test(rowOf(doc, 'proBody', 'PRO015').cells[4].textContent));
+    rowOf(doc, 'proBody', 'PRO015').cells[4].querySelector('[data-act="proapply"]').click(); await sleep(30);
+    ok('모달 열림 · 제목에 SC-2026-0011', doc.getElementById('proApplyModal').classList.contains('on') && /SC-2026-0011/.test(doc.getElementById('paTitle').textContent));
+    ok('PRO015 행 · 차이 있으니 반영 기본 체크 · 랙 변경 기본 체크', doc.getElementById('paA_0').checked && doc.getElementById('paR_0').checked && doc.getElementById('paQ_0').value === '18');
+    ok('기타 항목 없음 → 반영완료로 닫힌다 안내', /반영완료/.test(doc.getElementById('paOther').textContent));
+    doc.getElementById('paSubmit').click(); await sleep(20);
+    ok('PIN 없으면 요청 안 나감 + 안내', sentPA().length === 0 && /PIN/.test(doc.getElementById('paMsg').textContent));
+    doc.getElementById('paQ_0').value = '-1'; doc.getElementById('paPin').value = '4242';
+    doc.getElementById('paSubmit').click(); await sleep(20);
+    ok('음수 수량이면 요청 안 나감', sentPA().length === 0 && /0 이상/.test(doc.getElementById('paMsg').textContent));
+    doc.getElementById('paQ_0').value = '18'; doc.getElementById('paC_0').value = 'ok';
+    doc.getElementById('paSubmit').click(); await sleep(40);
+    const b = sentPA()[0];
+    ok('POST /stock-counts/20/promo-apply', b && b.cid === 20, sentPA());
+    ok('본문 = PRO015 · apply · 랙저장 · 수량 18 · 코멘트 · PIN', b && b.body.pin === '4242' && b.body.items.length === 1 && b.body.items[0].product_id === 1711
+      && b.body.items[0].apply === true && b.body.items[0].save_rack === true && b.body.items[0].final_qty === 18 && b.body.items[0].comment === 'ok', b && b.body);
+    ok('본문에 kind/부품 없음(PRO id 만)', b && !('promo_item_id' in b.body.items[0]));
+    ok('성공 → 모달 닫힘 · PIN 비움', !doc.getElementById('proApplyModal').classList.contains('on') && doc.getElementById('paPin').value === '');
+    ok('프로모 화면 다시 불러옴', calls.filter((c) => /\/api\/promo-products/.test(c.u)).length >= 2);
+  }
+  {
+    const { w, doc, sentPA, setReply } = mkDom();
+    await w.showPromo(); await sleep(40);
+    await w.openProApply(24); await sleep(20);
+    ok('SC-0012: 일치+랙변경 행은 반영 해제·랙저장 체크 / 차이 행은 반영 체크', !doc.getElementById('paA_0').checked && doc.getElementById('paR_0').checked && doc.getElementById('paA_1').checked);
+    ok('랙 스캔 없는 행은 랙저장 비활성', doc.getElementById('paR_1').disabled);
+    ok('부품 섞임 경고(2건 · 디렉터 반영)', /2건/.test(doc.getElementById('paOther').textContent) && /디렉터/.test(doc.getElementById('paOther').textContent));
+    doc.getElementById('paA_1').checked = false;   // PRO_019 는 보류 — 보내지 않는다
+    doc.getElementById('paPin').value = '4242';
+    setReply({ ok: false, status: 403, error: 'bad_pin' });
+    doc.getElementById('paSubmit').click(); await sleep(40);
+    const b = sentPA()[0];
+    ok('체크 해제한 PRO_019 는 본문에 없음(대기로 남음)', b && b.body.items.length === 1 && b.body.items[0].product_id === 1712 && b.body.items[0].apply === false && b.body.items[0].save_rack === true, b && b.body);
+    ok('PIN 오류 → 모달 유지 · 안내 · PIN 비움', doc.getElementById('proApplyModal').classList.contains('on') && /PIN/.test(doc.getElementById('paMsg').textContent) && doc.getElementById('paPin').value === '');
+    doc.getElementById('paR_0').checked = false;
+    doc.getElementById('paPin').value = '4242';
+    doc.getElementById('paSubmit').click(); await sleep(20);
+    ok('아무것도 체크 안 하면 요청 안 나감', sentPA().length === 1 && /하나 이상/.test(doc.getElementById('paMsg').textContent));
+    doc.getElementById('paCancel').click();
+    ok('[취소] 닫힘', !doc.getElementById('proApplyModal').classList.contains('on'));
+  }
+  {
+    const { w, doc } = mkDom();
+    await w.openReconcile(20); await sleep(60);
+    const btn = doc.querySelector('#applyBox [data-act="proapply"]');
+    ok('대조 화면(창고 계정)에도 [🎁 프로모션 품목만 반영 (1건)]', !!btn && /1건/.test(btn.textContent), doc.getElementById('applyBox').textContent);
+    btn.click(); await sleep(30);
+    ok('→ 같은 모달', doc.getElementById('proApplyModal').classList.contains('on'));
+  }
   console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);
   process.exit(fail ? 1 : 0);
 })();

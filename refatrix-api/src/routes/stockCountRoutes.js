@@ -1,4 +1,4 @@
-// stockCountRoutes.js · rev 20260918promo (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260922proapply (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
@@ -25,7 +25,7 @@ import { splitRacks } from './zoneRoutes.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260918promo"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260922proapply"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -814,7 +814,8 @@ export default async function stockCountRoutes(app) {
       `SELECT g.product_id, g.counted, p.code, p.name, p.stock_qty
          FROM (SELECT product_id, SUM(counted_qty) AS counted FROM stock_count_lines
                 WHERE count_id=$1 AND item_kind='part' AND product_id IS NOT NULL GROUP BY product_id) g
-         JOIN products p ON p.id=g.product_id WHERE p.deleted_at IS NULL`, [id])).rows;
+         JOIN products p ON p.id=g.product_id WHERE p.deleted_at IS NULL
+          AND g.product_id NOT IN (SELECT product_id FROM stock_count_adjustments WHERE count_id=$1 AND product_id IS NOT NULL)`, [id])).rows;
     const promos = (await query(
       `SELECT g.promo_item_id, g.counted, pi.code, pi.name, pi.stock_qty
          FROM (SELECT promo_item_id, SUM(counted_qty) AS counted FROM stock_count_lines
@@ -842,7 +843,8 @@ export default async function stockCountRoutes(app) {
                       STRING_AGG(DISTINCT NULLIF(rack_scanned,''), ', ') AS racks
                  FROM stock_count_lines
                 WHERE count_id=$1 AND item_kind='part' AND product_id IS NOT NULL GROUP BY product_id) g
-         JOIN products p ON p.id=g.product_id WHERE p.deleted_at IS NULL`, [id])).rows;
+         JOIN products p ON p.id=g.product_id WHERE p.deleted_at IS NULL
+          AND g.product_id NOT IN (SELECT product_id FROM stock_count_adjustments WHERE count_id=$1 AND product_id IS NOT NULL)`, [id])).rows;
     const promos = (await run(
       `SELECT g.promo_item_id, g.counted, g.racks, pi.code, pi.name, pi.stock_qty, pi.rack_location
          FROM (SELECT promo_item_id, SUM(counted_qty) AS counted,
@@ -1006,6 +1008,112 @@ export default async function stockCountRoutes(app) {
       return reply.code(codeMap[result.error] || 400).send(result);
     }
     await logEvent({ userId: uid, action: 'update', target: `stock_count:${id}`, detail: { step: 'apply', applied: result.applied, rack_saved: result.rack_saved, event_no: result.event_no } });
+    return result;
+  });
+
+  // ================= 프로모션(PRO) 품목만 실물 반영 (2026-09-22) =================
+  //   디렉터 지시: "프로모션 제품만 실물완료 반영이 되도록" — 판촉물(PRO) 수량 때문에 디렉터 PIN 을
+  //   기다리지 않게 한다. 부품은 종전대로 디렉터 전용(위 /apply).
+  //   · 대상 = 검토목록(buildReviewList) 중 **제품마스터 PRO 코드**인 부품 라인만. 구 promo_items 는 제외(디렉터 경로).
+  //   · 권한 = 창고 편집권한 + **본인 PIN** 재인증(누가 반영했는지 이력에 남는다).
+  //   · 처리 = 디렉터 반영과 똑같이 stock_qty 갱신 + stock_movements(adjust, source='count') + stock_count_adjustments.
+  //     반영(또는 랙저장)한 품목은 adjustments 행이 생겨 이후 검토목록에서 빠진다 → 두 번 반영되지 않는다.
+  //   · 세션 = 반영 후 남은 검토 항목이 0 이면 자동으로 반영완료(reconciled). 부품이 남아 있으면 제출됨 유지.
+  const isProCodeStr = (c) => /^PRO/i.test(String(c || ''));
+  async function promoReviewList(id, exec = query) {
+    return (await buildReviewList(id, exec)).filter((it) => it.kind === 'part' && isProCodeStr(it.code));
+  }
+
+  app.get('/api/stock-counts/:id/promo-apply', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const sc = await loadSession(id);
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(sc.mode) === 'spot') return reply.code(409).send(FULL_ONLY);
+    const all = await buildReviewList(id);
+    const items = all.filter((it) => it.kind === 'part' && isProCodeStr(it.code));
+    return { count_id: id, code: sc.code, status: sc.status, can_apply: sc.status === 'submitted',
+      items, other_pending: all.length - items.length };
+  });
+
+  app.post('/api/stock-counts/:id/promo-apply', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const uid = req.ctx.perm.userId;
+    const body = req.body || {};
+    const scMode = await loadSession(id);
+    if (!scMode) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(scMode.mode) === 'spot') return reply.code(409).send(FULL_ONLY);
+    const pin = String(body.pin || '');
+    if (!pin) return reply.code(400).send({ error: 'pin_required', note: 'PIN을 입력하세요.' });
+    const me = (await query(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [uid])).rows[0];
+    if (!me || !verifyPin(pin, me.pin_hash)) return reply.code(403).send({ error: 'bad_pin', note: 'PIN이 올바르지 않습니다.' });
+    const reqItems = Array.isArray(body.items) ? body.items : [];
+    const result = await withTx(async (c) => {
+      const sc = (await c.query(`SELECT id, code, status, mode FROM stock_counts WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+      if (!sc) return { error: 'not_found' };
+      if (normMode(sc.mode) === 'spot') return { error: 'full_only' };
+      if (sc.status !== 'submitted') return { error: 'not_submitted' };
+      const pending = await promoReviewList(id, c);
+      const byId = new Map(pending.map((it) => [Number(it.product_id), it]));
+      // 요청 품목은 전부 이 세션의 PRO 검토 항목이어야 한다 — 부품 id 를 끼워 넣어도 여기서 막힌다.
+      for (const r of reqItems) {
+        if (!byId.has(Number(r.product_id))) return { error: 'not_promo_item', product_id: Number(r.product_id) || null };
+      }
+      const eventNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
+      let applied = 0, rackSaved = 0, recorded = 0;
+      for (const r of reqItems) {
+        const it = byId.get(Number(r.product_id));
+        const fin = (r.final_qty != null && r.final_qty !== '' && isFinite(Number(r.final_qty))) ? Number(r.final_qty) : null;
+        const wantApply = !!r.apply, wantRack = !!r.save_rack && !!it.rack_scanned;
+        if (!wantApply && !wantRack) continue;                         // 둘 다 아니면 손대지 않고 대기로 남긴다
+        const comment = String(r.comment || '').trim().slice(0, 500);
+        let didApply = false, didRack = false, appliedQty = null;
+        if (wantApply) {
+          const cur = num((await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [it.product_id])).rows[0].stock_qty);
+          const target = round2(fin != null ? fin : it.counted_qty);
+          if (target < 0) return { error: 'would_go_negative', code: it.code };
+          const delta = round2(target - cur);
+          if (delta !== 0) {
+            await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [target, uid, it.product_id]);
+            const forced = fin != null && round2(fin) !== round2(it.counted_qty);
+            const note = `재고실사 ${sc.code} 실물조정 (프로모션)` + (forced ? ' (강제조정)' : '') + (comment ? ` · ${comment}` : '');
+            await c.query(
+              `INSERT INTO stock_movements (product_id, move_type, qty, ref, note, source, moved_at, event_no, created_by)
+               VALUES ($1,'adjust',$2,$3,$4,'count', now(), $5, $6)`,
+              [it.product_id, delta, `count:${id}`, note, eventNo, uid]);
+            didApply = true; applied += 1; appliedQty = target;
+          }
+        }
+        if (wantRack) {
+          await c.query(`UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3`, [it.rack_scanned, uid, it.product_id]);
+          didRack = true; rackSaved += 1;
+        }
+        await c.query(
+          `INSERT INTO stock_count_adjustments
+             (count_id, item_kind, product_id, promo_item_id, code, system_qty, counted_qty, delta,
+              decision, comment, rack_scanned, rack_saved, applied, applied_qty, event_no, reviewed_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          [id, 'part', it.product_id, null, it.code, it.system_qty, it.counted_qty, it.delta,
+           didApply ? 'apply' : 'skip', comment || null, it.rack_scanned || null, didRack, didApply, appliedQty, eventNo, uid]);
+        recorded += 1;
+      }
+      // 남은 검토 항목(부품·구 프로모 포함)이 없으면 세션을 반영완료로 닫는다.
+      const remaining = (await buildReviewList(id, c)).length;
+      let closed = false;
+      if (remaining === 0) {
+        await c.query(`UPDATE stock_counts SET status='reconciled', reconciled_at=now(), reconciled_by=$1, adjust_event_no=$2 WHERE id=$3`,
+          [uid, eventNo, id]);
+        closed = true;
+      }
+      return { ok: true, applied, rack_saved: rackSaved, recorded, remaining, closed, event_no: eventNo, code: sc.code };
+    });
+    if (result.error) {
+      const codeMap = { not_found: 404, not_submitted: 409, full_only: 409, would_go_negative: 400, not_promo_item: 400 };
+      if (result.error === 'full_only') return reply.code(409).send(FULL_ONLY);
+      if (result.error === 'not_promo_item') return reply.code(400).send({ ...result, note: '프로모션(PRO) 품목만 이 경로로 반영할 수 있습니다.' });
+      return reply.code(codeMap[result.error] || 400).send(result);
+    }
+    await logEvent({ userId: uid, action: 'update', target: `stock_count:${id}`,
+      detail: { step: 'promo_apply', applied: result.applied, rack_saved: result.rack_saved, closed: result.closed, event_no: result.event_no } });
     return result;
   });
 
