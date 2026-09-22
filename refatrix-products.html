@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pd-0918dem2</title>
+<title>Refatrix ERP · 제품 조회 · pt-0922tpl</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -275,6 +275,11 @@
       <div id="peDelMsg" class="msg" style="margin-top:6px"></div>
     </div>
     <div class="hint" style="margin-top:0">엑셀 파일(.xlsx)을 올리면 <b>Clave CTR</b> 기준으로 신규는 추가, 기존은 <b>변경된 항목만</b> 덮어씁니다. <b>재고수량·평균원가는 절대 바뀌지 않습니다.</b> Clave SyD는 ' // '로 여러 경쟁사 코드를 넣을 수 있고, 검색용으로 분해 저장됩니다. 먼저 미리보기로 확인 후 반영하세요.</div>
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn ghost sm" id="dlTemplate" type="button" title="업로드에 쓰는 빈 엑셀 서식을 내려받습니다. 첫 시트는 헤더만 있는 입력용, 둘째 시트에 작성 방법과 현재 등록된 제품 예시가 들어 있습니다.">📄 업로드 양식(.xlsx) 받기</button>
+      <span class="hint" style="margin:0;flex:1;min-width:260px">신규 제품을 엑셀로 올릴 때 이 양식을 쓰세요. <b>이미 등록된 제품을 고칠 때</b>는 「제품 찾기」 탭의 <b>⬇ 제품 마스터 다운로드</b>로 현재 값을 받아 고치는 편이 안전합니다(빈 칸은 값 없음으로 덮어씁니다).</span>
+    </div>
+    <div class="msg" id="tplMsg"></div>
     <div class="drop" id="drop" style="margin-top:12px">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)<br><span style="font-size:11px">필수 컬럼: Clave CTR · Nombre del producto</span></div>
     <input type="file" id="upFile" accept=".xlsx,.xls" class="hidden">
     <div class="msg" id="upMsg"></div>
@@ -1486,8 +1491,88 @@
     finally{ btn.disabled=false; btn.textContent=old; }
   }
 
+  // ===== 업로드 양식(빈 서식) 다운로드 =====
+  // 업로드 파서(백엔드 productImport.js 의 COLUMN_MAP)가 인식하는 헤더만 넣는다.
+  //   Rack·Stock·Backorder 같은 정보용 열은 넣지 않는다 — 올려도 무시되는 열이라 혼동만 준다.
+  // ⚠ 시트 순서: 업로드 파서는 **첫 번째 시트**만 읽는다 → 빈 서식이 반드시 첫 시트여야 한다
+  //   (덕분에 둘째 「작성방법」 시트의 예시 행은 절대 업로드되지 않는다).
+  // 각 항목: [헤더(파서와 문자 그대로 일치) , 필수/선택 , 설명 , 예시 , master-export 필드]
+  const TEMPLATE_COLS=[
+    ['Clave CTR','필수','제품코드(CTR). 업로드의 기준 — 없는 코드는 신규 등록, 있는 코드는 수정','CB0458','code'],
+    ['Clave SyD','선택','경쟁사(SyD) 코드. 여러 개는 " // " 로 구분하면 검색용으로 분해 저장된다','1603005 // 1516049','scode'],
+    ['Aplicacion (Maker : Model : Year)','선택','적용차종. 여러 건은 " // " 로 구분. 「메이커 모델 연식」 순서로 쓰면 차종 검색에 자동으로 잡힌다','NISSAN Frontier 4X2 1998-2004 // NISSAN Np300 Pickup 4X2 2009-2015','app'],
+    ['Nombre del producto','필수','제품명. 비어 있으면 그 행은 반영되지 않는다','JUEGO DE TERMINALES','name'],
+    ['Clave SAT','선택','SAT 품목코드','','sat_code'],
+    ['Origen','선택','원산지','','origin'],
+    ['List Price','선택','CTR 정가 (MXN · 숫자만)','','list_price'],
+    ['IVA','선택','부가세율. 아래 「현재 등록된 제품」 예시와 같은 표기로 적으세요','','iva_rate'],
+    ['Barcode (EAN13)','선택','바코드(EAN13)','','ean'],
+    ['Fast Movement Location','선택','고회전 위치 표시','','location'],
+    ['List Price de SYD','선택','SYD 정가 (MXN · 숫자만)','','list_price_syd'],
+    ['Precio Cliente de SYD','선택','SYD 고객가 (MXN · 숫자만)','','price_customer_syd'],
+    ['Precio Cliente de CTR','선택','CTR 고객가 (MXN · 숫자만)','','price_customer_ctr'],
+    ['Material','선택','소재. aluminio · aluminum · 알루미늄 · al 은 모두 aluminio 로 저장된다','aluminio','material'],
+  ];
+  function templateHeaderRow(){ return TEMPLATE_COLS.map(c=>c[0]); }
+  // 현재 등록된 제품 중 형식을 보여주기 좋은 몇 건(경쟁사코드·적용차종이 있는 것 우선)
+  function templateSampleRows(items){
+    const arr=(items||[]).filter(p=>p&&p.code);
+    const rich=arr.filter(p=>p.scode&&p.app&&p.name);
+    return (rich.length?rich:arr).slice(0,3).map(p=>TEMPLATE_COLS.map(c=>{const v=p[c[4]];return v==null?'':v;}));
+  }
+  function templateGuideRows(samples){
+    const rows=[
+      ['제품 마스터 업로드 양식 — 작성 방법'],
+      [],
+      ['① 「Plantilla Articulo」 시트의 첫 줄(헤더)은 그대로 두고, 둘째 줄부터 제품을 한 줄씩 적으세요.'],
+      ['② 업로드는 Clave CTR 기준입니다 — 없는 코드는 신규 등록, 있는 코드는 변경된 항목만 수정됩니다.'],
+      ['③ 재고수량·평균원가·Rack 위치는 이 업로드로 절대 바뀌지 않습니다.'],
+      ['④ 빈 칸은 「값 없음」으로 덮어씁니다. 기존 값을 그대로 두려면 그 열 자체를 지우고 올리세요.'],
+      ['⑤ 이미 등록된 제품을 고칠 때는 「제품 찾기」 탭의 ⬇ 제품 마스터 다운로드로 현재 값을 받아 고치는 편이 안전합니다.'],
+      ['⑥ 한 파일에 같은 코드가 여러 번 있으면 첫 행만 반영되고, 제품명이 빈 행은 건너뜁니다.'],
+      ['⑦ 열 순서는 바뀌어도 되고 필요 없는 열은 지워도 됩니다(헤더 이름으로 찾습니다). 다만 왼쪽에서 20열까지만 읽습니다.'],
+      ['⑧ 올리면 바로 저장되지 않습니다 — 미리보기에서 신규·변경 건수를 확인하고 「반영하기」를 눌러야 반영됩니다.'],
+      ['⑨ 이 「작성방법」 시트는 업로드 때 읽지 않습니다(첫 시트만 읽습니다). 지우지 않고 그대로 올려도 됩니다.'],
+      [],
+      ['열 이름','필수/선택','설명','예시'],
+    ].concat(TEMPLATE_COLS.map(c=>[c[0],c[1],c[2],c[3]]));
+    if(samples&&samples.length){
+      rows.push([]);
+      rows.push(['현재 등록된 제품 '+samples.length+'건 — 표기 형식 참고용(이 시트의 값은 업로드되지 않습니다)']);
+      rows.push(templateHeaderRow());
+      samples.forEach(r=>rows.push(r));
+    }
+    return rows;
+  }
+  async function downloadTemplate(){
+    const btn=$('dlTemplate'); if(!btn||btn.disabled) return;
+    const m=$('tplMsg'); m.className='msg'; m.style.display='none';
+    btn.disabled=true; const old=btn.textContent; btn.textContent='만드는 중…';
+    let samples=[];
+    try{   // 예시 행은 덤이다 — 못 받아도 양식 자체는 그대로 만든다
+      const res=await fetch(session.api+'/api/products/master-export',{headers:auth()});
+      const d=await res.json();
+      if(res.ok&&!d.error) samples=templateSampleRows(d.items);
+    }catch(e){}
+    try{
+      const wb=XLSX.utils.book_new();
+      const ws=XLSX.utils.aoa_to_sheet([templateHeaderRow()]);
+      ws['!cols']=TEMPLATE_COLS.map(c=>({wch:Math.max(14,Math.min(42,String(c[0]).length+4))}));
+      XLSX.utils.book_append_sheet(wb,ws,'Plantilla Articulo');
+      const gs=XLSX.utils.aoa_to_sheet(templateGuideRows(samples));
+      gs['!cols']=[{wch:36},{wch:11},{wch:70},{wch:48}];
+      XLSX.utils.book_append_sheet(wb,gs,'작성방법');
+      XLSX.writeFile(wb,'Refatrix_ProductMaster_Plantilla.xlsx');
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='양식을 내려받았습니다 — 「Plantilla Articulo」 시트 둘째 줄부터 입력한 뒤 이 화면에 그대로 올리세요.'
+        +(samples.length?'':' (현재 제품 예시는 받지 못했습니다 — 양식 자체는 정상입니다.)');
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='양식을 만들지 못했습니다: '+e.message; }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+
   $('go').addEventListener('click',login);
   $('dlMaster').addEventListener('click',downloadMaster);
+  $('dlTemplate').addEventListener('click',downloadTemplate);
   $('pin').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
   $('search').addEventListener('click',doSearch);
   $('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
@@ -2072,7 +2157,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build pd-0918dem2 (판매중단 후 견적요청 수요)'); }catch(e){}
+  try{ console.log('[refatrix-products] build pt-0922tpl (제품 마스터 업로드 양식 다운로드)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
