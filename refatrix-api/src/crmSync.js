@@ -122,6 +122,38 @@ function identityFields(c) {
 }
 
 /**
+ * 20260922 · **우리가 실제로 무엇을 보냈는지** 한 줄로 적는다.
+ *
+ *   왜: CRM 이 `ERR_VALIDATION — Para un RFC nuevo son requeridos razonSocial, contactEmail,
+ *   contactPhone y businessTypeId` 로 거절할 때, 이력에는 그 스페인어 문장만 남았다.
+ *   그러면 **넷 중 무엇이 빠졌는지** 알려면 「원문」을 열어 키를 눈으로 대조해야 한다.
+ *   상대의 요구사항을 우리 코드에 복제하지 않으면서(그건 두 곳에 규칙을 두는 일이다),
+ *   **우리가 보낸 것만** 사실대로 적어 주면 대조가 즉시 끝난다.
+ *
+ *   ⚠ 여기서 「필수」를 판정하지 않는다. 무엇이 필수인지는 상대가 정한다.
+ *     우리는 보낸 것과 안 보낸 것을 나열할 뿐이다.
+ */
+const IDENTITY_LABEL = {
+  razonSocial: '상호',
+  contactEmail: '이메일',
+  contactPhone: '전화',
+  businessTypeId: '회사종류ID',
+};
+
+export function identityNote(payload) {
+  const p = (payload && typeof payload === 'object') ? payload : {};
+  const keys = Object.keys(IDENTITY_LABEL);
+  const sent = keys.filter((k) => p[k] !== undefined && p[k] !== null && p[k] !== '');
+  const missing = keys.filter((k) => !sent.includes(k));
+  if (!sent.length && !missing.length) return null;
+  const label = (k) => IDENTITY_LABEL[k] + '(' + k + ')';
+  const parts = [];
+  if (sent.length) parts.push('보냄: ' + sent.map(label).join(' · '));
+  if (missing.length) parts.push('안 보냄: ' + missing.map(label).join(' · '));
+  return parts.join(' / ');
+}
+
+/**
  * 20260918tier · 상거래정보 창구(upsert)에도 신원을 함께 보낼지.
  *   기본은 **보낸다**(디렉터 지시). 상대 창구가 모르는 필드를 거절하면 전송이 줄줄이 실패하므로,
  *   **재배포 없이** 되돌릴 수 있는 스위치를 둔다 — Railway 변수:
@@ -483,9 +515,16 @@ export async function drainOutbox({ limit = 20, app } = {}) {
         put('http_status=$?', r.httpStatus || null);
         put('codigo_error=$?', codigo);
         put('response=$?', JSON.stringify(r.body));
+        // 20260922 · 거절 사유에 **우리가 보낸 신원**을 덧붙인다.
+        //   상대가 「razonSocial·contactEmail·contactPhone·businessTypeId 가 필요하다」고 할 때,
+        //   넷 중 무엇을 우리가 안 보냈는지가 바로 보여야 원문을 열지 않고 끝난다.
+        //   ⚠ **상대가 실제로 답했을 때만** 붙인다. 타임아웃·DNS 오류는 본문이 도달조차
+        //     하지 않았으므로 「무엇을 보냈나」가 답이 아니다 — 거기 붙이면 소음이 되고,
+        //     소음이 쌓이면 진짜 신호가 묻힌다.
+        const ident = r.error ? null : identityNote(payload);
         put('last_error=$?', fbId
           ? `CRM 에 없는 고객 — 등록 창구로 넘겼습니다 (전송 #${fbId})`
-          : String(note).slice(0, 500));
+          : String(ident ? `${note} | 신원 ${ident}` : note).slice(0, 500));
         put(`next_attempt_at = now() + ($? || ' seconds')::interval`, String(nextDelaySec(attempts)));
       }
       if (newCols) {
@@ -522,6 +561,10 @@ export function startCrmSyncWorker(app) {
 export function crmStatus() {
   return {
     kill_switch: globallyDisabled(),
+    // 20260922 · 신원(이메일·전화·상호) 동봉 여부를 **화면에 보이게** 한다.
+    //   이건 Railway 환경변수 하나로 조용히 꺼진다(CRM_UPSERT_IDENTITY=0). 꺼진 줄 모르면
+    //   「ERP 에서 이메일을 고쳤는데 CRM 이 그대로다」가 원인 불명으로 남는다 — 실제로 그랬다.
+    upsert_identity: upsertIdentityOn(),
     worker_sec: Number(config.crm.workerSec) || 60,
     max_attempts: MAX_ATTEMPTS,
     backoff_sec: BACKOFF_SEC,

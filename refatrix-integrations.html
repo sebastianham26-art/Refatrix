@@ -561,7 +561,18 @@
       const eng=d.engine||{};
       $('globalBanner').innerHTML = d.migrated===false
         ? '<div class="banner warn"><b>마이그레이션 대기</b> — Railway 콘솔에서 <span class="mono">npm run migrate</span> 로 0201 을 적용해야 이 화면에서 설정을 저장할 수 있습니다.</div>'
-        : (eng.kill_switch ? '<div class="banner err"><b>전체 정지</b> — 환경변수 CRM_SYNC_DISABLE_ALL=1 이 켜져 있어 어떤 연동도 전송되지 않습니다.</div>' : '');
+        : (eng.kill_switch
+            ? '<div class="banner err"><b>전체 정지</b> — 환경변수 CRM_SYNC_DISABLE_ALL=1 이 켜져 있어 어떤 연동도 전송되지 않습니다.</div>'
+            // 20260922 · 신원 동봉이 꺼져 있으면 **반드시 보여야 한다.** 이건 Railway 변수 하나로
+            //   조용히 꺼지고, 꺼진 줄 모르면 「ERP 에서 이메일을 고쳤는데 CRM 이 그대로다」가
+            //   원인 불명으로 남는다. 실제로 그 상태를 며칠 겪었다.
+            : (eng.upsert_identity === false
+                ? '<div class="banner warn"><b>이메일·전화·상호를 CRM 으로 보내지 않는 중</b> — '
+                  + '환경변수 <span class="mono">CRM_UPSERT_IDENTITY</span> 가 꺼져 있습니다. '
+                  + '상거래정보 전송에는 할인율·외상일·상태만 실립니다. '
+                  + 'ERP 에서 고친 연락처는 CRM 에 반영되지 않습니다 — Railway 에서 그 변수를 지우거나 '
+                  + '<span class="mono">1</span> 로 바꾸면 다시 실립니다.</div>'
+                : ''));
       renderEpList();
       const key=keepKey||(CUR&&CUR.key)||(EPS[0]&&EPS[0].key);
       if(key) selectEp(key);
