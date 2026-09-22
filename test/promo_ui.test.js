@@ -69,7 +69,7 @@ const val = (doc, id) => doc.getElementById(id).value;
   {
     const { w, doc } = mkDom();
     await sleep(10);
-    ok('build 태그 sc0918promo', /build sc0918promo/.test(fs.readFileSync(FILE, 'utf8')));
+    ok('build 태그 sc0922promo2', /build sc0922promo2/.test(fs.readFileSync(FILE, 'utf8')));
     ok('제품마스터(PRO) 표가 있다', !!doc.getElementById('proBody'));
     ok('구 프로모션 품목 표도 남아 있다', !!doc.getElementById('promoBody'));
     ok('PRO 편집 모달이 있다', !!doc.getElementById('proModal'));

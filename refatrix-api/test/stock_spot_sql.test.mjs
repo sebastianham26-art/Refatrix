@@ -53,7 +53,7 @@ ok('part/promo 짝 CHECK 존재', /scsc_item_chk/.test(MIG));
 ok('재실행 안전(IF NOT EXISTS/DO 가드)', /ADD COLUMN IF NOT EXISTS/.test(MIG) && /CREATE TABLE IF NOT EXISTS/.test(MIG));
 
 const FRONT = fs.readFileSync(path.resolve(API, '..', 'refatrix-stockcount.html'), 'utf8');
-ok('프런트 build 태그 갱신', /build sc0918promo/.test(FRONT));
+ok('프런트 build 태그 갱신', /build sc0922promo2/.test(FRONT));
 
 /* ---------- ③ 실 DB 파트 ---------- */
 const URL = process.env.TEST_PG_URL || process.env.DATABASE_URL;
