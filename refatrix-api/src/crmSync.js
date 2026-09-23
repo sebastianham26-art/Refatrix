@@ -560,7 +560,9 @@ export async function drainOutbox({ limit = 20, app } = {}) {
         //   ⚠ **상대가 실제로 답했을 때만** 붙인다. 타임아웃·DNS 오류는 본문이 도달조차
         //     하지 않았으므로 「무엇을 보냈나」가 답이 아니다 — 거기 붙이면 소음이 되고,
         //     소음이 쌓이면 진짜 신호가 묻힌다.
-        const ident = r.error ? null : identityNote(payload);
+        // 20260923 · 신원 대조는 **고객 건에만** 의미가 있다. 제품·오더 건에 「상호·이메일 안 보냄」을
+        //   붙이면 실패 원인과 무관한 소음이 된다.
+        const ident = (r.error || (row.entity && row.entity !== 'customer')) ? null : identityNote(payload);
         put('last_error=$?', fbId
           ? `CRM 에 없는 고객 — 등록 창구로 넘겼습니다 (전송 #${fbId})`
           : String(ident ? `${note} | 신원 ${ident}` : note).slice(0, 500));

@@ -26,6 +26,7 @@ import { computeQuoteTotals } from '../quotes.js';
 // ⚠ 화면과 **같은 조립기**를 쓴다. 두 벌로 두면 코드 해석 규칙이 갈라진다.
 import { buildLines, nextQuoteNo, assignReservations, normalizePoNo, poColumnReady } from '../quoteBuild.js';
 import { reserveExpiresAt } from '../quoteExpiry.js';
+import { kickOrderStatus } from '../orderStatusSync.js';   // 0227 · 접수 즉시 CRM 에 「Solicitud nueva」
 import { recordQuoteDevDemand } from '../quoteDevDemand.js';   // 2026-09-21 · 포털로 온 미등록 코드도 즉시 개발요청 대장에   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 
 export const QUOTE_KEY = 'crm_quote_request';
@@ -355,6 +356,8 @@ export default async function crmQuoteRoutes(app) {
         http_status: 200, result: 'created', codigo_error: '0',
         // 수신 이력에도 남긴다 — 디렉터가 화면에서 번호가 갈린 건을 찾을 수 있게.
         mensaje: numberNote ? `${body.mensaje} ⚠ ${numberNote}` : body.mensaje });
+      // 0227 · 오더상태 (전송) — 응답을 돌려준 **뒤에** 「Solicitud nueva」 를 보낸다(기다리지 않는다).
+      kickOrderStatus(result.q.id, { origin: 'crm_quote_created', app });
       return reply.code(200).send(body);
     } catch (e) {
       // 같은 번호가 **동시에** 두 번 들어오면 유니크 제약이 하나를 막는다.

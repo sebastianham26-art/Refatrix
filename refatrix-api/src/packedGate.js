@@ -1,4 +1,5 @@
 import { query } from './db.js';
+import { kickOrderStatus } from './orderStatusSync.js';   // 0227 · 포장완료 → CRM 「Preparando despacho」
 
 // 포장완료(packed) 3조건이 처음 모두 충족되면 quotes.packed_at 을 정확히 한 번 기록.
 //   ① 즉시재고(in_stock) 라인 전부 스캔 완료(packing_box_line 합 >= required)
@@ -36,5 +37,7 @@ export async function maybeMarkPacked(quoteId, exec = query) {
   if (!boxes.length) return false;
   // 3조건 충족 → 한 번만 기록
   const r = (await exec(`UPDATE quotes SET packed_at=now() WHERE id=$1 AND packed_at IS NULL RETURNING packed_at`, [id])).rows[0];
+  // 트랜잭션 안에서 불릴 수 있다 — 훅은 잠깐 미뤄 커밋 뒤에 읽고, 그래도 놓치면 감시가 줍는다.
+  if (r) kickOrderStatus(id, { origin: 'packed' });
   return !!r;
 }

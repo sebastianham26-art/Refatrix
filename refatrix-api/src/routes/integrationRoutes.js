@@ -9,6 +9,8 @@ import {
 } from '../integrations.js';
 import { sendPayload, isSuccess, crmStatus, buildPayload } from '../crmSync.js';
 import { fetchProducts, buildProduct, buildLote, mxNowParts } from '../productSync.js';
+import { testPayload as orderTestPayload, sweepOrderStatus, orderStatusReady, CRM_ORDER_STEPS,
+  previewOrderStatus, endpointState as orderEndpointState } from '../orderStatusSync.js';   // 0227
 import { inboundCounts } from '../crmInboundLog.js';
 
 const ERR_NOTE = {
@@ -127,6 +129,17 @@ export default async function integrationRoutes(app) {
     let payload = b.payload;
     let usedCustomer = null;
     let usedProduct = null;
+    let usedQuote = null;
+
+    // 0227 · 오더상태 창구는 **가장 최근 웹(COT) 견적의 지금 단계**로 시험한다.
+    //   고객 본문을 오더 주소로 보내면 상대는 무엇을 받았는지 알 수 없다(제품 창구와 같은 이유).
+    //   실제 전송과 **같은 함수**로 만든다. 웹 견적이 하나도 없으면 계약서의 요청 예시로 보낸다.
+    if (!payload && ep.category === 'order') {
+      const u = (await query(`SELECT login_id, name, role FROM users WHERE id=$1`, [req.ctx.perm.userId])).rows[0] || {};
+      const f = ['login_id', 'name', 'role'].includes(ep.user_field) ? ep.user_field : 'login_id';
+      const t = await orderTestPayload(String(u[f] || 'erp'));
+      if (t) { payload = t.payload; usedQuote = t.quote; }
+    }
 
     // 0218 · 제품 창구는 **고객 본문을 절대 보내지 않는다.**
     //   예전에는 화면에 「시험 전송할 고객」 칸이 그대로 보였고, 거기에 값이 있으면
@@ -157,7 +170,7 @@ export default async function integrationRoutes(app) {
     // 테스트에 쓸 고객: id 로 지정하거나, 코드·상호·RFC 로 찾는다.
     //   아무것도 안 주면 고객 연동에 한해 **가장 최근 승인된 RFC 보유 고객**을 자동으로 고른다.
     //   (매번 예시 JSON 을 손으로 채우게 하지 않기 위해서다. 실제 값으로 시험하는 편이 계약 검증에도 낫다)
-    if (!payload && (ep.category === 'customer' || b.customer_id || b.customer_query)) {
+    if (!payload && ep.category !== 'order' && (ep.category === 'customer' || b.customer_id || b.customer_query)) {
       let c = null;
       if (b.customer_id) {
         c = (await query(
@@ -227,12 +240,77 @@ export default async function integrationRoutes(app) {
     };
     return {
       ok,
-      request: { method: r.method, url: r.url, env: ep.env, payload, auth, customer: usedCustomer, product: usedProduct },
+      request: { method: r.method, url: r.url, env: ep.env, payload, auth, customer: usedCustomer, product: usedProduct, quote: usedQuote },
       response: r.error ? { error: r.error } : { http_status: r.httpStatus, body: r.body, ms: r.ms },
       verdict: ok ? 'CRM 이 성공(codigoError=' + (ep.ok_code) + ')으로 응답했습니다.'
         : (r.error ? '연결하지 못했습니다: ' + r.error
           : 'CRM 이 성공코드를 주지 않았습니다 — 계약서의 오류코드 표와 대조하세요.'),
     };
+  });
+
+  // ===== 0227 · 오더상태 (전송) — 현황 · 지금 따라잡기 · 견적 1건 확인 =====
+  //   현황: 웹(COT) 견적이 CRM 에 **어느 단계까지 알려졌는지** 단계별로 센다.
+  app.get('/api/order-status/overview', guard, async (req, reply) => {
+    if (!(await orderStatusReady())) {
+      return reply.code(503).send({ error: 'migration_required', note: 'npm run migrate (0227) 를 먼저 실행하세요.' });
+    }
+    const st = await orderEndpointState();
+    const byTop = (await query(
+      `SELECT COALESCE(e.top,0) AS top, COUNT(*)::int AS n
+         FROM quotes q
+         LEFT JOIN (SELECT quote_id, MAX(seq) AS top FROM crm_order_status_events GROUP BY quote_id) e
+                ON e.quote_id = q.id
+        WHERE q.deleted_at IS NULL AND q.external_quote_no IS NOT NULL
+          AND q.created_at >= now() - INTERVAL '120 days'
+        GROUP BY COALESCE(e.top,0)`)).rows;
+    const recent = (await query(
+      `SELECT e.quote_id, e.seq, e.status, e.event_at, e.origin, e.created_at, e.outbox_id,
+              q.quote_no, q.external_quote_no, c.name AS customer_name,
+              o.status AS send_status, o.http_status, o.last_error
+         FROM crm_order_status_events e
+         JOIN quotes q ON q.id = e.quote_id
+         LEFT JOIN customers c ON c.id = q.customer_id
+         LEFT JOIN crm_customer_outbox o ON o.id = e.outbox_id
+        ORDER BY e.created_at DESC, e.seq DESC
+        LIMIT 30`)).rows;
+    const counts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const r of byTop) counts[Number(r.top)] = Number(r.n);
+    return {
+      ready: st.ok, reason: st.ok ? null : st.reason,
+      steps: CRM_ORDER_STEPS,
+      counts,
+      recent: recent.map((r) => ({
+        quote_id: Number(r.quote_id), seq: Number(r.seq), status: r.status,
+        event_at: r.event_at, origin: r.origin, created_at: r.created_at,
+        outbox_id: r.outbox_id == null ? null : Number(r.outbox_id),
+        quote_no: r.quote_no, external_quote_no: r.external_quote_no, customer_name: r.customer_name,
+        send_status: r.send_status || null, http_status: r.http_status == null ? null : Number(r.http_status),
+        last_error: r.last_error || null,
+      })),
+    };
+  });
+
+  //   지금 따라잡기: 90초 감시를 기다리지 않고 바로 한 번 돌린다(연동을 막 켰을 때).
+  app.post('/api/order-status/sweep', guard, async (req, reply) => {
+    const st = await orderEndpointState();
+    if (!st.ok) {
+      return reply.code(409).send({ error: st.reason,
+        note: st.reason === 'endpoint_disabled' ? '오더상태 (전송)이 꺼져 있습니다 — 사용 여부를 켜고 저장한 뒤 누르세요.'
+          : (st.reason === 'url_missing' ? '지금 환경의 URL 이 비어 있습니다.' : '오더상태 창구를 찾을 수 없습니다(0227 미적용).') });
+    }
+    const r = await sweepOrderStatus({ app });
+    return { ok: true, ...r };
+  });
+
+  //   견적 1건 확인: 이 견적이 지금 CRM 에 무엇으로 보여야 하는지 + 이미 보낸 단계(보내지 않는다).
+  app.get('/api/order-status/quote', guard, async (req, reply) => {
+    const qno = String(req.query.q || '').trim();
+    if (!qno) return reply.code(400).send({ error: 'q_required' });
+    const row = (await query(
+      `SELECT id FROM quotes WHERE deleted_at IS NULL AND (quote_no=$1 OR external_quote_no=$1)
+        ORDER BY id DESC LIMIT 1`, [qno])).rows[0];
+    if (!row) return reply.code(404).send({ error: 'not_found', note: `견적 ${qno} 을(를) 찾지 못했습니다.` });
+    return { ok: true, ...(await previewOrderStatus(row.id)) };
   });
 
   // 캐시 즉시 반영(설정을 바꾸고 바로 시험할 때)

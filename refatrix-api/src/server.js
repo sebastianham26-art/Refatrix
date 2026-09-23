@@ -66,6 +66,7 @@ import { startSecretRefresh } from './secrets.js';
 import surveyRoutes from './routes/surveyRoutes.js';     // 제품·마케팅 › 고객 설문 분석(사진·PDF → AI 판독)
 import { startCrmSyncWorker } from './crmSync.js';
 import { startProductSyncWorker } from './productSync.js';
+import { startOrderStatusWorker } from './orderStatusSync.js';   // 0227 · 오더상태 (전송) 감시
 import { installPerfMonitor } from './perfMonitor.js';
 
 export function buildApp() {
@@ -155,6 +156,7 @@ export function buildApp() {
   // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
   startCrmSyncWorker(app);
   startProductSyncWorker(app);
+  startOrderStatusWorker(app);      // ERP → CRM 오더상태 — 놓친 단계 줍기(90초)
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {

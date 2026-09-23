@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20260921nopro</title>
+<title>Refatrix ERP · 연동 관리 · build 20260923ordst</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -175,6 +175,7 @@
                 <option value="customer">고객</option>
                 <option value="product">제품</option>
                 <option value="quote">견적</option>
+                <option value="order">오더</option>
                 <option value="other">기타</option>
               </select>
             </div>
@@ -343,6 +344,32 @@
 
             <div class="msg" id="catalogMsg"></div>
             <div id="catalogRuns" style="margin-top:10px"></div>
+          </div>
+
+          <!-- 0227 · 오더상태 (전송) — 오더 창구에서만 보인다 -->
+          <div id="boxOrder" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+            <div style="font-weight:600;margin-bottom:8px">오더상태 전송 <span class="hint">(계약서 Contrato_API_Estatus_Pedido v1.0)</span></div>
+            <div class="tblwrap"><table>
+              <thead><tr><th style="width:44px">#</th><th style="width:190px">CRM 단계</th><th>ERP 에서 언제 보내나 (수주 SLA 단계)</th><th style="width:110px" class="num">이 단계까지</th></tr></thead>
+              <tbody id="orderStepRows"></tbody>
+            </table></div>
+            <div class="hint" style="margin-top:6px">
+              <b>웹카달록에서 들어온 견적(COT-…)만</b> 보냅니다 — ERP 화면에서 만든 견적은 CRM 이 모르는 오더라 보내지 않습니다.
+              단계는 <b>앞으로만</b> 갑니다. 포장지시서 없이 바로 전환하는 등 <b>건너뛴 단계는 지어내지 않고</b> 실제로 거친 단계만 순서대로 보냅니다.
+              취소·만료는 이 4단계에 없으므로 보내지 않습니다.<br>
+              단계가 바뀌는 순간(출력·포장완료·전환·SAT 입력·접수) 바로 보내고, 놓친 것은 <b>90초마다</b> 감시가 줍습니다.
+              <b>꺼져 있는 동안에는 아무것도 쌓지 않습니다</b> — 켜면 지금 단계까지 한 번에 따라잡습니다.
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:end">
+              <button class="btn" id="btnOrderSweep" type="button">지금 따라잡기</button>
+              <button class="btn ghost sm" id="btnOrderReload" type="button">새로고침</button>
+              <div style="display:flex;gap:6px;align-items:end">
+                <div><label>견적 1건 확인 <span class="hint">(보내지 않고 보기만)</span></label><input id="fOrderQ" placeholder="COT-… 또는 견적번호" style="min-width:220px"></div>
+                <button class="btn ghost sm" id="btnOrderCheck" type="button">확인</button>
+              </div>
+            </div>
+            <div class="msg" id="orderMsg"></div>
+            <div id="orderRecent" style="margin-top:10px"></div>
           </div>
 
           <div id="boxTokens">
@@ -520,7 +547,15 @@
     crm_not_found:'CRM 에 없어 등록으로 전환',manual:'수동'};
   const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
   const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
-  const CAT_LABEL={customer:'고객',product:'제품',quote:'견적',other:'기타'};
+  const CAT_LABEL={customer:'고객',product:'제품',quote:'견적',order:'오더',other:'기타'};
+  // 0227 · 오더상태 전송 — 어떤 일이 전송을 일으켰나
+  Object.assign(ORIGIN_LABEL,{order_crm_quote_created:'오더상태 · 웹 견적 접수',order_packing_printed:'오더상태 · 포장지시서 출력',
+    order_packed:'오더상태 · 포장완료',order_converted:'오더상태 · 전환',order_sat_entered:'오더상태 · SAT 입력',
+    order_sweep:'오더상태 · 감시(놓친 단계)',order_hook:'오더상태'});
+  const ORDER_STEP_RULE={1:'웹 견적이 ERP 에 접수돼 견적이 만들어졌을 때 (견적작성)',
+    2:'포장작업지시서를 처음 출력했을 때 (포장작업 중)',
+    3:'포장이 끝났거나, 전환돼 SAT 입력을 기다릴 때 (포장완료 · SAT 입력대기)',
+    4:'실제 SAT 번호가 등록돼 수금 단계로 넘어갔을 때 (수금대기 · 수금완료)'};
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -632,10 +667,22 @@
     //   「시험 전송할 고객」 칸과 「전체 동기화」(= 고객 전체를 CRM 에 밀어 넣는 버튼)가
     //   제품 화면에 그대로 보이면, 제품을 보내려고 누른 버튼이 고객을 보낸다.
     const prod = !inb && CUR && CUR.category==='product';
+    // 0227 · 오더 창구도 고객 전용 요소(시험 고객 칸 · 전체 동기화)를 숨긴다 — 누르면 고객이 나간다.
+    const ord = !inb && CUR && CUR.category==='order';
     $('tCustomer').classList.toggle('hidden',!!inb||!!prod);
+    if(ord) $('tCustomer').classList.add('hidden');
     $('testHint').classList.toggle('hidden',!!inb);   // 시험 전송이 없는데 그 설명만 남으면 헷갈린다
     $('btnBulk').classList.toggle('hidden',!!prod);
-    if(prod){
+    if(ord) $('btnBulk').classList.add('hidden');
+    if(ord){
+      $('testHint').innerHTML='오더상태 연동의 <b>연결 테스트</b>는 <b>가장 최근 웹 견적(COT)</b>의 <b>지금 단계</b>를 1건 보냅니다 — '
+        +'실제 값이므로 CRM 에 그대로 반영됩니다. 웹 견적이 하나도 없으면 계약서의 요청 예시로 보냅니다. '
+        +'이 시험은 발송 장부에 남지 않으므로, 나중에 같은 단계가 정식으로 한 번 더 나갈 수 있습니다(<span class="mono">eventoId</span> 가 같아 CRM 은 무시하면 됩니다).';
+      $('fQ').placeholder='COT 번호 · 단계';
+      $('logHintOut').innerHTML='오더 단계 <b>1개 = 이력 1건</b>입니다. '
+        +'실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도하고, 6회 실패하면 <b>실패</b>로 남습니다 — '
+        +'원인을 고친 뒤 <b>재전송</b>을 누르면 같은 본문(같은 <span class="mono">eventoId</span>)으로 다시 나갑니다.';
+    }else if(prod){
       $('testHint').innerHTML='제품 연동의 <b>연결 테스트</b>는 실제 제품 <b>1건</b>을 보냅니다 — '
         +'시험이므로 마감 신호(<span class="mono">esUltimoLote</span>)는 실리지 않습니다. '
         +'전체 카탈로그는 「연결 설정」 아래의 <b>「지금 전체 보내기」</b>로 보냅니다.';
@@ -772,6 +819,10 @@
       applyShapeHint();
       loadCatalogStatus();
     }
+    // 0227 · 오더상태 전송(오더 창구에서만)
+    const isOrder = e.category==='order' && e.direction!=='in';
+    $('boxOrder').classList.toggle('hidden',!isOrder);
+    if(isOrder){ $('orderMsg').className='msg'; $('orderMsg').textContent=''; loadOrderStatus(); }
     applyDirection();
     const warn=[]; const info=[];
     if(e.direction==='in'){
@@ -876,6 +927,64 @@
       : (v==='array'
         ? '봉투 없이 제품 배열만 보냅니다. <b>마감 신호(esUltimoLote)가 없으므로</b> 이번 전송에 없는 제품을 감추는 일은 CRM 이 다른 방법으로 해야 합니다.'
         : '제품 1건마다 요청 1건입니다. 전체 전송 시 <b>전송 이력이 제품 수만큼</b> 생깁니다(약 1,700건) — 시험용으로만 권합니다.');
+  }
+
+  // ===== 0227 · 오더상태 전송 =====
+  const ORDER_REASON={endpoint_disabled:'연동이 꺼져 있습니다 — 꺼져 있는 동안은 아무것도 쌓지 않습니다. 켜면 지금 단계까지 따라잡습니다.',
+    url_missing:'지금 환경의 URL 이 비어 있습니다 — 보내지 않습니다.',endpoint_missing:'오더상태 창구를 찾을 수 없습니다(0227 미적용).'};
+  async function loadOrderStatus(){
+    const rowsEl=$('orderStepRows'), box=$('orderRecent'); if(!rowsEl) return;
+    try{
+      const res=await fetch(session.api+'/api/order-status/overview',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ box.innerHTML='<div class="hint">'+esc(d.note||d.error||res.status)+'</div>'; return; }
+      const c=d.counts||{};
+      rowsEl.innerHTML=(d.steps||[]).map(st=>'<tr><td class="num">'+st.seq+'</td>'
+        +'<td><b>'+esc(st.text)+'</b><div class="hint mono">'+esc(st.code)+'</div></td>'
+        +'<td>'+esc(ORDER_STEP_RULE[st.seq]||'')+'</td>'
+        +'<td class="num">'+(c[st.seq]||0)+'건</td></tr>').join('')
+        +'<tr><td></td><td class="hint">아직 안 보냄</td><td class="hint">최근 120일 웹 견적 중 한 단계도 보내지 않은 것</td><td class="num">'+(c[0]||0)+'건</td></tr>';
+      if(!d.ready){ $('orderMsg').className='msg warn'; $('orderMsg').textContent=ORDER_REASON[d.reason]||d.reason; }
+      const rec=d.recent||[];
+      const SEND={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
+      box.innerHTML='<div style="font-weight:600;margin:6px 0">최근 보낸 단계</div>'
+        +'<div class="tblwrap"><table><thead><tr><th>적재 시각</th><th>견적</th><th>단계</th><th>계기</th><th>전송</th></tr></thead><tbody>'
+        +(rec.length?rec.map(r=>'<tr><td class="num">'+esc(new Date(r.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</td>'
+          +'<td><b class="mono">'+esc(r.external_quote_no||r.quote_no)+'</b><div class="hint">'+esc(r.customer_name||'')+'</div></td>'
+          +'<td>'+r.seq+' · '+esc(((d.steps||[]).find(x=>x.seq===r.seq)||{}).text||r.status)+'</td>'
+          +'<td class="hint">'+esc(ORIGIN_LABEL['order_'+r.origin]||r.origin||'')+'</td>'
+          +'<td>'+(r.send_status?'<span class="pill p-'+esc(r.send_status)+'">'+esc(SEND[r.send_status]||r.send_status)+'</span>':'<span class="hint">–</span>')
+          +(r.last_error?'<div class="hint" style="color:var(--expense)">'+esc(r.last_error)+'</div>':'')+'</td></tr>').join('')
+          :'<tr><td colspan="5" class="empty">아직 보낸 단계가 없습니다.</td></tr>')
+        +'</tbody></table></div>';
+    }catch(e){ box.innerHTML='<div class="hint">현황을 불러오지 못했습니다.</div>'; }
+  }
+  async function orderSweep(){
+    const m=$('orderMsg'); m.className='msg'; m.textContent='확인 중…'; $('btnOrderSweep').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/order-status/sweep',{method:'POST',headers:jauth(),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg warn'; m.textContent=d.note||ORDER_REASON[d.error]||d.error||res.status; }
+      else if(d.skipped){ m.className='msg warn'; m.textContent=ORDER_REASON[d.skipped]||d.skipped; }
+      else{ m.className='msg ok'; m.textContent='웹 견적 '+(d.scanned||0)+'건 확인 · 새로 보낼 단계 '+(d.queued||0)+'건 — 결과는 아래 표와 전송 이력 탭에서 봅니다.'; }
+      setTimeout(loadOrderStatus,1500);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnOrderSweep').disabled=false; }
+  }
+  async function orderCheck(){
+    const q=$('fOrderQ').value.trim(); const m=$('orderMsg');
+    if(!q){ m.className='msg warn'; m.textContent='견적번호(COT-…)를 입력하세요.'; return; }
+    m.className='msg'; m.textContent='확인 중…';
+    try{
+      const res=await fetch(session.api+'/api/order-status/quote?q='+encodeURIComponent(q),{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg warn'; m.textContent=d.note||d.error||res.status; return; }
+      const sent=(d.sent||[]).map(x=>x.seq).join(', ')||'없음';
+      m.className=d.external_quote_no?'msg ok':'msg warn';
+      m.textContent=(d.external_quote_no?'':'⚠ 웹(COT) 견적이 아니라 보내지 않습니다. ')
+        +(d.quote_no||q)+' · ERP 단계 '+d.stage+' → CRM '+(d.crm_seq?(d.crm_seq+' '+d.crm_status):'해당 단계 없음(보내지 않음)')
+        +' · 이미 보낸 단계: '+sent;
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
 
   // ===== 0218 · 제품 카탈로그 전송 =====
@@ -1247,7 +1356,7 @@
       +'<td><b>'+esc(r.customer_name||('#'+(r.entity_id||'')))+'</b><div class="hint mono">'+esc(r.customer_code||r.rfc||'')+'</div></td>'
       +'<td>'+esc(ORIGIN_LABEL[r.origin]||r.origin)
         +(r.fallback_of?'<div class="hint" style="color:var(--income)">↳ 전송 #'+esc(r.fallback_of)+' 에서 이어짐</div>':'')
-        +'<div class="hint">'+(r.op==='delete'?'삭제':(r.op==='reject'?'반려 통보':'등록/수정'))+(r.env?(' · '+(r.env==='prod'?'운영':'테스트')):'')+'</div></td>'
+        +'<div class="hint">'+(r.entity==='order'?'오더상태':(r.op==='delete'?'삭제':(r.op==='reject'?'반려 통보':'등록/수정')))+(r.env?(' · '+(r.env==='prod'?'운영':'테스트')):'')+'</div></td>'
       +'<td><span class="pill p-'+esc(r.status)+'">'+esc(STATUS_LABEL[r.status]||r.status)+'</span>'+next+'</td>'
       +'<td class="num">'+esc(r.attempts)+'</td>'
       +'<td class="num mono">'+resp+'</td>'
@@ -1398,6 +1507,10 @@
   $('btnCatalogTest').addEventListener('click',()=>catalogSend('test'));
   $('btnCatalogPreview').addEventListener('click',catalogPreview);
   $('btnCatalogReload').addEventListener('click',loadCatalogStatus);
+  $('btnOrderSweep').addEventListener('click',orderSweep);
+  $('btnOrderReload').addEventListener('click',loadOrderStatus);
+  $('btnOrderCheck').addEventListener('click',orderCheck);
+  $('fOrderQ').addEventListener('keydown',e=>{if(e.key==='Enter')orderCheck();});
   $('btnSaveNotify').addEventListener('click',saveNotifyTargets);
   $('btnNotifyNone').addEventListener('click',function(){
     NOTIFY.forEach(u=>{ if(!u.always) u.selected=false; });

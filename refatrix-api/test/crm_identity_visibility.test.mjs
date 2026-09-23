@@ -150,7 +150,8 @@ test('킬스위치 상태가 화면으로 내려간다', () => {
 
 test('거절 사유에 신원 요약을 덧붙인다(전송 엔진)', () => {
   const src = readFileSync(new URL('../src/crmSync.js', import.meta.url), 'utf8');
-  assert.ok(/const ident = r\.error \? null : identityNote\(payload\)/.test(src),
+  // 20260923 · 고객 건에만 붙인다(제품·오더 건 제외) — 타임아웃 조건은 그대로 앞에 있어야 한다.
+  assert.ok(/const ident = \(r\.error \|\| \(row\.entity && row\.entity !== 'customer'\)\) \? null : identityNote\(payload\)/.test(src),
     '상대가 실제로 답했을 때만 붙여야 한다 — 타임아웃에 붙이면 소음이다');
   assert.ok(/신원 \$\{ident\}/.test(src), 'last_error 에 함께 남아야 한다');
   // 성공했을 때는 붙이지 않는다 — 평소에 시끄러우면 진짜 신호가 묻힌다.

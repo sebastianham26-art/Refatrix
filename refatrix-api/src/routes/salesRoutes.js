@@ -9,6 +9,7 @@ import { autoStage } from '../stageAuto.js';
 import { allocateShortagesOnSale, reverseInvoiceResolutions, scanResolveShortages } from '../shortageResolve.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { isInternalCall } from '../internalCall.js';   // 0224c · 견적 전환 내부 호출 식별
+import { kickOrderStatusByInvoice } from '../orderStatusSync.js';   // 0227 · SAT 번호 등록 → CRM 「OC Enviada」
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -222,6 +223,7 @@ export default async function salesRoutes(app) {
          WHERE id=$5 AND deleted_at IS NULL RETURNING id, sat_no, folio_no`, [sat, hasFolio, folio, req.ctx.perm.userId, id]);
       if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
       await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_invoice:${id}`, detail: { sat_no: r.rows[0].sat_no, folio_no: r.rows[0].folio_no } });
+      kickOrderStatusByInvoice(id, { origin: 'sat_entered', actorUserId: req.ctx.perm.userId, app });
       return { ok: true, sat_no: r.rows[0].sat_no, folio_no: r.rows[0].folio_no };
     } catch (e) {
       if (String(e.message).includes('unique') || e.code === '23505') return reply.code(409).send({ error: 'sat_no_duplicate' });

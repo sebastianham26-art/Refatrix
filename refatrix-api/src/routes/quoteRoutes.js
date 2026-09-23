@@ -13,6 +13,7 @@ import { packingDeadline } from '../workingHours.js';
 import { reserveExpiresAt } from '../quoteExpiry.js';
 import { recordQuoteDevDemand, quoteDevLines, esDevNote } from '../quoteDevDemand.js';   // 2026-09-21 · 미등록 코드는 저장 즉시 개발요청 대장에   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 import { maybeMarkPacked } from '../packedGate.js';
+import { kickOrderStatus } from '../orderStatusSync.js';   // 0227 · 단계 전진 → CRM 오더상태
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { internalHeaders } from '../internalCall.js';   // 0224c · /api/sales 내부 호출 표식
@@ -993,7 +994,10 @@ export default async function quoteRoutes(app) {
         `UPDATE quotes SET packing_printed_at = now(), packing_due_at = $2
            WHERE id=$1 AND packing_printed_at IS NULL
          RETURNING packing_printed_at, packing_due_at`, [id, due])).rows[0];
-      if (r) { printedAt = r.packing_printed_at; dueAt = r.packing_due_at; }
+      if (r) {
+        printedAt = r.packing_printed_at; dueAt = r.packing_due_at;
+        kickOrderStatus(id, { origin: 'packing_printed', actorUserId: req.ctx.perm.userId, app });   // 0227 · Surtiendo
+      }
       else { // 경합(동시 두 번 출력) → 이미 박힌 값 재조회
         const rr = (await query(`SELECT packing_printed_at, packing_due_at FROM quotes WHERE id=$1`, [id])).rows[0] || {};
         printedAt = rr.packing_printed_at; dueAt = rr.packing_due_at;
@@ -1112,6 +1116,7 @@ export default async function quoteRoutes(app) {
         [invoiceId || null, customerId, req.ctx.perm.userId, id]);
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, shortages: shortRows.length, dev_requests: devIds.length } });
+    kickOrderStatus(id, { origin: 'converted', actorUserId: req.ctx.perm.userId, app });   // 0227 · 전환 → Preparando despacho / OC Enviada
     // 전환 실행 → 단계 거래중(60) 자동 전진(전진만). (매출 확정 경로가 이미 올리지만 무인보이스 전환도 커버)
     if (customerId) { try { await autoStage({ customerId, targetSort: 60, onDate: invDate, userId: req.ctx.perm.userId, note: `자동: 견적 전환 실행 (${q.quote_no}) · 거래중 단계` }); } catch (_) {} }
     return {
