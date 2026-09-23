@@ -13,8 +13,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const { buildPayload, identityNote, crmStatus, upsertIdentityOn } =
+const { buildPayload, identityNote, crmStatus, upsertIdentityOn,
+        businessTypeId, businessTypeFallback, effectiveTier } =
   await import('../src/crmSync.js');
+
+/** 환경변수를 잠깐 바꿔 보고 반드시 되돌린다 — 다른 시험에 새지 않게. */
+function withEnv(name, value, fn) {
+  const prev = process.env[name];
+  try {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+    return fn();
+  } finally {
+    if (prev === undefined) delete process.env[name];
+    else process.env[name] = prev;
+  }
+}
 
 const BASE = {
   id: 1, code: 'C-0100', rfc: 'AIAC8310204A0', name: 'ACME SA',
@@ -30,11 +44,67 @@ test('보낸 신원과 안 보낸 신원을 그대로 적는다', () => {
   assert.equal(full.includes('안 보냄'), false, '다 보냈으면 「안 보냄」이 없어야 한다');
 });
 
-test('TIER 가 없으면 businessTypeId 가 빠졌다고 적는다', () => {
-  // 지금 ERR_VALIDATION 이 나는 가장 흔한 경우다. 이력만 보고 바로 알아야 한다.
-  const n = identityNote(buildPayload('upsert', { ...BASE, customer_type: 'refraccionaria' }, 'admin'));
-  assert.match(n, /안 보냄:.*businessTypeId/);
-  assert.match(n, /보냄:.*contactEmail/, '이메일은 보냈다는 사실도 같이 보여야 한다');
+// ── 20260923 · 회사 종류가 없는 고객도 CRM 에 등록되어야 한다 ──────────────────
+//   9/18 에는 「모르는 값을 지어내지 않는다」며 businessTypeId 를 비웠다. 의도는 옳았지만
+//   실제 결과는 **고객이 CRM 에 아예 안 생기는 것**이었다 — 잘못된 분류보다 나쁘다.
+//   그래서 기본값 D(Cliente nuevo / pequeño volumen)로 메운다. 가장 해가 적은 칸이다.
+
+test('TIER 가 없는 고객도 businessTypeId 를 싣는다 — 등록이 되어야 하니까', () => {
+  const p = buildPayload('upsert', { ...BASE, customer_type: 'refraccionaria' }, 'admin');
+  assert.equal(p.businessTypeId, 4, '기본값 D 로 나가야 한다');
+  const n = identityNote(p);
+  assert.equal(n.includes('안 보냄'), false, 'CRM 이 요구하는 4종이 다 실려야 한다');
+});
+
+test('회사 종류가 아예 비어도 마찬가지다', () => {
+  const p = buildPayload('create', { ...BASE, customer_type: '' }, 'admin');
+  assert.equal(p.businessTypeId, 4);
+  assert.equal(p.businessType, 'D', '이름과 아이디가 같은 말을 해야 한다');
+});
+
+test('ERP 에 진짜 TIER 가 있으면 그 값이 그대로 나간다 — 기본값이 덮지 않는다', () => {
+  for (const [tier, id] of [['A', 1], ['B', 2], ['C', 3], ['D', 4]]) {
+    assert.equal(businessTypeId(tier), id);
+    assert.equal(effectiveTier(tier).fallback, false);
+  }
+  assert.equal(effectiveTier('refraccionaria').fallback, true, '메운 값은 메웠다고 표시된다');
+});
+
+test('기본값은 Railway 변수 하나로 바꾸거나 끌 수 있다 — 코드 수정 없이', () => {
+  withEnv('CRM_BUSINESS_TYPE_FALLBACK', 'C', () => {
+    assert.equal(businessTypeFallback(), 'C');
+    assert.equal(businessTypeId('Mayoreo'), 3);
+  });
+  withEnv('CRM_BUSINESS_TYPE_FALLBACK', 'off', () => {
+    assert.equal(businessTypeFallback(), null);
+    assert.equal(businessTypeId('Mayoreo'), undefined, '9/18 동작으로 돌아간다');
+  });
+  // 오타로 엉뚱한 분류가 박히면 안 된다 — 모르는 값은 안 보낸다.
+  withEnv('CRM_BUSINESS_TYPE_FALLBACK', 'Z', () => {
+    assert.equal(businessTypeFallback(), null);
+  });
+});
+
+test('기본값 TIER 도 CRM_BUSINESS_TYPE_IDS 의 실제 숫자를 따른다', () => {
+  // 상대 카탈로그 숫자를 받으면 한 곳만 고치면 되게 — 기본값이 그 규칙을 비껴가면 안 된다.
+  withEnv('CRM_BUSINESS_TYPE_IDS', 'A=10,B=11,C=12,D=13', () => {
+    assert.equal(businessTypeId('refraccionaria'), 13);
+    assert.equal(businessTypeId('A'), 10);
+  });
+});
+
+test('기본값 상태가 화면으로 내려간다', () => {
+  assert.equal(crmStatus().business_type_fallback, 'D');
+  withEnv('CRM_BUSINESS_TYPE_FALLBACK', 'off', () => {
+    assert.equal(crmStatus().business_type_fallback, null);
+  });
+});
+
+test('화면이 기본값을 말해 준다 — 조용히 메우지 않는다', () => {
+  const g = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
+  assert.ok(/business_type_fallback/.test(g), '서버가 준 사실을 보고 판단해야 한다');
+  assert.ok(/CRM_BUSINESS_TYPE_FALLBACK/.test(g), '어느 변수를 고쳐야 하는지 알려 줘야 한다');
+  assert.ok(/등록되지 않습니다/.test(g), '꺼 두면 무슨 일이 벌어지는지 말해야 한다');
 });
 
 test('이메일이 비면 contactEmail 이 빠졌다고 적는다', () => {

@@ -70,17 +70,8 @@ const CUSTOMER_COLS = `SELECT id, code, name, rfc, contact, phone, ship_address,
          discount, credit_days, approval_status, deleted_at
     FROM customers`;
 
-/**
- * 20260918tier · 회사 종류(TIER A~D) → CRM 의 businessTypeId.
- *   상대 카탈로그의 실제 숫자를 아직 받지 못했다. 기본값은 화면 순서 그대로 A=1·B=2·C=3·D=4 이고,
- *   다르면 **코드를 고치지 말고** 환경변수로 덮어쓴다:
- *       CRM_BUSINESS_TYPE_IDS="A=10,B=11,C=12,D=13"
- *   A~D 가 아닌 예전 값(refraccionaria 등)이면 undefined 를 돌려준다 —
- *   모르는 값을 지어내 보내면 CRM 쪽에 엉뚱한 분류가 박힌다.
- */
-export function businessTypeId(tier) {
-  const t = String(tier == null ? '' : tier).trim().toUpperCase().charAt(0);
-  if (!t || 'ABCD'.indexOf(t) < 0) return undefined;
+/** TIER 글자 → CRM 아이디. 기본은 화면 순서 그대로 A=1·B=2·C=3·D=4. */
+function tierIdMap() {
   const map = { A: 1, B: 2, C: 3, D: 4 };
   const raw = String(process.env.CRM_BUSINESS_TYPE_IDS || '').trim();
   if (raw) {
@@ -91,7 +82,53 @@ export function businessTypeId(tier) {
       if (k && v && 'ABCD'.indexOf(k) >= 0) map[k] = /^-?\d+$/.test(v) ? Number(v) : v;
     }
   }
-  return map[t];
+  return map;
+}
+
+/** 값에서 TIER 글자만 뽑는다. A~D 가 아니면 null. */
+function tierLetter(v) {
+  const t = String(v == null ? '' : v).trim().toUpperCase().charAt(0);
+  return t && 'ABCD'.indexOf(t) >= 0 ? t : null;
+}
+
+/**
+ * 20260923 · **회사 종류가 없는 고객을 무엇으로 보낼지.**
+ *
+ *   왜 생겼나: CRM 은 **처음 보는 RFC** 에 razonSocial·contactEmail·contactPhone·businessTypeId
+ *   네 가지를 **전부** 요구한다. 예전 회사 종류(`refraccionaria` 등)나 빈 값인 레거시 고객은
+ *   `businessTypeId` 가 안 실려 **등록 자체가 거절**됐다(9/18 결정: 모르는 값을 지어내지 않는다).
+ *   그 결정은 「분류를 틀리게 박느니 비워 둔다」였는데, 실제로 벌어진 일은
+ *   **고객이 CRM 에 아예 안 생기는 것**이었다 — 잘못된 분류보다 나쁘다.
+ *
+ *   그래서 기본값을 **D** 로 둔다. D 는 「Cliente nuevo / pequeño volumen」 —
+ *   분류를 모르는 고객에게 가장 해가 적은 칸이다(상위 등급을 거저 주지 않는다).
+ *   ERP 의 회사 종류 칸은 **건드리지 않는다.** 전송할 때만 빈칸을 메우므로,
+ *   나중에 ERP 에서 진짜 TIER 를 넣으면 그 값이 그대로 나간다.
+ *
+ *   되돌리거나 바꿀 때는 **코드를 고치지 말고** Railway 변수 하나로:
+ *       CRM_BUSINESS_TYPE_FALLBACK=C      (A·B·C·D 중 하나)
+ *       CRM_BUSINESS_TYPE_FALLBACK=off    (9/18 동작 — 안 보냄. 그러면 다시 거절된다)
+ */
+export function businessTypeFallback() {
+  const raw = String(process.env.CRM_BUSINESS_TYPE_FALLBACK ?? '').trim();
+  if (!raw) return 'D';
+  const v = raw.toLowerCase();
+  if (v === 'off' || v === '0' || v === 'no' || v === 'none' || v === 'false') return null;
+  return tierLetter(raw);   // 알 수 없는 값이면 null — 오타로 엉뚱한 분류가 박히지 않는다
+}
+
+/** 이 고객이 실제로 어느 TIER 로 나가는지. `fallback` 이면 ERP 에는 없고 전송에만 채운 값이다. */
+export function effectiveTier(rawTier) {
+  const own = tierLetter(rawTier);
+  if (own) return { tier: own, fallback: false };
+  const fb = businessTypeFallback();
+  return fb ? { tier: fb, fallback: true } : { tier: null, fallback: false };
+}
+
+/** 회사 종류(TIER A~D) → CRM 의 businessTypeId. 미지정이면 위 기본값을 쓴다. */
+export function businessTypeId(tier) {
+  const { tier: t } = effectiveTier(tier);
+  return t ? tierIdMap()[t] : undefined;
 }
 
 /**
@@ -108,7 +145,9 @@ function identityFields(c) {
   const name = String(c.name || '').trim();
   const phone = String(c.phone || '').trim();
   const mail = String(c.contact || '').trim();
-  const tier = String(c.customer_type || '').trim();
+  // 20260923 · 이름과 아이디를 **같은 값에서** 만든다. 예전에는 businessType 이 원문
+  //   (`refraccionaria`) 이고 businessTypeId 가 비어 서로 다른 말을 했다.
+  const eff = effectiveTier(c.customer_type);
   return {
     nombre: name || undefined,
     razonSocial: name || undefined,
@@ -116,8 +155,8 @@ function identityFields(c) {
     contactPhone: phone || undefined,
     correo: mail || undefined,
     contactEmail: mail || undefined,
-    businessType: tier || undefined,
-    businessTypeId: businessTypeId(tier),
+    businessType: eff.tier || undefined,
+    businessTypeId: eff.tier ? tierIdMap()[eff.tier] : undefined,
   };
 }
 
@@ -565,6 +604,9 @@ export function crmStatus() {
     //   이건 Railway 환경변수 하나로 조용히 꺼진다(CRM_UPSERT_IDENTITY=0). 꺼진 줄 모르면
     //   「ERP 에서 이메일을 고쳤는데 CRM 이 그대로다」가 원인 불명으로 남는다 — 실제로 그랬다.
     upsert_identity: upsertIdentityOn(),
+    // 20260923 · 회사 종류가 없는 고객을 어느 TIER 로 보내는지. 이 값이 없으면 화면은
+    //   「왜 이 고객이 D 로 들어갔지?」에 답할 수 없다. null 이면 안 보낸다(= 새 RFC 는 거절된다).
+    business_type_fallback: businessTypeFallback(),
     worker_sec: Number(config.crm.workerSec) || 60,
     max_attempts: MAX_ATTEMPTS,
     backoff_sec: BACKOFF_SEC,

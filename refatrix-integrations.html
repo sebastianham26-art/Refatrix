@@ -76,6 +76,7 @@
   .banner{border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.6;margin-bottom:12px}
   .banner.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #e6d5ae}
   .banner.err{background:var(--expense-bg);color:var(--expense);border:1px solid #e7b6af}
+  .banner.info{background:var(--income-bg);color:var(--income);border:1px solid #bcd9cf}
   /* 발급된 키를 보여 주는 창 — 「닫기」 를 누르기 전까지 절대 사라지지 않는다.
      (키는 이때 딱 한 번만 볼 수 있으므로 화면이 저절로 다시 그려지면 그대로 잃어버린다) */
   .modalBack{position:fixed;inset:0;background:rgba(20,18,15,.55);display:flex;align-items:center;
@@ -572,7 +573,19 @@
                   + '상거래정보 전송에는 할인율·외상일·상태만 실립니다. '
                   + 'ERP 에서 고친 연락처는 CRM 에 반영되지 않습니다 — Railway 에서 그 변수를 지우거나 '
                   + '<span class="mono">1</span> 로 바꾸면 다시 실립니다.</div>'
-                : ''));
+                // 20260923 · 회사 종류(TIER)가 없는 고객이 어느 칸으로 나가는지 **말해 준다.**
+                //   보내는 쪽이 조용히 메우면, CRM 에서 「왜 이 고객이 D 지?」에 아무도 답할 수 없다.
+                : (eng.business_type_fallback === null
+                    ? '<div class="banner warn"><b>회사 종류(TIER)가 없는 고객은 CRM 에 등록되지 않습니다</b> — '
+                      + '환경변수 <span class="mono">CRM_BUSINESS_TYPE_FALLBACK</span> 가 '
+                      + '<span class="mono">off</span> 입니다. CRM 은 처음 보는 RFC 에 '
+                      + '<span class="mono">businessTypeId</span> 를 요구하므로 그 고객들은 거절됩니다 — '
+                      + '변수를 지우면 <span class="mono">D</span> 로 나갑니다.</div>'
+                    : (eng.business_type_fallback && eng.business_type_fallback !== 'D'
+                        ? '<div class="banner info">회사 종류(TIER)가 없는 고객은 CRM 으로 '
+                          + '<b>' + esc(eng.business_type_fallback) + '</b> 로 나갑니다 '
+                          + '(<span class="mono">CRM_BUSINESS_TYPE_FALLBACK</span>).</div>'
+                        : ''))));
       renderEpList();
       const key=keepKey||(CUR&&CUR.key)||(EPS[0]&&EPS[0].key);
       if(key) selectEp(key);

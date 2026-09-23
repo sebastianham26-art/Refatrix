@@ -36,13 +36,16 @@ const { buildPayload, isSuccess, nextDelaySec, MAX_ATTEMPTS, crmEstatus } = awai
 const { validatePatch, publicEndpoint, activeUrl, cleanSecret, maskSecret } = await import('../src/integrations.js');
 
 // ── ① 순수 로직 ────────────────────────────────────────────────
-test('본문은 계약의 5개 필드만 담는다(estatus 포함)', () => {
+test('본문은 상거래 5개 필드 + 회사 종류만 담는다 — 빈 신원은 키째 빠진다', () => {
+  // 20260923 · 회사 종류가 없는 고객도 CRM 에 등록되도록 기본값 D 를 싣는다(D=4).
+  //   그 밖의 신원(상호·이메일·전화)은 **값이 없으면 키 자체가 없어야 한다** —
+  //   빈 문자열을 보내면 CRM 에 제대로 들어 있던 연락처를 우리가 지운다.
   const p = buildPayload('upsert',
     { rfc: ' FEL990715AB1 ', discount: '12.50', credit_days: 30, approval_status: 'approved' }, 'admin');
   assert.deepEqual(p, { rfc: 'FEL990715AB1', discountPercent: 12.5, paymentDays: 30,
-    transactionUser: 'admin', estatus: 'aprobado' });
+    transactionUser: 'admin', estatus: 'aprobado', businessType: 'D', businessTypeId: 4 });
   assert.deepEqual(Object.keys(p).sort(),
-    ['discountPercent', 'estatus', 'paymentDays', 'rfc', 'transactionUser']);
+    ['businessType', 'businessTypeId', 'discountPercent', 'estatus', 'paymentDays', 'rfc', 'transactionUser']);
 });
 
 // 승인 상태를 안 보내면 ERP 에서 승인을 끝내도 CRM 고객이 「Aprobación pendiente」 로
