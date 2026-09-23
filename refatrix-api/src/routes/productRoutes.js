@@ -10,6 +10,8 @@ import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js
 import { demandSummary, demandRows } from '../inactiveDemand.js';
 import { changeParts, describeRow, sydForRow, signedQty, stockAtChange } from '../productHistory.js';
 import { refColumns, scanReferences, buildDeleteCheck, purgeReferences, describeCleanup } from '../productDelete.js';
+import { parseOe, formatOe, normOe, oeToken, OE_FOR_NOTE } from '../oeParse.js';
+import { oeReady, oeByProduct, syncOe } from '../oeCodes.js';
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -108,13 +110,21 @@ export default async function productRoutes(app) {
 
     const params = [];
     let where = 'p.deleted_at IS NULL';
+    // 0228 — OE 번호로도 찾는다. 정규화 키(대문자+영숫자)로 부분일치 — '54500-8H310' 을 '545008H' 로 쳐도 잡힌다.
+    //   짧은 입력(4자 미만)은 OE 에 대지 않는다: 숫자 몇 자리가 수백 건을 끌어오는 것을 막는다.
+    const oeOn = await oeReady();
+    const qn = normOe(q);
+    const oeLike = oeOn && qn.length >= 4;
     if (q) {
       params.push(`%${q}%`);
       const i = params.length;
+      let oeCond = '';
+      if (oeLike) { params.push(`%${qn}%`); oeCond = `
+                   OR EXISTS (SELECT 1 FROM product_oe_codes oc WHERE oc.product_id=p.id AND oc.oe_norm LIKE $${params.length})`; }
       where += ` AND (p.code ILIKE $${i} OR p.ean ILIKE $${i} OR p.name ILIKE $${i}
                    OR p.scode ILIKE $${i} OR p.app ILIKE $${i}
                    OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
-                   OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
+                   OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i})${oeCond})`;
     }
     if (materialFilter === '__none__') {
       where += ' AND p.material IS NULL';
@@ -160,12 +170,16 @@ export default async function productRoutes(app) {
     if (q && !SORTS[sortKey]) {
       params.push(q);
       const rk = params.length;
+      // 0228 — OE 정확일치는 SyD 와 같은 등급(4).
+      let oeRank = '';
+      if (oeOn && qn) { params.push(qn); oeRank = `
+                   WHEN EXISTS (SELECT 1 FROM product_oe_codes oc2 WHERE oc2.product_id=p.id AND oc2.oe_norm=$${params.length}) THEN 4`; }
       orderBy = `CASE
                    WHEN upper(p.code) = upper($${rk}) THEN 0
                    WHEN p.code ILIKE $${rk} || '%' THEN 1
                    WHEN p.code ILIKE '%' || $${rk} || '%' THEN 2
                    WHEN COALESCE(p.ean,'') ILIKE $${rk} || '%' THEN 3
-                   WHEN COALESCE(p.scode,'') ILIKE '%' || $${rk} || '%' THEN 4
+                   WHEN COALESCE(p.scode,'') ILIKE '%' || $${rk} || '%' THEN 4${oeRank}
                    WHEN COALESCE(p.name,'') ILIKE '%' || $${rk} || '%' THEN 5
                    ELSE 6
                  END, p.code ASC`;
@@ -185,7 +199,7 @@ export default async function productRoutes(app) {
     const rows = (await query(
       `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate,
               p.stock_qty, p.avg_cost, p.rack_location, p.material,
-              p.is_active, p.inactive_reason,
+              p.is_active, p.inactive_reason, ${oeOn ? 'p.oe' : 'NULL::text AS oe'},
               COALESCE(bo.backorder_qty, 0) AS backorder_qty,
               COALESCE(inc.incoming_qty, 0) AS incoming_qty,
               inc.incoming_eta::text AS incoming_eta,
@@ -219,8 +233,9 @@ export default async function productRoutes(app) {
   //     업로드 파서(COLUMN_MAP)에 없는 헤더라 재업로드 시 자동 무시됨(Stock·Rack과 동일).
   app.get('/api/products/master-export', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
     const { perm } = req.ctx;
+    const oeOn = await oeReady();
     const rows = (await query(
-      `SELECT p.code, p.scode, p.app, p.name, p.sat_code, p.origin,
+      `SELECT p.code, p.scode, p.app, p.name, p.sat_code, p.origin, ${oeOn ? 'p.oe' : 'NULL::text AS oe'},
               p.list_price, p.iva_rate, p.ean, p.location,
               p.list_price_syd, p.price_customer_syd, p.price_customer_ctr,
               p.material, p.rack_location, p.stock_qty,
@@ -238,6 +253,7 @@ export default async function productRoutes(app) {
         ean: r.ean, location: r.location, material: r.material,
         rack_location: r.rack_location, stock_qty: num(r.stock_qty) || 0,
         backorder_qty: num(r.backorder_qty) || 0,
+        oe: r.oe || null,   // 0228 — 다운로드 → 수정 → 재업로드 라운드트립
       };
       if (canPrice) {
         o.list_price = num(r.list_price);
@@ -249,7 +265,7 @@ export default async function productRoutes(app) {
     });
     await logEvent({ userId: perm.userId, action: 'read', target: 'product_master_export',
       detail: { rows: items.length, price_included: canPrice } });
-    return { items, total: items.length, price_included: canPrice };
+    return { items, total: items.length, price_included: canPrice, oe_ready: oeOn };
   });
 
   // 제품 드릴다운: ① 지금까지 판매한 고객별 수량 ② 원가(평균원가) 계산 근거(수식).
@@ -295,6 +311,12 @@ export default async function productRoutes(app) {
       sales, total_sold: totalSold, customer_count: sales.length,
       can_manage_status: perm.role === 'director',
     };
+    // 0228 — OE 목록 (FOR = 조립품 OE, 부연설명 동봉)
+    {
+      const oeMap = await oeByProduct([id]);
+      out.oe = (oeMap.get(id) || []).map((x) => ({ code: x.oe_code, rel: x.rel, source: x.source }));
+      out.oe_for_note = OE_FOR_NOTE;
+    }
 
     // ②-매출총이익 — unit_cost 권한 있을 때만(원가가 노출되므로). 매출원가는 판매 시점 스냅샷(applied_unit_cost) 기준.
     if (fieldVisible(perm, 'unit_cost')) {
@@ -395,9 +417,11 @@ export default async function productRoutes(app) {
   // requireDirector: 마스터 업로드는 디렉터만.
   async function loadExistingByCodes(codes) {
     if (!codes.length) return {};
+    const oeOn = await oeReady();
     const rows = (await query(
       `SELECT id, code, scode, app, name, sat_code, origin, list_price, iva_rate, ean, location,
-              list_price_syd, price_customer_syd, price_customer_ctr, stock_qty, avg_cost, material
+              list_price_syd, price_customer_syd, price_customer_ctr, stock_qty, avg_cost, material,
+              ${oeOn ? 'oe' : 'NULL::text AS oe'}
          FROM products WHERE deleted_at IS NULL AND code = ANY($1)`, [codes])).rows;
     const sydRows = rows.length ? (await query(
       `SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`,
@@ -409,9 +433,41 @@ export default async function productRoutes(app) {
       [rows.map((r) => r.id)])).rows : [];
     const appByPid = {};
     for (const a of appRows) (appByPid[a.product_id] ||= []).push(a.app_text);
+    const oeMap = await oeByProduct(rows.map((r) => r.id));
     const byCode = {};
-    for (const r of rows) byCode[r.code] = { ...r, syd_codes: sydByPid[r.id] || [], app_texts: appByPid[r.id] || [] };
+    for (const r of rows) byCode[r.code] = { ...r, syd_codes: sydByPid[r.id] || [], app_texts: appByPid[r.id] || [],
+      oe_codes: oeMap.get(Number(r.id)) || [] };
     return byCode;
+  }
+
+  // 0228 — 업로드 파싱 결과에서 OE 를 다룰 수 있는지 정리한다.
+  //   마이그레이션 전이면 OE 열은 **없는 것으로** 본다(칼럼이 없어 UPDATE 가 죽는다).
+  function stripOeIfNotReady(parsed, ready) {
+    if (ready) return;
+    for (const p of parsed) { delete p.oe; p.oe_codes = []; if (p.has) p.has.oe = false; }
+  }
+
+  // 0228 — OE 가 다른 제품의 CTR 코드·SyD 코드와 같은 경우(검토용 — 막지 않는다).
+  //   견적에서는 후보 선택으로 뜬다. 미리보기에 건수와 앞 50건만 보여 준다.
+  async function oeCollisions(parsed) {
+    const pairs = [];
+    for (const p of parsed) for (const it of (p.oe_codes || [])) pairs.push([p.code, it.oe_norm, oeToken(it)]);
+    if (!pairs.length) return { count: 0, items: [] };
+    const norms = [...new Set(pairs.map((x) => x[1]))];
+    const rows = (await query(
+      `SELECT regexp_replace(upper(p.code),'[^A-Z0-9]','','g') AS n, p.code, 'ctr' AS kind
+         FROM products p WHERE p.deleted_at IS NULL AND regexp_replace(upper(p.code),'[^A-Z0-9]','','g') = ANY($1)
+       UNION ALL
+       SELECT regexp_replace(upper(s.syd_code),'[^A-Z0-9]','','g'), p.code, 'syd'
+         FROM product_syd_codes s JOIN products p ON p.id=s.product_id AND p.deleted_at IS NULL
+        WHERE regexp_replace(upper(s.syd_code),'[^A-Z0-9]','','g') = ANY($1)`, [norms])).rows;
+    const by = new Map();
+    for (const r of rows) { if (!by.has(r.n)) by.set(r.n, []); by.get(r.n).push(r); }
+    const items = [];
+    for (const [code, n, label] of pairs) {
+      for (const r of (by.get(n) || [])) if (r.code !== code) items.push({ code, oe: label, kind: r.kind, other: r.code });
+    }
+    return { count: items.length, items: items.slice(0, 50) };
   }
 
   // 파생 데이터(SyD·적용차종) 동기화 — 화면 직접 추가/수정용 공용 헬퍼(트랜잭션 클라이언트 c 사용)
@@ -436,14 +492,16 @@ export default async function productRoutes(app) {
   app.get('/api/products/:id/master', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    const oeOn = await oeReady();
     const r = (await query(
       `SELECT id, code, scode, app, name, sat_code, origin, list_price, iva_rate, ean, location,
               list_price_syd, price_customer_syd, price_customer_ctr, material, rack_location,
-              stock_qty, avg_cost
+              stock_qty, avg_cost, ${oeOn ? 'oe' : 'NULL::text AS oe'}
          FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
     const num = (v) => (v == null ? null : Number(v));
     return {
+      oe: r.oe || null, oe_ready: oeOn,
       id: Number(r.id), code: r.code, scode: r.scode, app: r.app, name: r.name,
       sat_code: r.sat_code, origin: r.origin, list_price: num(r.list_price), iva_rate: num(r.iva_rate),
       ean: r.ean, location: r.location, list_price_syd: num(r.list_price_syd),
@@ -472,11 +530,16 @@ export default async function productRoutes(app) {
       });
     }
     const values = { code, name };
+    const oeOnC = await oeReady();
     for (const f of EDITABLE_FIELDS) {
       if (f === 'name') continue;
       if (b[f] === undefined) continue;
+      if (f === 'oe' && !oeOnC) continue;          // 0228 전 — OE 칸만 조용히 쉰다
       values[f] = normEditValue(f, b[f]);
     }
+    // 0228 — OE 는 정규 표기로 저장(None 류·중복 제거)
+    const oeItems = oeOnC && values.oe !== undefined ? parseOe(values.oe) : null;
+    if (oeItems) values.oe = formatOe(oeItems);
     const sydCodes = splitSyd(values.scode);
     const apps = parseApplications(values.app);
     const created = await withTx(async (c) => {
@@ -487,6 +550,7 @@ export default async function productRoutes(app) {
         `INSERT INTO products (${cols.join(',')}, created_by, updated_by) VALUES (${ph.join(',')}, $${vals.length}, $${vals.length}) RETURNING id`, vals)).rows[0];
       await syncSydShared(c, r.id, sydCodes);
       await syncAppShared(c, r.id, apps);
+      if (oeItems) await syncOe(c, r.id, oeItems);
       const changes = {};
       for (const [k, v] of Object.entries(values)) if (v != null) changes[k] = { from: null, to: v };
       await logProductChange(c.query.bind(c), { productId: Number(r.id), code, action: 'create', source: 'manual', changes, userId });
@@ -514,6 +578,17 @@ export default async function productRoutes(app) {
 
     const changes = {};
     const nextVals = {};
+    // 0228 — OE: 마이그레이션 전이면 무시, 후면 정규 표기로 바꿔서 비교
+    const oeOnP = await oeReady();
+    let curOe = null;
+    if (b.oe !== undefined) {
+      if (!oeOnP) delete b.oe;
+      else {
+        curOe = (await query(`SELECT oe FROM products WHERE id=$1`, [id])).rows[0]?.oe ?? null;
+        cur.oe = curOe;
+        b.oe = formatOe(parseOe(b.oe)) || '';
+      }
+    }
     // 코드 변경(선택)
     if (b.code !== undefined) {
       const nc = normEditValue('code', b.code);
@@ -537,7 +612,8 @@ export default async function productRoutes(app) {
     const chFields = Object.keys(nextVals);
     const wantSyd = b.scode !== undefined;
     const wantApp = b.app !== undefined;
-    if (!chFields.length && !wantSyd && !wantApp) return { ok: true, unchanged: true };
+    const wantOe = oeOnP && b.oe !== undefined;
+    if (!chFields.length && !wantSyd && !wantApp && !wantOe) return { ok: true, unchanged: true };
 
     await withTx(async (c) => {
       if (chFields.length) {
@@ -550,6 +626,7 @@ export default async function productRoutes(app) {
       // 파생 데이터는 보낸 값 기준으로 항상 재동기화(업로드와 동일 불변식)
       if (wantSyd) await syncSydShared(c, id, splitSyd(nextVals.scode !== undefined ? nextVals.scode : cur.scode));
       if (wantApp) await syncAppShared(c, id, parseApplications(nextVals.app !== undefined ? nextVals.app : cur.app));
+      if (wantOe) await syncOe(c, id, parseOe(nextVals.oe !== undefined ? nextVals.oe : cur.oe));
       if (chFields.length) {
         await logProductChange(c.query.bind(c), {
           productId: id, code: nextVals.code || cur.code, action: 'update', source: 'manual', changes, userId });
@@ -919,8 +996,17 @@ export default async function productRoutes(app) {
     const headerIdx = buildHeaderIndex(header);
     if (headerIdx.code == null) return reply.code(400).send({ error: 'no_code_column', detail: 'Clave CTR 컬럼을 찾을 수 없습니다.' });
     const parsed = rows.map((r) => parseRow(r, headerIdx)).filter(Boolean);
+    const oeOn = await oeReady();
+    const hadOeCol = headerIdx.oe != null;
+    stripOeIfNotReady(parsed, oeOn);
     const existing = await loadExistingByCodes([...new Set(parsed.map((p) => p.code))]);
     const preview = buildPreview(parsed, existing);
+    // 0228 — 파일에 OE 열이 있는데 마이그레이션 전이면 화면이 알려 준다(나머지 열은 그대로 반영 가능)
+    preview.oe_column = hadOeCol;
+    preview.oe_ready = oeOn;
+    if (hadOeCol && oeOn) preview.oe_collisions = await oeCollisions(parsed);
+    // 파일에 없는 열 — 이 열들의 기존 값·검색표는 건드리지 않는다는 것을 화면에 보여 준다
+    preview.columns_absent = ['name', 'scode', 'app', 'oe'].filter((f) => headerIdx[f] == null);
     return preview;
   });
 
@@ -931,6 +1017,8 @@ export default async function productRoutes(app) {
     const headerIdx = buildHeaderIndex(header);
     if (headerIdx.code == null) return reply.code(400).send({ error: 'no_code_column' });
     const parsed = rows.map((r) => parseRow(r, headerIdx)).filter(Boolean);
+    const oeOn = await oeReady();
+    stripOeIfNotReady(parsed, oeOn);
     const existing = await loadExistingByCodes([...new Set(parsed.map((p) => p.code))]);
     const userId = req.ctx.perm.userId;
     let created = 0, updated = 0, unchanged = 0, skipped = 0;
@@ -940,8 +1028,9 @@ export default async function productRoutes(app) {
       for (const p of parsed) {
         if (seen.has(p.code)) { skipped++; continue; }
         seen.add(p.code);
-        if (!p.name) { skipped++; continue; }
         const ex = existing[p.code];
+        // 0228 — 제품명은 신규에만 필수. 기존 제품은 제품명 열이 없어도 된다(미리보기와 같은 규칙).
+        if (!p.name && (!ex || (p.has && p.has.name))) { skipped++; continue; }
         const d = diffProduct(p, ex);
         if (d.isNew) {
           // 신규: 파일에 있는 필드만 입력, 재고·원가 0(기본값)
@@ -952,6 +1041,7 @@ export default async function productRoutes(app) {
             `INSERT INTO products (${cols.join(',')}, created_by) VALUES (${ph.join(',')}, $${vals.length}) RETURNING id`, vals)).rows[0];
           await syncSyd(c, r.id, p.syd_codes);
           await syncApp(c, r.id, p.applications);
+          if (p.has && p.has.oe) await syncOe(c, r.id, p.oe_codes);
           {
             const chg = {};
             for (const f of UPDATABLE_FIELDS) if (f in p && p[f] != null) chg[f] = { from: null, to: p[f] };
@@ -967,14 +1057,18 @@ export default async function productRoutes(app) {
             vals.push(ex.id);
             await c.query(`UPDATE products SET ${sets.join(', ')} WHERE id=$${vals.length}`, vals);
           }
-          // 파생 데이터(SyD·적용차종)는 항상 현재 파일 기준으로 재동기화 →
+          // 파생 데이터(SyD·적용차종·OE)는 **파일에 그 열이 있을 때만** 현재 파일 기준으로 재동기화 →
           // "동일"로 분류돼도 분해 데이터가 비지 않도록 보장.
-          await syncSyd(c, ex.id, p.syd_codes);
-          await syncApp(c, ex.id, p.applications);
-          if (chFields.length > 0 || d.syd_changed || d.app_changed) {
+          // 0228 — 열이 없는 파일(예: Clave CTR + OE 두 열)이 SyD·적용차종 분해표를 비우던 결함 수정.
+          const has = p.has || { scode: true, app: true, oe: false };
+          if (has.scode) await syncSyd(c, ex.id, p.syd_codes);
+          if (has.app) await syncApp(c, ex.id, p.applications);
+          if (has.oe) await syncOe(c, ex.id, p.oe_codes);
+          if (chFields.length > 0 || d.syd_changed || d.app_changed || d.oe_changed) {
             const chg = { ...d.changes };
             if (d.syd_changed) chg._syd = { from: ex.syd_codes || [], to: p.syd_codes };
             if (d.app_changed) chg._app = { from: (ex.app_texts || []).length, to: (p.applications || []).length };
+            if (d.oe_changed) { delete chg.oe; chg._oe = { from: (ex.oe_codes || []).map(oeToken), to: (p.oe_codes || []).map(oeToken) }; }
             await logProductChange(c.query.bind(c), { productId: Number(ex.id), code: p.code, action: 'update', source: 'import', changes: chg, userId });
             updated++;
           } else unchanged++;
@@ -1229,7 +1323,8 @@ export default async function productRoutes(app) {
   // 이미 올린 제품들의 분해 데이터를 한 번에 채울 때 사용.
   app.post('/api/products/resync-derived', { preHandler: [authGuard, requireDirector] }, async (req) => {
     const userId = req.ctx.perm.userId;
-    const prods = (await query(`SELECT id, scode, app FROM products WHERE deleted_at IS NULL`)).rows;
+    const oeOnR = await oeReady();
+    const prods = (await query(`SELECT id, scode, app, ${oeOnR ? 'oe' : 'NULL::text AS oe'} FROM products WHERE deleted_at IS NULL`)).rows;
     let n = 0;
     for (const pr of prods) {
       const syd = splitSyd(pr.scode);
@@ -1245,6 +1340,7 @@ export default async function productRoutes(app) {
             `INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,$5,$6)`,
             [pr.id, a.app_text, a.maker, a.model, a.year_from, a.year_to]);
         }
+        if (oeOnR) await syncOe(c, pr.id, parseOe(pr.oe));   // 0228 — OE 분해표도 원문 기준으로
       });
       n++;
     }

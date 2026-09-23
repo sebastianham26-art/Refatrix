@@ -30,6 +30,7 @@ export const isIdent = (s) => IDENT_RE.test(String(s || ''));
 export const CLEANUP_TABLES = {
   product_syd_codes: 'SyD 코드',
   product_applications: '적용차종',
+  product_oe_codes: 'OE 번호',          // 0228
   product_xref_codes: '경쟁사 교차참조',
   xref_snapshot_rows: '교차참조 백업 행',
   product_status_log: '판매상태 전환 이력',

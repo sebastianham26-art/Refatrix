@@ -11,6 +11,8 @@
 //        API 가격과 인보이스 가격이 다르면 그 연동은 신뢰를 잃는다.
 //     3) **키가 고객을 가리킨다.** 키 1개 = catalog_api_clients 1행 = customers 1행.
 //        키를 모르면 가격도 없다.
+import { OE_FOR_NOTE_ES } from './oeParse.js';   // 0228
+import { oeByProduct } from './oeCodes.js';
 import { query } from './db.js';
 import { getEndpoint } from './integrations.js';
 import { PRODUCT_KEY, imageUrlFor } from './productSync.js';
@@ -174,7 +176,7 @@ export function pageLimit(asked, dflt = 500) {
  *   apps      — product_applications 줄들
  *   opt       — { discount, stockMode, imgBase }
  */
-export function buildProducto(row, refs, apps, opt = {}) {
+export function buildProducto(row, refs, apps, opt = {}, oeItems = []) {
   const descripcion = String(row.name || '').trim();
   const listPrice = round2(row.list_price);
   return {
@@ -186,6 +188,11 @@ export function buildProducto(row, refs, apps, opt = {}) {
       marca: String(r.brand || '').trim() || 'SIN MARCA',
       codigo: String(r.xref_code || '').trim(),
     })).filter((r) => r.codigo),
+
+    // 0228 · 계약서 v1.1 — OE(순정) 번호. referencias(SYD 잠금)와 **별도 필드**다.
+    //   tipo 'OE'       = 이 부품의 순정번호
+    //   tipo 'CONJUNTO' = 이 부품이 들어가는 조립품의 순정번호 (nota 동봉)
+    referenciasOE: oeReferencias(oeItems),
 
     aplicaciones: (apps || []).map((a) => ({
       marca: String(a.maker || '').trim() || null,
@@ -215,6 +222,14 @@ export function buildProducto(row, refs, apps, opt = {}) {
     imagenUrl: imageUrlFor(opt.imgBase, row.code) || null,
     actualizado: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };
+}
+
+/** 0228 — OE 항목 → 계약서 v1.1 모양. 직접 OE 먼저, 조립품(FOR) 다음. */
+export function oeReferencias(items) {
+  const list = (items || []).filter((x) => x && String(x.oe_code || '').trim());
+  const direct = list.filter((x) => x.rel !== 'for').map((x) => ({ codigo: String(x.oe_code).trim(), tipo: 'OE' }));
+  const asm = list.filter((x) => x.rel === 'for').map((x) => ({ codigo: String(x.oe_code).trim(), tipo: 'CONJUNTO', nota: OE_FOR_NOTE_ES }));
+  return direct.concat(asm);
 }
 
 /** 적용차종 원문의 대괄호 주석만 뽑는다 — [perno grueso] → perno grueso */
@@ -448,7 +463,9 @@ async function decorate(client, rows) {
 
   const imgBase = await imgBaseFor(client);
   const opt = { discount: client.customer_discount, stockMode: client.stock_mode, imgBase };
-  return rows.map((r) => buildProducto(r, byRef.get(Number(r.id)) || [], byApp.get(Number(r.id)) || [], opt));
+  const oeMap = await oeByProduct(ids);   // 0228 — 마이그레이션 전이면 빈 Map → referenciasOE: []
+  return rows.map((r) => buildProducto(r, byRef.get(Number(r.id)) || [], byApp.get(Number(r.id)) || [], opt,
+    oeMap.get(Number(r.id)) || []));
 }
 
 // ─────────────────────── 접속창·회차·이력 (DB) ───────────────────────

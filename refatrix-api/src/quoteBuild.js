@@ -9,6 +9,9 @@
 //   이미 여러 번 겪었다.
 import { query } from './db.js';
 import { computeQuoteLine, stockFlag, formatQuoteNo, round2 } from './quotes.js';
+import { normOe, oeToken } from './oeParse.js';
+import { oeReady, oeByProduct, matchSourceFor } from './oeCodes.js';
+export { stampLineMeta } from './oeCodes.js';
 
 
 // ============ 고객 PO번호(Orden de compra) 정리 — 0225 ============
@@ -87,36 +90,62 @@ export function quoteSearchClause(kw, args, { quoteAlias = 'q', custExpr = "COAL
 
 // ============ 코드 해석 (CTR 또는 SYD) ============
 // 입력 코드 하나를 받아 매칭 후보를 반환. CTR 정확매칭 우선, 없으면 SYD 역검색.
-// 반환: { matches: [{product_id, ctr_code, list_price, app, name, syd_codes[]}], source:'ctr'|'syd'|'none' }
+// 반환: { matches: [{product_id, ctr_code, list_price, app, name, syd_codes[], matched_by, oe_codes[]}],
+//         source:'ctr'|'syd'|'oe'|'oe_for'|'mixed'|'none', pick_required }
+//   0228 — ② 단계에 OE(정규화 일치)를 합쳤다. FOR 로만 걸리면 pick_required=true.
 export async function resolveCode(code) {
   const c = String(code || '').trim();
   if (!c) return { matches: [], source: 'none' };
-  // 1) CTR 정확매칭
+  // 1) CTR 정확매칭 — 여기서 걸리면 끝(다른 표는 보지 않는다)
   const ctr = (await query(
     `SELECT id, code, name, app, list_price, is_active FROM products WHERE deleted_at IS NULL AND code=$1`, [c])).rows;
   let rows = ctr, source = 'ctr';
+  const via = new Map();          // product_id → 'syd' | 'oe' | 'oe_for' (어느 표로 걸렸나)
   if (!rows.length) {
-    // 2) SYD 역검색
-    rows = (await query(
+    // 2) SYD 역검색 ∪ OE(0228) — **같은 단계로 합친다.**
+    //    짧은 숫자형 OE 가 다른 제품의 SYD 코드와 같을 때 SYD 를 무조건 우선하면
+    //    조용히 엉뚱한 제품이 견적에 들어간다. 합쳐서 여러 개면 사람이 고른다.
+    const syd = (await query(
       `SELECT p.id, p.code, p.name, p.app, p.list_price, p.is_active
          FROM product_syd_codes s JOIN products p ON p.id=s.product_id AND p.deleted_at IS NULL
         WHERE s.syd_code=$1`, [c])).rows;
-    source = rows.length ? 'syd' : 'none';
+    for (const r of syd) via.set(Number(r.id), 'syd');
+    rows = syd.slice();
+    const n = normOe(c);
+    if (n && (await oeReady())) {
+      const oe = (await query(
+        `SELECT p.id, p.code, p.name, p.app, p.list_price, p.is_active, bool_or(o.rel='oe') AS direct
+           FROM product_oe_codes o JOIN products p ON p.id=o.product_id AND p.deleted_at IS NULL
+          WHERE o.oe_norm=$1
+          GROUP BY p.id, p.code, p.name, p.app, p.list_price, p.is_active`, [n])).rows;
+      for (const r of oe) {
+        if (via.has(Number(r.id))) continue;
+        via.set(Number(r.id), r.direct ? 'oe' : 'oe_for');
+        rows.push(r);
+      }
+    }
+    const kinds = new Set(via.values());
+    source = !rows.length ? 'none' : (kinds.size === 1 ? [...kinds][0] : 'mixed');
   }
   if (!rows.length) return { matches: [], source: 'none' };
   const ids = rows.map((r) => r.id);
   const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
   const sydByPid = {};
   for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
-  return {
-    source,
-    matches: rows.map((r) => ({
-      product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
-      list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
-      // 0179 — 비활성(판매중단) SKU 는 화면에 표시는 하되 신규 라인 저장에서 막는다.
-      is_active: r.is_active !== false,
-    })),
-  };
+  const oeMap = await oeByProduct(ids);
+  const matches = rows.map((r) => ({
+    product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
+    list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
+    // 0179 — 비활성(판매중단) SKU 는 화면에 표시는 하되 신규 라인 저장에서 막는다.
+    is_active: r.is_active !== false,
+    // 0228 — 무엇으로 걸렸나 + 그 제품의 OE 목록(표기 그대로)
+    matched_by: source === 'ctr' ? 'ctr' : (via.get(Number(r.id)) || null),
+    oe_codes: (oeMap.get(Number(r.id)) || []).map(oeToken),
+  }));
+  // FOR(조립품 OE)로만 걸린 경우는 한 건이어도 **자동 확정하지 않는다**(디렉터 결정 D6).
+  //   조립품 번호로 부품 하나가 조용히 견적되는 것을 막는다 — 후보창에서 사람이 고른다.
+  const pick_required = matches.length === 1 && matches[0].matched_by === 'oe_for';
+  return { source, matches, pick_required };
 }
 
 /**
@@ -232,17 +261,26 @@ export async function buildLines(customerDiscount, ivaRate, inputLines) {
     const qty = Number(ln.qty) || 0;
     let prod = null;
     let issue = null;
-    if (ln.product_id) prod = (await query(`SELECT id, code, name, app, list_price, stock_qty, is_active FROM products WHERE id=$1 AND deleted_at IS NULL`, [Number(ln.product_id)])).rows[0] || null;
-    else {
+    let matchSource = null;
+    if (ln.product_id) {
+      prod = (await query(`SELECT id, code, name, app, list_price, stock_qty, is_active FROM products WHERE id=$1 AND deleted_at IS NULL`, [Number(ln.product_id)])).rows[0] || null;
+      // 0228 — 자동완성·후보창에서 고른 줄도 「친 코드가 무엇이었나」를 서버가 판정한다
+      if (prod) matchSource = await matchSourceFor(prod.id, ln.code || prod.code);
+    } else {
       const res = await resolveCode(ln.code);
-      if (res.matches.length === 1) prod = (await query(`SELECT id, code, name, app, list_price, stock_qty, is_active FROM products WHERE id=$1`, [res.matches[0].product_id])).rows[0];
-      // 다중매칭은 저장 단계에서 product_id가 와야 함(화면에서 선택). 여기선 미매칭 처리.
-      else if (res.matches.length > 1) issue = 'multi_match';
+      if (res.matches.length === 1 && !res.pick_required) {
+        prod = (await query(`SELECT id, code, name, app, list_price, stock_qty, is_active FROM products WHERE id=$1`, [res.matches[0].product_id])).rows[0];
+        matchSource = res.matches[0].matched_by || res.source || null;
+      }
+      // 다중매칭(또는 FOR 로만 걸린 1건)은 저장 단계에서 product_id가 와야 함(화면에서 선택). 여기선 미매칭 처리.
+      else if (res.matches.length >= 1) issue = 'multi_match';
     }
     if (!prod) {
-      rows.push({ line_no: lineNo, product_id: null, input_code: ln.code || null, ctr_code: null, syd_codes: null, product_name: null, app_text: null, qty, list_price: 0, discount_rate: customerDiscount, final_price: 0, line_subtotal: 0, line_iva: 0, line_total: 0, avail_stock: null, stock_flag: 'not_found', issue: issue || 'not_found' });
+      rows.push({ line_no: lineNo, product_id: null, input_code: ln.code || null, ctr_code: null, syd_codes: null, product_name: null, app_text: null, qty, list_price: 0, discount_rate: customerDiscount, final_price: 0, line_subtotal: 0, line_iva: 0, line_total: 0, avail_stock: null, stock_flag: 'not_found', issue: issue || 'not_found',
+        match_source: 'none', oe_codes: null });
       continue;
     }
+    const oeList = ((await oeByProduct([prod.id])).get(Number(prod.id)) || []).map(oeToken);
     if (prod.is_active === false) issue = 'inactive';
     const sydRows = (await query(`SELECT syd_code FROM product_syd_codes WHERE product_id=$1`, [prod.id])).rows.map((x) => x.syd_code);
     const calc = computeQuoteLine({ listPrice: prod.list_price, discountRate: customerDiscount, qty, ivaRate });
@@ -254,6 +292,7 @@ export async function buildLines(customerDiscount, ivaRate, inputLines) {
       final_price: calc.finalPrice, line_subtotal: calc.lineSubtotal, line_iva: calc.lineIva, line_total: calc.lineTotal,
       avail_stock: avail, stock_flag: stockFlag({ matched: true, qty, availStock: avail }),
       issue,
+      match_source: matchSource, oe_codes: oeList.length ? oeList.join(' // ') : null,   // 0228
     });
   }
   return rows;

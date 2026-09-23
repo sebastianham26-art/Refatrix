@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-0921dev1</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-0923oe</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -268,6 +268,9 @@
 
   // ===== 자동완성 =====
   let acItems=[], acSel=-1, acTimer=null, pickedProduct=null;
+  // 0228 — FOR(조립품 OE) 부연설명. 서버 oeParse.OE_FOR_NOTE 와 같은 문장.
+  const OE_FOR_NOTE='해당 OE번호 부품의 조립품에 해당하는 OE부품입니다';
+  const MB_LABEL={syd:'SYD',oe:'OE',oe_for:'FOR (조립품 OE)'};
   function onCodeInput(){
     pickedProduct=null; // 직접 타이핑하면 이전 선택 해제
     const q=$('inCode').value.trim();
@@ -288,6 +291,7 @@
       +'<div><span class="c">'+esc(it.ctr_code)+'</span>'
       +(it.is_active===false?' <span class="inactbadge">비활성</span>':'')
       +(it.syd_codes&&it.syd_codes.length?' <span class="s">· SYD '+esc(it.syd_codes.join(' / '))+'</span>':'')
+      +(it.oe_hit?(' <span class="s" style="color:'+(it.oe_hit.rel==='for'?'#7a5a17':'#143D34')+';font-weight:700"'+(it.oe_hit.rel==='for'?' title="'+esc(OE_FOR_NOTE)+'"':'')+'>· '+(it.oe_hit.rel==='for'?'FOR ':'OE ')+esc(it.oe_hit.code)+' 로 찾음</span>'):'')
       +'<div class="s">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div></div>'
       +'<div class="lp">List '+fmt(it.list_price)+'</div></div>'
     ).join('');
@@ -347,6 +351,7 @@
       return '<tr>'
         +'<td>'+esc(l.ctr_code||'—')+'</td>'
         +'<td>'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
+        +'<td>'+esc(l.oe_ref||'—')+'</td>'   // 0228 · D2 — 고객 견적서 Referencia OE(직접 OE 만)
         +'<td class="l">'+esc(l.product_name||'')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td class="r">'+fmtq(l.qty)+'</td>'
         +'<td class="r">'+(l.matched?fmt(l.list_price):'—')+'</td>'
@@ -386,7 +391,7 @@
       +'<div class="head"><div>'+logo+'<div class="co">'+(co.emisor&&co.logo_data?'<b>'+esc(co.emisor)+'</b><br>':'')+(co.domicilio?esc(co.domicilio)+'<br>':'')+(co.phone?'Tel: '+esc(co.phone)+' · ':'')+(co.homepage?esc(co.homepage):'')+'</div></div>'
       +'<div class="title"><h2>COTIZACIÓN</h2></div></div>'
       +'<div class="meta"><b>Cliente:</b> '+esc(custName)+' &nbsp;&nbsp; <b>Fecha:</b> '+esc(date)+' &nbsp;&nbsp; <b>Atendió:</b> '+esc(issuerLabel())+'</div>'
-      +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Producto / Aplicación</th><th>Cant.</th><th>List</th><th>Desc.</th><th>P.Unit</th><th>IVA</th><th>Total c/IVA</th><th>Existencia</th></tr></thead>'
+      +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Ref. OE</th><th>Producto / Aplicación</th><th>Cant.</th><th>List</th><th>Desc.</th><th>P.Unit</th><th>IVA</th><th>Total c/IVA</th><th>Existencia</th></tr></thead>'
       +'<tbody>'+rowsHtml+'</tbody></table>'
       +'<div class="totbox"><table>'
       +'<tr><td>Total piezas:</td><td class="r">'+fmtq(t.totalQty||0)+'</td></tr>'
@@ -441,7 +446,7 @@
       rows.push(['Cliente', custName||'(no seleccionado)', '', 'Descuento', disc==null?'a definir':(disc+'%')]);
       rows.push(['Ingrese las cantidades por sucursal (Suc 1–5). El importe por SKU y los totales se calculan automáticamente.']);
       rows.push([]);
-      rows.push(['#','CTR Code','SYD Code','Producto','Application','Existencia','En tránsito','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)','Material']);
+      rows.push(['#','CTR Code','SYD Code','Producto','Application','Existencia','En tránsito','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)','Material','Referencia OE']);   // 0228 · D2 — 맨 끝(Q) · 수식 열 위치 불변
       const headerRow=rows.length, firstData=headerRow+1;
       const aluRows=[];   // 알루미늄 제품 행 번호(엑셀 행) — 음영 표기용
       items.forEach((it,idx)=>{
@@ -451,7 +456,7 @@
         rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.name||'', it.app||'',
           it.stock_qty==null?'':Number(it.stock_qty),
           (Number(it.backorder_qty)||0)>0?Number(it.backorder_qty):'',
-          unit, null,null,null,null,null, null, null, isAlu?'Aluminio':'' ]);
+          unit, null,null,null,null,null, null, null, isAlu?'Aluminio':'', it.oe_ref||'' ]);
       });
       const lastData=rows.length;
       rows.push([]);
@@ -491,7 +496,7 @@
       if(ws['P'+headerRow]) ws['P'+headerRow].s={font:{bold:true}};
       const sTraP={fill:{patternType:'solid',fgColor:{rgb:'DDEBF7'}},font:{bold:true,color:{rgb:'1F4E79'}}};
       for(let r=firstData;r<=lastData;r++){ if(ws['G'+r]&&ws['G'+r].v!==''&&ws['G'+r].v!=null){ ws['G'+r].s=Object.assign({},ws['G'+r].s,sTraP); ws['G'+r].z='#,##0'; } }
-      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:30},{wch:28},{wch:11},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12}];
+      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:30},{wch:28},{wch:11},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12},{wch:28}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Lista');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
@@ -1299,7 +1304,7 @@
     rows.push(['Refatrix — Cotización']);
     rows.push(['Cliente', custName, '', 'Fecha', date, '', 'Atendió', issuerLabel()]);
     rows.push([]);
-    rows.push(['CTR','SYD','Producto / Aplicación','Cantidad','List','Desc%','P.Unit','IVA','Total c/IVA','Stock','Estado']);
+    rows.push(['CTR','SYD','Producto / Aplicación','Cantidad','List','Desc%','P.Unit','IVA','Total c/IVA','Stock','Estado','Referencia OE']);   // 0228 · D2 — 맨 끝 열(기존 열 위치 불변)
     const flagLbl={ok:'OK',low_stock:'Stock bajo',not_found:'No encontrado'};
     (lastPreview.lines||[]).forEach(l=>{
       if(l.ambiguous){ rows.push([l.input_code,'','(múltiples coincidencias)',l.qty]); return; }
@@ -1311,6 +1316,7 @@
         l.matched?Number(l.final_price):'', l.matched?Number(l.line_iva):'',
         l.matched?Number(l.line_total):'',
         l.avail_stock==null?'':Number(l.avail_stock), flagLbl[l.stock_flag||'ok'],
+        l.oe_ref||'',
       ]);
     });
     const t=lastPreview.totals||{};
@@ -1318,7 +1324,7 @@
     rows.push(['','','TOTAL', Number(t.totalQty)||0,'','','', Number(t.iva)||0, Number(t.total)||0]);
     rows.push(['','','SKU', t.skuCount||0,'','','','Subtotal', Number(t.subtotal)||0]);
     const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:9},{wch:11},{wch:7},{wch:11},{wch:11},{wch:13},{wch:9},{wch:12}];
+    ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:9},{wch:11},{wch:7},{wch:11},{wch:11},{wch:13},{wch:9},{wch:12},{wch:28}];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'Cotizacion');
     const safe=(custName||'cotizacion').replace(/[^\w가-힣]+/g,'_').slice(0,30);
@@ -1357,24 +1363,26 @@
       const matches=(r&&r.matches)||[];
       if(!matches.length){
         lines.push({code,qty}); // 미매칭(not_found) 줄로 추가됨
-      } else if(matches.length===1){
+      } else if(matches.length===1 && !r.pick_required){
         // 0224b — 담고 진행한다. 스페인어 안내만 띄운다.
         if(matches[0].is_active===false) warnInactive(matches[0].ctr_code);
         lines.push({code,product_id:matches[0].product_id,qty});
       } else {
-        openCand(code,qty,matches); return; // 후보 선택 후 push
+        openCand(code,qty,matches,!!r.pick_required); return; // 후보 선택 후 push (0228: FOR 로만 걸린 1건도 여기로)
       }
       $('inCode').value='';$('inQty').value='1';$('inCode').focus();
       recalc();
     }catch(e){m.className='msg err';m.textContent='코드 조회 실패';}
   }
 
-  function openCand(code,qty,candidates){
+  function openCand(code,qty,candidates,pickRequired){
     pendingCand={code,qty};
-    $('candFor').textContent='— "'+code+'" 에 해당하는 CTR 제품을 고르세요';
+    $('candFor').textContent='— "'+code+'" 에 해당하는 CTR 제품을 고르세요'
+      +(pickRequired?' · 이 번호는 FOR(조립품 OE)입니다: '+OE_FOR_NOTE+'. 맞는 부품인지 확인 후 고르세요.':'');
     $('candBody').innerHTML=candidates.map(c=>
       '<div class="cand'+(c.is_active===false?' inact':'')+'" onclick="pickCand('+c.product_id+','+(c.is_active===false?'1':'0')+')">'
       +'<div><b>'+esc(c.ctr_code)+'</b>'+(c.is_active===false?' <span class="inactbadge">비활성</span>':'')
+      +(c.matched_by&&MB_LABEL[c.matched_by]?' <span class="inactbadge" style="background:'+(c.matched_by==='oe_for'?'#fbf3e3;color:#7a5a17':'#e9f1ec;color:#143D34')+'"'+(c.matched_by==='oe_for'?' title="'+esc(OE_FOR_NOTE)+'"':'')+'>'+MB_LABEL[c.matched_by]+'</span>':'')
       +'<div class="hint" style="margin:0">'+esc(c.name||'')+(c.app?' · '+esc(c.app):'')+'</div></div>'
       +'<div style="text-align:right;white-space:nowrap"><div>List '+fmt(c.list_price)+'</div></div></div>'
     ).join('');

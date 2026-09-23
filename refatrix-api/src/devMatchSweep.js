@@ -6,7 +6,7 @@
 //   자동으로 「개발완료(developed)」 처리한다.
 //
 //   매칭 기준(개발필요내용 화면과 동일): 정규화 코드(대소문자·기호 무시)로
-//   ① products.code(CTR) ② product_syd_codes ③ product_xref_codes 순.
+//   ① products.code(CTR) ② product_syd_codes ③ product_oe_codes(직접 OE · 0228) ④ product_xref_codes 순.
 //
 //   호출 지점:
 //   · 제품마스터 업로드 커밋 / 신규 제품 수동 생성 (productRoutes)
@@ -101,9 +101,14 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
   for (const p of prods) { codeById.set(Number(p.id), p.code); claim(normCode(p.code), p.id, 1); }
   const syds = (await query(`SELECT product_id, syd_code FROM product_syd_codes`)).rows;
   for (const s of syds) claim(normCode(s.syd_code), s.product_id, 2);
+  // 0228 — ③ OE(직접 OE 만 — FOR 는 조립품 번호라 「개발완료」 근거가 못 된다). oe_norm 은 normCode 와 같은 규칙.
+  try {
+    const oes = (await query(`SELECT product_id, oe_norm FROM product_oe_codes WHERE rel='oe'`)).rows;
+    for (const o of oes) claim(String(o.oe_norm || ''), o.product_id, 3);
+  } catch (_) { /* 0228 미적용 시 무시 */ }
   try {
     const xrefs = (await query(`SELECT product_id, norm_code FROM product_xref_codes`)).rows;
-    for (const x of xrefs) claim(String(x.norm_code || ''), x.product_id, 3);
+    for (const x of xrefs) claim(String(x.norm_code || ''), x.product_id, 4);
   } catch (_) { /* 0130 미적용 시 무시 */ }
 
   const items = [];

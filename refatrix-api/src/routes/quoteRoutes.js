@@ -6,7 +6,9 @@ import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quot
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
 import { resolveCode, assignReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
-         normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause } from '../quoteBuild.js';
+         normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, stampLineMeta } from '../quoteBuild.js';
+import { normOe, oeToken, customerOeText, OE_FOR_NOTE } from '../oeParse.js';   // 0228 · OE 번호
+import { oeReady, oeByProduct } from '../oeCodes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
 import { packingDeadline } from '../workingHours.js';
@@ -90,13 +92,20 @@ export default async function quoteRoutes(app) {
       params.push(materialFilter === 'aluminio' || materialFilter.includes('alumin') ? 'aluminio' : materialFilter);
       matSql = ` AND p.material = $${params.length}`;
     }
-    // CTR(code/name) 일치 + SYD 일치를 합쳐 제품 id 수집
+    // CTR(code/name) 일치 + SYD 일치 (+ 0228 OE 정규화 부분일치, 4자 이상) 를 합쳐 제품 id 수집
+    const qn = normOe(q);
+    const oeOn = qn.length >= 4 && (await oeReady());
+    let oeSql = '';
+    if (oeOn) {
+      params.push(`%${qn}%`);
+      oeSql = ` OR EXISTS (SELECT 1 FROM product_oe_codes o WHERE o.product_id=p.id AND o.oe_norm LIKE $${params.length})`;
+    }
     const rows = (await query(
       `SELECT DISTINCT p.id, p.code, p.name, p.app, p.list_price, p.is_active
          FROM products p
          LEFT JOIN product_syd_codes s ON s.product_id = p.id
         WHERE p.deleted_at IS NULL
-          AND (p.code ILIKE $1 OR p.name ILIKE $1 OR s.syd_code ILIKE $1)${matSql}
+          AND (p.code ILIKE $1 OR p.name ILIKE $1 OR s.syd_code ILIKE $1${oeSql})${matSql}
         ORDER BY p.code
         LIMIT 12`, params)).rows;
     if (!rows.length) return { items: [] };
@@ -104,12 +113,21 @@ export default async function quoteRoutes(app) {
     const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
     const sydByPid = {};
     for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
+    const oeMap = await oeByProduct(ids);
     return {
-      items: rows.map((r) => ({
-        product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
-        list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
-        is_active: r.is_active !== false,   // 0179 — 자동완성에 「비활성」 배지 표시용
-      })),
+      oe_for_note: OE_FOR_NOTE,
+      items: rows.map((r) => {
+        const oe = oeMap.get(Number(r.id)) || [];
+        // 0228 — 친 글자가 이 제품의 어느 OE 에 걸렸나(자동완성에 「OE … 로 찾음」 표시)
+        const hit = oeOn ? oe.find((x) => x.oe_norm.includes(qn)) : null;
+        return {
+          product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
+          list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
+          is_active: r.is_active !== false,   // 0179 — 자동완성에 「비활성」 배지 표시용
+          oe_hit: hit ? { code: hit.oe_code, rel: hit.rel } : null,
+          oe_count: oe.length,
+        };
+      }),
     };
   });
 
@@ -140,7 +158,7 @@ export default async function quoteRoutes(app) {
         if (r) prod = r;
       } else {
         const res = await resolveCode(ln.code);
-        if (res.matches.length === 1) {
+        if (res.matches.length === 1 && !res.pick_required) {
           const m = res.matches[0];
           const r = (await query(
             `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty, p.is_active,
@@ -151,18 +169,22 @@ export default async function quoteRoutes(app) {
                LEFT JOIN v_backorder bo ON bo.product_id=p.id
               WHERE p.id=$1`, [m.product_id])).rows[0];
           prod = r;
-        } else if (res.matches.length > 1) {
-          out.push({ input_code: ln.code, qty, ambiguous: true, candidates: res.matches });
+        } else if (res.matches.length >= 1) {
+          // 다중매칭 — 또는 0228: FOR(조립품 OE)로만 걸린 1건(자동 확정 금지)
+          out.push({ input_code: ln.code, qty, ambiguous: true, candidates: res.matches, pick_required: !!res.pick_required });
           continue;
         }
       }
       if (!prod) { out.push({ input_code: ln.code, qty, stock_flag: 'not_found', matched: false }); continue; }
       const sydRows = (await query(`SELECT syd_code FROM product_syd_codes WHERE product_id=$1`, [prod.id])).rows.map((x) => x.syd_code);
+      const oeItems = (await oeByProduct([prod.id])).get(Number(prod.id)) || [];   // 0228
       const calc = computeQuoteLine({ listPrice: prod.list_price, discountRate, qty, ivaRate });
       const avail = prod.stock_qty != null ? Number(prod.stock_qty) : null;
       out.push({
         input_code: ln.code || prod.code, matched: true, product_id: prod.id, ctr_code: prod.code,
         syd_codes: sydRows, product_name: prod.name, app_text: prod.app, qty,
+        oe_codes: oeItems.map(oeToken),                 // 0228 — 전체(FOR·SYD 표기 포함, 화면용)
+        oe_ref: customerOeText(oeItems),                // 0228 — 고객 견적서 「Referencia OE」(직접 OE 만)
         list_price: round2(prod.list_price), discount_rate: discountRate,
         final_price: calc.finalPrice, line_subtotal: calc.lineSubtotal, line_iva: calc.lineIva, line_total: calc.lineTotal,
         avail_stock: avail, stock_flag: stockFlag({ matched: true, qty, availStock: avail }),
@@ -317,6 +339,7 @@ export default async function quoteRoutes(app) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
           [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, screenIssue(l.issue)]);
       }
+      await stampLineMeta(c, q.id, lines);   // 0228 · 무엇으로 찾았나 + OE 스냅샷
       await assignReservations(c, q.id);   // 선착순 재고 예약(블럭)
       // 2026-09-21 · 카탈로그에 없는 코드는 **지금** 개발요청 대장에 적는다(전환·만료를 기다리지 않는다).
       await recordQuoteDevDemand(c, q.id, { userId: req.ctx.perm.userId });
@@ -401,6 +424,7 @@ export default async function quoteRoutes(app) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
           [id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, iss]);
       }
+      await stampLineMeta(c, id, lines);   // 0228
       await assignReservations(c, id);   // 라인 교체 후 예약 재배분(만료시각은 생성 기준 유지)
       // 2026-09-21 · 수정으로 새로 들어온 미등록 코드도 바로 적는다(같은 견적·같은 코드는 한 줄).
       await recordQuoteDevDemand(c, id, { userId: req.ctx.perm.userId });
@@ -916,9 +940,11 @@ export default async function quoteRoutes(app) {
     const sydRows = ids.length ? (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows : [];
     const sydByPid = {};
     for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
+    const oeMapPL = await oeByProduct(ids);   // 0228 — 가격표/견적 엑셀 「Referencia OE」
     const items = prods.map((p) => ({
       ctr_code: p.code,
       name: p.name || '',
+      oe_ref: customerOeText(oeMapPL.get(Number(p.id)) || []),
       syd_codes: p.scode || (sydByPid[p.id] || []).join(' / '),
       app: p.app || '',
       list_price: Number(p.list_price) || 0,
@@ -1235,6 +1261,7 @@ export default async function quoteRoutes(app) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
           [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag, screenIssue(l.issue)]);
       }
+      await stampLineMeta(c, q.id, lines);   // 0228
       await assignReservations(c, q.id);
       await recordQuoteDevDemand(c, q.id, { userId: req.ctx.perm.userId });   // 2026-09-21
       const devLines = await quoteDevLines(c, q.id);

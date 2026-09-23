@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pt-0922tpl</title>
+<title>Refatrix ERP · 제품 조회 · oe-0923a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -110,6 +110,16 @@
   .appsec{margin:0 0 12px;border-bottom:1px dashed var(--line);padding-bottom:10px}
   .appchips{display:flex;flex-wrap:wrap;gap:4px}
   .appchips .tag{font-size:12px;padding:3px 9px;background:#f4efe4;color:#6b5f45;border:1px solid #e6ddca}
+  /* 0228 — OE 순정번호 */
+  .oesec{margin:0 0 12px;border-bottom:1px dashed var(--line);padding-bottom:10px}
+  .oechips{display:flex;flex-wrap:wrap;gap:4px}
+  .oechips .oe{font-size:12px;padding:3px 9px;border-radius:6px;background:#e9f1ec;color:#143D34;border:1px solid #cfe0d6;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .oechips .oe.for{background:#fbf3e3;color:#7a5a17;border-color:#ecd9ae}
+  .oechips .oe .src{font-family:inherit;font-size:10px;margin-left:4px;padding:0 4px;border-radius:4px;background:#fff;color:#6f6a60;border:1px solid #ddd}
+  .oenote{font-size:11px;color:#7a5a17;margin:4px 0 0}
+  .oeline{font-size:11px;color:#143D34;margin-top:2px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .pvwarn{border:1px solid #e3b5ad;background:#fbeeeb;color:#8A3B32;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px}
+  .pvnote{border:1px solid #d9e4dc;background:#f2f7f3;color:#143D34;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:12px}
   /* 중국차 브랜드 칩(복수선택 토글) */
   .cnchip{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:14px;
     font-size:12px;font-weight:600;cursor:pointer;user-select:none;
@@ -274,13 +284,13 @@
       <div id="peQList" style="margin-top:6px"></div>
       <div id="peDelMsg" class="msg" style="margin-top:6px"></div>
     </div>
-    <div class="hint" style="margin-top:0">엑셀 파일(.xlsx)을 올리면 <b>Clave CTR</b> 기준으로 신규는 추가, 기존은 <b>변경된 항목만</b> 덮어씁니다. <b>재고수량·평균원가는 절대 바뀌지 않습니다.</b> Clave SyD는 ' // '로 여러 경쟁사 코드를 넣을 수 있고, 검색용으로 분해 저장됩니다. 먼저 미리보기로 확인 후 반영하세요.</div>
+    <div class="hint" style="margin-top:0">엑셀 파일(.xlsx)을 올리면 <b>Clave CTR</b> 기준으로 신규는 추가, 기존은 <b>변경된 항목만</b> 덮어씁니다. <b>재고수량·평균원가는 절대 바뀌지 않습니다.</b> Clave SyD는 ' // '로 여러 경쟁사 코드를 넣을 수 있고, 검색용으로 분해 저장됩니다. <b>OE</b> 열도 같은 규칙입니다(<code>FOR …</code> = 조립품 OE, <code>… (SYD)</code> = SyD 칸에서 옮긴 번호). <b>파일에 없는 열은 바뀌지 않습니다</b> — 예: Clave CTR + OE 두 열만 올리면 OE만 바뀝니다. 먼저 미리보기로 확인 후 반영하세요.</div>
     <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="btn ghost sm" id="dlTemplate" type="button" title="업로드에 쓰는 빈 엑셀 서식을 내려받습니다. 첫 시트는 헤더만 있는 입력용, 둘째 시트에 작성 방법과 현재 등록된 제품 예시가 들어 있습니다.">📄 업로드 양식(.xlsx) 받기</button>
       <span class="hint" style="margin:0;flex:1;min-width:260px">신규 제품을 엑셀로 올릴 때 이 양식을 쓰세요. <b>이미 등록된 제품을 고칠 때</b>는 「제품 찾기」 탭의 <b>⬇ 제품 마스터 다운로드</b>로 현재 값을 받아 고치는 편이 안전합니다(빈 칸은 값 없음으로 덮어씁니다).</span>
     </div>
     <div class="msg" id="tplMsg"></div>
-    <div class="drop" id="drop" style="margin-top:12px">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)<br><span style="font-size:11px">필수 컬럼: Clave CTR · Nombre del producto</span></div>
+    <div class="drop" id="drop" style="margin-top:12px">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)<br><span style="font-size:11px">필수 컬럼: Clave CTR (신규 제품은 Nombre del producto 도 필요)</span></div>
     <input type="file" id="upFile" accept=".xlsx,.xls" class="hidden">
     <div class="msg" id="upMsg"></div>
 
@@ -556,7 +566,7 @@
         +(prodSort===key?('<span class="ar">'+(prodDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
       let h='<table><thead><tr>'
         +(isDir?'<th class="selc" title="일괄 점검할 SKU 선택 (현재 페이지 전체)"><input type="checkbox" id="stAll"></th>':'')
-        +'<th class="nowrap">코드</th><th class="nowrap" title="비활성 = 신규 견적·매출·오퍼시트에서 사용 차단. 과거 내역은 그대로 조회됩니다.">상태</th><th>경쟁사(SyD)</th><th>적용차종</th><th class="nowrap">바코드</th>'+sh('rack','랙','')+'<th class="nowrap">소재</th>'
+        +'<th class="nowrap">코드</th><th class="nowrap" title="비활성 = 신규 견적·매출·오퍼시트에서 사용 차단. 과거 내역은 그대로 조회됩니다.">상태</th><th title="아래 초록 글씨 = OE(순정) 번호">경쟁사(SyD) · OE</th><th>적용차종</th><th class="nowrap">바코드</th>'+sh('rack','랙','')+'<th class="nowrap">소재</th>'
         +sh('stock','재고')+sh('backorder','Backorder')+sh('sold','누적판매')
         +(prodHasList?'<th class="num nowrap">List Price</th>':'')
         +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
@@ -575,7 +585,7 @@
           +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
           // 0224 · 비활성 SKU 는 「중단 후 요청 N건」이 배지 옆에 붙는다(아래 dmdDecorate 가 채운다).
           +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+(act?'':'<span class="dmdtag" data-pid="'+p.id+'"></span>')+'</td>'
-          +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
+          +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+oeListCell(p.oe)+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+cnBadgeHtml(p.app)+(app||'—')+'</td>'
           +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
           +'<td class="rack nowrap">'+(rack||'—')+'</td>'
@@ -627,6 +637,15 @@
       }); });
     }catch(e){ r.innerHTML='<div class="hint">조회에 실패했습니다.</div>'; }
   }
+  // 0228 — 목록 칸의 OE 한 줄(첫 직접 OE + 개수). 검색어가 걸린 OE 가 있으면 그것을 먼저.
+  function oeListCell(raw){
+    const toks=String(raw||'').split(/\s*\/\/\s*/).map(t=>t.trim()).filter(Boolean);
+    if(!toks.length) return '';
+    const qn=String(prodQ||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const nrm=t=>t.replace(/^FOR\s+/i,'').replace(/\s*\(SYD\)\s*$/i,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    let first=(qn.length>=4&&toks.find(t=>nrm(t).includes(qn)))||toks.find(t=>!/^FOR\s/i.test(t))||toks[0];
+    return '<div class="oeline" title="'+escP(toks.join(' // '))+'">OE '+escP(first.replace(/\s*\(SYD\)\s*$/i,''))+(toks.length>1?(' <span style="color:#6f6a60">+'+(toks.length-1)+'</span>'):'')+'</div>';
+  }
   async function toggleDrill(tr, pid, colN){
     const next=tr.nextElementSibling;
     if(next&&next.classList.contains('pdrill')){ next.remove(); tr.classList.remove('open'); return; }
@@ -669,7 +688,19 @@
       else{ h+='<div class="appchips">'+list.map(a=>'<span class="tag">'+escP(a)+'</span>').join('')+'</div>'; }
       return h+'</div>';
     }
-    const appHtml=appSection(appText)+statusPanel(d, pid);
+    // 0228 — OE(순정) 번호. FOR = 조립품 OE(부연설명), SYD = Clave SyD 칸에서 옮긴 번호.
+    function oeSection(list){
+      list=list||[];
+      let h='<div class="oesec"><div class="dh">OE (순정) 번호'+(list.length?(' ('+list.length+')'):'')+'</div>';
+      if(!list.length) return h+'<div class="hint" style="margin:2px 0">등록된 OE 번호가 없습니다.</div></div>';
+      const direct=list.filter(x=>x.rel!=='for'), asm=list.filter(x=>x.rel==='for');
+      const chip=x=>'<span class="oe'+(x.rel==='for'?' for':'')+'"'+(x.rel==='for'?' title="'+escP(OE_FOR_NOTE)+'"':'')+'>'
+        +(x.rel==='for'?'FOR ':'')+escP(x.code)+(x.source==='syd'?'<span class="src" title="Clave SyD 칸에서 옮긴 번호">SYD</span>':'')+'</span>';
+      h+='<div class="oechips">'+direct.map(chip).join('')+asm.map(chip).join('')+'</div>';
+      if(asm.length) h+='<div class="oenote">FOR — '+escP(d.oe_for_note||OE_FOR_NOTE)+'</div>';
+      return h+'</div>';
+    }
+    const appHtml=appSection(appText)+oeSection(d.oe)+statusPanel(d, pid);
 
     // ── 원가 분석 패널(좌) ──
     function costPanel(c){
@@ -855,10 +886,14 @@
     }
   }
 
+  // 0228 — FOR 표기 부연설명(디렉터 지정 문구). 서버 oeParse.OE_FOR_NOTE 와 같은 문장.
+  const OE_FOR_NOTE='해당 OE번호 부품의 조립품에 해당하는 OE부품입니다';
+
   // ===== 제품 마스터 업로드 =====
   // 파일 컬럼 라벨(표시용) — 시스템 필드 → 파일 컬럼명
-  const FIELD_LABEL={scode:'Clave SyD',app:'Aplicacion',name:'Nombre del producto',sat_code:'Clave SAT',origin:'Origen',list_price:'List Price',iva_rate:'IVA',ean:'Barcode',location:'Fast Movement Location',list_price_syd:'List Price de SYD',price_customer_syd:'Precio Cliente de SYD',price_customer_ctr:'Precio Cliente de CTR'};
+  const FIELD_LABEL={scode:'Clave SyD',app:'Aplicacion',name:'Nombre del producto',sat_code:'Clave SAT',origin:'Origen',list_price:'List Price',iva_rate:'IVA',ean:'Barcode',location:'Fast Movement Location',list_price_syd:'List Price de SYD',price_customer_syd:'Precio Cliente de SYD',price_customer_ctr:'Precio Cliente de CTR',oe:'OE'};
   let parsedPayload=null;
+  let pvOeCleared=[];   // 0228 — 반영 전에 한 번 더 묻는다(OE 가 통째로 지워지는 제품)
 
   async function handleFile(file){
     const m=$('upMsg');m.className='msg';m.style.display='none';
@@ -887,12 +922,14 @@
       $('pv-total').textContent=d.total;$('pv-new').textContent=d.new_items.length;$('pv-upd').textContent=d.updated.length;
       $('pv-same').textContent=d.unchanged;$('pv-err').textContent=d.errors.length;$('pv-dup').textContent=d.duplicates.length;
       let html='';
+      html+=pvOeHtml(d);   // 0228 — OE 요약·경고·충돌
       if(d.updated.length){
         html+='<div style="font-weight:700;margin-top:8px">변경되는 제품 (최대 50개 표시)</div>';
         html+='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th>변경 내용</th></tr></thead><tbody>'+
           d.updated.slice(0,50).map(u=>{
-            const parts=Object.keys(u.changes).map(f=>`<div class="chg">${FIELD_LABEL[f]||f}: <span style="color:var(--expense)">${fmtv(u.changes[f].from)}</span> → <b>${fmtv(u.changes[f].to)}</b></div>`);
+            const parts=Object.keys(u.changes).filter(f=>f!=='oe').map(f=>`<div class="chg">${FIELD_LABEL[f]||f}: <span style="color:var(--expense)">${fmtv(u.changes[f].from)}</span> → <b>${fmtv(u.changes[f].to)}</b></div>`);
             if(u.syd_changed)parts.push(`<div class="chg">Clave SyD: <span style="color:var(--expense)">${(u.syd_from||[]).join(' // ')||'—'}</span> → <b>${(u.syd_to||[]).join(' // ')||'—'}</b></div>`);
+            if(u.oe_changed)parts.push('<div class="chg">OE: <span style="color:var(--expense)">'+escP(oeShort(u.oe_from))+'</span> → <b>'+escP(oeShort(u.oe_to))+'</b></div>');
             return `<tr><td class="code">${u.code}</td><td>${u.name||''}</td><td>${parts.join('')}</td></tr>`;
           }).join('')+'</tbody></table>';
         if(d.updated.length>50)html+=`<div class="hint">외 ${d.updated.length-50}개 더 변경됩니다.</div>`;
@@ -916,8 +953,44 @@
   }
   const fmtv=(v)=> v==null||v===''?'—':(typeof v==='number'?Number(v).toLocaleString('es-MX'):String(v));
 
+  // ── 0228 · OE 미리보기 ──
+  function oeShort(list){
+    const a=(list||[]); if(!a.length) return '—';
+    return a.slice(0,4).join(' // ')+(a.length>4?(' … 외 '+(a.length-4)+'개'):'');
+  }
+  function pvOeHtml(d){
+    pvOeCleared=(d&&d.oe_cleared)||[];
+    let h='';
+    const absent=(d&&d.columns_absent)||[];
+    const lbl={name:'Nombre del producto',scode:'Clave SyD',app:'Aplicacion',oe:'OE'};
+    const keep=absent.filter(f=>f!=='oe'||d.oe_column).map(f=>lbl[f]);
+    if(keep.length) h+='<div class="pvnote">파일에 <b>'+keep.map(escP).join(' · ')+'</b> 열이 없습니다 — 이 항목의 현재 값과 검색표(SyD·적용차종)는 <b>그대로 둡니다</b>.</div>';
+    if(d&&d.oe_column&&!d.oe_ready){
+      h+='<div class="pvwarn">OE 열이 있지만 서버에 OE 저장소(마이그레이션 0228)가 아직 없습니다. <b>OE 는 반영되지 않습니다</b> — Railway 콘솔에서 <code>npm run migrate</code> 후 다시 올리세요. (다른 열은 반영됩니다)</div>';
+    }
+    if(d&&d.oe_column&&d.oe_ready){
+      h+='<div class="pvnote">OE: <b>'+(d.oe_products||0)+'</b>개 제품이 바뀌고, 번호 <b>'+(d.oe_added_codes||0)+'</b>개가 올라갑니다. '
+        +'<span style="color:#7a5a17">FOR = '+escP(OE_FOR_NOTE)+'</span></div>';
+      if(pvOeCleared.length){
+        h+='<div class="pvwarn">⚠ <b>OE 가 모두 지워지는 제품 '+pvOeCleared.length+'개</b> — 파일의 OE 칸이 비어 있습니다: '
+          +pvOeCleared.slice(0,20).map(c=>'<span class="tag">'+escP(c)+'</span>').join('')+(pvOeCleared.length>20?' …':'')
+          +'<br>의도한 것이 아니면 그 행을 파일에서 지우세요(파일에 없는 제품은 바뀌지 않습니다). 반영할 때 한 번 더 묻습니다.</div>';
+      }
+      const col=d.oe_collisions||{count:0,items:[]};
+      if(col.count){
+        h+='<details class="pvnote" style="cursor:pointer"><summary>검토용 — 다른 제품의 CTR·SyD 코드와 같은 OE <b>'+col.count+'</b>건 (막지 않음 · 견적에서는 후보 선택으로 뜹니다)</summary>'
+          +'<table style="margin-top:6px"><thead><tr><th>Clave CTR</th><th>OE</th><th>같은 코드</th></tr></thead><tbody>'
+          +col.items.map(x=>'<tr><td class="code">'+escP(x.code)+'</td><td>'+escP(x.oe)+'</td><td>'+escP(x.other)+' 의 '+(x.kind==='ctr'?'CTR 코드':'SyD 코드')+'</td></tr>').join('')
+          +'</tbody></table></details>';
+      }
+    }
+    return h;
+  }
+
   async function commit(){
     const m=$('commitMsg');m.className='msg';m.style.display='none';
+    // 0228 — OE 를 통째로 지우는 행이 있으면 한 번 더 확인(빈 칸 = 값 없음 규칙 때문에 실수가 조용히 난다)
+    if(pvOeCleared.length && !confirm('OE 가 모두 지워지는 제품이 '+pvOeCleared.length+'개 있습니다.\n('+pvOeCleared.slice(0,8).join(', ')+(pvOeCleared.length>8?' …':'')+')\n\n그래도 반영할까요?')) return;
     $('commitBtn').disabled=true;$('commitBtn').textContent='반영 중…';
     try{
       const res=await fetch(session.api+'/api/products/import/commit',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(parsedPayload)});
@@ -1027,11 +1100,12 @@
   //     ean   — 바코드는 SKU 마다 고유. 복사하면 코드검색·PDA 스캔이 두 제품을 잡는다
   //     location / rack_location — 실물 재고가 들어와야 정해지는 자리. 신규는 재고 0
   const PE_REF_SKIP=['code','ean','location','rack_location'];
+  // 0228 · D4 — OE 도 복사한다(디렉터 결정 2026-09-23). 좌/우·세대가 다르면 반드시 고칠 것.
   const PE_REF_FIELDS=['name','scode','app','sat_code','origin','list_price','iva_rate',
-    'list_price_syd','price_customer_syd','price_customer_ctr','material'];
+    'list_price_syd','price_customer_syd','price_customer_ctr','material','oe'];
   const PE_REF_HINT='제품코드 · Barcode(EAN) · Rack 위치 · Fast Movement Location 은 <b>복사하지 않습니다</b>'
     +' (SKU 마다 고유한 값 — 이미 입력해 두셨다면 그대로 남습니다).'
-    +' <b>Clave SyD 는 복사됩니다</b> — 경쟁사 코드가 다르면 반드시 고쳐 주세요(같은 코드가 두 제품에 걸리면 역검색이 엉킵니다).';
+    +' <b>Clave SyD · OE 는 복사됩니다</b> — 경쟁사 코드·순정번호가 다르면 반드시 고쳐 주세요(같은 코드가 두 제품에 걸리면 역검색이 엉킵니다. 좌/우 부품은 OE 가 다릅니다).';
   const PE_REF_CLEAR_BTN='<button class="btn ghost sm" id="peRefClear" type="button" style="margin-left:6px">↺ 전부 비우기</button>';
 
   function peRefBarHtml(){
@@ -1118,7 +1192,7 @@
       if(info2) info2.innerHTML='<b>'+escP(d.code)+'</b> 의 내용을 불러왔습니다 (노란 칸 = 아직 참조 그대로). '
         +'<b>제품코드</b>를 새로 입력하고 달라지는 항목만 고치세요. '
         +'복사하지 않은 항목: Barcode(EAN) · Rack 위치 · Fast Movement Location. '
-        +'<b>Clave SyD 는 복사되었으니</b> 경쟁사 코드가 다르면 꼭 고쳐 주세요. '+PE_REF_CLEAR_BTN;
+        +'<b>Clave SyD · OE 는 복사되었으니</b> 경쟁사 코드·순정번호가 다르면 꼭 고쳐 주세요. '+PE_REF_CLEAR_BTN;
       peRefBindClear();
       peRefRender([]);
       const rq=$('pe_ref'); if(rq) rq.value='';
@@ -1146,6 +1220,7 @@
       +(pid?'':peRefBarHtml())
       +'<div class="row">'+peInput('pe_code','제품코드 (Clave CTR) *')+'<div style="flex:2"><label>제품명 (Nombre del producto) *</label><input id="pe_name" type="text"></div></div>'
       +'<div><label>경쟁사 코드 (Clave SyD — 여러 개면 \' // \' 구분)</label><input id="pe_scode" type="text"></div>'
+      +'<div><label>OE 순정번호 (여러 개면 \' // \' 구분 · <code>FOR …</code> = 조립품 OE · <code>… (SYD)</code> = SyD 칸에서 옮긴 번호)</label><textarea id="pe_oe" style="width:100%;min-height:44px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></textarea><div class="hint" style="margin:2px 0 0;font-size:11px">FOR — '+OE_FOR_NOTE+'</div></div>'
       +'<div><label>적용차종 (Aplicacion — 여러 개면 \' // \' 구분)</label><textarea id="pe_app" style="width:100%;min-height:54px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></textarea></div>'
       +'<div class="row">'+peInput('pe_sat_code','Clave SAT')+peInput('pe_origin','Origen')+peInput('pe_ean','Barcode (EAN13)')+'</div>'
       +'<div class="row">'+peInput('pe_list_price','List Price')+peInput('pe_iva_rate','IVA (%)')+peInput('pe_list_price_syd','List Price de SYD')+'</div>'
@@ -1194,6 +1269,7 @@
       set('pe_list_price',d.list_price); set('pe_iva_rate',d.iva_rate); set('pe_list_price_syd',d.list_price_syd);
       set('pe_price_customer_syd',d.price_customer_syd); set('pe_price_customer_ctr',d.price_customer_ctr);
       set('pe_location',d.location); set('pe_rack_location',d.rack_location);
+      set('pe_oe',d.oe);   // 0228
       const ms=$('pe_material');
       if(d.material && d.material!=='aluminio'){ const op=document.createElement('option'); op.value=d.material; op.textContent=d.material; ms.appendChild(op); }
       ms.value=d.material||'';
@@ -1218,7 +1294,8 @@
       sat_code:val('pe_sat_code'), origin:val('pe_origin'), ean:val('pe_ean'),
       list_price:val('pe_list_price'), iva_rate:val('pe_iva_rate'), list_price_syd:val('pe_list_price_syd'),
       price_customer_syd:val('pe_price_customer_syd'), price_customer_ctr:val('pe_price_customer_ctr'),
-      material:val('pe_material'), location:val('pe_location'), rack_location:val('pe_rack_location') };
+      material:val('pe_material'), location:val('pe_location'), rack_location:val('pe_rack_location'),
+      oe:val('pe_oe') };   // 0228 — 서버가 정규 표기로 바꿔 저장(0228 전이면 무시)
   }
 
   async function peSave(){
@@ -1420,6 +1497,7 @@
       const c=chg[f]||{};
       if(f==='_syd'){ parts.push('<div class="chg">Clave SyD: <span style="color:var(--expense)">'+escP((c.from||[]).join(' // ')||'—')+'</span> → <b>'+escP((c.to||[]).join(' // ')||'—')+'</b></div>'); return; }
       if(f==='_app'){ parts.push('<div class="chg">적용차종: '+escP(String(c.from))+'종 → <b>'+escP(String(c.to))+'종</b></div>'); return; }
+      if(f==='_oe'){ parts.push('<div class="chg">OE: <span style="color:var(--expense)">'+escP(oeShort(c.from))+'</span> → <b>'+escP(oeShort(c.to))+'</b></div>'); return; }
       parts.push('<div class="chg">'+escP(PE_LABEL[f]||f)+': <span style="color:var(--expense)">'+escP(fmtv(c.from))+'</span> → <b>'+escP(fmtv(c.to))+'</b></div>');
     });
     return parts.join('')||'—';
@@ -1469,6 +1547,7 @@
     cols.push(['IVA','iva_rate'],['Barcode (EAN13)','ean'],['Fast Movement Location','location']);
     if(priceIncluded) cols.push(['List Price de SYD','list_price_syd'],['Precio Cliente de SYD','price_customer_syd'],['Precio Cliente de CTR','price_customer_ctr']);
     cols.push(['Material','material'],['Rack','rack_location'],['Stock','stock_qty'],['Backorder','backorder_qty']);
+    cols.push(['OE','oe']);   // 0228 — 맨 오른쪽(업로드 파서가 헤더 이름으로 읽는다 · 순서 무관)
     const header=cols.map(c=>c[0]);
     const rows=(items||[]).map(p=>cols.map(c=>{ const v=p[c[1]]; return v==null?'':v; }));
     return [header].concat(rows);
@@ -1512,6 +1591,7 @@
     ['Precio Cliente de SYD','선택','SYD 고객가 (MXN · 숫자만)','','price_customer_syd'],
     ['Precio Cliente de CTR','선택','CTR 고객가 (MXN · 숫자만)','','price_customer_ctr'],
     ['Material','선택','소재. aluminio · aluminum · 알루미늄 · al 은 모두 aluminio 로 저장된다','aluminio','material'],
+    ['OE','선택','OE(순정) 번호. 여러 개는 " // " 로 구분. 「FOR 번호」 = '+OE_FOR_NOTE+'. 「번호 (SYD)」 = SyD 칸에서 옮긴 번호','54500-8H310 // FOR 54500-8H31A','oe'],
   ];
   function templateHeaderRow(){ return TEMPLATE_COLS.map(c=>c[0]); }
   // 현재 등록된 제품 중 형식을 보여주기 좋은 몇 건(경쟁사코드·적용차종이 있는 것 우선)
@@ -2157,7 +2237,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build pt-0922tpl (제품 마스터 업로드 양식 다운로드)'); }catch(e){}
+  try{ console.log('[refatrix-products] build oe-0923a (OE 순정번호 — 찾기·업로드·수정)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);

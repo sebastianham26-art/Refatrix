@@ -482,12 +482,12 @@ test('참조 코드로 신규 등록 — jsdom', { skip: SKIP }, async (t) => {
     assert.ok($(d, 'pe_sat_code').classList.contains('reffill'));
   });
 
-  await t.test('㉔ 안내문이 Clave SyD 는 복사된다는 사실을 알려준다', async () => {
+  await t.test('㉔ 안내문이 Clave SyD · OE 는 복사된다는 사실을 알려준다 (0228 · D4)', async () => {
     const ctx = await boot();
     const { w, d } = ctx;
     $(d, 'peNewBtn').dispatchEvent(new w.Event('click'));
-    assert.match($(d, 'peRefInfo').textContent, /Clave SyD 는 복사됩니다/);
+    assert.match($(d, 'peRefInfo').textContent, /Clave SyD · OE 는 복사됩니다/);
     await openWithRef(ctx);
-    assert.match($(d, 'peRefInfo').textContent, /Clave SyD 는 복사되었으니/);
+    assert.match($(d, 'peRefInfo').textContent, /Clave SyD · OE 는 복사되었으니/);
   });
 });

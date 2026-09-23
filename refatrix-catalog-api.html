@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 카탈로그 조회 API (build 20260915catalogpull)</title>
+<title>Refatrix ERP · 카탈로그 조회 API (build 20260923oe)</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--radius:12px;}
@@ -414,6 +414,9 @@
         'referencias (대응품번)':(p.referencias||[]).map(x=>x.codigo).join(' // '),
         'marcas':[...new Set((p.referencias||[]).map(x=>x.marca))].join(', '),
         '대응품번 수':(p.referencias||[]).length,
+        // 0228 · 계약서 v1.1 — referenciasOE (OE = 순정번호 · CONJUNTO = 조립품 OE)
+        'referenciasOE (OE 순정번호)':(p.referenciasOE||[]).filter(x=>x.tipo==='OE').map(x=>x.codigo).join(' // '),
+        'referenciasOE (CONJUNTO · 조립품)':(p.referenciasOE||[]).filter(x=>x.tipo==='CONJUNTO').map(x=>x.codigo).join(' // '),
         'aplicacionesTexto (적용차종 원문)':p.aplicacionesTexto,
         '적용차종 수':(p.aplicaciones||[]).length,
         'precioLista (정가)':p.precio?p.precio.precioLista:null,
@@ -446,6 +449,7 @@
         {'항목':'단종품','값':c0.include_inactive?'포함 (activo=NO 로 표시)':'제외'},
         {'항목':'사진 주소 규칙','값':c0.img_base_url||'(제품전송 설정 물려받음)'},
         {'항목':'대응품번 없는 제품 수','값':prod.filter(x=>!x['referencias (대응품번)']).length},
+        {'항목':'OE 순정번호 없는 제품 수 (0228)','값':prod.filter(x=>!x['referenciasOE (OE 순정번호)']).length},
         {'항목':'사진 없는 제품 수','값':prod.filter(x=>!x['imagenUrl (사진)']).length},
         {'항목':'재질 미입력 제품 수','값':prod.filter(x=>!x['material (재질)']).length},
         {'항목':'적용차종 없는 제품 수','값':prod.filter(x=>!x['적용차종 수']).length}
