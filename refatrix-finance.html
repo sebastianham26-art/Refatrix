@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0902r</title>
+<title>Refatrix ERP · 재무 · build fin-0924rf</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -202,6 +202,16 @@
         <div style="flex:2"><label>영수증 번호</label><input id="t-receipt" type="text" placeholder="예: A-12345 / Factura 번호"></div></div>
       <!-- 영수증 번호 제안 근거 (fin-0831a) — 직전 번호 +1 을 위 칸에 미리 채우고 그 근거를 여기 보여준다 -->
       <div class="hint" id="t-rcpt-hint" style="margin-top:2px"></div>
+      <!-- 영수증 파일 첨부 (fin-0924rf · 0230) — 거래를 등록하면서 사진·PDF·CFDI XML 을 함께 올린다 -->
+      <div id="t-files-row" style="margin-top:6px">
+        <label>영수증 파일 (선택)</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn ghost sm" id="t-file-btn">📎 영수증 파일 선택</button>
+          <input type="file" id="t-file" multiple accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" style="display:none">
+          <span class="hint" style="margin:0">사진·PDF·XML(CFDI) · 파일당 8MB · 여러 개 가능 — <b>거래 등록</b>을 누르면 함께 올라갑니다.</span>
+        </div>
+        <div id="t-file-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+      </div>
       <div id="t-custRow" style="display:none;margin-top:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfaf6">
         <style>
           #t-custRow .fi-selbox{border:1.5px solid var(--brand);border-radius:8px;background:#f7faf8;padding:9px 12px;margin:10px 0}
@@ -1135,6 +1145,171 @@
     }catch(e){hint.innerHTML='';}
   }
 
+  // ===== 거래 영수증 파일 (fin-0924rf · 마이그레이션 0230) =====
+  //  · 거래등록: 파일을 골라 두면 [거래 등록] 직후 그 거래에 한 건씩 올린다.
+  //  · 거래목록: 행을 펼치면 📎 영수증 파일 상자 — 보기 · 추가 · 삭제(디렉터 또는 올린 본인).
+  //  · 백엔드 미배포(404) / 마이그레이션 전(503) 이면 사람이 알아들을 말로 안내한다.
+  const TXN_FILE_MAX=8*1024*1024;
+  let txnNewFiles=[];
+  function fmtBytes(n){n=Number(n)||0;if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
+  function txnFileKind(f){
+    const t=String(f.type||'').toLowerCase(),n=String(f.name||'').toLowerCase();
+    if(t.startsWith('image/'))return t;
+    if(t==='application/pdf'||/\.pdf$/.test(n))return 'application/pdf';
+    if(t==='text/xml'||t==='application/xml'||/\.xml$/.test(n))return 'text/xml';
+    if(/\.(jpe?g)$/.test(n))return 'image/jpeg';
+    if(/\.png$/.test(n))return 'image/png';
+    if(/\.hei[cf]$/.test(n))return 'image/heic';
+    return null;
+  }
+  function txnFileErr(f){
+    if(!txnFileKind(f))return '사진·PDF·XML 만 올릴 수 있습니다';
+    if(!(f.size>0))return '빈 파일입니다';
+    if(f.size>TXN_FILE_MAX)return '8MB를 넘습니다('+fmtBytes(f.size)+')';
+    return null;
+  }
+  // FileReader 가 붙이는 형식이 비어 있으면(XML 등) 확장자로 정한 형식으로 바꿔 서버 검증을 통과시킨다.
+  function readTxnFile(f){
+    return new Promise((res,rej)=>{
+      const fr=new FileReader();
+      fr.onload=()=>{const u=String(fr.result||'');const i=u.indexOf(';base64,');
+        if(i<0)return rej(new Error('bad_format'));
+        res('data:'+txnFileKind(f)+u.slice(i));};
+      fr.onerror=()=>rej(fr.error||new Error('read_fail'));
+      fr.readAsDataURL(f);
+    });
+  }
+  function txnUpErrText(status,d){
+    if(status===404&&!(d&&d.error==='not_found'))return '서버 업데이트 전이라 파일을 올릴 수 없습니다';
+    if(status===503)return '서버 마이그레이션(0230) 후에 쓸 수 있습니다';
+    if(status===403)return '이 거래에 파일을 붙일 권한이 없습니다';
+    if(status===409&&d&&d.error==='too_many_files')return '거래 1건당 최대 '+(d.max||20)+'개까지입니다';
+    if(d&&d.error==='invalid_file')return d.note==='too_large'?'8MB를 넘습니다':(d.note==='bad_mime'?'사진·PDF·XML 만 됩니다':'파일 형식을 읽지 못했습니다');
+    if(status===413)return '파일이 너무 큽니다';
+    return '실패('+(d&&d.error||status)+')';
+  }
+  async function uploadOneTxnFile(txnId,f){
+    const err=txnFileErr(f); if(err)return {ok:false,msg:err};
+    let data; try{data=await readTxnFile(f);}catch(e){return {ok:false,msg:'파일을 읽지 못했습니다'};}
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+txnId+'/files',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({file_name:f.name||null,data})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error)return {ok:false,msg:txnUpErrText(res.status,d)};
+      return {ok:true};
+    }catch(e){return {ok:false,msg:'서버 연결 실패'};}
+  }
+  async function uploadTxnFiles(txnId,files){
+    let ok=0;const failed=[],msgs=[];
+    for(const f of files){
+      const r=await uploadOneTxnFile(txnId,f);
+      if(r.ok)ok++; else {failed.push(f);msgs.push((f.name||'파일')+': '+r.msg);}
+    }
+    if(txnMap&&txnMap[txnId])txnMap[txnId].file_count=(Number(txnMap[txnId].file_count)||0)+ok;
+    const text=failed.length
+      ?((ok?'영수증 파일 '+ok+'건 첨부 · ':'')+'⚠ 영수증 파일 '+failed.length+'건 첨부 실패 — '+msgs.join(' / ')+' (거래목록에서 그 거래를 펼쳐 다시 붙일 수 있습니다)')
+      :('영수증 파일 '+ok+'건 첨부');
+    return {ok,fail:failed.length,failed,text};
+  }
+  function paintTxnNewFiles(){
+    const box=$('t-file-chips'); if(!box)return;
+    box.innerHTML=txnNewFiles.map((f,i)=>`<span class="badge" style="background:#fff;border:1px solid var(--line);color:var(--ink,#222);font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 10px">📎 ${escH(f.name||'파일')} <span style="color:var(--muted);font-weight:400">${fmtBytes(f.size)}</span><button type="button" class="t-file-x" data-i="${i}" title="빼기" style="border:none;background:#f1ede4;color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0">✕</button></span>`).join('');
+    [...box.querySelectorAll('.t-file-x')].forEach(b=>b.addEventListener('click',()=>{txnNewFiles.splice(Number(b.dataset.i),1);paintTxnNewFiles();}));
+  }
+  function onTxnFilesPicked(){
+    const inp=$('t-file'); const m=$('newMsg');
+    const picked=[...(inp.files||[])]; inp.value='';
+    const bad=[];
+    picked.forEach(f=>{const e=txnFileErr(f); if(e)bad.push((f.name||'파일')+': '+e); else txnNewFiles.push(f);});
+    if(txnNewFiles.length>20){bad.push('한 번에 최대 20개 — 넘는 파일은 뺐습니다');txnNewFiles=txnNewFiles.slice(0,20);}
+    paintTxnNewFiles();
+    if(bad.length){m.className='msg err';m.textContent='제외한 파일 — '+bad.join(' / ');}
+  }
+  // 거래목록 영수증 열: 번호 + 📎N
+  function txnRcptCell(t){
+    const n=Number(t.file_count)||0;
+    return escH(t.receipt_no||'')+(n?` <span class="badge" style="background:#e7f3ee;color:var(--brand);font-family:inherit" title="영수증 파일 ${n}개 — 행을 펼쳐 보기">📎${n}</span>`:'');
+  }
+  function refreshTxnRcptCell(id){
+    const t=txnMap&&txnMap[id]; if(!t)return;
+    document.querySelectorAll(`.txn-rcpt-cell[data-id="${id}"]`).forEach(td=>td.innerHTML=txnRcptCell(t));
+  }
+  async function appendTxnFiles(id,box){
+    if(!box)return;
+    const div=document.createElement('div');
+    div.className='txn-files-box';
+    div.style.cssText='margin-top:12px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:12px 14px';
+    div.innerHTML='<b style="font-size:12.5px;color:var(--brand)">📎 영수증 파일</b> <span class="hint" style="margin:0">불러오는 중…</span>';
+    box.appendChild(div);
+    await paintTxnFilesBox(id,div);
+  }
+  async function paintTxnFilesBox(id,div){
+    let res,d;
+    try{res=await fetch(session.api+'/api/transactions/'+id+'/files',{headers:auth()});d=await res.json().catch(()=>({}));}
+    catch(e){div.innerHTML='<b style="font-size:12.5px;color:var(--brand)">📎 영수증 파일</b> <span class="hint" style="margin:0">서버 연결 실패</span>';return;}
+    if(res.status===404&&!(d&&d.error)){div.remove();return;}                       // 백엔드 미배포 — 상자를 숨긴다
+    if(res.status===503){div.innerHTML='<b style="font-size:12.5px;color:var(--brand)">📎 영수증 파일</b> <span class="hint" style="margin:0">서버 마이그레이션(0230) 후에 쓸 수 있습니다.</span>';return;}
+    if(!res.ok||d.error){div.innerHTML='<b style="font-size:12.5px;color:var(--brand)">📎 영수증 파일</b> <span class="hint" style="margin:0">불러오지 못했습니다('+escH(d&&d.error||res.status)+')</span>';return;}
+    const items=d.items||[];
+    if(txnMap&&txnMap[id]){txnMap[id].file_count=items.length;refreshTxnRcptCell(id);}
+    let h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="font-size:12.5px;color:var(--brand)">📎 영수증 파일 '+(items.length?items.length+'개':'')+'</b>';
+    if(d.can_attach)h+='<button type="button" class="btn ghost sm tf-add">＋ 영수증 파일 추가</button><input type="file" class="tf-inp" multiple accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" style="display:none">';
+    h+='<span class="hint tf-msg" style="margin:0"></span></div>';
+    if(!items.length)h+='<div class="hint" style="margin:6px 0 0">붙은 파일이 없습니다.'+(d.can_attach?' 사진·PDF·XML(CFDI) · 파일당 8MB.':'')+'</div>';
+    else{
+      h+='<table style="margin-top:8px"><thead><tr><th>파일</th><th class="num">크기</th><th>올린 사람</th><th>시각</th><th></th></tr></thead><tbody>';
+      items.forEach(f=>{
+        const when=f.uploaded_at?new Date(f.uploaded_at).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+        const ic=String(f.mime_type||'').startsWith('image/')?'🖼':(f.mime_type==='application/pdf'?'📄':'🧾');
+        h+='<tr><td>'+ic+' '+escH(f.file_name||('파일 #'+f.id))+'</td><td class="num" style="color:var(--muted)">'+fmtBytes(f.file_size)+'</td>'
+          +'<td>'+escH(f.uploaded_by_name||'')+'</td><td style="white-space:nowrap;color:var(--muted)">'+escH(when)+'</td>'
+          +'<td style="white-space:nowrap"><button type="button" class="btn ghost sm tf-view" data-fid="'+f.id+'">보기</button>'
+          +(f.can_delete?' <button type="button" class="btn ghost sm tf-del" data-fid="'+f.id+'" style="color:var(--expense);border-color:var(--expense)">삭제</button>':'')+'</td></tr>';
+      });
+      h+='</tbody></table>';
+    }
+    div.innerHTML=h;
+    const add=div.querySelector('.tf-add'),inp=div.querySelector('.tf-inp'),msg=div.querySelector('.tf-msg');
+    if(add&&inp){
+      add.addEventListener('click',e=>{e.stopPropagation();inp.click();});
+      inp.addEventListener('change',async()=>{
+        const files=[...(inp.files||[])]; inp.value=''; if(!files.length)return;
+        add.disabled=true; msg.textContent='올리는 중… ('+files.length+'건)';
+        const up=await uploadTxnFiles(id,files);
+        add.disabled=false;
+        await paintTxnFilesBox(id,div);
+        const m2=div.querySelector('.tf-msg'); if(m2){m2.textContent=up.text;m2.style.color=up.fail?'var(--expense)':'var(--income)';}
+      });
+    }
+    div.querySelectorAll('.tf-view').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();viewTxnFile(Number(b.dataset.fid));}));
+    div.querySelectorAll('.tf-del').forEach(b=>b.addEventListener('click',async e=>{
+      e.stopPropagation();
+      if(!confirm('이 영수증 파일을 삭제할까요? 되돌릴 수 없습니다.'))return;
+      try{
+        const r=await fetch(session.api+'/api/transactions/files/'+b.dataset.fid,{method:'DELETE',headers:auth()});
+        const dd=await r.json().catch(()=>({}));
+        if(!r.ok||dd.error){alert(r.status===403?'올린 본인이나 디렉터만 삭제할 수 있습니다.':'삭제 실패');return;}
+      }catch(err){alert('서버 연결 실패');return;}
+      await paintTxnFilesBox(id,div);
+    }));
+  }
+  // 보기 — 인증 헤더가 필요해 fetch → Blob. 팝업 차단(특히 iPhone)을 피하려고 창을 먼저 연다.
+  async function viewTxnFile(fid){
+    const w=window.open('','_blank');
+    try{
+      const res=await fetch(session.api+'/api/transactions/files/'+fid,{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||!d.file_data){if(w)w.close();alert('파일을 불러오지 못했습니다.');return;}
+      const c=d.file_data.indexOf(',');const b64=d.file_data.slice(c+1);
+      const mime=(d.file_data.slice(0,c).match(/data:([^;]+)/)||[])[1]||d.mime_type||'application/octet-stream';
+      const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+      if(w){w.location.href=url;}
+      else{const a=document.createElement('a');a.href=url;a.download=d.file_name||('receipt-'+fid);document.body.appendChild(a);a.click();a.remove();}
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){if(w)w.close();alert('파일을 불러오지 못했습니다.');}
+  }
+
   async function saveTxn(){
     const m=$('newMsg');m.className='msg';
     const amt=Number($('t-amt').value)||0;
@@ -1156,6 +1331,15 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error==='account_required_for_actual'?'실제 거래는 계좌가 필요합니다.':(d.error||res.status));return;}
       m.className='msg ok';
       m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
+      // 영수증 파일 — 거래가 생긴 뒤 한 건씩 올린다(파일당 8MB라 한 요청에 몰아 싣지 않는다). (fin-0924rf)
+      if(txnNewFiles.length&&d.id){
+        $('t-save').textContent='영수증 파일 올리는 중…';
+        const up=await uploadTxnFiles(Number(d.id),txnNewFiles.slice());
+        m.textContent+=' · '+up.text;
+        if(up.fail)m.className='msg err';
+        txnNewFiles=up.failed;            // 실패한 파일만 남겨 둔다 — 거래목록에서 그 거래를 펼쳐 다시 붙일 수 있다
+        paintTxnNewFiles();
+      }
       $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';$('t-cashdue').checked=false;
       $('t-cust').value='';resetTxInv();previewTxn();
       rcptAuto=null;loadRcptSuggest();      // 방금 등록한 번호 기준으로 다음 번호를 다시 채운다 (fin-0831a)
@@ -1511,12 +1695,12 @@
                         : '<span style="font-family:monospace">'+t.sat_no+'</span>')
                     : '<span style="color:var(--muted)">미발급</span>')
                 : (t.memo||'')}</td>
-            <td style="font-family:monospace;font-size:12px">${t.receipt_no||''}</td>
+            <td style="font-family:monospace;font-size:12px" class="txn-rcpt-cell" data-id="${t.id}">${txnRcptCell(t)}</td>
           </tr>
           <tr class="txn-det hidden" data-id="${t.id}"><td colspan="${nCols}" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
       [...b.querySelectorAll('.txn-row')].forEach(row=>row.onclick=()=>{
         const id=row.dataset.id;const det=b.querySelector(`.txn-det[data-id="${id}"]`);
-        if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));appendFreightAlloc(Number(id),det.querySelector('.txn-det-body'));}
+        if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));appendFreightAlloc(Number(id),det.querySelector('.txn-det-body'));appendTxnFiles(Number(id),det.querySelector('.txn-det-body'));}
         else det.classList.add('hidden');
       });
       [...b.querySelectorAll('th[data-sort]')].forEach(h=>h.onclick=()=>txnHeadClick(h.dataset.sort));
@@ -4055,6 +4239,7 @@
       </div>
       <div class="row"><div style="flex:3"><label>변경 사유(계획과 다를 때)</label><input class="pp-memo" type="text"></div>
         <div style="flex:2"><label>영수증 번호 (선택)</label><input class="pp-receipt" type="text" maxlength="60" placeholder="영수증/Folio 번호"></div></div>
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn ghost sm pp-filebtn">📎 영수증 파일 (선택)</button><input type="file" class="pp-file" multiple accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" style="display:none"><span class="hint pp-filelist" style="margin:0">사진·PDF·XML · 실적 반영과 함께 올라갑니다</span></div>
       <div class="pp-rembox hidden" style="margin-top:8px;border:1px dashed var(--brand);border-radius:8px;padding:9px;background:#fff">
         <div style="font-weight:700;font-size:12.5px">계획보다 적게 집행 — 잔액 <span class="pp-remamt"></span> 처리를 선택하세요</div>
         <label style="display:block;margin-top:5px;font-weight:400;cursor:pointer"><input type="radio" name="pprem-${t.id}" class="pp-rem" value="close" checked style="width:auto"> <b>마감</b> — 잔액을 <span style="color:var(--income)">절감</span>으로 기록하고 이 예정을 종료합니다</label>
@@ -4066,6 +4251,13 @@
     tr.classList.remove('hidden');
     tr.querySelector('.pp-cancel').onclick=()=>togglePpForm(id);
     tr.querySelector('.pp-go').onclick=()=>doPpConfirm(id,tr);
+    // 영수증 파일(fin-0924rf) — 고른 파일은 실적 반영 성공 직후 이 거래에 올린다
+    tr._files=[];
+    const ppFile=tr.querySelector('.pp-file'),ppList=tr.querySelector('.pp-filelist');
+    const paintPpFiles=()=>{ppList.innerHTML=tr._files.length?tr._files.map((f,i)=>`📎 ${escH(f.name||'파일')} <a href="#" class="pp-filex" data-i="${i}" style="color:var(--expense)">✕</a>`).join(' · '):'사진·PDF·XML · 실적 반영과 함께 올라갑니다';
+      ppList.querySelectorAll('.pp-filex').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();tr._files.splice(Number(a.dataset.i),1);paintPpFiles();}));};
+    tr.querySelector('.pp-filebtn').addEventListener('click',()=>ppFile.click());
+    ppFile.addEventListener('change',()=>{const bad=[];[...(ppFile.files||[])].forEach(f=>{const e=txnFileErr(f);if(e)bad.push((f.name||'파일')+': '+e);else tr._files.push(f);});ppFile.value='';paintPpFiles();if(bad.length)alert('제외한 파일 — '+bad.join('\n'));});
     const ppPlanAmt=t.plan_amount!=null?Number(t.plan_amount):Number(t.amount);
     const ppAmtEl=tr.querySelector('.pp-amt');
     if(ppAmtEl){const upd=()=>updateRemainderUi(tr,'pp',Number(ppAmtEl.value)||0,ppPlanAmt,t.currency);ppAmtEl.addEventListener('input',upd);upd();}
@@ -4095,7 +4287,9 @@
       const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg pp-msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
-      alert(confirmResultMsg(d));
+      let fileNote='';
+      if(tr._files&&tr._files.length){const up=await uploadTxnFiles(id,tr._files.slice());fileNote='\n\n'+up.text;}
+      alert(confirmResultMsg(d)+fileNote);
       loadPendingPlans();loadAccounts();
     }catch(e){m.className='msg pp-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
@@ -4659,6 +4853,8 @@
   $('accAddBtn').addEventListener('click',()=>$('accForm').classList.toggle('hidden'));
   $('a-save').addEventListener('click',saveAccount);
   $('t-save').addEventListener('click',saveTxn);
+  $('t-file-btn').addEventListener('click',()=>$('t-file').click());
+  $('t-file').addEventListener('change',onTxnFilesPicked);
   $('bi-tpl').addEventListener('click',biTemplate);
   $('bi-check').addEventListener('click',biParse);
   $('bi-submit').addEventListener('click',biSubmit);

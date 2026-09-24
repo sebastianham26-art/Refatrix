@@ -7,6 +7,24 @@ import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { nextReceiptNo } from '../receiptNo.js';   // 영수증 번호 다음번호 제안(순수 함수)
+import { validateTxnFileDataUrl, cleanFileName, txnVisibleTo, canAttachTxnFile, canDeleteTxnFile, TXN_FILE_MAX_PER_TXN } from '../txnFiles.js';   // 거래 영수증 파일(0230)
+
+// ===== 거래 영수증 파일 테이블(0230) 준비 여부 — 반쪽 배포 안전장치 =====
+//   백엔드를 올리고 `npm run migrate` 를 아직 안 돌렸어도 거래목록이 500 으로 깨지면 안 된다.
+//   테이블이 없으면 목록은 file_count 없이(0) 돌고, 파일 API 는 503 migration_required 로 답한다.
+//   30초마다 다시 확인하므로 마이그레이션 직후 재시작 없이 켜진다.
+let _txnFilesReady = { at: 0, ok: false };
+export async function txnFilesReady(q = query) {
+  const now = Date.now();
+  if (_txnFilesReady.ok) return true;                                    // 한 번 생기면 계속 있다
+  if (_txnFilesReady.at && now - _txnFilesReady.at < 30000) return false; // 없다고 본 지 30초 안
+  try {
+    const r = await q(`SELECT to_regclass('public.transaction_files') IS NOT NULL AS ok`);
+    _txnFilesReady = { at: now, ok: !!(r.rows[0] && r.rows[0].ok) };
+  } catch (_) { _txnFilesReady = { at: now, ok: false }; }
+  return _txnFilesReady.ok;
+}
+export function _resetTxnFilesReady() { _txnFilesReady = { at: 0, ok: false }; }   // 테스트용
 
 // 운반비 인보이스 균등 분할(순수) — n등분하되 마지막 항이 반올림 잔액을 흡수해 합계 = total 보장.
 //   예: splitEqual(100, 3) → [33.33, 33.33, 33.34]
@@ -514,6 +532,7 @@ export default async function financeRoutes(app) {
     else if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
     if (q.from) { args.push(q.from); cond.push(`t.txn_date>=$${args.length}`); }
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
+    const filesOk = await txnFilesReady();   // 0230 전이면 file_count=0
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.receipt_no, t.sales_invoice_id,
@@ -522,7 +541,8 @@ export default async function financeRoutes(app) {
               si.sat_no AS sat_no, c.name AS customer_name,
               t.customer_id, fc.name AS freight_customer_name,
               (SELECT COUNT(*) FROM transaction_freight_allocations fa WHERE fa.transaction_id=t.id) AS freight_alloc_n,
-              (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
+              (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count,
+              ${filesOk ? '(SELECT COUNT(*) FROM transaction_files tf WHERE tf.transaction_id=t.id)' : '0'} AS file_count
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
@@ -535,6 +555,7 @@ export default async function financeRoutes(app) {
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
       freight_alloc_n: Number(t.freight_alloc_n || 0),
+      file_count: Number(t.file_count || 0),
       // 출처 — 예정 내역(pending-plans)과 같은 기준. 마케팅은 메모 접두사가 규약(0125).
       source: t.sales_invoice_id ? 'sales'
         : (t.recurring_rule_id ? 'recurring'
@@ -648,6 +669,96 @@ export default async function financeRoutes(app) {
       },
       skipped: rows.indexOf(last),   // 숫자가 없어 건너뛴 최근 건수(참고용)
     };
+  });
+
+  // ===== 거래 영수증 파일 (2026-09-24 · 0230) =====
+  // 재무 > 거래등록에서 거래를 등록하면서, 또는 거래목록에서 행을 펼쳐 영수증 파일(사진·PDF·CFDI XML)을 붙인다.
+  //  · 거래 1건당 여러 파일(최대 20). 파일당 원본 8MB.
+  //  · 보기: 거래목록과 같은 가시성(계좌 열람권한·세부차단·비공개 고정비).
+  //  · 올리기: 디렉터 · 그 거래 등록자 · 계좌 운영권한자 · 계좌 미지정(회사 공통) 거래.
+  //    영수증은 금액·계좌를 바꾸지 않으므로 **승인된 거래에도 수정요청 없이** 붙일 수 있다.
+  //  · 지우기: 디렉터 또는 올린 본인.
+  //  · 목록 응답에는 file_data 를 싣지 않는다(무겁다). 보기는 단건 GET 으로.
+  async function loadTxnForFiles(req, reply, txnId) {
+    if (!Number.isInteger(txnId) || txnId <= 0) { reply.code(400).send({ error: 'bad_id' }); return null; }
+    if (!(await txnFilesReady())) { reply.code(503).send({ error: 'migration_required', migration: '0230' }); return null; }
+    const t = (await query(
+      `SELECT id, account_id, is_private, created_by FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [txnId])).rows[0];
+    if (!t) { reply.code(404).send({ error: 'not_found' }); return null; }
+    const perm = req.ctx.perm;
+    const visible = txnVisibleTo(perm, t, { allow: allowedDetailAccountIds(perm), block: blockedDetailAccountIds(perm) });
+    if (!visible) { reply.code(404).send({ error: 'not_found' }); return null; }
+    const canAttach = canAttachTxnFile(perm, t, { visible, canOperate: canOperateAccount(perm, t.account_id) });
+    return { t, canAttach };
+  }
+
+  app.get('/api/transactions/:id/files', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const ctx = await loadTxnForFiles(req, reply, Number(req.params.id));
+    if (!ctx) return reply;
+    const rows = (await query(
+      `SELECT f.id, f.file_name, f.mime_type, f.file_size, f.uploaded_by, f.uploaded_at, u.name AS uploaded_by_name
+         FROM transaction_files f
+         LEFT JOIN users u ON u.id = f.uploaded_by
+        WHERE f.transaction_id = $1
+        ORDER BY f.uploaded_at ASC, f.id ASC`, [Number(req.params.id)])).rows;
+    const perm = req.ctx.perm;
+    return {
+      can_attach: ctx.canAttach,
+      max_files: TXN_FILE_MAX_PER_TXN,
+      items: rows.map((f) => ({
+        id: Number(f.id), file_name: f.file_name || null, mime_type: f.mime_type,
+        file_size: f.file_size == null ? null : Number(f.file_size),
+        uploaded_by_name: f.uploaded_by_name || null, uploaded_at: f.uploaded_at,
+        can_delete: canDeleteTxnFile(perm, f),
+      })),
+    };
+  });
+
+  // body: { file_name, data(dataURL) }
+  app.post('/api/transactions/:id/files', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const txnId = Number(req.params.id);
+    const ctx = await loadTxnForFiles(req, reply, txnId);
+    if (!ctx) return reply;
+    if (!ctx.canAttach) return reply.code(403).send({ error: 'forbidden' });
+    const b = req.body || {};
+    const v = validateTxnFileDataUrl(b.data);
+    if (!v.ok) return reply.code(400).send({ error: 'invalid_file', note: v.error });
+    const n = Number((await query(`SELECT COUNT(*) AS n FROM transaction_files WHERE transaction_id=$1`, [txnId])).rows[0].n);
+    if (n >= TXN_FILE_MAX_PER_TXN) return reply.code(409).send({ error: 'too_many_files', max: TXN_FILE_MAX_PER_TXN });
+    const ins = (await query(
+      `INSERT INTO transaction_files (transaction_id, file_name, mime_type, file_data, file_size, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, uploaded_at`,
+      [txnId, cleanFileName(b.file_name), v.mime, b.data, v.bytes, req.ctx.perm.userId])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${txnId}`,
+      detail: { receipt_file: Number(ins.id), mime: v.mime, bytes: v.bytes } });
+    return { ok: true, id: Number(ins.id), uploaded_at: ins.uploaded_at };
+  });
+
+  // 단일 파일(보기용) — 인증 헤더가 필요해 화면이 fetch → Blob → 새 창으로 연다.
+  app.get('/api/transactions/files/:fileId', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const fid = Number(req.params.fileId);
+    if (!Number.isInteger(fid) || fid <= 0) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await txnFilesReady())) return reply.code(503).send({ error: 'migration_required', migration: '0230' });
+    const f = (await query(`SELECT id, transaction_id, file_name, mime_type, file_data FROM transaction_files WHERE id=$1`, [fid])).rows[0];
+    if (!f) return reply.code(404).send({ error: 'not_found' });
+    const ctx = await loadTxnForFiles(req, reply, Number(f.transaction_id));
+    if (!ctx) return reply;
+    return { id: Number(f.id), transaction_id: Number(f.transaction_id), file_name: f.file_name || null, mime_type: f.mime_type, file_data: f.file_data };
+  });
+
+  app.delete('/api/transactions/files/:fileId', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const fid = Number(req.params.fileId);
+    if (!Number.isInteger(fid) || fid <= 0) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await txnFilesReady())) return reply.code(503).send({ error: 'migration_required', migration: '0230' });
+    const f = (await query(`SELECT id, transaction_id, file_name, uploaded_by FROM transaction_files WHERE id=$1`, [fid])).rows[0];
+    if (!f) return reply.code(404).send({ error: 'not_found' });
+    const ctx = await loadTxnForFiles(req, reply, Number(f.transaction_id));
+    if (!ctx) return reply;
+    if (!canDeleteTxnFile(req.ctx.perm, f)) return reply.code(403).send({ error: 'forbidden' });
+    await query(`DELETE FROM transaction_files WHERE id=$1`, [fid]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `transaction:${f.transaction_id}`,
+      detail: { receipt_file: fid, file_name: f.file_name || null } });
+    return { ok: true };
   });
 
   // 운반비 인보이스 배분 내역(거래 드릴다운) — 거래 1건의 균등 배분 결과.
