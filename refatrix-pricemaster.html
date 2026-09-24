@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-0924b</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-0924tpl</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -131,10 +131,13 @@
         </div>
         <div class="row" style="margin-top:10px">
           <button class="btn ghost sm" id="btnTExport">엑셀 내보내기</button>
+          <button class="btn ghost sm" id="dlTplPrice">📄 FOB·List 업로드 양식 받기</button>
           <button class="btn ghost sm" id="btnTImport">FOB·List 엑셀 올리기</button>
           <input type="file" id="fImport" accept=".xlsx,.xls,.csv" class="hidden">
-          <span class="mut" style="font-size:12px">올리기 열: <b>Clave CTR</b> · <b>FOB</b>(USD) · <b>List Price</b>(MXN) — 둘 중 하나만 있어도 됩니다. 바뀐 값만 반영합니다.</span>
+          <span class="mut" style="font-size:12px">올리기 열: <b>Clave CTR</b> · <b>FOB USD</b> · <b>List Price MXN</b> — 둘 중 하나만 있어도 됩니다. 바뀐 값만 반영합니다.
+            <b>새로 채울 때는 양식</b>, <b>지금 값을 고칠 때는 「엑셀 내보내기」 파일</b>을 고쳐 그대로 올리면 됩니다.</span>
         </div>
+        <div class="msg" id="tplPriceMsg"></div>
         <div class="kpis" id="tkpis"></div>
         <div class="tblWrap" style="margin-top:10px"><table><thead><tr><th>코드</th><th>품목</th><th>원산지</th><th class="n">FOB (USD)</th><th class="n">List (MXN)</th><th class="n">배수</th><th class="n">SYD List</th><th class="n">CTR ÷ SYD</th><th>최근 변경</th></tr></thead><tbody id="ttb"></tbody></table></div>
         <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnTMore">더 보기</button> <span class="mut" id="tcnt"></span></div>
@@ -233,6 +236,8 @@
           <div class="f" style="max-width:170px"><label for="sydDate">리스트 기준일</label><input type="date" id="sydDate"></div>
           <div style="flex:0 0 auto"><button class="btn" id="btnSydUp" disabled>올리고 비교</button></div>
         </div>
+        <div class="row" style="margin-top:8px"><button class="btn ghost sm" id="dlTplSyd">📄 SYD 업로드 양식 받기</button>
+          <span class="mut" style="font-size:12px">SYD 원본 파일을 그대로 올려도 됩니다(ARTÍCULO · PRECIO LISTA 열을 알아봅니다). 열 이름이 다르면 양식에 옮겨 붙여 올리세요.</span></div>
         <div class="msg" id="sydMsg"></div>
         <div class="tw" style="margin-top:8px"><table><thead><tr><th>기준일</th><th>파일</th><th class="n">코드</th><th class="n">인상</th><th class="n">인하</th><th class="n">같음</th><th class="n">신규</th><th class="n">사라짐</th><th>비교 대상</th><th>올린 사람</th><th></th></tr></thead><tbody id="sb"></tbody></table></div>
       </div>
@@ -264,7 +269,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='pm-0924b';
+  const BUILD='pm-0924tpl';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -314,6 +319,66 @@
     let X; try{ X=await xlsx(); }catch(e){ toast('엑셀 도구를 불러오지 못했습니다',true); return; }
     const ws=X.utils.aoa_to_sheet(aoa); if(cols) ws['!cols']=cols.map(w=>({wch:w}));
     const wb=X.utils.book_new(); X.utils.book_append_sheet(wb,ws,sheet); X.writeFile(wb,name);
+  }
+  // ─── 업로드 양식(.xlsx) ───
+  //   첫 시트 = 헤더 한 줄만 있는 빈 서식(올리기 파서는 첫 시트만 읽는다 → 안내 시트의 예시는 올라갈 수 없다)
+  //   둘째 시트 = 작성방법 · 열 설명 · 현재 등록된 실제 값 예시(서버가 안 되면 예시 없이 양식만)
+  const TPL={
+    price:{file:'Refatrix_Precios_Plantilla.xlsx', sheet:'Plantilla Precios', head:['Clave CTR','FOB USD','List Price MXN'], widths:[16,12,16],
+      cols:[['Clave CTR','필수','제품 마스터에 있는 CTR 코드. 없는 코드는 등록되지 않고 「모르는 코드」로 알려 줍니다.','CQ0728R'],
+            ['FOB USD','선택','공장 구매가(USD). 소수 3자리까지. 비우면 그 제품의 FOB 는 그대로.','17.28'],
+            ['List Price MXN','선택','판매 정가(MXN, IVA 제외). 소수 2자리까지. 비우면 그 제품의 List 는 그대로.','1083.00']],
+      rules:['첫 시트(Plantilla Precios)만 읽습니다. 이 안내 시트는 올라가지 않습니다.',
+             '첫 줄은 헤더 그대로 두고, 둘째 줄부터 제품 한 줄씩 적습니다.',
+             'FOB 와 List 중 하나만 적어도 됩니다. 빈 칸은 「바꾸지 않음」입니다(값을 지우지 않습니다).',
+             '금액은 숫자만(콤마·$ 기호는 괜찮습니다). 0 이하는 오류로 빠집니다.',
+             '같은 코드가 두 번 나오면 두 번째 줄은 오류로 빠집니다.',
+             '올리면 먼저 미리보기(변경 수 · 모르는 코드 · 오류)가 나오고, 적용일 · 사유 · PIN 을 넣어야 반영됩니다.',
+             '적용일이 오늘 이후면 예약 — 그날 멕시코 00:00 이후 적용됩니다.',
+             'FOB 와 List 는 각각 변경 묶음 1개로 남습니다 — ③ 변경 이력에서 되돌릴 수 있습니다.',
+             '지금 값을 고칠 때는 ① 「엑셀 내보내기」 파일을 고쳐서 그대로 올려도 됩니다(같은 열 이름).']},
+    syd:{file:'Refatrix_SYD_Plantilla.xlsx', sheet:'Lista SYD', head:['Clave SyD','Precio Lista','Familia'], widths:[20,14,22],
+      cols:[['Clave SyD','필수','SYD 가격 리스트의 코드(ARTÍCULO). 대문자·하이픈·공백은 무시하고 대응품번과 맞춥니다.','54500-8H310'],
+            ['Precio Lista','필수','SYD 정가(MXN). 0 이하·숫자 아님은 오류로 빠집니다.','1140.00'],
+            ['Familia','선택','품목 이름(리포트의 품목별 분포에 씀).','HORQUILLA']],
+      rules:['첫 시트(Lista SYD)만 읽습니다. 이 안내 시트는 올라가지 않습니다.',
+             '리스트 하나를 통째로 올립니다 — 이번 리스트에 없는 코드는 「사라짐」으로 집계됩니다.',
+             '같은 코드가 두 번 나오면 첫 줄 값을 쓰고 나머지는 건너뜁니다.',
+             '올릴 때 「리스트 기준일」(SYD 가 발표한 날짜)을 꼭 맞추세요 — 비교는 기준일 순서로 합니다.',
+             '옛 리스트부터 먼저, 최신 리스트를 나중에 올리면 첫 비교 리포트가 바로 나옵니다.',
+             '가장 최신 기준일 리스트일 때만 제품 마스터의 SYD List 칸을 갱신합니다(CTR 하나에 SYD 가 여럿이면 가장 높은 값).',
+             'SYD 원본 파일(ARTÍCULO · PRECIO LISTA · FAMILIA 열)은 이 양식에 옮기지 않고 그대로 올려도 됩니다.']}
+  };
+  function styleHead(X, ws, n){
+    for(let c=0;c<n;c++){ const ref=X.utils.encode_cell({r:0,c}); if(ws[ref]) ws[ref].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{patternType:'solid',fgColor:{rgb:'143D34'}},alignment:{horizontal:'center'}}; }
+  }
+  async function tplExamples(kind){
+    try{
+      if(kind==='price'){
+        const d=await api('/api/price-master/table?limit=400'); if(!d.ok) return null;
+        return d.rows.filter(r=>r.fob_usd!=null&&r.list_price!=null).slice(0,3).map(r=>[r.code,r.fob_usd,r.list_price]);
+      }
+      const L=await api('/api/price-master/syd/lists'); if(!L.ok||!L.items.length) return null;
+      const d=await api('/api/price-master/syd/lists/'+L.items[0].id+'/report?view=all'); if(!d.ok) return null;
+      return d.rows.filter(r=>r.syd_codes).slice(0,3).map(r=>[String(r.syd_codes).split(', ')[0],r.syd_new,r.familia||'']);
+    }catch(e){ return null; }
+  }
+  async function downloadTemplate(kind){
+    const T=TPL[kind]; const msg=$(kind==='price'?'tplPriceMsg':'sydMsg');
+    let X; try{ X=await xlsx(); }catch(e){ toast('엑셀 도구를 불러오지 못했습니다',true); return; }
+    const ex=await tplExamples(kind);
+    const ws1=X.utils.aoa_to_sheet([T.head]); ws1['!cols']=T.widths.map(w=>({wch:w})); styleHead(X,ws1,T.head.length);
+    const g=[[kind==='price'?'Refatrix · 가격 마스터 FOB·List 업로드 양식 — 작성방법':'Refatrix · 경쟁사 SYD 가격 리스트 업로드 양식 — 작성방법'],[],['작성 규칙']]
+      .concat(T.rules.map((r,i)=>[(i+1)+'. '+r])).concat([[],['열','필수','설명','예']]).concat(T.cols)
+      .concat([[],[ex&&ex.length?'현재 등록된 값 예시 (표기 참고용 — 이 시트는 올라가지 않습니다)':'(예시 없음 — 서버에서 현재 값을 가져오지 못했거나 아직 등록된 값이 없습니다)']]);
+    if(ex&&ex.length){ g.push(T.head); ex.forEach(r=>g.push(r)); }
+    const ws2=X.utils.aoa_to_sheet(g); ws2['!cols']=[{wch:18},{wch:8},{wch:80},{wch:16}];
+    const b=(ref)=>{ if(ws2[ref]) ws2[ref].s={font:{bold:true,color:{rgb:'143D34'}}}; };
+    b('A1'); b('A3');
+    const colHdrRow=3+T.rules.length+1; ['A','B','C','D'].forEach(c=>b(c+(colHdrRow+1)));
+    const wb=X.utils.book_new(); X.utils.book_append_sheet(wb,ws1,T.sheet); X.utils.book_append_sheet(wb,ws2,'작성방법');
+    X.writeFile(wb,T.file);
+    msg.className='msg ok'; msg.textContent='양식을 내려받았습니다 — '+T.file+(ex&&ex.length?' (작성방법 시트에 현재 값 예시 '+ex.length+'건)':' (예시 없이 양식만)');
   }
   async function readSheet(file){
     const X=await xlsx(); const wb=X.read(await file.arrayBuffer(),{type:'array'});
@@ -474,6 +539,8 @@
   }
   // FOB·List 엑셀
   $('btnTImport').addEventListener('click',()=>$('fImport').click());
+  $('dlTplPrice').addEventListener('click',()=>downloadTemplate('price'));
+  $('dlTplSyd').addEventListener('click',()=>downloadTemplate('syd'));
   $('fImport').addEventListener('change',async()=>{
     const file=$('fImport').files[0]; $('fImport').value=''; if(!file) return;
     let mat; try{ mat=await readSheet(file); }catch(e){ toast('파일을 읽을 수 없습니다',true); return; }
