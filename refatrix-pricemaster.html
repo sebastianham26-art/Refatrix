@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 가격 마스터 · build pm-0924b</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--soft:#FAF8F3;
+    --brand:#143D34;--gold:#B8893B;--up:#8A3B32;--up-bg:#F6E7E4;--down:#1E6B4E;--down-bg:#E4F0EB;--blue:#2458a6;--blue-bg:#e8f0fb;
+    --warn-bg:#FFF4D6;--warn-ink:#8A6100;--radius:12px}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;font-size:13px}
+  .wrap{max-width:1320px;margin:0 auto}
+  .hidden{display:none!important}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius);margin-bottom:12px;flex-wrap:wrap}
+  .topbar h1{font-size:18px;margin:0}.topbar .sub{font-size:12px;opacity:.75}
+  .portalBtn{margin-left:auto;color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:6px 10px;font-size:12px}
+  .who{font-size:12px;text-align:right}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px}
+  .ttl{font-weight:800;color:var(--brand);font-size:14px;margin:0 0 4px}
+  .sub2{color:var(--muted);font-size:12px;margin:0 0 12px;line-height:1.55}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.danger{background:#fff;color:var(--up);border:1px solid #e3b7b0}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  label{font-size:12px;color:var(--muted);font-weight:700;display:block;margin-bottom:4px}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;width:100%;background:#fff;color:var(--ink)}
+  textarea{resize:vertical}
+  input[type=checkbox]{width:auto;margin:0;vertical-align:middle}
+  .msg{font-size:12px;margin-top:8px;min-height:14px}.msg.ok{color:var(--down)}.msg.err{color:var(--up)}
+  .api{margin-top:14px;font-size:11px;color:var(--muted)}.api input{margin-top:4px;font-size:12px}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 13px;cursor:pointer;font-weight:700;color:var(--ink);font-family:inherit;font-size:13px}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+  @media (max-width:1000px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:640px){.grid{grid-template-columns:minmax(0,1fr)} body{padding:12px}}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;max-height:170px;overflow:auto;padding:1px}
+  .chip{border:1px solid var(--line);border-radius:14px;padding:3px 10px;font-size:12px;cursor:pointer;background:var(--soft);user-select:none;font-family:inherit;color:var(--ink)}
+  .chip small{color:var(--muted);margin-left:3px}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}.chip.on small{color:#cfe0da}
+  .chip.more{background:#fff;border-style:dashed;color:var(--muted)}
+  .chipq{margin-bottom:6px;padding:5px 8px;font-size:12px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.row>.f{flex:1;min-width:130px}
+  .pair{display:flex;gap:6px}.pair input{min-width:0}
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{flex:1;text-align:center;padding:8px;cursor:pointer;font-weight:700;background:#fff;border:none;font-family:inherit;font-size:13px;color:var(--ink);white-space:nowrap}
+  .seg button.on{background:var(--brand);color:#fff}.seg button.on.up{background:var(--up)}.seg button.on.down{background:var(--down)}
+  .seg button:disabled{color:#bbb;cursor:not-allowed}
+  .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 0}
+  .kpi{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:110px}
+  .kpi span{font-size:11px;color:var(--muted);font-weight:700}
+  .kpi b{display:block;font-size:18px;color:var(--brand);font-variant-numeric:tabular-nums}
+  .note{border-left:3px solid var(--gold);background:#fffaf0;padding:8px 10px;font-size:12px;margin-top:10px;line-height:1.55}
+  .warn{border-left:3px solid var(--up);background:var(--up-bg);padding:8px 10px;font-size:12px;margin-top:10px;line-height:1.55}
+  .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:7px 8px;border-bottom:1px solid #eee;text-align:left;white-space:nowrap}
+  th{background:var(--soft);font-size:11.5px;color:var(--muted);position:sticky;top:0;z-index:1}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  td.app{max-width:240px;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+  .up{color:var(--up)}.down{color:var(--down)}.mut{color:var(--muted)}
+  tr.off td{opacity:.42}
+  tr.clk{cursor:pointer}tr.clk:hover td{background:#fbfaf6}
+  .codeLink{font-weight:700;color:var(--brand);cursor:pointer;text-decoration:underline dotted}
+  .edit{cursor:pointer;border-bottom:1px dashed var(--muted)}.edit:hover{color:var(--brand);border-bottom-color:var(--brand)}
+  .badge{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;white-space:nowrap}
+  .b-ap{background:var(--down-bg);color:var(--brand)}.b-sc{background:var(--warn-bg);color:var(--warn-ink)}
+  .b-rv{background:#eee;color:#555}.b-cx{background:#f1efe9;color:#8b857a;text-decoration:line-through}
+  .b-in{background:#f1efe9;color:#777}.b-sk{background:var(--up-bg);color:var(--up)}.b-dn{background:var(--blue-bg);color:var(--blue)}
+  .b-fob{background:#efe7f7;color:#5b3a86}.b-list{background:var(--down-bg);color:var(--brand)}
+  .tblWrap{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .overlay{position:fixed;inset:0;background:rgba(20,20,18,.45);display:flex;align-items:center;justify-content:center;z-index:10010;padding:16px}
+  .modal{background:#fff;border-radius:14px;max-width:560px;width:100%;padding:18px 20px;max-height:90vh;overflow:auto}
+  .modal.wide{max-width:1000px}
+  .modal h3{margin:0 0 10px;color:var(--brand);font-size:16px}
+  .modal dl{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;margin:0 0 12px;font-size:13px}
+  .modal dt{color:var(--muted);font-weight:700}.modal dd{margin:0}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--brand);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;z-index:10020;display:none;max-width:calc(100% - 32px);box-shadow:0 6px 20px rgba(0,0,0,.2)}
+  .toast.err{background:var(--up)}
+  .phead{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;margin:12px 0 6px}
+  .phead b{font-size:18px;color:var(--brand)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:820px){.split{grid-template-columns:minmax(0,1fr)}}
+  .bar{height:8px;border-radius:4px;background:#eee;overflow:hidden;display:flex;min-width:80px}.bar i{display:block;height:100%}
+  h4{margin:14px 0 6px;color:var(--brand);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">가격 마스터 · FOB 구매가 · List 정가 · 경쟁사 SYD · 구매가 검증</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="goLogin" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="apiInput" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card warn hidden" id="migWarn" style="margin:0 0 12px">서버 마이그레이션(0229) 후에 쓸 수 있습니다 — Railway 콘솔에서 <b>npm run migrate</b>.</div>
+    <div class="tabs" role="tablist">
+      <button class="tab on" data-t="table">① 가격표</button>
+      <button class="tab" data-t="change">② 일괄 변경</button>
+      <button class="tab" data-t="history">③ 변경 이력</button>
+      <button class="tab" data-t="product">④ 제품별 이력</button>
+      <button class="tab" data-t="syd">⑤ 경쟁사 SYD</button>
+      <button class="tab" data-t="purchase">⑥ 구매가 검증</button>
+    </div>
+
+    <!-- ① 가격표 -->
+    <section id="t-table">
+      <div class="card">
+        <p class="ttl">가격 테이블 — 제품마다 FOB 구매가(USD)와 List 정가(MXN)</p>
+        <p class="sub2">판매가 = List × (1 − 고객 할인율, 고객 마스터). 구매 기록은 FOB 로 검증합니다. <b>밑줄 친 값을 누르면 그 제품 하나만 바로 수정</b>합니다(적용일 · 사유 · PIN).
+          배수 = List ÷ (FOB × 환율). CTR÷SYD = 우리 List ÷ SYD List.</p>
+        <div class="row">
+          <div class="f" style="flex:2"><label for="tq">검색</label><input id="tq" placeholder="코드 · 품목 · 적용차종"></div>
+          <div class="f"><label for="torigin">원산지</label><select id="torigin"><option value="">전체</option></select></div>
+          <div class="f"><label for="tview">보기</label><select id="tview"><option value="">전체</option><option value="no_fob">FOB 없음</option><option value="no_list">List 없음</option><option value="mult_lt">배수 3.0 미만</option><option value="syd_over">SYD보다 비쌈</option></select></div>
+          <div class="f"><label for="tsort">정렬</label><select id="tsort"><option value="code">코드</option><option value="list">List 높은 순</option><option value="fob">FOB 높은 순</option><option value="mult">배수 낮은 순</option><option value="ratio">CTR÷SYD 낮은 순</option></select></div>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:500;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="tall"> 비활성 포함</label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn ghost sm" id="btnTExport">엑셀 내보내기</button>
+          <button class="btn ghost sm" id="btnTImport">FOB·List 엑셀 올리기</button>
+          <input type="file" id="fImport" accept=".xlsx,.xls,.csv" class="hidden">
+          <span class="mut" style="font-size:12px">올리기 열: <b>Clave CTR</b> · <b>FOB</b>(USD) · <b>List Price</b>(MXN) — 둘 중 하나만 있어도 됩니다. 바뀐 값만 반영합니다.</span>
+        </div>
+        <div class="kpis" id="tkpis"></div>
+        <div class="tblWrap" style="margin-top:10px"><table><thead><tr><th>코드</th><th>품목</th><th>원산지</th><th class="n">FOB (USD)</th><th class="n">List (MXN)</th><th class="n">배수</th><th class="n">SYD List</th><th class="n">CTR ÷ SYD</th><th>최근 변경</th></tr></thead><tbody id="ttb"></tbody></table></div>
+        <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnTMore">더 보기</button> <span class="mut" id="tcnt"></span></div>
+      </div>
+    </section>
+
+    <!-- ② 일괄 변경 -->
+    <section id="t-change" class="hidden">
+      <div class="card">
+        <p class="ttl">1. 무엇을 바꾸나</p>
+        <div class="row">
+          <div class="f" style="max-width:380px"><label>대상 가격</label><div class="seg" id="ptype"><button class="on" data-v="list">List 정가 (MXN)</button><button data-v="fob">FOB 구매가 (USD)</button></div></div>
+          <div class="f" style="max-width:380px"><label>방식</label><div class="seg" id="cmode"><button class="on" data-v="pct">% 인상/인하</button><button data-v="ratio">SYD 비율 맞추기</button></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <p class="ttl">2. 대상 고르기</p>
+        <p class="sub2">조건끼리는 <b>모두 만족(AND)</b>, 한 조건 안에서 여러 개를 고르면 <b>그중 하나(OR)</b>. 아무것도 고르지 않으면 전체입니다.</p>
+        <div class="grid">
+          <div><label>원산지</label><div class="chips" data-f="origin"></div></div>
+          <div><label>품목(카테고리)</label><input class="chipq" data-q="cat" placeholder="품목 찾기 (예: HORQ)"><div class="chips" data-f="cat"></div></div>
+          <div><label>적용차종 — 메이커</label><input class="chipq" data-q="maker" placeholder="메이커 찾기"><div class="chips" data-f="maker"></div></div>
+          <div><label>소재</label><div class="chips" data-f="material"></div></div>
+        </div>
+        <div class="grid" style="margin-top:12px">
+          <div><label>현재 List 범위 (MXN)</label><div class="pair"><input id="fListMin" inputmode="decimal" placeholder="최소"><input id="fListMax" inputmode="decimal" placeholder="최대"></div></div>
+          <div><label>CTR ÷ SYD 범위</label><div class="pair"><input id="fRatioMin" inputmode="decimal" placeholder="예: 0.80"><input id="fRatioMax" inputmode="decimal" placeholder="예: 0.90"></div></div>
+          <div><label>배수 범위 (List ÷ FOB·환율)</label><div class="pair"><input id="fMultMin" inputmode="decimal" placeholder="최소"><input id="fMultMax" inputmode="decimal" placeholder="예: 3.0"></div></div>
+          <div><label for="fCodes">코드 목록 붙여넣기</label><textarea id="fCodes" rows="2" placeholder="CQ0728R&#10;CB0011 …"></textarea></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="f" style="flex:2"><label for="q">코드 · 이름 · 적용차종 모델 검색</label><input id="q" placeholder="예: CQ07 · X-Trail · Versa"></div>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:500;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="act" checked> 활성 제품만</label>
+          <button class="btn ghost sm" id="btnClearF" style="margin-bottom:6px">조건 모두 지우기</button>
+        </div>
+      </div>
+      <div class="card">
+        <p class="ttl">3. 변경 내용</p>
+        <div class="row">
+          <div class="f pctOnly"><label>방향</label><div class="seg" id="dir"><button class="on up" data-v="1">▲ 인상</button><button data-v="-1">▼ 인하</button></div></div>
+          <div class="f pctOnly" style="max-width:120px"><label for="pct">비율 (%)</label><input id="pct" type="number" step="0.1" min="0" max="100" placeholder="예: 5"></div>
+          <div class="f ratioOnly hidden" style="max-width:220px"><label for="ratio">목표 CTR ÷ SYD <span class="mut" id="ratioHint"></span></label><input id="ratio" type="number" step="0.01" min="0.1" max="3"></div>
+          <div class="f" style="max-width:170px"><label for="eff">적용일 (오늘 이후면 예약)</label><input id="eff" type="date"></div>
+          <div class="f" style="max-width:170px"><label for="rnd">반올림</label><select id="rnd"></select></div>
+          <div class="f"><label>적용 대상</label><div class="seg" id="scope"><button class="on" data-v="filter">조건 결과 전체</button><button data-v="selected">체크한 것만</button></div></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="f" style="flex:3"><label for="memo">사유 (이력에 남음 · 필수)</label><input id="memo" maxlength="300" placeholder="예: 2026 Q4 CTR 공장 인상 반영"></div>
+          <div style="flex:0 0 auto"><button class="btn gold" id="btnApply" disabled>적용</button></div>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div id="overlapBox"></div>
+        <div class="note" id="changeNote"></div>
+      </div>
+      <div class="card">
+        <div class="row" style="align-items:center;margin-bottom:8px">
+          <p class="ttl" style="margin:0">4. 미리보기</p><span class="mut" id="cnt"></span>
+          <span style="flex:1"></span><span id="pickInfo" class="mut"></span>
+        </div>
+        <div class="tblWrap"><table><thead><tr id="prevHead"></tr></thead><tbody id="tb"></tbody></table></div>
+        <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnMore">더 보기</button></div>
+      </div>
+    </section>
+
+    <!-- ③ 변경 이력 -->
+    <section id="t-history" class="hidden">
+      <div class="card">
+        <div class="row" style="align-items:center;margin-bottom:10px">
+          <p class="ttl" style="margin:0">변경 이력 — 적용일 최신순</p><span style="flex:1"></span>
+          <select id="hType" style="width:auto"><option value="">List · FOB</option><option value="list">List 만</option><option value="fob">FOB 만</option></select>
+          <select id="hStatus" style="width:auto"><option value="">전체 상태</option><option value="scheduled">예약</option><option value="applied">적용</option><option value="reverted">되돌림</option><option value="cancelled">취소</option></select>
+          <button class="btn ghost sm" id="btnHReload">새로고침</button>
+        </div>
+        <div class="tw"><table><thead><tr><th>적용일</th><th>가격</th><th>상태</th><th>방식 · 조건</th><th class="n">변경</th><th class="n">제품 수</th><th>사유</th><th>작성</th><th></th></tr></thead><tbody id="hb"></tbody></table></div>
+        <div class="note">되돌리기는 <b>그 뒤에 같은 가격(List 또는 FOB)의 다른 변경이 없는 제품만</b> 원래 값으로 돌립니다. 뒤에 바뀐 제품은 건너뛰고 목록으로 알려 줍니다.</div>
+      </div>
+    </section>
+
+    <!-- ④ 제품별 이력 -->
+    <section id="t-product" class="hidden">
+      <div class="card">
+        <p class="ttl">제품별 가격 이력</p>
+        <div class="row"><div class="f" style="max-width:260px"><label for="pcode">코드 (Clave CTR)</label><input id="pcode" placeholder="예: CQ0728R"></div><div><button class="btn" id="btnPLookup">조회</button></div></div>
+        <div id="pOut"></div>
+      </div>
+    </section>
+
+    <!-- ⑤ 경쟁사 SYD -->
+    <section id="t-syd" class="hidden">
+      <div class="card">
+        <p class="ttl">SYD 가격 리스트 올리기</p>
+        <p class="sub2">파일 열: <b>Clave SyD</b>(또는 ARTÍCULO) · <b>Precio Lista</b> · [Familia]. 올릴 때마다 날짜별로 통째로 보관하고, <b>바로 앞 리스트와 코드별로 비교</b>합니다.
+          대응품번(제품 마스터 Clave SyD)으로 우리 CTR 에 연결하고, 가장 최신 리스트면 제품 마스터의 SYD List 칸도 갱신합니다(한 CTR 에 SYD 가 여럿이면 <b>가장 높은 값</b>).</p>
+        <div class="row">
+          <div class="f" style="flex:2"><label for="fSyd">파일</label><input type="file" id="fSyd" accept=".xlsx,.xls,.csv"></div>
+          <div class="f" style="max-width:170px"><label for="sydDate">리스트 기준일</label><input type="date" id="sydDate"></div>
+          <div style="flex:0 0 auto"><button class="btn" id="btnSydUp" disabled>올리고 비교</button></div>
+        </div>
+        <div class="msg" id="sydMsg"></div>
+        <div class="tw" style="margin-top:8px"><table><thead><tr><th>기준일</th><th>파일</th><th class="n">코드</th><th class="n">인상</th><th class="n">인하</th><th class="n">같음</th><th class="n">신규</th><th class="n">사라짐</th><th>비교 대상</th><th>올린 사람</th><th></th></tr></thead><tbody id="sb"></tbody></table></div>
+      </div>
+      <div class="card hidden" id="sydRep"></div>
+    </section>
+
+    <!-- ⑥ 구매가 검증 -->
+    <section id="t-purchase" class="hidden">
+      <div class="card">
+        <p class="ttl">구매가 검증 — 구매 기록 단가 vs 주문일 당시 FOB</p>
+        <p class="sub2">구매 › 구매내역에 올린 줄마다 <b>주문일 당시 가격표의 FOB</b>와 비교합니다. 허용 오차 0 — <b>1센트라도 다르면 표시</b>합니다.
+          가격 마스터를 켜기 전 주문은 가장 처음 등록된 FOB 로 비교합니다(「최초 FOB」). 같은 표시가 구매 화면(업로드 미리보기 · 목록 · 상세)에도 나옵니다.</p>
+        <div class="row">
+          <div class="f" style="max-width:170px"><label for="pcFrom">주문일 부터</label><input type="date" id="pcFrom"></div>
+          <div class="f" style="max-width:170px"><label for="pcTo">까지</label><input type="date" id="pcTo"></div>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:500;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="pcBad" checked> 문제 있는 구매만</label>
+          <button class="btn" id="btnPc" style="margin-bottom:4px">조회</button>
+        </div>
+        <div class="kpis" id="pckpis"></div>
+        <div class="tw" style="margin-top:10px"><table><thead><tr><th>참조번호</th><th>주문일</th><th class="n">줄</th><th class="n">일치</th><th class="n">비쌈</th><th class="n">쌈</th><th class="n">FOB 없음</th><th class="n">미등록</th><th class="n">차액 (USD)</th></tr></thead><tbody id="pcb"></tbody></table></div>
+        <div id="pcLines"></div>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+  'use strict';
+  const BUILD='pm-0924b';
+  try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const fmt=(n,d)=>n==null||n===''?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:d==null?2:d,maximumFractionDigits:d==null?2:Math.max(d,2)});
+  const fmtU=(n)=>n==null||n===''?'—':'$ '+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:3});
+  const fmtP=(t,n)=>t==='fob'?fmtU(n):fmt(n);
+  const pctTxt=(a,b)=>{ if(a==null||b==null||!Number(a)) return ''; const p=(b-a)/a*100; return (p>0?'▲ ':p<0?'▼ ':'')+Math.abs(p).toFixed(1)+'%'; };
+  const cls=(a,b)=>(b||0)>(a||0)?'up':(b||0)<(a||0)?'down':'';
+  const XLSX_URL='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+  const ERR_KO={bad_pin:'PIN 이 맞지 않습니다',note_required:'사유를 2자 이상 입력하세요',past_date:'지난 날짜에는 적용할 수 없습니다',future_date:'미래 날짜 리스트는 올릴 수 없습니다',bad_date:'날짜 형식이 올바르지 않습니다',
+    bad_pct:'비율을 확인하세요 (0 초과 100 이하 · 인하는 100 미만)',bad_direction:'방향을 고르세요',bad_rounding:'반올림 단위를 확인하세요',bad_ratio:'목표 비율을 확인하세요',ratio_list_only:'SYD 비율은 List 에만 씁니다',
+    no_targets:'대상 제품이 없습니다',too_many:'제품이 너무 많습니다',migration_required:'서버 마이그레이션(0229) 후에 쓸 수 있습니다',not_scheduled:'예약 상태가 아닙니다',not_applied:'적용된 묶음만 되돌릴 수 있습니다',
+    nothing_to_revert:'되돌릴 제품이 없습니다 — 모두 뒤에 다른 변경이 있습니다',not_found:'찾을 수 없습니다',director_only:'디렉터만 쓸 수 있는 화면입니다',forbidden:'권한이 없습니다',network:'서버에 연결할 수 없습니다',
+    code_required:'코드를 입력하세요',bad_price:'가격을 확인하세요',same_price:'지금 값과 같습니다',no_rows:'읽을 수 있는 줄이 없습니다'};
+  const errKo=(e)=>ERR_KO[e]||e||'오류';
+  const STATUS={scheduled:['예약','b-sc'],applied:['적용','b-ap'],reverted:['되돌림','b-rv'],cancelled:['취소','b-cx']};
+  const RESULT={applied:['적용','b-ap'],pending:['예약','b-sc'],no_price:['가격 없음','b-sk'],no_syd:['SYD 없음','b-sk'],deleted:['삭제됨','b-sk'],no_change:['변화 없음','b-in'],to_zero:['0 이하 → 제외','b-sk'],reverted:['되돌림','b-rv'],revert_skipped:['되돌리기 제외','b-sk']};
+  const SOURCE={batch:'변경 묶음',manual:'제품 화면 ✎ 수정',import:'제품 엑셀 업로드',revert:'되돌림',initial:'최초 기록'};
+  const ORIGIN={bulk:'일괄',single:'단일 수정',import:'엑셀',syd:'SYD 제안'};
+  const SKIP_KO={later_change:'뒤에 다른 변경이 있음',price_differs:'현재 값이 다름',deleted:'삭제된 제품'};
+  const FOBST={ok:['일치','b-ap'],over:['FOB보다 비쌈','b-sk'],under:['FOB보다 쌈','b-dn'],no_fob:['FOB 없음','b-in'],unmatched:['미등록 코드','b-in']};
+  const badge=(map,k)=>{ const m=map[k]||[k||'—','b-in']; return '<span class="badge '+m[1]+'">'+esc(m[0])+'</span>'; };
+  const typeBadge=(t)=>t==='fob'?'<span class="badge b-fob">FOB</span>':'<span class="badge b-list">List</span>';
+
+  let session={token:null,user:null,api:''};
+  let facets={origin:[],cat:[],maker:[],material:[]}, today='', ready=false, fx=null, ratioAvg=null;
+  const sel={origin:new Set(),cat:new Set(),maker:new Set(),material:new Set()};
+  const chipShow={cat:36,maker:36};
+  const picked=new Set();
+  let ptype='list', cmode='pct', dir=1, scope='filter';
+  let rows=[], matched=0, lastSummary=null, prevT=null, prevSeq=0, busy=false;
+
+  // ─── 공통 ───
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  async function api(path,opt){
+    opt=opt||{}; opt.headers=Object.assign({'Content-Type':'application/json'},auth(),opt.headers||{});
+    let res; try{ res=await fetch(session.api+path,opt); }catch(e){ return {ok:false,http:0,error:'network'}; }
+    if(res.status===401) toast('세션이 만료됐습니다. 다시 로그인하세요.',true);
+    let body={}; try{ body=await res.json(); }catch(e){}
+    return Object.assign({ok:res.ok,http:res.status},body);
+  }
+  function toast(m,err){ const t=$('toast'); t.textContent=m; t.className='toast'+(err?' err':''); t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>{t.style.display='none';},err?4500:2800); }
+  const scripts={};
+  function loadScript(url){ if(scripts[url]) return scripts[url]; scripts[url]=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=url; s.onload=()=>res(); s.onerror=()=>{ delete scripts[url]; rej(new Error('load_fail')); }; document.head.appendChild(s); }); return scripts[url]; }
+  async function xlsx(){ await loadScript(XLSX_URL); return window.XLSX; }
+  async function saveXlsx(name, sheet, aoa, cols){
+    let X; try{ X=await xlsx(); }catch(e){ toast('엑셀 도구를 불러오지 못했습니다',true); return; }
+    const ws=X.utils.aoa_to_sheet(aoa); if(cols) ws['!cols']=cols.map(w=>({wch:w}));
+    const wb=X.utils.book_new(); X.utils.book_append_sheet(wb,ws,sheet); X.writeFile(wb,name);
+  }
+  async function readSheet(file){
+    const X=await xlsx(); const wb=X.read(await file.arrayBuffer(),{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]]; return X.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+  }
+  /** 헤더 행 찾기: 처음 15줄 중 기준 열이 가장 많이 잡히는 줄 */
+  function findHeader(mat, tests){
+    let best=null;
+    for(let r=0;r<Math.min(15,mat.length);r++){
+      const cells=(mat[r]||[]).map(v=>String(v==null?'':v).replace(/\s+/g,' ').trim());
+      const idx={}; let hit=0;
+      for(const k in tests){ const i=cells.findIndex(c=>tests[k](c)); idx[k]=i; if(i>=0) hit++; }
+      if(!best||hit>best.hit) best={row:r,idx,hit};
+    }
+    return best;
+  }
+  function openModal(html,wide){
+    const root=$('modalRoot'); root.innerHTML='<div class="overlay"><div class="modal'+(wide?' wide':'')+'">'+html+'</div></div>';
+    const ov=root.firstChild; ov.addEventListener('click',(e)=>{ if(e.target===ov) closeModal(); });
+    root.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closeModal));
+    return ov;
+  }
+  function closeModal(){ $('modalRoot').innerHTML=''; }
+  document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeModal(); });
+  const pinBlock='<label for="mPin">디렉터 PIN</label><input id="mPin" type="password" inputmode="numeric" autocomplete="off" style="max-width:180px"><div class="msg err" id="mMsg"></div>';
+  /** 날짜·사유·PIN 모달 공통 — onGo({eff,note,pin}) 가 {ok,...} 를 돌려준다 */
+  function confirmModal({title, body, defNote, okText, wide, noDate}, onGo){
+    const ov=openModal('<h3>'+title+'</h3>'+body
+      +(noDate?'':'<div class="row" style="margin-bottom:10px"><div class="f" style="max-width:170px"><label for="mEff">적용일</label><input id="mEff" type="date" value="'+today+'" min="'+today+'"></div>'
+      +'<div class="f"><label for="mNote">사유 (필수)</label><input id="mNote" maxlength="300" value="'+esc(defNote||'')+'"></div></div>')
+      +pinBlock+'<div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-close>취소</button><button class="btn gold" id="mOk">'+(okText||'저장')+'</button></div>',wide);
+    const pinEl=ov.querySelector('#mPin'); (ov.querySelector('#mNote')&&!defNote?ov.querySelector('#mNote'):pinEl).focus();
+    const go=async()=>{
+      if(busy) return; const pin=pinEl.value.trim(); const msg=ov.querySelector('#mMsg');
+      const eff=noDate?null:ov.querySelector('#mEff').value; const note=noDate?null:ov.querySelector('#mNote').value.trim();
+      if(!noDate&&note.length<2){ msg.textContent='사유를 2자 이상 입력하세요'; return; }
+      if(!pin){ msg.textContent='PIN 을 입력하세요'; return; }
+      busy=true; ov.querySelector('#mOk').disabled=true;
+      let d; try{ d=await onGo({eff,note,pin}); }finally{ busy=false; const b=ov.querySelector('#mOk'); if(b) b.disabled=false; }
+      if(d&&!d.ok){ msg.textContent=errKo(d.error)+(d.error==='past_date'&&d.today?' (오늘 '+d.today+')':''); }
+    };
+    ov.querySelector('#mOk').addEventListener('click',go);
+    pinEl.addEventListener('keydown',(e)=>{ if(e.key==='Enter') go(); });
+    return ov;
+  }
+
+  // ─── 로그인 ───
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token,api:o.api||'',user:o.user||{}}; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const apiBase=$('apiInput').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    if(!login_id||!pin){ $('loginMsg').className='msg err'; $('loginMsg').textContent='아이디와 PIN을 입력하세요.'; return; }
+    $('goLogin').disabled=true;
+    try{
+      const res=await fetch(apiBase+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('loginMsg').className='msg err'; $('loginMsg').textContent='로그인 실패: '+(d.error||res.status); return; }
+      session={token:d.token,user:d.user,api:apiBase};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      afterLogin();
+    }catch(e){ $('loginMsg').className='msg err'; $('loginMsg').textContent='서버에 연결할 수 없습니다.'; }
+    finally{ $('goLogin').disabled=false; }
+  }
+  async function afterLogin(){
+    $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>역할: '+esc(session.user&&session.user.role||'');
+    $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+    const f=await api('/api/price-master/facets');
+    if(!f.ok){ $('app').innerHTML='<div class="card"><p class="ttl">열 수 없습니다</p><p class="sub2">'+esc(errKo(f.error))+'</p></div>'; return; }
+    facets={origin:f.origin||[],cat:f.cat||[],maker:f.maker||[],material:f.material||[]}; today=f.today; ready=!!f.ready; fx=f.fx; ratioAvg=f.ratio_avg;
+    $('migWarn').classList.toggle('hidden',ready);
+    $('eff').value=today; $('eff').min=today; $('sydDate').value=today; $('sydDate').max=today;
+    $('torigin').innerHTML='<option value="">전체</option>'+facets.origin.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.v==='__none__'?'(없음)':o.v)+' ('+o.n+')</option>').join('');
+    if(ratioAvg){ $('ratio').value=ratioAvg.toFixed(2); $('ratioHint').textContent='(현재 평균 '+ratioAvg.toFixed(2)+')'; }
+    const d90=new Date(Date.parse(today+'T00:00:00Z')-90*86400000).toISOString().slice(0,10); $('pcFrom').value=d90; $('pcTo').value=today;
+    renderChips(); setRoundOpts(); updateModeUI();
+    let tab='table'; try{ const hp=new URLSearchParams(location.hash.slice(1)); tab=hp.get('tab')||'table'; const pc=hp.get('code'); if(pc){ $('pcode').value=pc; tab='product'; } }catch(e){}
+    showTab(TABS.includes(tab)?tab:'table');
+  }
+
+  // ─── 탭 ───
+  const TABS=['table','change','history','product','syd','purchase'];
+  const loaded={};
+  function showTab(k){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.t===k));
+    TABS.forEach(x=>$('t-'+x).classList.toggle('hidden',x!==k));
+    if(!ready&&k!=='change') return;
+    if(k==='table'&&!loaded.table){ loaded.table=1; loadTable(false); }
+    if(k==='change'&&!loaded.change){ loaded.change=1; schedulePreview(0); }
+    if(k==='history') loadHistory();
+    if(k==='product' && $('pcode').value.trim()) lookupProduct();
+    if(k==='syd') loadSydLists();
+    if(k==='purchase'&&!loaded.purchase){ loaded.purchase=1; loadPc(); }
+  }
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showTab(t.dataset.t)));
+  function gotoProduct(code){ closeModal(); $('pcode').value=code; showTab('product'); }
+  function bindCodeLinks(root){ root.querySelectorAll('.codeLink').forEach(a=>a.addEventListener('click',(e)=>{ e.stopPropagation(); gotoProduct(a.dataset.code); })); }
+
+  // ═══ ① 가격표 ═══
+  let tRows=[], tTimer=null;
+  function tQuery(offset,limit){
+    const p=new URLSearchParams(); const q=$('tq').value.trim(); if(q) p.set('q',q);
+    if($('torigin').value) p.set('origin',$('torigin').value); if($('tview').value) p.set('view',$('tview').value);
+    p.set('sort',$('tsort').value); if($('tall').checked) p.set('all','1'); p.set('offset',offset); p.set('limit',limit); return p.toString();
+  }
+  async function loadTable(append){
+    const d=await api('/api/price-master/table?'+tQuery(append?tRows.length:0,200));
+    if(!d.ok){ $('ttb').innerHTML='<tr><td colspan="9" class="mut" style="padding:14px">'+esc(errKo(d.error))+'</td></tr>'; return; }
+    tRows=append?tRows.concat(d.rows):d.rows; fx=d.fx||fx;
+    const k=d.kpi;
+    $('tkpis').innerHTML='<div class="kpi"><span>제품</span><b>'+k.total.toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>FOB 있음</span><b>'+k.fob.toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>List 있음</span><b>'+k.list.toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>평균 배수</span><b>'+(k.mult_avg==null?'—':k.mult_avg.toFixed(2))+'</b></div>'
+      +'<div class="kpi"><span>평균 CTR ÷ SYD</span><b>'+(k.ratio_avg==null?'—':k.ratio_avg.toFixed(2))+'</b></div>'
+      +'<div class="kpi"><span>환율 USD→MXN'+(fx?' ('+esc(fx.date)+')':'')+'</span><b>'+(fx?fx.rate.toFixed(2):'없음')+'</b></div>';
+    $('ttb').innerHTML=tRows.map(r=>'<tr class="'+(r.is_active?'':'off')+'"><td><span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span></td><td>'+esc(r.name||'')+'</td><td>'+esc(r.origin||'—')+'</td>'
+      +'<td class="n"><span class="edit" data-id="'+r.id+'" data-t="fob">'+(r.fob_usd==null?'<span class="badge b-sk">없음</span>':fmtU(r.fob_usd))+'</span></td>'
+      +'<td class="n"><span class="edit" data-id="'+r.id+'" data-t="list">'+(r.list_price==null?'<span class="badge b-sk">없음</span>':fmt(r.list_price))+'</span></td>'
+      +'<td class="n '+(r.mult!=null&&r.mult<3?'up':'')+'">'+(r.mult==null?'—':r.mult.toFixed(2))+'</td>'
+      +'<td class="n">'+fmt(r.list_price_syd)+'</td><td class="n '+(r.ratio>1?'up':'')+'">'+(r.ratio==null?'—':r.ratio.toFixed(2))+'</td>'
+      +'<td class="mut">'+esc(r.last_change||'')+'</td></tr>').join('')||'<tr><td colspan="9" class="mut" style="padding:14px">없음</td></tr>';
+    bindCodeLinks($('ttb'));
+    $('ttb').querySelectorAll('.edit').forEach(e=>e.addEventListener('click',()=>singleEdit(tRows.find(r=>r.id===Number(e.dataset.id)),e.dataset.t)));
+    $('tcnt').textContent=tRows.length.toLocaleString('es-MX')+' / '+k.total.toLocaleString('es-MX')+'개';
+    $('btnTMore').classList.toggle('hidden',tRows.length>=k.total);
+  }
+  ['tq'].forEach(id=>$(id).addEventListener('input',()=>{ clearTimeout(tTimer); tTimer=setTimeout(()=>loadTable(false),300); }));
+  ['torigin','tview','tsort','tall'].forEach(id=>$(id).addEventListener('change',()=>loadTable(false)));
+  $('btnTMore').addEventListener('click',()=>loadTable(true));
+  $('btnTExport').addEventListener('click',async()=>{
+    const d=await api('/api/price-master/table?'+tQuery(0,20000));
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    const aoa=[['Clave CTR','Producto','Origen','FOB USD','List Price MXN','Multiplo','SYD List','CTR/SYD','Ultimo cambio']]
+      .concat(d.rows.map(r=>[r.code,r.name||'',r.origin||'',r.fob_usd,r.list_price,r.mult,r.list_price_syd,r.ratio,r.last_change||'']));
+    saveXlsx('Refatrix_precios_'+today+'.xlsx','Precios',aoa,[14,26,8,10,12,9,11,9,12]);
+  });
+  function singleEdit(r,t){
+    if(!r) return; const cur=t==='fob'?r.fob_usd:r.list_price;
+    const ov=confirmModal({title:'단일 수정 — '+esc(r.code)+' '+typeBadge(t),
+      body:'<p class="sub2">'+esc(r.name||'')+' · 원산지 '+esc(r.origin||'—')+(t==='list'&&r.list_price_syd?' · SYD List '+fmt(r.list_price_syd):'')+(t==='list'&&r.fob_usd&&fx?' · FOB '+fmtU(r.fob_usd):'')+'</p>'
+        +'<div class="row" style="margin-bottom:10px"><div class="f"><label>현재</label><input value="'+(cur==null?'':cur)+'" disabled></div>'
+        +'<div class="f"><label for="mNew">새 값 ('+(t==='fob'?'USD':'MXN')+')</label><input id="mNew" inputmode="decimal"></div></div><div class="mut" id="mCalc" style="margin:-4px 0 10px"></div>',
+      okText:'저장'},async({eff,note,pin})=>{
+        const d=await api('/api/price-master/single',{method:'POST',body:JSON.stringify({product_id:r.id,price_type:t,price:ov.querySelector('#mNew').value,effective_date:eff,note,pin})});
+        if(d.ok){ closeModal(); toast(d.status==='applied'?'저장했습니다':'예약했습니다 — '+d.effective_date); loadTable(false); }
+        return d;
+      });
+    const nEl=ov.querySelector('#mNew'); nEl.focus();
+    nEl.addEventListener('input',()=>{ const v=Number(String(nEl.value).replace(/,/g,'')); let s='';
+      if(v>0&&cur) s+='변화 '+pctTxt(cur,v);
+      if(v>0&&t==='list'&&r.fob_usd&&fx) s+=' · 배수 '+(v/(r.fob_usd*fx.rate)).toFixed(2);
+      if(v>0&&t==='list'&&r.list_price_syd) s+=' · CTR÷SYD '+(v/r.list_price_syd).toFixed(2);
+      if(v>0&&t==='fob'&&r.list_price&&fx) s+=' · 배수 '+(r.list_price/(v*fx.rate)).toFixed(2);
+      ov.querySelector('#mCalc').textContent=s; });
+  }
+  // FOB·List 엑셀
+  $('btnTImport').addEventListener('click',()=>$('fImport').click());
+  $('fImport').addEventListener('change',async()=>{
+    const file=$('fImport').files[0]; $('fImport').value=''; if(!file) return;
+    let mat; try{ mat=await readSheet(file); }catch(e){ toast('파일을 읽을 수 없습니다',true); return; }
+    const h=findHeader(mat,{code:c=>/clave\s*ctr|^c[oó]digo|^code$|^ctr$|clave de ctr/i.test(c), fob:c=>/fob/i.test(c), list:c=>/list|lista/i.test(c)&&!/syd/i.test(c)});
+    if(!h||h.idx.code<0||(h.idx.fob<0&&h.idx.list<0)){ toast('열을 찾지 못했습니다 — Clave CTR · FOB · List Price',true); return; }
+    const data=[]; for(let r=h.row+1;r<mat.length;r++){ const m=mat[r]||[]; const code=String(m[h.idx.code]==null?'':m[h.idx.code]).trim(); if(!code) continue;
+      data.push({_row:r+1,code,fob:h.idx.fob>=0?m[h.idx.fob]:null,list:h.idx.list>=0?m[h.idx.list]:null}); }
+    const pv=await api('/api/price-master/import/preview',{method:'POST',body:JSON.stringify({rows:data})});
+    if(!pv.ok){ toast(errKo(pv.error),true); return; }
+    const body='<p class="sub2">'+esc(file.name)+' · 읽은 줄 '+pv.rows.toLocaleString('es-MX')+' · 열: '+(h.idx.fob>=0?'FOB ':'')+(h.idx.list>=0?'List':'')+'</p>'
+      +'<div class="kpis" style="margin:0 0 10px"><div class="kpi"><span>FOB 변경</span><b>'+pv.fob_changes+'</b></div><div class="kpi"><span>List 변경</span><b>'+pv.list_changes+'</b></div>'
+      +'<div class="kpi"><span>같음</span><b class="mut">'+pv.same+'</b></div><div class="kpi"><span>모르는 코드</span><b class="up">'+pv.unknown_count+'</b></div><div class="kpi"><span>오류</span><b class="up">'+pv.error_count+'</b></div></div>'
+      +(pv.unknown_count?'<div class="warn" style="margin:0 0 8px">모르는 코드(제품 마스터에 없음): '+pv.unknown.slice(0,30).map(esc).join(', ')+(pv.unknown_count>30?' …':'')+'</div>':'')
+      +(pv.error_count?'<div class="warn" style="margin:0 0 8px">오류: '+pv.errors.slice(0,20).map(e=>'#'+e.row+' '+esc(e.code)+' ('+(e.reason==='dup_code'?'코드 중복':'가격 오류')+')').join(', ')+'</div>':'')
+      +'<div class="tblWrap" style="max-height:260px;margin-bottom:10px"><table><thead><tr><th>코드</th><th>가격</th><th class="n">현재</th><th class="n">새 값</th><th class="n">변화</th></tr></thead><tbody>'
+      +pv.sample.map(x=>'<tr><td>'+esc(x.code)+'</td><td>'+typeBadge(x.type)+'</td><td class="n">'+fmtP(x.type,x.old)+'</td><td class="n"><b>'+fmtP(x.type,x.price)+'</b></td><td class="n '+cls(x.old,x.price)+'">'+pctTxt(x.old,x.price)+'</td></tr>').join('')
+      +'</tbody></table></div><p class="mut" style="font-size:12px">FOB 와 List 는 각각 변경 묶음 1개로 남습니다 — ③ 에서 되돌릴 수 있습니다.</p>';
+    if(!pv.fob_changes&&!pv.list_changes){ openModal('<h3>FOB·List 엑셀</h3>'+body+'<div class="row" style="justify-content:flex-end"><button class="btn" data-close>닫기</button></div>',true); return; }
+    confirmModal({title:'FOB·List 엑셀 반영',body,defNote:'',okText:'반영',wide:true},async({eff,note,pin})=>{
+      const d=await api('/api/price-master/import/commit',{method:'POST',body:JSON.stringify({rows:data,effective_date:eff,note,pin})});
+      if(d.ok){ closeModal(); toast('반영했습니다 — FOB '+(d.fob?d.fob.count:0)+' · List '+(d.list?d.list.count:0)+(eff>today?' (예약 '+eff+')':'')); loadTable(false); }
+      return d;
+    });
+  });
+
+  // ═══ ② 일괄 변경 ═══
+  function chipLabel(k,v){ return v==='__none__'?(k==='material'?'(미지정)':'(없음)'):v; }
+  function renderChips(){
+    document.querySelectorAll('.chips').forEach(box=>{
+      const k=box.dataset.f; const qEl=document.querySelector('[data-q="'+k+'"]'); const q=qEl?qEl.value.trim().toUpperCase():'';
+      let list=facets[k]||[];
+      if(q) list=list.filter(o=>String(o.v).toUpperCase().includes(q));
+      const selFirst=list.filter(o=>sel[k].has(o.v)).concat(list.filter(o=>!sel[k].has(o.v)));
+      const lim=chipShow[k]||999; const shown=q?selFirst:selFirst.slice(0,lim);
+      box.innerHTML=shown.map(o=>'<button type="button" class="chip'+(sel[k].has(o.v)?' on':'')+'" data-v="'+esc(o.v)+'">'+esc(chipLabel(k,o.v))+'<small>'+o.n.toLocaleString('es-MX')+'</small></button>').join('')
+        +(!q&&selFirst.length>lim?'<button type="button" class="chip more" data-more="1">＋ '+(selFirst.length-lim)+'개 더</button>':'')
+        +(!shown.length?'<span class="mut" style="font-size:12px">없음</span>':'');
+      box.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+        if(c.dataset.more){ chipShow[k]=9999; renderChips(); return; }
+        const v=c.dataset.v; sel[k].has(v)?sel[k].delete(v):sel[k].add(v); renderChips(); schedulePreview();
+      }));
+    });
+  }
+  document.querySelectorAll('.chipq').forEach(i=>i.addEventListener('input',renderChips));
+  $('btnClearF').addEventListener('click',()=>{ Object.values(sel).forEach(s=>s.clear()); ['q','fListMin','fListMax','fRatioMin','fRatioMax','fMultMin','fMultMax','fCodes'].forEach(id=>$(id).value=''); $('act').checked=true; document.querySelectorAll('.chipq').forEach(i=>i.value=''); renderChips(); schedulePreview(0); });
+  function seg(id,cb){ $(id).querySelectorAll('button').forEach(s=>s.addEventListener('click',()=>{
+    if(s.disabled) return;
+    $(id).querySelectorAll('button').forEach(x=>x.classList.remove('on','up','down')); s.classList.add('on');
+    if(id==='dir') s.classList.add(s.dataset.v==='1'?'up':'down'); cb(s.dataset.v); schedulePreview(); })); }
+  seg('dir',v=>{dir=Number(v);}); seg('scope',v=>{scope=v;});
+  seg('ptype',v=>{ ptype=v; if(v==='fob'&&cmode==='ratio'){ cmode='pct'; $('cmode').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v==='pct')); } setRoundOpts(); updateModeUI(); });
+  seg('cmode',v=>{ cmode=v; updateModeUI(); });
+  function setRoundOpts(){
+    $('rnd').innerHTML=ptype==='fob'?'<option value="0.01">센트 (0.01)</option><option value="0.001">0.001</option>'
+      :'<option value="0.01">센타보 (0.01)</option><option value="1">1 페소 단위</option><option value="10">10 페소 단위</option>';
+  }
+  function updateModeUI(){
+    $('cmode').querySelector('[data-v=ratio]').disabled=ptype==='fob';
+    document.querySelectorAll('.pctOnly').forEach(e=>e.classList.toggle('hidden',cmode!=='pct'));
+    document.querySelectorAll('.ratioOnly').forEach(e=>e.classList.toggle('hidden',cmode!=='ratio'));
+    $('changeNote').innerHTML=(cmode==='ratio'
+      ?'새 List = 반올림( <b>그 제품의 SYD List × 목표 비율</b> ). <b>SYD List 가 없는 제품은 제외</b>합니다. 목표 비율 기본값은 지금 가격표의 실제 평균 CTR÷SYD 입니다.'
+      :'새 '+(ptype==='fob'?'FOB':'List')+' = <b>적용하는 그 날의 현재 값</b> × (1 ± %) → 반올림. <b>값이 없는 제품은 제외</b>합니다.')
+      +(ptype==='fob'?' FOB 는 구매가 검증의 기준이 됩니다 — 판매가에는 영향이 없습니다.'
+        :' 이미 저장된 견적·인보이스는 바뀌지 않고, 새 견적과 CIOSA API 는 적용일부터 새 정가를 씁니다(판매가 = List × (1 − 고객 할인율)).')
+      +' 예약은 적용일 멕시코 00:00 이후 5분 안에 적용됩니다.';
+  }
+  ['q','fListMin','fListMax','fRatioMin','fRatioMax','fMultMin','fMultMax','fCodes','pct','ratio','rnd'].forEach(id=>$(id).addEventListener('input',()=>schedulePreview()));
+  $('act').addEventListener('change',()=>schedulePreview());
+  $('rnd').addEventListener('change',()=>schedulePreview());
+  $('eff').addEventListener('input',updateApplyBtn); $('memo').addEventListener('input',updateApplyBtn);
+  const nv=(id)=>{ const v=$(id).value.trim(); return v===''?null:v; };
+  function filterBody(){ return {origin:[...sel.origin],cat:[...sel.cat],maker:[...sel.maker],material:[...sel.material],q:$('q').value.trim(),active_only:$('act').checked,
+    list_min:nv('fListMin'),list_max:nv('fListMax'),ratio_min:nv('fRatioMin'),ratio_max:nv('fRatioMax'),mult_min:nv('fMultMin'),mult_max:nv('fMultMax'),codes:$('fCodes').value}; }
+  function changeBody(){ return {price_type:ptype,mode:cmode,direction:dir,pct:$('pct').value,ratio:$('ratio').value,rounding:Number($('rnd').value)}; }
+  function schedulePreview(ms){ clearTimeout(prevT); prevT=setTimeout(()=>preview(false), ms==null?280:ms); }
+  async function preview(append){
+    const seq=++prevSeq;
+    const body=Object.assign({filter:filterBody(),scope,product_ids:[...picked],offset:append?rows.length:0,limit:200},changeBody());
+    const d=await api('/api/price-master/preview',{method:'POST',body:JSON.stringify(body)});
+    if(seq!==prevSeq) return;
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    rows=append?rows.concat(d.rows):d.rows; matched=d.matched; lastSummary=d.summary; lastSummary.change_error=d.change_error;
+    renderRows(); renderSummary(d);
+  }
+  $('btnMore').addEventListener('click',()=>preview(true));
+  function renderRows(){
+    const t=ptype; const on=(r)=>scope==='filter'||picked.has(r.id);
+    const showSyd=t==='list';
+    $('prevHead').innerHTML='<th><input type="checkbox" id="chkAll" title="보이는 행 전부 체크"></th><th>코드</th><th>품목</th><th>적용차종</th><th>원산지</th>'
+      +'<th class="n">현재 '+(t==='fob'?'FOB':'List')+'</th><th class="n">변경 후</th><th class="n">차이</th>'+(showSyd?'<th class="n">SYD List</th><th class="n">CTR÷SYD (후)</th>':'<th class="n">List</th>')+'<th></th>';
+    $('tb').innerHTML=rows.map(r=>{
+      const inS=on(r)&&r.new_price!=null; const diff=r.new_price!=null&&r.cur!=null?r.new_price-r.cur:null;
+      return '<tr class="'+(inS?'':'off')+'"><td><input type="checkbox" data-id="'+r.id+'"'+(picked.has(r.id)?' checked':'')+'></td>'
+        +'<td><span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span>'+(r.is_active?'':' <span class="badge b-in">비활성</span>')+'</td>'
+        +'<td>'+esc(r.name||'')+'</td><td class="app" title="'+esc(r.app||'')+'">'+esc(r.app||'')+'</td><td>'+esc(r.origin||'—')+'</td>'
+        +'<td class="n">'+(r.cur!=null?fmtP(t,r.cur):'<span class="badge b-sk">없음</span>')+'</td>'
+        +'<td class="n"><b>'+(inS?fmtP(t,r.new_price):'—')+'</b></td>'
+        +'<td class="n '+(diff>0?'up':diff<0?'down':'')+'">'+(inS&&diff!=null?(diff>0?'+':'')+(t==='fob'?diff.toFixed(3):fmt(diff)):'')+'</td>'
+        +(showSyd?'<td class="n">'+fmt(r.list_price_syd)+'</td><td class="n '+(inS&&r.list_price_syd&&r.new_price>r.list_price_syd?'up':'')+'">'+(inS&&r.list_price_syd?(r.new_price/r.list_price_syd).toFixed(2):'')+'</td>':'<td class="n">'+fmt(r.list_price)+'</td>')
+        +'<td>'+(r.pending?'<span class="badge b-sc" title="이 제품에 같은 가격의 예약이 있습니다">예약 있음</span>':'')+'</td></tr>';
+    }).join('')||'<tr><td colspan="11" class="mut" style="padding:16px">조건에 맞는 제품이 없습니다.</td></tr>';
+    $('tb').querySelectorAll('input[type=checkbox]').forEach(c=>c.addEventListener('change',()=>{
+      const id=Number(c.dataset.id); c.checked?picked.add(id):picked.delete(id);
+      if(scope==='selected') schedulePreview(120); else renderPickInfo();
+    }));
+    bindCodeLinks($('tb'));
+    $('cnt').textContent='— 조건 결과 '+matched.toLocaleString('es-MX')+'개'+(rows.length<matched?' 중 '+rows.length.toLocaleString('es-MX')+'개 표시':'');
+    $('btnMore').classList.toggle('hidden',rows.length>=matched);
+    $('btnMore').textContent='더 보기 ('+(matched-rows.length).toLocaleString('es-MX')+'개 남음)';
+    const vis=rows.map(r=>r.id); $('chkAll').checked=vis.length>0&&vis.every(id=>picked.has(id));
+    $('chkAll').addEventListener('change',(e)=>{ rows.forEach(r=>e.target.checked?picked.add(r.id):picked.delete(r.id)); if(scope==='selected') schedulePreview(0); else renderRows(); });
+    renderPickInfo();
+  }
+  function renderPickInfo(){
+    $('pickInfo').innerHTML=picked.size?('체크 '+picked.size.toLocaleString('es-MX')+'개 <button class="btn ghost sm" id="btnUnpick">체크 해제</button>'):'';
+    const b=$('btnUnpick'); if(b) b.addEventListener('click',()=>{ picked.clear(); if(scope==='selected') schedulePreview(0); else renderRows(); });
+  }
+  function renderSummary(d){
+    const s=d.summary; const ok=!d.change_error; const t=ptype;
+    const avg=s.before_sum?((s.after_sum-s.before_sum)/s.before_sum*100):0;
+    const f=(n)=>t==='fob'?fmtU(n):fmt(n);
+    $('kpis').innerHTML=
+      '<div class="kpi"><span>대상 제품</span><b>'+s.eligible.toLocaleString('es-MX')+'</b></div>'
+      +(s.not_eligible?'<div class="kpi"><span>'+(cmode==='ratio'?'SYD 없음':'값 없음')+' → 제외</span><b class="mut">'+s.not_eligible.toLocaleString('es-MX')+'</b></div>':'')
+      +'<div class="kpi"><span>합계 (전 → 후)</span><b style="font-size:15px">'+f(s.before_sum)+' → '+(ok?f(s.after_sum):'—')+'</b></div>'
+      +'<div class="kpi"><span>평균 변화</span><b class="'+(avg>0?'up':avg<0?'down':'')+'">'+(ok?(avg>0?'▲ ':avg<0?'▼ ':'')+Math.abs(avg).toFixed(2)+'%':'—')+'</b></div>'
+      +(ok&&s.mult_before!=null?'<div class="kpi"><span>평균 배수 (전 → 후)</span><b>'+s.mult_before.toFixed(2)+' → '+(s.mult_after==null?'—':s.mult_after.toFixed(2))+'</b></div>':'')
+      +(ok&&t==='list'&&s.over_syd?'<div class="kpi"><span>SYD보다 비싸짐</span><b class="up">'+s.over_syd+'</b></div>':'')
+      +(ok&&s.no_change?'<div class="kpi"><span>반올림으로 변화 없음</span><b class="mut">'+s.no_change+'</b></div>':'')
+      +(ok&&s.to_zero?'<div class="kpi"><span>0 이하 → 제외</span><b class="up">'+s.to_zero+'</b></div>':'');
+    const ov=d.overlaps||[];
+    $('overlapBox').innerHTML=ov.length?'<div class="warn">⚠ 이 대상 중 일부가 이미 <b>예약된 '+(t==='fob'?'FOB':'List')+' 변경</b>에 걸려 있습니다 — 같은 제품에 차례로 적용됩니다.<br>'
+      +ov.map(o=>'#'+o.id+' · '+esc(o.effective_date)+' · '+(o.mode==='ratio'?'SYD×'+o.ratio:o.mode==='set'?'개별':(o.direction>0?'▲ ':'▼ ')+o.pct+'%')+' · 겹치는 제품 '+o.count+'개').join('<br>')+'</div>':'';
+    updateApplyBtn();
+  }
+  function updateApplyBtn(){
+    const eff=$('eff').value; const fut=eff&&today&&eff>today;
+    const b=$('btnApply'); b.textContent=fut?'적용 예약 ('+eff+')':'지금 적용';
+    const chOk=lastSummary&&!lastSummary.change_error;
+    const ok=ready&&chOk&&lastSummary.eligible>0&&$('memo').value.trim().length>=2&&eff&&eff>=today;
+    b.disabled=!ok;
+    b.title=!ready?'마이그레이션(0229) 후 사용':!chOk?(cmode==='ratio'?'목표 비율을 입력하세요':'비율을 입력하세요'):$('memo').value.trim().length<2?'사유를 입력하세요':(!lastSummary.eligible)?'대상 제품이 없습니다':'';
+  }
+  function describe(f){
+    const out=[]; if(f.origin.length) out.push('원산지 '+f.origin.map(x=>x==='__none__'?'(없음)':x).join(', '));
+    if(f.cat.length) out.push('품목 '+f.cat.join(', ')); if(f.maker.length) out.push('메이커 '+f.maker.join(', '));
+    if(f.material.length) out.push('소재 '+f.material.map(x=>x==='__none__'?'(미지정)':x).join(', '));
+    const codes=f.codes.split(/[\s,;]+/).filter(Boolean); if(codes.length) out.push('코드 '+codes.length+'개');
+    if(f.q) out.push('검색 「'+f.q+'」');
+    const rg=(l,a,b)=>{ if(a!=null||b!=null) out.push(l+' '+(a==null?'':a)+'~'+(b==null?'':b)); };
+    rg('List',f.list_min,f.list_max); rg('CTR÷SYD',f.ratio_min,f.ratio_max); rg('배수',f.mult_min,f.mult_max);
+    if(!out.length) out.push('전체'); if(!f.active_only) out.push('비활성 포함'); return out.join(' · ');
+  }
+  $('btnApply').addEventListener('click',()=>{
+    const s=lastSummary; if(!s) return;
+    const eff=$('eff').value; const fut=eff>today;
+    const cond=scope==='selected'?'체크한 제품 '+picked.size+'개':describe(filterBody());
+    const chg=cmode==='ratio'?'SYD List × '+$('ratio').value:(dir>0?'▲ 인상 ':'▼ 인하 ')+$('pct').value+'%';
+    const f=(n)=>ptype==='fob'?fmtU(n):fmt(n);
+    confirmModal({title:(fut?'가격 변경 예약':'가격 변경 — 지금 적용')+' '+typeBadge(ptype),noDate:true,okText:fut?'예약 저장':'적용',
+      body:'<dl><dt>대상</dt><dd>'+esc(cond)+'<br><b>'+s.eligible.toLocaleString('es-MX')+'개</b>'+(s.not_eligible?' ('+s.not_eligible+'개 제외)':'')+'</dd>'
+        +'<dt>변경</dt><dd class="'+(cmode==='pct'?(dir>0?'up':'down'):'')+'"><b>'+esc(chg)+'</b> · 반올림 '+esc($('rnd').selectedOptions[0].textContent)+'</dd>'
+        +'<dt>적용일</dt><dd><b>'+esc(eff)+'</b>'+(fut?' — 그날 멕시코 00:00 이후 자동 적용':' — 저장 즉시')+'</dd>'
+        +'<dt>합계</dt><dd>'+f(s.before_sum)+' → <b>'+f(s.after_sum)+'</b></dd>'
+        +'<dt>사유</dt><dd>'+esc($('memo').value.trim())+'</dd></dl>'
+        +(fut?'':'<div class="warn" style="margin:0 0 12px">저장하는 즉시 제품 마스터 '+(ptype==='fob'?'FOB':'정가')+'가 바뀝니다.</div>')},
+      async({pin})=>{
+        const body=Object.assign({pin,filter:filterBody(),scope,product_ids:[...picked],effective_date:eff,note:$('memo').value.trim()},changeBody());
+        const d=await api('/api/price-master/batches',{method:'POST',body:JSON.stringify(body)});
+        if(d.ok){ closeModal(); toast(d.status==='applied'?'적용했습니다 — '+d.applied_count+'개 변경'+(d.skipped_count?' · '+d.skipped_count+'개 제외':''):'예약했습니다 — '+d.effective_date+' · '+d.product_count+'개');
+          $('memo').value=''; schedulePreview(0); loaded.table=0; }
+        return d;
+      });
+  });
+
+  // ═══ ③ 변경 이력 ═══
+  let hItems=[];
+  const chgTxt=(b)=>b.mode==='ratio'?'SYD × '+b.ratio:b.mode==='set'?'개별 가격':(b.direction>0?'▲ ':'▼ ')+b.pct+'%';
+  async function loadHistory(){
+    const q=new URLSearchParams(); if($('hStatus').value) q.set('status',$('hStatus').value); if($('hType').value) q.set('price_type',$('hType').value);
+    const d=await api('/api/price-master/batches?'+q.toString());
+    if(!d.ok){ $('hb').innerHTML='<tr><td colspan="9" class="mut" style="padding:16px">'+esc(errKo(d.error))+'</td></tr>'; return; }
+    hItems=d.items||[];
+    $('hb').innerHTML=hItems.map(b=>{
+      const cnt=b.status==='applied'?b.applied_count+(b.skipped_count?' <span class="mut">(+제외 '+b.skipped_count+')</span>':'')
+        :b.status==='reverted'?b.reverted_count+' 되돌림'+(b.revert_skipped_count?' <span class="mut">· 제외 '+b.revert_skipped_count+'</span>':''):b.product_count;
+      return '<tr><td><b>'+esc(b.effective_date)+'</b></td><td>'+typeBadge(b.price_type)+'</td><td>'+badge(STATUS,b.status)+'</td>'
+        +'<td style="white-space:normal;min-width:180px"><span class="mut">'+esc(ORIGIN[b.origin]||b.origin)+'</span> · '+esc(b.condition)+'</td>'
+        +'<td class="n '+(b.mode==='pct'?(b.direction>0?'up':'down'):'')+'">'+esc(chgTxt(b))+'</td>'
+        +'<td class="n">'+cnt+'</td><td style="white-space:normal;min-width:160px">'+esc(b.note||'')+'</td>'
+        +'<td class="mut">'+esc(b.created_by_name||'')+' · '+esc(String(b.created_at||'').slice(5,10))+'</td>'
+        +'<td><button class="btn ghost sm" data-act="detail" data-id="'+b.id+'">상세</button>'
+        +(b.status==='scheduled'?' <button class="btn danger sm" data-act="cancel" data-id="'+b.id+'">예약 취소</button>':'')
+        +(b.status==='applied'?' <button class="btn danger sm" data-act="revert" data-id="'+b.id+'">되돌리기</button>':'')+'</td></tr>';
+    }).join('')||'<tr><td colspan="9" class="mut" style="padding:16px">아직 변경 이력이 없습니다.</td></tr>';
+    $('hb').querySelectorAll('button[data-act]').forEach(btn=>btn.addEventListener('click',()=>{
+      const id=Number(btn.dataset.id); const a=btn.dataset.act;
+      if(a==='detail') openDetail(id); else if(a==='cancel') cancelBatch(id); else revertBatch(id);
+    }));
+  }
+  ['hStatus','hType'].forEach(id=>$(id).addEventListener('change',loadHistory)); $('btnHReload').addEventListener('click',loadHistory);
+  async function openDetail(id){
+    const d=await api('/api/price-master/batches/'+id);
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    const b=d.batch; const pend=b.status==='scheduled'||b.status==='cancelled'; const t=b.price_type;
+    const ov=openModal('<h3>#'+b.id+' · '+esc(b.effective_date)+' '+typeBadge(t)+' '+badge(STATUS,b.status)+'</h3>'
+      +'<dl><dt>방식</dt><dd>'+esc(ORIGIN[b.origin]||b.origin)+' · '+esc(chgTxt(b))+' · 반올림 '+b.rounding+'</dd><dt>조건</dt><dd>'+esc(b.condition)+'</dd>'
+      +'<dt>사유</dt><dd>'+esc(b.note||'')+'</dd><dt>작성</dt><dd>'+esc(b.created_by_name||'')+'</dd></dl>'
+      +(pend?'<div class="note" style="margin:0 0 10px">예약 상태에서는 <b>지금 값 기준 예상</b>입니다. 실제 값은 적용일의 값으로 계산됩니다.</div>':'')
+      +'<div class="tblWrap"><table><thead><tr><th>코드</th><th>품목</th><th>원산지</th><th class="n">이전</th><th class="n">이후</th><th class="n">변화</th><th>결과</th></tr></thead><tbody>'
+      +d.items.map(x=>'<tr><td><span class="codeLink" data-code="'+esc(x.code)+'">'+esc(x.code)+'</span></td><td>'+esc(x.name||'')+'</td><td>'+esc(x.origin||'—')+'</td>'
+        +'<td class="n">'+fmtP(t,x.old_price)+'</td><td class="n"><b>'+fmtP(t,x.new_price)+'</b></td><td class="n '+cls(x.old_price,x.new_price)+'">'+pctTxt(x.old_price,x.new_price)+'</td><td>'+badge(RESULT,x.result)+'</td></tr>').join('')
+      +(!d.items.length?'<tr><td colspan="7" class="mut" style="padding:14px">남은 대상 제품이 없습니다 (모두 삭제됐습니다).</td></tr>':'')
+      +'</tbody></table></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn ghost" id="mXlsx">엑셀</button><button class="btn" data-close>닫기</button></div>',true);
+    bindCodeLinks(ov);
+    ov.querySelector('#mXlsx').addEventListener('click',()=>saveXlsx('Refatrix_cambio_'+(t==='fob'?'FOB':'precio')+'_'+b.id+'_'+b.effective_date+'.xlsx','Cambio '+b.id,
+      [['Clave CTR','Producto','Origen','Anterior','Nuevo','Variacion %','Resultado']].concat(d.items.map(x=>[x.code,x.name||'',x.origin||'',x.old_price,x.new_price,x.old_price?Math.round((x.new_price-x.old_price)/x.old_price*10000)/100:null,(RESULT[x.result]||[x.result])[0]])),[14,26,8,12,12,11,14]));
+  }
+  function cancelBatch(id){
+    const b=hItems.find(x=>x.id===id); if(!b) return;
+    const ov=openModal('<h3>예약 취소</h3><p>#'+id+' '+typeBadge(b.price_type)+' · '+esc(b.effective_date)+' · '+esc(chgTxt(b))+' · '+b.product_count+'개 예약을 취소합니다. 값은 바뀌지 않습니다.</p>'
+      +'<div class="msg err" id="mMsg"></div><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>닫기</button><button class="btn danger" id="mOk">예약 취소</button></div>');
+    ov.querySelector('#mOk').addEventListener('click',async()=>{
+      const d=await api('/api/price-master/batches/'+id+'/cancel',{method:'POST',body:'{}'});
+      if(!d.ok){ ov.querySelector('#mMsg').textContent=errKo(d.error); return; }
+      closeModal(); toast('예약을 취소했습니다'); loadHistory();
+    });
+  }
+  function revertBatch(id){
+    const b=hItems.find(x=>x.id===id); if(!b) return;
+    const skipList=(arr)=>arr&&arr.length?'<div class="warn">건너뛴 제품 '+arr.length+'개<br>'+arr.slice(0,60).map(x=>esc(x.code)+' — '+esc(SKIP_KO[x.reason]||x.reason)).join('<br>')+(arr.length>60?'<br>…':'')+'</div>':'';
+    const ov=confirmModal({title:'되돌리기 — #'+id+' '+typeBadge(b.price_type),noDate:true,okText:'되돌리기',
+      body:'<p>'+esc(b.effective_date)+' · '+esc(chgTxt(b))+' · '+esc(b.condition)+'</p><div class="note" style="margin:0 0 12px">이 변경으로 바뀐 '+b.applied_count+'개 중 <b>그 뒤에 다른 변경이 없는 제품만</b> 원래 값으로 돌립니다. 되돌린 것도 이력에 남습니다.</div><div id="mSkip"></div>'},
+      async({pin})=>{
+        const d=await api('/api/price-master/batches/'+id+'/revert',{method:'POST',body:JSON.stringify({pin})});
+        ov.querySelector('#mSkip').innerHTML=skipList(d.skipped);
+        if(d.ok){ ov.querySelector('#mOk').remove(); ov.querySelector('#mPin').disabled=true;
+          ov.querySelector('#mMsg').className='msg ok'; ov.querySelector('#mMsg').textContent=d.reverted+'개를 원래 값으로 돌렸습니다.'; toast('되돌렸습니다 — '+d.reverted+'개'); loadHistory(); loaded.table=0; }
+        return d;
+      });
+  }
+
+  // ═══ ④ 제품별 이력 ═══
+  async function lookupProduct(){
+    const code=$('pcode').value.trim(); if(!code){ toast('코드를 입력하세요',true); return; }
+    const d=await api('/api/price-master/product?code='+encodeURIComponent(code));
+    if(!d.ok){ $('pOut').innerHTML='<p class="msg err">'+esc(errKo(d.error))+'</p>'; return; }
+    const p=d.product; const rate=d.fx&&d.fx.rate;
+    const mult=p.fob_usd&&p.list_price&&rate?(p.list_price/(p.fob_usd*rate)).toFixed(2):'—';
+    const srcTxt=(h)=>h.batch_id?(ORIGIN[h.origin]||'변경')+' #'+h.batch_id+(h.condition&&h.origin!=='single'?' · '+esc(h.condition):''):(SOURCE[h.source]||h.source);
+    const line=(t,eff,bh,o,n,src,note,by)=>'<tr><td>'+esc(eff)+' '+bh+'</td><td>'+typeBadge(t)+'</td><td class="n">'+fmtP(t,o)+'</td><td class="n"><b>'+fmtP(t,n)+'</b></td>'
+      +'<td class="n '+cls(o,n)+'">'+(o!=null?pctTxt(o,n):'—')+'</td><td style="white-space:normal;min-width:180px">'+src+'</td><td style="white-space:normal">'+esc(note||'')+'</td><td class="mut">'+esc(by||'')+'</td></tr>';
+    $('pOut').innerHTML='<div class="phead"><b>'+esc(p.code)+'</b><span>'+esc(p.name||'')+'</span><span class="mut">원산지 '+esc(p.origin||'—')+'</span>'+(p.is_active?'':'<span class="badge b-in">비활성</span>')+'</div>'
+      +'<div class="kpis" style="margin-top:4px"><div class="kpi"><span>현재 FOB</span><b>'+fmtU(p.fob_usd)+'</b></div><div class="kpi"><span>현재 List</span><b>'+fmt(p.list_price)+'</b></div>'
+      +'<div class="kpi"><span>배수</span><b>'+mult+'</b></div><div class="kpi"><span>SYD List</span><b>'+fmt(p.list_price_syd)+'</b></div>'
+      +'<div class="kpi"><span>CTR ÷ SYD</span><b>'+(p.list_price&&p.list_price_syd?(p.list_price/p.list_price_syd).toFixed(2):'—')+'</b></div></div>'
+      +'<h4>우리 가격 (List · FOB)</h4><div class="tw"><table><thead><tr><th>적용일</th><th>가격</th><th class="n">이전</th><th class="n">이후</th><th class="n">변화</th><th>출처</th><th>사유</th><th>작성</th></tr></thead><tbody>'
+      +d.upcoming.map(u=>line(u.price_type,u.effective_date,'<span class="badge b-sc">예약 · 예상</span>',u.old_price,u.new_price,(ORIGIN[u.origin]||'변경')+' #'+u.batch_id+(u.origin==='single'?'':' · '+esc(u.condition)),u.note,u.by_name)).join('')
+      +d.history.map(h=>line(h.price_type,h.effective_date,h.batch_status==='reverted'&&h.source==='batch'?'<span class="badge b-rv">되돌려짐</span>':'',h.old_price,h.new_price,srcTxt(h),h.note,h.by_name)).join('')
+      +(!d.upcoming.length&&!d.history.length?'<tr><td colspan="8" class="mut" style="padding:14px">이력이 없습니다.</td></tr>':'')
+      +'</tbody></table></div>'
+      +'<h4>경쟁사 SYD (대응품번 · 리스트별 가장 높은 값)</h4><div class="tw"><table><thead><tr><th>리스트 기준일</th><th>SYD 코드</th><th class="n">이전 리스트</th><th class="n">이 리스트</th><th class="n">변화</th></tr></thead><tbody>'
+      +(d.syd.length?d.syd.map(s=>'<tr><td>'+esc(s.date)+'</td><td>'+esc(s.codes)+'</td><td class="n">'+fmt(s.prev)+'</td><td class="n"><b>'+fmt(s.price)+'</b></td><td class="n '+cls(s.prev,s.price)+'">'+(s.prev!=null?pctTxt(s.prev,s.price):'')+'</td></tr>').join('')
+        :'<tr><td colspan="5" class="mut" style="padding:14px">올린 SYD 리스트에 이 제품의 대응품번이 없습니다.</td></tr>')
+      +'</tbody></table></div><p class="sub2" style="margin-top:10px">제품 화면 ✎ 수정과 제품 엑셀 업로드로 바뀐 정가도 남습니다. 「최초 기록」은 가격 마스터를 켠 날의 정가입니다.</p>';
+  }
+  $('btnPLookup').addEventListener('click',lookupProduct);
+  $('pcode').addEventListener('keydown',(e)=>{ if(e.key==='Enter') lookupProduct(); });
+
+  // ═══ ⑤ 경쟁사 SYD ═══
+  let sydParsed=null;
+  $('fSyd').addEventListener('change',async()=>{
+    const file=$('fSyd').files[0]; sydParsed=null; $('btnSydUp').disabled=true; const m=$('sydMsg'); m.className='msg';
+    if(!file) return;
+    let mat; try{ mat=await readSheet(file); }catch(e){ m.className='msg err'; m.textContent='파일을 읽을 수 없습니다'; return; }
+    const h=findHeader(mat,{code:c=>/clave\s*s[yi]d|art[ií]culo|^s[yi]d$|c[oó]digo\s*s[yi]d|^c[oó]digo$|^clave$/i.test(c), price:c=>/precio\s*(de\s*)?lista|list\s*price|^precio$|^lista$/i.test(c), familia:c=>/familia|l[ií]nea|categor|sistema/i.test(c)});
+    if(!h||h.idx.code<0||h.idx.price<0){ m.className='msg err'; m.textContent='열을 찾지 못했습니다 — Clave SyD(또는 ARTÍCULO) · Precio Lista 가 필요합니다.'; return; }
+    const hdr=mat[h.row];
+    const rowsS=[]; for(let r=h.row+1;r<mat.length;r++){ const x=mat[r]||[]; const code=String(x[h.idx.code]==null?'':x[h.idx.code]).trim(); if(!code) continue;
+      rowsS.push({_row:r+1,code,price:x[h.idx.price],familia:h.idx.familia>=0?x[h.idx.familia]:null}); }
+    sydParsed={file:file.name,rows:rowsS};
+    m.className='msg ok'; m.textContent='읽음: '+rowsS.length.toLocaleString('es-MX')+'줄 · 코드 열 「'+hdr[h.idx.code]+'」 · 가격 열 「'+hdr[h.idx.price]+'」'+(h.idx.familia>=0?' · 품목 열 「'+hdr[h.idx.familia]+'」':' · 품목 열 없음')+' — 기준일을 확인하고 올리세요.';
+    $('btnSydUp').disabled=!ready||!rowsS.length;
+  });
+  $('btnSydUp').addEventListener('click',async()=>{
+    if(!sydParsed||busy) return; busy=true; $('btnSydUp').disabled=true; const m=$('sydMsg'); m.className='msg'; m.textContent='올리는 중…';
+    const d=await api('/api/price-master/syd/lists',{method:'POST',body:JSON.stringify({list_date:$('sydDate').value,file_name:sydParsed.file,rows:sydParsed.rows})});
+    busy=false; $('btnSydUp').disabled=false;
+    if(!d.ok){ m.className='msg err'; m.textContent=errKo(d.error); return; }
+    m.className='msg ok'; m.textContent='올렸습니다 — 코드 '+d.codes.toLocaleString('es-MX')+(d.dup?' (중복 '+d.dup+' 건너뜀)':'')+(d.error_count?' · 오류 '+d.error_count+'줄':'')
+      +(d.prev_list_id?' · 인상 '+d.up+' · 인하 '+d.down+' · 신규 '+d.new+' · 사라짐 '+d.gone:' · 첫 리스트(비교 대상 없음)')
+      +(d.is_latest?' · 제품 SYD List '+d.products_synced+'개 갱신':' · 더 최신 리스트가 있어 제품 SYD List 는 그대로');
+    $('fSyd').value=''; sydParsed=null; loaded.table=0;
+    await loadSydLists(); openReport(d.id);
+  });
+  let sydLists=[];
+  async function loadSydLists(){
+    const d=await api('/api/price-master/syd/lists');
+    if(!d.ok){ $('sb').innerHTML='<tr><td colspan="11" class="mut" style="padding:14px">'+esc(errKo(d.error))+'</td></tr>'; return; }
+    sydLists=d.items;
+    $('sb').innerHTML=sydLists.map(l=>'<tr><td><b>'+esc(l.list_date)+'</b></td><td class="mut">'+esc(l.file_name||'')+'</td><td class="n">'+(l.code_count||0).toLocaleString('es-MX')+'</td>'
+      +'<td class="n up">'+(l.prev_list_id?l.up:'—')+'</td><td class="n down">'+(l.prev_list_id?l.down:'—')+'</td><td class="n">'+(l.prev_list_id?l.same:'—')+'</td><td class="n">'+(l.prev_list_id?l.new:'—')+'</td><td class="n">'+(l.prev_list_id?l.gone:'—')+'</td>'
+      +'<td class="mut">'+esc(l.prev_date||'(첫 리스트)')+'</td><td class="mut">'+esc(l.by_name||'')+'</td>'
+      +'<td><button class="btn ghost sm" data-rep="'+l.id+'">리포트</button> <button class="btn danger sm" data-del="'+l.id+'">삭제</button></td></tr>').join('')
+      ||'<tr><td colspan="11" class="mut" style="padding:14px">아직 올린 SYD 리스트가 없습니다.</td></tr>';
+    $('sb').querySelectorAll('[data-rep]').forEach(b=>b.addEventListener('click',()=>openReport(Number(b.dataset.rep))));
+    $('sb').querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
+      const l=sydLists.find(x=>x.id===Number(b.dataset.del));
+      confirmModal({title:'SYD 리스트 삭제',noDate:true,okText:'삭제',body:'<p>'+esc(l.list_date)+' · '+esc(l.file_name||'')+' · 코드 '+l.code_count+'개를 지웁니다. 남은 리스트 중 가장 최신 것으로 제품 SYD List 를 다시 맞춥니다. 이 리스트로 만든 가격 변경은 그대로 남습니다.</p>'},
+        async({pin})=>{ const d=await api('/api/price-master/syd/lists/'+l.id,{method:'DELETE',body:JSON.stringify({pin})});
+          if(d.ok){ closeModal(); toast('삭제했습니다'); $('sydRep').classList.add('hidden'); loadSydLists(); loaded.table=0; } return d; });
+    }));
+  }
+  let rep=null; const repPick=new Set();
+  async function openReport(id,target,view){
+    const q=new URLSearchParams(); if(target) q.set('target',target); if(view) q.set('view',view);
+    const d=await api('/api/price-master/syd/lists/'+id+'/report?'+q.toString());
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    rep=d; repPick.clear(); d.rows.forEach(r=>{ if(r.suggested!=null) repPick.add(r.product_id); });
+    renderReport();
+    $('sydRep').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function renderReport(){
+    const d=rep; const k=d.kpi; const box=$('sydRep'); box.classList.remove('hidden');
+    const pc=(v)=>v==null?'—':(v>0?'+':'')+(v*100).toFixed(1)+'%';
+    const maxN=Math.max(1,...d.by_familia.map(f=>f.n));
+    box.innerHTML='<p class="ttl">비교 리포트 — SYD '+esc(d.list.date)+(d.list.prev_date?' vs '+esc(d.list.prev_date):' (첫 리스트 — 비교 대상 없음)')+'</p>'
+      +'<div class="kpis"><div class="kpi"><span>코드</span><b>'+(k.codes||0).toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>인상</span><b class="up">'+(k.up||0).toLocaleString('es-MX')+'</b></div><div class="kpi"><span>평균 인상률</span><b class="up">'+pc(k.avg_up)+'</b></div>'
+      +'<div class="kpi"><span>인하</span><b class="down">'+(k.down||0)+'</b></div><div class="kpi"><span>평균 인하율</span><b class="down">'+pc(k.avg_down)+'</b></div>'
+      +'<div class="kpi"><span>신규 · 사라짐</span><b>'+(k.new||0)+' · '+(k.gone||0)+'</b></div>'
+      +'<div class="kpi"><span>우리 제품과 연결</span><b>'+k.linked.toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>대응 검토 (인상 · 우리 목표 미만)</span><b class="up">'+k.need_review+'</b></div>'
+      +'<div class="kpi"><span>인하 후 우리가 더 비쌈</span><b class="up">'+k.over_syd_after_down+'</b></div></div>'
+      +'<div class="split" style="margin-top:12px"><div><h4>품목(Familia)별 — 코드 기준</h4><div class="tblWrap" style="max-height:300px"><table><thead><tr><th>품목</th><th class="n">코드</th><th class="n">인상</th><th class="n">인하</th><th class="n">평균 변화</th><th>분포</th></tr></thead><tbody>'
+      +d.by_familia.map(f=>'<tr><td>'+esc(f.familia)+'</td><td class="n">'+f.n+'</td><td class="n up">'+f.up+'</td><td class="n down">'+f.down+'</td><td class="n '+(f.avg_change>0?'up':f.avg_change<0?'down':'')+'">'+pc(f.avg_change)+'</td>'
+        +'<td><div class="bar" title="인상 '+f.up+' · 인하 '+f.down+' / '+f.n+'"><i style="width:'+(f.up/maxN*100)+'%;background:var(--up)"></i><i style="width:'+(f.down/maxN*100)+'%;background:var(--down)"></i></div></td></tr>').join('')
+      +'</tbody></table></div></div>'
+      +'<div><h4>검토 기준</h4><div class="row"><div class="f"><label for="rTarget">목표 CTR ÷ SYD</label><input id="rTarget" type="number" step="0.0001" value="'+(Math.round(d.target*10000)/10000)+'"></div>'
+      +'<div class="f"><label for="rView">보기</label><select id="rView"><option value="up_below">인상됨 · 우리가 목표보다 쌈</option><option value="down_above">인하됨 · 우리가 SYD보다 비쌈</option><option value="changed">변경된 것 전부</option><option value="all">연결된 제품 전부</option></select></div>'
+      +'<div style="flex:0 0 auto"><button class="btn ghost" id="rApply">다시 계산</button></div></div>'
+      +'<div class="note">목표 비율 기본값 <b>'+(d.target_default==null?'—':d.target_default.toFixed(4))+'</b> = 지금 우리 List ÷ '+(d.list.prev_date?'이전 리스트':'이 리스트')+' SYD 의 실제 평균(활성 제품).'
+      +' 한 CTR 에 SYD 코드가 여럿이면 <b>가장 높은 SYD</b> 를 기준으로 씁니다.<br>제안가 = 반올림( SYD 새 List × 목표 비율 ). 우리 가격이 이미 목표 이상이면 제안하지 않습니다.'
+      +' 체크한 제품으로 <b>「제안가로 변경 만들기」</b> → 적용일 · 사유 · PIN · ③ 에서 되돌리기.</div></div></div>'
+      +'<h4>제품별 — '+d.total.toLocaleString('es-MX')+'개'+(d.total>d.rows.length?' (처음 '+d.rows.length+'개 표시)':'')+'</h4>'
+      +'<div class="tblWrap"><table><thead><tr><th><input type="checkbox" id="rAll"></th><th>CTR</th><th>품목</th><th>SYD 코드</th><th class="n">SYD 이전</th><th class="n">SYD 새</th><th class="n">변화</th><th class="n">우리 List</th><th class="n">CTR÷SYD</th><th class="n">제안가</th><th class="n">제안 변화</th></tr></thead><tbody>'
+      +d.rows.map(r=>'<tr><td>'+(r.suggested!=null?'<input type="checkbox" data-pid="'+r.product_id+'"'+(repPick.has(r.product_id)?' checked':'')+'>':'')+'</td>'
+        +'<td><span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span>'+(r.is_active?'':' <span class="badge b-in">비활성</span>')+'</td><td>'+esc(r.name||r.familia||'')+'</td><td class="mut">'+esc(r.syd_codes||'')+'</td>'
+        +'<td class="n">'+fmt(r.syd_old)+'</td><td class="n"><b>'+fmt(r.syd_new)+'</b></td><td class="n '+(r.syd_change>0?'up':r.syd_change<0?'down':'')+'">'+(r.syd_change==null?'신규':pc(r.syd_change))+'</td>'
+        +'<td class="n">'+fmt(r.list_price)+'</td><td class="n '+(r.over_syd?'up':'')+'">'+(r.ratio==null?'—':r.ratio.toFixed(2))+(r.over_syd?' <span class="badge b-sk">SYD보다 비쌈</span>':'')+'</td>'
+        +'<td class="n"><b>'+(r.suggested==null?'<span class="mut">—</span>':fmt(r.suggested))+'</b></td><td class="n '+(r.suggested!=null?'up':'')+'">'+(r.suggested!=null?pctTxt(r.list_price,r.suggested)||'신규 정가':'')+'</td></tr>').join('')
+      +(!d.rows.length?'<tr><td colspan="11" class="mut" style="padding:14px">이 기준에 해당하는 제품이 없습니다.</td></tr>':'')
+      +'</tbody></table></div>'
+      +'<div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="rXlsx">엑셀</button><button class="btn gold" id="rMake"></button></div>';
+    $('rView').value=d.view;
+    const upd=()=>{ const b=$('rMake'); b.textContent='체크한 '+repPick.size+'개 → 제안가로 변경 만들기'; b.disabled=!repPick.size; };
+    upd();
+    box.querySelectorAll('input[data-pid]').forEach(c=>c.addEventListener('change',()=>{ const id=Number(c.dataset.pid); c.checked?repPick.add(id):repPick.delete(id); upd(); }));
+    $('rAll').checked=d.rows.some(r=>r.suggested!=null)&&d.rows.filter(r=>r.suggested!=null).every(r=>repPick.has(r.product_id));
+    $('rAll').addEventListener('change',(e)=>{ d.rows.forEach(r=>{ if(r.suggested!=null){ e.target.checked?repPick.add(r.product_id):repPick.delete(r.product_id); } }); renderReport(); });
+    bindCodeLinks(box);
+    $('rApply').addEventListener('click',()=>openReport(d.list.id,$('rTarget').value,$('rView').value));
+    $('rView').addEventListener('change',()=>openReport(d.list.id,$('rTarget').value,$('rView').value));
+    $('rXlsx').addEventListener('click',()=>saveXlsx('Refatrix_SYD_'+d.list.date+'.xlsx','SYD '+d.list.date,
+      [['Clave CTR','Producto','Clave SyD','SYD anterior','SYD nuevo','Var SYD %','List CTR','CTR/SYD','Precio sugerido','Var sugerida %']].concat(d.rows.map(r=>[r.code,r.name||'',r.syd_codes||'',r.syd_old,r.syd_new,r.syd_change==null?null:Math.round(r.syd_change*10000)/100,r.list_price,r.ratio,r.suggested,r.suggested&&r.list_price?Math.round((r.suggested-r.list_price)/r.list_price*10000)/100:null])),[12,24,18,11,11,9,11,9,12,11]));
+    $('rMake').addEventListener('click',()=>{
+      const items=d.rows.filter(r=>repPick.has(r.product_id)&&r.suggested!=null).map(r=>({product_id:r.product_id,price:r.suggested,code:r.code,old:r.list_price}));
+      const before=items.reduce((s,x)=>s+(x.old||0),0), after=items.reduce((s,x)=>s+x.price,0);
+      confirmModal({title:'SYD 제안가로 List 변경 '+typeBadge('list'),defNote:'SYD '+d.list.date+' 인상 대응 (목표 '+d.target.toFixed(4)+')',okText:'변경 만들기',
+        body:'<dl><dt>제품</dt><dd><b>'+items.length+'개</b> — '+items.slice(0,8).map(x=>esc(x.code)).join(', ')+(items.length>8?' …':'')+'</dd><dt>List 합계</dt><dd>'+fmt(before)+' → <b>'+fmt(after)+'</b></dd></dl>'},
+        async({eff,note,pin})=>{
+          const r=await api('/api/price-master/batches',{method:'POST',body:JSON.stringify({items:items.map(x=>({product_id:x.product_id,price:x.price})),syd_list_id:d.list.id,effective_date:eff,note,pin})});
+          if(r.ok){ closeModal(); toast(r.status==='applied'?'적용했습니다 — '+r.applied_count+'개':'예약했습니다 — '+r.effective_date+' · '+r.product_count+'개'); loaded.table=0; openReport(d.list.id,d.target,d.view); }
+          return r;
+        });
+    });
+  }
+
+  // ═══ ⑥ 구매가 검증 ═══
+  async function loadPc(){
+    const q=new URLSearchParams(); if($('pcFrom').value) q.set('from',$('pcFrom').value); if($('pcTo').value) q.set('to',$('pcTo').value); if($('pcBad').checked) q.set('only_bad','1');
+    const d=await api('/api/price-master/purchase-check?'+q.toString());
+    if(!d.ok){ $('pcb').innerHTML='<tr><td colspan="9" class="mut" style="padding:14px">'+esc(errKo(d.error))+'</td></tr>'; return; }
+    const T=d.total;
+    $('pckpis').innerHTML='<div class="kpi"><span>기간 내 구매</span><b>'+T.po+'</b></div><div class="kpi"><span>검사한 줄</span><b>'+T.lines.toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>일치</span><b class="down">'+T.ok.toLocaleString('es-MX')+'</b></div><div class="kpi"><span>FOB보다 비쌈</span><b class="up">'+T.over+'</b></div>'
+      +'<div class="kpi"><span>FOB보다 쌈</span><b style="color:var(--blue)">'+T.under+'</b></div><div class="kpi"><span>FOB 없음</span><b class="mut">'+T.no_fob+'</b></div>'
+      +'<div class="kpi"><span>미등록 코드</span><b class="mut">'+T.unmatched+'</b></div><div class="kpi"><span>초과 금액</span><b class="up">'+fmtU(T.over_usd)+'</b></div><div class="kpi"><span>덜 낸 금액</span><b style="color:var(--blue)">'+fmtU(T.under_usd)+'</b></div>';
+    $('pcb').innerHTML=d.items.map(x=>'<tr class="clk" data-id="'+x.id+'"><td><b>'+esc(x.ref_no)+'</b></td><td>'+esc(x.order_date)+'</td><td class="n">'+x.lines+'</td><td class="n">'+x.ok+'</td>'
+      +'<td class="n '+(x.over?'up':'')+'">'+x.over+'</td><td class="n" style="'+(x.under?'color:var(--blue)':'')+'">'+x.under+'</td><td class="n">'+x.no_fob+'</td><td class="n">'+x.unmatched+'</td>'
+      +'<td class="n '+(x.diff_usd>0?'up':'')+'">'+(x.diff_usd?(x.diff_usd>0?'+ ':'− ')+fmtU(Math.abs(x.diff_usd)).replace('$ ','$'):'—')+'</td></tr>').join('')
+      ||'<tr><td colspan="9" class="mut" style="padding:14px">'+($('pcBad').checked?'문제 있는 구매가 없습니다 👍':'구매 기록이 없습니다')+'</td></tr>';
+    $('pcb').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>pcLines(Number(tr.dataset.id))));
+    $('pcLines').innerHTML='';
+  }
+  $('btnPc').addEventListener('click',loadPc); $('pcBad').addEventListener('change',loadPc);
+  async function pcLines(id){
+    const d=await api('/api/price-master/purchase-check/'+id);
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    const ord={over:0,under:1,no_fob:2,unmatched:3,ok:4};
+    const L=d.lines.slice().sort((a,b)=>(ord[a.status]-ord[b.status])||String(a.code).localeCompare(b.code));
+    $('pcLines').innerHTML='<h4>'+esc(d.po.ref_no)+' · 주문일 '+esc(d.po.order_date)+' — 줄 '+L.length+'</h4>'
+      +'<div class="tblWrap"><table><thead><tr><th>코드</th><th>품목</th><th class="n">수량</th><th class="n">구매단가</th><th class="n">FOB (주문일)</th><th class="n">차이</th><th class="n">차액</th><th>상태</th><th class="n">지금 FOB</th></tr></thead><tbody>'
+      +L.map(l=>'<tr><td>'+(l.product_id?'<span class="codeLink" data-code="'+esc(l.code)+'">'+esc(l.code)+'</span>':esc(l.code))+'</td><td>'+esc(l.name||'')+'</td><td class="n">'+fmt(l.qty,0)+'</td>'
+        +'<td class="n">'+fmtU(l.unit_cost_usd)+'</td><td class="n">'+fmtU(l.fob)+(l.fob_basis==='earliest'&&l.fob!=null?' <span class="badge b-in" title="주문일 이전 FOB 이력이 없어 가장 처음 등록된 FOB 로 비교">최초 FOB</span>':'')+'</td>'
+        +'<td class="n '+(l.diff_pct>0?'up':'')+'" style="'+(l.diff_pct<0?'color:var(--blue)':'')+'">'+(l.diff_pct==null||l.status==='ok'?'':(l.diff_pct>0?'+':'')+(l.diff_pct*100).toFixed(1)+'%')+'</td>'
+        +'<td class="n">'+(l.diff_usd==null?'':(l.diff_usd>0?'+':'')+l.diff_usd.toFixed(2))+'</td><td>'+badge(FOBST,l.status)+'</td><td class="n mut">'+fmtU(l.fob_now)+'</td></tr>').join('')
+      +'</tbody></table></div><div class="row" style="margin-top:8px"><button class="btn ghost sm" id="pcX">엑셀 (공급사 클레임용)</button></div>'
+      +'<div class="note">가격표 FOB 가 최신이 아니라면 → ① 가격표에서 FOB 를 고치세요. 공급사 청구가 틀렸다면 → 엑셀로 내려받아 클레임하세요.</div>';
+    bindCodeLinks($('pcLines'));
+    $('pcX').addEventListener('click',()=>saveXlsx('Refatrix_verificacion_FOB_'+d.po.ref_no+'.xlsx','FOB '+String(d.po.ref_no).slice(0,20),
+      [['Ref','Fecha pedido','Clave CTR','Producto','Cantidad','Precio compra USD','FOB USD','Dif %','Dif USD','Estado']].concat(L.map(l=>[d.po.ref_no,d.po.order_date,l.code,l.name||'',l.qty,l.unit_cost_usd,l.fob,l.diff_pct==null?null:Math.round(l.diff_pct*10000)/100,l.diff_usd,({ok:'OK',over:'Mayor a FOB',under:'Menor a FOB',no_fob:'Sin FOB',unmatched:'Sin registro'})[l.status]||l.status])),[12,11,12,24,9,13,10,8,10,13]));
+  }
+
+  // ─── 시작 ───
+  $('goLogin').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  const ps=portalSession();
+  if(ps&&ps.token){ session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')}; afterLogin(); }
+  window.__pmDebug={get rows(){return rows;},get picked(){return picked;},get summary(){return lastSummary;},get tRows(){return tRows;},get rep(){return rep;},sel};
+})();
+</script>
+<script src="refatrix-nav.js?v=20260924pm"></script>
+</body>
+</html>

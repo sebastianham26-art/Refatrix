@@ -36,6 +36,8 @@ export const CLEANUP_TABLES = {
   product_status_log: '판매상태 전환 이력',
   product_status_check_items: '판매상태 점검 항목',
   product_status_check_notes: '판매상태 점검 메모',
+  product_price_history: '정가 이력',          // 0229 — 가격 마스터 장부(제품 전용)
+  price_change_items: '가격 변경 대상',         // 0229 — 예약·적용 묶음의 대상 목록
 };
 
 // ── 연결만 끊는 표(기록 자체는 남긴다) ────────────────────────────────

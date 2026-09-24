@@ -12,6 +12,7 @@ import { changeParts, describeRow, sydForRow, signedQty, stockAtChange } from '.
 import { refColumns, scanReferences, buildDeleteCheck, purgeReferences, describeCleanup } from '../productDelete.js';
 import { parseOe, formatOe, normOe, oeToken, OE_FOR_NOTE } from '../oeParse.js';
 import { oeReady, oeByProduct, syncOe } from '../oeCodes.js';
+import { recordPriceChange } from '../priceMaster.js';   // 0229 — 정가가 바뀌면 가격 마스터 장부에 1행
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -551,6 +552,7 @@ export default async function productRoutes(app) {
       await syncSydShared(c, r.id, sydCodes);
       await syncAppShared(c, r.id, apps);
       if (oeItems) await syncOe(c, r.id, oeItems);
+      if (values.list_price != null) await recordPriceChange(c, { productId: Number(r.id), oldPrice: null, newPrice: values.list_price, source: 'manual', userId });
       const changes = {};
       for (const [k, v] of Object.entries(values)) if (v != null) changes[k] = { from: null, to: v };
       await logProductChange(c.query.bind(c), { productId: Number(r.id), code, action: 'create', source: 'manual', changes, userId });
@@ -627,6 +629,7 @@ export default async function productRoutes(app) {
       if (wantSyd) await syncSydShared(c, id, splitSyd(nextVals.scode !== undefined ? nextVals.scode : cur.scode));
       if (wantApp) await syncAppShared(c, id, parseApplications(nextVals.app !== undefined ? nextVals.app : cur.app));
       if (wantOe) await syncOe(c, id, parseOe(nextVals.oe !== undefined ? nextVals.oe : cur.oe));
+      if (changes.list_price) await recordPriceChange(c, { productId: id, oldPrice: changes.list_price.from, newPrice: changes.list_price.to, source: 'manual', userId });
       if (chFields.length) {
         await logProductChange(c.query.bind(c), {
           productId: id, code: nextVals.code || cur.code, action: 'update', source: 'manual', changes, userId });
@@ -1043,6 +1046,7 @@ export default async function productRoutes(app) {
           await syncApp(c, r.id, p.applications);
           if (p.has && p.has.oe) await syncOe(c, r.id, p.oe_codes);
           if (p.estado === 'inactive') await applyStatus(c, Number(r.id), p.code, false, p.motivo, true);
+          if (p.list_price != null) await recordPriceChange(c, { productId: Number(r.id), oldPrice: null, newPrice: p.list_price, source: 'import', userId });
           {
             const chg = {};
             for (const f of UPDATABLE_FIELDS) if (f in p && p[f] != null) chg[f] = { from: null, to: p[f] };
@@ -1066,6 +1070,7 @@ export default async function productRoutes(app) {
           if (has.app) await syncApp(c, ex.id, p.applications);
           if (has.oe) await syncOe(c, ex.id, p.oe_codes);
           if (d.status_to) await applyStatus(c, Number(ex.id), p.code, d.status_to === 'active', p.motivo, false);
+          if (d.changes.list_price) await recordPriceChange(c, { productId: Number(ex.id), oldPrice: d.changes.list_price.from, newPrice: d.changes.list_price.to, source: 'import', userId });
           if (chFields.length > 0 || d.syd_changed || d.app_changed || d.oe_changed || d.status_to) {
             const chg = { ...d.changes };
             if (d.syd_changed) chg._syd = { from: ex.syd_codes || [], to: p.syd_codes };

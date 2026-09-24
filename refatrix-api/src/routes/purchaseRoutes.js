@@ -1,6 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
+import { fobAtDate, fobMismatchByPo, fobStatus, mxToday, isYmd } from '../priceMaster.js';   // 0229 — 가격 마스터 FOB 로 구매 단가 검증
 
 // 구매단가(USD) 열람 권한: 디렉터·소시오만 공개. 그 외 역할은 값 자체를 내려주지 않음(null).
 export function canSeeCost(perm) {
@@ -64,6 +65,18 @@ export default async function purchaseRoutes(app) {
       if (!seeCost) { base.cost = null; base.amount = null; }   // 구매단가 비공개
       return base;
     });
+    // 0229 — 가격 마스터 FOB(주문일 기준)와 비교. 구매단가를 볼 수 있는 사람에게만(디렉터·소시오).
+    let fobBad = 0;
+    if (seeCost) {
+      const od = isYmd(req.body && req.body.order_date) ? req.body.order_date : mxToday();
+      const fobs = await fobAtDate(lines.map((l) => l.product_id), od);
+      if (fobs) for (const l of lines) {
+        const f = l.product_id != null && fobs.has(l.product_id) ? fobs.get(l.product_id) : null;
+        l.fob_usd = f;
+        l.fob_status = fobStatus(l.cost, f, l.product_id, 0);
+        if (l.fob_status === 'over' || l.fob_status === 'under') fobBad++;
+      }
+    }
     // 참조번호별 그룹 요약
     const groups = {};
     for (const l of lines) {
@@ -85,7 +98,7 @@ export default async function purchaseRoutes(app) {
       errors,
       groups: Object.values(groups).map((g) => ({ ...g, total_qty: Math.round(g.total_qty * 1000) / 1000, total_usd: seeCost ? Math.round(g.total_usd * 100) / 100 : null })),
       existing_refs: existing,
-      summary: { total: lines.length, matched: lines.filter((l) => l.matched).length, unmatched: lines.filter((l) => !l.matched).length, error_rows: errors.length },
+      summary: { total: lines.length, matched: lines.filter((l) => l.matched).length, unmatched: lines.filter((l) => !l.matched).length, error_rows: errors.length, fob_mismatch: seeCost ? fobBad : null },
     };
   });
 
@@ -179,6 +192,11 @@ export default async function purchaseRoutes(app) {
       total_usd: seeCost ? Number(x.total_usd) : null,        // 구매단가 비공개
       matched_cnt: Number(x.matched_cnt), unmatched_cnt: Number(x.unmatched_cnt),
     }));
+    // 0229 — PO 별 FOB 불일치 줄 수(비쌈·쌈). 구매단가 권한자에게만.
+    if (seeCost) {
+      const fm = await fobMismatchByPo(items.map((i) => i.id));
+      for (const i of items) { const m = fm.get(i.id); i.fob_bad = m ? m.bad : null; i.fob_over = m ? m.over : null; i.fob_under = m ? m.under : null; i.fob_none = m ? m.no_fob : null; }
+    }
     const summary = {
       po_count: items.length,
       total_usd: seeCost ? Math.round(r.rows.reduce((s, x) => s + Number(x.total_usd), 0) * 100) / 100 : null,
@@ -435,7 +453,7 @@ export default async function purchaseRoutes(app) {
     if (!id) return reply.code(400).send({ error: 'bad_id' });
     const h = (await query(
       `SELECT p.id, p.ref_no, p.order_date, p.currency, p.status, p.note, p.created_at,
-              u.name AS created_by_name
+              u.name AS created_by_name, to_char(p.order_date,'YYYY-MM-DD') AS od
        FROM purchase_orders p LEFT JOIN users u ON u.id = p.created_by
        WHERE p.id = $1 AND p.deleted_at IS NULL`, [id])).rows[0];
     if (!h) return reply.code(404).send({ error: 'not_found' });
@@ -456,6 +474,14 @@ export default async function purchaseRoutes(app) {
       received_qty: Number(x.received_qty), backorder_qty: Number(x.qty) - Number(x.received_qty),
       matched: x.product_id != null,
     }));
+    // 0229 — 주문일 당시 FOB 와 비교(1센트라도 다르면 표시)
+    if (seeCost) {
+      const fobs = await fobAtDate(lines.map((l) => l.product_id), h.od);
+      if (fobs) for (const l of lines) {
+        const f = l.product_id != null && fobs.has(l.product_id) ? fobs.get(l.product_id) : null;
+        l.fob_usd = f; l.fob_status = fobStatus(l.unit_cost_usd, f, l.product_id, 0);
+      }
+    }
     return {
       cost_visible: seeCost,
       header: { id: Number(h.id), ref_no: h.ref_no, order_date: h.order_date, currency: h.currency, status: h.status, note: h.note, created_at: h.created_at, created_by_name: h.created_by_name },

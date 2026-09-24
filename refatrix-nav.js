@@ -135,6 +135,7 @@
     prodFind:{file:'refatrix-products.html',name:'제품 찾기',desc:'검색·경쟁사코드·차종',tab:'find'},
     prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
     prodHistory:{file:'refatrix-products.html',name:'제품 변경이력',desc:'마스터 변경·판매상태 + 이후 movement',tab:'history'},
+    priceMaster:{file:'refatrix-pricemaster.html',name:'가격 마스터',desc:'FOB·List 가격표 · 일괄/단일 변경 · 경쟁사 SYD · 구매가 검증'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
     mktspend:{file:'refatrix-mktspend.html',name:'마케팅 지출계획',desc:'행사·활동 지출 기안·승인'},
     survey:{file:'refatrix-survey.html',name:'고객 설문 분석',desc:'설문지 사진·PDF → AI 판독 → 엑셀·세그먼트 리포트'},
@@ -169,7 +170,7 @@
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
-    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', marketing:'marketing', mktspend:'marketing', survey:'marketing',
+    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'__director__', marketing:'marketing', mktspend:'marketing', survey:'marketing',
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
@@ -180,7 +181,7 @@
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
-    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','prodFind','prodUpload','prodHistory']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','prodFind','prodUpload','prodHistory','priceMaster']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound','relocate','zones']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','processKpi']}
