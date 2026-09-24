@@ -19,7 +19,8 @@ import { maybeMarkPacked } from '../packedGate.js';
 import { kickOrderStatus } from '../orderStatusSync.js';   // 0227 · 단계 전진 → CRM 오더상태
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
-import { internalHeaders } from '../internalCall.js';   // 0224c · /api/sales 내부 호출 표식
+import { internalHeaders } from '../internalCall.js';
+import { fobCostBasis } from '../priceMaster.js';   // 2026-09-24 · 견적 매출총이익 — 평균원가 없는 제품의 FOB 추정 원가   // 0224c · /api/sales 내부 호출 표식
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -572,20 +573,39 @@ export default async function quoteRoutes(app) {
     }
     // 2026-09-24 · 디렉터 전용 매출총이익(견적 목록 상태 칸 아래). 다른 역할에는 원가를 계산하지도 내려보내지도 않는다.
     //   매출전환 = 실제 인보이스(판매 시점 동결 원가 cogs_mxn), 그 외 = 견적 줄 금액(IVA 제외) − 수량 × 현재 평균원가(avg_cost).
-    //   평균원가가 없는(0) 제품 줄은 매출·원가 둘 다에서 빼고 개수만 알려 준다(이익률이 부풀지 않게).
+    //   평균원가(또는 동결 원가)가 0인 줄 = FOB × 최신 환율 × (1 + 전체 평균 부대비율)로 추정(ql-0924gp2 — 수입 이력 없는 제품은
+    //   평균원가가 0이라 전환 전 견적이 거의 표시되지 않았다). FOB 도 없으면 매출·원가 둘 다에서 빼고 개수만 알려 준다.
+    //   fob_usd 는 0229 컬럼 — to_jsonb 로 읽어 0229 전이어도 쿼리가 깨지지 않게 한다.
     const gpDir = req.ctx.perm.role === 'director';
-    const gpSel = gpDir ? `, gpq.gp_rev, gpq.gp_cost, gpq.gp_nocost, gps.s_rev, gps.s_cogs` : '';
+    let gpBasis = null;
+    if (gpDir) { gpBasis = await fobCostBasis(); args.push(gpBasis.fx > 0 ? gpBasis.fx : 0); }
+    const fxI = args.length;
+    const FOBP = `NULLIF(to_jsonb(p) ->> 'fob_usd', '')::numeric`;
+    const FOBOK = `(COALESCE(${FOBP}, 0) > 0 AND $${fxI}::numeric > 0)`;
+    const SC = `COALESCE(sl.cogs_mxn, sl.qty * sl.applied_unit_cost, 0)`;
+    const gpSel = gpDir ? `, gpq.a_rev, gpq.a_cost, gpq.f_rev, gpq.f_usd, gpq.f_n, gpq.no_n,
+              gps.s_n, gps.s_a_rev, gps.s_a_cost, gps.s_f_rev, gps.s_f_usd, gps.s_f_n, gps.s_no_n` : '';
     const gpJoin = gpDir ? `
          LEFT JOIN LATERAL (
-           SELECT COALESCE(SUM(ql.line_subtotal) FILTER (WHERE p.avg_cost > 0), 0)        AS gp_rev,
-                  COALESCE(SUM(ql.qty * p.avg_cost) FILTER (WHERE p.avg_cost > 0), 0)     AS gp_cost,
-                  COUNT(*) FILTER (WHERE COALESCE(p.avg_cost, 0) <= 0)::int              AS gp_nocost
+           SELECT COALESCE(SUM(ql.line_subtotal) FILTER (WHERE p.avg_cost > 0), 0)                              AS a_rev,
+                  COALESCE(SUM(ql.qty * p.avg_cost) FILTER (WHERE p.avg_cost > 0), 0)                           AS a_cost,
+                  COALESCE(SUM(ql.line_subtotal) FILTER (WHERE COALESCE(p.avg_cost, 0) <= 0 AND ${FOBOK}), 0)   AS f_rev,
+                  COALESCE(SUM(ql.qty * ${FOBP}) FILTER (WHERE COALESCE(p.avg_cost, 0) <= 0 AND ${FOBOK}), 0)   AS f_usd,
+                  COUNT(*) FILTER (WHERE COALESCE(p.avg_cost, 0) <= 0 AND ${FOBOK})::int                        AS f_n,
+                  COUNT(*) FILTER (WHERE COALESCE(p.avg_cost, 0) <= 0 AND NOT ${FOBOK})::int                    AS no_n
              FROM quote_lines ql JOIN products p ON p.id = ql.product_id
             WHERE ql.quote_id = q.id
          ) gpq ON TRUE
          LEFT JOIN LATERAL (
-           SELECT SUM(sl.line_amount_mxn) AS s_rev, SUM(COALESCE(sl.cogs_mxn, sl.qty * sl.applied_unit_cost, 0)) AS s_cogs
-             FROM sales_invoice_lines sl WHERE sl.invoice_id = i.id
+           SELECT COUNT(*)::int                                                                        AS s_n,
+                  COALESCE(SUM(sl.line_amount_mxn) FILTER (WHERE ${SC} > 0), 0)                        AS s_a_rev,
+                  COALESCE(SUM(${SC}) FILTER (WHERE ${SC} > 0), 0)                                     AS s_a_cost,
+                  COALESCE(SUM(sl.line_amount_mxn) FILTER (WHERE ${SC} <= 0 AND ${FOBOK}), 0)          AS s_f_rev,
+                  COALESCE(SUM(sl.qty * ${FOBP}) FILTER (WHERE ${SC} <= 0 AND ${FOBOK}), 0)            AS s_f_usd,
+                  COUNT(*) FILTER (WHERE ${SC} <= 0 AND ${FOBOK})::int                                 AS s_f_n,
+                  COUNT(*) FILTER (WHERE ${SC} <= 0 AND NOT ${FOBOK})::int                             AS s_no_n
+             FROM sales_invoice_lines sl LEFT JOIN products p ON p.id = sl.product_id
+            WHERE sl.invoice_id = i.id
          ) gps ON TRUE` : '';
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
@@ -624,12 +644,16 @@ export default async function quoteRoutes(app) {
         ORDER BY q.quote_date DESC, q.id DESC`, args)).rows;
     const gpOf = (r) => {
       if (!gpDir || r.status === 'pricelist') return undefined;
-      const sale = r.status === 'converted' && Number(r.s_rev || 0) > 0;
-      const rev = sale ? Number(r.s_rev) : Number(r.gp_rev || 0);
-      const cost = sale ? Number(r.s_cogs || 0) : Number(r.gp_cost || 0);
+      const sale = r.status === 'converted' && Number(r.s_n || 0) > 0;
+      const k = sale ? 's_' : '';
+      const unit = gpBasis && gpBasis.fx > 0 ? gpBasis.fx * (1 + gpBasis.oh_rate) : 0;   // FOB 1달러당 원가(MXN)
+      const rev = Number(r[k + 'a_rev'] || 0) + Number(r[k + 'f_rev'] || 0);
+      const cost = Number(r[k + 'a_cost'] || 0) + Number(r[k + 'f_usd'] || 0) * unit;
       const gp = Math.round((rev - cost) * 100) / 100;
       return { basis: sale ? 'sale' : 'quote', rev: Math.round(rev * 100) / 100, cost: Math.round(cost * 100) / 100, gp,
-        pct: rev > 0 ? Math.round(gp / rev * 1000) / 10 : null, nocost: sale ? 0 : Number(r.gp_nocost || 0) };
+        pct: rev > 0 ? Math.round(gp / rev * 1000) / 10 : null,
+        est: Number(r[k + 'f_n'] || 0), nocost: Number(r[k + 'no_n'] || 0),
+        ...(Number(r[k + 'f_n'] || 0) ? { fx: gpBasis.fx, oh_rate: gpBasis.oh_rate } : {}) };
     };
     return {
       items: rows.map((r) => ({

@@ -680,21 +680,41 @@ export async function setSga(pct, userId) {
  * 제품별 수익성 원자료(판관비 전). 필터는 JS 에서(칩 개수를 전체 기준으로 세기 위해).
  *   반환 { fx, overhead:{rate, batches}, rows:[...] }
  */
+// 배치별 FOB 금액(base) · 부대비(oh) — 승인 · 미삭제 · 원가 제외(0069) 아닌 배치만. 상관 서브쿼리 대신 한 번씩 집계(제품 수 × 줄 수로 커지지 않게)
+const FXL_SQL = `CASE WHEN upper(COALESCE(l.currency, b.currency, 'USD')) = 'MXN' THEN 1 ELSE COALESCE(b.fx_rate, 0) END`;
+const FXO_SQL = `CASE WHEN upper(COALESCE(o.currency, b.currency, 'USD')) = 'MXN' THEN 1 ELSE COALESCE(b.fx_rate, 0) END`;
+const BB_SQL = `SELECT b.id, COALESCE(bl.base, 0) AS base, COALESCE(bo.oh, 0) AS oh
+     FROM import_batches b
+     LEFT JOIN (SELECT l.batch_id, SUM(l.qty * l.import_price * ${FXL_SQL}) AS base
+                  FROM import_lines l JOIN import_batches b ON b.id = l.batch_id GROUP BY l.batch_id) bl ON bl.batch_id = b.id
+     LEFT JOIN (SELECT o.batch_id, SUM(o.amount * ${FXO_SQL}) AS oh
+                  FROM import_overheads o JOIN import_batches b ON b.id = o.batch_id GROUP BY o.batch_id) bo ON bo.batch_id = b.id
+    WHERE b.status = 'approved' AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE`;
+
+/** 견적 목록 매출총이익(디렉터) — 평균원가가 없는 제품의 추정 원가 기준.
+ *  1개당 = FOB × 최신 환율 × (1 + 전체 평균 수입부대비율). ⑦ 제품 수익성에서 수입 기록 없는 제품에 쓰는 식과 같다.
+ *  5분 캐시(목록을 열 때마다 배치 전체를 다시 집계하지 않게). */
+let fobBasisCache = { at: 0, v: null };
+export async function fobCostBasis() {
+  if (fobBasisCache.v && Date.now() - fobBasisCache.at < 5 * 60 * 1000) return fobBasisCache.v;
+  const fx = await latestFx();
+  let ohRate = 0;
+  try {
+    const g = (await query(`SELECT COALESCE(SUM(base),0) AS base, COALESCE(SUM(oh),0) AS oh FROM (${BB_SQL}) bb`)).rows[0];
+    ohRate = Number(g.base) > 0 ? Number(g.oh) / Number(g.base) : 0;
+  } catch (_) { ohRate = 0; }
+  const v = { fx: fx ? fx.rate : null, fx_date: fx ? fx.date : null, oh_rate: Math.round(ohRate * 10000) / 10000 };
+  fobBasisCache = { at: Date.now(), v };
+  return v;
+}
+export function _resetFobBasisForTest() { fobBasisCache = { at: 0, v: null }; }
+
 export async function profitBase({ from = null, to = null } = {}) {
   const p = []; let dw = '';
   if (from) { p.push(from); dw += ` AND si.inv_date >= $${p.length}::date`; }
   if (to) { p.push(to); dw += ` AND si.inv_date <= $${p.length}::date`; }
   const fx = await latestFx();
-  const FXL = `CASE WHEN upper(COALESCE(l.currency, b.currency, 'USD')) = 'MXN' THEN 1 ELSE COALESCE(b.fx_rate, 0) END`;
-  const FXO = `CASE WHEN upper(COALESCE(o.currency, b.currency, 'USD')) = 'MXN' THEN 1 ELSE COALESCE(b.fx_rate, 0) END`;
-  // 배치별 FOB 금액(base) · 부대비(oh) — 승인 · 미삭제 · 원가 제외(0069) 아닌 배치만. 상관 서브쿼리 대신 한 번씩 집계(제품 수 × 줄 수로 커지지 않게)
-  const bbSql = `SELECT b.id, COALESCE(bl.base, 0) AS base, COALESCE(bo.oh, 0) AS oh
-     FROM import_batches b
-     LEFT JOIN (SELECT l.batch_id, SUM(l.qty * l.import_price * ${FXL}) AS base
-                  FROM import_lines l JOIN import_batches b ON b.id = l.batch_id GROUP BY l.batch_id) bl ON bl.batch_id = b.id
-     LEFT JOIN (SELECT o.batch_id, SUM(o.amount * ${FXO}) AS oh
-                  FROM import_overheads o JOIN import_batches b ON b.id = o.batch_id GROUP BY o.batch_id) bo ON bo.batch_id = b.id
-    WHERE b.status = 'approved' AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE`;
+  const FXL = FXL_SQL; const bbSql = BB_SQL;
   const g = (await query(`SELECT COALESCE(SUM(base),0) AS base, COALESCE(SUM(oh),0) AS oh, COUNT(*)::int AS n FROM (${bbSql}) bb`)).rows[0];
   const gRate = Number(g.base) > 0 ? Number(g.oh) / Number(g.base) : 0;
   const rows = (await query(

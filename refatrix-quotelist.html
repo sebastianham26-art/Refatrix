@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0924gp</title>
+<title>Refatrix ERP · 견적 목록 · ql-0924gp2</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -170,7 +170,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-0924gp';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-0924gp2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -503,8 +503,9 @@
   function gpSmall(q){
     const g=q.gp; if(!isDirector||!g||g.pct==null) return '';
     const tip=(g.basis==='sale'?'실매출 기준(판매 시점 원가)':'견적 기준(현재 평균원가)')+' · 매출(IVA 제외) '+fmt(g.rev)+' − 원가 '+fmt(g.cost)
-      +(g.nocost?' · 평균원가 없는 줄 '+g.nocost+'개는 계산에서 뺌':'');
-    return '<br><span class="gpS'+(g.gp<0?' neg':'')+'" title="'+esc(tip)+'">'+(g.basis==='sale'?'<i>실</i> ':'')+'총이익 '+fmt(g.gp)+' · '+g.pct.toFixed(1)+'%'+(g.nocost?' <i>*</i>':'')+'</span>';
+      +(g.est?' · 평균원가가 없는 '+g.est+'줄은 FOB 추정(FOB × 환율 '+Number(g.fx).toFixed(2)+' × (1 + 부대비 '+(Number(g.oh_rate)*100).toFixed(1)+'%))':'')
+      +(g.nocost?' · 원가도 FOB 도 없는 '+g.nocost+'줄은 계산에서 뺌':'');
+    return '<br><span class="gpS'+(g.gp<0?' neg':'')+'" title="'+esc(tip)+'">'+(g.basis==='sale'?'<i>실</i> ':'')+'총이익 '+fmt(g.gp)+' · '+g.pct.toFixed(1)+'%'+((g.est||g.nocost)?' <i>*</i>':'')+'</span>';
   }
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
