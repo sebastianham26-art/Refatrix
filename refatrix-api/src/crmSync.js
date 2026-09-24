@@ -377,10 +377,79 @@ async function outboxHasAuthCols() {
   return authColsReady;
 }
 
-/** 응답 직후 비동기로 한 번 밀어 준다(요청 처리를 붙잡지 않는다). */
+/**
+ * 응답 직후 비동기로 밀어 준다(요청 처리를 붙잡지 않는다).
+ *   20260924 · 예전에는 20건만 보내고 나머지를 1분 워커에 맡겼다 → 제품 1,700건이 85분.
+ *   이제 **대기함이 빌 때까지 연속으로** 보낸다(pumpOutbox).
+ */
 export function scheduleDrain(app) {
   if (globallyDisabled()) return;
-  setTimeout(() => { drainOutbox({ app }).catch(() => {}); }, 10);
+  setTimeout(() => { pumpOutbox({ app }).catch(() => {}); }, 10);
+}
+
+/**
+ * 20260924 · 전송 속도 — 개발자 문의("ERP 가 건 사이에 얼마나 쉬나")에 대한 답.
+ *
+ *   예전: 20건 보내고 60초 쉼 → 분당 20건 상한. CRM 이 0초에 답해도 1,700건 = 85분.
+ *   이제: 한 번 돌기 시작하면 **대기함이 빌 때까지** 25건씩 이어서 보낸다.
+ *     · 요청은 여전히 **한 번에 하나**(응답을 받고 다음) — 상대 서버에 동시 요청을 쏟지 않는다.
+ *     · 제품 건 사이에는 짧은 간격(CRM_SYNC_GAP_MS, 기본 50ms)을 둔다.
+ *     · 25건마다 대기함을 다시 조회하고 **고객·오더 건을 제품보다 먼저** 꺼낸다 —
+ *       제품 전송 중에 승인한 고객이 1,700건 뒤에 줄 서지 않는다(최대 25건 뒤).
+ *     · 한 묶음이 **전부 연결 오류**(타임아웃·접속 불가)면 멈춘다. CRM 이 죽어 있을 때
+ *       1,700건 × 10초 타임아웃을 끝까지 두드리지 않는다. 나머지는 워커가 다음 주기에 다시 본다.
+ */
+export const PUMP_CHUNK = 25;
+let pumping = false;
+let pumpInfo = { running: false, started_at: null, finished_at: null, sent: 0, failed: 0, stopped: null };
+let cancelEpoch = 0;        // 제품 전송 중지 — 이미 꺼내 둔 건도 보내지 않게 하는 신호
+
+export function gapMs() {
+  const n = Number(process.env.CRM_SYNC_GAP_MS);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 5000) : 50;
+}
+
+/** 지금 연속 전송 중인가(화면 표시용). */
+export function pumpState() { return { ...pumpInfo, running: pumping }; }
+
+/** 제품 전송 중지 신호. 대기함 정리(skipped)는 호출한 쪽(productSync.cancelCatalogSync)이 한다. */
+export function signalProductCancel() { cancelEpoch++; return cancelEpoch; }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export async function pumpOutbox({ app, chunk = PUMP_CHUNK, maxRounds = 10000 } = {}) {
+  if (pumping) return { busy: true };
+  if (globallyDisabled()) return { disabled: true };
+  pumping = true;
+  pumpInfo = { running: true, started_at: new Date().toISOString(), finished_at: null, sent: 0, failed: 0, stopped: null };
+  const exclude = new Set();   // 꺼져 있는 창구 — 그 건들이 앞자리를 막지 않게 다음 조회에서 뺀다
+  let busyTries = 0;
+  try {
+    for (let round = 0; round < maxRounds; round++) {
+      const r = await drainOutbox({ app, limit: chunk, excludeKeys: [...exclude] });
+      if (r.busy) {                        // 수동 재전송 등이 잠깐 잡고 있다
+        if (++busyTries > 50) { pumpInfo.stopped = 'busy'; break; }
+        await sleep(200); continue;
+      }
+      busyTries = 0;
+      if (r.disabled || r.reason) { pumpInfo.stopped = r.reason || 'disabled'; break; }
+      for (const k of (r.heldKeys || [])) exclude.add(k);
+      pumpInfo.sent += r.sent || 0;
+      pumpInfo.failed += r.failed || 0;
+      if (!r.drained && !(r.held > 0)) break;                   // 보낼 것이 없다
+      if (r.drained > 0 && r.sent === 0 && r.netErrors === r.drained) {
+        pumpInfo.stopped = 'network';                            // CRM 연결 불가 — 워커에 맡긴다
+        break;
+      }
+    }
+  } catch (e) {
+    try { console.error('[crmSync] pump 실패', e && e.message); } catch (_) {}
+  } finally {
+    pumping = false;
+    pumpInfo.running = false;
+    pumpInfo.finished_at = new Date().toISOString();
+  }
+  return { ...pumpInfo };
 }
 
 /**
@@ -502,29 +571,47 @@ async function enqueueFallback(row, ep, body) {
   }
 }
 
-export async function drainOutbox({ limit = 20, app } = {}) {
+export async function drainOutbox({ limit = 20, app, excludeKeys = [] } = {}) {
   if (draining) return { drained: 0, busy: true };
   if (globallyDisabled()) return { drained: 0, disabled: true, reason: 'kill_switch' };
   if (!(await crmTableReady())) return { drained: 0, reason: 'migration_required' };
   draining = true;
-  let sent = 0, failed = 0, held = 0;
+  let sent = 0, failed = 0, held = 0, netErrors = 0, cancelled = 0;
+  const heldKeys = new Set();
+  const myEpoch = cancelEpoch;
+  const gap = gapMs();
   const newCols = await outboxHasEndpointCols();
   try {
-    const rows = (await query(
-      `SELECT * FROM crm_customer_outbox
-        WHERE status='pending' AND next_attempt_at <= now()
-        ORDER BY id LIMIT $1`, [limit])).rows;
+    // 20260924 · 고객·오더 건을 **제품보다 먼저** 꺼낸다. 꺼진 창구(excludeKeys)의 건은 빼고 조회한다 —
+    //   그러지 않으면 꺼 둔 제품 1,700건이 앞자리 20개를 영원히 차지해 고객 건이 못 나간다.
+    const ex = (excludeKeys || []).map(String).filter(Boolean);
+    const rows = newCols
+      ? (await query(
+        `SELECT * FROM crm_customer_outbox
+          WHERE status='pending' AND next_attempt_at <= now()
+            AND NOT (COALESCE(endpoint_key, '${CUSTOMER_KEY}') = ANY($2::text[]))
+          ORDER BY CASE WHEN entity='product' THEN 1 ELSE 0 END, id
+          LIMIT $1`, [limit, ex])).rows
+      : (await query(
+        `SELECT * FROM crm_customer_outbox
+          WHERE status='pending' AND next_attempt_at <= now()
+          ORDER BY id LIMIT $1`, [limit])).rows;
     for (const row of rows) {
+      const isProduct = row.entity === 'product';
+      // 제품 전송 중지가 눌렸으면, 이미 꺼내 둔 제품 건도 보내지 않는다(DB 에는 이미 skipped).
+      if (isProduct && cancelEpoch !== myEpoch) { cancelled++; continue; }
       const key = row.endpoint_key || CUSTOMER_KEY;
       const ep = await getEndpoint(key);
       // 연동이 없거나 꺼져 있거나 주소가 비었으면 **시도 횟수를 쓰지 않고** 그대로 둔다.
       if (!ep || !ep.enabled || !activeUrl(ep)) {
         held++;
+        heldKeys.add(key);
         continue;
       }
       const attempts = Number(row.attempts) + 1;
       const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
       const r = await sendPayload(ep, row.op, payload);
+      if (r.error) netErrors++;
       const okNow = !r.error && isSuccess(r.httpStatus, r.body, ep.ok_code);
       const codigo = r.body && r.body.codigoError != null ? String(r.body.codigoError) : null;
       // 전송 당시의 환경·주소·메서드도 같이 남긴다(이력에서 "어디로 보냈나"에 답하기 위해).
@@ -578,12 +665,16 @@ export async function drainOutbox({ limit = 20, app } = {}) {
         put('auth_header=$?', r.auth_header || null);
       }
       params.push(row.id);
-      await query(`UPDATE crm_customer_outbox SET ${sets.join(', ')} WHERE id=$${params.length}`, params);
+      // 20260924 · 결과 기록은 **아직 대기(pending)일 때만** — 전송 도중 「중지」로 skipped 가 된 건을
+      //   sent/failed 로 되살리지 않는다.
+      //   (성공한 건은 실제로 나갔으므로 그대로 sent 로 적는다 — 이력이 사실과 달라지면 안 된다.)
+      await query(`UPDATE crm_customer_outbox SET ${sets.join(', ')} WHERE id=$${params.length}${okNow ? '' : " AND status='pending'"}`, params);
+      if (isProduct && gap > 0) await sleep(gap);
     }
   } catch (e) {
     try { console.error('[crmSync] drain 실패', e && e.message); } catch (_) {}
   } finally { draining = false; }
-  return { drained: sent + failed, sent, failed, held };
+  return { drained: sent + failed, sent, failed, held, heldKeys: [...heldKeys], netErrors, cancelled };
 }
 
 /** 서버 기동 시 1회 호출. 주기 워커 — 즉시전송이 실패한 건을 책임진다. */
@@ -594,7 +685,8 @@ export function startCrmSyncWorker(app) {
     return;
   }
   const ms = Math.max(15, Number(config.crm.workerSec) || 60) * 1000;
-  timer = setInterval(() => { drainOutbox({ app }).catch(() => {}); }, ms);
+  // 20260924 · 워커도 연속 전송(pump) — 서버가 재시작돼 즉시전송이 끊겨도 다음 주기에 이어서 끝까지 보낸다.
+  timer = setInterval(() => { pumpOutbox({ app }).catch(() => {}); }, ms);
   if (timer.unref) timer.unref();
   try { app?.log?.info?.(`[crmSync] 워커 시작 — ${Math.round(ms / 1000)}초 주기 (연동 켜고 끄기는 관리자 화면)`); } catch (_) {}
 }
@@ -610,6 +702,8 @@ export function crmStatus() {
     //   「왜 이 고객이 D 로 들어갔지?」에 답할 수 없다. null 이면 안 보낸다(= 새 RFC 는 거절된다).
     business_type_fallback: businessTypeFallback(),
     worker_sec: Number(config.crm.workerSec) || 60,
+    gap_ms: gapMs(),
+    pump: pumpState(),
     max_attempts: MAX_ATTEMPTS,
     backoff_sec: BACKOFF_SEC,
   };

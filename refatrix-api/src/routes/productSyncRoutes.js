@@ -8,8 +8,9 @@ import { logEvent } from '../audit.js';
 import {
   PRODUCT_KEY, runCatalogSync, listRuns, productTablesReady,
   fetchProducts, buildProduct, buildLote, chunk, mxNowParts, autoRanToday,
-  SENDABLE_WHERE, EXCLUDED_PREFIXES,
+  SENDABLE_WHERE, EXCLUDED_PREFIXES, cancelCatalogSync, pendingProductCount,
 } from '../productSync.js';
+import { pumpState, gapMs } from '../crmSync.js';
 
 const ERR_NOTE = {
   migration_required: '0218_product_catalog_sync 마이그레이션이 필요합니다.',
@@ -70,7 +71,29 @@ export default async function productSyncRoutes(app) {
       mx_hour: hour,
       auto_ran_today: ready ? await autoRanToday(ymd) : false,
       last_runs: ready ? await listRuns({ limit: 5 }) : [],
+      // 20260924 · 진행 표시 — 대기 중인 제품 건 · 연속 전송 상태 · 건 사이 간격
+      pending_products: ready ? await pendingProductCount().catch(() => 0) : 0,
+      pump: pumpState(),
+      gap_ms: gapMs(),
     };
+  });
+
+  /**
+   * 20260924 · 제품 전송 중지 — 대기 중인 제품 건을 전부(또는 run_id 의 것만) 건너뜀으로 닫는다.
+   *   고객·오더 전송은 영향 없음. 이미 나간 건은 되돌리지 않는다.
+   */
+  app.post('/api/product-sync/cancel', guard, async (req, reply) => {
+    if (!(await productTablesReady())) return reply.code(503).send({ error: 'migration_required', note: ERR_NOTE.migration_required });
+    const body = req.body || {};
+    const r = await cancelCatalogSync({ runId: body.run_id == null ? null : Number(body.run_id) });
+    try {
+      logEvent({
+        userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId,
+        action: 'update', target: 'product_sync:cancel',
+        detail: { op: 'product_sync_cancel', run_id: body.run_id == null ? null : Number(body.run_id), cancelled: r.cancelled },
+      });
+    } catch (_) { /* 감사로그 실패가 중지를 막지 않는다 */ }
+    return r;
   });
 
   /** 미리보기 — 실제로 보내지 않는다. 계약서와 실제 값을 눈으로 대조하는 용도. */

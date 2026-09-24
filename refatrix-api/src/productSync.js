@@ -15,7 +15,7 @@
 //   ④ 적재는 전송을 기다리지 않는다. 묶음을 쌓고 즉시 응답한다(워커가 밀어 낸다).
 import { query } from './db.js';
 import { getEndpoint, activeUrl } from './integrations.js';
-import { scheduleDrain } from './crmSync.js';
+import { scheduleDrain, signalProductCancel } from './crmSync.js';
 
 export const PRODUCT_KEY = 'product';
 
@@ -349,6 +349,39 @@ export async function runCatalogSync({
     try { console.error('[productSync] 적재 실패', e && e.message); } catch (_) {}
     return { error: 'enqueue_failed', detail: String((e && e.message) || e).slice(0, 300) };
   }
+}
+
+/**
+ * 20260924 · **제품 전송 중지.** 아직 안 나간(pending) 제품 건을 전부 건너뜀(skipped)으로 닫는다.
+ *   · 고객·오더 건은 건드리지 않는다(entity='product' 만).
+ *   · 이미 나간 건(sent)은 되돌릴 수 없다 — CRM 에 들어간 것은 그대로다.
+ *   · 엔진이 이미 꺼내 둔 건(최대 25건)도 보내지 않도록 신호를 보낸다. 지금 막 전송 중인 1건만 끝까지 간다.
+ *   · 닫힌 건은 전송 이력에서 「재전송」할 수 있고, 새로 「지금 전체 보내기」를 해도 된다.
+ *   runId 를 주면 그 실행만, 없으면 대기 중인 제품 건 전부.
+ */
+export const CANCEL_NOTE = '디렉터 중지 — 전송 취소';
+export async function cancelCatalogSync({ runId = null } = {}) {
+  signalProductCancel();
+  const params = [CANCEL_NOTE];
+  let where = `entity='product' AND status='pending'`;
+  if (runId != null && Number.isFinite(Number(runId))) {
+    params.push(Number(runId));
+    where += ` AND entity_id=$2`;
+  }
+  const r = await query(
+    `UPDATE crm_customer_outbox SET status='skipped', last_error=$1
+      WHERE ${where} RETURNING id`, params);
+  // 한 번 더 — 위 UPDATE 가 끝나기 전에 새 묶음을 꺼낸 드레인이 있으면(시험에서 실제로 25건이 더 나갔다)
+  //   그 드레인도 여기서 멈춘다. 진행 중이던 1건만 끝까지 간다.
+  signalProductCancel();
+  return { ok: true, cancelled: r.rows.length };
+}
+
+/** 대기 중인 제품 건 수(화면 진행 표시용). */
+export async function pendingProductCount() {
+  const r = (await query(
+    `SELECT COUNT(*)::int AS n FROM crm_customer_outbox WHERE entity='product' AND status='pending'`)).rows[0];
+  return Number(r && r.n) || 0;
 }
 
 /** 최근 실행 목록 + 묶음별 상태 집계(이력 화면용). */

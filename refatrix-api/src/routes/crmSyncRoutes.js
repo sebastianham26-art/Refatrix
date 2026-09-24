@@ -3,7 +3,7 @@
 //   조회 · 재전송 · 수동 전송 · 즉시 드레인. 연동 설정·계약서는 integrationRoutes.js.
 import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
-import { crmTableReady, drainOutbox, enqueueCustomerSync, crmStatus, MAX_ATTEMPTS } from '../crmSync.js';
+import { crmTableReady, drainOutbox, enqueueCustomerSync, crmStatus, MAX_ATTEMPTS, scheduleDrain } from '../crmSync.js';
 
 // 0203 인증 추적 컬럼(있을 때만 조회에 싣는다)
 let hasAuthCols = false;
@@ -253,14 +253,16 @@ export default async function crmSyncRoutes(app) {
       drain.failed += d.failed || 0; drain.held += d.held || 0;
       if (!d.drained) break;
     }
+    if (queued > (drain.drained || 0)) scheduleDrain(app);   // 20260924 · 나머지는 연속 전송으로 이어서
     return { ok: true, queued, skipped, drain,
-             note: queued > 50 ? '나머지는 워커가 순서대로 전송합니다(1분 주기).' : null };
+             note: queued > 50 ? '나머지는 이어서 연속 전송됩니다.' : null };
   });
 
   // 대기분 즉시 밀기
   app.post('/api/crm-sync/drain', guard, async (_req, reply) => {
     if (!(await ready(reply))) return;
     const out = await drainOutbox({ app, limit: 50 });
+    scheduleDrain(app);   // 20260924 · 50건 뒤의 나머지도 이어서 끝까지
     return { ok: true, ...out };
   });
 }

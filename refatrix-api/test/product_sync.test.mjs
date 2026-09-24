@@ -254,7 +254,13 @@ dbTest('적재 → 전송 → 이력까지 (실 PostgreSQL)', async (t) => {
   const { query } = await import('../src/db.js');
   const { invalidateEndpointCache } = await import('../src/integrations.js');
   const { runCatalogSync, listRuns, autoRanToday, mxNowParts: mx } = await import('../src/productSync.js');
-  const { drainOutbox } = await import('../src/crmSync.js');
+  const { drainOutbox, pumpState } = await import('../src/crmSync.js');
+  // 20260924 · 적재하면 엔진이 **스스로 끝까지** 연속 전송한다(pump). 손으로 drainOutbox 를 부르기 전에
+  //   그 연속 전송이 끝나기를 기다린다 — 안 그러면 busy 로 돌아온다.
+  const idle = async () => {
+    await new Promise((r) => setTimeout(r, 50));
+    for (let i = 0; i < 300 && pumpState().running; i++) await new Promise((r) => setTimeout(r, 20));
+  };
 
   // 깨끗한 상태에서 시작
   await query(`DELETE FROM crm_customer_outbox WHERE entity='product'`);
@@ -277,6 +283,7 @@ dbTest('적재 → 전송 → 이력까지 (실 PostgreSQL)', async (t) => {
   invalidateEndpointCache();
 
   // ── 전체 전송 적재
+  received.length = 0;
   const run = await runCatalogSync({ mode: 'full', origin: 'manual', actorUserId: null });
   assert.equal(run.ok, true, JSON.stringify(run));
   assert.equal(run.total_productos, 25);
@@ -304,11 +311,10 @@ dbTest('적재 → 전송 → 이력까지 (실 PostgreSQL)', async (t) => {
   const inactivo = [...p1.productos, ...p3.productos].find((x) => x.codigo === 'T0007');
   assert.equal(inactivo.activo, false, '비활성도 보내되 activo:false');
 
-  // ── 실제 전송
-  received.length = 0;
-  const d = await drainOutbox({ limit: 10 });
-  assert.equal(d.sent, 3, JSON.stringify(d));
-  assert.equal(received.length, 3);
+  // ── 실제 전송 (적재 직후 엔진이 연속 전송 — 남은 게 있으면 한 번 더 민다)
+  await idle();
+  await drainOutbox({ limit: 10 });
+  assert.equal(received.length, 3, '3묶음이 모두 나갔다');
   assert.equal(received[0].method, 'POST');
   assert.equal(received[0].headers['x-api-key'], 'llave-de-pruebas', '키가 헤더로 실려 나간다');
   assert.equal(received[2].body.esUltimoLote, true);
@@ -355,6 +361,7 @@ dbTest('적재 → 전송 → 이력까지 (실 PostgreSQL)', async (t) => {
   const off = await runCatalogSync({ mode: 'test', limit: 2, origin: 'manual' });
   assert.equal(off.queued_only, true);
   assert.equal(off.note, 'endpoint_disabled');
+  await idle();
   const d2 = await drainOutbox({ limit: 10 });
   assert.equal(d2.sent, 0);
   assert.ok(d2.held >= 1, '꺼진 연동은 held — 시도 횟수를 깎지 않는다');
