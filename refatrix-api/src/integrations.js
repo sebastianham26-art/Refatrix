@@ -112,10 +112,7 @@ export async function getEndpoint(key, _depth = 0) {
     try {
       const src = await getEndpoint(String(ep.auth_from), _depth + 1);
       if (src && activeToken(src)) {
-        ep = { ...ep,
-          auth_token: src.auth_token, auth_token_test: src.auth_token_test,
-          auth_token_prod: src.auth_token_prod,
-          token_borrowed_from: src.key, token_borrowed_label: src.label || src.key };
+        ep = borrowToken(ep, src);
       }
     } catch (_) { /* 물려받기 실패는 인증 없이 보내는 것과 같다 — 화면이 경고한다 */ }
   }
@@ -138,11 +135,32 @@ export async function listEndpoints() {
     if (!e.auth_from || activeToken(e)) return e;
     const src = byKey.get(String(e.auth_from));
     if (!src || !activeToken(src)) return e;
-    return { ...e,
-      auth_token: src.auth_token, auth_token_test: src.auth_token_test,
-      auth_token_prod: src.auth_token_prod,
-      token_borrowed_from: src.key, token_borrowed_label: src.label || src.key };
+    return borrowToken(e, src);
   });
+}
+
+/**
+ * 20260924 · 다른 창구의 키를 물려받는다 — **환경이 서로 달라도** 키가 비지 않게.
+ *
+ *   사고: 「오더상태 (전송)」을 테스트 서버로 켜고 연결 테스트를 하자 CRM 이
+ *   `ERR_API_KEY — API key es requerida` 로 답했다. 키가 **아예 안 실려** 나갔다.
+ *   예전 물려받기는 원천 창구의 칸(테스트 키·운영 키)을 **칸 그대로** 복사했다.
+ *   원천(고객 상거래정보)은 운영으로 돌며 **운영 키만** 갖고 있었고, 받는 쪽은 테스트였다
+ *   → 테스트 칸이 비어 「키 없음」으로 호출됐다.
+ *
+ *   이제: 같은 환경의 키가 원천에 있으면 그것을, 없으면 **원천이 지금 실제로 쓰는 키**를 쓴다.
+ *   (디렉터 지시: 오더상태는 고객정보 연동과 **같은 키**를 쓴다 — 그 키가 곧 원천이 쓰는 키다)
+ */
+export function borrowToken(ep, src) {
+  if (!ep || !src) return ep;
+  const cur = activeToken(src);
+  if (!cur) return ep;
+  const pick = (v) => (v != null && String(v) !== '' ? v : cur);
+  return { ...ep,
+    auth_token: cur,
+    auth_token_test: pick(src.auth_token_test),
+    auth_token_prod: pick(src.auth_token_prod),
+    token_borrowed_from: src.key, token_borrowed_label: src.label || src.key };
 }
 
 /** 화면으로 내려보낼 형태 — 토큰은 절대 값으로 내리지 않는다. */
