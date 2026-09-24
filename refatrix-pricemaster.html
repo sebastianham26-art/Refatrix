@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-0924tpl</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-0924tpl2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -131,7 +131,7 @@
         </div>
         <div class="row" style="margin-top:10px">
           <button class="btn ghost sm" id="btnTExport">엑셀 내보내기</button>
-          <button class="btn ghost sm" id="dlTplPrice">📄 FOB·List 업로드 양식 받기</button>
+          <button class="btn ghost sm" id="dlTplPrice">📄 FOB List 업로드 엑셀양식 받기</button>
           <button class="btn ghost sm" id="btnTImport">FOB·List 엑셀 올리기</button>
           <input type="file" id="fImport" accept=".xlsx,.xls,.csv" class="hidden">
           <span class="mut" style="font-size:12px">올리기 열: <b>Clave CTR</b> · <b>FOB USD</b> · <b>List Price MXN</b> — 둘 중 하나만 있어도 됩니다. 바뀐 값만 반영합니다.
@@ -236,7 +236,7 @@
           <div class="f" style="max-width:170px"><label for="sydDate">리스트 기준일</label><input type="date" id="sydDate"></div>
           <div style="flex:0 0 auto"><button class="btn" id="btnSydUp" disabled>올리고 비교</button></div>
         </div>
-        <div class="row" style="margin-top:8px"><button class="btn ghost sm" id="dlTplSyd">📄 SYD 업로드 양식 받기</button>
+        <div class="row" style="margin-top:8px"><button class="btn ghost sm" id="dlTplSyd">📄 SYD 업로드 엑셀양식 받기</button>
           <span class="mut" style="font-size:12px">SYD 원본 파일을 그대로 올려도 됩니다(ARTÍCULO · PRECIO LISTA 열을 알아봅니다). 열 이름이 다르면 양식에 옮겨 붙여 올리세요.</span></div>
         <div class="msg" id="sydMsg"></div>
         <div class="tw" style="margin-top:8px"><table><thead><tr><th>기준일</th><th>파일</th><th class="n">코드</th><th class="n">인상</th><th class="n">인하</th><th class="n">같음</th><th class="n">신규</th><th class="n">사라짐</th><th>비교 대상</th><th>올린 사람</th><th></th></tr></thead><tbody id="sb"></tbody></table></div>
@@ -269,7 +269,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='pm-0924tpl';
+  const BUILD='pm-0924tpl2';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -378,7 +378,7 @@
     const colHdrRow=3+T.rules.length+1; ['A','B','C','D'].forEach(c=>b(c+(colHdrRow+1)));
     const wb=X.utils.book_new(); X.utils.book_append_sheet(wb,ws1,T.sheet); X.utils.book_append_sheet(wb,ws2,'작성방법');
     X.writeFile(wb,T.file);
-    msg.className='msg ok'; msg.textContent='양식을 내려받았습니다 — '+T.file+(ex&&ex.length?' (작성방법 시트에 현재 값 예시 '+ex.length+'건)':' (예시 없이 양식만)');
+    msg.className='msg ok'; msg.textContent='엑셀양식을 내려받았습니다 — '+T.file+(ex&&ex.length?' (작성방법 시트에 현재 값 예시 '+ex.length+'건)':' (예시 없이 양식만)');
   }
   async function readSheet(file){
     const X=await xlsx(); const wb=X.read(await file.arrayBuffer(),{type:'array'});
