@@ -83,7 +83,9 @@ export default async function crmSyncRoutes(app) {
     const st = String(req.query.status || 'open');
     const key = String(req.query.endpoint || '').trim();
     const q = String(req.query.q || '').trim();
-    const limit = Math.min(Number(req.query.limit || 100), 300);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 300);
+    // 09-24 · 페이지 넘기기. offset 이 없으면 예전 그대로(최신 limit 건).
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
     const where = [];
     const params = [];
     if (st === 'open') where.push(`o.status IN ('pending','failed')`);
@@ -94,7 +96,17 @@ export default async function crmSyncRoutes(app) {
       const i = params.length;
       where.push(`(c.code ILIKE $${i} OR c.name ILIKE $${i} OR o.rfc ILIKE $${i}${ep ? ` OR o.entity_label ILIKE $${i}` : ''})`);
     }
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    // 전체 건수 — 같은 조건 그대로(검색이 고객 칼럼을 보므로 JOIN 도 같게).
+    const total = Number((await query(
+      `SELECT count(*)::int AS n
+         FROM crm_customer_outbox o
+         LEFT JOIN customers c ON c.id=o.customer_id
+        ${whereSql}`, params)).rows[0].n);
     params.push(limit);
+    const limIdx = params.length;
+    params.push(offset);
+    const offIdx = params.length;
     const authSel = au ? `o.auth_sent, o.auth_header,` : `NULL::boolean AS auth_sent, NULL::text AS auth_header,`;
     const extra = ep
       ? `COALESCE(o.endpoint_key,'customer_commercial') AS endpoint_key, o.entity, o.entity_id, o.entity_label, o.env, o.url, o.request_method,`
@@ -118,10 +130,11 @@ export default async function crmSyncRoutes(app) {
          FROM crm_customer_outbox o
          LEFT JOIN customers c ON c.id=o.customer_id
          LEFT JOIN users u ON u.id=o.acted_by
-        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-        ORDER BY o.id DESC LIMIT $${params.length}`, params)).rows;
+        ${whereSql}
+        ORDER BY o.id DESC LIMIT $${limIdx} OFFSET $${offIdx}`, params)).rows;
     return {
       max_attempts: MAX_ATTEMPTS,
+      total, limit, offset,
       items: rows.map((r) => ({
         id: Number(r.id),
         endpoint_key: r.endpoint_key, entity: r.entity,

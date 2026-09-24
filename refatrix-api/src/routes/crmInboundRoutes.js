@@ -318,6 +318,8 @@ export default async function crmInboundRoutes(app) {
   app.get('/api/crm-inbound/history', guard, async (req) => {
     if (!(await inboundLogReady())) return { migrated: false, items: [], summary: {} };
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit) || 50));
+    // 09-24 · 페이지 넘기기. offset 이 없으면 예전 그대로(최신 limit 건).
+    const offset = Math.max(0, Number(req.query?.offset) || 0);
     const result = String(req.query?.result || '').trim();
     // ⚠ 창구(endpoint)로 반드시 가른다. 예전에는 이 필터가 없어서 연동 관리의
     //   **두 수신 연동이 같은 목록**을 보여 줬다(신규고객 등록 이력이 웹 가입 신청에도 떴다).
@@ -329,12 +331,18 @@ export default async function crmInboundRoutes(app) {
       where.push(`COALESCE(l.endpoint_key,'crm_customer_registration')=$${params.length}`);
     }
     if (['created', 'updated', 'rejected'].includes(result)) { params.push(result); where.push(`l.result=$${params.length}`); }
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const total = Number((await query(
+      `SELECT count(*)::int AS n FROM crm_inbound_log l ${whereSql}`, params)).rows[0].n);
     params.push(limit);
+    const limIdx = params.length;
+    params.push(offset);
+    const offIdx = params.length;
     const rows = (await query(
       `SELECT l.*, c.name AS customer_name
          FROM crm_inbound_log l LEFT JOIN customers c ON c.id=l.customer_id
-        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-        ORDER BY l.id DESC LIMIT $${params.length}`, params)).rows;
+        ${whereSql}
+        ORDER BY l.id DESC LIMIT $${limIdx} OFFSET $${offIdx}`, params)).rows;
     const sum = (await query(
       `SELECT result, count(*)::int AS n FROM crm_inbound_log
         ${endpoint ? `WHERE COALESCE(endpoint_key,'crm_customer_registration')=$1` : ''}
@@ -342,7 +350,7 @@ export default async function crmInboundRoutes(app) {
     const summary = { created: 0, updated: 0, rejected: 0 };
     for (const s of sum) if (s.result in summary) summary[s.result] = Number(s.n);
     return {
-      migrated: true, summary,
+      migrated: true, summary, total, limit, offset,
       items: rows.map((r) => ({
         id: Number(r.id), created_at: r.created_at, remote_ip: r.remote_ip,
         endpoint_key: r.endpoint_key || 'crm_customer_registration',
