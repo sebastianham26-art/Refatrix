@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0924rf</title>
+<title>Refatrix ERP · 재무 · build fin-0925rv</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1211,10 +1211,189 @@
       :('영수증 파일 '+ok+'건 첨부');
     return {ok,fail:failed.length,failed,text};
   }
+  // ===== 영수증 미리보기 (fin-0925rv) =====
+  //  올린(또는 올릴) 영수증을 화면 안에서 바로 보여준다 — 새 창·팝업 차단 걱정 없이.
+  //   · 사진: 화면에 맞춰 보기 · 클릭=원본 크기 확대 · ↻ 회전(폰 사진이 옆으로 누운 경우)
+  //   · PDF: 화면 안 뷰어 · XML(CFDI): 발행자·RFC·금액·날짜·UUID 요약 + 원문
+  //   · ◀ ▶ / 키보드 ← → 로 같은 거래의 다음 파일, Esc 닫기 · [새 창] [저장]
+  //  항목 형식: {name, mime, size, blob: async()=>Blob}
+  const rvBlobCache=new Map();                       // 서버 파일 id → Blob (최근 30개만)
+  async function txnFileBlob(fid){
+    if(rvBlobCache.has(fid))return rvBlobCache.get(fid);
+    const res=await fetch(session.api+'/api/transactions/files/'+fid,{headers:auth()});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok||!d.file_data)throw new Error(d.error||('http_'+res.status));
+    const c=d.file_data.indexOf(',');
+    const mime=(d.file_data.slice(0,c).match(/data:([^;]+)/)||[])[1]||d.mime_type||'application/octet-stream';
+    const bin=atob(d.file_data.slice(c+1));const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+    const blob=new Blob([arr],{type:mime});
+    rvBlobCache.set(fid,blob);
+    if(rvBlobCache.size>30)rvBlobCache.delete(rvBlobCache.keys().next().value);
+    return blob;
+  }
+  function rvKind(mime,name){
+    const m=String(mime||'').toLowerCase(),n=String(name||'').toLowerCase();
+    if(m.startsWith('image/'))return 'image';
+    if(m==='application/pdf'||/\.pdf$/.test(n))return 'pdf';
+    if(m.includes('xml')||/\.xml$/.test(n))return 'xml';
+    return 'other';
+  }
+  // CFDI(멕시코 전자 인보이스) XML 요약 — 네임스페이스 접두사(cfdi:, tfd:)와 무관하게 localName 으로 찾는다
+  function cfdiSummary(text){
+    let doc;try{doc=new DOMParser().parseFromString(text,'application/xml');}catch(e){return null;}
+    if(!doc||doc.getElementsByTagName('parsererror').length)return null;
+    const all=[...doc.getElementsByTagName('*')];
+    const el=(ln)=>all.find(x=>x.localName===ln);
+    const at=(e,...ks)=>{if(!e)return '';for(const k of ks){const v=e.getAttribute(k);if(v)return v;}return '';};
+    const comp=el('Comprobante');if(!comp)return null;
+    const em=el('Emisor'),re=el('Receptor'),tfd=el('TimbreFiscalDigital');
+    const tipo={I:'Ingreso',E:'Egreso',T:'Traslado',P:'Pago',N:'Nómina'}[at(comp,'TipoDeComprobante')]||at(comp,'TipoDeComprobante');
+    return [
+      ['발행자 (Emisor)',[at(em,'Nombre'),at(em,'Rfc')].filter(Boolean).join(' · ')],
+      ['수신자 (Receptor)',[at(re,'Nombre'),at(re,'Rfc')].filter(Boolean).join(' · ')],
+      ['Serie · Folio',[at(comp,'Serie'),at(comp,'Folio')].filter(Boolean).join(' ')],
+      ['날짜',at(comp,'Fecha').replace('T',' ')],
+      ['유형',tipo],
+      ['소계 (SubTotal)',at(comp,'SubTotal')?fmt(at(comp,'SubTotal'))+' '+at(comp,'Moneda'):''],
+      ['합계 (Total)',at(comp,'Total')?fmt(at(comp,'Total'))+' '+at(comp,'Moneda'):''],
+      ['UUID (Folio Fiscal)',at(tfd,'UUID')],
+    ].filter(r=>r[1]);
+  }
+  let rv={items:[],i:0,url:null,rot:0,zoom:false};
+  function rvEnsure(){
+    let o=$('rcptViewer'); if(o)return o;
+    o=document.createElement('div');o.id='rcptViewer';
+    o.innerHTML=`<style>
+      #rcptViewer{position:fixed;inset:0;z-index:9999;background:rgba(12,14,13,.97);display:none;flex-direction:column;font-family:inherit}
+      #rcptViewer.on{display:flex}
+      #rcptViewer .rv-top{display:flex;align-items:center;gap:8px;padding:10px 12px;color:#fff;flex-wrap:wrap}
+      #rcptViewer .rv-name{font-weight:700;font-size:14px;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      #rcptViewer .rv-cnt{font-size:12px;color:#c9c4b8}
+      #rcptViewer .rv-b{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 10px;font-size:12.5px;cursor:pointer;font-family:inherit}
+      #rcptViewer .rv-b:hover{background:rgba(255,255,255,.22)}
+      #rcptViewer .rv-stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;overflow:auto;padding:0 8px 10px}
+      #rcptViewer .rv-stage img{max-width:100%;max-height:100%;object-fit:contain;background:#fff;border-radius:4px;cursor:zoom-in;transition:transform .15s}
+      #rcptViewer .rv-stage.zoom{align-items:flex-start;justify-content:flex-start}
+      #rcptViewer .rv-stage.zoom img{max-width:none;max-height:none;cursor:zoom-out}
+      #rcptViewer .rv-stage iframe{width:100%;height:100%;border:0;background:#fff;border-radius:4px}
+      #rcptViewer .rv-doc{background:#fff;border-radius:10px;padding:16px 18px;max-width:760px;width:100%;max-height:100%;overflow:auto;align-self:flex-start}
+      #rcptViewer .rv-doc table{width:100%;border-collapse:collapse;font-size:13px}
+      #rcptViewer .rv-doc td{padding:6px 8px;border-bottom:1px solid #eee;vertical-align:top;word-break:break-all}
+      #rcptViewer .rv-doc td:first-child{color:#6b6b6b;white-space:nowrap;width:1%}
+      #rcptViewer .rv-doc pre{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#f7f5ef;padding:10px;border-radius:6px;max-height:40vh;overflow:auto}
+      #rcptViewer .rv-nav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:none;background:rgba(255,255,255,.2);color:#fff;font-size:18px;cursor:pointer}
+      #rcptViewer .rv-nav.p{left:10px} #rcptViewer .rv-nav.n{right:10px}
+      #rcptViewer .rv-msg{color:#fff;text-align:center;font-size:14px;line-height:1.6}
+      @media (max-width:600px){#rcptViewer .rv-hide-m{display:none}}
+    </style>
+    <div class="rv-top"><span class="rv-name"></span><span class="rv-cnt"></span>
+      <button type="button" class="rv-b rv-rot" title="사진 90° 회전">↻ 회전</button>
+      <button type="button" class="rv-b rv-open rv-hide-m">새 창</button>
+      <button type="button" class="rv-b rv-save">⬇ 저장</button>
+      <button type="button" class="rv-b rv-close" title="닫기 (Esc)">✕ 닫기</button></div>
+    <div class="rv-stage"></div>
+    <button type="button" class="rv-nav p" title="이전 (←)">◀</button><button type="button" class="rv-nav n" title="다음 (→)">▶</button>`;
+    document.body.appendChild(o);
+    o.querySelector('.rv-close').addEventListener('click',rvClose);
+    o.querySelector('.rv-nav.p').addEventListener('click',()=>rvGo(-1));
+    o.querySelector('.rv-nav.n').addEventListener('click',()=>rvGo(1));
+    o.querySelector('.rv-rot').addEventListener('click',()=>{rv.rot=(rv.rot+90)%360;const im=o.querySelector('.rv-stage img');if(im)im.style.transform=rv.rot?`rotate(${rv.rot}deg)`:'';});
+    o.querySelector('.rv-open').addEventListener('click',()=>{if(rv.url)window.open(rv.url,'_blank');});
+    o.querySelector('.rv-save').addEventListener('click',()=>{if(!rv.url)return;const a=document.createElement('a');a.href=rv.url;a.download=(rv.items[rv.i]||{}).name||'receipt';document.body.appendChild(a);a.click();a.remove();});
+    o.addEventListener('click',e=>{if(e.target===o||e.target.classList.contains('rv-stage'))rvClose();});   // 바깥 클릭 닫기
+    document.addEventListener('keydown',e=>{if(!o.classList.contains('on'))return;
+      if(e.key==='Escape')rvClose(); else if(e.key==='ArrowLeft')rvGo(-1); else if(e.key==='ArrowRight')rvGo(1);});
+    return o;
+  }
+  function openReceiptViewer(items,start){
+    if(!items||!items.length)return;
+    const o=rvEnsure();
+    rv.items=items;rv.i=Math.max(0,Math.min(items.length-1,Number(start)||0));
+    o.classList.add('on');document.body.style.overflow='hidden';
+    rvShow();
+  }
+  function rvClose(){
+    const o=$('rcptViewer');if(!o)return;
+    o.classList.remove('on');document.body.style.overflow='';
+    o.querySelector('.rv-stage').innerHTML='';
+    if(rv.url){const u=rv.url;setTimeout(()=>URL.revokeObjectURL(u),1000);rv.url=null;}
+  }
+  function rvGo(d){ if(rv.items.length<2)return; rv.i=(rv.i+d+rv.items.length)%rv.items.length; rvShow(); }
+  async function rvShow(){
+    const o=rvEnsure(),st=o.querySelector('.rv-stage'),it=rv.items[rv.i];
+    const token={};rv.token=token;
+    rv.rot=0;st.classList.remove('zoom');
+    o.querySelector('.rv-name').textContent=it.name||'영수증';
+    o.querySelector('.rv-cnt').textContent=rv.items.length>1?(rv.i+1)+' / '+rv.items.length:'';
+    o.querySelectorAll('.rv-nav').forEach(b=>b.style.display=rv.items.length>1?'':'none');
+    const kind=rvKind(it.mime,it.name);
+    o.querySelector('.rv-rot').style.display=kind==='image'?'':'none';
+    st.innerHTML='<div class="rv-msg">불러오는 중…</div>';
+    if(rv.url){URL.revokeObjectURL(rv.url);rv.url=null;}
+    let blob;
+    try{blob=await it.blob();}catch(e){if(rv.token===token)st.innerHTML='<div class="rv-msg">파일을 불러오지 못했습니다.</div>';return;}
+    if(rv.token!==token)return;                       // 기다리는 사이 다른 파일로 넘어감
+    rv.url=URL.createObjectURL(blob);
+    if(kind==='image'){
+      const im=document.createElement('img');im.alt=it.name||'';
+      im.onerror=()=>{st.innerHTML='<div class="rv-msg">이 사진 형식(예: HEIC)은 이 브라우저가 미리 보여주지 못합니다.<br>[⬇ 저장]으로 내려받아 여세요.</div>';};
+      im.addEventListener('click',e=>{e.stopPropagation();st.classList.toggle('zoom');});
+      im.src=rv.url;st.innerHTML='';st.appendChild(im);
+    }else if(kind==='pdf'){
+      st.innerHTML='';const fr=document.createElement('iframe');fr.title=it.name||'PDF';fr.src=rv.url;st.appendChild(fr);
+    }else if(kind==='xml'){
+      const text=await blob.text();if(rv.token!==token)return;
+      const sum=cfdiSummary(text);
+      const pretty=text.replace(/>\s*</g,'>\n<');
+      st.innerHTML='<div class="rv-doc">'+(sum&&sum.length
+        ?'<div style="font-weight:800;color:var(--brand);margin-bottom:8px">🧾 CFDI 요약</div><table>'+sum.map(r=>'<tr><td>'+escH(r[0])+'</td><td><b>'+escH(r[1])+'</b></td></tr>').join('')+'</table>'
+          +'<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12.5px;color:var(--muted)">XML 원문 보기</summary><pre>'+escH(pretty)+'</pre></details>'
+        :'<div style="font-weight:800;margin-bottom:8px">XML</div><pre style="max-height:none">'+escH(pretty)+'</pre>')+'</div>';
+    }else{
+      st.innerHTML='<div class="rv-msg">미리보기를 지원하지 않는 형식입니다. [⬇ 저장]으로 내려받아 여세요.</div>';
+    }
+  }
+  // 로컬 File(아직 안 올린 파일) → 뷰어 항목
+  function rvLocalItems(files){ return files.map(f=>({name:f.name,mime:txnFileKind(f)||f.type,size:f.size,blob:async()=>f})); }
+  // 서버 파일 목록 → 뷰어 항목
+  function rvServerItems(list){ return list.map(f=>({name:f.file_name||('파일 #'+f.id),mime:f.mime_type,size:f.file_size,blob:()=>txnFileBlob(Number(f.id))})); }
+  // 거래 1건의 영수증을 바로 연다(등록 직후 「방금 올린 영수증 보기」 등)
+  async function openTxnFilesViewer(txnId,start){
+    try{
+      const d=await fetch(session.api+'/api/transactions/'+txnId+'/files',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length){alert('붙은 영수증 파일이 없습니다.');return;}
+      openReceiptViewer(rvServerItems(items),start||0);
+    }catch(e){alert('파일을 불러오지 못했습니다.');}
+  }
+  // 썸네일 칸(사진이면 실제 축소 이미지, PDF·XML 은 아이콘) — 로컬/서버 공용
+  function rvThumbHtml(name,mime,idx,extra){
+    const k=rvKind(mime,name);
+    const ic=k==='pdf'?'📄':(k==='xml'?'🧾':(k==='image'?'🖼':'📎'));
+    return `<button type="button" class="rv-thumb" data-idx="${idx}" title="${escH(name||'')} — 눌러서 보기" style="position:relative;width:88px;height:96px;border:1px solid var(--line);border-radius:8px;background:#faf8f3;padding:0;cursor:pointer;overflow:hidden;display:inline-flex;flex-direction:column;align-items:stretch;flex:none;font-family:inherit">
+      <span class="rv-tim" data-kind="${k}" style="flex:1;display:flex;align-items:center;justify-content:center;font-size:26px;background:#fff;min-height:0">${ic}</span>
+      <span style="font-size:10.5px;line-height:1.25;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);background:#faf8f3;border-top:1px solid var(--line)">${escH(name||'파일')}</span>${extra||''}</button>`;
+  }
+  function rvFillThumbImg(btn,url){
+    const box=btn.querySelector('.rv-tim');if(!box||!url)return;
+    const im=new Image();im.alt='';im.style.cssText='width:100%;height:100%;object-fit:cover;display:block';
+    im.onload=()=>{box.innerHTML='';box.appendChild(im);};im.src=url;
+  }
   function paintTxnNewFiles(){
     const box=$('t-file-chips'); if(!box)return;
-    box.innerHTML=txnNewFiles.map((f,i)=>`<span class="badge" style="background:#fff;border:1px solid var(--line);color:var(--ink,#222);font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 10px">📎 ${escH(f.name||'파일')} <span style="color:var(--muted);font-weight:400">${fmtBytes(f.size)}</span><button type="button" class="t-file-x" data-i="${i}" title="빼기" style="border:none;background:#f1ede4;color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0">✕</button></span>`).join('');
-    [...box.querySelectorAll('.t-file-x')].forEach(b=>b.addEventListener('click',()=>{txnNewFiles.splice(Number(b.dataset.i),1);paintTxnNewFiles();}));
+    // 고른 파일을 바로 미리보기 — 사진은 축소 이미지, 누르면 크게(fin-0925rv)
+    (paintTxnNewFiles._urls||[]).forEach(u=>URL.revokeObjectURL(u)); paintTxnNewFiles._urls=[];
+    box.innerHTML=txnNewFiles.map((f,i)=>rvThumbHtml(f.name,txnFileKind(f)||f.type,i,
+      `<span class="t-file-x" data-i="${i}" role="button" title="빼기" style="position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:11px;line-height:20px;text-align:center">✕</span>`)).join('')
+      +(txnNewFiles.length?'<span class="hint" style="margin:0;align-self:center">눌러서 크게 보기 · ✕ 빼기</span>':'');
+    [...box.querySelectorAll('.rv-thumb')].forEach(b=>{
+      const i=Number(b.dataset.idx),f=txnNewFiles[i];
+      if(f&&rvKind(txnFileKind(f),f.name)==='image'){const u=URL.createObjectURL(f);paintTxnNewFiles._urls.push(u);rvFillThumbImg(b,u);}
+      b.addEventListener('click',e=>{
+        if(e.target.classList.contains('t-file-x')){txnNewFiles.splice(i,1);paintTxnNewFiles();return;}
+        openReceiptViewer(rvLocalItems(txnNewFiles),i);
+      });
+    });
   }
   function onTxnFilesPicked(){
     const inp=$('t-file'); const m=$('newMsg');
@@ -1257,13 +1436,14 @@
     h+='<span class="hint tf-msg" style="margin:0"></span></div>';
     if(!items.length)h+='<div class="hint" style="margin:6px 0 0">붙은 파일이 없습니다.'+(d.can_attach?' 사진·PDF·XML(CFDI) · 파일당 8MB.':'')+'</div>';
     else{
+      h+='<div class="tf-thumbs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+items.map((f,i)=>rvThumbHtml(f.file_name||('파일 #'+f.id),f.mime_type,i)).join('')+'</div>';
       h+='<table style="margin-top:8px"><thead><tr><th>파일</th><th class="num">크기</th><th>올린 사람</th><th>시각</th><th></th></tr></thead><tbody>';
       items.forEach(f=>{
         const when=f.uploaded_at?new Date(f.uploaded_at).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
         const ic=String(f.mime_type||'').startsWith('image/')?'🖼':(f.mime_type==='application/pdf'?'📄':'🧾');
-        h+='<tr><td>'+ic+' '+escH(f.file_name||('파일 #'+f.id))+'</td><td class="num" style="color:var(--muted)">'+fmtBytes(f.file_size)+'</td>'
+        h+='<tr><td><a href="#" class="tf-name" data-idx="'+items.indexOf(f)+'" style="color:var(--brand)">'+ic+' '+escH(f.file_name||('파일 #'+f.id))+'</a></td><td class="num" style="color:var(--muted)">'+fmtBytes(f.file_size)+'</td>'
           +'<td>'+escH(f.uploaded_by_name||'')+'</td><td style="white-space:nowrap;color:var(--muted)">'+escH(when)+'</td>'
-          +'<td style="white-space:nowrap"><button type="button" class="btn ghost sm tf-view" data-fid="'+f.id+'">보기</button>'
+          +'<td style="white-space:nowrap"><button type="button" class="btn ghost sm tf-view" data-idx="'+items.indexOf(f)+'">보기</button>'
           +(f.can_delete?' <button type="button" class="btn ghost sm tf-del" data-fid="'+f.id+'" style="color:var(--expense);border-color:var(--expense)">삭제</button>':'')+'</td></tr>';
       });
       h+='</tbody></table>';
@@ -1281,7 +1461,14 @@
         const m2=div.querySelector('.tf-msg'); if(m2){m2.textContent=up.text;m2.style.color=up.fail?'var(--expense)':'var(--income)';}
       });
     }
-    div.querySelectorAll('.tf-view').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();viewTxnFile(Number(b.dataset.fid));}));
+    // 보기: 화면 안 미리보기(◀ ▶ 로 이 거래의 다른 파일) — fin-0925rv
+    const rvItems=rvServerItems(items);
+    div.querySelectorAll('.tf-view,.tf-name,.rv-thumb').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openReceiptViewer(rvItems,Number(b.dataset.idx));}));
+    // 사진 썸네일은 차례로 불러 채운다(한꺼번에 몰리지 않게, 최대 12장)
+    (async()=>{let n=0;for(const b of div.querySelectorAll('.tf-thumbs .rv-thumb')){
+      const f=items[Number(b.dataset.idx)]; if(!f||rvKind(f.mime_type,f.file_name)!=='image')continue; if(++n>12)break;
+      try{const bl=await txnFileBlob(Number(f.id)); if(!div.isConnected)return; rvFillThumbImg(b,URL.createObjectURL(bl));}catch(e){}
+    }})();
     div.querySelectorAll('.tf-del').forEach(b=>b.addEventListener('click',async e=>{
       e.stopPropagation();
       if(!confirm('이 영수증 파일을 삭제할까요? 되돌릴 수 없습니다.'))return;
@@ -1337,6 +1524,10 @@
         const up=await uploadTxnFiles(Number(d.id),txnNewFiles.slice());
         m.textContent+=' · '+up.text;
         if(up.fail)m.className='msg err';
+        if(up.ok){ // 방금 올린 영수증을 바로 확인 (fin-0925rv)
+          const newId=Number(d.id),a=document.createElement('a');a.href='#';a.textContent=' 📎 방금 올린 영수증 보기';a.style.cssText='color:var(--brand);font-weight:700;margin-left:6px';
+          a.addEventListener('click',e=>{e.preventDefault();openTxnFilesViewer(newId,0);});m.appendChild(a);
+        }
         txnNewFiles=up.failed;            // 실패한 파일만 남겨 둔다 — 거래목록에서 그 거래를 펼쳐 다시 붙일 수 있다
         paintTxnNewFiles();
       }
@@ -4254,8 +4445,9 @@
     // 영수증 파일(fin-0924rf) — 고른 파일은 실적 반영 성공 직후 이 거래에 올린다
     tr._files=[];
     const ppFile=tr.querySelector('.pp-file'),ppList=tr.querySelector('.pp-filelist');
-    const paintPpFiles=()=>{ppList.innerHTML=tr._files.length?tr._files.map((f,i)=>`📎 ${escH(f.name||'파일')} <a href="#" class="pp-filex" data-i="${i}" style="color:var(--expense)">✕</a>`).join(' · '):'사진·PDF·XML · 실적 반영과 함께 올라갑니다';
-      ppList.querySelectorAll('.pp-filex').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();tr._files.splice(Number(a.dataset.i),1);paintPpFiles();}));};
+    const paintPpFiles=()=>{ppList.innerHTML=tr._files.length?tr._files.map((f,i)=>`<a href="#" class="pp-fileview" data-i="${i}" style="color:var(--brand)" title="눌러서 보기">📎 ${escH(f.name||'파일')}</a> <a href="#" class="pp-filex" data-i="${i}" style="color:var(--expense)" title="빼기">✕</a>`).join(' · '):'사진·PDF·XML · 실적 반영과 함께 올라갑니다';
+      ppList.querySelectorAll('.pp-filex').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();tr._files.splice(Number(a.dataset.i),1);paintPpFiles();}));
+      ppList.querySelectorAll('.pp-fileview').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();openReceiptViewer(rvLocalItems(tr._files),Number(a.dataset.i));}));};
     tr.querySelector('.pp-filebtn').addEventListener('click',()=>ppFile.click());
     ppFile.addEventListener('change',()=>{const bad=[];[...(ppFile.files||[])].forEach(f=>{const e=txnFileErr(f);if(e)bad.push((f.name||'파일')+': '+e);else tr._files.push(f);});ppFile.value='';paintPpFiles();if(bad.length)alert('제외한 파일 — '+bad.join('\n'));});
     const ppPlanAmt=t.plan_amount!=null?Number(t.plan_amount):Number(t.amount);
