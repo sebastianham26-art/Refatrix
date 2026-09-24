@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-0923oe</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-0924rg</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -73,6 +73,18 @@
   .cand.inact{background:#fdf6f5;opacity:.75}
   .inactbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#fbe9e7;color:#b23a2e;
     font-size:10px;font-weight:800;line-height:16px;vertical-align:middle}
+  /* 전체 견적 — 차종 지역 선택 모달 (qt-0924rg) */
+  .rgList{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}
+  .rgItem{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;background:#fff}
+  .rgItem:hover{border-color:var(--brand-soft)}
+  .rgItem input{width:auto;margin:0}
+  .rgItem .nm{font-weight:800;color:var(--brand);font-size:14px;min-width:92px}
+  .rgItem .ex{font-size:11.5px;color:var(--muted);flex:1;line-height:1.35}
+  .rgItem .ct{font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;text-align:right}
+  .rgItem.off{opacity:.55}
+  .rgMode{display:flex;flex-direction:column;gap:6px;margin-top:14px;font-size:12.5px}
+  .rgMode label{display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-weight:500}
+  .rgMode input{width:auto;margin:3px 0 0}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -122,7 +134,7 @@
             <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
             <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
             <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — A열에 SKU별 적용차종 표시(차종 그룹 → 부품 고정순서). 여러 차종에 쓰이는 코드는 차종마다 중복 기입(빨간 글씨)하고 대표 차종 1행만 파란 음영 + Subtotal 합산 · Existencia(현재고)·Disponible(가용)·En tránsito(운송중)·En producción(생산중) 4개 수량열">⭐ Top 500 견적</button>
-            <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — 모든 SKU의 적용차종(Aplicación)을 파싱해 A열에 차종을 표시. 차종 그룹(VIO순) → 부품 고정순서, 여러 차종에 쓰이는 코드는 중복 기입(빨강)·대표 차종 1행 파란 음영만 Subtotal 합산(총액 불변) · 수량열 4종: Existencia(현재고)·Disponible(현재고−타견적 예약)·En tránsito(선적됨)·En producción(발주 미선적) · 적용차종 없는 SKU는 맨 아래 Sin aplicación">📚 전체 견적</button>
+            <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — 모든 SKU의 적용차종(Aplicación)을 파싱해 A열에 차종을 표시. 차종 그룹(VIO순) → 부품 고정순서, 여러 차종에 쓰이는 코드는 중복 기입(빨강)·대표 차종 1행 파란 음영만 Subtotal 합산(총액 불변) · 수량열 4종: Existencia(현재고)·Disponible(현재고−타견적 예약)·En tránsito(선적됨)·En producción(발주 미선적) · 적용차종 없는 SKU는 맨 아래 Sin aplicación · 클릭하면 차종 지역(아시아·유럽·미국·중국) 선택 후 다운로드 — 지역별 시트 분리 가능">📚 전체 견적</button>
             <button class="btn ghost sm hidden" id="btnVsSyd" onclick="downloadVsSyd()" title="CTR vs SYD 커버리지 비교 — A열 차종 라벨을 「전체 견적」과 동일 규칙으로 통일(그룹사명+모델+연식). 차종·세대 × 6대 품군의 CTR·SYD 코드와 정가(MXN). SYD만 있고 CTR이 없는 칸은 빨강 · 대표·소시오 전용">🆚 CTR vs SYD</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
@@ -160,6 +172,30 @@
   <div class="box">
     <div class="hd"><span style="font-size:15px;font-weight:800;color:var(--brand)" id="histTitle">구매 실적</span><button class="btn ghost sm" style="margin-left:auto" onclick="document.getElementById('histModal').style.display='none'">닫기 ✕</button></div>
     <div class="bd" id="histBody"></div>
+  </div>
+</div>
+
+<!-- 전체 견적 — 차종 지역 선택 모달 (qt-0924rg) -->
+<div class="modal" id="rgModal">
+  <div class="box">
+    <div class="hd"><span style="font-size:15px;font-weight:800;color:var(--brand)">📚 전체 견적 — 차종 지역 선택</span><button class="btn ghost sm" style="margin-left:auto" id="rgClose">닫기 ✕</button></div>
+    <div class="bd">
+      <div class="hint">받을 차종 지역을 고르세요. 한 부품이 여러 지역 차종에 쓰이면 해당 지역 모두에 들어갑니다(예: 닛산·VW 공용 부품 → 아시아·유럽 양쪽).</div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button class="btn ghost sm" id="rgAll">전체 선택</button>
+        <button class="btn ghost sm" id="rgNone">전체 해제</button>
+      </div>
+      <div class="rgList" id="rgList"></div>
+      <div class="rgMode">
+        <label><input type="radio" name="rgMode" value="split" checked> <span><b>지역별 시트로 나누기</b> — 엑셀 아래 탭(Asia · Europa · América · China)으로 지역마다 따로 봅니다. 시트마다 할인율·Subtotal·IVA·Total이 따로 계산됩니다.</span></label>
+        <label><input type="radio" name="rgMode" value="merge"> <span><b>한 시트로 합치기</b> — 선택한 지역만 기존 전체 견적과 같은 순서(VIO순)로 한 시트에 담습니다.</span></label>
+      </div>
+      <div class="msg" id="rgMsg"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button class="btn ghost" id="rgCancel">취소</button>
+        <button class="btn" id="rgGo" disabled>📥 엑셀 다운로드</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -521,12 +557,25 @@
   //   · 그룹사 매핑: General Motors / Chrysler / Ford Motor (ACURA·INFINITI·LEXUS·AUDI는 묶지 않음)
   //   · 연식 범위는 병합하지 않는다(Aveo 2008-2018 / 2018-2023 별개 유지)
   const VEH=(function(){
-    const BRANDS=["CHEVROLET, GMC","DODGE, CHRYSLER","FORD, MERCURY","MERCEDES BENZ","ALFA ROMEO","LAND ROVER","ACURA","AUDI","BMW","BUICK","CADILLAC","CHIREY","CUPRA","EAGLE","FIAT","GEO","HONDA","HYUNDAI","INFINITI","ISUZU","JAC","JAGUAR","JEEP","KIA","LEXUS","LINCOLN","MAZDA","MINI","MITSUBISHI","NISSAN","OLDSMOBILE","PEUGEOT","PLYMOUTH","PONTIAC","PORSCHE","RAM","RENAULT","SAAB","SATURN","SEAT","SMART","SUBARU","SUZUKI","TOYOTA","VOLKSWAGEN","VOLVO","CHRYSLER","DODGE","FORD","CHEVROLET","GMC","MERCURY"].slice().sort(function(a,b){return b.length-a.length;});
+    const BRANDS=["CHEVROLET, GMC","DODGE, CHRYSLER","FORD, MERCURY","MERCEDES BENZ","ALFA ROMEO","LAND ROVER","ACURA","AUDI","BMW","BUICK","CADILLAC","CHIREY","CUPRA","EAGLE","FIAT","GEO","HONDA","HYUNDAI","INFINITI","ISUZU","JAC","JAGUAR","JEEP","KIA","LEXUS","LINCOLN","MAZDA","MINI","MITSUBISHI","NISSAN","OLDSMOBILE","PEUGEOT","PLYMOUTH","PONTIAC","PORSCHE","RAM","RENAULT","SAAB","SATURN","SEAT","SMART","SUBARU","SUZUKI","TOYOTA","VOLKSWAGEN","VOLVO","CHRYSLER","DODGE","FORD","CHEVROLET","GMC","MERCURY",
+      /* 중국 브랜드 (qt-0924rg) — 멕시코 판매 브랜드. 기존엔 파싱 실패 → Sin aplicación 으로 빠지던 것 */
+      "MG","OMODA","JAECOO","BYD","GEELY","CHANGAN","GWM","GREAT WALL","HAVAL","BAIC","JETOUR","JMC","FOTON","GAC","DONGFENG","CHERY","SEV"].slice().sort(function(a,b){return b.length-a.length;});
     const GRP={};
     ["CHEVROLET, GMC","BUICK","CADILLAC","OLDSMOBILE","PONTIAC","SATURN","GEO","SAAB","CHEVROLET","GMC"].forEach(function(b){GRP[b]='General Motors';});
     ["DODGE, CHRYSLER","JEEP","PLYMOUTH","EAGLE","RAM","CHRYSLER","DODGE"].forEach(function(b){GRP[b]='Chrysler';});
     ["FORD, MERCURY","LINCOLN","FORD","MERCURY"].forEach(function(b){GRP[b]='Ford Motor';});
-    const SPECIAL={'BMW':'BMW','SEAT':'SEAT','KIA':'KIA','JAC':'JAC','MERCEDES BENZ':'Mercedes Benz','ALFA ROMEO':'Alfa Romeo','LAND ROVER':'Land Rover'};
+    const SPECIAL={'BMW':'BMW','SEAT':'SEAT','KIA':'KIA','JAC':'JAC','MERCEDES BENZ':'Mercedes Benz','ALFA ROMEO':'Alfa Romeo','LAND ROVER':'Land Rover',
+      'MG':'MG','BYD':'BYD','GWM':'GWM','JMC':'JMC','GAC':'GAC','BAIC':'BAIC','SEV':'SEV'};
+    // ---- 차종 지역(제조사 국적) — 전체 견적 지역 선택용 (qt-0924rg) ----
+    // AS 아시아(일본·한국) · EU 유럽 · AM 미국 · CN 중국. 그룹사 기준: SAAB은 GM 그룹 라벨(General Motors)이라 AM.
+    // MG는 SAIC(중국) 소유 · 멕시코 판매분도 중국 생산이라 CN.
+    const REGION={};
+    ["ACURA","HONDA","HYUNDAI","INFINITI","ISUZU","KIA","LEXUS","MAZDA","MITSUBISHI","NISSAN","SUBARU","SUZUKI","TOYOTA"].forEach(function(b){REGION[b]='AS';});
+    ["MERCEDES BENZ","ALFA ROMEO","LAND ROVER","AUDI","BMW","CUPRA","FIAT","JAGUAR","MINI","PEUGEOT","PORSCHE","RENAULT","SEAT","SMART","VOLKSWAGEN","VOLVO"].forEach(function(b){REGION[b]='EU';});
+    ["CHEVROLET, GMC","BUICK","CADILLAC","OLDSMOBILE","PONTIAC","SATURN","GEO","SAAB","CHEVROLET","GMC","DODGE, CHRYSLER","JEEP","PLYMOUTH","EAGLE","RAM","CHRYSLER","DODGE","FORD, MERCURY","LINCOLN","FORD","MERCURY"].forEach(function(b){REGION[b]='AM';});
+    ["CHIREY","JAC","MG","OMODA","JAECOO","BYD","GEELY","CHANGAN","GWM","GREAT WALL","HAVAL","BAIC","JETOUR","JMC","FOTON","GAC","DONGFENG","CHERY","SEV"].forEach(function(b){REGION[b]='CN';});
+    const G2B={}; // 생성 차종 라벨 → 원 브랜드 키(BRANDS) — parseApp가 채운다
+    function regionOfGroup(g){ const b=G2B[g]; return (b&&REGION[b])||'NA'; }
     const ROMAN={'I':1,'II':1,'III':1,'IV':1,'V':1,'VI':1,'VII':1,'VIII':1,'IX':1};
     function titleCase(s){ return String(s||'').toLowerCase().replace(/(^|[\s\-\/,])([a-záéíóúüñ])/g,function(_,a,b){return a+b.toUpperCase();}); }
     // 브랜드 표기: 3글자 이하 전부 대문자 토큰(MG·BMW·JAC·KIA·RAM·GMC)은 대문자 유지
@@ -563,7 +612,10 @@
         else{ model=rest.replace(/\bTODOS\b/ig,'').trim(); }
       }
       model=cleanModel(model);
-      return model?glabel(dispBrand(b),model,y1,y2):null;
+      if(!model) return null;
+      const lbl=glabel(dispBrand(b),model,y1,y2);
+      if(!(lbl in G2B)) G2B[lbl]=b;
+      return lbl;
     }
     // Aplicación 전체 문자열(「 // 」 연결) → 차종 라벨 배열(중복 제거, 원문 순서)
     function appGroups(app){
@@ -728,14 +780,14 @@
         });
         uq.forEach(function(it){
           const c=String(it.ctr_code||'').trim().toUpperCase();
-          out.push({label:label,vio:vio||null,it:it,isRep:rep[c]===g,isDup:dupCnt[c]>1});
+          out.push({label:label,vio:vio||null,it:it,isRep:rep[c]===g,isDup:dupCnt[c]>1,region:regionOfGroup(g)});
         });
       });
       noapp.sort(function(x,y){
         return (partRank(x.name,x.ctr_code)-partRank(y.name,y.ctr_code))
           || String(x.ctr_code||'').localeCompare(String(y.ctr_code||''),'en');
       });
-      noapp.forEach(function(it){ out.push({label:'Sin aplicación especificada',vio:null,it:it,isRep:true,isDup:false}); });
+      noapp.forEach(function(it){ out.push({label:'Sin aplicación especificada',vio:null,it:it,isRep:true,isDup:false,region:'NA'}); });
       return {rows:out,stats:{groups:ordered.length,curated:curated.length,matched:mc.matched,
         dup:out.filter(function(r){return r.isDup;}).length,
         reps:Object.keys(rep).filter(function(c){return dupCnt[c]>1;}).length,
@@ -773,42 +825,171 @@
       return glabel(brand,model,y1,y2);
     }
     return {appGroups:appGroups,parseApp:parseApp,buildQuotePlan:buildQuotePlan,
-      unifiedLabel:unifiedLabel,similar:similar,partRank:partRank,partKind:partKind,cleanModel:cleanModel,stripDesc:stripDesc,dispBrand:dispBrand};
+      unifiedLabel:unifiedLabel,similar:similar,partRank:partRank,partKind:partKind,cleanModel:cleanModel,stripDesc:stripDesc,dispBrand:dispBrand,
+      regionOfGroup:regionOfGroup,REGION:REGION,BRANDS:BRANDS};
   })();
 
   // ===== Top 500 / 전체 견적 (VIO 등록대수 기준 · Oferta 양식) =====
   // all=false: VIO 상위 500 SKU. all=true: 전체 SKU(VIO 미매칭 포함 — 미매칭은 맨 뒤 그룹).
   async function downloadTop500(){ return downloadVioQuote(false); }
-  async function downloadAllQuote(){ return downloadVioQuote(true); }
-  async function downloadVioQuote(all){
+  async function downloadAllQuote(){ return openRegionModal(); }
+  // ---- 차종 지역 (qt-0924rg) ----
+  const RG_ORDER=['AS','EU','AM','CN','NA'];
+  const RG_INFO={
+    AS:{ko:'아시아차종',tag:'asia',sheet:'Asia',   es:'Vehículos asiáticos (Japón · Corea)',ex:'Nissan · Toyota · Honda · Mazda · Mitsubishi · Hyundai · KIA · Suzuki · Acura · Infiniti · Isuzu …'},
+    EU:{ko:'유럽차종',  tag:'europa',sheet:'Europa', es:'Vehículos europeos',ex:'Volkswagen · Audi · SEAT · Cupra · BMW · Mercedes Benz · Renault · Peugeot · Fiat · Volvo · Porsche …'},
+    AM:{ko:'미국차종',  tag:'america',sheet:'América',es:'Vehículos americanos (GM · Ford · Chrysler)',ex:'Chevrolet · GMC · Buick · Cadillac · Pontiac · Ford · Lincoln · Dodge · Chrysler · Jeep · RAM …'},
+    CN:{ko:'중국차종',  tag:'china',sheet:'China',  es:'Vehículos chinos',ex:'JAC · Chirey · MG · Omoda · BYD · Geely · Changan · GWM …'},
+    NA:{ko:'적용차종 미표기',tag:'sinapp',sheet:'Sin aplicación',es:'Sin aplicación especificada',ex:'Aplicación(적용차종)이 비어 있거나 브랜드를 읽을 수 없는 SKU'}
+  };
+  // 부분집합 재계산: 지역으로 잘라낸 행에서 중복(빨강)·대표(파랑, Subtotal 합산) 표시를 다시 매긴다.
+  // 대표 차종이 다른 지역에 있던 코드는 이 부분집합의 첫 행(VIO 높은 차종)이 대표가 된다 → 시트 Subtotal = 고유 SKU 합.
+  function subsetPlanRows(P,keep){
+    const sub=P.filter(keep), cnt=new Map(), hasRep=new Map(), chosen=new Map();
+    const key=function(p){ const c=String(p.it.ctr_code||'').trim().toUpperCase(); return c||p.it; };
+    sub.forEach(function(p){ const k=key(p); cnt.set(k,(cnt.get(k)||0)+1); if(p.isRep) hasRep.set(k,1); });
+    return sub.map(function(p){
+      const k=key(p); let isRep;
+      if(hasRep.has(k)) isRep=!!p.isRep;
+      else if(!chosen.has(k)){ chosen.set(k,1); isRep=true; }
+      else isRep=false;
+      return Object.assign({},p,{isRep:isRep,isDup:cnt.get(k)>1});
+    });
+  }
+  function regionCounts(P){
+    const out={};
+    RG_ORDER.forEach(function(r){ out[r]={rows:0,sku:0,_s:new Set()}; });
+    P.forEach(function(p){ const o=out[p.region]||out.NA; o.rows++; o._s.add(String(p.it.ctr_code||'').trim().toUpperCase()||p.it); });
+    RG_ORDER.forEach(function(r){ out[r].sku=out[r]._s.size; delete out[r]._s; });
+    return out;
+  }
+  // price-list 조회 + 차종 재편성(한 번) — 지역 모달과 Top 500이 공용
+  async function loadVioPlan(all){
+    const guest=isGuest;
+    const cid=$('custSel').value;
+    let url=session.api+'/api/quotes/price-list?'+(all?'all=1':'top=500');
+    if(!guest && cid && cid!=='__guest__') url+='&customer_id='+encodeURIComponent(cid);
+    const d=await fetch(url,{headers:auth()}).then(r=>r.json());
+    const items=d.items||[];
+    if(!items.length) return {d:d,items:items,plan:null};
+    await new Promise(r=>setTimeout(r,20));
+    return {d:d,items:items,plan:VEH.buildQuotePlan(items)};
+  }
+  let _rg=null; // 모달 상태 {ctx, counts, busy}
+  function rgSelected(){ return Array.prototype.slice.call(document.querySelectorAll('#rgList input[type=checkbox]:checked')).map(function(x){return x.value;}); }
+  function rgRefresh(){
+    const sel=rgSelected(), ready=!!(_rg&&_rg.ctx&&_rg.ctx.plan);
+    $('rgGo').disabled=!ready||!sel.length||!!(_rg&&_rg.busy);
+    document.querySelectorAll('#rgList .rgItem').forEach(function(el){ el.classList.toggle('off',!el.querySelector('input').checked); });
+  }
+  function rgRenderList(){
+    const c=_rg&&_rg.counts;
+    $('rgList').innerHTML=RG_ORDER.map(function(r){
+      const I=RG_INFO[r], n=c?c[r]:null, on=(r!=='NA');
+      const ct=n?(n.sku.toLocaleString('en-US')+' SKU<br><span style="font-weight:500;color:var(--muted)">'+n.rows.toLocaleString('en-US')+'행</span>'):'<span style="color:var(--muted)">…</span>';
+      return '<label class="rgItem" data-r="'+r+'"><input type="checkbox" value="'+r+'"'+(on?' checked':'')+(n&&!n.rows?' disabled':'')+'>'
+        +'<span class="nm">'+I.ko+'</span><span class="ex">'+I.ex+'</span><span class="ct">'+ct+'</span></label>';
+    }).join('');
+    document.querySelectorAll('#rgList input[type=checkbox]').forEach(function(x){
+      if(x.disabled) x.checked=false;
+      x.addEventListener('change',rgRefresh);
+    });
+    rgRefresh();
+  }
+  function closeRegionModal(){ $('rgModal').style.display='none'; }
+  async function openRegionModal(){
+    const m=$('lineMsg');m.className='msg';m.textContent='';
+    if(isGuest && !$('guestName').value.trim()){ m.className='msg err';m.textContent='Escriba primero el nombre del cliente.';return; }
+    _rg={ctx:null,counts:null,busy:false,seq:(_rg&&_rg.seq||0)+1};
+    const seq=_rg.seq;
+    rgRenderList();
+    const rm=$('rgMsg'); rm.className='msg ok'; rm.textContent='전체 SKU를 불러와 차종별로 나누는 중…';
+    $('rgModal').style.display='flex';
+    try{
+      const ctx=await loadVioPlan(true);
+      if(!_rg||_rg.seq!==seq) return; // 닫았다 다시 연 경우 이전 응답 무시
+      if(!ctx.plan){ rm.className='msg err'; rm.textContent='다운로드할 SKU가 없습니다.'; return; }
+      _rg.ctx=ctx; _rg.counts=regionCounts(ctx.plan.rows);
+      const keep=rgSelected();
+      rgRenderList();
+      document.querySelectorAll('#rgList input[type=checkbox]').forEach(function(x){ if(!x.disabled) x.checked=keep.indexOf(x.value)>=0; });
+      rgRefresh();
+      rm.className='msg ok'; rm.textContent='전체 '+ctx.plan.stats.sku.toLocaleString('en-US')+' SKU · 차종 '+ctx.plan.stats.groups.toLocaleString('en-US')+'그룹 준비 완료. 지역을 고르고 다운로드하세요.';
+    }catch(e){
+      if(!_rg||_rg.seq!==seq) return;
+      rm.className='msg err'; rm.textContent='불러오기 실패: '+(e&&e.message||e);
+    }
+  }
+  async function rgDownload(){
+    if(!_rg||!_rg.ctx||_rg.busy) return;
+    const sel=rgSelected(); if(!sel.length) return;
+    const mode=(document.querySelector('input[name=rgMode]:checked')||{}).value||'split';
+    _rg.busy=true; rgRefresh();
+    try{ await downloadVioQuote(true,{regions:sel,split:mode==='split',ctx:_rg.ctx}); closeRegionModal(); }
+    finally{ if(_rg){ _rg.busy=false; rgRefresh(); } }
+  }
+  document.addEventListener('DOMContentLoaded',function(){
+    const on=function(id,fn){ const el=$(id); if(el) el.addEventListener('click',fn); };
+    on('rgClose',closeRegionModal); on('rgCancel',closeRegionModal); on('rgGo',rgDownload);
+    on('rgAll',function(){ document.querySelectorAll('#rgList input[type=checkbox]').forEach(function(x){ if(!x.disabled) x.checked=true; }); rgRefresh(); });
+    on('rgNone',function(){ document.querySelectorAll('#rgList input[type=checkbox]').forEach(function(x){ x.checked=false; }); rgRefresh(); });
+  });
+  // opt(전체 견적 지역 선택): {regions:['AS',…], split:true|false, ctx:loadVioPlan 결과}
+  async function downloadVioQuote(all,opt){
     const LBL=all?'전체':'Top 500';
     const m=$('lineMsg');m.className='msg';
     const guest=isGuest;
     const custName=partyName();
     if(guest && !$('guestName').value.trim()){ m.className='msg err';m.textContent='Escriba primero el nombre del cliente.';return; }
     try{
-      m.className='msg ok';m.textContent=LBL+' 견적을 불러오는 중…';
-      const cid=$('custSel').value;
-      let url=session.api+'/api/quotes/price-list?'+(all?'all=1':'top=500');
-      if(!guest && cid && cid!=='__guest__') url+='&customer_id='+encodeURIComponent(cid);
-      const d=await fetch(url,{headers:auth()}).then(r=>r.json());
-      const items=d.items||[];
-      if(!items.length){ m.className='msg err';m.textContent=all?'다운로드할 SKU가 없습니다.':'VIO가 매칭된 SKU가 없습니다.';return; }
-      // ---- 차종별 재편성 ----
-      // A열 = 적용차종. Aplicación(F) 원문을 파싱해 「그룹사명 + 모델 + 연식」 그룹을 만들고,
-      // 기존 VIO 차종명과 1:1 매칭된 그룹은 기존 차종명·VIO 숫자를 그대로 쓴다.
-      // 한 부품이 여러 차종에 쓰이면 차종마다 중복 기입(SKU 1개 = 여러 행) —
-      // 중복 코드는 빨간 글씨, 그 코드의 대표 차종 1행만 파란 음영 + M열 1 → Subtotal은 대표행만 합산(총액 불변).
-      m.className='msg ok';m.textContent=LBL+' 견적 차종별 재편성 중… ('+items.length.toLocaleString('en-US')+' SKU)';
-      await new Promise(r=>setTimeout(r,20));
-      const plan=VEH.buildQuotePlan(items);
-      const P=plan.rows;
-      m.className='msg ok';m.textContent=LBL+' 견적 엑셀 생성 중… ('+P.length.toLocaleString('en-US')+'행 · 차종 '+plan.stats.groups.toLocaleString('en-US')+'그룹)';
-      await new Promise(r=>setTimeout(r,20));
+      let ctx=opt&&opt.ctx;
+      if(!ctx){
+        m.className='msg ok';m.textContent=LBL+' 견적을 불러오는 중…';
+        ctx=await loadVioPlan(all);
+      }
+      if(!ctx.plan){ m.className='msg err';m.textContent=all?'다운로드할 SKU가 없습니다.':'VIO가 매칭된 SKU가 없습니다.';return; }
+      const d=ctx.d, plan=ctx.plan;
       const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : (d.discountRate==null?0:d.discountRate);
-      const rateFrac = (Number(disc)||0)/100;            // 할인율 셀(편집형, 0.49 = 49%)
+      const rateFrac = (Number(disc)||0)/100;
       const today=new Date(); const pad=n=>String(n).padStart(2,'0');
       const fechaStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
+      const regs=(opt&&opt.regions&&opt.regions.length)?RG_ORDER.filter(r=>opt.regions.indexOf(r)>=0):null;
+      const allRegs=!regs||regs.length===RG_ORDER.length;
+      const sheets=[]; // {name, P, scope}
+      if(!all||!regs||(allRegs&&!opt.split)){
+        sheets.push({name:all?'Completo':'Top500',P:plan.rows,scope:null});
+      }else if(opt.split){
+        regs.forEach(function(r){
+          const P=subsetPlanRows(plan.rows,p=>p.region===r);
+          if(P.length) sheets.push({name:RG_INFO[r].sheet,P:P,scope:RG_INFO[r].es});
+        });
+      }else{
+        const P=subsetPlanRows(plan.rows,p=>regs.indexOf(p.region)>=0);
+        if(P.length) sheets.push({name:'Selección',P:P,scope:regs.map(r=>RG_INFO[r].es).join(' + ')});
+      }
+      if(!sheets.length){ m.className='msg err';m.textContent='선택한 지역에 해당하는 SKU가 없습니다.';return; }
+      const totalRows=sheets.reduce((a,s)=>a+s.P.length,0);
+      m.className='msg ok';m.textContent=LBL+' 견적 엑셀 생성 중… ('+totalRows.toLocaleString('en-US')+'행 · 시트 '+sheets.length+'개)';
+      await new Promise(r=>setTimeout(r,20));
+      const wb=XLSX.utils.book_new();
+      sheets.forEach(function(s){
+        XLSX.utils.book_append_sheet(wb,vioSheet(s.P,{all:all,custName:custName,rateFrac:rateFrac,fechaStr:fechaStr,scope:s.scope}),s.name);
+      });
+      const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
+      const rgTag=(regs&&!allRegs)?(regs.map(r=>RG_INFO[r].tag).join('_')+'_'):'';
+      XLSX.writeFile(wb,(all?'cotizacion_completa_':'cotizacion_top500_')+rgTag+safe+'.xlsx');
+      const rgNote=regs?(' · 지역: '+regs.map(r=>RG_INFO[r].ko+' '+(sheets.find(s=>s.name===RG_INFO[r].sheet)||{P:[]}).P.length.toLocaleString('en-US')+'행').join(' / ')
+        +(opt.split?(' (시트 '+sheets.length+'개 · 시트별 Subtotal)'):' (한 시트)')):'';
+      m.className='msg ok';m.textContent=LBL+' 견적 다운로드 완료 — '+plan.stats.sku.toLocaleString('en-US')+'개 SKU를 차종 '+plan.stats.groups.toLocaleString('en-US')+'그룹으로 재편성('+plan.rows.length.toLocaleString('en-US')+'행, 중복 '+plan.stats.dup.toLocaleString('en-US')+'행·대표 '+plan.stats.reps.toLocaleString('en-US')+'행)'
+        +' · 기존 VIO 차종명 매칭 '+plan.stats.matched+'/'+plan.stats.curated
+        +(plan.stats.noapp?(' · 적용차종 없음 '+plan.stats.noapp+'건은 맨 아래 Sin aplicación'):'')
+        +rgNote
+        +' · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함 · Subtotal은 파란 대표행만 합산).';
+    }catch(e){ m.className='msg err';m.textContent=LBL+' 견적 다운로드 실패: '+(e&&e.message||e); }
+  }
+  // 한 시트 생성 (Top 500 / 전체 / 지역별 공용 — 양식·수식·색은 기존과 동일)
+  function vioSheet(P,o){
+      const all=o.all, custName=o.custName, rateFrac=o.rateFrac, fechaStr=o.fechaStr;
       // ---- 색/스타일 (CTR 브랜드 레드) ----
       const RED='D81E25', INK='1C1B19', GREY='6F6A60', DUPRED='C00000', REPBLUE='D6E4F7';
       const thin={style:'thin',color:{rgb:'E3D6D6'}};
@@ -848,7 +1029,7 @@
       const rows=[];
       rows.push(['REFATRIX']);                                                                 // r1
       rows.push(['Distribuidor oficial CTR en México']);                                       // r2
-      rows.push(['COTIZACIÓN — '+(all?'Catálogo completo CTR (todos los SKU · incluye sin existencia)':'Top 500 SKU CTR (selección por registro VIO · incluye SKU sin existencia)')+' · agrupado por VEHÍCULO (aplicación) y tipo de pieza']); // r3
+      rows.push(['COTIZACIÓN — '+(all?(o.scope?('Catálogo CTR · '+o.scope+' (incluye sin existencia)'):'Catálogo completo CTR (todos los SKU · incluye sin existencia)'):'Top 500 SKU CTR (selección por registro VIO · incluye SKU sin existencia)')+' · agrupado por VEHÍCULO (aplicación) y tipo de pieza']); // r3
       rows.push(['Fecha: '+fechaStr+'   ·   Moneda: MXN   ·   Precios SIN IVA']);              // r4
       rows.push([]);                                                                           // r5
       rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
@@ -914,15 +1095,7 @@
       ws['!autofilter']={ref:'A'+headerRow+':N'+lastData};
       ws['!cols']=[{wch:34},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:11},{wch:12},{wch:12},{wch:15},{wch:14},{wch:15},{wch:10,hidden:true}];
       ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:14},{hpt:30}];
-      const wb=XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb,ws,all?'Completo':'Top500');
-      const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
-      XLSX.writeFile(wb,(all?'cotizacion_completa_':'cotizacion_top500_')+safe+'.xlsx');
-      m.className='msg ok';m.textContent=LBL+' 견적 다운로드 완료 — '+plan.stats.sku.toLocaleString('en-US')+'개 SKU를 차종 '+plan.stats.groups.toLocaleString('en-US')+'그룹으로 재편성('+P.length.toLocaleString('en-US')+'행, 중복 '+plan.stats.dup.toLocaleString('en-US')+'행·대표 '+plan.stats.reps.toLocaleString('en-US')+'행)'
-        +' · 기존 VIO 차종명 매칭 '+plan.stats.matched+'/'+plan.stats.curated
-        +(plan.stats.noapp?(' · 적용차종 없음 '+plan.stats.noapp+'건은 맨 아래 Sin aplicación'):'')
-        +' · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함 · Subtotal은 파란 대표행만 합산).';
-    }catch(e){ m.className='msg err';m.textContent=LBL+' 견적 다운로드 실패: '+(e&&e.message||e); }
+      return ws;
   }
 
   // ===== CTR vs SYD 커버리지 비교 엑셀 (대표·소시오 전용 · qt0806vs9) =====
