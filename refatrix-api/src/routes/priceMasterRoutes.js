@@ -1,6 +1,6 @@
 // =====================================================================
 // Refatrix ERP · priceMasterRoutes.js  (2026-09-24 · v2 · 0229)
-// 제품·마케팅 › 가격 마스터 — 디렉터 전용.
+// 제품·마케팅 › 가격 마스터 — 권한 키 pricemaster (열람 = 조회 · 수정 = 변경). 디렉터는 항상 전체.
 //
 //   ① 가격표          GET  /api/price-master/table
 //                     POST /api/price-master/single                 단일 수정(List 또는 FOB) — PIN
@@ -15,7 +15,7 @@
 //   ⑥ 구매가 검증      GET  /api/price-master/purchase-check · /purchase-check/:poId
 // =====================================================================
 import { query, withTx } from '../db.js';
-import { authGuard, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import {
@@ -26,7 +26,12 @@ import {
 } from '../priceMaster.js';
 
 const num = (v) => (v == null ? null : Number(v));
-const PRE = { preHandler: [authGuard, requireDirector] };
+// 권한(2026-09-24): 관리 › 사용자·권한의 「가격 마스터」(page_key = pricemaster)
+//   열람 → 조회·미리보기·리포트 전부(FOB 구매가 포함) · 수정 → 변경·예약·되돌리기·업로드(본인 PIN) · 디렉터는 항상 전체.
+export const PRICE_PAGE_KEY = 'pricemaster';
+const READ = { preHandler: [authGuard, requirePage(PRICE_PAGE_KEY)] };
+const WRITE = { preHandler: [authGuard, requirePageEdit(PRICE_PAGE_KEY)] };
+const canEditPrices = (perm) => perm.role === 'director' || ((perm.pageAccess && perm.pageAccess[PRICE_PAGE_KEY]) || 'edit') === 'edit';
 
 async function pinOk(perm, pin) {
   const r = (await query(`SELECT pin_hash FROM users WHERE id=$1`, [perm.userId])).rows[0];
@@ -77,7 +82,7 @@ export default async function priceMasterRoutes(app) {
   const noTargets = (reply) => reply.code(400).send({ error: 'no_targets', detail: '대상 제품이 없습니다.' });
 
   // ── 칩 · 환율 · 현재 평균 CTR÷SYD ──
-  app.get('/api/price-master/facets', PRE, async () => {
+  app.get('/api/price-master/facets', READ, async (req) => {
     const ok = await priceMasterReady();
     const base = `p.deleted_at IS NULL`;
     const origin = (await query(
@@ -97,11 +102,12 @@ export default async function priceMasterRoutes(app) {
       `SELECT AVG(p.list_price / p.list_price_syd) AS r FROM products p
         WHERE ${base} AND p.is_active AND p.list_price > 0 AND p.list_price_syd > 0`)).rows[0];
     return { ready: ok, today: mxToday(), fx: await latestFx(), origin, cat, maker, material,
+      can_edit: canEditPrices(req.ctx.perm),
       ratio_avg: avg && avg.r != null ? Math.round(Number(avg.r) * 10000) / 10000 : null };
   });
 
   // ── ① 가격표 ──
-  app.get('/api/price-master/table', PRE, async (req, reply) => {
+  app.get('/api/price-master/table', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const qv = req.query || {};
     const fx = await latestFx();
@@ -154,7 +160,7 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ① 단일 수정 ──
-  app.post('/api/price-master/single', PRE, async (req, reply) => {
+  app.post('/api/price-master/single', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const { perm } = req.ctx; const b = req.body || {};
     if (!(await pinOk(perm, b.pin))) return reply.code(403).send({ error: 'bad_pin' });
@@ -203,14 +209,14 @@ export default async function priceMasterRoutes(app) {
     }
     return { rows: clean.length, fob, list, unknown, same, errors };
   }
-  app.post('/api/price-master/import/preview', PRE, async (req, reply) => {
+  app.post('/api/price-master/import/preview', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const p = await importPlan((req.body || {}).rows);
     return { rows: p.rows, fob_changes: p.fob.length, list_changes: p.list.length, same: p.same,
       unknown: p.unknown.slice(0, 500), unknown_count: p.unknown.length, errors: p.errors.slice(0, 500), error_count: p.errors.length,
       sample: [...p.fob.slice(0, 100).map((x) => ({ ...x, type: 'fob' })), ...p.list.slice(0, 100).map((x) => ({ ...x, type: 'list' }))] };
   });
-  app.post('/api/price-master/import/commit', PRE, async (req, reply) => {
+  app.post('/api/price-master/import/commit', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const { perm } = req.ctx; const b = req.body || {};
     if (!(await pinOk(perm, b.pin))) return reply.code(403).send({ error: 'bad_pin' });
@@ -233,7 +239,7 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ② 미리보기 (% · SYD 비율) ──
-  app.post('/api/price-master/preview', PRE, async (req) => {
+  app.post('/api/price-master/preview', READ, async (req) => {
     const b = req.body || {};
     const scope = b.scope === 'selected' ? 'selected' : 'filter';
     const t = normType(b.price_type); const col = PRICE_COL[t]; const cur = 'p.' + col;
@@ -322,7 +328,7 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ② 묶음 만들기: % · SYD 비율 (b.mode) / SYD 제안(b.items + syd_list_id) ──
-  app.post('/api/price-master/batches', PRE, async (req, reply) => {
+  app.post('/api/price-master/batches', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const { perm } = req.ctx; const b = req.body || {};
     if (!(await pinOk(perm, b.pin))) return reply.code(403).send({ error: 'bad_pin' });
@@ -360,7 +366,7 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ③ 이력 ──
-  app.get('/api/price-master/batches', PRE, async (req, reply) => {
+  app.get('/api/price-master/batches', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     try { await applyDue(); } catch (_) {}
     const limit = Math.min(Number(req.query.limit) || 150, 500);
@@ -375,7 +381,7 @@ export default async function priceMasterRoutes(app) {
     return { today: mxToday(), items: rows.map(batchOut) };
   });
 
-  app.get('/api/price-master/batches/:id', PRE, async (req, reply) => {
+  app.get('/api/price-master/batches/:id', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
@@ -403,7 +409,7 @@ export default async function priceMasterRoutes(app) {
     };
   });
 
-  app.post('/api/price-master/batches/:id/cancel', PRE, async (req, reply) => {
+  app.post('/api/price-master/batches/:id/cancel', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const id = Number(req.params.id);
     const r = await query(
@@ -417,7 +423,7 @@ export default async function priceMasterRoutes(app) {
     return { ok: true };
   });
 
-  app.post('/api/price-master/batches/:id/revert', PRE, async (req, reply) => {
+  app.post('/api/price-master/batches/:id/revert', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const { perm } = req.ctx;
     if (!(await pinOk(perm, req.body && req.body.pin))) return reply.code(403).send({ error: 'bad_pin' });
@@ -431,7 +437,7 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ④ 제품별 이력 (List · FOB · SYD) ──
-  app.get('/api/price-master/product', PRE, async (req, reply) => {
+  app.get('/api/price-master/product', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const code = String(req.query.code || '').trim();
     if (!code) return reply.code(400).send({ error: 'code_required' });
@@ -489,7 +495,7 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ⑤ 경쟁사 SYD ──
-  app.post('/api/price-master/syd/lists', PRE, async (req, reply) => {
+  app.post('/api/price-master/syd/lists', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const { perm } = req.ctx; const b = req.body || {};
     const listDate = String(b.list_date || '');
@@ -525,7 +531,7 @@ export default async function priceMasterRoutes(app) {
       prev_list_id: out.prev, ...out.cmp, products_synced: out.synced, is_latest: out.is_latest };
   });
 
-  app.get('/api/price-master/syd/lists', PRE, async (req, reply) => {
+  app.get('/api/price-master/syd/lists', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const rows = (await query(
       `SELECT l.*, to_char(l.list_date,'YYYY-MM-DD') AS d, u.name AS by_name, to_char(pl.list_date,'YYYY-MM-DD') AS prev_date
@@ -538,7 +544,7 @@ export default async function priceMasterRoutes(app) {
 
   // 리포트: 품목별 분포(코드 기준) + 제품별 제안(CTR 기준, 한 CTR 의 SYD 여럿 → 가장 높은 값)
   //   view: up_below(인상 · 우리가 목표보다 쌈) · down_above(인하 · 우리가 SYD보다 비쌈) · changed · all
-  app.get('/api/price-master/syd/lists/:id/report', PRE, async (req, reply) => {
+  app.get('/api/price-master/syd/lists/:id/report', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const id = Number(req.params.id);
     const L = (await query(`SELECT id, to_char(list_date,'YYYY-MM-DD') AS d, prev_list_id FROM syd_price_lists WHERE id=$1`, [id])).rows[0];
@@ -612,7 +618,7 @@ export default async function priceMasterRoutes(app) {
     };
   });
 
-  app.delete('/api/price-master/syd/lists/:id', PRE, async (req, reply) => {
+  app.delete('/api/price-master/syd/lists/:id', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const { perm } = req.ctx;
     if (!(await pinOk(perm, req.body && req.body.pin))) return reply.code(403).send({ error: 'bad_pin' });
@@ -631,7 +637,7 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ⑥ 구매가 검증 ──
-  app.get('/api/price-master/purchase-check', PRE, async (req, reply) => {
+  app.get('/api/price-master/purchase-check', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const qv = req.query || {};
     const p = []; const w = ['po.deleted_at IS NULL'];
@@ -655,7 +661,7 @@ export default async function priceMasterRoutes(app) {
     return { tol, total, items };
   });
 
-  app.get('/api/price-master/purchase-check/:poId', PRE, async (req, reply) => {
+  app.get('/api/price-master/purchase-check/:poId', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const id = Number(req.params.poId);
     const po = (await query(`SELECT id, ref_no, to_char(order_date,'YYYY-MM-DD') AS d FROM purchase_orders WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 사용자 · 권한 관리 · build u15</title>
+<title>Refatrix ERP · 사용자 · 권한 관리 · build u16pm</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -307,7 +307,7 @@
     ['영업지원', [['settlement','수금/정산(AR)'],['stock','재고 이동'],['shortage','부족분'],['inventory','수입원가·입고']]],
     ['구매', [['purchase','구매 내역']]],
     ['재무', [['transactions','재무(거래·캐시플로)'],['commission','커미션'],['budget','예산']]],
-    ['제품·마케팅', [['products','제품'],['marketing','마케팅']]],
+    ['제품·마케팅', [['products','제품'],['marketing','마케팅'],['pricemaster','가격 마스터 (FOB 구매가 포함)']]],   // 2026-09-24 — 열람=조회 · 수정=가격 변경(본인 PIN)
     ['창고', [['warehouse','창고(입고·피킹·패킹)']]],
     ['안내 문서', [['guiacom','커미셔너 안내서 (Guía del Comisionista)']]],
   ];
@@ -959,6 +959,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260924pm"></script>
+<script src="refatrix-nav.js?v=20260924pm2"></script>
 </body>
 </html>

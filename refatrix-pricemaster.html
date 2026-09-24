@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-0924tpl2</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-0924perm</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -91,6 +91,9 @@
   .split{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:820px){.split{grid-template-columns:minmax(0,1fr)}}
   .bar{height:8px;border-radius:4px;background:#eee;overflow:hidden;display:flex;min-width:80px}.bar i{display:block;height:100%}
   h4{margin:14px 0 6px;color:var(--brand);font-size:13px}
+  /* 열람 권한(수정 권한 없음) — 바꾸는 버튼·입력은 숨기고 값 클릭 수정도 끈다 */
+  .ro .wOnly{display:none!important}
+  .ro .edit{cursor:default;border-bottom:none}.ro .edit:hover{color:inherit}
 </style>
 </head>
 <body>
@@ -106,6 +109,7 @@
   </div>
 
   <div class="hidden" id="app">
+    <div class="card note hidden" id="roNote" style="margin:0 0 12px">👁 <b>열람 권한</b>입니다 — 가격표 · 미리보기 · 이력 · SYD 리포트 · 구매가 검증을 볼 수 있습니다. 가격을 바꾸려면 디렉터에게 「수정」 권한을 요청하세요(관리 › 사용자·권한 › 가격 마스터).</div>
     <div class="card warn hidden" id="migWarn" style="margin:0 0 12px">서버 마이그레이션(0229) 후에 쓸 수 있습니다 — Railway 콘솔에서 <b>npm run migrate</b>.</div>
     <div class="tabs" role="tablist">
       <button class="tab on" data-t="table">① 가격표</button>
@@ -131,8 +135,8 @@
         </div>
         <div class="row" style="margin-top:10px">
           <button class="btn ghost sm" id="btnTExport">엑셀 내보내기</button>
-          <button class="btn ghost sm" id="dlTplPrice">📄 FOB List 업로드 엑셀양식 받기</button>
-          <button class="btn ghost sm" id="btnTImport">FOB·List 엑셀 올리기</button>
+          <button class="btn ghost sm wOnly" id="dlTplPrice">📄 FOB List 업로드 엑셀양식 받기</button>
+          <button class="btn ghost sm wOnly" id="btnTImport">FOB·List 엑셀 올리기</button>
           <input type="file" id="fImport" accept=".xlsx,.xls,.csv" class="hidden">
           <span class="mut" style="font-size:12px">올리기 열: <b>Clave CTR</b> · <b>FOB USD</b> · <b>List Price MXN</b> — 둘 중 하나만 있어도 됩니다. 바뀐 값만 반영합니다.
             <b>새로 채울 때는 양식</b>, <b>지금 값을 고칠 때는 「엑셀 내보내기」 파일</b>을 고쳐 그대로 올리면 됩니다.</span>
@@ -185,8 +189,8 @@
           <div class="f"><label>적용 대상</label><div class="seg" id="scope"><button class="on" data-v="filter">조건 결과 전체</button><button data-v="selected">체크한 것만</button></div></div>
         </div>
         <div class="row" style="margin-top:12px">
-          <div class="f" style="flex:3"><label for="memo">사유 (이력에 남음 · 필수)</label><input id="memo" maxlength="300" placeholder="예: 2026 Q4 CTR 공장 인상 반영"></div>
-          <div style="flex:0 0 auto"><button class="btn gold" id="btnApply" disabled>적용</button></div>
+          <div class="f wOnly" style="flex:3"><label for="memo">사유 (이력에 남음 · 필수)</label><input id="memo" maxlength="300" placeholder="예: 2026 Q4 CTR 공장 인상 반영"></div>
+          <div class="wOnly" style="flex:0 0 auto"><button class="btn gold" id="btnApply" disabled>적용</button></div>
         </div>
         <div class="kpis" id="kpis"></div>
         <div id="overlapBox"></div>
@@ -231,12 +235,12 @@
         <p class="ttl">SYD 가격 리스트 올리기</p>
         <p class="sub2">파일 열: <b>Clave SyD</b>(또는 ARTÍCULO) · <b>Precio Lista</b> · [Familia]. 올릴 때마다 날짜별로 통째로 보관하고, <b>바로 앞 리스트와 코드별로 비교</b>합니다.
           대응품번(제품 마스터 Clave SyD)으로 우리 CTR 에 연결하고, 가장 최신 리스트면 제품 마스터의 SYD List 칸도 갱신합니다(한 CTR 에 SYD 가 여럿이면 <b>가장 높은 값</b>).</p>
-        <div class="row">
+        <div class="row wOnly">
           <div class="f" style="flex:2"><label for="fSyd">파일</label><input type="file" id="fSyd" accept=".xlsx,.xls,.csv"></div>
           <div class="f" style="max-width:170px"><label for="sydDate">리스트 기준일</label><input type="date" id="sydDate"></div>
           <div style="flex:0 0 auto"><button class="btn" id="btnSydUp" disabled>올리고 비교</button></div>
         </div>
-        <div class="row" style="margin-top:8px"><button class="btn ghost sm" id="dlTplSyd">📄 SYD 업로드 엑셀양식 받기</button>
+        <div class="row wOnly" style="margin-top:8px"><button class="btn ghost sm" id="dlTplSyd">📄 SYD 업로드 엑셀양식 받기</button>
           <span class="mut" style="font-size:12px">SYD 원본 파일을 그대로 올려도 됩니다(ARTÍCULO · PRECIO LISTA 열을 알아봅니다). 열 이름이 다르면 양식에 옮겨 붙여 올리세요.</span></div>
         <div class="msg" id="sydMsg"></div>
         <div class="tw" style="margin-top:8px"><table><thead><tr><th>기준일</th><th>파일</th><th class="n">코드</th><th class="n">인상</th><th class="n">인하</th><th class="n">같음</th><th class="n">신규</th><th class="n">사라짐</th><th>비교 대상</th><th>올린 사람</th><th></th></tr></thead><tbody id="sb"></tbody></table></div>
@@ -269,7 +273,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='pm-0924tpl2';
+  const BUILD='pm-0924perm';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -295,7 +299,7 @@
   const typeBadge=(t)=>t==='fob'?'<span class="badge b-fob">FOB</span>':'<span class="badge b-list">List</span>';
 
   let session={token:null,user:null,api:''};
-  let facets={origin:[],cat:[],maker:[],material:[]}, today='', ready=false, fx=null, ratioAvg=null;
+  let facets={origin:[],cat:[],maker:[],material:[]}, today='', ready=false, fx=null, ratioAvg=null, canEdit=false;
   const sel={origin:new Set(),cat:new Set(),maker:new Set(),material:new Set()};
   const chipShow={cat:36,maker:36};
   const picked=new Set();
@@ -451,6 +455,8 @@
     const f=await api('/api/price-master/facets');
     if(!f.ok){ $('app').innerHTML='<div class="card"><p class="ttl">열 수 없습니다</p><p class="sub2">'+esc(errKo(f.error))+'</p></div>'; return; }
     facets={origin:f.origin||[],cat:f.cat||[],maker:f.maker||[],material:f.material||[]}; today=f.today; ready=!!f.ready; fx=f.fx; ratioAvg=f.ratio_avg;
+    canEdit=f.can_edit!==false;                                   // 구버전 서버(필드 없음) = 디렉터 전용 시절 → 수정 가능
+    $('app').classList.toggle('ro',!canEdit); $('roNote').classList.toggle('hidden',canEdit);
     $('migWarn').classList.toggle('hidden',ready);
     $('eff').value=today; $('eff').min=today; $('sydDate').value=today; $('sydDate').max=today;
     $('torigin').innerHTML='<option value="">전체</option>'+facets.origin.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.v==='__none__'?'(없음)':o.v)+' ('+o.n+')</option>').join('');
@@ -504,7 +510,7 @@
       +'<td class="n">'+fmt(r.list_price_syd)+'</td><td class="n '+(r.ratio>1?'up':'')+'">'+(r.ratio==null?'—':r.ratio.toFixed(2))+'</td>'
       +'<td class="mut">'+esc(r.last_change||'')+'</td></tr>').join('')||'<tr><td colspan="9" class="mut" style="padding:14px">없음</td></tr>';
     bindCodeLinks($('ttb'));
-    $('ttb').querySelectorAll('.edit').forEach(e=>e.addEventListener('click',()=>singleEdit(tRows.find(r=>r.id===Number(e.dataset.id)),e.dataset.t)));
+    $('ttb').querySelectorAll('.edit').forEach(e=>e.addEventListener('click',()=>{ if(!canEdit) return; singleEdit(tRows.find(r=>r.id===Number(e.dataset.id)),e.dataset.t); }));
     $('tcnt').textContent=tRows.length.toLocaleString('es-MX')+' / '+k.total.toLocaleString('es-MX')+'개';
     $('btnTMore').classList.toggle('hidden',tRows.length>=k.total);
   }
@@ -734,8 +740,8 @@
         +'<td class="n">'+cnt+'</td><td style="white-space:normal;min-width:160px">'+esc(b.note||'')+'</td>'
         +'<td class="mut">'+esc(b.created_by_name||'')+' · '+esc(String(b.created_at||'').slice(5,10))+'</td>'
         +'<td><button class="btn ghost sm" data-act="detail" data-id="'+b.id+'">상세</button>'
-        +(b.status==='scheduled'?' <button class="btn danger sm" data-act="cancel" data-id="'+b.id+'">예약 취소</button>':'')
-        +(b.status==='applied'?' <button class="btn danger sm" data-act="revert" data-id="'+b.id+'">되돌리기</button>':'')+'</td></tr>';
+        +(b.status==='scheduled'?' <button class="btn danger sm wOnly" data-act="cancel" data-id="'+b.id+'">예약 취소</button>':'')
+        +(b.status==='applied'?' <button class="btn danger sm wOnly" data-act="revert" data-id="'+b.id+'">되돌리기</button>':'')+'</td></tr>';
     }).join('')||'<tr><td colspan="9" class="mut" style="padding:16px">아직 변경 이력이 없습니다.</td></tr>';
     $('hb').querySelectorAll('button[data-act]').forEach(btn=>btn.addEventListener('click',()=>{
       const id=Number(btn.dataset.id); const a=btn.dataset.act;
@@ -845,7 +851,7 @@
     $('sb').innerHTML=sydLists.map(l=>'<tr><td><b>'+esc(l.list_date)+'</b></td><td class="mut">'+esc(l.file_name||'')+'</td><td class="n">'+(l.code_count||0).toLocaleString('es-MX')+'</td>'
       +'<td class="n up">'+(l.prev_list_id?l.up:'—')+'</td><td class="n down">'+(l.prev_list_id?l.down:'—')+'</td><td class="n">'+(l.prev_list_id?l.same:'—')+'</td><td class="n">'+(l.prev_list_id?l.new:'—')+'</td><td class="n">'+(l.prev_list_id?l.gone:'—')+'</td>'
       +'<td class="mut">'+esc(l.prev_date||'(첫 리스트)')+'</td><td class="mut">'+esc(l.by_name||'')+'</td>'
-      +'<td><button class="btn ghost sm" data-rep="'+l.id+'">리포트</button> <button class="btn danger sm" data-del="'+l.id+'">삭제</button></td></tr>').join('')
+      +'<td><button class="btn ghost sm" data-rep="'+l.id+'">리포트</button> <button class="btn danger sm wOnly" data-del="'+l.id+'">삭제</button></td></tr>').join('')
       ||'<tr><td colspan="11" class="mut" style="padding:14px">아직 올린 SYD 리스트가 없습니다.</td></tr>';
     $('sb').querySelectorAll('[data-rep]').forEach(b=>b.addEventListener('click',()=>openReport(Number(b.dataset.rep))));
     $('sb').querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
@@ -887,15 +893,15 @@
       +' 한 CTR 에 SYD 코드가 여럿이면 <b>가장 높은 SYD</b> 를 기준으로 씁니다.<br>제안가 = 반올림( SYD 새 List × 목표 비율 ). 우리 가격이 이미 목표 이상이면 제안하지 않습니다.'
       +' 체크한 제품으로 <b>「제안가로 변경 만들기」</b> → 적용일 · 사유 · PIN · ③ 에서 되돌리기.</div></div></div>'
       +'<h4>제품별 — '+d.total.toLocaleString('es-MX')+'개'+(d.total>d.rows.length?' (처음 '+d.rows.length+'개 표시)':'')+'</h4>'
-      +'<div class="tblWrap"><table><thead><tr><th><input type="checkbox" id="rAll"></th><th>CTR</th><th>품목</th><th>SYD 코드</th><th class="n">SYD 이전</th><th class="n">SYD 새</th><th class="n">변화</th><th class="n">우리 List</th><th class="n">CTR÷SYD</th><th class="n">제안가</th><th class="n">제안 변화</th></tr></thead><tbody>'
-      +d.rows.map(r=>'<tr><td>'+(r.suggested!=null?'<input type="checkbox" data-pid="'+r.product_id+'"'+(repPick.has(r.product_id)?' checked':'')+'>':'')+'</td>'
+      +'<div class="tblWrap"><table><thead><tr><th><input type="checkbox" class="wOnly" id="rAll"></th><th>CTR</th><th>품목</th><th>SYD 코드</th><th class="n">SYD 이전</th><th class="n">SYD 새</th><th class="n">변화</th><th class="n">우리 List</th><th class="n">CTR÷SYD</th><th class="n">제안가</th><th class="n">제안 변화</th></tr></thead><tbody>'
+      +d.rows.map(r=>'<tr><td>'+(r.suggested!=null?'<input type="checkbox" class="wOnly" data-pid="'+r.product_id+'"'+(repPick.has(r.product_id)?' checked':'')+'>':'')+'</td>'
         +'<td><span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span>'+(r.is_active?'':' <span class="badge b-in">비활성</span>')+'</td><td>'+esc(r.name||r.familia||'')+'</td><td class="mut">'+esc(r.syd_codes||'')+'</td>'
         +'<td class="n">'+fmt(r.syd_old)+'</td><td class="n"><b>'+fmt(r.syd_new)+'</b></td><td class="n '+(r.syd_change>0?'up':r.syd_change<0?'down':'')+'">'+(r.syd_change==null?'신규':pc(r.syd_change))+'</td>'
         +'<td class="n">'+fmt(r.list_price)+'</td><td class="n '+(r.over_syd?'up':'')+'">'+(r.ratio==null?'—':r.ratio.toFixed(2))+(r.over_syd?' <span class="badge b-sk">SYD보다 비쌈</span>':'')+'</td>'
         +'<td class="n"><b>'+(r.suggested==null?'<span class="mut">—</span>':fmt(r.suggested))+'</b></td><td class="n '+(r.suggested!=null?'up':'')+'">'+(r.suggested!=null?pctTxt(r.list_price,r.suggested)||'신규 정가':'')+'</td></tr>').join('')
       +(!d.rows.length?'<tr><td colspan="11" class="mut" style="padding:14px">이 기준에 해당하는 제품이 없습니다.</td></tr>':'')
       +'</tbody></table></div>'
-      +'<div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="rXlsx">엑셀</button><button class="btn gold" id="rMake"></button></div>';
+      +'<div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="rXlsx">엑셀</button><button class="btn gold wOnly" id="rMake"></button></div>';
     $('rView').value=d.view;
     const upd=()=>{ const b=$('rMake'); b.textContent='체크한 '+repPick.size+'개 → 제안가로 변경 만들기'; b.disabled=!repPick.size; };
     upd();
@@ -964,6 +970,6 @@
   window.__pmDebug={get rows(){return rows;},get picked(){return picked;},get summary(){return lastSummary;},get tRows(){return tRows;},get rep(){return rep;},sel};
 })();
 </script>
-<script src="refatrix-nav.js?v=20260924pm"></script>
+<script src="refatrix-nav.js?v=20260924pm2"></script>
 </body>
 </html>

@@ -170,7 +170,7 @@
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
-    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'__director__', marketing:'marketing', mktspend:'marketing', survey:'marketing',
+    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상) marketing:'marketing', mktspend:'marketing', survey:'marketing',
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };

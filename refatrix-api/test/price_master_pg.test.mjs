@@ -1,6 +1,6 @@
 // 가격 마스터 v2(0229) — 실 PostgreSQL 종단 테스트
 //   실 priceMasterRoutes.js · productRoutes.js · purchaseRoutes.js + Fastify inject (인증만 스텁)
-//   실행: PGADMIN_URL=postgres://postgres@localhost:5432/postgres node test/price_master_pg.test.mjs
+//   실행: PGADMIN_URL=postgres://postgres@localhost:5432/postgres node --import ./test/helpers/stub-auth.mjs test/price_master_pg.test.mjs
 //   PGADMIN_URL = CREATE DATABASE 권한이 있는 접속 URL. 없으면 건너뛴다.
 //   전용 DB(pmtest_0229)를 새로 만들어 쓰고 운영 DB 는 건드리지 않는다.
 import assert from 'node:assert/strict';
@@ -61,7 +61,8 @@ const app = Fastify({ bodyLimit: 12 * 1024 * 1024 });
 app.register(priceMasterRoutes); app.register(productRoutes); app.register(purchaseRoutes);
 await app.ready();
 const call = async (method, url, body, user = '1:director') => {
-  const r = await app.inject({ method, url, payload: body, headers: { 'x-test-user': user } });
+  const [u, pages] = String(user).split('|');                 // "2:sales_support|pricemaster=view"
+  const r = await app.inject({ method, url, payload: body, headers: { 'x-test-user': u, 'x-test-pages': pages || '' } });
   let j = {}; try { j = r.json(); } catch (_) {}
   return { ...j, status_body: j.status, status: r.statusCode };
 };
@@ -386,6 +387,58 @@ await t('정가·FOB 이력이 있어도 제품 삭제 가능(함께 정리)', a
   const c = await call('GET', `/api/products/${id}/delete-check`);
   assert.equal(c.can_delete, true, JSON.stringify(c.blockers));
   assert.equal((await call('DELETE', `/api/products/${id}`, { pin: '1234', code: 'NEW001' })).status, 200);
+});
+
+console.log('K. 권한 — 관리 › 사용자·권한 「가격 마스터」(pricemaster: 열람/수정)');
+const NONE = '2:sales_support', VIEW = '2:sales_support|pricemaster=view', EDIT = '2:sales_support|pricemaster=edit';
+await t('권한 없음 → 모든 가격 마스터 API 403', async () => {
+  for (const [m, u] of [['GET', '/api/price-master/facets'], ['GET', '/api/price-master/table'], ['POST', '/api/price-master/preview'],
+    ['GET', '/api/price-master/batches'], ['GET', '/api/price-master/syd/lists'], ['GET', '/api/price-master/purchase-check'], ['POST', '/api/price-master/single']]) {
+    const r = await call(m, u, m === 'POST' ? { filter: {} } : undefined, NONE);
+    assert.equal(r.status, 403, m + ' ' + u); assert.equal(r.error, 'forbidden');
+  }
+});
+await t('열람 → 조회·미리보기·리포트·구매 검증 200 · can_edit false', async () => {
+  const f = await call('GET', '/api/price-master/facets', undefined, VIEW); assert.equal(f.status, 200); assert.equal(f.can_edit, false);
+  assert.equal((await call('GET', '/api/price-master/table', undefined, VIEW)).status, 200);
+  assert.equal((await call('POST', '/api/price-master/preview', { filter: {}, direction: 1, pct: 1 }, VIEW)).status, 200);
+  const b = await call('GET', '/api/price-master/batches', undefined, VIEW); assert.equal(b.status, 200);
+  assert.equal((await call('GET', `/api/price-master/batches/${b.items[0].id}`, undefined, VIEW)).status, 200);
+  assert.equal((await call('GET', '/api/price-master/product?code=CB0011', undefined, VIEW)).status, 200);
+  const L = await call('GET', '/api/price-master/syd/lists', undefined, VIEW); assert.equal(L.status, 200);
+  assert.equal((await call('GET', `/api/price-master/syd/lists/${L.items[0].id}/report`, undefined, VIEW)).status, 200);
+  assert.equal((await call('GET', '/api/price-master/purchase-check', undefined, VIEW)).status, 200);
+});
+await t('열람 → 바꾸는 API 8개 전부 403 read_only (값 그대로)', async () => {
+  const before = await price('CB0011');
+  const id = await pid('CB0011');
+  const bs = (await call('GET', '/api/price-master/batches')).items;
+  const applied = bs.find((x) => x.status === 'applied'); const L = (await call('GET', '/api/price-master/syd/lists')).items[0];
+  for (const [m, u, body] of [
+    ['POST', '/api/price-master/single', { product_id: id, price_type: 'list', price: 999, pin: '1234', note: '열람자' }],
+    ['POST', '/api/price-master/import/preview', { rows: [{ code: 'CB0011', list: 1 }] }],
+    ['POST', '/api/price-master/import/commit', { rows: [{ code: 'CB0011', list: 1 }], pin: '1234', note: '열람자' }],
+    ['POST', '/api/price-master/batches', { filter: {}, direction: 1, pct: 5, pin: '1234', note: '열람자' }],
+    ['POST', `/api/price-master/batches/${applied.id}/cancel`, {}],
+    ['POST', `/api/price-master/batches/${applied.id}/revert`, { pin: '1234' }],
+    ['POST', '/api/price-master/syd/lists', { list_date: TODAY, rows: [{ code: 'A', price: 1 }] }],
+    ['DELETE', `/api/price-master/syd/lists/${L.id}`, { pin: '1234' }]]) {
+    const r = await call(m, u, body, VIEW);
+    assert.equal(r.status, 403, m + ' ' + u); assert.equal(r.error, 'read_only', m + ' ' + u);
+  }
+  assert.equal(await price('CB0011'), before);
+});
+await t('수정 → can_edit true · 본인 PIN 으로 단일 수정 · 틀린 PIN 403 · 기록에 본인 이름', async () => {
+  assert.equal((await call('GET', '/api/price-master/facets', undefined, EDIT)).can_edit, true);
+  const id = await pid('CB0011');
+  assert.equal((await call('POST', '/api/price-master/single', { product_id: id, price_type: 'list', price: 401.5, pin: '0000', note: '영업지원 수정' }, EDIT)).error, 'bad_pin');
+  const r = await call('POST', '/api/price-master/single', { product_id: id, price_type: 'list', price: 401.5, pin: '1234', note: '영업지원 수정' }, EDIT);
+  assert.equal(r.status, 200, JSON.stringify(r)); assert.equal(await price('CB0011'), 401.5);
+  const b = (await call('GET', '/api/price-master/batches', undefined, EDIT)).items.find((x) => x.id === r.id);
+  assert.equal(b.created_by_name, 'Maria');
+});
+await t('디렉터는 키 없이도 전체 · can_edit true', async () => {
+  const f = await call('GET', '/api/price-master/facets'); assert.equal(f.can_edit, true);
 });
 
 await app.close(); await pool.end();
