@@ -203,6 +203,22 @@ const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_tes
   'body_shape', 'field_map'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
+/**
+ * 메서드 값 정리 (2026-09-24 핫픽스).
+ * 브라우저 자동번역이 켜진 채 저장하면 선택칸 글자가 번역돼(POST→CORREO 등) 엉뚱한 값이 오거나,
+ * 선택칸에 없는 값이면 빈칸('')이 온다. 공백·소문자는 고쳐 받고, **빈칸은 「바꾸지 않음」**으로 본다.
+ */
+export function normalizeMethods(p) {
+  if (!p || typeof p !== 'object') return p;
+  const o = { ...p };
+  for (const m of ['method_upsert', 'method_delete']) {
+    if (o[m] === undefined) continue;
+    const v = String(o[m] == null ? '' : o[m]).trim().toUpperCase();
+    if (!v) delete o[m]; else o[m] = v;
+  }
+  return o;
+}
+
 export function validatePatch(p, cur = null) {
   // 수신(direction='in')은 상대 주소가 없다 — 운영 URL 을 요구하면 저장 자체가 막힌다.
   const inbound = String(p.direction || cur?.direction || 'out') === 'in';
@@ -306,6 +322,7 @@ export function maskSecret(t) {
 export async function saveEndpoint(key, patch, userId) {
   const cur = (await query(`SELECT * FROM integration_endpoints WHERE key=$1`, [key])).rows[0];
   if (!cur) return { error: 'not_found' };
+  patch = normalizeMethods(patch);
   const bad = validatePatch(patch, cur);
   if (bad) return { error: bad };
 

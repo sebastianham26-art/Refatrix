@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20260923ordst</title>
+<title>Refatrix ERP · 연동 관리 · build 20260924mth</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -263,9 +263,9 @@
 
           <div class="row3" id="boxMethods">
             <div><label>등록·수정 메서드</label>
-              <select id="fMethodUpsert"><option>POST</option><option>PUT</option><option>PATCH</option><option>GET</option></select></div>
+              <select id="fMethodUpsert" translate="no" class="notranslate"><option value="POST">POST</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option><option value="GET">GET</option></select></div>
             <div><label>삭제 메서드</label>
-              <select id="fMethodDelete"><option>DELETE</option><option>POST</option><option>PUT</option><option>PATCH</option></select></div>
+              <select id="fMethodDelete" translate="no" class="notranslate"><option value="DELETE">DELETE</option><option value="POST">POST</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option><option value="GET">GET</option></select></div>
             <div><label>성공 codigoError</label><input id="fOkCode" placeholder="0"></div>
             <div><label>재시도 안 할 코드 <span class="hint">(쉼표 구분)</span></label><input id="fNoRetry" placeholder="ERR_CUSTOMER_NOT_FOUND"></div>
           </div>
@@ -782,12 +782,19 @@
     finally{ $('btnSaveNotify').disabled=false; }
   }
 
+  // 2026-09-24 · 저장된 메서드가 목록에 없으면 추가해서 고른다(빈칸으로 저장되어 거절되던 문제).
+  function setMethodSel(id,v){
+    const sel=$(id); v=String(v||'').trim().toUpperCase(); if(!v) return;
+    if(![...sel.options].some(o=>o.value===v)){ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); }
+    sel.value=v;
+  }
+
   function fillCfg(){
     const e=CUR;
     $('fLabel').value=e.label||''; $('fCategory').value=e.category||'other'; $('fDesc').value=e.description||'';
     $('fEnabled').checked=!!e.enabled; $('fEnv').value=e.env||'test';
     $('fUrlTest').value=e.url_test||''; $('fUrlProd').value=e.url_prod||'';
-    $('fMethodUpsert').value=e.method_upsert||'POST'; $('fMethodDelete').value=e.method_delete||'DELETE';
+    setMethodSel('fMethodUpsert',e.method_upsert||'POST'); setMethodSel('fMethodDelete',e.method_delete||'DELETE');
     $('fOkCode').value=e.ok_code||'0';
     $('fNoRetry').value=e.no_retry_codes||'';
     // 폴백 대상 후보 = 나 자신을 뺀 **전송** 연동들(수신 창구로는 보낼 수 없다).
