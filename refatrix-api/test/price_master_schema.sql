@@ -20,3 +20,11 @@ CREATE TABLE purchase_orders (id BIGSERIAL PRIMARY KEY, ref_no TEXT, order_date 
   created_by BIGINT, created_at TIMESTAMPTZ DEFAULT now(), deleted_at TIMESTAMPTZ);
 CREATE TABLE purchase_order_lines (id BIGSERIAL PRIMARY KEY, po_id BIGINT REFERENCES purchase_orders(id), product_id BIGINT REFERENCES products(id),
   input_code TEXT, qty NUMERIC, unit_cost_usd NUMERIC, amount_usd NUMERIC, received_qty NUMERIC DEFAULT 0);
+-- ⑦ 제품 수익성: 매출 · 수입원가 배치
+CREATE TABLE sales_invoices (id BIGSERIAL PRIMARY KEY, inv_date DATE, status TEXT, deleted_at TIMESTAMPTZ);
+CREATE TABLE sales_invoice_lines (id BIGSERIAL PRIMARY KEY, invoice_id BIGINT REFERENCES sales_invoices(id), product_id BIGINT REFERENCES products(id),
+  qty NUMERIC, line_amount_mxn NUMERIC, cogs_mxn NUMERIC, applied_unit_cost NUMERIC);
+CREATE TABLE import_batches (id BIGSERIAL PRIMARY KEY, status TEXT, deleted_at TIMESTAMPTZ, currency TEXT DEFAULT 'USD', fx_rate NUMERIC, exclude_from_cost BOOLEAN NOT NULL DEFAULT false);
+CREATE TABLE import_lines (id BIGSERIAL PRIMARY KEY, batch_id BIGINT REFERENCES import_batches(id), product_id BIGINT REFERENCES products(id),
+  qty NUMERIC, import_price NUMERIC, currency TEXT);
+CREATE TABLE import_overheads (id BIGSERIAL PRIMARY KEY, batch_id BIGINT REFERENCES import_batches(id), label TEXT, amount NUMERIC, currency TEXT);

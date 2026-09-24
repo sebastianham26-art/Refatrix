@@ -15,7 +15,7 @@
 //   ⑥ 구매가 검증      GET  /api/price-master/purchase-check · /purchase-check/:poId
 // =====================================================================
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import {
@@ -23,6 +23,7 @@ import {
   nvSql, eligibleSql, calcNewPrice, roundTo, buildFilterWhere, buildTargetWhere, describeFilter, createBatch,
   applyDue, revertBatch, MAX_SELECTED, sydNorm, SYD_NORM_SQL, parseSydRows, prevSydList, latestSydListId,
   compareSydCounts, syncProductSydPrices, purchaseLinesWithFob, summarizeFob,
+  REGIONS, regionOf, profitBase, filterProfitRows, getSga, setSga, settingsReady,
 } from '../priceMaster.js';
 
 const num = (v) => (v == null ? null : Number(v));
@@ -130,8 +131,14 @@ export default async function priceMasterRoutes(app) {
               AVG(CASE WHEN p.fob_usd > 0 AND p.list_price > 0 THEN p.list_price / p.fob_usd END) AS mxn_per_usd,
               AVG(CASE WHEN p.list_price > 0 AND p.list_price_syd > 0 THEN p.list_price / p.list_price_syd END) AS ratio_avg
          FROM products p WHERE ${W}`, params)).rows[0];
-    const SORT = { code: 'p.code', list: 'p.list_price DESC NULLS LAST, p.code', fob: 'p.fob_usd DESC NULLS LAST, p.code',
-      ratio: '(p.list_price / NULLIF(p.list_price_syd,0)) ASC NULLS LAST, p.code', mult: '(p.list_price / NULLIF(p.fob_usd,0)) ASC NULLS LAST, p.code' };
+    // 정렬(2026-09-24): 표 제목 클릭 = sort + dir. 전체 데이터 기준(보이는 줄만이 아니라). dir 이 없으면 예전 기본 방향.
+    const SORT_COL = { code: 'p.code', name: "upper(COALESCE(p.name,''))", origin: "upper(COALESCE(p.origin,''))", fob: 'p.fob_usd', list: 'p.list_price',
+      mult: '(p.list_price / NULLIF(p.fob_usd,0))', syd: 'p.list_price_syd', ratio: '(p.list_price / NULLIF(p.list_price_syd,0))',
+      last: "(SELECT MAX(h2.effective_date) FROM product_price_history h2 WHERE h2.product_id = p.id AND h2.source <> 'initial')" };
+    const DEF_DIR = { code: 'asc', name: 'asc', origin: 'asc', fob: 'desc', list: 'desc', mult: 'asc', syd: 'desc', ratio: 'asc', last: 'desc' };
+    const sk = SORT_COL[qv.sort] ? qv.sort : 'code';
+    const sd = (qv.dir === 'asc' || qv.dir === 'desc') ? qv.dir : DEF_DIR[sk];
+    const orderSql = `${SORT_COL[sk]} ${sd.toUpperCase()} NULLS LAST, p.code`;
     const limit = Math.min(Math.max(Number(qv.limit) || 200, 1), 20000);
     const offset = Math.max(Number(qv.offset) || 0, 0);
     const lp = params.slice(); lp.push(limit, offset);
@@ -140,7 +147,7 @@ export default async function priceMasterRoutes(app) {
               (SELECT to_char(MAX(h.effective_date),'YYYY-MM-DD') FROM product_price_history h
                 WHERE h.product_id = p.id AND h.source <> 'initial') AS last_change
          FROM products p WHERE ${W}
-        ORDER BY ${SORT[qv.sort] || SORT.code} LIMIT $${lp.length - 1} OFFSET $${lp.length}`, lp)).rows;
+        ORDER BY ${orderSql} LIMIT $${lp.length - 1} OFFSET $${lp.length}`, lp)).rows;
     const fr = fx ? fx.rate : null;
     return {
       fx, today: mxToday(),
@@ -264,13 +271,20 @@ export default async function priceMasterRoutes(app) {
       ? `EXISTS (SELECT 1 FROM price_change_items pi JOIN price_change_batches pb ON pb.id = pi.batch_id
                   WHERE pi.product_id = p.id AND pb.status = 'scheduled' AND pb.price_type = '${t}')`
       : 'false';
+    // 정렬(2026-09-24): 미리보기 표 제목 클릭 — 조건 결과 전체 기준
+    const nvE = `(CASE WHEN ${eligibleSql(mode, cur)} THEN ${nvL} END)`;
+    const PV = { code: 'p.code', name: "upper(COALESCE(p.name,''))", origin: "upper(COALESCE(p.origin,''))", cur, new: nvE,
+      diff: `(${nvE} - ${cur})`, syd: 'p.list_price_syd', ratio: `(${nvE} / NULLIF(p.list_price_syd,0))`, list: 'p.list_price' };
+    const pk = PV[b.sort] ? b.sort : 'code';
+    const pd = b.dir === 'desc' ? 'DESC' : b.dir === 'asc' ? 'ASC' : (pk === 'code' || pk === 'name' || pk === 'origin' ? 'ASC' : 'DESC');
+    const pvOrder = `${PV[pk]} ${pd} NULLS LAST, p.code`;
     lp.push(limit, offset);
     const rows = (await query(
       `SELECT p.id, p.code, p.name, p.origin, p.is_active, ${cur} AS cur, p.list_price, p.fob_usd, p.list_price_syd,
               CASE WHEN ${eligibleSql(mode, cur)} THEN ${nvL} END AS new_price,
               left(COALESCE(p.app,''), 90) AS app, ${pendingSql} AS pending
          FROM products p WHERE ${lw}
-        ORDER BY p.code LIMIT $${lp.length - 1} OFFSET $${lp.length}`, lp)).rows;
+        ORDER BY ${pvOrder} LIMIT $${lp.length - 1} OFFSET $${lp.length}`, lp)).rows;
     const cp = [];
     const matched = (await query(`SELECT COUNT(*)::int AS n FROM products p WHERE ${buildFilterWhere(b.filter, cp, { fx: fr })}`, cp)).rows[0].n;
 
@@ -675,4 +689,45 @@ export default async function priceMasterRoutes(app) {
         diff_pct: l.fob > 0 ? Math.round((Number(l.unit_cost_usd) - Number(l.fob)) / Number(l.fob) * 10000) / 10000 : null,
         diff_usd: l.diff_usd, status: l.fob_status })) };
   });
+
+  // ── ⑦ 제품 수익성 ──
+  //   GET  /api/price-master/profit?from&to&cat=A,B&region=eu,cn&origin=KR&q=&inactive=1
+  //   PUT  /api/price-master/settings/sga  {pct, pin}   — 디렉터만 · 판관비율 저장
+  const csv = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 200);
+  app.get('/api/price-master/profit', READ, async (req, reply) => {
+    if (!(await gate(reply))) return;
+    const qv = req.query || {};
+    const from = isYmd(qv.from) ? qv.from : null; const to = isYmd(qv.to) ? qv.to : null;
+    const base = await profitBase({ from, to });
+    const all = base.rows;
+    const f = { cat: csv(qv.cat), region: csv(qv.region), origin: csv(qv.origin), q: qv.q, include_inactive: qv.inactive === '1' };
+    // 칩 개수는 「다른 조건만 적용한」 기준 — 품목 칩은 지역·원산지·검색을 반영, 지역 칩은 품목·원산지·검색을 반영
+    const catCount = {}; for (const r of filterProfitRows(all, { ...f, cat: [] })) catCount[r.cat] = (catCount[r.cat] || 0) + 1;
+    const regBase = filterProfitRows(all, { ...f, region: [] });
+    const regions = REGIONS.map((x) => ({ key: x.key, label: x.label, n: regBase.filter((r) => r.regions.includes(x.key)).length }));
+    const noRegion = regBase.filter((r) => !r.regions.length).length;
+    const unm = {}; for (const r of all) for (const m of r.makers) if (!regionOf(m)) unm[m] = (unm[m] || 0) + 1;
+    const rows = filterProfitRows(all, f);
+    return {
+      today: mxToday(), from, to, fx: base.fx, overhead: base.overhead, sga: await getSga(), can_set_sga: req.ctx.perm.role === 'director',
+      counts: { sold_products: all.length, shown: rows.length, no_region: noRegion },
+      cats: Object.entries(catCount).map(([v, n]) => ({ v, n })).sort((a, b) => b.n - a.n || a.v.localeCompare(b.v)),
+      regions, unmapped_makers: Object.entries(unm).map(([maker, n]) => ({ maker, n })).sort((a, b) => b.n - a.n).slice(0, 40),
+      rows,
+    };
+  });
+
+  app.put('/api/price-master/settings/sga', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { perm } = req.ctx; const b = req.body || {};
+    if (!(await settingsReady())) return reply.code(503).send({ error: 'migration_required', detail: '서버 마이그레이션(0231) 후에 쓸 수 있습니다.' });
+    if (!(await pinOk(perm, b.pin))) return reply.code(403).send({ error: 'bad_pin' });
+    const pct = Number(String(b.pct ?? '').replace(',', '.'));
+    if (!Number.isFinite(pct) || pct < 0 || pct >= 100) return reply.code(400).send({ error: 'bad_sga' });
+    const v = Math.round(pct * 100) / 100;
+    const before = await getSga();
+    await setSga(v, perm.userId);
+    await logEvent({ userId: perm.userId, action: 'update', target: 'price_master:sga_pct', detail: { from: before.pct, to: v } });
+    return { ok: true, sga: await getSga() };
+  });
+
 }

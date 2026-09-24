@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-0924perm</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-0924p7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -91,6 +91,24 @@
   .split{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:820px){.split{grid-template-columns:minmax(0,1fr)}}
   .bar{height:8px;border-radius:4px;background:#eee;overflow:hidden;display:flex;min-width:80px}.bar i{display:block;height:100%}
   h4{margin:14px 0 6px;color:var(--brand);font-size:13px}
+  /* 표 제목 눌러 정렬 */
+  th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--brand)}
+  th.sortable.on{color:var(--brand)}th.sortable.on.desc::after{content:' ▼';font-size:9px}th.sortable.on.asc::after{content:' ▲';font-size:9px}
+  /* ⑦ 제품 수익성 */
+  .kpi small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+  .flow{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:12px;margin:10px 0 0}.flow b{font-size:14px;font-variant-numeric:tabular-nums}.flow .m{color:var(--muted)}
+  .sga{display:flex;gap:10px;align-items:center;background:var(--warn-bg);border:1px solid #ecd9a6;border-radius:10px;padding:10px 12px;flex-wrap:wrap;margin-top:12px}
+  .sga input{width:90px;font-size:16px;font-weight:700;text-align:right}.sga input.bad{border-color:var(--up);background:var(--up-bg)}
+  .prGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:14px;margin-top:12px}@media(max-width:820px){.prGrid{grid-template-columns:minmax(0,1fr)}}
+  .prSplit{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px;margin-top:10px}@media(max-width:900px){.prSplit{grid-template-columns:minmax(0,1fr)}}
+  .quad{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}@media(max-width:560px){.quad{grid-template-columns:minmax(0,1fr)}}
+  .q{border-radius:10px;padding:10px 12px;border:1px solid var(--line);cursor:pointer;min-width:0}.q:hover{border-color:var(--brand)}.q.sel{outline:2px solid var(--brand)}
+  .q h5{margin:0 0 2px;font-size:13px}.q .qn{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}.q p{margin:2px 0;font-size:11.5px;color:var(--muted);line-height:1.45;overflow-wrap:anywhere}
+  .q1{background:#e9f3ee}.q2{background:#fbf3e3}.q3{background:#eef3fb}.q4{background:#f6ecea}
+  .qb{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;white-space:nowrap}.qb1{background:#dcefe4;color:var(--brand)}.qb2{background:#f8ebcf;color:#7a5a17}.qb3{background:var(--blue-bg);color:var(--blue)}.qb4{background:var(--up-bg);color:var(--up)}
+  .scatter{width:100%;height:auto;background:#fcfbf8;border:1px solid var(--line);border-radius:10px;display:block}.scatter circle{cursor:pointer}.scatter text{font-family:inherit}
+  .ins{margin:10px 0 0;padding-left:18px;line-height:1.7;font-size:12.5px}.ins li{overflow-wrap:anywhere}
+  .chip.all{font-weight:700}
   /* 열람 권한(수정 권한 없음) — 바꾸는 버튼·입력은 숨기고 값 클릭 수정도 끈다 */
   .ro .wOnly{display:none!important}
   .ro .edit{cursor:default;border-bottom:none}.ro .edit:hover{color:inherit}
@@ -98,7 +116,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">가격 마스터 · FOB 구매가 · List 정가 · 경쟁사 SYD · 구매가 검증</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">가격 마스터 · FOB 구매가 · List 정가 · 경쟁사 SYD · 구매가 검증 · 제품 수익성</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
@@ -118,6 +136,7 @@
       <button class="tab" data-t="product">④ 제품별 이력</button>
       <button class="tab" data-t="syd">⑤ 경쟁사 SYD</button>
       <button class="tab" data-t="purchase">⑥ 구매가 검증</button>
+      <button class="tab" data-t="profit">⑦ 제품 수익성</button>
     </div>
 
     <!-- ① 가격표 -->
@@ -130,7 +149,6 @@
           <div class="f" style="flex:2"><label for="tq">검색</label><input id="tq" placeholder="코드 · 품목 · 적용차종"></div>
           <div class="f"><label for="torigin">원산지</label><select id="torigin"><option value="">전체</option></select></div>
           <div class="f"><label for="tview">보기</label><select id="tview"><option value="">전체</option><option value="no_fob">FOB 없음</option><option value="no_list">List 없음</option><option value="mult_lt">배수 3.0 미만</option><option value="syd_over">SYD보다 비쌈</option></select></div>
-          <div class="f"><label for="tsort">정렬</label><select id="tsort"><option value="code">코드</option><option value="list">List 높은 순</option><option value="fob">FOB 높은 순</option><option value="mult">배수 낮은 순</option><option value="ratio">CTR÷SYD 낮은 순</option></select></div>
           <label style="display:flex;gap:6px;align-items:center;font-weight:500;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="tall"> 비활성 포함</label>
         </div>
         <div class="row" style="margin-top:10px">
@@ -143,7 +161,7 @@
         </div>
         <div class="msg" id="tplPriceMsg"></div>
         <div class="kpis" id="tkpis"></div>
-        <div class="tblWrap" style="margin-top:10px"><table><thead><tr><th>코드</th><th>품목</th><th>원산지</th><th class="n">FOB (USD)</th><th class="n">List (MXN)</th><th class="n">배수</th><th class="n">SYD List</th><th class="n">CTR ÷ SYD</th><th>최근 변경</th></tr></thead><tbody id="ttb"></tbody></table></div>
+        <div class="tblWrap" style="margin-top:10px"><table><thead id="tth"></thead><tbody id="ttb"></tbody></table></div>
         <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnTMore">더 보기</button> <span class="mut" id="tcnt"></span></div>
       </div>
     </section>
@@ -201,7 +219,7 @@
           <p class="ttl" style="margin:0">4. 미리보기</p><span class="mut" id="cnt"></span>
           <span style="flex:1"></span><span id="pickInfo" class="mut"></span>
         </div>
-        <div class="tblWrap"><table><thead><tr id="prevHead"></tr></thead><tbody id="tb"></tbody></table></div>
+        <div class="tblWrap"><table><thead id="prevHead"></thead><tbody id="tb"></tbody></table></div>
         <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnMore">더 보기</button></div>
       </div>
     </section>
@@ -215,7 +233,7 @@
           <select id="hStatus" style="width:auto"><option value="">전체 상태</option><option value="scheduled">예약</option><option value="applied">적용</option><option value="reverted">되돌림</option><option value="cancelled">취소</option></select>
           <button class="btn ghost sm" id="btnHReload">새로고침</button>
         </div>
-        <div class="tw"><table><thead><tr><th>적용일</th><th>가격</th><th>상태</th><th>방식 · 조건</th><th class="n">변경</th><th class="n">제품 수</th><th>사유</th><th>작성</th><th></th></tr></thead><tbody id="hb"></tbody></table></div>
+        <div class="tw"><table><thead id="hth"></thead><tbody id="hb"></tbody></table></div>
         <div class="note">되돌리기는 <b>그 뒤에 같은 가격(List 또는 FOB)의 다른 변경이 없는 제품만</b> 원래 값으로 돌립니다. 뒤에 바뀐 제품은 건너뛰고 목록으로 알려 줍니다.</div>
       </div>
     </section>
@@ -243,7 +261,7 @@
         <div class="row wOnly" style="margin-top:8px"><button class="btn ghost sm" id="dlTplSyd">📄 SYD 업로드 엑셀양식 받기</button>
           <span class="mut" style="font-size:12px">SYD 원본 파일을 그대로 올려도 됩니다(ARTÍCULO · PRECIO LISTA 열을 알아봅니다). 열 이름이 다르면 양식에 옮겨 붙여 올리세요.</span></div>
         <div class="msg" id="sydMsg"></div>
-        <div class="tw" style="margin-top:8px"><table><thead><tr><th>기준일</th><th>파일</th><th class="n">코드</th><th class="n">인상</th><th class="n">인하</th><th class="n">같음</th><th class="n">신규</th><th class="n">사라짐</th><th>비교 대상</th><th>올린 사람</th><th></th></tr></thead><tbody id="sb"></tbody></table></div>
+        <div class="tw" style="margin-top:8px"><table><thead id="sth"></thead><tbody id="sb"></tbody></table></div>
       </div>
       <div class="card hidden" id="sydRep"></div>
     </section>
@@ -261,8 +279,61 @@
           <button class="btn" id="btnPc" style="margin-bottom:4px">조회</button>
         </div>
         <div class="kpis" id="pckpis"></div>
-        <div class="tw" style="margin-top:10px"><table><thead><tr><th>참조번호</th><th>주문일</th><th class="n">줄</th><th class="n">일치</th><th class="n">비쌈</th><th class="n">쌈</th><th class="n">FOB 없음</th><th class="n">미등록</th><th class="n">차액 (USD)</th></tr></thead><tbody id="pcb"></tbody></table></div>
+        <div class="tw" style="margin-top:10px"><table><thead id="pcth"></thead><tbody id="pcb"></tbody></table></div>
         <div id="pcLines"></div>
+      </div>
+    </section>
+
+    <!-- ⑦ 제품 수익성 -->
+    <section id="t-profit" class="hidden">
+      <div class="card">
+        <p class="ttl">제품 수익성 — 누적 판매수량으로 본 매출총이익 · 영업이익</p>
+        <p class="sub2">제품마다 <b>1개당 원가 = FOB × 환율 × (1 + 수입부대비율)</b>을 누적 판매수량에 곱합니다. 매출은 실제 판매금액(게시된 인보이스 · IVA 제외)이고, 평균 판매가 = 매출 ÷ 수량입니다.
+          수입부대비율은 그동안 수입원가 배치(승인)에 기록된 부대비용(운임 · 통관 · 관세 등)을 <b>FOB 금액 비율</b>로 나눈 값이며, 새 배치가 승인되면 다음 조회부터 자동으로 들어옵니다.
+          FOB 가 없는 제품은 <b>판매 시점 실제 원가</b>로 대신합니다. 판관비 = 매출 × 판관비율, 영업이익 = 매출총이익 − 판관비.</p>
+        <div class="row">
+          <div class="f" style="max-width:170px"><label for="prPeriod">판매 기간</label><select id="prPeriod"><option value="all">전체 누적</option><option value="12m">최근 12개월</option><option value="ytd">올해</option><option value="custom">직접 지정</option></select></div>
+          <div class="f prCustom hidden" style="max-width:160px"><label for="prFrom">부터</label><input type="date" id="prFrom"></div>
+          <div class="f prCustom hidden" style="max-width:160px"><label for="prTo">까지</label><input type="date" id="prTo"></div>
+          <div class="f" style="max-width:170px"><label for="prOrigin">원산지</label><select id="prOrigin"><option value="">전체</option></select></div>
+          <div class="f" style="flex:2"><label for="prQ">검색</label><input id="prQ" placeholder="코드 · 품목 · 메이커"></div>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:500;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="prInact"> 비활성 포함</label>
+          <button class="btn ghost sm" id="btnPrReset" style="margin-bottom:6px">조건 모두 지우기</button>
+        </div>
+        <div class="prGrid">
+          <div><label>차종 — 여러 개 고르면 그중 하나라도 맞는 제품</label><div class="chips" id="prReg"></div><div class="mut" id="prRegInfo" style="font-size:11.5px;margin-top:4px;line-height:1.5"></div></div>
+          <div><label>제품 카테고리 — 여러 개 고를 수 있음 (차종 · 원산지 · 검색과는 모두 만족)</label><input class="chipq" id="prCatQ" placeholder="카테고리 찾기 (예: HORQ)"><div class="chips" id="prCat"></div></div>
+        </div>
+        <div class="sga">
+          <b style="color:var(--warn-ink)">판관비율</b><input id="prSgaIn" inputmode="decimal" placeholder="예: 18" aria-label="판관비율 (%)"><b>%</b>
+          <span class="mut" id="prSgaInfo" style="flex:1;min-width:200px;font-size:12px;line-height:1.5"></span>
+          <button class="btn gold sm hidden" id="prSgaSave">저장 (PIN)</button>
+        </div>
+        <div class="kpis" id="prKpis"></div>
+        <div class="flow" id="prFlow"></div>
+        <div id="prNotes"></div>
+      </div>
+      <div class="card">
+        <p class="ttl">어떤 제품이 돈을 버나 — 4분류</p>
+        <p class="sub2">가로 = 누적 판매수량, 세로 = 영업이익률. 위에서 고른 카테고리 · 차종 조건의 제품들끼리 나눕니다. 네모를 누르면 아래 표가 그 분류로 걸러집니다.</p>
+        <div class="row">
+          <div class="f" style="max-width:190px"><label for="prXcut">많이 팔림 = 수량 상위</label><select id="prXcut"><option value="10">10%</option><option value="20" selected>20%</option><option value="30">30%</option><option value="50">50%</option></select></div>
+          <div class="f" style="max-width:220px"><label for="prYcut">이익률 높음 = 영업이익률 (%) 이상</label><input id="prYcut" inputmode="decimal" placeholder="비우면 중앙값"></div>
+          <div class="f mut" id="prCutInfo" style="flex:3;font-size:12px;margin-bottom:10px"></div>
+        </div>
+        <div class="prSplit">
+          <div id="prScatter"></div>
+          <div><div class="quad" id="prQuad"></div><div id="prIns"></div></div>
+        </div>
+      </div>
+      <div class="card" id="prTblCard">
+        <div class="row" style="align-items:center;margin-bottom:8px">
+          <p class="ttl" style="margin:0">제품별 수익성</p><span class="mut" id="prCnt"></span><span style="flex:1"></span>
+          <select id="prQf" style="width:auto"><option value="">4분류 전체</option><option value="1">🐄 캐시카우</option><option value="2">💎 고수익 틈새</option><option value="3">📦 볼륨 · 저마진</option><option value="4">⚠ 정리 후보</option></select>
+          <button class="btn ghost sm" id="btnPrX">엑셀</button>
+        </div>
+        <div class="tblWrap"><table id="prTbl"></table></div>
+        <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnPrMore">더 보기</button> <span class="mut" style="font-size:12px">금액은 MXN · IVA 제외. 제목을 누르면 정렬합니다(다시 누르면 반대로).</span></div>
       </div>
     </section>
   </div>
@@ -273,7 +344,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='pm-0924perm';
+  const BUILD='pm-0924p7';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -287,7 +358,8 @@
     bad_pct:'비율을 확인하세요 (0 초과 100 이하 · 인하는 100 미만)',bad_direction:'방향을 고르세요',bad_rounding:'반올림 단위를 확인하세요',bad_ratio:'목표 비율을 확인하세요',ratio_list_only:'SYD 비율은 List 에만 씁니다',
     no_targets:'대상 제품이 없습니다',too_many:'제품이 너무 많습니다',migration_required:'서버 마이그레이션(0229) 후에 쓸 수 있습니다',not_scheduled:'예약 상태가 아닙니다',not_applied:'적용된 묶음만 되돌릴 수 있습니다',
     nothing_to_revert:'되돌릴 제품이 없습니다 — 모두 뒤에 다른 변경이 있습니다',not_found:'찾을 수 없습니다',director_only:'디렉터만 쓸 수 있는 화면입니다',forbidden:'권한이 없습니다',network:'서버에 연결할 수 없습니다',
-    code_required:'코드를 입력하세요',bad_price:'가격을 확인하세요',same_price:'지금 값과 같습니다',no_rows:'읽을 수 있는 줄이 없습니다'};
+    code_required:'코드를 입력하세요',bad_price:'가격을 확인하세요',same_price:'지금 값과 같습니다',no_rows:'읽을 수 있는 줄이 없습니다',
+    bad_sga:'판관비율은 0 이상 100 미만으로 넣으세요',mig0231:'서버 마이그레이션(0231) 후에 저장할 수 있습니다 — npm run migrate'};
   const errKo=(e)=>ERR_KO[e]||e||'오류';
   const STATUS={scheduled:['예약','b-sc'],applied:['적용','b-ap'],reverted:['되돌림','b-rv'],cancelled:['취소','b-cx']};
   const RESULT={applied:['적용','b-ap'],pending:['예약','b-sc'],no_price:['가격 없음','b-sk'],no_syd:['SYD 없음','b-sk'],deleted:['삭제됨','b-sk'],no_change:['변화 없음','b-in'],to_zero:['0 이하 → 제외','b-sk'],reverted:['되돌림','b-rv'],revert_skipped:['되돌리기 제외','b-sk']};
@@ -297,6 +369,27 @@
   const FOBST={ok:['일치','b-ap'],over:['FOB보다 비쌈','b-sk'],under:['FOB보다 쌈','b-dn'],no_fob:['FOB 없음','b-in'],unmatched:['미등록 코드','b-in']};
   const badge=(map,k)=>{ const m=map[k]||[k||'—','b-in']; return '<span class="badge '+m[1]+'">'+esc(m[0])+'</span>'; };
   const typeBadge=(t)=>t==='fob'?'<span class="badge b-fob">FOB</span>':'<span class="badge b-list">List</span>';
+  const num=(v)=>v==null||v===''?null:Number(v);
+  // ─── 표 제목 눌러 정렬 (09-24) — 처음 누르면 그 열의 기본 방향(숫자 큰 순 · 글자 가나다순), 다시 누르면 반대. 빈 값은 늘 맨 뒤 ───
+  const SORTS={t:{k:'code',dir:'asc'},pv:{k:'code',dir:'asc'},pr:{k:'op',dir:'desc'}};
+  function headRow(tbl, cols){
+    const s=SORTS[tbl];
+    return '<tr>'+cols.map(c=>{ if(typeof c==='string') return c;          // 정렬 없는 칸 = 완성된 <th>
+      const k=c[0], label=c[1], n=c[2], dd=c[3]; const on=s&&s.k===k;
+      return '<th class="sortable'+(n?' n':'')+(on?' on '+s.dir:'')+'" data-sk="'+k+'" data-dd="'+(dd||(n?'desc':'asc'))+'" title="눌러서 정렬">'+label+'</th>'; }).join('')+'</tr>';
+  }
+  function bindSort(root, tbl, onChange){
+    root.querySelectorAll('th[data-sk]').forEach(th=>th.addEventListener('click',()=>{
+      const k=th.dataset.sk; const s=SORTS[tbl]; SORTS[tbl]=s&&s.k===k?{k,dir:s.dir==='asc'?'desc':'asc'}:{k,dir:th.dataset.dd}; onChange(); }));
+  }
+  function sortArr(arr, tbl, getters){
+    const s=SORTS[tbl]; const g=s&&getters[s.k]; if(!g) return arr;
+    const m=s.dir==='asc'?1:-1;
+    return arr.map((v,i)=>[v,i]).sort((A,B)=>{ const x=g(A[0]), y=g(B[0]); const xn=x==null||x===''||(typeof x==='number'&&isNaN(x)), yn=y==null||y===''||(typeof y==='number'&&isNaN(y));
+      if(xn||yn) return xn&&yn?A[1]-B[1]:xn?1:-1;
+      const c=(typeof x==='number'&&typeof y==='number')?x-y:String(x).localeCompare(String(y),'es',{numeric:true,sensitivity:'base'});
+      return c?c*m:A[1]-B[1]; }).map(p=>p[0]);
+  }
 
   let session={token:null,user:null,api:''};
   let facets={origin:[],cat:[],maker:[],material:[]}, today='', ready=false, fx=null, ratioAvg=null, canEdit=false;
@@ -460,6 +553,8 @@
     $('migWarn').classList.toggle('hidden',ready);
     $('eff').value=today; $('eff').min=today; $('sydDate').value=today; $('sydDate').max=today;
     $('torigin').innerHTML='<option value="">전체</option>'+facets.origin.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.v==='__none__'?'(없음)':o.v)+' ('+o.n+')</option>').join('');
+    $('prOrigin').innerHTML='<option value="">전체</option>'+facets.origin.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.v==='__none__'?'(없음)':o.v)+'</option>').join('');
+    renderTHead();
     if(ratioAvg){ $('ratio').value=ratioAvg.toFixed(2); $('ratioHint').textContent='(현재 평균 '+ratioAvg.toFixed(2)+')'; }
     const d90=new Date(Date.parse(today+'T00:00:00Z')-90*86400000).toISOString().slice(0,10); $('pcFrom').value=d90; $('pcTo').value=today;
     renderChips(); setRoundOpts(); updateModeUI();
@@ -468,7 +563,7 @@
   }
 
   // ─── 탭 ───
-  const TABS=['table','change','history','product','syd','purchase'];
+  const TABS=['table','change','history','product','syd','purchase','profit'];
   const loaded={};
   function showTab(k){
     document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.t===k));
@@ -480,6 +575,7 @@
     if(k==='product' && $('pcode').value.trim()) lookupProduct();
     if(k==='syd') loadSydLists();
     if(k==='purchase'&&!loaded.purchase){ loaded.purchase=1; loadPc(); }
+    if(k==='profit'&&!loaded.profit){ loaded.profit=1; loadProfit(); }
   }
   document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showTab(t.dataset.t)));
   function gotoProduct(code){ closeModal(); $('pcode').value=code; showTab('product'); }
@@ -487,10 +583,13 @@
 
   // ═══ ① 가격표 ═══
   let tRows=[], tTimer=null;
+  // 정렬은 서버에서(제품 전체 기준) — 제목을 누르면 처음부터 다시 불러온다
+  const T_COLS=[['code','코드'],['name','품목'],['origin','원산지'],['fob','FOB (USD)',1],['list','List (MXN)',1],['mult','배수',1,'asc'],['syd','SYD List',1],['ratio','CTR ÷ SYD',1,'asc'],['last','최근 변경',0,'desc']];
+  function renderTHead(){ $('tth').innerHTML=headRow('t',T_COLS); bindSort($('tth'),'t',()=>{ renderTHead(); loadTable(false); }); }
   function tQuery(offset,limit){
     const p=new URLSearchParams(); const q=$('tq').value.trim(); if(q) p.set('q',q);
     if($('torigin').value) p.set('origin',$('torigin').value); if($('tview').value) p.set('view',$('tview').value);
-    p.set('sort',$('tsort').value); if($('tall').checked) p.set('all','1'); p.set('offset',offset); p.set('limit',limit); return p.toString();
+    p.set('sort',SORTS.t.k); p.set('dir',SORTS.t.dir); if($('tall').checked) p.set('all','1'); p.set('offset',offset); p.set('limit',limit); return p.toString();
   }
   async function loadTable(append){
     const d=await api('/api/price-master/table?'+tQuery(append?tRows.length:0,200));
@@ -515,7 +614,7 @@
     $('btnTMore').classList.toggle('hidden',tRows.length>=k.total);
   }
   ['tq'].forEach(id=>$(id).addEventListener('input',()=>{ clearTimeout(tTimer); tTimer=setTimeout(()=>loadTable(false),300); }));
-  ['torigin','tview','tsort','tall'].forEach(id=>$(id).addEventListener('change',()=>loadTable(false)));
+  ['torigin','tview','tall'].forEach(id=>$(id).addEventListener('change',()=>loadTable(false)));
   $('btnTMore').addEventListener('click',()=>loadTable(true));
   $('btnTExport').addEventListener('click',async()=>{
     const d=await api('/api/price-master/table?'+tQuery(0,20000));
@@ -625,7 +724,7 @@
   function schedulePreview(ms){ clearTimeout(prevT); prevT=setTimeout(()=>preview(false), ms==null?280:ms); }
   async function preview(append){
     const seq=++prevSeq;
-    const body=Object.assign({filter:filterBody(),scope,product_ids:[...picked],offset:append?rows.length:0,limit:200},changeBody());
+    const body=Object.assign({filter:filterBody(),scope,product_ids:[...picked],offset:append?rows.length:0,limit:200,sort:SORTS.pv.k,dir:SORTS.pv.dir},changeBody());
     const d=await api('/api/price-master/preview',{method:'POST',body:JSON.stringify(body)});
     if(seq!==prevSeq) return;
     if(!d.ok){ toast(errKo(d.error),true); return; }
@@ -636,8 +735,10 @@
   function renderRows(){
     const t=ptype; const on=(r)=>scope==='filter'||picked.has(r.id);
     const showSyd=t==='list';
-    $('prevHead').innerHTML='<th><input type="checkbox" id="chkAll" title="보이는 행 전부 체크"></th><th>코드</th><th>품목</th><th>적용차종</th><th>원산지</th>'
-      +'<th class="n">현재 '+(t==='fob'?'FOB':'List')+'</th><th class="n">변경 후</th><th class="n">차이</th>'+(showSyd?'<th class="n">SYD List</th><th class="n">CTR÷SYD (후)</th>':'<th class="n">List</th>')+'<th></th>';
+    // 정렬은 서버에서(조건 결과 전체 기준) — 제목을 누르면 처음부터 다시 불러온다
+    $('prevHead').innerHTML=headRow('pv',['<th><input type="checkbox" id="chkAll" title="보이는 행 전부 체크"></th>',['code','코드'],['name','품목'],'<th>적용차종</th>',['origin','원산지'],
+      ['cur','현재 '+(t==='fob'?'FOB':'List'),1],['new','변경 후',1],['diff','차이',1]].concat(showSyd?[['syd','SYD List',1],['ratio','CTR÷SYD (후)',1,'asc']]:[['list','List',1]]).concat(['<th></th>']));
+    bindSort($('prevHead'),'pv',()=>{ renderRows(); schedulePreview(0); });
     $('tb').innerHTML=rows.map(r=>{
       const inS=on(r)&&r.new_price!=null; const diff=r.new_price!=null&&r.cur!=null?r.new_price-r.cur:null;
       return '<tr class="'+(inS?'':'off')+'"><td><input type="checkbox" data-id="'+r.id+'"'+(picked.has(r.id)?' checked':'')+'></td>'
@@ -726,12 +827,19 @@
   // ═══ ③ 변경 이력 ═══
   let hItems=[];
   const chgTxt=(b)=>b.mode==='ratio'?'SYD × '+b.ratio:b.mode==='set'?'개별 가격':(b.direction>0?'▲ ':'▼ ')+b.pct+'%';
+  const hCnt=(b)=>b.status==='applied'?b.applied_count:b.status==='reverted'?b.reverted_count:b.product_count;
   async function loadHistory(){
     const q=new URLSearchParams(); if($('hStatus').value) q.set('status',$('hStatus').value); if($('hType').value) q.set('price_type',$('hType').value);
     const d=await api('/api/price-master/batches?'+q.toString());
     if(!d.ok){ $('hb').innerHTML='<tr><td colspan="9" class="mut" style="padding:16px">'+esc(errKo(d.error))+'</td></tr>'; return; }
-    hItems=d.items||[];
-    $('hb').innerHTML=hItems.map(b=>{
+    hItems=d.items||[]; renderHistory();
+  }
+  function renderHistory(){
+    $('hth').innerHTML=headRow('h',[['eff','적용일',0,'desc'],['type','가격'],['status','상태'],['cond','방식 · 조건'],['chg','변경',1],['cnt','제품 수',1],['note','사유'],['by','작성'],'<th></th>']);
+    bindSort($('hth'),'h',renderHistory);
+    const L=sortArr(hItems,'h',{eff:b=>b.effective_date,type:b=>b.price_type,status:b=>(STATUS[b.status]||[b.status])[0],cond:b=>(ORIGIN[b.origin]||b.origin)+' '+(b.condition||''),
+      chg:b=>b.mode==='pct'?num(b.pct)*(b.direction>0?1:-1):null,cnt:hCnt,note:b=>b.note,by:b=>b.created_by_name});
+    $('hb').innerHTML=L.map(b=>{
       const cnt=b.status==='applied'?b.applied_count+(b.skipped_count?' <span class="mut">(+제외 '+b.skipped_count+')</span>':'')
         :b.status==='reverted'?b.reverted_count+' 되돌림'+(b.revert_skipped_count?' <span class="mut">· 제외 '+b.revert_skipped_count+'</span>':''):b.product_count;
       return '<tr><td><b>'+esc(b.effective_date)+'</b></td><td>'+typeBadge(b.price_type)+'</td><td>'+badge(STATUS,b.status)+'</td>'
@@ -753,16 +861,23 @@
     const d=await api('/api/price-master/batches/'+id);
     if(!d.ok){ toast(errKo(d.error),true); return; }
     const b=d.batch; const pend=b.status==='scheduled'||b.status==='cancelled'; const t=b.price_type;
+    delete SORTS.hd;
     const ov=openModal('<h3>#'+b.id+' · '+esc(b.effective_date)+' '+typeBadge(t)+' '+badge(STATUS,b.status)+'</h3>'
       +'<dl><dt>방식</dt><dd>'+esc(ORIGIN[b.origin]||b.origin)+' · '+esc(chgTxt(b))+' · 반올림 '+b.rounding+'</dd><dt>조건</dt><dd>'+esc(b.condition)+'</dd>'
       +'<dt>사유</dt><dd>'+esc(b.note||'')+'</dd><dt>작성</dt><dd>'+esc(b.created_by_name||'')+'</dd></dl>'
       +(pend?'<div class="note" style="margin:0 0 10px">예약 상태에서는 <b>지금 값 기준 예상</b>입니다. 실제 값은 적용일의 값으로 계산됩니다.</div>':'')
-      +'<div class="tblWrap"><table><thead><tr><th>코드</th><th>품목</th><th>원산지</th><th class="n">이전</th><th class="n">이후</th><th class="n">변화</th><th>결과</th></tr></thead><tbody>'
-      +d.items.map(x=>'<tr><td><span class="codeLink" data-code="'+esc(x.code)+'">'+esc(x.code)+'</span></td><td>'+esc(x.name||'')+'</td><td>'+esc(x.origin||'—')+'</td>'
-        +'<td class="n">'+fmtP(t,x.old_price)+'</td><td class="n"><b>'+fmtP(t,x.new_price)+'</b></td><td class="n '+cls(x.old_price,x.new_price)+'">'+pctTxt(x.old_price,x.new_price)+'</td><td>'+badge(RESULT,x.result)+'</td></tr>').join('')
-      +(!d.items.length?'<tr><td colspan="7" class="mut" style="padding:14px">남은 대상 제품이 없습니다 (모두 삭제됐습니다).</td></tr>':'')
-      +'</tbody></table></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn ghost" id="mXlsx">엑셀</button><button class="btn" data-close>닫기</button></div>',true);
-    bindCodeLinks(ov);
+      +'<div class="tblWrap"><table id="dTbl"></table></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn ghost" id="mXlsx">엑셀</button><button class="btn" data-close>닫기</button></div>',true);
+    const chg=(x)=>x.old_price?(num(x.new_price)-num(x.old_price))/num(x.old_price):null;
+    const draw=()=>{
+      const tbl=ov.querySelector('#dTbl');
+      const L=sortArr(d.items,'hd',{code:x=>x.code,name:x=>x.name,origin:x=>x.origin,old:x=>num(x.old_price),new:x=>num(x.new_price),chg,res:x=>(RESULT[x.result]||[x.result])[0]});
+      tbl.innerHTML='<thead>'+headRow('hd',[['code','코드'],['name','품목'],['origin','원산지'],['old','이전',1],['new','이후',1],['chg','변화',1],['res','결과']])+'</thead><tbody>'
+        +L.map(x=>'<tr><td><span class="codeLink" data-code="'+esc(x.code)+'">'+esc(x.code)+'</span></td><td>'+esc(x.name||'')+'</td><td>'+esc(x.origin||'—')+'</td>'
+          +'<td class="n">'+fmtP(t,x.old_price)+'</td><td class="n"><b>'+fmtP(t,x.new_price)+'</b></td><td class="n '+cls(x.old_price,x.new_price)+'">'+pctTxt(x.old_price,x.new_price)+'</td><td>'+badge(RESULT,x.result)+'</td></tr>').join('')
+        +(!d.items.length?'<tr><td colspan="7" class="mut" style="padding:14px">남은 대상 제품이 없습니다 (모두 삭제됐습니다).</td></tr>':'')+'</tbody>';
+      bindSort(tbl,'hd',draw); bindCodeLinks(tbl);
+    };
+    draw();
     ov.querySelector('#mXlsx').addEventListener('click',()=>saveXlsx('Refatrix_cambio_'+(t==='fob'?'FOB':'precio')+'_'+b.id+'_'+b.effective_date+'.xlsx','Cambio '+b.id,
       [['Clave CTR','Producto','Origen','Anterior','Nuevo','Variacion %','Resultado']].concat(d.items.map(x=>[x.code,x.name||'',x.origin||'',x.old_price,x.new_price,x.old_price?Math.round((x.new_price-x.old_price)/x.old_price*10000)/100:null,(RESULT[x.result]||[x.result])[0]])),[14,26,8,12,12,11,14]));
   }
@@ -791,28 +906,37 @@
   }
 
   // ═══ ④ 제품별 이력 ═══
+  let pData=null;
   async function lookupProduct(){
     const code=$('pcode').value.trim(); if(!code){ toast('코드를 입력하세요',true); return; }
     const d=await api('/api/price-master/product?code='+encodeURIComponent(code));
-    if(!d.ok){ $('pOut').innerHTML='<p class="msg err">'+esc(errKo(d.error))+'</p>'; return; }
-    const p=d.product; const rate=d.fx&&d.fx.rate;
+    if(!d.ok){ pData=null; $('pOut').innerHTML='<p class="msg err">'+esc(errKo(d.error))+'</p>'; return; }
+    pData=d; renderProduct();
+  }
+  function renderProduct(){
+    const d=pData; const p=d.product; const rate=d.fx&&d.fx.rate;
     const mult=p.fob_usd&&p.list_price&&rate?(p.list_price/(p.fob_usd*rate)).toFixed(2):'—';
     const srcTxt=(h)=>h.batch_id?(ORIGIN[h.origin]||'변경')+' #'+h.batch_id+(h.condition&&h.origin!=='single'?' · '+esc(h.condition):''):(SOURCE[h.source]||h.source);
-    const line=(t,eff,bh,o,n,src,note,by)=>'<tr><td>'+esc(eff)+' '+bh+'</td><td>'+typeBadge(t)+'</td><td class="n">'+fmtP(t,o)+'</td><td class="n"><b>'+fmtP(t,n)+'</b></td>'
-      +'<td class="n '+cls(o,n)+'">'+(o!=null?pctTxt(o,n):'—')+'</td><td style="white-space:normal;min-width:180px">'+src+'</td><td style="white-space:normal">'+esc(note||'')+'</td><td class="mut">'+esc(by||'')+'</td></tr>';
+    // 예약(예상) + 지난 이력을 한 표로 — 제목을 누르지 않으면 원래 순서(예약 먼저, 적용일 최신순)
+    const H=d.upcoming.map(u=>({t:u.price_type,eff:u.effective_date,bh:'<span class="badge b-sc">예약 · 예상</span>',o:u.old_price,n:u.new_price,src:(ORIGIN[u.origin]||'변경')+' #'+u.batch_id+(u.origin==='single'?'':' · '+esc(u.condition)),note:u.note,by:u.by_name}))
+      .concat(d.history.map(h=>({t:h.price_type,eff:h.effective_date,bh:h.batch_status==='reverted'&&h.source==='batch'?'<span class="badge b-rv">되돌려짐</span>':'',o:h.old_price,n:h.new_price,src:srcTxt(h),note:h.note,by:h.by_name})));
+    const HL=sortArr(H,'ph',{eff:x=>x.eff,type:x=>x.t,old:x=>num(x.o),new:x=>num(x.n),chg:x=>x.o?(num(x.n)-num(x.o))/num(x.o):null,src:x=>String(x.src).replace(/<[^>]+>/g,''),note:x=>x.note,by:x=>x.by});
+    const SL=sortArr(d.syd,'ps',{date:s=>s.date,codes:s=>s.codes,prev:s=>num(s.prev),price:s=>num(s.price),chg:s=>s.prev?(num(s.price)-num(s.prev))/num(s.prev):null});
+    const line=(x)=>'<tr><td>'+esc(x.eff)+' '+x.bh+'</td><td>'+typeBadge(x.t)+'</td><td class="n">'+fmtP(x.t,x.o)+'</td><td class="n"><b>'+fmtP(x.t,x.n)+'</b></td>'
+      +'<td class="n '+cls(x.o,x.n)+'">'+(x.o!=null?pctTxt(x.o,x.n):'—')+'</td><td style="white-space:normal;min-width:180px">'+x.src+'</td><td style="white-space:normal">'+esc(x.note||'')+'</td><td class="mut">'+esc(x.by||'')+'</td></tr>';
     $('pOut').innerHTML='<div class="phead"><b>'+esc(p.code)+'</b><span>'+esc(p.name||'')+'</span><span class="mut">원산지 '+esc(p.origin||'—')+'</span>'+(p.is_active?'':'<span class="badge b-in">비활성</span>')+'</div>'
       +'<div class="kpis" style="margin-top:4px"><div class="kpi"><span>현재 FOB</span><b>'+fmtU(p.fob_usd)+'</b></div><div class="kpi"><span>현재 List</span><b>'+fmt(p.list_price)+'</b></div>'
       +'<div class="kpi"><span>배수</span><b>'+mult+'</b></div><div class="kpi"><span>SYD List</span><b>'+fmt(p.list_price_syd)+'</b></div>'
       +'<div class="kpi"><span>CTR ÷ SYD</span><b>'+(p.list_price&&p.list_price_syd?(p.list_price/p.list_price_syd).toFixed(2):'—')+'</b></div></div>'
-      +'<h4>우리 가격 (List · FOB)</h4><div class="tw"><table><thead><tr><th>적용일</th><th>가격</th><th class="n">이전</th><th class="n">이후</th><th class="n">변화</th><th>출처</th><th>사유</th><th>작성</th></tr></thead><tbody>'
-      +d.upcoming.map(u=>line(u.price_type,u.effective_date,'<span class="badge b-sc">예약 · 예상</span>',u.old_price,u.new_price,(ORIGIN[u.origin]||'변경')+' #'+u.batch_id+(u.origin==='single'?'':' · '+esc(u.condition)),u.note,u.by_name)).join('')
-      +d.history.map(h=>line(h.price_type,h.effective_date,h.batch_status==='reverted'&&h.source==='batch'?'<span class="badge b-rv">되돌려짐</span>':'',h.old_price,h.new_price,srcTxt(h),h.note,h.by_name)).join('')
-      +(!d.upcoming.length&&!d.history.length?'<tr><td colspan="8" class="mut" style="padding:14px">이력이 없습니다.</td></tr>':'')
+      +'<h4>우리 가격 (List · FOB)</h4><div class="tw"><table id="phTbl"><thead>'+headRow('ph',[['eff','적용일',0,'desc'],['type','가격'],['old','이전',1],['new','이후',1],['chg','변화',1],['src','출처'],['note','사유'],['by','작성']])+'</thead><tbody>'
+      +HL.map(line).join('')
+      +(!H.length?'<tr><td colspan="8" class="mut" style="padding:14px">이력이 없습니다.</td></tr>':'')
       +'</tbody></table></div>'
-      +'<h4>경쟁사 SYD (대응품번 · 리스트별 가장 높은 값)</h4><div class="tw"><table><thead><tr><th>리스트 기준일</th><th>SYD 코드</th><th class="n">이전 리스트</th><th class="n">이 리스트</th><th class="n">변화</th></tr></thead><tbody>'
-      +(d.syd.length?d.syd.map(s=>'<tr><td>'+esc(s.date)+'</td><td>'+esc(s.codes)+'</td><td class="n">'+fmt(s.prev)+'</td><td class="n"><b>'+fmt(s.price)+'</b></td><td class="n '+cls(s.prev,s.price)+'">'+(s.prev!=null?pctTxt(s.prev,s.price):'')+'</td></tr>').join('')
+      +'<h4>경쟁사 SYD (대응품번 · 리스트별 가장 높은 값)</h4><div class="tw"><table id="psTbl"><thead>'+headRow('ps',[['date','리스트 기준일',0,'desc'],['codes','SYD 코드'],['prev','이전 리스트',1],['price','이 리스트',1],['chg','변화',1]])+'</thead><tbody>'
+      +(SL.length?SL.map(s=>'<tr><td>'+esc(s.date)+'</td><td>'+esc(s.codes)+'</td><td class="n">'+fmt(s.prev)+'</td><td class="n"><b>'+fmt(s.price)+'</b></td><td class="n '+cls(s.prev,s.price)+'">'+(s.prev!=null?pctTxt(s.prev,s.price):'')+'</td></tr>').join('')
         :'<tr><td colspan="5" class="mut" style="padding:14px">올린 SYD 리스트에 이 제품의 대응품번이 없습니다.</td></tr>')
       +'</tbody></table></div><p class="sub2" style="margin-top:10px">제품 화면 ✎ 수정과 제품 엑셀 업로드로 바뀐 정가도 남습니다. 「최초 기록」은 가격 마스터를 켠 날의 정가입니다.</p>';
+    bindSort($('phTbl'),'ph',renderProduct); bindSort($('psTbl'),'ps',renderProduct);
   }
   $('btnPLookup').addEventListener('click',lookupProduct);
   $('pcode').addEventListener('keydown',(e)=>{ if(e.key==='Enter') lookupProduct(); });
@@ -847,8 +971,14 @@
   async function loadSydLists(){
     const d=await api('/api/price-master/syd/lists');
     if(!d.ok){ $('sb').innerHTML='<tr><td colspan="11" class="mut" style="padding:14px">'+esc(errKo(d.error))+'</td></tr>'; return; }
-    sydLists=d.items;
-    $('sb').innerHTML=sydLists.map(l=>'<tr><td><b>'+esc(l.list_date)+'</b></td><td class="mut">'+esc(l.file_name||'')+'</td><td class="n">'+(l.code_count||0).toLocaleString('es-MX')+'</td>'
+    sydLists=d.items; renderSydLists();
+  }
+  function renderSydLists(){
+    const cmp=(k)=>(l)=>l.prev_list_id?num(l[k]):null;
+    $('sth').innerHTML=headRow('sl',[['date','기준일',0,'desc'],['file','파일'],['codes','코드',1],['up','인상',1],['down','인하',1],['same','같음',1],['new','신규',1],['gone','사라짐',1],['prev','비교 대상',0,'desc'],['by','올린 사람'],'<th></th>']);
+    bindSort($('sth'),'sl',renderSydLists);
+    const L=sortArr(sydLists,'sl',{date:l=>l.list_date,file:l=>l.file_name,codes:l=>num(l.code_count),up:cmp('up'),down:cmp('down'),same:cmp('same'),new:cmp('new'),gone:cmp('gone'),prev:l=>l.prev_date,by:l=>l.by_name});
+    $('sb').innerHTML=L.map(l=>'<tr><td><b>'+esc(l.list_date)+'</b></td><td class="mut">'+esc(l.file_name||'')+'</td><td class="n">'+(l.code_count||0).toLocaleString('es-MX')+'</td>'
       +'<td class="n up">'+(l.prev_list_id?l.up:'—')+'</td><td class="n down">'+(l.prev_list_id?l.down:'—')+'</td><td class="n">'+(l.prev_list_id?l.same:'—')+'</td><td class="n">'+(l.prev_list_id?l.new:'—')+'</td><td class="n">'+(l.prev_list_id?l.gone:'—')+'</td>'
       +'<td class="mut">'+esc(l.prev_date||'(첫 리스트)')+'</td><td class="mut">'+esc(l.by_name||'')+'</td>'
       +'<td><button class="btn ghost sm" data-rep="'+l.id+'">리포트</button> <button class="btn danger sm wOnly" data-del="'+l.id+'">삭제</button></td></tr>').join('')
@@ -870,10 +1000,13 @@
     renderReport();
     $('sydRep').scrollIntoView({behavior:'smooth',block:'start'});
   }
-  function renderReport(){
+  function renderReport(keep){
     const d=rep; const k=d.kpi; const box=$('sydRep'); box.classList.remove('hidden');
+    const keepTarget=keep&&$('rTarget')?$('rTarget').value:null;   // 표 정렬로 다시 그릴 때 입력 중인 목표 비율은 그대로
     const pc=(v)=>v==null?'—':(v>0?'+':'')+(v*100).toFixed(1)+'%';
     const maxN=Math.max(1,...d.by_familia.map(f=>f.n));
+    const FL=sortArr(d.by_familia,'rf',{fam:f=>f.familia,n:f=>num(f.n),up:f=>num(f.up),down:f=>num(f.down),avg:f=>num(f.avg_change)});
+    const RL=sortArr(d.rows,'rr',{code:r=>r.code,name:r=>r.name||r.familia,syd:r=>r.syd_codes,old:r=>num(r.syd_old),new:r=>num(r.syd_new),chg:r=>num(r.syd_change),list:r=>num(r.list_price),ratio:r=>num(r.ratio),sug:r=>num(r.suggested),sugchg:r=>r.suggested!=null&&r.list_price?(r.suggested-r.list_price)/r.list_price:null});
     box.innerHTML='<p class="ttl">비교 리포트 — SYD '+esc(d.list.date)+(d.list.prev_date?' vs '+esc(d.list.prev_date):' (첫 리스트 — 비교 대상 없음)')+'</p>'
       +'<div class="kpis"><div class="kpi"><span>코드</span><b>'+(k.codes||0).toLocaleString('es-MX')+'</b></div>'
       +'<div class="kpi"><span>인상</span><b class="up">'+(k.up||0).toLocaleString('es-MX')+'</b></div><div class="kpi"><span>평균 인상률</span><b class="up">'+pc(k.avg_up)+'</b></div>'
@@ -882,19 +1015,21 @@
       +'<div class="kpi"><span>우리 제품과 연결</span><b>'+k.linked.toLocaleString('es-MX')+'</b></div>'
       +'<div class="kpi"><span>대응 검토 (인상 · 우리 목표 미만)</span><b class="up">'+k.need_review+'</b></div>'
       +'<div class="kpi"><span>인하 후 우리가 더 비쌈</span><b class="up">'+k.over_syd_after_down+'</b></div></div>'
-      +'<div class="split" style="margin-top:12px"><div><h4>품목(Familia)별 — 코드 기준</h4><div class="tblWrap" style="max-height:300px"><table><thead><tr><th>품목</th><th class="n">코드</th><th class="n">인상</th><th class="n">인하</th><th class="n">평균 변화</th><th>분포</th></tr></thead><tbody>'
-      +d.by_familia.map(f=>'<tr><td>'+esc(f.familia)+'</td><td class="n">'+f.n+'</td><td class="n up">'+f.up+'</td><td class="n down">'+f.down+'</td><td class="n '+(f.avg_change>0?'up':f.avg_change<0?'down':'')+'">'+pc(f.avg_change)+'</td>'
+      +'<div class="split" style="margin-top:12px"><div><h4>품목(Familia)별 — 코드 기준</h4><div class="tblWrap" style="max-height:300px"><table id="rfTbl"><thead>'
+      +headRow('rf',[['fam','품목'],['n','코드',1],['up','인상',1],['down','인하',1],['avg','평균 변화',1],'<th>분포</th>'])+'</thead><tbody>'
+      +FL.map(f=>'<tr><td>'+esc(f.familia)+'</td><td class="n">'+f.n+'</td><td class="n up">'+f.up+'</td><td class="n down">'+f.down+'</td><td class="n '+(f.avg_change>0?'up':f.avg_change<0?'down':'')+'">'+pc(f.avg_change)+'</td>'
         +'<td><div class="bar" title="인상 '+f.up+' · 인하 '+f.down+' / '+f.n+'"><i style="width:'+(f.up/maxN*100)+'%;background:var(--up)"></i><i style="width:'+(f.down/maxN*100)+'%;background:var(--down)"></i></div></td></tr>').join('')
       +'</tbody></table></div></div>'
-      +'<div><h4>검토 기준</h4><div class="row"><div class="f"><label for="rTarget">목표 CTR ÷ SYD</label><input id="rTarget" type="number" step="0.0001" value="'+(Math.round(d.target*10000)/10000)+'"></div>'
+      +'<div><h4>검토 기준</h4><div class="row"><div class="f"><label for="rTarget">목표 CTR ÷ SYD</label><input id="rTarget" type="number" step="0.0001" value="'+esc(keepTarget!=null?keepTarget:(Math.round(d.target*10000)/10000))+'"></div>'
       +'<div class="f"><label for="rView">보기</label><select id="rView"><option value="up_below">인상됨 · 우리가 목표보다 쌈</option><option value="down_above">인하됨 · 우리가 SYD보다 비쌈</option><option value="changed">변경된 것 전부</option><option value="all">연결된 제품 전부</option></select></div>'
       +'<div style="flex:0 0 auto"><button class="btn ghost" id="rApply">다시 계산</button></div></div>'
       +'<div class="note">목표 비율 기본값 <b>'+(d.target_default==null?'—':d.target_default.toFixed(4))+'</b> = 지금 우리 List ÷ '+(d.list.prev_date?'이전 리스트':'이 리스트')+' SYD 의 실제 평균(활성 제품).'
       +' 한 CTR 에 SYD 코드가 여럿이면 <b>가장 높은 SYD</b> 를 기준으로 씁니다.<br>제안가 = 반올림( SYD 새 List × 목표 비율 ). 우리 가격이 이미 목표 이상이면 제안하지 않습니다.'
       +' 체크한 제품으로 <b>「제안가로 변경 만들기」</b> → 적용일 · 사유 · PIN · ③ 에서 되돌리기.</div></div></div>'
-      +'<h4>제품별 — '+d.total.toLocaleString('es-MX')+'개'+(d.total>d.rows.length?' (처음 '+d.rows.length+'개 표시)':'')+'</h4>'
-      +'<div class="tblWrap"><table><thead><tr><th><input type="checkbox" class="wOnly" id="rAll"></th><th>CTR</th><th>품목</th><th>SYD 코드</th><th class="n">SYD 이전</th><th class="n">SYD 새</th><th class="n">변화</th><th class="n">우리 List</th><th class="n">CTR÷SYD</th><th class="n">제안가</th><th class="n">제안 변화</th></tr></thead><tbody>'
-      +d.rows.map(r=>'<tr><td>'+(r.suggested!=null?'<input type="checkbox" class="wOnly" data-pid="'+r.product_id+'"'+(repPick.has(r.product_id)?' checked':'')+'>':'')+'</td>'
+      +'<h4>제품별 — '+d.total.toLocaleString('es-MX')+'개'+(d.total>d.rows.length?' (처음 '+d.rows.length+'개 표시 · 정렬은 표시된 제품 안에서)':'')+'</h4>'
+      +'<div class="tblWrap"><table id="rrTbl"><thead>'
+      +headRow('rr',['<th><input type="checkbox" class="wOnly" id="rAll"></th>',['code','CTR'],['name','품목'],['syd','SYD 코드'],['old','SYD 이전',1],['new','SYD 새',1],['chg','변화',1],['list','우리 List',1],['ratio','CTR÷SYD',1,'asc'],['sug','제안가',1],['sugchg','제안 변화',1]])+'</thead><tbody>'
+      +RL.map(r=>'<tr><td>'+(r.suggested!=null?'<input type="checkbox" class="wOnly" data-pid="'+r.product_id+'"'+(repPick.has(r.product_id)?' checked':'')+'>':'')+'</td>'
         +'<td><span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span>'+(r.is_active?'':' <span class="badge b-in">비활성</span>')+'</td><td>'+esc(r.name||r.familia||'')+'</td><td class="mut">'+esc(r.syd_codes||'')+'</td>'
         +'<td class="n">'+fmt(r.syd_old)+'</td><td class="n"><b>'+fmt(r.syd_new)+'</b></td><td class="n '+(r.syd_change>0?'up':r.syd_change<0?'down':'')+'">'+(r.syd_change==null?'신규':pc(r.syd_change))+'</td>'
         +'<td class="n">'+fmt(r.list_price)+'</td><td class="n '+(r.over_syd?'up':'')+'">'+(r.ratio==null?'—':r.ratio.toFixed(2))+(r.over_syd?' <span class="badge b-sk">SYD보다 비쌈</span>':'')+'</td>'
@@ -903,16 +1038,17 @@
       +'</tbody></table></div>'
       +'<div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="rXlsx">엑셀</button><button class="btn gold wOnly" id="rMake"></button></div>';
     $('rView').value=d.view;
+    bindSort($('rfTbl'),'rf',()=>renderReport(true)); bindSort($('rrTbl'),'rr',()=>renderReport(true));
     const upd=()=>{ const b=$('rMake'); b.textContent='체크한 '+repPick.size+'개 → 제안가로 변경 만들기'; b.disabled=!repPick.size; };
     upd();
     box.querySelectorAll('input[data-pid]').forEach(c=>c.addEventListener('change',()=>{ const id=Number(c.dataset.pid); c.checked?repPick.add(id):repPick.delete(id); upd(); }));
     $('rAll').checked=d.rows.some(r=>r.suggested!=null)&&d.rows.filter(r=>r.suggested!=null).every(r=>repPick.has(r.product_id));
-    $('rAll').addEventListener('change',(e)=>{ d.rows.forEach(r=>{ if(r.suggested!=null){ e.target.checked?repPick.add(r.product_id):repPick.delete(r.product_id); } }); renderReport(); });
+    $('rAll').addEventListener('change',(e)=>{ d.rows.forEach(r=>{ if(r.suggested!=null){ e.target.checked?repPick.add(r.product_id):repPick.delete(r.product_id); } }); renderReport(true); });
     bindCodeLinks(box);
     $('rApply').addEventListener('click',()=>openReport(d.list.id,$('rTarget').value,$('rView').value));
     $('rView').addEventListener('change',()=>openReport(d.list.id,$('rTarget').value,$('rView').value));
     $('rXlsx').addEventListener('click',()=>saveXlsx('Refatrix_SYD_'+d.list.date+'.xlsx','SYD '+d.list.date,
-      [['Clave CTR','Producto','Clave SyD','SYD anterior','SYD nuevo','Var SYD %','List CTR','CTR/SYD','Precio sugerido','Var sugerida %']].concat(d.rows.map(r=>[r.code,r.name||'',r.syd_codes||'',r.syd_old,r.syd_new,r.syd_change==null?null:Math.round(r.syd_change*10000)/100,r.list_price,r.ratio,r.suggested,r.suggested&&r.list_price?Math.round((r.suggested-r.list_price)/r.list_price*10000)/100:null])),[12,24,18,11,11,9,11,9,12,11]));
+      [['Clave CTR','Producto','Clave SyD','SYD anterior','SYD nuevo','Var SYD %','List CTR','CTR/SYD','Precio sugerido','Var sugerida %']].concat(RL.map(r=>[r.code,r.name||'',r.syd_codes||'',r.syd_old,r.syd_new,r.syd_change==null?null:Math.round(r.syd_change*10000)/100,r.list_price,r.ratio,r.suggested,r.suggested&&r.list_price?Math.round((r.suggested-r.list_price)/r.list_price*10000)/100:null])),[12,24,18,11,11,9,11,9,12,11]));
     $('rMake').addEventListener('click',()=>{
       const items=d.rows.filter(r=>repPick.has(r.product_id)&&r.suggested!=null).map(r=>({product_id:r.product_id,price:r.suggested,code:r.code,old:r.list_price}));
       const before=items.reduce((s,x)=>s+(x.old||0),0), after=items.reduce((s,x)=>s+x.price,0);
@@ -927,6 +1063,7 @@
   }
 
   // ═══ ⑥ 구매가 검증 ═══
+  let pcItems=[], pcData=null;
   async function loadPc(){
     const q=new URLSearchParams(); if($('pcFrom').value) q.set('from',$('pcFrom').value); if($('pcTo').value) q.set('to',$('pcTo').value); if($('pcBad').checked) q.set('only_bad','1');
     const d=await api('/api/price-master/purchase-check?'+q.toString());
@@ -936,38 +1073,277 @@
       +'<div class="kpi"><span>일치</span><b class="down">'+T.ok.toLocaleString('es-MX')+'</b></div><div class="kpi"><span>FOB보다 비쌈</span><b class="up">'+T.over+'</b></div>'
       +'<div class="kpi"><span>FOB보다 쌈</span><b style="color:var(--blue)">'+T.under+'</b></div><div class="kpi"><span>FOB 없음</span><b class="mut">'+T.no_fob+'</b></div>'
       +'<div class="kpi"><span>미등록 코드</span><b class="mut">'+T.unmatched+'</b></div><div class="kpi"><span>초과 금액</span><b class="up">'+fmtU(T.over_usd)+'</b></div><div class="kpi"><span>덜 낸 금액</span><b style="color:var(--blue)">'+fmtU(T.under_usd)+'</b></div>';
-    $('pcb').innerHTML=d.items.map(x=>'<tr class="clk" data-id="'+x.id+'"><td><b>'+esc(x.ref_no)+'</b></td><td>'+esc(x.order_date)+'</td><td class="n">'+x.lines+'</td><td class="n">'+x.ok+'</td>'
+    pcItems=d.items||[]; renderPc();
+    $('pcLines').innerHTML='';
+  }
+  function renderPc(){
+    $('pcth').innerHTML=headRow('pc',[['ref','참조번호'],['date','주문일',0,'desc'],['lines','줄',1],['ok','일치',1],['over','비쌈',1],['under','쌈',1],['no_fob','FOB 없음',1],['unm','미등록',1],['diff','차액 (USD)',1]]);
+    bindSort($('pcth'),'pc',renderPc);
+    const L=sortArr(pcItems,'pc',{ref:x=>x.ref_no,date:x=>x.order_date,lines:x=>num(x.lines),ok:x=>num(x.ok),over:x=>num(x.over),under:x=>num(x.under),no_fob:x=>num(x.no_fob),unm:x=>num(x.unmatched),diff:x=>num(x.diff_usd)});
+    $('pcb').innerHTML=L.map(x=>'<tr class="clk" data-id="'+x.id+'"><td><b>'+esc(x.ref_no)+'</b></td><td>'+esc(x.order_date)+'</td><td class="n">'+x.lines+'</td><td class="n">'+x.ok+'</td>'
       +'<td class="n '+(x.over?'up':'')+'">'+x.over+'</td><td class="n" style="'+(x.under?'color:var(--blue)':'')+'">'+x.under+'</td><td class="n">'+x.no_fob+'</td><td class="n">'+x.unmatched+'</td>'
       +'<td class="n '+(x.diff_usd>0?'up':'')+'">'+(x.diff_usd?(x.diff_usd>0?'+ ':'− ')+fmtU(Math.abs(x.diff_usd)).replace('$ ','$'):'—')+'</td></tr>').join('')
       ||'<tr><td colspan="9" class="mut" style="padding:14px">'+($('pcBad').checked?'문제 있는 구매가 없습니다 👍':'구매 기록이 없습니다')+'</td></tr>';
     $('pcb').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>pcLines(Number(tr.dataset.id))));
-    $('pcLines').innerHTML='';
   }
   $('btnPc').addEventListener('click',loadPc); $('pcBad').addEventListener('change',loadPc);
   async function pcLines(id){
     const d=await api('/api/price-master/purchase-check/'+id);
     if(!d.ok){ toast(errKo(d.error),true); return; }
+    pcData=d; delete SORTS.pl; renderPcLines();
+  }
+  function renderPcLines(){
+    const d=pcData;
     const ord={over:0,under:1,no_fob:2,unmatched:3,ok:4};
-    const L=d.lines.slice().sort((a,b)=>(ord[a.status]-ord[b.status])||String(a.code).localeCompare(b.code));
+    const base=d.lines.slice().sort((a,b)=>(ord[a.status]-ord[b.status])||String(a.code).localeCompare(b.code));   // 기본: 문제 줄 먼저
+    const L=sortArr(base,'pl',{code:l=>l.code,name:l=>l.name,qty:l=>num(l.qty),cost:l=>num(l.unit_cost_usd),fob:l=>num(l.fob),pct:l=>l.status==='ok'?0:num(l.diff_pct),usd:l=>num(l.diff_usd),st:l=>ord[l.status],now:l=>num(l.fob_now)});
     $('pcLines').innerHTML='<h4>'+esc(d.po.ref_no)+' · 주문일 '+esc(d.po.order_date)+' — 줄 '+L.length+'</h4>'
-      +'<div class="tblWrap"><table><thead><tr><th>코드</th><th>품목</th><th class="n">수량</th><th class="n">구매단가</th><th class="n">FOB (주문일)</th><th class="n">차이</th><th class="n">차액</th><th>상태</th><th class="n">지금 FOB</th></tr></thead><tbody>'
+      +'<div class="tblWrap"><table id="plTbl"><thead>'+headRow('pl',[['code','코드'],['name','품목'],['qty','수량',1],['cost','구매단가',1],['fob','FOB (주문일)',1],['pct','차이',1],['usd','차액',1],['st','상태',0,'asc'],['now','지금 FOB',1]])+'</thead><tbody>'
       +L.map(l=>'<tr><td>'+(l.product_id?'<span class="codeLink" data-code="'+esc(l.code)+'">'+esc(l.code)+'</span>':esc(l.code))+'</td><td>'+esc(l.name||'')+'</td><td class="n">'+fmt(l.qty,0)+'</td>'
         +'<td class="n">'+fmtU(l.unit_cost_usd)+'</td><td class="n">'+fmtU(l.fob)+(l.fob_basis==='earliest'&&l.fob!=null?' <span class="badge b-in" title="주문일 이전 FOB 이력이 없어 가장 처음 등록된 FOB 로 비교">최초 FOB</span>':'')+'</td>'
         +'<td class="n '+(l.diff_pct>0?'up':'')+'" style="'+(l.diff_pct<0?'color:var(--blue)':'')+'">'+(l.diff_pct==null||l.status==='ok'?'':(l.diff_pct>0?'+':'')+(l.diff_pct*100).toFixed(1)+'%')+'</td>'
         +'<td class="n">'+(l.diff_usd==null?'':(l.diff_usd>0?'+':'')+l.diff_usd.toFixed(2))+'</td><td>'+badge(FOBST,l.status)+'</td><td class="n mut">'+fmtU(l.fob_now)+'</td></tr>').join('')
       +'</tbody></table></div><div class="row" style="margin-top:8px"><button class="btn ghost sm" id="pcX">엑셀 (공급사 클레임용)</button></div>'
       +'<div class="note">가격표 FOB 가 최신이 아니라면 → ① 가격표에서 FOB 를 고치세요. 공급사 청구가 틀렸다면 → 엑셀로 내려받아 클레임하세요.</div>';
-    bindCodeLinks($('pcLines'));
+    bindCodeLinks($('pcLines')); bindSort($('plTbl'),'pl',renderPcLines);
     $('pcX').addEventListener('click',()=>saveXlsx('Refatrix_verificacion_FOB_'+d.po.ref_no+'.xlsx','FOB '+String(d.po.ref_no).slice(0,20),
       [['Ref','Fecha pedido','Clave CTR','Producto','Cantidad','Precio compra USD','FOB USD','Dif %','Dif USD','Estado']].concat(L.map(l=>[d.po.ref_no,d.po.order_date,l.code,l.name||'',l.qty,l.unit_cost_usd,l.fob,l.diff_pct==null?null:Math.round(l.diff_pct*10000)/100,l.diff_usd,({ok:'OK',over:'Mayor a FOB',under:'Menor a FOB',no_fob:'Sin FOB',unmatched:'Sin registro'})[l.status]||l.status])),[12,11,12,24,9,13,10,8,10,13]));
   }
+
+  // ═══ ⑦ 제품 수익성 ═══
+  //   서버: 기간별 누적 판매 + 제품별 1개당 원가(FOB × 환율 × (1+부대비율), FOB 없으면 판매 시점 실제원가) — 기간이 바뀔 때만 다시 받는다
+  //   화면: 카테고리 · 차종 · 원산지 · 검색 필터와 판관비율 · 4분류 기준은 받은 데이터로 즉시 다시 계산
+  const QUAD={1:{ico:'🐄',name:'캐시카우',desc:'많이 팔리고 이익률도 높음 — 재고가 끊기지 않게',color:'#143D34'},
+    2:{ico:'💎',name:'고수익 틈새',desc:'이익률은 높지만 수량이 적음 — 판매를 늘릴 후보',color:'#b8893b'},
+    3:{ico:'📦',name:'볼륨 · 저마진',desc:'많이 팔리지만 이익률이 낮음 — 가격 · 원가 검토',color:'#2458a6'},
+    4:{ico:'⚠',name:'정리 후보',desc:'수량도 이익률도 낮음 — 가격 · 단종 검토',color:'#8A3B32'}};
+  const REG_LABEL={eu:'유럽',asia:'아시아',us:'미국',cn:'중국'};
+  const pf={cat:new Set(),region:new Set()};
+  let prData=null, prSeq=0, prTimer=null, prShow=300, prCatAll=false, prRes=null;
+  const shiftDay=(d,n)=>new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
+  const fmt0=(n)=>n==null||!Number.isFinite(Number(n))?'—':Math.round(Number(n)).toLocaleString('es-MX');
+  const fmtM=(n)=>{ if(n==null||!Number.isFinite(n)) return '—'; const a=Math.abs(n), s=n<0?'−':''; return s+'$ '+(a>=1e6?(a/1e6).toFixed(2)+'M':a>=1e4?(a/1e3).toFixed(1)+'K':a.toLocaleString('es-MX',{maximumFractionDigits:0})); };
+  const pctF=(v,d)=>v==null||!Number.isFinite(v)?'—':(v*100).toFixed(d==null?1:d)+'%';
+  const qBadge=(q)=>'<span class="qb qb'+q+'" title="'+esc(QUAD[q].desc)+'">'+QUAD[q].ico+' '+esc(QUAD[q].name)+'</span>';
+  function prRange(){
+    const v=$('prPeriod').value;
+    if(v==='12m') return {from:shiftDay(today,-365),to:today};
+    if(v==='ytd') return {from:today.slice(0,4)+'-01-01',to:today};
+    if(v==='custom') return {from:$('prFrom').value||null,to:$('prTo').value||null};
+    return {from:null,to:null};
+  }
+  async function loadProfit(){
+    const seq=++prSeq; const r=prRange(); const p=new URLSearchParams();
+    if(r.from) p.set('from',r.from); if(r.to) p.set('to',r.to); p.set('inactive','1');   // 비활성 · 필터는 화면에서
+    $('prKpis').innerHTML='<span class="mut">불러오는 중…</span>';
+    const d=await api('/api/price-master/profit?'+p.toString());
+    if(seq!==prSeq) return;
+    if(!d.ok){ $('prKpis').innerHTML='<span class="msg err">'+esc(errKo(d.error))+'</span>'; return; }
+    prData=d;
+    if(!$('prSgaIn').dataset.touched) $('prSgaIn').value=d.sga&&d.sga.pct!=null?d.sga.pct:'';
+    renderProfit();
+  }
+  function prFilter(skip){
+    const q=$('prQ').value.trim().toUpperCase(); const o=$('prOrigin').value; const inact=$('prInact').checked;
+    return prData.rows.filter(r=>(inact||r.is_active)
+      &&(skip==='cat'||!pf.cat.size||pf.cat.has(r.cat))
+      &&(skip==='region'||!pf.region.size||r.regions.some(x=>pf.region.has(x)))
+      &&(!o||(o==='__none__'?!String(r.origin||'').trim():String(r.origin||'').trim().toUpperCase()===o.toUpperCase()))
+      &&(!q||String(r.code).toUpperCase().includes(q)||r.cat.includes(q)||r.makers.some(m=>m.includes(q))));
+  }
+  function sgaPct(){ const v=String($('prSgaIn').value).trim().replace(',','.'); if(v==='') return null; const n=Number(v); return Number.isFinite(n)&&n>=0&&n<100?n:NaN; }
+  function renderPrChips(){
+    // 차종: 전체 + 4지역(중복 선택 = 그중 하나라도 맞으면). 숫자는 다른 조건만 적용했을 때 제품 수
+    const rb=prFilter('region'); const noReg=rb.filter(r=>!r.regions.length).length;
+    $('prReg').innerHTML='<button type="button" class="chip all'+(pf.region.size?'':' on')+'" data-reg="">전체 차종<small>'+rb.length.toLocaleString('es-MX')+'</small></button>'
+      +['eu','asia','us','cn'].map(k=>'<button type="button" class="chip'+(pf.region.has(k)?' on':'')+'" data-reg="'+k+'">'+REG_LABEL[k]+' 차종<small>'+rb.filter(r=>r.regions.includes(k)).length.toLocaleString('es-MX')+'</small></button>').join('');
+    $('prRegInfo').innerHTML=noReg?'차종 지역을 모르는 제품 '+noReg.toLocaleString('es-MX')+'개'+(pf.region.size?'는 지금 빠져 있습니다':'')+' — 적용차종이 없거나 목록에 없는 메이커'
+      +(prData.unmapped_makers&&prData.unmapped_makers.length?' (예: '+prData.unmapped_makers.slice(0,6).map(m=>esc(m.maker)).join(', ')+')':''):'';
+    $('prReg').querySelectorAll('[data-reg]').forEach(c=>c.addEventListener('click',()=>{ const k=c.dataset.reg;
+      if(!k) pf.region.clear(); else pf.region.has(k)?pf.region.delete(k):pf.region.add(k); prShow=300; renderProfit(); }));
+    // 카테고리(품목명) — 여러 개 고르면 그중 하나(OR). 차종 · 원산지 · 검색과는 모두 만족(AND)
+    const cnt={}; prFilter('cat').forEach(r=>{ cnt[r.cat]=(cnt[r.cat]||0)+1; });
+    pf.cat.forEach(c=>{ if(!(c in cnt)) cnt[c]=0; });
+    const cq=$('prCatQ').value.trim().toUpperCase();
+    let list=Object.entries(cnt).map(([v,n])=>({v,n})).sort((a,b)=>b.n-a.n||a.v.localeCompare(b.v));
+    if(cq) list=list.filter(o=>o.v.includes(cq));
+    list=list.filter(o=>pf.cat.has(o.v)).concat(list.filter(o=>!pf.cat.has(o.v)));
+    const lim=cq||prCatAll?9999:40; const shown=list.slice(0,lim);
+    $('prCat').innerHTML=(pf.cat.size?'<button type="button" class="chip more" data-clr="1">✕ 선택 '+pf.cat.size+'개 해제</button>':'')
+      +shown.map(o=>'<button type="button" class="chip'+(pf.cat.has(o.v)?' on':'')+'" data-cat="'+esc(o.v)+'">'+esc(o.v||'(이름 없음)')+'<small>'+o.n.toLocaleString('es-MX')+'</small></button>').join('')
+      +(list.length>lim?'<button type="button" class="chip more" data-more="1">＋ '+(list.length-lim)+'개 더</button>':'')
+      +(!list.length?'<span class="mut" style="font-size:12px">없음</span>':'');
+    $('prCat').querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+      if(c.dataset.more){ prCatAll=true; renderPrChips(); return; }
+      if(c.dataset.clr){ pf.cat.clear(); } else { const v=c.dataset.cat; pf.cat.has(v)?pf.cat.delete(v):pf.cat.add(v); }
+      prShow=300; renderProfit();
+    }));
+  }
+  function prCompute(){
+    let sp=sgaPct(); if(sp==null||Number.isNaN(sp)) sp=0;
+    const rows=prFilter();
+    rows.forEach(r=>{ r._sga=r.revenue*sp/100; r._op=r.gp-r._sga; r._gpm=r.revenue>0?r.gp/r.revenue:null; r._opm=r.revenue>0?r._op/r.revenue:null;
+      r._upr=r.unit_price==null?null:r.unit_price-r.unit_cost; r._fobc=r.basis==='fob'?r.unit_fob_mxn*r.qty:0; r._ohc=r.basis==='fob'?r.unit_oh*r.qty:0; });
+    // 4분류 기준 — 가로: 판매수량 상위 N%, 세로: 영업이익률(비우면 지금 보는 제품들의 중앙값)
+    const xp=Number($('prXcut').value)||20;
+    const qs=rows.map(r=>r.qty).sort((a,b)=>b-a); const nTop=Math.max(1,Math.ceil(rows.length*xp/100)); const xCut=qs.length?qs[Math.min(nTop,qs.length)-1]:0;
+    const ms=rows.map(r=>r._opm).filter(v=>v!=null).sort((a,b)=>a-b);
+    const med=ms.length?(ms.length%2?ms[(ms.length-1)/2]:(ms[ms.length/2-1]+ms[ms.length/2])/2):0;
+    const yIn=String($('prYcut').value).trim().replace(',','.'); const yOk=yIn!==''&&Number.isFinite(Number(yIn));
+    const yCut=yOk?Number(yIn)/100:med;
+    rows.forEach(r=>{ const hv=r.qty>=xCut; const hm=r._opm!=null&&r._opm>=yCut; r._q=hv?(hm?1:3):(hm?2:4); });
+    return {rows,sp,xp,xCut,yCut,med,yManual:yOk};
+  }
+  function renderProfit(){
+    if(!prData) return;
+    renderPrChips();
+    const R=prRes=prCompute(); const rows=R.rows; const d=prData;
+    // 판관비율 안내
+    const sv=sgaPct(); const saved=d.sga||{}; const inEl=$('prSgaIn'); inEl.classList.toggle('bad',Number.isNaN(sv));
+    let info='';
+    if(Number.isNaN(sv)) info='<b class="up">0 이상 100 미만 숫자를 넣으세요</b> — 지금은 0% 로 계산 중. ';
+    info+=saved.pct==null?'아직 정하지 않았습니다'+(sv==null?' — 지금은 판관비 0% 로 계산 중':'')+'. '
+      :'저장된 값 <b>'+saved.pct+'%</b>'+(saved.updated_at?' · '+esc(String(saved.updated_at).slice(0,10)):'')+(saved.by_name?' · '+esc(saved.by_name):'')+'. ';
+    if(sv!=null&&!Number.isNaN(sv)&&sv!==saved.pct) info+='<b class="up">저장하지 않은 값 '+sv+'% 로 계산 중</b>'+(d.can_set_sga?' — 「저장」을 누르면 모두에게 적용됩니다.':' — 내 화면에서만 보는 시뮬레이션입니다(저장은 디렉터).');
+    else info+='매출의 몇 %를 판관비(인건비 · 임차료 · 물류 · 마케팅 …)로 볼지 '+(d.can_set_sga?'정해 저장하면 모든 사람의 영업이익 계산에 쓰입니다.':'디렉터가 정합니다. 값을 바꿔 보면 내 화면에서만 다시 계산됩니다.');
+    if(d.can_set_sga&&saved.ready===false) info+=' <b class="up">서버 마이그레이션(0231) 후에 저장할 수 있습니다.</b>';
+    $('prSgaInfo').innerHTML=info;
+    $('prSgaSave').classList.toggle('hidden',!d.can_set_sga);
+    $('prSgaSave').disabled=saved.ready===false||sv==null||Number.isNaN(sv)||sv===saved.pct;
+    // 합계
+    const S=rows.reduce((a,r)=>{ a.qty+=r.qty; a.rev+=r.revenue; a.cogs+=r.cogs; a.gp+=r.gp; a.sga+=r._sga; a.op+=r._op; a.fob+=r._fobc; a.oh+=r._ohc;
+      if(r.basis==='actual'){ a.act+=r.cogs; a.actN++; a.actQ+=r.qty; } if(r.basis==='fob'&&r.oh_source==='global') a.glob++; return a; },
+      {qty:0,rev:0,cogs:0,gp:0,sga:0,op:0,fob:0,oh:0,act:0,actN:0,actQ:0,glob:0});
+    const per=d.from||d.to?(d.from||'처음')+' ~ '+(d.to||d.today):'전체 누적 (~ '+d.today+')';
+    const cls2=(v)=>v<0?'up':'down';
+    $('prKpis').innerHTML='<div class="kpi"><span>제품 (판매된 것)</span><b>'+rows.length.toLocaleString('es-MX')+'</b><small>전체 '+d.counts.sold_products.toLocaleString('es-MX')+'개 중 · '+esc(per)+'</small></div>'
+      +'<div class="kpi"><span>누적 판매수량</span><b>'+fmt0(S.qty)+'</b></div>'
+      +'<div class="kpi"><span>매출 (MXN · IVA 제외)</span><b title="'+fmt(S.rev)+'">'+fmtM(S.rev)+'</b></div>'
+      +'<div class="kpi"><span>매출원가 (FOB + 부대비)</span><b title="'+fmt(S.cogs)+'">'+fmtM(S.cogs)+'</b><small>FOB '+fmtM(S.fob)+' · 부대비 '+fmtM(S.oh)+(S.actN?' · 실제원가 '+fmtM(S.act):'')+'</small></div>'
+      +'<div class="kpi"><span>매출총이익</span><b class="'+cls2(S.gp)+'" title="'+fmt(S.gp)+'">'+fmtM(S.gp)+'</b><small>'+pctF(S.rev?S.gp/S.rev:null)+'</small></div>'
+      +'<div class="kpi"><span>판관비 ('+R.sp+'%)</span><b title="'+fmt(S.sga)+'">'+fmtM(S.sga)+'</b></div>'
+      +'<div class="kpi"><span>영업이익</span><b class="'+cls2(S.op)+'" title="'+fmt(S.op)+'">'+fmtM(S.op)+'</b><small>'+pctF(S.rev?S.op/S.rev:null)+'</small></div>';
+    $('prFlow').innerHTML='<span class="m">매출</span><b>'+fmtM(S.rev)+'</b><span class="m">− 원가</span><b>'+fmtM(S.cogs)+'</b><span class="m">= 매출총이익</span><b class="'+cls2(S.gp)+'">'+fmtM(S.gp)+'</b>'
+      +'<span class="m">− 판관비</span><b>'+fmtM(S.sga)+'</b><span class="m">= 영업이익</span><b class="'+cls2(S.op)+'">'+fmtM(S.op)+'</b>';
+    const oh=d.overhead||{};
+    $('prNotes').innerHTML=(S.actN?'<div class="note">⚠ FOB 가 없는 제품 <b>'+S.actN.toLocaleString('es-MX')+'개</b>(판매수량의 '+pctF(S.qty?S.actQ/S.qty:null)+')는 <b>판매 시점 실제 원가</b>로 대신 계산했습니다 — 표에 「실제원가」 표시. ① 가격표에 FOB 를 채우면 자동으로 바뀝니다.'+(d.fx?'':' (환율이 없어 모든 제품을 실제 원가로 계산 중)')+'</div>':'')
+      +'<div class="note">수입부대비율: 제품의 수입 기록이 있으면 그 제품 배치들의 <b>부대비 ÷ FOB 금액</b>, 없으면 전체 평균 <b>'+pctF(oh.rate)+'</b>'
+      +' (승인된 수입원가 배치 '+(oh.batches||0)+'개 · 부대비 '+fmtM(oh.oh_mxn)+' ÷ FOB 금액 '+fmtM(oh.base_mxn)+')'+(S.glob?' — 전체 평균을 쓴 제품 '+S.glob+'개':'')+'.'
+      +' 새 수입원가 배치를 승인하면 다음 조회부터 바로 반영됩니다.'+(d.fx?' 환율 USD→MXN <b>'+Number(d.fx.rate).toFixed(2)+'</b> ('+esc(d.fx.date)+').':'')+'</div>';
+    renderPrQuad(); renderPrTable();
+  }
+  function renderPrQuad(){
+    const R=prRes; const rows=R.rows;
+    $('prCutInfo').innerHTML='기준: 판매수량 <b>'+fmt0(R.xCut)+'개 이상</b>(상위 '+R.xp+'%) · 영업이익률 <b>'+pctF(R.yCut)+' 이상</b>'+(R.yManual?' (직접 입력 · 중앙값 '+pctF(R.med)+')':' (지금 보는 제품들의 중앙값)');
+    // 4분면 요약
+    const totOp=rows.reduce((s,r)=>s+r._op,0), totQ=rows.reduce((s,r)=>s+r.qty,0);
+    const qf=$('prQf').value;
+    $('prQuad').innerHTML=[2,1,4,3].map(q=>{ const L=rows.filter(r=>r._q===q); const op=L.reduce((s,r)=>s+r._op,0), qq=L.reduce((s,r)=>s+r.qty,0);
+      const top=L.slice().sort((a,b)=>b._op-a._op).slice(0,3);
+      return '<div class="q q'+q+(qf===String(q)?' sel':'')+'" data-q="'+q+'" title="눌러서 아래 표를 이 분류로 거르기"><h5>'+QUAD[q].ico+' '+esc(QUAD[q].name)+'</h5><div class="qn">'+L.length.toLocaleString('es-MX')+'<small style="font-size:12px;font-weight:500"> 개</small></div>'
+        +'<p>수량 '+pctF(totQ?qq/totQ:null,0)+' · 영업이익 '+fmtM(op)+(totOp>0?' ('+pctF(op/totOp,0)+')':'')+'</p><p>'+esc(QUAD[q].desc)+'</p>'
+        +(top.length?'<p>'+top.map(r=>'<span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span>').join(' · ')+'</p>':'')+'</div>'; }).join('');
+    bindCodeLinks($('prQuad'));
+    $('prQuad').querySelectorAll('.q').forEach(b=>b.addEventListener('click',()=>{ $('prQf').value=$('prQf').value===b.dataset.q?'':b.dataset.q; prShow=300; renderPrQuad(); renderPrTable(); $('prTblCard').scrollIntoView({behavior:'smooth',block:'start'}); }));
+    // 산점도 — 가로 log(수량) · 세로 영업이익률 · 원 크기 = 영업이익
+    const W=560,H=320,L0=48,R0=12,T0=12,B0=36;
+    if(!rows.length){ $('prScatter').innerHTML='<div class="mut" style="padding:30px;text-align:center">조건에 맞는 판매 제품이 없습니다.</div>'; $('prIns').innerHTML=''; return; }
+    const lq=rows.map(r=>Math.log10(Math.max(1,r.qty))); let x0=Math.min(...lq), x1=Math.max(...lq); if(x1-x0<0.3){ x0-=0.3; x1+=0.3; } const xpd=(x1-x0)*0.04; x0-=xpd; x1+=xpd;
+    const om=rows.map(r=>r._opm).filter(v=>v!=null); let y0=Math.max(-1,Math.min(R.yCut,...om)), y1=Math.min(1,Math.max(R.yCut,...om)); const yp=(y1-y0)*0.06||0.05; y0-=yp; y1+=yp;
+    const X=(v)=>L0+(Math.log10(Math.max(1,v))-x0)/(x1-x0)*(W-L0-R0), Y=(v)=>T0+(1-(Math.max(y0,Math.min(y1,v))-y0)/(y1-y0))*(H-T0-B0);
+    const cx=Math.max(L0,Math.min(W-R0,X(R.xCut))), cy=Y(R.yCut);
+    const maxOp=Math.max(1,...rows.map(r=>r._op));
+    let s='<svg class="scatter" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="판매수량 대비 영업이익률">'
+      +'<rect x="'+cx+'" y="'+T0+'" width="'+(W-R0-cx)+'" height="'+(cy-T0)+'" fill="#e9f3ee"/><rect x="'+L0+'" y="'+T0+'" width="'+(cx-L0)+'" height="'+(cy-T0)+'" fill="#fbf3e3"/>'
+      +'<rect x="'+cx+'" y="'+cy+'" width="'+(W-R0-cx)+'" height="'+(H-B0-cy)+'" fill="#eef3fb"/><rect x="'+L0+'" y="'+cy+'" width="'+(cx-L0)+'" height="'+(H-B0-cy)+'" fill="#f6ecea"/>';
+    for(let e=Math.ceil(x0);e<=Math.floor(x1);e++){ const xx=L0+(e-x0)/(x1-x0)*(W-L0-R0); s+='<line x1="'+xx+'" y1="'+(H-B0)+'" x2="'+xx+'" y2="'+(H-B0+4)+'" stroke="#999"/><text x="'+xx+'" y="'+(H-B0+15)+'" font-size="10" text-anchor="middle" fill="#6F6A60">'+Math.pow(10,e).toLocaleString('es-MX')+'</text>'; }
+    for(let i=0;i<=4;i++){ const v=y0+(y1-y0)*i/4; const yy=Y(v); s+='<text x="'+(L0-5)+'" y="'+(yy+3)+'" font-size="10" text-anchor="end" fill="#6F6A60">'+(v*100).toFixed(0)+'%</text>'; }
+    if(y0<0&&y1>0) s+='<line x1="'+L0+'" y1="'+Y(0)+'" x2="'+(W-R0)+'" y2="'+Y(0)+'" stroke="#8A3B32" stroke-opacity=".35"/>';
+    s+='<line x1="'+L0+'" y1="'+(H-B0)+'" x2="'+(W-R0)+'" y2="'+(H-B0)+'" stroke="#999"/><line x1="'+L0+'" y1="'+T0+'" x2="'+L0+'" y2="'+(H-B0)+'" stroke="#999"/>'
+      +'<line x1="'+cx+'" y1="'+T0+'" x2="'+cx+'" y2="'+(H-B0)+'" stroke="#b8893b" stroke-dasharray="4 3"/><line x1="'+L0+'" y1="'+cy+'" x2="'+(W-R0)+'" y2="'+cy+'" stroke="#b8893b" stroke-dasharray="4 3"/>'
+      +'<text x="'+(W-R0-6)+'" y="'+(T0+14)+'" text-anchor="end" font-size="12" font-weight="700" fill="#143D34">🐄 캐시카우</text><text x="'+(L0+6)+'" y="'+(T0+14)+'" font-size="12" font-weight="700" fill="#7a5a17">💎 고수익 틈새</text>'
+      +'<text x="'+(W-R0-6)+'" y="'+(H-B0-6)+'" text-anchor="end" font-size="12" font-weight="700" fill="#2458a6">📦 볼륨 · 저마진</text><text x="'+(L0+6)+'" y="'+(H-B0-6)+'" font-size="12" font-weight="700" fill="#8A3B32">⚠ 정리 후보</text>'
+      +'<text x="'+((L0+W-R0)/2)+'" y="'+(H-4)+'" font-size="10.5" text-anchor="middle" fill="#6F6A60">누적 판매수량 (로그 눈금) →</text>'
+      +'<text x="12" y="'+((T0+H-B0)/2)+'" font-size="10.5" text-anchor="middle" fill="#6F6A60" transform="rotate(-90 12 '+((T0+H-B0)/2)+')">영업이익률 →</text>';
+    const pts=rows.map(r=>({r,rad:r._op>0?2.5+11*Math.sqrt(r._op/maxOp):2.5})).sort((a,b)=>b.rad-a.rad);
+    s+=pts.map(p=>{ const r=p.r; return '<circle cx="'+X(r.qty).toFixed(1)+'" cy="'+Y(r._opm==null?y0:r._opm).toFixed(1)+'" r="'+p.rad.toFixed(1)+'" fill="'+QUAD[r._q].color+'" fill-opacity=".5" stroke="'+QUAD[r._q].color+'" stroke-width="'+(r._op<0?1.2:0.5)+'" data-code="'+esc(r.code)+'">'
+      +'<title>'+esc(r.code+' · '+r.cat)+'\n수량 '+fmt0(r.qty)+' · 영업이익 '+fmtM(r._op)+' ('+pctF(r._opm)+')</title></circle>'; }).join('');
+    $('prScatter').innerHTML=s+'</svg><div class="mut" style="font-size:11px;margin-top:4px">원을 누르면 ④ 제품별 이력으로 갑니다. 원 크기 = 영업이익(적자는 작은 원).</div>';
+    $('prScatter').querySelectorAll('circle[data-code]').forEach(c=>c.addEventListener('click',()=>gotoProduct(c.dataset.code)));
+    // 인사이트
+    const n=rows.length; const byOp=rows.slice().sort((a,b)=>b._op-a._op); const k20=Math.max(1,Math.ceil(n*0.2));
+    const top20=byOp.slice(0,k20).reduce((s2,r)=>s2+r._op,0);
+    const byQ=rows.slice().sort((a,b)=>b.qty-a.qty); const t10=byQ.slice(0,10); const t10q=t10.reduce((s2,r)=>s2+r.qty,0);
+    const loss=rows.filter(r=>r._op<0), below=rows.filter(r=>r.gp<0);
+    const cows=byOp.filter(r=>r._q===1).slice(0,5), niche=byOp.filter(r=>r._q===2).slice(0,5);
+    const codes=(L)=>L.map(r=>'<span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span> <span class="mut">'+esc(r.cat)+'</span>').join(' · ');
+    $('prIns').innerHTML='<ul class="ins">'
+      +(totOp>0?'<li>영업이익 상위 20% 제품(<b>'+k20.toLocaleString('es-MX')+'개</b>)이 전체 영업이익의 <b>'+pctF(top20/totOp,0)+'</b>를 냅니다.</li>':'')
+      +'<li>판매수량 상위 10개 제품이 전체 판매수량의 <b>'+pctF(totQ?t10q/totQ:null,0)+'</b> — '+codes(t10.slice(0,5))+(t10.length>5?' …':'')+'</li>'
+      +(cows.length?'<li>🐄 캐시카우 — 영업이익 큰 순: '+codes(cows)+'</li>':'')
+      +(niche.length?'<li>💎 고수익 틈새 — 판매를 늘리면 이익이 커질 후보: '+codes(niche)+'</li>':'')
+      +(loss.length?'<li class="up">영업이익 적자 제품 <b>'+loss.length.toLocaleString('es-MX')+'개</b> (합계 '+fmtM(loss.reduce((s2,r)=>s2+r._op,0))+')'+(below.length?' — 그중 <b>원가보다 싸게 판 제품 '+below.length+'개</b>':'')+'. 아래 표를 「영업이익」 오름차순으로 보세요.</li>':'<li>영업이익 적자 제품이 없습니다.</li>')
+      +'</ul>';
+    bindCodeLinks($('prIns'));
+  }
+  const PR_COLS=[['q','구분'],['code','코드'],['name','품목'],['origin','원산지'],['reg','차종'],['qty','누적수량',1],['price','평균판매가',1],['fob','FOB (USD)',1],['ohr','부대비율',1],['ucost','원가/개',1],['uprofit','이익/개',1],
+    ['rev','매출',1],['gp','매출총이익',1],['gpm','총이익률',1],['sga','판관비',1],['op','영업이익',1],['opm','영업이익률',1],['last','최근 판매',0,'desc']];
+  const PR_GET={q:r=>r._q,code:r=>r.code,name:r=>r.cat,origin:r=>r.origin,reg:r=>r.regions.map(k=>REG_LABEL[k]).join(','),qty:r=>r.qty,price:r=>r.unit_price,fob:r=>r.basis==='fob'?r.fob_usd:null,ohr:r=>r.basis==='fob'?r.oh_rate:null,
+    ucost:r=>r.unit_cost,uprofit:r=>r._upr,rev:r=>r.revenue,gp:r=>r.gp,gpm:r=>r._gpm,sga:r=>r._sga,op:r=>r._op,opm:r=>r._opm,last:r=>r.last_sale};
+  function prTableRows(){ const qf=$('prQf').value; return sortArr(prRes.rows.filter(r=>!qf||String(r._q)===qf),'pr',PR_GET); }
+  function renderPrTable(){
+    const L=prTableRows(); const V=L.slice(0,prShow);
+    $('prTbl').innerHTML='<thead>'+headRow('pr',PR_COLS)+'</thead><tbody>'
+      +V.map(r=>'<tr class="'+(r.is_active?'':'off')+'"><td>'+qBadge(r._q)+'</td><td><span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span></td><td>'+esc(r.name||'')+'</td><td>'+esc(r.origin||'—')+'</td>'
+        +'<td class="mut">'+(r.regions.length?r.regions.map(k=>REG_LABEL[k]).join(' · '):'—')+'</td><td class="n"><b>'+fmt0(r.qty)+'</b></td><td class="n">'+fmt(r.unit_price)+'</td>'
+        +'<td class="n">'+(r.basis==='fob'?fmtU(r.fob_usd):'<span class="badge b-sk" title="FOB 가 없어 판매 시점 실제 원가로 계산">실제원가</span>')+'</td>'
+        +'<td class="n">'+(r.basis==='fob'?pctF(r.oh_rate)+(r.oh_source==='global'?' <span class="mut" title="이 제품의 수입 기록이 없어 전체 평균 비율">평균</span>':''):'—')+'</td>'
+        +'<td class="n" title="'+(r.basis==='fob'?'FOB '+fmt(r.unit_fob_mxn)+' + 부대비 '+fmt(r.unit_oh):'판매 시점 실제 원가 평균')+'">'+fmt(r.unit_cost)+'</td>'
+        +'<td class="n '+(r._upr<0?'up':'')+'">'+fmt(r._upr)+'</td><td class="n">'+fmt0(r.revenue)+'</td><td class="n '+(r.gp<0?'up':'')+'">'+fmt0(r.gp)+'</td><td class="n">'+pctF(r._gpm)+'</td>'
+        +'<td class="n mut">'+fmt0(r._sga)+'</td><td class="n '+(r._op<0?'up':'down')+'"><b>'+fmt0(r._op)+'</b></td><td class="n '+(r._opm<0?'up':'')+'">'+pctF(r._opm)+'</td><td class="mut">'+esc(r.last_sale||'')+'</td></tr>').join('')
+      +(!L.length?'<tr><td colspan="18" class="mut" style="padding:14px">조건에 맞는 판매 제품이 없습니다.</td></tr>':'')+'</tbody>';
+    bindSort($('prTbl'),'pr',renderPrTable); bindCodeLinks($('prTbl'));
+    const qf=$('prQf').value;
+    $('prCnt').textContent='— '+L.length.toLocaleString('es-MX')+'개'+(qf?' ('+QUAD[qf].name+')':'')+(L.length>V.length?' 중 '+V.length.toLocaleString('es-MX')+'개 표시':'');
+    $('btnPrMore').classList.toggle('hidden',L.length<=V.length);
+  }
+  $('prPeriod').addEventListener('change',()=>{ const c=$('prPeriod').value==='custom'; document.querySelectorAll('.prCustom').forEach(e=>e.classList.toggle('hidden',!c));
+    if(c&&!$('prTo').value){ $('prTo').value=today; $('prFrom').value=shiftDay(today,-90); } loadProfit(); });
+  ['prFrom','prTo'].forEach(id=>$(id).addEventListener('change',loadProfit));
+  ['prOrigin','prInact','prXcut'].forEach(id=>$(id).addEventListener('change',()=>{ prShow=300; renderProfit(); }));
+  $('prQ').addEventListener('input',()=>{ clearTimeout(prTimer); prTimer=setTimeout(()=>{ prShow=300; renderProfit(); },250); });
+  $('prYcut').addEventListener('input',()=>{ clearTimeout(prTimer); prTimer=setTimeout(renderProfit,250); });
+  $('prSgaIn').addEventListener('input',()=>{ $('prSgaIn').dataset.touched='1'; clearTimeout(prTimer); prTimer=setTimeout(renderProfit,200); });
+  $('prCatQ').addEventListener('input',()=>{ if(prData) renderPrChips(); });
+  $('prQf').addEventListener('change',()=>{ prShow=300; renderPrQuad(); renderPrTable(); });
+  $('btnPrMore').addEventListener('click',()=>{ prShow+=500; renderPrTable(); });
+  $('btnPrReset').addEventListener('click',()=>{ pf.cat.clear(); pf.region.clear(); $('prQ').value=''; $('prOrigin').value=''; $('prInact').checked=false; $('prCatQ').value=''; $('prQf').value=''; prShow=300; renderProfit(); });
+  $('btnPrX').addEventListener('click',()=>{
+    if(!prRes) return; const L=prTableRows(); const r2=(v)=>v==null?null:Math.round(v*100)/100; const p2=(v)=>v==null?null:Math.round(v*10000)/100;
+    const Q={1:'Cash cow',2:'Nicho rentable',3:'Volumen bajo margen',4:'Revisar'};
+    saveXlsx('Refatrix_rentabilidad_'+today+'.xlsx','Rentabilidad',
+      [['Cuadrante','Clave CTR','Producto','Origen','Region','Cantidad','Precio prom MXN','FOB USD','% gastos imp','Costo unit MXN','Base costo','Utilidad unit MXN','Venta MXN','Costo MXN','Utilidad bruta','Margen bruto %','Gastos SGA','Utilidad operativa','Margen operativo %','Ultima venta']]
+      .concat(L.map(r=>[Q[r._q],r.code,r.name||'',r.origin||'',r.regions.map(k=>({eu:'Europa',asia:'Asia',us:'EUA',cn:'China'})[k]).join(', '),r.qty,r.unit_price,r.basis==='fob'?r.fob_usd:null,r.basis==='fob'?p2(r.oh_rate):null,r2(r.unit_cost),r.basis==='fob'?'FOB':'Costo real',r2(r._upr),r2(r.revenue),r2(r.cogs),r2(r.gp),p2(r._gpm),r2(r._sga),r2(r._op),p2(r._opm),r.last_sale||''])),
+      [16,13,24,8,14,9,11,9,9,11,10,11,13,13,13,9,12,13,9,11]);
+  });
+  $('prSgaSave').addEventListener('click',()=>{
+    const v=sgaPct(); if(v==null||Number.isNaN(v)){ toast('판관비율을 0 이상 100 미만으로 넣으세요',true); return; }
+    const cur=prData&&prData.sga?prData.sga.pct:null;
+    confirmModal({title:'판관비율 저장',noDate:true,okText:'저장',body:'<p>판관비율을 <b>'+v+'%</b>로 저장합니다'+(cur!=null?' (지금 '+cur+'%)':'')+'. 저장하면 이 화면을 보는 <b>모든 사람의 영업이익 계산</b>에 쓰입니다.</p>'},
+      async({pin})=>{
+        const d=await api('/api/price-master/settings/sga',{method:'PUT',body:JSON.stringify({pct:v,pin})});
+        if(d.ok){ closeModal(); prData.sga=d.sga; $('prSgaIn').value=d.sga.pct; delete $('prSgaIn').dataset.touched; toast('판관비율을 저장했습니다 — '+d.sga.pct+'%'); renderProfit(); }
+        else if(d.error==='migration_required') d.error='mig0231';
+        return d;
+      });
+  });
 
   // ─── 시작 ───
   $('goLogin').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   const ps=portalSession();
   if(ps&&ps.token){ session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')}; afterLogin(); }
-  window.__pmDebug={get rows(){return rows;},get picked(){return picked;},get summary(){return lastSummary;},get tRows(){return tRows;},get rep(){return rep;},sel};
+  window.__pmDebug={get rows(){return rows;},get picked(){return picked;},get summary(){return lastSummary;},get tRows(){return tRows;},get rep(){return rep;},sel,get profit(){return prRes;},get prData(){return prData;},SORTS};
 })();
 </script>
 <script src="refatrix-nav.js?v=20260924pm2"></script>

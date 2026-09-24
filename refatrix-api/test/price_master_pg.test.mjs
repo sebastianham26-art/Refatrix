@@ -1,6 +1,6 @@
 // 가격 마스터 v2(0229) — 실 PostgreSQL 종단 테스트
 //   실 priceMasterRoutes.js · productRoutes.js · purchaseRoutes.js + Fastify inject (인증만 스텁)
-//   실행: PGADMIN_URL=postgres://postgres@localhost:5432/postgres node --import ./test/helpers/stub-auth.mjs test/price_master_pg.test.mjs
+//   실행: PGADMIN_URL=postgres://postgres@localhost:5432/postgres node test/price_master_pg.test.mjs
 //   PGADMIN_URL = CREATE DATABASE 권한이 있는 접속 URL. 없으면 건너뛴다.
 //   전용 DB(pmtest_0229)를 새로 만들어 쓰고 운영 DB 는 건드리지 않는다.
 import assert from 'node:assert/strict';
@@ -439,6 +439,94 @@ await t('수정 → can_edit true · 본인 PIN 으로 단일 수정 · 틀린 P
 });
 await t('디렉터는 키 없이도 전체 · can_edit true', async () => {
   const f = await call('GET', '/api/price-master/facets'); assert.equal(f.can_edit, true);
+});
+
+console.log('L. ⑦ 제품 수익성 · 판관비율');
+await t('판관비율: 0231 전에는 ready:false · 저장 503', async () => {
+  const r = await call('GET', '/api/price-master/profit');
+  assert.equal(r.status, 200, JSON.stringify(r).slice(0, 200)); assert.equal(r.sga.ready, false); assert.equal(r.rows.length, 0);
+  assert.equal((await call('PUT', '/api/price-master/settings/sga', { pct: 18, pin: '1234' })).status, 503);
+});
+const MIG31 = readFileSync(new URL('../migrations/0231_price_master_settings.sql', import.meta.url), 'utf8');
+await query(MIG31); await query(MIG31); PM._resetSettingsForTest();
+// 수입 배치: A(승인·USD 18) 부대비율 0.1 · B(승인·USD 20) 부대비율 1.0 · C(대기) 무시 · D(승인·삭제) 무시
+const bA = (await query(`INSERT INTO import_batches (status, currency, fx_rate) VALUES ('approved','USD',18) RETURNING id`)).rows[0].id;
+await query(`INSERT INTO import_lines (batch_id, product_id, qty, import_price) VALUES ($1,$2,100,10),($1,$3,100,2)`, [bA, await pid('CQ0728R'), await pid('GV1187')]);
+await query(`INSERT INTO import_overheads (batch_id, label, amount, currency) VALUES ($1,'flete',2160,'MXN')`, [bA]);   // 2160 / 21600 = 0.1
+const bB = (await query(`INSERT INTO import_batches (status, currency, fx_rate) VALUES ('approved','USD',20) RETURNING id`)).rows[0].id;
+await query(`INSERT INTO import_lines (batch_id, product_id, qty, import_price) VALUES ($1,$2,50,4)`, [bB, await pid('CB0011')]);
+await query(`INSERT INTO import_overheads (batch_id, label, amount, currency) VALUES ($1,'aduana',200,'USD')`, [bB]);    // 4000 / 4000 = 1.0
+const bC = (await query(`INSERT INTO import_batches (status, currency, fx_rate) VALUES ('pending','USD',20) RETURNING id`)).rows[0].id;
+await query(`INSERT INTO import_lines (batch_id, product_id, qty, import_price) VALUES ($1,$2,50,4)`, [bC, await pid('CB0011')]);
+await query(`INSERT INTO import_overheads (batch_id, label, amount, currency) VALUES ($1,'x',99999,'USD')`, [bC]);
+const bD = (await query(`INSERT INTO import_batches (status, currency, fx_rate, deleted_at) VALUES ('approved','USD',20, now()) RETURNING id`)).rows[0].id;
+await query(`INSERT INTO import_overheads (batch_id, label, amount, currency) VALUES ($1,'x',99999,'USD')`, [bD]);
+const bE = (await query(`INSERT INTO import_batches (status, currency, fx_rate, exclude_from_cost) VALUES ('approved','USD',20, true) RETURNING id`)).rows[0].id;   // 원가 제외(0069) — 무시
+await query(`INSERT INTO import_lines (batch_id, product_id, qty, import_price) VALUES ($1,$2,50,4)`, [bE, await pid('CB0011')]);
+await query(`INSERT INTO import_overheads (batch_id, label, amount, currency) VALUES ($1,'x',99999,'USD')`, [bE]);
+// 매출: 게시 인보이스 2건 + 삭제 1건 + 초안 1건(둘 다 무시)
+const inv = async (d, st, del) => (await query(`INSERT INTO sales_invoices (inv_date, status, deleted_at) VALUES ($1,$2,$3) RETURNING id`, [d, st, del ? new Date() : null])).rows[0].id;
+const i1 = await inv('2026-01-10', 'posted'), i2 = await inv('2026-06-01', 'posted'), i3 = await inv('2026-06-02', 'posted', true), i4 = await inv('2026-06-03', 'draft');
+const line = async (i, c, q, amt, cogs) => query(`INSERT INTO sales_invoice_lines (invoice_id, product_id, qty, line_amount_mxn, cogs_mxn) VALUES ($1,$2,$3,$4,$5)`, [i, await pid(c), q, amt, cogs]);
+await line(i1, 'CQ0728R', 10, 6000, 3000); await line(i1, 'GV1187', 5, 1000, 400);
+await line(i2, 'CQ0728R', 5, 3200, 1500); await line(i2, 'CE0203', 4, 1200, 800); await line(i2, 'CE0839L', 2, 900, 500);
+await line(i3, 'CQ0728R', 100, 99999, 1); await line(i4, 'CQ0728R', 100, 99999, 1);
+const FX = 18.35, GRATE = (2160 + 4000) / (21600 + 4000);
+let prof;
+await t('수익성: 누적 수량·매출(게시만) · 1개당 원가 = FOB × 환율 × (1 + 제품 부대비율) · 부대비율 없으면 전체 평균', async () => {
+  prof = await call('GET', '/api/price-master/profit');
+  assert.equal(prof.status, 200);
+  assert.equal(prof.overhead.batches, 2); assert.equal(prof.overhead.rate, Math.round(GRATE * 10000) / 10000);
+  const cq = prof.rows.find((r) => r.code === 'CQ0728R');
+  assert.equal(cq.qty, 15); assert.equal(cq.revenue, 9200); assert.equal(cq.basis, 'fob'); assert.equal(cq.oh_rate, 0.1); assert.equal(cq.oh_source, 'product');
+  const fobCq = await fob('CQ0728R');
+  assert.ok(Math.abs(cq.unit_cost - fobCq * FX * 1.1) < 0.001, cq.unit_cost + ' vs ' + fobCq * FX * 1.1);
+  assert.ok(Math.abs(cq.gp - (9200 - 15 * fobCq * FX * 1.1)) < 0.02);
+  const gv = prof.rows.find((r) => r.code === 'GV1187'); assert.equal(gv.oh_rate, 0.1);
+});
+await t('FOB 없는 제품 → 판매 시점 실제원가(basis actual) · 이익 = 매출 − 실제원가', async () => {
+  const ce = prof.rows.find((r) => r.code === 'CE0203');
+  assert.equal(ce.basis, 'actual'); assert.equal(ce.unit_cost, 200); assert.equal(ce.gp, 400); assert.equal(ce.unit_price, 300);
+});
+await t('판매 없는 제품·삭제/초안 인보이스·대기/삭제 배치는 계산에서 빠짐', async () => {
+  assert.equal(prof.rows.length, 4); assert.equal(prof.rows.some((r) => r.code === 'CB0011'), false);
+});
+await t('기간: 2026-03-01 부터 → CQ0728R 5개', async () => {
+  const r = await call('GET', '/api/price-master/profit?from=2026-03-01');
+  assert.equal(r.rows.find((x) => x.code === 'CQ0728R').qty, 5); assert.equal(r.rows.some((x) => x.code === 'GV1187'), false);
+});
+await t('차종 지역: 유럽 · 아시아 · 중복선택(OR) · 칩 개수', async () => {
+  let r = await call('GET', '/api/price-master/profit?region=eu');
+  assert.deepEqual(r.rows.map((x) => x.code), ['CE0839L']);
+  r = await call('GET', '/api/price-master/profit?region=eu,asia');
+  assert.equal(r.rows.length, 4);
+  assert.equal(r.regions.find((x) => x.key === 'asia').n, 3); assert.equal(r.regions.find((x) => x.key === 'cn').n, 0);
+  assert.deepEqual(PM.regionOf('Mercedes Benz Sprinter'), 'eu'); assert.equal(PM.regionOf('CHIREY'), 'cn'); assert.equal(PM.regionOf('LADA'), null);
+});
+await t('품목 중복선택 + 지역 겹치기 · 품목 칩 개수는 지역 조건 반영', async () => {
+  const r = await call('GET', '/api/price-master/profit?cat=HORQUILLA,BUJE&region=asia');
+  assert.deepEqual(r.rows.map((x) => x.code).sort(), ['CQ0728R', 'GV1187']);
+  const e = await call('GET', '/api/price-master/profit?region=eu');
+  assert.deepEqual(e.cats.map((c) => c.v), ['TERMINAL EXTERIOR']);
+});
+await t('판관비율 저장: 비디렉터 403 · PIN 틀림 403 · 범위 400 · 저장 → 조회에 값·작성자', async () => {
+  assert.equal((await call('PUT', '/api/price-master/settings/sga', { pct: 18, pin: '1234' }, '2:sales_support|pricemaster=edit')).status, 403);
+  assert.equal((await call('PUT', '/api/price-master/settings/sga', { pct: 18, pin: '0' })).error, 'bad_pin');
+  assert.equal((await call('PUT', '/api/price-master/settings/sga', { pct: 120, pin: '1234' })).error, 'bad_sga');
+  const s = await call('PUT', '/api/price-master/settings/sga', { pct: '18,5', pin: '1234' });
+  assert.equal(s.status, 200); assert.equal(s.sga.pct, 18.5);
+  const g = await call('GET', '/api/price-master/profit', undefined, '2:sales_support|pricemaster=view');
+  assert.equal(g.sga.pct, 18.5); assert.equal(g.sga.by_name, 'Sebastian'); assert.equal(g.can_set_sga, false);
+});
+await t('정렬: ① 가격표 제목(sort·dir) · ② 미리보기 제목', async () => {
+  const a = await call('GET', '/api/price-master/table?sort=list&dir=asc&limit=500');
+  const l = a.rows.map((r) => r.list_price).filter((x) => x != null); assert.deepEqual(l, [...l].sort((x, y) => x - y));
+  const n = await call('GET', '/api/price-master/table?sort=name&dir=desc&limit=500');
+  const nm = n.rows.map((r) => String(r.name || '').toUpperCase()); assert.deepEqual(nm, [...nm].sort().reverse());
+  const pv = await call('POST', '/api/price-master/preview', { filter: {}, direction: 1, pct: 5, sort: 'new', dir: 'desc', limit: 500 });
+  const nv = pv.rows.map((r) => r.new_price).filter((x) => x != null); assert.deepEqual(nv, [...nv].sort((x, y) => y - x));
+  const pv2 = await call('POST', '/api/price-master/preview', { filter: {}, direction: 1, pct: 5, sort: 'code', dir: 'desc', limit: 500 });
+  assert.equal(pv2.rows[0].code > pv2.rows[pv2.rows.length - 1].code, true);
 });
 
 await app.close(); await pool.end();

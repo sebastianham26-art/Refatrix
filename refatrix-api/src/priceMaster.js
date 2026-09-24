@@ -621,3 +621,142 @@ export const RESULT_KO = {
   to_zero: '0 이하 → 제외', reverted: '되돌림', revert_skipped: '되돌리기 제외',
 };
 export const SKIP_REASON_KO = { later_change: '뒤에 다른 변경이 있음', price_differs: '현재 값이 다름', deleted: '삭제된 제품' };
+
+// =====================================================================
+// ⑦ 제품 수익성 (2026-09-24) — 누적 판매수량 × 1개당 이익
+//   결정(디렉터 09-24):
+//     · 1개당 판매가 = 실제 평균 판매가(기간 누적 매출 ÷ 누적 판매수량, IVA 제외, 게시·미삭제 인보이스)
+//     · 1개당 원가   = FOB(가격표, USD) × 최신 환율 × (1 + 부대비율)
+//         부대비율 = 그 제품이 들어온 승인 수입 배치들의 (배치 부대비용 ÷ 배치 FOB 금액)을 FOB 금액으로 가중평균.
+//                    수입 이력이 없으면 전체 평균 부대비율. → 새 배치가 승인되면 다음 조회부터 자동 반영.
+//     · FOB 가 없는 제품 = 판매 시점 실제 원가(sales_invoice_lines.cogs_mxn — 매출총이익 화면과 같은 동결 원가)로 대체
+//     · 판관비 = 매출 × 판관비율(디렉터가 정함 — price_master_settings.sga_pct, 0231)
+//   차종 지역: 적용차종 메이커 → 유럽 · 아시아(일본·한국) · 미국 · 중국. 한 제품이 여러 지역에 걸칠 수 있다.
+// =====================================================================
+export const REGIONS = [
+  { key: 'eu', label: '유럽', makers: ['VOLKSWAGEN', 'VW', 'AUDI', 'SEAT', 'CUPRA', 'SKODA', 'BMW', 'MINI', 'MERCEDES', 'MERCEDES BENZ', 'MERCEDES-BENZ', 'SMART',
+    'PORSCHE', 'PEUGEOT', 'CITROEN', 'DS', 'RENAULT', 'FIAT', 'ALFA ROMEO', 'LANCIA', 'MASERATI', 'FERRARI', 'VOLVO', 'SAAB', 'OPEL', 'LAND ROVER', 'JAGUAR'] },
+  { key: 'asia', label: '아시아', makers: ['NISSAN', 'TOYOTA', 'HONDA', 'MAZDA', 'MITSUBISHI', 'SUBARU', 'SUZUKI', 'ISUZU', 'INFINITI', 'LEXUS', 'ACURA', 'DATSUN',
+    'HINO', 'HYUNDAI', 'KIA', 'DAEWOO', 'SSANGYONG', 'GENESIS'] },
+  { key: 'us', label: '미국', makers: ['CHEVROLET', 'FORD', 'DODGE', 'CHRYSLER', 'JEEP', 'RAM', 'GMC', 'CADILLAC', 'BUICK', 'LINCOLN', 'PONTIAC', 'MERCURY',
+    'OLDSMOBILE', 'SATURN', 'HUMMER', 'PLYMOUTH', 'TESLA'] },
+  { key: 'cn', label: '중국', makers: ['MG', 'JAC', 'CHIREY', 'CHERY', 'OMODA', 'JAECOO', 'CHANGAN', 'BYD', 'GWM', 'GREAT WALL', 'HAVAL', 'GEELY', 'DONGFENG',
+    'FAW', 'BAIC', 'FOTON', 'JETOUR', 'EXEED', 'WULING', 'BAOJUN', 'MAXUS', 'JMC', 'ZEEKR', 'HONGQI', 'LYNK', 'NIO', 'XPENG', 'LEAPMOTOR', 'SERES',
+    'BESTUNE', 'ORA', 'TANK', 'ROEWE', 'BAW', 'JETTA'] },
+];
+const REGION_KEYS = REGIONS.map((r) => r.key);
+/** 메이커 → 지역 키(없으면 null). 정확히 같거나 「목록 이름 + 공백」으로 시작하면 인정(예: 'MERCEDES BENZ SPRINTER'). */
+export function regionOf(maker) {
+  const m = String(maker || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (!m) return null;
+  for (const r of REGIONS) for (const x of r.makers) if (m === x || m.startsWith(x + ' ') || m.startsWith(x + '-')) return r.key;
+  return null;
+}
+
+// ── 판관비율 설정(0231) ──
+let setReady = false; let setProbe = 0;
+export async function settingsReady(force = false) {
+  if (setReady) return true;
+  if (!force && Date.now() - setProbe < PROBE_MS) return false;
+  setProbe = Date.now();
+  try { setReady = !!(await query(`SELECT to_regclass('public.price_master_settings') AS t`)).rows[0].t; } catch (_) { setReady = false; }
+  return setReady;
+}
+export function _resetSettingsForTest() { setReady = false; setProbe = 0; }
+export async function getSga() {
+  if (!(await settingsReady())) return { pct: null, ready: false };
+  const r = (await query(
+    `SELECT s.num_value, s.updated_at, u.name AS by_name FROM price_master_settings s LEFT JOIN users u ON u.id = s.updated_by
+      WHERE s.key = 'sga_pct'`)).rows[0];
+  return { ready: true, pct: r && r.num_value != null ? Number(r.num_value) : null, updated_at: r ? r.updated_at : null, by_name: r ? r.by_name : null };
+}
+export async function setSga(pct, userId) {
+  await query(
+    `INSERT INTO price_master_settings (key, num_value, updated_by, updated_at) VALUES ('sga_pct', $1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET num_value = EXCLUDED.num_value, updated_by = EXCLUDED.updated_by, updated_at = now()`, [pct, userId]);
+}
+
+/**
+ * 제품별 수익성 원자료(판관비 전). 필터는 JS 에서(칩 개수를 전체 기준으로 세기 위해).
+ *   반환 { fx, overhead:{rate, batches}, rows:[...] }
+ */
+export async function profitBase({ from = null, to = null } = {}) {
+  const p = []; let dw = '';
+  if (from) { p.push(from); dw += ` AND si.inv_date >= $${p.length}::date`; }
+  if (to) { p.push(to); dw += ` AND si.inv_date <= $${p.length}::date`; }
+  const fx = await latestFx();
+  const FXL = `CASE WHEN upper(COALESCE(l.currency, b.currency, 'USD')) = 'MXN' THEN 1 ELSE COALESCE(b.fx_rate, 0) END`;
+  const FXO = `CASE WHEN upper(COALESCE(o.currency, b.currency, 'USD')) = 'MXN' THEN 1 ELSE COALESCE(b.fx_rate, 0) END`;
+  // 배치별 FOB 금액(base) · 부대비(oh) — 승인 · 미삭제 · 원가 제외(0069) 아닌 배치만. 상관 서브쿼리 대신 한 번씩 집계(제품 수 × 줄 수로 커지지 않게)
+  const bbSql = `SELECT b.id, COALESCE(bl.base, 0) AS base, COALESCE(bo.oh, 0) AS oh
+     FROM import_batches b
+     LEFT JOIN (SELECT l.batch_id, SUM(l.qty * l.import_price * ${FXL}) AS base
+                  FROM import_lines l JOIN import_batches b ON b.id = l.batch_id GROUP BY l.batch_id) bl ON bl.batch_id = b.id
+     LEFT JOIN (SELECT o.batch_id, SUM(o.amount * ${FXO}) AS oh
+                  FROM import_overheads o JOIN import_batches b ON b.id = o.batch_id GROUP BY o.batch_id) bo ON bo.batch_id = b.id
+    WHERE b.status = 'approved' AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE`;
+  const g = (await query(`SELECT COALESCE(SUM(base),0) AS base, COALESCE(SUM(oh),0) AS oh, COUNT(*)::int AS n FROM (${bbSql}) bb`)).rows[0];
+  const gRate = Number(g.base) > 0 ? Number(g.oh) / Number(g.base) : 0;
+  const rows = (await query(
+    `WITH s AS MATERIALIZED (
+        SELECT sil.product_id, SUM(sil.qty) AS qty, SUM(sil.line_amount_mxn) AS rev,
+               SUM(COALESCE(sil.cogs_mxn, sil.qty * sil.applied_unit_cost, 0)) AS cogs_act,
+               to_char(MAX(si.inv_date),'YYYY-MM-DD') AS last_sale, COUNT(DISTINCT si.id)::int AS inv_n
+          FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id = sil.invoice_id
+         WHERE si.status = 'posted' AND si.deleted_at IS NULL AND sil.product_id IS NOT NULL${dw}
+         GROUP BY sil.product_id HAVING SUM(sil.qty) > 0
+     ), bb AS MATERIALIZED (${bbSql}),
+     pl AS MATERIALIZED (
+        SELECT l.product_id,
+               SUM(l.qty * l.import_price * ${FXL}) AS val,
+               SUM(l.qty * l.import_price * ${FXL} * CASE WHEN bb.base > 0 THEN bb.oh / bb.base ELSE 0 END) AS oh
+          FROM import_lines l JOIN import_batches b ON b.id = l.batch_id JOIN bb ON bb.id = b.id
+         GROUP BY l.product_id),
+     pa AS MATERIALIZED (
+        SELECT product_id, string_agg(DISTINCT upper(trim(maker)), '|') AS makers FROM product_applications
+         WHERE COALESCE(trim(maker),'') <> '' GROUP BY product_id)
+     SELECT p.id, p.code, p.name, p.origin, p.is_active, p.fob_usd, p.list_price,
+            s.qty, s.rev, s.cogs_act, s.last_sale, s.inv_n, pl.val AS imp_val, pl.oh AS imp_oh,
+            pa.makers
+       FROM s JOIN products p ON p.id = s.product_id
+       LEFT JOIN pl ON pl.product_id = p.id
+       LEFT JOIN pa ON pa.product_id = p.id
+      WHERE p.deleted_at IS NULL`, p)).rows;
+  const rate = fx ? fx.rate : null;
+  const r4 = (x) => Math.round(x * 10000) / 10000;
+  const out = rows.map((r) => {
+    const qty = Number(r.qty); const rev = Number(r.rev); const cogsAct = Number(r.cogs_act);
+    const fob = r.fob_usd == null ? null : Number(r.fob_usd);
+    const ohOwn = Number(r.imp_val) > 0;
+    const ohRate = ohOwn ? Number(r.imp_oh) / Number(r.imp_val) : gRate;
+    const makers = r.makers ? String(r.makers).split('|') : [];
+    const regions = [...new Set(makers.map(regionOf).filter(Boolean))];
+    let basis; let unitFob = null; let unitOh = null; let unitCost;
+    if (fob > 0 && rate > 0) {
+      basis = 'fob'; unitFob = fob * rate; unitOh = unitFob * ohRate; unitCost = unitFob + unitOh;
+    } else { basis = 'actual'; unitCost = qty > 0 ? cogsAct / qty : 0; }
+    const cogs = unitCost * qty;
+    return {
+      id: Number(r.id), code: r.code, name: r.name, cat: String(r.name || '').trim().toUpperCase(), origin: r.origin,
+      is_active: r.is_active !== false, makers, regions, qty, revenue: Math.round(rev * 100) / 100,
+      unit_price: qty > 0 ? r4(rev / qty) : null, fob_usd: fob, oh_rate: r4(ohRate), oh_source: ohOwn ? 'product' : 'global',
+      unit_fob_mxn: unitFob == null ? null : r4(unitFob), unit_oh: unitOh == null ? null : r4(unitOh), unit_cost: r4(unitCost),
+      basis, cogs: Math.round(cogs * 100) / 100, gp: Math.round((rev - cogs) * 100) / 100,
+      cogs_actual: Math.round(cogsAct * 100) / 100, last_sale: r.last_sale, inv_n: r.inv_n, list_price: r.list_price == null ? null : Number(r.list_price),
+    };
+  });
+  return { fx, overhead: { rate: r4(gRate), batches: g.n, base_mxn: Number(g.base), oh_mxn: Number(g.oh) }, rows: out };
+}
+
+/** 필터(칩): cat[] · region[](OR) · origin[] · q · include_inactive */
+export function filterProfitRows(rows, f = {}) {
+  const cats = new Set((f.cat || []).map((x) => String(x).toUpperCase()));
+  const regs = new Set((f.region || []).filter((x) => REGION_KEYS.includes(x)));
+  const origins = new Set((f.origin || []).map((x) => String(x).toUpperCase()));
+  const q = String(f.q || '').trim().toUpperCase();
+  return rows.filter((r) => (f.include_inactive || r.is_active)
+    && (!cats.size || cats.has(r.cat))
+    && (!regs.size || r.regions.some((x) => regs.has(x)))
+    && (!origins.size || origins.has(String(r.origin || '').trim().toUpperCase() || '__NONE__'))
+    && (!q || String(r.code).toUpperCase().includes(q) || r.cat.includes(q) || r.makers.some((m) => m.includes(q))));
+}
