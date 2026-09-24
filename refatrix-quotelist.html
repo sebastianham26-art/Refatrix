@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0924np</title>
+<title>Refatrix ERP · 견적 목록 · ql-0924gp</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -40,6 +40,7 @@
   th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
   th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
   td.r,th.r{text-align:right}
+  .gpS{display:inline-block;margin-top:3px;font-size:10.5px;font-weight:700;color:var(--income);white-space:nowrap}.gpS.neg{color:var(--expense)}.gpS i{font-style:normal;font-weight:500;color:var(--muted)}
   .st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
   .st.draft{background:#eef0f2;color:#555}.st.confirmed{background:#fdf3e3;color:#9a6512}
   .st.converted{background:var(--income-bg);color:var(--income)}.st.cancelled{background:var(--expense-bg);color:var(--expense)}
@@ -169,7 +170,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-0924np';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-0924gp';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -498,6 +499,13 @@
     if(!po) return '';
     return '<div style="margin-top:2px;font-size:10.5px;font-weight:700;color:#8a6a1f;white-space:nowrap" title="고객이 발행한 PO(O.C.) 번호 — 패킹리스트에 「우리번호 / 이 번호」로 인쇄됩니다">PO '+esc(po)+'</div>';
   }
+  // 2026-09-24 · 디렉터 전용 — 상태 아래에 작게 매출총이익 · %. 서버도 디렉터에게만 gp 를 내려준다.
+  function gpSmall(q){
+    const g=q.gp; if(!isDirector||!g||g.pct==null) return '';
+    const tip=(g.basis==='sale'?'실매출 기준(판매 시점 원가)':'견적 기준(현재 평균원가)')+' · 매출(IVA 제외) '+fmt(g.rev)+' − 원가 '+fmt(g.cost)
+      +(g.nocost?' · 평균원가 없는 줄 '+g.nocost+'개는 계산에서 뺌':'');
+    return '<br><span class="gpS'+(g.gp<0?' neg':'')+'" title="'+esc(tip)+'">'+(g.basis==='sale'?'<i>실</i> ':'')+'총이익 '+fmt(g.gp)+' · '+g.pct.toFixed(1)+'%'+(g.nocost?' <i>*</i>':'')+'</span>';
+  }
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적',expired:'만료'};
@@ -536,7 +544,7 @@
             })() : '')
           +(q.shortage_cnt>0 ? '<br><span class="hint" style="color:var(--expense)">부족 '+q.shortage_cnt+'건 기록</span>' : ''))
           +'</td>'
-        +'<td><span class="st '+(expd?'expired':q.status)+'">'+(expd?'만료':(stLbl[q.status]||q.status))+'</span>'+((q.open&&!expd)?('<br>'+resvBadge(q)):'')+'</td>'
+        +'<td><span class="st '+(expd?'expired':q.status)+'">'+(expd?'만료':(stLbl[q.status]||q.status))+'</span>'+((q.open&&!expd)?('<br>'+resvBadge(q)):'')+gpSmall(q)+'</td>'
         +'<td>'+(conv?('<span class="arrow">→ '+esc(q.sale_date||'')+'</span>'+(q.sale_sat_no?'<br><span class="hint">'+esc(q.sale_sat_no)+'</span>':'')):'<span class="hint">미전환</span>')+'</td>'
         +'<td>'+action+'</td>'
         +'</tr>';

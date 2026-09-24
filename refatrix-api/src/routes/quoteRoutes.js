@@ -570,6 +570,23 @@ export default async function quoteRoutes(app) {
       args.push(req.ctx.perm.userId); const ui = args.length;
       conds.push(`(c.team_id = ANY($${ti}) OR (q.customer_id IS NULL AND q.created_by = $${ui}))`);
     }
+    // 2026-09-24 · 디렉터 전용 매출총이익(견적 목록 상태 칸 아래). 다른 역할에는 원가를 계산하지도 내려보내지도 않는다.
+    //   매출전환 = 실제 인보이스(판매 시점 동결 원가 cogs_mxn), 그 외 = 견적 줄 금액(IVA 제외) − 수량 × 현재 평균원가(avg_cost).
+    //   평균원가가 없는(0) 제품 줄은 매출·원가 둘 다에서 빼고 개수만 알려 준다(이익률이 부풀지 않게).
+    const gpDir = req.ctx.perm.role === 'director';
+    const gpSel = gpDir ? `, gpq.gp_rev, gpq.gp_cost, gpq.gp_nocost, gps.s_rev, gps.s_cogs` : '';
+    const gpJoin = gpDir ? `
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(ql.line_subtotal) FILTER (WHERE p.avg_cost > 0), 0)        AS gp_rev,
+                  COALESCE(SUM(ql.qty * p.avg_cost) FILTER (WHERE p.avg_cost > 0), 0)     AS gp_cost,
+                  COUNT(*) FILTER (WHERE COALESCE(p.avg_cost, 0) <= 0)::int              AS gp_nocost
+             FROM quote_lines ql JOIN products p ON p.id = ql.product_id
+            WHERE ql.quote_id = q.id
+         ) gpq ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT SUM(sl.line_amount_mxn) AS s_rev, SUM(COALESCE(sl.cogs_mxn, sl.qty * sl.applied_unit_cost, 0)) AS s_cogs
+             FROM sales_invoice_lines sl WHERE sl.invoice_id = i.id
+         ) gps ON TRUE` : '';
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
               q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at, q.created_at,
@@ -580,7 +597,7 @@ export default async function quoteRoutes(app) {
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
               cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty,
-              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt, cls.inact_cnt
+              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt, cls.inact_cnt${gpSel}
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uc ON uc.id=q.created_by
@@ -602,9 +619,18 @@ export default async function quoteRoutes(app) {
              COUNT(*) FILTER (WHERE ql.issue = 'inactive')::int AS inact_cnt
            FROM quote_lines ql
            WHERE ql.quote_id = q.id
-         ) cls ON TRUE
+         ) cls ON TRUE${gpJoin}
         WHERE ${conds.join(' AND ')}
         ORDER BY q.quote_date DESC, q.id DESC`, args)).rows;
+    const gpOf = (r) => {
+      if (!gpDir || r.status === 'pricelist') return undefined;
+      const sale = r.status === 'converted' && Number(r.s_rev || 0) > 0;
+      const rev = sale ? Number(r.s_rev) : Number(r.gp_rev || 0);
+      const cost = sale ? Number(r.s_cogs || 0) : Number(r.gp_cost || 0);
+      const gp = Math.round((rev - cost) * 100) / 100;
+      return { basis: sale ? 'sale' : 'quote', rev: Math.round(rev * 100) / 100, cost: Math.round(cost * 100) / 100, gp,
+        pct: rev > 0 ? Math.round(gp / rev * 1000) / 10 : null, nocost: sale ? 0 : Number(r.gp_nocost || 0) };
+    };
     return {
       items: rows.map((r) => ({
         id: r.id, quote_no: r.quote_no, quote_date: d10(r.quote_date), status: r.status,
@@ -624,6 +650,7 @@ export default async function quoteRoutes(app) {
         created_at: r.created_at || null,                   // 2026-09-21 · 접수 시각(견적일 아래 표시)
         packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
         inactive_cnt: Number(r.inact_cnt || 0),             // 0224 · 판매중단 줄(다음 단계 차단 사유)
+        ...(gpDir ? { gp: gpOf(r) } : {}),                   // 2026-09-24 · 디렉터만 — 매출총이익
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {
           ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
