@@ -8,7 +8,7 @@ import { logEvent } from '../audit.js';
 import {
   PRODUCT_KEY, runCatalogSync, listRuns, productTablesReady,
   fetchProducts, buildProduct, buildLote, chunk, mxNowParts, autoRanToday,
-  SENDABLE_WHERE, EXCLUDED_PREFIXES, cancelCatalogSync, pendingProductCount,
+  SENDABLE_WHERE, EXCLUDED_PREFIXES, cancelCatalogSync, pendingProductCount, runErrors,
 } from '../productSync.js';
 import { pumpState, gapMs } from '../crmSync.js';
 
@@ -151,6 +151,13 @@ export default async function productSyncRoutes(app) {
   app.get('/api/product-sync/runs', guard, async (req) => {
     const limit = Number(req.query && req.query.limit) || 20;
     return { runs: await listRuns({ limit }) };
+  });
+
+  /** 20260924 · 실행 1건의 실패·재시도 사유(상위) — 전송 단위 성과 화면용. */
+  app.get('/api/product-sync/runs/:id/errors', guard, async (req) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || !(await productTablesReady())) return { errors: [] };
+    return { errors: await runErrors(id) };
   });
 
   /** 실행 1건의 묶음 목록 — 어느 묶음이 실패했는지 바로 본다. */

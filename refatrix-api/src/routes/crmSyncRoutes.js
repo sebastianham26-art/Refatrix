@@ -55,8 +55,26 @@ export default async function crmSyncRoutes(app) {
     return false;
   }
 
-  // 요약(전체 · 연동별)
-  app.get('/api/crm-sync/summary', guard, async () => {
+  /**
+   * 20260924 · **범위(scope)** — 누적이 아니라 「이번 전송」·「오늘」 단위로 본다.
+   *   run_id : 제품 전송 1회(product_sync_runs.id) — 그 실행의 묶음/제품만
+   *   from/to: 멕시코 날짜(YYYY-MM-DD) — 적재 시각 기준. 고객·오더 이력용
+   *   아무것도 없으면 예전과 같다(전체 누적).
+   */
+  function scopeWhere(qs, params, where, hasEp) {
+    const runId = Number(qs.run_id);
+    if (qs.run_id != null && qs.run_id !== '' && Number.isFinite(runId) && hasEp) {
+      params.push(runId);
+      where.push(`o.entity='product' AND o.entity_id=$${params.length}`);
+    }
+    const ymd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : null);
+    const from = ymd(qs.from), to = ymd(qs.to);
+    if (from) { params.push(from); where.push(`(o.created_at AT TIME ZONE 'America/Mexico_City')::date >= $${params.length}::date`); }
+    if (to)   { params.push(to);   where.push(`(o.created_at AT TIME ZONE 'America/Mexico_City')::date <= $${params.length}::date`); }
+  }
+
+  // 요약(전체 · 연동별 · 20260924 범위)
+  app.get('/api/crm-sync/summary', guard, async (req) => {
     const engine = crmStatus();
     if (!(await crmTableReady())) return { engine, migrated: false, counts: {}, by_endpoint: {}, oldest_pending: null };
     const ep = await epCols();
@@ -72,7 +90,27 @@ export default async function crmSyncRoutes(app) {
     }
     const oldest = (await query(
       `SELECT min(created_at) AS t FROM crm_customer_outbox WHERE status='pending'`)).rows[0];
-    return { engine, migrated: true, counts, by_endpoint: byEp, oldest_pending: oldest.t || null };
+    // 20260924 · 범위 집계 — 창구 + (전송 1회 | 기간). 화면 상단 숫자가 누적이 아니라 이 범위를 보인다.
+    let scope = null;
+    const qs = req.query || {};
+    if (qs.endpoint || qs.run_id || qs.from || qs.to) {
+      const where = [], params = [];
+      if (qs.endpoint && ep) { params.push(String(qs.endpoint)); where.push(`COALESCE(o.endpoint_key,'customer_commercial')=$${params.length}`); }
+      scopeWhere(qs, params, where, ep);
+      const sr = (await query(
+        `SELECT o.status, count(*)::int AS n,
+                min(o.created_at) AS first_at, max(o.sent_at) AS last_sent_at
+           FROM crm_customer_outbox o
+          ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+          GROUP BY 1`, params)).rows;
+      scope = { pending: 0, sent: 0, failed: 0, skipped: 0, first_at: null, last_sent_at: null };
+      for (const r of sr) {
+        scope[r.status] = Number(r.n);
+        if (r.first_at && (!scope.first_at || r.first_at < scope.first_at)) scope.first_at = r.first_at;
+        if (r.last_sent_at && (!scope.last_sent_at || r.last_sent_at > scope.last_sent_at)) scope.last_sent_at = r.last_sent_at;
+      }
+    }
+    return { engine, migrated: true, counts, by_endpoint: byEp, oldest_pending: oldest.t || null, scope };
   });
 
   // 목록 — status(open|pending|sent|failed|skipped|all) · endpoint · q 검색
@@ -91,6 +129,7 @@ export default async function crmSyncRoutes(app) {
     if (st === 'open') where.push(`o.status IN ('pending','failed')`);
     else if (['pending', 'sent', 'failed', 'skipped'].includes(st)) { params.push(st); where.push(`o.status=$${params.length}`); }
     if (key && ep) { params.push(key); where.push(`COALESCE(o.endpoint_key,'customer_commercial')=$${params.length}`); }
+    scopeWhere(req.query || {}, params, where, ep);   // 20260924 · 전송 1회 / 기간
     if (q) {
       params.push(`%${q}%`);
       const i = params.length;

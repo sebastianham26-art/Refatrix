@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20260924sp1</title>
+<title>Refatrix ERP · 연동 관리 · build 20260924rp1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -75,6 +75,16 @@
   .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
   .kpi .n{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
   .kpi .l{font-size:11.5px;color:var(--muted)}
+  .scopebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .scopebar label{margin:0;font-weight:600}
+  .runperf{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:-2px 0 12px}
+  .runperf .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px 14px}
+  .runperf .v{font-weight:700;font-variant-numeric:tabular-nums}
+  .runperf .k{font-size:11.5px;color:var(--muted)}
+  .runperf table{width:100%;margin-top:8px}
+  .rstate{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid currentColor}
+  .rstate.running{color:var(--warn)}.rstate.done{color:var(--income)}.rstate.done_errors{color:var(--expense)}.rstate.stopped{color:var(--muted)}
+  .runlink{cursor:pointer;text-decoration:underline dotted}
   .kpi.pending .n{color:var(--warn)}.kpi.failed .n{color:var(--expense)}.kpi.sent .n{color:var(--income)}
   pre.out{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;max-height:260px;margin:6px 0 0;white-space:pre-wrap;word-break:break-all}
   .detail td{background:#faf8f3}
@@ -501,12 +511,18 @@
           </div>
 
           <div id="logOut">
+          <div class="scopebar">
+            <label for="fScope" id="fScopeL">기준</label>
+            <select id="fScope" style="width:auto;min-width:260px"></select>
+            <span class="hint" id="scopeInfo"></span>
+          </div>
           <div class="kpis">
             <div class="kpi pending"><div class="n" id="kPending">–</div><div class="l">대기</div></div>
             <div class="kpi failed"><div class="n" id="kFailed">–</div><div class="l">실패</div></div>
             <div class="kpi sent"><div class="n" id="kSent">–</div><div class="l">전송 완료</div></div>
-            <div class="kpi"><div class="n" id="kSkipped">–</div><div class="l">건너뜀</div></div>
+            <div class="kpi"><div class="n" id="kSkipped">–</div><div class="l" id="kSkippedL">건너뜀</div></div>
           </div>
+          <div class="runperf hidden" id="runPerf"></div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="fStatus" style="width:auto">
               <option value="open">대기 + 실패</option>
@@ -1018,14 +1034,22 @@
         +'묶음 '+(d.estimated_lotes||1)+'개 예상 · 멕시코 날짜 '+esc(d.mx_today||'')
         +(s.auto_send?(' · 자동 전송 '+s.send_hour_mx+'시'+(d.auto_ran_today?' (오늘 완료)':' (오늘 대기)')):' · 자동 전송 꺼짐')+'</div>';
       const runs=(d.last_runs||[]);
-      const rows=runs.length? runs.map(r=>'<tr><td class="mono">'+esc(r.envio_id)+'</td>'
+      const RS={running:'진행 중',done:'완료',done_errors:'완료(실패 있음)',stopped:'중지됨'};
+      const dur=function(sec){ sec=Math.max(0,Math.round(Number(sec)||0)); const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),x=sec%60; return h?(h+'시간 '+m+'분'):(m?(m+'분 '+x+'초'):(x+'초')); };
+      // 20260924 · 실행(전송 1회)별 성과 — 누적이 아니라 이 전송의 결과. envioId 를 누르면 그 전송의 이력으로 간다.
+      const rows=runs.length? runs.map(r=>'<tr><td class="mono"><a class="runlink" data-run="'+r.id+'">'+esc(r.envio_id)+'</a>'
+        +'<div><span class="rstate '+esc(r.state||'')+'">'+esc(RS[r.state]||r.state||'')+'</span></div></td>'
         +'<td>'+(r.mode==='test'?'시험':'전체')+' · '+(r.origin==='auto'?'자동':'수동')+'</td>'
-        +'<td>'+r.total_productos+'제품 / '+r.total_lotes+'묶음</td>'
-        +'<td>완료 '+r.sent+' · 대기 '+r.pending+' · 실패 '+r.failed+(r.skipped?(' · 중지/건너뜀 '+r.skipped):'')+'</td>'
+        +'<td class="num">'+r.total_lotes+'건</td>'
+        +'<td>완료 '+r.sent+' · 실패 '+r.failed+' · 대기 '+r.pending+(r.stopped?(' · 중지 '+r.stopped):'')+(r.retrying?('<div class="hint">재시도 대기 '+r.retrying+'</div>'):'')+'</td>'
+        +'<td class="num">'+(r.success_pct==null?'–':(r.success_pct+'%'))+'</td>'
+        +'<td class="num">'+dur(r.elapsed_sec)+(r.per_min!=null?('<div class="hint">분당 '+r.per_min+'건</div>'):'')+'</td>'
         +'<td class="hint">'+new Date(r.created_at).toLocaleString('ko-KR')+'</td></tr>').join('')
-        : '<tr><td colspan="5" class="hint">아직 전송한 적이 없습니다.</td></tr>';
+        : '<tr><td colspan="7" class="hint">아직 전송한 적이 없습니다.</td></tr>';
       box.innerHTML=head+'<table style="width:100%;margin-top:8px"><thead><tr>'
-        +'<th>envioId</th><th>구분</th><th>규모</th><th>상태</th><th>시각</th></tr></thead><tbody>'+rows+'</tbody></table>';
+        +'<th>envioId</th><th>구분</th><th>규모</th><th>결과</th><th>성공률</th><th>소요</th><th>시작</th></tr></thead><tbody>'+rows+'</tbody></table>'
+        +'<div class="hint" style="margin-top:4px">전송 1회씩 따로 셉니다 — envioId 를 누르면 그 전송의 이력만 봅니다.</div>';
+      box.querySelectorAll('a.runlink').forEach(a=>a.addEventListener('click',()=>openRunLog(Number(a.dataset.run))));
       // 20260924 · 진행 표시 — 대기 중인 제품이 있으면 5초마다 스스로 새로고침한다.
       const pend=Number(d.pending_products)||0, pump=d.pump||{};
       const pg=$('catalogProgress');
@@ -1406,18 +1430,108 @@
   }
 
   // ===== ③ 전송 이력 =====
+  // 20260924 · **범위(기준)** — 숫자를 누적으로 보지 않는다.
+  //   제품 창구: 전송 1회(envioId) 단위 · 그 외(고객·오더): 멕시코 날짜 기준 기간.
+  //   어제 전송과 오늘 전송을 섞으면 「이번 전송이 잘 됐나」에 답할 수 없다.
+  const SCOPE={key:null,auto:true,value:null,runs:{}};
+  const RUN_STATE={running:'진행 중',done:'완료',done_errors:'완료(실패 있음)',stopped:'중지됨'};
+  function isProductEp(){ return !!(CUR && (CUR.category==='product' || CUR.key==='product')); }
+  function mxYmd(d){
+    try{ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(d); }
+    catch(e){ return new Date(d.getTime()-6*3600000).toISOString().slice(0,10); }
+  }
+  function fmtDur(sec){
+    sec=Math.max(0,Math.round(Number(sec)||0));
+    const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), x=sec%60;
+    return h?(h+'시간 '+m+'분'):(m?(m+'분 '+x+'초'):(x+'초'));
+  }
+  function fmtWhen(t){ return t?new Date(t).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'–'; }
+  async function buildScope(){
+    const sel=$('fScope'); if(!sel||!CUR) return;
+    const keyChanged = SCOPE.key!==CUR.key;
+    if(keyChanged){ SCOPE.key=CUR.key; SCOPE.auto=true; SCOPE.value=null; }
+    let opts=[];
+    if(isProductEp()){
+      $('fScopeL').textContent='전송 단위';
+      let runs=[];
+      try{ runs=(await fetch(session.api+'/api/product-sync/runs?limit=30',{headers:auth()}).then(r=>r.json())).runs||[]; }catch(e){}
+      SCOPE.runs={}; runs.forEach(r=>{ SCOPE.runs[r.id]=r; });
+      opts=runs.map(r=>['run:'+r.id, r.envio_id+' · '+fmtWhen(r.created_at)+' · '+r.total_lotes+'건'
+        +(r.mode==='test'?' · 시험':'')+(r.origin==='auto'?' · 자동':'')+' · '+(RUN_STATE[r.state]||r.state)]);
+      opts.push(['all','전체 누적 (모든 전송 합계)']);
+    }else{
+      $('fScopeL').textContent='기간';
+      opts=[['today','오늘'],['yesterday','어제'],['7d','최근 7일'],['30d','최근 30일'],['all','전체 누적']];
+    }
+    const want = (!SCOPE.auto && SCOPE.value && opts.some(o=>o[0]===SCOPE.value)) ? SCOPE.value : opts[0][0];
+    sel.innerHTML=opts.map(o=>'<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>').join('');
+    sel.value=want; SCOPE.value=want;
+  }
+  function scopeQs(){
+    const v=SCOPE.value||'all';
+    if(v.indexOf('run:')===0) return '&run_id='+encodeURIComponent(v.slice(4));
+    const now=new Date(), day=86400000;
+    if(v==='today'){ const d=mxYmd(now); return '&from='+d+'&to='+d; }
+    if(v==='yesterday'){ const d=mxYmd(new Date(now.getTime()-day)); return '&from='+d+'&to='+d; }
+    if(v==='7d') return '&from='+mxYmd(new Date(now.getTime()-6*day))+'&to='+mxYmd(now);
+    if(v==='30d') return '&from='+mxYmd(new Date(now.getTime()-29*day))+'&to='+mxYmd(now);
+    return '';
+  }
+  function scopeRun(){ const v=SCOPE.value||''; return v.indexOf('run:')===0 ? SCOPE.runs[Number(v.slice(4))] : null; }
+  async function renderRunPerf(){
+    const box=$('runPerf'); const r=scopeRun();
+    if(!r){ box.classList.add('hidden'); box.innerHTML=''; return; }
+    const cell=(k,v)=>'<div><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
+    box.classList.remove('hidden');
+    box.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'
+      +'<b class="mono">'+esc(r.envio_id)+'</b><span class="rstate '+esc(r.state)+'">'+esc(RUN_STATE[r.state]||r.state)+'</span>'
+      +'<span class="hint">'+(r.mode==='test'?'시험':'전체')+' · '+(r.origin==='auto'?'자동':'수동')+(r.by_login?(' · '+esc(r.by_login)):'')+'</span></div>'
+      +'<div class="grid">'
+      +cell('시작',fmtWhen(r.created_at))
+      +cell('마지막 전송',fmtWhen(r.last_sent_at))
+      +cell(r.state==='running'?'경과':'소요',fmtDur(r.elapsed_sec))
+      +cell('분당 전송',r.per_min==null?'–':(r.per_min+'건'))
+      +cell('진행률',r.progress_pct==null?'–':(r.progress_pct+'%'))
+      +cell('성공률',r.success_pct==null?'–':(r.success_pct+'%'+(r.stopped?' <span class="hint">(중지 '+r.stopped+'건 제외)</span>':'')))
+      +cell('재시도 대기',r.retrying+'건')
+      +'</div><div id="runErr" class="hint" style="margin-top:6px">실패 사유 불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/product-sync/runs/'+r.id+'/errors',{headers:auth()}).then(x=>x.json());
+      const es=d.errors||[];
+      $('runErr').innerHTML = es.length
+        ? '<div style="font-weight:600;color:var(--ink)">이 전송의 실패·재시도 사유</div><table><thead><tr><th>건수</th><th>응답</th><th>사유</th><th>예시</th></tr></thead><tbody>'
+          + es.map(e=>'<tr><td class="num">'+e.count+'</td><td class="mono">'+(e.http_status?('HTTP '+e.http_status):'–')+(e.codigo_error?('<div class="hint">'+esc(e.codigo_error)+'</div>'):'')
+            +'</td><td style="color:var(--expense);word-break:break-word">'+esc(e.reason||'')+'<div class="hint">'+(e.status==='failed'?'실패 확정':'재시도 대기 · 최대 '+e.max_attempts+'회 시도')+'</div></td>'
+            +'<td class="hint mono">'+esc(e.example||'')+'</td></tr>').join('')
+          + '</tbody></table>'
+        : '이 전송에서 실패·재시도 건은 없습니다.';
+    }catch(e){ $('runErr').textContent='실패 사유를 불러오지 못했습니다.'; }
+  }
+  /** 제품 카드의 실행표에서 envioId 를 누르면 그 전송 단위로 이력을 연다. */
+  function openRunLog(runId){
+    SCOPE.key=CUR&&CUR.key; SCOPE.auto=false; SCOPE.value='run:'+runId;
+    PG.out.page=1; $('fStatus').value='all';
+    const t=document.querySelector('.tab[data-tab="log"]'); if(t) t.click();
+  }
   async function loadLog(){
     if(!CUR) return;
     if(CUR.direction==='in') return loadInbound();
+    await buildScope();
+    const sq=scopeQs();
     try{
-      const s=await fetch(session.api+'/api/crm-sync/summary',{headers:auth()}).then(r=>r.json());
-      const c=(s.by_endpoint&&s.by_endpoint[CUR.key])||{};
+      const s=await fetch(session.api+'/api/crm-sync/summary?endpoint='+encodeURIComponent(CUR.key)+sq,{headers:auth()}).then(r=>r.json());
+      const c=s.scope||(s.by_endpoint&&s.by_endpoint[CUR.key])||{};
       $('kPending').textContent=c.pending||0; $('kFailed').textContent=c.failed||0;
       $('kSent').textContent=c.sent||0; $('kSkipped').textContent=c.skipped||0;
+      const r=scopeRun();
+      $('kSkippedL').textContent = r&&r.stopped ? ('건너뜀 (중지 '+r.stopped+')') : '건너뜀';
+      $('scopeInfo').textContent = SCOPE.value==='all' ? '모든 전송을 합친 숫자입니다.'
+        : (r ? ('이 전송 1회의 숫자입니다 · 전체 '+r.total_lotes+'건') : '이 기간에 적재된 건의 숫자입니다(멕시코 날짜).');
     }catch(e){}
+    renderRunPerf();
     const st=$('fStatus').value,q=$('fQ').value.trim();
     pgSync(PG.out);
-    const url=session.api+'/api/crm-sync?status='+encodeURIComponent(st)+'&endpoint='+encodeURIComponent(CUR.key)+(q?'&q='+encodeURIComponent(q):'')+pgQs(PG.out);
+    const url=session.api+'/api/crm-sync?status='+encodeURIComponent(st)+'&endpoint='+encodeURIComponent(CUR.key)+sq+(q?'&q='+encodeURIComponent(q):'')+pgQs(PG.out);
     try{
       const res=await fetch(url,{headers:auth()});
       const d=await res.json();
@@ -1571,6 +1685,7 @@
   $('btnLogReload').addEventListener('click',logFromFirst);
   $('btnDrain').addEventListener('click',drain);
   $('fStatus').addEventListener('change',logFromFirst);
+  $('fScope').addEventListener('change',function(){ SCOPE.auto=false; SCOPE.value=$('fScope').value; logFromFirst(); });
   $('fQ').addEventListener('keydown',e=>{if(e.key==='Enter')logFromFirst();});
   $('btnNew').addEventListener('click',newEndpoint);
   $('btnReloadAll').addEventListener('click',()=>loadEndpoints(CUR&&CUR.key));

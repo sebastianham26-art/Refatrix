@@ -384,42 +384,89 @@ export async function pendingProductCount() {
   return Number(r && r.n) || 0;
 }
 
-/** 최근 실행 목록 + 묶음별 상태 집계(이력 화면용). */
+/**
+ * 최근 실행 목록 + **실행(전송 1회)별 성과** (이력 화면용).
+ *   20260924 · 누적이 아니라 **전송 단위**로 본다 — 어제 실행과 오늘 실행의 숫자를 섞지 않는다.
+ *     · 집계는 실행마다 LATERAL 로(인덱스 idx_crm_outbox_entity) — 제품 건이 수만 행이어도 그 실행만 센다.
+ *     · 중지(stopped) = 디렉터가 「전송 중지」로 닫은 건. 다른 건너뜀과 구분한다.
+ *     · 재시도 대기(retrying) = 대기 중이지만 한 번 이상 실패한 건.
+ *     · 성공률 = 완료 ÷ (전체 − 중지). 소요 = 적재 → 마지막 전송(진행 중이면 지금까지).
+ */
 export async function listRuns({ limit = 20 } = {}) {
   if (!(await productTablesReady())) return [];
   const rows = (await query(
-    `SELECT r.*,
-            COALESCE(o.pending,0) AS pending, COALESCE(o.sent,0) AS sent,
-            COALESCE(o.failed,0)  AS failed,  COALESCE(o.skipped,0) AS skipped,
-            u.login_id AS by_login
+    `SELECT r.*, u.login_id AS by_login, o.*
        FROM product_sync_runs r
        LEFT JOIN users u ON u.id = r.created_by
-       LEFT JOIN (
-         SELECT entity_id,
-                SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending,
-                SUM(CASE WHEN status='sent'    THEN 1 ELSE 0 END) AS sent,
-                SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END) AS failed,
-                SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END) AS skipped
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) AS pending,
+                COALESCE(SUM(CASE WHEN status='pending' AND attempts > 0 THEN 1 ELSE 0 END),0) AS retrying,
+                COALESCE(SUM(CASE WHEN status='sent'    THEN 1 ELSE 0 END),0) AS sent,
+                COALESCE(SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END),0) AS failed,
+                COALESCE(SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END),0) AS skipped,
+                COALESCE(SUM(CASE WHEN status='skipped' AND last_error=$2 THEN 1 ELSE 0 END),0) AS stopped,
+                MIN(sent_at) AS first_sent_at,
+                MAX(sent_at) AS last_sent_at
            FROM crm_customer_outbox
-          WHERE entity='product'
-          GROUP BY entity_id
-       ) o ON o.entity_id = r.id
+          WHERE entity='product' AND entity_id = r.id
+       ) o ON true
       ORDER BY r.id DESC
-      LIMIT $1`, [Math.max(1, Math.min(100, Number(limit) || 20))])).rows;
-  return rows.map((r) => ({
+      LIMIT $1`, [Math.max(1, Math.min(100, Number(limit) || 20)), CANCEL_NOTE])).rows;
+  return rows.map((r) => runView(r));
+}
+
+/** 실행 1행 → 화면용 성과 값. (순수 함수 — 테스트가 직접 부른다) */
+export function runView(r, now = Date.now()) {
+  const n = (v) => Number(v) || 0;
+  const total = n(r.total_lotes);
+  const sent = n(r.sent), failed = n(r.failed), pending = n(r.pending);
+  const skipped = n(r.skipped), stopped = n(r.stopped), retrying = n(r.retrying);
+  const target = Math.max(0, total - stopped);
+  const started = r.created_at ? new Date(r.created_at).getTime() : null;
+  const last = r.last_sent_at ? new Date(r.last_sent_at).getTime() : null;
+  const end = pending > 0 ? now : (last || started);
+  const elapsedSec = started && end ? Math.max(0, Math.round((end - started) / 1000)) : 0;
+  const state = pending > 0 ? 'running'
+    : (stopped > 0 ? 'stopped' : (failed > 0 ? 'done_errors' : 'done'));
+  return {
     id: Number(r.id),
     envio_id: r.envio_id,
     fecha_corte: typeof r.fecha_corte === 'string' ? r.fecha_corte : new Date(r.fecha_corte).toISOString().slice(0, 10),
     mode: r.mode,
     origin: r.origin,
-    total_productos: Number(r.total_productos),
-    total_lotes: Number(r.total_lotes),
-    batch_size: Number(r.batch_size),
+    total_productos: n(r.total_productos),
+    total_lotes: total,
+    batch_size: n(r.batch_size),
     env: r.env,
     by_login: r.by_login || null,
     created_at: r.created_at,
-    pending: Number(r.pending), sent: Number(r.sent),
-    failed: Number(r.failed), skipped: Number(r.skipped),
+    pending, sent, failed, skipped, stopped, retrying,
+    first_sent_at: r.first_sent_at || null,
+    last_sent_at: r.last_sent_at || null,
+    state,
+    elapsed_sec: elapsedSec,
+    per_min: elapsedSec > 0 ? Math.round((sent / elapsedSec) * 60) : null,
+    success_pct: target > 0 ? Math.round((sent / target) * 1000) / 10 : null,
+    progress_pct: total > 0 ? Math.round(((total - pending) / total) * 1000) / 10 : null,
+  };
+}
+
+/** 실행 1건의 실패·재시도 사유 상위 N개 — 「이번 전송에서 무엇이 거절됐나」. */
+export async function runErrors(runId, { limit = 8 } = {}) {
+  const rows = (await query(
+    `SELECT status, http_status, codigo_error, left(COALESCE(last_error,''), 160) AS reason,
+            COUNT(*)::int AS n, MAX(attempts)::int AS max_attempts, MIN(entity_label) AS example
+       FROM crm_customer_outbox
+      WHERE entity='product' AND entity_id=$1
+        AND (status='failed' OR (status='pending' AND attempts > 0))
+      GROUP BY 1,2,3,4
+      ORDER BY n DESC
+      LIMIT $2`, [Number(runId), Math.max(1, Math.min(50, Number(limit) || 8))])).rows;
+  return rows.map((r) => ({
+    status: r.status,
+    http_status: r.http_status == null ? null : Number(r.http_status),
+    codigo_error: r.codigo_error, reason: r.reason, count: Number(r.n),
+    max_attempts: Number(r.max_attempts), example: r.example,
   }));
 }
 
