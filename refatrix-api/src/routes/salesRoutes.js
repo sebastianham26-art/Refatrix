@@ -9,6 +9,7 @@ import { autoStage } from '../stageAuto.js';
 import { allocateShortagesOnSale, reverseInvoiceResolutions, scanResolveShortages } from '../shortageResolve.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { isInternalCall } from '../internalCall.js';   // 0224c · 견적 전환 내부 호출 식별
+import { noPriceItems, NO_PRICE_NOTE } from '../noPrice.js';   // 2026-09-24 · 정가 없는 제품은 매출 불가
 import { kickOrderStatusByInvoice } from '../orderStatusSync.js';   // 0227 · SAT 번호 등록 → CRM 「OC Enviada」
 
 export default async function salesRoutes(app) {
@@ -48,6 +49,10 @@ export default async function salesRoutes(app) {
           items: bad.map((p) => ({ product_id: Number(p.id), code: p.code, name: p.name })),
         });
       }
+      // 2026-09-24 · 정가 없는 제품은 매출로 가지 않는다(직접 등록·견적 전환 둘 다 이 관문을 지난다).
+      //   0원 인보이스가 한 번 나가면 CFDI 취소·재발행이 필요하다 — 여기서 막는 편이 싸다.
+      const np = await noPriceItems(chkIds);
+      if (np.length) return reply.code(409).send({ error: 'no_list_price', note: NO_PRICE_NOTE, items: np });
     }
     const out = await withTx(async (c) => {
       const cust = (await c.query(`SELECT id, name, rfc, discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customer_id])).rows[0];

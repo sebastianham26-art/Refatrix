@@ -22,7 +22,21 @@ export const COLUMN_MAP = {
   'OE': 'oe',
   'OE / OEM Reference': 'oe',
   'Referencia OE': 'oe',
+  // 2026-09-24 — 판매상태 일괄 지정(Activo/Inactivo). products 칼럼이 아니라 판매상태 전환(0179 규칙)으로 처리한다.
+  'Estado': 'estado',
+  'Estado (Activo/Inactivo)': 'estado',
+  'Motivo inactivo': 'motivo',
+  'Motivo': 'motivo',
 };
+
+/** 판매상태 칸 → 'active' | 'inactive' | null(칸이 비면 바꾸지 않음). */
+export function parseEstado(v) {
+  const t = String(v == null ? '' : v).trim().toLowerCase();
+  if (!t) return null;
+  if (['inactivo', 'inactive', '비활성', 'discontinued', 'descontinuado', 'no', '0', 'false'].includes(t)) return 'inactive';
+  if (['activo', 'active', '활성', 'si', 'sí', 'yes', '1', 'true'].includes(t)) return 'active';
+  return 'invalid';
+}
 
 // 업로드 시 갱신 대상 필드(코드는 키라 제외. 재고·평균원가는 절대 제외).
 export const UPDATABLE_FIELDS = [
@@ -125,7 +139,12 @@ export function parseRow(row, headerIdx) {
   // 0228 — 파일에 **있는 열만** 다룬다. 없는 열의 파생표(SyD·적용차종·OE)는 건드리지 않는다.
   //   (예전에는 Clave SyD 열이 없는 파일을 올려도 분해표를 「빈 목록」으로 다시 만들어
   //    SyD·차종 검색이 조용히 비었다 — 2026-09-23 OE 두 열 파일 점검에서 발견)
-  obj.has = { scode: 'scode' in obj, app: 'app' in obj, oe: 'oe' in obj, name: 'name' in obj };
+  obj.has = { scode: 'scode' in obj, app: 'app' in obj, oe: 'oe' in obj, name: 'name' in obj, estado: headerIdx.estado != null };
+  if (obj.has.estado) {
+    obj.estado = parseEstado(get('estado'));
+    const mo = clean(get('motivo'));
+    obj.motivo = mo ? mo.slice(0, 200) : null;
+  }
   if (obj.has.oe) {
     obj.oe_codes = parseOe(obj.oe);
     obj.oe = formatOe(obj.oe_codes);   // 정규 표기로 저장 → 같은 파일 재업로드는 「동일」
@@ -177,7 +196,13 @@ export function diffProduct(parsed, existing) {
   // OE 분해표 비교 — 원문(oe)이 같아도 분해표가 비어 있으면(0228 직후) 다시 채운다.
   let oe_changed = false;
   if (has.oe) oe_changed = !sameOe(existing.oe_codes || [], parsed.oe_codes || []);
-  return { isNew: false, changes, syd_changed, app_changed, oe_changed };
+  // 판매상태 — 칸에 값이 있을 때만(빈칸 = 그대로)
+  let status_to = null;
+  if (has.estado && (parsed.estado === 'active' || parsed.estado === 'inactive')) {
+    const cur = existing.is_active === false ? 'inactive' : 'active';
+    if (cur !== parsed.estado) status_to = parsed.estado;
+  }
+  return { isNew: false, changes, syd_changed, app_changed, oe_changed, status_to };
 }
 
 // 전체 미리보기 집계
@@ -185,7 +210,9 @@ export function diffProduct(parsed, existing) {
 export function buildPreview(parsedRows, existingByCode) {
   const result = { total: parsedRows.length, new_items: [], updated: [], unchanged: 0, errors: [], duplicates: [],
     // 0228 — OE 요약: 바뀌는 제품 수 · 올라가는 번호 수 · **OE 가 통째로 지워지는 제품**(빨간 경고)
-    oe_products: 0, oe_added_codes: 0, oe_cleared: [] };
+    oe_products: 0, oe_added_codes: 0, oe_cleared: [],
+    // 2026-09-24 — 판매상태 일괄 지정
+    status_to_inactive: 0, status_to_active: 0 };
   const seen = new Set();
   for (const p of parsedRows) {
     if (seen.has(p.code)) { result.duplicates.push(p.code); continue; }
@@ -194,15 +221,19 @@ export function buildPreview(parsedRows, existingByCode) {
     // 0228 — 제품명은 **신규**에만 필수. 기존 제품은 열이 없어도 된다(OE 두 열 파일 등).
     //   단, 제품명 열이 있는데 칸이 비었으면 이름을 지우게 되므로 여전히 오류.
     if (!p.name && (!ex || (p.has && p.has.name))) { result.errors.push({ code: p.code, reason: 'name_missing' }); continue; }
+    if (p.estado === 'invalid') { result.errors.push({ code: p.code, reason: 'estado_invalid' }); continue; }
     const d = diffProduct(p, ex);
     if (d.isNew) {
       result.new_items.push({ code: p.code, name: p.name, list_price: p.list_price ?? null, syd_count: p.syd_codes.length,
-        oe_count: (p.oe_codes || []).length });
+        oe_count: (p.oe_codes || []).length, estado: p.estado || null });
+      if (p.estado === 'inactive') result.status_to_inactive += 1;
       result.oe_added_codes += (p.oe_codes || []).length;
-    } else if (Object.keys(d.changes).length > 0 || d.syd_changed || d.app_changed || d.oe_changed) {
+    } else if (Object.keys(d.changes).length > 0 || d.syd_changed || d.app_changed || d.oe_changed || d.status_to) {
       const u = { code: p.code, name: p.name || ex.name, changes: d.changes, syd_changed: d.syd_changed,
         syd_from: ex.syd_codes || [], syd_to: p.syd_codes, app_changed: d.app_changed,
-        app_count: (p.applications || []).length, oe_changed: d.oe_changed };
+        app_count: (p.applications || []).length, oe_changed: d.oe_changed, status_to: d.status_to || null };
+      if (d.status_to === 'inactive') result.status_to_inactive += 1;
+      if (d.status_to === 'active') result.status_to_active += 1;
       if (d.oe_changed) {
         u.oe_from = (ex.oe_codes || []).map(oeToken); u.oe_to = (p.oe_codes || []).map(oeToken);
         if ((ex.oe_codes || []).length && !(p.oe_codes || []).length) result.oe_cleared.push(p.code);

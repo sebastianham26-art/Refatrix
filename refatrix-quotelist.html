@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0921rcv1</title>
+<title>Refatrix ERP · 견적 목록 · ql-0924np</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -169,7 +169,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-0921rcv1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-0924np';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -1092,10 +1092,13 @@
   // 포장 게이트: 피킹 대상이 있으면 스캔본 업로드 전까지 전환 실행 비활성
   function updateCvGate(){
     const pickable=!!(cvPreviewData && (cvPreviewData.in_stock||[]).length>0);
-    const ok = !pickable || cvHasDoc;
+    // 2026-09-24 — 정가 없는 품목이 있으면 전환 잠금(서버도 409 no_list_price 로 막는다)
+    const np=(cvPreviewData && cvPreviewData.no_price_items)||[];
+    const ok = (!pickable || cvHasDoc) && !np.length;
     $('cvBtn').disabled = !ok;
     const g=$('cvGateHint');
-    if(ok){ g.style.display='none'; g.textContent=''; }
+    if(np.length){ g.style.display='block'; g.textContent='⚠ 정가 없는 품목: '+np.map(x=>x.code).join(', ')+' — 제품/마케팅 › 제품 찾기에서 ✎ 수정으로 정가(List Price)를 입력한 뒤 이 창을 다시 여세요. (Sin precio de lista — no se puede facturar)'; }
+    else if(ok){ g.style.display='none'; g.textContent=''; }
     else { g.style.display='block'; g.textContent='전환하려면 ① 포장작업지시서를 PDF로 출력 → ② 서명 → ③ 스캔본 업로드를 완료하세요.'; }
     $('cvUploadBtn').disabled = !(cvPrinted || cvHasDoc);
     $('cvUploadBtn').title = (cvPrinted||cvHasDoc) ? '' : '먼저 포장작업지시서를 PDF로 출력하세요.';
@@ -1380,6 +1383,7 @@
         // 0193 · 매출 전환도 RFC 가 있어야 한다(견적 단계까지는 RFC 없이 진행 가능).
         else if(d.error==='customer_rfc_required')msg=(d.note||'RFC 가 없는 고객입니다. 영업>고객등록에서 RFC 를 먼저 입력하세요.')+(d.customer_name?(' ('+d.customer_name+')'):'');
         else if(d.error==='sale_failed')msg='매출 생성 실패: '+JSON.stringify(d.detail||{});
+        else if(d.error==='no_list_price')msg=(d.note||'정가 없는 제품이 있습니다.')+' [ '+(d.items||[]).map(x=>x.code).join(', ')+' ]';
         // 0224b · 서버는 더 이상 이 오류로 전환을 막지 않는다. 구버전 백엔드와 섞여 배포된
         //   경우에만 보이므로 안내만 남겨 둔다(앞뒤 배포 시차 보호).
         else if(d.error==='inactive_product_lines')msg=(d.note||'판매중단 제품이 포함돼 있습니다.')

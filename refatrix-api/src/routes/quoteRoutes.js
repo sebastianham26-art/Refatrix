@@ -9,6 +9,7 @@ import { resolveCode, assignReservations, nextQuoteNo, buildLines,
          normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, stampLineMeta } from '../quoteBuild.js';
 import { normOe, oeToken, customerOeText, OE_FOR_NOTE } from '../oeParse.js';   // 0228 · OE 번호
 import { oeReady, oeByProduct } from '../oeCodes.js';
+import { noPriceItems, lacksListPrice, NO_PRICE_NOTE } from '../noPrice.js';   // 2026-09-24 · 정가 없음 안내·전환 차단
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
 import { packingDeadline } from '../workingHours.js';
@@ -193,6 +194,8 @@ export default async function quoteRoutes(app) {
         backorder_qty: Number(prod.backorder_qty) || 0,
         // 0179 — 비활성(판매중단) SKU: 미리보기에는 보이되 저장 시 차단된다.
         is_active: prod.is_active !== false,
+        // 2026-09-24 — 정가 없음: 견적은 되지만 매출 전환은 막힌다(화면이 안내한다)
+        no_price: lacksListPrice({ code: prod.code, list_price: prod.list_price }),
       });
     }
     const totals = computeQuoteTotals(out.filter((l) => l.matched).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
@@ -889,6 +892,9 @@ export default async function quoteRoutes(app) {
       already: q.status === 'converted',
       counts: { in_stock: inStock.length, shortage: shortage.length, new_dev: newDev.length },
       in_stock: inStock, shortage, new_dev: newDev,
+      // 2026-09-24 — 정가 없는 품목(있으면 전환 버튼이 잠긴다)
+      no_price_items: await noPriceItems(lines.map((l) => l.product_id)),
+      no_price_note: NO_PRICE_NOTE,
     };
   });
 
@@ -1047,6 +1053,13 @@ export default async function quoteRoutes(app) {
     //   전환은 재고가 있는 줄만 인보이스로 만들고 나머지는 부족분으로 기록한다.
     //   단종 줄을 이유로 전환 전체를 세우면 팔 수 있는 물건까지 멈춘다.
     //   (0179 도 견적→매출 전환은 일부러 열어 두었다)
+    // 2026-09-24 · 정가 없는 제품이 있으면 전환하지 않는다 — 제품 마스터에 정가를 넣으면 바로 풀린다.
+    //   (내부 호출하는 /api/sales 도 같은 관문을 갖지만, 포장·RFC 안내보다 먼저 정확한 이유를 보여 주려고 여기서도 본다)
+    {
+      const pids = (await query(`SELECT DISTINCT product_id FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id])).rows.map((r) => Number(r.product_id));
+      const np = await noPriceItems(pids);
+      if (np.length) return reply.code(409).send({ error: 'no_list_price', note: NO_PRICE_NOTE, items: np });
+    }
     // 포장 게이트: 전량 가용(피킹 대상) 라인이 있으면 서명 스캔본 업로드가 선행돼야 전환 가능
     const pickable = (await query(
       `SELECT 1 FROM quote_lines ql JOIN products p ON p.id=ql.product_id

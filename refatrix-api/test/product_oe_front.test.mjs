@@ -1,5 +1,5 @@
 // =====================================================================
-// 0228 · OE 순정번호 — 화면 (jsdom)  refatrix-products.html oe-0923a · refatrix-quote.html qt-0923oe
+// 0228 · OE 순정번호 — 화면 (jsdom)  refatrix-products.html oe-0923a · refatrix-quote.html qt-0924np
 //   운영 HTML 을 그대로 로드하고 fetch 만 스텁한다. SheetJS 는 실제 xlsx 0.18.5 를 창에 넣는다.
 //   실행: node --test test/product_oe_front.test.mjs   (jsdom · xlsx 필요)
 // =====================================================================
@@ -215,6 +215,6 @@ test('견적 화면 — OE (jsdom)', { skip: SKIP }, async (t) => {
   });
   await t.test('⑪ 빌드 토큰', async () => {
     const c = await bootQuote({});
-    assert.match(c.d.title, /qt-0923oe/);
+    assert.match(c.d.title, /qt-0924np/);
   });
 });

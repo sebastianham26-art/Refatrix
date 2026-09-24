@@ -421,7 +421,7 @@ export default async function productRoutes(app) {
     const rows = (await query(
       `SELECT id, code, scode, app, name, sat_code, origin, list_price, iva_rate, ean, location,
               list_price_syd, price_customer_syd, price_customer_ctr, stock_qty, avg_cost, material,
-              ${oeOn ? 'oe' : 'NULL::text AS oe'}
+              ${oeOn ? 'oe' : 'NULL::text AS oe'}, is_active
          FROM products WHERE deleted_at IS NULL AND code = ANY($1)`, [codes])).rows;
     const sydRows = rows.length ? (await query(
       `SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`,
@@ -1042,6 +1042,7 @@ export default async function productRoutes(app) {
           await syncSyd(c, r.id, p.syd_codes);
           await syncApp(c, r.id, p.applications);
           if (p.has && p.has.oe) await syncOe(c, r.id, p.oe_codes);
+          if (p.estado === 'inactive') await applyStatus(c, Number(r.id), p.code, false, p.motivo, true);
           {
             const chg = {};
             for (const f of UPDATABLE_FIELDS) if (f in p && p[f] != null) chg[f] = { from: null, to: p[f] };
@@ -1064,11 +1065,13 @@ export default async function productRoutes(app) {
           if (has.scode) await syncSyd(c, ex.id, p.syd_codes);
           if (has.app) await syncApp(c, ex.id, p.applications);
           if (has.oe) await syncOe(c, ex.id, p.oe_codes);
-          if (chFields.length > 0 || d.syd_changed || d.app_changed || d.oe_changed) {
+          if (d.status_to) await applyStatus(c, Number(ex.id), p.code, d.status_to === 'active', p.motivo, false);
+          if (chFields.length > 0 || d.syd_changed || d.app_changed || d.oe_changed || d.status_to) {
             const chg = { ...d.changes };
             if (d.syd_changed) chg._syd = { from: ex.syd_codes || [], to: p.syd_codes };
             if (d.app_changed) chg._app = { from: (ex.app_texts || []).length, to: (p.applications || []).length };
             if (d.oe_changed) { delete chg.oe; chg._oe = { from: (ex.oe_codes || []).map(oeToken), to: (p.oe_codes || []).map(oeToken) }; }
+            if (d.status_to) chg.is_active = { from: d.status_to !== 'active', to: d.status_to === 'active' };
             await logProductChange(c.query.bind(c), { productId: Number(ex.id), code: p.code, action: 'update', source: 'import', changes: chg, userId });
             updated++;
           } else unchanged++;
@@ -1076,6 +1079,19 @@ export default async function productRoutes(app) {
       }
       return { ok: true };
     });
+
+    // 2026-09-24 — 업로드의 「Estado」 칸으로 판매상태 전환. 화면의 활성/비활성 전환(PATCH /:id/active)과
+    //   같은 칼럼·같은 이력(product_status_log)을 남긴다. 신규 등록 직후 비활성은 미결 항목이 없으므로 요약 생략.
+    async function applyStatus(c, productId, code, active, reason, isNew) {
+      await c.query(
+        `UPDATE products SET is_active=$2, inactive_reason=$3, status_changed_at=now(), status_changed_by=$4,
+                updated_at=now(), updated_by=$4 WHERE id=$1`,
+        [productId, active, active ? null : (reason || '엑셀 업로드 일괄 지정'), userId]);
+      await c.query(
+        `INSERT INTO product_status_log (product_id, code, action, reason, check_id, open_summary, changed_by)
+         VALUES ($1,$2,$3,$4,NULL,NULL,$5)`,
+        [productId, code, active ? 'activate' : 'deactivate', reason || (isNew ? '엑셀 업로드 — 신규 등록 시 비활성' : '엑셀 업로드 일괄 지정'), userId]);
+    }
 
     async function syncSyd(c, productId, codes) {
       await c.query(`DELETE FROM product_syd_codes WHERE product_id=$1`, [productId]);

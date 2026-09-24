@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-0924rg</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-0924np</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -1605,7 +1605,7 @@
         +'<td class="l" title="'+esc((l.syd_codes||[]).join(' / '))+'">'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
         +'<td class="prod'+(clickable?'':'" style="cursor:default;text-decoration:none')+'" '+(clickable?'onclick="showHistory('+l.product_id+',\''+esc(l.ctr_code)+'\')"':'')+' title="'+esc(l.product_name||'')+'">'+esc(l.product_name||'')+(l.app_text?'<span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td>'+fmtq(l.qty)+'</td>'
-        +'<td>'+(l.matched?fmt(l.list_price):'—')+'</td>'
+        +'<td>'+(l.matched?(l.no_price?'<span class="flag not_found" title="정가 없음 · Sin precio de lista">정가 없음</span>':fmt(l.list_price)):'—')+'</td>'
         +'<td>'+(l.matched?(l.discount_rate+'%'):'—')+'</td>'
         +'<td>'+(l.matched?fmt(l.final_price):'—')+'</td>'
         +'<td>'+(l.matched?fmt(sub):'—')+'</td>'
@@ -1618,6 +1618,15 @@
     const t=d.totals||{};
     html+='<tfoot><tr><td class="l" colspan="3">합계</td><td>'+fmtq(t.totalQty||0)+'</td><td colspan="3"></td><td>'+fmt(t.subtotal||0)+'</td><td><b>'+fmt(t.total||0)+'</b></td><td colspan="3"></td></tr></tfoot>';
     html+='</table>';
+    // 2026-09-24 — 정가 없는 품목 안내(견적은 저장되지만 매출 전환은 서버가 막는다)
+    const np=L.filter(l=>l.matched&&l.no_price);
+    if(np.length){
+      html+='<div class="msg err" style="display:block;margin-top:8px;white-space:normal">⚠ <b>정가 없는 품목 '+np.length+'개</b>: '+np.map(l=>esc(l.ctr_code)).join(', ')
+        +'<br>정가(List Price)를 찾아서 먼저 입력하세요 — 제품/마케팅 › 제품 찾기 › 그 제품 행 클릭 › <b>✎ 수정</b> › List Price. '
+        +'정가가 들어가면 이 견적을 다시 계산(품목 추가·삭제 또는 새로고침)하면 반영됩니다. '
+        +'<b>정가가 입력되기 전에는 매출로 전환되지 않습니다.</b>'
+        +'<br><span style="color:var(--muted)">Sin precio de lista: capture el precio en el catálogo antes de facturar. La cotización se puede guardar, pero no se puede convertir en venta.</span></div>';
+    }
     html+='<div class="hint" style="margin-top:6px">품목수(SKU) <b>'+(t.skuCount||0)+'</b> · 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 총계(IVA 미포함) '+fmt(t.subtotal||0)+' · IVA '+fmt(t.iva||0)+' · <b>총계(IVA 포함) '+fmt(t.total||0)+'</b> &nbsp;·&nbsp; <span style="color:var(--muted)">제품명을 클릭하면 이 고객의 구매 실적을 봅니다</span></div>';
     $('linesWrap').innerHTML=html;
   }

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · oe-0923a</title>
+<title>Refatrix ERP · 제품 조회 · st-0924np</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -929,6 +929,7 @@
           d.updated.slice(0,50).map(u=>{
             const parts=Object.keys(u.changes).filter(f=>f!=='oe').map(f=>`<div class="chg">${FIELD_LABEL[f]||f}: <span style="color:var(--expense)">${fmtv(u.changes[f].from)}</span> → <b>${fmtv(u.changes[f].to)}</b></div>`);
             if(u.syd_changed)parts.push(`<div class="chg">Clave SyD: <span style="color:var(--expense)">${(u.syd_from||[]).join(' // ')||'—'}</span> → <b>${(u.syd_to||[]).join(' // ')||'—'}</b></div>`);
+            if(u.status_to)parts.push('<div class="chg">판매상태 → <b>'+(u.status_to==='inactive'?'비활성(판매중단)':'활성')+'</b></div>');
             if(u.oe_changed)parts.push('<div class="chg">OE: <span style="color:var(--expense)">'+escP(oeShort(u.oe_from))+'</span> → <b>'+escP(oeShort(u.oe_to))+'</b></div>');
             return `<tr><td class="code">${u.code}</td><td>${u.name||''}</td><td>${parts.join('')}</td></tr>`;
           }).join('')+'</tbody></table>';
@@ -943,7 +944,7 @@
       if(d.errors.length){
         html+='<div style="font-weight:700;margin-top:8px;color:var(--expense)">오류 (반영되지 않음)</div>';
         html+='<table><thead><tr><th>Clave CTR</th><th>사유</th></tr></thead><tbody>'+
-          d.errors.map(e=>`<tr><td class="code">${e.code}</td><td>${e.reason==='name_missing'?'제품명(Nombre del producto) 누락':e.reason}</td></tr>`).join('')+'</tbody></table>';
+          d.errors.map(e=>`<tr><td class="code">${e.code}</td><td>${e.reason==='name_missing'?'제품명(Nombre del producto) 누락':(e.reason==='estado_invalid'?'Estado 값을 알 수 없음 (Activo / Inactivo 만)':e.reason)}</td></tr>`).join('')+'</tbody></table>';
       }
       if(d.duplicates.length){html+=`<div class="hint" style="color:var(--expense)">파일 내 중복 코드(첫 항목만 반영): ${d.duplicates.map(c=>'<span class="tag">'+c+'</span>').join('')}</div>`;}
       $('pv-detail').innerHTML=html;
@@ -965,6 +966,12 @@
     const lbl={name:'Nombre del producto',scode:'Clave SyD',app:'Aplicacion',oe:'OE'};
     const keep=absent.filter(f=>f!=='oe'||d.oe_column).map(f=>lbl[f]);
     if(keep.length) h+='<div class="pvnote">파일에 <b>'+keep.map(escP).join(' · ')+'</b> 열이 없습니다 — 이 항목의 현재 값과 검색표(SyD·적용차종)는 <b>그대로 둡니다</b>.</div>';
+    // 2026-09-24 — 「Estado」 칸(Activo/Inactivo)으로 판매상태 일괄 지정
+    if(d&&(d.status_to_inactive||d.status_to_active)){
+      h+='<div class="pvwarn" style="background:#fbf3e3;border-color:#ecd9ae;color:#7a5a17">판매상태: <b>비활성(판매중단)으로 '+(d.status_to_inactive||0)+'개</b>'
+        +(d.status_to_active?(' · 활성(판매재개)으로 '+d.status_to_active+'개'):'')
+        +' — 반영하면 판매상태 이력에 남고, 비활성 제품은 새 견적·매출에서 막힙니다(검색에는 보임).</div>';
+    }
     if(d&&d.oe_column&&!d.oe_ready){
       h+='<div class="pvwarn">OE 열이 있지만 서버에 OE 저장소(마이그레이션 0228)가 아직 없습니다. <b>OE 는 반영되지 않습니다</b> — Railway 콘솔에서 <code>npm run migrate</code> 후 다시 올리세요. (다른 열은 반영됩니다)</div>';
     }
@@ -2237,7 +2244,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build oe-0923a (OE 순정번호 — 찾기·업로드·수정)'); }catch(e){}
+  try{ console.log('[refatrix-products] build st-0924np (업로드 Estado 판매상태 일괄 지정)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
