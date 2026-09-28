@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 포털 · build 20260731a</title>
+<title>Refatrix ERP · 포털 · build 20260928hd1</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -15,8 +15,8 @@
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
     font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
   .wrap{max-width:1200px;margin:0 auto}
-  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
-  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .topbar{display:flex;align-items:center;gap:12px;background:linear-gradient(180deg,#E2231A,#B01810);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#FFD9D5}
   .who{margin-left:auto;font-size:13px;text-align:right}
   .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
   .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
@@ -157,6 +157,30 @@
   @media (max-width:760px){ .slaquad{grid-template-columns:1fr} }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<style id="portalCtrHeader">
+  /* 포털 홈 전용 — 상단 고정 헤더(#rnav)를 CTR 레드로 (2026-09-28 · build 20260928hd1)
+     CTR 브랜드 레드 #E2231A (ctr.co.kr 로고 실측, nav.js CTR_RED 와 동일). 다른 화면은 기존 색 유지.
+     nav.js 기본 규칙(#rnav …)보다 선택자 우선순위가 높도록 html body 접두사 + !important 사용. */
+  html body #rnav{background:linear-gradient(180deg,#E2231A 0%,#B01810 100%)!important;border-bottom:2px solid #7C0F08!important;box-shadow:0 6px 22px -10px rgba(120,10,5,.75)!important}
+  html body #rnav .rlogo{color:#fff!important}
+  html body #rnav .rlogo .dot{background:#fff!important;box-shadow:0 0 8px rgba(255,255,255,.85)!important}
+  html body #rnav .rhome{color:#fff!important;background:rgba(255,255,255,.16)!important;border-color:rgba(255,255,255,.45)!important}
+  html body #rnav .rhome:hover{background:rgba(255,255,255,.3)!important;color:#fff!important}
+  html body #rnav .rg{color:#FFD5D0!important}
+  html body #rnav .rg:hover,html body #rnav .rg.on{color:#fff!important}
+  html body #rnav .rg.on:after{background:#fff!important;box-shadow:0 0 10px rgba(255,255,255,.9)!important}
+  html body #rnav .rsub{background:linear-gradient(180deg,#B01810,#8E120C)!important;border-top-color:rgba(255,255,255,.18)!important}
+  html body #rnav .rs{color:#FFE3E0!important;background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.18)!important}
+  html body #rnav .rs:hover{background:rgba(255,255,255,.24)!important;border-color:rgba(255,255,255,.5)!important;color:#fff!important}
+  html body #rnav .rs.cur{background:linear-gradient(180deg,#fff,#FFE7E4)!important;color:#A5140B!important;border-color:transparent!important;box-shadow:0 2px 8px -2px rgba(0,0,0,.45)!important}
+  html body #rnav .rwho{color:#FFC9C3!important}
+  html body #rnav .rwho b{color:#fff!important}
+  html body #rnav .rlogout{border-color:rgba(255,255,255,.55)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}
+  html body #rnav .rlogout:hover{background:rgba(255,255,255,.32)!important;color:#fff!important}
+  html body #rnav .rpres{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}
+  html body #rnav .rpres:hover{background:rgba(255,255,255,.28)!important;color:#fff!important}
+  html body #rnav .rmtgl{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}
+</style>
 </head>
 <body>
 <div class="navfixed hidden" id="navFixed" style="display:none"><div class="navfixed-inner" id="tabBar"></div></div>
