@@ -283,12 +283,32 @@ export function buildPerf(opts) {
 }
 
 // ── SQL ──────────────────────────────────────────────────────────────
+// 수혜자 = 팀 커미션 수혜자(지정 시) → 없으면 고객마스터 담당자. 지급된 라인은 지급받은 사람으로 동결.
+//   commissionRoutes.js BENEFICIARY_LATERAL 과 같은 규칙.
+//   전제: customers c, commission_payouts cp 가 먼저 조인돼 있어야 한다.
+const BENEFICIARY_LATERAL = `
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN cp.paid IS TRUE THEN cp.agent_id
+                  ELSE COALESCE(
+                    (SELECT (to_jsonb(st)->>'commission_user_id')::bigint FROM sales_teams st WHERE st.id = c.team_id),
+                    c.owner_id) END AS uid
+    ) ben`;
+
+// 적용된 크레딧 노트 합계 — 매출·수금목표·커미션 모두 "인보이스 − NC" 순액 기준. commissionRoutes.js NC_LATERAL 과 같은 규칙.
+//   수금 실적(AGENT_ALLOCS_SQL)은 sales_payments JOIN 이라 현금 반제만 잡힌다 → 완납 = 현금 ≥ 순합계.
+const NC_LATERAL = `
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(n.base_mxn),0) AS base, COALESCE(SUM(n.total_mxn),0) AS total
+        FROM notas_credito n
+       WHERE n.invoice_id = i.id AND n.status = 'applied'
+    ) nc ON true`;
+
 // 인보이스 발행일이 속하는 커미션 기간(기준·율). commissionRoutes.js 와 같은 규칙.
 const PERIOD_LATERAL = `
     LEFT JOIN LATERAL (
       SELECT cap.basis, cap.rate
         FROM commission_agent_periods cap
-       WHERE cap.user_id = i.owner_id
+       WHERE cap.user_id = ben.uid
          AND i.inv_date >= cap.start_date
          AND (cap.end_date IS NULL OR i.inv_date <= cap.end_date)
        ORDER BY cap.start_date DESC
@@ -299,16 +319,16 @@ const AGENT_INVOICES_SQL = `
   SELECT i.id, i.sat_no,
          to_char(i.inv_date,'YYYY-MM-DD') AS inv_date,
          to_char(COALESCE(i.due_date, i.inv_date + COALESCE(i.credit_days,0)),'YYYY-MM-DD') AS due_date,
-         i.subtotal_mxn AS subtotal, i.total_mxn AS total,
+         (i.subtotal_mxn - nc.base) AS subtotal, (i.total_mxn - nc.total) AS total,
          COALESCE(i.credit_days, c.credit_days, 0) AS credit_days,
          c.id AS customer_id, c.name AS customer_name, c.code AS customer_code,
          per.basis, COALESCE(ccr.rate, per.rate) AS rate,
          cp.paid AS payout_paid, cp.amount AS payout_amount
     FROM sales_invoices i
     JOIN customers c ON c.id=i.customer_id
-    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=i.owner_id AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}
-    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
-   WHERE i.status <> 'deleted' AND i.owner_id=$1
+    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${NC_LATERAL}
+   WHERE i.status <> 'deleted' AND ben.uid=$1
    ORDER BY i.inv_date, i.id`;
 
 const AGENT_ALLOCS_SQL = `
@@ -316,7 +336,9 @@ const AGENT_ALLOCS_SQL = `
     FROM sales_payment_allocations spa
     JOIN sales_payments sp ON sp.id=spa.payment_id
     JOIN sales_invoices i ON i.id=spa.invoice_id
-   WHERE i.owner_id=$1 AND i.status <> 'deleted'`;
+    JOIN customers c ON c.id=i.customer_id
+    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+   WHERE ben.uid=$1 AND i.status <> 'deleted'`;
 
 // 성과급 정책 로드 (테이블 없으면 null — 마이그레이션 전에도 화면이 죽지 않게)
 export async function loadBonusPlan(userId) {

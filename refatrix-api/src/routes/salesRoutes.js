@@ -817,10 +817,8 @@ export default async function salesRoutes(app) {
       const paid = Number((await c.query(
         `SELECT COALESCE(SUM(amount),0) AS s FROM sales_payment_allocations WHERE invoice_id=$1`, [id])).rows[0].s) || 0;
       if (paid > 0) return { error: 'has_payments', code: 409, paid };
-      // 가드 ② 커미션이 이미 지급된 매출이면 삭제 불가
-      const commPaid = (await c.query(
-        `SELECT 1 FROM commission_payouts WHERE invoice_id=$1 AND paid=true`, [id])).rows[0];
-      if (commPaid) return { error: 'commission_paid', code: 409 };
+      // (2026-09-28) 커미션이 이미 지급된 매출도 삭제 가능 — 지급된 커미션은 다음 지급 때 자동 차감(환수)된다.
+      //   commission_payouts(paid=true) 행은 남겨 두어야 차액 정산이 잡힌다(아래 DELETE 는 paid=false 만).
 
       // 재고 복원: 라인 수량만큼 +복원하고, 원가 스냅샷으로 'in' 보정 이동 기록(이력 보존)
       for (const l of inv._lines) {

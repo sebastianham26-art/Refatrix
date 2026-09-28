@@ -82,7 +82,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b0828bono</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b0928adj</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -196,6 +196,7 @@
     <button class="btn ghost sm" style="float:right" onclick="closeRates()">닫기 ✕</button>
   </div>
   <div class="hint" style="margin-bottom:10px">영업사원마다 <b>대상</b>에 체크하고, 발행일 기간을 나눠 각 기간의 <b>기준(매출/수금)</b>과 <b>지급률(%)</b>을 정한 뒤 <b>저장</b>을 누르세요. 기간은 겹치지 않고 빈틈 없이 이어지며, 가장 최근 기간은 종료일을 비워 ∞(지속)로 둡니다. 고객별 예외율은 그 인보이스에 한해 율만 우선 적용됩니다.</div>
+  <div id="teamBen" style="margin-bottom:14px"></div>
   <div id="rateList"><div class="hint">불러오는 중…</div></div>
 </div>
 
@@ -592,16 +593,32 @@
         html+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+' '+basisChip(l.basis)+'</td><td>'+l.inv_date+'</td>'
           +(view==='customer'?'':'<td>'+esc(l.customer_name)+'</td>')
           +(seeAgentCol?'<td>'+esc(l.agent_name)+'</td>':'')
-          +'<td class="r">'+fmtm(l.base)+'</td><td class="r">'+l.rate+'%</td>'
+          +'<td class="r">'+fmtm(l.base)+(l.nc_base>0?('<div class="hint" style="font-size:11px">NC −'+fmtm(l.nc_base)+' 차감</div>'):'')+'</td><td class="r">'+l.rate+'%</td>'
           +'<td class="r exp">'+fmtm(l.expected)+'</td><td class="r conf">'+(l.confirmed?fmtm(l.confirmed):'—')+'</td>'
           +'<td>'+(l.due_date||'—')+'</td><td>'+st+'</td></tr>';
       }
       html+='</tbody></table></div>';
     }
     if(!shown){ const lbl=statusFilter==='unpaid'?'미지급(확정)':'지급완료'; html='<div class="hint" style="margin-top:12px">'+lbl+' 상태의 커미션이 없습니다.</div>'; }
+    const adjs=(data&&data.adjustments)||[];
+    if(adjs.length){
+      const t=adjs.reduce((s,a)=>s+Number(a.amount||0),0);
+      html='<div class="card" style="margin-top:12px"><div class="card-h">지급 후 매출 조정 — 다음 지급에서 정산 <span class="hint" style="font-weight:400">· '+adjs.length+'건 · '+(t<0?'차감 −':'추가 +')+fmtm(Math.abs(t))+'</span></div>'+adjTable(adjs)+'</div>'+html;
+    }
     $('body').innerHTML=html;
   }
   function sb(v,l,cls){ return '<div class="sb'+(cls?(' '+cls):'')+'"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+
+  // ── 지급 후 매출 조정 차액(차감/추가) ──
+  const ADJ_REASON={deleted:'매출 삭제',nota_credito:'크레딧 노트',amount_change:'금액 수정'};
+  function adjTable(list){
+    if(!list||!list.length) return '';
+    let h='<table style="margin-top:6px"><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th>사유</th><th class="r">지급 당시 매출</th><th class="r">현재 매출</th><th class="r">지급액</th><th class="r">차액</th></tr></thead><tbody>';
+    for(const a of list) h+='<tr><td>'+esc(a.sat_no||('#'+a.invoice_id))+'</td><td>'+esc(a.inv_date||'')+'</td><td>'+esc(a.customer_name||'')+'</td><td>'+esc(ADJ_REASON[a.reason]||a.reason)+'</td>'
+      +'<td class="r">'+fmtm(a.paid_base)+'</td><td class="r">'+fmtm(a.new_base)+'</td><td class="r">'+fmtm(a.paid_amount)+'</td>'
+      +'<td class="r '+(a.amount<0?'short':'conf')+'">'+(a.amount<0?'−':'+')+fmtm(Math.abs(a.amount))+'</td></tr>';
+    return h+'</tbody></table>';
+  }
 
   // ── 지급(반제) 패널 ──
   function payMsg(kind,text){ const m=$('payMsg'); m.className='msg '+kind; m.textContent=text; }
@@ -614,19 +631,22 @@
     try{
       const d=await fetch(session.api+'/api/commission/payable?agent_id='+aid+'&settle_ym='+ym,{headers:auth()}).then(r=>r.json());
       if(d.not_migrated){ $('payBody').innerHTML='<div class="msg err" style="display:block">지급 테이블이 없습니다. 마이그레이션(0086~0088)을 실행하세요.</div>'; $('payForm').classList.add('hidden'); return; }
-      const lines=d.lines||[]; const bn=d.bonus||null;
+      const lines=d.lines||[]; const bn=d.bonus||null; const adj=d.adjustments||[];
       if(!lines.length&&!bn){ $('payBody').innerHTML='<div class="hint">'+ym+' 월, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.</div>'; $('payForm').classList.remove('hidden'); $('payAmt').value=''; return; }
       let h='<div class="hint" style="margin-bottom:6px">'+ym+' 월 · 커미션 <b>'+lines.length+'건 '+fmtm(d.commission_total!=null?d.commission_total:d.total)+'</b>'
         +(bn?(' · 성과급 <b>'+fmtm(bn.amount)+'</b>'+(bn.achieved_rate!=null?(' (달성률 '+bn.achieved_rate+'%)'):'')):'')
+        +(adj.length?(' · 지급 후 조정 <b class="'+(d.adjustment_total<0?'short':'conf')+'">'+(d.adjustment_total<0?'−':'+')+fmtm(Math.abs(d.adjustment_total))+'</b>'):'')
         +' · 지급 합계 <b>'+fmtm(d.total)+'</b></div>';
       if(lines.length){
         h+='<table><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">확정 커미션</th></tr></thead><tbody>';
         for(const l of lines) h+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+'</td><td>'+l.inv_date+'</td><td>'+esc(l.customer_name)+'</td><td class="r">'+fmtm(l.base)+'</td><td class="r">'+l.rate+'%</td><td class="r conf">'+fmtm(l.expected)+'</td></tr>';
         h+='</tbody></table>';
       }
+      if(adj.length) h+='<div class="hint" style="margin-top:8px">지급 후 매출 조정 '+adj.length+'건 — 이미 지급한 커미션의 차액을 이번 지급에서 함께 정산합니다(지급 당시 율 기준).</div>'+adjTable(adj)
+        +(d.total<0?'<div class="msg err" style="display:block;margin-top:6px">차감액이 이번 달 지급 대상보다 커서 이번에는 지급할 수 없습니다. 차감액은 다음 지급으로 이월됩니다.</div>':'');
       if(bn) h+='<div class="hint" style="margin-top:8px">＋ 성과급(Bono) 1건 — '+(bn.basis==='revenue'?'매출':'수금')+' 목표 '+fmtm(bn.target_amount)+' / 실적 '+fmtm(bn.actual_amount)+' → <b class="conf">'+fmtm(bn.amount)+'</b> · 커미션 충당 후 남는 금액으로 충당됩니다.</div>';
       $('payBody').innerHTML=h;
-      $('payAmt').value=d.total;
+      $('payAmt').value=Math.max(0,d.total);
       if(!$('payDate').value) $('payDate').value=new Date().toISOString().slice(0,10);
       $('payForm').classList.remove('hidden');
       $('payMsg').className='msg';
@@ -671,6 +691,7 @@
       if(!res.ok||d.error){ payMsg('err','지급 등록 실패: '+(d.note||d.error||res.status)); return; }
       payMsg('ok','지급 등록·반제 완료 — 커미션 '+d.settled_count+'건 '+fmtm(d.commission_settled!=null?d.commission_settled:d.settled)
         +(d.bonus_settled>0?(' · 성과급 '+fmtm(d.bonus_settled)):'')
+        +(d.adjustment_count>0?(' · 지급 후 조정 '+d.adjustment_count+'건 '+(d.adjustment_settled<0?'−':'+')+fmtm(Math.abs(d.adjustment_settled))):'')
         +' · 충당 합계 '+fmtm(d.settled)+(d.leftover>0?(' · 남은 입력액 '+fmtm(d.leftover)+'은 미충당'):''));
       $('payFile').value=''; $('payNote').value='';
       loadOverview(); loadBatches(); loadPayable(aid, ym); loadVouchers(aid); loadProgress(); loadPerf();
@@ -743,7 +764,31 @@
   async function openRates(){
     $('rateBackdrop').classList.remove('hidden'); $('rateModal').classList.remove('hidden');
     $('rateList').innerHTML='<div class="hint">불러오는 중…</div>';
-    await loadAgents(); renderRates();
+    await loadAgents(); renderRates(); loadTeamBen();
+  }
+  // ── 팀 커미션 수혜자: 그 팀 고객의 매출 커미션을 고객 담당자 대신 지정한 사람에게 ──
+  async function loadTeamBen(){
+    const box=$('teamBen'); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/commission/teams',{headers:auth()}).then(r=>r.json());
+      if(!d.items){ box.innerHTML=''; return; }
+      const ags=(window.__agents||[]);
+      const opts=(sel)=>'<option value="">— 고객 담당자 기준(기본) —</option>'+ags.map(a=>'<option value="'+a.user_id+'"'+(String(sel)===String(a.user_id)?' selected':'')+'>'+esc(a.name)+(a.is_agent&&a.active?'':' (커미션 대상 아님)')+'</option>').join('');
+      box.innerHTML='<div class="card-h" style="font-size:14px">팀 커미션 수혜자 <span class="hint" style="font-weight:400">· 지정하면 그 팀 고객의 매출 커미션이 고객 담당자 대신 이 사람에게 잡힙니다(이미 지급된 커미션은 불변).</span></div>'
+        +(d.migrated?'':'<div class="msg err" style="display:block">서버에서 npm run migrate(0233)을 실행해야 지정할 수 있습니다.</div>')
+        +'<table><thead><tr><th>팀</th><th class="r">고객 수</th><th>커미션 수혜자</th><th></th></tr></thead><tbody>'
+        +d.items.map(t=>'<tr><td>'+esc(t.name)+'</td><td class="r">'+t.customer_count+'</td><td><select id="tb_'+t.id+'"'+(d.migrated&&isDir()?'':' disabled')+' onchange="saveTeamBen('+t.id+')">'+opts(t.commission_user_id)+'</select></td><td><span class="hint" id="tbm_'+t.id+'"></span></td></tr>').join('')
+        +'</tbody></table>';
+    }catch(e){ box.innerHTML=''; }
+  }
+  async function saveTeamBen(tid){
+    const v=$('tb_'+tid).value; const m=$('tbm_'+tid); m.textContent='저장 중…';
+    try{
+      const res=await fetch(session.api+'/api/commission/teams/'+tid+'/beneficiary',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({user_id:v?Number(v):null})});
+      const d=await res.json();
+      m.textContent=(!res.ok||d.error)?('실패: '+(d.note||d.error)):'저장됨 ✓';
+      if(res.ok&&!d.error){ loadOverview(); }
+    }catch(e){ m.textContent='서버에 연결할 수 없습니다.'; }
   }
   function closeRates(){ $('rateBackdrop').classList.add('hidden'); $('rateModal').classList.add('hidden'); }
   // 'YYYY-MM-DD' 다음날 (기간 연속성 검증)

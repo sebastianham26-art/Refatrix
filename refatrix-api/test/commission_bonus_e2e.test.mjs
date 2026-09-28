@@ -61,10 +61,10 @@ async function boot() {
     `INSERT INTO accounts (name, type, currency, open_balance, created_by) VALUES ($1,'bank','MXN',0,$2) RETURNING id`,
     [`${TAG}은행`, ID.dir])).rows[0].id);
 
-  // 고객: 외상 30일
+  // 고객: 외상 30일 · 고객마스터 담당자 = rep (커미션 수혜자는 고객마스터 담당자 — 2026-09-28)
   ID.cust = Number((await query(
-    `INSERT INTO customers (name, code, credit_days, created_by) VALUES ($1,$2,30,$3) RETURNING id`,
-    [`${TAG}고객A`, `${TAG}-1`, ID.dir])).rows[0].id);
+    `INSERT INTO customers (name, code, credit_days, owner_id, created_by) VALUES ($1,$2,30,$3,$4) RETURNING id`,
+    [`${TAG}고객A`, `${TAG}-1`, ID.rep, ID.dir])).rows[0].id);
 
   // 커미션 대상 + 기간(2026-01-01~ 수금 4%)
   await query(`INSERT INTO commission_agents (user_id, default_rate, active, created_by, updated_by) VALUES ($1,4,true,$2,$2)`, [ID.rep, ID.dir]);
@@ -76,7 +76,7 @@ async function boot() {
     `INSERT INTO sales_invoices (sat_no, customer_id, inv_date, credit_days, due_date, subtotal_mxn, iva_mxn, total_mxn,
                                  status, owner_id, memo, created_by)
      VALUES ($1,$2,$3,30,$4,$5,$6,$7,'posted',$8,$9,$10) RETURNING id`,
-    [o.sat, ID.cust, o.date, o.due, o.sub, o.sub * 0.16, o.sub * 1.16, ID.rep, `${TAG} ${o.sat}`, ID.dir])).rows[0].id);
+    [o.sat, ID.cust, o.date, o.due, o.sub, o.sub * 0.16, o.sub * 1.16, ID.dir, `${TAG} ${o.sat}`, ID.dir])).rows[0].id);
   ID.inv1 = await mkInv({ sat: `${TAG}-F1`, date: '2026-06-10', due: '2026-07-10', sub: 100000 });
   ID.inv2 = await mkInv({ sat: `${TAG}-F2`, date: '2026-07-20', due: '2026-08-19', sub: 50000 });
 

@@ -123,18 +123,29 @@ async function commissionRows(range) {
   if (range.to)   { params.push(range.to);   where += ` AND i.inv_date <= $${params.length}`; }
   for (const c of ymConds('i.inv_date', range)) where += ` AND ${c}`;
   const rows = (await query(
-    `SELECT i.customer_id, to_char(i.inv_date,'YYYY-MM') AS ym, i.subtotal_mxn,
+    `SELECT i.customer_id, to_char(i.inv_date,'YYYY-MM') AS ym, (i.subtotal_mxn - COALESCE(nc.base,0)) AS subtotal_mxn,
             per.rate AS period_rate, ccr.rate AS cust_rate,
             cp.paid AS payout_paid, cp.amount AS payout_amount
        FROM sales_invoices i
-       JOIN commission_agents ca ON ca.user_id = i.owner_id AND ca.active = true
-       LEFT JOIN commission_customer_rates ccr ON ccr.user_id = i.owner_id AND ccr.customer_id = i.customer_id
+       JOIN customers c ON c.id = i.customer_id
+       LEFT JOIN commission_payouts cp ON cp.invoice_id = i.id
+       -- 수혜자 = 팀 커미션 수혜자(지정 시) → 고객마스터 담당자 (지급분은 지급받은 사람으로 동결) — commissionRoutes 와 동일 규칙
+       CROSS JOIN LATERAL (
+         SELECT CASE WHEN cp.paid IS TRUE THEN cp.agent_id
+                     ELSE COALESCE(
+                       (SELECT (to_jsonb(st)->>'commission_user_id')::bigint FROM sales_teams st WHERE st.id = c.team_id),
+                       c.owner_id) END AS uid) ben
+       JOIN commission_agents ca ON ca.user_id = ben.uid AND ca.active = true
+       LEFT JOIN commission_customer_rates ccr ON ccr.user_id = ben.uid AND ccr.customer_id = i.customer_id
        LEFT JOIN LATERAL (
          SELECT cap.rate FROM commission_agent_periods cap
-          WHERE cap.user_id = i.owner_id AND i.inv_date >= cap.start_date
+          WHERE cap.user_id = ben.uid AND i.inv_date >= cap.start_date
             AND (cap.end_date IS NULL OR i.inv_date <= cap.end_date)
           ORDER BY cap.start_date DESC LIMIT 1) per ON true
-       LEFT JOIN commission_payouts cp ON cp.invoice_id = i.id
+       -- 적용된 크레딧 노트 차감(커미션은 순매출 기준)
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(n.base_mxn),0) AS base FROM notas_credito n
+          WHERE n.invoice_id = i.id AND n.status = 'applied') nc ON true
       WHERE i.status = 'posted' AND i.deleted_at IS NULL AND per.rate IS NOT NULL${where}`, params)).rows;
   return rows.map((r) => ({
     customer_id: Number(r.customer_id),

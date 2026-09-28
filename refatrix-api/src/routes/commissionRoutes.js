@@ -101,13 +101,89 @@ export function allocateFifo(lines, amount) {
   return { allocs, settled, leftover: round2((Number(amount) || 0) - settled) };
 }
 
+// 커미션 수혜자 = 고객마스터 담당자(customers.owner_id). (2026-09-28)
+//   예외: 고객의 팀에 "팀 커미션 수혜자"(sales_teams.commission_user_id, 0233)가 지정돼 있으면 그 사람.
+//         예) 06_Tele 팀 고객 매출 → Maria. to_jsonb 로 읽어 0233 미적용 DB 에서도 오류 없이 담당자 기준으로 동작.
+//   인보이스 owner_id 는 "매출을 등록한 사람"(대개 영업지원)이 들어가므로 커미션 귀속에 쓰지 않는다.
+//   단, 이미 지급(반제)된 라인은 지급받은 사람(commission_payouts.agent_id)으로 동결 — 담당 이관 후에도 불변.
+//   전제: 쿼리에 customers c, commission_payouts cp 가 먼저 조인돼 있어야 한다.
+export const BENEFICIARY_LATERAL = `
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN cp.paid IS TRUE THEN cp.agent_id
+                  ELSE COALESCE(
+                    (SELECT (to_jsonb(st)->>'commission_user_id')::bigint FROM sales_teams st WHERE st.id = c.team_id),
+                    c.owner_id) END AS uid
+    ) ben`;
+
+// 적용된 크레딧 노트(Nota de crédito) 합계 — 커미션은 "인보이스 − 적용 NC" 순액 기준. (2026-09-28)
+//   NC 는 인보이스 금액을 바꾸지 않고 비현금 반제로만 들어가므로(0085), 여기서 차감해야 할인·반품분에 커미션이 붙지 않는다.
+//   수금액(pa)은 sales_payments 와 JOIN 하므로 현금 반제만 잡힌다(NC 배분은 payment_id NULL).
+//   → 완납 판정 = 현금수금 ≥ (인보이스 합계 − NC 합계).
+export const NC_LATERAL = `
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(n.base_mxn),0) AS base, COALESCE(SUM(n.total_mxn),0) AS total
+        FROM notas_credito n
+       WHERE n.invoice_id = i.id AND n.status = 'applied'
+    ) nc ON true`;
+
+// 지급 후 매출 조정 → 다음 지급에서 차액 정산(차감/추가). 디렉터 결정 A (2026-09-28).
+//   지급 시점의 순매출(commission_payouts.base_mxn)과 지금 순매출을 비교해, 지급 당시 실효율로 차액을 낸다.
+//   요율·기간 변경은 차액을 만들지 않는다(지급 당시 율 고정). 매출 삭제 = 순매출 0 → 전액 환수.
+//   base_mxn 이 없는(0232 이전 지급) 라인은 대상에서 제외.
+export function computeAdjustment(r) {
+  const paidAmt = Number(r.paid_amount) || 0;
+  const paidBase = Number(r.paid_base) || 0;
+  if (!(paidBase > 0)) return null;
+  const curBase = r.deleted ? 0 : Math.max(0, Number(r.cur_base) || 0);
+  const newAmt = round2(curBase * paidAmt / paidBase);
+  const delta = round2(newAmt - paidAmt);
+  if (Math.abs(delta) < 0.01) return null;
+  const reason = r.deleted ? 'deleted' : (Number(r.nc_base) > 0 && curBase < paidBase ? 'nota_credito' : 'amount_change');
+  return { amount: delta, new_amount: newAmt, new_base: round2(curBase), paid_amount: round2(paidAmt), paid_base: round2(paidBase), reason };
+}
+
+// 0232(commission_payouts.base_mxn) 적용 여부 — 마이그레이션 전 배포에도 500 없이 동작(차액 정산만 꺼짐). 60초 캐시.
+let _baseReady = { v: null, at: 0 };
+export async function payoutBaseReady() {
+  if (_baseReady.v === true) return true;
+  if (_baseReady.v === false && Date.now() - _baseReady.at < 60000) return false;
+  const r = await query(`SELECT 1 FROM information_schema.columns WHERE table_name='commission_payouts' AND column_name='base_mxn'`);
+  _baseReady = { v: r.rows.length > 0, at: Date.now() };
+  return _baseReady.v;
+}
+
+const ADJ_SQL = `
+  SELECT cp.invoice_id, i.sat_no, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date,
+         c.name AS customer_name, c.code AS customer_code,
+         cp.agent_id, cp.amount AS paid_amount, cp.base_mxn AS paid_base,
+         (i.status = 'deleted' OR i.deleted_at IS NOT NULL) AS deleted,
+         (i.subtotal_mxn - nc.base) AS cur_base, nc.base AS nc_base
+    FROM commission_payouts cp
+    JOIN sales_invoices i ON i.id = cp.invoice_id
+    JOIN customers c ON c.id = i.customer_id${NC_LATERAL}
+   WHERE cp.paid = true AND cp.base_mxn IS NOT NULL AND cp.agent_id = $1
+   ORDER BY i.inv_date ASC, i.id ASC`;
+
+// 한 영업사원의 미정산 차액(지급 후 매출 조정분). 0232 전이면 [].
+export async function pendingAdjustments(agentId) {
+  if (!(await payoutBaseReady())) return [];
+  const rows = (await query(ADJ_SQL, [agentId])).rows;
+  const out = [];
+  for (const r of rows) {
+    const a = computeAdjustment(r);
+    if (!a) continue;
+    out.push({ invoice_id: r.invoice_id, sat_no: r.sat_no, inv_date: r.inv_date, customer_name: r.customer_name, customer_code: r.customer_code, ...a });
+  }
+  return out;
+}
+
 // 인보이스 발행일이 속하는 기간(매출/수금 기준 + 율)을 가져오는 LATERAL.
 //   기간들은 겹치지 않으므로 최대 1건. 안 잡히면 per.basis IS NULL → 커미션 대상 제외.
 const PERIOD_LATERAL = `
     LEFT JOIN LATERAL (
       SELECT cap.basis, cap.rate
         FROM commission_agent_periods cap
-       WHERE cap.user_id = i.owner_id
+       WHERE cap.user_id = ben.uid
          AND i.inv_date >= cap.start_date
          AND (cap.end_date IS NULL OR i.inv_date <= cap.end_date)
        ORDER BY cap.start_date DESC
@@ -117,21 +193,21 @@ const PERIOD_LATERAL = `
 const PAYABLE_SQL = `
   SELECT i.id AS invoice_id, i.sat_no,
          to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.inv_date,'YYYY-MM') AS inv_ym,
-         i.subtotal_mxn, i.total_mxn,
+         (i.subtotal_mxn - nc.base) AS subtotal_mxn, (i.total_mxn - nc.total) AS total_mxn,
          c.name AS customer_name, c.code AS customer_code,
          per.basis, per.rate, ccr.rate AS cust_rate,
          COALESCE(pa.paid_amount,0) AS paid_amount, pa.last_pay_date
     FROM sales_invoices i
     JOIN customers c ON c.id=i.customer_id
-    JOIN commission_agents ca ON ca.user_id=i.owner_id AND ca.active=true
-    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=i.owner_id AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}
+    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+    JOIN commission_agents ca ON ca.user_id=ben.uid AND ca.active=true
+    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${NC_LATERAL}
     LEFT JOIN (
       SELECT spa.invoice_id, SUM(spa.amount) AS paid_amount, to_char(MAX(sp.pay_date),'YYYY-MM-DD') AS last_pay_date
         FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
        GROUP BY spa.invoice_id
     ) pa ON pa.invoice_id=i.id
-    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
-   WHERE i.status <> 'deleted' AND i.owner_id=$1
+   WHERE i.status <> 'deleted' AND ben.uid=$1
      AND per.basis IS NOT NULL
      AND COALESCE(cp.paid,false)=false
    ORDER BY i.inv_date ASC, i.id ASC`;
@@ -181,20 +257,21 @@ export function summarizeByMonth(lines) {
 
 // 전체 영업사원의 확정 커미션 라인(settle_ym 포함) — 배치 집계/확정용
 const CONFIRMED_LINES_SQL = `
-  SELECT i.id AS invoice_id, i.owner_id, i.subtotal_mxn, i.total_mxn,
+  SELECT i.id AS invoice_id, ben.uid AS owner_id, (i.subtotal_mxn - nc.base) AS subtotal_mxn, (i.total_mxn - nc.total) AS total_mxn,
          to_char(i.inv_date,'YYYY-MM') AS inv_ym,
          per.basis, per.rate, ccr.rate AS cust_rate,
          COALESCE(pa.paid_amount,0) AS paid_amount, pa.last_pay_date,
          cp.paid AS payout_paid, cp.amount AS payout_amount
     FROM sales_invoices i
-    JOIN commission_agents ca ON ca.user_id=i.owner_id AND ca.active=true
-    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=i.owner_id AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}
+    JOIN customers c ON c.id=i.customer_id
+    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+    JOIN commission_agents ca ON ca.user_id=ben.uid AND ca.active=true
+    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${NC_LATERAL}
     LEFT JOIN (
       SELECT spa.invoice_id, SUM(spa.amount) AS paid_amount, to_char(MAX(sp.pay_date),'YYYY-MM-DD') AS last_pay_date
         FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
        GROUP BY spa.invoice_id
     ) pa ON pa.invoice_id=i.id
-    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
    WHERE i.status <> 'deleted'
      AND per.basis IS NOT NULL`;
 
@@ -319,6 +396,48 @@ export default async function commissionRoutes(app) {
     return { ok: true, active: true, periods: v.periods };
   });
 
+  // ── 팀 커미션 수혜자 (0233) — 그 팀 고객의 매출 커미션을 고객 담당자 대신 이 사람에게 귀속 ──
+  //   예) 06_Tele → Maria. 열람: 디렉터·재무·소시오 / 지정: 디렉터.
+  app.get('/api/commission/teams', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
+    if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    const rows = (await query(
+      `SELECT t.id, t.name, (to_jsonb(t)->>'commission_user_id')::bigint AS commission_user_id,
+              (SELECT COUNT(*) FROM customers c WHERE c.team_id=t.id) AS customer_count
+         FROM sales_teams t WHERE t.deleted_at IS NULL ORDER BY t.sort_order, t.name`)).rows;
+    const ready = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='sales_teams' AND column_name='commission_user_id'`)).rows.length > 0;
+    const names = {};
+    const ids = rows.map((r) => r.commission_user_id).filter(Boolean);
+    if (ids.length) for (const u of (await query(`SELECT id, name FROM users WHERE id = ANY($1)`, [ids])).rows) names[String(u.id)] = u.name;
+    return {
+      migrated: ready,
+      items: rows.map((r) => ({
+        id: Number(r.id), name: r.name, customer_count: Number(r.customer_count),
+        commission_user_id: r.commission_user_id != null ? Number(r.commission_user_id) : null,
+        commission_user_name: r.commission_user_id != null ? (names[String(r.commission_user_id)] || null) : null,
+      })),
+    };
+  });
+
+  app.post('/api/commission/teams/:id/beneficiary', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const teamId = Number(req.params.id);
+    const raw = req.body ? req.body.user_id : null;
+    const userId = raw === null || raw === '' || raw === undefined ? null : Number(raw);
+    if (!teamId || (userId !== null && !(userId > 0))) return reply.code(400).send({ error: 'bad_request' });
+    if (userId !== null) {
+      const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [userId])).rows[0];
+      if (!u) return reply.code(400).send({ error: 'user_not_found' });
+    }
+    try {
+      const r = await query(`UPDATE sales_teams SET commission_user_id=$2 WHERE id=$1 RETURNING id`, [teamId, userId]);
+      if (!r.rows.length) return reply.code(404).send({ error: 'team_not_found' });
+    } catch (e) {
+      if (e && e.code === '42703') return reply.code(503).send({ error: 'migration_required', note: 'npm run migrate(0233)을 실행하세요.' });
+      throw e;
+    }
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_team:${teamId}`, detail: { commission_user_id: userId } });
+    return { ok: true, team_id: teamId, commission_user_id: userId };
+  });
+
   // ── 내 커미션 조건(기간별 기준·율) — 로그인한 본인만(영업사원 포함) ──
   app.get('/api/commission/my-periods', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
     const uid = Number(req.ctx.perm.userId);
@@ -367,31 +486,31 @@ export default async function commissionRoutes(app) {
 
     const args = [];
     let ownerCond = '';
-    if (!seeAll) { args.push(Number(perm.userId)); ownerCond = ` AND i.owner_id=$${args.length}`; }
-    else if (req.query.agent_id) { args.push(Number(req.query.agent_id)); ownerCond = ` AND i.owner_id=$${args.length}`; }
+    if (!seeAll) { args.push(Number(perm.userId)); ownerCond = ` AND ben.uid=$${args.length}`; }
+    else if (req.query.agent_id) { args.push(Number(req.query.agent_id)); ownerCond = ` AND ben.uid=$${args.length}`; }
 
     let rows;
     try {
       rows = (await query(
         `SELECT i.id AS invoice_id, i.sat_no,
               to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.inv_date,'YYYY-MM') AS inv_ym,
-              i.subtotal_mxn, i.total_mxn,
-              i.owner_id, ag.name AS agent_name,
+              (i.subtotal_mxn - nc.base) AS subtotal_mxn, (i.total_mxn - nc.total) AS total_mxn, nc.base AS nc_base,
+              ben.uid AS owner_id, ag.name AS agent_name,
               c.id AS customer_id, c.name AS customer_name, c.code AS customer_code,
               per.basis, per.rate, ccr.rate AS cust_rate,
               COALESCE(pa.paid_amount,0) AS paid_amount, pa.last_pay_date,
               cp.paid AS payout_paid, cp.paid_date AS payout_paid_date, cp.amount AS payout_amount
          FROM sales_invoices i
          JOIN customers c ON c.id=i.customer_id
-         JOIN commission_agents ca ON ca.user_id=i.owner_id AND ca.active=true
-         JOIN users ag ON ag.id=i.owner_id
-         LEFT JOIN commission_customer_rates ccr ON ccr.user_id=i.owner_id AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}
+         LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+         JOIN commission_agents ca ON ca.user_id=ben.uid AND ca.active=true
+         JOIN users ag ON ag.id=ben.uid
+         LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${NC_LATERAL}
          LEFT JOIN (
            SELECT spa.invoice_id, SUM(spa.amount) AS paid_amount, to_char(MAX(sp.pay_date),'YYYY-MM-DD') AS last_pay_date
              FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
             GROUP BY spa.invoice_id
          ) pa ON pa.invoice_id=i.id
-         LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
         WHERE i.status <> 'deleted'
           AND per.basis IS NOT NULL${ownerCond}
         ORDER BY i.inv_date DESC, i.id DESC`, args)).rows;
@@ -416,7 +535,7 @@ export default async function commissionRoutes(app) {
         invoice_id: r.invoice_id, sat_no: r.sat_no, inv_date: String(r.inv_date).slice(0, 10),
         agent_id: r.owner_id, agent_name: r.agent_name,
         customer_id: r.customer_id, customer_name: r.customer_name, customer_code: r.customer_code,
-        rate: c.rate, base: c.base, expected: c.expected, confirmed: confirmedShown,
+        rate: c.rate, base: c.base, nc_base: Number(r.nc_base) || 0, expected: c.expected, confirmed: confirmedShown,
         basis: c.basis, recognized: c.recognized, fully_paid: c.fullyPaid,
         settle_ym: c.settleYm, batch_status: bstatus,
         due_date: c.settleYm ? nextMonth15(c.settleYm) : null,
@@ -479,7 +598,11 @@ export default async function commissionRoutes(app) {
       }));
     }
 
-    return { view, is_director: perm.role === 'director', can_pay: canPay, see_all: seeAll, agent_id: req.query.agent_id ? Number(req.query.agent_id) : null, summary, groups, by_agent: byAgent };
+    // 지급 후 매출 조정으로 생긴 미정산 차액(한 영업사원 선택 시 / 영업사원 본인)
+    const adjAgent = !seeAll ? Number(perm.userId) : (req.query.agent_id ? Number(req.query.agent_id) : 0);
+    const adjustments = adjAgent ? await pendingAdjustments(adjAgent) : [];
+    summary.adjustment_total = round2(adjustments.reduce((s, a) => s + a.amount, 0));
+    return { view, is_director: perm.role === 'director', can_pay: canPay, see_all: seeAll, agent_id: req.query.agent_id ? Number(req.query.agent_id) : null, summary, groups, by_agent: byAgent, adjustments };
   });
 
   // ── 지급 대상(확정·미지급) 라인 + 합계 (전체열람자 or 본인) ──
@@ -498,10 +621,13 @@ export default async function commissionRoutes(app) {
     const commissionTotal = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0));
     // 확정·미지급 성과급(월 1건)도 같은 전표로 지급된다. 커미션 라인 충당 후 남는 금액으로 충당.
     const bonus = settleYm ? await payableBonus(agentId, settleYm) : null;
-    const total = round2(commissionTotal + (bonus ? bonus.amount : 0));
+    // 지급 후 매출 조정 차액(차감은 음수) — 이번 지급에 함께 정산된다.
+    const adjustments = await pendingAdjustments(agentId);
+    const adjustmentTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0));
+    const total = round2(commissionTotal + (bonus ? bonus.amount : 0) + adjustmentTotal);
     return {
       agent_id: agentId, settle_ym: settleYm, can_pay: PAY_ROLES.includes(perm.role),
-      lines, commission_total: commissionTotal, bonus, total,
+      lines, commission_total: commissionTotal, bonus, adjustments, adjustment_total: adjustmentTotal, total,
     };
   });
 
@@ -535,19 +661,33 @@ export default async function commissionRoutes(app) {
     const bonus = await payableBonus(agentId, settleYm);
     if (!lines.length && !bonus) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.' });
 
-    const { allocs, settled, leftover } = allocateFifo(lines, amt);
+    // 지급 후 매출 조정 차액은 이번 전표에서 전액 정산(차감=음수·추가=양수). 차감이 지급할 금액보다 크면 이월.
+    const adjustments = await pendingAdjustments(agentId);
+    const adjTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0));
+    const grossDue = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0) + (bonus ? bonus.amount : 0));
+    if (adjTotal < 0 && grossDue + adjTotal < -0.001) {
+      return reply.code(409).send({ error: 'adjustment_exceeds', note: `지급 후 매출 조정으로 차감할 금액(${-adjTotal})이 이번 달 지급 대상(${grossDue})보다 큽니다. 차감액은 다음 지급으로 이월됩니다.` });
+    }
+    // 입력액 + 차감액(또는 − 추가액)만큼 커미션 라인을 FIFO 충당.
+    const { allocs, settled, leftover } = allocateFifo(lines, round2(amt - adjTotal));
     // 성과급은 커미션 라인을 FIFO 로 충당하고 남은 금액으로 충당(부분충당 없음).
     const bonusPaid = (bonus && leftover + 0.001 >= bonus.amount) ? bonus : null;
-    if (!allocs.length && !bonusPaid) {
+    // 차감은 이번 전표로 실제 충당되는 커미션·성과급 범위 안에서만 반영(현금 지급 < 0 이 되는 정산 방지).
+    if (adjustments.length && round2(settled + (bonusPaid ? bonusPaid.amount : 0) + adjTotal) < -0.001) {
+      return reply.code(409).send({ error: 'amount_too_small', note: `지급액이 작아 차감(${-adjTotal})을 반영할 수 없습니다. 기본 지급액(커미션 + 성과급 − 차감)으로 등록하세요.` });
+    }
+    if (!allocs.length && !bonusPaid && !(adjustments.length && adjTotal > 0)) {
       const smallest = lines.length ? round2(lines[0].expected) : (bonus ? bonus.amount : 0);
       return reply.code(409).send({ error: 'amount_too_small', note: `충당할 수 있는 가장 작은 단위(${smallest})보다 지급액이 적습니다. 커미션은 인보이스 단위, 성과급은 월 단위로 충당됩니다.` });
     }
 
+    const baseReady = await payoutBaseReady();
+    const baseOf = Object.fromEntries(lines.map((l) => [String(l.invoice_id), l.base]));
     const result = await withTx(async (cx) => {
       const pay = (await cx.query(
         `INSERT INTO commission_payments (agent_id, amount, settled, paid_date, note, evi_name, evi_mime, evi_data, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-        [agentId, amt, settled, payDate, note || null, (req.body?.evi_name || null), evi.mime, evi.b64, uid])).rows[0];
+        [agentId, amt, round2(settled + adjTotal), payDate, note || null, (req.body?.evi_name || null), evi.mime, evi.b64, uid])).rows[0];
     const paymentId = pay.id;
       for (const a of allocs) {
         await cx.query(
@@ -558,17 +698,29 @@ export default async function commissionRoutes(app) {
            VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,$8)
            ON CONFLICT (invoice_id) DO UPDATE SET amount=$3, settle_ym=$4, due_date=$5, paid=true, paid_date=$6, payment_id=$7, updated_by=$8, updated_at=now()`,
           [a.invoice_id, agentId, a.amount, a.settle_ym, a.settle_ym ? nextMonth15(a.settle_ym) : null, payDate, paymentId, uid]);
+        // 지급 시점 순매출 스냅샷 — 이후 매출 조정 차액 계산의 기준(0232)
+        if (baseReady) await cx.query(`UPDATE commission_payouts SET base_mxn=$2 WHERE invoice_id=$1`, [a.invoice_id, baseOf[String(a.invoice_id)] ?? null]);
+      }
+      // 차액 정산: 전표 배분(음수 가능) + 지급액·기준 순매출을 조정 후 값으로 갱신 → 같은 차액이 다시 잡히지 않음
+      for (const adj of adjustments) {
+        await cx.query(
+          `INSERT INTO commission_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
+          [paymentId, adj.invoice_id, adj.amount]);
+        await cx.query(
+          `UPDATE commission_payouts SET amount=$2, base_mxn=$3, payment_id=$4, updated_by=$5, updated_at=now() WHERE invoice_id=$1 AND paid=true`,
+          [adj.invoice_id, adj.new_amount, adj.new_base, paymentId, uid]);
       }
       if (bonusPaid) await markBonusPaid(cx, bonusPaid.id, payDate, paymentId, uid);
       return { paymentId };
     });
 
     const bonusAmt = bonusPaid ? bonusPaid.amount : 0;
-    const settledAll = round2(settled + bonusAmt);
-    await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled: settledAll, count: allocs.length, bonus: bonusAmt } });
+    const settledAll = round2(settled + bonusAmt + adjTotal);
+    await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled: settledAll, count: allocs.length, bonus: bonusAmt, adjustments: adjustments.length, adjustment_total: adjTotal } });
     return {
       ok: true, payment_id: result.paymentId, settled_count: allocs.length,
       settled: settledAll, commission_settled: settled, bonus_settled: bonusAmt,
+      adjustment_count: adjustments.length, adjustment_settled: adjTotal,
       leftover: round2(leftover - bonusAmt), total_paid_amount: amt,
     };
   });
@@ -690,13 +842,15 @@ export default async function commissionRoutes(app) {
     const uid = req.ctx.perm.userId;
     const paidDate = req.body?.paid_date || new Date().toISOString().slice(0, 10);
     const r = (await query(
-      `SELECT i.id, i.owner_id, i.subtotal_mxn, i.total_mxn,
+      `SELECT i.id, ben.uid AS owner_id, (i.subtotal_mxn - nc.base) AS subtotal_mxn, (i.total_mxn - nc.total) AS total_mxn,
               to_char(i.inv_date,'YYYY-MM') AS inv_ym,
               per.basis, per.rate, ccr.rate AS cust_rate,
               COALESCE(pa.paid_amount,0) AS paid_amount, pa.last_pay_date
          FROM sales_invoices i
-         JOIN commission_agents ca ON ca.user_id=i.owner_id AND ca.active=true
-         LEFT JOIN commission_customer_rates ccr ON ccr.user_id=i.owner_id AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}
+         JOIN customers c ON c.id=i.customer_id
+         LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+         JOIN commission_agents ca ON ca.user_id=ben.uid AND ca.active=true
+         LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${NC_LATERAL}
          LEFT JOIN (
            SELECT spa.invoice_id, SUM(spa.amount) AS paid_amount, to_char(MAX(sp.pay_date),'YYYY-MM-DD') AS last_pay_date
              FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
@@ -714,6 +868,7 @@ export default async function commissionRoutes(app) {
        VALUES ($1,$2,$3,$4,$5,true,$6,$7,$7)
        ON CONFLICT (invoice_id) DO UPDATE SET amount=$3, settle_ym=$4, due_date=$5, paid=true, paid_date=$6, updated_by=$7, updated_at=now()`,
       [invoiceId, r.owner_id, amount, settleYm, nextMonth15(settleYm), paidDate, uid]);
+    if (await payoutBaseReady()) await query(`UPDATE commission_payouts SET base_mxn=$2 WHERE invoice_id=$1`, [invoiceId, c.base]);
     await logEvent({ userId: uid, action: 'update', target: `commission_payout:${invoiceId}`, detail: { paid: true, amount } });
     return { ok: true, amount };
   });
