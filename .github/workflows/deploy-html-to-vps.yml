@@ -1,0 +1,30 @@
+name: Deploy HTML to VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "*.html"
+      - ".github/workflows/deploy-html-vps.yml"
+
+jobs:
+  deploy-html:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/github_actions
+          chmod 600 ~/.ssh/github_actions
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/github_actions \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "echo 'GitHub Actions connected successfully'; hostname; whoami"
