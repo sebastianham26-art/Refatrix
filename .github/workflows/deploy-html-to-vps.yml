@@ -6,10 +6,7 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "*.html"
-      - ".github/workflows/deploy-html-vps.yml"
-
+    
 jobs:
   deploy-html:
     runs-on: ubuntu-latest
@@ -25,8 +22,10 @@ jobs:
           chmod 600 ~/.ssh/github_actions
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Test SSH connection
+      - name: Deploy root files to VPS
         run: |
-          ssh -i ~/.ssh/github_actions \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "echo 'GitHub Actions connected successfully'; hostname; whoami"
+          find . -maxdepth 1 -type f -print0 | \
+          rsync -av --from0 --files-from=- \
+            -e "ssh -i ~/.ssh/github_actions" \
+            ./ \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/erp-refatrix/
