@@ -12,6 +12,7 @@ import { fetchProducts, buildProduct, buildLote, mxNowParts } from '../productSy
 import { testPayload as orderTestPayload, sweepOrderStatus, orderStatusReady, CRM_ORDER_STEPS,
   previewOrderStatus, endpointState as orderEndpointState } from '../orderStatusSync.js';   // 0227
 import { inboundCounts } from '../crmInboundLog.js';
+import { promoReady, buildPromoPayload, PROMO_COLS, PROMO_CATEGORY, promoCode } from '../promoSync.js';   // 0237
 
 const ERR_NOTE = {
   env_invalid: '환경은 test 또는 prod 만 됩니다.',
@@ -34,6 +35,7 @@ const ERR_NOTE = {
   no_products: '보낼 제품이 없습니다 — 제품 마스터를 먼저 확인하세요.',
   body_shape_invalid: '본문 형식은 묶음 · 제품 배열 · 1건씩 중 하나여야 합니다.',
   field_map_invalid: '필드 이름 매핑이 올바른 형태가 아닙니다.',
+  banner_size_invalid: '배너 규격은 10~5000 px 정수입니다(비우면 검사하지 않음).',
   field_map_name_invalid: '보낼 필드 이름에 쓸 수 없는 문자가 있습니다(영문·숫자·_ . - 만).',
 };
 
@@ -143,6 +145,22 @@ export default async function integrationRoutes(app) {
       if (t) { payload = t.payload; usedQuote = t.quote; }
     }
 
+    // 0237 · 프로모션 창구는 **가장 최근 프로모션**(전송된 것 우선)으로 시험한다 — 실제 전송과 같은 함수.
+    //   ⚠ CRM 에 실제로 등록된다(시험이라고 표시할 칸이 계약에 없다). 그래서 버전은 올리지 않고
+    //     지금 버전 그대로 보낸다 — CRM 이 version 으로 거르면 정식 전송이 이 시험을 덮어쓴다.
+    if (!payload && ep.category === PROMO_CATEGORY && await promoReady()) {
+      const p = (await query(
+        `SELECT ${PROMO_COLS} FROM crm_promotions p
+          WHERE p.deleted_at IS NULL AND p.image_sha IS NOT NULL
+          ORDER BY (p.status='published') DESC, p.id DESC LIMIT 1`)).rows[0];
+      if (p) {
+        const u = (await query(`SELECT login_id, name, role FROM users WHERE id=$1`, [req.ctx.perm.userId])).rows[0] || {};
+        const f = ['login_id', 'name', 'role'].includes(ep.user_field) ? ep.user_field : 'login_id';
+        payload = buildPromoPayload(p, { op, user: String(u[f] || 'erp'), map: ep.field_map || null });
+        usedProduct = { codigo: promoCode(p.id), descripcion: p.title };
+      }
+    }
+
     // 0218 · 제품 창구는 **고객 본문을 절대 보내지 않는다.**
     //   예전에는 화면에 「시험 전송할 고객」 칸이 그대로 보였고, 거기에 값이 있으면
     //   고객 본문(rfc·discountPercent…)이 제품 주소로 나갔다 — 상대는 우리가 무엇을
@@ -172,7 +190,8 @@ export default async function integrationRoutes(app) {
     // 테스트에 쓸 고객: id 로 지정하거나, 코드·상호·RFC 로 찾는다.
     //   아무것도 안 주면 고객 연동에 한해 **가장 최근 승인된 RFC 보유 고객**을 자동으로 고른다.
     //   (매번 예시 JSON 을 손으로 채우게 하지 않기 위해서다. 실제 값으로 시험하는 편이 계약 검증에도 낫다)
-    if (!payload && ep.category !== 'order' && (ep.category === 'customer' || b.customer_id || b.customer_query)) {
+    if (!payload && ep.category !== 'order' && ep.category !== PROMO_CATEGORY
+        && (ep.category === 'customer' || b.customer_id || b.customer_query)) {
       let c = null;
       if (b.customer_id) {
         c = (await query(

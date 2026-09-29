@@ -461,9 +461,13 @@ export async function sendPayload(ep, op, payload) {
   if (!url) return { error: 'url_missing' };
   // reject 는 "상태 갱신" 이므로 등록·수정과 같은 메서드를 쓴다(삭제가 아니다).
   const method = String(op === 'delete' ? ep.method_delete : ep.method_upsert || 'POST').toUpperCase();
-  // DELETE 는 본문을 무시하는 서버가 흔하다 → 쿼리스트링에도 rfc 를 실어 준다.
-  const target = (op === 'delete' && payload && payload.rfc)
-    ? url + (url.includes('?') ? '&' : '?') + 'rfc=' + encodeURIComponent(payload.rfc)
+  // DELETE 는 본문을 무시하는 서버가 흔하다 → 쿼리스트링에도 조회 키를 실어 준다.
+  //   고객은 rfc, 프로모션(0237)은 promocionId.
+  const delKey = (op === 'delete' && payload)
+    ? (payload.rfc ? ['rfc', payload.rfc] : (payload.promocionId ? ['promocionId', payload.promocionId] : null))
+    : null;
+  const target = delKey
+    ? url + (url.includes('?') ? '&' : '?') + delKey[0] + '=' + encodeURIComponent(delKey[1])
     : url;
   const headers = { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' };
   const token = activeToken(ep);   // 테스트/운영 각자의 키

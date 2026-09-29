@@ -210,6 +210,10 @@ export function publicEndpoint(ep) {
     delta_every_min: ep.delta_every_min == null ? null : Number(ep.delta_every_min),
     full_weekday: ep.full_weekday == null ? null : Number(ep.full_weekday),
     delta_ready: ep.delta_auto !== undefined,
+    // 0237 · 프로모션 배너 규격(px). 비어 있으면 검사하지 않는다. 0237 전이면 promo_ready=false.
+    banner_w: ep.banner_w == null ? null : Number(ep.banner_w),
+    banner_h: ep.banner_h == null ? null : Number(ep.banner_h),
+    promo_ready: ep.banner_w !== undefined,
     sort_order: ep.sort_order == null ? 100 : Number(ep.sort_order),
     source: ep.source || 'db',
     updated_at: ep.updated_at || null,
@@ -225,8 +229,10 @@ const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_tes
   // 0219 · 상대 규격에 맞추는 두 가지(추측이 틀려도 배포 없이 화면에서 고친다).
   'body_shape', 'field_map',
   // 0236 · 변경분 자동 전송(주기) · 전체 자동 전송 요일. 컬럼이 없으면(0236 전) 저장에서 조용히 뺀다.
-  'delta_auto', 'delta_every_min', 'full_weekday'];
-const DELTA_FIELDS = ['delta_auto', 'delta_every_min', 'full_weekday'];
+  'delta_auto', 'delta_every_min', 'full_weekday',
+  // 0237 · 프로모션 배너 규격. 칸이 없으면(0237 전) 저장에서 조용히 뺀다.
+  'banner_w', 'banner_h'];
+const DELTA_FIELDS = ['delta_auto', 'delta_every_min', 'full_weekday', 'banner_w', 'banner_h'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 /**
@@ -280,6 +286,12 @@ export function validatePatch(p, cur = null) {
   if (p.delta_every_min != null) {
     const n = Number(p.delta_every_min);
     if (!Number.isInteger(n) || n < 5 || n > 1440) return 'delta_every_invalid';
+  }
+  // 0237 · 배너 규격 — 비우면 검사 안 함. 값이 있으면 정수 px(10~5000).
+  for (const f of ['banner_w', 'banner_h']) {
+    if (p[f] == null || p[f] === '' || Number(p[f]) === 0) continue;
+    const n = Number(p[f]);
+    if (!Number.isInteger(n) || n < 10 || n > 5000) return 'banner_size_invalid';
   }
   if (p.full_weekday != null && p.full_weekday !== '') {
     const n = Number(p.full_weekday);
@@ -371,6 +383,7 @@ export async function saveEndpoint(key, patch, userId) {
     if (f === 'enabled' || f === 'auto_send' || f === 'delta_auto') v = !!v;
     else if (f === 'delta_every_min') v = Number(v);
     else if (f === 'full_weekday') v = (v === '' || v == null) ? null : Number(v);
+    else if (f === 'banner_w' || f === 'banner_h') v = (v === '' || v == null || Number(v) === 0) ? null : Number(v);
     else if (f === 'timeout_ms' || f === 'sort_order' || f === 'batch_size' || f === 'send_hour_mx') v = Number(v);
     else if (f === 'img_base_url') v = String(v == null ? '' : v).trim();
     else if (f === 'field_map') v = typeof v === 'string' ? v : JSON.stringify(v || {});

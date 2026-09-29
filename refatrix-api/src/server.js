@@ -67,6 +67,8 @@ import exclusivityRoutes from './routes/exclusivityRoutes.js';   // 0235 · 고�
 import { registerExclusivityHooks, startExclusivitySweep } from './exclusivity.js';
 import surveyRoutes from './routes/surveyRoutes.js';     // 제품·마케팅 › 고객 설문 분석(사진·PDF → AI 판독)
 import priceMasterRoutes from './routes/priceMasterRoutes.js';   // 제품·마케팅 › 가격 마스터(0229)
+import promoRoutes from './routes/promoRoutes.js';               // 관리 › 연동 관리 › 프로모션 배너(0237)
+import { startPromoWorker } from './promoSync.js';               // 0237 · 종료 프로모션 자동 내리기
 import approvalRoutes from './routes/approvalRoutes.js';         // 공통 › 전자결재(0234) — 비용집행 품의·증빙·사전/사후승인
 import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
 import { startCrmSyncWorker } from './crmSync.js';
@@ -157,6 +159,7 @@ export function buildApp() {
   registerExclusivityHooks(app);     // 0235 · 매출 삭제·수정·NC 뒤 독점·커미션 귀속 재계산
   app.register(surveyRoutes);       // 고객 설문 분석 — 양식·응답 판독 큐·AI 주제 요약·원본 zip
   app.register(priceMasterRoutes);  // 가격 마스터 — 날짜별 정가 이력 · % 일괄/선택 변경 · 예약 · 되돌리기
+  app.register(promoRoutes);        // 프로모션 배너 → CRM 여러 곳(0237) · 공개 배너 이미지 주소 포함
   app.register(approvalRoutes);     // 전자결재 — 품의 · 결재선 · 증빙(파일당 20MB, 라우트 전용 bodyLimit) · 댓글 · 알림 · 설정
 
   // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
@@ -167,6 +170,7 @@ export function buildApp() {
   startCrmSyncWorker(app);
   startProductSyncWorker(app);
   startOrderStatusWorker(app);      // ERP → CRM 오더상태 — 놓친 단계 줍기(90초)
+  startPromoWorker(app);            // 0237 · 종료일 지난 프로모션을 CRM 에서 자동으로 내리기(10분)
   startPriceMasterWorker(app);      // 가격 예약 — 적용일(멕시코 00:00)이 된 묶음 적용(5분)
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).

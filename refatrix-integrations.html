@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20260929dl</title>
+<title>Refatrix ERP · 연동 관리 · build 20260929promo</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -106,7 +106,38 @@
   .modalBox h3{margin:0 0 4px;font-size:16px;color:var(--brand)}
   .keyOut{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
     padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#faf8f3;word-break:break-all}
-  @media(max-width:900px){ .cols{grid-template-columns:1fr} .row2,.row3{grid-template-columns:1fr} body{padding:14px} }
+  /* 0237 · 상단 전환(연동 설정 / 프로모션 배너) — .tab 과 다른 클래스를 쓴다(기존 탭 핸들러가 .tab 전부를 잡는다) */
+  .mtabs{display:flex;gap:6px;margin-top:14px}
+  .mtab{padding:9px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:13.5px;font-weight:800;color:var(--muted);cursor:pointer}
+  .mtab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .pmlist{display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow:auto}
+  .pm{border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;background:#fff;display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:start}
+  .pm:hover{background:#faf8f3}
+  .pm.sel{border-color:var(--brand);box-shadow:inset 3px 0 0 var(--brand)}
+  .pm .th{width:64px;height:40px;border-radius:6px;background:#EFEDE7;object-fit:cover;display:block}
+  .pm .t{font-size:13px;font-weight:800;line-height:1.35}
+  .pm .m{font-size:11px;color:var(--muted);margin-top:2px}
+  .pm .b{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+  .pfilter{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+  .pfilter button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 10px;font-size:11.5px;cursor:pointer;color:var(--muted);font-weight:700}
+  .pfilter button.on{border-color:var(--brand);color:var(--brand);background:#EEF3F1}
+  .ph-active{background:var(--income-bg);color:var(--income)} .ph-scheduled{background:#E8EEF7;color:#2C4E86}
+  .ph-ended{background:#EFEDE7;color:var(--muted)} .ph-draft{background:var(--warn-bg);color:var(--warn)} .ph-cancelled{background:var(--expense-bg);color:var(--expense)}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:14px;text-align:center;cursor:pointer;background:#faf8f3}
+  .drop.over{border-color:var(--brand);background:#EEF3F1}
+  .drop img{max-width:100%;max-height:260px;border-radius:8px;display:block;margin:0 auto}
+  .drop .ph{color:var(--muted);font-size:12.5px;padding:18px 0}
+  .tgt{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff}
+  .tgt+.tgt{margin-top:6px}
+  .tgt .l{font-weight:700;font-size:13px}
+  .tgt .u{font-size:11px;color:var(--muted);word-break:break-all}
+  /* 그리드 칸이 안쪽 표 폭만큼 늘어나 휴대폰에서 가로 스크롤이 생기지 않게 */
+  #viewPromo > *, .pm > div, .tgt > div{min-width:0}
+  #pmDelivRows button{white-space:nowrap}
+  #pmDelivBox table{min-width:720px}
+  .chk{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;color:var(--ink);margin:0;font-weight:600}
+  @media(max-width:900px){ .cols{grid-template-columns:1fr} .row2,.row3{grid-template-columns:1fr} body{padding:14px}
+    .tgt{grid-template-columns:22px 1fr} .tgt > div:last-child{grid-column:2;justify-content:flex-start!important} }
 </style>
 </head>
 <body>
@@ -155,7 +186,11 @@
 
   <div id="app" class="hidden">
     <div id="globalBanner"></div>
-    <div class="cols">
+    <div class="mtabs">
+      <div class="mtab on" data-mode="eps">연동 설정</div>
+      <div class="mtab" data-mode="promo">📣 프로모션 배너</div>
+    </div>
+    <div class="cols" id="viewEps">
 
       <!-- 좌: 연동 목록 -->
       <div class="card">
@@ -192,6 +227,7 @@
                 <option value="product">제품</option>
                 <option value="quote">견적</option>
                 <option value="order">오더</option>
+                <option value="promotion">프로모션</option>
                 <option value="other">기타</option>
               </select>
             </div>
@@ -406,6 +442,26 @@
             <div id="orderRecent" style="margin-top:10px"></div>
           </div>
 
+          <!-- 0237 · 프로모션 배너 창구 설정 -->
+          <div id="boxPromo" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+            <div style="font-weight:600;margin-bottom:4px">프로모션 배너 <span class="hint">(계약서 Contrato_API_Promociones v1.0)</span></div>
+            <div class="hint">이 창구 = 배너를 받을 CRM 한 곳입니다. 등록·전송은 위쪽 <b>📣 프로모션 배너</b> 탭에서 합니다.
+              <b>여러 고객사에 보내려면 창구를 여러 개</b> 만드세요(「+ 새 연동」 또는 프로모션 탭의 「+ 전송할 곳 추가」).</div>
+            <div class="row3" style="margin-top:4px">
+              <div><label>배너 가로 (px)</label><input id="fBannerW" inputmode="numeric" placeholder="비우면 검사 안 함"></div>
+              <div><label>배너 세로 (px)</label><input id="fBannerH" inputmode="numeric" placeholder="비우면 검사 안 함"></div>
+              <div><label>취소·종료를 보내는 방식</label><div class="hint" style="margin-top:8px" id="promoDelHint"></div></div>
+            </div>
+            <div class="hint" id="promoMigHint" style="margin-top:4px;color:var(--expense)"></div>
+            <details style="margin-top:10px">
+              <summary class="hint" style="cursor:pointer"><b>보낼 필드 이름 바꾸기</b> — 상대가 다른 이름을 원할 때만 (빈칸 = 그대로 · <span class="mono">-</span> = 보내지 않음)</summary>
+              <div class="tblwrap" style="margin-top:6px"><table class="fieldtbl">
+                <thead><tr><th style="width:170px">우리 필드</th><th style="width:220px">보낼 이름</th><th>뜻</th></tr></thead>
+                <tbody id="promoMapRows"></tbody>
+              </table></div>
+            </details>
+          </div>
+
           <div id="boxTokens">
           <div class="row2">
             <div><label>테스트 서버 API 키</label><input id="fTokenTest" placeholder="변경할 때만 입력"></div>
@@ -574,6 +630,88 @@
         </div>
       </div>
     </div>
+
+    <!-- ===== 0237 · 프로모션 배너 ===== -->
+    <div class="cols hidden" id="viewPromo">
+      <div class="card">
+        <div class="card-h">프로모션<span class="sp" id="pmCount"></span></div>
+        <div class="pfilter" id="pmFilter">
+          <button data-f="live" class="on">진행·예정</button><button data-f="draft">초안</button>
+          <button data-f="ended">종료</button><button data-f="cancelled">취소</button><button data-f="all">전체</button>
+        </div>
+        <div class="pmlist" id="pmList"><div class="empty">불러오는 중…</div></div>
+        <div style="margin-top:12px;display:flex;gap:6px">
+          <button class="btn sm" id="pmNew">+ 새 프로모션</button>
+          <button class="btn ghost sm" id="pmReload">새로고침</button>
+        </div>
+        <div class="hint" style="margin-top:10px">
+          등록하고 <b>「저장하고 전송」</b>을 누르면 고른 CRM 전부에 바로 나갑니다. CRM 은 시작일~종료일(멕시코 날짜) 동안 배너로 보여 줍니다.
+          전송된 프로모션을 고쳐 저장하면 <b>고친 내용이 자동으로 다시</b> 나갑니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h" id="pmTitle">새 프로모션</div>
+        <div id="pmMigBanner"></div>
+        <div class="row2">
+          <div><label>제목 <span class="hint">(배너 대체 텍스트로도 쓰입니다 · 120자)</span></label><input id="pmFTitle" maxlength="120" placeholder="예: Octubre CTR -15%"></div>
+          <div class="row2" style="gap:8px">
+            <div><label>할인 종류</label>
+              <select id="pmFType"><option value="porcentaje">할인율 (%)</option><option value="monto">할인 금액 (MXN)</option><option value="otro">기타(금액 없음)</option></select></div>
+            <div><label id="pmFValueL">할인율 (%)</label><input id="pmFValue" inputmode="decimal" placeholder="15"></div>
+          </div>
+        </div>
+        <label>설명 <span class="hint">(CRM 에 그대로 보입니다 · 스페인어 권장)</span></label>
+        <textarea id="pmFDesc" rows="3" style="font-family:inherit;font-size:13px" placeholder="15% de descuento en terminales y rótulas CTR"></textarea>
+        <label>적용 조건</label><input id="pmFCond" placeholder="예: Pedido mínimo 5,000 MXN · sólo línea CTR">
+        <div class="row3">
+          <div><label>시작일 <span class="hint">(포함)</span></label><input id="pmFStart" type="date"></div>
+          <div><label>종료일 <span class="hint">(포함)</span></label><input id="pmFEnd" type="date"></div>
+          <div><label>노출 순서 <span class="hint">(작을수록 먼저)</span></label><input id="pmFPrio" inputmode="numeric" placeholder="100"></div>
+        </div>
+        <div class="row2">
+          <div><label>배너 클릭 시 이동 주소 <span class="hint">(선택)</span></label><input id="pmFLink" placeholder="https://…"></div>
+          <div style="align-self:end;padding-bottom:6px"><label class="chk"><input type="checkbox" id="pmFAuto" checked> 종료일 다음 날 CRM 에서 자동으로 내리기</label></div>
+        </div>
+
+        <label>배너 이미지 <span class="hint">(PNG · JPG · WEBP · GIF · 5MB 이하)</span></label>
+        <div class="drop" id="pmDrop" tabindex="0">
+          <div class="ph" id="pmDropPh">여기를 눌러 파일을 고르거나, 이미지를 끌어다 놓으세요</div>
+          <img id="pmImg" class="hidden" alt="배너 미리보기">
+        </div>
+        <input type="file" id="pmFile" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">
+        <div class="hint" id="pmImgInfo" style="margin-top:6px"></div>
+        <div id="pmSizeWarn"></div>
+
+        <label>전송할 곳 <span class="hint">(CRM · 고객사 — 여러 곳 선택 가능)</span></label>
+        <div id="pmTargets"><div class="hint">불러오는 중…</div></div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn ghost sm" id="pmAddTarget" type="button">+ 전송할 곳 추가</button>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+          <button class="btn" id="pmPublish">저장하고 전송</button>
+          <button class="btn ghost" id="pmSaveDraft">임시저장</button>
+          <button class="btn ghost sm" id="pmResend">다시 전송</button>
+          <button class="btn ghost sm" id="pmPreview">보낼 본문 보기</button>
+          <button class="btn danger sm" id="pmCancel">CRM 에서 내리기</button>
+          <button class="btn danger sm" id="pmDelete" style="margin-left:auto">삭제</button>
+        </div>
+        <div class="msg" id="pmMsg"></div>
+        <div id="pmPreviewOut"></div>
+
+        <div id="pmDelivBox" class="hidden" style="margin-top:16px">
+          <div class="card-h" style="margin-bottom:6px">CRM 별 전송 현황 <span class="sp" id="pmVer"></span></div>
+          <div class="tblwrap"><table>
+            <thead><tr><th>전송할 곳</th><th style="width:70px">환경</th><th style="width:56px">버전</th><th style="width:80px">작업</th>
+              <th style="width:80px">상태</th><th style="width:70px">응답</th><th>오류 / 메시지</th><th style="width:118px">시각</th><th style="width:70px"></th></tr></thead>
+            <tbody id="pmDelivRows"></tbody>
+          </table></div>
+          <div class="hint" style="margin-top:6px">실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 자동 재시도합니다. 창구가 꺼져 있으면 <b>대기</b>로 남았다가 켜는 즉시 나갑니다.
+            전체 이력은 연동 설정 › 해당 창구 › 전송 이력에서도 볼 수 있습니다.</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -593,7 +731,10 @@
   const MODE_LABEL={full:'전체',test:'시험',delta:'변경분',baseline:'기준 저장'};
   const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
   const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
-  const CAT_LABEL={customer:'고객',product:'제품',quote:'견적',order:'오더',other:'기타'};
+  const CAT_LABEL={customer:'고객',product:'제품',quote:'견적',order:'오더',promotion:'프로모션',other:'기타'};
+  // 0237 · 프로모션 전송 원인
+  Object.assign(ORIGIN_LABEL,{promo_publish:'프로모션 · 전송',promo_update:'프로모션 · 수정 반영',promo_resend:'프로모션 · 다시 전송',
+    promo_cancel:'프로모션 · 취소(내리기)',promo_auto_end:'프로모션 · 종료 자동 내리기',promo_target_removed:'프로모션 · 대상에서 빠짐'});
   // 0227 · 오더상태 전송 — 어떤 일이 전송을 일으켰나
   Object.assign(ORIGIN_LABEL,{order_crm_quote_created:'오더상태 · 웹 견적 접수',order_packing_printed:'오더상태 · 포장지시서 출력',
     order_packed:'오더상태 · 포장완료',order_converted:'오더상태 · 전환',order_sat_entered:'오더상태 · SAT 입력',
@@ -716,12 +857,21 @@
     const prod = !inb && CUR && CUR.category==='product';
     // 0227 · 오더 창구도 고객 전용 요소(시험 고객 칸 · 전체 동기화)를 숨긴다 — 누르면 고객이 나간다.
     const ord = !inb && CUR && CUR.category==='order';
+    // 0237 · 프로모션 창구도 고객 전용 요소를 숨긴다 — 「전체 동기화」를 누르면 고객이 나간다.
+    const promo = !inb && CUR && CUR.category==='promotion';
     $('tCustomer').classList.toggle('hidden',!!inb||!!prod);
-    if(ord) $('tCustomer').classList.add('hidden');
+    if(ord||promo) $('tCustomer').classList.add('hidden');
     $('testHint').classList.toggle('hidden',!!inb);   // 시험 전송이 없는데 그 설명만 남으면 헷갈린다
     $('btnBulk').classList.toggle('hidden',!!prod);
-    if(ord) $('btnBulk').classList.add('hidden');
-    if(ord){
+    if(ord||promo) $('btnBulk').classList.add('hidden');
+    if(promo){
+      $('testHint').innerHTML='프로모션 창구의 <b>연결 테스트</b>는 <b>가장 최근 프로모션</b>(전송된 것 우선) 1건을 지금 버전 그대로 보냅니다 — '
+        +'실제 값이므로 CRM 에 그대로 반영됩니다. 프로모션이 하나도 없으면 계약서의 요청 예시로 보냅니다.';
+      $('fQ').placeholder='PR-… · 제목';
+      $('logHintOut').innerHTML='프로모션 1건 × 이 창구 1곳 = 이력 1건입니다(등록·수정·다시 전송·내리기마다 1건). '
+        +'실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도하고, 6회 실패하면 <b>실패</b>로 남습니다. '
+        +'같은 프로모션의 새 버전이 쌓이면 대기 중인 옛 버전은 <b>건너뜀</b>으로 닫힙니다.';
+    }else if(ord){
       $('testHint').innerHTML='오더상태 연동의 <b>연결 테스트</b>는 <b>가장 최근 웹 견적(COT)</b>의 <b>지금 단계</b>를 1건 보냅니다 — '
         +'실제 값이므로 CRM 에 그대로 반영됩니다. 웹 견적이 하나도 없으면 계약서의 요청 예시로 보냅니다. '
         +'이 시험은 발송 장부에 남지 않으므로, 나중에 같은 단계가 정식으로 한 번 더 나갈 수 있습니다(<span class="mono">eventoId</span> 가 같아 CRM 은 무시하면 됩니다).';
@@ -883,6 +1033,21 @@
     // 0227 · 오더상태 전송(오더 창구에서만)
     const isOrder = e.category==='order' && e.direction!=='in';
     $('boxOrder').classList.toggle('hidden',!isOrder);
+    // 0237 · 프로모션 배너 창구
+    const isPromo = e.category==='promotion' && e.direction!=='in';
+    $('boxPromo').classList.toggle('hidden',!isPromo);
+    if(isPromo){
+      const pr=!!e.promo_ready;
+      ['fBannerW','fBannerH'].forEach(id=>{ $(id).disabled=!pr; });
+      $('fBannerW').value=e.banner_w==null?'':e.banner_w;
+      $('fBannerH').value=e.banner_h==null?'':e.banner_h;
+      $('promoMigHint').textContent=pr?'':'배너 규격은 마이그레이션 0237 후에 저장할 수 있습니다(npm run migrate).';
+      const md=String(e.method_delete||'DELETE').toUpperCase();
+      $('promoDelHint').innerHTML = md==='DELETE'
+        ? '<span class="mono">DELETE</span> 주소<span class="mono">?promocionId=PR-…</span> + 본문 <span class="mono">estatus</span>'
+        : '<span class="mono">'+esc(md)+'</span> 로 본문 <span class="mono">estatus: cancelada|finalizada</span>';
+      renderPromoMap(e.field_map||{});
+    }
     if(isOrder){ $('orderMsg').className='msg'; $('orderMsg').textContent=''; loadOrderStatus(); }
     applyDirection();
     const warn=[]; const info=[];
@@ -1227,6 +1392,11 @@
       }
       p.body_shape=$('fBodyShape').value;
       p.field_map=collectFieldMap();
+    }
+    // 0237 · 프로모션 창구 — 그 카드가 보일 때만(다른 창구의 매핑을 건드리지 않게)
+    if(!$('boxPromo').classList.contains('hidden')){
+      if(!$('fBannerW').disabled){ p.banner_w=$('fBannerW').value.trim(); p.banner_h=$('fBannerH').value.trim(); }
+      p.field_map=collectPromoMap();
     }
     // 이름 칸 하나로 헤더명/파라미터명을 겸한다 — 위치에 따라 알맞은 필드로 보낸다.
     const nm=$('fAuthName').value.trim();
@@ -1861,6 +2031,449 @@
       $('inKeyMsg').className='msg ok'; $('inKeyMsg').textContent='수신 주소를 복사했습니다.'; }
     catch(e){ $('fInboundUrl').select(); }
   });
+
+
+  // =====================================================================
+  // 0237 · 프로모션 배너 — ERP 에서 등록 → 고른 CRM 전부에 자동 전송 → CRM 이 배너로 반영
+  // =====================================================================
+  const PROMO_FIELDS=[
+    ['promocionId','프로모션 고유키 (PR-000001)'],['version','전송마다 +1'],['estatus','activa · cancelada · finalizada'],
+    ['titulo','제목'],['descripcion','설명'],['tipoPromocion','porcentaje · monto · otro'],['valorDescuento','할인값'],
+    ['condiciones','적용 조건'],['fechaInicio','시작일 YYYY-MM-DD'],['fechaFin','종료일 YYYY-MM-DD'],['zonaHoraria','America/Mexico_City'],
+    ['bannerUrl','배너 이미지 주소'],['bannerAncho','가로 px'],['bannerAlto','세로 px'],['bannerTipo','이미지 형식'],
+    ['enlace','클릭 이동 주소'],['prioridad','노출 순서'],['transactionUser','ERP 사용자']];
+  function renderPromoMap(map){
+    const m=map||{};
+    $('promoMapRows').innerHTML=PROMO_FIELDS.map(function(f){
+      const cur=Object.prototype.hasOwnProperty.call(m,f[0])?String(m[f[0]]==null?'':m[f[0]]):'';
+      const shown=Object.prototype.hasOwnProperty.call(m,f[0])&&cur===''?'-':cur;
+      return '<tr><td class="mono">'+esc(f[0])+'</td>'
+        +'<td><input data-pmapf="'+esc(f[0])+'" value="'+esc(shown)+'" placeholder="'+esc(f[0])+' (그대로)"></td>'
+        +'<td class="hint">'+esc(f[1])+'</td></tr>';
+    }).join('');
+  }
+  function collectPromoMap(){
+    const out={};
+    document.querySelectorAll('#promoMapRows input[data-pmapf]').forEach(function(i){
+      const v=i.value.trim();
+      if(v==='-') out[i.dataset.pmapf]='';
+      else if(v) out[i.dataset.pmapf]=v;
+    });
+    return out;
+  }
+
+  const PHASE_LABEL={active:'진행 중',scheduled:'예정',ended:'종료',draft:'초안',cancelled:'취소'};
+  const PM_ERR={image_too_large:'이미지는 5MB 이하여야 합니다.'};
+  let MODE='eps', PM={items:[],today:'',filter:'live'}, PMCUR=null, PMTARGETS=[], PMIMG=null, PMBLOB=null, PMSEL=new Set();
+
+  function setMode(m,epKey){
+    MODE=m;
+    document.querySelectorAll('.mtab').forEach(x=>x.classList.toggle('on',x.dataset.mode===m));
+    $('viewEps').classList.toggle('hidden',m!=='eps');
+    $('viewPromo').classList.toggle('hidden',m!=='promo');
+    if(m==='promo'){ loadPromoTargets().then(()=>loadPromos()); }
+    else loadEndpoints(epKey||(CUR&&CUR.key));
+  }
+  document.querySelectorAll('.mtab').forEach(function(t){ t.addEventListener('click',()=>setMode(t.dataset.mode)); });
+
+  function pmMsg(kind,html){ const m=$('pmMsg'); m.className='msg'+(kind?' '+kind:''); m.innerHTML=html||''; }
+  async function jget(path){
+    const res=await fetch(session.api+path,{headers:auth()});
+    let d={}; try{ d=await res.json(); }catch(e){}
+    if(!res.ok||d.error){ const err=new Error(d.note||d.error||('HTTP '+res.status)); err.code=d.error; throw err; }
+    return d;
+  }
+  async function jsend(method,path,body){
+    const res=await fetch(session.api+path,{method,headers:jauth(),body:JSON.stringify(body||{})});
+    let d={}; try{ d=await res.json(); }catch(e){}
+    if(!res.ok||d.error){ const err=new Error(d.note||PM_ERR[d.error]||d.error||('HTTP '+res.status)); err.code=d.error; throw err; }
+    return d;
+  }
+
+  // ── 전송할 곳(=프로모션 창구) ─────────────────────────────
+  async function loadPromoTargets(){
+    try{
+      const d=await jget('/api/promotions/targets');
+      PMTARGETS=d.items||[];
+      $('pmMigBanner').innerHTML='';
+    }catch(e){
+      PMTARGETS=[];
+      $('pmMigBanner').innerHTML='<div class="banner '+(e.code==='migration_required'?'warn':'err')+'">'
+        +(e.code==='migration_required'?'<b>마이그레이션 대기</b> — Railway 콘솔에서 <span class="mono">npm run migrate</span> 로 0237 을 적용하세요.':esc(e.message))+'</div>';
+    }
+    renderTargets();
+  }
+  function renderTargets(){
+    if(!PMTARGETS.length){
+      $('pmTargets').innerHTML='<div class="hint">프로모션 창구가 없습니다 — 「+ 전송할 곳 추가」로 만드세요.</div>';
+      return;
+    }
+    $('pmTargets').innerHTML=PMTARGETS.map(function(t){
+      const warns=[];
+      if(!t.active_url) warns.push('<span class="pill p-failed">주소 미설정</span>');
+      if(!t.has_token) warns.push('<span class="pill p-pending">키 없음</span>');
+      const size=(t.banner_w&&t.banner_h)?(t.banner_w+'×'+t.banner_h+' px'):'규격 미지정';
+      return '<div class="tgt">'
+        +'<input type="checkbox" data-tgt="'+esc(t.key)+'"'+(PMSEL.has(t.key)?' checked':'')+'>'
+        +'<div><div class="l">'+esc(t.label)+' <span class="hint mono">'+esc(t.key)+'</span></div>'
+        +'<div class="u">'+esc(t.active_url||'(주소 미설정)')+' · 배너 '+esc(size)
+        +(t.token_borrowed_label?(' · 키: 「'+esc(t.token_borrowed_label)+'」 것 사용'):'')+'</div></div>'
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'
+        +'<span class="pill '+(t.enabled?'p-on':'p-off')+'">'+(t.enabled?'켜짐':'꺼짐 — 대기')+'</span>'
+        +'<span class="pill '+(t.env==='prod'?'p-prod':'p-test')+'">'+(t.env==='prod'?'운영':'테스트')+'</span>'
+        +warns.join('')
+        +'<button class="btn ghost sm" type="button" data-tgtcfg="'+esc(t.key)+'">설정</button></div></div>';
+    }).join('');
+    document.querySelectorAll('#pmTargets input[data-tgt]').forEach(function(c){
+      c.addEventListener('change',function(){ if(c.checked) PMSEL.add(c.dataset.tgt); else PMSEL.delete(c.dataset.tgt); renderSizeWarn(); });
+    });
+    document.querySelectorAll('#pmTargets button[data-tgtcfg]').forEach(function(b){
+      b.addEventListener('click',function(){ setMode('eps',b.dataset.tgtcfg); });
+    });
+    renderSizeWarn();
+  }
+
+  async function addPromoTarget(){
+    const label=prompt('전송할 곳 이름 (예: 웹 카달록 · 고객사 A 포털)');
+    if(!label) return;
+    let key=prompt('창구 키 (영문 소문자·숫자·밑줄 3~40자, promo_ 로 시작 권장)', 'promo_'+label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,30));
+    if(!key) return;
+    key=key.trim();
+    try{
+      // 계약서는 기본 창구(promo_crm)의 것을 그대로 복사한다 — 모든 CRM 에 같은 규격을 준다.
+      let contract={fields:[],sample_request:'',sample_response:'{\n  "codigoError": "0",\n  "mensaje": ""\n}',raw:'',notes:''};
+      try{ const base=await jget('/api/integrations/promo_crm'); if(base.endpoint&&base.endpoint.contract) contract=base.endpoint.contract; }catch(e){}
+      await jsend('POST','/api/integrations',{key,label:label.trim(),category:'promotion',
+        description:'ERP 프로모션 → 이 CRM 의 배너 자동 반영',contract,sort_order:60});
+      PMSEL.add(key);
+      await loadPromoTargets();
+      pmMsg('ok','「'+esc(label)+'」 창구를 만들었습니다. <b>설정</b>을 눌러 주소·키·배너 규격을 넣고 「사용」을 켜세요 — 그 전까지는 대기로 쌓입니다.');
+    }catch(e){ pmMsg('err','창구를 만들지 못했습니다: '+esc(e.message)); }
+  }
+
+  // ── 목록 ─────────────────────────────────────────────
+  async function loadPromos(keepId){
+    try{
+      const d=await jget('/api/promotions');
+      PM.items=d.items||[]; PM.today=d.today||'';
+    }catch(e){
+      PM.items=[];
+      $('pmList').innerHTML='<div class="empty">'+esc(e.code==='migration_required'?'마이그레이션 0237 이 필요합니다.':e.message)+'</div>';
+      $('pmCount').textContent='';
+      if(!PMCUR) newPromo();
+      return;
+    }
+    renderPromoList();
+    const id=keepId||(PMCUR&&PMCUR.id);
+    if(id&&PM.items.some(x=>x.id===id)) openPromo(id);
+    else if(!PMCUR) newPromo();
+  }
+  function pmFiltered(){
+    const f=PM.filter;
+    return PM.items.filter(function(x){
+      if(f==='all') return true;
+      if(f==='live') return x.phase==='active'||x.phase==='scheduled';
+      return x.phase===f;
+    });
+  }
+  function renderPromoList(){
+    const list=pmFiltered();
+    $('pmCount').textContent=list.length+' / '+PM.items.length+'건';
+    if(!list.length){ $('pmList').innerHTML='<div class="empty">'+(PM.items.length?'이 분류에는 없습니다.':'아직 프로모션이 없습니다.')+'</div>'; return; }
+    $('pmList').innerHTML=list.map(function(x){
+      const s=x.send||{};
+      const thumb=(x.image&&x.status!=='draft')?'<img class="th" src="'+esc(x.image.url)+'" alt="">':'<div class="th"></div>';
+      return '<div class="pm'+(PMCUR&&PMCUR.id===x.id?' sel':'')+'" data-pm="'+x.id+'">'+thumb
+        +'<div><div class="t">'+esc(x.title)+'</div>'
+        +'<div class="m">'+esc(x.code)+' · '+esc(x.start_date)+' ~ '+esc(x.end_date)+'</div>'
+        +'<div class="b"><span class="pill ph-'+esc(x.phase)+'">'+esc(PHASE_LABEL[x.phase]||x.phase)+'</span>'
+        +(s.sent?'<span class="pill p-sent">보냄 '+s.sent+'</span>':'')
+        +(s.pending?'<span class="pill p-pending">대기 '+s.pending+'</span>':'')
+        +(s.failed?'<span class="pill p-failed">실패 '+s.failed+'</span>':'')
+        +(x.size_warnings&&x.size_warnings.length?'<span class="pill p-pending">규격 다름</span>':'')
+        +'</div></div></div>';
+    }).join('');
+    document.querySelectorAll('#pmList .pm[data-pm]').forEach(function(el){
+      el.addEventListener('click',()=>openPromo(Number(el.dataset.pm)));
+    });
+  }
+  document.querySelectorAll('#pmFilter button').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('#pmFilter button').forEach(x=>x.classList.toggle('on',x===b));
+      PM.filter=b.dataset.f; renderPromoList();
+    });
+  });
+
+  // ── 편집기 ───────────────────────────────────────────
+  function addDays(ymd,n){ const d=new Date(ymd+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+  function todayMx(){
+    if(PM.today) return PM.today;
+    try{ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City'}).format(new Date()); }catch(e){ return new Date().toISOString().slice(0,10); }
+  }
+  function setBlob(url){ if(PMBLOB){ try{URL.revokeObjectURL(PMBLOB);}catch(e){} } PMBLOB=url||null; }
+  function showImg(src,info){
+    if(src){ $('pmImg').src=src; $('pmImg').classList.remove('hidden'); $('pmDropPh').classList.add('hidden'); }
+    else{ $('pmImg').removeAttribute('src'); $('pmImg').classList.add('hidden'); $('pmDropPh').classList.remove('hidden'); }
+    $('pmImgInfo').innerHTML=info||'';
+  }
+  function applyTypeLabel(){
+    const t=$('pmFType').value;
+    $('pmFValueL').textContent=t==='monto'?'할인 금액 (MXN)':(t==='otro'?'값 (없음)':'할인율 (%)');
+    $('pmFValue').disabled=t==='otro';
+    if(t==='otro') $('pmFValue').value='';
+  }
+  $('pmFType').addEventListener('change',applyTypeLabel);
+
+  function newPromo(){
+    PMCUR=null; PMIMG=null; setBlob(null);
+    const t=todayMx();
+    $('pmTitle').textContent='새 프로모션';
+    $('pmFTitle').value=''; $('pmFDesc').value=''; $('pmFCond').value=''; $('pmFType').value='porcentaje'; $('pmFValue').value='';
+    $('pmFStart').value=t; $('pmFEnd').value=addDays(t,30); $('pmFPrio').value='100'; $('pmFLink').value=''; $('pmFAuto').checked=true;
+    applyTypeLabel();
+    // 새 프로모션은 **켜져 있는 창구 전부**를 기본으로 고른다(대부분 전부에 보낸다)
+    PMSEL=new Set(PMTARGETS.filter(x=>x.enabled).map(x=>x.key));
+    if(!PMSEL.size&&PMTARGETS.length===1) PMSEL.add(PMTARGETS[0].key);
+    showImg(null,''); renderTargets();
+    $('pmDelivBox').classList.add('hidden'); $('pmPreviewOut').innerHTML='';
+    pmMsg('',''); applyButtons(); renderPromoList();
+  }
+
+  async function openPromo(id){
+    try{
+      const d=await jget('/api/promotions/'+id);
+      const p=d.promo; PMCUR=p; PMIMG=null;
+      $('pmTitle').innerHTML=esc(p.code)+' · '+esc(p.title)+' <span class="pill ph-'+esc(p.phase)+'" style="margin-left:6px">'+esc(PHASE_LABEL[p.phase]||p.phase)+'</span>';
+      $('pmFTitle').value=p.title; $('pmFDesc').value=p.description||''; $('pmFCond').value=p.conditions||'';
+      $('pmFType').value=p.promo_type; $('pmFValue').value=p.discount_value==null?'':p.discount_value;
+      $('pmFStart').value=p.start_date; $('pmFEnd').value=p.end_date; $('pmFPrio').value=p.priority;
+      $('pmFLink').value=p.link_url||''; $('pmFAuto').checked=!!p.auto_withdraw;
+      applyTypeLabel();
+      PMSEL=new Set(p.targets||[]);
+      renderTargets();
+      setBlob(null);
+      if(p.image){
+        const info=imgInfo(p.image.w,p.image.h,p.image.bytes,p.image.mime,p.image.name);
+        // 초안의 그림은 공개 주소로 열리지 않는다 → 인증을 실어 받아 온다
+        try{
+          const r=await fetch(session.api+'/api/promotions/'+p.id+'/image',{headers:auth()});
+          if(r.ok){ const u=URL.createObjectURL(await r.blob()); setBlob(u); showImg(u,info); } else showImg(null,info);
+        }catch(e){ showImg(null,info); }
+      }else showImg(null,'');
+      renderDeliveries(d.deliveries||[], p);
+      $('pmPreviewOut').innerHTML='';
+      pmMsg('',''); applyButtons(); renderPromoList();
+    }catch(e){ pmMsg('err','불러오지 못했습니다: '+esc(e.message)); }
+  }
+
+  function imgInfo(w,h,bytes,mime,name){
+    return '<b>'+w+' × '+h+' px</b> · '+(bytes?(Math.round(bytes/1024)+' KB · '):'')+esc(mime||'')+(name?(' · '+esc(name)):'');
+  }
+  function curImgSize(){
+    if(PMIMG) return {w:PMIMG.w,h:PMIMG.h};
+    if(PMCUR&&PMCUR.image) return {w:PMCUR.image.w,h:PMCUR.image.h};
+    return null;
+  }
+  // 고른 창구의 규격과 다르면 경고(막지는 않는다 — 전송할 때 한 번 더 묻는다)
+  function sizeMismatches(){
+    const sz=curImgSize(); if(!sz) return [];
+    return PMTARGETS.filter(t=>PMSEL.has(t.key)&&t.banner_w&&t.banner_h&&(t.banner_w!==sz.w||t.banner_h!==sz.h))
+      .map(t=>({label:t.label,need:t.banner_w+'×'+t.banner_h}));
+  }
+  function renderSizeWarn(){
+    const mm=sizeMismatches(); const sz=curImgSize();
+    $('pmSizeWarn').innerHTML=mm.length&&sz
+      ? '<div class="msg warn" style="display:block">배너가 <b>'+sz.w+'×'+sz.h+'</b> px 입니다 — '
+        +mm.map(x=>'「'+esc(x.label)+'」 규격 <b>'+esc(x.need)+'</b>').join(', ')+' 와 다릅니다. CRM 에서 늘어나거나 잘릴 수 있습니다.</div>'
+      : '';
+  }
+
+  function pickFile(f){
+    if(!f) return;
+    if(!/^image\/(png|jpeg|webp|gif)$/.test(f.type)){ pmMsg('err','PNG · JPG · WEBP · GIF 만 올릴 수 있습니다.'); return; }
+    if(f.size>5*1024*1024){ pmMsg('err','이미지는 5MB 이하여야 합니다 ('+Math.round(f.size/1024/1024*10)/10+'MB).'); return; }
+    const rd=new FileReader();
+    rd.onload=function(){
+      const url=String(rd.result||'');
+      const im=new Image();
+      im.onload=function(){
+        PMIMG={dataUrl:url,name:f.name,w:im.naturalWidth,h:im.naturalHeight,bytes:f.size,mime:f.type};
+        setBlob(null);
+        showImg(url,imgInfo(PMIMG.w,PMIMG.h,PMIMG.bytes,PMIMG.mime,PMIMG.name)+' · <span style="color:var(--warn)">저장 전</span>');
+        renderSizeWarn(); pmMsg('','');
+      };
+      im.onerror=function(){ pmMsg('err','이미지를 읽지 못했습니다.'); };
+      im.src=url;
+    };
+    rd.readAsDataURL(f);
+  }
+  $('pmDrop').addEventListener('click',()=>$('pmFile').click());
+  $('pmDrop').addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); $('pmFile').click(); } });
+  $('pmFile').addEventListener('change',function(){ pickFile(this.files&&this.files[0]); this.value=''; });
+  $('pmDrop').addEventListener('dragover',e=>{ e.preventDefault(); $('pmDrop').classList.add('over'); });
+  $('pmDrop').addEventListener('dragleave',()=>$('pmDrop').classList.remove('over'));
+  $('pmDrop').addEventListener('drop',function(e){
+    e.preventDefault(); $('pmDrop').classList.remove('over');
+    pickFile(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]);
+  });
+
+  function applyButtons(){
+    const p=PMCUR; const pub=p&&p.status==='published';
+    $('pmResend').classList.toggle('hidden',!pub);
+    $('pmCancel').classList.toggle('hidden',!pub);
+    $('pmDelete').classList.toggle('hidden',!p);
+    $('pmPreview').classList.toggle('hidden',!p);
+    $('pmSaveDraft').textContent = pub ? '저장 (고친 내용 자동 재전송)' : '임시저장';
+    $('pmSaveDraft').classList.toggle('hidden', !!pub);   // 발행 중이면 저장 = 전송이므로 버튼 하나로 충분
+    $('pmPublish').textContent = pub ? '고친 내용 저장·전송' : (p&&p.status==='cancelled' ? '다시 전송(재개)' : '저장하고 전송');
+  }
+
+  function collectPromo(){
+    return {
+      title:$('pmFTitle').value.trim(), description:$('pmFDesc').value, conditions:$('pmFCond').value,
+      promo_type:$('pmFType').value, discount_value:$('pmFValue').value.trim(),
+      start_date:$('pmFStart').value, end_date:$('pmFEnd').value, priority:$('pmFPrio').value.trim(),
+      link_url:$('pmFLink').value.trim(), auto_withdraw:$('pmFAuto').checked,
+      targets:[...PMSEL],
+    };
+  }
+  // 서버와 같은 기준으로 먼저 걸러 준다(서버도 다시 검사한다)
+  function localCheck(b,publish){
+    if(!b.title) return '제목을 입력하세요.';
+    if(b.promo_type!=='otro'){ const v=Number(b.discount_value); if(!b.discount_value||!(v>0)) return '할인값을 입력하세요.'; if(b.promo_type==='porcentaje'&&v>100) return '할인율은 100% 를 넘을 수 없습니다.'; }
+    if(!b.start_date||!b.end_date) return '시작일·종료일을 입력하세요.';
+    if(b.end_date<b.start_date) return '종료일이 시작일보다 빠릅니다.';
+    if(b.link_url&&!/^https?:\/\//i.test(b.link_url)) return '클릭 이동 주소는 http:// 또는 https:// 로 시작해야 합니다.';
+    if(publish){
+      if(!PMIMG&&!(PMCUR&&PMCUR.image)) return '배너 이미지를 올려야 전송할 수 있습니다.';
+      if(!b.targets.length) return '전송할 곳을 하나 이상 고르세요.';
+      if(b.end_date<todayMx()) return '종료일이 이미 지났습니다.';
+    }
+    return null;
+  }
+
+  async function savePromo(publish){
+    const b=collectPromo();
+    const pub=PMCUR&&PMCUR.status==='published';
+    const sending=publish||pub;
+    const err=localCheck(b,sending);
+    if(err){ pmMsg('err',esc(err)); return; }
+    if(sending){
+      const mm=sizeMismatches();
+      if(mm.length&&!confirm('배너 크기가 다음 창구 규격과 다릅니다:\n'+mm.map(x=>'· '+x.label+' '+x.need).join('\n')+'\n\n그래도 보낼까요?')) return;
+      const off=PMTARGETS.filter(t=>PMSEL.has(t.key)&&(!t.enabled||!t.active_url)).map(t=>t.label);
+      const prod=PMTARGETS.filter(t=>PMSEL.has(t.key)&&t.enabled&&t.env==='prod').map(t=>t.label);
+      if(prod.length&&!confirm('운영 CRM 에 실제로 게시됩니다:\n'+prod.map(x=>'· '+x).join('\n')+(off.length?('\n\n(꺼져 있거나 주소가 없어 대기로 남는 곳: '+off.join(', ')+')'):'')+'\n\n계속할까요?')) return;
+    }
+    if(PMIMG){ b.image_data_url=PMIMG.dataUrl; b.image_name=PMIMG.name; }
+    b.publish=!!publish;
+    const btn=publish?$('pmPublish'):$('pmSaveDraft'); const txt=btn.textContent;
+    btn.disabled=true; btn.textContent='저장 중…';
+    try{
+      const d=PMCUR ? await jsend('PUT','/api/promotions/'+PMCUR.id,b) : await jsend('POST','/api/promotions',b);
+      PMIMG=null;
+      const s=d.sent;
+      let html = s ? ('저장하고 <b>'+s.sent_to.length+'곳</b>에 전송했습니다 (버전 '+s.version+').'
+          +(s.removed_from&&s.removed_from.length?(' 대상에서 뺀 '+s.removed_from.length+'곳에는 내리기를 보냈습니다.'):'')
+          +(s.replaced?(' 대기 중이던 옛 버전 '+s.replaced+'건은 건너뜀으로 닫았습니다.'):''))
+        : '임시저장했습니다 — 아직 CRM 에 보내지 않았습니다.';
+      await loadPromos(d.promo.id);   // 목록을 다시 그리면서 방금 저장한 건을 연다(열 때 메시지를 지우므로 그 뒤에 쓴다)
+      pmMsg('ok',html);
+      if(s) setTimeout(()=>{ if(PMCUR&&PMCUR.id===d.promo.id) refreshDeliveries(); },2500);
+    }catch(e){ pmMsg('err','저장 실패: '+esc(e.message)); }
+    finally{ btn.disabled=false; btn.textContent=txt; }
+  }
+
+  async function refreshDeliveries(){
+    if(!PMCUR) return;
+    try{ const d=await jget('/api/promotions/'+PMCUR.id); renderDeliveries(d.deliveries||[],d.promo); }catch(e){}
+  }
+  function renderDeliveries(rows,p){
+    const show=p&&(p.status!=='draft'||rows.length);
+    $('pmDelivBox').classList.toggle('hidden',!show);
+    if(!show) return;
+    $('pmVer').textContent='현재 버전 '+p.version;
+    const byKey=new Map(PMTARGETS.map(t=>[t.key,t]));
+    const keys=[...new Set([...(p.targets||[]),...rows.map(r=>r.endpoint_key)])];
+    $('pmDelivRows').innerHTML=keys.map(function(k){
+      const r=rows.find(x=>x.endpoint_key===k); const t=byKey.get(k);
+      const nm=(t?esc(t.label):esc(k))+((p.targets||[]).includes(k)?'':' <span class="hint">(대상에서 빠짐)</span>');
+      if(!r) return '<tr><td>'+nm+'</td><td colspan="8" class="hint">아직 보낸 적 없음</td></tr>';
+      const held=r.status==='pending'&&t&&(!t.enabled||!t.active_url);
+      return '<tr><td>'+nm+'</td><td>'+esc(r.env==='prod'?'운영':(r.env==='test'?'테스트':'–'))+'</td>'
+        +'<td class="num">'+(r.version==null?'–':r.version)+'</td>'
+        +'<td>'+(r.op==='delete'?'내리기':'등록·갱신')+'</td>'
+        +'<td><span class="pill p-'+esc(r.status)+'">'+esc(STATUS_LABEL[r.status]||r.status)+'</span></td>'
+        +'<td class="num">'+(r.http_status==null?'–':r.http_status)+(r.codigo_error!=null?(' · '+esc(r.codigo_error)):'')+'</td>'
+        +'<td class="hint">'+esc(held?'창구가 꺼져 있거나 주소가 없어 대기 중 — 켜면 나갑니다':(r.last_error||''))+'</td>'
+        +'<td class="hint">'+esc(fmtTs(r.sent_at||r.created_at))+'</td>'
+        +'<td>'+(r.status==='failed'?'<button class="btn ghost sm" data-pmretry="'+r.outbox_id+'">재전송</button>':'')+'</td></tr>';
+    }).join('') || '<tr><td colspan="9" class="empty">전송할 곳이 없습니다.</td></tr>';
+    document.querySelectorAll('#pmDelivRows button[data-pmretry]').forEach(function(b){
+      b.addEventListener('click',async function(){
+        b.disabled=true;
+        try{ await jsend('POST','/api/crm-sync/'+b.dataset.pmretry+'/retry',{}); }catch(e){ pmMsg('err','재전송 실패: '+esc(e.message)); }
+        refreshDeliveries();
+      });
+    });
+  }
+  function fmtTs(v){
+    if(!v) return '';
+    try{ return new Intl.DateTimeFormat('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v)); }
+    catch(e){ return String(v).slice(0,16).replace('T',' '); }
+  }
+
+  async function resendPromo(){
+    if(!PMCUR) return;
+    if(!confirm('같은 내용을 고른 곳 전부에 다시 보냅니다(버전 +1). 계속할까요?')) return;
+    try{
+      const s=await jsend('POST','/api/promotions/'+PMCUR.id+'/publish',{});
+      await loadPromos(PMCUR.id);
+      pmMsg('ok','<b>'+s.sent_to.length+'곳</b>에 다시 보냈습니다 (버전 '+s.version+').');
+      setTimeout(refreshDeliveries,2500);
+    }catch(e){ pmMsg('err','다시 전송 실패: '+esc(e.message)); }
+  }
+  async function cancelPromoUi(){
+    if(!PMCUR) return;
+    if(!confirm('「'+PMCUR.title+'」 을(를) 받은 CRM 전부에서 내립니다(estatus: cancelada). 계속할까요?')) return;
+    try{
+      const r=await jsend('POST','/api/promotions/'+PMCUR.id+'/cancel',{});
+      await loadPromos(PMCUR.id);
+      pmMsg('ok','취소했습니다 — <b>'+r.withdrawn_from.length+'곳</b>에 내리기를 보냈습니다.');
+      setTimeout(refreshDeliveries,2500);
+    }catch(e){ pmMsg('err','취소 실패: '+esc(e.message)); }
+  }
+  async function deletePromoUi(){
+    if(!PMCUR) return;
+    const live=PMCUR.status==='published';
+    if(!confirm((live?'전송 중인 프로모션입니다 — CRM 전부에서 먼저 내린 뒤 삭제합니다.\n\n':'')+'「'+PMCUR.title+'」 을(를) 삭제할까요?')) return;
+    try{
+      await fetch(session.api+'/api/promotions/'+PMCUR.id,{method:'DELETE',headers:auth()}).then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.note||d.error||r.status); } });
+      PMCUR=null; await loadPromos(); newPromo(); pmMsg('ok','삭제했습니다.');
+    }catch(e){ pmMsg('err','삭제 실패: '+esc(e.message)); }
+  }
+  async function previewPromo(){
+    if(!PMCUR) return;
+    try{
+      const key=[...PMSEL][0]||'';
+      const d=await jget('/api/promotions/'+PMCUR.id+'/preview'+(key?('?endpoint='+encodeURIComponent(key)):''));
+      $('pmPreviewOut').innerHTML='<div class="hint" style="margin-top:10px">다음 전송 본문 — 창구 <span class="mono">'+esc(d.endpoint||'-')+'</span> 의 필드 이름 기준 (저장된 내용 기준 · 보내지 않음)</div>'
+        +'<div class="row2"><div><div class="hint">등록·갱신</div><pre class="out">'+esc(JSON.stringify(d.upsert,null,2))+'</pre></div>'
+        +'<div><div class="hint">내리기(취소·종료)</div><pre class="out">'+esc(JSON.stringify(d.delete,null,2))+'</pre></div></div>';
+    }catch(e){ pmMsg('err','미리보기 실패: '+esc(e.message)); }
+  }
+
+  $('pmNew').addEventListener('click',newPromo);
+  $('pmReload').addEventListener('click',()=>loadPromoTargets().then(()=>loadPromos()));
+  $('pmAddTarget').addEventListener('click',addPromoTarget);
+  $('pmPublish').addEventListener('click',()=>savePromo(true));
+  $('pmSaveDraft').addEventListener('click',()=>savePromo(false));
+  $('pmResend').addEventListener('click',resendPromo);
+  $('pmCancel').addEventListener('click',cancelPromoUi);
+  $('pmDelete').addEventListener('click',deletePromoUi);
+  $('pmPreview').addEventListener('click',previewPromo);
+  // 주소로 바로 열기: refatrix-integrations.html#promo
+  if(/(^|[#&])promo\b/.test(location.hash)) setTimeout(function(){ if(session.token) setMode('promo'); else setTimeout(()=>{ if(session.token) setMode('promo'); },1200); },400);
 
   window.selectEp=selectEp; window.setF=setF; window.rmF=rmF; window.retry=retry;
   window.toggleDetail=toggleDetail; window.toggleIn=toggleIn; window.setNotify=setNotify;
