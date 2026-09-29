@@ -297,6 +297,80 @@ export default async function crmSyncRoutes(app) {
              note: queued > 50 ? '나머지는 이어서 연속 전송됩니다.' : null };
   });
 
+  /**
+   * 2026-09-29 · 실패 건 일괄 재전송 — 전송 이력 화면에서 「지금 보고 있는 범위」의 실패(failed)만.
+   *   body: { endpoint, run_id?, from?, to?, q?, dry_run? }  (목록 조회와 같은 조건 · 상태만 failed 고정)
+   *   ⚠ 본문은 적재 시점의 스냅샷이다. 그래서 **뒤에 더 새 값이 나간 건은 다시 보내지 않는다**(옛 값으로 덮어쓰기 방지):
+   *     · 고객·오더: 같은 대상에 더 나중 건이 전송 완료 또는 대기 중이면 제외
+   *     · 제품: 가장 최근 전송 회차가 아닌 묶음은 제외(다음 전체 전송이 최신 값을 싣는다)
+   *   건너뜀(skipped)은 대상이 아니다 — 상대가 거절한 영구 오류라 설정을 고친 뒤 건별 재전송으로 처리한다.
+   */
+  app.post('/api/crm-sync/retry-failed', guard, async (req, reply) => {
+    if (!(await ready(reply))) return;
+    const ep = await epCols();
+    const b = req.body || {};
+    const key = String(b.endpoint || '').trim();
+    const q = String(b.q || '').trim();
+    const params = [];
+    const where = [`o.status='failed'`];
+    if (key && ep) { params.push(key); where.push(`COALESCE(o.endpoint_key,'customer_commercial')=$${params.length}`); }
+    scopeWhere(b, params, where, ep);
+    if (q) {
+      params.push(`%${q}%`);
+      const i = params.length;
+      where.push(`(c.code ILIKE $${i} OR c.name ILIKE $${i} OR o.rfc ILIKE $${i}${ep ? ` OR o.entity_label ILIKE $${i}` : ''})`);
+    }
+    const superSql = ep
+      ? `CASE WHEN o.entity='product' THEN
+              o.entity_id < (SELECT max(p.entity_id) FROM crm_customer_outbox p
+                              WHERE p.entity='product'
+                                AND COALESCE(p.endpoint_key,'customer_commercial')=COALESCE(o.endpoint_key,'customer_commercial'))
+            ELSE EXISTS (SELECT 1 FROM crm_customer_outbox n
+                          WHERE n.id > o.id AND n.status IN ('sent','pending')
+                            AND COALESCE(n.endpoint_key,'customer_commercial')=COALESCE(o.endpoint_key,'customer_commercial')
+                            AND COALESCE(n.entity,'customer')=COALESCE(o.entity,'customer')
+                            AND COALESCE(n.entity_id, n.customer_id)=COALESCE(o.entity_id, o.customer_id)
+                            AND n.op=o.op)
+          END`
+      : `EXISTS (SELECT 1 FROM crm_customer_outbox n
+                  WHERE n.id > o.id AND n.status IN ('sent','pending')
+                    AND n.customer_id=o.customer_id AND n.op=o.op)`;
+    const label = ep ? `COALESCE(o.entity_label, c.code || ' ' || c.name, '#' || o.id)` : `COALESCE(c.code || ' ' || c.name, '#' || o.id)`;
+    const rows = (await query(
+      `SELECT o.id, ${label} AS label, (${superSql}) AS superseded
+         FROM crm_customer_outbox o
+         LEFT JOIN customers c ON c.id=o.customer_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY o.id
+        LIMIT 5000`, params)).rows;
+    const go = rows.filter((r) => !r.superseded);
+    const superseded = rows.length - go.length;
+    if (b.dry_run) {
+      return { ok: true, dry_run: true, count: go.length, superseded,
+               sample: go.slice(0, 5).map((r) => r.label) };
+    }
+    if (!go.length) return { ok: true, queued: 0, superseded, drain: { drained: 0, sent: 0, failed: 0, held: 0 } };
+    const ids = go.map((r) => Number(r.id));
+    // 되돌리는 순간에도 여전히 failed 인 것만(동시에 다른 사람이 건별 재전송한 건은 건드리지 않는다).
+    const upd = await query(
+      `UPDATE crm_customer_outbox
+          SET status='pending', attempts=0, next_attempt_at=now(), last_error=NULL
+        WHERE id = ANY($1) AND status='failed'`, [ids]);
+    const queued = upd.rowCount || 0;
+    await safeAudit(req, { action: 'update', detail: { op: 'crm_retry_failed', endpoint: key || null, queued, superseded } });
+    const drain = { drained: 0, sent: 0, failed: 0, held: 0 };
+    for (let i = 0; i < 5; i++) {
+      const d = await drainOutbox({ app, limit: 50 });
+      if (d.busy) { await new Promise((r) => setTimeout(r, 300)); continue; }
+      drain.drained += d.drained || 0; drain.sent += d.sent || 0;
+      drain.failed += d.failed || 0; drain.held += d.held || 0;
+      if (!d.drained) break;
+    }
+    if (queued > (drain.drained || 0)) scheduleDrain(app);
+    return { ok: true, queued, superseded, drain,
+             note: queued > 50 ? '나머지는 이어서 연속 전송됩니다.' : null };
+  });
+
   // 대기분 즉시 밀기
   app.post('/api/crm-sync/drain', guard, async (_req, reply) => {
     if (!(await ready(reply))) return;

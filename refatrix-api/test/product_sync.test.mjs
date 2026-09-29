@@ -406,5 +406,5 @@ test('연동 화면 필드표에 referenciaOE 가 서버와 같은 자리에 있
   const names = [...m[1].matchAll(/\['([A-Za-z0-9]+)'/g)].map((x) => x[1]);
   assert.ok(names.includes('referenciaOE'));
   assert.equal(names.indexOf('referenciaOE'), names.indexOf('referenciaSyd') + 1);
-  assert.match(html, /build 20260929oe/);
+  assert.match(html, /build 20260929(oe|rf)/);
 });
