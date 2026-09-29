@@ -16,6 +16,7 @@
 import { query } from './db.js';
 import { getEndpoint, activeUrl } from './integrations.js';
 import { scheduleDrain, signalProductCancel } from './crmSync.js';
+import { oeReady } from './oeCodes.js';   // 2026-09-29 · OE 열 전송(0228 전이면 null)
 
 export const PRODUCT_KEY = 'product';
 
@@ -92,6 +93,8 @@ function money(v) {
  */
 export const PRODUCT_FIELDS = [
   'codigo', 'descripcion', 'aplicaciones', 'referenciaSyd',
+  // 2026-09-29 · 제품 마스터 OE 열(products.oe) 원문 — ' // ' 구분, 「FOR …」(조립품 OE) 표기 포함.
+  'referenciaOE',
   'precioLista', 'moneda', 'existencia', 'imagenUrl', 'activo',
   'sat', 'origen', 'iva', 'ean13', 'ubicacion', 'precioListaComp', 'customerPrice',
   // 0220 · 상대(CRM) 규격이 요구하는 **다른 모양**의 값들.
@@ -115,6 +118,8 @@ export function buildProduct(row, imgBase) {
     descripcion: String(row.name || '').trim(),
     aplicaciones: String(row.app || '').trim(),
     referenciaSyd: String(row.scode || '').trim(),
+    // 없으면 null(빈 문자열 아님) — 다른 선택 열과 같은 규칙.
+    referenciaOE: row.oe == null || String(row.oe).trim() === '' ? null : String(row.oe).trim(),
     precioLista: money(row.list_price),
     moneda: 'MXN',
     existencia: stockRange(row.stock_qty),
@@ -233,13 +238,16 @@ export const EXCLUDE_SQL = EXCLUDED_PREFIXES
 /** 전송 대상 제품 조건(삭제 안 됨 · 코드 있음 · 제외 접두어 아님). 건수 집계도 이걸 쓴다. */
 export const SENDABLE_WHERE = `deleted_at IS NULL AND code IS NOT NULL AND code <> ''${EXCLUDE_SQL}`;
 
-const PRODUCT_COLS = `SELECT code, name, app, scode, list_price, stock_qty, is_active,
+// products.oe 는 0228 에서 생긴다 — 그 전이면 NULL 로 읽어 전송이 멈추지 않게 한다.
+const productCols = (oeOn) => `SELECT code, name, app, scode, list_price, stock_qty, is_active,
                              sat_code, origin, iva_rate, ean, location,
-                             list_price_syd, price_customer_ctr
+                             list_price_syd, price_customer_ctr,
+                             ${oeOn ? 'oe' : 'NULL::text AS oe'}
                         FROM products
                        WHERE ${SENDABLE_WHERE}`;
 
 export async function fetchProducts({ limit = null, code = null } = {}) {
+  const PRODUCT_COLS = productCols(await oeReady());
   if (code) {
     return (await query(`${PRODUCT_COLS} AND code = $1 LIMIT 1`, [String(code).trim()])).rows;
   }

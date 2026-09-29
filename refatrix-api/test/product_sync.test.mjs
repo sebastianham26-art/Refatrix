@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 
 const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
@@ -198,7 +199,10 @@ test('개발자 규격(2026-09-15) 그대로 만들어진다 — 1건씩 · 없�
 
   assert.deepEqual(Object.keys(body).sort(), [
     'ctrCode', 'descriptionEs', 'ean13', 'internalSku', 'listPriceMxn',
-    'originCode', 'satClass', 'statusCode', 'sydCode1', 'transactionUser'].sort());
+    'originCode', 'satClass', 'statusCode', 'sydCode1', 'transactionUser',
+    // 2026-09-29 · OE 열 — 매핑에 없으면 우리 이름 그대로 나간다(CRM 은 모르는 필드를 무시하는 계약)
+    'referenciaOE'].sort());
+  assert.equal(body.referenciaOE, null, 'OE 가 없으면 null');
   assert.equal(body.ctrCode, 'GV0022');
   assert.equal(body.internalSku, 'GV0022');
   assert.equal(body.descriptionEs, 'BRAZO AUXILIAR');
@@ -220,7 +224,7 @@ test('봉투 형식에서는 transactionUser 가 제품 안에 중복되지 않�
 
 // ── ② 화면(연동 관리) 정적 점검 ──────────────────────────────────────
 test('연동 관리 화면에 제품 전송 카드가 있고, 쓰는 id 가 전부 실제로 있다', async () => {
-  const { readFileSync } = await import('node:fs');
+  // readFileSync: 상단 import
   const html = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
   for (const id of ['boxProduct', 'fImgBase', 'fBatch', 'fSendHour', 'fAutoSend',
     'btnCatalogSend', 'btnCatalogTest', 'btnCatalogPreview', 'btnCatalogReload',
@@ -380,3 +384,27 @@ dbTest('적재 → 전송 → 이력까지 (실 PostgreSQL)', async (t) => {
 });
 
 test.after(() => { crm.close(); });
+
+// ── 2026-09-29 · 제품 마스터 OE 열 전송 ─────────────────────────────
+test('OE 열(products.oe)을 referenciaOE 로 보낸다 — 이름 바꾸기·빼기도 매핑으로', () => {
+  const row = { code: 'CE1131L', name: 'TERMINAL EXTERIOR', list_price: 300, stock_qty: 3, is_active: true,
+    oe: '  SC2E-3401120BL // FOR 48810-4A0A0  ' };
+  const p = buildProduct(row, '');
+  assert.equal(p.referenciaOE, 'SC2E-3401120BL // FOR 48810-4A0A0', '원문 그대로(앞뒤 공백만 정리) · FOR 표기 유지');
+  assert.equal(PRODUCT_FIELDS.indexOf('referenciaOE'), PRODUCT_FIELDS.indexOf('referenciaSyd') + 1);
+  assert.equal(buildProduct({ ...row, oe: '   ' }, '').referenciaOE, null, '빈칸은 null');
+  const renamed = applyMap(p, { referenciaOE: 'oeCodes' }, PRODUCT_FIELDS);
+  assert.equal(renamed.oeCodes, 'SC2E-3401120BL // FOR 48810-4A0A0');
+  assert.equal('referenciaOE' in renamed, false);
+  const dropped = applyMap(p, { referenciaOE: '' }, PRODUCT_FIELDS);
+  assert.equal('referenciaOE' in dropped, false, "'-' 로 지정하면 빠진다");
+});
+
+test('연동 화면 필드표에 referenciaOE 가 서버와 같은 자리에 있다', () => {
+  const html = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
+  const m = html.match(/const PFIELDS=\[([\s\S]*?)\n  \];/);
+  const names = [...m[1].matchAll(/\['([A-Za-z0-9]+)'/g)].map((x) => x[1]);
+  assert.ok(names.includes('referenciaOE'));
+  assert.equal(names.indexOf('referenciaOE'), names.indexOf('referenciaSyd') + 1);
+  assert.match(html, /build 20260929oe/);
+});
