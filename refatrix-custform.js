@@ -72,16 +72,28 @@
       +'</div>'
       +'<div id="rcf-claimres" style="font-size:12px;margin-top:6px"></div>'
     +'</div>'
-    // ===== 서류 3종 → 독점 + 외상 30일 (등록 화면에서 바로 첨부) =====
+    // ===== 0235 · 서류 → 할인·외상 조건 (공지 2026-09-28). 독점은 서류가 아니라 RFC 등록·판매로 생긴다. =====
     +'<div id="rcf-docsbox" style="display:none;border:1px solid #7a9c8b;background:#f4f9f6;border-radius:9px;padding:11px 12px">'
-      +'<div style="font-size:12.5px;font-weight:700;color:#1f5540;margin-bottom:2px">📎 서류 3종 → <b>독점 + 외상 30일</b></div>'
-      +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">세 가지가 <b>모두</b> 올라오면 이 고객은 담당자 독점 대상이 되고 <b>외상 30일</b> 조건으로 승인 검토됩니다. 하나라도 빠지면 영업은 시작할 수 있지만 <b>독점도, 외상 30일도 적용되지 않습니다</b>(선결제 조건). 지금 없으면 비워 두고 나중에 고객 상세 → 증빙서류에서 올려도 됩니다.</div>'
+      +'<div style="font-size:12.5px;font-weight:700;color:#1f5540;margin-bottom:2px">📎 서류 → <b>할인</b> · <b>외상 30일</b></div>'
+      +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">서류 없이도 등록은 됩니다. 다만 <b>①+② 가 모두 있어야 할인</b>이 적용되고, <b>③ 이 있어야 외상 30일</b>이 적용됩니다(없으면 <b>선입금</b>). 지금 없으면 나중에 고객 상세 → 증빙서류에서 올려도 그 순간부터 적용됩니다.</div>'
       +'<div class="rcf-row">'
-        +'<div class="rcf-f rcf-grow"><label>① Constancia de Situación Fiscal</label><input id="rcf-confile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
-        +'<div class="rcf-f rcf-grow"><label>② Comprobante de domicilio (주소 증명)</label><input id="rcf-domfile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
-        +'<div class="rcf-f rcf-grow"><label>③ Factura de compra de suspensión</label><input id="rcf-facfile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
+        +'<div class="rcf-f rcf-grow"><label>① Constancia de Situación Fiscal <span style="color:#7a9c8b">→ 할인</span></label><input id="rcf-confile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
+        +'<div class="rcf-f rcf-grow"><label>② Comprobante de domicilio (주소 증빙) <span style="color:#7a9c8b">→ 할인</span></label><input id="rcf-domfile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
+        +'<div class="rcf-f rcf-grow"><label>③ 경쟁사 브랜드 서스펜션 구매 인보이스 <span style="color:#7a9c8b">→ 외상</span></label><input id="rcf-facfile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
       +'</div>'
-      +'<div id="rcf-docsres" style="font-size:12px;margin-top:6px;color:#3f6b58">3종 중 <b>0</b>종 첨부 — 아직 독점·외상 30일 조건이 아닙니다.</div>'
+      +'<div id="rcf-docsres" style="font-size:12px;margin-top:6px;color:#3f6b58"></div>'
+    +'</div>'
+    // ===== 0235 · 서류 부족 경고 팝업 =====
+    +'<div id="rcf-docwarn" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:9999;align-items:center;justify-content:center;padding:16px">'
+      +'<div style="background:#fff;border-radius:12px;max-width:460px;width:100%;padding:18px 18px 14px;box-shadow:0 12px 40px rgba(0,0,0,.25)">'
+        +'<div style="font-size:15px;font-weight:800;color:#9a3b12;margin-bottom:8px">⚠ 서류가 부족합니다</div>'
+        +'<div id="rcf-docwarn-body" style="font-size:13px;line-height:1.55;color:#333"></div>'
+        +'<div style="font-size:12px;color:#666;margin-top:8px">그래도 등록할 수 있습니다. 서류는 나중에 고객 상세 → 증빙서류에서 올리면 그때부터 적용됩니다.</div>'
+        +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
+          +'<button type="button" class="btn ghost" id="rcf-docwarn-back">서류 첨부하러 돌아가기</button>'
+          +'<button type="button" class="btn" id="rcf-docwarn-go">서류 없이 등록</button>'
+        +'</div>'
+      +'</div>'
     +'</div>'
     // ===== 0185 · 기준품목 구매단가 → 할인율 제안 =====
     +'<div id="rcf-basebox" style="display:none;border:1px solid #c9a227;background:#fffdf4;border-radius:9px;padding:11px 12px">'
@@ -403,9 +415,10 @@
     o.appendChild(op);
   }
 
-  // ===== 서류 3종 상태 =====
-  //   3종이 모두 붙으면 그 자리에서 외상일을 30 으로 채운다 —
+  // ===== 서류 상태 (0235) =====
+  //   ①+② → 할인, ③ → 외상. ③ 이 붙으면 외상일을 30 으로 채운다 —
   //   담당자가 직접 외상일을 건드린 뒤에는 덮어쓰지 않는다(creditTouched).
+  //   (서버 트리거가 최종 판단한다: 서류가 없으면 약정 할인·외상일이 있어도 실효 0)
   var DOC_SLOTS=[['rcf-confile','constancia'],['rcf-domfile','domicilio'],['rcf-facfile','factura_compra']];
   var creditTouched=false;
   function pickedDocs(){
@@ -417,16 +430,37 @@
     }
     return out;
   }
+  function docGate(){
+    var t=pickedDocs().map(function(p){ return p.doc_type; });
+    return { discount_ok: t.indexOf('constancia')>=0 && t.indexOf('domicilio')>=0, credit_ok: t.indexOf('factura_compra')>=0 };
+  }
   function refreshDocs(){
     var box=$('rcf-docsres'); if(!box) return;
-    var n=pickedDocs().length;
-    if(n===3){
-      box.innerHTML='<b style="color:#1f5540">✔ 3종 모두 첨부 — 독점 + 외상 30일 조건으로 올라갑니다.</b>';
+    var g=docGate();
+    box.innerHTML=(g.discount_ok?'<b style="color:#1f5540">✔ 할인 적용</b>':'<b style="color:#9a6512">✖ 할인 미적용</b> (①+② 필요)')
+      +' &nbsp;·&nbsp; '
+      +(g.credit_ok?'<b style="color:#1f5540">✔ 외상 30일</b>':'<b style="color:#9a6512">✖ 선입금</b> (③ 필요)');
+    if(g.credit_ok){
       var cd=$('rcf-credit');
       if(cd&&!editingId&&!creditTouched&&Number(cd.value||0)!==30){ cd.value=30; try{ cd.dispatchEvent(new Event('change')); }catch(e){} }
-    }else{
-      box.innerHTML='3종 중 <b>'+n+'</b>종 첨부 — 아직 독점·외상 30일 조건이 아닙니다.';
     }
+  }
+  // 신규 등록인데 서류가 모자라면 팝업으로 결과를 알리고 확인을 받는다. true = 진행.
+  function confirmDocs(){
+    return new Promise(function(resolve){
+      var g=docGate();
+      if(g.discount_ok&&g.credit_ok){ resolve(true); return; }
+      var lines=[];
+      if(!g.discount_ok) lines.push('<div style="margin-bottom:6px">• <b>할인이 적용되지 않습니다.</b><br><span style="color:#666">Constancia de Situación Fiscal 과 주소 증빙(Comprobante de domicilio)이 <b>모두</b> 있어야 할인이 적용됩니다.</span></div>');
+      if(!g.credit_ok) lines.push('<div>• <b>외상이 적용되지 않습니다 — 모든 구매는 선입금입니다.</b><br><span style="color:#666">경쟁사 브랜드 서스펜션 구매 인보이스 사본이 있어야 외상 30일이 적용됩니다.</span></div>');
+      var m=$('rcf-docwarn'); if(!m){ resolve(window.confirm('서류가 부족합니다. 할인/외상이 적용되지 않습니다. 그래도 등록할까요?')); return; }
+      $('rcf-docwarn-body').innerHTML=lines.join('');
+      m.style.display='flex';
+      var go=$('rcf-docwarn-go'), back=$('rcf-docwarn-back');
+      function done(v){ m.style.display='none'; go.removeEventListener('click',onGo); back.removeEventListener('click',onBack); resolve(v); }
+      function onGo(){ done(true); } function onBack(){ done(false); }
+      go.addEventListener('click',onGo); back.addEventListener('click',onBack);
+    });
   }
   // 신규 등록에서만 선점·기준품목 박스를 띄운다.
   function setRegBoxes(isNew){
@@ -568,6 +602,8 @@
         else b.docs.push(Object.assign({doc_type:pf.doc_type}, payload));
       }
       if(!b.docs.length) delete b.docs;
+      // 0235 · 서류가 모자라면 팝업 경고 — 확인해야 등록한다(돌아가면 저장하지 않는다).
+      if(!(await confirmDocs())){ setMsg('warn','서류를 첨부한 뒤 다시 저장하세요.'); return; }
     }
     // ⚠ 수정(editingId) 에서는 RFC 를 요구하지 않는다.
     //   전화·배송지·구매결정권자만 고치려는 사람에게 RFC 형식까지 요구하면 일상 업무가 막힌다.
@@ -670,5 +706,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260918tier loaded (+ 이메일 필수(등록·수정) · 전화/TIER 신규 필수)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260929ex loaded (+ 0235 서류→할인·외상 관문 · 서류 부족 팝업)'); }catch(e){}
 })();

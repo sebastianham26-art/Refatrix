@@ -134,6 +134,7 @@ async function commissionRows(range) {
          SELECT CASE WHEN cp.paid IS TRUE THEN cp.agent_id
                      ELSE COALESCE(
                        (SELECT (to_jsonb(st)->>'commission_user_id')::bigint FROM sales_teams st WHERE st.id = c.team_id),
+                       (to_jsonb(i)->>'commission_agent_id')::bigint,
                        c.owner_id) END AS uid) ben
        JOIN commission_agents ca ON ca.user_id = ben.uid AND ca.active = true
        LEFT JOIN commission_customer_rates ccr ON ccr.user_id = ben.uid AND ccr.customer_id = i.customer_id

@@ -291,6 +291,7 @@ const BENEFICIARY_LATERAL = `
       SELECT CASE WHEN cp.paid IS TRUE THEN cp.agent_id
                   ELSE COALESCE(
                     (SELECT (to_jsonb(st)->>'commission_user_id')::bigint FROM sales_teams st WHERE st.id = c.team_id),
+                    (to_jsonb(i)->>'commission_agent_id')::bigint,
                     c.owner_id) END AS uid
     ) ben`;
 

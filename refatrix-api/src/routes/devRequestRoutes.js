@@ -731,6 +731,8 @@ export default async function devRequestRoutes(app) {
               c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
               c.team_id AS customer_team_id,
               c.owner_id AS owner_id, cu.name AS owner_name,
+              (to_jsonb(s)->>'seller_id')::bigint AS seller_id,
+              (SELECT us.name FROM users us WHERE us.id = (to_jsonb(s)->>'seller_id')::bigint) AS seller_name,
               c.credit_days AS base_credit_days, s.credit_days_req, s.credit_req_memo, ru.name AS credit_req_by_name
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
               LEFT JOIN users cu ON cu.id=c.owner_id
@@ -758,6 +760,8 @@ export default async function devRequestRoutes(app) {
         customer_code: inv.customer_code, customer_name: inv.customer_name,
         customer_rfc: inv.customer_rfc || null, customer_phone: inv.customer_phone || null,
         owner_id: inv.owner_id == null ? null : Number(inv.owner_id), owner_name: inv.owner_name || null,
+        // 0235 · 판매 영업사원(인보이스 출력 「Vendedor」). 비어 있으면 고객 담당자.
+        seller_id: inv.seller_id == null ? null : Number(inv.seller_id), seller_name: inv.seller_name || inv.owner_name || null,
         subtotal_mxn: Number(inv.subtotal_mxn) || 0, iva_mxn: Number(inv.iva_mxn) || 0, total_mxn: Number(inv.total_mxn) || 0,
         can_adjust: canAdjust, is_director: isDirector, past_edit_enabled: allowPastMonthSalesEdit(),
       },

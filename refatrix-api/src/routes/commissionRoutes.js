@@ -106,12 +106,17 @@ export function allocateFifo(lines, amount) {
 //         예) 06_Tele 팀 고객 매출 → Maria. to_jsonb 로 읽어 0233 미적용 DB 에서도 오류 없이 담당자 기준으로 동작.
 //   인보이스 owner_id 는 "매출을 등록한 사람"(대개 영업지원)이 들어가므로 커미션 귀속에 쓰지 않는다.
 //   단, 이미 지급(반제)된 라인은 지급받은 사람(commission_payouts.agent_id)으로 동결 — 담당 이관 후에도 불변.
-//   전제: 쿼리에 customers c, commission_payouts cp 가 먼저 조인돼 있어야 한다.
+//   0235 (2026-09-29) · 디렉터 결정: **인보이스 날짜의 독점권자로 고정** → sales_invoices.commission_agent_id.
+//         독점 대상 고객은 exclusivity.js 가 독점 기간으로 계산해 넣고, 기존 고객은 발행 시점 담당자를 박제한다.
+//         담당을 이관해도 과거 인보이스의 커미션은 따라가지 않는다. 값이 없으면(0235 전 DB) 종전대로 고객 담당자.
+//         순서: 지급 동결 → 팀 수혜자(06_Tele → Maria) → 인보이스 귀속 → 고객 담당자.
+//   전제: 쿼리에 sales_invoices i, customers c, commission_payouts cp 가 먼저 조인돼 있어야 한다.
 export const BENEFICIARY_LATERAL = `
     CROSS JOIN LATERAL (
       SELECT CASE WHEN cp.paid IS TRUE THEN cp.agent_id
                   ELSE COALESCE(
                     (SELECT (to_jsonb(st)->>'commission_user_id')::bigint FROM sales_teams st WHERE st.id = c.team_id),
+                    (to_jsonb(i)->>'commission_agent_id')::bigint,
                     c.owner_id) END AS uid
     ) ben`;
 

@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부 · build 0918po1</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 0929ex</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -364,6 +364,7 @@
       // 영업담당 + 인보이스일 + 만기일 (+ 디렉터: 일자 편집)
       t+='<div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fafafa">'
         +'<span style="font-size:12.5px">영업담당: <b>'+(inv.owner_name?esc(inv.owner_name):'<span style="color:var(--expense)">미지정</span>')+'</b></span>'
+        +(inv.seller_name?'<span style="font-size:12.5px">판매 영업사원: <b>'+esc(inv.seller_name)+'</b></span>':'')
         +'<span style="font-size:12.5px">인보이스일: <b>'+esc(inv.inv_date_str||inv.inv_date||'')+'</b></span>'
         +'<span style="font-size:12.5px">만기일: <b id="due-'+id+'">'+esc(inv.due_date||'—')+'</b>'+(inv.credit_days!=null?(' <span class="hint">(여신 '+inv.credit_days+'일)</span>'):'')+'</span>';
       if(inv.is_director){
@@ -496,7 +497,8 @@
     h+='<div style="font-size:14px;color:#222"><b>Cliente:</b> '+esc(inv.customer_name||'')+(inv.customer_code?(' <span style="color:#888">('+esc(inv.customer_code)+')</span>'):'')+'</div>';
     const cu=[inv.customer_rfc?('RFC: '+esc(inv.customer_rfc)):'',inv.customer_phone?('Tel: '+esc(inv.customer_phone)):''].filter(Boolean).join(' · ');
     if(cu) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+cu+'</div>';
-    const meta=[inv.owner_name?('영업담당: '+esc(inv.owner_name)):'',inv.due_date?('만기일: '+esc(inv.due_date)):''].filter(Boolean).join(' · ');
+    const vend=inv.seller_name||inv.owner_name;   // 0235 · 판매 영업사원
+    const meta=[vend?('Vendedor: '+esc(vend)):'',inv.due_date?('만기일: '+esc(inv.due_date)):''].filter(Boolean).join(' · ');
     if(meta) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+meta+'</div>';
     h+='<table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:11.5px;table-layout:fixed">'
       +'<colgroup><col style="width:5%"><col style="width:15%"><col style="width:25%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"></colgroup>'
@@ -584,7 +586,9 @@
       h+='<div style="font-size:14px;color:#222"><b>Cliente:</b> '+esc(inv.customer_name||'')+(inv.customer_code?(' <span style="color:#888">('+esc(inv.customer_code)+')</span>'):'')+'</div>';
       const cu=[inv.customer_rfc?('RFC: '+esc(inv.customer_rfc)):'',inv.customer_phone?('Tel: '+esc(inv.customer_phone)):''].filter(Boolean).join(' · ');
       if(cu) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+cu+'</div>';
-      const meta=[inv.owner_name?('영업담당: '+esc(inv.owner_name)):'',inv.due_date?('만기일: '+esc(inv.due_date)):''].filter(Boolean).join(' · ');
+      // 0235 · 판매 영업사원(Vendedor) — 인보이스의 seller. 없으면 고객 담당자.
+      const vend=inv.seller_name||inv.owner_name;
+      const meta=[vend?('Vendedor: '+esc(vend)):'',inv.due_date?('만기일: '+esc(inv.due_date)):''].filter(Boolean).join(' · ');
       if(meta) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+meta+'</div>';
       h+='<div style="height:10px"></div>'; return h;
     })();

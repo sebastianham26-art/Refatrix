@@ -714,9 +714,11 @@ test('H4. 등록 화면에 서류 3칸이 있고 신규 등록에서만 뜬다',
     '수정 화면에는 서류함이 뜨지 않는다');
 });
 
-test('H5. 3종이 다 붙으면 외상일이 30 으로 채워지되, 사람이 만진 값은 덮지 않는다', () => {
+// 0235 (2026-09-29) · 공지: 할인 = ①+②, 외상 = ③(경쟁사 구매 인보이스). 3종 세트 규칙은 폐지.
+test('H5. ③ 경쟁사 인보이스가 붙으면 외상일이 30 으로 채워지되, 사람이 만진 값은 덮지 않는다', () => {
   assert.ok(custform.includes('creditTouched'), '수동 편집 감지 플래그');
-  assert.ok(/if\(n===3\)/.test(custform), '3종 완비 분기');
+  assert.ok(/if\(g\.credit_ok\)/.test(custform), '외상 서류(③) 분기');
+  assert.ok(/discount_ok: t\.indexOf\('constancia'\)>=0 && t\.indexOf\('domicilio'\)>=0/.test(custform), '할인 = ①+②');
   assert.ok(/cd\.value=30/.test(custform), '외상 30일 자동 반영');
   assert.ok(/!creditTouched/.test(custform), '사람이 만졌으면 덮어쓰지 않는다');
 });
@@ -728,8 +730,9 @@ test('H6. 저장 시 constancia 는 기존 경로, 나머지는 docs[] 로 나�
   assert.ok(custform.includes("if(!b.docs.length) delete b.docs;"), '빈 배열은 아예 안 보낸다');
 });
 
-test('H7. 고객 상세에서도 3종을 올리고 완비 여부를 본다', () => {
+test('H7. 고객 상세에서도 3종을 올리고 할인·외상 적용 여부를 본다(0235 · 서버 판정)', () => {
   for (const t of DOC3) assert.ok(custHtml.includes(`value="${t}"`), `상세 업로드 종류 ${t}`);
-  assert.ok(custHtml.includes("['constancia','domicilio','factura_compra'].every"), '상세 완비 배너');
+  assert.ok(custHtml.includes("/exclusivity'"), '상세 독점·거래조건 박스는 서버 판정을 읽는다');
+  assert.ok(custHtml.includes('loadExcl(cid);'), '서류가 바뀌면 배지도 갱신');
   assert.ok(custHtml.includes('DOC_TYPE_LABEL'), '종류 라벨');
 });

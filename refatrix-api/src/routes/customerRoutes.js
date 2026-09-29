@@ -329,7 +329,7 @@ export default async function customerRoutes(app) {
     const owners = (await query(`SELECT id, name FROM users WHERE deleted_at IS NULL AND role IN ('sales','director')`)).rows;
     const stages = (await query(`SELECT id, name FROM stages WHERE deleted_at IS NULL`)).rows;
     const existing = (await query(
-      `SELECT c.code, c.name, c.rfc, c.customer_type, c.contact, c.phone, c.discount, c.credit_days, c.memo, c.team_id, t.name AS team_name
+      `SELECT c.code, c.name, c.rfc, c.customer_type, c.contact, c.phone, COALESCE((to_jsonb(c)->>'discount_agreed')::numeric, c.discount) AS discount, COALESCE((to_jsonb(c)->>'credit_days_agreed')::int, c.credit_days) AS credit_days, c.memo, c.team_id, t.name AS team_name
          FROM customers c LEFT JOIN sales_teams t ON t.id=c.team_id WHERE c.deleted_at IS NULL`)).rows;
     const teamByName = {}; for (const t of teams) teamByName[t.name.toLowerCase()] = t.id;
     const ownerByName = {}; for (const o of owners) ownerByName[o.name.toLowerCase()] = o.id;
@@ -556,6 +556,7 @@ export default async function customerRoutes(app) {
         WHERE c.id=$1 AND c.deleted_at IS NULL`, [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
     if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    agreedTerms(c);
     // 연초~현재 누적 매출실적(올해, posted 인보이스 합계)
     const ytd = (await query(
       `SELECT COALESCE(SUM(total_mxn),0) AS actual
@@ -657,6 +658,10 @@ export default async function customerRoutes(app) {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
         buyer_name: c.buyer_name || null, buyer_phone: c.buyer_phone || null,
         discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo, customer_type: c.customer_type,
+        // 0235 · 서류 관문이 적용된 실효 조건(신규 고객) + 독점 대상 여부
+        discount_effective: c.discount_effective == null ? Number(c.discount) : Number(c.discount_effective),
+        credit_days_effective: c.credit_days_effective == null ? c.credit_days : Number(c.credit_days_effective),
+        doc_gate: c.doc_gate === true, excl_policy: c.excl_policy === true,
         constancia_fiscal: c.constancia_fiscal || null,
         // 0185 · 등록 승인 + 선점 + 기준품목 근거 (마이그레이션 전 DB 에서는 undefined → 화면이 알아서 숨김)
         approval_status: c.approval_status || 'approved',
@@ -697,6 +702,15 @@ export default async function customerRoutes(app) {
 
   // ===== 기본할인(%)·외상일 변경 통제 헬퍼 =====
   // 숫자 정규화: 빈값/무효 → 현재값 유지(applyCustomerUpdate 의 keepNum 과 동일 의미)
+  // 0235 · 화면·수정·승인은 **약정** 할인/외상일로 본다. customers.discount/credit_days 는
+  //   서류 관문(신규 고객)이 적용된 실효값이라, 그대로 비교하면 서류 없는 고객 수정이 매번
+  //   「할인 변경」으로 잡힌다. 실효값은 *_effective 로 따로 싣는다.
+  function agreedTerms(c) {
+    if (!c) return c;
+    if (c.discount_agreed !== undefined && c.discount_agreed !== null) { c.discount_effective = c.discount; c.discount = c.discount_agreed; }
+    if (c.credit_days_agreed !== undefined && c.credit_days_agreed !== null) { c.credit_days_effective = c.credit_days; c.credit_days = c.credit_days_agreed; }
+    return c;
+  }
   function termsNum(v, cur) {
     if (v === undefined || v === '' || v === null) return Number(cur) || 0;
     const n = Number(v); return Number.isFinite(n) ? n : (Number(cur) || 0);
@@ -1520,9 +1534,18 @@ export default async function customerRoutes(app) {
       claimed_by: rfcClean ? 'rfc' : null, rfc_claimed: !!rfcClean,
       rfc: rfcClean, constancia_no: conNo || null, constancia_doc: !!docBuf && !docWarning,
       docs_saved: docsSaved, docs_types: docTypesSaved, docs_complete: docsComplete,
-      docs_note: docsComplete
-        ? '서류 3종이 모두 접수됐습니다 — 독점 + 외상 30일 조건으로 승인 검토됩니다.'
-        : '서류 3종(constancia · 주소증명 · 서스펜션 구매 팩투라)이 모두 있어야 독점 + 외상 30일 조건이 적용됩니다.',
+      // 0235 · 서류는 독점과 무관하다(독점은 RFC 등록·판매로 생긴다). 할인·외상 관문만 알린다.
+      gate: {
+        discount_ok: docTypesSaved.includes('constancia') && docTypesSaved.includes('domicilio'),
+        credit_ok: docTypesSaved.includes('factura_compra'),
+        missing: ['constancia', 'domicilio', 'factura_compra'].filter((t) => !docTypesSaved.includes(t)),
+      },
+      docs_note: [
+        (docTypesSaved.includes('constancia') && docTypesSaved.includes('domicilio'))
+          ? '할인 적용 ✔' : '할인 미적용 — Constancia + 주소 증빙을 올려야 할인이 적용됩니다',
+        docTypesSaved.includes('factura_compra')
+          ? '외상 30일 ✔' : '외상 불가(선입금) — 경쟁사 서스펜션 구매 인보이스를 올려야 외상이 적용됩니다',
+      ].join(' · '),
       similar,
       note: rfcClean
         ? `등록 요청을 보냈습니다 — RFC ${rfcClean} 로 선점되었고, 디렉터 승인 후 견적·매출에 쓸 수 있습니다.`
@@ -2115,7 +2138,7 @@ export default async function customerRoutes(app) {
     const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
     const claimsOn = await claimTableReady();
     const rows = (await query(
-      `SELECT c.id, c.code, c.name, c.rfc, c.constancia_no, c.discount, c.credit_days,
+      `SELECT c.id, c.code, c.name, c.rfc, c.constancia_no, COALESCE((to_jsonb(c)->>'discount_agreed')::numeric, c.discount) AS discount, COALESCE((to_jsonb(c)->>'credit_days_agreed')::int, c.credit_days) AS credit_days,
               ${await crmOriginColsReady() ? 'c.crm_customer_code' : 'NULL::text'} AS crm_customer_code,
               c.suggested_discount, c.syd_ref_code, c.syd_ref_buy_price, c.syd_ref_list_price,
               c.syd_ref_discount, c.ctr_ref_code, c.ctr_ref_list_price, c.customer_type, c.memo,
@@ -2169,6 +2192,7 @@ export default async function customerRoutes(app) {
       `SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(approval_status,'approved')='pending'`,
       [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
+    agreedTerms(c);
     // 0188 · CONSTANCIA 는 선택 증빙이 되었으므로 **승인을 막지 않는다**.
     //   대신 증빙 유무를 응답에 실어 승인 화면이 "증빙 없이 승인함" 을 남길 수 있게 한다.
     const docs = (await query(
@@ -2300,7 +2324,7 @@ export default async function customerRoutes(app) {
     const perm = req.ctx.perm;
     const c = (await query(
       `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.buyer_name, c.buyer_phone,
-              c.discount, c.credit_days, c.branch_count, c.customer_type, c.memo, c.constancia_fiscal,
+              COALESCE((to_jsonb(c)->>'discount_agreed')::numeric, c.discount) AS discount, COALESCE((to_jsonb(c)->>'credit_days_agreed')::int, c.credit_days) AS credit_days, c.branch_count, c.customer_type, c.memo, c.constancia_fiscal,
               c.ship_address, c.team_id, c.stage_id, c.owner_id,
               t.name AS team_name, s.name AS stage_name, u.name AS owner_name
          FROM customers c
@@ -2422,7 +2446,7 @@ export default async function customerRoutes(app) {
   app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const perm = req.ctx.perm;
-    const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const c = agreedTerms((await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0]);
     if (!c) return reply.code(404).send({ error: 'not_found' });
     // 타팀 고객: cross_team_request 권한이 있으면 "수정 요청"만 허용(즉시 반영 경로로는 절대 못 감).
     const crossTeam = !canEditTeam(perm, c.team_id);
@@ -2561,7 +2585,7 @@ export default async function customerRoutes(app) {
               c.code AS customer_code, c.name AS customer_name,
               c.name AS cur_name, c.rfc AS cur_rfc, c.contact AS cur_contact, c.phone AS cur_phone,
               c.buyer_name AS cur_buyer_name, c.buyer_phone AS cur_buyer_phone,
-              c.discount AS cur_discount, c.credit_days AS cur_credit_days, c.branch_count AS cur_branch_count,
+              COALESCE((to_jsonb(c)->>'discount_agreed')::numeric, c.discount) AS cur_discount, COALESCE((to_jsonb(c)->>'credit_days_agreed')::int, c.credit_days) AS cur_credit_days, c.branch_count AS cur_branch_count,
               c.team_id AS cur_team_id, c.stage_id AS cur_stage_id, c.owner_id AS cur_owner_id,
               c.customer_type AS cur_customer_type, c.memo AS cur_memo, c.constancia_fiscal AS cur_constancia_fiscal,
               c.constancia_no AS cur_constancia_no,
@@ -2646,7 +2670,7 @@ export default async function customerRoutes(app) {
     const id = Number(req.params.id);
     const r = (await query(`SELECT * FROM customer_change_requests WHERE id=$1 AND status='pending'`, [id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
-    const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [r.customer_id])).rows[0];
+    const c = agreedTerms((await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [r.customer_id])).rows[0]);
     if (!c) return reply.code(404).send({ error: 'customer_gone' });
     // 승인 전 현재값 기준으로 할인/외상일 실변경 산출 → 반영 후 이력 기록
     const approvedTerms = detectTermsChanges(c, r.proposed || {});

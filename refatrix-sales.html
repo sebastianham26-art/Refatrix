@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 매출 등록 · sl0819act1</title>
+<title>Refatrix ERP · 매출 등록 · sl0929ex</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -95,6 +95,8 @@
         <div style="flex:2"><label>고객</label>
           <select id="s-cust"></select>
         </div>
+        <!-- 0235 · 판매 영업사원(인보이스·출력물 표시, 커미션 귀속 근거) -->
+        <div><label>판매 영업사원</label><select id="s-seller"><option value="">— 선택 —</option></select></div>
         <div><label>SAT 번호(선택)</label><input id="s-sat" type="text"></div>
         <div><label>인보이스일</label><input id="s-date" type="date"></div>
       </div>
@@ -104,6 +106,7 @@
         <div><label>예상 입금일</label><input id="s-due" type="text" disabled placeholder="자동 계산"></div>
       </div>
       <div class="hint" id="custInfo"></div>
+      <div class="hint" id="exclInfo"></div>
 
       <div class="linehead"><label style="margin:0">품목 (코드·이름·바코드 검색)</label><button class="btn ghost sm" id="addLine">+ 품목 추가</button></div>
 
@@ -257,6 +260,37 @@
     if(!c){$('custInfo').textContent='';recalcDue();return;}
     $('custInfo').innerHTML=`적용 기준 — 할인율 <b>${c.discount}%</b>, 기본 외상일 <b>${c.credit_days}일</b>. (품목 할인을 비우면 이 할인율이 자동 적용됩니다.)`;
     recalcDue(); renderTotals();
+    checkExcl(c.id);
+  }
+  // ===== 0235 · 판매 영업사원 + 고객 독점 =====
+  let sellersLoaded=false;
+  async function loadSellers(){
+    if(sellersLoaded) return; sellersLoaded=true;
+    try{
+      const d=await fetch(session.api+'/api/sellers',{headers:auth()}).then(r=>r.json());
+      const me=Number((session.user||{}).id)||null;
+      $('s-seller').innerHTML='<option value="">— 선택 —</option>'+(d.items||[]).map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('');
+      if(me&&(d.items||[]).some(u=>u.id===me&&u.role==='sales')) $('s-seller').value=String(me);
+    }catch(e){ sellersLoaded=false; }
+  }
+  async function checkExcl(cid){
+    const b=$('exclInfo'), sel=$('s-seller');
+    await loadSellers();
+    sel.disabled=false; b.innerHTML=''; b.style.color='';
+    if(!cid) return;
+    try{
+      const d=await fetch(session.api+'/api/exclusivity/check?customer_id='+encodeURIComponent(cid),{headers:auth()}).then(r=>r.json());
+      if(!d||d.ready===false) return;
+      if(d.error==='exclusive_other'){ b.style.color='#a33'; b.textContent='⛔ '+(d.note||'다른 영업사원의 독점 고객입니다.'); return; }
+      if(d.locked&&d.holder){
+        if(!sel.querySelector('option[value="'+d.holder.id+'"]')) sel.insertAdjacentHTML('beforeend','<option value="'+d.holder.id+'">'+esc(d.holder.name)+'</option>');
+        sel.value=String(d.holder.id); sel.disabled=true; b.style.color='#1f5540';
+        b.textContent='🔒 '+d.holder.name+' 독점 · '+d.holder.until+' 까지 — 판매자·커미션은 독점권자로 고정됩니다.';
+      } else if(d.open){
+        b.style.color='#8a7328';
+        b.textContent='🟡 독점권 없음(개방) — 판매 영업사원을 선택하세요. 이 인보이스로 그 사람이 1년 독점을 갖습니다.';
+      } else if(d.seller_id && !sel.value){ sel.value=String(d.seller_id); }
+    }catch(e){}
   }
   // 고객 등록/수정은 공유 모듈(RefCustForm)이 처리합니다.
 
@@ -421,7 +455,8 @@
     pendingBody={sat_no:$('s-sat').value.trim()||null,customer_id:c.id,inv_date:$('s-date').value,
       credit_days:(dv===''||dv==null)?null:Number(dv),
       lines:lines.map(l=>({product_id:l.product_id,qty:l.qty,discount_rate:l.discount_rate})),
-      credit_memo:$('s-cmemo').value.trim()||null,memo:null};
+      credit_memo:$('s-cmemo').value.trim()||null,memo:null,
+      seller_id:$('s-seller').value?Number($('s-seller').value):null};   // 0235
     doSubmit(false);
   }
 
@@ -441,7 +476,10 @@
       if(!res.ok||d.error){
         // 0193 · RFC 없는 고객은 매출을 확정할 수 없다(견적까지는 가능). note 를 그대로 보여 준다.
         const map={customer_not_found:'고객을 찾을 수 없습니다.',customer_date_lines_required:'고객·일자·품목을 확인하세요.',
-          customer_rfc_required:(d.note||'RFC 가 없는 고객에게는 매출을 확정할 수 없습니다. 영업>고객등록에서 RFC 를 먼저 입력하세요.')};
+          customer_rfc_required:(d.note||'RFC 가 없는 고객에게는 매출을 확정할 수 없습니다. 영업>고객등록에서 RFC 를 먼저 입력하세요.'),
+          // 0235 · 고객 독점 정책
+          exclusive_other:(d.note||'다른 영업사원의 독점 고객입니다.'), seller_required:(d.note||'판매 영업사원을 선택하세요.'),
+          seller_self_only:(d.note||'영업사원은 본인 이름으로만 판매할 수 있습니다.')};
         let msg=map[d.error]||d.error||('등록 실패: '+res.status);
         if(d.error==='inactive_product'){
           msg='비활성(판매중단) 제품이 포함되어 있습니다: '+(d.items||[]).map(x=>x.code).join(', ')

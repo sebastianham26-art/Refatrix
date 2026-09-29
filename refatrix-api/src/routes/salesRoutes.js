@@ -11,6 +11,7 @@ import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { isInternalCall } from '../internalCall.js';   // 0224c · 견적 전환 내부 호출 식별
 import { noPriceItems, NO_PRICE_NOTE } from '../noPrice.js';   // 2026-09-24 · 정가 없는 제품은 매출 불가
 import { kickOrderStatusByInvoice } from '../orderStatusSync.js';   // 0227 · SAT 번호 등록 → CRM 「OC Enviada」
+import { resolveSeller, recomputeCustomer, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -54,8 +55,14 @@ export default async function salesRoutes(app) {
       const np = await noPriceItems(chkIds);
       if (np.length) return reply.code(409).send({ error: 'no_list_price', note: NO_PRICE_NOTE, items: np });
     }
+    // 0235 · 판매 영업사원 + 독점권 확인. 독점 중이면 판매자 = 독점권자(영업이 남의 독점 고객을 팔면 차단),
+    //   개방 고객이면 판매 영업사원 필수(그 사람이 이 인보이스로 1년 독점을 갖는다).
+    const exclOn = await exclusivityReady();
+    const sel = await resolveSeller(query, { customerId: Number(customer_id), requestedSeller: req.body?.seller_id, perm: req.ctx.perm });
+    if (!sel.ok) return reply.code(sel.code || 409).send({ error: sel.error, note: sel.note, holder: sel.holder || null });
+    const sellerId = sel.seller_id || null;
     const out = await withTx(async (c) => {
-      const cust = (await c.query(`SELECT id, name, rfc, discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customer_id])).rows[0];
+      const cust = (await c.query(`SELECT id, name, rfc, discount, credit_days, owner_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customer_id])).rows[0];
       if (!cust) return { error: 'customer_not_found' };
 
       // 0193 · **매출은 RFC 없이 확정할 수 없다.**
@@ -133,6 +140,11 @@ export default async function salesRoutes(app) {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,16,$9,$10,$11,'posted',$12,$13,$14) RETURNING id`,
         [satNo, customer_id, inv_date, appliedDays, due, exception, exception ? (credit_memo || null) : null,
          exception ? false : true, totals.subtotalMxn, totals.ivaMxn, totals.totalMxn, userId, memo || null, userId])).rows[0];
+      // 0235 · 판매 영업사원 + 커미션 귀속(발행 시점). 독점 대상 고객은 커밋 직후 recomputeCustomer 가 확정한다.
+      if (exclOn) {
+        await c.query(`UPDATE sales_invoices SET seller_id=$1, commission_agent_id=$2 WHERE id=$3`,
+          [sellerId, sellerId || cust.owner_id || null, inv.id]);
+      }
 
       // 라인 + 재고 차감 + 원장(out)
       for (const ln of computed) {
@@ -181,7 +193,11 @@ export default async function salesRoutes(app) {
       return reply.code(409).send({ error: out.error, note: out.note, customer_name: out.customer_name });
     }
     if (out.error) return reply.code(out.error.startsWith('insufficient') ? 409 : 400).send({ error: out.error });
-    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `sales_invoice:${out.id || 'none'}`, detail: { exception: out.exception, shortages: out.shortages?.length || 0 } });
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `sales_invoice:${out.id || 'none'}`, detail: { exception: out.exception, shortages: out.shortages?.length || 0, seller_id: sellerId } });
+    if (out.invoiced && out.id) {
+      try { await recomputeCustomer(Number(customer_id)); } catch (e) { req.log.warn({ err: e }, 'exclusivity recompute'); }
+      out.seller_id = sellerId;
+    }
     if (out.invoiced && out.id) {
       // 매출 확정 → 단계 거래중(60) 자동 전진(전진만) + 미팅기록에 매출내역 표기(전진 없어도 기록)
       try {

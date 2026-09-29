@@ -134,7 +134,8 @@ dbTest('판매중단 SKU 가 담긴 견적도 매출확정된다 · 직접 매�
   assert.equal(pk.statusCode, 200);
   await query(`INSERT INTO quote_packing_docs (quote_id, file_name, mime_type, file_data, uploaded_by)
                VALUES ($1,'s.jpg','image/jpeg','eA==',$2)`, [qid, dirId]);
-  const conv = await call('POST', `/api/quotes/${qid}/convert`, {});
+  // 0235 · 담당자 없는 신규 고객은 독점권이 없는(개방) 고객 → 전환 때 판매 영업사원을 반드시 지정한다.
+  const conv = await call('POST', `/api/quotes/${qid}/convert`, { seller_id: dirId });
   assert.equal(conv.statusCode, 200, '판매중단 SKU 때문에 매출확정이 막히면 안 된다: ' + JSON.stringify(conv.json()));
   const cj = conv.json();
   assert.ok(cj.invoice_id, '인보이스가 실제로 만들어진다');

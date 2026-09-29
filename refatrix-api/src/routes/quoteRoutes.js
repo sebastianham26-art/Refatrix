@@ -34,6 +34,21 @@ async function isPendingCustomer(customerId) {
   } catch (_) { return false; }
 }
 
+import { resolveSeller, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
+
+// 0235 · 견적의 판매 영업사원. 독점 중이면 독점권자로 고정, 영업이 남의 독점 고객 견적을 만들면 차단.
+//   개방 고객은 견적 단계에서 판매자를 비워 둘 수 있다(전환 때 정한다).
+async function quoteSeller(customerId, requested, perm) {
+  if (!customerId) return { ok: true, seller_id: null };
+  const r = await resolveSeller(query, { customerId, requestedSeller: requested, perm });
+  if (!r.ok && r.error === 'seller_required') return { ok: true, seller_id: null };
+  return r;
+}
+async function stampQuoteSeller(c, quoteId, sellerId) {
+  if (!(await exclusivityReady())) return;
+  await c.query(`UPDATE quotes SET seller_id=$1 WHERE id=$2`, [sellerId || null, quoteId]);
+}
+
 export default async function quoteRoutes(app) {
   // ============ 회사 설정 / 로고 ============
   app.get('/api/company', { preHandler: [authGuard] }, async () => {
@@ -314,6 +329,8 @@ export default async function quoteRoutes(app) {
       discountRate = Number(cust.discount) || 0;
     }
     const ivaRate = 16;
+    const qsel = await quoteSeller(customerId, b.seller_id, req.ctx.perm);
+    if (!qsel.ok) return reply.code(qsel.code || 409).send({ error: qsel.error, note: qsel.note, holder: qsel.holder || null });
     // 0224 — 비활성(판매중단) SKU 가 섞여 있어도 **거절하지 않고 접수한다.**
     //
     //   0179 는 여기서 409 로 막았다. 그런데 거절은 **아무 기록도 남기지 않는다** —
@@ -337,6 +354,7 @@ export default async function quoteRoutes(app) {
         poReady
           ? [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, poNo, reserveExpiresAt(new Date())]
           : [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, reserveExpiresAt(new Date())])).rows[0];
+      await stampQuoteSeller(c, q.id, qsel.seller_id);
       for (const l of lines) {
         await c.query(
           `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag, issue)
@@ -386,6 +404,8 @@ export default async function quoteRoutes(app) {
     const cust = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0];
     const discountRate = cust ? Number(cust.discount) || 0 : 0;
     const ivaRate = 16;
+    const qsel = await quoteSeller(customerId, b.seller_id, req.ctx.perm);
+    if (!qsel.ok) return reply.code(qsel.code || 409).send({ error: qsel.error, note: qsel.note, holder: qsel.holder || null });
     // 0179/0224 — 이미 이 견적에 들어 있던 SKU 는 비활성이어도 **그대로** 둔다.
     //   비활성 전에 확정된 오더를 계속 정리할 수 있어야 하므로, 그 줄에는 issue 를 달지
     //   않는다(달면 확정이 잠겨 예전 오더의 인보이스 발행이 막힌다 — 0179 가 견적→매출
@@ -419,6 +439,7 @@ export default async function quoteRoutes(app) {
         touchPo
           ? [customerId, discountRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, id, normalizePoNo(b.customer_po_no)]
           : [customerId, discountRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId, id]);
+      await stampQuoteSeller(c, id, qsel.seller_id);
       await c.query(`DELETE FROM quote_lines WHERE quote_id=$1`, [id]);
       for (const l of lines) {
         const iss = (l.issue === 'inactive' && l.product_id && flagInactive(l.product_id)) ? 'inactive' : null;
@@ -709,12 +730,16 @@ export default async function quoteRoutes(app) {
     const id = Number(req.params.id);
     const q = (await query(
       `SELECT q.*, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
-              uo.name AS customer_owner_name
+              uo.name AS customer_owner_name,
+              (SELECT us.name FROM users us WHERE us.id = (to_jsonb(q)->>'seller_id')::bigint) AS seller_name
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uo ON uo.id=c.owner_id AND uo.deleted_at IS NULL
         WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
+    // 0235 · 출력물 「Vendedor」 = 판매 영업사원. 비어 있으면 고객 담당자.
+    q.seller_id = q.seller_id == null ? null : Number(q.seller_id);
+    q.seller_name = q.seller_name || q.customer_owner_name || null;
     q.is_guest = q.customer_id == null;
     q.party_name = q.customer_id == null ? (q.guest_name || '불특정 고객') : q.customer_name;
     const lines = (await query(
@@ -1160,6 +1185,16 @@ export default async function quoteRoutes(app) {
       });
     }
 
+    // 0235 · 판매 영업사원 확정(요청값 → 견적값). 독점권은 **전환 시점**에 다시 판정한다 —
+    //   개방 고객을 두 사람이 견적했으면 먼저 인보이스를 낸 사람이 1년 독점을 가져간다.
+    const convSellerReq = Number(req.body?.seller_id) || (q.seller_id ? Number(q.seller_id) : null);
+    let convSeller = convSellerReq;
+    if (customerId) {
+      const cs = await resolveSeller(query, { customerId, requestedSeller: convSellerReq, perm: req.ctx.perm });
+      if (!cs.ok) return reply.code(cs.code || 409).send({ error: cs.error, note: cs.note, holder: cs.holder || null });
+      convSeller = cs.seller_id || null;
+    }
+
     let invoiceId = null, sale = null;
     const invDate = req.body?.inv_date || d10(new Date());
     if (shipLines.length) {
@@ -1168,6 +1203,7 @@ export default async function quoteRoutes(app) {
         customer_id: customerId, inv_date: invDate, allow_partial: true,
         lines: shipLines,
         memo: `견적 ${q.quote_no} 전환`,
+        seller_id: convSeller,
         // 0224c · 판매중단 SKU 가 섞여 있어도 이 견적의 줄이면 매출확정된다(salesRoutes 참조).
         source_quote_id: id,
       };
@@ -1204,6 +1240,7 @@ export default async function quoteRoutes(app) {
       }
       await c.query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`,
         [invoiceId || null, customerId, req.ctx.perm.userId, id]);
+      await stampQuoteSeller(c, id, convSeller);   // 0235 · 실제로 판 사람으로 견적도 맞춘다
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, shortages: shortRows.length, dev_requests: devIds.length } });
     kickOrderStatus(id, { origin: 'converted', actorUserId: req.ctx.perm.userId, app });   // 0227 · 전환 → Preparando despacho / OC Enviada

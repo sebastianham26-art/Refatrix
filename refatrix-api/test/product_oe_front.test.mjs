@@ -215,6 +215,6 @@ test('견적 화면 — OE (jsdom)', { skip: SKIP }, async (t) => {
   });
   await t.test('⑪ 빌드 토큰', async () => {
     const c = await bootQuote({});
-    assert.match(c.d.title, /qt-0924np/);
+    assert.match(c.d.title, /qt-0929ex/);
   });
 });

@@ -297,9 +297,13 @@ dbTest('수신 → 승인 대기 고객(P-####) 생성 · 멱등 · 인증 (실 
     assert.equal(b.estatus, 'pendiente');
     assert.match(b.erpCustomerCode, /^P-\d{4}$/, 'CRM 유입 고객은 P 계열이어야 구분이 된다');
 
+    // 0235 · 신규 고객은 서류 관문 대상 — CRM 이 보낸 할인·외상일은 **약정값**으로 들어가고,
+    //   서류가 없으니 실효 discount/credit_days 는 0 이다. 약정값이 없는 DB(0235 전)는 실효값으로 본다.
     const c = (await query(
-      `SELECT id, code, name, rfc, phone, contact, discount, credit_days, owner_id, team_id,
-              approval_status, crm_customer_code, ship_address
+      `SELECT id, code, name, rfc, phone, contact,
+              COALESCE((to_jsonb(customers)->>'discount_agreed')::numeric, discount) AS discount,
+              COALESCE((to_jsonb(customers)->>'credit_days_agreed')::int, credit_days) AS credit_days,
+              owner_id, team_id, approval_status, crm_customer_code, ship_address
          FROM customers WHERE code=$1`, [b.erpCustomerCode])).rows[0];
     madeIds.push(Number(c.id));
     assert.equal(c.approval_status, 'pending', '수신 즉시 승인되면 디렉터 통제가 무너진다');

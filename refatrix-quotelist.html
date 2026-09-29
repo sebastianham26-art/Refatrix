@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0924gp2</title>
+<title>Refatrix ERP · 견적 목록 · ql-0929ex</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -155,6 +155,10 @@
         <select id="cvCustomer" style="width:100%"></select>
         <div class="hint" style="margin:4px 0 10px">불특정 고객 견적은 등록된 고객을 지정해야 매출로 전환됩니다.</div>
       </div>
+      <!-- 0235 · 판매 영업사원. 독점 고객이면 독점권자로 고정, 개방 고객이면 선택 필수(그 사람이 1년 독점). -->
+      <label>판매 영업사원 (Vendedor)</label>
+      <select id="cvSeller" style="width:100%;max-width:280px"><option value="">— 선택 —</option></select>
+      <div id="cvExcl" class="hint" style="margin:4px 0 10px"></div>
       <label>매출일 (인보이스 기록일)</label>
       <input id="cvDate" type="date" style="width:170px">
       <div class="hint" style="margin-top:8px">전환하면 재고가 차감되고, 임시 SAT 번호(TMP-)가 부여됩니다. 실제 SAT는 나중에 입력할 수 있습니다.</div>
@@ -685,7 +689,8 @@
       // 0225 · 고객이 자기 PO번호로 대조할 수 있게 견적서에도 실어 보낸다. 없으면 줄 자체가 없다.
       +(q.customer_po_no?('<b>Su orden de compra (O.C.):</b> '+esc(q.customer_po_no)+'<br>'):'')
       +'<b>Fecha:</b> '+esc(date)+' &nbsp;&nbsp; <b>Atendió:</b> '+esc(issuerLabel(q))
-      +(q.customer_owner_name?' &nbsp;&nbsp; <b>Vendedor asignado:</b> '+esc(q.customer_owner_name):'')+'</div>'
+      // 0235 · 판매 영업사원(견적의 seller) — 없으면 고객 담당자
+      +((q.seller_name||q.customer_owner_name)?' &nbsp;&nbsp; <b>Vendedor:</b> '+esc(q.seller_name||q.customer_owner_name):'')+'</div>'
       +'<div class="wanote">📱 '+waNote+'</div>'
       +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Producto / Aplicación</th><th>Cant.</th>'+(showList?'<th>List</th>':'')+(showDisc?'<th>Desc.</th>':'')+'<th>P.Unit</th><th>IVA</th><th>Total c/IVA</th>'+thExtra+'</tr></thead>'
       +'<tbody>'+rowsHtml+'</tbody></table>'
@@ -1069,6 +1074,32 @@
     try{ const d=await fetch(session.api+'/api/customers',{headers:auth()}).then(r=>r.json()); custCache=d.items||[]; }catch(e){ custCache=[]; }
     return custCache;
   }
+  // ===== 0235 · 전환 시 판매 영업사원 =====
+  let cvSellers=null, cvQuoteSeller=null;
+  async function cvLoadSellers(){
+    if(!cvSellers){ try{ cvSellers=((await fetch(session.api+'/api/sellers',{headers:auth()}).then(r=>r.json())).items)||[]; }catch(e){ cvSellers=[]; } }
+    $('cvSeller').innerHTML='<option value="">— 선택 —</option>'+cvSellers.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('');
+  }
+  async function cvCheckExcl(customerId, quoteSeller){
+    const b=$('cvExcl'), sel=$('cvSeller');
+    sel.disabled=false; b.innerHTML=''; b.style.color='';
+    if(quoteSeller) sel.value=String(quoteSeller);
+    if(!customerId) return;
+    try{
+      const d=await fetch(session.api+'/api/exclusivity/check?customer_id='+encodeURIComponent(customerId)+(quoteSeller?('&seller_id='+quoteSeller):''),{headers:auth()}).then(r=>r.json());
+      if(!d||d.ready===false) return;
+      if(d.error==='exclusive_other'){ b.style.color='#a33'; b.textContent='⛔ '+(d.note||'다른 영업사원의 독점 고객입니다.'); return; }
+      if(d.locked&&d.holder){
+        if(!sel.querySelector('option[value="'+d.holder.id+'"]')) sel.insertAdjacentHTML('beforeend','<option value="'+d.holder.id+'">'+esc(d.holder.name)+'</option>');
+        sel.value=String(d.holder.id); sel.disabled=true; b.style.color='#1f5540';
+        b.textContent='🔒 '+d.holder.name+' 독점 · '+d.holder.until+' 까지 — 판매자·커미션은 독점권자로 고정됩니다.';
+      } else if(d.open){
+        b.style.color='#8a7328';
+        b.textContent='🟡 독점권 없음(개방) — 선택한 영업사원이 이 인보이스로 1년 독점을 갖습니다. 판매자를 반드시 선택하세요.';
+      } else if(d.seller_id && !sel.value){ sel.value=String(d.seller_id); }
+    }catch(e){ /* 서버가 전환 때 다시 판정 */ }
+  }
+  (function(){ var cc=document.getElementById('cvCustomer'); if(cc) cc.addEventListener('change',function(){ cvCheckExcl(Number(cc.value)||null, cvQuoteSeller); }); })();
   async function openConvert(id,isGuest,party){
     cvId=id; cvGuest=!!isGuest;
     cvPrinted=false; cvHasDoc=false; cvDocMeta=null;
@@ -1087,6 +1118,14 @@
     }
     $('cvPreview').innerHTML='<div class="hint">분류 미리보기 불러오는 중…</div>';
     $('cvModal').style.display='flex';
+    await cvLoadSellers();
+    try{
+      const qd=await fetch(session.api+'/api/quotes/'+id,{headers:auth()}).then(r=>r.json());
+      const qq=qd.quote||qd||{};
+      cvQuoteSeller=qq.seller_id||null;
+      if(!cvGuest) await cvCheckExcl(qq.customer_id, cvQuoteSeller);
+      else { $('cvExcl').textContent='고객을 지정하면 독점 여부를 확인합니다.'; if(cvQuoteSeller) $('cvSeller').value=String(cvQuoteSeller); }
+    }catch(e){}
     try{
       const pv=await fetch(session.api+'/api/quotes/'+id+'/convert-preview',{headers:auth()}).then(r=>r.json());
       cvPreviewData=pv;
@@ -1379,6 +1418,7 @@
       if(!cid){m.className='msg err';m.textContent='고객을 지정하세요(불특정 견적).';return;}
       body.customer_id=Number(cid);
     }
+    if($('cvSeller').value) body.seller_id=Number($('cvSeller').value);   // 0235
     $('cvBtn').disabled=true;
     try{
       const res=await fetch(session.api+'/api/quotes/'+cvId+'/convert',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
@@ -1391,7 +1431,9 @@
         else if(d.error==='packing_doc_required')msg='포장작업지시서 서명 스캔본을 먼저 업로드하세요.';
         // 0193 · 매출 전환도 RFC 가 있어야 한다(견적 단계까지는 RFC 없이 진행 가능).
         else if(d.error==='customer_rfc_required')msg=(d.note||'RFC 가 없는 고객입니다. 영업>고객등록에서 RFC 를 먼저 입력하세요.')+(d.customer_name?(' ('+d.customer_name+')'):'');
-        else if(d.error==='sale_failed')msg='매출 생성 실패: '+JSON.stringify(d.detail||{});
+        // 0235 · 고객 독점 정책
+        else if(d.error==='exclusive_other'||d.error==='seller_required'||d.error==='seller_self_only')msg=d.note||d.error;
+        else if(d.error==='sale_failed')msg=(d.detail&&d.detail.note)?d.detail.note:('매출 생성 실패: '+JSON.stringify(d.detail||{}));
         else if(d.error==='no_list_price')msg=(d.note||'정가 없는 제품이 있습니다.')+' [ '+(d.items||[]).map(x=>x.code).join(', ')+' ]';
         // 0224b · 서버는 더 이상 이 오류로 전환을 막지 않는다. 구버전 백엔드와 섞여 배포된
         //   경우에만 보이므로 안내만 남겨 둔다(앞뒤 배포 시차 보호).

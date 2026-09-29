@@ -63,6 +63,8 @@ import crmLeadRoutes from './routes/crmLeadRoutes.js';
 import crmQuoteRoutes from './routes/crmQuoteRoutes.js';
 import secretRoutes from './routes/secretRoutes.js';    // 외부 서비스 키 화면(0209) — 라이브 server.js 에서 등록이 빠져 있던 것을 복구
 import { startSecretRefresh } from './secrets.js';
+import exclusivityRoutes from './routes/exclusivityRoutes.js';   // 0235 · 고객 독점 정책
+import { registerExclusivityHooks, startExclusivitySweep } from './exclusivity.js';
 import surveyRoutes from './routes/surveyRoutes.js';     // 제품·마케팅 › 고객 설문 분석(사진·PDF → AI 판독)
 import priceMasterRoutes from './routes/priceMasterRoutes.js';   // 제품·마케팅 › 가격 마스터(0229)
 import approvalRoutes from './routes/approvalRoutes.js';         // 공통 › 전자결재(0234) — 비용집행 품의·증빙·사전/사후승인
@@ -151,12 +153,15 @@ export function buildApp() {
   app.register(crmLeadRoutes);      // CRM → ERP 수신(웹 가입 신청 알림) + 팝업·이력
   app.register(crmQuoteRoutes);     // CRM → ERP 수신(견적요청) + 팝업·담당자 지정
   app.register(secretRoutes);       // 관리 → 외부 서비스 키 (Anthropic·OpenAI·WhatsApp)
+  app.register(exclusivityRoutes);  // 0235 · 고객 독점(RFC 30일 · 판매 1년 · 6개월 연장) + 판매 영업사원
+  registerExclusivityHooks(app);     // 0235 · 매출 삭제·수정·NC 뒤 독점·커미션 귀속 재계산
   app.register(surveyRoutes);       // 고객 설문 분석 — 양식·응답 판독 큐·AI 주제 요약·원본 zip
   app.register(priceMasterRoutes);  // 가격 마스터 — 날짜별 정가 이력 · % 일괄/선택 변경 · 예약 · 되돌리기
   app.register(approvalRoutes);     // 전자결재 — 품의 · 결재선 · 증빙(파일당 20MB, 라우트 전용 bodyLimit) · 댓글 · 알림 · 설정
 
   // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
   startSecretRefresh(app);
+  startExclusivitySweep(app);        // 0235 · 기동 15초 후 + 6시간마다 독점 상태 갱신(만료 반영)
 
   // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
   startCrmSyncWorker(app);
