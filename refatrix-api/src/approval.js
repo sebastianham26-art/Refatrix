@@ -303,3 +303,127 @@ export function completenessChecks(docs, settings, nowMs = Date.now()) {
     { key: 'dup', label: '중복 증빙 의심', items: pick((d) => (d.files || []).some((f) => !f.voided_at && f.dup_of)) },
   ];
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 0237 — 통화(USD→MXN 환산) · 결제 방식(일시불/분할/정기) · 본문 그림
+// ═══════════════════════════════════════════════════════════════════════
+export const CURRENCIES = ['MXN', 'USD'];
+export const PAYMENT_TYPES = ['once', 'installment', 'recurring'];
+export const PAYMENT_TYPE_LABEL = { once: '일시불', installment: '분할 지급', recurring: '정기 지급' };
+export const FREQS = { weekly: '매주', biweekly: '격주', monthly: '매월', quarterly: '분기' };
+export const SCHEDULE_MAX = 60;          // 회차 상한(매주 1년 ≈ 52회)
+
+const isYmd = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z'));
+export { isYmd };
+
+// start(YYYY-MM-DD) 에서 i 번째 회차 날짜. 월 단위는 말일 보정(1/31 → 2/28 → 3/31).
+export function addPeriod(start, freq, i) {
+  const [y, m, d] = start.split('-').map(Number);
+  let dt;
+  if (freq === 'weekly' || freq === 'biweekly') {
+    dt = new Date(Date.UTC(y, m - 1, d + i * (freq === 'weekly' ? 7 : 14)));
+  } else {
+    const months = i * (freq === 'quarterly' ? 3 : 1);
+    const last = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
+    dt = new Date(Date.UTC(y, m - 1 + months, Math.min(d, last)));
+  }
+  return dt.toISOString().slice(0, 10);
+}
+
+// 금액을 n 회로 나눔(마지막 회차가 단수 차이 흡수)
+export function splitEven(total, count) {
+  const per = round2(total / count);
+  const rows = Array.from({ length: count }, () => per);
+  rows[count - 1] = round2(total - per * (count - 1));
+  return rows;
+}
+
+// 지급 일정 생성·검증 → { rows:[{seq,due_date,amount}], plan } | { error }
+//   total: 문서 통화 IVA 포함 합계.
+//   once        : pay_due 1회
+//   installment : rows=[{due_date,amount}] 2~60회, 합계 = total(±0.01)
+//   recurring   : plan={freq,count,start} → 같은 금액 count 회
+export function buildSchedule({ type, total, pay_due, plan, rows }) {
+  const tot = round2(total);
+  if (type === 'recurring') {
+    const freq = plan && plan.freq, count = Number(plan && plan.count), start = plan && plan.start;
+    if (!FREQS[freq]) return { error: 'bad_freq' };
+    if (!Number.isInteger(count) || count < 2 || count > SCHEDULE_MAX) return { error: 'bad_count' };
+    if (!isYmd(start)) return { error: 'bad_start' };
+    const amts = splitEven(tot, count);
+    return {
+      rows: amts.map((a, i) => ({ seq: i + 1, due_date: addPeriod(start, freq, i), amount: a })),
+      plan: { freq, count, start, per_sub: plan.per_sub != null ? round2(plan.per_sub) : null },
+    };
+  }
+  if (type === 'installment') {
+    if (!Array.isArray(rows) || rows.length < 2 || rows.length > SCHEDULE_MAX) return { error: 'bad_count' };
+    const out = [];
+    for (const [i, r] of rows.entries()) {
+      const a = round2(r && r.amount);
+      if (!(a > 0)) return { error: 'bad_amount' };
+      if (r.due_date != null && r.due_date !== '' && !isYmd(r.due_date)) return { error: 'bad_date' };
+      out.push({ seq: i + 1, due_date: r.due_date || null, amount: a });
+    }
+    const sum = round2(out.reduce((s, r) => s + r.amount, 0));
+    if (Math.abs(sum - tot) > 0.01) return { error: 'schedule_sum', sum, total: tot };
+    return { rows: out, plan: null };
+  }
+  return { rows: [{ seq: 1, due_date: isYmd(pay_due) ? pay_due : null, amount: tot }], plan: null };
+}
+
+// 원통화 → MXN. 합계가 정확히 맞도록 IVA 는 합계 − 소계.
+export function toMxn({ orig_sub, orig_total }, rate) {
+  const r = n(rate) || 1;
+  const planned_sub = round2(n(orig_sub) * r);
+  const planned_total = round2(n(orig_total) * r);
+  return { planned_sub, planned_iva: round2(planned_total - planned_sub), planned_total };
+}
+// 회차별 MXN — 합계가 planned_total 과 정확히 같도록 마지막 회차가 단수 흡수
+export function paymentsMxn(amounts, rate, plannedTotal) {
+  const r = n(rate) || 1;
+  const out = amounts.map((a) => round2(n(a) * r));
+  if (out.length) out[out.length - 1] = round2(n(plannedTotal) - out.slice(0, -1).reduce((s, x) => s + x, 0));
+  return out;
+}
+
+// ── 본문(문단 + 그림) ──────────────────────────────────────────────────
+export const BODY_IMG_MAX = 3 * 1024 * 1024;     // 그림 1장(data URL 길이) — 화면에서 1600px 로 줄여 보냄
+export const BODY_TOTAL_MAX = 10 * 1024 * 1024;  // 본문 전체
+export const BODY_NODES_MAX = 400;
+export const APPROVAL_DOC_BODY_LIMIT = 16 * 1024 * 1024;   // 작성·수정 라우트 전용 bodyLimit
+const IMG_SRC_RE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+// 입력: 배열 또는 JSON 문자열. 출력: { ok, nodes, plain } — 텍스트·그림 외 노드/속성은 버린다.
+export function normalizeBodyRich(raw, fallbackText) {
+  let arr = raw;
+  if (typeof raw === 'string') { try { arr = JSON.parse(raw); } catch { return { ok: false, error: 'bad_body' }; } }
+  if (arr == null) arr = fallbackText ? [{ t: 'p', v: String(fallbackText) }] : [];
+  if (!Array.isArray(arr)) return { ok: false, error: 'bad_body' };
+  if (arr.length > BODY_NODES_MAX) return { ok: false, error: 'body_too_long' };
+  const nodes = [];
+  let size = 0;
+  for (const x of arr) {
+    if (!x || typeof x !== 'object') continue;
+    if (x.t === 'p') {
+      const v = String(x.v ?? '').replace(/\u0000/g, '').replace(/\r\n?/g, '\n').slice(0, 20000);
+      if (!v) continue;
+      const prev = nodes[nodes.length - 1];
+      if (prev && prev.t === 'p') prev.v = (prev.v + '\n' + v).slice(0, 20000);
+      else nodes.push({ t: 'p', v });
+      size += v.length;
+    } else if (x.t === 'img') {
+      const src = String(x.src || '');
+      if (!IMG_SRC_RE.test(src)) return { ok: false, error: 'bad_image' };
+      if (src.length > BODY_IMG_MAX) return { ok: false, error: 'image_too_large' };
+      const w = Number.isInteger(x.w) && x.w > 0 && x.w <= 10000 ? x.w : null;
+      const h = Number.isInteger(x.h) && x.h > 0 && x.h <= 10000 ? x.h : null;
+      nodes.push({ t: 'img', src, w, h });
+      size += src.length;
+    }
+  }
+  if (size > BODY_TOTAL_MAX) return { ok: false, error: 'body_too_large' };
+  const imgs = nodes.filter((x) => x.t === 'img').length;
+  const plain = nodes.map((x) => (x.t === 'p' ? x.v : '[그림]')).join('\n').slice(0, 20000);
+  return { ok: true, nodes, plain, images: imgs };
+}

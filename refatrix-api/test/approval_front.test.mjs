@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20260929ea<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20260929eb<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260929ea/);
 });
 
@@ -67,12 +67,12 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     const catSel = o.$('[data-f="category_id"]');
     catSel.value = catSel.options[2].value; catSel.dispatchEvent(new o.w.Event('input', { bubbles: true }));
     o.type('[data-f="title"]', 'UI 테스트 · 부스 제작');
-    o.type('[data-f="planned_sub"]', '90000');
+    o.type('[data-f="orig_sub"]', '90000');
     assert.equal(o.$('#cTot').textContent, '$104,400.00');
     assert.match(o.$('#ceoNote').textContent, /사전승인 포함/);
-    o.type('[data-f="planned_sub"]', '80000');
+    o.type('[data-f="orig_sub"]', '80000');
     assert.match(o.$('#ceoNote').textContent, /사전승인 없음/);
-    o.type('[data-f="planned_sub"]', '90000');
+    o.type('[data-f="orig_sub"]', '90000');
     o.w.eval(`ui.cd.newFiles.push({file:new File(['%PDF-1.4 ui ' + Date.now()],'cotizacion_stand.pdf',{type:'application/pdf'}),name:'cotizacion_stand.pdf',size:30,kind:'견적서'})`);
     o.click(o.act('csubmit'));
     await o.until(() => o.w.eval('ui.view') === 'detail' && o.w.eval('DET') && o.w.eval('DET.doc.doc_no'));
@@ -159,7 +159,68 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     await s.until(() => s.$('.tbl tbody tr') && s.w.eval('REP'));
     assert.match(s.$('#app').textContent, /완결성 점검/);
 
-    for (const p of [o, s, j, c]) assert.deepEqual(p.errs, [], 'JS 오류 없음');
+    // ⑧ 0237 — USD 환산 미리보기 · 정기 지급 일정 · 분할 합계 · 본문 그림 · 회차 집행
+    const today = new Date().toISOString().slice(0, 10);
+    await pool.query(`INSERT INTO fx_rates(rate_date, base, quote, rate, source) VALUES ($1,'USD','MXN',18.5,'test')
+      ON CONFLICT (rate_date, base, quote) DO UPDATE SET rate=18.5, source='test'`, [today]);
+    const m = await open('maria');
+    m.click(m.$('[data-act="nav"][data-v="compose"]'));
+    await m.until(() => m.$('#lprev'));
+    const cs = m.$('[data-f="category_id"]'); cs.value = cs.options[1].value; cs.dispatchEvent(new m.w.Event('input', { bubbles: true }));
+    m.type('[data-f="title"]', 'UI USD 정기');
+    m.click(m.$('[data-act="ccur"][data-v="USD"]'));
+    await m.until(() => /18\.5/.test(m.$('#cFx').textContent));
+    m.click(m.$('[data-act="cpt"][data-v="recurring"]'));
+    await m.until(() => m.$('[data-pl="per_sub"]'));
+    m.$('[data-pl="start"]').value = '2026-10-05'; m.$('[data-pl="start"]').dispatchEvent(new m.w.Event('input', { bubbles: true }));
+    m.$('[data-pl="count"]').value = '4'; m.$('[data-pl="count"]').dispatchEvent(new m.w.Event('input', { bubbles: true }));
+    m.type('[data-pl="per_sub"]', '1000');
+    assert.equal(m.$('#cTot').textContent, 'US$4,640.00');
+    assert.match(m.$('#cFx').textContent, /\$85,840\.00 MXN/);
+    assert.equal(m.d.querySelectorAll('#cSchedPrev .pc').length, 4);
+    assert.match(m.$('#cSchedPrev').textContent, /2026-10-26/);
+    // 본문: 텍스트 + 그림 노드 → 직렬화
+    const ed = m.$('#bodyEd');
+    ed.innerHTML = '주간 경비<br>4주<div>둘째 줄</div><img src="data:image/png;base64,iVBORw0KGgo=" data-w="8" data-h="8"><img src="javascript:alert(1)">';
+    const nodes = m.w.eval('serializeEd(document.getElementById("bodyEd"))');
+    assert.deepEqual(JSON.parse(JSON.stringify(nodes)), [{ t: 'p', v: '주간 경비\n4주\n둘째 줄' }, { t: 'img', src: 'data:image/png;base64,iVBORw0KGgo=', w: 8, h: 8 }], '위험한 그림 주소는 버림');
+    m.click(m.act('csubmit'));
+    await m.until(() => m.w.eval('ui.view') === 'detail' && m.w.eval('DET') && m.w.eval('DET.doc.doc_no'));
+    const usdId = m.w.eval('DET.doc.id');
+    assert.equal(m.w.eval('DET.doc.fx_rate'), 18.5); assert.equal(m.w.eval('DET.payments.length'), 4);
+    assert.ok(m.$('.rbody img'), '본문 그림 표시'); assert.match(m.$('.rbody').textContent, /둘째 줄/);
+    assert.match(m.$('#app').textContent, /18\.5 .*상신 때 고정/);
+    // 분할: 합계가 안 맞으면 저장 막힘 → 선급 30% + 잔금 버튼으로 맞춤
+    m.click(m.$('[data-act="nav"][data-v="compose"]'));
+    await m.until(() => m.$('#lprev'));
+    m.click(m.$('[data-act="cpt"][data-v="installment"]'));
+    await m.until(() => m.$('#cSched'));
+    m.type('[data-f="orig_sub"]', '1000');
+    m.type('[data-f="title"]', 'UI 분할');
+    m.$('[data-sc="amount"][data-i="0"]').value = '100'; m.$('[data-sc="amount"][data-i="0"]').dispatchEvent(new m.w.Event('input', { bubbles: true }));
+    assert.match(m.$('#cSchedSum').textContent, /차이/);
+    m.click(m.act('scadv'));
+    assert.match(m.$('#cSchedSum').textContent, /일치/);
+    assert.equal(m.$('[data-sc="amount"][data-i="0"]').value, '348');
+    // 디렉터 승인 → 재무: 회차별 집행 버튼 · 1회차 집행
+    await s.w.eval(`openDoc(${usdId})`);
+    await s.until(() => s.w.eval('DET') && s.w.eval('DET.doc.id') === usdId && s.act('approve'));
+    s.click(s.act('approve')); await s.until(() => s.$('#mMemo')); s.click(s.act('mok'));
+    await s.until(() => s.w.eval('DET.doc.status') === 'approved');
+    await c.w.eval(`openDoc(${usdId})`);
+    await c.until(() => c.w.eval('DET') && c.w.eval('DET.doc.id') === usdId && c.d.querySelectorAll('[data-act="exec"][data-pid]').length === 4);
+    c.click(c.d.querySelector('[data-act="exec"][data-pid]'));
+    await c.until(() => c.$('#mAmt'));
+    assert.match(c.$('#modalCard h2').textContent, /1\/4회차/);
+    assert.equal(c.$('#mAmt').value, '1160');
+    c.w.eval(`ui.mFiles.push({file:new File(['SPEI w1 ' + Date.now()],'spei_w1.pdf',{type:'application/pdf'}),name:'spei_w1.pdf',size:12,kind:'송금증'})`);
+    c.click(c.act('mok'));
+    await c.until(() => c.w.eval('DET.payments[0].status') === 'done');
+    assert.equal(c.w.eval('DET.payments[0].actual_mxn'), 21460);
+    assert.equal(c.w.eval('DET.doc.exec_status'), 'pending', '남은 회차 있음');
+    assert.equal(c.d.querySelectorAll('[data-act="exec"][data-pid]').length, 3);
+
+    for (const p of [o, s, j, c, m]) assert.deepEqual(p.errs, [], 'JS 오류 없음');
     await pool.query(`UPDATE approval_settings SET ceo_pre_threshold=100000 WHERE id=1`);
   } finally {
     for (const dom of doms) dom.window.close();

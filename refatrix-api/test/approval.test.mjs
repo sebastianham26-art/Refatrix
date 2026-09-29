@@ -7,7 +7,7 @@
 //
 //   실행: node --test test/approval.test.mjs
 //         TEST_PG_URL=postgres://... node --test test/approval.test.mjs
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,14 @@ const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
 
 const R = await import('../src/approval.js');
+
+// E2E 들이 같은 DB 풀을 쓰므로 파일 끝에서 한 번만 정리. buildApp 동기화 워커(setInterval)가 프로세스를 붙잡아 결과 보고 뒤 종료.
+after(async () => {
+  if (!PG) return;
+  const { pool } = await import('../src/db.js');
+  await pool.end().catch(() => {});
+  setTimeout(() => process.exit(process.exitCode || 0), 500);
+});
 
 const SET = { ceo_pre_threshold: 100000, threshold_basis: 'total', variance_tolerance_pct: 10, ceo_user_id: 3, director_user_id: 1, finance_user_id: 2 };
 const doc = (o) => ({ planned_sub: 0, planned_total: 0, include_finance: true, status: 'draft', exec_status: 'none', post_status: 'none', drafter_id: 5, ...o });
@@ -334,8 +342,159 @@ test('C E2E — 기안·결재·집행·사후승인·이의·반려·재기안�
     assert.match((await ok('sebastian', 'GET', '/api/approvals/bootstrap')).settings_log[0].detail, /100,000\.00 → \$80,000\.00/);
   } finally {
     await app.close();
-    await pool.end();
-    // buildApp 이 띄우는 동기화 워커(setInterval)가 프로세스를 붙잡으므로 결과 보고 뒤 종료
-    setTimeout(() => process.exit(process.exitCode || 0), 1500);
+  }
+});
+
+// ═════════ 0237 — 통화 · 결제 방식 · 본문 그림 ═════════
+test('A12 회차 날짜 — 매주·격주·매월(말일 보정)·분기', () => {
+  assert.deepEqual([0, 1, 2].map((i) => R.addPeriod('2026-09-28', 'weekly', i)), ['2026-09-28', '2026-10-05', '2026-10-12']);
+  assert.equal(R.addPeriod('2026-12-28', 'biweekly', 1), '2027-01-11');
+  assert.deepEqual([0, 1, 2, 3].map((i) => R.addPeriod('2026-01-31', 'monthly', i)), ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30']);
+  assert.equal(R.addPeriod('2026-11-30', 'quarterly', 1), '2027-02-28');
+});
+test('A13 지급 일정 — 일시불 · 정기 · 분할(합계 검증)', () => {
+  assert.deepEqual(R.buildSchedule({ type: 'once', total: 116, pay_due: '2026-10-01' }).rows, [{ seq: 1, due_date: '2026-10-01', amount: 116 }]);
+  const rec = R.buildSchedule({ type: 'recurring', total: 100, plan: { freq: 'weekly', count: 3, start: '2026-10-05', per_sub: 1 } });
+  assert.deepEqual(rec.rows.map((r) => r.amount), [33.33, 33.33, 33.34], '마지막 회차가 단수 흡수');
+  assert.equal(rec.rows[2].due_date, '2026-10-19');
+  assert.equal(R.buildSchedule({ type: 'recurring', total: 1, plan: { freq: 'daily', count: 3, start: '2026-10-05' } }).error, 'bad_freq');
+  assert.equal(R.buildSchedule({ type: 'recurring', total: 1, plan: { freq: 'weekly', count: 61, start: '2026-10-05' } }).error, 'bad_count');
+  const ok = R.buildSchedule({ type: 'installment', total: 1000, rows: [{ due_date: '2026-10-01', amount: 300 }, { due_date: '2026-11-01', amount: 700 }] });
+  assert.equal(ok.rows.length, 2);
+  assert.equal(R.buildSchedule({ type: 'installment', total: 1000, rows: [{ amount: 300 }, { amount: 600 }] }).error, 'schedule_sum');
+  assert.equal(R.buildSchedule({ type: 'installment', total: 1000, rows: [{ amount: 1000 }] }).error, 'bad_count');
+});
+test('A14 MXN 환산 — 합계 정확 · 회차 단수 보정', () => {
+  const mx = R.toMxn({ orig_sub: 4000, orig_total: 4640 }, 18.5);
+  assert.deepEqual(mx, { planned_sub: 74000, planned_iva: 11840, planned_total: 85840 });
+  const p = R.paymentsMxn([33.33, 33.33, 33.34], 18.123457, R.round2(100 * 18.123457));
+  assert.equal(R.round2(p.reduce((a, b) => a + b, 0)), R.round2(100 * 18.123457));
+});
+test('A15 본문 — 텍스트·그림만 통과, 위험한 그림 주소 거부', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  const r = R.normalizeBodyRich([{ t: 'p', v: '가' }, { t: 'p', v: '나' }, { t: 'img', src: png, w: 10, h: 5, onerror: 'x' }, { t: 'html', v: '<script>' }]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.nodes, [{ t: 'p', v: '가\n나' }, { t: 'img', src: png, w: 10, h: 5 }]);
+  assert.equal(r.plain, '가\n나\n[그림]');
+  for (const bad of ['javascript:alert(1)', 'data:image/svg+xml;base64,PHN2Zz4=', 'data:text/html;base64,PGI+', 'https://x/y.png', png + '"><script>'])
+    assert.equal(R.normalizeBodyRich([{ t: 'img', src: bad }]).error, 'bad_image', bad);
+  assert.equal(R.normalizeBodyRich(null, '옛 본문').plain, '옛 본문', '0237 이전 문서 호환');
+  assert.equal(R.normalizeBodyRich([{ t: 'img', src: 'data:image/jpeg;base64,' + 'A'.repeat(R.BODY_IMG_MAX) }]).error, 'image_too_large');
+});
+
+test('D E2E — USD 환율 고정 · 정기 지급 회차별 집행 · 회차 중단 · 분할 · 본문 그림', { skip: !PG }, async () => {
+  const { buildApp } = await import('../src/server.js');
+  const { pool } = await import('../src/db.js');
+  const app = buildApp();
+  await app.ready();
+  const U = {};
+  for (const r of (await pool.query(`SELECT id, login_id, role FROM users WHERE login_id = ANY($1)`,
+    [['sebastian', 'christopher', 'jang', 'maria', 'oscar']])).rows) U[r.login_id] = { id: Number(r.id), tok: app.jwt.sign({ sub: Number(r.id), role: r.role }) };
+  const call = async (who, method, url, payload) => {
+    const res = await app.inject({ method, url, payload, headers: { authorization: 'Bearer ' + U[who].tok } });
+    let body = null; try { body = res.json(); } catch { body = res.body; }
+    return { code: res.statusCode, body };
+  };
+  const ok = async (...a) => { const r = await call(...a); assert.ok(r.code < 300, `${a[1]} ${a[2]} → ${r.code} ${JSON.stringify(r.body)}`); return r.body; };
+  const dataUrl = (buf, mime) => `data:${mime};base64,${Buffer.from(buf).toString('base64')}`;
+  const today = new Date().toISOString().slice(0, 10);
+  const setRate = (d, r) => pool.query(
+    `INSERT INTO fx_rates(rate_date, base, quote, rate, source) VALUES ($1,'USD','MXN',$2,'test')
+     ON CONFLICT (rate_date, base, quote) DO UPDATE SET rate=EXCLUDED.rate, source='test'`, [d, r]);
+  try {
+    await pool.query(`UPDATE approval_settings SET ceo_pre_threshold=100000, threshold_basis='total', ceo_user_id=$1, director_user_id=$2, finance_user_id=$3 WHERE id=1`,
+      [U.jang.id, U.sebastian.id, U.christopher.id]);
+    await setRate(today, 18.5); await setRate('2026-09-15', 18.1); await setRate('2026-09-01', 17.9);
+    const cat = (await ok('maria', 'GET', '/api/approvals/bootstrap')).categories[0].id;
+
+    // ① USD · 매주 4회 · 회당 소계 1,000 → 총 USD 4,640 → 미리보기 MXN 85,840
+    const png = dataUrl(Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), 'image/png');
+    const body = { category_id: cat, title: 'USD 정기 · 창고 경비 용역', currency: 'USD', payment_type: 'recurring', iva_applied: true,
+      payment_plan: { freq: 'weekly', count: 4, start: '2026-10-05', per_sub: 1000 },
+      body_rich: [{ t: 'p', v: '주간 경비 용역\n4주' }, { t: 'img', src: png, w: 16, h: 16 }] };
+    const d = (await ok('maria', 'POST', '/api/approvals', body)).id;
+    let det = await ok('maria', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.doc.currency, 'USD'); assert.equal(det.doc.orig_total, 4640); assert.equal(det.doc.planned_total, 85840);
+    assert.equal(det.doc.fx_locked_at, null, '임시저장은 미리보기(고정 아님)');
+    assert.deepEqual(det.payments.map((p) => [p.seq, p.due_date, p.planned_amount]), [[1, '2026-10-05', 1160], [2, '2026-10-12', 1160], [3, '2026-10-19', 1160], [4, '2026-10-26', 1160]]);
+    assert.equal(R.round2(det.payments.reduce((s, p) => s + p.planned_mxn, 0)), 85840);
+    assert.equal(det.body_nodes[1].t, 'img'); assert.equal(det.doc.body, '주간 경비 용역\n4주\n[그림]');
+    assert.equal((await ok('maria', 'GET', '/api/approvals')).items.find((i) => i.id === d).body, undefined, '목록엔 본문 없음');
+
+    // ② 상신 → 환율 고정 → 환율이 바뀌어도 문서 금액 불변
+    await ok('maria', 'POST', `/api/approvals/${d}/submit`);
+    det = await ok('maria', 'GET', `/api/approvals/${d}`);
+    assert.ok(det.doc.fx_locked_at); assert.equal(det.doc.fx_rate, 18.5); assert.equal(det.doc.fx_date, today);
+    assert.match(det.events[0].detail, /USD 4640\.00 × 18\.5/);
+    await setRate(today, 19.9);
+    assert.equal((await ok('maria', 'GET', `/api/approvals/${d}`)).doc.planned_total, 85840);
+    // 회수 → 금액 수정 → 재상신: 고정 환율 유지(19.9 아님)
+    await ok('maria', 'POST', `/api/approvals/${d}/withdraw`);
+    await ok('maria', 'PUT', `/api/approvals/${d}`, { ...body, payment_plan: { ...body.payment_plan, per_sub: 1100 } });
+    det = await ok('maria', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.doc.fx_rate, 18.5); assert.equal(det.doc.planned_total, R.round2(5104 * 18.5));
+    await ok('maria', 'POST', `/api/approvals/${d}/submit`);
+    await ok('sebastian', 'POST', `/api/approvals/${d}/act`, { action: 'approve' });
+    det = await ok('christopher', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.doc.exec_status, 'pending');
+
+    // ③ 1회차: 증빙 없으면 거부 → 회차 증빙 첨부 → 지급일(09-15) 환율 18.1 로 고정
+    const p1 = det.payments[0].id, p2 = det.payments[1].id;
+    assert.equal((await call('christopher', 'POST', `/api/approvals/${d}/execute`, { payment_id: p1, actual_amount: 1276, exec_date: '2026-09-15', pay_method: '계좌이체' })).body.error, 'exec_evidence_required');
+    await ok('christopher', 'POST', `/api/approvals/${d}/files`, { file_name: 'spei_w1.pdf', kind: '송금증', payment_id: p1, data_url: dataUrl('spei1' + Date.now(), 'application/pdf') });
+    const e1 = await ok('christopher', 'POST', `/api/approvals/${d}/execute`, { payment_id: p1, actual_amount: 1276, exec_date: '2026-09-15', pay_method: '계좌이체' });
+    assert.equal(e1.fx.rate, 18.1); assert.equal(e1.actual_mxn, R.round2(1276 * 18.1)); assert.equal(e1.finished, false);
+    assert.equal((await call('christopher', 'POST', `/api/approvals/${d}/execute`, { payment_id: p1, actual_amount: 1, exec_date: '2026-09-15' })).body.detail, 'payment_not_open');
+    let li = (await ok('christopher', 'GET', '/api/approvals')).items.find((i) => i.id === d);
+    assert.deepEqual([li.pay_n, li.pay_done, li.next_due, li.stage], [4, 1, '2026-10-12', 'execwait']);
+    // 2회차: 문서에 먼저 올린 Factura 를 연결(link_file_ids) · 지급일 09-20 은 그 이전 최근 환율(09-15 18.1)
+    const fx2 = await ok('christopher', 'POST', `/api/approvals/${d}/files`, { file_name: 'CFDI_w2.xml', data_url: dataUrl('<cfdi:Comprobante Total="1276.00"/>', 'text/xml') });
+    const e2 = await ok('christopher', 'POST', `/api/approvals/${d}/execute`, { payment_id: p2, actual_amount: 1276, exec_date: '2026-09-20', pay_method: '계좌이체', link_file_ids: [fx2.id] });
+    assert.equal(e2.fx.rate, 18.1); assert.equal(e2.fx.date, '2026-09-15');
+    assert.equal((await ok('christopher', 'GET', `/api/approvals/${d}`)).files.find((f) => f.id === fx2.id).payment_id, p2);
+    // 과거 날짜 환율이 나중에 바뀌어도 집행된 회차는 그대로
+    await setRate('2026-09-15', 25);
+    assert.equal((await ok('christopher', 'GET', `/api/approvals/${d}`)).payments[0].actual_mxn, R.round2(1276 * 18.1));
+    // 3·4회차 중단 → 전 회차 처리 → 집행완료 · 사후승인 요청
+    const [p3, p4] = (await ok('christopher', 'GET', `/api/approvals/${d}`)).payments.slice(2).map((p) => p.id);
+    assert.equal((await call('maria', 'POST', `/api/approvals/${d}/payments/${p3}/skip`, { reason: 'x' })).code, 403);
+    assert.equal((await call('christopher', 'POST', `/api/approvals/${d}/payments/${p3}/skip`, {})).code, 400);
+    await ok('christopher', 'POST', `/api/approvals/${d}/payments/${p3}/skip`, { reason: '계약 조기 종료' });
+    const sk = await ok('christopher', 'POST', `/api/approvals/${d}/payments/${p4}/skip`, { reason: '계약 조기 종료' });
+    assert.equal(sk.finished, true);
+    det = await ok('jang', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.doc.exec_status, 'done'); assert.equal(det.doc.post_status, 'pending');
+    assert.equal(det.doc.actual_total, R.round2(1276 * 18.1 * 2)); assert.equal(det.doc.exec_date, '2026-09-20');
+    assert.deepEqual(det.actions, ['post_confirm', 'flag']);
+    assert.ok(det.events.some((e) => e.action === 'pay_skip') && det.events.some((e) => e.action === 'exec_done'));
+    await setRate('2026-09-15', 18.1);
+
+    // ④ USD 기준액: 소계 6,000 → MXN 128,760 ≥ 100,000 → 사전승인
+    const d2 = (await ok('oscar', 'POST', '/api/approvals', { category_id: cat, title: 'USD 장비', currency: 'USD', orig_sub: 6000 })).id;
+    await setRate(today, 18.5);
+    await ok('oscar', 'POST', `/api/approvals/${d2}/submit`);
+    assert.ok((await ok('sebastian', 'GET', `/api/approvals/${d2}`)).lines.some((l) => l.step_type === 'pre_ceo'));
+
+    // ⑤ 분할: 합계 불일치 거부 · 선급 30% + 잔금
+    assert.equal((await call('oscar', 'POST', '/api/approvals', { category_id: cat, title: '분할', orig_sub: 1000, payment_type: 'installment',
+      schedule: [{ due_date: '2026-10-01', amount: 300 }, { due_date: '2026-11-01', amount: 500 }] })).body.detail, 'schedule_sum');
+    const d3 = (await ok('oscar', 'POST', '/api/approvals', { category_id: cat, title: '분할', orig_sub: 1000, payment_type: 'installment',
+      schedule: [{ due_date: '2026-10-01', amount: 348 }, { due_date: '2026-11-01', amount: 812 }] })).id;
+    const d3det = await ok('oscar', 'GET', `/api/approvals/${d3}`);
+    assert.deepEqual(d3det.payments.map((p) => p.planned_mxn), [348, 812]); assert.equal(d3det.doc.pay_due, '2026-10-01');
+
+    // ⑥ 본문 그림 — 위험한 주소 거부 · 재기안 복사
+    assert.equal((await call('oscar', 'POST', '/api/approvals', { title: 'x', body_rich: [{ t: 'img', src: 'javascript:alert(1)' }] })).body.detail, 'bad_image');
+    assert.equal((await call('oscar', 'POST', '/api/approvals', { title: 'x', body_rich: [{ t: 'img', src: 'data:image/svg+xml;base64,PHN2Zz4=' }] })).body.detail, 'bad_image');
+    await ok('jang', 'POST', `/api/approvals/${d2}/act`, { action: 'approve' }).catch(() => {});
+    const d4 = (await ok('maria', 'POST', '/api/approvals', { category_id: cat, title: '그림 재기안', orig_sub: 10, currency: 'USD', body_rich: body.body_rich })).id;
+    await ok('maria', 'POST', `/api/approvals/${d4}/submit`);
+    await ok('sebastian', 'POST', `/api/approvals/${d4}/act`, { action: 'reject', comment: '다시' });
+    const d5 = (await ok('maria', 'POST', `/api/approvals/${d4}/resubmit`)).id;
+    const d5det = await ok('maria', 'GET', `/api/approvals/${d5}`);
+    assert.equal(d5det.body_nodes[1].src, png); assert.equal(d5det.doc.currency, 'USD');
+    assert.equal(d5det.doc.fx_locked_at, null, '재기안 새 문서는 상신 때 새로 고정'); assert.equal(d5det.payments.length, 1);
+  } finally {
+    await app.close();
   }
 });

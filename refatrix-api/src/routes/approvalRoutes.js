@@ -2,20 +2,28 @@
 //   규칙(결재선 생성·다음 단계·열람 권한·파일 검증)은 src/approval.js 순수 함수.
 //   모든 상태 변경은 withTx 안에서 문서 행을 FOR UPDATE 로 잠근 뒤 처리한다(동시 클릭·중복 승인 방지).
 //   예정/실적 금액은 이 모듈 안에서만 관리 — transactions·cashflow 에는 쓰지 않는다.
+//   0237: USD 기입 → 재무 환율(fx_rates)로 MXN 환산(상신 시 고정) · 결제 방식(일시불/분할/정기) 회차별 집행 · 본문 그림.
 import { query, withTx } from '../db.js';
+import { getUsdMxnRate } from '../fx.js';
 import { authGuard } from '../middleware/authGuard.js';
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
   n, round2, sameId, decodeApprovalFile, sha256Hex, parseCfdi, guessKind, normKind, calcAmounts,
   roleCtx, buildLines, advance, postLine, myPending, canSeeDoc, isTodo, stageKey, fileStage, variancePct,
   allowedActions, canDeleteFile, canVoidFile, docNo, reportRows, completenessChecks,
+  CURRENCIES, PAYMENT_TYPES, PAYMENT_TYPE_LABEL, FREQS, SCHEDULE_MAX, buildSchedule, toMxn, paymentsMxn, normalizeBodyRich, APPROVAL_DOC_BODY_LIMIT, isYmd,
 } from '../approval.js';
 
 const DOC_COLS = `d.id, d.doc_no, d.version, d.parent_id, d.category_id, d.title, d.vendor, d.drafter_id,
   to_char(d.pay_due,'YYYY-MM-DD') AS pay_due, d.pay_method, d.iva_applied, d.planned_sub, d.planned_iva, d.planned_total,
   d.include_finance, d.status, d.exec_status, d.post_status, d.ceo_pre_required, d.threshold_at_submit, d.basis_at_submit,
   d.actual_total, to_char(d.exec_date,'YYYY-MM-DD') AS exec_date, d.exec_pay_method, d.exec_memo, d.exec_at, d.exec_by,
-  d.created_at, d.submitted_at, d.approved_at, d.closed_at`;
+  d.created_at, d.submitted_at, d.approved_at, d.closed_at,
+  d.currency, d.fx_rate, to_char(d.fx_date,'YYYY-MM-DD') AS fx_date, d.fx_source, d.fx_locked_at,
+  d.orig_sub, d.orig_iva, d.orig_total, d.payment_type, d.payment_plan`;
+const PAY_COLS = `id, document_id, seq, to_char(due_date,'YYYY-MM-DD') AS due_date, planned_amount, planned_mxn, status,
+  actual_amount, actual_mxn, fx_rate, to_char(fx_date,'YYYY-MM-DD') AS fx_date, to_char(exec_date,'YYYY-MM-DD') AS exec_date,
+  pay_method, memo, exec_at, exec_by, skip_reason`;
 
 const LINE_COLS = 'id, document_id, step_order, step_type, user_id, status, acted_at, comment';
 
@@ -23,8 +31,20 @@ function normDoc(r) {
   if (!r) return r;
   const o = { ...r };
   for (const k of ['id', 'version', 'parent_id', 'category_id', 'drafter_id', 'exec_by']) o[k] = o[k] == null ? null : Number(o[k]);
-  for (const k of ['planned_sub', 'planned_iva', 'planned_total', 'threshold_at_submit', 'actual_total']) o[k] = o[k] == null ? null : Number(o[k]);
+  for (const k of ['planned_sub', 'planned_iva', 'planned_total', 'threshold_at_submit', 'actual_total', 'fx_rate', 'orig_sub', 'orig_iva', 'orig_total']) o[k] = o[k] == null ? null : Number(o[k]);
+  if ('payment_plan' in o) { try { o.payment_plan = o.payment_plan ? JSON.parse(o.payment_plan) : null; } catch { o.payment_plan = null; } }
+  if (o.currency == null) o.currency = 'MXN';
+  if (o.payment_type == null) o.payment_type = 'once';
   return o;
+}
+const normPay = (p) => {
+  const o = { ...p };
+  for (const k of ['id', 'document_id', 'seq', 'exec_by']) o[k] = o[k] == null ? null : Number(o[k]);
+  for (const k of ['planned_amount', 'planned_mxn', 'actual_amount', 'actual_mxn', 'fx_rate']) o[k] = o[k] == null ? null : Number(o[k]);
+  return o;
+};
+async function loadPayments(q, docId) {
+  return (await q(`SELECT ${PAY_COLS} FROM approval_payments WHERE document_id=$1 ORDER BY seq`, [docId])).rows.map(normPay);
 }
 const normLine = (l) => ({ ...l, id: Number(l.id), document_id: Number(l.document_id), step_order: Number(l.step_order), user_id: Number(l.user_id) });
 const normViewer = (v) => ({ document_id: Number(v.document_id), user_id: Number(v.user_id), kind: v.kind });
@@ -50,7 +70,7 @@ async function loadUsers(q) {
   return map;
 }
 async function loadBundle(q, id, lock = false) {
-  const doc = normDoc((await q(`SELECT ${DOC_COLS}, d.body, d.deleted_at FROM approval_documents d WHERE d.id=$1${lock ? ' FOR UPDATE' : ''}`, [id])).rows[0]);
+  const doc = normDoc((await q(`SELECT ${DOC_COLS}, d.body, d.body_rich, d.deleted_at FROM approval_documents d WHERE d.id=$1${lock ? ' FOR UPDATE' : ''}`, [id])).rows[0]);
   if (!doc || doc.deleted_at) return null;
   const lines = (await q(`SELECT ${LINE_COLS} FROM approval_lines WHERE document_id=$1 ORDER BY step_order, id`, [id])).rows.map(normLine);
   const viewers = (await q(`SELECT document_id, user_id, kind FROM approval_viewers WHERE document_id=$1`, [id])).rows.map(normViewer);
@@ -75,7 +95,48 @@ function mxMonth(t) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit' }).format(new Date(t)).slice(0, 7);
 }
 const cleanText = (v, max = 5000) => (v == null ? null : String(v).replace(/\u0000/g, '').slice(0, max));
-const isYmd = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+// ── 환율 ─────────────────────────────────────────────────────────────
+//   재무 › 환율(fx.js · fx_rates)을 그대로 쓴다. fx_rates 는 날짜별로 한 번 받아 캐시하고 지난 날짜는 다시 받지 않는다.
+//   문서: 상신 시 그날 환율을 문서에 고정(fx_locked_at) — 이후 절대 다시 계산하지 않는다.
+//   회차 집행: 지급일(exec_date) 환율을 회차에 고정.
+async function rateToday() {
+  const r = await getUsdMxnRate();      // { rate, asOf, stale, source }
+  return { rate: n(r.rate), date: r.asOf || null, source: r.source || null, stale: !!r.stale };
+}
+async function rateOn(q, ymd) {
+  const today = new Date().toISOString().slice(0, 10);             // fx.js 캐시 키와 같은 기준(UTC 날짜)
+  if (!ymd || ymd >= today) return rateToday();
+  const row = (await q(
+    `SELECT rate, to_char(rate_date,'YYYY-MM-DD') AS d, source FROM fx_rates
+      WHERE base='USD' AND quote='MXN' AND rate_date <= $1 ORDER BY rate_date DESC LIMIT 1`, [ymd])).rows[0];
+  if (row) return { rate: n(row.rate), date: row.d, source: row.source, stale: row.d !== ymd };
+  return rateToday();
+}
+// 문서 환율: MXN=1 · 이미 고정됐으면 그 값 · 아니면 오늘 환율(미리보기, 고정 아님)
+async function docRate(doc) {
+  if (doc.currency !== 'USD') return { rate: 1, date: null, source: null, locked: false };
+  if (doc.fx_locked_at) return { rate: n(doc.fx_rate), date: doc.fx_date, source: doc.fx_source, locked: true };
+  return { ...(await rateToday()), locked: false };
+}
+// 원통화 금액·회차 → MXN 반영(임시저장·상신 공용). lock=true 면 오늘 환율을 문서에 고정.
+async function applyMoney(q, docId, { lock = false } = {}) {
+  const doc = normDoc((await q(`SELECT ${DOC_COLS} FROM approval_documents d WHERE d.id=$1`, [docId])).rows[0]);
+  let fx = await docRate(doc);
+  if (lock && doc.currency === 'USD' && !fx.locked) {
+    if (fx.source === 'default' || !(fx.rate > 0)) throw new Stop('fx_unavailable');
+    await q(`UPDATE approval_documents SET fx_rate=$2, fx_date=$3, fx_source=$4, fx_locked_at=now() WHERE id=$1`,
+      [docId, fx.rate, fx.date, fx.source]);
+    fx = { ...fx, locked: true };
+  }
+  const mx = toMxn(doc, fx.rate);
+  await q(`UPDATE approval_documents SET planned_sub=$2, planned_iva=$3, planned_total=$4, fx_rate=$5 WHERE id=$1`,
+    [docId, mx.planned_sub, mx.planned_iva, mx.planned_total, fx.rate]);
+  const pays = await loadPayments(q, docId);
+  const mxn = paymentsMxn(pays.map((p) => p.planned_amount), fx.rate, mx.planned_total);
+  for (const [i, p] of pays.entries()) await q(`UPDATE approval_payments SET planned_mxn=$2 WHERE id=$1`, [p.id, mxn[i]]);
+  return { ...mx, fx };
+}
 
 // 다음 단계 활성화 + 승인완료 처리(알림 포함). lines 는 DB 행과 같은 객체(id 보유).
 async function applyAdvance(q, bundle, actorId, settings) {
@@ -101,7 +162,7 @@ async function applyAdvance(q, bundle, actorId, settings) {
 
 const ERR = {
   not_found: 404, forbidden: 403, not_your_turn: 409, bad_state: 409, memo_required: 400, bad_input: 400,
-  director_unset: 409, ceo_unset: 409, exec_evidence_required: 400, director_only: 403,
+  director_unset: 409, ceo_unset: 409, exec_evidence_required: 400, director_only: 403, fx_unavailable: 409,
 };
 function fail(reply, code, extra) {
   return reply.code(ERR[code] || 400).send({ error: code, ...(extra || {}) });
@@ -135,6 +196,7 @@ export default async function approvalRoutes(app) {
       })),
       users: [...users.values()],
       kinds: KINDS, exec_kinds: EXEC_KINDS, pay_methods: PAY_METHODS, step_label: STEP_LABEL,
+      currencies: CURRENCIES, payment_types: PAYMENT_TYPE_LABEL, freqs: FREQS, schedule_max: SCHEDULE_MAX,
       file_max_bytes: APPROVAL_FILE_MAX_BYTES,
       unread,
     };
@@ -150,9 +212,10 @@ export default async function approvalRoutes(app) {
     const viewers = (await query(`SELECT document_id, user_id, kind FROM approval_viewers`)).rows.map(normViewer);
     const files = (await query(`SELECT document_id, kind, voided_at, dup_of FROM approval_files`)).rows;
     const cmts = (await query(`SELECT document_id, count(*)::int AS c FROM approval_comments WHERE deleted_at IS NULL GROUP BY document_id`)).rows;
+    const payRows = (await query(`SELECT document_id, status, to_char(due_date,'YYYY-MM-DD') AS due_date FROM approval_payments`)).rows;
     const unreadDocs = new Set((await query(`SELECT DISTINCT document_id FROM approval_notifications WHERE user_id=$1 AND read_at IS NULL`, [ctx.uid])).rows.map((r) => Number(r.document_id)));
     const group = (arr, key = 'document_id') => { const m = new Map(); for (const x of arr) { const k = Number(x[key]); if (!m.has(k)) m.set(k, []); m.get(k).push(x); } return m; };
-    const L = group(lines), V = group(viewers), F = group(files);
+    const L = group(lines), V = group(viewers), F = group(files), P = group(payRows);
     const C = new Map(cmts.map((r) => [Number(r.document_id), Number(r.c)]));
     const uname = (id) => (users.get(Number(id)) || {}).name || '—';
     const items = [];
@@ -167,7 +230,10 @@ export default async function approvalRoutes(app) {
       else if (d.post_status === 'pending' && pl) current = uname(pl.user_id) + ' (사후)';
       else if (d.post_status === 'flagged') current = uname(d.drafter_id) + ' (소명)';
       const live = fs.filter((f) => !f.voided_at);
+      const ps = P.get(d.id) || [];
+      const open = ps.filter((x) => x.status === 'planned').map((x) => x.due_date).filter(Boolean).sort();
       items.push({
+        pay_n: ps.length, pay_done: ps.filter((x) => x.status !== 'planned').length, next_due: open[0] || null,
         ...d,
         drafter_name: uname(d.drafter_id),
         stage: stageKey(d, ls),
@@ -196,10 +262,11 @@ export default async function approvalRoutes(app) {
     if (!b || !canSeeDoc(ctx, b.doc, b.lines, b.viewers)) return null;
     const priv = ctx.isDirector || ctx.isCeo;
     const files = (await query(
-      `SELECT id, comment_id, kind, stage, file_name, mime_type, file_size, sha256, cfdi_uuid, cfdi_rfc, cfdi_total, dup_of,
+      `SELECT id, comment_id, payment_id, kind, stage, file_name, mime_type, file_size, sha256, cfdi_uuid, cfdi_rfc, cfdi_total, dup_of,
               uploaded_by, uploaded_at, voided_at, voided_by, void_reason
          FROM approval_files WHERE document_id=$1 ORDER BY uploaded_at, id`, [id])).rows.map((f) => ({
-      ...f, id: Number(f.id), comment_id: f.comment_id == null ? null : Number(f.comment_id), file_size: Number(f.file_size),
+      ...f, id: Number(f.id), comment_id: f.comment_id == null ? null : Number(f.comment_id),
+      payment_id: f.payment_id == null ? null : Number(f.payment_id), file_size: Number(f.file_size),
       cfdi_total: f.cfdi_total == null ? null : Number(f.cfdi_total), uploaded_by: Number(f.uploaded_by),
       voided_by: f.voided_by == null ? null : Number(f.voided_by),
     }));
@@ -216,8 +283,13 @@ export default async function approvalRoutes(app) {
         WHERE l.document_id=$1 ORDER BY l.created_at`, [id])).rows.map((r) => ({ id: Number(r.id), doc_no: r.doc_no, title: r.title }));
     const parent = b.doc.parent_id ? (await query(`SELECT id, doc_no FROM approval_documents WHERE id=$1`, [b.doc.parent_id])).rows[0] : null;
     await query(`UPDATE approval_notifications SET read_at=now() WHERE user_id=$1 AND document_id=$2 AND read_at IS NULL`, [ctx.uid, id]);
+    const payments = await loadPayments(query, id);
+    const rich = normalizeBodyRich(b.doc.body_rich ?? null, b.doc.body);
+    const { body_rich: _raw, ...docOut } = b.doc;
     return {
-      doc: { ...b.doc, stage: stageKey(b.doc, b.lines), variance_pct: variancePct(b.doc), parent_no: parent ? parent.doc_no : null },
+      doc: { ...docOut, stage: stageKey(b.doc, b.lines), variance_pct: variancePct(b.doc), parent_no: parent ? parent.doc_no : null },
+      body_nodes: rich.ok ? rich.nodes : [{ t: 'p', v: b.doc.body || '' }],
+      payments,
       lines: b.lines,
       viewers: b.viewers,
       files: files.map((f) => ({ ...f, can_delete: canDeleteFile(ctx, b.doc, f), can_void: canVoidFile(ctx, b.doc, f) })),
@@ -247,22 +319,38 @@ export default async function approvalRoutes(app) {
   });
 
   // ── 임시저장(생성/수정) · 삭제 ─────────────────────────────────────────
+  // 임시저장 입력 → 원통화 금액 · 결제 방식 일정 · 본문(문단+그림)
+  //   금액은 문서 통화(orig_*) 로 받는다(구 클라이언트 planned_sub 도 허용). MXN 환산은 applyMoney.
   function draftFields(body) {
     const b = body || {};
     const title = cleanText(b.title, 200);
     if (!title || !title.trim()) return { error: 'title_required' };
-    const amt = calcAmounts(b.planned_sub, b.iva_applied !== false);
-    if (amt.planned_sub < 0) return { error: 'bad_amount' };
+    const currency = CURRENCIES.includes(b.currency) ? b.currency : 'MXN';
+    const ptype = PAYMENT_TYPES.includes(b.payment_type) ? b.payment_type : 'once';
+    const iva = b.iva_applied !== false;
+    const plan = b.payment_plan && typeof b.payment_plan === 'object' ? b.payment_plan : null;
+    let sub = round2(b.orig_sub ?? b.planned_sub);
+    if (ptype === 'recurring' && plan && plan.per_sub != null) sub = round2(n(plan.per_sub) * n(plan.count));
+    if (sub < 0) return { error: 'bad_amount' };
+    const amt = calcAmounts(sub, iva);
+    const sch = buildSchedule({ type: ptype, total: amt.planned_total, pay_due: b.pay_due, plan, rows: b.schedule });
+    if (sch.error) return { error: sch.error };
+    const rich = normalizeBodyRich(b.body_rich ?? null, b.body);
+    if (!rich.ok) return { error: rich.error };
     return {
       category_id: b.category_id ? Number(b.category_id) : null,
       title: title.trim(),
       vendor: cleanText(b.vendor, 200),
-      body: cleanText(b.body, 20000),
-      pay_due: isYmd(b.pay_due) ? b.pay_due : null,
+      body: rich.plain,
+      body_rich: rich.nodes.length ? JSON.stringify(rich.nodes) : null,
+      pay_due: sch.rows[0].due_date || (isYmd(b.pay_due) ? b.pay_due : null),
       pay_method: PAY_METHODS.includes(b.pay_method) ? b.pay_method : '계좌이체',
-      iva_applied: b.iva_applied !== false,
+      iva_applied: iva,
       include_finance: b.include_finance !== false,
-      ...amt,
+      currency, payment_type: ptype,
+      payment_plan: sch.plan ? JSON.stringify(sch.plan) : null,
+      orig_sub: amt.planned_sub, orig_iva: amt.planned_iva, orig_total: amt.planned_total,
+      schedule: sch.rows,
       refs: Array.isArray(b.refs) ? [...new Set(b.refs.map(Number).filter(Boolean))] : [],
       shares: Array.isArray(b.shares) ? [...new Set(b.shares.map(Number).filter(Boolean))] : [],
     };
@@ -276,22 +364,33 @@ export default async function approvalRoutes(app) {
       }
     }
   }
-  app.post('/api/approvals', guard, async (req, reply) => {
+  // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
+  async function saveSchedule(q, docId, rows) {
+    await q(`DELETE FROM approval_payments WHERE document_id=$1`, [docId]);
+    for (const r of rows) {
+      await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn) VALUES ($1,$2,$3,$4,$4)`,
+        [docId, r.seq, r.due_date, r.amount]);
+    }
+  }
+  const DRAFT_SET = `category_id=$2, title=$3, vendor=$4, body=$5, body_rich=$6, pay_due=$7, pay_method=$8, iva_applied=$9,
+    include_finance=$10, currency=$11, payment_type=$12, payment_plan=$13, orig_sub=$14, orig_iva=$15, orig_total=$16`;
+  const draftArgs = (id, f) => [id, f.category_id, f.title, f.vendor, f.body, f.body_rich, f.pay_due, f.pay_method, f.iva_applied,
+    f.include_finance, f.currency, f.payment_type, f.payment_plan, f.orig_sub, f.orig_iva, f.orig_total];
+  const docGuard = { preHandler: [authGuard], bodyLimit: APPROVAL_DOC_BODY_LIMIT };   // 본문 그림 포함
+  app.post('/api/approvals', docGuard, async (req, reply) => {
     const f = draftFields(req.body);
     if (f.error) return fail(reply, 'bad_input', { detail: f.error });
     const uid = Number(req.ctx.perm.userId);
     return tx(reply, async (q) => {
-      const id = Number((await q(
-        `INSERT INTO approval_documents(category_id, title, vendor, body, drafter_id, pay_due, pay_method, iva_applied,
-           planned_sub, planned_iva, planned_total, include_finance)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-        [f.category_id, f.title, f.vendor, f.body, uid, f.pay_due, f.pay_method, f.iva_applied,
-          f.planned_sub, f.planned_iva, f.planned_total, f.include_finance])).rows[0].id);
+      const id = Number((await q(`INSERT INTO approval_documents(title, drafter_id) VALUES ($1,$2) RETURNING id`, [f.title, uid])).rows[0].id);
+      await q(`UPDATE approval_documents SET ${DRAFT_SET} WHERE id=$1`, draftArgs(id, f));
+      await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
-      return { id };
+      const m = await applyMoney(q, id);
+      return { id, planned_total: m.planned_total, fx: m.fx };
     });
   });
-  app.put('/api/approvals/:id', guard, async (req, reply) => {
+  app.put('/api/approvals/:id', docGuard, async (req, reply) => {
     const f = draftFields(req.body);
     if (f.error) return fail(reply, 'bad_input', { detail: f.error });
     const id = Number(req.params.id), uid = Number(req.ctx.perm.userId);
@@ -299,12 +398,11 @@ export default async function approvalRoutes(app) {
       const b = await loadBundle(q, id, true);
       if (!b || !sameId(b.doc.drafter_id, uid)) throw new Stop('not_found');
       if (b.doc.status !== 'draft') throw new Stop('bad_state');
-      await q(`UPDATE approval_documents SET category_id=$2, title=$3, vendor=$4, body=$5, pay_due=$6, pay_method=$7, iva_applied=$8,
-                 planned_sub=$9, planned_iva=$10, planned_total=$11, include_finance=$12, updated_at=now() WHERE id=$1`,
-        [id, f.category_id, f.title, f.vendor, f.body, f.pay_due, f.pay_method, f.iva_applied,
-          f.planned_sub, f.planned_iva, f.planned_total, f.include_finance]);
+      await q(`UPDATE approval_documents SET ${DRAFT_SET}, updated_at=now() WHERE id=$1`, draftArgs(id, f));
+      await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
-      return { id };
+      const m = await applyMoney(q, id);
+      return { id, planned_total: m.planned_total, fx: m.fx };
     });
   });
   app.delete('/api/approvals/:id', guard, async (req, reply) => {
@@ -327,7 +425,13 @@ export default async function approvalRoutes(app) {
       if (!b || !sameId(b.doc.drafter_id, uid)) throw new Stop('not_found');
       if (b.doc.status !== 'draft') throw new Stop('bad_state');
       if (!b.doc.category_id) throw new Stop('bad_input', { detail: 'category_required' });
-      if (!(n(b.doc.planned_sub) > 0)) throw new Stop('bad_input', { detail: 'amount_required' });
+      if (!(n(b.doc.orig_sub ?? b.doc.planned_sub) > 0)) throw new Stop('bad_input', { detail: 'amount_required' });
+      if (!(await loadPayments(q, id)).length) {                    // 0237 이전에 만든 임시저장 — 일시불 1회로
+        await saveSchedule(q, id, [{ seq: 1, due_date: b.doc.pay_due, amount: n(b.doc.orig_total ?? b.doc.planned_total) }]);
+      }
+      // 환율 고정(USD) → MXN 확정 → 기준액·결재선은 확정된 MXN 으로 판단
+      const money = await applyMoney(q, id, { lock: true });
+      Object.assign(b.doc, { planned_sub: money.planned_sub, planned_iva: money.planned_iva, planned_total: money.planned_total });
       const cat = (await q(`SELECT id, active FROM approval_categories WHERE id=$1`, [b.doc.category_id])).rows[0];
       if (!cat) throw new Stop('bad_input', { detail: 'category_missing' });
       const steps = (await q(`SELECT id, step_order, step_type, user_id FROM approval_category_steps WHERE category_id=$1`, [b.doc.category_id])).rows;
@@ -355,7 +459,10 @@ export default async function approvalRoutes(app) {
                  updated_at=now() WHERE id=$1`,
         [id, no, built.ceoPre, settings.ceo_pre_threshold, settings.threshold_basis]);
       b.doc.status = 'progress'; b.doc.doc_no = no;
-      await event(q, id, uid, 'submit', 'draft', built.ceoPre ? `사전승인 대상 (기준액 ${settings.ceo_pre_threshold})` : null);
+      const fxNote = b.doc.currency === 'USD'
+        ? `USD ${n(b.doc.orig_total).toFixed(2)} × ${money.fx.rate} (${money.fx.date || '—'} 환율 고정) = MXN ${money.planned_total.toFixed(2)}` : null;
+      await event(q, id, uid, 'submit', 'draft',
+        [built.ceoPre ? `사전승인 대상 (기준액 ${settings.ceo_pre_threshold})` : null, fxNote].filter(Boolean).join('\n') || null);
       for (const v of b.viewers) if (v.kind === 'ref') await notify(q, v.user_id, id, '참조', null, uid);
       await applyAdvance(q, { doc: b.doc, lines, viewers: b.viewers }, uid, settings);
       return { id, doc_no: no };
@@ -463,30 +570,86 @@ export default async function approvalRoutes(app) {
   });
 
   // ── 집행 처리(재무) — 실적 증빙(Factura·송금증) 1건 이상 필요 ───────────────
+  // ── 집행(재무) — 회차 단위 ────────────────────────────────────────────
+  //   · 실적은 문서 통화로 입력. USD 는 지급일 환율로 MXN 환산해 그 회차에 고정.
+  //   · 회차 증빙: 그 회차에 연결된 Factura·송금증 1건 이상(link_file_ids 로 기존 증빙 연결 가능).
+  //     회차가 1개뿐인 문서는 문서에 붙은 실적 증빙도 인정(0234 방식 호환).
+  //   · 모든 회차가 집행/중단되면 문서 집행완료 → 대표이사 사후승인 요청.
+  async function finishIfAllPaid(q, b, ctx) {
+    const pays = await loadPayments(q, b.doc.id);
+    const done = pays.filter((p) => p.status === 'done');
+    const actual = round2(done.reduce((s2, p) => s2 + n(p.actual_mxn), 0));
+    if (pays.some((p) => p.status === 'planned')) {
+      await q(`UPDATE approval_documents SET actual_total=$2, updated_at=now() WHERE id=$1`, [b.doc.id, actual]);
+      return false;
+    }
+    const last = [...done].sort((a, c) => String(a.exec_date || '').localeCompare(String(c.exec_date || '')) || a.seq - c.seq).pop();
+    await q(`UPDATE approval_documents SET exec_status='done', actual_total=$2, exec_date=$3, exec_pay_method=$4,
+               exec_at=now(), exec_by=$5, post_status='pending', updated_at=now() WHERE id=$1`,
+      [b.doc.id, actual, last ? last.exec_date : null, last ? last.pay_method : null, ctx.uid]);
+    const pl = postLine(b.lines);
+    if (pl) await q(`UPDATE approval_lines SET status='pending' WHERE id=$1`, [pl.id]);
+    if (pays.length > 1) await event(q, b.doc.id, ctx.uid, 'exec_done', null, `전 회차 처리 완료 · 실적 합계 MXN ${actual.toFixed(2)}`);
+    if (pl) await notify(q, pl.user_id, b.doc.id, '사후승인 요청', null, ctx.uid);
+    await notify(q, b.doc.drafter_id, b.doc.id, '집행완료', null, ctx.uid);
+    return true;
+  }
+  async function execPrelude(q, req, id) {
+    const settings = await loadSettings(q);
+    const ctx = ctxOf(req, settings);
+    if (!ctx.isFinance && !ctx.isDirector) throw new Stop('forbidden');
+    const b = await loadBundle(q, id, true);
+    if (!b) throw new Stop('not_found');
+    if (b.doc.status !== 'approved' || b.doc.exec_status !== 'pending') throw new Stop('bad_state');
+    const pays = await loadPayments(q, id);
+    return { ctx, b, pays };
+  }
   app.post('/api/approvals/:id/execute', guard, async (req, reply) => {
     const id = Number(req.params.id);
-    const amt = round2(req.body?.actual_total);
+    const amt = round2(req.body?.actual_amount ?? req.body?.actual_total);   // 문서 통화
     const date = req.body?.exec_date;
     const pay = PAY_METHODS.includes(req.body?.pay_method) ? req.body.pay_method : '계좌이체';
     const memo = cleanText(req.body?.memo, 2000)?.trim() || null;
+    const linkIds = Array.isArray(req.body?.link_file_ids) ? req.body.link_file_ids.map(Number).filter(Boolean) : [];
     if (!(amt > 0) || !isYmd(date)) return fail(reply, 'bad_input');
     return tx(reply, async (q) => {
-      const settings = await loadSettings(q);
-      const ctx = ctxOf(req, settings);
-      if (!ctx.isFinance && !ctx.isDirector) throw new Stop('forbidden');
-      const b = await loadBundle(q, id, true);
-      if (!b) throw new Stop('not_found');
-      if (b.doc.status !== 'approved' || b.doc.exec_status !== 'pending') throw new Stop('bad_state');
-      const ev = (await q(`SELECT kind FROM approval_files WHERE document_id=$1 AND voided_at IS NULL`, [id])).rows;
-      if (!ev.some((f) => EXEC_KINDS.includes(f.kind))) throw new Stop('exec_evidence_required');
-      await q(`UPDATE approval_documents SET exec_status='done', actual_total=$2, exec_date=$3, exec_pay_method=$4, exec_memo=$5,
-                 exec_at=now(), exec_by=$6, post_status='pending', updated_at=now() WHERE id=$1`, [id, amt, date, pay, memo, ctx.uid]);
-      const pl = postLine(b.lines);
-      if (pl) await q(`UPDATE approval_lines SET status='pending' WHERE id=$1`, [pl.id]);
-      await event(q, id, ctx.uid, 'execute', null, `실적 ${amt.toFixed(2)} · ${pay} · 지급일 ${date}${memo ? '\n' + memo : ''}`);
-      if (pl) await notify(q, pl.user_id, id, '사후승인 요청', null, ctx.uid);
-      await notify(q, b.doc.drafter_id, id, '집행완료', null, ctx.uid);
-      return { ok: true };
+      const { ctx, b, pays } = await execPrelude(q, req, id);
+      const pid = req.body?.payment_id ? Number(req.body.payment_id) : (pays.find((p) => p.status === 'planned') || {}).id;
+      const row = pays.find((p) => p.id === pid);
+      if (!row || row.status !== 'planned') throw new Stop('bad_state', { detail: 'payment_not_open' });
+      for (const fid of linkIds) {
+        await q(`UPDATE approval_files SET payment_id=$3 WHERE id=$1 AND document_id=$2 AND payment_id IS NULL AND voided_at IS NULL`, [fid, id, pid]);
+      }
+      const ev = (await q(`SELECT kind, payment_id FROM approval_files WHERE document_id=$1 AND voided_at IS NULL`, [id])).rows;
+      const okEv = ev.some((f) => EXEC_KINDS.includes(f.kind) && (sameId(f.payment_id, pid) || (pays.length === 1 && f.payment_id == null)));
+      if (!okEv) throw new Stop('exec_evidence_required');
+      const fx = b.doc.currency === 'USD' ? await rateOn(q, date) : { rate: 1, date: null, source: null };
+      if (b.doc.currency === 'USD' && (fx.source === 'default' || !(fx.rate > 0))) throw new Stop('fx_unavailable');
+      const mxn = round2(amt * fx.rate);
+      await q(`UPDATE approval_payments SET status='done', actual_amount=$2, actual_mxn=$3, fx_rate=$4, fx_date=$5, exec_date=$6,
+                 pay_method=$7, memo=$8, exec_at=now(), exec_by=$9 WHERE id=$1`,
+        [pid, amt, mxn, fx.rate, fx.date, date, pay, memo, ctx.uid]);
+      const cur = b.doc.currency;
+      const money = cur === 'USD' ? `USD ${amt.toFixed(2)} × ${fx.rate} (${fx.date || '—'}) = MXN ${mxn.toFixed(2)}` : `MXN ${amt.toFixed(2)}`;
+      await event(q, id, ctx.uid, 'execute', null,
+        `${pays.length > 1 ? `${row.seq}/${pays.length}회차 · ` : ''}실적 ${money} · ${pay} · 지급일 ${date}${memo ? '\n' + memo : ''}`);
+      const finished = await finishIfAllPaid(q, b, ctx);
+      return { ok: true, payment_id: pid, actual_mxn: mxn, fx, finished };
+    });
+  });
+  // 남은 회차 중단(계약 종료 등) — 재무·디렉터. 사유 필수.
+  app.post('/api/approvals/:id/payments/:pid/skip', guard, async (req, reply) => {
+    const id = Number(req.params.id), pid = Number(req.params.pid);
+    const reason = cleanText(req.body?.reason, 500)?.trim();
+    if (!reason) return fail(reply, 'memo_required');
+    return tx(reply, async (q) => {
+      const { ctx, b, pays } = await execPrelude(q, req, id);
+      const row = pays.find((p) => p.id === pid);
+      if (!row || row.status !== 'planned') throw new Stop('bad_state', { detail: 'payment_not_open' });
+      await q(`UPDATE approval_payments SET status='skipped', skip_reason=$2, exec_at=now(), exec_by=$3 WHERE id=$1`, [pid, reason, ctx.uid]);
+      await event(q, id, ctx.uid, 'pay_skip', null, `${row.seq}/${pays.length}회차 중단 · ${reason}`);
+      const finished = await finishIfAllPaid(q, b, ctx);
+      return { ok: true, finished };
     });
   });
 
@@ -517,10 +680,15 @@ export default async function approvalRoutes(app) {
       const d = b.doc;
       const nid = Number((await q(
         `INSERT INTO approval_documents(version, parent_id, category_id, title, vendor, body, drafter_id, pay_due, pay_method,
-           iva_applied, planned_sub, planned_iva, planned_total, include_finance)
+           iva_applied, planned_sub, planned_iva, planned_total, include_finance,
+           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich)
          SELECT version+1, id, category_id, title, vendor, body, drafter_id, pay_due, pay_method,
-           iva_applied, planned_sub, planned_iva, planned_total, include_finance
+           iva_applied, planned_sub, planned_iva, planned_total, include_finance,
+           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich
            FROM approval_documents WHERE id=$1 RETURNING id`, [id])).rows[0].id);
+      await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn)
+               SELECT $2, seq, due_date, planned_amount, planned_mxn FROM approval_payments WHERE document_id=$1`, [id, nid]);
+      await applyMoney(q, nid);       // USD 면 오늘 환율로 미리보기(상신 때 새로 고정)
       await q(`INSERT INTO approval_files(document_id, kind, stage, file_name, mime_type, file_size, sha256, file_data,
                  cfdi_uuid, cfdi_rfc, cfdi_total, uploaded_by, uploaded_at)
                SELECT $2, kind, 'draft', file_name, mime_type, file_size, sha256, file_data, cfdi_uuid, cfdi_rfc, cfdi_total,
@@ -540,6 +708,7 @@ export default async function approvalRoutes(app) {
     if (!dec.ok) return fail(reply, 'bad_input', { detail: dec.error, max_bytes: APPROVAL_FILE_MAX_BYTES });
     const kind = req.body?.kind ? normKind(req.body.kind) : guessKind(dec.name);
     const commentId = req.body?.comment_id ? Number(req.body.comment_id) : null;
+    const paymentId = req.body?.payment_id ? Number(req.body.payment_id) : null;
     const hash = sha256Hex(dec.buf);
     const cfdi = dec.ext === 'xml' ? parseCfdi(dec.buf.toString('utf8')) : null;
     return tx(reply, async (q) => {
@@ -551,6 +720,10 @@ export default async function approvalRoutes(app) {
       if (commentId) {
         const c = (await q(`SELECT document_id, author_id, deleted_at FROM approval_comments WHERE id=$1`, [commentId])).rows[0];
         if (!c || !sameId(c.document_id, id) || !sameId(c.author_id, ctx.uid) || c.deleted_at) throw new Stop('bad_input', { detail: 'bad_comment' });
+      }
+      if (paymentId) {
+        const pr = (await q(`SELECT document_id FROM approval_payments WHERE id=$1`, [paymentId])).rows[0];
+        if (!pr || !sameId(pr.document_id, id)) throw new Stop('bad_input', { detail: 'bad_payment' });
       }
       // 같은 파일/같은 CFDI 가 다른 문서에 쓰였나(재기안 원문서·사본은 제외)
       const fam = [id, b.doc.parent_id].filter(Boolean);
@@ -568,10 +741,10 @@ export default async function approvalRoutes(app) {
       if (!dup && cfdi?.uuid) { const u = await dupQ('cfdi_uuid', cfdi.uuid); if (u) dup = `${u} (같은 CFDI UUID)`; }
       const row = (await q(
         `INSERT INTO approval_files(document_id, comment_id, kind, stage, file_name, mime_type, file_size, sha256, file_data,
-           cfdi_uuid, cfdi_rfc, cfdi_total, dup_of, uploaded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id, uploaded_at`,
+           cfdi_uuid, cfdi_rfc, cfdi_total, dup_of, uploaded_by, payment_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id, uploaded_at`,
         [id, commentId, kind, fileStage(b.doc), dec.name, dec.mime, dec.bytes, hash, dec.buf,
-          cfdi?.uuid || null, cfdi?.rfc || null, cfdi?.total ?? null, dup, ctx.uid])).rows[0];
+          cfdi?.uuid || null, cfdi?.rfc || null, cfdi?.total ?? null, dup, ctx.uid, paymentId])).rows[0];
       return { id: Number(row.id), uploaded_at: row.uploaded_at, kind, dup_of: dup, cfdi };
     });
   });

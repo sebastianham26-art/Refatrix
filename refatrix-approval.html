@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20260929ea</title>
+<title>Refatrix ERP · 전자결재 · b20260929eb</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -211,6 +211,17 @@ html.rfxm .bulk{bottom:calc(60px + env(safe-area-inset-bottom))}
 .addstep select{min-height:32px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:#fff}
 .x{border:0;background:none;cursor:pointer;color:var(--mute);padding:0 2px;font-size:14px}
 .login{max-width:380px;margin:40px auto;padding:18px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.ed{min-height:160px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;font-size:13.5px;line-height:1.6;outline:none;overflow-wrap:anywhere;white-space:pre-wrap}
+.ed:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(20,61,52,.15)}
+.ed:empty::before{content:attr(data-ph);color:#a9a497}
+.ed img,.rbody img{display:block;max-width:100%;height:auto;border-radius:8px;margin:8px 0;border:1px solid #ece6d8}
+.rbody img{cursor:zoom-in}
+.rbody .body{margin:0 0 6px}
+.sched .inp{min-height:34px;padding:5px 8px}
+.sched td{text-align:left}
+#cSchedPrev{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tbl.pays td,.tbl.pays th{white-space:normal;vertical-align:top}
 .loading{padding:30px;text-align:center;color:var(--mute)}
 @media print{
  .top .bell,.tabs,.abar,.composer,.acts,#rnav,#rmtab,.back,.no-print{display:none!important}
@@ -239,6 +250,7 @@ html.rfxm .bulk{bottom:calc(60px + env(safe-area-inset-bottom))}
 <div id="notifPanel" class="notif hidden"></div>
 <div id="modal" class="modal hidden"><div class="modal-card" id="modalCard"></div></div>
 <div id="toast" class="toast"></div>
+<input type="file" id="imgPick" multiple hidden accept="image/*">
 <input type="file" id="filePick" multiple hidden accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.gif,.heic,.heif,.webp,.xml,.zip,.eml,.msg,image/*">
 <script>
 'use strict';
@@ -382,7 +394,7 @@ function listHtml(){
  <div class="c-no"><div class="no">${esc(d.doc_no||'임시저장')}</div><span class="bdg b-gray">${esc(catName(d.category_id))}</span></div>
  <div class="c-ttl"><div class="ttl">${esc(d.title)}</div><div class="sub">${esc(d.vendor||'')}<span class="meta-ic">📎 ${d.files_n}</span><span class="meta-ic">💬 ${d.comments_n}</span></div><div>${flagsOf(d)}</div></div>
  <div class="c-who">${esc(d.drafter_name)}<div class="sub">${esc(UT(d.drafter_id))}</div></div>
- <div class="c-amt amt">${money(d.planned_total)}${d.exec_status==='done'?`<small class="${d.variance_pct>tol?'flag':'sub'}">실적 ${money(d.actual_total)}</small>`:''}</div>
+ <div class="c-amt amt">${money(d.planned_total)}${d.currency==='USD'?`<small class="sub">US${money(d.orig_total)}</small>`:''}${d.exec_status==='done'?`<small class="${d.variance_pct>tol?'flag':'sub'}">실적 ${money(d.actual_total)}</small>`:''}${d.pay_n>1?`<small class="sub">${PT_L[d.payment_type]||''} ${d.pay_done}/${d.pay_n}회${d.next_due&&d.exec_status!=='done'?` · 다음 ${esc(d.next_due.slice(5))}`:''}</small>`:''}</div>
  <div class="c-st">${badges(d)}${d.current?`<span class="mob sub"> · ${esc(d.current)}</span>`:''}</div>
  <div class="c-cur sub">${esc(d.current||'—')}</div>
  <div class="c-dt sub">${tm(d.submitted_at||d.created_at)}</div></div>`).join('');
@@ -465,7 +477,9 @@ function actionsHtml(){
 }
 function renderDetail(){
  if(!DET)return '<div class="loading">불러오는 중…</div>';
- const d=DET.doc,v=d.variance_pct,tol=B.settings.variance_tolerance_pct,warns=[];
+ const d=DET.doc,v=d.variance_pct,tol=B.settings.variance_tolerance_pct,warns=[],usd=d.currency==='USD';
+ const done=DET.payments.filter(p=>p.status==='done'),open=DET.payments.filter(p=>p.status==='planned');
+ const paidMxn=r2(done.reduce((x,p)=>x+p.actual_mxn,0)),paidOrig=r2(done.reduce((x,p)=>x+p.actual_amount,0)),canExec=DET.actions.includes('execute');
  if(d.ceo_pre_required)warns.push(`<div class="warn">상신 시 기준액 ${money(d.threshold_at_submit)} 이상 → 대표이사 사전승인 대상</div>`);
  if(v!=null&&v>tol)warns.push(`<div class="warn red">실적이 예정보다 ${v.toFixed(1)}% 많습니다 (경고 기준 ${tol}%). 사후승인 시 확인 대상입니다.</div>`);
  if(d.exec_status==='done'&&!d.ceo_pre_required&&d.actual_total>=B.settings.ceo_pre_threshold)warns.push(`<div class="warn red">실적이 사전승인 기준액 ${money(B.settings.ceo_pre_threshold)}을 넘었습니다.</div>`);
@@ -480,11 +494,26 @@ function renderDetail(){
  ${rej?`<div class="warn red" style="margin:0 0 12px"><b>${SL(rej.step_type)} ${esc(U(rej.user_id))} · ${rej.step_type==='agree'?'반대':'반려'}</b> ${tm(rej.acted_at)}<br>${esc(rej.comment)}</div>`:''}
  <div class="card sec"><h3>결재선</h3>${stampsHtml(d,DET.lines)}
   ${refs.length||shares.length?`<div class="sub" style="margin-top:8px">${refs.length?'참조: '+esc(refs.join(', ')):''}${refs.length&&shares.length?' · ':''}${shares.length?'공람 (승인 후): '+esc(shares.join(', ')):''}</div>`:''}</div>
- <div class="card sec"><h3>금액</h3><div class="grid2">
-  <div><p class="kv-h">집행 예정</p><dl class="kv"><dt>소계</dt><dd>${money(d.planned_sub)}</dd><dt>IVA 16%</dt><dd>${money(d.planned_iva)}</dd><dt>합계</dt><dd class="big">${money(d.planned_total)}</dd><dt>지급 예정일</dt><dd>${esc(d.pay_due||'—')}</dd><dt>지급 방법</dt><dd>${esc(d.pay_method||'—')}</dd></dl></div>
-  <div><p class="kv-h">집행 실적</p>${d.exec_status==='done'?`<dl class="kv"><dt>실적 합계</dt><dd class="big">${money(d.actual_total)}</dd><dt>차이</dt><dd class="${v>tol?'flag':''}">${d.actual_total-d.planned_total>=0?'+':''}${money(d.actual_total-d.planned_total)} (${v>=0?'+':''}${(v||0).toFixed(1)}%)</dd><dt>실제 지급일</dt><dd>${esc(d.exec_date)}</dd><dt>지급 방법</dt><dd>${esc(d.exec_pay_method)}</dd><dt>처리</dt><dd>${esc(U(d.exec_by))} · ${tm(d.exec_at)}</dd></dl>${d.exec_memo?`<p class="sub" style="white-space:pre-wrap">${esc(d.exec_memo)}</p>`:''}`:`<p class="sub">집행 전입니다. 재무 담당이 집행 처리하면 실적이 기록됩니다.</p>`}</div>
- </div>${warns.join('')}<div class="warn info">예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.</div></div>
- <div class="card sec"><h3>내용</h3><p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')}</p><p class="body">${d.body?esc(d.body):'<span class="sub">—</span>'}</p></div>
+ <div class="card sec"><h3>금액 · ${PT_L[d.payment_type]||'일시불'}${d.payment_type==='recurring'&&d.payment_plan?` <span class="sub">${FREQ_L[d.payment_plan.freq]||''} ${d.payment_plan.count}회 · ${esc(d.payment_plan.start)}부터</span>`:''}</h3><div class="grid2">
+  <div><p class="kv-h">집행 예정</p><dl class="kv">
+   ${usd?`<dt>합계 (USD)</dt><dd class="big">${cm(d.orig_total,'USD')}</dd><dt>환율</dt><dd>USD 1 = ${d.fx_rate} <span class="sub">${d.fx_locked_at?`${esc(d.fx_date||'')} 환율 · 상신 때 고정`:'미리보기 · 상신 때 고정'}</span></dd>`:''}
+   <dt>소계</dt><dd>${money(d.planned_sub)}</dd><dt>IVA 16%</dt><dd>${money(d.planned_iva)}</dd><dt>합계 (MXN)</dt><dd class="big">${money(d.planned_total)}</dd>
+   <dt>지급 방법</dt><dd>${esc(d.pay_method||'—')}</dd></dl></div>
+  <div><p class="kv-h">집행 실적</p>${d.exec_status==='done'?`<dl class="kv"><dt>실적 합계 (MXN)</dt><dd class="big">${money(d.actual_total)}</dd>${usd?`<dt>실적 (USD)</dt><dd>${cm(paidOrig,'USD')}</dd>`:''}<dt>차이</dt><dd class="${v>tol?'flag':''}">${d.actual_total-d.planned_total>=0?'+':''}${money(d.actual_total-d.planned_total)} (${v>=0?'+':''}${(v||0).toFixed(1)}%)</dd><dt>마지막 지급일</dt><dd>${esc(d.exec_date||'—')}</dd><dt>처리</dt><dd>${esc(U(d.exec_by))} · ${tm(d.exec_at)}</dd></dl>`
+   :done.length?`<dl class="kv"><dt>진행</dt><dd>${DET.payments.length-open.length}/${DET.payments.length}회 처리</dd><dt>누계 (MXN)</dt><dd class="big">${money(paidMxn)}</dd>${usd?`<dt>누계 (USD)</dt><dd>${cm(paidOrig,'USD')}</dd>`:''}<dt>다음 지급</dt><dd>${esc((open[0]||{}).due_date||'—')}</dd></dl>`
+   :`<p class="sub">집행 전입니다. 재무 담당이 회차마다 집행하면 실적이 기록됩니다.</p>`}</div>
+ </div>
+ <p class="kv-h" style="margin:14px 0 6px">지급 일정 <span class="sub" style="font-weight:400">${DET.payments.length}회${usd?' · USD 회차는 실제 지급일 환율로 MXN 환산해 고정':''}</span></p>
+ <div class="scroll"><table class="tbl pays"><thead><tr><th>회차</th><th>예정일</th><th>예정 금액</th><th>상태</th><th>실적</th><th>지급일</th><th>증빙</th><th></th></tr></thead><tbody>
+ ${DET.payments.map(p=>{const ev=DET.files.filter(f=>same(f.payment_id,p.id)&&!f.voided_at).length;
+  return `<tr><td>${p.seq}</td><td>${esc(p.due_date||'—')}</td><td>${cm(p.planned_amount,d.currency)}${usd?`<div class="sub">${money(p.planned_mxn)} MXN</div>`:''}</td>
+  <td>${p.status==='done'?'<span class="bdg b-teal">집행</span>':p.status==='skipped'?'<span class="bdg b-gray">중단</span>':'<span class="bdg b-gold">예정</span>'}</td>
+  <td>${p.status==='done'?`${cm(p.actual_amount,d.currency)}${usd?`<div class="sub">× ${p.fx_rate} (${esc(p.fx_date||'')}) = ${money(p.actual_mxn)} MXN</div>`:''}`:p.status==='skipped'?`<span class="sub">${esc(p.skip_reason||'')}</span>`:''}</td>
+  <td>${esc(p.exec_date||'')}${p.exec_by?`<div class="sub">${esc(U(p.exec_by))}</div>`:''}</td><td>${ev?`📎 ${ev}`:''}</td>
+  <td>${canExec&&p.status==='planned'?`<button class="btn sm gold" data-act="exec" data-pid="${p.id}">집행</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
+ </tbody></table></div>
+ ${warns.join('')}<div class="warn info">예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.</div></div>
+ <div class="card sec"><h3>내용</h3><p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')}</p><div class="rbody">${renderBodyNodes(DET.body_nodes)}</div></div>
  <div class="card sec"><h3>증빙 <span class="sub">${DET.files.filter(f=>!f.voided_at).length}건</span><span class="sp"></span>
   ${DET.can_upload?'<button class="btn sm no-print" data-act="upfile">+ 증빙 추가</button>':''}
   ${d.doc_no?'<button class="btn sm no-print" data-act="link">결재문서 연결</button><button class="btn sm no-print" data-act="print">인쇄 · PDF</button>':''}</h3>
@@ -523,41 +552,166 @@ function guessKind(name){
  return '기타';
 }
 const readDataUrl=file=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(r.error);r.readAsDataURL(file);});
-async function uploadFiles(docId,arr,commentId){
+async function uploadFiles(docId,arr,commentId,paymentId){
  let n=0;
  for(const f of arr){
   n++;toast(`업로드 중 ${n}/${arr.length} · ${f.name}`);
   const data_url=await readDataUrl(f.file);
-  const r=await api('POST',`/api/approvals/${docId}/files`,{file_name:f.name,kind:f.kind,data_url,comment_id:commentId||undefined});
+  const r=await api('POST',`/api/approvals/${docId}/files`,{file_name:f.name,kind:f.kind,data_url,comment_id:commentId||undefined,payment_id:paymentId||undefined});
   if(r.dup_of)toast(`⚠ ${f.name}: ${r.dup_of}에서 사용된 파일`);
  }
 }
 const MAXB=20*1024*1024;
 
 /* ═════════ 작성 ═════════ */
-function newCd(){return{id:null,category_id:'',title:'',vendor:'',pay_due:'',pay_method:'계좌이체',planned_sub:'',iva_applied:true,body:'',refs:[],shares:[],include_finance:true,files:[],newFiles:[],parent_no:null,version:1};}
-function cdFromDet(){
- const d=DET.doc;
- return{id:d.id,category_id:d.category_id||'',title:d.title,vendor:d.vendor||'',pay_due:d.pay_due||'',pay_method:d.pay_method||'계좌이체',planned_sub:String(d.planned_sub||''),iva_applied:d.iva_applied,body:d.body||'',
-  refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
-  include_finance:d.include_finance,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version};
+/* ─── 0237: 통화 · 결제 방식 · 본문 그림 ─── */
+const IMG_RE=/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
+const PT_L={once:'일시불',installment:'분할 지급',recurring:'정기 지급'};
+const FREQ_L={weekly:'매주',biweekly:'격주',monthly:'매월',quarterly:'분기'};
+const cm=(v,cur)=>(cur==='USD'?'US':'')+money(v);                 // 통화 표시: US$ / $
+function addPeriod(start,freq,i){
+ const [y,m,d]=start.split('-').map(Number);let dt;
+ if(freq==='weekly'||freq==='biweekly')dt=new Date(Date.UTC(y,m-1,d+i*(freq==='weekly'?7:14)));
+ else{const mo=i*(freq==='quarterly'?3:1);const last=new Date(Date.UTC(y,m-1+mo+1,0)).getUTCDate();dt=new Date(Date.UTC(y,m-1+mo,Math.min(d,last)));}
+ return dt.toISOString().slice(0,10);
 }
-function cdCalc(cd){const s=r2(cd.planned_sub),iva=cd.iva_applied?r2(s*0.16):0;return{sub:s,iva,total:r2(s+iva)};}
+function splitEven(total,count){const per=r2(total/count),rows=Array.from({length:count},()=>per);rows[count-1]=r2(total-per*(count-1));return rows;}
+
+/* 본문 편집기(contenteditable): 텍스트 + 그림. 서식 붙여넣기는 텍스트로만 받는다(안전). */
+function nodesToEdHtml(nodes){
+ return (nodes||[]).map(n=>n.t==='img'?(IMG_RE.test(n.src)?`<img src="${esc(n.src)}"${n.w?` data-w="${n.w}"`:''}${n.h?` data-h="${n.h}"`:''} alt="">`:''):esc(n.v).replace(/\n/g,'<br>')).join('<br>');
+}
+function serializeEd(root){
+ const out=[];let buf='';
+ const flush=()=>{const v=buf.replace(/^\n+|\n+$/g,'');if(v.trim())out.push({t:'p',v});buf='';};
+ const BLOCK=/^(DIV|P|LI|H[1-6]|TR|BLOCKQUOTE|PRE|UL|OL|TABLE)$/;
+ (function walk(node){
+  for(const c of node.childNodes){
+   if(c.nodeType===3){buf+=c.nodeValue.replace(/ /g,' ');continue;}
+   if(c.nodeType!==1)continue;
+   const tag=c.tagName;
+   if(tag==='IMG'){const src=c.getAttribute('src')||'';if(IMG_RE.test(src)){flush();out.push({t:'img',src,w:(c.naturalWidth||+c.dataset.w||null)||null,h:(c.naturalHeight||+c.dataset.h||null)||null});}continue;}
+   if(tag==='BR'){buf+='\n';continue;}
+   const block=BLOCK.test(tag);
+   if(block&&buf&&!buf.endsWith('\n'))buf+='\n';
+   walk(c);
+   if(tag==='TD'||tag==='TH')buf+='\t';
+   if(block&&!buf.endsWith('\n'))buf+='\n';
+  }
+ })(root);
+ flush();
+ return out;
+}
+function renderBodyNodes(nodes){
+ if(!nodes||!nodes.length||nodes.every(n=>n.t==='p'&&!n.v.trim()))return '<span class="sub">—</span>';
+ return nodes.map(n=>n.t==='img'?(IMG_RE.test(n.src)?`<img class="bimg" src="${esc(n.src)}" alt="첨부 그림" data-act="bimg">`:''):`<p class="body">${esc(n.v)}</p>`).join('');
+}
+async function compressImage(file){
+ const url=URL.createObjectURL(file);
+ try{
+  const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=url;});
+  const sc=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight)),w=Math.round(img.naturalWidth*sc),h=Math.round(img.naturalHeight*sc);
+  if(sc===1&&file.size<=700*1024&&/^image\/(png|jpeg|webp|gif)$/.test(file.type))return{src:await readDataUrl(file),w,h};
+  const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,w,h);g.drawImage(img,0,0,w,h);
+  return{src:c.toDataURL('image/jpeg',0.85),w,h};
+ }finally{URL.revokeObjectURL(url);}
+}
+function edInsertNode(node){
+ const ed=$('#bodyEd');if(!ed)return;
+ const sel=window.getSelection();
+ if(sel&&sel.rangeCount&&ed.contains(sel.getRangeAt(0).commonAncestorContainer)){const r=sel.getRangeAt(0);r.deleteContents();r.insertNode(node);r.setStartAfter(node);r.collapse(true);sel.removeAllRanges();sel.addRange(r);}
+ else ed.appendChild(node);
+}
+async function edAddImages(files){
+ for(const f of files){
+  if(!/^image\//.test(f.type)){toast(`${f.name}: 그림이 아닌 파일은 「증빙」에 올려 주세요`);continue;}
+  let r;try{r=await compressImage(f);}catch(e){toast(`${f.name}: 이 형식은 본문에 넣을 수 없습니다(증빙으로 올려 주세요)`);continue;}
+  if(r.src.length>3*1024*1024){toast(`${f.name}: 그림이 너무 큽니다`);continue;}
+  const img=document.createElement('img');img.src=r.src;img.dataset.w=r.w;img.dataset.h=r.h;img.alt='';
+  edInsertNode(img);edInsertNode(document.createElement('br'));
+ }
+ const ed=$('#bodyEd');if(ed&&ui.cd)ui.cd.body_nodes=serializeEd(ed);
+}
+function edInsertText(text){
+ if(!text)return;
+ if(!(document.execCommand&&document.execCommand('insertText',false,text))){
+  const frag=document.createDocumentFragment();text.split('\n').forEach((line,i)=>{if(i)frag.appendChild(document.createElement('br'));frag.appendChild(document.createTextNode(line));});
+  edInsertNode(frag);
+ }
+}
+
+/* ─── 작성 ─── */
+function newCd(){return{id:null,category_id:'',title:'',vendor:'',pay_due:'',pay_method:'계좌이체',orig_sub:'',iva_applied:true,currency:'MXN',payment_type:'once',
+ plan:{freq:'weekly',count:4,start:todayMX(),per_sub:''},sched:[{due_date:'',amount:''},{due_date:'',amount:''}],body_nodes:[],
+ refs:[],shares:[],include_finance:true,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null};}
+function cdFromDet(){
+ const d=DET.doc,plan=d.payment_plan||{};
+ return{id:d.id,category_id:d.category_id||'',title:d.title,vendor:d.vendor||'',pay_due:d.pay_due||'',pay_method:d.pay_method||'계좌이체',
+  orig_sub:String(d.orig_sub??d.planned_sub??''),iva_applied:d.iva_applied,currency:d.currency||'MXN',payment_type:d.payment_type||'once',
+  plan:{freq:plan.freq||'weekly',count:plan.count||4,start:plan.start||todayMX(),per_sub:plan.per_sub!=null?String(plan.per_sub):''},
+  sched:d.payment_type==='installment'?DET.payments.map(p=>({due_date:p.due_date||'',amount:String(p.planned_amount)})):[{due_date:'',amount:''},{due_date:'',amount:''}],
+  body_nodes:DET.body_nodes||[],
+  refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
+  include_finance:d.include_finance,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
+  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null};
+}
+// 문서 통화 기준 금액 → { sub, iva, total, per, count, rows:[{due_date,amount}] }
+function cdCalc(cd){
+ const iv=cd.iva_applied;
+ if(cd.payment_type==='recurring'){
+  const count=Math.max(0,Math.min(60,parseInt(cd.plan.count,10)||0)),perSub=r2(cd.plan.per_sub);
+  const sub=r2(perSub*count),iva=iv?r2(sub*0.16):0,total=r2(sub+iva);
+  const ok=count>=2&&/^\d{4}-\d{2}-\d{2}$/.test(cd.plan.start||'');
+  const rows=ok?splitEven(total,count).map((a,i)=>({due_date:addPeriod(cd.plan.start,cd.plan.freq,i),amount:a})):[];
+  return{sub,iva,total,per:count?r2(total/count):0,count,rows};
+ }
+ const sub=r2(cd.orig_sub),iva=iv?r2(sub*0.16):0,total=r2(sub+iva);
+ if(cd.payment_type==='installment')return{sub,iva,total,rows:cd.sched.map(r=>({due_date:r.due_date,amount:r2(r.amount)}))};
+ return{sub,iva,total,rows:[{due_date:cd.pay_due,amount:total}]};
+}
+function cdRate(cd){
+ if(cd.currency!=='USD')return{rate:1,label:''};
+ if(cd.fx_locked)return{rate:cd.fx_locked.rate,label:`${cd.fx_locked.date||''} 환율 · 상신 때 고정됨`};
+ if(ui.fx&&ui.fx.rate)return{rate:ui.fx.rate,label:`${ui.fx.asOf||''} 재무 환율 · 상신할 때 그날 환율로 고정${ui.fx.stale?' (최신 환율을 못 받아 마지막 값)':''}`};
+ return{rate:0,label:ui.fxErr?'환율을 불러오지 못했습니다 — 상신할 때 서버가 그날 환율을 받아 고정합니다':'환율 불러오는 중…'};
+}
+async function loadFx(){try{ui.fx=await api('GET','/api/fx/usd-mxn');}catch(e){ui.fx=null;ui.fxErr=true;}if(ui.view==='compose')updateCompose();}
 function previewLines(cd){
- const S=B.settings,me=B.me.id,c=cdCalc(cd);
+ const S=B.settings,me=B.me.id,c=cdCalc(cd),rate=cdRate(cd).rate||0,mx={sub:r2(c.sub*rate),total:r2(c.total*rate)};
  const isDir=B.me.isDirector||same(me,S.director_user_id);
  const ls=[{t:'draft',u:me}];const add=(t,u)=>{if(u==null||same(u,me))return;if(ls.some(x=>x.t===t&&same(x.u,u)))return;ls.push({t,u});};
  if(isDir){if(cd.include_finance)add('agree',S.finance_user_id);ls.push({t:'director',u:me});}
  else{const cat=B.categories.find(x=>same(x.id,cd.category_id));(cat?cat.steps:[]).forEach(s=>add(s.step_type,s.user_id));ls.push({t:'director',u:S.director_user_id});}
- const ceoD=same(me,S.ceo_user_id),b=S.threshold_basis==='sub'?c.sub:c.total,pre=!ceoD&&b>=S.ceo_pre_threshold;
+ const ceoD=same(me,S.ceo_user_id),b=S.threshold_basis==='sub'?mx.sub:mx.total,pre=!ceoD&&b>=S.ceo_pre_threshold;
  if(pre)ls.push({t:'pre_ceo',u:S.ceo_user_id});
  ls.push({t:'post_ceo',u:ceoD?S.director_user_id:S.ceo_user_id});
  return{ls,pre,b};
+}
+function schedEditorHtml(cd){
+ return `<table class="tbl sched"><thead><tr><th>#</th><th>지급일</th><th>금액 (${cd.currency}, IVA 포함)</th><th></th></tr></thead><tbody>${cd.sched.map((r,i)=>`<tr><td>${i+1}</td>
+  <td><input class="inp" type="date" data-sc="due_date" data-i="${i}" value="${esc(r.due_date)}"></td>
+  <td><input class="inp" inputmode="decimal" data-sc="amount" data-i="${i}" value="${esc(r.amount)}" placeholder="0.00"></td>
+  <td>${cd.sched.length>2?`<button class="x" data-act="scdel" data-i="${i}" aria-label="삭제">✕</button>`:''}</td></tr>`).join('')}</tbody></table>
+  <div class="addstep"><button class="btn sm" data-act="scadd">+ 회차</button><button class="btn sm" data-act="sceven">균등 분할</button><button class="btn sm" data-act="scadv">선급 30% + 잔금</button><span class="sub" id="cSchedSum"></span></div>`;
 }
 function renderCompose(){
  const cd=ui.cd,isDir=B.me.isDirector,others=B.users.filter(u=>u.active&&!same(u.id,B.me.id));
  const cats=B.categories.filter(c=>c.active||same(c.id,cd.category_id));
  const peopleFld=(key,label)=>`<div class="fld"><label>${label}</label><div class="pchips">${cd[key].map(u=>`<span class="pc">${esc(U(u))}<button data-act="pcdel" data-l="${key}" data-u="${u}" aria-label="제거">×</button></span>`).join('')}</div><select class="inp" data-addto="${key}"><option value="">+ 추가</option>${others.filter(u=>!cd[key].some(x=>same(x,u.id))).map(u=>`<option value="${u.id}">${esc(u.name)} · ${esc(u.dept||ROLE_KO[u.role]||u.role)}</option>`).join('')}</select></div>`;
+ const pt=cd.payment_type,cur=cd.currency;
+ const ivaCk=`<label class="ck"><input type="checkbox" id="ivaOn" ${cd.iva_applied?'checked':''}> IVA 16%</label>`;
+ let money='';
+ if(pt==='recurring')money=`<div class="form">
+   <div class="fld"><label>주기</label><select class="inp" data-pl="freq">${Object.entries(FREQ_L).map(([k,l])=>`<option value="${k}" ${cd.plan.freq===k?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div class="fld"><label>첫 지급일</label><input class="inp" type="date" data-pl="start" value="${esc(cd.plan.start)}"></div>
+   <div class="fld"><label>횟수 (2~60회)</label><input class="inp" type="number" min="2" max="60" data-pl="count" value="${esc(cd.plan.count)}"></div>
+   <div class="fld"><label>회당 소계 (${cur}, IVA 제외) <span class="req">*</span></label><input class="inp" inputmode="decimal" data-pl="per_sub" value="${esc(cd.plan.per_sub)}" placeholder="0.00"></div></div>
+   <div class="sum">${ivaCk}<span>회당 <b id="cPer">—</b></span><span>× <b id="cCnt">—</b>회 = 합계 <span class="tot" id="cTot">—</span></span></div>
+   <div class="sched-prev" id="cSchedPrev"></div>`;
+ else if(pt==='installment')money=`<div class="sum"><input class="inp" style="max-width:190px" inputmode="decimal" data-f="orig_sub" value="${esc(cd.orig_sub)}" placeholder="총 소계 (IVA 제외)">${ivaCk}<span>IVA <b id="cIva">—</b></span><span>합계 <span class="tot" id="cTot">—</span></span></div>
+   <div id="cSched" style="margin-top:10px">${schedEditorHtml(cd)}</div>`;
+ else money=`<div class="sum"><input class="inp" style="max-width:190px" inputmode="decimal" data-f="orig_sub" value="${esc(cd.orig_sub)}" placeholder="소계 (IVA 제외)">${ivaCk}<span>IVA <b id="cIva">—</b></span><span>합계 <span class="tot" id="cTot">—</span></span></div>
+   <div class="form" style="margin-top:10px"><div class="fld"><label>지급 예정일</label><input class="inp" type="date" data-f="pay_due" value="${esc(cd.pay_due)}"></div></div>`;
  return `
  <div class="dh"><h1 style="margin:0">${cd.id?'임시저장 문서 편집':'새 품의 작성'}</h1>${cd.parent_no?`<span class="bdg b-gold">${esc(cd.parent_no)} 재기안 · v${cd.version}</span>`:''}</div>
  <p class="sub" style="margin:2px 0 12px">기안자 ${esc(B.me.name)} (${esc(UT(B.me.id))})</p>
@@ -565,12 +719,20 @@ function renderCompose(){
   <div class="fld"><label>카테고리 <span class="req">*</span></label><select class="inp" data-f="category_id"><option value="">선택</option>${cats.map(c=>`<option value="${c.id}" ${same(c.id,cd.category_id)?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
   <div class="fld"><label>거래처</label><input class="inp" data-f="vendor" value="${esc(cd.vendor)}" placeholder="예: Empaques Regios"></div>
   <div class="fld full"><label>제목 <span class="req">*</span></label><input class="inp" data-f="title" value="${esc(cd.title)}" placeholder="예: 창고 소모품 10월분"></div>
-  <div class="fld"><label>지급 예정일</label><input class="inp" type="date" data-f="pay_due" value="${esc(cd.pay_due)}"></div>
-  <div class="fld"><label>지급 방법</label><select class="inp" data-f="pay_method">${B.pay_methods.map(p=>`<option ${p===cd.pay_method?'selected':''}>${p}</option>`).join('')}</select></div>
-  <div class="fld full"><label>집행 예정금액 (MXN) <span class="req">*</span></label>
-   <div class="sum"><input class="inp" style="max-width:190px" inputmode="decimal" data-f="planned_sub" value="${esc(cd.planned_sub)}" placeholder="소계 (IVA 제외)"><label class="ck"><input type="checkbox" id="ivaOn" ${cd.iva_applied?'checked':''}> IVA 16%</label><span>IVA <b id="cIva">—</b></span><span>합계 <span class="tot" id="cTot">—</span></span></div></div>
-  <div class="fld full"><label>내용</label><textarea class="inp" data-f="body" rows="5" placeholder="집행 목적, 산출 내역 등">${esc(cd.body)}</textarea></div>
  </div></div>
+ <div class="card sec"><h3>금액 · 결제 방식</h3>
+  <div class="form">
+   <div class="fld"><label>통화</label><div class="seg">${['MXN','USD'].map(c=>`<button class="chip ${cur===c?'on':''}" data-act="ccur" data-v="${c}">${c==='MXN'?'MXN (페소)':'USD (달러)'}</button>`).join('')}</div></div>
+   <div class="fld"><label>지급 방법</label><select class="inp" data-f="pay_method">${B.pay_methods.map(p=>`<option ${p===cd.pay_method?'selected':''}>${p}</option>`).join('')}</select></div>
+   <div class="fld full"><label>결제 방식</label><div class="seg">${Object.entries(PT_L).map(([k,l])=>`<button class="chip ${pt===k?'on':''}" data-act="cpt" data-v="${k}">${l}</button>`).join('')}</div>
+    <p class="sub" style="margin:4px 0 0">${pt==='once'?'한 번에 지급':pt==='installment'?'선급·잔금, 분할 납부 등 — 회차별 지급일과 금액을 정합니다':'매주·격주·매월·분기 같은 금액을 반복 지급 — 한 번 결재로 전 회차 승인'}. 재무가 회차마다 집행하고, 모든 회차가 끝나면 대표이사 사후승인으로 넘어갑니다.</p></div>
+  </div>
+  ${money}
+  ${cur==='USD'?`<div class="warn info" id="cFx" style="margin-top:10px"></div>`:''}
+ </div>
+ <div class="card sec"><h3>내용 <span class="sub">그림은 붙여넣기(Ctrl+V) · 끌어놓기 · 버튼으로 넣을 수 있습니다</span><span class="sp"></span><button class="btn sm" data-act="edimg">🖼 그림 넣기</button></h3>
+  <div id="bodyEd" class="ed" contenteditable="true" data-ph="집행 목적, 산출 내역 등 — 견적서 캡처나 사진을 바로 붙여 넣어도 됩니다">${nodesToEdHtml(cd.body_nodes)}</div>
+ </div>
  <div class="card sec"><h3>증빙 <span class="sub">선택 · 파일당 20MB</span><span class="sp"></span><button class="btn sm" data-act="pick" data-key="d">+ 파일 추가</button></h3>
   ${cd.files.length?`<div class="files" style="margin-bottom:6px">${cd.files.map(f=>`<div class="file">${fileIcon(f.file_name)}<div style="flex:1;min-width:0"><div class="fn">${esc(f.file_name)}</div><div class="fm"><span class="bdg b-gray">${esc(f.kind)}</span>${fsize(f.file_size)} · 저장됨</div></div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button><button class="btn sm danger" data-act="cfdel" data-fid="${f.id}">삭제</button></div></div>`).join('')}</div>`:''}
   <div id="pl-d">${pendList(cd.newFiles,'d')}</div>
@@ -583,8 +745,20 @@ function renderCompose(){
  <div class="abar"><button class="btn" data-act="csave">임시저장</button><button class="btn pri" data-act="csubmit">상신</button></div>`;
 }
 function updateCompose(){
- const cd=ui.cd;if(!cd||!$('#cTot'))return;
- const c=cdCalc(cd);$('#cIva').textContent=money(c.iva);$('#cTot').textContent=money(c.total);
+ const cd=ui.cd;if(!cd||!$('#lprev'))return;
+ if(cd.currency==='USD'&&!cd.fx_locked&&!ui.fx&&!ui.fxLoading&&!ui.fxErr){ui.fxLoading=true;loadFx().finally(()=>{ui.fxLoading=false;});}
+ const c=cdCalc(cd),cur=cd.currency,fx=cdRate(cd);
+ const set=(id,v)=>{const el=$('#'+id);if(el)el.textContent=v;};
+ set('cIva',cm(c.iva,cur));set('cTot',cm(c.total,cur));
+ if(cd.payment_type==='recurring'){
+  set('cPer',cm(c.per,cur));set('cCnt',String(c.count||0));
+  const pv=$('#cSchedPrev');if(pv)pv.innerHTML=c.rows.length?c.rows.slice(0,8).map(r=>`<span class="pc">${esc(r.due_date)} · ${cm(r.amount,cur)}</span>`).join('')+(c.rows.length>8?`<span class="sub"> … 외 ${c.rows.length-8}회 · 마지막 ${esc(c.rows[c.rows.length-1].due_date)}</span>`:''):'<span class="sub">첫 지급일과 횟수(2회 이상)를 넣으면 일정이 보입니다</span>';
+ }
+ if(cd.payment_type==='installment'){
+  const sum=r2(c.rows.reduce((s,r)=>s+r.amount,0)),diff=r2(c.total-sum);
+  const el=$('#cSchedSum');if(el){el.innerHTML=`회차 합계 ${cm(sum,cur)} ${Math.abs(diff)<0.01?'<b style="color:var(--green)">· 합계와 일치</b>':`<b class="flag">· 차이 ${cm(diff,cur)}</b>`}`;}
+ }
+ const fxEl=$('#cFx');if(fxEl)fxEl.innerHTML=fx.rate?`환산 <b>${money(r2(c.total*fx.rate))} MXN</b> · USD 1 = MXN ${fx.rate} <span class="sub">(${esc(fx.label)})</span>`:esc(fx.label);
  const p=previewLines(cd),parts=[];
  p.ls.forEach(l=>{
   if(l.t==='post_ceo')parts.push('<span class="lp fixed"><small>집행</small>재무</span>');
@@ -592,16 +766,26 @@ function updateCompose(){
  });
  $('#lprev').innerHTML=parts.join('<span class="arrow">›</span>');
  const S=B.settings,missing=(S.director_user_id==null&&!B.me.isDirector)||S.ceo_user_id==null;
- $('#ceoNote').innerHTML=`<div class="warn ${p.pre?'':'info'}">${S.threshold_basis==='sub'?'소계':'합계'} ${money(p.b)} ${p.pre?'≥':'<'} 사전승인 기준액 ${money(S.ceo_pre_threshold)} → 대표이사 사전승인 <b>${p.pre?'포함':'없음'}</b>${cd.category_id?'':' · 카테고리를 고르면 중간결재·합의가 반영됩니다'}<br>모든 문서는 집행완료 후 대표이사 사후승인을 거쳐 완결됩니다.</div>${missing?'<div class="warn red">설정에서 디렉터·대표이사 계정이 지정되지 않아 상신할 수 없습니다. 디렉터에게 요청하세요.</div>':''}`;
+ $('#ceoNote').innerHTML=`<div class="warn ${p.pre?'':'info'}">${S.threshold_basis==='sub'?'소계':'합계'} ${money(p.b)} MXN ${p.pre?'≥':'<'} 사전승인 기준액 ${money(S.ceo_pre_threshold)} → 대표이사 사전승인 <b>${p.pre?'포함':'없음'}</b>${cd.payment_type!=='once'?' (전 회차 합계 기준)':''}${cd.category_id?'':' · 카테고리를 고르면 중간결재·합의가 반영됩니다'}<br>모든 문서는 집행완료 후 대표이사 사후승인을 거쳐 완결됩니다.</div>${missing?'<div class="warn red">설정에서 디렉터·대표이사 계정이 지정되지 않아 상신할 수 없습니다. 디렉터에게 요청하세요.</div>':''}`;
 }
 async function saveCd(submit){
  if(ui.busy)return;
- const cd=ui.cd;
+ const cd=ui.cd;const ed=$('#bodyEd');if(ed)cd.body_nodes=serializeEd(ed);
+ const c=cdCalc(cd);
  if(!cd.title.trim()){toast('제목을 입력하세요');return;}
  if(submit&&!cd.category_id){toast('카테고리를 선택하세요');return;}
- if(submit&&!(r2(cd.planned_sub)>0)){toast('예정금액을 입력하세요');return;}
+ if(submit&&!(c.total>0)){toast('금액을 입력하세요');return;}
+ if(cd.payment_type==='recurring'&&c.rows.length<2){toast('정기 지급은 첫 지급일과 횟수(2회 이상)가 필요합니다');return;}
+ if(cd.payment_type==='installment'){
+  if(c.rows.some(r=>!(r.amount>0))){toast('회차 금액을 모두 입력하세요');return;}
+  if(Math.abs(r2(c.rows.reduce((s,r)=>s+r.amount,0))-c.total)>0.01){toast('회차 합계가 총액과 다릅니다');return;}
+ }
  ui.busy=true;
- const body={category_id:cd.category_id?Number(cd.category_id):null,title:cd.title,vendor:cd.vendor,pay_due:cd.pay_due||null,pay_method:cd.pay_method,planned_sub:r2(cd.planned_sub),iva_applied:cd.iva_applied,body:cd.body,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance};
+ const body={category_id:cd.category_id?Number(cd.category_id):null,title:cd.title,vendor:cd.vendor,pay_due:cd.pay_due||null,pay_method:cd.pay_method,
+  currency:cd.currency,payment_type:cd.payment_type,iva_applied:cd.iva_applied,orig_sub:c.sub,
+  payment_plan:cd.payment_type==='recurring'?{freq:cd.plan.freq,count:c.count,start:cd.plan.start,per_sub:r2(cd.plan.per_sub)}:null,
+  schedule:cd.payment_type==='installment'?c.rows.map(r=>({due_date:r.due_date||null,amount:r.amount})):null,
+  body_rich:cd.body_nodes,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance};
  try{
   if(cd.id)await api('PUT','/api/approvals/'+cd.id,body);else cd.id=(await api('POST','/api/approvals',body)).id;
   if(cd.newFiles.length){await uploadFiles(cd.id,cd.newFiles);cd.newFiles=[];}
@@ -724,13 +908,19 @@ function mdoc(m){return m.id&&(!DET||!same(DET.doc.id,m.id))?LIST.find(x=>same(x
 const MODALS={
  approve:m=>{const d=mdoc(m),t=m.title||'승인';return `<h2>${t}</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} · ${money(m.post?d.actual_total:d.planned_total)}</p><div class="fld"><label>의견 (선택)</label><textarea class="inp" id="mMemo" placeholder="의견은 타임라인에 기록됩니다"></textarea></div>${mBtns(t)}`;},
  reject:m=>{const d=mdoc(m),ag=m.agree;return `<h2>${ag?'반대 (반려)':'반려'}</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)}</p><div class="fld"><label>${ag?'반대':'반려'} 사유 <span class="req">*</span></label><textarea class="inp" id="mMemo" placeholder="보완해야 할 내용을 구체적으로 적어 주세요"></textarea></div>${upBox()}<div class="warn">기안자 ${esc(U(d.drafter_id))}에게 반려 알림이 사유와 함께 전송됩니다.</div>${mBtns(ag?'반대':'반려','danger')}`;},
- exec:m=>{const d=DET.doc,has=DET.files.some(f=>!f.voided_at&&B.exec_kinds.includes(f.kind));
-  return `<h2>집행 처리</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} · 예정 ${money(d.planned_total)}</p>
-  <div class="form"><div class="fld"><label>실적 금액 (IVA 포함) <span class="req">*</span></label><input class="inp" id="mAmt" inputmode="decimal" value="${d.planned_total}"></div>
+ exec:m=>{const d=DET.doc,p=DET.payments.find(x=>same(x.id,m.pid)),n1=DET.payments.length,usd=d.currency==='USD';
+  const linked=DET.files.filter(f=>!f.voided_at&&B.exec_kinds.includes(f.kind)&&(same(f.payment_id,p.id)||(n1===1&&f.payment_id==null)));
+  const free=DET.files.filter(f=>!f.voided_at&&B.exec_kinds.includes(f.kind)&&f.payment_id==null&&n1>1);
+  const last=DET.payments.filter(x=>x.status==='planned').length===1;
+  return `<h2>집행 처리${n1>1?` · ${p.seq}/${n1}회차`:''}</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} · 예정 ${cm(p.planned_amount,d.currency)}${p.due_date?` · 예정일 ${esc(p.due_date)}`:''}</p>
+  <div class="form"><div class="fld"><label>실적 금액 (${d.currency}, IVA 포함) <span class="req">*</span></label><input class="inp" id="mAmt" inputmode="decimal" value="${p.planned_amount}"></div>
   <div class="fld"><label>실제 지급일 <span class="req">*</span></label><input class="inp" type="date" id="mDate" value="${todayMX()}"></div>
-  <div class="fld full"><label>지급 방법</label><select class="inp" id="mPay">${B.pay_methods.map(p=>`<option ${p===d.pay_method?'selected':''}>${p}</option>`).join('')}</select></div></div>
-  ${upBox()}<div class="fld"><label>메모 (선택)</label><textarea class="inp" id="mMemo" style="min-height:56px"></textarea></div>
-  <div class="warn ${has?'info':''}">${has?'이미 등록된 Factura·송금증이 있습니다. 추가 증빙은 선택입니다.':'실적 증빙(Factura XML/PDF 또는 송금증) 1개 이상이 필요합니다.'} 집행 후 대표이사 사후승인이 요청됩니다.</div>${mBtns('집행완료 처리','gold')}`;},
+  <div class="fld full"><label>지급 방법</label><select class="inp" id="mPay">${B.pay_methods.map(x=>`<option ${x===d.pay_method?'selected':''}>${x}</option>`).join('')}</select></div></div>
+  ${upBox()}
+  ${free.length?`<div class="fld"><label>이미 올린 증빙을 이 회차에 연결</label>${free.map(f=>`<label class="ck"><input type="checkbox" class="mlink" value="${f.id}"> ${esc(f.file_name)} <span class="bdg b-gray">${esc(f.kind)}</span></label>`).join('')}</div>`:''}
+  <div class="fld"><label>메모 (선택)</label><textarea class="inp" id="mMemo" style="min-height:56px"></textarea></div>
+  <div class="warn ${linked.length?'info':''}">${linked.length?`이 회차 증빙 ${linked.length}건이 있습니다. 추가 증빙은 선택입니다.`:'이 회차의 실적 증빙(Factura XML/PDF 또는 송금증) 1개 이상이 필요합니다.'}${usd?' 실적은 USD 로 넣으면 지급일 환율(재무 환율)로 MXN 환산해 이 회차에 고정합니다.':''}${last?' 마지막 회차라 집행 후 대표이사 사후승인이 요청됩니다.':''}</div>${mBtns(last?'집행완료 처리':'이 회차 집행','gold')}`;},
+ pskip:m=>{const p=DET.payments.find(x=>same(x.id,m.pid)),last=DET.payments.filter(x=>x.status==='planned').length===1;return `<h2>${p.seq}회차 지급 중단</h2><p class="sub">계약 종료·취소 등으로 이 회차를 지급하지 않습니다. 되돌릴 수 없습니다.</p><div class="fld"><label>사유 <span class="req">*</span></label><input class="inp" id="mMemo" placeholder="예: 계약 조기 종료"></div>${last?'<div class="warn">마지막 남은 회차라 중단하면 집행이 끝나고 대표이사 사후승인이 요청됩니다.</div>':''}${mBtns('중단','danger')}`;},
  flag:m=>{const d=mdoc(m);return `<h2>이의제기</h2><p class="sub">${esc(d.doc_no)} · 예정 ${money(d.planned_total)} → 실적 ${money(d.actual_total)}</p><div class="fld"><label>이의 내용 <span class="req">*</span></label><textarea class="inp" id="mMemo" placeholder="소명이 필요한 내용"></textarea></div><div class="warn">기안자 ${esc(U(d.drafter_id))}와 디렉터에게 알림이 가고, 소명은 댓글로 받습니다.</div>${mBtns('이의제기','danger')}`;},
  postclose:m=>{const d=mdoc(m);return `<h2>이의 종결 · 사후승인 확인</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)}</p><div class="fld"><label>의견 (선택)</label><textarea class="inp" id="mMemo" placeholder="예: 소명 확인, 향후 인원 변경 시 사전 보고 바랍니다"></textarea></div>${mBtns('확인')}`;},
  upload:()=>{const d=DET.doc,st=d.status==='draft'?'기안':d.status!=='approved'?'결재중':d.exec_status==='done'?'사후':'집행';return `<h2>증빙 추가</h2><p class="sub">${esc(d.doc_no||'임시저장')} · 현재 단계 「${st}」로 기록됩니다</p>${upBox()}<p class="sub">PDF · Word · PowerPoint · Excel · 이미지 · CFDI XML · ZIP · 이메일 / 파일당 20MB</p>${mBtns('등록')}`;},
@@ -748,10 +938,13 @@ const OK={
  async approve(m){await api('POST',`/api/approvals/${tid(m)}/act`,{action:'approve',comment:val('#mMemo')});toast('처리되었습니다');},
  async reject(m){const memo=val('#mMemo');if(!memo){toast('사유를 입력하세요');return false;}if(ui.mFiles.length)await uploadFiles(tid(m),ui.mFiles);await api('POST',`/api/approvals/${tid(m)}/act`,{action:'reject',comment:memo});toast('반려되었습니다 · 기안자에게 알림');},
  async exec(m){const amt=r2(val('#mAmt')),date=val('#mDate');if(!(amt>0)||!date){toast('실적 금액과 지급일을 입력하세요');return false;}
-  const has=DET.files.some(f=>!f.voided_at&&B.exec_kinds.includes(f.kind))||ui.mFiles.some(f=>B.exec_kinds.includes(f.kind));
-  if(!has){toast('Factura 또는 송금증을 첨부하세요 (파일 종류 선택)');return false;}
-  if(ui.mFiles.length)await uploadFiles(DET.doc.id,ui.mFiles);
-  await api('POST',`/api/approvals/${DET.doc.id}/execute`,{actual_total:amt,exec_date:date,pay_method:$('#mPay').value,memo:val('#mMemo')});toast('집행완료 · 사후승인 요청됨');},
+  const n1=DET.payments.length,links=[...document.querySelectorAll('.mlink:checked')].map(x=>Number(x.value));
+  const has=DET.files.some(f=>!f.voided_at&&B.exec_kinds.includes(f.kind)&&(same(f.payment_id,m.pid)||(n1===1&&f.payment_id==null)))||links.length||ui.mFiles.some(f=>B.exec_kinds.includes(f.kind));
+  if(!has){toast('이 회차의 Factura 또는 송금증을 첨부하세요 (파일 종류 선택)');return false;}
+  if(ui.mFiles.length)await uploadFiles(DET.doc.id,ui.mFiles,null,m.pid);
+  const r=await api('POST',`/api/approvals/${DET.doc.id}/execute`,{payment_id:m.pid,actual_amount:amt,exec_date:date,pay_method:$('#mPay').value,memo:val('#mMemo'),link_file_ids:links});
+  toast(r.finished?'집행완료 · 사후승인 요청됨':`회차 집행 완료${DET.doc.currency==='USD'?` · ${money(r.actual_mxn)} MXN (환율 ${r.fx.rate})`:''}`);},
+ async pskip(m){const r=val('#mMemo');if(!r){toast('사유를 입력하세요');return false;}const x=await api('POST',`/api/approvals/${DET.doc.id}/payments/${m.pid}/skip`,{reason:r});toast(x.finished?'회차 중단 · 집행 종료 → 사후승인 요청됨':'회차를 중단했습니다');},
  async flag(m){const memo=val('#mMemo');if(!memo){toast('이의 내용을 입력하세요');return false;}await api('POST',`/api/approvals/${tid(m)}/flag`,{memo});toast('이의제기되었습니다');},
  async postclose(m){await api('POST',`/api/approvals/${tid(m)}/close-flag`,{memo:val('#mMemo')});toast('사후승인 확인 · 완결');},
  async upload(){if(!ui.mFiles.length){toast('파일을 선택하세요');return false;}await uploadFiles(DET.doc.id,ui.mFiles);toast('증빙이 등록되었습니다');},
@@ -784,7 +977,19 @@ const H={
   else if(DET&&!id){const mine=DET.lines.find(l=>l.status==='pending'&&same(l.user_id,B.me.id));if(mine)title=({pass:'경유 확인',agree:'합의',pre_ceo:'사전승인',post_ceo:'사후승인 확인'})[mine.step_type]||'승인';post=mine&&mine.step_type==='post_ceo';}
   openModal('approve',{id,title,post});},
  reject(a){const id=a.dataset.id?Number(a.dataset.id):null;const mine=!id&&DET?DET.lines.find(l=>l.status==='pending'&&same(l.user_id,B.me.id)):null;openModal('reject',{id,agree:mine&&mine.step_type==='agree'});},
- exec(){openModal('exec');},
+ exec(a){const pid=a.dataset.pid?Number(a.dataset.pid):(DET.payments.find(p=>p.status==='planned')||{}).id;if(!pid){toast('집행할 회차가 없습니다');return;}openModal('exec',{pid});},
+ pskip(a){openModal('pskip',{pid:Number(a.dataset.pid)});},
+ ccur(a){ui.cd.currency=a.dataset.v;if(ui.cd.currency==='USD'&&!ui.fx)loadFx();render();},
+ cpt(a){const cd=ui.cd,v=a.dataset.v;if(v===cd.payment_type)return;const ed=$('#bodyEd');if(ed)cd.body_nodes=serializeEd(ed);
+  if(v==='recurring'&&!(r2(cd.plan.per_sub)>0)&&r2(cd.orig_sub)>0)cd.plan.per_sub=cd.orig_sub;
+  if(v!=='recurring'&&cd.payment_type==='recurring'&&!(r2(cd.orig_sub)>0)){const c=cdCalc(cd);cd.orig_sub=c.sub?String(c.sub):'';}
+  cd.payment_type=v;render();},
+ scadd(){const ed=$('#bodyEd');if(ed)ui.cd.body_nodes=serializeEd(ed);if(ui.cd.sched.length>=60){toast('회차는 60회까지입니다');return;}ui.cd.sched.push({due_date:'',amount:''});$('#cSched').innerHTML=schedEditorHtml(ui.cd);updateCompose();},
+ scdel(a){ui.cd.sched.splice(Number(a.dataset.i),1);$('#cSched').innerHTML=schedEditorHtml(ui.cd);updateCompose();},
+ sceven(){const cd=ui.cd,c=cdCalc(cd);if(!(c.total>0)){toast('총 소계를 먼저 입력하세요');return;}splitEven(c.total,cd.sched.length).forEach((x,i)=>{cd.sched[i].amount=String(x);});$('#cSched').innerHTML=schedEditorHtml(cd);updateCompose();},
+ scadv(){const cd=ui.cd,c=cdCalc(cd);if(!(c.total>0)){toast('총 소계를 먼저 입력하세요');return;}const adv=r2(c.total*0.3);cd.sched=[{due_date:cd.sched[0]?cd.sched[0].due_date:'',amount:String(adv)},{due_date:cd.sched[1]?cd.sched[1].due_date:'',amount:String(r2(c.total-adv))}];$('#cSched').innerHTML=schedEditorHtml(cd);updateCompose();},
+ edimg(){const fp=$('#imgPick');fp.value='';fp.click();},
+ bimg(a){const w=window.open('','_blank');if(w){w.document.write('<title>그림</title><body style="margin:0;background:#111;display:grid;place-items:center;min-height:100vh"><img style="max-width:100%" src="'+a.getAttribute('src')+'"></body>');w.document.close();}},
  flag(a){openModal('flag',{id:a.dataset.id?Number(a.dataset.id):null});},
  postclose(a){openModal('postclose',{id:a.dataset.id?Number(a.dataset.id):null});},
  withdraw(){confirmBox('회수','문서를 회수하면 임시저장 상태로 돌아가고 결재선이 초기화됩니다.',async()=>{await api('POST',`/api/approvals/${DET.doc.id}/withdraw`);toast('회수되었습니다');},'회수','danger');},
@@ -829,8 +1034,8 @@ const H={
  catadd(){openModal('name',{title:'카테고리 추가',ok:'추가',fn:async v=>{await api('POST','/api/approvals/categories',{name:v});await loadBoot();}});},
  catren(a){const c=B.categories.find(x=>same(x.id,a.dataset.c));openModal('name',{title:'카테고리 이름 변경',value:c.name,fn:async v=>{await api('PUT',`/api/approvals/categories/${c.id}`,{name:v});await loadBoot();}});},
  async cattog(a){const c=B.categories.find(x=>same(x.id,a.dataset.c));const r=await run(()=>api('PUT',`/api/approvals/categories/${c.id}`,{active:!c.active}));if(r){await loadBoot();render();}},
- xls(){exportXls('전자결재_목록',['문서번호','카테고리','제목','거래처','기안자','상태','예정 합계','실적 합계','차이%','현재 처리자','상신일시','증빙','댓글'],
-  filtered().map(d=>[d.doc_no||'임시저장',catName(d.category_id),d.title,d.vendor||'',d.drafter_name,(STAGE_BADGE[d.stage]||[''])[0],d.planned_total,d.actual_total==null?'':d.actual_total,d.variance_pct==null?'':d.variance_pct,d.current||'',d.submitted_at?fmtT(d.submitted_at,'America/Mexico_City').slice(0,16):'',d.files_n,d.comments_n]));},
+ xls(){exportXls('전자결재_목록',['문서번호','카테고리','제목','거래처','기안자','상태','통화','원통화 합계','환율','결제 방식','회차','예정 합계(MXN)','실적 합계(MXN)','차이%','현재 처리자','상신일시','증빙','댓글'],
+  filtered().map(d=>[d.doc_no||'임시저장',catName(d.category_id),d.title,d.vendor||'',d.drafter_name,(STAGE_BADGE[d.stage]||[''])[0],d.currency,d.orig_total,d.currency==='USD'?d.fx_rate:'',PT_L[d.payment_type]||'',`${d.pay_done}/${d.pay_n}`,d.planned_total,d.actual_total==null?'':d.actual_total,d.variance_pct==null?'':d.variance_pct,d.current||'',d.submitted_at?fmtT(d.submitted_at,'America/Mexico_City').slice(0,16):'',d.files_n,d.comments_n]));},
  repxls(){exportXls('전자결재_예정실적_'+REP.month,['카테고리','승인','예정 합계','집행','실적 합계','차이','미집행 잔액','사후 미확인'],REP.rows.map(r=>[r.name,r.n,r.plan,r.execN,r.actual,r.diff,r.unexec,r.postOpen]));}
 };
 let xlsxLoading=null;
@@ -850,10 +1055,29 @@ document.addEventListener('click',e=>{
  f(a,e);
 });
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
+// 본문 편집기: 그림 붙여넣기(Ctrl+V) · 끌어놓기 — 서식 있는 붙여넣기는 텍스트로만
+document.addEventListener('paste',e=>{
+ if(!e.target.closest||!e.target.closest('#bodyEd'))return;
+ const dt=e.clipboardData;if(!dt)return;
+ const imgs=[...(dt.items||[])].filter(i=>i.kind==='file'&&/^image\//.test(i.type)).map(i=>i.getAsFile()).filter(Boolean);
+ e.preventDefault();
+ if(imgs.length){edAddImages(imgs);return;}
+ edInsertText(dt.getData('text/plain'));
+});
+document.addEventListener('dragover',e=>{if(e.target.closest&&e.target.closest('#bodyEd'))e.preventDefault();});
+document.addEventListener('drop',e=>{
+ if(!e.target.closest||!e.target.closest('#bodyEd'))return;
+ const files=[...((e.dataTransfer&&e.dataTransfer.files)||[])];if(!files.length)return;
+ e.preventDefault();edAddImages(files);
+});
+$('#imgPick').addEventListener('change',e=>{const f=[...e.target.files];if(f.length)edAddImages(f);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ui.modal)closeModal();if(e.key==='Enter'&&e.target.id==='pin')H.login();});
 document.addEventListener('input',e=>{
  const t=e.target;
  if(t.dataset.f&&ui.cd){ui.cd[t.dataset.f]=t.value;updateCompose();}
+ if(t.dataset.pl&&ui.cd){ui.cd.plan[t.dataset.pl]=t.value;updateCompose();}
+ if(t.dataset.sc&&ui.cd){ui.cd.sched[Number(t.dataset.i)][t.dataset.sc]=t.value;updateCompose();}
+ if(t.id==='bodyEd'&&ui.cd){clearTimeout(ui.edT);ui.edT=setTimeout(()=>{if(ui.cd&&$('#bodyEd'))ui.cd.body_nodes=serializeEd($('#bodyEd'));},300);}
  if(t.id==='q'){ui.q=t.value;const lb=$('#listBody');if(lb)lb.innerHTML=listHtml();}
 });
 document.addEventListener('change',e=>{
