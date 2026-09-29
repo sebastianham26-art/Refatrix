@@ -205,6 +205,11 @@ export function publicEndpoint(ep) {
     batch_size: ep.batch_size == null ? 500 : Number(ep.batch_size),
     send_hour_mx: ep.send_hour_mx == null ? 6 : Number(ep.send_hour_mx),
     auto_send: !!ep.auto_send,
+    // 0236 · 변경분 자동 전송 · 전체 전송 요일(0236 전이면 null — 화면이 「마이그레이션 필요」로 안내)
+    delta_auto: ep.delta_auto == null ? null : !!ep.delta_auto,
+    delta_every_min: ep.delta_every_min == null ? null : Number(ep.delta_every_min),
+    full_weekday: ep.full_weekday == null ? null : Number(ep.full_weekday),
+    delta_ready: ep.delta_auto !== undefined,
     sort_order: ep.sort_order == null ? 100 : Number(ep.sort_order),
     source: ep.source || 'db',
     updated_at: ep.updated_at || null,
@@ -218,7 +223,10 @@ const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_tes
   // 0218 · 제품 카탈로그 전송 설정(제품 창구에서만 쓰인다. 다른 창구에서는 값이 있어도 무해).
   'img_base_url', 'batch_size', 'send_hour_mx', 'auto_send',
   // 0219 · 상대 규격에 맞추는 두 가지(추측이 틀려도 배포 없이 화면에서 고친다).
-  'body_shape', 'field_map'];
+  'body_shape', 'field_map',
+  // 0236 · 변경분 자동 전송(주기) · 전체 자동 전송 요일. 컬럼이 없으면(0236 전) 저장에서 조용히 뺀다.
+  'delta_auto', 'delta_every_min', 'full_weekday'];
+const DELTA_FIELDS = ['delta_auto', 'delta_every_min', 'full_weekday'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 /**
@@ -268,6 +276,15 @@ export function validatePatch(p, cur = null) {
     if (!Number.isInteger(n) || n < 0 || n > 23) return 'send_hour_invalid';
   }
   if (p.body_shape != null && !['lote', 'array', 'item'].includes(String(p.body_shape))) return 'body_shape_invalid';
+  // 0236
+  if (p.delta_every_min != null) {
+    const n = Number(p.delta_every_min);
+    if (!Number.isInteger(n) || n < 5 || n > 1440) return 'delta_every_invalid';
+  }
+  if (p.full_weekday != null && p.full_weekday !== '') {
+    const n = Number(p.full_weekday);
+    if (!Number.isInteger(n) || n < 0 || n > 6) return 'full_weekday_invalid';
+  }
   if (p.field_map != null) {
     let m = p.field_map;
     if (typeof m === 'string') { try { m = JSON.parse(m); } catch (_) { return 'field_map_invalid'; } }
@@ -349,8 +366,11 @@ export async function saveEndpoint(key, patch, userId) {
   const changes = {};
   for (const f of EDITABLE) {
     if (patch[f] === undefined) continue;
+    if (DELTA_FIELDS.includes(f) && !(f in cur)) continue;       // 0236 전 — 칸이 없으면 건너뛴다
     let v = patch[f];
-    if (f === 'enabled' || f === 'auto_send') v = !!v;
+    if (f === 'enabled' || f === 'auto_send' || f === 'delta_auto') v = !!v;
+    else if (f === 'delta_every_min') v = Number(v);
+    else if (f === 'full_weekday') v = (v === '' || v == null) ? null : Number(v);
     else if (f === 'timeout_ms' || f === 'sort_order' || f === 'batch_size' || f === 'send_hour_mx') v = Number(v);
     else if (f === 'img_base_url') v = String(v == null ? '' : v).trim();
     else if (f === 'field_map') v = typeof v === 'string' ? v : JSON.stringify(v || {});

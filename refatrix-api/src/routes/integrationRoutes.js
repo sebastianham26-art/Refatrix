@@ -27,6 +27,8 @@ const ERR_NOTE = {
   auth_from_self: '자기 자신에게서 키를 물려받을 수는 없습니다.',
   batch_size_invalid: '묶음 크기는 10~2000 사이여야 합니다.',
   send_hour_invalid: '자동 전송 시각은 0~23 사이여야 합니다.',
+  delta_every_invalid: '변경분 확인 주기는 5~1440분 사이여야 합니다.',
+  full_weekday_invalid: '전체 전송 요일이 올바르지 않습니다.',
   img_base_invalid: '사진 기본주소는 http:// 또는 https:// 로 시작해야 합니다.',
   img_base_space: '사진 기본주소에 공백이 섞여 있습니다 — 주소만 남기세요.',
   no_products: '보낼 제품이 없습니다 — 제품 마스터를 먼저 확인하세요.',

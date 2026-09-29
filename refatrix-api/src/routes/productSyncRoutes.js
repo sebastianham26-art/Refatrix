@@ -9,6 +9,7 @@ import {
   PRODUCT_KEY, runCatalogSync, listRuns, productTablesReady,
   fetchProducts, buildProduct, buildLote, chunk, mxNowParts, autoRanToday,
   SENDABLE_WHERE, EXCLUDED_PREFIXES, cancelCatalogSync, pendingProductCount, runErrors,
+  stateReady, baselineCount, computeDelta,
 } from '../productSync.js';
 import { pumpState, gapMs } from '../crmSync.js';
 
@@ -17,7 +18,10 @@ const ERR_NOTE = {
   endpoint_missing: '연동 목록에 「제품정보」 창구가 없습니다.',
   no_products: '보낼 제품이 없습니다(products 가 비어 있습니다).',
   enqueue_failed: '전송 적재에 실패했습니다. 서버 로그를 확인하세요.',
+  migration_required_delta: '0236_product_sync_delta 마이그레이션이 필요합니다(변경분 전송).',
+  no_baseline: '비교할 기준이 없습니다 — 「지금 전체 보내기」를 한 번 하거나, CRM 이 이미 최신이면 「기준만 저장」을 누르세요.',
 };
+const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default async function productSyncRoutes(app) {
   const guard = { preHandler: [authGuard, requireDirector] };
@@ -56,6 +60,11 @@ export default async function productSyncRoutes(app) {
         batch_size: batch,
         send_hour_mx: Number(ep.send_hour_mx) || 6,
         auto_send: !!ep.auto_send,
+        // 0236
+        full_weekday: ep.full_weekday == null ? null : Number(ep.full_weekday),
+        full_weekday_label: ep.full_weekday == null ? '매일' : `매주 ${WEEKDAY[Number(ep.full_weekday)] || '?'}요일`,
+        delta_auto: ep.delta_auto == null ? null : !!ep.delta_auto,
+        delta_every_min: ep.delta_every_min == null ? null : Number(ep.delta_every_min),
         body_shape: ep.body_shape || 'lote',
         field_map: ep.field_map || {},
       } : null,
@@ -75,7 +84,30 @@ export default async function productSyncRoutes(app) {
       pending_products: ready ? await pendingProductCount().catch(() => 0) : 0,
       pump: pumpState(),
       gap_ms: gapMs(),
+      // 0236 · 변경분 — 기준 개수 · 마지막 변경분 전송
+      delta: await deltaStatus(),
     };
+  });
+
+  async function deltaStatus() {
+    if (!(await stateReady())) return { ready: false };
+    try {
+      const last = (await query(
+        `SELECT id, envio_id, total_productos, created_at FROM product_sync_runs
+          WHERE mode='delta' ORDER BY id DESC LIMIT 1`)).rows[0] || null;
+      return { ready: true, baseline: await baselineCount(), last_delta: last };
+    } catch (_) { return { ready: false }; }
+  }
+
+  /** 0236 · 변경분 미리 세기 — 보내지 않는다. 지금 보내면 무엇이 나가나. */
+  app.get('/api/product-sync/delta-preview', guard, async (req, reply) => {
+    if (!(await stateReady())) return reply.code(503).send({ error: 'migration_required_delta', note: ERR_NOTE.migration_required_delta });
+    const baseline = await baselineCount();
+    if (!baseline) return { ok: true, baseline: 0, total: 0, counts: null, note: ERR_NOTE.no_baseline };
+    const ep = await getEndpoint(PRODUCT_KEY);
+    const d = await computeDelta((ep && ep.img_base_url) || '');
+    return { ok: true, baseline, total: d.items.length, counts: d.counts,
+             sample: d.items.slice(0, 20).map((x) => ({ codigo: x.p.codigo, descripcion: x.p.descripcion, activo: x.p.activo })) };
   });
 
   /**
@@ -124,13 +156,14 @@ export default async function productSyncRoutes(app) {
    */
   app.post('/api/product-sync/run', guard, async (req, reply) => {
     const body = req.body || {};
-    const mode = String(body.mode || 'full') === 'test' ? 'test' : 'full';
+    const want = String(body.mode || 'full');
+    const mode = ['test', 'delta', 'baseline'].includes(want) ? want : 'full';
     const limit = mode === 'test' ? Math.max(1, Math.min(50, Number(body.limit) || 5)) : null;
     const r = await runCatalogSync({
       mode, limit, origin: 'manual', actorUserId: req.ctx.perm.userId, app,
     });
     if (r.error) {
-      const code = r.error === 'migration_required' ? 503 : 400;
+      const code = (r.error === 'migration_required' || r.error === 'migration_required_delta') ? 503 : 400;
       return reply.code(code).send({ error: r.error, note: ERR_NOTE[r.error] || null, detail: r.detail || null });
     }
     try {

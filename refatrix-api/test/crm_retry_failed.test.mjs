@@ -106,7 +106,7 @@ test('화면 — 버튼 · 목록과 같은 범위로 요청 · 빌드 토큰', 
   assert.match(html, /id="btnRetryFailed"[^>]*>실패 건 재전송</);
   assert.match(html, /\/api\/crm-sync\/retry-failed/);
   assert.match(html, /function scopeBody\(\)/);
-  assert.match(html, /build 20260929rf/);
+  assert.match(html, /build 20260929(rf|dl)/);
 });
 
 test.after(async () => { if (app) await app.close(); if (pool) await pool.end(); });

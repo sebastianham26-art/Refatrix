@@ -1,8 +1,11 @@
 // ERP → CRM(웹 카달록) 제품 카탈로그 전송. 계약서 v1.0 (Contrato_API_Producto_v1.0).
 //
-//   무엇을 언제 보내나
-//     하루 1회, **전체 카탈로그**를 묶음(lote)으로 나눠 보낸다. 변경분만 보내지 않는다 —
-//     받는 쪽이 "이번에 안 온 제품은 감춘다"로 마감할 수 있어야 단종품이 웹에 남지 않는다.
+//   무엇을 언제 보내나 (2026-09-29 개정 · 0236)
+//     · **변경분(delta)** — 5분마다(설정) 제품별 본문 지문(hash)을 마지막으로 보낸 것과 비교해
+//       달라진 제품·새 제품·지워진 제품(비활성으로 1회)·실패했던 제품만 보낸다. **마감 신호 없음.**
+//     · **전체(full)** — 주 1회 자동(설정 요일·시각) + 수동 버튼. 마지막 묶음에 마감 신호 —
+//       받는 쪽이 "이번에 안 온 제품은 감춘다"로 마감할 수 있어야 단종품이 웹에 남지 않는다.
+//     · **기준 저장(baseline)** — 보내지 않고 지금 값을 「이미 보낸 값」으로 기록(CRM 이 이미 최신일 때).
 //
 //   설계 원칙 4가지
 //   ① 엔진을 새로 만들지 않는다. 적재는 기존 아웃박스(crm_customer_outbox, entity='product'),
@@ -13,6 +16,7 @@
 //      esUltimoLote 를 절대 true 로 보내지 않는다. 몇 건만 보낸 뒤 마감 신호가 가면
 //      CRM 은 나머지 전 제품을 감춘다 — 한 번의 실수로 카탈로그가 비는 사고다.
 //   ④ 적재는 전송을 기다리지 않는다. 묶음을 쌓고 즉시 응답한다(워커가 밀어 낸다).
+import { createHash } from 'node:crypto';
 import { query } from './db.js';
 import { getEndpoint, activeUrl } from './integrations.js';
 import { scheduleDrain, signalProductCancel } from './crmSync.js';
@@ -199,8 +203,9 @@ export function buildLote(meta, productos, opt = {}) {
     lote: meta.lote,
     totalLotes: meta.totalLotes,
     totalProductos: meta.totalProductos,
-    // 시험 전송은 절대 마감 신호를 보내지 않는다(원칙 ③).
-    esUltimoLote: meta.mode === 'test' ? false : meta.lote === meta.totalLotes,
+    // 시험·변경분 전송은 절대 마감 신호를 보내지 않는다(원칙 ③) — 변경분이 마감하면
+    //   CRM 이 이번에 안 온 제품(= 나머지 전부)을 감춘다.
+    esUltimoLote: (meta.mode === 'test' || meta.mode === 'delta') ? false : meta.lote === meta.totalLotes,
     transactionUser: meta.transactionUser,
     productos: items,
   };
@@ -255,6 +260,125 @@ export async function fetchProducts({ limit = null, code = null } = {}) {
   return (await query(sql)).rows;
 }
 
+/** 코드로 제품 행(삭제·제외 포함) — 지워진 제품을 비활성으로 한 번 알리기 위해. */
+async function fetchProductsByCodes(codes) {
+  if (!codes.length) return [];
+  const oeOn = await oeReady();
+  return (await query(
+    `SELECT DISTINCT ON (code) code, name, app, scode, list_price, stock_qty,
+            (is_active AND deleted_at IS NULL) AS is_active,
+            sat_code, origin, iva_rate, ean, location, list_price_syd, price_customer_ctr,
+            ${oeOn ? 'oe' : 'NULL::text AS oe'}
+       FROM products WHERE code = ANY($1)
+      ORDER BY code, (deleted_at IS NULL) DESC, id DESC`, [codes])).rows;
+}
+
+// ===== 0236 · 변경분 판정 ===============================================
+/**
+ * 제품 본문 지문. 우리 표준 본문(이름 바꾸기 전) 기준 — 작업자 이름은 뺀다(보낼 때마다 다를 수 있다).
+ *   필드 이름 매핑·본문 형식을 바꾼 것은 변경으로 보지 않는다 → 그때는 전체 전송을 한 번 누른다.
+ */
+export function productHash(p) {
+  const o = {};
+  for (const k of PRODUCT_FIELDS) if (k !== 'transactionUser') o[k] = p[k] === undefined ? null : p[k];
+  return createHash('sha1').update(JSON.stringify(o)).digest('hex');
+}
+
+let stateOk = false;
+let stateProbe = 0;
+export async function stateReady() {
+  if (stateOk) return true;
+  if (Date.now() - stateProbe < PROBE_MS) return false;
+  stateProbe = Date.now();
+  try {
+    const r = await query(`SELECT to_regclass('public.product_sync_state') AS t`);
+    stateOk = !!(r.rows[0] && r.rows[0].t);
+  } catch (_) { stateOk = false; }
+  return stateOk;
+}
+export function setStateReady(v) { stateOk = !!v; stateProbe = Date.now(); }
+
+/** 기준(마지막으로 보낸 지문)이 몇 개 있나. 0 이면 변경분을 계산할 수 없다. */
+export async function baselineCount() {
+  if (!(await stateReady())) return 0;
+  const r = (await query(`SELECT COUNT(*)::int AS n FROM product_sync_state`)).rows[0];
+  return Number(r && r.n) || 0;
+}
+
+/**
+ * 순수 함수 — 지금 본문들과 기준을 비교해 보낼 것을 고른다.
+ *   state: Map(code → { hash, status })   status = 그 본문이 들어간 아웃박스 행의 상태(없으면 null)
+ *   · 기준에 없음(새 제품) → 보냄
+ *   · 지문이 다름(값이 바뀜) → 보냄
+ *   · 지문은 같지만 그 전송이 **실패(failed)** → 보냄(최신 값으로 다시)
+ *   · 대기(pending)·완료(sent)·건너뜀(skipped: 상대 거절·디렉터 중지)은 값이 안 바뀌면 보내지 않는다
+ *   gone: 기준에는 있는데 지금 목록에 없는 제품(삭제·제외) — 호출자가 비활성 본문으로 만들어 넘긴다.
+ */
+export function pickChanged(productos, state) {
+  const out = [];
+  const counts = { nuevo: 0, cambiado: 0, reintento: 0 };
+  for (const p of productos) {
+    const h = productHash(p);
+    const st = state.get(p.codigo);
+    if (!st) { counts.nuevo++; out.push({ p, h }); continue; }
+    if (st.hash !== h) { counts.cambiado++; out.push({ p, h }); continue; }
+    if (st.status === 'failed') { counts.reintento++; out.push({ p, h }); }
+  }
+  return { items: out, counts };
+}
+
+async function loadState() {
+  const rows = (await query(
+    `SELECT s.code, s.hash, o.status
+       FROM product_sync_state s
+       LEFT JOIN crm_customer_outbox o ON o.id = s.outbox_id`)).rows;
+  const m = new Map();
+  for (const r of rows) m.set(r.code, { hash: r.hash, status: r.status || null });
+  return m;
+}
+
+/** 기준 기록 — 한 번의 쿼리로(수만 건이어도). */
+async function saveState(entries, runId) {
+  if (!entries.length) return;
+  const CH = 5000;
+  for (let i = 0; i < entries.length; i += CH) {
+    const part = entries.slice(i, i + CH);
+    await query(
+      `INSERT INTO product_sync_state (code, hash, run_id, outbox_id, updated_at)
+       SELECT c, h, $4, o, now() FROM unnest($1::text[], $2::text[], $3::bigint[]) AS t(c, h, o)
+       ON CONFLICT (code) DO UPDATE
+          SET hash = EXCLUDED.hash, run_id = EXCLUDED.run_id,
+              outbox_id = EXCLUDED.outbox_id, updated_at = now()`,
+      [part.map((e) => e.code), part.map((e) => e.hash), part.map((e) => e.outbox_id), runId]);
+  }
+}
+
+/**
+ * 변경분 계산(보내지 않는다) — 미리보기와 실제 전송이 같은 함수를 쓴다.
+ *   returns { items:[{p,h}], counts:{nuevo,cambiado,reintento,baja}, baseline }
+ */
+export async function computeDelta(imgBase) {
+  const rows = (await fetchProducts()).filter((r) => !isExcludedCode(r.code));
+  const productos = rows.map((r) => buildProduct(r, imgBase));
+  const state = await loadState();
+  const { items, counts } = pickChanged(productos, state);
+  // 기준에는 있는데 지금 보낼 목록에 없는 제품 = 지워졌거나 제외됨 → 비활성으로 한 번 알린다.
+  const now = new Set(productos.map((p) => p.codigo));
+  const goneCodes = [...state.keys()].filter((c) => !now.has(c) && !isExcludedCode(c));
+  counts.baja = 0;
+  if (goneCodes.length) {
+    const found = new Map((await fetchProductsByCodes(goneCodes)).map((r) => [r.code, r]));
+    for (const c of goneCodes) {
+      const row = { ...(found.get(c) || { code: c, name: '' }), is_active: false };
+      const p = buildProduct(row, imgBase);
+      const h = productHash(p);
+      const st = state.get(c);
+      if (st.hash !== h || st.status === 'failed') { counts.baja++; items.push({ p, h }); }
+    }
+  }
+  return { items, counts, baseline: state.size };
+}
+
 async function actorName(userId, userField) {
   if (!userId) return 'erp';
   try {
@@ -268,6 +392,8 @@ async function actorName(userId, userField) {
 /** 같은 날 두 번째 전체 전송은 envioId 가 달라야 한다 — 상대가 두 corte 를 구분할 수 있게. */
 async function nextEnvioId(ymd, mode) {
   if (mode === 'test') return `TEST-${mxNowParts().stamp}`;
+  if (mode === 'delta') return `DLT-${mxNowParts().stamp}`;
+  if (mode === 'baseline') return `BASE-${mxNowParts().stamp}`;
   const base = `CAT-${ymd}`;
   const r = (await query(
     `SELECT COUNT(*)::int AS n FROM product_sync_runs WHERE fecha_corte = $1 AND mode = 'full'`,
@@ -278,7 +404,10 @@ async function nextEnvioId(ymd, mode) {
 
 /**
  * 카탈로그 전송 적재.
- *   mode: 'full' = 전체(마지막 묶음에 마감 신호) · 'test' = 앞에서 몇 건만(마감하지 않는다)
+ *   mode: 'full'     = 전체(마지막 묶음에 마감 신호)
+ *         'test'     = 앞에서 몇 건만(마감하지 않는다)
+ *         'delta'    = 0236 · 바뀐 것만(마감하지 않는다). 바뀐 게 없으면 회차를 만들지 않는다
+ *         'baseline' = 0236 · 보내지 않고 지금 값을 기준으로 기록만
  *   절대 throw 하지 않는다 — 화면 버튼이 500 으로 죽으면 원인을 알 수 없다.
  */
 export async function runCatalogSync({
@@ -286,52 +415,89 @@ export async function runCatalogSync({
 } = {}) {
   try {
     if (!(await productTablesReady())) return { error: 'migration_required' };
+    if (!['full', 'test', 'delta', 'baseline'].includes(mode)) mode = 'full';
+    const needState = mode === 'delta' || mode === 'baseline';
+    if (needState && !(await stateReady())) return { error: 'migration_required_delta' };
     const ep = await getEndpoint(PRODUCT_KEY);
     if (!ep) return { error: 'endpoint_missing' };
 
     const { ymd } = mxNowParts();
     const isTest = mode === 'test';
-    // SQL 이 이미 PRO* 를 거르지만, 조건이 바뀌어도 새지 않도록 한 번 더 거른다.
-    const rows = (await fetchProducts({ limit: isTest ? (Number(limit) || 5) : null }))
-      .filter((r) => !isExcludedCode(r.code));
-    if (!rows.length) return { error: 'no_products' };
-
     const imgBase = ep.img_base_url || '';
     const shape = BODY_SHAPES.includes(ep.body_shape) ? ep.body_shape : 'lote';
     const map = (ep.field_map && typeof ep.field_map === 'object') ? ep.field_map : {};
-    const productos = rows.map((r) => buildProduct(r, imgBase));
+
+    let productos; let hashes; let deltaCounts = null;
+    if (mode === 'delta') {
+      if ((await baselineCount()) === 0) return { error: 'no_baseline' };
+      const d = await computeDelta(imgBase);
+      deltaCounts = d.counts;
+      if (!d.items.length) return { ok: true, mode: 'delta', nothing: true, counts: d.counts, total_productos: 0 };
+      productos = d.items.map((x) => x.p);
+      hashes = d.items.map((x) => x.h);
+    } else {
+      // SQL 이 이미 PRO* 를 거르지만, 조건이 바뀌어도 새지 않도록 한 번 더 거른다.
+      const rows = (await fetchProducts({ limit: isTest ? (Number(limit) || 5) : null }))
+        .filter((r) => !isExcludedCode(r.code));
+      if (!rows.length) return { error: 'no_products' };
+      productos = rows.map((r) => buildProduct(r, imgBase));
+      hashes = productos.map(productHash);
+    }
+
+    const envioId = await nextEnvioId(ymd, mode);
+    const batchSize = Math.max(MIN_BATCH, Math.min(MAX_BATCH, Number(ep.batch_size) || DEFAULT_BATCH));
+
+    // 기준만 기록 — 보내지 않는다. 회차 1행(묶음 0)으로 「언제 누가 기준을 잡았나」를 남긴다.
+    if (mode === 'baseline') {
+      const run = (await query(
+        `INSERT INTO product_sync_runs
+           (envio_id, fecha_corte, mode, origin, total_productos, total_lotes, batch_size, env, created_by, note)
+         VALUES ($1,$2,'baseline',$3,$4,0,$5,$6,$7,$8) RETURNING id`,
+        [envioId, ymd, origin, productos.length, batchSize, ep.env || null, actorUserId || null,
+         '보내지 않음 — 지금 값을 CRM 에 이미 있는 값으로 기록'])).rows[0];
+      await saveState(productos.map((p, i) => ({ code: p.codigo, hash: hashes[i], outbox_id: null })), Number(run.id));
+      return { ok: true, mode: 'baseline', run_id: Number(run.id), envio_id: envioId, total_productos: productos.length, total_lotes: 0 };
+    }
+
     // 「1건씩」 형식이면 요청 1건 = 제품 1건이다(전송 이력도 제품 수만큼 생긴다).
-    const lotes = shape === 'item'
-      ? productos.map((p) => [p])
-      : chunk(productos, ep.batch_size);
+    const idx = productos.map((_, i) => i);
+    const lotesIdx = shape === 'item' ? idx.map((i) => [i]) : chunk(idx, ep.batch_size);
     const transactionUser = await actorName(actorUserId, ep.user_field);
-    const envioId = await nextEnvioId(ymd, isTest ? 'test' : 'full');
 
     const run = (await query(
       `INSERT INTO product_sync_runs
          (envio_id, fecha_corte, mode, origin, total_productos, total_lotes, batch_size, env, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, created_at`,
-      [envioId, ymd, isTest ? 'test' : 'full', origin, productos.length, lotes.length,
-       Math.max(MIN_BATCH, Math.min(MAX_BATCH, Number(ep.batch_size) || DEFAULT_BATCH)),
-       ep.env || null, actorUserId || null])).rows[0];
+      [envioId, ymd, mode, origin, productos.length, lotesIdx.length,
+       batchSize, ep.env || null, actorUserId || null])).rows[0];
 
     const meta = {
-      envioId, fechaCorte: ymd, totalLotes: lotes.length,
-      totalProductos: productos.length, transactionUser, mode: isTest ? 'test' : 'full',
+      envioId, fechaCorte: ymd, totalLotes: lotesIdx.length,
+      totalProductos: productos.length, transactionUser, mode,
     };
+    const originTag = origin === 'auto'
+      ? (mode === 'delta' ? 'auto_delta' : 'auto_daily')
+      : `product_${mode}`;
     const ids = [];
-    for (let i = 0; i < lotes.length; i++) {
-      const payload = buildLote({ ...meta, lote: i + 1 }, lotes[i], { map, shape });
+    const stateRows = [];
+    for (let i = 0; i < lotesIdx.length; i++) {
+      const lote = lotesIdx[i].map((k) => productos[k]);
+      const payload = buildLote({ ...meta, lote: i + 1 }, lote, { map, shape });
       const label = shape === 'item'
-        ? `${envioId} · ${i + 1}/${lotes.length} · ${lotes[i][0].codigo}`
-        : `${envioId} · ${i + 1}/${lotes.length} (${lotes[i].length}건)`;
+        ? `${envioId} · ${i + 1}/${lotesIdx.length} · ${lote[0].codigo}`
+        : `${envioId} · ${i + 1}/${lotesIdx.length} (${lote.length}건)`;
       const ins = (await query(
         `INSERT INTO crm_customer_outbox
            (customer_id, entity, entity_id, entity_label, endpoint_key, op, origin, rfc, payload, status, acted_by)
          VALUES (NULL,'product',$1,$2,$3,'upsert',$4,NULL,$5,'pending',$6) RETURNING id`,
-        [Number(run.id), label, PRODUCT_KEY, origin === 'auto' ? 'auto_daily' : `product_${isTest ? 'test' : 'full'}`,
-         JSON.stringify(payload), actorUserId || null])).rows[0];
+        [Number(run.id), label, PRODUCT_KEY, originTag, JSON.stringify(payload), actorUserId || null])).rows[0];
       ids.push(Number(ins.id));
+      for (const k of lotesIdx[i]) stateRows.push({ code: productos[k].codigo, hash: hashes[k], outbox_id: Number(ins.id) });
+    }
+    // 0236 · 보낸 값의 지문을 기준으로 남긴다(시험 전송은 몇 건뿐이라 기준을 건드리지 않는다).
+    if (!isTest && (await stateReady())) {
+      try { await saveState(stateRows, Number(run.id)); }
+      catch (e) { try { console.error('[productSync] 기준 기록 실패', e && e.message); } catch (_) {} }
     }
 
     // 연동이 꺼져 있거나 주소가 비어 있으면 워커가 **시도 횟수를 쓰지 않고** 대기로 둔다.
@@ -344,9 +510,10 @@ export async function runCatalogSync({
       run_id: Number(run.id),
       envio_id: envioId,
       fecha_corte: ymd,
-      mode: isTest ? 'test' : 'full',
+      mode,
       total_productos: productos.length,
-      total_lotes: lotes.length,
+      total_lotes: lotesIdx.length,
+      counts: deltaCounts,
       body_shape: shape,
       outbox_ids: ids,
       queued_only: !ready,
@@ -486,23 +653,61 @@ export async function autoRanToday(ymd) {
   return !!r;
 }
 
+/** 멕시코 요일(0=일 … 6=토). */
+export function mxWeekday(now = Date.now()) {
+  return new Date(now + MX_OFFSET_MIN * 60000).getUTCDay();
+}
+
+/** 전체 자동 전송을 지금 돌릴 차례인가(순수 함수). full_weekday 가 NULL 이면 매일(예전 동작). */
+export function fullDue({ autoSend, weekday, sendHour }, { wd, hour, ranToday }) {
+  if (!autoSend || ranToday) return false;
+  if (weekday != null && weekday !== '' && Number(weekday) !== wd) return false;
+  const h = Number(sendHour);
+  return hour >= (Number.isFinite(h) ? h : 6);
+}
+
+/** 변경분 자동 전송을 지금 돌릴 차례인가(순수 함수). */
+export function deltaDue({ deltaAuto, everyMin }, { lastAt, now = Date.now(), pending, baseline }) {
+  if (!deltaAuto || !baseline) return false;
+  if (pending > 0) return false;                 // 전체 전송이 나가는 중이면 겹쳐 싣지 않는다
+  const m = Math.max(5, Math.min(1440, Number(everyMin) || 5));
+  if (!lastAt) return true;
+  return now - new Date(lastAt).getTime() >= m * 60000 - 5000;   // 틱 오차 5초 허용
+}
+
+let lastDeltaCheck = 0;       // 바뀐 게 없어 회차를 만들지 않은 확인도 주기에 넣는다(메모리)
+
 /**
- * 자동 전송 스케줄러 — 5분 주기로 확인하고, 설정 시각이 지났는데 오늘 실행이 없으면 한 번 돌린다.
- *   · 서버가 그 시각에 자고 있었어도 **그날 안에 따라잡는다**(정각에 의존하지 않는다).
- *   · 하루 1회 보장은 DB 유니크 인덱스(uq_psr_auto_day)가 최종적으로 책임진다.
+ * 자동 전송 스케줄러 — 1분 주기로 확인한다.
+ *   ① 전체: 설정 요일(없으면 매일)·시각이 지났는데 오늘 자동 전체가 없으면 한 번. 서버가 자고 있었어도 그날 안에 따라잡는다.
+ *      하루 1회 보장은 DB 유니크 인덱스(uq_psr_auto_day)가 최종 책임.
+ *   ② 변경분(0236): 주기(기본 5분)마다 바뀐 것만. 기준이 없으면 돌지 않는다(첫 전체 전송 또는 「기준 저장」 후부터).
  */
-export async function productSyncTick({ app = null } = {}) {
+export async function productSyncTick({ app = null, now = Date.now() } = {}) {
   try {
     if (!(await productTablesReady())) return { skipped: 'migration_required' };
     const ep = await getEndpoint(PRODUCT_KEY);
-    if (!ep || !ep.auto_send) return { skipped: 'auto_off' };
+    if (!ep) return { skipped: 'endpoint_missing' };
     if (!ep.enabled || !activeUrl(ep)) return { skipped: 'endpoint_not_ready' };
-    const { ymd, hour } = mxNowParts();
-    const h = Number(ep.send_hour_mx);
-    if (hour < (Number.isFinite(h) ? h : 6)) return { skipped: 'too_early' };
-    if (await autoRanToday(ymd)) return { skipped: 'already_sent' };
-    const r = await runCatalogSync({ mode: 'full', origin: 'auto', app });
-    return { ran: true, result: r };
+    const { ymd, hour } = mxNowParts(now);
+    if (fullDue({ autoSend: ep.auto_send, weekday: ep.full_weekday, sendHour: ep.send_hour_mx },
+                { wd: mxWeekday(now), hour, ranToday: await autoRanToday(ymd) })) {
+      const r = await runCatalogSync({ mode: 'full', origin: 'auto', app });
+      return { ran: 'full', result: r };
+    }
+    if (!(await stateReady())) return { skipped: 'delta_migration_required' };
+    const deltaAuto = ep.delta_auto == null ? false : !!ep.delta_auto;
+    if (!deltaAuto) return { skipped: 'delta_off' };
+    const last = (await query(
+      `SELECT max(created_at) AS at FROM product_sync_runs WHERE mode='delta'`)).rows[0];
+    const lastAt = Math.max(last && last.at ? new Date(last.at).getTime() : 0, lastDeltaCheck) || null;
+    if (!deltaDue({ deltaAuto, everyMin: ep.delta_every_min },
+                  { lastAt, now, pending: await pendingProductCount(), baseline: await baselineCount() })) {
+      return { skipped: 'delta_not_due' };
+    }
+    lastDeltaCheck = now;
+    const r = await runCatalogSync({ mode: 'delta', origin: 'auto', app });
+    return { ran: 'delta', result: r };
   } catch (e) {
     try { console.error('[productSync] tick 실패', e && e.message); } catch (_) {}
     return { skipped: 'error' };
@@ -512,8 +717,8 @@ export async function productSyncTick({ app = null } = {}) {
 export function startProductSyncWorker(app) {
   if (timer) return;
   const tick = () => { productSyncTick({ app }).catch(() => {}); };
-  timer = setInterval(tick, 300000);          // 5분
+  timer = setInterval(tick, 60000);           // 1분 — 변경분 주기(기본 5분)를 지키려면 5분보다 촘촘해야 한다
   if (timer.unref) timer.unref();
   setTimeout(tick, 25000);                    // 기동 25초 뒤 한 번(밀린 날 따라잡기)
-  try { app?.log?.info?.('[productSync] 카탈로그 자동 전송 감시 시작 — 5분 주기'); } catch (_) {}
+  try { app?.log?.info?.('[productSync] 카탈로그 자동 전송 감시 시작 — 1분 주기(전체: 주 1회 · 변경분: 설정 주기)'); } catch (_) {}
 }

@@ -30,5 +30,5 @@ test('화면: 저장된 값이 목록에 없으면 추가해서 선택(빈칸 �
   assert.match(html, /function setMethodSel\(id,v\)/);
   assert.match(html, /setMethodSel\('fMethodDelete',e\.method_delete\|\|'DELETE'\)/);
   assert.ok([...doc.getElementById('fMethodDelete').options].some(o => o.value === 'GET'));
-  assert.match(html, /build 20260929rf|build 20260924mth/);
+  assert.match(html, /build 20260929(rf|dl)|build 20260924mth/);
 });

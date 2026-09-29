@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20260929rf</title>
+<title>Refatrix ERP · 연동 관리 · build 20260929dl</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -313,23 +313,39 @@
 
           <!-- 0218 · 제품 카탈로그 전송 — 제품 창구에서만 보인다 -->
           <div id="boxProduct" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
-            <div style="font-weight:600;margin-bottom:8px">제품 카탈로그 전송 <span class="hint">(계약서 v1.0 · 하루 1회 전체)</span></div>
+            <div style="font-weight:600;margin-bottom:8px">제품 카탈로그 전송 <span class="hint">(바뀐 것만 자동 · 전체는 주 1회 + 수동)</span></div>
             <div class="row3">
               <div><label>사진 기본주소 <span class="hint">({code} 를 쓰면 그 자리에 제품코드)</span></label>
                 <input id="fImgBase" placeholder="https://.../fotos  →  https://.../fotos/CA0032.jpg"></div>
               <div><label>묶음 크기 <span class="hint">(한 번에 보낼 제품 수)</span></label><input id="fBatch" placeholder="500"></div>
               <div><label>자동 전송 시각 <span class="hint">(멕시코 시간, 0~23)</span></label><input id="fSendHour" placeholder="6"></div>
             </div>
+            <!-- 0236 · 변경분 자동 · 전체 요일 -->
+            <div class="row3" style="margin-top:8px;align-items:end">
+              <div><label>전체 자동 전송 요일</label>
+                <select id="fFullWeekday"><option value="0">매주 일요일</option><option value="1">매주 월요일</option><option value="2">매주 화요일</option>
+                  <option value="3">매주 수요일</option><option value="4">매주 목요일</option><option value="5">매주 금요일</option><option value="6">매주 토요일</option>
+                  <option value="">매일</option></select></div>
+              <div><label>변경분 확인 주기 <span class="hint">(분, 5~1440)</span></label><input id="fDeltaEvery" placeholder="5"></div>
+              <div></div>
+            </div>
             <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
-              <input type="checkbox" id="fAutoSend"><span class="hint">매일 자동으로 전체 카탈로그를 보냅니다. 꺼 두면 아래 버튼으로만 보냅니다.</span>
+              <input type="checkbox" id="fAutoSend"><span class="hint"><b>전체 카탈로그 자동 전송</b> — 위 요일·시각에 전체를 보냅니다(마감 신호 포함). 꺼 두면 전체는 버튼으로만.</span>
             </label>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:4px">
+              <input type="checkbox" id="fDeltaAuto"><span class="hint"><b>바뀐 제품만 자동 전송</b> — 주기마다 마지막으로 보낸 값과 비교해 달라진 제품·새 제품·지워진 제품(비활성으로)·실패했던 제품만 보냅니다. 마감 신호는 보내지 않습니다.</span>
+            </label>
+            <div class="hint" id="deltaMigHint" style="margin-top:4px;color:var(--expense)"></div>
             <div class="hint" style="margin-top:8px">
               전체 전송의 <b>마지막 묶음</b>에는 마감 신호(<span class="mono">esUltimoLote</span>)가 붙습니다 —
               이번 전송에 없는 제품을 CRM 이 감추는 신호입니다.
               <b>시험 전송은 마감하지 않습니다</b>(몇 건만 보낸 뒤 마감하면 카탈로그가 통째로 비어 버립니다).
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-              <button class="btn" id="btnCatalogSend">지금 전체 보내기</button>
+              <button class="btn" id="btnCatalogDelta">바뀐 것만 지금 보내기</button>
+              <button class="btn ghost sm" id="btnCatalogDeltaPreview">바뀐 것 미리 세기</button>
+              <button class="btn ghost" id="btnCatalogSend">지금 전체 보내기</button>
+              <button class="btn ghost sm" id="btnCatalogBaseline" title="보내지 않고, 지금 ERP 값을 「CRM 에 이미 있는 값」으로 기록합니다">기준만 저장</button>
               <button class="btn ghost" id="btnCatalogTest">시험 전송 3건</button>
               <button class="btn ghost sm" id="btnCatalogPreview">보낼 본문 미리보기</button>
               <button class="btn ghost sm" id="btnCatalogReload">새로고침</button>
@@ -571,7 +587,10 @@
 
   const ORIGIN_LABEL={registration_approve:'등록 승인',change_approve:'수정 승인',director_edit:'디렉터 수정',
     customer_delete:'고객 삭제',registration_reject:'등록 반려',bulk_push:'전체 동기화',manual_resend:'수동 재전송',
-    crm_not_found:'CRM 에 없어 등록으로 전환',manual:'수동'};
+    crm_not_found:'CRM 에 없어 등록으로 전환',manual:'수동',
+    auto_daily:'자동 전체',auto_delta:'자동 변경분',product_full:'수동 전체',product_test:'시험',product_delta:'수동 변경분'};
+  // 0236 · 제품 전송 회차 구분
+  const MODE_LABEL={full:'전체',test:'시험',delta:'변경분',baseline:'기준 저장'};
   const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
   const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
   const CAT_LABEL={customer:'고객',product:'제품',quote:'견적',order:'오더',other:'기타'};
@@ -849,6 +868,13 @@
       $('fBatch').value=e.batch_size==null?500:e.batch_size;
       $('fSendHour').value=e.send_hour_mx==null?6:e.send_hour_mx;
       $('fAutoSend').checked=!!e.auto_send;
+      // 0236 — 칸이 없으면(마이그레이션 전) 잠그고 안내
+      const dr=!!e.delta_ready;
+      ['fFullWeekday','fDeltaEvery','fDeltaAuto'].forEach(id=>{ $(id).disabled=!dr; });
+      $('fFullWeekday').value=e.full_weekday==null?'':String(e.full_weekday);
+      $('fDeltaEvery').value=e.delta_every_min==null?5:e.delta_every_min;
+      $('fDeltaAuto').checked=!!e.delta_auto;
+      $('deltaMigHint').textContent=dr?'':'변경분 전송·요일 설정은 마이그레이션 0236 후에 쓸 수 있습니다(npm run migrate). 그 전까지 자동 전체 전송은 예전처럼 매일입니다.';
       $('fBodyShape').value=e.body_shape||'lote';
       renderFieldMap(e.field_map||{});
       applyShapeHint();
@@ -1034,14 +1060,15 @@
       const head='<div class="hint">제품 '+(c.total||0)+'건 (비활성 '+(c.inactivos||0)+'건'
         +(c.excluidos?(' · PRO* 제외 '+c.excluidos+'건'):'')+') · '
         +'묶음 '+(d.estimated_lotes||1)+'개 예상 · 멕시코 날짜 '+esc(d.mx_today||'')
-        +(s.auto_send?(' · 자동 전송 '+s.send_hour_mx+'시'+(d.auto_ran_today?' (오늘 완료)':' (오늘 대기)')):' · 자동 전송 꺼짐')+'</div>';
+        +(s.auto_send?(' · 전체 자동 '+(s.full_weekday_label||'매일')+' '+s.send_hour_mx+'시'+(d.auto_ran_today?' (오늘 완료)':'')):' · 전체 자동 꺼짐')+'</div>'
+        +deltaLine(d);
       const runs=(d.last_runs||[]);
       const RS={running:'진행 중',done:'완료',done_errors:'완료(실패 있음)',stopped:'중지됨'};
       const dur=function(sec){ sec=Math.max(0,Math.round(Number(sec)||0)); const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),x=sec%60; return h?(h+'시간 '+m+'분'):(m?(m+'분 '+x+'초'):(x+'초')); };
       // 20260924 · 실행(전송 1회)별 성과 — 누적이 아니라 이 전송의 결과. envioId 를 누르면 그 전송의 이력으로 간다.
       const rows=runs.length? runs.map(r=>'<tr><td class="mono"><a class="runlink" data-run="'+r.id+'">'+esc(r.envio_id)+'</a>'
         +'<div><span class="rstate '+esc(r.state||'')+'">'+esc(RS[r.state]||r.state||'')+'</span></div></td>'
-        +'<td>'+(r.mode==='test'?'시험':'전체')+' · '+(r.origin==='auto'?'자동':'수동')+'</td>'
+        +'<td>'+(MODE_LABEL[r.mode]||r.mode)+' · '+(r.origin==='auto'?'자동':'수동')+'</td>'
         +'<td class="num">'+r.total_lotes+'건</td>'
         +'<td>완료 '+r.sent+' · 실패 '+r.failed+' · 대기 '+r.pending+(r.stopped?(' · 중지 '+r.stopped):'')+(r.retrying?('<div class="hint">재시도 대기 '+r.retrying+'</div>'):'')+'</td>'
         +'<td class="num">'+(r.success_pct==null?'–':(r.success_pct+'%'))+'</td>'
@@ -1094,6 +1121,61 @@
     finally{ $('btnCatalogSend').disabled=false; $('btnCatalogTest').disabled=false; }
   }
 
+  // ===== 0236 · 바뀐 것만 보내기 =====
+  function deltaLine(d){
+    const x=d.delta||{}, s=d.settings||{};
+    if(!x.ready) return '<div class="hint" style="color:var(--expense)">변경분 전송: 마이그레이션 0236 필요</div>';
+    if(!x.baseline) return '<div class="hint" style="color:var(--expense)">변경분 전송: <b>비교 기준 없음</b> — 「지금 전체 보내기」를 한 번 하거나, CRM 이 이미 최신이면 「기준만 저장」을 누르세요.</div>';
+    const last=x.last_delta;
+    return '<div class="hint">변경분: '+(s.delta_auto?('<b>자동 '+(s.delta_every_min||5)+'분마다</b>'):'자동 꺼짐')
+      +' · 기준 '+x.baseline+'개'
+      +(last?(' · 마지막 변경분 전송 '+new Date(last.created_at).toLocaleString('ko-KR')+' ('+last.total_productos+'개)'):' · 아직 변경분 전송 없음')+'</div>';
+  }
+  async function catalogDeltaPreview(){
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='세는 중…';
+    try{
+      const res=await fetch(session.api+'/api/product-sync/delta-preview',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; return; }
+      if(!d.baseline){ m.className='msg warn'; m.textContent=d.note; return; }
+      const c=d.counts||{};
+      m.className='msg ok';
+      m.innerHTML='지금 보내면 <b>'+d.total+'개</b> — 새 제품 '+(c.nuevo||0)+' · 값 변경 '+(c.cambiado||0)+' · 실패 재전송 '+(c.reintento||0)+' · 삭제(비활성) '+(c.baja||0)
+        +(d.sample&&d.sample.length?('<div class="hint mono" style="margin-top:4px">'+d.sample.map(x=>esc(x.codigo)+(x.activo===false?'(비활성)':'')).join(' · ')+(d.total>d.sample.length?' …':'')+'</div>'):'');
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function catalogDelta(){
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='바뀐 제품을 찾는 중…';
+    $('btnCatalogDelta').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({mode:'delta'})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; }
+      else if(d.nothing){ m.className='msg ok'; m.textContent='바뀐 제품이 없습니다 — 보낼 것이 없습니다.'; }
+      else{
+        const c=d.counts||{};
+        m.className=d.queued_only?'msg warn':'msg ok';
+        m.textContent='변경분 '+d.total_productos+'개 적재 — '+d.envio_id+' (새 '+(c.nuevo||0)+' · 변경 '+(c.cambiado||0)+' · 재전송 '+(c.reintento||0)+' · 비활성 '+(c.baja||0)+')'
+          +(d.queued_only?' — 연동이 꺼져 있거나 주소가 비어 대기함에 쌓였습니다':' — 지금 보냅니다.');
+      }
+      loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnCatalogDelta').disabled=false; }
+  }
+  async function catalogBaseline(){
+    if(!confirm('지금 ERP 의 제품 값을 「CRM 에 이미 들어가 있는 값」으로 기록합니다. 아무것도 보내지 않습니다.\n\nCRM 이 최신이라고 확신할 때만 누르세요 — 그렇지 않으면 그 차이는 제품이 다시 바뀔 때까지 CRM 에 반영되지 않습니다.\n계속할까요?')) return;
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='기록 중…';
+    try{
+      const res=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({mode:'baseline'})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; }
+      else{ m.className='msg ok'; m.textContent='기준 저장 — 제품 '+d.total_productos+'개. 이제부터 바뀐 것만 보냅니다.'; }
+      loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
   // 20260924 · 전송 중지 — 아직 안 나간 제품 건을 전부 닫는다(고객·오더 전송은 그대로).
   async function catalogStop(){
     if(!confirm('아직 보내지 않은 제품 전송을 모두 중지합니다.\n\n이미 CRM 에 들어간 제품은 그대로이고, 고객·오더 전송은 영향이 없습니다.\n계속할까요?')) return;
@@ -1138,6 +1220,11 @@
       p.batch_size=Number($('fBatch').value||500);
       p.send_hour_mx=Number($('fSendHour').value||6);
       p.auto_send=$('fAutoSend').checked;
+      if(!$('fDeltaAuto').disabled){
+        p.delta_auto=$('fDeltaAuto').checked;
+        p.delta_every_min=Number($('fDeltaEvery').value||5);
+        p.full_weekday=$('fFullWeekday').value;
+      }
       p.body_shape=$('fBodyShape').value;
       p.field_map=collectFieldMap();
     }
@@ -1459,7 +1546,7 @@
       try{ runs=(await fetch(session.api+'/api/product-sync/runs?limit=30',{headers:auth()}).then(r=>r.json())).runs||[]; }catch(e){}
       SCOPE.runs={}; runs.forEach(r=>{ SCOPE.runs[r.id]=r; });
       opts=runs.map(r=>['run:'+r.id, r.envio_id+' · '+fmtWhen(r.created_at)+' · '+r.total_lotes+'건'
-        +(r.mode==='test'?' · 시험':'')+(r.origin==='auto'?' · 자동':'')+' · '+(RUN_STATE[r.state]||r.state)]);
+        +(r.mode!=='full'?(' · '+(MODE_LABEL[r.mode]||r.mode)):'')+(r.origin==='auto'?' · 자동':'')+' · '+(RUN_STATE[r.state]||r.state)]);
       opts.push(['all','전체 누적 (모든 전송 합계)']);
     }else{
       $('fScopeL').textContent='기간';
@@ -1487,7 +1574,7 @@
     box.classList.remove('hidden');
     box.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'
       +'<b class="mono">'+esc(r.envio_id)+'</b><span class="rstate '+esc(r.state)+'">'+esc(RUN_STATE[r.state]||r.state)+'</span>'
-      +'<span class="hint">'+(r.mode==='test'?'시험':'전체')+' · '+(r.origin==='auto'?'자동':'수동')+(r.by_login?(' · '+esc(r.by_login)):'')+'</span></div>'
+      +'<span class="hint">'+(MODE_LABEL[r.mode]||r.mode)+' · '+(r.origin==='auto'?'자동':'수동')+(r.by_login?(' · '+esc(r.by_login)):'')+'</span></div>'
       +'<div class="grid">'
       +cell('시작',fmtWhen(r.created_at))
       +cell('마지막 전송',fmtWhen(r.last_sent_at))
@@ -1743,6 +1830,9 @@
   });
   $('btnMapClear').addEventListener('click',function(){ renderFieldMap({}); });
   $('btnCatalogSend').addEventListener('click',()=>catalogSend('full'));
+  $('btnCatalogDelta').addEventListener('click',catalogDelta);
+  $('btnCatalogDeltaPreview').addEventListener('click',catalogDeltaPreview);
+  $('btnCatalogBaseline').addEventListener('click',catalogBaseline);
   $('btnCatalogTest').addEventListener('click',()=>catalogSend('test'));
   $('btnCatalogPreview').addEventListener('click',catalogPreview);
   $('btnCatalogReload').addEventListener('click',loadCatalogStatus);
