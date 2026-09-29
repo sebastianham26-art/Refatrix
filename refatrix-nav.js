@@ -48,6 +48,29 @@
   var CTR_RED='#E2231A', CTR_RED_D='#B01810', CTR_RED_DD='#8E120C';
   var QA_BADGE='<span class="rqa" id="rQaBadge" title="테스트 서버(QA)입니다 — 실제 운영 데이터가 아닙니다">🧪 QA 테스트 서버</span>';
   var Q='html[data-refatrix-env="qa"] ';
+  /* ===== 전 화면 공통 헤더 = CTR 레드 (2026-09-29 · nav 20260929hd) =====
+     기존 진녹색·골드 헤더를 모든 화면에서 CTR 레드로. QA 는 아래 QA_CSS 가 배지·제목줄 강조를 추가로 얹는다. */
+  var CTR_NAV_CSS=''+
+    '#rnav{background:linear-gradient(180deg,'+CTR_RED+' 0%,'+CTR_RED_D+' 100%)!important;border-bottom:2px solid #7C0F08!important;box-shadow:0 6px 22px -10px rgba(120,10,5,.75)!important}'+
+    '#rnav .rlogo{color:#fff!important}'+
+    '#rnav .rlogo .dot{background:#fff!important;box-shadow:0 0 8px rgba(255,255,255,.85)!important}'+
+    '#rnav .rhome{color:#fff!important;background:rgba(255,255,255,.16)!important;border-color:rgba(255,255,255,.45)!important}'+
+    '#rnav .rhome:hover{background:rgba(255,255,255,.3)!important;color:#fff!important}'+
+    '#rnav .rg{color:#FFD5D0!important}'+
+    '#rnav .rg:hover,#rnav .rg.on{color:#fff!important}'+
+    '#rnav .rg.on:after{background:#fff!important;box-shadow:0 0 10px rgba(255,255,255,.9)!important}'+
+    '#rnav .rsub{background:linear-gradient(180deg,'+CTR_RED_D+','+CTR_RED_DD+')!important;border-top-color:rgba(255,255,255,.18)!important}'+
+    '#rnav .rs{color:#FFE3E0!important;background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.18)!important}'+
+    '#rnav .rs:hover{background:rgba(255,255,255,.24)!important;border-color:rgba(255,255,255,.5)!important;color:#fff!important}'+
+    '#rnav .rs.cur{background:linear-gradient(180deg,#fff,#FFE7E4)!important;color:#A5140B!important;border-color:transparent!important;box-shadow:0 2px 8px -2px rgba(0,0,0,.45)!important}'+
+    '#rnav .rwho{color:#FFC9C3!important}'+
+    '#rnav .rwho b{color:#fff!important}'+
+    '#rnav .rlogout{border-color:rgba(255,255,255,.55)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    '#rnav .rlogout:hover{background:rgba(255,255,255,.32)!important;color:#fff!important}'+
+    '#rnav .rpres{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    '#rnav .rpres:hover{background:rgba(255,255,255,.28)!important;color:#fff!important}'+
+    'html.rfxnarrow #rnav .rmtgl{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}';
+
   var QA_CSS=''+
     Q+'#rnav{background:linear-gradient(180deg,'+CTR_RED+' 0%,'+CTR_RED_D+' 100%)!important;border-bottom:2px solid #7C0F08!important;box-shadow:0 6px 22px -10px rgba(120,10,5,.75)!important}'+
     Q+'#rnav .rlogo{color:#fff!important}'+
@@ -370,6 +393,7 @@
     'html.rfxm table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}'+
     /* QA 배지 — 기본은 숨김, QA 환경에서만 노출 */
     '#rnav .rqa{display:none}'+
+    CTR_NAV_CSS+
     QA_CSS;
     var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   }
