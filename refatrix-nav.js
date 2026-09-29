@@ -172,6 +172,7 @@
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
+    approval:{file:'refatrix-approval.html',name:'전자결재',desc:'비용집행 품의 · 사전/사후승인 · 증빙'},   // 2026-09-29 · nav 20260929ea — 공통·재무·창고 그룹(역할 제한 그룹에서도 보이게)
     guiaCom:{file:'refatrix-guia-comisionista.html',name:'Guía del Comisionista',desc:'커미셔너 안내서(스페인어) — 고객등록·독점·커미션'},
     whHome:{file:'refatrix-warehouse.html',name:'창고 홈',desc:'입고·피킹·패킹'},
     stockcount:{file:'refatrix-stockcount.html',name:'재고실사',desc:'실물 재고조사·대조·실물맞추기'},
@@ -181,7 +182,8 @@
   };
   // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터)
   var PAGEKEY={
-    salesperf:null, dashboard:null, board:null, portal:null, rnr:null, coverage:null, devmap:null, fieldsurvey:null, fsanalysis:null,
+    salesperf:null, dashboard:null, board:null, portal:null, approval:null,   // 2026-09-29 전자결재 — 전 직원(문서 열람은 API 가 결재선·참조 기준으로 판단)
+    rnr:null, coverage:null, devmap:null, fieldsurvey:null, fsanalysis:null,
     commission:'commission',
     guiaCom:'guiacom',   // 권한 부여한 사용자에게만 노출(사용자·권한 화면에서 켬/끔). 디렉터는 항상 보임.
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
@@ -193,20 +195,21 @@
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
-    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상) marketing:'marketing', mktspend:'marketing', survey:'marketing',
+    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
+    marketing:'marketing', mktspend:'marketing', survey:'marketing',   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
-    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','commission','guiaCom','dashboard','rnr','coverage','devmap']},
+    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','approval','salesperf','commission','guiaCom','dashboard','rnr','coverage','devmap']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','consult','fieldsurvey','fsanalysis','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
-    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
+    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','prodFind','prodUpload','prodHistory','priceMaster']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
-    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound','relocate','zones']},
+    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','approval','stockcount','inbound','relocate','zones']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','processKpi']}
   ];
 
@@ -221,7 +224,7 @@
   var ROLE_HIDE_GROUPS={ sales:['finance'] };
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
-  var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
+  var SHARED={approval:1, devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
 
   // 그룹 노출용 명시 앵커(SHARED 자동필터 대신 사용). 영업지원은 자체 비공유 화면이
   // recost(디렉터 전용)뿐이라 비디렉터에게 영영 안 떴음 → 권한 받은 핵심 화면을 앵커로 지정.
@@ -509,7 +512,7 @@
   };
   var MTAB_DEFAULT=['portal','salesperf','customers','board'];
   var MTAB_FALLBACK=['portal','salesperf','customers','pipeline','quotelist','quote','fieldsurvey','board','finance','products','whHome','dashboard'];
-  var MTAB_ICON={portal:'⌂',salesperf:'📈',customers:'🏢',pipeline:'🧭',consult:'💬',quotelist:'🧾',quote:'✎',fieldsurvey:'📋',fsanalysis:'🧮',board:'🗓',finance:'💳',settlement:'⚖',budget:'💰',products:'📦',stock:'📦',whHome:'🏬',inbound:'🚚',stockcount:'🔢',relocate:'↔',dashboard:'📊',targets:'🎯',commission:'💵'};
+  var MTAB_ICON={approval:'✍',portal:'⌂',salesperf:'📈',customers:'🏢',pipeline:'🧭',consult:'💬',quotelist:'🧾',quote:'✎',fieldsurvey:'📋',fsanalysis:'🧮',board:'🗓',finance:'💳',settlement:'⚖',budget:'💰',products:'📦',stock:'📦',whHome:'🏬',inbound:'🚚',stockcount:'🔢',relocate:'↔',dashboard:'📊',targets:'🎯',commission:'💵'};
 
   function mNarrow(){
     try{ if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches) return true; }catch(e){}
@@ -517,7 +520,7 @@
   }
   function mPref(){ try{ return localStorage.getItem(MKEY); }catch(e){ return null; } }
   function mOn(){ var p=mPref(); if(p==='on') return true; if(p==='off') return false; return mNarrow(); }
-  var MTAB_LABEL={portal:'홈',customers:'고객',pipeline:'영업활동',consult:'상담',quotelist:'견적',quote:'견적작성',
+  var MTAB_LABEL={approval:'결재',portal:'홈',customers:'고객',pipeline:'영업활동',consult:'상담',quotelist:'견적',quote:'견적작성',
     fieldsurvey:'현장조사',fsanalysis:'소진분석',board:'일정',salesperf:'실적',commission:'커미션',targets:'목표',
     finance:'재무',settlement:'정산',budget:'예산',products:'제품',stock:'재고',dashboard:'현황',
     whHome:'창고',inbound:'입고',stockcount:'실사',relocate:'위치'};

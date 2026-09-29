@@ -65,6 +65,7 @@ import secretRoutes from './routes/secretRoutes.js';    // 외부 서비스 키 
 import { startSecretRefresh } from './secrets.js';
 import surveyRoutes from './routes/surveyRoutes.js';     // 제품·마케팅 › 고객 설문 분석(사진·PDF → AI 판독)
 import priceMasterRoutes from './routes/priceMasterRoutes.js';   // 제품·마케팅 › 가격 마스터(0229)
+import approvalRoutes from './routes/approvalRoutes.js';         // 공통 › 전자결재(0234) — 비용집행 품의·증빙·사전/사후승인
 import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
 import { startCrmSyncWorker } from './crmSync.js';
 import { startProductSyncWorker } from './productSync.js';
@@ -152,6 +153,7 @@ export function buildApp() {
   app.register(secretRoutes);       // 관리 → 외부 서비스 키 (Anthropic·OpenAI·WhatsApp)
   app.register(surveyRoutes);       // 고객 설문 분석 — 양식·응답 판독 큐·AI 주제 요약·원본 zip
   app.register(priceMasterRoutes);  // 가격 마스터 — 날짜별 정가 이력 · % 일괄/선택 변경 · 예약 · 되돌리기
+  app.register(approvalRoutes);     // 전자결재 — 품의 · 결재선 · 증빙(파일당 20MB, 라우트 전용 bodyLimit) · 댓글 · 알림 · 설정
 
   // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
   startSecretRefresh(app);

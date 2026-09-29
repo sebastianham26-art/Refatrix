@@ -35,7 +35,7 @@ ok('server.js 에 rackMoveRoutes 등록', /import rackMoveRoutes/.test(SERVER) &
 const NAV = fs.readFileSync(path.resolve(API, '..', 'refatrix-nav.js'), 'utf8');
 ok('nav 에 위치변경 화면 등록', /relocate:\{file:'refatrix-relocate\.html'/.test(NAV));
 ok('nav 권한키 warehouse', /relocate:'warehouse'/.test(NAV));
-ok('nav 창고 그룹에 포함', /screens:\['whHome','stockcount','inbound','relocate','zones'\]/.test(NAV));
+ok('nav 창고 그룹에 포함', /\{key:'warehouse'[^\n]*screens:\[[^\]]*'relocate'/.test(NAV));   // 2026-09-29 그룹에 전자결재(approval)가 추가돼 정확한 목록 대신 포함 여부로 확인
 
 /* ---------- ② 실 DB 파트 ---------- */
 const URL = process.env.TEST_PG_URL || process.env.DATABASE_URL;
