@@ -58,6 +58,37 @@ table.heat th.rl,table.heat td.rl{text-align:left;min-width:150px}
 .empty{color:var(--mut);text-align:center;padding:26px 10px;font-size:13px}
 .note{font-size:11.5px;color:var(--mut);line-height:1.55;margin-top:16px;padding:10px 13px;border:1px dashed var(--line);border-radius:9px;background:var(--card)}
 .hidden{display:none!important}
+.tabs{display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+.tabs button{font:inherit;font-size:13.5px;font-weight:800;color:var(--ink2);background:none;border:none;border-bottom:3px solid transparent;padding:9px 14px;cursor:pointer}
+.tabs button.on{color:var(--ctr);border-bottom-color:var(--ctr)}
+.tabs .n{font-size:11px;color:var(--mut);font-weight:700;margin-left:4px}
+.ai li{margin:6px 0;line-height:1.5}
+.theme{display:grid;grid-template-columns:minmax(0,1fr) 86px;gap:12px;padding:10px 0;border-bottom:1px solid var(--line2)}
+.theme:last-child{border-bottom:none}
+.theme .nm{font-weight:800}.theme .sm{font-size:12.5px;color:var(--ink2);margin-top:3px;line-height:1.5}
+.theme .qt{font-size:12px;color:var(--mut);margin-top:5px;line-height:1.55}.theme .qt i{color:var(--ink2)}
+.theme .ct{text-align:right;font-weight:800;font-size:18px}.theme .ct small{display:block;font-size:11.5px;color:var(--mut);font-weight:600}
+.mini{height:6px;background:var(--line2);border-radius:3px;margin-top:7px}.mini i{display:block;height:6px;background:var(--bar);border-radius:3px}
+.cm{font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--line2);line-height:1.5}.cm:last-child{border-bottom:none}
+.fol{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--mut)}
+table.resp tr{cursor:pointer}table.resp tr:hover td{background:#f7f8fa}
+table.resp td{vertical-align:middle}
+.th{width:44px;height:58px;object-fit:cover;border-radius:4px;border:1px solid var(--line);background:#f5f6f8;display:block}
+.st{font-size:11px;font-weight:800;border-radius:10px;padding:2px 8px;white-space:nowrap}
+.st.ok{background:#e4f0eb;color:#0f6e56}.st.q{background:#e8eef9;color:#274b8f}.st.err{background:#f6e7e4;color:#b23a2e}
+.dbg{position:fixed;inset:0;background:rgba(20,20,18,.45);z-index:60;display:none}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(1040px,100%);background:var(--paper);z-index:61;overflow:auto;padding:16px;display:none;box-shadow:-8px 0 30px rgba(0,0,0,.2)}
+.drawer.on,.dbg.on{display:block}
+.dgrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px;align-items:start}
+@media (max-width:820px){.dgrid{grid-template-columns:minmax(0,1fr)}}
+.paper{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px;min-height:200px;display:flex;align-items:flex-start;justify-content:center}
+.paper img{max-width:100%;height:auto;display:block;border-radius:6px}.paper iframe{width:100%;height:78vh;border:0}
+.ans{display:grid;grid-template-columns:40px minmax(0,1fr);gap:8px;padding:8px 0;border-bottom:1px solid var(--line2)}
+.ans:last-child{border-bottom:none}.ans .k{font-weight:800;color:var(--syd-dark)}
+.ans .t{font-size:11.5px;color:var(--mut)}.ans .a{font-weight:700;margin-top:2px}.ans .a.no{color:var(--faint);font-weight:500}
+.ans .o{font-size:11.5px;color:var(--ink2);margin-top:2px}.flag{font-size:11px;color:var(--warn);font-weight:800}
+.btn{font:inherit;font-size:12.5px;font-weight:800;border-radius:8px;padding:7px 12px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink2)}
+.btn:hover{background:var(--ink);color:#fff}
 .who{font-size:12px;color:var(--mut);font-weight:700}
 .lnk.out{font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;color:var(--ink2);background:var(--card);border-color:var(--line)}.lnk.out:hover{background:var(--ink);color:#fff}
 .login{display:flex;justify-content:center;padding:40px 0}
@@ -79,11 +110,8 @@ table.heat th.rl,table.heat td.rl{text-align:left;min-width:150px}
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand" id="brand">Encuesta de clientes<small id="brandSub">Resultados anonimizados</small></div>
+    <div class="brand" id="brand">Encuesta de clientes<small id="brandSub">Acceso restringido</small></div>
     <span class="spacer"></span>
-    <a class="lnk" href="mx_parts_coverage_dashboard.html">← Dashboard de cobertura</a>
-    <a class="lnk b" href="mx_coverage_map.html">Mapa de cobertura ↗</a>
-    <a class="lnk b" href="mx_dev_projects.html">Proyectos de desarrollo ↗</a>
     <span class="who hidden" id="who"></span>
     <button class="lnk out hidden" id="btnOut" type="button">Cerrar sesión</button>
   </header>
@@ -104,11 +132,13 @@ table.heat th.rl,table.heat td.rl{text-align:left;min-width:150px}
   <div id="app"><div class="card empty">Cargando…</div></div>
 
   <div class="note">
-    <b>Privacidad:</b> esta página muestra solo resultados agregados y anónimos. No incluye nombre, empresa, teléfono, número de folio ni comentarios textuales de los encuestados.
+    <b>Confidencial:</b> esta página contiene datos de clientes de REFATRIX (nombres, empresas, teléfonos e imágenes de las encuestas). Úsalos solo para el fin acordado y no los compartas.
     Las respuestas fueron capturadas a partir de encuestas en papel y leídas con apoyo de IA; algunas pueden contener errores de lectura.
   </div>
 </div>
 <div class="tip" id="tip"></div>
+<div class="dbg" id="dbg"></div>
+<div class="drawer" id="drawer"></div>
 
 <script>
 (function(){
@@ -135,8 +165,17 @@ table.heat th.rl,table.heat td.rl{text-align:left;min-width:150px}
     let b={}; try{ b=await r.json(); }catch(e){}
     return Object.assign({ok:r.ok,status:r.status},b);
   }
+  async function callBlob(path){
+    let r; try{ r=await fetch(API+path,{headers:sess&&sess.token?{Authorization:'Bearer '+sess.token}:{}}); }catch(e){ return null; }
+    if(r.status===401){ showLogin('Tu sesión terminó. Vuelve a iniciar sesión.'); return null; }
+    if(!r.ok) return null; return r.blob();
+  }
+  const blobUrls=[];
+  function closeDrawer(){ $('drawer').classList.remove('on'); $('dbg').classList.remove('on'); $('drawer').innerHTML=''; while(blobUrls.length) URL.revokeObjectURL(blobUrls.pop()); }
+  $('dbg').addEventListener('click',closeDrawer);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
   function showLogin(msg){
-    sess=null; saveSess();
+    sess=null; saveSess(); closeDrawer();
     $('login').classList.remove('hidden'); $('app').innerHTML=''; $('pick').classList.add('hidden');
     $('who').classList.add('hidden'); $('btnOut').classList.add('hidden');
     $('lgMsg').textContent=msg||''; $('lgPass').value=''; setTimeout(()=>{ try{ ($('lgUser').value?$('lgPass'):$('lgUser')).focus(); }catch(e){} },30);
@@ -187,7 +226,7 @@ table.heat th.rl,table.heat td.rl{text-align:left;min-width:150px}
   const segQs=QS.filter(q=>q.seg&&(q.type==='single'||q.type==='geo'));
   let segKey='', segVal='', crossKey='';
 
-  $('brand').innerHTML='Encuesta de clientes · '+esc(D.title||'')+'<small>'+esc([fecha(D.date),'Resultados anonimizados','Actualizado '+fecha(D.generated_at)].filter(Boolean).join(' · '))+'</small>';
+  $('brand').innerHTML='Encuesta de clientes · '+esc(D.title||'')+'<small>'+esc([fecha(D.date),'Acceso restringido','Actualizado '+fecha(D.generated_at)].filter(Boolean).join(' · '))+'</small>';
   document.title='Encuesta de clientes · '+(D.title||'')+' · REFATRIX';
 
   // ── tooltip ──
@@ -312,16 +351,113 @@ table.heat th.rl,table.heat td.rl{text-align:left;min-width:150px}
     return h+'</tbody></table></div></div>';
   }
 
-  function themesCard(){
-    const groups=(Array.isArray(D.themes)?D.themes:[]).filter(g=>g&&Array.isArray(g.items)&&g.items.some(t=>t.count>0));
-    return groups.map(g=>{
-      const n=g.basis||g.items.reduce((a,t)=>a+t.count,0);
-      return '<div class="card"><div class="qhead"><div style="flex:1 1 260px"><h3>Temas en comentarios: '+esc(qName({text:g.title}))+'</h3><div class="sub">Comentarios abiertos agrupados por tema con apoyo de IA · '+n+' comentarios · no se publican los textos</div></div></div>'+
-        bars(g.items.filter(t=>t.count>0).map(t=>[t.name,t.count]).sort((a,b)=>b[1]-a[1]),n)+'</div>';
+  // ── Resumen IA y comentarios abiertos (igual que el reporte del ERP) ──
+  const RESP=Array.isArray(D.responses)?D.responses:[];
+  const AQ=Array.isArray(D.all_questions)&&D.all_questions.length?D.all_questions:QS;
+  const byId=new Map(RESP.map(r=>[r.id,r]));
+  const aiCard=()=>{
+    const a=D.ai;
+    if(!a) return '<div class="card"><div class="qhead"><div><h3>Resumen IA</h3><div class="sub">Aún no se ha generado el resumen con IA para esta encuesta.</div></div></div></div>';
+    const b=Array.isArray(a.bullets)?a.bullets:[];
+    return '<div class="card ai"><div class="qhead"><div style="flex:1 1 260px"><h3>Resumen IA</h3><div class="sub">Generado '+esc(fecha(String(a.generated_at||'').slice(0,10)))+' · interpretación automática de los resultados; verifica las cifras en las gráficas</div></div></div>'+
+      (b.length?'<ul style="margin:0;padding-left:20px">'+b.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p class="muted small" style="margin:0">'+(a.translated===false?'El resumen está disponible solo en coreano por el momento; se mostrará aquí cuando esté traducido.':'Sin puntos destacados.')+'</p>')+'</div>';
+  };
+  const textOf=(r,k)=>String((r.answers||{})[k]==null?'':(r.answers||{})[k]).trim();
+  function textCards(){
+    return AQ.filter(q=>q.type==='text').map(q=>{
+      const items=RESP.filter(r=>r.status==='done'&&textOf(r,q.k));
+      const th=D.ai&&D.ai.themes&&D.ai.themes[q.k];
+      let body;
+      if(th&&th.length){
+        const list=th.map(t=>Object.assign({},t,{cur:(t.ids||[]).filter(id=>byId.has(id))})).filter(t=>t.cur.length).sort((a,b)=>b.cur.length-a.cur.length);
+        const max=Math.max(1,...list.map(t=>t.cur.length));
+        body=list.map(t=>{
+          const quotes=t.cur.map(id=>byId.get(id)).map(r=>({no:r.folio,t:textOf(r,q.k)})).filter(x=>x.t).sort((a,b)=>Math.abs(a.t.length-70)-Math.abs(b.t.length-70)).slice(0,3);
+          return '<div class="theme"><div><div class="nm">'+esc(t.name)+'</div>'+(t.summary?'<div class="sm">'+esc(t.summary)+'</div>':'')+
+            '<div class="qt">'+quotes.map(x=>'<i>“'+esc(x.t.length>160?x.t.slice(0,158)+'…':x.t)+'”</i>'+(x.no?' <span class="fol">#'+esc(x.no)+'</span>':'')).join(' &nbsp; ')+'</div>'+
+            '<div class="mini"><i style="width:'+(t.cur.length/max*100)+'%"></i></div></div><div class="ct">'+t.cur.length+'<small>'+pctS(t.cur.length,items.length)+'%</small></div></div>';
+        }).join('')||'<p class="empty">Sin comentarios</p>';
+      } else {
+        body=items.length?items.slice(0,60).map(r=>'<div class="cm">'+esc(textOf(r,q.k))+(r.folio?' <span class="fol">#'+esc(r.folio)+'</span>':'')+'</div>').join('')+(items.length>60?'<div class="small muted">y '+(items.length-60)+' comentarios más (ver pestaña Respuestas)</div>':''):'<p class="empty">Sin comentarios</p>';
+      }
+      return '<div class="card"><div class="qhead"><span class="qno">P'+q.no+'</span><div style="flex:1 1 220px"><h3>'+esc(qName(q))+'</h3><div class="sub">Respuesta abierta · '+items.length+' comentarios'+(th&&th.length?' · agrupados por tema con IA':'')+'</div></div></div>'+body+'</div>';
     }).join('');
   }
 
+  // ── Pestaña «Respuestas» (lista de encuestas cargadas, solo lectura) ──
+  const ST={done:['Leída','ok'],queued:['En cola','q'],processing:['Leyendo','q'],error:['Error','err']};
+  const infoQs=AQ.filter(q=>q.type==='info');
+  let rFilter='', rSearch='';
+  function ansText(q,r){
+    const v=(r.answers||{})[q.k];
+    if(q.type==='geo'){ const g=(r.geo||{})[q.k]||{}; return [v||(g.raw?'(estado sin identificar)':''),g.ciudad].filter(Boolean).join(' · '); }
+    if(Array.isArray(v)) return v.join(', ');
+    return v==null?'':String(v);
+  }
+  function respView(){
+    const q=rSearch.trim().toLowerCase();
+    const list=RESP.filter(r=>{
+      if(rFilter==='flag'&&!(r.low_conf||[]).length) return false;
+      if(rFilter==='nonum'&&(r.folio||r.status!=='done')) return false;
+      if(rFilter==='pend'&&r.status==='done') return false;
+      if(!q) return true;
+      return [r.folio,r.file_name].concat(infoQs.map(iq=>ansText(iq,r))).some(x=>String(x||'').toLowerCase().includes(q));
+    });
+    const cnt={flag:RESP.filter(r=>(r.low_conf||[]).length).length,nonum:RESP.filter(r=>r.status==='done'&&!r.folio).length,pend:RESP.filter(r=>r.status!=='done').length};
+    const cols=infoQs.slice(0,3);
+    return '<div class="controls" style="position:static"><label for="rF">Mostrar</label><select id="rF">'+
+      [['','Todas ('+RESP.length+')'],['flag','Con dudas de lectura ('+cnt.flag+')'],['nonum','Sin número de folio ('+cnt.nonum+')'],['pend','Pendientes de leer ('+cnt.pend+')']].map(([v,l])=>'<option value="'+v+'"'+(v===rFilter?' selected':'')+'>'+l+'</option>').join('')+'</select>'+
+      '<input id="rQ" placeholder="Buscar folio, nombre, empresa…" value="'+esc(rSearch)+'" style="font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;flex:1 1 200px;min-width:0"><span class="small muted">'+list.length+' encuestas</span></div>'+
+      '<div class="card" style="padding:0"><div class="tbwrap" style="border:none"><table class="resp"><thead><tr><th></th><th>Folio</th><th>Archivo</th>'+cols.map(c=>'<th>'+esc(qName(c))+'</th>').join('')+'<th>Estado</th><th></th></tr></thead><tbody>'+
+      (list.map(r=>'<tr data-r="'+r.id+'"><td>'+(r.has_thumb?'<img class="th" data-th="'+r.id+'" alt="">':'')+'</td><td class="fol" style="font-size:12.5px;color:var(--ink)"><b>'+esc(r.folio||'—')+'</b></td><td class="fol">'+esc(r.file_name)+'</td>'+
+        cols.map(c=>'<td>'+esc(ansText(c,r))+'</td>').join('')+'<td><span class="st '+(ST[r.status]||['',''])[1]+'">'+esc((ST[r.status]||[r.status])[0])+'</span></td><td>'+((r.low_conf||[]).length?'<span class="flag">⚠ '+(r.low_conf.length)+'</span>':'')+'</td></tr>').join('')||'<tr><td colspan="9" class="empty">Sin resultados</td></tr>')+
+      '</tbody></table></div></div>';
+  }
+  const thumbUrl=new Map();          // id → blob URL (se guarda para no volver a pedirla al filtrar)
+  async function loadThumbs(){
+    const imgs=Array.from(document.querySelectorAll('img[data-th]'));
+    imgs.forEach(img=>{ const u=thumbUrl.get(img.getAttribute('data-th')); if(u) img.src=u; });
+    for(const img of imgs){
+      const id=img.getAttribute('data-th'); if(thumbUrl.has(id)) continue;
+      thumbUrl.set(id,'');
+      const b=await callBlob('/api/survey-viewer/pages/'+id+'/thumb'); if(!b) continue;
+      const u=URL.createObjectURL(b); thumbUrl.set(id,u);
+      document.querySelectorAll('img[data-th="'+id+'"]').forEach(x=>{ x.src=u; });
+    }
+  }
+  async function openResp(id){
+    const r=byId.get(id); if(!r) return;
+    const low=new Set(r.low_conf||[]);
+    const ans=r.status!=='done'?'<p class="empty">Esta encuesta todavía no se ha leído.</p>':AQ.map(q=>{
+      const t=ansText(q,r); const o=(r.others||{})[q.k]; const g=(r.geo||{})[q.k]||{};
+      return '<div class="ans"><div class="k">P'+q.no+'</div><div><div class="t">'+esc(qName(q))+'</div><div class="a'+(t?'':' no')+'">'+esc(t||'(sin respuesta)')+(low.has(q.k)?' <span class="flag">? lectura dudosa</span>':'')+'</div>'+
+        (o?'<div class="o">Otro: '+esc(o)+'</div>':'')+(q.type==='geo'&&g.raw?'<div class="o">Escrito: '+esc(g.raw)+'</div>':'')+'</div></div>';
+    }).join('');
+    $('drawer').innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><h3 style="margin:0;font-size:17px">Encuesta '+esc(r.folio?'#'+r.folio:r.file_name)+'</h3><span class="st '+(ST[r.status]||['',''])[1]+'">'+esc((ST[r.status]||[r.status])[0])+'</span><span class="fol">'+esc(r.file_name)+'</span><span class="spacer"></span>'+
+      '<button class="btn" id="dDl">Descargar original</button><button class="btn" id="dX">Cerrar</button></div>'+
+      '<div class="dgrid"><div class="paper" id="dImg"><p class="empty">Cargando imagen…</p></div><div class="card" style="margin:0">'+ans+'</div></div>';
+    $('drawer').classList.add('on'); $('dbg').classList.add('on'); $('drawer').scrollTop=0;
+    $('dX').addEventListener('click',closeDrawer);
+    $('dDl').addEventListener('click',async()=>{ const b=await callBlob('/api/survey-viewer/pages/'+id+'/file'); if(!b) return; const u=URL.createObjectURL(b); blobUrls.push(u); const a=document.createElement('a'); a.href=u; a.download=r.file_name; document.body.appendChild(a); a.click(); a.remove(); });
+    const b=await callBlob('/api/survey-viewer/pages/'+id+'/view');
+    if(!$('dImg')) return;
+    if(!b){ $('dImg').innerHTML='<p class="empty">No se pudo cargar la imagen.</p>'; return; }
+    const u=URL.createObjectURL(b); blobUrls.push(u);
+    $('dImg').innerHTML=(b.type==='application/pdf')?'<iframe src="'+u+'" title="Encuesta"></iframe>':'<img src="'+u+'" alt="Encuesta escaneada">';
+  }
+
+  let tab='rep';
   function render(){
+    const tabs='<div class="tabs"><button data-tab="rep"'+(tab==='rep'?' class="on"':'')+'>Reporte</button><button data-tab="resp"'+(tab==='resp'?' class="on"':'')+'>Respuestas<span class="n">'+RESP.length+'</span></button></div>';
+    if(tab==='resp'){
+      $('app').innerHTML=tabs+respView();
+      $('app').querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ tab=b.getAttribute('data-tab'); render(); }));
+      $('rF').addEventListener('change',e=>{ rFilter=e.target.value; render(); });
+      $('rQ').addEventListener('input',e=>{ rSearch=e.target.value; const pos=e.target.selectionStart; render(); const i=$('rQ'); i.focus(); try{ i.setSelectionRange(pos,pos); }catch(_){} });
+      $('app').querySelectorAll('tr[data-r]').forEach(tr=>tr.addEventListener('click',()=>openResp(Number(tr.getAttribute('data-r')))));
+      loadThumbs();
+      return;
+    }
     const rows=rowsNow();
     const sq=segKey?QS[idx[segKey]]:null;
     // KPIs
@@ -341,10 +477,11 @@ table.heat th.rl,table.heat td.rl{text-align:left;min-width:150px}
       (segVal?'<span class="chip">'+esc(segVal)+' · '+rows.length+'<button id="fClear" title="Quitar filtro">×</button></span>':'')+'</div>':'';
     const geoHtml=geoQs.map(q=>geoCard(rows,q)).join('');
     const qHtml=QS.filter(q=>q.type!=='geo').map(q=>qCard(rows,q)).filter(Boolean).join('');
-    $('app').innerHTML='<div class="kpis">'+k.join('')+'</div>'+ctl+
+    $('app').innerHTML=tabs+'<div class="kpis">'+k.join('')+'</div>'+(segVal?'':aiCard())+ctl+
       (geoHtml?'<div class="sec">Ubicación de los clientes</div>'+geoHtml:'')+
       '<div class="sec">Resultados por pregunta</div><div class="grid">'+qHtml+'</div>'+
-      (segVal?'':'<div class="sec">Segmentos</div>'+crossCard()+themesCard());
+      (segVal?'':'<div class="sec">Segmentos</div>'+crossCard()+'<div class="sec">Comentarios abiertos</div>'+textCards());
+    $('app').querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ tab=b.getAttribute('data-tab'); render(); }));
     const on=(id,ev,fn)=>{ const el=$(id); if(el) el.addEventListener(ev,fn); };
     on('fSeg','change',e=>{ segKey=e.target.value; segVal=''; render(); });
     on('fVal','change',e=>{ segVal=e.target.value; render(); });

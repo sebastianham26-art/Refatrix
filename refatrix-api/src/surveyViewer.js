@@ -2,7 +2,9 @@
 // Refatrix ERP · surveyViewer.js — 고객 설문 결과 「외부 열람 계정」 (2026-09-30)
 //
 //   ERP 계정과 분리된 **열람 전용** 계정(survey_viewers). 아이디+비밀번호로 로그인하면
-//   허락된 설문의 **익명 집계**(surveyPublic.js)만 받는다. 화면: mx_survey_analysis.html (스페인어).
+//   허락된 설문을 ERP 분석 리포트와 같게 본다(읽기 전용): 집계·AI 요약(스페인어)·응답 목록·설문지 원본 이미지.
+//   화면: mx_survey_analysis.html (스페인어).
+//   ── 2026-09-30 디렉터 결정 ── 응답 목록은 ERP 와 동일하게 공개 — 이름·상호·전화·붉은 번호·원본 이미지 포함.
 //
 //   ── 보안 ──
 //     · 토큰 {sub:'sv:<id>', typ:'survey_viewer', tv} — authGuard 가 typ 을 보고 **ERP API 전부 401**.
@@ -15,6 +17,7 @@ import { hashPin, verifyPin } from './auth.js';
 import { logEvent } from './audit.js';
 import { authGuard, requireDirector } from './middleware/authGuard.js';
 import { buildPublicSurveyData } from './surveyPublic.js';
+import { pageFileName, extractJson, clip } from './surveyAi.js';
 
 export const SV_TYP = 'survey_viewer';
 const MAX_FAIL = 5;
@@ -62,7 +65,67 @@ async function allowedSurveys(surveyIds) {
     .map((s) => ({ id: Number(s.id), title: s.title, date: s.survey_date }));
 }
 
-export default async function surveyViewerRoutes(app) {
+// ── AI 요약 스페인어판 ─────────────────────────────────────────────
+//   ERP 의 AI 요약(ai_cache)은 한국어(bullets, 주제 summary_ko). 열람 화면용으로 한 번 번역해
+//   ai_cache.es 에 둔다 — ERP 에서 요약을 다시 만들면(generated_at 이 바뀌면) 다음 열람 때 다시 번역.
+export function buildEsPrompt(cache) {
+  const themes = {};
+  for (const [k, list] of Object.entries((cache && cache.themes) || {})) {
+    if (Array.isArray(list)) themes[k] = list.map((t) => ({ name: clip(t && t.name, 120), ko: clip(t && t.summary_ko, 400) }));
+  }
+  return [
+    'Traduce al español de México este resumen de una encuesta a clientes de un distribuidor de autopartes (REFATRIX, marca CTR).',
+    'Conserva cifras, porcentajes y nombres propios. Tono profesional y breve. No agregues información.',
+    'Entrada (coreano):',
+    JSON.stringify({ bullets: ((cache && cache.bullets) || []).map((b) => clip(b, 400)), themes }),
+    '',
+    'Devuelve SOLO JSON con la MISMA estructura y el mismo orden:',
+    '{"bullets":["..."],"themes":{"q11":["resumen del tema 1","resumen del tema 2"]}}',
+    '(en "themes" una cadena por tema, traduciendo el campo "ko"; si "ko" está vacío, usa "").',
+  ].join('\n');
+}
+export function parseEsJson(text, cache) {
+  const j = extractJson(text);
+  if (!j || typeof j !== 'object') return null;
+  const nB = ((cache && cache.bullets) || []).length;
+  const bullets = Array.isArray(j.bullets) ? j.bullets.slice(0, nB).map((b) => clip(b, 400)) : [];
+  if (bullets.length !== nB) return null;
+  const themes = {};
+  for (const [k, list] of Object.entries((cache && cache.themes) || {})) {
+    const got = j.themes && Array.isArray(j.themes[k]) ? j.themes[k] : [];
+    themes[k] = (Array.isArray(list) ? list : []).map((_, i) => clip(got[i], 400));
+  }
+  return { bullets, themes };
+}
+async function ensureSpanishAi(s, ai) {
+  const c = s.ai_cache;
+  if (!c || !c.generated_at) return null;
+  if (c.es && c.es.src === c.generated_at) return c.es;
+  const hasText = (c.bullets || []).length || Object.values(c.themes || {}).some((l) => Array.isArray(l) && l.some((t) => t && t.summary_ko));
+  if (!hasText) return { src: c.generated_at, bullets: [], themes: {} };
+  if (!ai || !ai.ready || !ai.ready()) return null;
+  const out = await ai.call([{ type: 'text', text: buildEsPrompt(c) }], 3000);
+  const es = out && out.ok ? parseEsJson(out.text, c) : null;
+  if (!es) return null;
+  const val = { src: c.generated_at, ...es };
+  await query(`UPDATE surveys SET ai_cache = jsonb_set(ai_cache, '{es}', $2::jsonb)
+                WHERE id=$1 AND ai_cache->>'generated_at' = $3`, [Number(s.id), JSON.stringify(val), c.generated_at]);
+  return val;
+}
+
+// 열람자가 볼 수 있는 페이지인가 — 허락된 설문의 페이지만
+async function viewerPage(req) {
+  const pid = idOf(req.params.pid);
+  if (!pid) return null;
+  const p = (await query(
+    `SELECT p.id, p.survey_id, p.seq, p.mime, p.red_number, p.dup_idx, p.status, s.code_prefix
+       FROM survey_pages p JOIN surveys s ON s.id = p.survey_id AND s.deleted_at IS NULL WHERE p.id=$1`, [pid])).rows[0];
+  if (!p || !req.viewer.surveyIds.includes(Number(p.survey_id))) return null;
+  return p;
+}
+
+export default async function surveyViewerRoutes(app, deps = {}) {
+  const ai = deps.ai || null;
   // ───────── 열람자(외부) ─────────
   app.post('/api/survey-viewer/login', async (req, reply) => {
     const b = req.body || {};
@@ -98,13 +161,64 @@ export default async function surveyViewerRoutes(app) {
     const sid = idOf(req.params.id);
     if (!sid || !req.viewer.surveyIds.includes(sid)) return reply.code(404).send({ error: 'not_found' });
     const s = (await query(
-      `SELECT id, title, to_char(survey_date,'YYYY-MM-DD') AS survey_date, questions, ai_cache
+      `SELECT id, title, code_prefix, to_char(survey_date,'YYYY-MM-DD') AS survey_date, questions, ai_cache
          FROM surveys WHERE id=$1 AND deleted_at IS NULL`, [sid])).rows[0];
     if (!s) return reply.code(404).send({ error: 'not_found' });
-    const pages = (await query(`SELECT status, answers, geo FROM survey_pages WHERE survey_id=$1 AND status='done'`, [sid])).rows;
-    const up = (await query(`SELECT COUNT(*)::int AS n FROM survey_pages WHERE survey_id=$1`, [sid])).rows[0];
+    const all = (await query(
+      `SELECT id, seq, mime, red_number, dup_idx, status, answers, others, geo, low_conf,
+              (view_data IS NOT NULL) AS has_view, (thumb_data IS NOT NULL) AS has_thumb
+         FROM survey_pages WHERE survey_id=$1 ORDER BY seq`, [sid])).rows;
+    const pub = buildPublicSurveyData(s, all, { uploaded: all.length });
+    // ERP 와 같은 응답 목록(읽기 전용) — 한국어 번역(ko) 필드는 보내지 않는다
+    const qs = (Array.isArray(s.questions) ? s.questions : []).map((q) => {
+      const o = { k: q.k, no: q.no, type: q.type, text: q.text, seg: !!q.seg };
+      if (q.free) o.free = true;
+      if (Array.isArray(q.options) && q.type !== 'geo') o.options = q.options.slice();
+      if (q.type === 'scale') { o.min = q.min; o.max = q.max; o.min_label = q.min_label || ''; o.max_label = q.max_label || ''; }
+      return o;
+    });
+    const responses = all.map((p) => ({
+      id: Number(p.id), seq: Number(p.seq), folio: p.red_number || null, status: p.status,
+      file_name: pageFileName({ prefix: s.code_prefix, red_number: p.red_number, dup_idx: p.dup_idx, seq: p.seq, mime: p.mime, status: p.status }),
+      mime: p.mime, has_view: !!p.has_view, has_thumb: !!p.has_thumb,
+      answers: p.status === 'done' ? (p.answers || {}) : null, others: p.others || {},
+      geo: Object.fromEntries(Object.entries(p.geo || {}).map(([k, g]) => [k, { estado: g && g.estado || null, ciudad: g && g.ciudad || null, raw: g && g.raw || null }])),
+      low_conf: p.low_conf || [],
+    }));
+    let esAi = null;
+    try { esAi = await ensureSpanishAi(s, ai); } catch (_) { esAi = null; }
+    const c = s.ai_cache || null;
+    const aiOut = c && c.generated_at ? {
+      generated_at: c.generated_at,
+      bullets: esAi ? esAi.bullets : null,
+      themes: Object.fromEntries(Object.entries(c.themes || {}).map(([k, list]) => [k, (Array.isArray(list) ? list : []).map((t, i) => ({
+        name: String((t && t.name) || ''), summary: esAi && esAi.themes && esAi.themes[k] ? (esAi.themes[k][i] || '') : '', ids: (t && Array.isArray(t.ids) ? t.ids : []).map(Number) }))])),
+      translated: !!esAi,
+    } : null;
     reply.header('cache-control', 'no-store');
-    return buildPublicSurveyData(s, pages, { uploaded: Number(up.n) });
+    return { ...pub, all_questions: qs, responses, ai: aiOut };
+  });
+
+  // 설문지 원본 — 화면용(view: PDF 는 그린 JPEG) · 썸네일 · 원본 파일
+  app.get('/api/survey-viewer/pages/:pid/:kind', { preHandler: [viewerGuard] }, async (req, reply) => {
+    const kind = req.params.kind;
+    if (!['view', 'thumb', 'file'].includes(kind)) return reply.code(404).send({ error: 'not_found' });
+    const p = await viewerPage(req);
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const d = (await query(`SELECT mime, file_data, view_data, thumb_data FROM survey_pages WHERE id=$1`, [Number(p.id)])).rows[0];
+    reply.header('Cache-Control', 'private, max-age=600');
+    if (kind === 'thumb') {
+      if (!d.thumb_data) return reply.code(404).send({ error: 'no_thumb' });
+      reply.header('Content-Type', d.thumb_data[0] === 0x89 ? 'image/png' : 'image/jpeg');
+      return reply.send(d.thumb_data);
+    }
+    if (kind === 'view' && d.view_data) { reply.header('Content-Type', 'image/jpeg'); return reply.send(d.view_data); }
+    reply.header('Content-Type', d.mime);
+    if (kind === 'file') {
+      const name = pageFileName({ prefix: p.code_prefix, red_number: p.red_number, dup_idx: p.dup_idx, seq: p.seq, mime: p.mime, status: p.status });
+      reply.header('Content-Disposition', `attachment; filename="${name}"`);
+    }
+    return reply.send(d.file_data);
   });
 
   // ───────── 관리(디렉터) ─────────

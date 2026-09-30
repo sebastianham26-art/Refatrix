@@ -327,8 +327,8 @@ export async function drainForTest(timeoutMs = 20000) {
 
 // =====================================================================
 export default async function surveyRoutes(app) {
-  // 외부 열람 계정(아이디+비밀번호 → 익명 집계만) — 같은 플러그인 안에서 등록해 server.js 는 그대로 둔다
-  await surveyViewerRoutes(app);
+  // 외부 열람 계정(아이디+비밀번호 → ERP 분석 리포트와 같은 읽기 전용 화면) — 같은 플러그인 안에서 등록해 server.js 는 그대로 둔다
+  await surveyViewerRoutes(app, { ai: { ready: aiReady, call: (content, max) => surveyAiApi.call(content, max) } });
 
   // ── 목록 ──
   app.get('/api/surveys', { preHandler: [authGuard, requirePage(PAGE)] }, async () => {
