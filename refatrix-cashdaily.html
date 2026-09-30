@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-0930a</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-0930b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -51,6 +51,7 @@
   .bar .spacer{margin-left:auto}
   .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   /* ── 유첨 양식 표 ── */
+  .scopeLine{margin-top:8px}
   .scroll{overflow-x:auto;border:1.5px solid #333;border-radius:4px;background:#fff}
   table.ws{border-collapse:collapse;width:100%;min-width:980px;font-size:12.5px}
   table.ws td,table.ws th{border-right:1px solid #bdbdbd;padding:3px 7px;vertical-align:top}
@@ -140,7 +141,7 @@
     <div class="tabs">
       <button class="tab on" data-tab="week">📅 일일 요약 (주간)</button>
       <button class="tab" data-tab="month">📊 월간실적</button>
-      <button class="tab" data-tab="wa">📲 WhatsApp 발송</button>
+      <button class="tab" data-tab="wa">📲 WhatsApp · 대상 계좌</button>
     </div>
 
     <!-- ── 주간(유첨 양식) ── -->
@@ -155,7 +156,8 @@
           <span class="spacer"></span>
           <button class="btn ghost sm noprint" id="wPrint">🖨 인쇄</button>
         </div>
-        <div class="scroll" style="margin-top:12px"><div id="wTable"><div class="hint" style="padding:14px">불러오는 중…</div></div></div>
+        <div class="hint scopeLine" id="wScope"></div>
+        <div class="scroll" style="margin-top:8px"><div id="wTable"><div class="hint" style="padding:14px">불러오는 중…</div></div></div>
         <div class="legend">
           <span><i style="background:var(--bank)"></i>은행잔고 · 마감잔고</span>
           <span><i style="background:var(--done)"></i>회색 = 실적(실제 입출금)</span>
@@ -180,6 +182,7 @@
           <button class="btn ghost sm noprint" id="mXlsx">⬇ Excel</button>
           <button class="btn ghost sm noprint" id="mPrint">🖨 인쇄</button>
         </div>
+        <div class="hint scopeLine" id="mScope"></div>
         <div class="kpis" id="mKpis"></div>
       </div>
       <div class="card">
@@ -201,6 +204,12 @@
       <div class="card">
         <div class="card-h">⚙ 발송 설정 상태</div>
         <div id="waStatus"><div class="hint">확인 중…</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h">🏦 집계 대상 계좌 <span class="src">잔고·수금·지급·예정을 어느 계좌 기준으로 볼지 · 불공제 계좌와 금고는 자동 제외</span></div>
+        <div id="accList"><div class="hint">불러오는 중…</div></div>
+        <div class="hint" style="margin-top:8px"><b>자동</b> = 불공제 체크 계좌와 이름·유형에 <code>금고 · caja · efectivo · 현금 · cash</code> 가 들어간 계좌는 제외, 나머지 포함. 자동 판단이 틀리면 <b>포함/제외</b>로 고정하세요.
+          제외 계좌의 기초잔액·실적·예정은 모두 빠집니다(계좌 미지정 예정지출·미수 인보이스는 포함). 바꾸면 이미 저장된 날짜에 「사후 수정」 표시가 붙을 수 있습니다 — 월간 탭 [↻ 스냅샷 갱신]은 최초본을 보존합니다.</div>
       </div>
       <div class="card">
         <div class="card-h">👥 수신자 <span class="src">여기 등록된 사람에게만 발송 · 언어별 문구(한국어/스페인어)</span></div>
@@ -237,7 +246,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-0930a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-0930b (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -263,6 +272,9 @@
   const ERR={bad_phone:'번호 형식이 올바르지 않습니다',duplicate_phone:'이미 등록된 번호입니다',name_required:'이름을 입력하세요',no_recipients:'해당 종류(일일/월간)를 받는 수신자가 없습니다',
     wa_not_configured:'WhatsApp 설정(WHATSAPP_TOKEN · WHATSAPP_PHONE_ID)이 없습니다',not_closed:'오늘·미래 날짜는 아직 마감 전입니다',future_month:'아직 시작하지 않은 달입니다'};
   const errTxt=(e)=>ERR[e.code]||e.message;
+  const REASON={non_deductible:'불공제',cash_box:'금고',manual_out:'수동 제외',manual_in:'수동 포함',auto:'자동 포함'};
+  function scopeText(sc){ if(!sc) return ''; const ex=sc.excluded||[];
+    return '🏦 집계 대상 계좌 '+sc.included_n+'개'+(ex.length?' · 제외: '+ex.map(a=>esc(a.name)+' <span class="badge mute">'+(REASON[a.reason]||a.reason)+'</span>').join(' '):' · 제외 없음'); }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -303,7 +315,7 @@
   // ═════════ 주간(유첨 양식) ═════════
   async function loadWeek(){
     $('wTable').innerHTML='<div class="hint" style="padding:14px">불러오는 중…</div>';
-    try{ const d=await api('/api/treasury/week?date='+S.week); S.wdata=d; renderWeek(d); }
+    try{ const d=await api('/api/treasury/week?date='+S.week); S.wdata=d; $('wScope').innerHTML=scopeText(d.scope); renderWeek(d); }
     catch(e){ $('wTable').innerHTML='<div class="msg err" style="margin:12px">'+esc(errTxt(e))+'</div>'; }
   }
   function renderWeek(w){
@@ -355,7 +367,7 @@
     $('mRng').textContent=monthK(S.month);
     $('mNext').disabled = shiftMonth(S.month,1)+'-01' >= mxToday();
     $('mKpis').innerHTML=''; $('mTable').innerHTML='<div class="hint" style="padding:14px">불러오는 중…</div>'; $('mChart').innerHTML='';
-    try{ const d=await api('/api/treasury/month?month='+S.month); S.mdata=d; S.open=new Set(); renderMonth(d); }
+    try{ const d=await api('/api/treasury/month?month='+S.month); S.mdata=d; S.open=new Set(); $('mScope').innerHTML=scopeText(d.scope); renderMonth(d); }
     catch(e){ $('mTable').innerHTML='<div class="msg err" style="margin:12px">'+esc(errTxt(e))+'</div>'; }
   }
   function renderMonth(d){
@@ -462,7 +474,7 @@
 
   // ═════════ WhatsApp ═════════
   async function loadWa(){
-    try{ const [st,rc]=await Promise.all([api('/api/treasury/wa/status'),api('/api/treasury/recipients')]); S.wa=st; S.rc=rc.items; renderWa(); }
+    try{ const [st,rc,ac]=await Promise.all([api('/api/treasury/wa/status'),api('/api/treasury/recipients'),api('/api/treasury/accounts')]); S.wa=st; S.rc=rc.items; S.acc=ac.accounts; renderWa(); renderAcc(); }
     catch(e){ $('waStatus').innerHTML='<div class="msg err">'+esc(errTxt(e))+'</div>'; }
   }
   function renderWa(){
@@ -491,6 +503,15 @@
         +'<td>'+(x.status==='failed'?'<span class="badge bad" title="'+esc(x.error||'')+'">실패</span>':'<span class="badge ok">'+(x.status==='sent_template'?'템플릿':'전체 텍스트')+'</span>')+'</td>'
         +'<td>'+x.attempts+'</td><td>'+(x.sent_at?esc(new Date(x.sent_at).toLocaleString()):'—')+'</td></tr>').join('')+'</tbody></table>'
       :'<div class="hint">발송 기록 없음</div>';
+  }
+  function renderAcc(){
+    const xs=S.acc||[];
+    if(!xs.length){ $('accList').innerHTML='<div class="hint">계좌 없음</div>'; return; }
+    const mode=(a)=>a.treasury_exclude===true?'exclude':a.treasury_exclude===false?'include':'auto';
+    $('accList').innerHTML='<table class="sm"><thead><tr><th>계좌</th><th>유형</th><th>통화</th><th>집계</th><th>설정</th></tr></thead><tbody>'
+      +xs.map(a=>'<tr data-id="'+a.id+'"><td><b>'+esc(a.name)+'</b>'+(a.non_deductible?' <span class="badge mute">불공제</span>':'')+(a.disabled?' <span class="badge mute">안씀</span>':'')+'</td><td>'+esc(a.type||'—')+'</td><td>'+esc(a.currency)+'</td>'
+        +'<td>'+(a.included?'<span class="badge ok">포함</span>':'<span class="badge bad">제외</span>')+' <span class="hint">'+(REASON[a.reason]||'')+'</span></td>'
+        +'<td><select data-acc="1"><option value="auto"'+(mode(a)==='auto'?' selected':'')+'>자동</option><option value="include"'+(mode(a)==='include'?' selected':'')+'>항상 포함</option><option value="exclude"'+(mode(a)==='exclude'?' selected':'')+'>항상 제외</option></select></td></tr>').join('')+'</tbody></table>';
   }
   async function addRc(){
     const m=$('rcMsg');
@@ -534,6 +555,9 @@
   $('mRefresh').addEventListener('click',async()=>{ const b=$('mRefresh'); b.disabled=true; try{ const r=await api('/api/treasury/snapshots/refresh',{method:'POST',body:JSON.stringify({month:S.month})}); b.textContent='↻ '+r.saved+'일 갱신됨'; await loadMonth(); }catch(e){ alert(errTxt(e)); } finally{ b.disabled=false; setTimeout(()=>{b.textContent='↻ 스냅샷 갱신';},2500); } });
   $('mTable').addEventListener('click',(e)=>{ const tr=e.target.closest('tr.row'); if(!tr) return; const d=tr.dataset.d; if(S.open.has(d)) S.open.delete(d); else S.open.add(d); renderMonthTable(S.mdata); });
   $('rcAdd').addEventListener('click',addRc);
+  $('accList').addEventListener('change',async(e)=>{ const el=e.target; if(!el.dataset.acc) return; const id=el.closest('tr').dataset.id;
+    try{ const r=await api('/api/treasury/accounts/'+id,{method:'PATCH',body:JSON.stringify({mode:el.value})}); S.acc=r.accounts; renderAcc(); }
+    catch(err){ alert(errTxt(err)); loadWa(); } });
   $('rcList').addEventListener('change',async(e)=>{ const el=e.target; const f=el.dataset.f; if(!f) return; const id=el.closest('tr').dataset.id;
     const body={}; body[f]=el.type==='checkbox'?el.checked:el.value;
     try{ await api('/api/treasury/recipients/'+id,{method:'PATCH',body:JSON.stringify(body)}); const r=S.rc.find(x=>String(x.id)===id); if(r) r[f]=body[f]; }
@@ -547,6 +571,6 @@
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   (function boot(){ const ps=portalSession(); if(ps&&ps.token) login(); })();
 </script>
-<script src="refatrix-nav.js?v=20260930ur"></script>
+<script src="refatrix-nav.js?v=20260930td"></script>
 </body>
 </html>

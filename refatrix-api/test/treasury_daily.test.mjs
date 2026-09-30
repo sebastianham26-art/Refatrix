@@ -123,12 +123,23 @@ test('A6 driftOf — 사후 수정 감지(0.5 미만 무시)', () => {
   assert.deepEqual(T.driftOf({ close_mxn: 100 }, { close_mxn: 1100, in_mxn: 1000 }), { close_mxn: 1000, in_mxn: 1000 });
 });
 
+test('A7 집계 대상 계좌 — 불공제·금고 자동 제외, 수동 고정이 우선', () => {
+  const f = (o) => T.accountScopeOf({ name: 'BBVA', type: '은행', non_deductible: false, treasury_exclude: null, ...o });
+  assert.deepEqual(f({}), { included: true, reason: 'auto' });
+  assert.deepEqual(f({ non_deductible: true }), { included: false, reason: 'non_deductible' });
+  for (const n of ['금고', 'Caja fuerte', 'Efectivo oficina', 'Cash box']) assert.equal(f({ name: n }).reason, 'cash_box', n);
+  assert.equal(f({ type: '현금' }).reason, 'cash_box');
+  assert.deepEqual(f({ name: '금고', treasury_exclude: false }), { included: true, reason: 'manual_in' });
+  assert.deepEqual(f({ treasury_exclude: true }), { included: false, reason: 'manual_out' });
+});
+
 // ── B. 배선 ─────────────────────────────────────────────────────────────
 test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면키 · 화면 토큰', () => {
   const srv = read(join(API, 'src/server.js'));
   assert.match(srv, /import treasuryRoutes from '\.\/routes\/treasuryRoutes\.js'/);
   assert.match(srv, /app\.register\(treasuryRoutes\)/);
   assert.match(srv, /startTreasuryWorker\(app\)/);
+  assert.match(read(join(API, 'migrations/0241_treasury_account_scope.sql')), /ADD COLUMN IF NOT EXISTS treasury_exclude BOOLEAN/);
   const mig = read(join(API, 'migrations/0240_treasury_daily.sql'));
   for (const t of ['treasury_daily_snapshots', 'treasury_wa_recipients', 'treasury_wa_sends']) assert.match(mig, new RegExp('CREATE TABLE IF NOT EXISTS ' + t));
   const nav = read(join(REPO, 'refatrix-nav.js'));
@@ -136,7 +147,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-0930a/);
+  assert.match(page, /build cashd-0930b/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -155,6 +166,8 @@ async function seed() {
   const mxn = await one(`INSERT INTO accounts (name, currency, open_balance) VALUES ($1,'MXN',0) RETURNING id`, [tag + ' MXN']);
   const usd = await one(`INSERT INTO accounts (name, currency, open_balance) VALUES ($1,'USD',4894) RETURNING id`, [tag + ' USD']);
   const later = await one(`INSERT INTO accounts (name, currency, open_balance, open_date) VALUES ($1,'MXN',777,'2026-10-15') RETURNING id`, [tag + ' later']);
+  const safe = await one(`INSERT INTO accounts (name, type, currency, open_balance) VALUES ($1,'현금','MXN',50000) RETURNING id`, [tag + ' 금고']);
+  const nd = await one(`INSERT INTO accounts (name, type, currency, open_balance, non_deductible) VALUES ($1,'은행','MXN',30000,true) RETURNING id`, [tag + ' 불공제']);
   const cust = await one(`INSERT INTO customers (code, name) VALUES ($1,'Luemi') RETURNING id`, [tag]);
   await query(`INSERT INTO fx_rates (rate_date, rate, source) VALUES ('2026-09-25',18,'test') ON CONFLICT (rate_date, base, quote) DO UPDATE SET rate=18`);
   // 9/27 이전 누적 = 2,047 (입금 12,047 − 지출 10,000)
@@ -164,6 +177,11 @@ async function seed() {
     [acc, d, dir_, amt, extra.cat || (dir_ === 'in' ? '4010' : '6130'), extra.status || 'actual', extra.kind || 'general',
       extra.approved !== false, extra.memo || null, extra.inv || null, extra.priv === true, extra.rule || null, extra.plan_date || null, extra.plan_amount || null]);
   await tx(mxn.id, '2026-09-10', 'in', 12047.4, { memo: 'Deposito inicial' });
+  // 금고·불공제 계좌 활동 — 전부 제외돼야 유첨 숫자가 유지된다
+  await tx(safe.id, '2026-09-29', 'out', 1500, { memo: 'Caja chica gasolina' });
+  await tx(safe.id, '2026-10-02', 'out', 700, { status: 'plan', memo: 'Caja plan', plan_date: '2026-10-02', plan_amount: 700 });
+  await tx(nd.id, '2026-09-29', 'in', 8000, { memo: 'ND deposito' });
+  await tx(nd.id, '2026-09-30', 'out', 999, { memo: 'ND pendiente', approved: false });
   await tx(mxn.id, '2026-09-15', 'out', 10000, { memo: 'Renta', priv: true });
   await tx(mxn.id, '2026-09-29', 'out', 999, { memo: 'Pendiente aprob', approved: false });       // 승인 대기 → 잔고 제외
   // folio 34 · 9/29 수금 6,984 (반제)
@@ -182,12 +200,12 @@ async function seed() {
   const off = await rule('Old rent', false);
   await tx(mxn.id, '2026-10-02', 'out', 5555, { status: 'plan', rule: off.id, plan_date: '2026-10-02', plan_amount: 5555 });
   await tx(mxn.id, '2026-10-02', 'out', 40000, { status: 'plan', memo: 'SAT', plan_date: '2026-10-02', plan_amount: 40000 });
-  S = { dir: Number(dir.id), tre: Number(tre.id), tag, mxn: Number(mxn.id), usd: Number(usd.id), later: Number(later.id), cust: Number(cust.id) };
+  S = { dir: Number(dir.id), tre: Number(tre.id), tag, mxn: Number(mxn.id), usd: Number(usd.id), later: Number(later.id), safe: Number(safe.id), nd: Number(nd.id), cust: Number(cust.id) };
 }
 async function cleanup() {
   if (!S.tag) return;
   const { query } = await import('../src/db.js');
-  const accs = [S.mxn, S.usd, S.later];
+  const accs = [S.mxn, S.usd, S.later, S.safe, S.nd];
   await query(`DELETE FROM sales_payment_allocations WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE customer_id=$1)`, [S.cust]);
   await query(`DELETE FROM sales_payments WHERE customer_id=$1`, [S.cust]);
   await query(`DELETE FROM transactions WHERE account_id = ANY($1)`, [accs]);
@@ -211,6 +229,8 @@ E('C1 주간(유첨 양식) — 9/28~10/2 숫자가 유첨 엑셀과 일치 · �
   assert.deepEqual(w.days.slice(0, 5).map((d) => Math.round(d.close_eq)), [90139, 97124, 97124, 97124, 100080]);
   assert.equal(by['2026-10-02'].in.MXN, 65135);
   assert.equal(by['2026-10-02'].out.MXN, 62179, '비활성 고정비 5,555 제외');
+  assert.ok(!w.days.some((d) => d.items.some((i) => /Caja|ND /.test(i.name))), '금고·불공제 항목 없음');
+  assert.equal(by['2026-09-30'].pending.n, 0);
   assert.equal(by['2026-09-30'].kind, 'today'); assert.equal(by['2026-10-01'].kind, 'plan'); assert.equal(by['2026-09-28'].kind, 'actual');
 });
 
@@ -320,6 +340,16 @@ E('C5 API — 디렉터 전용 · 수신자 CRUD(번호 정규화·중복) · �
   if (tokenBak) process.env.WHATSAPP_TOKEN = tokenBak;
   const st = (await call(D, 'GET', '/api/treasury/wa/status')).json();
   assert.equal(st.api_ready, false); assert.equal(st.schedule.send_hour_mx, 6);
+  const acc = (await call(D, 'GET', '/api/treasury/accounts')).json();
+  const rs = Object.fromEntries(acc.accounts.map((a) => [a.id, a.reason]));
+  assert.equal(rs[S.safe], 'cash_box'); assert.equal(rs[S.nd], 'non_deductible'); assert.equal(rs[S.mxn], 'auto');
+  assert.deepEqual(mj.scope.excluded.map((x) => x.reason).sort(), ['cash_box', 'non_deductible']);
+  assert.equal((await call(D, 'PATCH', '/api/treasury/accounts/' + S.safe, { mode: 'x' })).statusCode, 400);
+  await call(D, 'PATCH', '/api/treasury/accounts/' + S.safe, { mode: 'include' });
+  const m2 = (await call(D, 'GET', '/api/treasury/month?month=2026-09')).json();
+  assert.equal(m2.summary.close.MXN, 9031.8 + 50000 - 1500, '금고 강제 포함 → 금고 잔고·지출 반영');
+  await call(D, 'PATCH', '/api/treasury/accounts/' + S.safe, { mode: 'auto' });
+  assert.equal((await call(D, 'GET', '/api/treasury/month?month=2026-09')).json().summary.close.MXN, 9031.8);
   assert.equal((await call(D, 'DELETE', '/api/treasury/recipients/' + rc.id)).json().ok, true);
   assert.equal((await call(D, 'GET', '/api/treasury/recipients')).json().items.length, 0);
   await cleanup();

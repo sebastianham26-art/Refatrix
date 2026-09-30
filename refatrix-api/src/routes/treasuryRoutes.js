@@ -5,6 +5,7 @@
 //   GET    /api/treasury/week?date=YYYY-MM-DD      유첨 양식(월~토): 과거=실적, 오늘부터=예정
 //   GET    /api/treasury/month?month=YYYY-MM       월간실적(원장 실시간 재계산) + 스냅샷 대비 사후수정 표시
 //   POST   /api/treasury/snapshots/refresh {month} 그 달 스냅샷 지금 재계산(최초본 보존)
+//   GET    /api/treasury/accounts                  집계 대상 계좌(금고·불공제 자동 제외) · PATCH /:id {mode:auto|include|exclude}
 //   GET    /api/treasury/recipients                수신자 목록
 //   POST   /api/treasury/recipients                {name, phone, lang, get_daily, get_monthly}
 //   PATCH  /api/treasury/recipients/:id            부분 수정(active 포함)
@@ -20,11 +21,16 @@ import { waApiReady, normalizeWaNumber } from '../waSend.js';
 import {
   isYmd, isMonth, mxNow, addDays, monthBounds, prevMonth, computeWeek, computeActualDays, summarizeMonth,
   upsertSnapshots, loadSnapshotMeta, driftOf, flatOf, prepareDaily, prepareMonthly, sendReport, maskPhone,
-  activeRecipients, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl,
+  activeRecipients, loadAccountScope, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl,
 } from '../treasuryDaily.js';
 
 const G = { preHandler: [authGuard, requireDirector] };
 const LANGS = ['ko', 'es'];
+
+function scopeBrief(sc) {
+  return { included_n: sc.ids.length,
+    excluded: sc.accounts.filter((a) => !a.included).map((a) => ({ id: a.id, name: a.name, reason: a.reason })) };
+}
 
 function recipOut(r) {
   return { id: Number(r.id), name: r.name, phone: r.phone, phone_masked: maskPhone(r.phone), lang: r.lang,
@@ -36,7 +42,8 @@ export default async function treasuryRoutes(app) {
   app.get('/api/treasury/week', G, async (req, reply) => {
     const today = mxNow().ymd;
     const date = isYmd(req.query.date) ? req.query.date : today;
-    return computeWeek(date, today);
+    const [w, sc] = await Promise.all([computeWeek(date, today), loadAccountScope()]);
+    return { ...w, scope: scopeBrief(sc) };
   });
 
   // ── 월간실적 ──
@@ -53,7 +60,7 @@ export default async function treasuryRoutes(app) {
       const m = meta.get(d.date);
       d.snap = m ? { first_at: m.first_at, computed_at: m.computed_at, drift: driftOf(m.first, flatOf(d)) } : null;
     }
-    return { month, from, to, today, partial: last < to, days, summary: summarizeMonth(days) };
+    return { month, from, to, today, partial: last < to, days, summary: summarizeMonth(days), scope: scopeBrief(await loadAccountScope()) };
   });
 
   app.post('/api/treasury/snapshots/refresh', G, async (req, reply) => {
@@ -64,6 +71,21 @@ export default async function treasuryRoutes(app) {
     if (last < from) return { ok: true, month, saved: 0 };
     const saved = await upsertSnapshots(await computeActualDays(from, last));
     return { ok: true, month, saved };
+  });
+
+  // ── 집계 대상 계좌 ──
+  app.get('/api/treasury/accounts', G, async () => loadAccountScope());
+
+  app.patch('/api/treasury/accounts/:id', G, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const mode = (req.body || {}).mode;
+    const val = { auto: null, include: false, exclude: true };
+    if (!(mode in val)) return reply.code(400).send({ error: 'bad_mode' });
+    const r = (await query(`UPDATE accounts SET treasury_exclude=$1 WHERE id=$2 AND deleted_at IS NULL RETURNING id`, [val[mode], id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `account:${id}`, detail: { treasury_scope: mode } });
+    return loadAccountScope();
   });
 
   // ── 수신자 ──

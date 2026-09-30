@@ -15,8 +15,8 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰 · 외부 스크립트는 허용 CDN 만', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit|keydown)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*build cashd-0930a<\/title>/);
-  assert.match(HTML, /refatrix-nav\.js\?v=20260930ur/);
+  assert.match(HTML, /<title>[^<]*build cashd-0930b<\/title>/);
+  assert.match(HTML, /refatrix-nav\.js\?v=20260930td/);
   for (const m of HTML.matchAll(/src=['"](https?:[^'"]+)/g)) assert.match(m[1], /^https:\/\/cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 });
 
@@ -79,6 +79,7 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
     // ① 주간(유첨 양식)
     await until(() => $('table.ws'));
     assert.equal($('#wRng').textContent, '9/28 (월) ~ 10/3 (토)');
+    assert.match($('#wScope').textContent, /집계 대상 계좌 \d+개/);
     const heads = [...d.querySelectorAll('tr.date th')].slice(1).map((th) => th.textContent);
     assert.deepEqual(heads.map((h) => h.replace(/[^0-9/()A-Za-z ].*$/, '').trim()), ['9/28 (Mon)', '9/29 (Tue)', '9/30 (Wed)', '10/1 (Thu)', '10/2 (Fri)', '10/3 (Sat)'], '일요일(무거래) 숨김');
     assert.match(heads[0], /실적/); assert.match(heads[2], /오늘/); assert.match(heads[4], /예정/);
@@ -139,6 +140,15 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
     await new Promise((r) => setTimeout(r, 300));
     const saved = await one(`SELECT get_daily, lang FROM treasury_wa_recipients WHERE deleted_at IS NULL`);
     assert.equal(saved.get_daily, false); assert.equal(saved.lang, 'ko');
+    // 집계 대상 계좌 카드 — 이 시드엔 금고·불공제가 없음 → 전부 자동 포함, 제외로 바꾸면 저장
+    await until(() => $('#accList select[data-acc]'));
+    const sel = $(`#accList tr[data-id="${usd.id}"] select`);
+    sel.value = 'exclude'; sel.dispatchEvent(new w.Event('change', { bubbles: true }));
+    await until(() => /수동 제외/.test($(`#accList tr[data-id="${usd.id}"]`).textContent));
+    assert.equal((await one(`SELECT treasury_exclude FROM accounts WHERE id=$1`, [usd.id])).treasury_exclude, true);
+    const sel2 = $(`#accList tr[data-id="${usd.id}"] select`);
+    sel2.value = 'auto'; sel2.dispatchEvent(new w.Event('change', { bubbles: true }));
+    await until(() => /자동 포함/.test($(`#accList tr[data-id="${usd.id}"]`).textContent));
     // 미리보기(월간·한국어)
     $('#pvKind').value = 'monthly'; $('#pvLang').value = 'ko'; $('#pvPeriod').value = '2026-09';
     click($('#pvBtn'));

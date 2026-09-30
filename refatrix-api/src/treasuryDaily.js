@@ -9,6 +9,9 @@
 //       in:+amount / out:-amount — /api/accounts 의 balance 와 동일. 삭제 계좌·삭제 거래 제외.
 //       open_date 가 있는 계좌는 그날부터 잔고에 들어간다(그 전 날짜의 기초엔 없음 → 개설일 「계좌 개설」 조정).
 //   · AR(수금) = 그날 실제 입금 거래 / AP(지급) = 그날 실제 출금 거래. 승인 대기 실적은 잔고 제외, 건수만 표시.
+//   · 집계 대상 계좌(0241): 불공제(non_deductible) 계좌와 금고(이름·유형에 금고/caja/efectivo/현금/cash)는
+//       자동 제외. 계좌별 강제 포함/제외는 accounts.treasury_exclude(화면 📲 탭 「집계 대상 계좌」).
+//       제외 계좌의 기초잔액·실적·예정·승인대기는 전부 빠진다. 계좌 미지정 예정지출·미수 인보이스는 포함.
 //   · MXN 환산 = MXN + USD × 그날 환율(환율 탭, 없으면 직전 값) — 유첨 엑셀 맨 아래 줄과 같은 계산.
 //   · 예정(오늘 이후): 미수 인보이스(만기일·잔여액) + 수동 예정수입 + 예정지출(비활성 고정비 제외).
 //     오늘 이전의 미실현 예정은 「오늘」 칸으로 이월(현금흐름 07-05 carry-forward 규칙과 동일).
@@ -358,6 +361,26 @@ export function buildMonthlyHeadline(sum, lang = 'es') {
 }
 function clip(s, max = 3800) { return s.length > max ? s.slice(0, max) + '\n…' : s; }
 
+// ───────────────────────── 집계 대상 계좌 ─────────────────────────
+export const CASH_BOX_RE = /금고|caja|efectivo|현금|cash/i;
+// a: { non_deductible, name, type, treasury_exclude } → { included, reason: manual_in|manual_out|non_deductible|cash_box|auto }
+export function accountScopeOf(a) {
+  if (a.treasury_exclude === true) return { included: false, reason: 'manual_out' };
+  if (a.treasury_exclude === false) return { included: true, reason: 'manual_in' };
+  if (a.non_deductible === true) return { included: false, reason: 'non_deductible' };
+  if (CASH_BOX_RE.test(`${a.name || ''} ${a.type || ''}`)) return { included: false, reason: 'cash_box' };
+  return { included: true, reason: 'auto' };
+}
+export async function loadAccountScope(q = query) {
+  const rows = (await q(`SELECT id, name, type, currency, non_deductible, disabled, treasury_exclude
+                           FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
+  const accounts = rows.map((a) => ({ id: Number(a.id), name: a.name, type: a.type || null, currency: a.currency,
+    non_deductible: a.non_deductible === true, disabled: a.disabled === true,
+    treasury_exclude: a.treasury_exclude === true ? true : a.treasury_exclude === false ? false : null,
+    ...accountScopeOf(a) }));
+  return { accounts, ids: accounts.filter((a) => a.included).map((a) => a.id) };
+}
+
 // ───────────────────────── DB 적재 ─────────────────────────
 const TXN_NAME_JOINS = `
   LEFT JOIN categories cat ON cat.code=t.category_code
@@ -374,25 +397,27 @@ const TXN_NAME_COLS = `t.id, t.direction, t.amount, t.amount_mxn, t.is_private, 
   COALESCE(c.name, cadv.name, cbd.name, ctag.name) AS customer_name, bd.payer_memo`;
 
 // 기간 실적 입력 적재(한 번의 조회 묶음)
-export async function loadActualInputs(from, to, q = query) {
+export async function loadActualInputs(from, to, q = query, scopeIds = null) {
+  const ids = scopeIds || (await loadAccountScope(q)).ids;
   const [openRows, preRows, opens, txns, pend] = await Promise.all([
     q(`SELECT a.currency, COALESCE(SUM(a.open_balance),0) AS s FROM accounts a
-        WHERE a.deleted_at IS NULL AND (a.open_date IS NULL OR a.open_date < $1) GROUP BY a.currency`, [from]),
+        WHERE a.deleted_at IS NULL AND a.id = ANY($2) AND (a.open_date IS NULL OR a.open_date < $1) GROUP BY a.currency`, [from, ids]),
     q(`SELECT a.currency, COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END),0) AS s
          FROM transactions t JOIN accounts a ON a.id=t.account_id
-        WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL AND t.txn_date < $1
-        GROUP BY a.currency`, [from]),
+        WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL AND a.id = ANY($2) AND t.txn_date < $1
+        GROUP BY a.currency`, [from, ids]),
     q(`SELECT a.currency, to_char(a.open_date,'YYYY-MM-DD') AS d, a.open_balance AS amount FROM accounts a
-        WHERE a.deleted_at IS NULL AND a.open_date >= $1 AND a.open_date <= $2`, [from, to]),
+        WHERE a.deleted_at IS NULL AND a.id = ANY($3) AND a.open_date >= $1 AND a.open_date <= $2`, [from, to, ids]),
     q(`SELECT ${TXN_NAME_COLS}, a.currency, to_char(t.txn_date,'YYYY-MM-DD') AS d
          FROM transactions t JOIN accounts a ON a.id=t.account_id ${TXN_NAME_JOINS}
-        WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL
+        WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL AND a.id = ANY($3)
           AND t.txn_date >= $1 AND t.txn_date <= $2
-        ORDER BY t.txn_date, t.id`, [from, to]),
+        ORDER BY t.txn_date, t.id`, [from, to, ids]),
     q(`SELECT to_char(t.txn_date,'YYYY-MM-DD') AS d, COUNT(*) AS n, COALESCE(SUM(t.amount_mxn),0) AS amount_mxn
          FROM transactions t
         WHERE t.status='actual' AND t.approved=false AND t.deleted_at IS NULL AND t.txn_date >= $1 AND t.txn_date <= $2
-        GROUP BY t.txn_date`, [from, to]),
+          AND (t.account_id IS NULL OR t.account_id = ANY($3))
+        GROUP BY t.txn_date`, [from, to, ids]),
   ]);
   const base = zero();
   for (const r of openRows.rows) base[cur(r.currency)] += Number(r.s) || 0;
@@ -418,7 +443,8 @@ export async function computeActualDays(from, to, q = query) {
 }
 
 // 예정 입력: 오늘~to (오늘 이전 미실현은 이월)
-export async function loadPlanInputs(today, to, q = query) {
+export async function loadPlanInputs(today, to, q = query, scopeIds = null) {
+  const ids = scopeIds || (await loadAccountScope(q)).ids;
   const [inv, plan, act] = await Promise.all([
     q(`SELECT x.* FROM (
          SELECT si.id, c.name AS customer_name, si.sat_no, to_char(si.due_date,'YYYY-MM-DD') AS due,
@@ -431,12 +457,13 @@ export async function loadPlanInputs(today, to, q = query) {
               to_char(COALESCE(t.plan_date, t.txn_date),'YYYY-MM-DD') AS d, t.sales_invoice_id
          FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id ${TXN_NAME_JOINS}
         WHERE t.status='plan' AND t.deleted_at IS NULL AND COALESCE(t.plan_date, t.txn_date) <= $1
+          AND (t.account_id IS NULL OR t.account_id = ANY($2))
           AND NOT (t.direction='in' AND t.sales_invoice_id IS NOT NULL)
           AND (t.recurring_rule_id IS NULL OR t.recurring_rule_id IN
-               (SELECT r.id FROM recurring_rules r WHERE r.active=true AND r.deleted_at IS NULL))`, [to]),
+               (SELECT r.id FROM recurring_rules r WHERE r.active=true AND r.deleted_at IS NULL))`, [to, ids]),
     q(`SELECT ${TXN_NAME_COLS}, a.currency, to_char(t.txn_date,'YYYY-MM-DD') AS d
          FROM transactions t JOIN accounts a ON a.id=t.account_id ${TXN_NAME_JOINS}
-        WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL AND t.txn_date=$1`, [today]),
+        WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL AND a.id = ANY($2) AND t.txn_date=$1`, [today, ids]),
   ]);
   const num = (r) => ({ ...r, amount: Number(r.amount), amount_mxn: Number(r.amount_mxn) });
   const uniq = (rows) => { const s = new Set(); return rows.filter((r) => { const k = Number(r.id); if (s.has(k)) return false; s.add(k); return true; }); };
