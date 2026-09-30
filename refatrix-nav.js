@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260930td loaded (+ 재무 › 일일 자금 · 월간실적)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260930vr loaded (+ 재무 › 일일 자금 · 월간실적 · 영업 › 재고 예약 현황)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -112,6 +112,7 @@
     daily:{file:'refatrix-daily.html',name:'오늘 요약',desc:'일자별 ERP 기록 AI 요약(디렉터)'},
     quote:{file:'refatrix-quote.html',name:'견적 작성',desc:'견적·매출전환'},
     quotelist:{file:'refatrix-quotelist.html',name:'견적·매출 추적',desc:'목록·전환'},
+    reservations:{file:'refatrix-reservations.html',name:'재고 예약 현황',desc:'견적 24h 예약·해제 시각'},   // 2026-09-30
     fieldsurvey:{file:'refatrix-fieldsurvey.html',name:'현장재고조사',desc:'고객창고 경쟁사 재고→오퍼'},
     fsanalysis:{file:'refatrix-fsanalysis.html',name:'현장조사 소진분석',desc:'누적구매−현장잔량=팔린 수량→재구매 오퍼'},
     orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이',desc:'즉시매출 KPI'},
@@ -187,7 +188,7 @@
     rnr:null, coverage:null, devmap:null, fieldsurvey:null, fsanalysis:null,
     commission:'commission',
     guiaCom:'guiacom',   // 권한 부여한 사용자에게만 노출(사용자·권한 화면에서 켬/끔). 디렉터는 항상 보임.
-    quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
+    quote:['quote','sales'], quotelist:['quote','sales'], reservations:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
     pipeline:'pipeline', consult:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', custReg:'__director__', custClaim:'__director__', custLeads:'customers', targets:'targets',
@@ -204,8 +205,8 @@
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','approval','salesperf','commission','guiaCom','dashboard','rnr','coverage','devmap']},
-    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','consult','fieldsurvey','fsanalysis','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
-    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','consult','fieldsurvey','fsanalysis','quote','quotelist','reservations','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
+    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','reservations','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','prodFind','prodUpload','prodHistory','priceMaster']},
@@ -225,7 +226,7 @@
   var ROLE_HIDE_GROUPS={ sales:['finance'] };
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
-  var SHARED={approval:1, devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
+  var SHARED={approval:1, devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, reservations:1, shortage:1, stock:1};
 
   // 그룹 노출용 명시 앵커(SHARED 자동필터 대신 사용). 영업지원은 자체 비공유 화면이
   // recost(디렉터 전용)뿐이라 비디렉터에게 영영 안 떴음 → 권한 받은 핵심 화면을 앵커로 지정.

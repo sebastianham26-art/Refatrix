@@ -26,6 +26,7 @@ import settlementVarianceRoutes from './routes/settlementVarianceRoutes.js';
 import portalBoardRoutes from './routes/portalBoardRoutes.js';
 import portalKpiRoutes from './routes/portalKpiRoutes.js';
 import quoteRoutes from './routes/quoteRoutes.js';
+import reservationRoutes from './routes/reservationRoutes.js';   // 2026-09-30 · 견적 재고예약 현황 (0930 apar2 스테일 푸시로 빠졌던 것 복구)
 import stockRoutes from './routes/stockRoutes.js';
 import devRequestRoutes from './routes/devRequestRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -121,6 +122,7 @@ export function buildApp() {
   app.register(portalBoardRoutes);
   app.register(portalKpiRoutes);
   app.register(quoteRoutes);
+  app.register(reservationRoutes);   // 2026-09-30 · 견적 재고예약 현황(읽기 전용)
   app.register(stockRoutes);
   app.register(inboundRoutes);
   app.register(zoneRoutes);
