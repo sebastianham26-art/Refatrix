@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0930rsv2</title>
+<title>Refatrix ERP · 견적 목록 · ql-0930sc1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -70,6 +70,13 @@
   #clsBanner .cb .dot{display:inline-block;width:9px;height:9px;border-radius:999px;margin-right:5px;vertical-align:middle}
   .clschip{cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#555;user-select:none}
   .clschip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  /* 2026-09-30 · 목록을 화면 높이 안의 스크롤 상자로 — 가로 스크롤바가 표 맨 아래가 아니라
+     항상 화면 안(상자 하단)에 보이고, 머리행은 세로로 내려도 고정된다. */
+  #listWrap{max-height:max(320px,calc(100vh - 150px));overflow:auto;margin-top:12px;-webkit-overflow-scrolling:touch}
+  #listWrap:has(table){border:1px solid var(--line);border-radius:8px}
+  #listWrap>table{margin-top:0}
+  #listWrap thead th{position:sticky;top:0;z-index:3;box-shadow:inset 0 -1px 0 var(--line)}
+  html.rfxm #listWrap{max-height:max(300px,calc(100vh - 210px))}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -116,7 +123,7 @@
       <div class="chips" id="clsChips" style="margin-top:8px"></div>
       <div class="msg" id="msg"></div>
       <div id="clsBanner"></div>
-      <div id="listWrap" style="overflow-x:auto"><div class="hint" style="margin-top:12px">조회를 누르세요.</div></div>
+      <div id="listWrap"><div class="hint" style="margin-top:12px">조회를 누르세요.</div></div>
     </div>
   </div>
 </div>
