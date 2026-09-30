@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0930sc1</title>
+<title>Refatrix ERP · 견적 목록 · ql-0930sc2</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -77,6 +77,15 @@
   #listWrap>table{margin-top:0}
   #listWrap thead th{position:sticky;top:0;z-index:3;box-shadow:inset 0 -1px 0 var(--line)}
   html.rfxm #listWrap{max-height:max(300px,calc(100vh - 210px))}
+  /* 2026-09-30 · 표 위 가로 스크롤바 — 크롬 자동번역(스페인어)으로 열이 넓어져도 스크롤바가 내용 바로 위에 있고,
+     페이지를 내려도 상단 메뉴 바로 아래에 붙어 따라온다. 아래쪽 스크롤바와 서로 연동. */
+  #listTopScroll{position:sticky;top:0;z-index:20;overflow-x:scroll;overflow-y:hidden;height:14px;margin-top:12px;background:var(--card);border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0}
+  #listTopScroll>div{height:1px}
+  #listTopScroll:not([hidden])+#listWrap{margin-top:0;border-top-left-radius:0;border-top-right-radius:0}
+  #listTopScroll::-webkit-scrollbar,#listWrap::-webkit-scrollbar{height:12px;width:12px}
+  #listTopScroll::-webkit-scrollbar-track,#listWrap::-webkit-scrollbar-track{background:#f1eee7}
+  #listTopScroll::-webkit-scrollbar-thumb,#listWrap::-webkit-scrollbar-thumb{background:#b9b3a6;border-radius:999px;border:2px solid #f1eee7}
+  #listTopScroll::-webkit-scrollbar-thumb:hover,#listWrap::-webkit-scrollbar-thumb:hover{background:var(--brand)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -123,6 +132,7 @@
       <div class="chips" id="clsChips" style="margin-top:8px"></div>
       <div class="msg" id="msg"></div>
       <div id="clsBanner"></div>
+      <div id="listTopScroll" hidden title="좌우로 끌어 표를 이동"><div></div></div>
       <div id="listWrap"><div class="hint" style="margin-top:12px">조회를 누르세요.</div></div>
     </div>
   </div>
@@ -1476,6 +1486,36 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>
+/* 2026-09-30 ql-0930sc2 · 표 위 가로 스크롤바 동기화.
+   - 표가 상자보다 넓을 때만 보인다(한국어 화면에서 표가 다 들어오면 숨김).
+   - 크롬 자동번역은 렌더 뒤에 글자를 바꿔 열 폭이 달라지므로, 목록 영역의 DOM·크기 변화를 감시해 폭을 다시 맞춘다.
+   - 상단 고정 메뉴(#rnav) 높이만큼 아래에 붙는다. */
+(function(){
+  var wrap=document.getElementById('listWrap'), bar=document.getElementById('listTopScroll');
+  if(!wrap||!bar) return;
+  var inner=bar.firstElementChild, raf=0, ro=null, seen=null;
+  function navH(){ var n=document.getElementById('rnav'); return n?Math.round(n.getBoundingClientRect().height):0; }
+  function sync(){
+    raf=0;
+    var tbl=wrap.querySelector('table');
+    if(ro&&tbl&&tbl!==seen){ if(seen) ro.unobserve(seen); ro.observe(tbl); seen=tbl; }
+    if(!tbl||wrap.scrollWidth<=wrap.clientWidth+1){ bar.hidden=true; return; }
+    bar.hidden=false;
+    inner.style.width=wrap.scrollWidth+'px';
+    bar.style.top=navH()+'px';
+    if(Math.abs(bar.scrollLeft-wrap.scrollLeft)>1) bar.scrollLeft=wrap.scrollLeft;
+  }
+  function later(){ if(!raf) raf=requestAnimationFrame(sync); }
+  bar.addEventListener('scroll',function(){ if(Math.abs(wrap.scrollLeft-bar.scrollLeft)>1) wrap.scrollLeft=bar.scrollLeft; });
+  wrap.addEventListener('scroll',function(){ if(Math.abs(bar.scrollLeft-wrap.scrollLeft)>1) bar.scrollLeft=wrap.scrollLeft; });
+  if(window.ResizeObserver){ ro=new ResizeObserver(later); ro.observe(wrap); }
+  if(window.MutationObserver) new MutationObserver(later).observe(wrap,{childList:true,subtree:true,characterData:true});
+  window.addEventListener('resize',later);
+  window.addEventListener('load',later);
+  later();
+})();
+</script>
 <script src="refatrix-nav.js?v=20260930vr"></script>
 </body>
 </html>
