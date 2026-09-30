@@ -70,6 +70,8 @@ import priceMasterRoutes from './routes/priceMasterRoutes.js';   // 제품·마�
 import promoRoutes from './routes/promoRoutes.js';               // 관리 › 연동 관리 › 프로모션 배너(0237)
 import { startPromoWorker } from './promoSync.js';               // 0237 · 종료 프로모션 자동 내리기
 import approvalRoutes from './routes/approvalRoutes.js';         // 공통 › 전자결재(0234) — 비용집행 품의·증빙·사전/사후승인
+import treasuryRoutes from './routes/treasuryRoutes.js';       // 재무 › 일일 자금·월간실적(0240) — 일별 스냅샷 누적 + WhatsApp 지정 수신자
+import { startTreasuryWorker } from './treasuryDaily.js';        // 0240 · 매일 06시 스냅샷·일일 발송 / 매월 1~3일 월간 발송
 import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
 import { startCrmSyncWorker } from './crmSync.js';
 import { startProductSyncWorker } from './productSync.js';
@@ -161,6 +163,7 @@ export function buildApp() {
   app.register(priceMasterRoutes);  // 가격 마스터 — 날짜별 정가 이력 · % 일괄/선택 변경 · 예약 · 되돌리기
   app.register(promoRoutes);        // 프로모션 배너 → CRM 여러 곳(0237) · 공개 배너 이미지 주소 포함
   app.register(approvalRoutes);     // 전자결재 — 품의 · 결재선 · 증빙(파일당 20MB, 라우트 전용 bodyLimit) · 댓글 · 알림 · 설정
+  app.register(treasuryRoutes);     // 일일 자금·월간실적 — 주간(유첨 양식)·월간·수신자·WhatsApp 발송
 
   // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
   startSecretRefresh(app);
@@ -172,6 +175,7 @@ export function buildApp() {
   startOrderStatusWorker(app);      // ERP → CRM 오더상태 — 놓친 단계 줍기(90초)
   startPromoWorker(app);            // 0237 · 종료일 지난 프로모션을 CRM 에서 자동으로 내리기(10분)
   startPriceMasterWorker(app);      // 가격 예약 — 적용일(멕시코 00:00)이 된 묶음 적용(5분)
+  startTreasuryWorker(app);         // 0240 · 일일 자금 스냅샷 누적 + WhatsApp 일일/월간 발송(5분 체크)
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {
