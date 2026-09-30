@@ -3,7 +3,9 @@
 //
 //   ERP 계정과 분리된 **열람 전용** 계정(survey_viewers). 아이디+비밀번호로 로그인하면
 //   허락된 설문을 ERP 분석 리포트와 같게 본다(읽기 전용): 집계·AI 요약(스페인어)·응답 목록·설문지 원본 이미지.
-//   화면: mx_survey_analysis.html (스페인어).
+//   화면: REFATRIX Platform 의 survey.html (원본 refatrix-api/templates/survey_platform.html · 스페인어).
+//   ── 2026-09-30 디렉터 결정 ── erp.refatrix.com 의 열람 페이지(mx_survey_analysis.html)와 아이디·비밀번호 열람 계정은 닫는다
+//      (회사 밖에 ERP 주소가 알려지지 않게). 열람은 **플랫폼 로그인으로만** — 계정 로그인·계정 토큰·계정 만들기는 410/401.
 //   ── 2026-09-30 디렉터 결정 ── 응답 목록은 ERP 와 동일하게 공개 — 이름·상호·전화·붉은 번호·원본 이미지 포함.
 //
 //   ── 보안 ──
@@ -20,6 +22,7 @@ import { buildPublicSurveyData } from './surveyPublic.js';
 import { pageFileName, extractJson, clip } from './surveyAi.js';
 
 export const SV_TYP = 'survey_viewer';
+const VIEWER_ACCOUNTS_CLOSED = true;                    // 2026-09-30 — 열람은 REFATRIX Platform 로그인으로만
 
 // ── REFATRIX Platform (refatrix-platform.netlify.app · Supabase) 로그인으로 열람 (2026-09-30) ──
 //   플랫폼 세션 토큰(uuid)을 받아 **플랫폼 서버에 직접** 확인한다 — 플랫폼 RPC app_log 는 토큰이 유효하지 않으면
@@ -88,6 +91,7 @@ async function viewerGuard(req, reply) {
     req.viewer = { id: null, login: 'platform', name: String(u.name || 'REFATRIX Platform'), surveyIds: await platformSurveyIds(), pf: true };
     return;
   }
+  if (VIEWER_ACCOUNTS_CLOSED) return reply.code(401).send({ error: 'unauthorized' });   // 아이디·비밀번호 계정 토큰은 더 이상 받지 않는다
   const vid = idOf(String(u.sub || '').replace(/^sv:/, ''));
   const v = vid && (await query(`SELECT id, login, name, survey_ids, active, token_version FROM survey_viewers WHERE id=$1`, [vid])).rows[0];
   if (!v || !v.active || Number(v.token_version) !== Number(u.tv)) return reply.code(401).send({ error: 'unauthorized' });
@@ -165,6 +169,7 @@ export default async function surveyViewerRoutes(app, deps = {}) {
   const ai = deps.ai || null;
   // ───────── 열람자(외부) ─────────
   app.post('/api/survey-viewer/login', async (req, reply) => {
+    if (VIEWER_ACCOUNTS_CLOSED) return reply.code(410).send({ error: 'viewer_login_closed' });
     const b = req.body || {};
     const login = cleanLogin(b.login);
     const pass = String(b.password == null ? '' : b.password);
@@ -295,6 +300,7 @@ export default async function surveyViewerRoutes(app, deps = {}) {
   });
 
   app.post('/api/surveys/viewers', admin, async (req, reply) => {
+    if (VIEWER_ACCOUNTS_CLOSED) return reply.code(410).send({ error: 'viewer_login_closed' });
     const b = req.body || {};
     const login = cleanLogin(b.login);
     if (!LOGIN_RE.test(login)) return reply.code(400).send({ error: 'bad_login' });

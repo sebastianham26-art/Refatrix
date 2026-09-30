@@ -1,16 +1,14 @@
-// 고객 설문 — 외부 열람 계정 + 스페인어 결과 페이지 (2026-09-30, build 20260930sv8)
-//   sv8: ERP 분석 리포트와 동일 — AI 요약(스페인어 번역 캐시)·서술형 주제·응답 목록·원본 이미지 · 헤더 링크 제거
+// 고객 설문 — REFATRIX Platform 로그인으로만 열람 (2026-09-30, build 20260930sv10)
 //
 //   실행: TEST_PG_URL=postgres://... NODE_ENV=test node --test test/survey_public.test.mjs
 //   (C 는 TEST_PG_URL, B·D 는 jsdom 이 있어야 돈다)
 //
 //   못 박는 것
-//     · 익명 데이터: 기재정보(이름·상호·전화)·서술형 원문·붉은 번호·손글씨 원문이 **응답에 없다**
-//     · 열람 토큰으로 ERP API 는 401 · 허락 안 한 설문 404 · 정지/비밀번호 재발급 → 기존 토큰 즉시 401
-//     · 5회 실패 → 잠금(429) · 없는 아이디와 틀린 비밀번호는 같은 응답 · 계정 관리는 디렉터만
-//     · 결과 페이지: 로그인 → 스페인어 렌더(한글 0자) · 세션 만료 → 로그인 화면 · 데이터 파일(mx_survey_data.js) 안 씀
-//     · ERP: 디렉터에게만 [🔐 외부 열람 계정], 만들면 스페인어 안내문(주소·아이디·비밀번호)
-
+//     · 익명 집계 빌더(A) · 플랫폼 화면(templates/survey_platform.html = Netlify survey.html):
+//       플랫폼 세션으로 자동 열람 · 리포트·AI 요약·서술형·응답 목록·원본 이미지(토큰) · 헤더 링크 0 · 한글 0자 · 세션 없으면 안내 · 401 재확인
+//     · 서버: 플랫폼 세션 확인 · 공개 설문만 · 끄면 즉시 404 · ERP API 401 · AI 요약 스페인어 번역 캐시 · 다른 설문 이미지 404
+//     · 닫힘(디렉터 결정): erp 의 mx_survey_analysis.html → 플랫폼으로 이동 · 아이디/비밀번호 로그인 410 · 계정 토큰 401 · 계정 만들기 410
+//     · ERP: 디렉터에게만 [🌐 플랫폼 공개] — 설문별 공개 체크만
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -19,6 +17,7 @@ const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'testsecret';
 process.env.NODE_ENV = 'test';
+process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'test-key';
 
 const REPO = new URL('../../', import.meta.url);
 const read = (f) => readFileSync(new URL(f, REPO), 'utf8');
@@ -65,8 +64,10 @@ test('A. 익명 데이터 — 기재정보·원문·번호 없음, 문항 구성
   assert.deepEqual(D.themes, [{ title: 'Comentarios', basis: 2, items: [{ name: 'Precio', count: 1 }, { name: 'Entrega', count: 1 }] }]);
 });
 
-// ── B. 결과 페이지 (jsdom) ──────────────────────────────────────────
-async function openPage({ loginOk = true, dataStatus = 200, stored = null } = {}) {
+
+// ── B. 플랫폼 안 결과 화면 (jsdom) ─────────────────────────────────────
+const TPL = () => read('refatrix-api/templates/survey_platform.html');
+async function openPlatformPage({ sess, first401 = false } = {}) {
   const { buildPublicSurveyData } = await import('../src/surveyPublic.js');
   const DATA = buildPublicSurveyData({ title: 'RUJAC_01', survey_date: '2026-09-14', questions: QUESTIONS }, PAGES, { uploaded: 5 });
   DATA.all_questions = QUESTIONS.map(({ ko, ...q }) => q);
@@ -74,108 +75,85 @@ async function openPage({ loginOk = true, dataStatus = 200, stored = null } = {}
     mime: 'image/jpeg', has_view: true, has_thumb: true, answers: p.answers, others: {}, geo: p.geo || {}, low_conf: i === 2 ? ['q12'] : [] }));
   DATA.ai = { generated_at: '2026-09-30T10:00:00Z', translated: true, bullets: ['Los mecánicos valoran la calidad (muestra pequeña).'],
     themes: { q11: [{ name: 'Precio', summary: 'Piden mejores precios.', ids: [1] }, { name: 'Entrega', summary: 'Quieren entrega rápida.', ids: [3] }] } };
-  const log = [];
-  const dom = new JSDOM(read('mx_survey_analysis.html'), {
-    url: 'https://erp.refatrix.com/mx_survey_analysis.html', runScripts: 'dangerously', pretendToBeVisual: true,
+  const log = []; let n401 = first401 ? 1 : 0;
+  const dom = new JSDOM(TPL(), { url: 'https://refatrix-platform.netlify.app/survey.html', runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(w) {
       w.URL.createObjectURL = () => 'blob:x'; w.URL.revokeObjectURL = () => {};
-      if (stored) w.sessionStorage.setItem('rfx_survey_viewer', JSON.stringify(stored));
+      if (sess) w.sessionStorage.setItem('rfx_sess', JSON.stringify(sess));
       w.fetch = async (url, opt = {}) => {
-        const u = String(url); log.push({ u, opt });
+        const u = String(url); log.push({ u, body: opt.body, auth: opt.headers && opt.headers.Authorization });
+        if (/\/api\/survey-viewer\/pages\/\d+\/(thumb|view|file)$/.test(u)) return { ok: true, status: 200, blob: async () => new w.Blob(['x'], { type: 'image/jpeg' }), json: async () => ({}) };
         let status = 200; let body = {};
-        if (u.endsWith('/api/survey-viewer/login')) {
-          const b = JSON.parse(opt.body);
-          if (loginOk && b.login === 'dev.juan' && b.password === 'Secreto123') body = { token: 'tok', name: 'Juan', surveys: [{ id: 2, title: 'RUJAC_01', date: '2026-09-14' }] };
-          else { status = 401; body = { error: 'invalid_credentials' }; }
-        } else if (u.endsWith('/api/survey-viewer/surveys')) body = { name: 'Juan', surveys: [{ id: 2, title: 'RUJAC_01', date: '2026-09-14' }] };
-        else if (u.endsWith('/api/survey-viewer/surveys/2')) { status = dataStatus; body = dataStatus === 200 ? DATA : { error: 'unauthorized' }; }
-        else if (/\/api\/survey-viewer\/pages\/\d+\/(thumb|view|file)$/.test(u)) return { ok: true, status: 200, blob: async () => new w.Blob(['x'], { type: 'image/jpeg' }), json: async () => ({}) };
+        if (u.endsWith('/platform-login')) body = { token: 'erp-tok-' + log.length, name: 'Kim CTR', surveys: [{ id: 2, title: 'RUJAC_01', date: '2026-09-14' }] };
+        else if (u.endsWith('/api/survey-viewer/surveys')) body = { name: 'Kim CTR', surveys: [{ id: 2, title: 'RUJAC_01', date: '2026-09-14' }] };
+        else if (u.endsWith('/surveys/2')) { if (n401 > 0) { n401--; status = 401; body = { error: 'unauthorized' }; } else body = DATA; }
         return { ok: status < 400, status, json: async () => body };
       };
-    },
-  });
-  await wait(30);
+    } });
+  await wait(80);
   return { w: dom.window, d: dom.window.document, log };
 }
-async function submit(d, w, user, pass) {
-  d.getElementById('lgUser').value = user; d.getElementById('lgPass').value = pass;
-  d.getElementById('loginForm').dispatchEvent(new w.Event('submit', { cancelable: true }));
-  await wait(60);
-}
+const SESS = { t: 'aaaaaaaa-1111-2222-3333-444444444444', u: { name: 'Kim CTR' }, e: Date.now() + 3600e3 };
 
-jt('B1. 로그인 전에는 로그인 화면만 · 틀리면 스페인어 오류 · 맞으면 스페인어 결과(한글 0자)', async () => {
-  const { w, d, log } = await openPage();
-  assert.ok(!d.getElementById('login').classList.contains('hidden'));
-  assert.match(d.body.textContent, /Acceso a resultados de encuesta/);
-  assert.ok(!log.some((x) => x.u.includes('/surveys/')), '로그인 전 데이터 요청 없음');
-  assert.ok(!read('mx_survey_analysis.html').includes('mx_survey_data.js'), '공개 데이터 파일을 읽지 않는다');
-  await submit(d, w, 'dev.juan', 'mal');
-  assert.match(d.getElementById('lgMsg').textContent, /Usuario o contraseña incorrectos/);
-  await submit(d, w, 'dev.juan', 'Secreto123');
-  assert.ok(d.getElementById('login').classList.contains('hidden'));
-  const dataReq = log.find((x) => x.u.endsWith('/api/survey-viewer/surveys/2'));
-  assert.equal(dataReq.opt.headers.Authorization, 'Bearer tok');
-  assert.ok(dataReq.u.startsWith('https://refatrix-production.up.railway.app/'), 'API 주소 고정');
-  const t = d.body.textContent;
-  assert.match(t, /Encuesta de clientes · RUJAC_01/);
-  assert.match(t, /Respuestas analizadas/); assert.match(t, /Ubicación del cliente \(escrita a mano\)/);
-  assert.equal(d.querySelectorAll('svg.map path').length, 32);
-  assert.match(t, /Comparación por segmento/);
-  // AI 요약(스페인어)·서술형 주제+요약+인용
-  assert.match(t, /Resumen IA/); assert.match(t, /Los mecánicos valoran la calidad/);
-  assert.match(t, /Comentarios abiertos/); assert.match(t, /Piden mejores precios/); assert.match(t, /llamen a Juan/);
-  // 헤더에는 다른 링크가 없다
+jt('B1. 플랫폼 세션으로 자동 열람 — 리포트·AI 요약·서술형·응답 목록·원본 이미지 · 헤더 링크 0 · 한글 0자', async () => {
+  const { w, d, log } = await openPlatformPage({ sess: SESS });
+  const pl = log.find((x) => x.u.endsWith('/platform-login'));
+  assert.deepEqual(JSON.parse(pl.body), { token: SESS.t, name: 'Kim CTR' });
+  assert.ok(pl.u.startsWith('https://refatrix-production.up.railway.app/'), 'API 주소 고정');
+  assert.ok(d.getElementById('login').classList.contains('hidden'), '별도 로그인 화면 없음');
+  assert.ok(d.getElementById('btnOut').classList.contains('hidden'), '로그아웃은 플랫폼에서');
   assert.equal(d.querySelectorAll('header a').length, 0, '헤더 링크 없음');
-  assert.ok(!/mx_coverage_map|mx_dev_projects|mx_parts_coverage_dashboard/.test(read('mx_survey_analysis.html')), '다른 페이지로 가는 링크 없음');
-  assert.match(d.getElementById('who').textContent, /Juan/);
+  const t = d.body.textContent;
+  assert.match(t, /Encuesta de clientes · RUJAC_01/); assert.match(t, /Respuestas analizadas/);
+  assert.equal(d.querySelectorAll('svg.map path').length, 32);
+  assert.match(t, /Resumen IA/); assert.match(t, /Los mecánicos valoran la calidad/);
+  assert.match(t, /Piden mejores precios/); assert.match(t, /llamen a Juan/);
   assert.ok(!HANGUL.test(d.documentElement.outerHTML.replace(/<script[\s\S]*?<\/script>/g, '')), '화면에 한글 없음');
-  assert.ok(!HANGUL.test(read('mx_survey_analysis.html')), '파일에 한글 없음');
-  // 응답 목록 탭 → 상세(원본 이미지는 인증 요청)
-  d.querySelector('[data-tab="resp"]').click(); await wait(30);
-  assert.match(d.body.textContent, /Juan Pérez/); assert.match(d.body.textContent, /81-1111-2222/); assert.match(d.body.textContent, /RUJAC_0101\.jpg/);
-  assert.match(d.body.textContent, /En cola/);
-  const rF = d.getElementById('rF'); rF.value = 'flag'; rF.dispatchEvent(new w.Event('change'));
-  assert.equal(d.querySelectorAll('tr[data-r]').length, 1, '확신 낮음 1건');
-  rF.value = ''; rF.dispatchEvent(new w.Event('change'));
-  const rQ = d.getElementById('rQ'); rQ.value = 'ruiz'; rQ.dispatchEvent(new w.Event('input'));
-  assert.equal(d.querySelectorAll('tr[data-r]').length, 1, '검색');
-  d.querySelector('tr[data-r]').click(); await wait(40);
-  assert.ok(d.getElementById('drawer').classList.contains('on'));
-  assert.match(d.getElementById('drawer').textContent, /Refacciones Ruiz/);
-  assert.ok(d.querySelector('#dImg img'), '원본 이미지 표시');
-  const viewReq = log.find((x) => /\/pages\/2\/view$/.test(x.u));
-  assert.ok(viewReq && viewReq.opt.headers.Authorization === 'Bearer tok', '이미지도 토큰으로');
-  assert.ok(!HANGUL.test(d.documentElement.outerHTML.replace(/<script[\s\S]*?<\/script>/g, '')), '응답 탭에도 한글 없음');
-  d.getElementById('dX').click();
-  d.querySelector('[data-tab="rep"]').click(); await wait(20);
+  assert.ok(!HANGUL.test(TPL()), '파일에 한글 없음');
   // 필터
   const fSeg = d.getElementById('fSeg'); fSeg.value = 'q4'; fSeg.dispatchEvent(new w.Event('change'));
   const fVal = d.getElementById('fVal'); fVal.value = 'Mecánico / Técnico'; fVal.dispatchEvent(new w.Event('change'));
   assert.equal(d.querySelector('.kpi .v').textContent, '2');
-  // 로그아웃
-  d.getElementById('btnOut').click();
-  assert.ok(!d.getElementById('login').classList.contains('hidden'));
-  assert.equal(w.sessionStorage.getItem('rfx_survey_viewer'), null);
+  d.getElementById('fClear').click();
+  // 응답 목록 → 상세
+  d.querySelector('[data-tab="resp"]').click(); await wait(30);
+  assert.match(d.body.textContent, /Juan Pérez/); assert.match(d.body.textContent, /RUJAC_0101\.jpg/);
+  const rQ = d.getElementById('rQ'); rQ.value = 'ruiz'; rQ.dispatchEvent(new w.Event('input'));
+  assert.equal(d.querySelectorAll('tr[data-r]').length, 1);
+  d.querySelector('tr[data-r]').click(); await wait(40);
+  assert.ok(d.getElementById('drawer').classList.contains('on'));
+  assert.ok(d.querySelector('#dImg img'), '원본 이미지');
+  const viewReq = log.find((x) => /\/pages\/2\/view$/.test(x.u));
+  assert.match(viewReq.auth || '', /^Bearer erp-tok-/, '이미지도 열람 토큰으로');
   w.close();
 });
 
-jt('B2. 세션이 끝났거나 계정이 정지되면(401) 로그인 화면으로', async () => {
-  const { w, d } = await openPage({ stored: { token: 'old', name: 'Juan', surveys: [] }, dataStatus: 401 });
-  await wait(60);
-  assert.ok(!d.getElementById('login').classList.contains('hidden'));
-  assert.match(d.getElementById('lgMsg').textContent, /Tu sesión terminó/);
-  assert.equal(d.getElementById('app').textContent, '');
-  w.close();
+jt('B2. 플랫폼 세션이 없으면 안내만(ERP 호출 없음) · 열람 토큰 401 이면 플랫폼 세션으로 다시 받아 이어서', async () => {
+  const a = await openPlatformPage({});
+  assert.match(a.d.body.textContent, /Inicia sesión en REFATRIX Platform/);
+  assert.equal(a.d.querySelector('#app a').getAttribute('href'), '/');
+  assert.equal(a.log.length, 0);
+  a.w.close();
+  const b = await openPlatformPage({ sess: { ...SESS, e: Date.now() - 1000 } });
+  assert.match(b.d.body.textContent, /Inicia sesión en REFATRIX Platform/, '만료된 플랫폼 세션');
+  assert.equal(b.log.length, 0);
+  b.w.close();
+  const c = await openPlatformPage({ sess: SESS, first401: true });
+  assert.equal(c.log.filter((x) => x.u.endsWith('/platform-login')).length, 2);
+  assert.match(c.d.body.textContent, /Respuestas analizadas/);
+  c.w.close();
 });
 
 // ── C. 실 DB 종단 ───────────────────────────────────────────────────
-dbTest('C. 열람 계정 — 만들기·로그인·익명 데이터·ERP 차단·설문 제한·정지/재발급·잠금·디렉터 전용 (실 DB)', async (t) => {
+dbTest('C. 플랫폼 세션 → 열람 · 공개 설문만 · 번역 캐시 · 이미지 · ERP 차단 · 아이디/비밀번호 경로 닫힘 (실 DB)', async (t) => {
   const { query, pool } = await import('../src/db.js');
   const Fastify = (await import('fastify')).default;
   const fastifyJwt = (await import('@fastify/jwt')).default;
   const R = await import('../src/routes/surveyRoutes.js');
+  const V = await import('../src/surveyViewer.js');
+  const seen = [];
+  V.platformApi.check = async (tok) => { seen.push(tok); return tok.startsWith('aaaaaaaa') ? { ok: true } : tok.startsWith('eeeeeeee') ? { ok: false, error: 'platform_timeout' } : { ok: false, invalid: true }; };
   let aiCalls = 0;
-  process.env.ANTHROPIC_API_KEY = 'test-key';
   R.surveyAiApi.call = async (content) => {
     const text = content.find((b) => b.type === 'text').text;
     if (text.includes('Traduce al español')) { aiCalls++; return { ok: true, text: JSON.stringify({ bullets: ['Resumen en español.'], themes: { q11: ['Buenos precios.'] } }) }; }
@@ -185,8 +163,7 @@ dbTest('C. 열람 계정 — 만들기·로그인·익명 데이터·ERP 차단�
   app.register(fastifyJwt, { secret: process.env.JWT_SECRET, sign: { expiresIn: '1h' } });
   app.register(R.default);
   await app.ready();
-
-  const TAG = 'VW' + String(Date.now()).slice(-6);
+  const TAG = 'PF' + String(Date.now()).slice(-6);
   const mk = async (name, role) => Number((await query(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,$2,'x',$3) RETURNING id`, [name + TAG, role, (name + TAG).toLowerCase()])).rows[0].id);
   const dir = await mk('Dir', 'director');
   const mkt = await mk('Mkt', 'marketing');
@@ -199,115 +176,89 @@ dbTest('C. 열람 계정 — 만들기·로그인·익명 데이터·ERP 차단�
     seq++;
     await query(`INSERT INTO survey_pages (survey_id, seq, mime, file_data, file_sha, status, answers, geo, red_number, uploaded_by)
                  VALUES ($1,$2,'image/jpeg',$3,$4,$5,$6,$7,$8,$9)`,
-    [s1, seq, Buffer.from([0xFF, 0xD8, 0xFF, seq]), TAG + seq, p.status, p.answers ? JSON.stringify(p.answers) : null, JSON.stringify(p.geo || {}), '01' + String(seq).padStart(2, '0'), dir]).catch(async (e) => {
-      throw new Error('insert page: ' + e.message);
-    });
+    [s1, seq, Buffer.from([0xFF, 0xD8, 0xFF, seq]), TAG + seq, p.status, p.answers ? JSON.stringify(p.answers) : null, JSON.stringify(p.geo || {}), '01' + String(seq).padStart(2, '0'), dir]);
   }
+  const other = Number((await query(`INSERT INTO survey_pages (survey_id, seq, mime, file_data, status, uploaded_by) VALUES ($1,1,'image/jpeg',$2,'done',$3) RETURNING id`, [s2, Buffer.from([0xFF, 0xD8, 0xFF, 9]), dir])).rows[0].id);
   t.after(async () => {
-    await query(`DELETE FROM survey_viewers WHERE login LIKE $1`, ['%' + TAG.toLowerCase() + '%']).catch(() => {});
     await query(`DELETE FROM survey_pages WHERE survey_id = ANY($1::bigint[])`, [[s1, s2]]).catch(() => {});
     await query(`DELETE FROM surveys WHERE id = ANY($1::bigint[])`, [[s1, s2]]).catch(() => {});
+    await query(`DELETE FROM survey_viewers WHERE login LIKE $1`, ['%' + TAG.toLowerCase() + '%']).catch(() => {});
     await query(`DELETE FROM audit_log WHERE user_id = ANY($1::bigint[])`, [[dir, mkt]]).catch(() => {});
     await query(`DELETE FROM user_page_access WHERE user_id = ANY($1::bigint[])`, [[dir, mkt]]);
     await query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [[dir, mkt]]);
-    await app.close();   // pool 은 F1 이 닫는다(같은 파일)
+    await app.close(); await pool.end();
   });
   const call = async (token, method, url, payload) => {
     const r = await app.inject({ method, url, headers: token ? { authorization: 'Bearer ' + token } : {}, payload });
     let j = null; try { j = r.json(); } catch (_) {}
-    return { code: r.statusCode, j, raw: r.payload };
+    return { code: r.statusCode, j, raw: r.payload, headers: r.headers };
   };
   const erp = (uid) => app.jwt.sign({ sub: uid });
-  const login = 'dev.' + TAG.toLowerCase();
+  const GOOD = 'aaaaaaaa-1111-2222-3333-444444444444';
 
-  // 관리 — 디렉터만 · 검증
-  assert.equal((await call(erp(mkt), 'GET', '/api/surveys/viewers')).code, 403, '마케팅 편집권한이어도 디렉터가 아니면 403');
-  assert.equal((await call(erp(dir), 'POST', '/api/surveys/viewers', { login: 'A B', password: 'Secreto123', survey_ids: [s1] })).j.error, 'bad_login');
-  assert.equal((await call(erp(dir), 'POST', '/api/surveys/viewers', { login, password: 'corta1', survey_ids: [s1] })).j.error, 'password_short');
-  assert.equal((await call(erp(dir), 'POST', '/api/surveys/viewers', { login, password: 'soloLetras', survey_ids: [s1] })).j.error, 'password_weak');
-  const cr = await call(erp(dir), 'POST', '/api/surveys/viewers', { login: login.toUpperCase(), name: 'Juan · Prov', password: 'Secreto123', survey_ids: [s1] });
-  assert.equal(cr.code, 200, cr.raw); assert.equal(cr.j.item.login, login); assert.deepEqual(cr.j.item.survey_ids, [s1]);
-  assert.ok(!cr.raw.includes('Secreto123') && !cr.raw.includes('pass_hash'), '비밀번호·해시는 돌려주지 않는다');
-  assert.equal((await call(erp(dir), 'POST', '/api/surveys/viewers', { login, password: 'Secreto123' })).code, 409);
-  const vid = cr.j.item.id;
+  // 플랫폼 세션 확인
+  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'no-uuid' })).code, 401);
+  assert.equal(seen.length, 0, 'uuid 아니면 플랫폼에 묻지도 않음');
+  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'bbbbbbbb-1111-2222-3333-444444444444' })).j.error, 'platform_session_invalid');
+  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'eeeeeeee-1111-2222-3333-444444444444' })).code, 502);
 
-  // 로그인
-  const bad = await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Nope12345' });
-  const ghost = await call(null, 'POST', '/api/survey-viewer/login', { login: 'nadie.' + TAG.toLowerCase(), password: 'Nope12345' });
-  assert.equal(bad.code, 401); assert.deepEqual(ghost.j, bad.j, '없는 아이디와 틀린 비밀번호는 같은 응답');
-  const lg = await call(null, 'POST', '/api/survey-viewer/login', { login: '  ' + login.toUpperCase() + ' ', password: 'Secreto123' });
-  assert.equal(lg.code, 200, lg.raw); assert.deepEqual(lg.j.surveys.map((x) => x.id), [s1]);
+  // 공개 설정 — 디렉터만
+  assert.equal((await call(erp(mkt), 'PATCH', `/api/surveys/${s1}/platform`, { visible: true })).code, 403);
+  assert.equal((await call(erp(mkt), 'GET', '/api/surveys/viewers')).code, 403);
+  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/${s1}/platform`, { visible: true })).j.visible, true);
+  const adm = await call(erp(dir), 'GET', '/api/surveys/viewers');
+  assert.equal(adm.j.platform.find((x) => x.id === s1).visible, true);
+  assert.equal(adm.j.platform.find((x) => x.id === s2).visible, false);
+
+  const lg = await call(null, 'POST', '/api/survey-viewer/platform-login', { token: GOOD, name: 'Kim CTR' });
+  assert.equal(lg.code, 200); assert.equal(lg.j.name, 'Kim CTR');
+  assert.deepEqual(lg.j.surveys.map((x) => x.id).filter((id) => id === s1 || id === s2), [s1]);
   const tok = lg.j.token;
 
-  // 데이터 — ERP 와 동일(디렉터 결정): 응답 목록에 이름·전화·번호, AI 요약은 스페인어로 한 번 번역해 캐시
+  // 데이터 — ERP 와 동일(응답 목록 포함) · 한국어 필드 없음 · AI 요약 번역 캐시
   const dd = await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`);
   assert.equal(dd.code, 200, dd.raw);
-  assert.equal(dd.j.rows.length, 4); assert.equal(dd.j.uploaded, 5);
-  assert.equal(dd.j.responses.length, 5);
+  assert.equal(dd.j.rows.length, 4); assert.equal(dd.j.uploaded, 5); assert.equal(dd.j.responses.length, 5);
   const r1 = dd.j.responses.find((r) => r.folio === '0101');
   assert.equal(r1.answers.q1, 'Juan Pérez'); assert.equal(r1.file_name, 'RUJAC_0101.jpg');
-  assert.ok(!('ko' in dd.j.all_questions[0]), '한국어 번역 필드는 보내지 않는다');
-  assert.ok(!HANGUL.test(JSON.stringify({ q: dd.j.all_questions, ai: dd.j.ai })), '문항·AI 요약에 한글 없음');
-  assert.deepEqual(dd.j.ai.bullets, ['Resumen en español.']);
-  assert.equal(dd.j.ai.themes.q11[0].name, 'Precio'); assert.equal(dd.j.ai.themes.q11[0].summary, 'Buenos precios.');
+  assert.ok(!('ko' in dd.j.all_questions[0]));
+  assert.ok(!HANGUL.test(JSON.stringify({ q: dd.j.all_questions, ai: dd.j.ai })));
+  assert.deepEqual(dd.j.ai.bullets, ['Resumen en español.']); assert.equal(dd.j.ai.themes.q11[0].summary, 'Buenos precios.');
   assert.equal(aiCalls, 1);
   await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`);
-  assert.equal(aiCalls, 1, '번역은 캐시 — 두 번째 열람은 AI 호출 없음');
+  assert.equal(aiCalls, 1, '두 번째 열람은 AI 호출 없음');
   await query(`UPDATE surveys SET ai_cache = jsonb_set(ai_cache, '{generated_at}', '"2026-10-01T00:00:00Z"') WHERE id=$1`, [s1]);
   await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`);
   assert.equal(aiCalls, 2, 'ERP 에서 요약을 다시 만들면 다시 번역');
-  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s2}`)).code, 404, '허락 안 한 설문');
-  // 원본 이미지 — 허락된 설문 페이지만
+
+  // 원본 이미지
   const p1 = dd.j.responses[0].id;
-  const img = await app.inject({ method: 'GET', url: `/api/survey-viewer/pages/${p1}/view`, headers: { authorization: 'Bearer ' + tok } });
-  assert.equal(img.statusCode, 200); assert.equal(img.headers['content-type'], 'image/jpeg');
-  const fl = await app.inject({ method: 'GET', url: `/api/survey-viewer/pages/${p1}/file`, headers: { authorization: 'Bearer ' + tok } });
-  assert.match(fl.headers['content-disposition'], /RUJAC_0101\.jpg/);
-  const other = Number((await query(`INSERT INTO survey_pages (survey_id, seq, mime, file_data, status, uploaded_by) VALUES ($1,1,'image/jpeg',$2,'done',$3) RETURNING id`, [s2, Buffer.from([0xFF, 0xD8, 0xFF, 9]), dir])).rows[0].id);
-  await call(erp(dir), 'PATCH', `/api/surveys/viewers/${vid}`, { survey_ids: [s1] });
-  assert.equal((await call(tok, 'GET', `/api/survey-viewer/pages/${other}/view`)).code, 404, '다른 설문 페이지 이미지 불가');
-  assert.equal((await call(erp(dir), 'GET', `/api/survey-viewer/pages/${p1}/view`)).code, 401, 'ERP 토큰으로 열람 이미지 API 불가');
+  const img = await call(tok, 'GET', `/api/survey-viewer/pages/${p1}/view`);
+  assert.equal(img.code, 200); assert.equal(img.headers['content-type'], 'image/jpeg');
+  assert.match((await call(tok, 'GET', `/api/survey-viewer/pages/${p1}/file`)).headers['content-disposition'], /RUJAC_0101\.jpg/);
+  assert.equal((await call(tok, 'GET', `/api/survey-viewer/pages/${other}/view`)).code, 404, '공개 안 한 설문의 이미지');
+  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s2}`)).code, 404);
+  assert.equal((await call(erp(dir), 'GET', `/api/survey-viewer/pages/${p1}/view`)).code, 401, 'ERP 토큰으로 열람 API 불가');
 
   // ERP 는 열리지 않는다
-  for (const u of ['/api/surveys', `/api/surveys/${s1}`, `/api/surveys/${s1}/pages`, '/api/surveys/viewers']) {
-    assert.equal((await call(tok, 'GET', u)).code, 401, 'ERP 차단: ' + u);
-  }
-  assert.equal((await call(erp(dir), 'GET', '/api/survey-viewer/surveys')).code, 401, 'ERP 토큰으로 열람 API 불가');
+  for (const u of ['/api/surveys', `/api/surveys/${s1}`, `/api/surveys/${s1}/pages`, '/api/surveys/viewers']) assert.equal((await call(tok, 'GET', u)).code, 401, 'ERP 차단: ' + u);
 
-  // 설문 권한 변경 → 즉시 반영
-  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/viewers/${vid}`, { survey_ids: [s1, s2] })).code, 200);
-  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s2}`)).code, 200);
+  // 아이디·비밀번호 경로는 닫혔다
+  assert.equal((await call(null, 'POST', '/api/survey-viewer/login', { login: 'x', password: 'Secreto123' })).code, 410);
+  assert.equal((await call(erp(dir), 'POST', '/api/surveys/viewers', { login: 'dev.' + TAG.toLowerCase(), password: 'Secreto123', survey_ids: [s1] })).code, 410);
+  const vid = Number((await query(`INSERT INTO survey_viewers (login, pass_hash, survey_ids) VALUES ($1,'x:00',$2::bigint[]) RETURNING id`, ['old.' + TAG.toLowerCase(), [s1]])).rows[0].id);
+  const forged = app.jwt.sign({ sub: 'sv:' + vid, typ: 'survey_viewer', tv: 1 });
+  assert.equal((await call(forged, 'GET', `/api/survey-viewer/surveys/${s1}`)).code, 401, '예전 계정 토큰은 무효');
 
-  // 비밀번호 재발급 → 기존 토큰 무효
-  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/viewers/${vid}`, { password: 'Nuevo4567x' })).code, 200);
-  assert.equal((await call(tok, 'GET', '/api/survey-viewer/surveys')).code, 401, '재발급 후 기존 토큰 무효');
-  assert.equal((await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Secreto123' })).code, 401);
-  const tok2 = (await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Nuevo4567x' })).j.token;
-  assert.ok(tok2);
-
-  // 정지 → 즉시 무효, 재개 → 다시 로그인 가능
-  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/viewers/${vid}`, { active: false })).code, 200);
-  assert.equal((await call(tok2, 'GET', '/api/survey-viewer/surveys')).code, 401);
-  assert.equal((await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Nuevo4567x' })).code, 401);
-  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/viewers/${vid}`, { active: true })).code, 200);
-
-  // 5회 실패 → 잠금(맞는 비밀번호도 429) → 디렉터 잠금 해제
-  for (let i = 0; i < 5; i++) await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Mal12345' + i });
-  const lk = await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Nuevo4567x' });
-  assert.equal(lk.code, 429); assert.equal(lk.j.error, 'locked');
-  assert.equal((await call(erp(dir), 'GET', '/api/surveys/viewers')).j.items.find((x) => x.id === vid).locked, true);
-  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/viewers/${vid}`, { unlock: true })).code, 200);
-  assert.equal((await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Nuevo4567x' })).code, 200);
-
-  // 삭제
-  assert.equal((await call(erp(dir), 'DELETE', `/api/surveys/viewers/${vid}`)).code, 200);
-  assert.equal((await call(null, 'POST', '/api/survey-viewer/login', { login, password: 'Nuevo4567x' })).code, 401);
+  // 공개를 끄면 이미 받은 토큰으로도 바로 막힌다
+  await call(erp(dir), 'PATCH', `/api/surveys/${s1}/platform`, { visible: false });
+  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`)).code, 404);
 });
 
-// ── D. ERP 관리 화면 (jsdom) ────────────────────────────────────────
+// ── D. ERP 화면 (jsdom) ────────────────────────────────────────────
 async function openErp(role) {
   const log = [];
-  let items = [];
+  let pf = [{ id: 2, title: 'RUJAC_01', code_prefix: 'RUJAC', visible: false }];
   const dom = new JSDOM(read('refatrix-survey.html'), {
     url: 'https://erp.refatrix.com/refatrix-survey.html', runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(w) {
@@ -321,8 +272,8 @@ async function openErp(role) {
         if (u === '/api/surveys' && m === 'GET') body = { items: [{ id: 2, title: 'RUJAC_01', code_prefix: 'RUJAC', total: 5, done: 4 }] };
         else if (u === '/api/surveys/2') body = { id: 2, title: 'RUJAC_01', code_prefix: 'RUJAC', questions: QUESTIONS, counts: { total: 5, done: 4 }, can_edit: true, is_director: role === 'director', ai_ready: true };
         else if (u === '/api/surveys/2/pages') body = { items: [], counts: { total: 5, done: 4 }, ai_ready: true };
-        else if (u === '/api/surveys/viewers' && m === 'GET') body = { items };
-        else if (u === '/api/surveys/viewers' && m === 'POST') { const b = JSON.parse(opt.body); const it = { id: 9, login: b.login, name: b.name, active: true, survey_ids: b.survey_ids, locked: false }; items = [it]; body = { ok: true, item: it }; }
+        else if (u === '/api/surveys/viewers') body = { items: [], platform: pf };
+        else if (u === '/api/surveys/2/platform') { const v = JSON.parse(opt.body).visible; pf = [{ ...pf[0], visible: v }]; body = { ok: true, id: 2, visible: v }; }
         return { ok: true, status: 200, json: async () => body, blob: async () => new w.Blob([]) };
       };
     },
@@ -335,28 +286,19 @@ async function openErp(role) {
   return { w, d: w.document, log };
 }
 
-jt('D1. 디렉터: [🔐 외부 열람 계정] → 계정 만들기 → 스페인어 안내문(주소·아이디·비밀번호)', async () => {
+jt('D1. 디렉터: [🌐 플랫폼 공개] → 설문 체크 → PATCH · 계정 만들기·ERP 열람 주소 없음', async () => {
   const { w, d, log } = await openErp('director');
   const btn = d.getElementById('btnViewers');
-  assert.ok(!btn.classList.contains('hidden'));
-  assert.ok(!d.getElementById('btnPublish'), '공개 데이터 파일 내보내기는 없앴다');
+  assert.ok(!btn.classList.contains('hidden')); assert.match(btn.textContent, /플랫폼 공개/);
   btn.click(); await wait(60);
-  assert.ok(d.getElementById('vwDrawer').classList.contains('on'));
-  assert.match(d.getElementById('vwBody').textContent, /https:\/\/erp\.refatrix\.com\/mx_survey_analysis\.html/);
-  assert.match(d.getElementById('vwBody').textContent, /고객 이름·상호·전화가 그대로 보입니다/);
-  d.getElementById('vwLogin').value = 'Dev.Juan';
-  d.getElementById('vwName').value = 'Juan';
-  d.getElementById('vwGen').click();
-  const pass = d.getElementById('vwPass').value;
-  assert.ok(pass.length === 12 && /\d/.test(pass) && /[A-Za-z]/.test(pass), '자동 비밀번호: 12자 영문+숫자');
-  d.getElementById('vwCreate').click(); await wait(60);
-  const post = log.find((l) => l.startsWith('POST /api/surveys/viewers'));
-  const sent = JSON.parse(post.slice(post.indexOf('{')));
-  assert.equal(sent.login, 'dev.juan'); assert.equal(sent.password, pass); assert.deepEqual(sent.survey_ids, [2]);
-  const cred = d.getElementById('vwCred').textContent;
-  assert.match(cred, /Usuario: dev\.juan/); assert.ok(cred.includes('Contraseña: ' + pass));
-  assert.match(cred, /erp\.refatrix\.com\/mx_survey_analysis\.html/);
-  assert.match(d.getElementById('vwBody').textContent, /다시 볼 수 없습니다/);
+  const body = d.getElementById('vwBody');
+  assert.match(body.textContent, /refatrix-platform\.netlify\.app/);
+  assert.ok(!d.getElementById('vwLogin') && !d.getElementById('vwCreate'), '아이디·비밀번호 계정 만들기 없음');
+  assert.ok(!/mx_survey_analysis/.test(read('refatrix-survey.html')), 'ERP 열람 주소 없음');
+  const cb = body.querySelector('input[data-pf="2"]');
+  cb.checked = true; cb.dispatchEvent(new w.Event('change')); await wait(40);
+  assert.ok(log.some((l) => l.startsWith('PATCH /api/surveys/2/platform') && l.includes('"visible":true')));
+  assert.match(d.getElementById('vwBody').textContent, /플랫폼 공개 중/);
   w.close();
 });
 
@@ -366,117 +308,21 @@ jt('D2. 디렉터가 아니면 버튼이 없다', async () => {
   w.close();
 });
 
-test('E. 커버리지 사이트 링크 · 빌드 토큰', () => {
-  for (const f of ['mx_parts_coverage_dashboard.html', 'mx_coverage_map.html', 'mx_dev_projects.html']) {
-    assert.match(read(f), /href="mx_survey_analysis\.html">Encuesta de clientes ↗</, f);
-  }
-  assert.match(read('refatrix-survey.html'), /build 20260930sv9/);
+// ── E. 닫힌 ERP 주소 · 링크 · 빌드 ─────────────────────────────────────
+test('E. erp 의 mx_survey_analysis.html 은 플랫폼으로 이동만 · 커버리지 사이트 링크 없음 · 빌드 토큰', () => {
+  const stub = read('mx_survey_analysis.html');
+  assert.match(stub, /location\.replace\('https:\/\/refatrix-platform\.netlify\.app\/'\)/);
+  assert.match(stub, /http-equiv="refresh" content="0; url=https:\/\/refatrix-platform\.netlify\.app\/"/);
+  assert.ok(stub.length < 1200 && !/survey-viewer|railway|Encuesta/.test(stub), '데이터·API 흔적 없음');
+  for (const f of ['mx_parts_coverage_dashboard.html', 'mx_coverage_map.html', 'mx_dev_projects.html']) assert.ok(!read(f).includes('mx_survey_analysis'), f);
+  assert.match(read('refatrix-survey.html'), /build 20260930sv10/);
   assert.match(read('refatrix-api/src/middleware/authGuard.js'), /survey_viewer/);
 });
 
-// ── F. REFATRIX Platform 로그인으로 열람 (2026-09-30, sv9) ─────────────────
-dbTest('F1. 플랫폼 세션 → 열람 토큰 · 플랫폼 공개 설문만 · 끄면 즉시 차단 · 관리 디렉터 전용 (실 DB)', async (t) => {
-  const { query, pool } = await import('../src/db.js');
-  const Fastify = (await import('fastify')).default;
-  const fastifyJwt = (await import('@fastify/jwt')).default;
-  const R = await import('../src/routes/surveyRoutes.js');
-  const V = await import('../src/surveyViewer.js');
-  const seen = [];
-  V.platformApi.check = async (tok) => { seen.push(tok); return tok.startsWith('aaaaaaaa') ? { ok: true } : tok.startsWith('eeeeeeee') ? { ok: false, error: 'platform_timeout' } : { ok: false, invalid: true }; };
-  const app = Fastify({ logger: false });
-  app.register(fastifyJwt, { secret: process.env.JWT_SECRET, sign: { expiresIn: '1h' } });
-  app.register(R.default);
-  await app.ready();
-  const TAG = 'PF' + String(Date.now()).slice(-6);
-  const dir = Number((await query(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`, ['Dir' + TAG, ('dir' + TAG).toLowerCase()])).rows[0].id);
-  const mkt = Number((await query(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'marketing','x',$2) RETURNING id`, ['Mkt' + TAG, ('mkt' + TAG).toLowerCase()])).rows[0].id);
-  const s1 = Number((await query(`INSERT INTO surveys (title, code_prefix, questions, created_by) VALUES ($1,'PFA',$2,$3) RETURNING id`, ['A ' + TAG, JSON.stringify(QUESTIONS), dir])).rows[0].id);
-  const s2 = Number((await query(`INSERT INTO surveys (title, code_prefix, questions, created_by) VALUES ($1,'PFB',$2,$3) RETURNING id`, ['B ' + TAG, JSON.stringify(QUESTIONS), dir])).rows[0].id);
-  t.after(async () => {
-    await query(`DELETE FROM surveys WHERE id = ANY($1::bigint[])`, [[s1, s2]]).catch(() => {});
-    await query(`DELETE FROM audit_log WHERE user_id = ANY($1::bigint[])`, [[dir, mkt]]).catch(() => {});
-    await query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [[dir, mkt]]);
-    await app.close(); await pool.end();
-  });
-  const call = async (token, method, url, payload) => {
-    const r = await app.inject({ method, url, headers: token ? { authorization: 'Bearer ' + token } : {}, payload });
-    let j = null; try { j = r.json(); } catch (_) {}
-    return { code: r.statusCode, j };
-  };
-  const erp = (uid) => app.jwt.sign({ sub: uid });
-  const GOOD = 'aaaaaaaa-1111-2222-3333-444444444444';
-
-  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'no-uuid' })).code, 401, 'uuid 아님 → 플랫폼에 묻지도 않음');
-  assert.equal(seen.length, 0);
-  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'bbbbbbbb-1111-2222-3333-444444444444' })).j.error, 'platform_session_invalid');
-  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'eeeeeeee-1111-2222-3333-444444444444' })).code, 502, '플랫폼 응답 없음');
-
-  // 공개 설정 — 디렉터만
-  assert.equal((await call(erp(mkt), 'PATCH', `/api/surveys/${s1}/platform`, { visible: true })).code, 403);
-  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/${s1}/platform`, { visible: true })).j.visible, true);
-  const adm = await call(erp(dir), 'GET', '/api/surveys/viewers');
-  assert.equal(adm.j.platform.find((x) => x.id === s1).visible, true);
-  assert.equal(adm.j.platform.find((x) => x.id === s2).visible, false);
-
-  const lg = await call(null, 'POST', '/api/survey-viewer/platform-login', { token: GOOD, name: 'Kim CTR' });
-  assert.equal(lg.code, 200); assert.equal(lg.j.name, 'Kim CTR');
-  assert.ok(lg.j.surveys.some((x) => x.id === s1)); assert.ok(!lg.j.surveys.some((x) => x.id === s2));
-  const tok = lg.j.token;
-  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`)).code, 200);
-  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s2}`)).code, 404, '공개 안 한 설문');
-  for (const u of ['/api/surveys', `/api/surveys/${s1}`, '/api/surveys/viewers']) assert.equal((await call(tok, 'GET', u)).code, 401, 'ERP 차단: ' + u);
-  // 끄면 이미 받은 토큰으로도 바로 막힌다
-  await call(erp(dir), 'PATCH', `/api/surveys/${s1}/platform`, { visible: false });
-  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`)).code, 404);
-});
-
-jt('F2. 플랫폼 안 survey.html — 플랫폼 세션으로 자동 열람 · 세션 없으면 안내 · 401 이면 다시 확인', async () => {
-  const { buildPublicSurveyData } = await import('../src/surveyPublic.js');
-  const DATA = buildPublicSurveyData({ title: 'RUJAC_01', survey_date: '2026-09-14', questions: QUESTIONS }, PAGES, { uploaded: 5 });
-  DATA.all_questions = QUESTIONS.map(({ ko, ...q }) => q); DATA.responses = []; DATA.ai = null;
-  const html = read('mx_survey_analysis.html').replace('<html lang="es">', '<html lang="es" data-auth="platform">');
-  const run = async (sess, first401 = false) => {
-    const log = []; let n401 = first401 ? 1 : 0;
-    const dom = new JSDOM(html, { url: 'https://refatrix-platform.netlify.app/survey.html', runScripts: 'dangerously', pretendToBeVisual: true,
-      beforeParse(w) {
-        if (sess) w.sessionStorage.setItem('rfx_sess', JSON.stringify(sess));
-        w.fetch = async (url, opt = {}) => {
-          const u = String(url); log.push({ u, body: opt.body, auth: opt.headers && opt.headers.Authorization });
-          let status = 200; let body = {};
-          if (u.endsWith('/platform-login')) body = { token: 'erp-tok-' + log.length, name: 'Kim CTR', surveys: [{ id: 2, title: 'RUJAC_01' }] };
-          else if (u.endsWith('/api/survey-viewer/surveys')) body = { name: 'Kim CTR', surveys: [{ id: 2, title: 'RUJAC_01' }] };
-          else if (u.endsWith('/surveys/2')) { if (n401 > 0) { n401--; status = 401; body = { error: 'unauthorized' }; } else body = DATA; }
-          return { ok: status < 400, status, json: async () => body };
-        };
-      } });
-    await wait(80);
-    return { d: dom.window.document, w: dom.window, log };
-  };
-  // 세션 있음 → 로그인 화면 없이 바로
-  const a = await run({ t: 'aaaaaaaa-1111-2222-3333-444444444444', u: { name: 'Kim CTR' }, e: Date.now() + 3600e3 });
-  const pl = a.log.find((x) => x.u.endsWith('/platform-login'));
-  assert.deepEqual(JSON.parse(pl.body), { token: 'aaaaaaaa-1111-2222-3333-444444444444', name: 'Kim CTR' });
-  assert.ok(a.d.getElementById('login').classList.contains('hidden'), '별도 로그인 화면 없음');
-  assert.match(a.d.body.textContent, /Encuesta de clientes · RUJAC_01/);
-  assert.ok(a.d.getElementById('btnOut').classList.contains('hidden'), '로그아웃은 플랫폼에서');
-  a.w.close();
-  // 세션 없음 → 안내 + 플랫폼으로
-  const b = await run(null);
-  assert.match(b.d.body.textContent, /Inicia sesión en REFATRIX Platform/);
-  assert.equal(b.d.querySelector('#app a').getAttribute('href'), '/');
-  assert.ok(!b.log.length, 'ERP 서버에 아무것도 묻지 않는다');
-  b.w.close();
-  // 만료된 열람 토큰(401) → 플랫폼 세션으로 다시 받아 이어서
-  const c = await run({ t: 'aaaaaaaa-1111-2222-3333-444444444444', u: { name: 'Kim CTR' }, e: Date.now() + 3600e3 }, true);
-  assert.equal(c.log.filter((x) => x.u.endsWith('/platform-login')).length, 2);
-  assert.match(c.d.body.textContent, /Respuestas analizadas/);
-  c.w.close();
-});
-
-test('F3. 플랫폼 index.html 패치 — 메뉴·화면·iframe·로그아웃 시 비우기', () => {
+test('F. 플랫폼 index.html 패치 — 메뉴·화면·iframe·로그아웃 시 비우기', () => {
   let h = null; try { h = readFileSync('/home/claude/platform/index.html', 'utf8'); } catch (_) { return; }
   assert.match(h, /<button id="navSurvey">고객 설문<\/button>/);
   assert.match(h, /id="viewSurvey"/); assert.match(h, /f\.src="survey\.html"/);
-  assert.match(h, /\$\("#viewSurvey"\)\.classList\.toggle\("hidden",which!=="survey"\)/);
   assert.match(h, /f\.src="about:blank"/);
+  assert.equal(readFileSync('/home/claude/platform/survey.html', 'utf8'), TPL(), 'Netlify survey.html = 레포 원본');
 });

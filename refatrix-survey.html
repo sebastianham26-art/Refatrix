@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 설문 분석 · build 20260930sv9</title>
+<title>Refatrix ERP · 고객 설문 분석 · build 20260930sv10</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -319,7 +319,7 @@
             <div><label>대상 좁히기</label><div id="segChips"></div></div>
             <div class="sp"></div>
             <button class="btn ghost" id="btnPrint">🧾 PDF 인쇄</button>
-            <button class="btn ghost hidden" id="btnViewers" title="아이디·비밀번호로 이 설문의 익명 결과(스페인어)만 볼 수 있는 외부 열람 계정 — 디렉터 전용">🔐 외부 열람 계정</button>
+            <button class="btn ghost hidden" id="btnViewers" title="이 설문을 REFATRIX Platform 메뉴 「고객 설문」에 보일지 정합니다 — 디렉터 전용">🌐 플랫폼 공개</button>
             <button class="btn" id="btnXlsx2">📥 엑셀</button>
           </div>
         </div>
@@ -340,7 +340,7 @@
 
 <div class="dbg" id="dbg"></div>
 <div class="dbg" id="vwBg"></div>
-<div class="drawer" id="vwDrawer"><div class="row" style="margin-bottom:12px"><p class="ttl" style="margin:0;font-size:17px">🔐 외부 열람 계정 <span class="sub2" style="font-weight:500">설문 결과만 · 스페인어 · 읽기 전용</span></p><div class="sp"></div><button class="btn ghost sm" id="vwClose">닫기</button></div><div id="vwBody"></div></div>
+<div class="drawer" id="vwDrawer"><div class="row" style="margin-bottom:12px"><p class="ttl" style="margin:0;font-size:17px">🌐 REFATRIX Platform 공개 <span class="sub2" style="font-weight:500">설문 결과는 플랫폼 로그인으로만</span></p><div class="sp"></div><button class="btn ghost sm" id="vwClose">닫기</button></div><div id="vwBody"></div></div>
 <div class="drawer" id="drawer"></div>
 <div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
@@ -350,7 +350,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='20260930sv9';
+  const BUILD='20260930sv10';
   try{ console.log('[survey] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -1315,56 +1315,24 @@
   $('segQ').addEventListener('change',e=>{ segKey=e.target.value; segFilter=''; renderReport(); });
   $('btnPrint').addEventListener('click',()=>{ showTab('report'); setTimeout(()=>window.print(),120); });
 
-  // ─────────────── 외부 열람 계정 (디렉터) ───────────────
-  //   ERP 와 분리된 열람 전용 계정 — erp.refatrix.com/mx_survey_analysis.html 에 아이디·비밀번호로 로그인하면
-  //   허락된 설문의 분석 리포트·AI 요약(스페인어)·응답 목록(원본 이미지 포함)을 읽기 전용으로 본다(2026-09-30 디렉터 결정: ERP 와 동일 공개).
-  const VIEW_URL='https://erp.refatrix.com/mx_survey_analysis.html';
-  const VW_ERR={bad_login:'아이디는 영문 소문자·숫자·._@- 3~60자',password_short:'비밀번호는 8자 이상',password_long:'비밀번호가 너무 깁니다',password_weak:'비밀번호에 영문과 숫자를 함께 넣으세요',login_taken:'이미 있는 아이디입니다',director_only:'디렉터만 관리할 수 있습니다'};
-  let viewers=[], pfSurveys=[];
+  // ─────────────── REFATRIX Platform 공개 (디렉터) ───────────────
+  //   설문 결과는 REFATRIX Platform(refatrix-platform.netlify.app) 메뉴 「고객 설문」에서만 본다 — 플랫폼 로그인 그대로.
+  //   2026-09-30 디렉터 결정: erp.refatrix.com 열람 페이지·아이디/비밀번호 열람 계정은 닫음(ERP 주소가 회사 밖에 알려지지 않게).
+  //   여기서는 어떤 설문을 플랫폼에 보일지만 고른다.
+  let pfSurveys=[];
   const PF_URL='https://refatrix-platform.netlify.app';
-  function genPass(){ const A='abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ', N='23456789'; const r=new Uint32Array(12); crypto.getRandomValues(r);
-    let p=''; for(let i=0;i<12;i++){ const set=i%4===3?N:A+N; p+=set[r[i]%set.length]; } return /\d/.test(p)&&/[A-Za-z]/.test(p)?p:p.slice(0,11)+'7'; }
-  function credText(login,pass){ return 'Acceso a resultados de la encuesta — REFATRIX\n'+VIEW_URL+'\nUsuario: '+login+'\nContraseña: '+pass; }
-  async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('복사했습니다'); }catch(e){ prompt('아래 내용을 복사하세요',t); } }
-  function surveyChecks(sel,name){ return (surveys||[]).map(x=>'<label style="display:inline-flex;gap:5px;align-items:center;margin:2px 10px 2px 0;font-weight:500"><input type="checkbox" name="'+name+'" value="'+x.id+'"'+(sel.includes(Number(x.id))?' checked':'')+'> '+esc(x.code_prefix+' · '+x.title)+'</label>').join('')||'<span class="sub2">설문이 없습니다</span>'; }
+  const VW_ERR={director_only:'디렉터만 관리할 수 있습니다'};
   function openViewers(){ $('vwDrawer').classList.add('on'); $('vwBg').classList.add('on'); loadViewers(); }
   function closeViewers(){ $('vwDrawer').classList.remove('on'); $('vwBg').classList.remove('on'); }
   async function loadViewers(){
     const d=await api('/api/surveys/viewers');
     if(!d.ok){ $('vwBody').innerHTML='<p class="msg err">'+esc(VW_ERR[d.error]||errKo(d.error))+'</p>'; return; }
-    viewers=d.items||[]; pfSurveys=d.platform||[]; renderViewers();
+    pfSurveys=d.platform||[]; renderViewers();
   }
-  function renderViewers(created){
-    const sName=id=>{ const x=(surveys||[]).find(y=>Number(y.id)===Number(id)); return x?x.code_prefix+' · '+x.title:'#'+id; };
-    const list=viewers.length?'<div class="tbwrap"><table><thead><tr><th>아이디</th><th>이름·회사</th><th>열람 설문</th><th>마지막 접속</th><th>상태</th><th></th></tr></thead><tbody>'+
-      viewers.map(v=>'<tr><td class="mono"><b>'+esc(v.login)+'</b></td><td>'+esc(v.name||'')+'</td>'+
-        '<td><div data-vs="'+v.id+'">'+surveyChecks(v.survey_ids,'vs'+v.id)+'</div></td>'+
-        '<td class="mono" style="white-space:nowrap">'+(v.last_login_at?esc(v.last_login_at.slice(0,16).replace('T',' ')):'—')+'</td>'+
-        '<td>'+(v.active?'<span class="chip ok">사용</span>':'<span class="chip">정지</span>')+(v.locked?' <span class="chip warn">잠김</span>':'')+'</td>'+
-        '<td style="white-space:nowrap"><button class="btn ghost sm" data-vact="save" data-id="'+v.id+'">설문 저장</button> <button class="btn ghost sm" data-vact="reset" data-id="'+v.id+'">비밀번호 재발급</button> '+
-        (v.locked?'<button class="btn ghost sm" data-vact="unlock" data-id="'+v.id+'">잠금 해제</button> ':'')+
-        '<button class="btn ghost sm" data-vact="'+(v.active?'off':'on')+'" data-id="'+v.id+'">'+(v.active?'정지':'재개')+'</button> <button class="btn danger sm" data-vact="del" data-id="'+v.id+'">삭제</button></td></tr>').join('')+
-      '</tbody></table></div>':'<p class="sub2">아직 외부 열람 계정이 없습니다.</p>';
-    const done=created?'<div class="card" style="border:2px solid var(--gold);margin:0 0 12px"><p class="ttl" style="margin:0 0 6px">✅ 계정 정보 — 지금 복사해 전달하세요</p><p class="sub2" style="margin:0 0 8px">비밀번호는 저장되지 않아 <b>다시 볼 수 없습니다</b>. 잊으면 [비밀번호 재발급]을 누르세요.</p>'+
-      '<pre id="vwCred" style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;white-space:pre-wrap;margin:0 0 8px">'+esc(credText(created.login,created.pass))+'</pre><button class="btn sm" id="vwCopy">📋 복사 (스페인어 안내문)</button></div>':'';
-    const pfCard='<div class="card" style="margin:0 0 12px;border-left:4px solid var(--brand)"><p class="ttl" style="margin:0 0 4px">🌐 REFATRIX Platform 공개</p>'+
-      '<p class="sub2" style="margin:0 0 8px"><a href="'+PF_URL+'" target="_blank" rel="noopener">refatrix-platform.netlify.app</a> 에 로그인한 사람(CTR 개발자·디렉터)이 메뉴 <b>「고객 설문」</b>에서 봅니다 — 별도 아이디·비밀번호 없이 <b>플랫폼 로그인 그대로</b>. 누가 들어올 수 있는지는 플랫폼 사용자 관리(가입 승인·PIN)에서 정하고, 여기서는 <b>어떤 설문을 보일지</b>만 고릅니다. 열람은 플랫폼 활동 로그에 이름과 함께 남습니다. <b>⚠ 응답 목록의 고객 이름·상호·전화도 보입니다.</b></p>'+
+  function renderViewers(){
+    $('vwBody').innerHTML='<div class="card" style="margin:0;border-left:4px solid var(--brand)"><p class="ttl" style="margin:0 0 4px">🌐 REFATRIX Platform 공개</p>'+
+      '<p class="sub2" style="margin:0 0 8px"><a href="'+PF_URL+'" target="_blank" rel="noopener">refatrix-platform.netlify.app</a> 에 로그인한 사람(CTR 개발자·디렉터)이 메뉴 <b>「고객 설문」</b>에서 봅니다 — <b>플랫폼 로그인 그대로</b>. 누가 들어올 수 있는지는 플랫폼 사용자 관리(가입 승인·PIN)에서 정하고, 여기서는 <b>어떤 설문을 보일지</b>만 고릅니다. 열람은 플랫폼 활동 로그에 이름과 함께 남습니다. <b>⚠ 응답 목록의 고객 이름·상호·전화도 보입니다.</b></p>'+
       (pfSurveys.length?pfSurveys.map(x=>'<label style="display:flex;gap:8px;align-items:center;margin:4px 0;font-weight:600;color:var(--ink)"><input type="checkbox" data-pf="'+x.id+'"'+(x.visible?' checked':'')+'> '+esc(x.code_prefix+' · '+x.title)+(x.visible?' <span class="chip ok">플랫폼 공개 중</span>':'')+'</label>').join(''):'<span class="sub2">설문이 없습니다</span>')+'</div>';
-    $('vwBody').innerHTML=done+pfCard+
-      '<div class="card" style="margin:0 0 12px"><p class="ttl" style="margin:0 0 4px">열람 페이지</p><div class="row" style="gap:8px"><a class="mono" href="'+VIEW_URL+'" target="_blank" rel="noopener">'+VIEW_URL+'</a><button class="btn ghost sm" id="vwCopyUrl">주소 복사</button></div>'+
-      '<p class="sub2" style="margin:6px 0 0">ERP와 분리된 계정입니다 — 이 아이디로는 ERP 화면·데이터를 열 수 없고, 허락한 설문만 <b>분석 리포트·AI 요약·응답 목록(설문지 원본 이미지 포함)</b>을 스페인어로, 읽기 전용으로 봅니다. <b>⚠ 응답 목록에는 고객 이름·상호·전화가 그대로 보입니다</b> — 믿을 수 있는 사람에게만 만들어 주세요. 5번 틀리면 15분 잠깁니다.</p></div>'+
-      '<div class="card" style="margin:0 0 12px"><p class="ttl" style="margin:0 0 8px">새 계정</p><div class="row" style="gap:8px;align-items:flex-end">'+
-        '<div class="f"><label>아이디</label><input id="vwLogin" placeholder="dev.juan" style="width:160px" autocomplete="off"></div>'+
-        '<div class="f"><label>이름·회사 (메모)</label><input id="vwName" placeholder="Juan · Proveedor X" style="width:200px"></div>'+
-        '<div class="f"><label>비밀번호</label><input id="vwPass" style="width:150px" class="mono" autocomplete="new-password"></div><button class="btn ghost sm" id="vwGen">🎲 자동 생성</button></div>'+
-        '<div style="margin:10px 0 8px"><label>열람할 설문</label><div id="vwNewS">'+surveyChecks(S?[Number(S.id)]:[],'vwnew')+'</div></div>'+
-        '<button class="btn" id="vwCreate">계정 만들기</button> <span class="msg" id="vwMsg"></span></div>'+
-      '<div class="card" style="margin:0"><p class="ttl" style="margin:0 0 8px">계정 목록 <span class="sub2">'+viewers.length+'개</span></p>'+list+'</div>';
-    const on=(id,fn)=>{ const el=$(id); if(el) el.addEventListener('click',fn); };
-    on('vwCopy',()=>copyText(credText(created.login,created.pass)));
-    on('vwCopyUrl',()=>copyText(VIEW_URL));
-    on('vwGen',()=>{ $('vwPass').value=genPass(); });
-    on('vwCreate',createViewer);
     $('vwBody').querySelectorAll('[data-pf]').forEach(cb=>cb.addEventListener('change',async()=>{
       const id=Number(cb.getAttribute('data-pf')); const on=cb.checked;
       if(on&&!confirm('이 설문을 REFATRIX Platform 사용자 전원(CTR 개발자 등)에게 공개합니다.\n응답 목록의 고객 이름·상호·전화·설문지 원본도 보입니다. 계속할까요?')){ cb.checked=false; return; }
@@ -1372,33 +1340,6 @@
       if(!d.ok){ cb.checked=!on; toast(VW_ERR[d.error]||errKo(d.error),true); return; }
       pfSurveys=pfSurveys.map(x=>x.id===id?Object.assign({},x,{visible:d.visible}):x); renderViewers(); toast(d.visible?'플랫폼에 공개했습니다':'플랫폼 공개를 껐습니다');
     }));
-    $('vwBody').querySelectorAll('[data-vact]').forEach(b=>b.addEventListener('click',()=>viewerAction(b.getAttribute('data-vact'),Number(b.getAttribute('data-id')))));
-  }
-  const checkedIds=name=>Array.from($('vwBody').querySelectorAll('input[name="'+name+'"]:checked')).map(x=>Number(x.value));
-  async function createViewer(){
-    const login=$('vwLogin').value.trim().toLowerCase(); let pass=$('vwPass').value; if(!pass){ pass=genPass(); $('vwPass').value=pass; }
-    const survey_ids=checkedIds('vwnew');
-    if(!survey_ids.length){ say('vwMsg',false,'열람할 설문을 하나 이상 고르세요'); return; }
-    const d=await api('/api/surveys/viewers',{method:'POST',body:JSON.stringify({login,name:$('vwName').value,password:pass,survey_ids})});
-    if(!d.ok){ say('vwMsg',false,VW_ERR[d.error]||errKo(d.error)); return; }
-    viewers.push(d.item); renderViewers({login:d.item.login,pass}); toast('열람 계정을 만들었습니다');
-  }
-  async function viewerAction(act,id){
-    const v=viewers.find(x=>x.id===id); if(!v) return;
-    let body=null, newPass=null;
-    if(act==='save') body={survey_ids:checkedIds('vs'+id)};
-    else if(act==='reset'){ if(!confirm('「'+v.login+'」 비밀번호를 새로 만듭니다. 이전 비밀번호와 열려 있는 화면은 바로 막힙니다. 계속할까요?')) return; newPass=genPass(); body={password:newPass}; }
-    else if(act==='unlock') body={unlock:true};
-    else if(act==='off'){ if(!confirm('「'+v.login+'」 계정을 정지합니다. 지금 보고 있는 화면도 바로 막힙니다.')) return; body={active:false}; }
-    else if(act==='on') body={active:true};
-    else if(act==='del'){ if(!confirm('「'+v.login+'」 계정을 삭제합니다. 되돌릴 수 없습니다.')) return;
-      const d=await api('/api/surveys/viewers/'+id,{method:'DELETE'}); if(!d.ok){ toast(VW_ERR[d.error]||errKo(d.error),true); return; }
-      viewers=viewers.filter(x=>x.id!==id); renderViewers(); toast('삭제했습니다'); return; }
-    const d=await api('/api/surveys/viewers/'+id,{method:'PATCH',body:JSON.stringify(body)});
-    if(!d.ok){ toast(VW_ERR[d.error]||errKo(d.error),true); return; }
-    viewers=viewers.map(x=>x.id===id?d.item:x);
-    renderViewers(newPass?{login:v.login,pass:newPass}:null);
-    toast(act==='save'?'열람 설문을 저장했습니다':act==='reset'?'비밀번호를 새로 만들었습니다':'저장했습니다');
   }
   $('btnViewers').addEventListener('click',openViewers);
   $('vwBg').addEventListener('click',closeViewers);
