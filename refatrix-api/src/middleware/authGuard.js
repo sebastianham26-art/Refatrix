@@ -8,6 +8,8 @@ export async function authGuard(req, reply) {
   } catch {
     return reply.code(401).send({ error: 'unauthorized' });
   }
+  // 고객 설문 「외부 열람 계정」 토큰(surveyViewer.js)으로는 ERP 를 열 수 없다 (2026-09-30)
+  if (req.user && req.user.typ === 'survey_viewer') return reply.code(401).send({ error: 'unauthorized' });
   const userId = req.user?.sub;
   const perm = await loadPerm(userId);
   if (!perm) return reply.code(401).send({ error: 'unknown_user' });

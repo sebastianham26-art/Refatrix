@@ -24,6 +24,7 @@ import {
   freeGeoQuestions, buildGeoScanPrompt, parseGeoScanJson,
 } from '../surveyAi.js';
 import { normalizeGeo, STATE_NAMES } from '../surveyGeo.js';
+import surveyViewerRoutes from '../surveyViewer.js';
 
 const PAGE = 'marketing';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -326,6 +327,9 @@ export async function drainForTest(timeoutMs = 20000) {
 
 // =====================================================================
 export default async function surveyRoutes(app) {
+  // 외부 열람 계정(아이디+비밀번호 → 익명 집계만) — 같은 플러그인 안에서 등록해 server.js 는 그대로 둔다
+  await surveyViewerRoutes(app);
+
   // ── 목록 ──
   app.get('/api/surveys', { preHandler: [authGuard, requirePage(PAGE)] }, async () => {
     const rows = (await query(
