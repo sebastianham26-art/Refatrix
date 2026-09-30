@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 설문 분석 · build 20260930sv4</title>
+<title>Refatrix ERP · 고객 설문 분석 · build 20260930sv5</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -347,7 +347,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='20260930sv4';
+  const BUILD='20260930sv5';
   try{ console.log('[survey] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -1235,13 +1235,15 @@
       $('geoCards').innerHTML=cq?('<div class="card"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">🗺 지역 분석을 켤 수 있습니다</p>'+
         '<p class="sub2" style="margin:4px 0 0">「<b>'+esc(qName(cq))+'</b>」 문항을 <b>지역(주)</b> 유형으로 바꾸면 지도·주별 순위·도시 표가 나옵니다. 적힌 표기(Mty · N.L. · CDMX…)는 멕시코 32개 주로 자동 정리되고, <b>AI 재판독은 필요 없습니다(비용 0).</b></p></div>'+
         (canEdit()?'<button class="btn no-print" id="btnToGeo">지역 문항으로 바꾸기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 바꿀 수 있습니다.</span>')+'</div></div>'):'';
-      // 양식에 지역 문항이 아예 없을 때 — 고객이 여백 등에 손으로 적은 지역을 찾는다
-      $('geoCards').innerHTML+='<div class="card"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">✍ 손으로 적은 지역 찾기</p>'+
-        '<p class="sub2" style="margin:4px 0 0">양식에 지역 문항이 없어도 고객이 여백·이름 칸 옆 등에 <b>도시·주를 직접 적은</b> 경우가 있습니다. 「손으로 적은 지역」 문항을 추가하고, 이미 읽은 <b>'+(counts.done||0)+'장</b>에서 <b>지역만</b> AI로 다시 찾습니다(다른 답은 그대로 · 1장당 AI 1회). 찾은 지역은 지도·엑셀·세그먼트에 들어갑니다.</p></div>'+
-        (canEdit()?'<button class="btn no-print" id="btnFreeGeo">손글씨 지역 찾기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 켤 수 있습니다.</span>')+'</div></div>';
       const bg=$('btnToGeo'); if(bg) bg.addEventListener('click',()=>convertToGeo(cq));
-      const bf=$('btnFreeGeo'); if(bf) bf.addEventListener('click',addFreeGeo);
     } else $('geoCards').innerHTML=geoQs.filter(q=>!(segFilter&&q.k===segKey)).map(q=>geoCardHTML(q,rows)).join('');
+    // 「손으로 적은 지역」 문항이 아직 없으면 — 지역 문항이 이미 있어도(9/14 판 전환 등) — 항상 켤 수 있게 맨 위에 띄운다
+    if(!geoQs.some(q=>q.free)&&!segFilter){
+      $('geoCards').insertAdjacentHTML('afterbegin','<div class="card" id="freeGeoCard" style="border-left:4px solid var(--gold,#B8893B)"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">✍ 손으로 적은 지역 찾기</p>'+
+        '<p class="sub2" style="margin:4px 0 0">'+(geoQs.length?'지역 문항과 별도로, ':'양식에 지역 문항이 없어도 ')+'고객이 여백·이름 칸 옆 등에 <b>도시·주를 직접 적은</b> 것을 찾습니다. 이미 읽은 <b>'+(counts.done||0)+'장</b>에서 <b>지역만</b> AI로 다시 찾고(다른 답은 그대로 · 1장당 AI 1회), 결과는 지도·엑셀·세그먼트에 들어갑니다.</p></div>'+
+        (canEdit()?'<button class="btn no-print" id="btnFreeGeo">✍ 손글씨 지역 찾기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 켤 수 있습니다.</span>')+'</div></div>');
+      const bf=$('btnFreeGeo'); if(bf) bf.addEventListener('click',addFreeGeo);
+    }
     $('geoCards').querySelectorAll('[data-geoscan]').forEach(b=>b.addEventListener('click',()=>geoScan(b.getAttribute('data-geoscan'))));
     const gu=$('geoUnres'); if(gu) gu.addEventListener('click',()=>{ showTab('upload'); $('lf').value='flag'; renderList(); });
     const gb=$('btnGeoNorm'); if(gb) gb.addEventListener('click',geoNormalize);
