@@ -21,6 +21,7 @@ import {
   clip, normalizeQuestions, buildTemplatePrompt, parseTemplateJson,
   buildPagePrompt, parsePageJson, normRedNumber, normPrefix, pageFileName, normalizeAnswers,
   buildThemePrompt, parseThemeJson, crossSummaryText, buildInsightPrompt, parseInsightJson, zipStream,
+  freeGeoQuestions, buildGeoScanPrompt, parseGeoScanJson,
 } from '../surveyAi.js';
 import { normalizeGeo, STATE_NAMES } from '../surveyGeo.js';
 
@@ -126,11 +127,14 @@ async function pageCounts(sid) {
             SUM(CASE WHEN status='done' AND red_number IS NULL THEN 1 ELSE 0 END)::int AS nonum,
             SUM(CASE WHEN dup_idx > 1 THEN 1 ELSE 0 END)::int AS dup,
             SUM(CASE WHEN status='done' AND cardinality(low_conf) > 0 THEN 1 ELSE 0 END)::int AS lowconf,
+            SUM(CASE WHEN geo_scan IN ('queued','processing') THEN 1 ELSE 0 END)::int AS geo_pending,
+            SUM(CASE WHEN geo_scan='error' THEN 1 ELSE 0 END)::int AS geo_error,
             to_char(MAX(processed_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_processed
        FROM survey_pages WHERE survey_id=$1`, [sid])).rows[0] || {};
   const n = (k) => Number(r[k] || 0);
   return { total: n('total'), done: n('done'), queued: n('queued'), processing: n('processing'), error: n('error'),
-    nonum: n('nonum'), dup: n('dup'), lowconf: n('lowconf'), last_processed: r.last_processed || null };
+    nonum: n('nonum'), dup: n('dup'), lowconf: n('lowconf'), geo_pending: n('geo_pending'), geo_error: n('geo_error'),
+    last_processed: r.last_processed || null };
 }
 
 // 같은 번호 안에서 비어 있는 가장 작은 순번(1, 2, 3…) — 자기 자신은 뺀다
@@ -151,7 +155,7 @@ function pageOut(r, prefix) {
     file_name: pageFileName({ prefix, red_number: r.red_number, dup_idx: r.dup_idx, seq: r.seq, mime: r.mime, status: r.status }),
     status: r.status, error: r.error || null, attempts: Number(r.attempts || 0),
     answers: r.answers || null, others: r.others || {}, geo: r.geo || {}, low_conf: r.low_conf || [], edited: r.edited || {},
-    notes: r.ai_notes || null, has_view: !!r.has_view, has_thumb: !!r.has_thumb,
+    notes: r.ai_notes || null, has_view: !!r.has_view, has_thumb: !!r.has_thumb, geo_scan: r.geo_scan || null,
     uploaded_by: r.uploaded_by_name || null, created_at: iso(r.created_at), processed_at: iso(r.processed_at),
   };
 }
@@ -168,6 +172,22 @@ async function claimNext() {
       WHERE id = (SELECT p.id FROM survey_pages p JOIN surveys s ON s.id = p.survey_id AND s.deleted_at IS NULL
                    WHERE p.status = 'queued' ORDER BY p.id FOR UPDATE OF p SKIP LOCKED LIMIT 1)
       RETURNING id, survey_id, mime, attempts`)).rows[0] || null;
+}
+
+// 지역만 다시 찾기(손글씨) — 본 판독 대기열이 비었을 때만 집는다
+async function claimNextGeo() {
+  return (await query(
+    `UPDATE survey_pages SET geo_scan='processing', geo_scan_attempts = geo_scan_attempts + 1
+      WHERE id = (SELECT p.id FROM survey_pages p JOIN surveys s ON s.id = p.survey_id AND s.deleted_at IS NULL
+                   WHERE p.geo_scan = 'queued' AND p.status = 'done' ORDER BY p.id FOR UPDATE OF p SKIP LOCKED LIMIT 1)
+      RETURNING id, survey_id, geo_scan_attempts AS attempts`)).rows[0] || null;
+}
+
+async function markGeoFail(id, error, transient, attempts) {
+  const requeue = transient && Number(attempts) < MAX_ATTEMPTS;
+  await query(`UPDATE survey_pages SET geo_scan=$2, geo_scan_error=$3 WHERE id=$1`,
+    [id, requeue ? 'queued' : 'error', String(error || 'error').slice(0, 300)]);
+  return requeue;
 }
 
 async function markFail(id, error, transient, attempts) {
@@ -219,10 +239,55 @@ export async function processPage(row) {
     await q(
       `UPDATE survey_pages
           SET status='done', error=NULL, answers=$2, others=$3, low_conf=$4, red_number=$5, red_raw=$6,
-              dup_idx=$7, ai_notes=$8, ai_model=$9, geo=$10, processed_at=now()
+              dup_idx=$7, ai_notes=$8, ai_model=$9, geo=$10, processed_at=now(),
+              geo_scan = CASE WHEN $11::boolean THEN 'done' ELSE geo_scan END, geo_scan_error = NULL
         WHERE id=$1`,
       [pid, JSON.stringify(answers), JSON.stringify(p.others || {}), low, red || null,
-        keepNo ? null : p.red_raw, dup, p.notes || null, AI_MODEL(), JSON.stringify(geo)]);
+        keepNo ? null : p.red_raw, dup, p.notes || null, AI_MODEL(), JSON.stringify(geo),
+        freeGeoQuestions(questions).length > 0]);
+  });
+  return true;
+}
+
+// 이미 읽은 1장에서 「손으로 적은 지역」 문항만 다시 찾는다 — 다른 답·번호는 건드리지 않는다
+export async function processGeoScan(row) {
+  const pid = Number(row.id);
+  if (!aiReady()) { await query(`UPDATE survey_pages SET geo_scan='queued', geo_scan_attempts=GREATEST(geo_scan_attempts-1,0) WHERE id=$1`, [pid]); return false; }
+  const s = await getSurvey(row.survey_id);
+  if (!s) return markGeoFail(pid, 'survey_deleted', false, row.attempts);
+  const fq = freeGeoQuestions(qList(s));
+  if (!fq.length) { await query(`UPDATE survey_pages SET geo_scan=NULL, geo_scan_error=NULL WHERE id=$1`, [pid]); return false; }
+  const bin = (await query(`SELECT mime, file_data, view_data FROM survey_pages WHERE id=$1`, [pid])).rows[0];
+  if (!bin) return false;
+  const out = await surveyAiApi.call([mediaBlock(bin), { type: 'text', text: buildGeoScanPrompt(fq) }], 600);
+  if (!out.ok) {
+    if (out.status === 429 || out.status === 529) pausedUntil = Date.now() + (Number(process.env.SURVEY_AI_PAUSE_MS) || 20000);
+    return markGeoFail(pid, out.error, out.transient, row.attempts);
+  }
+  const found = parseGeoScanJson(out.text, fq);
+  if (!found) return markGeoFail(pid, 'ai_parse: 응답을 해석하지 못했습니다', Number(row.attempts) < 2, row.attempts);
+  await withTx(async (c) => {
+    const q = c.query.bind(c);
+    const cur = (await q(`SELECT status, answers, geo, edited, low_conf FROM survey_pages WHERE id=$1 FOR UPDATE`, [pid])).rows[0];
+    if (!cur || cur.status !== 'done') {                      // 그사이 전체 재판독에 들어갔다 — 그쪽이 채운다
+      await q(`UPDATE survey_pages SET geo_scan=NULL WHERE id=$1`, [pid]); return;
+    }
+    const answers = { ...(cur.answers || {}) };
+    const geo = { ...(cur.geo || {}) };
+    const edited = cur.edited || {};
+    const low = new Set(cur.low_conf || []);
+    for (const fqq of fq) {
+      if (edited[fqq.k]) continue;                              // 사람이 고른 주·도시는 지킨다
+      const g = found[fqq.k];
+      if (g) {
+        geo[fqq.k] = g; answers[fqq.k] = g.estado || null;
+        if (g.estado) low.delete(fqq.k); else low.add(fqq.k);   // 적혔는데 주를 못 정함 → 「주 미확인」
+      } else {
+        delete geo[fqq.k]; answers[fqq.k] = null; low.delete(fqq.k);   // 적힌 지역 없음 = 무응답
+      }
+    }
+    await q(`UPDATE survey_pages SET answers=$2, geo=$3, low_conf=$4, geo_scan='done', geo_scan_error=NULL WHERE id=$1`,
+      [pid, JSON.stringify(answers), JSON.stringify(geo), [...low]]);
   });
   return true;
 }
@@ -233,11 +298,15 @@ export async function pump() {
   while (running < CONCURRENCY() && Date.now() >= pausedUntil) {
     running++;                            // 자리를 먼저 잡는다 — 동시에 불린 pump 가 한도를 넘지 않게
     let row = null;
-    try { row = await claimNext(); } catch (_) { running--; break; }
+    let geoRow = false;
+    try {
+      row = await claimNext();
+      if (!row) { row = await claimNextGeo(); geoRow = !!row; }
+    } catch (_) { running--; break; }
     if (!row) { running--; break; }
     started++;
-    processPage(row)
-      .catch((e) => markFail(Number(row.id), 'internal: ' + String(e && e.message).slice(0, 200), false, row.attempts).catch(() => {}))
+    (geoRow ? processGeoScan(row) : processPage(row))
+      .catch((e) => (geoRow ? markGeoFail : markFail)(Number(row.id), 'internal: ' + String(e && e.message).slice(0, 200), false, row.attempts).catch(() => {}))
       .finally(() => { running--; setTimeout(() => { pump().catch(() => {}); }, Date.now() < pausedUntil ? pausedUntil - Date.now() + 50 : 50); });
   }
   return started;
@@ -247,7 +316,8 @@ export async function drainForTest(timeoutMs = 20000) {
   const t0 = Date.now();
   for (;;) {
     await pump();
-    const r = (await query(`SELECT COUNT(*)::int AS n FROM survey_pages WHERE status IN ('queued','processing')`)).rows[0];
+    const r = (await query(`SELECT COUNT(*)::int AS n FROM survey_pages
+      WHERE status IN ('queued','processing') OR (status='done' AND geo_scan IN ('queued','processing'))`)).rows[0];
     if (!Number(r.n) && running === 0) return true;
     if (Date.now() - t0 > timeoutMs) return false;
     await new Promise((res) => setTimeout(res, 30));
@@ -424,7 +494,7 @@ export default async function surveyRoutes(app) {
     const rows = (await query(
       `SELECT p.id, p.seq, p.orig_name, p.mime, p.file_bytes, p.red_number, p.red_raw, p.dup_idx, p.status, p.error,
               p.attempts, p.answers, p.others, p.geo, p.low_conf, p.edited, p.ai_notes,
-              (p.view_data IS NOT NULL) AS has_view, (p.thumb_data IS NOT NULL) AS has_thumb,
+              (p.view_data IS NOT NULL) AS has_view, p.geo_scan, (p.thumb_data IS NOT NULL) AS has_thumb,
               p.created_at, p.processed_at, u.name AS uploaded_by_name
          FROM survey_pages p LEFT JOIN users u ON u.id = p.uploaded_by
         WHERE p.survey_id = $1 ORDER BY p.seq`, [Number(s.id)])).rows;
@@ -493,6 +563,7 @@ export default async function surveyRoutes(app) {
         const ciudad = clip(g.ciudad, 80) || null;
         const prev = (p.geo || {})[q.k] || {};
         geo[q.k] = { estado: est, ciudad, raw: prev.raw || [ciudad, est].filter(Boolean).join(', ') };
+        if (prev.at) geo[q.k].at = prev.at;                    // 손글씨 위치(여백 등) 표시는 남긴다
         answers[q.k] = est;
         edited[q.k] = true;
         low = low.filter((x) => x !== q.k);
@@ -566,6 +637,23 @@ export default async function surveyRoutes(app) {
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `survey:${s.id}`, detail: { reprocess: scope, n: r.rowCount } });
     setTimeout(() => { pump().catch(() => {}); }, 30);
     return { ok: true, queued: r.rowCount, ai_ready: aiReady() };
+  });
+
+  // ── 손으로 적은 지역 찾기 (문항에 지역이 없을 때) — 이미 읽은 장만, 지역 칸만 AI 로 다시 본다 ──
+  //   scope: new(아직 안 찾은 장 + 실패한 장) | all(전부 다시 — 사람이 고른 칸은 그대로)
+  app.post('/api/surveys/:id/geo-scan', { preHandler: [authGuard, requirePageEdit(PAGE)] }, async (req, reply) => {
+    const s = await getSurvey(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    if (!freeGeoQuestions(qList(s)).length) return reply.code(409).send({ error: 'no_free_geo' });
+    const scope = (req.body && req.body.scope) === 'all' ? 'all' : 'new';
+    const r = await query(
+      `UPDATE survey_pages SET geo_scan='queued', geo_scan_attempts=0, geo_scan_error=NULL
+        WHERE survey_id=$1 AND status='done'
+          AND ${scope === 'all' ? `COALESCE(geo_scan,'') <> 'processing'` : `(geo_scan IS NULL OR geo_scan='error')`}
+        RETURNING id`, [Number(s.id)]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `survey:${s.id}`, detail: { geo_scan: scope, n: r.rowCount } });
+    setTimeout(() => { pump().catch(() => {}); }, 30);
+    return { ok: true, queued: r.rowCount, ai_ready: aiReady(), counts: await pageCounts(Number(s.id)) };
   });
 
   // ── 지역 다시 정리 (AI 호출 없음) ──
@@ -686,6 +774,7 @@ export default async function surveyRoutes(app) {
     globalThis.__refatrixSurveyScheduler = setInterval(() => { pump().catch(() => {}); }, 60000);
     setTimeout(async () => {
       try { await query(`UPDATE survey_pages SET status='queued' WHERE status='processing'`); } catch (_) {}
+      try { await query(`UPDATE survey_pages SET geo_scan='queued' WHERE geo_scan='processing'`); } catch (_) {}
       pump().catch(() => {});
     }, 20000);
   }

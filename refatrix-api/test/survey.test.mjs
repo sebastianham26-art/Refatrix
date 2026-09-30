@@ -190,7 +190,7 @@ test('B3. 화면 — 지도 내장 · 지역 문항 전환 안내 · 무AI 재�
   assert.ok(h.includes('const MX_MAP='), '멕시코 지도 데이터가 파일에 들어 있어야 한다(외부 CDN 금지)');
   assert.ok(h.includes('btnToGeo'), '지역 문항이 아닐 때 바꿔 주는 안내가 있어야 한다');
   assert.ok(h.includes('geo-normalize'), 'AI 없이 다시 정리하는 버튼이 있어야 한다');
-  assert.ok(/build 20260914sv\d/.test(h), '빌드 토큰');
+  assert.ok(/build 2026\d{4}sv\d/.test(h), '빌드 토큰');
 });
 
 // ── C. 실 DB 종단 ────────────────────────────────────────────────────

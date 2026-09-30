@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 설문 분석 · build 20260914sv3</title>
+<title>Refatrix ERP · 고객 설문 분석 · build 20260930sv4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -347,7 +347,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='20260914sv3';
+  const BUILD='20260930sv4';
   try{ console.log('[survey] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -409,7 +409,7 @@
   function optKo(q,o){ const i=(q.options||[]).indexOf(o); return (q.options_ko&&q.options_ko[i])||''; }
   function fmtTime(iso){ if(!iso) return ''; try{ return new Date(iso).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return iso; } }
   function kb(n){ if(n==null) return ''; return n>1048576?(n/1048576).toFixed(1)+'MB':Math.round(n/1024)+'KB'; }
-  const ERR_KO={no_title:'설문명을 입력하세요',no_prefix:'파일명 접두어를 입력하세요(영문·숫자)',bad_questions:'문항 표를 확인하세요',no_questions:'문항이 하나도 없습니다',
+  const ERR_KO={no_title:'설문명을 입력하세요',no_prefix:'파일명 접두어를 입력하세요(영문·숫자)',bad_questions:'문항 표를 확인하세요',no_questions:'문항이 하나도 없습니다',no_free_geo:'「손으로 적은 지역」 문항이 없습니다',
     no_anthropic_key:'AI 키가 없습니다(관리 → 외부 서비스 키)',ai_parse:'AI 응답을 해석하지 못했습니다 — 다시 시도하세요',bad_mime:'지원하지 않는 파일 형식',bad_file:'파일 내용이 형식과 다릅니다',
     too_large:'파일이 너무 큽니다',same_file:'이미 올린 파일',number_taken:'이미 있는 번호',bad_number:'번호에 숫자가 없습니다',bad_answer:'값이 보기/범위와 맞지 않습니다',
     forbidden:'권한이 없습니다',read_only:'열람 전용 권한입니다',director_only:'디렉터만 할 수 있습니다',no_done_pages:'판독이 끝난 응답이 없습니다',network:'서버에 연결할 수 없습니다'};
@@ -553,6 +553,7 @@
         '<div class="row" style="gap:6px;margin-top:6px"><input data-i="'+i+'" data-f="min_label" placeholder="낮은 쪽 말(선택)" value="'+esc(q.min_label||'')+'" style="width:48%"'+ro+'><input data-i="'+i+'" data-f="max_label" placeholder="높은 쪽 말(선택)" value="'+esc(q.max_label||'')+'" style="width:48%"'+ro+'></div>';
       else if(q.type==='text') opt='<span style="color:var(--muted)">자유 기재 → 리포트에서 AI 주제 요약</span>';
       else if(q.type==='info') opt='<span style="color:var(--muted)">상호·이름·전화 등 — 엑셀에만 (분석 안 함)</span>';
+      else if(q.type==='geo'&&q.free) opt='<span style="color:var(--muted)"><b>✍ 양식에 없는 문항</b> — 설문지 어디든(여백·이름 칸 옆 등) <b>손으로 적은 지역</b>을 찾아 멕시코 32개 주로 분류합니다. 인쇄된 글자는 읽지 않습니다.</span>';
       else if(q.type==='geo') opt='<span style="color:var(--muted)">손으로 적은 도시·주를 <b>멕시코 32개 주</b>로 자동 분류합니다(도시도 함께 저장). 보기는 고칠 수 없습니다.</span>';
       else opt='<span style="color:var(--muted)">숫자 기재 → 평균·중앙값·분포</span>';
       const seg=(q.type==='single'||q.type==='geo')?'<label style="display:inline-flex;gap:5px;align-items:center;margin:0;white-space:nowrap"><input type="checkbox" data-i="'+i+'" data-f="seg"'+(q.seg?' checked':'')+ro+'> 사용</label>':'<span style="color:var(--muted)">—</span>';
@@ -782,19 +783,19 @@
     if(!S||S.id!==sid) return;
     if(!d.ok){ if(d.status!==401) toast(errKo(d.error),true); return; }
     pages=d.items||[]; counts=d.counts||{};
-    $('aiWarn').classList.toggle('hidden',!!d.ai_ready || !((counts.queued||0)+(counts.processing||0)));
+    $('aiWarn').classList.toggle('hidden',!!d.ai_ready || !((counts.queued||0)+(counts.processing||0)+(counts.geo_pending||0)));
     const live=new Set(pages.map(p=>p.id)); Array.from(sel).forEach(id=>{ if(!live.has(id)) sel.delete(id); });
     renderSumChips(); renderProgress();
     if(curTab==='upload') renderList();
     if(curTab==='report') renderReport();
     if(drawerId&&!drawerEdit){ const p=pages.find(x=>x.id===drawerId); if(p) renderDrawerBody(p,false); else closeDrawer(); }
     clearTimeout(pollT);
-    if((counts.queued||0)+(counts.processing||0)>0 || upBusy) pollT=setTimeout(loadPages,4000);
+    if((counts.queued||0)+(counts.processing||0)+(counts.geo_pending||0)>0 || upBusy) pollT=setTimeout(loadPages,4000);
   }
   function renderProgress(){
     const c=counts; const tot=c.total||0; const run=(c.queued||0)+(c.processing||0);
     $('cDone').textContent=c.done||0; $('cErr').textContent=c.error||0;
-    $('cRunChip').innerHTML=(run?'<span class="spin"></span> ':'')+'대기·처리 중 <span id="cRun">'+run+'</span>';
+    $('cRunChip').innerHTML=(run||c.geo_pending?'<span class="spin"></span> ':'')+'대기·처리 중 <span id="cRun">'+run+'</span>'+(c.geo_pending?' · ✍ 지역 찾는 중 '+c.geo_pending:'');
     $('cNoNum').textContent=c.nonum||0; $('cDup').textContent=c.dup||0; $('cLow').textContent=c.lowconf||0;
     $('prog').innerHTML=tot?'<i style="width:'+((c.done||0)/tot*100)+'%;background:var(--income)"></i><i style="width:'+(run/tot*100)+'%;background:#9db6e4"></i><i style="width:'+((c.error||0)/tot*100)+'%;background:var(--expense)"></i>':'';
     $('btnRetryErr').disabled=!c.error||!canEdit();
@@ -936,7 +937,8 @@
         return '<div class="ans"><div class="k">Q'+q.no+'</div><div><div class="t">'+esc(qName(q))+(q.ko?' · '+esc(q.text):'')+' · '+TYPE_LB[q.type]+'</div>'+
           '<div class="a'+(empty?' noans':'')+'" data-k="'+q.k+'">'+esc(empty?'(무응답)':shown)+(low.has(q.k)?' <span class="q">? 확신 낮음</span>':'')+(ed[q.k]?' <span class="ed">✎ 수정됨</span>':'')+'</div>'+
           (o?'<div class="oth">기타 기재: '+esc(o)+'</div>':'')+
-          (q.type==='geo'&&((p.geo||{})[q.k]||{}).raw?'<div class="oth">적힌 그대로: '+esc(p.geo[q.k].raw)+'</div>':'')+
+          (q.type==='geo'&&((p.geo||{})[q.k]||{}).raw?'<div class="oth">적힌 그대로: '+esc(p.geo[q.k].raw)+(p.geo[q.k].at?' <span style="color:var(--muted)">('+esc(p.geo[q.k].at)+')</span>':'')+'</div>':'')+
+          (q.type==='geo'&&q.free&&(p.geo_scan==='queued'||p.geo_scan==='processing')?'<div class="oth">✍ 손글씨 지역 찾는 중…</div>':'')+
           (drawerEdit?'<div class="edit">'+editor(q,v,p)+'</div>':'')+'</div></div>';
       }).join('');
       if(ce) body+='<div class="row" style="margin-top:10px">'+(drawerEdit?'<button class="btn sm" id="dSave">💾 고친 칸 저장</button><button class="btn ghost sm" id="dCancel">취소</button>':'<span class="sub2" style="margin:0">AI 결과를 그대로 씁니다. 틀린 칸이 눈에 띄면 고칠 수 있습니다(필수 아님).</span><div class="sp"></div><button class="btn ghost sm" id="dEdit">✎ 수정</button><button class="btn ghost sm" id="dRetry2">↻ 다시 판독</button><button class="btn danger sm" id="dDel2">🗑</button>')+'</div>';
@@ -1072,9 +1074,17 @@
     });
     return {m,n,unres,cities};
   }
+  // 「손으로 적은 지역」(양식에 없는 문항) 진행·버튼 — 지도 카드 머리에 붙는다
+  function freeGeoBar(q){
+    if(!q.free) return '';
+    const pend=counts.geo_pending||0, err=counts.geo_error||0;
+    return (pend?'<span class="chip"><span class="spin"></span> ✍ 찾는 중 '+pend+'장</span>':'')+
+      (err?'<span class="chip warn">찾기 실패 '+err+'장</span>':'')+
+      (canEdit()?'<button class="btn ghost sm no-print" data-geoscan="'+(err?'new':'all')+'" title="'+(err?'실패한 장과 아직 안 찾은 장만 다시 찾습니다':'읽어 둔 모든 장에서 손글씨 지역을 다시 찾습니다(사람이 고른 칸은 유지)')+'"'+(pend?' disabled':'')+'>✍ '+(err?'실패한 장 다시 찾기':'손글씨 지역 다시 찾기')+'</button>':'');
+  }
   function geoCardHTML(q,rows){
     const {m,n,unres,cities}=geoStats(rows,q);
-    if(!n&&!unres) return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div><h4>'+esc(qName(q))+'</h4></div></div><p class="empty">지역이 적힌 응답이 없습니다</p></div>';
+    if(!n&&!unres) return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div style="flex:1 1 220px"><h4>'+esc(qName(q))+'</h4>'+(q.free?'<div class="orig">양식에 없는 문항 · 설문지 어디든 손으로 적은 지역</div>':'')+'</div>'+freeGeoBar(q)+'</div><p class="empty">'+(q.free&&counts.geo_pending?'손글씨 지역을 찾고 있습니다…':'지역이 적힌 응답이 없습니다')+'</p></div>';
     const ent=[...m.entries()].sort((a,b)=>b[1]-a[1]);
     const max=Math.max(1,...ent.map(e=>e[1]));
     const fill=(c)=>c?SEQ[Math.min(SEQ.length-1,Math.round(c/max*(SEQ.length-1)))]:'#eceae3';
@@ -1099,7 +1109,7 @@
     const warn=unres?'<span class="chip warn click" id="geoUnres" title="목록에서 이 응답들을 열어 주를 고를 수 있습니다" style="white-space:normal">⚠ 주 미확인 '+unres+'건</span>':'';
     const btn=canEdit()?'<button class="btn ghost sm no-print" id="btnGeoNorm" title="AI 호출 없이 표기 규칙으로 다시 맞춥니다">🗺 지역 다시 정리</button>':'';
     return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div style="flex:1 1 220px;min-width:180px"><h4>'+esc(qName(q))+' — 지역 분석</h4>'+
-      '<div class="orig">'+(q.ko?esc(q.text)+' · ':'')+'멕시코 32개 주 기준 · 응답 '+n+'건'+(unres?' · 주 미확인 '+unres+'건':'')+'</div></div>'+warn+btn+'</div>'+
+      '<div class="orig">'+(q.free?'양식에 없는 문항 · 손으로 지역을 적은 응답 '+(n+unres)+'건 / 읽은 '+rows.length+'장 · ':(q.ko?esc(q.text)+' · ':''))+'멕시코 32개 주 기준 · 응답 '+n+'건'+(unres?' · 주 미확인 '+unres+'건':'')+'</div></div>'+warn+freeGeoBar(q)+btn+'</div>'+
       '<div class="grid2geo"><div>'+map+'<div class="legend" style="margin-top:6px"><span><i style="background:#eceae3"></i>0</span><span><i style="background:'+SEQ[3]+'"></i>적음</span><span><i style="background:'+SEQ[8]+'"></i>많음</span><span><i style="background:'+SEQ[11]+'"></i>최다 '+max+'명</span></div></div>'+
       '<div>'+bars+cityTbl+'</div></div></div>';
   }
@@ -1133,6 +1143,25 @@
     if(!g.ok){ toast(errKo(g.error),true); await loadPages(); return; }
     toast('지역 문항으로 바꿨습니다 — '+g.changed+'건 정리'+(g.unresolved?' · 주 미확인 '+g.unresolved+'건':''));
     segKey=q.k; segFilter='';
+    await loadPages();
+  }
+
+  // 양식에 지역 문항이 없을 때: 「손으로 적은 지역」(geo · free) 문항을 붙이고 읽어 둔 장에서 지역만 찾는다
+  async function addFreeGeo(){
+    if(!confirm('「손으로 적은 지역」 문항을 추가합니다.\n\n· 이미 읽은 '+(counts.done||0)+'장에서 손으로 적은 도시·주만 AI로 다시 찾습니다(1장당 AI 1회).\n· 다른 답·번호·사람이 고친 칸은 바뀌지 않습니다.\n· 앞으로 올리는 설문지는 판독할 때 함께 찾습니다.\n\n계속할까요?')) return;
+    const bf=$('btnFreeGeo'); if(bf){ bf.disabled=true; bf.innerHTML='<span class="spin"></span> 추가 중…'; }
+    const qs=(S.questions||[]).concat([{text:'Ubicación escrita a mano',ko:'손으로 적은 지역',type:'geo',free:true,seg:true}]);
+    const d=await api('/api/surveys/'+S.id,{method:'PUT',body:JSON.stringify({questions:qs})});
+    if(!d.ok){ toast(errKo(d.error),true); if(bf){ bf.disabled=false; bf.textContent='손글씨 지역 찾기'; } return; }
+    S.questions=d.questions; draftQs=JSON.parse(JSON.stringify(d.questions)); renderQs();
+    await geoScan('new',true);
+  }
+  async function geoScan(scope,quiet){
+    if(scope==='all'&&!quiet&&!confirm('읽어 둔 '+(counts.done||0)+'장에서 손글씨 지역을 모두 다시 찾습니다(1장당 AI 1회).\n사람이 고른 주·도시는 그대로 둡니다. 계속할까요?')) return;
+    const g=await api('/api/surveys/'+S.id+'/geo-scan',{method:'POST',body:JSON.stringify({scope})});
+    if(!g.ok){ toast(errKo(g.error),true); await loadPages(); return; }
+    toast(g.queued?'✍ '+g.queued+'장에서 손글씨 지역을 찾습니다'+(g.ai_ready?'':' (AI 키 없음 — 대기)'):'새로 찾을 장이 없습니다');
+    const ft=(S.questions||[]).find(q=>q.type==='geo'&&q.free); if(ft){ segKey=ft.k; segFilter=''; }
     await loadPages();
   }
 
@@ -1206,8 +1235,14 @@
       $('geoCards').innerHTML=cq?('<div class="card"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">🗺 지역 분석을 켤 수 있습니다</p>'+
         '<p class="sub2" style="margin:4px 0 0">「<b>'+esc(qName(cq))+'</b>」 문항을 <b>지역(주)</b> 유형으로 바꾸면 지도·주별 순위·도시 표가 나옵니다. 적힌 표기(Mty · N.L. · CDMX…)는 멕시코 32개 주로 자동 정리되고, <b>AI 재판독은 필요 없습니다(비용 0).</b></p></div>'+
         (canEdit()?'<button class="btn no-print" id="btnToGeo">지역 문항으로 바꾸기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 바꿀 수 있습니다.</span>')+'</div></div>'):'';
+      // 양식에 지역 문항이 아예 없을 때 — 고객이 여백 등에 손으로 적은 지역을 찾는다
+      $('geoCards').innerHTML+='<div class="card"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">✍ 손으로 적은 지역 찾기</p>'+
+        '<p class="sub2" style="margin:4px 0 0">양식에 지역 문항이 없어도 고객이 여백·이름 칸 옆 등에 <b>도시·주를 직접 적은</b> 경우가 있습니다. 「손으로 적은 지역」 문항을 추가하고, 이미 읽은 <b>'+(counts.done||0)+'장</b>에서 <b>지역만</b> AI로 다시 찾습니다(다른 답은 그대로 · 1장당 AI 1회). 찾은 지역은 지도·엑셀·세그먼트에 들어갑니다.</p></div>'+
+        (canEdit()?'<button class="btn no-print" id="btnFreeGeo">손글씨 지역 찾기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 켤 수 있습니다.</span>')+'</div></div>';
       const bg=$('btnToGeo'); if(bg) bg.addEventListener('click',()=>convertToGeo(cq));
+      const bf=$('btnFreeGeo'); if(bf) bf.addEventListener('click',addFreeGeo);
     } else $('geoCards').innerHTML=geoQs.filter(q=>!(segFilter&&q.k===segKey)).map(q=>geoCardHTML(q,rows)).join('');
+    $('geoCards').querySelectorAll('[data-geoscan]').forEach(b=>b.addEventListener('click',()=>geoScan(b.getAttribute('data-geoscan'))));
     const gu=$('geoUnres'); if(gu) gu.addEventListener('click',()=>{ showTab('upload'); $('lf').value='flag'; renderList(); });
     const gb=$('btnGeoNorm'); if(gb) gb.addEventListener('click',geoNormalize);
     bindTips($('geoCards'));
@@ -1372,7 +1407,7 @@
   // ─────────────── 시작 ───────────────
   $('goLogin').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S&&((counts.queued||0)+(counts.processing||0))>0) loadPages(); });
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S&&((counts.queued||0)+(counts.processing||0)+(counts.geo_pending||0))>0) loadPages(); });
   const ps=portalSession();
   if(ps&&ps.token){ session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')}; afterLogin(); }
   window.__surveyDebug={get S(){return S;},get pages(){return pages;},get counts(){return counts;}};

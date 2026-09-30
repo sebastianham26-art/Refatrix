@@ -84,6 +84,8 @@ export function normalizeQuestions(list, prevQuestions) {
       item.options = STATE_NAMES.slice();
       item.options_ko = [];
       item.seg = q.seg === false ? false : true;
+      // free: 양식에 인쇄된 문항이 아니다 — 여백·이름 칸 옆 등 **어디든 손으로 적은 지역**을 찾는다(2026-09-30)
+      if (q.free) item.free = true;
     } else if (type === 'scale') {
       let mn = Number.isInteger(Number(q.min)) ? Number(q.min) : 1;
       let mx = Number.isInteger(Number(q.max)) ? Number(q.max) : 5;
@@ -151,7 +153,7 @@ export function parseTemplateJson(text) {
 export function schemaForPrompt(questions) {
   return questions.map((q) => {
     const o = { k: q.k, type: q.type, text: q.text };
-    if (q.type === 'geo') return o;                       // 보기(32개 주)는 보내지 않는다 — 적힌 그대로 읽게
+    if (q.type === 'geo') { if (q.free) o.free = true; return o; }   // 보기(32개 주)는 보내지 않는다 — 적힌 그대로 읽게
     if (q.type === 'single' || q.type === 'multi') o.options = q.options;
     if (q.type === 'scale') { o.min = q.min; o.max = q.max; }
     return o;
@@ -174,6 +176,7 @@ export function buildPagePrompt(questions, numberHint) {
     'Reglas:',
     '- single: una opción de la lista (texto exacto) o null si no contestó. Si marcó "Otro" y escribió algo, pon "Otro" y el texto en others.',
     '- geo (ubicación): devuelve un objeto {"estado":"...","ciudad":"..."} copiando EXACTAMENTE lo escrito (abreviaturas incluidas: "Mty", "N.L.", "Yuc."). No corrijas ni completes; si sólo hay una palabra, ponla en el campo que corresponda y deja el otro vacío.',
+    ...(questions.some((q) => q.type === 'geo' && q.free) ? [FREE_GEO_RULE] : []),
     '- multi: arreglo con las opciones marcadas (texto exacto); [] si ninguna.',
     '- scale / number: número; null si no contestó.',
     '- text / info: transcribe literalmente lo escrito, en su idioma original, sin corregir ni resumir; "" si está vacío.',
@@ -182,6 +185,55 @@ export function buildPagePrompt(questions, numberHint) {
     '- Agrega a low_confidence toda clave cuya lectura sea dudosa (letra ilegible, marca ambigua, foto borrosa).',
     '- No inventes respuestas. Si la hoja NO es este formulario, pon "not_survey": true.',
   ].join('\n');
+}
+
+// ── ③-b 양식에 없는 지역 — 손글씨 찾기 (2026-09-30) ────────────────
+//   설문 양식에 지역 문항이 없어서 고객이 여백 등에 직접 적은 경우. 인쇄된 글자(우리 회사 주소·꼬리말)는 제외.
+const FREE_GEO_RULE =
+  '- geo con "free":true: esa pregunta NO está impresa en el formulario. Busca en TODA la hoja (márgenes, encabezado, pie, reverso, '
+  + 'junto al nombre/negocio/teléfono, campo de dirección, sello del negocio del CLIENTE) una ciudad, municipio, colonia o estado ESCRITO A MANO '
+  + 'o sellado por el cliente. IGNORA todo texto IMPRESO del formulario (dirección del distribuidor, pie de página, logotipos) y el folio rojo. '
+  + 'Devuelve {"estado":"...","ciudad":"...","donde":"dónde está en la hoja, p.ej. margen superior"} copiando EXACTAMENTE lo escrito; '
+  + 'si no hay nada escrito, {"estado":"","ciudad":""}. No deduzcas la ubicación por la LADA del teléfono ni por el nombre del negocio.';
+
+export function freeGeoQuestions(questions) {
+  return (Array.isArray(questions) ? questions : []).filter((q) => q && q.type === 'geo' && q.free);
+}
+
+// 이미 읽은 설문지에서 **지역만** 다시 찾는 프롬프트 — 다른 답은 보내지도 받지도 않는다
+export function buildGeoScanPrompt(geoQuestions) {
+  const qs = freeGeoQuestions(geoQuestions);
+  const shape = {};
+  qs.forEach((q) => { shape[q.k] = { estado: 'N.L.', ciudad: 'Mty', donde: 'margen superior' }; });
+  return [
+    'Eres un capturista experto. La imagen es UNA hoja de encuesta contestada a mano por un cliente (México, español).',
+    'El formulario NO tiene pregunta de ubicación, pero a veces el cliente escribió a mano de dónde es.',
+    '',
+    'Claves a llenar:',
+    JSON.stringify(qs.map((q) => ({ k: q.k, text: q.text }))),
+    '',
+    'Devuelve SOLO un objeto JSON con esas claves, por ejemplo:',
+    JSON.stringify(shape),
+    '',
+    'Reglas:',
+    FREE_GEO_RULE.replace(/^- geo con "free":true: esa pregunta NO está impresa en el formulario\. /, '- '),
+    '- Si hay varias ubicaciones escritas, usa la del negocio del cliente.',
+  ].join('\n');
+}
+
+// 응답 → {k: {estado, ciudad, raw, at} | null}  (null = 적힌 지역 없음). JSON 이 아니면 null 전체.
+export function parseGeoScanJson(text, geoQuestions) {
+  const j = extractJson(text);
+  if (!j || typeof j !== 'object') return null;
+  const src = j.answers && typeof j.answers === 'object' ? j.answers : j;
+  const out = {};
+  for (const q of freeGeoQuestions(geoQuestions)) {
+    const v = src[q.k];
+    const obj = v && typeof v === 'object' ? v : { estado: v == null ? '' : String(v), ciudad: '' };
+    const g = normalizeGeo(obj);
+    out[q.k] = g.raw ? { estado: g.estado, ciudad: g.ciudad, raw: g.raw, at: clip(obj.donde || obj.where || '', 60) || null } : null;
+  }
+  return out;
 }
 
 // 보기 대조 — 정확히 같으면 그것, 아니면 접은 값이 같거나 한쪽이 다른 쪽을 품는 유일한 보기
@@ -232,7 +284,10 @@ export function normalizeAnswers(rawAnswers, rawOthers, rawLow, questions) {
     if (q.type === 'geo') {
       const g = normalizeGeo(v && typeof v === 'object' ? v : { estado: v, ciudad: (O[q.k] || '') });
       answers[q.k] = g.estado;
-      if (g.raw) geo[q.k] = { estado: g.estado, ciudad: g.ciudad, raw: g.raw };
+      if (g.raw) {
+        geo[q.k] = { estado: g.estado, ciudad: g.ciudad, raw: g.raw };
+        if (q.free && v && typeof v === 'object' && (v.donde || v.where)) geo[q.k].at = clip(v.donde || v.where, 60);
+      }
       if (g.raw && !g.estado) low.add(q.k);     // 주를 못 정하면 「확인 필요」 — 추측하지 않는다
     } else if (q.type === 'single') {
       let m = null;
