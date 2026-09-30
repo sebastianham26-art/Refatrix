@@ -1,5 +1,5 @@
 // =====================================================================
-// 거래목록 「⬇ 엑셀」 버튼 — refatrix-finance.html 을 jsdom 에서 구동해 검증 (build fin-0925rv).
+// 거래목록 「⬇ 엑셀」 버튼 — refatrix-finance.html 을 jsdom 에서 구동해 검증 (build fin-0930bal).
 //   요구(디렉터): 거래목록을 엑셀로 받게. 나만 받으면 된다.
 //   ExcelJS 는 CDN 이라 jsdom 에서 못 받으므로, 워크북 스텁을 window.ExcelJS 로 심어
 //   **실제로 어떤 셀에 무엇을 쓰는지**를 그대로 캡처해 검증한다.
@@ -134,7 +134,7 @@ test('② 클릭하면 지금 필터 그대로 export 엔드포인트를 부른�
   assert.match(req.url, /to=2026-04-30/);
 });
 
-test('③ 시트 헤더가 20열 · 한/스 병기로 만들어진다', async () => {
+test('③ 시트 헤더가 21열(거래 후 잔고 포함) · 한/스 병기로 만들어진다', async () => {
   const ctx = boot();
   ctx.w.document.getElementById('txn-xls').dispatchEvent(new ctx.w.MouseEvent('click', { bubbles: true }));
   await tick(30);
@@ -144,9 +144,10 @@ test('③ 시트 헤더가 20열 · 한/스 병기로 만들어진다', async ()
   assert.equal(cell(ctx.capture, HR, 1), '일자\nFecha');
   assert.equal(cell(ctx.capture, HR, 4), '출처\nOrigen');
   assert.equal(cell(ctx.capture, HR, 9), 'MXN 환산\nConv. MXN');
-  assert.equal(cell(ctx.capture, HR, 20), '등록일시\nCreado');
-  assert.equal(cell(ctx.capture, HR, 21), undefined, '21번째 열은 없다');
-  assert.deepEqual(ws.autoFilter, { from: { row: HR, column: 1 }, to: { row: HR, column: 20 } });
+  assert.equal(cell(ctx.capture, HR, 10), '거래 후 잔고\nSaldo después');
+  assert.equal(cell(ctx.capture, HR, 21), '등록일시\nCreado');
+  assert.equal(cell(ctx.capture, HR, 22), undefined, '22번째 열은 없다');
+  assert.deepEqual(ws.autoFilter, { from: { row: HR, column: 1 }, to: { row: HR, column: 21 } });
   assert.deepEqual(ws.views, [{ state: 'frozen', ySplit: HR, xSplit: 1 }]);
 });
 
@@ -164,11 +165,11 @@ test('④ 첫 행(USD 실적)의 값·서식이 정확하다', async () => {
   assert.equal(cell(ctx.capture, R, 7), 500);
   assert.equal(cell(ctx.capture, R, 8), 18, '환율');
   assert.equal(cell(ctx.capture, R, 9), 9000, 'MXN 환산');
-  assert.equal(cell(ctx.capture, R, 10), '실제 Real');
-  assert.equal(cell(ctx.capture, R, 11), '승인 Sí');
-  assert.equal(cell(ctx.capture, R, 14), 'F-999');
-  assert.equal(cell(ctx.capture, R, 19), '디렉터');
-  assert.equal(cell(ctx.capture, R, 20), '2026-04-25 10:00');
+  assert.equal(cell(ctx.capture, R, 11), '실제 Real');
+  assert.equal(cell(ctx.capture, R, 12), '승인 Sí');
+  assert.equal(cell(ctx.capture, R, 15), 'F-999');
+  assert.equal(cell(ctx.capture, R, 20), '디렉터');
+  assert.equal(cell(ctx.capture, R, 21), '2026-04-25 10:00');
 });
 
 test('⑤ 출처·계좌미지정·계획 열이 행마다 맞는다', async () => {
@@ -176,8 +177,8 @@ test('⑤ 출처·계좌미지정·계획 열이 행마다 맞는다', async () 
   ctx.w.document.getElementById('txn-xls').dispatchEvent(new ctx.w.MouseEvent('click', { bubbles: true }));
   await tick(30);
   assert.equal(cell(ctx.capture, HR + 2, 4), '고정비 Fijo');
-  assert.equal(cell(ctx.capture, HR + 2, 16), '2026-04-15', '계획일');
-  assert.equal(cell(ctx.capture, HR + 2, 17), 10000, '계획금액');
+  assert.equal(cell(ctx.capture, HR + 2, 17), '2026-04-15', '계획일');
+  assert.equal(cell(ctx.capture, HR + 2, 18), 10000, '계획금액');
   assert.equal(cell(ctx.capture, HR + 3, 4), '마케팅 Marketing');
   assert.equal(cell(ctx.capture, HR + 3, 3), '(미지정)', '계좌 없는 마케팅 계획');
   assert.equal(cell(ctx.capture, HR + 4, 2), '수입 Ingreso');
@@ -261,5 +262,5 @@ test('⑫ 만드는 동안 버튼이 잠겼다가 원래대로 돌아온다', as
 });
 
 test('⑬ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0925rv/);
+  assert.match(HTML, /build fin-0930bal/);
 });

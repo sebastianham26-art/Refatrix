@@ -7,6 +7,7 @@ import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { nextReceiptNo } from '../receiptNo.js';   // 영수증 번호 다음번호 제안(순수 함수)
+import { attachBalanceAfter } from '../txnBalance.js';   // 거래목록 「거래 후 잔고」(2026-09-30)
 import { validateTxnFileDataUrl, cleanFileName, txnVisibleTo, canAttachTxnFile, canDeleteTxnFile, TXN_FILE_MAX_PER_TXN } from '../txnFiles.js';   // 거래 영수증 파일(0230)
 
 // ===== 거래 영수증 파일 테이블(0230) 준비 여부 — 반쪽 배포 안전장치 =====
@@ -532,6 +533,17 @@ export default async function financeRoutes(app) {
     else if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
     if (q.from) { args.push(q.from); cond.push(`t.txn_date>=$${args.length}`); }
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
+    // ===== 페이지네이션 (2026-09-02 도입 → 같은 날 옛 사본 push(c398078)로 유실 → 2026-09-30 복원) =====
+    // 예전엔 LIMIT 200 고정이라, 건수가 많은 조건(예: 전체 계좌)에서 최신 200건에 밀려
+    // 과거 거래가 **화면에서 통째로 사라진 것처럼** 보였다. 프런트의 [더 보기]가 offset 을 올려 이어받는다.
+    //  · 파라미터를 안 주면 기존과 100% 동일(첫 200건) — 하위호환.
+    //  · has_more 는 limit+1 건을 떠서 판정한 뒤 잘라낸다(별도 COUNT 쿼리 없이).
+    //  · ORDER BY (txn_date DESC, id DESC) 가 유일키를 포함하므로 offset 페이징이 안정적이다.
+    const TXN_PAGE_MAX = 500;
+    const limit = Math.min(Math.max(parseInt(q.limit, 10) || 200, 1), TXN_PAGE_MAX);
+    const offset = Math.max(parseInt(q.offset, 10) || 0, 0);
+    args.push(limit + 1); const pLimit = args.length;
+    args.push(offset); const pOffset = args.length;
     const filesOk = await txnFilesReady();   // 0230 전이면 file_count=0
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
@@ -550,8 +562,13 @@ export default async function financeRoutes(app) {
          LEFT JOIN customers c ON c.id=si.customer_id
          LEFT JOIN customers fc ON fc.id=t.customer_id
         WHERE ${cond.join(' AND ')}
-        ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
-    return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
+        ORDER BY t.txn_date DESC, t.id DESC LIMIT $${pLimit} OFFSET $${pOffset}`, args)).rows;
+    const hasMore = rows.length > limit;
+    if (hasMore) rows.length = limit;
+    // 거래 후 잔고(계좌 통화) — 필터·페이지와 무관하게 계좌 전 이력으로 누적한 값. 예정·미승인·계좌없음은 null.
+    const withBal = await attachBalanceAfter(query, rows);
+    return { limit, offset, has_more: hasMore, balance_after: true,
+      items: withBal.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
       freight_alloc_n: Number(t.freight_alloc_n || 0),
@@ -564,7 +581,7 @@ export default async function financeRoutes(app) {
   });
 
   // ===== 거래목록 엑셀 내보내기 — 디렉터 전용 (2026-08-26) =====
-  // 화면 목록(/api/transactions)은 LIMIT 200 이라 "보이는 것만" 받는다.
+  // 화면 목록(/api/transactions)은 200건씩 페이징이라 "지금까지 불러온 것만" 받는다.
   // 내보내기는 **필터에 걸린 전부**를 줘야 하므로 별도 엔드포인트로 분리한다.
   //  · 같은 필터(status·direction·account_id[=none]·from·to)를 그대로 받는다.
   //  · 디렉터 전용(requireDirector) — 계좌 권한·비공개 필터가 필요 없다(디렉터는 전부 열람).
@@ -602,7 +619,7 @@ export default async function financeRoutes(app) {
         ORDER BY t.txn_date DESC, t.id DESC
         LIMIT ${CAP + 1}`, args)).rows;
     const truncated = rows.length > CAP;
-    const items = rows.slice(0, CAP).map((t) => ({
+    const items = (await attachBalanceAfter(query, rows.slice(0, CAP))).map((t) => ({
       ...t,
       amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),

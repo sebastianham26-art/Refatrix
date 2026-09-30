@@ -76,12 +76,13 @@ test('① 시트가 하나, 이름이 맞다', { skip: SKIP }, async () => {
   assert.equal(WB.worksheets[0].name, '거래목록 Transacciones');
 });
 
-test('② 헤더 20열이 그대로 저장된다', { skip: SKIP }, async () => {
+test('② 헤더 21열(거래 후 잔고 포함)이 그대로 저장된다', { skip: SKIP }, async () => {
   const ws = WB.worksheets[0];
   assert.equal(ws.getCell(5, 1).value, '일자\nFecha');
   assert.equal(ws.getCell(5, 9).value, 'MXN 환산\nConv. MXN');
-  assert.equal(ws.getCell(5, 20).value, '등록일시\nCreado');
-  assert.equal(ws.getCell(5, 21).value, null);
+  assert.equal(ws.getCell(5, 10).value, '거래 후 잔고\nSaldo después');
+  assert.equal(ws.getCell(5, 21).value, '등록일시\nCreado');
+  assert.equal(ws.getCell(5, 22).value, null);
 });
 
 test('③ 데이터 행의 값·타입이 보존된다 (숫자는 숫자, 일자는 텍스트)', { skip: SKIP }, async () => {
@@ -95,11 +96,11 @@ test('③ 데이터 행의 값·타입이 보존된다 (숫자는 숫자, 일자
   assert.strictEqual(ws.getCell(R, 8).value, 18);
   assert.strictEqual(ws.getCell(R, 9).value, 9000);
   assert.equal(ws.getCell(R, 7).numFmt, '#,##0.00');
-  assert.equal(ws.getCell(R, 14).value, 'F-999');
+  assert.equal(ws.getCell(R, 15).value, 'F-999');
 });
 
 test('④ 특수문자가 들어간 메모가 깨지지 않는다', { skip: SKIP }, async () => {
-  assert.equal(WB.worksheets[0].getCell(6, 15).value, 'Pago proveedor — "comillas" & <tags>');
+  assert.equal(WB.worksheets[0].getCell(6, 16).value, 'Pago proveedor — "comillas" & <tags>');
 });
 
 test('⑤ 합계 셀이 수식으로 저장된다', { skip: SKIP }, async () => {
@@ -128,7 +129,7 @@ test('⑦ 틀고정·자동필터·열너비가 저장된다', { skip: SKIP }, a
   assert.equal(v.ySplit, 5);
   assert.equal(v.xSplit, 1);
   assert.ok(ws.autoFilter, '자동필터');
-  assert.ok(ws.getColumn(15).width >= 40, '메모 열이 넓다');
+  assert.ok(ws.getColumn(16).width >= 40, '메모 열이 넓다');
 });
 
 test('⑧ 조건·생성 안내 줄이 저장된다', { skip: SKIP }, async () => {
