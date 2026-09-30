@@ -162,3 +162,43 @@ export async function sendDailySummaryWa({ dateLabel, content_md, stats }) {
   if (fb.ok) return { ok: true, mode: 'template', message_id: fb.message_id, text_error: first.error };
   return { ok: false, mode: null, error: `text: ${first.error}` + (fb.error !== 'no_template' ? ` / template: ${fb.error}` : ''), code: first.code };
 }
+
+// ── 이미지 발송(일일 자금·월간실적, 2026-09-30) ──
+//   ① 미디어 업로드(POST /{phone_id}/media, multipart) → media id (30일 유효, 여러 수신자 재사용)
+//   ② type:image 메시지(캡션) — 24시간 창 안에서만 도달
+//   ③ (선택) 이미지 헤더 템플릿 — 헤더 IMAGE + 본문 {{1}} 로 승인된 템플릿이면 창 밖에서도 도달
+export async function uploadWaMedia(buf, { mime = 'image/png', filename = 'report.png' } = {}) {
+  if (!waApiReady()) return { ok: false, error: 'wa_not_configured' };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', mime);
+    form.append('file', new Blob([buf], { type: mime }), filename);
+    const resp = await fetch(`https://graph.facebook.com/${API_VER()}/${process.env.WHATSAPP_PHONE_ID}/media`, {
+      method: 'POST', headers: { authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` }, body: form, signal: ctrl.signal,
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.id) { const e = (data && data.error) || {}; return { ok: false, code: e.code || resp.status, error: (e.message || ('http_' + resp.status)).slice(0, 300) }; }
+    return { ok: true, id: String(data.id) };
+  } catch (e) {
+    return { ok: false, code: null, error: e && e.name === 'AbortError' ? 'timeout' : 'network' };
+  } finally { clearTimeout(timer); }
+}
+
+export async function sendWaImage({ to, mediaId, caption = '' }) {
+  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'image',
+    image: { id: String(mediaId), caption: String(caption || '').slice(0, 1024) } });
+}
+
+export async function sendWaImageTemplate({ to, mediaId, param, name, lang = null }) {
+  if (!name) return { ok: false, code: null, error: 'no_template' };
+  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'template',
+    template: { name, language: { code: lang || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX' },
+      components: [
+        { type: 'header', parameters: [{ type: 'image', image: { id: String(mediaId) } }] },
+        { type: 'body', parameters: [{ type: 'text', text: String(param || '').replace(/[\n\t]+/g, ' ').slice(0, 1024) }] },
+      ] } });
+}
+

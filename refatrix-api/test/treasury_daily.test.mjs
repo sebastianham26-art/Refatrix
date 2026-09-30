@@ -133,6 +133,30 @@ test('A7 집계 대상 계좌 — 불공제·금고 자동 제외, 수동 고정
   assert.deepEqual(f({ treasury_exclude: true }), { included: false, reason: 'manual_out' });
 });
 
+test('A8 이미지 — 일일(유첨 양식)·월간 SVG 내용 · PNG 렌더(한글 폰트 동봉) · 비공개 숨김', async () => {
+  const I = await import('../src/treasuryImage.js');
+  const fx = fx18('2026-09-28', '2026-10-03');
+  const act = T.buildDays({ from: '2026-09-28', to: '2026-09-29', base: { MXN: 2047.4, USD: 4894 }, fx,
+    txns: [{ id: 1, d: '2026-09-29', direction: 'in', currency: 'MXN', amount: 6984.4, amount_mxn: 6984.4, customer_name: 'Luemi' },
+      { id: 2, d: '2026-09-29', direction: 'out', currency: 'MXN', amount: 1, amount_mxn: 1, memo: 'Secreto', is_private: true }] });
+  const plan = T.projectDays({ today: '2026-09-30', to: '2026-10-03', startOpen: act[1].close, fx,
+    invoices: [{ id: 3, due: '2026-10-02', outstanding: 65135, customer_name: 'Distrib. Yucatán' }] });
+  for (const lang of ['ko', 'es']) {
+    const svg = I.dailyImageSvg({ cols: [...act, ...plan.slice(0, 4)], reportDay: '2026-09-29', sendDay: '2026-09-30', lang });
+    assert.match(svg, /^<svg /); assert.ok(svg.includes('9,031') || svg.includes('9,032'));
+    assert.ok(svg.includes('97,123') && svg.includes('Luemi') && svg.includes('Yucatán'), '9,030.8 + 4,894×18');
+    assert.ok(!svg.includes('Secreto'), '비공개 이름 숨김');
+    assert.ok(svg.includes(lang === 'ko' ? '일일 자금 요약' : 'Resumen diario de caja'));
+    const png = await I.svgToPng(svg);
+    assert.ok(png && png.slice(1, 4).toString() === 'PNG', 'PNG 렌더');
+  }
+  const sum = T.summarizeMonth(act, { mask: true });
+  const msvg = I.monthlyImageSvg({ sum, days: act, lang: 'ko', partial: true });
+  assert.ok(msvg.includes('월간 자금실적') && msvg.includes('비공개') && !msvg.includes('Secreto'));
+  assert.equal(I.fit('Nomina Luis Guzman Hernandez de la Garza', 12.5, 120).endsWith('…'), true);
+  assert.ok(I.esc('<a&b>') === '&lt;a&amp;b&gt;');
+});
+
 // ── B. 배선 ─────────────────────────────────────────────────────────────
 test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면키 · 화면 토큰', () => {
   const srv = read(join(API, 'src/server.js'));
@@ -147,7 +171,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-0930b/);
+  assert.match(page, /build cashd-0930c/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -308,6 +332,48 @@ E('C4 스케줄 — 10/1 07시: 일일(9/30)·월간(9월) 발송 · 1회 가드
   assert.ok(r2.id);
 });
 
+E('C6 이미지 발송 — 업로드 1회 재사용 · 이미지 실패 시 이미지 템플릿 → 텍스트 대체 · 원장 상태', async () => {
+  const { query } = await import('../src/db.js');
+  await query(`DELETE FROM treasury_wa_sends; DELETE FROM treasury_wa_recipients;`);
+  await query(`INSERT INTO treasury_wa_recipients (name, phone, lang) VALUES ('A','5218110000011','ko'),('B','5218110000012','ko'),('C','5218110000013','es')`);
+  const log = [];
+  const img = (mode) => ({
+    upload: async (buf) => { log.push(['upload', buf.slice(1, 4).toString()]); return { ok: true, id: 'mid' + log.filter((x) => x[0] === 'upload').length }; },
+    image: async (o) => { log.push(['image', o.to, o.mediaId, o.caption]); return mode === 'ok' ? { ok: true, message_id: 'wamid.i' } : { ok: false, error: 'Re-engagement message' }; },
+    imageTemplate: async (o) => { log.push(['itpl', o.to, o.name]); return mode === 'tpl' ? { ok: true, message_id: 'wamid.t' } : { ok: false, error: 'no' }; },
+  });
+  const text = async (m) => { log.push(['text', m.to]); return { ok: true, mode: 'text', message_id: 'wamid.x' }; };
+  // ① 이미지 성공: 한국어 2명은 업로드 1회 공유, 스페인어 1회
+  const prepared = await T.prepareDaily('2026-09-29', '2026-09-30');
+  assert.equal(prepared.cols.map((d) => d.kind).join(','), 'actual,actual,today,plan,plan,plan');
+  let rc = (await query(`SELECT id, name, phone, lang FROM treasury_wa_recipients ORDER BY id`)).rows;
+  let r = await T.sendReport({ kind: 'daily', period: '2026-09-29', recipients: rc, prepared, sender: text, imgApi: img('ok') }, query);
+  assert.deepEqual(r.map((x) => x.status), ['sent_image', 'sent_image', 'sent_image']);
+  assert.equal(log.filter((x) => x[0] === 'upload').length, 2, '언어별 업로드 1회');
+  assert.ok(log.every((x) => x[0] !== 'upload' || x[1] === 'PNG'));
+  assert.match(log.find((x) => x[0] === 'image')[3], /일일 자금 요약.*9,032/);
+  // ② 이미지 실패 + 이미지 템플릿 설정 → 이미지 템플릿
+  log.length = 0; process.env.TREASURY_WA_IMAGE_TEMPLATE = 'resumen_caja_img';
+  r = await T.sendReport({ kind: 'daily', period: '2026-09-28', recipients: rc.slice(0, 1), prepared, force: true, sender: text, imgApi: img('tpl') }, query);
+  assert.equal(r[0].status, 'sent_image_template');
+  // ③ 둘 다 실패 → 텍스트, 원장 error 에 이미지 실패 사유 보존
+  log.length = 0;
+  r = await T.sendReport({ kind: 'daily', period: '2026-09-27', recipients: rc.slice(0, 1), prepared, force: true, sender: text, imgApi: img('bad') }, query);
+  assert.equal(r[0].status, 'sent_text');
+  const row = (await query(`SELECT status, error FROM treasury_wa_sends WHERE period='2026-09-27'`)).rows[0];
+  assert.match(row.error, /image: Re-engagement/);
+  delete process.env.TREASURY_WA_IMAGE_TEMPLATE;
+  // ④ TREASURY_WA_FORMAT=text → 업로드 없이 텍스트
+  log.length = 0; process.env.TREASURY_WA_FORMAT = 'text';
+  r = await T.sendReport({ kind: 'daily', period: '2026-09-26', recipients: rc.slice(0, 1), prepared, force: true, sender: text, imgApi: img('ok') }, query);
+  assert.equal(r[0].status, 'sent_text'); assert.equal(log.filter((x) => x[0] === 'upload').length, 0);
+  delete process.env.TREASURY_WA_FORMAT;
+  // 월간 이미지 준비
+  const pm = await T.prepareMonthly('2026-09', '2026-10-01');
+  assert.match(pm.build('es').svg, /Resultado mensual de caja/);
+  await query(`DELETE FROM treasury_wa_sends; DELETE FROM treasury_wa_recipients;`);
+});
+
 E('C5 API — 디렉터 전용 · 수신자 CRUD(번호 정규화·중복) · 월간 · 미리보기 · 미설정 발송 503', async () => {
   const { buildApp } = await import('../src/server.js');
   const { query } = await import('../src/db.js');
@@ -338,7 +404,11 @@ E('C5 API — 디렉터 전용 · 수신자 CRUD(번호 정규화·중복) · �
   const tokenBak = process.env.WHATSAPP_TOKEN; delete process.env.WHATSAPP_TOKEN;
   assert.equal((await call(D, 'POST', '/api/treasury/wa/send', { kind: 'daily' })).statusCode, 503);
   if (tokenBak) process.env.WHATSAPP_TOKEN = tokenBak;
+  const im = await call(D, 'GET', '/api/treasury/wa/image?kind=daily&period=2026-09-29&lang=ko');
+  assert.equal(im.statusCode, 200); assert.equal(im.headers['content-type'], 'image/png');
+  assert.equal(im.rawPayload.slice(1, 4).toString(), 'PNG');
   const st = (await call(D, 'GET', '/api/treasury/wa/status')).json();
+  assert.equal(st.format, 'image'); assert.equal(st.image_ready, true);
   assert.equal(st.api_ready, false); assert.equal(st.schedule.send_hour_mx, 6);
   const acc = (await call(D, 'GET', '/api/treasury/accounts')).json();
   const rs = Object.fromEntries(acc.accounts.map((a) => [a.id, a.reason]));

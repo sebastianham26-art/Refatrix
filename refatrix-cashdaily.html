@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-0930b</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-0930c</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -235,7 +235,8 @@
           <div><label>&nbsp;</label><button class="btn gold" id="sendBtn">📲 지금 발송 (해당 수신자 전원)</button></div>
         </div>
         <div class="msg" id="pvMsg"></div>
-        <pre class="pv hidden" id="pvText"></pre>
+        <div class="hidden" id="pvImgWrap" style="margin-top:12px"><div class="hint" style="margin-bottom:6px">📷 WhatsApp 으로 가는 이미지 (캡션 = 아래 한 줄 요약)</div><img id="pvImg" alt="발송 이미지 미리보기" style="max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></div>
+        <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">이미지를 못 보낼 때 대신 가는 텍스트 보기</summary><pre class="pv hidden" id="pvText"></pre></details>
       </div>
       <div class="card">
         <div class="card-h">🧾 최근 발송 원장</div>
@@ -246,7 +247,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-0930b (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-0930c (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -483,6 +484,8 @@
     if(st.api_ready) h+='<div class="msg ok" style="margin-top:0">✅ WhatsApp 발송 사용 가능'+(st.template?' · 창 밖 폴백 템플릿 <code>'+esc(st.template)+'</code>':' · <b>폴백 템플릿 없음</b>')+'</div>';
     else h+='<div class="msg err" style="margin-top:0">⚠ WhatsApp 미설정 — Railway 변수 '+(!st.token_set?'<code>WHATSAPP_TOKEN</code> ':'')+(!st.phone_id_set?'<code>WHATSAPP_PHONE_ID</code>':'')+' 필요. (스냅샷 누적은 설정과 무관하게 매일 계속됩니다)</div>';
     if(!st.enabled) h+='<div class="msg err">⚠ <code>TREASURY_DAILY_ENABLED=0</code> — 자동 누적·발송이 꺼져 있습니다.</div>';
+    h+='<div class="hint" style="margin-top:8px">📷 발송 형식: <b>'+(st.format==='image'?(st.image_ready?'표 이미지 + 한 줄 캡션':'이미지(폰트 파일 없음 → 텍스트로 대체)'):'텍스트')+'</b>'
+      +(st.image_template?' · 창 밖 이미지 템플릿 <code>'+esc(st.image_template)+'</code>':' · 창 밖이면 <code>TREASURY_WA_IMAGE_TEMPLATE</code>(헤더 이미지 + 본문 {{1}}) 승인 시 이미지로, 없으면 한 줄 텍스트 템플릿')+'</div>';
     h+='<div class="hint" style="margin-top:8px">⏰ <b>일일</b>: 멕시코 매일 '+sc.send_hour_mx+':00 이후 전날 요약(정오 전까지 · 일요일 무거래 생략) · <b>월간</b>: 매월 1~'+sc.monthly_days+'일 '+sc.send_hour_mx+':00 이후 전월 실적 · 실패 시 5분 간격 최대 '+sc.max_attempts+'회 재시도 · 성공은 수신자별 1회.<br>'
       +'자유 텍스트는 수신자가 최근 24시간 안에 비즈니스 번호로 메시지를 보낸 경우에만 도달합니다(Meta 정책). 매일 확실히 받으려면 본문 <code>{{1}}</code> 유틸리티 템플릿을 승인받아 <code>TREASURY_WA_TEMPLATE</code>(또는 공용 <code>WHATSAPP_TEMPLATE</code>)에 등록하세요 — 그러면 창 밖에서도 한 줄 요약이 도착합니다.</div>';
     $('waStatus').innerHTML=h;
@@ -500,7 +503,7 @@
     const L={daily:'일일',monthly:'월간'};
     $('waLog').innerHTML=st.recent.length?'<table class="sm"><thead><tr><th>종류</th><th>기간</th><th>수신자</th><th>상태</th><th>시도</th><th>마지막 성공</th></tr></thead><tbody>'
       +st.recent.map(x=>'<tr><td>'+L[x.kind]+'</td><td>'+esc(x.period)+'</td><td>'+esc(x.name||'')+' <span class="hint">'+esc(x.to_masked||'')+'</span></td>'
-        +'<td>'+(x.status==='failed'?'<span class="badge bad" title="'+esc(x.error||'')+'">실패</span>':'<span class="badge ok">'+(x.status==='sent_template'?'템플릿':'전체 텍스트')+'</span>')+'</td>'
+        +'<td>'+(x.status==='failed'?'<span class="badge bad" title="'+esc(x.error||'')+'">실패</span>':'<span class="badge ok">'+({sent_image:'이미지',sent_image_template:'이미지 템플릿',sent_template:'텍스트 템플릿',sent_text:'텍스트'}[x.status]||x.status)+'</span>')+'</td>'
         +'<td>'+x.attempts+'</td><td>'+(x.sent_at?esc(new Date(x.sent_at).toLocaleString()):'—')+'</td></tr>').join('')+'</tbody></table>'
       :'<div class="hint">발송 기록 없음</div>';
   }
@@ -523,8 +526,16 @@
   async function preview(){
     const m=$('pvMsg'); m.className='msg';
     const q='kind='+$('pvKind').value+'&lang='+$('pvLang').value+($('pvPeriod').value.trim()?'&period='+encodeURIComponent($('pvPeriod').value.trim()):'');
-    try{ const d=await api('/api/treasury/wa/preview?'+q); $('pvText').textContent=d.text; $('pvText').classList.remove('hidden'); flash(m,(d.kind==='monthly'?'월간 ':'일일 ')+d.period+' 미리보기 · 템플릿 폴백 한 줄: '+d.headline,true); }
-    catch(e){ flash(m,errTxt(e)); $('pvText').classList.add('hidden'); }
+    try{
+      const d=await api('/api/treasury/wa/preview?'+q); $('pvText').textContent=d.text; $('pvText').classList.remove('hidden');
+      flash(m,(d.kind==='monthly'?'월간 ':'일일 ')+d.period+' · 캡션: '+d.headline,true);
+      if(S.wa&&S.wa.format==='image'){
+        const res=await fetch(session.api+'/api/treasury/wa/image?'+q,{headers:auth()});
+        if(res.ok){ const u8=new Uint8Array(await res.arrayBuffer()); let bin=''; for(let i=0;i<u8.length;i+=0x8000) bin+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); $('pvImg').src='data:image/png;base64,'+btoa(bin); $('pvImgWrap').classList.remove('hidden'); }
+        else { $('pvImgWrap').classList.add('hidden'); flash(m,'이미지를 만들 수 없어 텍스트로 발송됩니다 (서버 이미지 렌더러 확인 필요)'); }
+      } else $('pvImgWrap').classList.add('hidden');
+    }
+    catch(e){ flash(m,errTxt(e)); $('pvText').classList.add('hidden'); $('pvImgWrap').classList.add('hidden'); }
   }
   async function sendNow(recipientId){
     const kind=recipientId?'daily':$('pvKind').value;

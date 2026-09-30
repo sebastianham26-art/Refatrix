@@ -20,13 +20,16 @@
 //   · 매일 06:00 이후: 어제까지의 이번 달 스냅샷 갱신 → 일일 요약 발송(06~12시 창, 일요일 무거래는 생략)
 //   · 매월 1~3일 06:00 이후: 전월 월간실적 발송(수신자별 성공 1회)
 //   · 실패는 5분 간격 최대 5회 재시도. WhatsApp 미설정이어도 스냅샷 누적은 계속된다.
+//   · 발송 형식(15:13 지시): 표 이미지(PNG) + 한 줄 캡션. 실패 시 이미지 헤더 템플릿(TREASURY_WA_IMAGE_TEMPLATE) → 텍스트 순으로 대체.
+//     TREASURY_WA_FORMAT=text 면 예전 텍스트 방식.
 //   · TREASURY_DAILY_ENABLED=0 → 전체 끄기 · TREASURY_WA_TEMPLATE → 24h 창 밖 폴백 템플릿(없으면 WHATSAPP_TEMPLATE)
 // =====================================================================
 import { query } from './db.js';
 import { getFxRange, getRateForDate } from './fx.js';
 import { AR_PAID_EPS } from './ar.js';
 import { MX_OFFSET_MIN } from './workingHours.js';
-import { waApiReady, sendWaTo } from './waSend.js';
+import { waApiReady, sendWaTo, uploadWaMedia, sendWaImage, sendWaImageTemplate } from './waSend.js';
+import { dailyImageSvg, monthlyImageSvg, svgToPng } from './treasuryImage.js';
 
 export const CURS = ['MXN', 'USD'];
 export const SEND_HOUR_MX = 6;          // 06:00 이후 발송
@@ -539,13 +542,44 @@ export const maskPhone = (p) => { const s = String(p || ''); return s ? s.slice(
 export function reportUrl() { return process.env.TREASURY_REPORT_URL || DEFAULT_REPORT_URL; }
 
 // 1명 발송 + 원장 기록. force=false 면 성공 이력·시도 상한을 지킨다.
-export async function sendOne({ kind, period, rcpt, text, headline, force = false, sender = sendWaTo }, q = query) {
+export const DEFAULT_IMG_API = { upload: uploadWaMedia, image: sendWaImage, imageTemplate: sendWaImageTemplate };
+export const imageFormatOn = () => process.env.TREASURY_WA_FORMAT !== 'text';
+
+// 이미지 경로: ① 업로드(언어별 1회, mediaCache) → ② image 메시지(캡션) → ③ 이미지 헤더 템플릿. 모두 실패하면 null(→ 텍스트).
+async function tryImage({ rcpt, png, headline, cacheKey, mediaCache, imgApi }) {
+  if (!png) return null;
+  let mid = mediaCache[cacheKey];
+  if (!mid) {
+    const up = await imgApi.upload(png, { mime: 'image/png', filename: `refatrix_${cacheKey}.png` });
+    if (!up.ok) return { ok: false, error: `upload: ${up.error}` };
+    mid = mediaCache[cacheKey] = up.id;
+  }
+  const r1 = await imgApi.image({ to: rcpt.phone, mediaId: mid, caption: headline });
+  if (r1.ok) return { ok: true, mode: 'image', message_id: r1.message_id };
+  const tpl = process.env.TREASURY_WA_IMAGE_TEMPLATE;
+  if (tpl) {
+    const r2 = await imgApi.imageTemplate({ to: rcpt.phone, mediaId: mid, param: headline, name: tpl });
+    if (r2.ok) return { ok: true, mode: 'image_template', message_id: r2.message_id, text_error: r1.error };
+    return { ok: false, error: `image: ${r1.error} / image_template: ${r2.error}` };
+  }
+  return { ok: false, error: `image: ${r1.error}` };
+}
+
+export async function sendOne({ kind, period, rcpt, text, headline, png = null, cacheKey = null, mediaCache = {}, force = false, sender = sendWaTo, imgApi = DEFAULT_IMG_API }, q = query) {
   const prev = (await q(`SELECT sent_at, attempts FROM treasury_wa_sends WHERE kind=$1 AND period=$2 AND recipient_id=$3`,
     [kind, period, rcpt.id])).rows[0];
   if (!force && prev && prev.sent_at) return { skipped: 'already_sent', recipient_id: Number(rcpt.id) };
   if (!force && prev && Number(prev.attempts) >= MAX_ATTEMPTS) return { skipped: 'max_attempts', recipient_id: Number(rcpt.id) };
-  const res = await sender({ to: rcpt.phone, text, headline, templateName: process.env.TREASURY_WA_TEMPLATE || null });
-  const status = res.ok ? (res.mode === 'template' ? 'sent_template' : 'sent_text') : 'failed';
+  let res = png ? await tryImage({ rcpt, png, headline, cacheKey: cacheKey || `${kind}_${period}`, mediaCache, imgApi }) : null;
+  let imgErr = null;
+  if (!res || !res.ok) {
+    imgErr = res ? res.error : null;
+    res = await sender({ to: rcpt.phone, text, headline, templateName: process.env.TREASURY_WA_TEMPLATE || null });
+    if (res.ok && imgErr) res.text_error = imgErr;
+    if (!res.ok && imgErr) res.error = `${imgErr} / ${res.error}`;
+  }
+  const MODE = { image: 'sent_image', image_template: 'sent_image_template', template: 'sent_template', text: 'sent_text' };
+  const status = res.ok ? (MODE[res.mode] || 'sent_text') : 'failed';
   await q(
     `INSERT INTO treasury_wa_sends (kind, period, recipient_id, to_masked, status, message_id, error, attempts, sent_at, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,1, CASE WHEN $8 THEN now() ELSE NULL END, now())
@@ -559,38 +593,62 @@ export async function sendOne({ kind, period, rcpt, text, headline, force = fals
 }
 
 // 일일 발송 본문 준비(언어별)
+//   이미지 열(유첨 양식): 발송일이 요약일 다음날이면 [최근 실적 2일 + 오늘 + 예정 3일], 아니면(과거 재발송) 최근 실적 6일.
+//   일요일은 거래가 있을 때만 열로 쓴다.
+export const IMG_ACTUAL_COLS = 2, IMG_PLAN_COLS = 4;
 export async function prepareDaily(dateStr, sendDay, q = query) {
   const { from } = monthBounds(dateStr.slice(0, 7));
-  const days = await computeActualDays(from, dateStr, q);
+  const winFrom = addDays(dateStr, -9);
+  const all = await computeActualDays(winFrom < from ? winFrom : from, dateStr, q);
+  const days = all.filter((d) => d.date >= from);
   const day = days[days.length - 1];
   const mtd = summarizeMonth(days, { mask: true });
-  let plan = null;
-  if (sendDay && sendDay > dateStr) { try { plan = (await computePlanDays(sendDay, sendDay, q))[0]; } catch (_) { plan = null; } }
-  const build = (lang) => ({ text: buildDailyText(day, { mtd, plan, lang }), headline: buildDailyHeadline(day, lang) });
-  return { days, day, mtd, plan, build };
+  const keep = (d) => d.dow !== 0 || d.moved;
+  let plan = null, planDays = [];
+  if (sendDay && sendDay > dateStr) {
+    try { planDays = await computePlanDays(sendDay, addDays(sendDay, 7), q); plan = planDays[0] || null; } catch (_) { planDays = []; plan = null; }
+  }
+  const actualCols = all.filter(keep);
+  const cols = (sendDay === addDays(dateStr, 1) && planDays.length)
+    ? [...actualCols.slice(-IMG_ACTUAL_COLS), ...planDays.filter(keep).slice(0, IMG_PLAN_COLS)]
+    : actualCols.slice(-(IMG_ACTUAL_COLS + IMG_PLAN_COLS));
+  const build = (lang) => ({ text: buildDailyText(day, { mtd, plan, lang }), headline: buildDailyHeadline(day, lang),
+    svg: dailyImageSvg({ cols, reportDay: dateStr, sendDay: sendDay || addDays(dateStr, 1), mtd, lang }) });
+  return { days, day, mtd, plan, cols, build };
 }
 export async function prepareMonthly(month, today, q = query) {
   const { from, to } = monthBounds(month);
   const last = to < today ? to : addDays(today, -1);
   const days = await computeActualDays(from, last, q);
   const sum = summarizeMonth(days, { mask: true });
-  const build = (lang) => ({ text: buildMonthlyText(sum, { lang, link: reportUrl() }), headline: buildMonthlyHeadline(sum, lang) });
-  return { days, sum, build };
+  const partial = last < to;
+  const build = (lang) => ({ text: buildMonthlyText(sum, { lang, link: reportUrl() }), headline: buildMonthlyHeadline(sum, lang),
+    svg: monthlyImageSvg({ sum, days, lang, partial }) });
+  return { days, sum, partial, build };
 }
 
-export async function sendReport({ kind, period, recipients, prepared, force = false, sender }, q = query) {
+// 언어별로 문구·PNG 를 한 번만 만들고, 업로드한 미디어 id 도 언어별로 재사용
+export async function sendReport({ kind, period, recipients, prepared, force = false, sender, imgApi }, q = query) {
   const cache = {};
+  const mediaCache = {};
   const results = [];
   for (const r of recipients) {
     const lang = r.lang === 'ko' ? 'ko' : 'es';
-    if (!cache[lang]) cache[lang] = prepared.build(lang);
-    results.push(await sendOne({ kind, period, rcpt: r, ...cache[lang], force, sender }, q));
+    if (!cache[lang]) {
+      const b = prepared.build(lang);
+      const png = imageFormatOn() ? await svgToPng(b.svg) : null;
+      cache[lang] = { text: b.text, headline: b.headline, png, cacheKey: `${kind}_${period}_${lang}` };
+    }
+    const opt = { kind, period, rcpt: r, ...cache[lang], mediaCache, force };
+    if (sender) opt.sender = sender;
+    if (imgApi) opt.imgApi = imgApi;
+    results.push(await sendOne(opt, q));
   }
   return results;
 }
 
 // ── 스케줄 1회 실행 (5분마다 호출) ──
-export async function runTreasuryJob({ nowMs = Date.now(), sender, q = query } = {}) {
+export async function runTreasuryJob({ nowMs = Date.now(), sender, imgApi, q = query } = {}) {
   if (process.env.TREASURY_DAILY_ENABLED === '0') return { skipped: 'disabled' };
   const now = mxNow(nowMs);
   if (now.hour < SEND_HOUR_MX) return { skipped: 'early' };
@@ -607,7 +665,7 @@ export async function runTreasuryJob({ nowMs = Date.now(), sender, q = query } =
     const rc = await activeRecipients('daily', q);
     if (rc.length) {
       const prepared = await prepareDaily(yday, now.ymd, q);
-      out.daily = await sendReport({ kind: 'daily', period: yday, recipients: rc, prepared, sender }, q);
+      out.daily = await sendReport({ kind: 'daily', period: yday, recipients: rc, prepared, sender, imgApi }, q);
     }
   }
   // 3) 월간 발송 (1~3일)
@@ -617,7 +675,7 @@ export async function runTreasuryJob({ nowMs = Date.now(), sender, q = query } =
     if (rc.length) {
       if (pm !== yday.slice(0, 7)) await upsertSnapshots(await computeActualDays(monthBounds(pm).from, monthBounds(pm).to, q), q);
       const prepared = await prepareMonthly(pm, now.ymd, q);
-      out.monthly = await sendReport({ kind: 'monthly', period: pm, recipients: rc, prepared, sender }, q);
+      out.monthly = await sendReport({ kind: 'monthly', period: pm, recipients: rc, prepared, sender, imgApi }, q);
     }
   }
   return out;

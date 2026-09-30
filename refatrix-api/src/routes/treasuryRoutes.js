@@ -11,17 +11,19 @@
 //   PATCH  /api/treasury/recipients/:id            부분 수정(active 포함)
 //   DELETE /api/treasury/recipients/:id            삭제(소프트)
 //   GET    /api/treasury/wa/status                 설정 상태 + 최근 발송 원장
-//   GET    /api/treasury/wa/preview?kind&period&lang   보낼 문구 미리보기
+//   GET    /api/treasury/wa/preview?kind&period&lang   보낼 문구 미리보기(캡션 한 줄 + 대체 텍스트)
+//   GET    /api/treasury/wa/image?kind&period&lang     보낼 이미지(PNG) 미리보기
 //   POST   /api/treasury/wa/send {kind, period?, recipient_id?}   지금 발송(수동 — 성공 이력 무시)
 // =====================================================================
 import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { waApiReady, normalizeWaNumber } from '../waSend.js';
+import { svgToPng, imageReady } from '../treasuryImage.js';
 import {
   isYmd, isMonth, mxNow, addDays, monthBounds, prevMonth, computeWeek, computeActualDays, summarizeMonth,
   upsertSnapshots, loadSnapshotMeta, driftOf, flatOf, prepareDaily, prepareMonthly, sendReport, maskPhone,
-  activeRecipients, loadAccountScope, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl,
+  activeRecipients, loadAccountScope, imageFormatOn, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl,
 } from '../treasuryDaily.js';
 
 const G = { preHandler: [authGuard, requireDirector] };
@@ -153,6 +155,8 @@ export default async function treasuryRoutes(app) {
       api_ready: waApiReady(),
       token_set: !!process.env.WHATSAPP_TOKEN, phone_id_set: !!process.env.WHATSAPP_PHONE_ID,
       template: process.env.TREASURY_WA_TEMPLATE || process.env.WHATSAPP_TEMPLATE || null,
+      format: imageFormatOn() ? 'image' : 'text', image_ready: imageReady(),
+      image_template: process.env.TREASURY_WA_IMAGE_TEMPLATE || null,
       enabled: process.env.TREASURY_DAILY_ENABLED !== '0',
       schedule: { send_hour_mx: SEND_HOUR_MX, daily_until_mx: DAILY_SEND_UNTIL_MX, monthly_days: MONTHLY_CATCHUP_DAYS, max_attempts: MAX_ATTEMPTS },
       report_url: reportUrl(),
@@ -179,6 +183,17 @@ export default async function treasuryRoutes(app) {
     if (d.error) return reply.code(400).send({ error: d.error });
     const prepared = kind === 'monthly' ? await prepareMonthly(d.period, d.today) : await prepareDaily(d.period, d.today);
     return { kind, period: d.period, lang, ...prepared.build(lang) };
+  });
+
+  app.get('/api/treasury/wa/image', G, async (req, reply) => {
+    const kind = req.query.kind === 'monthly' ? 'monthly' : 'daily';
+    const lang = LANGS.includes(req.query.lang) ? req.query.lang : 'es';
+    const d = defaults(kind, req.query.period);
+    if (d.error) return reply.code(400).send({ error: d.error });
+    const prepared = kind === 'monthly' ? await prepareMonthly(d.period, d.today) : await prepareDaily(d.period, d.today);
+    const png = await svgToPng(prepared.build(lang).svg);
+    if (!png) return reply.code(503).send({ error: 'image_unavailable' });
+    return reply.header('cache-control', 'no-store').type('image/png').send(png);
   });
 
   app.post('/api/treasury/wa/send', G, async (req, reply) => {
