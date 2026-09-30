@@ -4,7 +4,7 @@ import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
-import { resolveCode, assignReservations, nextQuoteNo, buildLines,
+import { resolveCode, assignReservations, topUpReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
          normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, stampLineMeta } from '../quoteBuild.js';
 import { normOe, oeToken, customerOeText, OE_FOR_NOTE } from '../oeParse.js';   // 0228 · OE 번호
@@ -268,9 +268,14 @@ export default async function quoteRoutes(app) {
   }
   // 서버 기동 시 1회 + 60초 주기 스위퍼(외부 크론 불필요). 테스트(미기동)에선 등록 안 됨.
   if (!globalThis.__refatrixExpirySweeper) {
-    globalThis.__refatrixExpirySweeper = setInterval(() => { finalizeExpiredQuotes().catch(() => {}); }, 60000);
+    // 2026-09-30 · 만료 처리 뒤 곧바로 풀린 재고를 부족한 미결 견적에 접수 순서대로 채운다(Q-2026-0280).
+    const sweep = () => finalizeExpiredQuotes().catch(() => {})
+      .then(() => topUpReservations({ query, withTx }))
+      .then((ch) => { if (ch && ch.length) app.log.info({ topped_up: ch.length }, 'quote reservations topped up'); })
+      .catch(() => {});
+    globalThis.__refatrixExpirySweeper = setInterval(sweep, 60000);
     if (globalThis.__refatrixExpirySweeper.unref) globalThis.__refatrixExpirySweeper.unref();
-    finalizeExpiredQuotes().catch(() => {});
+    sweep();
   }
 
 
@@ -1283,7 +1288,7 @@ export default async function quoteRoutes(app) {
                        WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL
                        ORDER BY ql.line_no, ql.id`;
     const before = (await query(LINE_SQL, [id])).rows;
-    await withTx(async (c) => { await assignReservations(c, id); });
+    await withTx(async (c) => { await assignReservations(c, id, { stamp: false }); });   // 추이 스냅샷(stock_flag) 보존
     const after = (await query(LINE_SQL, [id])).rows;
 
     const wasBy = new Map(before.map((l) => [Number(l.id), Number(l.reserved_qty) || 0]));

@@ -211,7 +211,16 @@ export async function inactiveTargets(inputLines, allowedIds = null) {
 // 한 견적의 매칭 라인들을 제품별로 묶어 생성순(line_no)으로 선착순 greedy 배분한다.
 //  · 같은 트랜잭션(c) 안에서 product 행을 FOR UPDATE 로 잠가, 동시 저장이 같은 재고를 중복 예약하지 못하게 직렬화.
 //  · '타 견적' 합은 이미 커밋된 reserved_qty 만 보이므로(잠금 대기 후 읽음) 선착순이 보장된다.
-export async function assignReservations(c, quoteId) {
+//
+//  stamp(기본 true) — 2026-09-30 · Q-2026-0280 사례
+//    수주흐름 추이(오더퍼널)는 줄의 `stock_flag`·`avail_stock` **스냅샷**으로 집계한다. 그런데 이 두 값은
+//    buildLines 에서 **물리 재고만** 보고 매겨져, 다른 견적이 이미 잡은 수량을 빼지 않았다.
+//    → 실제로는 4개 중 2개만 예약됐는데 추이에는 100% 가용으로 찍혔다.
+//    그래서 예약을 배분하는 바로 이 자리에서, **실제 배분 결과**로 두 값을 다시 적는다.
+//      avail_stock = 그 순간 이 줄이 쓸 수 있던 가용(현재고 − 타 견적 예약 − 같은 견적 앞줄 배분)
+//      stock_flag  = 예약 ≥ 요청 ? 'ok' : 'low_stock'
+//    수동 「재고 재검증」은 stamp:false — 추이의 「요청 시점」 기록은 보존한다(기존 원칙 유지).
+export async function assignReservations(c, quoteId, { stamp = true } = {}) {
   const lines = (await c.query(
     `SELECT id, product_id, qty FROM quote_lines
       WHERE quote_id=$1 AND product_id IS NOT NULL ORDER BY product_id, line_no, id`, [quoteId])).rows;
@@ -230,10 +239,65 @@ export async function assignReservations(c, quoteId) {
     for (const l of byProd[pid]) {
       const want = Number(l.qty) || 0;
       const give = Math.max(0, Math.min(want, remaining));
+      if (stamp) {
+        await c.query(`UPDATE quote_lines SET reserved_qty=$1, avail_stock=$2, stock_flag=$3 WHERE id=$4`,
+          [give, remaining, give >= want ? 'ok' : 'low_stock', l.id]);
+      } else {
+        await c.query(`UPDATE quote_lines SET reserved_qty=$1 WHERE id=$2`, [give, l.id]);
+      }
       remaining -= give;
-      await c.query(`UPDATE quote_lines SET reserved_qty=$1 WHERE id=$2`, [give, l.id]);
     }
   }
+}
+
+// ============ 풀린 재고 자동 충당 (2026-09-30) ============
+// 왜: `reserved_qty` 는 저장 순간의 스냅샷이다. 앞선 견적이 만료·전환·삭제되거나 입고·실사로 재고가 늘어도
+//     뒤에서 기다리던 견적은 「재고 재검증」을 누르기 전까지 계속 부족으로 남았다(Q-2026-0280: 가용 4인데 2개만 가능).
+// 규칙: 1분 스위퍼가 부족한 미결 견적에 **접수 순서대로(created_at, id, line_no)** 남는 재고를 채운다.
+//   · 대상 = 살아 있는 예약(draft·confirmed, 미삭제, 만료 전) 중 포장지시 미출력, 예약 < 요청
+//   · 제품 행을 FOR UPDATE 로 잠가 견적 저장(assignReservations)과 직렬화 — 같은 재고를 두 번 주지 않는다.
+//   · 늘리기만 한다(이미 잡힌 예약은 절대 줄이지 않는다). 만료시각·stock_flag(추이 스냅샷)는 건드리지 않는다.
+// 반환: [{ quote_id, line_id, product_id, before, after }]
+export async function topUpReservations(db, { limit = 200 } = {}) {
+  const OPEN = `q.status IN ('draft','confirmed') AND q.deleted_at IS NULL
+                AND q.packing_printed_at IS NULL AND q.reserve_expires_at > now()`;
+  const prods = (await db.query(
+    `SELECT DISTINCT ql.product_id
+       FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+       JOIN products p ON p.id = ql.product_id
+      WHERE ql.product_id IS NOT NULL AND ql.reserved_qty < ql.qty AND ${OPEN}
+        AND COALESCE(p.stock_qty,0) > 0
+      LIMIT ${Math.max(1, Math.floor(limit))}`)).rows.map((r) => Number(r.product_id));
+  const changed = [];
+  for (const pid of prods) {
+    await db.withTx(async (c) => {
+      const p = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [pid])).rows[0];
+      const physical = p && p.stock_qty != null ? Number(p.stock_qty) : 0;
+      const held = (await c.query(
+        `SELECT COALESCE(SUM(ql.reserved_qty),0) AS s
+           FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
+          WHERE ql.product_id=$1 AND q.status IN ('draft','confirmed')
+            AND (q.reserve_expires_at > now() OR q.packing_printed_at IS NOT NULL)
+            AND q.deleted_at IS NULL`, [pid])).rows[0];
+      let free = physical - (Number(held.s) || 0);
+      if (free <= 0) return;
+      const need = (await c.query(
+        `SELECT ql.id, ql.quote_id, ql.qty, ql.reserved_qty
+           FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+          WHERE ql.product_id=$1 AND ql.reserved_qty < ql.qty AND ${OPEN}
+          ORDER BY q.created_at, q.id, ql.line_no, ql.id`, [pid])).rows;
+      for (const l of need) {
+        if (free <= 0) break;
+        const before = Number(l.reserved_qty) || 0;
+        const add = Math.min(free, (Number(l.qty) || 0) - before);
+        if (add <= 0) continue;
+        await c.query(`UPDATE quote_lines SET reserved_qty = reserved_qty + $1 WHERE id=$2`, [add, l.id]);
+        free -= add;
+        changed.push({ quote_id: Number(l.quote_id), line_id: Number(l.id), product_id: pid, before, after: before + add });
+      }
+    });
+  }
+  return changed;
 }
 
 // ============ 견적 저장/수정 ============

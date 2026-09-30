@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 재고 예약 현황 · rsv-0930a</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+    --red:#B23A2E;--red-bg:#F6E7E4;--amber:#9A6512;--amber-bg:#FBF0DA;--green:#0F6E56;--green-bg:#E4F0EB;--gray:#5b544a;--gray-bg:#EEEBE4;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .card-h .r{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.sm{padding:5px 10px;font-size:12px}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--red-bg);color:var(--red)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.55}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+  .kpi{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .kpi .v{font-size:22px;font-weight:800;color:var(--brand);letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .kpi.soon .v{color:var(--red)} .kpi.hold .v{color:var(--gray)}
+  .kpi.click{cursor:pointer}.kpi.click:hover{border-color:var(--brand)}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .bar .grow{flex:1;min-width:200px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+  .seg button{background:#fff;border:0;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted);border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:var(--brand);color:#fff}
+  .fl{font-size:11px;color:var(--muted);font-weight:700;margin-right:2px}
+  .note{background:#EEF3EF;border-left:3px solid var(--brand);padding:9px 12px;border-radius:0 9px 9px 0;font-size:12px;color:#2c4a42;margin-top:12px;line-height:1.6}
+  /* 견적 묶음 */
+  .qg{border:1px solid var(--line);border-radius:10px;margin-top:10px;overflow:hidden}
+  .qg.soon{border-color:#e3b3aa}
+  .qh{display:grid;grid-template-columns:150px 1fr auto;gap:12px;align-items:center;padding:10px 14px;background:#faf8f3}
+  .qg.soon .qh{background:#fbf1ef}
+  .cd{display:flex;flex-direction:column;gap:2px}
+  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums;width:max-content}
+  .badge.soon{background:var(--red-bg);color:var(--red)}
+  .badge.today{background:var(--amber-bg);color:var(--amber)}
+  .badge.later{background:var(--green-bg);color:var(--green)}
+  .badge.hold{background:var(--gray-bg);color:var(--gray)}
+  .badge.released{background:#eee;color:#888}
+  .cd .at{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .qmain{min-width:0}
+  .qno{font-weight:800;color:var(--brand);text-decoration:none;font-size:14px}
+  .qno:hover{text-decoration:underline}
+  .qparty{font-weight:700;font-size:13.5px;margin-left:8px}
+  .qmeta{font-size:12px;color:var(--muted);margin-top:3px;display:flex;gap:12px;flex-wrap:wrap}
+  .qmeta b{color:var(--ink);font-weight:700}
+  .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:10.5px;font-weight:800;vertical-align:1px}
+  .tag.cat{background:#E9E3F6;color:#5B3F99}.tag.int{background:#E6EEF4;color:#33495C}
+  .tag.conf{background:var(--green-bg);color:var(--green)}.tag.off{background:var(--amber-bg);color:var(--amber)}
+  .qsum{text-align:right;font-size:12px;color:var(--muted);white-space:nowrap}
+  .qsum b{display:block;font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:7px 14px;text-align:left;border-top:1px solid var(--line)}
+  th{font-size:11px;color:var(--muted);background:#fff;font-weight:700}
+  td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+  td.code{font-weight:700;white-space:nowrap}
+  td.nm{color:var(--muted)}
+  .part{color:var(--amber);font-size:11px;font-weight:700}
+  /* 제품별 */
+  table.prod th,table.prod td{border-top:1px solid var(--line)}
+  table.prod tr.ph{cursor:pointer}
+  table.prod tr.ph:hover td{background:#faf8f3}
+  table.prod tr.pd td{background:#faf8f3;padding:0}
+  table.prod tr.pd table td,table.prod tr.pd table th{background:transparent}
+  .avail0{color:var(--red);font-weight:800}
+  .caret{display:inline-block;color:var(--muted);transition:transform .15s;width:12px}
+  tr.ph.open .caret{transform:rotate(90deg)}
+  .empty{color:var(--muted);text-align:center;padding:30px 10px;font-size:13px}
+  .rel .qh{background:#f4f3ef}
+  .rel .qno{color:var(--muted)}
+  @media (max-width:720px){
+    body{padding:10px}
+    .qh{grid-template-columns:1fr;gap:6px}
+    .qsum{text-align:left}
+    th.hm,td.hm{display:none}
+    th,td{padding:7px 9px}
+  }
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">재고 예약 현황 — 견적 접수 후 24시간 예약</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card">
+      <div class="kpis" id="kpis"></div>
+      <div class="note" id="scopeNote">
+        예약은 <b>재고가 있는 품목만</b> 견적 접수 순서대로 잡힙니다(부족분은 예약되지 않음).
+        <b>근무시간(월~금 07:30~17:00) 안</b> 접수 = 접수 시각부터 24시간, <b>근무시간 밖</b> 접수 = 다음 근무일 07:30부터 24시간.
+        <b>포장지시서를 인쇄한 견적</b>은 시간으로 풀리지 않고 출고·매출전환까지 유지됩니다.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="bar">
+        <input id="kw" class="grow" type="text" placeholder="🔎 제품코드 · 제품명 · 견적번호 · 고객 · 예약자">
+        <select id="byUser"><option value="">예약자 전체</option></select>
+      </div>
+      <div class="bar" style="margin-top:10px">
+        <span class="fl">보기</span>
+        <div class="seg" id="segView"><button data-v="quote" class="on">견적별</button><button data-v="product">제품별</button></div>
+        <span class="fl" style="margin-left:6px">해제</span>
+        <div class="seg" id="segWhen"><button data-v="" class="on">전체</button><button data-v="soon">2시간 내</button><button data-v="today">6시간 내</button><button data-v="hold">포장지시</button></div>
+        <span class="fl" style="margin-left:6px">출처</span>
+        <div class="seg" id="segOrigin"><button data-v="" class="on">전체</button><button data-v="internal">내부 견적</button><button data-v="catalog">웹카달록</button></div>
+      </div>
+      <div class="bar" style="margin-top:10px">
+        <span class="fl">최근 풀린 예약</span>
+        <select id="relH"><option value="0">안 봄</option><option value="24">24시간</option><option value="48">48시간</option><option value="168">7일</option></select>
+        <span class="hint" id="stamp" style="margin-left:auto"></span>
+        <button class="btn ghost sm" id="btnXlsx">엑셀</button>
+        <button class="btn ghost sm" id="btnReload">새로고침</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="card" id="listCard">
+      <div class="card-h"><span id="listTitle">예약 중</span></div>
+      <div id="list"><div class="empty">불러오는 중…</div></div>
+    </div>
+
+    <div class="card hidden" id="relCard">
+      <div class="card-h"><span id="relTitle">최근 풀린 예약</span></div>
+      <div class="hint">만료 시각이 지나 재고로 돌아간 예약입니다. 견적은 「만료」로 바뀌며, 현재고로 못 채우던 수량은 부족 수요로 적재됩니다.</div>
+      <div id="relList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+  var fmtN=function(n){return Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});};
+  var fmtM=function(n){return '$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});};
+  var TZ='America/Mexico_City';
+  function fmtT(iso){
+    if(!iso) return '-';
+    var d=new Date(iso); if(isNaN(d)) return '-';
+    var p=new Intl.DateTimeFormat('en-GB',{timeZone:TZ,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false,weekday:'short'}).formatToParts(d);
+    var g=function(t){var x=p.filter(function(o){return o.type===t;})[0];return x?x.value:'';};
+    var wk={Mon:'월',Tue:'화',Wed:'수',Thu:'목',Fri:'금',Sat:'토',Sun:'일'}[g('weekday')]||'';
+    return Number(g('month'))+'/'+Number(g('day'))+'('+wk+') '+g('hour')+':'+g('minute');
+  }
+  // 남은 시간은 **지금 이 순간** 기준으로 매번 다시 잰다(서버 값은 불러온 시각 기준이라 늙는다).
+  function leftMin(it){ if(!it.releases_at) return null; return Math.floor((new Date(it.releases_at).getTime()-Date.now())/60000); }
+  function urgencyOf(it){
+    if(it.state==='hold') return 'hold';
+    var m=leftMin(it); if(m==null||m<=0) return 'released';
+    return m<=120?'soon':(m<=360?'today':'later');
+  }
+  function leftText(it){
+    if(it.state==='hold') return '📦 출고까지 유지';
+    var m=leftMin(it); if(m==null) return '-';
+    if(m<=0) return '해제됨';
+    var h=Math.floor(m/60), mm=m%60;
+    return '⏱ '+(h?h+'시간 ':'')+mm+'분 남음';
+  }
+
+  var session=null, DATA=null, view='quote', when='', origin='', kw='', byUser='', openProd={};
+
+  function auth(){ return {Authorization:'Bearer '+session.token}; }
+  function portalSession(){
+    try{ var raw=sessionStorage.getItem('refatrix_session'); if(raw){ var o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var token=p.get('token'); if(token){ var o2={token:token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o2));}catch(e){} return o2; } } }catch(e){}
+    return null;
+  }
+  function login(){
+    var api=$('api').value.replace(/\/+$/,''), lid=$('lid').value.trim(), pin=$('pin').value.trim();
+    var m=$('loginMsg'); m.className='msg';
+    if(!lid||!pin){ m.className='msg err'; m.textContent='아이디와 PIN을 입력하세요.'; return; }
+    $('go').disabled=true; $('go').textContent='확인 중…';
+    var ps=portalSession();
+    var p= (ps&&ps.token) ? Promise.resolve({ok:true,d:{token:ps.token,user:ps.user}})
+      : fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id:lid,pin:pin})})
+          .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); });
+    p.then(function(x){
+      var d=x.d;
+      if(!x.ok||d.error){ m.className='msg err'; m.textContent='로그인 실패: '+(d.error||''); return; }
+      session={token:d.token,user:d.user||{},api:(ps&&ps.api)||api};
+      try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user})); }catch(e){}
+      $('who').innerHTML='<b>'+esc(session.user.name||lid)+'</b><br>'+esc(session.user.role||'-');
+      $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+      load();
+    }).catch(function(){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; })
+      .then(function(){ $('go').disabled=false; $('go').textContent='로그인'; });
+  }
+
+  var loading=false;
+  function load(){
+    if(loading) return; loading=true;
+    var h=Number($('relH').value)||0;
+    fetch(session.api+'/api/reservations'+(h?('?released='+h):''),{headers:auth()})
+      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,status:r.status,d:d}; }); })
+      .then(function(x){
+        var m=$('msg'); m.className='msg';
+        if(!x.ok){ m.className='msg err'; m.textContent= x.status===403?'이 화면 권한(견적 또는 영업)이 없습니다.':('불러오기 실패: '+(x.d.error||x.status)); return; }
+        DATA=x.d; fillUsers(); render();
+        $('stamp').textContent='기준 '+fmtT(DATA.now)+(DATA.scope==='team'?' · 내 팀 견적만':' · 전체');
+      })
+      .catch(function(){ var m=$('msg'); m.className='msg err'; m.textContent='서버 연결 실패'; })
+      .then(function(){ loading=false; });
+  }
+
+  function fillUsers(){
+    var sel=$('byUser'), cur=sel.value, seen={}, opts=[];
+    (DATA.items||[]).concat(DATA.released||[]).forEach(function(it){ var k=it.by.label; if(!seen[k]){ seen[k]=1; opts.push(k); } });
+    opts.sort(function(a,b){ return a.localeCompare(b,'ko'); });
+    sel.innerHTML='<option value="">예약자 전체</option>'+opts.map(function(o){ return '<option'+(o===cur?' selected':'')+'>'+esc(o)+'</option>'; }).join('');
+    if(cur && !seen[cur]) byUser='';
+  }
+
+  function match(it){
+    if(origin && it.origin!==origin) return false;
+    if(byUser && it.by.label!==byUser) return false;
+    if(kw){
+      var s=(it.product_code+' '+it.product_name+' '+it.quote_no+' '+(it.external_quote_no||'')+' '+it.party_name+' '+it.by.label+' '+(it.by.sub||'')).toLowerCase();
+      if(s.indexOf(kw)<0) return false;
+    }
+    return true;
+  }
+  function filtered(){
+    return (DATA&&DATA.items||[]).filter(function(it){
+      if(!match(it)) return false;
+      var u=urgencyOf(it);
+      if(u==='released') return false;           // 화면을 열어 둔 사이 풀린 줄 — 다음 새로고침 전까지 숨김
+      if(when==='soon' && u!=='soon') return false;
+      if(when==='today' && !(u==='soon'||u==='today')) return false;
+      if(when==='hold' && u!=='hold') return false;
+      return true;
+    });
+  }
+
+  function renderKpis(){
+    var items=(DATA.items||[]).filter(function(it){ return urgencyOf(it)!=='released'; });
+    var q={},sku={},qty=0,sub=0,soon={},hold={};
+    items.forEach(function(it){ q[it.quote_id]=1; sku[it.product_id]=1; qty+=it.reserved_qty; sub+=it.reserved_sub;
+      var u=urgencyOf(it); if(u==='soon') soon[it.quote_id]=1; if(u==='hold') hold[it.quote_id]=1; });
+    var n=function(o){return Object.keys(o).length;};
+    $('kpis').innerHTML=
+      '<div class="kpi"><div class="v">'+n(q)+'</div><div class="l">예약 중 견적</div></div>'+
+      '<div class="kpi"><div class="v">'+n(sku)+'</div><div class="l">예약 SKU</div></div>'+
+      '<div class="kpi"><div class="v">'+fmtN(qty)+'</div><div class="l">예약 수량</div></div>'+
+      '<div class="kpi"><div class="v">'+fmtM(sub)+'</div><div class="l">예약 금액 (IVA 제외)</div></div>'+
+      '<div class="kpi soon click" data-when="soon"><div class="v">'+n(soon)+'</div><div class="l">⏰ 2시간 내 해제 견적</div></div>'+
+      '<div class="kpi hold click" data-when="hold"><div class="v">'+n(hold)+'</div><div class="l">📦 포장지시 (시간 무관)</div></div>';
+  }
+
+  function groupQuotes(items){
+    var by={}, order=[];
+    items.forEach(function(it){
+      var g=by[it.quote_id];
+      if(!g){ g=by[it.quote_id]={head:it,lines:[],qty:0,sub:0}; order.push(g); }
+      g.lines.push(it); g.qty+=it.reserved_qty; g.sub+=it.reserved_sub;
+    });
+    return order;
+  }
+  function byCell(it){
+    return '<b>'+esc(it.by.label)+'</b>'+(it.by.sub?' <span style="color:var(--muted)">('+esc(it.by.sub)+')</span>':'');
+  }
+  function quoteLink(it){
+    return '<a class="qno" href="refatrix-quotelist.html?q='+encodeURIComponent(it.quote_no)+'" target="_blank" rel="noopener">'+esc(it.quote_no)+'</a>';
+  }
+  function quoteBlock(g, released){
+    var h=g.head, u=released?'released':urgencyOf(h);
+    var tags=(h.origin==='catalog'?'<span class="tag cat">웹카달록</span> ':'<span class="tag int">내부</span> ')
+      +(h.quote_status==='confirmed'?'<span class="tag conf">수주확정</span> ':'')
+      +(h.offhours&&!released?'<span class="tag off" title="근무시간 밖 접수 — 다음 근무일 07:30부터 24시간">근무시간 외 접수</span>':'');
+    var cd= released
+      ? '<span class="badge released">해제됨</span><span class="at">'+fmtT(h.releases_at)+'</span>'
+      : '<span class="badge '+u+'" data-left="'+h.line_id+'">'+leftText(h)+'</span><span class="at">'
+          +(h.state==='hold'?'인쇄 '+fmtT(h.packing_printed_at):'해제 '+fmtT(h.releases_at))+'</span>';
+    var rows=g.lines.map(function(l){
+      return '<tr><td class="code">'+esc(l.product_code)+'</td><td class="nm hm">'+esc(l.product_name)+'</td>'
+        +'<td class="r"><b>'+fmtN(l.reserved_qty)+'</b>'+(l.partial?' <span class="part">/ 요청 '+fmtN(l.qty)+'</span>':'')+'</td>'
+        +'<td class="r hm">'+fmtM(l.reserved_sub)+'</td></tr>';
+    }).join('');
+    return '<div class="qg'+(u==='soon'?' soon':'')+'">'
+      +'<div class="qh"><div class="cd">'+cd+'</div>'
+      +'<div class="qmain"><div>'+quoteLink(h)+'<span class="qparty">'+esc(h.party_name)+'</span></div>'
+      +'<div class="qmeta"><span>예약자 '+byCell(h)+'</span><span>예약 <b>'+fmtT(h.reserved_at)+'</b></span>'
+      +(h.offhours&&!released?'<span>기산 <b>'+fmtT(h.count_from)+'</b></span>':'')+'<span>'+tags+'</span></div></div>'
+      +'<div class="qsum"><b>'+fmtN(g.qty)+'개</b>'+g.lines.length+'품목 · '+fmtM(g.sub)+'</div></div>'
+      +'<table><thead><tr><th>제품</th><th class="hm">제품명</th><th class="r">예약 수량</th><th class="r hm">금액(IVA 제외)</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+
+  function renderQuotes(items){
+    if(!items.length) return '<div class="empty">조건에 맞는 예약이 없습니다.</div>';
+    return groupQuotes(items).map(function(g){ return quoteBlock(g,false); }).join('');
+  }
+
+  function renderProducts(items){
+    if(!items.length) return '<div class="empty">조건에 맞는 예약이 없습니다.</div>';
+    var stock={}; (DATA.products||[]).forEach(function(p){ stock[p.product_id]=p; });
+    var by={}, order=[];
+    items.forEach(function(it){
+      var g=by[it.product_id];
+      if(!g){ g=by[it.product_id]={id:it.product_id,code:it.product_code,name:it.product_name,qty:0,lines:[],next:null}; order.push(g); }
+      g.qty+=it.reserved_qty; g.lines.push(it);
+      if(it.state==='active' && (!g.next || it.releases_at<g.next)) g.next=it.releases_at;
+    });
+    order.sort(function(a,b){ return b.qty-a.qty || a.code.localeCompare(b.code); });
+    var body=order.map(function(g){
+      var s=stock[g.id]||{}, open=!!openProd[g.id];
+      var sub=g.lines.map(function(l){
+        return '<tr><td><span class="badge '+urgencyOf(l)+'" data-left="'+l.line_id+'">'+leftText(l)+'</span></td>'
+          +'<td class="hm">'+(l.state==='hold'?'-':fmtT(l.releases_at))+'</td>'
+          +'<td>'+quoteLink(l)+'</td><td>'+esc(l.party_name)+'</td><td class="hm">'+byCell(l)+'</td>'
+          +'<td class="hm">'+fmtT(l.reserved_at)+'</td>'
+          +'<td class="r"><b>'+fmtN(l.reserved_qty)+'</b>'+(l.partial?' <span class="part">/ '+fmtN(l.qty)+'</span>':'')+'</td></tr>';
+      }).join('');
+      return '<tr class="ph'+(open?' open':'')+'" data-pid="'+g.id+'"><td class="code"><span class="caret">▸</span> '+esc(g.code)+'</td>'
+        +'<td class="nm hm">'+esc(g.name)+'</td>'
+        +'<td class="r">'+fmtN(s.stock_qty)+'</td><td class="r">'+fmtN(s.reserved_all)+'</td>'
+        +'<td class="r'+(Number(s.available)<=0?' avail0':'')+'">'+fmtN(s.available)+'</td>'
+        +'<td class="r"><b>'+fmtN(g.qty)+'</b> <span style="color:var(--muted)">('+g.lines.length+'건)</span></td>'
+        +'<td class="hm">'+(g.next?fmtT(g.next):'-')+'</td></tr>'
+        +'<tr class="pd'+(open?'':' hidden')+'" data-pd="'+g.id+'"><td colspan="7"><table><thead><tr><th>해제까지</th><th class="hm">해제 예정</th><th>견적</th><th>고객</th><th class="hm">예약자</th><th class="hm">예약 시각</th><th class="r">예약</th></tr></thead><tbody>'+sub+'</tbody></table></td></tr>';
+    }).join('');
+    return '<table class="prod"><thead><tr><th>제품</th><th class="hm">제품명</th><th class="r">현재고</th><th class="r" title="회사 전체 견적의 살아 있는 예약 합계">전체 예약</th><th class="r">가용</th><th class="r">이 목록 예약</th><th class="hm">다음 해제</th></tr></thead><tbody>'+body+'</tbody></table>'
+      +'<div class="hint" style="margin-top:8px">현재고 · 전체 예약 · 가용은 팀과 관계없는 <b>회사 전체</b> 숫자입니다. 가용 = 현재고 − 전체 예약.</div>';
+  }
+
+  function renderReleased(){
+    var h=DATA.released_hours||0, card=$('relCard');
+    if(!h){ card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    var items=(DATA.released||[]).filter(match);
+    $('relTitle').textContent='최근 '+(h>=168?'7일':h+'시간')+' 동안 풀린 예약 · '+groupQuotes(items).length+'건';
+    $('relList').innerHTML= items.length
+      ? '<div class="rel">'+groupQuotes(items).map(function(g){ return quoteBlock(g,true); }).join('')+'</div>'
+      : '<div class="empty">이 기간에 만료로 풀린 예약이 없습니다.</div>';
+  }
+
+  function render(){
+    if(!DATA) return;
+    renderKpis();
+    var items=filtered();
+    var nq={}; items.forEach(function(it){ nq[it.quote_id]=1; });
+    $('listTitle').textContent= (view==='quote'?'예약 중 — 견적별 · 곧 풀리는 순':'예약 중 — 제품별')+' · 견적 '+Object.keys(nq).length+'건';
+    $('list').innerHTML= view==='quote'?renderQuotes(items):renderProducts(items);
+    renderReleased();
+  }
+
+  // 30초마다 남은 시간을 새로 쓴다. 해제된 줄이 생기면 서버에서 다시 받는다(견적이 「만료」로 바뀌었는지까지).
+  function tick(){
+    if(!DATA) return;
+    var crossed=(DATA.items||[]).some(function(it){ return it.state==='active' && leftMin(it)<=0; });
+    if(crossed){ load(); return; }
+    render();
+  }
+
+  function exportXlsx(){
+    if(!DATA || typeof XLSX==='undefined'){ alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+    var head=['상태','해제까지','해제 예정','견적번호','CRM 번호','견적 상태','출처','고객','예약자','담당/로그인','예약 시각','24h 기산','제품코드','제품명','요청 수량','예약 수량','예약 금액(IVA 제외)'];
+    var rows=[head];
+    var put=function(it,rel){
+      rows.push([rel?'해제됨':(it.state==='hold'?'포장지시(시간 무관)':'예약 중'),
+        rel?'':leftText(it).replace(/^[^\d출]*/,''), it.state==='hold'?'':fmtT(it.releases_at),
+        it.quote_no, it.external_quote_no||'', it.quote_status, it.origin==='catalog'?'웹카달록':'내부',
+        it.party_name, it.by.label, it.by.sub||'', fmtT(it.reserved_at), it.state==='hold'?'':fmtT(it.count_from),
+        it.product_code, it.product_name, it.qty, it.reserved_qty, it.reserved_sub]);
+    };
+    filtered().forEach(function(it){ put(it,false); });
+    (DATA.released_hours?(DATA.released||[]).filter(match):[]).forEach(function(it){ put(it,true); });
+    var ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=head.map(function(h,i){ return {wch:[12,14,14,16,16,10,9,26,14,14,14,14,14,30,9,9,14][i]||12}; });
+    head.forEach(function(_,i){ var c=ws[XLSX.utils.encode_cell({r:0,c:i})]; if(c) c.s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}}}; });
+    var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Reservas');
+    var d=new Date(), ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    XLSX.writeFile(wb,'Refatrix_reservas_'+ymd+'.xlsx');
+  }
+
+  function segBind(id, fn){
+    $(id).addEventListener('click',function(e){
+      var b=e.target.closest('button'); if(!b) return;
+      Array.prototype.forEach.call($(id).querySelectorAll('button'),function(x){ x.classList.toggle('on',x===b); });
+      fn(b.getAttribute('data-v')||'');
+      render();
+    });
+  }
+  function setWhen(v){
+    when=v;
+    Array.prototype.forEach.call($('segWhen').querySelectorAll('button'),function(x){ x.classList.toggle('on',(x.getAttribute('data-v')||'')===v); });
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
+  segBind('segView',function(v){ view=v||'quote'; });
+  segBind('segWhen',function(v){ when=v; });
+  segBind('segOrigin',function(v){ origin=v; });
+  $('kw').addEventListener('input',function(){ kw=this.value.trim().toLowerCase(); render(); });
+  $('byUser').addEventListener('change',function(){ byUser=this.value; render(); });
+  $('relH').addEventListener('change',load);
+  $('btnReload').addEventListener('click',load);
+  $('btnXlsx').addEventListener('click',exportXlsx);
+  $('kpis').addEventListener('click',function(e){
+    var k=e.target.closest('.kpi.click'); if(!k) return;
+    var v=k.getAttribute('data-when'); setWhen(when===v?'':v); render();
+  });
+  $('list').addEventListener('click',function(e){
+    if(e.target.closest('a')) return;
+    var tr=e.target.closest('tr.ph'); if(!tr) return;
+    var id=tr.getAttribute('data-pid'); openProd[id]=!openProd[id]; render();
+  });
+  setInterval(tick,30000);
+  setInterval(function(){ if(session && !document.hidden) load(); },120000);
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden && session) load(); });
+
+  (function(){ var ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-'; $('pin').value='-'; setTimeout(login,30); } })();
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="refatrix-nav.js?v=20260930ur"></script>
+</body>
+</html>

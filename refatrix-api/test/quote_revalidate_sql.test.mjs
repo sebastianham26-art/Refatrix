@@ -21,7 +21,8 @@ const BUILD = fs.readFileSync(path.join(__dirname, '..', 'src', 'quoteBuild.js')
 
 // ---- 운영 소스에서 그대로 뽑아온다 ----------------------------------
 function extractAssignReservations() {
-  const m = BUILD.match(/export async function assignReservations\(c, quoteId\) \{[\s\S]*?\n\}\n/);
+  // 2026-09-30 · 세 번째 인자 { stamp } 추가(stock_flag 실제 배분 기록) — 시그니처 두 모양 다 받는다.
+  const m = BUILD.match(/export async function assignReservations\(c, quoteId(?:, \{ stamp = true \} = \{\})?\) \{[\s\S]*?\n\}\n/);
   assert.ok(m, 'assignReservations 를 소스에서 찾지 못했습니다 (이름·시그니처가 바뀌었나요?)');
   // eslint-disable-next-line no-new-func
   return new Function(`return (${m[0].trim().replace(/^export /, '')})`)();
@@ -66,7 +67,8 @@ async function withDb(fn) {
       CREATE TEMP TABLE quote_lines (
         id BIGSERIAL PRIMARY KEY, quote_id BIGINT NOT NULL, line_no INT NOT NULL DEFAULT 0,
         product_id BIGINT, ctr_code TEXT, product_name TEXT,
-        qty NUMERIC(15,3) NOT NULL DEFAULT 0, reserved_qty NUMERIC(15,3) NOT NULL DEFAULT 0) ON COMMIT DROP;
+        qty NUMERIC(15,3) NOT NULL DEFAULT 0, reserved_qty NUMERIC(15,3) NOT NULL DEFAULT 0,
+        avail_stock NUMERIC(15,3), stock_flag TEXT) ON COMMIT DROP;   -- 2026-09-30 · assignReservations 가 stamp 로 적는 칸
     `);
     await fn(client);
   } finally {
@@ -264,7 +266,8 @@ test('⑪ 동시 재검증 — FOR UPDATE 로 같은 재고를 중복 배분하�
       CREATE TABLE ${S}.quotes (id BIGSERIAL PRIMARY KEY, quote_no TEXT, status TEXT NOT NULL DEFAULT 'draft',
         reserve_expires_at TIMESTAMPTZ, packing_printed_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ);
       CREATE TABLE ${S}.quote_lines (id BIGSERIAL PRIMARY KEY, quote_id BIGINT, line_no INT DEFAULT 0, product_id BIGINT,
-        ctr_code TEXT, product_name TEXT, qty NUMERIC(15,3) DEFAULT 0, reserved_qty NUMERIC(15,3) NOT NULL DEFAULT 0);`);
+        ctr_code TEXT, product_name TEXT, qty NUMERIC(15,3) DEFAULT 0, reserved_qty NUMERIC(15,3) NOT NULL DEFAULT 0,
+        avail_stock NUMERIC(15,3), stock_flag TEXT);`);
     const pid = Number((await admin.query(`INSERT INTO ${S}.products (code,stock_qty) VALUES ('CC1',10) RETURNING id`)).rows[0].id);
     const ids = [];
     for (let i = 0; i < 2; i++) {
