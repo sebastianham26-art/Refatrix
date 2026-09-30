@@ -20,6 +20,39 @@ import { buildPublicSurveyData } from './surveyPublic.js';
 import { pageFileName, extractJson, clip } from './surveyAi.js';
 
 export const SV_TYP = 'survey_viewer';
+
+// ── REFATRIX Platform (refatrix-platform.netlify.app · Supabase) 로그인으로 열람 (2026-09-30) ──
+//   플랫폼 세션 토큰(uuid)을 받아 **플랫폼 서버에 직접** 확인한다 — 플랫폼 RPC app_log 는 토큰이 유효하지 않으면
+//   SESION_INVALIDA 로 거절하고, 유효하면 「고객 설문 결과 열람」을 플랫폼 활동 로그에 그 사용자 이름으로 남긴다.
+//   확인되면 1시간짜리 열람 토큰(pf)을 준다 — 플랫폼 세션이 끝나면 다음 갱신에서 막힌다.
+//   볼 수 있는 설문 = surveys.platform_visible (디렉터가 ERP 에서 켬).
+const PF_URL = () => (process.env.PLATFORM_SUPA_URL || 'https://hvwteeecvukddmurzlfm.supabase.co').replace(/\/$/, '');
+const PF_KEY = () => process.env.PLATFORM_SUPA_KEY || 'sb_publishable_-hlx1MHlTNEwyif6nePYHA_ue_r8mV0';
+const PF_TTL = '1h';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const platformApi = {
+  // → {ok:true} | {ok:false, invalid:true} | {ok:false, error}
+  async check(token) {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const r = await fetch(PF_URL() + '/rest/v1/rpc/app_log', {
+        method: 'POST', signal: ctrl.signal,
+        headers: { apikey: PF_KEY(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_token: token, p_type: 'user', p_txt: '고객 설문 결과 열람 (ERP 연동)' }),
+      });
+      if (r.ok) return { ok: true };
+      const b = await r.json().catch(() => ({}));
+      const msg = String((b && (b.message || b.hint)) || '');
+      if (/SESION_INVALIDA|CUENTA_INVALIDA|22P02/.test(msg + ' ' + (b && b.code))) return { ok: false, invalid: true };
+      return { ok: false, error: 'platform_http_' + r.status };
+    } catch (e) {
+      return { ok: false, error: e && e.name === 'AbortError' ? 'platform_timeout' : 'platform_network' };
+    } finally { clearTimeout(t); }
+  },
+};
+async function platformSurveyIds() {
+  return (await query(`SELECT id FROM surveys WHERE platform_visible AND deleted_at IS NULL`)).rows.map((r) => Number(r.id));
+}
 const MAX_FAIL = 5;
 const LOCK_MIN = 15;
 const TOKEN_TTL = '8h';
@@ -51,6 +84,10 @@ async function viewerGuard(req, reply) {
   try { await req.jwtVerify(); } catch { return reply.code(401).send({ error: 'unauthorized' }); }
   const u = req.user || {};
   if (u.typ !== SV_TYP) return reply.code(401).send({ error: 'unauthorized' });
+  if (u.pf) {                                          // 플랫폼 로그인 — 디렉터가 플랫폼에 공개한 설문만
+    req.viewer = { id: null, login: 'platform', name: String(u.name || 'REFATRIX Platform'), surveyIds: await platformSurveyIds(), pf: true };
+    return;
+  }
   const vid = idOf(String(u.sub || '').replace(/^sv:/, ''));
   const v = vid && (await query(`SELECT id, login, name, survey_ids, active, token_version FROM survey_viewers WHERE id=$1`, [vid])).rows[0];
   if (!v || !v.active || Number(v.token_version) !== Number(u.tv)) return reply.code(401).send({ error: 'unauthorized' });
@@ -153,6 +190,22 @@ export default async function surveyViewerRoutes(app, deps = {}) {
     return { token, name: v.name || v.login, surveys: await allowedSurveys((v.survey_ids || []).map(Number)) };
   });
 
+  // 플랫폼 세션 → 열람 토큰
+  app.post('/api/survey-viewer/platform-login', async (req, reply) => {
+    const b = req.body || {};
+    const tok = String(b.token || '').trim();
+    if (!UUID_RE.test(tok)) return reply.code(401).send({ error: 'platform_session_invalid' });
+    const chk = await platformApi.check(tok);
+    if (!chk.ok) {
+      if (chk.invalid) return reply.code(401).send({ error: 'platform_session_invalid' });
+      return reply.code(502).send({ error: chk.error || 'platform_unreachable' });
+    }
+    const name = cleanName(b.name) || 'REFATRIX Platform';
+    await logEvent({ userId: null, action: 'login', target: 'survey_platform:' + name, result: 'ok' }).catch(() => {});
+    const token = await reply.jwtSign({ sub: 'pf', typ: SV_TYP, pf: 1, name }, { expiresIn: PF_TTL });
+    return { token, name, surveys: await allowedSurveys(await platformSurveyIds()) };
+  });
+
   app.get('/api/survey-viewer/surveys', { preHandler: [viewerGuard] }, async (req) => ({
     name: req.viewer.name || req.viewer.login, surveys: await allowedSurveys(req.viewer.surveyIds),
   }));
@@ -226,7 +279,19 @@ export default async function surveyViewerRoutes(app, deps = {}) {
 
   app.get('/api/surveys/viewers', admin, async () => {
     const rows = (await query(`SELECT * FROM survey_viewers ORDER BY active DESC, lower(login)`)).rows;
-    return { items: rows.map(viewerOut) };
+    const pf = (await query(
+      `SELECT id, title, code_prefix, platform_visible FROM surveys WHERE deleted_at IS NULL ORDER BY survey_date DESC NULLS LAST, id DESC`)).rows;
+    return { items: rows.map(viewerOut), platform: pf.map((x) => ({ id: Number(x.id), title: x.title, code_prefix: x.code_prefix, visible: !!x.platform_visible })) };
+  });
+
+  // REFATRIX Platform 공개 켜기/끄기 (디렉터)
+  app.patch('/api/surveys/:id/platform', admin, async (req, reply) => {
+    const sid = idOf(req.params.id);
+    const r = sid && (await query(`UPDATE surveys SET platform_visible=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING id, platform_visible`,
+      [sid, !!(req.body && req.body.visible)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `survey:${sid}`, detail: { platform_visible: r.platform_visible } });
+    return { ok: true, id: Number(r.id), visible: !!r.platform_visible };
   });
 
   app.post('/api/surveys/viewers', admin, async (req, reply) => {

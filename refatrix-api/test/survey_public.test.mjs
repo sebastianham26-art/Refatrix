@@ -210,7 +210,7 @@ dbTest('C. 열람 계정 — 만들기·로그인·익명 데이터·ERP 차단�
     await query(`DELETE FROM audit_log WHERE user_id = ANY($1::bigint[])`, [[dir, mkt]]).catch(() => {});
     await query(`DELETE FROM user_page_access WHERE user_id = ANY($1::bigint[])`, [[dir, mkt]]);
     await query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [[dir, mkt]]);
-    await app.close(); await pool.end();
+    await app.close();   // pool 은 F1 이 닫는다(같은 파일)
   });
   const call = async (token, method, url, payload) => {
     const r = await app.inject({ method, url, headers: token ? { authorization: 'Bearer ' + token } : {}, payload });
@@ -370,6 +370,113 @@ test('E. 커버리지 사이트 링크 · 빌드 토큰', () => {
   for (const f of ['mx_parts_coverage_dashboard.html', 'mx_coverage_map.html', 'mx_dev_projects.html']) {
     assert.match(read(f), /href="mx_survey_analysis\.html">Encuesta de clientes ↗</, f);
   }
-  assert.match(read('refatrix-survey.html'), /build 20260930sv8/);
+  assert.match(read('refatrix-survey.html'), /build 20260930sv9/);
   assert.match(read('refatrix-api/src/middleware/authGuard.js'), /survey_viewer/);
+});
+
+// ── F. REFATRIX Platform 로그인으로 열람 (2026-09-30, sv9) ─────────────────
+dbTest('F1. 플랫폼 세션 → 열람 토큰 · 플랫폼 공개 설문만 · 끄면 즉시 차단 · 관리 디렉터 전용 (실 DB)', async (t) => {
+  const { query, pool } = await import('../src/db.js');
+  const Fastify = (await import('fastify')).default;
+  const fastifyJwt = (await import('@fastify/jwt')).default;
+  const R = await import('../src/routes/surveyRoutes.js');
+  const V = await import('../src/surveyViewer.js');
+  const seen = [];
+  V.platformApi.check = async (tok) => { seen.push(tok); return tok.startsWith('aaaaaaaa') ? { ok: true } : tok.startsWith('eeeeeeee') ? { ok: false, error: 'platform_timeout' } : { ok: false, invalid: true }; };
+  const app = Fastify({ logger: false });
+  app.register(fastifyJwt, { secret: process.env.JWT_SECRET, sign: { expiresIn: '1h' } });
+  app.register(R.default);
+  await app.ready();
+  const TAG = 'PF' + String(Date.now()).slice(-6);
+  const dir = Number((await query(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`, ['Dir' + TAG, ('dir' + TAG).toLowerCase()])).rows[0].id);
+  const mkt = Number((await query(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'marketing','x',$2) RETURNING id`, ['Mkt' + TAG, ('mkt' + TAG).toLowerCase()])).rows[0].id);
+  const s1 = Number((await query(`INSERT INTO surveys (title, code_prefix, questions, created_by) VALUES ($1,'PFA',$2,$3) RETURNING id`, ['A ' + TAG, JSON.stringify(QUESTIONS), dir])).rows[0].id);
+  const s2 = Number((await query(`INSERT INTO surveys (title, code_prefix, questions, created_by) VALUES ($1,'PFB',$2,$3) RETURNING id`, ['B ' + TAG, JSON.stringify(QUESTIONS), dir])).rows[0].id);
+  t.after(async () => {
+    await query(`DELETE FROM surveys WHERE id = ANY($1::bigint[])`, [[s1, s2]]).catch(() => {});
+    await query(`DELETE FROM audit_log WHERE user_id = ANY($1::bigint[])`, [[dir, mkt]]).catch(() => {});
+    await query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [[dir, mkt]]);
+    await app.close(); await pool.end();
+  });
+  const call = async (token, method, url, payload) => {
+    const r = await app.inject({ method, url, headers: token ? { authorization: 'Bearer ' + token } : {}, payload });
+    let j = null; try { j = r.json(); } catch (_) {}
+    return { code: r.statusCode, j };
+  };
+  const erp = (uid) => app.jwt.sign({ sub: uid });
+  const GOOD = 'aaaaaaaa-1111-2222-3333-444444444444';
+
+  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'no-uuid' })).code, 401, 'uuid 아님 → 플랫폼에 묻지도 않음');
+  assert.equal(seen.length, 0);
+  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'bbbbbbbb-1111-2222-3333-444444444444' })).j.error, 'platform_session_invalid');
+  assert.equal((await call(null, 'POST', '/api/survey-viewer/platform-login', { token: 'eeeeeeee-1111-2222-3333-444444444444' })).code, 502, '플랫폼 응답 없음');
+
+  // 공개 설정 — 디렉터만
+  assert.equal((await call(erp(mkt), 'PATCH', `/api/surveys/${s1}/platform`, { visible: true })).code, 403);
+  assert.equal((await call(erp(dir), 'PATCH', `/api/surveys/${s1}/platform`, { visible: true })).j.visible, true);
+  const adm = await call(erp(dir), 'GET', '/api/surveys/viewers');
+  assert.equal(adm.j.platform.find((x) => x.id === s1).visible, true);
+  assert.equal(adm.j.platform.find((x) => x.id === s2).visible, false);
+
+  const lg = await call(null, 'POST', '/api/survey-viewer/platform-login', { token: GOOD, name: 'Kim CTR' });
+  assert.equal(lg.code, 200); assert.equal(lg.j.name, 'Kim CTR');
+  assert.ok(lg.j.surveys.some((x) => x.id === s1)); assert.ok(!lg.j.surveys.some((x) => x.id === s2));
+  const tok = lg.j.token;
+  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`)).code, 200);
+  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s2}`)).code, 404, '공개 안 한 설문');
+  for (const u of ['/api/surveys', `/api/surveys/${s1}`, '/api/surveys/viewers']) assert.equal((await call(tok, 'GET', u)).code, 401, 'ERP 차단: ' + u);
+  // 끄면 이미 받은 토큰으로도 바로 막힌다
+  await call(erp(dir), 'PATCH', `/api/surveys/${s1}/platform`, { visible: false });
+  assert.equal((await call(tok, 'GET', `/api/survey-viewer/surveys/${s1}`)).code, 404);
+});
+
+jt('F2. 플랫폼 안 survey.html — 플랫폼 세션으로 자동 열람 · 세션 없으면 안내 · 401 이면 다시 확인', async () => {
+  const { buildPublicSurveyData } = await import('../src/surveyPublic.js');
+  const DATA = buildPublicSurveyData({ title: 'RUJAC_01', survey_date: '2026-09-14', questions: QUESTIONS }, PAGES, { uploaded: 5 });
+  DATA.all_questions = QUESTIONS.map(({ ko, ...q }) => q); DATA.responses = []; DATA.ai = null;
+  const html = read('mx_survey_analysis.html').replace('<html lang="es">', '<html lang="es" data-auth="platform">');
+  const run = async (sess, first401 = false) => {
+    const log = []; let n401 = first401 ? 1 : 0;
+    const dom = new JSDOM(html, { url: 'https://refatrix-platform.netlify.app/survey.html', runScripts: 'dangerously', pretendToBeVisual: true,
+      beforeParse(w) {
+        if (sess) w.sessionStorage.setItem('rfx_sess', JSON.stringify(sess));
+        w.fetch = async (url, opt = {}) => {
+          const u = String(url); log.push({ u, body: opt.body, auth: opt.headers && opt.headers.Authorization });
+          let status = 200; let body = {};
+          if (u.endsWith('/platform-login')) body = { token: 'erp-tok-' + log.length, name: 'Kim CTR', surveys: [{ id: 2, title: 'RUJAC_01' }] };
+          else if (u.endsWith('/api/survey-viewer/surveys')) body = { name: 'Kim CTR', surveys: [{ id: 2, title: 'RUJAC_01' }] };
+          else if (u.endsWith('/surveys/2')) { if (n401 > 0) { n401--; status = 401; body = { error: 'unauthorized' }; } else body = DATA; }
+          return { ok: status < 400, status, json: async () => body };
+        };
+      } });
+    await wait(80);
+    return { d: dom.window.document, w: dom.window, log };
+  };
+  // 세션 있음 → 로그인 화면 없이 바로
+  const a = await run({ t: 'aaaaaaaa-1111-2222-3333-444444444444', u: { name: 'Kim CTR' }, e: Date.now() + 3600e3 });
+  const pl = a.log.find((x) => x.u.endsWith('/platform-login'));
+  assert.deepEqual(JSON.parse(pl.body), { token: 'aaaaaaaa-1111-2222-3333-444444444444', name: 'Kim CTR' });
+  assert.ok(a.d.getElementById('login').classList.contains('hidden'), '별도 로그인 화면 없음');
+  assert.match(a.d.body.textContent, /Encuesta de clientes · RUJAC_01/);
+  assert.ok(a.d.getElementById('btnOut').classList.contains('hidden'), '로그아웃은 플랫폼에서');
+  a.w.close();
+  // 세션 없음 → 안내 + 플랫폼으로
+  const b = await run(null);
+  assert.match(b.d.body.textContent, /Inicia sesión en REFATRIX Platform/);
+  assert.equal(b.d.querySelector('#app a').getAttribute('href'), '/');
+  assert.ok(!b.log.length, 'ERP 서버에 아무것도 묻지 않는다');
+  b.w.close();
+  // 만료된 열람 토큰(401) → 플랫폼 세션으로 다시 받아 이어서
+  const c = await run({ t: 'aaaaaaaa-1111-2222-3333-444444444444', u: { name: 'Kim CTR' }, e: Date.now() + 3600e3 }, true);
+  assert.equal(c.log.filter((x) => x.u.endsWith('/platform-login')).length, 2);
+  assert.match(c.d.body.textContent, /Respuestas analizadas/);
+  c.w.close();
+});
+
+test('F3. 플랫폼 index.html 패치 — 메뉴·화면·iframe·로그아웃 시 비우기', () => {
+  let h = null; try { h = readFileSync('/home/claude/platform/index.html', 'utf8'); } catch (_) { return; }
+  assert.match(h, /<button id="navSurvey">고객 설문<\/button>/);
+  assert.match(h, /id="viewSurvey"/); assert.match(h, /f\.src="survey\.html"/);
+  assert.match(h, /\$\("#viewSurvey"\)\.classList\.toggle\("hidden",which!=="survey"\)/);
+  assert.match(h, /f\.src="about:blank"/);
 });

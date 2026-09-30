@@ -157,16 +157,30 @@ table.resp td{vertical-align:middle}
   // ── acceso (usuario + contraseña) ── el servidor solo entrega resultados anónimos y agregados
   const API='https://refatrix-production.up.railway.app';
   const SK='rfx_survey_viewer';
+  // Modo «platform»: la página vive en REFATRIX Platform (mismo sitio) y usa su sesión (sessionStorage rfx_sess);
+  // el servidor de REFATRIX verifica esa sesión directamente con la plataforma. No hay usuario ni contraseña aparte.
+  const PF=document.documentElement.getAttribute('data-auth')==='platform';
+  let pfMsg='';
+  async function pfExchange(){
+    let ps=null; try{ ps=JSON.parse(sessionStorage.getItem('rfx_sess')||'null'); }catch(e){ ps=null; }
+    if(!ps||!ps.t||Date.now()>Number(ps.e||0)){ pfMsg='Inicia sesión en REFATRIX Platform para ver la encuesta.'; return false; }
+    let r; try{ r=await fetch(API+'/api/survey-viewer/platform-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:ps.t,name:ps.u&&ps.u.name||''})}); }catch(e){ pfMsg=ERR.network; return false; }
+    let b={}; try{ b=await r.json(); }catch(e){}
+    if(!r.ok){ pfMsg=r.status===401?'Tu sesión de REFATRIX Platform terminó. Vuelve a iniciar sesión en la plataforma.':'No se pudo verificar tu sesión de REFATRIX Platform. Inténtalo de nuevo en unos minutos.'; return false; }
+    sess={token:b.token,name:b.name,surveys:b.surveys||[]}; saveSess(); return true;
+  }
   let sess=null; try{ sess=JSON.parse(sessionStorage.getItem(SK)||'null'); }catch(e){ sess=null; }
   const saveSess=()=>{ try{ sess?sessionStorage.setItem(SK,JSON.stringify(sess)):sessionStorage.removeItem(SK); }catch(e){} };
-  async function call(path,opt){
-    opt=opt||{}; opt.headers=Object.assign({'Content-Type':'application/json'},sess&&sess.token?{Authorization:'Bearer '+sess.token}:{},opt.headers||{});
-    let r; try{ r=await fetch(API+path,opt); }catch(e){ return {ok:false,status:0,error:'network'}; }
+  async function call(path,opt,retried){
+    const o=Object.assign({},opt||{}); o.headers=Object.assign({'Content-Type':'application/json'},sess&&sess.token?{Authorization:'Bearer '+sess.token}:{},(opt&&opt.headers)||{});
+    let r; try{ r=await fetch(API+path,o); }catch(e){ return {ok:false,status:0,error:'network'}; }
+    if(r.status===401&&PF&&!retried&&await pfExchange()) return call(path,opt,true);
     let b={}; try{ b=await r.json(); }catch(e){}
     return Object.assign({ok:r.ok,status:r.status},b);
   }
-  async function callBlob(path){
+  async function callBlob(path,retried){
     let r; try{ r=await fetch(API+path,{headers:sess&&sess.token?{Authorization:'Bearer '+sess.token}:{}}); }catch(e){ return null; }
+    if(r.status===401&&PF&&!retried&&await pfExchange()) return callBlob(path,true);
     if(r.status===401){ showLogin('Tu sesión terminó. Vuelve a iniciar sesión.'); return null; }
     if(!r.ok) return null; return r.blob();
   }
@@ -176,6 +190,11 @@ table.resp td{vertical-align:middle}
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
   function showLogin(msg){
     sess=null; saveSess(); closeDrawer();
+    if(PF){
+      $('login').classList.add('hidden'); $('pick').classList.add('hidden'); $('who').classList.add('hidden'); $('btnOut').classList.add('hidden');
+      $('app').innerHTML='<div class="card empty">'+esc(pfMsg||msg||'Inicia sesión en REFATRIX Platform para ver la encuesta.')+'<br><br><a class="btn" href="/" target="_top" style="text-decoration:none">Ir a REFATRIX Platform</a></div>';
+      return;
+    }
     $('login').classList.remove('hidden'); $('app').innerHTML=''; $('pick').classList.add('hidden');
     $('who').classList.add('hidden'); $('btnOut').classList.add('hidden');
     $('lgMsg').textContent=msg||''; $('lgPass').value=''; setTimeout(()=>{ try{ ($('lgUser').value?$('lgPass'):$('lgUser')).focus(); }catch(e){} },30);
@@ -192,7 +211,7 @@ table.resp td{vertical-align:middle}
   $('btnOut').addEventListener('click',()=>showLogin(''));
   async function start(){
     $('login').classList.add('hidden');
-    $('who').textContent=sess.name||''; $('who').classList.remove('hidden'); $('btnOut').classList.remove('hidden');
+    $('who').textContent=sess.name||''; $('who').classList.remove('hidden'); $('btnOut').classList.toggle('hidden',PF);
     const list=await call('/api/survey-viewer/surveys');
     if(list.status===401) return showLogin('Tu sesión terminó. Vuelve a iniciar sesión.');
     const sv=(list.ok?list.surveys:sess.surveys)||[];
@@ -213,7 +232,8 @@ table.resp td{vertical-align:middle}
     if(!d.ok||!Array.isArray(d.questions)||!Array.isArray(d.rows)){ $('app').innerHTML='<div class="card empty">No se pudieron cargar los resultados.</div>'; return; }
     mount(d);
   }
-  if(sess&&sess.token) start(); else showLogin('');
+  if(PF){ (async()=>{ if(await pfExchange()) start(); else showLogin(''); })(); }
+  else if(sess&&sess.token) start(); else showLogin('');
 
   function mount(D){
   const QS=D.questions;
