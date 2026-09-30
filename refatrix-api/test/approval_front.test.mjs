@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20260929eb<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20260929ec<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260929ea/);
 });
 
@@ -190,6 +190,22 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     assert.equal(m.w.eval('DET.doc.fx_rate'), 18.5); assert.equal(m.w.eval('DET.payments.length'), 4);
     assert.ok(m.$('.rbody img'), '본문 그림 표시'); assert.match(m.$('.rbody').textContent, /둘째 줄/);
     assert.match(m.$('#app').textContent, /18\.5 .*상신 때 고정/);
+    // 인쇄(A4 1장 시트): 결재 도장 · 정보 · 지급 일정 · 본문 그림 · 증빙 · 이력 · 출력자
+    let printed = 0; m.w.print = () => { printed++; };
+    m.click(m.act('print'));
+    await m.until(() => printed === 1);
+    const ps = m.$('#printSheet');
+    assert.ok(ps && ps.parentElement === m.d.body, '인쇄 시트는 body 바로 아래(인쇄 CSS 대상)');
+    assert.match(ps.textContent, new RegExp(m.w.eval('DET.doc.doc_no')));
+    assert.match(ps.textContent, /지급 일정 · 정기 지급 · 매주 4회/);
+    assert.equal(ps.querySelectorAll('.pst-c').length, m.w.eval('DET.lines.length') + 1, '결재선 + 집행 칸');
+    assert.equal(ps.querySelectorAll('.pimgs img').length, 1);
+    assert.match(ps.textContent, /결재 의견 · 이력/); assert.match(ps.textContent, /출력 .*Maria/);
+    assert.match(ps.textContent, /US\$5,104\.00|US\$4,640\.00/);
+    assert.ok(!ps.classList.contains('measuring'), '측정 끝나면 화면용 표시 해제');
+    m.click(m.act('print'));
+    await m.until(() => printed === 2);
+    assert.equal(m.d.querySelectorAll('#printSheet').length, 1, '다시 인쇄해도 시트는 하나');
     // 분할: 합계가 안 맞으면 저장 막힘 → 선급 30% + 잔금 버튼으로 맞춤
     m.click(m.$('[data-act="nav"][data-v="compose"]'));
     await m.until(() => m.$('#lprev'));

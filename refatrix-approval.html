@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20260929eb</title>
+<title>Refatrix ERP · 전자결재 · b20260929ec</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -223,10 +223,51 @@ html.rfxm .bulk{bottom:calc(60px + env(safe-area-inset-bottom))}
 #cSchedPrev{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .tbl.pays td,.tbl.pays th{white-space:normal;vertical-align:top}
 .loading{padding:30px;text-align:center;color:var(--mute)}
+/* ── 인쇄 전용 시트(A4 1장) ── */
+#printSheet{display:none;font-family:'IBM Plex Sans KR','Noto Sans CJK KR','Malgun Gothic',sans-serif;color:#111;font-size:8.4pt;line-height:1.28;width:194mm;background:#fff}
+#printSheet.measuring{display:block;position:absolute;left:-10000px;top:0;visibility:hidden}
+#printSheet table{border-collapse:collapse;width:100%}
+#printSheet .phd td{vertical-align:bottom;padding:0 0 1.6mm}
+#printSheet .phd{border-bottom:1.4pt solid #143D34;margin-bottom:1.8mm}
+#printSheet .p0{font-size:7pt;color:#555}
+#printSheet .p1{font-size:12pt;font-weight:700;line-height:1.2}
+#printSheet .pno{font:700 10pt ui-monospace,Menlo,Consolas,monospace}
+#printSheet .pr{text-align:right}
+#printSheet .pg{color:#666;font-size:.9em}
+#printSheet .pst{width:auto;margin-bottom:1.8mm}
+#printSheet .pst-c{border:.5pt solid #999;width:21mm;text-align:center;padding:.6mm .4mm;vertical-align:top}
+#printSheet .pst-c .pl{font-size:6.3pt;color:#555;border-bottom:.3pt solid #ccc;padding-bottom:.3mm}
+#printSheet .pst-c .pn{font-size:7.6pt;font-weight:700;margin-top:.4mm}
+#printSheet .pst-c .pm{font-size:8.4pt;font-weight:700;min-height:4mm;color:#b3412e}
+#printSheet .pst-c.pending .pm,#printSheet .pst-c.waiting .pm,#printSheet .pst-c.skipped .pm{color:#999;font-weight:400}
+#printSheet .pst-c.rejected,#printSheet .pst-c.flagged{background:#f6e1dc}
+#printSheet .pst-c .pt{font-size:6.2pt;color:#666}
+#printSheet .pkv th,#printSheet .pkv td{border:.3pt solid #bbb;padding:.5mm 1mm;vertical-align:top;text-align:left}
+#printSheet .pkv th{background:#f1efe8;font-weight:600;font-size:7pt;white-space:nowrap;width:1%}
+#printSheet .psec{margin-top:1.8mm}
+#printSheet .psec h4{font-size:7.8pt;margin:0 0 .6mm;color:#143D34;border-bottom:.5pt solid #bbb;padding-bottom:.3mm}
+#printSheet .pcols>tbody>tr>td.pcol,#printSheet .pcols td.pcol{vertical-align:top;padding:0 1.2mm 0 0}
+#printSheet .ptb{font-size:7pt}
+#printSheet .ptb th{background:#f1efe8;font-weight:600;text-align:left;padding:.3mm .8mm;white-space:nowrap}
+#printSheet .ptb td{padding:.3mm .8mm;border-bottom:.3pt solid #ddd;vertical-align:top}
+#printSheet .ptb td.pnw{white-space:nowrap}
+#printSheet .ptb td.ptx{width:100%}
+#printSheet .pvoid td{text-decoration:line-through;color:#888}
+#printSheet .pbody p{margin:0 0 .8mm;white-space:pre-wrap;word-break:break-word}
+#printSheet .pimgs{margin-top:.8mm}
+#printSheet .pimgs img{display:inline-block;max-height:46mm;max-width:92mm;margin:0 1.5mm 1.5mm 0;border:.3pt solid #ccc;vertical-align:top}
+#printSheet.tight .pimgs img{max-height:30mm;max-width:62mm}
+#printSheet.tight .ptb td.ptx{font-size:6.6pt}
+#printSheet .pnote{font-size:7pt;color:#555}
+#printSheet .pfoot{margin-top:2mm;border-top:.5pt solid #bbb;padding-top:.6mm;font-size:6.3pt;color:#666}
 @media print{
- .top .bell,.tabs,.abar,.composer,.acts,#rnav,#rmtab,.back,.no-print{display:none!important}
- body{background:#fff}.card{box-shadow:none}.wrap{padding:0}
+ @page{size:A4 portrait;margin:8mm}
+ html,body{background:#fff!important;margin:0!important;padding:0!important}
+ body>*:not(#printSheet){display:none!important}
+ #printSheet{display:block!important;position:static!important;left:auto!important;top:auto!important;visibility:visible!important}
+ #printSheet *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
 </style>
 </head>
 <body>
@@ -895,6 +936,115 @@ function renderSettings(){
  </div>`;
 }
 
+/* ═════════ 인쇄 — A4 1장 결재문서 ═════════
+   화면 상세를 그대로 찍지 않고, 인쇄 전용 시트(#printSheet)를 따로 만든다.
+   ① 촘촘한 표 배치(결재 도장 1줄 · 정보 4열 · 회차/증빙/이력은 칸 나눔)
+   ② 넘치면 'tight'(그림·이력 줄이기) → ③ 그래도 넘치면 zoom 으로 A4 한 장에 맞춤(최소 55%).
+   레이아웃은 표(table)만 써서 오래된 인쇄 엔진에서도 같게 나온다. */
+const PR_MIN_ZOOM=0.55;
+const pdt=(iso,len=16)=>iso?fmtT(iso,'America/Mexico_City').slice(5,len):'';           // MM-DD HH:mm
+const cut=(s,nn)=>{s=String(s||'').replace(/\s*\n\s*/g,' · ');return s.length>nn?s.slice(0,nn-1)+'…':s;};
+function prCols(rows,maxPerCol,head,maxCols=3){
+ // 행이 많으면 표를 옆으로 나란히(최대 maxCols 칸) — 세로 공간 절약
+ if(!rows.length)return '';
+ const cols=Math.min(maxCols,Math.max(1,Math.ceil(rows.length/maxPerCol))),per=Math.ceil(rows.length/cols),cells=[];
+ for(let i=0;i<cols;i++){const part=rows.slice(i*per,(i+1)*per);if(part.length)cells.push(`<td class="pcol"><table class="ptb">${head}${part.join('')}</table></td>`);}
+ return `<table class="pcols"><tr>${cells.join('')}</tr></table>`;
+}
+function printSheetHtml(){
+ const d=DET.doc,usd=d.currency==='USD',cur=d.currency,S=B.settings;
+ const st=STAGE_BADGE[d.stage]||['',''];
+ const status=d.status==='approved'?(d.exec_status!=='done'?'승인 · 집행대기':d.post_status==='confirmed'?'완결':d.post_status==='flagged'?'이의제기':'집행완료 · 사후대기'):st[0];
+ // 결재 도장 1줄
+ const stp=l=>{const s=l.status,mk=s==='done'?sealText(l):s==='rejected'?(l.step_type==='agree'?'반대':'반려'):s==='flagged'?'이의':s==='pending'?'대기':s==='skipped'?'—':'';
+  return `<td class="pst-c ${s}"><div class="pl">${SL(l.step_type).replace('대표이사 ','대표 ')}</div><div class="pn">${esc(U(l.user_id))}</div><div class="pm">${mk}</div><div class="pt">${l.acted_at?pdt(l.acted_at,11):''}</div></td>`;};
+ const main=DET.lines.filter(l=>l.step_type!=='post_ceo'),pl=DET.lines.find(l=>l.step_type==='post_ceo');
+ const es=d.status==='rejected'?'skipped':d.exec_status==='done'?'done':d.exec_status==='pending'?'pending':'waiting';
+ const execCell=`<td class="pst-c ${es}"><div class="pl">집행 (재무)</div><div class="pn">${esc(U(d.exec_by||S.finance_user_id))}</div><div class="pm">${({done:'집행',pending:'대기',waiting:'',skipped:'—'})[es]}</div><div class="pt">${d.exec_at?pdt(d.exec_at,11):''}</div></td>`;
+ const stamps=DET.lines.length?`<table class="pst"><tr>${main.map(stp).join('')}${execCell}${pl?stp(pl):''}</tr></table>`:'<div class="pnote">상신 전 문서 — 결재선 미확정</div>';
+ // 정보(4열)
+ const done=DET.payments.filter(p=>p.status==='done'),open=DET.payments.filter(p=>p.status==='planned');
+ const plan=d.payment_plan,v=d.variance_pct;
+ const ptxt=(PT_L[d.payment_type]||'일시불')+(d.payment_type==='recurring'&&plan?` · ${FREQ_L[plan.freq]||''} ${plan.count}회 · ${plan.start}~`:d.payment_type==='installment'?` · ${DET.payments.length}회`:'');
+ const refs=DET.viewers.filter(x=>x.kind==='ref').map(x=>U(x.user_id)),shares=DET.viewers.filter(x=>x.kind==='share').map(x=>U(x.user_id));
+ const kv=[
+  ['카테고리',esc(catName(d.category_id))],['기안자',`${esc(U(d.drafter_id))} <span class="pg">${esc(UT(d.drafter_id))}</span>`],
+  ['상신',d.submitted_at?pdt(d.submitted_at):'—'],['상태',`<b>${esc(status)}</b>`],
+  ['거래처',esc(d.vendor||'—')],['결제 방식',esc(ptxt)],['지급 방법',esc(d.pay_method||'—')],['지급 예정',esc((open[0]||{}).due_date||d.pay_due||'—')],
+  ['예정 소계',money(d.planned_sub)],['IVA 16%',money(d.planned_iva)],['예정 합계',`<b>${money(d.planned_total)}</b> MXN`],
+  [usd?'원통화·환율':'통화',usd?`${cm(d.orig_total,'USD')} × ${d.fx_rate}${d.fx_locked_at?` (${esc(d.fx_date||'')} 고정)`:' (미확정)'}`:'MXN'],
+  ['실적 합계',d.exec_status==='done'||done.length?`<b>${money(d.actual_total||r2(done.reduce((x,p)=>x+p.actual_mxn,0)))}</b> MXN`:'—'],
+  ['차이',v!=null?`${d.actual_total-d.planned_total>=0?'+':''}${money(d.actual_total-d.planned_total)} (${v>=0?'+':''}${v.toFixed(1)}%)`:'—'],
+  ['집행',DET.payments.length>1?`${DET.payments.length-open.length}/${DET.payments.length}회 처리`:(d.exec_status==='done'?`${esc(d.exec_date||'')} ${esc(d.exec_pay_method||'')}`:'—')],
+  ['사전승인',d.ceo_pre_required?`대상 (기준 ${money(d.threshold_at_submit)})`:'해당 없음'],
+ ];
+ if(refs.length||shares.length)kv.push(['참조',esc(refs.join(', ')||'—')],['공람',esc(shares.join(', ')||'—')]);
+ const kvRows=[];for(let i=0;i<kv.length;i+=4){const g=kv.slice(i,i+4);while(g.length<4)g.push(['','']);kvRows.push(`<tr>${g.map(([k,x])=>`<th>${k}</th><td>${x}</td>`).join('')}</tr>`);}
+ // 지급 일정(2회 이상)
+ let pays='';
+ if(DET.payments.length>1){
+  const head=`<tr><th>#</th><th>예정일</th><th>예정</th><th>상태</th><th>실적 (MXN)</th><th>지급일</th></tr>`;
+  const rows=DET.payments.map(p=>`<tr><td>${p.seq}</td><td>${esc((p.due_date||'').slice(2))}</td><td class="pr">${cm(p.planned_amount,cur)}</td><td>${p.status==='done'?'집행':p.status==='skipped'?'중단':'예정'}</td><td class="pr">${p.status==='done'?money(p.actual_mxn)+(usd?`<span class="pg"> @${p.fx_rate}</span>`:''):p.status==='skipped'?`<span class="pg">${esc(cut(p.skip_reason,18))}</span>`:''}</td><td>${esc((p.exec_date||'').slice(2))}</td></tr>`);
+  pays=`<div class="psec"><h4>지급 일정 · ${esc(ptxt)}</h4>${prCols(rows,8,head,DET.payments.length>36?4:3)}</div>`;
+ }
+ // 본문(문단 + 그림)
+ const nodes=DET.body_nodes||[],txt=nodes.filter(x=>x.t==='p').map(x=>`<p>${esc(x.v)}</p>`).join('');
+ const imgs=nodes.filter(x=>x.t==='img'&&IMG_RE.test(x.src)).map(x=>`<img src="${esc(x.src)}" alt="">`).join('');
+ const body=`<div class="psec"><h4>내용</h4><div class="pbody">${txt||'<p class="pg">—</p>'}</div>${imgs?`<div class="pimgs">${imgs}</div>`:''}</div>`;
+ // 증빙
+ const fileRows=DET.files.map(f=>{const pay=f.payment_id?DET.payments.find(p=>same(p.id,f.payment_id)):null;
+  return `<tr class="${f.voided_at?'pvoid':''}"><td class="pnw">${esc(f.kind)}</td><td class="ptx">${esc(cut(f.file_name,44))}${f.cfdi_total!=null?` <span class="pg">CFDI ${money(f.cfdi_total)}</span>`:''}${f.voided_at?` <span class="pg">무효: ${esc(cut(f.void_reason,20))}</span>`:''}</td><td class="pnw">${STAGE_L[f.stage]||''}${pay?` ${pay.seq}회`:''}${f.comment_id?' 댓글':''}</td><td class="pnw">${esc(U(f.uploaded_by))} ${pdt(f.uploaded_at,11)}</td></tr>`;});
+ const links=DET.links.length?`<div class="pnote">연결 문서: ${DET.links.map(l=>esc(`${l.doc_no||''} ${cut(l.title,30)}`)).join(' / ')}</div>`:'';
+ const files=`<div class="psec"><h4>증빙 ${DET.files.filter(f=>!f.voided_at).length}건</h4>${fileRows.length?prCols(fileRows,6,'<tr><th>종류</th><th>파일</th><th>단계</th><th>등록</th></tr>',2):'<div class="pnote">첨부된 증빙 없음</div>'}${links}</div>`;
+ // 결재 의견 · 이력(댓글 포함)
+ const hist=[];
+ DET.events.forEach(e=>hist.push({at:e.created_at,who:e.actor_id==null?'시스템':U(e.actor_id),what:(EV_L[e.action]||e.action)+(e.step_type&&e.step_type!=='draft'&&e.actor_id!=null?` · ${SL(e.step_type)}`:''),txt:e.detail||''}));
+ DET.comments.forEach(c=>{const nf=DET.files.filter(f=>same(f.comment_id,c.id)).length;hist.push({at:c.created_at,who:U(c.author_id),what:'댓글'+(c.edited_at?' (수정됨)':''),txt:c.deleted_at?'(삭제된 댓글)':(c.body||'')+(nf?` [파일 ${nf}]`:'')});});
+ hist.sort((a,b)=>String(a.at).localeCompare(String(b.at)));
+ // 이력이 길면 2칸으로 나누고 내용은 짧게
+ const two=hist.length>12;
+ const histRows=hist.map(h=>`<tr><td class="pnw">${pdt(h.at)}</td><td class="pnw">${esc(h.who)}</td><td class="pnw">${esc(h.what)}</td><td class="ptx">${esc(cut(h.txt,two?72:160))}</td></tr>`);
+ const histHtml=`<div class="psec"><h4>결재 의견 · 이력 ${hist.length}건</h4>${!histRows.length?'<div class="pnote">기록 없음</div>':two?prCols(histRows,Math.ceil(hist.length/2),'',2):`<table class="ptb">${histRows.join('')}</table>`}</div>`;
+ return `<table class="phd"><tr><td><div class="p0">Refatrix · 전자결재 · 비용집행 품의${d.version>1?` · 재기안 v${d.version}${d.parent_no?` (원문서 ${esc(d.parent_no)})`:''}`:''}</div><div class="p1">${esc(d.title)}</div></td>
+  <td class="pr"><div class="pno">${esc(d.doc_no||'임시저장')}</div><div class="p0">${esc(status)}</div></td></tr></table>
+  ${stamps}
+  <table class="pkv">${kvRows.join('')}</table>
+  ${pays}${body}${files}${histHtml}
+  <div class="pfoot">출력 ${fmtT(new Date().toISOString(),'America/Mexico_City').slice(0,16)} (멕시코) · ${esc(B.me.name)} · 예정·실적 금액은 결재 모듈 기준(재무상태 미반영)</div>`;
+}
+// A4 세로(여백 8mm) 한 장 높이에 맞춘다. 반환: { zoom, fits }
+function fitPrintSheet(el){
+ const probe=document.createElement('div');probe.style.cssText='position:absolute;visibility:hidden;width:100mm;height:0';document.body.appendChild(probe);
+ const pxmm=probe.getBoundingClientRect().width/100||3.7795;probe.remove();
+ const W=194,availH=(297-16)*pxmm-4;
+ const measure=z=>{el.style.zoom='';el.style.width=(W/z)+'mm';return el.scrollHeight*z;};
+ el.classList.remove('tight');
+ let z=1,h=measure(1),fits=true;
+ if(!h)return{zoom:1,fits:true};                        // 레이아웃 없는 환경(테스트)
+ if(h>availH){el.classList.add('tight');h=measure(1);}
+ if(h>availH){
+  // 넓게 펼치면 줄바꿈이 줄어 높이가 비선형 → 들어가는 가장 큰 배율을 이분 탐색
+  if(measure(PR_MIN_ZOOM)>availH){z=PR_MIN_ZOOM;fits=false;}
+  else{let lo=PR_MIN_ZOOM,hi=1;for(let i=0;i<8;i++){const mid=(lo+hi)/2;if(measure(mid)<=availH)lo=mid;else hi=mid;}z=Math.floor(lo*1000)/1000;}
+ }
+ el.style.width=(W/z)+'mm';el.style.zoom=String(z);
+ return{zoom:z,fits};
+}
+async function buildPrintSheet(){
+ let el=document.getElementById('printSheet');if(el)el.remove();
+ el=document.createElement('div');el.id='printSheet';el.className='measuring';el.innerHTML=printSheetHtml();
+ document.body.appendChild(el);
+ await Promise.all([...el.querySelectorAll('img')].map(i=>i.decode?i.decode().catch(()=>{}):null));
+ const r=fitPrintSheet(el);el.classList.remove('measuring');
+ return r;
+}
+async function printDoc(){
+ if(!DET)return;
+ const r=await buildPrintSheet();          // 화면에는 안 보임(@media screen 숨김) — 다음 인쇄 때 새로 만든다
+ if(!r.fits)toast('내용이 많아 최대로 줄여도 1장을 넘습니다 — 2장으로 출력됩니다');
+ window.print();
+}
+
 /* ═════════ 알림 ═════════ */
 function drawNotif(){
  $('#notifPanel').innerHTML=`<div class="nh"><span>알림</span><button class="btn sm ghost" data-act="nall">모두 읽음</button></div>`+
@@ -999,7 +1149,7 @@ const H={
  async resubmit(){const old=DET.doc.doc_no;const r=await run(()=>api('POST',`/api/approvals/${DET.doc.id}/resubmit`));if(!r)return;DET=await api('GET','/api/approvals/'+r.id);ui.cd=cdFromDet();ui.view='compose';await loadList();render();window.scrollTo(0,0);toast(`${old} 내용을 불러왔습니다 · 고친 뒤 상신하세요`);},
  upfile(){openModal('upload');},
  link(){openModal('link');},
- print(){window.print();},
+ print(){printDoc();},
  async fopen(a){const fid=a.dataset.fid,w=window.open('','_blank');
   try{const r=await fetch(`${session.api}/api/approvals/files/${fid}`,{headers:{'Authorization':'Bearer '+session.token}});if(!r.ok)throw new Error();const blob=await r.blob();const url=URL.createObjectURL(blob);
    if(w)w.location.href=url;else{const x=document.createElement('a');x.href=url;x.target='_blank';x.rel='noopener';document.body.appendChild(x);x.click();x.remove();}setTimeout(()=>URL.revokeObjectURL(url),60000);}
