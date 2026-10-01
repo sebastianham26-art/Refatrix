@@ -73,13 +73,13 @@ const get = async (url, user = uid + ':director') => {
 };
 const S7 = await get('/api/quotes/summary?yms=' + YM);
 await t('총 견적액·수량 — 작성중·확정·전환·만료만 (가용재고·취소 제외)', async () => {
-  assert.deepEqual(S7.quotes, { n: 5, amt: 2350, qty: 24, open: 1, converted: 2, expired: 2 });
+  assert.deepEqual(S7.quotes, { n: 5, amt: 2350, qty: 24, sku: 3, lines: 6, open: 1, converted: 2, expired: 2 });
 });
 await t('실매출 — 전환 인보이스 줄 합(삭제된 인보이스 제외) · 전환율', async () => {
-  assert.deepEqual(S7.sales, { invoices: 1, amt: 600, qty: 6, rate: 25.5 });
+  assert.deepEqual(S7.sales, { invoices: 1, amt: 600, qty: 6, sku: 1, rate: 25.5 });
 });
 await t('재고부족 실기 — 전환 미확보 800 + 만료 500 (무효 기록 제외) · IVA 제외', async () => {
-  assert.equal(S7.lost.amt, 1300); assert.equal(S7.lost.qty, 13); assert.equal(S7.lost.n, 3);
+  assert.equal(S7.lost.amt, 1300); assert.equal(S7.lost.qty, 13); assert.equal(S7.lost.n, 3); assert.equal(S7.lost.sku, 3);
   assert.equal(S7.lost.converted_amt, 800); assert.equal(S7.lost.expired_amt, 500);
 });
 await t('미결 견적의 현재 부족분은 따로 (200 · 2개)', async () => {
@@ -104,9 +104,19 @@ await t('잘못된/빈 기간은 빈 응답(전체를 조용히 긁지 않는다
   const S = await get('/api/quotes/summary?yms=2031-13,abc');
   assert.equal(S.empty, true);
 });
-await t('디렉터가 아니면 이익 필드가 없다', async () => {
-  const S = await get('/api/quotes/summary?yms=' + YM, uid + ':sales_support');
-  assert.equal('gp' in S, false); assert.equal(S.quotes.amt, 2350);
+await t('요약은 디렉터 · 소시오 전용 — 소시오는 이익까지 보고, 그 밖의 역할은 403', async () => {
+  // 소시오는 목록과 같은 팀 범위로 본다(시험 소시오는 소속팀이 없어 0건) — 이익 칸은 내려온다
+  const S = await get('/api/quotes/summary?yms=' + YM, uid + ':socio');
+  assert.equal(S.quotes.n, 0); assert.ok(S.gp && S.gp.sales, '소시오에게 이익 칸이 없음');
+  for (const role of ['sales_support', 'sales', 'finance']) {
+    const r = await app.inject({ method: 'GET', url: '/api/quotes/summary?yms=' + YM, headers: { 'x-test-user': uid + ':' + role } });
+    assert.equal(r.statusCode, 403, role); assert.ok(!r.body.includes('2350'), role + ' 에 숫자 노출');
+  }
+});
+await t('미등록 코드 줄은 입력 코드(정규화) 하나를 SKU 하나로 센다', async () => {
+  const qx = await quote('QX', '2031-09-02', 'draft', 30, 3, [[null, null, 'zz-9', 1, 10], [null, null, 'ZZ9', 1, 10], [null, null, 'YY1', 1, 10]]);
+  const S = await get('/api/quotes/summary?yms=2031-09');
+  assert.equal(S.quotes.sku, 2); assert.equal(S.quotes.lines, 3); assert.equal(S.quotes.qty, 3); assert.ok(qx);
 });
 
 // ── 검색 ──

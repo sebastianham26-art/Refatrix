@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1001sm1</title>
+<title>Refatrix ERP · 견적 목록 · ql-1001sm2</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -100,6 +100,11 @@
   .sumc.gp{background:#eef6f2;border-color:#cfe5da}.sumc.gp .v{color:var(--income)}
   .sumc.gplost{background:#fdf5f3;border-color:#efd3cc}.sumc.gplost .v{color:var(--expense)}
   .sumc.gp .v .neg{color:var(--expense)}
+  .sumc .v2{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+  .sumc .v2 span{font-size:11px;font-weight:700;color:var(--muted);margin-right:3px}
+  #sumBox .sumtog{margin-left:auto;padding:3px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--brand);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  #sumBox .summini{font-size:12px;color:var(--muted)}#sumBox .summini b{color:var(--ink)}
+  #sumBox.collapsed .sumgrid{display:none}#sumBox:not(.collapsed) .summini{display:none}
   .codehit{display:block;margin-top:3px;font-size:10.5px;font-weight:700;color:#2b5a78;white-space:nowrap}
   .codehit i{font-style:normal;font-weight:500;color:var(--muted)}
 </style>
@@ -208,7 +213,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-1001sm1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1001sm2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -557,7 +562,18 @@
     if(ys.length===1) return ys[0]+'년 '+ms.map(x=>Number(x.slice(5))+'월').join('·');
     return ms.map(x=>x.slice(2,4)+'.'+x.slice(5)).join(' · ');
   }
+  // 2026-10-01 b · 요약은 디렉터 · 소시오만(서버도 403). 접기 상태는 이 브라우저에만 기억.
+  const SUM_FOLD_KEY='rfx_ql_sum_folded';
+  function sumAllowed(){ const r=session&&session.user&&session.user.role; return r==='director'||r==='socio'; }
+  function sumFolded(){ try{ return localStorage.getItem(SUM_FOLD_KEY)==='1'; }catch(e){ return false; } }
+  function setSumFolded(v){ try{ localStorage.setItem(SUM_FOLD_KEY,v?'1':'0'); }catch(e){} applySumFold(); }
+  function applySumFold(){
+    const box=$('sumBox'); if(!box) return; const f=sumFolded();
+    box.classList.toggle('collapsed',f);
+    const b=$('sumTog'); if(b){ b.textContent=f?'▸ 요약 펼치기':'▾ 요약 접기'; b.setAttribute('aria-expanded',f?'false':'true'); }
+  }
   async function loadSummary(){
+    if(!sumAllowed()){ $('sumBox').innerHTML=''; return; }
     const eff=effectiveYMs();
     const key=eff?[...eff].sort().join(','):'all';
     if(key===sumKey && $('sumBox').innerHTML){ syncSumSearchNote(); return; }   // 같은 기간이면 다시 부르지 않는다(상태 칩·검색 전환)
@@ -581,8 +597,13 @@
     const card=(cls,k,v,s,title)=>'<div class="sumc '+cls+'"'+(title?' title="'+esc(title)+'"':'')+'><div class="k">'+k+'</div><div class="v">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+'</div>';
     const pctOf=(a,b)=> b>0 ? (Math.round(a/b*1000)/10)+'%' : '—';
     let h='<div class="sh"><b>📊 '+esc(periodLabel())+' 요약</b><span class="hint">견적일 기준 · 금액은 IVA 제외'
-      +'<span id="sumSearchNote" style="color:#9a6512;font-weight:700;display:none"> · 검색 결과와 무관하게 선택 기간 전체</span></span></div>';
-    if(d.empty){ $('sumBox').innerHTML=h+'<div class="hint">기간을 선택하세요.</div>'; syncSumSearchNote(); return; }
+      +'<span id="sumSearchNote" style="color:#9a6512;font-weight:700;display:none"> · 검색 결과와 무관하게 선택 기간 전체</span></span>'
+      +'<button type="button" class="sumtog" id="sumTog"></button></div>';
+    const wire=()=>{ const b=$('sumTog'); if(b) b.addEventListener('click',()=>setSumFolded(!sumFolded())); applySumFold(); syncSumSearchNote(); };
+    if(d.empty){ $('sumBox').innerHTML=h+'<div class="hint summini">기간을 선택하세요.</div><div class="sumgrid"><div class="hint">기간을 선택하세요.</div></div>'; wire(); return; }
+    // 접었을 때 한 줄 — 금액 세 개만
+    h+='<div class="summini">견적 <b>'+money(qd.amt)+'</b> · 실매출 <b style="color:var(--income)">'+money(sd.amt)+'</b>'
+      +(sd.rate==null?'':' ('+sd.rate+'%)')+' · 재고부족 실기 <b style="color:var(--expense)">'+money(ld.amt)+'</b></div>';
     h+='<div class="sumgrid">';
     h+=card('', '총 견적액', money(qd.amt),
       '견적 '+(qd.n||0)+'건 · 미결 '+(qd.open||0)+' · 전환 '+(qd.converted||0)+' · 만료 '+(qd.expired||0),
@@ -594,9 +615,13 @@
       '전환 시 미확보 '+money(ld.converted_amt)+' · 만료 시 부족 '+money(ld.expired_amt)
       +((ld.open_short_amt||0)>0?'<br><span style="color:#9a6512">＋ 미결 견적 현재 부족 '+money(ld.open_short_amt)+' ('+fmtq(ld.open_short_qty)+'개 · 확정 전)</span>':''),
       '재고가 모자라 팔지 못한 금액 — 매출 전환 때 확보하지 못한 수량 + 만료된 견적의 부족 수량(부족 기록 기준, IVA 제외). 미결 견적의 부족분은 아직 확정 전이라 합계에 넣지 않습니다.');
-    h+=card('', '총 견적 수량', fmtq(qd.qty||0)+'<span style="font-size:12px;font-weight:600"> 개</span>', '');
-    h+=card('sale', '매출 수량', fmtq(sd.qty||0)+'<span style="font-size:12px;font-weight:600"> 개</span>',
-      '견적 수량의 '+pctOf(sd.qty||0, qd.qty||0)+' · 부족 '+fmtq(ld.qty||0)+'개');
+    const v2=(sku,pz)=>'<div class="v2"><div><span>SKU</span>'+fmtq(sku||0)+'</div><div><span>Pieza</span>'+fmtq(pz||0)+'</div></div>';
+    h+=card('', '총 견적 수량', v2(qd.sku,qd.qty),
+      '견적 줄 '+fmtq(qd.lines||0)+'개',
+      'SKU = 서로 다른 제품 수(여러 견적에 같은 제품이 있어도 1). 미등록 코드는 입력 코드 하나를 1 SKU 로 셈. Pieza = 개수 합.');
+    h+=card('sale', '매출 수량', v2(sd.sku,sd.qty),
+      'Pieza 기준 견적의 '+pctOf(sd.qty||0, qd.qty||0)+' · 부족 '+fmtq(ld.sku||0)+' SKU / '+fmtq(ld.qty||0)+' pzs',
+      '실제 인보이스에 담긴 SKU 수 · Pieza 합. 부족 = 재고부족으로 못 판 SKU 수 · Pieza.');
     if(d.gp){
       const gs=d.gp.sales||{}, gl=d.gp.lost||{};
       const note=(g)=>{ const a=[]; if(g.est) a.push('FOB추정 '+g.est+'줄'); if(g.nocost) a.push('원가없음 '+g.nocost+'줄 제외'); return a.length?'<br>'+a.join(' · '):''; };
@@ -609,7 +634,7 @@
     }
     h+='</div>';
     $('sumBox').innerHTML=h;
-    syncSumSearchNote();
+    wire();
   }
   // 검색어가 제품번호에 걸렸으면 어느 줄인지 견적번호 밑에 작게
   function codeHitSmall(q){

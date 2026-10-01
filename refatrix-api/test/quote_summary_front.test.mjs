@@ -18,9 +18,9 @@ const tick = (ms = 150) => new Promise((r) => setTimeout(r, ms));
 
 const SUM = {
   period: ['2026-10'], basis: 'ex_iva',
-  quotes: { n: 12, amt: 250000, qty: 900, open: 3, converted: 7, expired: 2 },
-  sales: { invoices: 7, amt: 150000, qty: 600, rate: 60 },
-  lost: { n: 9, amt: 40000, qty: 120, converted_amt: 30000, expired_amt: 10000, open_short_amt: 5000, open_short_qty: 20 },
+  quotes: { n: 12, amt: 250000, qty: 900, sku: 38, lines: 112, open: 3, converted: 7, expired: 2 },
+  sales: { invoices: 7, amt: 150000, qty: 600, sku: 25, rate: 60 },
+  lost: { n: 9, amt: 40000, qty: 120, sku: 9, converted_amt: 30000, expired_amt: 10000, open_short_amt: 5000, open_short_qty: 20 },
   gp: { sales: { gp: 60000, rev: 150000, cost: 90000, pct: 40, est: 2, nocost: 1 },
         lost: { gp: 15000, rev: 38000, cost: 23000, pct: 39.5, est: 0, nocost: 3 } },
 };
@@ -39,7 +39,7 @@ function boot({ role = 'director', summary = SUM } = {}) {
       w.fetch = async (url) => {
         const u = String(url); calls.push(u);
         const json = (d) => ({ ok: true, status: 200, json: async () => d });
-        if (u.includes('/api/quotes/summary')) { const s = JSON.parse(JSON.stringify(summary)); if (role !== 'director') delete s.gp; return json(s); }
+        if (u.includes('/api/quotes/summary')) { if (role !== 'director' && role !== 'socio') return { ok: false, status: 403, json: async () => ({ error: 'director_or_socio_only' }) }; return json(JSON.parse(JSON.stringify(summary))); }
         if (u.includes('/api/quotes/open-count')) return json({ open: 0, guest_pending: 0, delete_pending: 0 });
         if (u.includes('/api/quotes?')) return json({ items: u.includes('q=') ? [ROW] : [] });
         return json({ items: [] });
@@ -59,15 +59,43 @@ test('견적·매출 추적 — 상단 요약 (jsdom)', { skip: SKIP && 'jsdom �
     const keys = [...box.querySelectorAll('.sumc .k')].map((e) => e.textContent);
     assert.deepEqual(keys, ['총 견적액', '실매출액', '재고부족 매출실기', '총 견적 수량', '매출 수량', '매출총이익 실현', '재고부족 이익 실현불가']);
     const txt = box.textContent;
-    for (const s of ['250,000.00', '150,000.00', '40,000.00', '900', '600', '60,000.00', '15,000.00', '견적액 대비 60%', '이익률 40%',
+    for (const s of ['250,000.00', '150,000.00', '40,000.00', '900', '600', '견적 줄 112', '부족 9 SKU / 120 pzs', '60,000.00', '15,000.00', '견적액 대비 60%', '이익률 40%',
       '미결 견적 현재 부족', 'FOB추정 2줄', '원가없음 3줄 제외', 'IVA 제외']) assert.ok(txt.includes(s), '없음: ' + s);
     assert.match(txt, /2026년 \d+월 요약/);
     c.close();
   });
-  await t.test('② 디렉터가 아니면 이익 두 칸이 없다', async () => {
-    const c = boot({ role: 'sales_support' }); await c.ready; await tick(300);
-    assert.equal(c.d.querySelectorAll('#sumBox .sumc').length, 5);
-    assert.ok(!c.d.getElementById('sumBox').textContent.includes('매출총이익'));
+  await t.test('② 디렉터 · 소시오 외에는 요약을 그리지도, 부르지도 않는다', async () => {
+    for (const role of ['sales_support', 'sales', 'finance']) {
+      const c = boot({ role }); await c.ready; await tick(300);
+      assert.equal(c.d.getElementById('sumBox').innerHTML, '', role);
+      assert.equal(sumCalls(c.calls).length, 0, role + ' 이 요약 API 를 불렀다');
+      c.close();
+    }
+    const s = boot({ role: 'socio' }); await s.ready; await tick(300);
+    assert.equal(s.d.querySelectorAll('#sumBox .sumc').length, 7, '소시오는 7칸');
+    s.close();
+  });
+  await t.test('②-b 수량 칸은 SKU 와 Pieza 를 나눠 보인다', async () => {
+    const c = boot(); await c.ready; await tick(300);
+    const cards = [...c.d.querySelectorAll('#sumBox .sumc')];
+    const q = cards.find((e) => e.querySelector('.k').textContent === '총 견적 수량');
+    const v = [...q.querySelectorAll('.v2 > div')].map((e) => e.textContent);
+    assert.deepEqual(v, ['SKU38', 'Pieza900']);
+    const sl = cards.find((e) => e.querySelector('.k').textContent === '매출 수량');
+    assert.deepEqual([...sl.querySelectorAll('.v2 > div')].map((e) => e.textContent), ['SKU25', 'Pieza600']);
+    c.close();
+  });
+  await t.test('②-c 접기/펼치기 — 접으면 한 줄 요약만, 상태는 다시 열어도 유지', async () => {
+    const c = boot(); await c.ready; await tick(300);
+    const box = c.d.getElementById('sumBox'); const tog = c.d.getElementById('sumTog');
+    assert.equal(box.classList.contains('collapsed'), false); assert.match(tog.textContent, /접기/);
+    tog.click();
+    assert.equal(box.classList.contains('collapsed'), true); assert.match(c.d.getElementById('sumTog').textContent, /펼치기/);
+    assert.match(box.querySelector('.summini').textContent, /견적 \$250,000\.00 · 실매출 \$150,000\.00 \(60%\) · 재고부족 실기 \$40,000\.00/);
+    c.w.toggleMonth(3); await tick(250);                       // 다시 그려도 접힌 채
+    assert.equal(c.d.getElementById('sumBox').classList.contains('collapsed'), true);
+    c.d.getElementById('sumTog').click();
+    assert.equal(c.d.getElementById('sumBox').classList.contains('collapsed'), false);
     c.close();
   });
   await t.test('③ 월을 바꾸면 그 달(yms)로 다시 부르고, 상태 칩은 다시 부르지 않는다', async () => {

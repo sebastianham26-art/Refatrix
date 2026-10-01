@@ -726,9 +726,14 @@ export default async function quoteRoutes(app) {
   //   · 실매출액/수량   = 그 견적이 전환된 인보이스 줄(삭제된 인보이스 제외)
   //   · 재고부족 실기   = 그 견적에서 생긴 부족 기록(stock_shortages — 전환 시 미확보분 + 만료 시 부족분, 무효(cancelled) 제외).
   //                       금액은 기록된 IVA 포함액 ÷ 1.16(기록 시 1.16 을 곱했다). 미결 견적의 현재 부족분은 확정 전이라 따로 보여 준다.
-  //   · 매출총이익(디렉터만) = 인보이스 줄 매출 − 동결 원가(0 이면 FOB × 환율 × (1+부대비율) 추정)
-  //   · 실기 이익(디렉터만)  = 부족 금액 − 부족 수량 × 현재 평균원가(0 이면 같은 FOB 추정). 원가를 알 수 없는 줄은 빼고 개수만 알린다.
-  app.get('/api/quotes/summary', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
+  //   · 매출총이익(디렉터·소시오) = 인보이스 줄 매출 − 동결 원가(0 이면 FOB × 환율 × (1+부대비율) 추정)
+  //   · 실기 이익(디렉터·소시오)  = 부족 금액 − 부족 수량 × 현재 평균원가(0 이면 같은 FOB 추정). 원가를 알 수 없는 줄은 빼고 개수만 알린다.
+  //   · 수량은 SKU(서로 다른 제품 수)와 pieza(개수)를 따로 낸다. 미등록 코드 줄은 입력 코드(정규화) 하나를 SKU 하나로 센다.
+  //   2026-10-01 b · 요약 전체가 **디렉터 · 소시오 전용**(디렉터 지시). 그 밖의 역할은 403 — 화면도 카드를 그리지 않는다.
+  //     이익 두 칸도 같은 두 역할에게 보인다(canSeeCost 와 같은 범위).
+  app.get('/api/quotes/summary', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req, reply) => {
+    const role = req.ctx.perm.role;
+    if (role !== 'director' && role !== 'socio') return reply.code(403).send({ error: 'director_or_socio_only' });
     const yms = String(req.query.yms || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s));
     const all = req.query.all === '1';
     const args = []; const conds = [`q.deleted_at IS NULL`, `q.status IN ('draft','confirmed','converted','expired')`];
@@ -742,7 +747,7 @@ export default async function quoteRoutes(app) {
       args.push(req.ctx.perm.userId); const ui = args.length;
       conds.push(`(c.team_id = ANY($${ti}) OR (q.customer_id IS NULL AND q.created_by = $${ui}))`);
     }
-    const gpDir = req.ctx.perm.role === 'director';
+    const gpDir = true;   // 위에서 디렉터 · 소시오로 이미 걸렀다
     let basis = null;
     if (gpDir) basis = await fobCostBasis();
     args.push(gpDir && basis && basis.fx > 0 ? basis.fx : 0); const fxI = args.length;
@@ -757,17 +762,20 @@ export default async function quoteRoutes(app) {
          SELECT DISTINCT i.id FROM qs JOIN sales_invoices i ON i.id = qs.invoice_id
           WHERE qs.status = 'converted' AND i.status <> 'deleted'
        ), sl AS MATERIALIZED (
-         SELECT sl.qty, sl.line_amount_mxn AS amt, COALESCE(sl.cogs_mxn, sl.qty * sl.applied_unit_cost, 0) AS sc,
+         SELECT sl.product_id, sl.qty, sl.line_amount_mxn AS amt, COALESCE(sl.cogs_mxn, sl.qty * sl.applied_unit_cost, 0) AS sc,
                 ${FOBP} AS fob, ${FOBOK} AS fobok
            FROM sales_invoice_lines sl JOIN inv ON inv.id = sl.invoice_id LEFT JOIN products p ON p.id = sl.product_id
        ), sh AS MATERIALIZED (
-         SELECT ss.shortage_qty AS qty, ss.shortage_amount_mxn / 1.16 AS amt, qs.status AS qst,
+         SELECT ss.product_id, ss.shortage_qty AS qty, ss.shortage_amount_mxn / 1.16 AS amt, qs.status AS qst,
                 COALESCE(p.avg_cost, 0) AS avg_cost, ${FOBP} AS fob, ${FOBOK} AS fobok
            FROM stock_shortages ss
            JOIN qs ON (ss.source_quote_id = qs.id
                        OR (ss.source_quote_id IS NULL AND qs.invoice_id IS NOT NULL AND ss.sales_invoice_id = qs.invoice_id))
            LEFT JOIN products p ON p.id = ss.product_id
           WHERE ss.status <> 'cancelled'
+       ), qsku AS MATERIALIZED (
+         SELECT COALESCE(ql.product_id::text, 'X:' || regexp_replace(upper(COALESCE(ql.input_code,'')), '[^A-Z0-9]', '', 'g')) AS k
+           FROM quote_lines ql JOIN qs ON qs.id = ql.quote_id
        ), op AS MATERIALIZED (
          SELECT GREATEST(ql.qty - COALESCE(ql.reserved_qty, 0), 0) AS sq,
                 GREATEST(ql.qty - COALESCE(ql.reserved_qty, 0), 0)::numeric / NULLIF(ql.qty, 0) * ql.line_subtotal AS samt
@@ -778,12 +786,15 @@ export default async function quoteRoutes(app) {
          (SELECT COUNT(*) FROM qs)::int                                             AS q_n,
          (SELECT COALESCE(SUM(subtotal_mxn), 0) FROM qs)                            AS q_amt,
          (SELECT COALESCE(SUM(total_qty), 0) FROM qs)                               AS q_qty,
+         (SELECT COUNT(DISTINCT k) FROM qsku WHERE k <> 'X:')::int                  AS q_sku,
+         (SELECT COUNT(*) FROM qsku)::int                                           AS q_lines,
          (SELECT COUNT(*) FROM qs WHERE status IN ('draft','confirmed'))::int       AS q_open,
          (SELECT COUNT(*) FROM qs WHERE status = 'converted')::int                  AS q_conv,
          (SELECT COUNT(*) FROM qs WHERE status = 'expired')::int                    AS q_exp,
          (SELECT COUNT(*) FROM inv)::int                                            AS s_inv,
          (SELECT COALESCE(SUM(amt), 0) FROM sl)                                     AS s_amt,
          (SELECT COALESCE(SUM(qty), 0) FROM sl)                                     AS s_qty,
+         (SELECT COUNT(DISTINCT product_id) FROM sl)::int                           AS s_sku,
          (SELECT COALESCE(SUM(amt) FILTER (WHERE sc > 0), 0) FROM sl)               AS s_a_rev,
          (SELECT COALESCE(SUM(sc)  FILTER (WHERE sc > 0), 0) FROM sl)               AS s_a_cost,
          (SELECT COALESCE(SUM(amt) FILTER (WHERE sc <= 0 AND fobok), 0) FROM sl)    AS s_f_rev,
@@ -793,6 +804,7 @@ export default async function quoteRoutes(app) {
          (SELECT COUNT(*) FROM sh)::int                                             AS l_n,
          (SELECT COALESCE(SUM(amt), 0) FROM sh)                                     AS l_amt,
          (SELECT COALESCE(SUM(qty), 0) FROM sh)                                     AS l_qty,
+         (SELECT COUNT(DISTINCT product_id) FROM sh)::int                           AS l_sku,
          (SELECT COALESCE(SUM(amt) FILTER (WHERE qst = 'converted'), 0) FROM sh)    AS l_conv_amt,
          (SELECT COALESCE(SUM(amt) FILTER (WHERE qst = 'expired'), 0) FROM sh)      AS l_exp_amt,
          (SELECT COALESCE(SUM(amt) FILTER (WHERE avg_cost > 0), 0) FROM sh)         AS l_a_rev,
@@ -808,10 +820,10 @@ export default async function quoteRoutes(app) {
     const out = {
       period: all ? 'all' : [...new Set(yms)].sort(),
       basis: 'ex_iva',
-      quotes: { n: N('q_n'), amt: r2(N('q_amt')), qty: N('q_qty'), open: N('q_open'), converted: N('q_conv'), expired: N('q_exp') },
-      sales: { invoices: N('s_inv'), amt: r2(N('s_amt')), qty: N('s_qty'),
+      quotes: { n: N('q_n'), amt: r2(N('q_amt')), qty: N('q_qty'), sku: N('q_sku'), lines: N('q_lines'), open: N('q_open'), converted: N('q_conv'), expired: N('q_exp') },
+      sales: { invoices: N('s_inv'), amt: r2(N('s_amt')), qty: N('s_qty'), sku: N('s_sku'),
         rate: N('q_amt') > 0 ? Math.round(N('s_amt') / N('q_amt') * 1000) / 10 : null },
-      lost: { n: N('l_n'), amt: r2(N('l_amt')), qty: N('l_qty'),
+      lost: { n: N('l_n'), amt: r2(N('l_amt')), qty: N('l_qty'), sku: N('l_sku'),
         converted_amt: r2(N('l_conv_amt')), expired_amt: r2(N('l_exp_amt')),
         open_short_amt: r2(N('o_amt')), open_short_qty: N('o_qty') },
     };
