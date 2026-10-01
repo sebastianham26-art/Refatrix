@@ -6,7 +6,7 @@ import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quot
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
 import { resolveCode, assignReservations, topUpReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
-         normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, stampLineMeta } from '../quoteBuild.js';
+         normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, quoteLineCodeMatch, stampLineMeta } from '../quoteBuild.js';
 import { normOe, oeToken, customerOeText, OE_FOR_NOTE } from '../oeParse.js';   // 0228 · OE 번호
 import { oeReady, oeByProduct } from '../oeCodes.js';
 import { noPriceItems, lacksListPrice, NO_PRICE_NOTE } from '../noPrice.js';   // 2026-09-24 · 정가 없음 안내·전환 차단
@@ -588,8 +588,14 @@ export default async function quoteRoutes(app) {
     // 0225 · 한 칸 검색 — 견적번호 · 고객명 · 고객 PO번호.
     //   고객이 전화로 대는 번호가 우리 번호인지 자기 PO 인지 모르는 채로 받으므로 칸을 나누지 않는다.
     const poReady = await poColumnReady();
-    const kwClause = quoteSearchClause(req.query.q, args, { poReady });
+    // 2026-10-01 · 우리 제품번호(CTR) · 경쟁사 제품번호로도 찾는다(codes). 걸린 줄은 code_hits 로 함께 내려 준다.
+    const kwOut = {};
+    const kwClause = quoteSearchClause(req.query.q, args, { poReady, codes: true, out: kwOut });
     if (kwClause) conds.push(kwClause);
+    const hitSel = kwOut.codeIdx
+      ? `, (SELECT json_agg(json_build_object('ctr', qlh.ctr_code, 'input', qlh.input_code, 'qty', qlh.qty) ORDER BY qlh.line_no, qlh.id)
+            FROM quote_lines qlh WHERE qlh.quote_id = q.id AND ${quoteLineCodeMatch('qlh', kwOut.codeIdx)}) AS code_hits`
+      : '';
     // 팀 가시성: 디렉터/영업지원=전체. 그 외=자기 팀 고객 견적 + 본인이 만든 불특정 견적만.
     const ta = teamArr(req.ctx.perm);
     if (ta) {
@@ -643,7 +649,7 @@ export default async function quoteRoutes(app) {
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
               cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty,
-              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt, cls.inact_cnt${gpSel}
+              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt, cls.inact_cnt${gpSel}${hitSel}
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uc ON uc.id=q.created_by
@@ -701,6 +707,7 @@ export default async function quoteRoutes(app) {
         packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
         inactive_cnt: Number(r.inact_cnt || 0),             // 0224 · 판매중단 줄(다음 단계 차단 사유)
         ...(gpDir ? { gp: gpOf(r) } : {}),                   // 2026-09-24 · 디렉터만 — 매출총이익
+        ...(kwOut.codeIdx ? { code_hits: (r.code_hits || []).map((h) => ({ ctr: h.ctr || null, input: h.input || null, qty: Number(h.qty) || 0 })) } : {}),
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {
           ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
@@ -710,6 +717,115 @@ export default async function quoteRoutes(app) {
         },
       })),
     };
+  });
+
+  // ============ 견적·매출 추적 — 기간 요약 (2026-10-01) ============
+  // 상단 요약 카드. 기간 = **견적일** 기준(목록과 같은 연×월 조합). 금액은 전부 **IVA 제외**(목표·이익과 같은 기준).
+  //   대상 견적 = 작성중·확정·매출전환·만료. 가용재고 견적(pricelist)·취소·삭제대기·삭제는 뺀다.
+  //   · 총 견적액/수량  = 대상 견적의 subtotal_mxn / total_qty
+  //   · 실매출액/수량   = 그 견적이 전환된 인보이스 줄(삭제된 인보이스 제외)
+  //   · 재고부족 실기   = 그 견적에서 생긴 부족 기록(stock_shortages — 전환 시 미확보분 + 만료 시 부족분, 무효(cancelled) 제외).
+  //                       금액은 기록된 IVA 포함액 ÷ 1.16(기록 시 1.16 을 곱했다). 미결 견적의 현재 부족분은 확정 전이라 따로 보여 준다.
+  //   · 매출총이익(디렉터만) = 인보이스 줄 매출 − 동결 원가(0 이면 FOB × 환율 × (1+부대비율) 추정)
+  //   · 실기 이익(디렉터만)  = 부족 금액 − 부족 수량 × 현재 평균원가(0 이면 같은 FOB 추정). 원가를 알 수 없는 줄은 빼고 개수만 알린다.
+  app.get('/api/quotes/summary', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
+    const yms = String(req.query.yms || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s));
+    const all = req.query.all === '1';
+    const args = []; const conds = [`q.deleted_at IS NULL`, `q.status IN ('draft','confirmed','converted','expired')`];
+    if (!all) {
+      if (!yms.length) return { period: [], empty: true };
+      args.push([...new Set(yms)]); conds.push(`to_char(q.quote_date, 'YYYY-MM') = ANY($${args.length}::text[])`);
+    }
+    const ta = teamArr(req.ctx.perm);
+    if (ta) {
+      args.push(ta); const ti = args.length;
+      args.push(req.ctx.perm.userId); const ui = args.length;
+      conds.push(`(c.team_id = ANY($${ti}) OR (q.customer_id IS NULL AND q.created_by = $${ui}))`);
+    }
+    const gpDir = req.ctx.perm.role === 'director';
+    let basis = null;
+    if (gpDir) basis = await fobCostBasis();
+    args.push(gpDir && basis && basis.fx > 0 ? basis.fx : 0); const fxI = args.length;
+    const FOBP = `NULLIF(to_jsonb(p) ->> 'fob_usd', '')::numeric`;
+    const FOBOK = `(COALESCE(${FOBP}, 0) > 0 AND $${fxI}::numeric > 0)`;
+    const r = (await query(
+      `WITH qs AS MATERIALIZED (
+         SELECT q.id, q.status, q.subtotal_mxn, q.total_qty, q.invoice_id
+           FROM quotes q LEFT JOIN customers c ON c.id = q.customer_id
+          WHERE ${conds.join(' AND ')}
+       ), inv AS MATERIALIZED (
+         SELECT DISTINCT i.id FROM qs JOIN sales_invoices i ON i.id = qs.invoice_id
+          WHERE qs.status = 'converted' AND i.status <> 'deleted'
+       ), sl AS MATERIALIZED (
+         SELECT sl.qty, sl.line_amount_mxn AS amt, COALESCE(sl.cogs_mxn, sl.qty * sl.applied_unit_cost, 0) AS sc,
+                ${FOBP} AS fob, ${FOBOK} AS fobok
+           FROM sales_invoice_lines sl JOIN inv ON inv.id = sl.invoice_id LEFT JOIN products p ON p.id = sl.product_id
+       ), sh AS MATERIALIZED (
+         SELECT ss.shortage_qty AS qty, ss.shortage_amount_mxn / 1.16 AS amt, qs.status AS qst,
+                COALESCE(p.avg_cost, 0) AS avg_cost, ${FOBP} AS fob, ${FOBOK} AS fobok
+           FROM stock_shortages ss
+           JOIN qs ON (ss.source_quote_id = qs.id
+                       OR (ss.source_quote_id IS NULL AND qs.invoice_id IS NOT NULL AND ss.sales_invoice_id = qs.invoice_id))
+           LEFT JOIN products p ON p.id = ss.product_id
+          WHERE ss.status <> 'cancelled'
+       ), op AS MATERIALIZED (
+         SELECT GREATEST(ql.qty - COALESCE(ql.reserved_qty, 0), 0) AS sq,
+                GREATEST(ql.qty - COALESCE(ql.reserved_qty, 0), 0)::numeric / NULLIF(ql.qty, 0) * ql.line_subtotal AS samt
+           FROM quote_lines ql JOIN qs ON qs.id = ql.quote_id
+          WHERE qs.status IN ('draft','confirmed') AND ql.product_id IS NOT NULL
+       )
+       SELECT
+         (SELECT COUNT(*) FROM qs)::int                                             AS q_n,
+         (SELECT COALESCE(SUM(subtotal_mxn), 0) FROM qs)                            AS q_amt,
+         (SELECT COALESCE(SUM(total_qty), 0) FROM qs)                               AS q_qty,
+         (SELECT COUNT(*) FROM qs WHERE status IN ('draft','confirmed'))::int       AS q_open,
+         (SELECT COUNT(*) FROM qs WHERE status = 'converted')::int                  AS q_conv,
+         (SELECT COUNT(*) FROM qs WHERE status = 'expired')::int                    AS q_exp,
+         (SELECT COUNT(*) FROM inv)::int                                            AS s_inv,
+         (SELECT COALESCE(SUM(amt), 0) FROM sl)                                     AS s_amt,
+         (SELECT COALESCE(SUM(qty), 0) FROM sl)                                     AS s_qty,
+         (SELECT COALESCE(SUM(amt) FILTER (WHERE sc > 0), 0) FROM sl)               AS s_a_rev,
+         (SELECT COALESCE(SUM(sc)  FILTER (WHERE sc > 0), 0) FROM sl)               AS s_a_cost,
+         (SELECT COALESCE(SUM(amt) FILTER (WHERE sc <= 0 AND fobok), 0) FROM sl)    AS s_f_rev,
+         (SELECT COALESCE(SUM(qty * fob) FILTER (WHERE sc <= 0 AND fobok), 0) FROM sl) AS s_f_usd,
+         (SELECT COUNT(*) FILTER (WHERE sc <= 0 AND fobok) FROM sl)::int            AS s_f_n,
+         (SELECT COUNT(*) FILTER (WHERE sc <= 0 AND NOT fobok) FROM sl)::int        AS s_no_n,
+         (SELECT COUNT(*) FROM sh)::int                                             AS l_n,
+         (SELECT COALESCE(SUM(amt), 0) FROM sh)                                     AS l_amt,
+         (SELECT COALESCE(SUM(qty), 0) FROM sh)                                     AS l_qty,
+         (SELECT COALESCE(SUM(amt) FILTER (WHERE qst = 'converted'), 0) FROM sh)    AS l_conv_amt,
+         (SELECT COALESCE(SUM(amt) FILTER (WHERE qst = 'expired'), 0) FROM sh)      AS l_exp_amt,
+         (SELECT COALESCE(SUM(amt) FILTER (WHERE avg_cost > 0), 0) FROM sh)         AS l_a_rev,
+         (SELECT COALESCE(SUM(qty * avg_cost) FILTER (WHERE avg_cost > 0), 0) FROM sh) AS l_a_cost,
+         (SELECT COALESCE(SUM(amt) FILTER (WHERE avg_cost <= 0 AND fobok), 0) FROM sh) AS l_f_rev,
+         (SELECT COALESCE(SUM(qty * fob) FILTER (WHERE avg_cost <= 0 AND fobok), 0) FROM sh) AS l_f_usd,
+         (SELECT COUNT(*) FILTER (WHERE avg_cost <= 0 AND fobok) FROM sh)::int      AS l_f_n,
+         (SELECT COUNT(*) FILTER (WHERE avg_cost <= 0 AND NOT fobok) FROM sh)::int  AS l_no_n,
+         (SELECT COALESCE(SUM(samt), 0) FROM op)                                    AS o_amt,
+         (SELECT COALESCE(SUM(sq), 0) FROM op)                                      AS o_qty`, args)).rows[0];
+    const N = (k) => Number(r[k] || 0);
+    const r2 = (x) => Math.round(x * 100) / 100;
+    const out = {
+      period: all ? 'all' : [...new Set(yms)].sort(),
+      basis: 'ex_iva',
+      quotes: { n: N('q_n'), amt: r2(N('q_amt')), qty: N('q_qty'), open: N('q_open'), converted: N('q_conv'), expired: N('q_exp') },
+      sales: { invoices: N('s_inv'), amt: r2(N('s_amt')), qty: N('s_qty'),
+        rate: N('q_amt') > 0 ? Math.round(N('s_amt') / N('q_amt') * 1000) / 10 : null },
+      lost: { n: N('l_n'), amt: r2(N('l_amt')), qty: N('l_qty'),
+        converted_amt: r2(N('l_conv_amt')), expired_amt: r2(N('l_exp_amt')),
+        open_short_amt: r2(N('o_amt')), open_short_qty: N('o_qty') },
+    };
+    if (gpDir) {
+      const unit = basis && basis.fx > 0 ? basis.fx * (1 + basis.oh_rate) : 0;    // FOB 1달러당 원가(MXN)
+      const g = (p) => {
+        const rev = N(p + 'a_rev') + N(p + 'f_rev');
+        const cost = N(p + 'a_cost') + N(p + 'f_usd') * unit;
+        return { gp: r2(rev - cost), rev: r2(rev), cost: r2(cost), pct: rev > 0 ? Math.round((rev - cost) / rev * 1000) / 10 : null,
+          est: N(p + 'f_n'), nocost: N(p + 'no_n') };
+      };
+      out.gp = { sales: g('s_'), lost: g('l_'), ...(unit ? { fx: basis.fx, oh_rate: basis.oh_rate } : {}) };
+    }
+    return out;
   });
 
   // 미결/불특정 카운트 (배지용)

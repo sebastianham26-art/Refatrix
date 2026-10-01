@@ -74,7 +74,7 @@ export function poSelectFrag(ready, alias = 'q') {
  *   `args` 에 값을 밀어 넣고 조건문을 돌려준다(호출부가 파라미터 번호를 세지 않게).
  *   `custExpr` 는 화면마다 고객 이름이 오는 자리가 달라서 받는다(불특정 고객은 guest_name).
  */
-export function quoteSearchClause(kw, args, { quoteAlias = 'q', custExpr = "COALESCE(c.name, q.guest_name)", poReady = false } = {}) {
+export function quoteSearchClause(kw, args, { quoteAlias = 'q', custExpr = "COALESCE(c.name, q.guest_name)", poReady = false, codes = false, out = null } = {}) {
   const s = String(kw || '').trim();
   if (!s) return null;
   args.push('%' + s.toLowerCase() + '%');
@@ -84,7 +84,44 @@ export function quoteSearchClause(kw, args, { quoteAlias = 'q', custExpr = "COAL
     `lower(COALESCE(${custExpr},'')) LIKE $${i}`,
   ];
   if (poReady) parts.push(`lower(COALESCE(${quoteAlias}.customer_po_no,'')) LIKE $${i}`);
+  // 2026-10-01 · 제품번호로도 찾는다 — 우리 CTR 번호 · 경쟁사 번호(SYD · BAW · GROB · VASLO · KYB · MOOG …).
+  if (codes) {
+    const pat = codeSearchPattern(s);
+    if (pat) {
+      args.push(pat);
+      const k = args.length;
+      if (out) out.codeIdx = k;
+      parts.push(`EXISTS (SELECT 1 FROM quote_lines qlx WHERE qlx.quote_id = ${quoteAlias}.id AND ${quoteLineCodeMatch('qlx', k)})`);
+    }
+  }
   return '(' + parts.join(' OR ') + ')';
+}
+
+/**
+ * 제품번호 검색 패턴 (2026-10-01).
+ *   표기 흔들림(하이픈 · 공백 · 점 · 대소문자)은 지우고 비교한다 — 'DS-1045-S' = 'ds1045s'.
+ *   4자 이상이면 **앞부분 일치**(DS1045 → DS1045S · DS1045L), 그보다 짧으면 정확히 같을 때만.
+ *   (3자 이하로 앞부분을 허용하면 수백 개 제품이 걸려 견적번호 검색까지 묻힌다.)
+ *   영숫자가 하나도 없으면(고객명이 한글 등) null — 제품번호 조건을 만들지 않는다.
+ */
+export function codeSearchPattern(kw) {
+  const n = String(kw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!n) return null;
+  return n.length >= 4 ? n + '%' : n;
+}
+
+/**
+ * 견적 줄 하나가 제품번호 패턴($k)에 걸리는가.
+ *   · 줄에 적힌 CTR 번호 / 사용자가 입력한 원문 코드(경쟁사 번호를 그대로 친 경우 · 미등록 코드 포함)
+ *   · 줄의 제품에 연결된 SYD 번호(product_syd_codes) · 경쟁사 교차참조(product_xref_codes)
+ *   SYD · 교차참조 쪽은 상관없는 부분질의라 PG 가 한 번만 계산해 해시로 대조한다.
+ */
+export function quoteLineCodeMatch(a, k) {
+  const N = (col) => `regexp_replace(upper(COALESCE(${col},'')), '[^A-Z0-9]', '', 'g')`;
+  return `(${N(a + '.ctr_code')} LIKE $${k}
+       OR ${N(a + '.input_code')} LIKE $${k}
+       OR ${a}.product_id IN (SELECT s.product_id FROM product_syd_codes s WHERE ${N('s.syd_code')} LIKE $${k}
+                              UNION SELECT x.product_id FROM product_xref_codes x WHERE x.norm_code LIKE $${k}))`;
 }
 
 

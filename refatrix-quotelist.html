@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-0930sc2</title>
+<title>Refatrix ERP · 견적 목록 · ql-1001sm1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -86,6 +86,22 @@
   #listTopScroll::-webkit-scrollbar-track,#listWrap::-webkit-scrollbar-track{background:#f1eee7}
   #listTopScroll::-webkit-scrollbar-thumb,#listWrap::-webkit-scrollbar-thumb{background:#b9b3a6;border-radius:999px;border:2px solid #f1eee7}
   #listTopScroll::-webkit-scrollbar-thumb:hover,#listWrap::-webkit-scrollbar-thumb:hover{background:var(--brand)}
+  /* 2026-10-01 · 기간 요약 카드 */
+  #sumBox{margin-top:14px}
+  #sumBox .sh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  #sumBox .sh b{font-size:14px;color:var(--brand)}
+  .sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:8px}
+  .sumc{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
+  .sumc .k{font-size:11px;font-weight:700;color:var(--muted)}
+  .sumc .v{font-size:16px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.2px}
+  @media (max-width:520px){.sumgrid{grid-template-columns:1fr 1fr}.sumc{padding:9px 10px}.sumc .v{font-size:15px}}
+  .sumc .s{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.45}
+  .sumc.sale .v{color:var(--income)}.sumc.lost{background:#fdf5f3;border-color:#efd3cc}.sumc.lost .v{color:var(--expense)}
+  .sumc.gp{background:#eef6f2;border-color:#cfe5da}.sumc.gp .v{color:var(--income)}
+  .sumc.gplost{background:#fdf5f3;border-color:#efd3cc}.sumc.gplost .v{color:var(--expense)}
+  .sumc.gp .v .neg{color:var(--expense)}
+  .codehit{display:block;margin-top:3px;font-size:10.5px;font-weight:700;color:#2b5a78;white-space:nowrap}
+  .codehit i{font-style:normal;font-weight:500;color:var(--muted)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -118,15 +134,16 @@
         <!-- 0225 · 한 칸 검색. 고객이 전화로 대는 번호가 우리 견적번호인지 자기 PO인지
              미리 알 수 없으므로 칸을 나누지 않는다. 검색 중에는 기간 선택을 무시하고 전 기간을 본다. -->
         <div style="min-width:260px">
-          <label>검색 <span class="hint" style="font-weight:500">— 견적번호 · 고객명 · 고객 PO번호</span></label>
+          <label>검색 <span class="hint" style="font-weight:500">— 견적번호 · 고객명 · 고객 PO번호 · 제품번호(CTR · 경쟁사)</span></label>
           <div style="display:flex;gap:6px;margin-top:6px">
-            <input id="qSearch" type="text" placeholder="예: 4471 · COT-2026… · Refaccionaria" style="width:220px" autocomplete="off">
+            <input id="qSearch" type="text" placeholder="예: 4471 · Refaccionaria · CTR 번호 · SYD/BAW 번호" style="width:240px" autocomplete="off">
             <button class="btn ghost sm" id="qSearchGo" title="전 기간에서 찾습니다">찾기</button>
             <button class="btn ghost sm" id="qSearchClear" title="검색 해제">✕</button>
           </div>
         </div>
         <div style="margin-left:auto"><a href="refatrix-quote.html" style="text-decoration:none"><button class="btn ghost">＋ 새 견적</button></a></div>
       </div>
+      <div id="sumBox"></div>
       <div class="hint" id="qSearchNote" style="margin-top:8px;display:none"></div>
       <div class="chips" id="chips" style="margin-top:12px"></div>
       <div class="chips" id="clsChips" style="margin-top:8px"></div>
@@ -191,7 +208,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-0924gp2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1001sm1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -305,13 +322,14 @@
     const el=$('qSearchNote'); if(!el) return;
     if(!kw){ el.style.display='none'; el.innerHTML=''; return; }
     el.style.display='';
-    el.innerHTML='🔎 <b>"'+esc(kw)+'"</b> 검색 결과 <b>'+n+'건</b> — 견적번호 · 고객명 · 고객 PO번호에서 찾았습니다. '
+    el.innerHTML='🔎 <b>"'+esc(kw)+'"</b> 검색 결과 <b>'+n+'건</b> — 견적번호 · 고객명 · 고객 PO번호 · 제품번호(CTR · SYD · 경쟁사)에서 찾았습니다. '
       +'<span style="color:#9a6512;font-weight:700">기간·상태 선택은 무시하고 전 기간을 봅니다.</span> '
       +'<a id="qSearchOff" style="cursor:pointer;text-decoration:underline;color:var(--brand);font-weight:700">검색 해제</a>';
     const off=$('qSearchOff'); if(off) off.addEventListener('click',clearSearch);
   }
 
   async function load(){
+    loadSummary();                                   // 기간 요약(상단) — 목록과 따로 불러온다
     await loadCounts();
     const m=$('msg');m.className='msg';
     const rng=monthRange();                          // null = 전체기간
@@ -528,6 +546,83 @@
       +(g.nocost?' · 원가도 FOB 도 없는 '+g.nocost+'줄은 계산에서 뺌':'');
     return '<br><span class="gpS'+(g.gp<0?' neg':'')+'" title="'+esc(tip)+'">'+(g.basis==='sale'?'<i>실</i> ':'')+'총이익 '+fmt(g.gp)+' · '+g.pct.toFixed(1)+'%'+((g.est||g.nocost)?' <i>*</i>':'')+'</span>';
   }
+  // ===== 2026-10-01 · 기간 요약 (견적일 기준 · IVA 제외) =====
+  //   GET /api/quotes/summary — 상태 칩·검색과 상관없이 **선택한 연×월** 전체를 요약한다.
+  //   매출총이익 두 칸은 디렉터에게만 서버가 내려 준다(원가 비노출 원칙).
+  let sumKey='', sumSeq=0;
+  function periodLabel(){
+    const eff=effectiveYMs(); if(!eff) return '전체기간';
+    const ms=[...eff].sort(); const ys=[...new Set(ms.map(x=>x.slice(0,4)))];
+    if(ms.length===1){ const [y,m]=ms[0].split('-'); return y+'년 '+Number(m)+'월'; }
+    if(ys.length===1) return ys[0]+'년 '+ms.map(x=>Number(x.slice(5))+'월').join('·');
+    return ms.map(x=>x.slice(2,4)+'.'+x.slice(5)).join(' · ');
+  }
+  async function loadSummary(){
+    const eff=effectiveYMs();
+    const key=eff?[...eff].sort().join(','):'all';
+    if(key===sumKey && $('sumBox').innerHTML){ syncSumSearchNote(); return; }   // 같은 기간이면 다시 부르지 않는다(상태 칩·검색 전환)
+    sumKey=key; const my=++sumSeq;
+    $('sumBox').innerHTML='<div class="hint">요약 불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/quotes/summary?'+(eff?('yms='+encodeURIComponent(key)):'all=1'),{headers:auth()});
+      const d=await res.json();
+      if(my!==sumSeq) return;                              // 그 사이 기간을 또 바꿨다
+      if(!res.ok||d.error){ $('sumBox').innerHTML='<div class="hint">요약을 불러오지 못했습니다 ('+esc(d.error||res.status)+').</div>'; sumKey=''; return; }
+      renderSummary(d);
+    }catch(e){ if(my===sumSeq){ $('sumBox').innerHTML='<div class="hint">요약을 불러오지 못했습니다.</div>'; sumKey=''; } }
+  }
+  // 검색 중이면 「요약은 검색 결과가 아니라 선택 기간 전체」라고 화면이 말해 준다
+  function syncSumSearchNote(){
+    const el=$('sumSearchNote'); if(el) el.style.display=searchKw?'':'none';
+  }
+  function renderSummary(d){
+    const qd=d.quotes||{}, sd=d.sales||{}, ld=d.lost||{};
+    const money=(n)=>'$'+fmt(n||0);
+    const card=(cls,k,v,s,title)=>'<div class="sumc '+cls+'"'+(title?' title="'+esc(title)+'"':'')+'><div class="k">'+k+'</div><div class="v">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+'</div>';
+    const pctOf=(a,b)=> b>0 ? (Math.round(a/b*1000)/10)+'%' : '—';
+    let h='<div class="sh"><b>📊 '+esc(periodLabel())+' 요약</b><span class="hint">견적일 기준 · 금액은 IVA 제외'
+      +'<span id="sumSearchNote" style="color:#9a6512;font-weight:700;display:none"> · 검색 결과와 무관하게 선택 기간 전체</span></span></div>';
+    if(d.empty){ $('sumBox').innerHTML=h+'<div class="hint">기간을 선택하세요.</div>'; syncSumSearchNote(); return; }
+    h+='<div class="sumgrid">';
+    h+=card('', '총 견적액', money(qd.amt),
+      '견적 '+(qd.n||0)+'건 · 미결 '+(qd.open||0)+' · 전환 '+(qd.converted||0)+' · 만료 '+(qd.expired||0),
+      '작성중·확정·매출전환·만료 견적의 소계(IVA 제외). 가용재고 견적·취소·삭제대기는 제외.');
+    h+=card('sale', '실매출액', money(sd.amt),
+      '견적액 대비 '+(sd.rate==null?'—':sd.rate+'%')+' · 인보이스 '+(sd.invoices||0)+'건',
+      '이 기간 견적이 매출 전환되어 실제로 인보이스에 담긴 금액(IVA 제외, 삭제된 인보이스 제외).');
+    h+=card('lost', '재고부족 매출실기', money(ld.amt),
+      '전환 시 미확보 '+money(ld.converted_amt)+' · 만료 시 부족 '+money(ld.expired_amt)
+      +((ld.open_short_amt||0)>0?'<br><span style="color:#9a6512">＋ 미결 견적 현재 부족 '+money(ld.open_short_amt)+' ('+fmtq(ld.open_short_qty)+'개 · 확정 전)</span>':''),
+      '재고가 모자라 팔지 못한 금액 — 매출 전환 때 확보하지 못한 수량 + 만료된 견적의 부족 수량(부족 기록 기준, IVA 제외). 미결 견적의 부족분은 아직 확정 전이라 합계에 넣지 않습니다.');
+    h+=card('', '총 견적 수량', fmtq(qd.qty||0)+'<span style="font-size:12px;font-weight:600"> 개</span>', '');
+    h+=card('sale', '매출 수량', fmtq(sd.qty||0)+'<span style="font-size:12px;font-weight:600"> 개</span>',
+      '견적 수량의 '+pctOf(sd.qty||0, qd.qty||0)+' · 부족 '+fmtq(ld.qty||0)+'개');
+    if(d.gp){
+      const gs=d.gp.sales||{}, gl=d.gp.lost||{};
+      const note=(g)=>{ const a=[]; if(g.est) a.push('FOB추정 '+g.est+'줄'); if(g.nocost) a.push('원가없음 '+g.nocost+'줄 제외'); return a.length?'<br>'+a.join(' · '):''; };
+      h+=card('gp', '매출총이익 실현', '<span class="'+((gs.gp||0)<0?'neg':'')+'">'+money(gs.gp)+'</span>',
+        '이익률 '+(gs.pct==null?'—':gs.pct+'%')+note(gs),
+        '실매출 인보이스 줄 매출 − 판매 시점 동결 원가. 동결 원가가 0 인 줄은 FOB × 환율 × (1+부대비율)로 추정.');
+      h+=card('gplost', '재고부족 이익 실현불가', money(gl.gp),
+        '부족 매출 '+money(gl.rev)+' 기준'+(gl.pct==null?'':' · 이익률 '+gl.pct+'%')+note(gl),
+        '재고부족 매출실기 금액 − 부족 수량 × 현재 평균원가(없으면 FOB 추정). 원가를 알 수 없는 줄은 빼고 계산.');
+    }
+    h+='</div>';
+    $('sumBox').innerHTML=h;
+    syncSumSearchNote();
+  }
+  // 검색어가 제품번호에 걸렸으면 어느 줄인지 견적번호 밑에 작게
+  function codeHitSmall(q){
+    const hs=q&&q.code_hits; if(!hs||!hs.length) return '';
+    const norm=(x)=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const parts=hs.slice(0,3).map(hh=>{
+      const main=hh.ctr||hh.input||'';
+      const inp=(hh.input&&norm(hh.input)!==norm(hh.ctr))?' <i>← '+esc(hh.input)+'</i>':'';
+      return esc(main)+' ×'+fmtq(hh.qty)+inp;
+    });
+    return '<span class="codehit" title="검색한 제품번호가 들어 있는 줄">🔎 '+parts.join(' · ')+(hs.length>3?' <i>외 '+(hs.length-3)+'줄</i>':'')+'</span>';
+  }
+
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적',expired:'만료'};
@@ -550,7 +645,7 @@
         // 0225 · 고객 PO 는 **견적번호 바로 아래에 작게.** 두 번호가 같은 칸에 붙어 있어야
         //   전화를 받으면서 한눈에 대조된다(칼럼을 따로 만들면 가로 스크롤 밖으로 밀린다).
         +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b>'
-          +poSmall(q.customer_po_no)+'</td>'
+          +poSmall(q.customer_po_no)+codeHitSmall(q)+'</td>'
         +'<td data-sv="'+esc(q.quote_date||'')+'">'+esc(q.quote_date||'')+recvSmall(q)+'</td>'
         +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+(q.from_field_survey?'<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:800;color:#0F6E56;background:#E4F0EB;border-radius:10px;padding:1px 7px;white-space:nowrap">📍현장</span>':'')+'</td>'
         +'<td>'+esc(q.creator_name||'—')+'</td>'
