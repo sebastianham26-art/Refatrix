@@ -731,20 +731,16 @@ export default async function quoteRoutes(app) {
   //   · 수량은 SKU(서로 다른 제품 수)와 pieza(개수)를 따로 낸다. 미등록 코드 줄은 입력 코드(정규화) 하나를 SKU 하나로 센다.
   //   2026-10-01 b · 요약 전체가 **디렉터 · 소시오 전용**(디렉터 지시). 그 밖의 역할은 403 — 화면도 카드를 그리지 않는다.
   //     이익 두 칸도 같은 두 역할에게 보인다(canSeeCost 와 같은 범위).
-  app.get('/api/quotes/summary', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req, reply) => {
-    const role = req.ctx.perm.role;
-    if (role !== 'director' && role !== 'socio') return reply.code(403).send({ error: 'director_or_socio_only' });
-    const yms = String(req.query.yms || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s));
-    const all = req.query.all === '1';
+  async function quoteSummary(perm, { yms = [], all = false } = {}) {
     const args = []; const conds = [`q.deleted_at IS NULL`, `q.status IN ('draft','confirmed','converted','expired')`];
     if (!all) {
       if (!yms.length) return { period: [], empty: true };
       args.push([...new Set(yms)]); conds.push(`to_char(q.quote_date, 'YYYY-MM') = ANY($${args.length}::text[])`);
     }
-    const ta = teamArr(req.ctx.perm);
+    const ta = teamArr(perm);
     if (ta) {
       args.push(ta); const ti = args.length;
-      args.push(req.ctx.perm.userId); const ui = args.length;
+      args.push(perm.userId); const ui = args.length;
       conds.push(`(c.team_id = ANY($${ti}) OR (q.customer_id IS NULL AND q.created_by = $${ui}))`);
     }
     const gpDir = true;   // 위에서 디렉터 · 소시오로 이미 걸렀다
@@ -838,6 +834,23 @@ export default async function quoteRoutes(app) {
       out.gp = { sales: g('s_'), lost: g('l_'), ...(unit ? { fx: basis.fx, oh_rate: basis.oh_rate } : {}) };
     }
     return out;
+  }
+
+  app.get('/api/quotes/summary', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req, reply) => {
+    const role = req.ctx.perm.role;
+    if (role !== 'director' && role !== 'socio') return reply.code(403).send({ error: 'director_or_socio_only' });
+    const yms = [...new Set(String(req.query.yms || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s)))].sort();
+    const all = req.query.all === '1';
+    // 2026-10-01 c · 그래프 팝업 — by=month 이면 선택한 달마다 같은 요약을 하나씩 + 전체 합계.
+    //   달마다 같은 함수를 돌리므로 카드 숫자와 그래프 막대가 **정의상 같다**. 최대 36개월로 제한.
+    if (req.query.by === 'month') {
+      if (!yms.length) return { months: [], total: { period: [], empty: true } };
+      if (yms.length > 36) return reply.code(400).send({ error: 'too_many_months', max: 36 });
+      const months = [];
+      for (const ym of yms) months.push({ ym, ...(await quoteSummary(req.ctx.perm, { yms: [ym] })) });
+      return { months, total: await quoteSummary(req.ctx.perm, { yms }) };
+    }
+    return quoteSummary(req.ctx.perm, { yms, all });
   });
 
   // 미결/불특정 카운트 (배지용)

@@ -39,6 +39,9 @@ function boot({ role = 'director', summary = SUM } = {}) {
       w.fetch = async (url) => {
         const u = String(url); calls.push(u);
         const json = (d) => ({ ok: true, status: 200, json: async () => d });
+        if (u.includes('by=month')) { if (role !== 'director' && role !== 'socio') return { ok: false, status: 403, json: async () => ({}) };
+          const yms = decodeURIComponent(u.split('yms=')[1] || '').split(',').filter(Boolean);
+          return json({ months: yms.map((ym, i) => ({ ym, ...JSON.parse(JSON.stringify(summary)), quotes: { ...summary.quotes, amt: 1000 * (i + 1) } })), total: summary }); }
         if (u.includes('/api/quotes/summary')) { if (role !== 'director' && role !== 'socio') return { ok: false, status: 403, json: async () => ({ error: 'director_or_socio_only' }) }; return json(JSON.parse(JSON.stringify(summary))); }
         if (u.includes('/api/quotes/open-count')) return json({ open: 0, guest_pending: 0, delete_pending: 0 });
         if (u.includes('/api/quotes?')) return json({ items: u.includes('q=') ? [ROW] : [] });
@@ -153,6 +156,82 @@ test('견적·매출 추적 — 제품번호 검색 표시 (jsdom)', { skip: SKI
     const many = c.w.codeHitSmall({ code_hits: [1, 2, 3, 4, 5].map((i) => ({ ctr: 'C' + i, input: null, qty: 1 })) });
     assert.match(many, /외 2줄/);
     assert.ok(!c.w.codeHitSmall({ code_hits: [{ ctr: '<b>x', input: null, qty: 1 }] }).includes('<b>x'), '이스케이프');
+    c.close();
+  });
+});
+
+test('견적·매출 추적 — 수주 흐름 그래프 팝업 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
+  const open = async () => { const c = boot(); await c.ready; await tick(300); c.d.getElementById('sumGraph').click(); await tick(300); return c; };
+  const lastCall = (c) => decodeURIComponent(c.calls.filter((u) => u.includes('by=month')).at(-1) || '');
+  await t.test('① 화면이 한 달만 골라져 있으면 올해 1월~이번 달 추이로 연다 · 흐름 2개 + 번 돈/놓친 돈', async () => {
+    const c = await open();
+    assert.equal(c.d.getElementById('grModal').style.display, 'flex');
+    const now = new c.w.Date(); const n = now.getMonth() + 1;
+    const yms = lastCall(c).split('yms=')[1].split(',');
+    assert.equal(yms.length, n); assert.equal(yms[0], now.getFullYear() + '-01');
+    const titles = [...c.d.querySelectorAll('#grBody .grcard .grhead > b')].map((e) => e.textContent);
+    assert.match(titles[0], /수주 흐름 — 금액/); assert.match(titles[1], /수주 흐름 — 수량 — Pieza/); assert.match(titles[2], /번 돈 vs 놓친 돈/);
+    for (const k of ['견적 (받은 수요)', '실매출', '재고부족 실기', '기타 미전환', '번 돈 (이익)', '놓친 돈 (이익)']) assert.ok(c.d.querySelector('#grBody .grkpis').textContent.includes(k), k);
+    c.close();
+  });
+  await t.test('② 12개월 전체 → 달마다 hover 영역 12개, 표는 12달 + 합계', async () => {
+    const c = await open();
+    c.d.querySelector('#grMonths [data-gr=mall]').click(); await tick(300);
+    assert.equal(lastCall(c).split('yms=')[1].split(',').length, 12);
+    assert.equal(c.d.querySelectorAll('#grBody svg[data-kind=amt] .grhit').length, 12);
+    assert.equal(c.d.querySelectorAll('#grBody tbody tr').length, 13);
+    c.close();
+  });
+  await t.test('③ 수주 흐름 = 견적 선 + 실매출 · 재고부족 음영(쌓기) + 기타 미전환 빗금', async () => {
+    const c = await open();
+    const svg = c.d.querySelector('#grBody svg[data-kind=amt]');
+    const fills = [...svg.querySelectorAll('path')].map((p) => p.getAttribute('fill'));
+    assert.ok(fills.includes('#1baf7a') && fills.includes('#eb6834'), '음영 두 겹');
+    assert.ok(fills.some((f) => /url\(#grHatch/.test(f || '')), '기타 미전환 빗금');
+    assert.ok([...svg.querySelectorAll('path')].some((p) => p.getAttribute('stroke') === '#2a78d6'), '견적 선');
+    c.close();
+  });
+  await t.test('④ 금액만 / 수량만 — 둘 다 끄지는 못한다 · 이익 그래프는 늘 아래', async () => {
+    const c = await open();
+    c.d.querySelector('#grView [data-gr=qty]').click(); await tick(50);
+    let t2 = [...c.d.querySelectorAll('#grBody .grcard .grhead > b')].map((e) => e.textContent);
+    assert.equal(t2.length, 2); assert.match(t2[0], /금액/);
+    c.d.querySelector('#grView [data-gr=amt]').click(); await tick(50);
+    t2 = [...c.d.querySelectorAll('#grBody .grcard .grhead > b')].map((e) => e.textContent);
+    assert.match(t2[0], /수량/, '금액을 끄면 수량이 다시 켜진다');
+    c.close();
+  });
+  await t.test('⑤ SKU 는 쌓지 않고 겹친 선 + 안내', async () => {
+    const c = await open();
+    c.d.querySelector('#grView [data-gr=unit][data-v=sku]').click(); await tick(50);
+    const svg = c.d.querySelector('#grBody svg[data-kind=sku]'); assert.ok(svg);
+    assert.ok(![...svg.querySelectorAll('path')].some((p) => /url\(#grHatch/.test(p.getAttribute('fill') || '')), 'SKU 에 기타 빗금이 있으면 안 된다');
+    assert.match(c.d.getElementById('grBody').textContent, /쌓지 않고 겹쳐/);
+    c.close();
+  });
+  await t.test('⑥ 마우스를 올리면 세로선 + 그 달 툴팁(견적 · 실매출 · 재고부족 · 기타)', async () => {
+    const c = await open();
+    const hit = c.d.querySelector('#grBody svg[data-kind=amt] .grhit');
+    hit.dispatchEvent(new c.w.MouseEvent('mousemove', { bubbles: true, clientX: 100, clientY: 100 }));
+    const tip = c.d.getElementById('grTip');
+    assert.equal(tip.style.display, 'block');
+    for (const k of ['견적', '실매출', '재고부족', '기타 미전환']) assert.ok(tip.textContent.includes(k), k);
+    c.close();
+  });
+  await t.test('⑦ 한 달만 고르면 추이 대신 구성 막대', async () => {
+    const c = await open();
+    c.d.querySelector('#grMonths [data-gr=mnone]').click(); await tick(100);
+    assert.match(c.d.getElementById('grBody').textContent, /하나 이상 선택/);
+    c.d.querySelector('#grMonths [data-gr=m][data-v="3"]').click(); await tick(300);
+    assert.equal(c.d.querySelectorAll('#grBody svg[data-kind=amt] .grx').length, 0, '한 달이면 세로선 없음');
+    assert.equal(c.d.querySelectorAll('#grBody svg[data-kind=amt] .grhit').length, 1);
+    c.d.dispatchEvent(new c.w.KeyboardEvent('keydown', { key: 'Escape' }));
+    assert.equal(c.d.getElementById('grModal').style.display, 'none');
+    c.close();
+  });
+  await t.test('⑧ 디렉터·소시오가 아니면 그래프 버튼도 없다', async () => {
+    const c = boot({ role: 'sales' }); await c.ready; await tick(300);
+    assert.equal(c.d.getElementById('sumGraph'), null);
     c.close();
   });
 });

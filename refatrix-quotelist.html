@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1001sm2</title>
+<title>Refatrix ERP · 견적 목록 · ql-1001gr2</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -105,6 +105,46 @@
   #sumBox .sumtog{margin-left:auto;padding:3px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--brand);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
   #sumBox .summini{font-size:12px;color:var(--muted)}#sumBox .summini b{color:var(--ink)}
   #sumBox.collapsed .sumgrid{display:none}#sumBox:not(.collapsed) .summini{display:none}
+  #sumBox .sumbtns{margin-left:auto;display:flex;gap:6px}
+  #sumBox .sumbtns .sumtog{margin-left:0}
+  /* 2026-10-01 c · 그래프 팝업 */
+  #grModal{display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:120;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto}
+  #grModal .grbox{background:#fff;border-radius:14px;max-width:1040px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  #grModal .grtop{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+  #grModal .grctl{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+  #grModal .grctl .row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  #grModal .grctl .row>.hint:first-child{min-width:34px;font-weight:700}
+  #grModal .chip{font-family:inherit}
+  #grModal .grsep{width:1px;height:20px;background:var(--line);margin:0 6px}
+  #grBody{padding:14px 18px 18px}
+  .grcard{border:1px solid var(--line);border-radius:10px;padding:10px 12px 4px;margin-bottom:12px}
+  .grhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+  .grhead b{font-size:13px;color:var(--brand)}
+  .grlegs{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+  .grleg{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 9px;font-size:11.5px;font-weight:600;color:var(--ink);cursor:pointer;font-family:inherit}
+  .grleg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .grleg.off{opacity:.45;text-decoration:line-through}
+  .grleg2{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--ink)}
+  .grleg2 i{width:12px;height:10px;border-radius:2px;display:inline-block}
+  .grkpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
+  .grk{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  .grk .kl{font-size:11px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .grk .kl i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .grk .kv{font-size:16px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .grk .ks{font-size:11px;color:var(--muted)}
+  .grsplit{display:flex;gap:2px;height:12px;border-radius:999px;overflow:hidden;background:#f4f1ea;margin:0 0 12px}
+  .grsplit span{display:block;height:100%}
+  .grtblwrap{margin-top:4px}.grtblwrap summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--brand);padding:6px 0}
+  .grtbl{overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .grtbl table{margin-top:0;font-size:12px}
+  .grtbl td,.grtbl th{padding:6px 8px;font-variant-numeric:tabular-nums}
+  .grtbl tr.tot td{font-weight:800;background:#faf8f3}
+  #grTip{display:none;position:fixed;z-index:130;pointer-events:none;background:#1C1B19;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.25);min-width:170px}
+  #grTip .tt{font-weight:800;margin-bottom:4px}
+  #grTip div{display:flex;align-items:center;gap:6px;line-height:1.6}
+  #grTip i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  #grTip b{margin-left:auto;padding-left:12px;font-variant-numeric:tabular-nums}
+  @media (max-width:520px){#grModal{padding:0}#grModal .grbox{border-radius:0;min-height:100vh}#grBody,#grModal .grctl{padding-left:12px;padding-right:12px}}
   .codehit{display:block;margin-top:3px;font-size:10.5px;font-weight:700;color:#2b5a78;white-space:nowrap}
   .codehit i{font-style:normal;font-weight:500;color:var(--muted)}
 </style>
@@ -160,6 +200,23 @@
   </div>
 </div>
 
+<!-- 2026-10-01 c · 요약 그래프 팝업 (디렉터·소시오) -->
+<div id="grModal" role="dialog" aria-modal="true" aria-labelledby="grTitle">
+  <div class="grbox">
+    <div class="grtop">
+      <span id="grTitle" style="font-size:15px;font-weight:800;color:var(--brand)">📈 수주 흐름 — 받은 견적 · 실매출 · 재고부족 실기</span>
+      <button type="button" class="btn ghost sm" id="grClose" style="margin-left:auto;white-space:nowrap;flex:none">닫기 ✕</button>
+    </div>
+    <div class="grctl">
+      <div class="row"><span class="hint">연도</span><span id="grYears" class="row"></span></div>
+      <div class="row"><span class="hint">월</span><span id="grMonths" class="row"></span></div>
+      <div class="row"><span class="hint">보기</span><span id="grView" class="row"></span></div>
+    </div>
+    <div id="grBody"></div>
+  </div>
+</div>
+<div id="grTip"></div>
+
 <!-- 견적 상세 / 편집 모달 -->
 <div id="dtModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
   <div style="background:#fff;border-radius:14px;max-width:760px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
@@ -213,7 +270,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-1001sm2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1001gr2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -598,8 +655,11 @@
     const pctOf=(a,b)=> b>0 ? (Math.round(a/b*1000)/10)+'%' : '—';
     let h='<div class="sh"><b>📊 '+esc(periodLabel())+' 요약</b><span class="hint">견적일 기준 · 금액은 IVA 제외'
       +'<span id="sumSearchNote" style="color:#9a6512;font-weight:700;display:none"> · 검색 결과와 무관하게 선택 기간 전체</span></span>'
-      +'<button type="button" class="sumtog" id="sumTog"></button></div>';
-    const wire=()=>{ const b=$('sumTog'); if(b) b.addEventListener('click',()=>setSumFolded(!sumFolded())); applySumFold(); syncSumSearchNote(); };
+      +'<span class="sumbtns"><button type="button" class="sumtog" id="sumGraph" title="연도·월을 골라 금액·수량 그래프로 보기">📈 그래프</button>'
+      +'<button type="button" class="sumtog" id="sumTog"></button></span></div>';
+    const wire=()=>{ const b=$('sumTog'); if(b) b.addEventListener('click',()=>setSumFolded(!sumFolded()));
+      const gb=$('sumGraph'); if(gb) gb.addEventListener('click',grOpen);
+      applySumFold(); syncSumSearchNote(); };
     if(d.empty){ $('sumBox').innerHTML=h+'<div class="hint summini">기간을 선택하세요.</div><div class="sumgrid"><div class="hint">기간을 선택하세요.</div></div>'; wire(); return; }
     // 접었을 때 한 줄 — 금액 세 개만
     h+='<div class="summini">견적 <b>'+money(qd.amt)+'</b> · 실매출 <b style="color:var(--income)">'+money(sd.amt)+'</b>'
@@ -635,6 +695,257 @@
     h+='</div>';
     $('sumBox').innerHTML=h;
     wire();
+  }
+  // ===== 2026-10-01 d · 수주 흐름 그래프 팝업 (ql-1001gr2) =====
+  //   GET /api/quotes/summary?by=month — 달마다 상단 카드와 같은 함수로 계산한 값. 디렉터 · 소시오 전용.
+  //   ① 수주 흐름: 선 = 견적(받은 수요). 그 아래를 음영으로 나눠 — 청록 = 실매출(잡은 것),
+  //      그 위 주황 = 재고부족 실기(재고가 없어 놓친 것), 남은 빗금 = 기타 미전환(만료·미결·개발).
+  //      「음영 안이 견적선에 가까워질수록 좋다」가 한눈에 보이게. 수량(Pieza)도 같은 모양.
+  //      SKU 는 서로 겹칠 수 있어(같은 제품이 일부 팔리고 일부 부족) 쌓지 않고 겹친 선으로만.
+  //   ② 번 돈 / 놓친 돈: 0 위 = 이익 실현, 0 아래 = 재고부족으로 못 번 이익. 한 축(MXN).
+  //   색은 항목을 따라간다 — 파랑 견적 · 청록 매출/번 돈 · 주황 부족/놓친 돈 (팔레트 검증 통과).
+  const GR_COL={q:'#2a78d6', s:'#1baf7a', l:'#eb6834', o:'#9b958a'};
+  let gr={years:new Set(), months:new Set(), showAmt:true, showQty:true, unit:'pz', data:null, seq:0};
+  function grOpen(){
+    // 기본 = 화면에서 고른 기간. 한 달만 골라져 있거나 「전체기간」이면 추이가 안 보이므로 올해 1월~이번 달.
+    const now=new Date();
+    gr.years=new Set(selYears.size?selYears:[now.getFullYear()]);
+    gr.months=(selMonths.size>1)?new Set(selMonths):new Set(Array.from({length:now.getMonth()+1},(_,i)=>i+1));
+    if(selMonths.size<=1) gr.years=new Set([now.getFullYear()]);
+    $('grModal').style.display='flex';
+    try{ document.body.dataset.grOv=document.body.style.overflow||''; document.body.style.overflow='hidden'; }catch(e){}
+    grRenderChips(); grLoad();
+  }
+  function grClose(){ $('grModal').style.display='none'; $('grTip').style.display='none'; try{ document.body.style.overflow=document.body.dataset.grOv||''; }catch(e){} }
+  function grYms(){ const a=[]; for(const y of gr.years) for(const m of gr.months) a.push(y+'-'+String(m).padStart(2,'0')); return a.sort(); }
+  function grRenderChips(){
+    const chip=(on,txt,act,val)=>'<button type="button" class="chip'+(on?' on':'')+'" data-gr="'+act+'" data-v="'+val+'">'+txt+'</button>';
+    $('grYears').innerHTML=allYears.map(y=>chip(gr.years.has(y),y+'년','y',y)).join('');
+    $('grMonths').innerHTML=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>chip(gr.months.has(m),m+'월','m',m)).join('')
+      +chip(false,'12개월 전체','mall',0)+chip(false,'해제','mnone',0);
+    $('grView').innerHTML=chip(gr.showAmt,'💰 금액','amt',0)+chip(gr.showQty,'📦 수량','qty',0)
+      +'<span class="grsep"></span>'
+      +'<span class="hint" style="align-self:center">수량 단위</span>'
+      +chip(gr.unit==='pz','Pieza','unit','pz')+chip(gr.unit==='sku','SKU','unit','sku');
+  }
+  function grChipClick(e){
+    const b=e.target.closest('[data-gr]'); if(!b) return;
+    const a=b.getAttribute('data-gr'), v=b.getAttribute('data-v');
+    let reload=false;
+    if(a==='y'){ const n=Number(v); gr.years.has(n)?gr.years.delete(n):gr.years.add(n); reload=true; }
+    else if(a==='m'){ const n=Number(v); gr.months.has(n)?gr.months.delete(n):gr.months.add(n); reload=true; }
+    else if(a==='mall'){ gr.months=new Set([1,2,3,4,5,6,7,8,9,10,11,12]); reload=true; }
+    else if(a==='mnone'){ gr.months=new Set(); reload=true; }
+    else if(a==='amt'){ gr.showAmt=!gr.showAmt; if(!gr.showAmt&&!gr.showQty) gr.showQty=true; }
+    else if(a==='qty'){ gr.showQty=!gr.showQty; if(!gr.showAmt&&!gr.showQty) gr.showAmt=true; }
+    else if(a==='unit'){ gr.unit=v; }
+    grRenderChips();
+    if(reload) grLoad(); else grRender();
+  }
+  async function grLoad(){
+    const yms=grYms(); const my=++gr.seq;
+    if(!yms.length){ gr.data=null; $('grBody').innerHTML='<div class="hint" style="padding:30px 0;text-align:center">연도와 월을 하나 이상 선택하세요.</div>'; return; }
+    if(yms.length>36){ gr.data=null; $('grBody').innerHTML='<div class="hint" style="padding:30px 0;text-align:center">한 번에 36개월까지 볼 수 있습니다. (지금 '+yms.length+'개월)</div>'; return; }
+    $('grBody').innerHTML='<div class="hint" style="padding:30px 0;text-align:center">불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/quotes/summary?by=month&yms='+encodeURIComponent(yms.join(',')),{headers:auth()});
+      const d=await res.json();
+      if(my!==gr.seq) return;
+      if(!res.ok||d.error){ $('grBody').innerHTML='<div class="hint">불러오지 못했습니다 ('+esc(d.error||res.status)+').</div>'; return; }
+      gr.data=d; grRender();
+    }catch(e){ if(my===gr.seq) $('grBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function grNice(max){
+    if(!(max>0)) return 1;
+    const raw=max/4, p=Math.pow(10,Math.floor(Math.log10(raw))), f=raw/p;
+    const s=f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10; return s*p;
+  }
+  function grShort(v,money){
+    const a=Math.abs(v), sg=v<0?'-':'', pre=money?'$':'';
+    if(a>=1e6) return sg+pre+(Math.round(a/1e5)/10)+'M';
+    if(a>=1e3) return sg+pre+(Math.round(a/100)/10)+'k';
+    return sg+pre+Math.round(a);
+  }
+  function grYmLbl(ym,multiYear){ const [y,m]=ym.split('-'); return multiYear?(y.slice(2)+'.'+m):(Number(m)+'월'); }
+  // 달 하나의 흐름 값 (kind: amt | pz | sku)
+  function grFlowVals(m,kind){
+    const n=(v)=>Number(v||0);
+    if(kind==='amt') return {q:n(m.quotes&&m.quotes.amt), s:n(m.sales&&m.sales.amt), l:n(m.lost&&m.lost.amt)};
+    if(kind==='pz')  return {q:n(m.quotes&&m.quotes.qty), s:n(m.sales&&m.sales.qty), l:n(m.lost&&m.lost.qty)};
+    return {q:n(m.quotes&&m.quotes.sku), s:n(m.sales&&m.sales.sku), l:n(m.lost&&m.lost.sku)};
+  }
+  function grFrame(){ const W=Math.max(320, Math.min(1000, ($('grBody').clientWidth||720)-26)); return {W, L:W<480?44:58, R:14, T:14}; }
+  function grXs(n,L,pw){ return (i)=> L + (n===1? pw/2 : i*pw/(n-1)); }
+  function grPath(pts){ return pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(''); }
+  function grArea(top,bot){ return grPath(top)+bot.slice().reverse().map(p=>'L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join('')+'Z'; }
+  function grAxis(ticks,y,L,W,R,money){
+    return ticks.map(t=>'<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(t)+'" y2="'+y(t)+'" stroke="'+(t===0?'#b9b3a6':'#ece8df')+'" stroke-width="1"/>'
+      +'<text x="'+(L-6)+'" y="'+(y(t)+4)+'" text-anchor="end" font-size="10.5" fill="#6F6A60">'+grShort(t,money)+'</text>').join('');
+  }
+  function grXLabels(ms,x,H,pw){
+    const multiYear=new Set(ms.map(m=>m.ym.slice(0,4))).size>1, n=ms.length;
+    const every=Math.max(1,Math.ceil(n/Math.max(1,Math.floor(pw/46))));
+    // 이번 달은 아직 진행 중 — 꺾여 내려가는 게 실적 하락이 아님을 표시
+    const nd=new Date(), cur=nd.getFullYear()+'-'+String(nd.getMonth()+1).padStart(2,'0');
+    return ms.map((m,i)=> i%every===0||i===n-1 ? '<text x="'+x(i)+'" y="'+(H-8)+'" text-anchor="'+(i===n-1&&n>1?'end':'middle')+'" font-size="11" fill="#6F6A60">'+grYmLbl(m.ym,multiYear)+(m.ym===cur?' (진행중)':'')+'</text>' : '').join('');
+  }
+  function grHits(ms,x,T,ph,pw,kind){
+    const n=ms.length, w=n===1?pw:pw/(n-1);
+    return ms.map((m,i)=>'<rect class="grhit" x="'+(x(i)-w/2)+'" y="'+T+'" width="'+w+'" height="'+ph+'" fill="transparent" data-kind="'+kind+'" data-i="'+i+'"/>').join('')
+      +'<line class="grx" x1="0" x2="0" y1="'+T+'" y2="'+(T+ph)+'" stroke="#1C1B19" stroke-width="1" stroke-dasharray="3 3" style="display:none" pointer-events="none"/>';
+  }
+  // ① 수주 흐름 — 견적 선 + 실매출 · 재고부족 음영(쌓기) + 기타 미전환 빗금
+  function grFlowChart(kind){
+    const ms=gr.data.months||[], n=ms.length, money=kind==='amt', stack=kind!=='sku';
+    const {W,L,R,T}=grFrame(), H=270, B=28, pw=W-L-R, ph=H-T-B;
+    const V=ms.map(m=>grFlowVals(m,kind));
+    const mx=Math.max(1,...V.map(v=>Math.max(v.q, stack?v.s+v.l:Math.max(v.s,v.l))));
+    const step=grNice(mx), top=Math.ceil(mx/step)*step;
+    const x=grXs(n,L,pw), y=v=>T+ph*(top-v)/top;
+    const ticks=[]; for(let t=0;t<=top+1e-9;t+=step) ticks.push(t);
+    let g='<defs><pattern id="grHatch'+kind+'" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#b9b3a6" stroke-width="1.2"/></pattern></defs>';
+    g+=grAxis(ticks,y,L,W,R,money);
+    if(n===1){
+      // 한 달 = 추이가 없으니 100% 구성 막대 하나
+      const v=V[0], tot=Math.max(v.q,1), bw=Math.min(pw*0.7,520), bx=L+(pw-bw)/2, by=T+ph*0.35, bh=ph*0.3;
+      const seg=[['s',v.s],['l',v.l],['o',Math.max(0,v.q-v.s-v.l)]]; let acc=bx;
+      g='<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="#f4f1ea"/>';
+      seg.forEach(([k,val])=>{ const w=bw*Math.min(1,val/tot); if(w<=0) return;
+        g+='<rect x="'+acc+'" y="'+by+'" width="'+w+'" height="'+bh+'" fill="'+(k==='o'?'url(#grHatch'+kind+')':GR_COL[k])+'" opacity="'+(k==='o'?1:0.85)+'"/>'; acc+=w+2; });
+      g='<defs><pattern id="grHatch'+kind+'" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#b9b3a6" stroke-width="1.2"/></pattern></defs>'+g
+        +'<text x="'+bx+'" y="'+(by-8)+'" font-size="12" fill="#1C1B19">'+esc(grYmLbl(ms[0].ym,true))+' — 견적 '+(money?'$'+fmt(v.q):fmtq(v.q))+'</text>'
+        +'<rect class="grhit" x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="transparent" data-kind="'+kind+'" data-i="0"/>';
+    } else {
+      const P=(f)=>V.map((v,i)=>[x(i),y(f(v))]);
+      const base=V.map((v,i)=>[x(i),y(0)]);
+      if(stack){
+        const sTop=P(v=>v.s), lTop=P(v=>v.s+v.l), qTop=P(v=>Math.max(v.q,v.s+v.l));
+        g+='<path d="'+grArea(qTop,lTop)+'" fill="url(#grHatch'+kind+')" opacity=".9"/>'
+          +'<path d="'+grArea(lTop,sTop)+'" fill="'+GR_COL.l+'" fill-opacity=".38"/>'
+          +'<path d="'+grArea(sTop,base)+'" fill="'+GR_COL.s+'" fill-opacity=".45"/>'
+          +'<path d="'+grPath(lTop)+'" fill="none" stroke="'+GR_COL.l+'" stroke-width="2"/>'
+          +'<path d="'+grPath(sTop)+'" fill="none" stroke="'+GR_COL.s+'" stroke-width="2"/>';
+      } else {
+        g+='<path d="'+grArea(P(v=>v.s),base)+'" fill="'+GR_COL.s+'" fill-opacity=".22"/>'
+          +'<path d="'+grArea(P(v=>v.l),base)+'" fill="'+GR_COL.l+'" fill-opacity=".22"/>'
+          +'<path d="'+grPath(P(v=>v.s))+'" fill="none" stroke="'+GR_COL.s+'" stroke-width="2"/>'
+          +'<path d="'+grPath(P(v=>v.l))+'" fill="none" stroke="'+GR_COL.l+'" stroke-width="2"/>';
+      }
+      g+='<path d="'+grPath(P(v=>v.q))+'" fill="none" stroke="'+GR_COL.q+'" stroke-width="2.4"/>'
+        +V.map((v,i)=>'<circle cx="'+x(i)+'" cy="'+y(v.q)+'" r="3.2" fill="'+GR_COL.q+'" stroke="#fff" stroke-width="1.5" pointer-events="none"/>').join('');
+      g+=grXLabels(ms,x,H,pw)+grHits(ms,x,T,ph,pw,kind);
+    }
+    const unitLbl=kind==='amt'?'금액 (IVA 제외)':kind==='pz'?'수량 — Pieza':'수량 — SKU';
+    const leg=(c,t,hatch)=>'<span class="grleg2"><i style="'+(hatch?'background:repeating-linear-gradient(45deg,#b9b3a6 0 1.5px,#fff 1.5px 4px)':'background:'+c)+'"></i>'+t+'</span>';
+    const legend=leg(GR_COL.q,'견적(받은 수요) — 선')+leg(GR_COL.s,'실매출')+leg(GR_COL.l,'재고부족 실기')+(stack?leg('', '기타 미전환(만료·미결·개발)',true):'');
+    return '<div class="grcard"><div class="grhead"><b>'+(kind==='amt'?'💰':'📦')+' 수주 흐름 — '+unitLbl+'</b><div class="grlegs">'+legend+'</div></div>'
+      +'<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" role="img" aria-label="'+esc(unitLbl)+' 월별 수주 흐름" data-kind="'+kind+'" style="display:block">'+g+'</svg>'
+      +(kind==='sku'?'<div class="hint" style="padding:0 0 6px">SKU 는 같은 제품이 일부 팔리고 일부 부족할 수 있어 쌓지 않고 겹쳐 그립니다.</div>':'')+'</div>';
+  }
+  // ② 번 돈 / 놓친 돈 — 0 위 이익 실현, 0 아래 재고부족으로 못 번 이익
+  function grProfitChart(){
+    const ms=gr.data.months||[], n=ms.length, tot=gr.data.total||{};
+    if(!ms.some(m=>m.gp)) return '';
+    const {W,L,R,T}=grFrame(), H=230, B=28, pw=W-L-R, ph=H-T-B;
+    const E=ms.map(m=>Number(m.gp&&m.gp.sales.gp||0)), Lo=ms.map(m=>Number(m.gp&&m.gp.lost.gp||0));
+    const mxE=Math.max(0,...E), mxL=Math.max(0,...Lo), mnE=Math.min(0,...E);
+    const step=grNice(Math.max(mxE,mxL+Math.max(0,-mnE),1));
+    const top=Math.max(step,Math.ceil(mxE/step)*step), bot=-Math.max(step,Math.ceil((mxL-mnE)/step)*step);
+    const x=grXs(n,L,pw), y=v=>T+ph*(top-v)/(top-bot);
+    const ticks=[]; for(let t=bot;t<=top+1e-9;t+=step) ticks.push(t);
+    let g=grAxis(ticks,y,L,W,R,true);
+    const base=ms.map((m,i)=>[x(i),y(0)]);
+    if(n===1){
+      const bw=Math.min(80,pw*0.3), bx=L+(pw-bw)/2;
+      g+='<rect x="'+bx+'" y="'+y(Math.max(E[0],0))+'" width="'+bw+'" height="'+Math.abs(y(E[0])-y(0))+'" fill="'+GR_COL.s+'" fill-opacity=".6"/>'
+        +'<rect x="'+bx+'" y="'+y(0)+'" width="'+bw+'" height="'+(y(-Lo[0])-y(0))+'" fill="'+GR_COL.l+'" fill-opacity=".55"/>'
+        +'<rect class="grhit" x="'+bx+'" y="'+T+'" width="'+bw+'" height="'+ph+'" fill="transparent" data-kind="gp" data-i="0"/>';
+    } else {
+      const eP=E.map((v,i)=>[x(i),y(v)]), lP=Lo.map((v,i)=>[x(i),y(-v)]);
+      g+='<path d="'+grArea(eP,base)+'" fill="'+GR_COL.s+'" fill-opacity=".4"/>'
+        +'<path d="'+grArea(lP,base)+'" fill="'+GR_COL.l+'" fill-opacity=".35"/>'
+        +'<path d="'+grPath(eP)+'" fill="none" stroke="'+GR_COL.s+'" stroke-width="2"/>'
+        +'<path d="'+grPath(lP)+'" fill="none" stroke="'+GR_COL.l+'" stroke-width="2"/>'
+        +grXLabels(ms,x,H,pw)+grHits(ms,x,T,ph,pw,'gp');
+    }
+    // 축 이름표는 오른쪽 끝 바깥 여백 쪽에(왼쪽은 선과 겹친다)
+    g+='<text x="'+(W-R-4)+'" y="'+(T+12)+'" text-anchor="end" font-size="10.5" font-weight="700" fill="#0F6E56">▲ 번 돈</text>'
+      +'<text x="'+(W-R-4)+'" y="'+(T+ph-6)+'" text-anchor="end" font-size="10.5" font-weight="700" fill="#B23A2E">▼ 놓친 돈</text>';
+    const ge=tot.gp?tot.gp.sales.gp:E.reduce((a,b)=>a+b,0), gl=tot.gp?tot.gp.lost.gp:Lo.reduce((a,b)=>a+b,0);
+    return '<div class="grcard"><div class="grhead"><b>💵 번 돈 vs 놓친 돈 — 매출총이익</b>'
+      +'<div class="grlegs"><span class="grleg2"><i style="background:'+GR_COL.s+'"></i>이익 실현 <b style="margin-left:4px">$'+fmt(ge)+'</b></span>'
+      +'<span class="grleg2"><i style="background:'+GR_COL.l+'"></i>재고부족으로 못 번 이익 <b style="margin-left:4px">$'+fmt(gl)+'</b></span></div></div>'
+      +'<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" role="img" aria-label="월별 이익 실현과 놓친 이익" data-kind="gp" style="display:block">'+g+'</svg></div>';
+  }
+  // 기간 합계 띠 — 견적이 어디로 갔나
+  function grKpis(){
+    const t=gr.data.total||{}, q=t.quotes||{}, s=t.sales||{}, l=t.lost||{};
+    const qa=Number(q.amt||0), sa=Number(s.amt||0), la=Number(l.amt||0), oa=Math.max(0,qa-sa-la);
+    const pct=(v)=>qa>0?(Math.round(v/qa*1000)/10)+'%':'—';
+    const k=(c,lbl,v,sub)=>'<div class="grk"><div class="kl"><i style="background:'+c+'"></i>'+lbl+'</div><div class="kv">'+v+'</div><div class="ks">'+sub+'</div></div>';
+    let h='<div class="grkpis">'
+      +k(GR_COL.q,'견적 (받은 수요)','$'+fmt(qa),fmtq(q.qty||0)+' pzs · '+fmtq(q.sku||0)+' SKU')
+      +k(GR_COL.s,'실매출','$'+fmt(sa),'견적의 '+pct(sa))
+      +k(GR_COL.l,'재고부족 실기','$'+fmt(la),'견적의 '+pct(la))
+      +k(GR_COL.o,'기타 미전환','$'+fmt(oa),'견적의 '+pct(oa)+' · 만료·미결·개발');
+    if(t.gp) h+=k(GR_COL.s,'번 돈 (이익)','$'+fmt(t.gp.sales.gp),'이익률 '+(t.gp.sales.pct==null?'—':t.gp.sales.pct+'%'))
+      +k(GR_COL.l,'놓친 돈 (이익)','$'+fmt(t.gp.lost.gp),'재고가 있었다면');
+    // 막대 하나로 「견적이 어디로 갔나」
+    const w=(v)=>qa>0?Math.max(0,Math.min(100,v/qa*100)):0;
+    h+='</div><div class="grsplit" title="견적액 = 실매출 + 재고부족 실기 + 기타 미전환">'
+      +'<span style="width:'+w(sa)+'%;background:'+GR_COL.s+'"></span><span style="width:'+w(la)+'%;background:'+GR_COL.l+'"></span>'
+      +'<span style="width:'+w(oa)+'%;background:repeating-linear-gradient(45deg,#b9b3a6 0 1.5px,#f4f1ea 1.5px 5px)"></span></div>';
+    return h;
+  }
+  function grTable(){
+    const d=gr.data, ms=d.months||[], tot=d.total||{}, hasGp=ms.some(m=>m.gp)||!!tot.gp;
+    const oth=m=>{ const q=Number(m.quotes&&m.quotes.amt||0), s=Number(m.sales&&m.sales.amt||0), l=Number(m.lost&&m.lost.amt||0); return Math.max(0,q-s-l); };
+    const cols=[['견적액',m=>m.quotes&&m.quotes.amt,1],['실매출',m=>m.sales&&m.sales.amt,1],['전환율',m=>m.sales&&m.sales.rate,2],['재고부족 실기',m=>m.lost&&m.lost.amt,1],['기타 미전환',oth,1]]
+      .concat(hasGp?[['번 돈(이익)',m=>m.gp&&m.gp.sales.gp,1],['놓친 돈(이익)',m=>m.gp&&m.gp.lost.gp,1]]:[])
+      .concat([['견적 SKU',m=>m.quotes&&m.quotes.sku,0],['견적 Pieza',m=>m.quotes&&m.quotes.qty,0],['매출 SKU',m=>m.sales&&m.sales.sku,0],['매출 Pieza',m=>m.sales&&m.sales.qty,0],['부족 SKU',m=>m.lost&&m.lost.sku,0],['부족 Pieza',m=>m.lost&&m.lost.qty,0]]);
+    const cell=(v,t)=>{ if(v==null) return '—'; return t===1?fmt(v):t===2?(v+'%'):fmtq(v); };
+    const multiYear=new Set(ms.map(m=>m.ym.slice(0,4))).size>1;
+    let h='<details class="grtblwrap"><summary>📋 월별 표 보기</summary><div class="grtbl"><table><thead><tr><th>월</th>'+cols.map(c=>'<th class="r">'+c[0]+'</th>').join('')+'</tr></thead><tbody>';
+    ms.forEach(m=>{ h+='<tr><td>'+(multiYear?m.ym:grYmLbl(m.ym,false))+'</td>'+cols.map(c=>'<td class="r">'+cell(c[1](m),c[2])+'</td>').join('')+'</tr>'; });
+    h+='<tr class="tot"><td>합계</td>'+cols.map(c=>'<td class="r">'+cell(c[1](tot),c[2])+'</td>').join('')+'</tr></tbody></table></div></details>';
+    return h;
+  }
+  function grRender(){
+    const d=gr.data; if(!d) return;
+    if(!(d.months||[]).length){ $('grBody').innerHTML='<div class="hint">데이터가 없습니다.</div>'; return; }
+    let h=grKpis();
+    if(gr.showAmt) h+=grFlowChart('amt');
+    if(gr.showQty) h+=grFlowChart(gr.unit);
+    h+=grProfitChart();
+    h+=grTable();
+    h+='<div class="hint" style="margin-top:6px">견적일 기준 · 달마다 상단 요약 카드와 같은 계산입니다. 견적액 = 실매출 + 재고부족 실기 + 기타 미전환(만료·미결·개발요청 등).</div>';
+    $('grBody').innerHTML=h;
+  }
+  function grBodyClick(){ /* 범례는 표시만 — 클릭 동작 없음(항목 수가 적어 감출 필요가 없다) */ }
+  function grHover(e){
+    const tip=$('grTip'); const r=e.target.closest && e.target.closest('.grhit');
+    $('grBody').querySelectorAll('.grx').forEach(l=>{ l.style.display='none'; });
+    if(!r||!gr.data){ tip.style.display='none'; return; }
+    const kind=r.getAttribute('data-kind'), i=Number(r.getAttribute('data-i')), m=gr.data.months[i]; if(!m) return;
+    const svg=r.ownerSVGElement, cx=Number(r.getAttribute('x'))+Number(r.getAttribute('width'))/2;
+    const xl=svg&&svg.querySelector('.grx'); if(xl&&gr.data.months.length>1){ xl.setAttribute('x1',cx); xl.setAttribute('x2',cx); xl.style.display=''; }
+    const row=(c,t,v,hatch)=>'<div><i style="'+(hatch?'background:repeating-linear-gradient(45deg,#b9b3a6 0 1.5px,#fff 1.5px 4px)':'background:'+c)+'"></i>'+t+'<b>'+v+'</b></div>';
+    let body='';
+    if(kind==='gp'){
+      body=row(GR_COL.s,'번 돈(이익)','$'+fmt(m.gp.sales.gp))+row(GR_COL.l,'놓친 돈(이익)','$'+fmt(m.gp.lost.gp));
+    } else {
+      const v=grFlowVals(m,kind), money=kind==='amt', f=(x)=>money?'$'+fmt(x):fmtq(x);
+      const p=(x)=>v.q>0?' <span style="opacity:.7">('+Math.round(x/v.q*100)+'%)</span>':'';
+      body=row(GR_COL.q,'견적',f(v.q))+row(GR_COL.s,'실매출',f(v.s)+(kind!=='sku'?p(v.s):''))+row(GR_COL.l,'재고부족',f(v.l)+(kind!=='sku'?p(v.l):''))
+        +(kind!=='sku'?row('','기타 미전환',f(Math.max(0,v.q-v.s-v.l))+p(Math.max(0,v.q-v.s-v.l)),true):'');
+    }
+    tip.innerHTML='<div class="tt">'+m.ym+'</div>'+body;
+    tip.style.display='block';
+    const pad=14, tw=tip.offsetWidth, th=tip.offsetHeight;
+    let x=e.clientX+pad, yy=e.clientY+pad;
+    if(x+tw>window.innerWidth-8) x=e.clientX-tw-pad;
+    if(yy+th>window.innerHeight-8) yy=e.clientY-th-pad;
+    tip.style.left=Math.max(8,x)+'px'; tip.style.top=Math.max(8,yy)+'px';
   }
   // 검색어가 제품번호에 걸렸으면 어느 줄인지 견적번호 밑에 작게
   function codeHitSmall(q){
@@ -1599,6 +1910,15 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   // 0225 · 검색칸 — Enter 로도 찾는다(창고·영업은 마우스를 잡고 있지 않다)
   $('qSearchGo').addEventListener('click',runSearch);
+  // 그래프 팝업
+  $('grClose').addEventListener('click',grClose);
+  $('grModal').addEventListener('click',e=>{ if(e.target.id==='grModal') grClose(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('grModal').style.display==='flex') grClose(); });
+  $('grYears').addEventListener('click',grChipClick); $('grMonths').addEventListener('click',grChipClick); $('grView').addEventListener('click',grChipClick);
+  $('grBody').addEventListener('click',grBodyClick);
+  $('grBody').addEventListener('mousemove',grHover);
+  $('grBody').addEventListener('mouseleave',()=>{ $('grTip').style.display='none'; });
+  { let rt=null; window.addEventListener('resize',()=>{ if($('grModal').style.display!=='flex') return; clearTimeout(rt); rt=setTimeout(grRender,150); }); }
   $('qSearchClear').addEventListener('click',clearSearch);
   $('qSearch').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); runSearch(); } });
   // 2026-09-30 · 다른 화면(재고 예약 현황 등)에서 견적번호로 바로 열기 — ?q=Q-2026-0123

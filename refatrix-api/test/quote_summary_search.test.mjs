@@ -119,6 +119,22 @@ await t('미등록 코드 줄은 입력 코드(정규화) 하나를 SKU 하나�
   assert.equal(S.quotes.sku, 2); assert.equal(S.quotes.lines, 3); assert.equal(S.quotes.qty, 3); assert.ok(qx);
 });
 
+await t('그래프용 by=month — 달마다 카드와 같은 숫자 + 합계', async () => {
+  const M = await get('/api/quotes/summary?by=month&yms=' + YM2 + ',' + YM);
+  assert.deepEqual(M.months.map((m) => m.ym), [YM, YM2], '달은 오름차순');
+  assert.equal(M.months[0].quotes.amt, 2350); assert.equal(M.months[0].lost.amt, 1300); assert.equal(M.months[0].gp.sales.gp, 390);
+  assert.equal(M.months[1].sales.amt, 200); assert.equal(M.months[1].quotes.sku, 1);
+  assert.equal(M.total.quotes.amt, 2650); assert.equal(M.total.sales.amt, 800);
+});
+await t('by=month — 37개월 이상은 400, 기간 없으면 빈 배열, 디렉터·소시오 외 403', async () => {
+  const many = []; for (let y = 2027; y <= 2030; y++) for (let m = 1; m <= 12; m++) many.push(y + '-' + String(m).padStart(2, '0'));
+  const r = await app.inject({ method: 'GET', url: '/api/quotes/summary?by=month&yms=' + many.join(','), headers: { 'x-test-user': uid + ':director' } });
+  assert.equal(r.statusCode, 400);
+  assert.deepEqual((await get('/api/quotes/summary?by=month&yms=')).months, []);
+  const f = await app.inject({ method: 'GET', url: '/api/quotes/summary?by=month&yms=' + YM, headers: { 'x-test-user': uid + ':sales' } });
+  assert.equal(f.statusCode, 403);
+});
+
 // ── 검색 ──
 const ids = async (kw) => (await get('/api/quotes?from=&to=&q=' + encodeURIComponent(kw))).items.map((x) => x.id);
 await t('codeSearchPattern — 표기 흔들림 제거 · 4자 이상 앞부분 일치 · 영숫자 없으면 null', async () => {
