@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261001ed</title>
+<title>Refatrix ERP · 전자결재 · b20261001ee</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -214,7 +214,12 @@ html.rfxm .bulk{bottom:calc(60px + env(safe-area-inset-bottom))}
 .dtop{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
 .dleft{flex:1 1 auto;min-width:0}
 .dleft h1{margin:2px 0 4px}
-.dright{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:58%}
+.dright{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:62%}
+.drow{display:flex;align-items:center;gap:8px}
+.btn.le-btn{border:1.5px solid var(--gold);color:#7a5517;background:#fbf4e6;font-weight:700}
+.btn.le-btn:hover{background:#f6ead3}
+.le-click{cursor:pointer;border-radius:8px}
+.le-click:hover .mstamps{outline:2px solid var(--gold);outline-offset:1px}
 .mstamps{border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .mstamps td.ms{width:52px;min-width:52px;text-align:center;border-left:1px solid #ece6d8;padding:3px 2px;vertical-align:top}
 .mstamps td.ms:first-child{border-left:0}
@@ -228,7 +233,7 @@ html.rfxm .bulk{bottom:calc(60px + env(safe-area-inset-bottom))}
 .mstamps td.ceo{background:#fbf6ea}.mstamps td.exec{background:#f3f7f5}
 .mstamps td.pending{background:#fff8e8}
 .mstamps .mt{font-size:9px;color:var(--mute);min-height:11px}
-@media(max-width:860px){.dtop{flex-direction:column;gap:8px}.dright{max-width:100%;align-items:stretch;overflow-x:auto}.dright .btn{align-self:flex-start}}
+@media(max-width:860px){.dtop{flex-direction:column;gap:8px}.dright{max-width:100%;align-items:stretch;overflow-x:auto}.dright .btn{align-self:flex-start}.drow{flex-direction:column;align-items:flex-start}}
 .addm{margin-top:10px;border-left:3px solid var(--gold);background:#fbf7ee;border-radius:0 10px 10px 0;padding:8px 10px}
 .addh{font-size:12.5px;margin-bottom:4px}
 details.revs{margin-top:10px;font-size:12.5px}
@@ -564,7 +569,7 @@ function cmtItem(c){
 }
 const btn=(act,l,cls)=>`<button class="btn ${cls||''}" data-act="${act}">${l}</button>`;
 function actionsHtml(){
- const d=DET.doc,a=DET.actions,b=[],mine=DET.lines.find(l=>l.status==='pending'&&same(l.user_id,B.me.id));
+ const d=DET.doc,a=DET.actions,b=DET.can_edit_lines?[btn('lineedit','✎ 결재선 수정','le-btn')]:[],mine=DET.lines.find(l=>l.status==='pending'&&same(l.user_id,B.me.id));
  if(a.includes('reject'))b.push(btn('reject',mine&&mine.step_type==='agree'?'반대 (반려)':'반려','danger'));
  if(a.includes('approve')){const t=mine?({pass:'경유 확인',agree:'합의',pre_ceo:'사전승인'})[mine.step_type]||'승인':'승인';b.push(btn('approve',t,'pri'));}
  if(a.includes('flag'))b.push(btn('flag','이의제기','danger'));
@@ -598,7 +603,7 @@ function renderDetail(){
    ${refs.length||shares.length?`<div class="sub">${refs.length?'참조: '+esc(refs.join(', ')):''}${refs.length&&shares.length?' · ':''}${shares.length?'공람 (승인 후): '+esc(shares.join(', ')):''}</div>`:''}
    <div style="margin-top:4px">${!DET.files.some(f=>!f.voided_at)&&d.status!=='draft'?'<span class="flag">증빙 없음</span>':''}${noDirFin&&d.status!=='draft'?'<span class="flag g">디렉터 기안·재무합의 없음</span>':''}${DET.revisions.length?`<span class="flag g">수정 ${DET.revisions.length}회</span>`:''}</div>
   </div>
-  <div class="dright">${miniStampsHtml(d,DET.lines)}${DET.can_edit_lines?'<button class="btn sm ghost no-print" data-act="lineedit">✎ 결재선 수정</button>':''}</div>
+  <div class="dright">${DET.can_edit_lines?`<div class="drow"><button class="btn sm le-btn no-print" data-act="lineedit">✎ 결재선 수정</button><div class="le-click" data-act="lineedit" title="눌러서 결재선 수정">${miniStampsHtml(d,DET.lines)}</div></div>`:miniStampsHtml(d,DET.lines)}</div>
  </div>
  ${rej?`<div class="warn red" style="margin:0 0 12px"><b>${SL(rej.step_type)} ${esc(U(rej.user_id))} · ${rej.step_type==='agree'?'반대':'반려'}</b> ${tm(rej.acted_at)}<br>${esc(rej.comment)}</div>`:''}
  <div class="card sec"><h3>금액 · ${PT_L[d.payment_type]||'일시불'}${d.payment_type==='recurring'&&d.payment_plan?` <span class="sub">${FREQ_L[d.payment_plan.freq]||''} ${d.payment_plan.count}회 · ${esc(d.payment_plan.start)}부터</span>`:''}</h3><div class="grid2">
