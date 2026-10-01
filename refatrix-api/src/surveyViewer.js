@@ -19,7 +19,9 @@ import { hashPin, verifyPin } from './auth.js';
 import { logEvent } from './audit.js';
 import { authGuard, requireDirector } from './middleware/authGuard.js';
 import { buildPublicSurveyData } from './surveyPublic.js';
-import { pageFileName, extractJson, clip } from './surveyAi.js';
+import { pageFileName, extractJson, clip, zipStream } from './surveyAi.js';
+import { Readable } from 'node:stream';
+import { ACK_VERSION, ACK_LINES, ACK_LINES_KO, ACK_TEXT, ACK_SHA, sha256, buildCsv, readmeText } from './surveyRedact.js';
 
 export const SV_TYP = 'survey_viewer';
 const VIEWER_ACCOUNTS_CLOSED = true;                    // 2026-09-30 — 열람은 REFATRIX Platform 로그인으로만
@@ -35,13 +37,15 @@ const PF_TTL = '1h';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const platformApi = {
   // → {ok:true} | {ok:false, invalid:true} | {ok:false, error}
-  async check(token) {
+  async check(token) { return this.log(token, '고객 설문 결과 열람 (ERP 연동)'); },
+  // 플랫폼 활동 로그에 그 세션의 사용자 이름으로 남긴다 — 세션이 무효면 거절된다(= 신원 확인)
+  async log(token, txt) {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
     try {
       const r = await fetch(PF_URL() + '/rest/v1/rpc/app_log', {
         method: 'POST', signal: ctrl.signal,
         headers: { apikey: PF_KEY(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ p_token: token, p_type: 'user', p_txt: '고객 설문 결과 열람 (ERP 연동)' }),
+        body: JSON.stringify({ p_token: token, p_type: 'user', p_txt: String(txt).slice(0, 300) }),
       });
       if (r.ok) return { ok: true };
       const b = await r.json().catch(() => ({}));
@@ -279,6 +283,92 @@ export default async function surveyViewerRoutes(app, deps = {}) {
     return reply.send(d.file_data);
   });
 
+  // ───────── 일괄 다운로드 — 개인정보 가린 사본만 · CTR 책임 확인 기록 (2026-09-30) ─────────
+  //   ① download-ack: 확인 문구(버전·sha 일치) 체크 + 플랫폼 세션 재확인(플랫폼 로그에 실명으로 남김) → 기록 → 10분짜리 다운로드 표
+  //   ② download?t=표: zip 스트림 — 가린 JPEG + datos.csv(개인정보·서술형 제외) + LEEME.txt(확인 기록 전문)
+  const DL_TTL = '10m';
+  // 플랫폼 index.html 「고객 설문」 화면의 [⬇ 설문지 전체 다운로드] 창이 쓴다 — 준비된 장수 + 확인 문구(한국어·스페인어)
+  app.get('/api/survey-viewer/surveys/:id/download-info', { preHandler: [viewerGuard] }, async (req, reply) => {
+    if (!req.viewer.pf) return reply.code(403).send({ error: 'platform_only' });
+    const sid = idOf(req.params.id);
+    if (!sid || !req.viewer.surveyIds.includes(sid)) return reply.code(404).send({ error: 'not_found' });
+    const s = (await query(`SELECT id, title FROM surveys WHERE id=$1 AND deleted_at IS NULL`, [sid])).rows[0];
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    const dc = (await query(
+      `SELECT SUM(CASE WHEN redact_data IS NOT NULL AND NOT redact_excluded THEN 1 ELSE 0 END)::int AS ready, COUNT(*)::int AS done
+         FROM survey_pages WHERE survey_id=$1 AND status='done'`, [sid])).rows[0] || {};
+    reply.header('cache-control', 'no-store');
+    return { id: Number(s.id), title: s.title, ready: Number(dc.ready || 0), done: Number(dc.done || 0),
+      ack: { version: ACK_VERSION, sha: ACK_SHA, lines_ko: ACK_LINES_KO, lines_es: ACK_LINES } };
+  });
+  app.post('/api/survey-viewer/surveys/:id/download-ack', { preHandler: [viewerGuard] }, async (req, reply) => {
+    if (!req.viewer.pf) return reply.code(403).send({ error: 'platform_only' });
+    const sid = idOf(req.params.id);
+    if (!sid || !req.viewer.surveyIds.includes(sid)) return reply.code(404).send({ error: 'not_found' });
+    const b = req.body || {};
+    if (b.accept !== true || b.version !== ACK_VERSION || b.sha !== ACK_SHA) return reply.code(400).send({ error: 'ack_required' });
+    const ptok = String(b.platform_token || '').trim();
+    if (!UUID_RE.test(ptok)) return reply.code(401).send({ error: 'platform_session_invalid' });
+    const s = (await query(`SELECT id, title FROM surveys WHERE id=$1 AND deleted_at IS NULL`, [sid])).rows[0];
+    const dc = (await query(
+      `SELECT SUM(CASE WHEN redact_data IS NOT NULL AND NOT redact_excluded THEN 1 ELSE 0 END)::int AS ready, COUNT(*)::int AS done
+         FROM survey_pages WHERE survey_id=$1 AND status='done'`, [sid])).rows[0] || {};
+    const ready = Number(dc.ready || 0);
+    if (!ready) return reply.code(409).send({ error: 'nothing_ready' });
+    const ip = String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 64);
+    const ack = (await query(
+      `INSERT INTO survey_download_acks (survey_id, viewer_name, platform_session_sha, ack_version, ack_sha, ack_text, files_ready, files_done, ip, user_agent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') AS created_at`,
+      [sid, req.viewer.name, sha256(ptok), ACK_VERSION, ACK_SHA, ACK_TEXT, ready, Number(dc.done || 0), ip || null,
+        String(req.headers['user-agent'] || '').slice(0, 300) || null])).rows[0];
+    const pl = await platformApi.log(ptok, `고객 설문 일괄 다운로드 — 개인정보 유출 책임(CTR) 확인 · ${clip(s.title, 60)} · ${ready}장 · 확인번호 #${ack.id}`);
+    if (!pl.ok) {
+      await query(`DELETE FROM survey_download_acks WHERE id=$1`, [ack.id]);
+      return reply.code(pl.invalid ? 401 : 502).send({ error: pl.invalid ? 'platform_session_invalid' : (pl.error || 'platform_unreachable') });
+    }
+    await query(`UPDATE survey_download_acks SET platform_logged=true WHERE id=$1`, [ack.id]);
+    await logEvent({ userId: null, action: 'export', target: `survey:${sid}`, detail: { download_ack: Number(ack.id), viewer: req.viewer.name, ready } }).catch(() => {});
+    const ticket = await reply.jwtSign({ sub: 'dl', typ: 'survey_dl', sid, ack: Number(ack.id) }, { expiresIn: DL_TTL });
+    return { ok: true, ack_id: Number(ack.id), created_at: ack.created_at, ready, url: '/api/survey-viewer/download?t=' + encodeURIComponent(ticket) };
+  });
+
+  app.get('/api/survey-viewer/download', async (req, reply) => {
+    let t = null;
+    try { t = app.jwt.verify(String((req.query && req.query.t) || '')); } catch (_) { t = null; }
+    if (!t || t.typ !== 'survey_dl') return reply.code(401).type('text/plain; charset=utf-8').send('El enlace de descarga venció. Vuelve a confirmar en REFATRIX Platform.');
+    const sid = idOf(t.sid);
+    const s = (await query(`SELECT id, title, code_prefix, questions FROM surveys WHERE id=$1 AND deleted_at IS NULL AND platform_visible`, [sid])).rows[0];
+    const ack = s && (await query(
+      `SELECT id, viewer_name, ack_version, ack_text, to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') AS created_at
+         FROM survey_download_acks WHERE id=$1 AND survey_id=$2 AND platform_logged`, [Number(t.ack), sid])).rows[0];
+    if (!s || !ack) return reply.code(404).type('text/plain; charset=utf-8').send('No disponible.');
+    const pages = (await query(
+      `SELECT id, seq, red_number, dup_idx, mime, status, answers, geo, (redact_data IS NOT NULL AND NOT redact_excluded) AS ok
+         FROM survey_pages WHERE survey_id=$1 AND status='done' ORDER BY seq`, [sid])).rows;
+    const inc = pages.filter((p) => p.ok);
+    const incIds = new Set(inc.map((p) => Number(p.id)));
+    const named = pages.map((p) => ({ ...p, file_name: pageFileName({ prefix: s.code_prefix, red_number: p.red_number, dup_idx: p.dup_idx, seq: p.seq, mime: 'image/jpeg', status: p.status }) }));
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+    await query(`UPDATE survey_download_acks SET downloaded_at=COALESCE(downloaded_at, now()), download_count=download_count+1 WHERE id=$1`, [ack.id]);
+    await logEvent({ userId: null, action: 'export', target: `survey:${sid}`, detail: { download: Number(ack.id), files: inc.length } }).catch(() => {});
+    const qs = Array.isArray(s.questions) ? s.questions : [];
+    const d = new Date();
+    async function* entries() {
+      for (const p of named) {
+        if (!incIds.has(Number(p.id))) continue;
+        const r = (await query(`SELECT redact_data FROM survey_pages WHERE id=$1 AND redact_data IS NOT NULL AND NOT redact_excluded`, [Number(p.id)])).rows[0];
+        if (r) yield { name: 'encuestas/' + p.file_name, data: r.redact_data, date: d };
+      }
+      yield { name: 'datos.csv', data: Buffer.from(buildCsv(qs, named, incIds), 'utf8'), date: d };
+      yield { name: 'LEEME.txt', data: Buffer.from(readmeText({ survey: s, ack, included: inc.length, omitted: pages.length - inc.length, generatedAt: now }), 'utf8'), date: d };
+    }
+    const fname = (String(s.code_prefix || 'ENC').replace(/[^A-Za-z0-9_-]/g, '') || 'ENC') + '_encuestas_sin_datos_personales_' + d.toISOString().slice(0, 10).replace(/-/g, '') + '.zip';
+    reply.header('Content-Type', 'application/zip');
+    reply.header('Content-Disposition', `attachment; filename="${fname}"`);
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(Readable.from(zipStream(entries())));
+  });
+
   // ───────── 관리(디렉터) ─────────
   const admin = { preHandler: [authGuard, requireDirector] };
 
@@ -287,6 +377,19 @@ export default async function surveyViewerRoutes(app, deps = {}) {
     const pf = (await query(
       `SELECT id, title, code_prefix, platform_visible FROM surveys WHERE deleted_at IS NULL ORDER BY survey_date DESC NULLS LAST, id DESC`)).rows;
     return { items: rows.map(viewerOut), platform: pf.map((x) => ({ id: Number(x.id), title: x.title, code_prefix: x.code_prefix, visible: !!x.platform_visible })) };
+  });
+
+  // 일괄 다운로드 확인 기록 (디렉터)
+  app.get('/api/surveys/download-acks', admin, async (req) => {
+    const sid = idOf(req.query && req.query.survey_id);
+    const rows = (await query(
+      `SELECT a.id, a.survey_id, s.title, s.code_prefix, a.viewer_name, a.ack_version, a.ack_text, a.files_ready, a.files_done, a.ip, a.user_agent,
+              a.platform_logged, a.download_count,
+              to_char(a.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS created_at,
+              to_char(a.downloaded_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS downloaded_at
+         FROM survey_download_acks a JOIN surveys s ON s.id = a.survey_id
+        WHERE ($1::bigint IS NULL OR a.survey_id = $1) ORDER BY a.id DESC LIMIT 200`, [sid])).rows;
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), survey_id: Number(r.survey_id), files_ready: Number(r.files_ready), files_done: Number(r.files_done), download_count: Number(r.download_count) })) };
   });
 
   // REFATRIX Platform 공개 켜기/끄기 (디렉터)

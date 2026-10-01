@@ -315,7 +315,7 @@ test('E. erp 의 mx_survey_analysis.html 은 플랫폼으로 이동만 · 커버
   assert.match(stub, /http-equiv="refresh" content="0; url=https:\/\/refatrix-platform\.netlify\.app\/"/);
   assert.ok(stub.length < 1200 && !/survey-viewer|railway|Encuesta/.test(stub), '데이터·API 흔적 없음');
   for (const f of ['mx_parts_coverage_dashboard.html', 'mx_coverage_map.html', 'mx_dev_projects.html']) assert.ok(!read(f).includes('mx_survey_analysis'), f);
-  assert.match(read('refatrix-survey.html'), /build 20260930sv10/);
+  assert.match(read('refatrix-survey.html'), /build 20260930sv1\d/);
   assert.match(read('refatrix-api/src/middleware/authGuard.js'), /survey_viewer/);
 });
 

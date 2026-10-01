@@ -72,11 +72,11 @@ test('A4. 본 판독에서 free 지역의 위치(donde)도 남는다', () => {
 });
 
 // ── B. 화면 (jsdom) ──────────────────────────────────────────────────
-test('B1. 지역 문항이 없으면 「손글씨 지역 찾기」 → 문항 추가(PUT free) → geo-scan(new)', async () => {
+async function uiRun(baseQs, expectLen) {
   let JSDOM;
   try { ({ JSDOM } = await import('jsdom')); } catch (_) { return; }       // jsdom 이 없으면 건너뜀
   const html = readFileSync(new URL('../../refatrix-survey.html', import.meta.url), 'utf8');
-  const qs = S.normalizeQuestions(BASE).questions;
+  const qs = S.normalizeQuestions(baseQs).questions;
   let serverQs = qs;
   const log = [];
   const page = (id, n) => ({ id, seq: id, status: 'done', red_number: n, dup_idx: 1, file_name: 'EXPO_' + n + '.jpg',
@@ -119,12 +119,14 @@ test('B1. 지역 문항이 없으면 「손글씨 지역 찾기」 → 문항 �
   const sent = JSON.parse(put.slice(put.indexOf('{')));
   const last = sent.questions[sent.questions.length - 1];
   assert.equal(last.type, 'geo'); assert.equal(last.free, true);
-  assert.equal(sent.questions.length, 3, '기존 문항은 그대로');
+  assert.equal(sent.questions.length, expectLen, '기존 문항은 그대로');
   assert.ok(log.some((l) => l.startsWith('POST /api/surveys/7/geo-scan') && l.includes('"scope":"new"')), 'geo-scan(new) 호출');
   assert.ok(!log.some((l) => l.includes('/reprocess')), '전체 재판독은 하지 않는다');
   assert.match(w.document.getElementById('cRunChip').textContent, /지역 찾는 중 2/);
   w.close();
-});
+}
+test('B1. 지역 문항이 없으면 「손글씨 지역 찾기」 → 문항 추가(PUT free) → geo-scan(new)', () => uiRun(BASE, 3));
+test('B2. 이미 일반 지역 문항(지도)이 있어도 「손글씨 지역 찾기」가 보인다', () => uiRun([...BASE, { text: 'Estado', type: 'geo' }], 4));
 
 // ── C. 실 DB 종단 ────────────────────────────────────────────────────
 const dbTest = PG ? test : test.skip;

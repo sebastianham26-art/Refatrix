@@ -25,6 +25,7 @@ import {
 } from '../surveyAi.js';
 import { normalizeGeo, STATE_NAMES } from '../surveyGeo.js';
 import surveyViewerRoutes from '../surveyViewer.js';
+import { buildRedactPrompt, parseRedactJson, medianBoxes, boxesForPage } from '../surveyRedact.js';
 
 const PAGE = 'marketing';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -293,21 +294,60 @@ export async function processGeoScan(row) {
   return true;
 }
 
+// ── 일괄 다운로드용 「개인정보 가릴 영역」 찾기 (2026-09-30) — 판독 끝난 장만, 다른 대기열이 빈 뒤 ──
+async function claimNextRedact() {
+  return (await query(
+    `UPDATE survey_pages SET redact_scan='processing', redact_attempts = redact_attempts + 1
+      WHERE id = (SELECT p.id FROM survey_pages p JOIN surveys s ON s.id = p.survey_id AND s.deleted_at IS NULL
+                   WHERE p.redact_scan = 'queued' AND p.status = 'done' ORDER BY p.id FOR UPDATE OF p SKIP LOCKED LIMIT 1)
+      RETURNING id, survey_id, redact_attempts AS attempts`)).rows[0] || null;
+}
+async function markRedactFail(id, error, transient, attempts) {
+  const requeue = transient && Number(attempts) < MAX_ATTEMPTS;
+  await query(`UPDATE survey_pages SET redact_scan=$2, redact_error=$3 WHERE id=$1`,
+    [id, requeue ? 'queued' : 'error', String(error || 'error').slice(0, 300)]);
+  return requeue;
+}
+export async function processRedactScan(row) {
+  const pid = Number(row.id);
+  if (!aiReady()) { await query(`UPDATE survey_pages SET redact_scan='queued', redact_attempts=GREATEST(redact_attempts-1,0) WHERE id=$1`, [pid]); return false; }
+  const s = await getSurvey(row.survey_id);
+  if (!s) return markRedactFail(pid, 'survey_deleted', false, row.attempts);
+  const bin = (await query(`SELECT mime, file_data, view_data FROM survey_pages WHERE id=$1`, [pid])).rows[0];
+  if (!bin) return false;
+  if (bin.mime === 'application/pdf' && !(bin.view_data && bin.view_data.length)) return markRedactFail(pid, 'no_view_image', false, row.attempts);
+  const questions = qList(s);
+  const out = await surveyAiApi.call([mediaBlock(bin), { type: 'text', text: buildRedactPrompt(questions) }], 900);
+  if (!out.ok) {
+    if (out.status === 429 || out.status === 529) pausedUntil = Date.now() + (Number(process.env.SURVEY_AI_PAUSE_MS) || 20000);
+    return markRedactFail(pid, out.error, out.transient, row.attempts);
+  }
+  const r = parseRedactJson(out.text, questions);
+  if (!r) return markRedactFail(pid, 'ai_parse: 응답을 해석하지 못했습니다', Number(row.attempts) < 2, row.attempts);
+  // 영역이 바뀌면 예전에 만든 가린 사본은 버린다(다시 칠해야 한다)
+  await query(`UPDATE survey_pages SET redact_scan='done', redact_error=NULL, redact_boxes=$2, redact_data=NULL, redact_used=NULL, redact_at=NULL WHERE id=$1`,
+    [pid, JSON.stringify(r.boxes)]);
+  return true;
+}
+
 export async function pump() {
   if (!aiReady()) return 0;
   let started = 0;
   while (running < CONCURRENCY() && Date.now() >= pausedUntil) {
     running++;                            // 자리를 먼저 잡는다 — 동시에 불린 pump 가 한도를 넘지 않게
     let row = null;
-    let geoRow = false;
+    let kind = 'page';
     try {
       row = await claimNext();
-      if (!row) { row = await claimNextGeo(); geoRow = !!row; }
+      if (!row) { row = await claimNextGeo(); if (row) kind = 'geo'; }
+      if (!row) { row = await claimNextRedact(); if (row) kind = 'redact'; }
     } catch (_) { running--; break; }
     if (!row) { running--; break; }
     started++;
-    (geoRow ? processGeoScan(row) : processPage(row))
-      .catch((e) => (geoRow ? markGeoFail : markFail)(Number(row.id), 'internal: ' + String(e && e.message).slice(0, 200), false, row.attempts).catch(() => {}))
+    const run = kind === 'geo' ? processGeoScan : kind === 'redact' ? processRedactScan : processPage;
+    const fail = kind === 'geo' ? markGeoFail : kind === 'redact' ? markRedactFail : markFail;
+    run(row)
+      .catch((e) => fail(Number(row.id), 'internal: ' + String(e && e.message).slice(0, 200), false, row.attempts).catch(() => {}))
       .finally(() => { running--; setTimeout(() => { pump().catch(() => {}); }, Date.now() < pausedUntil ? pausedUntil - Date.now() + 50 : 50); });
   }
   return started;
@@ -318,7 +358,7 @@ export async function drainForTest(timeoutMs = 20000) {
   for (;;) {
     await pump();
     const r = (await query(`SELECT COUNT(*)::int AS n FROM survey_pages
-      WHERE status IN ('queued','processing') OR (status='done' AND geo_scan IN ('queued','processing'))`)).rows[0];
+      WHERE status IN ('queued','processing') OR (status='done' AND (geo_scan IN ('queued','processing') OR redact_scan IN ('queued','processing')))`)).rows[0];
     if (!Number(r.n) && running === 0) return true;
     if (Date.now() - t0 > timeoutMs) return false;
     await new Promise((res) => setTimeout(res, 30));
@@ -645,6 +685,96 @@ export default async function surveyRoutes(app) {
 
   // ── 손으로 적은 지역 찾기 (문항에 지역이 없을 때) — 이미 읽은 장만, 지역 칸만 AI 로 다시 본다 ──
   //   scope: new(아직 안 찾은 장 + 실패한 장) | all(전부 다시 — 사람이 고른 칸은 그대로)
+  // ───────── 일괄 다운로드용 가린 사본 (디렉터) ─────────
+  //   ① redact-scan: AI 로 가릴 영역 찾기(큐)  ② GET redact: 장별 상태·칠할 사각형  ③ PUT pages/:pid/redacted: 화면이 칠한 JPEG
+  const DIR = { preHandler: [authGuard, requirePage(PAGE), requireDirector] };
+  async function redactState(sid, questions) {
+    const rows = (await query(
+      `SELECT id, seq, red_number, dup_idx, mime, status, answers, redact_scan, redact_error, redact_boxes, redact_excluded,
+              (redact_data IS NOT NULL) AS has_redacted, to_char(redact_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS redact_at,
+              (view_data IS NOT NULL) AS has_view
+         FROM survey_pages WHERE survey_id=$1 AND status='done' ORDER BY seq`, [sid])).rows;
+    const med = medianBoxes(rows);
+    const items = rows.map((r) => {
+      const plan = r.redact_scan === 'done' ? boxesForPage(r, questions, med) : { boxes: [], filled: [], missing: [] };
+      return {
+        id: Number(r.id), seq: Number(r.seq), folio: r.red_number || null, mime: r.mime, has_view: !!r.has_view,
+        scan: r.redact_scan || null, error: r.redact_error || null, excluded: !!r.redact_excluded,
+        has_redacted: !!r.has_redacted, redact_at: r.redact_at || null,
+        boxes: plan.boxes, filled: plan.filled, missing: plan.missing,
+      };
+    });
+    const c = { done: items.length, scanned: 0, scanning: 0, errors: 0, ready: 0, to_paint: 0, excluded: 0, review: 0 };
+    for (const it of items) {
+      if (it.scan === 'done') c.scanned++;
+      if (it.scan === 'queued' || it.scan === 'processing') c.scanning++;
+      if (it.scan === 'error') c.errors++;
+      if (it.excluded) c.excluded++;
+      else if (it.has_redacted) c.ready++;
+      else if (it.scan === 'done') c.to_paint++;
+      if (it.missing.length) c.review++;
+    }
+    return { counts: c, items };
+  }
+  app.get('/api/surveys/:id/redact', DIR, async (req, reply) => {
+    const s = await getSurvey(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    reply.header('cache-control', 'no-store');
+    return { ai_ready: aiReady(), ...(await redactState(Number(s.id), qList(s))) };
+  });
+  // scope: new(아직 안 찾은 장·실패) | all(전부 다시 — 만든 사본도 버림)
+  app.post('/api/surveys/:id/redact-scan', DIR, async (req, reply) => {
+    const s = await getSurvey(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    const scope = (req.body && req.body.scope) === 'all' ? 'all' : 'new';
+    const r = await query(
+      `UPDATE survey_pages SET redact_scan='queued', redact_attempts=0, redact_error=NULL
+              ${scope === 'all' ? ', redact_data=NULL, redact_used=NULL, redact_at=NULL' : ''}
+        WHERE survey_id=$1 AND status='done'
+          AND ${scope === 'all' ? `COALESCE(redact_scan,'') <> 'processing'` : `(redact_scan IS NULL OR redact_scan='error')`}
+        RETURNING id`, [Number(s.id)]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `survey:${s.id}`, detail: { redact_scan: scope, n: r.rowCount } });
+    setTimeout(() => { pump().catch(() => {}); }, 30);
+    return { ok: true, queued: r.rowCount, ai_ready: aiReady() };
+  });
+  // 화면(디렉터)이 원본 위에 검은 사각형을 칠한 JPEG
+  app.put('/api/surveys/pages/:pid/redacted', DIR, async (req, reply) => {
+    const p = await pageWithSurvey(req.params.pid);
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const cur = (await query(`SELECT redact_scan, redact_boxes FROM survey_pages WHERE id=$1`, [Number(p.id)])).rows[0];
+    if (!cur || cur.redact_scan !== 'done') return reply.code(409).send({ error: 'redact_not_scanned' });
+    // 답(이름·상호·전화)은 있는데 가릴 위치를 모르는 장은 받지 않는다 — 다시 찾거나 다운로드에서 뺀다
+    const st = await redactState(Number(p.survey_id), Array.isArray(p.questions) ? p.questions : []);
+    const mine = st.items.find((x) => x.id === Number(p.id));
+    if (!mine || mine.missing.length) return reply.code(409).send({ error: 'redact_review_needed', missing: mine ? mine.missing : [] });
+    const b = req.body || {};
+    const f = b64buf(b.data_b64, VIEW_MAX);
+    if (f.err) return reply.code(400).send({ error: f.err });
+    if (!isJpeg(f.buf)) return reply.code(400).send({ error: 'not_jpeg' });
+    const used = Array.isArray(b.boxes) ? b.boxes.slice(0, 40) : [];
+    if (!used.length && Array.isArray(cur.redact_boxes) && cur.redact_boxes.length) return reply.code(400).send({ error: 'no_boxes_used' });
+    await query(`UPDATE survey_pages SET redact_data=$2, redact_used=$3, redact_at=now(), redact_by=$4 WHERE id=$1`,
+      [Number(p.id), f.buf, JSON.stringify(used), Number(req.ctx.perm.userId)]);
+    return { ok: true };
+  });
+  app.get('/api/surveys/pages/:pid/redacted', DIR, async (req, reply) => {
+    const p = await pageWithSurvey(req.params.pid);
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const d = (await query(`SELECT redact_data FROM survey_pages WHERE id=$1`, [Number(p.id)])).rows[0];
+    if (!d || !d.redact_data) return reply.code(404).send({ error: 'no_redacted' });
+    reply.header('Content-Type', 'image/jpeg'); reply.header('Cache-Control', 'private, no-store');
+    return reply.send(d.redact_data);
+  });
+  // 이 장은 다운로드에서 빼기 / 다시 넣기 (가림이 미덥지 않을 때)
+  app.patch('/api/surveys/pages/:pid/redact', DIR, async (req, reply) => {
+    const p = await pageWithSurvey(req.params.pid);
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const ex = !!(req.body && req.body.excluded);
+    await query(`UPDATE survey_pages SET redact_excluded=$2 WHERE id=$1`, [Number(p.id), ex]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `survey_page:${p.id}`, detail: { redact_excluded: ex } });
+    return { ok: true, excluded: ex };
+  });
+
   app.post('/api/surveys/:id/geo-scan', { preHandler: [authGuard, requirePageEdit(PAGE)] }, async (req, reply) => {
     const s = await getSurvey(req.params.id);
     if (!s) return reply.code(404).send({ error: 'not_found' });
@@ -779,6 +909,7 @@ export default async function surveyRoutes(app) {
     setTimeout(async () => {
       try { await query(`UPDATE survey_pages SET status='queued' WHERE status='processing'`); } catch (_) {}
       try { await query(`UPDATE survey_pages SET geo_scan='queued' WHERE geo_scan='processing'`); } catch (_) {}
+      try { await query(`UPDATE survey_pages SET redact_scan='queued' WHERE redact_scan='processing'`); } catch (_) {}
       pump().catch(() => {});
     }, 20000);
   }
