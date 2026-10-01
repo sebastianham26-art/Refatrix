@@ -29,7 +29,8 @@ const L = {
     dailyTitle: '일일 자금 요약', monthlyTitle: '월간 자금실적', asOf: (d) => `${d} 기준`,
     bank: '은행잔고', ar: 'AR 수금', ap: 'AP 지급', fx: '환율', date: '일자', close: '마감잔고', eq: 'MXN 환산', total: '합계',
     actual: '실적', today: '오늘', plan: '예정', pend: (n) => `대기 ${n}`, more: (n) => `외 ${n}건`, adj: '계좌 개설',
-    legend: '회색 = 실적(실제 입출금) · 파랑 = 예정(미수 인보이스·예정지출) · +Nd = 지난 예정을 오늘로 이월 · 금고·불공제 계좌 제외',
+    legend: '회색 = 실적(실제 입출금) · 파랑 = 예정(거래목록 「예정」 그대로) · 금고·불공제 계좌 제외',
+    overdue: (n, a) => `※ 지난 날짜 예정 미처리 ${n}건 · MXN ${a} — 거래목록에서 처리/삭제 필요 (잔고 예측 미포함)`,
     mtd: '이번 달 누계', inL: '수금', outL: '지급', net: '순액',
     kOpen: '월초 잔고 (MXN 환산)', kIn: '수금 합계', kOut: '지급 합계', kNet: '순액', kClose: '월말 잔고 (MXN 환산)', kCloseP: '어제 잔고 (MXN 환산)', kMin: '최저 잔고',
     cnt: (n) => `${n}건`, days: (n) => `거래일 ${n}일`, chart: '일별 마감잔고(MXN 환산) · 수금/지급', tbl: '일별 실적',
@@ -41,7 +42,8 @@ const L = {
     dailyTitle: 'Resumen diario de caja', monthlyTitle: 'Resultado mensual de caja', asOf: (d) => `al ${d}`,
     bank: 'Bank Account', ar: 'AR Cobros', ap: 'AP Pagos', fx: 'Tipo de cambio', date: 'Fecha', close: 'Closing Balance', eq: 'Equiv. MXN', total: 'Total',
     actual: 'real', today: 'hoy', plan: 'prog.', pend: (n) => `pend. ${n}`, more: (n) => `+${n} más`, adj: 'Alta de cuenta',
-    legend: 'Gris = real (movimientos) · Azul = programado (facturas por cobrar, pagos) · +Nd = vencido pasado a hoy · Sin caja ni cuentas no deducibles',
+    legend: 'Gris = real (movimientos) · Azul = programado (igual a la lista de movimientos) · Sin caja ni cuentas no deducibles',
+    overdue: (n, a) => `※ ${n} programado(s) de fechas pasadas sin procesar · MXN ${a} — revisar en la lista de movimientos (no incluido)`,
     mtd: 'Acumulado del mes', inL: 'Cobros', outL: 'Pagos', net: 'Neto',
     kOpen: 'Saldo inicial (equiv. MXN)', kIn: 'Cobros', kOut: 'Pagos', kNet: 'Neto', kClose: 'Saldo final (equiv. MXN)', kCloseP: 'Saldo a ayer (equiv. MXN)', kMin: 'Saldo mínimo',
     cnt: (n) => `${n} mov.`, days: (n) => `${n} días con mov.`, chart: 'Saldo diario (equiv. MXN) · cobros/pagos', tbl: 'Detalle diario',
@@ -211,6 +213,8 @@ export function dailyImageSvg({ cols, reportDay, sendDay, mtd = null, lang = 'es
     parts.push(T(12, y + 16, `${t.mtd} (${t.month(yy, mm)}) — ${t.inL} MXN ${f0(mtd.in_eq)} · ${t.outL} MXN ${f0(mtd.out_eq)} · ${t.net} ${sgn(mtd.net_eq)}`, { size: 13.5, bold: true }));
     y += 24;
   }
+  const od = cols.find((d) => d.overdue && d.overdue.n);
+  if (od) { parts.push(T(12, y + 15, fit(t.overdue(od.overdue.n, f0(od.overdue.in_mxn + od.overdue.out_mxn)), 12.5, W - 24), { size: 12.5, bold: true, fill: '#8A5A00' })); y += 22; }
   parts.push(T(12, y + 14, fit(t.legend, 11.5, W - 24), { size: 11.5, fill: C.mute }));
   y += 26;
   void reportDay;

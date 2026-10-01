@@ -44,29 +44,26 @@ test('A1 buildDays — 기초·수금·지급·마감 연결, 누계, MXN 환산
   assert.equal(days[0].moved, false);
 });
 
-test('A2 projectDays — 오늘부터 예정, 지난 미실현은 오늘로 이월(유첨 10/2 = 65,135 / 62,179 / 11,988 / 100,080)', () => {
+test('A2 projectDays — 예정은 기록된 날짜에만 · 지난 날짜 미처리는 오늘로 옮기지 않고 overdue 로 분리 (10/1 Nom.Palomino)', () => {
+  const nom = (id, d, a) => ({ id, d, direction: 'out', currency: 'MXN', amount: a, amount_mxn: a, rule_name: 'Nom.Palomino', recurring_rule_id: 9 });
   const days = T.projectDays({
-    today: '2026-09-30', to: '2026-10-03', startOpen: { MXN: 9032, USD: 4894 }, fx: fx18('2026-09-30', '2026-10-03'),
-    invoices: [
-      { id: 25, due: '2026-10-02', outstanding: 25929, customer_name: 'Luemi', sat_no: 'F-25' },
-      { id: 31, due: '2026-10-02', outstanding: 39206, customer_name: 'Luemi', sat_no: 'F-31' },
-      { id: 9, due: '2026-09-20', outstanding: 0.3, customer_name: 'Dust' },                // 반올림 잔여 — 제외
-      { id: 7, due: '2026-09-25', outstanding: 1000, customer_name: 'Late SA' },           // 연체 → 오늘로
+    today: '2026-10-01', to: '2026-10-03', startOpen: { MXN: 9032, USD: 4894 }, fx: fx18('2026-10-01', '2026-10-03'),
+    planIn: [
+      { id: 25, d: '2026-10-02', direction: 'in', currency: 'MXN', amount: 25929, amount_mxn: 25929, customer_name: 'Luemi', sales_invoice_id: 25 },
+      { id: 31, d: '2026-10-02', direction: 'in', currency: 'MXN', amount: 39206, amount_mxn: 39206, customer_name: 'Luemi', sales_invoice_id: 31 },
     ],
-    planOut: [
-      { id: 101, d: '2026-10-02', direction: 'out', currency: 'MXN', amount: 4804, amount_mxn: 4804, rule_name: 'Nomina Maria', recurring_rule_id: 1 },
-      { id: 102, d: '2026-10-02', direction: 'out', currency: 'MXN', amount: 10180, amount_mxn: 10180, rule_name: 'Nomina Oscar', recurring_rule_id: 2 },
-      { id: 103, d: '2026-10-02', direction: 'out', currency: 'MXN', amount: 4281, amount_mxn: 4281, rule_name: 'Nomina Luis Mendez', recurring_rule_id: 3 },
-      { id: 104, d: '2026-10-02', direction: 'out', currency: 'MXN', amount: 2914, amount_mxn: 2914, rule_name: 'Nomina Luis Guzman', recurring_rule_id: 4 },
-      { id: 105, d: '2026-10-02', direction: 'out', currency: 'MXN', amount: 40000, amount_mxn: 40000, memo: 'SAT' },
-    ],
+    planOut: [nom(901, '2026-09-15', 5000), nom(902, '2026-09-30', 5000),
+      { id: 105, d: '2026-10-02', direction: 'out', currency: 'MXN', amount: 62179, amount_mxn: 62179, memo: 'SAT' }],
   });
   const today = days[0], fri = days.find((d) => d.date === '2026-10-02');
-  assert.equal(today.kind, 'today');
-  assert.equal(today.in.MXN, 1000); assert.equal(today.items[0].late_days, 5);
-  assert.equal(fri.in.MXN, 65135); assert.equal(fri.out.MXN, 62179);
-  assert.equal(fri.close.MXN, 11988 + 1000);          // 연체 1,000 이 오늘 이월돼 뒤로 이어짐
-  assert.equal(fri.items.find((i) => i.src === 'fix').name, 'Nomina Oscar');
+  assert.equal(today.items.length, 0, '지난 예정이 오늘 칸에 들어오지 않음');
+  assert.equal(today.close.MXN, 9032);
+  assert.deepEqual([today.overdue.n, today.overdue.out_mxn], [2, 10000]);
+  assert.deepEqual(today.overdue.items.map((x) => [x.id, x.due, x.late_days]), [[901, '2026-09-15', 16], [902, '2026-09-30', 1]]);
+  assert.equal(fri.in.MXN, 65135); assert.equal(fri.out.MXN, 62179); assert.equal(fri.close.MXN, 11988);
+  assert.equal(fri.items.find((i) => i.dir === 'in').src, 'inv');
+  const txt = T.buildDailyText(T.buildDays({ from: '2026-09-30', to: '2026-09-30', base: { MXN: 9032, USD: 0 } })[0], { plan: today, lang: 'ko' });
+  assert.match(txt, /지난 날짜 예정 미처리 2건 · MXN 10,000/);
 });
 
 test('A3 summarizeMonth — 합계·상위·최저잔고·비공개 마스킹·계좌개설 조정', () => {
@@ -140,7 +137,7 @@ test('A8 이미지 — 일일(유첨 양식)·월간 SVG 내용 · PNG 렌더(�
     txns: [{ id: 1, d: '2026-09-29', direction: 'in', currency: 'MXN', amount: 6984.4, amount_mxn: 6984.4, customer_name: 'Luemi' },
       { id: 2, d: '2026-09-29', direction: 'out', currency: 'MXN', amount: 1, amount_mxn: 1, memo: 'Secreto', is_private: true }] });
   const plan = T.projectDays({ today: '2026-09-30', to: '2026-10-03', startOpen: act[1].close, fx,
-    invoices: [{ id: 3, due: '2026-10-02', outstanding: 65135, customer_name: 'Distrib. Yucatán' }] });
+    planIn: [{ id: 3, d: '2026-10-02', direction: 'in', currency: 'MXN', amount: 65135, amount_mxn: 65135, customer_name: 'Distrib. Yucatán', sales_invoice_id: 3 }] });
   for (const lang of ['ko', 'es']) {
     const svg = I.dailyImageSvg({ cols: [...act, ...plan.slice(0, 4)], reportDay: '2026-09-29', sendDay: '2026-09-30', lang });
     assert.match(svg, /^<svg /); assert.ok(svg.includes('9,031') || svg.includes('9,032'));
@@ -171,7 +168,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-0930c/);
+  assert.match(page, /build cashd-1001a/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -214,7 +211,13 @@ async function seed() {
   const t34 = await tx(mxn.id, '2026-09-29', 'in', 6984.4, { kind: 'payment', inv: inv34.id, memo: '입금 반제 (인보이스 #x)' });
   await query(`INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount, txn_id) VALUES ($1,$2,6984.4,$3)`, [pay.id, inv34.id, t34.id]);
   // 10/2 만기 미수 2건
-  await query(`INSERT INTO sales_invoices (customer_id, inv_date, due_date, sat_no, total_mxn, status) VALUES ($1,'2026-09-02','2026-10-02','F-25',25929,'posted'),($1,'2026-09-05','2026-10-02','F-31',39206,'posted')`, [cust.id]);
+  // 인보이스 발행 시 ERP 가 만드는 「매출 입금예정」 예정 거래(계좌 미지정) — 일일 자금 AR 의 원천
+  for (const [sat, amt] of [['F-25', 25929], ['F-31', 39206]]) {
+    const iv = await one(`INSERT INTO sales_invoices (customer_id, inv_date, due_date, sat_no, total_mxn, status) VALUES ($1,'2026-09-02','2026-10-02',$2,$3,'posted') RETURNING id`, [cust.id, sat, amt]);
+    await query(`INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, sales_invoice_id, memo)
+                 VALUES (NULL,'2026-10-02','in',$1,'MXN',1,$1,'4010','plan','invoice',true,$2,'매출 입금예정')`, [amt, iv.id]);
+  }
+
   // 10/2 예정 지급: 고정비 4건 + SAT, 비활성 고정비 1건(제외돼야)
   const rule = async (name, active = true) => one(`INSERT INTO recurring_rules (name, amount, direction, freq, day_or_wday, active) VALUES ($1,1,'out','month',2,$2) RETURNING id`, [name, active]);
   for (const [n, a] of [['Nomina Maria', 4804], ['Nomina Oscar', 10180], ['Nomina Luis Mendez', 4281], ['Nomina Luis Guzman', 2914]]) {
@@ -224,6 +227,11 @@ async function seed() {
   const off = await rule('Old rent', false);
   await tx(mxn.id, '2026-10-02', 'out', 5555, { status: 'plan', rule: off.id, plan_date: '2026-10-02', plan_amount: 5555 });
   await tx(mxn.id, '2026-10-02', 'out', 40000, { status: 'plan', memo: 'SAT', plan_date: '2026-10-02', plan_amount: 40000 });
+  // 지난 날짜 미처리 예정(Nom.Palomino 9/15·9/29) — 오늘 칸에 나오면 안 됨
+  const pal = await rule('Nom.Palomino');
+  for (const d of ['2026-09-15', '2026-09-29']) await tx(mxn.id, d, 'out', 5000, { status: 'plan', rule: pal.id, plan_date: d, plan_amount: 5000, memo: '[고정비] Nom.Palomino' });
+  // 삭제된 예정 — 거래목록에 없으므로 안 나와야 함
+  await query(`INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, status, approved, memo, deleted_at) VALUES ($1,'2026-10-01','out',777,'MXN',1,777,'plan',true,'Borrado',now())`, [mxn.id]);
   S = { dir: Number(dir.id), tre: Number(tre.id), tag, mxn: Number(mxn.id), usd: Number(usd.id), later: Number(later.id), safe: Number(safe.id), nd: Number(nd.id), cust: Number(cust.id) };
 }
 async function cleanup() {
@@ -233,8 +241,9 @@ async function cleanup() {
   await query(`DELETE FROM sales_payment_allocations WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE customer_id=$1)`, [S.cust]);
   await query(`DELETE FROM sales_payments WHERE customer_id=$1`, [S.cust]);
   await query(`DELETE FROM transactions WHERE account_id = ANY($1)`, [accs]);
+  await query(`DELETE FROM transactions WHERE sales_invoice_id IN (SELECT id FROM sales_invoices WHERE customer_id=$1)`, [S.cust]);
   await query(`DELETE FROM sales_invoices WHERE customer_id=$1`, [S.cust]);
-  await query(`DELETE FROM recurring_rules WHERE name IN ('Nomina Maria','Nomina Oscar','Nomina Luis Mendez','Nomina Luis Guzman','Old rent')`);
+  await query(`DELETE FROM recurring_rules WHERE name IN ('Nomina Maria','Nomina Oscar','Nomina Luis Mendez','Nomina Luis Guzman','Old rent','Nom.Palomino')`);
   await query(`DELETE FROM customers WHERE id=$1`, [S.cust]);
   await query(`DELETE FROM treasury_wa_sends; DELETE FROM treasury_wa_recipients; DELETE FROM treasury_daily_snapshots;`);
   await query(`DELETE FROM accounts WHERE id = ANY($1)`, [accs]);
@@ -254,6 +263,12 @@ E('C1 주간(유첨 양식) — 9/28~10/2 숫자가 유첨 엑셀과 일치 · �
   assert.equal(by['2026-10-02'].in.MXN, 65135);
   assert.equal(by['2026-10-02'].out.MXN, 62179, '비활성 고정비 5,555 제외');
   assert.ok(!w.days.some((d) => d.items.some((i) => /Caja|ND /.test(i.name))), '금고·불공제 항목 없음');
+  assert.ok(!by['2026-09-30'].items.some((i) => /Palomino|Borrado/.test(i.name)), '지난 예정·삭제 예정은 오늘 칸에 없음');
+  assert.deepEqual([by['2026-09-30'].overdue.n, by['2026-09-30'].overdue.out_mxn], [2, 10000], '9/15·9/29 미처리는 별도 알림');
+  assert.deepEqual(by['2026-09-30'].overdue.items.map((i) => i.name), ['Nom.Palomino', 'Nom.Palomino']);
+  const rc = by['2026-09-30'].reconcile;
+  assert.equal(rc.excluded.inactive_rule.n, 1); assert.equal(rc.excluded.account.n, 1, '금고 예정 1건');
+  assert.equal(rc.list_n - rc.shown_n, 2);
   assert.equal(by['2026-09-30'].pending.n, 0);
   assert.equal(by['2026-09-30'].kind, 'today'); assert.equal(by['2026-10-01'].kind, 'plan'); assert.equal(by['2026-09-28'].kind, 'actual');
 });

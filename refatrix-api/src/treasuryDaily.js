@@ -13,8 +13,12 @@
 //       자동 제외. 계좌별 강제 포함/제외는 accounts.treasury_exclude(화면 📲 탭 「집계 대상 계좌」).
 //       제외 계좌의 기초잔액·실적·예정·승인대기는 전부 빠진다. 계좌 미지정 예정지출·미수 인보이스는 포함.
 //   · MXN 환산 = MXN + USD × 그날 환율(환율 탭, 없으면 직전 값) — 유첨 엑셀 맨 아래 줄과 같은 계산.
-//   · 예정(오늘 이후): 미수 인보이스(만기일·잔여액) + 수동 예정수입 + 예정지출(비활성 고정비 제외).
-//     오늘 이전의 미실현 예정은 「오늘」 칸으로 이월(현금흐름 07-05 carry-forward 규칙과 동일).
+//   · 예정(오늘 이후) = **거래목록의 「예정」 거래 그대로**(2026-10-01 디렉터 지시: 거래목록 예정과 일치해야 함).
+//       status='plan' · 삭제 안 됨 · 기록된 날짜(예정일)에만 표시. 수금예정(AR)도 인보이스가 아니라
+//       인보이스 발행 시 생긴 예정 거래(반제 때마다 잔액으로 맞춰지고 완납이면 지워짐)를 그대로 쓴다.
+//       제외는 두 가지뿐이며 화면에 건수로 보인다: 비활성 고정비 회차(현금흐름과 동일) · 집계 제외 계좌.
+//     오늘 이전 날짜의 미처리 예정은 **다른 날로 옮기지 않는다**(예전 「오늘 칸으로 이월」 규칙 폐지 — 거래목록에서
+//       그 날짜로 조회하면 없는 항목이 오늘 칸에 보이던 문제, 10/1 Nom.Palomino 2건 보고). 대신 「지난 예정 미처리」로 건수·금액만 따로 알리고 잔고 예측에는 넣지 않는다.
 //
 //   ── 스케줄 (멕시코 시간, UTC-6 고정) ──
 //   · 매일 06:00 이후: 어제까지의 이번 달 스냅샷 갱신 → 일일 요약 발송(06~12시 창, 일요일 무거래는 생략)
@@ -66,7 +70,8 @@ export function weekStart(ymd) { const w = dowOf(ymd); return addDays(ymd, -((w 
 export function dateList(from, to) { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; }
 
 // 멕시코 현재(UTC-6 고정 — workingHours 와 동일 규칙)
-export function mxNow(nowMs = Date.now()) {
+//   TREASURY_FAKE_NOW(ISO 시각)는 테스트 전용 — 운영에선 설정하지 않는다.
+export function mxNow(nowMs = (process.env.TREASURY_FAKE_NOW ? Date.parse(process.env.TREASURY_FAKE_NOW) : Date.now())) {
   const m = new Date(nowMs + MX_OFFSET_MIN * 60000);
   return { ymd: m.toISOString().slice(0, 10), hour: m.getUTCHours(), day: m.getUTCDate() };
 }
@@ -158,25 +163,20 @@ export function buildDays({ from, to, base, opens = [], txns = [], pending = [],
 //   startOpen: 오늘 기초(= 어제 실적 마감) · todayActual: 오늘 이미 들어온 실적 거래(목록)
 //   invoices : 미수 인보이스 [{id, due, outstanding, customer_name, sat_no}] (MXN)
 //   planIn/planOut: 예정 거래 [{id, d, direction, currency, amount, amount_mxn, …}]
-//   오늘 이전 만기/예정은 오늘 칸으로 이월(carry=true, late_days).
-export function projectDays({ today, to, startOpen, todayActual = [], invoices = [], planIn = [], planOut = [], fx = new Map() }) {
+//   planIn/planOut: 거래목록 예정 거래(각자 기록된 날짜). 오늘 이전 날짜는 칸에 넣지 않고 overdue 로 모은다.
+export function planSrc(t) { return t.sales_invoice_id ? 'inv' : (t.recurring_rule_id ? 'fix' : (t.direction === 'in' ? 'man' : 'plan')); }
+export function projectDays({ today, to, startOpen, todayActual = [], planIn = [], planOut = [], fx = new Map() }) {
   const days = [];
   let run = { MXN: r2(startOpen.MXN || 0), USD: r2(startOpen.USD || 0) };
-  const slot = (d) => (d < today ? today : d);
-  const late = (d) => (d < today ? Math.round((Date.parse(today) - Date.parse(d)) / 86400000) : 0);
   const bucket = new Map();
+  const overdue = [];
   const push = (d, it) => { if (d > to) return; if (!bucket.has(d)) bucket.set(d, []); bucket.get(d).push(it); };
   for (const t of todayActual) push(today, toItem(t, { state: 'actual' }));
-  for (const iv of invoices) {
-    const out = Number(iv.outstanding) || 0;
-    if (out < AR_PAID_EPS) continue;
-    const d0 = String(iv.due).slice(0, 10);
-    push(slot(d0), toItem({ id: iv.id, direction: 'in', currency: 'MXN', amount: out, amount_mxn: out,
-      customer_name: iv.customer_name, sat_no: iv.sat_no }, { state: 'plan', src: 'inv', due: d0, late_days: late(d0) }));
-  }
   for (const t of [...planIn, ...planOut]) {
     const d0 = String(t.d).slice(0, 10);
-    push(slot(d0), toItem(t, { state: 'plan', src: t.recurring_rule_id ? 'fix' : (t.direction === 'in' ? 'man' : 'plan'), due: d0, late_days: late(d0) }));
+    const it = toItem(t, { state: 'plan', src: planSrc(t), due: d0 });
+    if (d0 < today) overdue.push({ ...it, late_days: Math.round((Date.parse(today) - Date.parse(d0)) / 86400000) });
+    else push(d0, it);
   }
   for (const d of dateList(today, to)) {
     const fxr = fx.get(d) || null;
@@ -193,7 +193,13 @@ export function projectDays({ today, to, startOpen, todayActual = [], invoices =
       items, pending: { n: 0, amount_mxn: 0 }, moved: items.length > 0 });
     run = close;
   }
+  if (days.length) days[0].overdue = summarizeOverdue(overdue);
   return days;
+}
+export function summarizeOverdue(list) {
+  const xs = [...list].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : b.amount_mxn - a.amount_mxn));
+  const sum = (dir) => r2(xs.filter((x) => x.dir === dir).reduce((s, x) => s + x.amount_mxn, 0));
+  return { n: xs.length, in_mxn: sum('in'), out_mxn: sum('out'), items: xs };
 }
 
 // ── 월간실적 요약 ──
@@ -264,7 +270,7 @@ const L = {
     open: 'Saldo inicial', close: 'Saldo final', ar: 'Cobros (AR)', ap: 'Pagos (AP)', eq: 'Equiv. MXN', fx: 'TC',
     none: 'sin movimientos', more: (n) => `…y ${n} más`, adj: 'Alta de cuenta',
     mtd: (m) => `Acumulado del mes (${m})`, inL: 'Cobros', outL: 'Pagos', net: 'Neto',
-    plan: (d) => `Programado hoy (${d})`, carry: 'incl. vencidos',
+    plan: (d) => `Programado hoy (${d})`, overdue: (n, a) => `⚠ ${n} programado(s) de fechas pasadas sin procesar · MXN ${a} (revisar en lista de movimientos; no incluido)`,
     pend: (n, a) => `⚠ ${n} movimiento(s) pendiente(s) de aprobación · MXN ${a} (no incluido en saldo)`,
     priv: 'Privado', topIn: 'Principales cobros', topOut: 'Principales pagos', cat: 'Por concepto',
     change: 'Variación', minBal: 'Saldo mínimo', maxBal: 'Saldo máximo', moves: (n) => `${n} mov.`, days: (n) => `${n} días con movimiento`,
@@ -277,7 +283,7 @@ const L = {
     open: '기초잔고', close: '마감잔고', ar: '수금(AR)', ap: '지급(AP)', eq: 'MXN 환산', fx: '환율',
     none: '거래 없음', more: (n) => `…외 ${n}건`, adj: '계좌 개설',
     mtd: (m) => `이번 달 누계 (${m})`, inL: '수금', outL: '지급', net: '순액',
-    plan: (d) => `오늘 예정 (${d})`, carry: '연체 이월 포함',
+    plan: (d) => `오늘 예정 (${d})`, overdue: (n, a) => `⚠ 지난 날짜 예정 미처리 ${n}건 · MXN ${a} (거래목록에서 처리/삭제 필요 · 잔고 예측 미포함)`,
     pend: (n, a) => `⚠ 승인 대기 ${n}건 · MXN ${a} (잔고 미반영)`,
     priv: '비공개', topIn: '주요 수금처', topOut: '주요 지급', cat: '계정과목별',
     change: '증감', minBal: '최저 잔고', maxBal: '최고 잔고', moves: (n) => `${n}건`, days: (n) => `거래일 ${n}일`,
@@ -323,11 +329,11 @@ export function buildDailyText(day, { mtd = null, plan = null, lang = 'es' } = {
     const pi = plan.items.filter((i) => i.state === 'plan' && i.dir === 'in');
     const po = plan.items.filter((i) => i.state === 'plan' && i.dir === 'out');
     const s = (xs) => r2(xs.reduce((a, b) => a + b.amount_mxn, 0));
-    const hasCarry = [...pi, ...po].some((i) => i.late_days);
-    L1.push('', `*${t.plan(dayLabel(plan.date, lang))}*${hasCarry ? ` · ${t.carry}` : ''}`);
+    L1.push('', `*${t.plan(dayLabel(plan.date, lang))}*`);
     L1.push(`${t.inL} ${pi.length} · MXN ${fmt0(s(pi))}  |  ${t.outL} ${po.length} · MXN ${fmt0(s(po))}`);
     L1.push(...itemLines([...pi, ...po].sort((a, b) => b.amount_mxn - a.amount_mxn), lang, 5).map((x) => x));
   }
+  if (plan && plan.overdue && plan.overdue.n) L1.push('', t.overdue(plan.overdue.n, fmt0(plan.overdue.in_mxn + plan.overdue.out_mxn)));
   return clip(L1.join('\n'));
 }
 
@@ -445,37 +451,40 @@ export async function computeActualDays(from, to, q = query) {
   return buildDays({ from, to, ...inp, fx });
 }
 
-// 예정 입력: 오늘~to (오늘 이전 미실현은 이월)
+// 예정 입력: ~to 의 예정 전부(오늘 이전 날짜분은 projectDays 가 overdue 로 분리)
+// 예정 = 거래목록 예정(status='plan', 미삭제) 그대로. 제외 사유별 건수(excluded)도 함께 돌려준다.
+export const PLAN_FILTER_SQL = `t.status='plan' AND t.deleted_at IS NULL`;
 export async function loadPlanInputs(today, to, q = query, scopeIds = null) {
   const ids = scopeIds || (await loadAccountScope(q)).ids;
-  const [inv, plan, act] = await Promise.all([
-    q(`SELECT x.* FROM (
-         SELECT si.id, c.name AS customer_name, si.sat_no, to_char(si.due_date,'YYYY-MM-DD') AS due,
-                (si.total_mxn - COALESCE(pa.paid,0)) AS outstanding
-           FROM sales_invoices si JOIN customers c ON c.id=si.customer_id
-           LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=si.id
-          WHERE si.status='posted' AND si.deleted_at IS NULL AND si.due_date IS NOT NULL AND si.due_date <= $1
-       ) x WHERE x.outstanding >= $2`, [to, AR_PAID_EPS]),
+  const [plan, act] = await Promise.all([
     q(`SELECT ${TXN_NAME_COLS}, COALESCE(a.currency, t.currency) AS currency,
-              to_char(COALESCE(t.plan_date, t.txn_date),'YYYY-MM-DD') AS d, t.sales_invoice_id
+              to_char(COALESCE(t.plan_date, t.txn_date),'YYYY-MM-DD') AS d, t.sales_invoice_id,
+              CASE WHEN t.account_id IS NOT NULL AND NOT (t.account_id = ANY($2)) THEN 'account'
+                   WHEN t.recurring_rule_id IS NOT NULL AND t.recurring_rule_id NOT IN
+                        (SELECT r.id FROM recurring_rules r WHERE r.active=true AND r.deleted_at IS NULL) THEN 'inactive_rule'
+                   ELSE NULL END AS excluded_by
          FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id ${TXN_NAME_JOINS}
-        WHERE t.status='plan' AND t.deleted_at IS NULL AND COALESCE(t.plan_date, t.txn_date) <= $1
-          AND (t.account_id IS NULL OR t.account_id = ANY($2))
-          AND NOT (t.direction='in' AND t.sales_invoice_id IS NOT NULL)
-          AND (t.recurring_rule_id IS NULL OR t.recurring_rule_id IN
-               (SELECT r.id FROM recurring_rules r WHERE r.active=true AND r.deleted_at IS NULL))`, [to, ids]),
+        WHERE ${PLAN_FILTER_SQL} AND COALESCE(t.plan_date, t.txn_date) <= $1`, [to, ids]),
     q(`SELECT ${TXN_NAME_COLS}, a.currency, to_char(t.txn_date,'YYYY-MM-DD') AS d
          FROM transactions t JOIN accounts a ON a.id=t.account_id ${TXN_NAME_JOINS}
         WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL AND a.id = ANY($2) AND t.txn_date=$1`, [today, ids]),
   ]);
   const num = (r) => ({ ...r, amount: Number(r.amount), amount_mxn: Number(r.amount_mxn) });
   const uniq = (rows) => { const s = new Set(); return rows.filter((r) => { const k = Number(r.id); if (s.has(k)) return false; s.add(k); return true; }); };
-  const planRows = uniq(plan.rows).map(num);
+  const all = uniq(plan.rows).map(num);
+  const planRows = all.filter((r) => !r.excluded_by);
+  const ex = (why) => all.filter((r) => r.excluded_by === why);
+  const brief = (xs) => ({ n: xs.length, amount_mxn: r2(xs.reduce((s, x) => s + x.amount_mxn, 0)) });
   return {
-    invoices: inv.rows.map((r) => ({ ...r, outstanding: Number(r.outstanding) })),
     planIn: planRows.filter((r) => r.direction === 'in'),
     planOut: planRows.filter((r) => r.direction === 'out'),
     todayActual: uniq(act.rows).map(num),
+    // 대사(거래목록 예정과의 일치 확인): 오늘~to 예정 중 표시/제외 건수
+    reconcile: (() => {
+      const inWin = (r) => r.d >= today;
+      return { list_n: all.filter(inWin).length, shown_n: planRows.filter(inWin).length,
+        excluded: { account: brief(ex('account').filter(inWin)), inactive_rule: brief(ex('inactive_rule').filter(inWin)) } };
+    })(),
   };
 }
 
@@ -485,7 +494,9 @@ export async function computePlanDays(today, to, q = query) {
   const [prev, plan, fx] = await Promise.all([
     computeActualDays(yday, yday, q), loadPlanInputs(today, to, q), loadFx(today, to),
   ]);
-  return projectDays({ today, to, startOpen: prev[0].close, ...plan, fx });
+  const days = projectDays({ today, to, startOpen: prev[0].close, ...plan, fx });
+  if (days.length) days[0].reconcile = plan.reconcile;
+  return days;
 }
 
 // 주간 보기(유첨 양식): 월~일 — 과거는 실적, 오늘부터 예정. 일요일은 화면에서 거래가 있을 때만 표시

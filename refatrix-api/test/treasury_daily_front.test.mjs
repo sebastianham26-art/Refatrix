@@ -15,14 +15,16 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰 · 외부 스크립트는 허용 CDN 만', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit|keydown)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*build cashd-0930c<\/title>/);
+  assert.match(HTML, /<title>[^<]*build cashd-1001a<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
   for (const m of HTML.matchAll(/src=['"](https?:[^'"]+)/g)) assert.match(m[1], /^https:\/\/cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 });
 
-const mxToday = () => new Date(Date.now() - 6 * 3600000).toISOString().slice(0, 10);
 
-test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기', { skip: !PG || mxToday() !== '2026-09-30' }, async () => {
+// 시나리오 기준 시각: MX 2026-09-30 12:00 (서버는 TREASURY_FAKE_NOW, 화면은 Date 고정)
+const FAKE_NOW = '2026-09-30T18:00:00Z';
+test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기', { skip: !PG }, async () => {
+  process.env.TREASURY_FAKE_NOW = FAKE_NOW;
   const { JSDOM } = await import('jsdom');
   const { buildApp } = await import('../src/server.js');
   const { pool } = await import('../src/db.js');
@@ -46,7 +48,11 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
   const pay = await one(`INSERT INTO sales_payments (customer_id, pay_date, account_id, amount) VALUES ($1,'2026-09-29',$2,6984.4) RETURNING id`, [cust.id, mxn.id]);
   const t34 = await tx('2026-09-29', 'in', 6984.4, { kind: 'payment', inv: inv34.id });
   await q(`INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount, txn_id) VALUES ($1,$2,6984.4,$3)`, [pay.id, inv34.id, t34.id]);
-  await q(`INSERT INTO sales_invoices (customer_id, inv_date, due_date, sat_no, total_mxn, status) VALUES ($1,'2026-09-02','2026-10-02','F-25',25929,'posted'),($1,'2026-09-05','2026-10-02','F-31',39206,'posted')`, [cust.id]);
+  for (const [sat, amt] of [['F-25', 25929], ['F-31', 39206]]) {
+    const iv = await one(`INSERT INTO sales_invoices (customer_id, inv_date, due_date, sat_no, total_mxn, status) VALUES ($1,'2026-09-02','2026-10-02',$2,$3,'posted') RETURNING id`, [cust.id, sat, amt]);
+    await q(`INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, sales_invoice_id, memo)
+             VALUES (NULL,'2026-10-02','in',$1,'MXN',1,$1,'4010','plan','invoice',true,$2,'매출 입금예정')`, [amt, iv.id]);
+  }
   const rules = [];
   for (const [n, a] of [['Nomina Maria', 4804], ['Nomina Oscar', 10180], ['Nomina Luis Mendez', 4281], ['Nomina Luis Guzman', 2914]]) {
     const r = await one(`INSERT INTO recurring_rules (name, amount, direction, freq, day_or_wday) VALUES ($1,$2,'out','month',2) RETURNING id`, [n, a]);
@@ -66,6 +72,9 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
       beforeParse(w) {
         w.fetch = (u, o) => fetch(u, o);
         w.confirm = () => true; w.alert = () => {}; w.print = () => {};
+        const RD = w.Date, fixed = Date.parse(FAKE_NOW);
+        class FD extends RD { constructor(...a) { if (a.length) super(...a); else super(fixed); } static now() { return fixed; } }
+        w.Date = FD;
         w.sessionStorage.setItem('refatrix_session', JSON.stringify({ token: tok, api: API, user: { id: Number(dir.id), name: 'T Director', role: 'director' } }));
       },
     });
@@ -80,6 +89,7 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
     await until(() => $('table.ws'));
     assert.equal($('#wRng').textContent, '9/28 (월) ~ 10/3 (토)');
     assert.match($('#wScope').textContent, /집계 대상 계좌 \d+개/);
+    assert.match($('#wRecon').textContent, /거래목록 「예정」 그대로 · 오늘 이후 7건 중 7건 표시 · 일치/);
     const heads = [...d.querySelectorAll('tr.date th')].slice(1).map((th) => th.textContent);
     assert.deepEqual(heads.map((h) => h.replace(/[^0-9/()A-Za-z ].*$/, '').trim()), ['9/28 (Mon)', '9/29 (Tue)', '9/30 (Wed)', '10/1 (Thu)', '10/2 (Fri)', '10/3 (Sat)'], '일요일(무거래) 숨김');
     assert.match(heads[0], /실적/); assert.match(heads[2], /오늘/); assert.match(heads[4], /예정/);
@@ -167,6 +177,7 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
     await q(`DELETE FROM sales_payment_allocations WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE customer_id=$1)`, [cust.id]);
     await q(`DELETE FROM sales_payments WHERE customer_id=$1`, [cust.id]);
     await q(`DELETE FROM transactions WHERE account_id = ANY($1)`, [[mxn.id, usd.id]]);
+    await q(`DELETE FROM transactions WHERE sales_invoice_id IN (SELECT id FROM sales_invoices WHERE customer_id=$1)`, [cust.id]);
     await q(`DELETE FROM sales_invoices WHERE customer_id=$1`, [cust.id]);
     await q(`DELETE FROM recurring_rules WHERE id = ANY($1)`, [rules]);
     await q(`DELETE FROM customers WHERE id=$1`, [cust.id]);

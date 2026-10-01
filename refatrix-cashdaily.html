@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-0930c</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1001a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -157,12 +157,14 @@
           <button class="btn ghost sm noprint" id="wPrint">🖨 인쇄</button>
         </div>
         <div class="hint scopeLine" id="wScope"></div>
+        <div class="hint scopeLine" id="wRecon"></div>
+        <div id="wOverdue"></div>
         <div class="scroll" style="margin-top:8px"><div id="wTable"><div class="hint" style="padding:14px">불러오는 중…</div></div></div>
         <div class="legend">
           <span><i style="background:var(--bank)"></i>은행잔고 · 마감잔고</span>
           <span><i style="background:var(--done)"></i>회색 = 실적(실제 입출금)</span>
           <span><i style="background:var(--plan)"></i>파랑 = 예정(미수 인보이스·예정지출·고정비)</span>
-          <span>⏰ = 지난 예정을 오늘로 이월</span>
+          <span>항목에 마우스 → 거래 번호·출처(거래목록에서 같은 번호로 찾을 수 있음)</span>
           <span>맨 아래 초록 = MXN + USD × 환율</span>
         </div>
         <div class="hint" style="margin-top:8px">어제까지는 <b>승인된 실제 거래</b>, 오늘부터는 <b>예정</b>입니다. 잔고 공식은 재무/계좌 화면 잔액과 같습니다(기초잔액 + 승인된 실적). 승인 대기 실적은 잔고에 넣지 않고 날짜 칸에 건수만 표시합니다.</div>
@@ -247,7 +249,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-0930c (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-1001a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -316,8 +318,21 @@
   // ═════════ 주간(유첨 양식) ═════════
   async function loadWeek(){
     $('wTable').innerHTML='<div class="hint" style="padding:14px">불러오는 중…</div>';
-    try{ const d=await api('/api/treasury/week?date='+S.week); S.wdata=d; $('wScope').innerHTML=scopeText(d.scope); renderWeek(d); }
+    try{ const d=await api('/api/treasury/week?date='+S.week); S.wdata=d; $('wScope').innerHTML=scopeText(d.scope); renderRecon(d); renderWeek(d); }
     catch(e){ $('wTable').innerHTML='<div class="msg err" style="margin:12px">'+esc(errTxt(e))+'</div>'; }
+  }
+  // 거래목록 예정과의 대사 · 지난 날짜 미처리 예정(오늘 칸으로 옮기지 않음)
+  function renderRecon(w){
+    const t=(w.days||[]).find(d=>d.reconcile||d.overdue);
+    const r=t&&t.reconcile, o=t&&t.overdue;
+    if(!r){ $('wRecon').innerHTML=''; $('wOverdue').innerHTML=''; return; }
+    const ex=[]; if(r.excluded.inactive_rule.n) ex.push('비활성 고정비 '+r.excluded.inactive_rule.n+'건'); if(r.excluded.account.n) ex.push('집계 제외 계좌 '+r.excluded.account.n+'건');
+    $('wRecon').innerHTML='🔗 예정 = 거래목록 「예정」 그대로 · 오늘 이후 '+r.list_n+'건 중 '+r.shown_n+'건 표시'+(ex.length?' (제외: '+ex.join(', ')+')':' · 일치');
+    if(o&&o.n){
+      $('wOverdue').innerHTML='<div class="msg err" style="display:block;background:#FFF6E0;color:#8A5A00;border-color:#F1D79A">⚠ <b>지난 날짜 예정 미처리 '+o.n+'건</b> · 수금 MXN '+f0(o.in_mxn)+' · 지급 MXN '+f0(o.out_mxn)
+        +' — 날짜가 지났지만 거래목록에 「예정」으로 남아 있는 건입니다. 실제로 처리됐으면 거래목록에서 실적 전환, 아니면 날짜 변경·삭제하세요. (잔고 예측에는 넣지 않음)'
+        +'<div style="margin-top:6px;font-size:12px">'+o.items.slice(0,12).map(i=>'#'+i.id+' '+esc(i.due)+' '+esc(i.private?'비공개':i.name)+' '+(i.dir==='in'?'+':'−')+f0(i.amount)).join(' · ')+(o.items.length>12?' …':'')+'</div></div>';
+    } else $('wOverdue').innerHTML='';
   }
   function renderWeek(w){
     $('wRng').textContent=md(w.from)+' (월) ~ '+md(addDays(w.from,5))+' (토)';
@@ -332,7 +347,8 @@
       for(const it of xs){
         const st=it.state||'actual';
         const nm=esc(it.name)+(it.late_days?'<span class="late">⏰'+it.late_days+'d</span>':'');
-        const tip=[it.sat_no,it.category,it.account,it.due&&it.due!==d.date?('예정일 '+it.due):null].filter(Boolean).join(' · ');
+        const SRC={inv:'매출 입금예정',fix:'고정비',man:'수동 예정수입',plan:'예정지출'};
+        const tip=[it.id?('거래 #'+it.id):null,st==='plan'?('거래목록 예정 · '+(SRC[it.src]||'예정')):'거래목록 실제',it.sat_no,it.category,it.account].filter(Boolean).join(' · ');
         h+='<div class="it '+(st==='plan'?'plan':'actual')+'" title="'+esc(tip)+'"><span class="nm">'+nm+'</span><span>'+f0(it.amount)+'</span></div>';
       }
       for(let i=xs.length;i<min;i++) h+='<div class="dash">-</div>';
