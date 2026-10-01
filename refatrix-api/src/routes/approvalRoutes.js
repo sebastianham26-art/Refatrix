@@ -11,6 +11,7 @@ import {
   n, round2, sameId, decodeApprovalFile, sha256Hex, parseCfdi, guessKind, normKind, calcAmounts,
   roleCtx, buildLines, advance, postLine, myPending, canSeeDoc, isTodo, stageKey, fileStage, variancePct,
   allowedActions, canDeleteFile, canVoidFile, docNo, reportRows, completenessChecks,
+  canEditContent, canAddend, canEditLines, editorStep, planLineEdit, diffContent, amountChanged, basisAmount,
   CURRENCIES, PAYMENT_TYPES, PAYMENT_TYPE_LABEL, FREQS, SCHEDULE_MAX, buildSchedule, toMxn, paymentsMxn, normalizeBodyRich, APPROVAL_DOC_BODY_LIMIT, isYmd,
 } from '../approval.js';
 
@@ -139,12 +140,12 @@ async function applyMoney(q, docId, { lock = false } = {}) {
 }
 
 // 다음 단계 활성화 + 승인완료 처리(알림 포함). lines 는 DB 행과 같은 객체(id 보유).
-async function applyAdvance(q, bundle, actorId, settings) {
+async function applyAdvance(q, bundle, actorId, settings, { silent } = {}) {
   const { doc, lines, viewers } = bundle;
   const res = advance(lines);
   for (const l of res.activated) {
     await q(`UPDATE approval_lines SET status='pending' WHERE id=$1`, [l.id]);
-    await notify(q, l.user_id, doc.id, REQUEST_KIND[l.step_type], null, actorId);
+    if (!(silent && silent.has(Number(l.user_id)))) await notify(q, l.user_id, doc.id, REQUEST_KIND[l.step_type], null, actorId);
   }
   if (res.approved) {
     await q(`UPDATE approval_documents SET status='approved', exec_status='pending', approved_at=now(), updated_at=now() WHERE id=$1`, [doc.id]);
@@ -262,10 +263,11 @@ export default async function approvalRoutes(app) {
     if (!b || !canSeeDoc(ctx, b.doc, b.lines, b.viewers)) return null;
     const priv = ctx.isDirector || ctx.isCeo;
     const files = (await query(
-      `SELECT id, comment_id, payment_id, kind, stage, file_name, mime_type, file_size, sha256, cfdi_uuid, cfdi_rfc, cfdi_total, dup_of,
+      `SELECT id, comment_id, payment_id, addendum_id, kind, stage, file_name, mime_type, file_size, sha256, cfdi_uuid, cfdi_rfc, cfdi_total, dup_of,
               uploaded_by, uploaded_at, voided_at, voided_by, void_reason
          FROM approval_files WHERE document_id=$1 ORDER BY uploaded_at, id`, [id])).rows.map((f) => ({
       ...f, id: Number(f.id), comment_id: f.comment_id == null ? null : Number(f.comment_id),
+      addendum_id: f.addendum_id == null ? null : Number(f.addendum_id),
       payment_id: f.payment_id == null ? null : Number(f.payment_id), file_size: Number(f.file_size),
       cfdi_total: f.cfdi_total == null ? null : Number(f.cfdi_total), uploaded_by: Number(f.uploaded_by),
       voided_by: f.voided_by == null ? null : Number(f.voided_by),
@@ -284,6 +286,12 @@ export default async function approvalRoutes(app) {
     const parent = b.doc.parent_id ? (await query(`SELECT id, doc_no FROM approval_documents WHERE id=$1`, [b.doc.parent_id])).rows[0] : null;
     await query(`UPDATE approval_notifications SET read_at=now() WHERE user_id=$1 AND document_id=$2 AND read_at IS NULL`, [ctx.uid, id]);
     const payments = await loadPayments(query, id);
+    const addenda = (await query(
+      `SELECT id, author_id, step_type, body, body_rich, created_at FROM approval_addenda WHERE document_id=$1 ORDER BY created_at, id`, [id])).rows
+      .map((x) => { const r2 = normalizeBodyRich(x.body_rich ?? null, x.body); return { id: Number(x.id), author_id: Number(x.author_id), step_type: x.step_type, created_at: x.created_at, nodes: r2.ok ? r2.nodes : [{ t: 'p', v: x.body || '' }] }; });
+    const revisions = (await query(
+      `SELECT id, editor_id, step_type, reason, changes, created_at FROM approval_revisions WHERE document_id=$1 ORDER BY created_at, id`, [id])).rows
+      .map((x) => { let ch = []; try { ch = JSON.parse(x.changes); } catch { /* 손상 무시 */ } return { id: Number(x.id), editor_id: Number(x.editor_id), step_type: x.step_type, reason: x.reason, created_at: x.created_at, changes: ch }; });
     const rich = normalizeBodyRich(b.doc.body_rich ?? null, b.doc.body);
     const { body_rich: _raw, ...docOut } = b.doc;
     return {
@@ -307,6 +315,10 @@ export default async function approvalRoutes(app) {
       events: events.map((e) => ({ ...e, id: Number(e.id), actor_id: e.actor_id == null ? null : Number(e.actor_id) })),
       links,
       actions: allowedActions(ctx, b.doc, b.lines),
+      addenda, revisions,
+      can_edit_content: canEditContent(ctx, b.doc, b.lines),
+      can_addend: canAddend(ctx, b.doc, b.lines),
+      can_edit_lines: canEditLines(ctx, b.doc),
       can_comment: b.doc.status !== 'draft',
       can_upload: b.doc.status !== 'draft' || sameId(b.doc.drafter_id, ctx.uid),
       priv,
@@ -701,6 +713,151 @@ export default async function approvalRoutes(app) {
     });
   });
 
+  // ═══════ 0244 — 결재선 수정(디렉터) · 내용 수정 · 추가 작성 ═══════
+  const lineSummary = (ls, users) => ls.filter((l) => l.step_type !== 'draft')
+    .sort((a, c) => n(a.step_order) - n(c.step_order))
+    .map((l) => `${STEP_LABEL[l.step_type]} ${(users.get(Number(l.user_id)) || {}).name || l.user_id}${['done', 'rejected', 'flagged'].includes(l.status) ? '✓' : ''}`).join(' › ');
+
+  // 결재선 수정 — body: { steps:[{step_type,user_id}] (남은 본 단계, 순서대로), post_user_id, reason }
+  app.put('/api/approvals/:id/lines', guard, async (req, reply) => {
+    const id = Number(req.params.id);
+    return tx(reply, async (q) => {
+      const settings = await loadSettings(q);
+      const ctx = ctxOf(req, settings);
+      if (!ctx.isDirector) throw new Stop('director_only');
+      const b = await loadBundle(q, id, true);
+      if (!b) throw new Stop('not_found');
+      if (!canEditLines(ctx, b.doc)) throw new Stop('bad_state');
+      const users = await loadUsers(q);
+      const activeIds = [...users.values()].filter((u) => u.active).map((u) => u.id);
+      const plan = planLineEdit({ lines: b.lines, steps: req.body?.steps, postUser: req.body?.post_user_id, doc: b.doc, activeUserIds: activeIds });
+      if (plan.error) throw new Stop('bad_input', { detail: plan.error });
+      const before = lineSummary(b.lines, users);
+      const prevPending = new Set(b.lines.filter((l) => l.status === 'pending').map((l) => Number(l.user_id)));
+      const pl = postLine(b.lines);
+      if (b.doc.status === 'progress') {
+        const lockedIds = plan.locked.map((l) => l.id);
+        await q(`DELETE FROM approval_lines WHERE document_id=$1 AND step_type <> 'post_ceo' AND NOT (id = ANY($2::bigint[]))`, [id, lockedIds]);
+        for (const r of plan.rows) {
+          await q(`INSERT INTO approval_lines(document_id, step_order, step_type, user_id, status) VALUES ($1,$2,$3,$4,'waiting')`,
+            [id, r.step_order, r.step_type, r.user_id]);
+        }
+      }
+      if (pl && !sameId(pl.user_id, plan.postUser)) {
+        await q(`UPDATE approval_lines SET user_id=$2 WHERE id=$1`, [pl.id, plan.postUser]);
+        if (pl.status === 'pending') await notify(q, plan.postUser, id, '사후승인 요청', null, ctx.uid);
+      }
+      const hasPre = plan.rows.some((r) => r.step_type === 'pre_ceo') || plan.locked.some((l) => l.step_type === 'pre_ceo');
+      await q(`UPDATE approval_documents SET ceo_pre_required=$2, updated_at=now() WHERE id=$1`, [id, hasPre]);
+      const fresh = await loadBundle(q, id, false);
+      // 지워진 사람의 처리 요청 알림(안 읽은 것) 정리
+      const stillIn = new Set(fresh.lines.filter((l) => ['pending', 'waiting'].includes(l.status)).map((l) => Number(l.user_id)));
+      for (const u of prevPending) {
+        if (!stillIn.has(u)) await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND user_id=$2 AND read_at IS NULL AND kind LIKE '%요청'`, [id, u]);
+      }
+      let status = fresh.doc.status;
+      if (fresh.doc.status === 'progress') {
+        const r = await applyAdvance(q, fresh, ctx.uid, settings, { silent: prevPending });
+        status = r.approved ? 'approved' : 'progress';
+      }
+      const after = lineSummary((await loadBundle(q, id, false)).lines, users);
+      const reason = cleanText(req.body?.reason, 500)?.trim();
+      if (before !== after) await event(q, id, ctx.uid, 'lines_edit', null, `변경 전: ${before}\n변경 후: ${after}${reason ? '\n사유: ' + reason : ''}`);
+      return { ok: true, status, changed: before !== after };
+    });
+  });
+
+  // 문서 상태(비교·스냅샷용)
+  async function docState(q, id) {
+    const d = normDoc((await q(`SELECT ${DOC_COLS}, d.body, d.body_rich FROM approval_documents d WHERE d.id=$1`, [id])).rows[0]);
+    const cat = d.category_id ? (await q(`SELECT name FROM approval_categories WHERE id=$1`, [d.category_id])).rows[0] : null;
+    const pays = (await loadPayments(q, id)).map((p) => ({ seq: p.seq, due_date: p.due_date, amount: p.planned_amount, mxn: p.planned_mxn }));
+    const rich = normalizeBodyRich(d.body_rich ?? null, d.body);
+    return {
+      title: d.title, vendor: d.vendor, category_id: d.category_id, category_name: cat ? cat.name : '',
+      currency: d.currency, iva_applied: d.iva_applied, orig_sub: d.orig_sub, orig_total: d.orig_total,
+      planned_sub: d.planned_sub, planned_total: d.planned_total, fx_rate: d.fx_rate, pay_method: d.pay_method, pay_due: d.pay_due,
+      payment_type: d.payment_type, payment_plan: d.payment_plan, payments: pays,
+      body: d.body, body_nodes: rich.ok ? rich.nodes : [],
+    };
+  }
+
+  // 내용 수정 — 현재 차례 결재자(경유 제외) · 디렉터. body: 작성 화면과 같은 필드 + reason
+  app.put('/api/approvals/:id/content', docGuard, async (req, reply) => {
+    const id = Number(req.params.id);
+    const f = draftFields(req.body);
+    if (f.error) return fail(reply, 'bad_input', { detail: f.error });
+    return tx(reply, async (q) => {
+      const settings = await loadSettings(q);
+      const ctx = ctxOf(req, settings);
+      const b = await loadBundle(q, id, true);
+      if (!b || !canSeeDoc(ctx, b.doc, b.lines, b.viewers)) throw new Stop('not_found');
+      if (!canEditContent(ctx, b.doc, b.lines)) throw new Stop('forbidden');
+      if (!f.category_id) throw new Stop('bad_input', { detail: 'category_required' });
+      if (!(n(f.orig_sub) > 0)) throw new Stop('bad_input', { detail: 'amount_required' });
+      if (b.doc.fx_locked_at && f.currency !== b.doc.currency) throw new Stop('bad_input', { detail: 'currency_locked' });
+      f.include_finance = b.doc.include_finance;                    // 결재선 성격 값은 결재선 수정으로만
+      const before = await docState(q, id);
+      await q(`UPDATE approval_documents SET ${DRAFT_SET}, updated_at=now() WHERE id=$1`, draftArgs(id, f));
+      await saveSchedule(q, id, f.schedule);                        // 진행 중 = 집행 전이라 회차 교체 안전
+      const money = await applyMoney(q, id, { lock: true });        // USD 는 상신 때 고정한 환율 그대로
+      const after = await docState(q, id);
+      const changes = diffContent(before, after);
+      if (!changes.length) return { ok: true, changes: [] };
+      const step = editorStep(ctx, b.lines);
+      const reason = cleanText(req.body?.reason, 500)?.trim() || null;
+      await q(`INSERT INTO approval_revisions(document_id, editor_id, step_type, reason, changes, snapshot) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, ctx.uid, step, reason, JSON.stringify(changes), JSON.stringify(before)]);
+      // 금액이 커져 기준액을 넘으면 대표이사 사전승인을 자동으로 붙인다(빼는 것은 디렉터가 결재선 수정으로)
+      let preAdded = false;
+      const thr = b.doc.threshold_at_submit != null ? n(b.doc.threshold_at_submit) : settings.ceo_pre_threshold;
+      const basis = b.doc.basis_at_submit || settings.threshold_basis;
+      const ceoDrafter = sameId(b.doc.drafter_id, settings.ceo_user_id);
+      if (!ceoDrafter && settings.ceo_user_id && !b.lines.some((l) => l.step_type === 'pre_ceo') && basisAmount(money, basis) >= thr) {
+        const maxOrd = Math.max(0, ...b.lines.filter((l) => l.step_type !== 'post_ceo').map((l) => n(l.step_order)));
+        await q(`INSERT INTO approval_lines(document_id, step_order, step_type, user_id, status) VALUES ($1,$2,'pre_ceo',$3,'waiting')`,
+          [id, maxOrd + 1, settings.ceo_user_id]);
+        await q(`UPDATE approval_documents SET ceo_pre_required=true WHERE id=$1`, [id]);
+        preAdded = true;
+      }
+      const label = step === 'director_override' ? '디렉터' : STEP_LABEL[step] || '';
+      await event(q, id, ctx.uid, 'edit', step === 'director_override' ? 'director' : step,
+        [...changes.map((c) => c.field === 'body' ? '내용 수정' : `${c.label}: ${c.old || '—'} → ${c.new || '—'}`),
+          preAdded ? `기준액 ${thr} 이상 → 대표이사 사전승인 추가` : null, reason ? `사유: ${reason}` : null].filter(Boolean).join('\n'));
+      // 알림: 기안자 · (금액이 바뀌면) 이미 승인한 사람
+      await notify(q, b.doc.drafter_id, id, `문서 수정 (${label})`, changes.map((c) => c.label).join(', '), ctx.uid);
+      if (amountChanged(changes)) {
+        const done = new Set(b.lines.filter((l) => l.status === 'done' && !['draft', 'post_ceo'].includes(l.step_type)).map((l) => Number(l.user_id)));
+        done.delete(Number(b.doc.drafter_id));
+        for (const u of done) await notify(q, u, id, '승인 후 금액 변경', changes.filter((c) => ['amount', 'amount_mxn', 'schedule'].includes(c.field)).map((c) => `${c.label} ${c.old} → ${c.new}`).join(' · '), ctx.uid);
+      }
+      return { ok: true, changes, pre_added: preAdded, planned_total: money.planned_total };
+    });
+  });
+
+  // 추가 작성 — 원문은 그대로, 결재자·디렉터 의견/내용(그림 포함)을 덧붙인다. 파일은 /files 에 addendum_id 로.
+  app.post('/api/approvals/:id/addenda', docGuard, async (req, reply) => {
+    const id = Number(req.params.id);
+    const rich = normalizeBodyRich(req.body?.body_rich ?? null, req.body?.body);
+    if (!rich.ok) return fail(reply, 'bad_input', { detail: rich.error });
+    if (!rich.nodes.length && !req.body?.with_files) return fail(reply, 'bad_input', { detail: 'empty' });
+    return tx(reply, async (q) => {
+      const settings = await loadSettings(q);
+      const ctx = ctxOf(req, settings);
+      const b = await loadBundle(q, id, true);
+      if (!b || !canSeeDoc(ctx, b.doc, b.lines, b.viewers)) throw new Stop('not_found');
+      if (!canAddend(ctx, b.doc, b.lines)) throw new Stop('forbidden');
+      const mine = b.lines.find((l) => l.status === 'pending' && l.step_type !== 'post_ceo' && sameId(l.user_id, ctx.uid));
+      const step = mine ? mine.step_type : (ctx.isDirector ? 'director' : null);
+      const row = (await q(`INSERT INTO approval_addenda(document_id, author_id, step_type, body, body_rich) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at`,
+        [id, ctx.uid, step, rich.plain || '', rich.nodes.length ? JSON.stringify(rich.nodes) : null])).rows[0];
+      await event(q, id, ctx.uid, 'addend', step, (rich.plain || '(파일 첨부)').slice(0, 300));
+      const to = new Set([b.doc.drafter_id, ...b.lines.filter((l) => ['done', 'pending'].includes(l.status) && l.step_type !== 'draft').map((l) => l.user_id)].map(Number));
+      for (const u of to) await notify(q, u, id, '추가 작성', (rich.plain || '(파일 첨부)').slice(0, 60), ctx.uid);
+      return { id: Number(row.id), created_at: row.created_at };
+    });
+  });
+
   // ── 증빙 파일 ─────────────────────────────────────────────────────────
   app.post('/api/approvals/:id/files', { preHandler: [authGuard], bodyLimit: APPROVAL_FILE_BODY_LIMIT }, async (req, reply) => {
     const id = Number(req.params.id);
@@ -709,6 +866,7 @@ export default async function approvalRoutes(app) {
     const kind = req.body?.kind ? normKind(req.body.kind) : guessKind(dec.name);
     const commentId = req.body?.comment_id ? Number(req.body.comment_id) : null;
     const paymentId = req.body?.payment_id ? Number(req.body.payment_id) : null;
+    const addendumId = req.body?.addendum_id ? Number(req.body.addendum_id) : null;
     const hash = sha256Hex(dec.buf);
     const cfdi = dec.ext === 'xml' ? parseCfdi(dec.buf.toString('utf8')) : null;
     return tx(reply, async (q) => {
@@ -724,6 +882,10 @@ export default async function approvalRoutes(app) {
       if (paymentId) {
         const pr = (await q(`SELECT document_id FROM approval_payments WHERE id=$1`, [paymentId])).rows[0];
         if (!pr || !sameId(pr.document_id, id)) throw new Stop('bad_input', { detail: 'bad_payment' });
+      }
+      if (addendumId) {
+        const ad = (await q(`SELECT document_id, author_id FROM approval_addenda WHERE id=$1`, [addendumId])).rows[0];
+        if (!ad || !sameId(ad.document_id, id) || !sameId(ad.author_id, ctx.uid)) throw new Stop('bad_input', { detail: 'bad_addendum' });
       }
       // 같은 파일/같은 CFDI 가 다른 문서에 쓰였나(재기안 원문서·사본은 제외)
       const fam = [id, b.doc.parent_id].filter(Boolean);
@@ -741,10 +903,10 @@ export default async function approvalRoutes(app) {
       if (!dup && cfdi?.uuid) { const u = await dupQ('cfdi_uuid', cfdi.uuid); if (u) dup = `${u} (같은 CFDI UUID)`; }
       const row = (await q(
         `INSERT INTO approval_files(document_id, comment_id, kind, stage, file_name, mime_type, file_size, sha256, file_data,
-           cfdi_uuid, cfdi_rfc, cfdi_total, dup_of, uploaded_by, payment_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id, uploaded_at`,
+           cfdi_uuid, cfdi_rfc, cfdi_total, dup_of, uploaded_by, payment_id, addendum_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id, uploaded_at`,
         [id, commentId, kind, fileStage(b.doc), dec.name, dec.mime, dec.bytes, hash, dec.buf,
-          cfdi?.uuid || null, cfdi?.rfc || null, cfdi?.total ?? null, dup, ctx.uid, paymentId])).rows[0];
+          cfdi?.uuid || null, cfdi?.rfc || null, cfdi?.total ?? null, dup, ctx.uid, paymentId, addendumId])).rows[0];
       return { id: Number(row.id), uploaded_at: row.uploaded_at, kind, dup_of: dup, cfdi };
     });
   });

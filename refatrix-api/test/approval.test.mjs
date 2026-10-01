@@ -498,3 +498,170 @@ test('D E2E — USD 환율 고정 · 정기 지급 회차별 집행 · 회차 �
     await app.close();
   }
 });
+
+// ═════════ 0244 — 결재선 수동 수정 · 내용 수정 · 추가 작성 ═════════
+test('A16 권한 — 내용 수정·추가 작성·결재선 수정', () => {
+  const c = (uid, o = {}) => ({ uid, isDirector: false, isCeo: false, isFinance: false, ...o });
+  const d = { status: 'progress', drafter_id: 5 };
+  const ls = [{ step_type: 'draft', user_id: 5, status: 'done' }, { step_type: 'pass', user_id: 6, status: 'done' },
+    { step_type: 'approve', user_id: 4, status: 'pending' }, { step_type: 'director', user_id: 1, status: 'waiting' }, { step_type: 'post_ceo', user_id: 3, status: 'waiting' }];
+  assert.equal(R.canEditContent(c(4), d, ls), true, '현재 차례 중간결재자');
+  assert.equal(R.canEditContent(c(5), d, ls), false, '기안자는 상신 후 수정 불가(회수 후 편집)');
+  assert.equal(R.canEditContent(c(1, { isDirector: true }), d, ls), true, '디렉터는 차례 밖에도');
+  assert.equal(R.canEditContent(c(3), d, ls), false);
+  assert.equal(R.canEditContent(c(1, { isDirector: true }), { ...d, status: 'approved' }, ls), false, '승인 후 내용 수정 불가');
+  const passLs = ls.map((l) => (l.step_type === 'approve' ? { ...l, step_type: 'pass' } : l));
+  assert.equal(R.canEditContent(c(4), d, passLs), false, '경유는 수정 불가');
+  assert.equal(R.canAddend(c(4), d, passLs), true, '경유도 추가 작성은 가능');
+  assert.equal(R.canAddend(c(1, { isDirector: true }), { ...d, status: 'approved' }, ls), true, '디렉터 추가 작성은 승인 후에도');
+  assert.equal(R.canAddend(c(6), d, ls), false, '이미 처리한 사람은 차례가 아님');
+  assert.equal(R.canEditLines(c(1, { isDirector: true }), d), true);
+  assert.equal(R.canEditLines(c(4), d), false);
+  assert.equal(R.canEditLines(c(1, { isDirector: true }), { status: 'approved', post_status: 'confirmed' }), false);
+  assert.equal(R.editorStep(c(1, { isDirector: true }), ls), 'director_override');
+  assert.equal(R.editorStep(c(4), ls), 'approve');
+});
+test('A17 결재선 수정 계획 — 처리된 단계 잠금 · 디렉터 1명 · 사전승인 마지막 · 기안자 제외', () => {
+  const doc = { status: 'progress', drafter_id: 5 };
+  const lines = [{ id: 1, step_order: 0, step_type: 'draft', user_id: 5, status: 'done' }, { id: 2, step_order: 1, step_type: 'approve', user_id: 4, status: 'done' },
+    { id: 3, step_order: 2, step_type: 'director', user_id: 1, status: 'pending' }, { id: 9, step_order: 99, step_type: 'post_ceo', user_id: 3, status: 'waiting' }];
+  const act = [1, 2, 3, 4, 5, 6];
+  const ok = R.planLineEdit({ lines, doc, activeUserIds: act, postUser: 3, steps: [{ step_type: 'agree', user_id: 2 }, { step_type: 'director', user_id: 1 }, { step_type: 'pre_ceo', user_id: 3 }] });
+  assert.deepEqual(ok.locked.map((l) => l.id), [1, 2]);
+  assert.deepEqual(ok.rows.map((r) => [r.step_order, r.step_type, r.user_id]), [[2, 'agree', 2], [3, 'director', 1], [4, 'pre_ceo', 3]]);
+  const e = (steps, extra = {}) => R.planLineEdit({ lines, doc, activeUserIds: act, postUser: 3, steps, ...extra }).error;
+  assert.equal(e([{ step_type: 'agree', user_id: 2 }]), 'director_count');
+  assert.equal(e([{ step_type: 'director', user_id: 1 }, { step_type: 'director', user_id: 6 }]), 'director_count');
+  assert.equal(e([{ step_type: 'pre_ceo', user_id: 3 }, { step_type: 'director', user_id: 1 }]), 'pre_ceo_last');
+  assert.equal(e([{ step_type: 'approve', user_id: 5 }, { step_type: 'director', user_id: 1 }]), 'drafter_in_line');
+  assert.equal(e([{ step_type: 'approve', user_id: 99 }, { step_type: 'director', user_id: 1 }]), 'bad_user');
+  assert.equal(e([{ step_type: 'post_ceo', user_id: 3 }, { step_type: 'director', user_id: 1 }]), 'bad_step_type');
+  assert.equal(e([{ step_type: 'agree', user_id: 2 }, { step_type: 'agree', user_id: 2 }, { step_type: 'director', user_id: 1 }]), 'duplicate');
+  assert.equal(e([{ step_type: 'director', user_id: 1 }], { postUser: 5 }), 'drafter_in_line');
+  assert.equal(R.planLineEdit({ lines, doc: { status: 'approved', drafter_id: 5 }, activeUserIds: act, postUser: 1, steps: [{ step_type: 'agree', user_id: 2 }] }).error, 'only_post_editable');
+  assert.equal(R.planLineEdit({ lines, doc: { status: 'approved', drafter_id: 5 }, activeUserIds: act, postUser: 1, steps: [] }).postUser, 1);
+});
+test('A18 내용 비교 — 바뀐 항목만 · 금액 변경 판정', () => {
+  const a = { title: '랙', vendor: 'A', category_name: '외주', currency: 'MXN', orig_total: 116, planned_total: 116, iva_applied: true, pay_method: '계좌이체',
+    payment_type: 'once', payments: [{ due_date: '2026-10-01', amount: 116 }], body: '원문\n[그림]', body_nodes: [{ t: 'p', v: '원문' }, { t: 'img', src: 'x' }] };
+  assert.deepEqual(R.diffContent(a, { ...a }), []);
+  const ch = R.diffContent(a, { ...a, title: '랙 설치', orig_total: 232, planned_total: 232, payments: [{ due_date: '2026-10-01', amount: 232 }], body: '원문 보완', body_nodes: [{ t: 'p', v: '원문 보완' }] });
+  assert.deepEqual(ch.map((c) => c.field), ['title', 'amount', 'schedule', 'body', 'images']);
+  assert.equal(ch.find((c) => c.field === 'amount').new, '$232.00');
+  assert.equal(R.amountChanged(ch), true);
+  assert.equal(R.amountChanged(R.diffContent(a, { ...a, vendor: 'B' })), false);
+});
+
+test('E E2E — 디렉터 결재선 수정 · 결재자 내용 수정/반려/추가 작성 · 사전승인 자동 추가', { skip: !PG }, async () => {
+  const { buildApp } = await import('../src/server.js');
+  const { pool } = await import('../src/db.js');
+  const app = buildApp();
+  await app.ready();
+  const U = {};
+  for (const r of (await pool.query(`SELECT id, login_id, role FROM users WHERE login_id = ANY($1)`,
+    [['sebastian', 'christopher', 'jang', 'maria', 'oscar', 'luis', 'jose']])).rows) U[r.login_id] = { id: Number(r.id), tok: app.jwt.sign({ sub: Number(r.id), role: r.role }) };
+  const call = async (who, method, url, payload) => {
+    const res = await app.inject({ method, url, payload, headers: { authorization: 'Bearer ' + U[who].tok } });
+    let body = null; try { body = res.json(); } catch { body = res.body; }
+    return { code: res.statusCode, body };
+  };
+  const ok = async (...a) => { const r = await call(...a); assert.ok(r.code < 300, `${a[1]} ${a[2]} → ${r.code} ${JSON.stringify(r.body)}`); return r.body; };
+  const dataUrl = (buf, mime) => `data:${mime};base64,${Buffer.from(buf).toString('base64')}`;
+  const steps = async (id) => (await ok('sebastian', 'GET', `/api/approvals/${id}`)).lines.map((l) => `${l.step_type}:${Object.keys(U).find((k) => U[k].id === l.user_id)}:${l.status}`);
+  try {
+    await pool.query(`UPDATE approval_settings SET ceo_pre_threshold=100000, threshold_basis='total', ceo_user_id=$1, director_user_id=$2, finance_user_id=$3 WHERE id=1`,
+      [U.jang.id, U.sebastian.id, U.christopher.id]);
+    const boot = await ok('maria', 'GET', '/api/approvals/bootstrap');
+    const cat = boot.categories[0].id, cat2 = boot.categories[1].id;
+    await pool.query(`DELETE FROM approval_category_steps WHERE category_id=$1`, [cat]);
+    await ok('sebastian', 'POST', `/api/approvals/categories/${cat}/steps`, { step_type: 'approve', user_id: U.maria.id });
+    const form = { category_id: cat, title: '창고 소모품', vendor: 'Empaques', orig_sub: 1000, body_rich: [{ t: 'p', v: '원문 내용' }] };
+    const d = (await ok('oscar', 'POST', '/api/approvals', form)).id;
+    await ok('oscar', 'POST', `/api/approvals/${d}/submit`);
+    assert.deepEqual(await steps(d), ['draft:oscar:done', 'approve:maria:pending', 'director:sebastian:waiting', 'post_ceo:jang:waiting']);
+
+    // ① 2차(중간결재 Maria): 내용 수정 → 이력 · 기안자 알림. 다른 사람은 불가
+    assert.equal((await call('luis', 'PUT', `/api/approvals/${d}/content`, form)).code, 404);
+    assert.equal((await call('oscar', 'PUT', `/api/approvals/${d}/content`, form)).code, 403, '기안자는 상신 후 수정 불가');
+    const e1 = await ok('maria', 'PUT', `/api/approvals/${d}/content`, { ...form, title: '창고 소모품 (10월)', body_rich: [{ t: 'p', v: '원문 내용\n수량 보완: 테이프 48 → 60' }], reason: '수량 정정' });
+    assert.deepEqual(e1.changes.map((c) => c.field), ['title', 'body']);
+    let det = await ok('oscar', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.doc.title, '창고 소모품 (10월)'); assert.equal(det.revisions.length, 1);
+    assert.equal(det.revisions[0].step_type, 'approve'); assert.equal(det.revisions[0].reason, '수량 정정');
+    assert.ok((await ok('oscar', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === d && /문서 수정/.test(x.kind)));
+    assert.equal((await ok('maria', 'PUT', `/api/approvals/${d}/content`, { ...form, title: '창고 소모품 (10월)', body_rich: [{ t: 'p', v: '원문 내용\n수량 보완: 테이프 48 → 60' }] })).changes.length, 0, '바뀐 게 없으면 이력 안 남김');
+    // ② Maria 추가 작성 + 파일
+    const ad = await ok('maria', 'POST', `/api/approvals/${d}/addenda`, { body_rich: [{ t: 'p', v: '중간결재 의견: 단가 확인함' }, { t: 'img', src: 'data:image/png;base64,iVBORw0KGgo=' }] });
+    await ok('maria', 'POST', `/api/approvals/${d}/files`, { file_name: '단가비교.xlsx', addendum_id: ad.id, data_url: dataUrl('xlsx' + Date.now(), 'application/octet-stream') });
+    assert.equal((await call('oscar', 'POST', `/api/approvals/${d}/files`, { file_name: 'x.pdf', addendum_id: ad.id, data_url: dataUrl('x', 'application/pdf') })).body.detail, 'bad_addendum');
+    assert.equal((await call('luis', 'POST', `/api/approvals/${d}/addenda`, { body_rich: [{ t: 'p', v: 'x' }] })).code, 404);
+    assert.equal((await call('oscar', 'POST', `/api/approvals/${d}/addenda`, { body_rich: [{ t: 'p', v: 'x' }] })).code, 403, '기안자는 추가 작성 대신 댓글');
+    det = await ok('sebastian', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.addenda.length, 1); assert.equal(det.addenda[0].nodes[1].t, 'img'); assert.equal(det.addenda[0].step_type, 'approve');
+    assert.equal(det.files.find((f) => f.file_name === '단가비교.xlsx').addendum_id, ad.id);
+    await ok('maria', 'POST', `/api/approvals/${d}/act`, { action: 'approve' });
+    assert.equal((await call('maria', 'PUT', `/api/approvals/${d}/content`, form)).code, 403, '처리 후에는 수정 불가');
+
+    // ③ 디렉터(내 차례): 결재선 수정 — 합의(Christopher) 추가 + 사전승인 추가, 본인 차례 유지 → 알림 중복 없음
+    assert.deepEqual(det.lines.find((l) => l.step_type === 'director').status === 'waiting', true);
+    det = await ok('sebastian', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.can_edit_lines, true); assert.equal(det.can_edit_content, true); assert.equal(det.can_addend, true);
+    assert.equal((await call('maria', 'PUT', `/api/approvals/${d}/lines`, { steps: [], post_user_id: U.jang.id })).code, 403);
+    const nBefore = (await pool.query(`SELECT count(*)::int c FROM approval_notifications WHERE user_id=$1 AND document_id=$2`, [U.sebastian.id, d])).rows[0].c;
+    await ok('sebastian', 'PUT', `/api/approvals/${d}/lines`, { steps: [{ step_type: 'director', user_id: U.sebastian.id }, { step_type: 'agree', user_id: U.christopher.id }, { step_type: 'pre_ceo', user_id: U.jang.id }], post_user_id: U.jang.id, reason: '금액 검토 필요' });
+    assert.deepEqual(await steps(d), ['draft:oscar:done', 'approve:maria:done', 'director:sebastian:pending', 'agree:christopher:waiting', 'pre_ceo:jang:waiting', 'post_ceo:jang:waiting']);
+    const nAfter = (await pool.query(`SELECT count(*)::int c FROM approval_notifications WHERE user_id=$1 AND document_id=$2`, [U.sebastian.id, d])).rows[0].c;
+    assert.equal(nAfter, nBefore, '이미 내 차례였으면 다시 알림 안 감');
+    det = await ok('sebastian', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.doc.ceo_pre_required, true);
+    const le = det.events.find((x) => x.action === 'lines_edit');
+    assert.match(le.detail, /변경 전: .*중간결재 Maria✓ › 디렉터 결재 Sebastian/); assert.match(le.detail, /합의 Christopher/); assert.match(le.detail, /사유: 금액 검토 필요/);
+    // 잘못된 수정은 거부(처리된 단계는 목록에 없어도 잠겨 유지됨)
+    assert.equal((await call('sebastian', 'PUT', `/api/approvals/${d}/lines`, { steps: [{ step_type: 'agree', user_id: U.christopher.id }], post_user_id: U.jang.id })).body.detail, 'director_count');
+    assert.equal((await call('sebastian', 'PUT', `/api/approvals/${d}/lines`, { steps: [{ step_type: 'director', user_id: U.sebastian.id }, { step_type: 'approve', user_id: U.oscar.id }], post_user_id: U.jang.id })).body.detail, 'drafter_in_line');
+    // 디렉터: 내 차례에 금액 수정 + 추가 작성 → 승인
+    const e2 = await ok('sebastian', 'PUT', `/api/approvals/${d}/content`, { ...form, category_id: cat2, title: '창고 소모품 (10월)', orig_sub: 1200, body_rich: [{ t: 'p', v: '원문 내용\n수량 보완: 테이프 48 → 60' }] });
+    assert.deepEqual(e2.changes.map((c) => c.field), ['category', 'amount', 'schedule']);
+    assert.ok((await ok('maria', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === d && x.kind === '승인 후 금액 변경'), '이미 승인한 Maria 에게 금액 변경 알림');
+    await ok('sebastian', 'POST', `/api/approvals/${d}/addenda`, { body_rich: [{ t: 'p', v: '디렉터: 10월분까지만 승인' }] });
+    await ok('sebastian', 'POST', `/api/approvals/${d}/act`, { action: 'approve' });
+    assert.deepEqual(await steps(d), ['draft:oscar:done', 'approve:maria:done', 'director:sebastian:done', 'agree:christopher:pending', 'pre_ceo:jang:waiting', 'post_ceo:jang:waiting']);
+    // ④ 디렉터가 차례 밖에서 결재선 수정: 합의 대기자를 Luis 로 교체 → Christopher 알림 정리 · Luis 알림
+    await ok('sebastian', 'PUT', `/api/approvals/${d}/lines`, { steps: [{ step_type: 'agree', user_id: U.luis.id }, { step_type: 'pre_ceo', user_id: U.jang.id }], post_user_id: U.jang.id });
+    assert.deepEqual(await steps(d), ['draft:oscar:done', 'approve:maria:done', 'director:sebastian:done', 'agree:luis:pending', 'pre_ceo:jang:waiting', 'post_ceo:jang:waiting']);
+    assert.ok(!(await ok('christopher', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === d && x.kind === '합의 요청' && !x.read_at), '빠진 사람의 요청 알림 정리');
+    assert.ok((await ok('luis', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === d && x.kind === '합의 요청'));
+    // ⑤ 최종(대표이사 사전승인) 단계: Luis 합의 → Jang 이 내용 수정 · 반려 가능
+    await ok('luis', 'POST', `/api/approvals/${d}/act`, { action: 'approve' });
+    det = await ok('jang', 'GET', `/api/approvals/${d}`);
+    assert.equal(det.can_edit_content, true); assert.equal(det.can_addend, true); assert.equal(det.can_edit_lines, false);
+    await ok('jang', 'PUT', `/api/approvals/${d}/content`, { ...form, category_id: cat2, title: '창고 소모품 (10월) — 대표 확인', orig_sub: 1200, body_rich: [{ t: 'p', v: '원문 내용\n수량 보완: 테이프 48 → 60' }] });
+    assert.equal((await ok('jang', 'GET', `/api/approvals/${d}`)).revisions.at(-1).step_type, 'pre_ceo');
+    await ok('jang', 'POST', `/api/approvals/${d}/act`, { action: 'reject', comment: '11월분과 합쳐 다시 올려 주세요' });
+    assert.equal((await ok('oscar', 'GET', `/api/approvals/${d}`)).doc.status, 'rejected');
+    assert.equal((await call('sebastian', 'PUT', `/api/approvals/${d}/lines`, { steps: [], post_user_id: U.jang.id })).code, 409, '반려된 문서는 결재선 수정 불가');
+
+    // ⑥ 금액이 커져 기준액을 넘으면 사전승인 자동 추가(중간결재자 수정)
+    const d2 = (await ok('oscar', 'POST', '/api/approvals', form)).id;
+    await ok('oscar', 'POST', `/api/approvals/${d2}/submit`);
+    const e3 = await ok('maria', 'PUT', `/api/approvals/${d2}/content`, { ...form, orig_sub: 90000 });
+    assert.equal(e3.pre_added, true); assert.equal(e3.planned_total, 104400);
+    assert.deepEqual(await steps(d2), ['draft:oscar:done', 'approve:maria:pending', 'director:sebastian:waiting', 'pre_ceo:jang:waiting', 'post_ceo:jang:waiting']);
+    // 디렉터가 사전승인을 빼면(결재선 수정) 기록 남김
+    await ok('sebastian', 'PUT', `/api/approvals/${d2}/lines`, { steps: [{ step_type: 'approve', user_id: U.maria.id }, { step_type: 'director', user_id: U.sebastian.id }], post_user_id: U.jang.id, reason: '긴급 · 사후 보고' });
+    const d2det = await ok('sebastian', 'GET', `/api/approvals/${d2}`);
+    assert.equal(d2det.doc.ceo_pre_required, false); assert.ok(!d2det.lines.some((l) => l.step_type === 'pre_ceo'));
+    assert.equal(d2det.lines.find((l) => l.step_type === 'approve').status, 'pending', 'Maria 차례 유지');
+    // ⑦ 승인 후: 사후승인자만 바꿀 수 있음 · 디렉터 추가 작성 가능
+    await ok('maria', 'POST', `/api/approvals/${d2}/act`, { action: 'approve' });
+    await ok('sebastian', 'POST', `/api/approvals/${d2}/act`, { action: 'approve' });
+    assert.equal((await call('sebastian', 'PUT', `/api/approvals/${d2}/lines`, { steps: [{ step_type: 'agree', user_id: U.luis.id }], post_user_id: U.jang.id })).body.detail, 'only_post_editable');
+    await ok('sebastian', 'PUT', `/api/approvals/${d2}/lines`, { steps: [], post_user_id: U.christopher.id });
+    assert.equal((await ok('sebastian', 'GET', `/api/approvals/${d2}`)).lines.find((l) => l.step_type === 'post_ceo').user_id, U.christopher.id);
+    await ok('sebastian', 'POST', `/api/approvals/${d2}/addenda`, { body_rich: [{ t: 'p', v: '집행 시 분할 지급 협의' }] });
+    assert.equal((await call('maria', 'POST', `/api/approvals/${d2}/addenda`, { body_rich: [{ t: 'p', v: 'x' }] })).code, 403, '승인 후 일반 결재자는 추가 작성 불가');
+    assert.equal((await call('sebastian', 'PUT', `/api/approvals/${d2}/content`, form)).code, 403, '승인 후 내용 수정 불가');
+  } finally {
+    await app.close();
+  }
+});

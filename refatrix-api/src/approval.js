@@ -427,3 +427,99 @@ export function normalizeBodyRich(raw, fallbackText) {
   const plain = nodes.map((x) => (x.t === 'p' ? x.v : '[그림]')).join('\n').slice(0, 20000);
   return { ok: true, nodes, plain, images: imgs };
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 0244 — 결재선 수동 수정(디렉터) · 내용 수정 · 추가 작성
+// ═══════════════════════════════════════════════════════════════════════
+export const EDIT_STEP_TYPES = ['approve', 'agree', 'director', 'pre_ceo'];   // 내용 수정 가능한 결재 단계(경유 제외)
+export const LINE_EDIT_TYPES = ['approve', 'agree', 'pass', 'director', 'pre_ceo'];
+const LOCKED = ['done', 'rejected', 'flagged', 'skipped'];
+
+const mainPending = (ctx, lines) => lines.find((l) => l.status === 'pending' && l.step_type !== 'post_ceo' && sameId(l.user_id, ctx.uid)) || null;
+
+// 내용 수정: 진행 중 문서 · (현재 차례인 결재자[경유 제외] 또는 디렉터)
+export function canEditContent(ctx, doc, lines) {
+  if (doc.status !== 'progress') return false;
+  if (ctx.isDirector) return true;
+  const m = mainPending(ctx, lines);
+  return !!(m && EDIT_STEP_TYPES.includes(m.step_type));
+}
+// 추가 작성: 진행 중 문서의 현재 차례 결재자(경유 포함) · 디렉터는 상신 이후 언제나
+export function canAddend(ctx, doc, lines) {
+  if (doc.status === 'draft') return false;
+  if (ctx.isDirector) return true;
+  return doc.status === 'progress' && !!mainPending(ctx, lines);
+}
+// 결재선 수정: 디렉터 · 진행 중(남은 단계 전체) 또는 승인 후 사후승인 확인 전(사후승인자만)
+export function canEditLines(ctx, doc) {
+  if (!ctx.isDirector) return false;
+  if (doc.status === 'progress') return true;
+  return doc.status === 'approved' && doc.post_status !== 'confirmed';
+}
+// 수정 주체의 단계 표시
+export function editorStep(ctx, lines) {
+  const m = mainPending(ctx, lines);
+  if (m && EDIT_STEP_TYPES.includes(m.step_type)) return m.step_type;
+  return ctx.isDirector ? 'director_override' : (m ? m.step_type : null);
+}
+
+// 결재선 수정 검증
+//   lines: 현재 결재선 · steps: 남은 본 단계 새 목록(순서대로 [{step_type,user_id}]) · postUser: 사후승인자
+//   반환 { locked, rows:[{step_order,step_type,user_id}], postUser } | { error }
+export function planLineEdit({ lines, steps, postUser, doc, activeUserIds }) {
+  const main = lines.filter((l) => l.step_type !== 'post_ceo');
+  const locked = main.filter((l) => l.step_type === 'draft' || LOCKED.includes(l.status));
+  const list = Array.isArray(steps) ? steps : [];
+  const active = new Set((activeUserIds || []).map(Number));
+  if (doc.status === 'approved' && list.length) return { error: 'only_post_editable' };
+  const rows = [];
+  for (const s of list) {
+    const t = s && s.step_type, u = Number(s && s.user_id);
+    if (!LINE_EDIT_TYPES.includes(t)) return { error: 'bad_step_type' };
+    if (!u || !active.has(u)) return { error: 'bad_user' };
+    if (sameId(u, doc.drafter_id) && t !== 'director') return { error: 'drafter_in_line' };
+    if (rows.some((r) => r.step_type === t && r.user_id === u)) return { error: 'duplicate' };
+    rows.push({ step_type: t, user_id: u });
+  }
+  const all = [...locked.filter((l) => l.step_type !== 'draft'), ...rows];
+  if (doc.status === 'progress') {
+    if (all.filter((r) => r.step_type === 'director').length !== 1) return { error: 'director_count' };
+    if (all.filter((r) => r.step_type === 'pre_ceo').length > 1) return { error: 'pre_ceo_count' };
+    const pi = rows.findIndex((r) => r.step_type === 'pre_ceo');
+    if (pi >= 0 && pi !== rows.length - 1) return { error: 'pre_ceo_last' };
+  }
+  const pu = Number(postUser);
+  if (!pu || !active.has(pu)) return { error: 'bad_post_user' };
+  if (sameId(pu, doc.drafter_id)) return { error: 'drafter_in_line' };
+  const base = Math.max(0, ...locked.map((l) => n(l.step_order)));
+  return { locked, rows: rows.map((r, i) => ({ ...r, step_order: base + 1 + i })), postUser: pu };
+}
+
+// 내용 수정 전/후 비교 → [{field,label,old,new}]
+const MONEYF = (v, cur) => (v == null ? '—' : `${cur === 'USD' ? 'US' : ''}$${n(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+export function schedSummary(type, payments, cur) {
+  const ps = payments || [];
+  if (!ps.length) return '—';
+  if (ps.length === 1) return `${PAYMENT_TYPE_LABEL[type] || '일시불'} · ${ps[0].due_date || '—'} · ${MONEYF(ps[0].amount ?? ps[0].planned_amount, cur)}`;
+  const first = ps[0], last = ps[ps.length - 1];
+  return `${PAYMENT_TYPE_LABEL[type] || ''} ${ps.length}회 · ${first.due_date || '—'}~${last.due_date || '—'} · 회당 ${MONEYF(first.amount ?? first.planned_amount, cur)}`;
+}
+export function diffContent(a, b) {
+  const out = [];
+  const add = (field, label, o, nw) => { if (String(o ?? '') !== String(nw ?? '')) out.push({ field, label, old: o ?? '', new: nw ?? '' }); };
+  add('title', '제목', a.title, b.title);
+  add('vendor', '거래처', a.vendor, b.vendor);
+  add('category', '카테고리', a.category_name, b.category_name);
+  add('currency', '통화', a.currency, b.currency);
+  add('amount', '합계', MONEYF(a.orig_total, a.currency), MONEYF(b.orig_total, b.currency));
+  if (a.currency === 'USD' || b.currency === 'USD') add('amount_mxn', '합계 (MXN)', MONEYF(a.planned_total, 'MXN'), MONEYF(b.planned_total, 'MXN'));
+  add('iva', 'IVA', a.iva_applied ? '적용' : '미적용', b.iva_applied ? '적용' : '미적용');
+  add('pay_method', '지급 방법', a.pay_method, b.pay_method);
+  add('schedule', '지급 일정', schedSummary(a.payment_type, a.payments, a.currency), schedSummary(b.payment_type, b.payments, b.currency));
+  const ai = (a.body_nodes || []).filter((x) => x.t === 'img').length, bi = (b.body_nodes || []).filter((x) => x.t === 'img').length;
+  const ap = (a.body || '').replace(/\[그림\]/g, '').trim(), bp = (b.body || '').replace(/\[그림\]/g, '').trim();
+  if (ap !== bp) out.push({ field: 'body', label: '내용', old: ap.slice(0, 2000), new: bp.slice(0, 2000) });
+  if (ai !== bi) out.push({ field: 'images', label: '본문 그림', old: `${ai}장`, new: `${bi}장` });
+  return out;
+}
+export const amountChanged = (changes) => changes.some((c) => ['amount', 'amount_mxn', 'iva', 'schedule', 'currency'].includes(c.field));

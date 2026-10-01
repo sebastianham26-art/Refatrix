@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20260929ec<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20261001ed<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
 });
 
@@ -78,7 +78,10 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     await o.until(() => o.w.eval('ui.view') === 'detail' && o.w.eval('DET') && o.w.eval('DET.doc.doc_no'));
     const docId = o.w.eval('DET.doc.id');
     assert.equal(o.w.eval('DET.files.length'), 1);
-    assert.equal(o.d.querySelectorAll('.stp').length, 5, '기안·디렉터·사전·집행·사후');
+    assert.equal(o.d.querySelectorAll('.dright .mstamps td.ms').length, 5, '제목 오른쪽 축소 결재선: 기안·디렉터·사전·집행·사후');
+    assert.ok(o.$('.dtop .dleft h1') && o.$('.dtop .dright .mstamps'), '제목과 결재선이 한 줄(dtop)');
+    assert.ok(!o.$('[data-act="lineedit"]'), '직원은 결재선 수정 버튼 없음');
+    assert.ok(!o.$('[data-act="revise"]') && !o.$('[data-act="addend"]'), '상신한 기안자는 내용 수정·추가 작성 없음');
     assert.ok(o.act('withdraw'), '처리 전 회수 버튼');
 
     // ② Sebastian(디렉터): 할 일 → 승인(모달) → 사전승인 대기로
@@ -87,11 +90,55 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     await s.until(() => s.$(`.row[data-id="${docId}"]`));
     s.click(s.$(`.row[data-id="${docId}"]`));
     await s.until(() => s.w.eval('DET') && s.act('approve'));
+    // 0244: 디렉터(내 차례) — 결재선 수정 · 추가 작성 · 내용 수정
+    assert.ok(s.act('lineedit') && s.act('revise') && s.act('addend'));
+    s.click(s.act('lineedit'));
+    await s.until(() => s.$('#modalCard [data-le="addT"]'));
+    assert.equal(s.d.querySelectorAll('#modalCard .le-row.locked').length, 1, '기안만 잠김');
+    const at = s.$('[data-le="addT"]'); at.value = 'agree'; at.dispatchEvent(new s.w.Event('change', { bubbles: true }));
+    const au = s.$('[data-le="addU"]'); au.value = String(U.christopher.id); au.dispatchEvent(new s.w.Event('change', { bubbles: true }));
+    s.click(s.act('leadd'));
+    await s.until(() => s.d.querySelectorAll('#modalCard .le-row:not(.locked) [data-le="type"]').length === 3);
+    // 합의를 맨 끝(사전승인 뒤)에 두면 서버가 거부 → 위로 옮겨 저장
+    s.click(s.act('mok'));
+    await s.idle();
+    assert.ok(s.w.eval('ui.modal'), '사전승인이 맨 끝이 아니면 저장 거부(모달 유지)');
+    s.click(s.$('#modalCard [data-act="leup"][data-i="2"]'));
+    await s.until(() => s.$('#modalCard [data-le="type"][data-i="1"]').value === 'agree');
+    s.click(s.act('mok'));
+    await s.until(() => !s.w.eval('ui.modal') && s.w.eval('DET.lines.some(l=>l.step_type==="agree")'));
+    assert.deepEqual(JSON.parse(JSON.stringify(s.w.eval('DET.lines.map(l=>l.step_type)'))), ['draft', 'director', 'agree', 'pre_ceo', 'post_ceo']);
+    assert.match(s.$('.tl').textContent, /결재선 수정/);
+    // 추가 작성(그림 + 글)
+    s.click(s.act('addend'));
+    await s.until(() => s.$('#adEd'));
+    s.$('#adEd').innerHTML = '디렉터 의견: 부스 위치 확인<img src="data:image/png;base64,iVBORw0KGgo=">';
+    s.click(s.act('mok'));
+    await s.until(() => s.w.eval('DET.addenda.length') === 1);
+    assert.ok(s.$('.addm .rbody img'), '추가 작성 그림 표시'); assert.match(s.$('.addm').textContent, /디렉터 의견/);
+    // 내용 수정(제목) → 수정 이력
+    s.click(s.act('revise'));
+    await s.until(() => s.w.eval('ui.view') === 'compose' && s.$('[data-act="rvcancel"]'));
+    assert.ok(!s.$('#lprev'), '수정 모드에는 결재선 미리보기 없음');
+    s.type('[data-f="title"]', 'UI 테스트 · 부스 제작 (디렉터 수정)');
+    s.type('[data-f="reason"]', '제목 정리');
+    s.click(s.act('csave'));
+    await s.until(() => s.w.eval('ui.view') === 'detail' && s.w.eval('DET') && s.w.eval('DET.revisions.length') === 1);
+    assert.match(s.$('h1').textContent, /디렉터 수정/);
+    assert.match(s.$('details.revs').textContent, /제목 정리/);
     s.click(s.act('approve'));
     await s.until(() => s.$('#mMemo'));
     s.$('#mMemo').value = 'UI 승인';
     s.click(s.act('mok'));
-    await s.until(() => s.w.eval('DET.doc.stage') === 'pre');
+    await s.until(() => s.w.eval('DET.lines.find(l=>l.step_type==="agree").status') === 'pending');
+    // 합의(Christopher) 처리 → 사전승인 단계로
+    const cx = await open('christopher');
+    cx.w.eval(`openDoc(${docId})`);
+    await cx.until(() => cx.w.eval('DET') && cx.w.eval('DET.doc.id') === docId && cx.act('approve'));
+    assert.ok(cx.act('revise') && cx.act('addend'), '현재 차례 합의자도 수정·추가 가능');
+    assert.ok(!cx.act('lineedit'), '결재선 수정은 디렉터만');
+    cx.click(cx.act('approve')); await cx.until(() => cx.$('#mMemo')); cx.click(cx.act('mok'));
+    await cx.until(() => cx.w.eval('DET.doc.stage') === 'pre');
     // 디렉터 작성 화면에는 재무 합의 토글
     s.click(s.$('[data-act="nav"][data-v="compose"]'));
     await s.until(() => s.$('#finTog'));
@@ -236,7 +283,7 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     assert.equal(c.w.eval('DET.doc.exec_status'), 'pending', '남은 회차 있음');
     assert.equal(c.d.querySelectorAll('[data-act="exec"][data-pid]').length, 3);
 
-    for (const p of [o, s, j, c, m]) assert.deepEqual(p.errs, [], 'JS 오류 없음');
+    for (const p of [o, s, j, c, m, cx]) assert.deepEqual(p.errs, [], 'JS 오류 없음');
     await pool.query(`UPDATE approval_settings SET ceo_pre_threshold=100000 WHERE id=1`);
   } finally {
     for (const dom of doms) dom.window.close();

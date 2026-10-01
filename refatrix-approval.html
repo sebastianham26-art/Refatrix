@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20260929ec</title>
+<title>Refatrix ERP · 전자결재 · b20261001ed</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -211,6 +211,40 @@ html.rfxm .bulk{bottom:calc(60px + env(safe-area-inset-bottom))}
 .addstep select{min-height:32px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:#fff}
 .x{border:0;background:none;cursor:pointer;color:var(--mute);padding:0 2px;font-size:14px}
 .login{max-width:380px;margin:40px auto;padding:18px}
+.dtop{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+.dleft{flex:1 1 auto;min-width:0}
+.dleft h1{margin:2px 0 4px}
+.dright{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:58%}
+.mstamps{border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.mstamps td.ms{width:52px;min-width:52px;text-align:center;border-left:1px solid #ece6d8;padding:3px 2px;vertical-align:top}
+.mstamps td.ms:first-child{border-left:0}
+.mstamps .ml{font-size:9.5px;color:var(--mute);border-bottom:1px solid #f0ebe0;padding-bottom:1px;white-space:nowrap}
+.mstamps .mn{font-size:11px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50px}
+.mstamps .mk{height:24px;display:grid;place-items:center}
+.mstamps .mk span{display:inline-block;min-width:22px;height:22px;line-height:18px;border-radius:50%;font-size:10px;font-weight:700;padding:0 2px}
+.mstamps td.done .mk span{border:1.5px solid var(--red);color:var(--red);transform:rotate(-8deg)}
+.mstamps td.pending .mk span{border:1.5px dashed var(--gold);color:#8a6424}
+.mstamps td.rejected .mk span,.mstamps td.flagged .mk span{background:var(--red);color:#fff;border:1.5px solid var(--red)}
+.mstamps td.ceo{background:#fbf6ea}.mstamps td.exec{background:#f3f7f5}
+.mstamps td.pending{background:#fff8e8}
+.mstamps .mt{font-size:9px;color:var(--mute);min-height:11px}
+@media(max-width:860px){.dtop{flex-direction:column;gap:8px}.dright{max-width:100%;align-items:stretch;overflow-x:auto}.dright .btn{align-self:flex-start}}
+.addm{margin-top:10px;border-left:3px solid var(--gold);background:#fbf7ee;border-radius:0 10px 10px 0;padding:8px 10px}
+.addh{font-size:12.5px;margin-bottom:4px}
+details.revs{margin-top:10px;font-size:12.5px}
+details.revs summary{cursor:pointer;color:var(--brand);font-weight:600}
+.rev{border-top:1px dashed #e6dfd0;padding:8px 0}
+.revt{border-collapse:collapse;width:100%;font-size:12.5px}
+.revt th{text-align:left;color:var(--mute);font-weight:500;white-space:nowrap;padding:2px 8px 2px 0;vertical-align:top;width:1%}
+.revt td{padding:2px 6px 2px 0;vertical-align:top;word-break:break-word}
+.rvo{color:#8a8a82;text-decoration:line-through}.rvn{color:var(--ink)}
+.revt pre{white-space:pre-wrap;font:inherit;margin:2px 0 6px;padding:6px;background:#fff;border:1px solid #ece6d8;border-radius:6px;text-decoration:none}
+.le-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px dashed #e6dfd0}
+.le-row.locked{opacity:.6}
+.le-row .no2{width:20px;color:var(--mute);font-size:12px;text-align:right}
+.le-row select{min-height:34px;padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:#fff}
+.le-row .grow{flex:1;min-width:0}
+.le-row .st{font-size:11.5px;color:var(--mute);white-space:nowrap}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
 .ed{min-height:160px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;font-size:13.5px;line-height:1.6;outline:none;overflow-wrap:anywhere;white-space:pre-wrap}
 .ed:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(20,61,52,.15)}
@@ -259,6 +293,8 @@ html.rfxm .bulk{bottom:calc(60px + env(safe-area-inset-bottom))}
 #printSheet.tight .pimgs img{max-height:30mm;max-width:62mm}
 #printSheet.tight .ptb td.ptx{font-size:6.6pt}
 #printSheet .pnote{font-size:7pt;color:#555}
+#printSheet .padd{margin-top:1.2mm;border-left:1.2pt solid #B8893B;padding:.4mm 0 .4mm 1.6mm;background:#faf6ec}
+#printSheet .pah{font-size:7pt;font-weight:700;margin-bottom:.4mm}
 #printSheet .pfoot{margin-top:2mm;border-top:.5pt solid #bbb;padding-top:.6mm;font-size:6.3pt;color:#666}
 @media print{
  @page{size:A4 portrait;margin:8mm}
@@ -450,6 +486,21 @@ function stampBox(l){
  const ceo=l.step_type==='pre_ceo'||l.step_type==='post_ceo';
  return `<div class="stp ${ceo?'ceo':''}" title="${esc(l.comment||'')}"><div class="lb">${SL(l.step_type)}</div><div class="nm">${esc(U(l.user_id))}</div><div class="seal ${l.status}">${sealText(l)}</div>${l.acted_at?tm(l.acted_at):'<span class="t">—</span>'}</div>`;
 }
+// 축소 결재선 — 상세 제목 오른쪽. 칸: 단계 · 이름 · 도장 · 날짜
+const SL_SHORT={draft:'기안',approve:'결재',agree:'합의',pass:'경유',director:'디렉터',pre_ceo:'대표 사전',post_ceo:'대표 사후'};
+function miniStamp(lb,name,status,mark,at,title,cls){
+ return `<td class="ms ${status} ${cls||''}" title="${esc(title||'')}"><div class="ml">${lb}</div><div class="mn">${esc(name)}</div><div class="mk"><span>${mark||''}</span></div><div class="mt">${at?pdt(at,11):''}</div></td>`;
+}
+function miniStampsHtml(d,lines){
+ if(!lines.length)return '<div class="sub">상신하면 결재선이 확정됩니다</div>';
+ const cell=l=>{const mk=l.status==='done'?sealText(l):l.status==='rejected'?(l.step_type==='agree'?'반대':'반려'):l.status==='flagged'?'이의':l.status==='pending'?'대기':'';
+  return miniStamp(SL_SHORT[l.step_type]||SL(l.step_type),U(l.user_id),l.status,mk,l.acted_at,`${SL(l.step_type)} · ${U(l.user_id)}${l.comment?'\n'+l.comment:''}`,l.step_type==='pre_ceo'||l.step_type==='post_ceo'?'ceo':'');};
+ const main=lines.filter(l=>l.step_type!=='post_ceo').map(cell);
+ const es=d.status==='rejected'?'skipped':d.exec_status==='done'?'done':d.exec_status==='pending'?'pending':'waiting';
+ main.push(miniStamp('집행',d.exec_by?U(d.exec_by):U(B.settings.finance_user_id),es,({done:'집행',pending:'대기'})[es]||'',d.exec_at,'집행 (재무)','exec'));
+ const pl=lines.find(l=>l.step_type==='post_ceo');if(pl)main.push(cell(pl));
+ return `<table class="mstamps"><tr>${main.join('')}</tr></table>`;
+}
 function stampsHtml(d,lines){
  if(!lines.length)return '<p class="sub" style="margin:0">상신하면 결재선이 확정됩니다.</p>';
  const main=lines.filter(l=>l.step_type!=='post_ceo').map(stampBox);
@@ -457,6 +508,17 @@ function stampsHtml(d,lines){
  main.push(`<div class="stp exec"><div class="lb">집행 (재무)</div><div class="nm">${esc(d.exec_by?U(d.exec_by):U(B.settings.finance_user_id))}</div><div class="seal ${es}">${({done:'집행',pending:'대기중',waiting:'예정',skipped:'—'})[es]}</div>${d.exec_at?tm(d.exec_at):'<span class="t">—</span>'}</div>`);
  const pl=lines.find(l=>l.step_type==='post_ceo');if(pl)main.push(stampBox(pl));
  return `<div class="stamps">${main.join('<span class="arrow">›</span>')}</div>`;
+}
+const STEP_WHO={draft:'기안',approve:'중간결재',agree:'합의',pass:'경유',director:'디렉터',pre_ceo:'대표이사 사전승인',post_ceo:'대표이사',director_override:'디렉터'};
+function addendumHtml(a){
+ const files=DET.files.filter(f=>same(f.addendum_id,a.id));
+ return `<div class="addm"><div class="addh"><b>추가 작성</b> · ${esc(U(a.author_id))} <span class="sub">${esc(STEP_WHO[a.step_type]||'')}</span> ${tm(a.created_at)}</div>
+  <div class="rbody">${renderBodyNodes(a.nodes)}</div>${files.length?`<div class="files" style="margin-top:6px">${files.map(f=>fileRow(f,DET.doc)).join('')}</div>`:''}</div>`;
+}
+function revisionHtml(r){
+ return `<div class="rev"><div class="addh"><b>${esc(U(r.editor_id))}</b> <span class="sub">${esc(STEP_WHO[r.step_type]||'')}</span> ${tm(r.created_at)}${r.reason?` · 사유: ${esc(r.reason)}`:''}</div>
+  <table class="revt">${r.changes.map(c=>c.field==='body'?`<tr><th>${esc(c.label)}</th><td colspan="2"><details><summary>변경 내용 보기</summary><div class="rvo">이전<pre>${esc(c.old)}</pre></div><div class="rvn">변경<pre>${esc(c.new)}</pre></div></details></td></tr>`
+   :`<tr><th>${esc(c.label)}</th><td class="rvo">${esc(c.old||'—')}</td><td class="rvn">→ ${esc(c.new||'—')}</td></tr>`).join('')}</table></div>`;
 }
 function extOf(name){const m=String(name||'').toLowerCase().match(/\.([a-z0-9]{1,5})$/);return m?m[1]:'';}
 function fileIcon(name){
@@ -474,7 +536,7 @@ function fileRow(f,d){
   ${f.voided_at?`<div class="fm">무효 처리 · ${esc(U(f.voided_by))} · ${tm(f.voided_at)} · ${esc(f.void_reason)}</div>`:''}
  </div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button>${f.can_delete?`<button class="btn sm danger" data-act="fdel" data-fid="${f.id}">삭제</button>`:''}${f.can_void?`<button class="btn sm danger" data-act="fvoid" data-fid="${f.id}">무효</button>`:''}</div></div>`;
 }
-const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결'};
+const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단'};
 function timeline(){
  const it=[];
  DET.events.forEach(e=>it.push({k:'ev',at:e.created_at,e}));
@@ -528,13 +590,17 @@ function renderDetail(){
  const refs=DET.viewers.filter(x=>x.kind==='ref').map(x=>U(x.user_id)),shares=DET.viewers.filter(x=>x.kind==='share').map(x=>U(x.user_id));
  const noDirFin=DET.lines.some(l=>l.step_type==='director'&&same(l.user_id,d.drafter_id))&&!DET.lines.some(l=>l.step_type==='agree'&&same(l.user_id,B.settings.finance_user_id));
  return `
- <div class="dh"><button class="back" data-act="back">‹ 목록</button><span class="no">${esc(d.doc_no||'임시저장')}</span><span class="bdg b-gray">${esc(catName(d.category_id))}</span>${badges(d)}</div>
- <h1>${esc(d.title)}</h1>
- <div class="sub">기안 ${esc(U(d.drafter_id))} (${esc(UT(d.drafter_id))}) · 작성 ${tm(d.created_at)}${d.submitted_at?` · 상신 ${tm(d.submitted_at)}`:''}${d.parent_no?` · 원문서 <span class="lnk" style="margin:0" data-act="openid" data-id="${d.parent_id}">${esc(d.parent_no)}</span> v${d.version}`:''}</div>
- <div style="margin:6px 0 12px">${!DET.files.some(f=>!f.voided_at)&&d.status!=='draft'?'<span class="flag">증빙 없음</span>':''}${noDirFin&&d.status!=='draft'?'<span class="flag g">디렉터 기안·재무합의 없음</span>':''}</div>
+ <div class="dtop">
+  <div class="dleft">
+   <div class="dh"><button class="back" data-act="back">‹ 목록</button><span class="no">${esc(d.doc_no||'임시저장')}</span><span class="bdg b-gray">${esc(catName(d.category_id))}</span>${badges(d)}</div>
+   <h1>${esc(d.title)}</h1>
+   <div class="sub">기안 ${esc(U(d.drafter_id))} (${esc(UT(d.drafter_id))}) · 작성 ${tm(d.created_at)}${d.submitted_at?` · 상신 ${tm(d.submitted_at)}`:''}${d.parent_no?` · 원문서 <span class="lnk" style="margin:0" data-act="openid" data-id="${d.parent_id}">${esc(d.parent_no)}</span> v${d.version}`:''}</div>
+   ${refs.length||shares.length?`<div class="sub">${refs.length?'참조: '+esc(refs.join(', ')):''}${refs.length&&shares.length?' · ':''}${shares.length?'공람 (승인 후): '+esc(shares.join(', ')):''}</div>`:''}
+   <div style="margin-top:4px">${!DET.files.some(f=>!f.voided_at)&&d.status!=='draft'?'<span class="flag">증빙 없음</span>':''}${noDirFin&&d.status!=='draft'?'<span class="flag g">디렉터 기안·재무합의 없음</span>':''}${DET.revisions.length?`<span class="flag g">수정 ${DET.revisions.length}회</span>`:''}</div>
+  </div>
+  <div class="dright">${miniStampsHtml(d,DET.lines)}${DET.can_edit_lines?'<button class="btn sm ghost no-print" data-act="lineedit">✎ 결재선 수정</button>':''}</div>
+ </div>
  ${rej?`<div class="warn red" style="margin:0 0 12px"><b>${SL(rej.step_type)} ${esc(U(rej.user_id))} · ${rej.step_type==='agree'?'반대':'반려'}</b> ${tm(rej.acted_at)}<br>${esc(rej.comment)}</div>`:''}
- <div class="card sec"><h3>결재선</h3>${stampsHtml(d,DET.lines)}
-  ${refs.length||shares.length?`<div class="sub" style="margin-top:8px">${refs.length?'참조: '+esc(refs.join(', ')):''}${refs.length&&shares.length?' · ':''}${shares.length?'공람 (승인 후): '+esc(shares.join(', ')):''}</div>`:''}</div>
  <div class="card sec"><h3>금액 · ${PT_L[d.payment_type]||'일시불'}${d.payment_type==='recurring'&&d.payment_plan?` <span class="sub">${FREQ_L[d.payment_plan.freq]||''} ${d.payment_plan.count}회 · ${esc(d.payment_plan.start)}부터</span>`:''}</h3><div class="grid2">
   <div><p class="kv-h">집행 예정</p><dl class="kv">
    ${usd?`<dt>합계 (USD)</dt><dd class="big">${cm(d.orig_total,'USD')}</dd><dt>환율</dt><dd>USD 1 = ${d.fx_rate} <span class="sub">${d.fx_locked_at?`${esc(d.fx_date||'')} 환율 · 상신 때 고정`:'미리보기 · 상신 때 고정'}</span></dd>`:''}
@@ -554,7 +620,12 @@ function renderDetail(){
   <td>${canExec&&p.status==='planned'?`<button class="btn sm gold" data-act="exec" data-pid="${p.id}">집행</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
  </tbody></table></div>
  ${warns.join('')}<div class="warn info">예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.</div></div>
- <div class="card sec"><h3>내용</h3><p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')}</p><div class="rbody">${renderBodyNodes(DET.body_nodes)}</div></div>
+ <div class="card sec"><h3>내용<span class="sp"></span>${DET.can_edit_content?'<button class="btn sm" data-act="revise">✎ 내용 수정</button>':''}${DET.can_addend?'<button class="btn sm" data-act="addend">＋ 추가 작성</button>':''}</h3>
+  <p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')} · 원문 ${esc(U(d.drafter_id))}${DET.revisions.length?` · 마지막 수정 ${esc(U(DET.revisions[DET.revisions.length-1].editor_id))} ${tm(DET.revisions[DET.revisions.length-1].created_at)}`:''}</p>
+  <div class="rbody">${renderBodyNodes(DET.body_nodes)}</div>
+  ${DET.addenda.map(addendumHtml).join('')}
+  ${DET.revisions.length?`<details class="revs"><summary>수정 이력 ${DET.revisions.length}건</summary>${DET.revisions.slice().reverse().map(revisionHtml).join('')}</details>`:''}
+ </div>
  <div class="card sec"><h3>증빙 <span class="sub">${DET.files.filter(f=>!f.voided_at).length}건</span><span class="sp"></span>
   ${DET.can_upload?'<button class="btn sm no-print" data-act="upfile">+ 증빙 추가</button>':''}
   ${d.doc_no?'<button class="btn sm no-print" data-act="link">결재문서 연결</button><button class="btn sm no-print" data-act="print">인쇄 · PDF</button>':''}</h3>
@@ -593,12 +664,12 @@ function guessKind(name){
  return '기타';
 }
 const readDataUrl=file=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(r.error);r.readAsDataURL(file);});
-async function uploadFiles(docId,arr,commentId,paymentId){
+async function uploadFiles(docId,arr,commentId,paymentId,addendumId){
  let n=0;
  for(const f of arr){
   n++;toast(`업로드 중 ${n}/${arr.length} · ${f.name}`);
   const data_url=await readDataUrl(f.file);
-  const r=await api('POST',`/api/approvals/${docId}/files`,{file_name:f.name,kind:f.kind,data_url,comment_id:commentId||undefined,payment_id:paymentId||undefined});
+  const r=await api('POST',`/api/approvals/${docId}/files`,{file_name:f.name,kind:f.kind,data_url,comment_id:commentId||undefined,payment_id:paymentId||undefined,addendum_id:addendumId||undefined});
   if(r.dup_of)toast(`⚠ ${f.name}: ${r.dup_of}에서 사용된 파일`);
  }
 }
@@ -658,7 +729,7 @@ async function compressImage(file){
  }finally{URL.revokeObjectURL(url);}
 }
 function edInsertNode(node){
- const ed=$('#bodyEd');if(!ed)return;
+ const ed=document.getElementById(ui.edTarget||'bodyEd')||$('#bodyEd')||$('#adEd');if(!ed)return;
  const sel=window.getSelection();
  if(sel&&sel.rangeCount&&ed.contains(sel.getRangeAt(0).commonAncestorContainer)){const r=sel.getRangeAt(0);r.deleteContents();r.insertNode(node);r.setStartAfter(node);r.collapse(true);sel.removeAllRanges();sel.addRange(r);}
  else ed.appendChild(node);
@@ -673,6 +744,7 @@ async function edAddImages(files){
  }
  const ed=$('#bodyEd');if(ed&&ui.cd)ui.cd.body_nodes=serializeEd(ed);
 }
+
 function edInsertText(text){
  if(!text)return;
  if(!(document.execCommand&&document.execCommand('insertText',false,text))){
@@ -694,7 +766,7 @@ function cdFromDet(){
   body_nodes:DET.body_nodes||[],
   refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
   include_finance:d.include_finance,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
-  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null};
+  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:''};
 }
 // 문서 통화 기준 금액 → { sub, iva, total, per, count, rows:[{due_date,amount}] }
 function cdCalc(cd){
@@ -754,7 +826,8 @@ function renderCompose(){
  else money=`<div class="sum"><input class="inp" style="max-width:190px" inputmode="decimal" data-f="orig_sub" value="${esc(cd.orig_sub)}" placeholder="소계 (IVA 제외)">${ivaCk}<span>IVA <b id="cIva">—</b></span><span>합계 <span class="tot" id="cTot">—</span></span></div>
    <div class="form" style="margin-top:10px"><div class="fld"><label>지급 예정일</label><input class="inp" type="date" data-f="pay_due" value="${esc(cd.pay_due)}"></div></div>`;
  return `
- <div class="dh"><h1 style="margin:0">${cd.id?'임시저장 문서 편집':'새 품의 작성'}</h1>${cd.parent_no?`<span class="bdg b-gold">${esc(cd.parent_no)} 재기안 · v${cd.version}</span>`:''}</div>
+ <div class="dh"><h1 style="margin:0">${cd.revise?`내용 수정 · ${esc(cd.doc_no||'')}`:cd.id?'임시저장 문서 편집':'새 품의 작성'}</h1>${cd.parent_no&&!cd.revise?`<span class="bdg b-gold">${esc(cd.parent_no)} 재기안 · v${cd.version}</span>`:''}</div>
+ ${cd.revise?`<div class="warn" style="margin:6px 0 10px">결재 중 수정입니다. 수정 전 내용은 「수정 이력」으로 남고 기안자에게 알림이 갑니다. 금액을 바꾸면 이미 승인한 사람에게도 알림이 가며, 기준액을 넘으면 대표이사 사전승인이 자동으로 추가됩니다. 원문은 그대로 두고 의견만 덧붙이려면 상세 화면의 「추가 작성」을 쓰세요.</div>`:''}
  <p class="sub" style="margin:2px 0 12px">기안자 ${esc(B.me.name)} (${esc(UT(B.me.id))})</p>
  <div class="card sec"><div class="form">
   <div class="fld"><label>카테고리 <span class="req">*</span></label><select class="inp" data-f="category_id"><option value="">선택</option>${cats.map(c=>`<option value="${c.id}" ${same(c.id,cd.category_id)?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
@@ -763,7 +836,7 @@ function renderCompose(){
  </div></div>
  <div class="card sec"><h3>금액 · 결제 방식</h3>
   <div class="form">
-   <div class="fld"><label>통화</label><div class="seg">${['MXN','USD'].map(c=>`<button class="chip ${cur===c?'on':''}" data-act="ccur" data-v="${c}">${c==='MXN'?'MXN (페소)':'USD (달러)'}</button>`).join('')}</div></div>
+   <div class="fld"><label>통화</label><div class="seg">${cd.revise&&cd.fx_locked?`<span class="chip on">${cur}</span><span class="sub">상신 때 환율이 고정되어 통화는 바꿀 수 없습니다</span>`:['MXN','USD'].map(c=>`<button class="chip ${cur===c?'on':''}" data-act="ccur" data-v="${c}">${c==='MXN'?'MXN (페소)':'USD (달러)'}</button>`).join('')}</div></div>
    <div class="fld"><label>지급 방법</label><select class="inp" data-f="pay_method">${B.pay_methods.map(p=>`<option ${p===cd.pay_method?'selected':''}>${p}</option>`).join('')}</select></div>
    <div class="fld full"><label>결제 방식</label><div class="seg">${Object.entries(PT_L).map(([k,l])=>`<button class="chip ${pt===k?'on':''}" data-act="cpt" data-v="${k}">${l}</button>`).join('')}</div>
     <p class="sub" style="margin:4px 0 0">${pt==='once'?'한 번에 지급':pt==='installment'?'선급·잔금, 분할 납부 등 — 회차별 지급일과 금액을 정합니다':'매주·격주·매월·분기 같은 금액을 반복 지급 — 한 번 결재로 전 회차 승인'}. 재무가 회차마다 집행하고, 모든 회차가 끝나면 대표이사 사후승인으로 넘어갑니다.</p></div>
@@ -778,12 +851,14 @@ function renderCompose(){
   ${cd.files.length?`<div class="files" style="margin-bottom:6px">${cd.files.map(f=>`<div class="file">${fileIcon(f.file_name)}<div style="flex:1;min-width:0"><div class="fn">${esc(f.file_name)}</div><div class="fm"><span class="bdg b-gray">${esc(f.kind)}</span>${fsize(f.file_size)} · 저장됨</div></div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button><button class="btn sm danger" data-act="cfdel" data-fid="${f.id}">삭제</button></div></div>`).join('')}</div>`:''}
   <div id="pl-d">${pendList(cd.newFiles,'d')}</div>
   <p class="sub" style="margin:8px 0 0">PDF · Word · PowerPoint · Excel · JPG/PNG/HEIC · CFDI XML · ZIP · 이메일(eml/msg). 증빙 없이도 상신할 수 있으며, 결재자가 반려로 보완을 요청할 수 있습니다.</p></div>
- <div class="card sec"><h3>결재선</h3>
+${cd.revise?` <div class="card sec"><h3>수정 사유 <span class="sub">선택</span></h3><input class="inp" data-f="reason" value="${esc(cd.reason||'')}" placeholder="예: 수량 정정, 견적 변경 반영">
+  <p class="sub" style="margin:8px 0 0">결재선·참조·공람은 그대로입니다${B.me.isDirector?' — 결재선은 상세 화면의 「결재선 수정」에서 바꿉니다':''}.</p></div>
+ <div class="abar"><button class="btn" data-act="rvcancel">취소</button><button class="btn pri" data-act="csave">수정 저장</button></div>`:` <div class="card sec"><h3>결재선</h3>
   ${isDir?`<div class="toggle ${cd.include_finance?'on':''}" data-act="ctog" id="finTog"><span class="sw"></span><div><b>재무담당 합의 포함</b><div class="sub">디렉터 기안 전용 — 필요에 따라 ${esc(U(B.settings.finance_user_id))} 합의를 넣거나 뺄 수 있습니다</div></div></div><div style="height:10px"></div>`:''}
   <div class="lineprev" id="lprev"></div><div id="ceoNote"></div>
   <div class="form" style="margin-top:12px">${peopleFld('refs','참조 (진행 중 열람)')}${peopleFld('shares','공람 (승인 후 공유)')}</div>
  </div>
- <div class="abar"><button class="btn" data-act="csave">임시저장</button><button class="btn pri" data-act="csubmit">상신</button></div>`;
+ <div class="abar"><button class="btn" data-act="csave">임시저장</button><button class="btn pri" data-act="csubmit">상신</button></div>`}`;
 }
 function updateCompose(){
  const cd=ui.cd;if(!cd||!$('#lprev'))return;
@@ -814,7 +889,8 @@ async function saveCd(submit){
  const cd=ui.cd;const ed=$('#bodyEd');if(ed)cd.body_nodes=serializeEd(ed);
  const c=cdCalc(cd);
  if(!cd.title.trim()){toast('제목을 입력하세요');return;}
- if(submit&&!cd.category_id){toast('카테고리를 선택하세요');return;}
+ if((submit||cd.revise)&&!cd.category_id){toast('카테고리를 선택하세요');return;}
+ if(cd.revise&&!(c.total>0)){toast('금액을 입력하세요');return;}
  if(submit&&!(c.total>0)){toast('금액을 입력하세요');return;}
  if(cd.payment_type==='recurring'&&c.rows.length<2){toast('정기 지급은 첫 지급일과 횟수(2회 이상)가 필요합니다');return;}
  if(cd.payment_type==='installment'){
@@ -828,6 +904,13 @@ async function saveCd(submit){
   schedule:cd.payment_type==='installment'?c.rows.map(r=>({due_date:r.due_date||null,amount:r.amount})):null,
   body_rich:cd.body_nodes,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance};
  try{
+  if(cd.revise){
+   const r=await api('PUT',`/api/approvals/${cd.id}/content`,{...body,reason:cd.reason||''});
+   if(cd.newFiles.length){await uploadFiles(cd.id,cd.newFiles);cd.newFiles=[];}
+   const id=cd.id;ui.cd=null;
+   toast(r.changes.length?`수정했습니다 · ${r.changes.map(x=>x.label).join(', ')}${r.pre_added?' · 대표이사 사전승인 추가됨':''}`:'바뀐 내용이 없습니다');
+   await loadList();openDoc(id);return;
+  }
   if(cd.id)await api('PUT','/api/approvals/'+cd.id,body);else cd.id=(await api('POST','/api/approvals',body)).id;
   if(cd.newFiles.length){await uploadFiles(cd.id,cd.newFiles);cd.newFiles=[];}
   if(submit){const r=await api('POST',`/api/approvals/${cd.id}/submit`);const id=cd.id;ui.cd=null;toast('상신되었습니다 · '+r.doc_no);await loadList();openDoc(id);}
@@ -990,7 +1073,11 @@ function printSheetHtml(){
  // 본문(문단 + 그림)
  const nodes=DET.body_nodes||[],txt=nodes.filter(x=>x.t==='p').map(x=>`<p>${esc(x.v)}</p>`).join('');
  const imgs=nodes.filter(x=>x.t==='img'&&IMG_RE.test(x.src)).map(x=>`<img src="${esc(x.src)}" alt="">`).join('');
- const body=`<div class="psec"><h4>내용</h4><div class="pbody">${txt||'<p class="pg">—</p>'}</div>${imgs?`<div class="pimgs">${imgs}</div>`:''}</div>`;
+ const adds=(DET.addenda||[]).map(a=>{const at=a.nodes.filter(x=>x.t==='p').map(x=>`<p>${esc(x.v)}</p>`).join(''),ai=a.nodes.filter(x=>x.t==='img'&&IMG_RE.test(x.src)).map(x=>`<img src="${esc(x.src)}" alt="">`).join('');
+  const nf=DET.files.filter(f=>same(f.addendum_id,a.id)&&!f.voided_at).length;
+  return `<div class="padd"><div class="pah">추가 작성 · ${esc(U(a.author_id))} <span class="pg">${esc(STEP_WHO[a.step_type]||'')} · ${pdt(a.created_at)}${nf?` · 파일 ${nf}`:''}</span></div><div class="pbody">${at}</div>${ai?`<div class="pimgs">${ai}</div>`:''}</div>`;}).join('');
+ const revN=(DET.revisions||[]).length,lastRev=revN?DET.revisions[revN-1]:null;
+ const body=`<div class="psec"><h4>내용${revN?` <span class="pg">· 결재 중 수정 ${revN}회 (마지막 ${esc(U(lastRev.editor_id))} ${pdt(lastRev.created_at)})</span>`:''}</h4><div class="pbody">${txt||'<p class="pg">—</p>'}</div>${imgs?`<div class="pimgs">${imgs}</div>`:''}${adds}</div>`;
  // 증빙
  const fileRows=DET.files.map(f=>{const pay=f.payment_id?DET.payments.find(p=>same(p.id,f.payment_id)):null;
   return `<tr class="${f.voided_at?'pvoid':''}"><td class="pnw">${esc(f.kind)}</td><td class="ptx">${esc(cut(f.file_name,44))}${f.cfdi_total!=null?` <span class="pg">CFDI ${money(f.cfdi_total)}</span>`:''}${f.voided_at?` <span class="pg">무효: ${esc(cut(f.void_reason,20))}</span>`:''}</td><td class="pnw">${STAGE_L[f.stage]||''}${pay?` ${pay.seq}회`:''}${f.comment_id?' 댓글':''}</td><td class="pnw">${esc(U(f.uploaded_by))} ${pdt(f.uploaded_at,11)}</td></tr>`;});
@@ -1055,7 +1142,35 @@ function drawNotif(){
 const mBtns=(ok,cls)=>`<div class="mbtn"><button class="btn" data-act="mx">취소</button><button class="btn ${cls||'pri'}" data-act="mok">${ok}</button></div>`;
 const upBox=()=>`<div class="fld"><label>첨부 파일</label><div id="pl-m">${pendList(ui.mFiles,'m')}</div><button class="btn sm" style="align-self:flex-start;margin-top:6px" data-act="pick" data-key="m">📎 파일 선택</button></div>`;
 function mdoc(m){return m.id&&(!DET||!same(DET.doc.id,m.id))?LIST.find(x=>same(x.id,m.id)):(DET?DET.doc:null);}
+const LE_TYPES={approve:'중간결재',agree:'합의',pass:'경유',director:'디렉터 결재',pre_ceo:'대표이사 사전승인'};
+function leInit(){
+ const main=DET.lines.filter(l=>l.step_type!=='post_ceo').sort((a,b)=>a.step_order-b.step_order);
+ const LOCK=['done','rejected','flagged','skipped'];
+ const pl=DET.lines.find(l=>l.step_type==='post_ceo');
+ ui.le={locked:main.filter(l=>l.step_type==='draft'||LOCK.includes(l.status)),
+  rows:DET.doc.status==='progress'?main.filter(l=>l.step_type!=='draft'&&!LOCK.includes(l.status)).map(l=>({step_type:l.step_type,user_id:l.user_id,status:l.status})):[],
+  post:pl?pl.user_id:B.settings.ceo_user_id,reason:'',addT:'agree',addU:''};
+}
+function leUserSel(attr,cur,exclude){
+ return `<select ${attr}>${B.users.filter(u=>u.active&&!same(u.id,exclude)).map(u=>`<option value="${u.id}" ${same(u.id,cur)?'selected':''}>${esc(u.name)} · ${esc(u.dept||ROLE_KO[u.role]||u.role)}</option>`).join('')}</select>`;
+}
 const MODALS={
+ lineedit:()=>{const L=ui.le,d=DET.doc,prog=d.status==='progress';
+  return `<h2>결재선 수정</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} — 처리 끝난 단계는 바꿀 수 없습니다. 저장하면 맨 앞 남은 단계부터 다시 진행됩니다.</p>
+  <div>${L.locked.map((l,i)=>`<div class="le-row locked"><span class="no2">${i+1}</span><span class="grow"><b>${SL(l.step_type)}</b> · ${esc(U(l.user_id))}</span><span class="st">${l.status==='done'?'처리 '+pdt(l.acted_at,11):l.status}</span></div>`).join('')}
+  ${L.rows.map((r,i)=>`<div class="le-row"><span class="no2">${L.locked.length+i+1}</span>
+   <select data-le="type" data-i="${i}">${Object.entries(LE_TYPES).map(([k,v])=>`<option value="${k}" ${r.step_type===k?'selected':''}>${v}</option>`).join('')}</select>
+   <span class="grow">${leUserSel(`data-le="user" data-i="${i}"`,r.user_id,d.drafter_id)}</span>
+   ${r.status==='pending'?'<span class="st">현재 차례</span>':''}
+   <button class="x" data-act="leup" data-i="${i}" ${i?'':'disabled'} aria-label="위로">↑</button><button class="x" data-act="ledn" data-i="${i}" ${i<L.rows.length-1?'':'disabled'} aria-label="아래로">↓</button><button class="x" data-act="ledel" data-i="${i}" aria-label="삭제">✕</button></div>`).join('')}</div>
+  ${prog?`<div class="addstep" style="margin:10px 0"><select data-le="addT">${Object.entries(LE_TYPES).map(([k,v])=>`<option value="${k}" ${L.addT===k?'selected':''}>${v}</option>`).join('')}</select>${leUserSel('data-le="addU"',L.addU,d.drafter_id)}<button class="btn sm" data-act="leadd">＋ 단계 추가</button></div>`:'<p class="sub">승인된 문서는 사후승인자만 바꿀 수 있습니다.</p>'}
+  <div class="le-row"><span class="no2">⌁</span><span class="grow"><b>대표이사 사후승인</b> ${leUserSel('data-le="post"',L.post,d.drafter_id)}</span></div>
+  <div class="fld" style="margin-top:10px"><label>사유 (선택 · 이력에 남음)</label><input class="inp" data-le="reason" value="${esc(L.reason)}" placeholder="예: 금액 검토 필요로 재무 합의 추가"></div>
+  <div class="warn info">디렉터 결재는 1개여야 하고, 대표이사 사전승인은 맨 끝에만 둘 수 있습니다. 기안자는 결재선에 넣을 수 없습니다.</div>${mBtns('저장')}`;},
+ addend:()=>`<h2>추가 작성</h2><p class="sub">${esc(DET.doc.doc_no)} · 원문은 그대로 두고 아래에 덧붙입니다. 그림은 붙여넣기(Ctrl+V)·끌어놓기로 넣을 수 있습니다.</p>
+  <div style="text-align:right;margin-bottom:4px"><button class="btn sm" data-act="edimgad">🖼 그림 넣기</button></div>
+  <div id="adEd" class="ed" contenteditable="true" data-ph="의견, 추가 내용, 보완 설명 등"></div>
+  <div style="margin-top:8px">${upBox()}</div>${mBtns('등록')}`,
  approve:m=>{const d=mdoc(m),t=m.title||'승인';return `<h2>${t}</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} · ${money(m.post?d.actual_total:d.planned_total)}</p><div class="fld"><label>의견 (선택)</label><textarea class="inp" id="mMemo" placeholder="의견은 타임라인에 기록됩니다"></textarea></div>${mBtns(t)}`;},
  reject:m=>{const d=mdoc(m),ag=m.agree;return `<h2>${ag?'반대 (반려)':'반려'}</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)}</p><div class="fld"><label>${ag?'반대':'반려'} 사유 <span class="req">*</span></label><textarea class="inp" id="mMemo" placeholder="보완해야 할 내용을 구체적으로 적어 주세요"></textarea></div>${upBox()}<div class="warn">기안자 ${esc(U(d.drafter_id))}에게 반려 알림이 사유와 함께 전송됩니다.</div>${mBtns(ag?'반대':'반려','danger')}`;},
  exec:m=>{const d=DET.doc,p=DET.payments.find(x=>same(x.id,m.pid)),n1=DET.payments.length,usd=d.currency==='USD';
@@ -1081,10 +1196,19 @@ const MODALS={
  name:m=>`<h2>${esc(m.title)}</h2><div class="fld"><label>이름</label><input class="inp" id="mNo" value="${esc(m.value||'')}" placeholder="예: 교육·세미나"></div>${mBtns(m.ok||'저장')}`
 };
 function openModal(kind,o){ui.modal=Object.assign({kind},o||{});ui.mFiles=[];$('#modalCard').innerHTML=MODALS[kind](ui.modal);$('#modal').classList.remove('hidden');const f=$('#modalCard textarea,#modalCard input:not([type=checkbox])');if(f&&window.matchMedia&&window.matchMedia('(min-width:761px)').matches)f.focus();}
+function leRedraw(){if(ui.modal&&ui.modal.kind==='lineedit')$('#modalCard').innerHTML=MODALS.lineedit(ui.modal);}
 function closeModal(){ui.modal=null;ui.mFiles=[];$('#modal').classList.add('hidden');}
 function confirmBox(title,msg,fn,ok,cls){openModal('confirm',{title,msg,fn,ok,cls});}
 const tid=m=>m.id||DET.doc.id;
 const OK={
+ async lineedit(){const L=ui.le;
+  await api('PUT',`/api/approvals/${DET.doc.id}/lines`,{steps:L.rows.map(r=>({step_type:r.step_type,user_id:Number(r.user_id)})),post_user_id:Number(L.post),reason:L.reason});
+  toast('결재선을 수정했습니다');},
+ async addend(){const ed=$('#adEd'),nodes=ed?serializeEd(ed):[];
+  if(!nodes.length&&!ui.mFiles.length){toast('내용이나 파일을 넣어 주세요');return false;}
+  const r=await api('POST',`/api/approvals/${DET.doc.id}/addenda`,{body_rich:nodes,with_files:ui.mFiles.length>0});
+  if(ui.mFiles.length)await uploadFiles(DET.doc.id,ui.mFiles,null,null,r.id);
+  toast('추가 작성을 등록했습니다');},
  async approve(m){await api('POST',`/api/approvals/${tid(m)}/act`,{action:'approve',comment:val('#mMemo')});toast('처리되었습니다');},
  async reject(m){const memo=val('#mMemo');if(!memo){toast('사유를 입력하세요');return false;}if(ui.mFiles.length)await uploadFiles(tid(m),ui.mFiles);await api('POST',`/api/approvals/${tid(m)}/act`,{action:'reject',comment:memo});toast('반려되었습니다 · 기안자에게 알림');},
  async exec(m){const amt=r2(val('#mAmt')),date=val('#mDate');if(!(amt>0)||!date){toast('실적 금액과 지급일을 입력하세요');return false;}
@@ -1129,6 +1253,15 @@ const H={
  reject(a){const id=a.dataset.id?Number(a.dataset.id):null;const mine=!id&&DET?DET.lines.find(l=>l.status==='pending'&&same(l.user_id,B.me.id)):null;openModal('reject',{id,agree:mine&&mine.step_type==='agree'});},
  exec(a){const pid=a.dataset.pid?Number(a.dataset.pid):(DET.payments.find(p=>p.status==='planned')||{}).id;if(!pid){toast('집행할 회차가 없습니다');return;}openModal('exec',{pid});},
  pskip(a){openModal('pskip',{pid:Number(a.dataset.pid)});},
+ lineedit(){leInit();openModal('lineedit');},
+ leadd(){const L=ui.le,u=Number(L.addU||($('[data-le="addU"]')||{}).value);if(!u){toast('사용자를 고르세요');return;}L.rows.push({step_type:L.addT,user_id:u});leRedraw();},
+ ledel(a){ui.le.rows.splice(Number(a.dataset.i),1);leRedraw();},
+ leup(a){const i=Number(a.dataset.i),R=ui.le.rows;if(i>0){[R[i-1],R[i]]=[R[i],R[i-1]];leRedraw();}},
+ ledn(a){const i=Number(a.dataset.i),R=ui.le.rows;if(i<R.length-1){[R[i+1],R[i]]=[R[i],R[i+1]];leRedraw();}},
+ revise(){ui.cd=cdFromDet();ui.cd.revise=true;ui.view='compose';render();window.scrollTo(0,0);},
+ rvcancel(){const id=ui.cd&&ui.cd.id;ui.cd=null;if(id)openDoc(id);else{ui.view='board';render();}},
+ addend(){openModal('addend');},
+ edimgad(){ui.edTarget='adEd';const fp=$('#imgPick');fp.value='';fp.click();},
  ccur(a){ui.cd.currency=a.dataset.v;if(ui.cd.currency==='USD'&&!ui.fx)loadFx();render();},
  cpt(a){const cd=ui.cd,v=a.dataset.v;if(v===cd.payment_type)return;const ed=$('#bodyEd');if(ed)cd.body_nodes=serializeEd(ed);
   if(v==='recurring'&&!(r2(cd.plan.per_sub)>0)&&r2(cd.orig_sub)>0)cd.plan.per_sub=cd.orig_sub;
@@ -1138,7 +1271,7 @@ const H={
  scdel(a){ui.cd.sched.splice(Number(a.dataset.i),1);$('#cSched').innerHTML=schedEditorHtml(ui.cd);updateCompose();},
  sceven(){const cd=ui.cd,c=cdCalc(cd);if(!(c.total>0)){toast('총 소계를 먼저 입력하세요');return;}splitEven(c.total,cd.sched.length).forEach((x,i)=>{cd.sched[i].amount=String(x);});$('#cSched').innerHTML=schedEditorHtml(cd);updateCompose();},
  scadv(){const cd=ui.cd,c=cdCalc(cd);if(!(c.total>0)){toast('총 소계를 먼저 입력하세요');return;}const adv=r2(c.total*0.3);cd.sched=[{due_date:cd.sched[0]?cd.sched[0].due_date:'',amount:String(adv)},{due_date:cd.sched[1]?cd.sched[1].due_date:'',amount:String(r2(c.total-adv))}];$('#cSched').innerHTML=schedEditorHtml(cd);updateCompose();},
- edimg(){const fp=$('#imgPick');fp.value='';fp.click();},
+ edimg(){ui.edTarget='bodyEd';const fp=$('#imgPick');fp.value='';fp.click();},
  bimg(a){const w=window.open('','_blank');if(w){w.document.write('<title>그림</title><body style="margin:0;background:#111;display:grid;place-items:center;min-height:100vh"><img style="max-width:100%" src="'+a.getAttribute('src')+'"></body>');w.document.close();}},
  flag(a){openModal('flag',{id:a.dataset.id?Number(a.dataset.id):null});},
  postclose(a){openModal('postclose',{id:a.dataset.id?Number(a.dataset.id):null});},
@@ -1207,16 +1340,18 @@ document.addEventListener('click',e=>{
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
 // 본문 편집기: 그림 붙여넣기(Ctrl+V) · 끌어놓기 — 서식 있는 붙여넣기는 텍스트로만
 document.addEventListener('paste',e=>{
- if(!e.target.closest||!e.target.closest('#bodyEd'))return;
+ if(!e.target.closest||!e.target.closest('#bodyEd,#adEd'))return;
+ ui.edTarget=e.target.closest('#bodyEd,#adEd').id;
  const dt=e.clipboardData;if(!dt)return;
  const imgs=[...(dt.items||[])].filter(i=>i.kind==='file'&&/^image\//.test(i.type)).map(i=>i.getAsFile()).filter(Boolean);
  e.preventDefault();
  if(imgs.length){edAddImages(imgs);return;}
  edInsertText(dt.getData('text/plain'));
 });
-document.addEventListener('dragover',e=>{if(e.target.closest&&e.target.closest('#bodyEd'))e.preventDefault();});
+document.addEventListener('dragover',e=>{if(e.target.closest&&e.target.closest('#bodyEd,#adEd'))e.preventDefault();});
 document.addEventListener('drop',e=>{
- if(!e.target.closest||!e.target.closest('#bodyEd'))return;
+ if(!e.target.closest||!e.target.closest('#bodyEd,#adEd'))return;
+ ui.edTarget=e.target.closest('#bodyEd,#adEd').id;
  const files=[...((e.dataTransfer&&e.dataTransfer.files)||[])];if(!files.length)return;
  e.preventDefault();edAddImages(files);
 });
@@ -1226,6 +1361,7 @@ document.addEventListener('input',e=>{
  const t=e.target;
  if(t.dataset.f&&ui.cd){ui.cd[t.dataset.f]=t.value;updateCompose();}
  if(t.dataset.pl&&ui.cd){ui.cd.plan[t.dataset.pl]=t.value;updateCompose();}
+ if(t.dataset.le==='reason'&&ui.le)ui.le.reason=t.value;
  if(t.dataset.sc&&ui.cd){ui.cd.sched[Number(t.dataset.i)][t.dataset.sc]=t.value;updateCompose();}
  if(t.id==='bodyEd'&&ui.cd){clearTimeout(ui.edT);ui.edT=setTimeout(()=>{if(ui.cd&&$('#bodyEd'))ui.cd.body_nodes=serializeEd($('#bodyEd'));},300);}
  if(t.id==='q'){ui.q=t.value;const lb=$('#listBody');if(lb)lb.innerHTML=listHtml();}
@@ -1233,6 +1369,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
  const t=e.target;
  if(t.id==='ivaOn'&&ui.cd){ui.cd.iva_applied=t.checked;updateCompose();}
+ else if(t.dataset.le&&ui.le){const k=t.dataset.le;if(k==='type')ui.le.rows[Number(t.dataset.i)].step_type=t.value;else if(k==='user')ui.le.rows[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='post')ui.le.post=Number(t.value);else if(k==='addT')ui.le.addT=t.value;else if(k==='addU')ui.le.addU=Number(t.value);}
  else if(t.dataset.kind){getArr(t.dataset.kind)[Number(t.dataset.i)].kind=t.value;}
  else if(t.id==='catSel'){ui.cat=t.value;render();}
  else if(t.id==='noEvid'){ui.noEvid=t.checked;render();}
