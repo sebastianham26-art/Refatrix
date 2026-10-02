@@ -805,6 +805,39 @@ test('E E2E — 디렉터 결재선 수정 · 결재자 내용 수정/반려/추
     await pool.query(readFileSync(new URL('../migrations/0248_e_approval_pending_at.sql', import.meta.url), 'utf8'));
     const bf = (await item(w2)).current_parts[0].since;
     assert.ok(Math.abs(Date.now() - Date.parse(bf) - 2 * 864e5) < 60000, '백필 = 기안 처리 시각(2일 전)');
+
+    // ⑬ 0249 디렉터 문서 삭제 · 삭제 목록 · 복구
+    const k1 = (await ok('oscar', 'POST', '/api/approvals', form)).id;
+    await ok('oscar', 'POST', `/api/approvals/${k1}/submit`);              // Maria 차례
+    assert.equal((await call('maria', 'POST', `/api/approvals/${k1}/delete`, { reason: 'x' })).code, 403, '디렉터만');
+    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k1}/delete`, {})).body.error, 'memo_required');
+    const k0 = (await ok('sebastian', 'POST', '/api/approvals', form)).id;
+    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k0}/delete`, { reason: 'x' })).body.detail, 'draft_use_delete');
+    await ok('sebastian', 'POST', `/api/approvals/${k1}/delete`, { reason: '중복 작성' });
+    assert.ok(!(await ok('sebastian', 'GET', '/api/approvals')).items.some((x) => x.id === k1), '게시판에서 사라짐');
+    assert.equal((await call('oscar', 'GET', `/api/approvals/${k1}`)).code, 404);
+    assert.equal((await call('maria', 'POST', `/api/approvals/${k1}/act`, { action: 'approve' })).code, 404, '삭제된 문서는 결재 불가');
+    assert.ok(!(await ok('maria', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === k1), '처리 요청 알림 정리');
+    const on = (await ok('oscar', 'GET', '/api/approvals/notifications')).items.find((x) => x.document_id === k1 && x.kind === '문서 삭제');
+    assert.ok(on && on.memo === '중복 작성' && on.doc_deleted === true, '기안자에게 삭제 알림(사유)');
+    assert.equal((await call('oscar', 'GET', '/api/approvals/deleted')).code, 403);
+    const dl = (await ok('sebastian', 'GET', '/api/approvals/deleted')).items.find((x) => x.id === k1);
+    assert.equal(dl.delete_reason, '중복 작성'); assert.equal(dl.deleted_by_name, 'Sebastian'); assert.equal(dl.status, 'progress');
+    // 집행 끝난 문서도 삭제 가능 → 리포트에서 빠짐
+    const repBefore = JSON.stringify(await ok('sebastian', 'GET', '/api/approvals/report'));
+    await ok('sebastian', 'POST', `/api/approvals/${nx}/delete`, { reason: '테스트' });
+    const repAfter = JSON.stringify(await ok('sebastian', 'GET', '/api/approvals/report'));
+    assert.notEqual(repBefore, repAfter, '리포트 숫자에서 빠짐');
+    // 복구 → 같은 상태로 돌아오고 지금 차례(Maria)에게 다시 알림
+    assert.equal((await call('maria', 'POST', `/api/approvals/${k1}/restore`)).code, 403);
+    await ok('sebastian', 'POST', `/api/approvals/${k1}/restore`);
+    it = await item(k1);
+    assert.equal(it.stage, 'progress'); assert.equal(it.current_parts[0].who, 'Maria');
+    assert.ok((await ok('maria', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === k1 && x.kind === '결재 요청'));
+    assert.ok((await ok('sebastian', 'GET', `/api/approvals/${k1}`)).events.some((e) => e.action === 'restore'));
+    assert.ok(!(await ok('sebastian', 'GET', '/api/approvals/deleted')).items.some((x) => x.id === k1));
+    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k1}/restore`)).code, 404, '삭제 안 된 문서 복구 불가');
+    await ok('maria', 'POST', `/api/approvals/${k1}/act`, { action: 'approve' });
   } finally {
     await app.close();
   }

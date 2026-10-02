@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20261002fa<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20261002fb<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
 });
 
@@ -258,6 +258,27 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     s.click(s.$('[data-act="nav"][data-v="report"]'));
     await s.until(() => s.$('.tbl tbody tr') && s.w.eval('REP'));
     assert.match(s.$('#app').textContent, /완결성 점검/);
+
+    // 0249 디렉터 문서 삭제(사유 필수) → 「삭제된 문서」 → 복구
+    assert.ok(!o.act('docdel'), '직원은 문서 삭제 버튼 없음');
+    await s.w.eval(`openDoc(${docId})`);
+    await s.until(() => s.w.eval('DET') && s.w.eval('DET.doc.id') === docId && s.act('docdel'));
+    s.click(s.act('docdel'));
+    await s.until(() => s.$('#modalCard #mMemo'));
+    s.click(s.act('mok'));
+    await s.idle();
+    assert.ok(s.w.eval('ui.modal'), '사유 없으면 삭제 안 됨');
+    s.$('#mMemo').value = 'UI 테스트 삭제';
+    s.click(s.act('mok'));
+    await s.until(() => s.w.eval('ui.view') === 'board' && !s.w.eval('LIST').some((x) => x.id === docId));
+    s.click(s.$('[data-act="flt"][data-v="deleted"]'));
+    await s.until(() => s.$(`[data-act="restore"][data-id="${docId}"]`));
+    assert.match(s.$('#listBody').textContent, /UI 테스트 삭제/);
+    s.click(s.$(`[data-act="restore"][data-id="${docId}"]`));
+    await s.until(() => s.$('#modalCard') && /문서 복구/.test(s.$('#modalCard').textContent));
+    s.click(s.act('mok'));
+    await s.until(() => s.w.eval('LIST').some((x) => x.id === docId) && !s.$(`[data-act="restore"][data-id="${docId}"]`));
+    s.click(s.$('[data-act="flt"][data-v="all"]'));
 
     // ⑧ 0237 — USD 환산 미리보기 · 정기 지급 일정 · 분할 합계 · 본문 그림 · 회차 집행
     const today = new Date().toISOString().slice(0, 10);

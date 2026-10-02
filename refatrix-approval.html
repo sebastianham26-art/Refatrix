@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261002fa</title>
+<title>Refatrix ERP · 전자결재 · b20261002fb</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -430,7 +430,7 @@ function flagsOf(d){
 async function loadBoot(){B=await api('GET','/api/approvals/bootstrap');$('#bellCnt').textContent=B.unread||'';}
 async function loadList(){LIST=(await api('GET','/api/approvals')).items;}
 async function refreshBell(){try{NOTIFS=(await api('GET','/api/approvals/notifications')).items;$('#bellCnt').textContent=NOTIFS.filter(n=>!n.read_at).length||'';}catch(e){}}
-async function reload(){await loadList();if(ui.view==='detail'&&ui.docId){try{DET=await api('GET','/api/approvals/'+ui.docId);}catch(e){DET=null;ui.view='board';}}if(ui.view==='report')await loadReport();render();refreshBell();}
+async function reload(){await loadList();if(ui.flt==='deleted'&&B.me.isDirector)await loadDels();if(ui.view==='detail'&&ui.docId){try{DET=await api('GET','/api/approvals/'+ui.docId);}catch(e){DET=null;ui.view='board';}}if(ui.view==='report')await loadReport();render();refreshBell();}
 async function loadReport(){REP=await api('GET','/api/approvals/report'+(ui.mon?('?month='+encodeURIComponent(ui.mon)):''));ui.mon=REP.month;}
 
 /* ═════════ 탭 ═════════ */
@@ -455,6 +455,7 @@ function renderBoard(){
  const execM=LIST.filter(d=>d.exec_status==='done'&&(d.exec_date||'').startsWith(mon)),postw=LIST.filter(d=>d.exec_status==='done'&&d.post_status!=='confirmed');
  const boxes=[['todo',m.isFinance?'결재·집행할 문서':'처리할 문서',todo.length],['mine','내가 올린 문서',LIST.filter(d=>same(d.drafter_id,m.id)).length],['ref','참조·공람',LIST.filter(d=>d.is_ref).length],['all','전체',LIST.length]];
  const F=[['all','전체'],['draft','임시저장'],['progress','결재중'],['pre','사전승인 대기'],['execwait','집행대기'],['postwait','사후승인 대기'],['flagged','이의제기'],['closed','완결'],['rejected','반려']];
+ if(m.isDirector)F.push(['deleted','🗑 삭제된 문서']);
  return `
  <div class="kpis">
   <button class="card kpi ${todo.length?'hot':''}" data-act="kpi" data-b="todo" data-f="all"><small>내가 처리할 문서</small><b>${todo.length}건</b><em>결재·합의·집행·소명</em></button>
@@ -486,7 +487,24 @@ function filtered(){
  if(q)a=a.filter(d=>[d.doc_no,d.title,d.vendor,d.drafter_name,catName(d.category_id)].join(' ').toLowerCase().includes(q));
  return a;
 }
+// 0249 삭제된 문서(디렉터) — 열람 대신 삭제 정보와 복구 버튼만
+function delListHtml(){
+ if(!ui.dels)return '<div class="loading">불러오는 중…</div>';
+ const q=ui.q.trim().toLowerCase();
+ const a=ui.dels.filter(d=>!q||[d.doc_no,d.title,d.vendor,d.drafter_name,d.delete_reason].join(' ').toLowerCase().includes(q));
+ if(!a.length)return '<div class="empty">삭제된 문서가 없습니다</div>';
+ return a.map(d=>`<div class="row del-row" data-id="${d.id}">
+ <div class="c-no"><div class="no">${esc(d.doc_no||'—')}</div><span class="bdg b-gray">${esc(catName(d.category_id))}</span></div>
+ <div class="c-ttl"><div class="ttl">${esc(d.title)}</div><div class="sub">${esc(d.vendor||'')}</div><div class="sub flag">삭제 사유: ${esc(d.delete_reason||'')}</div></div>
+ <div class="c-who">${esc(d.drafter_name||'')}</div>
+ <div class="c-amt amt">${money(d.planned_total)}${d.currency==='USD'?`<small class="sub">US${money(d.orig_total)}</small>`:''}</div>
+ <div class="c-st"><span class="bdg b-red">삭제됨</span> <span class="sub">${esc(({progress:'결재중',approved:'승인',rejected:'반려'})[d.status]||d.status)}</span></div>
+ <div class="c-cur sub">${esc(d.deleted_by_name||'')}<br>${tm(d.deleted_at)}</div>
+ <div class="c-dt"><button class="btn sm" data-act="restore" data-id="${d.id}">↺ 복구</button></div></div>`).join('');
+}
+async function loadDels(){ui.dels=(await api('GET','/api/approvals/deleted')).items;}
 function listHtml(){
+ if(ui.flt==='deleted')return delListHtml();
  const a=filtered();
  if(!a.length)return `<div class="empty">${LIST.length?'해당하는 문서가 없습니다':'아직 문서가 없습니다 — 「작성」 탭에서 첫 품의를 올려 보세요'}</div>`;
  const tol=B.settings.variance_tolerance_pct;
@@ -561,7 +579,7 @@ function fileRow(f,d){
   ${f.voided_at?`<div class="fm">무효 처리 · ${esc(U(f.voided_by))} · ${tm(f.voided_at)} · ${esc(f.void_reason)}</div>`:''}
  </div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button>${f.can_delete?`<button class="btn sm danger" data-act="fdel" data-fid="${f.id}">삭제</button>`:''}${f.can_void?`<button class="btn sm danger" data-act="fvoid" data-fid="${f.id}">무효</button>`:''}</div></div>`;
 }
-const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단',exec_skip:'집행 생략 · 예정 금액으로 집행완료',delete:'임시저장 삭제'};
+const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단',exec_skip:'집행 생략 · 예정 금액으로 집행완료',delete:'삭제',restore:'복구'};
 function timeline(){
  const it=[];
  DET.events.forEach(e=>it.push({k:'ev',at:e.created_at,e}));
@@ -601,6 +619,7 @@ function actionsHtml(){
  if(a.includes('submit'))b.push(btn('submitd','상신','pri'));
  if(a.includes('resubmit'))b.push(btn('resubmit','수정 후 재기안','pri'));
  if(d.status==='draft'&&same(d.drafter_id,B.me.id))b.unshift(btn('deldraft','🗑 임시저장 삭제','danger'));
+ if(B.me.isDirector&&d.status!=='draft')b.push(btn('docdel','🗑 문서 삭제','danger'));
  return b.join('');
 }
 function renderDetail(){
@@ -1187,7 +1206,7 @@ async function printDoc(){
 /* ═════════ 알림 ═════════ */
 function drawNotif(){
  $('#notifPanel').innerHTML=`<div class="nh"><span>알림</span><button class="btn sm ghost" data-act="nall">모두 읽음</button></div>`+
- (NOTIFS.length?NOTIFS.map(n=>`<div class="ni ${n.read_at?'':'unread'}" data-act="nopen" data-id="${n.id}" data-doc="${n.document_id}"><b>${esc(n.kind)}</b> · <span class="no">${esc(n.doc_no||'임시저장')}</span><div>${esc(n.title||'')}</div>${n.memo?`<div class="m">“${esc(n.memo)}”</div>`:''}<div class="m">${tm(n.created_at)}</div></div>`).join(''):'<div class="empty">알림이 없습니다</div>');
+ (NOTIFS.length?NOTIFS.map(n=>`<div class="ni ${n.read_at?'':'unread'}" data-act="nopen" data-id="${n.id}" data-doc="${n.document_id}" data-del="${n.doc_deleted?1:''}"><b>${esc(n.kind)}</b> · <span class="no">${esc(n.doc_no||'임시저장')}</span><div>${esc(n.title||'')}</div>${n.memo?`<div class="m">“${esc(n.memo)}”</div>`:''}<div class="m">${tm(n.created_at)}</div></div>`).join(''):'<div class="empty">알림이 없습니다</div>');
 }
 
 /* ═════════ 모달 ═════════ */
@@ -1222,6 +1241,11 @@ const MODALS={
   <div class="le-row"><span class="no2">⌁</span><span class="grow"><b>대표이사 사후승인</b> ${leUserSel('data-le="post"',L.post,d.drafter_id)}</span></div>
   <div class="fld" style="margin-top:10px"><label>사유 (선택 · 이력에 남음)</label><input class="inp" data-le="reason" value="${esc(L.reason)}" placeholder="예: 금액 검토 필요로 재무 합의 추가"></div>
   <div class="warn info">디렉터 결재는 1개여야 하고, 대표이사 사전승인은 맨 끝에만 둘 수 있습니다. 기안자는 결재선에 넣을 수 없습니다.</div>${mBtns('저장')}`;},
+ docdel:()=>{const d=DET.doc,paid=DET.payments.filter(p=>p.status==='done').length;
+  return `<h2>문서 삭제</h2><p class="sub">${esc(d.doc_no||'')} · ${esc(d.title)} · ${money(d.planned_total)}</p>
+  <div class="warn">게시판·결재함·리포트에서 사라지고, 기안자 ${esc(U(d.drafter_id))}에게 사유와 함께 알림이 갑니다. 처리 대기 알림도 정리됩니다.${paid?`<br>이미 집행된 회차가 ${paid}건 있습니다 — 전자결재 집행실적 리포트에서도 빠집니다.`:''}</div>
+  <div class="fld"><label>삭제 사유 <span class="req">*</span></label><input class="inp" id="mMemo" placeholder="예: 중복 작성, 테스트 문서"></div>
+  <p class="sub">완전히 지우지 않습니다. 게시판 「🗑 삭제된 문서」에서 언제든 복구할 수 있습니다.</p>${mBtns('삭제','danger')}`;},
  addend:()=>`<h2>추가 작성</h2><p class="sub">${esc(DET.doc.doc_no)} · 원문은 그대로 두고 아래에 덧붙입니다. 그림은 붙여넣기(Ctrl+V)·끌어놓기로 넣을 수 있습니다.</p>
   <div style="text-align:right;margin-bottom:4px"><button class="btn sm" data-act="edimgad">🖼 그림 넣기</button></div>
   <div id="adEd" class="ed" contenteditable="true" data-ph="의견, 추가 내용, 보완 설명 등"></div>
@@ -1259,6 +1283,8 @@ const OK={
  async lineedit(){const L=ui.le;
   const r=await api('PUT',`/api/approvals/${DET.doc.id}/lines`,{steps:L.rows.map(r=>({step_type:r.step_type,user_id:Number(r.user_id)})),post_user_id:Number(L.post),reason:L.reason,...(DET.doc.exec_status==='done'?{}:{exec_required:!!L.exec})});
   toast(r.reopened?'결재선을 수정했습니다 · 다시 결재중으로 돌아갔습니다':r.auto_exec?'결재선을 수정했습니다 · 집행 생략 → 사후승인 대기':'결재선을 수정했습니다');},
+ async docdel(){const r=val('#mMemo');if(!r){toast('삭제 사유를 입력하세요');return false;}
+  await api('POST',`/api/approvals/${DET.doc.id}/delete`,{reason:r});ui.view='board';ui.docId=null;DET=null;toast('삭제했습니다 · 「삭제된 문서」에서 복구할 수 있습니다');},
  async addend(){const ed=$('#adEd'),nodes=ed?serializeEd(ed):[];
   if(!nodes.length&&!ui.mFiles.length){toast('내용이나 파일을 넣어 주세요');return false;}
   const r=await api('POST',`/api/approvals/${DET.doc.id}/addenda`,{body_rich:nodes,with_files:ui.mFiles.length>0});
@@ -1292,13 +1318,15 @@ const H={
    session={token:d.token,api:apiUrl,user:d.user};try{sessionStorage.setItem('refatrix_session',JSON.stringify(session));}catch(e){}start();}catch(e){$('#loginMsg').textContent='서버에 연결할 수 없습니다';}},
  async nav(a){ui.view=a.dataset.v;if(ui.view==='compose'&&!ui.cd)ui.cd=newCd();if(ui.view==='report'){REP=null;render();await run(loadReport);}render();window.scrollTo(0,0);},
  box(a){ui.box=a.dataset.v;render();},
- flt(a){ui.flt=a.dataset.v;render();},
+ async flt(a){ui.flt=a.dataset.v;if(ui.flt==='deleted'){ui.dels=null;render();await run(loadDels);}render();},
+ restore(a){const id=Number(a.dataset.id),d=(ui.dels||[]).find(x=>same(x.id,id));confirmBox('문서 복구',`${d?d.doc_no+' · '+d.title:''}\n삭제 전 상태 그대로 게시판에 다시 나타나고, 지금 차례인 사람에게 다시 알림이 갑니다.`,async()=>{await api('POST',`/api/approvals/${id}/restore`);toast('복구했습니다');});},
+ docdel(){openModal('docdel');},
  kpi(a){ui.box=a.dataset.b;ui.flt=a.dataset.f;render();},
  open(a){openDoc(a.dataset.id);},
  openid(a){openDoc(a.dataset.id);},
  back(){ui.view='board';DET=null;render();},
  async bell(){const p=$('#notifPanel');if(p.classList.contains('hidden')){await refreshBell();drawNotif();p.classList.remove('hidden');}else p.classList.add('hidden');},
- async nopen(a){$('#notifPanel').classList.add('hidden');try{await api('POST','/api/approvals/notifications/read',{ids:[Number(a.dataset.id)]});}catch(e){}openDoc(a.dataset.doc);},
+ async nopen(a){$('#notifPanel').classList.add('hidden');try{await api('POST','/api/approvals/notifications/read',{ids:[Number(a.dataset.id)]});}catch(e){}if(a.dataset.del){toast('삭제된 문서입니다');refreshBell();return;}openDoc(a.dataset.doc);},
  async nall(){await run(()=>api('POST','/api/approvals/notifications/read',{all:true}));await refreshBell();drawNotif();},
  approve(a){const id=a.dataset.id?Number(a.dataset.id):null;let title='승인',post=false;
   const d=id?LIST.find(x=>same(x.id,id)):DET.doc;

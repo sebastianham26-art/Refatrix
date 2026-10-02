@@ -484,6 +484,64 @@ export default async function approvalRoutes(app) {
     });
   });
 
+  // ── 0249 디렉터 문서 삭제 · 삭제 목록 · 복구 ────────────────────────────
+  //   임시저장 외 모든 상태(결재중·승인·반려·완결). 사유 필수. 숨김 처리라 복구 가능.
+  //   예정/실적은 재무제표에 반영하지 않으므로 숨겨도 다른 화면 숫자는 바뀌지 않는다(전자결재 리포트에서만 빠짐).
+  app.post('/api/approvals/:id/delete', guard, async (req, reply) => {
+    const id = Number(req.params.id);
+    const reason = cleanText(req.body?.reason, 500)?.trim();
+    if (!reason) return fail(reply, 'memo_required');
+    return tx(reply, async (q) => {
+      const settings = await loadSettings(q);
+      const ctx = ctxOf(req, settings);
+      if (!ctx.isDirector) throw new Stop('director_only');
+      const b = await loadBundle(q, id, true);
+      if (!b) throw new Stop('not_found');
+      if (b.doc.status === 'draft') throw new Stop('bad_state', { detail: 'draft_use_delete' });   // 임시저장은 기안자가 삭제
+      await q(`UPDATE approval_documents SET deleted_at=now(), deleted_by=$2, delete_reason=$3, updated_at=now() WHERE id=$1`, [id, ctx.uid, reason]);
+      await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL`, [id]);
+      await event(q, id, ctx.uid, 'delete', null, `문서 삭제 (${b.doc.doc_no || '—'} · 상태 ${stageKey(b.doc, b.lines)})\n사유: ${reason}`);
+      await notify(q, b.doc.drafter_id, id, '문서 삭제', reason, ctx.uid);
+      return { ok: true, doc_no: b.doc.doc_no };
+    });
+  });
+  app.get('/api/approvals/deleted', guard, async (req, reply) => {
+    const settings = await loadSettings(query);
+    const ctx = ctxOf(req, settings);
+    if (!ctx.isDirector) return fail(reply, 'director_only');
+    const users = await loadUsers(query);
+    const uname = (v) => (v == null ? null : (users.get(Number(v)) || {}).name || '—');
+    const rows = (await query(
+      `SELECT ${DOC_COLS}, d.deleted_at, d.deleted_by, d.delete_reason FROM approval_documents d
+        WHERE d.deleted_at IS NOT NULL AND d.status <> 'draft' ORDER BY d.deleted_at DESC LIMIT 200`)).rows.map(normDoc);
+    return {
+      items: rows.map((d) => ({
+        id: d.id, doc_no: d.doc_no, title: d.title, vendor: d.vendor, category_id: d.category_id, drafter_id: d.drafter_id, drafter_name: uname(d.drafter_id),
+        status: d.status, exec_status: d.exec_status, post_status: d.post_status, planned_total: d.planned_total, actual_total: d.actual_total,
+        currency: d.currency, orig_total: d.orig_total, submitted_at: d.submitted_at,
+        deleted_at: d.deleted_at, deleted_by: d.deleted_by == null ? null : Number(d.deleted_by), deleted_by_name: uname(d.deleted_by), delete_reason: d.delete_reason,
+      })),
+    };
+  });
+  app.post('/api/approvals/:id/restore', guard, async (req, reply) => {
+    const id = Number(req.params.id);
+    return tx(reply, async (q) => {
+      const settings = await loadSettings(q);
+      const ctx = ctxOf(req, settings);
+      if (!ctx.isDirector) throw new Stop('director_only');
+      const d = (await q(`SELECT id, doc_no, drafter_id, status, deleted_at FROM approval_documents WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+      if (!d || !d.deleted_at || d.status === 'draft') throw new Stop('not_found');
+      await q(`UPDATE approval_documents SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL, updated_at=now() WHERE id=$1`, [id]);
+      await event(q, id, ctx.uid, 'restore', null, '삭제한 문서 복구');
+      await notify(q, Number(d.drafter_id), id, '문서 복구', null, ctx.uid);
+      // 복구 후 지금 차례인 사람에게 다시 알림(삭제 때 안 읽은 알림을 지웠으므로)
+      const b = await loadBundle(q, id, false);
+      for (const l of b.lines.filter((x) => x.status === 'pending')) await notify(q, l.user_id, id, REQUEST_KIND[l.step_type], '복구된 문서', ctx.uid);
+      if (b.doc.status === 'approved' && b.doc.exec_status === 'pending' && settings.finance_user_id) await notify(q, settings.finance_user_id, id, '집행 대기', '복구된 문서', ctx.uid);
+      return { ok: true };
+    });
+  });
+
   // ── 상신 ─────────────────────────────────────────────────────────────
   app.post('/api/approvals/:id/submit', guard, async (req, reply) => {
     const id = Number(req.params.id), uid = Number(req.ctx.perm.userId);
@@ -1118,9 +1176,9 @@ export default async function approvalRoutes(app) {
   // ── 알림 ─────────────────────────────────────────────────────────────
   app.get('/api/approvals/notifications', guard, async (req) => {
     const rows = (await query(
-      `SELECT x.id, x.document_id, x.kind, x.memo, x.created_at, x.read_at, d.doc_no, d.title
+      `SELECT x.id, x.document_id, x.kind, x.memo, x.created_at, x.read_at, d.doc_no, d.title, (d.deleted_at IS NOT NULL) AS doc_deleted
          FROM approval_notifications x JOIN approval_documents d ON d.id=x.document_id
-        WHERE x.user_id=$1 AND d.deleted_at IS NULL ORDER BY x.created_at DESC, x.id DESC LIMIT 100`, [req.ctx.perm.userId])).rows;
+        WHERE x.user_id=$1 AND (d.deleted_at IS NULL OR x.kind='문서 삭제') ORDER BY x.created_at DESC, x.id DESC LIMIT 100`, [req.ctx.perm.userId])).rows;
     return { items: rows.map((r) => ({ ...r, id: Number(r.id), document_id: Number(r.document_id) })) };
   });
   app.post('/api/approvals/notifications/read', guard, async (req) => {
