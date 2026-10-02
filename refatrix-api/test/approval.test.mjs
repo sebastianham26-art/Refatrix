@@ -806,14 +806,20 @@ test('E E2E — 디렉터 결재선 수정 · 결재자 내용 수정/반려/추
     const bf = (await item(w2)).current_parts[0].since;
     assert.ok(Math.abs(Date.now() - Date.parse(bf) - 2 * 864e5) < 60000, '백필 = 기안 처리 시각(2일 전)');
 
-    // ⑬ 0249 디렉터 문서 삭제 · 삭제 목록 · 복구
+    // ⑬ 0249 디렉터 문서 삭제(사유 + PIN) · 삭제 목록 · 복구
+    const { hashPin } = await import('../src/auth.js');
+    await pool.query(`UPDATE users SET pin_hash=$2 WHERE id=$1`, [U.sebastian.id, hashPin('2468')]);
     const k1 = (await ok('oscar', 'POST', '/api/approvals', form)).id;
     await ok('oscar', 'POST', `/api/approvals/${k1}/submit`);              // Maria 차례
-    assert.equal((await call('maria', 'POST', `/api/approvals/${k1}/delete`, { reason: 'x' })).code, 403, '디렉터만');
-    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k1}/delete`, {})).body.error, 'memo_required');
+    assert.equal((await call('maria', 'POST', `/api/approvals/${k1}/delete`, { reason: 'x', pin: '2468' })).code, 403, '디렉터만');
+    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k1}/delete`, { pin: '2468' })).body.error, 'memo_required');
+    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k1}/delete`, { reason: 'x' })).body.error, 'pin_required');
+    const badPin = await call('sebastian', 'POST', `/api/approvals/${k1}/delete`, { reason: 'x', pin: '0000' });
+    assert.equal(badPin.code, 403); assert.equal(badPin.body.error, 'bad_pin');
+    assert.ok((await ok('sebastian', 'GET', '/api/approvals')).items.some((x) => x.id === k1), 'PIN 틀리면 삭제 안 됨');
     const k0 = (await ok('sebastian', 'POST', '/api/approvals', form)).id;
-    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k0}/delete`, { reason: 'x' })).body.detail, 'draft_use_delete');
-    await ok('sebastian', 'POST', `/api/approvals/${k1}/delete`, { reason: '중복 작성' });
+    assert.equal((await call('sebastian', 'POST', `/api/approvals/${k0}/delete`, { reason: 'x', pin: '2468' })).body.detail, 'draft_use_delete');
+    await ok('sebastian', 'POST', `/api/approvals/${k1}/delete`, { reason: '중복 작성', pin: '2468' });
     assert.ok(!(await ok('sebastian', 'GET', '/api/approvals')).items.some((x) => x.id === k1), '게시판에서 사라짐');
     assert.equal((await call('oscar', 'GET', `/api/approvals/${k1}`)).code, 404);
     assert.equal((await call('maria', 'POST', `/api/approvals/${k1}/act`, { action: 'approve' })).code, 404, '삭제된 문서는 결재 불가');
@@ -825,7 +831,7 @@ test('E E2E — 디렉터 결재선 수정 · 결재자 내용 수정/반려/추
     assert.equal(dl.delete_reason, '중복 작성'); assert.equal(dl.deleted_by_name, 'Sebastian'); assert.equal(dl.status, 'progress');
     // 집행 끝난 문서도 삭제 가능 → 리포트에서 빠짐
     const repBefore = JSON.stringify(await ok('sebastian', 'GET', '/api/approvals/report'));
-    await ok('sebastian', 'POST', `/api/approvals/${nx}/delete`, { reason: '테스트' });
+    await ok('sebastian', 'POST', `/api/approvals/${nx}/delete`, { reason: '테스트', pin: '2468' });
     const repAfter = JSON.stringify(await ok('sebastian', 'GET', '/api/approvals/report'));
     assert.notEqual(repBefore, repAfter, '리포트 숫자에서 빠짐');
     // 복구 → 같은 상태로 돌아오고 지금 차례(Maria)에게 다시 알림

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261002fb</title>
+<title>Refatrix ERP · 전자결재 · b20261002fc</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -376,7 +376,7 @@ const val=s=>{const el=$(s);return el?el.value.trim():'';};
 const same=(a,b)=>a!=null&&b!=null&&Number(a)===Number(b);
 function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),2800);}
 
-const ERRMSG={not_your_turn:'이미 처리되었거나 내 차례가 아닙니다',bad_state:'현재 상태에서는 할 수 없습니다',memo_required:'사유를 입력하세요',
+const ERRMSG={bad_pin:'PIN이 올바르지 않습니다',pin_required:'PIN을 입력하세요',not_your_turn:'이미 처리되었거나 내 차례가 아닙니다',bad_state:'현재 상태에서는 할 수 없습니다',memo_required:'사유를 입력하세요',
  exec_evidence_required:'Factura(XML/PDF) 또는 송금증이 1건 이상 필요합니다',director_unset:'설정에서 디렉터 결재자를 먼저 지정해야 합니다',
  ceo_unset:'설정에서 대표이사 계정을 먼저 지정해야 합니다',too_large:'20MB를 넘는 파일입니다',bad_type:'지원하지 않는 파일 형식입니다',
  director_only:'디렉터만 할 수 있습니다',forbidden:'권한이 없습니다',not_found:'문서를 찾을 수 없거나 열람 권한이 없습니다',
@@ -1245,6 +1245,7 @@ const MODALS={
   return `<h2>문서 삭제</h2><p class="sub">${esc(d.doc_no||'')} · ${esc(d.title)} · ${money(d.planned_total)}</p>
   <div class="warn">게시판·결재함·리포트에서 사라지고, 기안자 ${esc(U(d.drafter_id))}에게 사유와 함께 알림이 갑니다. 처리 대기 알림도 정리됩니다.${paid?`<br>이미 집행된 회차가 ${paid}건 있습니다 — 전자결재 집행실적 리포트에서도 빠집니다.`:''}</div>
   <div class="fld"><label>삭제 사유 <span class="req">*</span></label><input class="inp" id="mMemo" placeholder="예: 중복 작성, 테스트 문서"></div>
+  <div class="fld"><label>내 PIN (로그인 PIN) <span class="req">*</span></label><input class="inp" id="mPin" type="password" inputmode="numeric" autocomplete="current-password" style="max-width:180px" placeholder="••••"></div>
   <p class="sub">완전히 지우지 않습니다. 게시판 「🗑 삭제된 문서」에서 언제든 복구할 수 있습니다.</p>${mBtns('삭제','danger')}`;},
  addend:()=>`<h2>추가 작성</h2><p class="sub">${esc(DET.doc.doc_no)} · 원문은 그대로 두고 아래에 덧붙입니다. 그림은 붙여넣기(Ctrl+V)·끌어놓기로 넣을 수 있습니다.</p>
   <div style="text-align:right;margin-bottom:4px"><button class="btn sm" data-act="edimgad">🖼 그림 넣기</button></div>
@@ -1283,8 +1284,8 @@ const OK={
  async lineedit(){const L=ui.le;
   const r=await api('PUT',`/api/approvals/${DET.doc.id}/lines`,{steps:L.rows.map(r=>({step_type:r.step_type,user_id:Number(r.user_id)})),post_user_id:Number(L.post),reason:L.reason,...(DET.doc.exec_status==='done'?{}:{exec_required:!!L.exec})});
   toast(r.reopened?'결재선을 수정했습니다 · 다시 결재중으로 돌아갔습니다':r.auto_exec?'결재선을 수정했습니다 · 집행 생략 → 사후승인 대기':'결재선을 수정했습니다');},
- async docdel(){const r=val('#mMemo');if(!r){toast('삭제 사유를 입력하세요');return false;}
-  await api('POST',`/api/approvals/${DET.doc.id}/delete`,{reason:r});ui.view='board';ui.docId=null;DET=null;toast('삭제했습니다 · 「삭제된 문서」에서 복구할 수 있습니다');},
+ async docdel(){const r=val('#mMemo'),pin=($('#mPin')||{}).value||'';if(!r){toast('삭제 사유를 입력하세요');return false;}if(!pin){toast('PIN을 입력하세요');$('#mPin').focus();return false;}
+  try{await api('POST',`/api/approvals/${DET.doc.id}/delete`,{reason:r,pin});}catch(e){if(e&&e.error==='bad_pin'){toast('PIN이 올바르지 않습니다');const p=$('#mPin');if(p){p.value='';p.focus();}return false;}throw e;}ui.view='board';ui.docId=null;DET=null;toast('삭제했습니다 · 「삭제된 문서」에서 복구할 수 있습니다');},
  async addend(){const ed=$('#adEd'),nodes=ed?serializeEd(ed):[];
   if(!nodes.length&&!ui.mFiles.length){toast('내용이나 파일을 넣어 주세요');return false;}
   const r=await api('POST',`/api/approvals/${DET.doc.id}/addenda`,{body_rich:nodes,with_files:ui.mFiles.length>0});

@@ -6,6 +6,7 @@
 import { query, withTx } from '../db.js';
 import { getUsdMxnRate } from '../fx.js';
 import { authGuard } from '../middleware/authGuard.js';
+import { verifyPin } from '../auth.js';
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
   n, round2, sameId, decodeApprovalFile, sha256Hex, parseCfdi, guessKind, normKind, calcAmounts,
@@ -195,7 +196,7 @@ async function applyAdvance(q, bundle, actorId, settings, { silent } = {}) {
 
 const ERR = {
   not_found: 404, forbidden: 403, not_your_turn: 409, bad_state: 409, memo_required: 400, bad_input: 400,
-  director_unset: 409, ceo_unset: 409, exec_evidence_required: 400, director_only: 403, fx_unavailable: 409,
+  director_unset: 409, ceo_unset: 409, exec_evidence_required: 400, director_only: 403, fx_unavailable: 409, bad_pin: 403, pin_required: 400,
 };
 function fail(reply, code, extra) {
   return reply.code(ERR[code] || 400).send({ error: code, ...(extra || {}) });
@@ -490,11 +491,16 @@ export default async function approvalRoutes(app) {
   app.post('/api/approvals/:id/delete', guard, async (req, reply) => {
     const id = Number(req.params.id);
     const reason = cleanText(req.body?.reason, 500)?.trim();
+    const pin = String(req.body?.pin ?? '');
     if (!reason) return fail(reply, 'memo_required');
+    if (!pin) return fail(reply, 'pin_required');
     return tx(reply, async (q) => {
       const settings = await loadSettings(q);
       const ctx = ctxOf(req, settings);
       if (!ctx.isDirector) throw new Stop('director_only');
+      // 0249b 삭제는 본인 PIN 재확인(로그인 PIN)
+      const me = (await q(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [ctx.uid])).rows[0];
+      if (!me || !verifyPin(pin, me.pin_hash)) throw new Stop('bad_pin');
       const b = await loadBundle(q, id, true);
       if (!b) throw new Stop('not_found');
       if (b.doc.status === 'draft') throw new Stop('bad_state', { detail: 'draft_use_delete' });   // 임시저장은 기안자가 삭제

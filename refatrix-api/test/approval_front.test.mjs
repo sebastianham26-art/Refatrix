@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20261002fb<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20261002fc<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
 });
 
@@ -259,7 +259,9 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     await s.until(() => s.$('.tbl tbody tr') && s.w.eval('REP'));
     assert.match(s.$('#app').textContent, /완결성 점검/);
 
-    // 0249 디렉터 문서 삭제(사유 필수) → 「삭제된 문서」 → 복구
+    // 0249 디렉터 문서 삭제(사유 + PIN) → 「삭제된 문서」 → 복구
+    const { hashPin } = await import('../src/auth.js');
+    await pool.query(`UPDATE users SET pin_hash=$2 WHERE id=$1`, [U.sebastian.id, hashPin('2468')]);
     assert.ok(!o.act('docdel'), '직원은 문서 삭제 버튼 없음');
     await s.w.eval(`openDoc(${docId})`);
     await s.until(() => s.w.eval('DET') && s.w.eval('DET.doc.id') === docId && s.act('docdel'));
@@ -269,6 +271,16 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     await s.idle();
     assert.ok(s.w.eval('ui.modal'), '사유 없으면 삭제 안 됨');
     s.$('#mMemo').value = 'UI 테스트 삭제';
+    assert.ok(s.$('#mPin') && s.$('#mPin').type === 'password', 'PIN 입력칸');
+    s.click(s.act('mok'));
+    await s.idle();
+    assert.ok(s.w.eval('ui.modal'), 'PIN 없으면 삭제 안 됨');
+    s.$('#mPin').value = '0000';
+    s.click(s.act('mok'));
+    await s.until(() => s.$('#mPin') && s.$('#mPin').value === '');
+    assert.ok(s.w.eval('ui.modal'), 'PIN 틀리면 창 유지');
+    assert.ok(s.w.eval('LIST').some((x) => x.id === docId));
+    s.$('#mPin').value = '2468';
     s.click(s.act('mok'));
     await s.until(() => s.w.eval('ui.view') === 'board' && !s.w.eval('LIST').some((x) => x.id === docId));
     s.click(s.$('[data-act="flt"][data-v="deleted"]'));
