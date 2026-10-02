@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261002eg</title>
+<title>Refatrix ERP · 전자결재 · b20261002eh</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -246,6 +246,9 @@ details.revs summary{cursor:pointer;color:var(--brand);font-weight:600}
 .revt pre{white-space:pre-wrap;font:inherit;margin:2px 0 6px;padding:6px;background:#fff;border:1px solid #ece6d8;border-radius:6px;text-decoration:none}
 .le-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px dashed #e6dfd0}
 .le-row.locked{opacity:.6}
+.le-row.exec{background:#fbf6e6;border-radius:8px;padding:6px 8px;margin-top:4px;border-bottom:0}
+.le-row.exec.off{background:#f3f1ec;color:#8a857a}
+.lp.fixed.off{text-decoration:line-through;opacity:.6}
 .le-row .no2{width:20px;color:var(--mute);font-size:12px;text-align:right}
 .le-row select{min-height:34px;padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:#fff}
 .le-row .grow{flex:1;min-width:0}
@@ -493,6 +496,7 @@ function stampBox(l){
 }
 // 축소 결재선 — 상세 제목 오른쪽. 칸: 단계 · 이름 · 도장 · 날짜
 const SL_SHORT={draft:'기안',approve:'결재',agree:'합의',pass:'경유',director:'디렉터',pre_ceo:'대표 사전',post_ceo:'대표 사후'};
+const execState=d=>d.status==='rejected'?'skipped':d.exec_status==='done'?'done':d.exec_status==='pending'?'pending':'waiting';
 function miniStamp(lb,name,status,mark,at,title,cls){
  return `<td class="ms ${status} ${cls||''}" title="${esc(title||'')}"><div class="ml">${lb}</div><div class="mn">${esc(name)}</div><div class="mk"><span>${mark||''}</span></div><div class="mt">${at?pdt(at,11):''}</div></td>`;
 }
@@ -501,16 +505,17 @@ function miniStampsHtml(d,lines){
  const cell=l=>{const mk=l.status==='done'?sealText(l):l.status==='rejected'?(l.step_type==='agree'?'반대':'반려'):l.status==='flagged'?'이의':l.status==='pending'?'대기':'';
   return miniStamp(SL_SHORT[l.step_type]||SL(l.step_type),U(l.user_id),l.status,mk,l.acted_at,`${SL(l.step_type)} · ${U(l.user_id)}${l.comment?'\n'+l.comment:''}`,l.step_type==='pre_ceo'||l.step_type==='post_ceo'?'ceo':'');};
  const main=lines.filter(l=>l.step_type!=='post_ceo').map(cell);
- const es=d.status==='rejected'?'skipped':d.exec_status==='done'?'done':d.exec_status==='pending'?'pending':'waiting';
- main.push(miniStamp('집행',d.exec_by?U(d.exec_by):U(B.settings.finance_user_id),es,({done:'집행',pending:'대기'})[es]||'',d.exec_at,'집행 (재무)','exec'));
+ const es=execState(d);
+ main.push(d.exec_required===false?miniStamp('집행','없음','skipped','생략',null,'집행 단계 없음 — 승인 시 예정 금액으로 집행완료','exec'):miniStamp('집행',d.exec_by?U(d.exec_by):U(B.settings.finance_user_id),es,({done:'집행',pending:'대기'})[es]||'',d.exec_at,'집행 (재무)','exec'));
  const pl=lines.find(l=>l.step_type==='post_ceo');if(pl)main.push(cell(pl));
  return `<table class="mstamps"><tr>${main.join('')}</tr></table>`;
 }
 function stampsHtml(d,lines){
  if(!lines.length)return '<p class="sub" style="margin:0">상신하면 결재선이 확정됩니다.</p>';
  const main=lines.filter(l=>l.step_type!=='post_ceo').map(stampBox);
- const es=d.status==='rejected'?'skipped':d.exec_status==='done'?'done':d.exec_status==='pending'?'pending':'waiting';
- main.push(`<div class="stp exec"><div class="lb">집행 (재무)</div><div class="nm">${esc(d.exec_by?U(d.exec_by):U(B.settings.finance_user_id))}</div><div class="seal ${es}">${({done:'집행',pending:'대기중',waiting:'예정',skipped:'—'})[es]}</div>${d.exec_at?tm(d.exec_at):'<span class="t">—</span>'}</div>`);
+ const es=execState(d);
+ main.push(d.exec_required===false?`<div class="stp exec"><div class="lb">집행 (재무)</div><div class="nm">없음</div><div class="seal skipped">생략</div><span class="t">${d.exec_status==='done'?'예정=실적':'—'}</span></div>`
+  :`<div class="stp exec"><div class="lb">집행 (재무)</div><div class="nm">${esc(d.exec_by?U(d.exec_by):U(B.settings.finance_user_id))}</div><div class="seal ${es}">${({done:'집행',pending:'대기중',waiting:'예정',skipped:'—'})[es]}</div>${d.exec_at?tm(d.exec_at):'<span class="t">—</span>'}</div>`);
  const pl=lines.find(l=>l.step_type==='post_ceo');if(pl)main.push(stampBox(pl));
  return `<div class="stamps">${main.join('<span class="arrow">›</span>')}</div>`;
 }
@@ -541,7 +546,7 @@ function fileRow(f,d){
   ${f.voided_at?`<div class="fm">무효 처리 · ${esc(U(f.voided_by))} · ${tm(f.voided_at)} · ${esc(f.void_reason)}</div>`:''}
  </div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button>${f.can_delete?`<button class="btn sm danger" data-act="fdel" data-fid="${f.id}">삭제</button>`:''}${f.can_void?`<button class="btn sm danger" data-act="fvoid" data-fid="${f.id}">무효</button>`:''}</div></div>`;
 }
-const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단'};
+const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단',exec_skip:'집행 생략 · 예정 금액으로 집행완료',delete:'임시저장 삭제'};
 function timeline(){
  const it=[];
  DET.events.forEach(e=>it.push({k:'ev',at:e.created_at,e}));
@@ -580,7 +585,7 @@ function actionsHtml(){
  if(a.includes('edit'))b.push(btn('edit','편집',''));
  if(a.includes('submit'))b.push(btn('submitd','상신','pri'));
  if(a.includes('resubmit'))b.push(btn('resubmit','수정 후 재기안','pri'));
- if(d.status==='draft'&&!d.doc_no&&same(d.drafter_id,B.me.id))b.unshift(btn('deldraft','임시저장 삭제','danger'));
+ if(d.status==='draft'&&same(d.drafter_id,B.me.id))b.unshift(btn('deldraft','🗑 임시저장 삭제','danger'));
  return b.join('');
 }
 function renderDetail(){
@@ -761,7 +766,7 @@ function edInsertText(text){
 /* ─── 작성 ─── */
 function newCd(){return{id:null,category_id:'',title:'',vendor:'',pay_due:'',pay_method:'계좌이체',orig_sub:'',iva_applied:true,currency:'MXN',payment_type:'once',
  plan:{freq:'weekly',count:4,start:todayMX(),per_sub:''},sched:[{due_date:'',amount:''},{due_date:'',amount:''}],body_nodes:[],
- refs:[],shares:[],include_finance:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null};}
+ refs:[],shares:[],include_finance:true,exec:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null};}
 function cdFromDet(){
  const d=DET.doc,plan=d.payment_plan||{};
  return{id:d.id,category_id:d.category_id||'',title:d.title,vendor:d.vendor||'',pay_due:d.pay_due||'',pay_method:d.pay_method||'계좌이체',
@@ -770,7 +775,7 @@ function cdFromDet(){
   sched:d.payment_type==='installment'?DET.payments.map(p=>({due_date:p.due_date||'',amount:String(p.planned_amount)})):[{due_date:'',amount:''},{due_date:'',amount:''}],
   body_nodes:DET.body_nodes||[],
   refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
-  include_finance:d.include_finance,steps:Array.isArray(d.custom_steps)?d.custom_steps.map(x=>({...x})):null,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
+  include_finance:d.include_finance,exec:d.exec_required!==false,steps:Array.isArray(d.custom_steps)?d.custom_steps.map(x=>({...x})):null,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
   fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:''};
 }
 // 문서 통화 기준 금액 → { sub, iva, total, per, count, rows:[{due_date,amount}] }
@@ -807,7 +812,15 @@ function csEditorHtml(cd){
   <button class="x" data-act="csup" data-i="${i}" ${i?'':'disabled'} aria-label="위로">↑</button><button class="x" data-act="csdn" data-i="${i}" ${i<st.length-1?'':'disabled'} aria-label="아래로">↓</button><button class="x" data-act="csdel" data-i="${i}" aria-label="삭제">✕</button></div>`).join('')}
  <div class="addstep" style="margin-top:8px">${tsel('data-cs="addT"',ui.csAddT||'agree')}${usel('data-cs="addU"',ui.csAddU||B.settings.finance_user_id)}<button class="btn sm" data-act="csadd">＋ 단계 추가</button>
   ${B.settings.finance_user_id&&!st.some(x=>x.step_type==='agree'&&same(x.user_id,B.settings.finance_user_id))?`<button class="btn sm le-btn" data-act="csfin">＋ 재무 합의 (${esc(U(B.settings.finance_user_id))})</button>`:''}</div>
- ${st.length?'':'<p class="sub" style="margin:6px 0 0">내 결재 뒤 단계가 없으면 상신 즉시 승인완료(집행대기)됩니다. 기준액 이상이면 대표이사 사전승인은 자동으로 붙습니다.</p>'}`;
+ ${execRowHtml(cd.exec,'csexec')}
+ ${st.length?'':`<p class="sub" style="margin:6px 0 0">내 결재 뒤 단계가 없으면 상신 즉시 승인완료${cd.exec?'(집행대기)':''}됩니다. 기준액 이상이면 대표이사 사전승인은 자동으로 붙습니다.</p>`}`;
+}
+// 집행(재무) 단계 넣기/빼기 한 줄 — 작성 화면·결재선 수정 공용
+function execRowHtml(on,act,lockedMsg){
+ const fin=B.settings.finance_user_id?U(B.settings.finance_user_id):'재무';
+ if(lockedMsg)return `<div class="le-row exec ${on?'':'off'} locked"><span class="no2">₩</span><span class="grow"><b>집행 (재무)</b> · ${on?esc(fin):'없음'}</span><span class="st">${esc(lockedMsg)}</span></div>`;
+ return on?`<div class="le-row exec"><span class="no2">₩</span><span class="grow"><b>집행 (재무)</b> · ${esc(fin)} — 승인 후 회차별 집행 처리(실적·증빙)</span><button class="btn sm" data-act="${act}" data-on="0">✕ 집행 빼기</button></div>`
+  :`<div class="le-row exec off"><span class="no2">₩</span><span class="grow"><b>집행 단계 없음</b> — 승인되면 예정 금액으로 바로 집행완료 처리되고 대표이사 사후승인으로 넘어갑니다</span><button class="btn sm le-btn" data-act="${act}" data-on="1">＋ 재무 집행 (${esc(fin)})</button></div>`;
 }
 function csRedraw(){const el=$('#csEd');if(el&&ui.cd)el.innerHTML=csEditorHtml(ui.cd);updateCompose();}
 function previewLines(cd){
@@ -879,7 +892,7 @@ ${cd.revise?` <div class="card sec"><h3>수정 사유 <span class="sub">선택</
   <div class="lineprev" id="lprev"></div><div id="ceoNote"></div>
   <div class="form" style="margin-top:12px">${peopleFld('refs','참조 (진행 중 열람)')}${peopleFld('shares','공람 (승인 후 공유)')}</div>
  </div>
- <div class="abar"><button class="btn" data-act="csave">임시저장</button><button class="btn pri" data-act="csubmit">상신</button></div>`}`;
+ <div class="abar">${cd.id?'<button class="btn danger" data-act="deldraft">🗑 삭제</button>':''}<button class="btn" data-act="csave">임시저장</button><button class="btn pri" data-act="csubmit">상신</button></div>`}`;
 }
 function updateCompose(){
  const cd=ui.cd;if(!cd||!$('#lprev'))return;
@@ -898,7 +911,7 @@ function updateCompose(){
  const fxEl=$('#cFx');if(fxEl)fxEl.innerHTML=fx.rate?`환산 <b>${money(r2(c.total*fx.rate))} MXN</b> · USD 1 = MXN ${fx.rate} <span class="sub">(${esc(fx.label)})</span>`:esc(fx.label);
  const p=previewLines(cd),parts=[];
  p.ls.forEach(l=>{
-  if(l.t==='post_ceo')parts.push('<span class="lp fixed"><small>집행</small>재무</span>');
+  if(l.t==='post_ceo')parts.push(cd.exec!==false?'<span class="lp fixed"><small>집행</small>재무</span>':'<span class="lp fixed off" title="집행 단계 없음"><small>집행</small>생략</span>');
   parts.push(`<span class="lp ${l.t==='pre_ceo'?'ceo':''} ${l.t==='post_ceo'?'ceo post':''}"><small>${SL(l.t)}</small>${esc(l.u==null?'(미지정)':U(l.u))}${same(l.u,B.me.id)&&l.t!=='draft'?' (본인)':''}</span>`);
  });
  $('#lprev').innerHTML=parts.join('<span class="arrow">›</span>');
@@ -925,7 +938,8 @@ async function saveCd(submit){
   payment_plan:cd.payment_type==='recurring'?{freq:cd.plan.freq,count:c.count,start:cd.plan.start,per_sub:r2(cd.plan.per_sub)}:null,
   schedule:cd.payment_type==='installment'?c.rows.map(r=>({due_date:r.due_date||null,amount:r.amount})):null,
   body_rich:cd.body_nodes,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance,
-  custom_steps:B.me.isDirector&&!cd.revise?cdSteps(cd).map(x=>({step_type:x.step_type,user_id:Number(x.user_id)})):undefined};
+  custom_steps:B.me.isDirector&&!cd.revise?cdSteps(cd).map(x=>({step_type:x.step_type,user_id:Number(x.user_id)})):undefined,
+  exec_required:B.me.isDirector&&!cd.revise?cd.exec!==false:undefined};
  try{
   if(cd.revise){
    const r=await api('PUT',`/api/approvals/${cd.id}/content`,{...body,reason:cd.reason||''});
@@ -1065,8 +1079,8 @@ function printSheetHtml(){
  const stp=l=>{const s=l.status,mk=s==='done'?sealText(l):s==='rejected'?(l.step_type==='agree'?'반대':'반려'):s==='flagged'?'이의':s==='pending'?'대기':s==='skipped'?'—':'';
   return `<td class="pst-c ${s}"><div class="pl">${SL(l.step_type).replace('대표이사 ','대표 ')}</div><div class="pn">${esc(U(l.user_id))}</div><div class="pm">${mk}</div><div class="pt">${l.acted_at?pdt(l.acted_at,11):''}</div></td>`;};
  const main=DET.lines.filter(l=>l.step_type!=='post_ceo'),pl=DET.lines.find(l=>l.step_type==='post_ceo');
- const es=d.status==='rejected'?'skipped':d.exec_status==='done'?'done':d.exec_status==='pending'?'pending':'waiting';
- const execCell=`<td class="pst-c ${es}"><div class="pl">집행 (재무)</div><div class="pn">${esc(U(d.exec_by||S.finance_user_id))}</div><div class="pm">${({done:'집행',pending:'대기',waiting:'',skipped:'—'})[es]}</div><div class="pt">${d.exec_at?pdt(d.exec_at,11):''}</div></td>`;
+ const es=d.exec_required===false?'skipped':execState(d);
+ const execCell=d.exec_required===false?`<td class="pst-c skipped"><div class="pl">집행 (재무)</div><div class="pn">없음</div><div class="pm">생략</div><div class="pt"></div></td>`:`<td class="pst-c ${es}"><div class="pl">집행 (재무)</div><div class="pn">${esc(U(d.exec_by||S.finance_user_id))}</div><div class="pm">${({done:'집행',pending:'대기',waiting:'',skipped:'—'})[es]}</div><div class="pt">${d.exec_at?pdt(d.exec_at,11):''}</div></td>`;
  const stamps=DET.lines.length?`<table class="pst"><tr>${main.map(stp).join('')}${execCell}${pl?stp(pl):''}</tr></table>`:'<div class="pnote">상신 전 문서 — 결재선 미확정</div>';
  // 정보(4열)
  const done=DET.payments.filter(p=>p.status==='done'),open=DET.payments.filter(p=>p.status==='planned');
@@ -1172,7 +1186,7 @@ function leInit(){
  const pl=DET.lines.find(l=>l.step_type==='post_ceo');
  ui.le={locked:main.filter(l=>l.step_type==='draft'||LOCK.includes(l.status)),
   rows:DET.doc.status==='progress'?main.filter(l=>l.step_type!=='draft'&&!LOCK.includes(l.status)).map(l=>({step_type:l.step_type,user_id:l.user_id,status:l.status})):[],
-  post:pl?pl.user_id:B.settings.ceo_user_id,reason:'',addT:'agree',addU:''};
+  post:pl?pl.user_id:B.settings.ceo_user_id,reason:'',addT:'agree',addU:'',exec:DET.doc.exec_required!==false};
 }
 function leUserSel(attr,cur,exclude){
  return `<select ${attr}>${B.users.filter(u=>u.active&&!same(u.id,exclude)).map(u=>`<option value="${u.id}" ${same(u.id,cur)?'selected':''}>${esc(u.name)} · ${esc(u.dept||ROLE_KO[u.role]||u.role)}</option>`).join('')}</select>`;
@@ -1188,6 +1202,8 @@ const MODALS={
    ${r.status==='pending'?'<span class="st">현재 차례</span>':''}
    <button class="x" data-act="leup" data-i="${i}" ${i?'':'disabled'} aria-label="위로">↑</button><button class="x" data-act="ledn" data-i="${i}" ${i<L.rows.length-1?'':'disabled'} aria-label="아래로">↓</button><button class="x" data-act="ledel" data-i="${i}" aria-label="삭제">✕</button></div>`).join('')}</div>
   ${prog?`<div class="addstep" style="margin:10px 0"><select data-le="addT">${Object.entries(LE_TYPES).map(([k,v])=>`<option value="${k}" ${L.addT===k?'selected':''}>${v}</option>`).join('')}</select>${leUserSel('data-le="addU"',L.addU,d.drafter_id)}<button class="btn sm" data-act="leadd">＋ 단계 추가</button></div>`:'<p class="sub">집행이 끝난 문서는 사후승인자만 바꿀 수 있습니다.</p>'}
+  ${d.exec_status==='done'?execRowHtml(d.exec_required!==false,'leexec',d.exec_required===false?'생략됨':'집행 완료'):execRowHtml(L.exec,'leexec')}
+  ${!L.exec&&d.exec_required!==false&&d.status==='approved'&&d.exec_status==='pending'?'<div class="warn">저장하면 재무 집행 없이 <b>바로 집행완료</b>(예정 금액)로 처리되고 대표이사 사후승인으로 넘어갑니다.</div>':''}
   <div class="le-row"><span class="no2">⌁</span><span class="grow"><b>대표이사 사후승인</b> ${leUserSel('data-le="post"',L.post,d.drafter_id)}</span></div>
   <div class="fld" style="margin-top:10px"><label>사유 (선택 · 이력에 남음)</label><input class="inp" data-le="reason" value="${esc(L.reason)}" placeholder="예: 금액 검토 필요로 재무 합의 추가"></div>
   <div class="warn info">디렉터 결재는 1개여야 하고, 대표이사 사전승인은 맨 끝에만 둘 수 있습니다. 기안자는 결재선에 넣을 수 없습니다.</div>${mBtns('저장')}`;},
@@ -1226,8 +1242,8 @@ function confirmBox(title,msg,fn,ok,cls){openModal('confirm',{title,msg,fn,ok,cl
 const tid=m=>m.id||DET.doc.id;
 const OK={
  async lineedit(){const L=ui.le;
-  const r=await api('PUT',`/api/approvals/${DET.doc.id}/lines`,{steps:L.rows.map(r=>({step_type:r.step_type,user_id:Number(r.user_id)})),post_user_id:Number(L.post),reason:L.reason});
-  toast(r.reopened?'결재선을 수정했습니다 · 다시 결재중으로 돌아갔습니다':'결재선을 수정했습니다');},
+  const r=await api('PUT',`/api/approvals/${DET.doc.id}/lines`,{steps:L.rows.map(r=>({step_type:r.step_type,user_id:Number(r.user_id)})),post_user_id:Number(L.post),reason:L.reason,...(DET.doc.exec_status==='done'?{}:{exec_required:!!L.exec})});
+  toast(r.reopened?'결재선을 수정했습니다 · 다시 결재중으로 돌아갔습니다':r.auto_exec?'결재선을 수정했습니다 · 집행 생략 → 사후승인 대기':'결재선을 수정했습니다');},
  async addend(){const ed=$('#adEd'),nodes=ed?serializeEd(ed):[];
   if(!nodes.length&&!ui.mFiles.length){toast('내용이나 파일을 넣어 주세요');return false;}
   const r=await api('POST',`/api/approvals/${DET.doc.id}/addenda`,{body_rich:nodes,with_files:ui.mFiles.length>0});
@@ -1288,6 +1304,8 @@ const H={
  csadd(){const st=cdSteps(ui.cd),t=($('[data-cs="addT"]')||{}).value||'agree',u=Number(($('[data-cs="addU"]')||{}).value);if(!u){toast('사람을 고르세요');return;}
   if(st.some(x=>x.step_type===t&&same(x.user_id,u))){toast('이미 있는 단계입니다');return;}
   const pi=st.findIndex(x=>x.step_type==='pre_ceo');if(t!=='pre_ceo'&&pi>=0)st.splice(pi,0,{step_type:t,user_id:u});else st.push({step_type:t,user_id:u});ui.csAddT=t;ui.csAddU=u;csRedraw();},
+ csexec(a){ui.cd.exec=a.dataset.on==='1';csRedraw();},
+ leexec(a){ui.le.exec=a.dataset.on==='1';leRedraw();},
  csfin(){const st=cdSteps(ui.cd),f={step_type:'agree',user_id:B.settings.finance_user_id},pi=st.findIndex(x=>x.step_type==='pre_ceo');if(pi>=0)st.splice(pi,0,f);else st.push(f);csRedraw();},
  csdel(a){cdSteps(ui.cd).splice(Number(a.dataset.i),1);csRedraw();},
  csup(a){const i=Number(a.dataset.i),R=cdSteps(ui.cd);if(i>0){[R[i-1],R[i]]=[R[i],R[i-1]];csRedraw();}},
@@ -1309,7 +1327,8 @@ const H={
  withdraw(){confirmBox('회수','문서를 회수하면 임시저장 상태로 돌아가고 결재선이 초기화됩니다.',async()=>{await api('POST',`/api/approvals/${DET.doc.id}/withdraw`);toast('회수되었습니다');},'회수','danger');},
  edit(){ui.cd=cdFromDet();ui.view='compose';render();window.scrollTo(0,0);},
  async submitd(){const id=DET.doc.id;await run(async()=>{const r=await api('POST',`/api/approvals/${id}/submit`);toast('상신되었습니다 · '+r.doc_no);});await loadList();openDoc(id);},
- deldraft(){confirmBox('임시저장 삭제','이 임시저장 문서를 삭제합니다.',async()=>{await api('DELETE',`/api/approvals/${DET.doc.id}`);ui.view='board';DET=null;toast('삭제되었습니다');},'삭제','danger');},
+ deldraft(){const id=ui.view==='compose'&&ui.cd?ui.cd.id:DET&&DET.doc.id,no=ui.view==='compose'&&ui.cd?ui.cd.doc_no:DET&&DET.doc.doc_no;if(!id)return;
+  confirmBox('임시저장 삭제',`이 임시저장 문서를 삭제합니다. 첨부한 증빙도 함께 사라지고 되돌릴 수 없습니다.${no?`\n문서번호 ${no}는 결번으로 남습니다.`:''}`,async()=>{await api('DELETE',`/api/approvals/${id}`);ui.view='board';ui.cd=null;DET=null;toast('삭제되었습니다');},'삭제','danger');},
  async resubmit(){const old=DET.doc.doc_no;const r=await run(()=>api('POST',`/api/approvals/${DET.doc.id}/resubmit`));if(!r)return;DET=await api('GET','/api/approvals/'+r.id);ui.cd=cdFromDet();ui.view='compose';await loadList();render();window.scrollTo(0,0);toast(`${old} 내용을 불러왔습니다 · 고친 뒤 상신하세요`);},
  upfile(){openModal('upload');},
  link(){openModal('link');},

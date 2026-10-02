@@ -6,6 +6,7 @@
 //              → 재무 집행(실적 입력) → 대표이사 사후승인 → 완결
 //   디렉터 기안: 템플릿 대신 「재무 합의 포함」 토글(include_finance). 본인 결재 칸은 자동 완료.
 //   대표이사 기안: 사전승인 생략, 사후승인은 디렉터가 한다(자기 문서 자기 확인 방지).
+//   0247 집행 단계 넣기/빼기(exec_required): 빼면 승인완료 시 예정 금액으로 집행완료 → 바로 사후승인(라우트 autoExecute).
 import { createHash } from 'node:crypto';
 import { cleanFileName } from './txnFiles.js';
 

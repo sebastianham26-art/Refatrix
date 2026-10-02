@@ -300,7 +300,7 @@ test('C E2E — 기안·결재·집행·사후승인·이의·반려·재기안�
     await ok('luis', 'POST', `/api/approvals/${d6}/submit`);
     await ok('luis', 'POST', `/api/approvals/${d6}/withdraw`);
     assert.equal((await ok('luis', 'GET', `/api/approvals/${d6}`)).doc.status, 'draft');
-    assert.equal((await call('luis', 'DELETE', `/api/approvals/${d6}`)).code, 409, '번호 받은 문서는 삭제 불가');
+    assert.equal((await call('oscar', 'DELETE', `/api/approvals/${d6}`)).code, 404, '남의 임시저장은 삭제 불가');   // 0247: 회수해 번호 있는 임시저장도 기안자는 삭제 가능(⑪)
     const d7 = (await ok('luis', 'POST', '/api/approvals', { title: '메모' })).id;
     assert.equal((await call('luis', 'POST', `/api/approvals/${d7}/submit`)).body.detail, 'category_required');
     await ok('luis', 'DELETE', `/api/approvals/${d7}`);
@@ -704,6 +704,76 @@ test('E E2E — 디렉터 결재선 수정 · 결재자 내용 수정/반려/추
     const cs3 = (await ok('sebastian', 'POST', '/api/approvals', { ...form, title: '디렉터 기안 · 단독', custom_steps: [] })).id;
     await ok('sebastian', 'POST', `/api/approvals/${cs3}/submit`);
     assert.equal((await ok('sebastian', 'GET', `/api/approvals/${cs3}`)).doc.status, 'approved');
+    assert.equal((await ok('sebastian', 'GET', `/api/approvals/${cs3}`)).doc.exec_required, true, '기본값은 집행 있음');
+
+    // ⑨ 0247 작성 중 집행(재무) 빼기 → 상신 즉시 승인 + 예정 금액으로 집행완료 → 사후승인 대기(재무 집행 대기 알림 없음)
+    const nx = (await ok('sebastian', 'POST', '/api/approvals', { ...form, title: '디렉터 기안 · 집행 없음', custom_steps: [], exec_required: false })).id;
+    assert.equal((await ok('sebastian', 'GET', `/api/approvals/${nx}`)).doc.exec_required, false);
+    await ok('sebastian', 'POST', `/api/approvals/${nx}/submit`);
+    let nd = await ok('sebastian', 'GET', `/api/approvals/${nx}`);
+    assert.equal(nd.doc.status, 'approved'); assert.equal(nd.doc.exec_status, 'done'); assert.equal(nd.doc.post_status, 'pending');
+    assert.equal(nd.doc.actual_total, nd.doc.planned_total); assert.equal(nd.doc.exec_by, null);
+    assert.ok(nd.payments.every((p) => p.status === 'done' && p.actual_mxn === p.planned_mxn));
+    assert.ok(nd.events.some((e) => e.action === 'exec_skip'));
+    assert.equal(nd.lines.find((l) => l.step_type === 'post_ceo').status, 'pending');
+    assert.ok(!(await ok('christopher', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === nx && x.kind === '집행 대기'));
+    assert.ok((await ok('jang', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === nx && x.kind === '사후승인 요청'));
+    // 합의가 있으면 합의 끝난 뒤(승인 시점)에 자동 집행완료
+    const nx2 = (await ok('sebastian', 'POST', '/api/approvals', { ...form, title: '집행 없음 + 합의', custom_steps: [{ step_type: 'agree', user_id: U.christopher.id }], exec_required: false })).id;
+    await ok('sebastian', 'POST', `/api/approvals/${nx2}/submit`);
+    assert.equal((await ok('sebastian', 'GET', `/api/approvals/${nx2}`)).doc.exec_status, 'none');
+    await ok('christopher', 'POST', `/api/approvals/${nx2}/act`, { action: 'approve' });
+    assert.equal((await ok('sebastian', 'GET', `/api/approvals/${nx2}`)).doc.exec_status, 'done');
+    // 직원은 exec_required 를 보내도 무시
+    const ex = (await ok('oscar', 'POST', '/api/approvals', { ...form, exec_required: false })).id;
+    assert.equal((await ok('oscar', 'GET', `/api/approvals/${ex}`)).doc.exec_required, true);
+
+    // ⑩ 결재선 수정에서 집행 넣기/빼기
+    //   승인완료·집행대기(cs3) → 빼기 → 즉시 집행완료 · 재무 '집행 대기' 알림 정리
+    assert.ok((await ok('christopher', 'GET', '/api/approvals/notifications')).items.some((x) => x.document_id === cs3 && x.kind === '집행 대기'));
+    const t1 = await ok('sebastian', 'PUT', `/api/approvals/${cs3}/lines`, { steps: [], post_user_id: U.jang.id, exec_required: false, reason: '법인카드로 이미 결제' });
+    assert.equal(t1.auto_exec, true); assert.equal(t1.changed, true);
+    nd = await ok('sebastian', 'GET', `/api/approvals/${cs3}`);
+    assert.equal(nd.doc.exec_status, 'done'); assert.equal(nd.doc.post_status, 'pending');
+    assert.ok(nd.events.some((e) => e.action === 'lines_edit' && /집행\(재무\) 단계 제외/.test(e.detail)));
+    const unreadExec = (await pool.query(`SELECT count(*)::int c FROM approval_notifications WHERE document_id=$1 AND kind='집행 대기' AND read_at IS NULL`, [cs3])).rows[0].c;
+    assert.equal(unreadExec, 0);
+    //   집행 끝난 문서는 집행 다시 넣기 불가
+    assert.equal((await call('sebastian', 'PUT', `/api/approvals/${cs3}/lines`, { steps: [], post_user_id: U.jang.id, exec_required: true })).body.detail, 'exec_already_done');
+    //   결재중 문서(직원 기안 emp2)에서 빼기 → 승인되는 순간 자동 집행완료, 다시 넣으면 정상 집행대기
+    const x2 = (await ok('oscar', 'POST', '/api/approvals', form)).id;
+    await ok('oscar', 'POST', `/api/approvals/${x2}/submit`);
+    const cur2 = (await ok('sebastian', 'GET', `/api/approvals/${x2}`)).lines.filter((l) => l.step_type !== 'draft' && l.step_type !== 'post_ceo').map((l) => ({ step_type: l.step_type, user_id: l.user_id }));
+    await ok('sebastian', 'PUT', `/api/approvals/${x2}/lines`, { steps: cur2, post_user_id: U.jang.id, exec_required: false });
+    assert.equal((await ok('sebastian', 'GET', `/api/approvals/${x2}`)).doc.exec_required, false);
+    await ok('sebastian', 'PUT', `/api/approvals/${x2}/lines`, { steps: cur2, post_user_id: U.jang.id, exec_required: true });
+    await ok('maria', 'POST', `/api/approvals/${x2}/act`, { action: 'approve' });
+    await ok('sebastian', 'POST', `/api/approvals/${x2}/act`, { action: 'approve' });
+    assert.equal((await ok('sebastian', 'GET', `/api/approvals/${x2}`)).doc.exec_status, 'pending', '다시 넣으면 재무 집행 대기');
+    const x3 = (await ok('oscar', 'POST', '/api/approvals', form)).id;
+    await ok('oscar', 'POST', `/api/approvals/${x3}/submit`);
+    const cur3 = (await ok('sebastian', 'GET', `/api/approvals/${x3}`)).lines.filter((l) => l.step_type !== 'draft' && l.step_type !== 'post_ceo').map((l) => ({ step_type: l.step_type, user_id: l.user_id }));
+    await ok('sebastian', 'PUT', `/api/approvals/${x3}/lines`, { steps: cur3, post_user_id: U.jang.id, exec_required: false });
+    await ok('maria', 'POST', `/api/approvals/${x3}/act`, { action: 'approve' });
+    await ok('sebastian', 'POST', `/api/approvals/${x3}/act`, { action: 'approve' });
+    nd = await ok('oscar', 'GET', `/api/approvals/${x3}`);
+    assert.equal(nd.doc.exec_status, 'done'); assert.equal(nd.doc.actual_total, nd.doc.planned_total);
+    assert.equal((await call('maria', 'PUT', `/api/approvals/${x3}/lines`, { steps: [], post_user_id: U.jang.id, exec_required: true })).code, 403, '디렉터만');
+
+    // ⑪ 임시저장 삭제 — 새 임시저장 · 회수해 번호 있는 임시저장 모두 기안자가 삭제 가능
+    const dd = (await ok('luis', 'POST', '/api/approvals', form)).id;
+    assert.equal((await call('oscar', 'DELETE', `/api/approvals/${dd}`)).code, 404, '남의 임시저장은 삭제 불가');
+    await ok('luis', 'DELETE', `/api/approvals/${dd}`);
+    assert.equal((await call('luis', 'GET', `/api/approvals/${dd}`)).code, 404);
+    const wd = (await ok('luis', 'POST', '/api/approvals', form)).id;
+    const wno = (await ok('luis', 'POST', `/api/approvals/${wd}/submit`)).doc_no;
+    assert.equal((await call('luis', 'DELETE', `/api/approvals/${wd}`)).code, 409, '결재중 문서는 삭제 불가(회수 먼저)');
+    await ok('luis', 'POST', `/api/approvals/${wd}/withdraw`);
+    const del = await ok('luis', 'DELETE', `/api/approvals/${wd}`);
+    assert.equal(del.doc_no, wno);
+    assert.ok(!(await ok('luis', 'GET', '/api/approvals')).items.some((x) => x.id === wd), '목록에서 사라짐');
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL`, [wd])).rows[0].c, 0);
+    assert.ok((await pool.query(`SELECT 1 FROM approval_events WHERE document_id=$1 AND action='delete'`, [wd])).rows.length, '삭제 이력 남김');
   } finally {
     await app.close();
   }

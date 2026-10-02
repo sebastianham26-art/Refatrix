@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20261002eg<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20261002eh<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
 });
 
@@ -153,6 +153,27 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     s.click(s.$('#csEd [data-act="csfin"]'));
     assert.deepEqual(lp().slice(0, 4), ['기안', '디렉터 결재', '경유', '합의']);
     assert.deepEqual(JSON.parse(JSON.stringify(s.w.eval('cdSteps(ui.cd)'))), [{ step_type: 'pass', user_id: U.maria.id }, { step_type: 'agree', user_id: U.christopher.id }]);
+    // 0247 집행(재무) 넣기/빼기 — 기본 있음 → 빼기 → 미리보기 '생략' → 다시 넣기 → 빼고 임시저장 → 작성 화면에서 삭제
+    assert.ok(s.$('#csEd [data-act="csexec"][data-on="0"]'), '집행 빼기 버튼');
+    assert.ok(!s.$('#lprev .lp.off'));
+    s.click(s.$('#csEd [data-act="csexec"][data-on="0"]'));
+    assert.equal(s.w.eval('ui.cd.exec'), false);
+    assert.ok(s.$('#lprev .lp.off'), '미리보기에 집행 생략');
+    assert.match(s.$('#csEd').textContent, /집행 단계 없음/);
+    s.click(s.$('#csEd [data-act="csexec"][data-on="1"]'));
+    assert.equal(s.w.eval('ui.cd.exec'), true); assert.ok(!s.$('#lprev .lp.off'));
+    s.click(s.$('#csEd [data-act="csexec"][data-on="0"]'));
+    s.w.eval(`ui.cd.title='삭제할 임시저장'`);
+    assert.ok(!s.act('deldraft'), '저장 전에는 삭제 버튼 없음');
+    s.click(s.act('csave'));
+    await s.until(() => s.w.eval('ui.cd && ui.cd.id') && s.act('deldraft'));
+    const draftId = s.w.eval('ui.cd.id');
+    assert.equal(s.w.eval('DET.doc.exec_required'), false, '집행 없음이 저장됨');
+    assert.equal(s.w.eval('ui.cd.exec'), false);
+    s.click(s.act('deldraft'));
+    await s.until(() => s.$('#modalCard') && /임시저장 삭제/.test(s.$('#modalCard').textContent));
+    s.click(s.act('mok'));
+    await s.until(() => s.w.eval('ui.view') === 'board' && !s.w.eval('LIST').some((x) => x.id === draftId));
 
     // ③ Jang(대표이사): 결재함 → 사전승인
     const j = await open('jang');
@@ -171,6 +192,12 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     s.click(s.act('lineedit'));
     await s.until(() => s.$('#modalCard [data-le="addT"]'));
     assert.match(s.$('#modalCard').textContent, /다시 결재중/);
+    // 결재선 수정 창에서도 집행 넣기/빼기 — 승인완료·집행대기에서 빼면 바로 집행완료 경고
+    assert.ok(s.$('#modalCard [data-act="leexec"][data-on="0"]'));
+    s.click(s.$('#modalCard [data-act="leexec"][data-on="0"]'));
+    assert.match(s.$('#modalCard').textContent, /바로 집행완료/);
+    s.click(s.$('#modalCard [data-act="leexec"][data-on="1"]'));
+    assert.doesNotMatch(s.$('#modalCard').textContent, /바로 집행완료/);
     s.click(s.act('mx'));
     await s.until(() => !s.w.eval('ui.modal'));
     // ④ Christopher(재무): 집행 — 증빙 없으면 막힘 → 송금증 첨부 후 집행

@@ -21,7 +21,7 @@ const DOC_COLS = `d.id, d.doc_no, d.version, d.parent_id, d.category_id, d.title
   d.actual_total, to_char(d.exec_date,'YYYY-MM-DD') AS exec_date, d.exec_pay_method, d.exec_memo, d.exec_at, d.exec_by,
   d.created_at, d.submitted_at, d.approved_at, d.closed_at,
   d.currency, d.fx_rate, to_char(d.fx_date,'YYYY-MM-DD') AS fx_date, d.fx_source, d.fx_locked_at,
-  d.orig_sub, d.orig_iva, d.orig_total, d.payment_type, d.payment_plan, d.custom_steps`;
+  d.orig_sub, d.orig_iva, d.orig_total, d.payment_type, d.payment_plan, d.custom_steps, d.exec_required`;
 const PAY_COLS = `id, document_id, seq, to_char(due_date,'YYYY-MM-DD') AS due_date, planned_amount, planned_mxn, status,
   actual_amount, actual_mxn, fx_rate, to_char(fx_date,'YYYY-MM-DD') AS fx_date, to_char(exec_date,'YYYY-MM-DD') AS exec_date,
   pay_method, memo, exec_at, exec_by, skip_reason`;
@@ -37,6 +37,7 @@ function normDoc(r) {
   if ('payment_plan' in o) { try { o.payment_plan = o.payment_plan ? JSON.parse(o.payment_plan) : null; } catch { o.payment_plan = null; } }
   if (o.currency == null) o.currency = 'MXN';
   if (o.payment_type == null) o.payment_type = 'once';
+  if ('exec_required' in o) o.exec_required = o.exec_required !== false;
   return o;
 }
 const normPay = (p) => {
@@ -140,6 +141,35 @@ async function applyMoney(q, docId, { lock = false } = {}) {
   return { ...mx, fx };
 }
 
+// 0247 집행 단계 없음 — 남은 회차를 예정 금액으로 집행완료 처리하고 사후승인 대기로 넘긴다.
+//   실적 = 예정(MXN 은 상신 때 고정한 문서 환율). 처리자는 비워 두고 이력에 「집행 단계 없음」을 남긴다.
+async function autoExecute(q, doc, lines, actorId, why) {
+  // 상신 중 고정한 환율·금액을 DB 에서 다시 읽는다(호출부의 doc 는 고정 전 값일 수 있음)
+  const cur = (await q(`SELECT currency, fx_rate, to_char(fx_date,'YYYY-MM-DD') AS fx_date, pay_method, planned_total FROM approval_documents WHERE id=$1`, [doc.id])).rows[0];
+  doc = { ...doc, currency: cur.currency || 'MXN', fx_rate: cur.fx_rate, fx_date: cur.fx_date, pay_method: cur.pay_method, planned_total: cur.planned_total, _ref: doc };
+  const fxRate = doc.currency === 'USD' ? n(doc.fx_rate) : 1;
+  const fxDate = doc.currency === 'USD' ? doc.fx_date : null;
+  await q(`UPDATE approval_payments SET status='done', actual_amount=planned_amount, actual_mxn=planned_mxn, fx_rate=$2, fx_date=$3,
+             exec_date=COALESCE(due_date, (now() AT TIME ZONE 'America/Mexico_City')::date), pay_method=$4,
+             memo='집행 단계 없음 — 예정 금액으로 처리', exec_at=now(), exec_by=NULL
+           WHERE document_id=$1 AND status='planned'`, [doc.id, fxRate, fxDate, doc.pay_method || '계좌이체']);
+  const pays = await loadPayments(q, doc.id);
+  const done = pays.filter((p) => p.status === 'done');
+  const actual = pays.length ? round2(done.reduce((s2, p) => s2 + n(p.actual_mxn), 0)) : n(doc.planned_total);
+  const last = [...done].sort((a, c) => String(a.exec_date || '').localeCompare(String(c.exec_date || '')) || a.seq - c.seq).pop();
+  await q(`UPDATE approval_documents SET exec_status='done', actual_total=$2, exec_date=$3, exec_pay_method=$4,
+             exec_at=now(), exec_by=NULL, post_status='pending', updated_at=now() WHERE id=$1`,
+    [doc.id, actual, last ? last.exec_date : null, last ? last.pay_method : (doc.pay_method || null)]);
+  doc._ref.exec_status = 'done'; doc._ref.post_status = 'pending';
+  await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL AND kind='집행 대기'`, [doc.id]);
+  await event(q, doc.id, actorId, 'exec_skip', null, `${why || '집행 단계 없음'} — 예정 금액으로 집행완료 처리 · MXN ${actual.toFixed(2)}`);
+  const pl = postLine(lines);
+  if (pl) {
+    await q(`UPDATE approval_lines SET status='pending' WHERE id=$1`, [pl.id]);
+    await notify(q, pl.user_id, doc.id, '사후승인 요청', null, actorId);
+  }
+}
+
 // 다음 단계 활성화 + 승인완료 처리(알림 포함). lines 는 DB 행과 같은 객체(id 보유).
 async function applyAdvance(q, bundle, actorId, settings, { silent } = {}) {
   const { doc, lines, viewers } = bundle;
@@ -154,6 +184,7 @@ async function applyAdvance(q, bundle, actorId, settings, { silent } = {}) {
     await event(q, doc.id, null, 'approved', null, '결재 완료 · 집행대기');
     await notify(q, doc.drafter_id, doc.id, '승인완료', null, actorId);
     for (const v of viewers) if (v.kind === 'share') await notify(q, v.user_id, doc.id, '공람', null, actorId);
+    if (doc.exec_required === false) { await autoExecute(q, doc, lines, actorId); return res; }
     const fin = settings.finance_user_id
       ? [settings.finance_user_id]
       : (await q(`SELECT id FROM users WHERE role='treasury' AND deleted_at IS NULL`)).rows.map((r) => Number(r.id));
@@ -228,7 +259,7 @@ export default async function approvalRoutes(app) {
       const pend = ls.filter((l) => l.status === 'pending' && l.step_type !== 'post_ceo');
       let current = null;
       if (d.status === 'progress') current = pend.map((l) => uname(l.user_id) + (l.step_type === 'pre_ceo' ? ' (사전)' : '')).join(', ');
-      else if (d.status === 'approved' && d.exec_status === 'pending') current = '재무 (집행)';
+      else if (d.status === 'approved' && d.exec_status === 'pending') current = '재무 (집행)';   // exec_required=false 문서는 승인 즉시 집행완료라 여기 오지 않음
       else if (d.post_status === 'pending' && pl) current = uname(pl.user_id) + ' (사후)';
       else if (d.post_status === 'flagged') current = uname(d.drafter_id) + ' (소명)';
       const live = fs.filter((f) => !f.voided_at);
@@ -386,7 +417,9 @@ export default async function approvalRoutes(app) {
       if (v.error) throw new Stop('bad_input', { detail: v.error });
       val = JSON.stringify(v.steps);
     }
-    await q(`UPDATE approval_documents SET custom_steps=$2 WHERE id=$1`, [id, val]);
+    // 0247 집행(재무) 단계 넣기/빼기 — 디렉터 기안만. 직원 기안은 항상 집행 있음(상신 후 디렉터가 결재선 수정에서 바꾼다).
+    const execReq = req.ctx.perm.role === 'director' ? req.body?.exec_required !== false : true;
+    await q(`UPDATE approval_documents SET custom_steps=$2, exec_required=$3 WHERE id=$1`, [id, val, execReq]);
   }
   // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
   async function saveSchedule(q, docId, rows) {
@@ -436,9 +469,12 @@ export default async function approvalRoutes(app) {
     return tx(reply, async (q) => {
       const b = await loadBundle(q, id, true);
       if (!b || !sameId(b.doc.drafter_id, uid)) throw new Stop('not_found');
-      if (b.doc.status !== 'draft' || b.doc.doc_no) throw new Stop('bad_state');   // 번호 받은 문서는 삭제 대신 보관
-      await q(`UPDATE approval_documents SET deleted_at=now() WHERE id=$1`, [id]);
-      return { ok: true };
+      if (b.doc.status !== 'draft') throw new Stop('bad_state');
+      // 임시저장(회수해 번호가 있는 문서 포함)은 기안자가 삭제할 수 있다. 행은 남기고 숨김(deleted_at) — 번호는 재사용하지 않는다.
+      await q(`UPDATE approval_documents SET deleted_at=now(), updated_at=now() WHERE id=$1`, [id]);
+      await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL`, [id]);
+      await event(q, id, uid, 'delete', null, b.doc.doc_no ? `임시저장 삭제 (문서번호 ${b.doc.doc_no} 결번)` : '임시저장 삭제');
+      return { ok: true, doc_no: b.doc.doc_no || null };
     });
   });
 
@@ -714,10 +750,10 @@ export default async function approvalRoutes(app) {
       const nid = Number((await q(
         `INSERT INTO approval_documents(version, parent_id, category_id, title, vendor, body, drafter_id, pay_due, pay_method,
            iva_applied, planned_sub, planned_iva, planned_total, include_finance,
-           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich, custom_steps)
+           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich, custom_steps, exec_required)
          SELECT version+1, id, category_id, title, vendor, body, drafter_id, pay_due, pay_method,
            iva_applied, planned_sub, planned_iva, planned_total, include_finance,
-           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich, custom_steps
+           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich, custom_steps, exec_required
            FROM approval_documents WHERE id=$1 RETURNING id`, [id])).rows[0].id);
       await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn)
                SELECT $2, seq, due_date, planned_amount, planned_mxn FROM approval_payments WHERE document_id=$1`, [id, nid]);
@@ -753,6 +789,14 @@ export default async function approvalRoutes(app) {
       const activeIds = [...users.values()].filter((u) => u.active).map((u) => u.id);
       const plan = planLineEdit({ lines: b.lines, steps: req.body?.steps, postUser: req.body?.post_user_id, doc: b.doc, activeUserIds: activeIds });
       if (plan.error) throw new Stop('bad_input', { detail: plan.error });
+      // 0247 집행(재무) 단계 넣기/빼기 — 집행이 끝나기 전까지
+      const wantExec = typeof req.body?.exec_required === 'boolean' ? req.body.exec_required : b.doc.exec_required;
+      const execChanged = wantExec !== b.doc.exec_required;
+      if (execChanged && b.doc.exec_status === 'done') throw new Stop('bad_input', { detail: 'exec_already_done' });
+      if (execChanged) {
+        await q(`UPDATE approval_documents SET exec_required=$2, updated_at=now() WHERE id=$1`, [id, wantExec]);
+        b.doc.exec_required = wantExec;
+      }
       const before = lineSummary(b.lines, users);
       const prevPending = new Set(b.lines.filter((l) => l.status === 'pending').map((l) => Number(l.user_id)));
       const pl = postLine(b.lines);
@@ -777,6 +821,12 @@ export default async function approvalRoutes(app) {
       const hasPre = plan.rows.some((r) => r.step_type === 'pre_ceo') || plan.locked.some((l) => l.step_type === 'pre_ceo');
       await q(`UPDATE approval_documents SET ceo_pre_required=$2, updated_at=now() WHERE id=$1`, [id, hasPre]);
       const fresh = await loadBundle(q, id, false);
+      // 승인완료·집행대기 문서에서 집행 단계를 뺐다 → 바로 집행완료(예정 금액) · 사후승인 대기
+      let autoExec = false;
+      if (execChanged && !wantExec && fresh.doc.status === 'approved' && fresh.doc.exec_status === 'pending') {
+        await autoExecute(q, fresh.doc, fresh.lines, ctx.uid, '결재선 수정: 집행 단계 제외');
+        autoExec = true;
+      }
       // 지워진 사람의 처리 요청 알림(안 읽은 것) 정리
       const stillIn = new Set(fresh.lines.filter((l) => ['pending', 'waiting'].includes(l.status)).map((l) => Number(l.user_id)));
       for (const u of prevPending) {
@@ -786,12 +836,17 @@ export default async function approvalRoutes(app) {
       if (fresh.doc.status === 'progress') {
         const r = await applyAdvance(q, fresh, ctx.uid, settings, { silent: prevPending });
         status = r.approved ? 'approved' : 'progress';
+        if (r.approved && fresh.doc.exec_status === 'done') autoExec = true;
       }
       const after = lineSummary((await loadBundle(q, id, false)).lines, users);
       const reason = cleanText(req.body?.reason, 500)?.trim();
-      if (before !== after) await event(q, id, ctx.uid, 'lines_edit', null, `변경 전: ${before}\n변경 후: ${after}${reopen ? '\n승인 후 결재선 추가 → 다시 결재중' : ''}${reason ? '\n사유: ' + reason : ''}`);
+      const execNote = execChanged ? (wantExec ? '집행(재무) 단계 추가' : '집행(재무) 단계 제외') : '';
+      if (before !== after || execChanged) {
+        await event(q, id, ctx.uid, 'lines_edit', null,
+          [before !== after ? `변경 전: ${before}\n변경 후: ${after}` : null, execNote || null, reopen ? '승인 후 결재선 추가 → 다시 결재중' : null, reason ? '사유: ' + reason : null].filter(Boolean).join('\n'));
+      }
       if (reopen) await notify(q, b.doc.drafter_id, id, '승인 후 결재선 추가 (재결재)', reason || null, ctx.uid);
-      return { ok: true, status, changed: before !== after, reopened: reopen };
+      return { ok: true, status, changed: before !== after || execChanged, reopened: reopen, exec_required: wantExec, auto_exec: autoExec };
     });
   });
 
