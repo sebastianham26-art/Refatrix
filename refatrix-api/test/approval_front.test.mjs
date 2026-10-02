@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20261002eh<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20261002fa<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
 });
 
@@ -88,6 +88,16 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     const s = await open('sebastian');
     assert.deepEqual(tabNames(s), ['board', 'compose', 'ceo', 'report', 'settings']);
     await s.until(() => s.$(`.row[data-id="${docId}"]`));
+    // 0248 게시판 현재 처리자 + 대기 시간 배지
+    const cur = s.$(`.row[data-id="${docId}"] .c-cur`);
+    assert.match(cur.textContent, /Sebastian/); assert.ok(cur.querySelector('.ago[data-since]'), '대기 시간 배지');
+    assert.match(cur.querySelector('.ago').textContent, /방금|분째/);
+    const H = 3600e3, ago = (ms) => JSON.parse(JSON.stringify(s.w.eval(`ageOf(new Date(Date.now()-${ms}).toISOString())`)));
+    assert.deepEqual(ago(5 * 60e3), { t: '5분째', c: '' });
+    assert.deepEqual(ago(3 * H + 60e3), { t: '3시간째', c: '' });
+    assert.deepEqual(ago(26 * H), { t: '1일 2시간째', c: 'warn' });
+    assert.deepEqual(ago(80 * H), { t: '3일 8시간째', c: 'hot' });
+    assert.deepEqual(ago(10 * 24 * H), { t: '10일째', c: 'hot' });
     s.click(s.$(`.row[data-id="${docId}"]`));
     await s.until(() => s.w.eval('DET') && s.act('approve'));
     // 0244: 디렉터(내 차례) — 결재선 수정 · 추가 작성 · 내용 수정

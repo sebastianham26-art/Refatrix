@@ -774,6 +774,37 @@ test('E E2E — 디렉터 결재선 수정 · 결재자 내용 수정/반려/추
     assert.ok(!(await ok('luis', 'GET', '/api/approvals')).items.some((x) => x.id === wd), '목록에서 사라짐');
     assert.equal((await pool.query(`SELECT count(*)::int c FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL`, [wd])).rows[0].c, 0);
     assert.ok((await pool.query(`SELECT 1 FROM approval_events WHERE document_id=$1 AND action='delete'`, [wd])).rows.length, '삭제 이력 남김');
+
+    // ⑫ 0248 게시판 현재 처리자 + 차례가 된 시각
+    const item = async (id) => (await ok('sebastian', 'GET', '/api/approvals')).items.find((x) => x.id === id);
+    const w1 = (await ok('oscar', 'POST', '/api/approvals', form)).id;
+    await ok('oscar', 'POST', `/api/approvals/${w1}/submit`);
+    let it = await item(w1);
+    assert.equal(it.current_parts.length, 1); assert.equal(it.current_parts[0].who, 'Maria');
+    assert.ok(Math.abs(Date.parse(it.current_parts[0].since) - Date.now()) < 60000, '방금 차례가 됨');
+    // 3시간 전 차례가 된 것으로 바꾼 뒤, 결재선 수정(같은 사람 유지 + 뒤에 경유 추가)해도 시각 유지
+    await pool.query(`UPDATE approval_lines SET pending_at=now()-interval '3 hours' WHERE document_id=$1 AND status='pending'`, [w1]);
+    const sinceBefore = (await item(w1)).current_parts[0].since;
+    const curW = (await ok('sebastian', 'GET', `/api/approvals/${w1}`)).lines.filter((l) => !['draft', 'post_ceo'].includes(l.step_type)).map((l) => ({ step_type: l.step_type, user_id: l.user_id }));
+    await ok('sebastian', 'PUT', `/api/approvals/${w1}/lines`, { steps: [...curW, { step_type: 'pass', user_id: U.luis.id }], post_user_id: U.jang.id });
+    assert.equal((await item(w1)).current_parts[0].since, sinceBefore, '결재선 수정 후에도 대기 시작 시각 유지');
+    // 다음 사람으로 넘어가면 새 시각
+    await ok('maria', 'POST', `/api/approvals/${w1}/act`, { action: 'approve' });
+    it = await item(w1);
+    assert.equal(it.current_parts[0].who, 'Sebastian'); assert.ok(Date.parse(it.current_parts[0].since) > Date.parse(sinceBefore));
+    await ok('sebastian', 'POST', `/api/approvals/${w1}/act`, { action: 'approve' });
+    await ok('luis', 'POST', `/api/approvals/${w1}/act`, { action: 'approve' });
+    it = await item(w1);
+    assert.equal(it.current_parts[0].who, '재무 (집행)'); assert.ok(it.current_parts[0].since, '집행 대기는 승인 시각부터');
+    // 마이그레이션 백필: 비어 있는 pending_at 을 앞 단계 처리 시각으로 채움
+    const w2 = (await ok('oscar', 'POST', '/api/approvals', form)).id;
+    await ok('oscar', 'POST', `/api/approvals/${w2}/submit`);
+    await pool.query(`UPDATE approval_lines SET pending_at=NULL WHERE document_id=$1`, [w2]);
+    await pool.query(`UPDATE approval_lines SET acted_at=now()-interval '2 days' WHERE document_id=$1 AND step_type='draft'`, [w2]);
+    const { readFileSync } = await import('node:fs');
+    await pool.query(readFileSync(new URL('../migrations/0248_e_approval_pending_at.sql', import.meta.url), 'utf8'));
+    const bf = (await item(w2)).current_parts[0].since;
+    assert.ok(Math.abs(Date.now() - Date.parse(bf) - 2 * 864e5) < 60000, '백필 = 기안 처리 시각(2일 전)');
   } finally {
     await app.close();
   }

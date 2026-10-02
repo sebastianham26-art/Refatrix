@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261002eh</title>
+<title>Refatrix ERP · 전자결재 · b20261002fa</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -67,6 +67,10 @@ h1{font-size:20px;margin:4px 0 6px;line-height:1.3}
 .meta-ic{font-size:12px;color:var(--mute);margin-left:8px;white-space:nowrap}
 .empty{padding:40px 16px;text-align:center;color:var(--mute)}
 .mob{display:none}
+.ago{display:inline-block;margin-left:4px;padding:0 6px;border-radius:9px;font-size:11px;line-height:17px;background:#eef1f4;color:#5b6570;white-space:nowrap;font-weight:600}
+.ago.warn{background:#fdf1d8;color:#8a5a00}
+.ago.hot{background:#fde4e1;color:#b3261e}
+.c-cur .cp{display:block;line-height:1.5}
 @media(max-width:860px){
  .lh{display:none}
  .row{grid-template-columns:1fr auto;grid-template-areas:"no amt" "ttl ttl" "st st" "who dt";gap:4px 10px;padding:12px 14px}
@@ -352,6 +356,17 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>{const x=parseFloat(String(v??'').replace(/[^0-9.\-]/g,''));return isFinite(x)?x:0;};
 const r2=v=>Math.round((num(v)+Number.EPSILON)*100)/100;
+// 현재 처리자 대기 시간 — 1일 이상 노랑, 3일 이상 빨강
+function ageOf(iso){
+ if(!iso)return null;const ms=Date.now()-new Date(iso).getTime();if(!(ms>=0))return{t:'방금',c:''};
+ const m=Math.floor(ms/60000),h=Math.floor(m/60),d=Math.floor(h/24);
+ const t=m<1?'방금':m<60?`${m}분째`:h<24?`${h}시간째`:d<7&&h%24?`${d}일 ${h%24}시간째`:`${d}일째`;
+ return{t,c:h>=72?'hot':h>=24?'warn':''};
+}
+function agoHtml(iso){const a=ageOf(iso);return a?`<span class="ago ${a.c}" data-since="${esc(iso)}" title="차례가 된 시각 ${esc(fmtT(iso,'America/Mexico_City').slice(0,16))}">${a.t}</span>`:'';}
+function curHtml(d,cls){const ps=d.current_parts&&d.current_parts.length?d.current_parts:(d.current?[{who:d.current,since:null}]:[]);
+ return ps.map(p=>`<span class="${cls||''}">${esc(p.who)}${agoHtml(p.since)}</span>`).join(cls==='cp'?'':', ');}
+function curText(d){return (d.current_parts||[]).map(p=>p.who+(ageOf(p.since)?` (${ageOf(p.since).t})`:'')).join(', ')||d.current||'';}
 const money=v=>'$'+Number(v||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtT=(iso,tz)=>new Intl.DateTimeFormat('sv-SE',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(iso));
 function tm(iso){if(!iso)return '';const mx=fmtT(iso,'America/Mexico_City'),kr=fmtT(iso,'Asia/Seoul');return `<time datetime="${esc(iso)}" title="${mx} (멕시코) · ${kr} (한국)">${mx.slice(0,16)}</time>`;}
@@ -480,8 +495,8 @@ function listHtml(){
  <div class="c-ttl"><div class="ttl">${esc(d.title)}</div><div class="sub">${esc(d.vendor||'')}<span class="meta-ic">📎 ${d.files_n}</span><span class="meta-ic">💬 ${d.comments_n}</span></div><div>${flagsOf(d)}</div></div>
  <div class="c-who">${esc(d.drafter_name)}<div class="sub">${esc(UT(d.drafter_id))}</div></div>
  <div class="c-amt amt">${money(d.planned_total)}${d.currency==='USD'?`<small class="sub">US${money(d.orig_total)}</small>`:''}${d.exec_status==='done'?`<small class="${d.variance_pct>tol?'flag':'sub'}">실적 ${money(d.actual_total)}</small>`:''}${d.pay_n>1?`<small class="sub">${PT_L[d.payment_type]||''} ${d.pay_done}/${d.pay_n}회${d.next_due&&d.exec_status!=='done'?` · 다음 ${esc(d.next_due.slice(5))}`:''}</small>`:''}</div>
- <div class="c-st">${badges(d)}${d.current?`<span class="mob sub"> · ${esc(d.current)}</span>`:''}</div>
- <div class="c-cur sub">${esc(d.current||'—')}</div>
+ <div class="c-st">${badges(d)}${d.current?`<span class="mob sub"> · ${curHtml(d)}</span>`:''}</div>
+ <div class="c-cur sub">${d.current?curHtml(d,'cp'):'—'}</div>
  <div class="c-dt sub">${tm(d.submitted_at||d.created_at)}</div></div>`).join('');
 }
 
@@ -1368,7 +1383,7 @@ const H={
  catren(a){const c=B.categories.find(x=>same(x.id,a.dataset.c));openModal('name',{title:'카테고리 이름 변경',value:c.name,fn:async v=>{await api('PUT',`/api/approvals/categories/${c.id}`,{name:v});await loadBoot();}});},
  async cattog(a){const c=B.categories.find(x=>same(x.id,a.dataset.c));const r=await run(()=>api('PUT',`/api/approvals/categories/${c.id}`,{active:!c.active}));if(r){await loadBoot();render();}},
  xls(){exportXls('전자결재_목록',['문서번호','카테고리','제목','거래처','기안자','상태','통화','원통화 합계','환율','결제 방식','회차','예정 합계(MXN)','실적 합계(MXN)','차이%','현재 처리자','상신일시','증빙','댓글'],
-  filtered().map(d=>[d.doc_no||'임시저장',catName(d.category_id),d.title,d.vendor||'',d.drafter_name,(STAGE_BADGE[d.stage]||[''])[0],d.currency,d.orig_total,d.currency==='USD'?d.fx_rate:'',PT_L[d.payment_type]||'',`${d.pay_done}/${d.pay_n}`,d.planned_total,d.actual_total==null?'':d.actual_total,d.variance_pct==null?'':d.variance_pct,d.current||'',d.submitted_at?fmtT(d.submitted_at,'America/Mexico_City').slice(0,16):'',d.files_n,d.comments_n]));},
+  filtered().map(d=>[d.doc_no||'임시저장',catName(d.category_id),d.title,d.vendor||'',d.drafter_name,(STAGE_BADGE[d.stage]||[''])[0],d.currency,d.orig_total,d.currency==='USD'?d.fx_rate:'',PT_L[d.payment_type]||'',`${d.pay_done}/${d.pay_n}`,d.planned_total,d.actual_total==null?'':d.actual_total,d.variance_pct==null?'':d.variance_pct,curText(d),d.submitted_at?fmtT(d.submitted_at,'America/Mexico_City').slice(0,16):'',d.files_n,d.comments_n]));},
  repxls(){exportXls('전자결재_예정실적_'+REP.month,['카테고리','승인','예정 합계','집행','실적 합계','차이','미집행 잔액','사후 미확인'],REP.rows.map(r=>[r.name,r.n,r.plan,r.execN,r.actual,r.diff,r.unexec,r.postOpen]));}
 };
 let xlsxLoading=null;
@@ -1405,6 +1420,7 @@ document.addEventListener('drop',e=>{
  const files=[...((e.dataTransfer&&e.dataTransfer.files)||[])];if(!files.length)return;
  e.preventDefault();edAddImages(files);
 });
+setInterval(()=>{document.querySelectorAll('.ago[data-since]').forEach(el=>{const a=ageOf(el.dataset.since);if(a){el.textContent=a.t;el.className='ago '+a.c;}});},60000);
 $('#imgPick').addEventListener('change',e=>{const f=[...e.target.files];if(f.length)edAddImages(f);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ui.modal)closeModal();if(e.key==='Enter'&&e.target.id==='pin')H.login();});
 document.addEventListener('input',e=>{

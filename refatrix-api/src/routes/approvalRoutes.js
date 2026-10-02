@@ -26,7 +26,7 @@ const PAY_COLS = `id, document_id, seq, to_char(due_date,'YYYY-MM-DD') AS due_da
   actual_amount, actual_mxn, fx_rate, to_char(fx_date,'YYYY-MM-DD') AS fx_date, to_char(exec_date,'YYYY-MM-DD') AS exec_date,
   pay_method, memo, exec_at, exec_by, skip_reason`;
 
-const LINE_COLS = 'id, document_id, step_order, step_type, user_id, status, acted_at, comment';
+const LINE_COLS = 'id, document_id, step_order, step_type, user_id, status, acted_at, comment, pending_at';
 
 function normDoc(r) {
   if (!r) return r;
@@ -165,7 +165,7 @@ async function autoExecute(q, doc, lines, actorId, why) {
   await event(q, doc.id, actorId, 'exec_skip', null, `${why || '집행 단계 없음'} — 예정 금액으로 집행완료 처리 · MXN ${actual.toFixed(2)}`);
   const pl = postLine(lines);
   if (pl) {
-    await q(`UPDATE approval_lines SET status='pending' WHERE id=$1`, [pl.id]);
+    await q(`UPDATE approval_lines SET status='pending', pending_at=now() WHERE id=$1`, [pl.id]);
     await notify(q, pl.user_id, doc.id, '사후승인 요청', null, actorId);
   }
 }
@@ -175,7 +175,7 @@ async function applyAdvance(q, bundle, actorId, settings, { silent } = {}) {
   const { doc, lines, viewers } = bundle;
   const res = advance(lines);
   for (const l of res.activated) {
-    await q(`UPDATE approval_lines SET status='pending' WHERE id=$1`, [l.id]);
+    await q(`UPDATE approval_lines SET status='pending', pending_at=now() WHERE id=$1`, [l.id]);
     if (!(silent && silent.has(Number(l.user_id)))) await notify(q, l.user_id, doc.id, REQUEST_KIND[l.step_type], null, actorId);
   }
   if (res.approved) {
@@ -245,7 +245,7 @@ export default async function approvalRoutes(app) {
     const viewers = (await query(`SELECT document_id, user_id, kind FROM approval_viewers`)).rows.map(normViewer);
     const files = (await query(`SELECT document_id, kind, voided_at, dup_of FROM approval_files`)).rows;
     const cmts = (await query(`SELECT document_id, count(*)::int AS c FROM approval_comments WHERE deleted_at IS NULL GROUP BY document_id`)).rows;
-    const payRows = (await query(`SELECT document_id, status, to_char(due_date,'YYYY-MM-DD') AS due_date FROM approval_payments`)).rows;
+    const payRows = (await query(`SELECT document_id, status, to_char(due_date,'YYYY-MM-DD') AS due_date, exec_at FROM approval_payments`)).rows;
     const unreadDocs = new Set((await query(`SELECT DISTINCT document_id FROM approval_notifications WHERE user_id=$1 AND read_at IS NULL`, [ctx.uid])).rows.map((r) => Number(r.document_id)));
     const group = (arr, key = 'document_id') => { const m = new Map(); for (const x of arr) { const k = Number(x[key]); if (!m.has(k)) m.set(k, []); m.get(k).push(x); } return m; };
     const L = group(lines), V = group(viewers), F = group(files), P = group(payRows);
@@ -257,11 +257,16 @@ export default async function approvalRoutes(app) {
       if (!canSeeDoc(ctx, d, ls, vs)) continue;
       const pl = postLine(ls);
       const pend = ls.filter((l) => l.status === 'pending' && l.step_type !== 'post_ceo');
-      let current = null;
-      if (d.status === 'progress') current = pend.map((l) => uname(l.user_id) + (l.step_type === 'pre_ceo' ? ' (사전)' : '')).join(', ');
-      else if (d.status === 'approved' && d.exec_status === 'pending') current = '재무 (집행)';   // exec_required=false 문서는 승인 즉시 집행완료라 여기 오지 않음
-      else if (d.post_status === 'pending' && pl) current = uname(pl.user_id) + ' (사후)';
-      else if (d.post_status === 'flagged') current = uname(d.drafter_id) + ' (소명)';
+      // 현재 처리자 + 차례가 된 시각(0248) — 게시판에 「○시간째」 표시
+      let parts = [];
+      const ps0 = P.get(d.id) || [];
+      const latest = (...ts) => ts.filter(Boolean).map((t) => new Date(t)).sort((a, c) => c - a)[0] || null;
+      if (d.status === 'progress') parts = pend.map((l) => ({ who: uname(l.user_id) + (l.step_type === 'pre_ceo' ? ' (사전)' : ''), since: l.pending_at || null }));
+      else if (d.status === 'approved' && d.exec_status === 'pending') {     // exec_required=false 문서는 승인 즉시 집행완료라 여기 오지 않음
+        parts = [{ who: '재무 (집행)', since: latest(d.approved_at, ...ps0.filter((x) => x.status !== 'planned').map((x) => x.exec_at)) }];
+      } else if (d.post_status === 'pending' && pl) parts = [{ who: uname(pl.user_id) + ' (사후)', since: pl.pending_at || d.exec_at || null }];
+      else if (d.post_status === 'flagged') parts = [{ who: uname(d.drafter_id) + ' (소명)', since: pl ? pl.acted_at : null }];
+      const current = parts.length ? parts.map((x) => x.who).join(', ') : null;
       const live = fs.filter((f) => !f.voided_at);
       const ps = P.get(d.id) || [];
       const open = ps.filter((x) => x.status === 'planned').map((x) => x.due_date).filter(Boolean).sort();
@@ -273,6 +278,7 @@ export default async function approvalRoutes(app) {
         todo: isTodo(ctx, d, ls),
         is_ref: vs.some((v) => sameId(v.user_id, ctx.uid)),
         current,
+        current_parts: parts.map((x) => ({ who: x.who, since: x.since ? new Date(x.since).toISOString() : null })),
         files_n: live.length,
         has_exec_evidence: live.some((f) => EXEC_KINDS.includes(f.kind)),
         dup: live.some((f) => f.dup_of),
@@ -657,7 +663,7 @@ export default async function approvalRoutes(app) {
                exec_at=now(), exec_by=$5, post_status='pending', updated_at=now() WHERE id=$1`,
       [b.doc.id, actual, last ? last.exec_date : null, last ? last.pay_method : null, ctx.uid]);
     const pl = postLine(b.lines);
-    if (pl) await q(`UPDATE approval_lines SET status='pending' WHERE id=$1`, [pl.id]);
+    if (pl) await q(`UPDATE approval_lines SET status='pending', pending_at=now() WHERE id=$1`, [pl.id]);
     if (pays.length > 1) await event(q, b.doc.id, ctx.uid, 'exec_done', null, `전 회차 처리 완료 · 실적 합계 MXN ${actual.toFixed(2)}`);
     if (pl) await notify(q, pl.user_id, b.doc.id, '사후승인 요청', null, ctx.uid);
     await notify(q, b.doc.drafter_id, b.doc.id, '집행완료', null, ctx.uid);
@@ -799,6 +805,7 @@ export default async function approvalRoutes(app) {
       }
       const before = lineSummary(b.lines, users);
       const prevPending = new Set(b.lines.filter((l) => l.status === 'pending').map((l) => Number(l.user_id)));
+      const prevSince = new Map(b.lines.filter((l) => l.status === 'pending' && l.pending_at).map((l) => [`${l.step_type}:${Number(l.user_id)}`, l.pending_at]));
       const pl = postLine(b.lines);
       const reopen = b.doc.status === 'approved' && plan.rows.length > 0;   // 승인 후(집행 전) 단계 추가 → 재결재
       if (reopen) {
@@ -815,7 +822,7 @@ export default async function approvalRoutes(app) {
         }
       }
       if (pl && !sameId(pl.user_id, plan.postUser)) {
-        await q(`UPDATE approval_lines SET user_id=$2 WHERE id=$1`, [pl.id, plan.postUser]);
+        await q(`UPDATE approval_lines SET user_id=$2, pending_at=CASE WHEN status='pending' THEN now() ELSE pending_at END WHERE id=$1`, [pl.id, plan.postUser]);
         if (pl.status === 'pending') await notify(q, plan.postUser, id, '사후승인 요청', null, ctx.uid);
       }
       const hasPre = plan.rows.some((r) => r.step_type === 'pre_ceo') || plan.locked.some((l) => l.step_type === 'pre_ceo');
@@ -837,6 +844,11 @@ export default async function approvalRoutes(app) {
         const r = await applyAdvance(q, fresh, ctx.uid, settings, { silent: prevPending });
         status = r.approved ? 'approved' : 'progress';
         if (r.approved && fresh.doc.exec_status === 'done') autoExec = true;
+      }
+      // 결재선만 바뀌고 같은 사람이 계속 차례면 대기 시작 시각을 그대로 유지(시간이 0으로 리셋되지 않게)
+      for (const l of (await loadBundle(q, id, false)).lines) {
+        const k = `${l.step_type}:${Number(l.user_id)}`;
+        if (l.status === 'pending' && prevSince.has(k)) await q(`UPDATE approval_lines SET pending_at=$2 WHERE id=$1`, [l.id, prevSince.get(k)]);
       }
       const after = lineSummary((await loadBundle(q, id, false)).lines, users);
       const reason = cleanText(req.body?.reason, 500)?.trim();
