@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수금/정산 · build 0708da</title>
+<title>Refatrix ERP · 수금/정산 · build 20261002adv</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -231,9 +231,11 @@
       const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());
       isFin = !!(su&&su.isDirector) || ['director','treasury'].includes((su&&su.role)||'');
       isDirector = !!(su&&su.isDirector) || ((su&&su.role)==='director');
+      canApplyAdv = isDirector || ((su&&su.role)==='sales_support');
     }catch(e){
       isFin = ['director','treasury'].includes((session.user&&session.user.role)||'');
       isDirector = ((session.user&&session.user.role)==='director');
+      canApplyAdv = isDirector || ((session.user&&session.user.role)==='sales_support');
     }
     if(isFin){ $('varSection').classList.remove('hidden'); renderYearSeg(); load(); }
     else { $('varSection').classList.add('hidden'); }
@@ -311,6 +313,7 @@
   // NC(할인 승인 증빙) 상태
   let ncItems=[], ncStatusFilter='all', arOpenNc=null;
   let isDirector=false;
+  let canApplyAdv=false;   // 선수금 [인보이스에 배분] — 디렉터 + 영업지원(2026-10-02)
   let arEditAlloc=null;
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -1344,10 +1347,12 @@
         +'<td>'+esc(x.memo||'—')+'</td>'
         +'<td>'+esc(x.created_by_name||'—')+'</td>'
         +'<td style="white-space:nowrap">'
+        +(canApplyAdv
+          ? ('<button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="toggleAdvApply('+x.id+')">'+(advOpen===x.id?'닫기':'인보이스에 배분')+'</button> ')
+          : '<span class="hint">디렉터·영업지원만 배분 가능</span>')
         +(isDirector
-          ? ('<button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="toggleAdvApply('+x.id+')">'+(advOpen===x.id?'닫기':'인보이스에 배분')+'</button> '
-             +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" onclick="cancelAdvPayment('+x.id+')">입금 취소</button>')
-          : '<span class="hint">디렉터만 처리 가능</span>')
+          ? '<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" onclick="cancelAdvPayment('+x.id+')">입금 취소</button>'
+          : '')
         +'</td></tr>';
       if(advOpen===x.id){ h+='<tr><td colspan="9" style="background:#fdf8ee">'+advApplyHtml(x)+'</td></tr>'; }
     });

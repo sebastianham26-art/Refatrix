@@ -219,28 +219,33 @@ test('④ 가드 — 선수금 초과 · 남의 고객 인보이스 · 미수 �
   assert.equal(overInv.json().detail[0].error, 'over_outstanding');
 });
 
-test('⑤ 권한 — 배분은 디렉터 전용, 조회는 settlement 권한자', { skip: SKIP }, async () => {
+test('⑤ 권한 — 배분은 디렉터·영업지원, 재무는 불가, 입금 취소는 디렉터 전용', { skip: SKIP }, async () => {
+  const f = await post('fin', `/api/ar/advances/${ID.pay2}/apply`, { allocations: [{ invoice_id: ID.inv2, amount: 100 }] });
+  assert.equal(f.statusCode, 403, '재무는 배분 불가');
   const r = await post('sup', `/api/ar/advances/${ID.pay2}/apply`, { allocations: [{ invoice_id: ID.inv2, amount: 100 }] });
-  assert.equal(r.statusCode, 403, '영업지원은 배분 불가');
+  assert.equal(r.statusCode, 200, '영업지원(Maria)은 배분 가능 — ' + r.body);
+  assert.equal(r.json().advance_left, 6500);
+  assert.equal(await outstanding(ID.inv2), 18100);
+  assert.equal((await del('sup', `/api/ar/payments/${ID.pay2}`)).statusCode, 403, '영업지원은 입금 취소 불가');
   assert.equal((await get('sup', '/api/ar/advances')).statusCode, 200, '조회는 가능');
   assert.ok((await advances('sup')).length > 0);
 });
 
 test('⑥ 입금 취소 — 선수금 소멸 · 반제 복구 · 통지 인박스 복귀', { skip: SKIP }, async () => {
   const invBefore = await outstanding(ID.inv2);
-  assert.equal(invBefore, 18200);
+  assert.equal(invBefore, 18100);   // ⑤ 에서 영업지원이 100 배분
   const inBefore = await accountIn();
 
   const r = await del('dir', `/api/ar/payments/${ID.pay2}`);
   assert.equal(r.statusCode, 200, r.body);
   assert.equal(r.json().deposit_reopened, true, '연결된 통지가 인박스로 복귀');
-  assert.equal(r.json().advance, 6600);
+  assert.equal(r.json().advance, 6500);
 
-  assert.equal(await outstanding(ID.inv2), 23200, '배분했던 5,000 도 함께 복구');
+  assert.equal(await outstanding(ID.inv2), 23200, '배분했던 5,000 + 100 도 함께 복구');
   assert.equal((await advances()).find((x) => x.id === ID.pay2), undefined, '선수금 목록에서 사라짐');
   // 이 입금건이 만든 거래(배분 5,000 + 선수금 잔여 6,600)가 통째로 계좌에서 빠진다
   assert.equal(r2(inBefore - await accountIn()), 11600, '입금 총액만큼 계좌에서 빠짐');
-  assert.equal((await txnByKind('advance')).filter((t) => Number(t.amount_mxn) === 6600).length, 0, '축소돼 있던 선수금 거래도 취소');
+  assert.equal((await txnByKind('advance')).filter((t) => Number(t.amount_mxn) === 6500).length, 0, '축소돼 있던 선수금 거래도 취소');
 
   // 복귀한 통지는 잔여 전액으로 다시 반제 가능하다
   const inbox = (await get('sup', '/api/bank-deposits?status=pending')).json().items;
@@ -250,10 +255,11 @@ test('⑥ 입금 취소 — 선수금 소멸 · 반제 복구 · 통지 인박�
 });
 
 test('⑦ 선수금 0 인 입금건은 목록에 뜨지 않는다 (회귀)', { skip: SKIP }, async () => {
-  const inv = await mkInv(`${TAG}-F4`, 10000);
-  const dep = await mkDeposit(11600, '정상반제');
+  // 금액은 ⑥ 에서 인박스로 복귀한 11,600 통지와 겹치지 않게(같은 계좌·일자·금액이면 중복 등록 가드 409)
+  const inv = await mkInv(`${TAG}-F4`, 10500);   // 12,180
+  const dep = await mkDeposit(12180, '정상반제');
   const p = await post('sup', '/api/ar/payments', {
-    customer_id: ID.cust, deposit_id: dep, allocations: [{ invoice_id: inv, amount: 11600 }],
+    customer_id: ID.cust, deposit_id: dep, allocations: [{ invoice_id: inv, amount: 12180 }],
   });
   assert.equal(p.statusCode, 200, p.body);
   assert.equal(p.json().advance, 0);

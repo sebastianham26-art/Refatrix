@@ -1546,7 +1546,9 @@ export default async function financeRoutes(app) {
   //   선수금 거래(2030 부채)를 배분액만큼 줄이고, 같은 금액의 매출수금 거래(4010)를 만든다.
   //   → 계좌 잔액은 그대로, 돈만 "선수금 → 매출수금"으로 이동. 이중계상 없음.
   //   body: { allocations:[{invoice_id, amount}] }
-  app.post('/api/ar/advances/:id/apply', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+  //   권한(2026-10-02): 디렉터 + 영업지원(반제 담당) — 통지 반제와 같은 _bdCanNotify. [입금 취소]는 디렉터 전용 유지.
+  app.post('/api/ar/advances/:id/apply', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
+    if (!_bdCanNotify(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     const pid = Number(req.params.id);
     if (!pid) return reply.code(400).send({ error: 'bad_id' });
     const b = req.body || {};
