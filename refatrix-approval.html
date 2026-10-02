@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261001ee</title>
+<title>Refatrix ERP · 전자결재 · b20261002eg</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -761,7 +761,7 @@ function edInsertText(text){
 /* ─── 작성 ─── */
 function newCd(){return{id:null,category_id:'',title:'',vendor:'',pay_due:'',pay_method:'계좌이체',orig_sub:'',iva_applied:true,currency:'MXN',payment_type:'once',
  plan:{freq:'weekly',count:4,start:todayMX(),per_sub:''},sched:[{due_date:'',amount:''},{due_date:'',amount:''}],body_nodes:[],
- refs:[],shares:[],include_finance:true,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null};}
+ refs:[],shares:[],include_finance:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null};}
 function cdFromDet(){
  const d=DET.doc,plan=d.payment_plan||{};
  return{id:d.id,category_id:d.category_id||'',title:d.title,vendor:d.vendor||'',pay_due:d.pay_due||'',pay_method:d.pay_method||'계좌이체',
@@ -770,7 +770,7 @@ function cdFromDet(){
   sched:d.payment_type==='installment'?DET.payments.map(p=>({due_date:p.due_date||'',amount:String(p.planned_amount)})):[{due_date:'',amount:''},{due_date:'',amount:''}],
   body_nodes:DET.body_nodes||[],
   refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
-  include_finance:d.include_finance,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
+  include_finance:d.include_finance,steps:Array.isArray(d.custom_steps)?d.custom_steps.map(x=>({...x})):null,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
   fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:''};
 }
 // 문서 통화 기준 금액 → { sub, iva, total, per, count, rows:[{due_date,amount}] }
@@ -794,14 +794,30 @@ function cdRate(cd){
  return{rate:0,label:ui.fxErr?'환율을 불러오지 못했습니다 — 상신할 때 서버가 그날 환율을 받아 고정합니다':'환율 불러오는 중…'};
 }
 async function loadFx(){try{ui.fx=await api('GET','/api/fx/usd-mxn');}catch(e){ui.fx=null;ui.fxErr=true;}if(ui.view==='compose')updateCompose();}
+// 디렉터 작성 화면 결재선 편집기(내 결재 뒤 단계)
+const CS_TYPES={approve:'중간결재',agree:'합의',pass:'경유',pre_ceo:'대표이사 사전승인'};
+function cdSteps(cd){ if(!Array.isArray(cd.steps)) cd.steps=cd.include_finance&&B.settings.finance_user_id?[{step_type:'agree',user_id:B.settings.finance_user_id}]:[]; return cd.steps; }
+function csEditorHtml(cd){
+ const st=cdSteps(cd),me=B.me.id,act=B.users.filter(u=>u.active&&!same(u.id,me));
+ const usel=(attr,cur)=>`<select ${attr}>${act.map(u=>`<option value="${u.id}" ${same(u.id,cur)?'selected':''}>${esc(u.name)} · ${esc(u.dept||ROLE_KO[u.role]||u.role)}</option>`).join('')}</select>`;
+ const tsel=(attr,cur)=>`<select ${attr}>${Object.entries(CS_TYPES).map(([k,v])=>`<option value="${k}" ${cur===k?'selected':''}>${v}</option>`).join('')}</select>`;
+ return `<div class="le-row locked"><span class="no2">1</span><span class="grow"><b>기안</b> · ${esc(B.me.name)}</span></div>
+ <div class="le-row locked"><span class="no2">2</span><span class="grow"><b>디렉터 결재</b> · ${esc(B.me.name)} (본인 · 상신 시 자동 승인)</span></div>
+ ${st.map((x,i)=>`<div class="le-row"><span class="no2">${i+3}</span>${tsel(`data-cs="type" data-i="${i}"`,x.step_type)}<span class="grow">${usel(`data-cs="user" data-i="${i}"`,x.user_id)}</span>
+  <button class="x" data-act="csup" data-i="${i}" ${i?'':'disabled'} aria-label="위로">↑</button><button class="x" data-act="csdn" data-i="${i}" ${i<st.length-1?'':'disabled'} aria-label="아래로">↓</button><button class="x" data-act="csdel" data-i="${i}" aria-label="삭제">✕</button></div>`).join('')}
+ <div class="addstep" style="margin-top:8px">${tsel('data-cs="addT"',ui.csAddT||'agree')}${usel('data-cs="addU"',ui.csAddU||B.settings.finance_user_id)}<button class="btn sm" data-act="csadd">＋ 단계 추가</button>
+  ${B.settings.finance_user_id&&!st.some(x=>x.step_type==='agree'&&same(x.user_id,B.settings.finance_user_id))?`<button class="btn sm le-btn" data-act="csfin">＋ 재무 합의 (${esc(U(B.settings.finance_user_id))})</button>`:''}</div>
+ ${st.length?'':'<p class="sub" style="margin:6px 0 0">내 결재 뒤 단계가 없으면 상신 즉시 승인완료(집행대기)됩니다. 기준액 이상이면 대표이사 사전승인은 자동으로 붙습니다.</p>'}`;
+}
+function csRedraw(){const el=$('#csEd');if(el&&ui.cd)el.innerHTML=csEditorHtml(ui.cd);updateCompose();}
 function previewLines(cd){
  const S=B.settings,me=B.me.id,c=cdCalc(cd),rate=cdRate(cd).rate||0,mx={sub:r2(c.sub*rate),total:r2(c.total*rate)};
  const isDir=B.me.isDirector||same(me,S.director_user_id);
  const ls=[{t:'draft',u:me}];const add=(t,u)=>{if(u==null||same(u,me))return;if(ls.some(x=>x.t===t&&same(x.u,u)))return;ls.push({t,u});};
- if(isDir){if(cd.include_finance)add('agree',S.finance_user_id);ls.push({t:'director',u:me});}
+ if(isDir){ls.push({t:'director',u:me});cdSteps(cd).forEach(x=>add(x.step_type,x.user_id));}
  else{const cat=B.categories.find(x=>same(x.id,cd.category_id));(cat?cat.steps:[]).forEach(s=>add(s.step_type,s.user_id));ls.push({t:'director',u:S.director_user_id});}
- const ceoD=same(me,S.ceo_user_id),b=S.threshold_basis==='sub'?mx.sub:mx.total,pre=!ceoD&&b>=S.ceo_pre_threshold;
- if(pre)ls.push({t:'pre_ceo',u:S.ceo_user_id});
+ const ceoD=same(me,S.ceo_user_id),b=S.threshold_basis==='sub'?mx.sub:mx.total,hasPre=ls.some(x=>x.t==='pre_ceo'),pre=hasPre||(!ceoD&&b>=S.ceo_pre_threshold);
+ if(pre&&!hasPre)ls.push({t:'pre_ceo',u:S.ceo_user_id});
  ls.push({t:'post_ceo',u:ceoD?S.director_user_id:S.ceo_user_id});
  return{ls,pre,b};
 }
@@ -859,7 +875,7 @@ function renderCompose(){
 ${cd.revise?` <div class="card sec"><h3>수정 사유 <span class="sub">선택</span></h3><input class="inp" data-f="reason" value="${esc(cd.reason||'')}" placeholder="예: 수량 정정, 견적 변경 반영">
   <p class="sub" style="margin:8px 0 0">결재선·참조·공람은 그대로입니다${B.me.isDirector?' — 결재선은 상세 화면의 「결재선 수정」에서 바꿉니다':''}.</p></div>
  <div class="abar"><button class="btn" data-act="rvcancel">취소</button><button class="btn pri" data-act="csave">수정 저장</button></div>`:` <div class="card sec"><h3>결재선</h3>
-  ${isDir?`<div class="toggle ${cd.include_finance?'on':''}" data-act="ctog" id="finTog"><span class="sw"></span><div><b>재무담당 합의 포함</b><div class="sub">디렉터 기안 전용 — 필요에 따라 ${esc(U(B.settings.finance_user_id))} 합의를 넣거나 뺄 수 있습니다</div></div></div><div style="height:10px"></div>`:''}
+  ${isDir?`<div class="sub" style="margin:-4px 0 6px">디렉터 기안 — <b>내 결재 뒤</b> 단계를 직접 정합니다. 상신 후·승인 후에도 「결재선 수정」으로 바꿀 수 있습니다.</div><div id="csEd">${csEditorHtml(cd)}</div><div style="height:10px"></div>`:''}
   <div class="lineprev" id="lprev"></div><div id="ceoNote"></div>
   <div class="form" style="margin-top:12px">${peopleFld('refs','참조 (진행 중 열람)')}${peopleFld('shares','공람 (승인 후 공유)')}</div>
  </div>
@@ -895,6 +911,7 @@ async function saveCd(submit){
  const c=cdCalc(cd);
  if(!cd.title.trim()){toast('제목을 입력하세요');return;}
  if((submit||cd.revise)&&!cd.category_id){toast('카테고리를 선택하세요');return;}
+ if(B.me.isDirector&&!cd.revise){const st=cdSteps(cd),pi=st.findIndex(x=>x.step_type==='pre_ceo');if(pi>=0&&pi!==st.length-1){toast('대표이사 사전승인은 맨 끝에만 둘 수 있습니다');return;}}
  if(cd.revise&&!(c.total>0)){toast('금액을 입력하세요');return;}
  if(submit&&!(c.total>0)){toast('금액을 입력하세요');return;}
  if(cd.payment_type==='recurring'&&c.rows.length<2){toast('정기 지급은 첫 지급일과 횟수(2회 이상)가 필요합니다');return;}
@@ -907,7 +924,8 @@ async function saveCd(submit){
   currency:cd.currency,payment_type:cd.payment_type,iva_applied:cd.iva_applied,orig_sub:c.sub,
   payment_plan:cd.payment_type==='recurring'?{freq:cd.plan.freq,count:c.count,start:cd.plan.start,per_sub:r2(cd.plan.per_sub)}:null,
   schedule:cd.payment_type==='installment'?c.rows.map(r=>({due_date:r.due_date||null,amount:r.amount})):null,
-  body_rich:cd.body_nodes,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance};
+  body_rich:cd.body_nodes,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance,
+  custom_steps:B.me.isDirector&&!cd.revise?cdSteps(cd).map(x=>({step_type:x.step_type,user_id:Number(x.user_id)})):undefined};
  try{
   if(cd.revise){
    const r=await api('PUT',`/api/approvals/${cd.id}/content`,{...body,reason:cd.reason||''});
@@ -1160,15 +1178,16 @@ function leUserSel(attr,cur,exclude){
  return `<select ${attr}>${B.users.filter(u=>u.active&&!same(u.id,exclude)).map(u=>`<option value="${u.id}" ${same(u.id,cur)?'selected':''}>${esc(u.name)} · ${esc(u.dept||ROLE_KO[u.role]||u.role)}</option>`).join('')}</select>`;
 }
 const MODALS={
- lineedit:()=>{const L=ui.le,d=DET.doc,prog=d.status==='progress';
+ lineedit:()=>{const L=ui.le,d=DET.doc,prog=d.status==='progress'||(d.status==='approved'&&d.exec_status!=='done'),appr=d.status==='approved';
   return `<h2>결재선 수정</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} — 처리 끝난 단계는 바꿀 수 없습니다. 저장하면 맨 앞 남은 단계부터 다시 진행됩니다.</p>
+  ${appr&&prog?'<div class="warn">승인완료 문서입니다. 단계를 추가하면 <b>다시 결재중</b>으로 돌아가고, 추가한 단계가 모두 승인되면 다시 집행대기가 됩니다. 사후승인자만 바꾸면 그대로 유지됩니다.</div>':''}
   <div>${L.locked.map((l,i)=>`<div class="le-row locked"><span class="no2">${i+1}</span><span class="grow"><b>${SL(l.step_type)}</b> · ${esc(U(l.user_id))}</span><span class="st">${l.status==='done'?'처리 '+pdt(l.acted_at,11):l.status}</span></div>`).join('')}
   ${L.rows.map((r,i)=>`<div class="le-row"><span class="no2">${L.locked.length+i+1}</span>
    <select data-le="type" data-i="${i}">${Object.entries(LE_TYPES).map(([k,v])=>`<option value="${k}" ${r.step_type===k?'selected':''}>${v}</option>`).join('')}</select>
    <span class="grow">${leUserSel(`data-le="user" data-i="${i}"`,r.user_id,d.drafter_id)}</span>
    ${r.status==='pending'?'<span class="st">현재 차례</span>':''}
    <button class="x" data-act="leup" data-i="${i}" ${i?'':'disabled'} aria-label="위로">↑</button><button class="x" data-act="ledn" data-i="${i}" ${i<L.rows.length-1?'':'disabled'} aria-label="아래로">↓</button><button class="x" data-act="ledel" data-i="${i}" aria-label="삭제">✕</button></div>`).join('')}</div>
-  ${prog?`<div class="addstep" style="margin:10px 0"><select data-le="addT">${Object.entries(LE_TYPES).map(([k,v])=>`<option value="${k}" ${L.addT===k?'selected':''}>${v}</option>`).join('')}</select>${leUserSel('data-le="addU"',L.addU,d.drafter_id)}<button class="btn sm" data-act="leadd">＋ 단계 추가</button></div>`:'<p class="sub">승인된 문서는 사후승인자만 바꿀 수 있습니다.</p>'}
+  ${prog?`<div class="addstep" style="margin:10px 0"><select data-le="addT">${Object.entries(LE_TYPES).map(([k,v])=>`<option value="${k}" ${L.addT===k?'selected':''}>${v}</option>`).join('')}</select>${leUserSel('data-le="addU"',L.addU,d.drafter_id)}<button class="btn sm" data-act="leadd">＋ 단계 추가</button></div>`:'<p class="sub">집행이 끝난 문서는 사후승인자만 바꿀 수 있습니다.</p>'}
   <div class="le-row"><span class="no2">⌁</span><span class="grow"><b>대표이사 사후승인</b> ${leUserSel('data-le="post"',L.post,d.drafter_id)}</span></div>
   <div class="fld" style="margin-top:10px"><label>사유 (선택 · 이력에 남음)</label><input class="inp" data-le="reason" value="${esc(L.reason)}" placeholder="예: 금액 검토 필요로 재무 합의 추가"></div>
   <div class="warn info">디렉터 결재는 1개여야 하고, 대표이사 사전승인은 맨 끝에만 둘 수 있습니다. 기안자는 결재선에 넣을 수 없습니다.</div>${mBtns('저장')}`;},
@@ -1207,8 +1226,8 @@ function confirmBox(title,msg,fn,ok,cls){openModal('confirm',{title,msg,fn,ok,cl
 const tid=m=>m.id||DET.doc.id;
 const OK={
  async lineedit(){const L=ui.le;
-  await api('PUT',`/api/approvals/${DET.doc.id}/lines`,{steps:L.rows.map(r=>({step_type:r.step_type,user_id:Number(r.user_id)})),post_user_id:Number(L.post),reason:L.reason});
-  toast('결재선을 수정했습니다');},
+  const r=await api('PUT',`/api/approvals/${DET.doc.id}/lines`,{steps:L.rows.map(r=>({step_type:r.step_type,user_id:Number(r.user_id)})),post_user_id:Number(L.post),reason:L.reason});
+  toast(r.reopened?'결재선을 수정했습니다 · 다시 결재중으로 돌아갔습니다':'결재선을 수정했습니다');},
  async addend(){const ed=$('#adEd'),nodes=ed?serializeEd(ed):[];
   if(!nodes.length&&!ui.mFiles.length){toast('내용이나 파일을 넣어 주세요');return false;}
   const r=await api('POST',`/api/approvals/${DET.doc.id}/addenda`,{body_rich:nodes,with_files:ui.mFiles.length>0});
@@ -1266,6 +1285,13 @@ const H={
  revise(){ui.cd=cdFromDet();ui.cd.revise=true;ui.view='compose';render();window.scrollTo(0,0);},
  rvcancel(){const id=ui.cd&&ui.cd.id;ui.cd=null;if(id)openDoc(id);else{ui.view='board';render();}},
  addend(){openModal('addend');},
+ csadd(){const st=cdSteps(ui.cd),t=($('[data-cs="addT"]')||{}).value||'agree',u=Number(($('[data-cs="addU"]')||{}).value);if(!u){toast('사람을 고르세요');return;}
+  if(st.some(x=>x.step_type===t&&same(x.user_id,u))){toast('이미 있는 단계입니다');return;}
+  const pi=st.findIndex(x=>x.step_type==='pre_ceo');if(t!=='pre_ceo'&&pi>=0)st.splice(pi,0,{step_type:t,user_id:u});else st.push({step_type:t,user_id:u});ui.csAddT=t;ui.csAddU=u;csRedraw();},
+ csfin(){const st=cdSteps(ui.cd),f={step_type:'agree',user_id:B.settings.finance_user_id},pi=st.findIndex(x=>x.step_type==='pre_ceo');if(pi>=0)st.splice(pi,0,f);else st.push(f);csRedraw();},
+ csdel(a){cdSteps(ui.cd).splice(Number(a.dataset.i),1);csRedraw();},
+ csup(a){const i=Number(a.dataset.i),R=cdSteps(ui.cd);if(i>0){[R[i-1],R[i]]=[R[i],R[i-1]];csRedraw();}},
+ csdn(a){const i=Number(a.dataset.i),R=cdSteps(ui.cd);if(i<R.length-1){[R[i+1],R[i]]=[R[i],R[i+1]];csRedraw();}},
  edimgad(){ui.edTarget='adEd';const fp=$('#imgPick');fp.value='';fp.click();},
  ccur(a){ui.cd.currency=a.dataset.v;if(ui.cd.currency==='USD'&&!ui.fx)loadFx();render();},
  cpt(a){const cd=ui.cd,v=a.dataset.v;if(v===cd.payment_type)return;const ed=$('#bodyEd');if(ed)cd.body_nodes=serializeEd(ed);
@@ -1374,6 +1400,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
  const t=e.target;
  if(t.id==='ivaOn'&&ui.cd){ui.cd.iva_applied=t.checked;updateCompose();}
+ else if(t.dataset.cs&&ui.cd){const k=t.dataset.cs,st=cdSteps(ui.cd);if(k==='type')st[Number(t.dataset.i)].step_type=t.value;else if(k==='user')st[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='addT')ui.csAddT=t.value;else if(k==='addU')ui.csAddU=Number(t.value);if(k==='type'||k==='user')updateCompose();}
  else if(t.dataset.le&&ui.le){const k=t.dataset.le;if(k==='type')ui.le.rows[Number(t.dataset.i)].step_type=t.value;else if(k==='user')ui.le.rows[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='post')ui.le.post=Number(t.value);else if(k==='addT')ui.le.addT=t.value;else if(k==='addU')ui.le.addU=Number(t.value);}
  else if(t.dataset.kind){getArr(t.dataset.kind)[Number(t.dataset.i)].kind=t.value;}
  else if(t.id==='catSel'){ui.cat=t.value;render();}

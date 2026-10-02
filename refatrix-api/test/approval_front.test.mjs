@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20261001ed<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20261002eg<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
 });
 
@@ -141,10 +141,18 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     await cx.until(() => cx.w.eval('DET.doc.stage') === 'pre');
     // 디렉터 작성 화면에는 재무 합의 토글
     s.click(s.$('[data-act="nav"][data-v="compose"]'));
-    await s.until(() => s.$('#finTog'));
-    assert.match(s.$('#lprev').textContent, /합의/);
-    s.click(s.$('#finTog'));
-    assert.doesNotMatch(s.$('#lprev').textContent, /합의/);
+    // 결재 전: 디렉터 작성 화면에서 결재선 직접 지정(내 결재 뒤) — 기본 재무 합의 → 삭제 → 경유 추가 → 재무 다시
+    await s.until(() => s.$('#csEd'));
+    const lp = () => [...s.d.querySelectorAll('#lprev .lp small')].map((x) => x.textContent);
+    assert.deepEqual(lp().slice(0, 3), ['기안', '디렉터 결재', '합의'], '재무 합의가 내 결재 뒤');
+    s.click(s.$('#csEd [data-act="csdel"][data-i="0"]'));
+    assert.ok(!lp().includes('합의')); assert.ok(s.$('#csEd [data-act="csfin"]'), '재무 합의 빠른 추가 버튼');
+    const ct = s.$('#csEd [data-cs="addT"]'); ct.value = 'pass'; ct.dispatchEvent(new s.w.Event('change', { bubbles: true }));
+    const cu = s.$('#csEd [data-cs="addU"]'); cu.value = String(U.maria.id); cu.dispatchEvent(new s.w.Event('change', { bubbles: true }));
+    s.click(s.$('#csEd [data-act="csadd"]'));
+    s.click(s.$('#csEd [data-act="csfin"]'));
+    assert.deepEqual(lp().slice(0, 4), ['기안', '디렉터 결재', '경유', '합의']);
+    assert.deepEqual(JSON.parse(JSON.stringify(s.w.eval('cdSteps(ui.cd)'))), [{ step_type: 'pass', user_id: U.maria.id }, { step_type: 'agree', user_id: U.christopher.id }]);
 
     // ③ Jang(대표이사): 결재함 → 사전승인
     const j = await open('jang');
@@ -157,6 +165,14 @@ test('F1 화면 흐름 — 작성·상신 → 결재 → 집행 → 대표이사
     j.click(j.act('mok'));
     await j.until(() => !j.$(`[data-act="approve"][data-id="${docId}"]`));
 
+    // 결재 후(승인완료·집행 전): 디렉터 결재선 수정 창에 단계 추가 + 재결재 경고
+    await s.w.eval(`openDoc(${docId})`);
+    await s.until(() => s.w.eval('DET') && s.w.eval('DET.doc.id') === docId && s.w.eval('DET.doc.status') === 'approved' && s.act('lineedit'));
+    s.click(s.act('lineedit'));
+    await s.until(() => s.$('#modalCard [data-le="addT"]'));
+    assert.match(s.$('#modalCard').textContent, /다시 결재중/);
+    s.click(s.act('mx'));
+    await s.until(() => !s.w.eval('ui.modal'));
     // ④ Christopher(재무): 집행 — 증빙 없으면 막힘 → 송금증 첨부 후 집행
     const c = await open('christopher');
     assert.deepEqual(tabNames(c), ['board', 'compose', 'report']);

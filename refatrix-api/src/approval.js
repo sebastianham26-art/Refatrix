@@ -128,7 +128,7 @@ export function roleCtx(perm, settings) {
 // ── 결재선 생성(상신 시점) ─────────────────────────────────────────────
 //   반환: [{step_order, step_type, user_id, status, comment}]  (status: draft=done, 나머지 waiting)
 //   오류: { error: 'director_unset' | 'ceo_unset' }
-export function buildLines({ drafterId, drafterIsDirector, catSteps = [], doc }, settings) {
+export function buildLines({ drafterId, drafterIsDirector, catSteps = [], doc, customSteps = null }, settings) {
   const dirId = settings.director_user_id != null ? Number(settings.director_user_id) : null;
   const ceoId = settings.ceo_user_id != null ? Number(settings.ceo_user_id) : null;
   const finId = settings.finance_user_id != null ? Number(settings.finance_user_id) : null;
@@ -147,16 +147,19 @@ export function buildLines({ drafterId, drafterIsDirector, catSteps = [], doc },
     lines.push({ step_order: o++, step_type: type, user_id: u, status: 'waiting', comment: null });
   };
   if (isDir) {
-    if (doc.include_finance) add('agree', finId);
+    // 디렉터 본인 결재(자동 완료) → 그 뒤 단계: 작성 화면에서 직접 짠 목록(custom_steps) 또는 재무 합의 토글
     lines.push({ step_order: o++, step_type: 'director', user_id: me, status: 'done', comment: '기안자 결재 (디렉터 기안)' });
+    if (Array.isArray(customSteps)) customSteps.forEach((st) => add(st.step_type, st.user_id));
+    else if (doc.include_finance) add('agree', finId);
   } else {
     [...catSteps].sort((a, b) => n(a.step_order) - n(b.step_order) || n(a.id) - n(b.id))
       .forEach((s) => add(s.step_type, s.user_id));
     lines.push({ step_order: o++, step_type: 'director', user_id: dirId, status: 'waiting', comment: null });
   }
   const ceoDrafter = sameId(me, ceoId);
-  const pre = !ceoDrafter && basisAmount(doc, settings.threshold_basis) >= n(settings.ceo_pre_threshold);
-  if (pre) lines.push({ step_order: o++, step_type: 'pre_ceo', user_id: ceoId, status: 'waiting', comment: null });
+  const hasPre = lines.some((l) => l.step_type === 'pre_ceo');
+  const pre = hasPre || (!ceoDrafter && basisAmount(doc, settings.threshold_basis) >= n(settings.ceo_pre_threshold));
+  if (pre && !hasPre) lines.push({ step_order: o++, step_type: 'pre_ceo', user_id: ceoId, status: 'waiting', comment: null });
   // 사후승인 — 대표이사 기안이면 디렉터가 확인
   const postUser = ceoDrafter ? (dirId ?? me) : ceoId;
   lines.push({ step_order: 99, step_type: 'post_ceo', user_id: postUser, status: 'waiting', comment: null });
@@ -451,6 +454,28 @@ export function canAddend(ctx, doc, lines) {
   return doc.status === 'progress' && !!mainPending(ctx, lines);
 }
 // 결재선 수정: 디렉터 · 진행 중(남은 단계 전체) 또는 승인 후 사후승인 확인 전(사후승인자만)
+// 작성 화면에서 디렉터가 짠 결재선(내 결재 뒤 단계) 검증 → { steps } | { error }
+export const CUSTOM_STEP_TYPES = ['approve', 'agree', 'pass', 'pre_ceo'];
+export function validateCustomSteps(raw, { drafterId, activeUserIds }) {
+  if (raw == null) return { steps: null };
+  let arr = raw;
+  if (typeof raw === 'string') { try { arr = JSON.parse(raw); } catch { return { error: 'bad_custom_steps' }; } }
+  if (!Array.isArray(arr) || arr.length > 20) return { error: 'bad_custom_steps' };
+  const active = new Set((activeUserIds || []).map(Number));
+  const out = [];
+  for (const st of arr) {
+    const t = st && st.step_type, u = Number(st && st.user_id);
+    if (!CUSTOM_STEP_TYPES.includes(t)) return { error: 'bad_step_type' };
+    if (!u || (activeUserIds && !active.has(u))) return { error: 'bad_user' };
+    if (sameId(u, drafterId)) return { error: 'drafter_in_line' };
+    if (out.some((r) => r.step_type === t && r.user_id === u)) return { error: 'duplicate' };
+    out.push({ step_type: t, user_id: u });
+  }
+  if (out.filter((r) => r.step_type === 'pre_ceo').length > 1) return { error: 'pre_ceo_count' };
+  const pi = out.findIndex((r) => r.step_type === 'pre_ceo');
+  if (pi >= 0 && pi !== out.length - 1) return { error: 'pre_ceo_last' };
+  return { steps: out };
+}
 export function canEditLines(ctx, doc) {
   if (!ctx.isDirector) return false;
   if (doc.status === 'progress') return true;
@@ -471,7 +496,8 @@ export function planLineEdit({ lines, steps, postUser, doc, activeUserIds }) {
   const locked = main.filter((l) => l.step_type === 'draft' || LOCKED.includes(l.status));
   const list = Array.isArray(steps) ? steps : [];
   const active = new Set((activeUserIds || []).map(Number));
-  if (doc.status === 'approved' && list.length) return { error: 'only_post_editable' };
+  // 승인 후: 집행 전이면 단계 추가 가능(재결재로 되돌아감) · 집행 후에는 사후승인자만
+  if (doc.status === 'approved' && list.length && doc.exec_status === 'done') return { error: 'only_post_editable' };
   const rows = [];
   for (const s of list) {
     const t = s && s.step_type, u = Number(s && s.user_id);
@@ -482,7 +508,7 @@ export function planLineEdit({ lines, steps, postUser, doc, activeUserIds }) {
     rows.push({ step_type: t, user_id: u });
   }
   const all = [...locked.filter((l) => l.step_type !== 'draft'), ...rows];
-  if (doc.status === 'progress') {
+  if (doc.status === 'progress' || list.length) {
     if (all.filter((r) => r.step_type === 'director').length !== 1) return { error: 'director_count' };
     if (all.filter((r) => r.step_type === 'pre_ceo').length > 1) return { error: 'pre_ceo_count' };
     const pi = rows.findIndex((r) => r.step_type === 'pre_ceo');

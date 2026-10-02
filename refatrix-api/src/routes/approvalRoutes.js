@@ -11,7 +11,7 @@ import {
   n, round2, sameId, decodeApprovalFile, sha256Hex, parseCfdi, guessKind, normKind, calcAmounts,
   roleCtx, buildLines, advance, postLine, myPending, canSeeDoc, isTodo, stageKey, fileStage, variancePct,
   allowedActions, canDeleteFile, canVoidFile, docNo, reportRows, completenessChecks,
-  canEditContent, canAddend, canEditLines, editorStep, planLineEdit, diffContent, amountChanged, basisAmount,
+  validateCustomSteps, canEditContent, canAddend, canEditLines, editorStep, planLineEdit, diffContent, amountChanged, basisAmount,
   CURRENCIES, PAYMENT_TYPES, PAYMENT_TYPE_LABEL, FREQS, SCHEDULE_MAX, buildSchedule, toMxn, paymentsMxn, normalizeBodyRich, APPROVAL_DOC_BODY_LIMIT, isYmd,
 } from '../approval.js';
 
@@ -21,7 +21,7 @@ const DOC_COLS = `d.id, d.doc_no, d.version, d.parent_id, d.category_id, d.title
   d.actual_total, to_char(d.exec_date,'YYYY-MM-DD') AS exec_date, d.exec_pay_method, d.exec_memo, d.exec_at, d.exec_by,
   d.created_at, d.submitted_at, d.approved_at, d.closed_at,
   d.currency, d.fx_rate, to_char(d.fx_date,'YYYY-MM-DD') AS fx_date, d.fx_source, d.fx_locked_at,
-  d.orig_sub, d.orig_iva, d.orig_total, d.payment_type, d.payment_plan`;
+  d.orig_sub, d.orig_iva, d.orig_total, d.payment_type, d.payment_plan, d.custom_steps`;
 const PAY_COLS = `id, document_id, seq, to_char(due_date,'YYYY-MM-DD') AS due_date, planned_amount, planned_mxn, status,
   actual_amount, actual_mxn, fx_rate, to_char(fx_date,'YYYY-MM-DD') AS fx_date, to_char(exec_date,'YYYY-MM-DD') AS exec_date,
   pay_method, memo, exec_at, exec_by, skip_reason`;
@@ -33,6 +33,7 @@ function normDoc(r) {
   const o = { ...r };
   for (const k of ['id', 'version', 'parent_id', 'category_id', 'drafter_id', 'exec_by']) o[k] = o[k] == null ? null : Number(o[k]);
   for (const k of ['planned_sub', 'planned_iva', 'planned_total', 'threshold_at_submit', 'actual_total', 'fx_rate', 'orig_sub', 'orig_iva', 'orig_total']) o[k] = o[k] == null ? null : Number(o[k]);
+  if ('custom_steps' in o) { try { o.custom_steps = o.custom_steps ? JSON.parse(o.custom_steps) : null; } catch { o.custom_steps = null; } }
   if ('payment_plan' in o) { try { o.payment_plan = o.payment_plan ? JSON.parse(o.payment_plan) : null; } catch { o.payment_plan = null; } }
   if (o.currency == null) o.currency = 'MXN';
   if (o.payment_type == null) o.payment_type = 'once';
@@ -376,6 +377,17 @@ export default async function approvalRoutes(app) {
       }
     }
   }
+  // 디렉터 기안: 작성 화면에서 짠 결재선(내 결재 뒤 단계) 저장. 직원 기안은 항상 NULL(카테고리 템플릿).
+  async function saveCustomSteps(q, req, id, uid) {
+    let val = null;
+    if (req.ctx.perm.role === 'director' && req.body && Array.isArray(req.body.custom_steps)) {
+      const users = await loadUsers(q);
+      const v = validateCustomSteps(req.body.custom_steps, { drafterId: uid, activeUserIds: [...users.values()].filter((u) => u.active).map((u) => u.id) });
+      if (v.error) throw new Stop('bad_input', { detail: v.error });
+      val = JSON.stringify(v.steps);
+    }
+    await q(`UPDATE approval_documents SET custom_steps=$2 WHERE id=$1`, [id, val]);
+  }
   // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
   async function saveSchedule(q, docId, rows) {
     await q(`DELETE FROM approval_payments WHERE document_id=$1`, [docId]);
@@ -398,6 +410,7 @@ export default async function approvalRoutes(app) {
       await q(`UPDATE approval_documents SET ${DRAFT_SET} WHERE id=$1`, draftArgs(id, f));
       await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
+      await saveCustomSteps(q, req, id, uid);
       const m = await applyMoney(q, id);
       return { id, planned_total: m.planned_total, fx: m.fx };
     });
@@ -413,6 +426,7 @@ export default async function approvalRoutes(app) {
       await q(`UPDATE approval_documents SET ${DRAFT_SET}, updated_at=now() WHERE id=$1`, draftArgs(id, f));
       await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
+      await saveCustomSteps(q, req, id, uid);
       const m = await applyMoney(q, id);
       return { id, planned_total: m.planned_total, fx: m.fx };
     });
@@ -447,7 +461,14 @@ export default async function approvalRoutes(app) {
       const cat = (await q(`SELECT id, active FROM approval_categories WHERE id=$1`, [b.doc.category_id])).rows[0];
       if (!cat) throw new Stop('bad_input', { detail: 'category_missing' });
       const steps = (await q(`SELECT id, step_order, step_type, user_id FROM approval_category_steps WHERE category_id=$1`, [b.doc.category_id])).rows;
-      const built = buildLines({ drafterId: uid, drafterIsDirector: req.ctx.perm.role === 'director', catSteps: steps, doc: b.doc }, settings);
+      let customSteps = null;
+      if (req.ctx.perm.role === 'director' && Array.isArray(b.doc.custom_steps)) {
+        const users = await loadUsers(q);
+        const v = validateCustomSteps(b.doc.custom_steps, { drafterId: uid, activeUserIds: [...users.values()].filter((u) => u.active).map((u) => u.id) });
+        if (v.error) throw new Stop('bad_input', { detail: v.error });
+        customSteps = v.steps;
+      }
+      const built = buildLines({ drafterId: uid, drafterIsDirector: req.ctx.perm.role === 'director', catSteps: steps, doc: b.doc, customSteps }, settings);
       if (built.error) throw new Stop(built.error);
       let no = b.doc.doc_no;
       if (!no) {
@@ -693,10 +714,10 @@ export default async function approvalRoutes(app) {
       const nid = Number((await q(
         `INSERT INTO approval_documents(version, parent_id, category_id, title, vendor, body, drafter_id, pay_due, pay_method,
            iva_applied, planned_sub, planned_iva, planned_total, include_finance,
-           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich)
+           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich, custom_steps)
          SELECT version+1, id, category_id, title, vendor, body, drafter_id, pay_due, pay_method,
            iva_applied, planned_sub, planned_iva, planned_total, include_finance,
-           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich
+           currency, orig_sub, orig_iva, orig_total, payment_type, payment_plan, body_rich, custom_steps
            FROM approval_documents WHERE id=$1 RETURNING id`, [id])).rows[0].id);
       await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn)
                SELECT $2, seq, due_date, planned_amount, planned_mxn FROM approval_payments WHERE document_id=$1`, [id, nid]);
@@ -735,6 +756,12 @@ export default async function approvalRoutes(app) {
       const before = lineSummary(b.lines, users);
       const prevPending = new Set(b.lines.filter((l) => l.status === 'pending').map((l) => Number(l.user_id)));
       const pl = postLine(b.lines);
+      const reopen = b.doc.status === 'approved' && plan.rows.length > 0;   // 승인 후(집행 전) 단계 추가 → 재결재
+      if (reopen) {
+        await q(`UPDATE approval_documents SET status='progress', exec_status='none', approved_at=NULL, updated_at=now() WHERE id=$1`, [id]);
+        await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL AND kind IN ('집행 대기','승인완료','공람')`, [id]);
+        b.doc.status = 'progress';
+      }
       if (b.doc.status === 'progress') {
         const lockedIds = plan.locked.map((l) => l.id);
         await q(`DELETE FROM approval_lines WHERE document_id=$1 AND step_type <> 'post_ceo' AND NOT (id = ANY($2::bigint[]))`, [id, lockedIds]);
@@ -762,8 +789,9 @@ export default async function approvalRoutes(app) {
       }
       const after = lineSummary((await loadBundle(q, id, false)).lines, users);
       const reason = cleanText(req.body?.reason, 500)?.trim();
-      if (before !== after) await event(q, id, ctx.uid, 'lines_edit', null, `변경 전: ${before}\n변경 후: ${after}${reason ? '\n사유: ' + reason : ''}`);
-      return { ok: true, status, changed: before !== after };
+      if (before !== after) await event(q, id, ctx.uid, 'lines_edit', null, `변경 전: ${before}\n변경 후: ${after}${reopen ? '\n승인 후 결재선 추가 → 다시 결재중' : ''}${reason ? '\n사유: ' + reason : ''}`);
+      if (reopen) await notify(q, b.doc.drafter_id, id, '승인 후 결재선 추가 (재결재)', reason || null, ctx.uid);
+      return { ok: true, status, changed: before !== after, reopened: reopen };
     });
   });
 
