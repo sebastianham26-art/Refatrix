@@ -115,7 +115,8 @@ function quoteScript() {
 }
 test('F4 견적: 독점 고객 → 판매자 잠김, 남의 독점 → 경고, 출력에 Vendedor', async () => {
   const html = quoteScript();
-  assert.match(html, /<title>[^<]*qt-0929ex<\/title>/, '빌드 토큰');
+  // 빌드 토큰은 다른 작업으로 계속 올라가므로 고정하지 않는다(0247) — 기능 존재만 본다.
+  assert.match(html, /id="sellerSel"/);
   const dom = new JSDOM(html.replace(/<script src="[^"]+"><\/script>/g, ''), { runScripts: 'dangerously', url: 'http://localhost/' });
   const w = dom.window;
   const answers = {
@@ -155,9 +156,60 @@ test('F5 견적 목록 출력 · 인보이스 PDF 에 Vendedor(판매 영업사�
   const ql = readFileSync(root('refatrix-quotelist.html'), 'utf-8');
   assert.match(ql, /<b>Vendedor:<\/b> '\+esc\(q\.seller_name\|\|q\.customer_owner_name\)/);
   assert.match(ql, /body\.seller_id=Number\(\$\('cvSeller'\)\.value\)/, '전환 요청에 판매자');
-  assert.match(ql, /<title>[^<]*ql-0929ex<\/title>/);
+  assert.match(ql, /id="cvSeller"/);
   const fn = readFileSync(root('refatrix-funnel.html'), 'utf-8');
   assert.equal((fn.match(/'Vendedor: '\+esc\(vend\)/g) || []).length, 2, '인보이스 인쇄 2곳');
   const sl = readFileSync(root('refatrix-sales.html'), 'utf-8');
   assert.match(sl, /seller_id:\$\('s-seller'\)\.value\?Number/);
+});
+
+// ── 0247 · 고객 상세 디렉터 PIN 승인 패널 ─────────────────────────────
+test('F6 고객 상세: 디렉터에게만 PIN 승인 패널 — 체크·사유·PIN 으로 저장, 결과 표시', async () => {
+  const html = readFileSync(root('refatrix-customers.html'), 'utf-8');
+  assert.match(html, /<title>[^<]*tx-1002ov\)?<\/title>/, '빌드 토큰');
+  const boot = async (role) => {
+    const dom = new JSDOM(html.replace(/<script src="[^"]+"><\/script>/g, ''), { runScripts: 'dangerously', url: 'http://localhost/' });
+    const w = dom.window;
+    const calls = [];
+    let state = { discount_override: false, credit_override: false };
+    w.fetch = async (url, opt) => {
+      const u = String(url); calls.push({ u, opt });
+      if (u.endsWith('/exclusivity')) return { ok: true, json: async () => ({ ready: true, policy: true, current: null, open: true, history: [],
+        gate: { applies: true, discount_docs_ok: false, credit_docs_ok: false, ...state,
+          discount_ok: state.discount_override, credit_ok: state.credit_override,
+          discount_agreed: 38, credit_days_agreed: 45, discount_effective: state.discount_override ? 38 : 0,
+          credit_days_effective: state.credit_override ? 45 : 0, override_by_name: state.discount_override ? 'Sebastian' : null } }) };
+      if (u.endsWith('/terms-override')) {
+        const b = JSON.parse(opt.body);
+        if (b.pin !== '4321') return { ok: false, status: 403, json: async () => ({ error: 'bad_pin' }) };
+        state = { discount_override: !!b.discount, credit_override: !!b.credit };
+        return { ok: true, json: async () => ({ ok: true, discount: b.discount ? 38 : 0, credit_days: b.credit ? 45 : 0, crm_queued: true }) };
+      }
+      return { ok: true, json: async () => ({ items: [] }) };
+    };
+    await tick(20);
+    w.eval(`session={token:'t',api:'',user:{id:1,name:'X',role:'${role}'}};`);
+    await w.eval('loadExcl(9)');
+    return { w, calls, doc: w.document };
+  };
+  const rep = await boot('sales');
+  assert.equal(rep.doc.getElementById('ovBox'), null, '영업에게는 패널이 없다');
+  const { w, calls, doc } = await boot('director');
+  assert.ok(doc.getElementById('ovBox'), '디렉터에게 패널');
+  assert.match(doc.getElementById('d-excl').textContent, /할인 미적용/);
+  doc.getElementById('ovDisc').checked = true;
+  doc.getElementById('ovCred').checked = true;
+  doc.getElementById('ovSave').click(); await tick(20);
+  assert.match(doc.getElementById('ovMsg').textContent, /PIN 을 입력/, 'PIN 없이 저장 안 됨');
+  doc.getElementById('ovPin').value = '4321';
+  doc.getElementById('ovSave').click(); await tick(20);
+  assert.match(doc.getElementById('ovMsg').textContent, /사유/, '켤 때 사유 필수');
+  assert.ok(!calls.some((c) => c.u.endsWith('/terms-override')), '검증 실패 시 서버 호출 없음');
+  doc.getElementById('ovReason').value = '서류 추후 제출';
+  doc.getElementById('ovSave').click(); await tick(60);
+  const post = calls.find((c) => c.u.endsWith('/terms-override'));
+  assert.deepEqual(JSON.parse(post.opt.body), { pin: '4321', reason: '서류 추후 제출', discount: true, credit: true });
+  assert.match(doc.getElementById('d-excl').textContent, /할인 적용 38% · 디렉터 승인/);
+  assert.match(doc.getElementById('d-excl').textContent, /외상 45일 · 디렉터 승인/);
+  assert.match(doc.getElementById('ovMsg').textContent, /CRM 전송/);
 });

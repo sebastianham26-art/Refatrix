@@ -2829,9 +2829,21 @@ export default async function customerRoutes(app) {
   });
 
   // 업로드: { doc_type?, file_name, mime_type, data_base64 }
+  // 0247 · 서류가 바뀌어 실효 할인·외상일(0235 관문)이 달라지면 CRM 에 다시 보낸다.
+  //   전에는 서류를 나중에 올려도 CRM 에는 등록 당시의 0 이 그대로 남았다.
+  async function resyncIfTermsChanged(id, before, actorUserId) {
+    try {
+      if (!before) return;
+      const now = (await query(`SELECT discount, credit_days, approval_status FROM customers WHERE id=$1`, [id])).rows[0];
+      if (!now || String(now.approval_status || 'approved') === 'pending') return;
+      if (Number(now.discount) === Number(before.discount) && Number(now.credit_days) === Number(before.credit_days)) return;
+      await enqueueCustomerSync(id, 'upsert', { origin: 'docs_terms_change', actorUserId, app });
+    } catch (_) { /* 전송 실패가 업로드를 막지 않음 */ }
+  }
+
   app.post('/api/customers/:id/documents', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const c = (await query(`SELECT team_id, discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
     if (!canEditTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const b = req.body || {};
@@ -2849,6 +2861,7 @@ export default async function customerRoutes(app) {
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
       [id, b.doc_type || null, fileName, mime, buf.length, buf, req.ctx.perm.userId])).rows[0];
     await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `customer_doc:${row.id}`, detail: { customer_id: id, file_name: fileName } });
+    await resyncIfTermsChanged(id, c, req.ctx.perm.userId);
     return { ok: true, id: row.id };
   });
 
@@ -2868,12 +2881,13 @@ export default async function customerRoutes(app) {
   // 삭제(soft)
   app.delete('/api/customers/:id/documents/:docId', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const id = Number(req.params.id), docId = Number(req.params.docId);
-    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const c = (await query(`SELECT team_id, discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
     if (!canEditTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const r = (await query(`UPDATE customer_documents SET deleted_at=now() WHERE id=$1 AND customer_id=$2 AND deleted_at IS NULL RETURNING id`, [docId, id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'delete', target: `customer_doc:${docId}` });
+    await resyncIfTermsChanged(id, c, req.ctx.perm.userId);
     return { ok: true };
   });
 }

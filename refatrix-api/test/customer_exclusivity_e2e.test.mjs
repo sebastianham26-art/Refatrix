@@ -213,7 +213,78 @@ test('E10 SQL 스모크 — 0235 로 바뀐 조회가 실 DB 에서 모두 200',
   assert.equal(fl.invoice.seller_name, `${TAG}영업A`, '인보이스 출력용 판매 영업사원');
   const rc = await call('dir', 'POST', '/api/exclusivity/recompute', {});
   assert.equal(rc.statusCode, 200, rc.body);
-  assert.ok(rc.json().customers >= 3);
+  assert.ok(rc.json().customers >= 2, '독점 대상 고객 P·O 이상');
+});
+
+test('E11 0247 · 디렉터 PIN 승인 예외 → 약정 할인·외상 적용 + CRM 전송 / 해제 → 서류 기준 복귀', { skip: SKIP }, async () => {
+  const { hashPin } = await import('../src/auth.js');
+  await query(`UPDATE users SET pin_hash=$1 WHERE id=$2`, [hashPin('4321'), ID.dir]);
+  // 서류 없는 신규 고객(관문 대상) · 승인 완료
+  ID.custV = Number((await query(
+    `INSERT INTO customers (name, code, rfc, discount, credit_days, owner_id, approval_status, created_by)
+     VALUES ($1,$2,$3,38,45,$4,'approved',$4) RETURNING id`, [`${TAG}예외V`, `${TAG}-V`, rfc(3), ID.repA])).rows[0].id);
+  let c = await cust(ID.custV);
+  assert.equal(Number(c.discount), 0); assert.equal(Number(c.credit_days), 0);
+  const ob = async () => (await query(
+    `SELECT payload FROM crm_customer_outbox WHERE customer_id=$1 AND origin='terms_override' ORDER BY id DESC LIMIT 1`, [ID.custV])).rows[0];
+  // 권한·PIN·사유 검사
+  assert.equal((await call('repA', 'POST', `/api/customers/${ID.custV}/terms-override`, { discount: true, pin: '4321', reason: 'x' })).statusCode, 403, '디렉터 전용');
+  const bad = await call('dir', 'POST', `/api/customers/${ID.custV}/terms-override`, { discount: true, pin: '0000', reason: 'x' });
+  assert.equal(bad.statusCode, 403); assert.equal(bad.json().error, 'bad_pin');
+  assert.equal((await call('dir', 'POST', `/api/customers/${ID.custV}/terms-override`, { discount: true, pin: '4321' })).json().error, 'reason_required');
+  assert.equal(Number((await cust(ID.custV)).discount), 0, '거절된 요청은 아무것도 안 바꾼다');
+  // 할인만 승인
+  const r1 = await call('dir', 'POST', `/api/customers/${ID.custV}/terms-override`, { discount: true, pin: '4321', reason: '대형 거래처 — 서류 추후 제출' });
+  assert.equal(r1.statusCode, 200, r1.body);
+  c = await cust(ID.custV);
+  assert.equal(Number(c.discount), 38); assert.equal(Number(c.credit_days), 0, '외상은 그대로 선입금');
+  let p = (await ob()).payload;
+  assert.equal(Number(p.discountPercent), 38, 'CRM 에 할인율 전송'); assert.equal(Number(p.paymentDays), 0);
+  // 외상도 승인
+  const r2 = await call('dir', 'POST', `/api/customers/${ID.custV}/terms-override`, { credit: true, pin: '4321', reason: '외상 승인' });
+  assert.equal(r2.statusCode, 200, r2.body);
+  c = await cust(ID.custV);
+  assert.equal(Number(c.discount), 38, '할인 승인은 유지'); assert.equal(Number(c.credit_days), 45, '약정 외상일');
+  p = (await ob()).payload;
+  assert.equal(Number(p.discountPercent), 38); assert.equal(Number(p.paymentDays), 45, 'CRM 에 외상일 전송');
+  // 화면 상태
+  const st = (await call('dir', 'GET', `/api/customers/${ID.custV}/exclusivity`)).json();
+  assert.equal(st.gate.discount_ok, true); assert.equal(st.gate.credit_ok, true);
+  assert.equal(st.gate.discount_docs_ok, false); assert.equal(st.gate.discount_override, true);
+  assert.equal(st.gate.override_by_name, `${TAG}디렉터`); assert.equal(st.gate.override_reason, '외상 승인');
+  // 약정 할인을 바꿔도 승인 상태에서는 새 값이 그대로 적용된다
+  await query(`UPDATE customers SET discount=42 WHERE id=$1`, [ID.custV]);
+  assert.equal(Number((await cust(ID.custV)).discount), 42);
+  // 해제 → 서류 기준(0) 복귀 + CRM 에 0 재전송
+  const r3 = await call('dir', 'POST', `/api/customers/${ID.custV}/terms-override`, { discount: false, credit: false, pin: '4321' });
+  assert.equal(r3.statusCode, 200, r3.body);
+  c = await cust(ID.custV);
+  assert.equal(Number(c.discount), 0); assert.equal(Number(c.credit_days), 0);
+  assert.equal(Number(c.discount_agreed), 42, '약정값은 보존');
+  p = (await ob()).payload;
+  assert.equal(Number(p.discountPercent), 0);
+  // 이력
+  const ev = (await query(`SELECT count(*)::int AS n FROM customer_registration_events WHERE customer_id=$1 AND action='terms_override'`, [ID.custV])).rows[0];
+  assert.equal(ev.n, 3);
+  // 기존 고객(관문 없음)에는 쓸 수 없다
+  const ng = await call('dir', 'POST', `/api/customers/${ID.custL}/terms-override`, { discount: true, pin: '4321', reason: 'x' });
+  assert.equal(ng.statusCode, 409);
+});
+
+test('E12 0247 · 서류를 나중에 올리면 실효 조건이 바뀌고 CRM 에 다시 전송된다', { skip: SKIP }, async () => {
+  const before = (await query(`SELECT count(*)::int AS n FROM crm_customer_outbox WHERE customer_id=$1 AND origin='docs_terms_change'`, [ID.custV])).rows[0].n;
+  const up = (t) => call('dir', 'POST', `/api/customers/${ID.custV}/documents`,
+    { doc_type: t, file_name: t + '.pdf', mime_type: 'application/pdf', data_base64: 'JVBERi0x' });
+  assert.equal((await up('factura_compra')).statusCode, 200);
+  assert.equal(Number((await cust(ID.custV)).credit_days), 45, '경쟁사 인보이스 → 약정 외상일(45)');
+  const after = (await query(
+    `SELECT payload FROM crm_customer_outbox WHERE customer_id=$1 AND origin='docs_terms_change' ORDER BY id DESC`, [ID.custV])).rows;
+  assert.equal(after.length, before + 1, '서류로 외상이 생겼으니 재전송');
+  assert.equal(Number(after[0].payload.paymentDays), Number((await cust(ID.custV)).credit_days));
+  // 실효값이 안 바뀌는 업로드(constancia 만)는 보내지 않는다
+  assert.equal((await up('constancia')).statusCode, 200);
+  const n2 = (await query(`SELECT count(*)::int AS n FROM crm_customer_outbox WHERE customer_id=$1 AND origin='docs_terms_change'`, [ID.custV])).rows[0].n;
+  assert.equal(n2, before + 1);
 });
 
 test('close', { skip: SKIP }, async () => {

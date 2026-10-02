@@ -274,15 +274,30 @@ export async function statusFor(customerId) {
   const docs = (await query(
     `SELECT doc_type FROM customer_documents WHERE customer_id=$1 AND deleted_at IS NULL`, [customerId])).rows.map((r) => r.doc_type);
   const has = (t) => docs.includes(t);
-  const disc = (await query(`SELECT discount, credit_days, discount_agreed, credit_days_agreed FROM customers WHERE id=$1`, [customerId])).rows[0] || {};
+  // 0247 · 디렉터 PIN 승인 예외(override) — to_jsonb 로 읽어 0247 전 DB 에서도 오류 없이 false
+  const disc = (await query(
+    `SELECT c.discount, c.credit_days, c.discount_agreed, c.credit_days_agreed,
+            COALESCE((to_jsonb(c)->>'discount_override')::boolean, false) AS discount_override,
+            COALESCE((to_jsonb(c)->>'credit_override')::boolean, false) AS credit_override,
+            to_char((to_jsonb(c)->>'terms_override_at')::timestamptz AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS override_at,
+            to_jsonb(c)->>'terms_override_reason' AS override_reason,
+            (SELECT u.name FROM users u WHERE u.id = (to_jsonb(c)->>'terms_override_by')::bigint) AS override_by_name
+       FROM customers c WHERE c.id=$1`, [customerId])).rows[0] || {};
   return {
     ready: true, policy: ev.policy, today: td,
     current: out(ev.current), open: ev.policy && !ev.current,
     history: ev.periods.map(out),
     gate: {
       applies: !!c.doc_gate,
-      discount_ok: !c.doc_gate || (has('constancia') && has('domicilio')),
-      credit_ok: !c.doc_gate || has('factura_compra'),
+      discount_ok: !c.doc_gate || (has('constancia') && has('domicilio')) || !!disc.discount_override,
+      credit_ok: !c.doc_gate || has('factura_compra') || !!disc.credit_override,
+      discount_docs_ok: has('constancia') && has('domicilio'),
+      credit_docs_ok: has('factura_compra'),
+      discount_override: !!disc.discount_override,
+      credit_override: !!disc.credit_override,
+      override_by_name: disc.override_by_name || null,
+      override_at: disc.override_at || null,
+      override_reason: disc.override_reason || null,
       missing: c.doc_gate ? ['constancia', 'domicilio', 'factura_compra'].filter((t) => !has(t)) : [],
       discount_agreed: disc.discount_agreed == null ? null : Number(disc.discount_agreed),
       discount_effective: disc.discount == null ? 0 : Number(disc.discount),

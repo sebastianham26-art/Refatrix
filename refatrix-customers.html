@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (build tx-0929ex)</title>
+<title>Refatrix ERP · 고객 등록 (build tx-1002ov)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -390,8 +390,25 @@
         h+='<div style="margin-top:6px">';
         if(!g.applies){ h+='<span class="hint">서류 관문 대상 아님(2026-09-28 이전 등록 고객) — 등록된 할인·외상 조건 그대로 적용</span>'; }
         else {
-          h+=g.discount_ok?pill('#e4f0eb','#0F6E56','할인 적용 '+(g.discount_effective)+'%'):pill('#fbe9e4','#9a3b12','할인 미적용 (약정 '+(g.discount_agreed==null?0:g.discount_agreed)+'%) — Constancia + 주소 증빙 필요');
-          h+=g.credit_ok?pill('#e4f0eb','#0F6E56','외상 '+g.credit_days_effective+'일'):pill('#fbe9e4','#9a3b12','선입금 — 경쟁사 서스펜션 구매 인보이스 필요');
+          h+=g.discount_ok?pill('#e4f0eb','#0F6E56','할인 적용 '+(g.discount_effective)+'%'+(g.discount_override&&!g.discount_docs_ok?' · 디렉터 승인':'')):pill('#fbe9e4','#9a3b12','할인 미적용 (약정 '+(g.discount_agreed==null?0:g.discount_agreed)+'%) — Constancia + 주소 증빙 필요');
+          h+=g.credit_ok?pill('#e4f0eb','#0F6E56','외상 '+g.credit_days_effective+'일'+(g.credit_override&&!g.credit_docs_ok?' · 디렉터 승인':'')):pill('#fbe9e4','#9a3b12','선입금 — 경쟁사 서스펜션 구매 인보이스 필요');
+          // 0247 · 디렉터 PIN 승인 예외 — 서류가 없어도 약정 조건 적용 + CRM 전송
+          if(g.discount_override||g.credit_override){
+            h+='<div class="hint" style="margin-top:4px">🔑 디렉터 승인: '+[g.discount_override?'할인':'',g.credit_override?'외상':''].filter(Boolean).join(' · ')
+              +(g.override_by_name?' — '+esc(g.override_by_name):'')+(g.override_at?' · '+esc(g.override_at):'')+(g.override_reason?' · 사유: '+esc(g.override_reason):'')+'</div>';
+          }
+          if(isDirector()&&(!g.discount_docs_ok||!g.credit_docs_ok||g.discount_override||g.credit_override)){
+            h+='<div id="ovBox" style="margin-top:8px;padding:8px 10px;border:1px dashed #b8893b;border-radius:8px;background:#fffdf4">'
+              +'<div style="font-weight:700;font-size:12.5px;color:#7a6212;margin-bottom:4px">🔑 디렉터 PIN 승인 — 서류 없이 조건 적용</div>'
+              +'<div class="hint" style="margin-bottom:6px">체크하면 서류가 없어도 약정 할인율·외상일이 적용되고 CRM 에도 전송됩니다. 체크를 풀면 서류 기준으로 돌아갑니다.</div>'
+              +(g.discount_docs_ok?'':'<label style="display:inline-flex;gap:5px;align-items:center;margin-right:14px;font-size:12.5px"><input type="checkbox" id="ovDisc"'+(g.discount_override?' checked':'')+'> 할인 '+(g.discount_agreed==null?0:g.discount_agreed)+'% 적용</label>')
+              +(g.credit_docs_ok?'':'<label style="display:inline-flex;gap:5px;align-items:center;margin-right:14px;font-size:12.5px"><input type="checkbox" id="ovCred"'+(g.credit_override?' checked':'')+'> 외상 '+((g.credit_days_agreed||30))+'일 적용</label>')
+              +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">'
+              +'<input id="ovReason" type="text" placeholder="승인 사유 (켤 때 필수)" style="flex:1;min-width:180px;font-size:12px" value="'+esc(g.override_reason||'')+'">'
+              +'<input id="ovPin" type="password" inputmode="numeric" autocomplete="off" placeholder="디렉터 PIN" style="width:110px;font-size:12px">'
+              +'<button class="btn gold sm" id="ovSave" type="button">PIN 승인 저장</button></div>'
+              +'<div id="ovMsg" class="hint" style="margin-top:4px"></div></div>';
+          }
         }
         h+='</div>';
       }
@@ -401,7 +418,29 @@
       }
       h+='</div>';
       box.innerHTML=h;
+      const ovs=$('ovSave'); if(ovs) ovs.addEventListener('click',()=>saveOverride(cid));
     }catch(e){ /* 0235 미적용 백엔드 — 조용히 숨김 */ }
+  }
+  // 0247 · 서류 관문 디렉터 PIN 승인
+  async function saveOverride(cid){
+    const msg=$('ovMsg'); msg.style.color='';
+    const body={pin:($('ovPin').value||'').trim(), reason:($('ovReason').value||'').trim()};
+    if($('ovDisc')) body.discount=$('ovDisc').checked;
+    if($('ovCred')) body.credit=$('ovCred').checked;
+    if(!body.pin){ msg.style.color='#a33'; msg.textContent='디렉터 PIN 을 입력하세요.'; return; }
+    if((body.discount||body.credit)&&!body.reason){ msg.style.color='#a33'; msg.textContent='승인 사유를 입력하세요.'; return; }
+    $('ovSave').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/customers/'+cid+'/terms-override',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        msg.style.color='#a33';
+        msg.textContent=d.error==='bad_pin'?'PIN 이 올바르지 않습니다.':d.error==='reason_required'?'승인 사유를 입력하세요.':(d.note||('저장 실패: '+(d.error||res.status)));
+        $('ovSave').disabled=false; return;
+      }
+      await loadExcl(cid);
+      const m2=$('ovMsg'); if(m2){ m2.style.color='#1f5540'; m2.textContent='저장됨 — 할인 '+d.discount+'% · 외상 '+d.credit_days+'일'+(d.crm_queued?' · CRM 전송 대기열에 올렸습니다':''); }
+    }catch(e){ msg.style.color='#a33'; msg.textContent='서버에 연결할 수 없습니다.'; $('ovSave').disabled=false; }
   }
   async function loadDocs(cid){
     curDocCustomer=cid;
