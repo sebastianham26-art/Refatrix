@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { sortRacks, rackGroup, splitRacks } from './zoneRoutes.js';
+import { rackSafe, relocate } from '../rackStock.js';   // 0245 · 위치변경 = 랙별 재고 이동
 
 // build 20260827a-relocate
 // 창고 위치변경(Cambio de ubicación) — 카톤 랙 → fast moving rack 박스 이동 기록 (0187)
@@ -321,6 +322,12 @@ export default async function rackMoveRoutes(app) {
             cartons, per, cartons * per, label, willUpdate, masterFrom, note, uid]
         )).rows[0];
 
+        // 0245 · 랙별 재고도 같이 옮긴다(출발 랙 −, 도착 랙 +). 소입수량이 없는 라벨(EA 0)은 수량 이동 없음.
+        if (cartons * per > 0) {
+          await rackSafe(c, 'relocate', (run) => relocate(run, Number(prod.id), fromRack, toRack, cartons * per,
+            { userId: uid, ref: 'rack_move:' + ins.id, note }));
+        }
+
         moved.push({
           id: Number(ins.id), product_id: Number(prod.id), code: prod.code,
           from_rack: fromRack, to_rack: toRack, cartons, per_carton: per, qty_ea: cartons * per,
@@ -450,6 +457,10 @@ export default async function rackMoveRoutes(app) {
           m.cartons, m.per_carton, m.qty_ea, m.label, willUpdate, masterFrom,
           '되돌리기 #' + id, uid]
       )).rows[0];
+      if (Number(m.qty_ea) > 0) {   // 0245 · 랙별 재고도 되돌린다(도착 랙 → 출발 랙)
+        await rackSafe(c, 'relocate_undo', (run) => relocate(run, Number(m.product_id), m.to_rack, m.from_rack, Number(m.qty_ea),
+          { userId: uid, ref: 'rack_move:' + ins.id, note: '되돌리기 #' + id }));
+      }
       return { undo_id: Number(ins.id), master_updated: willUpdate };
     });
 

@@ -28,7 +28,7 @@ const inSrc = (sql) => squash(SRC).includes(squash(sql));
 
 /* ───────────────────────── ① 정적 가드 ───────────────────────── */
 console.log('\n① 정적 가드 — 부품 마스터는 이 경로로 절대 안 바뀐다');
-ok('rev 마커 갱신', /loaded rev 20260922proapply/.test(SRC));
+ok('rev 마커 갱신', /loaded rev 20261001rs1/.test(SRC));   // 0245 랙별 재고 릴리스
 ok('PRO 접두사 판정 함수 존재', /const isProCode = \(c\) => PRO_RE\.test/.test(SRC));
 ok('코드 미지정 시 자동 제안', /const finalCode = code \|\| \(await nextProCode\(exec\)\)/.test(SRC));
 ok('PRO 아닌 코드로 등록 거부', /pro_prefix_required/.test(SRC));

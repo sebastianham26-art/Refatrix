@@ -18,7 +18,7 @@ const ok = (n, c, x) => {
 /* ---------- ① 정적 가드 (DB 없이도 항상 돈다) ---------- */
 const SRC = fs.readFileSync(path.join(API, 'src/routes/stockCountRoutes.js'), 'utf8');
 console.log('\n① 정적 가드 — 스팟점검은 재고를 바꾸지 않는다');
-ok('rev 마커 갱신', /loaded rev 20260922proapply/.test(SRC));
+ok('rev 마커 갱신', /loaded rev 20261001rs1/.test(SRC));   // 0245 랙별 재고 릴리스
 ok('세션 모드 2종만 허용', /const MODES = \['full', 'spot'\]/.test(SRC));
 ok('스팟 세션 코드 접두사 SP', /mode === 'spot' \? 'SP' : 'SC'/.test(SRC));
 // 재고를 바꾸는 문장은 기존 apply 경로에만 있어야 한다(스팟 추가로 늘어나지 않았는지)

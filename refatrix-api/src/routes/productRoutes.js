@@ -13,6 +13,7 @@ import { refColumns, scanReferences, buildDeleteCheck, purgeReferences, describe
 import { parseOe, formatOe, normOe, oeToken, OE_FOR_NOTE } from '../oeParse.js';
 import { oeReady, oeByProduct, syncOe } from '../oeCodes.js';
 import { recordPriceChange } from '../priceMaster.js';   // 0229 — 정가가 바뀌면 가격 마스터 장부에 1행
+import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품찾기 랙 × 수량
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -223,7 +224,15 @@ export default async function productRoutes(app) {
 
     await logPageView(perm.userId, 'products');
     // 각 행을 권한에 맞게 최소화
-    return { items: rows.map((p) => minimizeProduct(perm, p)), limit, offset, total };
+    const items = rows.map((p) => minimizeProduct(perm, p));
+    // 0245 · SKU 별 랙 × 수량(피킹 순서: fast moving 먼저). 제품찾기 「랙」 열이 이 값을 보여준다.
+    try {
+      if (items.length && await rackStockReady()) {
+        const rm = await rackMap(null, items.map((p) => p.id));
+        for (const p of items) p.rack_stock = rm.get(Number(p.id)) || [];
+      }
+    } catch (e) { try { console.error('[products] rack_stock', e.message); } catch (_) {} }
+    return { items, limit, offset, total };
   });
 
   // 제품 마스터 다운로드용 전체 목록(프런트가 엑셀로 변환).

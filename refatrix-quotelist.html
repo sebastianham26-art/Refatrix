@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1001gr2</title>
+<title>Refatrix ERP · 견적 목록 · ql-1001rs1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -270,7 +270,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-1001gr2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1001rs1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -1662,15 +1662,21 @@
       +'<span class="pvtag ok">① 즉시 매출 SKU '+inSku+'개 · 총수량 '+inQty+'개</span> '
       +'<span class="pvtag warn">② 부족(발주) SKU '+shSku+'개 · 총수량 '+shQty+'개 (부족 '+shShort+'개)</span> '
       +'<span class="pvtag dev">③ 개발요청(미등록) SKU '+devSku+'개 · 총수량 '+devQty+'개</span></div>';
-    if((pv.in_stock||[]).length) h+='<div class="pvseg"><b>① 즉시 매출</b><br>'+pv.in_stock.map(x=>esc(x.ctr_code)+' ×'+x.qty+' (재고 '+x.avail+')').join('<br>')+'</div>';
+    // 0245 · 피킹 위치(랙 × 수량, fast moving 먼저)를 같이 보여준다.
+    const pkTxt=(x)=>{ const p=(x.picks||[]).filter(k=>k.rack); return p.length?(' · 📍 '+p.map(k=>esc(k.rack)+' ×'+k.qty).join(' · ')):''; };
+    if((pv.in_stock||[]).length) h+='<div class="pvseg"><b>① 즉시 매출</b><br>'+pv.in_stock.map(x=>esc(x.ctr_code)+' ×'+x.qty+' (재고 '+x.avail+')'+pkTxt(x)).join('<br>')+'</div>';
     if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>esc(x.ctr_code)+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>').join('<br>')+'</div>';
     if((pv.new_dev||[]).length) h+='<div class="pvseg"><b>③ 미등록 → 개발요청 생성</b><br>'+pv.new_dev.map(x=>esc(x.input_code||'(코드없음)')+' ×'+x.qty).join('<br>')+'</div>';
     if(!(pv.in_stock||[]).length && !(pv.shortage||[]).length && !(pv.new_dev||[]).length) h+='<div class="hint">전환할 품목이 없습니다.</div>';
     // 랙 미지정 경고 — 지시서를 뽑기 전에 영업지원이 먼저 알 수 있게(제품마스터에서 랙을 넣으면 사라진다).
-    const noRackList=(pv.in_stock||[]).filter(x=>!String(x.rack_location||'').trim()).map(x=>x.ctr_code||'');
+    const noRackList=(pv.in_stock||[]).filter(x=>{
+      const p=x.picks||[];
+      if(p.length) return p.some(k=>!k.rack) && !String(x.rack_location||'').trim();   // 랙재고로 다 못 채우고 마스터 위치도 없음
+      return !String(x.rack_location||'').trim();
+    }).map(x=>x.ctr_code||'');
     if((pv.in_stock||[]).length) h+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">'
       +'<button class="btn" type="button" onclick="printPickList()">📦 포장작업지시서 출력 (PDF)</button> '
-      +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다. (랙 위치 순 정렬)</span>'
+      +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다. (랙 위치 순 정렬 · 랙 × 수량 · fast moving 랙 먼저 · 매출 전환 때 이 위치에서 자동 차감)</span>'
       +(noRackList.length?('<div class="hint" style="color:var(--expense);margin-top:6px">⚠ 랙 위치가 없는 SKU '+noRackList.length+'개 — 지시서에 <b>SIN UBICACIÓN</b> 으로 나갑니다: '
         +esc(noRackList.slice(0,8).join(', '))+(noRackList.length>8?' 외 '+(noRackList.length-8)+'개':'')
         +' · 제품 화면에서 랙을 등록하세요.</div>'):'')
@@ -1687,28 +1693,50 @@
     //   자연정렬(A-1-9 < A-1-10 · 존 지정 화면 rackSortKey 와 같은 규칙) · 랙 미지정 SKU 는 맨 뒤 · 같은 랙이면 SKU 코드순.
     const rackOf=(x)=>String((x&&(x.rack_location||x.rack||x.location))||'').trim();
     const rackKey=(s)=>s.toUpperCase().replace(/\d+/g,n=>n.padStart(6,'0'));
-    const items=(pv.in_stock||[]).slice().sort((a,b)=>{
-      const ra=rackOf(a), rb=rackOf(b);
-      if(!ra!==!rb) return ra?-1:1;
-      const ka=rackKey(ra), kb=rackKey(rb);
-      if(ka!==kb) return ka<kb?-1:1;
-      return String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en',{numeric:true});
-    });
-    const noRackCount=items.filter(x=>!rackOf(x)).length;   // 랙 미지정 SKU 수 — 상단 경고 카드에 표시
     const row=qRowsById[cvId]||{};
     const co=await getCompany();
 
     // 포장출력 기록 + 포장완료 기한(업무시간 6시간) 수신 → 슬립에 기한 표기.
     //   (최초 출력에만 기한 고정. 재출력해도 서버가 기존 기한을 그대로 반환.)
-    let packDueAt=null;
+    let packDueAt=null, savedPicks=null;
     if(cvId){
       try{
         const pr=await fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}).then(r=>r.json()).catch(()=>null);
         // 0224b — 판매중단 줄이 있어도 **포장은 그대로 진행한다.** 그 줄은 재고가 없어
         //   피킹 목록에 안 들어가고, 요청 기록은 견적에 남아 있다.
-        if(pr){ packDueAt=pr.packing_due_at||null; if(pr.packing_printed_at&&qRowsById[cvId]) qRowsById[cvId].packing_printed_at=pr.packing_printed_at; }
+        if(pr){ packDueAt=pr.packing_due_at||null; savedPicks=pr.picks||null; if(pr.packing_printed_at&&qRowsById[cvId]) qRowsById[cvId].packing_printed_at=pr.packing_printed_at; }
       }catch(_){}
     }
+    // 0245 · 피킹 정거장 = SKU × 랙 × 수량. 서버가 지시서 출력 시 저장한 위치(= 매출 전환 때 차감될 위치)를 쓴다.
+    //   한 SKU 가 여러 랙에 있으면 fast moving 랙을 먼저, 줄을 나눠 찍는다. 랙재고로 다 못 채운 분량은 제품마스터 위치로 안내.
+    const merged=[]; const byPid={};
+    (pv.in_stock||[]).forEach(x=>{
+      const k=x.product_id?('p'+x.product_id):('c'+(x.ctr_code||''));
+      if(byPid[k]){ byPid[k].qty=Number(byPid[k].qty||0)+Number(x.qty||0); return; }
+      byPid[k]=Object.assign({},x); merged.push(byPid[k]);
+    });
+    const items=[];
+    merged.forEach(x=>{
+      const pk=(savedPicks&&x.product_id&&savedPicks[x.product_id])||x.picks||null;
+      if(pk&&pk.length){
+        pk.forEach((k,i)=>items.push(Object.assign({},x,{
+          stop_qty:k.qty, stop_rack:k.rack||rackOf(x), stop_kind:k.rack?(k.kind||'carton'):null,
+          from_master:!k.rack && pk.length>1, split:pk.length>1, part:i+1, parts:pk.length, sku_total:x.qty })));   // 마스터 위치 표시는 랙재고와 섞일 때만
+      } else {
+        // 랙재고 정보가 아예 없는 응답(구버전 서버·마이그레이션 전) — 종전처럼 제품마스터 위치만, 표시 없음
+        items.push(Object.assign({},x,{ stop_qty:x.qty, stop_rack:rackOf(x), stop_kind:null, from_master:false, split:false, part:1, parts:1, sku_total:x.qty }));
+      }
+    });
+    items.sort((a,b)=>{
+      const ra=a.stop_rack||'', rb=b.stop_rack||'';
+      if(!ra!==!rb) return ra?-1:1;
+      const fa=a.stop_kind==='fast'?0:1, fb=b.stop_kind==='fast'?0:1;
+      if(fa!==fb) return fa-fb;
+      const ka=rackKey(ra), kb=rackKey(rb);
+      if(ka!==kb) return ka<kb?-1:1;
+      return String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en',{numeric:true});
+    });
+    const noRackCount=new Set(items.filter(x=>!x.stop_rack).map(x=>x.ctr_code||'')).size;   // 위치 없는 SKU 수 — 상단 경고 카드
     const mxFmtDl=(iso)=>{ if(!iso) return '—'; const d=new Date(new Date(iso).getTime()-360*60000); const p=n=>String(n).padStart(2,'0'); return p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes()); };
     const dueStr=mxFmtDl(packDueAt);
 
@@ -1727,8 +1755,8 @@
     const now=new Date(); const pad=n=>String(n).padStart(2,'0');
     const dateStr=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
     const timeStr=pad(now.getHours())+':'+pad(now.getMinutes());
-    const skuCount=items.length;
-    const totalQty=items.reduce((s,x)=>s+(Number(x.qty)||0),0);
+    const skuCount=merged.length;
+    const totalQty=merged.reduce((s,x)=>s+(Number(x.qty)||0),0);
     const qfmt=n=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});
 
     const logo=co.logo_data
@@ -1781,15 +1809,17 @@
       let rows='';
       slice.forEach((x,i)=>{
         const seq=p*PER_PAGE+i+1;
-        // 랙 위치: 제품마스터(products.rack_location) → convert-preview 가 내려준다. 미지정이면 빨간 경고.
-        const rk=rackOf(x);
-        const rack=rk?esc(rk):'<span class="norack">⚠ SIN UBICACIÓN</span>';
+        // 0245 · 랙 위치 = 랙별 재고(지시서 저장 위치). FM = fast moving 랙. 랙재고가 없으면 제품마스터 위치.
+        const rk=x.stop_rack||'';
+        const rack=rk?(esc(rk)+(x.stop_kind==='fast'?' <span class="fm">FM</span>':'')+(x.from_master?'<span class="mst">ubic. maestro</span>':''))
+                     :'<span class="norack">⚠ SIN UBICACIÓN</span>';
         rows+='<tr>'
           +'<td class="c-no">'+seq+'</td>'
           +'<td class="c-sku">'+esc(x.ctr_code||'—')+'</td>'
           +'<td class="c-syd">'+esc(x.syd_codes||sydMap[(x.ctr_code||'').trim()]||'')+'</td>'
-          +'<td class="c-name">'+esc(x.product_name||'(미등록)')+'</td>'
-          +'<td class="c-qty">'+qfmt(x.qty)+'</td>'
+          +'<td class="c-name">'+esc(x.product_name||'(미등록)')
+            +(x.split?'<span class="split">'+x.part+'/'+x.parts+' · Total SKU '+qfmt(x.sku_total)+'</span>':'')+'</td>'
+          +'<td class="c-qty">'+qfmt(x.stop_qty)+'</td>'
           +'<td class="c-rack">'+rack+'</td>'
           +'<td class="c-chk"><span class="chk"></span></td>'
           +'</tr>';
@@ -1829,6 +1859,9 @@
       +'.pk-tbl .c-rack{width:14%;text-align:center}'
       +'.pk-tbl td.c-rack{color:#1c1b19;font-weight:700;letter-spacing:.3px}'
       +'.pk-tbl td.c-rack .norack{display:inline-block;color:#c0392b;font-weight:700;font-size:9px;letter-spacing:0;line-height:1.2}'
+      +'.pk-tbl td.c-rack .fm{display:inline-block;background:#B8893B;color:#fff;border-radius:3px;font-size:8px;padding:1px 3px;margin-left:3px;vertical-align:middle}'
+      +'.pk-tbl td.c-rack .mst{display:block;color:#888;font-weight:400;font-size:8px;letter-spacing:0}'
+      +'.pk-tbl td.c-name .split{display:block;color:#0F6E56;font-size:9px;font-weight:700;margin-top:2px}'
       +'.pk-tbl .c-chk{width:10%;text-align:center}'
       +'.chk{display:inline-block;width:5mm;height:5mm;border:1.5px solid #333;border-radius:1px}'
       +'.pk-foot{margin-top:auto;padding-top:8px;border-top:1.5px solid #143D34}'
@@ -1849,7 +1882,7 @@
     const html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Orden de surtido '
       +esc(quoteNo||custDisplay)+'</title><style>'+css+'</style></head><body>'
       +'<div class="bar noprint"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button>'
-      +'<span>Orden de surtido y empaque · '+skuCount+' SKU disponibles · '+qfmt(totalQty)+' piezas · '+pageCount+' hoja(s)</span></div>'
+      +'<span>Orden de surtido y empaque · '+skuCount+' SKU disponibles · '+qfmt(totalQty)+' piezas · '+items.length+' ubicaciones · '+pageCount+' hoja(s)</span></div>'
       +pagesHtml+'</body></html>';
 
     const win=window.open('','_blank');

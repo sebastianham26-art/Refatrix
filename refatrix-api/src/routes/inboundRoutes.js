@@ -3,6 +3,7 @@ import { authGuard, requirePage, requirePageAny, requireDirector } from '../midd
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { NEW_KEY } from './zoneRoutes.js';
+import { rackSafe, addToRack, takeFromRack, reverseByRef } from '../rackStock.js';   // 0245 · 적치 = 랙별 재고 +
 
 // build 20260718a-inbound
 // 수입 입고(Recepción): 패킹리스트 업로드 → 팔렛/검수/적치 → 마감(구매 received_qty 연동)
@@ -715,6 +716,11 @@ export default async function inboundRoutes(app) {
           `UPDATE inbound_scans SET voided_at=now() WHERE pallet_id=$1 AND voided_at IS NULL RETURNING id`, [p.id])).rows.length;
         const dirty = v > 0 || num(had.sc) > 0 || num(had.pc) > 0 || ['checking', 'checked', 'done'].includes(p.status);
         if (!dirty) continue;   // 손댈 게 없는 팔렛은 그대로
+        // 0245 · 적치를 0 으로 되돌리면 이 팔렛 항목들이 랙에 더했던 수량도 그대로 뺀다(재적치 시 이중 계산 방지)
+        if (num(had.pc) > 0) {
+          const its = (await q(`SELECT id FROM inbound_pallet_items WHERE pallet_id=$1 AND put_cartons > 0`, [p.id])).rows;
+          for (const it of its) await rackSafe(c, 'putaway_reset', (run) => reverseByRef(run, 'inbound_item:' + it.id, 'putaway', uid));
+        }
         await q(`UPDATE inbound_pallet_items SET scanned_cartons=0, put_cartons=0 WHERE pallet_id=$1`, [p.id]);
         await q(
           `UPDATE inbound_pallets SET status = CASE WHEN status='wait' THEN 'wait' ELSE 'unloaded' END,
@@ -738,6 +744,30 @@ export default async function inboundRoutes(app) {
   //   ⚠ 적치 목표 카톤 = **검수된 카톤(scanned_cartons)** — 실제로 도착한 분량.
   //     검수 전 팔렛만 예상 카톤(cartons)으로 대체한다. (예전에는 항상 cartons 기준이어서
   //     부족 검수된 팔렛이 적치를 다 해도 done 이 되지 않았다 — 2026-08-14 수정)
+  // 0245 · 적치된 카톤만큼 랙별 재고를 더한다(음수 delta = 랙에서 다시 내림).
+  //   EA = 적치 카톤 변화 × (예상 수량 ÷ 예상 카톤).
+  //   + 는 이번에 저장된 적치 랙(새 랙 스캔 → 그 랙)에, − 는 **이전에 적치해 둔 랙**에서 뺀다
+  //   (박스를 다른 랙으로 옮길 때 −n 은 옛 랙에서, +n 은 새 랙으로 — 양쪽에 이중으로 남지 않는다).
+  //   랙이 하나도 없으면 제품마스터 첫 랙. it.put_cartons·rack_saved 를 갱신해 같은 요청의 반복에도 맞게 한다.
+  async function putawayRack(c, it, upd, uid) {
+    if (!upd || !it.product_id) return;
+    const before = Number(it.put_cartons) || 0, after = Number(upd.put_cartons) || 0;
+    const prevRack = it.rack_saved || null;
+    it.put_cartons = after; it.rack_saved = upd.rack_saved || prevRack;
+    const dc = after - before;
+    const cartons = Number(it.cartons) || 0;
+    if (!dc || cartons <= 0) return;
+    const per = (Number(it.qty) || 0) / cartons;
+    const ea = Math.round(dc * per * 1000) / 1000;
+    const master = String(it.rack_location || '').split(/[,\n\r]+/).map((x) => x.trim()).filter(Boolean)[0] || null;
+    const rk = ea > 0 ? (upd.rack_saved || master) : (prevRack || master);
+    if (!rk || !ea) return;
+    const meta = { reason: 'putaway', ref: 'inbound_item:' + it.id, userId: uid };
+    await rackSafe(c, 'putaway', (run) => (ea > 0
+      ? addToRack(run, Number(it.product_id), rk, ea, meta)
+      : takeFromRack(run, Number(it.product_id), rk, -ea, meta)));
+  }
+
   app.post('/api/inbound/:id/pallets/:pid/putaway', g, async (req) => {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id), pid = Number(req.params.pid);
@@ -750,7 +780,7 @@ export default async function inboundRoutes(app) {
       if (!pal) return { error: 'not_found' };
       const byScan = pal.checked_at != null;   // 검수 확정분 기준
       const items = (await q(
-        `SELECT pi.id, pi.product_id, pi.cartons, pi.scanned_cartons, pi.rack_saved,
+        `SELECT pi.id, pi.product_id, pi.cartons, pi.scanned_cartons, pi.rack_saved, pi.qty, pi.put_cartons,
                 p.rack_location, p.code AS product_code
            FROM inbound_pallet_items pi
            LEFT JOIN products p ON p.id = pi.product_id
@@ -767,13 +797,16 @@ export default async function inboundRoutes(app) {
           // 음수 delta 허용(2026-08-17 적치 수정): 이미 올린 박스를 빼거나 위치를 바꿀 때 쓴다.
           // 바닥은 0, 천장은 목표 카톤 — 두 사람이 동시에 빼도 0 밑으로 내려가지 않는다.
           const d = int(row.put_delta);
-          await q(
+          const upd = (await q(
             `UPDATE inbound_pallet_items
                 SET put_cartons = GREATEST(0, LEAST(put_cartons + $1, $2)), rack_saved = COALESCE($3, rack_saved)
-              WHERE id=$4`, [d, cap, rack, iid]);
+              WHERE id=$4 RETURNING put_cartons, rack_saved`, [d, cap, rack, iid])).rows[0];
+          await putawayRack(c, it, upd, uid);
         } else {
           const pc = Math.max(0, Math.min(int(row.put_cartons), cap));
-          await q(`UPDATE inbound_pallet_items SET put_cartons=$1, rack_saved=COALESCE($2, rack_saved) WHERE id=$3`, [pc, rack, iid]);
+          const upd = (await q(`UPDATE inbound_pallet_items SET put_cartons=$1, rack_saved=COALESCE($2, rack_saved) WHERE id=$3
+                                RETURNING put_cartons, rack_saved`, [pc, rack, iid])).rows[0];
+          await putawayRack(c, it, upd, uid);
         }
         // 랙 저장: 제품 마스터 위치 갱신(미지정 신규 / 현장 변경) — 재고실사와 동일하게 위치만
         if (row.save_rack && rack && it.product_id) {

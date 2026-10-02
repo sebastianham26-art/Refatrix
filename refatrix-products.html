@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · st-0924np</title>
+<title>Refatrix ERP · 제품 조회 · st-1001rs1</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -43,6 +43,12 @@
   .code .tri{display:inline-block;width:13px;color:var(--gold);transition:transform .15s}
   tr.prow.open .code .tri{transform:rotate(90deg)}
   .rack{font-size:11px;color:#6f6a60}
+  .rack .rk{display:block;line-height:1.35;white-space:nowrap}
+  .rack .rk b{color:#143D34;font-weight:700}
+  .rack .rk .q{color:#1c1b19;font-weight:700;margin-left:4px}
+  .rack .rk .fm{display:inline-block;background:#B8893B;color:#fff;border-radius:3px;font-size:9px;padding:0 3px;margin-left:3px}
+  .rack .rk.un{color:#b4452f}
+  .rack .mst{display:block;color:#9a958b;font-size:10px}
   /* 입고단가 브레이크다운 카드 */
   .cbk{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 6px}
   .cbk .card2{border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:248px;background:#fff;font-size:12px}
@@ -578,7 +584,7 @@
         if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>40)app=app.slice(0,40)+'…';
         var sold=Number(p.sold_qty||0);
         var bo=Number(p.backorder_qty||0);
-        var rack=escP(p.rack_location||'');
+        var rack=rackCellHtml(p);
         var act=(p.is_active!==false);
         h+='<tr class="prow'+(act?'':' inact')+'" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" data-name="'+escP(p.name||'')+'" data-active="'+(act?'1':'0')+'" style="cursor:pointer">'
           +(isDir?('<td class="selc"><input type="checkbox" class="stChk" data-pid="'+p.id+'"'+(stSel.has(Number(p.id))?' checked':'')+'></td>'):'')
@@ -588,7 +594,7 @@
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+oeListCell(p.oe)+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+cnBadgeHtml(p.app)+(app||'—')+'</td>'
           +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
-          +'<td class="rack nowrap">'+(rack||'—')+'</td>'
+          +'<td class="rack nowrap"'+(p.rack_stock&&p.rack_stock.length?' title="랙별 재고(실사·적치·위치변경·출고로 자동 유지) · FM = fast moving 랙 · 위 → 아래 = 피킹 순서"':'')+'>'+(rack||'—')+'</td>'
           +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
             +(isDir?' title="클릭하면 알루미늄 지정/해제" style="cursor:pointer"':'')+'>'+matBadge(p.material)+'</td>'
           +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
@@ -1880,6 +1886,19 @@
   //   · 전환 전에 "지금 이 SKU 가 어디에 걸려 있나"를 업체별로 정리해 보여주고,
   //     업체별 처리결과를 메모로 남긴다. 여러 SKU 는 한 번에 점검해 이력으로 보관.
   // ===================================================================
+  // 0245 · 제품찾기 「랙」 열 — 랙별 재고(product_rack_stock)를 피킹 순서(fast moving 먼저)로.
+  //   랙 기록이 아직 없는 SKU 는 종전처럼 제품마스터 위치(rack_location)를 회색으로 보여준다.
+  function rackCellHtml(p){
+    var rs=p.rack_stock||[];
+    if(!rs.length) return p.rack_location?('<span class="mst" style="color:#6f6a60;font-size:11px">'+escP(p.rack_location)+'</span>'):'';
+    var fq=function(n){ return Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3}); };
+    var h=rs.map(function(r){ return '<span class="rk"><b>'+escP(r.rack)+'</b><span class="q">'+fq(r.qty)+'</span>'+(r.kind==='fast'?'<span class="fm">FM</span>':'')+'</span>'; }).join('');
+    var loc=rs.reduce(function(s,r){ return s+Number(r.qty||0); },0);
+    var un=Math.round((Number(p.stock_qty||0)-loc)*1000)/1000;
+    if(un>0) h+='<span class="rk un" title="재고 총량 중 랙이 기록되지 않은 수량">위치 미지정 <span class="q">'+fq(un)+'</span></span>';
+    return h;
+  }
+
   function stBadge(active, reason){
     return active
       ? '<span class="stbadge on">활성</span>'
@@ -2244,7 +2263,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build st-0924np (업로드 Estado 판매상태 일괄 지정)'); }catch(e){}
+  try{ console.log('[refatrix-products] build st-1001rs1 (랙 열 = 랙별 재고 · fast moving 먼저)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);

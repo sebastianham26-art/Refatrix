@@ -1,10 +1,11 @@
-// stockCountRoutes.js · rev 20260922proapply (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20261001rs1 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { verifyPin } from '../auth.js';
 import { splitRacks } from './zoneRoutes.js';
+import { rackSafe, applyCountToRacks, rackStockReady } from '../rackStock.js';   // 0245 · 실사 반영 시 SKU 별 랙 × 수량 저장
 
 // =====================================================================
 // Refatrix ERP · stockCountRoutes.js  (재고실사 / Inventory Count)
@@ -25,7 +26,7 @@ import { splitRacks } from './zoneRoutes.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260922proapply"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20261001rs1"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -694,6 +695,12 @@ export default async function stockCountRoutes(app) {
     // 실사한 부품(집계) + 시스템 재고
     const parts = (await query(
       `SELECT g.product_id, g.counted, g.racks,
+              (SELECT STRING_AGG(x.rk || ' ×' || (CASE WHEN x.q = TRUNC(x.q) THEN TRUNC(x.q)::text ELSE RTRIM(x.q::text, '0') END), ' · ' ORDER BY x.rk)
+                 FROM (SELECT UPPER(TRIM(l2.rack_scanned)) AS rk, SUM(l2.counted_qty) AS q
+                         FROM stock_count_lines l2
+                        WHERE l2.count_id=$1 AND l2.product_id=g.product_id
+                          AND NULLIF(TRIM(COALESCE(l2.rack_scanned,'')),'') IS NOT NULL
+                        GROUP BY UPPER(TRIM(l2.rack_scanned))) x) AS rack_qty,
               p.code, p.name, p.rack_location, p.stock_qty, p.avg_cost, p.list_price,
               (SELECT STRING_AGG(DISTINCT s.syd_code, ', ') FROM product_syd_codes s
                  WHERE s.product_id=p.id AND s.syd_code IS NOT NULL AND TRIM(s.syd_code) <> '') AS syd_code,
@@ -756,7 +763,8 @@ export default async function stockCountRoutes(app) {
       valCost += vc; valList += vl;
       rows.push({
         kind: 'part', category: cat, product_id: Number(p.product_id), code: p.code, name: p.name || '', syd_code: p.syd_code || '',
-        rack: p.racks || p.rack_location || '', rack_scanned: p.racks || '', master_rack: p.rack_location || '',
+        rack: p.rack_qty || p.racks || p.rack_location || '', rack_scanned: p.racks || '', master_rack: p.rack_location || '',
+        rack_qty: p.rack_qty || '',
         system_qty: sys, counted_qty: cnt,
         avail_qty: Math.max(0, sys - num(p.reserved)), diff,
         ...(withValue ? { value_cost: vc, value_list: vl } : {}),
@@ -838,7 +846,13 @@ export default async function stockCountRoutes(app) {
   async function buildReviewList(id, exec = query) {
     const run = typeof exec === 'function' ? exec : (s, p) => exec.query(s, p);
     const parts = (await run(
-      `SELECT g.product_id, g.counted, g.racks, p.code, p.name, p.stock_qty, p.rack_location
+      `SELECT g.product_id, g.counted, g.racks, p.code, p.name, p.stock_qty, p.rack_location,
+              (SELECT STRING_AGG(x.rk || ' ×' || (CASE WHEN x.q = TRUNC(x.q) THEN TRUNC(x.q)::text ELSE RTRIM(x.q::text, '0') END), ' · ' ORDER BY x.rk)
+                 FROM (SELECT UPPER(TRIM(l2.rack_scanned)) AS rk, SUM(l2.counted_qty) AS q
+                         FROM stock_count_lines l2
+                        WHERE l2.count_id=$1 AND l2.product_id=g.product_id
+                          AND NULLIF(TRIM(COALESCE(l2.rack_scanned,'')),'') IS NOT NULL
+                        GROUP BY UPPER(TRIM(l2.rack_scanned))) x) AS rack_qty
          FROM (SELECT product_id, SUM(counted_qty) AS counted,
                       STRING_AGG(DISTINCT NULLIF(rack_scanned,''), ', ') AS racks
                  FROM stock_count_lines
@@ -859,7 +873,7 @@ export default async function stockCountRoutes(app) {
       const rackDiff = scanned !== '' && scanned !== master;
       if (delta === 0 && !rackDiff) return null;
       const it = { kind, code: p.code, name: p.name || '', system_qty: before, counted_qty: after, delta,
-        rack_scanned: scanned, master_rack: master, rack_diff: rackDiff };
+        rack_scanned: scanned, master_rack: master, rack_diff: rackDiff, rack_qty: p.rack_qty || '' };
       it[idKey] = Number(kind === 'part' ? p.product_id : p.promo_item_id);
       return it;
     };
@@ -945,6 +959,11 @@ export default async function stockCountRoutes(app) {
       const review = await buildReviewList(id, c);
       const eventNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
       let applied = 0, rackSaved = 0;
+      // 0245 · 랙재고 제외 대상: ① 이번에 수량차이를 보류한 부품 ② 앞서 프로모션(PRO) 경로로 이미 결정된 부품
+      //   (반영한 것은 그때 랙재고를 저장했고, 보류한 것은 저장하지 않는다 — 다시 덮어쓰면 그 뒤 출고가 지워진다)
+      const rackSkip = new Set((await c.query(
+        `SELECT DISTINCT product_id FROM stock_count_adjustments WHERE count_id=$1 AND product_id IS NOT NULL`, [id]))
+        .rows.map((r) => Number(r.product_id)));
       for (const it of review) {
         const k = keyOf(it.kind, it.product_id, it.promo_item_id);
         // 결정: 명시적 payload 있으면 그대로, 없으면 레거시(차이는 반영, 랙은 저장 안함)
@@ -952,6 +971,7 @@ export default async function stockCountRoutes(app) {
                                  : { apply: it.delta !== 0, save_rack: false, comment: '', final: null };
         let didApply = false, didRack = false, appliedQty = null;
         if (it.kind === 'part') {
+          if (!dec.apply && it.delta !== 0) rackSkip.add(Number(it.product_id));
           if (dec.apply) {
             const cur = num((await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [it.product_id])).rows[0].stock_qty);
             const target = round2(dec.final != null && dec.final >= 0 ? dec.final : it.counted_qty);
@@ -998,9 +1018,14 @@ export default async function stockCountRoutes(app) {
            it.code, it.system_qty, it.counted_qty, it.delta,
            didApply ? 'apply' : 'skip', dec.comment || null, it.rack_scanned || null, didRack, didApply, appliedQty, eventNo, uid]);
       }
+      // 0245 · 이 세션에서 센 「랙마다 몇 개」를 랙재고(product_rack_stock)로 저장 — 위 제외 대상 빼고.
+      const rackRes = await rackSafe(c, 'count_apply', (run) => applyCountToRacks(run, id, { skip: rackSkip, userId: uid, code: sc.code }));
+      const rackFailed = !rackRes && await rackStockReady();
       await c.query(`UPDATE stock_counts SET status='reconciled', reconciled_at=now(), reconciled_by=$1, adjust_event_no=$2 WHERE id=$3`,
         [uid, eventNo, id]);
-      return { ok: true, applied, rack_saved: rackSaved, reviewed: review.length, event_no: eventNo, code: sc.code };
+      return { ok: true, applied, rack_saved: rackSaved, reviewed: review.length, event_no: eventNo, code: sc.code,
+        rack_stock: rackRes ? { skus: rackRes.skus, changed: rackRes.changed, skipped: rackSkip.size } : null,
+        rack_stock_error: rackFailed || undefined };
     });
     if (result.error) {
       const codeMap = { not_found: 404, not_submitted: 409, full_only: 409, would_go_negative: 400 };
@@ -1060,6 +1085,7 @@ export default async function stockCountRoutes(app) {
       }
       const eventNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
       let applied = 0, rackSaved = 0, recorded = 0;
+      const rackOnly = new Set();      // 0245 · 이번에 반영한 PRO 부품만 랙재고 저장
       for (const r of reqItems) {
         const it = byId.get(Number(r.product_id));
         const fin = (r.final_qty != null && r.final_qty !== '' && isFinite(Number(r.final_qty))) ? Number(r.final_qty) : null;
@@ -1082,6 +1108,7 @@ export default async function stockCountRoutes(app) {
               [it.product_id, delta, `count:${id}`, note, eventNo, uid]);
             didApply = true; applied += 1; appliedQty = target;
           }
+          rackOnly.add(Number(it.product_id));
         }
         if (wantRack) {
           await c.query(`UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3`, [it.rack_scanned, uid, it.product_id]);
@@ -1099,7 +1126,13 @@ export default async function stockCountRoutes(app) {
       // 남은 검토 항목(부품·구 프로모 포함)이 없으면 세션을 반영완료로 닫는다.
       const remaining = (await buildReviewList(id, c)).length;
       let closed = false;
+      if (rackOnly.size) await rackSafe(c, 'count_promo', (run) => applyCountToRacks(run, id, { only: rackOnly, userId: uid, code: sc.code }));
       if (remaining === 0) {
+        // 세션이 닫히면(검토할 차이가 더 없음) 수량이 맞았던 SKU 까지 랙재고를 저장한다 — 보류 SKU 제외.
+        //   결정 기록이 있는 SKU(반영 = 그때 저장함 / 보류 = 저장 안 함)는 건드리지 않는다.
+        const skip = new Set((await c.query(`SELECT DISTINCT product_id FROM stock_count_adjustments
+                        WHERE count_id=$1 AND product_id IS NOT NULL`, [id])).rows.map((r) => Number(r.product_id)));
+        await rackSafe(c, 'count_close', (run) => applyCountToRacks(run, id, { skip, userId: uid, code: sc.code }));
         await c.query(`UPDATE stock_counts SET status='reconciled', reconciled_at=now(), reconciled_by=$1, adjust_event_no=$2 WHERE id=$3`,
           [uid, eventNo, id]);
         closed = true;

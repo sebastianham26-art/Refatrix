@@ -7,6 +7,8 @@ import { summarizeSla } from '../stageSla.js';
 import { buildStageCohorts, getSlaKpi } from '../stageCohorts.js';
 // 0225 · 고객 PO(O.C.) — 견적 화면과 같은 마이그레이션 판정기를 쓴다.
 import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
+// 0245 · 랙별 피킹 위치(포장작업지시서와 같은 값) — fast moving 랙 먼저
+import { rackStockReady, quotePicks, picksText } from '../rackStock.js';
 
 // =====================================================================
 // Refatrix ERP · warehouseRoutes.js  (창고 모듈)
@@ -106,6 +108,7 @@ export default async function warehouseRoutes(app) {
       if (fulfill < qty) continue;                        // 부족 라인 제외(즉시재고만)
       const syd = (l.syd_codes && String(l.syd_codes).trim()) || (l.scode && String(l.scode).trim()) || '';
       items.push({
+        product_id: Number(l.product_id),
         ctr_code: l.ctr_code || '',
         syd_code: syd,
         ean: l.ean || '',
@@ -114,6 +117,7 @@ export default async function warehouseRoutes(app) {
       });
       totalPieces += qty;
     }
+    await attachPicks(id, items, 'qty');
 
     return {
       quote_id: Number(q.id),
@@ -180,6 +184,25 @@ export default async function warehouseRoutes(app) {
     return map;
   }
 
+  // 0245 · 각 줄에 피킹 위치(picks=[{rack,qty,kind}], rack_picks="AE5-1 ×4 · AE1-3 ×8")를 붙인다.
+  //   포장작업지시서 출력 때 저장된 위치가 있으면 그대로(= 매출 전환 때 차감될 위치), 없으면 현재 계획.
+  async function attachPicks(quoteId, items, qtyKey) {
+    try {
+      if (!items.length || !(await rackStockReady())) return;
+      const { picks } = await quotePicks(null, quoteId, items.map((it) => ({ product_id: it.product_id, qty: it[qtyKey] })));
+      for (const it of items) {
+        const p = picks[it.product_id] || [];
+        it.picks = p;
+        // 랙재고로 다 못 채운 분량(rack null)은 제품마스터 위치로 안내 — 위치가 사라져 보이지 않게
+        const un = p.filter((k) => !k.rack).reduce((s, k) => s + Number(k.qty || 0), 0);
+        let t = picksText(p);
+        if (t && un > 0) t += ` · ${it.rack_location || 'SIN UBICACIÓN'} ×${un}`;
+        it.rack_picks = t;
+        if (t) it.rack_location = t;     // 기존 화면(랙위치 열)도 랙별 수량을 그대로 보여준다
+      }
+    } catch (e) { try { console.error('[warehouse] rack picks', e.message); } catch (_) {} }
+  }
+
   // EAN-13 매칭(리더기 앞자리 0 가감 폴백)
   async function findProductByEan(ean, exec = query) {
     const e = String(ean || '').trim();
@@ -214,6 +237,7 @@ export default async function warehouseRoutes(app) {
       return { product_id: l.product_id, ctr_code: l.ctr_code, syd_code: l.syd_code, ean: l.ean,
                rack_location: l.rack_location, required: l.required, scanned: sc, remaining: Math.max(0, l.required - sc) };
     });
+    await attachPicks(id, items, 'required');
 
     // product_id → 경쟁사 코드(SYD) 매핑 — 재고 조건 없이 전체 라인 기준(빈칸 버그 방지)
     const sydMap = await sydMapAllLines(id);

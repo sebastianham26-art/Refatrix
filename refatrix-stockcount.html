@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0922proapply</title>
+<title>재고실사 · Refatrix · build sc1001rs1</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -184,6 +184,7 @@
       <h2 style="margin:0">재고실사 세션</h2>
       <div class="row">
         <button class="btn ghost sm" onclick="openHelp()">📖 사용방법</button>
+        <button class="btn ghost sm" id="rsOpenBtn" type="button">📍 랙별 재고</button>
         <button class="btn ghost sm" onclick="showSpotHist()">🎯 점검 이력</button>
         <button class="btn ghost sm" onclick="showPromo()">🎁 프로모션 품목 관리</button>
         <button class="btn brass sm" onclick="openStart()">＋ 새 실사 시작</button>
@@ -246,6 +247,58 @@
   <div class="card">
     <h2 id="shLogTtl">점검 기록</h2>
     <div class="tbl-wrap"><table><thead><tr id="shHead"></tr></thead><tbody id="shBody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- 0245 · 랙별 재고 (제품 × 랙 × 수량) -->
+<div id="rackStockView" class="wrap hidden">
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0" id="rsTitle">📍 랙별 재고</h2>
+      <div class="row">
+        <button class="btn ghost sm" id="rsXlsBtn" type="button">⬇ 엑셀</button>
+        <button class="btn ghost sm" id="rsBackBtn" type="button">← 목록</button>
+      </div>
+    </div>
+    <div class="hint mut" id="rsHint" style="margin:4px 0 8px">실사 반영 · 수입 적치 · 위치변경 · 매출 출고(포장작업지시서 위치)로 자동 유지됩니다. <b>FM</b> = fast moving 랙(피킹 우선). <b>위치 미지정</b> = 재고 총량 중 랙이 기록되지 않은 수량.</div>
+    <div class="row">
+      <div style="flex:2;min-width:150px"><label id="rsLbQ">제품번호 · 품명</label><input id="rsQ" placeholder="CB0257" autocomplete="off"></div>
+      <div style="flex:1;min-width:110px"><label id="rsLbRack">랙</label><input id="rsRack" placeholder="AE1" autocomplete="off"></div>
+      <div style="min-width:120px"><label>&nbsp;</label><label style="margin:0;display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="rsUn" style="width:auto"> <span id="rsLbUn">위치 미지정만</span></label></div>
+      <div><label>&nbsp;</label><button class="btn sm" id="rsGo" type="button">조회</button></div>
+    </div>
+    <div id="rsRacks" class="rackbar" style="margin-top:10px"></div>
+    <div class="msg" id="rsMsg"></div>
+  </div>
+  <div class="card">
+    <h2 id="rsListTtl" style="margin-top:0">SKU별 위치 <span class="mut" id="rsCount"></span></h2>
+    <div class="tbl-wrap"><table><thead><tr id="rsHead"></tr></thead><tbody id="rsBody"></tbody></table></div>
+  </div>
+  <div class="card hidden" id="rsDetail">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0" id="rsDtTitle"></h2>
+      <button class="btn ghost sm" id="rsDtClose" type="button">✕</button>
+    </div>
+    <div id="rsDtRacks" style="margin-top:6px"></div>
+    <div id="rsDtEdit" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+      <div class="row">
+        <div style="flex:1;min-width:110px"><label>랙</label><input id="rsEdRack" placeholder="AE1-3" autocomplete="off"></div>
+        <div style="flex:1;min-width:90px"><label>수량(최종)</label><input id="rsEdQty" type="number" min="0" step="1"></div>
+        <div style="flex:2;min-width:150px"><label>사유</label><input id="rsEdNote" placeholder="예: 현장 재확인"></div>
+        <div><label>&nbsp;</label><button class="btn brass sm" id="rsEdSave" type="button">저장</button></div>
+      </div>
+      <div class="hint mut">디렉터 전용 · 그 랙의 수량을 입력한 값으로 맞춥니다(0 = 그 랙에서 제거). 재고 총량(stock_qty)은 바뀌지 않습니다.</div>
+    </div>
+    <h2 style="margin:14px 0 6px;font-size:14px" id="rsDtMvTtl">이력</h2>
+    <div class="tbl-wrap" style="max-height:34vh"><table><thead><tr><th>일시</th><th>랙</th><th class="num">변화</th><th class="num">이후</th><th>사유</th><th>참조</th><th>처리자</th></tr></thead><tbody id="rsDtMoves"></tbody></table></div>
+  </div>
+  <div class="card hidden" id="rsImport">
+    <h2 style="margin-top:0">반영완료된 실사에서 랙재고 가져오기 <span class="mut">(디렉터)</span></h2>
+    <div class="hint mut">이 기능 배포 전에 반영완료한 실사의 「랙마다 센 수량」을 랙재고로 저장합니다. 그 실사에서 센 SKU · 그 실사가 돈 랙만 바뀌고, 수량차이를 보류한 SKU 는 제외됩니다. 실사 이후의 출고·이동은 들어가지 않으니 최근 실사에만 쓰세요. 한 실사는 한 번만 가져올 수 있고, 앞으로 반영하는 실사는 자동으로 저장됩니다.</div>
+    <div class="row">
+      <div style="flex:1;min-width:200px"><select id="rsImpSel"></select></div>
+      <div><button class="btn sm" id="rsImpBtn" type="button">가져오기</button></div>
+    </div>
   </div>
 </div>
 
@@ -523,7 +576,7 @@ async function api(path,opt){
   return {ok:res.ok,status:res.status,...body,_raw:body};
 }
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),1600); }
-function show(v){ ['loginView','homeView','recordView','reconView','promoView','spotView','spotHistView'].forEach(x=>$(x).classList.add('hidden')); $(v).classList.remove('hidden'); if(typeof pdaApply==='function') pdaApply(); }
+function show(v){ ['loginView','homeView','recordView','reconView','promoView','spotView','spotHistView','rackStockView'].forEach(x=>$(x).classList.add('hidden')); $(v).classList.remove('hidden'); if(typeof pdaApply==='function') pdaApply(); }
 function closeModal(id){ $(id).classList.remove('on'); }
 function openHelp(){ $('helpModal').classList.add('on'); }
 
@@ -927,13 +980,13 @@ async function openReview(){
   renderReview(); $('reviewModal').classList.add('on');
 }
 function renderReview(){
-  $('rvHint').innerHTML='<b>조정수량</b>을 직접 고쳐 강제조정할 수 있습니다(기본값=실사수량). <b>반영</b> 체크한 항목만 그 수량으로 재고에 반영되고, 해제한 항목은 <b>사유만 기록</b>됩니다. <b>랙저장</b>은 마스터 위치를 갱신합니다.';
+  $('rvHint').innerHTML='<b>조정수량</b>을 직접 고쳐 강제조정할 수 있습니다(기본값=실사수량). <b>반영</b> 체크한 항목만 그 수량으로 재고에 반영되고, 해제한 항목은 <b>사유만 기록</b>됩니다. <b>랙저장</b>은 마스터 위치를 갱신합니다. 📍 실사에서 센 <b>랙마다의 수량</b>은 반영 시 <b>랙별 재고</b>로 저장됩니다(반영 해제한 수량차이 SKU 제외).';
   $('rvBody').innerHTML=REVIEW.map((it,i)=>{
     const diffTxt=(it.delta>0?'+':'')+fmt(it.delta);
     const diffCls=it.delta<0?'diff-neg':(it.delta>0?'diff-pos':'diff-zero');
     const sys=Number(it.system_qty);
     const applyChecked=(Number(it.counted_qty)!==sys);   // 차이 있으면 기본 반영
-    const rackTxt=(it.rack_scanned||'(없음)')+' → '+(it.master_rack||'(비어있음)');
+    const rackTxt=(it.rack_qty?('<b>'+it.rack_qty+'</b><div class="mut">'):'')+(it.rack_scanned||'(없음)')+' → '+(it.master_rack||'(비어있음)')+(it.rack_qty?'</div>':'');
     return '<tr>'
       +'<td><b>'+(it.code||'')+'</b><div class="mut">'+(it.name||'')+'</div></td>'
       +'<td class="num">'+fmt(it.system_qty)+' → '+fmt(it.counted_qty)+' <span class="'+diffCls+'">('+diffTxt+')</span></td>'
@@ -973,7 +1026,8 @@ async function submitReview(){
   }
   if($('rvPin')) $('rvPin').value='';
   closeModal('reviewModal');
-  toast('✔ 반영 '+r.applied+'건 · 랙저장 '+(r.rack_saved||0)+'건 완료');
+  toast('✔ 반영 '+r.applied+'건 · 랙저장 '+(r.rack_saved||0)+'건'+(r.rack_stock?(' · 📍 랙재고 '+r.rack_stock.skus+' SKU'):'')+' 완료');
+  if(r.rack_stock_error) setTimeout(()=>alert('⚠ 재고 반영은 끝났지만 랙별 재고 저장이 실패했습니다.\n📍 랙별 재고 화면 → 「반영완료된 실사에서 가져오기」로 다시 저장하세요.'),300);
   openReconcile(CUR.id);
 }
 async function finalizeEmpty(){
@@ -1110,7 +1164,7 @@ async function openProApply(cid){
   const its=PROAPPLY.items;
   $('paBody').innerHTML=its.map((it,i)=>{
     const diffTxt=(it.delta>0?'+':'')+fmt(it.delta), diffCls=it.delta<0?'diff-neg':(it.delta>0?'diff-pos':'diff-zero');
-    const rackTxt=(it.rack_scanned||'(없음)')+' → '+(it.master_rack||'(비어있음)');
+    const rackTxt=(it.rack_qty?('<b>'+it.rack_qty+'</b><div class="mut">'):'')+(it.rack_scanned||'(없음)')+' → '+(it.master_rack||'(비어있음)')+(it.rack_qty?'</div>':'');
     return '<tr><td style="text-align:center"><input type="checkbox" id="paA_'+i+'" '+(Number(it.delta)!==0?'checked':'')+' style="width:20px;height:20px"></td>'
       +'<td class="nm"><b>'+(it.code||'')+'</b><div class="mut">'+(it.name||'')+'</div></td>'
       +'<td class="num">'+fmt(it.system_qty)+' → '+fmt(it.counted_qty)+' <span class="'+diffCls+'">('+diffTxt+')</span></td>'
@@ -1734,6 +1788,142 @@ function spotHistXlsx(){
   <div id="adjBody" style="margin-top:10px"></div>
 </div></div>
 
+<script>
+/* =====================================================================
+   0245 · 랙별 재고 화면 (build sc1001rs1)
+   제품 × 랙 × 수량 — 실사 반영·적치·위치변경·매출 출고로 서버가 유지한다.
+   이 화면은 조회 + 디렉터 수동 조정 + 과거 실사 가져오기.
+   ===================================================================== */
+(function(){
+  var RS={items:[],racks:[],pid:null};
+  var q3=function(n){ return Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3}); };
+  var esc=function(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); };
+  var REASON={count:'재고실사',sale:'매출 출고',sale_reverse:'매출 취소·수정',putaway:'수입 적치',relocate:'위치변경',manual:'디렉터 수동'};
+  function chip(r){ return '<span style="display:inline-block;margin:1px 6px 1px 0;white-space:nowrap"><b>'+esc(r.rack)+'</b> '+q3(r.qty)+(r.kind==='fast'?' <span class="pill p-over" style="font-size:10px;padding:0 4px">FM</span>':'')+'</span>'; }
+  async function openRS(){
+    show('rackStockView');
+    $('rsTitle').textContent=L('📍 랙별 재고','📍 Inventario por ubicación');
+    $('rsDetail').classList.add('hidden');
+    $('rsImport').classList.toggle('hidden', !isDir());
+    if(isDir()) loadImportList();
+    await loadRacks(); await loadRS();
+    setTimeout(function(){ $('rsQ').focus(); },50);
+  }
+  async function loadRacks(){
+    var r=await api('/api/rack-stock/racks');
+    if(!r.ok){ $('rsRacks').innerHTML=''; setMsg('rsMsg', r.note||('조회 실패: '+(r.error||r.status)),'err'); return; }
+    RS.racks=r.racks||[];
+    var cur=normScan($('rsRack').value).trim().toUpperCase();
+    $('rsRacks').innerHTML=RS.racks.map(function(k){
+      return '<button type="button" class="rackchip'+(cur&&k.rack===cur?' on':'')+'" data-rack="'+esc(k.rack)+'">📍 '+esc(k.rack)+(k.kind==='fast'?' ⚡':'')+' <b>'+k.skus+'</b> · '+q3(k.qty)+'</button>';
+    }).join('')||'<span class="mut">아직 랙별 재고 기록이 없습니다 — 재고실사를 반영하면 생깁니다.</span>';
+    Array.prototype.forEach.call($('rsRacks').querySelectorAll('[data-rack]'),function(b){
+      b.addEventListener('click',function(){ var v=b.getAttribute('data-rack'); $('rsRack').value=($('rsRack').value.trim().toUpperCase()===v)?'':v; loadRacks(); loadRS(); });
+    });
+  }
+  async function loadRS(){
+    setMsg('rsMsg','');
+    var qs=new URLSearchParams();
+    var q=$('rsQ').value.trim(), rk=normScan($('rsRack').value).trim();
+    if(q) qs.set('q',q); if(rk) qs.set('rack',rk); if($('rsUn').checked) qs.set('unassigned','1');
+    qs.set('limit','500');
+    var r=await api('/api/rack-stock?'+qs.toString());
+    if(!r.ok){ setMsg('rsMsg', r.note||('조회 실패: '+(r.error||r.status)),'err'); RS.items=[]; renderRS(); return; }
+    RS.items=r.items||[]; $('rsCount').textContent='('+RS.items.length+(r.total>RS.items.length?(' / '+r.total):'')+')';
+    renderRS();
+  }
+  function renderRS(){
+    $('rsHead').innerHTML='<th>제품번호</th><th>품명</th><th class="num">재고(시스템)</th><th>랙 × 수량 <span class="mut" style="font-weight:400">(피킹 순서)</span></th><th class="num">위치 미지정</th><th>마스터 위치</th>';
+    $('rsBody').innerHTML=RS.items.map(function(it){
+      var warn=it.over>0?(' <span class="pill p-short" title="랙 수량 합이 시스템 재고보다 많습니다">+'+q3(it.over)+' 초과</span>'):'';
+      return '<tr data-pid="'+it.product_id+'" style="cursor:pointer">'
+        +'<td><b>'+esc(it.code)+'</b></td><td class="mut">'+esc(it.name)+'</td>'
+        +'<td class="num">'+q3(it.stock_qty)+'</td>'
+        +'<td>'+(it.racks.length?it.racks.map(chip).join(''):'<span class="mut">—</span>')+warn+'</td>'
+        +'<td class="num">'+(it.unassigned>0?('<b class="diff-neg">'+q3(it.unassigned)+'</b>'):'—')+'</td>'
+        +'<td class="mut">'+esc(it.master_rack||'—')+'</td></tr>';
+    }).join('')||'<tr><td colspan="6" class="mut" style="text-align:center;padding:14px">해당 조건의 SKU가 없습니다.</td></tr>';
+    Array.prototype.forEach.call($('rsBody').querySelectorAll('tr[data-pid]'),function(tr){
+      tr.addEventListener('click',function(){ openDetail(Number(tr.getAttribute('data-pid'))); });
+    });
+  }
+  async function openDetail(pid){
+    RS.pid=pid;
+    var r=await api('/api/rack-stock/product/'+pid);
+    if(!r.ok){ toast(r.note||'조회 실패'); return; }
+    var p=r.product;
+    $('rsDtTitle').innerHTML=esc(p.code)+' <span class="mut" style="font-weight:400">'+esc(p.name)+'</span>';
+    $('rsDtRacks').innerHTML='시스템 재고 <b>'+q3(p.stock_qty)+'</b> · 랙 기록 <b>'+q3(r.located)+'</b>'
+      +(r.unassigned>0?(' · <span class="diff-neg">위치 미지정 '+q3(r.unassigned)+'</span>'):'')
+      +'<div style="margin-top:6px">'+(r.racks.length?r.racks.map(chip).join(''):'<span class="mut">랙 기록 없음</span>')+'</div>'
+      +(p.master_rack?('<div class="mut" style="margin-top:4px">제품마스터 위치: '+esc(p.master_rack)+'</div>'):'');
+    $('rsDtMoves').innerHTML=(r.moves||[]).map(function(m){
+      var d=Number(m.delta);
+      var ref=m.sales_invoice_id?('매출 #'+m.sales_invoice_id):(m.ref||'');
+      return '<tr><td class="mut">'+new Date(m.created_at).toLocaleString('ko-KR')+'</td><td><b>'+esc(m.rack)+'</b></td>'
+        +'<td class="num '+(d<0?'diff-neg':'diff-pos')+'">'+(d>0?'+':'')+q3(d)+'</td><td class="num">'+q3(m.qty_after)+'</td>'
+        +'<td>'+esc(REASON[m.reason]||m.reason)+(m.note?('<div class="mut">'+esc(m.note)+'</div>'):'')+'</td>'
+        +'<td class="mut">'+esc(ref)+'</td><td class="mut">'+esc(m.by_name||'')+'</td></tr>';
+    }).join('')||'<tr><td colspan="7" class="mut" style="text-align:center;padding:12px">이력이 없습니다.</td></tr>';
+    $('rsDtEdit').classList.toggle('hidden', !isDir());
+    $('rsEdRack').value=''; $('rsEdQty').value=''; $('rsEdNote').value='';
+    $('rsDetail').classList.remove('hidden');
+    try{ $('rsDetail').scrollIntoView({behavior:'smooth',block:'start'}); }catch(_){}
+  }
+  async function saveEdit(){
+    var rack=normScan($('rsEdRack').value).trim().toUpperCase(), qty=$('rsEdQty').value;
+    if(!RS.pid||!rack||qty===''){ toast('랙과 수량을 입력하세요'); return; }
+    if(!confirm(rack+' 의 수량을 '+qty+' 개로 맞춥니다. 계속할까요?')) return;
+    var r=await api('/api/rack-stock/set',{method:'POST',body:JSON.stringify({product_id:RS.pid,rack:rack,qty:Number(qty),note:$('rsEdNote').value})});
+    if(!r.ok){ toast(r.note||('저장 실패: '+(r.error||''))); return; }
+    toast('✔ 저장 ('+(r.delta>0?'+':'')+q3(r.delta)+')');
+    await openDetail(RS.pid); loadRacks(); loadRS();
+  }
+  async function loadImportList(){
+    var r=await api('/api/stock-counts');
+    var list=(r.items||r.rows||r.sessions||r._raw||[]); if(!Array.isArray(list)) list=[];
+    list=list.filter(function(s){ return s.status==='reconciled' && (s.mode||'full')!=='spot'; });
+    $('rsImpSel').innerHTML=list.length?list.map(function(s){ return '<option value="'+s.id+'">'+esc(s.code)+' · '+esc(s.scope_note||'')+'</option>'; }).join('')
+      :'<option value="">반영완료된 실사가 없습니다</option>';
+  }
+  async function doImport(){
+    var id=$('rsImpSel').value; if(!id) return;
+    var label=$('rsImpSel').options[$('rsImpSel').selectedIndex].text;
+    if(!confirm(label+'\n\n이 실사의 랙별 수량으로 해당 SKU 들의 랙재고를 맞춥니다. 계속할까요?')) return;
+    var r=await api('/api/rack-stock/from-count/'+id,{method:'POST',body:'{}'});
+    if(!r.ok){ toast(r.note||('실패: '+(r.error||''))); return; }
+    toast('✔ '+r.code+' · '+r.skus+' SKU 저장'+(r.skipped?(' · 보류 '+r.skipped+' 제외'):''));
+    loadRacks(); loadRS();
+  }
+  function xls(){
+    if(!window.XLSX){ toast('엑셀 모듈 로딩중'); return; }
+    var data=[['Código','Producto','Stock sistema','Rack','Cantidad','Tipo','Sin ubicación','Ubicación maestro']];
+    RS.items.forEach(function(it){
+      if(!it.racks.length) data.push([it.code,it.name,it.stock_qty,'','','',it.unassigned,it.master_rack]);
+      it.racks.forEach(function(r,i){ data.push([it.code,it.name,i?'':it.stock_qty,r.rack,r.qty,r.kind==='fast'?'FM':'carton',i?'':it.unassigned,i?'':it.master_rack]); });
+    });
+    var ws=XLSX.utils.aoa_to_sheet(data), wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'RackStock');
+    XLSX.writeFile(wb,'rack_stock.xlsx');
+  }
+  function bind(){
+    var on=function(id,ev,fn){ var e=$(id); if(e) e.addEventListener(ev,fn); };
+    on('rsOpenBtn','click',openRS);
+    on('rsBackBtn','click',function(){ backHome(); });
+    on('rsGo','click',function(){ loadRacks(); loadRS(); });
+    on('rsUn','change',loadRS);
+    on('rsQ','keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); loadRS(); } });
+    on('rsRack','keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); loadRacks(); loadRS(); } });
+    on('rsDtClose','click',function(){ $('rsDetail').classList.add('hidden'); });
+    on('rsEdSave','click',saveEdit);
+    on('rsImpBtn','click',doImport);
+    on('rsXlsBtn','click',xls);
+  }
+  bind();
+  window.openRackStock=openRS;
+  try{ console.log('[refatrix-stockcount] build sc1001rs1 — 랙별 재고(제품×랙×수량)'); }catch(e){}
+})();
+</script>
 <script src="refatrix-nav.js?v=20260930vr"></script>
 </body>
 </html>

@@ -12,6 +12,7 @@ import { isInternalCall } from '../internalCall.js';   // 0224c · 견적 전환
 import { noPriceItems, NO_PRICE_NOTE } from '../noPrice.js';   // 2026-09-24 · 정가 없는 제품은 매출 불가
 import { kickOrderStatusByInvoice } from '../orderStatusSync.js';   // 0227 · SAT 번호 등록 → CRM 「OC Enviada」
 import { resolveSeller, recomputeCustomer, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
+import { rackSafe, deductForSale, restoreForSale } from '../rackStock.js';   // 0245 · 랙별 재고(지시서 위치에서 자동 차감)
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -158,6 +159,16 @@ export default async function salesRoutes(app) {
           `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, sales_invoice_id, sales_invoice_line_id, moved_at, created_by)
            VALUES ($1,'out',$2,$3,$4,$5,$6,$7,$8)`,
           [ln.product_id, ln.qty, ln.appliedUnitCost, `sales:${inv.id}`, inv.id, lineRow.id, inv_date, userId]);
+      }
+
+      // 0245 · 랙별 재고 차감 — 견적 전환이면 포장작업지시서에 적힌 위치에서, 직접 등록이면 피킹 순서(fast 먼저)로.
+      //   SAVEPOINT 격리: 랙 기록이 실패해도 매출 등록은 그대로 진행된다.
+      {
+        const rackQuoteId = isInternalCall(req) ? (Number(req.body?.source_quote_id) || null) : null;
+        await rackSafe(c, 'sale', (run) => deductForSale(run, {
+          invoiceId: inv.id, quoteId: rackQuoteId, userId,
+          lines: computed.map((ln) => ({ product_id: ln.product_id, qty: ln.qty })),
+        }));
       }
 
       // 부족분 기록 (인보이스 연결)
@@ -844,6 +855,8 @@ export default async function salesRoutes(app) {
            VALUES ($1,'in',$2,$3,$4,$5,$6)`,
           [l.productId, l.qty, l.appliedUnitCost, `sales_reverse:${inv.id}`, inv.id, userId]);
       }
+      // 0245 · 랙별 재고도 뺐던 랙으로 되돌린다(지시서 위치는 다시 미차감 상태 → 재전환 시 같은 위치)
+      await rackSafe(c, 'sale_del', (run) => restoreForSale(run, inv.id, userId));
       // 입금예정(AR) 취소
       if (inv.txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.txn_id]);
       // 이 인보이스가 해소했던 부족분 되돌림(원장 삭제 + 잔여 복원) → 그 다음 이 인보이스의 부족 기록 삭제
@@ -982,6 +995,7 @@ export default async function salesRoutes(app) {
              VALUES ($1,'in',$2,$3,$4,$5,$6)`,
             [l.productId, l.qty, l.appliedUnitCost, `sales_reverse:${inv.id}`, inv.id, userId]);
         }
+        await rackSafe(c, 'sale_rev', (run) => restoreForSale(run, inv.id, userId));   // 0245 · 랙 수량도 원위치
       }
       // 정산차액/소급 정정 기록(기록만, 거래전기는 후속)
       async function recordVariance(varianceMxn, kind, source) {
@@ -1054,6 +1068,11 @@ export default async function salesRoutes(app) {
            VALUES ($1,'out',$2,$3,$4,$5,$6,$7,$8)`,
           [ln.product_id, ln.qty, ln.appliedUnitCost, `sales:${inv.id}`, inv.id, lineRow.id, inv.inv_date, userId]);
       }
+      // 3.4) 0245 · 수정된 출고분을 랙에서 다시 차감(피킹 순서 — 수정 매출은 지시서와 무관)
+      await rackSafe(c, 'sale_edit', (run) => deductForSale(run, {
+        invoiceId: inv.id, quoteId: null, userId,
+        lines: newComputed.map((ln) => ({ product_id: ln.product_id, qty: ln.qty })),
+      }));
       // 3.5) 수정된 출고분 기준으로 부족분 해소 재배분(같은 고객+제품 open 부족분 FIFO)
       for (const ln of newComputed) {
         await allocateShortagesOnSale(c.query.bind(c), {

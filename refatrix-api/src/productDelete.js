@@ -60,6 +60,9 @@ export const BLOCK_LABELS = {
   stock_shortages: '부족분',
   offer_sheet_items: '오퍼시트 항목',
   product_dev_requests: '개발요청',
+  product_rack_stock: '랙별 재고',                 // 0245 — 실물이 랙에 있다고 기록된 제품은 지우지 않는다
+  product_rack_moves: '랙별 재고 이력',
+  quote_pick_alloc: '포장지시서 피킹 위치',
 };
 
 // 「판매」·「구매」로 묶어 화면에 한 줄 요약을 만들기 위한 분류.
