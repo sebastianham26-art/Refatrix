@@ -123,11 +123,21 @@ export function validateBonusPlan(input) {
 }
 
 // ── 성과 집계 (순수) ─────────────────────────────────────────────────
-// invoices: [{id,sat_no,inv_date,due_date,subtotal,total,customer_id,customer_name,customer_code,
-//             credit_days,basis,rate,payout_paid,payout_amount}]
-// allocs  : [{invoice_id,pay_date,amount}]  (수금 충당 내역 · 총액 기준)
+// invoices: [{id,sat_no,inv_date,due_date,subtotal,total,customer_id,customer_name,customer_code,phone,
+//             credit_days,basis,match_on,rate,po_rate,payout_paid,payout_amount}]
+//            basis/match_on = 발행일이 속한 커미션 기간. rate/po_rate 는 고객 예외율이 반영된 값.
+// allocs  : [{invoice_id,pay_date,amount,com_rate,payment_id}]  (현금 수금 충당 · 총액 기준)
+//            com_rate = 그 수금일이 「수금 기준 + 수금일 판정」 기간에 속하면 그 율(예외율 우선), 아니면 null.
 // plan/tiers/targets: 성과급 정책. plan=null 이면 성과급 없음.
 // months  : 집계할 월 배열, today: 'YYYY-MM-DD'
+//
+// 커미션 모드(commissionRoutes.commissionMode 와 같은 규칙):
+//   revenue = 발행월 확정 / invoice = 완납월에 전액 확정 / payment = 수금할 때마다 적립, 완납월에 적립분 확정.
+export function invMode(i) {
+  if (i.basis === 'revenue') return 'revenue';
+  if (i.basis === 'collection' && i.match_on !== 'payment') return 'invoice';
+  return 'payment';
+}
 export function buildPerf(opts) {
   const { invoices = [], allocs = [], plan = null, tiers = [], targets = {}, months = [], today = null, customerId = null } = opts || {};
   const curYm = today ? ymOf(today) : null;
@@ -135,7 +145,10 @@ export function buildPerf(opts) {
 
   const payBy = {};
   for (const a of allocs) {
-    (payBy[a.invoice_id] ||= []).push({ date: String(a.pay_date).slice(0, 10), amount: Number(a.amount) || 0 });
+    (payBy[a.invoice_id] ||= []).push({
+      date: String(a.pay_date).slice(0, 10), amount: Number(a.amount) || 0,
+      com_rate: a.com_rate != null ? Number(a.com_rate) : null, payment_id: a.payment_id != null ? Number(a.payment_id) : null,
+    });
   }
   for (const k of Object.keys(payBy)) payBy[k].sort((x, y) => x.date.localeCompare(y.date));
 
@@ -144,19 +157,37 @@ export function buildPerf(opts) {
     const total = Number(i.total) || 0;
     const ratio = total > 0 ? subtotal / total : 1;          // ex-IVA 환산비
     const pays = payBy[i.id] || [];
-    let cum = 0, fullyPaidDate = null;
+    const mode = invMode(i);
+    let cum = 0, fullyPaidDate = null, accW = 0;
     for (const p of pays) {
       cum += p.amount;
       if (!fullyPaidDate && total > 0 && cum + 0.01 >= total) fullyPaidDate = p.date;
+      // 수금일 판정: 수금 1건마다 적립 커미션 = 수금액(ex-IVA) × 그 수금일 기간의 율
+      p.com = (mode === 'payment' && p.com_rate != null) ? (p.amount * ratio * p.com_rate / 100) : 0;
+      if (mode === 'payment' && p.com_rate != null) accW += p.amount * p.com_rate;
+    }
+    const remainCash = Math.max(0, total - cum);
+    let accrued = 0, potential = 0, comRate = null;
+    if (mode === 'payment') {
+      accrued = round2(accW * ratio / 100);
+      comRate = i.po_rate != null ? Number(i.po_rate) : null;
+      potential = (!fullyPaidDate && comRate != null) ? round2(remainCash * ratio * comRate / 100) : 0;
+    } else if (i.basis) {
+      comRate = Number(i.rate) || 0;
+      const full = round2(subtotal * comRate / 100);
+      accrued = mode === 'revenue' || fullyPaidDate ? full : 0;
+      potential = mode === 'invoice' && !fullyPaidDate ? full : 0;
     }
     return {
-      ...i, subtotal, total, ratio, pays, paidTotal: cum, fullyPaidDate,
+      ...i, subtotal, total, ratio, pays, paidTotal: cum, fullyPaidDate, mode, accrued, potential, comRate,
+      remainCash: round2(remainCash),
       dueDate: i.due_date ? String(i.due_date).slice(0, 10) : null,
       invDate: String(i.inv_date).slice(0, 10),
     };
   });
 
-  const partial = !plan || plan.partial_credit !== false;
+  // 수금 실적 표시: 성과급이 「수금 기준 + 완납분만 인정」일 때만 완납분 기준, 그 외엔 실제 들어온 현금(비례).
+  const partial = !plan || plan.basis !== 'collection' || plan.partial_credit !== false;
   const inclOver = !plan || plan.include_overdue !== false;
   const pick = (list) => (customerId ? list.filter((i) => Number(i.customer_id) === Number(customerId)) : list);
 
@@ -165,26 +196,31 @@ export function buildPerf(opts) {
     ? sum(pick(list).map((i) => i.pays.filter((p) => ymOf(p.date) === m).reduce((s, p) => s + p.amount, 0) * i.ratio))
     : sum(pick(list).filter((i) => i.fullyPaidDate && ymOf(i.fullyPaidDate) === m).map((i) => i.subtotal)));
   const dueIn = (m, list = inv) => round2(sum(pick(list).filter((i) => i.dueDate && ymOf(i.dueDate) === m).map((i) => i.subtotal)));
+  const openBefore = (i, st) => Math.max(0, i.subtotal - i.pays.filter((p) => p.date < st).reduce((s, p) => s + p.amount, 0) * i.ratio);
   const carryTo = (m, list = inv) => {
     const st = monthStart(m);
-    return round2(sum(pick(list).filter((i) => i.dueDate && i.dueDate < st).map((i) => {
-      const before = i.pays.filter((p) => p.date < st).reduce((s, p) => s + p.amount, 0);
-      return Math.max(0, i.subtotal - before * i.ratio);
-    })));
+    return round2(sum(pick(list).filter((i) => i.dueDate && i.dueDate < st).map((i) => openBefore(i, st))));
   };
   // 수금목표: 미래 월은 연체 이월을 더하지 않는다(그 시점에 확정됨)
-  const colTarget = (m) => round2(dueIn(m) + ((inclOver && (!curYm || m <= curYm)) ? carryTo(m) : 0));
+  const carryOn = (m) => inclOver && (!curYm || m <= curYm);
+  const colTarget = (m) => round2(dueIn(m) + (carryOn(m) ? carryTo(m) : 0));
   const revTarget = (m) => round2(Number(targets[m] || 0));
 
-  // 인보이스 1건이 그 달에 인식하는 커미션 (지급된 건은 지급 시점 금액으로 동결)
+  // 인보이스 1건이 그 달에 「지급 확정」하는 커미션 (지급된 건은 지급 시점 금액으로 동결)
   const comOfInv = (i, m) => {
-    if (!i.basis) return 0;
-    const rate = Number(i.rate) || 0;
-    const amt = (i.payout_paid === true && i.payout_amount != null) ? Number(i.payout_amount) : round2(i.subtotal * rate / 100);
-    if (i.basis === 'revenue') return ymOf(i.invDate) === m ? amt : 0;
-    return (i.fullyPaidDate && ymOf(i.fullyPaidDate) === m) ? amt : 0;
+    if (i.payout_paid === true && i.payout_amount != null) {
+      const ym = i.mode === 'revenue' ? ymOf(i.invDate) : ymOf(i.fullyPaidDate);
+      return ym === m ? Number(i.payout_amount) : 0;
+    }
+    if (i.mode === 'revenue') return i.basis && ymOf(i.invDate) === m ? i.accrued : 0;
+    return (i.fullyPaidDate && ymOf(i.fullyPaidDate) === m) ? i.accrued : 0;
   };
+  // 그 달에 「적립」된 커미션 — 수금일 판정은 그 달 수금분 × 율, 나머지는 확정과 같다.
+  const accOfInv = (i, m) => (i.mode === 'payment'
+    ? i.pays.filter((p) => ymOf(p.date) === m).reduce((s, p) => s + p.com, 0)
+    : comOfInv(i, m));
   const comIn = (m, list = inv) => round2(sum(pick(list).map((i) => comOfInv(i, m))));
+  const accIn = (m, list = inv) => round2(sum(pick(list).map((i) => accOfInv(i, m))));
 
   const inPlan = (m) => !!plan && plan.enabled !== false && m >= plan.start_month && (!plan.end_month || m <= plan.end_month);
   const bonusOf = (m) => {
@@ -194,7 +230,11 @@ export function buildPerf(opts) {
     const actual = basis === 'revenue' ? revIn(m) : colIn(m);
     const rate = target > 0 ? round2(actual / target * 100) : null;
     const t = pickTier(tiers, rate);
-    return { in_plan: true, basis, target, actual, rate, amount: t ? round2(t.amount) : 0, tier: t ? t.min_rate : null };
+    const nt = nextTier(tiers, rate);
+    return {
+      in_plan: true, basis, target, actual, rate, amount: t ? round2(t.amount) : 0, tier: t ? t.min_rate : null,
+      next_tier: nt ? { min_rate: nt.min_rate, amount: round2(nt.amount), need: round2(Math.max(0, target * nt.min_rate / 100 - actual)) } : null,
+    };
   };
 
   const rows = months.map((m) => {
@@ -205,8 +245,9 @@ export function buildPerf(opts) {
       provisional: !!(curYm && m > curYm),                 // 미래 월 = 수금목표 잠정
       in_progress: !!(curYm && m === curYm),               // 진행중(확정 전)
       revenue: { target: rT, actual: rA, rate: rT > 0 ? round2(rA / rT * 100) : null },
-      collection: { target: cT, actual: cA, due: dueIn(m), carry: (inclOver && (!curYm || m <= curYm)) ? carryTo(m) : 0, rate: cT > 0 ? round2(cA / cT * 100) : null },
+      collection: { target: cT, actual: cA, due: dueIn(m), carry: carryOn(m) ? carryTo(m) : 0, rate: cT > 0 ? round2(cA / cT * 100) : null },
       commission: comIn(m),
+      commission_accrued: accIn(m),
       bonus: b,
       total: round2(comIn(m) + b.amount),
     };
@@ -215,13 +256,21 @@ export function buildPerf(opts) {
   // 기간 합계 · 고객별 · 인보이스별
   const from = months[0] || null, to = months[months.length - 1] || null;
   const inRangeDate = (d) => !!d && from && to && ymOf(d) >= from && ymOf(d) <= to;
-  const rangeInv = pick(inv).filter((i) => inRangeDate(i.invDate) || i.pays.some((p) => inRangeDate(p.date)));
+  const endLimit = to ? monthEnd(to) : null;
+  const openAt = (i, lim) => {
+    if (lim && i.invDate > lim) return 0;
+    const paid = lim ? i.pays.filter((p) => p.date <= lim).reduce((s, p) => s + p.amount, 0) : i.paidTotal;
+    return Math.max(0, i.subtotal - paid * i.ratio);
+  };
+  const openNow = (i) => Math.max(0, i.subtotal - i.paidTotal * i.ratio);
+  const isLate = (i) => !!(today && i.dueDate && i.dueDate < today && openNow(i) > 0.005);
+  const dueGap = (i) => (today && i.dueDate ? Math.round((Date.parse(today) - Date.parse(i.dueDate)) / 864e5) : null);
 
   const custBy = {};
   for (const i of pick(inv)) {
     const g = (custBy[i.customer_id] ||= {
-      customer_id: i.customer_id, customer_name: i.customer_name, customer_code: i.customer_code,
-      credit_days: i.credit_days, sales: 0, collected: 0, due: 0, open: 0, late: 0, commission: 0, invoice_count: 0,
+      customer_id: i.customer_id, customer_name: i.customer_name, customer_code: i.customer_code, phone: i.phone || null,
+      credit_days: i.credit_days, sales: 0, collected: 0, due: 0, open: 0, late: 0, commission: 0, commission_accrued: 0, invoice_count: 0,
     });
     if (inRangeDate(i.invDate)) { g.sales = round2(g.sales + i.subtotal); g.invoice_count++; }
     if (i.dueDate && inRangeDate(i.dueDate)) g.due = round2(g.due + i.subtotal);
@@ -229,21 +278,19 @@ export function buildPerf(opts) {
       ? i.pays.filter((p) => inRangeDate(p.date)).reduce((s, p) => s + p.amount, 0) * i.ratio
       : (i.fullyPaidDate && inRangeDate(i.fullyPaidDate) ? i.subtotal : 0);
     g.collected = round2(g.collected + colHere);
-    for (const m of months) g.commission = round2(g.commission + comOfInv(i, m));
-    // 미수잔액 = 기간 종료월 말 시점 잔액 / 연체 = 오늘 기준 만기 지난 미수
-    const endLimit = to ? monthEnd(to) : null;
-    const paidByEnd = endLimit ? i.pays.filter((p) => p.date <= endLimit).reduce((s, p) => s + p.amount, 0) : i.paidTotal;
-    const openAmt = (!endLimit || i.invDate <= endLimit) ? Math.max(0, i.subtotal - paidByEnd * i.ratio) : 0;
-    g.open = round2(g.open + openAmt);
-    if (today && i.dueDate && i.dueDate < today) {
-      g.late = round2(g.late + Math.max(0, i.subtotal - i.paidTotal * i.ratio));
+    for (const m of months) {
+      g.commission = round2(g.commission + comOfInv(i, m));
+      g.commission_accrued = round2(g.commission_accrued + accOfInv(i, m));
     }
+    // 미수잔액 = 기간 종료월 말 시점 잔액 / 연체 = 오늘 기준 만기 지난 미수
+    g.open = round2(g.open + openAt(i, endLimit));
+    if (isLate(i)) g.late = round2(g.late + openNow(i));
   }
   const customers = Object.values(custBy)
     .filter((g) => g.sales || g.collected || g.open || g.due)
     .sort((a, b) => b.sales - a.sales);
 
-  const invoiceRows = rangeInv.map((i) => {
+  const statusOf = (i) => {
     let status = 'open', lateDays = 0;
     if (i.fullyPaidDate) {
       status = (i.dueDate && i.fullyPaidDate > i.dueDate) ? 'paid_late' : 'paid';
@@ -255,31 +302,110 @@ export function buildPerf(opts) {
       status = 'due_soon';
       lateDays = -Math.round((Date.parse(i.dueDate) - Date.parse(today)) / 864e5);
     }
-    let com = 0;
-    for (const m of months) com = round2(com + comOfInv(i, m));
+    return { status, lateDays };
+  };
+
+  // 인보이스 목록 — 기간 안에 발행·수금·만기된 것 + 기간 말 미수가 남은 것(팔로업 대상)
+  const rangeInv = pick(inv).filter((i) => inRangeDate(i.invDate) || i.pays.some((p) => inRangeDate(p.date))
+    || (i.dueDate && inRangeDate(i.dueDate)) || openAt(i, endLimit) > 0.005);
+  const invoiceRows = rangeInv.map((i) => {
+    const st = statusOf(i);
+    let com = 0, acc = 0;
+    for (const m of months) { com = round2(com + comOfInv(i, m)); acc = round2(acc + accOfInv(i, m)); }
+    const payout = i.payout_paid === true;
     return {
-      invoice_id: i.id, sat_no: i.sat_no, customer_name: i.customer_name, customer_code: i.customer_code,
+      invoice_id: i.id, sat_no: i.sat_no, customer_id: i.customer_id, customer_name: i.customer_name, customer_code: i.customer_code,
+      phone: i.phone || null,
       inv_date: i.invDate, due_date: i.dueDate, credit_days: i.credit_days,
-      subtotal: i.subtotal, paid_amount: round2(i.paidTotal * i.ratio), paid_date: i.fullyPaidDate,
-      basis: i.basis || null, rate: i.rate != null ? Number(i.rate) : null,
-      commission: com, status, late_days: lateDays,
-      open_amount: round2(Math.max(0, i.subtotal - i.paidTotal * i.ratio)),
+      subtotal: i.subtotal, total: round2(i.total), paid_amount: round2(i.paidTotal * i.ratio), paid_date: i.fullyPaidDate,
+      basis: i.basis || (i.mode === 'payment' && (i.accrued > 0 || i.potential > 0) ? 'collection' : null),
+      mode: i.mode, rate: i.comRate,
+      commission: com,                                        // 기간 안에 지급 확정된 커미션
+      commission_accrued: acc,                                // 기간 안에 적립된 커미션(수금일 판정)
+      commission_total_accrued: payout ? Number(i.payout_amount) : i.accrued, // 지금까지 이 인보이스에 적립된 커미션 전체
+      commission_potential: i.potential,                      // 잔액을 다 걷으면 더 붙는 커미션
+      payout_paid: payout,
+      settle_ym: i.fullyPaidDate && (i.accrued > 0 || payout) && i.mode !== 'revenue' ? ymOf(i.fullyPaidDate) : (i.mode === 'revenue' ? ymOf(i.invDate) : null),
+      status: st.status, late_days: st.lateDays,
+      in_range_sale: !!inRangeDate(i.invDate),
+      open_amount: round2(openNow(i)),                        // 오늘 기준 미수(ex-IVA)
+      open_total: i.remainCash,                               // 오늘 기준 미수(IVA 포함) — 고객이 실제로 낼 돈
+      open_end: round2(openAt(i, endLimit)),                  // 기간 말 기준 미수(ex-IVA) — 「미수잔액」 박스와 같은 기준
+      late: isLate(i),
+      due_gap: dueGap(i),
     };
   }).sort((a, b) => a.inv_date.localeCompare(b.inv_date) || a.invoice_id - b.invoice_id);
+
+  // 수금 내역(기간 안) — 수금 1건 × 인보이스 1건 단위
+  const payments = [];
+  for (const i of pick(inv)) {
+    let cum = 0;
+    for (const p of i.pays) {
+      cum += p.amount;
+      if (!inRangeDate(p.date)) continue;
+      const fully = !!(i.fullyPaidDate && i.fullyPaidDate <= p.date);
+      payments.push({
+        pay_date: p.date, payment_id: p.payment_id, invoice_id: i.id, sat_no: i.sat_no,
+        customer_id: i.customer_id, customer_name: i.customer_name, customer_code: i.customer_code, phone: i.phone || null,
+        inv_date: i.invDate, due_date: i.dueDate,
+        amount_total: round2(p.amount), amount: round2(p.amount * i.ratio),
+        mode: i.mode, com_rate: i.mode === 'payment' ? p.com_rate : null,
+        commission_accrued: round2(p.com || 0),
+        invoice_fully_paid: !!i.fullyPaidDate, fully_paid_date: i.fullyPaidDate, closes_invoice: fully && i.fullyPaidDate === p.date && cum + 0.01 >= i.total,
+        invoice_open_total: i.remainCash, invoice_open: round2(openNow(i)),
+        invoice_commission: i.payout_paid === true ? Number(i.payout_amount) : i.accrued,
+        invoice_potential: i.potential, payout_paid: i.payout_paid === true,
+      });
+    }
+  }
+  payments.sort((a, b) => b.pay_date.localeCompare(a.pay_date) || a.invoice_id - b.invoice_id);
+
+  // 수금목표 구성 — 월마다 「당월 만기도래」 + 「연체 이월」 인보이스와 그 달 수금·남은 금액
+  const collectionTargets = [];
+  for (const m of months) {
+    const st = monthStart(m), en = monthEnd(m);
+    for (const i of pick(inv)) {
+      const dueHere = i.dueDate && ymOf(i.dueDate) === m;
+      const carry = carryOn(m) && i.dueDate && i.dueDate < st ? openBefore(i, st) : 0;
+      if (!dueHere && !(carry > 0.005)) continue;
+      const colM = i.pays.filter((p) => ymOf(p.date) === m).reduce((s, p) => s + p.amount, 0);
+      const st2 = statusOf(i);
+      collectionTargets.push({
+        month: m, kind: dueHere ? 'due' : 'carry', invoice_id: i.id, sat_no: i.sat_no,
+        customer_id: i.customer_id, customer_name: i.customer_name, customer_code: i.customer_code, phone: i.phone || null,
+        inv_date: i.invDate, due_date: i.dueDate,
+        target_amount: round2(dueHere ? i.subtotal : carry),
+        collected: round2(colM * i.ratio), collected_total: round2(colM),
+        open_now: round2(openNow(i)), open_total: i.remainCash,
+        paid_by_month_end: !!(i.fullyPaidDate && i.fullyPaidDate <= en),
+        status: st2.status, late_days: st2.lateDays,
+        commission_potential: i.potential,
+      });
+    }
+  }
+  collectionTargets.sort((a, b) => (a.month.localeCompare(b.month)) || String(a.due_date || '').localeCompare(String(b.due_date || '')));
+
+  // 완납 대기 커미션 — 적립됐지만 인보이스 잔액이 남아 아직 지급 확정되지 않은 것(현재 시점·기간 무관)
+  const pendingInv = pick(inv).filter((i) => i.mode === 'payment' && i.payout_paid !== true && !i.fullyPaidDate && i.accrued > 0);
 
   const totals = {
     revenue_target: round2(sum(rows.map((r) => r.revenue.target))),
     revenue: round2(sum(rows.map((r) => r.revenue.actual))),
     collection_target: round2(sum(rows.map((r) => r.collection.target))),
     collection: round2(sum(rows.map((r) => r.collection.actual))),
+    collection_cash: round2(sum(payments.map((p) => p.amount))),
     commission: round2(sum(rows.map((r) => r.commission))),
+    commission_accrued: round2(sum(rows.map((r) => r.commission_accrued))),
+    commission_pending: round2(sum(pendingInv.map((i) => i.accrued))),
+    commission_pending_potential: round2(sum(pendingInv.map((i) => i.potential))),
+    commission_pending_open: round2(sum(pendingInv.map((i) => i.remainCash))),
     bonus: round2(sum(rows.map((r) => r.bonus.amount))),
     open: round2(sum(customers.map((c) => c.open))),
     late: round2(sum(customers.map((c) => c.late))),
   };
   totals.total = round2(totals.commission + totals.bonus);
 
-  return { months: rows, customers, invoices: invoiceRows, totals };
+  return { months: rows, customers, invoices: invoiceRows, payments, collection_targets: collectionTargets, totals };
 }
 
 // ── SQL ──────────────────────────────────────────────────────────────
@@ -304,10 +430,11 @@ const NC_LATERAL = `
        WHERE n.invoice_id = i.id AND n.status = 'applied'
     ) nc ON true`;
 
-// 인보이스 발행일이 속하는 커미션 기간(기준·율). commissionRoutes.js 와 같은 규칙.
+// 인보이스 발행일이 속하는 커미션 기간(기준·율·판정기준). commissionRoutes.js 와 같은 규칙.
+//   match_on 은 to_jsonb 로 읽어 0250 미적용 DB 에서도 'invoice'(종전)로 동작.
 const PERIOD_LATERAL = `
     LEFT JOIN LATERAL (
-      SELECT cap.basis, cap.rate
+      SELECT cap.basis, cap.rate, COALESCE(to_jsonb(cap)->>'match_on','invoice') AS match_on
         FROM commission_agent_periods cap
        WHERE cap.user_id = ben.uid
          AND i.inv_date >= cap.start_date
@@ -316,6 +443,16 @@ const PERIOD_LATERAL = `
        LIMIT 1
     ) per ON true`;
 
+// 지속(∞) 「수금 기준 + 수금일 판정」 기간의 율 — 남은 잔액을 걷으면 붙을 커미션 계산용(0250)
+const PAYOPEN_LATERAL = `
+    LEFT JOIN LATERAL (
+      SELECT cap.rate
+        FROM commission_agent_periods cap
+       WHERE cap.user_id = ben.uid AND cap.basis = 'collection' AND cap.end_date IS NULL
+         AND COALESCE(to_jsonb(cap)->>'match_on','invoice') = 'payment'
+       LIMIT 1
+    ) po ON true`;
+
 const AGENT_INVOICES_SQL = `
   SELECT i.id, i.sat_no,
          to_char(i.inv_date,'YYYY-MM-DD') AS inv_date,
@@ -323,22 +460,36 @@ const AGENT_INVOICES_SQL = `
          (i.subtotal_mxn - nc.base) AS subtotal, (i.total_mxn - nc.total) AS total,
          COALESCE(i.credit_days, c.credit_days, 0) AS credit_days,
          c.id AS customer_id, c.name AS customer_name, c.code AS customer_code,
-         per.basis, COALESCE(ccr.rate, per.rate) AS rate,
+         NULLIF(COALESCE(NULLIF(to_jsonb(c)->>'buyer_phone',''), c.phone),'') AS phone,
+         per.basis, per.match_on, COALESCE(ccr.rate, per.rate) AS rate,
+         CASE WHEN po.rate IS NULL THEN NULL ELSE COALESCE(ccr.rate, po.rate) END AS po_rate,
          cp.paid AS payout_paid, cp.amount AS payout_amount
     FROM sales_invoices i
     JOIN customers c ON c.id=i.customer_id
     LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
-    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${NC_LATERAL}
+    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${PAYOPEN_LATERAL}${NC_LATERAL}
    WHERE i.status <> 'deleted' AND ben.uid=$1
    ORDER BY i.inv_date, i.id`;
 
+// 현금 수금 충당 내역 + 그 수금일의 「수금일 판정」 율(com_rate · 고객 예외율 우선 · 해당 없으면 NULL)
 const AGENT_ALLOCS_SQL = `
-  SELECT spa.invoice_id, to_char(sp.pay_date,'YYYY-MM-DD') AS pay_date, spa.amount
+  SELECT spa.invoice_id, sp.id AS payment_id, to_char(sp.pay_date,'YYYY-MM-DD') AS pay_date, spa.amount,
+         CASE WHEN pr.rate IS NULL THEN NULL ELSE COALESCE(ccr.rate, pr.rate) END AS com_rate
     FROM sales_payment_allocations spa
     JOIN sales_payments sp ON sp.id=spa.payment_id
     JOIN sales_invoices i ON i.id=spa.invoice_id
     JOIN customers c ON c.id=i.customer_id
     LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id
+    LEFT JOIN LATERAL (
+      SELECT cap.rate
+        FROM commission_agent_periods cap
+       WHERE cap.user_id = ben.uid AND cap.basis = 'collection'
+         AND COALESCE(to_jsonb(cap)->>'match_on','invoice') = 'payment'
+         AND sp.pay_date >= cap.start_date AND (cap.end_date IS NULL OR sp.pay_date <= cap.end_date)
+       ORDER BY cap.start_date DESC
+       LIMIT 1
+    ) pr ON true
    WHERE ben.uid=$1 AND i.status <> 'deleted'`;
 
 // 성과급 정책 로드 (테이블 없으면 null — 마이그레이션 전에도 화면이 죽지 않게)
@@ -373,11 +524,14 @@ export async function loadAgentData(agentId) {
     id: Number(r.id), sat_no: r.sat_no, inv_date: r.inv_date, due_date: r.due_date,
     subtotal: Number(r.subtotal), total: Number(r.total), credit_days: Number(r.credit_days || 0),
     customer_id: Number(r.customer_id), customer_name: r.customer_name, customer_code: r.customer_code,
-    basis: r.basis || null, rate: r.rate != null ? Number(r.rate) : null,
+    phone: r.phone || null,
+    basis: r.basis || null, match_on: r.match_on || 'invoice', rate: r.rate != null ? Number(r.rate) : null,
+    po_rate: r.po_rate != null ? Number(r.po_rate) : null,
     payout_paid: r.payout_paid === true, payout_amount: r.payout_amount != null ? Number(r.payout_amount) : null,
   }));
   const allocs = (await query(AGENT_ALLOCS_SQL, [agentId])).rows.map((r) => ({
-    invoice_id: Number(r.invoice_id), pay_date: r.pay_date, amount: Number(r.amount),
+    invoice_id: Number(r.invoice_id), payment_id: Number(r.payment_id), pay_date: r.pay_date, amount: Number(r.amount),
+    com_rate: r.com_rate != null ? Number(r.com_rate) : null,
   }));
   return { invoices, allocs };
 }
@@ -552,17 +706,25 @@ export function registerBonusRoutes(app) {
     let comPeriod = null;
     try {
       const p = (await query(
-        `SELECT basis, rate FROM commission_agent_periods
+        `SELECT basis, rate, COALESCE(to_jsonb(cap)->>'match_on','invoice') AS match_on FROM commission_agent_periods cap
           WHERE user_id=$1 AND $2::date >= start_date AND (end_date IS NULL OR $2::date <= end_date)
           ORDER BY start_date DESC LIMIT 1`, [agentId, today])).rows[0];
-      if (p) comPeriod = { basis: p.basis, rate: Number(p.rate) };
+      if (p) comPeriod = { basis: p.basis, rate: Number(p.rate), match_on: p.match_on };
     } catch (e) { if (!(e && e.code === '42P01')) throw e; }
 
     return {
       agent_id: agentId, ym, today, elapsed: round2(el * 100), bonus_migrated: migrated,
       revenue: { ...row.revenue, projected: proj(row.revenue.actual), gap: round2(row.revenue.target - row.revenue.actual) },
       collection: { ...row.collection, projected: proj(row.collection.actual), gap: round2(row.collection.target - row.collection.actual) },
-      commission: { amount: row.commission, basis: comPeriod ? comPeriod.basis : null, rate: comPeriod ? comPeriod.rate : null },
+      commission: {
+        amount: row.commission,                       // 이번 달 지급 확정(완납 인보이스)
+        accrued: row.commission_accrued,              // 이번 달 적립(이번 달 수금 × 율)
+        pending: perf.totals.commission_pending,      // 적립됐지만 잔액이 남아 완납 대기 중(전체)
+        pending_potential: perf.totals.commission_pending_potential, // 그 잔액을 다 걷으면 더 붙는 커미션
+        pending_open: perf.totals.commission_pending_open,           // 완납 대기 인보이스의 남은 잔액(IVA 포함)
+        basis: comPeriod ? comPeriod.basis : null, rate: comPeriod ? comPeriod.rate : null,
+        match_on: comPeriod ? comPeriod.match_on : null,
+      },
       bonus: {
         enabled: !!(plan && plan.enabled), in_plan: row.bonus.in_plan, basis: row.bonus.basis,
         target: row.bonus.target, actual: row.bonus.actual, rate: row.bonus.rate,
@@ -626,6 +788,8 @@ export function registerBonusRoutes(app) {
       months: monthsOut,
       customers: customerList,
       invoices: perf.invoices,
+      payments: perf.payments,                         // 기간 안 수금 내역(팝업)
+      collection_targets: perf.collection_targets,     // 월별 수금목표 구성(팝업)
       totals: { ...perf.totals, bonus: round2(monthsOut.reduce((s, r) => s + Number(r.bonus.amount || 0), 0)) },
     };
   });
