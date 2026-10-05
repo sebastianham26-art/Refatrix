@@ -106,3 +106,13 @@ test('수금 실적 표시 — 성과급이 매출 기준이면 완납분만 설
   const col = buildPerf({ invoices, allocs, months: ['2026-10'], today: '2026-10-05', plan: { enabled: true, basis: 'collection', start_month: '2026-10', partial_credit: false }, tiers: [{ min_rate: 100, amount: 6000 }] });
   assert.equal(col.months[0].collection.actual, 0, '수금 기준 성과급 + 완납분만 → 완납 전엔 0');
 });
+
+test('반올림 잔액 — 1센타보 이내로 완납된 인보이스는 미수·연체 0 (2026-10-05 hotfix)', () => {
+  const invoices = [{ id: 9, sat_no: 'R', inv_date: '2026-07-15', due_date: '2026-08-14', subtotal: 1000, total: 1160, customer_id: 1, basis: null, po_rate: 4 }];
+  const allocs = [{ invoice_id: 9, pay_date: '2026-08-28', amount: 1159.99, com_rate: null }];
+  const p = buildPerf({ invoices, allocs, months: ['2026-10'], today: '2026-10-05' });
+  assert.equal(p.totals.late, 0);
+  assert.equal(p.totals.open, 0);
+  assert.equal(p.invoices.filter((r) => r.late).length, 0);
+  assert.equal(p.months[0].collection.carry, 0);
+});

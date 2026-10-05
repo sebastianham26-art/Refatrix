@@ -166,7 +166,8 @@ export function buildPerf(opts) {
       p.com = (mode === 'payment' && p.com_rate != null) ? (p.amount * ratio * p.com_rate / 100) : 0;
       if (mode === 'payment' && p.com_rate != null) accW += p.amount * p.com_rate;
     }
-    const remainCash = Math.max(0, total - cum);
+    // 완납 판정(1센타보 허용)과 같은 기준 — 완납이면 반올림 잔액(0.01 등)은 미수·연체로 치지 않는다
+    const remainCash = fullyPaidDate ? 0 : Math.max(0, total - cum);
     let accrued = 0, potential = 0, comRate = null;
     if (mode === 'payment') {
       accrued = round2(accW * ratio / 100);
@@ -196,7 +197,8 @@ export function buildPerf(opts) {
     ? sum(pick(list).map((i) => i.pays.filter((p) => ymOf(p.date) === m).reduce((s, p) => s + p.amount, 0) * i.ratio))
     : sum(pick(list).filter((i) => i.fullyPaidDate && ymOf(i.fullyPaidDate) === m).map((i) => i.subtotal)));
   const dueIn = (m, list = inv) => round2(sum(pick(list).filter((i) => i.dueDate && ymOf(i.dueDate) === m).map((i) => i.subtotal)));
-  const openBefore = (i, st) => Math.max(0, i.subtotal - i.pays.filter((p) => p.date < st).reduce((s, p) => s + p.amount, 0) * i.ratio);
+  const openBefore = (i, st) => ((i.fullyPaidDate && i.fullyPaidDate < st) ? 0
+    : Math.max(0, i.subtotal - i.pays.filter((p) => p.date < st).reduce((s, p) => s + p.amount, 0) * i.ratio));
   const carryTo = (m, list = inv) => {
     const st = monthStart(m);
     return round2(sum(pick(list).filter((i) => i.dueDate && i.dueDate < st).map((i) => openBefore(i, st))));
@@ -259,10 +261,11 @@ export function buildPerf(opts) {
   const endLimit = to ? monthEnd(to) : null;
   const openAt = (i, lim) => {
     if (lim && i.invDate > lim) return 0;
+    if (i.fullyPaidDate && (!lim || i.fullyPaidDate <= lim)) return 0;   // 완납(1센타보 허용) → 잔액 0
     const paid = lim ? i.pays.filter((p) => p.date <= lim).reduce((s, p) => s + p.amount, 0) : i.paidTotal;
     return Math.max(0, i.subtotal - paid * i.ratio);
   };
-  const openNow = (i) => Math.max(0, i.subtotal - i.paidTotal * i.ratio);
+  const openNow = (i) => (i.fullyPaidDate ? 0 : Math.max(0, i.subtotal - i.paidTotal * i.ratio));
   const isLate = (i) => !!(today && i.dueDate && i.dueDate < today && openNow(i) > 0.005);
   const dueGap = (i) => (today && i.dueDate ? Math.round((Date.parse(today) - Date.parse(i.dueDate)) / 864e5) : null);
 
