@@ -18,6 +18,8 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
+// 완납 판정 공통 허용치(잔액 0.5 페소 미만 = 완납) — 수금/정산·고객 화면과 같은 기준 (2026-10-05)
+import { AR_PAID_EPS } from '../ar.js';
 
 export const SEE_ALL_ROLES = ['director', 'treasury', 'socio'];
 export const canSeeAll = (perm) => SEE_ALL_ROLES.includes(perm.role);
@@ -161,12 +163,12 @@ export function buildPerf(opts) {
     let cum = 0, fullyPaidDate = null, accW = 0;
     for (const p of pays) {
       cum += p.amount;
-      if (!fullyPaidDate && total > 0 && cum + 0.01 >= total) fullyPaidDate = p.date;
+      if (!fullyPaidDate && total > 0 && (total - cum) < AR_PAID_EPS) fullyPaidDate = p.date;
       // 수금일 판정: 수금 1건마다 적립 커미션 = 수금액(ex-IVA) × 그 수금일 기간의 율
       p.com = (mode === 'payment' && p.com_rate != null) ? (p.amount * ratio * p.com_rate / 100) : 0;
       if (mode === 'payment' && p.com_rate != null) accW += p.amount * p.com_rate;
     }
-    // 완납 판정(1센타보 허용)과 같은 기준 — 완납이면 반올림 잔액(0.01 등)은 미수·연체로 치지 않는다
+    // 완납 판정(AR_PAID_EPS · 0.5 페소 미만)과 같은 기준 — 완납이면 반올림 잔액은 미수·연체로 치지 않는다
     const remainCash = fullyPaidDate ? 0 : Math.max(0, total - cum);
     let accrued = 0, potential = 0, comRate = null;
     if (mode === 'payment') {
@@ -354,7 +356,7 @@ export function buildPerf(opts) {
         amount_total: round2(p.amount), amount: round2(p.amount * i.ratio),
         mode: i.mode, com_rate: i.mode === 'payment' ? p.com_rate : null,
         commission_accrued: round2(p.com || 0),
-        invoice_fully_paid: !!i.fullyPaidDate, fully_paid_date: i.fullyPaidDate, closes_invoice: fully && i.fullyPaidDate === p.date && cum + 0.01 >= i.total,
+        invoice_fully_paid: !!i.fullyPaidDate, fully_paid_date: i.fullyPaidDate, closes_invoice: fully && i.fullyPaidDate === p.date && (i.total - cum) < AR_PAID_EPS,
         invoice_open_total: i.remainCash, invoice_open: round2(openNow(i)),
         invoice_commission: i.payout_paid === true ? Number(i.payout_amount) : i.accrued,
         invoice_potential: i.potential, payout_paid: i.payout_paid === true,

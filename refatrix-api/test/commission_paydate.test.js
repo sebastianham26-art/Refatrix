@@ -116,3 +116,21 @@ test('반올림 잔액 — 1센타보 이내로 완납된 인보이스는 미수
   assert.equal(p.invoices.filter((r) => r.late).length, 0);
   assert.equal(p.months[0].collection.carry, 0);
 });
+
+test('완납 기준 = 수금 화면과 같은 AR_PAID_EPS(0.5 페소 미만) — 잔액 0.21 은 완납·커미션 확정', () => {
+  // BAGO 사례: 합계 1,821.01 중 1,820.80 수금 → 잔액 0.21
+  const c = computeLine({ subtotal_mxn: 1569.84, total_mxn: 1821.01, paid_amount: 1820.80, last_pay_date: '2026-10-02', basis: 'collection', match_on: 'payment', pp_amt: 1820.80, pp_w: 1820.80 * 4, po_rate: 4 });
+  assert.equal(c.fullyPaid, true);
+  assert.equal(c.recognized, true);
+  assert.equal(c.potential, 0);
+  assert.equal(c.settleYm, '2026-10');
+  // 0.5 페소 이상 남으면 미완납
+  const open = computeLine({ subtotal_mxn: 100, total_mxn: 116, paid_amount: 115.5, last_pay_date: '2026-10-02', basis: null, pp_amt: 115.5, pp_w: 115.5 * 4, po_rate: 4 });
+  assert.equal(open.fullyPaid, false);
+  const p = buildPerf({ invoices: [{ id: 5, sat_no: 'B', inv_date: '2026-09-24', due_date: '2026-10-24', subtotal: 1569.84, total: 1821.01, customer_id: 4, basis: 'collection', match_on: 'payment', rate: 4, po_rate: 4 }],
+    allocs: [{ invoice_id: 5, pay_date: '2026-10-02', amount: 1820.80, com_rate: 4 }], months: ['2026-10'], today: '2026-10-05' });
+  assert.equal(p.totals.commission_pending, 0, '완납 대기에서 빠진다');
+  assert.ok(p.months[0].commission > 0, '지급 확정으로 넘어간다');
+  assert.equal(p.totals.open, 0);
+  assert.equal(p.invoices[0].open_total, 0);
+});

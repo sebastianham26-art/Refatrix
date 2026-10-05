@@ -31,6 +31,7 @@ import stockRoutes from './routes/stockRoutes.js';
 import devRequestRoutes from './routes/devRequestRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import commissionRoutes from './routes/commissionRoutes.js';
+import commissionAgreementRoutes from './routes/commissionAgreementRoutes.js';   // 0251 · 커미션 조건 합의(본인 PIN)
 import wbrRoutes from './routes/wbrRoutes.js';
 import wbrMbrRoutes from './routes/wbrMbrRoutes.js';
 import presenceRoutes from './routes/presenceRoutes.js';
@@ -132,6 +133,7 @@ export function buildApp() {
   app.register(devRequestRoutes);
   app.register(userRoutes);
   app.register(commissionRoutes);
+  app.register(commissionAgreementRoutes);   // 0251 · 커미션 조건 합의
   app.register(wbrRoutes);
   app.register(wbrMbrRoutes);
   app.register(presenceRoutes);

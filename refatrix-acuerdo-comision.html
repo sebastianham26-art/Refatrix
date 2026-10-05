@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acuerdo de Comisión · build b1005acu</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+    --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:16px}
+  .wrap{max-width:880px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-top:14px}
+  .doc-h{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .doc-h h1{font-size:20px;margin:0;color:var(--brand)}
+  .ver{font-size:11.5px;color:var(--muted);margin-top:4px}
+  .stamp{margin-left:auto;font-size:12px;font-weight:700;border-radius:20px;padding:5px 12px;white-space:nowrap}
+  .stamp.ok{background:var(--ok-bg);color:var(--ok)}.stamp.no{background:var(--warn-bg);color:var(--warn)}.stamp.re{background:var(--bad-bg);color:var(--bad)}
+  .who{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+  .who div{background:#faf8f3;border:1px solid var(--line);border-radius:9px;padding:8px 11px}
+  .who small{display:block;font-size:10.5px;color:var(--muted)}.who b{font-size:13.5px}
+  h2{font-size:14.5px;color:var(--brand);margin:20px 0 8px;display:flex;gap:8px;align-items:center}
+  h2 .n{background:var(--brand);color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.r,th.r{text-align:right;white-space:nowrap}
+  .tw{overflow-x:auto}
+  ul{margin:8px 0 0;padding-left:20px;font-size:13.5px;line-height:1.6}
+  .key{border-radius:10px;padding:10px 13px;font-size:13.5px;line-height:1.55;margin-top:12px}
+  .key.re{background:var(--bad-bg);border:1px solid #ecc7c1}
+  .sign{background:#fff;border:2px solid var(--brand);border-radius:var(--r);padding:16px;margin-top:20px}
+  .sign label.chk{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;line-height:1.5;cursor:pointer}
+  .sign input[type=checkbox]{width:19px;height:19px;margin-top:2px;flex:none;accent-color:var(--brand)}
+  .pinrow{display:flex;gap:10px;align-items:flex-end;margin-top:14px;flex-wrap:wrap}
+  .pinrow label{font-size:12px;color:var(--muted);font-weight:700;display:block;margin-bottom:4px}
+  .pinrow input{padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:18px;width:150px;letter-spacing:5px;font-family:inherit}
+  .btn{padding:10px 16px;border:none;border-radius:9px;background:var(--brand);color:#fff;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.sm{padding:5px 10px;font-size:12px}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--bad-bg);color:var(--bad)}.msg.ok{display:block;background:var(--ok-bg);color:var(--ok)}
+  .done{background:var(--ok-bg);border:1px solid #bfe0d3;border-radius:var(--r);padding:14px 16px;margin-top:20px;font-size:13.5px;line-height:1.65}
+  .done b{color:var(--ok)}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:#eee;color:#555;white-space:nowrap}
+  .badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.no{background:var(--warn-bg);color:var(--warn)}.badge.re{background:var(--bad-bg);color:var(--bad)}.badge.old{background:#f0ece2;color:#7a7462}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .hidden{display:none!important}
+  .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .kpi{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px 13px}
+  .kpi .v{font-size:22px;font-weight:800;color:var(--ok)}.kpi .l{font-size:11.5px;color:var(--muted)}
+  .kpi.re .v{color:var(--bad)}.kpi.no .v{color:var(--warn)}
+  .lnk{color:var(--brand);font-weight:700;cursor:pointer;text-decoration:underline;background:none;border:none;padding:0;font-size:12.5px;font-family:inherit}
+  #modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(880px,96vw);max-height:90vh;overflow:auto;z-index:9999;margin:0;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+  #backdrop{position:fixed;inset:0;background:rgba(20,20,18,.5);z-index:9998}
+  .loginBox input{padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px}
+  @media(max-width:560px){body{padding:10px}.card{padding:14px}.doc-h h1{font-size:17px}.stamp{margin-left:0}}
+  @media print{body{background:#fff;padding:0}.sign,.noprint,#dirView{display:none!important}.card{border:none}}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card hidden loginBox" id="loginCard">
+    <div class="doc-h"><h1>Acuerdo de comisión</h1></div>
+    <p class="hint">Entra con tu usuario del ERP.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div><div class="hint">Usuario</div><input id="lid" type="text" autocomplete="username" style="width:150px"></div>
+      <div><div class="hint">PIN</div><input id="lpin" type="password" inputmode="numeric" autocomplete="current-password" style="width:120px"></div>
+      <button class="btn" id="go">Entrar</button>
+    </div>
+    <div class="msg" id="loginMsg"></div>
+    <div class="hint" style="margin-top:10px">Servidor <input id="api" type="text" value="https://refatrix-production.up.railway.app" style="width:300px;font-size:12px;padding:5px 7px"></div>
+  </div>
+
+  <div id="loading" class="card hint">Cargando…</div>
+
+  <!-- ══ 디렉터·재무·소시오: 합의 현황판 ══ -->
+  <div id="dirView" class="hidden">
+    <div class="card">
+      <div class="doc-h">
+        <div><h1>커미션 조건 합의 현황</h1>
+          <div class="ver">커미션 대상자별 현재 조건 · 본인 PIN 합의 기록 · 조건이 바뀌면 자동으로 「재합의 필요」 · 합의 기록은 수정·삭제 불가</div></div>
+        <button class="btn ghost sm noprint" id="reloadBoard" style="margin-left:auto">새로고침</button>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="tw"><table style="margin-top:12px"><thead><tr><th>대상자</th><th>유형</th><th>현재 조건</th><th>상태</th><th>최근 합의</th><th></th></tr></thead><tbody id="board"></tbody></table></div>
+      <div class="msg" id="boardMsg"></div>
+      <div class="hint" style="margin-top:8px">· <b>합의 문서</b> = 그 사람이 PIN 을 넣은 시점의 문서 원문(스냅샷) · <b>현재 조건</b> = 지금 ERP 설정으로 만든 문서(본인이 보게 될 화면) · <b>링크 복사</b> = 본인에게 WhatsApp 등으로 보낼 이 페이지 주소. 조건은 [커미션 설정]·[성과급 설정]에서 바꾸며, 바뀌면 다음 접속 때 본인에게 재합의 요청이 보입니다.</div>
+    </div>
+  </div>
+
+  <!-- ══ 본인(커미션 대상자) 문서 ══ -->
+  <div id="docView" class="hidden">
+    <div class="card" id="docCard"></div>
+    <div class="sign noprint" id="signBox">
+      <label class="chk"><input type="checkbox" id="chk"> <span id="decl"></span></label>
+      <div class="pinrow">
+        <div><label for="pin">Mi PIN del ERP</label><input type="password" inputmode="numeric" autocomplete="off" placeholder="••••" id="pin"></div>
+        <button class="btn" id="signBtn" disabled>Acepto con mi PIN</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Tu PIN confirma que eres tú quien acepta. Se guarda la fecha y hora, la versión aceptada y el dispositivo. El registro no se puede modificar ni borrar.</div>
+      <div class="msg" id="signMsg"></div>
+    </div>
+    <div class="done hidden" id="doneBox"></div>
+    <div class="card">
+      <h2 style="margin-top:0">Historial de aceptaciones</h2>
+      <div class="tw"><table><thead><tr><th>Fecha y hora (Monterrey)</th><th>Versión</th><th>Dispositivo</th><th>Estado</th><th></th></tr></thead><tbody id="hist"></tbody></table></div>
+    </div>
+  </div>
+
+  <div id="notAgent" class="card hidden">
+    <div class="doc-h"><h1>Acuerdo de comisión</h1></div>
+    <p>Todavía no tienes condiciones de comisión registradas en el ERP. Cuando Refatrix las capture, aquí podrás revisarlas y aceptarlas con tu PIN.</p>
+  </div>
+</div>
+
+<!-- 문서 보기 모달 (스냅샷·미리보기) -->
+<div id="backdrop" class="hidden"></div>
+<div id="modal" class="card hidden" role="dialog" aria-modal="true">
+  <div style="display:flex;gap:8px;justify-content:flex-end" class="noprint">
+    <button class="btn ghost sm" id="printBtn">인쇄 / PDF</button>
+    <button class="btn ghost sm" id="closeModal">닫기 ✕</button>
+  </div>
+  <div id="modalBody"></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // 서버 문서의 **굵게** 표기 → 이스케이프 후 <b>
+  const md=(s)=>esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+  let session=null, me=null;
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const api=(p,o)=>fetch(session.api+p,Object.assign({},o||{},{headers:Object.assign({},auth(),(o&&o.headers)||{})}));
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session')||localStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} history.replaceState(null,'',location.pathname); return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const a=$('api').value.replace(/\/+$/,''), id=$('lid').value.trim(), pin=$('lpin').value.trim(), m=$('loginMsg');
+    if(!id||!pin){ m.className='msg err'; m.textContent='Escribe usuario y PIN.'; return; }
+    $('go').disabled=true;
+    try{
+      const r=await fetch(a+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id:id,pin})});
+      const d=await r.json();
+      if(!r.ok||d.error){ m.className='msg err'; m.textContent='No se pudo entrar: '+(d.error||r.status); return; }
+      session={token:d.token,user:d.user,api:a};
+      try{ sessionStorage.setItem('refatrix_session',JSON.stringify(session)); }catch(e){}
+      $('loginCard').classList.add('hidden'); start();
+    }catch(e){ m.className='msg err'; m.textContent='No hay conexión con el servidor.'; }
+    finally{ $('go').disabled=false; }
+  }
+
+  // ── 문서 렌더 (본인 화면·스냅샷·미리보기 공통) ──
+  function tableHtml(t){
+    if(!t||!t.rows||!t.rows.length) return '';
+    const R=new Set(t.right||[]);
+    return '<div class="tw"><table><thead><tr>'+t.head.map((h,i)=>'<th'+(R.has(i)?' class="r"':'')+'>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'
+      +t.rows.map(r=>'<tr>'+r.map((c,i)=>'<td'+(R.has(i)?' class="r"':'')+'>'+(R.has(i)?'<b>'+esc(c)+'</b>':esc(c))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+  }
+  function docHtml(doc, opt){
+    opt=opt||{};
+    let h='<div class="doc-h"><div><h1>'+esc(doc.title)+'</h1><div class="ver">Versión de condiciones <b>#'+esc(doc.version)+'</b>'+(opt.verNote?(' · '+esc(opt.verNote)):'')+'</div></div>'
+      +(opt.stamp?('<span class="stamp '+opt.stamp[0]+'">'+esc(opt.stamp[1])+'</span>'):'')+'</div>';
+    const w=doc.who||{};
+    h+='<div class="who"><div><small>Nombre</small><b>'+esc(w.name||'—')+'</b></div><div><small>Equipo</small><b>'+esc(w.team||'—')+'</b></div><div><small>Tipo</small><b>'+esc(w.type||'—')+'</b></div></div>';
+    if(opt.reNote) h+='<div class="key re">'+opt.reNote+'</div>';
+    (doc.sections||[]).forEach((s,i)=>{
+      h+='<h2><span class="n">'+(i+1)+'</span> '+esc(s.title)+'</h2>';
+      h+=tableHtml(s.table);
+      if(s.table2) h+='<div style="margin-top:8px">'+tableHtml(s.table2)+'</div>';
+      if(s.items&&s.items.length) h+='<ul>'+s.items.map(x=>'<li>'+md(x)+'</li>').join('')+'</ul>';
+    });
+    if(opt.showDecl) h+='<div class="key" style="background:#faf8f3;border:1px solid var(--line)"><b>Declaración aceptada:</b> '+md(doc.declaration)+'</div>';
+    return h;
+  }
+
+  // ── 본인 화면 ──
+  async function loadMe(){
+    const r=await api('/api/commission/agreement/me');
+    if(r.status===401) throw new Error('auth');
+    me=await r.json();
+    return me;
+  }
+  function renderMe(){
+    const d=me;
+    $('docView').classList.remove('hidden');
+    const st=d.status;
+    const stamp = st==='agreed'?['ok','Aceptado ✓']:(st==='changed'?['re','Condiciones nuevas — acepta de nuevo']:['no','Pendiente de aceptar']);
+    const prev=(d.history||[])[0];
+    const reNote = st==='changed'&&prev ? '<b>Tus condiciones cambiaron</b> desde tu última aceptación ('+esc(prev.agreed_at)+', versión #'+esc(prev.version)+'). Revisa el documento y acepta de nuevo con tu PIN. Tu aceptación anterior queda en el historial.' : '';
+    $('docCard').innerHTML=docHtml(d.doc,{stamp,reNote,verNote:'generada con tus condiciones actuales del ERP'});
+    $('decl').innerHTML=md(d.doc.declaration);
+    const signed = st==='agreed';
+    $('signBox').classList.toggle('hidden', signed || d.migrated===false);
+    if(d.migrated===false){ $('doneBox').classList.remove('hidden'); $('doneBox').style.background='var(--warn-bg)'; $('doneBox').innerHTML='La aceptación con PIN aún no está activa en el servidor. Intenta más tarde.'; }
+    else if(signed){
+      const cur=(d.history||[]).find(x=>x.current)||prev;
+      $('doneBox').classList.remove('hidden');
+      $('doneBox').innerHTML='<b>✓ Aceptado</b> el <b>'+esc(cur.agreed_at)+'</b> (hora de Monterrey) con tu PIN.<br>Versión aceptada <b>#'+esc(cur.version)+'</b> · Registro #'+cur.id+(cur.device?(' · '+esc(cur.device)):'');
+    } else { $('doneBox').classList.add('hidden'); }
+    renderHist(d.history||[], $('hist'), false);
+    $('chk').checked=false; $('pin').value=''; syncSign();
+  }
+  function renderHist(list, tbody, korean){
+    if(!list.length){ tbody.innerHTML='<tr><td colspan="5" class="hint">'+(korean?'합의 기록 없음':'Aún no hay aceptaciones.')+'</td></tr>'; return; }
+    tbody.innerHTML=list.map(h=>'<tr><td>'+esc(h.agreed_at)+'</td><td>#'+esc(h.version)+'</td><td>'+esc(h.device||'—')+'</td>'
+      +'<td>'+(h.current?'<span class="badge ok">'+(korean?'현재 조건':'Vigente')+'</span>':'<span class="badge old">'+(korean?'이전 조건':'Reemplazada')+'</span>')+'</td>'
+      +'<td><button class="lnk" data-doc="'+h.id+'">'+(korean?'문서 보기':'Ver documento')+'</button></td></tr>').join('');
+  }
+  function syncSign(){ $('signBtn').disabled=!($('chk').checked && /^\S{4,}$/.test($('pin').value)); }
+  async function sign(){
+    const m=$('signMsg'); m.className='msg';
+    $('signBtn').disabled=true; $('signBtn').textContent='Verificando…';
+    try{
+      const r=await api('/api/commission/agreement/me',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:$('pin').value,version:me.version,agree:$('chk').checked})});
+      const d=await r.json();
+      if(!r.ok||d.error){
+        m.className='msg err'; m.textContent=d.note||('Error: '+(d.error||r.status));
+        if(d.error==='version_changed'){ await loadMe(); renderMe(); m.className='msg err'; m.textContent=d.note; }
+        $('pin').value=''; return;
+      }
+      await loadMe(); renderMe(); window.scrollTo({top:$('doneBox').offsetTop-20,behavior:'smooth'});
+    }catch(e){ m.className='msg err'; m.textContent='No hay conexión con el servidor.'; }
+    finally{ $('signBtn').textContent='Acepto con mi PIN'; syncSign(); }
+  }
+
+  // ── 디렉터 현황판 ──
+  const ST={agreed:['ok','합의 완료'],pending:['no','미합의'],changed:['re','재합의 필요']};
+  async function loadBoard(){
+    $('dirView').classList.remove('hidden');
+    $('board').innerHTML='<tr><td colspan="6" class="hint">불러오는 중…</td></tr>';
+    try{
+      const d=await api('/api/commission/agreement/board').then(r=>r.json());
+      if(d.error){ $('board').innerHTML='<tr><td colspan="6" class="hint">'+esc(d.error)+'</td></tr>'; return; }
+      if(!d.migrated){ $('boardMsg').className='msg err'; $('boardMsg').textContent='합의 테이블이 아직 없습니다. 서버에서 npm run migrate(0251)를 실행하세요. (조건 미리보기는 가능)'; }
+      const c=d.counts||{};
+      $('kpis').innerHTML='<div class="kpi"><div class="v">'+(c.agreed||0)+'</div><div class="l">합의 완료</div></div>'
+        +'<div class="kpi no"><div class="v">'+(c.pending||0)+'</div><div class="l">미합의</div></div>'
+        +'<div class="kpi re"><div class="v">'+(c.changed||0)+'</div><div class="l">조건 변경 → 재합의 필요</div></div>';
+      const items=d.items||[];
+      if(!items.length){ $('board').innerHTML='<tr><td colspan="6" class="hint">커미션 대상자가 없습니다. [커미션 설정]에서 대상과 기간을 먼저 지정하세요.</td></tr>'; return; }
+      const order={changed:0,pending:1,agreed:2};
+      items.sort((a,b)=>order[a.status]-order[b.status]);
+      $('board').innerHTML=items.map(x=>{
+        const s=ST[x.status]||['','—'];
+        const lt=x.latest;
+        return '<tr><td><b>'+esc(x.name)+'</b> <span class="hint">'+esc(x.team_name||'')+'</span></td>'
+          +'<td>'+(x.type==='comisionista'?'커미셔너':'직원')+'</td>'
+          +'<td>'+esc(x.summary)+' <span class="hint">#'+esc(x.version)+'</span></td>'
+          +'<td><span class="badge '+s[0]+'">'+s[1]+'</span></td>'
+          +'<td>'+(lt?(esc(lt.agreed_at)+' <span class="hint">#'+esc(lt.version)+(x.status==='changed'?' · 이전 조건':'')+(x.count>1?(' · 총 '+x.count+'회'):'')+'</span>'):'<span class="hint">—</span>')+'</td>'
+          +'<td style="white-space:nowrap">'+(lt?'<button class="lnk" data-doc="'+lt.id+'">합의 문서</button> · ':'')
+          +'<button class="lnk" data-preview="'+x.user_id+'">현재 조건</button> · <button class="lnk" data-copy="1">링크 복사</button></td></tr>';
+      }).join('');
+    }catch(e){ $('board').innerHTML='<tr><td colspan="6" class="hint">불러오지 못했습니다.</td></tr>'; }
+  }
+
+  // ── 모달 ──
+  function openModal(html){ $('modalBody').innerHTML=html; $('backdrop').classList.remove('hidden'); $('modal').classList.remove('hidden'); $('closeModal').focus(); }
+  function closeModal(){ $('backdrop').classList.add('hidden'); $('modal').classList.add('hidden'); }
+  async function showDoc(id){
+    openModal('<div class="hint">Cargando…</div>');
+    const r=await api('/api/commission/agreement/doc/'+id); const d=await r.json();
+    if(!r.ok||d.error){ $('modalBody').innerHTML='<div class="hint">'+esc(d.error||r.status)+'</div>'; return; }
+    $('modalBody').innerHTML=docHtml(d.doc,{stamp:['ok','Aceptado ✓'],verNote:'aceptada el '+d.agreed_at+(d.device?(' · '+d.device):'')+(d.ip?(' · IP '+d.ip):''),showDecl:true})
+      +'<div class="done"><b>✓ Aceptado con PIN</b> el <b>'+esc(d.agreed_at)+'</b> (hora de Monterrey) · Registro #'+d.id+'</div>';
+  }
+  async function showPreview(uid){
+    openModal('<div class="hint">불러오는 중…</div>');
+    const r=await api('/api/commission/agreement/preview/'+uid); const d=await r.json();
+    if(!r.ok||d.error){ $('modalBody').innerHTML='<div class="hint">'+esc(d.error||r.status)+'</div>'; return; }
+    const s=ST[d.status]||['','—'];
+    $('modalBody').innerHTML='<div class="hint" style="margin-bottom:8px">미리보기 — <b>'+esc(d.name)+'</b> 님이 지금 보게 될 문서입니다. 상태: <span class="badge '+s[0]+'">'+s[1]+'</span></div>'
+      +docHtml(d.doc,{verNote:'condiciones actuales del ERP',showDecl:true})
+      +'<h2>합의 이력</h2><div class="tw"><table><thead><tr><th>일시</th><th>버전</th><th>기기</th><th>상태</th><th></th></tr></thead><tbody id="pvHist"></tbody></table></div>';
+    renderHist(d.history||[], $('pvHist'), true);
+  }
+  async function copyLink(btn){
+    const url=location.origin+location.pathname;
+    try{ await navigator.clipboard.writeText(url); btn.textContent='복사됨 ✓'; }
+    catch(e){ window.prompt('이 주소를 복사하세요', url); }
+    setTimeout(()=>{ btn.textContent='링크 복사'; },1800);
+  }
+
+  // ── 시작 ──
+  async function start(){
+    $('loading').classList.remove('hidden');
+    try{
+      await loadMe();
+      if(me.see_all) await loadBoard();
+      if(me.is_agent) renderMe();
+      else if(!me.see_all) $('notAgent').classList.remove('hidden');
+      document.documentElement.lang = me.see_all && !me.is_agent ? 'ko' : 'es';
+    }catch(e){
+      session=null; try{ sessionStorage.removeItem('refatrix_session'); }catch(_){}
+      $('loginCard').classList.remove('hidden');
+    }finally{ $('loading').classList.add('hidden'); }
+  }
+
+  document.addEventListener('click',e=>{
+    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy]');
+    if(!t) return;
+    if(t.dataset.doc) showDoc(t.dataset.doc);
+    else if(t.dataset.preview) showPreview(t.dataset.preview);
+    else if(t.dataset.copy) copyLink(t);
+  });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('modal').classList.contains('hidden')) closeModal(); });
+  $('closeModal').addEventListener('click',closeModal);
+  $('backdrop').addEventListener('click',closeModal);
+  $('printBtn').addEventListener('click',()=>{ const w=window.open('','_blank'); if(!w) return; w.document.write('<html><head><title>Acuerdo</title><style>'+document.querySelector('style').textContent+'</style></head><body><div class="wrap"><div class="card">'+$('modalBody').innerHTML+'</div></div></body></html>'); w.document.close(); w.focus(); w.print(); });
+  $('reloadBoard').addEventListener('click',loadBoard);
+  $('chk').addEventListener('change',syncSign);
+  $('pin').addEventListener('input',syncSign);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!$('signBtn').disabled) sign(); });
+  $('signBtn').addEventListener('click',sign);
+  $('go').addEventListener('click',login);
+  $('lpin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+
+  session=portalSession();
+  if(session&&session.token){ session.api=(session.api||$('api').value).replace(/\/+$/,''); start(); }
+  else { $('loading').classList.add('hidden'); $('loginCard').classList.remove('hidden'); }
+})();
+</script>
+<script src="refatrix-nav.js?v=20260930vr"></script>
+</body>
+</html>

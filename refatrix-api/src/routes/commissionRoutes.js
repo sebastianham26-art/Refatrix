@@ -2,6 +2,8 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
+// 완납 판정 공통 허용치(잔액 0.5 페소 미만 = 완납) — 수금/정산·고객 화면과 같은 기준 (2026-10-05)
+import { AR_PAID_EPS } from '../ar.js';
 // 성과급(Bono) — 목표 달성률 기반. 커미션과 분리된 축(0190).
 import { registerBonusRoutes, snapshotBonusForMonth, payableBonus, markBonusPaid } from './commissionBonus.js';
 
@@ -45,7 +47,7 @@ export function computeLine(r) {
   const base = Number(r.subtotal_mxn) || 0;
   const total = Number(r.total_mxn) || 0;
   const paidAmt = Number(r.paid_amount || 0);
-  const fullyPaid = paidAmt + 0.01 >= total && total > 0;
+  const fullyPaid = total > 0 && (total - paidAmt) < AR_PAID_EPS;   // 수금 화면과 같은 완납 기준
   const mode = commissionMode(r);
   const custRate = r.cust_rate != null ? Number(r.cust_rate) : null;
   if (mode !== 'payment') {

@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1005pay2</title>
+<title>Refatrix ERP · 커미션 · build b1005acu</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -100,7 +100,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1005pay2</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1005acu</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -121,6 +121,16 @@
         <button class="btn ghost sm" onclick="reloadAll()" style="margin-left:auto">새로고침</button>
         <button class="btn ghost sm hidden" id="rateBtn" onclick="openRates()">커미션 설정</button>
         <button class="btn ghost sm hidden" id="bonusBtn" onclick="openBonus()">성과급(Bono) 설정</button>
+        <a class="btn ghost sm hidden" id="agreeBtn" href="refatrix-acuerdo-comision.html" style="text-decoration:none">조건 합의 현황</a>
+      </div>
+    </div>
+
+    <!-- 커미션 조건 합의 요청 (본인 · 미합의/재합의 필요일 때만) -->
+    <div class="card hidden" id="agreeBanner" style="background:#FBEFD6;border-color:#F0D9A8">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px"><b id="agreeTitle">Tienes condiciones de comisión pendientes de aceptar</b>
+          <div class="hint" id="agreeSub">Revisa tus condiciones y acéptalas con tu PIN. · 커미션 조건을 확인하고 본인 PIN 으로 합의해 주세요.</div></div>
+        <a class="btn" href="refatrix-acuerdo-comision.html" style="text-decoration:none">Revisar y aceptar ›</a>
       </div>
     </div>
 
@@ -290,6 +300,8 @@
       else { $('myCondCard').classList.remove('hidden'); loadMyPeriods(); }
       if(canPay()){ $('payPanel').classList.remove('hidden'); }
       if(isDir()){ $('rateBtn').classList.remove('hidden'); $('bonusBtn').classList.remove('hidden'); }
+      if(canSeeAll()) $('agreeBtn').classList.remove('hidden');
+      loadAgreeBanner();
       if(!canSeeAll()) $('topWho').textContent='본인 실적만 조회됩니다.';
       initPerfFilters();
       loadProgress(); loadPerf();
@@ -335,6 +347,18 @@
       syncAgentOptions();
       render();
     }catch(e){ $('body').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  // 커미션 조건 합의 상태 — 본인이 커미션 대상이고 아직 현재 조건에 합의하지 않았으면 배너
+  async function loadAgreeBanner(){
+    try{
+      const r=await fetch(session.api+'/api/commission/agreement/me',{headers:auth()});
+      if(!r.ok) return;
+      const d=await r.json();
+      if(!d.is_agent||d.migrated===false||d.status==='agreed') return;
+      if(d.status==='changed'){ $('agreeTitle').textContent='Tus condiciones de comisión cambiaron — acéptalas de nuevo'; }
+      $('agreeBanner').classList.remove('hidden');
+    }catch(e){}
   }
 
   function reloadAll(){ loadProgress(); loadPerf(); loadOverview(); loadBatches(); loadPayable(agentId, $('payMonth')?$('payMonth').value:''); loadVouchers(agentId); }
