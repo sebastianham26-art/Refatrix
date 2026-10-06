@@ -15,6 +15,7 @@ import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/aut
 import { logEvent } from '../audit.js';
 import { generateOfferSheets } from '../offerSheets.js';
 import { waApiReady, normalizeWaNumber, sendWaTo } from '../waSend.js';
+import { windowState } from '../waWebhook.js';   // 0253 · 창 밖이면 템플릿부터
 
 // 비활성화·활성화 실행 권한: 디렉터 또는 Maria (고객관리 Constancia 알림과 같은 판정 방식).
 function canDisableOffer(perm) {
@@ -275,7 +276,7 @@ export default async function offerSheetRoutes(app) {
       + `\n\nOferta ${os.offer_no || ''} — sujeto a existencia disponible. ¡Le recomendamos confirmar su pedido pronto, gracias!`;
     const headline = `${emisor}: ${lines.length} producto(s) que solicitó ya están disponibles. Oferta ${os.offer_no || ''}, total ${fmtm(os.total_mxn)} MXN. Responda este mensaje para recibir el detalle.`;
 
-    const res = await sendWaTo({ to, text, headline, templateName: process.env.OFFERSHEET_WA_TEMPLATE || null });
+    const res = await sendWaTo({ to, text, headline, templateName: process.env.OFFERSHEET_WA_TEMPLATE || null, windowOpen: (await windowState(to)).open });
     if (res.ok) {
       await query(
         `UPDATE offer_sheets

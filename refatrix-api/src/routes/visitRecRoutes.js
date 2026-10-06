@@ -31,6 +31,7 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { logEvent } from '../audit.js';
 import { mxTodayStr, MX_OFFSET_MIN } from '../workingHours.js';
 import { sendWaTo, waApiReady, normalizeWaNumber } from '../waSend.js';
+import { windowState } from '../waWebhook.js';   // 0253 · 창 밖이면 템플릿부터
 import {
   clip, buildSummaryPrompt, parseSummaryJson, summaryToNotes, mergeNote,
   buildTranslatePrompt, parseTranslationJson,
@@ -374,7 +375,7 @@ export async function runSalesBriefingJob({ force = false, userId = null } = {})
       await upsertSend(uid, mxToday, 'failed', 'bad_number');
       results.push({ user_id: uid, error: 'bad_number' }); continue;
     }
-    const out = await sendWaTo({ to, text: buildBriefingText(data), headline: briefingHeadline(data) });
+    const out = await sendWaTo({ to, text: buildBriefingText(data), headline: briefingHeadline(data), windowOpen: (await windowState(to)).open });
     if (out.ok) {
       await upsertSend(uid, mxToday, out.mode === 'template' ? 'sent_template' : 'sent_text', null);
       results.push({ user_id: uid, ok: true, mode: out.mode });

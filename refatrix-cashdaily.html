@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1006wa</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1006wh</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -39,6 +39,7 @@
   .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
   .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
   .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d2}
+  .msg.warn{display:block;background:#FFF6E0;color:#7a5200;border:1px solid #f0dca8}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
   .hidden{display:none!important}.hint{font-size:12px;color:var(--muted);line-height:1.55}
   code{background:#f3f0e8;padding:0 4px;border-radius:4px;font-size:11.5px}
@@ -97,6 +98,8 @@
   .mscroll{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:10px}
   .badge{display:inline-block;font-size:10.5px;border-radius:9px;padding:1px 7px;font-weight:600}
   .badge.warn{background:#FFF1D6;color:#8a5a00}.badge.ok{background:var(--income-bg);color:var(--income)}.badge.bad{background:var(--expense-bg);color:var(--expense)}.badge.mute{background:#eee;color:#666}
+  .badge.dlv-read{background:#E3EEFF;color:#1d4fa8}
+  .hint.why{max-width:320px;white-space:normal;line-height:1.35;margin-top:2px}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media (max-width:820px){.two{grid-template-columns:1fr}}
   table.sm{border-collapse:collapse;width:100%;font-size:12.5px}
@@ -249,7 +252,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-1006wa (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-1006wh (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -499,6 +502,10 @@
     let h='';
     if(st.api_ready) h+='<div class="msg ok" style="margin-top:0">✅ WhatsApp 발송 사용 가능'+(st.template?' · 창 밖 폴백 템플릿 <code>'+esc(st.template)+'</code>':' · <b>폴백 템플릿 없음</b>')+'</div>';
     else h+='<div class="msg err" style="margin-top:0">⚠ WhatsApp 미설정 — Railway 변수 '+(!st.token_set?'<code>WHATSAPP_TOKEN</code> ':'')+(!st.phone_id_set?'<code>WHATSAPP_PHONE_ID</code>':'')+' 필요. (스냅샷 누적은 설정과 무관하게 매일 계속됩니다)</div>';
+    const wh=st.webhook||{};
+    h+=wh.configured
+      ?'<div class="hint" style="margin-top:8px">📡 실제 전달 상태(웹훅): <b>연결됨</b>'+(wh.last_event_at?' · 마지막 알림 '+esc(new Date(wh.last_event_at).toLocaleString()):' · <b>아직 받은 알림 없음</b> — Meta 앱의 웹훅 등록·<code>messages</code> 구독 확인')+'</div>'
+      :'<div class="msg warn">📡 웹훅 미설정 — 「접수」만 알 수 있고 실제 도착·읽음·실패는 알 수 없습니다. 관리 → 외부 서비스 키 → WhatsApp 의 <b>웹훅 확인 토큰 · 앱 시크릿</b>을 넣고 Meta 앱에 웹훅을 등록하세요.</div>';
     if(!st.enabled) h+='<div class="msg err">⚠ <code>TREASURY_DAILY_ENABLED=0</code> — 자동 누적·발송이 꺼져 있습니다.</div>';
     h+='<div class="hint" style="margin-top:8px">📷 발송 형식: <b>'+(st.format==='image'?(st.image_ready?'표 이미지 + 한 줄 캡션':'이미지(폰트 파일 없음 → 텍스트로 대체)'):'텍스트')+'</b>'
       +(st.image_template?' · 창 밖 이미지 템플릿 <code>'+esc(st.image_template)+'</code>':' · 창 밖이면 <code>TREASURY_WA_IMAGE_TEMPLATE</code>(헤더 이미지 + 본문 {{1}}) 승인 시 이미지로, 없으면 한 줄 텍스트 템플릿')+'</div>';
@@ -508,8 +515,8 @@
     $('sendBtn').disabled=!st.api_ready;
     // 수신자
     if(!S.rc.length) $('rcList').innerHTML='<div class="hint">아직 수신자가 없습니다. 아래에서 추가하세요 — <b>등록된 사람에게만</b> 발송됩니다.</div>';
-    else $('rcList').innerHTML='<table class="sm"><thead><tr><th>이름</th><th>번호</th><th>언어</th><th>일일</th><th>월간</th><th>사용</th><th></th></tr></thead><tbody>'
-      +S.rc.map(r=>'<tr data-id="'+r.id+'"><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.phone_masked)+'</td>'
+    else $('rcList').innerHTML='<table class="sm"><thead><tr><th>이름</th><th>번호</th><th title="수신자가 최근 24시간 안에 회사 번호로 메시지를 보냈으면 열림 — 열려 있어야 자유 메시지(이미지)가 도착하고, 닫혀 있으면 승인된 템플릿으로만 도착합니다">24시간 창</th><th>언어</th><th>일일</th><th>월간</th><th>사용</th><th></th></tr></thead><tbody>'
+      +S.rc.map(r=>'<tr data-id="'+r.id+'"><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.phone_masked)+'</td><td>'+winCell(r)+'</td>'
         +'<td><select data-f="lang"><option value="es"'+(r.lang==='es'?' selected':'')+'>Español</option><option value="ko"'+(r.lang==='ko'?' selected':'')+'>한국어</option></select></td>'
         +'<td><input type="checkbox" data-f="get_daily"'+(r.get_daily?' checked':'')+'></td>'
         +'<td><input type="checkbox" data-f="get_monthly"'+(r.get_monthly?' checked':'')+'></td>'
@@ -517,11 +524,29 @@
         +'<td style="text-align:right"><button class="btn sm ghost" data-act="send1">📲 테스트</button> <button class="btn sm danger" data-act="del">삭제</button></td></tr>').join('')+'</tbody></table>';
     // 원장
     const L={daily:'일일',monthly:'월간'};
-    $('waLog').innerHTML=st.recent.length?'<table class="sm"><thead><tr><th>종류</th><th>기간</th><th>수신자</th><th>상태</th><th>시도</th><th>마지막 성공</th></tr></thead><tbody>'
+    $('waLog').innerHTML=st.recent.length?'<table class="sm"><thead><tr><th>종류</th><th>기간</th><th>수신자</th><th>발송(접수)</th><th>실제 전달</th><th>시도</th><th>마지막 접수</th></tr></thead><tbody>'
       +st.recent.map(x=>'<tr><td>'+L[x.kind]+'</td><td>'+esc(x.period)+'</td><td>'+esc(x.name||'')+' <span class="hint">'+esc(x.to_masked||'')+'</span></td>'
-        +'<td>'+(x.status==='failed'?'<span class="badge bad" title="'+esc(x.error||'')+'">실패</span>':'<span class="badge ok">'+({sent_image:'이미지',sent_image_template:'이미지 템플릿',sent_template:'텍스트 템플릿',sent_text:'텍스트'}[x.status]||x.status)+'</span>')+'</td>'
+        +'<td>'+(x.status==='failed'?'<span class="badge bad">실패</span><div class="hint why">'+esc(x.error||'')+'</div>':'<span class="badge ok">'+({sent_image:'이미지',sent_image_template:'이미지 템플릿',sent_template:'텍스트 템플릿',sent_text:'텍스트'}[x.status]||x.status)+'</span>')+'</td>'
+        +'<td>'+dlvCell(x,wh)+'</td>'
         +'<td>'+x.attempts+'</td><td>'+(x.sent_at?esc(new Date(x.sent_at).toLocaleString()):'—')+'</td></tr>').join('')+'</tbody></table>'
       :'<div class="hint">발송 기록 없음</div>';
+  }
+  // 0253 · 웹훅 — 실제 전달 상태 / 24시간 창
+  function tm(t){ return t?esc(new Date(t).toLocaleString()):''; }
+  function dlvCell(x,wh){
+    if(x.status==='failed') return '<span class="hint">—</span>';
+    if(!wh.configured) return '<span class="hint" title="웹훅 미설정 — 도착 여부를 알 수 없음">알 수 없음</span>';
+    if(x.dlv_status==='read') return '<span class="badge dlv-read" title="읽음 '+tm(x.read_at)+'">👁 읽음</span><div class="hint">'+tm(x.read_at)+'</div>';
+    if(x.dlv_status==='delivered') return '<span class="badge ok" title="도착 '+tm(x.delivered_at)+'">✓✓ 도착</span><div class="hint">'+tm(x.delivered_at)+'</div>';
+    if(x.dlv_status==='failed') return '<span class="badge bad">✗ 전달 실패</span><div class="hint why">'+esc(x.dlv_reason||'')+(x.dlv_code?' <code>'+esc(String(x.dlv_code))+'</code>':'')+'</div>';
+    if(x.dlv_status==='sent') return '<span class="badge mute" title="Meta 서버 출발 — 아직 휴대폰 도착 알림 없음">✓ 출발</span>';
+    return '<span class="badge mute" title="아직 웹훅 알림 없음">대기</span>';
+  }
+  function winCell(r){
+    if(r.window_open===null||r.window_open===undefined) return '<span class="hint" title="웹훅 미설정 — 알 수 없음">—</span>';
+    return r.window_open
+      ?'<span class="badge ok" title="마지막 메시지 '+tm(r.inbound_at)+'">열림</span>'
+      :'<span class="badge mute" title="'+(r.inbound_at?'마지막 메시지 '+tm(r.inbound_at):'이 번호에서 받은 메시지 없음')+' — 템플릿으로만 도착">닫힘</span>';
   }
   function renderAcc(){
     const xs=S.acc||[];
@@ -563,8 +588,8 @@
       const body={kind}; if(per) body.period=per; if(recipientId) body.recipient_id=recipientId;
       const d=await api('/api/treasury/wa/send',{method:'POST',body:JSON.stringify(body)});
       const ok=d.results.filter(r=>r.ok).length;
-      flash(m,d.period+' 발송: 성공 '+ok+' / '+d.results.length+(ok<d.results.length?' — 실패 사유는 원장에서 확인':''), ok===d.results.length);
-      loadWa();
+      flash(m,d.period+' 발송: 접수 '+ok+' / '+d.results.length+(ok<d.results.length?' — 실패 사유는 아래 원장에 표시':'')+((S.wa&&S.wa.webhook&&S.wa.webhook.configured)?' · 실제 도착 여부는 원장 「실제 전달」 칸에 몇 초 뒤 표시됩니다':''), ok===d.results.length);
+      loadWa(); setTimeout(loadWa,8000); setTimeout(loadWa,25000);
     }catch(e){ flash(m,errTxt(e)); }
   }
 

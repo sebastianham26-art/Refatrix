@@ -74,6 +74,7 @@ import promoRoutes from './routes/promoRoutes.js';               // 관리 › �
 import { startPromoWorker } from './promoSync.js';               // 0237 · 종료 프로모션 자동 내리기
 import approvalRoutes from './routes/approvalRoutes.js';         // 공통 › 전자결재(0234) — 비용집행 품의·증빙·사전/사후승인
 import treasuryRoutes from './routes/treasuryRoutes.js';       // 재무 › 일일 자금·월간실적(0240) — 일별 스냅샷 누적 + WhatsApp 지정 수신자
+import waWebhookRoutes from './routes/waWebhookRoutes.js'; // 0253 · WhatsApp 웹훅(도착·읽음·실패)
 import { startTreasuryWorker } from './treasuryDaily.js';        // 0240 · 매일 06시 스냅샷·일일 발송 / 매월 1~3일 월간 발송
 import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
 import { startCrmSyncWorker } from './crmSync.js';
@@ -88,6 +89,7 @@ export function buildApp() {
   // 본문 없는 POST(예: 박스 생성)도 Content-Type: application/json 으로 오면
   // 기본 파서가 빈 본문을 거부해 400(Bad Request)이 난다. 빈/공백 본문은 {} 로 허용.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, function (request, body, done) {
+    request.rawBody = body;   // WhatsApp 웹훅 서명(X-Hub-Signature-256) 검증용 원문
     if (body === undefined || body === null || String(body).trim() === '') { done(null, {}); return; }
     try { done(null, JSON.parse(body)); } catch (err) { err.statusCode = 400; done(err, undefined); }
   });
@@ -170,6 +172,7 @@ export function buildApp() {
   app.register(promoRoutes);        // 프로모션 배너 → CRM 여러 곳(0237) · 공개 배너 이미지 주소 포함
   app.register(approvalRoutes);     // 전자결재 — 품의 · 결재선 · 증빙(파일당 20MB, 라우트 전용 bodyLimit) · 댓글 · 알림 · 설정
   app.register(treasuryRoutes);     // 일일 자금·월간실적 — 주간(유첨 양식)·월간·수신자·WhatsApp 발송
+  app.register(waWebhookRoutes);    // 0253 · WhatsApp 웹훅 — 실제 도착/읽음/실패 사유 + 24시간 창
 
   // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
   startSecretRefresh(app);

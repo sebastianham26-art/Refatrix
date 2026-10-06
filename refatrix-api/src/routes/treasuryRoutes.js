@@ -19,6 +19,7 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { waApiReady, normalizeWaNumber } from '../waSend.js';
+import { webhookConfigured, explainWaError } from '../waWebhook.js';   // 0253
 import { svgToPng, imageReady } from '../treasuryImage.js';
 import {
   isYmd, isMonth, mxNow, addDays, monthBounds, prevMonth, computeWeek, computeActualDays, summarizeMonth,
@@ -92,8 +93,16 @@ export default async function treasuryRoutes(app) {
 
   // ── 수신자 ──
   app.get('/api/treasury/recipients', G, async () => {
-    const rows = (await query(`SELECT * FROM treasury_wa_recipients WHERE deleted_at IS NULL ORDER BY id`)).rows;
-    return { items: rows.map(recipOut) };
+    let rows;
+    try {   // 0253 · 웹훅이 기록한 마지막 수신 시각 → 24시간 창
+      rows = (await query(
+        `SELECT r.*, i.last_at AS inbound_at, (i.last_at > now() - interval '24 hours') AS window_open
+           FROM treasury_wa_recipients r LEFT JOIN wa_inbound i ON i.wa_from = r.phone
+          WHERE r.deleted_at IS NULL ORDER BY r.id`)).rows;
+    } catch { rows = (await query(`SELECT * FROM treasury_wa_recipients WHERE deleted_at IS NULL ORDER BY id`)).rows; }
+    const hook = webhookConfigured();
+    return { items: rows.map((r) => ({ ...recipOut(r), inbound_at: r.inbound_at || null,
+      window_open: hook ? r.window_open === true : null })), webhook: hook };
   });
 
   app.post('/api/treasury/recipients', G, async (req, reply) => {
@@ -147,10 +156,27 @@ export default async function treasuryRoutes(app) {
 
   // ── 발송 ──
   app.get('/api/treasury/wa/status', G, async () => {
-    const recent = (await query(
-      `SELECT s.kind, s.period, s.recipient_id, r.name, s.to_masked, s.status, s.error, s.attempts, s.sent_at, s.updated_at
-         FROM treasury_wa_sends s LEFT JOIN treasury_wa_recipients r ON r.id=s.recipient_id
-        ORDER BY s.updated_at DESC LIMIT 40`)).rows.map((x) => ({ ...x, recipient_id: Number(x.recipient_id), attempts: Number(x.attempts) }));
+    let rows, hookLast = null;
+    try {   // 0253 · 웹훅이 기록한 실제 전달 상태(접수/도착/읽음/실패 + 사유)
+      rows = (await query(
+        `SELECT s.kind, s.period, s.recipient_id, r.name, s.to_masked, s.status, s.error, s.attempts, s.sent_at, s.updated_at,
+                m.status AS dlv_status, m.delivered_at, m.read_at, m.failed_at, m.error_code AS dlv_code,
+                m.error_title AS dlv_title, m.error_detail AS dlv_detail, m.updated_at AS dlv_at
+           FROM treasury_wa_sends s LEFT JOIN treasury_wa_recipients r ON r.id=s.recipient_id
+           LEFT JOIN wa_message_status m ON m.message_id = s.message_id
+          ORDER BY s.updated_at DESC LIMIT 40`)).rows;
+      hookLast = (await query(`SELECT GREATEST((SELECT max(updated_at) FROM wa_message_status), (SELECT max(updated_at) FROM wa_inbound)) AS at`)).rows[0].at;
+    } catch {
+      rows = (await query(
+        `SELECT s.kind, s.period, s.recipient_id, r.name, s.to_masked, s.status, s.error, s.attempts, s.sent_at, s.updated_at
+           FROM treasury_wa_sends s LEFT JOIN treasury_wa_recipients r ON r.id=s.recipient_id
+          ORDER BY s.updated_at DESC LIMIT 40`)).rows;
+    }
+    const recent = rows.map((x) => {
+      const o = { ...x, recipient_id: Number(x.recipient_id), attempts: Number(x.attempts) };
+      if (x.dlv_status === 'failed') o.dlv_reason = explainWaError(x.dlv_code, x.dlv_title) + (x.dlv_detail ? ` — ${x.dlv_detail}` : '');
+      return o;
+    });
     return {
       api_ready: waApiReady(),
       token_set: !!process.env.WHATSAPP_TOKEN, phone_id_set: !!process.env.WHATSAPP_PHONE_ID,
@@ -160,6 +186,7 @@ export default async function treasuryRoutes(app) {
       enabled: process.env.TREASURY_DAILY_ENABLED !== '0',
       schedule: { send_hour_mx: SEND_HOUR_MX, daily_until_mx: DAILY_SEND_UNTIL_MX, monthly_days: MONTHLY_CATCHUP_DAYS, max_attempts: MAX_ATTEMPTS },
       report_url: reportUrl(),
+      webhook: { configured: webhookConfigured(), last_event_at: hookLast },
       recent,
     };
   });

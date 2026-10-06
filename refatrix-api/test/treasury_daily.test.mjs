@@ -168,7 +168,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-1006wa/);
+  assert.match(page, /build cashd-1006wh/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');

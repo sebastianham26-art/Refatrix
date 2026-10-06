@@ -145,9 +145,16 @@ export async function sendWaTemplate(param, opts = {}) {
 
 // 임의 수신자 발송(오퍼시트 등): ① 텍스트 → ② 실패 시 템플릿 헤드라인 폴백
 //   templateName 우선순위: 인자 > OFFERSHEET_WA_TEMPLATE(호출부에서 지정) > WHATSAPP_TEMPLATE
-export async function sendWaTo({ to, text, headline, templateName = null, templateLang = null }) {
+//   windowOpen === false(웹훅으로 24시간 창이 닫힌 것을 안다) + 템플릿 있음 → 템플릿부터.
+//   자유 텍스트는 창 밖이어도 API 가 「접수」하고 나중에 웹훅으로 실패를 알려 오므로, 미리 아는 경우엔 건너뛴다.
+export async function sendWaTo({ to, text, headline, templateName = null, templateLang = null, windowOpen = null }) {
   if (!waApiReady()) return { ok: false, mode: null, error: 'wa_not_configured' };
   if (!to) return { ok: false, mode: null, error: 'no_recipient' };
+  const tplName = templateName || process.env.WHATSAPP_TEMPLATE;
+  if (windowOpen === false && tplName) {
+    const t0 = await sendWaTemplate(headline, { to, name: tplName, lang: templateLang });
+    if (t0.ok) return { ok: true, mode: 'template', message_id: t0.message_id, text_error: 'window_closed' };
+  }
   const first = await sendWaText(text, to);
   if (first.ok) return { ok: true, mode: 'text', message_id: first.message_id };
   const fb = await sendWaTemplate(headline, { to, name: templateName || process.env.WHATSAPP_TEMPLATE, lang: templateLang });

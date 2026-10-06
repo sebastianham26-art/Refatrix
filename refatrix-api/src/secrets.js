@@ -67,11 +67,16 @@ export const SERVICES = [
       { name: 'WHATSAPP_TEMPLATE_LANG', label: '템플릿 언어', secret: false, hint: '비우면 es_MX' },
       { name: 'OFFERSHEET_WA_TEMPLATE', label: '오퍼시트 템플릿명', secret: false },
       { name: 'DAILY_SUMMARY_WA_TO', label: '일일요약 수신 번호', secret: false, hint: '52 + 10자리' },
+      { name: 'TREASURY_WA_IMAGE_TEMPLATE', label: '일일자금 이미지 템플릿명', secret: false, hint: '이미지 헤더 + 본문 {{1}} 유틸리티 템플릿(예: resumen_caja_img) — 24시간 창 밖 발송용' },
+      { name: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN', label: '웹훅 확인 토큰', secret: true, hint: '직접 정한 문자열(8자 이상) — Meta 웹훅의 「확인 토큰」에 같은 값 · 콜백 URL: https://refatrix-production.up.railway.app/api/wa/webhook' },
+      { name: 'WHATSAPP_APP_SECRET', label: '앱 시크릿', secret: true, hint: 'Meta 앱 → 앱 설정 → 기본 설정 → 앱 시크릿(웹훅 서명 검증)' },
     ],
     uses: [
       '영업사원 아침 브리핑 발송',
       '일일 요약 발송',
       '오퍼시트 고객 발송',
+      '일일 자금 · 월간실적 발송',
+      '실제 도착 · 읽음 · 실패 사유 기록(웹훅)',
     ],
   },
 ];

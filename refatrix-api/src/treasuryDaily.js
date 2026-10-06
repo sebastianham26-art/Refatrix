@@ -34,6 +34,7 @@ import { AR_PAID_EPS } from './ar.js';
 import { MX_OFFSET_MIN } from './workingHours.js';
 import { waApiReady, sendWaTo, uploadWaMedia, sendWaImage, sendWaImageTemplate } from './waSend.js';
 import { dailyImageSvg, monthlyImageSvg, svgToPng } from './treasuryImage.js';
+import { windowState } from './waWebhook.js';   // 0253 · 24시간 창(웹훅이 아는 경우)
 
 export const CURS = ['MXN', 'USD'];
 export const SEND_HOUR_MX = 6;          // 06:00 이후 발송
@@ -557,7 +558,9 @@ export const DEFAULT_IMG_API = { upload: uploadWaMedia, image: sendWaImage, imag
 export const imageFormatOn = () => process.env.TREASURY_WA_FORMAT !== 'text';
 
 // 이미지 경로: ① 업로드(언어별 1회, mediaCache) → ② image 메시지(캡션) → ③ 이미지 헤더 템플릿. 모두 실패하면 null(→ 텍스트).
-async function tryImage({ rcpt, png, headline, cacheKey, mediaCache, imgApi }) {
+//   windowOpen === false(웹훅이 24시간 창이 닫힌 것을 안다, 0253) → ③ 템플릿을 먼저. 창 밖 자유 이미지는
+//   API 가 접수만 하고 나중에 실패하므로(131047), 아는 경우엔 처음부터 템플릿으로 보낸다.
+async function tryImage({ rcpt, png, headline, cacheKey, mediaCache, imgApi, windowOpen = null }) {
   if (!png) return null;
   let mid = mediaCache[cacheKey];
   if (!mid) {
@@ -565,9 +568,13 @@ async function tryImage({ rcpt, png, headline, cacheKey, mediaCache, imgApi }) {
     if (!up.ok) return { ok: false, error: `upload: ${up.error}` };
     mid = mediaCache[cacheKey] = up.id;
   }
+  const tpl = process.env.TREASURY_WA_IMAGE_TEMPLATE;
+  if (windowOpen === false && tpl) {
+    const r0 = await imgApi.imageTemplate({ to: rcpt.phone, mediaId: mid, param: headline, name: tpl });
+    if (r0.ok) return { ok: true, mode: 'image_template', message_id: r0.message_id, text_error: 'window_closed' };
+  }
   const r1 = await imgApi.image({ to: rcpt.phone, mediaId: mid, caption: headline });
   if (r1.ok) return { ok: true, mode: 'image', message_id: r1.message_id };
-  const tpl = process.env.TREASURY_WA_IMAGE_TEMPLATE;
   if (tpl) {
     const r2 = await imgApi.imageTemplate({ to: rcpt.phone, mediaId: mid, param: headline, name: tpl });
     if (r2.ok) return { ok: true, mode: 'image_template', message_id: r2.message_id, text_error: r1.error };
@@ -576,16 +583,17 @@ async function tryImage({ rcpt, png, headline, cacheKey, mediaCache, imgApi }) {
   return { ok: false, error: `image: ${r1.error}` };
 }
 
-export async function sendOne({ kind, period, rcpt, text, headline, png = null, cacheKey = null, mediaCache = {}, force = false, sender = sendWaTo, imgApi = DEFAULT_IMG_API }, q = query) {
+export async function sendOne({ kind, period, rcpt, text, headline, png = null, cacheKey = null, mediaCache = {}, force = false, sender = sendWaTo, imgApi = DEFAULT_IMG_API, windowOpen }, q = query) {
   const prev = (await q(`SELECT sent_at, attempts FROM treasury_wa_sends WHERE kind=$1 AND period=$2 AND recipient_id=$3`,
     [kind, period, rcpt.id])).rows[0];
   if (!force && prev && prev.sent_at) return { skipped: 'already_sent', recipient_id: Number(rcpt.id) };
   if (!force && prev && Number(prev.attempts) >= MAX_ATTEMPTS) return { skipped: 'max_attempts', recipient_id: Number(rcpt.id) };
-  let res = png ? await tryImage({ rcpt, png, headline, cacheKey: cacheKey || `${kind}_${period}`, mediaCache, imgApi }) : null;
+  if (windowOpen === undefined) windowOpen = (await windowState(rcpt.phone, q)).open;   // 웹훅 미설정이면 null(기존 동작)
+  let res = png ? await tryImage({ rcpt, png, headline, cacheKey: cacheKey || `${kind}_${period}`, mediaCache, imgApi, windowOpen }) : null;
   let imgErr = null;
   if (!res || !res.ok) {
     imgErr = res ? res.error : null;
-    res = await sender({ to: rcpt.phone, text, headline, templateName: process.env.TREASURY_WA_TEMPLATE || null });
+    res = await sender({ to: rcpt.phone, text, headline, templateName: process.env.TREASURY_WA_TEMPLATE || null, windowOpen });
     if (res.ok && imgErr) res.text_error = imgErr;
     if (!res.ok && imgErr) res.error = `${imgErr} / ${res.error}`;
   }
