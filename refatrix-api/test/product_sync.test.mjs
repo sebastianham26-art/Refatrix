@@ -29,7 +29,7 @@ await new Promise((r) => crm.listen(0, '127.0.0.1', r));
 const CRM_URL = `http://127.0.0.1:${crm.address().port}/api/integrations/erp/productos`;
 
 const {
-  stockRange, imageUrlFor, buildProduct, buildLote, chunk, mxNowParts,
+  stockRange, stockQty, imageUrlFor, buildProduct, buildLote, chunk, mxNowParts,
   applyMap, PRODUCT_FIELDS, firstSyd,
 } = await import('../src/productSync.js');
 
@@ -68,7 +68,8 @@ test('제품 본문은 계약서의 이름·타입 그대로다', () => {
   assert.equal(typeof p.precioLista, 'number');       // NUMERIC 은 문자열로 오므로 숫자로 바꿔야 한다
   assert.equal(p.precioLista, 245.5);
   assert.equal(p.moneda, 'MXN');
-  assert.equal(p.existencia, '11-20');
+  assert.equal(p.existencia, 15, '2026-10-06 · 숫자로');
+  assert.equal(typeof p.existencia, 'number');
   assert.equal(p.imagenUrl, 'https://x.mx/fotos/CE0427.jpg');
   assert.equal(p.activo, true);
 });
@@ -132,7 +133,7 @@ test('CRM 열 이름으로 갈아 끼울 수 있다 — 빈 이름은 그 필드
   assert.equal(out.ean13, '7501234567890');
   assert.equal('codigo' in out, false, '옛 이름은 남으면 안 된다');
   assert.equal('moneda' in out, false, '빈 이름으로 지정한 필드는 빠진다');
-  assert.equal(out.existencia, '11-20', '지정 없는 필드는 우리 이름 그대로');
+  assert.equal(out.existencia, 15, '지정 없는 필드는 우리 이름 그대로');
 });
 
 test('본문 형식 — 묶음 · 제품 배열 · 1건씩', () => {
@@ -406,5 +407,14 @@ test('연동 화면 필드표에 referenciaOE 가 서버와 같은 자리에 있
   const names = [...m[1].matchAll(/\['([A-Za-z0-9]+)'/g)].map((x) => x[1]);
   assert.ok(names.includes('referenciaOE'));
   assert.equal(names.indexOf('referenciaOE'), names.indexOf('referenciaSyd') + 1);
-  assert.match(html, /build 20260929(oe|rf|dl|promo)/);
+  assert.match(html, /build 20260929(oe|rf|dl|promo)|build 20261006ex/);
+});
+
+test('2026-10-06 · existencia 는 숫자 — 마이너스·빈값은 0, 소수는 내림', () => {
+  assert.equal(stockQty(0), 0); assert.equal(stockQty(-5), 0); assert.equal(stockQty(null), 0);
+  assert.equal(stockQty('12'), 12); assert.equal(stockQty(10.9), 10); assert.equal(stockQty(5000), 5000);
+  const body = buildLote({ envioId: 'T', fechaCorte: '2026-10-06', lote: 1, totalLotes: 1, totalProductos: 1,
+    transactionUser: 'x', mode: 'test' }, [buildProduct({ code: 'A', name: 'n', list_price: 1, stock_qty: 0, is_active: true }, '')],
+    { shape: 'item' });
+  assert.match(JSON.stringify(body), /"existencia":0[,}]/, '따옴표 없는 0');
 });

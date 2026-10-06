@@ -47,8 +47,9 @@ test('지문 — 작업자 이름은 무시, 재고 구간·정가·OE 는 반�
   const p = ps.buildProduct({ code: 'A', name: 'X', list_price: 10, stock_qty: 1, is_active: true }, '');
   assert.equal(ps.productHash({ ...p, transactionUser: 'otro' }), ps.productHash(p));
   assert.notEqual(ps.productHash({ ...p, precioLista: 11 }), ps.productHash(p));
-  assert.equal(ps.productHash(ps.buildProduct({ code: 'A', name: 'X', list_price: 10, stock_qty: 2, is_active: true }, '')),
-    ps.productHash(p), '같은 재고 구간(1-10)이면 안 바뀜');
+  // 2026-10-06 · existencia 가 수량(숫자)이 되어 재고가 1개만 바뀌어도 변경분으로 나간다
+  assert.notEqual(ps.productHash(ps.buildProduct({ code: 'A', name: 'X', list_price: 10, stock_qty: 2, is_active: true }, '')),
+    ps.productHash(p), '재고 수량이 바뀌면 변경');
   assert.notEqual(ps.productHash({ ...p, referenciaOE: 'X1' }), ps.productHash(p));
 });
 
@@ -204,7 +205,7 @@ test('화면 — 버튼 · 설정 칸 · 빌드 토큰', () => {
   for (const id of ['btnCatalogDelta', 'btnCatalogDeltaPreview', 'btnCatalogBaseline', 'fDeltaAuto', 'fDeltaEvery', 'fFullWeekday'])
     assert.match(html, new RegExp(`id="${id}"`), id);
   assert.match(html, /\/api\/product-sync\/delta-preview/);
-  assert.match(html, /build 20260929dl/);
+  assert.match(html, /build 20261006ex/);
 });
 
 test.after(async () => { if (pool) await pool.end(); try { (await import('../src/db.js')).pool?.end?.(); } catch (_) {} });

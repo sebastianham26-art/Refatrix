@@ -60,6 +60,16 @@ export function mxNowParts(now = Date.now()) {
  * 가용재고 → 구간 문자열. 정확한 수량은 내보내지 않는다(참고용이고, 경쟁 정보다).
  *   0 · 1-10 · 11-20 · 21-30 · +30
  */
+/**
+ * 2026-10-06 · CRM 은 existencia 를 **숫자**로 받는다("0" 같은 문자열·구간 문자열 불가).
+ *   가용재고(products.stock_qty)를 0 이상의 정수로 보낸다 — 마이너스는 0, 소수는 내림, 비면 0.
+ */
+export function stockQty(qty) {
+  const n = Math.floor(Number(qty));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** (예전 계약서 v1.0 의 구간 문자열 — 지금은 쓰지 않는다. 다른 곳이 부를 수 있어 남겨 둔다.) */
 export function stockRange(qty) {
   const n = Math.floor(Number(qty) || 0);
   if (n <= 0) return '0';
@@ -126,7 +136,7 @@ export function buildProduct(row, imgBase) {
     referenciaOE: row.oe == null || String(row.oe).trim() === '' ? null : String(row.oe).trim(),
     precioLista: money(row.list_price),
     moneda: 'MXN',
-    existencia: stockRange(row.stock_qty),
+    existencia: stockQty(row.stock_qty),           // 2026-10-06 · 숫자(구간 문자열 아님)
     imagenUrl: imageUrlFor(imgBase, row.code),
     // 비활성(단종·판매중단)도 **보낸다** — 빼 버리면 CRM 이 감출 근거가 없다.
     activo: row.is_active !== false,
