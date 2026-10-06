@@ -15,7 +15,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰 · 외부 스크립트는 허용 CDN 만', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit|keydown)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*build cashd-1001a<\/title>/);
+  assert.match(HTML, /<title>[^<]*build cashd-1006wa<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
   for (const m of HTML.matchAll(/src=['"](https?:[^'"]+)/g)) assert.match(m[1], /^https:\/\/cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 });
@@ -143,7 +143,7 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
     $('#rcPhone').value = '81 1234 5678'; $('#rcLang').value = 'ko';
     click($('#rcAdd'));
     await until(() => $('#rcList tr[data-id]'));
-    assert.match($('#rcList').textContent, /521\*\*\*\*5678/);
+    assert.match($('#rcList').textContent, /528\*\*\*\*5678/);
     const cb = $('#rcList [data-f="get_daily"]');
     cb.checked = false; cb.dispatchEvent(new w.Event('change', { bubbles: true }));
     await until(async () => true);

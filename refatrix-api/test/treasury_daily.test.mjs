@@ -168,7 +168,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-1001a/);
+  assert.match(page, /build cashd-1006wa/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -400,7 +400,7 @@ E('C5 API — 디렉터 전용 · 수신자 CRUD(번호 정규화·중복) · �
   assert.equal((await call(X, 'GET', '/api/treasury/month?month=2026-09')).statusCode, 403, '재무담당도 화면은 디렉터 전용');
   const c = await call(D, 'POST', '/api/treasury/recipients', { name: 'Jang', phone: '81 1234 5678', lang: 'ko' });
   assert.equal(c.statusCode, 200); const rc = c.json();
-  assert.equal(rc.phone, '5218112345678'); assert.equal(rc.phone_masked, '521****5678');
+  assert.equal(rc.phone, '528112345678'); assert.equal(rc.phone_masked, '528****5678');
   assert.equal((await call(D, 'POST', '/api/treasury/recipients', { name: 'Dup', phone: '+52 1 81 1234 5678' })).statusCode, 409);
   assert.equal((await call(D, 'POST', '/api/treasury/recipients', { name: 'Bad', phone: '123' })).json().error, 'bad_phone');
   const p = await call(D, 'PATCH', '/api/treasury/recipients/' + rc.id, { get_daily: false, lang: 'es' });

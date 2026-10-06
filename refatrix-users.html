@@ -708,7 +708,7 @@
       const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
       users=d.items||[];
       accountsList=d.accounts||[];
-      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>판매가</th><th>기기 제한</th><th title="아침 브리핑 WhatsApp 수신번호 (멕시코 10자리 또는 521+10자리)">📲 WhatsApp</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>판매가</th><th>기기 제한</th><th title="아침 브리핑 WhatsApp 수신번호 (멕시코 10자리 또는 52+10자리)">📲 WhatsApp</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
         users.map(u=>`<tr>
           <td class="c-id"><b class="uname">${u.name}</b></td>
           <td class="c-id">${u.login_id||'—'}</td>
@@ -799,7 +799,7 @@
   // WhatsApp 수신번호(아침 브리핑) — 즉시 저장 (빈 값 = 발송 제외)
   async function setWaPhone(userId,inp){
     const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/wa-phone',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({wa_phone:inp.value.trim()})},15000);
-    if(!r.ok){ alert('WhatsApp 번호 저장 실패: '+((r.data&&(r.data.error==='bad_phone'?'번호 형식이 올바르지 않습니다 (10자리 또는 521+10자리)':r.data.error))||r.err||('HTTP '+r.status))); loadUsers(); return; }
+    if(!r.ok){ alert('WhatsApp 번호 저장 실패: '+((r.data&&(r.data.error==='bad_phone'?'번호 형식이 올바르지 않습니다 (10자리 또는 52+10자리)':r.data.error))||r.err||('HTTP '+r.status))); loadUsers(); return; }
     inp.value=(r.data&&r.data.wa_phone)||'';
     const u=users.find(x=>Number(x.id)===Number(userId)); if(u) u.wa_phone=inp.value||null;
   }

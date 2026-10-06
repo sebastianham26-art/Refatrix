@@ -6,7 +6,7 @@
 //   ── 필요한 Railway 환경변수 (전부 있어야 발송 활성) ──
 //   · WHATSAPP_TOKEN        Meta(WhatsApp Business Cloud API) 영구 토큰
 //   · WHATSAPP_PHONE_ID     발신 전화번호 ID (Meta Business 관리자에서 확인)
-//   · DAILY_SUMMARY_WA_TO   수신 번호(국가코드 포함 숫자만, 예: 5218112345678)
+//   · DAILY_SUMMARY_WA_TO   수신 번호(국가코드 포함 숫자만, 예: 528112345678 — 구 형식 521… 도 발송 시 52… 로 보정)
 //   ── 선택 ──
 //   · WHATSAPP_TEMPLATE       승인된 템플릿 이름(24시간 창 밖 폴백용, 본문 {{1}} 1개)
 //   · WHATSAPP_TEMPLATE_LANG  템플릿 언어 코드(기본 es_MX)
@@ -34,13 +34,14 @@ export function waApiReady() {
   return !!(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID);
 }
 
-// 전화번호 → WhatsApp 수신 형식(숫자만). 멕시코 규칙:
-//   10자리(로컬) → 521+10자리 · '52'+10자리(12자리) → 521 로 보정 · 이미 521+10자리(13)면 그대로.
+// 전화번호 → WhatsApp 수신 형식(숫자만). 멕시코 규칙(2026-10-06 디렉터 지시: 521 → 52):
+//   10자리(로컬) → 52+10자리 · 구 형식 521+10자리(13자리) → 52+10자리로 보정 · 52+10자리(12)면 그대로.
+//   멕시코는 2019년에 휴대폰 앞 '1'이 폐지됐고, WhatsApp 수신 형식도 52+10자리다.
 export function normalizeWaNumber(phone) {
   let d = String(phone || '').replace(/\D/g, '');
   if (!d) return null;
-  if (d.length === 10) d = '521' + d;
-  else if (d.length === 12 && d.startsWith('52')) d = '521' + d.slice(2);
+  if (d.length === 10) d = '52' + d;
+  else if (d.length === 13 && d.startsWith('521')) d = '52' + d.slice(3);
   if (d.length < 11 || d.length > 15) return null;
   return d;
 }
@@ -92,6 +93,8 @@ export function buildWaHeadline(dateLabel, stats) {
 }
 
 async function callGraph(payload) {
+  // 발송 직전 한 번 더 정규화 — DB·환경변수(DAILY_SUMMARY_WA_TO)에 남은 구 형식 521… 도 52… 로 나간다.
+  if (payload && payload.to) { const n = normalizeWaNumber(payload.to); if (n) payload = { ...payload, to: n }; }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {

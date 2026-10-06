@@ -66,7 +66,7 @@ export const SERVICES = [
       { name: 'WHATSAPP_TEMPLATE', label: '기본 템플릿명', secret: false, hint: '24시간 창 밖 폴백용(본문 {{1}} 1개)' },
       { name: 'WHATSAPP_TEMPLATE_LANG', label: '템플릿 언어', secret: false, hint: '비우면 es_MX' },
       { name: 'OFFERSHEET_WA_TEMPLATE', label: '오퍼시트 템플릿명', secret: false },
-      { name: 'DAILY_SUMMARY_WA_TO', label: '일일요약 수신 번호', secret: false, hint: '521 + 10자리' },
+      { name: 'DAILY_SUMMARY_WA_TO', label: '일일요약 수신 번호', secret: false, hint: '52 + 10자리' },
     ],
     uses: [
       '영업사원 아침 브리핑 발송',

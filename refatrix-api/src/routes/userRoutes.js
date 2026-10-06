@@ -90,7 +90,7 @@ export default async function userRoutes(app) {
   });
 
   // WhatsApp 수신번호 설정(디렉터) — 아침 브리핑 수신용. 빈 값이면 해제(발송 대상 제외).
-  //   멕시코 휴대폰: 10자리 로컬/52·521 국가코드 어떤 형식이든 저장 시 521+10자리로 정규화.
+  //   멕시코 휴대폰: 10자리 로컬/52·521 국가코드 어떤 형식이든 저장 시 52+10자리로 정규화(2026-10-06 521 → 52).
   app.patch('/api/users/:id/wa-phone', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
@@ -101,7 +101,7 @@ export default async function userRoutes(app) {
     if (raw) {
       const { normalizeWaNumber } = await import('../waSend.js');
       value = normalizeWaNumber(raw);
-      if (!value) return reply.code(400).send({ error: 'bad_phone', hint: '숫자 10자리(로컬) 또는 521+10자리 형식' });
+      if (!value) return reply.code(400).send({ error: 'bad_phone', hint: '숫자 10자리(로컬) 또는 52+10자리 형식' });
     }
     await query(`UPDATE users SET wa_phone=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `user:${id}`, detail: { wa_phone: value ? (value.slice(0, 3) + '****' + value.slice(-4)) : null } });
