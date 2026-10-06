@@ -8,7 +8,7 @@
 //   커미셔너 = 「안내서(guiacom)」 권한이 있는 사용자 / 그 외 커미션 대상 = 직원.
 // =====================================================================
 import { createHash } from 'node:crypto';
-import { query } from '../db.js';
+import { query, withTx } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
@@ -22,9 +22,64 @@ export const RULES_VERSION = '2026-10-05';
 const money = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pctTxt = (n) => `${Number(n)}%`;
 
+// ── 날짜 표기 (2026-10-06 디렉터 결정: 월이 아니라 「일·월·연」으로) ──
+//   'YYYY-MM-DD' → '1 oct 2026'. 일/월 순서 혼동이 없도록 월은 약어로 쓴다.
+const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+export function fechaEs(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ''));
+  if (!m) return String(ymd || '—');
+  return `${Number(m[3])} ${MES[Number(m[2]) - 1]} ${m[1]}`;
+}
+const lastDay = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+const monthFirst = (ym) => `${ym}-01`;
+const monthLast = (ym) => `${ym}-${String(lastDay(ym)).padStart(2, '0')}`;
+// 기간 표기: 'Del 1 oct 2026 al 31 oct 2026' / 'Desde 1 mar 2027'
+export function rangoEs(start, end) {
+  return end ? `Del ${fechaEs(start)} al ${fechaEs(end)}` : `Desde ${fechaEs(start)}`;
+}
+function nextDayYmd(ymd) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d)); dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+function prevDayYmd(ymd) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d)); dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+// ── 고정급여 단계표 검증 (순수 · 0254) ─────────────────────────────
+//   · 날짜 형식·금액 ≥ 0 · 시작일 오름차순 · 겹침 금지
+//   · 중간 단계의 종료일이 비어 있으면 「다음 단계 시작일 전날」로 채운다(빈틈 없이 이어지게).
+//   · 마지막 단계는 종료일을 비워(∞) 두거나 날짜를 넣을 수 있다.
+export function validateSalarySteps(input) {
+  const list = Array.isArray(input) ? input : [];
+  const norm = [];
+  for (const r of list) {
+    const start = String(r.start_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return { ok: false, error: 'bad_start', note: '적용 시작일(YYYY-MM-DD)을 모두 입력하세요.' };
+    const end = r.end_date ? String(r.end_date).slice(0, 10) : null;
+    if (end !== null && !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { ok: false, error: 'bad_end', note: '종료일 형식이 올바르지 않습니다.' };
+    if (end !== null && end < start) return { ok: false, error: 'end_before_start', note: `종료일(${end})이 시작일(${start})보다 빠릅니다.` };
+    const amount = Number(r.amount);
+    if (!(amount >= 0) || r.amount === '' || r.amount == null) return { ok: false, error: 'bad_amount', note: `${start} 단계의 금액을 입력하세요(0 이상).` };
+    const note = r.note != null && String(r.note).trim() ? String(r.note).trim().slice(0, 200) : null;
+    norm.push({ start_date: start, end_date: end, amount: Math.round(amount * 100) / 100, note });
+  }
+  norm.sort((a, b) => a.start_date.localeCompare(b.start_date));
+  for (let i = 0; i < norm.length; i++) {
+    const nx = norm[i + 1];
+    if (!nx) break;
+    if (nx.start_date === norm[i].start_date) return { ok: false, error: 'dup_start', note: `시작일 ${nx.start_date} 이 두 번 있습니다.` };
+    if (norm[i].end_date === null) norm[i].end_date = prevDayYmd(nx.start_date);
+    if (norm[i].end_date >= nx.start_date) return { ok: false, error: 'overlap', note: `단계가 겹칩니다: ${norm[i].start_date}~${norm[i].end_date} 와 ${nx.start_date}~` };
+  }
+  return { ok: true, steps: norm };
+}
+
 // ── 조건 정규화 (순수) ─────────────────────────────────────────────
 //   해시가 표시 순서·타입 차이로 흔들리지 않도록 값을 고정 형태로 만든다.
-export function buildTerms({ type, periods = [], custRates = [], bonus = null }) {
+export function buildTerms({ type, periods = [], custRates = [], bonus = null, salary = [] }) {
   const ps = periods.map((p) => ({
     start: String(p.start_date).slice(0, 10),
     end: p.end_date ? String(p.end_date).slice(0, 10) : null,
@@ -43,7 +98,14 @@ export function buildTerms({ type, periods = [], custRates = [], bonus = null })
       targets: Object.keys(bonus.targets || {}).sort().map((m) => ({ month: m, amount: Number(bonus.targets[m]) })),
     };
   }
-  return { rules: RULES_VERSION, type: type === 'comisionista' ? 'comisionista' : 'empleado', periods: ps, customer_rates: cr, bonus: bn };
+  const out = { rules: RULES_VERSION, type: type === 'comisionista' ? 'comisionista' : 'empleado', periods: ps, customer_rates: cr, bonus: bn };
+  // 고정급여 단계표(0254) — 있는 사람만 키를 넣는다. 없는 사람의 버전(해시)은 그대로 유지된다.
+  const sal = (salary || []).map((r) => ({
+    start: String(r.start_date).slice(0, 10), end: r.end_date ? String(r.end_date).slice(0, 10) : null,
+    amount: Number(r.amount), note: r.note ? String(r.note) : null,
+  })).sort((a, b) => a.start.localeCompare(b.start));
+  if (sal.length) out.salary = sal;
+  return out;
 }
 
 export function termsHash(terms) {
@@ -53,13 +115,35 @@ export function termsHash(terms) {
 const baseLabel = (p) => (p.basis === 'revenue'
   ? 'Venta — al emitir la factura'
   : (p.match_on === 'payment' ? 'Cobranza — por fecha de cobro' : 'Cobranza — facturas emitidas en el periodo, cobradas al 100%'));
-const vigencia = (p) => (p.end ? `${p.start} a ${p.end}` : `Desde ${p.start}`);
+const vigencia = (p) => rangoEs(p.start, p.end);
 
 // ── 문서 생성 (순수) — 스페인어. **굵게** 표기만 쓰고, 화면이 이스케이프 후 <b> 로 바꾼다. ──
 export function buildDoc(terms, who = {}) {
   const sections = [];
   const cur = terms.periods.find((p) => !p.end) || terms.periods[terms.periods.length - 1] || null;
   const isCom = terms.type === 'comisionista';
+
+  // 0. 고정급여 단계표 (0254)
+  if (terms.salary && terms.salary.length) {
+    const hasNote = terms.salary.some((r) => r.note);
+    const rows = terms.salary.map((r) => {
+      const row = [rangoEs(r.start, r.end), money(r.amount)];
+      if (hasNote) row.push(r.note || '');
+      return row;
+    });
+    const last = terms.salary[terms.salary.length - 1];
+    sections.push({
+      key: 'salary', title: 'Tu sueldo fijo mensual',
+      table: { head: hasNote ? ['Vigencia', 'Sueldo fijo mensual', 'Nota'] : ['Vigencia', 'Sueldo fijo mensual'], rows, right: [1] },
+      items: [
+        'Tu sueldo fijo mensual cambia **por etapas en las fechas indicadas** en la tabla. Cada monto aplica desde el día de inicio hasta el día final de su renglón.',
+        last.end
+          ? `Después del ${fechaEs(last.end)} el sueldo fijo se revisará y se informará por escrito.`
+          : `A partir del ${fechaEs(last.start)} el sueldo fijo queda en **${money(last.amount)} al mes**.`,
+        'La comisión y el bono se pagan **aparte y además** del sueldo fijo.',
+      ],
+    });
+  }
 
   // 1. 커미션
   const items = [];
@@ -98,12 +182,12 @@ export function buildDoc(terms, who = {}) {
       b.basis === 'revenue'
         ? 'Venta del mes = facturas emitidas en el mes, sin IVA, menos notas de crédito.'
         : 'La meta de cobranza la calcula el sistema con las facturas que vencen en el mes según los días de crédito del cliente.',
-      `Vigencia del bono: ${b.start || '—'}${b.end ? ` a ${b.end}` : ' en adelante'}.`,
+      `Vigencia del bono: ${b.start ? (b.end ? rangoEs(monthFirst(b.start), monthLast(b.end)) : rangoEs(monthFirst(b.start), null)) : '—'}.`,
     ];
     sections.push({
       key: 'bonus', title: 'Tu bono mensual',
       table: { head: ['Cumplimiento de la meta', 'Bono'], rows, right: [1] },
-      table2: b.targets.length ? { head: ['Mes', b.basis === 'revenue' ? 'Meta de venta (sin IVA)' : 'Meta (sin IVA)'], rows: b.targets.map((t) => [t.month, money(t.amount)]), right: [1] } : null,
+      table2: b.targets.length ? { head: ['Periodo', b.basis === 'revenue' ? 'Meta de venta (sin IVA)' : 'Meta (sin IVA)'], rows: b.targets.map((t) => [rangoEs(monthFirst(t.month), monthLast(t.month)), money(t.amount)]), right: [1] } : null,
       items: bItems,
     });
   }
@@ -130,9 +214,14 @@ export function buildDoc(terms, who = {}) {
   });
 
   const hash = termsHash(terms);
-  const declaration = `Leí y entiendo estas condiciones (versión #${hash}). Acepto que mi comisión${terms.bonus ? ' y mi bono' : ''} se calculen y paguen así. Al ingresar mi PIN confirmo esta aceptación.`;
+  const parts = [];
+  if (terms.salary && terms.salary.length) parts.push('mi sueldo fijo');
+  parts.push('mi comisión');
+  if (terms.bonus) parts.push('mi bono');
+  const joined = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0];
+  const declaration = `Leí y entiendo estas condiciones (versión #${hash}). Acepto que ${joined} se calculen y paguen así. Al ingresar mi PIN confirmo esta aceptación.`;
   return {
-    title: 'Acuerdo de condiciones de comisión',
+    title: terms.salary && terms.salary.length ? 'Acuerdo de sueldo fijo y comisión' : 'Acuerdo de condiciones de comisión',
     version: hash, rules_version: RULES_VERSION,
     who: { name: who.name || null, team: who.team || null, type: isCom ? 'Comisionista (externo)' : 'Empleado' },
     sections, declaration,
@@ -148,6 +237,7 @@ export function summaryKo(terms) {
   if (terms.periods.length > 1) s += ` 외 ${terms.periods.length - 1}기간`;
   if (terms.customer_rates.length) s += ` · 예외율 ${terms.customer_rates.length}곳`;
   if (terms.bonus) s += ' · 성과급 ' + terms.bonus.tiers.filter((t) => t.amount > 0).map((t) => `${t.min_rate}%↑${Math.round(t.amount / 1000)}k`).join('/');
+  if (terms.salary && terms.salary.length) s += ` · 고정급 ${terms.salary.length}단계`;
   return s;
 }
 
@@ -201,10 +291,21 @@ async function loadTerms(u) {
       bonus = { enabled: true, basis: p.basis, start_month: p.start_month, end_month: p.end_month, tiers, targets };
     }
   } catch (e) { if (!(e && e.code === '42P01')) throw e; }
-  const terms = buildTerms({ type: u.is_com ? 'comisionista' : 'empleado', periods, custRates, bonus });
+  const salary = await loadSalary(uid);
+  const terms = buildTerms({ type: u.is_com ? 'comisionista' : 'empleado', periods, custRates, bonus, salary });
   const hash = termsHash(terms);
   const doc = buildDoc(terms, { name: u.name, team: u.team_name });
   return { terms, hash, doc };
+}
+
+// 고정급여 단계 (0254 미적용이면 빈 배열)
+async function loadSalary(uid) {
+  try {
+    return (await query(
+      `SELECT to_char(start_date,'YYYY-MM-DD') AS start_date, to_char(end_date,'YYYY-MM-DD') AS end_date, amount, note
+         FROM commission_salary_steps WHERE user_id=$1 ORDER BY start_date`, [uid])).rows
+      .map((r) => ({ start_date: r.start_date, end_date: r.end_date || null, amount: Number(r.amount), note: r.note || null }));
+  } catch (e) { if (e && e.code === '42P01') return []; throw e; }
 }
 
 const AGREE_COLS = `id, user_id, version_hash, agent_type, summary,
@@ -237,6 +338,44 @@ function noteFail(uid) { const arr = fails.get(uid) || []; arr.push(Date.now());
 export function _resetPinFails() { fails.clear(); }
 
 export default async function commissionAgreementRoutes(app) {
+  // ── 고정급여 단계표 — 조회(디렉터·재무·소시오) / 저장(디렉터) · 0254 ──
+  app.get('/api/commission/salary', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    let rows;
+    try {
+      rows = (await query(
+        `SELECT user_id, to_char(start_date,'YYYY-MM-DD') AS start_date, to_char(end_date,'YYYY-MM-DD') AS end_date, amount, note
+           FROM commission_salary_steps ORDER BY user_id, start_date`)).rows;
+    } catch (e) { if (e && e.code === '42P01') return { migrated: false, by_user: {} }; throw e; }
+    const by = {};
+    for (const r of rows) (by[r.user_id] ||= []).push({ start_date: r.start_date, end_date: r.end_date || null, amount: Number(r.amount), note: r.note || null });
+    return { migrated: true, by_user: by };
+  });
+
+  app.post('/api/commission/salary/:uid', { preHandler: [authGuard] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'forbidden', note: '디렉터만 저장할 수 있습니다.' });
+    const uid = Number(req.params.uid);
+    if (!uid) return reply.code(400).send({ error: 'user_required' });
+    const v = validateSalarySteps((req.body && req.body.steps) || []);
+    if (!v.ok) return reply.code(400).send({ error: v.error, note: v.note });
+    const dir = Number(req.ctx.perm.userId);
+    try {
+      await withTx(async (cx) => {
+        await cx.query(`DELETE FROM commission_salary_steps WHERE user_id=$1`, [uid]);
+        for (const s of v.steps) {
+          await cx.query(
+            `INSERT INTO commission_salary_steps (user_id, start_date, end_date, amount, note, created_by, updated_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$6)`, [uid, s.start_date, s.end_date, s.amount, s.note, dir]);
+        }
+      });
+    } catch (e) {
+      if (e && e.code === '42P01') return reply.code(503).send({ error: 'migration_required', note: '서버에서 npm run migrate(0254)를 먼저 실행하세요.' });
+      throw e;
+    }
+    await logEvent({ userId: dir, action: 'update', target: `commission_salary:${uid}`, detail: { steps: v.steps.length } });
+    return { ok: true, steps: v.steps };
+  });
+
   // ── 내 조건 문서 + 상태 + 이력 ──
   app.get('/api/commission/agreement/me', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;

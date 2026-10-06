@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // db.js 가 import 시점에 DATABASE_URL 을 읽으므로, 먼저 설정한 뒤 동적 import
 if (process.env.TEST_PG_URL) process.env.DATABASE_URL = process.env.TEST_PG_URL;
-const { buildTerms, termsHash, buildDoc, summaryKo, statusOf, deviceLabel, RULES_VERSION } = await import('../src/routes/commissionAgreementRoutes.js');
+const { buildTerms, termsHash, buildDoc, summaryKo, statusOf, deviceLabel, RULES_VERSION, validateSalarySteps, fechaEs, rangoEs } = await import('../src/routes/commissionAgreementRoutes.js');
 
 // ── 순수 ──
 const OSC = {
@@ -58,6 +58,36 @@ test('요약·상태·기기', () => {
   assert.equal(deviceLabel('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36'), 'Chrome / Android');
 });
 
+
+test('고정급여 단계(0254) — 검증·날짜 표기·문서·해시', () => {
+  assert.equal(fechaEs('2026-10-01'), '1 oct 2026');
+  assert.equal(rangoEs('2026-11-16', '2027-02-28'), 'Del 16 nov 2026 al 28 feb 2027');
+  const v = validateSalarySteps([{ start_date: '2026-11-16', amount: 40000 }, { start_date: '2026-10-01', amount: '45000' }, { start_date: '2027-03-01', amount: 25000, note: 'final' }]);
+  assert.equal(v.ok, true);
+  assert.deepEqual(v.steps.map((x) => [x.start_date, x.end_date, x.amount]), [['2026-10-01', '2026-11-15', 45000], ['2026-11-16', '2027-02-28', 40000], ['2027-03-01', null, 25000]]);
+  assert.equal(validateSalarySteps([{ start_date: '2026-10-01', end_date: '2026-12-01', amount: 1 }, { start_date: '2026-11-01', amount: 1 }]).error, 'overlap');
+  assert.equal(validateSalarySteps([{ start_date: '2026-10-01', amount: '' }]).error, 'bad_amount');
+  assert.equal(validateSalarySteps([{ start_date: '10/01/2026', amount: 1 }]).error, 'bad_start');
+  assert.equal(validateSalarySteps([]).ok, true, '빈 목록 = 단계표 삭제');
+  const base = buildTerms(OSC);
+  const withSal = buildTerms({ ...OSC, salary: v.steps });
+  assert.ok(!('salary' in base), '단계표 없는 사람은 키 없음 → 기존 버전 유지');
+  assert.notEqual(termsHash(base), termsHash(withSal));
+  const d = buildDoc(withSal, { name: 'oscar' });
+  assert.equal(d.title, 'Acuerdo de sueldo fijo y comisión');
+  const sal = d.sections[0];
+  assert.equal(sal.key, 'salary');
+  assert.deepEqual(sal.table.rows[0], ['Del 1 oct 2026 al 15 nov 2026', '$45,000.00', '']);
+  assert.deepEqual(sal.table.rows[2], ['Desde 1 mar 2027', '$25,000.00', 'final']);
+  assert.match(d.declaration, /mi sueldo fijo, mi comisión y mi bono/);
+  assert.match(summaryKo(withSal), /고정급 3단계$/);
+  // 성과급 월도 날짜 범위로
+  const bonus = d.sections.find((x) => x.key === 'bonus');
+  assert.deepEqual(bonus.table2.rows[0], ['Del 1 oct 2026 al 31 oct 2026', '$350,000.00']);
+  assert.match(bonus.items[2], /Del 1 oct 2026 al 31 mar 2027/);
+  assert.deepEqual(d.sections.find((x) => x.key === 'commission').table.rows[0][0], 'Desde 1 oct 2026');
+});
+
 // ── 종단 ──
 const PG = process.env.TEST_PG_URL;
 const SKIP = !PG;
@@ -77,6 +107,7 @@ test('boot', { skip: SKIP }, async () => {
   await query(`DELETE FROM commission_agreements WHERE user_id IN ${U}`);
   await query(`ALTER TABLE commission_agreements ENABLE TRIGGER trg_comm_agree_immutable`);
   await query(`DELETE FROM bonus_payouts WHERE user_id IN ${U}`);
+  await query(`DELETE FROM commission_salary_steps WHERE user_id IN ${U}`);
   await query(`DELETE FROM bonus_tiers WHERE user_id IN ${U}`);
   await query(`DELETE FROM bonus_targets WHERE user_id IN ${U}`);
   await query(`DELETE FROM bonus_plans WHERE user_id IN ${U}`);
@@ -184,6 +215,44 @@ test('⑥ PIN 오입력 5회 → 429', { skip: SKIP }, async () => {
   const me = (await get('emp', '/api/commission/agreement/me')).json();
   for (let i = 0; i < 5; i++) assert.equal((await post('emp', '/api/commission/agreement/me', { pin: '0000', version: me.version, agree: true })).statusCode, 403);
   assert.equal((await post('emp', '/api/commission/agreement/me', { pin: '5678', version: me.version, agree: true })).statusCode, 429);
+});
+
+
+test('⑦ 고정급여 단계 저장(디렉터) → 문서에 표시 · 재합의 필요 · 다른 사람 버전 불변', { skip: SKIP }, async () => {
+  const before = (await get('com', '/api/commission/agreement/me')).json();
+  const empBefore = (await get('emp', '/api/commission/agreement/me')).json();
+  // 영업사원은 저장 불가
+  assert.equal((await post('emp', `/api/commission/salary/${ID.emp}`, { steps: [] })).statusCode, 403);
+  const bad = await post('dir', `/api/commission/salary/${ID.emp}`, { steps: [{ start_date: '2026-10-01', end_date: '2026-12-01', amount: 1 }, { start_date: '2026-11-01', amount: 1 }] });
+  assert.equal(bad.statusCode, 400);
+  const r = await post('dir', `/api/commission/salary/${ID.emp}`, { steps: [
+    { start_date: '2026-10-01', amount: 45000 }, { start_date: '2026-11-16', amount: 40000 }, { start_date: '2027-03-01', amount: 25000 } ] });
+  assert.equal(r.statusCode, 200, r.body);
+  assert.equal(r.json().steps[0].end_date, '2026-11-15');
+  const list = (await get('dir', '/api/commission/salary')).json();
+  assert.equal(list.by_user[ID.emp].length, 3);
+  assert.equal((await get('emp', '/api/commission/salary')).statusCode, 403);
+  const after = (await get('emp', '/api/commission/agreement/me')).json();
+  assert.notEqual(after.version, empBefore.version);
+  assert.equal(after.doc.sections[0].key, 'salary');
+  assert.equal(after.doc.sections[0].table.rows[1][0], 'Del 16 nov 2026 al 28 feb 2027');
+  // 다른 사람(커미셔너)의 버전은 그대로
+  assert.equal((await get('com', '/api/commission/agreement/me')).json().version, before.version);
+  // 합의 → 스냅샷에 단계표 포함
+  const { _resetPinFails } = await import('../src/routes/commissionAgreementRoutes.js');
+  _resetPinFails();
+  const ok = await post('emp', '/api/commission/agreement/me', { pin: '5678', version: after.version, agree: true });
+  assert.equal(ok.statusCode, 200, ok.body);
+  const snap = (await get('emp', `/api/commission/agreement/doc/${ok.json().id}`)).json();
+  assert.equal(snap.terms.salary.length, 3);
+  // 금액 하나 바꾸면 재합의 필요
+  await post('dir', `/api/commission/salary/${ID.emp}`, { steps: [
+    { start_date: '2026-10-01', amount: 45000 }, { start_date: '2026-11-16', amount: 38000 }, { start_date: '2027-03-01', amount: 25000 } ] });
+  assert.equal((await get('emp', '/api/commission/agreement/me')).json().status, 'changed');
+  // 단계표 삭제(빈 목록) → 문서에서 빠짐
+  await post('dir', `/api/commission/salary/${ID.emp}`, { steps: [] });
+  const gone = (await get('emp', '/api/commission/agreement/me')).json();
+  assert.ok(!gone.doc.sections.find((x) => x.key === 'salary'));
 });
 
 test('teardown', { skip: SKIP }, async () => {

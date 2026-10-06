@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1005acu</title>
+<title>Refatrix ERP · 커미션 · build b1006sal</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -100,7 +100,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1005acu</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1006sal</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -1124,8 +1124,59 @@
   async function openRates(){
     $('rateBackdrop').classList.remove('hidden'); $('rateModal').classList.remove('hidden');
     $('rateList').innerHTML='<div class="hint">불러오는 중…</div>';
-    await loadAgents(); renderRates(); loadTeamBen();
+    await Promise.all([loadAgents(), loadSalary()]); renderRates(); loadTeamBen();
   }
+  // ── 고정급여 단계표 (0254) — 합의 문서 「Tu sueldo fijo mensual」에 그대로 나온다 ──
+  async function loadSalary(){
+    try{ const d=await fetch(session.api+'/api/commission/salary',{headers:auth()}).then(r=>r.json()); window.__salary=d.by_user||{}; window.__salaryReady=d.migrated!==false; }
+    catch(e){ window.__salary={}; window.__salaryReady=false; }
+  }
+  const won=(n)=>Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:2});
+  function salaryRow(r){
+    return '<tr class="srow2"><td><input type="date" class="sa-start" value="'+(r.start_date||'')+'" style="width:140px"></td>'
+      +'<td><input type="date" class="sa-end" value="'+(r.end_date||'')+'" style="width:140px"></td>'
+      +'<td class="r"><input type="number" step="0.01" min="0" class="sa-amt" value="'+(r.amount!=null?r.amount:'')+'" style="width:120px"></td>'
+      +'<td><input type="text" class="sa-note" value="'+esc(r.note||'')+'" placeholder="(선택) 비고" style="width:150px"></td>'
+      +'<td><button type="button" class="btn ghost sm" data-sal-del="1" title="이 단계 삭제">✕</button></td></tr>';
+  }
+  function salaryBlock(a){
+    const rows=(window.__salary&&window.__salary[a.user_id])||[];
+    return '<div class="sal-wrap" style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:13px;color:var(--brand)">고정급여 단계</b>'
+      +'<span class="hint">· 월 고정급이 날짜별로 바뀌는 경우 · 합의 문서에 「일 월 연」 날짜로 표시 · 비워 두면 문서에 안 나옴</span>'
+      +'<button type="button" class="btn sm" style="margin-left:auto" data-sal-save="'+a.user_id+'">고정급여 저장</button></div>'
+      +(window.__salaryReady===false?'<div class="msg err" style="display:block">서버에서 npm run migrate(0254)를 실행해야 저장할 수 있습니다.</div>':'')
+      +'<table style="margin-top:6px"><thead><tr><th>적용 시작일</th><th>종료일(비우면 다음 단계 전날 / 마지막은 ∞)</th><th class="r">월 고정급(MXN)</th><th>비고</th><th></th></tr></thead>'
+      +'<tbody id="st-'+a.user_id+'">'+rows.map(salaryRow).join('')+'</tbody></table>'
+      +'<button type="button" class="btn ghost sm" style="margin-top:6px" data-sal-add="'+a.user_id+'">+ 단계 추가</button>'
+      +'<div class="msg" id="sm-'+a.user_id+'"></div></div>';
+  }
+  function gatherSalary(uid){
+    return [...document.querySelectorAll('#st-'+uid+' .srow2')].map(tr=>({start_date:tr.querySelector('.sa-start').value,end_date:tr.querySelector('.sa-end').value||null,amount:tr.querySelector('.sa-amt').value,note:tr.querySelector('.sa-note').value}))
+      .filter(r=>r.start_date||r.amount!==''||r.note);
+  }
+  async function saveSalary(uid){
+    const m=$('sm-'+uid); m.className='msg';
+    const steps=gatherSalary(uid);
+    for(const r of steps){ if(!/^\d{4}-\d{2}-\d{2}$/.test(r.start_date)){ m.className='msg err'; m.textContent='적용 시작일을 모두 입력하세요.'; return; } if(r.amount===''||!(Number(r.amount)>=0)){ m.className='msg err'; m.textContent=r.start_date+' 단계의 금액을 입력하세요.'; return; } }
+    try{
+      const res=await fetch(session.api+'/api/commission/salary/'+uid,{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({steps})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      (window.__salary||(window.__salary={}))[uid]=d.steps;
+      $('st-'+uid).innerHTML=d.steps.map(salaryRow).join('');
+      m.className='msg ok'; m.textContent=d.steps.length
+        ? ('저장되었습니다 — '+d.steps.length+'단계 ('+d.steps.map(x=>x.start_date+' '+won(x.amount)).join(' → ')+'). 조건이 바뀌어 본인에게 재합의 요청이 표시됩니다.')
+        : '고정급여 단계를 모두 지웠습니다(합의 문서에서 빠짐).';
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+  }
+  document.addEventListener('click',e=>{
+    const t=e.target.closest&&e.target.closest('[data-sal-add],[data-sal-del],[data-sal-save]');
+    if(!t) return;
+    if(t.dataset.salAdd){ const tb=$('st-'+t.dataset.salAdd); const prev=[...tb.querySelectorAll('.sa-start')].map(x=>x.value).filter(Boolean).sort().pop(); let nx=''; if(prev){ const d=new Date(prev+'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth()+1); nx=d.toISOString().slice(0,10); } tb.insertAdjacentHTML('beforeend',salaryRow({start_date:nx})); }
+    else if(t.dataset.salDel){ t.closest('tr').remove(); }
+    else if(t.dataset.salSave){ saveSalary(Number(t.dataset.salSave)); }
+  });
   // ── 팀 커미션 수혜자: 그 팀 고객의 매출 커미션을 고객 담당자 대신 지정한 사람에게 ──
   async function loadTeamBen(){
     const box=$('teamBen'); if(!box) return;
@@ -1193,7 +1244,7 @@
       +'<tbody id="pt-'+a.user_id+'">'+rows.map(p=>periodRow(p)).join('')+'</tbody></table>'
       +'<button class="btn ghost sm" style="margin-top:6px" onclick="addPeriodRow('+a.user_id+')">+ 기간 추가</button>'
       +'<div class="hint" style="margin-top:6px">· <b>매출</b> = 인보이스 발행 즉시 확정 · <b>수금 · 수금일 판정</b> = 이 기간에 들어온 수금액(ex-IVA) × 율 적립, 인보이스가 미수 없이 완납되면 지급(발행일 무관) · <b>수금 · 발행일 판정</b> = 발행일이 이 기간인 인보이스만, 완납 시 전액. 기간은 겹치지 않고 빈틈 없이 이어져야 하며, 가장 최근 기간은 종료일을 비워 ∞(지속)로 둡니다.</div>'
-      +'<div class="msg" id="pm-'+a.user_id+'"></div></div></div>';
+      +'<div class="msg" id="pm-'+a.user_id+'"></div>'+salaryBlock(a)+'</div></div>';
   }
   function periodRow(p){
     return '<tr class="prow"><td><input type="date" class="p-start" value="'+(p.start_date||'')+'" style="width:140px"></td>'
