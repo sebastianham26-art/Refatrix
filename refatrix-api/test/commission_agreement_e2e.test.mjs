@@ -108,6 +108,7 @@ test('boot', { skip: SKIP }, async () => {
   await query(`ALTER TABLE commission_agreements ENABLE TRIGGER trg_comm_agree_immutable`);
   await query(`DELETE FROM bonus_payouts WHERE user_id IN ${U}`);
   await query(`DELETE FROM commission_salary_steps WHERE user_id IN ${U}`);
+  await query(`DELETE FROM commission_contracts WHERE user_id IN ${U} OR uploaded_by IN ${U}`);
   await query(`DELETE FROM bonus_tiers WHERE user_id IN ${U}`);
   await query(`DELETE FROM bonus_targets WHERE user_id IN ${U}`);
   await query(`DELETE FROM bonus_plans WHERE user_id IN ${U}`);
@@ -122,6 +123,7 @@ test('boot', { skip: SKIP }, async () => {
   ID.com = await mk(`${TAG}커미셔너`, 'sales', 'agrtest_com', '1234');
   ID.emp = await mk(`${TAG}직원`, 'sales', 'agrtest_emp', '5678');
   ID.none = await mk(`${TAG}비대상`, 'sales', 'agrtest_none', '1111');
+  ID.fin = await mk(`${TAG}재무`, 'treasury', 'agrtest_fin', '2222');
   await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'guiacom','anywhere','view')`, [ID.com]);
   for (const [u, rate, m] of [[ID.com, 5, 'invoice'], [ID.emp, 4, 'payment']]) {
     await query(`INSERT INTO commission_agents (user_id, default_rate, active, created_by, updated_by) VALUES ($1,$2,true,$3,$3)`, [u, rate, ID.dir]);
@@ -135,7 +137,7 @@ test('boot', { skip: SKIP }, async () => {
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'CHANGE_ME_dev_secret' });
   await app.register(routes);
   await app.ready();
-  for (const k of ['dir', 'com', 'emp', 'none']) tok[k] = app.jwt.sign({ sub: ID[k] });
+  for (const k of ['dir', 'com', 'emp', 'none', 'fin']) tok[k] = app.jwt.sign({ sub: ID[k] });
 });
 
 const get = (w, url) => app.inject({ method: 'GET', url, headers: { authorization: 'Bearer ' + tok[w] } });
@@ -171,6 +173,10 @@ test('② PIN 합의 — 틀린 PIN 403 · 체크 없음 400 · 옛 버전 409 �
   const row = (await query(`SELECT ip, agent_type, terms->>'type' AS t FROM commission_agreements WHERE user_id=$1`, [ID.com])).rows[0];
   assert.equal(row.ip, '189.203.1.2');
   assert.equal(row.agent_type, 'comisionista');
+  // 감사로그 — 성공 1건(create) + 실패(denied) 기록이 실제로 남는다
+  const al = (await query(`SELECT action, result FROM audit_log WHERE user_id=$1 AND target LIKE 'commission_agreement:%'`, [ID.com])).rows;
+  assert.ok(al.some((x) => x.action === 'create' && x.result === 'success'));
+  assert.ok(al.some((x) => x.result === 'denied'));
   // 비대상은 합의 불가
   assert.equal((await post('none', '/api/commission/agreement/me', { pin: '1111', version: 'x', agree: true })).statusCode, 403);
 });
@@ -253,6 +259,58 @@ test('⑦ 고정급여 단계 저장(디렉터) → 문서에 표시 · 재합�
   await post('dir', `/api/commission/salary/${ID.emp}`, { steps: [] });
   const gone = (await get('emp', '/api/commission/agreement/me')).json();
   assert.ok(!gone.doc.sections.find((x) => x.key === 'salary'));
+});
+
+
+test('⑧ 계약서 — 디렉터만 올림 · 본인과 디렉터만 열람 · 삭제는 본인 화면에서만 사라짐', { skip: SKIP }, async () => {
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4\n% contrato emp\n%%EOF').toString('base64');
+  const pdf2 = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4\n% contrato com\n%%EOF').toString('base64');
+  const up = (who, uid, body) => app.inject({ method: 'POST', url: `/api/commission/contracts/${uid}`, payload: body, headers: { authorization: 'Bearer ' + tok[who] } });
+  assert.equal((await up('emp', ID.emp, { file_name: 'c.pdf', data_url: pdf })).statusCode, 403, '본인도 올릴 수 없음');
+  assert.equal((await up('fin', ID.emp, { file_name: 'c.pdf', data_url: pdf })).statusCode, 403, '재무도 올릴 수 없음');
+  assert.equal((await up('dir', ID.emp, { file_name: 'c.exe', data_url: pdf })).json().error, 'bad_type');
+  assert.equal((await up('dir', ID.emp, { file_name: 'c.pdf', data_url: 'data:application/pdf;base64,' + Buffer.from('MZ fake').toString('base64') })).json().error, 'bad_content');
+  const big = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF'), Buffer.alloc(15 * 1024 * 1024)]).toString('base64');
+  const bigR = await up('dir', ID.emp, { file_name: 'big.pdf', data_url: big });
+  assert.equal(bigR.statusCode, 400); assert.equal(bigR.json().error, 'too_large');
+  const ok = await up('dir', ID.emp, { file_name: 'Contrato Oscar.pdf', data_url: pdf, title: 'Contrato de comisión 2026', signed_date: '2026-10-01' });
+  assert.equal(ok.statusCode, 200, ok.body);
+  const cid = ok.json().item.id;
+  assert.equal(ok.json().item.signed_date, '2026-10-01');
+  assert.equal((await up('dir', ID.emp, { file_name: 'again.pdf', data_url: pdf })).statusCode, 409, '같은 파일 중복');
+  const cid2 = (await up('dir', ID.com, { file_name: 'com.pdf', data_url: pdf2 })).json().item.id;
+
+  // 목록: 본인은 user_id 를 바꿔도 자기 것만
+  const mine = (await get('emp', `/api/commission/contracts?user_id=${ID.com}`)).json();
+  assert.equal(mine.user_id, ID.emp);
+  assert.deepEqual(mine.items.map((x) => x.id), [cid]);
+  assert.equal(mine.can_upload, false);
+  assert.equal((await get('emp', '/api/commission/agreement/me')).json().contracts.length, 1);
+  // 파일: 본인 200 · 다른 대상자 403 · 재무 403 · 디렉터 200
+  const f = await get('emp', `/api/commission/contracts/file/${cid}`);
+  assert.equal(f.statusCode, 200);
+  assert.equal(f.headers['content-type'], 'application/pdf');
+  assert.match(f.body, /contrato emp/);
+  assert.match(f.headers['cache-control'], /no-store/);
+  assert.equal((await get('com', `/api/commission/contracts/file/${cid}`)).statusCode, 403);
+  assert.equal((await get('emp', `/api/commission/contracts/file/${cid2}`)).statusCode, 403);
+  assert.equal((await get('fin', `/api/commission/contracts/file/${cid}`)).statusCode, 403);
+  assert.equal((await get('dir', `/api/commission/contracts/file/${cid}`)).statusCode, 200);
+  // 열람 기록
+  const logs = (await query(`SELECT COUNT(*)::int n FROM audit_log WHERE target=$1 AND action='export'`, [`commission_contract:${cid}`])).rows[0].n;
+  assert.ok(logs >= 2);
+  // 현황판: 디렉터에게만 건수
+  const bd = (await get('dir', '/api/commission/agreement/board')).json();
+  assert.equal(bd.is_director, true);
+  assert.equal(bd.items.find((x) => x.user_id === ID.emp).contracts, 1);
+  const bf = (await get('fin', '/api/commission/agreement/board')).json();
+  assert.equal(bf.items.find((x) => x.user_id === ID.emp).contracts, undefined);
+  // 삭제: 디렉터만 · 소프트 삭제
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/commission/contracts/${cid}`, headers: { authorization: 'Bearer ' + tok.emp } })).statusCode, 403);
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/commission/contracts/${cid}`, headers: { authorization: 'Bearer ' + tok.dir } })).statusCode, 200);
+  assert.equal((await get('emp', '/api/commission/contracts')).json().items.length, 0);
+  assert.equal((await get('emp', `/api/commission/contracts/file/${cid}`)).statusCode, 404);
+  assert.equal((await query(`SELECT COUNT(*)::int n FROM commission_contracts WHERE id=$1 AND deleted_at IS NOT NULL`, [cid])).rows[0].n, 1, '기록은 남음');
 });
 
 test('teardown', { skip: SKIP }, async () => {

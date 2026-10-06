@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acuerdo de Comisión · build b1006sal</title>
+<title>Acuerdo de Comisión · build b1006ctr</title>
 <style>
   :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
@@ -88,7 +88,7 @@
         <button class="btn ghost sm noprint" id="reloadBoard" style="margin-left:auto">새로고침</button>
       </div>
       <div class="kpis" id="kpis"></div>
-      <div class="tw"><table style="margin-top:12px"><thead><tr><th>대상자</th><th>유형</th><th>현재 조건</th><th>상태</th><th>최근 합의</th><th></th></tr></thead><tbody id="board"></tbody></table></div>
+      <div class="tw"><table style="margin-top:12px"><thead><tr><th>대상자</th><th>유형</th><th>현재 조건</th><th>상태</th><th>최근 합의</th><th class="ctrCol">계약서</th><th></th></tr></thead><tbody id="board"></tbody></table></div>
       <div class="msg" id="boardMsg"></div>
       <div class="hint" style="margin-top:8px">· <b>합의 문서</b> = 그 사람이 PIN 을 넣은 시점의 문서 원문(스냅샷) · <b>현재 조건</b> = 지금 ERP 설정으로 만든 문서(본인이 보게 될 화면) · <b>링크 복사</b> = 본인에게 WhatsApp 등으로 보낼 이 페이지 주소. 조건은 [커미션 설정]·[성과급 설정]에서 바꾸며, 바뀌면 다음 접속 때 본인에게 재합의 요청이 보입니다.</div>
     </div>
@@ -107,6 +107,11 @@
       <div class="msg" id="signMsg"></div>
     </div>
     <div class="done hidden" id="doneBox"></div>
+    <div class="card" id="myContractCard">
+      <h2 style="margin-top:0">Mi contrato</h2>
+      <div class="hint">Solo tú y la Dirección pueden ver estos archivos.</div>
+      <div class="tw"><table style="margin-top:6px"><thead><tr><th>Documento</th><th>Fecha de firma</th><th>Cargado</th><th></th></tr></thead><tbody id="myContracts"></tbody></table></div>
+    </div>
     <div class="card">
       <h2 style="margin-top:0">Historial de aceptaciones</h2>
       <div class="tw"><table><thead><tr><th>Fecha y hora (Monterrey)</th><th>Versión</th><th>Dispositivo</th><th>Estado</th><th></th></tr></thead><tbody id="hist"></tbody></table></div>
@@ -209,6 +214,7 @@
       $('doneBox').innerHTML='<b>✓ Aceptado</b> el <b>'+esc(cur.agreed_at)+'</b> (hora de Monterrey) con tu PIN.<br>Versión aceptada <b>#'+esc(cur.version)+'</b> · Registro #'+cur.id+(cur.device?(' · '+esc(cur.device)):'');
     } else { $('doneBox').classList.add('hidden'); }
     renderHist(d.history||[], $('hist'), false);
+    renderMyContracts(d.contracts||[]);
     $('chk').checked=false; $('pin').value=''; syncSign();
   }
   function renderHist(list, tbody, korean){
@@ -238,17 +244,19 @@
   const ST={agreed:['ok','합의 완료'],pending:['no','미합의'],changed:['re','재합의 필요']};
   async function loadBoard(){
     $('dirView').classList.remove('hidden');
-    $('board').innerHTML='<tr><td colspan="6" class="hint">불러오는 중…</td></tr>';
+    $('board').innerHTML='<tr><td colspan="7" class="hint">불러오는 중…</td></tr>';
     try{
       const d=await api('/api/commission/agreement/board').then(r=>r.json());
-      if(d.error){ $('board').innerHTML='<tr><td colspan="6" class="hint">'+esc(d.error)+'</td></tr>'; return; }
+      if(d.error){ $('board').innerHTML='<tr><td colspan="7" class="hint">'+esc(d.error)+'</td></tr>'; return; }
       if(!d.migrated){ $('boardMsg').className='msg err'; $('boardMsg').textContent='합의 테이블이 아직 없습니다. 서버에서 npm run migrate(0251)를 실행하세요. (조건 미리보기는 가능)'; }
       const c=d.counts||{};
       $('kpis').innerHTML='<div class="kpi"><div class="v">'+(c.agreed||0)+'</div><div class="l">합의 완료</div></div>'
         +'<div class="kpi no"><div class="v">'+(c.pending||0)+'</div><div class="l">미합의</div></div>'
         +'<div class="kpi re"><div class="v">'+(c.changed||0)+'</div><div class="l">조건 변경 → 재합의 필요</div></div>';
+      document.querySelectorAll('.ctrCol').forEach(el=>el.classList.toggle('hidden',!d.is_director));
+      window.__ctrReady=d.contracts_ready!==false;
       const items=d.items||[];
-      if(!items.length){ $('board').innerHTML='<tr><td colspan="6" class="hint">커미션 대상자가 없습니다. [커미션 설정]에서 대상과 기간을 먼저 지정하세요.</td></tr>'; return; }
+      if(!items.length){ $('board').innerHTML='<tr><td colspan="7" class="hint">커미션 대상자가 없습니다. [커미션 설정]에서 대상과 기간을 먼저 지정하세요.</td></tr>'; return; }
       const order={changed:0,pending:1,agreed:2};
       items.sort((a,b)=>order[a.status]-order[b.status]);
       $('board').innerHTML=items.map(x=>{
@@ -259,10 +267,11 @@
           +'<td>'+esc(x.summary)+' <span class="hint">#'+esc(x.version)+'</span></td>'
           +'<td><span class="badge '+s[0]+'">'+s[1]+'</span></td>'
           +'<td>'+(lt?(esc(lt.agreed_at)+' <span class="hint">#'+esc(lt.version)+(x.status==='changed'?' · 이전 조건':'')+(x.count>1?(' · 총 '+x.count+'회'):'')+'</span>'):'<span class="hint">—</span>')+'</td>'
+          +(d.is_director?('<td class="ctrCol" style="white-space:nowrap">'+(x.contracts?('<span class="badge ok">'+x.contracts+'건</span> '):'<span class="badge no">없음</span> ')+'<button class="lnk" data-ctr="'+x.user_id+'" data-ctr-name="'+esc(x.name)+'">'+(x.contracts?'관리':'올리기')+'</button></td>'):'')
           +'<td style="white-space:nowrap">'+(lt?'<button class="lnk" data-doc="'+lt.id+'">합의 문서</button> · ':'')
           +'<button class="lnk" data-preview="'+x.user_id+'">현재 조건</button> · <button class="lnk" data-copy="1">링크 복사</button></td></tr>';
       }).join('');
-    }catch(e){ $('board').innerHTML='<tr><td colspan="6" class="hint">불러오지 못했습니다.</td></tr>'; }
+    }catch(e){ $('board').innerHTML='<tr><td colspan="7" class="hint">불러오지 못했습니다.</td></tr>'; }
   }
 
   // ── 모달 ──
@@ -285,6 +294,79 @@
       +'<h2>합의 이력</h2><div class="tw"><table><thead><tr><th>일시</th><th>버전</th><th>기기</th><th>상태</th><th></th></tr></thead><tbody id="pvHist"></tbody></table></div>';
     renderHist(d.history||[], $('pvHist'), true);
   }
+  // ── 계약서 (0255) — 본인 + 디렉터만 열람, 디렉터만 올리기·삭제 ──
+  const fsize=(n)=> n>=1048576 ? (Math.round(n/104857.6)/10)+' MB' : Math.max(1,Math.round(n/1024))+' KB';
+  async function openContractFile(id, btn){
+    const old=btn?btn.textContent:'';
+    if(btn) btn.textContent='…';
+    try{
+      const r=await api('/api/commission/contracts/file/'+id);
+      if(!r.ok){ alertMsg(r.status===403?'No tienes permiso para ver este archivo.':'No se pudo abrir el archivo.'); return; }
+      const blob=await r.blob(); const url=URL.createObjectURL(blob);
+      const w=window.open(url,'_blank');
+      if(!w){ const a=document.createElement('a'); a.href=url; a.download=(btn&&btn.dataset.name)||'contrato'; document.body.appendChild(a); a.click(); a.remove(); }
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ alertMsg('No hay conexión con el servidor.'); }
+    finally{ if(btn) btn.textContent=old; }
+  }
+  function alertMsg(t){ const m=$('ctrMsg')||$('signMsg'); if(m){ m.className='msg err'; m.textContent=t; } }
+  function renderMyContracts(list){
+    const tb=$('myContracts'); if(!tb) return;
+    if(!list.length){ tb.innerHTML='<tr><td colspan="4" class="hint">Aún no hay contrato cargado.</td></tr>'; return; }
+    tb.innerHTML=list.map(c=>'<tr><td><b>'+esc(c.title||c.file_name)+'</b>'+(c.title?'<div class="hint">'+esc(c.file_name)+'</div>':'')+'</td>'
+      +'<td>'+esc(c.signed_date||'—')+'</td><td>'+esc(c.uploaded_at)+'</td>'
+      +'<td><button class="btn ghost sm" data-ctr-open="'+c.id+'" data-name="'+esc(c.file_name)+'">Ver</button></td></tr>').join('');
+  }
+  let ctrUid=null, ctrName='';
+  async function openContracts(uid, name){
+    ctrUid=Number(uid); ctrName=name||'';
+    openModal('<div class="hint">불러오는 중…</div>');
+    await renderContractsModal();
+  }
+  async function renderContractsModal(msg){
+    const d=await api('/api/commission/contracts?user_id='+ctrUid).then(r=>r.json()).catch(()=>({}));
+    const items=d.items||[];
+    let h='<div class="doc-h"><div><h1>'+esc(ctrName)+' · 계약서</h1><div class="ver">본인과 디렉터만 볼 수 있습니다 · 파일당 15MB · PDF·이미지·Word(DOCX)</div></div></div>';
+    if(d.migrated===false) h+='<div class="msg err" style="display:block">서버에서 npm run migrate(0255)를 먼저 실행하세요.</div>';
+    h+='<div class="tw"><table style="margin-top:12px"><thead><tr><th>문서</th><th>계약(서명)일</th><th>크기</th><th>올린 일시</th><th></th></tr></thead><tbody>'
+      +(items.length?items.map(c=>'<tr><td><b>'+esc(c.title||c.file_name)+'</b>'+(c.title?'<div class="hint">'+esc(c.file_name)+'</div>':'')+'</td><td>'+esc(c.signed_date||'—')+'</td><td>'+fsize(c.file_size)+'</td><td>'+esc(c.uploaded_at)+'</td>'
+        +'<td style="white-space:nowrap"><button class="btn ghost sm" data-ctr-open="'+c.id+'" data-name="'+esc(c.file_name)+'">열기</button> <button class="btn ghost sm" data-ctr-del="'+c.id+'" data-name="'+esc(c.title||c.file_name)+'" style="color:var(--bad);border-color:#ecc7c1">삭제</button></td></tr>').join('')
+        :'<tr><td colspan="5" class="hint">아직 올린 계약서가 없습니다.</td></tr>')
+      +'</tbody></table></div>';
+    h+='<div class="sign" style="margin-top:16px;border-width:1px"><b style="color:var(--brand)">계약서 올리기</b>'
+      +'<div class="pinrow" style="margin-top:8px">'
+      +'<div><label for="ctrFile">파일</label><input type="file" id="ctrFile" accept=".pdf,.jpg,.jpeg,.png,.webp,.docx" style="font-size:13px;letter-spacing:0;width:240px;padding:6px"></div>'
+      +'<div><label for="ctrTitle">제목(선택)</label><input type="text" id="ctrTitle" placeholder="예: Contrato de comisión 2026" style="font-size:13px;letter-spacing:0;width:230px"></div>'
+      +'<div><label for="ctrDate">계약(서명)일(선택)</label><input type="date" id="ctrDate" style="font-size:13px;letter-spacing:0;width:150px"></div>'
+      +'<button class="btn" id="ctrUpload">올리기</button></div>'
+      +'<div class="msg" id="ctrMsg"></div></div>';
+    $('modalBody').innerHTML=h;
+    if(msg){ $('ctrMsg').className='msg '+msg[0]; $('ctrMsg').textContent=msg[1]; }
+    $('ctrUpload').addEventListener('click',uploadContract);
+  }
+  async function uploadContract(){
+    const f=$('ctrFile').files[0], m=$('ctrMsg'); m.className='msg';
+    if(!f){ m.className='msg err'; m.textContent='파일을 선택하세요.'; return; }
+    if(f.size>15*1024*1024){ m.className='msg err'; m.textContent='파일당 15MB 까지 올릴 수 있습니다.'; return; }
+    $('ctrUpload').disabled=true; $('ctrUpload').textContent='올리는 중…';
+    try{
+      const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); });
+      const r=await api('/api/commission/contracts/'+ctrUid,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file_name:f.name,data_url:dataUrl,title:$('ctrTitle').value,signed_date:$('ctrDate').value||null})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error){ m.className='msg err'; m.textContent='실패: '+(d.note||d.error||r.status); return; }
+      await renderContractsModal(['ok','올렸습니다 — '+(d.item.title||d.item.file_name)+'. 본인 화면 「Mi contrato」에 바로 보입니다.']);
+      loadBoard();
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ const b=$('ctrUpload'); if(b){ b.disabled=false; b.textContent='올리기'; } }
+  }
+  async function deleteContract(id, name){
+    if(!window.confirm('「'+name+'」 계약서를 삭제할까요?\n본인 화면에서 사라집니다(기록은 남음).')) return;
+    const r=await api('/api/commission/contracts/'+id,{method:'DELETE'});
+    const d=await r.json().catch(()=>({}));
+    await renderContractsModal(r.ok&&!d.error?['ok','삭제했습니다.']:['err','삭제 실패: '+(d.error||r.status)]);
+    loadBoard();
+  }
+
   async function copyLink(btn){
     const url=location.origin+location.pathname;
     try{ await navigator.clipboard.writeText(url); btn.textContent='복사됨 ✓'; }
@@ -308,9 +390,12 @@
   }
 
   document.addEventListener('click',e=>{
-    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy]');
+    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del]');
     if(!t) return;
-    if(t.dataset.doc) showDoc(t.dataset.doc);
+    if(t.dataset.ctrOpen) openContractFile(t.dataset.ctrOpen, t);
+    else if(t.dataset.ctrDel) deleteContract(t.dataset.ctrDel, t.dataset.name||'');
+    else if(t.dataset.ctr) openContracts(t.dataset.ctr, t.dataset.ctrName);
+    else if(t.dataset.doc) showDoc(t.dataset.doc);
     else if(t.dataset.preview) showPreview(t.dataset.preview);
     else if(t.dataset.copy) copyLink(t);
   });

@@ -337,7 +337,114 @@ function tooManyFails(uid) {
 function noteFail(uid) { const arr = fails.get(uid) || []; arr.push(Date.now()); fails.set(uid, arr); }
 export function _resetPinFails() { fails.clear(); }
 
+// ── 계약서 파일 (0255) ─────────────────────────────────────────────
+//   허용: PDF · JPG/PNG/WEBP · Word(docx). 파일당 15MB. 열람은 본인 + 디렉터만.
+export const CONTRACT_MAX_BYTES = 15 * 1024 * 1024;
+const CONTRACT_BODY_LIMIT = 22 * 1024 * 1024;   // base64(×4/3) + 여유
+const CONTRACT_TYPES = {
+  pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+// dataURL → {ok, buf, mime, name} (순수). 확장자·내용 서명(매직바이트)이 맞는지 본다.
+export function decodeContractFile(dataUrl, fileName) {
+  const name = String(fileName || '').replace(/[\\/\r\n"]/g, '_').trim().slice(0, 180);
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1];
+  const e = ext ? ext.toLowerCase() : '';
+  if (!CONTRACT_TYPES[e]) return { ok: false, error: 'bad_type', note: 'PDF, 이미지(JPG·PNG·WEBP), Word(DOCX)만 올릴 수 있습니다.' };
+  const m = /^data:[^;,]*;base64,(.+)$/s.exec(String(dataUrl || ''));
+  if (!m) return { ok: false, error: 'bad_data', note: '파일을 읽지 못했습니다.' };
+  const buf = Buffer.from(m[1], 'base64');
+  if (!buf.length) return { ok: false, error: 'empty', note: '빈 파일입니다.' };
+  if (buf.length > CONTRACT_MAX_BYTES) return { ok: false, error: 'too_large', note: '파일당 15MB 까지 올릴 수 있습니다.' };
+  const head = buf.subarray(0, 12);
+  const sig = {
+    pdf: () => head.subarray(0, 4).toString('latin1') === '%PDF',
+    jpg: () => head[0] === 0xFF && head[1] === 0xD8,
+    png: () => head[0] === 0x89 && head.subarray(1, 4).toString('latin1') === 'PNG',
+    webp: () => head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP',
+    docx: () => head[0] === 0x50 && head[1] === 0x4B,
+  };
+  const chk = sig[e === 'jpeg' ? 'jpg' : e];
+  if (chk && !chk()) return { ok: false, error: 'bad_content', note: '파일 내용이 확장자와 맞지 않습니다.' };
+  return { ok: true, buf, mime: CONTRACT_TYPES[e], name: name || `contrato.${e}`, sha256: createHash('sha256').update(buf).digest('hex') };
+}
+
+let _cReady = { v: null, at: 0 };
+async function contractsReady() {
+  if (_cReady.v === true) return true;
+  if (_cReady.v === false && Date.now() - _cReady.at < 60000) return false;
+  const r = await query(`SELECT 1 FROM information_schema.tables WHERE table_name='commission_contracts'`);
+  _cReady = { v: r.rows.length > 0, at: Date.now() };
+  return _cReady.v;
+}
+const CONTRACT_COLS = `id, user_id, title, file_name, mime_type, file_size, to_char(signed_date,'YYYY-MM-DD') AS signed_date,
+  to_char(uploaded_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS uploaded_at_local`;
+const contractOut = (r) => ({
+  id: Number(r.id), user_id: Number(r.user_id), title: r.title || null, file_name: r.file_name, mime_type: r.mime_type,
+  file_size: Number(r.file_size), signed_date: r.signed_date || null, uploaded_at: r.uploaded_at_local,
+});
+async function contractList(uid) {
+  if (!(await contractsReady())) return [];
+  return (await query(`SELECT ${CONTRACT_COLS} FROM commission_contracts WHERE user_id=$1 AND deleted_at IS NULL ORDER BY uploaded_at DESC, id DESC`, [uid])).rows.map(contractOut);
+}
+const isDirector = (perm) => perm.role === 'director';
+
 export default async function commissionAgreementRoutes(app) {
+  // ── 계약서: 목록 — 본인은 자기 것만(user_id 무시), 디렉터는 지정한 사람 ──
+  app.get('/api/commission/contracts', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const uid = isDirector(perm) ? Number(req.query.user_id || 0) : Number(perm.userId);
+    if (!uid) return reply.code(400).send({ error: 'user_required' });
+    return { migrated: await contractsReady(), user_id: uid, can_upload: isDirector(perm), items: await contractList(uid) };
+  });
+
+  // ── 계약서: 올리기 (디렉터) ──
+  app.post('/api/commission/contracts/:uid', { preHandler: [authGuard], bodyLimit: CONTRACT_BODY_LIMIT }, async (req, reply) => {
+    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden', note: '디렉터만 올릴 수 있습니다.' });
+    if (!(await contractsReady())) return reply.code(503).send({ error: 'migration_required', note: '서버에서 npm run migrate(0255)를 먼저 실행하세요.' });
+    const uid = Number(req.params.uid);
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [uid])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'user_not_found' });
+    const b = req.body || {};
+    const dec = decodeContractFile(b.data_url, b.file_name);
+    if (!dec.ok) return reply.code(400).send({ error: dec.error, note: dec.note, max_bytes: CONTRACT_MAX_BYTES });
+    const signed = /^\d{4}-\d{2}-\d{2}$/.test(String(b.signed_date || '')) ? b.signed_date : null;
+    const title = b.title != null && String(b.title).trim() ? String(b.title).trim().slice(0, 200) : null;
+    const dup = (await query(`SELECT id FROM commission_contracts WHERE user_id=$1 AND sha256=$2 AND deleted_at IS NULL`, [uid, dec.sha256])).rows[0];
+    if (dup) return reply.code(409).send({ error: 'duplicate', note: '같은 파일이 이미 올라가 있습니다.' });
+    const r = (await query(
+      `INSERT INTO commission_contracts (user_id, title, file_name, mime_type, file_size, sha256, file_data, signed_date, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${CONTRACT_COLS}`,
+      [uid, title, dec.name, dec.mime, dec.buf.length, dec.sha256, dec.buf, signed, Number(req.ctx.perm.userId)])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `commission_contract:${r.id}`, detail: { user_id: uid, file: dec.name, size: dec.buf.length } });
+    return { ok: true, item: contractOut(r) };
+  });
+
+  // ── 계약서: 파일 열람 — 본인 또는 디렉터만 ──
+  app.get('/api/commission/contracts/file/:id', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!(await contractsReady())) return reply.code(404).send({ error: 'not_found' });
+    const perm = req.ctx.perm;
+    const r = (await query(`SELECT user_id, file_name, mime_type, file_data FROM commission_contracts WHERE id=$1 AND deleted_at IS NULL`, [Number(req.params.id)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    if (!isDirector(perm) && Number(r.user_id) !== Number(perm.userId)) return reply.code(403).send({ error: 'forbidden' });
+    await logEvent({ userId: perm.userId, action: 'export', target: `commission_contract:${req.params.id}`, detail: { owner: Number(r.user_id), kind: 'view' } });   // 파일 열람 = 원본 반출
+    reply.header('Content-Type', r.mime_type || 'application/octet-stream');
+    reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(r.file_name)}`);
+    reply.header('Cache-Control', 'private, no-store');
+    return reply.send(Buffer.isBuffer(r.file_data) ? r.file_data : Buffer.from(r.file_data));
+  });
+
+  // ── 계약서: 삭제 (디렉터 · 소프트 삭제) ──
+  app.delete('/api/commission/contracts/:id', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    if (!(await contractsReady())) return reply.code(404).send({ error: 'not_found' });
+    const r = (await query(`UPDATE commission_contracts SET deleted_at=now(), deleted_by=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING user_id, file_name`,
+      [Number(req.params.id), Number(req.ctx.perm.userId)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `commission_contract:${req.params.id}`, detail: { user_id: Number(r.user_id), file: r.file_name } });
+    return { ok: true };
+  });
+
   // ── 고정급여 단계표 — 조회(디렉터·재무·소시오) / 저장(디렉터) · 0254 ──
   app.get('/api/commission/salary', { preHandler: [authGuard] }, async (req, reply) => {
     if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
@@ -388,6 +495,7 @@ export default async function commissionAgreementRoutes(app) {
     const latest = hist[0] ? { version_hash: hist[0].version } : null;
     return {
       is_agent: true, see_all: seeAll, migrated: await tableReady(),
+      contracts: await contractList(uid),
       version: hash, status: statusOf(hash, latest), doc, terms,
       history: hist.map((h) => ({ ...h, current: h.version === hash })),
     };
@@ -410,7 +518,7 @@ export default async function commissionAgreementRoutes(app) {
     const me = (await query(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [uid])).rows[0];
     if (!me || !verifyPin(String(b.pin || ''), me.pin_hash)) {
       noteFail(uid);
-      await logEvent({ userId: uid, action: 'agree_fail', target: `commission_agreement:${uid}`, detail: { reason: 'bad_pin', version: hash } });
+      await logEvent({ userId: uid, action: 'create', target: `commission_agreement:${uid}`, detail: { reason: 'bad_pin', version: hash }, result: 'denied' });   // audit_log_action_check 허용값 사용
       return reply.code(403).send({ error: 'bad_pin', note: 'PIN incorrecto.' });
     }
     const ua = String(req.headers['user-agent'] || '').slice(0, 300);
@@ -420,7 +528,7 @@ export default async function commissionAgreementRoutes(app) {
        RETURNING ${AGREE_COLS}`,
       [uid, hash, terms.type, JSON.stringify(terms), JSON.stringify(doc), summaryKo(terms), req.ip || null, ua || null])).rows[0];
     fails.delete(uid);
-    await logEvent({ userId: uid, action: 'agree', target: `commission_agreement:${r.id}`, detail: { version: hash } });
+    await logEvent({ userId: uid, action: 'create', target: `commission_agreement:${r.id}`, detail: { version: hash, kind: 'pin_agree' } });
     return { ok: true, id: Number(r.id), version: hash, agreed_at: r.agreed_at_local, device: deviceLabel(r.user_agent) };
   });
 
@@ -440,8 +548,14 @@ export default async function commissionAgreementRoutes(app) {
         latest, count: hist.length,
       });
     }
+    // 계약서 건수 — 디렉터에게만(재무·소시오에게는 내용 비공개)
+    if (isDirector(req.ctx.perm) && await contractsReady()) {
+      const cnt = {};
+      for (const r of (await query(`SELECT user_id, COUNT(*)::int AS n FROM commission_contracts WHERE deleted_at IS NULL GROUP BY user_id`)).rows) cnt[r.user_id] = r.n;
+      for (const x of out) x.contracts = cnt[x.user_id] || 0;
+    }
     const n = (s) => out.filter((x) => x.status === s).length;
-    return { migrated: ready, items: out, counts: { agreed: n('agreed'), pending: n('pending'), changed: n('changed') } };
+    return { migrated: ready, is_director: isDirector(req.ctx.perm), contracts_ready: await contractsReady(), items: out, counts: { agreed: n('agreed'), pending: n('pending'), changed: n('changed') } };
   });
 
   // ── 특정 사원의 현재 문서 미리보기 (디렉터·재무·소시오) ──
