@@ -407,7 +407,7 @@ test('연동 화면 필드표에 referenciaOE 가 서버와 같은 자리에 있
   const names = [...m[1].matchAll(/\['([A-Za-z0-9]+)'/g)].map((x) => x[1]);
   assert.ok(names.includes('referenciaOE'));
   assert.equal(names.indexOf('referenciaOE'), names.indexOf('referenciaSyd') + 1);
-  assert.match(html, /build 20260929(oe|rf|dl|promo)|build 20261006ex/);
+  assert.match(html, /build 20260929(oe|rf|dl|promo)|build 20261006(ex|xl)/);
 });
 
 test('2026-10-06 · existencia 는 숫자 — 마이너스·빈값은 0, 소수는 내림', () => {

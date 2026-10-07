@@ -181,5 +181,5 @@ test('⑧ 새 코드에 인라인 onclick 없음 · 빌드 토큰', () => {
   assert.equal(/onclick\s*=/.test(HTML.slice(start, end)), false);
   const view = HTML.slice(HTML.indexOf('<!-- ===== 0237 · 프로모션 배너 ===== -->'), HTML.indexOf('<script>', HTML.indexOf('<!-- ===== 0237')));
   assert.equal(/onclick\s*=/.test(view), false);
-  assert.match(HTML, /<title>[^<]*build (20260929promo|20261006ex)<\/title>/);
+  assert.match(HTML, /<title>[^<]*build (20260929promo|20261006ex|20261006xl)<\/title>/);
 });

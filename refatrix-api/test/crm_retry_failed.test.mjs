@@ -20,7 +20,8 @@ CREATE TABLE crm_customer_outbox (
   id BIGSERIAL PRIMARY KEY, customer_id BIGINT, entity TEXT, entity_id BIGINT, entity_label TEXT,
   endpoint_key TEXT, op TEXT NOT NULL DEFAULT 'upsert', origin TEXT, rfc TEXT, payload JSONB,
   status TEXT NOT NULL, attempts INT DEFAULT 0, next_attempt_at TIMESTAMPTZ DEFAULT now(),
-  last_error TEXT, http_status INT, codigo_error TEXT, created_at TIMESTAMPTZ DEFAULT now(), sent_at TIMESTAMPTZ);
+  last_error TEXT, http_status INT, codigo_error TEXT, created_at TIMESTAMPTZ DEFAULT now(), sent_at TIMESTAMPTZ,
+  response JSONB, env TEXT, url TEXT, request_method TEXT);
 INSERT INTO customers (id, code, name) VALUES (1,'C001','ALFA'),(2,'C002','BETA'),(3,'C003','GAMA');
 INSERT INTO crm_customer_outbox (id, customer_id, entity, entity_id, endpoint_key, op, status, attempts, last_error, entity_label) VALUES
  -- 고객: 1 은 실패만 → 재전송 · 2 는 실패 뒤 새 값이 이미 나감 → 제외 · 3 은 건너뜀 → 대상 아님
@@ -101,12 +102,43 @@ test('DB ④ 오더 — 같은 오더의 더 나중 단계가 있으면 옛 단�
   assert.equal(r2.count, 0, '회차 10 은 옛 회차라 0'); assert.equal(r2.superseded, 1);
 });
 
+
+test('DB ⑤ 실패·대기 내려받기 — 범위·사유 묶음·원문 포함, 완료/건너뜀 제외', { skip }, async () => {
+  const a = await boot();
+  await pool.query(`UPDATE crm_customer_outbox SET payload='{"ctrCode":"CE0001","existencia":0}', response='{"codigoError":"ERR_X","mensaje":"bad"}',
+                      http_status=400, codigo_error='ERR_X' WHERE id=5`);
+  const r = (await a.inject({ method: 'GET', url: '/api/crm-sync/export?endpoint=product' })).json();
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.items.map((x) => [x.id, x.status]).sort(), [[5, 'failed'], [6, 'failed']].sort());
+  assert.equal(r.counts.failed, 2); assert.equal(r.counts.pending, 0);
+  const it5 = r.items.find((x) => x.id === 5);
+  assert.equal(it5.payload.existencia, 0); assert.equal(it5.response.codigoError, 'ERR_X'); assert.equal(it5.reference, 'ENV-10 · 1/2');
+  assert.ok(r.groups.length >= 1 && r.groups[0].count >= 1);
+  // 오더: 대기 + 실패 둘 다
+  const o = (await a.inject({ method: 'GET', url: '/api/crm-sync/export?endpoint=order_status' })).json();
+  assert.deepEqual(o.items.map((x) => x.status).sort(), ['failed', 'pending']);
+  // 회차 범위
+  const s1 = (await a.inject({ method: 'GET', url: '/api/crm-sync/export?endpoint=product&run_id=11' })).json();
+  assert.deepEqual(s1.items.map((x) => x.id), [6]);
+  const au = (await pool.query(`SELECT detail FROM audit_log ORDER BY id DESC LIMIT 1`)).rows[0];
+  assert.equal(au.detail.op, 'crm_sync_export');
+});
+
+test('화면 — 실패·대기 엑셀 버튼 · 스페인어 머리글 · 같은 범위', () => {
+  const html = readFileSync(resolve(HERE, '../../refatrix-integrations.html'), 'utf8');
+  assert.match(html, /id="btnExportOpen"/);
+  assert.match(html, /\/api\/crm-sync\/export\?/);
+  assert.match(html, /'Cuerpo enviado \(JSON\)'/);
+  assert.match(html, /function exportOpen\(\)[\s\S]*scopeBody\(\)/);
+  assert.match(html, /build 20261006xl/);
+});
+
 test('화면 — 버튼 · 목록과 같은 범위로 요청 · 빌드 토큰', () => {
   const html = readFileSync(resolve(HERE, '../../refatrix-integrations.html'), 'utf8');
   assert.match(html, /id="btnRetryFailed"[^>]*>실패 건 재전송</);
   assert.match(html, /\/api\/crm-sync\/retry-failed/);
   assert.match(html, /function scopeBody\(\)/);
-  assert.match(html, /build 20260929(rf|dl|promo)|build 20261006ex/);
+  assert.match(html, /build 20260929(rf|dl|promo)|build 20261006(ex|xl)/);
 });
 
 test.after(async () => { if (app) await app.close(); if (pool) await pool.end(); });

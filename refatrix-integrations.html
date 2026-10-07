@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20261006ex</title>
+<title>Refatrix ERP · 연동 관리 · build 20261006xl</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -607,6 +607,7 @@
             <input id="fQ" placeholder="고객코드 · 상호 · RFC" style="width:auto;min-width:200px">
             <button class="btn ghost sm" id="btnLogReload">조회</button>
             <button class="btn sm" id="btnDrain">대기분 지금 전송</button>
+            <button class="btn ghost sm" id="btnExportOpen" title="지금 보고 있는 범위의 실패·대기 건을 엑셀로 내려받습니다 — 보낸 본문·받은 응답 원문 포함(CRM 개발자 전달용, 키는 들어가지 않음)">⬇ 실패·대기 엑셀</button>
             <button class="btn danger sm" id="btnRetryFailed" title="지금 보고 있는 범위(전송 회차·기간·검색어)의 실패 건만 다시 보냅니다">실패 건 재전송</button>
             <button class="btn ghost sm" id="btnBulk" title="새 변경이 없어도 현재 ERP 값을 CRM 에 다시 밀어 넣습니다">전체 동기화</button>
             <span class="hint" id="logMeta" style="margin-left:auto"></span>
@@ -1888,6 +1889,69 @@
     finally{ b.disabled=false; b.textContent='실패 건 재전송'; loadLog(); }
   }
   $('btnRetryFailed').addEventListener('click',retryFailed);
+
+  // 2026-10-06 · 실패·대기 내역 엑셀 — CRM 개발자에게 보낼 파일(머리글 스페인어).
+  let xlsxLoading=null;
+  function loadXlsx(){
+    if(window.XLSX) return Promise.resolve(window.XLSX);
+    if(xlsxLoading) return xlsxLoading;
+    xlsxLoading=new Promise(function(ok,ko){
+      const sc=document.createElement('script');
+      sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ xlsxLoading=null; ko(new Error('xlsx_load')); };
+      document.head.appendChild(sc);
+    });
+    return xlsxLoading;
+  }
+  const CELL_MAX=32000;   // 엑셀 한 칸 한도(32,767자) 안쪽
+  function cellJson(v){
+    if(v==null) return '';
+    const t=typeof v==='string'?v:JSON.stringify(v);
+    return t.length>CELL_MAX ? t.slice(0,CELL_MAX)+' …[recortado: '+t.length+' caracteres]' : t;
+  }
+  function mxStamp(d){ try{ return new Date(d).toLocaleString('es-MX',{timeZone:'America/Mexico_City',hour12:false}); }catch(e){ return String(d||''); } }
+  async function exportOpen(){
+    if(!CUR) return;
+    const m=$('logMsg'), b=$('btnExportOpen'); m.className='msg'; m.textContent='내려받는 중…'; b.disabled=true;
+    try{
+      const body=scopeBody(); const p=new URLSearchParams({status:'open'});
+      Object.keys(body).forEach(k=>{ if(body[k]!=null&&body[k]!=='') p.set(k,body[k]); });
+      const [X,res]=await Promise.all([loadXlsx(), fetch(session.api+'/api/crm-sync/export?'+p.toString(),{headers:auth()})]);
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='내려받기 실패: '+(d.note||d.error||res.status); return; }
+      if(!d.total){ m.className='msg ok'; m.textContent='지금 범위에 실패·대기 건이 없습니다.'; return; }
+      const ST={pending:'Pendiente (reintento automático)',failed:'Fallido (reintentos agotados)'};
+      const sc=d.scope||{};
+      const resumen=[
+        ['Refatrix ERP → CRM · Envíos fallidos y pendientes'],[],
+        ['Interfaz', (CUR.label||CUR.key)+' ('+CUR.key+')'],
+        ['Servidor', CUR.env==='prod'?'Producción':'Pruebas'],
+        ['URL', (CUR.env==='prod'?CUR.url_prod:CUR.url_test)||''],
+        ['Generado', mxStamp(d.generated_at)+' (hora de México)'],
+        ['Alcance', sc.run_id?('Envío #'+sc.run_id):((sc.from||sc.to)?('Del '+(sc.from||'…')+' al '+(sc.to||'…')):'Todo el historial')+(sc.q?(' · búsqueda: '+sc.q):'')],
+        ['Fallidos', d.counts.failed],['Pendientes', d.counts.pending],['Total', d.total+(d.truncated?' (limitado a 20,000)':'')],
+        ['Reintentos máximos por envío', d.max_attempts],[],
+        ['Errores agrupados'],
+        ['Cantidad','Estado','HTTP','codigoError','Motivo / mensaje','Ejemplo (ID · referencia)']
+      ].concat((d.groups||[]).map(g=>[g.count, ST[g.status]||g.status, g.http_status==null?'':g.http_status, g.codigo_error||'', g.reason||'', g.example_id+(g.example?(' · '+g.example):'')]));
+      const head=['ID','Estado','Intentos','Creado','Próximo intento','Referencia','RFC','Operación','Método','URL','HTTP','codigoError','Motivo / mensaje','Cuerpo enviado (JSON)','Respuesta recibida (JSON)'];
+      const det=[head].concat(d.items.map(r=>[r.id, ST[r.status]||r.status, r.attempts, mxStamp(r.created_at),
+        r.status==='pending'&&r.next_attempt_at?mxStamp(r.next_attempt_at):'', r.reference||'', r.rfc||'', r.op||'',
+        r.request_method||'', r.url||'', r.http_status==null?'':r.http_status, r.codigo_error||'', r.last_error||'',
+        cellJson(r.payload), cellJson(r.response)]));
+      const wb=X.utils.book_new();
+      const ws1=X.utils.aoa_to_sheet(resumen); ws1['!cols']=[{wch:30},{wch:28},{wch:8},{wch:22},{wch:60},{wch:40}];
+      const ws2=X.utils.aoa_to_sheet(det);
+      ws2['!cols']=[{wch:8},{wch:26},{wch:8},{wch:18},{wch:18},{wch:34},{wch:15},{wch:9},{wch:8},{wch:40},{wch:6},{wch:22},{wch:50},{wch:70},{wch:50}];
+      ws2['!autofilter']={ref:'A1:O'+(det.length)};
+      X.utils.book_append_sheet(wb,ws1,'Resumen'); X.utils.book_append_sheet(wb,ws2,'Detalle');
+      const day=new Date().toISOString().slice(0,10);
+      X.writeFile(wb,'Refatrix_CRM_fallidos_pendientes_'+CUR.key+'_'+day+'.xlsx');
+      m.className='msg ok'; m.textContent='내려받기 완료 — 실패 '+d.counts.failed+' · 대기 '+d.counts.pending+'건'+(d.truncated?' (2만 건까지)':'')+'. 머리글은 스페인어입니다(개발자 전달용).';
+    }catch(e){ m.className='msg err'; m.textContent=(e&&e.message==='xlsx_load')?'엑셀 도구를 불러오지 못했습니다(인터넷 확인).':'서버 연결 실패'; }
+    finally{ b.disabled=false; }
+  }
+  $('btnExportOpen').addEventListener('click',exportOpen);
 
   // ===== 새 연동 =====
   async function newEndpoint(){

@@ -205,7 +205,7 @@ test('화면 — 버튼 · 설정 칸 · 빌드 토큰', () => {
   for (const id of ['btnCatalogDelta', 'btnCatalogDeltaPreview', 'btnCatalogBaseline', 'fDeltaAuto', 'fDeltaEvery', 'fFullWeekday'])
     assert.match(html, new RegExp(`id="${id}"`), id);
   assert.match(html, /\/api\/product-sync\/delta-preview/);
-  assert.match(html, /build 20261006ex/);
+  assert.match(html, /build 20261006(ex|xl)/);
 });
 
 test.after(async () => { if (pool) await pool.end(); try { (await import('../src/db.js')).pool?.end?.(); } catch (_) {} });

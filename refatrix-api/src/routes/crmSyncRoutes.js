@@ -193,6 +193,78 @@ export default async function crmSyncRoutes(app) {
     };
   });
 
+  /**
+   * 2026-10-06 · 실패·대기 내역 내려받기 — CRM 개발자에게 그대로 넘길 용도.
+   *   GET /api/crm-sync/export?endpoint=&status=open(기본: 대기+실패)&run_id=&from=&to=&q=
+   *   목록과 같은 범위 조건 · 페이지 없이 최대 20,000건 · 보낸 본문·받은 응답 원문 포함.
+   *   ⚠ 키는 들어가지 않는다 — 본문은 키를 싣기 전 상태로 저장되고, url 은 키를 *** 로 지운 형태다.
+   */
+  app.get('/api/crm-sync/export', guard, async (req, reply) => {
+    if (!(await ready(reply))) return;
+    const ep = await epCols();
+    const qs = req.query || {};
+    const st = String(qs.status || 'open');
+    const key = String(qs.endpoint || '').trim();
+    const q = String(qs.q || '').trim();
+    const where = [];
+    const params = [];
+    if (st === 'open') where.push(`o.status IN ('pending','failed')`);
+    else if (['pending', 'sent', 'failed', 'skipped'].includes(st)) { params.push(st); where.push(`o.status=$${params.length}`); }
+    if (key && ep) { params.push(key); where.push(`COALESCE(o.endpoint_key,'customer_commercial')=$${params.length}`); }
+    scopeWhere(qs, params, where, ep);
+    if (q) {
+      params.push(`%${q}%`);
+      const i = params.length;
+      where.push(`(c.code ILIKE $${i} OR c.name ILIKE $${i} OR o.rfc ILIKE $${i}${ep ? ` OR o.entity_label ILIKE $${i}` : ''})`);
+    }
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const extra = ep
+      ? `COALESCE(o.endpoint_key,'customer_commercial') AS endpoint_key, o.entity, o.entity_id, o.entity_label, o.env, o.url, o.request_method,`
+      : `'customer_commercial' AS endpoint_key, 'customer' AS entity, o.customer_id AS entity_id,
+         NULL::text AS entity_label, NULL::text AS env, NULL::text AS url, NULL::text AS request_method,`;
+    const LIMIT = 20000;
+    params.push(LIMIT + 1);
+    const rows = (await query(
+      `SELECT o.id, ${extra}
+              o.op, o.origin, o.rfc, o.payload, o.status, o.attempts, o.next_attempt_at,
+              o.http_status, o.codigo_error, o.last_error, o.response, o.created_at,
+              c.code AS customer_code, c.name AS customer_name
+         FROM crm_customer_outbox o
+         LEFT JOIN customers c ON c.id=o.customer_id
+        ${whereSql}
+        ORDER BY o.id ASC LIMIT $${params.length}`, params)).rows;
+    const truncated = rows.length > LIMIT;
+    if (truncated) rows.length = LIMIT;
+    // 사유별 묶음(개발자가 먼저 볼 표) — HTTP · codigoError · 사유 앞 160자
+    const groups = new Map();
+    for (const r of rows) {
+      const reason = String(r.last_error || '').slice(0, 160);
+      const g = `${r.status}|${r.http_status ?? ''}|${r.codigo_error ?? ''}|${reason}`;
+      if (!groups.has(g)) groups.set(g, { status: r.status, http_status: r.http_status == null ? null : Number(r.http_status),
+        codigo_error: r.codigo_error, reason, count: 0, example_id: Number(r.id),
+        example: r.entity_label || [r.customer_code, r.customer_name].filter(Boolean).join(' ') || null });
+      groups.get(g).count++;
+    }
+    await safeAudit(req, { action: 'update', detail: { op: 'crm_sync_export', endpoint: key || null, status: st, rows: rows.length } });
+    return {
+      ok: true, generated_at: new Date().toISOString(), endpoint: key || null, status: st,
+      scope: { run_id: qs.run_id || null, from: qs.from || null, to: qs.to || null, q: q || null },
+      total: rows.length, truncated, max_attempts: MAX_ATTEMPTS,
+      counts: { pending: rows.filter((r) => r.status === 'pending').length, failed: rows.filter((r) => r.status === 'failed').length },
+      groups: [...groups.values()].sort((a, b) => b.count - a.count),
+      items: rows.map((r) => ({
+        id: Number(r.id), endpoint_key: r.endpoint_key, entity: r.entity,
+        reference: r.entity_label || [r.customer_code, r.customer_name].filter(Boolean).join(' ') || null,
+        rfc: r.rfc, op: r.op, origin: r.origin, status: r.status, attempts: Number(r.attempts),
+        created_at: r.created_at, next_attempt_at: r.next_attempt_at,
+        env: r.env, request_method: r.request_method, url: r.url,
+        http_status: r.http_status == null ? null : Number(r.http_status),
+        codigo_error: r.codigo_error, last_error: r.last_error,
+        payload: r.payload, response: r.response,
+      })),
+    };
+  });
+
   // 고객별 최근 전송 이력(고객 상세에서 쓸 수 있게 열어 둔다)
   app.get('/api/crm-sync/customers/:id', guard, async (req, reply) => {
     if (!(await ready(reply))) return;
