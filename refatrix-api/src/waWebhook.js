@@ -5,7 +5,8 @@
 //   API 응답의 「성공」은 Meta 가 메시지를 접수했다는 뜻뿐이다. 24시간 창 밖 자유 메시지,
 //   결제 수단 없음 같은 실패는 접수 뒤에 웹훅(statuses)으로만 알려 온다.
 //   ① statuses  → wa_message_status (접수 sent → 도착 delivered → 읽음 read / 실패 failed + 사유)
-//   ② messages  → wa_inbound (번호별 마지막 수신 시각 → 24시간 창 판단, 본문은 저장 안 함)
+//   ② messages  → wa_inbound (번호별 마지막 수신 시각 → 24시간 창 판단)
+//                 + 0260: 본문을 wa_messages 에 저장하고, 등록된 잠재고객이면 자동응답·동의 처리(waPromo.handleInbound)
 //   ③ 일일자금 발송이 「24시간 창 밖」으로 실패하면 원장을 다시 열어(sent_at=NULL) 재시도하게 하고,
 //      다음 시도는 창이 닫힌 것을 알고 이미지 헤더 템플릿으로 바로 간다(treasuryDaily.sendOne).
 //
@@ -17,6 +18,7 @@
 import crypto from 'node:crypto';
 import { query } from './db.js';
 import { normalizeWaNumber } from './waSend.js';
+import { handleInbound } from './waPromo.js';   // 0260 · 받은 메시지 저장 + 자동응답(WhatsApp 마케팅)
 
 export const WINDOW_CODES = new Set([131047, 470]);   // 24시간 창 밖(재참여 필요)
 
@@ -135,6 +137,8 @@ export async function applyWebhook(body, q = query) {
              msg_count = wa_inbound.msg_count + 1, updated_at = now()`,
           [from, tsOf(m.timestamp).toISOString(), String(m.type || '').slice(0, 30) || null]);
         out.inbound++;
+        try { const h = await handleInbound(m, q); if (h && h.stored) out.stored = (out.stored || 0) + 1; }
+        catch (_) { /* 0260 전이면 테이블 없음 — 24시간 창 기록은 위에서 끝남 */ }
       }
     }
   }

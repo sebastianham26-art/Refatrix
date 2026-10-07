@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260930vr loaded (+ 재무 › 일일 자금 · 월간실적 · 영업 › 재고 예약 현황)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260930vr loaded (+ 재무 › 일일 자금 · 월간실적 · 영업 › 재고 예약 현황 · 제품·마케팅 › WhatsApp 마케팅)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -164,6 +164,7 @@
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
     mktspend:{file:'refatrix-mktspend.html',name:'마케팅 지출계획',desc:'행사·활동 지출 기안·승인'},
     survey:{file:'refatrix-survey.html',name:'고객 설문 분석',desc:'설문지 사진·PDF → AI 판독 → 엑셀·세그먼트 리포트'},
+    wapromo:{file:'refatrix-wapromo.html',name:'WhatsApp 마케팅',desc:'잠재고객 동의·정기 이미지 발송·받은 메시지·자동응답'},
     rnr:{file:'refatrix-rnr.html',name:'업무 프로세스',desc:'R&R 안내'},
     coverage:{file:'mx_parts_coverage_dashboard.html',name:'Coverage',desc:'부품 커버리지 대시보드'},
     devmap:{file:'mx_parts_development_decision_4.html',name:'Development Map',desc:'개발 의사결정 맵'},
@@ -198,7 +199,7 @@
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
-    marketing:'marketing', mktspend:'marketing', survey:'marketing',   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
+    marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'marketing',   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
@@ -209,7 +210,7 @@
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','reservations','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
-    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','prodFind','prodUpload','prodHistory','priceMaster']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','wapromo','prodFind','prodUpload','prodHistory','priceMaster']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','approval','stockcount','inbound','relocate','zones']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','processKpi']}

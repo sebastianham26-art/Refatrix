@@ -212,3 +212,19 @@ export async function sendWaImageTemplate({ to, mediaId, param, name, lang = nul
       ] } });
 }
 
+
+// ── 0260 · WhatsApp 마케팅(잠재고객) ──
+// 변수 없는 템플릿(동의 요청 등). 빠른 답장 버튼은 템플릿에 고정돼 있어 보낼 때 따로 넣지 않는다.
+export async function sendWaTemplateBare({ to, name, lang = null }) {
+  if (!name) return { ok: false, code: null, error: 'no_template' };
+  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'template',
+    template: { name, language: { code: lang || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX' } } });
+}
+// 24시간 창 안 — 선택 버튼(최대 3개, 버튼 글자 20자) 달린 답장
+export async function sendWaButtons({ to, text, buttons = [] }) {
+  const bs = (Array.isArray(buttons) ? buttons : []).map((b) => String(b || '').trim()).filter(Boolean).slice(0, 3);
+  if (!bs.length) return sendWaText(text, to);
+  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'interactive',
+    interactive: { type: 'button', body: { text: String(text || '').slice(0, 1024) },
+      action: { buttons: bs.map((t, i) => ({ type: 'reply', reply: { id: `b${i + 1}`, title: t.slice(0, 20) } })) } } });
+}
