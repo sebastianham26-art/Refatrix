@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-1007ap</title>
+<title>Refatrix ERP · 재무 · build fin-1007aq</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -4488,7 +4488,7 @@
                         ? '<span style="color:var(--muted)">'+t.sat_no+' (임시)</span>'
                         : '<span style="font-family:monospace">'+t.sat_no+'</span>')
                     : '<span style="color:var(--muted)">미발급</span>')
-                : t.approval ? `<a href="${AP_URL(t.approval.doc_id)}" target="_blank" rel="noopener" style="color:#3b4ba0" title="전자결재 문서 열기">📄 ${escH(t.approval.doc_no||'')} ${escH(String(t.approval.title||'').slice(0,24))}${t.approval.pay_n>1?' ('+t.approval.seq+'/'+t.approval.pay_n+')':''}</a>`
+                : t.approval ? `<a href="${AP_URL(t.approval.doc_id)}" target="_blank" rel="noopener" style="color:#3b4ba0" title="전자결재 문서 열기">📄 ${escH(t.approval.doc_no||'')} ${escH(String(t.approval.title||'').slice(0,24))}${t.approval.pay_n>1?' ('+t.approval.seq+'/'+t.approval.pay_n+')':''}</a>${t.approval.pay_status==='done'?' <span class="badge" style="background:#fdf1d8;color:#8a5a00" title="전자결재에서 집행 처리됨 — 거래등록 실적 연결 대기">결재 집행됨</span>':''}`
                 : '<span style="color:var(--muted)">'+(t.memo||'').replace(/^\[고정비\]\s*/,'').replace(/^\[마케팅\]\s*/,'').slice(0,30)+'</span>'}</td>
             <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${fmt(t.plan_amount!=null?t.plan_amount:t.amount)} ${t.currency}</td>
             <td style="white-space:nowrap">${isSales?'<span class="hint" style="margin:0">매출(반제)에서 처리</span>':`<button class="btn sm pp-do" data-id="${t.id}">실적 처리</button>${delOk?` <button class="btn ghost sm pp-del" data-id="${t.id}" style="border-color:var(--expense);color:var(--expense)" title="이 계획(예정) 라인을 삭제합니다">🗑 삭제</button>`:''}`}</td>

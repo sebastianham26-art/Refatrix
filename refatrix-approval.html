@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261007ga</title>
+<title>Refatrix ERP · 전자결재 · b20261007gb</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -672,9 +672,9 @@ function renderDetail(){
   <td>${p.status==='done'?`${cm(p.actual_amount,d.currency)}${usd?`<div class="sub">× ${p.fx_rate} (${esc(p.fx_date||'')}) = ${money(p.actual_mxn)} MXN</div>`:''}`:p.status==='skipped'?`<span class="sub">${esc(p.skip_reason||'')}</span>`:''}</td>
   <td>${esc(p.exec_date||'')}${p.exec_by?`<div class="sub">${esc(U(p.exec_by))}</div>`:''}</td><td>${ev?`📎 ${ev}`:''}${p.fin==='actual'?`${ev?'<br>':''}<span class="sub">📄 결재문서</span>`:''}</td>
   <td>${finCell(p)}</td>
-  <td>${canExec&&p.status==='planned'?`${B.fin_link?`<a class="btn sm gold" href="${finExecUrl(p.id)}" target="_blank" rel="noopener" title="재무 › 거래등록에서 실제 지급을 등록 — 이 결재 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다">거래등록에서 집행</a> `:''}<button class="btn sm ${B.fin_link?'ghost':'gold'}" data-act="exec" data-pid="${p.id}" ${B.fin_link?'title="전자결재에만 기록(자금 실적은 거래등록에 따로 등록)"':''}>${B.fin_link?'여기서 집행':'집행'}</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
+  <td>${canExec&&p.status==='planned'?`${B.fin_link?`<a class="btn sm gold" href="${finExecUrl(p.id)}" target="_blank" rel="noopener" title="재무 › 거래등록에서 실제 지급을 등록 — 이 결재 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다">거래등록에서 집행</a> `:''}<button class="btn sm ${B.fin_link?'ghost':'gold'}" data-act="exec" data-pid="${p.id}" ${B.fin_link?'title="전자결재에 집행 기록 — 자금계획 예정은 거래등록 실적이 연결될 때까지 남음"':''}>${B.fin_link?'여기서 집행':'집행'}</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
  </tbody></table></div>
- ${warns.join('')}<div class="warn info">${B.fin_link?'결재가 끝나면 미집행 회차가 <b>재무 › 미래자금계획(예정)</b>에 들어갑니다. 재무가 거래등록에서 실제 지급을 등록하면 이 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다.':'예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.'}</div></div>
+ ${warns.join('')}<div class="warn info">${B.fin_link?'결재가 끝나면 회차가 <b>재무 › 미래자금계획(예정)</b>에 들어가고, 거래등록 실적이 연결될 때까지 남습니다. 재무가 거래등록에서 실제 지급을 등록하면 이 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다.':'예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.'}</div></div>
  <div class="card sec"><h3>내용<span class="sp"></span>${DET.can_edit_content?'<button class="btn sm" data-act="revise">✎ 내용 수정</button>':''}${DET.can_addend?'<button class="btn sm" data-act="addend">＋ 추가 작성</button>':''}</h3>
   <p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')} · 원문 ${esc(U(d.drafter_id))}${DET.revisions.length?` · 마지막 수정 ${esc(U(DET.revisions[DET.revisions.length-1].editor_id))} ${tm(DET.revisions[DET.revisions.length-1].created_at)}`:''}</p>
   <div class="rbody">${renderBodyNodes(DET.body_nodes)}</div>
@@ -1276,7 +1276,7 @@ const MODALS={
   const free=DET.files.filter(f=>!f.voided_at&&B.exec_kinds.includes(f.kind)&&f.payment_id==null&&n1>1);
   const last=DET.payments.filter(x=>x.status==='planned').length===1;
   return `<h2>집행 처리${n1>1?` · ${p.seq}/${n1}회차`:''}</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} · 예정 ${cm(p.planned_amount,d.currency)}${p.due_date?` · 예정일 ${esc(p.due_date)}`:''}</p>
-  ${B.fin_link?`<div class="warn info"><b>권장: 재무 › 거래등록에서 집행</b> — 실제 지급(계좌·금액)을 등록하면 자금 실적과 이 회차 집행이 한 번에 처리되고, 이 결재 문서가 영수증 대용 증빙이 됩니다.<br><a class="btn sm gold" style="margin-top:6px" href="${finExecUrl(p.id)}" target="_blank" rel="noopener">거래등록에서 집행 →</a><br><span class="sub">아래에서 집행하면 전자결재에만 기록되고 이 회차의 자금계획 예정은 빠집니다(자금 실적은 거래등록에 따로 등록해야 합니다).</span></div>`:''}
+  ${B.fin_link?`<div class="warn info"><b>권장: 재무 › 거래등록에서 집행</b> — 실제 지급(계좌·금액)을 등록하면 자금 실적과 이 회차 집행이 한 번에 처리되고, 이 결재 문서가 영수증 대용 증빙이 됩니다.<br><a class="btn sm gold" style="margin-top:6px" href="${finExecUrl(p.id)}" target="_blank" rel="noopener">거래등록에서 집행 →</a><br><span class="sub">아래에서 집행해도 자금계획 예정은 남아 있습니다(실제 지급일·금액으로 바뀜) — 재무가 거래등록에서 실적을 등록하거나 기존 지출에 연결하면 빠집니다.</span></div>`:''}
   <div class="form"><div class="fld"><label>실적 금액 (${d.currency}, IVA 포함) <span class="req">*</span></label><input class="inp" id="mAmt" inputmode="decimal" value="${p.planned_amount}"></div>
   <div class="fld"><label>실제 지급일 <span class="req">*</span></label><input class="inp" type="date" id="mDate" value="${todayMX()}"></div>
   <div class="fld full"><label>지급 방법</label><select class="inp" id="mPay">${B.pay_methods.map(x=>`<option ${x===d.pay_method?'selected':''}>${x}</option>`).join('')}</select></div></div>

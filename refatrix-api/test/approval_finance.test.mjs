@@ -202,24 +202,50 @@ test('F3 E2E — 승인 → 미래자금계획 · 실적 처리/거래등록/기
     await ok('christopher', 'POST', `/api/approvals/${d2}/payments/${pid2}/skip`, { reason: '계약 취소' });
     assert.equal((await plansOf(d2))[0].del, true, '회차 중단 → 예정 숨김');
 
-    // ⑩ 전자결재 화면에서 집행(기존 방식) → 예정 정리 · 집행 생략 문서는 예정 없이 바로 집행완료 · 거래등록 연결은 가능
+    // ⑩ 0259 전자결재 화면에서 집행 · 집행 생략 → 예정은 남는다(실제 지급일·실적 금액) → 거래등록 연결로 정리
     const d3 = (await ok('sebastian', 'POST', '/api/approvals', { category_id: sobo.id, title: '디렉터 소액', orig_sub: 100, custom_steps: [] })).id;
     await ok('sebastian', 'POST', `/api/approvals/${d3}/submit`);
     assert.equal((await plansOf(d3))[0].status, 'plan');
     await ok('christopher', 'POST', `/api/approvals/${d3}/files`, { file_name: 'f.pdf', kind: '송금증', data_url: dataUrl('spei-d3-' + Date.now(), 'application/pdf') });
     await ok('christopher', 'POST', `/api/approvals/${d3}/execute`, { actual_total: 116, exec_date: today, pay_method: '계좌이체' });
     let P3 = await plansOf(d3);
-    assert.deepEqual([P3[0].pay_status, P3[0].exec_source, P3[0].del], ['done', 'approval', true]);
+    assert.deepEqual([P3[0].pay_status, P3[0].exec_source, P3[0].status, P3[0].del, P3[0].amount, P3[0].d], ['done', 'approval', 'plan', false, 116, today]);
+    // 예정 실적 처리 → 같은 행 실적, 전자결재 실적은 유지
+    await ok('sebastian', 'POST', `/api/transactions/${P3[0].id}/confirm-pay`, { account_id: acc, pay_date: today, amount: 116 });
+    P3 = await plansOf(d3);
+    assert.deepEqual([P3[0].status, P3[0].pay_status, P3[0].exec_source], ['actual', 'done', 'approval']);
     const d4 = (await ok('sebastian', 'POST', '/api/approvals', { category_id: sobo.id, title: '카드 결제분', orig_sub: 200, custom_steps: [], exec_required: false })).id;
     await ok('sebastian', 'POST', `/api/approvals/${d4}/submit`);
     const P4 = await plansOf(d4);
-    assert.equal(P4[0].id, null, '집행 생략 문서는 예정 없음'); assert.equal(P4[0].pay_status, 'done');
+    assert.deepEqual([P4[0].status, P4[0].amount, P4[0].pay_status], ['plan', 232, 'done'], '집행 생략 문서도 거래등록 전까지 예정');
+    const ppD4 = (await ok('sebastian', 'GET', '/api/transactions/pending-plans?all=1')).items.find((x) => x.approval && x.approval.doc_id === d4);
+    assert.equal(ppD4.approval.pay_status, 'done');
     const o4 = (await ok('sebastian', 'GET', '/api/transactions/approval-options')).items.find((o) => o.doc_id === d4);
     assert.ok(o4, '집행 생략 문서도 증빙으로 연결 가능');
     const t4 = Number((await ok('sebastian', 'POST', '/api/transactions', { status: 'actual', direction: 'out', account_id: acc, txn_date: today, amount: 232 })).id);
     await ok('sebastian', 'POST', `/api/transactions/${t4}/approval-link`, { payment_id: o4.payment_id });
     const P4b = await plansOf(d4);
     assert.deepEqual([P4b[0].id, P4b[0].exec_source], [t4, 'approval'], '전자결재 집행 실적은 유지, 증빙 연결만');
+    assert.equal((await pool.query(`SELECT deleted_at IS NOT NULL AS del FROM transactions WHERE id=$1`, [P4[0].id])).rows[0].del, true, '연결하면 예정 빠짐');
+
+    // ⑩-b 0259 백필(운영 상황 재현): 0258 때 예정이 없던 「전자결재 집행 완료」 회차 → 예정 생성 / 숨겨졌던 예정 → 되살림
+    const d7 = (await ok('sebastian', 'POST', '/api/approvals', { category_id: sobo.id, title: 'test', orig_sub: 100, pay_due: '2026-10-08', custom_steps: [], exec_required: false })).id;
+    await ok('sebastian', 'POST', `/api/approvals/${d7}/submit`);
+    const P7 = await plansOf(d7);
+    await pool.query(`UPDATE transactions SET deleted_at=now(), plan_memo=NULL WHERE id=$1`, [P7[0].id]);
+    await pool.query(`UPDATE approval_payments SET txn_id=NULL WHERE document_id=$1`, [d7]);          // 0258 만 돈 운영 상태
+    const d8 = (await ok('sebastian', 'POST', '/api/approvals', { category_id: sobo.id, title: '숨겨진 예정', orig_sub: 50, custom_steps: [], exec_required: false })).id;
+    await ok('sebastian', 'POST', `/api/approvals/${d8}/submit`);
+    const P8 = await plansOf(d8);
+    await pool.query(`UPDATE transactions SET deleted_at=now() WHERE id=$1`, [P8[0].id]);              // 이전 규칙이 숨긴 상태
+    const m59 = read(join(API, 'migrations/0259_e_approval_plan_executed.sql'));
+    await pool.query(m59); await pool.query(m59);
+    const P7b = await plansOf(d7), P8b = await plansOf(d8);
+    assert.deepEqual([P7b[0].status, P7b[0].del, P7b[0].amount, P7b[0].category_code], ['plan', false, 116, '6050']);
+    assert.match(P7b[0].memo, /^\[전자결재\] .+ test$/);
+    assert.deepEqual([P8b[0].id, P8b[0].del], [P8[0].id, false], '숨겨졌던 같은 행 복귀');
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM transactions t JOIN approval_payments p ON t.plan_memo='approval_payment:'||p.id WHERE p.document_id=$1 AND t.deleted_at IS NULL`, [d7])).rows[0].c, 1, '재실행 중복 없음');
+    assert.ok((await ok('sebastian', 'GET', '/api/transactions/approval-options')).items.some((o) => o.doc_id === d7 && o.plan_txn_id === P7b[0].id));
 
     // ⑪ 카테고리 재무 과목 변경 → 남은 예정 과목도 변경
     const d5 = (await ok('oscar', 'POST', '/api/approvals', { category_id: sobo.id, title: '과목 변경 확인', orig_sub: 300 })).id;

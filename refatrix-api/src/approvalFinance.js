@@ -3,7 +3,8 @@
 //   규칙 한 곳: syncApprovalDoc(q, docId, actorId) — 문서 상태를 보고 연결을 "있어야 할 모습"으로 맞춘다(멱등).
 //     · 승인완료 · 미삭제 문서의 미집행(planned) 회차   → 지출 예정 거래(transactions status='plan') 1행
 //         (계좌 미지정 · 과목 = 결재 카테고리의 재무 과목 · 메모 「[전자결재] 문서번호 제목 (회차)」)
-//     · 문서가 승인완료가 아니게 됨(재결재·삭제) / 회차 중단 / 전자결재 화면에서 집행  → 아직 예정이면 숨김(소프트 삭제)
+//     · 전자결재 화면에서 집행(또는 집행 생략)한 회차도 거래등록 실적이 연결될 때까지 예정으로 남긴다(0259 — 실제 지급일·금액으로)
+//     · 문서가 승인완료가 아니게 됨(재결재·삭제) / 회차 중단  → 아직 예정이면 숨김(소프트 삭제)
 //     · 연결된 거래가 실적이 됨(예정 내역 → 실적 처리, 또는 거래등록에서 이 문서를 골라 등록)
 //         → 회차 집행완료(exec_source='finance', 실적 = 거래 금액) → 전 회차 끝나면 사후승인 요청
 //     · 거래등록 실적이 삭제·반려됨 → 회차를 미집행으로 되돌리고 예정을 다시 만든다(사후승인 대기였다면 집행대기로)
@@ -123,9 +124,14 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
   const fx = doc.currency === 'USD' ? n(doc.fx_rate) || 1 : 1;
   for (const p of pays) {
     if (isActual(p)) continue;
-    const want = live && p.status === 'planned';
-    const date = p.due_date || doc.pay_due || new Date().toISOString().slice(0, 10);
-    const amt = round2(n(p.planned_amount)), mxn = round2(n(p.planned_mxn ?? p.planned_amount)), memo = planMemo(doc, p.seq, total);
+    // 0259: 전자결재에서 집행·집행생략한 회차(done · exec_source≠finance)도 거래등록 실적 연결 전까지 예정 유지
+    const apDone = p.status === 'done' && p.exec_source !== 'finance';
+    const want = live && (p.status === 'planned' || apDone);
+    const date = (apDone && p.exec_date) || p.due_date || doc.pay_due || new Date().toISOString().slice(0, 10);
+    const amt = round2(n(apDone && p.actual_amount != null ? p.actual_amount : p.planned_amount));
+    const mxn = round2(n(apDone && p.actual_mxn != null ? p.actual_mxn : (p.planned_mxn ?? p.planned_amount)));
+    const memo = planMemo(doc, p.seq, total);
+    const fxRow = doc.currency === 'USD' && apDone && amt > 0 ? Math.round((mxn / amt) * 1e6) / 1e6 : fx;
     if (want) {
       if (p.t_id != null && p.t_status === 'plan') {
         const same = !p.t_deleted && p.t_date === date && Math.abs(n(p.t_amount) - amt) < 0.005 && p.t_currency === doc.currency
@@ -133,7 +139,7 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
         if (!same) {
           await q(`UPDATE transactions SET deleted_at=NULL, txn_date=$2, plan_date=$2, amount=$3, plan_amount=$3, currency=$4, fx_rate=$5,
                      amount_mxn=$6, category_code=$7, memo=$8, updated_by=$9 WHERE id=$1 AND status='plan'`,
-            [p.t_id, date, amt, doc.currency, fx, mxn, codeOk, memo, actorId]);
+            [p.t_id, date, amt, doc.currency, fxRow, mxn, codeOk, memo, actorId]);
           if (p.t_deleted) out.plans.created++; else out.plans.updated++;
         }
       } else {
@@ -141,7 +147,7 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
           `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind,
                                      approved, owner_id, memo, created_by, plan_amount, plan_date, plan_memo)
            VALUES (NULL,$1,'out',$2,$3,$4,$5,$6,'plan','general',true,$7,$8,$9,$2,$1,$10) RETURNING id`,
-          [date, amt, doc.currency, fx, mxn, codeOk, doc.drafter_id, memo, actorId ?? doc.drafter_id, `approval_payment:${p.id}`]);
+          [date, amt, doc.currency, fxRow, mxn, codeOk, doc.drafter_id, memo, actorId ?? doc.drafter_id, `approval_payment:${p.id}`]);
         await q(`UPDATE approval_payments SET txn_id=$2 WHERE id=$1`, [p.id, ins.rows[0].id]);
         out.plans.created++;
       }

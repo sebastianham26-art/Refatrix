@@ -124,5 +124,5 @@ test('⑨ 필터 변경 이벤트가 「이어붙이기」로 오작동하지 �
 });
 
 test('⑩ 빌드 마커', () => {
-  assert.match(HTML, /build fin-1007ap/);
+  assert.match(HTML, /build fin-1007aq/);
 });

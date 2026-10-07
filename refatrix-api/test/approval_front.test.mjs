@@ -16,7 +16,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*b20261007ga<\/title>/);
+  assert.match(HTML, /<title>[^<]*b20261007gb<\/title>/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
 });
 
