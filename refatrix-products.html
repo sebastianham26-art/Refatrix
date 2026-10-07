@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · st-1001rs1</title>
+<title>Refatrix ERP · 제품 조회 · ps-1007srt1</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -551,6 +551,8 @@
     prodActive=($('qActive')&&$('qActive').value)||'';
     loadProducts();
   }
+  // 텍스트 열(첫 클릭 = 오름차순 A→Z). 상태는 첫 클릭 = 활성 먼저(서버 DESC).
+  const PROD_TEXT_SORT={code:1,syd:1,app:1,ean:1,rack:1,material:1};
   async function loadProducts(){
     const r=$('result'); r.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
@@ -568,13 +570,15 @@
       // 0179: 「상태」 열 +1, 디렉터는 선택 체크박스 열 +1 (드릴다운 colspan 계산에 반영)
       const colN=10+(isDir?1:0)+(prodHasList?1:0)+(prodHasCost?2:0);
       if($('stBar')) $('stBar').classList.toggle('hidden',!isDir);
-      const sh=(key,label,cls)=>'<th class="'+(cls==null?'num ':cls)+'nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'">'+label
+      // 2026-10-07 — 모든 열 제목 클릭 정렬(서버측·전체 데이터 기준). 4번째 인자 = 추가 속성(title 등).
+      const sh=(key,label,cls,attr)=>'<th class="'+(cls==null?'num ':cls)+'nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'"'+(attr||'')+'>'+label
         +(prodSort===key?('<span class="ar">'+(prodDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
       let h='<table><thead><tr>'
         +(isDir?'<th class="selc" title="일괄 점검할 SKU 선택 (현재 페이지 전체)"><input type="checkbox" id="stAll"></th>':'')
-        +'<th class="nowrap">코드</th><th class="nowrap" title="비활성 = 신규 견적·매출·오퍼시트에서 사용 차단. 과거 내역은 그대로 조회됩니다.">상태</th><th title="아래 초록 글씨 = OE(순정) 번호">경쟁사(SyD) · OE</th><th>적용차종</th><th class="nowrap">바코드</th>'+sh('rack','랙','')+'<th class="nowrap">소재</th>'
+        +sh('code','코드','')+sh('active','상태','',' title="비활성 = 신규 견적·매출·오퍼시트에서 사용 차단. 과거 내역은 그대로 조회됩니다."')
+        +sh('syd','경쟁사(SyD) · OE','',' title="아래 초록 글씨 = OE(순정) 번호 · 정렬은 SyD 코드 기준"')+sh('app','적용차종','')+sh('ean','바코드','')+sh('rack','랙','')+sh('material','소재','')
         +sh('stock','재고')+sh('backorder','Backorder')+sh('sold','누적판매')
-        +(prodHasList?'<th class="num nowrap">List Price</th>':'')
+        +(prodHasList?sh('listprice','List Price'):'')
         +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
         +'</tr></thead><tbody>';
       items.forEach(function(p){
@@ -638,7 +642,7 @@
       r.querySelectorAll('th.sortable').forEach(th=>{ th.addEventListener('click',()=>{
         const key=th.getAttribute('data-sort');
         if(prodSort===key){ prodDir=(prodDir==='asc'?'desc':'asc'); }   // 같은 열 재클릭 → 오름/내림 토글
-        else { prodSort=key; prodDir=(key==='rack'?'asc':'desc'); }     // 새 열 → 많은 순부터(랙은 텍스트라 A→Z부터)
+        else { prodSort=key; prodDir=(PROD_TEXT_SORT[key]?'asc':'desc'); }     // 새 열 → 숫자는 많은 순부터, 텍스트는 A→Z부터
         prodOffset=0; loadProducts();
       }); });
     }catch(e){ r.innerHTML='<div class="hint">조회에 실패했습니다.</div>'; }
@@ -2263,7 +2267,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build st-1001rs1 (랙 열 = 랙별 재고 · fast moving 먼저)'); }catch(e){}
+  try{ console.log('[refatrix-products] build ps-1007srt1 (모든 열 제목 클릭 정렬)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);

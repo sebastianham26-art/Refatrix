@@ -98,7 +98,18 @@ export default async function productRoutes(app) {
     //   원가 기반 정렬(avgcost·stockval)은 unit_cost 권한이 있을 때만 허용(없으면 코드 정렬로 폴백).
     const dir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
     const canCost = fieldVisible(perm, 'unit_cost');
+    const canPrice = fieldVisible(perm, 'sale_price');
+    // 2026-10-07 — 제품찾기 목록의 모든 열 제목을 눌러 정렬(코드·상태·SyD·적용차종·바코드·소재·List Price 추가).
+    //   텍스트 열은 빈 값을 항상 맨 뒤로(NULLS LAST), 대소문자 무시. List Price 는 sale_price 권한이 있을 때만.
+    const txt = (col) => `NULLIF(upper(btrim(COALESCE(${col},''))),'') ${dir} NULLS LAST, p.code`;
     const SORTS = {
+      code:     `p.code ${dir}`,
+      active:   `p.is_active ${dir}, p.code`,
+      syd:      txt('p.scode'),
+      app:      txt('p.app'),
+      ean:      txt('p.ean'),
+      material: txt('p.material'),
+      listprice: canPrice ? `p.list_price ${dir} NULLS LAST, p.code` : null,
       stock:    `p.stock_qty ${dir} NULLS LAST, p.code`,
       rack:     `NULLIF(p.rack_location,'') ${dir} NULLS LAST, p.code`,
       backorder: `COALESCE(bo.backorder_qty,0) ${dir}, p.code`,
