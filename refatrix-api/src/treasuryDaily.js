@@ -91,7 +91,28 @@ export function fxFill(rows, from, to, seed) {
 
 // 거래 → 표시 이름. 입금: 고객(인보이스·선수금·통장입금·태그) › 송금인 메모 › 메모 › 계정과목
 //                  출금: 고정비 이름(Nomina Maria 등) › 메모 › 계정과목
+// 전자결재 연결 거래(2026-10-07 디렉터 요청): 「EXP-2026-」은 반복이라 빼고 번호만 + 제목(간략) + 받는 사람(지급처).
+//   원천 = 거래에 연결된 결재 문서(approval_payments.txn_id) — 없으면 메모 「[전자결재] EXP-YYYY-NNNN 제목 (n/m) · 지급처」 해석.
+//   반환 { no:'0012', title, vendor, seq:'1/3'|null } 또는 null
+const APPR_MEMO_RE = /^\[전자결재\]\s*(?:[A-Z]+-\d{4}-)?(\S+)\s*(.*?)(?:\s*\((\d+\/\d+)\))?(?:\s*·\s*(.+))?$/;
+export function shortDocNo(docNo) { return String(docNo || '').replace(/^[A-Z]+-\d{4}-/, ''); }
+export function approvalLabel(t) {
+  const memo = String(t.memo || '').trim();
+  const m = APPR_MEMO_RE.exec(memo);
+  if (t.ap_doc_no) {
+    return { no: shortDocNo(t.ap_doc_no), title: String(t.ap_title || '').trim(), vendor: String(t.ap_vendor || '').trim() || null,
+      seq: (m && m[3]) || null };
+  }
+  if (!m) return null;
+  return { no: m[1], title: (m[2] || '').trim(), vendor: (m[4] || '').trim() || null, seq: m[3] || null };
+}
+export function approvalName(a) {
+  return `${a.no} ${a.title}${a.seq ? ` (${a.seq})` : ''}${a.vendor ? ` · ${a.vendor}` : ''}`.replace(/\s+/g, ' ').trim();
+}
+
 export function itemName(t) {
+  const ap = approvalLabel(t);
+  if (ap) return approvalName(ap);
   const clean = (s) => String(s || '').replace(/^\[고정비\]\s*/, '').trim();
   if (t.direction === 'in') {
     return clean(t.customer_name) || clean(t.payer_memo) || clean(t.memo) || clean(t.category_name) || '입금';
@@ -111,6 +132,7 @@ function toItem(t, extra = {}) {
     account: t.account_name || null,
     sat_no: t.sat_no || null,
     private: t.is_private === true,
+    appr: approvalLabel(t),
     ...extra,
   };
 }
@@ -401,10 +423,14 @@ const TXN_NAME_JOINS = `
   LEFT JOIN customers cadv ON cadv.id=sp.customer_id
   LEFT JOIN bank_deposits_pending bd ON bd.txn_id=t.id
   LEFT JOIN customers cbd ON cbd.id=bd.customer_id
-  LEFT JOIN customers ctag ON ctag.id=t.customer_id`;
+  LEFT JOIN customers ctag ON ctag.id=t.customer_id
+  LEFT JOIN LATERAL (SELECT ad.doc_no, ad.title, ad.vendor FROM approval_payments ap
+                       JOIN approval_documents ad ON ad.id=ap.document_id
+                      WHERE ap.txn_id=t.id ORDER BY ap.id LIMIT 1) apd ON true`;
 const TXN_NAME_COLS = `t.id, t.direction, t.amount, t.amount_mxn, t.is_private, t.memo, t.recurring_rule_id,
   a.name AS account_name, cat.name AS category_name, rr.name AS rule_name, si.sat_no,
-  COALESCE(c.name, cadv.name, cbd.name, ctag.name) AS customer_name, bd.payer_memo`;
+  COALESCE(c.name, cadv.name, cbd.name, ctag.name) AS customer_name, bd.payer_memo,
+  apd.doc_no AS ap_doc_no, apd.title AS ap_title, apd.vendor AS ap_vendor`;
 
 // 기간 실적 입력 적재(한 번의 조회 묶음)
 export async function loadActualInputs(from, to, q = query, scopeIds = null) {

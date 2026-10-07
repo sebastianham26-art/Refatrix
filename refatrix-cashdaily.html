@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1007a</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1007b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -75,6 +75,11 @@
   .it + .it{border-top:1px dotted #e3e3e3}
   .it .nm{flex:1;min-width:0;text-align:left;white-space:normal;overflow-wrap:anywhere;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .it .am{flex:0 0 auto;white-space:nowrap;text-align:right}
+  /* 전자결재 연결 항목: 1줄 = 번호(EXP-YYYY- 생략) + 제목 간략 · 2줄 = 받는 사람(지급처) — 각 줄 넘치면 … */
+  .it .nm.ap{display:block;-webkit-line-clamp:unset;line-clamp:unset}
+  .ap .l1,.ap .l2{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ap .no{font-weight:600;margin-right:3px}
+  .ap .l2{opacity:.85}
   .it.plan{color:var(--plan)}.it.actual{color:var(--done)}
   .it .late{font-size:10px;color:var(--expense);margin-left:3px}
   .dash{color:#b0b0b0;text-align:right;line-height:1.35}
@@ -116,6 +121,7 @@
   .detl .r{align-items:flex-start}
   .detl .r span:first-child{flex:1;min-width:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical}
   .detl .r span.num{flex:0 0 auto;white-space:nowrap}
+  .detl .r span.ap{display:block;-webkit-line-clamp:unset;line-clamp:unset}
   /* WA */
   .addrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
   .addrow > div{display:flex;flex-direction:column}
@@ -258,7 +264,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-1007a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-1007b (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -343,6 +349,12 @@
         +'<div style="margin-top:6px;font-size:12px">'+o.items.slice(0,12).map(i=>'#'+i.id+' '+esc(i.due)+' '+esc(i.private?'비공개':i.name)+' '+(i.dir==='in'?'+':'−')+f0(i.amount)).join(' · ')+(o.items.length>12?' …':'')+'</div></div>';
     } else $('wOverdue').innerHTML='';
   }
+  // 전자결재 항목 2줄 표시(비공개는 이름 숨김 유지)
+  function apHtml(it){
+    const a=it&&it.appr; if(!a||it.private) return '';
+    return '<span class="l1"><span class="no">'+esc(a.no)+'</span>'+esc(a.title||'전자결재')+(a.seq?' ('+esc(a.seq)+')':'')+'</span>'
+      +(a.vendor?'<span class="l2">'+esc(a.vendor)+'</span>':'');
+  }
   function renderWeek(w){
     $('wRng').textContent=md(w.from)+' (월) ~ '+md(addDays(w.from,5))+' (토)';
     const ds=w.days.filter(d=>d.dow!==0||d.moved), show=$('wItems').checked;
@@ -355,10 +367,10 @@
       let h='';
       for(const it of xs){
         const st=it.state||'actual';
-        const nm=esc(it.name)+(it.late_days?'<span class="late">⏰'+it.late_days+'d</span>':'');
+        const nm=apHtml(it)||(esc(it.name)+(it.late_days?'<span class="late">⏰'+it.late_days+'d</span>':''));
         const SRC={inv:'매출 입금예정',fix:'고정비',man:'수동 예정수입',plan:'예정지출'};
         const tip=[it.private?'비공개':it.name,it.id?('거래 #'+it.id):null,st==='plan'?('거래목록 예정 · '+(SRC[it.src]||'예정')):'거래목록 실제',it.sat_no,it.category,it.account].filter(Boolean).join(' · ');
-        h+='<div class="it '+(st==='plan'?'plan':'actual')+'" title="'+esc(tip)+'"><span class="nm">'+nm+'</span><span class="am">'+f0(it.amount)+'</span></div>';
+        h+='<div class="it '+(st==='plan'?'plan':'actual')+'" title="'+esc(tip)+'"><span class="nm'+(it.appr&&!it.private?' ap':'')+'">'+nm+'</span><span class="am">'+f0(it.amount)+'</span></div>';
       }
       for(let i=xs.length;i<min;i++) h+='<div class="dash">-</div>';
       return '<td'+tdc(d)+'>'+h+'</td>';
@@ -439,7 +451,7 @@
         +'<td>'+(x.fx?Number(x.fx).toFixed(2):'')+'</td><td>'+fn(x.close_eq)+'</td>'
         +'<td class="in">'+fn(x.cum.in_eq)+'</td><td class="out">'+fn(x.cum.out_eq)+'</td><td class="l">'+st.join(' ')+'</td></tr>';
       if(S.open.has(x.date)){
-        const col=(dir)=>{ const xs=x.items.filter(i=>i.dir===dir); return xs.length? xs.map(i=>'<div class="r"><span title="'+esc([i.private?'비공개':i.name,i.category,i.account,i.sat_no].filter(Boolean).join(' · '))+'">'+esc(i.name)+(i.private?' <span class="badge mute">비공개</span>':'')+'</span><span class="num">'+(i.cur==='USD'?'USD ':'')+f0(i.amount)+'</span></div>').join('') : '<div class="hint">없음</div>'; };
+        const col=(dir)=>{ const xs=x.items.filter(i=>i.dir===dir); return xs.length? xs.map(i=>'<div class="r"><span title="'+esc([i.private?'비공개':i.name,i.category,i.account,i.sat_no].filter(Boolean).join(' · '))+'"'+(apHtml(i)?' class="ap"':'')+'>'+(apHtml(i)||esc(i.name))+(i.private?' <span class="badge mute">비공개</span>':'')+'</span><span class="num">'+(i.cur==='USD'?'USD ':'')+f0(i.amount)+'</span></div>').join('') : '<div class="hint">없음</div>'; };
         h+='<tr class="det"><td colspan="14"><div class="detl"><div><h4 style="color:var(--income)">수금 (AR)</h4>'+col('in')+'</div><div><h4 style="color:var(--expense)">지급 (AP)</h4>'+col('out')+'</div></div></td></tr>';
       }
     }

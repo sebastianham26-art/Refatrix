@@ -15,11 +15,12 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰 · 외부 스크립트는 허용 CDN 만', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit|keydown)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*build cashd-1007a<\/title>/);
+  assert.match(HTML, /<title>[^<]*build cashd-1007b<\/title>/);
   // 10/07: 내역이 길어도 칸 폭 고정 — 고정 표 배치 + 이름 2줄 제한 + 금액 줄바꿈 금지
   assert.match(HTML, /table\.ws\{[^}]*table-layout:fixed/);
   assert.match(HTML, /\.it \.nm\{[^}]*-webkit-line-clamp:2/);
   assert.match(HTML, /\.it \.am\{[^}]*white-space:nowrap/);
+  assert.match(HTML, /\.ap \.l1,\.ap \.l2\{[^}]*text-overflow:ellipsis/);
   assert.match(HTML, /refatrix-nav\.js\?v=20260930vr/);
   for (const m of HTML.matchAll(/src=['"](https?:[^'"]+)/g)) assert.match(m[1], /^https:\/\/cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 });

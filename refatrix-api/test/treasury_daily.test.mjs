@@ -154,6 +154,18 @@ test('A8 이미지 — 일일(유첨 양식)·월간 SVG 내용 · PNG 렌더(�
   assert.ok(I.esc('<a&b>') === '&lt;a&amp;b&gt;');
 });
 
+test('A9 전자결재 항목 — EXP-YYYY- 생략·번호+제목+회차+지급처 · 문서 연결 우선 · 메모 해석 대체 · 이미지 한 줄은 지급처 보존', async () => {
+  const I = await import('../src/treasuryImage.js');
+  const m = '[전자결재] EXP-2026-0012 사무실 에어컨 수리 및 부품 교체 (1/3) · Climas del Norte SA de CV';
+  assert.deepEqual(T.approvalLabel({ memo: m }), { no: '0012', title: '사무실 에어컨 수리 및 부품 교체', vendor: 'Climas del Norte SA de CV', seq: '1/3' });
+  assert.equal(T.itemName({ memo: '[전자결재] EXP-2026-0007 출장비', direction: 'out' }), '0007 출장비');
+  assert.equal(T.itemName({ memo: 'x', ap_doc_no: 'EXP-2026-0031', ap_title: '광고비', ap_vendor: 'Meta', direction: 'out' }), '0031 광고비 · Meta', '문서 연결이 메모보다 우선');
+  assert.equal(T.approvalLabel({ memo: '[고정비] Nomina Maria' }), null);
+  const line = I.apLine(T.approvalLabel({ memo: m }), 12.5, 150);
+  assert.ok(line.startsWith('0012 ') && line.includes('· Climas'), line);
+  assert.ok(I.textWidth(line, 12.5) <= 152);
+});
+
 // ── B. 배선 ─────────────────────────────────────────────────────────────
 test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면키 · 화면 토큰', () => {
   const srv = read(join(API, 'src/server.js'));
@@ -168,7 +180,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-1007a/);
+  assert.match(page, /build cashd-1007b/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -227,12 +239,16 @@ async function seed() {
   const off = await rule('Old rent', false);
   await tx(mxn.id, '2026-10-02', 'out', 5555, { status: 'plan', rule: off.id, plan_date: '2026-10-02', plan_amount: 5555 });
   await tx(mxn.id, '2026-10-02', 'out', 40000, { status: 'plan', memo: 'SAT', plan_date: '2026-10-02', plan_amount: 40000 });
+  // 전자결재 연결 예정(10/3) — 문서 번호·제목·지급처는 문서에서
+  const apDoc = await one(`INSERT INTO approval_documents (title, drafter_id, doc_no, vendor, status) VALUES ('창고 선반 설치 공사',$1,$2,'Estructuras Apodaca SA de CV','approved') RETURNING id`, [dir.id, 'EXP-2026-' + String(Date.now() % 10000).padStart(4, '0')]);
+  const apTx = await tx(null, '2026-10-03', 'out', 3000, { status: 'plan', memo: '[전자결재] (메모는 무시됨)', plan_date: '2026-10-03', plan_amount: 3000 });
+  await query(`INSERT INTO approval_payments (document_id, seq, planned_amount, planned_mxn, txn_id) VALUES ($1,1,3000,3000,$2)`, [apDoc.id, apTx.id]);
   // 지난 날짜 미처리 예정(Nom.Palomino 9/15·9/29) — 오늘 칸에 나오면 안 됨
   const pal = await rule('Nom.Palomino');
   for (const d of ['2026-09-15', '2026-09-29']) await tx(mxn.id, d, 'out', 5000, { status: 'plan', rule: pal.id, plan_date: d, plan_amount: 5000, memo: '[고정비] Nom.Palomino' });
   // 삭제된 예정 — 거래목록에 없으므로 안 나와야 함
   await query(`INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, status, approved, memo, deleted_at) VALUES ($1,'2026-10-01','out',777,'MXN',1,777,'plan',true,'Borrado',now())`, [mxn.id]);
-  S = { dir: Number(dir.id), tre: Number(tre.id), tag, mxn: Number(mxn.id), usd: Number(usd.id), later: Number(later.id), safe: Number(safe.id), nd: Number(nd.id), cust: Number(cust.id) };
+  S = { apDoc: Number(apDoc.id), dir: Number(dir.id), tre: Number(tre.id), tag, mxn: Number(mxn.id), usd: Number(usd.id), later: Number(later.id), safe: Number(safe.id), nd: Number(nd.id), cust: Number(cust.id) };
 }
 async function cleanup() {
   if (!S.tag) return;
@@ -240,6 +256,9 @@ async function cleanup() {
   const accs = [S.mxn, S.usd, S.later, S.safe, S.nd];
   await query(`DELETE FROM sales_payment_allocations WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE customer_id=$1)`, [S.cust]);
   await query(`DELETE FROM sales_payments WHERE customer_id=$1`, [S.cust]);
+  await query(`DELETE FROM approval_payments WHERE document_id=$1`, [S.apDoc]);
+  await query(`DELETE FROM transactions WHERE account_id IS NULL AND memo LIKE '[전자결재]%'`);
+  await query(`DELETE FROM approval_documents WHERE id=$1`, [S.apDoc]);
   await query(`DELETE FROM transactions WHERE account_id = ANY($1)`, [accs]);
   await query(`DELETE FROM transactions WHERE sales_invoice_id IN (SELECT id FROM sales_invoices WHERE customer_id=$1)`, [S.cust]);
   await query(`DELETE FROM sales_invoices WHERE customer_id=$1`, [S.cust]);
@@ -269,6 +288,9 @@ E('C1 주간(유첨 양식) — 9/28~10/2 숫자가 유첨 엑셀과 일치 · �
   const rc = by['2026-09-30'].reconcile;
   assert.equal(rc.excluded.inactive_rule.n, 1); assert.equal(rc.excluded.account.n, 1, '금고 예정 1건');
   assert.equal(rc.list_n - rc.shown_n, 2);
+  const ap = by['2026-10-03'].items.find((i) => i.appr);
+  assert.ok(ap, '전자결재 항목'); assert.equal(ap.appr.vendor, 'Estructuras Apodaca SA de CV'); assert.equal(ap.appr.title, '창고 선반 설치 공사');
+  assert.match(ap.appr.no, /^\d{4}$/); assert.ok(!/EXP-/.test(ap.name));
   assert.equal(by['2026-09-30'].pending.n, 0);
   assert.equal(by['2026-09-30'].kind, 'today'); assert.equal(by['2026-10-01'].kind, 'plan'); assert.equal(by['2026-09-28'].kind, 'actual');
 });

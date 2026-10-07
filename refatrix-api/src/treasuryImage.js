@@ -93,6 +93,15 @@ const R = (x, y, w, h, fill, o = {}) => `<rect x="${x}" y="${y}" width="${w}" he
 const Ln = (x1, y1, x2, y2, stroke = C.line, sw = 1) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}"/>`;
 const svgWrap = (w, h, body) => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="${FAMILY.replace(/"/g, '')}">${R(0, 0, w, h, '#FFFFFF')}${body}</svg>`;
 
+// 전자결재 항목 한 줄: 번호 + 제목(남는 폭만큼) · 지급처 — 지급처가 잘리지 않도록 제목을 먼저 줄인다
+export function apLine(a, size, maxW) {
+  const head = `${a.no} `, tail = a.vendor ? ` · ${a.vendor}` : '';
+  const title = `${a.title || ''}${a.seq ? ` (${a.seq})` : ''}`;
+  const tailW = Math.min(textWidth(tail, size), maxW * 0.45);
+  const titleRoom = maxW - textWidth(head, size) - tailW;
+  return head + (titleRoom > size * 2 ? fit(title, size, titleRoom) : '') + (tail ? fit(tail, size, tailW + 1) : '');
+}
+
 // ═════════ 일일 — 유첨 양식 ═════════
 //   cols: buildDays/projectDays 의 날짜 객체 배열(실적·오늘·예정 혼합), reportDay: 요약 대상일, sendDay: 발송일(오늘)
 //   mtd: summarizeMonth(월초~reportDay) — 하단 누계 줄
@@ -140,8 +149,8 @@ export function dailyImageSvg({ cols, reportDay, sendDay, mtd = null, lang = 'es
         const color = (it.state || 'actual') === 'plan' ? C.plan : C.actual;
         const amt = f0(it.amount);
         const lateTxt = it.late_days ? ` +${it.late_days}d` : '';
-        const nm = it.private ? t.priv : it.name;
         const room = CW - PAD * 2 - textWidth(amt, 12.5) - textWidth(lateTxt, 11) - 10;
+        const nm = it.private ? t.priv : (it.appr ? apLine(it.appr, 12.5, room) : it.name);
         out.push(T(x0(i) + PAD, yy, fit(nm, 12.5, room), { size: 12.5, fill: color }));
         if (lateTxt) out.push(T(x0(i) + CW - PAD - textWidth(amt, 12.5) - 4, yy, lateTxt, { size: 11, fill: C.neg, anchor: 'end' }));
         out.push(T(x0(i) + CW - PAD, yy, amt, { size: 12.5, fill: color, anchor: 'end' }));
