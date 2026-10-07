@@ -1,4 +1,5 @@
 import { query, withTx } from '../db.js';
+import { kickQuoteNotify } from '../quoteWaNotify.js';   // 0256 · 신규 견적 WhatsApp 알림
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
@@ -389,6 +390,7 @@ export default async function quoteRoutes(app) {
       return { ...q, lines, devLines };
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}` });
+    kickQuoteNotify(result.id, app);   // 0256 · 응답 뒤 지정 수신자에게 WhatsApp(기다리지 않음)
     if (customerId) {
       // 단계 자동 전진(전진만): 이름입력으로 신규 자동등록된 미등록 고객 → 접촉(20),
       //  기존 등록 고객(선택 또는 동명 재사용) 견적 작성 → 견적(30).
@@ -1549,6 +1551,7 @@ export default async function quoteRoutes(app) {
       return { ...q, lines, devLines };
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}`, detail: { cloned_from: srcId } });
+    kickQuoteNotify(result.id, app);   // 0256 · 복제도 새 견적
     const cloneInactive = (result.lines || []).filter((l) => l.issue === 'inactive')
       .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
     return { id: result.id, quote_no: result.quote_no, customer_id: customerId,

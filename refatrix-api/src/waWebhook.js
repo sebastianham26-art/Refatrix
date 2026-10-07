@@ -114,6 +114,13 @@ export async function applyWebhook(body, q = query) {
               `UPDATE treasury_wa_sends SET status='failed', sent_at=NULL, error=$2, updated_at=now()
                 WHERE message_id=$1 AND sent_at IS NOT NULL RETURNING id`, [st.id, reason]);
             out.reopened += (r.rows || []).length;
+            // 0256 · 신규 견적 알림 원장도 같은 규칙(다음 시도는 템플릿으로). 0256 전이면 건너뜀.
+            try {
+              const r2 = await q(
+                `UPDATE quote_wa_sends SET status='failed', sent_at=NULL, error=$2, updated_at=now()
+                  WHERE message_id=$1 AND sent_at IS NOT NULL RETURNING id`, [st.id, reason]);
+              out.reopened += (r2.rows || []).length;
+            } catch (_) { /* 0256 전 */ }
           }
         }
       }

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1001rs1</title>
+<title>Refatrix ERP · 견적 목록 · ql-1007wa1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -270,7 +270,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-1001rs1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1007wa1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -1987,6 +1987,186 @@
   window.addEventListener('resize',later);
   window.addEventListener('load',later);
   later();
+})();
+</script>
+<!-- 2026-10-07 · 0256 신규 견적 WhatsApp 알림 — 디렉터 전용 설정 패널 (ql-1007wa1) -->
+<style>
+  #qwModal{display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:130;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto}
+  #qwModal.on{display:flex}
+  #qwModal .qwbox{background:#fff;border-radius:14px;max-width:980px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  #qwModal .qwtop{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  #qwModal .qwsec{padding:14px 18px;border-bottom:1px solid var(--line)}
+  #qwModal .qwsec:last-child{border-bottom:none}
+  #qwModal h3{margin:0 0 8px;font-size:13.5px;color:var(--brand)}
+  #qwModal .qwstat{display:flex;gap:8px;flex-wrap:wrap;font-size:12px}
+  #qwModal .qwstat span{padding:3px 9px;border-radius:999px;background:#eef0f2;color:#555;font-weight:700}
+  #qwModal .qwstat span.ok{background:var(--income-bg);color:var(--income)}
+  #qwModal .qwstat span.bad{background:var(--expense-bg);color:var(--expense)}
+  #qwModal table{margin-top:4px}
+  #qwModal td{white-space:normal;vertical-align:middle}
+  #qwModal .teams{display:flex;gap:8px;flex-wrap:wrap}
+  #qwModal .teams label{display:inline-flex;align-items:center;gap:3px;margin:0;font-weight:500;color:var(--ink);font-size:12px}
+  #qwModal .win{font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px}
+  #qwModal .win.open{background:var(--income-bg);color:var(--income)}#qwModal .win.closed{background:#fdf3e3;color:#9a6512}
+  #qwModal .addrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
+  #qwModal pre{background:#f6f9f7;border:1px solid var(--line);border-radius:10px;padding:12px;font-family:inherit;font-size:12.5px;line-height:1.55;white-space:pre-wrap;margin:6px 0 0;max-height:320px;overflow:auto}
+  #qwModal .dl{font-size:11.5px}
+  #qwModal .dl.f{color:var(--expense);font-weight:700}
+  #qwModal .dl.r{color:var(--income);font-weight:700}
+  #qwMsg{margin:0 18px 0}
+  @media (max-width:640px){ #qwModal .qwsec{padding:12px} #qwModal th:nth-child(2),#qwModal td:nth-child(2){display:none} }
+</style>
+<div id="qwModal" role="dialog" aria-modal="true" aria-labelledby="qwTitle">
+  <div class="qwbox">
+    <div class="qwtop">
+      <span id="qwTitle" style="font-size:15px;font-weight:800;color:var(--brand)">📲 신규 견적 WhatsApp 알림</span>
+      <button type="button" class="btn ghost sm" id="qwClose" style="margin-left:auto">닫기 ✕</button>
+    </div>
+    <div class="msg" id="qwMsg"></div>
+    <div class="qwsec">
+      <div class="qwstat" id="qwStat"></div>
+      <div class="hint" style="margin-top:8px">견적이 새로 저장되면(화면 저장 · 복제 · 포털 견적요청) 아래 받는 사람에게 <b>견적번호 · 고객 · SKU · 총수량 · 수주현황 · 견적액</b>을 바로 보냅니다. 받는 사람을 등록한 뒤에 만들어진 견적부터 갑니다. 팀을 고르면 그 팀 고객의 견적만 받습니다(하나도 안 고르면 전체).</div>
+    </div>
+    <div class="qwsec">
+      <h3>받는 사람</h3>
+      <div id="qwRecips"><div class="hint">불러오는 중…</div></div>
+      <div class="addrow">
+        <div><label>이름</label><input id="qwName" type="text" style="width:140px" maxlength="80"></div>
+        <div><label>WhatsApp 번호 <span class="hint" style="font-weight:500">(10자리 또는 52+10자리)</span></label><input id="qwPhone" type="tel" style="width:160px" placeholder="8112345678"></div>
+        <div><label>언어</label><select id="qwLang"><option value="ko">한국어</option><option value="es">Español</option></select></div>
+        <div><label>팀 범위</label><div class="teams" id="qwNewTeams"></div></div>
+        <button type="button" class="btn sm" id="qwAdd">＋ 추가</button>
+      </div>
+    </div>
+    <div class="qwsec">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="margin:0">보낼 내용 미리보기</h3>
+        <span class="hint" id="qwPvNo"></span>
+        <select id="qwPvLang" style="margin-left:auto"><option value="ko">한국어</option><option value="es">Español</option></select>
+      </div>
+      <pre id="qwPv">—</pre>
+    </div>
+    <div class="qwsec">
+      <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">최근 발송</h3><button type="button" class="btn ghost sm" id="qwRefresh" style="margin-left:auto">↻ 새로고침</button></div>
+      <div id="qwLog"><div class="hint">—</div></div>
+    </div>
+  </div>
+</div>
+<script>
+/* 0256 · 신규 견적 WhatsApp 알림 설정 (디렉터 전용) — 새 코드는 addEventListener 만 사용 */
+(function(){
+  var st={teams:[],items:[],webhook:false};
+  function $q(id){ return document.getElementById(id); }
+  function ex(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function call(method,path,body){
+    var o={method:method,headers:{'Authorization':'Bearer '+session.token}};
+    if(body!==undefined){ o.headers['Content-Type']='application/json'; o.body=JSON.stringify(body); }
+    return fetch(session.api+path,o).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ if(!r.ok){ var e=new Error(d.error||('http_'+r.status)); e.data=d; throw e; } return d; }); });
+  }
+  var ERR={name_required:'이름을 넣으세요.',bad_phone:'번호 형식이 맞지 않습니다(10자리 또는 52+10자리).',duplicate_phone:'이미 등록된 번호입니다.',
+    wa_not_configured:'WhatsApp 키가 설정되지 않았습니다(관리 › 외부 서비스 키).',no_quote:'보낼 견적이 없습니다.',no_recipients:'범위에 드는 받는 사람이 없습니다.'};
+  function say(ok,t){ var m=$q('qwMsg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; if(ok) setTimeout(function(){ if(m.textContent===t) m.className='msg'; },4000); }
+  function errText(e){ return ERR[e.message]||('오류: '+e.message); }
+  function teamBoxes(sel,attr){
+    if(!st.teams.length) return '<span class="hint">팀 없음</span>';
+    return st.teams.map(function(t){ return '<label><input type="checkbox" '+attr+' value="'+t.id+'"'+(sel.indexOf(t.id)>=0?' checked':'')+'>'+ex(t.name)+'</label>'; }).join('');
+  }
+  function renderRecips(){
+    var el=$q('qwRecips');
+    if(!st.items.length){ el.innerHTML='<div class="hint">아직 없습니다. 아래에서 추가하세요.</div>'; }
+    else el.innerHTML='<table><thead><tr><th>이름</th><th>번호</th><th>언어</th><th>팀 범위</th><th>24시간 창</th><th>사용</th><th></th></tr></thead><tbody>'
+      + st.items.map(function(r){
+        var win=r.window_open==null?'<span class="hint">웹훅 미설정</span>':(r.window_open?'<span class="win open">열림</span>':'<span class="win closed">닫힘 · 템플릿</span>');
+        return '<tr data-id="'+r.id+'"><td><b>'+ex(r.name)+'</b></td><td>'+ex(r.phone_masked)+'</td>'
+          +'<td><select data-act="lang"><option value="ko"'+(r.lang==='ko'?' selected':'')+'>한국어</option><option value="es"'+(r.lang==='es'?' selected':'')+'>Español</option></select></td>'
+          +'<td><div class="teams">'+teamBoxes(r.team_ids||[],'data-act="team"')+'</div>'+(!(r.team_ids||[]).length?'<span class="hint">전체</span>':'')+'</td>'
+          +'<td>'+win+'</td>'
+          +'<td><input type="checkbox" data-act="active"'+(r.active?' checked':'')+'></td>'
+          +'<td style="white-space:nowrap"><button type="button" class="btn ghost sm" data-act="test" title="가장 최근 견적으로 이 사람에게 지금 보냅니다">시험 발송</button> <button type="button" class="btn ghost sm" data-act="del" style="color:var(--expense);border-color:var(--expense)">삭제</button></td></tr>';
+      }).join('')+'</tbody></table>';
+    $q('qwNewTeams').innerHTML=teamBoxes([],'data-new-team');
+  }
+  function renderStat(s){
+    var tag=function(ok,t){ return '<span class="'+(ok?'ok':'bad')+'">'+t+'</span>'; };
+    $q('qwStat').innerHTML=tag(s.enabled,s.enabled?'알림 켜짐':'알림 꺼짐(QUOTE_WA_ENABLED=0)')
+      +tag(s.api_ready,s.api_ready?'WhatsApp 키 OK':'WhatsApp 키 없음')
+      +tag(!!s.template,s.template?('창 밖 템플릿: '+ex(s.template)):'템플릿 없음 — 24시간 창 밖이면 못 받음')
+      +tag(s.webhook,s.webhook?'웹훅 연결 — 실제 전달 확인':'웹훅 미설정');
+  }
+  function dlv(x){
+    if(x.status==='sending') return '<span class="hint">보내는 중</span>';
+    if(x.status==='failed') return '<span class="dl f">✗ '+ex(x.error||'실패')+'</span>';
+    var a=x.status==='sent_template'?'접수(템플릿)':'접수';
+    if(x.dlv_status==='failed') return a+' · <span class="dl f">✗ 전달 실패 — '+ex(x.dlv_reason||'')+'</span>';
+    if(x.dlv_status==='read') return a+' · <span class="dl r">👁 읽음</span>';
+    if(x.dlv_status==='delivered') return a+' · <span class="dl r">✓✓ 도착</span>';
+    if(x.dlv_status==='sent') return a+' · ✓ 출발';
+    return a;
+  }
+  function renderLog(s){
+    var rows=s.recent||[];
+    if(!rows.length){ $q('qwLog').innerHTML='<div class="hint">아직 보낸 기록이 없습니다.</div>'; return; }
+    $q('qwLog').innerHTML='<table><thead><tr><th>시각</th><th>견적번호</th><th>고객</th><th>받는 사람</th><th>상태</th><th class="r">시도</th></tr></thead><tbody>'
+      +rows.map(function(x){ var t=x.updated_at?new Date(x.updated_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+        return '<tr><td>'+ex(t)+'</td><td>'+ex(x.quote_no)+'</td><td>'+ex(x.customer_name||'')+'</td><td>'+ex(x.name||x.to_masked||'')+'</td><td>'+dlv(x)+'</td><td class="r">'+ex(x.attempts)+'</td></tr>'; }).join('')
+      +'</tbody></table>';
+  }
+  function loadPreview(){
+    call('GET','/api/quote-wa/preview?lang='+encodeURIComponent($q('qwPvLang').value)).then(function(d){
+      $q('qwPvNo').textContent='가장 최근 견적 '+d.quote_no; $q('qwPv').textContent=d.text;
+    }).catch(function(e){ $q('qwPvNo').textContent=''; $q('qwPv').textContent=e.message==='no_quote'?'견적이 아직 없습니다.':errText(e); });
+  }
+  function loadAll(){
+    call('GET','/api/quote-wa/recipients').then(function(d){ st.teams=d.teams||[]; st.items=d.items||[]; st.webhook=!!d.webhook; renderRecips(); })
+      .catch(function(e){ $q('qwRecips').innerHTML='<div class="hint">'+ex(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포·migrate 확인).':errText(e))+'</div>'; });
+    call('GET','/api/quote-wa/status').then(function(s){ renderStat(s); renderLog(s); }).catch(function(){});
+    loadPreview();
+  }
+  function open(){ $q('qwModal').classList.add('on'); $q('qwMsg').className='msg'; loadAll(); }
+  function close(){ $q('qwModal').classList.remove('on'); }
+  $q('qwClose').addEventListener('click',close);
+  $q('qwModal').addEventListener('click',function(e){ if(e.target===$q('qwModal')) close(); });
+  $q('qwRefresh').addEventListener('click',loadAll);
+  $q('qwPvLang').addEventListener('change',loadPreview);
+  $q('qwAdd').addEventListener('click',function(){
+    var teams=[].slice.call(document.querySelectorAll('#qwNewTeams input:checked')).map(function(i){return Number(i.value);});
+    call('POST','/api/quote-wa/recipients',{name:$q('qwName').value,phone:$q('qwPhone').value,lang:$q('qwLang').value,team_ids:teams})
+      .then(function(){ $q('qwName').value=''; $q('qwPhone').value=''; say(true,'추가했습니다. 지금부터 만들어지는 견적이 갑니다.'); loadAll(); })
+      .catch(function(e){ say(false,errText(e)); });
+  });
+  $q('qwRecips').addEventListener('change',function(e){
+    var tr=e.target.closest('tr[data-id]'); if(!tr) return; var id=tr.getAttribute('data-id'); var act=e.target.getAttribute('data-act'); var body=null;
+    if(act==='lang') body={lang:e.target.value};
+    else if(act==='active') body={active:e.target.checked};
+    else if(act==='team') body={team_ids:[].slice.call(tr.querySelectorAll('input[data-act="team"]:checked')).map(function(i){return Number(i.value);})};
+    if(!body) return;
+    call('PATCH','/api/quote-wa/recipients/'+id,body).then(function(r){
+      st.items=st.items.map(function(x){ return String(x.id)===String(id)?Object.assign({},x,r):x; }); renderRecips(); say(true,'저장했습니다.');
+    }).catch(function(err){ say(false,errText(err)); loadAll(); });
+  });
+  $q('qwRecips').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-act]'); if(!b) return; var tr=b.closest('tr[data-id]'); var id=tr.getAttribute('data-id'); var act=b.getAttribute('data-act');
+    if(act==='del'){ if(!confirm('이 받는 사람을 삭제할까요?')) return;
+      call('DELETE','/api/quote-wa/recipients/'+id).then(function(){ say(true,'삭제했습니다.'); loadAll(); }).catch(function(err){ say(false,errText(err)); }); }
+    if(act==='test'){ b.disabled=true;
+      call('POST','/api/quote-wa/send',{recipient_id:Number(id)}).then(function(d){ var r=(d.results||[])[0]||{};
+        say(!!r.ok, r.ok?('보냈습니다 — '+d.quote_no+' (휴대폰 도착은 아래 「최근 발송」에서 확인)'):('발송 실패: '+(r.error||r.skipped||''))); setTimeout(loadAll,1500); setTimeout(loadAll,9000);
+      }).catch(function(err){ say(false,errText(err)); }).finally(function(){ b.disabled=false; }); }
+  });
+  // 디렉터에게만 버튼 — 로그인(포털 세션 자동 로그인 포함)이 끝난 뒤 붙인다
+  var tries=0, iv=setInterval(function(){
+    tries++;
+    var app=$q('app');
+    if(app && !app.classList.contains('hidden')){
+      clearInterval(iv);
+      if(typeof isDirector==='undefined' || !isDirector || $q('qwOpen')) return;
+      var anchor=document.querySelector('a[href="refatrix-quote.html"]');
+      var btn=document.createElement('button'); btn.type='button'; btn.id='qwOpen'; btn.className='btn ghost'; btn.style.marginRight='8px';
+      btn.title='새 견적이 들어오면 지정한 사람에게 WhatsApp 으로 알립니다'; btn.textContent='📲 신규견적 알림';
+      btn.addEventListener('click',open);
+      if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn,anchor);
+    } else if(tries>600) clearInterval(iv);
+  },100);
 })();
 </script>
 <script src="refatrix-nav.js?v=20260930vr"></script>

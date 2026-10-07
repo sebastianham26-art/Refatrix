@@ -16,6 +16,7 @@
 //        고객에게 나가는 것이 더 나쁘다.
 //     4) 수신 1건 = 이력 1행. **거절도 남는다.**
 import { query, withTx } from '../db.js';
+import { kickQuoteNotify } from '../quoteWaNotify.js';   // 0256 · 신규 견적 WhatsApp 알림
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { getEndpoint, INBOUND_KEY_FALLBACK, maskSecret, activeToken } from '../integrations.js';
@@ -359,6 +360,7 @@ export default async function crmQuoteRoutes(app) {
         mensaje: numberNote ? `${body.mensaje} ⚠ ${numberNote}` : body.mensaje });
       // 0227 · 오더상태 (전송) — 응답을 돌려준 **뒤에** 「Solicitud nueva」 를 보낸다(기다리지 않는다).
       kickOrderStatus(result.q.id, { origin: 'crm_quote_created', app });
+      kickQuoteNotify(result.q.id, app);   // 0256 · 포털 견적요청도 신규 견적 알림
       return reply.code(200).send(body);
     } catch (e) {
       // 같은 번호가 **동시에** 두 번 들어오면 유니크 제약이 하나를 막는다.
