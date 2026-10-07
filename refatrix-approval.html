@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261002fc</title>
+<title>Refatrix ERP · 전자결재 · b20261007ga</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -605,6 +605,16 @@ function cmtItem(c){
   ${c.history&&c.history.length?`<details class="orig"><summary>수정 이력 ${c.history.length}건</summary>${c.history.map(h=>`<div>${tm(h.at)} · ${esc(h.body)}</div>`).join('')}</details>`:''}
  </div></li>`;
 }
+// 0258 회차별 자금 연결 표시 · 거래등록 바로가기
+const finExecUrl=pid=>'refatrix-finance.html#tab=new&apay='+pid;
+function finCell(p){
+ if(!B.fin_link)return '';
+ if(p.fin==='actual')return `<span class="bdg b-teal" title="거래등록 #${p.txn_id}">거래등록 실적</span>${p.exec_source==='finance'?'':'<div class="sub">증빙 연결</div>'}`;
+ if(p.fin==='plan')return '<span class="bdg b-blue" title="재무 › 미래자금계획에 지출 예정으로 반영됨">자금계획 예정</span>';
+ if(p.status==='done')return '<span class="sub">전자결재 집행</span>';
+ if(p.status==='skipped')return '<span class="sub">—</span>';
+ return DET.doc.status==='approved'?'<span class="sub">반영 대기</span>':'<span class="sub">결재 후 반영</span>';
+}
 const btn=(act,l,cls)=>`<button class="btn ${cls||''}" data-act="${act}">${l}</button>`;
 function actionsHtml(){
  const d=DET.doc,a=DET.actions,b=DET.can_edit_lines?[btn('lineedit','✎ 결재선 수정','le-btn')]:[],mine=DET.lines.find(l=>l.status==='pending'&&same(l.user_id,B.me.id));
@@ -655,15 +665,16 @@ function renderDetail(){
    :`<p class="sub">집행 전입니다. 재무 담당이 회차마다 집행하면 실적이 기록됩니다.</p>`}</div>
  </div>
  <p class="kv-h" style="margin:14px 0 6px">지급 일정 <span class="sub" style="font-weight:400">${DET.payments.length}회${usd?' · USD 회차는 실제 지급일 환율로 MXN 환산해 고정':''}</span></p>
- <div class="scroll"><table class="tbl pays"><thead><tr><th>회차</th><th>예정일</th><th>예정 금액</th><th>상태</th><th>실적</th><th>지급일</th><th>증빙</th><th></th></tr></thead><tbody>
+ <div class="scroll"><table class="tbl pays"><thead><tr><th>회차</th><th>예정일</th><th>예정 금액</th><th>상태</th><th>실적</th><th>지급일</th><th>증빙</th><th>자금</th><th></th></tr></thead><tbody>
  ${DET.payments.map(p=>{const ev=DET.files.filter(f=>same(f.payment_id,p.id)&&!f.voided_at).length;
   return `<tr><td>${p.seq}</td><td>${esc(p.due_date||'—')}</td><td>${cm(p.planned_amount,d.currency)}${usd?`<div class="sub">${money(p.planned_mxn)} MXN</div>`:''}</td>
   <td>${p.status==='done'?'<span class="bdg b-teal">집행</span>':p.status==='skipped'?'<span class="bdg b-gray">중단</span>':'<span class="bdg b-gold">예정</span>'}</td>
   <td>${p.status==='done'?`${cm(p.actual_amount,d.currency)}${usd?`<div class="sub">× ${p.fx_rate} (${esc(p.fx_date||'')}) = ${money(p.actual_mxn)} MXN</div>`:''}`:p.status==='skipped'?`<span class="sub">${esc(p.skip_reason||'')}</span>`:''}</td>
-  <td>${esc(p.exec_date||'')}${p.exec_by?`<div class="sub">${esc(U(p.exec_by))}</div>`:''}</td><td>${ev?`📎 ${ev}`:''}</td>
-  <td>${canExec&&p.status==='planned'?`<button class="btn sm gold" data-act="exec" data-pid="${p.id}">집행</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
+  <td>${esc(p.exec_date||'')}${p.exec_by?`<div class="sub">${esc(U(p.exec_by))}</div>`:''}</td><td>${ev?`📎 ${ev}`:''}${p.fin==='actual'?`${ev?'<br>':''}<span class="sub">📄 결재문서</span>`:''}</td>
+  <td>${finCell(p)}</td>
+  <td>${canExec&&p.status==='planned'?`${B.fin_link?`<a class="btn sm gold" href="${finExecUrl(p.id)}" target="_blank" rel="noopener" title="재무 › 거래등록에서 실제 지급을 등록 — 이 결재 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다">거래등록에서 집행</a> `:''}<button class="btn sm ${B.fin_link?'ghost':'gold'}" data-act="exec" data-pid="${p.id}" ${B.fin_link?'title="전자결재에만 기록(자금 실적은 거래등록에 따로 등록)"':''}>${B.fin_link?'여기서 집행':'집행'}</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
  </tbody></table></div>
- ${warns.join('')}<div class="warn info">예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.</div></div>
+ ${warns.join('')}<div class="warn info">${B.fin_link?'결재가 끝나면 미집행 회차가 <b>재무 › 미래자금계획(예정)</b>에 들어갑니다. 재무가 거래등록에서 실제 지급을 등록하면 이 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다.':'예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.'}</div></div>
  <div class="card sec"><h3>내용<span class="sp"></span>${DET.can_edit_content?'<button class="btn sm" data-act="revise">✎ 내용 수정</button>':''}${DET.can_addend?'<button class="btn sm" data-act="addend">＋ 추가 작성</button>':''}</h3>
   <p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')} · 원문 ${esc(U(d.drafter_id))}${DET.revisions.length?` · 마지막 수정 ${esc(U(DET.revisions[DET.revisions.length-1].editor_id))} ${tm(DET.revisions[DET.revisions.length-1].created_at)}`:''}</p>
   <div class="rbody">${renderBodyNodes(DET.body_nodes)}</div>
@@ -1032,7 +1043,7 @@ function renderReport(){
  const rows=REP.rows,T=REP.total,mxv=Math.max(1,...rows.map(r=>Math.max(r.plan,r.actual)));
  return `
  <div class="dh" style="justify-content:space-between"><h1 style="margin:0">예정 대비 실적</h1><div style="display:flex;gap:6px"><select class="inp" id="monSel" style="width:auto">${REP.months.map(m=>`<option ${m===REP.month?'selected':''}>${m}</option>`).join('')}</select><button class="btn" data-act="repxls">엑셀</button></div></div>
- <div class="warn info" style="margin:8px 0 12px">결재 모듈 내부 집계입니다. 재무상태·cashflow에는 반영되지 않으며, 완결성 확인 후 연동 여부를 결정합니다. (상신월 기준 · 승인완료 문서)</div>
+ <div class="warn info" style="margin:8px 0 12px">결재 모듈 집계입니다(상신월 기준 · 승인완료 문서). ${B.fin_link?'승인완료 문서의 미집행 회차는 재무 미래자금계획에 예정으로 반영되고, 거래등록 실적으로 집행됩니다.':'재무상태·cashflow에는 반영되지 않습니다.'}</div>
  <div class="card sec scroll"><table class="tbl"><thead><tr><th>카테고리</th><th>승인</th><th>예정 합계</th><th>집행</th><th>실적 합계</th><th>차이</th><th>미집행 잔액</th><th>사후 미확인</th></tr></thead>
  <tbody>${rows.length?rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.n}</td><td>${money(r.plan)}</td><td>${r.execN}</td><td>${money(r.actual)}</td><td class="${r.diff>0?'flag':''}">${r.diff>0?'+':''}${money(r.diff)}</td><td>${money(r.unexec)}</td><td>${r.postOpen||''}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">해당 월 데이터가 없습니다</td></tr>'}</tbody>
  ${rows.length?`<tfoot><tr><td>합계</td><td>${T.n}</td><td>${money(T.plan)}</td><td>${T.execN}</td><td>${money(T.actual)}</td><td>${T.diff>0?'+':''}${money(T.diff)}</td><td>${money(T.unexec)}</td><td>${T.postOpen||''}</td></tr></tfoot>`:''}</table></div>
@@ -1044,9 +1055,15 @@ function renderReport(){
 }
 
 /* ═════════ 설정 ═════════ */
+// 0258 카테고리 → 재무 계정과목(미래자금계획 예정 · 거래등록 실적의 과목)
+function finCatSel(c){
+ const def=(B.fin_categories||[]).find(x=>x.code===B.fin_default_code);
+ return `<label class="sub" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px" title="이 카테고리 문서가 자금계획·거래등록에 들어갈 때의 계정과목">재무 과목 <select class="inp" data-fincat="${c.id}" style="max-width:190px;padding:4px 6px">
+  <option value="">(기본${def?' · '+esc(def.code+' '+def.name):''})</option>${(B.fin_categories||[]).map(x=>`<option value="${esc(x.code)}" ${x.code===c.fin_category_code?'selected':''}>${esc(x.code+' · '+x.name)}</option>`).join('')}</select></label>`;
+}
 function tplRow(c){
  const staff=B.users.filter(u=>u.active&&!same(u.id,B.settings.director_user_id)&&!same(u.id,B.settings.ceo_user_id));
- return `<div class="tpl ${c.active?'':'off'}"><div class="nm">${esc(c.name)}${c.active?'':' <span class="bdg b-gray">사용 중지</span>'}<span style="flex:1"></span><button class="btn sm ghost" data-act="catren" data-c="${c.id}">이름</button><button class="btn sm ghost" data-act="cattog" data-c="${c.id}">${c.active?'사용 중지':'다시 사용'}</button></div><div class="lineprev">
+ return `<div class="tpl ${c.active?'':'off'}"><div class="nm">${esc(c.name)}${c.active?'':' <span class="bdg b-gray">사용 중지</span>'}<span style="flex:1"></span>${B.fin_link?finCatSel(c):''}<button class="btn sm ghost" data-act="catren" data-c="${c.id}">이름</button><button class="btn sm ghost" data-act="cattog" data-c="${c.id}">${c.active?'사용 중지':'다시 사용'}</button></div><div class="lineprev">
   <span class="lp fixed"><small>기안</small>기안자</span><span class="arrow">›</span>
   ${c.steps.map(s=>`<span class="lp"><small>${SL(s.step_type)}</small>${esc(U(s.user_id))} <button class="x" data-act="tpldel" data-s="${s.id}" aria-label="삭제">×</button></span><span class="arrow">›</span>`).join('')}
   <span class="lp fixed"><small>디렉터 결재</small>${esc(U(B.settings.director_user_id))}</span><span class="arrow">›</span>
@@ -1085,7 +1102,8 @@ function renderSettings(){
    <li><span>댓글 수정·삭제</span><span class="v">디렉터만 · 이력 보존</span></li>
    <li><span>승인완료 후 증빙 삭제</span><span class="v">불가 (무효 처리)</span></li>
    <li><span>사후승인 시점</span><span class="v">집행완료 후</span></li>
-   <li><span>재무상태·cashflow 반영</span><span class="v">하지 않음</span></li></ul></div>
+   <li><span>미래자금계획(예정) 반영</span><span class="v">${B.fin_link?'승인완료 시 회차별 지출 예정':'하지 않음'}</span></li>
+   <li><span>실제 자금집행</span><span class="v">${B.fin_link?'재무 › 거래등록 (결재 문서 = 영수증 대용)':'전자결재 집행 처리'}</span></li></ul></div>
   <div class="card sec"><h3>설정 변경 이력</h3><ul class="chk">${B.settings_log.length?B.settings_log.map(x=>`<li><span>${esc(x.detail)}</span><span class="sub" style="white-space:nowrap">${esc(U(x.by))} · ${tm(x.at)}</span></li>`).join(''):'<li class="sub">변경 이력이 없습니다</li>'}</ul></div>
  </div>`;
 }
@@ -1258,6 +1276,7 @@ const MODALS={
   const free=DET.files.filter(f=>!f.voided_at&&B.exec_kinds.includes(f.kind)&&f.payment_id==null&&n1>1);
   const last=DET.payments.filter(x=>x.status==='planned').length===1;
   return `<h2>집행 처리${n1>1?` · ${p.seq}/${n1}회차`:''}</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)} · 예정 ${cm(p.planned_amount,d.currency)}${p.due_date?` · 예정일 ${esc(p.due_date)}`:''}</p>
+  ${B.fin_link?`<div class="warn info"><b>권장: 재무 › 거래등록에서 집행</b> — 실제 지급(계좌·금액)을 등록하면 자금 실적과 이 회차 집행이 한 번에 처리되고, 이 결재 문서가 영수증 대용 증빙이 됩니다.<br><a class="btn sm gold" style="margin-top:6px" href="${finExecUrl(p.id)}" target="_blank" rel="noopener">거래등록에서 집행 →</a><br><span class="sub">아래에서 집행하면 전자결재에만 기록되고 이 회차의 자금계획 예정은 빠집니다(자금 실적은 거래등록에 따로 등록해야 합니다).</span></div>`:''}
   <div class="form"><div class="fld"><label>실적 금액 (${d.currency}, IVA 포함) <span class="req">*</span></label><input class="inp" id="mAmt" inputmode="decimal" value="${p.planned_amount}"></div>
   <div class="fld"><label>실제 지급일 <span class="req">*</span></label><input class="inp" type="date" id="mDate" value="${todayMX()}"></div>
   <div class="fld full"><label>지급 방법</label><select class="inp" id="mPay">${B.pay_methods.map(x=>`<option ${x===d.pay_method?'selected':''}>${x}</option>`).join('')}</select></div></div>
@@ -1463,6 +1482,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
  const t=e.target;
+ if(t.dataset.fincat){const cid=Number(t.dataset.fincat);run(async()=>{await api('PUT',`/api/approvals/categories/${cid}`,{fin_category_code:t.value||null});await loadBoot();toast('재무 과목을 바꿨습니다 · 남은 자금계획 예정에도 반영');render();});return;}
  if(t.id==='ivaOn'&&ui.cd){ui.cd.iva_applied=t.checked;updateCompose();}
  else if(t.dataset.cs&&ui.cd){const k=t.dataset.cs,st=cdSteps(ui.cd);if(k==='type')st[Number(t.dataset.i)].step_type=t.value;else if(k==='user')st[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='addT')ui.csAddT=t.value;else if(k==='addU')ui.csAddU=Number(t.value);if(k==='type'||k==='user')updateCompose();}
  else if(t.dataset.le&&ui.le){const k=t.dataset.le;if(k==='type')ui.le.rows[Number(t.dataset.i)].step_type=t.value;else if(k==='user')ui.le.rows[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='post')ui.le.post=Number(t.value);else if(k==='addT')ui.le.addT=t.value;else if(k==='addU')ui.le.addU=Number(t.value);}

@@ -189,5 +189,5 @@ test('⑫ 이어받은 행도 예정 삭제 선택 대상에 들어간다 (디�
 });
 
 test('⑬ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0930bal/);
+  assert.match(HTML, /build fin-1007ap/);
 });

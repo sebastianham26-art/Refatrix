@@ -1,12 +1,13 @@
 // 공통 › 전자결재(0234) — 비용집행 품의 · 결재선 · 증빙 · 댓글 · 알림 · 설정 · 예정/실적 리포트
 //   규칙(결재선 생성·다음 단계·열람 권한·파일 검증)은 src/approval.js 순수 함수.
 //   모든 상태 변경은 withTx 안에서 문서 행을 FOR UPDATE 로 잠근 뒤 처리한다(동시 클릭·중복 승인 방지).
-//   예정/실적 금액은 이 모듈 안에서만 관리 — transactions·cashflow 에는 쓰지 않는다.
+//   0258: 승인완료 문서의 미집행 회차는 미래자금계획(예정)에 반영 · 거래등록 실적으로 집행 — 연동 규칙은 src/approvalFinance.js(이 파일은 거래 테이블을 직접 다루지 않음).
 //   0237: USD 기입 → 재무 환율(fx_rates)로 MXN 환산(상신 시 고정) · 결제 방식(일시불/분할/정기) 회차별 집행 · 본문 그림.
 import { query, withTx } from '../db.js';
 import { getUsdMxnRate } from '../fx.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
+import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE } from '../approvalFinance.js';   // 0258 자금 연동
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
   n, round2, sameId, decodeApprovalFile, sha256Hex, parseCfdi, guessKind, normKind, calcAmounts,
@@ -152,7 +153,7 @@ async function autoExecute(q, doc, lines, actorId, why) {
   const fxDate = doc.currency === 'USD' ? doc.fx_date : null;
   await q(`UPDATE approval_payments SET status='done', actual_amount=planned_amount, actual_mxn=planned_mxn, fx_rate=$2, fx_date=$3,
              exec_date=COALESCE(due_date, (now() AT TIME ZONE 'America/Mexico_City')::date), pay_method=$4,
-             memo='집행 단계 없음 — 예정 금액으로 처리', exec_at=now(), exec_by=NULL
+             memo='집행 단계 없음 — 예정 금액으로 처리', exec_at=now(), exec_by=NULL, exec_source='approval'
            WHERE document_id=$1 AND status='planned'`, [doc.id, fxRate, fxDate, doc.pay_method || '계좌이체']);
   const pays = await loadPayments(q, doc.id);
   const done = pays.filter((p) => p.status === 'done');
@@ -216,7 +217,9 @@ export default async function approvalRoutes(app) {
     const settings = await loadSettings(query);
     const ctx = ctxOf(req, settings);
     const users = await loadUsers(query);
-    const cats = (await query(`SELECT id, name, sort_order, active FROM approval_categories ORDER BY sort_order, id`)).rows;
+    const finOk = await approvalFinReady(query);
+    const cats = (await query(`SELECT id, name, sort_order, active${finOk ? ', fin_category_code' : ''} FROM approval_categories ORDER BY sort_order, id`)).rows;
+    const finCats = (await query(`SELECT code, name, group_name FROM categories ORDER BY sort_order, code`)).rows;
     const steps = (await query(`SELECT id, category_id, step_order, step_type, user_id FROM approval_category_steps ORDER BY step_order, id`)).rows;
     const unread = Number((await query(`SELECT count(*)::int AS c FROM approval_notifications WHERE user_id=$1 AND read_at IS NULL`, [ctx.uid])).rows[0].c);
     const log = (await query(`SELECT changed_at, changed_by, detail FROM approval_settings_log ORDER BY changed_at DESC, id DESC LIMIT 50`)).rows;
@@ -225,10 +228,11 @@ export default async function approvalRoutes(app) {
       settings,
       settings_log: log.map((r) => ({ at: r.changed_at, by: r.changed_by == null ? null : Number(r.changed_by), detail: r.detail })),
       categories: cats.map((c) => ({
-        id: Number(c.id), name: c.name, sort_order: Number(c.sort_order), active: c.active,
+        id: Number(c.id), name: c.name, sort_order: Number(c.sort_order), active: c.active, fin_category_code: c.fin_category_code || null,
         steps: steps.filter((s) => sameId(s.category_id, c.id)).map((s) => ({ id: Number(s.id), step_order: Number(s.step_order), step_type: s.step_type, user_id: Number(s.user_id) })),
       })),
       users: [...users.values()],
+      fin_categories: finCats, fin_link: finOk, fin_default_code: DEFAULT_EXP_CODE,
       kinds: KINDS, exec_kinds: EXEC_KINDS, pay_methods: PAY_METHODS, step_label: STEP_LABEL,
       currencies: CURRENCIES, payment_types: PAYMENT_TYPE_LABEL, freqs: FREQS, schedule_max: SCHEDULE_MAX,
       file_max_bytes: APPROVAL_FILE_MAX_BYTES,
@@ -324,7 +328,8 @@ export default async function approvalRoutes(app) {
         WHERE l.document_id=$1 ORDER BY l.created_at`, [id])).rows.map((r) => ({ id: Number(r.id), doc_no: r.doc_no, title: r.title }));
     const parent = b.doc.parent_id ? (await query(`SELECT id, doc_no FROM approval_documents WHERE id=$1`, [b.doc.parent_id])).rows[0] : null;
     await query(`UPDATE approval_notifications SET read_at=now() WHERE user_id=$1 AND document_id=$2 AND read_at IS NULL`, [ctx.uid, id]);
-    const payments = await loadPayments(query, id);
+    const finMap = await paymentFinanceMap(query, id);   // 0258 회차별 자금 연결(예정/실적)
+    const payments = (await loadPayments(query, id)).map((p) => ({ ...p, ...(finMap[p.id] || {}) }));
     const addenda = (await query(
       `SELECT id, author_id, step_type, body, body_rich, created_at FROM approval_addenda WHERE document_id=$1 ORDER BY created_at, id`, [id])).rows
       .map((x) => { const r2 = normalizeBodyRich(x.body_rich ?? null, x.body); return { id: Number(x.id), author_id: Number(x.author_id), step_type: x.step_type, created_at: x.created_at, nodes: r2.ok ? r2.nodes : [{ t: 'p', v: x.body || '' }] }; });
@@ -508,6 +513,7 @@ export default async function approvalRoutes(app) {
       await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL`, [id]);
       await event(q, id, ctx.uid, 'delete', null, `문서 삭제 (${b.doc.doc_no || '—'} · 상태 ${stageKey(b.doc, b.lines)})\n사유: ${reason}`);
       await notify(q, b.doc.drafter_id, id, '문서 삭제', reason, ctx.uid);
+      await syncApprovalDoc(q, id, ctx.uid);   // 0258 삭제 → 예정 숨김
       return { ok: true, doc_no: b.doc.doc_no };
     });
   });
@@ -544,6 +550,7 @@ export default async function approvalRoutes(app) {
       const b = await loadBundle(q, id, false);
       for (const l of b.lines.filter((x) => x.status === 'pending')) await notify(q, l.user_id, id, REQUEST_KIND[l.step_type], '복구된 문서', ctx.uid);
       if (b.doc.status === 'approved' && b.doc.exec_status === 'pending' && settings.finance_user_id) await notify(q, settings.finance_user_id, id, '집행 대기', '복구된 문서', ctx.uid);
+      await syncApprovalDoc(q, id, ctx.uid);   // 0258 복구 → 예정 다시
       return { ok: true };
     });
   });
@@ -604,6 +611,7 @@ export default async function approvalRoutes(app) {
         [built.ceoPre ? `사전승인 대상 (기준액 ${settings.ceo_pre_threshold})` : null, fxNote].filter(Boolean).join('\n') || null);
       for (const v of b.viewers) if (v.kind === 'ref') await notify(q, v.user_id, id, '참조', null, uid);
       await applyAdvance(q, { doc: b.doc, lines, viewers: b.viewers }, uid, settings);
+      await syncApprovalDoc(q, id, uid);   // 0258 상신 즉시 승인완료면 예정 반영
       return { id, doc_no: no };
     });
   });
@@ -643,6 +651,7 @@ export default async function approvalRoutes(app) {
       }
       await event(q, id, ctx.uid, { agree: 'agree', pass: 'pass' }[mine.step_type] || 'approve', mine.step_type, comment);
       const r = await applyAdvance(q, b, ctx.uid, settings);
+      await syncApprovalDoc(q, id, ctx.uid);   // 0258 승인완료 → 미래자금계획 반영
       return { ok: true, status: r.approved ? 'approved' : 'progress' };
     });
   });
@@ -766,13 +775,14 @@ export default async function approvalRoutes(app) {
       if (b.doc.currency === 'USD' && (fx.source === 'default' || !(fx.rate > 0))) throw new Stop('fx_unavailable');
       const mxn = round2(amt * fx.rate);
       await q(`UPDATE approval_payments SET status='done', actual_amount=$2, actual_mxn=$3, fx_rate=$4, fx_date=$5, exec_date=$6,
-                 pay_method=$7, memo=$8, exec_at=now(), exec_by=$9 WHERE id=$1`,
+                 pay_method=$7, memo=$8, exec_at=now(), exec_by=$9, exec_source='approval' WHERE id=$1`,
         [pid, amt, mxn, fx.rate, fx.date, date, pay, memo, ctx.uid]);
       const cur = b.doc.currency;
       const money = cur === 'USD' ? `USD ${amt.toFixed(2)} × ${fx.rate} (${fx.date || '—'}) = MXN ${mxn.toFixed(2)}` : `MXN ${amt.toFixed(2)}`;
       await event(q, id, ctx.uid, 'execute', null,
         `${pays.length > 1 ? `${row.seq}/${pays.length}회차 · ` : ''}실적 ${money} · ${pay} · 지급일 ${date}${memo ? '\n' + memo : ''}`);
       const finished = await finishIfAllPaid(q, b, ctx);
+      await syncApprovalDoc(q, id, ctx.uid);   // 0258 전자결재 화면 집행 → 남은 예정 정리
       return { ok: true, payment_id: pid, actual_mxn: mxn, fx, finished };
     });
   });
@@ -788,6 +798,7 @@ export default async function approvalRoutes(app) {
       await q(`UPDATE approval_payments SET status='skipped', skip_reason=$2, exec_at=now(), exec_by=$3 WHERE id=$1`, [pid, reason, ctx.uid]);
       await event(q, id, ctx.uid, 'pay_skip', null, `${row.seq}/${pays.length}회차 중단 · ${reason}`);
       const finished = await finishIfAllPaid(q, b, ctx);
+      await syncApprovalDoc(q, id, ctx.uid);   // 0258 중단한 회차 예정 정리
       return { ok: true, finished };
     });
   });
@@ -922,6 +933,7 @@ export default async function approvalRoutes(app) {
           [before !== after ? `변경 전: ${before}\n변경 후: ${after}` : null, execNote || null, reopen ? '승인 후 결재선 추가 → 다시 결재중' : null, reason ? '사유: ' + reason : null].filter(Boolean).join('\n'));
       }
       if (reopen) await notify(q, b.doc.drafter_id, id, '승인 후 결재선 추가 (재결재)', reason || null, ctx.uid);
+      await syncApprovalDoc(q, id, ctx.uid);   // 0258 재결재·승인·집행생략 → 예정 맞춤
       return { ok: true, status, changed: before !== after || execChanged, reopened: reopen, exec_required: wantExec, auto_exec: autoExec };
     });
   });
@@ -1249,6 +1261,19 @@ export default async function approvalRoutes(app) {
       const name = cleanText(req.body?.name, 60)?.trim() || c.name;
       const active = typeof req.body?.active === 'boolean' ? req.body.active : c.active;
       await q(`UPDATE approval_categories SET name=$2, active=$3 WHERE id=$1`, [cid, name, active]);
+      // 0258 재무 계정과목(미래자금계획·거래등록 과목) — 키가 있을 때만
+      if (req.body && 'fin_category_code' in req.body && await approvalFinReady(q)) {
+        const code = req.body.fin_category_code ? String(req.body.fin_category_code) : null;
+        if (code && !(await q(`SELECT 1 FROM categories WHERE code=$1`, [code])).rows.length) throw new Stop('bad_input', { detail: 'bad_fin_category' });
+        const old = (await q(`SELECT fin_category_code FROM approval_categories WHERE id=$1`, [cid])).rows[0].fin_category_code || null;
+        if (old !== code) {
+          await q(`UPDATE approval_categories SET fin_category_code=$2 WHERE id=$1`, [cid, code]);
+          await logSet(q, req.ctx.perm.userId, `카테고리 ${name} 재무 과목: ${old || '(기본)'} → ${code || '(기본)'}`);
+          // 이 카테고리 문서의 남은 예정 과목도 맞춘다
+          const ds = (await q(`SELECT id FROM approval_documents WHERE category_id=$1 AND status='approved' AND deleted_at IS NULL`, [cid])).rows;
+          for (const d of ds) await syncApprovalDoc(q, Number(d.id), req.ctx.perm.userId);
+        }
+      }
       if (name !== c.name) await logSet(q, req.ctx.perm.userId, `카테고리 이름: ${c.name} → ${name}`);
       if (active !== c.active) await logSet(q, req.ctx.perm.userId, `카테고리 ${name}: ${active ? '사용' : '사용 중지'}`);
       return { ok: true };

@@ -9,6 +9,7 @@ import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { nextReceiptNo } from '../receiptNo.js';   // 영수증 번호 다음번호 제안(순수 함수)
 import { attachBalanceAfter } from '../txnBalance.js';   // 거래목록 「거래 후 잔고」(2026-09-30)
 import { validateTxnFileDataUrl, cleanFileName, txnVisibleTo, canAttachTxnFile, canDeleteTxnFile, TXN_FILE_MAX_PER_TXN } from '../txnFiles.js';   // 거래 영수증 파일(0230)
+import { syncApprovalByTxn, syncApprovalDoc, approvalCloseLock, approvalLinksForTxns, approvalOptions, lockPaymentForLink, approvalFinReady, APPROVAL_MEMO_PREFIX } from '../approvalFinance.js';   // 0258 전자결재 연동
 
 // ===== 거래 영수증 파일 테이블(0230) 준비 여부 — 반쪽 배포 안전장치 =====
 //   백엔드를 올리고 `npm run migrate` 를 아직 안 돌렸어도 거래목록이 500 으로 깨지면 안 된다.
@@ -26,6 +27,17 @@ export async function txnFilesReady(q = query) {
   return _txnFilesReady.ok;
 }
 export function _resetTxnFilesReady() { _txnFilesReady = { at: 0, ok: false }; }   // 테스트용
+
+// 0258 거래가 바뀐 뒤 연결된 전자결재 문서를 맞춘다(실패해도 거래 처리는 유지 — 로그만).
+async function afterTxnChange(txnId, userId) {
+  try { await withTx((c) => syncApprovalByTxn(c.query.bind(c), Number(txnId), userId)); }
+  catch (e) { console.error('[approval-sync]', txnId, e && e.message); }
+}
+// 0258 전자결재 연결 거래인가(예정 행) — 금액·날짜는 전자결재가 정한다
+async function approvalLinkedPlan(txnId) {
+  if (!(await approvalFinReady(query))) return false;
+  return (await query(`SELECT 1 FROM approval_payments WHERE txn_id=$1`, [txnId])).rows.length > 0;
+}
 
 // 운반비 인보이스 균등 분할(순수) — n등분하되 마지막 항이 반올림 잔액을 흡수해 합계 = total 보장.
 //   예: splitEqual(100, 3) → [33.33, 33.33, 33.34]
@@ -384,15 +396,46 @@ export default async function financeRoutes(app) {
     }
     // 승인 규칙: 지출 + 담당자 → 미승인(approved=false). 그 외 → 승인.
     const approved = !(direction === 'out' && !isDirector);
+    // 0258 전자결재 문서(회차)를 증빙으로 골라 실제 자금집행 등록 — 그 회차의 예정 행을 실적으로 바꾼다(없으면 새로 만들어 연결).
+    const apPayId = b.approval_payment_id != null && b.approval_payment_id !== '' ? Number(b.approval_payment_id) : null;
+    if (apPayId != null && (status !== 'actual' || direction !== 'out' || !Number.isInteger(apPayId) || apPayId <= 0)) {
+      return reply.code(400).send({ error: 'approval_needs_actual_out' });
+    }
+    let apDocId = null;
     const r = await withTx(async (client) => {
-      const ins = await client.query(
-        `INSERT INTO transactions
-           (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due, customer_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16,$17) RETURNING id`,
-        [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
+      const cq = client.query.bind(client);
+      const vals = [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
          status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null,
          (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null,
-         direction === 'out' && b.cash_due === true, customerId]);
+         direction === 'out' && b.cash_due === true, customerId];
+      let ins;
+      if (apPayId != null) {
+        const lk = await lockPaymentForLink(cq, apPayId);
+        if (lk.error) return { error: lk.error };
+        apDocId = lk.docId;
+        if (lk.planTxnId) {
+          // 예정 행 → 실적(계획 금액·일자는 plan_amount/plan_date 로 남아 계획대비실적에 잡힌다)
+          ins = await client.query(
+            `UPDATE transactions SET account_id=$1, txn_date=$2, direction='out', amount=$3, currency=$4, fx_rate=$5, amount_mxn=$6,
+               category_code=COALESCE($7, category_code), status='actual', approved=$8, memo=COALESCE($9, memo), receipt_no=$10, cash_due=$11, customer_id=$12,
+               change_count = change_count + CASE WHEN abs(COALESCE(plan_amount, amount) - $3) > 0.001 OR COALESCE(plan_date, txn_date) <> $2::date THEN 1 ELSE 0 END,
+               updated_by=$13
+             WHERE id=$14 AND status='plan' AND deleted_at IS NULL RETURNING id`,
+            [vals[0], vals[1], vals[3], vals[4], vals[5], vals[6], vals[7], vals[9], vals[11], vals[14], vals[15], vals[16], vals[10], lk.planTxnId]);
+          if (!ins.rows.length) return { error: 'approval_payment_already_linked' };
+        } else {
+          ins = await client.query(
+            `INSERT INTO transactions
+               (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due, customer_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16,$17) RETURNING id`, vals);
+          await client.query(`UPDATE approval_payments SET txn_id=$2 WHERE id=$1`, [apPayId, ins.rows[0].id]);
+        }
+      } else {
+        ins = await client.query(
+          `INSERT INTO transactions
+             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due, customer_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16,$17) RETURNING id`, vals);
+      }
       if (invRows.length) {
         const parts = splitEqual(amountMxn, invRows.length);
         for (let i = 0; i < invRows.length; i++) {
@@ -402,10 +445,12 @@ export default async function financeRoutes(app) {
             [ins.rows[0].id, invRows[i].id, invRows[i].customer_id, parts[i]]);
         }
       }
+      if (apDocId != null) await syncApprovalDoc(cq, apDocId, req.ctx.perm.userId);   // 회차 집행완료 · 사후승인 요청
       return ins;
     });
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved } });
-    return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
+    if (r.error) return reply.code(409).send({ error: r.error });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved, approval_payment_id: apPayId } });
+    return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx, approval_doc_id: apDocId };
   });
 
   // 거래등록 화면의 고객 태그용 경량 고객 목록(id·이름만).
@@ -567,8 +612,10 @@ export default async function financeRoutes(app) {
     if (hasMore) rows.length = limit;
     // 거래 후 잔고(계좌 통화) — 필터·페이지와 무관하게 계좌 전 이력으로 누적한 값. 예정·미승인·계좌없음은 null.
     const withBal = await attachBalanceAfter(query, rows);
+    const apLinks = await approvalLinksForTxns(query, rows.map((t) => t.id));   // 0258 전자결재 증빙
     return { limit, offset, has_more: hasMore, balance_after: true,
       items: withBal.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
+      approval: apLinks[Number(t.id)] || null,
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
       freight_alloc_n: Number(t.freight_alloc_n || 0),
@@ -576,7 +623,7 @@ export default async function financeRoutes(app) {
       // 출처 — 예정 내역(pending-plans)과 같은 기준. 마케팅은 메모 접두사가 규약(0125).
       source: t.sales_invoice_id ? 'sales'
         : (t.recurring_rule_id ? 'recurring'
-          : (String(t.memo || '').startsWith('[마케팅]') ? 'marketing' : 'manual')),
+          : (apLinks[Number(t.id)] ? 'approval' : (String(t.memo || '').startsWith('[마케팅]') ? 'marketing' : 'manual'))),
       editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
   });
 
@@ -709,6 +756,59 @@ export default async function financeRoutes(app) {
     return { t, canAttach };
   }
 
+  // ===== 0258 전자결재 문서를 증빙(영수증 대용)으로 — 고를 수 있는 회차 · 연결 · 해제 =====
+  //   고를 수 있는 회차: 승인완료·미삭제 문서 · 중단 아님 · 아직 거래등록 실적이 없는 회차.
+  app.get('/api/transactions/approval-options', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const ready = await approvalFinReady(query);
+    return { ready, items: ready ? await approvalOptions(query, { search: req.query.q }) : [] };
+  });
+  // 이미 등록한 실적(지출)에 전자결재 회차를 증빙으로 연결 → 그 회차 예정은 빠지고 회차 집행완료
+  app.post('/api/transactions/:id/approval-link', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const pid = Number(req.body?.payment_id);
+    if (!Number.isInteger(pid) || pid <= 0) return reply.code(400).send({ error: 'payment_id_required' });
+    const ctx = await loadTxnForFiles(req, reply, id);
+    if (!ctx) return reply;
+    if (!ctx.canAttach) return reply.code(403).send({ error: 'forbidden' });
+    const out = await withTx(async (c) => {
+      const cq = c.query.bind(c);
+      const t = (await cq(`SELECT id, status, direction FROM transactions WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!t) return { code: 404, error: 'not_found' };
+      if (t.status !== 'actual' || t.direction !== 'out') return { code: 409, error: 'approval_needs_actual_out' };
+      if ((await cq(`SELECT 1 FROM approval_payments WHERE txn_id=$1`, [id])).rows.length) return { code: 409, error: 'txn_already_linked' };
+      const lk = await lockPaymentForLink(cq, pid);
+      if (lk.error) return { code: 409, error: lk.error };
+      if (lk.planTxnId) await cq(`UPDATE transactions SET deleted_at=now(), updated_by=$2 WHERE id=$1 AND status='plan'`, [lk.planTxnId, req.ctx.perm.userId]);
+      await cq(`UPDATE approval_payments SET txn_id=$2 WHERE id=$1`, [pid, id]);
+      await syncApprovalDoc(cq, lk.docId, req.ctx.perm.userId);
+      return { ok: true, doc_id: lk.docId, plan_removed: lk.planTxnId || null };
+    });
+    if (out.error) return reply.code(out.code).send({ error: out.error });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { approval_link: pid, plan_removed: out.plan_removed } });
+    return out;
+  });
+  // 연결 해제 — 거래등록으로 집행한 회차는 미집행으로 돌아가고 예정이 다시 생긴다(사후승인까지 끝난 문서는 불가)
+  app.delete('/api/transactions/:id/approval-link', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const ctx = await loadTxnForFiles(req, reply, id);
+    if (!ctx) return reply;
+    if (!ctx.canAttach) return reply.code(403).send({ error: 'forbidden' });
+    const lockNo = await approvalCloseLock(query, id);
+    if (lockNo) return reply.code(409).send({ error: 'approval_closed', doc_no: lockNo });
+    const out = await withTx(async (c) => {
+      const cq = c.query.bind(c);
+      const t = (await cq(`SELECT status FROM transactions WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+      if (!t || t.status !== 'actual') return { code: 409, error: 'not_actual' };
+      const rows = (await cq(`UPDATE approval_payments SET txn_id=NULL WHERE txn_id=$1 RETURNING document_id`, [id])).rows;
+      if (!rows.length) return { code: 404, error: 'not_linked' };
+      for (const r of rows) await syncApprovalDoc(cq, Number(r.document_id), req.ctx.perm.userId);
+      return { ok: true };
+    });
+    if (out.error) return reply.code(out.code).send({ error: out.error });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { approval_unlink: true } });
+    return out;
+  });
+
   app.get('/api/transactions/:id/files', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const ctx = await loadTxnForFiles(req, reply, Number(req.params.id));
     if (!ctx) return reply;
@@ -719,9 +819,12 @@ export default async function financeRoutes(app) {
         WHERE f.transaction_id = $1
         ORDER BY f.uploaded_at ASC, f.id ASC`, [Number(req.params.id)])).rows;
     const perm = req.ctx.perm;
+    const apLink = (await approvalLinksForTxns(query, [Number(req.params.id)]))[Number(req.params.id)] || null;   // 0258 전자결재 증빙
     return {
       can_attach: ctx.canAttach,
       max_files: TXN_FILE_MAX_PER_TXN,
+      approval: apLink,
+      can_unlink_approval: !!apLink && ctx.canAttach,
       items: rows.map((f) => ({
         id: Number(f.id), file_name: f.file_name || null, mime_type: f.mime_type,
         file_size: f.file_size == null ? null : Number(f.file_size),
@@ -825,9 +928,12 @@ export default async function financeRoutes(app) {
 
   app.post('/api/transactions/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
+    const lockNo = await approvalCloseLock(query, id);
+    if (lockNo) return reply.code(409).send({ error: 'approval_closed', doc_no: lockNo });
     const r = await query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND approved=false AND deleted_at IS NULL RETURNING id`, [req.ctx.perm.userId, id]);
     if (!r.rows[0]) return reply.code(409).send({ error: 'not_pending' });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { rejected: true } });
+    await afterTxnChange(id, req.ctx.perm.userId);   // 0258 전자결재 회차 미집행으로
     return { ok: true };
   });
 
@@ -887,6 +993,7 @@ export default async function financeRoutes(app) {
       }
     }
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { direct_edit: true } });
+    await afterTxnChange(id, req.ctx.perm.userId);   // 0258 연결 전자결재 실적 갱신
     return { ok: true };
   });
 
@@ -983,6 +1090,8 @@ export default async function financeRoutes(app) {
       const t = (await c.query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [cr.txn_id])).rows[0];
       if (!t) return { error: 'txn_not_found' };
       if (cr.req_type === 'delete') {
+        const lockNo = await approvalCloseLock(c.query.bind(c), t.id);
+        if (lockNo) return { error: 'approval_closed', doc_no: lockNo };
         await c.query(`UPDATE transactions SET deleted_at=now(), change_status=NULL, updated_by=$1 WHERE id=$2`, [userId, t.id]);
       } else {
         const p = typeof cr.payload === 'string' ? JSON.parse(cr.payload) : (cr.payload || {});
@@ -1007,6 +1116,7 @@ export default async function financeRoutes(app) {
            userId, t.id]);
       }
       await c.query(`UPDATE txn_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [userId, reqId]);
+      await syncApprovalByTxn(c.query.bind(c), Number(t.id), userId);   // 0258 연결 전자결재 실적 갱신/되돌림
       return { ok: true, type: cr.req_type };
     });
     if (out.error) return reply.code(409).send(out);
@@ -2265,7 +2375,13 @@ export default async function financeRoutes(app) {
     if (!t) return reply.code(404).send({ error: 'not_found' });
     if (t.sales_invoice_id != null) return reply.code(400).send({ error: 'sales_linked' });
     if (t.kind !== 'general') return reply.code(400).send({ error: 'kind_not_deletable' });
+    const lockNo = await approvalCloseLock(query, id);
+    if (lockNo) return reply.code(409).send({ error: 'approval_closed', doc_no: lockNo });
+    if (await approvalLinkedPlan(id) && (await query(`SELECT status FROM transactions WHERE id=$1`, [id])).rows[0].status === 'plan') {
+      return reply.code(409).send({ error: 'approval_linked', note: '전자결재 예정은 전자결재에서 회차 중단·문서 삭제로 정리합니다' });
+    }
     await query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [req.ctx.perm.userId, id]);
+    await afterTxnChange(id, req.ctx.perm.userId);   // 0258
     await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `transaction:${id}`,
       detail: { direction: t.direction, amount: Number(t.amount), currency: t.currency, memo: t.memo } });
     return { ok: true };
@@ -2378,6 +2494,7 @@ export default async function financeRoutes(app) {
         remId = Number(rr.rows[0].id);
       });
       await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved, remainder: 'keep', remainder_amount: rem, remainder_txn_id: remId } });
+      await afterTxnChange(id, req.ctx.perm.userId);   // 0258 전자결재 회차 집행완료
       return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved,
         plan_amount: planAmt, diff: r2(newAmount - planAmt), remainder: 'keep', remainder_amount: rem, remainder_txn_id: remId };
     }
@@ -2386,6 +2503,7 @@ export default async function financeRoutes(app) {
          approved=$10, change_count=$6, plan_memo=$7, receipt_no=$11, updated_by=$8 WHERE id=$9`,
       [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id, approved, receiptNo]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved, remainder: 'close' } });
+    await afterTxnChange(id, req.ctx.perm.userId);   // 0258 전자결재 회차 집행완료
     return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved,
       plan_amount: planAmt, diff: r2(newAmount - planAmt), remainder: 'close',
       saved: rem > 0.001 ? rem : 0, over: newAmount - planAmt > 0.001 ? r2(newAmount - planAmt) : 0 };
@@ -2471,6 +2589,12 @@ export default async function financeRoutes(app) {
     if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
     if (!canOperateAccount(req.ctx.perm, t.account_id)) return reply.code(403).send({ error: 'account_not_operable' });
     const b = req.body || {};
+    // 0258 전자결재 예정: 금액·날짜는 결재 문서가 정한다(바꾸려면 전자결재에서 결재선 수정·회차 중단). 계좌만 지정 가능.
+    if (await approvalLinkedPlan(id)) {
+      const amtCh = b.amount != null && Math.abs(r2(b.amount) - Number(t.amount)) > 0.001;
+      const dateCh = b.plan_date && b.plan_date !== (toYMD(t.plan_date) || toYMD(t.txn_date));
+      if (amtCh || dateCh) return reply.code(409).send({ error: 'approval_linked', note: '전자결재 예정은 금액·날짜를 바꿀 수 없습니다(계좌만 지정)' });
+    }
     const newAmount = b.amount != null ? r2(b.amount) : Number(t.amount);
     if (!(newAmount > 0)) return reply.code(400).send({ error: 'invalid_amount' });
     const newDate = b.plan_date || toYMD(t.plan_date) || toYMD(t.txn_date);
@@ -2554,6 +2678,7 @@ export default async function financeRoutes(app) {
       if (t.status !== 'plan') { skipped.push({ id, error: 'not_plan' }); continue; }
       if (t.sales_invoice_id != null) { skipped.push({ id, error: 'sales_linked' }); continue; }
       if (t.kind !== 'general') { skipped.push({ id, error: 'kind_not_deletable' }); continue; }
+      if (await approvalLinkedPlan(id)) { skipped.push({ id, error: 'approval_linked' }); continue; }   // 0258 전자결재에서 회차 중단·문서 삭제
       targets.push(t);
     }
 
@@ -3569,14 +3694,17 @@ export default async function financeRoutes(app) {
         WHERE t.status='plan' AND t.deleted_at IS NULL${privTxnCond(req.ctx.perm)}${dateCond}
         ORDER BY COALESCE(t.plan_date,t.txn_date) ASC, t.id ASC`,
       params)).rows;
+    const apLinks = await approvalLinksForTxns(query, rows.map((t) => t.id));   // 0258 전자결재 예정
     const items = rows.map((t) => {
       const pdate = t.plan_date || t.txn_date;
       const overdue = pdate < today;
+      const ap = apLinks[Number(t.id)] || null;
       return { ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
         plan_amount: t.plan_amount == null ? null : Number(t.plan_amount), plan_date: pdate, overdue,
-        source: t.sales_invoice_id ? 'sales' : (t.recurring_rule_id ? 'recurring' : 'manual'),
-        // 계획 삭제 가능 여부(디렉터 전용 UI 판단용) — 매출 연계·특수 kind 는 불가
-        can_delete: t.sales_invoice_id == null && t.kind === 'general' };
+        source: t.sales_invoice_id ? 'sales' : (t.recurring_rule_id ? 'recurring' : (ap ? 'approval' : 'manual')),
+        approval: ap,
+        // 계획 삭제 가능 여부(디렉터 전용 UI 판단용) — 매출 연계·특수 kind·전자결재(회차 중단·문서 삭제로 정리) 는 불가
+        can_delete: t.sales_invoice_id == null && t.kind === 'general' && !ap };
     });
     return { month, all: wantAll, today, count: items.length, items };
   });

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0930bal</title>
+<title>Refatrix ERP · 재무 · build fin-1007ap</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -204,12 +204,14 @@
       <div class="hint" id="t-rcpt-hint" style="margin-top:2px"></div>
       <!-- 영수증 파일 첨부 (fin-0924rf · 0230) — 거래를 등록하면서 사진·PDF·CFDI XML 을 함께 올린다 -->
       <div id="t-files-row" style="margin-top:6px">
-        <label>영수증 파일 (선택)</label>
+        <label>영수증 (선택) — 사진·파일 또는 전자결재 문서</label>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button type="button" class="btn ghost sm" id="t-file-btn">📎 영수증 파일 선택</button>
+          <button type="button" class="btn ghost sm" id="t-file-btn">🖼 사진·파일에서 선택</button>
+          <button type="button" class="btn ghost sm" id="t-ap-btn" title="결재가 끝난 전자결재 문서를 이 지출의 증빙(영수증 대용)으로 씁니다">📄 전자결재 문서에서 선택</button>
           <input type="file" id="t-file" multiple accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" style="display:none">
           <span class="hint" style="margin:0">사진·PDF·XML(CFDI) · 파일당 8MB · 여러 개 가능 — <b>거래 등록</b>을 누르면 함께 올라갑니다.</span>
         </div>
+        <div id="t-ap-chip" style="margin-top:6px"></div>
         <div id="t-file-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       </div>
       <div id="t-custRow" style="display:none;margin-top:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfaf6">
@@ -1152,6 +1154,10 @@
   //  · 백엔드 미배포(404) / 마이그레이션 전(503) 이면 사람이 알아들을 말로 안내한다.
   const TXN_FILE_MAX=8*1024*1024;
   let txnNewFiles=[];
+  const AP_ERR={approval_needs_actual_out:'전자결재 증빙은 지출·실제 거래에만 붙일 수 있습니다.',approval_payment_already_linked:'이 전자결재 회차는 이미 다른 거래로 집행 등록되었습니다.',
+    approval_not_approved:'결재가 끝나지 않았거나 삭제된 문서입니다.',approval_payment_skipped:'중단된 회차입니다.',approval_payment_not_found:'전자결재 회차를 찾을 수 없습니다.',
+    txn_already_linked:'이 거래에는 이미 전자결재 증빙이 연결되어 있습니다.',approval_closed:'사후승인까지 끝난 전자결재 문서와 연결된 거래라 바꿀 수 없습니다.',
+    approval_linked:'전자결재 예정입니다 — 금액·날짜는 전자결재에서 정하고, 정리는 전자결재에서 회차 중단·문서 삭제로 합니다.',migration_required:'서버 마이그레이션(0258) 후에 쓸 수 있습니다.'};
   function fmtBytes(n){n=Number(n)||0;if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
   function txnFileKind(f){
     const t=String(f.type||'').toLowerCase(),n=String(f.name||'').toLowerCase();
@@ -1405,10 +1411,92 @@
     paintTxnNewFiles();
     if(bad.length){m.className='msg err';m.textContent='제외한 파일 — '+bad.join(' / ');}
   }
-  // 거래목록 영수증 열: 번호 + 📎N
+  // ===== 0258 전자결재 문서를 증빙(영수증 대용)으로 — 고르기 · 연결 (fin-1007ap) =====
+  //   결재가 끝난 문서의 회차를 고른다. 거래 등록 시 그 회차의 예정(미래자금계획)이 실적으로 바뀌고,
+  //   전자결재 회차는 집행완료(전 회차 끝나면 대표이사 사후승인 요청)로 처리된다.
+  let txnApSel=null;                      // 거래 등록 화면에서 고른 회차
+  const AP_URL=id=>'refatrix-approval.html#doc='+id;
+  const apLabel=o=>`${o.doc_no||'전자결재'} ${o.title||''}${o.pay_n>1?` (${o.seq}/${o.pay_n}회차)`:''}`;
+  function apMemo(o){return ('[전자결재] '+apLabel(o)+(o.vendor?' · '+o.vendor:'')).slice(0,500);}
+  async function apFetchOptions(q){
+    const res=await fetch(session.api+'/api/transactions/approval-options'+(q?('?q='+encodeURIComponent(q)):''),{headers:auth()});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok||d.error)throw new Error(d.error||res.status);
+    return d;
+  }
+  // 고르기 창(공용) — onPick(option)
+  function openApPicker(onPick,title){
+    document.querySelectorAll('.ap-pick-ov').forEach(x=>x.remove());
+    const ov=document.createElement('div');ov.className='ap-pick-ov';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(20,24,22,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:6vh 12px';
+    ov.innerHTML=`<div role="dialog" aria-label="전자결재 문서 선택" style="background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:84vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.25)">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <b style="font-size:15px">${escH(title||'📄 전자결재 문서에서 선택')}</b>
+        <input type="search" class="ap-q" placeholder="문서번호 · 제목 · 거래처" style="flex:1;min-width:160px">
+        <button type="button" class="btn ghost sm ap-x">닫기</button></div>
+      <div class="hint" style="margin:8px 16px 0">결재가 끝났고 아직 거래등록 실적이 없는 회차만 보입니다. 고르면 이 지출의 증빙(영수증 대용)이 되고, 전자결재 회차는 집행완료로 처리됩니다.</div>
+      <div class="ap-list" style="overflow:auto;padding:8px 16px 16px"><div class="hint">불러오는 중…</div></div></div>`;
+    document.body.appendChild(ov);
+    const close=()=>ov.remove();
+    ov.addEventListener('click',e=>{if(e.target===ov)close();});
+    ov.querySelector('.ap-x').addEventListener('click',close);
+    const list=ov.querySelector('.ap-list'),qi=ov.querySelector('.ap-q');
+    let items=[];
+    const paint=()=>{
+      const q=qi.value.trim().toLowerCase();
+      const a=items.filter(o=>!q||[o.doc_no,o.title,o.vendor,o.drafter_name,o.category_name].join(' ').toLowerCase().includes(q));
+      if(!a.length){list.innerHTML='<div class="hint">'+(items.length?'검색 결과가 없습니다.':'고를 수 있는 전자결재 문서가 없습니다. (결재가 끝난 문서만 보입니다)')+'</div>';return;}
+      list.innerHTML=a.map(o=>`<div class="ap-row" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)">
+        <div style="flex:1 1 260px;min-width:0"><b>${escH(o.doc_no||'')}</b> ${escH(o.title||'')}
+          <div class="hint" style="margin:2px 0 0">${o.pay_n>1?o.seq+'/'+o.pay_n+'회차':'일시불'} · 예정일 ${escH(o.due_date||'—')}${o.plan_txn_id?' · 자금계획 예정':''}${o.pay_status==='done'?' · 전자결재 집행됨':''}</div>
+          <div class="hint" style="margin:0">${escH(o.vendor||'')}${o.vendor?' · ':''}${escH(o.category_name||'')} · 기안 ${escH(o.drafter_name||'')}</div></div>
+        <div style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums"><b>${fmt(o.planned_amount)} ${o.currency}</b>${o.currency==='USD'?`<div class="hint" style="margin:0">MXN ${fmt(o.planned_mxn)}</div>`:''}</div>
+        <div style="white-space:nowrap;display:flex;gap:6px"><a href="${AP_URL(o.doc_id)}" target="_blank" rel="noopener" class="btn ghost sm" style="text-decoration:none">문서</a><button type="button" class="btn sm ap-pick" data-pid="${o.payment_id}">선택</button></div></div>`).join('');
+      list.querySelectorAll('.ap-pick').forEach(b=>b.addEventListener('click',()=>{const o=items.find(x=>x.payment_id===Number(b.dataset.pid));close();if(o)onPick(o);}));
+    };
+    qi.addEventListener('input',paint);
+    apFetchOptions().then(d=>{
+      if(d.ready===false){list.innerHTML='<div class="hint">서버 마이그레이션(0258) 후에 쓸 수 있습니다.</div>';return;}
+      items=d.items||[];paint();setTimeout(()=>qi.focus(),0);
+    }).catch(e=>{list.innerHTML='<div class="hint">불러오지 못했습니다('+escH(e.message)+')</div>';});
+  }
+  // 거래 등록 화면: 고른 회차로 칸 채우기
+  function applyTxnAp(o){
+    txnApSel=o;
+    $('t-dir').value='out';$('t-dir').dispatchEvent(new Event('change'));
+    $('t-status').value='actual';
+    if(o.category_code&&[...$('t-cat').options].some(x=>x.value===o.category_code))$('t-cat').value=o.category_code;
+    $('t-cur').value=o.currency||'MXN';
+    $('t-amt').value=Number(o.planned_amount).toFixed(2);
+    $('t-date').value=new Date(Date.now()-6*3600e3).toISOString().slice(0,10);
+    $('t-memo').value=apMemo(o);
+    paintTxnAp();
+    try{previewTxn();}catch(e){}
+  }
+  function paintTxnAp(){
+    const box=$('t-ap-chip');if(!box)return;
+    if(!txnApSel){box.innerHTML='';return;}
+    const o=txnApSel;
+    box.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1.5px solid var(--brand);border-radius:10px;padding:8px 12px;background:#f7faf8">
+      <span style="font-size:18px">📄</span><div style="flex:1;min-width:180px"><b style="color:var(--brand)">전자결재 증빙</b> · ${escH(apLabel(o))}
+      <div class="hint" style="margin:0">계획 ${fmt(o.planned_amount)} ${o.currency}${o.due_date?' · 예정일 '+escH(o.due_date):''} — 등록하면 ${o.plan_txn_id?'이 회차의 <b>자금계획 예정이 실적으로</b> 바뀌고 ':''}전자결재 회차가 <b>집행완료</b>로 처리됩니다</div></div>
+      <a href="${AP_URL(o.doc_id)}" target="_blank" rel="noopener" class="btn ghost sm" style="text-decoration:none">문서 보기</a>
+      <button type="button" class="btn ghost sm" id="t-ap-x" style="color:var(--expense);border-color:var(--expense)">✕ 빼기</button></div>`;
+    $('t-ap-x').addEventListener('click',()=>{txnApSel=null;paintTxnAp();});
+  }
+  // #tab=new&apay=회차ID — 전자결재 화면의 「거래등록에서 집행」 버튼으로 들어온 경우
+  async function apPreselect(pid){
+    try{const d=await apFetchOptions();const o=(d.items||[]).find(x=>x.payment_id===Number(pid));
+      if(o){applyTxnAp(o);const m=$('newMsg');m.className='msg ok';m.textContent='전자결재 회차를 불러왔습니다 — 계좌·지급일·금액을 확인하고 「거래 등록」을 누르세요.';}
+      else{const m=$('newMsg');m.className='msg err';m.textContent='이 전자결재 회차는 이미 거래등록되었거나 고를 수 없습니다.';}
+    }catch(e){}
+  }
+
+  // 거래목록 영수증 열: 번호 + 📎N + 📄(전자결재 증빙)
   function txnRcptCell(t){
     const n=Number(t.file_count)||0;
-    return escH(t.receipt_no||'')+(n?` <span class="badge" style="background:#e7f3ee;color:var(--brand);font-family:inherit" title="영수증 파일 ${n}개 — 행을 펼쳐 보기">📎${n}</span>`:'');
+    return escH(t.receipt_no||'')+(n?` <span class="badge" style="background:#e7f3ee;color:var(--brand);font-family:inherit" title="영수증 파일 ${n}개 — 행을 펼쳐 보기">📎${n}</span>`:'')
+      +(t.approval?` <span class="badge" style="background:#eef0fb;color:#3b4ba0;font-family:inherit" title="전자결재 ${escH(t.approval.doc_no||'')} ${escH(t.approval.title||'')}">📄 결재</span>`:'');
   }
   function refreshTxnRcptCell(id){
     const t=txnMap&&txnMap[id]; if(!t)return;
@@ -1434,8 +1522,18 @@
     if(txnMap&&txnMap[id]){txnMap[id].file_count=items.length;refreshTxnRcptCell(id);}
     let h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="font-size:12.5px;color:var(--brand)">📎 영수증 파일 '+(items.length?items.length+'개':'')+'</b>';
     if(d.can_attach)h+='<button type="button" class="btn ghost sm tf-add">＋ 영수증 파일 추가</button><input type="file" class="tf-inp" multiple accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" style="display:none">';
+    const tx0=txnMap&&txnMap[id];
+    const apCan=d.can_attach&&tx0&&tx0.status==='actual'&&tx0.direction==='out'&&!d.approval;
+    if(apCan)h+='<button type="button" class="btn ghost sm tf-aplink" title="결재가 끝난 전자결재 문서를 이 지출의 증빙으로 연결">📄 전자결재 문서 연결</button>';
     h+='<span class="hint tf-msg" style="margin:0"></span></div>';
-    if(!items.length)h+='<div class="hint" style="margin:6px 0 0">붙은 파일이 없습니다.'+(d.can_attach?' 사진·PDF·XML(CFDI) · 파일당 8MB.':'')+'</div>';
+    // 0258 전자결재 증빙(영수증 대용)
+    if(d.approval){const a=d.approval;
+      h+=`<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1.5px solid var(--brand);border-radius:10px;padding:8px 12px;background:#f7faf8">
+        <span style="font-size:18px">📄</span><div style="flex:1;min-width:180px"><b style="color:var(--brand)">전자결재 증빙</b> · ${escH(a.doc_no||'')} ${escH(a.title||'')}${a.pay_n>1?` (${a.seq}/${a.pay_n}회차)`:''}${a.doc_deleted?' <span class="badge" style="background:#fde2e0;color:#c0392b">삭제된 문서</span>':''}
+        <div class="hint" style="margin:0">${a.exec_source==='finance'?'이 거래로 전자결재 회차가 집행완료 처리됨':'전자결재에서 집행된 회차의 증빙'}${a.post_status==='confirmed'?' · 대표이사 사후승인 완료':''}</div></div>
+        <a href="${AP_URL(a.doc_id)}" target="_blank" rel="noopener" class="btn ghost sm" style="text-decoration:none">문서 보기 · 인쇄</a>
+        ${d.can_unlink_approval&&a.post_status!=='confirmed'&&a.post_status!=='flagged'?'<button type="button" class="btn ghost sm tf-apunlink" style="color:var(--expense);border-color:var(--expense)">연결 해제</button>':''}</div>`;}
+    if(!items.length)h+='<div class="hint" style="margin:6px 0 0">붙은 파일이 없습니다.'+(d.approval?' 전자결재 문서가 증빙입니다.':(d.can_attach?' 사진·PDF·XML(CFDI) · 파일당 8MB — 또는 「📄 전자결재 문서 연결」.':''))+'</div>';
     else{
       h+='<div class="tf-thumbs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+items.map((f,i)=>rvThumbHtml(f.file_name||('파일 #'+f.id),f.mime_type,i)).join('')+'</div>';
       h+='<table style="margin-top:8px"><thead><tr><th>파일</th><th class="num">크기</th><th>올린 사람</th><th>시각</th><th></th></tr></thead><tbody>';
@@ -1451,6 +1549,24 @@
     }
     div.innerHTML=h;
     const add=div.querySelector('.tf-add'),inp=div.querySelector('.tf-inp'),msg=div.querySelector('.tf-msg');
+    const apSync=async(dd)=>{if(txnMap&&txnMap[id]){txnMap[id].approval=dd;refreshTxnRcptCell(id);}await paintTxnFilesBox(id,div);};
+    const apl=div.querySelector('.tf-aplink');
+    if(apl)apl.addEventListener('click',e=>{e.stopPropagation();openApPicker(async o=>{
+      try{const r=await fetch(session.api+'/api/transactions/'+id+'/approval-link',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({payment_id:o.payment_id})});
+        const dd=await r.json().catch(()=>({}));
+        if(!r.ok||dd.error){alert('연결 실패: '+(AP_ERR[dd.error]||dd.error||r.status));return;}
+        await apSync({doc_id:o.doc_id,doc_no:o.doc_no,title:o.title,seq:o.seq,pay_n:o.pay_n,exec_source:o.pay_status==='done'?'approval':'finance'});
+        const m2=div.querySelector('.tf-msg');if(m2){m2.textContent='전자결재 증빙을 연결했습니다'+(dd.plan_removed?' · 그 회차의 자금계획 예정은 빠졌습니다':'');m2.style.color='var(--income)';}
+      }catch(err){alert('서버 연결 실패');}
+    },'📄 이 지출의 증빙으로 연결할 전자결재 문서');});
+    const apu=div.querySelector('.tf-apunlink');
+    if(apu)apu.addEventListener('click',async e=>{e.stopPropagation();
+      if(!confirm('전자결재 증빙 연결을 해제할까요?\n이 거래로 집행 처리된 회차는 다시 「미집행」이 되고 자금계획 예정이 다시 생깁니다.'))return;
+      try{const r=await fetch(session.api+'/api/transactions/'+id+'/approval-link',{method:'DELETE',headers:auth()});const dd=await r.json().catch(()=>({}));
+        if(!r.ok||dd.error){alert('해제 실패: '+(AP_ERR[dd.error]||dd.error||r.status));return;}
+        await apSync(null);
+      }catch(err){alert('서버 연결 실패');}
+    });
     if(add&&inp){
       add.addEventListener('click',e=>{e.stopPropagation();inp.click();});
       inp.addEventListener('change',async()=>{
@@ -1512,13 +1628,18 @@
       cash_due:($('t-dir').value==='out' && $('t-cashdue').checked),
       customer_id:($('t-cat').value===FREIGHT_OUT_CODE && $('t-cust').value)?Number($('t-cust').value):null,
       freight_invoice_ids:($('t-cat').value===FREIGHT_OUT_CODE && txInvSel.size)?[...txInvSel.keys()]:null};
+    if(txnApSel){
+      if($('t-dir').value!=='out'||$('t-status').value!=='actual'){m.className='msg err';m.textContent='전자결재 증빙은 「지출 · 실제(완료)」 거래에만 붙일 수 있습니다.';return;}
+      body.approval_payment_id=txnApSel.payment_id;
+    }
     $('t-save').disabled=true;$('t-save').textContent='등록 중…';
     try{
       const res=await fetch(session.api+'/api/transactions',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error==='account_required_for_actual'?'실제 거래는 계좌가 필요합니다.':(d.error||res.status));return;}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error==='account_required_for_actual'?'실제 거래는 계좌가 필요합니다.':(AP_ERR[d.error]||d.error||res.status));return;}
       m.className='msg ok';
       m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
+      if(txnApSel&&d.approval_doc_id){m.textContent+=' · 📄 전자결재 '+apLabel(txnApSel)+' 증빙 연결 · 회차 집행완료';txnApSel=null;paintTxnAp();loadPendingPlans();}
       // 영수증 파일 — 거래가 생긴 뒤 한 건씩 올린다(파일당 8MB라 한 요청에 몰아 싣지 않는다). (fin-0924rf)
       if(txnNewFiles.length&&d.id){
         $('t-save').textContent='영수증 파일 올리는 중…';
@@ -4345,7 +4466,7 @@
       }
       const parrow=k=>ppSort.key===k?(ppSort.dir===1?' ▲':' ▼'):'';
       const pth=(k,label,cls)=>`<th${cls?' class="'+cls+'"':''} data-ppsort="${k}" style="cursor:pointer;user-select:none" title="클릭해 정렬 (3회째 기본순서)">${label}${parrow(k)}</th>`;
-      const srcLabel=(s)=>s==='sales'?'<span class="badge" style="background:#e6f1fb;color:#0c447c">매출</span>':s==='recurring'?'<span class="badge" style="background:#efeee9;color:#6b6b6b">고정비</span>':s==='marketing'?'<span class="badge" style="background:#f1ebf7;color:#7a4ea0">마케팅</span>':'<span class="badge" style="background:#f0ece4;color:#8a6d1a">수동</span>';
+      const srcLabel=(s)=>s==='approval'?'<span class="badge" style="background:#eef0fb;color:#3b4ba0">전자결재</span>':s==='sales'?'<span class="badge" style="background:#e6f1fb;color:#0c447c">매출</span>':s==='recurring'?'<span class="badge" style="background:#efeee9;color:#6b6b6b">고정비</span>':s==='marketing'?'<span class="badge" style="background:#f1ebf7;color:#7a4ea0">마케팅</span>':'<span class="badge" style="background:#f0ece4;color:#8a6d1a">수동</span>';
       const canDel=isDirector();
       const ppCols=6+1+(canDel?1:0);
       b.innerHTML=`<table><thead><tr>${canDel?'<th style="width:30px"><input type="checkbox" id="pp-selall" style="width:auto" title="표시된 건 전체선택"></th>':''}${pth('date','예정일')}${pth('cust','고객')}${pth('src','출처')}${pth('cat','계정과목')}${pth('memo','메모')}${pth('amt','계획액','num')}<th></th></tr></thead>
@@ -4356,7 +4477,7 @@
           return `<tr class="${t.overdue?'pp-over':''}" data-id="${t.id}">
             ${canDel?`<td>${delOk
               ? `<input type="checkbox" class="pp-sel" data-id="${t.id}" style="width:auto"${ppSel.has(Number(t.id))?' checked':''}>`
-              : '<span class="hint" style="margin:0" title="매출 수금 예정은 삭제할 수 없습니다">—</span>'}</td>`:''}
+              : `<span class="hint" style="margin:0" title="${t.source==='approval'?'전자결재 예정은 전자결재에서 회차 중단·문서 삭제로 정리합니다':'매출 수금 예정은 삭제할 수 없습니다'}">—</span>`}</td>`:''}
             <td>${t.plan_date}${t.overdue?' <span class="badge" style="background:#fde2e0;color:#c0392b">경과</span>':''}</td>
             <td>${t.source==='sales' ? (t.customer_name||'') : ''}</td>
             <td>${srcLabel(t.source)}</td>
@@ -4367,6 +4488,7 @@
                         ? '<span style="color:var(--muted)">'+t.sat_no+' (임시)</span>'
                         : '<span style="font-family:monospace">'+t.sat_no+'</span>')
                     : '<span style="color:var(--muted)">미발급</span>')
+                : t.approval ? `<a href="${AP_URL(t.approval.doc_id)}" target="_blank" rel="noopener" style="color:#3b4ba0" title="전자결재 문서 열기">📄 ${escH(t.approval.doc_no||'')} ${escH(String(t.approval.title||'').slice(0,24))}${t.approval.pay_n>1?' ('+t.approval.seq+'/'+t.approval.pay_n+')':''}</a>`
                 : '<span style="color:var(--muted)">'+(t.memo||'').replace(/^\[고정비\]\s*/,'').replace(/^\[마케팅\]\s*/,'').slice(0,30)+'</span>'}</td>
             <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${fmt(t.plan_amount!=null?t.plan_amount:t.amount)} ${t.currency}</td>
             <td style="white-space:nowrap">${isSales?'<span class="hint" style="margin:0">매출(반제)에서 처리</span>':`<button class="btn sm pp-do" data-id="${t.id}">실적 처리</button>${delOk?` <button class="btn ghost sm pp-del" data-id="${t.id}" style="border-color:var(--expense);color:var(--expense)" title="이 계획(예정) 라인을 삭제합니다">🗑 삭제</button>`:''}`}</td>
@@ -4486,6 +4608,7 @@
     const t=ppMap[id];
     tr.firstElementChild.innerHTML=`<div style="border:1px solid var(--brand);border-radius:8px;padding:10px;background:#fbfaf6">
       <div style="font-weight:700;margin-bottom:4px">${t.direction==='in'?'입금':'지급'} 확인 — ${t.category_name||''} (계획 ${fmt(t.plan_amount!=null?t.plan_amount:t.amount)} ${t.currency} · ${t.plan_date})</div>
+      ${t.approval?`<div class="hint" style="margin:0 0 6px;color:#3b4ba0">📄 전자결재 <a href="${AP_URL(t.approval.doc_id)}" target="_blank" rel="noopener" style="color:#3b4ba0;font-weight:700">${escH(t.approval.doc_no||'')} ${escH(t.approval.title||'')}${t.approval.pay_n>1?' ('+t.approval.seq+'/'+t.approval.pay_n+'회차)':''}</a> — 결재 문서가 이 지출의 증빙(영수증 대용)입니다. 실적을 반영하면 전자결재 회차가 집행완료로 처리됩니다. 송금증 등 사진은 아래에서 함께 올릴 수 있습니다.</div>`:''}
       <div class="row">
         <div style="flex:2"><label>계좌</label><select class="pp-acc">${accOptions(t.account_id)}</select></div>
         <div><label>${t.direction==='in'?'입금':'지급'}일</label><input class="pp-date" type="date" value="${t.txn_date}"></div>
@@ -4545,7 +4668,7 @@
       if(!res.ok||d.error){m.className='msg pp-msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
       let fileNote='';
       if(tr._files&&tr._files.length){const up=await uploadTxnFiles(id,tr._files.slice());fileNote='\n\n'+up.text;}
-      alert(confirmResultMsg(d)+fileNote);
+      alert(confirmResultMsg(d)+fileNote+(t8.approval?'\n\n📄 전자결재 '+(t8.approval.doc_no||'')+' 회차가 집행완료로 처리되었습니다.':''));
       loadPendingPlans();loadAccounts();
     }catch(e){m.className='msg pp-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
@@ -4940,6 +5063,7 @@
     var t='acc'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'acc'; }catch(e){}
     var valid=['acc','new','txn','pay','fixed','cash','fx','report','approve'];
     showTab(valid.indexOf(t)>=0?t:'acc');
+    try{ var ap=new URLSearchParams(location.hash.slice(1)).get('apay'); if(t==='new'&&ap&&/^\d+$/.test(ap))apPreselect(Number(ap)); }catch(e){}
   }
   window.addEventListener('hashchange',function(){ if(!$('app').classList.contains('hidden')) applyHashTab(); });
 
@@ -4948,6 +5072,7 @@
   $('tabAcc').addEventListener('click',()=>showTab('acc'));
   $('txnBackAcc').addEventListener('click',()=>{ $('f-acc').value=''; $('f-status').value=''; $('f-dir').value=''; showTab('acc'); });
   $('cashDueBtn').addEventListener('click',()=>{ const box=$('cashDueBox'); if(box.classList.contains('hidden'))loadCashDue(true); else box.classList.add('hidden'); });
+  $('t-ap-btn').addEventListener('click',()=>openApPicker(applyTxnAp));
   $('t-dir').addEventListener('change',()=>{ $('t-cashdue-row').style.display = $('t-dir').value==='out' ? '' : 'none'; if($('t-dir').value!=='out')$('t-cashdue').checked=false; });
   // 영수증 번호를 사람이 고치는 순간 "제안" 안내를 "직접 입력"으로 바꾼다 (fin-0831a)
   $('t-receipt').addEventListener('input',()=>{ const v=$('t-receipt').value.trim();
