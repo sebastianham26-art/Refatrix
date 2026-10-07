@@ -14,7 +14,7 @@ import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
   mxParts, mxIso, windowState, clientByToken, clientById, fetchPage, fetchOne,
-  countProducts, listBrands, openRun, advanceRun, callsInWindow, logCall,
+  countProducts, listBrands, openRun, advanceRun, callsInWindow, testCallLimit, logCall,
   ipAllowed, decodeCursor, encodeCursor, pageLimit, catalogTablesReady,
   purchasePrice, usedDiscount,
 } from '../catalogPull.js';
@@ -104,11 +104,14 @@ async function gate(req, reply, { needsRun }) {
         body: { proximaVentana: win.nextOpen } }) };
   }
 
-  // 레이트리밋 — 이 접속창이 열린 시각부터 센다.
+  // 레이트리밋 — 운영 키는 접속창이 열린 시각부터, 테스트 키는 그날 0시부터 센다.
+  //   환경별로 따로 센다: 테스트로 몇 번 받아 봐도 토요일 운영 동기화가 막히지 않는다(2026-10-07).
   const p = mxParts(now);
-  const sinceIso = mxIso(p.ymd, Number(client.window_start_hour));
-  const used = await callsInWindow(client.id, new Date(sinceIso).toISOString());
-  if (used >= Number(client.max_calls)) {
+  const esTest = client.env === 'test';
+  const sinceIso = esTest ? mxIso(p.ymd, 0) : mxIso(p.ymd, Number(client.window_start_hour));
+  const tope = esTest ? testCallLimit(client) : Number(client.max_calls);
+  const used = await callsInWindow(client.id, new Date(sinceIso).toISOString(), client.env);
+  if (used >= tope) {
     return { stop: await fail(429, 'ERR_RATE_LIMIT', null, { client_id: client.id, env: client.env }) };
   }
 

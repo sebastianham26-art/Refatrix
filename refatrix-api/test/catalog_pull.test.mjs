@@ -11,7 +11,7 @@ if (PG) process.env.DATABASE_URL = PG;
 
 const {
   windowState, purchasePrice, usedDiscount, posicionMontaje, stockValue, catalogStockRange,
-  excludePrefixes, refSource, scodeRefs,
+  excludePrefixes, refSource, scodeRefs, testCallLimit,
   encodeCursor, decodeCursor, pageLimit, normCode, notaOf, buildProducto, mxIso,
 } = await import('../src/catalogPull.js');
 
@@ -113,6 +113,12 @@ test('대응품번 출처 — 기본은 화면과 같은 scode', () => {
   assert.equal(refSource({ ref_source: 'xref' }), 'xref');
   assert.equal(refSource({ ref_source: 'BOTH' }), 'both');
   assert.equal(refSource({ ref_source: '이상한값' }), 'scode', '이상한 값은 안전한 기본으로');
+});
+
+test('테스트 키 하루 한도는 운영 한도보다 넉넉하다', () => {
+  assert.equal(testCallLimit({ max_calls: 60 }), 500, '최소 500');
+  assert.equal(testCallLimit({ max_calls: 200 }), 1000, '운영 한도의 5배');
+  assert.equal(testCallLimit({}), 500);
 });
 
 test('scode 를 대응품번 배열로 쪼갠다 — 화면이 보여 주는 그 값', () => {
@@ -489,6 +495,39 @@ if (!PG) {
       url: `/api/catalog/admin/clients/${clientId}/export` })).statusCode, 401);
     assert.equal((await app.inject({ method: 'GET',
       url: `/api/catalog/admin/clients/${clientId}/export`, headers: bearer(salesId) })).statusCode, 403);
+  });
+
+  test('★ 테스트 호출은 운영 한도를 먹지 않는다 — 환경별로 따로 센다', async () => {
+    // 이 시험만의 고객사를 따로 만든다 — 다른 시험의 이력을 건드리지 않기 위해
+    const id = (await app.inject({ method: 'POST', url: '/api/catalog/admin/clients',
+      headers: bearer(dirId), payload: { label: 'RL 0221 TEST' } })).json().id;
+    await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${id}`,
+      headers: bearer(dirId), payload: { window_enforced: false, max_calls: 2 } });
+    const key = (k) => app.inject({ method: 'POST', url: `/api/catalog/admin/clients/${id}/key`,
+      headers: bearer(dirId), payload: { env: k } }).then((r) => r.json().token);
+    const [pk, tk] = [await key('prod'), await key('test')];
+    const uno = (k) => app.inject({ method: 'GET', url: '/api/catalog/v1/products/K022101',
+      headers: { 'x-api-key': k } });
+
+    for (let i = 0; i < 6; i++) {
+      assert.equal((await uno(tk)).statusCode, 200, '테스트 키는 운영 한도(2)에 걸리지 않는다');
+    }
+    assert.equal((await uno(pk)).statusCode, 200, '운영 1번째 — 테스트 6번은 세지 않았다');
+    assert.equal((await uno(pk)).statusCode, 200, '운영 2번째');
+    const tres = await uno(pk);
+    assert.equal(tres.statusCode, 429, '운영은 한도 2 를 넘으면 막힌다');
+    assert.equal(tres.json().codigoError, 'ERR_RATE_LIMIT');
+
+    // 429 가 또 429 를 부르는 눈덩이가 없어야 한다 — 한도를 올리면 바로 풀린다
+    await uno(pk);
+    await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${id}`,
+      headers: bearer(dirId), payload: { max_calls: 4 } });
+    assert.equal((await uno(pk)).statusCode, 200, '막혔던 429 는 한도 계산에서 빠진다');
+    assert.equal((await uno(tk)).statusCode, 200, '테스트는 내내 열려 있다');
+
+    await query(`DELETE FROM catalog_api_calls WHERE client_id=$1`, [id]);
+    await query(`DELETE FROM catalog_api_runs   WHERE client_id=$1`, [id]);
+    await query(`DELETE FROM catalog_api_clients WHERE id=$1`, [id]);
   });
 
   test('호출 1건 = 이력 1행 — 실패한 호출도 남는다', async () => {

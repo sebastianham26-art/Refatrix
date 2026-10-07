@@ -524,12 +524,24 @@ export async function advanceRun(run, items, done) {
       WHERE id = $1`, [run.id, Number(items) || 0, !!done]);
 }
 
-/** 이 접속창 안에서 이 고객사가 몇 번 호출했나 — 레이트리밋 판정용. */
-export async function callsInWindow(clientId, sinceIso) {
-  const r = (await query(
-    `SELECT count(*)::int AS n FROM catalog_api_calls
-      WHERE client_id=$1 AND created_at >= $2`, [clientId, sinceIso])).rows[0];
+/**
+ * 이 고객사가 몇 번 호출했나 — 레이트리밋 판정용.
+ *   env 를 주면 그 환경(test/prod)만 센다. 테스트로 개발하다가 운영 한도를 까먹는 일이 없게(2026-10-07).
+ *   한도에 걸려 돌려보낸 429 자체는 세지 않는다 — 한 번 걸리면 영영 못 푸는 눈덩이를 막는다.
+ */
+export async function callsInWindow(clientId, sinceIso, env) {
+  const params = [clientId, sinceIso];
+  let sql = `SELECT count(*)::int AS n FROM catalog_api_calls
+              WHERE client_id=$1 AND created_at >= $2
+                AND COALESCE(codigo_error,'') <> 'ERR_RATE_LIMIT'`;
+  if (env) { params.push(env); sql += ` AND env = $3`; }
+  const r = (await query(sql, params)).rows[0];
   return Number(r.n) || 0;
+}
+
+/** 테스트 키의 하루 한도 — 개발이 막히지 않을 만큼 넉넉하되 무한은 아니다. */
+export function testCallLimit(client) {
+  return Math.max(500, Number(client && client.max_calls) * 5 || 0);
 }
 
 /** 호출 1건 기록. 기록 실패가 응답을 막지 않는다. */
