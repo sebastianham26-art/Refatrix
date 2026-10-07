@@ -18,9 +18,13 @@ const EP = { key: 'product', enabled: true, url_test: 'http://crm.test/p', env: 
   body_shape: 'lote', batch_size: 500, field_map: {}, user_field: 'login_id', send_hour_mx: 6,
   auto_send: false, full_weekday: 0, delta_auto: true, delta_every_min: 5 };
 mock.module(resolve(HERE, '../src/integrations.js'), { namedExports: {
-  getEndpoint: async () => EP, activeUrl: (e) => e.url_test } });
+  getEndpoint: async () => EP, activeUrl: (e) => e.url_test, publicEndpoint: (e) => ({ key: e.key }) } });
 mock.module(resolve(HERE, '../src/crmSync.js'), { namedExports: {
-  scheduleDrain: () => {}, signalProductCancel: () => 0 } });
+  scheduleDrain: () => {}, signalProductCancel: () => 0, pumpState: () => ({}), gapMs: () => 50 } });
+mock.module(resolve(HERE, '../src/middleware/authGuard.js'), { namedExports: {
+  authGuard: async (req) => { req.ctx = { perm: { role: 'director', userId: 1 }, deviceId: null }; },
+  requireDirector: (r, p, d) => d() } });
+mock.module(resolve(HERE, '../src/audit.js'), { namedExports: { logEvent: () => {}, logPageView: async () => {} } });
 mock.module(resolve(HERE, '../src/oeCodes.js'), { namedExports: { oeReady: async () => false } });
 
 const ps = await import('../src/productSync.js');
@@ -200,12 +204,63 @@ test('DB ⑥ 틱: 일요일 06시 이후 전체 자동(auto_send 켬) · 같은 
   EP.auto_send = false;
 });
 
+test('고른 제품 — 코드 정리(중복·대소문자·구분자)', () => {
+  assert.deepEqual(ps.parseCodes(' ce0001, CE0001\nCB0011;gv1187  '), ['ce0001', 'CB0011', 'gv1187']);
+  assert.deepEqual(ps.parseCodes(['A', 'a', '', null, 'B']), ['A', 'B']);
+});
+
+test('DB ⑦ 고른 제품만 보내기 — 없는·PRO 코드는 제외 · 마감 신호 없음 · 기준 갱신 · 변경분 주기에 안 섞임', { skip }, async () => {
+  await db();
+  await pool.query(`UPDATE crm_customer_outbox SET status='sent'`);
+  const before = (await pool.query(`SELECT max(created_at) AS at FROM product_sync_runs WHERE mode='delta' AND origin <> 'pick'`)).rows[0].at;
+  const r = await ps.runCatalogSync({ mode: 'pick', codes: ['ce0001', ' CE0003 ', 'PRO001', 'NOPE', 'CE0001'] });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.match(r.envio_id, /^SEL-/);
+  assert.equal(r.total_productos, 2);
+  assert.deepEqual(r.missing.sort(), ['NOPE', 'PRO001']);
+  const run = (await pool.query(`SELECT mode, origin FROM product_sync_runs WHERE id=$1`, [r.run_id])).rows[0];
+  assert.deepEqual(run, { mode: 'delta', origin: 'pick' });
+  const ob = (await pool.query(`SELECT * FROM crm_customer_outbox WHERE entity_id=$1`, [r.run_id])).rows;
+  assert.equal(ob.length, 1); assert.equal(ob[0].origin, 'product_pick');
+  assert.equal(ob[0].payload.esUltimoLote, false);
+  assert.deepEqual(ob[0].payload.productos.map((x) => x.codigo).sort(), ['CE0001', 'CE0003']);
+  const st = (await pool.query(`SELECT outbox_id FROM product_sync_state WHERE code='CE0001'`)).rows[0];
+  assert.equal(Number(st.outbox_id), Number(ob[0].id), '보낸 값이 기준이 된다');
+  const after = (await pool.query(`SELECT max(created_at) AS at FROM product_sync_runs WHERE mode='delta' AND origin <> 'pick'`)).rows[0].at;
+  assert.equal(String(after), String(before), '변경분 주기 계산에서 빠진다');
+  assert.equal((await ps.runCatalogSync({ mode: 'pick', codes: [] })).error, 'no_codes');
+  assert.equal((await ps.runCatalogSync({ mode: 'pick', codes: ['NOPE'] })).error, 'codes_not_found');
+  assert.equal((await ps.runCatalogSync({ mode: 'pick', codes: Array.from({ length: 501 }, (_, k) => 'X' + k) })).error, 'too_many_codes');
+  const found = await ps.searchSendable('ce00');
+  assert.ok(found.length >= 2 && found.every((x) => !/^PRO/.test(x.code)));
+  assert.equal((await ps.searchSendable('gorra')).length, 0, 'PRO 판촉물은 검색에도 안 나옴');
+});
+
+test('DB ⑧ 화면 API — 찾기 · 붙여넣기 확인 · 고른 제품 보내기(HTTP)', { skip }, async () => {
+  await db();
+  const Fastify = (await import('fastify')).default;
+  const app = Fastify();
+  app.register((await import('../src/routes/productSyncRoutes.js')).default);
+  await app.ready();
+  try {
+    const s1 = (await app.inject({ method: 'GET', url: '/api/product-sync/search?q=CE000' })).json();
+    assert.ok(s1.items.length >= 2);
+    const c = (await app.inject({ method: 'POST', url: '/api/product-sync/pick-check', payload: { codes: 'CE0001\nnope, PRO001' } })).json();
+    assert.deepEqual(c.found.map((x) => x.code), ['CE0001']); assert.deepEqual(c.missing.sort(), ['PRO001', 'nope']);
+    assert.equal(typeof c.found[0].existencia, 'number');
+    const r = await app.inject({ method: 'POST', url: '/api/product-sync/run', payload: { mode: 'pick', codes: ['CE0003'] } });
+    assert.equal(r.statusCode, 200, r.body); assert.match(r.json().envio_id, /^SEL-/);
+    const e = await app.inject({ method: 'POST', url: '/api/product-sync/run', payload: { mode: 'pick', codes: ['NOPE'] } });
+    assert.equal(e.statusCode, 400); assert.equal(e.json().error, 'codes_not_found'); assert.deepEqual(e.json().missing, ['NOPE']);
+  } finally { await app.close(); }
+});
+
 test('화면 — 버튼 · 설정 칸 · 빌드 토큰', () => {
   const html = readFileSync(resolve(HERE, '../../refatrix-integrations.html'), 'utf8');
-  for (const id of ['btnCatalogDelta', 'btnCatalogDeltaPreview', 'btnCatalogBaseline', 'fDeltaAuto', 'fDeltaEvery', 'fFullWeekday'])
+  for (const id of ['btnPickSend', 'fPickQ', 'fPickPaste', 'btnPickPaste', 'pickRows', 'btnCatalogDelta', 'btnCatalogDeltaPreview', 'btnCatalogBaseline', 'fDeltaAuto', 'fDeltaEvery', 'fFullWeekday'])
     assert.match(html, new RegExp(`id="${id}"`), id);
   assert.match(html, /\/api\/product-sync\/delta-preview/);
-  assert.match(html, /build 20261006(ex|xl)/);
+  assert.match(html, /build 20261006(ex|xl)|build 20261007pk/);
 });
 
 test.after(async () => { if (pool) await pool.end(); try { (await import('../src/db.js')).pool?.end?.(); } catch (_) {} });

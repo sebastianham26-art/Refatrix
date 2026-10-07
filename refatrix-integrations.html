@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20261006xl</title>
+<title>Refatrix ERP · 연동 관리 · build 20261007pk</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -388,6 +388,32 @@
               <button class="btn ghost sm" id="btnCatalogStop" style="color:var(--expense);border-color:var(--expense)">전송 중지</button>
             </div>
             <div id="catalogProgress" class="hint" style="margin-top:6px"></div>
+            <!-- 2026-10-07 · 고른 제품만 보내기 -->
+            <div id="boxPick" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">
+              <div style="font-weight:600;margin-bottom:6px">고른 제품만 보내기 <span class="hint">(코드를 골라 담은 뒤 한 번에 · 마감 신호 없음 · 한 번에 최대 500개)</span></div>
+              <div class="row2" style="align-items:start">
+                <div style="position:relative">
+                  <label>제품 찾기 <span class="hint">(코드 앞부분 또는 이름 — Enter 로 담기)</span></label>
+                  <input id="fPickQ" placeholder="예: CE04, TERMINAL" autocomplete="off">
+                  <div id="pickSuggest" class="hidden" style="position:absolute;left:0;right:0;z-index:20;background:var(--card,#fff);border:1px solid var(--line);border-radius:6px;max-height:260px;overflow:auto;box-shadow:0 4px 14px rgba(0,0,0,.08)"></div>
+                </div>
+                <div>
+                  <label>여러 코드 붙여넣기 <span class="hint">(줄바꿈·쉼표·공백 구분)</span></label>
+                  <textarea id="fPickPaste" rows="2" placeholder="CE0427&#10;CB0011&#10;GV1187"></textarea>
+                  <button class="btn ghost sm" id="btnPickPaste" type="button" style="margin-top:4px">목록에 담기</button>
+                </div>
+              </div>
+              <div class="tblwrap" style="margin-top:8px"><table>
+                <thead><tr><th style="width:130px">코드</th><th>제품명</th><th style="width:70px">판매</th><th style="width:70px" class="num">재고</th><th style="width:90px" class="num">정가</th><th style="width:44px"></th></tr></thead>
+                <tbody id="pickRows"><tr><td colspan="6" class="empty">담은 제품이 없습니다.</td></tr></tbody>
+              </table></div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+                <button class="btn" id="btnPickSend" disabled>담은 0개 보내기</button>
+                <button class="btn ghost sm" id="btnPickClear" type="button">비우기</button>
+                <span class="hint">값이 바뀌었는지와 상관없이 지금 ERP 값을 보냅니다. 보낸 값은 「바뀐 것만」 전송의 기준으로도 기록됩니다.</span>
+              </div>
+              <div class="msg" id="pickMsg"></div>
+            </div>
             <div style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">
               <div style="font-weight:600;margin-bottom:6px">상대 규격 맞추기 <span class="hint">(개발자 답을 받으면 여기서 고칩니다 — 배포 불필요)</span></div>
               <div class="row2" style="align-items:end">
@@ -727,7 +753,7 @@
   const ORIGIN_LABEL={registration_approve:'등록 승인',change_approve:'수정 승인',director_edit:'디렉터 수정',
     customer_delete:'고객 삭제',registration_reject:'등록 반려',bulk_push:'전체 동기화',manual_resend:'수동 재전송',
     crm_not_found:'CRM 에 없어 등록으로 전환',manual:'수동',
-    auto_daily:'자동 전체',auto_delta:'자동 변경분',product_full:'수동 전체',product_test:'시험',product_delta:'수동 변경분'};
+    auto_daily:'자동 전체',auto_delta:'자동 변경분',product_pick:'고른 제품',product_full:'수동 전체',product_test:'시험',product_delta:'수동 변경분'};
   // 0236 · 제품 전송 회차 구분
   const MODE_LABEL={full:'전체',test:'시험',delta:'변경분',baseline:'기준 저장'};
   const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
@@ -1234,7 +1260,7 @@
       // 20260924 · 실행(전송 1회)별 성과 — 누적이 아니라 이 전송의 결과. envioId 를 누르면 그 전송의 이력으로 간다.
       const rows=runs.length? runs.map(r=>'<tr><td class="mono"><a class="runlink" data-run="'+r.id+'">'+esc(r.envio_id)+'</a>'
         +'<div><span class="rstate '+esc(r.state||'')+'">'+esc(RS[r.state]||r.state||'')+'</span></div></td>'
-        +'<td>'+(MODE_LABEL[r.mode]||r.mode)+' · '+(r.origin==='auto'?'자동':'수동')+'</td>'
+        +'<td>'+(r.origin==='pick'?'고른 제품':(MODE_LABEL[r.mode]||r.mode))+' · '+(r.origin==='auto'?'자동':'수동')+'</td>'
         +'<td class="num">'+r.total_lotes+'건</td>'
         +'<td>완료 '+r.sent+' · 실패 '+r.failed+' · 대기 '+r.pending+(r.stopped?(' · 중지 '+r.stopped):'')+(r.retrying?('<div class="hint">재시도 대기 '+r.retrying+'</div>'):'')+'</td>'
         +'<td class="num">'+(r.success_pct==null?'–':(r.success_pct+'%'))+'</td>'
@@ -1286,6 +1312,90 @@
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
     finally{ $('btnCatalogSend').disabled=false; $('btnCatalogTest').disabled=false; }
   }
+
+  // ===== 2026-10-07 · 고른 제품만 보내기 =====
+  const PICK=new Map();   // CODE(대문자) → {code,name,activo,existencia,precio}
+  let pickTimer=null, pickItems=[];
+  function pickRender(){
+    const rows=[...PICK.values()];
+    $('pickRows').innerHTML=rows.length?rows.map(r=>'<tr><td class="mono">'+esc(r.code)+'</td><td>'+esc(r.name||'')+'</td>'
+      +'<td>'+(r.activo?'판매':'<span style="color:var(--expense)">비활성</span>')+'</td>'
+      +'<td class="num">'+esc(r.existencia)+'</td><td class="num">'+(r.precio==null?'–':esc(r.precio))+'</td>'
+      +'<td><button class="btn ghost sm" type="button" data-pickdel="'+esc(r.code)+'" title="빼기">×</button></td></tr>').join('')
+      :'<tr><td colspan="6" class="empty">담은 제품이 없습니다.</td></tr>';
+    $('btnPickSend').textContent='담은 '+rows.length+'개 보내기';
+    $('btnPickSend').disabled=!rows.length;
+  }
+  function pickAdd(list){
+    let n=0;
+    for(const r of list){ const k=String(r.code).trim().toUpperCase(); if(!PICK.has(k)){ if(PICK.size>=500) break; PICK.set(k,r); n++; } }
+    pickRender(); return n;
+  }
+  function pickHide(){ $('pickSuggest').classList.add('hidden'); }
+  async function pickSearch(){
+    const q=$('fPickQ').value.trim();
+    if(q.length<2){ pickItems=[]; pickHide(); return; }
+    try{
+      const d=await fetch(session.api+'/api/product-sync/search?q='+encodeURIComponent(q),{headers:auth()}).then(r=>r.json());
+      pickItems=d.items||[];
+      const box=$('pickSuggest');
+      box.innerHTML=pickItems.length?pickItems.map((r,i)=>'<div data-pickidx="'+i+'" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">'
+        +'<b class="mono">'+esc(r.code)+'</b> '+esc(r.name||'')+(r.activo?'':' <span class="hint" style="color:var(--expense)">비활성</span>')
+        +(PICK.has(String(r.code).toUpperCase())?' <span class="hint">· 담김</span>':'')+'</div>').join('')
+        :'<div class="hint" style="padding:6px 10px">보낼 수 있는 제품이 없습니다(PRO·삭제 제외).</div>';
+      box.classList.remove('hidden');
+    }catch(e){ pickHide(); }
+  }
+  $('fPickQ').addEventListener('input',function(){ clearTimeout(pickTimer); pickTimer=setTimeout(pickSearch,250); });
+  $('fPickQ').addEventListener('keydown',function(e){
+    if(e.key==='Escape'){ pickHide(); return; }
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    const q=$('fPickQ').value.trim().toUpperCase(); if(!q) return;
+    const exact=pickItems.find(r=>String(r.code).toUpperCase()===q)||pickItems[0];
+    if(exact){ pickAdd([exact]); $('fPickQ').value=''; pickItems=[]; pickHide(); }
+  });
+  $('pickSuggest').addEventListener('mousedown',function(e){
+    const el=e.target.closest('[data-pickidx]'); if(!el) return;
+    e.preventDefault(); pickAdd([pickItems[Number(el.dataset.pickidx)]]); $('fPickQ').value=''; pickItems=[]; pickHide(); $('fPickQ').focus();
+  });
+  $('fPickQ').addEventListener('blur',function(){ setTimeout(pickHide,150); });
+  $('pickRows').addEventListener('click',function(e){
+    const b=e.target.closest('[data-pickdel]'); if(!b) return;
+    PICK.delete(String(b.dataset.pickdel).toUpperCase()); pickRender();
+  });
+  $('btnPickClear').addEventListener('click',function(){ PICK.clear(); pickRender(); $('pickMsg').className='msg'; $('pickMsg').textContent=''; });
+  $('btnPickPaste').addEventListener('click',async function(){
+    const m=$('pickMsg'); const txt=$('fPickPaste').value.trim(); if(!txt) return;
+    m.className='msg'; m.textContent='확인 중…';
+    try{
+      const res=await fetch(session.api+'/api/product-sync/pick-check',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({codes:txt})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; return; }
+      const n=pickAdd(d.found||[]);
+      $('fPickPaste').value=(d.missing||[]).join('\n');
+      m.className=(d.missing&&d.missing.length)?'msg warn':'msg ok';
+      m.textContent='담음 '+n+'개'+((d.missing&&d.missing.length)?(' · 못 찾은 코드 '+d.missing.length+'개(붙여넣기 칸에 남김): '+d.missing.slice(0,10).join(', ')+(d.missing.length>10?' …':'')+' — 없는 코드·삭제된 제품·PRO 판촉물'):'');
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  });
+  $('btnPickSend').addEventListener('click',async function(){
+    const codes=[...PICK.values()].map(r=>r.code); if(!codes.length) return;
+    if(!confirm('고른 제품 '+codes.length+'개의 지금 값을 CRM 으로 보냅니다.\n\n예: '+codes.slice(0,5).join(', ')+(codes.length>5?' …':'')+'\n\n계속할까요?')) return;
+    const m=$('pickMsg'), b=$('btnPickSend'); m.className='msg'; m.textContent='보내는 중…'; b.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({mode:'pick',codes})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=(d.note||d.error||res.status)+((d.missing&&d.missing.length)?(' — '+d.missing.slice(0,10).join(', ')):''); return; }
+      m.className=d.queued_only?'msg warn':'msg ok';
+      m.textContent='적재 완료 — '+d.envio_id+' · '+d.total_productos+'개'
+        +((d.missing&&d.missing.length)?(' · 제외 '+d.missing.length+'개: '+d.missing.slice(0,10).join(', ')):'')
+        +(d.queued_only?' (연동이 꺼져 있거나 주소가 비어 대기함에 쌓였습니다)':' — 지금 보냅니다. 결과는 전송 이력에서 envioId 로 봅니다.');
+      PICK.clear(); pickRender(); loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ b.disabled=!PICK.size; }
+  });
 
   // ===== 0236 · 바뀐 것만 보내기 =====
   function deltaLine(d){

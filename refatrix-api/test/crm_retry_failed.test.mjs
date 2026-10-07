@@ -130,7 +130,7 @@ test('화면 — 실패·대기 엑셀 버튼 · 스페인어 머리글 · 같�
   assert.match(html, /\/api\/crm-sync\/export\?/);
   assert.match(html, /'Cuerpo enviado \(JSON\)'/);
   assert.match(html, /function exportOpen\(\)[\s\S]*scopeBody\(\)/);
-  assert.match(html, /build 20261006xl/);
+  assert.match(html, /build 20261006xl|build 20261007pk/);
 });
 
 test('화면 — 버튼 · 목록과 같은 범위로 요청 · 빌드 토큰', () => {
@@ -138,7 +138,7 @@ test('화면 — 버튼 · 목록과 같은 범위로 요청 · 빌드 토큰', 
   assert.match(html, /id="btnRetryFailed"[^>]*>실패 건 재전송</);
   assert.match(html, /\/api\/crm-sync\/retry-failed/);
   assert.match(html, /function scopeBody\(\)/);
-  assert.match(html, /build 20260929(rf|dl|promo)|build 20261006(ex|xl)/);
+  assert.match(html, /build 20260929(rf|dl|promo)|build 20261006(ex|xl)|build 20261007pk/);
 });
 
 test.after(async () => { if (app) await app.close(); if (pool) await pool.end(); });

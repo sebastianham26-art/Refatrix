@@ -270,6 +270,48 @@ export async function fetchProducts({ limit = null, code = null } = {}) {
   return (await query(sql)).rows;
 }
 
+/**
+ * 2026-10-07 · 고른 제품만 — 보낼 수 있는 제품(삭제 안 됨 · PRO 아님) 중 코드가 맞는 것.
+ *   대소문자·앞뒤 공백 무시. returns { rows, missing:[입력 코드] }
+ */
+export const PICK_MAX = 500;
+export function parseCodes(input) {
+  const list = Array.isArray(input) ? input : String(input == null ? '' : input).split(/[\s,;]+/);
+  const out = []; const seen = new Set();
+  for (const c of list) {
+    const v = String(c == null ? '' : c).trim();
+    if (!v) continue;
+    const k = v.toUpperCase();
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(v);
+  }
+  return out;
+}
+export async function fetchProductsPick(codes) {
+  const list = parseCodes(codes);
+  if (!list.length) return { rows: [], missing: [] };
+  const PRODUCT_COLS = productCols(await oeReady());
+  const rows = (await query(
+    `${PRODUCT_COLS} AND upper(btrim(code)) = ANY($1) ORDER BY code`,
+    [list.map((c) => c.toUpperCase())])).rows.filter((r) => !isExcludedCode(r.code));
+  const got = new Set(rows.map((r) => String(r.code).trim().toUpperCase()));
+  return { rows, missing: list.filter((c) => !got.has(c.toUpperCase())) };
+}
+
+/** 고른 제품 찾기(화면 자동완성) — 코드 앞부분 또는 이름. 보낼 수 있는 제품만. */
+export async function searchSendable(q, limit = 20) {
+  const s = String(q == null ? '' : q).trim();
+  if (s.length < 2) return [];
+  return (await query(
+    `SELECT code, name, is_active, stock_qty, list_price FROM products
+      WHERE ${SENDABLE_WHERE} AND (code ILIKE $1 OR name ILIKE $2)
+      ORDER BY (code ILIKE $1) DESC, code LIMIT $3`,
+    [`${s}%`, `%${s}%`, Math.max(1, Math.min(50, Number(limit) || 20))])).rows
+    .filter((r) => !isExcludedCode(r.code))
+    .map((r) => ({ code: r.code, name: r.name, activo: r.is_active !== false,
+                   existencia: stockQty(r.stock_qty), precio: r.list_price == null ? null : Number(r.list_price) }));
+}
+
 /** 코드로 제품 행(삭제·제외 포함) — 지워진 제품을 비활성으로 한 번 알리기 위해. */
 async function fetchProductsByCodes(codes) {
   if (!codes.length) return [];
@@ -404,6 +446,7 @@ async function nextEnvioId(ymd, mode) {
   if (mode === 'test') return `TEST-${mxNowParts().stamp}`;
   if (mode === 'delta') return `DLT-${mxNowParts().stamp}`;
   if (mode === 'baseline') return `BASE-${mxNowParts().stamp}`;
+  if (mode === 'pick') return `SEL-${mxNowParts().stamp}`;
   const base = `CAT-${ymd}`;
   const r = (await query(
     `SELECT COUNT(*)::int AS n FROM product_sync_runs WHERE fecha_corte = $1 AND mode = 'full'`,
@@ -421,11 +464,11 @@ async function nextEnvioId(ymd, mode) {
  *   절대 throw 하지 않는다 — 화면 버튼이 500 으로 죽으면 원인을 알 수 없다.
  */
 export async function runCatalogSync({
-  mode = 'full', limit = null, origin = 'manual', actorUserId = null, app = null,
+  mode = 'full', limit = null, origin = 'manual', actorUserId = null, app = null, codes = null,
 } = {}) {
   try {
     if (!(await productTablesReady())) return { error: 'migration_required' };
-    if (!['full', 'test', 'delta', 'baseline'].includes(mode)) mode = 'full';
+    if (!['full', 'test', 'delta', 'baseline', 'pick'].includes(mode)) mode = 'full';
     const needState = mode === 'delta' || mode === 'baseline';
     if (needState && !(await stateReady())) return { error: 'migration_required_delta' };
     const ep = await getEndpoint(PRODUCT_KEY);
@@ -437,8 +480,18 @@ export async function runCatalogSync({
     const shape = BODY_SHAPES.includes(ep.body_shape) ? ep.body_shape : 'lote';
     const map = (ep.field_map && typeof ep.field_map === 'object') ? ep.field_map : {};
 
-    let productos; let hashes; let deltaCounts = null;
-    if (mode === 'delta') {
+    let productos; let hashes; let deltaCounts = null; let missing = null;
+    if (mode === 'pick') {
+      // 2026-10-07 · 고른 제품만. 마감 신호 없음(변경분과 같다). 바뀌었는지와 상관없이 지금 값을 보낸다.
+      const list = parseCodes(codes);
+      if (!list.length) return { error: 'no_codes' };
+      if (list.length > PICK_MAX) return { error: 'too_many_codes', max: PICK_MAX };
+      const f = await fetchProductsPick(list);
+      missing = f.missing;
+      if (!f.rows.length) return { error: 'codes_not_found', missing };
+      productos = f.rows.map((r) => buildProduct(r, imgBase));
+      hashes = productos.map(productHash);
+    } else if (mode === 'delta') {
       if ((await baselineCount()) === 0) return { error: 'no_baseline' };
       const d = await computeDelta(imgBase);
       deltaCounts = d.counts;
@@ -455,6 +508,10 @@ export async function runCatalogSync({
     }
 
     const envioId = await nextEnvioId(ymd, mode);
+    // 고른 제품 전송은 회차표에 「변경분(delta)」으로 남긴다(마감 신호 없는 부분 전송 — 같은 성격, 마이그레이션 불필요).
+    //   구분은 origin='pick'. 0236 전이면 'test' 로(그때는 delta 가 CHECK 에 없다).
+    const dbMode = mode === 'pick' ? ((await stateReady()) ? 'delta' : 'test') : mode;
+    if (mode === 'pick') origin = 'pick';
     const batchSize = Math.max(MIN_BATCH, Math.min(MAX_BATCH, Number(ep.batch_size) || DEFAULT_BATCH));
 
     // 기준만 기록 — 보내지 않는다. 회차 1행(묶음 0)으로 「언제 누가 기준을 잡았나」를 남긴다.
@@ -478,12 +535,13 @@ export async function runCatalogSync({
       `INSERT INTO product_sync_runs
          (envio_id, fecha_corte, mode, origin, total_productos, total_lotes, batch_size, env, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, created_at`,
-      [envioId, ymd, mode, origin, productos.length, lotesIdx.length,
+      [envioId, ymd, dbMode, origin, productos.length, lotesIdx.length,
        batchSize, ep.env || null, actorUserId || null])).rows[0];
 
     const meta = {
       envioId, fechaCorte: ymd, totalLotes: lotesIdx.length,
-      totalProductos: productos.length, transactionUser, mode,
+      totalProductos: productos.length, transactionUser,
+      mode: mode === 'pick' ? 'delta' : mode,        // 고른 제품도 마감 신호 없음
     };
     const originTag = origin === 'auto'
       ? (mode === 'delta' ? 'auto_delta' : 'auto_daily')
@@ -524,6 +582,7 @@ export async function runCatalogSync({
       total_productos: productos.length,
       total_lotes: lotesIdx.length,
       counts: deltaCounts,
+      missing,                                       // 고른 제품 중 못 찾은 코드(없음·삭제·PRO)
       body_shape: shape,
       outbox_ids: ids,
       queued_only: !ready,
@@ -709,7 +768,7 @@ export async function productSyncTick({ app = null, now = Date.now() } = {}) {
     const deltaAuto = ep.delta_auto == null ? false : !!ep.delta_auto;
     if (!deltaAuto) return { skipped: 'delta_off' };
     const last = (await query(
-      `SELECT max(created_at) AS at FROM product_sync_runs WHERE mode='delta'`)).rows[0];
+      `SELECT max(created_at) AS at FROM product_sync_runs WHERE mode='delta' AND origin <> 'pick'`)).rows[0];
     const lastAt = Math.max(last && last.at ? new Date(last.at).getTime() : 0, lastDeltaCheck) || null;
     if (!deltaDue({ deltaAuto, everyMin: ep.delta_every_min },
                   { lastAt, now, pending: await pendingProductCount(), baseline: await baselineCount() })) {

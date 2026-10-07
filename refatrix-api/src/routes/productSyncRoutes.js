@@ -10,6 +10,7 @@ import {
   fetchProducts, buildProduct, buildLote, chunk, mxNowParts, autoRanToday,
   SENDABLE_WHERE, EXCLUDED_PREFIXES, cancelCatalogSync, pendingProductCount, runErrors,
   stateReady, baselineCount, computeDelta,
+  fetchProductsPick, searchSendable, parseCodes, PICK_MAX, stockQty,
 } from '../productSync.js';
 import { pumpState, gapMs } from '../crmSync.js';
 
@@ -20,6 +21,9 @@ const ERR_NOTE = {
   enqueue_failed: '전송 적재에 실패했습니다. 서버 로그를 확인하세요.',
   migration_required_delta: '0236_product_sync_delta 마이그레이션이 필요합니다(변경분 전송).',
   no_baseline: '비교할 기준이 없습니다 — 「지금 전체 보내기」를 한 번 하거나, CRM 이 이미 최신이면 「기준만 저장」을 누르세요.',
+  no_codes: '보낼 제품 코드를 하나 이상 넣으세요.',
+  too_many_codes: `한 번에 ${PICK_MAX}개까지 보낼 수 있습니다.`,
+  codes_not_found: '보낼 수 있는 제품을 찾지 못했습니다(없는 코드·삭제된 제품·PRO 판촉물은 제외).',
 };
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -94,7 +98,7 @@ export default async function productSyncRoutes(app) {
     try {
       const last = (await query(
         `SELECT id, envio_id, total_productos, created_at FROM product_sync_runs
-          WHERE mode='delta' ORDER BY id DESC LIMIT 1`)).rows[0] || null;
+          WHERE mode='delta' AND origin <> 'pick' ORDER BY id DESC LIMIT 1`)).rows[0] || null;
       return { ready: true, baseline: await baselineCount(), last_delta: last };
     } catch (_) { return { ready: false }; }
   }
@@ -154,17 +158,33 @@ export default async function productSyncRoutes(app) {
    *   mode=test  앞에서 limit 건만. **마감 신호를 보내지 않는다** —
    *              시험 전송이 마감하면 CRM 이 나머지 전 제품을 감춰 버린다.
    */
+  /** 2026-10-07 · 고른 제품 보내기 — 자동완성(코드 앞부분·이름). */
+  app.get('/api/product-sync/search', guard, async (req) => {
+    return { items: await searchSendable((req.query || {}).q, 20) };
+  });
+
+  /** 2026-10-07 · 고른 제품 확인 — 붙여 넣은 코드들 중 보낼 수 있는 것 / 못 찾은 것. 보내지 않는다. */
+  app.post('/api/product-sync/pick-check', guard, async (req, reply) => {
+    const list = parseCodes((req.body || {}).codes);
+    if (list.length > PICK_MAX) return reply.code(400).send({ error: 'too_many_codes', note: ERR_NOTE.too_many_codes });
+    const f = await fetchProductsPick(list);
+    return { found: f.rows.map((r) => ({ code: r.code, name: r.name, activo: r.is_active !== false,
+                                         existencia: stockQty(r.stock_qty), precio: r.list_price == null ? null : Number(r.list_price) })),
+             missing: f.missing, max: PICK_MAX };
+  });
+
   app.post('/api/product-sync/run', guard, async (req, reply) => {
     const body = req.body || {};
     const want = String(body.mode || 'full');
-    const mode = ['test', 'delta', 'baseline'].includes(want) ? want : 'full';
+    const mode = ['test', 'delta', 'baseline', 'pick'].includes(want) ? want : 'full';
     const limit = mode === 'test' ? Math.max(1, Math.min(50, Number(body.limit) || 5)) : null;
     const r = await runCatalogSync({
       mode, limit, origin: 'manual', actorUserId: req.ctx.perm.userId, app,
+      codes: mode === 'pick' ? body.codes : null,
     });
     if (r.error) {
       const code = (r.error === 'migration_required' || r.error === 'migration_required_delta') ? 503 : 400;
-      return reply.code(code).send({ error: r.error, note: ERR_NOTE[r.error] || null, detail: r.detail || null });
+      return reply.code(code).send({ error: r.error, note: ERR_NOTE[r.error] || null, detail: r.detail || null, missing: r.missing || null });
     }
     try {
       // ⚠ audit_log.action 은 체크 제약이 걸린 고정 목록이다 — 'product_sync' 를 그대로 넣으면
@@ -174,7 +194,8 @@ export default async function productSyncRoutes(app) {
         userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId,
         action: 'update', target: `product_sync:${r.envio_id}`,
         detail: { op: 'product_sync', mode: r.mode, envio_id: r.envio_id,
-          lotes: r.total_lotes, productos: r.total_productos },
+          lotes: r.total_lotes, productos: r.total_productos,
+          ...(mode === 'pick' ? { pick: parseCodes(body.codes).slice(0, 50) } : {}) },
       });
     } catch (_) { /* 감사로그 실패가 전송을 막지 않는다 */ }
     return r;
