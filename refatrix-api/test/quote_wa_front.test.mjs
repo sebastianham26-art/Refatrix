@@ -60,7 +60,7 @@ function boot(role = 'director') {
 test('신규 견적 WhatsApp 알림 패널 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 디렉터: 버튼 → 패널 · 상태 · 수신자(팀 범위 · 24시간 창) · 원장(읽음/실패 사유) · 미리보기', async () => {
     const c = boot(); await c.ready; await tick(500);
-    assert.match(c.d.title, /ql-1007wa1/);
+    assert.match(c.d.title, /ql-1007wa2/);
     const btn = c.d.getElementById('qwOpen'); assert.ok(btn, '디렉터에게 버튼');
     btn.click(); await tick(300);
     assert.ok(c.d.getElementById('qwModal').classList.contains('on'));
@@ -81,15 +81,22 @@ test('신규 견적 WhatsApp 알림 패널 (jsdom)', { skip: SKIP && 'jsdom 또�
     const c = boot(); await c.ready; await tick(500);
     c.d.getElementById('qwOpen').click(); await tick(300);
     c.d.getElementById('qwName').value = 'Oscar'; c.d.getElementById('qwPhone').value = '9991234567'; c.d.getElementById('qwLang').value = 'es';
-    c.d.querySelector('#qwNewTeams input[value="2"]').checked = true;
+    c.d.querySelector('#qwNewTeams input[value="2"]').checked = true; c.d.getElementById('qwSum').value = 'no_profit';
     c.d.getElementById('qwAdd').click(); await tick(300);
     const post = c.calls.find((x) => x.method === 'POST' && x.u.endsWith('/api/quote-wa/recipients'));
-    assert.deepEqual(post.body, { name: 'Oscar', phone: '9991234567', lang: 'es', team_ids: [2] });
+    assert.deepEqual(post.body, { name: 'Oscar', phone: '9991234567', lang: 'es', team_ids: [2], month_summary: 'no_profit' });
     assert.match(c.d.getElementById('qwRecips').textContent, /Oscar/);
     const cb = c.d.querySelector('tr[data-id="7"] input[data-act="team"][value="1"]');
     cb.checked = true; cb.dispatchEvent(new c.w.Event('change', { bubbles: true })); await tick(200);
     const pat = c.calls.find((x) => x.method === 'PATCH');
     assert.ok(pat.u.endsWith('/api/quote-wa/recipients/7')); assert.deepEqual(pat.body, { team_ids: [1] });
+    const sel = c.d.querySelector('tr[data-id="7"] select[data-act="summary"]');
+    assert.equal(sel.value, 'full', '기본 7칸');
+    sel.value = 'off'; sel.dispatchEvent(new c.w.Event('change', { bubbles: true })); await tick(200);
+    const pat2 = c.calls.filter((x) => x.method === 'PATCH').pop();
+    assert.deepEqual(pat2.body, { month_summary: 'off' });
+    c.d.getElementById('qwPvSum').value = 'no_profit'; c.d.getElementById('qwPvSum').dispatchEvent(new c.w.Event('change')); await tick(200);
+    assert.ok(c.calls.some((x) => x.u.includes('/api/quote-wa/preview') && x.u.includes('summary=no_profit')));
     c.d.querySelector('tr[data-id="7"] button[data-act="test"]').click(); await tick(200);
     const send = c.calls.find((x) => x.u.includes('/api/quote-wa/send'));
     assert.deepEqual(send.body, { recipient_id: 7 });

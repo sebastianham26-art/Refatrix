@@ -48,6 +48,29 @@ test('A3. 팀 범위 — 비어 있으면 전체, 있으면 그 팀만(팀 없�
   assert.equal(N.recipientCovers({ team_ids: [1] }, { ...QT, team_id: null }), false);
 });
 
+const MS = { ym: '2026-10', teamNames: null, sum: {
+  quotes: { n: 12, amt: 250000, qty: 900, sku: 38, lines: 112, open: 3, converted: 7, expired: 2 },
+  sales: { invoices: 7, amt: 150000, qty: 600, sku: 25, rate: 60 },
+  lost: { n: 9, amt: 40000, qty: 120, sku: 9, converted_amt: 30000, expired_amt: 10000, open_short_amt: 5000, open_short_qty: 20 },
+  gp: { sales: { gp: 60000, rev: 150000, cost: 90000, pct: 40, est: 2, nocost: 1 }, lost: { gp: 15000, rev: 38000, cost: 23000, pct: 39.5, est: 0, nocost: 0 } } } };
+
+test('A4. 당월 요약 — 화면 카드 7칸 순서 · 이익 제외 · 끔 · 스페인어', () => {
+  const full = N.buildMonthSummaryText(MS, 'ko', 'full');
+  for (const s of ['📊 *10월 요약*', 'IVA 제외', '① 총 견적액 *$250,000.00* — 견적 12건 · 미결 3 · 전환 7 · 만료 2',
+    '② 실매출액 *$150,000.00* — 견적액 대비 60% · 인보이스 7건',
+    '③ 재고부족 매출실기 *$40,000.00* — 전환 시 미확보 $30,000.00 · 만료 시 부족 $10,000.00 (+ 미결 견적 현재 부족 $5,000.00 · 20개)',
+    '④ 총 견적 수량 SKU *38* · Pieza *900* — 견적 줄 112개', '⑤ 매출 수량 SKU *25* · Pieza *600* — 견적의 66.7% · 부족 9 SKU / 120개',
+    '⑥ 매출총이익 실현 *$60,000.00* — 이익률 40% · FOB추정 2줄 · 원가없음 1줄 제외', '⑦ 재고부족 이익 실현불가 *$15,000.00* — 부족 매출 $38,000.00 기준 · 이익률 39.5%'])
+    assert.ok(full.includes(s), `${s}\n${full}`);
+  const np = N.buildMonthSummaryText(MS, 'ko', 'no_profit');
+  assert.ok(np.includes('⑤') && !np.includes('⑥') && !np.includes('⑦') && !np.includes('60,000'));
+  assert.equal(N.buildMonthSummaryText(MS, 'ko', 'off'), '');
+  const es = N.buildMonthSummaryText({ ...MS, teamNames: ['02_Merida'] }, 'es', 'full');
+  for (const s of ['Resumen oct 2026', '02_Merida', 'Monto cotizado', 'Venta real', 'Utilidad bruta realizada']) assert.ok(es.includes(s), s);
+  assert.equal(N.levelOf({ month_summary: 'x' }), 'full');
+  assert.match(N.mxYm(Date.parse('2026-11-01T03:00:00Z')), /^2026-10$/, '멕시코 날짜 기준(UTC 11/1 03시 = 멕시코 10/31)');
+});
+
 test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, async (t) => {
   const { query, pool } = await import('../src/db.js');
   after(async () => { await pool.end().catch(() => {}); setTimeout(() => process.exit(process.exitCode || 0), 300); });
@@ -232,6 +255,46 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     await N.runQuoteNotifyJob({});
     assert.equal(sent.length, 0);
     await call(D, 'PATCH', `/api/quote-wa/recipients/${rT1.id}`, { active: true });
+  });
+
+  await t.test('B10. 당월 요약 — 화면 카드(/api/quotes/summary)와 같은 숫자 · 이익 제외 수신자 · 팀 범위 수신자', async () => {
+    const ym = N.mxYm();
+    const card = (await call(D, 'GET', `/api/quotes/summary?yms=${ym}`)).json();
+    const $ = (v) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // 이익 제외 + 팀 범위(T2) 수신자 추가
+    const rp = (await call(D, 'POST', '/api/quote-wa/recipients', { name: 'Rep', phone: '8110007777', team_ids: [T2.id], month_summary: 'no_profit' })).json();
+    assert.equal(rp.month_summary, 'no_profit');
+    assert.equal((await call(D, 'PATCH', `/api/quote-wa/recipients/${rp.id}`, { month_summary: 'nope' })).statusCode, 400);
+    assert.equal((await call(D, 'POST', '/api/quote-wa/recipients', { name: 'Bad', phone: '8110007778', month_summary: 'x' })).statusCode, 400);
+    sent.length = 0;
+    const q = await newQuote(); await wait(1200);
+    const card2 = (await call(D, 'GET', `/api/quotes/summary?yms=${ym}`)).json();   // 새 견적이 들어간 뒤의 카드
+    const all = sent.find((x) => x.to === '528110005311');
+    const rep = sent.find((x) => x.to === '528110007777');
+    assert.ok(all && rep, '두 명 모두');
+    // 전사 수신자 = 카드 숫자(7칸 전부)
+    assert.ok(all.text.indexOf(q.quote_no) < all.text.indexOf('📊'), '요약은 맨 아래');
+    for (const s of [`① 총 견적액 *${$(card2.quotes.amt)}* — 견적 ${card2.quotes.n}건`, `② 실매출액 *${$(card2.sales.amt)}*`,
+      `③ 재고부족 매출실기 *${$(card2.lost.amt)}*`, `④ 총 견적 수량 SKU *${card2.quotes.sku}* · Pieza *${card2.quotes.qty}*`,
+      `⑤ 매출 수량 SKU *${card2.sales.sku}*`, `⑥ 매출총이익 실현 *${$(card2.gp.sales.gp)}*`, `⑦ 재고부족 이익 실현불가 *${$(card2.gp.lost.gp)}*`])
+      assert.ok(all.text.includes(s), `${s}\n${all.text}`);
+    assert.ok(card2.quotes.n === card.quotes.n + 1, '새 견적 포함');
+    // 팀 범위 수신자 = 그 팀만 · 이익 없음 · 팀 이름 표시
+    const { computeQuoteSummary } = await import('../src/quoteSummary.js');
+    const ts = await computeQuoteSummary({ yms: [ym], scope: { teamIds: [T2.id], guestByCreatorTeam: true } });
+    const tName = (await one(`SELECT name FROM sales_teams WHERE id=$1`, [T2.id])).name;
+    assert.ok(rep.text.includes(tName) && rep.text.includes(`① 총 견적액 *${$(ts.quotes.amt)}*`), rep.text);
+    assert.ok(!rep.text.includes('⑥') && !rep.text.includes('⑦'), '이익 제외');
+    // 미리보기
+    const pv = (await call(D, 'GET', `/api/quote-wa/preview?quote_id=${q.id}&summary=no_profit`)).json();
+    assert.equal(pv.summary_level, 'no_profit'); assert.ok(pv.text.includes('⑤') && !pv.text.includes('⑥'));
+    const pv0 = (await call(D, 'GET', `/api/quote-wa/preview?quote_id=${q.id}&summary=off`)).json();
+    assert.ok(!pv0.text.includes('📊'));
+    // 끔
+    await call(D, 'PATCH', `/api/quote-wa/recipients/${rp.id}`, { month_summary: 'off' });
+    sent.length = 0; await newQuote(); await wait(1200);
+    assert.ok(!sent.find((x) => x.to === '528110007777').text.includes('📊'));
+    await call(D, 'DELETE', `/api/quote-wa/recipients/${rp.id}`);
   });
 
   await t.test('B9. 미리보기 · 꺼짐 스위치 · 수신자 삭제', async () => {

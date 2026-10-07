@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1007wa1</title>
+<title>Refatrix ERP · 견적 목록 · ql-1007wa2</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -270,7 +270,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='ql-1007wa1';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1007wa2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -1989,7 +1989,7 @@
   later();
 })();
 </script>
-<!-- 2026-10-07 · 0256 신규 견적 WhatsApp 알림 — 디렉터 전용 설정 패널 (ql-1007wa1) -->
+<!-- 2026-10-07 · 0256 신규 견적 WhatsApp 알림 — 디렉터 전용 설정 패널 (ql-1007wa1 · 0257 당월 요약 ql-1007wa2) -->
 <style>
   #qwModal{display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:130;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto}
   #qwModal.on{display:flex}
@@ -2014,7 +2014,7 @@
   #qwModal .dl.f{color:var(--expense);font-weight:700}
   #qwModal .dl.r{color:var(--income);font-weight:700}
   #qwMsg{margin:0 18px 0}
-  @media (max-width:640px){ #qwModal .qwsec{padding:12px} #qwModal th:nth-child(2),#qwModal td:nth-child(2){display:none} }
+  @media (max-width:640px){ #qwModal .qwsec{padding:12px} #qwModal th:nth-child(2),#qwModal td:nth-child(2){display:none} #qwModal table{display:block;overflow-x:auto} }
 </style>
 <div id="qwModal" role="dialog" aria-modal="true" aria-labelledby="qwTitle">
   <div class="qwbox">
@@ -2025,7 +2025,7 @@
     <div class="msg" id="qwMsg"></div>
     <div class="qwsec">
       <div class="qwstat" id="qwStat"></div>
-      <div class="hint" style="margin-top:8px">견적이 새로 저장되면(화면 저장 · 복제 · 포털 견적요청) 아래 받는 사람에게 <b>견적번호 · 고객 · SKU · 총수량 · 수주현황 · 견적액</b>을 바로 보냅니다. 받는 사람을 등록한 뒤에 만들어진 견적부터 갑니다. 팀을 고르면 그 팀 고객의 견적만 받습니다(하나도 안 고르면 전체).</div>
+      <div class="hint" style="margin-top:8px">견적이 새로 저장되면(화면 저장 · 복제 · 포털 견적요청) 아래 받는 사람에게 <b>견적번호 · 고객 · SKU · 총수량 · 수주현황 · 견적액</b>을 바로 보내고, 맨 아래에 <b>당월 요약(위 요약 카드 7칸과 같은 숫자)</b>을 붙입니다. 이익 두 칸(⑥⑦)은 원가 정보라, 영업사원 등에게는 「이익 제외」를 권장합니다. 받는 사람을 등록한 뒤에 만들어진 견적부터 갑니다. 팀을 고르면 그 팀 고객의 견적만 받습니다(하나도 안 고르면 전체).</div>
     </div>
     <div class="qwsec">
       <h3>받는 사람</h3>
@@ -2035,6 +2035,7 @@
         <div><label>WhatsApp 번호 <span class="hint" style="font-weight:500">(10자리 또는 52+10자리)</span></label><input id="qwPhone" type="tel" style="width:160px" placeholder="8112345678"></div>
         <div><label>언어</label><select id="qwLang"><option value="ko">한국어</option><option value="es">Español</option></select></div>
         <div><label>팀 범위</label><div class="teams" id="qwNewTeams"></div></div>
+        <div><label>당월 요약</label><select id="qwSum"><option value="full">7칸 전부</option><option value="no_profit">이익 제외(5칸)</option><option value="off">안 붙임</option></select></div>
         <button type="button" class="btn sm" id="qwAdd">＋ 추가</button>
       </div>
     </div>
@@ -2042,7 +2043,8 @@
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h3 style="margin:0">보낼 내용 미리보기</h3>
         <span class="hint" id="qwPvNo"></span>
-        <select id="qwPvLang" style="margin-left:auto"><option value="ko">한국어</option><option value="es">Español</option></select>
+        <select id="qwPvSum" style="margin-left:auto"><option value="full">요약 7칸</option><option value="no_profit">이익 제외</option><option value="off">요약 없음</option></select>
+        <select id="qwPvLang"><option value="ko">한국어</option><option value="es">Español</option></select>
       </div>
       <pre id="qwPv">—</pre>
     </div>
@@ -2074,12 +2076,13 @@
   function renderRecips(){
     var el=$q('qwRecips');
     if(!st.items.length){ el.innerHTML='<div class="hint">아직 없습니다. 아래에서 추가하세요.</div>'; }
-    else el.innerHTML='<table><thead><tr><th>이름</th><th>번호</th><th>언어</th><th>팀 범위</th><th>24시간 창</th><th>사용</th><th></th></tr></thead><tbody>'
+    else el.innerHTML='<table><thead><tr><th>이름</th><th>번호</th><th>언어</th><th>팀 범위</th><th>당월 요약</th><th>24시간 창</th><th>사용</th><th></th></tr></thead><tbody>'
       + st.items.map(function(r){
         var win=r.window_open==null?'<span class="hint">웹훅 미설정</span>':(r.window_open?'<span class="win open">열림</span>':'<span class="win closed">닫힘 · 템플릿</span>');
         return '<tr data-id="'+r.id+'"><td><b>'+ex(r.name)+'</b></td><td>'+ex(r.phone_masked)+'</td>'
           +'<td><select data-act="lang"><option value="ko"'+(r.lang==='ko'?' selected':'')+'>한국어</option><option value="es"'+(r.lang==='es'?' selected':'')+'>Español</option></select></td>'
           +'<td><div class="teams">'+teamBoxes(r.team_ids||[],'data-act="team"')+'</div>'+(!(r.team_ids||[]).length?'<span class="hint">전체</span>':'')+'</td>'
+          +'<td><select data-act="summary">'+[['full','7칸 전부'],['no_profit','이익 제외'],['off','안 붙임']].map(function(o){ return '<option value="'+o[0]+'"'+((r.month_summary||'full')===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></td>'
           +'<td>'+win+'</td>'
           +'<td><input type="checkbox" data-act="active"'+(r.active?' checked':'')+'></td>'
           +'<td style="white-space:nowrap"><button type="button" class="btn ghost sm" data-act="test" title="가장 최근 견적으로 이 사람에게 지금 보냅니다">시험 발송</button> <button type="button" class="btn ghost sm" data-act="del" style="color:var(--expense);border-color:var(--expense)">삭제</button></td></tr>';
@@ -2112,7 +2115,7 @@
       +'</tbody></table>';
   }
   function loadPreview(){
-    call('GET','/api/quote-wa/preview?lang='+encodeURIComponent($q('qwPvLang').value)).then(function(d){
+    call('GET','/api/quote-wa/preview?lang='+encodeURIComponent($q('qwPvLang').value)+'&summary='+encodeURIComponent($q('qwPvSum').value)).then(function(d){
       $q('qwPvNo').textContent='가장 최근 견적 '+d.quote_no; $q('qwPv').textContent=d.text;
     }).catch(function(e){ $q('qwPvNo').textContent=''; $q('qwPv').textContent=e.message==='no_quote'?'견적이 아직 없습니다.':errText(e); });
   }
@@ -2128,9 +2131,10 @@
   $q('qwModal').addEventListener('click',function(e){ if(e.target===$q('qwModal')) close(); });
   $q('qwRefresh').addEventListener('click',loadAll);
   $q('qwPvLang').addEventListener('change',loadPreview);
+  $q('qwPvSum').addEventListener('change',loadPreview);
   $q('qwAdd').addEventListener('click',function(){
     var teams=[].slice.call(document.querySelectorAll('#qwNewTeams input:checked')).map(function(i){return Number(i.value);});
-    call('POST','/api/quote-wa/recipients',{name:$q('qwName').value,phone:$q('qwPhone').value,lang:$q('qwLang').value,team_ids:teams})
+    call('POST','/api/quote-wa/recipients',{name:$q('qwName').value,phone:$q('qwPhone').value,lang:$q('qwLang').value,team_ids:teams,month_summary:$q('qwSum').value})
       .then(function(){ $q('qwName').value=''; $q('qwPhone').value=''; say(true,'추가했습니다. 지금부터 만들어지는 견적이 갑니다.'); loadAll(); })
       .catch(function(e){ say(false,errText(e)); });
   });
@@ -2138,6 +2142,7 @@
     var tr=e.target.closest('tr[data-id]'); if(!tr) return; var id=tr.getAttribute('data-id'); var act=e.target.getAttribute('data-act'); var body=null;
     if(act==='lang') body={lang:e.target.value};
     else if(act==='active') body={active:e.target.checked};
+    else if(act==='summary') body={month_summary:e.target.value};
     else if(act==='team') body={team_ids:[].slice.call(tr.querySelectorAll('input[data-act="team"]:checked')).map(function(i){return Number(i.value);})};
     if(!body) return;
     call('PATCH','/api/quote-wa/recipients/'+id,body).then(function(r){

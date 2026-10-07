@@ -5,6 +5,10 @@
 //     수주현황 = 견적 목록과 같은 3분류(예약 확보 기준): 즉시매출가능 / 재고부족 / 개발필요
 //     견적액   = IVA 제외(목표·이익과 같은 기준) + IVA 포함 병기. 수주현황 금액도 IVA 제외.
 //
+//   맨 아래(0257): 「당월 요약」 = 견적·매출 추적 상단 KPI 7칸(같은 함수 computeQuoteSummary).
+//     당월 = 멕시코 날짜 기준 이번 달(견적일 기준) · IVA 제외 · 수신자 팀 범위가 있으면 그 팀만.
+//     수신자별 month_summary: full(7칸) / no_profit(이익 2칸 제외) / off.
+//
 //   언제: 견적이 만들어지면 바로(kickQuoteNotify — 응답 뒤, 기다리지 않음) +
 //         60초마다 놓친 건 줍기(runQuoteNotifyJob — 최근 24시간, 시도 3회까지).
 //     · 대상 경로: 화면 견적 저장 · 견적 복제 · 포털(CRM) 견적요청. 가용재고 견적(pricelist)은 제외.
@@ -18,6 +22,7 @@
 import { query } from './db.js';
 import { sendWaTo, waApiReady } from './waSend.js';
 import { windowState } from './waWebhook.js';
+import { computeQuoteSummary } from './quoteSummary.js';   // 0257 · 당월 요약(KPI 7칸)
 
 export const MAX_ATTEMPTS = 3;
 export const LOOKBACK_HOURS = 24;
@@ -118,6 +123,76 @@ export function buildQuoteHeadline(qt, lang = 'ko') {
     .replace(/[\n\t]+/g, ' ').slice(0, 950);
 }
 
+// ───────── 0257 · 당월 요약(KPI 7칸) ─────────
+export const SUMMARY_LEVELS = ['full', 'no_profit', 'off'];
+export const levelOf = (r) => (SUMMARY_LEVELS.includes(r && r.month_summary) ? r.month_summary : 'full');
+export function mxYm(nowMs = Date.now()) {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit' }).formatToParts(new Date(nowMs));
+  return `${p.find((x) => x.type === 'year').value}-${p.find((x) => x.type === 'month').value}`;
+}
+const teamKey = (r) => {
+  const ids = Array.isArray(r && r.team_ids) ? r.team_ids.map(Number).filter(Boolean).sort((a, b) => a - b) : [];
+  return ids.length ? ids.join(',') : 'all';
+};
+// 같은 팀 범위의 수신자끼리는 한 번만 계산(caches = 한 번의 발송 묶음 안에서만 재사용)
+export async function monthSummaryFor(rcpt, { ym = mxYm(), cache = null, q = query } = {}) {
+  const key = `${ym}|${teamKey(rcpt)}`;
+  if (cache && cache[key]) return cache[key];
+  const ids = teamKey(rcpt) === 'all' ? null : teamKey(rcpt).split(',').map(Number);
+  const sum = await computeQuoteSummary({ yms: [ym], scope: ids ? { teamIds: ids, guestByCreatorTeam: true } : null }, q);
+  let teamNames = null;
+  if (ids) teamNames = (await q(`SELECT name FROM sales_teams WHERE id = ANY($1::bigint[]) ORDER BY sort_order, id`, [ids])).rows.map((x) => x.name);
+  const out = { ym, sum, teamNames };
+  if (cache) cache[key] = out;
+  return out;
+}
+
+const S = {
+  ko: { head: (ym) => `${Number(ym.slice(5))}월 요약`, basis: '견적일 기준 · IVA 제외',
+    q: '총 견적액', qs: (d) => `견적 ${d.n}건 · 미결 ${d.open} · 전환 ${d.converted} · 만료 ${d.expired}`,
+    s: '실매출액', ss: (d) => `견적액 대비 ${d.rate == null ? '—' : d.rate + '%'} · 인보이스 ${d.invoices}건`,
+    l: '재고부족 매출실기', ls: (d) => `전환 시 미확보 ${money(d.converted_amt)} · 만료 시 부족 ${money(d.expired_amt)}`
+      + (n(d.open_short_amt) > 0 ? ` (+ 미결 견적 현재 부족 ${money(d.open_short_amt)} · ${int(d.open_short_qty)}개)` : ''),
+    qq: '총 견적 수량', qqs: (d) => `견적 줄 ${int(d.lines)}개`,
+    sq: '매출 수량', sqs: (sd, qd, ld) => `견적의 ${qd.qty > 0 ? Math.round(sd.qty / qd.qty * 1000) / 10 + '%' : '—'} · 부족 ${int(ld.sku)} SKU / ${int(ld.qty)}개`,
+    gp: '매출총이익 실현', gps: (g) => `이익률 ${g.pct == null ? '—' : g.pct + '%'}`,
+    gl: '재고부족 이익 실현불가', gls: (g) => `부족 매출 ${money(g.rev)} 기준` + (g.pct == null ? '' : ` · 이익률 ${g.pct}%`),
+    est: (g) => [g.est ? `FOB추정 ${g.est}줄` : null, g.nocost ? `원가없음 ${g.nocost}줄 제외` : null].filter(Boolean).join(' · ') },
+  es: { head: (ym) => `Resumen ${['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)}`,
+    basis: 'por fecha de cotización · sin IVA',
+    q: 'Monto cotizado', qs: (d) => `${d.n} cotizaciones · abiertas ${d.open} · convertidas ${d.converted} · vencidas ${d.expired}`,
+    s: 'Venta real', ss: (d) => `${d.rate == null ? '—' : d.rate + '%'} de lo cotizado · ${d.invoices} facturas`,
+    l: 'Venta perdida por falta de stock', ls: (d) => `al convertir ${money(d.converted_amt)} · al vencer ${money(d.expired_amt)}`
+      + (n(d.open_short_amt) > 0 ? ` (+ faltante actual en abiertas ${money(d.open_short_amt)} · ${int(d.open_short_qty)} pzas)` : ''),
+    qq: 'Cantidad cotizada', qqs: (d) => `${int(d.lines)} partidas`,
+    sq: 'Cantidad vendida', sqs: (sd, qd, ld) => `${qd.qty > 0 ? Math.round(sd.qty / qd.qty * 1000) / 10 + '%' : '—'} de lo cotizado · faltante ${int(ld.sku)} SKU / ${int(ld.qty)} pzas`,
+    gp: 'Utilidad bruta realizada', gps: (g) => `margen ${g.pct == null ? '—' : g.pct + '%'}`,
+    gl: 'Utilidad no realizada (falta de stock)', gls: (g) => `sobre ${money(g.rev)} faltante` + (g.pct == null ? '' : ` · margen ${g.pct}%`),
+    est: (g) => [g.est ? `FOB estimado ${g.est}` : null, g.nocost ? `sin costo ${g.nocost} excl.` : null].filter(Boolean).join(' · ') },
+};
+
+// 화면 카드 7칸과 같은 순서·같은 숫자. level='no_profit' 이면 ⑥⑦(원가) 빼고 5칸.
+export function buildMonthSummaryText(ms, lang = 'ko', level = 'full') {
+  if (!ms || level === 'off') return '';
+  const t = S[lang] || S.ko; const d = ms.sum || {};
+  const qd = d.quotes || {}, sd = d.sales || {}, ld = d.lost || {};
+  const scope = ms.teamNames && ms.teamNames.length ? ` · ${ms.teamNames.join(', ')}` : '';
+  const out = ['━━━━━━━━━━', `📊 *${t.head(ms.ym)}* (${t.basis}${scope})`];
+  if (d.empty) return out.join('\n');
+  out.push(`① ${t.q} *${money(qd.amt)}* — ${t.qs(qd)}`);
+  out.push(`② ${t.s} *${money(sd.amt)}* — ${t.ss(sd)}`);
+  out.push(`③ ${t.l} *${money(ld.amt)}* — ${t.ls(ld)}`);
+  out.push(`④ ${t.qq} SKU *${int(qd.sku)}* · Pieza *${int(qd.qty)}* — ${t.qqs(qd)}`);
+  out.push(`⑤ ${t.sq} SKU *${int(sd.sku)}* · Pieza *${int(sd.qty)}* — ${t.sqs(sd, qd, ld)}`);
+  if (level === 'full' && d.gp) {
+    const gs = d.gp.sales || {}, gl = d.gp.lost || {};
+    const e1 = t.est(gs), e2 = t.est(gl);
+    out.push(`⑥ ${t.gp} *${money(gs.gp)}* — ${t.gps(gs)}${e1 ? ' · ' + e1 : ''}`);
+    out.push(`⑦ ${t.gl} *${money(gl.gp)}* — ${t.gls(gl)}${e2 ? ' · ' + e2 : ''}`);
+  }
+  return out.join('\n');
+}
+
 export function recipientCovers(rcpt, qt) {
   const ids = Array.isArray(rcpt.team_ids) ? rcpt.team_ids.map(Number).filter(Boolean) : [];
   if (!ids.length) return true;
@@ -126,12 +201,12 @@ export function recipientCovers(rcpt, qt) {
 const notifiable = (qt) => qt && !qt.deleted && qt.status !== 'pricelist' && qt.status !== 'cancelled';
 
 export async function activeRecipients(q = query) {
-  return (await q(`SELECT id, name, phone, lang, team_ids, created_at FROM quote_wa_recipients
+  return (await q(`SELECT id, name, phone, lang, team_ids, created_at, month_summary FROM quote_wa_recipients
                     WHERE active = true AND deleted_at IS NULL ORDER BY id`)).rows;
 }
 
 // 1명에게 1건 — 원장 잠금(claim) 후 발송. force = 성공 이력·시도 상한 무시(수동 재발송·시험).
-export async function sendQuoteTo(qt, rcpt, { force = false, q = query } = {}) {
+export async function sendQuoteTo(qt, rcpt, { force = false, q = query, summaryCache = {} } = {}) {
   const claim = (await q(
     `INSERT INTO quote_wa_sends (quote_id, recipient_id, to_masked, status, attempts, claimed_at, updated_at)
      VALUES ($1, $2, $3, 'sending', 0, now(), now())
@@ -143,10 +218,17 @@ export async function sendQuoteTo(qt, rcpt, { force = false, q = query } = {}) {
   if (!claim) return { skipped: 'claimed_or_done', recipient_id: Number(rcpt.id) };
   const lang = rcpt.lang === 'es' ? 'es' : 'ko';
   const ws = await windowState(rcpt.phone, q);
+  // 0257 · 맨 아래 당월 요약 — 계산이 실패해도 견적 알림은 보낸다
+  let text = buildQuoteText(qt, lang);
+  const level = levelOf(rcpt);
+  if (level !== 'off') {
+    try { const ms = await monthSummaryFor(rcpt, { cache: summaryCache, q }); const add = buildMonthSummaryText(ms, lang, level); if (add) text += '\n\n' + add; }
+    catch (_) { /* 요약 실패 — 본문만 */ }
+  }
   const sender = senderOverride || sendWaTo;
   let res;
   try {
-    res = await sender({ to: rcpt.phone, text: buildQuoteText(qt, lang), headline: buildQuoteHeadline(qt, lang),
+    res = await sender({ to: rcpt.phone, text: text.slice(0, 4000), headline: buildQuoteHeadline(qt, lang),
       templateName: quoteWaTemplate(), windowOpen: ws.open });
   } catch (e) { res = { ok: false, error: String((e && e.message) || e).slice(0, 200) }; }
   const status = res.ok ? (res.mode === 'template' ? 'sent_template' : 'sent_text') : 'failed';
@@ -166,11 +248,11 @@ export async function notifyQuote(quoteId, { q = query, recipients = null } = {}
   if (!notifiable(qt)) return { skipped: 'not_notifiable' };
   const rc = recipients || await activeRecipients(q);
   const created = new Date(qt.created_at).getTime();
-  const out = [];
+  const out = []; const summaryCache = {};
   for (const r of rc) {
     if (new Date(r.created_at).getTime() > created) continue;        // 등록 이전 견적은 보내지 않는다
     if (!recipientCovers(r, qt)) continue;
-    out.push(await sendQuoteTo(qt, r, { q }));
+    out.push(await sendQuoteTo(qt, r, { q, summaryCache }));
   }
   return { quote_no: qt.quote_no, results: out };
 }
