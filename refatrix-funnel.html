@@ -112,6 +112,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
+  // ── 시각 표시 — 서버는 UTC 로 저장한다. 화면은 멕시코 중부(UTC−6 고정)로 보여 준다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let cat='quotes', months=[], FYEAR=new Date().getFullYear();
   let openRows={};
@@ -684,7 +694,7 @@
     if(!list.length){ box.innerHTML='<span style="color:var(--muted)">첨부된 파일이 없습니다.</span>'; return; }
     let h='<div style="display:flex;flex-direction:column;gap:4px">';
     list.forEach(f=>{
-      const when=f.uploaded_at?esc(String(f.uploaded_at).slice(0,16).replace('T',' ')):'';
+      const when=f.uploaded_at?esc(mxHora(f.uploaded_at)):'';
       const who=f.uploaded_by_name?(' · '+esc(f.uploaded_by_name)):'';
       h+='<div style="display:flex;gap:8px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:7px;padding:4px 8px">'
         +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(f.file_name||'')+'"><b>'+esc(f.file_name||'첨부파일')+'</b>'

@@ -119,6 +119,16 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -263,7 +273,7 @@
       const i=allOrders.indexOf(o);
       return '<tr><td class="chk"><input type="checkbox" class="osel" data-i="'+i+'" '+(o._sel?'checked':'')+'></td>'
         +'<td class="l" style="font-weight:600">'+esc(o.quote_no)+'</td><td class="l">'+esc(o.customer)+'</td>'
-        +'<td>'+String(o.created_at).slice(0,10)+'</td>'
+        +'<td>'+mxDia(o.created_at)+'</td>'
         +'<td>'+durCell({value:o.order_h,state:o.order_state,over:o.order_over},'h')+'</td>'
         +'<td>'+packingCell(o)+'</td>'
         +'<td>'+durCell({value:o.sat_h,state:o.sat_state,over:o.sat_over},'h')+'</td>'

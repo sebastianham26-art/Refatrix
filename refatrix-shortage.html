@@ -149,6 +149,16 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let rows=[], openDetail={}, summary=null;
   const $=(id)=>document.getElementById(id);
@@ -217,7 +227,7 @@
         +'</tr>';
       if(openDetail[r.product_id]){
         const dets=openDetail[r.product_id];
-        html+='<tr class="detail"><td colspan="7">'+(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+(Number(x.resolved_qty)>0?(', 해소 '+fmtq(x.resolved_qty)+', 잔여 '+fmtq(x.remaining_qty)):'')+' ('+esc(String(x.occurred_at||'').slice(0,10))+')').join('<br>'):'세부 내역 불러오는 중…')+'</td></tr>';
+        html+='<tr class="detail"><td colspan="7">'+(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+(Number(x.resolved_qty)>0?(', 해소 '+fmtq(x.resolved_qty)+', 잔여 '+fmtq(x.remaining_qty)):'')+' ('+esc(mxDia(x.occurred_at||''))+')').join('<br>'):'세부 내역 불러오는 중…')+'</td></tr>';
       }
     });
     html+='</tbody></table>';
@@ -317,7 +327,7 @@
     h+='<table><thead><tr><th>발생일</th><th>CTR 코드</th><th>제품명</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족(발생)</th><th class="r">해소</th><th class="r">잔여</th><th>상태</th></tr></thead><tbody>';
     for(const r of cmRecords){
       h+='<tr style="cursor:pointer" onclick="cmToggleRes('+r.id+')">'
-        +'<td>'+esc(String(r.occurred_at||'').slice(0,10))+'</td>'
+        +'<td>'+esc(mxDia(r.occurred_at||''))+'</td>'
         +'<td><b>'+esc(r.code||'')+'</b></td><td>'+esc(r.name||'')+'</td>'
         +'<td class="r">'+fmtq(r.requested_qty)+'</td>'
         +'<td class="r">'+fmtq(r.fulfilled_qty)+'</td>'
@@ -334,7 +344,7 @@
           const src=x.source==='manual'?'수동 해소':(x.source==='scan'?'소급 스캔':'판매 해소');
           const inv=x.sales_invoice_id?(' · 인보이스 '+(x.sat_no?esc(x.sat_no):('#'+x.sales_invoice_id))+(x.inv_date?(' ('+String(x.inv_date).slice(0,10)+')'):'')):'';
           const who=x.resolved_by_name?(' · '+esc(x.resolved_by_name)):'';
-          return '↳ '+String(x.resolved_at||'').slice(0,10)+' · <b>'+fmtq(x.qty)+'개 해소</b> · '+src+inv+who;
+          return '↳ '+mxDia(x.resolved_at||'')+' · <b>'+fmtq(x.qty)+'개 해소</b> · '+src+inv+who;
         }).join('<br>');
         h+='<tr class="detail"><td colspan="9">'+inner+'</td></tr>';
       }
@@ -675,7 +685,7 @@
     if(co.bank_account)bankParts.push('Cuenta: '+esc(co.bank_account));
     if(co.bank_clabe)bankParts.push('CLABE: '+esc(co.bank_clabe));
     if(co.bank_holder)bankParts.push('Beneficiario: '+esc(co.bank_holder));
-    const today=new Date().toISOString().slice(0,10);
+    const today=mxHoy();
     const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+esc(s.offer_no||'Oferta')+'</title><style>'
       +'body{font-family:Arial,Helvetica,sans-serif;color:#1C1B19;margin:26px;font-size:12px}'
       +'.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #143D34;padding-bottom:10px}'

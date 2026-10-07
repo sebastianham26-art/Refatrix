@@ -156,6 +156,16 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session = { token:null, user:null, api:'' };
   let isDirector = false;
   let canCost = false;  // 구매단가(USD) 열람 권한 — 디렉터·소시오만(서버 cost_visible 로 확정)
@@ -248,7 +258,7 @@
   function etaTag(s){
     if(s.status==='receiving') return '<span class="etaTag recv">입고 진행중</span>';
     if(!s.eta) return '<span class="etaTag none">ETA 미정</span>';
-    const dd=Math.round((new Date(s.eta+'T00:00:00')-new Date(new Date().toISOString().slice(0,10)+'T00:00:00'))/86400000);
+    const dd=Math.round((new Date(s.eta+'T00:00:00')-new Date(mxHoy()+'T00:00:00'))/86400000);
     const rel=dd===0?'오늘':(dd>0?('D-'+dd):('지연 '+Math.abs(dd)+'일'));
     return '<span class="etaTag">'+esc(s.eta)+' · '+rel+'</span>';
   }

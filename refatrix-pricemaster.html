@@ -342,6 +342,16 @@
 <div id="modalRoot"></div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
 (function(){
   'use strict';
   const BUILD='pm-0924p7';
@@ -1203,7 +1213,7 @@
     let info='';
     if(Number.isNaN(sv)) info='<b class="up">0 이상 100 미만 숫자를 넣으세요</b> — 지금은 0% 로 계산 중. ';
     info+=saved.pct==null?'아직 정하지 않았습니다'+(sv==null?' — 지금은 판관비 0% 로 계산 중':'')+'. '
-      :'저장된 값 <b>'+saved.pct+'%</b>'+(saved.updated_at?' · '+esc(String(saved.updated_at).slice(0,10)):'')+(saved.by_name?' · '+esc(saved.by_name):'')+'. ';
+      :'저장된 값 <b>'+saved.pct+'%</b>'+(saved.updated_at?' · '+esc(mxDia(saved.updated_at)):'')+(saved.by_name?' · '+esc(saved.by_name):'')+'. ';
     if(sv!=null&&!Number.isNaN(sv)&&sv!==saved.pct) info+='<b class="up">저장하지 않은 값 '+sv+'% 로 계산 중</b>'+(d.can_set_sga?' — 「저장」을 누르면 모두에게 적용됩니다.':' — 내 화면에서만 보는 시뮬레이션입니다(저장은 디렉터).');
     else info+='매출의 몇 %를 판관비(인건비 · 임차료 · 물류 · 마케팅 …)로 볼지 '+(d.can_set_sga?'정해 저장하면 모든 사람의 영업이익 계산에 쓰입니다.':'디렉터가 정합니다. 값을 바꿔 보면 내 화면에서만 다시 계산됩니다.');
     if(d.can_set_sga&&saved.ready===false) info+=' <b class="up">서버 마이그레이션(0231) 후에 저장할 수 있습니다.</b>';

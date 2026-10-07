@@ -150,6 +150,16 @@
 <div id="promoOverlay" style="display:none"></div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -212,7 +222,7 @@
       try{
         let signal=null,to=null;
         try{ const ctrl=new AbortController(); signal=ctrl.signal; to=setTimeout(function(){try{ctrl.abort();}catch(e){}},8000); }catch(e){}
-        const _dk=new Date().toISOString().slice(0,10); // 일 단위 캐시(재방문 시 브라우저 캐시 사용)
+        const _dk=mxHoy(); // 일 단위 캐시(재방문 시 브라우저 캐시 사용)
         const txt=await fetch('mx_parts_coverage_dashboard.html?d='+_dk,signal?{signal:signal}:undefined).then(x=>x.text());
         if(to) clearTimeout(to);
         const line=txt.split('\n').find(l=>l.trimStart().startsWith('const DATA='));

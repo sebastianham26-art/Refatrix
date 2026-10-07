@@ -743,6 +743,24 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
+  // ── 시각 표시 — 서버는 UTC 로 저장한다. 화면은 멕시코 중부(UTC−6 고정)로 보여 준다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+
   let session={token:null,user:null,api:''};
   let EPS=[], CUR=null, TAB='cfg', DETAIL=null;
   const $=(id)=>document.getElementById(id);
@@ -2055,7 +2073,7 @@
       ws2['!cols']=[{wch:8},{wch:26},{wch:8},{wch:18},{wch:18},{wch:34},{wch:15},{wch:9},{wch:8},{wch:40},{wch:6},{wch:22},{wch:50},{wch:70},{wch:50}];
       ws2['!autofilter']={ref:'A1:O'+(det.length)};
       X.utils.book_append_sheet(wb,ws1,'Resumen'); X.utils.book_append_sheet(wb,ws2,'Detalle');
-      const day=new Date().toISOString().slice(0,10);
+      const day=mxHoy();
       X.writeFile(wb,'Refatrix_CRM_fallidos_pendientes_'+CUR.key+'_'+day+'.xlsx');
       m.className='msg ok'; m.textContent='내려받기 완료 — 실패 '+d.counts.failed+' · 대기 '+d.counts.pending+'건'+(d.truncated?' (2만 건까지)':'')+'. 머리글은 스페인어입니다(개발자 전달용).';
     }catch(e){ m.className='msg err'; m.textContent=(e&&e.message==='xlsx_load')?'엑셀 도구를 불러오지 못했습니다(인터넷 확인).':'서버 연결 실패'; }
@@ -2382,7 +2400,7 @@
   function addDays(ymd,n){ const d=new Date(ymd+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
   function todayMx(){
     if(PM.today) return PM.today;
-    try{ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City'}).format(new Date()); }catch(e){ return new Date().toISOString().slice(0,10); }
+    try{ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City'}).format(new Date()); }catch(e){ return mxHoy(); }
   }
   function setBlob(url){ if(PMBLOB){ try{URL.revokeObjectURL(PMBLOB);}catch(e){} } PMBLOB=url||null; }
   function showImg(src,info){
@@ -2594,7 +2612,7 @@
   function fmtTs(v){
     if(!v) return '';
     try{ return new Intl.DateTimeFormat('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v)); }
-    catch(e){ return String(v).slice(0,16).replace('T',' '); }
+    catch(e){ return mxHora(v); }
   }
 
   async function resendPromo(){

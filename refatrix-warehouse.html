@@ -413,6 +413,16 @@
 <div class="modal" id="newModal"><div class="mbox"><div class="ic">📦</div><h3>새 포장지시 도착</h3><p id="newMsg">새 포장 작업이 내려왔습니다.</p><button class="mbtn" id="newOk">확인</button></div></div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
 (function(){
   try{ console.log('[refatrix-warehouse] build 0918po1 — Pedido 칸에 고객 PO(O.C.) 병기'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
@@ -692,7 +702,7 @@
     if(!items.length){ box.innerHTML='<div class="empty">'+(status==='shipped'?'출고완료 내역이 없습니다.':'출고 대기 건이 없습니다.')+'</div>'; return; }
     box.innerHTML=items.map(function(it){
       var satHtml=(it.has_sat?'<div class="sat"><span class="lab">No. factura</span> <b>'+esc(it.sat_no)+'</b></div>':'<div class="sat nosat"><span class="satwarn">\u26a0 SAT 번호를 넣으세요</span></div>');
-      var shipdt=(status==='shipped'&&it.shipped_at)?'<div class="shipdt">\u2713 출고완료 '+esc(String(it.shipped_at).slice(0,10))+'</div>':'';
+      var shipdt=(status==='shipped'&&it.shipped_at)?'<div class="shipdt">\u2713 출고완료 '+esc(mxDia(it.shipped_at))+'</div>':'';
       var actBtn='';
       if(CAN_SHIP){
         actBtn=(status==='shipped')

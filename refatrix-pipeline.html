@@ -314,6 +314,16 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let teams=[], stages=[], curTeam=null, data=null, curCust=null;
   // 7단계(0~6) 색상 — 고객관리와 100% 동일(연한 배경 + 짙은 글자)
@@ -377,7 +387,7 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');applyAccessLock('pipeline');
-      $('m-date').value=new Date().toISOString().slice(0,10);
+      $('m-date').value=mxHoy();
       await loadTeams(); loadPipeline();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -574,7 +584,7 @@
   $('meetClose').addEventListener('click',()=>$('meetCard').classList.add('hidden'));
 
   // ===== 방문·동선 모듈 (build 20260715v-visitlog) =====
-  var vlMxToday = new Date().toISOString().slice(0,10);
+  var vlMxToday = mxHoy();
   let vlInited=false, vlGeo=null, vlPhotos=[], vlSel=new Set();
   var vlMap=null, vlLayer=null, vlMarkerCount=0, vlPolyCount=0;
   const VL_PAL=['#0F6E56','#2563EB','#B23A2E','#6D28D9','#0E7490','#C2410C']; // 오늘·어제·그저께·보라·청록·주황
@@ -1098,7 +1108,7 @@
   function rvShift(ymd,days){ const p=String(ymd).split('-').map(Number); const t=new Date(Date.UTC(p[0],p[1]-1,p[2])); t.setUTCDate(t.getUTCDate()+days); return t.toISOString().slice(0,10); }
   async function rvInit(){
     if(rvInited){ return; } rvInited=true;
-    const today=vlMxToday||new Date().toISOString().slice(0,10);
+    const today=vlMxToday||mxHoy();
     $('rv-to').value=today; $('rv-from').value=rvShift(today,-6);
     if(isDirector()){ $('rv-userWrap').classList.remove('hidden');
       try{ const u=(await fetch(session.api+'/api/pipeline/salespeople',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[];

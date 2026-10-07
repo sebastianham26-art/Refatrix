@@ -410,6 +410,24 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
+  // ── 시각 표시 — 서버는 UTC 로 저장한다. 화면은 멕시코 중부(UTC−6 고정)로 보여 준다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -1581,7 +1599,7 @@
       ws['!cols']=aoa[0].map(h=>({wch:Math.max(12,Math.min(38,String(h).length+4))}));
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Plantilla Articulo');
-      const ymd=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      const ymd=mxHoy().replace(/-/g,'');
       XLSX.writeFile(wb,'Refatrix_ProductMaster_'+ymd+'.xlsx');
     }catch(e){ alert('다운로드 중 오류가 발생했습니다: '+e.message); }
     finally{ btn.disabled=false; btn.textContent=old; }
@@ -1824,7 +1842,7 @@
       const aoa=[['CTR','MARCA','CODIGO','PRECIO']].concat(d.rows.map(r=>[r.ctr,r.brand||'',r.code,r.price!=null?r.price:'']));
       const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:12},{wch:12},{wch:22},{wch:10}];
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'xref_master');
-      const dt=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      const dt=mxHoy().replace(/-/g,'');
       XLSX.writeFile(wb,'Refatrix_xref_master_'+dt+'.xlsx');
       m.className='msg ok'; m.style.display='block'; m.textContent='현재 마스터 '+d.count.toLocaleString()+'건 다운로드 완료.';
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='내보내기 실패: '+e.message; }
@@ -1920,7 +1938,7 @@
     if(!d || !d.can_manage_status || !pid) return '';
     const pr=d.product||{};
     const act=pr.is_active!==false;
-    const when=pr.status_changed_at?('<span class="hint" style="margin:0"> · 변경 '+escP(String(pr.status_changed_at).slice(0,10))+'</span>'):'';
+    const when=pr.status_changed_at?('<span class="hint" style="margin:0"> · 변경 '+escP(mxDia(pr.status_changed_at))+'</span>'):'';
     const reason=(!act&&pr.inactive_reason)?('<span class="hint" style="margin:0"> · 사유: '+escP(pr.inactive_reason)+'</span>'):'';
     return '<div class="appsec" id="stp'+pid+'">'
       +'<div class="dh">판매 상태 '+stBadge(act, pr.inactive_reason)+when+reason+'</div>'
@@ -1981,7 +1999,7 @@
   }
   function dmdHtml(d){
     const items=(d&&d.items)||[];
-    const since=(d&&d.since_at)?String(d.since_at).slice(0,10):null;
+    const since=(d&&d.since_at)?mxDia(d.since_at):null;
     if(!items.length){
       return '<div class="hint" style="margin:6px 0 0">판매중단'+(since?(' ('+escP(since)+')'):'')
         +' 이후 들어온 견적요청이 <b>없습니다</b> — 지금은 판매재개를 요구하는 수요 신호가 없습니다.</div>';
@@ -2001,7 +2019,7 @@
       +'</tr></thead><tbody>';
     const stLblQ={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',expired:'만료'};
     items.forEach(function(x){
-      h+='<tr><td>'+escP(x.quote_date||String(x.created_at||'').slice(0,10))+'</td>'
+      h+='<tr><td>'+escP(x.quote_date||mxDia(x.created_at||''))+'</td>'
         +'<td>'+escP(x.quote_no||'')+'</td>'
         +'<td>'+escP(x.customer||'(고객 미지정)')+'</td>'
         +'<td style="text-align:right">'+Number(x.qty||0)+'</td>'
@@ -2016,15 +2034,15 @@
   function dmdXlsx(pid){
     const c=dmdCache[pid]; if(!c||!c.data) return;
     const rows=[['제품코드','판매중단일','요청일','견적번호','고객','수량','출처','작성자','견적상태']];
-    const since=c.data.since_at?String(c.data.since_at).slice(0,10):'';
+    const since=c.data.since_at?mxDia(c.data.since_at):'';
     (c.data.items||[]).forEach(function(x){
-      rows.push([c.code||c.data.code||'', since, x.quote_date||String(x.created_at||'').slice(0,10),
+      rows.push([c.code||c.data.code||'', since, x.quote_date||mxDia(x.created_at||''),
         x.quote_no||'', x.customer||'', Number(x.qty||0),
         x.origin==='web'?'웹':'영업', x.creator||'', x.status||'']);
     });
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '판매중단후요청');
-    XLSX.writeFile(wb, 'SKU_판매중단후요청_'+(c.code||pid)+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    XLSX.writeFile(wb, 'SKU_판매중단후요청_'+(c.code||pid)+'_'+mxHoy()+'.xlsx');
   }
   async function stLoadPipeline(pid){
     const box=$('stb'+pid); if(!box) return;
@@ -2084,7 +2102,7 @@
           +'<option value="done"'+(st==='done'?' selected':'')+'>처리완료</option></select>'
           +'<input type="text" class="ntMemo" placeholder="처리결과 메모 (예: 견적 취소 요청함 / 잔량 대체품 안내 / 미수금 회수 예정 8/30)" value="'+escP((nt&&nt.memo)||'')+'">'
           +'<button class="btn ghost sm ntSave" type="button">저장</button>'
-          +'<span class="hint ntMsg" style="margin:0">'+(nt&&nt.updated_at?('최근 저장 '+escP(String(nt.updated_at).slice(0,10))):'')+'</span>'
+          +'<span class="hint ntMsg" style="margin:0">'+(nt&&nt.updated_at?('최근 저장 '+escP(mxDia(nt.updated_at))):'')+'</span>'
           +'</div>';
       }
       h+='</div>';
@@ -2117,7 +2135,7 @@
     const anyActive=[...stSel.values()].some(v=>v.is_active);
     const anyInactive=[...stSel.values()].some(v=>!v.is_active);
     const kind = anyActive&&anyInactive ? '혼합' : (anyActive?'판매중단 검토':'판매재개 검토');
-    const title=prompt('점검 이름을 정하세요 (이력 목록에 표시됩니다)', ids.length+'개 SKU '+kind+' '+new Date().toISOString().slice(0,10));
+    const title=prompt('점검 이름을 정하세요 (이력 목록에 표시됩니다)', ids.length+'개 SKU '+kind+' '+mxHoy());
     if(title===null) return;
     stModal('🔎 일괄 점검', '<div class="hint">'+ids.length+'개 SKU 를 점검하는 중…</div>');
     try{
@@ -2141,7 +2159,7 @@
       +'<button class="btn ghost sm" id="stXlsx" type="button" style="margin-left:6px">⬇ 엑셀</button>';
     const ov=stModal('🗂 '+escP(c.title||('점검 #'+c.id)), '<div class="hint">준비 중…</div>', acts);
     let h='<div class="hint" style="margin-top:0">점검 #'+c.id+' · SKU '+stCur.items.length+'개 · 미결 있는 SKU <b>'+withOpen+'</b>개'
-      +(c.created_at?(' · '+escP(String(c.created_at).slice(0,16).replace('T',' '))):'')+'</div>';
+      +(c.created_at?(' · '+escP(mxHora(c.created_at))):'')+'</div>';
     stCur.items.forEach(function(it){
       const tgt=it.target_active;
       h+='<div class="skucard'+(it.open_total?'':' clean')+'" data-pid="'+it.pid+'">'
@@ -2219,7 +2237,7 @@
     });
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '점검결과');
-    XLSX.writeFile(wb, 'SKU_점검_'+stCur.check.id+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    XLSX.writeFile(wb, 'SKU_점검_'+stCur.check.id+'_'+mxHoy()+'.xlsx');
   }
   async function stOpenHistory(){
     stModal('🗂 점검 이력', '<div class="hint">불러오는 중…</div>');
@@ -2229,7 +2247,7 @@
       if(!it.length){ $('stBody').innerHTML='<div class="hint">저장된 점검 이력이 없습니다.</div>'; return; }
       $('stBody').innerHTML='<table class="stlist"><thead><tr><th>일시</th><th>이름</th><th>구분</th>'
         +'<th class="num">SKU</th><th class="num">미결 SKU</th><th class="num">전환됨</th><th>작성자</th><th></th></tr></thead><tbody>'
-        +it.map(x=>'<tr data-cid="'+x.id+'"><td class="nowrap">'+escP(String(x.created_at).slice(0,16).replace('T',' '))+'</td>'
+        +it.map(x=>'<tr data-cid="'+x.id+'"><td class="nowrap">'+escP(mxHora(x.created_at))+'</td>'
           +'<td>'+escP(x.title||'')+'</td>'
           +'<td>'+({deactivate:'판매중단',activate:'판매재개',mixed:'혼합'}[x.mode]||x.mode)+'</td>'
           +'<td class="num">'+x.sku_count+'</td><td class="num">'+x.open_count+'</td><td class="num">'+x.applied_count+'</td>'
@@ -2480,7 +2498,7 @@
     ]));
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '제품이력');
-    XLSX.writeFile(wb, 'refatrix_product_history_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    XLSX.writeFile(wb, 'refatrix_product_history_'+mxHoy()+'.xlsx');
   }
 
   if($('phGo')) $('phGo').addEventListener('click',()=>phLoad(true));

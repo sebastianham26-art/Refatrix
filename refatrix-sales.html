@@ -173,6 +173,16 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let customers=[]; let prodCache={};
   let curInvDetail=null;
@@ -213,7 +223,7 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      $('s-date').value=new Date().toISOString().slice(0,10);
+      $('s-date').value=mxHoy();
       addLine(); await loadCustomers();
       applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
@@ -527,13 +537,13 @@
         :'<div class="hint">미해소 부족 기록이 없습니다.</div>';
       const led=s2.items||[];
       $('shortLedger').innerHTML = led.length?`<table><thead><tr><th>발생일</th><th>코드</th><th>제품</th><th>고객</th><th class="num">요청</th><th class="num">출고</th><th class="num">부족</th><th>인보이스</th></tr></thead>
-        <tbody>${led.map(r=>`<tr><td>${String(r.occurred_at).slice(0,10)}</td><td class="code">${r.code}</td><td>${r.name||''}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.sales_invoice_id?('#'+r.sales_invoice_id):'미발행'}</td></tr>`).join('')}</tbody></table>`
+        <tbody>${led.map(r=>`<tr><td>${mxDia(r.occurred_at)}</td><td class="code">${r.code}</td><td>${r.name||''}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.sales_invoice_id?('#'+r.sales_invoice_id):'미발행'}</td></tr>`).join('')}</tbody></table>`
         :'<div class="hint">부족 원장이 비어 있습니다.</div>';
     }catch(e){$('shortSummary').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
     try{
       const sp=(await fetch(session.api+'/api/sales/sku-pending?status=open',{headers:auth()}).then(r=>r.json())).items||[];
       $('skuPending').innerHTML = sp.length?`<table><thead><tr><th>보류일</th><th>CTR 코드</th><th class="num">수량</th><th>고객</th><th>의도 SAT</th><th>제품등록</th></tr></thead>
-        <tbody>${sp.map(r=>`<tr><td>${String(r.occurred_at).slice(0,10)}</td><td class="code">${r.code}</td><td class="num">${Number(r.qty).toLocaleString()}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td>${r.intended_sat_no||'—'}</td><td>${r.now_registered?'<span class="badge" style="background:#e7f3ee;color:var(--income)">등록됨·처리가능</span>':'<span class="badge b-warn">미등록</span>'}</td></tr>`).join('')}</tbody></table>`
+        <tbody>${sp.map(r=>`<tr><td>${mxDia(r.occurred_at)}</td><td class="code">${r.code}</td><td class="num">${Number(r.qty).toLocaleString()}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td>${r.intended_sat_no||'—'}</td><td>${r.now_registered?'<span class="badge" style="background:#e7f3ee;color:var(--income)">등록됨·처리가능</span>':'<span class="badge b-warn">미등록</span>'}</td></tr>`).join('')}</tbody></table>`
         :'<div class="hint">보류된 미등록 SKU가 없습니다.</div>';
     }catch(e){$('skuPending').innerHTML='<div class="hint">보류 목록을 불러오지 못했습니다.</div>';}
   }

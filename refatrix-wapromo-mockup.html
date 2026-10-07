@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhatsApp 마케팅 목업</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+    --ok:#0F6E56;--ok-bg:#E4F0EB;--bad:#B23A2E;--bad-bg:#F6E7E4;--warn:#9a6512;--warn-bg:#fdf3e3;--ctr:#E2231A;--radius:12px}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,sans-serif;padding:20px 16px}
+  .wrap{max-width:1120px;margin:0 auto}
+  .top{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .top h1{margin:0;font-size:18px}.top .sub{font-size:12px;color:#cfe0d8}
+  .mock{margin-left:auto;font-size:11px;background:var(--gold);color:#fff;padding:3px 9px;border-radius:999px;font-weight:700}
+  .tabs{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+  .tab{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .tab .n{display:inline-block;margin-left:5px;background:var(--ctr);color:#fff;border-radius:999px;font-size:10px;padding:0 6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px}
+  .pane{display:none}.pane.on{display:block}
+  h2{font-size:15px;margin:0 0 10px;color:var(--brand)}
+  .hint{font-size:12px;color:var(--muted);line-height:1.55}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  label{display:block;font-size:11.5px;color:var(--muted);font-weight:700;margin-bottom:4px}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn.red{background:var(--ctr)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  th{font-size:11px;color:var(--muted);background:#faf8f3}
+  .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .t-yes{background:var(--ok-bg);color:var(--ok)}.t-no{background:var(--bad-bg);color:var(--bad)}
+  .t-ask{background:var(--warn-bg);color:var(--warn)}.t-unk{background:#eef0f2;color:#555}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fdfcf9}
+  .kpi .k{font-size:11px;color:var(--muted);font-weight:700}.kpi .v{font-size:22px;font-weight:700;margin-top:2px}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:10px}
+  .day{border:1px solid var(--line);border-radius:10px;min-height:118px;padding:6px;background:#fff;font-size:11px;position:relative}
+  .day .d{font-weight:700;color:var(--muted)}
+  .day.off{background:#faf8f3}
+  .day .thumb{margin-top:5px;height:52px;border-radius:6px;background:linear-gradient(135deg,var(--ctr),#8E120C);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
+  .day .st{position:absolute;bottom:5px;left:6px;right:6px}
+  .split{display:grid;grid-template-columns:320px 1fr;gap:12px}
+  .list .it{padding:10px;border-bottom:1px solid var(--line);cursor:pointer}
+  .list .it.on{background:#f3f7f5}
+  .list .nm{font-weight:700;font-size:13px}.list .pv{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chat{background:#efeae2;border-radius:10px;padding:12px;min-height:300px;display:flex;flex-direction:column;gap:6px}
+  .b{max-width:72%;padding:7px 10px;border-radius:9px;font-size:12.5px;line-height:1.45;box-shadow:0 1px 1px rgba(0,0,0,.08)}
+  .b.in{background:#fff;align-self:flex-start}.b.out{background:#d9fdd3;align-self:flex-end}.b.bot{background:#e7f0ff;align-self:flex-end}
+  .b .tm{display:block;font-size:10px;color:var(--muted);text-align:right;margin-top:2px}
+  .b img{display:block;width:100%;border-radius:6px;margin-bottom:4px}
+  .pill{display:inline-block;margin:3px 3px 0 0;padding:4px 10px;border-radius:999px;border:1px solid #9cc7b8;background:#fff;color:#0b6b52;font-size:11.5px;font-weight:700}
+  .note{border-left:4px solid var(--gold);background:#fbf7ee;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;margin-top:10px}
+  @media (max-width:760px){ .split{grid-template-columns:1fr} .cal{grid-template-columns:repeat(2,1fr)} th:nth-child(4),td:nth-child(4){display:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><h1>📣 WhatsApp 마케팅</h1><div class="sub">잠재고객 · 발송 일정 · 받은 메시지 · 자동응답</div></div><span class="mock">목업 — 숫자는 예시</span></div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-p="p1">👥 연락처</button>
+    <button class="tab" data-p="p2">🗓 발송 일정</button>
+    <button class="tab" data-p="p3">💬 받은 메시지 <span class="n">7</span></button>
+    <button class="tab" data-p="p4">🤖 자동응답</button>
+    <button class="tab" data-p="p5">⚙ 설정 · 원장</button>
+  </div>
+
+  <!-- ① 연락처 -->
+  <section class="pane on" id="p1">
+    <div class="card">
+      <div class="kpis">
+        <div class="kpi"><div class="k">전체</div><div class="v">214</div></div>
+        <div class="kpi"><div class="k">✅ 동의</div><div class="v" style="color:var(--ok)">63</div></div>
+        <div class="kpi"><div class="k">⏳ 동의 요청 보냄(응답 대기)</div><div class="v" style="color:var(--warn)">120</div></div>
+        <div class="kpi"><div class="k">❓ 미확인</div><div class="v">22</div></div>
+        <div class="kpi"><div class="k">⛔ 거부 · 수신거부</div><div class="v" style="color:var(--bad)">9</div></div>
+      </div>
+      <div class="note"><b>발송 규칙</b> — 정기 이미지는 <b>✅ 동의</b>한 사람에게만 갑니다. ❓ 미확인에게는 <b>동의 요청 메시지를 딱 한 번</b> 보내고, 「Sí, quiero」를 누르면 자동으로 ✅, 「No, gracias」나 BAJA면 ⛔ 로 바뀝니다. 영업이 전화로 동의를 받았으면 직접 ✅ 로 바꿀 수 있습니다(경로 「영업 확인」으로 기록).</div>
+    </div>
+    <div class="card">
+      <h2>연락처 추가</h2>
+      <div class="row">
+        <div><label>이름</label><input placeholder="Juan Pérez" style="width:180px"></div>
+        <div><label>WhatsApp 번호</label><input placeholder="8112345678" style="width:160px"></div>
+        <div><label>메모(선택)</label><input placeholder="Expo 2026 · Refaccionaria" style="width:220px"></div>
+        <button class="btn">＋ 추가</button>
+        <span style="margin-left:auto"></span>
+        <button class="btn ghost">📥 엑셀 업로드</button>
+        <button class="btn ghost">⬇ 양식 받기</button>
+        <button class="btn ghost">📋 설문 응답자 가져오기</button>
+      </div>
+      <div class="hint" style="margin-top:8px">엑셀은 <b>이름 · 전화번호</b> 두 칸이면 됩니다(머리글 「Nombre / Teléfono」 또는 「이름 / 전화」 자동 인식). 올리기 전에 미리보기에서 <b>번호 형식 오류 · 중복 · 이미 등록됨</b>을 보여 주고 확인 후 저장합니다. 번호는 52+10자리로 맞춥니다.</div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <input placeholder="이름 · 번호 검색" style="width:220px">
+        <select><option>상태 전체</option><option>✅ 동의</option><option>⏳ 응답 대기</option><option>❓ 미확인</option><option>⛔ 거부</option></select>
+        <span style="margin-left:auto"></span>
+        <button class="btn red">✉ 미확인 22명에게 동의 요청 보내기</button>
+      </div>
+      <table>
+        <thead><tr><th><input type="checkbox"></th><th>이름</th><th>번호</th><th>메모</th><th>상태</th><th>동의 경로 · 일시</th><th>마지막 메시지</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><input type="checkbox"></td><td><b>Juan Pérez</b></td><td>528****5678</td><td>Expo 2026 · Refacc. Sur</td><td><span class="tag t-yes">✅ 동의</span></td><td>버튼 「Sí, quiero」 · 10/08 09:14</td><td>10/09 11:02</td><td><button class="btn ghost sm">대화</button></td></tr>
+          <tr><td><input type="checkbox"></td><td><b>María López</b></td><td>528****1290</td><td>Expo 2026</td><td><span class="tag t-ask">⏳ 응답 대기</span></td><td>요청 10/08 09:00</td><td>—</td><td><button class="btn ghost sm">✅ 영업 확인</button></td></tr>
+          <tr><td><input type="checkbox"></td><td><b>Taller Hnos. Garza</b></td><td>528****4410</td><td>설문 EXPO26_0137</td><td><span class="tag t-unk">❓ 미확인</span></td><td>—</td><td>—</td><td><button class="btn ghost sm">✅ 영업 확인</button></td></tr>
+          <tr><td><input type="checkbox"></td><td><b>Pedro Ruiz</b></td><td>529****0033</td><td>Mérida</td><td><span class="tag t-no">⛔ 수신거부</span></td><td>「BAJA」 답장 · 10/10 18:40</td><td>10/10 18:40</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ② 발송 일정 -->
+  <section class="pane" id="p2">
+    <div class="card">
+      <h2>새 발송 예약</h2>
+      <div class="row">
+        <div><label>발송일</label><input type="date" value="2026-10-14"></div>
+        <div><label>시각(멕시코)</label><input type="time" value="10:00"></div>
+        <div><label>이미지 (JPG/PNG · 5MB 이하)</label><input type="file"></div>
+        <div style="flex:1;min-width:260px"><label>문구 — 이미지 아래 글 (템플릿의 {{1}})</label><input style="width:100%" value="Amortiguadores CTR para Versa 2015-2019 · 15% esta semana"></div>
+        <div><label>대상</label><select><option>✅ 동의 전체 (63명)</option><option>✅ 동의 · Monterrey 메모</option></select></div>
+        <button class="btn">예약</button>
+      </div>
+      <div class="hint" style="margin-top:8px">같은 승인 템플릿으로 <b>이미지와 문구를 매번 바꿔</b> 보냅니다 — 재승인 불필요. 대화창이 열린 사람(24시간 안에 답장한 사람)에게는 무료 일반 이미지로, 나머지는 마케팅 템플릿으로 자동 선택합니다. 한도 보호: 하루 최대 <b>150명</b>(설정에서 변경).</div>
+    </div>
+    <div class="card">
+      <div class="row"><h2 style="margin:0">10월 3주</h2><span style="margin-left:auto"></span><button class="btn ghost sm">◀</button><button class="btn ghost sm">▶</button></div>
+      <div class="cal">
+        <div class="day"><div class="d">월 10/12</div><div class="thumb">Kit dirección<br>Aveo</div><div class="st"><span class="tag t-yes">✓ 61/63 도착</span></div></div>
+        <div class="day off"><div class="d">화 10/13</div></div>
+        <div class="day"><div class="d">수 10/14 · 10:00</div><div class="thumb">Amortiguadores<br>Versa 15%</div><div class="st"><span class="tag t-ask">예약됨</span></div></div>
+        <div class="day off"><div class="d">목 10/15</div></div>
+        <div class="day"><div class="d">금 10/16 · 10:00</div><div class="thumb">Rótulas Jetta</div><div class="st"><span class="tag t-ask">예약됨</span></div></div>
+        <div class="day off"><div class="d">토 10/17</div></div>
+        <div class="day off"><div class="d">일 10/18</div></div>
+      </div>
+      <div class="hint" style="margin-top:8px">칸을 누르면 미리보기(휴대폰 모양) · 수정 · 취소 · 지금 시험 발송(나에게만). 보낸 칸은 도착 · 읽음 · 실패 사유와 답장 수를 보여 줍니다.</div>
+    </div>
+  </section>
+
+  <!-- ③ 받은 메시지 -->
+  <section class="pane" id="p3">
+    <div class="card">
+      <div class="row">
+        <select><option>미처리 7</option><option>전체</option><option>처리 완료</option></select>
+        <select><option>담당 전체</option><option>Maria</option><option>Oscar</option></select>
+        <input type="date" value="2026-10-01"><input type="date" value="2026-10-31">
+        <span style="margin-left:auto"></span>
+        <button class="btn ghost">⬇ 엑셀로 받기</button>
+      </div>
+      <div class="split" style="margin-top:10px">
+        <div class="list" style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
+          <div class="it on"><div class="nm">Juan Pérez <span class="tag t-ask" style="float:right">🙋 상담 요청</span></div><div class="pv">¿Tienen el amortiguador para Versa 2017?</div></div>
+          <div class="it"><div class="nm">Taller Hnos. Garza</div><div class="pv">Precio de rótula Jetta</div></div>
+          <div class="it"><div class="nm">Pedro Ruiz <span class="tag t-no" style="float:right">⛔</span></div><div class="pv">BAJA</div></div>
+        </div>
+        <div>
+          <div class="chat">
+            <div class="b out"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='209'><rect width='400' height='209' fill='%23C51B14'/><text x='20' y='110' font-size='28' fill='white' font-family='sans-serif' font-weight='700'>Amortiguadores CTR</text></svg>" alt="">Amortiguadores CTR para Versa 2015-2019 · 15% esta semana<span class="tm">10/14 10:00 ✓✓</span><span class="pill">Quiero cotizar</span><span class="pill">Ver catálogo</span><span class="pill">BAJA</span></div>
+            <div class="b in">Quiero cotizar<span class="tm">10/14 10:21</span></div>
+            <div class="b bot">🤖 ¡Gracias! Un asesor de Refatrix le escribirá en breve. ¿Para qué vehículo y año lo necesita?<span class="tm">10/14 10:21 · 자동응답</span></div>
+            <div class="b in">¿Tienen el amortiguador para Versa 2017?<span class="tm">10/14 10:23</span></div>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <input style="flex:1" placeholder="답장 입력 — 24시간 창 열림(23:37 남음) · 무료">
+            <button class="btn">보내기</button>
+            <button class="btn ghost">🧾 견적 만들기</button>
+            <button class="btn ghost">✔ 처리 완료</button>
+          </div>
+          <div class="hint" style="margin-top:6px">담당자 지정 · 메모 · 「견적 만들기」로 견적 화면에 고객·번호를 넘깁니다. 고객으로 등록하면 기존 고객 화면과 연결됩니다.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ④ 자동응답 -->
+  <section class="pane" id="p4">
+    <div class="card">
+      <h2>자동응답 규칙 (위에서부터 먼저 맞는 것 1개)</h2>
+      <table>
+        <thead><tr><th>받은 말 · 버튼</th><th>자동 답장</th><th>함께 할 일</th><th>사용</th></tr></thead>
+        <tbody>
+          <tr><td><b>Sí, quiero</b> · sí · si · acepto</td><td>¡Listo! Recibirá nuestras promociones. Puede escribir BAJA cuando quiera.</td><td><span class="tag t-yes">✅ 동의로</span></td><td><input type="checkbox" checked></td></tr>
+          <tr><td><b>No, gracias</b> · BAJA · stop · no</td><td>Entendido, no le enviaremos más promociones.</td><td><span class="tag t-no">⛔ 수신거부로</span></td><td><input type="checkbox" checked></td></tr>
+          <tr><td><b>Quiero cotizar</b> · precio · cotización</td><td>¡Gracias! Un asesor le escribirá en breve. ¿Para qué vehículo y año?</td><td><span class="tag t-ask">🙋 상담 요청 · 담당 알림</span></td><td><input type="checkbox" checked></td></tr>
+          <tr><td><b>Ver catálogo</b> · catálogo</td><td>Aquí está nuestro catálogo: refatrix.com</td><td>—</td><td><input type="checkbox" checked></td></tr>
+          <tr><td><i>그 밖의 모든 말</i></td><td>Gracias por escribir. Horario de atención L-V 8:00-18:00. Elija: <span class="pill">Quiero cotizar</span><span class="pill">Ver catálogo</span><span class="pill">Hablar con asesor</span></td><td><span class="tag t-ask">미처리함으로</span></td><td><input type="checkbox" checked></td></tr>
+        </tbody>
+      </table>
+      <div class="row" style="margin-top:10px"><button class="btn ghost">＋ 규칙 추가</button><span class="hint">같은 사람에게 같은 자동응답은 6시간에 한 번만 · 근무시간 밖 문구 따로 지정 가능</span></div>
+    </div>
+  </section>
+
+  <!-- ⑤ 설정 · 원장 -->
+  <section class="pane" id="p5">
+    <div class="card">
+      <div class="kpis">
+        <div class="kpi"><div class="k">Meta 한도(24시간)</div><div class="v">250</div><div class="hint">비즈니스 인증 시 2,000</div></div>
+        <div class="kpi"><div class="k">오늘 마케팅 발송</div><div class="v">61 / 150</div></div>
+        <div class="kpi"><div class="k">동의 요청 템플릿</div><div class="v" style="font-size:14px">promo_consentimiento ✅</div></div>
+        <div class="kpi"><div class="k">이미지 템플릿</div><div class="v" style="font-size:14px">promo_imagen ✅</div></div>
+        <div class="kpi"><div class="k">품질 등급</div><div class="v" style="color:var(--ok)">높음</div></div>
+      </div>
+      <div class="hint" style="margin-top:10px">발송 원장: 날짜 · 대상 · 형식(템플릿/일반) · 접수 → ✓✓ 도착 → 👁 읽음 · ✗ 실패 사유(131049 마케팅 한도 등). 실패는 다음 발송일에 자동 재시도하지 않습니다(한도 보호).</div>
+    </div>
+  </section>
+</div>
+<script>
+  document.getElementById('tabs').addEventListener('click',function(e){
+    var b=e.target.closest('.tab'); if(!b) return;
+    document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('on',t===b);});
+    document.querySelectorAll('.pane').forEach(function(p){p.classList.toggle('on',p.id===b.dataset.p);});
+  });
+</script>
+</body>
+</html>

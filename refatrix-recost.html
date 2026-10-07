@@ -151,6 +151,16 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+  // ── 시각 표시 — 서버는 UTC 로 저장한다. 화면은 멕시코 중부(UTC−6 고정)로 보여 준다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -232,7 +242,7 @@
       let h='<div style="overflow-x:auto"><table><thead><tr><th>배치번호</th><th>입고일</th><th>삭제시각</th><th class="n">수량</th><th class="n">SKU</th><th>복원</th></tr></thead><tbody>';
       items.forEach(b=>{
         h+='<tr><td><b>'+esc(b.batch_no||('#'+b.id))+'</b></td><td>'+esc(b.import_date||'')+'</td>'
-          +'<td>'+esc(b.deleted_at?String(b.deleted_at).slice(0,16).replace('T',' '):'')+'</td>'
+          +'<td>'+esc(mxHora(b.deleted_at))+'</td>'
           +'<td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count)+'</td>'
           +'<td><button type="button" class="brestore btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--income);padding:4px 10px;font-size:11.5px">↩ 복원</button></td></tr>';
       });

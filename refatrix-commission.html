@@ -256,6 +256,16 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let view='customer', statusFilter='all', agentId='', data=null, agentsPopulated=false;
   let perfView='month';
@@ -1004,7 +1014,7 @@
       if(bn) h+='<div class="hint" style="margin-top:8px">＋ 성과급(Bono) 1건 — '+(bn.basis==='revenue'?'매출':'수금')+' 목표 '+fmtm(bn.target_amount)+' / 실적 '+fmtm(bn.actual_amount)+' → <b class="conf">'+fmtm(bn.amount)+'</b> · 커미션 충당 후 남는 금액으로 충당됩니다.</div>';
       $('payBody').innerHTML=h;
       $('payAmt').value=Math.max(0,d.total);
-      if(!$('payDate').value) $('payDate').value=new Date().toISOString().slice(0,10);
+      if(!$('payDate').value) $('payDate').value=mxHoy();
       $('payForm').classList.remove('hidden');
       $('payMsg').className='msg';
     }catch(e){ $('payBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }

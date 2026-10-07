@@ -151,6 +151,16 @@
 
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session = { token:null, user:null, api:'' };
   let prodCache = {};         // id -> {id, code, name, stock_qty, avg_cost}
   let currentBatchId = null;
@@ -175,7 +185,7 @@
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');
       $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
-      $('idate').value=new Date().toISOString().slice(0,10);
+      $('idate').value=mxHoy();
       addLine(); addOh();
       loadFromInbound();
       isDirector=(d.user?.role==='director'); document.body.classList.toggle('emp', !isDirector);
@@ -465,7 +475,7 @@
         }
         const tag=s.batch_id?(' — 원가 '+(s.batch_status==='approved'?'승인됨':'등록됨')+' (배치 #'+s.batch_id+')'):'';
         const label=name+' · SKU '+s.sku_count+' · '+Number(s.measured_qty).toLocaleString()+'개'
-          +(s.closed_at?(' · 마감 '+String(s.closed_at).slice(0,10)):'')+tag;
+          +(s.closed_at?(' · 마감 '+mxDia(s.closed_at)):'')+tag;
         return '<option value="'+s.id+'"'+(s.batch_id?' disabled':'')+'>'+label+'</option>';
       }).join('');
     }catch(e){ sel.innerHTML='<option value="">서버에 연결할 수 없습니다</option>'; }
@@ -817,7 +827,7 @@
     const who=document.getElementById('who'); if(who) who.innerHTML='<b>'+((ps.user&&ps.user.name)||'')+'</b><br>역할: '+((ps.user&&ps.user.role)||'-');
     $('loginCard').classList.add('hidden');
     $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
-    $('idate').value=new Date().toISOString().slice(0,10);
+    $('idate').value=mxHoy();
     addLine(); addOh();
     isDirector=((ps.user&&ps.user.role)==='director'); document.body.classList.toggle('emp', !isDirector);
     var pr=document.getElementById('pendRole'); if(pr) pr.textContent=isDirector?'(디렉터 — 승인 가능)':'(디렉터 승인 대기 — 보기 전용)';

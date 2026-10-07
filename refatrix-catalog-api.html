@@ -226,7 +226,13 @@
     const hh=(h)=>String(h).padStart(2,'0')+':00';
     return dia+' '+hh(c.window_start_hour)+'~'+hh(c.window_end_hour);
   }
-  const fecha=(s)=>s?String(s).slice(0,16).replace('T',' '):'—';
+  // 시각은 전부 멕시코 중부(UTC−6 고정)로 보여 준다 — 서버는 UTC 로 저장한다. (2026-10-07)
+  const fecha=(s)=>{
+    if(!s) return '—';
+    const d=new Date(s);
+    if(String(s).length<=10 || isNaN(d.getTime())) return String(s).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  };
 
   function renderList(){
     if(!ITEMS.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">등록된 고객사가 없습니다. 「+ 고객사 추가」로 시작하세요.</div>'; return; }
@@ -247,7 +253,7 @@
         +'<td><button class="btn sm ghost" data-edit="'+c.id+'">설정</button></td></tr>';
     }).join('');
     $('listWrap').innerHTML='<table><thead><tr><th>이름</th><th>연결 고객 · 가격 근거</th><th>키</th><th>접속창</th>'
-      +'<th>재고</th><th>마지막 호출</th><th>마지막 동기화</th><th>상태</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+      +'<th>재고</th><th>마지막 호출 (MX)</th><th>마지막 동기화 (MX)</th><th>상태</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
   }
 
   async function loadCustomers(q){
@@ -478,11 +484,11 @@
         +'<td>'+(c.codigo_error?'<span class="tag off">'+esc(c.codigo_error)+'</span>':'')+'</td>'
         +'<td>'+(c.items==null?'':c.items)+'</td><td>'+(c.ms==null?'':c.ms+'ms')+'</td></tr>').join('');
       $('outWrap').innerHTML='<div class="card-h" style="margin-top:14px">동기화 회차</div>'
-        +'<table><thead><tr><th>기간</th><th>환경</th><th>시작</th><th>완료</th><th>페이지</th><th>제품</th></tr></thead><tbody>'
+        +'<table><thead><tr><th>기간</th><th>환경</th><th>시작 (MX)</th><th>완료 (MX)</th><th>페이지</th><th>제품</th></tr></thead><tbody>'
         +(runs||'<tr><td colspan="6" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>'
         +'<div class="hint" style="margin-top:4px">운영 키 = 토요일 접속창 안에서 주 1회. 테스트 키 = 제한 없이 받을 때마다 한 줄씩 남습니다(2026-09-21 이전 테스트 호출은 회차 없이 아래 호출 이력에만 있습니다).</div>'
         +'<div class="card-h" style="margin-top:14px">호출 이력</div>'
-        +'<table><thead><tr><th>시각</th><th>IP</th><th>환경</th><th>경로</th><th>HTTP</th><th>오류</th><th>건수</th><th>소요</th></tr></thead><tbody>'
+        +'<table><thead><tr><th>시각 (멕시코)</th><th>IP</th><th>환경</th><th>경로</th><th>HTTP</th><th>오류</th><th>건수</th><th>소요</th></tr></thead><tbody>'
         +(rows||'<tr><td colspan="8" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>';
     }catch(e){ $('outWrap').innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }
   }

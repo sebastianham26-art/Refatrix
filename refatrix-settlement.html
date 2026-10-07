@@ -184,6 +184,16 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let year=String(new Date().getFullYear());
   const $=(id)=>document.getElementById(id);
@@ -324,7 +334,7 @@
         fetch(session.api+'/api/ar/accounts',{headers:auth()}).then(r=>r.json()).catch(()=>({items:[]})),
         fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
-      arItems=arNorm((d&&d.items)||[]); arToday=(d&&d.today)||new Date().toISOString().slice(0,10);
+      arItems=arNorm((d&&d.items)||[]); arToday=(d&&d.today)||mxHoy();
       arAccounts=(acc&&acc.items)||[]; arCompany=co||{};
       arHistData={};
       renderArSeg(); renderAr();
@@ -1275,7 +1285,7 @@
       +(co.emisor?('<div style="font-weight:800;font-size:16px">'+esc(co.emisor)+'</div>'):'')
       +(co.domicilio?('<div style="color:#555;font-size:12px;margin-top:2px">'+esc(co.domicilio)+'</div>'):'')
       +('<div style="color:#555;font-size:12px;margin-top:2px">'+[co.rfc?('RFC: '+esc(co.rfc)):'',co.phone?('Tel: '+esc(co.phone)):'',co.email?esc(co.email):''].filter(Boolean).join(' · ')+'</div>');
-    const today=new Date().toISOString().slice(0,10);
+    const today=mxHoy();
     const html='<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Nota de crédito #'+esc(String(n.id))+'</title>'
       +'<style>*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1b1b1b;margin:0;padding:34px 40px}'
       +'.row{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}'

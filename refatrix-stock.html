@@ -189,6 +189,16 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let picked=null, acItems=[], acSel=-1, acTimer=null;
   const $=(id)=>document.getElementById(id);
@@ -216,7 +226,7 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      if($('mdate') && !$('mdate').value) $('mdate').value=new Date().toISOString().slice(0,10);
+      if($('mdate') && !$('mdate').value) $('mdate').value=mxHoy();
       loadList();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -545,7 +555,7 @@
         for(const c of [6,7]){ const ref=XLSX.utils.encode_cell({r:i,c}); if(ws[ref]&&ws[ref].t==='n')ws[ref].z='#,##0.00'; }
       }
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Existencia');
-      const today=new Date().toISOString().slice(0,10);
+      const today=mxHoy();
       XLSX.writeFile(wb,'refatrix_stock_actual_'+today+'.xlsx');
     }catch(e){ alert('다운로드 실패: '+((e&&e.message)||e)); }
   }

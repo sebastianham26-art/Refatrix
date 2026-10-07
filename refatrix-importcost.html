@@ -146,6 +146,16 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let batchList=[];
   let currentDocId=null;
@@ -185,7 +195,7 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('formCard').classList.remove('hidden');
-      $('cdate').value=new Date().toISOString().slice(0,10);
+      $('cdate').value=mxHoy();
       // 재무 가져오기는 디렉터만(백엔드도 requireDirector)
       if((d.user&&d.user.role)==='director') $('finOpen').classList.remove('hidden');
       addOh(); loadBatches();

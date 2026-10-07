@@ -587,6 +587,24 @@
 </div>
 
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
+  // ── 시각 표시 — 서버는 UTC 로 저장한다. 화면은 멕시코 중부(UTC−6 고정)로 보여 준다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+
   let session={token:null,user:null,api:''};
   let fxRate=null, fxAsOf=null, fxStale=false, accounts=[], cats=[], accEditId=null;
   // 환율 탭: KRW(USD→KRW 오늘값) + 통화쌍 모드 + 계산기 방향 상태
@@ -635,7 +653,7 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      $('t-date').value=new Date().toISOString().slice(0,10);
+      $('t-date').value=mxHoy();
       if(!isDirector())$('accAddBtn').classList.add('hidden');
       $('tabReport').classList.toggle('hidden',!isDirector()); // 월 리포트 탭: 디렉터만 노출
       await loadFx(); loadKrwRate(); await loadCats(); await loadAccounts();
@@ -1028,7 +1046,7 @@
       [6,7,8].concat(isUsd?[9]:[]).forEach(ci=>{ws.getColumn(ci).alignment={horizontal:'right'};});
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      const today=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      const today=mxHoy().replace(/-/g,'');
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);
       a.download='refatrix_ledger_acc'+acc.id+'_'+today+'.xlsx';
       document.body.appendChild(a);a.click();
@@ -1952,7 +1970,7 @@
   }
   function txnDeletableVisible(){ return (txnItems||[]).filter(txnPlanDeletable); }
   function txnSelectVisible(on,onlyOverdue){
-    const today=new Date().toISOString().slice(0,10);
+    const today=mxHoy();
     const vis=txnDeletableVisible()
       .filter(t=>!onlyOverdue||String(t.plan_date||t.txn_date||'').slice(0,10)<today)
       .map(t=>Number(t.id));
@@ -2143,7 +2161,7 @@
       ws.getCell(2,2).value='계좌 '+f.acc+'  ·  상태 '+f.st+'  ·  구분 '+f.dir+'  ·  기간 '+f.period;
       ws.getCell(3,1).value='내려받음 / Generado';ws.getCell(3,1).font={bold:true};
       ws.mergeCells(3,2,3,N);
-      ws.getCell(3,2).value=new Date().toISOString().slice(0,16).replace('T',' ')+'  ·  '+items.length+'건'
+      ws.getCell(3,2).value=mxHora(new Date().toISOString())+'  ·  '+items.length+'건'
         +(d.truncated?('  ⚠ 상한 '+d.cap+'행 초과분은 제외됨 — 기간을 좁혀 다시 받으세요'):'');
       if(d.truncated)ws.getCell(3,2).font={color:{argb:'FFB4231F'},bold:true};
       const HR=5;
@@ -2210,7 +2228,7 @@
       ws.getColumn(16).alignment={wrapText:false};
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      const stamp=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      const stamp=mxHoy().replace(/-/g,'');
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);
       a.download='refatrix_transacciones_'+stamp+'.xlsx';
       document.body.appendChild(a);a.click();
@@ -2256,7 +2274,7 @@
           +'<td>'+(t.memo||'')+(t.approved?'':' <span class="badge b-warn">미승인</span>')+'</td>'
           +'<td style="font-family:monospace;font-size:12px">'+(t.receipt_no||'')+'</td>'
           +'<td style="white-space:nowrap">'+(done
-            ?('<span class="badge" style="background:#eee;color:#777">✔ 수령완료 '+String(t.cash_due_done_at).slice(0,10)+(t.done_by_name?(' · '+t.done_by_name):'')+'</span>')
+            ?('<span class="badge" style="background:#eee;color:#777">✔ 수령완료 '+mxDia(t.cash_due_done_at)+(t.done_by_name?(' · '+t.done_by_name):'')+'</span>')
             :'<span class="badge" style="background:#fdf3d7;color:#8a6410">미수령</span>')+'</td>'
           +'<td style="white-space:nowrap">'+(done
             ?('<button class="btn ghost sm" onclick="cashDueDone('+t.id+',false)">↩ 되돌리기</button>')
@@ -2548,7 +2566,7 @@
         <div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
             <div><b>거래 #${cr.txn_id}</b> · ${cr.req_type==='delete'?'<span class="badge" style="background:#fde0db;color:var(--expense)">삭제요청</span>':'<span class="badge b-warn">수정요청</span>'}
-              <span class="hint" style="margin:0"> · 요청자 ${cr.requested_by_name||'—'} · ${String(cr.requested_at).slice(0,10)}</span></div>
+              <span class="hint" style="margin:0"> · 요청자 ${cr.requested_by_name||'—'} · ${mxDia(cr.requested_at)}</span></div>
             <button class="btn ghost sm cr-open" data-id="${cr.id}">전/후 보기</button>
           </div>
           ${cr.reason?`<div class="hint">사유: ${cr.reason}</div>`:''}
@@ -4378,7 +4396,7 @@
 
   // ===== 거래 등록 탭: 예정 내역(실적 처리) =====
   // 연·월 다중선택 필터 + 찾기 (fin-0710a 스펙): 서버는 all=1로 전체를 주고, 필터·검색은 클라이언트에서.
-  const ppNow=new Date().toISOString().slice(0,10);
+  const ppNow=mxHoy();
   const ppCurYear=Number(ppNow.slice(0,4)), ppCurMonth=Number(ppNow.slice(5,7));
   let ppSelYears=new Set([ppCurYear]), ppSelMonths=new Set([ppCurMonth]), ppShowOverdue=true, ppQuery='';
   async function loadPendingPlans(){
@@ -4542,7 +4560,7 @@
   // 계획 삭제 공통 코어 — 「예정 내역(거래등록)」과 「거래목록」 양쪽에서 같은 문구·같은 API 를 쓴다.
   //  · rows: 화면마다 필드가 조금 달라(예정 내역은 plan_date/overdue, 거래목록은 txn_date) 아래에서 정규화한다.
   function planRowInfo(t){
-    const today=new Date().toISOString().slice(0,10);
+    const today=mxHoy();
     const date=String(t.plan_date||t.txn_date||'').slice(0,10);
     const memo=String(t.memo||'');
     return {
@@ -4717,7 +4735,7 @@
   async function loadBdp(){
     const box=$('bd-list'); if(!box) return;
     if($('bd-acc')) $('bd-acc').innerHTML=accOptions('');
-    if($('bd-date')&&!$('bd-date').value) $('bd-date').value=new Date().toISOString().slice(0,10);
+    if($('bd-date')&&!$('bd-date').value) $('bd-date').value=mxHoy();
     bdClosePanel();
     try{
       bdItems=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];

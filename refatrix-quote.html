@@ -213,6 +213,16 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
   let session={token:null,user:null,api:''};
   let customers=[], curDisc=0, lines=[]; // lines: {code, product_id?, qty, _calc?}
   let lastPreview=null; // 마지막 계산 결과(엑셀 다운로드용)
@@ -310,7 +320,7 @@
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       updateVsSydBtn();
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      $('qDate').value=new Date().toISOString().slice(0,10);
+      $('qDate').value=mxHoy();
       loadCustomers();
       loadSellers();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
@@ -1171,7 +1181,7 @@
     _covReady=(async()=>{
       let signal=null,to=null;
       try{ const ctrl=new AbortController(); signal=ctrl.signal; to=setTimeout(function(){try{ctrl.abort();}catch(e){}},15000); }catch(e){}
-      const _dk=new Date().toISOString().slice(0,10);
+      const _dk=mxHoy();
       const txt=await fetch('mx_parts_coverage_dashboard.html?d='+_dk,signal?{signal:signal}:undefined)
         .then(x=>{ if(!x.ok) throw new Error('커버리지 파일 HTTP '+x.status); return x.text(); });
       if(to) clearTimeout(to);
