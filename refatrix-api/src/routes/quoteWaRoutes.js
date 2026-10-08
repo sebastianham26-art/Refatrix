@@ -22,6 +22,7 @@ import {
   loadQuoteForNotify, buildQuoteText, buildQuoteHeadline, sendQuoteTo, recipientCovers, maskPhone,
   quoteWaEnabled, quoteWaTemplate, quoteWaTemplateLang, MAX_ATTEMPTS, LOOKBACK_HOURS,
   SUMMARY_LEVELS, levelOf, monthSummaryFor, buildMonthSummaryText, loadQuoteWaSettings, QUOTE_WA_MODES,
+  buildQuoteCaption, buildDetailParams, quoteWaDetailTemplate,
 } from '../quoteWaNotify.js';
 
 const G = { preHandler: [authGuard, requireDirector] };
@@ -158,7 +159,7 @@ export default async function quoteWaRoutes(app) {
     } catch { rows = (await query(`${SEL} ${FROM} ORDER BY s.updated_at DESC LIMIT 40`)).rows; }
     return {
       enabled: quoteWaEnabled(), api_ready: waApiReady(), template: quoteWaTemplate(), template_lang: quoteWaTemplateLang(),
-      template_set: !!process.env.QUOTE_WA_TEMPLATE, settings: settingsOut(await loadQuoteWaSettings()),
+      template_set: !!process.env.QUOTE_WA_TEMPLATE, detail_template: quoteWaDetailTemplate(), settings: settingsOut(await loadQuoteWaSettings()),
       webhook: webhookConfigured(), max_attempts: MAX_ATTEMPTS, lookback_hours: LOOKBACK_HOURS,
       recent: rows.map((x) => {
         const o = { ...x, quote_id: Number(x.quote_id), recipient_id: Number(x.recipient_id), attempts: Number(x.attempts) };
@@ -180,7 +181,11 @@ export default async function quoteWaRoutes(app) {
       summary = await monthSummaryFor({ team_ids: null });
       const add = buildMonthSummaryText(summary, lang, level); if (add) text += '\n\n' + add;
     }
-    return { quote_id: qt.id, quote_no: qt.quote_no, lang, summary_level: level, text, headline: buildQuoteHeadline(qt, lang), quote: qt,
+    // 0265 · 「헤더 이미지 + 상세」 — 창 안이면 이 캡션, 창 밖이면 상세 템플릿에 이 변수 16개
+    const caption = buildQuoteCaption(qt, summary, lang, level);
+    const detail_params = buildDetailParams(qt, summary, lang, level);
+    return { quote_id: qt.id, quote_no: qt.quote_no, lang, summary_level: level, text, caption, detail_params,
+      headline: buildQuoteHeadline(qt, lang), quote: qt,
       month: summary ? summary.ym : null };
   });
 

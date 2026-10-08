@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1008hd</title>
+<title>Refatrix ERP · 견적 목록 · ql-1008rc</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -288,7 +288,7 @@
     return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
   }
 
-  const QL_BUILD='ql-1008hd';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1008rc';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -2034,6 +2034,10 @@
   #qwMsg{margin:0 18px 0}
   #qwModal .qwmode{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
   #qwModal .qwmode label{display:block;margin:0;font-weight:500;color:var(--ink);font-size:12.5px}
+  #qwModal .qwbub{max-width:420px;margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  #qwModal .qwbub img{display:block;width:100%;height:auto}
+  #qwModal .qwbub pre{margin:0;border:0;border-radius:0;background:#fff}
+  #qwModal details.qwdp{margin-top:8px;font-size:12px}#qwModal details.qwdp ol{margin:6px 0 0;padding-left:28px;line-height:1.6}
   #qwModal .qwhdr{margin-top:10px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;background:#fdfcf9}
   @media (max-width:640px){ #qwModal .qwsec{padding:12px} #qwModal th:nth-child(2),#qwModal td:nth-child(2){display:none} #qwModal table{display:block;overflow-x:auto} }
 </style>
@@ -2051,12 +2055,13 @@
     <div class="qwsec">
       <h3>발송 형식 · 템플릿 디자인</h3>
       <div class="qwmode" id="qwMode">
+        <label><input type="radio" name="qwMode" value="rich"> <b>헤더 이미지 + 상세 내용 (한 통)</b> <span class="hint">— 권장 · 이미지 아래에 견적 상세·수주현황·당월 요약. 24시간 창 안 = 이미지+설명(무료), 창 밖 = 상세 템플릿 <code id="qwDetName">cotizacion_detalle</code>(승인 전이면 한 줄 템플릿)</span></label>
         <label><input type="radio" name="qwMode" value="template"> <b>항상 디자인(승인 템플릿)으로</b> <span class="hint">— 헤더·버튼 등 Meta 에서 만든 모양 그대로. 내용은 한 줄 요약</span></label>
         <label style="margin-left:22px"><input type="checkbox" id="qwFollow"> 24시간 창이 열려 있으면 템플릿 뒤에 상세(수주현황 · 당월 요약)도 이어서 보내기 <span class="hint">(무료)</span></label>
         <label><input type="radio" name="qwMode" value="text_when_open"> 창이 열려 있으면 <b>상세 텍스트만</b>(디자인 없음), 닫혀 있으면 템플릿</label>
       </div>
       <div class="qwhdr">
-        <div><b style="font-size:12.5px">템플릿 헤더 이미지</b> <span class="hint">— Meta 템플릿 헤더를 「이미지」로 만들었다면 <b>꼭</b> 올려야 합니다(보낼 때마다 이미지를 함께 넣어야 템플릿이 나갑니다 · 없으면 #132012 로 실패). 헤더가 텍스트·없음이면 비워 두세요.</span></div>
+        <div><b style="font-size:12.5px">헤더 이미지</b> <span class="hint">— 「헤더 이미지 + 상세」에서 맨 위에 붙는 이미지이자, Meta 템플릿 헤더를 「이미지」로 만들었다면 <b>꼭</b> 올려야 합니다(보낼 때마다 이미지를 함께 넣어야 템플릿이 나갑니다 · 없으면 #132012 로 실패). 헤더가 텍스트·없음이면 비워 두세요.</span></div>
         <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
           <img id="qwHdrImg" alt="" style="display:none;max-width:220px;max-height:115px;border-radius:8px;border:1px solid var(--line)">
           <span class="hint" id="qwHdrInfo">이미지 없음</span>
@@ -2084,7 +2089,8 @@
         <select id="qwPvSum" style="margin-left:auto"><option value="full">요약 7칸</option><option value="no_profit">이익 제외</option><option value="off">요약 없음</option></select>
         <select id="qwPvLang"><option value="ko">한국어</option><option value="es">Español</option></select>
       </div>
-      <pre id="qwPv">—</pre>
+      <div class="qwbub"><img id="qwPvImg" alt="" style="display:none"><pre id="qwPv">—</pre></div>
+      <details class="qwdp" id="qwDp"><summary>창 밖에서 나가는 상세 템플릿 변수 16개 보기</summary><ol id="qwDpList"></ol></details>
     </div>
     <div class="qwsec">
       <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">최근 발송</h3><button type="button" class="btn ghost sm" id="qwRefresh" style="margin-left:auto">↻ 새로고침</button></div>
@@ -2137,9 +2143,9 @@
   function dlv(x){
     if(x.status==='sending') return '<span class="hint">보내는 중</span>';
     if(x.status==='failed') return '<span class="dl f">✗ '+ex(x.error||'실패')+'</span>';
-    var a=x.status==='sent_template'?'접수(템플릿)':'접수(텍스트)';
-    // 2026-10-08 · 템플릿이 실패해 텍스트로 나간 건 — 창 밖이면 도착하지 않으므로 사유를 그대로 보여 준다
-    if(x.status==='sent_text'&&x.error) a+=' <span class="dl f" title="'+ex(x.error)+'">⚠ '+ex(x.error)+'</span>';
+    var a={sent_image:'접수(이미지+상세)',sent_detail:'접수(상세 템플릿)',sent_template:'접수(템플릿)'}[x.status]||'접수(텍스트)';
+    // 2026-10-08 · 템플릿이 실패해 다른 형식으로 나간 건 — 사유를 그대로 보여 준다(상세 템플릿 승인 전 등)
+    if(x.error) a+=' <span class="dl f" title="'+ex(x.error)+'">⚠ '+ex(x.error)+'</span>';
     if(x.dlv_status==='failed') return a+' · <span class="dl f">✗ 전달 실패 — '+ex(x.dlv_reason||'')+'</span>';
     if(x.dlv_status==='read') return a+' · <span class="dl r">👁 읽음</span>';
     if(x.dlv_status==='delivered') return a+' · <span class="dl r">✓✓ 도착</span>';
@@ -2156,24 +2162,29 @@
   }
   function loadPreview(){
     call('GET','/api/quote-wa/preview?lang='+encodeURIComponent($q('qwPvLang').value)+'&summary='+encodeURIComponent($q('qwPvSum').value)).then(function(d){
-      $q('qwPvNo').textContent='가장 최근 견적 '+d.quote_no; $q('qwPv').textContent=d.text;
+      $q('qwPvNo').textContent='가장 최근 견적 '+d.quote_no;
+      var rich=((st.settings||{}).send_mode||'rich')==='rich';
+      $q('qwPv').textContent=rich&&d.caption?d.caption:d.text;
+      var im=$q('qwPvImg'); if(rich&&hdrUrl){ im.src=hdrUrl; im.style.display=''; } else im.style.display='none';
+      $q('qwDp').style.display=rich&&d.detail_params?'':'none';
+      $q('qwDpList').innerHTML=(d.detail_params||[]).map(function(v){ return '<li>'+ex(v)+'</li>'; }).join('');
     }).catch(function(e){ $q('qwPvNo').textContent=''; $q('qwPv').textContent=e.message==='no_quote'?'견적이 아직 없습니다.':errText(e); });
   }
   // 0264 · 발송 형식 · 헤더 이미지
   var hdrUrl='';
   function renderSettings(t){
     st.settings=t;
-    [].slice.call(document.querySelectorAll('input[name="qwMode"]')).forEach(function(r){ r.checked=(r.value===(t.send_mode||'template')); });
-    $q('qwFollow').checked=t.follow_detail!==false; $q('qwFollow').disabled=(t.send_mode||'template')!=='template';
+    [].slice.call(document.querySelectorAll('input[name="qwMode"]')).forEach(function(r){ r.checked=(r.value===(t.send_mode||'rich')); });
+    $q('qwFollow').checked=t.follow_detail!==false; $q('qwFollow').disabled=(t.send_mode||'rich')!=='template';
     if(t.has_header){
       $q('qwHdrInfo').innerHTML=ex(t.header_name||'헤더 이미지')+' · '+Math.round((t.header_bytes||0)/1024)+'KB'+(t.media_ready?' · <span class="dl r">Meta 업로드됨</span>':' · 다음 발송 때 Meta 에 올림');
       $q('qwHdrClear').style.display='';
       fetch(session.api+'/api/quote-wa/settings/image?t='+Date.now(),{headers:{'Authorization':'Bearer '+session.token}}).then(function(r){ return r.ok?r.blob():null; })
-        .then(function(b){ if(!b) return; try{ if(hdrUrl) URL.revokeObjectURL(hdrUrl); hdrUrl=URL.createObjectURL(b); $q('qwHdrImg').src=hdrUrl; $q('qwHdrImg').style.display=''; }catch(e){} }).catch(function(){});
-    } else { $q('qwHdrInfo').textContent='이미지 없음'; $q('qwHdrImg').style.display='none'; $q('qwHdrClear').style.display='none'; }
+        .then(function(b){ if(!b) return; try{ if(hdrUrl) URL.revokeObjectURL(hdrUrl); hdrUrl=URL.createObjectURL(b); $q('qwHdrImg').src=hdrUrl; $q('qwHdrImg').style.display=''; loadPreview(); }catch(e){} }).catch(function(){});
+    } else { hdrUrl=''; $q('qwHdrInfo').textContent='이미지 없음'; $q('qwHdrImg').style.display='none'; $q('qwHdrClear').style.display='none'; }
   }
   function saveSettings(body,okText){
-    return call('PUT','/api/quote-wa/settings',body).then(function(t){ renderSettings(t); say(true,okText); }).catch(function(e){ say(false,errText(e)); call('GET','/api/quote-wa/settings').then(renderSettings).catch(function(){}); });
+    return call('PUT','/api/quote-wa/settings',body).then(function(t){ renderSettings(t); say(true,okText); loadPreview(); }).catch(function(e){ say(false,errText(e)); call('GET','/api/quote-wa/settings').then(renderSettings).catch(function(){}); });
   }
   [].slice.call(document.querySelectorAll('input[name="qwMode"]')).forEach(function(r){ r.addEventListener('change',function(){ if(r.checked) saveSettings({send_mode:r.value},'발송 형식을 저장했습니다.'); }); });
   $q('qwFollow').addEventListener('change',function(e){ saveSettings({follow_detail:e.target.checked},'저장했습니다.'); });
@@ -2187,7 +2198,7 @@
     call('GET','/api/quote-wa/settings').then(renderSettings).catch(function(){});
     call('GET','/api/quote-wa/recipients').then(function(d){ st.teams=d.teams||[]; st.items=d.items||[]; st.webhook=!!d.webhook; renderRecips(); })
       .catch(function(e){ $q('qwRecips').innerHTML='<div class="hint">'+ex(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포·migrate 확인).':errText(e))+'</div>'; });
-    call('GET','/api/quote-wa/status').then(function(s){ renderStat(s); renderLog(s); }).catch(function(){});
+    call('GET','/api/quote-wa/status').then(function(s){ renderStat(s); renderLog(s); if(s.detail_template) $q('qwDetName').textContent=s.detail_template; }).catch(function(){});
     loadPreview();
   }
   function open(){ $q('qwModal').classList.add('on'); $q('qwMsg').className='msg'; loadAll(); }

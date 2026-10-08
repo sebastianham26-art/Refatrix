@@ -212,6 +212,19 @@ export async function sendWaImageTemplate({ to, mediaId, param, name, lang = nul
       ] } });
 }
 
+// 0265 · 헤더 이미지(선택) + 본문 변수 여러 개 템플릿(cotizacion_detalle 등). 변수엔 줄바꿈·탭 금지, 빈 값 금지(Meta 규칙).
+export const waParam = (v) => {
+  const s = String(v == null ? '' : v).replace(/[\n\t\r]+/g, ' ').replace(/ {4,}/g, '   ').trim().slice(0, 1024);
+  return s || '—';
+};
+export async function sendWaTemplateParams({ to, name, lang = null, mediaId = null, params = [] }) {
+  if (!name) return { ok: false, code: null, error: 'no_template' };
+  const components = [];
+  if (mediaId) components.push({ type: 'header', parameters: [{ type: 'image', image: { id: String(mediaId) } }] });
+  components.push({ type: 'body', parameters: (params || []).map((p) => ({ type: 'text', text: waParam(p) })) });
+  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'template',
+    template: { name, language: { code: lang || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX' }, components } });
+}
 
 // ── 0260 · WhatsApp 마케팅(잠재고객) ──
 // 변수 없는 템플릿(동의 요청 등). 빠른 답장 버튼은 템플릿에 고정돼 있어 보낼 때 따로 넣지 않는다.

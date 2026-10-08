@@ -15,12 +15,14 @@
 //     · 수신자 등록 이전에 만들어진 견적은 보내지 않는다(등록 순간 옛 견적이 몰려가지 않게).
 //     · 팀 범위: 수신자의 team_ids 가 있으면 그 팀 고객의 견적만(고객 미지정 견적은 작성자 팀).
 //
-//   발송 규칙(2026-10-08 b): 기본은 항상 승인 템플릿(디자인 · 헤더 이미지 포함) — 창이 열려 있으면 상세 텍스트를 이어서. 설정(0264)으로 「창 열리면 텍스트」도 가능 — deliverQuote 참고.
+//   발송 규칙(2026-10-08 e · 0265): 기본 'rich' = 「헤더 이미지 + 상세」 한 통 — 창이 열려 있으면 이미지+캡션(무료),
+//     닫혀 있으면 상세 템플릿 cotizacion_detalle(변수 16개) → 승인 전이면 nueva_cotizacion 한 줄. deliverQuote 참고.
+//   예전 규칙(2026-10-08 b): 항상 승인 템플릿(디자인 · 헤더 이미지 포함) — 창이 열려 있으면 상세 텍스트를 이어서. 설정(0264)으로 「창 열리면 텍스트」도 가능 — deliverQuote 참고.
 //     아니면 텍스트 → 실패 시 템플릿 한 줄. 창 밖 실패(131047)는 웹훅이 원장을 다시 열어 재시도한다.
 //   끄기: QUOTE_WA_ENABLED=0
 // =====================================================================
 import { query } from './db.js';
-import { sendWaText, sendWaTemplate, sendWaImageTemplate, uploadWaMedia, waApiReady } from './waSend.js';
+import { sendWaText, sendWaTemplate, sendWaImageTemplate, sendWaImage, sendWaTemplateParams, uploadWaMedia, waApiReady } from './waSend.js';
 import { windowState } from './waWebhook.js';
 import { computeQuoteSummary } from './quoteSummary.js';   // 0257 · 당월 요약(KPI 7칸)
 
@@ -34,6 +36,9 @@ export const quoteWaEnabled = () => process.env.QUOTE_WA_ENABLED !== '0';
 // 2026-10-08 · 기본 = 승인받은 nueva_cotizacion (이름을 비워 둬도 이 템플릿으로 간다). 언어는 승인 때 고른 것과 같아야 한다.
 export const quoteWaTemplate = () => process.env.QUOTE_WA_TEMPLATE || 'nueva_cotizacion';
 export const quoteWaTemplateLang = () => process.env.QUOTE_WA_TEMPLATE_LANG || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX';
+// 0265 · 상세 템플릿(헤더 이미지 + 여러 줄 본문 · 변수 16개). 한국어 수신자는 'ko' 번역을 먼저, 없으면(#132001) 스페인어로.
+export const quoteWaDetailTemplate = () => (process.env.QUOTE_WA_DETAIL_TEMPLATE === '-' ? '' : (process.env.QUOTE_WA_DETAIL_TEMPLATE || 'cotizacion_detalle'));
+export const DETAIL_PARAM_COUNT = 16;
 
 // 2026-10-08 디렉터 점검 — 「템플릿이 승인됐는데도 창 밖 수신자가 못 받는다」
 //   전에는 공용 sendWaTo 를 썼다: 24시간 창이 「닫힘」으로 확실할 때만 템플릿, 그 밖(모름 · 템플릿 실패)은 자유 텍스트.
@@ -46,16 +51,47 @@ export const DEFAULT_QUOTE_API = {
   text: ({ to, text }) => sendWaText(text, to),
   template: (param, opts) => sendWaTemplate(param, opts),
   imageTemplate: (a) => sendWaImageTemplate(a),
+  image: (a) => sendWaImage(a),                       // 0265 · 헤더 이미지 + 캡션(창 안 · 무료)
+  paramsTemplate: (a) => sendWaTemplateParams(a),     // 0265 · 상세 템플릿(변수 여러 개)
 };
 // 2026-10-08 b · 「템플릿 디자인이 안 오고 텍스트로 온다」 → 발송 형식 설정(0264)
 //   mode = 'template'(기본): 창 상태와 상관없이 승인 템플릿(디자인)으로. 창이 열려 있고 followDetail 이면 상세 텍스트를 이어서(무료).
 //   mode = 'text_when_open': 창이 열려 있으면 상세 텍스트만(예전 방식), 아니면 템플릿.
 //   headerMediaId: 템플릿 헤더가 이미지면 그 이미지(Meta media id) — 없이 보내면 #132012 로 실패한다.
+// 0265 · mode = 'rich'(새 기본): 「헤더 이미지 + 상세」 한 통
+//   창 열림  → 이미지(헤더) + caption(상세 · 당월 요약 ≤1024자) — 무료. 헤더 이미지가 없으면 상세 텍스트.
+//   그 밖    → 상세 템플릿(detailName · detail = [{lang, params}] 순서대로 · #132001(번역 없음)이면 다음 언어)
+//   상세 템플릿 실패 → 아래 기존 규칙(nueva_cotizacion 한 줄 + 헤더 이미지) — 실패 사유는 text_error 로 남긴다.
 export async function deliverQuote({ to, text, headline, templateName = quoteWaTemplate(), templateLang = quoteWaTemplateLang(),
-  windowOpen = null, mode = 'template', followDetail = true, headerMediaId = null }, api = DEFAULT_QUOTE_API) {
+  windowOpen = null, mode = 'rich', followDetail = true, headerMediaId = null,
+  caption = null, detailName = quoteWaDetailTemplate(), detail = [] }, api = DEFAULT_QUOTE_API) {
   if (windowOpen === true && mode === 'text_when_open') {
     const r = await api.text({ to, text });
     if (r.ok) return { ok: true, mode: 'text', message_id: r.message_id };
+  }
+  let pre = '';
+  if (mode === 'rich') {
+    if (windowOpen === true) {
+      const r = headerMediaId ? await api.image({ to, mediaId: headerMediaId, caption: caption || text.slice(0, 1024) })
+                              : await api.text({ to, text });
+      if (r.ok) return { ok: true, mode: headerMediaId ? 'image' : 'text', message_id: r.message_id };
+      pre = `${headerMediaId ? '이미지' : '텍스트'} 실패: ${r.error} · `;
+    }
+    if (detailName && Array.isArray(detail) && detail.length) {
+      let dErr = '';
+      for (const d of detail) {
+        const t = await api.paramsTemplate({ to, name: detailName, lang: d.lang, mediaId: headerMediaId, params: d.params });
+        if (t.ok) {
+          const out = { ok: true, mode: 'detail_template', message_id: t.message_id };
+          if (dErr || pre) out.text_error = `${pre}${dErr}`.replace(/ · $/, '') + ` — ${d.lang} 으로 보냄`;
+          return out;
+        }
+        dErr += `상세 템플릿 ${detailName}(${d.lang}) 실패${t.code ? ' #' + t.code : ''}: ${t.error} · `;
+        if (Number(t.code) === 132012 && !headerMediaId) dErr += '헤더가 이미지라면 알림 패널에 헤더 이미지를 올리세요 · ';
+        if (Number(t.code) !== 132001) break;          // 번역 없음일 때만 다음 언어로
+      }
+      pre += dErr;
+    }
   }
   let tErr = 'no_template';
   if (templateName) {
@@ -67,9 +103,10 @@ export async function deliverQuote({ to, text, headline, templateName = quoteWaT
       if (windowOpen === true && mode === 'template' && followDetail) {   // 창이 열려 있으면 상세를 이어서(무료) — 실패해도 알림은 성공
         try { const d = await api.text({ to, text }); out.detail = d.ok ? 'sent' : `failed: ${d.error}`; } catch (e) { out.detail = 'failed'; }
       }
+      if (pre) out.text_error = pre.replace(/ · $/, '') + ` — ${templateName} 한 줄로 보냄`;
       return out;
     }
-    tErr = `템플릿 ${templateName}(${templateLang}) 실패${t.code ? ' #' + t.code : ''}: ${t.error}`;
+    tErr = pre + `템플릿 ${templateName}(${templateLang}) 실패${t.code ? ' #' + t.code : ''}: ${t.error}`;
     if (Number(t.code) === 132012 && !headerMediaId) tErr += ' — 템플릿 헤더가 이미지라면 알림 패널 「템플릿 헤더 이미지」에 이미지를 올리세요';
   }
   if (windowOpen === true || windowOpen === null) {
@@ -82,7 +119,7 @@ export async function deliverQuote({ to, text, headline, templateName = quoteWaT
 }
 
 // ── 발송 형식 · 헤더 이미지 (0264) ──
-export const QUOTE_WA_MODES = ['template', 'text_when_open'];
+export const QUOTE_WA_MODES = ['rich', 'template', 'text_when_open'];
 const MEDIA_FRESH_DAYS = 25;
 let uploadOverride = null;
 export function setQuoteWaUpload(fn) { uploadOverride = fn || null; }
@@ -90,11 +127,11 @@ export async function loadQuoteWaSettings(q = query) {
   try {
     const r = (await q(`SELECT send_mode, follow_detail, header_mime, header_name, octet_length(header_image) AS header_bytes,
                                media_id, media_at, updated_at FROM quote_wa_settings WHERE id = 1`)).rows[0];
-    if (!r) return { send_mode: 'template', follow_detail: true, has_header: false };
-    return { send_mode: QUOTE_WA_MODES.includes(r.send_mode) ? r.send_mode : 'template', follow_detail: r.follow_detail !== false,
+    if (!r) return { send_mode: 'rich', follow_detail: true, has_header: false };
+    return { send_mode: QUOTE_WA_MODES.includes(r.send_mode) ? r.send_mode : 'rich', follow_detail: r.follow_detail !== false,
       has_header: Number(r.header_bytes) > 0, header_name: r.header_name || null, header_mime: r.header_mime || null,
       header_bytes: Number(r.header_bytes) || 0, media_id: r.media_id || null, media_at: r.media_at || null, updated_at: r.updated_at };
-  } catch { return { send_mode: 'template', follow_detail: true, has_header: false }; }   // 0264 전
+  } catch { return { send_mode: 'rich', follow_detail: true, has_header: false }; }   // 0264 전
 }
 // 헤더 이미지의 Meta media id — 25일 지나면 다시 올린다
 export async function ensureHeaderMedia(set, q = query) {
@@ -217,7 +254,12 @@ export async function monthSummaryFor(rcpt, { ym = mxYm(), cache = null, q = que
   const ids = teamKey(rcpt) === 'all' ? null : teamKey(rcpt).split(',').map(Number);
   const sum = await computeQuoteSummary({ yms: [ym], scope: ids ? { teamIds: ids, guestByCreatorTeam: true } : null }, q);
   let teamNames = null;
-  if (ids) teamNames = (await q(`SELECT name FROM sales_teams WHERE id = ANY($1::bigint[]) ORDER BY sort_order, id`, [ids])).rows.map((x) => x.name);
+  if (ids) {
+    teamNames = (await q(`SELECT name FROM sales_teams WHERE id = ANY($1::bigint[]) ORDER BY sort_order, id`, [ids])).rows.map((x) => x.name);
+    // 2026-10-08 e · 모든 팀을 고른 수신자는 팀 이름을 줄줄이 붙이지 않는다(= 전사)
+    const all = Number((await q(`SELECT count(*)::int AS n FROM sales_teams`)).rows[0].n) || 0;
+    if (all && teamNames.length >= all) teamNames = null;
+  }
   const out = { ym, sum, teamNames };
   if (cache) cache[key] = out;
   return out;
@@ -248,11 +290,13 @@ const S = {
 };
 
 // 화면 카드 7칸과 같은 순서·같은 숫자. level='no_profit' 이면 ⑥⑦(원가) 빼고 5칸.
-export function buildMonthSummaryText(ms, lang = 'ko', level = 'full') {
+// compact = 「 — 」 뒤 세부를 뺀 짧은 꼴(이미지 캡션 1024자 안에 넣을 때)
+export function buildMonthSummaryText(ms, lang = 'ko', level = 'full', { compact = false } = {}) {
   if (!ms || level === 'off') return '';
   const t = S[lang] || S.ko; const d = ms.sum || {};
   const qd = d.quotes || {}, sd = d.sales || {}, ld = d.lost || {};
-  const scope = ms.teamNames && ms.teamNames.length ? ` · ${ms.teamNames.join(', ')}` : '';
+  const tn = ms.teamNames || [];
+  const scope = !tn.length ? '' : (tn.length > 3 ? ` · ${tn.length}${lang === 'es' ? ' equipos' : '개 팀'}` : ` · ${tn.join(', ')}`);
   const out = ['━━━━━━━━━━', `📊 *${t.head(ms.ym)}* (${t.basis}${scope})`];
   if (d.empty) return out.join('\n');
   out.push(`① ${t.q} *${money(qd.amt)}* — ${t.qs(qd)}`);
@@ -266,7 +310,50 @@ export function buildMonthSummaryText(ms, lang = 'ko', level = 'full') {
     out.push(`⑥ ${t.gp} *${money(gs.gp)}* — ${t.gps(gs)}${e1 ? ' · ' + e1 : ''}`);
     out.push(`⑦ ${t.gl} *${money(gl.gp)}* — ${t.gls(gl)}${e2 ? ' · ' + e2 : ''}`);
   }
-  return out.join('\n');
+  return (compact ? out.map((x) => x.replace(/ — .*$/, '')) : out).join('\n');
+}
+
+// ───────── 0265 · 「헤더 이미지 + 상세」 ─────────
+// 이미지 캡션(≤1024자): 견적 상세 + 당월 요약. 넘치면 요약 세부를 빼고, 그래도 넘치면 자른다.
+export const CAPTION_MAX = 1024;
+export function buildQuoteCaption(qt, ms, lang = 'ko', level = 'full') {
+  const body = buildQuoteText(qt, lang);
+  const full = buildMonthSummaryText(ms, lang, level);
+  let c = full ? `${body}\n\n${full}` : body;
+  if (c.length > CAPTION_MAX && full) c = `${body}\n\n${buildMonthSummaryText(ms, lang, level, { compact: true })}`;
+  return c.length > CAPTION_MAX ? c.slice(0, CAPTION_MAX - 1) + '…' : c;
+}
+// 상세 템플릿 변수 16개 — 템플릿 본문(고정 글자)과 같은 순서. 값에 줄바꿈 없음 · 빈 값은 「—」.
+//   {{1}} 견적번호 {{2}} 고객 {{3}} 작성 {{4}} SKU {{5}} 총수량 {{6}}~{{8}} 수주현황 3분류 {{9}} 견적액
+//   {{10}}~{{16}} 당월 요약 ①~⑦ (level no_profit → ⑥⑦ 「—」 · off/계산 실패 → 전부 「—」)
+export function buildDetailParams(qt, ms, lang = 'ko', level = 'full') {
+  const t = L[lang] || L.ko; const c = qt.cls; const ko = lang !== 'es';
+  const dash = '—';
+  const p = [
+    `${qt.quote_no}${qt.origin === 'crm' ? ` (${t.crm})` : ''}`,
+    `${qt.customer_name}${qt.team_name ? ` (${qt.team_name})` : ''}${qt.customer_po_no ? ` · ${t.po} ${qt.customer_po_no}` : ''}`,
+    `${qt.creator_name || dash} · ${qt.quote_date}`,
+    int(qt.sku), int(qt.qty),
+    `${c.ok} SKU · ${int(c.ok_qty)} ${t.ea} · ${money(c.ok_sub)}`,
+    `${c.short} SKU · ${int(c.short_qty)} ${t.ea} · ${money(c.short_sub)}`,
+    `${c.dev} SKU · ${int(c.dev_qty)} ${t.ea}`,
+    `${money(qt.subtotal)} (${t.noIva}) · ${money(qt.total)} (${t.iva})`,
+  ];
+  const d = (ms && ms.sum) || null;
+  if (!d || level === 'off') { for (let i = 0; i < 7; i++) p.push(dash); return p; }
+  const qd = d.quotes || {}, sd = d.sales || {}, ld = d.lost || {};
+  const ea = t.ea;
+  p.push(`${money(qd.amt)} · ${ko ? `견적 ${n(qd.n)}건` : `${n(qd.n)} cotizaciones`}`);
+  p.push(`${money(sd.amt)} · ${ko ? '견적 대비' : 'de lo cotizado'} ${sd.rate == null ? dash : sd.rate + '%'}`);
+  p.push(money(ld.amt));
+  p.push(`SKU ${int(qd.sku)} · ${int(qd.qty)} ${ea}`);
+  p.push(`SKU ${int(sd.sku)} · ${int(sd.qty)} ${ea}`);
+  if (level === 'full' && d.gp) {
+    const gs = d.gp.sales || {}, gl = d.gp.lost || {};
+    p.push(`${money(gs.gp)} · ${ko ? '이익률' : 'margen'} ${gs.pct == null ? dash : gs.pct + '%'}`);
+    p.push(money(gl.gp));
+  } else { p.push(dash); p.push(dash); }
+  return p;
 }
 
 export function recipientCovers(rcpt, qt) {
@@ -297,10 +384,16 @@ export async function sendQuoteTo(qt, rcpt, { force = false, q = query, summaryC
   // 0257 · 맨 아래 당월 요약 — 계산이 실패해도 견적 알림은 보낸다
   let text = buildQuoteText(qt, lang);
   const level = levelOf(rcpt);
+  let ms = null;
   if (level !== 'off') {
-    try { const ms = await monthSummaryFor(rcpt, { cache: summaryCache, q }); const add = buildMonthSummaryText(ms, lang, level); if (add) text += '\n\n' + add; }
-    catch (_) { /* 요약 실패 — 본문만 */ }
+    try { ms = await monthSummaryFor(rcpt, { cache: summaryCache, q }); const add = buildMonthSummaryText(ms, lang, level); if (add) text += '\n\n' + add; }
+    catch (_) { ms = null; /* 요약 실패 — 본문만 */ }
   }
+  // 0265 · 「헤더 이미지 + 상세」 — 캡션과 상세 템플릿 변수(수신자 언어 먼저, 그다음 다른 언어)
+  const caption = buildQuoteCaption(qt, ms, lang, level);
+  const detail = lang === 'ko'
+    ? [{ lang: 'ko', params: buildDetailParams(qt, ms, 'ko', level) }, { lang: quoteWaTemplateLang(), params: buildDetailParams(qt, ms, 'es', level) }]
+    : [{ lang: quoteWaTemplateLang(), params: buildDetailParams(qt, ms, 'es', level) }];
   const sender = senderOverride || deliverQuote;
   // 0264 · 발송 형식 · 헤더 이미지 — 한 번의 발송 묶음 안에서는 한 번만 읽고 한 번만 올린다
   if (!summaryCache.__set) summaryCache.__set = await loadQuoteWaSettings(q);
@@ -314,10 +407,12 @@ export async function sendQuoteTo(qt, rcpt, { force = false, q = query, summaryC
   try {
     res = await sender({ to: rcpt.phone, text: text.slice(0, 4000), headline: buildQuoteHeadline(qt, lang),
       templateName: quoteWaTemplate(), templateLang: quoteWaTemplateLang(), windowOpen: ws.open,
-      mode: set.send_mode, followDetail: set.follow_detail, headerMediaId });
+      mode: set.send_mode, followDetail: set.follow_detail, headerMediaId,
+      caption, detailName: quoteWaDetailTemplate(), detail });
     if (set.has_header && !headerMediaId && res && res.ok) res.text_error = `헤더 이미지 업로드 실패: ${(summaryCache.__media || {}).error || '?'}`;
   } catch (e) { res = { ok: false, error: String((e && e.message) || e).slice(0, 200) }; }
-  const status = res.ok ? ((res.mode === 'template' || res.mode === 'image_template') ? 'sent_template' : 'sent_text') : 'failed';
+  const STATUS = { template: 'sent_template', image_template: 'sent_template', detail_template: 'sent_detail', image: 'sent_image', text: 'sent_text' };
+  const status = res.ok ? (STATUS[res.mode] || 'sent_text') : 'failed';
   await q(
     `UPDATE quote_wa_sends SET status = $2, message_id = COALESCE($3, message_id), error = $4,
             attempts = attempts + 1, sent_at = CASE WHEN $5 THEN now() ELSE sent_at END, claimed_at = NULL, updated_at = now()

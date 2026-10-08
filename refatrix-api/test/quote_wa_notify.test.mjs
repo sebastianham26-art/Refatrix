@@ -78,7 +78,7 @@ test('A5. 2026-10-08 · 템플릿 우선 — 창이 「열림」 확실할 때�
       template: async (param, o) => { calls.push(['template', o.name, o.lang, param]); return tplOk ? { ok: true, message_id: 'P' } : { ok: false, code: tplCode, error: 'Template error' }; },
       imageTemplate: async (a) => { calls.push(['imageTemplate', a.name, a.lang, a.param, a.mediaId]); return tplOk ? { ok: true, message_id: 'I' } : { ok: false, code: tplCode, error: 'Template error' }; } } }; };
   let tplCode = 132001;
-  const base = { to: '528110000001', text: 'full', headline: 'one line', templateName: 'nueva_cotizacion', templateLang: 'es_MX' };
+  const base = { to: '528110000001', text: 'full', headline: 'one line', templateName: 'nueva_cotizacion', templateLang: 'es_MX', mode: 'template' };
   let m = mk(); let r = await N.deliverQuote({ ...base, windowOpen: null }, m.api);
   assert.equal(r.mode, 'template', '창 상태를 모르면 템플릿(전에는 텍스트 → 창 밖이면 안 감)');
   assert.deepEqual(m.calls, [['template', 'nueva_cotizacion', 'es_MX', 'one line']]);
@@ -112,6 +112,59 @@ test('A5. 2026-10-08 · 템플릿 우선 — 창이 「열림」 확실할 때�
   const keep = process.env.QUOTE_WA_TEMPLATE; delete process.env.QUOTE_WA_TEMPLATE;
   assert.equal(N.quoteWaTemplate(), 'nueva_cotizacion', '이름을 비워도 승인 템플릿으로');
   if (keep) process.env.QUOTE_WA_TEMPLATE = keep;
+});
+
+test('A6. 0265 · rich(헤더 이미지 + 상세) — 창 안 = 이미지+캡션 · 창 밖 = 상세 템플릿(변수 16 · ko→es_MX) · 실패 → 한 줄 템플릿', async () => {
+  // 캡션 ≤1024 · 변수 16개 · 줄바꿈 없음
+  const big = { ...MS, teamNames: ['A', 'B', 'C', 'D', 'E'] };
+  const cap = N.buildQuoteCaption(QT, big, 'ko', 'full');
+  assert.ok(cap.length <= 1024, cap.length); assert.ok(cap.includes('Q26-0100') && cap.includes('수주현황') && cap.includes('① 총 견적액'));
+  assert.ok(cap.includes('5개 팀') && !cap.includes('A, B, C'), '팀이 많으면 이름 대신 개수');
+  const huge = N.buildQuoteCaption({ ...QT, customer_name: 'X'.repeat(900) }, MS, 'ko', 'full');
+  assert.ok(huge.length <= 1024);
+  const pk = N.buildDetailParams(QT, MS, 'ko', 'full');
+  assert.equal(pk.length, N.DETAIL_PARAM_COUNT);
+  assert.ok(pk.every((v) => v && !/[\n\t]/.test(v)));
+  assert.equal(pk[0], 'Q26-0100'); assert.match(pk[1], /REFACCIONARIA SUR \(02_Merida\) · 고객 PO OC-77/);
+  assert.equal(pk[3], '5'); assert.equal(pk[4], '40'); assert.match(pk[5], /^3 SKU · 30 개 · \$10,000\.00$/);
+  assert.match(pk[8], /\$12,000\.00 \(IVA 제외\) · \$13,920\.00 \(IVA 포함\)/);
+  assert.match(pk[9], /\$250,000\.00 · 견적 12건/); assert.match(pk[14], /\$60,000\.00 · 이익률 40%/);
+  assert.deepEqual(N.buildDetailParams(QT, MS, 'ko', 'no_profit').slice(14), ['—', '—']);
+  assert.deepEqual(N.buildDetailParams(QT, null, 'es', 'full').slice(9), Array(7).fill('—'));
+  assert.match(N.buildDetailParams(QT, MS, 'es', 'full')[9], /12 cotizaciones/);
+
+  let failCodes = [];
+  const mk = () => { const calls = [];
+    return { calls, api: {
+      text: async (a) => { calls.push(['text']); return { ok: true, message_id: 'T' }; },
+      image: async (a) => { calls.push(['image', a.mediaId, a.caption]); return { ok: true, message_id: 'IM' }; },
+      template: async (param, o) => { calls.push(['template', o.name]); return { ok: true, message_id: 'P' }; },
+      imageTemplate: async (a) => { calls.push(['imageTemplate', a.name, a.mediaId]); return { ok: true, message_id: 'I' }; },
+      paramsTemplate: async (a) => { calls.push(['paramsTemplate', a.name, a.lang, a.mediaId, a.params.length]);
+        const c = failCodes.shift(); return c ? { ok: false, code: c, error: 'tpl err' } : { ok: true, message_id: 'D' }; } } }; };
+  const detail = [{ lang: 'ko', params: pk }, { lang: 'es_MX', params: N.buildDetailParams(QT, MS, 'es', 'full') }];
+  const base = { to: '528110000001', text: 'full', headline: 'one line', caption: 'CAP', templateName: 'nueva_cotizacion', templateLang: 'es_MX',
+    headerMediaId: 'MED', detailName: 'cotizacion_detalle', detail };
+  let m = mk(); let r = await N.deliverQuote({ ...base, windowOpen: true }, m.api);
+  assert.equal(r.mode, 'image', '기본 mode = rich'); assert.deepEqual(m.calls, [['image', 'MED', 'CAP']]);
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: true, headerMediaId: null }, m.api);
+  assert.deepEqual(m.calls.map((c) => c[0]), ['text'], '헤더 이미지 없으면 상세 텍스트');
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
+  assert.equal(r.mode, 'detail_template'); assert.deepEqual(m.calls, [['paramsTemplate', 'cotizacion_detalle', 'ko', 'MED', 16]]);
+  // ko 번역 없음(#132001) → es_MX
+  failCodes = [132001]; m = mk(); r = await N.deliverQuote({ ...base, windowOpen: null }, m.api);
+  assert.equal(r.mode, 'detail_template'); assert.deepEqual(m.calls.map((c) => c[2]), ['ko', 'es_MX']); assert.match(r.text_error, /#132001.*es_MX 으로 보냄/);
+  // 상세 템플릿 아직 승인 전(둘 다 #132001) → nueva_cotizacion 한 줄 + 헤더 이미지
+  failCodes = [132001, 132001]; m = mk(); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
+  assert.equal(r.mode, 'image_template'); assert.deepEqual(m.calls.map((c) => c[0]), ['paramsTemplate', 'paramsTemplate', 'imageTemplate']);
+  assert.match(r.text_error, /cotizacion_detalle\(ko\) 실패 #132001.*nueva_cotizacion 한 줄로 보냄/);
+  // 다른 오류(#100 변수 수)면 다음 언어를 시도하지 않고 바로 한 줄 템플릿
+  failCodes = [100]; m = mk(); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
+  assert.deepEqual(m.calls.map((c) => c[0]), ['paramsTemplate', 'imageTemplate']);
+  // 상세 템플릿 끔(이름 비움) → 한 줄 템플릿
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: false, detailName: '' }, m.api);
+  assert.deepEqual(m.calls.map((c) => c[0]), ['imageTemplate']);
+  assert.equal(N.quoteWaDetailTemplate(), process.env.QUOTE_WA_DETAIL_TEMPLATE || 'cotizacion_detalle');
 });
 
 test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, async (t) => {
@@ -352,6 +405,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const keepEnv = { ...process.env };
     delete process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN; delete process.env.WHATSAPP_APP_SECRET;   // 창 상태 모름
     delete process.env.QUOTE_WA_TEMPLATE; delete process.env.WHATSAPP_TEMPLATE_LANG; delete process.env.QUOTE_WA_TEMPLATE_LANG;
+    await query(`UPDATE quote_wa_settings SET send_mode='template' WHERE id=1`);   // 0265 뒤 기본은 rich — 이 시험은 한 줄 템플릿 규칙
     try {
       const q = await newQuote(); await wait(1200);
       const t1 = graph.filter((g) => g.to === '528110005311');
@@ -381,6 +435,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
       assert.equal(lg.status, 'failed'); assert.match(lg.error, /#132001/);
     } finally {
       globalThis.fetch = keepFetch; process.env = keepEnv;
+      await query(`UPDATE quote_wa_settings SET send_mode='rich' WHERE id=1`);
       N.setQuoteWaSender(stubSender);
     }
   });
@@ -400,7 +455,8 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const mine = (g) => g.filter((x) => x.to === '528110005311');
     try {
       let st = (await call(D, 'GET', '/api/quote-wa/settings')).json();
-      assert.equal(st.send_mode, 'template', '기본 = 항상 디자인'); assert.equal(st.follow_detail, true); assert.equal(st.has_header, false);
+      assert.equal(st.send_mode, 'rich', '0265 기본 = 헤더 이미지 + 상세'); assert.equal(st.follow_detail, true); assert.equal(st.has_header, false);
+      await call(D, 'PUT', '/api/quote-wa/settings', { send_mode: 'template' });
       assert.equal((await call(D, 'PUT', '/api/quote-wa/settings', { send_mode: 'x' })).statusCode, 400);
       assert.equal((await call(D, 'PUT', '/api/quote-wa/settings', { image_b64: 'AAAA', image_mime: 'image/gif' })).statusCode, 400);
       assert.equal((await call(R, 'GET', '/api/quote-wa/settings')).statusCode, 403);
@@ -445,7 +501,64 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
       assert.equal((await call(D, 'GET', '/api/quote-wa/status')).json().settings.send_mode, 'template');
     } finally {
       globalThis.fetch = keepFetch; process.env = keepEnv;
-      await query(`UPDATE quote_wa_settings SET send_mode='template', follow_detail=true, header_image=NULL, header_mime=NULL, header_name=NULL, media_id=NULL, media_at=NULL WHERE id=1`);
+      await query(`UPDATE quote_wa_settings SET send_mode='rich', follow_detail=true, header_image=NULL, header_mime=NULL, header_name=NULL, media_id=NULL, media_at=NULL WHERE id=1`);
+      N.setQuoteWaSender(stubSender);
+    }
+  });
+
+  await t.test('B13. 0265 · rich — 창 열림 = 이미지(헤더)+캡션 한 통 · 창 닫힘 = cotizacion_detalle(헤더 이미지 + 변수 16) · 승인 전 → nueva_cotizacion', async () => {
+    N.setQuoteWaSender(null);
+    const keepFetch = globalThis.fetch; const graph = []; let uploads = 0; let detailFail = false;
+    globalThis.fetch = async (url, opt) => {
+      if (String(url).endsWith('/media')) { uploads++; return { ok: true, status: 200, json: async () => ({ id: 'RMEDIA' + uploads }) }; }
+      const b = JSON.parse(opt.body); graph.push(b);
+      if (detailFail && b.type === 'template' && b.template.name === 'cotizacion_detalle')
+        return { ok: false, status: 404, json: async () => ({ error: { code: 132001, message: 'Template name does not exist in the translation' } }) };
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.R' + graph.length }] }) };
+    };
+    const keepEnv = { ...process.env };
+    process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = 'v'; process.env.WHATSAPP_APP_SECRET = 's';
+    delete process.env.QUOTE_WA_TEMPLATE; delete process.env.QUOTE_WA_DETAIL_TEMPLATE; delete process.env.WHATSAPP_TEMPLATE_LANG; delete process.env.QUOTE_WA_TEMPLATE_LANG;
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const mine = () => graph.filter((x) => x.to === '528110005311');
+    try {
+      const st = (await call(D, 'PUT', '/api/quote-wa/settings', { send_mode: 'rich', image_b64: png, image_mime: 'image/png', image_name: 'ctr.png' })).json();
+      assert.equal(st.send_mode, 'rich');
+      // 창 열림 → 이미지 한 통(헤더 이미지 + 캡션에 상세)
+      await query(`INSERT INTO wa_inbound (wa_from, last_at, last_type, msg_count) VALUES ('528110005311', now(), 'text', 1)
+                   ON CONFLICT (wa_from) DO UPDATE SET last_at = now()`);
+      const q1 = await newQuote(); await wait(1200);
+      let m = mine();
+      assert.equal(m.length, 1, '한 통만'); assert.equal(m[0].type, 'image'); assert.equal(m[0].image.id, 'RMEDIA1');
+      const cap = m[0].image.caption;
+      assert.ok(cap.length <= 1024 && cap.includes(q1.quote_no) && cap.includes('수주현황') && cap.includes('견적액'), cap);
+      let lg = (await query(`SELECT status, error FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q1.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'sent_image'); assert.equal(lg.error, null);
+      // 창 닫힘 → 상세 템플릿(헤더 이미지 + 변수 16) · 수신자 한국어 → ko
+      await query(`DELETE FROM wa_inbound WHERE wa_from='528110005311'`);
+      graph.length = 0; const q2 = await newQuote(); await wait(1200);
+      m = mine(); assert.equal(m.length, 1); assert.equal(m[0].type, 'template');
+      assert.equal(m[0].template.name, 'cotizacion_detalle'); assert.equal(m[0].template.language.code, 'ko');
+      const [hd, bd] = m[0].template.components;
+      assert.equal(hd.type, 'header'); assert.equal(hd.parameters[0].image.id, 'RMEDIA1'); assert.equal(uploads, 1);
+      assert.equal(bd.parameters.length, 16); assert.equal(bd.parameters[0].text, q2.quote_no);
+      assert.ok(bd.parameters.every((p) => p.text && !/[\n\t]/.test(p.text)));
+      lg = (await query(`SELECT status FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q2.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'sent_detail');
+      // 상세 템플릿 승인 전 → ko·es_MX 둘 다 #132001 → nueva_cotizacion(헤더 이미지 + 한 줄) · 사유는 원장에
+      detailFail = true; graph.length = 0; const q3 = await newQuote(); await wait(1200);
+      m = mine();
+      assert.deepEqual(m.map((x) => `${x.template.name}:${x.template.language.code}`), ['cotizacion_detalle:ko', 'cotizacion_detalle:es_MX', 'nueva_cotizacion:es_MX']);
+      assert.equal(m[2].template.components[0].parameters[0].image.id, 'RMEDIA1');
+      lg = (await query(`SELECT status, error FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q3.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'sent_template'); assert.match(lg.error, /cotizacion_detalle.*#132001.*nueva_cotizacion 한 줄로 보냄/);
+      // 미리보기 — 캡션 + 변수 16개 · 상태에 상세 템플릿 이름
+      const pv = (await call(D, 'GET', `/api/quote-wa/preview?quote_id=${q3.id}`)).json();
+      assert.ok(pv.caption.length <= 1024 && pv.caption.includes(q3.quote_no)); assert.equal(pv.detail_params.length, 16);
+      assert.equal((await call(D, 'GET', '/api/quote-wa/status')).json().detail_template, 'cotizacion_detalle');
+    } finally {
+      globalThis.fetch = keepFetch; process.env = keepEnv;
+      await query(`UPDATE quote_wa_settings SET send_mode='rich', follow_detail=true, header_image=NULL, header_mime=NULL, header_name=NULL, media_id=NULL, media_at=NULL WHERE id=1`);
       N.setQuoteWaSender(stubSender);
     }
   });
