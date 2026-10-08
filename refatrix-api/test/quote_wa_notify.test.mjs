@@ -71,6 +71,31 @@ test('A4. 당월 요약 — 화면 카드 7칸 순서 · 이익 제외 · 끔 ·
   assert.match(N.mxYm(Date.parse('2026-11-01T03:00:00Z')), /^2026-10$/, '멕시코 날짜 기준(UTC 11/1 03시 = 멕시코 10/31)');
 });
 
+test('A5. 2026-10-08 · 템플릿 우선 — 창이 「열림」 확실할 때만 텍스트, 모르거나 닫힘이면 템플릿 · 실패 사유 보존', async () => {
+  const mk = (tplOk = true, textOk = true) => { const calls = [];
+    return { calls, api: {
+      text: async (a) => { calls.push(['text', a.to]); return textOk ? { ok: true, message_id: 'T' } : { ok: false, error: 'txt_err' }; },
+      template: async (param, o) => { calls.push(['template', o.name, o.lang, param]); return tplOk ? { ok: true, message_id: 'P' } : { ok: false, code: 132001, error: 'Template name does not exist in the translation' }; } } }; };
+  const base = { to: '528110000001', text: 'full', headline: 'one line', templateName: 'nueva_cotizacion', templateLang: 'es_MX' };
+  let m = mk(); let r = await N.deliverQuote({ ...base, windowOpen: null }, m.api);
+  assert.equal(r.mode, 'template', '창 상태를 모르면 템플릿(전에는 텍스트 → 창 밖이면 안 감)');
+  assert.deepEqual(m.calls, [['template', 'nueva_cotizacion', 'es_MX', 'one line']]);
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
+  assert.equal(r.mode, 'template'); assert.equal(m.calls.length, 1);
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: true }, m.api);
+  assert.equal(r.mode, 'text'); assert.deepEqual(m.calls, [['text', '528110000001']], '창 열림이면 무료 상세 텍스트');
+  m = mk(true, false); r = await N.deliverQuote({ ...base, windowOpen: true }, m.api);
+  assert.equal(r.mode, 'template', '텍스트가 실패하면 템플릿');
+  m = mk(false); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
+  assert.equal(r.ok, false); assert.match(r.error, /nueva_cotizacion\(es_MX\) 실패 #132001/); assert.equal(m.calls.length, 1, '창 닫힘이면 텍스트를 보내지 않음');
+  m = mk(false); r = await N.deliverQuote({ ...base, windowOpen: null }, m.api);
+  assert.equal(r.ok, true); assert.equal(r.mode, 'text'); assert.match(r.text_error, /#132001.*텍스트로 보냄/, '모를 때만 마지막 수단 텍스트 + 사유');
+  assert.equal(N.quoteWaTemplate(), process.env.QUOTE_WA_TEMPLATE || 'nueva_cotizacion');
+  const keep = process.env.QUOTE_WA_TEMPLATE; delete process.env.QUOTE_WA_TEMPLATE;
+  assert.equal(N.quoteWaTemplate(), 'nueva_cotizacion', '이름을 비워도 승인 템플릿으로');
+  if (keep) process.env.QUOTE_WA_TEMPLATE = keep;
+});
+
 test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, async (t) => {
   const { query, pool } = await import('../src/db.js');
   after(async () => { await pool.end().catch(() => {}); setTimeout(() => process.exit(process.exitCode || 0), 300); });
@@ -82,12 +107,13 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
 
   // 발송 스텁 — 실제 Meta 호출 없이 무엇이 나갔는지 기록
   const sent = []; let mode = 'ok'; let seq = 0;
-  N.setQuoteWaSender(async (a) => {
+  const stubSender = async (a) => {
     sent.push(a);
     if (mode === 'fail') return { ok: false, error: 'boom' };
     if (mode === 'slow') await wait(200);
     return { ok: true, mode: a.windowOpen === false ? 'template' : 'text', message_id: `wamid.Q${++seq}` };
-  });
+  };
+  N.setQuoteWaSender(stubSender);
   t.after(() => N.setQuoteWaSender(null));
 
   const { buildApp } = await import('../src/server.js');
@@ -295,6 +321,50 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     sent.length = 0; await newQuote(); await wait(1200);
     assert.ok(!sent.find((x) => x.to === '528110007777').text.includes('📊'));
     await call(D, 'DELETE', `/api/quote-wa/recipients/${rp.id}`);
+  });
+
+  await t.test('B11. 2026-10-08 · 실제 Meta 호출 모양 — 웹훅 없이도 템플릿 nueva_cotizacion(es_MX)로 · 템플릿 실패는 원장에 사유', async () => {
+    N.setQuoteWaSender(null);
+    const keepFetch = globalThis.fetch; const graph = []; let tplFail = false;
+    globalThis.fetch = async (url, opt) => {
+      const b = JSON.parse(opt.body); graph.push(b);
+      if (b.type === 'template' && tplFail) return { ok: false, status: 400, json: async () => ({ error: { code: 132001, message: 'Template name does not exist in the translation' } }) };
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.G' + graph.length }] }) };
+    };
+    const keepEnv = { ...process.env };
+    delete process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN; delete process.env.WHATSAPP_APP_SECRET;   // 창 상태 모름
+    delete process.env.QUOTE_WA_TEMPLATE; delete process.env.WHATSAPP_TEMPLATE_LANG; delete process.env.QUOTE_WA_TEMPLATE_LANG;
+    try {
+      const q = await newQuote(); await wait(1200);
+      const t1 = graph.filter((g) => g.to === '528110005311');
+      assert.equal(t1.length, 1); assert.equal(t1[0].type, 'template', '텍스트가 아니라 템플릿');
+      assert.equal(t1[0].template.name, 'nueva_cotizacion'); assert.equal(t1[0].template.language.code, 'es_MX');
+      const p1 = t1[0].template.components[0].parameters[0].text;
+      assert.ok(p1.includes(q.quote_no) && !/\n/.test(p1));
+      let lg = (await query(`SELECT status, error FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'sent_template');
+      // 템플릿 실패(이름·언어 불일치) → 창 상태를 모르니 텍스트로 · 사유 보존 · 화면 원장에 보임
+      tplFail = true; graph.length = 0;
+      const q2 = await newQuote(); await wait(1200);
+      const t2 = graph.filter((g) => g.to === '528110005311');
+      assert.deepEqual(t2.map((g) => g.type), ['template', 'text']);
+      lg = (await query(`SELECT status, error FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q2.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'sent_text'); assert.match(lg.error, /#132001/);
+      const st = (await call(D, 'GET', '/api/quote-wa/status')).json();
+      assert.equal(st.template, 'nueva_cotizacion'); assert.equal(st.template_lang, 'es_MX'); assert.equal(st.template_set, false);
+      assert.ok(st.recent.some((x) => x.quote_id === Number(q2.id) && /#132001/.test(x.error || '')));
+      // 웹훅으로 창 「닫힘」을 알면 텍스트는 아예 안 보냄
+      process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = 'v'; process.env.WHATSAPP_APP_SECRET = 's';
+      await query(`DELETE FROM wa_inbound WHERE wa_from='528110005311'`);
+      graph.length = 0;
+      const q3 = await newQuote(); await wait(1200);
+      assert.deepEqual(graph.filter((g) => g.to === '528110005311').map((g) => g.type), ['template']);
+      lg = (await query(`SELECT status, error FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q3.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'failed'); assert.match(lg.error, /#132001/);
+    } finally {
+      globalThis.fetch = keepFetch; process.env = keepEnv;
+      N.setQuoteWaSender(stubSender);
+    }
   });
 
   await t.test('B9. 미리보기 · 꺼짐 스위치 · 수신자 삭제', async () => {

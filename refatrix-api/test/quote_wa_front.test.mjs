@@ -60,7 +60,7 @@ function boot(role = 'director') {
 test('신규 견적 WhatsApp 알림 패널 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 디렉터: 버튼 → 패널 · 상태 · 수신자(팀 범위 · 24시간 창) · 원장(읽음/실패 사유) · 미리보기', async () => {
     const c = boot(); await c.ready; await tick(500);
-    assert.match(c.d.title, /ql-1007wa2/);
+    assert.match(c.d.title, /ql-1008tp/);
     const btn = c.d.getElementById('qwOpen'); assert.ok(btn, '디렉터에게 버튼');
     btn.click(); await tick(300);
     assert.ok(c.d.getElementById('qwModal').classList.contains('on'));

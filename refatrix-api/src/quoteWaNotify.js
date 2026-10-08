@@ -15,12 +15,12 @@
 //     · 수신자 등록 이전에 만들어진 견적은 보내지 않는다(등록 순간 옛 견적이 몰려가지 않게).
 //     · 팀 범위: 수신자의 team_ids 가 있으면 그 팀 고객의 견적만(고객 미지정 견적은 작성자 팀).
 //
-//   발송 규칙: 웹훅이 24시간 창이 닫힌 것을 알면 템플릿부터(QUOTE_WA_TEMPLATE → WHATSAPP_TEMPLATE),
+//   발송 규칙(2026-10-08 수정): 24시간 창이 열린 게 확실할 때만 자유 텍스트, 그 밖에는 항상 템플릿(QUOTE_WA_TEMPLATE, 기본 nueva_cotizacion) — deliverQuote 참고.
 //     아니면 텍스트 → 실패 시 템플릿 한 줄. 창 밖 실패(131047)는 웹훅이 원장을 다시 열어 재시도한다.
 //   끄기: QUOTE_WA_ENABLED=0
 // =====================================================================
 import { query } from './db.js';
-import { sendWaTo, waApiReady } from './waSend.js';
+import { sendWaText, sendWaTemplate, waApiReady } from './waSend.js';
 import { windowState } from './waWebhook.js';
 import { computeQuoteSummary } from './quoteSummary.js';   // 0257 · 당월 요약(KPI 7칸)
 
@@ -31,7 +31,36 @@ export const STALE_CLAIM_MIN = 5;
 let senderOverride = null;                     // 테스트용
 export function setQuoteWaSender(fn) { senderOverride = fn || null; }
 export const quoteWaEnabled = () => process.env.QUOTE_WA_ENABLED !== '0';
-export const quoteWaTemplate = () => process.env.QUOTE_WA_TEMPLATE || process.env.WHATSAPP_TEMPLATE || null;
+// 2026-10-08 · 기본 = 승인받은 nueva_cotizacion (이름을 비워 둬도 이 템플릿으로 간다). 언어는 승인 때 고른 것과 같아야 한다.
+export const quoteWaTemplate = () => process.env.QUOTE_WA_TEMPLATE || 'nueva_cotizacion';
+export const quoteWaTemplateLang = () => process.env.QUOTE_WA_TEMPLATE_LANG || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX';
+
+// 2026-10-08 디렉터 점검 — 「템플릿이 승인됐는데도 창 밖 수신자가 못 받는다」
+//   전에는 공용 sendWaTo 를 썼다: 24시간 창이 「닫힘」으로 확실할 때만 템플릿, 그 밖(모름 · 템플릿 실패)은 자유 텍스트.
+//   Meta 는 창 밖 자유 텍스트도 일단 「접수」로 답하고 나중에 131047 로 버린다 → 원장엔 성공, 휴대폰엔 안 옴.
+//   템플릿 실패 사유도 버려져 원인을 볼 수 없었다.
+//   이제: 창이 「열림」으로 확실할 때만 자유 텍스트(무료 · 상세). 그 밖에는 항상 템플릿.
+//     · 템플릿이 실패하면 사유를 남긴다. 창이 「닫힘」이면 텍스트는 보내지 않는다(어차피 안 감 → 실패로 두고 재시도).
+//     · 창 상태를 모를 때(웹훅 미설정)만 마지막 수단으로 텍스트 — 이때도 템플릿 실패 사유를 함께 남긴다.
+export const DEFAULT_QUOTE_API = { text: ({ to, text }) => sendWaText(text, to), template: (param, opts) => sendWaTemplate(param, opts) };
+export async function deliverQuote({ to, text, headline, templateName = quoteWaTemplate(), templateLang = quoteWaTemplateLang(), windowOpen = null }, api = DEFAULT_QUOTE_API) {
+  if (windowOpen === true) {
+    const r = await api.text({ to, text });
+    if (r.ok) return { ok: true, mode: 'text', message_id: r.message_id };
+  }
+  let tErr = 'no_template';
+  if (templateName) {
+    const t = await api.template(headline, { to, name: templateName, lang: templateLang });
+    if (t.ok) return { ok: true, mode: 'template', message_id: t.message_id };
+    tErr = `템플릿 ${templateName}(${templateLang}) 실패${t.code ? ' #' + t.code : ''}: ${t.error}`;
+  }
+  if (windowOpen === null) {
+    const r = await api.text({ to, text });
+    if (r.ok) return { ok: true, mode: 'text', message_id: r.message_id, text_error: `${tErr} — 텍스트로 보냄(24시간 창 밖이면 도착 안 함)` };
+    return { ok: false, error: `${tErr} / 텍스트: ${r.error}` };
+  }
+  return { ok: false, error: tErr };
+}
 export const maskPhone = (p) => { const s = String(p || ''); return s ? s.slice(0, 3) + '****' + s.slice(-4) : null; };
 
 const n = (v) => Number(v) || 0;
@@ -225,11 +254,11 @@ export async function sendQuoteTo(qt, rcpt, { force = false, q = query, summaryC
     try { const ms = await monthSummaryFor(rcpt, { cache: summaryCache, q }); const add = buildMonthSummaryText(ms, lang, level); if (add) text += '\n\n' + add; }
     catch (_) { /* 요약 실패 — 본문만 */ }
   }
-  const sender = senderOverride || sendWaTo;
+  const sender = senderOverride || deliverQuote;
   let res;
   try {
     res = await sender({ to: rcpt.phone, text: text.slice(0, 4000), headline: buildQuoteHeadline(qt, lang),
-      templateName: quoteWaTemplate(), windowOpen: ws.open });
+      templateName: quoteWaTemplate(), templateLang: quoteWaTemplateLang(), windowOpen: ws.open });
   } catch (e) { res = { ok: false, error: String((e && e.message) || e).slice(0, 200) }; }
   const status = res.ok ? (res.mode === 'template' ? 'sent_template' : 'sent_text') : 'failed';
   await q(

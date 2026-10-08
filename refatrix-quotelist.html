@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1007wa2</title>
+<title>Refatrix ERP · 견적 목록 · ql-1008tp</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -288,7 +288,7 @@
     return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
   }
 
-  const QL_BUILD='ql-1007wa2';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1008tp';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -2111,13 +2111,15 @@
     var tag=function(ok,t){ return '<span class="'+(ok?'ok':'bad')+'">'+t+'</span>'; };
     $q('qwStat').innerHTML=tag(s.enabled,s.enabled?'알림 켜짐':'알림 꺼짐(QUOTE_WA_ENABLED=0)')
       +tag(s.api_ready,s.api_ready?'WhatsApp 키 OK':'WhatsApp 키 없음')
-      +tag(!!s.template,s.template?('창 밖 템플릿: '+ex(s.template)):'템플릿 없음 — 24시간 창 밖이면 못 받음')
+      +tag(!!s.template,s.template?('창 밖 템플릿: '+ex(s.template)+' ('+ex(s.template_lang||'es_MX')+')'+(s.template_set?'':' · 기본값')):'템플릿 없음 — 24시간 창 밖이면 못 받음')
       +tag(s.webhook,s.webhook?'웹훅 연결 — 실제 전달 확인':'웹훅 미설정');
   }
   function dlv(x){
     if(x.status==='sending') return '<span class="hint">보내는 중</span>';
     if(x.status==='failed') return '<span class="dl f">✗ '+ex(x.error||'실패')+'</span>';
-    var a=x.status==='sent_template'?'접수(템플릿)':'접수';
+    var a=x.status==='sent_template'?'접수(템플릿)':'접수(텍스트)';
+    // 2026-10-08 · 템플릿이 실패해 텍스트로 나간 건 — 창 밖이면 도착하지 않으므로 사유를 그대로 보여 준다
+    if(x.status==='sent_text'&&x.error) a+=' <span class="dl f" title="'+ex(x.error)+'">⚠ '+ex(x.error)+'</span>';
     if(x.dlv_status==='failed') return a+' · <span class="dl f">✗ 전달 실패 — '+ex(x.dlv_reason||'')+'</span>';
     if(x.dlv_status==='read') return a+' · <span class="dl r">👁 읽음</span>';
     if(x.dlv_status==='delivered') return a+' · <span class="dl r">✓✓ 도착</span>';

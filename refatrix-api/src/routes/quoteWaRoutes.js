@@ -17,7 +17,7 @@ import { waApiReady, normalizeWaNumber } from '../waSend.js';
 import { webhookConfigured, explainWaError } from '../waWebhook.js';
 import {
   loadQuoteForNotify, buildQuoteText, buildQuoteHeadline, sendQuoteTo, recipientCovers, maskPhone,
-  quoteWaEnabled, quoteWaTemplate, MAX_ATTEMPTS, LOOKBACK_HOURS,
+  quoteWaEnabled, quoteWaTemplate, quoteWaTemplateLang, MAX_ATTEMPTS, LOOKBACK_HOURS,
   SUMMARY_LEVELS, levelOf, monthSummaryFor, buildMonthSummaryText,
 } from '../quoteWaNotify.js';
 
@@ -121,7 +121,8 @@ export default async function quoteWaRoutes(app) {
           ORDER BY s.updated_at DESC LIMIT 40`)).rows;
     } catch { rows = (await query(`${SEL} ${FROM} ORDER BY s.updated_at DESC LIMIT 40`)).rows; }
     return {
-      enabled: quoteWaEnabled(), api_ready: waApiReady(), template: quoteWaTemplate(),
+      enabled: quoteWaEnabled(), api_ready: waApiReady(), template: quoteWaTemplate(), template_lang: quoteWaTemplateLang(),
+      template_set: !!process.env.QUOTE_WA_TEMPLATE,
       webhook: webhookConfigured(), max_attempts: MAX_ATTEMPTS, lookback_hours: LOOKBACK_HOURS,
       recent: rows.map((x) => {
         const o = { ...x, quote_id: Number(x.quote_id), recipient_id: Number(x.recipient_id), attempts: Number(x.attempts) };
