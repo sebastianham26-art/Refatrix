@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 오늘 요약 · build daily-0828a</title>
+<title>Refatrix ERP · 오늘 요약 · build daily-1008a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -165,7 +165,7 @@
 
     <!-- WhatsApp 자동 발송 -->
     <div class="card">
-      <div class="card-h">📲 WhatsApp 자동 발송 <span class="src">멕시코 기준 매일 오전 5시 · 전일 요약을 자동 생성해 디렉터 번호로 발송</span></div>
+      <div class="card-h">📲 WhatsApp 자동 발송 <span class="src">관리 › WhatsApp 발송 시각에서 정한 시각(기본 05:00 · 전일 요약)에 자동 생성해 디렉터 번호로 발송</span></div>
       <div id="waBox"><div class="hint">상태 확인 중…</div></div>
       <div class="genrow no-print">
         <button class="btn" id="waTestBtn" disabled>📲 어제 요약 지금 발송 (테스트)</button>
@@ -195,7 +195,7 @@
 </div>
 
 <script>
-  console.log('[daily] build daily-0828a (나의 기록 반영 + 기간 묶음 요약)');
+  console.log('[daily] build daily-1008a (나의 기록 반영 + 기간 묶음 요약)');
   let session={token:null,user:null,api:''};
   let isDirector=false, aiEnabled=false;
   let selDates=new Set();            // 선택된 날짜(YYYY-MM-DD, 월 이동해도 유지)
@@ -751,7 +751,7 @@
       if(!res.ok||d.error) throw new Error(d.error||res.status);
       let h='';
       if(d.enabled){
-        h+='<div class="hint" style="font-size:12.5px;color:var(--income)"><b>✅ 자동 발송 사용 중</b> — 매일 멕시코 시각 오전 '+d.send_hour_mx+'시, 전일 요약 → <b>'+esc(d.to_masked||'?')+'</b>'
+        h+='<div class="hint" style="font-size:12.5px;color:var(--income)"><b>✅ 자동 발송 사용 중</b> — 매일 멕시코 시각 '+esc(d.send_time||(d.send_hour_mx+':00'))+', '+(d.target_day==='today'?'당일':'전일')+' 요약'+(d.schedule_enabled===false?' <b style="color:var(--expense)">(자동 발송 꺼짐)</b>':'')+' (<a href="refatrix-wasched.html">시각 변경</a>) → <b>'+esc(d.to_masked||'?')+'</b>'
           +(d.template?' · 템플릿 폴백: '+esc(d.template)+' ('+esc(d.template_lang)+')':' · 템플릿 폴백 미설정')+'</div>';
       }else{
         h+='<div class="hint" style="font-size:12.5px;color:var(--expense)"><b>⚠ 자동 발송 미설정</b> — Railway 환경변수 필요: '
@@ -797,6 +797,6 @@
     if(ps&&ps.token){ login(); }
   })();
 </script>
-<script src="refatrix-nav.js?v=20260930vr"></script>
+<script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>

@@ -33,6 +33,7 @@ import { logEvent } from '../audit.js';
 import { MX_OFFSET_MIN } from '../workingHours.js';
 import { buildDailyPrompt, buildPeriodPrompt, periodLabel, digestStats, extractText, clip, krDate } from '../dayDigest.js';
 import { waEnabled, waConfig, sendDailySummaryWa } from '../waSend.js';
+import { loadSchedule, isDue, targetDate, mxParts } from '../waSchedule.js';   // 0262 · 발송 시각 설정
 
 const MODEL = process.env.DAILY_SUMMARY_MODEL || 'claude-sonnet-4-5-20250929';
 const MAX_DATES = 7;               // 한 번에 생성할 최대 날짜 수(순차 처리)
@@ -422,7 +423,7 @@ async function generateAndStore(dateStr, userId) {
 }
 
 // ── WhatsApp 자동 발송 (멕시코 05:00 · 전일 요약) ─────────────────────
-const WA_SEND_HOUR_MX = 5;      // MX 현지 05:00 이후 발송
+const WA_SEND_HOUR_MX = 5;      // 기본값(표시용) — 실제 시각·대상일은 관리 › WhatsApp 발송 시각(wa_schedules.daily_summary)
 const WA_MAX_ATTEMPTS = 5;      // 하루 최대 재시도(5분 간격 체크)
 
 function mxNowParts() {
@@ -577,7 +578,8 @@ export default async function dailySummaryRoutes(app) {
            FROM daily_summaries ORDER BY summary_date DESC LIMIT 7`)).rows
         .map((r) => ({ summary_date: d10(r.summary_date), wa_sent_at: r.wa_sent_at, wa_status: r.wa_status, wa_error: r.wa_error, wa_attempts: Number(r.wa_attempts) }));
     } catch (_) { /* 0161 미적용 시 */ }
-    return { ...waConfig(), ai_enabled: aiEnabled(), send_hour_mx: WA_SEND_HOUR_MX, recent };
+    const sc = await loadSchedule('daily_summary');
+    return { ...waConfig(), ai_enabled: aiEnabled(), send_hour_mx: Number(sc.send_time.slice(0, 2)), send_time: sc.send_time, target_day: sc.target_day, schedule_enabled: sc.enabled, recent };
   });
 
   // ── WhatsApp 즉시(테스트) 발송 — 디렉터 전용. body {date?} 기본=MX 어제 ──
@@ -758,15 +760,17 @@ export default async function dailySummaryRoutes(app) {
     return { ok: true, id: Number(r.id) };
   });
 
-  // ── 매일 MX 05:00 전일 요약 → WhatsApp 자동 발송 스케줄러 (5분 주기 체크) ──
-  //   · 05:00 이후 첫 체크에서 발송(서버 재시작으로 놓쳐도 그날 안에 따라잡음).
+  // ── 매일 설정 시각(기본 MX 05:00 · 전일분) 요약 → WhatsApp 자동 발송 스케줄러 (5분 주기 체크) ──
+  //   · 시각·대상일(오늘/어제)·사용 여부 = 관리 › WhatsApp 발송 시각(0262). 설정 시각 ~ +6시간 창 안에서 따라잡음.
   //   · 발송 성공(wa_sent_at) 시 하루 1회 가드 · 실패는 5분 간격 재시도(최대 5회).
   //   · WHATSAPP_* 환경변수 미설정이면 아무것도 하지 않음(무해).
   if (!globalThis.__refatrixDailyWaScheduler) {
     const tick = async () => {
       if (!waEnabled() || !aiEnabled()) return;
-      if (mxNowParts().hour < WA_SEND_HOUR_MX) return;
-      await runDailyWaJob({});
+      const sc = await loadSchedule('daily_summary');
+      const now = mxParts();
+      if (!isDue(sc, now)) return;
+      await runDailyWaJob({ dateStr: targetDate(sc, now) });
     };
     globalThis.__refatrixDailyWaScheduler = setInterval(() => { tick().catch(() => {}); }, 300000);
     setTimeout(() => { tick().catch(() => {}); }, 20000);

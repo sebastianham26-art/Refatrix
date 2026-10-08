@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · WhatsApp 발송 시각 · build wasched-1008b</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--line2:#EFEBE2;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px}
+  .wrap{max-width:900px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius);flex-wrap:wrap}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-top:14px;box-shadow:var(--shadow)}
+  .card-h{font-size:15px;font-weight:700;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+  .card-h .src{font-size:12px;color:var(--muted);font-weight:500}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff;color:var(--ink)}
+  select.tm{font-size:16px;font-weight:600;padding:6px 8px}
+  .tmrow{display:flex;align-items:center;gap:4px}.tmrow b{font-size:16px}
+  .btn{padding:8px 16px;border:1px solid var(--brand);border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d2}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none!important}.hint{font-size:12.5px;color:var(--muted);line-height:1.6}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
+  .row > div{display:flex;flex-direction:column}
+  .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);font-weight:500;margin:0}
+  .meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .pill{display:inline-block;font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px}
+  .pill.on{background:var(--income-bg);color:var(--income)}.pill.off{background:#eee;color:#666}
+  .now{font-size:13px;color:var(--muted);margin-top:12px}
+  a{color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>⏱ WhatsApp 발송 시각</h1>
+    <span class="sub">디렉터 전용 · 자동 발송 시각과 대상일을 정합니다 · 모든 시각은 멕시코 현지 시각</span>
+    <a class="portalBtn" href="refatrix-portal.html">🏠 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="card hidden" id="noDir">
+    <div class="card-h">⛔ 접근 권한 없음</div>
+    <div class="hint">「WhatsApp 발송 시각」은 디렉터 전용 화면입니다.</div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="now" id="nowMx"></div>
+    <div id="jobs"></div>
+    <div class="card">
+      <div class="card-h">ℹ 동작 방식</div>
+      <div class="hint">
+        · 서버가 5분마다 확인해서 <b>설정 시각이 지나면</b> 보냅니다(보통 설정 시각 ~ 5분 안). 서버가 잠시 멈춰도 <b>설정 시각부터 6시간 안</b>이면 따라잡고, 그 뒤에는 그날은 보내지 않습니다.<br>
+        · 같은 날짜 보고는 수신자마다 <b>한 번만</b> 갑니다. 시각을 바꿔도 이미 보낸 날은 다시 보내지 않습니다.<br>
+        · <b>그날 마감분</b>으로 보내면 발송 시각 이후에 등록한 그날 거래는 메시지에 빠집니다(화면·월간실적은 다음 날 자동 반영). 늦게 등록하는 거래가 많으면 시각을 늦추거나 「전날분」으로 바꾸세요.<br>
+        · 수신자·미리보기·테스트 발송은 <a href="refatrix-cashdaily.html">재무 › 일일 자금 · 월간실적</a>의 📲 탭, <a href="refatrix-daily.html">오늘 요약</a> 화면에서 합니다.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  console.log('[wasched] build wasched-1008b (WhatsApp 자동 발송 시각 설정)');
+  let session={token:null,user:null,api:''};
+  let DATA=null;
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const DOW=['일','월','화','수','목','금','토'];
+  const DESC={
+    treasury_daily:{icon:'💰',sub:'은행잔고·수금·지급·마감잔고 표 이미지 → 📲 탭에 등록된 수신자',
+      targets:{today:'그날 마감분 (발송하는 날의 거래)',yesterday:'전날분 (어제의 거래)'}, sunday:true},
+    treasury_monthly:{icon:'📊',sub:'월간 자금실적 이미지 → 📲 탭의 월간 수신자',
+      targets:{today:'말일에 그달 실적 (말일 거래 포함)',yesterday:'매월 1일에 지난달 실적'}},
+    daily_summary:{icon:'📋',sub:'ERP 기록 AI 요약 → 디렉터 번호(외부 서비스 키 화면)',
+      targets:{today:'그날 요약',yesterday:'전날 요약'}},
+  };
+  async function api(path,opt){
+    const o=Object.assign({},opt||{}); o.headers=Object.assign({'Content-Type':'application/json'},auth(),o.headers||{});
+    const res=await fetch(session.api+path,o); let d={}; try{ d=await res.json(); }catch(e){}
+    if(!res.ok){ const e=new Error(d.detail||d.error||('HTTP '+res.status)); e.code=d.error; throw e; }
+    return d;
+  }
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const apiBase=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg'; const ps=portalSession();
+    if(!ps&&(!login_id||!pin)){ m.className='msg err'; m.textContent='아이디와 PIN을 입력하세요.'; return; }
+    $('go').disabled=true;
+    try{
+      let d,res={ok:true};
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else{ res=await fetch(apiBase+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})}); d=await res.json(); }
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='로그인 실패: '+(d.error||res.status); return; }
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||apiBase};
+      try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
+      $('loginCard').classList.add('hidden');
+      if(((d.user&&d.user.role)||'')!=='director'){ $('noDir').classList.remove('hidden'); return; }
+      $('app').classList.remove('hidden');
+      load();
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ $('go').disabled=false; }
+  }
+  function fmtNext(s){ if(!s) return '—'; const [d,t]=s.split(' '); const p=d.split('-').map(Number); return p[1]+'/'+p[2]+' ('+DOW[new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay()]+') '+t; }
+  function fmtTs(s){ if(!s) return '—'; const d=new Date(s); if(isNaN(d)) return '—'; const m=new Date(d.getTime()-6*3600000); return (m.getUTCMonth()+1)+'/'+m.getUTCDate()+' '+String(m.getUTCHours()).padStart(2,'0')+':'+String(m.getUTCMinutes()).padStart(2,'0'); }
+  async function load(){
+    try{ DATA=await api('/api/wa-schedules'); render(); }
+    catch(e){ $('jobs').innerHTML='<div class="msg err">'+esc(e.code==='migration_required'?'마이그레이션(0262) 필요':e.message)+'</div>'; }
+  }
+  // 24시간 시·분 선택(브라우저 시간 입력의 오전/오후 표시 혼동 방지). 분은 5분 단위(+현재 값 보존).
+  function tmSel(f,max,step,cur){
+    let o=''; const seen=new Set();
+    for(let v=0;v<max;v+=step){ const t=String(v).padStart(2,'0'); seen.add(t); o+='<option value="'+t+'"'+(t===cur?' selected':'')+'>'+t+'</option>'; }
+    if(cur&&!seen.has(cur)) o+='<option value="'+esc(cur)+'" selected>'+esc(cur)+'</option>';
+    return '<select class="tm" data-f="'+f+'">'+o+'</select>';
+  }
+  function render(){
+    $('nowMx').textContent='지금 멕시코 시각: '+DATA.now_mx;
+    $('jobs').innerHTML=DATA.items.map(it=>{
+      const D=DESC[it.job]||{icon:'•',sub:'',targets:{today:'오늘',yesterday:'어제'}};
+      return '<div class="card" data-job="'+it.job+'">'
+        +'<div class="card-h">'+D.icon+' '+esc(it.label)+' <span class="pill '+(it.enabled?'on':'off')+'">'+(it.enabled?'사용 중':'꺼짐')+'</span><span class="src">'+esc(D.sub)+'</span></div>'
+        +'<div class="row">'
+        +'<div><label>발송 시각 (멕시코 · 24시간)</label><div class="tmrow">'+tmSel('hh',24,1,it.send_time.slice(0,2))+'<b>:</b>'+tmSel('mm',60,5,it.send_time.slice(3,5))+'</div></div>'
+        +'<div><label>보낼 내용</label><select data-f="target_day">'+['today','yesterday'].map(v=>'<option value="'+v+'"'+(it.target_day===v?' selected':'')+'>'+esc(D.targets[v])+'</option>').join('')+'</select></div>'
+        +'<div><label>&nbsp;</label><label class="chk"><input type="checkbox" data-f="enabled"'+(it.enabled?' checked':'')+'> 자동 발송</label></div>'
+        +(D.sunday?'<div><label>&nbsp;</label><label class="chk"><input type="checkbox" data-f="skip_empty_sunday"'+(it.skip_empty_sunday?' checked':'')+'> 일요일 거래 없으면 생략</label></div>':'')
+        +'<div><label>&nbsp;</label><button class="btn" data-act="save" disabled>저장</button></div>'
+        +'</div>'
+        +'<div class="meta"><span>다음 발송: <b data-k="next">'+esc(it.enabled?fmtNext(it.next_run):'꺼짐')+'</b></span><span>최근 발송: <b>'+esc(fmtTs(it.last_sent_at))+'</b></span>'
+        +(it.updated_at?'<span>변경: '+esc(fmtTs(it.updated_at))+(it.updated_by_name?' · '+esc(it.updated_by_name):'')+'</span>':'')+'</div>'
+        +'<div class="msg" data-k="msg"></div></div>';
+    }).join('');
+  }
+  $('jobs').addEventListener('input',(e)=>{ const c=e.target.closest('.card[data-job]'); if(c) c.querySelector('[data-act="save"]').disabled=false; });
+  $('jobs').addEventListener('change',(e)=>{ const c=e.target.closest('.card[data-job]'); if(c) c.querySelector('[data-act="save"]').disabled=false; });
+  $('jobs').addEventListener('click',async(e)=>{
+    const b=e.target.closest('[data-act="save"]'); if(!b) return;
+    const c=b.closest('.card[data-job]'); const job=c.dataset.job; const m=c.querySelector('[data-k="msg"]');
+    const v=(f)=>c.querySelector('[data-f="'+f+'"]');
+    const t=v('hh').value+':'+v('mm').value;
+    if(!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(t)){ m.className='msg err'; m.textContent='시각을 HH:MM 으로 입력하세요.'; return; }
+    const body={send_time:t,target_day:v('target_day').value,enabled:v('enabled').checked};
+    if(v('skip_empty_sunday')) body.skip_empty_sunday=v('skip_empty_sunday').checked;
+    b.disabled=true;
+    try{
+      const r=await api('/api/wa-schedules/'+job,{method:'PUT',body:JSON.stringify(body)});
+      m.className='msg ok'; m.textContent='저장했습니다 — 다음 발송: '+(r.enabled?fmtNext(r.next_run):'꺼짐');
+      const it=DATA.items.find(x=>x.job===job); Object.assign(it,r);
+      c.querySelector('[data-k="next"]').textContent=r.enabled?fmtNext(r.next_run):'꺼짐';
+      const pill=c.querySelector('.pill'); pill.className='pill '+(r.enabled?'on':'off'); pill.textContent=r.enabled?'사용 중':'꺼짐';
+    }catch(err){ m.className='msg err'; m.textContent='저장 실패: '+(err.code==='migration_required'?'마이그레이션(0262) 필요':err.message); b.disabled=false; }
+  });
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  (function boot(){ const ps=portalSession(); if(ps&&ps.token) login(); })();
+</script>
+<script src="refatrix-nav.js?v=20261008ws"></script>
+</body>
+</html>

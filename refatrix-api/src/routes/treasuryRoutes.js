@@ -21,6 +21,7 @@ import { logEvent } from '../audit.js';
 import { waApiReady, normalizeWaNumber } from '../waSend.js';
 import { webhookConfigured, explainWaError } from '../waWebhook.js';   // 0253
 import { svgToPng, imageReady } from '../treasuryImage.js';
+import { loadSchedules } from '../waSchedule.js';
 import {
   isYmd, isMonth, mxNow, addDays, monthBounds, prevMonth, computeWeek, computeActualDays, summarizeMonth,
   upsertSnapshots, loadSnapshotMeta, driftOf, flatOf, prepareDaily, prepareMonthly, sendReport, maskPhone,
@@ -184,40 +185,48 @@ export default async function treasuryRoutes(app) {
       format: imageFormatOn() ? 'image' : 'text', image_ready: imageReady(),
       image_template: process.env.TREASURY_WA_IMAGE_TEMPLATE || null,
       enabled: process.env.TREASURY_DAILY_ENABLED !== '0',
-      schedule: { send_hour_mx: SEND_HOUR_MX, daily_until_mx: DAILY_SEND_UNTIL_MX, monthly_days: MONTHLY_CATCHUP_DAYS, max_attempts: MAX_ATTEMPTS },
+      schedule: { send_hour_mx: SEND_HOUR_MX, daily_until_mx: DAILY_SEND_UNTIL_MX, monthly_days: MONTHLY_CATCHUP_DAYS, max_attempts: MAX_ATTEMPTS,
+        daily: (await loadSchedules()).treasury_daily, monthly: (await loadSchedules()).treasury_monthly, page: 'refatrix-wasched.html' },
       report_url: reportUrl(),
       webhook: { configured: webhookConfigured(), last_event_at: hookLast },
       recent,
     };
   });
 
-  function defaults(kind, period) {
+  // 기본 기간 = 다음 자동 발송이 보낼 것(발송 시각 설정 0262 기준). 당일 마감 모드면 오늘도 허용(현재까지 실적).
+  async function defaults(kind, period) {
     const today = mxNow().ymd;
+    const sc = await loadSchedules();
     if (kind === 'monthly') {
-      const p = isMonth(period) ? period : prevMonth(today.slice(0, 7));
-      if (monthBounds(p).from >= today) return { error: 'future_month' };
-      return { today, period: p };
+      const curMode = sc.treasury_monthly.target_day === 'today';
+      const p = isMonth(period) ? period : (curMode ? today.slice(0, 7) : prevMonth(today.slice(0, 7)));
+      if (monthBounds(p).from > today || (!curMode && monthBounds(p).from >= today)) return { error: 'future_month' };
+      return { today, period: p, includeToday: curMode && p === today.slice(0, 7) };
     }
-    const p = isYmd(period) ? period : addDays(today, -1);
-    if (p >= today) return { error: 'not_closed' };           // 오늘·미래는 마감 전
-    return { today, period: p };
+    const sameDayMode = sc.treasury_daily.target_day === 'today';
+    const p = isYmd(period) ? period : (sameDayMode ? today : addDays(today, -1));
+    if (p > today || (p === today && !sameDayMode)) return { error: 'not_closed' };   // 미래·(전일 모드의) 오늘은 마감 전
+    return { today, period: p, sameDay: p === today, sendTime: sc.treasury_daily.send_time };
   }
+  const prep = (kind, d) => (kind === 'monthly'
+    ? prepareMonthly(d.period, d.today, undefined, { includeToday: d.includeToday })
+    : prepareDaily(d.period, d.today, undefined, { sameDay: d.sameDay, sendTime: d.sendTime }));
 
   app.get('/api/treasury/wa/preview', G, async (req, reply) => {
     const kind = req.query.kind === 'monthly' ? 'monthly' : 'daily';
     const lang = LANGS.includes(req.query.lang) ? req.query.lang : 'es';
-    const d = defaults(kind, req.query.period);
+    const d = await defaults(kind, req.query.period);
     if (d.error) return reply.code(400).send({ error: d.error });
-    const prepared = kind === 'monthly' ? await prepareMonthly(d.period, d.today) : await prepareDaily(d.period, d.today);
+    const prepared = await prep(kind, d);
     return { kind, period: d.period, lang, ...prepared.build(lang) };
   });
 
   app.get('/api/treasury/wa/image', G, async (req, reply) => {
     const kind = req.query.kind === 'monthly' ? 'monthly' : 'daily';
     const lang = LANGS.includes(req.query.lang) ? req.query.lang : 'es';
-    const d = defaults(kind, req.query.period);
+    const d = await defaults(kind, req.query.period);
     if (d.error) return reply.code(400).send({ error: d.error });
-    const prepared = kind === 'monthly' ? await prepareMonthly(d.period, d.today) : await prepareDaily(d.period, d.today);
+    const prepared = await prep(kind, d);
     const png = await svgToPng(prepared.build(lang).svg);
     if (!png) return reply.code(503).send({ error: 'image_unavailable' });
     return reply.header('cache-control', 'no-store').type('image/png').send(png);
@@ -227,7 +236,7 @@ export default async function treasuryRoutes(app) {
     const b = req.body || {};
     const kind = b.kind === 'monthly' ? 'monthly' : 'daily';
     if (!waApiReady()) return reply.code(503).send({ error: 'wa_not_configured', detail: 'Railway 변수 WHATSAPP_TOKEN · WHATSAPP_PHONE_ID 가 필요합니다.' });
-    const d = defaults(kind, b.period);
+    const d = await defaults(kind, b.period);
     if (d.error) return reply.code(400).send({ error: d.error });
     let recipients;
     if (b.recipient_id != null) {
@@ -238,7 +247,7 @@ export default async function treasuryRoutes(app) {
       recipients = await activeRecipients(kind);
       if (!recipients.length) return reply.code(400).send({ error: 'no_recipients' });
     }
-    const prepared = kind === 'monthly' ? await prepareMonthly(d.period, d.today) : await prepareDaily(d.period, d.today);
+    const prepared = await prep(kind, d);
     const results = await sendReport({ kind, period: d.period, recipients, prepared, force: true });
     await logEvent({ userId: req.ctx.perm.userId, action: 'export', target: `treasury_wa:${kind}:${d.period}`,
       detail: { n: results.length, ok: results.filter((x) => x.ok).length } });

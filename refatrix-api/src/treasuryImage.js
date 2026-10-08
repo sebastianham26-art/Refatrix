@@ -105,7 +105,7 @@ export function apLine(a, size, maxW) {
 // ═════════ 일일 — 유첨 양식 ═════════
 //   cols: buildDays/projectDays 의 날짜 객체 배열(실적·오늘·예정 혼합), reportDay: 요약 대상일, sendDay: 발송일(오늘)
 //   mtd: summarizeMonth(월초~reportDay) — 하단 누계 줄
-export function dailyImageSvg({ cols, reportDay, sendDay, mtd = null, lang = 'es', maxItems = 7 }) {
+export function dailyImageSvg({ cols, reportDay, sendDay, mtd = null, lang = 'es', maxItems = 7, sendTime = null }) {
   const t = lg(lang);
   const n = cols.length;
   const LW = 150, CW = 205, W = LW + n * CW + 2, PAD = 8;
@@ -120,7 +120,7 @@ export function dailyImageSvg({ cols, reportDay, sendDay, mtd = null, lang = 'es
   // 제목
   const title = `Refatrix · ${t.dailyTitle}`;
   parts.push(R(0, 0, W, 46, C.brand), T(16, 30, title, { size: 18, bold: true, fill: '#FFFFFF' }),
-    T(W - 16, 30, t.asOf(`${dayLab(sendDay, lang)} 06:00`), { size: 13, fill: '#CFE0D8', anchor: 'end' }));
+    T(W - 16, 30, t.asOf(`${dayLab(sendDay, lang)}${sendTime ? ' ' + sendTime : ''}`), { size: 13, fill: '#CFE0D8', anchor: 'end' }));
   y = 46;
   const x0 = (i) => LW + i * CW;
   const isToday = (d) => d.date === sendDay;

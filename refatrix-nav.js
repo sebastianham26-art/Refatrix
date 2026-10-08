@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260930vr loaded (+ 재무 › 일일 자금 · 월간실적 · 영업 › 재고 예약 현황 · 제품·마케팅 › WhatsApp 마케팅)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261008ws loaded (+ 관리 › WhatsApp 발송 시각)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -172,6 +172,7 @@
     integrations:{file:'refatrix-integrations.html',name:'연동 관리',desc:'CRM 전송 주소·계약서·전송이력'},
     catalogApi:{file:'refatrix-catalog-api.html',name:'카탈로그 조회 API',desc:'고객사가 우리 카탈로그를 가져가는 창구 — 키 발급·접속창·가격 확인'},
     apikeys:{file:'refatrix-apikeys.html',name:'외부 서비스 키',desc:'Anthropic·OpenAI·WhatsApp 키·모델 설정'},
+    waSched:{file:'refatrix-wasched.html',name:'WhatsApp 발송 시각',desc:'자동 발송 시각·대상일(멕시코 시각)'},   // 2026-10-08 · 0262
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
@@ -200,7 +201,7 @@
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
     marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'marketing',   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
-    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__',
+    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__', waSched:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
@@ -213,7 +214,7 @@
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','wapromo','prodFind','prodUpload','prodHistory','priceMaster']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','approval','stockcount','inbound','relocate','zones']},
-    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','processKpi']}
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','waSched','processKpi']}
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.

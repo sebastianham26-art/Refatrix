@@ -74,6 +74,7 @@ import promoRoutes from './routes/promoRoutes.js';               // 관리 › �
 import { startPromoWorker } from './promoSync.js';               // 0237 · 종료 프로모션 자동 내리기
 import approvalRoutes from './routes/approvalRoutes.js';         // 공통 › 전자결재(0234) — 비용집행 품의·증빙·사전/사후승인
 import treasuryRoutes from './routes/treasuryRoutes.js';       // 재무 › 일일 자금·월간실적(0240) — 일별 스냅샷 누적 + WhatsApp 지정 수신자
+import waScheduleRoutes from './routes/waScheduleRoutes.js';   // 0262 · 관리 › WhatsApp 발송 시각
 import waWebhookRoutes from './routes/waWebhookRoutes.js'; // 0253 · WhatsApp 웹훅(도착·읽음·실패)
 import { startTreasuryWorker } from './treasuryDaily.js';        // 0240 · 매일 06시 스냅샷·일일 발송 / 매월 1~3일 월간 발송
 import quoteWaRoutes from './routes/quoteWaRoutes.js';          // 0256 · 신규 견적 WhatsApp 알림(수신자·원장)
@@ -176,6 +177,7 @@ export function buildApp() {
   app.register(promoRoutes);        // 프로모션 배너 → CRM 여러 곳(0237) · 공개 배너 이미지 주소 포함
   app.register(approvalRoutes);     // 전자결재 — 품의 · 결재선 · 증빙(파일당 20MB, 라우트 전용 bodyLimit) · 댓글 · 알림 · 설정
   app.register(treasuryRoutes);     // 일일 자금·월간실적 — 주간(유첨 양식)·월간·수신자·WhatsApp 발송
+  app.register(waScheduleRoutes);   // 관리 › WhatsApp 발송 시각 — 작업별 시각·대상일(0262)
   app.register(waWebhookRoutes);    // 0253 · WhatsApp 웹훅 — 실제 도착/읽음/실패 사유 + 24시간 창
   app.register(quoteWaRoutes);      // 0256 · 견적·매출 추적 › 신규 견적 WhatsApp 알림
   app.register(waPromoRoutes);      // 0260 · 제품·마케팅 › WhatsApp 마케팅

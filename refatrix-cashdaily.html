@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1007b</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1008a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -264,7 +264,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-1007b (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-1008a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -527,7 +527,10 @@
     if(!st.enabled) h+='<div class="msg err">⚠ <code>TREASURY_DAILY_ENABLED=0</code> — 자동 누적·발송이 꺼져 있습니다.</div>';
     h+='<div class="hint" style="margin-top:8px">📷 발송 형식: <b>'+(st.format==='image'?(st.image_ready?'표 이미지 + 한 줄 캡션':'이미지(폰트 파일 없음 → 텍스트로 대체)'):'텍스트')+'</b>'
       +(st.image_template?' · 창 밖 이미지 템플릿 <code>'+esc(st.image_template)+'</code>':' · 창 밖이면 <code>TREASURY_WA_IMAGE_TEMPLATE</code>(헤더 이미지 + 본문 {{1}}) 승인 시 이미지로, 없으면 한 줄 텍스트 템플릿')+'</div>';
-    h+='<div class="hint" style="margin-top:8px">⏰ <b>일일</b>: 멕시코 매일 '+sc.send_hour_mx+':00 이후 전날 요약(정오 전까지 · 일요일 무거래 생략) · <b>월간</b>: 매월 1~'+sc.monthly_days+'일 '+sc.send_hour_mx+':00 이후 전월 실적 · 실패 시 5분 간격 최대 '+sc.max_attempts+'회 재시도 · 성공은 수신자별 1회.<br>'
+    const dS=sc.daily||{send_time:sc.send_hour_mx+':00',target_day:'yesterday',enabled:true}, mS=sc.monthly||{send_time:sc.send_hour_mx+':00',target_day:'yesterday',enabled:true};
+    h+='<div class="hint" style="margin-top:8px">⏰ <b>일일</b>: '+(dS.enabled===false?'<b style="color:var(--expense)">꺼짐</b>':'멕시코 매일 <b>'+esc(dS.send_time)+'</b> · '+(dS.target_day==='today'?'그날 마감분':'전날분')+(dS.skip_empty_sunday?' · 일요일 무거래 생략':''))
+      +' · <b>월간</b>: '+(mS.enabled===false?'<b style="color:var(--expense)">꺼짐</b>':(mS.target_day==='today'?'말일 '+esc(mS.send_time)+' 그달 실적':'매월 1일 '+esc(mS.send_time)+' 지난달 실적')+' (놓치면 1~'+sc.monthly_days+'일 따라잡기)')
+      +' · <a href="'+esc(sc.page||'refatrix-wasched.html')+'">⏱ 발송 시각 변경</a> · 실패 시 5분 간격 최대 '+sc.max_attempts+'회 재시도 · 성공은 수신자별 1회.<br>'
       +'자유 텍스트는 수신자가 최근 24시간 안에 비즈니스 번호로 메시지를 보낸 경우에만 도달합니다(Meta 정책). 매일 확실히 받으려면 본문 <code>{{1}}</code> 유틸리티 템플릿을 승인받아 <code>TREASURY_WA_TEMPLATE</code>(또는 공용 <code>WHATSAPP_TEMPLATE</code>)에 등록하세요 — 그러면 창 밖에서도 한 줄 요약이 도착합니다.</div>';
     $('waStatus').innerHTML=h;
     $('sendBtn').disabled=!st.api_ready;
@@ -641,6 +644,6 @@
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   (function boot(){ const ps=portalSession(); if(ps&&ps.token) login(); })();
 </script>
-<script src="refatrix-nav.js?v=20260930vr"></script>
+<script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>

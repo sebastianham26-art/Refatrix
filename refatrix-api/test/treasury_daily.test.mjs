@@ -180,7 +180,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-1007b/);
+  assert.match(page, /build cashd-1008a/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -321,7 +321,12 @@ E('C3 월간 + 스냅샷 최초본 보존 + 사후 수정 감지', async () => {
   await query(`DELETE FROM transactions WHERE account_id=$1 AND txn_date='2026-09-20'`, [S.mxn]);
 });
 
-E('C4 스케줄 — 10/1 07시: 일일(9/30)·월간(9월) 발송 · 1회 가드 · 실패 5회 상한 · 창 밖 시간 무발송', async () => {
+// 예전 동작(06:00 · 전날분 · 월간 1일) = 설정 화면에서 「전날분」으로 고른 경우와 같다 — 그대로 회귀 검증
+const LEGACY = {
+  treasury_daily: { send_time: '06:00', target_day: 'yesterday', enabled: true, skip_empty_sunday: true },
+  treasury_monthly: { send_time: '06:00', target_day: 'yesterday', enabled: true },
+};
+E('C4 스케줄(전날분 06:00 설정) — 10/1 07시: 일일(9/30)·월간(9월) 발송 · 1회 가드 · 실패 5회 상한 · 창(6시간) 밖 무발송', async () => {
   const { query } = await import('../src/db.js');
   const r1 = (await query(`INSERT INTO treasury_wa_recipients (name, phone, lang) VALUES ('Jang','5218110000001','ko') RETURNING id`)).rows[0];
   const r2 = (await query(`INSERT INTO treasury_wa_recipients (name, phone, lang, get_daily) VALUES ('Christopher','5218110000002','es',false) RETURNING id`)).rows[0];
@@ -329,7 +334,7 @@ E('C4 스케줄 — 10/1 07시: 일일(9/30)·월간(9월) 발송 · 1회 가드
   const sent = [];
   const ok = async (m) => { sent.push(m); return { ok: true, mode: 'text', message_id: 'wamid.' + sent.length }; };
   const at = (iso) => Date.parse(iso);
-  const res = await T.runTreasuryJob({ nowMs: at('2026-10-01T13:00:00Z'), sender: ok });   // MX 07:00
+  const res = await T.runTreasuryJob({ nowMs: at('2026-10-01T13:00:00Z'), sender: ok, schedules: LEGACY });   // MX 07:00
   assert.equal(res.yday, '2026-09-30');
   assert.equal(res.daily.length, 1, '일일은 get_daily 수신자만(비활성·월간전용 제외)');
   assert.equal(res.monthly.length, 2);
@@ -346,27 +351,66 @@ E('C4 스케줄 — 10/1 07시: 일일(9/30)·월간(9월) 발송 · 1회 가드
   assert.ok(!/Renta/.test(chrisMonthly.text), '비공개 지출 이름 숨김');
   assert.match(chrisMonthly.text, /refatrix-cashdaily\.html/);
   // 2회차: 성공 이력 → 재발송 없음
-  const again = await T.runTreasuryJob({ nowMs: at('2026-10-01T13:05:00Z'), sender: ok });
+  const again = await T.runTreasuryJob({ nowMs: at('2026-10-01T13:05:00Z'), sender: ok, schedules: LEGACY });
   assert.ok(again.daily.every((x) => x.skipped === 'already_sent') && again.monthly.every((x) => x.skipped === 'already_sent'));
   // 스냅샷 누적
   const n = Number((await query(`SELECT COUNT(*) AS n FROM treasury_daily_snapshots WHERE snap_date BETWEEN '2026-09-01' AND '2026-09-30'`)).rows[0].n);
   assert.equal(n, 30);
   // 실패: 10/2 일일 → 5회 후 중단
   const bad = async () => ({ ok: false, error: 'Re-engagement message', code: 131047 });
-  for (let i = 0; i < 7; i++) await T.runTreasuryJob({ nowMs: at('2026-10-02T13:00:00Z') + i * 300000, sender: bad });
+  for (let i = 0; i < 7; i++) await T.runTreasuryJob({ nowMs: at('2026-10-02T13:00:00Z') + i * 300000, sender: bad, schedules: LEGACY });
   const row = (await query(`SELECT attempts, status, error, sent_at FROM treasury_wa_sends WHERE kind='daily' AND period='2026-10-01' AND recipient_id=$1`, [r1.id])).rows[0];
   assert.equal(Number(row.attempts), 5); assert.equal(row.status, 'failed'); assert.equal(row.sent_at, null);
-  // 정오 이후 / 06시 전 → 일일 없음
-  const late = await T.runTreasuryJob({ nowMs: at('2026-10-03T19:00:00Z'), sender: ok });   // MX 13:00
-  assert.equal(late.daily.length, 0);
-  assert.equal((await T.runTreasuryJob({ nowMs: at('2026-10-03T11:00:00Z'), sender: ok })).skipped, 'early');
+  // 창(06:00~12:00) 밖 / 06시 전 → 일일 없음
+  const late = await T.runTreasuryJob({ nowMs: at('2026-10-03T19:00:00Z'), sender: ok, schedules: LEGACY });   // MX 13:00
+  assert.equal(late.daily.length, 0); assert.equal(late.daily_period, undefined);
+  const early = await T.runTreasuryJob({ nowMs: at('2026-10-03T11:00:00Z'), sender: ok, schedules: LEGACY });   // MX 05:00
+  assert.equal(early.daily.length, 0); assert.equal(early.daily_period, undefined);
   // 4일 → 월간 캐치업 종료
-  const d4 = await T.runTreasuryJob({ nowMs: at('2026-10-04T13:00:00Z'), sender: ok });
+  const d4 = await T.runTreasuryJob({ nowMs: at('2026-10-04T13:00:00Z'), sender: ok, schedules: LEGACY });
   assert.equal(d4.monthly.length, 0);
   // 일요일 무거래는 일일 생략 (10/4 일 → 10/5 발송분)
-  const mon = await T.runTreasuryJob({ nowMs: at('2026-10-05T13:00:00Z'), sender: ok });
-  assert.equal(mon.yday, '2026-10-04'); assert.equal(mon.daily.length, 0);
+  const mon = await T.runTreasuryJob({ nowMs: at('2026-10-05T13:00:00Z'), sender: ok, schedules: LEGACY });
+  assert.equal(mon.yday, '2026-10-04'); assert.equal(mon.daily.length, 0); assert.equal(mon.daily_skipped, 'empty_sunday');
   assert.ok(r2.id);
+});
+
+E('C7 스케줄(기본 = 0262 · 18:00 당일 마감 · 월간 말일) — DB 설정을 읽어 동작', async () => {
+  const { query } = await import('../src/db.js');
+  const { clearScheduleCache } = await import('../src/waSchedule.js');
+  await query(`DELETE FROM treasury_wa_sends`);
+  await query(`UPDATE wa_schedules SET send_time='18:00', target_day='today', enabled=true WHERE job IN ('treasury_daily','treasury_monthly')`);
+  clearScheduleCache();
+  const sent = [];
+  const ok = async (m) => { sent.push(m); return { ok: true, mode: 'text', message_id: 'w' + sent.length }; };
+  const at = (iso) => Date.parse(iso);
+  // 9/30(수) 17:55 MX → 아직 아님
+  const pre = await T.runTreasuryJob({ nowMs: at('2026-09-30T23:55:00Z'), sender: ok });
+  assert.equal(pre.daily.length, 0); assert.equal(pre.monthly.length, 0);
+  // 18:00 MX → 9/30 당일분 + 말일이므로 9월 월간(9/30 포함)
+  const r = await T.runTreasuryJob({ nowMs: at('2026-10-01T00:00:00Z'), sender: ok });
+  assert.equal(r.daily_period, '2026-09-30'); assert.ok(r.daily.length >= 1);
+  assert.equal(r.monthly_period, '2026-09'); assert.ok(r.monthly.length >= 1);
+  const d = sent.find((m) => /일일 자금 요약|Resumen diario/.test(m.text));
+  assert.match(d.text, /9\/30\(수\)|mié 30\/09/);
+  assert.ok(!/오늘 예정/.test(d.text), '당일 마감 발송에 「오늘 예정」 없음');
+  const p1 = await T.prepareDaily('2026-10-01', '2026-10-01', undefined, { sameDay: true, sendTime: '18:00' });
+  assert.match(p1.build('ko').text, /내일 예정 \(10\/2\(금\)\)/, '당일 마감은 「내일 예정」');
+  const snap = (await query(`SELECT 1 FROM treasury_daily_snapshots WHERE snap_date='2026-09-30'`)).rows.length;
+  assert.equal(snap, 1, '당일 스냅샷 저장');
+  // 다음날 07:00 → 아무것도(월간은 이미 보냄, 일일은 18:00 전)
+  const nx = await T.runTreasuryJob({ nowMs: at('2026-10-01T13:00:00Z'), sender: ok });
+  assert.equal(nx.daily.length, 0); assert.ok(nx.monthly.every((x) => x.skipped === 'already_sent'));
+  // 자동 발송 끄기 → 18:00 에도 일일 없음
+  await query(`UPDATE wa_schedules SET enabled=false WHERE job='treasury_daily'`); clearScheduleCache();
+  const off = await T.runTreasuryJob({ nowMs: at('2026-10-02T00:30:00Z'), sender: ok });
+  assert.equal(off.daily.length, 0); assert.equal(off.daily_period, undefined);
+  await query(`UPDATE wa_schedules SET enabled=true WHERE job='treasury_daily'`); clearScheduleCache();
+  // 이미지 머리말에 설정 시각
+  const p = await T.prepareDaily('2026-09-30', '2026-09-30', undefined, { sameDay: true, sendTime: '18:00' });
+  assert.match(p.build('ko').svg, /9\/30 \(수\) 18:00 기준/);
+  assert.equal(p.cols.find((c) => c.date === '2026-09-30').kind, 'today');
+  assert.equal(p.cols.find((c) => c.date === '2026-10-01').kind, 'plan');
 });
 
 E('C6 이미지 발송 — 업로드 1회 재사용 · 이미지 실패 시 이미지 템플릿 → 텍스트 대체 · 원장 상태', async () => {
@@ -446,7 +490,7 @@ E('C5 API — 디렉터 전용 · 수신자 CRUD(번호 정규화·중복) · �
   assert.equal(im.rawPayload.slice(1, 4).toString(), 'PNG');
   const st = (await call(D, 'GET', '/api/treasury/wa/status')).json();
   assert.equal(st.format, 'image'); assert.equal(st.image_ready, true);
-  assert.equal(st.api_ready, false); assert.equal(st.schedule.send_hour_mx, 6);
+  assert.equal(st.api_ready, false); assert.equal(st.schedule.daily.send_time, '18:00'); assert.equal(st.schedule.daily.target_day, 'today');
   const acc = (await call(D, 'GET', '/api/treasury/accounts')).json();
   const rs = Object.fromEntries(acc.accounts.map((a) => [a.id, a.reason]));
   assert.equal(rs[S.safe], 'cash_box'); assert.equal(rs[S.nd], 'non_deductible'); assert.equal(rs[S.mxn], 'auto');

@@ -21,8 +21,9 @@
 //       그 날짜로 조회하면 없는 항목이 오늘 칸에 보이던 문제, 10/1 Nom.Palomino 2건 보고). 대신 「지난 예정 미처리」로 건수·금액만 따로 알리고 잔고 예측에는 넣지 않는다.
 //
 //   ── 스케줄 (멕시코 시간, UTC-6 고정) ──
-//   · 매일 06:00 이후: 어제까지의 이번 달 스냅샷 갱신 → 일일 요약 발송(06~12시 창, 일요일 무거래는 생략)
-//   · 매월 1~3일 06:00 이후: 전월 월간실적 발송(수신자별 성공 1회)
+//   · 발송 시각·대상일은 관리 › WhatsApp 발송 시각(wa_schedules, 0262). 기본(2026-10-08 디렉터 지시):
+//       일일 = 매일 18:00 그날 마감분 · 월간 = 말일 18:00 그달(놓치면 다음 달 1~3일 따라잡기)
+//   · 스냅샷 누적은 시각과 무관하게 매 실행
 //   · 실패는 5분 간격 최대 5회 재시도. WhatsApp 미설정이어도 스냅샷 누적은 계속된다.
 //   · 발송 형식(15:13 지시): 표 이미지(PNG) + 한 줄 캡션. 실패 시 이미지 헤더 템플릿(TREASURY_WA_IMAGE_TEMPLATE) → 텍스트 순으로 대체.
 //     TREASURY_WA_FORMAT=text 면 예전 텍스트 방식.
@@ -34,11 +35,12 @@ import { AR_PAID_EPS } from './ar.js';
 import { MX_OFFSET_MIN } from './workingHours.js';
 import { waApiReady, sendWaTo, uploadWaMedia, sendWaImage, sendWaImageTemplate } from './waSend.js';
 import { dailyImageSvg, monthlyImageSvg, svgToPng } from './treasuryImage.js';
+import { loadSchedules, isDue, targetDate, toMinutes, mxParts } from './waSchedule.js';
 import { windowState } from './waWebhook.js';   // 0253 · 24시간 창(웹훅이 아는 경우)
 
 export const CURS = ['MXN', 'USD'];
-export const SEND_HOUR_MX = 6;          // 06:00 이후 발송
-export const DAILY_SEND_UNTIL_MX = 12;  // 자동 일일 발송은 정오까지만(오후에 추가된 수신자에게 어제 요약이 뒤늦게 가지 않도록)
+export const SEND_HOUR_MX = 18;         // (표시용 기본값) 실제 시각은 wa_schedules — 관리 › WhatsApp 발송 시각
+export const DAILY_SEND_UNTIL_MX = 24;  // (폐지 — waSchedule.WINDOW_MIN 6시간 창으로 대체) 하위호환용
 export const MONTHLY_CATCHUP_DAYS = 3;  // 1~3일 사이 월간 발송(서버 중단 대비)
 export const MAX_ATTEMPTS = 5;
 export const ITEM_LINES = 8;            // WA 본문에 항목 최대 줄 수(통화·방향별)
@@ -293,7 +295,7 @@ const L = {
     open: 'Saldo inicial', close: 'Saldo final', ar: 'Cobros (AR)', ap: 'Pagos (AP)', eq: 'Equiv. MXN', fx: 'TC',
     none: 'sin movimientos', more: (n) => `…y ${n} más`, adj: 'Alta de cuenta',
     mtd: (m) => `Acumulado del mes (${m})`, inL: 'Cobros', outL: 'Pagos', net: 'Neto',
-    plan: (d) => `Programado hoy (${d})`, overdue: (n, a) => `⚠ ${n} programado(s) de fechas pasadas sin procesar · MXN ${a} (revisar en lista de movimientos; no incluido)`,
+    plan: (d) => `Programado hoy (${d})`, planTomorrow: (d) => `Programado mañana (${d})`, overdue: (n, a) => `⚠ ${n} programado(s) de fechas pasadas sin procesar · MXN ${a} (revisar en lista de movimientos; no incluido)`,
     pend: (n, a) => `⚠ ${n} movimiento(s) pendiente(s) de aprobación · MXN ${a} (no incluido en saldo)`,
     priv: 'Privado', topIn: 'Principales cobros', topOut: 'Principales pagos', cat: 'Por concepto',
     change: 'Variación', minBal: 'Saldo mínimo', maxBal: 'Saldo máximo', moves: (n) => `${n} mov.`, days: (n) => `${n} días con movimiento`,
@@ -306,7 +308,7 @@ const L = {
     open: '기초잔고', close: '마감잔고', ar: '수금(AR)', ap: '지급(AP)', eq: 'MXN 환산', fx: '환율',
     none: '거래 없음', more: (n) => `…외 ${n}건`, adj: '계좌 개설',
     mtd: (m) => `이번 달 누계 (${m})`, inL: '수금', outL: '지급', net: '순액',
-    plan: (d) => `오늘 예정 (${d})`, overdue: (n, a) => `⚠ 지난 날짜 예정 미처리 ${n}건 · MXN ${a} (거래목록에서 처리/삭제 필요 · 잔고 예측 미포함)`,
+    plan: (d) => `오늘 예정 (${d})`, planTomorrow: (d) => `내일 예정 (${d})`, overdue: (n, a) => `⚠ 지난 날짜 예정 미처리 ${n}건 · MXN ${a} (거래목록에서 처리/삭제 필요 · 잔고 예측 미포함)`,
     pend: (n, a) => `⚠ 승인 대기 ${n}건 · MXN ${a} (잔고 미반영)`,
     priv: '비공개', topIn: '주요 수금처', topOut: '주요 지급', cat: '계정과목별',
     change: '증감', minBal: '최저 잔고', maxBal: '최고 잔고', moves: (n) => `${n}건`, days: (n) => `거래일 ${n}일`,
@@ -331,7 +333,7 @@ function itemLines(items, lang, n = ITEM_LINES) {
 }
 
 // 일일 요약 — day: buildDays 의 한 날 · mtd: summarizeMonth(월초~그날) · plan: projectDays 의 발송일(오늘) 1칸(선택)
-export function buildDailyText(day, { mtd = null, plan = null, lang = 'es' } = {}) {
+export function buildDailyText(day, { mtd = null, plan = null, lang = 'es', planTomorrow = false } = {}) {
   const t = lg(lang);
   const ins = day.items.filter((i) => i.dir === 'in'), outs = day.items.filter((i) => i.dir === 'out');
   const L1 = [`*${t.dailyTitle}*`, `*${dayLabel(day.date, lang)} ${day.date.slice(0, 4)}*`, ''];
@@ -352,7 +354,7 @@ export function buildDailyText(day, { mtd = null, plan = null, lang = 'es' } = {
     const pi = plan.items.filter((i) => i.state === 'plan' && i.dir === 'in');
     const po = plan.items.filter((i) => i.state === 'plan' && i.dir === 'out');
     const s = (xs) => r2(xs.reduce((a, b) => a + b.amount_mxn, 0));
-    L1.push('', `*${t.plan(dayLabel(plan.date, lang))}*`);
+    L1.push('', `*${(planTomorrow ? t.planTomorrow : t.plan)(dayLabel(plan.date, lang))}*`);
     L1.push(`${t.inL} ${pi.length} · MXN ${fmt0(s(pi))}  |  ${t.outL} ${po.length} · MXN ${fmt0(s(po))}`);
     L1.push(...itemLines([...pi, ...po].sort((a, b) => b.amount_mxn - a.amount_mxn), lang, 5).map((x) => x));
   }
@@ -641,7 +643,13 @@ export async function sendOne({ kind, period, rcpt, text, headline, png = null, 
 //   이미지 열(유첨 양식): 발송일이 요약일 다음날이면 [최근 실적 2일 + 오늘 + 예정 3일], 아니면(과거 재발송) 최근 실적 6일.
 //   일요일은 거래가 있을 때만 열로 쓴다.
 export const IMG_ACTUAL_COLS = 2, IMG_PLAN_COLS = 4;
-export async function prepareDaily(dateStr, sendDay, q = query) {
+//   opts.sameDay=true(당일 마감 발송, 0262 기본 18:00): 보고일 = 발송일, 예정은 「내일」부터, 보고일 열을 「오늘」로 표시.
+//   opts.sendTime: 이미지 머리말 「… HH:MM 기준」.
+export async function prepareDaily(dateStr, sendDay, q = query, opts = {}) {
+  const sameDay = opts.sameDay === true;
+  const sendTime = opts.sendTime || null;
+  if (sameDay) sendDay = dateStr;
+  const planStart = sameDay ? addDays(dateStr, 1) : sendDay;
   const { from } = monthBounds(dateStr.slice(0, 7));
   const winFrom = addDays(dateStr, -9);
   const all = await computeActualDays(winFrom < from ? winFrom : from, dateStr, q);
@@ -650,20 +658,24 @@ export async function prepareDaily(dateStr, sendDay, q = query) {
   const mtd = summarizeMonth(days, { mask: true });
   const keep = (d) => d.dow !== 0 || d.moved;
   let plan = null, planDays = [];
-  if (sendDay && sendDay > dateStr) {
-    try { planDays = await computePlanDays(sendDay, addDays(sendDay, 7), q); plan = planDays[0] || null; } catch (_) { planDays = []; plan = null; }
+  if (planStart && planStart > dateStr) {
+    try { planDays = await computePlanDays(planStart, addDays(planStart, 7), q); plan = planDays[0] || null; } catch (_) { planDays = []; plan = null; }
   }
-  const actualCols = all.filter(keep);
-  const cols = (sendDay === addDays(dateStr, 1) && planDays.length)
+  // 당일 마감: 보고일 열 = 「오늘」(실적), 내일 열 = 「예정」(projectDays 가 첫날을 today 로 표시하므로 바로잡음)
+  if (sameDay && planDays.length) planDays = planDays.map((d) => (d.kind === 'today' ? { ...d, kind: 'plan' } : d));
+  const actualCols = all.filter(keep).map((d) => (sameDay && d.date === dateStr ? { ...d, kind: 'today' } : d));
+  const cols = (planStart === addDays(dateStr, 1) && planDays.length)
     ? [...actualCols.slice(-IMG_ACTUAL_COLS), ...planDays.filter(keep).slice(0, IMG_PLAN_COLS)]
     : actualCols.slice(-(IMG_ACTUAL_COLS + IMG_PLAN_COLS));
-  const build = (lang) => ({ text: buildDailyText(day, { mtd, plan, lang }), headline: buildDailyHeadline(day, lang),
-    svg: dailyImageSvg({ cols, reportDay: dateStr, sendDay: sendDay || addDays(dateStr, 1), mtd, lang }) });
+  const sd = sendDay || addDays(dateStr, 1);
+  const build = (lang) => ({ text: buildDailyText(day, { mtd, plan, lang, planTomorrow: sameDay }), headline: buildDailyHeadline(day, lang),
+    svg: dailyImageSvg({ cols, reportDay: dateStr, sendDay: sd, mtd, lang, sendTime }) });
   return { days, day, mtd, plan, cols, build };
 }
-export async function prepareMonthly(month, today, q = query) {
+//   opts.includeToday=true: 말일 당일 마감 발송(0262 기본) — 오늘까지 포함
+export async function prepareMonthly(month, today, q = query, opts = {}) {
   const { from, to } = monthBounds(month);
-  const last = to < today ? to : addDays(today, -1);
+  const last = to < today ? to : (opts.includeToday ? today : addDays(today, -1));
   const days = await computeActualDays(from, last, q);
   const sum = summarizeMonth(days, { mask: true });
   const partial = last < to;
@@ -693,34 +705,53 @@ export async function sendReport({ kind, period, recipients, prepared, force = f
 }
 
 // ── 스케줄 1회 실행 (5분마다 호출) ──
-export async function runTreasuryJob({ nowMs = Date.now(), sender, imgApi, q = query } = {}) {
+//   시각·대상일은 관리 › WhatsApp 발송 시각(wa_schedules, 0262). 기본: 일일 18:00 당일 마감 · 월간 18:00 말일(그달).
+//   · 일일: 설정 시각 ~ +6시간 창 안에서 1회(수신자별 성공 1회 가드). 일요일 무거래는 생략(설정).
+//   · 월간: today = 말일 설정 시각에 그달(오늘 포함) · yesterday = 1일 설정 시각에 지난달.
+//           어느 쪽이든 놓치면 다음 달 1~3일 설정 시각 이후 지난달로 따라잡는다(이미 보냈으면 가드).
+//   · 스냅샷 누적은 시각과 무관하게 매 실행(어제까지 + 당일 마감 발송 시 오늘).
+export async function runTreasuryJob({ nowMs, sender, imgApi, q = query, schedules = null } = {}) {
   if (process.env.TREASURY_DAILY_ENABLED === '0') return { skipped: 'disabled' };
-  const now = mxNow(nowMs);
-  if (now.hour < SEND_HOUR_MX) return { skipped: 'early' };
+  const now = mxParts(nowMs);
+  const cfg = schedules || await loadSchedules(q);
+  const cd = cfg.treasury_daily, cm = cfg.treasury_monthly;
   const yday = addDays(now.ymd, -1);
   const out = { yday, snapshots: 0, daily: [], monthly: [] };
-  // 1) 스냅샷: 어제가 속한 달의 1일~어제 (원장 사후 수정도 반영, 최초본은 보존)
+  // 1) 스냅샷: 어제가 속한 달 1일~어제
   const days = await computeActualDays(monthBounds(yday.slice(0, 7)).from, yday, q);
   out.snapshots = await upsertSnapshots(days, q);
   const canSend = waApiReady() || !!sender;
   if (!canSend) return { ...out, wa: 'not_configured' };
-  // 2) 일일 발송 (06~12시, 일요일 무거래 생략)
-  const day = days[days.length - 1];
-  if (now.hour < DAILY_SEND_UNTIL_MX && !(day.dow === 0 && !day.moved)) {
-    const rc = await activeRecipients('daily', q);
-    if (rc.length) {
-      const prepared = await prepareDaily(yday, now.ymd, q);
-      out.daily = await sendReport({ kind: 'daily', period: yday, recipients: rc, prepared, sender, imgApi }, q);
-    }
+  // 2) 일일
+  if (isDue(cd, now)) {
+    const period = targetDate(cd, now);
+    const sameDay = cd.target_day === 'today';
+    let day = days[days.length - 1];
+    if (sameDay) { const td = await computeActualDays(period, period, q); out.snapshots += await upsertSnapshots(td, q); day = td[0]; }
+    out.daily_period = period;
+    if (!(cd.skip_empty_sunday && day.dow === 0 && !day.moved)) {
+      const rc = await activeRecipients('daily', q);
+      if (rc.length) {
+        const prepared = await prepareDaily(period, sameDay ? period : now.ymd, q, { sameDay, sendTime: cd.send_time });
+        out.daily = await sendReport({ kind: 'daily', period, recipients: rc, prepared, sender, imgApi }, q);
+      }
+    } else out.daily_skipped = 'empty_sunday';
   }
-  // 3) 월간 발송 (1~3일)
-  if (now.day <= MONTHLY_CATCHUP_DAYS) {
-    const pm = prevMonth(now.ymd.slice(0, 7));
-    const rc = await activeRecipients('monthly', q);
-    if (rc.length) {
-      if (pm !== yday.slice(0, 7)) await upsertSnapshots(await computeActualDays(monthBounds(pm).from, monthBounds(pm).to, q), q);
-      const prepared = await prepareMonthly(pm, now.ymd, q);
-      out.monthly = await sendReport({ kind: 'monthly', period: pm, recipients: rc, prepared, sender, imgApi }, q);
+  // 3) 월간
+  if (cm.enabled !== false && now.minutes >= toMinutes(cm.send_time)) {
+    const lastDay = monthBounds(now.ymd.slice(0, 7)).to === now.ymd;
+    let month = null, includeToday = false;
+    if (cm.target_day === 'today' && lastDay) { month = now.ymd.slice(0, 7); includeToday = true; }
+    else if (now.day <= MONTHLY_CATCHUP_DAYS) month = prevMonth(now.ymd.slice(0, 7));
+    if (month) {
+      const rc = await activeRecipients('monthly', q);
+      if (rc.length) {
+        const { from, to } = monthBounds(month);
+        await upsertSnapshots(await computeActualDays(from, includeToday ? now.ymd : to, q), q);
+        const prepared = await prepareMonthly(month, now.ymd, q, { includeToday });
+        out.monthly_period = month;
+        out.monthly = await sendReport({ kind: 'monthly', period: month, recipients: rc, prepared, sender, imgApi }, q);
+      }
     }
   }
   return out;
