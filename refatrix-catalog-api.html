@@ -472,6 +472,20 @@
     finally{ btn.disabled=false; btn.textContent=old; }
   }
 
+  /** 「이번 기간은 이미 동기화됐다(429)」로 막힌 고객을 푼다 — 회차 기록만 지운다. */
+  async function resetRun(){
+    if(!CUR) return;
+    if(!confirm('이 고객사의 이번 기간 운영 동기화 회차를 다시 엽니다.\n고객이 지금부터 다시 전체를 받아 갈 수 있습니다. 진행할까요?')) return;
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id+'/reset-run',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({env:'prod'})});
+      const d=await r.json();
+      if(!r.ok||d.error){ show('edMsg','err','다시 열기 실패: '+(d.error||r.status)); return; }
+      show('edMsg','ok','기간 '+d.period+' 운영 회차를 다시 열었습니다. (지운 기록 '+d.borradas+'건)');
+      await calls(); await loadList();
+    }catch(e){ show('edMsg','err','서버 연결 실패'); }
+  }
+
   async function calls(){
     if(!CUR) return;
     try{
@@ -483,13 +497,15 @@
         +'<td class="mono">'+esc(c.path||'')+'</td><td>'+c.http_status+'</td>'
         +'<td>'+(c.codigo_error?'<span class="tag off">'+esc(c.codigo_error)+'</span>':'')+'</td>'
         +'<td>'+(c.items==null?'':c.items)+'</td><td>'+(c.ms==null?'':c.ms+'ms')+'</td></tr>').join('');
-      $('outWrap').innerHTML='<div class="card-h" style="margin-top:14px">동기화 회차</div>'
+      $('outWrap').innerHTML='<div class="card-h" style="margin-top:14px">동기화 회차'
+        +' <button class="btn sm ghost" id="btnReset" style="margin-left:8px">이번 회차 다시 열기 (운영)</button></div>'
         +'<table><thead><tr><th>기간</th><th>환경</th><th>시작 (MX)</th><th>완료 (MX)</th><th>페이지</th><th>제품</th></tr></thead><tbody>'
         +(runs||'<tr><td colspan="6" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>'
         +'<div class="hint" style="margin-top:4px">운영 키 = 토요일 접속창 안에서 주 1회. 테스트 키 = 제한 없이 받을 때마다 한 줄씩 남습니다(2026-09-21 이전 테스트 호출은 회차 없이 아래 호출 이력에만 있습니다).</div>'
         +'<div class="card-h" style="margin-top:14px">호출 이력</div>'
         +'<table><thead><tr><th>시각 (멕시코)</th><th>IP</th><th>환경</th><th>경로</th><th>HTTP</th><th>오류</th><th>건수</th><th>소요</th></tr></thead><tbody>'
         +(rows||'<tr><td colspan="8" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>';
+      const br=$('btnReset'); if(br) br.addEventListener('click',resetRun);
     }catch(e){ $('outWrap').innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }
   }
 

@@ -358,6 +358,47 @@ if (!PG) {
     assert.ok(d.proximaVentana, '다음 개방 시각을 함께 준다');
   });
 
+  test('★ 회차 다시 열기 — 429 로 막힌 고객을 디렉터가 그 자리에서 푼다', async () => {
+    // 이번 기간을 끝까지 받아 막힌 상태를 만든다(앞 시험에서 이미 막혔으면 그대로 둔다)
+    let cursor = null;
+    for (let i = 0; i < 60; i++) {
+      const r = await app.inject({ method: 'GET',
+        url: '/api/catalog/v1/products?limit=100' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''),
+        headers: { 'x-api-key': KEY } });
+      if (r.statusCode === 429) break;
+      assert.equal(r.statusCode, 200);
+      cursor = r.json().cursor;
+      if (!cursor) break;
+    }
+    const bloqueado = await app.inject({ method: 'GET', url: '/api/catalog/v1/products',
+      headers: { 'x-api-key': KEY } });
+    assert.equal(bloqueado.statusCode, 429);
+    assert.equal(bloqueado.json().codigoError, 'ERR_YA_SINCRONIZADO');
+
+    const noDir = await app.inject({ method: 'POST', url: `/api/catalog/admin/clients/${clientId}/reset-run`,
+      headers: bearer(salesId), payload: { env: 'prod' } });
+    assert.equal(noDir.statusCode, 403, '디렉터만 열 수 있다');
+
+    const ok = await app.inject({ method: 'POST', url: `/api/catalog/admin/clients/${clientId}/reset-run`,
+      headers: bearer(dirId), payload: { env: 'prod' } });
+    assert.equal(ok.statusCode, 200);
+    assert.ok(ok.json().borradas >= 1, '이번 기간 회차를 지웠다');
+
+    const libre = await app.inject({ method: 'GET', url: '/api/catalog/v1/products?limit=100',
+      headers: { 'x-api-key': KEY } });
+    assert.equal(libre.statusCode, 200, '다시 받을 수 있다');
+    assert.ok(libre.json().productos.length > 0, '제품은 그대로 나간다');
+
+    // 뒤 시험을 위해 이번 회차를 끝까지 받아 닫아 둔다
+    let c2 = libre.json().cursor;
+    while (c2) {
+      const r = await app.inject({ method: 'GET',
+        url: '/api/catalog/v1/products?limit=100&cursor=' + encodeURIComponent(c2),
+        headers: { 'x-api-key': KEY } });
+      c2 = r.json().cursor;
+    }
+  });
+
   test('단건 조회는 회차를 소모하지 않는다 — 동기화 뒤에도 열려 있다', async () => {
     const r = await app.inject({ method: 'GET', url: '/api/catalog/v1/products/K022102',
       headers: { 'x-api-key': KEY } });

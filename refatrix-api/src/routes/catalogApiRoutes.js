@@ -304,6 +304,25 @@ export default async function catalogApiRoutes(app) {
   });
 
   /**
+   * 회차 다시 열기 — 「이번 기간은 이미 동기화됐다(429)」로 막힌 고객을 디렉터가 풀어 준다.
+   *   period 를 주지 않으면 지금 접속창의 기간(멕시코 날짜)을 연다. 기본 환경은 운영.
+   *   받아 간 제품에는 손대지 않는다. 회차 기록만 지운다.
+   */
+  app.post('/api/catalog/admin/clients/:id/reset-run', guard, async (req, reply) => {
+    if (!(await catalogTablesReady())) return reply.code(503).send({ error: 'migration_required' });
+    const c = await clientById(Number(req.params.id));
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    const env = ['test', 'prod'].includes(String(req.body?.env)) ? String(req.body.env) : 'prod';
+    const period = String(req.body?.period || '').trim() || windowState(c, Date.now()).periodKey;
+    const out = await query(
+      `DELETE FROM catalog_api_runs WHERE client_id=$1 AND env=$2 AND period_key=$3`,
+      [c.id, env, period]);
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update',
+      target: `catalog_client:${c.id}`, detail: { op: 'catalog_run_reset', env, period, borradas: out.rowCount } });
+    return { ok: true, env, period, borradas: out.rowCount };
+  });
+
+  /**
    * 미리보기 — **고객이 받을 것과 똑같은 응답**을 디렉터가 먼저 본다.
    *   접속창도, 주 1회 제한도, 호출 이력도 건드리지 않는다. 가격이 맞는지 여기서 확인한다.
    */
