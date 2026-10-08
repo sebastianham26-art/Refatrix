@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  var BUILD = 'wp-1008a';
+  var BUILD = 'wp-1008b';
   try { console.log('[workplan] build ' + BUILD); } catch (_) {}
   var WP_LAUNCH = '2026-10-08';   // 이 날 이전의 빈 날짜는 「미작성」으로 표시하지 않는다(도입일)
   var STAT = { done: { t: '완료', c: 'on' }, partial: { t: '일부', c: 'part' }, missed: { t: '못함', c: 'miss' } };
@@ -72,7 +72,39 @@
     + '.wpusers input{width:auto}'
     + '.wplog{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}'
     + '.wplog td,.wplog th{padding:4px 6px;border-bottom:1px solid #f0ece2;text-align:left}'
-    + '.wpprev{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:8px;display:block}';
+    + '.wpprev{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:8px;display:block}'
+    /* 0266 · 코멘트 · 디렉터 코멘트 · 팀 카드 · 직원 선택 */
+    + '.wpmk.dir{background:#fdf3dc;color:#8a6512;margin-left:3px}.wpmk.dir.seen{background:#f1eee7;color:var(--muted)}'
+    + '.wpinbox{border:1.5px solid var(--gold);background:#fffaf0;border-radius:12px;padding:11px 13px;margin-bottom:12px}'
+    + '.wpinbox h4{margin:0 0 6px;font-size:13.5px;color:#8a6512;display:flex;align-items:center;gap:6px;flex-wrap:wrap}'
+    + '.wpinbox .wd{font-size:11.5px;color:var(--muted);font-weight:700;margin:8px 0 3px}'
+    + '.wpinbox .dc{white-space:pre-wrap;font-size:13px;line-height:1.5;background:#fff;border:1px solid #ecd9b0;border-radius:8px;padding:7px 10px;margin:3px 0}'
+    + '.wpinbox .ic{font-size:12.5px;margin:4px 0}.wpinbox .ic b{color:var(--ink);font-weight:600}'
+    + '.wpdir{margin:3px 0 4px;background:#fffaf0;border:1px solid #ecd9b0;border-left:4px solid var(--gold);border-radius:7px;padding:5px 9px;font-size:12.5px;white-space:pre-wrap;line-height:1.45}'
+    + '.wpdir .who{font-size:10.5px;font-weight:800;color:#8a6512;margin-right:4px}'
+    + '.wpdir a{font-size:11px;color:var(--brand-soft);cursor:pointer;text-decoration:underline;margin-left:6px}'
+    + '.wpcmt{font-size:12px;color:#3a5a50;background:#f2f7f4;border-radius:7px;padding:4px 9px;margin:3px 0 2px;white-space:pre-wrap}'
+    + '.wpcmt .who{font-size:10.5px;font-weight:800;color:var(--income);margin-right:4px}'
+    + '.wpdirbtn{border:1px dashed #d8c08a;background:#fff;color:#8a6512;border-radius:999px;font-size:11px;font-weight:700;padding:1px 9px;cursor:pointer;font-family:inherit;margin:2px 0}'
+    + '.wpdired{display:flex;gap:6px;margin:4px 0;align-items:flex-start}.wpdired textarea{min-height:38px;font-size:12.5px;padding:6px 8px;flex:1}'
+    + '.wpcard{border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden;background:#fff}'
+    + '.wpch{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 13px;background:#faf8f3;border-bottom:1px solid var(--line)}'
+    + '.wpch .nm{font-size:14px;font-weight:800;color:var(--brand);margin-right:4px}'
+    + '.wpcols{display:grid;grid-template-columns:1fr 1fr}'
+    + '@media(max-width:720px){.wpcols{grid-template-columns:1fr}.wpcols .wpcol+.wpcol{border-left:none;border-top:1px solid var(--line)}}'
+    + '.wpcol{padding:9px 13px;min-width:0}.wpcol+.wpcol{border-left:1px solid var(--line)}'
+    + '.wpcolh{font-size:12px;font-weight:800;color:var(--brand);margin-bottom:5px;display:flex;gap:6px;align-items:center}'
+    + '.wpcolh span{font-weight:600;color:var(--muted);font-size:11px}'
+    + '.wpol{margin:0;padding-left:20px;font-size:13px;line-height:1.55}.wpol li{margin:2px 0}'
+    + '.wpul{list-style:none;margin:0;padding:0;font-size:13px}.wpul li{padding:5px 0;border-bottom:1px dashed #efe9dc}.wpul li:last-child{border-bottom:none}'
+    + '.wpbd{display:inline-block;min-width:34px;text-align:center;font-size:10.5px;font-weight:800;border-radius:5px;padding:1px 5px;margin-right:6px}'
+    + '.wpbd.done{background:var(--income);color:#fff}.wpbd.partial{background:var(--gold);color:#fff}.wpbd.missed{background:#fff;color:var(--expense);border:1px solid #e7b6af}'
+    + '.wpdaycm{padding:8px 13px;border-top:1px solid var(--line);background:#fffdf7}'
+    + '.wppick{border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:12px;background:#fafcfb}'
+    + '.wppick .row1{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px}'
+    + '.wppick .lst{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px}'
+    + '.wppick .lst label{display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:500;color:var(--ink);margin:0}'
+    + '.wppick .lst input{width:auto}';
   var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
   // ── 공통 ──
@@ -86,7 +118,7 @@
   function md(ymd) { var p = ymd.split('-'); return Number(p[1]) + '/' + Number(p[2]); }
   function dowK(ymd) { return ['일', '월', '화', '수', '목', '금', '토'][new Date(ymd + 'T00:00:00').getDay()]; }
   function addD(ymd, n) { var d = new Date(ymd + 'T00:00:00'); d.setDate(d.getDate() + n); return cYmd(d); }
-  function errText(j, dflt) { return (j && j.message) || (j && j.error === 'migration_required' ? '서버에서 npm run migrate 를 실행하세요 (0263).' : dflt); }
+  function errText(j, dflt) { return (j && j.message) || (j && j.error === 'migration_required' ? '서버에서 npm run migrate 를 실행하세요 (0263·0266).' : dflt); }
 
   // ═════════ 달력 표식 ═════════
   var W = { marks: {}, enabled: false, today: null, workdays: null };
@@ -94,10 +126,15 @@
     var f = cYmd(from), t = cYmd(to);
     var need = W.workdays ? Promise.resolve() : api('/api/workplan/settings').then(function (j) { if (j.__ok) { W.workdays = j.settings.workdays; W.today = j.today; } });
     return need.then(function () { return api('/api/workplan/marks?from=' + f + '&to=' + t); })
-      .then(function (j) { if (!j.__ok) { W.enabled = false; return; } W.enabled = !!j.enabled; W.today = j.today; W.marks = j.marks || {}; })
+      .then(function (j) { if (!j.__ok) { W.enabled = false; W.marks = {}; return; } W.enabled = !!j.enabled; W.today = j.today; W.marks = j.marks || {}; })
       .catch(function () { W.enabled = false; });
   };
   window.wpMark = function (key) {
+    var m0 = W.marks[key];
+    var dm = m0 && m0.dir ? '<span class="wpmk dir' + (m0.dir === 'seen' ? ' seen' : '') + '" title="디렉터 코멘트' + (m0.dir === 'seen' ? ' (확인함)' : ' — 눌러서 확인') + '">💬' + (m0.dir === 'seen' ? '' : ' 코멘트') + '</span>' : '';
+    return wpMarkWork(key) + dm;
+  };
+  function wpMarkWork(key) {
     if (!W.enabled || !W.today) return '';
     var m = W.marks[key];
     var past = key < W.today;
@@ -111,7 +148,7 @@
       : '<span class="wpmk plan" title="오늘 할 일 작성">🌅 할 일 ' + m.total + '</span>';
     if (past && work && key >= WP_LAUNCH) return '<span class="wpmk bad" title="업무일지 미작성">미작성</span>';
     return '';
-  };
+  }
   function refreshGrid() { try { var r = calRange(); renderCal(r.from, r.to); } catch (_) {} }
 
   // ═════════ 날짜 모달 ═════════
@@ -133,12 +170,13 @@
         if (j.__status === 503) b.innerHTML = '<div class="hint" style="margin-bottom:10px">업무일지: ' + esc(errText(j, '')) + '</div>';
         return;
       }
-      if (!j.enabled) {   // 디렉터·대상 아닌 계정 — 팀 업무 바로가기만
-        b.innerHTML = '<div class="wpteamlink"><button class="btn ghost sm" type="button" data-wp="team" data-date="' + key + '">👥 이 날 팀 업무 보기</button></div>';
+      INBOX = j.inbox || [];
+      if (!j.enabled) {   // 디렉터·대상 아닌 계정 — (받은 코멘트) + 팀 업무 바로가기
+        b.innerHTML = inboxHtml() + '<div class="wpteamlink"><button class="btn ghost sm" type="button" data-wp="team" data-date="' + key + '">👥 이 날 팀 업무 보기</button></div>';
         return;
       }
       D = j;
-      plan = j.items.map(function (i) { return { id: i.id, title: i.title, carried: i.carried, carry_count: i.carry_count, added_late: i.added_late }; });
+      plan = j.items.map(mapItem);
       marks = {};
       j.items.forEach(function (i) { if (i.status !== 'open') marks[i.id] = { status: i.status, note: i.note || '' }; else marks[i.id] = { status: '', note: i.note || '' }; });
       // 기본 탭: 할 일을 이미 썼고(또는 지난 날짜) 한 일 마감 2시간 전부터는 「오늘 한 일」
@@ -149,6 +187,26 @@
       base = snap();
     }).catch(function () {});
   };
+  var INBOX = [];
+  function mapItem(i) { return { id: i.id, title: i.title, carried: i.carried, carry_count: i.carry_count, added_late: i.added_late, dir_comment: i.dir_comment || '' }; }
+  function dateLab(ymd) { return md(ymd) + '(' + dowK(ymd) + ')'; }
+  // 📌 디렉터 코멘트 — 다음 근무일 일정표 맨 위
+  function inboxHtml() {
+    if (!INBOX.length) return '';
+    var unseen = INBOX.some(function (x) { return !x.seen_at; });
+    var h = '<div class="wpinbox"><h4>📌 디렉터 코멘트' + (unseen ? ' <span class="wpp late">새 코멘트</span>' : ' <span class="wpp ok">확인함</span>') + '</h4>';
+    INBOX.forEach(function (x) {
+      h += '<div class="wd">' + esc(dateLab(x.work_date)) + ' 업무에 대해</div>';
+      if (x.day_comment) h += '<div class="dc">' + esc(x.day_comment) + '</div>';
+      x.items.forEach(function (i) {
+        var st = STAT[i.status];
+        h += '<div class="ic">' + (st ? '<span class="wpbd ' + i.status + '">' + st.t + '</span>' : '') + '<b>' + esc(i.title) + '</b>'
+          + '<div class="wpdir"><span class="who">디렉터</span>' + esc(i.dir_comment) + '</div></div>';
+      });
+    });
+    if (unseen) h += '<div class="wpbtns" style="margin-top:6px"><button type="button" class="btn sm" data-wp="seen">확인했습니다</button></div>';
+    return h + '</div>';
+  }
   // 새 할 일 칸은 id 없음(DraftKeeper 가 방금 추가한 글을 되살리지 않게) · 계획 외 한 일은 날짜별 id(모바일 앱 전환 시 그 날짜에만 복원)
   function newInput() { return document.querySelector('#wpBox [data-wpin="new"]'); }
   function extraInput() { return document.querySelector('#wpBox [data-wpin="extra"]'); }
@@ -159,7 +217,7 @@
     var j = D, d = j.day;
     var planSub = d.plan_saved_at ? ('✔ ' + d.plan_hm + (d.plan_late ? ' 지연' : '')) : ('마감 ' + j.settings.plan_deadline);
     var doneSub = d.done_saved_at ? ('✔ ' + d.done_hm + (d.done_late ? ' 지연' : '')) : ('마감 ' + j.settings.done_deadline);
-    var h = '<div class="wpbox"><div class="wptabs">'
+    var h = inboxHtml() + '<div class="wpbox"><div class="wptabs">'
       + '<button type="button" class="wptab' + (tab === 'plan' ? ' on' : '') + '" data-wp="tab" data-tab="plan">🌅 오늘 할 일<small>' + esc(planSub) + '</small></button>'
       + '<button type="button" class="wptab' + (tab === 'done' ? ' on' : '') + '" data-wp="tab" data-tab="done">🌙 오늘 한 일<small>' + esc(doneSub) + '</small></button>'
       + '</div><div class="wpb">' + (tab === 'plan' ? planHtml() : doneHtml()) + '<div class="msg" id="wp-msg"></div></div></div>'
@@ -210,14 +268,17 @@
       var sc = STAT[m.status];
       h += '<div class="wpli"><button type="button" class="wpchk ' + (sc ? sc.c : '') + '" data-wp="cycle" data-id="' + i.id + '"' + (edit ? '' : ' disabled') + '>' + (sc ? sc.t : '—') + '</button>'
         + '<span class="tt"' + (m.status === 'done' ? ' style="color:var(--muted);text-decoration:line-through"' : '') + '>' + esc(i.title) + pills(i) + '</span></div>';
-      if (edit && m.status && m.status !== 'done') h += '<div class="wpnote"><input type="text" maxlength="500" data-wp="note" data-id="' + i.id + '" placeholder="' + (m.status === 'partial' ? '어디까지 했는지 (선택)' : '못 한 이유 (선택) — 내일로 이월됩니다') + '" value="' + esc(m.note || '') + '"></div>';
-      else if (!edit && m.note) h += '<div class="wpnote hint">' + esc(m.note) + '</div>';
-      else if (edit && m.status === 'done' && m.note) h += '<div class="wpnote"><input type="text" maxlength="500" data-wp="note" data-id="' + i.id + '" placeholder="메모 (선택)" value="' + esc(m.note || '') + '"></div>';
+      // 항목마다 코멘트(0266) — 상태와 상관없이 늘 적을 수 있다
+      var ph = m.status === 'partial' ? '코멘트 — 어디까지 했는지' : (m.status === 'missed' || !m.status ? '코멘트 — 못 한 이유 (내일로 이월됩니다)' : '코멘트 — 결과·특이사항');
+      if (edit) h += '<div class="wpnote"><input type="text" maxlength="500" data-wp="note" data-id="' + i.id + '" placeholder="' + ph + '" value="' + esc(m.note || '') + '"></div>';
+      else if (m.note) h += '<div class="wpnote"><div class="wpcmt"><span class="who">내 코멘트</span>' + esc(m.note) + '</div></div>';
+      if (i.dir_comment) h += '<div class="wpnote"><div class="wpdir"><span class="who">디렉터</span>' + esc(i.dir_comment) + '</div></div>';
     });
     h += '<div class="wpsub">➕ 계획에 없던 한 일</div>';
     if (edit) h += '<textarea id="wp-extra-' + esc(j.date) + '" data-wpin="extra" maxlength="4000" placeholder="예: 창고 요청으로 반품 입고 검수 · 재고 문의 고객 3명 응대">' + esc(d.extra_done || '') + '</textarea>'
       + '<div class="wpbtns"><button type="button" class="btn" id="wp-saveDone" data-wp="saveDone">한 일 저장 (마감)</button><span class="hint">저장 후에도 오늘 23:59까지 고칠 수 있습니다.</span></div>';
     else h += '<div style="white-space:pre-wrap;font-size:13px">' + (d.extra_done ? esc(d.extra_done) : '<span class="hint">없음</span>') + '</div>';
+    if (d.dir_comment) h += '<div class="wpsub">🧭 디렉터 종합 코멘트</div><div class="wpdir">' + esc(d.dir_comment) + '</div>';
     return h;
   }
   function syncInputs() {
@@ -256,7 +317,7 @@
     W.enabled = true; W.today = W.today || D.today;   // 달력 표식이 아직 안 불러졌어도 저장 결과는 바로 반영
     D.can_plan = D.date >= D.today || !j.day.plan_saved_at;
     D.can_done = D.date <= D.today && (D.date === D.today || !j.day.done_saved_at);
-    plan = j.items.map(function (i) { return { id: i.id, title: i.title, carried: i.carried, carry_count: i.carry_count, added_late: i.added_late }; });
+    plan = j.items.map(mapItem);
     marks = {}; j.items.forEach(function (i) { marks[i.id] = { status: i.status === 'open' ? '' : i.status, note: i.note || '' }; });
     W.marks[D.date] = { total: j.sum.total, done: j.sum.done, partial: j.sum.partial, plan: j.sum.plan_written, done_saved: j.sum.done_written };
     render(); base = snap(); refreshGrid();
@@ -271,6 +332,18 @@
     if (act === 'add') { addNew(); return; }
     if (act === 'del') { syncInputs(); plan.splice(Number(t.getAttribute('data-k')), 1); render(); return; }
     if (act === 'savePlan') { savePlan(); return; }
+    if (act === 'seen') {
+      t.disabled = true;
+      api('/api/workplan/inbox/seen', { method: 'POST', body: { dates: INBOX.map(function (x) { return x.work_date; }) } }).then(function (r) {
+        if (!r.__ok) { t.disabled = false; return; }
+        INBOX.forEach(function (x) { x.seen_at = x.seen_at || new Date().toISOString(); });
+        Object.keys(W.marks).forEach(function (k) { if (W.marks[k].dir === 'new') W.marks[k].dir = 'seen'; });
+        var b = $('wpBox');
+        if (D) { syncInputs(); render(); } else if (b) { var ib = b.querySelector('.wpinbox'); if (ib) ib.outerHTML = inboxHtml(); }
+        refreshGrid();
+      });
+      return;
+    }
     if (act === 'saveDone') { saveDone(); return; }
     if (act === 'cycle') {
       if (!D || !D.can_done) return;
@@ -311,17 +384,57 @@
     }).catch(function () { $('wpTeamBody').innerHTML = '<div class="hint">불러오지 못했습니다.</div>'; });
     if (isDirector) loadAdmin();
   }
-  function itemLine(i, showStatus) {
-    var mark = '', cls = 'x';
-    if (showStatus) {
-      if (i.status === 'done') { mark = '✓ '; cls = 'd'; }
-      else if (i.status === 'partial') { mark = '½ '; cls = 'p'; }
-      else { mark = '✗ '; cls = 'm'; }
+  // ── 팀 카드(0266): 왼쪽 「할 일」 목록 · 오른쪽 「한 일」 목록(결과 + 직원 코멘트 + 디렉터 코멘트) ──
+  var CE = {};   // 디렉터 코멘트 편집 중인 칸: key → true  (key = uid:itemId | uid:day)
+  function pillsT(i) {
+    return (i.carried ? ' <span class="wpp carry">' + (i.carry_count >= 2 ? i.carry_count + '회 이월' : '이월') + '</span>' : '')
+      + (i.added_late ? ' <span class="wpp add">추가</span>' : '');
+  }
+  function dirBlock(m, item) {
+    var key = m.user_id + ':' + (item ? item.id : 'day');
+    var text = item ? item.dir_comment : m.day.dir_comment;
+    var dir = T.data && T.data.is_director;
+    if (dir && CE[key]) {
+      return '<div class="wpdired"><textarea maxlength="1000" data-wpc="text" data-key="' + key + '" placeholder="' + (item ? '이 항목에 대한 코멘트' : '오늘 업무 전체에 대한 코멘트') + ' — 다음 근무일 직원 일정표에 표시">' + esc(text || '') + '</textarea>'
+        + '<div style="display:flex;flex-direction:column;gap:4px"><button type="button" class="btn sm" data-wpc="save" data-key="' + key + '" data-uid="' + m.user_id + '" data-item="' + (item ? item.id : '') + '">저장</button>'
+        + '<button type="button" class="btn ghost sm" data-wpc="cancel" data-key="' + key + '">취소</button></div></div>';
     }
-    return '<span class="' + (showStatus ? cls : '') + '">' + mark + '</span>' + esc(i.title)
-      + (i.carried ? ' <span class="wpp carry">' + (i.carry_count >= 2 ? i.carry_count + '회 이월' : '이월') + '</span>' : '')
-      + (i.added_late ? ' <span class="wpp add">추가</span>' : '')
-      + (i.note ? ' <span class="n">(' + esc(i.note) + ')</span>' : '');
+    if (text) return '<div class="wpdir"><span class="who">디렉터</span>' + esc(text) + (dir ? '<a data-wpc="edit" data-key="' + key + '">수정</a>' : '') + '</div>';
+    return dir ? '<button type="button" class="wpdirbtn" data-wpc="edit" data-key="' + key + '">💬 ' + (item ? '코멘트' : '종합 코멘트') + '</button>' : '';
+  }
+  function memberCard(m, j) {
+    var d = m.day, s = m.sum;
+    var head = '<div class="wpch"><span class="nm">' + esc(m.name) + '</span>'
+      + (d.plan_saved_at ? '<span class="wpp ' + (d.plan_late ? 'late' : 'ok') + '">할 일 ' + esc(d.plan_hm) + (d.plan_late ? ' 지연' : '') + '</span>' : '<span class="wpp late">할 일 미작성</span>')
+      + (d.done_saved_at ? '<span class="wpp ' + (d.done_late ? 'late' : 'ok') + '">한 일 ' + esc(d.done_hm) + (d.done_late ? ' 지연' : '') + '</span>'
+        + '<span class="wpbar" style="margin-left:4px"><i style="width:' + (s.rate || 0) + '%"></i></span><b style="font-size:12px;color:var(--brand)">' + (s.score % 1 ? s.score.toFixed(1) : s.score) + '/' + s.total + '</b>'
+        : '<span class="wpp">한 일 작성 전</span>');
+    var hasDir = d.dir_comment || m.items.some(function (i) { return i.dir_comment; });
+    if (j.is_director && hasDir) head += d.dir_seen_at ? '<span class="wpp ok" style="margin-left:auto">💬 직원 확인함</span>'
+      : '<span class="wpp carry" style="margin-left:auto">💬 ' + (d.dir_show_date ? esc(dateLab(d.dir_show_date)) + ' 일정표에 표시 · ' : '') + '미확인</span>';
+    head += '</div>';
+    // 왼쪽: 할 일
+    var left = '<div class="wpcol"><div class="wpcolh">🌅 할 일 <span>' + m.items.length + '건</span></div>';
+    if (!m.items.length) left += '<div class="hint">' + (d.plan_saved_at ? '할 일 없음' : '아직 적지 않았습니다') + '</div>';
+    else left += '<ol class="wpol">' + m.items.map(function (i) {
+      return '<li>' + esc(i.title) + pillsT(i) + (d.done_saved_at ? '' : dirBlock(m, i)) + '</li>';
+    }).join('') + '</ol>';
+    left += '</div>';
+    // 오른쪽: 한 일
+    var right = '<div class="wpcol"><div class="wpcolh">🌙 한 일' + (d.done_saved_at ? ' <span>완료 ' + s.done + ' · 일부 ' + s.partial + ' · 못함 ' + s.missed + '</span>' : '') + '</div>';
+    if (!d.done_saved_at) right += '<div class="hint">' + (j.date > j.today ? '아직 오지 않은 날입니다' : '아직 작성 전') + '</div>';
+    else {
+      right += '<ul class="wpul">' + m.items.map(function (i) {
+        var st = STAT[i.status] || { t: '—' };
+        return '<li><span class="wpbd ' + i.status + '">' + st.t + '</span>' + esc(i.title)
+          + (i.note ? '<div class="wpcmt"><span class="who">' + esc(m.name) + '</span>' + esc(i.note) + '</div>' : '')
+          + dirBlock(m, i) + '</li>';
+      }).join('') + '</ul>';
+      if (d.extra_done) right += '<div class="wpcolh" style="margin-top:8px">➕ 계획에 없던 한 일</div><div style="white-space:pre-wrap;font-size:13px">' + esc(d.extra_done) + '</div>';
+    }
+    right += '</div>';
+    var dayCm = (d.dir_comment || j.is_director) ? '<div class="wpdaycm"><div class="wpcolh">🧭 디렉터 종합 코멘트</div>' + dirBlock(m, null) + '</div>' : '';
+    return '<div class="wpcard" data-uid="' + m.user_id + '">' + head + '<div class="wpcols">' + left + right + '</div>' + dayCm + '</div>';
   }
   function teamHtml(j) {
     var k = j.kpi;
@@ -332,21 +445,60 @@
       + '<div><b>' + k.plan_missing.length + '</b><span>할 일 미작성' + (k.plan_missing.length ? ' — ' + esc(k.plan_missing.join(', ')) : '') + '</span></div>'
       + '</div>';
     if (!j.workday) h += '<div class="hint" style="margin-bottom:8px">근무일이 아닌 날입니다(설정 기준).</div>';
-    if (!j.members.length) return h + '<div class="hint">업무일지 대상 직원이 없습니다.</div>';
-    h += '<div style="overflow-x:auto"><table class="wptbl"><tr><th>직원</th><th>할 일</th><th>한 일</th><th>내용</th></tr>';
-    j.members.forEach(function (m) {
-      var d = m.day, s = m.sum;
-      var pc = d.plan_saved_at ? '<span class="wpp ' + (d.plan_late ? 'late' : 'ok') + '">' + esc(d.plan_hm) + (d.plan_late ? ' 지연' : '') + '</span>'
-        : '<span class="wpp late">미작성</span>';
-      var dc = d.done_saved_at
-        ? '<span class="wpbar"><i style="width:' + (s.rate || 0) + '%"></i></span>' + (s.score % 1 ? s.score.toFixed(1) : s.score) + '/' + s.total + (d.done_late ? ' <span class="wpp late">지연</span>' : '')
-        : (d.plan_saved_at ? '<span class="wpp">작성 전</span>' : '<span class="wpp">—</span>');
-      var body = m.items.length ? m.items.map(function (i) { return itemLine(i, !!d.done_saved_at); }).join(' · ') : '<span class="n">' + (d.plan_saved_at ? '할 일 없음' : '') + '</span>';
-      if (d.extra_done) body += '<br><span class="n">+ ' + esc(d.extra_done).replace(/\n+/g, ' · ') + '</span>';
-      h += '<tr><td class="nm">' + esc(m.name) + '</td><td>' + pc + '</td><td style="white-space:nowrap">' + dc + '</td><td class="wpit">' + body + '</td></tr>';
-    });
-    return h + '</table></div>';
+    if (!j.members.length) return h + '<div class="hint">업무일지를 사용하는 직원이 없습니다.' + (j.is_director ? ' 위 「직원 선택」에서 고르세요.' : '') + '</div>';
+    if (j.is_director) h += '<div class="hint" style="margin-bottom:8px">💬 코멘트는 그 직원과 디렉터만 봅니다 · 다음 근무일에 직원 일정표 맨 위에 표시됩니다.</div>';
+    return h + j.members.map(function (m) { return memberCard(m, j); }).join('');
   }
+  function rerenderTeam() { if (T.data) $('wpTeamBody').innerHTML = teamHtml(T.data); }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-wpc]') : null;
+    if (!t || !T.data) return;
+    var a = t.getAttribute('data-wpc'), key = t.getAttribute('data-key');
+    if (a === 'edit') { CE[key] = true; rerenderTeam(); var ta = document.querySelector('#wpTeamBody textarea[data-key="' + key + '"]'); if (ta) ta.focus(); return; }
+    if (a === 'cancel') { delete CE[key]; rerenderTeam(); return; }
+    if (a === 'save') {
+      var ta2 = document.querySelector('#wpTeamBody textarea[data-key="' + key + '"]');
+      var body = ta2 ? ta2.value : '';
+      var uid = Number(t.getAttribute('data-uid')), item = t.getAttribute('data-item');
+      t.disabled = true;
+      api('/api/workplan/comment', { method: 'PUT', body: { user_id: uid, date: T.data.date, item_id: item ? Number(item) : null, body: body } }).then(function (r) {
+        if (!r.__ok) { t.disabled = false; alertBox(errText(r, '저장하지 못했습니다.')); return; }
+        // 화면 상태 갱신(서버가 표시 날짜·확인 초기화를 정한다)
+        T.data.members.forEach(function (m) {
+          if (m.user_id !== uid) return;
+          if (item) m.items.forEach(function (i) { if (i.id === Number(item)) i.dir_comment = body.trim(); });
+          else m.day.dir_comment = body.trim();
+          m.day.dir_show_date = r.show_date; m.day.dir_seen_at = null;
+        });
+        delete CE[key]; rerenderTeam();
+      }).catch(function () { t.disabled = false; alertBox('저장하지 못했습니다.'); });
+    }
+  });
+  function alertBox(text) { var b = $('wpTeamBody'); if (!b) return; var d = document.createElement('div'); d.className = 'msg err'; d.textContent = text; b.insertBefore(d, b.firstChild); setTimeout(function () { try { d.remove(); } catch (_) {} }, 5000); }
+
+  // ── 디렉터: 업무일지 사용 직원 선택(0266 — 기본 꺼짐, 고른 직원만) ──
+  var PK = { open: false };
+  function renderPick() {
+    var el = $('wpPick'); if (!el) return;
+    if (!isDirector || !A.users.length) { el.innerHTML = ''; return; }
+    var staff = A.users.filter(function (u) { return !u.director; });
+    var on = staff.filter(function (u) { return u.enabled; });
+    var h = '<div class="wppick"><div class="row1"><b style="color:var(--brand)">👥 업무일지 사용 직원 ' + on.length + '명</b>'
+      + '<span class="hint">' + (on.length ? esc(on.map(function (u) { return u.name; }).join(', ')) : '아직 아무도 없습니다') + '</span>'
+      + '<button type="button" class="btn ghost sm" style="margin-left:auto" data-wpp="toggle">' + (PK.open ? '닫기' : '직원 선택') + '</button></div>';
+    if (PK.open) {
+      h += '<div class="lst">' + staff.map(function (u) {
+        return '<label><input type="checkbox" data-wpa="target" value="' + u.id + '"' + (u.enabled ? ' checked' : '') + '> ' + esc(u.name)
+          + ' <span class="hint">' + (u.has_phone ? '📱' : '번호 없음') + '</span></label>';
+      }).join('') + '</div><div class="hint" style="margin-top:6px">체크한 직원만 일정표에 업무일지 칸이 생기고, 알림·요약 대상이 됩니다(즉시 반영). 디렉터는 대상이 아닙니다.</div>';
+    }
+    el.innerHTML = h + '</div>';
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-wpp]') : null;
+    if (!t) return;
+    PK.open = !PK.open; renderPick();
+  });
   function bindTeamNav() {
     var on = function (id, fn) { var el = $(id); if (el) el.addEventListener('click', fn); };
     on('wpTeamBtn', function () { openTeam(W.today || cYmd(new Date())); });
@@ -373,7 +525,7 @@
       A.s = r[0].settings; A.next = r[0].next || []; A.ready = r[0].wa_ready;
       A.users = (r[1].items || []); A.st = r[2].__ok ? r[2] : null;
       W.workdays = A.s.workdays;
-      renderAdmin();
+      renderAdmin(); renderPick();
     });
   }
   var KIND = { remind_plan: '할 일 알림', remind_done: '한 일 알림', sum_plan: '아침 요약', sum_done: '저녁 요약' };
@@ -399,9 +551,6 @@
       + '<label>받는 사람 (휴대폰 등록된 사용자 · 아무도 안 고르면 디렉터 번호 환경변수)</label><div class="wpusers">'
       + A.users.map(function (u) { return '<label><input type="checkbox" data-wpa="rcpt" value="' + u.id + '"' + (s.summary_user_ids.indexOf(u.id) >= 0 ? ' checked' : '') + (u.has_phone ? '' : ' disabled') + '> ' + esc(u.name) + ' <span class="hint">' + (u.has_phone ? esc(u.phone_masked) : '번호 없음') + '</span></label>'; }).join('')
       + '</div></div>'
-      + '<div class="bx"><h4>👥 업무일지 대상 직원</h4><div class="wpusers">'
-      + A.users.filter(function (u) { return !u.director; }).map(function (u) { return '<label><input type="checkbox" data-wpa="target" value="' + u.id + '"' + (u.enabled ? ' checked' : '') + '> ' + esc(u.name) + ' <span class="hint">' + (u.has_phone ? '📱' : '번호 없음 — 알림 못 받음') + '</span></label>'; }).join('')
-      + '</div><div class="hint" style="margin-top:4px">체크 해제 = 업무일지 칸·알림·요약에서 제외(즉시 반영). 디렉터는 항상 제외. 휴대폰 번호는 관리 › 사용자 화면에서.</div></div>'
       + '</div>'
       + '<div class="wpbtns"><button type="button" class="btn" data-wpa="save">설정 저장</button><span class="hint">' + (A.next.length ? '다음 자동 발송: ' + A.next.map(function (n) { return md(n.date) + ' ' + n.at + ' ' + KIND[n.kind]; }).join(' · ') : '') + '</span></div>'
       + '<div class="msg" id="wpa-msg"></div>'
@@ -482,6 +631,7 @@
       api('/api/workplan/users/' + id, { method: 'PUT', body: { enabled: on } }).then(function (j) {
         if (!j.__ok) { t.checked = !on; msg('wpa-msg', false, errText(j, '바꾸지 못했습니다.')); return; }
         A.users.forEach(function (u) { if (u.id === id) u.enabled = on; });
+        renderPick();
         if (T.date) loadTeam(T.date);
       });
     }

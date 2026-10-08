@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일정 · 공지 · 할 일 · build board-1008wp</title>
+<title>Refatrix ERP · 일정 · 공지 · 할 일 · build board-1008wc</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -234,6 +234,7 @@
         <button class="today" id="wpToday" type="button">오늘</button>
         <span class="hint" id="wpAsOf" style="margin-left:auto"></span>
       </div>
+      <div id="wpPick"></div>
       <div id="wpTeamBody"><div class="hint">불러오는 중…</div></div>
       <div id="wpAdmin"></div>
     </div>
@@ -1185,7 +1186,7 @@
   $('calToday').addEventListener('click',()=>calGoToday());
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-workplan.js?v=20261008wp"></script>
+<script src="refatrix-workplan.js?v=20261008wc"></script>
 <script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>

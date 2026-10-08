@@ -15,6 +15,7 @@ export const MAX_ITEMS = 30;
 export const MAX_TITLE = 300;
 export const MAX_NOTE = 500;
 export const MAX_EXTRA = 4000;
+export const MAX_DIR_COMMENT = 1000;
 export const MAX_ATTEMPTS = 5;
 export const SEND_WINDOW_MIN = 180;      // 설정 시각부터 3시간 안에서만 자동 발송(서버 재시작 따라잡기, 밤 발송 방지)
 export const CARRY_LOOKBACK_DAYS = 14;   // 이월 원본을 찾는 범위
@@ -132,18 +133,27 @@ export async function isTarget(userId, q = query) {
 
 // ───────────────────────── 하루 읽기 ─────────────────────────
 const ITEM_COLS = `i.id, i.user_id, to_char(i.work_date,'YYYY-MM-DD') AS work_date, i.title, i.sort, i.carried_from,
-  i.carry_count, i.added_late, i.status, i.note, i.created_at, i.updated_at`;
+  i.carry_count, i.added_late, i.status, i.note, i.dir_comment, i.dir_comment_at, i.created_at, i.updated_at`;
 const DAY_COLS = `d.user_id, to_char(d.work_date,'YYYY-MM-DD') AS work_date, d.plan_saved_at, d.plan_late,
-  d.done_saved_at, d.done_late, d.extra_done, d.updated_at`;
+  d.done_saved_at, d.done_late, d.extra_done, d.dir_comment, d.dir_comment_at,
+  to_char(d.dir_show_date,'YYYY-MM-DD') AS dir_show_date, d.dir_seen_at, d.updated_at`;
 export const itemOut = (r) => ({
   id: Number(r.id), title: r.title, sort: Number(r.sort), status: r.status, note: r.note || '',
   carried: r.carried_from != null, carry_count: Number(r.carry_count) || 0, added_late: !!r.added_late,
+  dir_comment: r.dir_comment || '', dir_comment_at: ts(r.dir_comment_at),
 });
 export const dayOut = (d) => ({
   plan_saved_at: ts(d && d.plan_saved_at), plan_late: !!(d && d.plan_late), plan_hm: mxHm(d && d.plan_saved_at),
   done_saved_at: ts(d && d.done_saved_at), done_late: !!(d && d.done_late), done_hm: mxHm(d && d.done_saved_at),
   extra_done: (d && d.extra_done) || '',
+  dir_comment: (d && d.dir_comment) || '', dir_comment_at: ts(d && d.dir_comment_at),
+  dir_show_date: (d && d.dir_show_date) || null, dir_seen_at: ts(d && d.dir_seen_at),
 });
+// 디렉터 코멘트는 본인과 디렉터만 본다(팀 업무는 전 직원 공유이므로 다른 직원에게는 지운다)
+export function hideDirComments(m) {
+  return { ...m, day: { ...m.day, dir_comment: '', dir_comment_at: null, dir_show_date: null, dir_seen_at: null },
+    items: m.items.map((i) => ({ ...i, dir_comment: '', dir_comment_at: null })) };
+}
 
 // 상태·완료율(일부 = 0.5)
 export function summarize(day, items) {
@@ -277,6 +287,71 @@ export async function saveDone({ userId, date, items, extra_done, clock, setting
   });
 }
 
+// ───────────────────────── 디렉터 코멘트 ─────────────────────────
+// 직원 일정표에 띄울 날짜 = 「업무일 다음날」과 「코멘트 단 날」 중 늦은 날부터 첫 근무일
+export function commentShowDate(workDate, clock, settings) {
+  let d = addDays(workDate, 1);
+  if (clock.ymd > d) d = clock.ymd;
+  for (let k = 0; k < 8 && !isWorkday(settings, d); k++) d = addDays(d, 1);
+  return d;
+}
+// 항목별(itemId) 또는 하루 전체(itemId=null) 코멘트 저장. 빈 내용 = 삭제.
+export async function saveDirComment({ targetId, date, itemId = null, body, directorId, clock, settings }) {
+  if (!isYmd(date)) throw new WpError('bad_date');
+  const text = String(body == null ? '' : body).trim();
+  if (text.length > MAX_DIR_COMMENT) throw new WpError('too_long', 400, `코멘트는 ${MAX_DIR_COMMENT}자까지입니다.`);
+  return withTx(async (c) => {
+    const q = c.query.bind(c);
+    const u = (await q(`SELECT role, deleted_at FROM users WHERE id=$1`, [targetId])).rows[0];
+    if (!u || u.deleted_at || u.role === 'director') throw new WpError('bad_target', 404, '직원을 찾을 수 없습니다.');
+    const stamp = new Date(clock.ms).toISOString();
+    if (itemId != null) {
+      const r = await q(`UPDATE workplan_items SET dir_comment=$1, dir_comment_at=CASE WHEN $1='' THEN NULL ELSE $2::timestamptz END,
+                                dir_comment_by=CASE WHEN $1='' THEN NULL ELSE $3::bigint END
+                          WHERE id=$4 AND user_id=$5 AND work_date=$6 AND deleted_at IS NULL`, [text, stamp, directorId, itemId, targetId, date]);
+      if (!r.rowCount) throw new WpError('item_not_found', 404, '항목을 찾을 수 없습니다.');
+      await q(`INSERT INTO workplan_days (user_id, work_date) VALUES ($1,$2) ON CONFLICT (user_id, work_date) DO NOTHING`, [targetId, date]);
+    } else {
+      await q(`INSERT INTO workplan_days (user_id, work_date, dir_comment, dir_comment_at, dir_comment_by)
+               VALUES ($1,$2,$3, CASE WHEN $3='' THEN NULL ELSE $4::timestamptz END, CASE WHEN $3='' THEN NULL ELSE $5::bigint END)
+               ON CONFLICT (user_id, work_date) DO UPDATE SET dir_comment=EXCLUDED.dir_comment,
+                 dir_comment_at=EXCLUDED.dir_comment_at, dir_comment_by=EXCLUDED.dir_comment_by, updated_at=now()`,
+      [targetId, date, text, stamp, directorId]);
+    }
+    // 남은 코멘트가 하나라도 있으면 표시 날짜를 (다시) 잡고 「확인」을 초기화, 하나도 없으면 표시 해제
+    const any = (await q(`SELECT (d.dir_comment <> '') OR EXISTS (SELECT 1 FROM workplan_items i WHERE i.user_id=d.user_id
+                                   AND i.work_date=d.work_date AND i.deleted_at IS NULL AND i.dir_comment <> '') AS has
+                            FROM workplan_days d WHERE d.user_id=$1 AND d.work_date=$2`, [targetId, date])).rows[0];
+    const show = any && any.has ? commentShowDate(date, clock, settings) : null;
+    await q(`UPDATE workplan_days SET dir_show_date=$3::date, dir_seen_at=NULL, updated_at=now() WHERE user_id=$1 AND work_date=$2`, [targetId, date, show]);
+    return { show_date: show };
+  });
+}
+// 직원 일정표의 「디렉터 코멘트」 — 표시 날짜가 date 인 것 + (오늘이면) 아직 확인 안 한 지난 것
+export async function loadInbox(userId, date, today, q = query) {
+  const rows = (await q(`SELECT ${DAY_COLS} FROM workplan_days d
+                          WHERE d.user_id=$1 AND d.dir_show_date IS NOT NULL
+                            AND (d.dir_show_date = $2::date OR ($2::date = $3::date AND d.dir_show_date < $3::date AND d.dir_seen_at IS NULL))
+                          ORDER BY d.work_date`, [userId, date, today])).rows;
+  if (!rows.length) return [];
+  const dates = rows.map((r) => r.work_date);
+  const its = (await q(`SELECT ${ITEM_COLS} FROM workplan_items i
+                         WHERE i.user_id=$1 AND i.work_date = ANY($2::date[]) AND i.deleted_at IS NULL AND i.dir_comment <> ''
+                         ORDER BY i.work_date, i.sort, i.id`, [userId, dates])).rows;
+  return rows.map((r) => ({
+    work_date: r.work_date, show_date: r.dir_show_date, seen_at: ts(r.dir_seen_at),
+    day_comment: r.dir_comment || '', day_comment_at: ts(r.dir_comment_at),
+    items: its.filter((i) => i.work_date === r.work_date).map(itemOut),
+  })).filter((x) => x.day_comment || x.items.length);
+}
+export async function markInboxSeen(userId, workDates, clock, q = query) {
+  const ds = (Array.isArray(workDates) ? workDates : []).filter(isYmd).slice(0, 31);
+  if (!ds.length) return 0;
+  const r = await q(`UPDATE workplan_days SET dir_seen_at=$3::timestamptz WHERE user_id=$1 AND work_date = ANY($2::date[])
+                       AND dir_show_date IS NOT NULL AND dir_seen_at IS NULL`, [userId, ds, new Date(clock.ms).toISOString()]);
+  return r.rowCount || 0;
+}
+
 // ───────────────────────── 팀 · 달력 표식 ─────────────────────────
 export async function loadTeam(date, q = query) {
   const targets = await loadTargets(q);
@@ -316,6 +391,13 @@ export async function loadMarks(userId, from, to, q = query) {
   for (const r of days) {
     const o = out[r.d] || (out[r.d] = { total: 0, done: 0, partial: 0 });
     o.plan = !!r.plan_saved_at; o.done_saved = !!r.done_saved_at;
+  }
+  // 디렉터 코멘트가 보일 날짜(다음 근무일) — dir: 'new'(미확인) | 'seen'
+  const cm = (await q(`SELECT to_char(dir_show_date,'YYYY-MM-DD') AS d, bool_or(dir_seen_at IS NULL) AS unseen FROM workplan_days
+                        WHERE user_id=$1 AND dir_show_date BETWEEN $2 AND $3 GROUP BY dir_show_date`, [userId, from, to])).rows;
+  for (const r of cm) {
+    const o = out[r.d] || (out[r.d] = { total: 0, done: 0, partial: 0, plan: false, done_saved: false });
+    o.dir = r.unseen ? 'new' : 'seen';
   }
   return out;
 }

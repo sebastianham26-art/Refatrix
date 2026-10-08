@@ -40,6 +40,7 @@ async function reset() {
 }
 test.before(async () => {
   await query(readFileSync(new URL('../migrations/0263_staff_workplan.sql', import.meta.url), 'utf8'));   // 멱등 재적용
+  await query(readFileSync(new URL('../migrations/0266_workplan_comments.sql', import.meta.url), 'utf8'));
   await query(`DELETE FROM workplan_wa_sends; DELETE FROM workplan_items; DELETE FROM workplan_days`);
   await query(`DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE name LIKE 'wp_%')`);
   await query(`DELETE FROM users WHERE name LIKE 'wp_%'`);
@@ -52,6 +53,13 @@ test.before(async () => {
   LUIS = await mk('wp_Luis', 'sales', null);
   WARE = await mk('wp_Bodega', 'warehouse', '528177777777', 'ko');
   await reset();
+  // 0266 — 새 직원은 기본 꺼짐 → 디렉터가 골라서 켠다
+  setNow('2026-10-08 09:00');
+  const off = await call('GET /api/workplan/me', { user: MARIA });
+  assert.equal(off.out.enabled, false, '새 직원은 기본 대상 아님');
+  const offPut = await call('PUT /api/workplan/plan/:date', { user: MARIA, params: { date: '2026-10-08' }, body: { items: [{ title: 'x' }] } });
+  assert.equal(offPut.status, 403);
+  for (const id of [MARIA, OSCAR, LUIS, WARE]) await call('PUT /api/workplan/users/:id', { user: DIR, role: 'director', params: { id }, body: { enabled: true } });
 });
 test.after(async () => { await query(`DELETE FROM workplan_wa_sends; DELETE FROM workplan_items; DELETE FROM workplan_days;
   DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE name LIKE 'wp_%'); DELETE FROM users WHERE name LIKE 'wp_%'`); await pool.end(); });
@@ -343,4 +351,109 @@ test('X1 마이그레이션 전이면 503 migration_required', async () => {
     assert.ok(s.date || s.skipped);   // 설정 테이블은 있으므로 진행 — 실패해도 throw 는 워커가 흡수
   } catch (e) { if (!/workplan_days/.test(String(e.message))) throw e; }
   finally { await query(`ALTER TABLE workplan_days_x RENAME TO workplan_days`); }
+});
+
+// ─────────── 0266 · 디렉터 코멘트 · 다음 근무일 일정표 ───────────
+test('C1 디렉터 코멘트 저장 — 게이팅·검증·표시 날짜(다음 근무일)', async () => {
+  assert.ok(R['PUT /api/workplan/comment'].opts.preHandler.includes(requireDirector));
+  setNow('2026-10-08 18:40');
+  const day = await call('GET /api/workplan/me', { user: MARIA, q: { date: '2026-10-08' } });
+  const it = day.out.items[3];   // 못함 항목
+  const r = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: MARIA, date: '2026-10-08', item_id: it.id, body: '  내일 오전에 꼭 방문하세요  ' } });
+  assert.equal(r.status, 200); assert.equal(r.out.show_date, '2026-10-09');
+  const r2 = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: MARIA, date: '2026-10-08', body: '전반적으로 좋습니다.\n미수금 건 정리 부탁' } });
+  assert.equal(r2.out.show_date, '2026-10-09');
+  const other = (await call('GET /api/workplan/me', { user: OSCAR, q: { date: '2026-10-08' } })).out.items[0];
+  const wrong = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: MARIA, date: '2026-10-08', item_id: other.id, body: 'x' } });
+  assert.equal(wrong.status, 404, '다른 직원 항목 id 는 거부');
+  const dirT = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: DIR, date: '2026-10-08', body: 'x' } });
+  assert.equal(dirT.status, 404);
+  const long = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: MARIA, date: '2026-10-08', body: 'a'.repeat(1001) } });
+  assert.equal(long.status, 400);
+  const badD = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: MARIA, date: "x'; DROP TABLE users;--", body: 'x' } });
+  assert.equal(badD.status, 400);
+  const v = (await query(`SELECT dir_comment FROM workplan_items WHERE id=$1`, [it.id])).rows[0];
+  assert.equal(v.dir_comment, '내일 오전에 꼭 방문하세요');
+});
+
+test('C2 공개 범위 — 팀 업무에서 디렉터 코멘트는 본인·디렉터만', async () => {
+  const o = await call('GET /api/workplan/team', { user: OSCAR, q: { date: '2026-10-08' } });
+  const mByO = o.out.members.find((m) => m.user_id === MARIA);
+  assert.equal(mByO.day.dir_comment, ''); assert.ok(mByO.items.every((i) => i.dir_comment === ''));
+  assert.ok(mByO.items.some((i) => i.note), '직원 코멘트(note)는 전 직원 공유');
+  const self = (await call('GET /api/workplan/team', { user: MARIA, q: { date: '2026-10-08' } })).out.members.find((m) => m.user_id === MARIA);
+  assert.match(self.day.dir_comment, /미수금/);
+  const d = await call('GET /api/workplan/team', { user: DIR, role: 'director', q: { date: '2026-10-08' } });
+  assert.equal(d.out.is_director, true);
+  const mByD = d.out.members.find((m) => m.user_id === MARIA);
+  assert.equal(mByD.day.dir_show_date, '2026-10-09'); assert.equal(mByD.day.dir_seen_at, null);
+  assert.equal(mByD.items[3].dir_comment, '내일 오전에 꼭 방문하세요');
+});
+
+test('C3 다음 근무일 — 직원 일정표(모달·달력)에 코멘트, 확인하면 확인됨, 다시 고치면 다시 새 코멘트', async () => {
+  setNow('2026-10-09 08:30');
+  const me = await call('GET /api/workplan/me', { user: MARIA });
+  assert.equal(me.out.inbox.length, 1);
+  const ib = me.out.inbox[0];
+  assert.equal(ib.work_date, '2026-10-08'); assert.match(ib.day_comment, /미수금/); assert.equal(ib.seen_at, null);
+  assert.deepEqual(ib.items.map((i) => i.dir_comment), ['내일 오전에 꼭 방문하세요']);
+  const before = await call('GET /api/workplan/me', { user: MARIA, q: { date: '2026-10-08' } });
+  assert.equal(before.out.inbox.length, 0, '코멘트는 그 날짜가 아니라 다음 근무일에 뜬다');
+  assert.equal(before.out.day.dir_comment.includes('미수금'), true, '그 날 기록에도 디렉터 코멘트가 붙어 보임');
+  const mk = await call('GET /api/workplan/marks', { user: MARIA, q: { from: '2026-10-01', to: '2026-10-31' } });
+  assert.equal(mk.out.marks['2026-10-09'].dir, 'new');
+  const os = await call('GET /api/workplan/me', { user: OSCAR });
+  assert.equal(os.out.inbox.length, 0, '다른 직원에게는 안 보임');
+  const seen = await call('POST /api/workplan/inbox/seen', { user: MARIA, body: { dates: ['2026-10-08'] } });
+  assert.equal(seen.out.updated, 1);
+  const mk2 = await call('GET /api/workplan/marks', { user: MARIA, q: { from: '2026-10-01', to: '2026-10-31' } });
+  assert.equal(mk2.out.marks['2026-10-09'].dir, 'seen');
+  const seenOs = await call('POST /api/workplan/inbox/seen', { user: OSCAR, body: { dates: ['2026-10-08'] } });
+  assert.equal(seenOs.out.updated, 0, '남의 코멘트는 확인 처리 못 함');
+  // 디렉터가 다시 고치면 → 확인 초기화
+  await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: MARIA, date: '2026-10-08', body: '수정: 미수금 금요일까지' } });
+  const me2 = await call('GET /api/workplan/me', { user: MARIA });
+  assert.equal(me2.out.inbox[0].seen_at, null); assert.match(me2.out.inbox[0].day_comment, /금요일까지/);
+});
+
+test('C4 확인 안 한 코멘트는 오늘까지 따라온다 · 토요일 업무 → 월요일 표시 · 늦게 단 코멘트는 그 날 표시', async () => {
+  // 10/9 에 안 보고 지나감 → 10/12(월) 오늘 모달·달력에도
+  setNow('2026-10-12 09:00');
+  const me = await call('GET /api/workplan/me', { user: MARIA });
+  assert.equal(me.out.inbox.length, 1); assert.equal(me.out.inbox[0].show_date, '2026-10-09');
+  const mk = await call('GET /api/workplan/marks', { user: MARIA, q: { from: '2026-10-01', to: '2026-10-31' } });
+  assert.equal(mk.out.marks['2026-10-12'].dir, 'new');
+  // 지난 일에 오늘 코멘트 → 오늘(10/12) 표시
+  const late = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: OSCAR, date: '2026-10-08', body: '좋았어요' } });
+  assert.equal(late.out.show_date, '2026-10-12');
+  // 토요일 업무 코멘트 → 일요일 건너뛰고 월요일
+  const sat = WP.commentShowDate('2026-10-10', WP.mxClock(Date.parse('2026-10-10T23:00:00Z')), { workdays: [1, 2, 3, 4, 5, 6] });
+  assert.equal(sat, '2026-10-12');
+  // 기록 없는 직원(루이스)도 하루 코멘트 가능
+  const lu = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: LUIS, date: '2026-10-12', body: '할 일을 꼭 적어 주세요' } });
+  assert.equal(lu.out.show_date, '2026-10-13');
+});
+
+test('C5 코멘트를 모두 지우면 일정표 표시도 해제', async () => {
+  setNow('2026-10-12 10:00');
+  const r = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: OSCAR, date: '2026-10-08', body: '   ' } });
+  assert.equal(r.out.show_date, null);
+  const row = (await query(`SELECT dir_show_date, dir_comment FROM workplan_days WHERE user_id=$1 AND work_date='2026-10-08'`, [OSCAR])).rows[0];
+  assert.equal(row.dir_show_date, null); assert.equal(row.dir_comment, '');
+  // 마리아: 하루 코멘트만 지워도 항목 코멘트가 남아 있으면 표시 유지
+  const r2 = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: MARIA, date: '2026-10-08', body: '' } });
+  assert.equal(r2.out.show_date, '2026-10-12');
+});
+
+test('C6 직원 코멘트 — 완료 항목에도 코멘트 저장(마감 때 항목마다)', async () => {
+  setNow('2026-10-12 09:10');
+  await call('PUT /api/workplan/plan/:date', { user: OSCAR, params: { date: '2026-10-12' }, body: { items: [{ title: '정비소 방문' }, { title: '견적 발송' }] } });
+  setNow('2026-10-12 17:50');
+  const me = await call('GET /api/workplan/me', { user: OSCAR });
+  const ids = me.out.items.map((i) => i.id);
+  assert.ok(ids.length >= 1);
+  const r = await call('PUT /api/workplan/done/:date', { user: OSCAR, params: { date: '2026-10-12' },
+    body: { items: ids.map((id, k) => ({ id, status: 'done', note: '완료 코멘트 ' + k })) } });
+  assert.equal(r.status, 200);
+  assert.ok(r.out.items.every((i, k) => i.note === '완료 코멘트 ' + k));
 });

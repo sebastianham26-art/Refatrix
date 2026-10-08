@@ -11,10 +11,10 @@ import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import {
   isYmd, mxClock, addDays, loadSettings, cleanSettingsInput, saveSettings, isWorkday, isTarget, loadDay, ensureCarry,
   savePlan, saveDone, WpError, loadTeam, teamKpi, loadMarks, summarySvg, summaryText, sendSummary, summaryRecipients,
-  maskPhone, nextRuns, DEFAULT_DEPS, startWorkplanWorker,
+  maskPhone, nextRuns, DEFAULT_DEPS, startWorkplanWorker, saveDirComment, loadInbox, markInboxSeen, hideDirComments,
 } from '../workplan.js';
 
-const MIGRATION_MSG = '업무일지 테이블이 없습니다. 서버에서 npm run migrate 를 실행하세요. (0263_staff_workplan)';
+const MIGRATION_MSG = '업무일지 테이블이 없습니다. 서버에서 npm run migrate 를 실행하세요. (0263_staff_workplan · 0266_workplan_comments)';
 const isMig = (e) => e && (e.code === '42P01' || e.code === '42703');
 
 // 공통 래퍼: 마이그레이션 전 503 · 업무 오류(WpError) → 상태코드
@@ -58,8 +58,9 @@ export async function registerWorkplan(app, { startWorker = true } = {}) {
     const [s, enabled] = await Promise.all([loadSettings(), isTarget(me)]);
     if (enabled && date === clock.ymd) await ensureCarry(me, date);
     const d = await loadDay(me, date);
+    const inbox = await loadInbox(me, date, clock.ymd);   // 디렉터 코멘트(대상에서 빠졌어도 받은 코멘트는 보인다)
     return {
-      today: clock.ymd, now_min: clock.min, enabled, workday: isWorkday(s, date), settings: publicSettings(s), ...d,
+      today: clock.ymd, now_min: clock.min, enabled, workday: isWorkday(s, date), settings: publicSettings(s), ...d, inbox,
       can_plan: enabled && (date >= clock.ymd || !d.day.plan_saved_at),
       can_done: enabled && date <= clock.ymd && (date === clock.ymd || !d.day.done_saved_at),
     };
@@ -88,7 +89,31 @@ export async function registerWorkplan(app, { startWorker = true } = {}) {
     const from = String(req.query.from || ''), to = String(req.query.to || '');
     if (!isYmd(from) || !isYmd(to) || from > to || addDays(from, 62) < to) return reply.code(400).send({ error: 'bad_range' });
     const me = Number(req.ctx.perm.userId);
-    return { today: mxClock().ymd, enabled: await isTarget(me), marks: await loadMarks(me, from, to) };
+    const today = mxClock().ymd;
+    const marks = await loadMarks(me, from, to);
+    // 지난 날짜에 떴는데 아직 확인 안 한 코멘트는 오늘 칸에도 「새 코멘트」로
+    if (today >= from && today <= to && !(marks[today] && marks[today].dir === 'new')
+      && Object.keys(marks).some((k) => k < today && marks[k].dir === 'new')) {
+      marks[today] = { total: 0, done: 0, partial: 0, plan: false, done_saved: false, ...(marks[today] || {}), dir: 'new' };
+    }
+    return { today, enabled: await isTarget(me), marks };
+  }));
+
+  // ── 디렉터 코멘트 ──
+  app.put('/api/workplan/comment', { preHandler: [authGuard, requireDirector] }, wrap(async (req, reply) => {
+    const b = req.body || {};
+    const targetId = Number(b.user_id);
+    const itemId = b.item_id == null || b.item_id === '' ? null : Number(b.item_id);
+    if (!Number.isInteger(targetId) || targetId <= 0) return reply.code(400).send({ error: 'bad_user' });
+    if (itemId !== null && (!Number.isInteger(itemId) || itemId <= 0)) return reply.code(400).send({ error: 'bad_item' });
+    const date = String(b.date || '');
+    const r = await saveDirComment({ targetId, date, itemId, body: b.body, directorId: Number(req.ctx.perm.userId), clock: mxClock(), settings: await loadSettings() });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `workplan_comment:${targetId}:${date}${itemId ? ':' + itemId : ''}` });
+    return { ok: true, ...r };
+  }));
+  app.post('/api/workplan/inbox/seen', { preHandler: [authGuard] }, wrap(async (req) => {
+    const n = await markInboxSeen(Number(req.ctx.perm.userId), (req.body || {}).dates, mxClock());
+    return { ok: true, updated: n };
   }));
 
   // ── 팀 업무(전 직원 공유) ──
@@ -97,8 +122,12 @@ export async function registerWorkplan(app, { startWorker = true } = {}) {
     const date = req.query.date ? String(req.query.date) : clock.ymd;
     if (!isYmd(date)) return reply.code(400).send({ error: 'bad_date' });
     const s = await loadSettings();
-    const team = (await loadTeam(date)).map(({ wa_phone, lang, ...m }) => m);   // 번호는 공유하지 않는다
-    return { date, today: clock.ymd, now_min: clock.min, workday: isWorkday(s, date), settings: publicSettings(s), kpi: teamKpi(team), members: team };
+    const me = Number(req.ctx.perm.userId);
+    const isDir = req.ctx.perm.role === 'director';
+    // 번호는 공유하지 않는다 · 디렉터 코멘트는 본인과 디렉터만
+    const team = (await loadTeam(date)).map(({ wa_phone, lang, ...m }) => (isDir || m.user_id === me ? m : hideDirComments(m)));
+    return { date, today: clock.ymd, now_min: clock.min, workday: isWorkday(s, date), settings: publicSettings(s), is_director: isDir,
+      kpi: teamKpi(team), members: team };
   }));
 
   // ── 디렉터: 대상 직원 ──
