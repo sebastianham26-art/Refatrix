@@ -15,12 +15,12 @@
 //     · 수신자 등록 이전에 만들어진 견적은 보내지 않는다(등록 순간 옛 견적이 몰려가지 않게).
 //     · 팀 범위: 수신자의 team_ids 가 있으면 그 팀 고객의 견적만(고객 미지정 견적은 작성자 팀).
 //
-//   발송 규칙(2026-10-08 수정): 24시간 창이 열린 게 확실할 때만 자유 텍스트, 그 밖에는 항상 템플릿(QUOTE_WA_TEMPLATE, 기본 nueva_cotizacion) — deliverQuote 참고.
+//   발송 규칙(2026-10-08 b): 기본은 항상 승인 템플릿(디자인 · 헤더 이미지 포함) — 창이 열려 있으면 상세 텍스트를 이어서. 설정(0264)으로 「창 열리면 텍스트」도 가능 — deliverQuote 참고.
 //     아니면 텍스트 → 실패 시 템플릿 한 줄. 창 밖 실패(131047)는 웹훅이 원장을 다시 열어 재시도한다.
 //   끄기: QUOTE_WA_ENABLED=0
 // =====================================================================
 import { query } from './db.js';
-import { sendWaText, sendWaTemplate, waApiReady } from './waSend.js';
+import { sendWaText, sendWaTemplate, sendWaImageTemplate, uploadWaMedia, waApiReady } from './waSend.js';
 import { windowState } from './waWebhook.js';
 import { computeQuoteSummary } from './quoteSummary.js';   // 0257 · 당월 요약(KPI 7칸)
 
@@ -42,24 +42,71 @@ export const quoteWaTemplateLang = () => process.env.QUOTE_WA_TEMPLATE_LANG || p
 //   이제: 창이 「열림」으로 확실할 때만 자유 텍스트(무료 · 상세). 그 밖에는 항상 템플릿.
 //     · 템플릿이 실패하면 사유를 남긴다. 창이 「닫힘」이면 텍스트는 보내지 않는다(어차피 안 감 → 실패로 두고 재시도).
 //     · 창 상태를 모를 때(웹훅 미설정)만 마지막 수단으로 텍스트 — 이때도 템플릿 실패 사유를 함께 남긴다.
-export const DEFAULT_QUOTE_API = { text: ({ to, text }) => sendWaText(text, to), template: (param, opts) => sendWaTemplate(param, opts) };
-export async function deliverQuote({ to, text, headline, templateName = quoteWaTemplate(), templateLang = quoteWaTemplateLang(), windowOpen = null }, api = DEFAULT_QUOTE_API) {
-  if (windowOpen === true) {
+export const DEFAULT_QUOTE_API = {
+  text: ({ to, text }) => sendWaText(text, to),
+  template: (param, opts) => sendWaTemplate(param, opts),
+  imageTemplate: (a) => sendWaImageTemplate(a),
+};
+// 2026-10-08 b · 「템플릿 디자인이 안 오고 텍스트로 온다」 → 발송 형식 설정(0264)
+//   mode = 'template'(기본): 창 상태와 상관없이 승인 템플릿(디자인)으로. 창이 열려 있고 followDetail 이면 상세 텍스트를 이어서(무료).
+//   mode = 'text_when_open': 창이 열려 있으면 상세 텍스트만(예전 방식), 아니면 템플릿.
+//   headerMediaId: 템플릿 헤더가 이미지면 그 이미지(Meta media id) — 없이 보내면 #132012 로 실패한다.
+export async function deliverQuote({ to, text, headline, templateName = quoteWaTemplate(), templateLang = quoteWaTemplateLang(),
+  windowOpen = null, mode = 'template', followDetail = true, headerMediaId = null }, api = DEFAULT_QUOTE_API) {
+  if (windowOpen === true && mode === 'text_when_open') {
     const r = await api.text({ to, text });
     if (r.ok) return { ok: true, mode: 'text', message_id: r.message_id };
   }
   let tErr = 'no_template';
   if (templateName) {
-    const t = await api.template(headline, { to, name: templateName, lang: templateLang });
-    if (t.ok) return { ok: true, mode: 'template', message_id: t.message_id };
+    const t = headerMediaId
+      ? await api.imageTemplate({ to, mediaId: headerMediaId, param: headline, name: templateName, lang: templateLang })
+      : await api.template(headline, { to, name: templateName, lang: templateLang });
+    if (t.ok) {
+      const out = { ok: true, mode: headerMediaId ? 'image_template' : 'template', message_id: t.message_id };
+      if (windowOpen === true && mode === 'template' && followDetail) {   // 창이 열려 있으면 상세를 이어서(무료) — 실패해도 알림은 성공
+        try { const d = await api.text({ to, text }); out.detail = d.ok ? 'sent' : `failed: ${d.error}`; } catch (e) { out.detail = 'failed'; }
+      }
+      return out;
+    }
     tErr = `템플릿 ${templateName}(${templateLang}) 실패${t.code ? ' #' + t.code : ''}: ${t.error}`;
+    if (Number(t.code) === 132012 && !headerMediaId) tErr += ' — 템플릿 헤더가 이미지라면 알림 패널 「템플릿 헤더 이미지」에 이미지를 올리세요';
   }
-  if (windowOpen === null) {
+  if (windowOpen === true || windowOpen === null) {
     const r = await api.text({ to, text });
-    if (r.ok) return { ok: true, mode: 'text', message_id: r.message_id, text_error: `${tErr} — 텍스트로 보냄(24시간 창 밖이면 도착 안 함)` };
+    if (r.ok) return { ok: true, mode: 'text', message_id: r.message_id,
+      text_error: `${tErr} — 텍스트로 보냄${windowOpen === null ? '(24시간 창 밖이면 도착 안 함)' : ''}` };
     return { ok: false, error: `${tErr} / 텍스트: ${r.error}` };
   }
   return { ok: false, error: tErr };
+}
+
+// ── 발송 형식 · 헤더 이미지 (0264) ──
+export const QUOTE_WA_MODES = ['template', 'text_when_open'];
+const MEDIA_FRESH_DAYS = 25;
+let uploadOverride = null;
+export function setQuoteWaUpload(fn) { uploadOverride = fn || null; }
+export async function loadQuoteWaSettings(q = query) {
+  try {
+    const r = (await q(`SELECT send_mode, follow_detail, header_mime, header_name, octet_length(header_image) AS header_bytes,
+                               media_id, media_at, updated_at FROM quote_wa_settings WHERE id = 1`)).rows[0];
+    if (!r) return { send_mode: 'template', follow_detail: true, has_header: false };
+    return { send_mode: QUOTE_WA_MODES.includes(r.send_mode) ? r.send_mode : 'template', follow_detail: r.follow_detail !== false,
+      has_header: Number(r.header_bytes) > 0, header_name: r.header_name || null, header_mime: r.header_mime || null,
+      header_bytes: Number(r.header_bytes) || 0, media_id: r.media_id || null, media_at: r.media_at || null, updated_at: r.updated_at };
+  } catch { return { send_mode: 'template', follow_detail: true, has_header: false }; }   // 0264 전
+}
+// 헤더 이미지의 Meta media id — 25일 지나면 다시 올린다
+export async function ensureHeaderMedia(set, q = query) {
+  if (!set || !set.has_header) return { ok: true, id: null };
+  if (set.media_id && set.media_at && Date.now() - new Date(set.media_at).getTime() < MEDIA_FRESH_DAYS * 86400000) return { ok: true, id: set.media_id };
+  const img = (await q(`SELECT header_image, header_mime, header_name FROM quote_wa_settings WHERE id = 1`)).rows[0];
+  if (!img || !img.header_image) return { ok: true, id: null };
+  const up = await (uploadOverride || uploadWaMedia)(img.header_image, { mime: img.header_mime || 'image/jpeg', filename: img.header_name || 'nueva_cotizacion.jpg' });
+  if (!up.ok) return { ok: false, error: up.error };
+  await q(`UPDATE quote_wa_settings SET media_id = $1, media_at = now() WHERE id = 1`, [up.id]);
+  set.media_id = up.id; set.media_at = new Date();
+  return { ok: true, id: up.id };
 }
 export const maskPhone = (p) => { const s = String(p || ''); return s ? s.slice(0, 3) + '****' + s.slice(-4) : null; };
 
@@ -255,12 +302,22 @@ export async function sendQuoteTo(qt, rcpt, { force = false, q = query, summaryC
     catch (_) { /* 요약 실패 — 본문만 */ }
   }
   const sender = senderOverride || deliverQuote;
+  // 0264 · 발송 형식 · 헤더 이미지 — 한 번의 발송 묶음 안에서는 한 번만 읽고 한 번만 올린다
+  if (!summaryCache.__set) summaryCache.__set = await loadQuoteWaSettings(q);
+  const set = summaryCache.__set;
+  let headerMediaId = null;
+  if (set.has_header) {
+    if (!summaryCache.__media) summaryCache.__media = await ensureHeaderMedia(set, q);
+    headerMediaId = summaryCache.__media.ok ? summaryCache.__media.id : null;
+  }
   let res;
   try {
     res = await sender({ to: rcpt.phone, text: text.slice(0, 4000), headline: buildQuoteHeadline(qt, lang),
-      templateName: quoteWaTemplate(), templateLang: quoteWaTemplateLang(), windowOpen: ws.open });
+      templateName: quoteWaTemplate(), templateLang: quoteWaTemplateLang(), windowOpen: ws.open,
+      mode: set.send_mode, followDetail: set.follow_detail, headerMediaId });
+    if (set.has_header && !headerMediaId && res && res.ok) res.text_error = `헤더 이미지 업로드 실패: ${(summaryCache.__media || {}).error || '?'}`;
   } catch (e) { res = { ok: false, error: String((e && e.message) || e).slice(0, 200) }; }
-  const status = res.ok ? (res.mode === 'template' ? 'sent_template' : 'sent_text') : 'failed';
+  const status = res.ok ? ((res.mode === 'template' || res.mode === 'image_template') ? 'sent_template' : 'sent_text') : 'failed';
   await q(
     `UPDATE quote_wa_sends SET status = $2, message_id = COALESCE($3, message_id), error = $4,
             attempts = attempts + 1, sent_at = CASE WHEN $5 THEN now() ELSE sent_at END, claimed_at = NULL, updated_at = now()

@@ -75,17 +75,35 @@ test('A5. 2026-10-08 · 템플릿 우선 — 창이 「열림」 확실할 때�
   const mk = (tplOk = true, textOk = true) => { const calls = [];
     return { calls, api: {
       text: async (a) => { calls.push(['text', a.to]); return textOk ? { ok: true, message_id: 'T' } : { ok: false, error: 'txt_err' }; },
-      template: async (param, o) => { calls.push(['template', o.name, o.lang, param]); return tplOk ? { ok: true, message_id: 'P' } : { ok: false, code: 132001, error: 'Template name does not exist in the translation' }; } } }; };
+      template: async (param, o) => { calls.push(['template', o.name, o.lang, param]); return tplOk ? { ok: true, message_id: 'P' } : { ok: false, code: tplCode, error: 'Template error' }; },
+      imageTemplate: async (a) => { calls.push(['imageTemplate', a.name, a.lang, a.param, a.mediaId]); return tplOk ? { ok: true, message_id: 'I' } : { ok: false, code: tplCode, error: 'Template error' }; } } }; };
+  let tplCode = 132001;
   const base = { to: '528110000001', text: 'full', headline: 'one line', templateName: 'nueva_cotizacion', templateLang: 'es_MX' };
   let m = mk(); let r = await N.deliverQuote({ ...base, windowOpen: null }, m.api);
   assert.equal(r.mode, 'template', '창 상태를 모르면 템플릿(전에는 텍스트 → 창 밖이면 안 감)');
   assert.deepEqual(m.calls, [['template', 'nueva_cotizacion', 'es_MX', 'one line']]);
   m = mk(); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
   assert.equal(r.mode, 'template'); assert.equal(m.calls.length, 1);
+  // 2026-10-08 b · 기본(template): 창이 열려 있어도 디자인(템플릿) 먼저 + 상세 텍스트 이어서
   m = mk(); r = await N.deliverQuote({ ...base, windowOpen: true }, m.api);
-  assert.equal(r.mode, 'text'); assert.deepEqual(m.calls, [['text', '528110000001']], '창 열림이면 무료 상세 텍스트');
-  m = mk(true, false); r = await N.deliverQuote({ ...base, windowOpen: true }, m.api);
+  assert.equal(r.mode, 'template'); assert.equal(r.detail, 'sent');
+  assert.deepEqual(m.calls.map((c) => c[0]), ['template', 'text']);
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: true, followDetail: false }, m.api);
+  assert.deepEqual(m.calls.map((c) => c[0]), ['template'], '상세 이어 보내기 끔');
+  // 예전 방식(text_when_open): 창 열림이면 상세 텍스트만
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: true, mode: 'text_when_open' }, m.api);
+  assert.equal(r.mode, 'text'); assert.deepEqual(m.calls, [['text', '528110000001']]);
+  m = mk(true, false); r = await N.deliverQuote({ ...base, windowOpen: true, mode: 'text_when_open' }, m.api);
   assert.equal(r.mode, 'template', '텍스트가 실패하면 템플릿');
+  // 헤더 이미지 → 이미지 템플릿
+  m = mk(); r = await N.deliverQuote({ ...base, windowOpen: false, headerMediaId: 'MEDIA9' }, m.api);
+  assert.equal(r.mode, 'image_template'); assert.deepEqual(m.calls, [['imageTemplate', 'nueva_cotizacion', 'es_MX', 'one line', 'MEDIA9']]);
+  // 이미지 헤더 템플릿인데 이미지 없이 보냄 → #132012 안내
+  tplCode = 132012; m = mk(false); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
+  assert.match(r.error, /#132012.*헤더 이미지/); tplCode = 132001;
+  // 창 열림 + 템플릿 실패 → 상세 텍스트로라도
+  m = mk(false); r = await N.deliverQuote({ ...base, windowOpen: true }, m.api);
+  assert.equal(r.mode, 'text'); assert.match(r.text_error, /#132001/);
   m = mk(false); r = await N.deliverQuote({ ...base, windowOpen: false }, m.api);
   assert.equal(r.ok, false); assert.match(r.error, /nueva_cotizacion\(es_MX\) 실패 #132001/); assert.equal(m.calls.length, 1, '창 닫힘이면 텍스트를 보내지 않음');
   m = mk(false); r = await N.deliverQuote({ ...base, windowOpen: null }, m.api);
@@ -363,6 +381,71 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
       assert.equal(lg.status, 'failed'); assert.match(lg.error, /#132001/);
     } finally {
       globalThis.fetch = keepFetch; process.env = keepEnv;
+      N.setQuoteWaSender(stubSender);
+    }
+  });
+
+  await t.test('B12. 2026-10-08 b · 설정(0264) — 헤더 이미지 올리면 이미지 템플릿 · 업로드 1회 · 창 열림이면 템플릿 + 상세 · 예전 방식 선택', async () => {
+    N.setQuoteWaSender(null);
+    const keepFetch = globalThis.fetch; const graph = []; let uploads = 0;
+    globalThis.fetch = async (url, opt) => {
+      if (String(url).endsWith('/media')) { uploads++; return { ok: true, status: 200, json: async () => ({ id: 'MEDIA' + uploads }) }; }
+      const b = JSON.parse(opt.body); graph.push(b);
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.H' + graph.length }] }) };
+    };
+    const keepEnv = { ...process.env };
+    process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = 'v'; process.env.WHATSAPP_APP_SECRET = 's';
+    delete process.env.QUOTE_WA_TEMPLATE; delete process.env.WHATSAPP_TEMPLATE_LANG; delete process.env.QUOTE_WA_TEMPLATE_LANG;
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const mine = (g) => g.filter((x) => x.to === '528110005311');
+    try {
+      let st = (await call(D, 'GET', '/api/quote-wa/settings')).json();
+      assert.equal(st.send_mode, 'template', '기본 = 항상 디자인'); assert.equal(st.follow_detail, true); assert.equal(st.has_header, false);
+      assert.equal((await call(D, 'PUT', '/api/quote-wa/settings', { send_mode: 'x' })).statusCode, 400);
+      assert.equal((await call(D, 'PUT', '/api/quote-wa/settings', { image_b64: 'AAAA', image_mime: 'image/gif' })).statusCode, 400);
+      assert.equal((await call(R, 'GET', '/api/quote-wa/settings')).statusCode, 403);
+      st = (await call(D, 'PUT', '/api/quote-wa/settings', { image_b64: png, image_mime: 'image/png', image_name: 'ctr.png' })).json();
+      assert.equal(st.has_header, true); assert.equal(st.header_name, 'ctr.png'); assert.equal(st.media_ready, false);
+      const img = await call(D, 'GET', '/api/quote-wa/settings/image');
+      assert.equal(img.statusCode, 200); assert.equal(img.headers['content-type'], 'image/png');
+      // 창 닫힘 → 이미지 템플릿(헤더 이미지 + 본문) · 업로드 1회
+      await query(`DELETE FROM wa_inbound WHERE wa_from='528110005311'`);
+      const q1 = await newQuote(); await wait(1200);
+      let m1 = mine(graph);
+      assert.equal(m1.length, 1); assert.equal(m1[0].type, 'template'); assert.equal(m1[0].template.name, 'nueva_cotizacion');
+      const comps = m1[0].template.components;
+      assert.equal(comps[0].type, 'header'); assert.equal(comps[0].parameters[0].type, 'image'); assert.equal(comps[0].parameters[0].image.id, 'MEDIA1');
+      assert.equal(comps[1].type, 'body'); assert.ok(comps[1].parameters[0].text.includes(q1.quote_no));
+      assert.equal((await call(D, 'GET', '/api/quote-wa/settings')).json().media_ready, true);
+      // 창 열림 → 템플릿(디자인) + 상세 텍스트 이어서 · 다시 올리지 않음
+      await query(`INSERT INTO wa_inbound (wa_from, last_at, last_type, msg_count) VALUES ('528110005311', now(), 'text', 1)
+                   ON CONFLICT (wa_from) DO UPDATE SET last_at = now()`);
+      graph.length = 0;
+      const q2 = await newQuote(); await wait(1200);
+      m1 = mine(graph);
+      assert.deepEqual(m1.map((x) => x.type), ['template', 'text']); assert.equal(uploads, 1, '업로드는 한 번');
+      assert.ok(m1[1].text.body.includes('수주현황') && m1[1].text.body.includes(q2.quote_no));
+      let lg = (await query(`SELECT status FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q2.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'sent_template');
+      // 상세 이어 보내기 끔
+      await call(D, 'PUT', '/api/quote-wa/settings', { follow_detail: false });
+      graph.length = 0; await newQuote(); await wait(1200);
+      assert.deepEqual(mine(graph).map((x) => x.type), ['template']);
+      // 예전 방식 — 창 열림이면 상세 텍스트만
+      await call(D, 'PUT', '/api/quote-wa/settings', { send_mode: 'text_when_open', follow_detail: true });
+      graph.length = 0; const q4 = await newQuote(); await wait(1200);
+      assert.deepEqual(mine(graph).map((x) => x.type), ['text']);
+      lg = (await query(`SELECT status FROM quote_wa_sends WHERE quote_id=$1 AND recipient_id=$2`, [q4.id, rAll.id])).rows[0];
+      assert.equal(lg.status, 'sent_text');
+      // 이미지 지우기 → 일반 템플릿
+      await call(D, 'PUT', '/api/quote-wa/settings', { send_mode: 'template', clear_image: true });
+      await query(`DELETE FROM wa_inbound WHERE wa_from='528110005311'`);
+      graph.length = 0; await newQuote(); await wait(1200);
+      m1 = mine(graph); assert.equal(m1.length, 1); assert.equal(m1[0].template.components.length, 1, '헤더 없이 본문만');
+      assert.equal((await call(D, 'GET', '/api/quote-wa/status')).json().settings.send_mode, 'template');
+    } finally {
+      globalThis.fetch = keepFetch; process.env = keepEnv;
+      await query(`UPDATE quote_wa_settings SET send_mode='template', follow_detail=true, header_image=NULL, header_mime=NULL, header_name=NULL, media_id=NULL, media_at=NULL WHERE id=1`);
       N.setQuoteWaSender(stubSender);
     }
   });

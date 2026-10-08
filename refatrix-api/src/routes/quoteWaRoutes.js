@@ -9,6 +9,9 @@
 //   GET    /api/quote-wa/status              설정 상태 + 최근 발송 원장(실제 전달 상태)
 //   GET    /api/quote-wa/preview?quote_id&lang&summary   보낼 문구(없으면 가장 최근 견적) + 당월 요약(0257)
 //   POST   /api/quote-wa/send {quote_id?, recipient_id?}   지금 발송(수동 — 성공 이력 무시)
+//   GET    /api/quote-wa/settings                     발송 형식 · 헤더 이미지 정보(0264)
+//   PUT    /api/quote-wa/settings {send_mode, follow_detail, image_b64·image_mime·image_name | clear_image}
+//   GET    /api/quote-wa/settings/image               헤더 이미지
 // =====================================================================
 import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
@@ -18,7 +21,7 @@ import { webhookConfigured, explainWaError } from '../waWebhook.js';
 import {
   loadQuoteForNotify, buildQuoteText, buildQuoteHeadline, sendQuoteTo, recipientCovers, maskPhone,
   quoteWaEnabled, quoteWaTemplate, quoteWaTemplateLang, MAX_ATTEMPTS, LOOKBACK_HOURS,
-  SUMMARY_LEVELS, levelOf, monthSummaryFor, buildMonthSummaryText,
+  SUMMARY_LEVELS, levelOf, monthSummaryFor, buildMonthSummaryText, loadQuoteWaSettings, QUOTE_WA_MODES,
 } from '../quoteWaNotify.js';
 
 const G = { preHandler: [authGuard, requireDirector] };
@@ -107,6 +110,39 @@ export default async function quoteWaRoutes(app) {
     return { ok: true };
   });
 
+  // ── 0264 · 발송 형식 · 템플릿 헤더 이미지 ──
+  const settingsOut = (st) => ({ send_mode: st.send_mode, follow_detail: st.follow_detail, has_header: !!st.has_header,
+    header_name: st.header_name || null, header_bytes: st.header_bytes || 0, media_ready: !!st.media_id, updated_at: st.updated_at || null });
+  app.get('/api/quote-wa/settings', G, async () => settingsOut(await loadQuoteWaSettings()));
+  app.get('/api/quote-wa/settings/image', G, async (req, reply) => {
+    const r = (await query(`SELECT header_image, header_mime FROM quote_wa_settings WHERE id = 1`)).rows[0];
+    if (!r || !r.header_image) return reply.code(404).send({ error: 'no_image' });
+    return reply.type(r.header_mime || 'image/jpeg').header('cache-control', 'private, no-cache').send(r.header_image);
+  });
+  app.put('/api/quote-wa/settings', { preHandler: [authGuard, requireDirector], bodyLimit: 9 * 1024 * 1024 }, async (req, reply) => {
+    const b = req.body || {}; const sets = []; const args = [];
+    const put = (col, v) => { args.push(v); sets.push(`${col}=$${args.length}`); };
+    if (b.send_mode != null) { if (!QUOTE_WA_MODES.includes(b.send_mode)) return reply.code(400).send({ error: 'bad_mode' }); put('send_mode', b.send_mode); }
+    if (typeof b.follow_detail === 'boolean') put('follow_detail', b.follow_detail);
+    if (b.clear_image === true) { sets.push('header_image=NULL', 'header_mime=NULL', 'header_name=NULL', 'media_id=NULL', 'media_at=NULL'); }
+    else if (b.image_b64) {
+      const mime = String(b.image_mime || '').toLowerCase();
+      if (!['image/jpeg', 'image/png'].includes(mime)) return reply.code(400).send({ error: 'bad_image_type' });
+      const buf = Buffer.from(String(b.image_b64).replace(/^data:[^,]*,/, ''), 'base64');
+      if (!buf.length) return reply.code(400).send({ error: 'bad_image' });
+      if (buf.length > 5 * 1024 * 1024) return reply.code(400).send({ error: 'image_too_large' });
+      put('header_image', buf); put('header_mime', mime); put('header_name', String(b.image_name || '').slice(0, 120) || null);
+      sets.push('media_id=NULL', 'media_at=NULL');   // 새 이미지 → 다음 발송 때 다시 올림
+    }
+    if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    put('updated_by', req.ctx.perm.userId);
+    await query(`INSERT INTO quote_wa_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
+    await query(`UPDATE quote_wa_settings SET ${sets.join(', ')}, updated_at=now() WHERE id = 1`, args);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'quote_wa_settings',
+      detail: { send_mode: b.send_mode, follow_detail: b.follow_detail, image: b.clear_image ? 'cleared' : (b.image_b64 ? 'set' : undefined) } });
+    return settingsOut(await loadQuoteWaSettings());
+  });
+
   app.get('/api/quote-wa/status', G, async () => {
     const SEL = `SELECT s.quote_id, q.quote_no, COALESCE(c.name, q.guest_name) AS customer_name, s.recipient_id, r.name,
                         s.to_masked, s.status, s.error, s.attempts, s.sent_at, s.updated_at`;
@@ -122,7 +158,7 @@ export default async function quoteWaRoutes(app) {
     } catch { rows = (await query(`${SEL} ${FROM} ORDER BY s.updated_at DESC LIMIT 40`)).rows; }
     return {
       enabled: quoteWaEnabled(), api_ready: waApiReady(), template: quoteWaTemplate(), template_lang: quoteWaTemplateLang(),
-      template_set: !!process.env.QUOTE_WA_TEMPLATE,
+      template_set: !!process.env.QUOTE_WA_TEMPLATE, settings: settingsOut(await loadQuoteWaSettings()),
       webhook: webhookConfigured(), max_attempts: MAX_ATTEMPTS, lookback_hours: LOOKBACK_HOURS,
       recent: rows.map((x) => {
         const o = { ...x, quote_id: Number(x.quote_id), recipient_id: Number(x.recipient_id), attempts: Number(x.attempts) };
