@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일정 · 공지 · 할 일</title>
+<title>Refatrix ERP · 일정 · 공지 · 할 일 · build board-1008wp</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -190,6 +190,7 @@
       <div class="tab on" id="tabCal" onclick="showTab('cal')">일정</div>
       <div class="tab" id="tabNotice" onclick="showTab('notice')">공지<span class="b hidden" id="noticeBadge"></span></div>
       <div class="tab" id="tabTodo" onclick="showTab('todo')">할 일<span class="b hidden" id="todoBadge"></span></div>
+      <div class="tab" id="tabTeam" onclick="showTab('team')">팀 업무</div>
     </div>
 
     <!-- 일정 (달력) -->
@@ -199,6 +200,7 @@
         <span class="ctitle" id="calTitle">—</span>
         <button class="navb" id="calNext">›</button>
         <button class="today" id="calToday">오늘</button>
+        <button class="today" id="wpTeamBtn" type="button" style="font-weight:800">👥 팀 업무</button>
         <span class="seg"><button id="calDayBtn" onclick="setCalView('day')">일</button><button id="calWeekBtn" onclick="setCalView('week')">주</button><button id="calMonthBtn" class="on" onclick="setCalView('month')">월</button></span>
       </div>
       <div class="calbar" style="margin-top:-4px">
@@ -220,6 +222,20 @@
     <div class="card hidden" id="paneTodo">
       <div id="todoForm"></div>
       <div id="todoList"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 팀 업무 (0263 · 직원 오늘 할 일 / 오늘 한 일 — 전 직원 공유) -->
+    <div class="card hidden" id="paneTeam">
+      <div class="calbar">
+        <button class="today" id="wpBackBtn" type="button">← 일정</button>
+        <button class="navb" id="wpPrev" type="button">‹</button>
+        <span class="ctitle" id="wpTitle">—</span>
+        <button class="navb" id="wpNext" type="button">›</button>
+        <button class="today" id="wpToday" type="button">오늘</button>
+        <span class="hint" id="wpAsOf" style="margin-left:auto"></span>
+      </div>
+      <div id="wpTeamBody"><div class="hint">불러오는 중…</div></div>
+      <div id="wpAdmin"></div>
     </div>
   </div>
 </div>
@@ -286,7 +302,7 @@
   }
 
   function showTab(t){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
-    ['cal','notice','todo'].forEach(x=>{
+    ['cal','notice','todo','team'].forEach(x=>{
       $('tab'+x.charAt(0).toUpperCase()+x.slice(1)).classList.toggle('on',x===t);
       $('pane'+x.charAt(0).toUpperCase()+x.slice(1)).classList.toggle('hidden',x!==t);
     });
@@ -294,7 +310,8 @@
   // 헤더(트리) 딥링크: #tab=cal/notice/todo
   function applyHashTab(){
     var t='cal'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'cal'; }catch(e){}
-    showTab(['cal','notice','todo'].indexOf(t)>=0?t:'cal');
+    showTab(['cal','notice','todo','team'].indexOf(t)>=0?t:'cal');
+    if(t==='team' && window.wpOpenTeam) window.wpOpenTeam();
   }
   window.addEventListener('hashchange',function(){ if(!$('app').classList.contains('hidden')) applyHashTab(); });
 
@@ -474,6 +491,7 @@
         fetch(session.api+'/api/calendar?from='+cYmd(cAddDays(from,-1))+'&to='+cYmd(cAddDays(to,1)),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         loadJournalRange(from,to),   // 나의 기록 표식(디렉터 본인만 · 실패해도 달력은 정상)
+        (window.wpLoadMarks?window.wpLoadMarks(from,to):null),   // 0263 업무일지 표식(본인 · 실패해도 달력은 정상)
       ]);
       calEvents=cal.items||[];
       // 할 일: 직원 필터 중이면 그 직원에게 배정된 것만 / '모두'면 전체 / 그 외 필터면 내게 배정된 것만
@@ -650,7 +668,7 @@
         const amInner=amEvs.length?amEvs.map(evChip).join(''):'<div class="hempty">—</div>';
         const pmInner=pmEvs.length?pmEvs.map(evChip).join(''):'<div class="hempty">—</div>';
         return '<div class="cgcell week'+(isToday?' today':'')+'" onclick="openDay(\''+key+'\')">'
-          +'<div class="cghead"><span class="dn">'+DOW[day.getDay()]+' '+day.getDate()+jrMark(key)+'</span>'+(cnt?'<span class="cnt">'+cnt+'건</span>':'')+'</div>'
+          +'<div class="cghead"><span class="dn">'+DOW[day.getDay()]+' '+day.getDate()+jrMark(key)+'</span>'+(window.wpMark?window.wpMark(key):'')+(cnt?'<span class="cnt">'+cnt+'건</span>':'')+'</div>'
           +'<div class="cgbody">'+adband
             +'<div class="half"><div class="hlab am">오전<span class="ln"></span></div>'+amInner+'</div>'
             +'<div class="half"><div class="hlab pm">오후<span class="ln"></span></div>'+pmInner+'</div>'
@@ -665,7 +683,7 @@
       });
       if(all.length>maxChips) chips+='<div class="cgmore">+'+(all.length-maxChips)+' 더</div>';
       return '<div class="cgcell'+(out?' out':'')+(isToday?' today':'')+'" onclick="openDay(\''+key+'\')">'
-        +'<div class="dn">'+day.getDate()+jrMark(key)+'</div>'+chips+'</div>';
+        +'<div class="dn">'+day.getDate()+jrMark(key)+'</div>'+(window.wpMark?window.wpMark(key):'')+chips+'</div>';
     }).join('');
     $('calGrid').style.gridTemplateColumns='';
     $('calGrid').innerHTML=tzNote()+'<div class="calgrid" style="grid-template-columns:repeat('+dows.length+',1fr)">'+head+cells+'</div>';
@@ -702,6 +720,8 @@
     $('dmTitle').textContent=Number(m)+'월 '+Number(d)+'일('+wd+')';
     const evs=eventsOn(key), tds=todosOn(key);
     let html='';
+    // 0263 · 업무일지(오늘 할 일 / 오늘 한 일) — 대상 직원에게만 칸이 채워짐
+    html+='<div id="wpBox"></div>';
     // 일정 목록
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:4px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
@@ -765,12 +785,14 @@
     $('dmBody').innerHTML=html;
     evs.forEach(e=>loadEvMemos(e.id));
     if(isDirector){ jrBase=''; loadJournal(dmDate); }
+    if(window.wpLoadDay) window.wpLoadDay(key);
     $('dayModal').style.display='flex';
   }
   function closeDay(){
     // 저장하지 않은 기록이 있으면 확인 (일지는 되돌릴 수 없으므로)
     const ta=$('jr-content');
     if(ta && !ta.disabled && ta.value!==jrBase && !confirm('저장하지 않은 기록이 있습니다. 저장하지 않고 닫을까요?')) return;
+    if(window.wpDirty && window.wpDirty() && !confirm('저장하지 않은 업무일지가 있습니다. 저장하지 않고 닫을까요?')) return;
     $('dayModal').style.display='none';
   }
   function dmScopeChange(){
@@ -1163,6 +1185,7 @@
   $('calToday').addEventListener('click',()=>calGoToday());
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
+<script src="refatrix-workplan.js?v=20261008wp"></script>
 <script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>

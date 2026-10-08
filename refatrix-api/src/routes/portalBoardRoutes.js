@@ -2,6 +2,7 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
 import { logEvent } from '../audit.js';
+import { registerWorkplan } from './workplanRoutes.js';   // 0263 · 직원 업무일지(오늘 할 일/한 일)
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function isoTs(d) { if (!d) return null; if (d instanceof Date) return d.toISOString(); return String(d); }
@@ -805,4 +806,8 @@ export default async function portalBoardRoutes(app) {
     await query(`UPDATE todos SET deleted_at=now() WHERE id=$1`, [id]);
     return { ok: true };
   });
+
+  // =================== 직원 업무일지 (0263) ===================
+  //   server.js 를 건드리지 않으려고 이 플러그인에 함께 등록(라우트 + 5분 WhatsApp 스케줄러).
+  await registerWorkplan(app);
 }
