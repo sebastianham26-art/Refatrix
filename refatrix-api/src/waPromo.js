@@ -178,15 +178,24 @@ export async function processConsentAsks(budget, q = query) {
 
 // ───────────────────────── ③ 정기 발송 ─────────────────────────
 export const oneLine = (s) => String(s || '').replace(/[\n\t\r]+/g, ' ').replace(/ {4,}/g, '   ').trim().slice(0, 1000);
-const audienceSql = (c) => {
+// 대상 조건(0261): target_ids 가 있으면 「고른 연락처 중 ✅ 동의자」, 없으면 「✅ 동의 전체(+메모 조건)」.
+//   args 는 $2 부터 쓴다($1 = campaign_id).
+export const targetIdsOf = (v) => {
+  const a = (Array.isArray(v) ? v : []).map(Number).filter((x) => Number.isInteger(x) && x > 0);
+  return a.length ? [...new Set(a)] : null;
+};
+const audienceSql = (c, base = 1) => {
   const args = []; let extra = '';
-  if (c.memo_filter && String(c.memo_filter).trim()) { args.push('%' + String(c.memo_filter).trim() + '%'); extra = ` AND w.memo ILIKE $${args.length + 1}`; }
+  const ids = targetIdsOf(c.target_ids);
+  if (ids) { args.push(ids); extra = ` AND w.id = ANY($${args.length + base}::bigint[])`; }
+  else if (c.memo_filter && String(c.memo_filter).trim()) { args.push('%' + String(c.memo_filter).trim() + '%'); extra = ` AND w.memo ILIKE $${args.length + base}`; }
   return { args, extra };
 };
-export async function audienceCount(memoFilter, q = query) {
-  const f = memoFilter && String(memoFilter).trim();
-  return Number((await q(`SELECT count(*)::int n FROM wa_contacts w WHERE w.deleted_at IS NULL AND w.consent='yes'${f ? ` AND w.memo ILIKE $1` : ''}`,
-    f ? ['%' + f + '%'] : [])).rows[0].n);
+// audienceCount('메모') 또는 audienceCount({ memo_filter, target_ids })
+export async function audienceCount(spec, q = query) {
+  const c = spec && typeof spec === 'object' ? spec : { memo_filter: spec };
+  const { args, extra } = audienceSql(c, 0);
+  return Number((await q(`SELECT count(*)::int n FROM wa_contacts w WHERE w.deleted_at IS NULL AND w.consent='yes'${extra}`, args)).rows[0].n);
 }
 
 export async function uploadCampaignImage(c) {
@@ -216,7 +225,7 @@ export async function sendCampaignTo(c, ct, mediaId, { q = query, source = 'camp
 
 async function processCampaign(c, budget, q) {
   if (c.status === 'scheduled') {
-    const n = await audienceCount(c.memo_filter, q);
+    const n = await audienceCount(c, q);
     await q(`UPDATE wa_campaigns SET status='sending', started_at=now(), target_n=$2, updated_at=now() WHERE id=$1 AND status='scheduled'`, [c.id, n]);
   }
   const { args, extra } = audienceSql(c);
@@ -267,7 +276,7 @@ export async function runPromoJob({ q = query } = {}) {
   if (!promoReady()) return { skipped: 'wa_not_configured' };
   let budget = Math.min(MAX_PER_TICK, await remainingToday(q));
   const out = { campaigns: [], asks: null, budget };
-  const due = (await q(`SELECT id, caption, memo_filter, status, media_id, media_at FROM wa_campaigns
+  const due = (await q(`SELECT id, caption, memo_filter, target_ids, status, media_id, media_at FROM wa_campaigns
                          WHERE status IN ('scheduled','sending') AND send_at <= now() ORDER BY send_at, id`)).rows;
   for (const c of due) {
     const r = await processCampaign({ ...c, id: Number(c.id) }, budget, q);

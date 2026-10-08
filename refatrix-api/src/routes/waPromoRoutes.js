@@ -13,7 +13,9 @@
 //   POST   /api/wa-promo/survey-import {survey_id, name_k, phone_k, company_k?, dry_run}
 //   발송 일정
 //   GET    /api/wa-promo/campaigns?from&to               일정(이미지 제외) + 결과 집계
-//   POST   /api/wa-promo/campaigns {send_at, caption, image_b64, image_mime, image_name, memo_filter}
+//   POST   /api/wa-promo/campaigns {send_at | send_now, caption, image_b64·image_mime·image_name | from_campaign_id, memo_filter, contact_ids?}
+//            contact_ids(0261) = 고른 연락처 중 ✅ 동의자에게만 · from_campaign_id = 지난 발송 이미지 다시 쓰기
+//   GET    /api/wa-promo/campaigns/recent-images         다시 쓸 이미지 목록(최근 발송)
 //   PATCH  /api/wa-promo/campaigns/:id                   예약 상태만 수정 · DELETE = 취소
 //   GET    /api/wa-promo/campaigns/:id/image             이미지
 //   GET    /api/wa-promo/campaigns/:id/sends             발송 원장(실제 전달 상태)
@@ -37,7 +39,7 @@ import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
 import {
   promoCfg, promoReady, insertContacts, classifyRows, queueConsentAsk, sentToday, audienceCount,
-  sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage,
+  sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage, targetIdsOf,
 } from '../waPromo.js';
 
 const R = { preHandler: [authGuard, requirePage('marketing')] };
@@ -199,7 +201,7 @@ export default async function waPromoRoutes(app) {
 
   // ───────── 발송 일정 ─────────
   const CAMP_COLS = `c.id, ${MXT('c.send_at')} AS send_at_mx, c.send_at, c.caption, c.image_mime, c.image_name, octet_length(c.image) AS image_bytes,
-                     c.memo_filter, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
+                     c.memo_filter, COALESCE(cardinality(c.target_ids), 0) AS target_sel, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
   async function campaignStats(ids) {
     if (!ids.length) return new Map();
     const rows = (await query(
@@ -225,7 +227,7 @@ export default async function waPromoRoutes(app) {
     const rows = (await query(`SELECT ${CAMP_COLS} FROM wa_campaigns c LEFT JOIN users u ON u.id=c.created_by
                                 WHERE ${conds.map((x) => `(${x})`).join(' AND ')} ORDER BY c.send_at, c.id`, args)).rows;
     const st = await campaignStats(rows.map((r) => Number(r.id)));
-    return { items: rows.map((r) => ({ ...r, id: Number(r.id), image_bytes: Number(r.image_bytes), stats: st.get(Number(r.id)) || null })),
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), image_bytes: Number(r.image_bytes), target_sel: Number(r.target_sel), stats: st.get(Number(r.id)) || null })),
       audience_yes: await audienceCount(null) };
   });
 
@@ -238,21 +240,49 @@ export default async function waPromoRoutes(app) {
     if (buf.length > MAX_IMAGE_BYTES) return { error: 'image_too_large' };
     return { buf, mime, name: String(b.image_name || '').slice(0, 120) || null };
   }
+  app.get('/api/wa-promo/campaigns/recent-images', R, async () => {
+    const rows = (await query(
+      `SELECT DISTINCT ON (md5(c.image)) c.id, c.caption, c.image_name, ${MXT('c.send_at')} AS send_at_mx
+         FROM wa_campaigns c ORDER BY md5(c.image), c.send_at DESC, c.id DESC`)).rows
+      .sort((a, b) => String(b.send_at_mx).localeCompare(String(a.send_at_mx))).slice(0, 12);
+    return { items: rows.map((r) => ({ id: Number(r.id), caption: r.caption, image_name: r.image_name, send_at_mx: r.send_at_mx })) };
+  });
   app.post('/api/wa-promo/campaigns', IMG_LIMIT, async (req, reply) => {
     const b = req.body || {};
-    if (!localMx(b.send_at)) return reply.code(400).send({ error: 'bad_send_at' });
+    const now = b.send_now === true;
+    if (!now && !localMx(b.send_at)) return reply.code(400).send({ error: 'bad_send_at' });
     const caption = String(b.caption || '').trim();
     if (!caption) return reply.code(400).send({ error: 'caption_required' });
     if (caption.length > 900) return reply.code(400).send({ error: 'caption_too_long' });
-    const img = readImage(b);
-    if (img.none) return reply.code(400).send({ error: 'image_required' });
+    let img = readImage(b);
     if (img.error) return reply.code(400).send({ error: img.error });
+    if (img.none && b.from_campaign_id) {   // 지난 발송 이미지 다시 쓰기
+      const src = (await query(`SELECT image, image_mime, image_name FROM wa_campaigns WHERE id=$1`, [idOf(b.from_campaign_id)])).rows[0];
+      if (!src) return reply.code(404).send({ error: 'image_source_not_found' });
+      img = { buf: src.image, mime: src.image_mime, name: src.image_name };
+    }
+    if (img.none) return reply.code(400).send({ error: 'image_required' });
+    // 0261 · 고른 연락처 — 그중 ✅ 동의자만 대상. 동의자가 없으면 만들지 않는다.
+    let targets = null; let picked = null;
+    if (b.contact_ids != null) {
+      const ids = targetIdsOf(b.contact_ids);
+      if (!ids) return reply.code(400).send({ error: 'no_contacts' });
+      if (ids.length > 5000) return reply.code(400).send({ error: 'too_many_contacts' });
+      const rows = (await query(`SELECT id, consent FROM wa_contacts WHERE deleted_at IS NULL AND id = ANY($1::bigint[])`, [ids])).rows;
+      picked = { selected: ids.length, yes: 0, unknown: 0, asked: 0, no: 0, missing: ids.length - rows.length };
+      for (const r of rows) picked[r.consent] = (picked[r.consent] || 0) + 1;
+      targets = rows.filter((r) => r.consent === 'yes').map((r) => Number(r.id));
+      if (!targets.length) return reply.code(400).send({ error: 'no_consented', picked });
+    }
     const r = (await query(
-      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, created_by)
-       VALUES (($1::timestamp AT TIME ZONE 'America/Mexico_City'),$2,$3,$4,$5,$6,$7) RETURNING id, (send_at < now()) AS past`,
-      [b.send_at, caption, img.buf, img.mime, img.name, String(b.memo_filter || '').trim() || null, req.ctx.perm.userId])).rows[0];
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_campaign:${r.id}`, detail: { send_at: b.send_at } });
-    return { id: Number(r.id), past: r.past === true, audience: await audienceCount(b.memo_filter) };
+      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, target_ids, created_by)
+       VALUES (CASE WHEN $8 THEN now() ELSE ($1::timestamp AT TIME ZONE 'America/Mexico_City') END,$2,$3,$4,$5,$6,$7::bigint[],$9)
+       RETURNING id, (send_at <= now()) AS past`,
+      [now ? null : b.send_at, caption, img.buf, img.mime, img.name, targets ? null : (String(b.memo_filter || '').trim() || null), targets, now, req.ctx.perm.userId])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_campaign:${r.id}`,
+      detail: { send_at: now ? 'now' : b.send_at, targets: targets ? targets.length : null } });
+    return { id: Number(r.id), past: r.past === true, audience: await audienceCount({ memo_filter: b.memo_filter, target_ids: targets }), picked,
+      remaining_today: Math.max(0, promoCfg().cap - await sentToday()) };
   });
   app.patch('/api/wa-promo/campaigns/:id', IMG_LIMIT, async (req, reply) => {
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });

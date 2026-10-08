@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · wap-1007a) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1008s) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -45,7 +45,8 @@ function boot() {
         if (u.includes('/api/wa-promo/campaigns/7/sends')) return json({ items: [{ name: 'Juan', phone_masked: '528****0001', status: 'sent_template', dlv_status: 'read', sent_at: '2026-10-14T16:00:00Z' }] });
         if (u.includes('/api/wa-promo/campaigns/7/image')) return json({});
         if (u.includes('/api/wa-promo/campaigns/7/test')) return json({ ok: true, kind: 'template' });
-        if (u.endsWith('/api/wa-promo/campaigns') && method === 'POST') return json({ id: 8, past: false, audience: 1 });
+        if (u.includes('/api/wa-promo/campaigns/recent-images')) return json({ items: [{ id: 7, caption: 'Amortiguadores', image_name: 'a.png', send_at_mx: '2026-10-14T10:00' }] });
+        if (u.endsWith('/api/wa-promo/campaigns') && method === 'POST') return json({ id: 8, past: !!body.send_now, audience: (body.contact_ids || [1]).length });
         if (u.includes('/api/wa-promo/conversations?')) return json({ items: [{ phone: '528110000002', phone_masked: '528****0002', contact_id: 2, name: 'María', inbox_state: 'open', lead: true, last: { direction: 'in', body: 'Quiero cotizar', at: '2026-10-14T16:20:00Z' }, window_open: true }] });
         if (u.includes('/api/wa-promo/conversations/528110000002/reply')) return json({ ok: true });
         if (u.includes('/api/wa-promo/conversations/528110000002')) return json({ phone: '528110000002', contact: { ...CONTACTS[1], inbox_state: 'open', assigned_to: null }, window: { open: true, last_in_at: new Date().toISOString() },
@@ -69,18 +70,24 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1007a/);
+    assert.match(c.d.title, /wap-1008s/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
     assert.match(tbl, /Juan Pérez/); assert.match(tbl, /버튼/); assert.match(tbl, /⏳ 응답 대기/);
-    assert.equal(c.d.querySelectorAll('#cList input[data-sel]').length, 1, '미확인만 고를 수 있음');
+    assert.equal(c.d.querySelectorAll('#cList input[data-sel]').length, 3, '모든 행을 고를 수 있음');
+    assert.ok(c.d.querySelector('tr[data-id="2"] button[data-act="ask"]'), '미확인 행: ✉ 동의 요청');
+    assert.ok(c.d.querySelector('tr[data-id="1"] button[data-act="send"]'), '동의 행: 📣 보내기');
+    assert.ok(!c.d.querySelector('tr[data-id="3"] button[data-act="ask"]') && !c.d.querySelector('tr[data-id="3"] button[data-act="send"]'), '응답 대기 행은 둘 다 없음');
+    assert.ok(c.d.getElementById('cSelBar').classList.contains('hidden'), '고른 사람 없으면 선택 막대 숨김');
     c.d.getElementById('cName').value = 'Ana'; c.d.getElementById('cPhone').value = '8111111111'; click(c, 'cAdd'); await tick();
     assert.deepEqual(c.calls.find((x) => x.method === 'POST' && x.u.endsWith('/contacts')).body, { name: 'Ana', phone: '8111111111', memo: '' });
     click(c, 'cAskAll'); await tick();
     assert.deepEqual(c.calls.find((x) => x.u.includes('/consent/ask')).body, {});
-    const cb = c.d.querySelector('#cList input[data-sel]'); cb.checked = true; cb.dispatchEvent(new c.w.Event('change', { bubbles: true }));
-    assert.equal(c.d.getElementById('cAskSel').disabled, false); click(c, 'cAskSel'); await tick();
+    const all = c.d.getElementById('cAll'); all.checked = true; all.dispatchEvent(new c.w.Event('change', { bubbles: true }));
+    assert.match(c.d.getElementById('cSelInfo').textContent, /3명 선택 · ✅ 동의 1 · ❓ 미확인 1 · 그 밖 1/);
+    assert.match(c.d.getElementById('cSelAsk').textContent, /1명/); assert.match(c.d.getElementById('cSelSend').textContent, /1명/);
+    click(c, 'cSelAsk'); await tick();
     assert.deepEqual(c.calls.filter((x) => x.u.includes('/consent/ask')).pop().body, { ids: [2] });
     c.d.querySelector('tr[data-id="2"] button[data-act="sales"]').click(); await tick();
     assert.deepEqual(c.calls.find((x) => x.method === 'PATCH').body, { consent: 'yes' });
@@ -94,6 +101,35 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     assert.match(c.d.getElementById('mImpSave').textContent, /2명 저장/);
     click(c, 'mImpSave'); await tick();
     assert.equal(c.calls.filter((x) => x.u.includes('/contacts/bulk')).pop().body.dry_run, false);
+    c.close();
+  });
+
+  await t.test('①-2 고른 사람에게 이미지 — 행의 📣 · 선택 막대 · 지난 이미지 다시 쓰기 · 지금/예약', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    c.d.querySelector('tr[data-id="1"] button[data-act="send"]').click(); await tick(300);
+    assert.ok(c.d.getElementById('mSend').classList.contains('on'));
+    assert.match(c.d.getElementById('sdWho').textContent, /Juan Pérez/);
+    assert.match(c.d.getElementById('sdCap0').textContent, /138 \/ 150/);
+    assert.match(c.d.getElementById('sdGo').textContent, /1명에게 지금 보내기/);
+    // 지난 이미지 고르기 → 문구가 비어 있으면 그 문구로
+    c.d.querySelector('input[name="sdSrc"][value="old"]').checked = true;
+    c.d.querySelector('input[name="sdSrc"][value="old"]').dispatchEvent(new c.w.Event('change', { bubbles: true }));
+    assert.ok(!c.d.getElementById('sdOldWrap').classList.contains('hidden'));
+    c.d.querySelector('#sdOld [data-old="7"]').click(); await tick();
+    assert.equal(c.d.getElementById('sdCap').value, 'Amortiguadores');
+    assert.match(c.d.getElementById('sdPhone').textContent, /Novedades de Refatrix: Amortiguadores/);
+    click(c, 'sdGo'); await tick(300);
+    const post = c.calls.filter((x) => x.method === 'POST' && x.u.endsWith('/api/wa-promo/campaigns')).pop();
+    assert.deepEqual(post.body, { caption: 'Amortiguadores', contact_ids: [1], send_now: true, from_campaign_id: 7 });
+    assert.ok(!c.d.getElementById('mSend').classList.contains('on'));
+    assert.match(c.d.getElementById('msg').textContent, /1분 안에 발송을 시작합니다 — 대상 1명/);
+    // 예약 + 새 이미지 없으면 막음
+    c.d.querySelector('tr[data-id="1"] button[data-act="send"]').click(); await tick(300);
+    c.d.querySelector('input[name="sdWhen"][value="at"]').checked = true;
+    c.d.querySelector('input[name="sdWhen"][value="at"]').dispatchEvent(new c.w.Event('change', { bubbles: true }));
+    assert.match(c.d.getElementById('sdGo').textContent, /1명에게 예약/);
+    c.d.getElementById('sdCap').value = 'hola'; click(c, 'sdGo'); await tick();
+    assert.match(c.d.getElementById('sdMsg').textContent, /이미지를 고르세요/);
     c.close();
   });
 

@@ -251,4 +251,33 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal(stt.cap, 150); assert.ok(stt.sent_today >= 6); assert.equal(stt.consent_template, 'promo_consentimiento'); assert.equal(stt.webhook, true);
     assert.equal((await call(Rp, 'POST', '/api/wa-promo/campaigns', {})).statusCode, 403);
   });
+
+  await t.test('B7. 고른 사람에게만(0261) — 동의자만 대상 · 지금 보내기 · 지난 이미지 다시 쓰기 · 동의자 없으면 400', async () => {
+    const ids = async (...phones) => (await query(`SELECT id FROM wa_contacts WHERE deleted_at IS NULL AND phone = ANY($1::text[]) ORDER BY id`, [phones])).rows.map((r) => Number(r.id));
+    const [c1, c2, c3] = await ids('528110000001', '528110000002', '528110000003');   // ✅ ✅ ⛔
+    const eq = await one(`SELECT id FROM wa_contacts WHERE phone='528119999999'`);          // ❓
+    // 동의자 없음
+    const bad = await call(D, 'POST', '/api/wa-promo/campaigns', { send_now: true, caption: 'x', image_b64: png.toString('base64'), image_mime: 'image/png', contact_ids: [c3, Number(eq.id)] });
+    assert.equal(bad.statusCode, 400); assert.equal(bad.json().error, 'no_consented'); assert.equal(bad.json().picked.no, 1); assert.equal(bad.json().picked.unknown, 1);
+    // 지난 이미지 목록 → 다시 쓰기 + 지금 보내기 + 섞어서 고르기(✅ 1명 · ⛔ 1명 · ❓ 1명)
+    const ri = (await call(D, 'GET', '/api/wa-promo/campaigns/recent-images')).json();
+    assert.ok(ri.items.length >= 1);
+    const r = await call(D, 'POST', '/api/wa-promo/campaigns', { send_now: true, caption: 'Solo para usted', from_campaign_id: ri.items[0].id, contact_ids: [c1, c3, Number(eq.id)] });
+    assert.equal(r.statusCode, 200, r.body);
+    const k = r.json(); assert.equal(k.past, true); assert.equal(k.audience, 1); assert.deepEqual([k.picked.selected, k.picked.yes, k.picked.no, k.picked.unknown], [3, 1, 1, 1]);
+    const row = await one(`SELECT target_ids, memo_filter, octet_length(image) n FROM wa_campaigns WHERE id=$1`, [k.id]);
+    assert.deepEqual(row.target_ids.map(Number), [c1], '저장되는 대상은 동의자만'); assert.equal(row.memo_filter, null); assert.ok(Number(row.n) > 0);
+    calls.length = 0;
+    await P.runPromoJob({});
+    const sends = calls.filter((c) => ['image', 'imageTemplate'].includes(c.kind));
+    assert.equal(sends.length, 1); assert.equal(sends[0].to, '528110000001', '고른 동의자 한 명에게만');
+    assert.equal((await one(`SELECT status FROM wa_campaigns WHERE id=$1`, [k.id])).status, 'done');
+    // 2명 예약 → 목록에 「고른 N명」
+    const r2 = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-02-01T10:00', caption: 'dos', image_b64: png.toString('base64'), image_mime: 'image/png', contact_ids: [c1, c2] })).json();
+    assert.equal(r2.audience, 2); assert.equal(r2.past, false);
+    const lst = (await call(D, 'GET', '/api/wa-promo/campaigns?from=2099-02-01&to=2099-02-01')).json().items;
+    assert.equal(lst[0].target_sel, 2);
+    assert.equal((await call(D, 'POST', '/api/wa-promo/campaigns', { send_now: true, caption: 'x', image_b64: png.toString('base64'), image_mime: 'image/png', contact_ids: [] })).statusCode, 400);
+    await call(D, 'DELETE', `/api/wa-promo/campaigns/${r2.id}`);
+  });
 });

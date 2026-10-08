@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1007a</title>
+<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1008s</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -83,6 +83,18 @@
   .phone .qr{margin-top:6px;display:flex;flex-direction:column;gap:4px}
   .phone .qr span{background:#fff;border-radius:8px;text-align:center;padding:6px;font-size:12px;color:#0b78c5;font-weight:600}
   .ok-t{color:var(--ok);font-weight:700}.bad-t{color:var(--bad);font-weight:700}.warn-t{color:var(--warn);font-weight:700}
+  .selbar{position:sticky;top:0;z-index:5;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:10px 12px;border-radius:10px;background:#143D34;color:#fff}
+  .selbar .btn.ghost{background:#fff}
+  .selbar .cnt{font-size:12.5px}
+  tr.sel td{background:#eef5f1}
+  .who-list{max-height:120px;overflow:auto;font-size:12.5px;line-height:1.7;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fdfcf9}
+  .oldimgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px}
+  .oldimgs .oi{border:2px solid var(--line);border-radius:8px;overflow:hidden;cursor:pointer;background:#fff;font-size:10.5px}
+  .oldimgs .oi.on{border-color:var(--ctr)}
+  .oldimgs .oi img{display:block;width:100%;height:64px;object-fit:cover;background:#ddd}
+  .oldimgs .oi div{padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .radio{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin:4px 0}
+  .radio label{display:flex;align-items:center;gap:5px;margin:0;color:var(--ink);font-weight:600;font-size:13px}
   @media (max-width:820px){ .split{grid-template-columns:1fr} .cal{grid-template-columns:repeat(2,1fr)} .chat{height:360px} }
 </style>
 </head>
@@ -132,9 +144,16 @@
           <input id="cQ" placeholder="이름 · 메모 · 번호 검색" style="width:220px">
           <select id="cConsent"><option value="">상태 전체</option><option value="yes">✅ 동의</option><option value="asked">⏳ 응답 대기</option><option value="unknown">❓ 미확인</option><option value="no">⛔ 거부</option></select>
           <span style="margin-left:auto"></span>
-          <button type="button" class="btn ghost" id="cAskSel" disabled>✉ 선택한 미확인에게 동의 요청</button>
           <button type="button" class="btn red" id="cAskAll">✉ 미확인 전체에게 동의 요청</button>
         </div>
+        <div class="selbar hidden" id="cSelBar">
+          <span class="cnt" id="cSelInfo"></span>
+          <span style="margin-left:auto"></span>
+          <button type="button" class="btn ghost sm" id="cSelAsk">✉ 동의 요청</button>
+          <button type="button" class="btn red sm" id="cSelSend">📣 이미지 보내기</button>
+          <button type="button" class="btn ghost sm" id="cSelClear">선택 해제</button>
+        </div>
+        <div class="hint" style="margin-top:6px">맨 왼쪽 칸을 체크해 여러 명을 고를 수 있습니다 — ❓ 미확인에게는 동의 요청, ✅ 동의자에게는 이미지가 갑니다(그 밖의 상태는 자동으로 빠짐).</div>
         <div class="tblwrap" id="cList"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
       </div>
     </section>
@@ -249,6 +268,33 @@
   </div>
 </div></div>
 
+<!-- 고른 사람에게 보내기 (0261) -->
+<div class="modal" id="mSend" role="dialog" aria-modal="true"><div class="mbox">
+  <div class="mtop"><b id="sdTitle" style="color:var(--brand)"></b><button type="button" class="btn ghost sm" data-close="mSend" style="margin-left:auto">닫기 ✕</button></div>
+  <div class="mbody">
+    <div class="row" style="align-items:flex-start;gap:18px">
+      <div style="flex:1;min-width:280px">
+        <label>받는 사람 (✅ 동의자만)</label>
+        <div class="who-list" id="sdWho"></div>
+        <div style="margin-top:12px"><label>이미지</label>
+          <div class="radio"><label><input type="radio" name="sdSrc" value="new" checked>새 이미지 올리기</label><label><input type="radio" name="sdSrc" value="old">지난 발송 이미지 다시 쓰기</label></div>
+          <div id="sdNewWrap"><input type="file" id="sdImg" accept="image/jpeg,image/png"><div class="hint">JPG · PNG · 5MB 이하</div></div>
+          <div id="sdOldWrap" class="hidden"><div class="oldimgs" id="sdOld"></div></div>
+        </div>
+        <div style="margin-top:12px"><label>문구 — 이미지 아래 글 (템플릿 {{1}} · 900자 이하)</label><textarea id="sdCap" maxlength="900" placeholder="Amortiguadores CTR para Versa 2015-2019 · 15% esta semana"></textarea></div>
+        <div style="margin-top:8px"><label>보내는 때</label>
+          <div class="radio"><label><input type="radio" name="sdWhen" value="now" checked>지금 보내기</label><label><input type="radio" name="sdWhen" value="at">예약</label></div>
+          <div class="row hidden" id="sdAtWrap"><input type="date" id="sdDate"><input type="time" id="sdTime" value="10:00"><span class="hint">멕시코 시각</span></div>
+        </div>
+        <div class="hint" id="sdCap0" style="margin-top:6px"></div>
+        <div class="row" style="margin-top:12px"><button type="button" class="btn red" id="sdGo">📣 보내기</button></div>
+        <div class="msg" id="sdMsg"></div>
+      </div>
+      <div><label>미리보기(템플릿으로 갈 때)</label><div class="phone" id="sdPhone"></div></div>
+    </div>
+  </div>
+</div></div>
+
 <!-- 발송 상세 -->
 <div class="modal" id="mCamp" role="dialog" aria-modal="true"><div class="mbox">
   <div class="mtop"><b id="mcTitle" style="color:var(--brand)"></b><button type="button" class="btn ghost sm" data-close="mCamp" style="margin-left:auto">닫기 ✕</button></div>
@@ -274,7 +320,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const WAP_BUILD='wap-1007a';
+  const WAP_BUILD='wap-1008s';
   try{ console.log('[wapromo] build '+WAP_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
@@ -284,7 +330,7 @@
   const fmtT=(t)=>{ if(!t) return '—'; const d=new Date(t); return d.toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
   const ERR={bad_phone:'번호 형식이 맞지 않습니다(10자리 또는 52+10자리).',name_required:'이름을 넣으세요.',duplicate_phone:'이미 등록된 번호입니다.',
     wa_not_configured:'WhatsApp 키가 없습니다(관리 › 외부 서비스 키).',window_closed:'24시간 창이 닫혀 있어 직접 답장은 못 보냅니다(템플릿만 가능). 고객이 먼저 메시지를 보내면 열립니다.',
-    image_required:'이미지를 고르세요.',image_too_large:'이미지가 5MB 를 넘습니다.',bad_image_type:'JPG 또는 PNG 만 됩니다.',caption_required:'문구를 넣으세요.',
+    image_required:'이미지를 고르세요.',image_too_large:'이미지가 5MB 를 넘습니다.',bad_image_type:'JPG 또는 PNG 만 됩니다.',caption_required:'문구를 넣으세요.',no_consented:'고른 사람 중 ✅ 동의자가 없습니다 — 먼저 동의 요청을 보내세요.',no_contacts:'고른 사람이 없습니다.',image_source_not_found:'다시 쓸 이미지를 찾지 못했습니다.',
     caption_too_long:'문구는 900자 이하로.',bad_send_at:'날짜와 시각을 넣으세요.',not_editable:'예약 상태인 발송만 고칠 수 있습니다.',not_cancellable:'이미 끝났거나 취소된 발송입니다.',
     reply_required:'자동 답장을 넣으세요.',keywords_required:'받은 말(키워드)을 하나 이상 넣으세요.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',
     send_failed:'발송 실패',upload_failed:'이미지 업로드 실패',no_rows:'읽은 행이 없습니다.',empty:'내용을 넣으세요.',opted_out:'본인이 수신거부한 연락처입니다 — 다시 받으려면 고객이 직접 「Sí, quiero」를 보내야 합니다.'};
@@ -351,7 +397,7 @@
   // ───── ① 연락처 ─────
   async function loadContacts(){
     const qs=new URLSearchParams(); if($('cQ').value.trim()) qs.set('q',$('cQ').value.trim()); if($('cConsent').value) qs.set('consent',$('cConsent').value);
-    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.sel.clear(); renderContacts(); setInboxBadge(S.counts.inbox_open); }
+    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
     catch(e){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
   }
   function setInboxBadge(n){ const b=$('inboxN'); if(n>0){ b.textContent=n; b.classList.remove('hidden'); } else b.classList.add('hidden'); }
@@ -372,18 +418,33 @@
         if(x.ask_error) via+='<br><span class="bad-t" title="'+esc(x.ask_error)+'">요청 실패: '+esc(x.ask_error.slice(0,60))+'</span>';
         const acts=[];
         const selfOut=x.consent==='no'&&(x.consent_via==='button'||x.consent_via==='message');   // 본인이 수신거부 — 다시 받으려면 본인이 「Sí, quiero」를 보내야 함
+        if(x.consent==='unknown'&&!x.ask_queued) acts.push('<button type="button" class="btn ghost sm" data-act="ask" title="이 사람에게만 동의 요청(1회)">✉ 동의 요청</button>');
+        if(x.consent==='yes') acts.push('<button type="button" class="btn red sm" data-act="send" title="이 사람에게만 이미지 보내기">📣 보내기</button>');
         if(x.consent!=='yes'&&!selfOut) acts.push('<button type="button" class="btn ghost sm" data-act="sales" title="영업이 전화 등으로 동의를 받았을 때">✅ 영업 확인</button>');
         if(x.consent==='yes') acts.push('<button type="button" class="btn ghost sm" data-act="optout">⛔ 수신거부</button>');
         if(x.last_in_at) acts.push('<button type="button" class="btn ghost sm" data-act="chat">대화</button>');
         acts.push('<button type="button" class="btn ghost sm" data-act="del" title="삭제" style="color:var(--bad);border-color:var(--bad)">✕</button>');
-        return '<tr data-id="'+x.id+'"><td>'+(x.consent==='unknown'&&!x.ask_queued?'<input type="checkbox" data-sel>':'')+'</td><td><b>'+esc(x.name)+'</b>'+(x.lead?' <span class="tag t-asked">🙋</span>':'')+'</td><td>'+esc(x.phone_masked)+'</td><td>'+esc(x.memo||'')+'</td><td>'+consTag(x.consent)+'</td><td>'+via+'</td><td>'+fmtT(x.last_in_at)+'</td><td style="white-space:nowrap">'+acts.join(' ')+'</td></tr>';
+        return '<tr data-id="'+x.id+'"'+(S.sel.has(x.id)?' class="sel"':'')+'><td><input type="checkbox" data-sel'+(S.sel.has(x.id)?' checked':'')+'></td><td><b>'+esc(x.name)+'</b>'+(x.lead?' <span class="tag t-asked">🙋</span>':'')+'</td><td>'+esc(x.phone_masked)+'</td><td>'+esc(x.memo||'')+'</td><td>'+consTag(x.consent)+'</td><td>'+via+'</td><td>'+fmtT(x.last_in_at)+'</td><td style="white-space:nowrap">'+acts.join(' ')+'</td></tr>';
       }).join('')+'</tbody></table>';
     syncSel();
   }
-  function syncSel(){ $('cAskSel').disabled=!S.sel.size; $('cAskSel').textContent='✉ 선택한 '+S.sel.size+'명에게 동의 요청'; }
+  // 고른 사람을 상태별로 나눈다 — 동의 요청은 ❓ 미확인(대기열 아님)만, 이미지는 ✅ 동의자만
+  function selGroups(){
+    const g={all:[],yes:[],ask:[],other:[]};
+    S.contacts.forEach(c=>{ if(!S.sel.has(c.id)) return; g.all.push(c); if(c.consent==='yes') g.yes.push(c); else if(c.consent==='unknown'&&!c.ask_queued) g.ask.push(c); else g.other.push(c); });
+    return g;
+  }
+  function syncSel(){
+    const g=selGroups(); const bar=$('cSelBar');
+    bar.classList.toggle('hidden',!g.all.length);
+    $('cSelInfo').innerHTML='<b>'+g.all.length+'명 선택</b> · ✅ 동의 '+g.yes.length+' · ❓ 미확인 '+g.ask.length+(g.other.length?' · 그 밖 '+g.other.length+'(보낼 것 없음)':'');
+    $('cSelAsk').disabled=!g.ask.length; $('cSelAsk').textContent='✉ 동의 요청 ('+g.ask.length+'명)';
+    $('cSelSend').disabled=!g.yes.length; $('cSelSend').textContent='📣 이미지 보내기 ('+g.yes.length+'명)';
+    const all=$('cAll'); if(all){ const n=document.querySelectorAll('#cList input[data-sel]').length; all.checked=n>0&&g.all.length>=n; }
+  }
   $('cList').addEventListener('change',e=>{
-    if(e.target.id==='cAll'){ document.querySelectorAll('#cList input[data-sel]').forEach(i=>{ i.checked=e.target.checked; const id=Number(i.closest('tr').dataset.id); if(i.checked) S.sel.add(id); else S.sel.delete(id); }); syncSel(); return; }
-    if(e.target.hasAttribute('data-sel')){ const id=Number(e.target.closest('tr').dataset.id); if(e.target.checked) S.sel.add(id); else S.sel.delete(id); syncSel(); }
+    if(e.target.id==='cAll'){ document.querySelectorAll('#cList input[data-sel]').forEach(i=>{ i.checked=e.target.checked; const tr=i.closest('tr'); const id=Number(tr.dataset.id); tr.classList.toggle('sel',i.checked); if(i.checked) S.sel.add(id); else S.sel.delete(id); }); syncSel(); return; }
+    if(e.target.hasAttribute('data-sel')){ const tr=e.target.closest('tr'); const id=Number(tr.dataset.id); tr.classList.toggle('sel',e.target.checked); if(e.target.checked) S.sel.add(id); else S.sel.delete(id); syncSel(); }
   });
   $('cList').addEventListener('click',async e=>{
     const b=e.target.closest('button[data-act]'); if(!b) return; const tr=b.closest('tr'); const id=Number(tr.dataset.id); const x=S.contacts.find(c=>c.id===id); const act=b.dataset.act;
@@ -392,6 +453,8 @@
       else if(act==='optout'){ if(!confirm(x.name+' — ⛔ 수신거부로 바꿀까요? 더 이상 정기 발송을 받지 않습니다.')) return; await api('PATCH','/api/wa-promo/contacts/'+id,{consent:'no'}); say(true,'⛔ 수신거부로 바꿨습니다.'); }
       else if(act==='del'){ if(!confirm(x.name+' 연락처를 삭제할까요?')) return; await api('DELETE','/api/wa-promo/contacts/'+id); say(true,'삭제했습니다.'); }
       else if(act==='chat'){ S.cur=x.phone; setTab('inbox'); return; }
+      else if(act==='ask'){ await askConsent([id],[x]); return; }
+      else if(act==='send'){ openSend([x]); return; }
       loadContacts();
     }catch(err){ say(false,errText(err)); }
   });
@@ -401,14 +464,77 @@
     try{ await api('POST','/api/wa-promo/contacts',{name:$('cName').value,phone:$('cPhone').value,memo:$('cMemo').value}); $('cName').value='';$('cPhone').value=''; say(true,'추가했습니다. ❓ 미확인 상태 — 동의 요청을 보내야 정기 발송 대상이 됩니다.'); loadContacts(); }
     catch(err){ say(false,errText(err)); }
   });
-  async function askConsent(ids){
+  async function askConsent(ids,people){
     const n=ids?ids.length:Math.max(0,(S.counts.unknown||0)-(S.counts.queued||0));
-    if(!confirm('미확인 '+n+'명에게 동의 요청을 보냅니다(사람마다 딱 한 번 · 마케팅 템플릿 요금).\n하루 상한 안에서 순서대로 나가고, 넘치면 다음 날 이어서 보냅니다. 진행할까요?')) return;
-    try{ const d=await api('POST','/api/wa-promo/consent/ask',ids?{ids}:{}); say(true,d.queued+'명을 대기열에 넣었습니다. 오늘 남은 발송 가능 수 '+d.remaining_today+' / '+d.cap+' — 1분 안에 발송이 시작됩니다.'); loadContacts(); }
+    const who=people&&people.length<=5?' ('+people.map(p=>p.name).join(', ')+')':'';
+    if(!confirm('미확인 '+n+'명'+who+'에게 동의 요청을 보냅니다(사람마다 딱 한 번 · 마케팅 템플릿 요금).\n하루 상한 안에서 순서대로 나가고, 넘치면 다음 날 이어서 보냅니다. 진행할까요?')) return;
+    try{ const d=await api('POST','/api/wa-promo/consent/ask',ids?{ids}:{}); say(true,d.queued+'명을 대기열에 넣었습니다. 오늘 남은 발송 가능 수 '+d.remaining_today+' / '+d.cap+' — 1분 안에 발송이 시작됩니다.');
+      if(ids) ids.forEach(i=>S.sel.delete(i)); loadContacts(); }
     catch(err){ say(false,errText(err)); }
   }
   $('cAskAll').addEventListener('click',()=>askConsent(null));
-  $('cAskSel').addEventListener('click',()=>askConsent([...S.sel]));
+  $('cSelAsk').addEventListener('click',()=>{ const g=selGroups(); askConsent(g.ask.map(c=>c.id),g.ask); });
+  $('cSelSend').addEventListener('click',()=>openSend(selGroups().yes));
+  $('cSelClear').addEventListener('click',()=>{ S.sel.clear(); renderContacts(); });
+
+  // ───── 고른 사람에게 이미지 보내기 (0261) ─────
+  const SD={people:[],old:null,oldList:[]};
+  const sdVal=(n)=>{ const r=document.querySelector('input[name="'+n+'"]:checked'); return r?r.value:''; };
+  async function openSend(people){
+    if(!people.length) return;
+    SD.people=people; SD.old=null;
+    $('sdTitle').textContent='📣 이미지 보내기 — '+people.length+'명';
+    $('sdWho').innerHTML=people.map(p=>'<div>✅ <b>'+esc(p.name)+'</b> <span class="hint">'+esc(p.phone_masked)+(p.memo?' · '+esc(p.memo):'')+'</span></div>').join('');
+    $('sdImg').value=''; $('sdCap').value=''; $('sdMsg').className='msg'; $('sdCap0').textContent='';
+    document.querySelector('input[name="sdSrc"][value="new"]').checked=true;
+    document.querySelector('input[name="sdWhen"][value="now"]').checked=true;
+    $('sdDate').value=addDays(mxToday(),1); $('sdTime').value='10:00';
+    syncSendForm(); sdPreview();
+    $('mSend').classList.add('on');
+    try{ const st=await api('GET','/api/wa-promo/status'); $('sdCap0').textContent='오늘 남은 발송 가능 수 '+st.remaining_today+' / '+st.cap+(people.length>st.remaining_today?' — 넘는 사람은 내일 이어서 갑니다':''); }catch(e){}
+    try{ const d=await api('GET','/api/wa-promo/campaigns/recent-images'); SD.oldList=d.items||[];
+      $('sdOld').innerHTML=SD.oldList.length?SD.oldList.map(o=>'<div class="oi" data-old="'+o.id+'"><img data-img="'+o.id+'" alt=""><div>'+esc((o.send_at_mx||'').slice(5,10).replace('-','/'))+' · '+esc(o.caption||'')+'</div></div>').join(''):'<div class="hint">지난 발송 이미지가 없습니다.</div>';
+      document.querySelectorAll('#sdOld img[data-img]').forEach(async im=>{ im.src=await imgUrl(im.dataset.img); });
+    }catch(e){ $('sdOld').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; }
+  }
+  function syncSendForm(){
+    const src=sdVal('sdSrc'), when=sdVal('sdWhen');
+    $('sdNewWrap').classList.toggle('hidden',src!=='new'); $('sdOldWrap').classList.toggle('hidden',src!=='old');
+    $('sdAtWrap').classList.toggle('hidden',when!=='at');
+    $('sdGo').textContent=when==='now'?'📣 '+SD.people.length+'명에게 지금 보내기':'🗓 '+SD.people.length+'명에게 예약';
+  }
+  let sdUrl='';
+  async function sdPreview(){
+    let u='';
+    if(sdVal('sdSrc')==='new'){ const f=$('sdImg').files&&$('sdImg').files[0]; if(f){ try{ if(sdUrl) URL.revokeObjectURL(sdUrl); sdUrl=URL.createObjectURL(f); u=sdUrl; }catch(e){} } }
+    else if(SD.old) u=await imgUrl(SD.old);
+    const cap=($('sdCap').value||'…').replace(/[\n\t]+/g,' ');
+    $('sdPhone').innerHTML='<div class="bub">'+(u?'<img src="'+u+'" alt="">':'<div class="hint" style="padding:18px;text-align:center;background:#eee;border-radius:6px;margin-bottom:5px">이미지</div>')+'Novedades de Refatrix: '+esc(cap)+'. Responda BAJA si no desea recibir más mensajes.</div><div class="qr"><span>Quiero cotizar</span><span>Ver catálogo</span><span>BAJA</span></div>';
+  }
+  document.querySelectorAll('input[name="sdSrc"],input[name="sdWhen"]').forEach(r=>r.addEventListener('change',()=>{ syncSendForm(); sdPreview(); }));
+  $('sdImg').addEventListener('change',sdPreview);
+  $('sdCap').addEventListener('input',sdPreview);
+  $('sdOld').addEventListener('click',e=>{ const o=e.target.closest('[data-old]'); if(!o) return; SD.old=Number(o.dataset.old);
+    document.querySelectorAll('#sdOld .oi').forEach(x=>x.classList.toggle('on',x===o));
+    const it=SD.oldList.find(x=>x.id===SD.old); if(it&&!$('sdCap').value.trim()) $('sdCap').value=it.caption||''; sdPreview(); });
+  $('sdGo').addEventListener('click',async()=>{
+    const src=sdVal('sdSrc'), when=sdVal('sdWhen');
+    const body={caption:$('sdCap').value,contact_ids:SD.people.map(p=>p.id)};
+    if(when==='now') body.send_now=true; else { if(!$('sdDate').value){ say(false,ERR.bad_send_at,$('sdMsg')); return; } body.send_at=$('sdDate').value+'T'+($('sdTime').value||'10:00'); }
+    if(!body.caption.trim()){ say(false,ERR.caption_required,$('sdMsg')); return; }
+    if(src==='new'){ const f=$('sdImg').files&&$('sdImg').files[0]; if(!f){ say(false,ERR.image_required,$('sdMsg')); return; } if(f.size>5*1024*1024){ say(false,ERR.image_too_large,$('sdMsg')); return; }
+      body.image_b64=await fileB64(f); body.image_mime=f.type; body.image_name=f.name; }
+    else { if(!SD.old){ say(false,'다시 쓸 이미지를 고르세요.',$('sdMsg')); return; } body.from_campaign_id=SD.old; }
+    if(!confirm(SD.people.length+'명에게 '+(when==='now'?'지금':'예약 시각에')+' 이미지를 보냅니다(마케팅 템플릿 요금 · 24시간 안에 답장한 사람은 무료). 진행할까요?')) return;
+    $('sdGo').disabled=true;
+    try{
+      const d=await api('POST','/api/wa-promo/campaigns',body);
+      $('mSend').classList.remove('on'); SD.people.forEach(p=>S.sel.delete(p.id)); renderContacts();
+      say(true,(d.past?'1분 안에 발송을 시작합니다':'예약했습니다')+' — 대상 '+d.audience+'명. 결과는 「🗓 발송 일정」에서 볼 수 있습니다.');
+    }catch(err){ say(false,errText(err),$('sdMsg')); }
+    finally{ $('sdGo').disabled=false; }
+  });
+
 
   // 엑셀
   $('cTpl').addEventListener('click',()=>{
@@ -504,7 +630,7 @@
     $('cal').innerHTML=[0,1,2,3,4,5,6].map(i=>{
       const day=addDays(S.weekStart,i); const cs=S.camps.filter(c=>c.send_at_mx.slice(0,10)===day);
       return '<div class="day'+(day<today?' past':'')+(day===today?' today':'')+'" data-day="'+day+'"><div class="d">'+W[i]+' '+day.slice(5).replace('-','/')+'</div>'
-        +cs.map(c=>'<div class="camp" data-camp="'+c.id+'"><img data-img="'+c.id+'" alt=""><div class="cb">'+campState(c)+'<div style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.caption)+'</div></div></div>').join('')+'</div>';
+        +cs.map(c=>'<div class="camp" data-camp="'+c.id+'"><img data-img="'+c.id+'" alt=""><div class="cb">'+campState(c)+(c.target_sel?' <span class="tag t-unknown" title="연락처 화면에서 고른 사람에게만">👥 '+c.target_sel+'</span>':'')+'<div style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.caption)+'</div></div></div>').join('')+'</div>';
     }).join('');
     document.querySelectorAll('#cal img[data-img]').forEach(async im=>{ im.src=await imgUrl(im.dataset.img); });
   }
@@ -540,7 +666,7 @@
     const u=await imgUrl(id);
     $('mcPhone').innerHTML='<div class="bub"><img src="'+u+'" alt="">Novedades de Refatrix: '+esc(c.caption.replace(/[\n\t]+/g,' '))+'. Responda BAJA si no desea recibir más mensajes.</div><div class="qr"><span>Quiero cotizar</span><span>Ver catálogo</span><span>BAJA</span></div><div class="hint" style="margin-top:6px">템플릿으로 나갈 때 모습(창이 열린 사람은 이미지 + 문구만)</div>';
     const st=c.stats||{};
-    $('mcInfo').innerHTML='<div>'+campState(c)+'</div><div class="hint" style="margin-top:6px">대상: '+(c.memo_filter?'✅ 동의 중 메모에 「'+esc(c.memo_filter)+'」':'✅ 동의 전체')+(c.target_n!=null?' · 시작 때 '+c.target_n+'명':'')
+    $('mcInfo').innerHTML='<div>'+campState(c)+'</div><div class="hint" style="margin-top:6px">대상: '+(c.target_sel?'👥 연락처 화면에서 고른 '+c.target_sel+'명(그중 ✅ 동의자)':c.memo_filter?'✅ 동의 중 메모에 「'+esc(c.memo_filter)+'」':'✅ 동의 전체')+(c.target_n!=null?' · 시작 때 '+c.target_n+'명':'')
       +'<br>보냄 '+(st.sent||0)+' · 도착 '+(st.delivered||0)+' · 읽음 '+(st.read||0)+' · 실패 '+((st.failed||0)+(st.dlv_failed||0))+' · 답장 '+(st.replied||0)+'명'
       +'<br>이미지 '+esc(c.image_name||'')+' · '+Math.round((c.image_bytes||0)/1024)+'KB · 작성 '+esc(c.created_by_name||'')+'</div>';
     $('mcEdit').disabled=c.status!=='scheduled'; $('mcCancel').disabled=!['scheduled','sending'].includes(c.status);
