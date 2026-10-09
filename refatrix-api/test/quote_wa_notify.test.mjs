@@ -167,6 +167,34 @@ test('A6. 0265 · rich(헤더 이미지 + 상세) — 창 안 = 이미지+캡션
   assert.equal(N.quoteWaDetailTemplate(), process.env.QUOTE_WA_DETAIL_TEMPLATE || 'cotizacion_detalle');
 });
 
+test('A7. 2026-10-09 · 헤더 이미지를 올렸는데 승인 템플릿 헤더가 이미지가 아니면(#132012·#132000) 이미지 빼고 다시 보냄', async () => {
+  const mk = (hdrOk) => { const calls = [];
+    return { calls, api: {
+      text: async () => { calls.push('text'); return { ok: true, message_id: 'T' }; },
+      image: async () => { calls.push('image'); return { ok: true, message_id: 'IM' }; },
+      template: async (p, o) => { calls.push('template:' + o.name); return { ok: true, message_id: 'P' }; },
+      imageTemplate: async (a) => { calls.push('imageTemplate:' + a.name); return hdrOk ? { ok: true, message_id: 'I' } : { ok: false, code: 132012, error: 'Parameter format does not match' }; },
+      paramsTemplate: async (a) => { calls.push(`detail:${a.lang}:${a.mediaId ? 'img' : 'none'}`);
+        if (a.name === 'nope') return { ok: false, code: 132001, error: 'no translation' };
+        return a.mediaId && !hdrOk ? { ok: false, code: 132000, error: 'param count' } : { ok: true, message_id: 'D' }; },
+    } }; };
+  const base = { to: '525512345678', text: '상세', headline: 'h', templateName: 'nueva_cotizacion', windowOpen: false, mode: 'rich', headerMediaId: 'MED' };
+  // ① 상세 템플릿 미승인 + nueva_cotizacion 헤더가 텍스트 → 이미지 헤더 실패 → 헤더 없이 성공
+  let m = mk(false);
+  let r = await N.deliverQuote({ ...base, detailName: 'nope', detail: [{ lang: 'es_MX', params: ['a'] }] }, m.api);
+  assert.deepEqual(m.calls, ['detail:es_MX:img', 'imageTemplate:nueva_cotizacion', 'template:nueva_cotizacion']);
+  assert.equal(r.ok, true); assert.equal(r.mode, 'template'); assert.match(r.text_error, /이미지 헤더가 없음\(#132012\)/);
+  // ② 상세 템플릿 헤더가 이미지가 아님 → 헤더 없이 상세 템플릿 성공
+  m = mk(false);
+  r = await N.deliverQuote({ ...base, detailName: 'cotizacion_detalle', detail: [{ lang: 'es_MX', params: ['a'] }] }, m.api);
+  assert.deepEqual(m.calls, ['detail:es_MX:img', 'detail:es_MX:none']);
+  assert.equal(r.mode, 'detail_template'); assert.match(r.text_error, /헤더 이미지 없이/);
+  // ③ 헤더가 이미지로 맞으면 재시도 없음
+  m = mk(true);
+  r = await N.deliverQuote({ ...base, mode: 'template' }, m.api);
+  assert.deepEqual(m.calls, ['imageTemplate:nueva_cotizacion']); assert.equal(r.mode, 'image_template'); assert.equal(r.text_error, undefined);
+});
+
 test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, async (t) => {
   const { query, pool } = await import('../src/db.js');
   after(async () => { await pool.end().catch(() => {}); setTimeout(() => process.exit(process.exitCode || 0), 300); });

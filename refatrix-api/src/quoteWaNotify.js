@@ -62,6 +62,8 @@ export const DEFAULT_QUOTE_API = {
 //   창 열림  → 이미지(헤더) + caption(상세 · 당월 요약 ≤1024자) — 무료. 헤더 이미지가 없으면 상세 텍스트.
 //   그 밖    → 상세 템플릿(detailName · detail = [{lang, params}] 순서대로 · #132001(번역 없음)이면 다음 언어)
 //   상세 템플릿 실패 → 아래 기존 규칙(nueva_cotizacion 한 줄 + 헤더 이미지) — 실패 사유는 text_error 로 남긴다.
+// 1009 · 헤더 형식이 승인 템플릿과 다를 때 Meta 가 주는 코드 — 132012(변수 형식 다름) · 132000(변수 개수 다름)
+const HEADER_MISMATCH = (code) => [132012, 132000].includes(Number(code));
 export async function deliverQuote({ to, text, headline, templateName = quoteWaTemplate(), templateLang = quoteWaTemplateLang(),
   windowOpen = null, mode = 'rich', followDetail = true, headerMediaId = null,
   caption = null, detailName = quoteWaDetailTemplate(), detail = [] }, api = DEFAULT_QUOTE_API) {
@@ -80,10 +82,15 @@ export async function deliverQuote({ to, text, headline, templateName = quoteWaT
     if (detailName && Array.isArray(detail) && detail.length) {
       let dErr = '';
       for (const d of detail) {
-        const t = await api.paramsTemplate({ to, name: detailName, lang: d.lang, mediaId: headerMediaId, params: d.params });
+        let t = await api.paramsTemplate({ to, name: detailName, lang: d.lang, mediaId: headerMediaId, params: d.params });
+        if (!t.ok && headerMediaId && HEADER_MISMATCH(t.code)) {   // 1009 · 승인 템플릿에 이미지 헤더가 없으면 헤더 빼고 한 번 더
+          const t2 = await api.paramsTemplate({ to, name: detailName, lang: d.lang, mediaId: null, params: d.params });
+          t = t2.ok ? { ...t2, noHeader: `#${t.code}` } : t2;
+        }
         if (t.ok) {
           const out = { ok: true, mode: 'detail_template', message_id: t.message_id };
-          if (dErr || pre) out.text_error = `${pre}${dErr}`.replace(/ · $/, '') + ` — ${d.lang} 으로 보냄`;
+          if (t.noHeader) dErr += `상세 템플릿에 이미지 헤더가 없음(${t.noHeader}) · `;
+          if (dErr || pre) out.text_error = `${pre}${dErr}`.replace(/ · $/, '') + ` — ${d.lang} 으로 보냄${t.noHeader ? '(헤더 이미지 없이)' : ''}`;
           return out;
         }
         dErr += `상세 템플릿 ${detailName}(${d.lang}) 실패${t.code ? ' #' + t.code : ''}: ${t.error} · `;
@@ -95,11 +102,18 @@ export async function deliverQuote({ to, text, headline, templateName = quoteWaT
   }
   let tErr = 'no_template';
   if (templateName) {
-    const t = headerMediaId
+    let t = headerMediaId
       ? await api.imageTemplate({ to, mediaId: headerMediaId, param: headline, name: templateName, lang: templateLang })
       : await api.template(headline, { to, name: templateName, lang: templateLang });
+    let noHeader = '';
+    if (!t.ok && headerMediaId && HEADER_MISMATCH(t.code)) {   // 1009 · 승인된 템플릿 헤더가 이미지가 아니면(텍스트·없음) 이미지 빼고 한 번 더
+      const t2 = await api.template(headline, { to, name: templateName, lang: templateLang });
+      if (t2.ok) { noHeader = `#${t.code}`; t = t2; }
+      else { pre += `템플릿 ${templateName} 이미지 헤더 #${t.code} → 헤더 없이도 실패 · `; t = t2; }
+    }
     if (t.ok) {
-      const out = { ok: true, mode: headerMediaId ? 'image_template' : 'template', message_id: t.message_id };
+      const out = { ok: true, mode: headerMediaId && !noHeader ? 'image_template' : 'template', message_id: t.message_id };
+      if (noHeader) pre += `템플릿 ${templateName}에 이미지 헤더가 없음(${noHeader}) — 헤더 이미지 없이 보냄 · `;
       if (windowOpen === true && mode === 'template' && followDetail) {   // 창이 열려 있으면 상세를 이어서(무료) — 실패해도 알림은 성공
         try { const d = await api.text({ to, text }); out.detail = d.ok ? 'sent' : `failed: ${d.error}`; } catch (e) { out.detail = 'failed'; }
       }
