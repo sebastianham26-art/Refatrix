@@ -73,7 +73,7 @@ export const SERVICES = [
       { name: 'QUOTE_WA_TEMPLATE', label: '신규견적 알림 템플릿명', secret: false, hint: '본문 {{1}} 1개 유틸리티 템플릿 — 24시간 창 밖 수신자용. 비우면 nueva_cotizacion' },
       { name: 'QUOTE_WA_DETAIL_TEMPLATE', label: '신규견적 상세 템플릿명', secret: false, hint: '헤더 이미지 + 여러 줄 본문(변수 16개) 유틸리티 템플릿 — 창 밖에서도 상세가 감. 비우면 cotizacion_detalle · 「-」 = 안 씀' },
       { name: 'QUOTE_WA_TEMPLATE_LANG', label: '신규견적 템플릿 언어', secret: false, hint: 'Meta 에서 승인받은 언어 코드 — Spanish (MEX) = es_MX · Spanish = es. 비우면 템플릿 언어(기본 es_MX)' },
-      { name: 'TREASURY_WA_IMAGE_TEMPLATE', label: '일일자금 이미지 템플릿명', secret: false, hint: '이미지 헤더 + 본문 {{1}} 유틸리티 템플릿(예: resumen_caja_img) — 24시간 창 밖 발송용' },
+      { name: 'TREASURY_WA_IMAGE_TEMPLATE', label: '일일자금 이미지 템플릿명', secret: false, hint: '이미지 헤더 + 본문 {{1}} 유틸리티 템플릿 — 24시간 창 밖 수신자용(승인: resumen_diario_fondos · Spanish (MEX)). 비우면 resumen_diario_fondos · 「-」 = 안 씀' },
       { name: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN', label: '웹훅 확인 토큰', secret: true, hint: '직접 정한 문자열(8자 이상) — Meta 웹훅의 「확인 토큰」에 같은 값 · 콜백 URL: https://refatrix-production.up.railway.app/api/wa/webhook' },
       { name: 'WHATSAPP_APP_SECRET', label: '앱 시크릿', secret: true, hint: 'Meta 앱 → 앱 설정 → 기본 설정 → 앱 시크릿(웹훅 서명 검증)' },
     ],

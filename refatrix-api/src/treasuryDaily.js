@@ -322,6 +322,11 @@ function dayLabel(ymd, lang) {
   const t = lg(lang); const [, m, d] = ymd.split('-').map(Number);
   return lang === 'ko' ? `${m}/${d}(${t.dow[dowOf(ymd)]})` : `${t.dow[dowOf(ymd)]} ${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
 }
+// 1009 · 승인 템플릿 resumen_diario_fondos 본문 「… con corte al {{1}}.」 — {{1}} = 「mar, 06/10」 형식(템플릿이 스페인어라 언어 무관)
+export function templateDate(ymd) {
+  const [, m, d] = ymd.split('-').map(Number);
+  return `${lg('es').dow[dowOf(ymd)]}, ${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+}
 function monthLabel(month, lang) { const [y, m] = month.split('-').map(Number); return lang === 'ko' ? `${y}년 ${m}월` : `${lg(lang).months[m - 1]} ${y}`; }
 const pair = (o) => `MXN ${fmt0(o.MXN)}` + (Math.abs(o.USD) >= 0.5 ? ` · USD ${fmt0(o.USD)}` : '');
 const dispName = (it, lang, mask = true) => ((mask && it.private) || it.name === '__private' ? lg(lang).priv : it.name);
@@ -588,7 +593,14 @@ export const imageFormatOn = () => process.env.TREASURY_WA_FORMAT !== 'text';
 // 이미지 경로: ① 업로드(언어별 1회, mediaCache) → ② image 메시지(캡션) → ③ 이미지 헤더 템플릿. 모두 실패하면 null(→ 텍스트).
 //   windowOpen === false(웹훅이 24시간 창이 닫힌 것을 안다, 0253) → ③ 템플릿을 먼저. 창 밖 자유 이미지는
 //   API 가 접수만 하고 나중에 실패하므로(131047), 아는 경우엔 처음부터 템플릿으로 보낸다.
-async function tryImage({ rcpt, png, headline, cacheKey, mediaCache, imgApi, windowOpen = null }) {
+// 1009 · 24시간 창 밖 수신자용 이미지 헤더 템플릿 — 비우면 resumen_diario_fondos · 「-」 = 안 씀
+export const treasuryImageTemplate = () => (process.env.TREASURY_WA_IMAGE_TEMPLATE === '-' ? '' : (process.env.TREASURY_WA_IMAGE_TEMPLATE || 'resumen_diario_fondos'));
+export const treasuryTemplateLang = () => process.env.TREASURY_WA_TEMPLATE_LANG || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX';
+//   1009 · 창이 「열림」으로 확실할 때만 자유 이미지(무료). 닫힘·모름이면 이미지 템플릿 먼저.
+//     닫힘 + 템플릿 실패 → 보내지 않고 실패 기록(자유 이미지는 API 가 접수만 하고 도착하지 않음 · #131047).
+//     모름(웹훅 미설정) + 템플릿 실패 → 마지막 수단으로 자유 이미지, 원장에 「창 밖이면 도착 안 함」 사유.
+async function tryImage({ rcpt, png, headline, tplParam = null, cacheKey, mediaCache, imgApi, windowOpen = null }) {
+  const tplText = tplParam || headline;   // 템플릿 {{1}} — 날짜(승인 본문), 없으면 예전처럼 한 줄 요약
   if (!png) return null;
   let mid = mediaCache[cacheKey];
   if (!mid) {
@@ -596,28 +608,36 @@ async function tryImage({ rcpt, png, headline, cacheKey, mediaCache, imgApi, win
     if (!up.ok) return { ok: false, error: `upload: ${up.error}` };
     mid = mediaCache[cacheKey] = up.id;
   }
-  const tpl = process.env.TREASURY_WA_IMAGE_TEMPLATE;
-  if (windowOpen === false && tpl) {
-    const r0 = await imgApi.imageTemplate({ to: rcpt.phone, mediaId: mid, param: headline, name: tpl });
-    if (r0.ok) return { ok: true, mode: 'image_template', message_id: r0.message_id, text_error: 'window_closed' };
+  const tpl = treasuryImageTemplate();
+  const lang = treasuryTemplateLang();
+  let tErr = '';
+  if (windowOpen !== true) {
+    if (tpl) {
+      const r0 = await imgApi.imageTemplate({ to: rcpt.phone, mediaId: mid, param: tplText, name: tpl, lang });
+      if (r0.ok) return { ok: true, mode: 'image_template', message_id: r0.message_id };
+      tErr = `이미지 템플릿 ${tpl}(${lang}) 실패${r0.code ? ' #' + r0.code : ''}: ${r0.error}`
+        + (Number(r0.code) === 132001 ? ' — Meta 에 템플릿이 없거나 아직 승인 전' : '');
+    } else tErr = '이미지 템플릿 안 씀(「-」)';
+    if (windowOpen === false) return { ok: false, error: `${tErr} · 24시간 창 밖이라 자유 이미지는 보내지 않음` };
   }
   const r1 = await imgApi.image({ to: rcpt.phone, mediaId: mid, caption: headline });
-  if (r1.ok) return { ok: true, mode: 'image', message_id: r1.message_id };
-  if (tpl) {
-    const r2 = await imgApi.imageTemplate({ to: rcpt.phone, mediaId: mid, param: headline, name: tpl });
-    if (r2.ok) return { ok: true, mode: 'image_template', message_id: r2.message_id, text_error: r1.error };
+  if (r1.ok) return { ok: true, mode: 'image', message_id: r1.message_id,
+    text_error: tErr ? `${tErr} — 자유 이미지로 보냄(24시간 창 밖 수신자에게는 도착 안 함)` : null };
+  if (windowOpen === true && tpl) {
+    const r2 = await imgApi.imageTemplate({ to: rcpt.phone, mediaId: mid, param: tplText, name: tpl, lang });
+    if (r2.ok) return { ok: true, mode: 'image_template', message_id: r2.message_id, text_error: `image: ${r1.error}` };
     return { ok: false, error: `image: ${r1.error} / image_template: ${r2.error}` };
   }
-  return { ok: false, error: `image: ${r1.error}` };
+  return { ok: false, error: `${tErr ? tErr + ' / ' : ''}image: ${r1.error}` };
 }
 
-export async function sendOne({ kind, period, rcpt, text, headline, png = null, cacheKey = null, mediaCache = {}, force = false, sender = sendWaTo, imgApi = DEFAULT_IMG_API, windowOpen }, q = query) {
+export async function sendOne({ kind, period, rcpt, text, headline, tplParam = null, png = null, cacheKey = null, mediaCache = {}, force = false, sender = sendWaTo, imgApi = DEFAULT_IMG_API, windowOpen }, q = query) {
   const prev = (await q(`SELECT sent_at, attempts FROM treasury_wa_sends WHERE kind=$1 AND period=$2 AND recipient_id=$3`,
     [kind, period, rcpt.id])).rows[0];
   if (!force && prev && prev.sent_at) return { skipped: 'already_sent', recipient_id: Number(rcpt.id) };
   if (!force && prev && Number(prev.attempts) >= MAX_ATTEMPTS) return { skipped: 'max_attempts', recipient_id: Number(rcpt.id) };
   if (windowOpen === undefined) windowOpen = (await windowState(rcpt.phone, q)).open;   // 웹훅 미설정이면 null(기존 동작)
-  let res = png ? await tryImage({ rcpt, png, headline, cacheKey: cacheKey || `${kind}_${period}`, mediaCache, imgApi, windowOpen }) : null;
+  let res = png ? await tryImage({ rcpt, png, headline, tplParam, cacheKey: cacheKey || `${kind}_${period}`, mediaCache, imgApi, windowOpen }) : null;
   let imgErr = null;
   if (!res || !res.ok) {
     imgErr = res ? res.error : null;
@@ -668,7 +688,7 @@ export async function prepareDaily(dateStr, sendDay, q = query, opts = {}) {
     ? [...actualCols.slice(-IMG_ACTUAL_COLS), ...planDays.filter(keep).slice(0, IMG_PLAN_COLS)]
     : actualCols.slice(-(IMG_ACTUAL_COLS + IMG_PLAN_COLS));
   const sd = sendDay || addDays(dateStr, 1);
-  const build = (lang) => ({ text: buildDailyText(day, { mtd, plan, lang, planTomorrow: sameDay }), headline: buildDailyHeadline(day, lang),
+  const build = (lang) => ({ text: buildDailyText(day, { mtd, plan, lang, planTomorrow: sameDay }), headline: buildDailyHeadline(day, lang), tplParam: templateDate(dateStr),
     svg: dailyImageSvg({ cols, reportDay: dateStr, sendDay: sd, mtd, lang, sendTime }) });
   return { days, day, mtd, plan, cols, build };
 }
@@ -679,7 +699,7 @@ export async function prepareMonthly(month, today, q = query, opts = {}) {
   const days = await computeActualDays(from, last, q);
   const sum = summarizeMonth(days, { mask: true });
   const partial = last < to;
-  const build = (lang) => ({ text: buildMonthlyText(sum, { lang, link: reportUrl() }), headline: buildMonthlyHeadline(sum, lang),
+  const build = (lang) => ({ text: buildMonthlyText(sum, { lang, link: reportUrl() }), headline: buildMonthlyHeadline(sum, lang), tplParam: `${templateDate(last)} (resultado mensual de ${monthLabel(month, 'es')})`,
     svg: monthlyImageSvg({ sum, days, lang, partial }) });
   return { days, sum, partial, build };
 }
@@ -694,7 +714,7 @@ export async function sendReport({ kind, period, recipients, prepared, force = f
     if (!cache[lang]) {
       const b = prepared.build(lang);
       const png = imageFormatOn() ? await svgToPng(b.svg) : null;
-      cache[lang] = { text: b.text, headline: b.headline, png, cacheKey: `${kind}_${period}_${lang}` };
+      cache[lang] = { text: b.text, headline: b.headline, tplParam: b.tplParam || null, png, cacheKey: `${kind}_${period}_${lang}` };
     }
     const opt = { kind, period, rcpt: r, ...cache[lang], mediaCache, force };
     if (sender) opt.sender = sender;

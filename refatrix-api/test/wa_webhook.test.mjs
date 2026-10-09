@@ -134,26 +134,39 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   await t.test('B8. 창이 닫혀 있으면 이미지 템플릿부터(자유 이미지는 접수 후 실패하므로)', async () => {
     const T = await import('../src/treasuryDaily.js');
     process.env.TREASURY_WA_IMAGE_TEMPLATE = 'resumen_caja_img';
-    const calls = [];
+    const calls = []; const params = [];
     const imgApi = {
       upload: async () => ({ ok: true, id: 'MID' }),
       image: async (a) => { calls.push('image:' + a.to); return { ok: true, message_id: 'wamid.IMG' }; },
-      imageTemplate: async (a) => { calls.push('tpl:' + a.name); return { ok: true, message_id: 'wamid.TPL' }; },
+      imageTemplate: async (a) => { calls.push('tpl:' + a.name); params.push(a.param); return { ok: true, message_id: 'wamid.TPL' }; },
     };
     const sender = async () => { calls.push('text'); return { ok: true, mode: 'text', message_id: 'wamid.TXT' }; };
     const rcpt = { id: rc.id, phone: '528110005311' };
     await query(`DELETE FROM treasury_wa_sends`);
-    const r1 = await T.sendOne({ kind: 'daily', period: '2026-10-05', rcpt, text: 't', headline: 'h', png: Buffer.from('x'), force: true, sender, imgApi });
+    const r1 = await T.sendOne({ kind: 'daily', period: '2026-10-05', rcpt, text: 't', headline: 'h', tplParam: T.templateDate('2026-10-05'), png: Buffer.from('x'), force: true, sender, imgApi });
+    assert.deepEqual(params, ['lun, 05/10'], '승인 본문 {{1}} = 날짜(mar, 06/10 형식)');
     assert.equal(r1.status, 'sent_image_template'); assert.deepEqual(calls, ['tpl:resumen_caja_img']);
     // 창이 열리면 예전처럼 자유 이미지
     await query(`UPDATE wa_inbound SET last_at = now()`); calls.length = 0;
     const r2 = await T.sendOne({ kind: 'daily', period: '2026-10-04', rcpt, text: 't', headline: 'h', png: Buffer.from('x'), force: true, sender, imgApi });
     assert.equal(r2.status, 'sent_image'); assert.deepEqual(calls, ['image:528110005311']);
-    // 웹훅 미설정이면(창을 모름) 기존 동작 그대로
+    // 1009 · 웹훅 미설정이면(창을 모름) 이미지 템플릿 먼저 — 창 밖 사람에게도 도착
     delete process.env.WHATSAPP_APP_SECRET; await query(`UPDATE wa_inbound SET last_at = now() - interval '3 days'`); calls.length = 0;
     const r3 = await T.sendOne({ kind: 'daily', period: '2026-10-03', rcpt, text: 't', headline: 'h', png: Buffer.from('x'), force: true, sender, imgApi });
-    assert.equal(r3.status, 'sent_image'); assert.deepEqual(calls, ['image:528110005311']);
+    assert.equal(r3.status, 'sent_image_template'); assert.deepEqual(calls, ['tpl:resumen_caja_img']);
+    // 창을 모르는데 템플릿이 아직 없음(#132001) → 마지막 수단 자유 이미지 + 원장 사유
+    calls.length = 0;
+    const imgApi2 = { ...imgApi, imageTemplate: async (a) => { calls.push('tpl:' + a.name); return { ok: false, code: 132001, error: 'Template name does not exist' }; } };
+    const r4 = await T.sendOne({ kind: 'daily', period: '2026-10-02', rcpt, text: 't', headline: 'h', png: Buffer.from('x'), force: true, sender, imgApi: imgApi2 });
+    assert.equal(r4.status, 'sent_image'); assert.deepEqual(calls, ['tpl:resumen_caja_img', 'image:528110005311']);
+    const e4 = (await query(`SELECT error FROM treasury_wa_sends WHERE period='2026-10-02'`)).rows[0].error;
+    assert.match(e4, /#132001.*승인 전.*도착 안 함/);
+    // 창 닫힘 + 템플릿 실패 → 자유 이미지를 보내지 않음(텍스트 경로로 넘어감)
+    process.env.WHATSAPP_APP_SECRET = SECRET; calls.length = 0;
+    const r5 = await T.sendOne({ kind: 'daily', period: '2026-10-01', rcpt, text: 't', headline: 'h', png: Buffer.from('x'), force: true, sender, imgApi: imgApi2 });
+    assert.ok(!calls.includes('image:528110005311'), '창 밖 자유 이미지 안 보냄'); assert.equal(r5.status, 'sent_text');
     process.env.WHATSAPP_APP_SECRET = SECRET; delete process.env.TREASURY_WA_IMAGE_TEMPLATE;
+    assert.equal(T.treasuryImageTemplate(), 'resumen_diario_fondos', '승인받은 이름이 기본값'); assert.equal(T.treasuryTemplateLang(), process.env.TREASURY_WA_TEMPLATE_LANG || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX');
   });
 
   await t.test('B9. 웹훅 설정 정보(디렉터)', async () => {

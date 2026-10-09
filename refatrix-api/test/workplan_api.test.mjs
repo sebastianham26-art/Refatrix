@@ -268,13 +268,13 @@ test('W1 09:30 알림 — 미작성·번호 있는 직원만, 하루 1회, 창 �
   assert.equal(row.status, 'sent_template'); assert.equal(row.to_masked, '528****9999');
 });
 
-test('W2 창 정보 없음 → 자유 문장 먼저 · 실패하면 템플릿 폴백 · 템플릿 없으면 실패 기록', async () => {
+test('W2 창 정보 없음 → 템플릿 먼저(1009) · 템플릿 없으면 자유 문장 · 그것도 실패하면 실패 기록', async () => {
   await query(`DELETE FROM workplan_wa_sends`);
   const a = stubDeps({ windowOpen: null, textFail: true });
   const r = await WP.runWorkplanJob({ nowMs: at('2026-10-09 17:31'), deps: a.deps });
   const os = r.remind_done.find((x) => x.user_id === OSCAR);
   assert.equal(os.status, 'sent_template');
-  assert.ok(a.log.some((l) => l[0] === 'text' && /Hola wp_Oscar/.test(l[2])));
+  assert.ok(!a.log.some((l) => l[0] === 'text' && /Hola wp_Oscar/.test(l[2])), '템플릿이 되면 자유 문장은 안 보냄');
   await query(`DELETE FROM workplan_wa_sends; UPDATE workplan_settings SET remind_template=NULL`);
   const b = stubDeps({ textFail: true });
   const r2 = await WP.runWorkplanJob({ nowMs: at('2026-10-09 17:31'), deps: b.deps });

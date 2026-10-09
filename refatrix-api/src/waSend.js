@@ -151,10 +151,16 @@ export async function sendWaTo({ to, text, headline, templateName = null, templa
   if (!waApiReady()) return { ok: false, mode: null, error: 'wa_not_configured' };
   if (!to) return { ok: false, mode: null, error: 'no_recipient' };
   const tplName = templateName || process.env.WHATSAPP_TEMPLATE;
-  if (windowOpen === false && tplName) {
+  // 1009 · 창이 「열림」으로 확실하지 않으면(닫힘·모름) 템플릿 먼저 — 자유 문장은 창 밖이면 API 는 받아도 도착하지 않는다(#131047).
+  if (windowOpen !== true && tplName) {
     const t0 = await sendWaTemplate(headline, { to, name: tplName, lang: templateLang });
-    if (t0.ok) return { ok: true, mode: 'template', message_id: t0.message_id, text_error: 'window_closed' };
+    if (t0.ok) return { ok: true, mode: 'template', message_id: t0.message_id, text_error: windowOpen === false ? 'window_closed' : null };
+    if (windowOpen === false) return { ok: false, mode: null, error: `template ${tplName}: ${t0.error}${t0.code ? ' #' + t0.code : ''} (24시간 창 밖 — 텍스트는 도착하지 않아 보내지 않음)`, code: t0.code };
+    const tx = await sendWaText(text, to);
+    if (tx.ok) return { ok: true, mode: 'text', message_id: tx.message_id, text_error: `template: ${t0.error}${t0.code ? ' #' + t0.code : ''} — 텍스트로 보냄(24시간 창 밖이면 도착 안 함)` };
+    return { ok: false, mode: null, error: `template: ${t0.error} / text: ${tx.error}`, code: t0.code };
   }
+  if (windowOpen === false) return { ok: false, mode: null, error: 'no_template (24시간 창 밖 — 템플릿 이름을 설정하세요)' };
   const first = await sendWaText(text, to);
   if (first.ok) return { ok: true, mode: 'text', message_id: first.message_id };
   const fb = await sendWaTemplate(headline, { to, name: templateName || process.env.WHATSAPP_TEMPLATE, lang: templateLang });
@@ -163,9 +169,14 @@ export async function sendWaTo({ to, text, headline, templateName = null, templa
 }
 
 // 요약 1건 발송: ① 자유 텍스트 → ② 실패 시(24h 창 밖 등) 템플릿 헤드라인 폴백
-export async function sendDailySummaryWa({ dateLabel, content_md, stats }) {
+export async function sendDailySummaryWa({ dateLabel, content_md, stats, windowOpen = true }) {
   if (!waEnabled()) return { ok: false, mode: null, error: 'wa_not_configured' };
   const text = mdToWaText(`📋 Refatrix 오늘 요약 · ${dateLabel}`, content_md);
+  if (windowOpen !== true) {   // 1009 · 창 닫힘·모름 → 템플릿 먼저
+    const t0 = await sendWaTemplate(buildWaHeadline(dateLabel, stats));
+    if (t0.ok) return { ok: true, mode: 'template', message_id: t0.message_id };
+    if (windowOpen === false) return { ok: false, mode: null, error: `template: ${t0.error} (24시간 창 밖)`, code: t0.code };
+  }
   const first = await sendWaText(text);
   if (first.ok) return { ok: true, mode: 'text', message_id: first.message_id };
   const fb = await sendWaTemplate(buildWaHeadline(dateLabel, stats));

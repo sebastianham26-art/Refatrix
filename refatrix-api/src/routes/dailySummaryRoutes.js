@@ -33,6 +33,7 @@ import { logEvent } from '../audit.js';
 import { MX_OFFSET_MIN } from '../workingHours.js';
 import { buildDailyPrompt, buildPeriodPrompt, periodLabel, digestStats, extractText, clip, krDate } from '../dayDigest.js';
 import { waEnabled, waConfig, sendDailySummaryWa } from '../waSend.js';
+import { windowState } from '../waWebhook.js';   // 1009 · 창 밖·모름이면 템플릿 먼저
 import { loadSchedule, isDue, targetDate, mxParts } from '../waSchedule.js';   // 0262 · 발송 시각 설정
 
 const MODEL = process.env.DAILY_SUMMARY_MODEL || 'claude-sonnet-4-5-20250929';
@@ -458,7 +459,8 @@ export async function runDailyWaJob({ force = false, dateStr = null, userId = nu
     content = gen.content_md; digest = gen.digest;
   }
 
-  const res = await sendDailySummaryWa({ dateLabel: krDate(target), content_md: content, stats: digestStats(digest) });
+  const ws = await windowState(process.env.DAILY_SUMMARY_WA_TO).catch(() => ({ open: null }));
+  const res = await sendDailySummaryWa({ dateLabel: krDate(target), content_md: content, stats: digestStats(digest), windowOpen: ws.open });
   if (res.ok) {
     await query(
       `UPDATE daily_summaries SET wa_sent_at=now(), wa_status=$2, wa_error=NULL, wa_attempts=COALESCE(wa_attempts,0)+1 WHERE summary_date=$1`,

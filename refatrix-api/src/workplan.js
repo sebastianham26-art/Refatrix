@@ -620,9 +620,14 @@ export async function sendReminder({ kind, date, user, settings, force = false, 
   const tpl = settings.remind_template;
   const viaTpl = () => deps.template({ to: phone, name: tpl, lang: settings.remind_template_lang, params: reminderParams(kind, user, date, settings) });
   let res;
-  if (win && win.open === false && tpl) {
+  const open = win ? win.open : null;
+  if (open !== true && tpl) {   // 1009 · 창 닫힘·모름 → 템플릿 먼저 · 모름이면 실패 시에만 텍스트
     const r = await viaTpl();
-    res = r.ok ? { ...r, mode: 'template', note: 'window_closed' } : r;
+    if (r.ok) res = { ...r, mode: 'template', note: open === false ? 'window_closed' : null };
+    else if (open === false) res = r;
+    else { const t = await deps.text(phone, reminderText(kind, user, date, settings)); res = t.ok ? { ...t, mode: 'text', note: `template: ${r.error} — 텍스트(창 밖이면 도착 안 함)` } : { ok: false, error: `template: ${r.error} / text: ${t.error}` }; }
+  } else if (open === false) {
+    res = { ok: false, error: '24시간 창 밖 — 알림 템플릿을 설정하세요' };
   } else {
     const r = await deps.text(phone, reminderText(kind, user, date, settings));
     if (r.ok) res = { ...r, mode: 'text' };
@@ -650,7 +655,7 @@ export async function sendSummary({ kind, date, settings, force = false, hm = nu
   if (!rcpts.length) return { skipped: 'no_recipients', results: [] };
   const team = await loadTeam(date, q);
   const cache = {}; const results = [];
-  const imgTpl = process.env.WORKPLAN_WA_IMAGE_TEMPLATE || process.env.TREASURY_WA_IMAGE_TEMPLATE || null;
+  const imgTpl = process.env.WORKPLAN_WA_IMAGE_TEMPLATE || (process.env.TREASURY_WA_IMAGE_TEMPLATE !== '-' && process.env.TREASURY_WA_IMAGE_TEMPLATE) || null;
   for (const r of rcpts) {
     if (!r.phone) { results.push({ user_id: r.id, skipped: 'no_phone' }); continue; }
     const prev = await ledgerPrev(kind, date, r.id, q);
@@ -668,11 +673,12 @@ export async function sendSummary({ kind, date, settings, force = false, hm = nu
     if (c.png) {
       if (!c.media) { const up = await deps.upload(c.png, { mime: 'image/png', filename: `refatrix_${kind}_${date}_${lang}.png` }); if (up.ok) c.media = up.id; else imgErr = `upload: ${up.error}`; }
       if (c.media) {
-        if (win && win.open === false && imgTpl) {
+        const open = win ? win.open : null;
+        if (open !== true && imgTpl) {   // 1009 · 창 닫힘·모름 → 이미지 템플릿 먼저
           const t0 = await deps.imageTemplate({ to: r.phone, mediaId: c.media, param: c.headline, name: imgTpl });
-          if (t0.ok) res = { ...t0, mode: 'image_template', note: 'window_closed' }; else imgErr = `image_template: ${t0.error}`;
+          if (t0.ok) res = { ...t0, mode: 'image_template', note: open === false ? 'window_closed' : null }; else imgErr = `image_template: ${t0.error}`;
         }
-        if (!res) {
+        if (!res && open !== false) {   // 창 밖 자유 이미지는 도착하지 않음
           const r1 = await deps.image({ to: r.phone, mediaId: c.media, caption: c.headline });
           if (r1.ok) res = { ...r1, mode: 'image' };
           else if (imgTpl) { const r2 = await deps.imageTemplate({ to: r.phone, mediaId: c.media, param: c.headline, name: imgTpl }); if (r2.ok) res = { ...r2, mode: 'image_template', note: `image: ${r1.error}` }; else imgErr = `image: ${r1.error} / image_template: ${r2.error}`; }

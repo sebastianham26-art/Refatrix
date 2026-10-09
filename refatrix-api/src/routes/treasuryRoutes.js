@@ -25,7 +25,7 @@ import { loadSchedules } from '../waSchedule.js';
 import {
   isYmd, isMonth, mxNow, addDays, monthBounds, prevMonth, computeWeek, computeActualDays, summarizeMonth,
   upsertSnapshots, loadSnapshotMeta, driftOf, flatOf, prepareDaily, prepareMonthly, sendReport, maskPhone,
-  activeRecipients, loadAccountScope, imageFormatOn, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl,
+  activeRecipients, loadAccountScope, imageFormatOn, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl, treasuryImageTemplate, treasuryTemplateLang,
 } from '../treasuryDaily.js';
 
 const G = { preHandler: [authGuard, requireDirector] };
@@ -183,7 +183,7 @@ export default async function treasuryRoutes(app) {
       token_set: !!process.env.WHATSAPP_TOKEN, phone_id_set: !!process.env.WHATSAPP_PHONE_ID,
       template: process.env.TREASURY_WA_TEMPLATE || process.env.WHATSAPP_TEMPLATE || null,
       format: imageFormatOn() ? 'image' : 'text', image_ready: imageReady(),
-      image_template: process.env.TREASURY_WA_IMAGE_TEMPLATE || null,
+      image_template: treasuryImageTemplate() || null, image_template_set: !!process.env.TREASURY_WA_IMAGE_TEMPLATE, template_lang: treasuryTemplateLang(),
       enabled: process.env.TREASURY_DAILY_ENABLED !== '0',
       schedule: { send_hour_mx: SEND_HOUR_MX, daily_until_mx: DAILY_SEND_UNTIL_MX, monthly_days: MONTHLY_CATCHUP_DAYS, max_attempts: MAX_ATTEMPTS,
         daily: (await loadSchedules()).treasury_daily, monthly: (await loadSchedules()).treasury_monthly, page: 'refatrix-wasched.html' },
