@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품개발요청 · build 20261012dm</title>
+<title>Refatrix ERP · 제품개발요청 · build 20261012ds</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
@@ -491,6 +491,17 @@
       h+='<div class="seg"><h4>개발 결과</h4><div class="hint">경쟁사 <b>'+esc(r.review_syd_code||r.input_code||'')+'</b> → 신규 <b>'+esc(r.result_ctr_code||'')+'</b> (자동 매핑 완료)<br>메이커 <b>'+esc(vv.maker||'-')+'</b> · 차종 <b>'+esc(vv.model||'-')+'</b> · 연식 <b>'+esc(vv.year||'-')+'</b><br>App: '+esc(r.review_app||'-')+' · List: '+(r.review_list_price==null?'-':r.review_list_price)+'</div></div>';
       $('dBody').innerHTML=h; return;
     }
+    // ✂ 코드 나누기 — 한 칸에 여러 코드가 들어간 접수 건 (디렉터 · 2026-10-12)
+    const splitN=splitTokens(r.input_code).length;
+    if(r.status==='received'&&splitN>1){
+      h+='<div class="seg" style="border-color:#e3d6f3;background:#faf7fe"><h4>✂ 코드 나누기 — 이 요청에 코드 <b>'+splitN+'개</b>가 들어 있습니다</h4>'
+        +((session.user&&session.user.role==='director')
+          ?'<div class="hint">띄어쓰기·줄바꿈·쉼표로 나눠 코드마다 개별 개발요청(접수)으로 만들고, 이 원본은 취소로 남깁니다. 같은 고객에 이미 있는 코드는 건너뜁니다.</div>'
+            +'<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" id="splitPrevBtn" type="button">미리보기</button><button class="btn sm" id="splitRunBtn" type="button" disabled>나누기 실행</button></div>'
+            +'<div id="splitOut" class="hint" style="margin-top:6px"></div>'
+          :'<div class="hint">디렉터가 코드별 개별 요청으로 나눌 수 있습니다.</div>')
+        +'</div>';
+    }
     // ② 검토완료 입력 (제품·마케팅)
     h+='<div class="seg"><h4>② 검토완료 입력 (제품·마케팅)</h4>'
       +'<div class="grid2">'
@@ -511,6 +522,28 @@
     h+='<div style="margin-top:10px"><button class="btn ghost sm" onclick="doCancel()" style="color:var(--expense);border-color:#e7b6af">요청 취소</button></div>';
     h+='<div class="msg" id="mMsg"></div>';
     $('dBody').innerHTML=h;
+    const sp=$('splitPrevBtn'); if(sp) sp.addEventListener('click',()=>doSplit(true));
+    const sr=$('splitRunBtn'); if(sr) sr.addEventListener('click',()=>doSplit(false));
+  }
+  function splitTokens(code){ const seen={}; return String(code||'').split(/[\s,;\/|]+/).map(t=>t.trim()).filter(t=>{ const n=t.toUpperCase().replace(/[^A-Z0-9]/g,''); if(!n||seen[n]) return false; seen[n]=1; return true; }); }
+  async function doSplit(dry){
+    const out=$('splitOut'), run=$('splitRunBtn');
+    if(!dry&&!confirm('이 요청을 코드별 개별 요청으로 나누고 원본은 취소합니다. 진행할까요?')) return;
+    out.textContent=dry?'확인 중…':'나누는 중…';
+    try{
+      const res=await fetch(session.api+'/api/dev-requests/'+cur.id+'/split',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({dry_run:dry})});
+      const d=await res.json();
+      if(!res.ok||d.error){ out.innerHTML='<span style="color:var(--expense)">실패: '+esc(d.note||d.error||res.status)+'</span>'; return; }
+      if(dry){
+        out.innerHTML='코드 <b>'+d.total+'</b>개 → 새 요청 <b>'+d.create+'</b>건 생성'
+          +(d.skipped?' · 같은 고객에 이미 있는 <b>'+d.skipped+'</b>건 건너뜀 ('+esc((d.skipped_codes||[]).join(', '))+(d.skipped>(d.skipped_codes||[]).length?' …':'')+')':'')
+          +' · 원본 #'+d.id+'은 취소로 남김.'+(d.sample&&d.sample.length?'<br>예: '+esc(d.sample.join(', '))+(d.create>d.sample.length?' …':''):'');
+        if(run) run.disabled=!(d.create>0);
+        return;
+      }
+      closeModal(); load(); loadKpi(); loadDemand();
+      alert('✂ 나누기 완료 — 새 요청 '+d.create+'건'+(d.created_ids&&d.created_ids.length?' (#'+d.created_ids[0]+'~#'+d.created_ids[1]+')':'')+', 건너뜀 '+d.skipped+'건.\n이미 카탈로그에 있는 코드는 잠시 뒤 자동으로 개발완료 처리됩니다.');
+    }catch(e){ out.innerHTML='<span style="color:var(--expense)">서버에 연결할 수 없습니다.</span>'; }
   }
   async function call(url,body){
     const res=await fetch(session.api+url,{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body||{})});

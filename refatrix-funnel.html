@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부 · build 20261012dv</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 20261012dw</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -867,7 +867,7 @@
   const stLbl={received:'접수',reviewed:'검토완료',factory_requested:'공장요청',developed:'개발완료'};
   const OFFER_LBL={sold:'판매완료',sheet_ready:'발송 대기',sheet_sent:'발송 완료',disabled:'오퍼 중단',no_customer:'고객 미지정',inactive:'판매중단 제품',no_stock:'재고 0 · 입고 시 자동 오퍼',offerable:'오퍼 가능'};
   const OFFER_CLS={sold:'ok',sheet_ready:'low',sheet_sent:'ok',disabled:'draft',no_customer:'draft',inactive:'draft',no_stock:'draft',offerable:'nf'};
-  let devItems=[], devView='list', devAll=false, devCanOffer=false, devMsg='';
+  let devItems=[], devView='list', devAll=false, devCanOffer=false, devMsg='', devCust='';   // devCust: 고객별 보기에서 고른 고객('' = 전체)
   function splitApp(app){ const s=String(app||'').trim(); if(!s)return{maker:'',model:'',year:''}; const p=s.split(/\s+/); return {maker:p[0]||'',model:p[1]||'',year:p.slice(2).join(' ')||''}; }
   function devVeh(r){ const v=splitApp(r.review_app); return [r.review_maker||v.maker,r.review_model||v.model,r.review_year||v.year].filter(Boolean).join(' / '); }
   function devCtrCell(r){
@@ -889,7 +889,7 @@
       +'<label style="display:inline-flex;align-items:center;gap:5px;margin:0 0 0 8px;font-size:12px;color:var(--ink);cursor:pointer"><input type="checkbox" id="devAllChk"'+(devAll?' checked':'')+'> 전체 기간</label>'
       +'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
       +'<button class="btn ghost sm" id="devSweepBtn" type="button" title="지금의 제품 카탈로그(CTR·SYD·OE·교차참조)와 미완료 경쟁사 코드를 다시 대조합니다. 매칭되면 개발완료로 바뀝니다.">🔄 카탈로그 대조</button>'
-      +'<button class="btn ghost sm" id="devXlsBtn" type="button">⬇ 엑셀 다운로드 ('+devItems.length+'건)</button>'
+      +'<button class="btn ghost sm" id="devXlsBtn" type="button">⬇ 엑셀 다운로드 ('+((devView==='cust'&&devCust)?devItems.filter(r=>(r.customer_id?String(r.customer_id):'none')===devCust).length:devItems.length)+'건)</button>'
       +'</div></div>'
       +(devMsg?'<div id="devMsgBox" style="margin-top:8px;font-size:12.5px;border-radius:8px;padding:8px 11px;background:#f6f3ec">'+devMsg+'</div>':'');
   }
@@ -934,9 +934,29 @@
     g.sort((a,b)=> (b.offerable-a.offerable) || (b.dev-a.dev) || (b.rows.length-a.rows.length) || String(a.name).localeCompare(String(b.name)));
     return g;
   }
+  // 고객별 보기 상단 고객 선택 (2026-10-12) — 고객이 많아 스크롤로 찾지 않도록
+  function devCustKey(g){ return g.customer_id?String(g.customer_id):'none'; }
+  function devCustPicker(gs){
+    const byName=gs.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+    const opt=(g)=>'<option value="'+esc(devCustKey(g))+'"'+(devCust===devCustKey(g)?' selected':'')+'>'
+      +esc(g.name)+' — 요청 '+g.rows.length+(g.dev?' · 완료 '+g.dev:'')+(g.offerable?' · 오퍼가능 '+g.offerable:'')+'</option>';
+    const offer=byName.filter(g=>g.offerable);
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding:9px 11px;background:#faf8f3;border:1px solid var(--line);border-radius:10px">'
+      +'<b style="font-size:12.5px;color:var(--brand)">고객 선택</b>'
+      +'<select id="devCustSel" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;min-width:260px;max-width:100%;background:#fff">'
+      +'<option value=""'+(devCust?'':' selected')+'>전체 고객 ('+gs.length+')</option>'
+      +(offer.length?'<optgroup label="오퍼 가능 고객">'+offer.map(opt).join('')+'</optgroup>':'')
+      +'<optgroup label="전체 (이름순)">'+byName.map(opt).join('')+'</optgroup>'
+      +'</select>'
+      +(devCust?'<button class="mbtn" type="button" id="devCustClear">✕ 전체 보기</button>':'')
+      +'<span class="hint">'+(devCust?'선택한 고객만 표시 · 엑셀도 이 고객만':'고객을 고르면 그 고객 카드만 보입니다')+'</span>'
+      +'</div>';
+  }
   function devCustHtml(){
-    const gs=devGroups();
-    let h='<div class="hint" style="margin-top:8px">고객별 개발요청. <b>오퍼시트 만들기</b>는 개발완료되고 재고가 있는 건으로 그 고객의 「개발완료 오퍼시트」를 만듭니다(부족 해소 판매오퍼와 같은 시트 — 부족분 화면에서 PDF·WhatsApp 발송). 재고가 0이면 입고 승인 때 자동으로 만들어집니다.</div>';
+    const all=devGroups();
+    if(devCust&&!all.some(g=>devCustKey(g)===devCust)) devCust='';   // 기간을 바꿔 그 고객이 사라졌으면 전체로
+    const gs=devCust?all.filter(g=>devCustKey(g)===devCust):all;
+    let h=devCustPicker(all)+'<div class="hint" style="margin-top:8px">고객별 개발요청. <b>오퍼시트 만들기</b>는 개발완료되고 재고가 있는 건으로 그 고객의 「개발완료 오퍼시트」를 만듭니다(부족 해소 판매오퍼와 같은 시트 — 부족분 화면에서 PDF·WhatsApp 발송). 재고가 0이면 입고 승인 때 자동으로 만들어집니다.</div>';
     gs.forEach(g=>{
       h+='<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;background:#fff">'
         +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
@@ -957,6 +977,8 @@
     return h;
   }
   function bindDev(){
+    const cs=$('devCustSel'); if(cs) cs.addEventListener('change',()=>{ devCust=cs.value; renderDev(); });
+    const cc=$('devCustClear'); if(cc) cc.addEventListener('click',()=>{ devCust=''; renderDev(); });
     document.querySelectorAll('[data-devview]').forEach(b=>b.addEventListener('click',()=>{ devView=b.getAttribute('data-devview'); renderDev(); }));
     const chk=$('devAllChk'); if(chk) chk.addEventListener('change',()=>{ devAll=chk.checked; devMsg=''; load(); });
     const xb=$('devXlsBtn'); if(xb) xb.addEventListener('click',downloadDevXlsx);
@@ -1007,6 +1029,7 @@
     const head=['접수월','고객','경쟁사코드','개발결과 CTR코드','CTR 제품명','현재고','오퍼 상태','오퍼시트','SYD코드','수량','상태','카테고리','메이커','차종','연식',
       '① 접수일','② 검토완료일','③ 공장요청일','④ 개발완료일','접수→검토(일)','검토→공장(일)','공장→완료(일)','전체 소요(일)','오더 메모','검토 메모'];
     let list=devItems.slice();
+    if(devView==='cust'&&devCust) list=list.filter(r=>(r.customer_id?String(r.customer_id):'none')===devCust);
     if(devView==='cust') list.sort((a,b)=>String(a.customer_name||'~').localeCompare(String(b.customer_name||'~'))||String(b.requested_at).localeCompare(String(a.requested_at)));
     const aoa=[head];
     list.forEach(r=>{ const v=splitApp(r.review_app);
@@ -1023,7 +1046,8 @@
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Desarrollo');
     const ms=months.slice().sort();
     const tag=devAll?'todo':(!ms.length?'':(ms.length===1?ms[0]:ms[0]+'_'+ms[ms.length-1]+'_'+ms.length+'m'));
-    XLSX.writeFile(wb,'desarrollo_'+tag.replace(/[^0-9A-Za-z_-]/g,'')+'_'+mxHoy()+'.xlsx');
+    const ctag=(devView==='cust'&&devCust&&list.length)?('_'+String(list[0].customer_code||list[0].customer_name||'cliente').replace(/[^0-9A-Za-z_-]+/g,'_').slice(0,30)):'';
+    XLSX.writeFile(wb,'desarrollo_'+tag.replace(/[^0-9A-Za-z_-]/g,'')+ctag+'_'+mxHoy()+'.xlsx');
   }
 
   $('go').addEventListener('click',login);

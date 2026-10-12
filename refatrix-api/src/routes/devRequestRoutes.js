@@ -335,6 +335,60 @@ export default async function devRequestRoutes(app) {
     return { ok: true, mapped_to: prod.code, todos_created: todos.length, followup };
   });
 
+  // ── 한 칸에 여러 코드가 들어간 개발요청 → 코드별 개별 요청으로 분리 (디렉터 · 2026-10-12) ──
+  //   예: 2026-09-28 GRUPO RAGA #1036 — 경쟁사 코드 620개가 띄어쓰기로 한 칸에 입력됨.
+  //   규칙: 띄어쓰기·줄바꿈·, ; / | 로 나눔 → 정규화 코드(대소문자·기호 무시) 기준 중복 제거.
+  //         같은 고객에 이미 있는(취소 제외) 같은 코드는 건너뜀 — 중복 요청 방지.
+  //         새 요청은 원본의 고객·요청수량·접수일·견적·카테고리·등록자를 그대로 물려받고 '접수' 상태.
+  //         원본은 '취소' + 오더 메모에 분리 기록(삭제하지 않음 — 이력 보존).
+  //   대상: '접수' 상태만(검토 이후 건은 SYD 코드·가격이 한 코드 기준이라 나누면 안 됨).
+  //   body: { dry_run?: true } → 실행 없이 미리보기(생성·건너뜀 건수, 건너뛴 코드).
+  app.post('/api/dev-requests/:id/split', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const id = Number(req.params.id);
+    const dry = !!(req.body && req.body.dry_run);
+    const d = (await query(`SELECT * FROM product_dev_requests WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!d) return reply.code(404).send({ error: 'not_found' });
+    if (d.status !== 'received') return reply.code(409).send({ error: 'not_received', note: '접수 상태의 요청만 나눌 수 있습니다.' });
+    const seen = new Set(); const tokens = [];
+    for (const t of String(d.input_code || '').split(/[\s,;\/|]+/)) {
+      const raw = t.trim(); const n = normCode(raw);
+      if (!n || seen.has(n)) continue;
+      seen.add(n); tokens.push(raw);
+    }
+    if (tokens.length < 2) return reply.code(400).send({ error: 'nothing_to_split', note: '나눌 코드가 2개 이상이어야 합니다.' });
+    const existing = new Set((await query(
+      `SELECT input_code FROM product_dev_requests
+        WHERE deleted_at IS NULL AND status <> 'cancelled' AND id <> $1
+          AND customer_id IS NOT DISTINCT FROM $2`, [id, d.customer_id])).rows.map((r) => normCode(r.input_code)));
+    const create = tokens.filter((t) => !existing.has(normCode(t)));
+    const skipped = tokens.filter((t) => existing.has(normCode(t)));
+    const summary = { id, total: tokens.length, create: create.length, skipped: skipped.length, skipped_codes: skipped.slice(0, 50), sample: create.slice(0, 10) };
+    if (dry) return { ok: true, dry_run: true, ...summary };
+
+    const uid = req.ctx.perm.userId;
+    const memo = (s) => (s && String(s).trim() ? String(s).trim() + ' · ' : '');
+    const ids = await withTx(async (c) => {
+      const out = [];
+      for (const code of create) {
+        const r = (await c.query(
+          `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, category, created_by, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,'received',$7,$8,$9) RETURNING id`,
+          [code, d.customer_id, d.requested_qty, `${memo(d.order_memo)}#${id} 에서 분리`.slice(0, 500), d.requested_at,
+            d.source_quote_id, d.category || null, d.created_by || uid, uid])).rows[0];
+        out.push(Number(r.id));
+      }
+      const note = `[분리됨] ${tokens.length}개 코드 → 새 요청 ${out.length}건${out.length ? ` (#${out[0]}~#${out[out.length - 1]})` : ''}, 이미 있던 ${skipped.length}건 건너뜀`;
+      await c.query(
+        `UPDATE product_dev_requests SET status='cancelled', order_memo=$1, updated_by=$2, updated_at=now() WHERE id=$3 AND status='received'`,
+        [(memo(d.order_memo) + note).slice(0, 1000), uid, id]);
+      return out;
+    });
+    await logEvent({ userId: uid, action: 'update', target: `dev_request:${id}`, detail: { split: true, total: tokens.length, created: ids.length, skipped: skipped.length } });
+    scheduleDevMatchSweep({ userId: uid });   // 나눈 코드 중 이미 카탈로그에 있는 것은 바로 개발완료
+    return { ok: true, ...summary, created_ids: ids.length ? [ids[0], ids[ids.length - 1]] : [] };
+  });
+
   app.put('/api/dev-requests/:id/cancel', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
     const id = Number(req.params.id);
     await query(`UPDATE product_dev_requests SET status='cancelled', updated_by=$1, updated_at=now() WHERE id=$2 AND deleted_at IS NULL`, [req.ctx.perm.userId, id]);
