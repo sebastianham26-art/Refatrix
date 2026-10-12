@@ -216,7 +216,11 @@ test('E10 SQL 스모크 — 0235 로 바뀐 조회가 실 DB 에서 모두 200',
   assert.ok(rc.json().customers >= 2, '독점 대상 고객 P·O 이상');
 });
 
-test('E11 0247 · 디렉터 PIN 승인 예외 → 약정 할인·외상 적용 + CRM 전송 / 해제 → 서류 기준 복귀', { skip: SKIP }, async () => {
+// 20261012 · **CRM 전송 규칙이 바뀌었다**(디렉터 지시: "전송은 먼저 하도록 해줘").
+//   전: CRM 본문이 ERP 실효값을 그대로 비췄다 → 서류가 없으면 0% · 0일이 갔다.
+//   후: CRM 본문은 항상 **약정값**이다. 0247 PIN 승인은 이제 **ERP 가 그 조건을 지킬지**만 정한다.
+//   그래서 아래는 두 가지를 따로 본다: ERP 실효값(관문이 정한다)과 CRM 본문(약정값).
+test('E11 0247 · 디렉터 PIN 승인 예외 → ERP 실효값이 바뀐다 / CRM 본문은 항상 약정값', { skip: SKIP }, async () => {
   const { hashPin } = await import('../src/auth.js');
   await query(`UPDATE users SET pin_hash=$1 WHERE id=$2`, [hashPin('4321'), ID.dir]);
   // 서류 없는 신규 고객(관문 대상) · 승인 완료
@@ -239,7 +243,11 @@ test('E11 0247 · 디렉터 PIN 승인 예외 → 약정 할인·외상 적용 +
   c = await cust(ID.custV);
   assert.equal(Number(c.discount), 38); assert.equal(Number(c.credit_days), 0, '외상은 그대로 선입금');
   let p = (await ob()).payload;
-  assert.equal(Number(p.discountPercent), 38, 'CRM 에 할인율 전송'); assert.equal(Number(p.paymentDays), 0);
+  assert.equal(Number(p.discountPercent), 38, 'CRM 에 할인율 전송');
+  // ⚠ 20261012 · CRM 에는 **약정 외상일(45)** 이 간다. ERP 는 아직 선입금(0)이다.
+  //   디렉터가 할인만 승인했어도 카달록에는 약정 조건이 보인다 — 의도된 어긋남이고,
+  //   고객 상세의 서류 관문 안내가 그 사실을 말해 준다.
+  assert.equal(Number(p.paymentDays), 45, 'CRM 본문은 약정값이다(실효값을 비추지 않는다)');
   // 외상도 승인
   const r2 = await call('dir', 'POST', `/api/customers/${ID.custV}/terms-override`, { credit: true, pin: '4321', reason: '외상 승인' });
   assert.equal(r2.statusCode, 200, r2.body);
@@ -247,6 +255,7 @@ test('E11 0247 · 디렉터 PIN 승인 예외 → 약정 할인·외상 적용 +
   assert.equal(Number(c.discount), 38, '할인 승인은 유지'); assert.equal(Number(c.credit_days), 45, '약정 외상일');
   p = (await ob()).payload;
   assert.equal(Number(p.discountPercent), 38); assert.equal(Number(p.paymentDays), 45, 'CRM 에 외상일 전송');
+  //   이 시점에는 ERP 실효값과 CRM 본문이 같다 — 승인으로 어긋남이 사라졌다.
   // 화면 상태
   const st = (await call('dir', 'GET', `/api/customers/${ID.custV}/exclusivity`)).json();
   assert.equal(st.gate.discount_ok, true); assert.equal(st.gate.credit_ok, true);
@@ -262,7 +271,9 @@ test('E11 0247 · 디렉터 PIN 승인 예외 → 약정 할인·외상 적용 +
   assert.equal(Number(c.discount), 0); assert.equal(Number(c.credit_days), 0);
   assert.equal(Number(c.discount_agreed), 42, '약정값은 보존');
   p = (await ob()).payload;
-  assert.equal(Number(p.discountPercent), 0);
+  // 20261012 · 해제는 **ERP 를 서류 기준으로 되돌리는 일**이고, CRM 본문은 약정값(42) 그대로다.
+  //   예전에는 여기서 0 이 나갔다 — 그게 "서류가 없으면 CRM 에도 0" 이던 동작이다.
+  assert.equal(Number(p.discountPercent), 42, 'CRM 본문은 계속 약정값이다');
   // 이력
   const ev = (await query(`SELECT count(*)::int AS n FROM customer_registration_events WHERE customer_id=$1 AND action='terms_override'`, [ID.custV])).rows[0];
   assert.equal(ev.n, 3);

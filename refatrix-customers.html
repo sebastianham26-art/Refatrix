@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (build tx-1009ratify)</title>
+<title>Refatrix ERP · 고객 등록 (build tx-1012crmterms)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -405,6 +405,23 @@
         else {
           h+=g.discount_ok?pill('#e4f0eb','#0F6E56','할인 적용 '+(g.discount_effective)+'%'+(g.discount_override&&!g.discount_docs_ok?' · 디렉터 승인':'')):pill('#fbe9e4','#9a3b12','할인 미적용 (약정 '+(g.discount_agreed==null?0:g.discount_agreed)+'%) — Constancia + 주소 증빙 필요');
           h+=g.credit_ok?pill('#e4f0eb','#0F6E56','외상 '+g.credit_days_effective+'일'+(g.credit_override&&!g.credit_docs_ok?' · 디렉터 승인':'')):pill('#fbe9e4','#9a3b12','선입금 — 경쟁사 서스펜션 구매 인보이스 필요');
+          // 20261012 · CRM 에는 **약정값**이 이미 가 있다(디렉터 지시: "전송은 먼저 하도록 해줘").
+          //   그래서 서류가 모자란 동안 카달록과 ERP 가 다른 값을 쓴다. 그 사실을 여기서
+          //   말해 주지 않으면 「카달록은 40% 인데 왜 견적은 정가냐」가 원인 불명으로 남는다.
+          //   ⚠ **실제로 어긋난 항목만** 말한다. 약정과 실효가 같은데 「다릅니다」라고 하면
+          //     그 안내는 곧 아무도 안 읽는 문구가 된다.
+          (function(){
+            const n=(v)=>v==null?0:Number(v);
+            const dGap=n(g.discount_agreed)!==n(g.discount_effective);
+            const cGap=n(g.credit_days_agreed)!==n(g.credit_days_effective);
+            if(!dGap&&!cGap) return;
+            const parts=[];
+            if(dGap) parts.push('할인 <b>'+n(g.discount_agreed)+'%</b>(ERP 는 '+n(g.discount_effective)+'%)');
+            if(cGap) parts.push('외상 <b>'+n(g.credit_days_agreed)+'일</b>(ERP 는 '+n(g.credit_days_effective)+'일)');
+            h+='<div class="hint" style="margin-top:4px">🌐 CRM(웹카달록)에는 <b>약정 조건</b>이 이미 전송돼 있습니다 — '
+              +parts.join(' · ')+'. ERP 의 견적·매출은 위 실효값으로 계산되니, 서류가 모일 때까지 두 쪽이 다릅니다.'
+              +' 지금 맞추려면 아래 디렉터 PIN 승인을 쓰세요.</div>';
+          })();
           // 0247 · 디렉터 PIN 승인 예외 — 서류가 없어도 약정 조건 적용 + CRM 전송
           if(g.discount_override||g.credit_override){
             h+='<div class="hint" style="margin-top:4px">🔑 디렉터 승인: '+[g.discount_override?'할인':'',g.credit_override?'외상':''].filter(Boolean).join(' · ')

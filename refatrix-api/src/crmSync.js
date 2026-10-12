@@ -66,9 +66,74 @@ export function isSuccess(httpStatus, body, okCode = '0') {
 }
 
 // 전송 본문을 만들 때 필요한 고객 값 — create 는 신원(상호·연락처·배송지)까지 쓴다.
-const CUSTOMER_COLS = `SELECT id, code, name, rfc, contact, phone, ship_address, customer_type,
-         discount, credit_days, approval_status, deleted_at
+//
+// ★ 0235/0247 서류 관문 때문에 **컬럼이 두 벌**이다:
+//     discount / credit_days               = 관문이 적용된 **실효값** (서류 없으면 0)
+//     discount_agreed / credit_days_agreed = 사람이 합의한 **약정값**
+//   CRM 으로는 **약정값**을 보낸다(디렉터 지시 2026-10-12 · termsForCrm 참고).
+const CUSTOMER_COLS_BASE = `id, code, name, rfc, contact, phone, ship_address, customer_type,
+         discount, credit_days, approval_status, deleted_at`;
+const CUSTOMER_COLS_AGREED = `, discount_agreed, credit_days_agreed, doc_gate,
+         discount_override, credit_override`;
+
+// 0235 미적용 배포에서 없는 컬럼을 고르면 쿼리가 통째로 터진다 — 있는지 보고 고른다.
+//   ⚠ 긍정만 캐싱한다(이 파일의 다른 probe 들과 같은 규칙). 서버 기동 후 migrate 해도
+//     30초 안에 반영되고, 「없다」가 굳어 영원히 옛 길로 가는 일이 없다.
+let agreedColsReady = false;
+let agreedColsProbe = 0;
+export async function customerAgreedColsReady() {
+  if (agreedColsReady) return true;
+  if (Date.now() - agreedColsProbe < PROBE_MS) return false;
+  agreedColsProbe = Date.now();
+  try {
+    const r = await query(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+        WHERE table_name='customers'
+          AND column_name IN ('discount_agreed','credit_days_agreed')`);
+    agreedColsReady = Number(r.rows[0]?.n) >= 2;
+  } catch (_) { agreedColsReady = false; }
+  return agreedColsReady;
+}
+
+async function customerCols() {
+  return `SELECT ${CUSTOMER_COLS_BASE}${(await customerAgreedColsReady()) ? CUSTOMER_COLS_AGREED : ''}
     FROM customers`;
+}
+
+/**
+ * 20261012 · **CRM 에는 약정 할인율·외상일을 보낸다.**
+ *
+ *   디렉터 지시: "서류가 없으면 할인률과 외상일이 crm으로 전송이 안되는데, 전송은 먼저 하도록 해줘."
+ *
+ *   왜 안 갔나: 0235/0247 서류 관문이 `customers.discount`·`credit_days` 를 **0 으로 유보**하고
+ *   합의값은 `*_agreed` 에 둔다. CRM 전송이 실효값을 읽고 있었으니 상대에게는 0% · 0일이 갔다.
+ *   그 결과 신규 고객은 서류가 모일 때까지 카달록에서 **정가**를 봤다 — 합의한 조건이 있는데도.
+ *
+ *   ⚠ 서류 관문 자체는 **건드리지 않았다.** ERP 의 견적·매출은 계속 실효값으로 계산한다.
+ *     그래서 서류가 모자란 동안 **CRM 은 약정가, ERP 는 정가**가 된다. 그 어긋남을 없애려면
+ *     0247 의 디렉터 PIN 승인으로 ERP 쪽도 약정값을 쓰게 하면 된다(고객 상세에서 한 번).
+ *     이 함수가 관문 규칙을 복제하지 않는 것이 중요하다 — 규칙은 트리거 한 곳에만 있어야 한다.
+ *
+ *   @returns {{discountPercent:number, paymentDays:number, gated:boolean}}
+ *     gated = 약정값과 실효값이 다르다(= ERP 는 아직 유보 중이다). 기록·화면용 사실일 뿐,
+ *             보내는 값을 바꾸지 않는다.
+ */
+export function termsForCrm(c) {
+  const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+  const eff = { d: num(c?.discount), p: num(c?.credit_days) };
+  //   *_agreed 가 없는 배포(0235 미적용)에서는 실효값이 곧 약정값이다.
+  const agr = {
+    d: c?.discount_agreed === undefined ? null : num(c.discount_agreed),
+    p: c?.credit_days_agreed === undefined ? null : num(c.credit_days_agreed),
+  };
+  const d = agr.d != null ? agr.d : (eff.d != null ? eff.d : 0);
+  const p = agr.p != null ? agr.p : (eff.p != null ? eff.p : 0);
+  return {
+    discountPercent: d,
+    paymentDays: p,
+    gated: (eff.d != null && eff.d !== d) || (eff.p != null && eff.p !== p),
+  };
+}
 
 /** TIER 글자 → CRM 아이디. 기본은 화면 순서 그대로 A=1·B=2·C=3·D=4. */
 function tierIdMap() {
@@ -208,6 +273,8 @@ export function upsertIdentityOn() {
 export function buildPayload(op, c, transactionUser, reason) {
   const rfc = String(c.rfc || '').trim();
   if (op === 'delete') return { rfc, transactionUser };
+  // 20261012 · 할인율·외상일은 **한 곳에서** 정한다(create·upsert 가 갈라지지 않게).
+  const terms = termsForCrm(c);
   // 반려: CRM 의 고객이 "승인 대기" 로 남지 않도록 상태와 사유를 함께 보낸다.
   if (op === 'reject') {
     return {
@@ -225,8 +292,9 @@ export function buildPayload(op, c, transactionUser, reason) {
       ...identityFields(c),
       erpCustomerCode: String(c.code || '').trim() || undefined,
       direccion: String(c.ship_address || '').trim() || undefined,
-      discountPercent: c.discount == null ? 0 : Number(c.discount),
-      paymentDays: c.credit_days == null ? 0 : Number(c.credit_days),
+      // 20261012 · 약정값을 보낸다(서류 관문이 유보한 실효값이 아니다). termsForCrm 참고.
+      discountPercent: terms.discountPercent,
+      paymentDays: terms.paymentDays,
       estatus: crmEstatus(c.approval_status),
       transactionUser,
     };
@@ -241,8 +309,9 @@ export function buildPayload(op, c, transactionUser, reason) {
   const up = {
     rfc,
     ...(upsertIdentityOn() ? identityFields(c) : {}),
-    discountPercent: c.discount == null ? 0 : Number(c.discount),
-    paymentDays: c.credit_days == null ? 0 : Number(c.credit_days),
+    // 20261012 · 약정값을 보낸다(서류 관문이 유보한 실효값이 아니다). termsForCrm 참고.
+    discountPercent: terms.discountPercent,
+    paymentDays: terms.paymentDays,
     transactionUser,
     // 승인 상태를 **같이 보낸다.** 이게 없으면 ERP 에서 승인을 끝내도 CRM 쪽 고객은
     //   「Aprobación pendiente」 로 영원히 남는다(P-0001 에서 실제로 그렇게 됐다).
@@ -282,7 +351,7 @@ export async function enqueueCustomerSync(customerId, op, { origin, actorUserId,
   try {
     if (!(await crmTableReady())) return { ok: false, reason: 'migration_required' };
     const c = (await query(
-      `${CUSTOMER_COLS} WHERE id=$1`, [customerId])).rows[0];
+      `${await customerCols()} WHERE id=$1`, [customerId])).rows[0];
     if (!c) return { ok: false, reason: 'customer_not_found' };
 
     const ep = await getEndpoint(CUSTOMER_KEY);
@@ -547,7 +616,7 @@ async function enqueueFallback(row, ep, body) {
     const target = await getEndpoint(ep.fallback_key);
     if (!target || !target.enabled || !activeUrl(target)) return null;
 
-    const c = (await query(`${CUSTOMER_COLS} WHERE id=$1`, [row.customer_id])).rows[0];
+    const c = (await query(`${await customerCols()} WHERE id=$1`, [row.customer_id])).rows[0];
     if (!c) return null;
     const user = await actorName(row.acted_by, target.user_field);
     const payload = buildPayload('create', c, user);
