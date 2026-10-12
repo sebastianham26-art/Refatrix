@@ -13,7 +13,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { generateOfferSheets } from '../offerSheets.js';
+import { generateOfferSheets, offerSheetKindSql, devIdFromNote } from '../offerSheets.js';
 import { waApiReady, normalizeWaNumber, sendWaTo } from '../waSend.js';
 import { windowState } from '../waWebhook.js';   // 0253 · 창 밖이면 템플릿부터
 
@@ -24,13 +24,23 @@ function canDisableOffer(perm) {
   return String(perm.name || '').trim().toLowerCase().startsWith('maria');
 }
 
+// 개발요청 id → 고객이 요청한 경쟁사 코드(input_code) (2026-10-12 · 개발완료 오퍼 양식)
+async function devCodesFor(ids) {
+  const list = [...new Set((ids || []).map(Number).filter(Boolean))];
+  const m = new Map();
+  if (!list.length) return m;
+  const rows = (await query(`SELECT id, input_code FROM product_dev_requests WHERE id = ANY($1::bigint[])`, [list])).rows;
+  for (const r of rows) if (r.input_code) m.set(Number(r.id), String(r.input_code).trim());
+  return m;
+}
+
 export default async function offerSheetRoutes(app) {
   // ---- 목록 ----
   // GET /api/offersheets?status=ready|sent|cancelled|all (기본 all, cancelled 제외 아님 — 프런트 필터)
   app.get('/api/offersheets', { preHandler: [authGuard, requirePageAny(['shortage', 'sales'])] }, async (req) => {
     const status = String(req.query.status || 'all');
     const rows = (await query(
-      `SELECT os.id, os.offer_no, os.status, os.origin, os.import_batch_id,
+      `SELECT os.id, os.offer_no, os.status, os.origin, os.import_batch_id, ${offerSheetKindSql('os')} AS kind,
               os.subtotal_mxn, os.iva_mxn, os.total_mxn,
               os.created_at, os.sent_at, os.sent_channel,
               os.wa_sent_at, os.wa_status, os.wa_error, os.wa_to,
@@ -79,7 +89,7 @@ export default async function offerSheetRoutes(app) {
         WHERE os.deleted_at IS NULL`)).rows[0];
     return {
       items: rows.map((r) => ({
-        id: Number(r.id), offer_no: r.offer_no, status: r.status, origin: r.origin,
+        id: Number(r.id), offer_no: r.offer_no, status: r.status, origin: r.origin, kind: r.kind || 'shortage',
         import_batch_id: r.import_batch_id != null ? Number(r.import_batch_id) : null,
         subtotal_mxn: Number(r.subtotal_mxn), iva_mxn: Number(r.iva_mxn), total_mxn: Number(r.total_mxn),
         created_at: r.created_at, sent_at: r.sent_at, sent_channel: r.sent_channel, sent_by_name: r.sent_by_name,
@@ -110,7 +120,7 @@ export default async function offerSheetRoutes(app) {
   app.get('/api/offersheets/:id', { preHandler: [authGuard, requirePageAny(['shortage', 'sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const os = (await query(
-      `SELECT os.*, c.code AS customer_code, c.name AS customer_name,
+      `SELECT os.*, ${offerSheetKindSql('os')} AS kind, c.code AS customer_code, c.name AS customer_name,
               COALESCE(NULLIF(TRIM(c.buyer_phone),''), c.phone) AS customer_phone,
               c.buyer_name, (NULLIF(TRIM(c.buyer_phone),'') IS NOT NULL) AS phone_is_buyer,
               c.contact AS customer_contact, c.rfc AS customer_rfc,
@@ -127,12 +137,15 @@ export default async function offerSheetRoutes(app) {
       `SELECT oi.id, oi.shortage_id, oi.quote_id, oi.quote_line_id, oi.product_id, oi.offer_qty, oi.list_price, oi.discount_rate,
               oi.unit_price, oi.line_subtotal, oi.line_iva, oi.line_total, oi.occurred_at::text AS occurred_at,
               p.code AS ctr_code, p.scode AS syd_codes, p.name AS product_name, p.app AS app_text, p.stock_qty,
-              qt.quote_no AS quote_no
+              qt.quote_no AS quote_no, sh.note AS sh_note
          FROM offer_sheet_items oi
          JOIN products p ON p.id = oi.product_id
          LEFT JOIN quotes qt ON qt.id = oi.quote_id
+         LEFT JOIN stock_shortages sh ON sh.id = oi.shortage_id
         WHERE oi.offer_sheet_id = $1
         ORDER BY p.code, oi.occurred_at, oi.id`, [id])).rows;
+    // 2026-10-12 — 개발완료 라인: 고객이 요청했던 경쟁사 코드(개발요청 input_code)를 붙인다
+    const devCodes = await devCodesFor(items.map((it) => devIdFromNote(it.sh_note)));
     const grouped = {};
     for (const it of items) {
       const k = Number(it.product_id);
@@ -142,10 +155,13 @@ export default async function offerSheetRoutes(app) {
           app_text: it.app_text, stock_qty: Number(it.stock_qty),
           offer_qty: 0, list_price: Number(it.list_price), discount_rate: Number(it.discount_rate),
           unit_price: Number(it.unit_price), line_subtotal: 0, line_iva: 0, line_total: 0,
-          first_occurred: it.occurred_at, shortage_ids: [], sources: [],
+          first_occurred: it.occurred_at, shortage_ids: [], sources: [], comp_codes: [],
         };
       }
       const g = grouped[k];
+      const did = devIdFromNote(it.sh_note);
+      const cc = did ? devCodes.get(did) : null;
+      if (cc && !g.comp_codes.includes(cc)) g.comp_codes.push(cc);
       g.offer_qty += Number(it.offer_qty);
       g.line_subtotal += Number(it.line_subtotal);
       g.line_iva += Number(it.line_iva);
@@ -153,12 +169,12 @@ export default async function offerSheetRoutes(app) {
       if (it.occurred_at && (!g.first_occurred || it.occurred_at < g.first_occurred)) g.first_occurred = it.occurred_at;
       if (it.shortage_id != null) g.shortage_ids.push(Number(it.shortage_id));
       // 출처 라벨: 견적 라인(전환·만료 전) vs 부족 기록(전환확정·매출·만료)
-      const src = it.quote_line_id != null ? ('견적' + (it.quote_no ? ' ' + it.quote_no : '')) : '부족기록';
+      const src = it.quote_line_id != null ? ('견적' + (it.quote_no ? ' ' + it.quote_no : '')) : (did ? '개발완료' : '부족기록');
       if (!g.sources.includes(src)) g.sources.push(src);
     }
     return {
       sheet: {
-        id: Number(os.id), offer_no: os.offer_no, status: os.status, origin: os.origin,
+        id: Number(os.id), offer_no: os.offer_no, status: os.status, origin: os.origin, kind: os.kind || 'shortage',
         import_batch_id: os.import_batch_id != null ? Number(os.import_batch_id) : null,
         import_batch_no: os.import_batch_no,
         subtotal_mxn: Number(os.subtotal_mxn), iva_mxn: Number(os.iva_mxn), total_mxn: Number(os.total_mxn),
@@ -173,8 +189,8 @@ export default async function offerSheetRoutes(app) {
         disabled_by_name: os.disabled_by_name || null, disabled_note: os.disabled_note || null,
       },
       perm: { can_disable: canDisableOffer(req.ctx.perm) },
-      items: items.map((r) => ({
-        ...r, product_id: Number(r.product_id),
+      items: items.map(({ sh_note, ...r }) => ({
+        ...r, product_id: Number(r.product_id), dev_request_id: devIdFromNote(sh_note),
         shortage_id: r.shortage_id != null ? Number(r.shortage_id) : null,
         quote_id: r.quote_id != null ? Number(r.quote_id) : null,
         quote_line_id: r.quote_line_id != null ? Number(r.quote_line_id) : null,
@@ -246,7 +262,7 @@ export default async function offerSheetRoutes(app) {
     }
     const id = Number(req.params.id);
     const os = (await query(
-      `SELECT os.*, c.name AS customer_name,
+      `SELECT os.*, ${offerSheetKindSql('os')} AS kind, c.name AS customer_name,
               COALESCE(NULLIF(TRIM(c.buyer_phone),''), c.phone) AS customer_phone,
               c.buyer_name, c.contact AS customer_contact
          FROM offer_sheets os JOIN customers c ON c.id = os.customer_id
@@ -260,21 +276,32 @@ export default async function offerSheetRoutes(app) {
     // 제품별 합산 라인(상세와 동일 기준)
     const lines = (await query(
       `SELECT p.code AS ctr_code, p.name AS product_name, SUM(oi.offer_qty) AS qty,
-              MAX(oi.unit_price) AS unit_price
+              MAX(oi.unit_price) AS unit_price, array_agg(sh.note) AS sh_notes
          FROM offer_sheet_items oi JOIN products p ON p.id = oi.product_id
+         LEFT JOIN stock_shortages sh ON sh.id = oi.shortage_id
         WHERE oi.offer_sheet_id = $1
         GROUP BY p.code, p.name ORDER BY p.code`, [id])).rows;
+    const isDev = os.kind === 'dev';
+    const waDevCodes = isDev ? await devCodesFor(lines.flatMap((l) => (l.sh_notes || []).map(devIdFromNote))) : new Map();
     let emisor = 'CTR';
     try { emisor = (await query(`SELECT emisor FROM company_settings WHERE id=1`)).rows[0]?.emisor || 'CTR'; } catch (_) {}
     const fmtm = (n) => '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const itemsTxt = lines.map((l) => `• ${l.ctr_code || ''} — ${l.product_name || ''} × ${Number(l.qty) || 0}  (${fmtm(l.unit_price)} c/u)`).join('\n');
+    const compOf = (l) => [...new Set((l.sh_notes || []).map(devIdFromNote).map((d) => waDevCodes.get(d)).filter(Boolean))].join(', ');
+    const itemsTxt = lines.map((l) => {
+      const cc = isDev ? compOf(l) : '';
+      return `• ${cc ? cc + ' → ' : ''}${l.ctr_code || ''} — ${l.product_name || ''} × ${Number(l.qty) || 0}  (${fmtm(l.unit_price)} c/u)`;
+    }).join('\n');
     const greetName = os.buyer_name || os.customer_contact; // 구매결정권자 이름 우선
     const text = `Hola${greetName ? ' ' + greetName : ''}, le saludamos de parte de ${emisor}. 🎉\n\n`
-      + `¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n`
+      + (isDev
+        ? `¡Buenas noticias! Los productos que nos solicitó YA FUERON DESARROLLADOS y están disponibles en nuestro almacén. Su código solicitado → nuestro código CTR:\n\n`
+        : `¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n`)
       + itemsTxt
       + `\n\nSubtotal: ${fmtm(os.subtotal_mxn)} · IVA: ${fmtm(os.iva_mxn)} · *Total: ${fmtm(os.total_mxn)} MXN*`
       + `\n\nOferta ${os.offer_no || ''} — sujeto a existencia disponible. ¡Le recomendamos confirmar su pedido pronto, gracias!`;
-    const headline = `${emisor}: ${lines.length} producto(s) que solicitó ya están disponibles. Oferta ${os.offer_no || ''}, total ${fmtm(os.total_mxn)} MXN. Responda este mensaje para recibir el detalle.`;
+    const headline = isDev
+      ? `${emisor}: ${lines.length} producto(s) que nos solicitó ya fueron desarrollados y están disponibles. Oferta ${os.offer_no || ''}, total ${fmtm(os.total_mxn)} MXN. Responda este mensaje para recibir el detalle.`
+      : `${emisor}: ${lines.length} producto(s) que solicitó ya están disponibles. Oferta ${os.offer_no || ''}, total ${fmtm(os.total_mxn)} MXN. Responda este mensaje para recibir el detalle.`;
 
     const res = await sendWaTo({ to, text, headline, templateName: process.env.OFFERSHEET_WA_TEMPLATE || null, windowOpen: (await windowState(to)).open });
     if (res.ok) {

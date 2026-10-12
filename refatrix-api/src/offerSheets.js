@@ -28,7 +28,30 @@
 //           이미 오퍼된 경우 제외 — 견적 오퍼 후 전환·만료돼도 이중 오퍼 없음.
 //       - 견적 라인: quote_line_id 가 이미 담겨 있으면 제외.
 //   · advisory lock 으로 동시 생성 직렬화(승인 연타·수동 버튼 동시 클릭 대비).
+//   · 개발완료 분리(2026-10-12): 개발요청이 개발완료되며 적재된 부족 기록(note 의 [devreq:<id>])은
+//       일반 부족분과 섞지 않고 고객별 **별도 시트**로 만든다 — 시트 양식이 「품절 재입고」가 아니라
+//       「요청하신 제품 개발완료(경쟁사 코드 → CTR 코드)」라서. 스키마 변경 없음: 시트 종류는
+//       담긴 부족 기록의 마커로 판정한다(offerSheetKindSql).
+//       옵션 devOnly / devRequestIds / customerIds 로 개발 필요 화면의 [오퍼시트 만들기]가 대상만 생성.
 // =====================================================================
+
+/** 부족 기록 note 의 개발요청 마커 → 개발요청 id (없으면 null) */
+export function devIdFromNote(note) {
+  const m = /\[devreq:(\d+)\]/.exec(String(note || ''));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * 시트 종류 SQL 식 — 'dev'(담긴 라인이 전부 개발완료 부족 기록) | 'shortage'.
+ * @param {string} alias offer_sheets 별칭
+ */
+export function offerSheetKindSql(alias = 'os') {
+  return `(CASE WHEN EXISTS (SELECT 1 FROM offer_sheet_items ki JOIN stock_shortages ks ON ks.id = ki.shortage_id
+                              WHERE ki.offer_sheet_id = ${alias}.id AND ks.note LIKE '%[devreq:%')
+                 AND NOT EXISTS (SELECT 1 FROM offer_sheet_items kn LEFT JOIN stock_shortages ks2 ON ks2.id = kn.shortage_id
+                                  WHERE kn.offer_sheet_id = ${alias}.id AND COALESCE(ks2.note,'') NOT LIKE '%[devreq:%')
+            THEN 'dev' ELSE 'shortage' END)`;
+}
 
 const OFFER_LOCK_KEY = 815202601; // pg_advisory_xact_lock 용 임의 고정 키
 
@@ -41,9 +64,13 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
  * @param {number}   [opts.importBatchId]  생성 시트에 남길 입고 배치 참조
  * @param {number}   [opts.userId]         created_by (수동 생성 시)
  * @param {string}   [opts.origin]         'auto' | 'manual'
+ * @param {boolean}  [opts.devOnly]        개발완료 부족 기록만(견적 부족라인·일반 부족분 제외)
+ * @param {number[]} [opts.devRequestIds]  이 개발요청들의 부족 기록만(devOnly 함의)
+ * @param {number[]} [opts.customerIds]    이 고객들만
  * @returns {Promise<{sheets:number, items:number, customers:Array}>}
  */
-export async function generateOfferSheets(q, { productIds = null, importBatchId = null, userId = null, origin = 'auto' } = {}) {
+export async function generateOfferSheets(q, { productIds = null, importBatchId = null, userId = null, origin = 'auto',
+  devOnly = false, devRequestIds = null, customerIds = null } = {}) {
   await q(`SELECT pg_advisory_xact_lock($1)`, [OFFER_LOCK_KEY]);
 
   const pids = Array.isArray(productIds) && productIds.length ? productIds.map(Number) : null;
@@ -54,7 +81,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
   //        다시 활성화하면 그 시점의 부족분·견적 부족라인이 자동으로 다시 대상이 된다.
   // ① 부족 기록(전환확정·매출등록·만료) — 살아있는 시트에 없는 것만
   const shortRows = (await q(
-    `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id,
+    `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id, sh.note AS sh_note,
             (sh.shortage_qty - sh.resolved_qty) AS demand_qty,
             sh.occurred_at::text AS occurred_at,
             NULL AS quote_id, NULL AS quote_line_id,
@@ -128,19 +155,27 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
         ${pidCond('ql.product_id')}
       ORDER BY qt.customer_id, ql.product_id, qt.quote_date, ql.id`, args2)).rows;
 
-  const rows = shortRows.concat(quoteRows);
+  // 개발완료 분리·필터 (2026-10-12)
+  const devSet = Array.isArray(devRequestIds) && devRequestIds.length ? new Set(devRequestIds.map(Number)) : null;
+  const custSet = Array.isArray(customerIds) && customerIds.length ? new Set(customerIds.map(Number)) : null;
+  const onlyDev = !!(devOnly || devSet);
+  for (const r of shortRows) r.dev_id = devIdFromNote(r.sh_note);
+  let rows = onlyDev ? shortRows.filter((r) => r.dev_id != null) : shortRows.concat(quoteRows);
+  if (devSet) rows = rows.filter((r) => devSet.has(Number(r.dev_id)));
+  if (custSet) rows = rows.filter((r) => custSet.has(Number(r.customer_id)));
   if (!rows.length) return { sheets: 0, items: 0, customers: [] };
 
-  // 고객별 그룹
+  // 고객 × 종류(개발완료 / 일반) 그룹 — 같은 고객이라도 양식이 달라 시트를 나눈다
   const byCust = new Map();
   for (const r of rows) {
-    const k = Number(r.customer_id);
-    if (!byCust.has(k)) byCust.set(k, []);
-    byCust.get(k).push(r);
+    const kind = r.dev_id != null ? 'dev' : 'shortage';
+    const k = Number(r.customer_id) + ':' + kind;
+    if (!byCust.has(k)) byCust.set(k, { custId: Number(r.customer_id), kind, list: [] });
+    byCust.get(k).list.push(r);
   }
 
   let sheetCount = 0; let itemCount = 0; const customers = [];
-  for (const [custId, list] of byCust) {
+  for (const { custId, kind, list } of byCust.values()) {
     let subtotal = 0; let iva = 0;
     // 제안수량 캡: SKU별 남은 오퍼 가능량(현재고 스냅샷)에서 차감하며 min(부족수량, 남은량).
     const remaining = new Map();
@@ -172,7 +207,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
        VALUES ($1,$2,'ready',$3,$4,$5,$6,$7) RETURNING id, created_at`,
       [custId, importBatchId, origin === 'manual' ? 'manual' : 'auto', subtotal, iva, r2(subtotal + iva), userId])).rows[0];
     const sheetId = Number(sheet.id);
-    await q(`UPDATE offer_sheets SET offer_no = 'OS-' || to_char(created_at,'YYYYMMDD') || '-' || id::text WHERE id=$1`, [sheetId]);
+    const offerNo = (await q(`UPDATE offer_sheets SET offer_no = 'OS-' || to_char(created_at,'YYYYMMDD') || '-' || id::text WHERE id=$1 RETURNING offer_no`, [sheetId])).rows[0]?.offer_no || null;
 
     for (const it of items) {
       await q(
@@ -184,7 +219,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
       itemCount += 1;
     }
     sheetCount += 1;
-    customers.push({ customer_id: custId, offer_sheet_id: sheetId, items: items.length, total_mxn: r2(subtotal + iva) });
+    customers.push({ customer_id: custId, kind, offer_sheet_id: sheetId, offer_no: offerNo, items: items.length, total_mxn: r2(subtotal + iva) });
   }
   return { sheets: sheetCount, items: itemCount, customers };
 }

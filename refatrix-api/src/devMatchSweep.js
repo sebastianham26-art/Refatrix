@@ -40,23 +40,31 @@ function clip1(s, max) { s = String(s == null ? '' : s); return s.length > max ?
 //      재고가 없으면 → 부족분(open)이 그대로 "즉시 구매 제안"이 되고,
 //      이후 수입입고 승인 시 기존 훅이 자동으로 오퍼시트를 만든다.
 //   중복 가드: note 의 [devreq:<id>] 마커로 같은 개발요청의 재적재 방지(멱등).
-export async function pushDevDemandAndOffer({ productId, rows, userId = null }) {
-  const out = { shortages: 0, stock_qty: null, offer_sheets: 0, offer_items: 0 };
-  if (!productId || !Array.isArray(rows) || !rows.length) return out;
-
+// 개발요청 수요 → 부족분 대장 적재만(멱등). 오퍼시트 생성은 호출자가 정한다.
+//   반환: 새로 적재한 건수
+export async function ensureDevDemand({ productId, rows, userId = null, exec = query }) {
+  let n = 0;
+  if (!productId || !Array.isArray(rows) || !rows.length) return n;
   for (const r of rows) {
     const marker = `[devreq:${Number(r.id)}]`;
     const qty = Number(r.requested_qty) > 0 ? Number(r.requested_qty) : 1;   // 수량 미입력 접수도 최소 1개 신호
     const note = clip1(`개발완료 오퍼·발주 제안 — 개발요청 ${marker} 경쟁사코드 ${r.input_code || '-'}`, 300);
-    const ins = await query(
+    const ins = await exec(
       `INSERT INTO stock_shortages
          (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty,
           occurred_at, source_quote_id, note, created_by)
        SELECT $1::bigint,$2::bigint,NULL,$3::numeric,0,$3::numeric,CURRENT_DATE,$4::bigint,$5,$6::bigint
         WHERE NOT EXISTS (SELECT 1 FROM stock_shortages ss WHERE ss.note LIKE $7)`,
       [productId, r.customer_id || null, qty, r.source_quote_id || null, note, userId, `%${marker}%`]);
-    if (ins.rowCount) out.shortages += ins.rowCount;
+    if (ins.rowCount) n += ins.rowCount;
   }
+  return n;
+}
+
+export async function pushDevDemandAndOffer({ productId, rows, userId = null }) {
+  const out = { shortages: 0, stock_qty: null, offer_sheets: 0, offer_items: 0 };
+  if (!productId || !Array.isArray(rows) || !rows.length) return out;
+  out.shortages = await ensureDevDemand({ productId, rows, userId });
 
   // 재고검증
   try {
@@ -218,7 +226,7 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
       const title = `개발완료(카탈로그 자동 매칭): ${items.length}건`;
       const tail = `\n— 오퍼시트 ${offerSheets}건 자동 생성 · 부족분(발주 근거) ${shortageRecords}건 기록`
         + (noStockProducts ? ` · 재고 없는 제품 ${noStockProducts}종 → 즉시 구매 검토 필요(부족분/발주 화면)` : '');
-      const detail = clip1(`카탈로그/제품마스터 업데이트로 개발목록의 경쟁사 코드가 우리 제품과 매칭되어 자동 개발완료 처리되었습니다. 고객에게 안내하세요.\n` + lines.join('\n') + more + tail, 1800);
+      const detail = clip1(`카탈로그/제품마스터 업데이트로 개발목록의 경쟁사 코드가 우리 제품과 매칭되어 자동 개발완료 처리되었습니다(경쟁사 코드 → CTR 코드). 고객에게 안내하세요 — 영업 > 개발 필요 [고객별]에서 오퍼시트를 만들 수 있습니다.\n` + lines.join('\n') + more + tail, 1800);
       for (const uid of recipients) {
         await query(
           `INSERT INTO todos (title, detail, assignee_id, due_date, kind, created_by)

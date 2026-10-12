@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부 · build 20261012dx</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 20261012dv</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -859,69 +859,171 @@
     }catch(e){ openRows['s'+pid]='불러오지 못했습니다.'; loadShortage(); }
   }
 
-  // ④ 개발 필요 → 개발요청 목록, 클릭 시 단계 상세
+  // ④ 개발 필요 → 개발요청 목록 (2026-10-12 개편)
+  //   · 개발완료 건은 「경쟁사 코드 → CTR 코드」를 목록에 바로 표시
+  //   · [목록 | 고객별] 전환 — 고객별 카드에서 개발완료 건으로 오퍼시트 생성(부족 해소 오퍼와 같은 시트·발송 화면)
+  //   · [🔄 카탈로그 대조] — 지금 카탈로그와 미완료 경쟁사 코드를 다시 대조(매칭되면 개발완료) 후 새로고침
+  //   · [전체 기간] — 월 선택과 무관하게 전체 개발요청
   const stLbl={received:'접수',reviewed:'검토완료',factory_requested:'공장요청',developed:'개발완료'};
+  const OFFER_LBL={sold:'판매완료',sheet_ready:'발송 대기',sheet_sent:'발송 완료',disabled:'오퍼 중단',no_customer:'고객 미지정',inactive:'판매중단 제품',no_stock:'재고 0 · 입고 시 자동 오퍼',offerable:'오퍼 가능'};
+  const OFFER_CLS={sold:'ok',sheet_ready:'low',sheet_sent:'ok',disabled:'draft',no_customer:'draft',inactive:'draft',no_stock:'draft',offerable:'nf'};
+  let devItems=[], devView='list', devAll=false, devCanOffer=false, devMsg='';
   function splitApp(app){ const s=String(app||'').trim(); if(!s)return{maker:'',model:'',year:''}; const p=s.split(/\s+/); return {maker:p[0]||'',model:p[1]||'',year:p.slice(2).join(' ')||''}; }
-  async function loadDev(){
-    const d=await fetch(session.api+'/api/dashboard/funnel/dev?months='+mq(),{headers:auth()}).then(r=>r.json());
-    const items=d.items||[];
-    devItems=items;
-    if(!items.length){ $('body').innerHTML='<div class="hint" style="margin-top:10px">해당 기간 개발필요 항목이 없습니다.</div>'; return; }
-    let h='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">'
-      +'<div class="hint" style="margin:0">항목을 클릭하면 단계별(접수→검토→공장→완료) 진행과 소요일을 펼칩니다.</div>'
-      +'<button class="btn ghost sm" id="devXlsBtn" type="button">⬇ 엑셀 다운로드 ('+items.length+'건)</button></div>';
-    h+='<table data-sort="funnel:dev"><thead><tr><th>경쟁사코드</th><th>고객</th><th class="r">수량</th><th>상태</th><th>차량(메이커/차종/연식)</th><th data-type="date">접수일</th><th data-type="date">완료일</th><th class="r">소요</th></tr></thead><tbody>';
-    items.forEach(r=>{ const v=splitApp(r.review_app); const veh=[v.maker,v.model,v.year].filter(Boolean).join(' / ');
-      h+='<tr class="click" onclick="toggleDev('+r.id+')"><td><b>'+esc(r.input_code||'')+'</b></td><td>'+esc(r.customer_name||'-')+'</td><td class="r">'+(r.requested_qty==null?'-':nf(r.requested_qty))+'</td><td><span class="st '+r.status+'">'+(stLbl[r.status]||r.status)+'</span></td><td>'+esc(veh||'-')+'</td><td>'+esc(r.requested_at||'')+'</td><td>'+esc(r.developed_at||'-')+'</td><td class="r">'+(r.dur_total==null?'–':r.dur_total+'일')+'</td></tr>';
-      if(openRows['d'+r.id]) h+='<tr class="sub"><td colspan="8">'+openRows['d'+r.id]+'</td></tr>';
-    });
-    h+='</tbody></table>';
-    setBody(h);
-    const xb=$('devXlsBtn'); if(xb) xb.addEventListener('click',downloadDevXlsx);
+  function devVeh(r){ const v=splitApp(r.review_app); return [r.review_maker||v.maker,r.review_model||v.model,r.review_year||v.year].filter(Boolean).join(' / '); }
+  function devCtrCell(r){
+    if(!r.result_ctr_code) return '<span class="hint">—</span>';
+    return '→ <b style="color:var(--income)">'+esc(r.result_ctr_code)+'</b>'+(r.result_product_name?'<div class="hint clamp2" style="white-space:normal;max-width:220px">'+esc(r.result_product_name)+'</div>':'');
   }
-  // 개발 필요 목록 엑셀 다운로드 (2026-10-12) — 화면을 볼 수 있는 사용자 누구나.
-  //  · 같은 API(/api/dashboard/funnel/dev, 화면 권한과 동일)에서 받은 선택 월 목록 그대로 내보냄 — 서버 변경 없음.
-  //  · 가격(review_list_price)은 화면에 없으므로 엑셀에도 넣지 않음.
-  let devItems=[];
+  function devOfferCell(r){
+    if(!r.offer_state) return '<span class="hint">—</span>';
+    const sh=r.offer_sheet; const lbl=OFFER_LBL[r.offer_state]||r.offer_state;
+    let h='<span class="pill '+(OFFER_CLS[r.offer_state]||'draft')+'">'+esc(lbl)+'</span>';
+    if(sh&&sh.id) h+=' <a href="refatrix-shortage.html#os='+sh.id+'" class="devOsLink" style="font-size:11px;font-weight:700;color:var(--brand)">'+esc(sh.offer_no||('#'+sh.id))+' ↗</a>';
+    return h;
+  }
+  function devToolbar(){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">'
+      +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+      +'<button type="button" class="mbtn'+(devView==='list'?' on':'')+'" data-devview="list">목록</button>'
+      +'<button type="button" class="mbtn'+(devView==='cust'?' on':'')+'" data-devview="cust">고객별</button>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;margin:0 0 0 8px;font-size:12px;color:var(--ink);cursor:pointer"><input type="checkbox" id="devAllChk"'+(devAll?' checked':'')+'> 전체 기간</label>'
+      +'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn ghost sm" id="devSweepBtn" type="button" title="지금의 제품 카탈로그(CTR·SYD·OE·교차참조)와 미완료 경쟁사 코드를 다시 대조합니다. 매칭되면 개발완료로 바뀝니다.">🔄 카탈로그 대조</button>'
+      +'<button class="btn ghost sm" id="devXlsBtn" type="button">⬇ 엑셀 다운로드 ('+devItems.length+'건)</button>'
+      +'</div></div>'
+      +(devMsg?'<div id="devMsgBox" style="margin-top:8px;font-size:12.5px;border-radius:8px;padding:8px 11px;background:#f6f3ec">'+devMsg+'</div>':'');
+  }
+  async function loadDev(){
+    const url=session.api+'/api/dashboard/funnel/dev?months='+mq()+(devAll?'&all=1':'');
+    const d=await fetch(url,{headers:auth()}).then(r=>r.json());
+    devItems=d.items||[]; devCanOffer=!!d.can_offer;
+    renderDev();
+  }
+  function renderDev(){
+    let h=devToolbar();
+    if(!devItems.length){ h+='<div class="hint" style="margin-top:10px">'+(devAll?'개발필요 항목이 없습니다.':'해당 기간 개발필요 항목이 없습니다. (전체 기간을 켜면 모든 달을 봅니다)')+'</div>'; setBody(h); bindDev(); return; }
+    h+= devView==='cust'? devCustHtml() : devListHtml();
+    setBody(h); bindDev();
+  }
+  function devListHtml(){
+    let h='<div class="hint" style="margin-top:8px">항목을 클릭하면 단계별(접수→검토→공장→완료) 진행과 소요일을 펼칩니다. 개발완료 건은 <b>경쟁사 코드 → CTR 코드</b>로 표시됩니다.</div>';
+    h+='<div style="overflow-x:auto"><table data-sort="funnel:dev"><thead><tr><th>경쟁사코드</th><th>개발결과 CTR</th><th>고객</th><th class="r">수량</th><th>상태</th><th>오퍼</th><th>차량(메이커/차종/연식)</th><th data-type="date">접수일</th><th data-type="date">완료일</th><th class="r">소요</th></tr></thead><tbody>';
+    devItems.forEach(r=>{
+      h+='<tr class="click" data-devrow="'+r.id+'"><td><b>'+esc(r.input_code||'')+'</b></td><td>'+devCtrCell(r)+'</td><td>'+esc(r.customer_name||'-')+'</td><td class="r">'+(r.requested_qty==null?'-':nf(r.requested_qty))+'</td><td><span class="st '+r.status+'">'+(stLbl[r.status]||r.status)+'</span></td><td>'+devOfferCell(r)+'</td><td>'+esc(devVeh(r)||'-')+'</td><td>'+esc(r.requested_at||'')+'</td><td>'+esc(r.developed_at||'-')+'</td><td class="r">'+(r.dur_total==null?'–':r.dur_total+'일')+'</td></tr>';
+      if(openRows['d'+r.id]) h+='<tr class="sub"><td colspan="10">'+devStagesHtml(r)+'</td></tr>';
+    });
+    return h+'</tbody></table></div>';
+  }
+  function devStagesHtml(r){
+    const dd=(n)=> n==null?'–':(n+'일');
+    return '<table style="margin:0"><tbody>'
+      +'<tr><td>① 오더 접수일</td><td><b>'+esc(r.requested_at||'-')+'</b></td><td></td></tr>'
+      +'<tr><td>② 검토완료일</td><td><b>'+esc(r.reviewed_at||'-')+'</b>'+(r.review_syd_code?' <span class="hint">SYD '+esc(r.review_syd_code)+'</span>':'')+'</td><td class="hint">'+dd(r.dur_review)+'</td></tr>'
+      +'<tr><td>③ 공장 개발요청일</td><td><b>'+esc(r.factory_requested_at||'-')+'</b></td><td class="hint">'+dd(r.dur_factory)+'</td></tr>'
+      +'<tr><td>④ 개발완료일</td><td><b>'+esc(r.developed_at||'-')+'</b></td><td class="hint">'+dd(r.dur_develop)+'</td></tr>'
+      +'<tr><td><b>전체</b></td><td>'+(r.result_ctr_code?(esc(r.input_code||'')+' → <b>'+esc(r.result_ctr_code)+'</b>'+(r.result_product_name?' · '+esc(r.result_product_name):'')+(r.result_stock_qty!=null?' · 재고 '+nf(r.result_stock_qty):'')):'')+'</td><td class="hint"><b>'+dd(r.dur_total)+'</b></td></tr>'
+      +'</tbody></table>';
+  }
+  function devGroups(){
+    const m=new Map();
+    devItems.forEach(r=>{ const k=r.customer_id?String(r.customer_id):'none';
+      if(!m.has(k)) m.set(k,{customer_id:r.customer_id||null,name:r.customer_name||'고객 미지정',code:r.customer_code||'',rows:[]});
+      m.get(k).rows.push(r); });
+    const g=[...m.values()];
+    g.forEach(x=>{ x.dev=x.rows.filter(r=>r.status==='developed').length; x.open=x.rows.length-x.dev; x.offerable=x.rows.filter(r=>r.offer_state==='offerable').length; });
+    g.sort((a,b)=> (b.offerable-a.offerable) || (b.dev-a.dev) || (b.rows.length-a.rows.length) || String(a.name).localeCompare(String(b.name)));
+    return g;
+  }
+  function devCustHtml(){
+    const gs=devGroups();
+    let h='<div class="hint" style="margin-top:8px">고객별 개발요청. <b>오퍼시트 만들기</b>는 개발완료되고 재고가 있는 건으로 그 고객의 「개발완료 오퍼시트」를 만듭니다(부족 해소 판매오퍼와 같은 시트 — 부족분 화면에서 PDF·WhatsApp 발송). 재고가 0이면 입고 승인 때 자동으로 만들어집니다.</div>';
+    gs.forEach(g=>{
+      h+='<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;background:#fff">'
+        +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+        +'<b style="font-size:13.5px;color:var(--brand)">'+esc(g.name)+'</b>'+(g.code?'<span class="hint">'+esc(g.code)+'</span>':'')
+        +'<span class="hint">요청 <b>'+g.rows.length+'</b> · 진행중 <b>'+g.open+'</b> · 개발완료 <b style="color:var(--income)">'+g.dev+'</b>'+(g.offerable?' · 오퍼 가능 <b style="color:var(--purple)">'+g.offerable+'</b>':'')+'</span>'
+        +(g.customer_id&&g.offerable&&devCanOffer?'<button class="btn sm" type="button" data-devoffer="'+g.customer_id+'" style="margin-left:auto;background:var(--purple)">📄 오퍼시트 만들기 ('+g.offerable+'건)</button>':'')
+        +(g.customer_id&&g.offerable&&!devCanOffer?'<span class="hint" style="margin-left:auto">오퍼시트 생성은 부족분·매출 편집 권한 필요</span>':'')
+        +'</div>'
+        +'<div style="overflow-x:auto"><table style="margin-top:6px"><thead><tr><th>경쟁사코드</th><th>개발결과 CTR</th><th class="r">요청수량</th><th>상태</th><th class="r">현재고</th><th>오퍼</th><th>접수일</th><th>완료일</th></tr></thead><tbody>';
+      g.rows.slice().sort((a,b)=>(a.status==='developed'?0:1)-(b.status==='developed'?0:1)||String(b.requested_at).localeCompare(String(a.requested_at))).forEach(r=>{
+        h+='<tr><td><b>'+esc(r.input_code||'')+'</b></td><td>'+devCtrCell(r)+'</td><td class="r">'+(r.requested_qty==null?'-':nf(r.requested_qty))+'</td>'
+          +'<td><span class="st '+r.status+'">'+(stLbl[r.status]||r.status)+'</span></td>'
+          +'<td class="r">'+(r.result_stock_qty==null?'<span class="hint">—</span>':nf(r.result_stock_qty))+'</td>'
+          +'<td>'+devOfferCell(r)+'</td><td>'+esc(r.requested_at||'')+'</td><td>'+esc(r.developed_at||'-')+'</td></tr>';
+      });
+      h+='</tbody></table></div></div>';
+    });
+    return h;
+  }
+  function bindDev(){
+    document.querySelectorAll('[data-devview]').forEach(b=>b.addEventListener('click',()=>{ devView=b.getAttribute('data-devview'); renderDev(); }));
+    const chk=$('devAllChk'); if(chk) chk.addEventListener('change',()=>{ devAll=chk.checked; devMsg=''; load(); });
+    const xb=$('devXlsBtn'); if(xb) xb.addEventListener('click',downloadDevXlsx);
+    const sb=$('devSweepBtn'); if(sb) sb.addEventListener('click',devSweep);
+    document.querySelectorAll('[data-devrow]').forEach(tr=>tr.addEventListener('click',e=>{
+      if(e.target.closest('a')) return;
+      const id=Number(tr.getAttribute('data-devrow')); if(openRows['d'+id]) delete openRows['d'+id]; else openRows['d'+id]=1; renderDev(); }));
+    document.querySelectorAll('[data-devoffer]').forEach(b=>b.addEventListener('click',()=>devMakeOffer(Number(b.getAttribute('data-devoffer')),b)));
+  }
+  async function devSweep(){
+    const b=$('devSweepBtn'); if(b){ b.disabled=true; b.textContent='🔄 대조 중…'; }
+    try{
+      const res=await fetch(session.api+'/api/dev-requests/match-sweep',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      const amb=d.ambiguous||[];
+      devMsg=(d.matched>0
+          ? '✅ 카탈로그 대조 — <b>'+d.matched+'건 개발완료</b>: '+(d.items||[]).slice(0,10).map(it=>esc(it.input_code)+' → <b>'+esc(it.ctr_code)+'</b>'+(it.customer_name?' ('+esc(it.customer_name)+')':'')).join(' · ')+((d.items||[]).length>10?' 외 '+((d.items||[]).length-10)+'건':'')
+          : '카탈로그 대조 완료 — 새로 매칭된 코드가 없습니다. (미완료 '+(d.checked||0)+'건 대조)')
+        +(amb.length?'<div style="margin-top:4px;color:#9a6512">⚠ 후보가 여러 제품이라 자동 완료하지 않은 '+amb.length+'건: '+amb.slice(0,8).map(a=>esc(a.input_code||'')+' → '+(a.candidates||[]).map(esc).join(' / ')).join(' · ')+(amb.length>8?' 외 '+(amb.length-8)+'건':'')+' — 제품개발요청 화면에서 수동 개발완료</div>':'');
+      await loadDev();
+    }catch(e){ devMsg='<span style="color:var(--expense)">카탈로그 대조 실패: '+esc(e.message)+'</span>'; renderDev(); }
+  }
+  async function devMakeOffer(customerId,btn){
+    const g=devGroups().find(x=>Number(x.customer_id)===customerId); if(!g) return;
+    const rows=g.rows.filter(r=>r.offer_state==='offerable');
+    if(!confirm((g.name||'')+' 고객에게 개발완료 오퍼시트를 만듭니다.\n\n'+rows.map(r=>'• '+(r.input_code||'')+' → '+(r.result_ctr_code||'')+'  (요청 '+(r.requested_qty==null?'-':r.requested_qty)+', 재고 '+(r.result_stock_qty==null?0:r.result_stock_qty)+')').join('\n')
+      +'\n\n제안수량 = min(요청수량, 현재고) · 단가 = 정가 × (1 − 고객할인). 만든 뒤 부족분 화면에서 PDF·WhatsApp 으로 발송합니다.')) return;
+    if(btn){ btn.disabled=true; btn.textContent='만드는 중…'; }
+    try{
+      const res=await fetch(session.api+'/api/dev-requests/offer-sheets',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_id:customerId,dev_request_ids:rows.map(r=>r.id)})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('오퍼시트 생성 실패: '+(d.note||d.error||res.status)); await loadDev(); return; }
+      const c=(d.customers||[])[0];
+      if(d.sheets>0&&c){
+        if(confirm('✅ 오퍼시트 '+(c.offer_no||'')+' 생성 ('+c.items+'개 라인 · Total $'+money(c.total_mxn)+').\n\n지금 열어서 PDF·WhatsApp 으로 보낼까요?')){ location.href='refatrix-shortage.html#os='+c.offer_sheet_id; return; }
+      } else {
+        alert('새로 만들 오퍼가 없습니다.\n(재고가 0이 되었거나, 이미 살아있는 오퍼시트에 담겨 있습니다)');
+      }
+      await loadDev();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  // 개발 필요 목록 엑셀 다운로드 (2026-10-12) — 화면을 볼 수 있는 사용자 누구나. 고객별 보기면 고객 순으로 정렬.
   function downloadDevXlsx(){
     if(!window.XLSX){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
     if(!devItems.length){ alert('다운로드할 항목이 없습니다.'); return; }
     const num=(v)=> v==null||v===''?'':Number(v);
-    const head=['접수월','경쟁사코드','SYD코드','고객','수량','상태','카테고리','메이커','차종','연식',
-      '① 접수일','② 검토완료일','③ 공장요청일','④ 개발완료일','접수→검토(일)','검토→공장(일)','공장→완료(일)','전체 소요(일)',
-      '개발결과 CTR코드','오더 메모','검토 메모'];
+    const head=['접수월','고객','경쟁사코드','개발결과 CTR코드','CTR 제품명','현재고','오퍼 상태','오퍼시트','SYD코드','수량','상태','카테고리','메이커','차종','연식',
+      '① 접수일','② 검토완료일','③ 공장요청일','④ 개발완료일','접수→검토(일)','검토→공장(일)','공장→완료(일)','전체 소요(일)','오더 메모','검토 메모'];
+    let list=devItems.slice();
+    if(devView==='cust') list.sort((a,b)=>String(a.customer_name||'~').localeCompare(String(b.customer_name||'~'))||String(b.requested_at).localeCompare(String(a.requested_at)));
     const aoa=[head];
-    devItems.forEach(r=>{ const v=splitApp(r.review_app);
-      aoa.push([ String(r.requested_at||'').slice(0,7), r.input_code||'', r.review_syd_code||'', r.customer_name||'',
-        num(r.requested_qty), stLbl[r.status]||r.status||'', r.category||'',
+    list.forEach(r=>{ const v=splitApp(r.review_app);
+      aoa.push([ String(r.requested_at||'').slice(0,7), r.customer_name||'', r.input_code||'', r.result_ctr_code||'', r.result_product_name||'',
+        num(r.result_stock_qty), r.offer_state?(OFFER_LBL[r.offer_state]||r.offer_state):'', r.offer_sheet?(r.offer_sheet.offer_no||''):'',
+        r.review_syd_code||'', num(r.requested_qty), stLbl[r.status]||r.status||'', r.category||'',
         r.review_maker||v.maker, r.review_model||v.model, r.review_year||v.year,
         r.requested_at||'', r.reviewed_at||'', r.factory_requested_at||'', r.developed_at||'',
-        num(r.dur_review), num(r.dur_factory), num(r.dur_develop), num(r.dur_total),
-        r.result_ctr_code||'', r.order_memo||'', r.review_memo||'' ]);
+        num(r.dur_review), num(r.dur_factory), num(r.dur_develop), num(r.dur_total), r.order_memo||'', r.review_memo||'' ]);
     });
     const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols']=[8,16,14,26,7,9,12,12,14,12,11,11,11,11,9,9,9,9,16,30,30].map(w=>({wch:w}));
+    ws['!cols']=[8,26,16,16,30,8,20,18,14,7,9,12,12,14,12,11,11,11,11,9,9,9,9,30,30].map(w=>({wch:w}));
     ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:head.length-1}})};
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Desarrollo');
     const ms=months.slice().sort();
-    const tag=!ms.length?'':(ms.length===1?ms[0]:ms[0]+'_'+ms[ms.length-1]+'_'+ms.length+'m');
+    const tag=devAll?'todo':(!ms.length?'':(ms.length===1?ms[0]:ms[0]+'_'+ms[ms.length-1]+'_'+ms.length+'m'));
     XLSX.writeFile(wb,'desarrollo_'+tag.replace(/[^0-9A-Za-z_-]/g,'')+'_'+mxHoy()+'.xlsx');
-  }
-  function toggleDev(id){
-    if(openRows['d'+id]){ delete openRows['d'+id]; return loadDev(); }
-    // 데이터는 이미 목록에 있음 — 해당 row 찾아 단계 표시
-    fetch(session.api+'/api/dashboard/funnel/dev?months='+mq(),{headers:auth()}).then(r=>r.json()).then(d=>{
-      const r=(d.items||[]).find(x=>x.id===id); if(!r){ return; }
-      const dd=(n)=> n==null?'–':(n+'일');
-      let t='<table style="margin:0"><tbody>'
-        +'<tr><td>① 오더 접수일</td><td><b>'+esc(r.requested_at||'-')+'</b></td><td></td></tr>'
-        +'<tr><td>② 검토완료일</td><td><b>'+esc(r.reviewed_at||'-')+'</b></td><td class="hint">'+dd(r.dur_review)+'</td></tr>'
-        +'<tr><td>③ 공장 개발요청일</td><td><b>'+esc(r.factory_requested_at||'-')+'</b></td><td class="hint">'+dd(r.dur_factory)+'</td></tr>'
-        +'<tr><td>④ 개발완료일</td><td><b>'+esc(r.developed_at||'-')+'</b></td><td class="hint">'+dd(r.dur_develop)+'</td></tr>'
-        +'<tr><td><b>전체</b></td><td>'+(r.result_ctr_code?('→ <b>'+esc(r.result_ctr_code)+'</b>'):'')+'</td><td class="hint"><b>'+dd(r.dur_total)+'</b></td></tr>'
-        +'</tbody></table>';
-      openRows['d'+id]=t; loadDev();
-    });
   }
 
   $('go').addEventListener('click',login);

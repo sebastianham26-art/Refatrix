@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard } from '../middleware/authGuard.js';
+import { authGuard, requirePageEditAny } from '../middleware/authGuard.js';
 import { pageAllowed, allowPastMonthSalesEdit } from '../permissions.js';
 import { visibleTeamIds, teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
@@ -8,6 +8,7 @@ import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
 import { groupDemand, attachVehicleVio, sortDemand, normCode, DEV_CAT_KEYS } from '../devDemand.js';
 import { sweepDevRequestMatches, pushDevDemandAndOffer, scheduleDevMatchSweep } from '../devMatchSweep.js';
+import { devOfferInfo, devOfferState, createDevOfferSheets } from '../devOffer.js';   // 2026-10-12 · 개발완료 오퍼
 // 0225 · 고객 PO(O.C.) — 견적 화면과 **같은 판정·같은 검색 규칙**을 쓴다.
 import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
 
@@ -802,13 +803,50 @@ export default async function devRequestRoutes(app) {
   });
 
   // ④ 개발 필요 드릴다운: 개발요청 목록 + 단계 (requested_at 월)
+  //   2026-10-12 — 개발결과 CTR 제품(이름·재고) + 오퍼 상태(devOffer.js) + ?all=1(전체 기간)
+  //   can_offer: 오퍼시트 생성 권한(부족분·매출 편집) — 화면에서 버튼 노출용
   app.get('/api/dashboard/funnel/dev', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const all = String(req.query.all || '') === '1';
     const months = parseMonths(req);
     const rows = (await query(
-      `SELECT d.*, c.name AS customer_name FROM product_dev_requests d LEFT JOIN customers c ON c.id=d.customer_id
-        WHERE d.deleted_at IS NULL AND d.status<>'cancelled' AND to_char(d.requested_at,'YYYY-MM') = ANY($1)
-        ORDER BY d.requested_at DESC, d.id DESC`, [months])).rows;
-    return { months, items: rows.map((r) => ({ ...withDurations(r), customer_name: r.customer_name })) };
+      `SELECT d.*, c.name AS customer_name, c.code AS customer_code,
+              rp.name AS result_product_name, rp.stock_qty AS result_stock_qty, rp.is_active AS result_is_active
+         FROM product_dev_requests d
+         LEFT JOIN customers c ON c.id=d.customer_id
+         LEFT JOIN products rp ON rp.id=d.result_product_id AND rp.deleted_at IS NULL
+        WHERE d.deleted_at IS NULL AND d.status<>'cancelled'
+          AND ($2::boolean OR to_char(d.requested_at,'YYYY-MM') = ANY($1))
+        ORDER BY d.requested_at DESC, d.id DESC`, [months, all])).rows;
+    const info = await devOfferInfo(rows.filter((r) => r.status === 'developed').map((r) => Number(r.id)));
+    const perm = req.ctx.perm;
+    const canOffer = perm.role === 'director' || ['shortage', 'sales'].some((k) =>
+      pageAllowed(perm, k, req.ctx.isRegistered) && ((perm.pageAccess && perm.pageAccess[k]) || 'edit') === 'edit');
+    return {
+      months, all, can_offer: canOffer,
+      items: rows.map((r) => {
+        const inf = info.get(Number(r.id)) || null;
+        return {
+          ...withDurations(r), customer_name: r.customer_name, customer_code: r.customer_code || null,
+          result_product_name: r.result_product_name || null,
+          result_stock_qty: r.result_stock_qty != null ? Number(r.result_stock_qty) : null,
+          offer_state: devOfferState(r, inf),
+          offer_sheet: inf && inf.sheet ? inf.sheet : null,
+        };
+      }),
+    };
+  });
+
+  // 개발완료 건 → 고객 오퍼시트 생성 (부족 해소 판매오퍼와 같은 시트·같은 발송 화면, 양식만 「개발완료」)
+  //   body: { customer_id?, dev_request_ids? } — 둘 다 없으면 오퍼 가능한 개발완료 건 전체
+  app.post('/api/dev-requests/offer-sheets', { preHandler: [authGuard, requireDevAccess(), requirePageEditAny(['shortage', 'sales'])] }, async (req) => {
+    const b = req.body || {};
+    const ids = Array.isArray(b.dev_request_ids) ? b.dev_request_ids.map(Number).filter(Boolean) : null;
+    const out = await createDevOfferSheets({ customerId: Number(b.customer_id) || null, devRequestIds: ids, userId: req.ctx.perm.userId });
+    if (out.sheets > 0) {
+      await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: 'offer_sheets',
+        detail: { dev: true, customer_id: Number(b.customer_id) || null, sheets: out.sheets, items: out.items } });
+    }
+    return { ok: true, ...out };
   });
 
   // 수주 단계 경고 → 담당자 팝업 노티스 sweep (5분 주기 + 시작 15초 후 1회).

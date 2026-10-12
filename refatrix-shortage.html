@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 부족분 집계</title>
+<title>Refatrix ERP · 부족분 집계 · build 20261012do</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--radius:12px;}
@@ -187,6 +187,8 @@
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       renderMonths(); load(); osLoad();
+      // 2026-10-12 · 딥링크 #os=<id> — 개발 필요 화면의 [오퍼시트 만들기]·오퍼 번호 링크에서 바로 이 시트를 연다
+      try{ const _h=new URLSearchParams(location.hash.slice(1)); const _os=Number(_h.get('os')); if(_os){ showTab('offer'); osOpen(_os); } }catch(e){}
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -461,7 +463,7 @@
         +'<td>'+(r.sent_at?d10(r.sent_at)+(r.sent_by_name?' ('+esc(r.sent_by_name)+')':''):'—')+'</td>'
         +'<td>'+osWaCell(r)+'</td>'
         +'<td>'+reply+'</td>'
-        +'<td class="hint">'+(r.origin==='auto'?'입고 자동':'수동')+'</td>'
+        +'<td class="hint">'+(r.kind==='dev'?'<span class="pill" style="background:#f1ebf7;color:#6B4FB0">🛠 개발완료</span> ':'')+(r.origin==='auto'?'입고 자동':'수동')+'</td>'
         +'</tr>';
     });
     html+='</tbody></table>';
@@ -501,6 +503,7 @@
     const s=osDetail.sheet, lines=osDetail.lines||[];
     let h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
       +'<div style="font-size:16px;font-weight:800;color:var(--brand)">'+esc(s.offer_no||('#'+s.id))+'</div>'+osStatusPill(s.status)
+      +(s.kind==='dev'?'<span class="pill" style="background:#f1ebf7;color:#6B4FB0" title="고객이 요청한 경쟁사 코드가 개발완료되어 CTR 코드로 오퍼하는 시트 — PDF·WhatsApp 문구가 「개발완료」 양식">🛠 개발완료 오퍼</span>':'')
       +(s.disabled?'<span class="pill off">🚫 비활성</span>':'')
       +'<div class="hint">생성 '+d10(s.created_at)+(s.origin==='auto'?' · 입고 자동'+(s.import_batch_no?' (배치 '+esc(s.import_batch_no)+')':''):' · 수동')+'</div>'
       +'<button class="btn ghost sm" style="margin-left:auto" onclick="osClose()">닫기 ✕</button></div>'
@@ -547,9 +550,10 @@
         +(s.wa_sent_at?('📲 API 발송: '+d10(s.wa_sent_at)+' · '+(s.wa_status==='sent_template'?'템플릿':'텍스트')+' · '+esc(s.wa_to||'')+(s.wa_message_id?' · id '+esc(String(s.wa_message_id).slice(0,24))+'…':'')):('⚠ API 발송 실패: '+esc(s.wa_error||'')))
         +'</div>';
     }
-    h+='<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">제안 수량</th><th class="r">정가</th><th class="r">할인</th><th class="r">단가</th><th class="r">금액(IVA제외)</th><th>부족 발생 · 출처</th></tr></thead><tbody>';
+    const isDev=s.kind==='dev';
+    h+='<table><thead><tr>'+(isDev?'<th>고객 요청 코드</th>':'')+'<th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">제안 수량</th><th class="r">정가</th><th class="r">할인</th><th class="r">단가</th><th class="r">금액(IVA제외)</th><th>부족 발생 · 출처</th></tr></thead><tbody>';
     lines.forEach(l=>{
-      h+='<tr><td><b>'+esc(l.ctr_code||'')+'</b></td><td>'+esc(l.product_name||'')+'</td>'
+      h+='<tr>'+(isDev?'<td>'+esc((l.comp_codes||[]).join(', ')||'—')+' →</td>':'')+'<td><b>'+esc(l.ctr_code||'')+'</b></td><td>'+esc(l.product_name||'')+'</td>'
         +'<td class="r">'+fmtq(l.stock_qty)+'</td>'
         +'<td class="r" style="font-weight:800">'+fmtq(l.offer_qty)+'</td>'
         +'<td class="r">'+fmtm(l.list_price)+'</td>'
@@ -657,10 +661,12 @@
     const s=osDetail.sheet, lines=osDetail.lines||[];
     const dg=osWaDigits(s.customer_phone);
     if(!dg){ alert('고객 전화번호가 없습니다.'); return; }
-    const items=lines.map(l=>'• '+(l.ctr_code||'')+' — '+(l.product_name||'')+' × '+fmtq(l.offer_qty)).join('\n');
+    const isDev=s.kind==='dev';
+    const items=lines.map(l=>'• '+(isDev&&(l.comp_codes||[]).length?(l.comp_codes.join(', ')+' → '):'')+(l.ctr_code||'')+' — '+(l.product_name||'')+' × '+fmtq(l.offer_qty)).join('\n');
     const greet=s.buyer_name||s.customer_contact;
     const msg='Hola'+(greet?' '+greet:'')+', le saludamos de parte de '+((companyCache&&companyCache.emisor)||'CTR')+'. 🎉\n\n'
-      +'¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n'
+      +(isDev?'¡Buenas noticias! Los productos que nos solicitó YA FUERON DESARROLLADOS y están disponibles en nuestro almacén. Su código solicitado → nuestro código CTR:\n\n'
+             :'¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n')
       +items+'\n\nTotal con IVA: '+fmtm(s.total_mxn)+' MXN\n\n'
       +'Le enviamos la oferta en PDF ('+(s.offer_no||'')+'). Sujeto a existencia disponible — le recomendamos confirmar su pedido pronto. ¡Gracias!';
     getCompany().then(()=>{ window.open('https://wa.me/'+dg+'?text='+encodeURIComponent(msg),'_blank'); });
@@ -670,8 +676,10 @@
     const s=osDetail.sheet, lines=osDetail.lines||[];
     const co=await getCompany();
     const logo=co.logo_data?'<img src="'+co.logo_data+'" style="height:52px">':'';
+    const isDev=s.kind==='dev';
     const rowsHtml=lines.map(l=>'<tr>'
-      +'<td>'+esc(l.ctr_code||'')+'</td>'
+      +(isDev?'<td>'+esc((l.comp_codes||[]).join(', ')||'—')+'</td>':'')
+      +'<td><b>'+esc(l.ctr_code||'')+'</b></td>'
       +'<td>'+esc(l.syd_codes||'—')+'</td>'
       +'<td class="l">'+esc(l.product_name||'')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
       +'<td class="r">'+fmtq(l.offer_qty)+'</td>'
@@ -707,12 +715,15 @@
       +'.ft{margin-top:16px;font-size:10.5px;color:#666;line-height:1.6;border-top:1px solid #ddd;padding-top:8px}'
       +'@page{margin:14mm}'
       +'</style></head><body>'
-      +'<div class="hd"><div>'+logo+'<h1>OFERTA — PRODUCTOS YA DISPONIBLES</h1><div class="sub">'+esc(s.offer_no||'')+'</div></div>'
+      +'<div class="hd"><div>'+logo+'<h1>'+(isDev?'OFERTA — PRODUCTOS NUEVOS DESARROLLADOS':'OFERTA — PRODUCTOS YA DISPONIBLES')+'</h1><div class="sub">'+esc(s.offer_no||'')+'</div></div>'
       +'<div class="co"><b>'+esc(co.emisor||'')+'</b><br>'+esc(co.domicilio||'')+'<br>'+(co.rfc?'RFC: '+esc(co.rfc)+'<br>':'')+(co.phone?'Tel/WhatsApp: '+esc(co.phone)+'<br>':'')+esc(co.homepage||'')+'</div></div>'
       +'<div class="meta"><b>Cliente:</b> '+esc(s.customer_name||'')+(s.customer_rfc?' · RFC: '+esc(s.customer_rfc):'')+(s.customer_contact?'<br><b>Atención:</b> '+esc(s.customer_contact):'')+'<br><b>Fecha:</b> '+today+'</div>'
-      +'<div class="banner">📦 <b>¡Buenas noticias!</b> Los productos que usted solicitó y que se encontraban <b>agotados ya están disponibles</b> en nuestro almacén. '
-      +'Le presentamos esta oferta con su precio aplicado. <b>Sujeto a existencia disponible</b> — le recomendamos confirmar su pedido a la brevedad.</div>'
-      +'<table><thead><tr><th>Código CTR</th><th>Código SYD</th><th>Producto / Aplicación</th><th class="r">Cantidad</th><th class="r">Precio lista</th><th class="r">Desc.</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>'
+      +(isDev
+        ?'<div class="banner">🛠 <b>¡Buenas noticias!</b> Los productos que usted nos solicitó y que aún no manejábamos <b>ya fueron desarrollados</b> y están disponibles en nuestro almacén. '
+          +'En la tabla encontrará la <b>equivalencia entre el código que nos pidió y nuestro nuevo código CTR</b>, con su precio aplicado. <b>Sujeto a existencia disponible</b> — le recomendamos confirmar su pedido a la brevedad.</div>'
+        :'<div class="banner">📦 <b>¡Buenas noticias!</b> Los productos que usted solicitó y que se encontraban <b>agotados ya están disponibles</b> en nuestro almacén. '
+          +'Le presentamos esta oferta con su precio aplicado. <b>Sujeto a existencia disponible</b> — le recomendamos confirmar su pedido a la brevedad.</div>')
+      +'<table><thead><tr>'+(isDev?'<th>Su código</th>':'')+'<th>Código CTR</th><th>Código SYD</th><th>Producto / Aplicación</th><th class="r">Cantidad</th><th class="r">Precio lista</th><th class="r">Desc.</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>'
       +'<tbody>'+rowsHtml+'</tbody></table>'
       +'<div class="totwrap"><div class="tot">'
       +'<div><span>Subtotal</span><span>'+fmtm(s.subtotal_mxn)+'</span></div>'
@@ -720,7 +731,8 @@
       +'<div class="g"><span>TOTAL MXN</span><span>'+fmtm(s.total_mxn)+'</span></div>'
       +'</div></div>'
       +'<div class="ft">'+(bankParts.length?bankParts.join(' · ')+'<br>':'')
-      +'Precios en MXN. Oferta informativa generada a partir de sus pedidos pendientes por falta de existencia; no constituye una factura. Sujeto a existencia disponible al momento de confirmar su pedido.</div>'
+      +(isDev?'Precios en MXN. Oferta informativa generada a partir de sus solicitudes de productos nuevos; no constituye una factura. Sujeto a existencia disponible al momento de confirmar su pedido.</div>'
+             :'Precios en MXN. Oferta informativa generada a partir de sus pedidos pendientes por falta de existencia; no constituye una factura. Sujeto a existencia disponible al momento de confirmar su pedido.</div>')
       +'<scr'+'ipt>window.onload=function(){window.print();};</scr'+'ipt>'
       +'</body></html>';
     const w=window.open('','_blank');
