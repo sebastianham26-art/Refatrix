@@ -15,11 +15,13 @@
 //   ⑥ 구매가 검증      GET  /api/price-master/purchase-check · /purchase-check/:poId
 //   ⑦ 제품 수익성      GET  /api/price-master/profit · PUT /settings/sga(디렉터)
 //   ⑧ 매출원가 분석    POST /api/price-master/cost-sim   {items:[{code}]} — 코드 매칭 + 현재 기준 원가 구성 (2026-10-12)
+//                     GET  /api/price-master/cost-sim/customers?q=  — 고객 할인율(실효·약정) + 최근 12개월 매출 (2026-10-12)
 // =====================================================================
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
+import { visibleTeamIds } from '../teams.js';
 import {
   priceMasterReady, mxToday, isYmd, latestFx, normType, PRICE_COL, ROUNDINGS, normalizeFilter, normalizeChange,
   nvSql, eligibleSql, calcNewPrice, roundTo, buildFilterWhere, buildTargetWhere, describeFilter, createBatch,
@@ -730,6 +732,47 @@ export default async function priceMasterRoutes(app) {
     if (items.length > COST_SIM_MAX) return reply.code(400).send({ error: 'too_many', max: COST_SIM_MAX });
     const out = await costSim(items);
     return { today: mxToday(), ...out };
+  });
+
+  // ── ⑧ 고객 선택(옵션) — 기준 할인율 대비 추가 할인 비용 계산용 ──
+  //   discount = 실효 할인율(견적에 실제로 쓰이는 값) · discount_agreed = 약정 할인율(서류 관문 전)
+  //   sales_12m = 최근 12개월 게시 매출(IVA 제외) — 연간 추가할인 비용 추정에 씀. 고객 열람 범위는 고객 화면과 같다(팀).
+  let custAgreedCol = null;
+  async function hasAgreedCol() {
+    if (custAgreedCol != null) return custAgreedCol;
+    try {
+      const r = await query(`SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='discount_agreed'`);
+      custAgreedCol = r.rows.length > 0;
+    } catch (_) { custAgreedCol = false; }
+    return custAgreedCol;
+  }
+  app.get('/api/price-master/cost-sim/customers', READ, async (req) => {
+    const { perm } = req.ctx;
+    const q = String((req.query && req.query.q) || '').trim().slice(0, 80);
+    if (q.length < 2) return { items: [] };
+    const vis = visibleTeamIds(perm);
+    const params = [`%${q}%`];
+    const conds = ['c.deleted_at IS NULL', '(c.name ILIKE $1 OR c.code ILIKE $1 OR c.rfc ILIKE $1)'];
+    if (vis !== null) {
+      if (!vis.length) return { items: [] };
+      params.push(vis); conds.push(`c.team_id = ANY($${params.length})`);
+    }
+    const agreed = await hasAgreedCol();
+    const rows = (await query(
+      `SELECT c.id, c.code, c.name, c.discount, ${agreed ? 'c.discount_agreed' : 'NULL::numeric'} AS discount_agreed,
+              c.customer_type, t.name AS team_name,
+              (SELECT COALESCE(SUM(i.subtotal_mxn),0) FROM sales_invoices i
+                WHERE i.customer_id = c.id AND i.status = 'posted' AND i.deleted_at IS NULL
+                  AND i.inv_date > (CURRENT_DATE - INTERVAL '12 months')) AS sales_12m
+         FROM customers c LEFT JOIN sales_teams t ON t.id = c.team_id
+        WHERE ${conds.join(' AND ')}
+        ORDER BY (upper(c.name) LIKE upper($1)) DESC, c.name LIMIT 15`, params)).rows;
+    return { items: rows.map((r) => ({
+      id: Number(r.id), code: r.code, name: r.name, customer_type: r.customer_type || null, team_name: r.team_name || null,
+      discount: r.discount == null ? 0 : Number(r.discount),
+      discount_agreed: r.discount_agreed == null ? null : Number(r.discount_agreed),
+      sales_12m: Math.round(Number(r.sales_12m || 0) * 100) / 100,
+    })) };
   });
 
   app.put('/api/price-master/settings/sga', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
