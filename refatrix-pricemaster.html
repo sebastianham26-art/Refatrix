@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-0924p7</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-1012cs1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -109,6 +109,16 @@
   .scatter{width:100%;height:auto;background:#fcfbf8;border:1px solid var(--line);border-radius:10px;display:block}.scatter circle{cursor:pointer}.scatter text{font-family:inherit}
   .ins{margin:10px 0 0;padding-left:18px;line-height:1.7;font-size:12.5px}.ins li{overflow-wrap:anywhere}
   .chip.all{font-weight:700}
+  /* ⑧ 매출원가 분석 */
+  .csPaste{margin-top:12px;border:2px dashed #cfc6b2;border-radius:10px;padding:12px 14px;background:var(--soft);font-size:12.5px;line-height:1.6;color:var(--muted);cursor:text}
+  .csPaste:focus{outline:none;border-color:var(--brand);background:#eef5f2;color:var(--ink)}
+  #csTbl td input{width:92px;padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums}
+  #csTbl td input.q{width:60px}
+  #csTbl td.sub{font-size:11px;color:var(--muted)}
+  #csTbl .dflt{font-style:italic;color:var(--muted)}
+  #csTbl select{width:auto;padding:3px 5px;font-size:12px}
+  .csMix{display:flex;height:8px;border-radius:4px;overflow:hidden;background:#eee;min-width:70px;margin-top:3px}.csMix i{display:block;height:100%}
+  .b-via{background:#eef3fb;color:var(--blue)}
   /* 열람 권한(수정 권한 없음) — 바꾸는 버튼·입력은 숨기고 값 클릭 수정도 끈다 */
   .ro .wOnly{display:none!important}
   .ro .edit{cursor:default;border-bottom:none}.ro .edit:hover{color:inherit}
@@ -116,7 +126,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">가격 마스터 · FOB 구매가 · List 정가 · 경쟁사 SYD · 구매가 검증 · 제품 수익성</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">가격 마스터 · FOB 구매가 · List 정가 · 경쟁사 SYD · 구매가 검증 · 제품 수익성 · 매출원가 분석</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
@@ -137,6 +147,7 @@
       <button class="tab" data-t="syd">⑤ 경쟁사 SYD</button>
       <button class="tab" data-t="purchase">⑥ 구매가 검증</button>
       <button class="tab" data-t="profit">⑦ 제품 수익성</button>
+      <button class="tab" data-t="cost">⑧ 매출원가 분석</button>
     </div>
 
     <!-- ① 가격표 -->
@@ -336,6 +347,41 @@
         <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnPrMore">더 보기</button> <span class="mut" style="font-size:12px">금액은 MXN · IVA 제외. 제목을 누르면 정렬합니다(다시 누르면 반대로).</span></div>
       </div>
     </section>
+
+    <!-- ⑧ 매출원가 분석 (2026-10-12) -->
+    <section id="t-cost" class="hidden">
+      <div class="card" id="csCard">
+        <p class="ttl">매출원가 분석 — 코드 · 판매단가로 보는 할인율 · 원가 구성 · 매출총이익</p>
+        <p class="sub2">우리 코드(CTR) · SYD 코드 · 경쟁사 코드(BAW · GROB · KYB …) 아무거나 넣으면 우리 제품으로 찾아 계산합니다.
+          <b>1개당 매출원가 = FOB 구매단가(FOB USD × 최신 환율) + 수입부대비용(FOB × 수입부대비율)</b> — 오늘 가격표 기준입니다.
+          수입부대비율은 그 제품의 승인된 수입 배치 부대비용 + 승인된 부대비용 문서 배분액 ÷ 수입 FOB 금액(수입 기록이 없으면 전체 평균).
+          FOB 가 없는 제품은 저장된 평균원가를 같은 비율로 나눕니다. 금액은 MXN · IVA 제외.</p>
+        <div class="row">
+          <div class="f" style="max-width:220px"><label for="csCode">제품 코드</label><input id="csCode" placeholder="CE0536L · BAW 코드 …" autocomplete="off"></div>
+          <div class="f" style="max-width:150px"><label for="csPrice">판매단가 (MXN)</label><input id="csPrice" inputmode="decimal" placeholder="비우면 기본 할인"></div>
+          <div class="f" style="max-width:90px"><label for="csQty">수량</label><input id="csQty" inputmode="numeric" value="1"></div>
+          <button class="btn" id="csAdd" style="margin-bottom:4px">추가</button>
+          <span style="flex:1"></span>
+          <div class="f" style="max-width:170px"><label for="csDisc">단가 비었을 때 List 할인율</label><div class="pair"><input id="csDisc" inputmode="decimal" value="45" style="text-align:right"><b style="align-self:center">%</b></div></div>
+        </div>
+        <div class="csPaste" id="csPasteZone" tabindex="0">
+          <b>엑셀에서 여러 칸을 복사해 여기를 누르고 붙여넣기 (Ctrl+V)</b> — 열 순서: <b>제품코드 · 판매단가 · 수량</b>(단가 · 수량은 없어도 됨, 제목 줄은 자동으로 건너뜀).
+          코드 칸에 바로 붙여넣어도 됩니다.
+        </div>
+        <div class="msg" id="csMsg"></div>
+        <div class="kpis" id="csKpis"></div>
+        <div id="csFlow"></div>
+      </div>
+      <div class="card">
+        <div class="row" style="align-items:center;margin-bottom:8px">
+          <p class="ttl" style="margin:0">제품별 분석</p><span class="mut" id="csCnt"></span><span style="flex:1"></span>
+          <button class="btn ghost sm" id="csX">엑셀</button>
+          <button class="btn danger sm" id="csClear">모두 지우기</button>
+        </div>
+        <div class="tblWrap"><table id="csTbl"></table></div>
+        <div class="mut" style="font-size:12px;margin-top:8px">판매단가 · 수량 칸은 표에서 바로 고칠 수 있습니다(Enter 또는 칸 밖을 누르면 다시 계산). 이탤릭 단가 = 입력이 없어 「List × (1 − 기본 할인율)」로 계산한 값.</div>
+      </div>
+    </section>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -354,7 +400,7 @@
 
 (function(){
   'use strict';
-  const BUILD='pm-0924p7';
+  const BUILD='pm-1012cs1';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -573,7 +619,7 @@
   }
 
   // ─── 탭 ───
-  const TABS=['table','change','history','product','syd','purchase','profit'];
+  const TABS=['table','change','history','product','syd','purchase','profit','cost'];
   const loaded={};
   function showTab(k){
     document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.t===k));
@@ -586,6 +632,7 @@
     if(k==='syd') loadSydLists();
     if(k==='purchase'&&!loaded.purchase){ loaded.purchase=1; loadPc(); }
     if(k==='profit'&&!loaded.profit){ loaded.profit=1; loadProfit(); }
+    if(k==='cost') setTimeout(()=>$('csCode').focus(),0);
   }
   document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showTab(t.dataset.t)));
   function gotoProduct(code){ closeModal(); $('pcode').value=code; showTab('product'); }
@@ -1348,12 +1395,183 @@
       });
   });
 
+  // ═══ ⑧ 매출원가 분석 (2026-10-12) ═══
+  //   입력 줄 = {code, price(null=기본 할인), qty, pick(후보 중 고른 제품 id)}
+  //   서버는 코드 매칭 + 1개당 원가 구성만 준다. 단가 · 할인율 · 이익 계산은 여기서(단가를 고칠 때마다 서버를 부르지 않음).
+  const CS_MAX=1000;
+  let csRows=[], csSeq=0, csFx=null, csGRate=null;
+  const csLine=new Map();     // 정규화 코드 → {via, candidates}
+  const csProd=new Map();     // 제품 id → 원가 구성
+  const csNorm=(s)=>String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const csPct=(v)=>v==null||!Number.isFinite(v)?'—':(v*100).toFixed(1)+'%';
+  const csVia={ctr:'CTR',syd:'SYD',xref:'경쟁사'};
+  /** 숫자 칸 읽기 — $ · 공백 · 천단위 콤마 허용, 「12,50」 같은 소수 콤마도 허용 */
+  function csNum(v){
+    if(v==null) return null; let t=String(v).replace(/[$\s]/g,'').replace(/MXN|USD/ig,'');
+    if(!t) return null;
+    if(t.includes(',')&&t.includes('.')) t=t.replace(/,/g,'');
+    else if(/^-?\d+,\d{1,2}$/.test(t)) t=t.replace(',','.');
+    else t=t.replace(/,/g,'');
+    const n=Number(t); return Number.isFinite(n)?n:null;
+  }
+  const CS_HEAD=/c[oó]digo|clave|code|코드|품번|precio|price|단가|cantidad|수량/i;
+  /** 엑셀 붙여넣기(탭 구분) → [{code, price, qty}] — 첫 칸 = 코드, 뒤쪽 숫자 칸 = 단가 · 수량 */
+  function csParse(text){
+    const out=[];
+    String(text||'').replace(/\r/g,'').split('\n').forEach((line,i)=>{
+      const cells=line.split('\t').map(c=>c.trim());
+      const ci=cells.findIndex(c=>c!=='');
+      if(ci<0) return;
+      const code=cells[ci];
+      const nums=cells.slice(ci+1).filter(c=>c!=='').map(csNum);
+      if(i===0&&CS_HEAD.test(line)&&!nums.some(n=>n!=null)) return;     // 제목 줄
+      const price=nums[0]!=null&&nums[0]>0?nums[0]:null;
+      const qty=nums[1]!=null&&nums[1]>0?nums[1]:1;
+      out.push({code,price,qty});
+    });
+    return out;
+  }
+  async function csAddRows(list){
+    const msg=$('csMsg');
+    list=list.filter(r=>r&&String(r.code||'').trim());
+    if(!list.length){ msg.className='msg err'; msg.textContent='읽을 수 있는 코드가 없습니다'; return; }
+    if(csRows.length+list.length>CS_MAX){ msg.className='msg err'; msg.textContent='한 번에 '+CS_MAX+'줄까지 분석합니다 (지금 '+csRows.length+'줄)'; return; }
+    list.forEach(r=>csRows.push({id:++csSeq,code:String(r.code).trim(),price:r.price,qty:r.qty||1,pick:null}));
+    const need=[...new Set(list.map(r=>String(r.code).trim()).filter(c=>!csLine.has(csNorm(c))))];
+    if(need.length){
+      msg.className='msg'; msg.textContent='찾는 중… ('+need.length+'개 코드)';
+      const d=await api('/api/price-master/cost-sim',{method:'POST',body:JSON.stringify({items:need.map(code=>({code}))})});
+      if(!d.ok){ msg.className='msg err'; msg.textContent=errKo(d.error); csRender(); return; }
+      csFx=d.fx; csGRate=d.global_oh_rate;
+      (d.products||[]).forEach(p=>csProd.set(p.id,p));
+      (d.lines||[]).forEach(l=>csLine.set(csNorm(l.code),{via:l.via,candidates:l.candidates||[]}));
+    }
+    const miss=list.filter(r=>{ const e=csLine.get(csNorm(r.code)); return !e||!e.candidates.length; }).length;
+    msg.className='msg '+(miss?'err':'ok');
+    msg.textContent=list.length+'줄 추가'+(miss?' · 찾지 못한 코드 '+miss+'줄(표에 「미등록」으로 남김)':'');
+    csRender();
+  }
+  /** 한 줄 계산 */
+  function csCalc(r){
+    const e=csLine.get(csNorm(r.code)); const cands=e?e.candidates:[];
+    const pid=r.pick&&cands.some(c=>c.product_id===r.pick)?r.pick:(cands[0]?cands[0].product_id:null);
+    const p=pid?csProd.get(pid):null; const cand=cands.find(c=>c.product_id===pid)||null;
+    const disc=csNum($('csDisc').value); const dflt=disc!=null&&disc>=0&&disc<100?disc/100:0.45;
+    const list=p&&p.list_price>0?p.list_price:null;
+    const isDef=r.price==null;
+    const price=!isDef?r.price:(list!=null?Math.round(list*(1-dflt)*100)/100:null);
+    const cost=p&&p.unit_cost!=null?p.unit_cost:null;
+    const fob=p?p.unit_fob_mxn:null, oh=p?p.unit_oh_mxn:null;
+    const o={r,e,cands,pid,p,cand,list,price,isDef,cost,fob,oh,qty:r.qty||1};
+    o.disc=list!=null&&price!=null?1-price/list:null;
+    o.gp=price!=null&&cost!=null?price-cost:null;
+    o.gpPct=o.gp!=null&&price>0?o.gp/price:null;
+    o.fobC=cost>0?fob/cost:null; o.ohC=cost>0?oh/cost:null;
+    o.fobS=price>0&&fob!=null?fob/price:null; o.ohS=price>0&&oh!=null?oh/price:null;
+    return o;
+  }
+  function csMixBar(f,o){ if(f==null) return ''; return '<div class="csMix" title="FOB '+csPct(f)+' · 부대비용 '+csPct(o)+'"><i style="width:'+(f*100).toFixed(1)+'%;background:var(--brand)"></i><i style="width:'+((o||0)*100).toFixed(1)+'%;background:var(--gold)"></i></div>'; }
+  function csRender(){
+    const calc=csRows.map(csCalc);
+    // ── 합계(수량 가중, 단가와 원가가 모두 있는 줄만) ──
+    const ok=calc.filter(c=>c.price!=null&&c.cost!=null);
+    const S={q:0,rev:0,list:0,listRev:0,fob:0,oh:0};
+    ok.forEach(c=>{ S.q+=c.qty; S.rev+=c.price*c.qty; S.fob+=c.fob*c.qty; S.oh+=c.oh*c.qty; if(c.list!=null){ S.list+=c.list*c.qty; S.listRev+=c.price*c.qty; } });
+    const cogs=S.fob+S.oh, gp=S.rev-cogs;
+    const kp=(lab,val,sub)=>'<div class="kpi"><span>'+lab+'</span><b>'+val+'</b>'+(sub?'<small>'+sub+'</small>':'')+'</div>';
+    $('csKpis').innerHTML=ok.length?(
+       kp('매출 (판매가 합)',fmt(S.rev),fmt0(S.q)+'개 · '+ok.length+'줄')
+      +kp('List 대비 할인율',S.list>0?csPct(1-S.listRev/S.list):'—','List 합 '+fmt(S.list))
+      +kp('FOB 구매단가',fmt(S.fob),'원가의 '+csPct(cogs>0?S.fob/cogs:null)+' · 판매가의 '+csPct(S.rev>0?S.fob/S.rev:null))
+      +kp('수입부대비용',fmt(S.oh),'원가의 '+csPct(cogs>0?S.oh/cogs:null)+' · 판매가의 '+csPct(S.rev>0?S.oh/S.rev:null))
+      +kp('매출원가',fmt(cogs),'판매가의 '+csPct(S.rev>0?cogs/S.rev:null))
+      +kp('매출총이익',fmt(gp),'이익률 '+csPct(S.rev>0?gp/S.rev:null))):'';
+    $('csFlow').innerHTML=(csFx?'<div class="mut" style="font-size:12px;margin-top:8px">환율 USD→MXN <b>'+fmt(csFx.rate,4)+'</b> ('+esc(csFx.date)+')'
+        +(csGRate!=null?' · 전체 평균 수입부대비율 '+csPct(csGRate):'')+'</div>':'')
+      +(calc.some(c=>c.p&&c.p.basis==='avg')?'<div class="note">「평균원가」 표시 제품은 가격표에 FOB 가 없어 <b>저장된 평균원가</b>를 FOB : 부대비용으로 나눴습니다 — ① 가격표에 FOB 를 넣으면 FOB 기준으로 바뀝니다.</div>':'')
+      +(calc.some(c=>c.p&&!c.p.basis)?'<div class="warn">FOB 도 평균원가도 없는 제품은 원가를 계산하지 못해 합계에서 뺐습니다.</div>':'');
+    $('csCnt').textContent=csRows.length?(csRows.length+'줄 · 찾음 '+calc.filter(c=>c.p).length+' · 미등록 '+calc.filter(c=>!c.cands.length).length):'';
+    if(!csRows.length){ $('csTbl').innerHTML='<tbody><tr><td class="mut" style="padding:18px">코드를 넣거나 엑셀에서 붙여넣으면 여기에 나옵니다.</td></tr></tbody>'; return; }
+    const head='<thead><tr><th>입력 코드</th><th>우리 제품</th><th class="n">List</th><th class="n">판매단가</th><th class="n">할인율</th>'
+      +'<th class="n">FOB 구매단가</th><th class="n">수입부대비용</th><th class="n">매출원가</th><th>원가 구성 (FOB · 부대)</th><th>판매가 대비 (FOB · 부대)</th>'
+      +'<th class="n">매출총이익</th><th class="n">이익률</th><th class="n">수량</th><th class="n">총 이익</th><th></th></tr></thead>';
+    const body=calc.map(c=>{
+      const r=c.r; let prod;
+      if(!c.cands.length) prod='<span class="badge b-sk">미등록</span>';
+      else{
+        const vb='<span class="badge b-via">'+esc(c.cand&&c.cand.via==='xref'?(c.cand.brand||'경쟁사'):csVia[c.cand?c.cand.via:'']||'')+'</span> ';
+        if(c.cands.length>1) prod=vb+'<select data-pick="'+r.id+'">'+c.cands.map(x=>{ const pp=csProd.get(x.product_id); return '<option value="'+x.product_id+'"'+(x.product_id===c.pid?' selected':'')+'>'+esc(pp?pp.code:x.product_id)+'</option>'; }).join('')+'</select> <span class="mut">후보 '+c.cands.length+'</span>';
+        else prod=vb+'<span class="codeLink" data-code="'+esc(c.p?c.p.code:'')+'">'+esc(c.p?c.p.code:'')+'</span>';
+        if(c.p) prod+='<div class="sub mut" style="font-size:11px">'+esc(c.p.name||'')+(c.p.is_active?'':' · 비활성')+'</div>';
+      }
+      const basis=c.p&&c.p.basis==='avg'?'<div style="font-size:11px" class="mut">평균원가</div>':(c.p&&c.p.fob_usd!=null?'<div style="font-size:11px" class="mut">'+fmtU(c.p.fob_usd)+'</div>':'');
+      const ohSub=c.p&&c.oh!=null?'<div style="font-size:11px" class="mut">'+csPct(c.p.oh_rate)+(c.p.oh_source==='global'?' (평균)':'')+'</div>':'';
+      const gcls=c.gp==null?'':c.gp<0?'up':'down';
+      return '<tr>'
+        +'<td><b>'+esc(r.code)+'</b></td>'
+        +'<td>'+prod+'</td>'
+        +'<td class="n">'+fmt(c.list)+'</td>'
+        +'<td class="n"><input data-price="'+r.id+'" inputmode="decimal" value="'+(r.price!=null?r.price:'')+'" placeholder="'+(c.price!=null?fmt(c.price):'')+'"'+(c.isDef?' class="dflt"':'')+' aria-label="판매단가"></td>'
+        +'<td class="n">'+csPct(c.disc)+'</td>'
+        +'<td class="n">'+fmt(c.fob)+basis+'</td>'
+        +'<td class="n">'+fmt(c.oh)+ohSub+'</td>'
+        +'<td class="n"><b>'+fmt(c.cost)+'</b></td>'
+        +'<td>'+(c.fobC!=null?csPct(c.fobC)+' · '+csPct(c.ohC):'—')+csMixBar(c.fobC,c.ohC)+'</td>'
+        +'<td>'+(c.fobS!=null?csPct(c.fobS)+' · '+csPct(c.ohS):'—')+csMixBar(c.fobS,c.ohS)+'</td>'
+        +'<td class="n '+gcls+'">'+fmt(c.gp)+'</td>'
+        +'<td class="n '+gcls+'"><b>'+csPct(c.gpPct)+'</b></td>'
+        +'<td class="n"><input class="q" data-qty="'+r.id+'" inputmode="numeric" value="'+r.qty+'" aria-label="수량"></td>'
+        +'<td class="n '+gcls+'">'+(c.gp!=null?fmt(c.gp*c.qty):'—')+'</td>'
+        +'<td><button class="btn ghost sm" data-del="'+r.id+'" title="이 줄 지우기">×</button></td></tr>';
+    }).join('');
+    $('csTbl').innerHTML=head+'<tbody>'+body+'</tbody>';
+    const T=$('csTbl'); const find=(id)=>csRows.find(x=>x.id===Number(id));
+    T.querySelectorAll('input[data-price]').forEach(i=>i.addEventListener('change',()=>{ const r=find(i.dataset.price); if(!r) return; const v=csNum(i.value); r.price=v!=null&&v>0?v:null; csRender(); }));
+    T.querySelectorAll('input[data-qty]').forEach(i=>i.addEventListener('change',()=>{ const r=find(i.dataset.qty); if(!r) return; const v=csNum(i.value); r.qty=v!=null&&v>0?v:1; csRender(); }));
+    T.querySelectorAll('input[data-price],input[data-qty]').forEach(i=>i.addEventListener('keydown',(e)=>{ if(e.key==='Enter') i.blur(); }));
+    T.querySelectorAll('select[data-pick]').forEach(s=>s.addEventListener('change',()=>{ const r=find(s.dataset.pick); if(r){ r.pick=Number(s.value); csRender(); } }));
+    T.querySelectorAll('button[data-del]').forEach(b=>b.addEventListener('click',()=>{ csRows=csRows.filter(x=>x.id!==Number(b.dataset.del)); csRender(); }));
+    bindCodeLinks(T);
+  }
+  function csAddOne(){
+    const code=$('csCode').value.trim(); if(!code){ $('csCode').focus(); return; }
+    const p=csNum($('csPrice').value); const q=csNum($('csQty').value);
+    csAddRows([{code,price:p!=null&&p>0?p:null,qty:q!=null&&q>0?q:1}]).then(()=>{ $('csCode').value=''; $('csPrice').value=''; $('csQty').value='1'; $('csCode').focus(); });
+  }
+  $('csAdd').addEventListener('click',csAddOne);
+  ['csCode','csPrice','csQty'].forEach(id=>$(id).addEventListener('keydown',(e)=>{ if(e.key==='Enter') csAddOne(); }));
+  $('csDisc').addEventListener('change',csRender);
+  // 붙여넣기: 탭이나 줄바꿈이 있으면(엑셀 여러 칸) 표로 가져온다. 한 칸짜리를 입력칸에 붙이면 그냥 입력.
+  $('csCard').addEventListener('paste',(e)=>{
+    const t=(e.clipboardData||window.clipboardData).getData('text');
+    const multi=/[\t\n]/.test(String(t||'').replace(/\r?\n$/,''));
+    const tgt=e.target; const inInput=tgt&&(tgt.tagName==='INPUT'||tgt.tagName==='TEXTAREA');
+    if(inInput&&!multi) return;
+    if(tgt&&tgt.id==='csDisc') return;
+    e.preventDefault();
+    const rows=csParse(t);
+    csAddRows(rows);
+  });
+  $('csPasteZone').addEventListener('click',()=>$('csPasteZone').focus());
+  $('csClear').addEventListener('click',()=>{ if(!csRows.length) return; if(!confirm('표의 '+csRows.length+'줄을 모두 지울까요?')) return; csRows=[]; $('csMsg').textContent=''; csRender(); });
+  $('csX').addEventListener('click',()=>{
+    const calc=csRows.map(csCalc); if(!calc.length){ toast('내보낼 줄이 없습니다',true); return; }
+    const r2=(v)=>v==null?'':Math.round(v*100)/100, p1=(v)=>v==null?'':Math.round(v*1000)/10;
+    const aoa=[['입력 코드','매칭','우리 코드','품목','List MXN','판매단가 MXN','단가 출처','할인율 %','FOB USD','FOB 구매단가 MXN','수입부대비용 MXN','수입부대비율 %','매출원가 MXN','원가 중 FOB %','원가 중 부대 %','판매가 중 FOB %','판매가 중 부대 %','매출총이익 MXN','이익률 %','수량','총 매출총이익 MXN','원가 기준']];
+    calc.forEach(c=>aoa.push([c.r.code,c.cand?(c.cand.via==='xref'?(c.cand.brand||'경쟁사'):csVia[c.cand.via]):'미등록',c.p?c.p.code:'',c.p?c.p.name:'',r2(c.list),r2(c.price),c.isDef?'기본 할인':'입력',p1(c.disc),
+      c.p&&c.p.fob_usd!=null?c.p.fob_usd:'',r2(c.fob),r2(c.oh),c.p?p1(c.p.oh_rate):'',r2(c.cost),p1(c.fobC),p1(c.ohC),p1(c.fobS),p1(c.ohS),r2(c.gp),p1(c.gpPct),c.qty,c.gp!=null?r2(c.gp*c.qty):'',
+      c.p?(c.p.basis==='fob'?'FOB × 환율':c.p.basis==='avg'?'평균원가':'없음'):'']));
+    if(csFx) aoa.push([],['환율 USD→MXN',csFx.rate,csFx.date]);
+    saveXlsx('Refatrix_매출원가분석_'+today+'.xlsx','매출원가분석',aoa,[14,8,12,18,10,11,9,8,8,12,12,10,11,9,9,9,9,12,8,6,13,10]);
+  });
+  csRender();
+
   // ─── 시작 ───
   $('goLogin').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   const ps=portalSession();
   if(ps&&ps.token){ session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')}; afterLogin(); }
-  window.__pmDebug={get rows(){return rows;},get picked(){return picked;},get summary(){return lastSummary;},get tRows(){return tRows;},get rep(){return rep;},sel,get profit(){return prRes;},get prData(){return prData;},SORTS};
+  window.__pmDebug={get csRows(){return csRows;},csParse,csCalc,get rows(){return rows;},get picked(){return picked;},get summary(){return lastSummary;},get tRows(){return tRows;},get rep(){return rep;},sel,get profit(){return prRes;},get prData(){return prData;},SORTS};
 })();
 </script>
 <script src="refatrix-nav.js?v=20261008ws"></script>

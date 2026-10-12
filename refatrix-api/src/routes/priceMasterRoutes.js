@@ -13,6 +13,8 @@
 //   ④ 제품별 이력      GET  /api/price-master/product?code=
 //   ⑤ 경쟁사 SYD       POST /api/price-master/syd/lists · GET /syd/lists · GET /syd/lists/:id/report · DELETE /syd/lists/:id(PIN)
 //   ⑥ 구매가 검증      GET  /api/price-master/purchase-check · /purchase-check/:poId
+//   ⑦ 제품 수익성      GET  /api/price-master/profit · PUT /settings/sga(디렉터)
+//   ⑧ 매출원가 분석    POST /api/price-master/cost-sim   {items:[{code}]} — 코드 매칭 + 현재 기준 원가 구성 (2026-10-12)
 // =====================================================================
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
@@ -24,6 +26,7 @@ import {
   applyDue, revertBatch, MAX_SELECTED, sydNorm, SYD_NORM_SQL, parseSydRows, prevSydList, latestSydListId,
   compareSydCounts, syncProductSydPrices, purchaseLinesWithFob, summarizeFob,
   REGIONS, regionOf, profitBase, filterProfitRows, getSga, setSga, settingsReady,
+  costSim, COST_SIM_MAX,
 } from '../priceMaster.js';
 
 const num = (v) => (v == null ? null : Number(v));
@@ -715,6 +718,18 @@ export default async function priceMasterRoutes(app) {
       regions, unmapped_makers: Object.entries(unm).map(([maker, n]) => ({ maker, n })).sort((a, b) => b.n - a.n).slice(0, 40),
       rows,
     };
+  });
+
+  // ── ⑧ 매출원가 분석 ──
+  //   body { items: [{ code }] } 최대 1000줄 · CTR 코드 · SYD 대응품번 · 경쟁사 교차참조 아무거나
+  //   판매단가·할인율·매출총이익은 화면 계산(단가를 고칠 때마다 다시 부르지 않음)
+  app.post('/api/price-master/cost-sim', READ, async (req, reply) => {
+    if (!(await gate(reply))) return;
+    const items = Array.isArray(req.body && req.body.items) ? req.body.items : [];
+    if (!items.length) return reply.code(400).send({ error: 'no_rows' });
+    if (items.length > COST_SIM_MAX) return reply.code(400).send({ error: 'too_many', max: COST_SIM_MAX });
+    const out = await costSim(items);
+    return { today: mxToday(), ...out };
   });
 
   app.put('/api/price-master/settings/sga', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {

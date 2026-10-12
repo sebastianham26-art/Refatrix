@@ -780,3 +780,123 @@ export function filterProfitRows(rows, f = {}) {
     && (!origins.size || origins.has(String(r.origin || '').trim().toUpperCase() || '__NONE__'))
     && (!q || String(r.code).toUpperCase().includes(q) || r.cat.includes(q) || r.makers.some((m) => m.includes(q))));
 }
+
+// ═══ ⑧ 매출원가 분석 (2026-10-12) ══════════════════════════════════════
+//   코드(CTR · SYD · 경쟁사 교차참조) → 제품 매칭 + 「현재 기준」 1개당 원가 구성.
+//   1개당 FOB(MXN) = FOB USD × 최신 환율
+//   1개당 수입부대비용 = FOB(MXN) × 수입부대비율
+//     수입부대비율 = (배치 부대비용[import_overheads]의 FOB 금액 비율 몫 + 승인된 부대비용 문서[import_cost_docs]의 이 제품 배분액)
+//                    ÷ 이 제품의 수입 FOB 금액(MXN). 수입 기록이 없으면 전체 평균 비율.
+//   FOB 가 없는 제품은 저장 평균원가(products.avg_cost)를 같은 비율로 FOB : 부대비용으로 나눈다(basis='avg').
+//   판매단가 · 할인율 · 매출총이익 계산은 화면에서(단가를 바꿀 때마다 서버를 다시 부르지 않도록).
+export const COST_SIM_MAX = 1000;
+const normCode = (s) => String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/** 코드 정규화값 목록 → Map(norm → { via, candidates:[{product_id, via, brand, matched}] })
+ *  우선순위: CTR 코드(1) > SYD 대응품번(2) > 경쟁사 교차참조(3). 같은 우선순위에 제품이 여럿이면 모두 후보로. */
+export async function resolveSimCodes(norms, exec = query) {
+  const out = new Map();
+  if (!norms.length) return out;
+  const rows = (await exec(
+    `SELECT norm, pid, pri, brand, matched FROM (
+       SELECT regexp_replace(upper(p.code), '[^A-Z0-9]', '', 'g') AS norm, p.id AS pid, 1 AS pri, NULL::text AS brand, p.code AS matched
+         FROM products p WHERE p.deleted_at IS NULL
+          AND regexp_replace(upper(p.code), '[^A-Z0-9]', '', 'g') = ANY($1)
+       UNION ALL
+       SELECT regexp_replace(upper(s.syd_code), '[^A-Z0-9]', '', 'g'), s.product_id, 2, 'SYD', s.syd_code
+         FROM product_syd_codes s JOIN products p ON p.id = s.product_id AND p.deleted_at IS NULL
+        WHERE regexp_replace(upper(s.syd_code), '[^A-Z0-9]', '', 'g') = ANY($1)
+       UNION ALL
+       SELECT x.norm_code, x.product_id, 3, x.brand, x.xref_code
+         FROM product_xref_codes x JOIN products p ON p.id = x.product_id AND p.deleted_at IS NULL
+        WHERE x.norm_code = ANY($1)
+     ) t ORDER BY norm, pri, pid`, [norms])).rows;
+  const VIA = { 1: 'ctr', 2: 'syd', 3: 'xref' };
+  for (const r of rows) {
+    const pri = Number(r.pri); const pid = Number(r.pid);
+    let e = out.get(r.norm);
+    if (!e) { e = { pri, via: VIA[pri], candidates: [] }; out.set(r.norm, e); }
+    if (pri !== e.pri) continue;                                     // 더 높은 우선순위가 이미 잡힘
+    if (e.candidates.some((c) => c.product_id === pid)) continue;
+    const brand = r.brand ? String(r.brand).toUpperCase().replace(/[0-9]+$/, '') : null;   // SYD1→SYD
+    if (e.candidates.length < 8) e.candidates.push({ product_id: pid, via: VIA[pri], brand, matched: r.matched });
+  }
+  return out;
+}
+
+/** 제품 id 목록 → { fx, global_oh_rate, products: Map(id → 원가 구성) } */
+export async function costSimBasis(pids, exec = query) {
+  const fx = await latestFx(exec);
+  const rate = fx ? fx.rate : null;
+  const g = (await exec(`SELECT COALESCE(SUM(base),0) AS base, COALESCE(SUM(oh),0) AS oh FROM (${BB_SQL}) bb`)).rows[0];
+  const gd = (await exec(
+    `SELECT COALESCE(SUM(a.alloc_amount_mxn),0) AS oh
+       FROM import_cost_allocations a
+       JOIN import_cost_docs d ON d.id = a.doc_id AND d.status = 'approved' AND d.deleted_at IS NULL
+       JOIN (${BB_SQL}) bb ON bb.id = a.batch_id`)).rows[0];
+  const gBase = Number(g.base); const gOh = Number(g.oh) + Number(gd.oh);
+  const gRate = gBase > 0 ? gOh / gBase : 0;
+  const map = new Map();
+  if (!pids.length) return { fx, global_oh_rate: gRate, products: map };
+  const rows = (await exec(
+    `WITH bb AS MATERIALIZED (${BB_SQL}),
+     pl AS (
+        SELECT l.product_id,
+               SUM(l.qty * l.import_price * ${FXL_SQL}) AS val,
+               SUM(l.qty * l.import_price * ${FXL_SQL} * CASE WHEN bb.base > 0 THEN bb.oh / bb.base ELSE 0 END) AS oh
+          FROM import_lines l JOIN import_batches b ON b.id = l.batch_id JOIN bb ON bb.id = b.id
+         WHERE l.product_id = ANY($1)
+         GROUP BY l.product_id),
+     dc AS (
+        SELECT a.product_id, SUM(a.per_unit_mxn * a.batch_qty) AS oh
+          FROM import_cost_adjustments a
+          JOIN import_cost_docs d ON d.id = a.doc_id AND d.status = 'approved' AND d.deleted_at IS NULL
+          JOIN bb ON bb.id = a.batch_id
+         WHERE a.product_id = ANY($1)
+         GROUP BY a.product_id)
+     SELECT p.id, p.code, p.name, p.origin, p.is_active, p.list_price, p.fob_usd, p.avg_cost,
+            pl.val, pl.oh AS io_oh, dc.oh AS doc_oh
+       FROM products p
+       LEFT JOIN pl ON pl.product_id = p.id
+       LEFT JOIN dc ON dc.product_id = p.id
+      WHERE p.id = ANY($1) AND p.deleted_at IS NULL`, [pids])).rows;
+  const r2 = (x) => Math.round(x * 100) / 100; const r4 = (x) => Math.round(x * 10000) / 10000;
+  for (const r of rows) {
+    const val = Number(r.val || 0);
+    const own = val > 0;
+    const ohRate = own ? (Number(r.io_oh || 0) + Number(r.doc_oh || 0)) / val : gRate;
+    const fob = r.fob_usd == null ? null : Number(r.fob_usd);
+    const avg = r.avg_cost == null ? null : Number(r.avg_cost);
+    let basis = null; let unitFob = null; let unitOh = null;
+    if (fob > 0 && rate > 0) { basis = 'fob'; unitFob = fob * rate; unitOh = unitFob * ohRate; }
+    else if (avg > 0) { basis = 'avg'; unitFob = avg / (1 + ohRate); unitOh = avg - unitFob; }
+    map.set(Number(r.id), {
+      id: Number(r.id), code: r.code, name: r.name, origin: r.origin, is_active: r.is_active !== false,
+      list_price: r.list_price == null ? null : Number(r.list_price),
+      fob_usd: fob, avg_cost: avg == null ? null : r2(avg),
+      oh_rate: r4(ohRate), oh_source: own ? 'product' : 'global', basis,
+      unit_fob_mxn: unitFob == null ? null : r4(unitFob),
+      unit_oh_mxn: unitOh == null ? null : r4(unitOh),
+      unit_cost: unitFob == null ? null : r4(unitFob + unitOh),
+    });
+  }
+  return { fx, global_oh_rate: r4(gRate), products: map };
+}
+
+/** items [{code}] → 줄별 매칭 결과 + 제품 원가 구성(중복 제품은 한 번만) */
+export async function costSim(items, exec = query) {
+  const clean = items.slice(0, COST_SIM_MAX).map((it) => String((it && it.code) || '').trim()).filter(Boolean);
+  const norms = [...new Set(clean.map(normCode).filter(Boolean))];
+  const res = await resolveSimCodes(norms, exec);
+  const pids = [...new Set([...res.values()].flatMap((e) => e.candidates.map((c) => c.product_id)))];
+  const basis = await costSimBasis(pids, exec);
+  const lines = clean.map((code) => {
+    const e = res.get(normCode(code));
+    return { code, via: e ? e.via : null, candidates: e ? e.candidates.filter((c) => basis.products.has(c.product_id)) : [] };
+  });
+  return {
+    fx: basis.fx, global_oh_rate: basis.global_oh_rate,
+    lines, products: [...basis.products.values()],
+    matched: lines.filter((l) => l.candidates.length).length, unmatched: lines.filter((l) => !l.candidates.length).length,
+  };
+}
