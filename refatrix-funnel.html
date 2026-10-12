@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부 · build 0929ex</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 20261012dx</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -865,8 +865,11 @@
   async function loadDev(){
     const d=await fetch(session.api+'/api/dashboard/funnel/dev?months='+mq(),{headers:auth()}).then(r=>r.json());
     const items=d.items||[];
+    devItems=items;
     if(!items.length){ $('body').innerHTML='<div class="hint" style="margin-top:10px">해당 기간 개발필요 항목이 없습니다.</div>'; return; }
-    let h='<div class="hint" style="margin-top:8px">항목을 클릭하면 단계별(접수→검토→공장→완료) 진행과 소요일을 펼칩니다.</div>';
+    let h='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">'
+      +'<div class="hint" style="margin:0">항목을 클릭하면 단계별(접수→검토→공장→완료) 진행과 소요일을 펼칩니다.</div>'
+      +'<button class="btn ghost sm" id="devXlsBtn" type="button">⬇ 엑셀 다운로드 ('+items.length+'건)</button></div>';
     h+='<table data-sort="funnel:dev"><thead><tr><th>경쟁사코드</th><th>고객</th><th class="r">수량</th><th>상태</th><th>차량(메이커/차종/연식)</th><th data-type="date">접수일</th><th data-type="date">완료일</th><th class="r">소요</th></tr></thead><tbody>';
     items.forEach(r=>{ const v=splitApp(r.review_app); const veh=[v.maker,v.model,v.year].filter(Boolean).join(' / ');
       h+='<tr class="click" onclick="toggleDev('+r.id+')"><td><b>'+esc(r.input_code||'')+'</b></td><td>'+esc(r.customer_name||'-')+'</td><td class="r">'+(r.requested_qty==null?'-':nf(r.requested_qty))+'</td><td><span class="st '+r.status+'">'+(stLbl[r.status]||r.status)+'</span></td><td>'+esc(veh||'-')+'</td><td>'+esc(r.requested_at||'')+'</td><td>'+esc(r.developed_at||'-')+'</td><td class="r">'+(r.dur_total==null?'–':r.dur_total+'일')+'</td></tr>';
@@ -874,6 +877,35 @@
     });
     h+='</tbody></table>';
     setBody(h);
+    const xb=$('devXlsBtn'); if(xb) xb.addEventListener('click',downloadDevXlsx);
+  }
+  // 개발 필요 목록 엑셀 다운로드 (2026-10-12) — 화면을 볼 수 있는 사용자 누구나.
+  //  · 같은 API(/api/dashboard/funnel/dev, 화면 권한과 동일)에서 받은 선택 월 목록 그대로 내보냄 — 서버 변경 없음.
+  //  · 가격(review_list_price)은 화면에 없으므로 엑셀에도 넣지 않음.
+  let devItems=[];
+  function downloadDevXlsx(){
+    if(!window.XLSX){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
+    if(!devItems.length){ alert('다운로드할 항목이 없습니다.'); return; }
+    const num=(v)=> v==null||v===''?'':Number(v);
+    const head=['접수월','경쟁사코드','SYD코드','고객','수량','상태','카테고리','메이커','차종','연식',
+      '① 접수일','② 검토완료일','③ 공장요청일','④ 개발완료일','접수→검토(일)','검토→공장(일)','공장→완료(일)','전체 소요(일)',
+      '개발결과 CTR코드','오더 메모','검토 메모'];
+    const aoa=[head];
+    devItems.forEach(r=>{ const v=splitApp(r.review_app);
+      aoa.push([ String(r.requested_at||'').slice(0,7), r.input_code||'', r.review_syd_code||'', r.customer_name||'',
+        num(r.requested_qty), stLbl[r.status]||r.status||'', r.category||'',
+        r.review_maker||v.maker, r.review_model||v.model, r.review_year||v.year,
+        r.requested_at||'', r.reviewed_at||'', r.factory_requested_at||'', r.developed_at||'',
+        num(r.dur_review), num(r.dur_factory), num(r.dur_develop), num(r.dur_total),
+        r.result_ctr_code||'', r.order_memo||'', r.review_memo||'' ]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[8,16,14,26,7,9,12,12,14,12,11,11,11,11,9,9,9,9,16,30,30].map(w=>({wch:w}));
+    ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:head.length-1}})};
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Desarrollo');
+    const ms=months.slice().sort();
+    const tag=!ms.length?'':(ms.length===1?ms[0]:ms[0]+'_'+ms[ms.length-1]+'_'+ms.length+'m');
+    XLSX.writeFile(wb,'desarrollo_'+tag.replace(/[^0-9A-Za-z_-]/g,'')+'_'+mxHoy()+'.xlsx');
   }
   function toggleDev(id){
     if(openRows['d'+id]){ delete openRows['d'+id]; return loadDev(); }
