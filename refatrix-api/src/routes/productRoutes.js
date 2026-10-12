@@ -369,12 +369,32 @@ export default async function productRoutes(app) {
     // ② 원가 근거(수식) — unit_cost 권한 있을 때만
     if (fieldVisible(perm, 'unit_cost')) {
       const costRows = (await query(
-        `SELECT b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency, b.fx_rate, b.status,
+        `SELECT b.id AS batch_id, b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency, b.fx_rate, b.status,
                 il.qty, il.import_price, il.unit_cost_mxn, il.po_ref
            FROM import_lines il
            JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE
           WHERE il.product_id=$1
           ORDER BY b.import_date, b.id`, [id])).rows;
+      // 2026-10-12 — 부대비용 문서(import_cost_docs) 승인분은 products.avg_cost 만 올리고
+      //   import_lines.unit_cost_mxn 은 그대로 둔다. 그래서 라인 역산만으로는 부대비용이 0으로 보였다.
+      //   승인된 문서의 배치×제품 단위당 부대비용을 더해 카드에 표시한다(표시 전용 — 저장 원가·COGS 불변).
+      const docOvh = new Map(); // batch_id → 단위당 추가 부대비용(MXN)
+      {
+        const ar = (await query(
+          // 문서별 단위당 금액을 구한 뒤(같은 배치에 같은 제품 라인이 여러 줄이어도 중복 없이) 문서끼리 합산
+          `SELECT batch_id, SUM(per_unit) AS per_unit FROM (
+             SELECT a.batch_id, a.doc_id,
+                    SUM(a.per_unit_mxn * a.batch_qty) / NULLIF(SUM(a.batch_qty),0) AS per_unit
+               FROM import_cost_adjustments a
+               JOIN import_cost_docs d ON d.id=a.doc_id AND d.status='approved' AND d.deleted_at IS NULL
+              WHERE a.product_id=$1
+              GROUP BY a.batch_id, a.doc_id) t
+            GROUP BY batch_id`, [id])).rows;
+        for (const x of ar) {
+          const pu = Number(x.per_unit);
+          if (pu > 0) docOvh.set(Number(x.batch_id), pu);
+        }
+      }
       const r2 = (n) => Math.round(n * 100) / 100;
       const lines = costRows.map((r) => {
         // 원가 반영 여부(2026-08-19): 승인된 배치의 계산 완료 라인만 평균원가에 들어간다.
@@ -383,7 +403,9 @@ export default async function productRoutes(app) {
         const qty = Number(r.qty);
         const importPrice = r.import_price != null ? Number(r.import_price) : null; // 원통화 수입단가
         const fx = (r.currency === 'USD' && r.fx_rate != null) ? Number(r.fx_rate) : 1; // USD만 환율 적용
-        const unitCostMxn = r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null;
+        // 입고단가 = 라인 저장 단가 + 승인된 부대비용 문서의 단위당 배분액(2026-10-12)
+        const docPerUnit = docOvh.get(Number(r.batch_id)) || 0;
+        const unitCostMxn = r.unit_cost_mxn != null ? r2(Number(r.unit_cost_mxn) + docPerUnit) : null;
         // 수입금액(원통화) = 수입수량 × 수입단가
         const baseAmountCur = importPrice != null ? r2(qty * importPrice) : null;
         // 기본원가(MXN) = 수입금액(원통화) × 환율
