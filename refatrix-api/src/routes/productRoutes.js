@@ -420,6 +420,9 @@ export default async function productRoutes(app) {
           qty, import_price: importPrice, fx_rate: fx,
           base_amount_cur: baseAmountCur, base_amount_mxn: baseAmountMxn,
           overhead_mxn: overheadMxn, line_total_mxn: lineTotalMxn,
+          // 개당 FOB 구매단가 / 개당 수입부대비용(MXN) — 2026-10-12
+          fob_unit_mxn: (lineTotalMxn != null && qty > 0) ? r2((lineTotalMxn - (overheadMxn || 0)) / qty) : null,
+          overhead_unit_mxn: (overheadMxn != null && qty > 0) ? r2(overheadMxn / qty) : null,
           unit_cost_mxn: unitCostMxn,
           status: r.status || null, counted,                       // 원가 반영 여부(2026-08-19)
           po_ref: r.po_ref || null,                                 // 구매 참조번호(0179)
@@ -438,6 +441,40 @@ export default async function productRoutes(app) {
         formula: '평균원가 = Σ(수입수량 × 입고단가) ÷ Σ수입수량',
         note: '입고단가는 통화별 입고가에 입고일 환율과 분배 부대비용(1/n)을 반영한 MXN 단가입니다.',
       };
+
+      // 2026-10-12 — 원가 구성(FOB 구매단가 vs 수입부대비용). 원가 반영 라인 기준.
+      //   FOB분 = 라인총원가 − 부대비용 (합이 라인총원가와 정확히 맞도록)
+      let fobAmt = 0, ovhAmt = 0, mixQty = 0;
+      for (const l of cLines) {
+        if (l.line_total_mxn == null) continue;
+        const ovh = l.overhead_mxn || 0;
+        fobAmt += l.line_total_mxn - ovh; ovhAmt += ovh; mixQty += l.qty;
+      }
+      const mixTotal = fobAmt + ovhAmt;
+      const mix = mixTotal > 0 ? {
+        qty: mixQty, fob_amount: r2(fobAmt), overhead_amount: r2(ovhAmt), total: r2(mixTotal),
+        fob_share: fobAmt / mixTotal, overhead_share: ovhAmt / mixTotal,           // 0~1 (반올림 전)
+        fob_unit: mixQty > 0 ? r2(fobAmt / mixQty) : null,
+        overhead_unit: mixQty > 0 ? r2(ovhAmt / mixQty) : null,
+      } : null;
+      out.cost.mix = mix;
+
+      // 매출원가(동결 COGS)를 위 구성비로 나눠 FOB분·부대비용분, 그리고 매출 대비 %
+      if (out.gross && mix) {
+        const t = out.gross.total;
+        const cogsFob = r2(t.cogs * mix.fob_share);
+        const cogsOvh = r2(t.cogs - cogsFob);
+        const pctOf = (a, b) => (b > 0 ? r2(a / b * 100) : null);
+        out.gross.mix = {
+          cogs_fob: cogsFob, cogs_overhead: cogsOvh,
+          fob_pct_of_cogs: r2(mix.fob_share * 100), overhead_pct_of_cogs: r2(100 - r2(mix.fob_share * 100)),
+          fob_pct_of_sales: pctOf(cogsFob, t.revenue), overhead_pct_of_sales: pctOf(cogsOvh, t.revenue),
+          cogs_pct_of_sales: pctOf(t.cogs, t.revenue), profit_pct_of_sales: t.margin_pct,
+          fob_unit: t.qty > 0 ? r2(cogsFob / t.qty) : null,
+          overhead_unit: t.qty > 0 ? r2(cogsOvh / t.qty) : null,
+          note: '매출원가(판매 시점 동결값)를 원가 분석의 입고 이력 구성비(FOB : 부대비용)로 나눈 값입니다.',
+        };
+      }
     }
     return out;
   });
