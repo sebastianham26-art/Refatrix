@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 1012re1</title>
+<title>Refatrix · 창고 포장 · build 1012lk1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -231,6 +231,38 @@
   .sealedbox{background:#f3f5f2;border:1px solid #d6ddd2;border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:15px}
   .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
   .sealedbox .un{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:800;cursor:pointer}
+  /* 2026-10-12 · 제품 위치 찾기 (제품번호·바코드 → 총 재고 + 랙 × 수량) */
+  .lk{background:var(--card);border:2px solid var(--steel);border-radius:var(--radius);padding:14px 16px;margin-bottom:6px}
+  .lk .lkrow{display:flex;gap:8px;align-items:center}
+  .lk input{flex:1 1 auto;min-width:0;font-size:20px;font-weight:800;letter-spacing:.5px;padding:12px 14px;border:2px solid var(--steel);border-radius:12px;font-family:ui-monospace,Menlo,Consolas,monospace;text-transform:uppercase}
+  .lk .lkgo{flex:0 0 auto;background:var(--steel);color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:17px;font-weight:800;cursor:pointer}
+  .lk .lkclr{flex:0 0 auto;background:#eef2f5;color:var(--steel-d);border:none;border-radius:12px;padding:13px 14px;font-size:17px;font-weight:800;cursor:pointer}
+  .lkres{margin-top:12px}
+  .lkres .lkmsg{font-size:16px;font-weight:700;color:var(--muted);padding:6px 2px}
+  .lkres .lkmsg.err{color:var(--red)}
+  .lkcard{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:center}
+  .lkcard .img{grid-row:1 / span 2;width:64px;height:64px;border-radius:10px;border:1px solid var(--line);object-fit:contain;background:#fff}
+  .lkcard .cd{font-size:26px;font-weight:800;line-height:1.1}
+  .lkcard .nm{font-size:14px;color:var(--muted);grid-column:2}
+  .lkcard .tot{grid-column:3;grid-row:1 / span 2;text-align:center;min-width:96px}
+  .lkcard .tot .n{display:block;font-size:40px;font-weight:800;line-height:1;color:var(--steel-d);font-variant-numeric:tabular-nums}
+  .lkcard .tot .l{font-size:12px;font-weight:700;color:var(--muted)}
+  .lkracks{margin-top:10px;border-top:1px dashed var(--line)}
+  .lkr{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px dashed var(--line)}
+  .lkr .rk{font-size:22px;font-weight:800;letter-spacing:.3px;min-width:110px}
+  .lkr .fm{display:inline-block;background:var(--gold);color:#fff;border-radius:5px;font-size:11px;padding:1px 5px;margin-left:5px;vertical-align:middle}
+  .lkr .q{margin-left:auto;font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+  .lkr .q small{font-size:13px;font-weight:700;color:var(--muted);margin-left:3px}
+  .lkr .hd{font-size:12px;font-weight:700;color:var(--red);flex-basis:100%;margin-top:-6px}
+  .lkr.un .rk{color:var(--red);font-size:17px}
+  .lkr.un .q{color:var(--red)}
+  .lknote{font-size:13px;color:var(--muted);margin-top:8px}
+  .lkcands{display:flex;flex-wrap:wrap;gap:8px}
+  .lkcand{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:10px;padding:9px 12px;font-size:15px;font-weight:800;cursor:pointer;text-align:left}
+  .lkcand small{display:block;font-weight:600;font-size:12px;color:var(--muted)}
+  body.pda .lk{padding:9px 10px} body.pda .lk input{font-size:16px;padding:9px 10px} body.pda .lk .lkgo,body.pda .lk .lkclr{padding:9px 12px;font-size:14px}
+  body.pda .lkcard .cd{font-size:19px} body.pda .lkcard .tot .n{font-size:30px} body.pda .lkcard .img{width:48px;height:48px}
+  body.pda .lkr .rk{font-size:17px;min-width:84px} body.pda .lkr .q{font-size:19px} body.pda .lkr{padding:7px 2px}
   /* 0269 · 피킹 기록(어느 랙에서 집었는가) */
   table.ptbl td.rk{white-space:normal;min-width:170px}
   table.ptbl td.rk .pk{font-weight:800;color:var(--steel-d)}
@@ -363,6 +395,17 @@
     <button id="langToggle" class="langtgl" type="button">🌐</button>
   </div>
   <div class="sec">
+    <div class="sec-t"><span>🔍 제품 위치 찾기</span></div>
+    <div class="lk">
+      <div class="lkrow">
+        <input id="lkInput" autocomplete="off" inputmode="text" placeholder="제품번호 · 바코드 · SYD 입력 후 Enter">
+        <button class="lkgo" id="lkGo" type="button">찾기</button>
+        <button class="lkclr" id="lkClr" type="button" title="지우기">✕</button>
+      </div>
+      <div class="lkres" id="lkRes"></div>
+    </div>
+  </div>
+  <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
     <div id="queue"><div class="empty">불러오는 중…</div></div>
@@ -457,7 +500,7 @@
   function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
 
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0918po1 — Pedido 칸에 고객 PO(O.C.) 병기'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 1012lk1 — 제품 위치 찾기(총 재고 + 랙 × 수량)'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -468,6 +511,40 @@
 
   // ================= 한국어 ↔ 스페인어 (앱 내장 번역) =================
   var I18N=[
+    /* 2026-10-12 · 제품 위치 찾기 · 피킹 기록(0269) */
+    ["🔍 제품 위치 찾기","🔍 Buscar ubicación de producto"],
+    ["제품번호 · 바코드 · SYD 입력 후 Enter","Código CTR · código de barras · SYD y Enter"],
+    ["찾기","Buscar"],
+    ["총 재고","Existencia total"],
+    ["위치 미지정","Sin ubicación"],
+    ["랙 기록이 없는 재고","existencia sin rack registrado"],
+    ["포장작업지시서가 잡아 둔 수량","apartado en órdenes de surtido"],
+    ["재고 없음","Sin existencia"],
+    ["랙 기록 없음","Sin racks registrados"],
+    ["찾는 중…","Buscando…"],
+    ["해당 제품이 없습니다","No se encontró el producto"],
+    ["여러 제품이 있습니다 — 선택하세요","Hay varios productos — elija uno"],
+    ["비슷한 제품 — 선택하세요","Productos parecidos — elija uno"],
+    ["랙 합계가 재고보다 많습니다","La suma de racks supera la existencia"],
+    ["제품마스터 위치","Ubicación maestro"],
+    ["조회 실패","Error de consulta"],
+    ["랙위치 · 수량","Rack · cantidad"],
+    ["피킹 기록","Surtido registrado"],
+    ["지시서대로 ✓","Como la orden ✓"],
+    ["다른 랙","Otro rack"],
+    ["✓ 기록됨","✓ Registrado"],
+    ["변경","Cambiar"],
+    ["전체 랙:","Todos los racks:"],
+    ["📍 피킹 랙 기록 · ","📍 Registrar rack de surtido · "],
+    ["실제로 집은 랙과 수량을 넣으세요. 매출 전환 때 이 랙에서 차감됩니다. 포장할 수량","Ingrese el rack y la cantidad que realmente tomó. Se descontará de este rack al facturar. Cantidad a empacar"],
+    ["랙 재고","Existencia rack"],
+    ["집을 수 있음","Disponible"],
+    ["집은 수량","Tomado"],
+    ["✔ 기록","✔ Registrar"],
+    ["기록 취소(지시서대로)","Cancelar registro (como la orden)"],
+    ["닫기","Cerrar"],
+    ["— 집을 수 있는 수량을 넘었습니다","— excede lo disponible"],
+    ["피킹 기록 취소 — 지시서 위치로 차감됩니다","registro cancelado — se descuenta de la ubicación de la orden"],
     /* 2026-08-26 — 스페인어 화면에 한국어로 남아 있던 문구 보충(현장은 기본이 es 다).
        tr() 는 배열 순서대로 누적 치환하므로, 문장 전체 짝은 부분 치환보다 반드시 앞에 둔다. */
     ['📦 박스 라벨(TD-402S) · 📄 통합 패킹리스트(스페인어) 출력 — 포장완료 + SAT 번호 등록된 건만 표시됩니다.',
@@ -1082,6 +1159,57 @@
     if(fresh.length){ $('newMsg').textContent='새 포장 작업 '+fresh.length+'건이 내려왔습니다.'; $('newModal').classList.add('on'); beep(true); }
   }
   $('newOk').addEventListener('click',function(){ $('newModal').classList.remove('on'); });
+
+  // ===== 2026-10-12 · 제품 위치 찾기 — 제품번호·바코드·SYD → 총 재고 + 랙 × 수량(fast 먼저) =====
+  function lkNorm(v){ return String(v||'').replace(/['´`‘’′]/g,'-').trim(); }
+  function lkQty(n){ return Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3}); }
+  function lkU(){ return (typeof LANG!=='undefined' && LANG==='es')?'pzas':'개'; }
+  function lkImg(code){ return 'https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/'+encodeURIComponent(code)+'/'+encodeURIComponent(code)+'_1.webp'; }
+  function lkRender(it){
+    var h='<div class="lkcard">'
+      +'<img class="img" src="'+lkImg(it.code)+'" alt="" onerror="this.style.visibility=\'hidden\'">'
+      +'<div class="cd">'+esc(it.code)+'</div>'
+      +'<div class="tot"><span class="n">'+lkQty(it.stock_qty)+'</span><span class="l">총 재고</span></div>'
+      +'<div class="nm">'+esc(it.name)+(it.syd?(' · SYD '+esc(it.syd)):'')+(it.ean?(' · '+esc(it.ean)):'')+'</div>'
+      +'</div>';
+    var rows=(it.racks||[]).map(function(r){
+      var hd=(r.held>0)?('<div class="hd">포장작업지시서가 잡아 둔 수량 '+lkQty(r.held)+' ('+esc((r.held_quotes||[]).join(', '))+')</div>'):'';
+      return '<div class="lkr"><span class="rk">📍 '+esc(r.rack)+(r.kind==='fast'?'<span class="fm">FM</span>':'')+'</span><span class="q">'+lkQty(r.qty)+'<small>'+lkU()+'</small></span>'+hd+'</div>';
+    });
+    if(it.unassigned>0) rows.push('<div class="lkr un"><span class="rk">위치 미지정<div style="font-size:12px;font-weight:600;color:var(--muted)">랙 기록이 없는 재고</div></span><span class="q">'+lkQty(it.unassigned)+'<small>'+lkU()+'</small></span></div>');
+    h+='<div class="lkracks">'+(rows.join('')||('<div class="lkr"><span class="rk" style="color:var(--muted);font-size:16px">'+(it.stock_qty>0?'랙 기록 없음':'재고 없음')+'</span></div>'))+'</div>';
+    var notes=[];
+    if(it.over>0) notes.push('⚠ 랙 합계가 재고보다 많습니다 (+'+lkQty(it.over)+')');
+    if(it.held_total>0) notes.push('포장작업지시서가 잡아 둔 수량 '+lkQty(it.held_total)+' · '+esc((it.held_quotes||[]).join(', ')));
+    if(!(it.racks||[]).length && it.master_rack) notes.push('제품마스터 위치: '+esc(it.master_rack));
+    if(notes.length) h+='<div class="lknote">'+notes.join('<br>')+'</div>';
+    return h;
+  }
+  var lkSeq=0;
+  function lookup(code){
+    var v=lkNorm(code!=null?code:$('lkInput').value);
+    if(!v){ $('lkRes').innerHTML=''; return; }
+    var my=++lkSeq;
+    $('lkRes').innerHTML='<div class="lkmsg">찾는 중…</div>';
+    fetch(API+'/api/rack-stock/lookup?code='+encodeURIComponent(v),{headers:AUTH}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,status:r.status,body:j}; }); }).then(function(o){
+      if(my!==lkSeq) return;   // 더 새 조회가 있으면 버린다
+      if(!o.ok){ $('lkRes').innerHTML='<div class="lkmsg err">'+esc(o.status===403?'⚠ 권한 없음 (창고 화면 권한 필요)':('조회 실패 · '+((o.body&&o.body.note)||o.status)))+'</div>'; return; }
+      var d=o.body||{};
+      if(d.match==='none'){ $('lkRes').innerHTML='<div class="lkmsg err">해당 제품이 없습니다 · '+esc(v)+'</div>'; beep(false); return; }
+      if(d.match==='many'){
+        $('lkRes').innerHTML='<div class="lkmsg">'+(d.partial?'비슷한 제품 — 선택하세요':'여러 제품이 있습니다 — 선택하세요')+'</div><div class="lkcands">'
+          +(d.candidates||[]).map(function(c){ return '<button class="lkcand" type="button" data-code="'+esc(c.code)+'">'+esc(c.code)+'<small>총 재고 '+lkQty(c.stock_qty)+' · '+esc((c.racks||[]).map(function(r){ return r.rack+' '+lkQty(r.qty); }).join(' · ')||'—')+'</small></button>'; }).join('')+'</div>';
+        Array.prototype.forEach.call($('lkRes').querySelectorAll('[data-code]'),function(b){ b.addEventListener('click',function(){ $('lkInput').value=b.getAttribute('data-code'); lookup(b.getAttribute('data-code')); }); });
+        return;
+      }
+      $('lkRes').innerHTML=lkRender(d.item);
+      beep(true);
+      var inp=$('lkInput'); try{ inp.select(); }catch(_){}   // 바로 다음 스캔이 덮어쓰게
+    }).catch(function(){ if(my===lkSeq) $('lkRes').innerHTML='<div class="lkmsg err">조회 실패 (통신)</div>'; });
+  }
+  $('lkInput').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); lookup(); } });
+  $('lkGo').addEventListener('click',function(){ lookup(); });
+  $('lkClr').addEventListener('click',function(){ lkSeq++; $('lkInput').value=''; $('lkRes').innerHTML=''; try{ $('lkInput').focus(); }catch(_){} });
 
   // ---------- 패킹 ----------
   var PK=null, curBox=null, pollTimer=null, drillElapsedSec=0;

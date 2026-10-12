@@ -9,6 +9,7 @@
 //     · POST /api/rack-stock/import/preview  실사 랙 업로드 미리보기 — 창고 열람 권한
 //     · POST /api/rack-stock/import          실사 랙 업로드 적용 — 디렉터
 //     · GET  /api/rack-stock/imports         업로드 이력
+//   2026-10-12 · GET /api/rack-stock/lookup?code=  창고 제품 위치 찾기(총 재고 + 랙 × 수량)
 // =====================================================================
 import { query, withTx } from '../db.js';
 import { authGuard, requirePageAny, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
@@ -83,6 +84,62 @@ export default async function rackStockRoutes(app) {
       };
     });
     return { total, limit, offset, items };
+  });
+
+  /* 2026-10-12 · 창고 제품 위치 찾기 — ?code= 제품번호 · EAN(바코드) · SYD 코드
+     정확히 하나면 { match:'one', item }, 여러 개면 { match:'many', candidates }, 없으면 { match:'none' }.
+     item: 총 재고(stock_qty) · 랙 × 수량(피킹 순서: fast 먼저) · 위치 미지정 · 포장지시서가 잡아 둔 수량 */
+  app.get('/api/rack-stock/lookup', gRead, async (req, reply) => {
+    const raw = String((req.query || {}).code || '').trim();
+    const code = raw.replace(/['´`‘’′]/g, '-').toUpperCase();   // 스캐너 아포스트로피 → 하이픈
+    if (!code) return reply.code(400).send({ error: 'code_required', note: '제품번호나 바코드를 입력하세요.' });
+    const noZero = code.replace(/^0+/, '');
+    const cols = `p.id, p.code, p.name, p.stock_qty, p.ean, p.scode, p.rack_location`;
+    // ① 정확히 일치: 제품번호 → EAN(앞자리 0 무시) → SYD(제품마스터·교차표)
+    let rows = (await query(`SELECT ${cols} FROM products p WHERE p.deleted_at IS NULL AND UPPER(TRIM(p.code)) = $1`, [code])).rows;
+    if (!rows.length && noZero) rows = (await query(
+      `SELECT ${cols} FROM products p WHERE p.deleted_at IS NULL AND ltrim(TRIM(COALESCE(p.ean,'')),'0') = $1`, [noZero])).rows;
+    if (!rows.length) rows = (await query(
+      `SELECT ${cols} FROM products p WHERE p.deleted_at IS NULL
+          AND (UPPER(TRIM(COALESCE(p.scode,''))) = $1
+               OR p.id IN (SELECT sc.product_id FROM product_syd_codes sc WHERE UPPER(TRIM(sc.syd_code)) = $1))
+        ORDER BY p.code LIMIT 20`, [code]).catch(() => ({ rows: [] }))).rows;
+    // ② 일부 일치(제품번호 앞부분 → 포함) — 후보 목록
+    let partial = false;
+    if (!rows.length && code.length >= 3) {
+      partial = true;
+      rows = (await query(
+        `SELECT ${cols} FROM products p
+          WHERE p.deleted_at IS NULL AND (UPPER(p.code) LIKE '%' || $1 || '%' OR UPPER(COALESCE(p.name,'')) LIKE '%' || $1 || '%')
+          ORDER BY (UPPER(p.code) LIKE $1 || '%') DESC, COALESCE(p.stock_qty,0) DESC, p.code
+          LIMIT 12`, [code])).rows;
+    }
+    const ready = await rackStockReady();
+    const map = ready ? await rackMap(null, rows.map((r) => r.id)) : new Map();
+    const shape = (p) => {
+      const racks = (map.get(Number(p.id)) || []).map((r) => ({ rack: r.rack, qty: r.qty, kind: r.kind }));
+      const located = Math.round(racks.reduce((s, r) => s + r.qty, 0) * 1000) / 1000;
+      const stock = num(p.stock_qty);
+      return {
+        product_id: Number(p.id), code: p.code, name: p.name || '', ean: p.ean || '', syd: p.scode || '',
+        stock_qty: stock, racks, located,
+        unassigned: Math.max(0, Math.round((stock - located) * 1000) / 1000),
+        over: Math.max(0, Math.round((located - stock) * 1000) / 1000),
+        master_rack: p.rack_location || '',
+      };
+    };
+    if (!rows.length) return { match: 'none', code: raw };
+    if (rows.length > 1 || partial) return { match: 'many', code: raw, partial, candidates: rows.map(shape) };
+    const item = shape(rows[0]);
+    // 포장작업지시서가 잡아 둔(아직 출고 전) 수량 — 랙마다
+    if (ready && await rackEditReady()) {
+      const h = await holdsDetail(null, item.product_id, 0);
+      for (const r of item.racks) { const x = h.get(r.rack); r.held = x ? x.qty : 0; r.held_quotes = x ? x.quotes : []; }
+      let held = 0; const quotes = new Set();
+      for (const [, x] of h) { held += x.qty; x.quotes.forEach((q) => quotes.add(q)); }
+      item.held_total = Math.round(held * 1000) / 1000; item.held_quotes = [...quotes];
+    }
+    return { match: 'one', code: raw, item, rack_ready: ready };
   });
 
   /* 랙별 요약 — 랙마다 SKU 수·수량·유형 */

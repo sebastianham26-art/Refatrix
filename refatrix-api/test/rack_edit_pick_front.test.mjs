@@ -144,6 +144,7 @@ test('④ 창고 포장 — 랙위치·수량(전체 랙) · 지시서대로 · 
   const dom = new JSDOM(read('refatrix-warehouse.html'), { runScripts: 'dangerously', url: 'https://example.test/refatrix-warehouse.html',
     beforeParse(win) {
       win.sessionStorage.setItem('refatrix_session', JSON.stringify({ token: 't', api: 'https://api.test', user: { name: 'u', role: 'warehouse' } }));
+      win.localStorage.setItem('wh_lang', 'ko');   // 창고 계정 기본은 스페인어 — 이 시험은 한국어 문구로 본다
       win.HTMLMediaElement && (win.HTMLMediaElement.prototype.play = () => Promise.resolve());
       win.AudioContext = undefined; win.webkitAudioContext = undefined;
       win.fetch = async (url, init) => {
