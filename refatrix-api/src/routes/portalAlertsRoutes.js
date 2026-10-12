@@ -139,10 +139,15 @@ async function mktRevisionItems() {
   } catch (_) { return []; } // 0124 미적용 또는 테이블 미생성
 }
 
-// ── 신규 고객 등록 승인 대기 (원본: customerRoutes.js /api/customer-registrations?status=pending) ──
+// ── 신규 고객 **사후승인** 대기 (원본: customerRoutes.js /api/customer-registrations) ──
 //    전역 팝업(nav.js)이 60초마다 조회하므로, 무거운 서브쿼리(등록이력 스냅샷·증빙 개수)는 빼고
 //    "누가·언제·무엇을 올렸나"만 뽑는 경량 미러로 둔다. 상세·승인은 기존 엔드포인트가 담당.
 //    0185 미적용(approval_status 컬럼 없음) 배포 순서에도 안전하도록 전체를 try 로 감쌈.
+//
+//    ★ 0267 · 조건이 `approval_status='pending'` → **`ratified_at IS NULL`** 로 옮겨 갔다.
+//      원본 목록과 **같은 조건**이어야 한다 — 미러가 다른 질문을 하면 배지 숫자와 목록이
+//      어긋나고, 그런 종류의 불일치는 아무도 버그로 신고하지 않은 채 신뢰만 깎는다.
+//      컬럼이 없는 배포 창에서는 catch 가 빈 배열을 돌려주므로 팝업만 잠시 조용하다.
 async function customerRegPendingItems() {
   try {
     const rows = (await query(
@@ -153,7 +158,8 @@ async function customerRegPendingItems() {
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN users cu ON cu.id=c.created_by
-        WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved')='pending'
+        WHERE c.deleted_at IS NULL AND c.ratified_at IS NULL
+          AND COALESCE(c.approval_status,'approved') <> 'rejected'
         ORDER BY c.created_at DESC LIMIT 50`)).rows;
     return rows.map((r) => ({
       id: Number(r.id), code: r.code, name: r.name, rfc: r.rfc || null,

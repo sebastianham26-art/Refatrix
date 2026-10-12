@@ -229,12 +229,20 @@ test('D2. 견적·가격표 두 경로 모두 미등록/승인대기 고객을 �
   assert.ok(quoteRoutes.includes('isPendingCustomer'));
 });
 
-test('D3. 등록 API 는 RFC 를 요구하지 않고 SYD 단가는 요구한다 (0193)', () => {
+test('D3. 등록 API 는 RFC·SYD 단가·TIER 를 요구하지 않는다 (0193 → 0267)', () => {
   assert.ok(/const rfcChk = validateRfcOptional\(b\.rfc\)/.test(custRoutes),
     'RFC 는 선택이지만 넣은 값의 형식은 여전히 엄격히 봐야 한다');
   assert.ok(!/const rfcChk = validateRfc\(b\.rfc\)/.test(custRoutes),
     'RFC 를 다시 필수로 만들면 상담 이력을 먼저 쌓지 못한다');
-  assert.ok(custRoutes.includes('syd_ref_price_required'), '기준품목(SYD) 구매단가는 필수(할인율 근거)');
+  // 0267 · 디렉터 지시로 기준품목 구매단가와 회사 종류(TIER)를 **선택**으로 풀었다.
+  //   두 에러 코드가 되살아나면 단순화가 되돌아간 것이다.
+  assert.ok(!custRoutes.includes("error: 'syd_ref_price_required'"),
+    '기준품목 구매단가를 다시 필수로 만들면 등록이 다시 무거워진다(0267)');
+  assert.ok(!custRoutes.includes("error: 'business_type_required'"),
+    '회사 종류(TIER)는 선택이다 — 비면 CRM 전송 때 D 로 메운다(0267)');
+  // 다만 이메일·전화는 **상대(CRM)가 요구하는 값**이라 계속 막는다 — 없는 값을 지어낼 수 없다.
+  assert.ok(custRoutes.includes("error: 'contact_required'") && custRoutes.includes("error: 'phone_required'"),
+    '이메일·전화까지 풀면 그 고객은 CRM 등록이 거절되어 카달록에서 가격을 못 본다');
   // CONSTANCIA 를 강제하던 관문은 사라져야 한다
   assert.ok(!custRoutes.includes('constancia_no_required'),
     'CONSTANCIA 번호를 다시 필수로 만들면 선점 시점이 뒤로 밀린다');
@@ -251,13 +259,41 @@ test('D3b. RFC 는 저장 전 정규화본으로 들어간다(표기 흔들림 �
   assert.ok(/\[code, b\.name, rfcClean,/.test(custRoutes), '원본 b.rfc 가 그대로 저장되면 안 된다');
 });
 
-test('D4. 0193 · 모든 등록이 pending — 디렉터 본인 등록도 예외가 아니다', () => {
-  assert.ok(/const status = 'pending'/.test(custRoutes),
-    '승인 경로가 하나여야 등록 이력·커미션 귀속이 흔들리지 않는다');
-  assert.ok(!/const status = isDir \? 'approved' : 'pending'/.test(custRoutes),
-    '디렉터 등록만 승인을 건너뛰면 유사고객 검토가 그 건에서만 사라진다');
-  // 항상 pending 이므로 승인자·승인시각은 등록 시점에 비어 있어야 한다
-  assert.ok(/status, null, null,/.test(custRoutes), 'pending 인데 approved_by 가 박히면 승인 이력이 거짓이 된다');
+test('D4. 0267 · 등록은 승인을 기다리지 않는다 — 즉시 활성 + 사후승인 대기', () => {
+  assert.ok(/const status = 'approved'/.test(custRoutes),
+    '등록 즉시 쓸 수 있어야 한다(디렉터 지시 2026-10-09 · 사후승인)');
+  assert.ok(!/const status = 'pending'/.test(custRoutes),
+    'pending 으로 되돌리면 견적 차단 4곳이 다시 걸려 고객이 못 쓰인다');
+  // ★ 승인자·승인시각은 **비어 있어야 한다** — 아직 아무도 승인하지 않았다.
+  //   사후승인 여부는 ratified_at 축이 들고 있고, 그 컬럼은 기본값 NULL 이다.
+  assert.ok(/status, null, null,/.test(custRoutes),
+    '아무도 승인하지 않았는데 approved_by 가 박히면 승인 이력이 거짓이 된다');
+  // 등록 핸들러 안에서는 ratified_* 를 한 글자도 쓰지 않아야 한다 —
+  //   등록이 스스로를 승인하면 사후승인 대기 목록이 영원히 비어 있다.
+  const reg = custRoutes.slice(
+    custRoutes.indexOf("app.post('/api/customers',"),
+    custRoutes.indexOf("app.post('/api/customers/:id/rfc-claim'"));
+  assert.ok(reg.length > 1000, '등록 핸들러를 찾지 못했다');
+  //   (주석과 응답 플래그는 괜찮다 — 막아야 하는 것은 **DB 에 쓰는 것**이다.)
+  assert.ok(!/ratified_at\s*[=,]/.test(reg),
+    '등록이 스스로 사후승인까지 해 버리면 디렉터가 볼 것이 남지 않는다');
+  assert.ok(/awaiting_ratify: true/.test(reg),
+    '등록 응답은 「사후승인 대기」를 분명히 말해야 한다');
+  assert.ok(/pending_approval: false/.test(reg),
+    '예전 키는 「아직 못 쓴다」는 뜻이었다 — true 로 두면 화면이 고객을 막는다');
+  assert.ok(/enqueueCustomerSync\(row\.id, 'upsert'/.test(reg) && reg.includes("'registration_create'"),
+    'CRM 전송이 등록 시점으로 와야 한다 — 승인에 매여 있으면 단순화의 목적이 사라진다');
+});
+
+test('D4b. 0267 · approval_status 의 뜻을 바꾸지 않았다 — 기존 차단 지점이 그대로 산다', () => {
+  // 이 값은 견적 차단·CRM 상태값·독점 트리거 등 20여 곳에서 읽힌다.
+  //   「pending 인데 쓸 수 있는 고객」을 만들면 그 전부를 고쳐야 하고, 한 곳만 놓치면
+  //   고객이 조용히 막힌다. 그래서 승인 여부는 **별도 축**으로 뺐다.
+  const quote = readFileSync(new URL('../src/routes/quoteRoutes.js', import.meta.url), 'utf8');
+  assert.ok(/'pending'/.test(quote) && quote.includes('customer_not_approved'),
+    '견적 차단은 pending 으로 계속 판정한다(0267 이 건드리지 않았다)');
+  const sync = readFileSync(new URL('../src/crmSync.js', import.meta.url), 'utf8');
+  assert.ok(/pendiente/.test(sync), 'CRM 상태값 변환도 그대로다');
 });
 
 test('D5. 선점 조회 API 는 매출·연락처를 절대 내려주지 않는다', () => {
@@ -396,7 +432,7 @@ test('E0. 수정 화면은 RFC 를 요구하지 않는다(일상 업무 방해 �
   assert.ok(/kb\.style\.display=isNew\?'':'none'/.test(custform));
 });
 
-test('E1. 신규 등록 폼은 RFC 를 막지 않고 SYD 단가만 막는다 (0193)', () => {
+test('E1. 신규 등록 폼은 RFC·SYD 단가·TIER 를 막지 않는다 (0193 → 0267)', () => {
   const save = custform.match(/async function save\(\)[\s\S]*?\n  \}/);
   assert.ok(save, 'save() 를 찾지 못했다');
   const s = save[0];
@@ -404,7 +440,17 @@ test('E1. 신규 등록 폼은 RFC 를 막지 않고 SYD 단가만 막는다 (01
     'RFC 를 넣은 경우에만 형식을 본다');
   assert.ok(/\}else\{[\s\S]*b\.rfc=null;/.test(s), 'RFC 를 비우면 그대로 통과해야 한다');
   assert.ok(s.includes('RFC 없이 등록합니다'), '선점이 없다는 사실을 한 번은 확인받아야 한다');
-  assert.ok(s.includes('SYD 기준품목의 고객 구매단가를 입력해야 등록이 진행됩니다'));
+  // 0267 · 구매단가와 TIER 는 더 이상 저장을 막지 않는다. 서버도 안 막으므로
+  //   화면만 막으면 규칙이 두 곳에 생긴다 — 이 저장소가 여러 번 당한 실패 방식이다.
+  assert.ok(!s.includes('구매단가를 입력해야 등록이 진행됩니다'),
+    '구매단가로 저장을 막으면 단순화가 되돌아간다(0267)');
+  assert.ok(!s.includes('회사 종류(TIER A~D)를 선택해야 등록이 진행됩니다'),
+    'TIER 로 저장을 막으면 서버와 규칙이 갈라진다(0267)');
+  // 대신 **결과를 알려 주고 한 번 확인받는다** — 돈이 걸린 선택이라 조용히 넘기지 않는다.
+  assert.ok(s.includes('기준품목(SYD) 구매단가 없이 등록합니다'),
+    '근거 없이 할인율을 정한다는 사실은 알려야 한다');
+  // 이메일·전화는 계속 막는다(CRM 이 요구한다).
+  assert.ok(s.includes('이메일 주소를 입력해야 저장됩니다') && s.includes('전화번호를 입력해야 등록이 진행됩니다'));
   assert.ok(!s.includes('CONSTANCIA 번호를 입력해야'), 'CONSTANCIA 번호를 다시 필수로 만들면 안 된다');
   assert.ok(!s.includes('CONSTANCIA 스캔본(PDF)을 첨부하세요'), 'CONSTANCIA 파일을 다시 필수로 만들면 안 된다');
   assert.ok(s.includes('constancia_file'), '첨부한 경우에는 body 에 실려야 서버가 저장한다');
@@ -457,15 +503,18 @@ test('E7. 견적·현장조사에서 "자동 등록" 안내 문구가 사라졌�
 });
 
 test('E8. 빌드 마커가 올라갔다(하드 리프레시 확인용)', () => {
-  assert.ok(custform.includes('v20260909docs3'));
-  assert.ok(custHtml.includes('refatrix-custform.js?v=20260909docs3'), 'custform 캐시버스터 동기화');
+  // 0267 · 캐시버스터는 **양쪽이 같아야** 한다. 어긋나면 옛 custform 이 계속 뜬다.
+  const m = custHtml.match(/refatrix-custform\.js\?v=([A-Za-z0-9_-]+)/);
+  assert.ok(m, 'custform 캐시버스터를 찾지 못했다');
+  assert.equal(m[1], '20261009ratify', '0267 배포 마커');
   // 탭 제목 마커는 화면이 바뀔 때마다 올라간다(merge-0903 = 🔗 고객 병합 추가).
   assert.ok(custHtml.includes('merge-0903'));
 });
 
 test('E9. 화면 문구가 "RFC 로 선점" 으로 바뀌었다', () => {
   assert.ok(custform.includes('🔒 내 고객 선점 — RFC 입력 시점이 우선권'));
-  assert.ok(custHtml.includes('RFC 가 없는 고객은 선점되지 않은 상태'), '승인 대기 탭 안내');
+  // 0267 · 사후승인 탭으로 바뀌면서 안내 문구도 바뀌었다.
+  assert.ok(custHtml.includes('여기 있는 고객들은 이미 쓰이고 있습니다'), '사후승인 탭 안내');
   assert.ok(custHtml.includes('RFC 선점이 풀립니다'), '반려 확인 문구');
   assert.ok(custHtml.includes('rfc_claim_exempt'), '레거시 중복 고객은 상세에서 보호 제외임을 알려야 한다');
 });
@@ -540,7 +589,7 @@ test('F5. 마이그레이션 0193 — 선점 시각/선점자 + 대기 요청 �
 test('F6. 등록 응답이 「선점됐는지」를 분명히 말한다', () => {
   assert.ok(/claimed_by: rfcClean \? 'rfc' : null/.test(custRoutes),
     'RFC 없이 등록했는데 claimed_by 가 채워지면 영업사원이 선점된 줄 안다');
-  assert.ok(custRoutes.includes('아직 선점되지 않았습니다'), 'RFC 없이 등록한 사람에게 결과를 말해야 한다');
+  assert.ok(custRoutes.includes('아직 선점되지 않았고'), 'RFC 없이 등록한 사람에게 결과를 말해야 한다');
   assert.ok(custRoutes.includes('우선권이 갑니다'), '누가 가져갈 수 있는지까지 말해야 행동이 바뀐다');
 });
 
@@ -601,8 +650,9 @@ test('F12. 승인 화면이 「RFC 없음」과 유사 상호를 보여 준다',
   assert.ok(custHtml.includes('claimTabBtn') && custHtml.includes('tab-claim'), '선점 이관 탭');
   assert.ok(custHtml.includes('우선권의 근거'), '요청 시각이 왜 중요한지 화면에서 말해야 한다');
   assert.ok(custHtml.includes('claimRfcNow'), '상세에서 바로 RFC 를 채워 선점을 확정할 수 있어야 한다');
-  // 전원 승인 대기로 바뀐 사실이 안내에 반영돼야 한다
-  assert.ok(custHtml.includes('디렉터가 직접 등록한 건도 포함'));
+  // 0267 · 사후승인으로 바뀐 사실이 안내에 반영돼야 한다
+  assert.ok(custHtml.includes('등록되는 순간 활성이 되고 CRM'),
+    '이 목록의 고객이 이미 쓰이고 있다는 사실을 디렉터가 알아야 반려를 함부로 누르지 않는다');
 });
 
 test('F13. 등록 폼에서 「이 고객을 내 RFC 로 선점」 경로가 살아 있다', () => {

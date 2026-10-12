@@ -35,7 +35,7 @@
     +'</div>'
     +'<div class="rcf-row">'
       +'<div class="rcf-f"><label>RFC(세금번호)<span id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none"> — 선택 · 입력하면 그 순간 선점</span></label><input id="rcf-rfc" type="text" placeholder="예: ABC010203XY1"><div id="rcf-rfcmsg" style="font-size:11px;margin-top:3px"></div></div>'
-      +'<div class="rcf-f rcf-grow"><label>회사 종류 · TIER *<span id="rcf-typewarn" style="color:#B23A2E;font-weight:700;display:none"> ⚠ 미지정</span></label><select id="rcf-type"><option value="">Sin seleccionar</option><option value="A">A · Distribuidor mayorista / cliente estratégico</option><option value="B">B · Distribuidor medio / refaccionaria grande</option><option value="C">C · Refaccionaria / taller establecido</option><option value="D">D · Cliente nuevo / pequeño volumen</option></select></div>'
+      +'<div class="rcf-f rcf-grow"><label>회사 종류 · TIER<span id="rcf-typewarn" style="color:#B23A2E;font-weight:700;display:none"> ⚠ 미지정</span></label><select id="rcf-type"><option value="">Sin seleccionar</option><option value="A">A · Distribuidor mayorista / cliente estratégico</option><option value="B">B · Distribuidor medio / refaccionaria grande</option><option value="C">C · Refaccionaria / taller establecido</option><option value="D">D · Cliente nuevo / pequeño volumen</option></select></div>'
       +'<div class="rcf-f"><label>담당자</label><select id="rcf-owner"><option value="">미지정</option></select></div>'
       +'<div class="rcf-f"><label>단계</label><select id="rcf-stage"><option value="">미지정</option></select></div>'
     +'</div>'
@@ -97,11 +97,11 @@
     +'</div>'
     // ===== 0185 · 기준품목 구매단가 → 할인율 제안 =====
     +'<div id="rcf-basebox" style="display:none;border:1px solid #c9a227;background:#fffdf4;border-radius:9px;padding:11px 12px">'
-      +'<div style="font-size:12.5px;font-weight:700;color:#7a6212;margin-bottom:2px">💲 기준품목 구매단가 → 할인율 산출 (필수)</div>'
+      +'<div style="font-size:12.5px;font-weight:700;color:#7a6212;margin-bottom:2px">💲 기준품목 구매단가 → 할인율 산출 (선택 — 넣으면 제안 할인율을 계산합니다)</div>'
       +'<div style="font-size:11.5px;color:#8a7328;margin-bottom:8px">이 고객이 경쟁사(SYD) 기준품목을 <b>얼마에 사는지</b> 입력하면, 우리 제품을 그 가격보다 5% 싸게 주기 위한 할인율을 제안합니다.</div>'
       +'<div class="rcf-row">'
         +'<div class="rcf-f"><label>기준품목 (SYD 코드)</label><input id="rcf-basecode" type="text" value="1516049" style="font-family:ui-monospace,Consolas,monospace;font-weight:700"></div>'
-        +'<div class="rcf-f"><label>고객 구매단가 (MXN) *</label><input id="rcf-baseprice" type="number" step="0.01" min="0" placeholder="0.00" style="text-align:right;font-weight:700"></div>'
+        +'<div class="rcf-f"><label>고객 구매단가 (MXN)</label><input id="rcf-baseprice" type="number" step="0.01" min="0" placeholder="0.00" style="text-align:right;font-weight:700"></div>'
         +'<div class="rcf-f" style="flex:0 0 auto;justify-content:flex-end"><button type="button" class="btn ghost" id="rcf-basecalc" style="padding:8px 12px">계산</button></div>'
       +'</div>'
       +'<div id="rcf-basepanel" style="margin-top:8px"></div>'
@@ -554,7 +554,10 @@
     if(!validEmail(b.contact)){ setMsg('err','이메일 주소 형식이 올바르지 않습니다. (예: ejemplo@correo.com)'); focusField('rcf-contact'); return; }
     if(!editingId){
       if(!b.phone){ setMsg('err','⛔ 전화번호를 입력해야 등록이 진행됩니다 — CRM 이 새 RFC 에 요구하는 항목입니다.'); focusField('rcf-phone'); return; }
-      if(!b.customer_type){ setMsg('err','⛔ 회사 종류(TIER A~D)를 선택해야 등록이 진행됩니다 — CRM 의 businessTypeId 로 나갑니다.'); focusField('rcf-type'); return; }
+      // 0267 · 회사 종류(TIER) 필수를 **풀었다**(디렉터 지시 2026-10-09).
+      //   비워 두면 CRM 전송 때 businessTypeId 를 D 로 메운다(crmSync 2026-09-23).
+      //   막지 않는 대신 **분류가 추정값이 된다는 사실만** 알려 준다 — 서버도 막지 않으므로
+      //   여기서 막으면 규칙이 두 곳에 생긴다(이 프로젝트에서 여러 번 사고가 난 방식).
     }
 
     // ===== 0193 · 신규 등록 필수값 =====
@@ -572,10 +575,17 @@
         showRfcMsg('empty');
         if(!window.confirm('RFC 없이 등록합니다.\n\n⚠ 이 고객은 아직 선점되지 않습니다. 나중에 다른 영업사원이 이 고객에 RFC 를 먼저 입력하면 그 시점·그 담당자에게 우선권이 넘어갑니다.\n또한 RFC 가 없으면 매출(팩투라) 확정이 막힙니다.\n\n이대로 등록할까요?')) return;
       }
+      // 0267 · 기준품목(SYD) 구매단가 필수를 **풀었다**(디렉터 지시 2026-10-09).
+      //   넣으면 종전대로 제안 할인율이 계산되고, 비우면 근거 없이 입력한 할인율만 남는다.
+      //   비울 수 있게 됐으니 **그 결과를 한 번 확인받는다** — 제안값을 보지 않고 할인율을
+      //   적는 것은 돈이 걸린 선택이고, 디렉터 사후승인 화면에도 「근거 없음」으로 뜬다.
       var bp=($('rcf-baseprice')&&$('rcf-baseprice').value)||'';
       if(!bp||Number(bp)<=0){
-        var bpEl=$('rcf-baseprice'); if(bpEl){ try{ bpEl.focus(); }catch(e){} }
-        setMsg('err','⛔ SYD 기준품목의 고객 구매단가를 입력해야 등록이 진행됩니다 — 할인율 산출의 근거입니다.'); return;
+        if(!window.confirm('기준품목(SYD) 구매단가 없이 등록합니다.\n\n제안 할인율을 계산할 근거가 없어, 입력하신 할인율 '
+          +(b.discount==null?'':b.discount)+'% 가 근거 없이 적용됩니다.\n디렉터 사후승인 화면에는 「근거 없음」으로 표시됩니다.\n\n이대로 등록할까요?')) {
+          var bpEl=$('rcf-baseprice'); if(bpEl){ try{ bpEl.focus(); }catch(e){} }
+          return;
+        }
       }
       // 저장 직전 선점 재확인 — 입력 중 다른 사람이 먼저 등록했을 수 있다.
       //   RFC 를 넣은 경우에만 차단한다(RFC 없이 등록하는 건 상호 유사 경고만 뜨고 통과).
@@ -645,11 +655,15 @@
         setMsg('err',msg); $('rcf-save').disabled=false; return;
       }
       if(d.pending){ setMsg('pend', (d.cross_team?'타팀 고객 수정 요청을 보냈습니다. ':'수정 요청을 보냈습니다. ')+(td?'할인·외상일 변경은 디렉터 승인 후 반영·이력 기록됩니다.':'디렉터 승인 후 반영됩니다.')); }
-      else if(!editingId&&d.pending_approval){
+      // 0267 · 사후승인. 등록은 **끝났고 바로 쓸 수 있다** — 「요청」이 아니다.
+      //   예전 키(pending_approval)도 같이 본다: 구버전 서버로 되돌려도 안내가 사라지지 않는다.
+      else if(!editingId&&(d.awaiting_ratify||d.pending_approval)){
         // 0193 · 선점 여부에 따라 문구가 갈린다(서버가 note 로 내려 준다).
-        setMsg(d.rfc_claimed?'pend':'warn','등록 요청: '+(d.code||'')+' · '+b.name+' — '
-          +(d.note||'디렉터 승인 후 견적·매출에 쓸 수 있습니다.')
-          +(d.suggested_discount!=null?(' (제안 '+fmtPct(d.suggested_discount)+' · 신청 '+fmtPct(b.discount)+')'):'')
+        setMsg(d.rfc_claimed?'ok':'warn','등록 완료: '+(d.code||'')+' · '+b.name+' — '
+          +(d.note||'지금 바로 견적에 쓸 수 있습니다.')
+          +(d.suggested_discount!=null
+              ?(' (제안 '+fmtPct(d.suggested_discount)+' · 적용 '+fmtPct(b.discount)+')')
+              :(' (할인율 '+fmtPct(b.discount)+' · 제안 근거 없음)'))
           +(d.docs_note?(' · '+d.docs_note):'')
           +(d.warning_note?(' ⚠ '+d.warning_note):''));
       }

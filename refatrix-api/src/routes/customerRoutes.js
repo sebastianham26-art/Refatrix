@@ -54,6 +54,25 @@ async function regColumnsReady() {
   return _regReady;
 }
 
+// 0267 · 사후승인 축(ratified_at) 적용 여부.
+//   ⚠ 긍정만 캐싱한다(이 저장소의 관례). false 는 30초 뒤 다시 본다 —
+//     배포 직후 마이그레이션이 늦게 적용되는 창에서 「없다」가 굳으면,
+//     컬럼이 생긴 뒤에도 화면이 계속 옛 길로 가고 아무도 이유를 모른다.
+let _ratifyReady = false, _ratifyCheckedAt = 0;
+async function ratifyColsReady() {
+  if (_ratifyReady) return true;
+  const now = Date.now();
+  if (now - _ratifyCheckedAt < 30000) return false;
+  _ratifyCheckedAt = now;
+  try {
+    const r = (await query(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+        WHERE table_name='customers' AND column_name IN ('ratified_at','ratified_by')`)).rows[0];
+    _ratifyReady = Number(r.n) >= 2;
+  } catch (_) { _ratifyReady = false; }
+  return _ratifyReady;
+}
+
 // 0188 · RFC 선점 예외 컬럼(rfc_claim_exempt) + 유니크 인덱스 적용 여부.
 //   미적용이어도 등록은 막지 않는다 — 애플리케이션 사전조회로 선점을 판정하고,
 //   DB 유니크(동시성 최종 방어선)만 없는 상태로 동작한다.
@@ -1215,9 +1234,13 @@ export default async function customerRoutes(app) {
     }
     if (!b.name) return reply.code(400).send({ error: 'missing_fields' });
 
-    // ── 20260918tier · CRM 이 새 RFC 에 요구하는 4종 ──────────────────
+    // ── 20260918tier → **0267 개정** · 이메일·전화만 필수로 남긴다 ────
     //   razonSocial = name(위에서 검사) · contactEmail · contactPhone · businessTypeId = customer_type.
-    //   ⚠ 엑셀 일괄등록(POST /api/customers/import/commit)과 CRM 수신 창구는 이 경로를 타지 않는다.
+    //   이메일·전화를 계속 막는 이유: **상대(CRM)가 새 RFC 에 요구하는 값**이고, 우리가 없는 값을
+    //   지어내 보낼 수는 없다. 비우고 등록하면 그 고객은 CRM 등록이 거절되어 카달록에서
+    //   가격도 재고도 못 본다 — 입력 한 칸을 아끼고 고객을 잃는 거래다.
+    //   회사 종류(TIER)는 **풀었다**(디렉터 지시 2026-10-09). 비어 있으면 CRM 전송 때
+    //   `businessTypeId` 를 D 로 메운다(crmSync.businessTypeFallback — 2026-09-23).
     const contactIn = String(b.contact == null ? '' : b.contact).trim();
     const phoneIn = String(b.phone == null ? '' : b.phone).trim();
     const tierIn = String(b.customer_type == null ? '' : b.customer_type).trim();
@@ -1225,9 +1248,7 @@ export default async function customerRoutes(app) {
     if (!isEmailAddr(contactIn)) return reply.code(400).send({ error: 'contact_invalid', note: CONTACT_INVALID_NOTE });
     if (!phoneIn) return reply.code(400).send({ error: 'phone_required',
       note: '전화번호를 입력해야 고객을 등록할 수 있습니다 — CRM 이 새 RFC 에 요구하는 항목입니다.' });
-    if (!tierIn) return reply.code(400).send({ error: 'business_type_required',
-      note: '회사 종류(TIER A~D)를 선택해야 고객을 등록할 수 있습니다 — CRM 의 businessTypeId 로 나갑니다.' });
-    b.contact = contactIn; b.phone = phoneIn; b.customer_type = tierIn;
+    b.contact = contactIn; b.phone = phoneIn; b.customer_type = tierIn || null;
 
     const teamId = b.team_id ? Number(b.team_id) : (perm.teamId || null);
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
@@ -1335,14 +1356,16 @@ export default async function customerRoutes(app) {
     //   디렉터 승인 카드에 「유사 고객」 을 실어 보내 사람이 판단할 재료를 남긴다.
     const similar = await findSimilarCustomers(b.name, { excludeId: null });
 
-    // ── ④ 기준품목 단가 → 할인율 근거 스냅샷 ──────────────────────────
+    // ── ④ 기준품목 단가 → 할인율 근거 스냅샷 (**0267: 선택 입력**) ────
+    //   디렉터 지시(2026-10-09)로 필수를 풀었다. 넣으면 종전대로 제안 할인율을 계산해
+    //   `suggested_discount` 로 남기고, 비우면 **근거 없이** 등록자가 정한 할인율만 남는다.
+    //   ⚠ 대체 산출 경로를 만들지 않았다 — TIER 별 기본 할인율 같은 표는 이 시스템에 없고,
+    //     없는 표를 지어내면 「근거처럼 보이는 숫자」가 생겨 사후승인이 그걸 믿게 된다.
+    //     근거가 없으면 **없다고 보여 주는 쪽**이 맞다(사후승인 화면이 그렇게 표시한다).
     const baseCode = String(b.syd_ref_code || SYD_BASE_CODE).trim();
-    const buyPrice = (b.syd_ref_buy_price == null || b.syd_ref_buy_price === '') ? null : Number(b.syd_ref_buy_price);
-    if (buyPrice == null || !Number.isFinite(buyPrice) || buyPrice <= 0) {
-      return reply.code(400).send({ error: 'syd_ref_price_required',
-        note: `기준품목 ${baseCode} 의 고객 구매단가를 입력해야 합니다.` });
-    }
-    const base = (await query(
+    const buyRaw = (b.syd_ref_buy_price == null || b.syd_ref_buy_price === '') ? null : Number(b.syd_ref_buy_price);
+    const buyPrice = (buyRaw != null && Number.isFinite(buyRaw) && buyRaw > 0) ? buyRaw : null;
+    const base = buyPrice == null ? null : (await query(
       `SELECT p.code, p.list_price_syd, p.list_price
          FROM product_syd_codes sc JOIN products p ON p.id=sc.product_id AND p.deleted_at IS NULL
         WHERE sc.syd_code=$1 ORDER BY p.code LIMIT 1`, [baseCode])).rows[0]
@@ -1352,7 +1375,10 @@ export default async function customerRoutes(app) {
         ['%' + baseCode.replace(/([%_\\])/g, '\\$1') + '%'])).rows[0] || null;
     const sydLP = base?.list_price_syd != null ? Number(base.list_price_syd) : null;
     const ctrLP = base?.list_price != null ? Number(base.list_price) : null;
-    const calc = computeBaselineDiscount({ buy_price: buyPrice, syd_list_price: sydLP, ctr_list_price: ctrLP });
+    //   구매단가가 없으면 계산을 **시도하지 않는다** — 빈 근거를 들고 제안값을 만들지 않는다.
+    const calc = buyPrice == null
+      ? { suggested_discount: null, syd_discount: null, target_price: null, error: null }
+      : computeBaselineDiscount({ buy_price: buyPrice, syd_list_price: sydLP, ctr_list_price: ctrLP });
 
     // ── ⑤ 등록자가 정한 할인율 ────────────────────────────────────────
     const chosen = validateChosenDiscount(b.discount);
@@ -1361,11 +1387,20 @@ export default async function customerRoutes(app) {
         note: `기본 할인율을 0~${MAX_DISCOUNT_PCT}% 범위로 입력하세요(제안값: ${calc.suggested_discount ?? '—'}%).` });
     }
 
-    // 0193 · **예외 없이 승인 대기.** 디렉터가 직접 등록해도 pending 이다.
-    //   승인 경로가 하나여야 등록 이력·커미션 귀속·유사고객 검토가 한 군데서 끝난다.
-    //   (디렉터는 승인 대기 탭에서 자기 건을 바로 승인하면 되므로 실무 비용은 클릭 한 번이다.)
+    // 0193 → **0267 개정 · 사후승인.** 등록이 승인을 기다리지 않는다.
+    //   디렉터 지시(2026-10-09): "디렉터 사후승인으로 하자. 디렉터가 승인안한걸 모아서
+    //   나중에 승인하는 걸로 해줘"
+    //
+    //   그래서 신규 고객은 등록되는 즉시 `approved` 다 — 견적도 되고 CRM 으로도 바로 나간다.
+    //   디렉터의 승인은 **게이트가 아니라 사후 확인**이고, 그 축은 `ratified_at` 이다(0267).
+    //
+    //   ★ `approval_status` 에 새 뜻을 끼워 넣지 않은 이유: 이 값은 견적 차단 4곳,
+    //     CRM 수신 견적 차단, CRM 상태값 변환(pendiente), 독점·조건 트리거(0235·0247),
+    //     리드 팝업, 목록 배지 등 20여 곳에서 읽힌다. 「pending 인데 쓸 수 있는 고객」을
+    //     만들면 그 전부를 고쳐야 하고, 한 곳만 놓치면 고객이 조용히 막힌다.
+    //     승인 여부를 별도 축으로 뺐으므로 **그 20여 곳은 한 줄도 고치지 않았다.**
     const isDir = perm.role === 'director';
-    const status = 'pending';
+    const status = 'approved';
     const claimOn = await claimTableReady();
 
     // ── 0212 · 웹에서 들어온 고객은 **P-####** 다 ──────────────────────
@@ -1423,7 +1458,9 @@ export default async function customerRoutes(app) {
            b.constancia_fiscal || null, conNo || null,
            baseCode, buyPrice, sydLP, calc.syd_discount,
            base?.code || null, ctrLP, calc.suggested_discount,
-           // 0193 · 항상 pending 이므로 승인자·승인시각은 비운다(디렉터 등록도 예외 없음).
+           // 0267 · 상태는 approved 로 들어가지만 **승인자·승인시각은 비운다** —
+           //   아직 아무도 승인하지 않았다. 사후승인은 ratified_at 축이 들고 있고,
+           //   그 컬럼은 기본값 NULL 이라 여기서 쓸 것이 없다(= 사후승인 대기).
            status, null, null,
            perm.userId,
            ...(crmColsOn ? [leadSrc.crm_lead_code || null, leadSrc.received_at] : [])])).rows[0];
@@ -1501,8 +1538,12 @@ export default async function customerRoutes(app) {
     if (initTerms.length) {
       try {
         await logTermsHistory(row.id, initTerms, {
-          reason: '신규 등록 초기값 (기준품목 ' + baseCode + ' 구매단가 ' + buyPrice + ' → 제안 ' + (calc.suggested_discount ?? '—') + '%)',
-          // 0193 · 등록은 전부 pending 이라 이 시점의 승인자는 없다(승인 시 이력이 따로 남는다).
+          // 0267 · 구매단가가 선택이 되었으니 「근거 없음」도 사실대로 적는다.
+          reason: buyPrice == null
+            ? '신규 등록 초기값 (기준품목 구매단가 미입력 — 제안 할인율 근거 없음)'
+            : '신규 등록 초기값 (기준품목 ' + baseCode + ' 구매단가 ' + buyPrice
+              + ' → 제안 ' + (calc.suggested_discount ?? '—') + '%)',
+          // 0267 · 사후승인이므로 이 시점의 승인자는 없다(사후승인 시 이력이 따로 남는다).
           conditions: null, changedBy: perm.userId, approvedBy: null });
       } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
     }
@@ -1514,22 +1555,41 @@ export default async function customerRoutes(app) {
     const leadId = leadSrc ? Number(leadSrc.id) : 0;
     if (leadId > 0) {
       try {
-        // 0211 · 등록은 **완결이 아니다.** 디렉터 승인이 나야 끝이고, 그때까지 담당자
-        //   화면에는 이 건이 계속 팝업으로 뜬다(등록만 하고 승인을 안 챙기면 고객은
-        //   여전히 홈페이지에서 가격을 못 본다).
+        // 0211 → **0267 개정 · 등록이 곧 완결이다.** 예전에는 디렉터 승인까지 팝업이
+        //   계속 떠 있었다(승인 전에는 고객이 카달록에서 가격을 못 봤으니 맞는 설계였다).
+        //   이제 등록 즉시 활성이고 CRM 으로도 나가므로, 담당자가 더 할 일이 없다 —
+        //   여기서 닫는다. 사후승인은 디렉터의 일이고 담당자 팝업과는 무관하다.
+        //   (리드 팝업의 OPEN_WHERE 는 approved 고객을 이미 제외하므로 두 길이 같은 답을 낸다.)
         const lk = (await query(
           `UPDATE crm_web_leads
-              SET status='registered', customer_id=$1, registered_at=now()
+              SET status='done', customer_id=$1, registered_at=now(),
+                  closed_by=$3, closed_at=now()
             WHERE id=$2 AND status IN ('new','assigned')
-            RETURNING id, crm_lead_code`, [row.id, leadId])).rows[0];
+            RETURNING id, crm_lead_code`, [row.id, leadId, perm.userId])).rows[0];
         if (lk) leadLinked = { id: Number(lk.id), crm_lead_code: lk.crm_lead_code || null };
       } catch (_) { /* 0210 미적용이거나 이미 닫힌 건 — 등록은 그대로 진행 */ }
     }
 
+    // ── ⑦-c 0267 · **CRM 전송은 이제 등록 시점이다.** ──────────────────
+    //   예전에는 승인 라우트(origin='registration_approve')만 전송했다. 사후승인으로
+    //   바뀌었으니 전송을 승인에 매어 두면 디렉터가 늦게 보는 동안 고객이 카달록에서
+    //   가격을 못 본다 — 단순화의 목적이 그것이었다.
+    //   ⚠ enqueueCustomerSync 는 절대 throw 하지 않는다(crmSync.js). 전송 실패가
+    //     등록을 되돌리지 않는 것이 이 아웃박스 설계의 요점이다.
+    //   RFC 가 없으면 CRM 조회 키가 없으므로 skipped 로 남는다(종전과 동일).
+    await enqueueCustomerSync(row.id, 'upsert',
+      { origin: 'registration_create', actorUserId: perm.userId, app });
+
     await safeLog({ userId: perm.userId, action: 'create', target: `customer:${row.id}`,
-      detail: { approval_status: status, rfc_claimed: !!rfcClean, lead_id: leadLinked ? leadId : null } });
+      detail: { approval_status: status, ratified: false,
+        rfc_claimed: !!rfcClean, lead_id: leadLinked ? leadId : null } });
     return { ok: true, id: row.id, code: row.code, approval_status: status, lead_linked: leadLinked,
-      pending_approval: true, calc, suggested_discount: calc.suggested_discount,
+      // 0267 · 고객은 **이미 쓸 수 있다.** 기다리는 것은 디렉터의 사후 확인뿐이다.
+      //   예전 키(pending_approval)는 「아직 못 쓴다」는 뜻으로 화면들이 읽고 있었으므로
+      //   false 로 고정하고, 사후승인 대기는 새 키로 알린다(뜻이 다른 두 사실을 한 키에
+      //   담으면 다음 사람이 반드시 틀린 쪽으로 읽는다).
+      pending_approval: false, awaiting_ratify: true,
+      calc, suggested_discount: calc.suggested_discount,
       // 0193 · RFC 를 넣었으면 그 순간 선점됐고, 안 넣었으면 선점이 없다(나중에 남이 가져갈 수 있다).
       claimed_by: rfcClean ? 'rfc' : null, rfc_claimed: !!rfcClean,
       rfc: rfcClean, constancia_no: conNo || null, constancia_doc: !!docBuf && !docWarning,
@@ -1547,9 +1607,12 @@ export default async function customerRoutes(app) {
           ? '외상 30일 ✔' : '외상 불가(선입금) — 경쟁사 서스펜션 구매 인보이스를 올려야 외상이 적용됩니다',
       ].join(' · '),
       similar,
+      // 0267 · 「요청을 보냈습니다」가 아니다. 등록이 끝났고 바로 쓸 수 있다.
       note: rfcClean
-        ? `등록 요청을 보냈습니다 — RFC ${rfcClean} 로 선점되었고, 디렉터 승인 후 견적·매출에 쓸 수 있습니다.`
-        : '등록 요청을 보냈습니다 — ⚠ RFC 가 비어 있어 **아직 선점되지 않았습니다.** '
+        ? `등록을 완료했습니다 — RFC ${rfcClean} 로 선점되었고, 지금 바로 견적에 쓸 수 있습니다. `
+          + 'CRM(웹카달록) 으로도 전송했습니다. 디렉터 사후승인은 따로 진행됩니다.'
+        : '등록을 완료했습니다 — 지금 바로 견적에 쓸 수 있습니다. '
+          + '⚠ RFC 가 비어 있어 **아직 선점되지 않았고**, CRM 전송도 RFC 가 있어야 됩니다. '
           + '다른 영업사원이 이 고객에 RFC 를 먼저 입력하면 그 사람에게 우선권이 갑니다. RFC 를 받는 대로 입력하세요.',
       warning: docWarning,
       warning_note: docWarning
@@ -2131,11 +2194,29 @@ export default async function customerRoutes(app) {
   });
 
   // =====================================================================
-  // 0185 · 고객 등록 승인 (디렉터)
+  // 0185 → **0267 · 고객 등록 사후승인 (디렉터)**
+  //
+  //   바뀐 것: 이 목록은 「쓸 수 없는 고객」이 아니라 「**이미 쓰고 있는데 아직 확인
+  //   안 한 고객**」이다. 그래서 필터가 `approval_status='pending'` 에서
+  //   `ratified_at IS NULL` 로 옮겨 갔다 — 사후승인 여부를 묻는 조건이 **한 곳**이다.
+  //
+  //   `?status=` 는 하위호환으로 남긴다(옛 화면이 보내도 깨지지 않게):
+  //     status 없음 | 'pending'  → 사후승인 대기 (ratified_at IS NULL, 반려 제외)
+  //     'approved'              → 사후승인 완료
+  //     'rejected'              → 반려된 고객
   // =====================================================================
   app.get('/api/customer-registrations', { preHandler: [authGuard, requireDirector] }, async (req) => {
     if (!(await regColumnsReady())) return { items: [], migration_required: true };
+    const ratifyOn = await ratifyColsReady();
+    if (!ratifyOn) return { items: [], migration_required: true, need: '0267' };
     const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
+    //   반려 건은 대기 목록에 섞이지 않는다 — 0267 마이그레이션이 ratified_at 을 채워 닫지만,
+    //   그 뒤 사후 반려된 건도 있으므로 조건으로 한 번 더 못 박는다.
+    const WHERE_BY_STATUS = {
+      pending: `c.ratified_at IS NULL AND COALESCE(c.approval_status,'approved') <> 'rejected'`,
+      approved: `c.ratified_at IS NOT NULL AND COALESCE(c.approval_status,'approved') = 'approved'`,
+      rejected: `COALESCE(c.approval_status,'approved') = 'rejected'`,
+    };
     const claimsOn = await claimTableReady();
     const rows = (await query(
       `SELECT c.id, c.code, c.name, c.rfc, c.constancia_no, COALESCE((to_jsonb(c)->>'discount_agreed')::numeric, c.discount) AS discount, COALESCE((to_jsonb(c)->>'credit_days_agreed')::int, c.credit_days) AS credit_days,
@@ -2150,13 +2231,22 @@ export default async function customerRoutes(app) {
                 WHERE e.customer_id=c.id AND e.action='submit'
                 ORDER BY e.acted_at LIMIT 1) AS submit_snapshot,
               (SELECT count(*) FROM customer_documents d
-                WHERE d.customer_id=c.id AND d.deleted_at IS NULL AND d.doc_type='constancia') AS constancia_docs
+                WHERE d.customer_id=c.id AND d.deleted_at IS NULL AND d.doc_type='constancia') AS constancia_docs,
+              -- 0267 · **사후 반려는 되돌리는 일이다.** 이 고객에 이미 견적·매출이 붙어
+              --   있으면 반려는 그 일까지 건드린다. 디렉터가 누르기 전에 보여 줘야 한다.
+              (SELECT count(*) FROM quotes q
+                WHERE q.customer_id=c.id AND q.deleted_at IS NULL) AS quote_cnt,
+              (SELECT count(*) FROM invoices i
+                WHERE i.customer_id=c.id AND i.deleted_at IS NULL) AS sale_cnt,
+              to_char(c.ratified_at,'YYYY-MM-DD HH24:MI') AS ratified_at,
+              ru.name AS ratified_by_name
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN users cu ON cu.id=c.created_by
-        WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved')=$1
-        ORDER BY c.created_at DESC LIMIT 200`, [status])).rows;
+         LEFT JOIN users ru ON ru.id=c.ratified_by
+        WHERE c.deleted_at IS NULL AND ${WHERE_BY_STATUS[status]}
+        ORDER BY c.created_at DESC LIMIT 200`)).rows;
     return {
       items: rows.map((r) => ({
         id: Number(r.id), code: r.code, name: r.name, rfc: r.rfc || null,
@@ -2173,6 +2263,10 @@ export default async function customerRoutes(app) {
         customer_type: r.customer_type, memo: r.memo,
         team_name: r.team_name, owner_name: r.owner_name, created_by_name: r.created_by_name,
         registered_at: r.registered_at, approval_status: r.approval_status,
+        // 0267 · 사후승인 축. ratified_at 이 null 이면 「아직 확인 안 함」 — 쓸 수 없다는 뜻이 아니다.
+        ratified_at: r.ratified_at || null, ratified_by_name: r.ratified_by_name || null,
+        // 사후 반려가 무엇을 건드리는지 — 디렉터가 누르기 전에 알아야 하는 숫자.
+        quote_cnt: Number(r.quote_cnt || 0), sale_cnt: Number(r.sale_cnt || 0),
         crm_customer_code: r.crm_customer_code || null,
         from_crm: !!(r.crm_customer_code || /^p-/i.test(String(r.code || ''))),
         // 0193 · RFC 없이 올라온 건은 **선점이 없는 상태**다. 승인 화면에서 눈에 띄어야 한다.
@@ -2188,8 +2282,16 @@ export default async function customerRoutes(app) {
   app.post('/api/customer-registrations/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const perm = req.ctx.perm;
+    if (!(await ratifyColsReady())) {
+      return reply.code(503).send({ error: 'migration_required',
+        note: '사후승인(0267) 마이그레이션이 아직 적용되지 않았습니다. Railway 콘솔에서 npm run migrate 를 먼저 실행하세요.' });
+    }
+    // 0267 · 대상 조건이 `pending` 에서 **`ratified_at IS NULL`** 로 옮겨 갔다.
+    //   반려된 고객은 사후승인 대상이 아니다(반려를 되돌리려면 고객 수정 경로를 쓴다).
     const c = (await query(
-      `SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(approval_status,'approved')='pending'`,
+      `SELECT * FROM customers
+        WHERE id=$1 AND deleted_at IS NULL AND ratified_at IS NULL
+          AND COALESCE(approval_status,'approved') <> 'rejected'`,
       [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
     agreedTerms(c);
@@ -2205,14 +2307,19 @@ export default async function customerRoutes(app) {
       if (!v.ok) return reply.code(400).send({ error: v.error });
       discount = v.value;
     }
+    // 0267 · 사후승인은 **ratified_* 를 채우는 일**이다. approval_status 는 등록 때 이미
+    //   approved 이지만, 0267 전환으로 넘어온 고객(예전 pending)과 혹시 모를 수동 변경을
+    //   생각해 여기서도 approved 로 못 박는다 — 멱등하고, 상태가 갈라지지 않는다.
     await query(
       `UPDATE customers SET approval_status='approved', approved_by=$1, approved_at=now(),
+              ratified_at=now(), ratified_by=$1, ratified_note=$4,
               rejected_reason=NULL, discount=$2, updated_by=$1 WHERE id=$3`,
-      [perm.userId, discount, id]);
+      [perm.userId, discount, id,
+       (req.body && req.body.reason) ? String(req.body.reason).slice(0, 500) : null]);
     try {
       await query(
         `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
-         VALUES ($1,'approve',$2,$3,$4)`,
+         VALUES ($1,'ratify',$2,$3,$4)`,
         [id, (req.body && req.body.reason) ? String(req.body.reason) : null,
          JSON.stringify({ approved_discount: discount, requested_discount: c.discount == null ? null : Number(c.discount),
            suggested_discount: c.suggested_discount == null ? null : Number(c.suggested_discount),
@@ -2231,20 +2338,21 @@ export default async function customerRoutes(app) {
     const warns = [];
     if (!hadDoc) warns.push('constancia_missing');
     if (!hasRfc) warns.push('rfc_missing');
-    await safeLog({ userId: perm.userId, action: 'approve_registration', target: `customer:${id}`,
-      detail: { constancia_doc: hadDoc, rfc_claimed: hasRfc } });
-    // 0211 · 이 고객이 웹 가입 신청에서 온 건이면 **여기서 비로소 완결**이다.
-    //   담당자 화면의 팝업이 멈추는 지점이 바로 이 순간이다.
-    //   ⚠ 실패해도 승인을 되돌리지 않는다(승인이 본질, 리드 정리는 뒤처리).
+    await safeLog({ userId: perm.userId, action: 'ratify_registration', target: `customer:${id}`,
+      detail: { constancia_doc: hadDoc, rfc_claimed: hasRfc, discount } });
+    // 0211 → 0267 · 리드는 이제 **등록 시점에** 닫힌다. 여기 남겨 둔 것은 전환(0267)으로
+    //   넘어온 고객과, 등록 때 리드 정리가 실패했던 건을 위한 안전망이다 — 멱등하다.
     try {
       await query(
         `UPDATE crm_web_leads SET status='done', closed_by=$1, closed_at=now()
           WHERE customer_id=$2 AND status IN ('new','assigned','registered')`, [perm.userId, id]);
     } catch (_) { /* 0210/0211 미적용 — 승인은 그대로 진행 */ }
 
-    // → CRM 전송(신규 고객). RFC 가 없으면 skipped 로 남는다(CRM 조회 키가 RFC 이므로).
-    await enqueueCustomerSync(id, 'upsert', { origin: 'registration_approve', actorUserId: perm.userId, app });
-    return { ok: true, id, discount, constancia_doc: hadDoc, rfc_claimed: hasRfc,
+    // → CRM 전송. 등록 시점에 이미 한 번 나갔지만(origin=registration_create) 여기서
+    //   **다시** 보낸다: 디렉터가 할인율을 조정했을 수 있고, 0267 전환으로 넘어온 고객은
+    //   아직 한 번도 나가지 않았다. upsert 라 중복 전송이 해롭지 않다.
+    await enqueueCustomerSync(id, 'upsert', { origin: 'registration_ratify', actorUserId: perm.userId, app });
+    return { ok: true, id, discount, ratified: true, constancia_doc: hadDoc, rfc_claimed: hasRfc,
       warning: warns[0] || null, warnings: warns,
       warning_note: warns.length
         ? [
@@ -2255,27 +2363,120 @@ export default async function customerRoutes(app) {
   });
 
   // 반려: 선점을 풀어준다 — rejected 는 RFC·CONSTANCIA 두 유니크 인덱스 모두에서 빠진다 + 소프트 삭제.
+  //
+  // ★ 0267 · **반려의 성격이 바뀌었다.** 예전에는 아직 아무것도 못 한 고객을 걸러내는 일이었다.
+  //   이제 이 고객은 등록된 순간부터 활성이었으므로, 그 사이 견적이 나갔거나 팩투라가
+  //   발행됐을 수 있다. 그런 고객을 소프트 삭제하면 **이미 일어난 거래의 상대가 사라진다.**
+  //   그래서 붙어 있는 일을 먼저 보고 판단한다:
+  //     · 매출(팩투라)이 있으면 → **반려하지 않는다.** 되돌릴 수 없는 일이 이미 끝났다.
+  //     · 견적만 있으면       → 디렉터가 confirm 을 보내야 진행한다(화면이 숫자를 보여 주고 묻는다).
   app.post('/api/customer-registrations/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const perm = req.ctx.perm;
     const reason = (req.body && req.body.reason) ? String(req.body.reason).trim() : '';
     if (!reason) return reply.code(400).send({ error: 'reason_required', note: '반려 사유를 입력하세요.' });
+    if (!(await ratifyColsReady())) {
+      return reply.code(503).send({ error: 'migration_required',
+        note: '사후승인(0267) 마이그레이션이 아직 적용되지 않았습니다. Railway 콘솔에서 npm run migrate 를 먼저 실행하세요.' });
+    }
     const c = (await query(
-      `SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(approval_status,'approved')='pending'`,
+      `SELECT id, name, code FROM customers
+        WHERE id=$1 AND deleted_at IS NULL AND ratified_at IS NULL
+          AND COALESCE(approval_status,'approved') <> 'rejected'`,
       [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
+    const att = (await query(
+      `SELECT (SELECT count(*)::int FROM quotes   q WHERE q.customer_id=$1 AND q.deleted_at IS NULL) AS quote_cnt,
+              (SELECT count(*)::int FROM invoices i WHERE i.customer_id=$1 AND i.deleted_at IS NULL) AS sale_cnt`,
+      [id])).rows[0];
+    const quoteCnt = Number(att.quote_cnt || 0), saleCnt = Number(att.sale_cnt || 0);
+    if (saleCnt > 0) {
+      return reply.code(409).send({ error: 'has_sales', quote_cnt: quoteCnt, sale_cnt: saleCnt,
+        note: `이 고객에게 이미 매출 ${saleCnt}건이 있습니다 — 반려로 지울 수 없습니다. `
+          + '조건이 문제라면 고객 상세에서 할인율·외상일을 고치고, 거래를 끊어야 한다면 고객 삭제 경로를 쓰세요.' });
+    }
+    if (quoteCnt > 0 && !(req.body && req.body.confirm === true)) {
+      return reply.code(409).send({ error: 'has_quotes', quote_cnt: quoteCnt, sale_cnt: 0,
+        note: `이 고객으로 작성된 견적이 ${quoteCnt}건 있습니다. 반려하면 고객이 삭제되어 그 견적들의 고객이 사라집니다. `
+          + '계속하려면 다시 확인해 주세요.' });
+    }
     await query(
       `UPDATE customers SET approval_status='rejected', rejected_reason=$1, approved_by=$2, approved_at=now(),
-              deleted_at=now(), updated_by=$2 WHERE id=$3`, [reason, perm.userId, id]);
+              ratified_at=now(), ratified_by=$2, deleted_at=now(), updated_by=$2 WHERE id=$3`,
+      [reason, perm.userId, id]);
     try {
       await query(
         `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
-         VALUES ($1,'reject',$2,NULL,$3)`, [id, reason, perm.userId]);
+         VALUES ($1,'reject',$2,$3,$4)`,
+        [id, reason, JSON.stringify({ quote_cnt: quoteCnt, sale_cnt: saleCnt, post_approval: true }), perm.userId]);
     } catch (_) { /* ignore */ }
-    await safeLog({ userId: perm.userId, action: 'reject_registration', target: `customer:${id}` });
-    // → CRM 전송(반려). CRM 에서 올라온 고객이 「승인 대기」 로 남지 않도록 상태와 사유를 보낸다.
+    await safeLog({ userId: perm.userId, action: 'reject_registration', target: `customer:${id}`,
+      detail: { quote_cnt: quoteCnt } });
+    // → CRM 전송(반려). 이 고객은 등록 시점에 이미 CRM 으로 나갔으므로, 상태를 되돌리는
+    //   전송이 **반드시** 필요하다(안 보내면 CRM 에만 살아 있는 고객이 된다).
     await enqueueCustomerSync(id, 'reject', { origin: 'registration_reject', actorUserId: perm.userId, reason, app });
-    return { ok: true, id };
+    return { ok: true, id, quote_cnt: quoteCnt };
+  });
+
+  // =====================================================================
+  // 0267 · **모아서 한 번에 사후승인** (디렉터 지시: "승인안한걸 모아서 나중에 승인")
+  //
+  //   한 건씩 누르는 화면으로는 「모아서」가 안 된다. 다만 **일괄에 할인율 조정은 없다** —
+  //   여러 고객에게 같은 할인율을 한 번에 박는 버튼은 사고가 나는 종류의 편의다.
+  //   할인율을 손볼 건은 단건 승인으로 가야 한다(화면이 그렇게 안내한다).
+  //
+  //   한 건이 실패해도 나머지는 승인한다 — 전부 되돌리면 디렉터가 원인 하나를 찾아
+  //   고칠 때까지 아무것도 못 끝낸다. 대신 **실패한 건과 이유를 돌려준다.**
+  // =====================================================================
+  app.post('/api/customer-registrations/ratify-bulk', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (!(await ratifyColsReady())) {
+      return reply.code(503).send({ error: 'migration_required',
+        note: '사후승인(0267) 마이그레이션이 아직 적용되지 않았습니다. Railway 콘솔에서 npm run migrate 를 먼저 실행하세요.' });
+    }
+    const raw = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const ids = [...new Set(raw.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0))];
+    if (!ids.length) return reply.code(400).send({ error: 'ids_required', note: '승인할 고객을 선택하세요.' });
+    if (ids.length > 200) {
+      return reply.code(400).send({ error: 'too_many',
+        note: '한 번에 200건까지 승인할 수 있습니다. 나눠서 눌러 주세요.' });
+    }
+    const note = (req.body && req.body.reason) ? String(req.body.reason).slice(0, 500) : null;
+    //   대상만 골라 한 문장으로 갱신한다 — 건당 왕복을 돌면 200건에서 화면이 멈춘다.
+    const done = (await query(
+      `UPDATE customers
+          SET approval_status='approved', approved_by=$1, approved_at=now(),
+              ratified_at=now(), ratified_by=$1, ratified_note=$3,
+              rejected_reason=NULL, updated_by=$1
+        WHERE id = ANY($2::bigint[]) AND deleted_at IS NULL AND ratified_at IS NULL
+          AND COALESCE(approval_status,'approved') <> 'rejected'
+        RETURNING id, code, name`, [perm.userId, ids, note])).rows;
+    const okIds = done.map((r) => Number(r.id));
+    const skipped = ids.filter((n) => !okIds.includes(n));
+    for (const r of done) {
+      try {
+        await query(
+          `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+           VALUES ($1,'ratify',$2,$3,$4)`,
+          [Number(r.id), note, JSON.stringify({ bulk: true, count: done.length }), perm.userId]);
+      } catch (_) { /* 이력 실패가 승인을 되돌리지 않는다 */ }
+      // 리드 안전망(등록 시점에 이미 닫혔을 수 있다 — 멱등).
+      try {
+        await query(
+          `UPDATE crm_web_leads SET status='done', closed_by=$1, closed_at=now()
+            WHERE customer_id=$2 AND status IN ('new','assigned','registered')`, [perm.userId, Number(r.id)]);
+      } catch (_) { /* 0210/0211 미적용 */ }
+      // 0267 전환으로 넘어온 고객은 아직 CRM 에 안 나갔다 — 여기서 보낸다(upsert, 멱등).
+      await enqueueCustomerSync(Number(r.id), 'upsert',
+        { origin: 'registration_ratify_bulk', actorUserId: perm.userId, app });
+    }
+    await safeLog({ userId: perm.userId, action: 'ratify_registration_bulk',
+      target: `customer:${okIds.join(',')}`, detail: { ok: okIds.length, skipped: skipped.length } });
+    return { ok: true, ratified: done.map((r) => ({ id: Number(r.id), code: r.code, name: r.name })),
+      ratified_count: done.length, skipped,
+      note: skipped.length
+        ? `${done.length}건 승인했습니다. ${skipped.length}건은 이미 승인됐거나 반려·삭제된 고객이라 건너뛰었습니다.`
+        : `${done.length}건 승인했습니다.` };
   });
 
   // 고객 수정

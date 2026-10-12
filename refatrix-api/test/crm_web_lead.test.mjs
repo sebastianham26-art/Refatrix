@@ -99,13 +99,20 @@ test('C4-b. 임시로 닫아도 승인 전까지는 다시 뜬다', () => {
     '영구 닫기 플래그가 남아 있으면 안 된다');
 });
 
-test('C4-c. 등록만으로 끝나지 않는다 — 승인이 완결이다', () => {
+test('C4-c. 0267 · 등록이 곧 완결이다 — 담당자가 더 할 일이 없다', () => {
+  // 0211 에서는 승인이 완결이었다. 승인 전에는 고객이 카달록에서 가격을 못 봤으니 맞았다.
+  //   0267 부터 등록 즉시 활성 + CRM 전송이므로, 담당자 팝업을 더 띄울 이유가 없다.
+  //   사후승인은 디렉터의 일이고 담당자 화면과는 무관하다.
   const c = read(join(API, 'src/routes/customerRoutes.js'));
-  assert.ok(/SET status='registered'/.test(c), '고객 등록은 registered 까지만');
-  assert.ok(/SET status='done'[\s\S]{0,160}WHERE customer_id=/.test(c), '승인이 done 으로 닫는다');
+  assert.ok(/SET status='done', customer_id=\$1/.test(c), '등록이 리드를 바로 닫는다');
+  assert.ok(!/SET status='registered'/.test(c),
+    '등록에서 멈춰 두면 담당자에게 끝나지 않는 할 일이 남는다');
+  // 사후승인·일괄승인에도 같은 닫기가 남아 있다 — 0267 전환으로 넘어온 건의 안전망.
+  assert.ok((c.match(/SET status='done', closed_by=/g) || []).length >= 2,
+    '전환으로 넘어온 고객의 리드도 승인 때 닫혀야 한다');
   const l = read(join(API, 'src/routes/crmLeadRoutes.js'));
   assert.ok(/OPEN_WHERE/.test(l) && /COALESCE\(lc\.approval_status,'approved'\)='approved'/.test(l),
-    '승인된 건은 상태와 무관하게 팝업에서 빠져야 한다(훅이 못 돌았을 때의 안전장치)');
+    '활성 고객이 된 건은 상태와 무관하게 팝업에서 빠져야 한다(훅이 못 돌았을 때의 안전장치)');
 });
 
 test('C5. 고객 화면의 목록은 요약 표이고 자세히는 접혀 있다', () => {
@@ -143,11 +150,12 @@ test('C7. 팝업은 고객이 보낸 값을 전부 편다', () => {
 });
 
 test('C8. 고객 등록이 리드를 자동으로 진행시킨다', () => {
-  // 사람이 상태를 따로 눌러 옮겨야 하면 반드시 빠뜨린다. 등록하면 자동으로 「등록됨」이 되고,
-  // 승인하면 자동으로 「완결」이 된다.
+  // 사람이 상태를 따로 눌러 옮겨야 하면 반드시 빠뜨린다.
+  // 0267 · 등록하면 그대로 「완결」이다 — 등록 즉시 고객이 활성이라 남은 할 일이 없다.
   const c = read(join(API, 'src/routes/customerRoutes.js'));
   assert.ok(/b\.lead_id/.test(c), '등록 API 가 lead_id 를 받아야 한다');
-  assert.ok(/UPDATE crm_web_leads[\s\S]{0,200}status='registered'/.test(c));
+  // 0267 · 등록이 곧 완결이므로 한 번에 done 으로 간다(예전엔 registered 를 거쳤다).
+  assert.ok(/UPDATE crm_web_leads[\s\S]{0,200}status='done'/.test(c));
   assert.ok(/lead_linked/.test(c), '응답으로 알려 줘야 화면이 목록을 맞출 수 있다');
   const f = read(join(REPO, 'refatrix-custform.js'));
   assert.ok(/b\.lead_id\s*=\s*leadId/.test(f), '폼이 lead_id 를 실어 보내야 한다');

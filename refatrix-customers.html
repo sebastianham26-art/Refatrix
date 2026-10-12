@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (build tx-1002ov)</title>
+<title>Refatrix ERP · 고객 등록 (build tx-1009ratify)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -92,7 +92,7 @@
       <div class="tab on" data-tab="list">고객 목록</div>
       <div class="tab" data-tab="team" id="teamTabBtn">팀 권한 관리</div>
       <div class="tab" data-tab="approve" id="approveTabBtn">수정 승인 대기<span id="approveBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
-      <div class="tab" data-tab="reg" id="regTabBtn">🔒 등록 승인 대기<span id="regBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
+      <div class="tab" data-tab="reg" id="regTabBtn">📋 등록 사후승인<span id="regBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
       <div class="tab" data-tab="claim" id="claimTabBtn">🔑 RFC 선점 이관<span id="claimBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
       <div class="tab" data-tab="leads" id="leadsTabBtn">🌐 웹 가입 신청<span id="leadsBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
     </div>
@@ -192,12 +192,25 @@
       </div>
     </div>
 
-    <!-- 고객 등록 승인 대기(디렉터) · 0185 -->
+    <!-- 고객 등록 사후승인(디렉터) · 0185 → 0267 -->
     <div id="tab-reg" class="hidden">
       <div class="card">
-        <h2 style="margin:0 0 4px">🔒 고객 등록 승인 대기</h2>
-        <div class="hint" style="margin-top:0"><b>모든 신규 고객 등록</b>이 여기를 거칩니다(디렉터가 직접 등록한 건도 포함). 승인해야 견적·매출에 쓸 수 있고, 반려하면 선점이 풀립니다.<br>
-        RFC 와 CONSTANCIA 는 <b>선택</b>이라 없어도 승인할 수 있습니다 — 다만 <b style="color:#B23A2E">RFC 가 없는 고객은 선점되지 않은 상태</b>라 다른 영업사원이 RFC 를 먼저 넣으면 우선권이 넘어가고, 매출 확정도 막힙니다.</div>
+        <h2 style="margin:0 0 4px">📋 고객 등록 사후승인</h2>
+        <div class="hint" style="margin-top:0"><b>여기 있는 고객들은 이미 쓰이고 있습니다</b> — 등록되는 순간 활성이 되고 CRM(웹카달록)으로도 전송됩니다(0267).
+        이 목록은 <b>아직 확인하지 않은 등록</b>이고, 승인은 「봤고 조건에 동의한다」는 기록입니다. 모아서 한 번에 승인할 수 있습니다.<br>
+        <b style="color:#B23A2E">반려는 되돌리는 일입니다</b> — 고객이 삭제되므로, 이미 견적·매출이 붙은 건은 숫자로 먼저 보여 드립니다(매출이 있으면 반려할 수 없습니다).</div>
+        <!-- 0267 · 「모아서 나중에 승인」 — 선택바. 할인율 조정은 일괄에 없다(단건으로만). -->
+        <div id="regSelBar" class="hidden" style="margin-top:10px;padding:9px 12px;border:1px solid #c9dcf3;background:#eaf1fb;border-radius:9px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <b id="regSelCount" style="color:#20486f">0건 선택</b>
+          <button class="btn sm" id="regBulkBtn">선택한 건 한 번에 승인</button>
+          <button class="btn ghost sm" id="regSelClear">선택 해제</button>
+          <span class="hint" style="margin:0">할인율을 손볼 건은 아래에서 <b>단건 승인</b>으로 처리하세요.</span>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+            <input type="checkbox" id="regAll"> <span>전체 선택</span>
+          </label>
+        </div>
         <div id="regList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
@@ -985,6 +998,19 @@
   //   디렉터는 ① 증빙이 붙었는지 ② 신청 할인율이 제안값에서 얼마나 벌어졌는지 를 보고 판단한다.
   function pctTxt(v){ return v==null?'—':(Number(v).toFixed(1)+'%'); }
   function mxTxt(v){ return v==null?'—':('$'+Number(v).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})); }
+  // ===== 0267 · 사후승인 선택 상태 =====
+  //   디렉터 지시: "승인안한걸 모아서 나중에 승인하는 걸로 해줘".
+  //   Set 하나가 진실의 유일한 출처다 — DOM 의 checked 를 읽어 세면 재조회 후 어긋난다.
+  const REG_SEL=new Set();
+  function syncRegSel(){
+    const bar=$('regSelBar'), cnt=$('regSelCount'), all=$('regAll');
+    if(!bar) return;
+    if(REG_SEL.size){ bar.classList.remove('hidden'); if(cnt) cnt.textContent=REG_SEL.size+'건 선택'; }
+    else bar.classList.add('hidden');
+    // 전체선택 체크박스는 「화면에 보이는 것 전부가 선택됐나」만 반영한다.
+    const boxes=document.querySelectorAll('#regList input[data-regsel]');
+    if(all) all.checked = boxes.length>0 && [...boxes].every(i=>i.checked);
+  }
   async function loadRegBadge(){
     try{
       const d=await fetch(session.api+'/api/customer-registrations?status=pending',{headers:auth()}).then(r=>r.json());
@@ -996,9 +1022,9 @@
     const box=$('regList'); if(!box)return; box.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
       const d=await fetch(session.api+'/api/customer-registrations?status=pending',{headers:auth()}).then(r=>r.json());
-      if(d.migration_required){ box.innerHTML='<div class="hint">서버 마이그레이션(0185)이 아직 적용되지 않았습니다.</div>'; return; }
+      if(d.migration_required){ box.innerHTML='<div class="hint">서버 마이그레이션('+(d.need||'0185')+')이 아직 적용되지 않았습니다 — Railway 콘솔에서 <span class="mono">npm run migrate</span> 를 실행하세요.</div>'; REG_SEL.clear(); syncRegSel(); return; }
       const items=d.items||[];
-      if(!items.length){box.innerHTML='<div class="hint">승인 대기중인 신규 고객 등록이 없습니다.</div>';return;}
+      if(!items.length){box.innerHTML='<div class="hint">사후승인을 기다리는 등록이 없습니다 — 모두 확인되었습니다.</div>'; REG_SEL.clear(); syncRegSel(); return;}
       box.innerHTML=items.map(r=>{
         const gap=r.discount_gap;
         const gapTxt = gap==null?'' :
@@ -1014,9 +1040,15 @@
           ? `<tr><th style="text-align:left;color:#b3261e;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">⚠ 유사 상호</th>
                <td style="padding:3px 0">${sim.map(x=>`<div class="hint" style="margin:0">${esc(x.name)} · RFC ${esc(x.rfc||'—')} · 담당 ${esc(x.owner_name||'—')} <span style="color:#b3261e">(유사도 ${Math.round((x.score||0)*100)}%)</span></div>`).join('')}</td></tr>`
           : '';
-        return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+        // 0267 · 이미 쓰이고 있는 고객이므로, 붙어 있는 일을 카드에서 바로 보여 준다.
+        const attach = (r.quote_cnt||r.sale_cnt)
+          ? `<span class="pill" style="background:#f6eedd;color:#8a5a00;border:1px solid #e6d5ae;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="반려하면 이 일들의 고객이 사라집니다">견적 ${r.quote_cnt||0}건${r.sale_cnt?` · 매출 ${r.sale_cnt}건`:''}</span>`
+          : '';
+        return `<div data-regid="${r.id}" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input type="checkbox" data-regsel value="${r.id}" style="width:16px;height:16px;cursor:pointer" title="모아서 한 번에 승인">
             <b>${esc(r.name)}</b> <span class="hint" style="margin:0">(${esc(r.code)})</span>
+            ${attach}
             ${r.from_crm?`<span class="pill" style="background:#eaf1fb;color:#20486f;border:1px solid #c9dcf3;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="웹 카탈로그(CRM)에서 고객이 직접 등록한 건입니다${r.crm_customer_code?(' · CRM 코드 '+esc(r.crm_customer_code)):''}">🌐 CRM 등록${r.crm_customer_code?(' · '+esc(r.crm_customer_code)):''}</span>`:''}
             <span class="hint" style="margin:0">· 신청: ${esc(r.created_by_name||'-')} / 담당 ${esc(r.owner_name||'-')} / ${esc(r.team_name||'-')} · ${esc(r.registered_at||'')}</span>
             ${gapTxt}
@@ -1028,9 +1060,12 @@
                     : `<span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:11px;padding:2px 8px;border-radius:6px" title="RFC 가 없으면 이 고객은 선점되지 않은 상태입니다">RFC 없음 — 선점 안 됨</span>`}
                   <span class="hint" style="margin:0">· CONSTANCIA ${esc(r.constancia_no||'—')}</span> &nbsp; ${docOk}</td></tr>
             ${simRow}
-            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">기준품목 ${esc(r.syd_ref_code||'')}</th>
+            ${r.syd_ref_buy_price==null
+              ? `<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">기준품목</th>
+                <td style="padding:3px 0"><span class="pill" style="background:#f6eedd;color:#8a5a00;border:1px solid #e6d5ae;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="0267 이후 구매단가는 선택 입력입니다 — 없으면 제안 할인율을 계산할 근거가 없습니다">구매단가 미입력 — 제안 근거 없음</span></td></tr>`
+              : `<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">기준품목 ${esc(r.syd_ref_code||'')}</th>
                 <td style="padding:3px 0">고객 구매단가 <b>${mxTxt(r.syd_ref_buy_price)}</b>
-                  <span class="hint" style="margin:0">· SYD 정가 ${mxTxt(r.syd_ref_list_price)} → 고객이 받는 할인율 ${pctTxt(r.syd_ref_discount)}</span></td></tr>
+                  <span class="hint" style="margin:0">· SYD 정가 ${mxTxt(r.syd_ref_list_price)} → 고객이 받는 할인율 ${pctTxt(r.syd_ref_discount)}</span></td></tr>`}
             <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">우리 제품 (${esc(r.ctr_ref_code||'—')})</th>
                 <td style="padding:3px 0">CTR 정가 ${mxTxt(r.ctr_ref_list_price)}
                   <span class="hint" style="margin:0">· 5% 우위 목표가 ${mxTxt(target)}</span></td></tr>
@@ -1041,14 +1076,63 @@
             ${r.memo?`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0">메모</th><td style="padding:3px 0">${esc(r.memo)}</td></tr>`:''}
           </tbody></table>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <button class="btn sm" onclick="approveReg(${r.id},null)">승인 (${pctTxt(r.discount)})</button>
+            <button class="btn sm" onclick="approveReg(${r.id},null)">사후승인 (${pctTxt(r.discount)})</button>
             <button class="btn ghost sm" onclick="approveReg(${r.id},'ask')">할인율 조정 후 승인</button>
             <button class="btn ghost sm" style="color:var(--expense);border-color:var(--expense)" onclick="rejectReg(${r.id})">반려</button>
           </div>
         </div>`;
       }).join('');
+      // 0267 · 재조회로 사라진 id 는 선택에서 지운다(없는 건을 승인하려 들지 않게).
+      const live=new Set(items.map(r=>Number(r.id)));
+      [...REG_SEL].forEach(id=>{ if(!live.has(id)) REG_SEL.delete(id); });
+      document.querySelectorAll('#regList input[data-regsel]').forEach(i=>{
+        if(REG_SEL.has(Number(i.value))) i.checked=true;
+      });
+      syncRegSel();
     }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+
+  // ===== 0267 · 선택 이벤트는 위임 한 곳에서만 =====
+  document.addEventListener('change',function(e){
+    if(e.target&&e.target.id==='regAll'){
+      document.querySelectorAll('#regList input[data-regsel]').forEach(i=>{
+        i.checked=e.target.checked;
+        const id=Number(i.value);
+        if(i.checked) REG_SEL.add(id); else REG_SEL.delete(id);
+      });
+      syncRegSel(); return;
+    }
+    if(e.target&&e.target.hasAttribute&&e.target.hasAttribute('data-regsel')){
+      const id=Number(e.target.value);
+      if(e.target.checked) REG_SEL.add(id); else REG_SEL.delete(id);
+      syncRegSel();
+    }
+  });
+  document.addEventListener('click',function(e){
+    if(e.target&&e.target.id==='regSelClear'){
+      REG_SEL.clear();
+      document.querySelectorAll('#regList input[data-regsel]').forEach(i=>{i.checked=false;});
+      syncRegSel(); return;
+    }
+    if(e.target&&e.target.id==='regBulkBtn') ratifyBulk();
+  });
+
+  async function ratifyBulk(){
+    const ids=[...REG_SEL];
+    if(!ids.length) return;
+    if(!confirm(ids.length+'건을 한 번에 사후승인합니다.\n\n각 고객의 할인율은 신청된 값 그대로 확정됩니다 — 조정이 필요한 건은 취소하고 단건으로 승인하세요.\n\n계속할까요?')) return;
+    const btn=$('regBulkBtn'); if(btn) btn.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/customer-registrations/ratify-bulk',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({ids})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ alert('일괄 승인 실패: '+(d.note||d.error||res.status)); return; }
+      REG_SEL.clear();
+      alert(d.note||((d.ratified_count||0)+'건 승인했습니다.'));
+      loadRegApprovals(); loadRegBadge(); loadCustomers();
+    } finally { if(btn) btn.disabled=false; }
+  }
+
   async function approveReg(id,mode){
     const body={};
     if(mode==='ask'){
@@ -1060,19 +1144,38 @@
     const res=await fetch(session.api+'/api/customer-registrations/'+id+'/approve',
       {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
     const d=await res.json().catch(()=>({}));
-    if(res.ok&&!d.error){ loadRegApprovals(); loadRegBadge(); loadCustomers(); }
+    if(res.ok&&!d.error){ REG_SEL.delete(Number(id)); loadRegApprovals(); loadRegBadge(); loadCustomers(); }
     else alert('승인 실패: '+(d.note||d.error||res.status));
   }
-  async function rejectReg(id){
-    const reason=prompt('반려 사유(필수) — 영업사원에게 남는 기록입니다:');
-    if(reason===null) return;
-    if(!reason.trim()){ alert('반려 사유를 입력해야 합니다.'); return; }
-    if(!confirm('반려하면 이 고객의 RFC 선점이 풀립니다(다른 영업사원이 같은 RFC 로 등록할 수 있게 됩니다). 진행할까요?')) return;
+  // 0267 · 사후 반려. 이 고객은 이미 활성이었으므로 견적·매출이 붙어 있을 수 있다.
+  //   붙어 있는 일의 판정은 **서버가 한다** — 화면이 같은 규칙을 또 들고 있으면
+  //   둘이 갈라지는 날이 온다. 화면은 서버가 돌려준 숫자를 사람 말로 옮기고 다시 묻는다.
+  async function rejectReg(id,confirmed){
+    let reason=window.__regRejectReason||'';
+    if(!confirmed){
+      reason=prompt('반려 사유(필수) — 영업사원에게 남는 기록입니다:')||'';
+      if(!reason.trim()){ if(reason!=='') alert('반려 사유를 입력해야 합니다.'); return; }
+      if(!confirm('반려하면 이 고객이 삭제되고 RFC 선점이 풀립니다(다른 영업사원이 같은 RFC 로 등록할 수 있게 됩니다). 진행할까요?')) return;
+    }
+    const body={reason:reason.trim()};
+    if(confirmed) body.confirm=true;
     const res=await fetch(session.api+'/api/customer-registrations/'+id+'/reject',
-      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason:reason.trim()})});
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
     const d=await res.json().catch(()=>({}));
-    if(res.ok&&!d.error){ loadRegApprovals(); loadRegBadge(); loadCustomers(); }
-    else alert('반려 실패: '+(d.note||d.error||res.status));
+    if(res.ok&&!d.error){
+      window.__regRejectReason='';
+      REG_SEL.delete(Number(id));
+      loadRegApprovals(); loadRegBadge(); loadCustomers(); return;
+    }
+    if(d.error==='has_sales'){ alert('⛔ '+(d.note||'이미 매출이 있어 반려할 수 없습니다.')); return; }
+    if(d.error==='has_quotes'&&!confirmed){
+      if(confirm('⚠ '+(d.note||'이 고객으로 작성된 견적이 있습니다.')+'\n\n그래도 반려할까요?')){
+        window.__regRejectReason=reason;
+        return rejectReg(id,true);
+      }
+      return;
+    }
+    alert('반려 실패: '+(d.note||d.error||res.status));
   }
 
   // ===== 0194 · 선점 예외(RFC 중복) 정리 =====
@@ -2214,7 +2317,7 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20260929ex"></script>
+<script src="refatrix-custform.js?v=20261009ratify"></script>
 <script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>
