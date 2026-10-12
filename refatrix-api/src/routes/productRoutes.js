@@ -5,7 +5,7 @@ import { verifyPin } from '../auth.js';
 import { logPageView, logEvent } from '../audit.js';
 import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
 import { visibleTeamIds } from '../teams.js';
-import { sweepDevRequestMatches } from '../devMatchSweep.js';
+import { sweepDevRequestMatches, scheduleDevMatchSweep } from '../devMatchSweep.js';
 import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js';
 import { demandSummary, demandRows } from '../inactiveDemand.js';
 import { changeParts, describeRow, sydForRow, signedQty, stockAtChange } from '../productHistory.js';
@@ -658,7 +658,10 @@ export default async function productRoutes(app) {
     if (chFields.length) {
       await logEvent({ userId, action: 'update', target: 'product_manual', detail: { code: nextVals.code || cur.code, fields: chFields } });
     }
-    return { ok: true, changed: chFields };
+    // 2026-10-12 — 코드·SYD·OE 가 바뀌면 개발목록 자동 매칭(응답을 기다리게 하지 않음 · 연속 수정은 1회로 묶음)
+    const devMatchQueued = !!(changes.code || wantSyd || wantOe);
+    if (devMatchQueued) scheduleDevMatchSweep({ userId });
+    return { ok: true, changed: chFields, dev_match_queued: devMatchQueued };
   });
 
   // 제품 변경 이력 조회(디렉터). ?product_id= / ?code=(부분일치) / limit / offset
@@ -1386,7 +1389,8 @@ export default async function productRoutes(app) {
       n++;
     }
     await logEvent({ userId, action: 'update', target: 'product_resync', detail: { products: n } });
-    return { ok: true, products: n };
+    scheduleDevMatchSweep({ userId, delayMs: 0 });   // 2026-10-12 — SYD/OE 분해표가 새로 깔렸으니 개발목록 재대조
+    return { ok: true, products: n, dev_match_queued: true };
   });
 
   // 차종별 부품 매트릭스: 모델 검색 → 카테고리별 정렬. 세대(모델·연식)를 열 머리로, 그 아래에 CTR/SYD 코드.

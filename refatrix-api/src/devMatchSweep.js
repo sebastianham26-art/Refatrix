@@ -7,11 +7,16 @@
 //
 //   매칭 기준(개발필요내용 화면과 동일): 정규화 코드(대소문자·기호 무시)로
 //   ① products.code(CTR) ② product_syd_codes ③ product_oe_codes(직접 OE · 0228) ④ product_xref_codes 순.
+//   대조하는 코드(2026-10-12 확대): 경쟁사 코드(input_code) 전체 + 한 칸에 여러 코드를
+//   「/ , ; |」·줄바꿈으로 적은 경우 각각 + 검토 단계에서 넣은 SYD 코드(review_syd_code).
+//   ⚠ 가장 높은 우선순위에서 서로 다른 제품이 2개 이상 걸리면 「후보 여럿」으로 두고
+//     자동 완료하지 않는다(엉뚱한 제품으로 고객 오퍼가 나가는 것을 막음) — 결과의 ambiguous 로 보고.
 //
 //   호출 지점:
 //   · 제품마스터 업로드 커밋 / 신규 제품 수동 생성 (productRoutes)
+//   · 제품 수정(코드·SYD·OE 변경) / 파생 데이터 재동기화 (productRoutes — 2026-10-12, scheduleDevMatchSweep 비동기)
 //   · 교차참조 카탈로그 업로드 / 스냅샷 복원 (xrefRoutes)
-//   · 60분 주기 + 서버 기동 시 1회 스위퍼 (devRequestRoutes — 다른 경로 보강)
+//   · 12시간 주기 + 서버 기동 시 1회 스위퍼 (devRequestRoutes — 다른 경로 보강)
 //   · 수동 점검 버튼 POST /api/dev-requests/match-sweep
 //
 //   완료 처리 시: result_product_id·result_ctr_code·developed_at(오늘) 기록,
@@ -70,31 +75,66 @@ export async function pushDevDemandAndOffer({ productId, rows, userId = null }) 
   return out;
 }
 
+// 개발요청 1건이 대조할 정규화 코드들 — 전체 코드, 구분자로 나눈 각 코드, 검토 SYD 코드.
+//   나눈 조각은 4자 미만이면 버린다(「L」「R」「2」 같은 꼬리표가 짧은 코드와 우연히 맞는 것을 막음).
+const SPLIT_RE = /[,;/|\n\r]+/;
+export function devRequestKeys(r) {
+  const keys = new Set();
+  const add = (v, min = 1) => { const n = normCode(v); if (n && n.length >= min) keys.add(n); };
+  const raw = String(r && r.input_code != null ? r.input_code : '');
+  add(raw);
+  const parts = raw.split(SPLIT_RE).map((x) => x.trim()).filter(Boolean);
+  if (parts.length > 1) for (const p of parts) add(p, 4);
+  if (r && r.review_syd_code) {
+    const sp = String(r.review_syd_code).split(SPLIT_RE).map((x) => x.trim()).filter(Boolean);
+    for (const p of sp) add(p, sp.length > 1 ? 4 : 1);
+  }
+  return [...keys];
+}
+
+// 요청 1건 판정(순수 함수 — 테스트용 분리).
+//   index: Map(norm → Map(productId → pri))
+//   반환: {product_id, pri} | {ambiguous:[pid...], pri} | null
+export function pickDevMatch(keys, index) {
+  let best = null; const pids = new Set();
+  for (const k of keys) {
+    const m = index.get(k); if (!m) continue;
+    for (const [pid, pri] of m) {
+      if (best == null || pri < best) { best = pri; pids.clear(); pids.add(pid); }
+      else if (pri === best) pids.add(pid);
+    }
+  }
+  if (best == null) return null;
+  if (pids.size > 1) return { ambiguous: [...pids], pri: best };
+  return { product_id: [...pids][0], pri: best };
+}
+
 // 미완료 개발요청을 카탈로그와 대조해 매칭분을 developed 로 전환.
-// 반환: { checked, matched, items:[{id, input_code, ctr_code, customer_name}] }
+// 반환: { checked, matched, items:[…], ambiguous:[{id, input_code, customer_name, candidates:[CTR…]}] }
 export async function sweepDevRequestMatches({ userId = null, notify = true } = {}) {
   const reqs = (await query(
-    `SELECT d.id, d.input_code, d.customer_id, d.requested_qty, d.source_quote_id,
+    `SELECT d.id, d.input_code, d.review_syd_code, d.customer_id, d.requested_qty, d.source_quote_id,
             c.name AS customer_name, c.owner_id AS customer_owner_id
        FROM product_dev_requests d
        LEFT JOIN customers c ON c.id = d.customer_id
       WHERE d.deleted_at IS NULL
         AND d.status IN ('received','reviewed','factory_requested')
-        AND d.input_code IS NOT NULL`)).rows;
-  if (!reqs.length) return { checked: 0, matched: 0, items: [] };
+        AND (NULLIF(TRIM(d.input_code),'') IS NOT NULL OR NULLIF(TRIM(d.review_syd_code),'') IS NOT NULL)`)).rows;
+  if (!reqs.length) return { checked: 0, matched: 0, items: [], ambiguous: [] };
 
-  // 필요한 정규화 코드 집합
+  const keysById = new Map();
   const wanted = new Set();
-  for (const r of reqs) { const n = normCode(r.input_code); if (n) wanted.add(n); }
-  if (!wanted.size) return { checked: reqs.length, matched: 0, items: [] };
+  for (const r of reqs) { const ks = devRequestKeys(r); keysById.set(Number(r.id), ks); for (const k of ks) wanted.add(k); }
+  if (!wanted.size) return { checked: reqs.length, matched: 0, items: [], ambiguous: [] };
 
-  // norm → {product_id, pri} (CTR > SYD > xref)
-  const hit = new Map();
+  // norm → Map(productId → 최고 우선순위)  (CTR 1 > SYD 2 > OE 3 > xref 4)
+  const index = new Map();
   const claim = (norm, productId, pri) => {
     if (!norm || !wanted.has(norm)) return;
-    const cur = hit.get(norm);
-    if (cur && cur.pri <= pri) return;
-    hit.set(norm, { product_id: Number(productId), pri });
+    const pid = Number(productId); if (!pid) return;
+    if (!index.has(norm)) index.set(norm, new Map());
+    const m = index.get(norm);
+    if (!m.has(pid) || m.get(pid) > pri) m.set(pid, pri);
   };
   const prods = (await query(`SELECT id, code FROM products WHERE deleted_at IS NULL`)).rows;
   const codeById = new Map();
@@ -110,11 +150,19 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
     const xrefs = (await query(`SELECT product_id, norm_code FROM product_xref_codes`)).rows;
     for (const x of xrefs) claim(String(x.norm_code || ''), x.product_id, 4);
   } catch (_) { /* 0130 미적용 시 무시 */ }
+  // 삭제된 제품(활성 제품 목록에 없음)은 후보에서 뺀다
+  for (const m of index.values()) for (const pid of [...m.keys()]) if (!codeById.has(pid)) m.delete(pid);
 
   const items = [];
+  const ambiguous = [];
   for (const r of reqs) {
-    const h = hit.get(normCode(r.input_code));
+    const h = pickDevMatch(keysById.get(Number(r.id)) || [], index);
     if (!h) continue;
+    if (h.ambiguous) {
+      ambiguous.push({ id: Number(r.id), input_code: r.input_code, customer_name: r.customer_name || null,
+        candidates: h.ambiguous.map((pid) => codeById.get(pid)).filter(Boolean).sort() });
+      continue;
+    }
     const ctr = codeById.get(h.product_id);
     if (!ctr) continue;
     const upd = await query(
@@ -179,5 +227,22 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
       }
     } catch (_) { /* 알림 실패해도 완료 처리 자체는 유지 */ }
   }
-  return { checked: reqs.length, matched: items.length, items, offer_sheets: offerSheets, shortage_records: shortageRecords, no_stock_products: noStockProducts };
+  return { checked: reqs.length, matched: items.length, items, ambiguous, offer_sheets: offerSheets, shortage_records: shortageRecords, no_stock_products: noStockProducts };
+}
+
+// ── 제품 수정 등 잦은 변경용 비동기 예약 (2026-10-12) ──
+//   요청 응답을 기다리게 하지 않고, 짧은 시간 안의 연속 수정은 1회로 묶는다(디바운스).
+//   이미 도는 중이면 끝난 뒤 1회 더 돌린다(그 사이 바뀐 코드를 놓치지 않음).
+let _dmTimer = null, _dmRunning = false, _dmAgain = false, _dmUser = null;
+export function scheduleDevMatchSweep({ userId = null, delayMs = 3000 } = {}) {
+  _dmUser = userId;
+  if (_dmRunning) { _dmAgain = true; return; }
+  if (_dmTimer) clearTimeout(_dmTimer);
+  _dmTimer = setTimeout(async () => {
+    _dmTimer = null; _dmRunning = true;
+    try { await sweepDevRequestMatches({ userId: _dmUser, notify: true }); } catch (_) { /* best-effort */ }
+    _dmRunning = false;
+    if (_dmAgain) { _dmAgain = false; scheduleDevMatchSweep({ userId: _dmUser, delayMs }); }
+  }, Math.max(0, Number(delayMs) || 0));
+  if (_dmTimer && typeof _dmTimer.unref === 'function') _dmTimer.unref();
 }

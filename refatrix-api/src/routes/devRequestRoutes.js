@@ -7,7 +7,7 @@ import { mxTodayStr } from '../workingHours.js';
 import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
 import { groupDemand, attachVehicleVio, sortDemand, normCode, DEV_CAT_KEYS } from '../devDemand.js';
-import { sweepDevRequestMatches, pushDevDemandAndOffer } from '../devMatchSweep.js';
+import { sweepDevRequestMatches, pushDevDemandAndOffer, scheduleDevMatchSweep } from '../devMatchSweep.js';
 // 0225 · 고객 PO(O.C.) — 견적 화면과 **같은 판정·같은 검색 규칙**을 쓴다.
 import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
 
@@ -72,6 +72,7 @@ export default async function devRequestRoutes(app) {
       return { id: r.id, todos: todos.length };
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `dev_request:${result.id}`, detail: { notified: result.todos } });
+    scheduleDevMatchSweep({ userId: req.ctx.perm.userId });   // 2026-10-12 — 이미 카탈로그에 있는 코드면 바로 개발완료
     return result;
   });
 
@@ -264,6 +265,7 @@ export default async function devRequestRoutes(app) {
        b.review_maker || null, b.review_model || null, b.review_year || null,
        b.reviewed_at || null, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'review' } });
+    scheduleDevMatchSweep({ userId: req.ctx.perm.userId });   // 2026-10-12 — 검토 SYD 코드가 카탈로그에 있으면 개발완료
     return { ok: true };
   });
 

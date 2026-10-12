@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품개발요청</title>
+<title>Refatrix ERP · 제품개발요청 · build 20261012dm</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
@@ -93,7 +93,7 @@
           <button class="mbtn on" id="dmScopeOpen">미완료만</button>
           <button class="mbtn" id="dmScopeAll">전체</button></span>
         <button class="btn ghost sm" id="dmReload">새로고침</button>
-        <button class="btn sm" id="dmSweep" title="제품마스터·교차참조 카탈로그와 대조해 매칭되는 경쟁사 코드를 자동 개발완료 처리">🔄 카탈로그 매칭 점검</button>
+        <button class="btn sm" id="dmSweep" title="제품마스터·교차참조 카탈로그와 대조해 매칭되는 경쟁사 코드를 자동 개발완료 처리 (제품 등록·수정·업로드 때도 자동 실행)">🔄 카탈로그 매칭 점검</button>
         <span class="hint" id="dmInfo"></span>
       </div>
       <div class="mrow" id="dmCatChips" style="margin-top:8px"><span class="ml">품목</span></div>
@@ -331,12 +331,16 @@
       const res=await fetch(session.api+'/api/dev-requests/match-sweep',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
       const d=await res.json();
       if(!res.ok||d.error) throw new Error(d.error||res.status);
+      const amb=d.ambiguous||[];
+      const ambHtml=amb.length?('<div style="margin-top:6px;color:#9a6512">⚠ 후보가 여러 제품이라 자동 완료하지 않은 '+amb.length+'건 — 확인 후 수동 개발완료: '
+        +amb.slice(0,8).map(a=>esc(a.input_code||'')+' → '+(a.candidates||[]).map(esc).join(' / ')+(a.customer_name?' ('+esc(a.customer_name)+')':'')).join(' · ')
+        +(amb.length>8?' 외 '+(amb.length-8)+'건':'')+'</div>'):'';
       if(d.matched>0){
         const lines=(d.items||[]).slice(0,8).map(it=>esc(it.input_code)+' → <b>'+esc(it.ctr_code)+'</b>'+(it.customer_name?' ('+esc(it.customer_name)+')':''));
         m.className='msg ok';
-        m.innerHTML='✅ '+d.matched+'건 자동 개발완료: '+lines.join(' · ')+((d.items||[]).length>8?' 외 '+((d.items||[]).length-8)+'건':'');
+        m.innerHTML='✅ '+d.matched+'건 자동 개발완료: '+lines.join(' · ')+((d.items||[]).length>8?' 외 '+((d.items||[]).length-8)+'건':'')+ambHtml;
       }else{
-        m.className='msg ok'; m.textContent='점검 완료 — 새로 매칭된 코드가 없습니다. (미완료 '+d.checked+'건 대조)';
+        m.className='msg ok'; m.innerHTML='점검 완료 — 새로 매칭된 코드가 없습니다. (미완료 '+d.checked+'건 대조)'+ambHtml;
       }
       loadDemand(); load(); loadKpi();
     }catch(e){ m.className='msg err'; m.textContent='매칭 점검 실패: '+e.message; }
