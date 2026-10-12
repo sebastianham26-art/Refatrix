@@ -18,6 +18,7 @@
 //        팝업으로 계속 상기받는다. 등록만 하고 승인을 안 챙기면 고객은 여전히 가격을 못 본다.
 import { query } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { kickLeadNotify } from '../leadWaNotify.js';   // 0268 · 가입신청 WhatsApp 알림
 import { logEvent } from '../audit.js';
 import { getEndpoint, INBOUND_KEY_FALLBACK, maskSecret, activeToken } from '../integrations.js';
 import { writeInboundLog } from '../crmInboundLog.js';
@@ -207,6 +208,12 @@ export default async function crmLeadRoutes(app) {
       await safeLog({ userId: null, action: 'create', target: `web_lead:${row.id}`,
         detail: { origin: 'crm_web_lead', rfc: m.rfc, empresa: m.empresa } });
 
+      // 0268 · ① 접수 알림 — 알림 대상자 + 디렉터에게 WhatsApp.
+      //   ⚠ 기다리지 않는다. 이 요청은 **CRM(상대 시스템)이 보낸 것**이고, 우리 알림이 느리거나
+      //     실패했다고 상대에게 오류를 돌려주면 상대는 같은 신청을 다시 보낸다.
+      //     실패해도 60초 줍기(runLeadNotifyJob)가 다시 시도한다.
+      kickLeadNotify(row.id, 'received', app);
+
       const body = errBody('0', 'Solicitud recibida, un asesor lo contactará.', { leadId: Number(row.id) });
       await writeLog({ ...logBase, http_status: 200, result: 'created',
         erp_code: 'LEAD-' + row.id, codigo_error: '0', mensaje: body.mensaje });
@@ -314,6 +321,10 @@ export default async function crmLeadRoutes(app) {
     if (!r) return reply.code(404).send({ error: 'not_found_or_closed' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `web_lead:${id}`,
       detail: { op: 'assign', to: uid } });
+    // 0268 · ② 담당자 지정 알림 — 지정된 그 사람에게 WhatsApp(그 사람의 users.wa_phone).
+    //   담당자를 다른 사람으로 바꾸면 **새 사람에게 1통** 간다(원장 유니크가 lead+kind+user 이므로).
+    //   같은 사람에게 다시 지정해도 두 번 가지 않는다.
+    kickLeadNotify(id, 'assigned', app);
     return { ok: true, assigned_to_name: u.name, lead: leadRow(await loadLead(id)) };
   });
 

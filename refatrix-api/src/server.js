@@ -79,6 +79,8 @@ import waWebhookRoutes from './routes/waWebhookRoutes.js'; // 0253 · WhatsApp �
 import { startTreasuryWorker } from './treasuryDaily.js';        // 0240 · 매일 06시 스냅샷·일일 발송 / 매월 1~3일 월간 발송
 import quoteWaRoutes from './routes/quoteWaRoutes.js';          // 0256 · 신규 견적 WhatsApp 알림(수신자·원장)
 import { startQuoteNotifyWorker } from './quoteWaNotify.js';    // 0256 · 놓친 신규 견적 알림 줍기(60초)
+import leadWaRoutes from './routes/leadWaRoutes.js';            // 0268 · 웹 가입 신청 WhatsApp 알림(상태·설정·시험발송)
+import { startLeadNotifyWorker } from './leadWaNotify.js';      // 0268 · 놓친 가입신청 알림 줍기(60초)
 import waPromoRoutes from './routes/waPromoRoutes.js';          // 0260 · WhatsApp 마케팅(잠재고객·발송 일정·받은 메시지·자동응답)
 import { startWaPromoWorker } from './waPromo.js';               // 0260 · 예약 발송·동의 요청 대기열(60초)
 import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
@@ -180,6 +182,7 @@ export function buildApp() {
   app.register(waScheduleRoutes);   // 관리 › WhatsApp 발송 시각 — 작업별 시각·대상일(0262)
   app.register(waWebhookRoutes);    // 0253 · WhatsApp 웹훅 — 실제 도착/읽음/실패 사유 + 24시간 창
   app.register(quoteWaRoutes);      // 0256 · 견적·매출 추적 › 신규 견적 WhatsApp 알림
+  app.register(leadWaRoutes);       // 0268 · 고객등록 › 웹 가입 신청 WhatsApp 알림(접수·담당자 지정)
   app.register(waPromoRoutes);      // 0260 · 제품·마케팅 › WhatsApp 마케팅
 
   // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
@@ -194,6 +197,7 @@ export function buildApp() {
   startPriceMasterWorker(app);      // 가격 예약 — 적용일(멕시코 00:00)이 된 묶음 적용(5분)
   startWaPromoWorker(app);          // 0260 · WhatsApp 마케팅 — 예약 발송 · 동의 요청(하루 상한 안에서)
   startQuoteNotifyWorker(app);      // 0256 · 신규 견적 WhatsApp 알림 — 놓친 건 줍기(60초)
+  startLeadNotifyWorker(app);       // 0268 · 웹 가입 신청 WhatsApp 알림 — 놓친 건 줍기(60초)
   startTreasuryWorker(app);         // 0240 · 일일 자금 스냅샷 누적 + WhatsApp 일일/월간 발송(5분 체크)
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).

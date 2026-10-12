@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (build tx-1012crmterms)</title>
+<title>Refatrix ERP · 고객 등록 (build tx-1012leadwa)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -259,6 +259,17 @@
           <span class="hint" id="leadMeta" style="margin-left:auto;margin-top:0"></span>
         </div>
         <div id="leadList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+      </div>
+
+      <!-- 0268 · 가입신청 WhatsApp 알림(디렉터) -->
+      <div class="card hidden" id="leadWaCard" style="margin-top:12px">
+        <h2 style="margin:0 0 4px">📲 가입신청 WhatsApp 알림</h2>
+        <div class="hint" style="margin-top:0">
+          ① <b>신청이 접수되면</b> 아래 「받는 사람」에게, ② <b>담당자를 지정하면</b> 그 담당자에게 자동 발송됩니다.<br>
+          받는 사람은 <b>관리 › 연동관리 › 팝업 알림 대상</b>과 같은 명단이고(디렉터는 항상 포함),
+          번호는 <b>관리 › 사용자</b>의 <span class="mono">WhatsApp 번호</span>를 씁니다 — 명단을 두 곳에 두지 않습니다.
+        </div>
+        <div id="leadWaBody" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
 
@@ -2195,7 +2206,10 @@
     if(tab==='approve')loadApprovals();
     if(tab==='reg')loadRegApprovals();
     if(tab==='claim'){loadClaimApprovals();loadRfcExempt();}
-    if(tab==='leads')loadLeads();
+    if(tab==='leads'){ loadLeads();
+      // 0268 · 알림 패널은 디렉터에게만 보인다(서버도 director 전용).
+      if(window.RefLeadWa) RefLeadWa.render({ api:session.api, token:session.token,
+        isDirector:isDirector(), userId:(session.user&&session.user.id)||null }); }
   }));
   if(window.__rnavRefresh)window.__rnavRefresh();
   // 헤더(트리) 딥링크: #tab=list/team/approve
@@ -2213,7 +2227,10 @@
     if(tab==='approve')loadApprovals();
     if(tab==='reg')loadRegApprovals();
     if(tab==='claim'){loadClaimApprovals();loadRfcExempt();}
-    if(tab==='leads')loadLeads();
+    if(tab==='leads'){ loadLeads();
+      // 0268 · 알림 패널은 디렉터에게만 보인다(서버도 director 전용).
+      if(window.RefLeadWa) RefLeadWa.render({ api:session.api, token:session.token,
+        isDirector:isDirector(), userId:(session.user&&session.user.id)||null }); }
   }
   window.addEventListener('hashchange',()=>{ if(!$('app').classList.contains('hidden'))applyCustHashTab(); });
 
@@ -2335,6 +2352,8 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20261009ratify"></script>
+<!-- 0268 · 웹 가입 신슭 WhatsApp 알림 패널(디렉터) -->
+<script src="refatrix-leadwa.js?v=20261012leadwa"></script>
 <script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>
