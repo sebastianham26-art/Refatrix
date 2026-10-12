@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0918po1</title>
+<title>Refatrix · 창고 포장 · build 1012re1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -231,6 +231,26 @@
   .sealedbox{background:#f3f5f2;border:1px solid #d6ddd2;border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:15px}
   .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
   .sealedbox .un{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:800;cursor:pointer}
+  /* 0269 · 피킹 기록(어느 랙에서 집었는가) */
+  table.ptbl td.rk{white-space:normal;min-width:170px}
+  table.ptbl td.rk .pk{font-weight:800;color:var(--steel-d)}
+  table.ptbl td.rk .fm{display:inline-block;background:var(--gold);color:#fff;border-radius:4px;font-size:10px;padding:0 4px;margin-left:2px;vertical-align:middle}
+  table.ptbl td.rk .all{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+  table.ptbl td.pkc{white-space:nowrap}
+  .pkbtn{border:none;border-radius:8px;padding:7px 10px;font-size:13px;font-weight:800;cursor:pointer;margin:1px 2px 1px 0}
+  .pkbtn.ok{background:var(--green);color:#fff} .pkbtn.alt{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel)}
+  .pkdone{display:inline-block;color:#2e6b49;font-weight:800;font-size:13px}
+  .pkdone small{display:block;color:var(--muted);font-weight:600;font-size:11px}
+  #pickModal .mbox{max-width:520px;text-align:left}
+  #pickModal table{width:100%;border-collapse:collapse;table-layout:auto;border:1px solid var(--line);border-radius:10px}
+  #pickModal th,#pickModal td{padding:9px 8px;font-size:15px;white-space:nowrap}
+  #pickModal th{background:#eef1f4;color:var(--steel-d);font-size:12px}
+  #pickModal input{width:84px;font-size:18px;font-weight:800;padding:6px 8px;border:2px solid var(--steel);border-radius:8px;text-align:right}
+  #pickModal .sum{margin:10px 0;font-size:16px;font-weight:800}
+  #pickModal .sum.bad{color:var(--red)} #pickModal .sum.good{color:var(--green)}
+  #pickModal .pmerr{color:var(--red);font-weight:700;font-size:13px;min-height:18px;margin-bottom:6px}
+  #pickModal .btns{display:flex;gap:8px;flex-wrap:wrap}
+  #pickModal .btns button{flex:1}
   .soon{opacity:.6;font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
 
   /* ===== PDA 컴팩트 모드(2026-08-26) — 수입입고와 같은 처방을 포장작업에 적용 =====
@@ -410,6 +430,19 @@
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 <div id="lightbox" onclick="this.style.display='none'"><img id="lightImg" alt=""></div>
 
+<div class="modal" id="pickModal"><div class="mbox">
+  <h3 style="margin:0 0 4px;font-size:20px">📍 피킹 랙 기록 · <span id="pmCode"></span></h3>
+  <div style="font-size:14px;color:var(--muted);margin-bottom:8px">실제로 집은 랙과 수량을 넣으세요. 매출 전환 때 이 랙에서 차감됩니다. 포장할 수량 <b id="pmReq" style="color:var(--ink)"></b>개</div>
+  <table><thead><tr><th>랙</th><th style="text-align:right">랙 재고</th><th style="text-align:right">집을 수 있음</th><th style="text-align:right">집은 수량</th></tr></thead><tbody id="pmBody"></tbody></table>
+  <div class="sum" id="pmSum"></div>
+  <div class="pmerr" id="pmErr"></div>
+  <div class="btns">
+    <button class="mbtn" id="pmSave" type="button">✔ 기록</button>
+    <button class="mbtn" id="pmReset" type="button" style="background:#8a857a">기록 취소(지시서대로)</button>
+    <button class="mbtn" id="pmClose" type="button" style="background:#eef2f5;color:var(--steel-d)">닫기</button>
+  </div>
+  <div style="font-size:12px;color:var(--muted);margin-top:8px">목록에 없는 랙에서 집었다면 시스템 위치가 틀린 것입니다 — 재고실사 → 📍 랙별 재고 → 위치수정으로 먼저 고친 뒤 기록하세요.</div>
+</div></div>
 <div class="modal" id="newModal"><div class="mbox"><div class="ic">📦</div><h3>새 포장지시 도착</h3><p id="newMsg">새 포장 작업이 내려왔습니다.</p><button class="mbtn" id="newOk">확인</button></div></div>
 
 <script>
@@ -1104,7 +1137,7 @@
   function renderSig(d){
     if(!d) return '';
     var bx=(d.boxes||[]).map(function(b){ return b.box_id+'/'+b.box_no+'/'+(b.sealed?1:0)+'/'+(b.photo_count||0)+'/'+(b.lines||[]).map(function(l){return l.product_id+':'+l.qty;}).join(','); }).join('|');
-    var it=(d.items||[]).map(function(i){ return i.product_id+':'+i.scanned+':'+i.remaining+':'+(i.box_nos||[]).join('.'); }).join('|');
+    var it=(d.items||[]).map(function(i){ return i.product_id+':'+i.scanned+':'+i.remaining+':'+(i.box_nos||[]).join('.')+':'+(i.picked?1:0)+':'+(i.rack_picks||''); }).join('|');
     return bx+'#'+it+'#'+d.scanned_total+'/'+d.required_total+'/'+(d.all_done?1:0)+'/'+(d.photos_ok?1:0);
   }
   // 실시간 자동 갱신 중지: 포장 중 화면이 다시 그려지며 커서가 튀는 문제 방지.
@@ -1141,12 +1174,13 @@
   }
   function renderItemsTable(){
     var d=PK;
-    var cols=[['ctr_code','CTR',false],['syd_code','경쟁사',false],['ean','EAN-13',false],['required','포장할',true],['scanned','포장한',true],['remaining','남은',true],['rack_location','랙위치',false],['box_nos','박스',false]];
+    var cols=[['ctr_code','CTR',false],['syd_code','경쟁사',false],['ean','EAN-13',false],['required','포장할',true],['scanned','포장한',true],['remaining','남은',true],['rack_location','랙위치 · 수량',false],['picked','피킹 기록',false],['box_nos','박스',false]];
     $('itemsHead').innerHTML='<tr>'+cols.map(function(c){ var ar=(itemSortKey===c[0])?('<span class="ar">'+(itemSortDir>0?'\u25b2':'\u25bc')+'</span>'):''; return '<th class="'+(c[2]?'num':'')+'" data-k="'+c[0]+'">'+c[1]+ar+'</th>'; }).join('')+'</tr>';
     var rows=(d.items||[]).slice().sort(function(a,b){
       var k=itemSortKey, x=a[k], y=b[k];
       if(k==='box_nos'){ x=(a.box_nos&&a.box_nos[0])||0; y=(b.box_nos&&b.box_nos[0])||0; return (x-y)*itemSortDir; }
       if(k==='required'||k==='scanned'||k==='remaining'){ return ((Number(x)||0)-(Number(y)||0))*itemSortDir; }
+      if(k==='picked'){ return ((a.picked?1:0)-(b.picked?1:0))*itemSortDir; }
       return String(x||'').localeCompare(String(y||''))*itemSortDir;
     });
     $('remBody').innerHTML=rows.map(function(it){
@@ -1156,10 +1190,108 @@
         +'<td>'+esc(it.ctr_code)+'</td><td>'+esc(it.syd_code||'\u2014')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
         +'<td class="num">'+it.required+'</td><td class="num">'+it.scanned+'</td>'
         +'<td class="num"><b class="'+(done?'zero':'pos')+'">'+it.remaining+'</b></td>'
-        +'<td>'+esc(it.rack_location||'\u2014')+'</td><td>'+esc(bx)+'</td></tr>';
-    }).join('') || '<tr><td colspan="8" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
+        +'<td class="rk">'+rackCell(it)+'</td><td class="pkc">'+pickCell(it)+'</td><td>'+esc(bx)+'</td></tr>';
+    }).join('') || '<tr><td colspan="9" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
+    wirePickBtns();
     Array.prototype.forEach.call($('itemsHead').querySelectorAll('th'),function(th){ th.addEventListener('click',function(){ var k=th.getAttribute('data-k'); if(itemSortKey===k) itemSortDir=-itemSortDir; else { itemSortKey=k; itemSortDir=1; } renderItemsTable(); }); });
   }
+  // ===== 0269 · 랙위치 · 수량(지시서 위치 + 이 SKU 가 놓인 모든 랙) / 피킹 기록 =====
+  function rackCell(it){
+    var p=(it.picks||[]).filter(function(k){ return k.rack; });
+    var un=(it.picks||[]).filter(function(k){ return !k.rack; }).reduce(function(s,k){ return s+Number(k.qty||0); },0);
+    var main=p.length? p.map(function(k){ return '<span class="pk">'+esc(k.rack)+(k.kind==='fast'?'<span class="fm">FM</span>':'')+' ×'+k.qty+'</span>'; }).join(' · ')
+      : esc(it.rack_location||'\u2014');
+    if(p.length && un>0) main+=' · <span class="pk">'+esc('SIN UBICACIÓN')+' ×'+un+'</span>';
+    var all=(it.racks_all||[]);
+    var others=all.filter(function(r){ return !p.some(function(k){ return k.rack===r.rack; }); });
+    var allTxt=all.length>1||others.length? ('<span class="all">전체 랙: '+all.map(function(r){ return esc(r.rack)+' '+r.qty; }).join(' · ')+'</span>') : '';
+    return main+allTxt;
+  }
+  function pickCell(it){
+    if(!(it.picks&&it.picks.length)) return '<span style="color:#9a958b">\u2014</span>';
+    if(it.picked) return '<span class="pkdone">\u2713 기록됨<small>'+esc(it.picked_by_name||'')+'</small></span> <button class="pkbtn alt" data-pk="edit" data-pid="'+it.product_id+'">변경</button>';
+    return '<button class="pkbtn ok" data-pk="plan" data-pid="'+it.product_id+'">지시서대로 \u2713</button><button class="pkbtn alt" data-pk="edit" data-pid="'+it.product_id+'">다른 랙</button>';
+  }
+  function wirePickBtns(){
+    Array.prototype.forEach.call($('remBody').querySelectorAll('[data-pk]'),function(b){
+      b.addEventListener('click',function(e){
+        e.stopPropagation();
+        var pid=Number(b.getAttribute('data-pid'));
+        if(b.getAttribute('data-pk')==='plan') pickAsPlanned(pid); else openPickModal(pid);
+      });
+    });
+  }
+  function pickFail(o){
+    if(o.status===403) return failMsg(o);
+    return '\u26a0 '+((o.body&&o.body.note)||(o.body&&o.body.error)||('상태 '+o.status));
+  }
+  function pickAsPlanned(pid){
+    if(!PK) return;
+    var it=(PK.items||[]).find(function(x){ return x.product_id===pid; });
+    postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/pick',{product_id:pid,as_planned:true}).then(function(o){
+      if(!o.ok){ feedback(pickFail(o),'err'); beep(false); return; }
+      feedback('\ud83d\udccd '+(it?it.ctr_code:'')+' 피킹 기록 \u2014 '+(o.body.picks||[]).map(function(k){ return (k.rack||'SIN UBICACIÓN')+' \u00d7'+k.qty; }).join(' · '),'ok');
+      loadPacking(PK.quote_id,false);
+    }).catch(function(){ feedback('\u26a0 피킹 기록 실패(통신)','err'); });
+  }
+  var PM=null;
+  function openPickModal(pid){
+    if(!PK) return;
+    fetch(API+'/api/warehouse/packing/'+PK.quote_id+'/pick-options?product_id='+pid,{headers:AUTH}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,status:r.status,body:j}; }); }).then(function(o){
+      if(!o.ok){ feedback(pickFail(o),'err'); return; }
+      PM=o.body; PM.product_id=pid;
+      var cur={}; (PM.current||[]).forEach(function(k){ cur[k.rack||'']=(cur[k.rack||'']||0)+Number(k.qty); });
+      $('pmCode').textContent=PM.ctr_code; $('pmReq').textContent=PM.required;
+      var rows=(PM.racks||[]).map(function(r){
+        return '<tr><td><b>'+esc(r.rack)+'</b>'+(r.kind==='fast'?' <span style="background:var(--gold);color:#fff;border-radius:4px;font-size:10px;padding:0 4px">FM</span>':'')
+          +(r.picked_other>0?('<div style="font-size:11px;color:var(--red)">다른 오더 '+esc((r.held_quotes||[]).join(', '))+' 가 '+r.picked_other+'개 피킹함</div>')
+            :(r.held_other>0?('<div style="font-size:11px;color:var(--muted)">다른 지시서 '+esc((r.held_quotes||[]).join(', '))+' 계획 '+r.held_other+'개 (먼저 집는 쪽)</div>'):''))+'</td>'
+          +'<td style="text-align:right">'+r.qty+'</td><td style="text-align:right">'+r.max+'</td>'
+          +'<td style="text-align:right"><input type="number" min="0" step="1" inputmode="numeric" data-rack="'+esc(r.rack)+'" data-max="'+r.max+'" value="'+(cur[r.rack]||'')+'"></td></tr>';
+      });
+      if(PM.unassigned>0) rows.push('<tr><td><b>위치 미지정</b><div style="font-size:11px;color:var(--muted)">랙 기록이 없는 재고</div></td><td style="text-align:right">'+PM.unassigned+'</td><td style="text-align:right">'+PM.unassigned+'</td>'
+        +'<td style="text-align:right"><input type="number" min="0" step="1" inputmode="numeric" data-rack="" data-max="'+PM.unassigned+'" value="'+(cur['']||'')+'"></td></tr>');
+      $('pmBody').innerHTML=rows.join('')||'<tr><td colspan="4" style="color:#9a958b;text-align:center">랙재고 기록이 없습니다</td></tr>';
+      Array.prototype.forEach.call($('pmBody').querySelectorAll('input'),function(inp){ inp.addEventListener('input',pmSum); });
+      $('pmErr').textContent=''; pmSum();
+      $('pickModal').classList.add('on');
+    }).catch(function(){ feedback('\u26a0 피킹 위치 조회 실패(통신)','err'); });
+  }
+  function pmPicks(){
+    var out=[]; Array.prototype.forEach.call($('pmBody').querySelectorAll('input'),function(inp){ var q=Number(inp.value)||0; if(q>0) out.push({rack:inp.getAttribute('data-rack')||null,qty:q}); });
+    return out;
+  }
+  function pmSum(){
+    if(!PM) return;
+    var t=pmPicks().reduce(function(s,k){ return s+k.qty; },0);
+    var over=Array.prototype.some.call($('pmBody').querySelectorAll('input'),function(inp){ return (Number(inp.value)||0)>Number(inp.getAttribute('data-max')); });
+    var ok=t===Number(PM.required) && !over;
+    $('pmSum').className='sum '+(ok?'good':'bad');
+    $('pmSum').textContent='합계 '+t+' / '+PM.required+(over?' \u2014 집을 수 있는 수량을 넘었습니다':(t===Number(PM.required)?' \u2713':''));
+    $('pmSave').disabled=!ok;
+  }
+  function pmSave(){
+    if(!PM||!PK) return;
+    $('pmSave').disabled=true;
+    postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/pick',{product_id:PM.product_id,picks:pmPicks()}).then(function(o){
+      if(!o.ok){ $('pmErr').textContent=pickFail(o); pmSum(); return; }
+      $('pickModal').classList.remove('on');
+      feedback('\ud83d\udccd '+PM.ctr_code+' 피킹 기록 \u2014 '+(o.body.picks||[]).map(function(k){ return (k.rack||'SIN UBICACIÓN')+' \u00d7'+k.qty; }).join(' · '),'ok');
+      loadPacking(PK.quote_id,false);
+    }).catch(function(){ $('pmErr').textContent='\u26a0 통신 실패'; pmSum(); });
+  }
+  function pmReset(){
+    if(!PM||!PK) return;
+    postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/pick',{product_id:PM.product_id,reset:true}).then(function(o){
+      if(!o.ok){ $('pmErr').textContent=pickFail(o); return; }
+      $('pickModal').classList.remove('on');
+      feedback('\ud83d\udccd '+PM.ctr_code+' 피킹 기록 취소 \u2014 지시서 위치로 차감됩니다','idle');
+      loadPacking(PK.quote_id,false);
+    }).catch(function(){ $('pmErr').textContent='\u26a0 통신 실패'; });
+  }
+  $('pmSave').addEventListener('click',pmSave);
+  $('pmReset').addEventListener('click',pmReset);
+  $('pmClose').addEventListener('click',function(){ $('pickModal').classList.remove('on'); focusScan(); });
   function renderPacking(){
     var d=PK;
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+poBadge(d.customer_po_no)+'</span><span class="cu">'+esc(d.customer)+'</span>'

@@ -37,7 +37,7 @@ async function isPendingCustomer(customerId) {
 }
 
 import { resolveSeller, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
-import { rackStockReady, quotePicks, snapshotQuotePicks } from '../rackStock.js';   // 0245 · 피킹 위치(fast moving 우선)
+import { rackStockReady, quotePicks, snapshotQuotePicks, rackMap } from '../rackStock.js';   // 0245 · 피킹 위치(fast moving 우선)
 
 // 0235 · 견적의 판매 영업사원. 독점 중이면 독점권자로 고정, 영업이 남의 독점 고객 견적을 만들면 차단.
 //   개방 고객은 견적 단계에서 판매자를 비워 둘 수 있다(전환 때 정한다).
@@ -1033,7 +1033,8 @@ export default async function quoteRoutes(app) {
     try {
       if (await rackStockReady() && inStock.length) {
         const { picks, saved } = await quotePicks(null, id, inStock);
-        for (const it of inStock) { it.picks = picks[it.product_id] || []; it.picks_saved = !!saved[it.product_id]; }
+        const all = await rackMap(null, inStock.map((it) => it.product_id));   // 0269 · SKU 가 놓인 모든 랙 × 수량
+        for (const it of inStock) { it.picks = picks[it.product_id] || []; it.picks_saved = !!saved[it.product_id]; it.racks_all = all.get(Number(it.product_id)) || []; }
         rackReady = true;
       }
     } catch (e) { try { console.error('[convert-preview] rack picks', e.message); } catch (_) {} }
@@ -1189,16 +1190,19 @@ export default async function quoteRoutes(app) {
     if (q.customer_id) { try { await autoStage({ customerId: q.customer_id, targetSort: 50, userId: req.ctx.perm.userId, note: `자동: 포장작업지시서 출력 (${q.quote_no || id}) · 수주 단계` }); } catch (_) {} }
     // 0245 · 지시서에 찍히는 피킹 위치를 저장한다 — 매출 전환 때 **이 위치에서 자동 차감**(디렉터 결정 2026-10-01).
     //   재출력 시 수량이 바뀐 SKU 만 다시 잡는다(이미 차감된 위치는 건드리지 않음).
-    let picks = null;
+    let picks = null, racksAll = null;
     try {
       if (await rackStockReady()) {
         const items = await pickableItems(id);
         picks = await withTx(async (c) => snapshotQuotePicks(c, id, items, req.ctx.perm.userId));
+        // 0269 · 지시서에 「이 SKU 가 있는 모든 랙 × 수량」도 찍는다(피킹 위치 밖의 랙 포함)
+        const m = await rackMap(null, items.map((it) => it.product_id));
+        racksAll = {}; for (const [k, v] of m) racksAll[k] = v;
       }
     } catch (e) { try { console.error('[packing-printed] rack picks', e.message); } catch (_) {} picks = null; }
     // 출력 클릭을 영구 기록(불변) — 매 클릭마다. 최초 1건이 실제 첫 출력 시각.
     try { await logEvent({ userId: req.ctx.perm.userId, action: 'print', target: 'packing_print', detail: { quote_id: id, quote_no: q.quote_no || null, customer_id: q.customer_id || null, printed_at: printedAt } }); } catch (_) {}
-    return { ok: true, held: true, packing_printed_at: printedAt, packing_due_at: dueAt, picks };
+    return { ok: true, held: true, packing_printed_at: printedAt, packing_due_at: dueAt, picks, racks_all: racksAll };
   });
 
   // 확정된 견적을 매출 인보이스로 전환. 매칭 안 된 줄(not_found)은 제외.

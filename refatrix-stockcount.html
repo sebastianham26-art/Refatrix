@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc1001rs1</title>
+<title>재고실사 · Refatrix · build sc1012re1</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -270,6 +270,29 @@
     <div id="rsRacks" class="rackbar" style="margin-top:10px"></div>
     <div class="msg" id="rsMsg"></div>
   </div>
+  <!-- 0269 · 실사 랙 업로드 (SKU × 랙 × 수량) -->
+  <div class="card" id="rsUp">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">⬆ 실사 랙 업로드 <span class="mut" style="font-weight:400">SKU × 랙 × 수량</span></h2>
+      <button class="btn ghost sm" id="rsUpTpl" type="button">⬇ 양식</button>
+    </div>
+    <div class="hint mut" style="margin:4px 0 8px">엑셀 첫 줄에 <b>CODIGO CTR</b> · <b>UBICACIÓN</b> · <b>QTY</b> 가 있으면 됩니다(UBICACIÓN/QTY 쌍은 여러 개 가능 — 「conteos」 양식 그대로). 파일에 나온 SKU 는 <b>파일 내용으로 랙재고를 통째로 맞추고</b>, 파일에 없는 SKU 는 그대로 둡니다. 랙 합계가 <b>등록 재고를 넘는 SKU 는 저장하지 않습니다</b>(재고실사로 수량을 먼저 맞추세요). 모자라는 분량은 「위치 미지정」으로 남습니다.</div>
+    <div class="row">
+      <div style="flex:2;min-width:200px"><input type="file" id="rsUpFile" accept=".xlsx,.xls,.csv"></div>
+      <div><button class="btn sm" id="rsUpGo" type="button">미리보기</button></div>
+    </div>
+    <div class="msg" id="rsUpMsg"></div>
+    <div id="rsUpRes" class="hidden" style="margin-top:8px">
+      <div class="chips" id="rsUpChips"></div>
+      <div class="tbl-wrap" style="margin-top:8px;max-height:46vh"><table><thead><tr><th>제품번호</th><th class="num">등록 재고</th><th class="num">파일 합계</th><th class="num">차이</th><th>파일 랙 × 수량</th><th>현재 랙 × 수량</th><th>판정</th></tr></thead><tbody id="rsUpBody"></tbody></table></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn brass sm" id="rsUpApply" type="button">✔ 랙재고에 저장 (디렉터)</button>
+        <button class="btn ghost sm" id="rsUpXls" type="button">⬇ 미리보기 엑셀</button>
+        <span class="mut" id="rsUpNote"></span>
+      </div>
+    </div>
+    <div id="rsUpHist" class="mut" style="margin-top:8px"></div>
+  </div>
   <div class="card">
     <h2 id="rsListTtl" style="margin-top:0">SKU별 위치 <span class="mut" id="rsCount"></span></h2>
     <div class="tbl-wrap"><table><thead><tr id="rsHead"></tr></thead><tbody id="rsBody"></tbody></table></div>
@@ -280,6 +303,21 @@
       <button class="btn ghost sm" id="rsDtClose" type="button">✕</button>
     </div>
     <div id="rsDtRacks" style="margin-top:6px"></div>
+    <!-- 0269 · 위치수정(창고담당) — 기존 위치 → 새 위치 + 수량. 합계는 그대로라 등록 재고를 벗어나지 않는다 -->
+    <div id="rsTr" class="hidden" style="margin-top:10px;padding:10px;border:1.5px solid var(--green);border-radius:12px;background:#f6faf7">
+      <div style="font-weight:800;color:var(--green);margin-bottom:2px">↔ 위치수정</div>
+      <div class="row">
+        <div style="flex:1;min-width:150px"><label>보내는 위치</label><select id="rsTrFrom"></select></div>
+        <div style="flex:1;min-width:120px"><label>받는 위치</label><input id="rsTrTo" list="rsTrRacks" placeholder="AE2-1 · 비우면 위치 미지정" autocomplete="off"><datalist id="rsTrRacks"></datalist></div>
+        <div style="flex:0 0 90px"><label>수량</label><input id="rsTrQty" type="number" min="1" step="1" inputmode="decimal"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div style="flex:1;min-width:160px"><input id="rsTrNote" placeholder="사유(선택) — 예: 카톤 정리"></div>
+        <div><button class="btn sm" id="rsTrGo" type="button">옮기기</button></div>
+      </div>
+      <div class="msg" id="rsTrMsg"></div>
+      <div class="hint mut" id="rsTrHint">옮길 수 있는 수량 = 그 랙 수량 − 포장작업지시서가 잡아 둔 수량. 위치 미지정에서는 미지정 수량까지만 랙에 올릴 수 있습니다.</div>
+    </div>
     <div id="rsDtEdit" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
       <div class="row">
         <div style="flex:1;min-width:110px"><label>랙</label><input id="rsEdRack" placeholder="AE1-3" autocomplete="off"></div>
@@ -287,7 +325,7 @@
         <div style="flex:2;min-width:150px"><label>사유</label><input id="rsEdNote" placeholder="예: 현장 재확인"></div>
         <div><label>&nbsp;</label><button class="btn brass sm" id="rsEdSave" type="button">저장</button></div>
       </div>
-      <div class="hint mut">디렉터 전용 · 그 랙의 수량을 입력한 값으로 맞춥니다(0 = 그 랙에서 제거). 재고 총량(stock_qty)은 바뀌지 않습니다.</div>
+      <div class="hint mut">디렉터 전용 · 그 랙의 수량을 입력한 값으로 맞춥니다(0 = 그 랙에서 제거). 재고 총량(stock_qty)은 바뀌지 않습니다. 보통은 위 「위치수정」을 쓰세요 — 랙 합계가 등록 재고를 넘지 않게 지켜 줍니다.</div>
     </div>
     <h2 style="margin:14px 0 6px;font-size:14px" id="rsDtMvTtl">이력</h2>
     <div class="tbl-wrap" style="max-height:34vh"><table><thead><tr><th>일시</th><th>랙</th><th class="num">변화</th><th class="num">이후</th><th>사유</th><th>참조</th><th>처리자</th></tr></thead><tbody id="rsDtMoves"></tbody></table></div>
@@ -1790,15 +1828,16 @@ function spotHistXlsx(){
 
 <script>
 /* =====================================================================
-   0245 · 랙별 재고 화면 (build sc1001rs1)
+   0245 · 랙별 재고 화면 (build sc1012re1)
    제품 × 랙 × 수량 — 실사 반영·적치·위치변경·매출 출고로 서버가 유지한다.
    이 화면은 조회 + 디렉터 수동 조정 + 과거 실사 가져오기.
+   0269 · 실사 랙 업로드(엑셀) · 창고담당 위치수정(기존 위치 → 새 위치 + 수량, 합계 보존)
    ===================================================================== */
 (function(){
   var RS={items:[],racks:[],pid:null};
   var q3=function(n){ return Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3}); };
   var esc=function(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); };
-  var REASON={count:'재고실사',sale:'매출 출고',sale_reverse:'매출 취소·수정',putaway:'수입 적치',relocate:'위치변경',manual:'디렉터 수동'};
+  var REASON={count:'재고실사',sale:'매출 출고',sale_reverse:'매출 취소·수정',putaway:'수입 적치',relocate:'위치변경',manual:'디렉터 수동',transfer:'위치수정',import:'실사 업로드'};
   function chip(r){ return '<span style="display:inline-block;margin:1px 6px 1px 0;white-space:nowrap"><b>'+esc(r.rack)+'</b> '+q3(r.qty)+(r.kind==='fast'?' <span class="pill p-over" style="font-size:10px;padding:0 4px">FM</span>':'')+'</span>'; }
   async function openRS(){
     show('rackStockView');
@@ -1806,6 +1845,9 @@ function spotHistXlsx(){
     $('rsDetail').classList.add('hidden');
     $('rsImport').classList.toggle('hidden', !isDir());
     if(isDir()) loadImportList();
+    $('rsUpApply').classList.toggle('hidden', !isDir());
+    $('rsUpNote').textContent=isDir()?'':'저장은 디렉터가 합니다 — 미리보기 결과를 확인해 전달하세요.';
+    loadUpHist();
     await loadRacks(); await loadRS();
     setTimeout(function(){ $('rsQ').focus(); },50);
   }
@@ -1855,7 +1897,7 @@ function spotHistXlsx(){
     $('rsDtTitle').innerHTML=esc(p.code)+' <span class="mut" style="font-weight:400">'+esc(p.name)+'</span>';
     $('rsDtRacks').innerHTML='시스템 재고 <b>'+q3(p.stock_qty)+'</b> · 랙 기록 <b>'+q3(r.located)+'</b>'
       +(r.unassigned>0?(' · <span class="diff-neg">위치 미지정 '+q3(r.unassigned)+'</span>'):'')
-      +'<div style="margin-top:6px">'+(r.racks.length?r.racks.map(chip).join(''):'<span class="mut">랙 기록 없음</span>')+'</div>'
+      +'<div style="margin-top:6px">'+(r.racks.length?rackTable(r.racks):'<span class="mut">랙 기록 없음</span>')+'</div>'
       +(p.master_rack?('<div class="mut" style="margin-top:4px">제품마스터 위치: '+esc(p.master_rack)+'</div>'):'');
     $('rsDtMoves').innerHTML=(r.moves||[]).map(function(m){
       var d=Number(m.delta);
@@ -1865,6 +1907,7 @@ function spotHistXlsx(){
         +'<td>'+esc(REASON[m.reason]||m.reason)+(m.note?('<div class="mut">'+esc(m.note)+'</div>'):'')+'</td>'
         +'<td class="mut">'+esc(ref)+'</td><td class="mut">'+esc(m.by_name||'')+'</td></tr>';
     }).join('')||'<tr><td colspan="7" class="mut" style="text-align:center;padding:12px">이력이 없습니다.</td></tr>';
+    RS.detail=r; fillTransfer(r);
     $('rsDtEdit').classList.toggle('hidden', !isDir());
     $('rsEdRack').value=''; $('rsEdQty').value=''; $('rsEdNote').value='';
     $('rsDetail').classList.remove('hidden');
@@ -1895,6 +1938,213 @@ function spotHistXlsx(){
     toast('✔ '+r.code+' · '+r.skus+' SKU 저장'+(r.skipped?(' · 보류 '+r.skipped+' 제외'):''));
     loadRacks(); loadRS();
   }
+  /* ---------- 0269 · 랙 × 수량 표(상세) ---------- */
+  function rackTable(list){
+    return '<table style="margin-top:4px"><thead><tr><th>랙</th><th class="num">수량</th><th class="num">지시서가 잡음</th><th class="num">옮길 수 있음</th></tr></thead><tbody>'
+      +list.map(function(x){
+        var held=Number(x.held||0);
+        return '<tr><td><b>'+esc(x.rack)+'</b>'+(x.kind==='fast'?' <span class="pill p-over" style="font-size:10px;padding:0 4px">FM</span>':'')+'</td>'
+          +'<td class="num"><b>'+q3(x.qty)+'</b></td>'
+          +'<td class="num">'+(held>0?('<span class="diff-neg" title="'+esc((x.held_quotes||[]).join(', '))+'">'+q3(held)+'</span> <span class="mut">'+esc((x.held_quotes||[]).join(', '))+'</span>'):'—')+'</td>'
+          +'<td class="num">'+(x.movable!=null?q3(x.movable):'—')+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+  /* ---------- 0269 · 위치수정(기존 위치 → 새 위치 + 수량) ---------- */
+  function fillTransfer(r){
+    var box=$('rsTr'); if(!box) return;
+    if(!r.edit_ready){ box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    var opts=r.racks.map(function(x){
+      var mv=x.movable!=null?x.movable:x.qty;
+      return '<option value="'+esc(x.rack)+'" data-max="'+mv+'">'+esc(x.rack)+' — '+q3(x.qty)+'개'+(mv<x.qty?(' (옮길 수 있음 '+q3(mv)+')'):'')+'</option>';
+    });
+    if(r.unassigned>0) opts.push('<option value="" data-max="'+r.unassigned+'">위치 미지정 — '+q3(r.unassigned)+'개</option>');
+    $('rsTrFrom').innerHTML=opts.join('')||'<option value="" data-max="0">옮길 재고가 없습니다</option>';
+    $('rsTrRacks').innerHTML=(RS.racks||[]).map(function(k){ return '<option value="'+esc(k.rack)+'">'; }).join('');
+    $('rsTrTo').value=''; $('rsTrQty').value=''; $('rsTrNote').value=''; setMsg('rsTrMsg','');
+    syncTrMax();
+  }
+  function syncTrMax(){
+    var o=$('rsTrFrom').options[$('rsTrFrom').selectedIndex];
+    var mx=o?Number(o.getAttribute('data-max')||0):0;
+    $('rsTrQty').max=mx; $('rsTrQty').placeholder='최대 '+q3(mx);
+  }
+  async function doTransfer(){
+    if(!RS.pid) return;
+    var from=$('rsTrFrom').value, to=normScan($('rsTrTo').value).trim().toUpperCase(), qty=Number($('rsTrQty').value);
+    var o=$('rsTrFrom').options[$('rsTrFrom').selectedIndex]; var mx=o?Number(o.getAttribute('data-max')||0):0;
+    if(!(qty>0)){ setMsg('rsTrMsg','수량을 입력하세요','err'); return; }
+    if(qty>mx){ setMsg('rsTrMsg','옮길 수 있는 수량은 '+q3(mx)+'개입니다','err'); return; }
+    if(!from && !to){ setMsg('rsTrMsg','받는 랙을 입력하세요(위치 미지정 → 위치 미지정은 의미가 없습니다)','err'); return; }
+    if(from && from===to){ setMsg('rsTrMsg','보내는 랙과 받는 랙이 같습니다','err'); return; }
+    var label=(from||'위치 미지정')+' → '+(to||'위치 미지정')+' · '+q3(qty)+'개';
+    if(!confirm(RS.detail.product.code+'\n'+label+'\n\n옮길까요?')) return;
+    $('rsTrGo').disabled=true;
+    try{
+      var r=await api('/api/rack-stock/transfer',{method:'POST',body:JSON.stringify({product_id:RS.pid,from:from||null,to:to||null,qty:qty,note:$('rsTrNote').value})});
+      if(!r.ok){
+        var m=r.note||r.error||('실패 '+r.status);
+        if(r.status===403) m=(r.error==='read_only')?'창고 「수정·기록(edit)」 권한이 필요합니다':'권한이 없습니다';
+        setMsg('rsTrMsg','⚠ '+m,'err'); return;
+      }
+      toast('✔ '+label);
+      await openDetail(RS.pid); setMsg('rsTrMsg','✔ '+label,'ok'); loadRacks(); loadRS();
+    } finally { $('rsTrGo').disabled=false; }
+  }
+  /* ---------- 0269 · 실사 랙 업로드 ----------
+     parseRackSheet(aoa) — 첫 줄(머리글)에서 코드 열과 「랙(UBICACIÓN) · 수량(QTY)」 쌍을 찾는다.
+     가로형(conteos: 코드 · 랙/수량 ×6 · QTY CONTADA · QTY SISTEMA ERP · DIFERENCIA)과 세로형(코드 · 랙 · 수량) 모두 읽는다.
+     같은 내용의 줄이 두 번 있으면 서버가 한 번만 센다(sig). */
+  function parseRackSheet(aoa){
+    var norm=function(v){ return String(v==null?'':v).trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); };
+    var hr=-1, head=[];
+    for(var i=0;i<Math.min(aoa.length,15);i++){
+      var h=(aoa[i]||[]).map(norm);
+      if(h.some(function(x){ return /UBICACION|RACK|LOCATION|랙|위치/.test(x); }) && h.some(function(x){ return /CODIGO|SKU|CLAVE|CODE|제품번호|코드|^CTR$/.test(x); })){ hr=i; head=h; break; }
+    }
+    if(hr<0) return {error:'머리글을 찾지 못했습니다 — 첫 줄에 CODIGO CTR · UBICACIÓN · QTY 가 있어야 합니다.'};
+    var codeCol=head.findIndex(function(x){ return /CODIGO|SKU|CLAVE|CODE|제품번호|코드|^CTR$/.test(x); });
+    var isRack=function(x){ return /UBICACION|RACK|LOCATION|랙|위치/.test(x); };
+    var isQty=function(x){ return /^(QTY|CANTIDAD|CANT\.?|PIEZAS|PZAS|수량)$/.test(x); };
+    var contCol=head.findIndex(function(x){ return /CONTAD/.test(x); });
+    var pairs=[];
+    head.forEach(function(x,c){
+      if(!isRack(x)) return;
+      for(var k=c+1;k<head.length;k++){ if(isRack(head[k])) break; if(isQty(head[k])){ pairs.push([c,k]); break; } }
+    });
+    if(codeCol<0||!pairs.length) return {error:'랙(UBICACIÓN) 열과 수량(QTY) 열을 찾지 못했습니다.'};
+    var rows=[], lines=0, sumWarn=[];
+    for(var r=hr+1;r<aoa.length;r++){
+      var row=aoa[r]||[]; var code=String(row[codeCol]==null?'':row[codeCol]).trim();
+      if(!code) continue;
+      lines++;
+      var sigBase=code.toUpperCase()+'|'+pairs.map(function(p){ return String(row[p[0]]==null?'':row[p[0]]).trim().toUpperCase()+':'+String(row[p[1]]==null?'':row[p[1]]).trim(); }).join('|');
+      var tot=0, any=false;
+      pairs.forEach(function(p,pi){
+        var rk=row[p[0]], q=row[p[1]];
+        var rkS=String(rk==null?'':rk).trim(), qS=String(q==null?'':q).trim();
+        if(!rkS && !qS) return;
+        any=true; tot+=Number(qS)||0;
+        rows.push({line:r+1, code:code, rack:normScan(rkS), qty:qS===''?null:q, sig:sigBase+'#'+pi});
+      });
+      if(!any) rows.push({line:r+1, code:code, rack:'', qty:null, sig:sigBase+'#x'});
+      if(contCol>=0 && row[contCol]!=null && String(row[contCol]).trim()!=='' && Math.abs(tot-Number(row[contCol]))>1e-9) sumWarn.push(r+1);
+    }
+    return {rows:rows, lines:lines, pairs:pairs.length, sumWarn:sumWarn};
+  }
+  window.parseRackSheet=parseRackSheet;
+  window.rackUploadAoa=function(aoa,name){ return upPreviewAoa(aoa,name||'test.xlsx'); };   // 시험용(파일 선택 없이)
+  var UP={rows:null, res:null, file:'', filter:'issue'};
+  function readFile(f){
+    return new Promise(function(res,rej){
+      var fr=new FileReader();
+      fr.onload=function(){ try{ var wb=XLSX.read(fr.result,{type:'array'}); var ws=wb.Sheets[wb.SheetNames[0]]; res(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null})); }catch(e){ rej(e); } };
+      fr.onerror=function(){ rej(fr.error); };
+      fr.readAsArrayBuffer(f);
+    });
+  }
+  async function upPreview(){
+    var f=$('rsUpFile').files&&$('rsUpFile').files[0];
+    if(!f){ setMsg('rsUpMsg','파일을 고르세요','err'); return; }
+    if(!window.XLSX){ setMsg('rsUpMsg','엑셀 모듈 로딩중 — 잠시 후 다시','err'); return; }
+    setMsg('rsUpMsg','읽는 중…','');
+    var aoa; try{ aoa=await readFile(f); }catch(e){ setMsg('rsUpMsg','파일을 읽지 못했습니다: '+(e&&e.message||e),'err'); return; }
+    return upPreviewAoa(aoa, f.name);
+  }
+  async function upPreviewAoa(aoa, fname){
+    var p=parseRackSheet(aoa);
+    if(p.error){ setMsg('rsUpMsg',p.error,'err'); return; }
+    var f={name:fname};
+    UP.rows=p.rows; UP.file=f.name;
+    $('rsUpGo').disabled=true;
+    try{
+      var r=await api('/api/rack-stock/import/preview',{method:'POST',body:JSON.stringify({rows:p.rows})});
+      if(!r.ok){ setMsg('rsUpMsg',r.note||('미리보기 실패: '+(r.error||r.status)),'err'); return; }
+      UP.res=r; UP.filter=(r.counts.over||r.counts.under||r.counts.unknown||r.counts.errors)?'issue':'all';
+      setMsg('rsUpMsg','📄 '+f.name+' · '+p.lines+'줄(랙/수량 '+p.pairs+'쌍) 읽음'+(p.sumWarn.length?(' · ⚠ QTY CONTADA 와 합계가 다른 줄 '+p.sumWarn.length+'개('+p.sumWarn.slice(0,5).join(', ')+')'):''), p.sumWarn.length?'warn':'ok');
+      renderUp();
+    } finally { $('rsUpGo').disabled=false; }
+  }
+  var ST={ok:['일치','p-match'],under:['부족 → 나머지 위치 미지정','p-unc'],over:['초과 → 저장 안 함','p-short'],error:['오류 줄 있음 → 저장 안 함','p-over']};
+  function upList(){
+    var r=UP.res; if(!r) return [];
+    var f=UP.filter;
+    if(f==='all') return r.skus;
+    if(f==='issue') return r.skus.filter(function(x){ return x.status!=='ok'||x.dup_lines; });
+    if(f==='changed') return r.skus.filter(function(x){ return !x.unchanged; });
+    return r.skus.filter(function(x){ return x.status===f; });
+  }
+  function renderUp(){
+    var r=UP.res; if(!r) return;
+    var c=r.counts;
+    var chip=function(k,label,n,cls){ return '<div class="chip '+(cls||'')+(UP.filter===k?' on':'')+'" data-f="'+k+'"><span class="n">'+n+'</span>'+label+'</div>'; };
+    $('rsUpChips').innerHTML=chip('all','SKU',c.skus)+chip('ok','일치',c.ok,'c-match')+chip('under','부족',c.under,'c-unc')+chip('over','초과(저장 안 함)',c.over,'c-short')
+      +(c.error_skus?chip('error','오류 SKU(저장 안 함)',c.error_skus,'c-over'):'')
+      +chip('changed','바뀌는 SKU',c.skus-c.unchanged)+chip('unknown','미등록 코드',c.unknown,'c-unk')+chip('errors','줄 오류',c.errors,'c-over')
+      +(c.dup_lines?chip('issue','중복 줄(1번만 셈)',c.dup_lines):'');
+    Array.prototype.forEach.call($('rsUpChips').querySelectorAll('[data-f]'),function(el){ el.addEventListener('click',function(){ UP.filter=el.getAttribute('data-f'); renderUp(); }); });
+    var rk=function(list){ return (list||[]).map(function(x){ return '<b>'+esc(x.rack)+'</b> '+q3(x.qty); }).join(' · ')||'<span class="mut">—</span>'; };
+    var html='';
+    if(UP.filter==='unknown') html=r.unknown.map(function(u){ return '<tr><td><b>'+esc(u.code)+'</b></td><td colspan="5" class="mut">제품마스터에 없는 코드 · 줄 '+esc((u.lines||[]).join(', '))+'</td><td><span class="pill p-unk">미등록</span></td></tr>'; }).join('');
+    else if(UP.filter==='errors') html=r.errors.map(function(e){ return '<tr><td><b>'+esc(e.code||'')+'</b></td><td colspan="5" class="mut">줄 '+esc(e.line||'')+' · '+esc(e.msg)+'</td><td><span class="pill p-over">오류</span></td></tr>'; }).join('');
+    else html=upList().map(function(x){
+      var st=ST[x.status]||['',''];
+      return '<tr><td><b>'+esc(x.code)+'</b>'+(x.dup_lines?' <span class="mut">(중복 '+x.dup_lines+'줄)</span>':'')
+        +((x.err_lines&&x.err_lines.length)?'<div class="diff-neg" style="font-size:11px">오류 줄 '+esc(x.err_lines.join(', '))+' — 파일을 고쳐 다시 올리세요</div>':'')+'</td>'
+        +'<td class="num">'+q3(x.stock)+'</td><td class="num">'+q3(x.total)+'</td>'
+        +'<td class="num '+(x.diff>0?'diff-pos':x.diff<0?'diff-neg':'diff-zero')+'">'+(x.diff>0?'+':'')+q3(x.diff)+'</td>'
+        +'<td style="white-space:normal">'+rk(x.racks)+'</td><td style="white-space:normal" class="mut">'+(x.unchanged?'(같음)':rk(x.current))
+        +(x.holds?('<div class="diff-neg">지시서 '+esc(x.holds.quotes)+' 가 '+q3(x.holds.qty)+'개 잡음</div>'):'')+'</td>'
+        +'<td><span class="pill '+st[1]+'">'+st[0]+'</span></td></tr>';
+    }).join('');
+    $('rsUpBody').innerHTML=html||'<tr><td colspan="7" class="mut" style="text-align:center;padding:12px">해당 항목이 없습니다.</td></tr>';
+    var willSave=r.skus.filter(function(x){ return x.status!=='over' && x.status!=='error' && !x.unchanged; }).length;
+    $('rsUpApply').textContent='✔ 랙재고에 저장 — '+willSave+' SKU (디렉터)';
+    $('rsUpApply').disabled=!willSave;
+    $('rsUpRes').classList.remove('hidden');
+  }
+  async function upApply(){
+    if(!UP.rows||!UP.res) return;
+    var c=UP.res.counts;
+    var willSave=UP.res.skus.filter(function(x){ return x.status!=='over' && x.status!=='error' && !x.unchanged; }).length;
+    if(!confirm(UP.file+'\n\n'+willSave+' SKU 의 랙재고를 파일 내용으로 맞춥니다.'
+      +(c.over?('\n초과 '+c.over+' SKU 는 저장하지 않습니다.'):'')+(c.error_skus?('\n오류 줄이 있는 '+c.error_skus+' SKU 는 저장하지 않습니다.'):'')
+      +(c.held?('\n⚠ 포장작업지시서가 잡고 있는 SKU '+c.held+'개 — 지시서 위치가 바뀔 수 있습니다(실물 기준으로 저장).'):'')+(c.unknown?('\n미등록 코드 '+c.unknown+'개는 건너뜁니다.'):'')
+      +'\n파일에 없는 SKU 는 그대로 둡니다.\n\n저장할까요?')) return;
+    $('rsUpApply').disabled=true;
+    try{
+      var r=await api('/api/rack-stock/import',{method:'POST',body:JSON.stringify({rows:UP.rows,file_name:UP.file})});
+      if(!r.ok){ setMsg('rsUpMsg',r.note||('저장 실패: '+(r.error||r.status)),'err'); $('rsUpApply').disabled=false; return; }
+      var why={over:'재고 초과',error:'오류 줄',gone:'삭제된 제품'};
+      setMsg('rsUpMsg','✔ 업로드 #'+r.id+' · '+r.skus+' SKU 저장'
+        +(r.blocked.length?(' · 저장 안 함 '+r.blocked.length+' SKU: '+r.blocked.slice(0,8).map(function(b){return b.code+'('+(why[b.reason]||b.reason)+')';}).join(', ')+(r.blocked.length>8?' …':'')):'')
+        +((r.held&&r.held.length)?(' · ⚠ 지시서 위치가 줄어든 SKU: '+r.held.slice(0,5).map(function(h){return h.code+' '+h.racks.join(' ');}).join(' / ')):''),'ok');
+      toast('✔ 랙재고 '+r.skus+' SKU 저장');
+      UP.res=null; $('rsUpRes').classList.add('hidden'); $('rsUpFile').value='';
+      loadRacks(); loadRS(); loadUpHist();
+    } catch(e){ setMsg('rsUpMsg','서버 연결 실패','err'); $('rsUpApply').disabled=false; }
+  }
+  function upXls(){
+    if(!UP.res||!window.XLSX) return;
+    var rk=function(list){ return (list||[]).map(function(x){ return x.rack+' '+x.qty; }).join(' · '); };
+    var data=[['Código','Stock ERP','Total archivo','Diferencia','Racks archivo','Racks actuales','Estado']];
+    UP.res.skus.forEach(function(x){ data.push([x.code,x.stock,x.total,x.diff,rk(x.racks),rk(x.current),x.status==='over'?'EXCEDE STOCK (no se guarda)':x.status==='error'?('Error en filas '+(x.err_lines||[]).join(', ')+' (no se guarda)'):x.status==='under'?'Falta (sin ubicación)':'OK']); });
+    UP.res.unknown.forEach(function(u){ data.push([u.code,'','','','','','Código no registrado']); });
+    UP.res.errors.forEach(function(e){ data.push([e.code||'','','','','','','Error fila '+(e.line||'')+': '+e.msg]); });
+    var ws=XLSX.utils.aoa_to_sheet(data), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Revision');
+    XLSX.writeFile(wb,'rack_upload_revision.xlsx');
+  }
+  function upTpl(){
+    if(!window.XLSX) return;
+    var data=[['CODIGO CTR','UBICACIÓN','QTY','UBICACIÓN','QTY','UBICACIÓN','QTY'],['CB0011','AD1-1',8,'AE1-2',30,'D1-3',8],['CB0032','AD1-3',10,null,null,null,null]];
+    var ws=XLSX.utils.aoa_to_sheet(data), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Inventario');
+    XLSX.writeFile(wb,'rack_upload_formato.xlsx');
+  }
+  async function loadUpHist(){
+    var r=await api('/api/rack-stock/imports');
+    var it=(r&&r.items)||[];
+    $('rsUpHist').innerHTML=it.length?('최근 업로드: '+it.slice(0,3).map(function(x){ return '#'+x.id+' '+esc(x.file_name||'')+' · '+x.skus+' SKU'+(x.blocked?(' (초과 '+x.blocked+')'):'')+' · '+esc(x.by_name||'')+' '+new Date(x.created_at).toLocaleString('ko-KR'); }).join(' / ')):'';
+  }
   function xls(){
     if(!window.XLSX){ toast('엑셀 모듈 로딩중'); return; }
     var data=[['Código','Producto','Stock sistema','Rack','Cantidad','Tipo','Sin ubicación','Ubicación maestro']];
@@ -1918,10 +2168,16 @@ function spotHistXlsx(){
     on('rsEdSave','click',saveEdit);
     on('rsImpBtn','click',doImport);
     on('rsXlsBtn','click',xls);
+    on('rsTrFrom','change',syncTrMax);
+    on('rsTrGo','click',doTransfer);
+    on('rsUpGo','click',upPreview);
+    on('rsUpApply','click',upApply);
+    on('rsUpXls','click',upXls);
+    on('rsUpTpl','click',upTpl);
   }
   bind();
   window.openRackStock=openRS;
-  try{ console.log('[refatrix-stockcount] build sc1001rs1 — 랙별 재고(제품×랙×수량)'); }catch(e){}
+  try{ console.log('[refatrix-stockcount] build sc1012re1 — 랙별 재고 · 실사 업로드 · 위치수정'); }catch(e){}
 })();
 </script>
 <script src="refatrix-nav.js?v=20261008ws"></script>

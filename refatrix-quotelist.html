@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1008rc</title>
+<title>Refatrix ERP · 견적 목록 · ql-1012re1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -1711,18 +1711,19 @@
     //   자연정렬(A-1-9 < A-1-10 · 존 지정 화면 rackSortKey 와 같은 규칙) · 랙 미지정 SKU 는 맨 뒤 · 같은 랙이면 SKU 코드순.
     const rackOf=(x)=>String((x&&(x.rack_location||x.rack||x.location))||'').trim();
     const rackKey=(s)=>s.toUpperCase().replace(/\d+/g,n=>n.padStart(6,'0'));
+    const qfmtA=n=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});
     const row=qRowsById[cvId]||{};
     const co=await getCompany();
 
     // 포장출력 기록 + 포장완료 기한(업무시간 6시간) 수신 → 슬립에 기한 표기.
     //   (최초 출력에만 기한 고정. 재출력해도 서버가 기존 기한을 그대로 반환.)
-    let packDueAt=null, savedPicks=null;
+    let packDueAt=null, savedPicks=null, racksAll=null;
     if(cvId){
       try{
         const pr=await fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}).then(r=>r.json()).catch(()=>null);
         // 0224b — 판매중단 줄이 있어도 **포장은 그대로 진행한다.** 그 줄은 재고가 없어
         //   피킹 목록에 안 들어가고, 요청 기록은 견적에 남아 있다.
-        if(pr){ packDueAt=pr.packing_due_at||null; savedPicks=pr.picks||null; if(pr.packing_printed_at&&qRowsById[cvId]) qRowsById[cvId].packing_printed_at=pr.packing_printed_at; }
+        if(pr){ packDueAt=pr.packing_due_at||null; savedPicks=pr.picks||null; racksAll=pr.racks_all||null; if(pr.packing_printed_at&&qRowsById[cvId]) qRowsById[cvId].packing_printed_at=pr.packing_printed_at; }
       }catch(_){}
     }
     // 0245 · 피킹 정거장 = SKU × 랙 × 수량. 서버가 지시서 출력 시 저장한 위치(= 매출 전환 때 차감될 위치)를 쓴다.
@@ -1736,6 +1737,9 @@
     const items=[];
     merged.forEach(x=>{
       const pk=(savedPicks&&x.product_id&&savedPicks[x.product_id])||x.picks||null;
+      // 0269 · 이 SKU 가 놓인 모든 랙 × 수량(피킹 위치 밖의 랙 포함) — 지시서 위치에 없으면 다른 랙을 바로 찾게
+      const allR=(racksAll&&x.product_id&&racksAll[x.product_id])||x.racks_all||[];
+      x.all_racks_txt=allR.length>1?allR.map(r=>r.rack+' '+qfmtA(r.qty)).join(' · '):'';
       if(pk&&pk.length){
         pk.forEach((k,i)=>items.push(Object.assign({},x,{
           stop_qty:k.qty, stop_rack:k.rack||rackOf(x), stop_kind:k.rack?(k.kind||'carton'):null,
@@ -1805,7 +1809,7 @@
 
     const colHead='<thead><tr>'
       +'<th class="c-no">#</th><th class="c-sku">Clave SKU</th><th class="c-syd">Clave SYD</th><th class="c-name">Producto</th>'
-      +'<th class="c-qty">Cantidad</th><th class="c-rack">Ubicación rack</th><th class="c-chk">Surtido</th>'
+      +'<th class="c-qty">Cantidad</th><th class="c-rack">Ubicación rack</th><th class="c-real">Rack real<br><span style="font-weight:400;font-size:8px">si fue otro</span></th><th class="c-chk">Surtido</th>'
       +'</tr></thead>';
 
     // 하단 폼(페이지마다 반복 고정): 작업자 이름·서명·날짜·시각 + 페이지번호
@@ -1836,9 +1840,11 @@
           +'<td class="c-sku">'+esc(x.ctr_code||'—')+'</td>'
           +'<td class="c-syd">'+esc(x.syd_codes||sydMap[(x.ctr_code||'').trim()]||'')+'</td>'
           +'<td class="c-name">'+esc(x.product_name||'(미등록)')
-            +(x.split?'<span class="split">'+x.part+'/'+x.parts+' · Total SKU '+qfmt(x.sku_total)+'</span>':'')+'</td>'
+            +(x.split?'<span class="split">'+x.part+'/'+x.parts+' · Total SKU '+qfmt(x.sku_total)+'</span>':'')
+            +((x.all_racks_txt&&x.part===1)?'<span class="allr">Existencia por rack: '+esc(x.all_racks_txt)+'</span>':'')+'</td>'
           +'<td class="c-qty">'+qfmt(x.stop_qty)+'</td>'
           +'<td class="c-rack">'+rack+'</td>'
+          +'<td class="c-real"></td>'
           +'<td class="c-chk"><span class="chk"></span></td>'
           +'</tr>';
       });
@@ -1869,10 +1875,10 @@
       +'.pk-tbl th,.pk-tbl td{border:1px solid #bbb;padding:6px 7px;font-size:12px;vertical-align:middle}'
       +'.pk-tbl th{background:#143D34;color:#fff;font-weight:600;font-size:11px}'
       +'.pk-tbl .c-no{width:6%;text-align:center}'
-      +'.pk-tbl .c-sku{width:16%;text-align:left;word-break:break-word;font-weight:700}'
-      +'.pk-tbl .c-syd{width:16%;text-align:left;word-break:break-word}'
+      +'.pk-tbl .c-sku{width:14%;text-align:left;word-break:break-word;font-weight:700}'
+      +'.pk-tbl .c-syd{width:13%;text-align:left;word-break:break-word}'
       +'.pk-tbl td.c-syd{color:#555}'
-      +'.pk-tbl .c-name{width:28%;text-align:left;word-break:break-word}'
+      +'.pk-tbl .c-name{width:25%;text-align:left;word-break:break-word}'
       +'.pk-tbl .c-qty{width:10%;text-align:right;font-weight:700}'
       +'.pk-tbl .c-rack{width:14%;text-align:center}'
       +'.pk-tbl td.c-rack{color:#1c1b19;font-weight:700;letter-spacing:.3px}'
@@ -1880,7 +1886,7 @@
       +'.pk-tbl td.c-rack .fm{display:inline-block;background:#B8893B;color:#fff;border-radius:3px;font-size:8px;padding:1px 3px;margin-left:3px;vertical-align:middle}'
       +'.pk-tbl td.c-rack .mst{display:block;color:#888;font-weight:400;font-size:8px;letter-spacing:0}'
       +'.pk-tbl td.c-name .split{display:block;color:#0F6E56;font-size:9px;font-weight:700;margin-top:2px}'
-      +'.pk-tbl .c-chk{width:10%;text-align:center}'
+      +'.pk-tbl .c-chk{width:8%;text-align:center}'+'.pk-tbl .c-real{width:10%}'+'.pk-tbl td.c-name .allr{display:block;color:#555;font-size:8.5px;margin-top:2px}'
       +'.chk{display:inline-block;width:5mm;height:5mm;border:1.5px solid #333;border-radius:1px}'
       +'.pk-foot{margin-top:auto;padding-top:8px;border-top:1.5px solid #143D34}'
       +'.pk-sign{display:flex;gap:14px;align-items:flex-end}'
@@ -1900,7 +1906,7 @@
     const html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Orden de surtido '
       +esc(quoteNo||custDisplay)+'</title><style>'+css+'</style></head><body>'
       +'<div class="bar noprint"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button>'
-      +'<span>Orden de surtido y empaque · '+skuCount+' SKU disponibles · '+qfmt(totalQty)+' piezas · '+items.length+' ubicaciones · '+pageCount+' hoja(s)</span></div>'
+      +'<span>Orden de surtido y empaque · Si surtió de otro rack, anótelo en «Rack real» · '+skuCount+' SKU disponibles · '+qfmt(totalQty)+' piezas · '+items.length+' ubicaciones · '+pageCount+' hoja(s)</span></div>'
       +pagesHtml+'</body></html>';
 
     const win=window.open('','_blank');

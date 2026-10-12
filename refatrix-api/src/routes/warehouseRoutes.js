@@ -8,7 +8,8 @@ import { buildStageCohorts, getSlaKpi } from '../stageCohorts.js';
 // 0225 · 고객 PO(O.C.) — 견적 화면과 같은 마이그레이션 판정기를 쓴다.
 import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
 // 0245 · 랙별 피킹 위치(포장작업지시서와 같은 값) — fast moving 랙 먼저
-import { rackStockReady, quotePicks, picksText } from '../rackStock.js';
+import { rackStockReady, quotePicks, picksText, rackMap,
+  rackEditReady, pickOptions, recordPick, resetPick, RackError } from '../rackStock.js';   // 0269 · 피킹 기록
 
 // =====================================================================
 // Refatrix ERP · warehouseRoutes.js  (창고 모듈)
@@ -199,7 +200,15 @@ export default async function warehouseRoutes(app) {
         if (t && un > 0) t += ` · ${it.rack_location || 'SIN UBICACIÓN'} ×${un}`;
         it.rack_picks = t;
         if (t) it.rack_location = t;     // 기존 화면(랙위치 열)도 랙별 수량을 그대로 보여준다
+        // 0269 · 창고가 실제 피킹 랙을 기록했는가(기록 = 매출 전환 때 이 위치에서 차감)
+        const pk = p.filter((k) => k.picked);
+        it.picked = p.length > 0 && pk.length === p.length;
+        it.picked_by_name = pk.length ? (pk[0].picked_by_name || '') : '';
+        it.picked_at = pk.length ? pk[0].picked_at : null;
       }
+      // 0269 · 이 SKU 가 놓인 모든 랙 × 수량(피킹 위치 밖의 랙도) — 「랙위치와 수량을 모두」 보여준다
+      const all = await rackMap(null, items.map((it) => it.product_id));
+      for (const it of items) it.racks_all = all.get(Number(it.product_id)) || [];
     } catch (e) { try { console.error('[warehouse] rack picks', e.message); } catch (_) {} }
   }
 
@@ -279,6 +288,60 @@ export default async function warehouseRoutes(app) {
       photos_ok: photosOk,
       items, boxes: boxOut,
     };
+  });
+
+  // ===================================================================
+  // 0269 · 피킹 기록 — 「실제로 어느 랙에서 집었는가」 (디렉터 지시 2026-10-12)
+  //   랙 바코드는 스캔하지 않는다(10-01 결정 유지). 지시서 위치 그대로면 [지시서대로],
+  //   다르면 랙별 수량을 골라 기록한다. 매출 전환 때 기록한 위치에서 차감된다.
+  //   기록이 없으면 종전처럼 지시서 출력 때 잡힌 위치에서 차감.
+  // ===================================================================
+  async function pickTarget(quoteId, productId, reply) {
+    if (!(await rackStockReady()) || !(await rackEditReady())) {
+      reply.code(409).send({ error: 'rack_edit_not_ready', note: '마이그레이션 0269 를 먼저 실행하세요 (npm run migrate).' }); return null;
+    }
+    const q = (await query(`SELECT id, invoice_id, status, packing_printed_at FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [quoteId])).rows[0];
+    if (!q) { reply.code(404).send({ error: 'not_found' }); return null; }
+    if (q.invoice_id || q.status === 'converted') { reply.code(409).send({ error: 'already_converted', note: '이미 매출로 전환된 오더입니다 — 피킹 위치는 차감이 끝났습니다.' }); return null; }
+    if (!q.packing_printed_at) { reply.code(409).send({ error: 'not_printed', note: '포장작업지시서가 아직 출력되지 않았습니다.' }); return null; }
+    const line = (await packableLines(quoteId)).filter((l) => l.product_id === Number(productId));
+    if (!line.length) { reply.code(400).send({ error: 'not_in_order', note: '이 오더의 포장 품목이 아닙니다.' }); return null; }
+    return { required: line.reduce((s, l) => s + l.required, 0), ctr_code: line[0].ctr_code };
+  }
+
+  // 피킹 위치 선택지(랙마다 집을 수 있는 수량) + 현재 기록
+  app.get('/api/warehouse/packing/:id/pick-options', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id), pid = Number((req.query || {}).product_id);
+    const t = await pickTarget(id, pid, reply); if (!t) return;
+    const opt = await pickOptions(null, id, pid);
+    const { picks } = await quotePicks(null, id, [{ product_id: pid, qty: t.required }]);
+    return { product_id: pid, ctr_code: t.ctr_code, required: t.required, ...opt, current: picks[pid] || [] };
+  });
+
+  // 피킹 기록 — body: { product_id, picks:[{rack|null, qty}] } 또는 { product_id, as_planned:true } 또는 { product_id, reset:true }
+  app.post('/api/warehouse/packing/:id/pick', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    const pid = Number(b.product_id);
+    const t = await pickTarget(id, pid, reply); if (!t) return;
+    const uid = req.ctx.perm.userId;
+    try {
+      const out = await withTx(async (c) => {
+        if (b.reset) return { reset: true, picks: await resetPick(c, id, pid, t.required, uid) };
+        let picks = b.picks;
+        if (b.as_planned) {
+          const { picks: cur } = await quotePicks(c, id, [{ product_id: pid, qty: t.required }]);
+          picks = (cur[pid] || []).map((k) => ({ rack: k.rack, qty: k.qty }));
+        }
+        return { picks: await recordPick(c, id, pid, picks, t.required, uid) };
+      });
+      await logEvent({ userId: uid, action: 'update', target: `packing_pick:${id}`,
+        detail: { product_id: pid, ctr_code: t.ctr_code, reset: !!b.reset, as_planned: !!b.as_planned, picks: out.picks } });
+      return { ok: true, product_id: pid, required: t.required, ...out };
+    } catch (e) {
+      if (e instanceof RackError) return reply.code(409).send({ error: e.code, note: e.note, ...(e.extra || {}) });
+      throw e;
+    }
   });
 
   // ---------- 새 박스(자동번호 Box N) ----------

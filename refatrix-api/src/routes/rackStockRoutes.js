@@ -3,13 +3,34 @@
 //   읽기: 창고(warehouse) 또는 제품(products) 화면 권한
 //   쓰기: 디렉터 전용(수동 조정, 반영완료된 과거 실사에서 랙재고 가져오기)
 //   수량 변경 로직은 전부 ../rackStock.js 에 있다 — 여기는 HTTP 껍데기.
+//
+//   0269 (2026-10-12):
+//     · POST /api/rack-stock/transfer        창고 위치수정(기존 위치 → 새 위치 + 수량) — 창고 edit 권한
+//     · POST /api/rack-stock/import/preview  실사 랙 업로드 미리보기 — 창고 열람 권한
+//     · POST /api/rack-stock/import          실사 랙 업로드 적용 — 디렉터
+//     · GET  /api/rack-stock/imports         업로드 이력
 // =====================================================================
 import { query, withTx } from '../db.js';
-import { authGuard, requirePageAny, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePageAny, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { rackStockReady, rackMap, setRackQty, applyCountToRacks, normRack, RACK_BUILD } from '../rackStock.js';
+import { rackStockReady, rackMap, setRackQty, applyCountToRacks, normRack, RACK_BUILD,
+  rackEditReady, holdsDetail, transferRack, analyzeImport, applyImport, RackError } from '../rackStock.js';
 
 const NOT_READY = { error: 'rack_stock_not_ready', note: '마이그레이션 0245 를 먼저 실행하세요 (npm run migrate).' };
+const EDIT_NOT_READY = { error: 'rack_edit_not_ready', note: '마이그레이션 0269 를 먼저 실행하세요 (npm run migrate).' };
+const MAX_IMPORT_ROWS = 20000;
+const TOO_MANY = { error: 'too_many_rows', note: `한 번에 ${MAX_IMPORT_ROWS.toLocaleString('en-US')} 줄(랙/수량 쌍)까지 올릴 수 있습니다. 파일을 나눠 올리세요 — 잘라서 저장하면 일부 랙이 지워질 수 있어 받지 않습니다.` };
+/** 업로드 줄 정리 — [{line, code, rack, qty, sig}] 만 남긴다 */
+function cleanRows(raw) {
+  if (!Array.isArray(raw)) return null;
+  return raw.slice(0, MAX_IMPORT_ROWS).map((r, i) => ({
+    line: Number(r && r.line) || i + 1,
+    code: r && r.code != null ? String(r.code).slice(0, 60) : '',
+    rack: r && r.rack != null ? String(r.rack).slice(0, 60) : '',
+    qty: r ? r.qty : null,
+    sig: r && r.sig != null ? String(r.sig).slice(0, 300) : null,
+  }));
+}
 
 export default async function rackStockRoutes(app) {
   try { console.log('[rackStockRoutes] loaded ' + RACK_BUILD); } catch (_) {}
@@ -84,6 +105,15 @@ export default async function rackStockRoutes(app) {
     const p = (await query(`SELECT id, code, name, stock_qty, rack_location FROM products WHERE id=$1`, [id])).rows[0];
     if (!p) return reply.code(404).send({ error: 'not_found' });
     const racks = (await rackMap(null, [id])).get(id) || [];
+    // 0269 · 랙마다 다른 포장지시서가 잡아 둔 수량(옮길 수 없는 분량) — 위치수정 화면 안내용
+    if (await rackEditReady()) {
+      const h = await holdsDetail(null, id, 0);
+      for (const r of racks) {
+        const x = h.get(r.rack);
+        r.held = x ? x.qty : 0; r.held_quotes = x ? x.quotes : [];
+        r.movable = Math.max(0, Math.round((r.qty - r.held) * 1000) / 1000);
+      }
+    }
     const moves = (await query(
       `SELECT m.id, m.rack, m.delta, m.qty_after, m.reason, m.ref, m.sales_invoice_id, m.quote_id, m.note,
               m.created_at, u.name AS by_name
@@ -96,7 +126,65 @@ export default async function rackStockRoutes(app) {
     return {
       product: { id: Number(p.id), code: p.code, name: p.name || '', stock_qty: num(p.stock_qty), master_rack: p.rack_location || '' },
       racks, located, unassigned: Math.max(0, num(p.stock_qty) - located), moves,
+      edit_ready: await rackEditReady(),
     };
+  });
+
+  /* 0269 · 창고 위치수정 — body: { product_id, moves:[{from, to, qty}], note }  (from/to 빈값 = 위치 미지정)
+     단건 형식 { product_id, from, to, qty, note } 도 받는다. 합계 보존 이동이라 재고를 벗어날 수 없다. */
+  app.post('/api/rack-stock/transfer', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    if (!(await rackStockReady()) || !(await rackEditReady())) return reply.code(409).send(EDIT_NOT_READY);
+    const b = req.body || {};
+    const pid = Number(b.product_id);
+    if (!pid) return reply.code(400).send({ error: 'product_required', note: '제품을 지정하세요.' });
+    const moves = Array.isArray(b.moves) ? b.moves : [{ from: b.from, to: b.to, qty: b.qty }];
+    if (moves.length > 50) return reply.code(400).send({ error: 'too_many', note: '한 번에 50건까지 옮길 수 있습니다.' });
+    const uid = req.ctx.perm.userId;
+    const note = String(b.note || '').trim().slice(0, 200) || null;
+    try {
+      const out = await withTx(async (c) => transferRack(c, pid, moves, { userId: uid, note }));
+      await logEvent({ userId: uid, action: 'update', target: `rack_stock:${pid}`, detail: { step: 'transfer', moves: out.moved, note } });
+      return { ok: true, product_id: pid, ...out };
+    } catch (e) {
+      if (e instanceof RackError) return reply.code(e.code === 'not_found' ? 404 : 409).send({ error: e.code, note: e.note, ...(e.extra || {}) });
+      throw e;
+    }
+  });
+
+  /* 0269 · 실사 랙 업로드 미리보기 — body: { rows:[{line, code, rack, qty, sig}] } (엑셀은 화면에서 읽어 줄로 보낸다) */
+  app.post('/api/rack-stock/import/preview', gRead, async (req, reply) => {
+    if (!(await rackStockReady()) || !(await rackEditReady())) return reply.code(409).send(EDIT_NOT_READY);
+    const raw = (req.body || {}).rows;
+    if (Array.isArray(raw) && raw.length > MAX_IMPORT_ROWS) return reply.code(413).send(TOO_MANY);
+    const rows = cleanRows(raw);
+    if (!rows || !rows.length) return reply.code(400).send({ error: 'no_rows', note: '읽은 줄이 없습니다.' });
+    return { ok: true, ...(await analyzeImport(null, rows)) };
+  });
+
+  /* 0269 · 실사 랙 업로드 적용(디렉터) — 파일에 나온 SKU 의 랙재고를 파일 내용으로 맞춘다.
+     랙 합이 등록 재고를 넘는 SKU 는 저장하지 않는다. 파일에 없는 SKU 는 그대로. */
+  app.post('/api/rack-stock/import', gDir, async (req, reply) => {
+    if (!(await rackStockReady()) || !(await rackEditReady())) return reply.code(409).send(EDIT_NOT_READY);
+    const b = req.body || {};
+    if (Array.isArray(b.rows) && b.rows.length > MAX_IMPORT_ROWS) return reply.code(413).send(TOO_MANY);
+    const rows = cleanRows(b.rows);
+    if (!rows || !rows.length) return reply.code(400).send({ error: 'no_rows', note: '읽은 줄이 없습니다.' });
+    const uid = req.ctx.perm.userId;
+    // SKU 묶음마다 짧은 트랜잭션(교착·잠금 한도 방지) — rackStock.applyImport 참고
+    const out = await applyImport(withTx, rows, { userId: uid, fileName: b.file_name || null, note: b.note || null });
+    await logEvent({ userId: uid, action: 'update', target: `rack_import:${out.id}`,
+      detail: { step: 'rack_import', file: b.file_name || null, skus: out.skus, blocked: out.blocked.length, held: out.held.length, unknown: out.unknown.length } });
+    return { ok: true, ...out };
+  });
+
+  /* 0269 · 업로드 이력 */
+  app.get('/api/rack-stock/imports', gRead, async (req, reply) => {
+    if (!(await rackEditReady())) return { items: [] };
+    const rows = (await query(
+      `SELECT i.id, i.file_name, i.note, i.rows_in, i.skus, i.blocked, i.summary, i.created_at, u.name AS by_name
+         FROM rack_stock_imports i LEFT JOIN users u ON u.id = i.created_by
+        ORDER BY i.id DESC LIMIT 30`)).rows;
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id) })) };
   });
 
   /* 디렉터 수동 조정 — body: { product_id, rack, qty, note } (qty=0 이면 그 랙에서 제거) */

@@ -170,5 +170,5 @@ test('⑤ 재고실사 — 📍 랙별 재고 버튼 → 목록·랙칩·상세(
   await new Promise((r) => setTimeout(r, 30));
   const set = calls.find((c) => /rack-stock\/set/.test(c[0]));
   assert.ok(set && set[1] === 'POST', '수동 조정 POST');
-  assert.match(w.document.title, /sc1001rs1/);
+  assert.match(w.document.title, /sc1012re1/);
 });
