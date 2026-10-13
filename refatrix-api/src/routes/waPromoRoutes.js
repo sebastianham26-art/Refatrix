@@ -1,6 +1,7 @@
 // =====================================================================
 // Refatrix ERP · waPromoRoutes.js — 제품·마케팅 › WhatsApp 마케팅 (0260)
-//   열람 requirePage('marketing') · 쓰기 requirePageEdit('marketing'). 로직은 src/waPromo.js.
+//   2026-10-13 디렉터 지시: 디렉터 · 소시오 전용(화면 권한과 무관 — requireRoles). 로직은 src/waPromo.js.
+//   (이전: 열람 requirePage('marketing') · 쓰기 requirePageEdit('marketing'))
 //
 //   연락처
 //   GET    /api/wa-promo/contacts?q&consent&limit        목록 + 상태별 건수
@@ -33,7 +34,7 @@
 //   GET    /api/wa-promo/users                           담당자 선택용
 // =====================================================================
 import { query } from '../db.js';
-import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
+import { authGuard, requireRoles, DIR_SOCIO } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
@@ -42,9 +43,10 @@ import {
   sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage, targetIdsOf,
 } from '../waPromo.js';
 
-const R = { preHandler: [authGuard, requirePage('marketing')] };
-const W = { preHandler: [authGuard, requirePageEdit('marketing')] };
-const IMG_LIMIT = { preHandler: [authGuard, requirePageEdit('marketing')], bodyLimit: 9 * 1024 * 1024 };
+const ONLY = requireRoles(DIR_SOCIO);
+const R = { preHandler: [authGuard, ONLY] };
+const W = { preHandler: [authGuard, ONLY] };
+const IMG_LIMIT = { preHandler: [authGuard, ONLY], bodyLimit: 9 * 1024 * 1024 };
 const IMG_MIMES = ['image/jpeg', 'image/png'];
 const CONSENTS = ['unknown', 'asked', 'yes', 'no'];
 const ACTIONS = ['none', 'consent_yes', 'consent_no', 'lead'];

@@ -130,7 +130,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   await t.test('C4. 새 코드에 인라인 onclick 없음 · 메뉴 등록', () => {
     const h = readFileSync(HTML, 'utf-8'); assert.ok(!/onclick=/.test(h));
     const nav = readFileSync(path.join(ROOT, 'refatrix-nav.js'), 'utf-8');
-    assert.ok(nav.includes("metaleads:{file:'refatrix-metaleads.html'") && nav.includes("metaleads:'marketing'") && nav.includes("'wapromo','metaleads'"));
+    assert.ok(nav.includes("metaleads:{file:'refatrix-metaleads.html'") && nav.includes("metaleads:['products','marketing','pricemaster','devrequest','quote','sales']") && nav.includes("'wapromo','metaleads'"));
   });
 });
 
@@ -201,6 +201,17 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     process.env.META_PAGE_TOKEN = keepTok; if (keepWa) process.env.WHATSAPP_TOKEN = keepWa;
     assert.equal((await call(R, 'GET', '/api/meta-leads/list')).statusCode, 403, '마케팅 화면 권한이 없으면 못 본다');
     assert.equal((await call(R, 'POST', '/api/meta-leads/sync', {})).statusCode, 403, '가져오기는 마케팅 편집 권한');
+    // 2026-10-13 · 제품·마케팅 메뉴에 들어가는 사람은 모두 본다(제품 보기만 있어도) · 상태 변경은 그중 edit 권한
+    const pv = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'ops','x',$2) RETURNING id`, [`ML Prod ${SFX}`, `mlprod${SFX}`]);
+    await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'products','anywhere','view')`, [pv.id]);
+    const Pv = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(pv.id), role: 'ops' }) };
+    assert.equal((await call(Pv, 'GET', '/api/meta-leads/list')).statusCode, 200, '제품(보기) 권한으로 목록');
+    assert.equal((await call(Pv, 'GET', '/api/meta-leads/status')).statusCode, 200);
+    assert.equal((await call(Pv, 'POST', '/api/meta-leads/sync', {})).json().error, 'read_only', '보기 권한은 가져오기 불가');
+    const sv = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'sales','x',$2) RETURNING id`, [`ML Sales ${SFX}`, `mlsal${SFX}`]);
+    await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'sales','anywhere','edit')`, [sv.id]);
+    const Sv = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(sv.id), role: 'sales' }) };
+    assert.equal((await call(Sv, 'GET', '/api/meta-leads/list')).statusCode, 200, '영업(개발 요청 화면 경로) 권한으로도 본다');
     s = (await call(D, 'GET', '/api/meta-leads/status')).json();
     assert.equal(s.configured, true); assert.equal(s.page.name, 'CTR Suspensión y Dirección México'); assert.equal(s.page.ig_username, 'ctrmexico_');
     assert.equal(s.token_source, 'META_PAGE_TOKEN'); assert.equal(s.counts.total, 0); assert.equal(s.states.length, 32);

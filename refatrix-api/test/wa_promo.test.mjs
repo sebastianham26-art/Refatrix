@@ -102,7 +102,17 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal(sv.added, 3);
     const l = (await call(D, 'GET', '/api/wa-promo/contacts')).json();
     assert.equal(l.counts.total, 4); assert.equal(l.counts.unknown, 4);
-    assert.equal((await call(Rp, 'GET', '/api/wa-promo/contacts')).statusCode, 403, '마케팅 화면 권한 없는 영업');
+    assert.equal((await call(Rp, 'GET', '/api/wa-promo/contacts')).statusCode, 403, '영업은 못 본다');
+    // 2026-10-13 · 디렉터 · 소시오 전용 — 마케팅 화면 권한(edit)이 있어도 다른 역할은 403, 소시오는 화면 권한 없이도 연다
+    const mk = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'marketing','x',$2) RETURNING id`, [`WP Mkt ${SFX}`, `wpmkt${SFX}`]);
+    await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'marketing','anywhere','edit')`, [mk.id]);
+    const Mk = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(mk.id), role: 'marketing' }) };
+    const rm = await call(Mk, 'GET', '/api/wa-promo/contacts');
+    assert.equal(rm.statusCode, 403, '마케팅 권한(edit)만으로는 안 됨'); assert.equal(rm.json().error, 'director_or_socio_only');
+    const so = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'socio','x',$2) RETURNING id`, [`WP Socio ${SFX}`, `wpsoc${SFX}`]);
+    const So = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(so.id), role: 'socio' }) };
+    assert.equal((await call(So, 'GET', '/api/wa-promo/contacts')).statusCode, 200, '소시오는 연다');
+    assert.equal((await call(So, 'GET', '/api/wa-promo/status')).statusCode, 200);
   });
 
   await t.test('B2. 동의 요청 — 미확인만 1회 · 하루 상한 · 창 열린 사람은 무료 버튼 메시지', async () => {

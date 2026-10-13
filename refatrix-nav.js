@@ -185,7 +185,7 @@
     zones:{file:'refatrix-zones.html',name:'존 지정',desc:'랙 → 존 이동용 임시 팔렛 배정'},
     relocate:{file:'refatrix-relocate.html',name:'위치변경',desc:'카톤 라벨·랙 스캔으로 보관 위치 이동'}
   };
-  // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터)
+  // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터, __dirsocio__=디렉터·소시오)
   var PAGEKEY={
     salesperf:null, dashboard:null, board:null, portal:null, approval:null,   // 2026-09-29 전자결재 — 전 직원(문서 열람은 API 가 결재선·참조 기준으로 판단)
     rnr:null, coverage:null, devmap:null, fieldsurvey:null, fsanalysis:null,
@@ -201,7 +201,7 @@
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
-    marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'marketing', metaleads:'marketing',   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
+    marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'__dirsocio__', metaleads:['products','marketing','pricemaster','devrequest','quote','sales'],   // 2026-10-13 — WhatsApp 마케팅 = 디렉터·소시오 전용 · Meta 광고 문의 = 제품·마케팅 메뉴에 들어가는 사람 모두(서버 PM_KEYS 와 같은 목록)   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__', waSched:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
@@ -292,6 +292,7 @@
     if(!sum) return false;
     if(sum.isDirector) return true;
     if(pk==='__director__') return false;
+    if(pk==='__dirsocio__') return sum.role==='socio';
     var have=sum.pages||[];
     if(Array.isArray(pk)) return pk.some(function(k){return have.indexOf(k)>=0;});
     return have.indexOf(pk)>=0;

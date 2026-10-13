@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1008s) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1013ds) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -70,7 +70,7 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1008s/);
+    assert.match(c.d.title, /wap-1013ds/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -184,7 +184,8 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
   await t.test('⑥ 메뉴 등록 · 인라인 onclick 없음', () => {
     const nav = readFileSync(NAV, 'utf-8');
     assert.match(nav, /wapromo:\{file:'refatrix-wapromo\.html'/);
-    assert.match(nav, /wapromo:'marketing'/);
+    assert.match(nav, /wapromo:'__dirsocio__'/, '디렉터 · 소시오 전용');
+    assert.match(nav, /if\(pk==='__dirsocio__'\) return sum\.role==='socio';/);
     assert.match(nav, /'survey','wapromo'/);
     assert.ok(!/onclick=/.test(readFileSync(HTML, 'utf-8')));
   });

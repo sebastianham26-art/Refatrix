@@ -73,3 +73,11 @@ export function requireDirector(req, reply, done) {
   }
   done();
 }
+
+// 2026-10-13 · 역할 전용 화면(예: WhatsApp 마케팅 = 디렉터 · 소시오) — 화면 권한(pages)과 상관없이 역할로만 연다.
+export const DIR_SOCIO = ['director', 'socio'];
+export function requireRoles(roles, error = 'director_or_socio_only') {
+  return async (req, reply) => {
+    if (!roles.includes(req.ctx.perm.role)) return reply.code(403).send({ error });
+  };
+}

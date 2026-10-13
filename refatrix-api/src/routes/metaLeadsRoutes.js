@@ -1,6 +1,7 @@
 // =====================================================================
 // Refatrix ERP · metaLeadsRoutes.js — 제품·마케팅 › Meta 광고 문의 (0270)
-//   열람 requirePage('marketing') · 쓰기/가져오기 requirePageEdit('marketing'). 로직은 src/metaLeads.js.
+//   2026-10-13 디렉터 지시: 「제품·마케팅」 메뉴에 들어갈 수 있는 사람은 모두 본다 —
+//   그 그룹 화면들의 권한키(PM_KEYS) 중 하나라도 있으면 열람, 그중 하나라도 edit 면 상태 · 메모 · 가져오기. 로직은 src/metaLeads.js.
 //
 //   GET   /api/meta-leads/status                 토큰 · 페이지 · 마지막 가져오기 · 건수
 //   POST  /api/meta-leads/sync {full}            지금 가져오기(백그라운드) — 진행은 status 로
@@ -10,15 +11,17 @@
 //   POST  /api/meta-leads/reextract              저장된 대화에 추출 규칙 다시 적용
 // =====================================================================
 import { query } from '../db.js';
-import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
+import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
   metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll,
 } from '../metaLeads.js';
 import { META_STATES } from '../metaLeadExtract.js';
 
-const R = { preHandler: [authGuard, requirePage('marketing')] };
-const W = { preHandler: [authGuard, requirePageEdit('marketing')] };
+// 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
+export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
+const R = { preHandler: [authGuard, requirePageAny(PM_KEYS)] };
+const W = { preHandler: [authGuard, requirePageEditAny(PM_KEYS)] };
 const STATUSES = ['nuevo', 'contactado', 'derivado', 'venta', 'descartado'];
 const idOf = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 const ymd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? s : null;
