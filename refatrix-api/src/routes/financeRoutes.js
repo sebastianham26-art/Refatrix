@@ -49,6 +49,73 @@ export function splitEqual(total, n) {
   parts[n - 1] = Math.round((t - per * (n - 1)) * 100) / 100;
   return parts;
 }
+
+// ===== 운반비(6160) 고객·인보이스 태그 — 등록 이후 경로(수정·수정요청 승인·예정 지급확인) 공용 (fin-1013fr) =====
+//   거래등록(POST)만 태그를 받던 탓에, 계정을 운반비로 「수정」하거나 전자결재 예정을 「지급 확인」할 때는
+//   인보이스를 고를 수 없었다. 같은 규칙을 이 두 함수로 공유한다.
+export const FREIGHT_OUT_CODE = '6160';
+// body 에 customer_id / freight_invoice_ids 키가 있으면 검증해 { set:true, customerId, invRows },
+// 키가 없으면 { set:false }(기존 태그 유지), 잘못된 값이면 { error }.
+//   인보이스를 고르면 고객은 자동 확정(한 고객이면 그 고객, 여러 고객 혼적이면 NULL — 배분행이 고객별로 든다).
+export async function parseFreightTag(q, b) {
+  b = b || {};
+  if (!('customer_id' in b) && !('freight_invoice_ids' in b)) return { set: false };
+  let customerId = null;
+  if (b.customer_id != null && b.customer_id !== '') {
+    customerId = Number(b.customer_id);
+    if (!Number.isInteger(customerId) || customerId <= 0) return { error: 'bad_customer' };
+    const cu = await q(`SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId]);
+    if (!cu.rows.length) return { error: 'bad_customer' };
+  }
+  let invRows = [];
+  if (Array.isArray(b.freight_invoice_ids) && b.freight_invoice_ids.length) {
+    const ids = [...new Set(b.freight_invoice_ids.map(Number))];
+    if (ids.length > 50 || ids.some((x) => !Number.isInteger(x) || x <= 0)) return { error: 'bad_invoice' };
+    invRows = (await q(
+      `SELECT id, customer_id FROM sales_invoices WHERE id = ANY($1) AND status='posted' AND deleted_at IS NULL`,
+      [ids])).rows.map((i) => ({ id: Number(i.id), customer_id: Number(i.customer_id) }));
+    if (invRows.length !== ids.length) return { error: 'bad_invoice' };
+    invRows.sort((a, c) => ids.indexOf(a.id) - ids.indexOf(c.id));   // 고른 순서 유지(마지막 건이 반올림 흡수)
+    const custSet = new Set(invRows.map((i) => i.customer_id));
+    customerId = custSet.size === 1 ? [...custSet][0] : null;
+  }
+  return { set: true, customerId, invRows };
+}
+// 거래 1건의 운반비 태그를 최종 상태로 맞춘다(같은 트랜잭션의 q 로 호출).
+//   · 최종 계정이 6160 이 아니고 (이번에 태그를 보냈거나 원래 6160 이었으면) → 고객 태그·배분행 제거
+//   · 6160 + 태그를 보냄 → 배분행 교체(금액 균등 분할) + 고객 태그 갱신
+//   · 6160 + 태그 없음 → 기존 배분행을 새 금액으로 균등 재분할(합계 = 거래금액 유지)
+export async function syncFreightTag(q, txnId, { categoryCode, prevCategoryCode, amountMxn, tag }) {
+  const isFreight = categoryCode === FREIGHT_OUT_CODE;
+  if (!isFreight) {
+    if ((tag && tag.set) || prevCategoryCode === FREIGHT_OUT_CODE) {
+      await q(`DELETE FROM transaction_freight_allocations WHERE transaction_id=$1`, [txnId]);
+      await q(`UPDATE transactions SET customer_id=NULL WHERE id=$1 AND customer_id IS NOT NULL`, [txnId]);
+    }
+    return { allocations: 0 };
+  }
+  if (tag && tag.set) {
+    await q(`DELETE FROM transaction_freight_allocations WHERE transaction_id=$1`, [txnId]);
+    await q(`UPDATE transactions SET customer_id=$1 WHERE id=$2`, [tag.customerId, txnId]);
+    const parts = splitEqual(amountMxn, tag.invRows.length);
+    for (let i = 0; i < tag.invRows.length; i++) {
+      await q(
+        `INSERT INTO transaction_freight_allocations (transaction_id, sales_invoice_id, customer_id, amount_mxn)
+         VALUES ($1,$2,$3,$4)`,
+        [txnId, tag.invRows[i].id, tag.invRows[i].customer_id, parts[i]]);
+    }
+    return { allocations: tag.invRows.length };
+  }
+  const allocIds = (await q(
+    `SELECT id FROM transaction_freight_allocations WHERE transaction_id=$1 ORDER BY id`, [txnId])).rows;
+  if (allocIds.length) {
+    const parts = splitEqual(amountMxn, allocIds.length);
+    for (let i = 0; i < allocIds.length; i++) {
+      await q(`UPDATE transaction_freight_allocations SET amount_mxn=$1 WHERE id=$2`, [parts[i], allocIds[i].id]);
+    }
+  }
+  return { allocations: allocIds.length };
+}
 import { validateReceiptDataUrl, AR_PAID_EPS, arIsPaid, arIsOpen, AR_SETTLED_SQL } from '../ar.js';
 import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
@@ -973,26 +1040,26 @@ export default async function financeRoutes(app) {
     const amount = b.amount != null ? Number(b.amount) : Number(t.amount);
     const txnDate = b.txn_date || t.txn_date;
     const { fx, amountMxn } = await calcMxn(currency, amount, b.fx_rate, t.status, txnDate);
-    await query(
-      `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
-         category_code=$8, memo=$9, receipt_no=$10, updated_by=$11 WHERE id=$12`,
-      [b.account_id ?? t.account_id, b.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
-       // 필드가 body에 있으면 null=비우기(계정과목 '(없음)'·메모 지움), 없으면 기존값 유지.
-       // (기존 `?? t.x`는 null을 '변경 없음'으로 삼켜 비우기가 불가능했음)
-       ('category_code' in b) ? (b.category_code || null) : t.category_code,
-       ('memo' in b) ? (b.memo || null) : t.memo,
-       b.receipt_no !== undefined ? ((b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null) : t.receipt_no,
-       req.ctx.perm.userId, id]);
-    // 운반비 인보이스 배분행이 있으면 새 금액으로 균등 재분할(합계 = 거래금액 유지).
-    const allocIds = (await query(
-      `SELECT id FROM transaction_freight_allocations WHERE transaction_id=$1 ORDER BY id`, [id])).rows;
-    if (allocIds.length) {
-      const parts = splitEqual(amountMxn, allocIds.length);
-      for (let i = 0; i < allocIds.length; i++) {
-        await query(`UPDATE transaction_freight_allocations SET amount_mxn=$1 WHERE id=$2`, [parts[i], allocIds[i].id]);
-      }
-    }
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { direct_edit: true } });
+    // 필드가 body에 있으면 null=비우기(계정과목 '(없음)'·메모 지움), 없으면 기존값 유지.
+    // (기존 `?? t.x`는 null을 '변경 없음'으로 삼켜 비우기가 불가능했음)
+    const newCat = ('category_code' in b) ? (b.category_code || null) : t.category_code;
+    // 운반비(6160) 고객·인보이스 태그 — 수정에서도 고르게 (fin-1013fr)
+    const tag = await parseFreightTag(query, b);
+    if (tag.error) return reply.code(400).send({ error: tag.error });
+    await withTx(async (c) => {
+      const cq = c.query.bind(c);
+      await cq(
+        `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
+           category_code=$8, memo=$9, receipt_no=$10, updated_by=$11 WHERE id=$12`,
+        [b.account_id ?? t.account_id, b.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
+         newCat,
+         ('memo' in b) ? (b.memo || null) : t.memo,
+         b.receipt_no !== undefined ? ((b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null) : t.receipt_no,
+         req.ctx.perm.userId, id]);
+      // 태그 교체 또는(태그 미전송 시) 기존 배분행을 새 금액으로 균등 재분할.
+      await syncFreightTag(cq, id, { categoryCode: newCat, prevCategoryCode: t.category_code, amountMxn, tag });
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { direct_edit: true, freight_tag: tag.set ? (tag.invRows.length || 'customer') : undefined } });
     await afterTxnChange(id, req.ctx.perm.userId);   // 0258 연결 전자결재 실적 갱신
     return { ok: true };
   });
@@ -1007,6 +1074,9 @@ export default async function financeRoutes(app) {
     if (!t.approved) return reply.code(409).send({ error: 'not_approved_edit_directly' });
     if (t.change_status) return reply.code(409).send({ error: 'change_in_progress' });
     const payload = req.body?.payload || {};
+    // 운반비 태그가 실려 있으면 요청 시점에 먼저 검증(승인 때 실패하지 않도록) (fin-1013fr)
+    const tagChk = await parseFreightTag(query, payload);
+    if (tagChk.error) return reply.code(400).send({ error: tagChk.error });
     const r = await query(
       `INSERT INTO txn_change_requests (txn_id, req_type, payload, reason, requested_by) VALUES ($1,'edit',$2,$3,$4) RETURNING id`,
       [id, JSON.stringify(payload), req.body?.reason || null, req.ctx.perm.userId]);
@@ -1077,6 +1147,19 @@ export default async function financeRoutes(app) {
       memo: ('memo' in p) ? (p.memo || null) : t.memo,
       receipt_no: p.receipt_no !== undefined ? p.receipt_no : t.receipt_no,
     };
+    // 운반비 태그(전/후) — 요청에 태그가 실렸거나 계정이 6160 에서 바뀔 때만 비교 표시 (fin-1013fr)
+    const fLabel = (custName, invIds) => invIds.length ? ('인보이스 ' + invIds.map((x) => '#' + x).join(', ')) : (custName ? ('고객 ' + custName) : '미지정');
+    const origAlloc = (await query(`SELECT sales_invoice_id FROM transaction_freight_allocations WHERE transaction_id=$1 ORDER BY id`, [t.id])).rows.map((x) => Number(x.sales_invoice_id));
+    const origCust = t.customer_id ? (await query(`SELECT name FROM customers WHERE id=$1`, [t.customer_id])).rows[0]?.name || ('#' + t.customer_id) : null;
+    orig.freight = t.category_code === FREIGHT_OUT_CODE ? fLabel(origCust, origAlloc) : null;
+    const pTagged = ('customer_id' in p) || ('freight_invoice_ids' in p);
+    if (next.category_code !== FREIGHT_OUT_CODE) next.freight = null;
+    else if (!pTagged) next.freight = orig.freight;
+    else {
+      const ids = Array.isArray(p.freight_invoice_ids) ? p.freight_invoice_ids.map(Number) : [];
+      const nc = (!ids.length && p.customer_id) ? ((await query(`SELECT name FROM customers WHERE id=$1`, [Number(p.customer_id)])).rows[0]?.name || ('#' + p.customer_id)) : null;
+      next.freight = fLabel(nc, ids);
+    }
     return { type: 'edit', reason: cr.reason, orig, next };
   });
 
@@ -1106,14 +1189,20 @@ export default async function financeRoutes(app) {
           else fx = (await getUsdMxnRate()).rate;
         }
         const amountMxn = r2(amount * fx);
+        const newCat = ('category_code' in p) ? (p.category_code || null) : t.category_code; // null=비우기
+        const cq = c.query.bind(c);
+        const tag = await parseFreightTag(cq, p);   // 운반비 태그(fin-1013fr) — 요청 후 인보이스가 지워졌으면 승인 중단
+        if (tag.error) return { error: tag.error };
         await c.query(
           `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
              category_code=$8, memo=$9, receipt_no=$10, change_status=NULL, updated_by=$11 WHERE id=$12`,
           [p.account_id ?? t.account_id, p.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
-           ('category_code' in p) ? (p.category_code || null) : t.category_code, // null=비우기
+           newCat,
            ('memo' in p) ? (p.memo || null) : t.memo,
            p.receipt_no !== undefined ? ((p.receipt_no && String(p.receipt_no).trim()) ? String(p.receipt_no).trim().slice(0, 60) : null) : t.receipt_no,
            userId, t.id]);
+        // 태그 교체 또는 기존 배분행 금액 재분할(종전엔 승인 경로에서 재분할이 빠져 있었다)
+        await syncFreightTag(cq, Number(t.id), { categoryCode: newCat, prevCategoryCode: t.category_code, amountMxn, tag });
       }
       await c.query(`UPDATE txn_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [userId, reqId]);
       await syncApprovalByTxn(c.query.bind(c), Number(t.id), userId);   // 0258 연결 전자결재 실적 갱신/되돌림
@@ -2466,6 +2555,18 @@ export default async function financeRoutes(app) {
     // 지출(out)을 비디렉터가 확정하면 실적이지만 디렉터 승인 전까지 미반영(approved=false).
     const isDir = req.ctx.perm.role === 'director';
     const approved = !(t.direction === 'out' && !isDir);
+    // 계정과목(선택) — 전자결재·고정비 예정도 지급 확인 때 계정을 바로잡을 수 있게. 키가 없으면 기존 유지.
+    // 운반비(6160)면 고객·인보이스 태그도 함께 받는다 (fin-1013fr).
+    const b0 = req.body || {};
+    let newCat = t.category_code;
+    if ('category_code' in b0) {
+      newCat = b0.category_code ? String(b0.category_code) : null;
+      if (newCat && !(await query(`SELECT 1 FROM categories WHERE code=$1`, [newCat])).rows.length) {
+        return reply.code(400).send({ error: 'bad_category' });
+      }
+    }
+    const tag = await parseFreightTag(query, b0);
+    if (tag.error) return reply.code(400).send({ error: tag.error });
     // ===== 잔액 처리: 실적 < 계획일 때 선택 =====
     // remainder='close'(기본): 그대로 마감 → plan_amount(계획)는 유지되어 차액이 "절감"으로 기록됨.
     // remainder='keep': 부분 집행 → 이 행의 계획을 실집행분으로 낮추고, 잔액을 새 예정(plan) 거래로 분리해 남김(절감 아님·미집행).
@@ -2483,13 +2584,14 @@ export default async function financeRoutes(app) {
       await withTx(async (exec) => {
         await exec.query(
           `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
-             approved=$10, change_count=$6, plan_memo=$7, plan_amount=$3, receipt_no=$11, updated_by=$8 WHERE id=$9`,
-          [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemoKeep, req.ctx.perm.userId, id, approved, receiptNo]);
+             approved=$10, change_count=$6, plan_memo=$7, plan_amount=$3, receipt_no=$11, category_code=$12, updated_by=$8 WHERE id=$9`,
+          [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemoKeep, req.ctx.perm.userId, id, approved, receiptNo, newCat]);
+        await syncFreightTag(exec.query.bind(exec), id, { categoryCode: newCat, prevCategoryCode: t.category_code, amountMxn, tag });
         const rr = await exec.query(
           `INSERT INTO transactions
              (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date, is_private)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'plan','general',true,$9,$10,$9,$11,$12,$4,$2,$13) RETURNING id`,
-          [t.account_id || null, planDate, t.direction, rem, t.currency, planFx, remMxn, t.category_code || null,
+          [t.account_id || null, planDate, t.direction, rem, t.currency, planFx, remMxn, newCat || null,
            req.ctx.perm.userId, remMemo, t.recurring_rule_id || null, remPeriod, t.is_private === true]);
         remId = Number(rr.rows[0].id);
       });
@@ -2498,11 +2600,14 @@ export default async function financeRoutes(app) {
       return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved,
         plan_amount: planAmt, diff: r2(newAmount - planAmt), remainder: 'keep', remainder_amount: rem, remainder_txn_id: remId };
     }
-    await query(
-      `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
-         approved=$10, change_count=$6, plan_memo=$7, receipt_no=$11, updated_by=$8 WHERE id=$9`,
-      [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id, approved, receiptNo]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved, remainder: 'close' } });
+    await withTx(async (exec) => {
+      await exec.query(
+        `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
+           approved=$10, change_count=$6, plan_memo=$7, receipt_no=$11, category_code=$12, updated_by=$8 WHERE id=$9`,
+        [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id, approved, receiptNo, newCat]);
+      await syncFreightTag(exec.query.bind(exec), id, { categoryCode: newCat, prevCategoryCode: t.category_code, amountMxn, tag });
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved, remainder: 'close', category_code: newCat !== t.category_code ? newCat : undefined, freight_tag: tag.set ? (tag.invRows.length || 'customer') : undefined } });
     await afterTxnChange(id, req.ctx.perm.userId);   // 0258 전자결재 회차 집행완료
     return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved,
       plan_amount: planAmt, diff: r2(newAmount - planAmt), remainder: 'close',

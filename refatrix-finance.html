@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-1007aq</title>
+<title>Refatrix ERP · 재무 · build fin-1013fr</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -214,42 +214,43 @@
         <div id="t-ap-chip" style="margin-top:6px"></div>
         <div id="t-file-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       </div>
-      <div id="t-custRow" style="display:none;margin-top:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfaf6">
+      <div id="t-custRow" class="fi-pick" style="display:none;margin-top:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfaf6">
         <style>
-          #t-custRow .fi-selbox{border:1.5px solid var(--brand);border-radius:8px;background:#f7faf8;padding:9px 12px;margin:10px 0}
-          #t-custRow .fi-selh{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
-          #t-custRow .fi-selh b{font-size:12.5px;color:var(--brand)}
-          #t-custRow .fi-per{margin-left:auto;font-size:12px;color:var(--income);font-weight:800}
-          #t-custRow .fi-chips{display:flex;flex-wrap:wrap;gap:6px}
-          #t-custRow .fi-chip{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 10px;font-size:12px;line-height:1.3}
-          #t-custRow .fi-chip .no{font-weight:800;color:var(--brand)}
-          #t-custRow .fi-chip .cu{color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-          #t-custRow .fi-chip .amt{font-variant-numeric:tabular-nums}
-          #t-custRow .fi-chip .x{border:none;background:#f1ede4;color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0}
-          #t-custRow .fi-chip .x:hover{background:#F6E7E4;color:var(--expense)}
-          #t-custRow .fi-invtbl{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
-          #t-custRow .fi-thead,#t-custRow .fi-invrow{display:grid;grid-template-columns:36px 80px 1fr 88px 112px;align-items:center}
-          #t-custRow .fi-thead{background:#faf8f3;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);font-weight:700;padding:6px 0}
-          #t-custRow .fi-thead span{padding:0 9px}
-          #t-custRow .fi-r{text-align:right}
-          #t-custRow .fi-invscroll{max-height:210px;overflow:auto}
-          #t-custRow .fi-invrow{padding:7px 0;border-bottom:1px solid #f0ece3;cursor:pointer;font-size:13px}
-          #t-custRow .fi-invrow:hover{background:#f7f5ef}
-          #t-custRow .fi-invrow.on{background:#E4F0EB}
-          #t-custRow .fi-invrow>*{padding:0 9px;min-width:0}
-          #t-custRow .fi-invrow input{width:15px;height:15px;margin:0 0 0 9px;accent-color:var(--brand);cursor:pointer}
-          #t-custRow .fi-invrow .no{font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
-          #t-custRow .fi-invrow .sat{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-          #t-custRow .fi-invrow .date{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12.5px}
-          #t-custRow .fi-invrow .amt{font-variant-numeric:tabular-nums;font-weight:600}
-          #t-custRow .fi-badge{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px}
-          #t-custRow .fi-badge.tmp{background:#fbf1dc;color:#9A6A12;border:1px solid #ecd9a0}
-          #t-custRow .fi-badge.none{background:#f1ede4;color:var(--muted);border:1px solid var(--line)}
-          #t-custRow .fi-grouph{background:#f1ede4;font-size:11px;font-weight:800;color:var(--muted);padding:4px 11px;border-bottom:1px solid var(--line)}
-          #t-custRow .fi-nores{font-size:12.5px;color:var(--muted);padding:12px 11px}
-          #t-custRow .fi-splitbar{display:flex;align-items:center;gap:14px;margin-top:9px;background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;flex-wrap:wrap}
-          #t-custRow .fi-splitbar b{color:var(--brand)}
-          #t-custRow .fi-warn{color:#B8893B;font-weight:700}
+          .fi-pick .fi-selbox{border:1.5px solid var(--brand);border-radius:8px;background:#f7faf8;padding:9px 12px;margin:10px 0}
+          .fi-pick .fi-selh{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+          .fi-pick .fi-selh b{font-size:12.5px;color:var(--brand)}
+          .fi-pick .fi-per{margin-left:auto;font-size:12px;color:var(--income);font-weight:800}
+          .fi-pick .fi-chips{display:flex;flex-wrap:wrap;gap:6px}
+          .fi-pick .fi-chip{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 10px;font-size:12px;line-height:1.3}
+          .fi-pick .fi-chip .no{font-weight:800;color:var(--brand)}
+          .fi-pick .fi-chip .cu{color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          .fi-pick .fi-chip .amt{font-variant-numeric:tabular-nums}
+          .fi-pick .fi-chip .x{border:none;background:#f1ede4;color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0}
+          .fi-pick .fi-chip .x:hover{background:#F6E7E4;color:var(--expense)}
+          .fi-pick .fi-invtbl{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+          .fi-pick .fi-thead,.fi-pick .fi-invrow{display:grid;grid-template-columns:36px 80px 1fr 88px 112px;align-items:center}
+          .fi-pick .fi-thead{background:#faf8f3;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);font-weight:700;padding:6px 0}
+          .fi-pick .fi-thead span{padding:0 9px}
+          .fi-pick .fi-r{text-align:right}
+          .fi-pick .fi-invscroll{max-height:210px;overflow:auto}
+          .fi-pick .fi-invrow{padding:7px 0;border-bottom:1px solid #f0ece3;cursor:pointer;font-size:13px}
+          .fi-pick .fi-invrow:hover{background:#f7f5ef}
+          .fi-pick .fi-invrow.on{background:#E4F0EB}
+          .fi-pick .fi-invrow>*{padding:0 9px;min-width:0}
+          .fi-pick .fi-invrow input{width:15px;height:15px;margin:0 0 0 9px;accent-color:var(--brand);cursor:pointer}
+          .fi-pick .fi-invrow .no{font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
+          .fi-pick .fi-invrow .sat{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          .fi-pick .fi-invrow .date{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12.5px}
+          .fi-pick .fi-invrow .amt{font-variant-numeric:tabular-nums;font-weight:600}
+          .fi-pick .fi-badge{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px}
+          .fi-pick .fi-badge.tmp{background:#fbf1dc;color:#9A6A12;border:1px solid #ecd9a0}
+          .fi-pick .fi-badge.none{background:#f1ede4;color:var(--muted);border:1px solid var(--line)}
+          .fi-pick .fi-grouph{background:#f1ede4;font-size:11px;font-weight:800;color:var(--muted);padding:4px 11px;border-bottom:1px solid var(--line)}
+          .fi-pick .fi-nores{font-size:12.5px;color:var(--muted);padding:12px 11px}
+          .fi-pick .fi-splitbar{display:flex;align-items:center;gap:14px;margin-top:9px;background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;flex-wrap:wrap}
+          .fi-pick .fi-splitbar b{color:var(--brand)}
+          .fi-pick .fi-warn{color:#B8893B;font-weight:700}
+          .fi-pick.fi-panel{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}
         </style>
         <div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:8px">🚚 운반비 귀속 — 인보이스 선택 <span style="font-weight:500;font-size:11px;color:var(--muted)">복수 선택 시 금액을 건수로 균등 배분 · 손익 화면 P&L용</span></div>
         <div class="row" style="margin:0 0 2px">
@@ -897,6 +898,146 @@
         :'<span class="fi-warn">금액을 입력하면 건당 배분액이 표시됩니다</span>');
   }
 
+  // ── 운반비 인보이스 선택기(재사용) — 거래 수정·예정 지급확인·예정 내역 실적처리 (fin-1013fr) ──
+  //   거래등록 화면의 선택기와 같은 규칙(고객 → 인보이스 목록 · 복수/혼적 · 균등 배분)을 패널 안에 하나 더 띄운다.
+  //   opts: { getAmount(), getCur(), txnId(기존 배분 불러오기, 선택), customerId(기존 고객 태그, 선택) }
+  //   반환: { ready, payload() → {customer_id, freight_invoice_ids} | null(불러오기 실패 — 보내지 않음 = 기존 유지), refresh() }
+  async function mountFreightPicker(root,opts){
+    opts=opts||{};
+    const st={sel:new Map(),q:'',ready:false};
+    root.classList.add('fi-pick','fi-panel');
+    root.innerHTML='<div style="font-size:12.5px;font-weight:800;color:var(--brand);margin-bottom:6px">🚚 운반비 귀속 — 매출 인보이스 선택 <span style="font-weight:500;font-size:11px;color:var(--muted)">복수 선택 시 금액을 건수로 균등 배분 · 손익 화면 P&L용</span></div>'
+      +'<div class="row" style="margin:0 0 2px"><div style="flex:2"><label>고객 선택 → 그 고객의 인보이스 목록</label><select class="fp-cust"><option value="">(공통 — 미지정, 매출비중 자동배분)</option></select></div>'
+      +'<div style="flex:3"><label>인보이스 검색</label><input class="fp-q" type="text" placeholder="🔍 인보이스 No. · SAT 번호로 검색"></div></div>'
+      +'<div class="fi-selbox"><div class="fi-selh"><b>선택된 인보이스</b><span class="fp-cnt" style="font-size:12px;color:var(--muted)"></span><span class="fi-per fp-per"></span></div><div class="fi-chips fp-chips"></div></div>'
+      +'<div class="fi-invtbl"><div class="fi-thead"><span></span><span>No.</span><span>SAT 번호</span><span>날짜</span><span class="fi-r">금액 (MX$)</span></div><div class="fi-invscroll fp-list"><div class="fi-nores">불러오는 중…</div></div></div>'
+      +'<div class="fi-splitbar fp-sum"></div><div class="msg fp-msg" style="display:none"></div>';
+    const q=(c)=>root.querySelector(c);
+    const custSel=q('.fp-cust'),listEl=q('.fp-list');
+    const cidNow=()=>Number(custSel.value)||0;
+    function summary(){
+      const n=st.sel.size, amt=Number(opts.getAmount?opts.getAmount():0)||0, cur=opts.getCur?opts.getCur():'MXN';
+      q('.fp-cnt').textContent=n?('· '+n+'건'):'';
+      if(!n){
+        q('.fp-chips').innerHTML='<span style="font-size:12px;color:var(--muted)">아직 선택 없음 — 미선택 시 "고객 공통"(고객 선택 시) 또는 "미지정"(매출비중 자동배분)으로 저장됩니다.</span>';
+        q('.fp-per').textContent='';
+        q('.fp-sum').innerHTML='<span style="color:var(--muted)">인보이스를 선택하지 않으면 → <b>고객 공통</b>(고객만 태그) 또는 <b>미지정</b>(매출비중 자동배분)으로 저장됩니다.</span>';
+        return;
+      }
+      const parts=fiSplit(amt,n), custCnt=new Set([...st.sel.values()].map(v=>v.cid)).size;
+      q('.fp-per').textContent=amt>0?('건당 '+fmt(parts[0])+' '+cur):'';
+      let h='',k=0;
+      for(const [id,v] of st.sel){
+        h+='<span class="fi-chip"><span class="no">#'+id+'</span><span class="cu" title="'+invEsc(v.cn)+'">'+invEsc(v.cn)+'</span>'
+          +(amt>0?('<span class="amt">'+fmt(parts[k])+'</span>'):'')+'<button type="button" class="x" data-x="'+id+'" title="선택 해제">✕</button></span>';
+        k++;
+      }
+      q('.fp-chips').innerHTML=h;
+      q('.fp-chips').querySelectorAll('.x').forEach(b=>b.addEventListener('click',()=>{st.sel.delete(Number(b.getAttribute('data-x')));render();}));
+      q('.fp-sum').innerHTML='<span>선택 <b>'+n+'건</b>'+(custCnt>1?(' <span class="fi-warn">· 고객 '+custCnt+'곳 혼적</span>'):'')+'</span>'
+        +(amt>0?('<span style="color:var(--muted)">'+fmt(amt)+' '+cur+' ÷ '+n+' = <b>'+fmt(parts[0])+'</b>/건'+(parts[n-1]!==parts[0]?(' (마지막 건 '+fmt(parts[n-1])+' — 반올림 잔액 흡수)'):'')+'</span>')
+          :'<span class="fi-warn">금액을 입력하면 건당 배분액이 표시됩니다</span>');
+    }
+    function render(){
+      const cid=cidNow(), qq=st.q.toLowerCase();
+      let h='';
+      const foreign=[...st.sel.entries()].filter(([id,v])=>v.cid!==cid);
+      if(foreign.length){
+        h+='<div class="fi-grouph">다른 고객에서 선택됨 · '+foreign.length+'건 (체크 해제 가능)</div>';
+        foreign.forEach(([id,v])=>{h+=fiRowHtml(v.i,v.cid,true,v.cn);});
+      }
+      if(cid){
+        const cn=(finCustomers||[]).find(c=>Number(c.id)===cid)?.name||'';
+        if(foreign.length)h+='<div class="fi-grouph">'+invEsc(cn)+'</div>';
+        const rows=(finInvCache[cid]||[]).filter(i=>!qq||String(i.id).includes(qq)||String(i.sat_no||'').toLowerCase().includes(qq));
+        if(!rows.length)h+='<div class="fi-nores">'+(qq?'검색 결과가 없습니다.':'이 고객의 게시 인보이스가 없습니다 — 고객 공통으로 저장됩니다.')+'</div>';
+        rows.forEach(i=>{h+=fiRowHtml(i,cid,st.sel.has(Number(i.id)),null);});
+      }else if(!foreign.length)h='<div class="fi-nores">고객을 먼저 선택하세요.</div>';
+      listEl.innerHTML=h;
+      listEl.querySelectorAll('.fi-invrow').forEach(r=>r.addEventListener('click',(e)=>{
+        const cb=r.querySelector('input');if(e.target!==cb)cb.checked=!cb.checked;
+        const id=Number(r.getAttribute('data-inv')),ccid=Number(r.getAttribute('data-cid'))||0;
+        if(cb.checked){
+          const prev=st.sel.get(id);
+          const src=(finInvCache[ccid]||[]).find(x=>Number(x.id)===id)||(prev&&prev.i);
+          const cn=(finCustomers||[]).find(c=>Number(c.id)===ccid)?.name||(prev&&prev.cn)||'';
+          if(src)st.sel.set(id,{cid:ccid,cn,i:src});
+        }else st.sel.delete(id);
+        render();
+      }));
+      summary();
+    }
+    async function loadInv(){
+      const cid=cidNow();
+      if(cid&&!finInvCache[cid]){
+        listEl.innerHTML='<div class="fi-nores">불러오는 중…</div>';
+        try{const d=await fetch(session.api+'/api/finance/customer-invoices?customer_id='+cid,{headers:auth()}).then(r=>r.json());finInvCache[cid]=(d&&d.items)||[];}
+        catch(e){finInvCache[cid]=[];}
+        if(cidNow()!==cid)return;
+      }
+      render();
+    }
+    custSel.addEventListener('change',loadInv);
+    q('.fp-q').addEventListener('input',(e)=>{st.q=e.target.value.trim();render();});
+    const list=await loadFinCustomers();
+    custSel.innerHTML='<option value="">(공통 — 미지정, 매출비중 자동배분)</option>'+list.map(c=>`<option value="${c.id}">${invEsc(c.name)}</option>`).join('');
+    // 기존 태그 불러오기 — 실패하면 ready=false 로 남겨 저장 때 태그를 보내지 않는다(기존 배분 보존).
+    let ok=true;
+    if(opts.txnId){
+      try{
+        const r=await fetch(session.api+'/api/transactions/'+opts.txnId+'/freight-allocations',{headers:auth()});
+        if(!r.ok)throw new Error(String(r.status));
+        const d=await r.json();
+        (d.items||[]).forEach(x=>st.sel.set(Number(x.sales_invoice_id),{cid:Number(x.customer_id),cn:x.customer_name||'',
+          i:{id:Number(x.sales_invoice_id),sat_no:x.sat_no,inv_date:x.inv_date,total_mxn:x.invoice_total_mxn}}));
+      }catch(e){
+        ok=false;const m=q('.fp-msg');m.className='msg fp-msg err';m.style.display='block';
+        m.textContent='기존 인보이스 배분을 불러오지 못했습니다 — 이대로 저장하면 기존 배분은 그대로 유지됩니다.';
+      }
+    }
+    const initCid=Number(opts.customerId)||(st.sel.size?[...st.sel.values()][0].cid:0);
+    if(initCid&&[...custSel.options].some(o=>Number(o.value)===initCid))custSel.value=String(initCid);
+    st.ready=ok;
+    await loadInv();
+    return {
+      get ready(){return st.ready;},
+      refresh:summary,
+      payload(){
+        if(!st.ready)return null;
+        return {customer_id:cidNow()||null,freight_invoice_ids:st.sel.size?[...st.sel.keys()]:null};
+      }
+    };
+  }
+  // 패널 안의 계정 select 가 6160 일 때만 선택기를 띄운다(최초 1회 생성 후 보이기/숨기기).
+  function bindFreightPicker(catSel,host,opts){
+    let picker=null,loading=null;
+    const sync=async()=>{
+      const on=catSel.value===FREIGHT_OUT_CODE;
+      host.style.display=on?'':'none';
+      if(on&&!picker&&!loading){loading=mountFreightPicker(host,opts).then(p=>{picker=p;return p;});}
+    };
+    catSel.addEventListener('change',sync);
+    sync();
+    return {
+      active:()=>catSel.value===FREIGHT_OUT_CODE,
+      refresh:()=>{if(picker)picker.refresh();},
+      // 6160 이면 {customer_id, freight_invoice_ids}, 아니거나 로딩 전/실패면 null(= 태그 키를 보내지 않음)
+      payload:()=>(catSel.value===FREIGHT_OUT_CODE&&picker)?picker.payload():null,
+    };
+  }
+  // 예정 지급확인(confirm-pay) 본문에 계정 변경·운반비 태그를 싣는다 — 계정은 바뀐 경우에만 보낸다(구 데이터 계정 보존).
+  function addPlanCatFreight(body,catSel,t,fp){
+    if(catSel&&catSel.value!==(t.category_code||''))body.category_code=catSel.value||null;
+    const fpl=fp&&fp.payload();
+    if(fpl){body.customer_id=fpl.customer_id;body.freight_invoice_ids=fpl.freight_invoice_ids;}
+  }
+  function freightErrText(e){
+    return e==='bad_invoice'?'선택한 매출 인보이스 중 게시 상태가 아니거나 삭제된 건이 있습니다 — 다시 선택하세요.'
+      :e==='bad_customer'?'선택한 고객을 찾을 수 없습니다 — 다시 선택하세요.'
+      :e==='bad_category'?'계정과목을 찾을 수 없습니다.'
+      :String(e);
+  }
+
   // 화면에 보이는 계좌들의 MXN 환산 총합. USD 계좌는 오늘 환율(fxRate)로 환산.
   // accounts 배열은 /api/accounts 가 권한(allowedAccountIds)으로 이미 걸러 내려준 것이라,
   // 재무담당·socio 처럼 일부 계좌만 보는 사용자는 합계도 자동으로 달라진다.
@@ -1484,6 +1625,7 @@
     $('t-dir').value='out';$('t-dir').dispatchEvent(new Event('change'));
     $('t-status').value='actual';
     if(o.category_code&&[...$('t-cat').options].some(x=>x.value===o.category_code))$('t-cat').value=o.category_code;
+    updateTxCustRow();   // 계정을 코드로 채우면 change 이벤트가 안 나 운반비(6160) 인보이스 선택기가 안 뜨던 문제 (fin-1013fr)
     $('t-cur').value=o.currency||'MXN';
     $('t-amt').value=Number(o.planned_amount).toFixed(2);
     $('t-date').value=new Date(Date.now()-6*3600e3).toISOString().slice(0,10);
@@ -2379,6 +2521,8 @@
             <div><label>실제 금액</label><input class="cf-amt" type="number" step="0.01" value="${t.amount}"></div>
             ${t.currency==='USD'?'<div><label>환율(USD)</label><input class="cf-fx" type="number" step="0.0001" placeholder="지급일 환율"></div>':''}
           </div>
+          <div class="row"><div style="flex:2"><label>계정과목 <span class="hint" style="margin:0;font-weight:400">— 운반비(6160)면 아래에서 매출 인보이스 선택</span></label><select class="cf-cat">${catOptionsFor(t.direction,t.category_code)}</select></div></div>
+          <div class="cf-fi" style="display:none"></div>
           <div class="row"><div style="flex:3"><label>변경 사유(계획과 다를 때)</label><input class="cf-memo" type="text" placeholder="예: 임대료 인상분 반영"></div>
             <div style="flex:2"><label>영수증 번호 (선택)</label><input class="cf-receipt" type="text" maxlength="60" placeholder="영수증/Folio 번호"></div></div>
           <div class="cf-rembox hidden" style="margin-top:8px;border:1px dashed var(--brand);border-radius:8px;padding:9px;background:#fff">
@@ -2412,6 +2556,12 @@
       const cfPlanAmt=t.plan_amount!=null?Number(t.plan_amount):Number(t.amount);
       const cfAmtEl=box.querySelector('.cf-amt');
       if(cfAmtEl){const upd=()=>updateRemainderUi(box,'cf',Number(cfAmtEl.value)||0,cfPlanAmt,t.currency);cfAmtEl.addEventListener('input',upd);upd();}
+      // 운반비(6160) 매출 인보이스 선택기 — 전자결재·고정비 예정을 지급 확인할 때도 (fin-1013fr)
+      box._fp=bindFreightPicker(box.querySelector('.cf-cat'),box.querySelector('.cf-fi'),{
+        getAmount:()=>{const a=Number(box.querySelector('.cf-amt').value)||0;const fx=box.querySelector('.cf-fx');return t.currency==='USD'?a*((fx&&Number(fx.value))||fxRate||1):a;},
+        getCur:()=>'MXN',txnId:(t.category_code===FREIGHT_OUT_CODE&&Number(t.freight_alloc_n)>0)?t.id:null,
+        customerId:t.category_code===FREIGHT_OUT_CODE?t.customer_id:null});
+      ['.cf-amt','.cf-fx'].forEach(sel=>{const el=box.querySelector(sel);if(el)el.addEventListener('input',()=>box._fp.refresh());});
       box.querySelector('.cf-planedit').onclick=()=>{box.querySelector('.planedit').classList.toggle('hidden');};
       box.querySelector('.pe-save').onclick=()=>savePlanEdit(t.id,box);
       const cfDel=box.querySelector('.cf-del');
@@ -2442,6 +2592,7 @@
           <div><label>금액</label><input class="e-amt" type="number" step="0.01" value="${t.amount}"></div>
           <div><label>환율(USD)</label><input class="e-fx" type="number" step="0.0001" value="${t.currency==='USD'?t.fx_rate:''}" placeholder="오늘 환율"></div>
         </div>
+        <div class="e-fi" style="display:none"></div>
         <div class="row"><div style="flex:3"><label>메모</label><input class="e-memo" type="text" value="${t.memo||''}"></div>
           <div style="flex:2"><label>영수증 번호</label><input class="e-receipt" type="text" value="${(t.receipt_no||'').replace(/"/g,'&quot;')}"></div>
           ${directEdit?'':'<div style="flex:2"><label>변경 사유</label><input class="e-reason" type="text" placeholder="디렉터 검토용"></div>'}</div>
@@ -2452,7 +2603,15 @@
         </div>
         <div class="msg e-msg"></div>
       </div>`;
-    box.querySelector('.e-dir').addEventListener('change',e=>{box.querySelector('.e-cat').innerHTML=catOptionsFor(e.target.value,'');});
+    box.querySelector('.e-dir').addEventListener('change',e=>{const ec=box.querySelector('.e-cat');ec.innerHTML=catOptionsFor(e.target.value,'');ec.dispatchEvent(new Event('change'));});
+    // 운반비(6160) — 계정을 운반비로 바꾸거나 이미 운반비인 거래면 매출 인보이스 선택기 (fin-1013fr)
+    const wasFreight=t.category_code===FREIGHT_OUT_CODE;
+    box._fp=bindFreightPicker(box.querySelector('.e-cat'),box.querySelector('.e-fi'),{
+      getAmount:()=>{const a=Number(box.querySelector('.e-amt').value)||0;return box.querySelector('.e-cur').value==='USD'?a*(Number(box.querySelector('.e-fx').value)||fxRate||1):a;},
+      getCur:()=>'MXN',
+      txnId:(wasFreight&&Number(t.freight_alloc_n)>0)?t.id:null,
+      customerId:wasFreight?t.customer_id:null});
+    ['.e-amt','.e-fx','.e-cur'].forEach(sel=>{const el=box.querySelector(sel);if(el){el.addEventListener('input',()=>box._fp.refresh());el.addEventListener('change',()=>box._fp.refresh());}});
     const cdBtn=box.querySelector('.e-cashdue');if(cdBtn)cdBtn.onclick=()=>cashDueFlag(id,!t.cash_due);
     box.querySelector('.e-cancel').onclick=()=>{box.closest('.txn-det').classList.add('hidden');};
     box.querySelector('.e-submit').onclick=()=>submitTxnEdit(id,box,directEdit);
@@ -2469,6 +2628,9 @@
       fx_rate:cur==='USD'?(Number(box.querySelector('.e-fx').value)||fxRate):1,
       category_code:box.querySelector('.e-cat').value||null,memo:box.querySelector('.e-memo').value.trim()||null,
       receipt_no:box.querySelector('.e-receipt').value.trim()||null};
+    // 운반비 태그(fin-1013fr) — 6160 이고 선택기가 준비됐을 때만 보낸다(안 보내면 서버가 기존 배분을 새 금액으로 재분할).
+    const fpl=box._fp&&box._fp.payload();
+    if(fpl){payload.customer_id=fpl.customer_id;payload.freight_invoice_ids=fpl.freight_invoice_ids;}
     if(!(payload.amount>0)){m.className='msg e-msg err';m.style.display='block';m.textContent='금액을 확인하세요.';return;}
     try{
       let res;
@@ -2479,7 +2641,7 @@
         res=await fetch(session.api+'/api/transactions/'+id+'/edit-request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({payload,reason})});
       }
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg e-msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
+      if(!res.ok||d.error){m.className='msg e-msg err';m.style.display='block';m.textContent='실패: '+freightErrText(d.error||res.status);return;}
       if(directEdit){alert('수정되었습니다.');}else{alert('수정요청이 접수되었습니다. 승인 대기 탭에서 디렉터가 검토·승인합니다.');}
       loadTxns();loadAccounts();
     }catch(e){m.className='msg e-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
@@ -2606,7 +2768,8 @@
           ${fldRow('계정과목',(o.category_code||'—')+' '+(o.category_name||''),(n.category_code||'—'))}
           ${fldRow('금액',money(o.amount,o.currency,o.amount_mxn),money(n.amount,n.currency,n.amount_mxn))}
           ${fldRow('메모',o.memo||'',n.memo||'')}
-          ${fldRow('영수증 번호',o.receipt_no||'',n.receipt_no||'')}</table>
+          ${fldRow('영수증 번호',o.receipt_no||'',n.receipt_no||'')}
+          ${(o.freight||n.freight)?fldRow('🚚 운반비 귀속',escH(o.freight||'—'),escH(n.freight||'—')):''}</table>
           <div class="hint">승인하면 변경 내용이 거래에 반영되고 계좌 잔액이 재계산됩니다.</div>`;
       }
       box.innerHTML=`${rows}
@@ -3070,10 +3233,11 @@
       return;
     }
     const remSel=box.querySelector('.cf-rembox:not(.hidden) .cf-rem:checked');if(remSel)body.remainder=remSel.value;
+    addPlanCatFreight(body,box.querySelector('.cf-cat'),t9,box._fp);
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='account_required'?'계좌가 필요합니다.':(d.error||res.status));return;}
+      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='account_required'?'계좌가 필요합니다.':freightErrText(d.error||res.status));return;}
       alert(confirmResultMsg(d));
       loadTxns();loadAccounts();
     }catch(e){m.className='msg cf-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
@@ -4633,6 +4797,8 @@
         <div><label>실제 금액</label><input class="pp-amt" type="number" step="0.01" value="${t.amount}"></div>
         ${t.currency==='USD'?'<div><label>환율</label><input class="pp-fx" type="number" step="0.0001" placeholder="지급일 환율"></div>':''}
       </div>
+      <div class="row"><div style="flex:2"><label>계정과목 <span class="hint" style="margin:0;font-weight:400">— 운반비(6160)면 아래에서 매출 인보이스 선택</span></label><select class="pp-cat">${catOptionsFor(t.direction,t.category_code)}</select></div></div>
+      <div class="pp-fi" style="display:none"></div>
       <div class="row"><div style="flex:3"><label>변경 사유(계획과 다를 때)</label><input class="pp-memo" type="text"></div>
         <div style="flex:2"><label>영수증 번호 (선택)</label><input class="pp-receipt" type="text" maxlength="60" placeholder="영수증/Folio 번호"></div></div>
       <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn ghost sm pp-filebtn">📎 영수증 파일 (선택)</button><input type="file" class="pp-file" multiple accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" style="display:none"><span class="hint pp-filelist" style="margin:0">사진·PDF·XML · 실적 반영과 함께 올라갑니다</span></div>
@@ -4658,6 +4824,11 @@
     const ppPlanAmt=t.plan_amount!=null?Number(t.plan_amount):Number(t.amount);
     const ppAmtEl=tr.querySelector('.pp-amt');
     if(ppAmtEl){const upd=()=>updateRemainderUi(tr,'pp',Number(ppAmtEl.value)||0,ppPlanAmt,t.currency);ppAmtEl.addEventListener('input',upd);upd();}
+    // 운반비(6160) 매출 인보이스 선택기 — 전자결재 승인으로 생긴 예정도 실적 처리 때 인보이스를 고른다 (fin-1013fr)
+    tr._fp=bindFreightPicker(tr.querySelector('.pp-cat'),tr.querySelector('.pp-fi'),{
+      getAmount:()=>{const a=Number(tr.querySelector('.pp-amt').value)||0;const fx=tr.querySelector('.pp-fx');return t.currency==='USD'?a*((fx&&Number(fx.value))||fxRate||1):a;},
+      getCur:()=>'MXN'});
+    ['.pp-amt','.pp-fx'].forEach(sel=>{const el=tr.querySelector(sel);if(el)el.addEventListener('input',()=>tr._fp.refresh());});
   }
   async function doPpConfirm(id,tr){
     const m=tr.querySelector('.pp-msg');m.className='msg pp-msg';m.style.display='none';
@@ -4680,10 +4851,11 @@
       return;
     }
     const remSel=tr.querySelector('.pp-rembox:not(.hidden) .pp-rem:checked');if(remSel)body.remainder=remSel.value;
+    addPlanCatFreight(body,tr.querySelector('.pp-cat'),t8,tr._fp);
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg pp-msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
+      if(!res.ok||d.error){m.className='msg pp-msg err';m.style.display='block';m.textContent='실패: '+freightErrText(d.error||res.status);return;}
       let fileNote='';
       if(tr._files&&tr._files.length){const up=await uploadTxnFiles(id,tr._files.slice());fileNote='\n\n'+up.text;}
       alert(confirmResultMsg(d)+fileNote+(t8.approval?'\n\n📄 전자결재 '+(t8.approval.doc_no||'')+' 회차가 집행완료로 처리되었습니다.':''));
