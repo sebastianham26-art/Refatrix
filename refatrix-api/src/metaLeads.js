@@ -45,22 +45,49 @@ async function graphGet(url) {
 const gErr = (r) => { const e = (r.json && r.json.error) || {}; return `${e.code ? '#' + e.code + ' ' : ''}${e.message || 'http_' + r.status}`.slice(0, 300); };
 
 // ── 페이지 토큰 · 페이지 정보 ──
-let tokenCache = null;   // {token, at, page:{name, ig_id, ig_username}}
+//   2026-10-13 · 「Messenger API 설정」에서 받은 페이지 토큰은 대화(pages_messaging)는 읽지만
+//   페이지 정보(/{page}?fields=name…)는 pages_read_engagement 가 없어 #100 으로 거절된다.
+//   → 페이지 정보 조회가 실패해도 멈추지 않는다. 토큰을 그대로 쓰고(경고만 남김) 대화를 읽는다.
+//     Instagram 계정 id 를 못 받으면 대화 참여자에서 추정한다(모든 대화에 공통으로 있는 쪽 = 우리 계정).
+let tokenCache = null;   // {token, at, page:{name, ig_id, ig_username}, warning}
 export async function resolvePage() {
   if (tokenCache && Date.now() - tokenCache.at < 50 * 60000) return tokenCache;
   const tok = baseToken();
   if (!tok) return { error: 'no_token' };
-  const url = `https://graph.facebook.com/${apiVer()}/${encodeURIComponent(metaPageId())}?fields=name,access_token,instagram_business_account{id,username}&access_token=${encodeURIComponent(tok)}`;
-  let r = await graphGet(url);
-  if (!r.ok) {   // 페이지 토큰이면 access_token 필드를 요청할 수 없을 수 있다 — 필드를 줄여 다시
-    r = await graphGet(`https://graph.facebook.com/${apiVer()}/${encodeURIComponent(metaPageId())}?fields=name,instagram_business_account{id,username}&access_token=${encodeURIComponent(tok)}`);
-    if (!r.ok) return { error: gErr(r) };
+  const base = `https://graph.facebook.com/${apiVer()}/${encodeURIComponent(metaPageId())}`;
+  const tries = [
+    'name,access_token,instagram_business_account{id,username}',   // 시스템 사용자 토큰 → 페이지 토큰
+    'name,instagram_business_account{id,username}',                // 페이지 토큰(정보 권한 있음)
+    'name',
+  ];
+  let j = null, lastErr = null;
+  for (const f of tries) {
+    const r = await graphGet(`${base}?fields=${f}&access_token=${encodeURIComponent(tok)}`);
+    if (r.ok) { j = r.json || {}; break; }
+    lastErr = gErr(r);
   }
-  const j = r.json || {};
+  if (!j) {
+    // 페이지 정보는 못 읽어도 대화를 읽을 수 있으면 그대로 쓴다
+    const probe = await graphGet(`${base}/conversations?platform=messenger&limit=1&fields=id&access_token=${encodeURIComponent(tok)}`);
+    if (!probe.ok) return { error: lastErr || gErr(probe) };
+    tokenCache = { token: tok, at: Date.now(), page: { id: metaPageId(), name: null, ig_id: null, ig_username: null },
+      warning: '페이지 이름 · Instagram 계정 정보는 이 토큰으로 읽을 수 없습니다(pages_read_engagement 없음) — 대화는 정상으로 가져옵니다' };
+    return tokenCache;
+  }
   const ig = j.instagram_business_account || null;
   tokenCache = { token: j.access_token || tok, at: Date.now(),
     page: { id: metaPageId(), name: j.name || null, ig_id: ig ? String(ig.id) : null, ig_username: ig ? ig.username || null : null } };
   return tokenCache;
+}
+
+// Instagram 계정 id 추정 — 여러 대화에 공통으로 들어 있는 참여자(우리 계정). 대화가 1건뿐이면 판단하지 않는다.
+export function inferBusinessId(convs) {
+  const cnt = new Map();
+  for (const c of convs || []) for (const p of ((c.participants && c.participants.data) || [])) cnt.set(String(p.id), (cnt.get(String(p.id)) || 0) + 1);
+  const n = (convs || []).length;
+  if (n < 2) return null;
+  const top = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0];
+  return top && top[1] === n ? top[0] : null;
 }
 
 // ── 대화 1건 → 저장할 모양 ──
@@ -127,13 +154,16 @@ export async function syncMetaLeads({ full = false, trigger = 'manual', userId =
     for (const platform of ['messenger', 'instagram']) {
       syncState.progress.platform = platform;
       const bp = { threads: 0, inserted: 0, error: null };
-      if (platform === 'instagram' && !pg.page.ig_id) { bp.error = 'Instagram 계정이 페이지에 연결돼 있지 않거나 권한(instagram_basic)이 없습니다'; out.by_platform[platform] = bp; continue; }
       let url = `https://graph.facebook.com/${apiVer()}/${encodeURIComponent(metaPageId())}/conversations?platform=${platform}`
         + `&fields=id,updated_time,message_count,participants,messages.limit(${MSG_KEEP}){id,created_time,from,message}&limit=25&access_token=${encodeURIComponent(pg.token)}`;
       let stop = false;
       while (url && !stop && out.threads < MAX_THREADS) {
         const r = await graphGet(url);
         if (!r.ok) { bp.error = gErr(r); break; }
+        if (platform === 'instagram' && !me.ig_id) {   // 페이지 정보에서 못 받았으면 대화 참여자로 추정
+          me.ig_id = inferBusinessId(r.json.data || []);
+          if (!me.ig_id && (r.json.data || []).length) { bp.error = 'Instagram 계정을 확인하지 못했습니다(대화가 1건뿐) — 다음 가져오기에 다시 시도'; break; }
+        }
         for (const conv of (r.json.data || [])) {
           if (conv.updated_time && new Date(conv.updated_time) < cutoff) { stop = true; break; }
           const t = shapeThread(conv, platform, me);

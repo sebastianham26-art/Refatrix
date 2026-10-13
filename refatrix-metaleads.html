@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1012a</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -164,7 +164,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1012a';
+  const MTL_BUILD='mtl-1013b';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -226,7 +226,8 @@
     if(s.migrated===false){ $('sKpis').innerHTML='<div class="hint bad-t">마이그레이션 대기 — Railway 에서 npm run migrate (0270)</div>'; return; }
     if(!$('fState').dataset.filled&&s.states){ $('fState').insertAdjacentHTML('beforeend',s.states.map(x=>'<option>'+esc(x)+'</option>').join('')); $('fState').dataset.filled='1';
       $('eState').innerHTML='<option value="">(자동값)</option>'+s.states.map(x=>'<option>'+esc(x)+'</option>').join(''); }
-    $('sPage').innerHTML=s.page?('페이지 <b>'+esc(s.page.name||s.page_id)+'</b>'+(s.page.ig_username?' · Instagram <b>@'+esc(s.page.ig_username)+'</b>':' · <span class="warn-t">Instagram 연결 안 됨</span>')+' · 토큰: '+esc(s.token_source))
+    $('sPage').innerHTML=s.page?('페이지 <b>'+esc(s.page.name||s.page_id)+'</b>'+(s.page.ig_username?' · Instagram <b>@'+esc(s.page.ig_username)+'</b>':(s.page_warning?'':' · <span class="warn-t">Instagram 연결 안 됨</span>'))+' · 토큰: '+esc(s.token_source)
+        +(s.page_warning?'<br><span class="warn-t" title="'+esc(s.page_warning)+'">ⓘ 대화는 정상으로 가져옵니다 — 페이지 이름 · Instagram 계정 정보는 이 토큰 권한으로 읽지 않습니다</span>':''))
       :(s.configured?'<span class="bad-t">Meta 연결 오류: '+esc(s.page_error||'')+'</span>':'<span class="bad-t">Meta 토큰 없음</span>');
     const c=s.counts||{};
     $('sKpis').innerHTML=[['전체 문의',c.total,''],['Messenger',c.messenger,'var(--fb)'],['Instagram',c.instagram,'var(--ig)'],['차종·부품 있음',c.demand,'var(--ok)'],['지역 확인',c.with_state,''],['전화 있음',c.with_phone,''],['신규(미처리)',c.nuevo,'var(--warn)']]

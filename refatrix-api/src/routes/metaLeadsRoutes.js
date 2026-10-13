@@ -33,8 +33,8 @@ const COLS = `t.id, t.platform, t.thread_id, COALESCE(t.m_name, t.name) AS name,
 
 export default async function metaLeadsRoutes(app) {
   app.get('/api/meta-leads/status', R, async () => {
-    let page = null, pageError = null;
-    if (metaLeadsConfigured()) { const p = await resolvePage(); if (p.error) pageError = p.error; else page = p.page; }
+    let page = null, pageError = null, pageWarning = null;
+    if (metaLeadsConfigured()) { const p = await resolvePage(); if (p.error) pageError = p.error; else { page = p.page; pageWarning = p.warning || null; } }
     let counts = null, last = null, lastOk = null;
     try {
       counts = (await query(`SELECT count(*)::int AS total,
@@ -47,7 +47,7 @@ export default async function metaLeadsRoutes(app) {
       last = (await query(`SELECT id, started_at, finished_at, trigger, full_scan, ok, threads, inserted, by_platform, error FROM meta_sync_runs ORDER BY id DESC LIMIT 1`)).rows[0] || null;
       lastOk = (await query(`SELECT max(finished_at) AS t FROM meta_sync_runs WHERE ok = true`)).rows[0].t || null;
     } catch (_) { return { configured: metaLeadsConfigured(), migrated: false }; }
-    return { configured: metaLeadsConfigured(), migrated: true, token_source: metaTokenSource(), page_id: metaPageId(), page, page_error: pageError,
+    return { configured: metaLeadsConfigured(), migrated: true, token_source: metaTokenSource(), page_id: metaPageId(), page, page_error: pageError, page_warning: pageWarning,
       running: syncState.running, progress: syncState.running ? syncState.progress : null, counts, last_run: last, last_ok_at: lastOk,
       auto: process.env.META_LEADS_AUTO !== '0', states: META_STATES };
   });

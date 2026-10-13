@@ -96,7 +96,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1012a/);
+    assert.match(d.title, /mtl-1013b/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
     assert.match(d.getElementById('sKpis').textContent, /전체 문의3/);
     assert.equal(d.querySelectorAll('#lTable tbody tr').length, 3);
@@ -262,6 +262,37 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal(nu.state, 'Querétaro'); assert.equal(nu.vehicles, 'Nissan Sentra 2019');
   });
 
+  await t.test('B6. 2026-10-13 · 페이지 토큰에 pages_read_engagement 가 없어 페이지 정보가 #100 이어도 대화는 가져온다 · Instagram 계정은 참여자로 추정', async () => {
+    const seen = [];
+    M.setMetaFetch(async (url) => {
+      const u = new URL(url); seen.push(u.pathname + '?' + (u.searchParams.get('fields') || '').slice(0, 20) + '&' + (u.searchParams.get('platform') || ''));
+      if (u.pathname.endsWith('/' + PAGE)) return { ok: false, status: 400, json: { error: { code: 100, message: "(#100) Object does not exist, cannot be loaded due to missing permission or reviewable feature … requires the 'pages_read_engagement' permission" } } };
+      if (u.pathname.endsWith('/conversations')) {
+        assert.equal(u.searchParams.get('access_token'), 'SYS_TOKEN', '받은 토큰을 그대로 쓴다');
+        const plat = u.searchParams.get('platform');
+        if (u.searchParams.get('limit') === '1') return { ok: true, status: 200, json: { data: [{ id: 't_probe' }] } };
+        if (plat === 'instagram') return { ok: true, status: 200, json: { data: [
+          conv('t_i7', { u: 'cliente.uno', id: 'ig7' }, [['c', 'rotulas para tsuru 2015, soy de puebla', iso(5)]], iso(5), true),
+          conv('t_i8', { u: 'cliente.dos', id: 'ig8' }, [['p', 'hola', iso(7)], ['c', 'bujes para march', iso(6)]], iso(6), true)] } };
+        return { ok: true, status: 200, json: { data: [conv('t_m7', { n: 'Solo Messenger', id: 'psid7' }, [['c', 'horquillas versa 2019 en cancun', iso(4)]], iso(4))] } };
+      }
+      return { ok: false, status: 404, json: {} };
+    });
+    const st0 = (await call(D, 'GET', '/api/meta-leads/status')).json();
+    assert.equal(st0.page_error, null, '오류가 아니다'); assert.match(st0.page_warning, /pages_read_engagement/);
+    await call(D, 'POST', '/api/meta-leads/sync', {}); await untilDone();
+    const s1 = (await call(D, 'GET', '/api/meta-leads/status')).json();
+    assert.equal(s1.last_run.ok, true, s1.last_run.error);
+    const l = (await call(D, 'GET', '/api/meta-leads/list?q=cliente')).json().items;
+    const uno = l.find((x) => x.username === 'cliente.uno');
+    assert.ok(uno, 'IG 대화 저장'); assert.equal(uno.state, 'Puebla'); assert.equal(uno.vehicles, 'Nissan Tsuru 2015');
+    const dos = (await call(D, 'GET', `/api/meta-leads/${l.find((x) => x.username === 'cliente.dos').id}`)).json();
+    assert.deepEqual(dos.messages.map((m) => m.me), [true, false], 'IG 우리 계정을 참여자로 추정해 구분');
+    const m7 = (await call(D, 'GET', '/api/meta-leads/list?q=cancun')).json().items[0];
+    assert.equal(m7.state, 'Quintana Roo');
+    assert.equal(M.inferBusinessId([conv('a', { n: 'x', id: '1' }, [], iso(1))]), null, '대화 1건이면 추정하지 않음');
+  });
+
   await t.test('B5. 토큰 오류 → 실패 기록 · 다시 추출', async () => {
     pageMode = 'bad'; M.setMetaFetch(async (url) => {
       const u = new URL(url); if (u.pathname.endsWith('/' + PAGE)) return { ok: false, status: 400, json: { error: { code: 190, message: 'Invalid OAuth access token' } } };
@@ -270,7 +301,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const s = (await call(D, 'GET', '/api/meta-leads/status')).json();
     assert.equal(s.last_run.ok, false); assert.match(s.last_run.error, /#190 Invalid OAuth/); assert.match(s.page_error, /#190/);
     await query(`UPDATE meta_threads SET a_state = NULL`);
-    const r = (await call(D, 'POST', '/api/meta-leads/reextract', {})).json(); assert.equal(r.updated, 5);
+    const r = (await call(D, 'POST', '/api/meta-leads/reextract', {})).json(); assert.equal(r.updated, 8);
     const l = (await call(D, 'GET', '/api/meta-leads/list?state=Coahuila')).json().items; assert.equal(l.length, 1, '저장된 대화로 다시 추출');
   });
 });
