@@ -55,6 +55,20 @@ export const SERVICES = [
     ],
   },
   {
+    key: 'metapage',
+    label: 'Meta 페이지 (Messenger · Instagram 문의)',
+    desc: '광고 문의 대화 가져오기(0270)',
+    console: 'https://business.facebook.com/settings/system-users',
+    fields: [
+      { name: 'META_PAGE_TOKEN', label: '페이지 · 시스템 사용자 토큰', secret: true, required: true, hint: '권한: pages_show_list · pages_read_engagement · pages_manage_metadata · pages_messaging (+ Instagram: instagram_basic · instagram_manage_messages). 비우면 WhatsApp 영구 토큰으로 시도' },
+      { name: 'META_PAGE_ID', label: '페이지 ID', secret: false, hint: '비우면 1338649012669713 (Business Suite 주소의 asset_id)' },
+      { name: 'META_LEADS_DAYS', label: '첫 가져오기 기간(일)', secret: false, hint: '비우면 180' },
+    ],
+    uses: [
+      '제품·마케팅 › Meta 광고 문의 — Messenger · Instagram 대화 목록 · 지역 · 차종 · 부품 정리 · 엑셀',
+    ],
+  },
+  {
     key: 'whatsapp',
     label: 'WhatsApp Business Cloud (Meta)',
     desc: '자동 발송(브리핑 · 일일요약 · 오퍼시트)',
@@ -347,6 +361,24 @@ export async function testService(key) {
       });
       const body = await r.text();
       return { ok: r.ok, status: r.status, note: r.ok ? '키가 유효합니다.' : httpNote(r.status), body: clip(body) };
+    }
+    if (key === 'metapage') {
+      const tok = val('META_PAGE_TOKEN') || val('WHATSAPP_TOKEN');
+      if (!tok) return { ok: false, reason: 'no_key', note: '페이지 토큰(또는 WhatsApp 영구 토큰)이 없습니다.' };
+      const ver = val('WHATSAPP_API_VERSION') || 'v20.0';
+      const pid = val('META_PAGE_ID') || '1338649012669713';
+      // 시스템 사용자 토큰이면 페이지 토큰으로 바꿔서(대화 목록은 페이지 토큰만 읽을 수 있다)
+      let ptok = tok;
+      try {
+        const p0 = await fetchWithTimeout(`https://graph.facebook.com/${ver}/${encodeURIComponent(pid)}?fields=access_token`, { headers: { authorization: 'Bearer ' + tok } });
+        const j0 = await p0.json().catch(() => ({}));
+        if (j0 && j0.access_token) ptok = j0.access_token;
+      } catch (_) { /* 그대로 */ }
+      const r = await fetchWithTimeout(
+        `https://graph.facebook.com/${ver}/${encodeURIComponent(pid)}/conversations?platform=messenger&limit=1&fields=id,updated_time`,
+        { headers: { authorization: 'Bearer ' + ptok } });
+      const body = await r.text();
+      return { ok: r.ok, status: r.status, note: r.ok ? '페이지 대화를 읽을 수 있습니다.' : httpNote(r.status) + ' — 시스템 사용자에 페이지 자산 · pages_messaging 권한이 있는지 확인', body: clip(body) };
     }
     if (key === 'whatsapp') {
       const tok = val('WHATSAPP_TOKEN');

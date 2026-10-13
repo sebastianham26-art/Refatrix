@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1012a</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+    --ok:#0F6E56;--ok-bg:#E4F0EB;--bad:#B23A2E;--bad-bg:#F6E7E4;--warn:#9a6512;--warn-bg:#fdf3e3;--ctr:#E2231A;--fb:#1877F2;--ig:#C13584;--radius:12px}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px 16px}
+  .wrap{max-width:1280px;margin:0 auto}
+  .top{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .top h1{margin:0;font-size:18px}.top .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:12.5px;text-align:right}
+  .tabs{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+  .tab{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px}
+  .pane{display:none}.pane.on{display:block}
+  h2{font-size:15px;margin:0 0 10px;color:var(--brand)}
+  .hint{font-size:12px;color:var(--muted);line-height:1.55}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  label{display:block;font-size:11.5px;color:var(--muted);font-weight:700;margin-bottom:4px}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;background:#fff;color:var(--ink);max-width:100%}
+  textarea{width:100%;min-height:60px;resize:vertical}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--bad-bg);color:var(--bad)}.msg.ok{display:block;background:var(--ok-bg);color:var(--ok)}
+  .hidden{display:none!important}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;width:100%;margin-top:3px}
+  .tblwrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;white-space:nowrap;position:sticky;top:0}
+  tbody tr.click{cursor:pointer}tbody tr.click:hover{background:#faf8f3}
+  td.num,th.num{text-align:right}
+  .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .ch-messenger{background:#e7f0fe;color:var(--fb)}.ch-instagram{background:#fbe7f2;color:var(--ig)}
+  .st-nuevo{background:#eef0f2;color:#555}.st-contactado{background:var(--warn-bg);color:var(--warn)}.st-derivado{background:#e7f0fe;color:var(--fb)}
+  .st-venta{background:var(--ok-bg);color:var(--ok)}.st-descartado{background:var(--bad-bg);color:var(--bad)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fdfcf9}
+  .kpi .k{font-size:11px;color:var(--muted);font-weight:700}.kpi .v{font-size:22px;font-weight:700;margin-top:2px}
+  .note{border-left:4px solid var(--gold);background:#fbf7ee;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.65;margin-top:10px}
+  .note ol{margin:6px 0 0;padding-left:20px}
+  .bad-t{color:var(--bad);font-weight:700}.ok-t{color:var(--ok);font-weight:700}.warn-t{color:var(--warn);font-weight:700}
+  .muted{color:var(--muted)}
+  .auto{color:var(--muted);font-style:italic}
+  .clip{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bars .b{display:flex;align-items:center;gap:8px;font-size:12.5px;margin:4px 0}
+  .bars .b .l{width:190px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bars .b .t{flex:1;background:#f1eee6;border-radius:6px;height:16px;position:relative}
+  .bars .b .f{background:var(--brand);height:100%;border-radius:6px}
+  .bars .b .n{width:48px;text-align:right;font-weight:700}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+  .modal{position:fixed;inset:0;background:rgba(20,20,20,.45);display:none;align-items:flex-start;justify-content:center;z-index:50;padding:24px 12px;overflow:auto}
+  .modal.on{display:flex}
+  .mbox{background:#fff;border-radius:14px;max-width:980px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .mtop{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .mbody{padding:14px 16px;display:grid;grid-template-columns:1fr 340px;gap:16px}
+  @media (max-width:820px){ .mbody{grid-template-columns:1fr} }
+  .chat{background:#efeae2;border-radius:10px;padding:10px;max-height:62vh;overflow:auto;display:flex;flex-direction:column;gap:6px}
+  .bub{max-width:80%;padding:7px 10px;border-radius:10px;font-size:12.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+  .bub.in{background:#fff;align-self:flex-start}.bub.me{background:#d9fdd3;align-self:flex-end}
+  .bub .t{font-size:10px;color:var(--muted);margin-top:2px}
+  .ed label{margin-top:8px}.ed input,.ed select{width:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><h1>📨 Meta 광고 문의</h1><div class="sub">Messenger · Instagram 문의 → 지역 · 연락처 · 차종 · 부품 → refaccionaria 판매기회</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
+    <div class="row"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div><button type="button" class="btn" id="go">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 연결 · 가져오기 -->
+    <div class="card">
+      <div class="row" style="align-items:center">
+        <h2 style="margin:0">연결 · 가져오기</h2>
+        <span class="hint" id="sPage"></span>
+        <span style="margin-left:auto"></span>
+        <button type="button" class="btn" id="bSync">⟳ 새 문의 가져오기</button>
+        <button type="button" class="btn ghost" id="bFull" title="최근 180일을 처음부터 다시 읽습니다(사람이 고친 값 · 상태 · 메모는 그대로)">전체 다시 가져오기</button>
+      </div>
+      <div class="hint" id="sRun" style="margin-top:6px"></div>
+      <div class="kpis" id="sKpis" style="margin-top:10px"></div>
+      <div class="note hidden" id="sGuide"></div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button type="button" class="tab on" data-p="list">📋 문의 목록</button>
+      <button type="button" class="tab" data-p="sum">📊 지역 · 수요 요약</button>
+    </div>
+
+    <!-- 목록 -->
+    <section class="pane on card" id="p-list">
+      <div class="row">
+        <div><label>검색(이름 · 메시지 · 메모 · 전화)</label><input id="fQ" type="text" style="width:220px" placeholder="versa, horquilla…"></div>
+        <div><label>채널</label><select id="fCh"><option value="">전체</option><option value="messenger">Messenger</option><option value="instagram">Instagram</option></select></div>
+        <div><label>주(지역)</label><select id="fState"><option value="">전체</option><option value="__none">— 지역 모름</option></select></div>
+        <div><label>업종</label><select id="fTipo"><option value="">전체</option><option>Refaccionaria</option><option>Mayorista</option><option>Taller</option><option>Flotilla</option><option>Taxi</option><option>Particular</option></select></div>
+        <div><label>상태</label><select id="fStatus"><option value="">전체</option><option value="nuevo">신규</option><option value="contactado">연락함</option><option value="derivado">refaccionaria 연결</option><option value="venta">판매</option><option value="descartado">제외</option></select></div>
+        <div><label>마지막 대화</label><div class="row" style="gap:4px"><input id="fFrom" type="date"><input id="fTo" type="date"></div></div>
+        <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:600;color:var(--ink)"><input type="checkbox" id="fDemand"> 차종·부품 있는 것만</label>
+        <button type="button" class="btn ghost" id="bSearch">조회</button>
+        <button type="button" class="btn" id="bXls">📥 엑셀</button>
+      </div>
+      <div class="hint" id="lCount" style="margin-top:8px"></div>
+      <div class="tblwrap" id="lTable"></div>
+    </section>
+
+    <!-- 요약 -->
+    <section class="pane card" id="p-sum">
+      <div class="hint">지금 목록 필터 그대로 집계합니다. 「지역」은 고객이 대화에서 말한 곳입니다(Facebook 프로필 거주지는 Meta 가 API 로 주지 않습니다).</div>
+      <div class="grid3" style="margin-top:12px">
+        <div><h2>주(지역)별 문의</h2><div class="bars" id="sumState"></div></div>
+        <div><h2>차종</h2><div class="bars" id="sumVeh"></div></div>
+        <div><h2>부품</h2><div class="bars" id="sumPart"></div></div>
+      </div>
+      <h2 style="margin-top:18px">지역 × 수요 — refaccionaria 에 넘길 판매기회</h2>
+      <div class="tblwrap" id="sumOpp"></div>
+    </section>
+  </div>
+</div>
+
+<!-- 한 건 -->
+<div class="modal" id="mOne"><div class="mbox">
+  <div class="mtop"><b id="oTitle" style="color:var(--brand)"></b><span id="oCh"></span><button type="button" class="btn ghost sm" data-close="mOne" style="margin-left:auto">닫기 ✕</button></div>
+  <div class="mbody">
+    <div><div class="chat" id="oChat"></div></div>
+    <div class="ed">
+      <div class="hint">비워 두면 대화에서 뽑은 <span class="auto">자동값</span>을 씁니다. 고친 값은 다시 가져와도 지워지지 않습니다.</div>
+      <label>이름</label><input id="eName">
+      <label>업종</label><input id="eTipo" list="dlTipo"><datalist id="dlTipo"><option>Refaccionaria</option><option>Mayorista</option><option>Taller mecánico</option><option>Flotilla</option><option>Taxi / app</option><option>Particular</option></datalist>
+      <div class="row" style="gap:8px"><div style="flex:1"><label>주</label><select id="eState"></select></div><div style="flex:1"><label>도시</label><input id="eCity"></div></div>
+      <label>전화</label><input id="ePhone" placeholder="10자리">
+      <label>차종</label><input id="eVeh" placeholder="Nissan Versa 2018; …">
+      <label>부품</label><input id="eParts" placeholder="Horquilla; Amortiguador; …">
+      <div class="row" style="gap:8px"><div style="flex:1"><label>상태</label><select id="eStatus"><option value="nuevo">신규</option><option value="contactado">연락함</option><option value="derivado">refaccionaria 연결</option><option value="venta">판매</option><option value="descartado">제외</option></select></div>
+        <div style="flex:1"><label>연결한 refaccionaria</label><input id="eDerived"></div></div>
+      <label>메모</label><textarea id="eNote"></textarea>
+      <div class="row" style="margin-top:10px"><button type="button" class="btn" id="eSave">저장</button><a class="btn ghost sm" id="oOpen" target="_blank" rel="noopener" style="text-decoration:none">Meta 받은편지함에서 열기 ↗</a></div>
+      <div class="msg" id="eMsg"></div>
+    </div>
+  </div>
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>
+  const MTL_BUILD='mtl-1012a';
+  try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
+  let session={token:null,user:null,api:''};
+  const S={items:[],status:null,cur:null,poll:null,tab:'list'};
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtT=(t)=>{ if(!t) return '—'; return new Date(t).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
+  const ST={nuevo:'신규',contactado:'연락함',derivado:'refaccionaria 연결',venta:'판매',descartado:'제외'};
+  const ERR={no_token:'Meta 토큰이 없습니다 — 관리 › 외부 서비스 키 › 「Meta 페이지」에 토큰을 넣으세요.',already_running:'이미 가져오는 중입니다.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',bad_status:'잘못된 상태'};
+  const errText=(e)=>ERR[e.message]||('오류: '+e.message);
+  function say(ok,t,el){ const m=el||$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; if(ok) setTimeout(()=>{ if(m.textContent===t) m.className='msg'; },5000); }
+  async function api(method,path,body){
+    const o={method,headers:{'Authorization':'Bearer '+session.token}};
+    if(body!==undefined){ o.headers['Content-Type']='application/json'; o.body=JSON.stringify(body); }
+    const r=await fetch(session.api+path,o); const d=await r.json().catch(()=>({}));
+    if(!r.ok){ const e=new Error(d.error||('http_'+r.status)); e.data=d; throw e; }
+    return d;
+  }
+
+  // ───── 로그인 ─────
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const apiBase=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg'; const ps=portalSession();
+    if(!ps&&(!login_id||!pin)){ say(false,'아이디와 PIN을 입력하세요.',m); return; }
+    $('go').disabled=true;
+    try{
+      let d,res={ok:true};
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else{ res=await fetch(apiBase+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})}); d=await res.json(); }
+      if(!res.ok||d.error){ say(false,'로그인 실패: '+(d.error||res.status),m); return; }
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||apiBase};
+      try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
+      $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+      await loadStatus(); loadList();
+    }catch(e){ say(false,'서버에 연결할 수 없습니다.',m); }
+    finally{ $('go').disabled=false; }
+  }
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  document.addEventListener('click',e=>{ const c=e.target.closest('[data-close]'); if(c) $(c.dataset.close).classList.remove('on'); });
+  $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b) return; S.tab=b.dataset.p;
+    document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.toggle('on',x===b)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='p-'+S.tab)); if(S.tab==='sum') renderSummary(); });
+
+  // ───── 연결 상태 ─────
+  const GUIDE='<b>🧩 Meta 연결 (한 번만)</b><ol>'
+    +'<li><b>business.facebook.com › 설정 › 시스템 사용자</b> — WhatsApp 에 쓰는 시스템 사용자를 고릅니다.</li>'
+    +'<li>「<b>자산 추가</b>」 › <b>페이지</b> › Refatrix(CTR) 페이지 › 「<b>메시지</b>」 권한(또는 전체 관리) 켜기. Instagram 문의도 받으려면 같은 화면에서 <b>Instagram 계정</b>도 추가.</li>'
+    +'<li>「<b>새 토큰 생성</b>」 › 앱 <b>RefatrixERPmensaje</b> › 권한 체크: <code>pages_show_list</code> · <code>pages_read_engagement</code> · <code>pages_manage_metadata</code> · <code>pages_messaging</code> (+ <code>instagram_basic</code> · <code>instagram_manage_messages</code>) › 만료 「없음」.</li>'
+    +'<li>ERP <b>관리 › 외부 서비스 키 › Meta 페이지</b>에 토큰 붙여 넣기 → 「연결 시험」.</li>'
+    +'<li>여기서 「<b>⟳ 새 문의 가져오기</b>」 — 처음엔 최근 180일을 읽습니다(수 분).</li></ol>';
+  async function loadStatus(){
+    let s; try{ s=await api('GET','/api/meta-leads/status'); }catch(e){ $('sKpis').innerHTML='<div class="hint">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; return; }
+    S.status=s;
+    if(s.migrated===false){ $('sKpis').innerHTML='<div class="hint bad-t">마이그레이션 대기 — Railway 에서 npm run migrate (0270)</div>'; return; }
+    if(!$('fState').dataset.filled&&s.states){ $('fState').insertAdjacentHTML('beforeend',s.states.map(x=>'<option>'+esc(x)+'</option>').join('')); $('fState').dataset.filled='1';
+      $('eState').innerHTML='<option value="">(자동값)</option>'+s.states.map(x=>'<option>'+esc(x)+'</option>').join(''); }
+    $('sPage').innerHTML=s.page?('페이지 <b>'+esc(s.page.name||s.page_id)+'</b>'+(s.page.ig_username?' · Instagram <b>@'+esc(s.page.ig_username)+'</b>':' · <span class="warn-t">Instagram 연결 안 됨</span>')+' · 토큰: '+esc(s.token_source))
+      :(s.configured?'<span class="bad-t">Meta 연결 오류: '+esc(s.page_error||'')+'</span>':'<span class="bad-t">Meta 토큰 없음</span>');
+    const c=s.counts||{};
+    $('sKpis').innerHTML=[['전체 문의',c.total,''],['Messenger',c.messenger,'var(--fb)'],['Instagram',c.instagram,'var(--ig)'],['차종·부품 있음',c.demand,'var(--ok)'],['지역 확인',c.with_state,''],['전화 있음',c.with_phone,''],['신규(미처리)',c.nuevo,'var(--warn)']]
+      .map(([k,v,col])=>'<div class="kpi"><div class="k">'+k+'</div><div class="v"'+(col?' style="color:'+col+'"':'')+'>'+(v||0)+'</div></div>').join('');
+    const lr=s.last_run;
+    let run='';
+    if(s.running) run='<span class="warn-t">가져오는 중…</span> '+esc((s.progress&&s.progress.platform)||'')+' · 대화 '+((s.progress&&s.progress.threads)||0)+'건 · 새 문의 '+((s.progress&&s.progress.inserted)||0)+'건';
+    else if(lr) run='마지막 가져오기 '+fmtT(lr.finished_at||lr.started_at)+' · '+(lr.ok?'<span class="ok-t">성공</span>':'<span class="bad-t">실패</span>')+' · 대화 '+lr.threads+'건(새 '+lr.inserted+')'
+      +(lr.error?' · <span class="bad-t">'+esc(lr.error)+'</span>':'')+(s.auto&&s.last_ok_at?' · 이후 30분마다 자동':'');
+    else run='아직 가져온 적이 없습니다.';
+    $('sRun').innerHTML=run;
+    const needGuide=!s.configured||!!s.page_error||(lr&&!lr.ok);
+    $('sGuide').innerHTML=GUIDE; $('sGuide').classList.toggle('hidden',!needGuide);
+    $('bSync').disabled=$('bFull').disabled=!!s.running||!s.configured;
+    clearTimeout(S.poll);
+    if(s.running){ S.poll=setTimeout(async()=>{ const was=true; await loadStatus(); if(was&&!S.status.running) loadList(); },3000); }
+  }
+  async function sync(full){
+    if(full&&!confirm('최근 180일 대화를 처음부터 다시 읽습니다(몇 분). 사람이 고친 값 · 상태 · 메모는 그대로 둡니다. 진행할까요?')) return;
+    try{ await api('POST','/api/meta-leads/sync',{full}); say(true,'가져오기를 시작했습니다 — 끝나면 목록이 새로 고쳐집니다.'); setTimeout(loadStatus,800); }
+    catch(e){ say(false,errText(e)); }
+  }
+  $('bSync').addEventListener('click',()=>sync(false));
+  $('bFull').addEventListener('click',()=>sync(true));
+
+  // ───── 목록 ─────
+  function qs(){ const p=new URLSearchParams(); const v=(id)=>$(id).value;
+    if(v('fQ').trim()) p.set('q',v('fQ').trim()); if(v('fCh')) p.set('platform',v('fCh')); if(v('fState')) p.set('state',v('fState'));
+    if(v('fTipo')) p.set('tipo',v('fTipo')); if(v('fStatus')) p.set('status',v('fStatus')); if(v('fFrom')) p.set('from',v('fFrom')); if(v('fTo')) p.set('to',v('fTo'));
+    if($('fDemand').checked) p.set('demand','1'); return p; }
+  async function loadList(){
+    try{ const d=await api('GET','/api/meta-leads/list?'+qs()); S.items=d.items||[]; renderList(); if(S.tab==='sum') renderSummary(); }
+    catch(e){ $('lTable').innerHTML='<div class="hint">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
+  }
+  const tipoOf=(x)=>x.tipo?esc(x.tipo):(x.tipo_btn?'<span class="auto" title="광고 버튼으로만 고름">'+esc(x.tipo_btn)+' (버튼)</span>':'<span class="muted">—</span>');
+  function renderList(){
+    const it=S.items;
+    $('lCount').textContent=it.length+'건'+(it.length>=5000?' (최대 5,000건 표시 — 필터로 좁히세요)':'');
+    if(!it.length){ $('lTable').innerHTML='<div class="hint" style="margin-top:10px">문의가 없습니다'+(S.status&&S.status.counts&&!S.status.counts.total?' — 위에서 「⟳ 새 문의 가져오기」를 누르세요.':'.')+'</div>'; return; }
+    $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품</th><th>고객 메시지</th><th>상태</th></tr></thead><tbody>'
+      +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b>'+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</td>'
+        +'<td><span class="tag ch-'+x.platform+'">'+(x.platform==='instagram'?'IG':'FB')+'</span></td><td>'+tipoOf(x)+'</td>'
+        +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
+        +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+'</td>'
+        +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+esc((x.customer_text||'').replace(/\n/g,' / '))+'</td>'
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+'</td></tr>').join('')
+      +'</tbody></table>';
+  }
+  ['fCh','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
+  $('bSearch').addEventListener('click',loadList);
+  $('fQ').addEventListener('keydown',e=>{ if(e.key==='Enter') loadList(); });
+  $('lTable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id)); });
+
+  // ───── 한 건 ─────
+  async function openOne(id){
+    let d; try{ d=await api('GET','/api/meta-leads/'+id); }catch(e){ say(false,errText(e)); return; }
+    S.cur=d;
+    $('oTitle').textContent=(d.name||d.username||'—')+(d.username?' (@'+d.username+')':'');
+    $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(d.platform==='instagram'?'Instagram':'Messenger')+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
+    $('oChat').innerHTML=(d.messages||[]).map(m=>'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+fmtT(m.at)+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
+    const ph=(el,auto)=>{ el.placeholder=auto?('자동: '+auto):el.placeholder; };
+    $('eName').value=d.name&&d.name!==d.meta_name?d.name:''; ph($('eName'),d.meta_name);
+    $('eTipo').value=d.tipo&&d.tipo!==d.a_tipo?d.tipo:''; $('eTipo').placeholder='자동: '+(d.a_tipo||d.tipo_btn||'—');
+    $('eState').value=d.state&&d.state!==d.a_state?d.state:''; $('eState').options[0].textContent='(자동값: '+(d.a_state||'—')+')';
+    $('eCity').value=d.city&&d.city!==d.a_city?d.city:''; $('eCity').placeholder='자동: '+(d.a_city||'—');
+    $('ePhone').value=d.phone&&d.phone!==d.a_phone?d.phone:''; $('ePhone').placeholder='자동: '+(d.a_phone||'—');
+    $('eVeh').value=d.vehicles&&d.vehicles!==d.a_vehicles?d.vehicles:''; $('eVeh').placeholder='자동: '+(d.a_vehicles||'—');
+    $('eParts').value=d.parts&&d.parts!==d.a_parts?d.parts:''; $('eParts').placeholder='자동: '+(d.a_parts||'—');
+    $('eStatus').value=d.status; $('eDerived').value=d.derived_to||''; $('eNote').value=d.note||'';
+    $('oOpen').href='https://business.facebook.com/latest/inbox/all/?asset_id='+encodeURIComponent((S.status&&S.status.page_id)||'');
+    $('eMsg').className='msg'; $('mOne').classList.add('on');
+    setTimeout(()=>{ const c=$('oChat'); c.scrollTop=c.scrollHeight; },30);
+  }
+  $('eSave').addEventListener('click',async()=>{
+    const d=S.cur; if(!d) return;
+    const body={name:$('eName').value,tipo:$('eTipo').value,state:$('eState').value,city:$('eCity').value,phone:$('ePhone').value,
+      vehicles:$('eVeh').value,parts:$('eParts').value,status:$('eStatus').value,derived_to:$('eDerived').value,note:$('eNote').value};
+    try{ const r=await api('PATCH','/api/meta-leads/'+d.id,body); S.items=S.items.map(x=>x.id===r.id?Object.assign({},x,r):x); renderList(); say(true,'저장했습니다.',$('eMsg')); loadStatus(); }
+    catch(e){ say(false,errText(e),$('eMsg')); }
+  });
+
+  // ───── 요약 ─────
+  const splitList=(s)=>String(s||'').split(/;\s*/).map(x=>x.trim()).filter(Boolean);
+  const modelOf=(v)=>v.replace(/\s+((19|20)\d\d)(-\d{4})?$/,'');
+  function counter(items,fn){ const m=new Map(); for(const x of items) for(const k of fn(x)) m.set(k,(m.get(k)||0)+1); return [...m.entries()].sort((a,b)=>b[1]-a[1]); }
+  function bars(rows,el,max){ const top=rows.slice(0,max||15); const mx=top.length?top[0][1]:1;
+    $(el).innerHTML=top.length?top.map(([k,n])=>'<div class="b"><div class="l" title="'+esc(k)+'">'+esc(k)+'</div><div class="t"><div class="f" style="width:'+Math.max(3,Math.round(n/mx*100))+'%"></div></div><div class="n">'+n+'</div></div>').join(''):'<div class="hint">—</div>'; }
+  function summaries(items){
+    return {
+      state: counter(items,x=>[x.state||'(지역 모름)']),
+      veh: counter(items,x=>splitList(x.vehicles).map(modelOf)),
+      part: counter(items,x=>splitList(x.parts)),
+    };
+  }
+  function opportunities(items){
+    const by=new Map();
+    for(const x of items){ if(!x.state||(!x.parts&&!x.vehicles)) continue; const g=by.get(x.state)||{state:x.state,n:0,veh:new Map(),part:new Map(),phones:0}; g.n++; if(x.phone) g.phones++;
+      splitList(x.vehicles).map(modelOf).forEach(v=>g.veh.set(v,(g.veh.get(v)||0)+1)); splitList(x.parts).forEach(p=>g.part.set(p,(g.part.get(p)||0)+1)); by.set(x.state,g); }
+    const top=(m,k)=>[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,k).map(([a,n])=>a+' ('+n+')').join(', ');
+    return [...by.values()].sort((a,b)=>b.n-a.n).map(g=>({state:g.state,n:g.n,phones:g.phones,veh:top(g.veh,4),part:top(g.part,5)}));
+  }
+  function renderSummary(){
+    const s=summaries(S.items); bars(s.state,'sumState',20); bars(s.veh,'sumVeh',15); bars(s.part,'sumPart',15);
+    const o=opportunities(S.items);
+    $('sumOpp').innerHTML=o.length?'<table><thead><tr><th>주</th><th class="num">수요 문의</th><th class="num">전화 있음</th><th>많이 찾는 차종</th><th>많이 찾는 부품</th></tr></thead><tbody>'
+      +o.map(g=>'<tr><td><b>'+esc(g.state)+'</b></td><td class="num">'+g.n+'</td><td class="num">'+g.phones+'</td><td>'+esc(g.veh)+'</td><td>'+esc(g.part)+'</td></tr>').join('')+'</tbody></table>'
+      :'<div class="hint">지역과 차종·부품이 함께 확인된 문의가 아직 없습니다.</div>';
+  }
+
+  // ───── 엑셀 ─────
+  function sheet(aoa,widths,color){ const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=widths.map(w=>({wch:w}));
+    for(let c=0;c<aoa[0].length;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:color||'C00000'}},alignment:{vertical:'center',wrapText:true}}; }
+    ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})}; ws['!freeze']={xSplit:0,ySplit:1}; return ws; }
+  $('bXls').addEventListener('click',()=>{
+    const it=S.items; if(!it.length){ say(false,'내보낼 문의가 없습니다.'); return; }
+    const aoa=[['Último mensaje','Primer mensaje','Nombre','Canal','Tipo de cliente','Tipo (botón del anuncio)','Estado','Ciudad','Teléfono','Correo','Vehículo','Piezas buscadas','Interés','Mensaje del cliente','Estatus','Refaccionaria asignada','Nota']];
+    for(const x of it) aoa.push([x.last_mx||'',x.first_mx||'',x.name||x.username||'',x.platform==='instagram'?'Instagram':'Messenger',x.tipo||'',x.tipo_btn||'',x.state||'',x.city||'',x.phone||'',x.email||'',x.vehicles||'',x.parts||'',x.intent||'',(x.customer_text||'').replace(/\n/g,' / ').slice(0,500),
+      ({nuevo:'Nuevo',contactado:'Contactado',derivado:'Derivado a refaccionaria',venta:'Venta',descartado:'Descartado'})[x.status]||x.status,x.derived_to||'',x.note||'']);
+    const s=summaries(it); const o=opportunities(it);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,sheet(aoa,[16,11,26,10,16,16,18,16,13,22,30,36,18,60,18,22,30]),'Contactos');
+    XLSX.utils.book_append_sheet(wb,sheet([['Estado','Refaccionarias potenciales: consultas con demanda','Con teléfono','Vehículos más buscados','Piezas más buscadas']].concat(o.map(g=>[g.state,g.n,g.phones,g.veh,g.part])),[22,16,12,50,60],'143D34'),'Oportunidades por estado');
+    XLSX.utils.book_append_sheet(wb,sheet([['Estado','Consultas']].concat(s.state),[26,12],'143D34'),'Por estado');
+    XLSX.utils.book_append_sheet(wb,sheet([['Vehículo','Consultas']].concat(s.veh),[32,12],'143D34'),'Por vehículo');
+    XLSX.utils.book_append_sheet(wb,sheet([['Pieza','Consultas']].concat(s.part),[36,12],'143D34'),'Por pieza');
+    const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City'}).format(new Date());
+    XLSX.writeFile(wb,'refatrix_meta_consultas_'+today+'.xlsx');
+  });
+
+  (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
+</script>
+<script src="refatrix-nav.js?v=20261008ws"></script>
+</body>
+</html>
