@@ -782,7 +782,7 @@ export default async function devRequestRoutes(app) {
     const id = Number(req.query.invoice_id);
     if (!id) return reply.code(400).send({ error: 'invoice_id_required' });
     const inv = (await query(
-      `SELECT s.id, s.sat_no, s.folio_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, s.credit_days,
+      `SELECT s.id, s.sat_no, s.folio_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, s.credit_days, s.iva_rate,
               to_char(s.inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date_str, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
@@ -798,7 +798,7 @@ export default async function devRequestRoutes(app) {
     if (!inv) return reply.code(404).send({ error: 'not_found' });
     if (!canViewTeam(req.ctx.perm, inv.customer_team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const lines = (await query(
-      `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn,
+      `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn, sl.list_price, sl.discount_rate,
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
          FROM sales_invoice_lines sl JOIN products p ON p.id=sl.product_id WHERE sl.invoice_id=$1 ORDER BY sl.id`, [id])).rows;
     // 삭제/일자변경/매출액수정 버튼 노출용 플래그.
@@ -806,6 +806,8 @@ export default async function devRequestRoutes(app) {
     // 백엔드 실제 동작(requireDirector)과 동일 기준으로 맞춰 버튼이 새지 않게 함.
     const isDirector = (req.ctx.perm.role === 'director');
     const canAdjust = isDirector && (allowPastMonthSalesEdit() || inv.inv_ym === inv.now_ym);
+    // 2026-10-13 · 「최종단가 엑셀」 버튼 — 디렉터 + 영업지원(Maria). 단가 자체는 이 화면 열람자에게 이미 보이는 값이라 버튼 노출만 가른다.
+    const canPriceXls = isDirector || req.ctx.perm.role === 'sales_support';
     return {
       invoice: {
         id: inv.id, sat_no: inv.sat_no, folio_no: inv.folio_no || null, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
@@ -820,9 +822,10 @@ export default async function devRequestRoutes(app) {
         // 0235 · 판매 영업사원(인보이스 출력 「Vendedor」). 비어 있으면 고객 담당자.
         seller_id: inv.seller_id == null ? null : Number(inv.seller_id), seller_name: inv.seller_name || inv.owner_name || null,
         subtotal_mxn: Number(inv.subtotal_mxn) || 0, iva_mxn: Number(inv.iva_mxn) || 0, total_mxn: Number(inv.total_mxn) || 0,
-        can_adjust: canAdjust, is_director: isDirector, past_edit_enabled: allowPastMonthSalesEdit(),
+        iva_rate: inv.iva_rate == null ? 16 : Number(inv.iva_rate),
+        can_adjust: canAdjust, is_director: isDirector, past_edit_enabled: allowPastMonthSalesEdit(), can_price_xls: canPriceXls,
       },
-      items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn) })),
+      items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn), list_price: Number(l.list_price) || 0, discount_rate: Number(l.discount_rate) || 0 })),
     };
   });
 

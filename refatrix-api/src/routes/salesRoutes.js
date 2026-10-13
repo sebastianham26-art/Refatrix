@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { visibleTeamIds, canViewTeam } from '../teams.js';
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEdit } from '../middleware/authGuard.js';
-import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd } from '../sales.js';
+import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd, repriceByDiscount } from '../sales.js';
 import { isClosedMonth } from '../importCost.js';
 import { round2, allowPastMonthSalesEdit } from '../permissions.js';
 import { logEvent } from '../audit.js';
@@ -435,6 +435,55 @@ export default async function salesRoutes(app) {
     });
     if (out.error) return reply.code(out.code || 409).send(out);
     await logEvent({ userId, action: 'update', target: `sales_invoice:${id}`, detail: { adjustTotal: out.after, before: out.before } });
+    return out;
+  });
+
+  // 2026-10-13 · 할인율로 매출액 수정 (디렉터) — 단가를 할인율로 다시 매기고 IVA 제외 소계·IVA·총계를 자동 계산.
+  // body: { basis: 'list'(정가 대비) | 'current'(현재 매출액에서 추가 할인), rate: 0~99.99 }
+  //   adjust-total 과 같은 규칙: 게시된 인보이스 · 당월(마이그레이션 기간엔 과거 달도) · 입금예정(AR) 금액 동기화.
+  app.post('/api/sales/:id/adjust-discount', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const userId = req.ctx.perm.userId;
+    const basis = String(req.body?.basis || '');
+    const rate = req.body?.rate;
+    const out = await withTx(async (c) => {
+      const inv = (await c.query(
+        `SELECT *, to_char(inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym
+           FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!inv) return { error: 'not_found', code: 404 };
+      if (inv.status !== 'posted') return { error: 'not_posted', code: 409, note: '게시된 인보이스만 수정할 수 있습니다.' };
+      if (!allowPastMonthSalesEdit() && inv.inv_ym !== inv.now_ym) return { error: 'not_current_month', code: 409, note: '당월에 발행된 매출만 수정할 수 있습니다.' };
+      const lines = (await c.query(
+        `SELECT l.id, l.qty, l.list_price, l.discount_rate, l.unit_price, l.line_amount_mxn, p.code
+           FROM sales_invoice_lines l LEFT JOIN products p ON p.id=l.product_id
+          WHERE l.invoice_id=$1 ORDER BY l.id`, [id])).rows;
+      const rp = repriceByDiscount(lines, { basis, rate, ivaRate: inv.iva_rate == null ? 16 : Number(inv.iva_rate) });
+      if (rp.error) {
+        const notes = {
+          bad_basis: '기준(정가 대비 / 현재 매출액 대비)을 선택하세요.',
+          bad_rate: '할인율은 0 이상 100 미만이어야 합니다.',
+          no_lines: '라인이 없는 인보이스입니다.',
+          no_list_price: '정가가 0인 품목이 있어 정가 대비 할인을 적용할 수 없습니다: ' + (rp.codes || []).join(', '),
+          zero_qty: '수량이 0인 품목이 있습니다: ' + (rp.codes || []).join(', '),
+        };
+        return { error: rp.error, code: rp.error === 'bad_basis' || rp.error === 'bad_rate' ? 400 : 409, note: notes[rp.error], codes: rp.codes };
+      }
+      for (const l of rp.lines) {
+        await c.query(`UPDATE sales_invoice_lines SET unit_price=$1, line_amount_mxn=$2, discount_rate=$3 WHERE id=$4`,
+          [l.unit_price, l.line_amount_mxn, l.discount_rate, l.id]);
+      }
+      await c.query(`UPDATE sales_invoices SET subtotal_mxn=$1, iva_mxn=$2, total_mxn=$3, updated_by=$4 WHERE id=$5`,
+        [rp.subtotal, rp.iva, rp.total, userId, id]);
+      if (inv.txn_id) await c.query(`UPDATE transactions SET amount=$1, amount_mxn=$1, updated_by=$2 WHERE id=$3`, [rp.total, userId, inv.txn_id]);
+      return {
+        ok: true, basis, rate: round2(Number(rate)),
+        before: { subtotal: Number(inv.subtotal_mxn), iva: Number(inv.iva_mxn), total: Number(inv.total_mxn) },
+        after: { subtotal: rp.subtotal, iva: rp.iva, total: rp.total },
+        lines: rp.lines.length,
+      };
+    });
+    if (out.error) return reply.code(out.code || 409).send(out);
+    await logEvent({ userId, action: 'update', target: `sales_invoice:${id}`, detail: { adjustDiscount: { basis: out.basis, rate: out.rate }, after: out.after, before: out.before } });
     return out;
   });
 

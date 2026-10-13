@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부 · build 20261012dw</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 20261013dc</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -349,6 +349,7 @@
       t+='</tbody></table>'
         +'<div class="inv-totals">'
         +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="downloadInvoiceF('+id+')">⬇ 엑셀</button>'
+        +(inv.can_price_xls?'<button class="btn ghost sm" data-pxls="'+id+'" title="최종 매출액 기준 품목별 최종단가(IVA 제외) — 디렉터·영업지원" style="border:1px solid var(--gold,#d4a017);color:#9a6512;border-radius:8px;padding:5px 10px;cursor:pointer;background:#fffaf0;font-weight:700">⬇ 최종단가 엑셀</button>':'')
         +'<button class="btn ghost sm" style="margin-right:auto;border:1px solid var(--brand);color:var(--brand);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff;font-weight:700" onclick="openInvoiceStatement('+id+')">🧾 인보이스 출력</button>'
         +'<span>총계(IVA 미포함): <b>'+money(inv.subtotal_mxn)+'</b></span>'
         +'<span>IVA 16%: <b>'+money(inv.iva_mxn)+'</b></span>'
@@ -387,7 +388,9 @@
       t+='</div>';
       if(inv.can_adjust){
         t+='<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--gold,#d4a017);border-radius:10px;background:#fffaf0">'
-          +'<div style="font-weight:800;color:#9a6512;font-size:12.5px;margin-bottom:6px">매출액 수정 (디렉터 · '+(inv.past_edit_enabled?'<span style="color:#b8860b">마이그레이션: 과거 달 포함</span>':'당월')+') — 총계와 IVA를 입력하면 단가가 자동 역산됩니다</div>'
+          +'<div style="font-weight:800;color:#9a6512;font-size:12.5px;margin-bottom:8px">매출액 수정 (디렉터 · '+(inv.past_edit_enabled?'<span style="color:#b8860b">마이그레이션: 과거 달 포함</span>':'당월')+')</div>'
+          +rpxBoxHtml(id,d)
+          +'<div style="font-weight:700;color:#9a6512;font-size:12px;margin:10px 0 6px;padding-top:8px;border-top:1px dashed #e6d3a3">② 총액 직접 입력 — 총계와 IVA를 입력하면 단가가 자동 역산됩니다</div>'
           +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
           +'<label style="font-size:11.5px;color:var(--muted)">총계(IVA 포함)<br><input id="adj-tot-'+id+'" type="number" step="0.01" min="0" style="font-size:13px;padding:5px 8px;width:130px" value="'+(Number(inv.total_mxn)||0)+'" oninput="adjPreview('+id+')"></label>'
           +'<label style="font-size:11.5px;color:var(--muted)">IVA<br><input id="adj-iva-'+id+'" type="number" step="0.01" min="0" style="font-size:13px;padding:5px 8px;width:120px" value="'+(Number(inv.iva_mxn)||0)+'" oninput="adjPreview('+id+')"></label>'
@@ -811,6 +814,142 @@
       await loadImmediate(); if(wasOpen) toggleInvoice(id);
     }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
   }
+  // ===== 2026-10-13 · 할인율로 매출액 수정 + 최종단가 엑셀 =====
+  //   서버 repriceByDiscount(src/sales.js)와 같은 계산 — 미리보기 숫자 = 적용 후 숫자.
+  //   정가 대비: 단가 = 정가×(1−r) (몇 번 적용해도 누적되지 않음) / 현재 매출액 대비: 단가 = 현재 실효단가×(1−r) (적용할 때마다 누적)
+  const rpxR2=(n)=>Math.round((Number(n)+Number.EPSILON)*100)/100;
+  function rpxCompute(items,basis,rate,ivaRate){
+    const r=Number(rate);
+    if(basis!=='list'&&basis!=='current') return {error:'기준을 선택하세요.'};
+    if(rate===''||rate==null||!isFinite(r)||r<0||r>=100) return {error:'할인율은 0 이상 100 미만'};
+    if(!items||!items.length) return {error:'라인 없음'};
+    const out=[];
+    for(const l of items){
+      const qty=Number(l.qty)||0, list=Number(l.list_price)||0;
+      let unit;
+      if(basis==='list'){ if(!(list>0)) return {error:'정가 0인 품목: '+(l.ctr_code||'')}; unit=rpxR2(list*(1-r/100)); }
+      else { if(!(qty>0)) return {error:'수량 0인 품목: '+(l.ctr_code||'')}; unit=rpxR2((Number(l.line_amount_mxn)/qty)*(1-r/100)); }
+      out.push({unit, amt:rpxR2(unit*qty)});
+    }
+    const sub=rpxR2(out.reduce((s,x)=>s+x.amt,0)); const iva=rpxR2(sub*(ivaRate==null?16:Number(ivaRate))/100);
+    return {lines:out, sub, iva, tot:rpxR2(sub+iva)};
+  }
+  function rpxEffPct(items){
+    let list=0, amt=0; (items||[]).forEach(l=>{ list+=(Number(l.list_price)||0)*(Number(l.qty)||0); amt+=Number(l.line_amount_mxn)||0; });
+    return list>0? rpxR2((1-amt/list)*100) : null;
+  }
+  function rpxBoxHtml(id,d){
+    const items=(d&&d.items)||[]; const eff=rpxEffPct(items);
+    const hasList=items.length&&items.every(l=>Number(l.list_price)>0);
+    return '<div data-rpx-box="'+id+'">'
+      +'<div style="font-weight:700;color:#9a6512;font-size:12px;margin-bottom:6px">① 할인율로 계산 — 할인율을 넣으면 IVA 제외 매출액·IVA·총계가 자동 계산됩니다</div>'
+      +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
+      +'<label style="font-size:11.5px;color:var(--muted)">기준<br><select id="rpx-basis-'+id+'" data-rpx-prev="'+id+'" style="font-size:13px;padding:5px 8px">'
+        +'<option value="list"'+(hasList?' selected':' disabled')+'>정가 대비 할인율</option>'
+        +'<option value="current"'+(hasList?'':' selected')+'>현재 매출액에서 추가 할인</option></select></label>'
+      +'<label style="font-size:11.5px;color:var(--muted)">할인율(%)<br><input id="rpx-rate-'+id+'" data-rpx-prev="'+id+'" type="number" step="0.01" min="0" max="99.99" placeholder="예: 50" style="font-size:13px;padding:5px 8px;width:90px"></label>'
+      +'<div id="rpx-out-'+id+'" style="font-size:12px;line-height:1.6">할인율을 입력하세요</div>'
+      +'<button class="btn" data-rpx-apply="'+id+'" style="border:1px solid var(--gold,#d4a017);background:var(--gold,#d4a017);color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:700">할인율 적용</button>'
+      +'<span id="rpx-msg-'+id+'" style="font-size:12px"></span></div>'
+      +'<div class="hint" style="margin-top:6px">현재 정가 대비 실효 할인율: <b>'+(eff==null?'— (정가 없는 품목 있음)':(eff.toFixed(2)+'%'))+'</b>'
+      +' · 정가 대비는 몇 번 적용해도 같은 결과이고, 「현재 매출액에서 추가 할인」은 적용할 때마다 누적됩니다. 단가는 소수 2자리로 맞춰 <b>수량 × 단가 = 금액</b>이 정확히 맞고, 입금예정(미수금)도 함께 수정됩니다.</div>'
+      +'</div>';
+  }
+  function rpxPreview(id){
+    const out=document.getElementById('rpx-out-'+id); if(!out) return;
+    const d=invCache[id]; const inv=(d&&d.invoice)||{};
+    const basis=(document.getElementById('rpx-basis-'+id)||{}).value;
+    const rate=(document.getElementById('rpx-rate-'+id)||{}).value;
+    if(rate===''||rate==null){ out.textContent='할인율을 입력하세요'; out.style.color=''; return null; }
+    const c=rpxCompute((d&&d.items)||[],basis,rate,inv.iva_rate);
+    if(c.error){ out.textContent=c.error; out.style.color='var(--expense)'; return null; }
+    const diff=rpxR2(c.tot-(Number(inv.total_mxn)||0));
+    out.style.color='';
+    out.innerHTML='→ 총계(IVA 미포함): <b>'+money(c.sub)+'</b> · IVA '+money(c.iva)+' · 총계(IVA 포함): <b style="color:var(--income)">'+money(c.tot)+'</b>'
+      +' <span class="hint">(현재 대비 '+(diff>0?'+':'')+money(diff)+')</span>';
+    return c;
+  }
+  async function rpxApply(id){
+    const msg=document.getElementById('rpx-msg-'+id);
+    const basis=(document.getElementById('rpx-basis-'+id)||{}).value;
+    const rate=(document.getElementById('rpx-rate-'+id)||{}).value;
+    const c=rpxPreview(id);
+    if(!c){ if(msg){msg.style.color='var(--expense)';msg.textContent='할인율을 확인하세요.';} return; }
+    const label=basis==='list'?('정가 대비 '+rate+'% 할인'):('현재 매출액에서 '+rate+'% 추가 할인');
+    if(!confirm('이 인보이스의 매출액을 「'+label+'」으로 수정합니다.\n\n총계(IVA 미포함): '+money(c.sub)+'\nIVA: '+money(c.iva)+'\n총계(IVA 포함): '+money(c.tot)+'\n\n모든 라인 단가가 다시 계산되고 입금예정 금액도 함께 수정됩니다. 진행할까요?')) return;
+    if(msg){msg.style.color='var(--muted)';msg.textContent='적용 중…';}
+    try{
+      const r=await fetch(session.api+'/api/sales/'+id+'/adjust-discount',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({basis, rate:Number(rate)})});
+      const dd=await r.json().catch(()=>({}));
+      if(!r.ok||dd.error){ if(msg){msg.style.color='var(--expense)';msg.textContent=dd.note||(r.status===404?'서버가 아직 이 기능을 모릅니다(백엔드 배포 확인)':('수정 실패: '+(dd.error||r.status)));} return; }
+      if(msg){msg.style.color='var(--income)';msg.textContent='수정됨';}
+      delete openRows['i'+id]; delete invCache[id]; await loadImmediate(); toggleInvoice(id);
+    }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
+  }
+  // 최종단가 엑셀 — 지금 인보이스에 확정된 최종 매출액(IVA 제외) 기준 품목별 최종단가.
+  //   단가 = 라인금액 ÷ 수량. 2자리로 딱 떨어지면 2자리, 아니면(총액 직접 입력으로 비례 조정된 줄) 6자리까지(CFDI ValorUnitario 허용 범위).
+  function pxlsUnit(l){
+    const qty=Number(l.qty)||0, amt=Number(l.line_amount_mxn)||0;
+    if(!(qty>0)) return 0;
+    const u2=rpxR2(amt/qty);
+    if(Math.abs(rpxR2(u2*qty)-amt)<0.005) return u2;
+    return Math.round((amt/qty)*1e6)/1e6;
+  }
+  function pxlsBuildAoa(d){
+    const inv=d.invoice||{}, items=d.items||[]; const ivaR=(inv.iva_rate==null?16:Number(inv.iva_rate))/100;
+    const aoa=[];
+    aoa.push(['Refatrix — Precios unitarios finales / 최종단가']);
+    aoa.push(['Cliente', (inv.customer_code?inv.customer_code+' · ':'')+(inv.customer_name||''), '', 'RFC', inv.customer_rfc||'']);
+    aoa.push(['SAT', inv.sat_no||'—', '', 'Folio', inv.folio_no||'']);
+    aoa.push(['Fecha factura', inv.inv_date_str||String(inv.inv_date||'').slice(0,10), '', 'Descargado', mxHoy()]);
+    aoa.push([]);
+    const head=['#','Código CTR','SYD','Descripción','Cant.','Precio lista','Desc. %','Precio unit. final (sin IVA)','Importe (sin IVA)','IVA','Importe (con IVA)'];
+    aoa.push(head);
+    let sumAmt=0, sumQty=0, exact=true;
+    items.forEach((l,i)=>{
+      const qty=Number(l.qty)||0, amt=rpxR2(Number(l.line_amount_mxn)||0), list=Number(l.list_price)||0;
+      const u=pxlsUnit(l); if(rpxR2(u)!==u) exact=false;   // 6자리 단가를 쓴 줄이 있으면 표시
+      const disc=list>0? rpxR2((1-(qty>0?amt/qty:0)/list)*100) : '';
+      const iva=rpxR2(amt*ivaR);
+      sumAmt=rpxR2(sumAmt+amt); sumQty+=qty;
+      aoa.push([i+1, l.ctr_code||'', l.syd_codes||'', l.product_name||'', qty, list||'', disc, u, amt, iva, rpxR2(amt+iva)]);
+    });
+    aoa.push([]);
+    aoa.push(['','','','Total', sumQty,'','', 'Subtotal (sin IVA)', Number(inv.subtotal_mxn)||0]);
+    aoa.push(['','','','','','','', 'IVA '+Math.round(ivaR*100)+'%', Number(inv.iva_mxn)||0]);
+    aoa.push(['','','','','','','', 'Total (con IVA)', Number(inv.total_mxn)||0]);
+    const okSum=Math.abs(sumAmt-(Number(inv.subtotal_mxn)||0))<0.005;
+    aoa.push([]);
+    aoa.push(['Verificación', (okSum?'✔ Σ Importe = Subtotal de la factura':'✖ Σ Importe ('+sumAmt.toFixed(2)+') ≠ Subtotal ('+(Number(inv.subtotal_mxn)||0).toFixed(2)+')')
+      +(exact?' · Cant. × Precio unit. = Importe en todas las líneas':' · Algunas líneas usan precio con 6 decimales para cuadrar el importe')]);
+    return {aoa, headRow:5, okSum, exact};
+  }
+  function downloadFinalPriceXls(id){
+    const d=invCache[id];
+    if(!d||!d.invoice){ alert('내역을 불러오지 못했습니다. 다시 펼쳐 주세요.'); return; }
+    if(!window.XLSX){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
+    const inv=d.invoice;
+    const b=pxlsBuildAoa(d);
+    const ws=XLSX.utils.aoa_to_sheet(b.aoa);
+    ws['!cols']=[{wch:4},{wch:14},{wch:18},{wch:34},{wch:7},{wch:12},{wch:8},{wch:16},{wch:16},{wch:12},{wch:16}];
+    // 숫자 서식: 단가는 6자리까지 보이게, 금액은 2자리
+    const rng=XLSX.utils.decode_range(ws['!ref']);
+    for(let R=b.headRow+1;R<=rng.e.r;R++){
+      for(const C of [5,7,8,9,10]){ const cell=ws[XLSX.utils.encode_cell({r:R,c:C})]; if(cell&&cell.t==='n') cell.z=(C===7?'#,##0.00####':'#,##0.00'); }
+    }
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Precios finales');
+    const safe=String(inv.sat_no&&!String(inv.sat_no).startsWith('TMP-')?inv.sat_no:('inv_'+id)).replace(/[^\w\-]+/g,'_').slice(0,40);
+    XLSX.writeFile(wb,'precios_finales_'+safe+'_'+mxHoy()+'.xlsx');
+  }
+  // 이벤트 위임(addEventListener) — 펼침 영역은 문자열로 다시 그려지므로 document 에서 받는다.
+  document.addEventListener('input',function(e){ const t=e.target; if(t&&t.getAttribute&&t.getAttribute('data-rpx-prev')) rpxPreview(Number(t.getAttribute('data-rpx-prev'))); });
+  document.addEventListener('change',function(e){ const t=e.target; if(t&&t.getAttribute&&t.getAttribute('data-rpx-prev')) rpxPreview(Number(t.getAttribute('data-rpx-prev'))); });
+  document.addEventListener('click',function(e){
+    const t=e.target&&e.target.closest?e.target.closest('[data-rpx-apply],[data-pxls]'):null; if(!t) return;
+    e.preventDefault(); e.stopPropagation();
+    if(t.hasAttribute('data-rpx-apply')) rpxApply(Number(t.getAttribute('data-rpx-apply')));
+    else downloadFinalPriceXls(Number(t.getAttribute('data-pxls')));
+  });
   function adjPreview(id){
     const tot=Number((document.getElementById('adj-tot-'+id)||{}).value)||0;
     const iva=Number((document.getElementById('adj-iva-'+id)||{}).value)||0;

@@ -234,7 +234,7 @@ export function startExclusivitySweep(app) {
 // ── 변경 요청 뒤 자동 재계산 (삭제·수정 승인·NC·금액조정·일자변경) ──────
 const HOOK_PATTERNS = [
   { re: /^\/api\/sales\/change-requests\/(\d+)\/approve/, sql: `SELECT i.customer_id FROM sales_change_requests r JOIN sales_invoices i ON i.id=r.invoice_id WHERE r.id=$1` },
-  { re: /^\/api\/sales\/(\d+)(\/(inv-date|adjust-total|sat-no))?$/, sql: `SELECT customer_id FROM sales_invoices WHERE id=$1` },
+  { re: /^\/api\/sales\/(\d+)(\/(inv-date|adjust-total|adjust-discount|sat-no))?$/, sql: `SELECT customer_id FROM sales_invoices WHERE id=$1` },
   { re: /^\/api\/nc\/(\d+)(\/(apply|void))?$/, sql: `SELECT customer_id FROM notas_credito WHERE id=$1` },
 ];
 export function registerExclusivityHooks(app) {

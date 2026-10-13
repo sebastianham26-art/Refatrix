@@ -125,3 +125,53 @@ export function computeEditNetEffect({ origLines, newLines, closedMonth }) {
     varianceMxn: round2(o.sales - o.cogs), // 원본 매출총이익(되돌리지 못한 과거분)을 정산차액으로
   };
 }
+
+// =====================================================================
+// 2026-10-13 · 매출확정 인보이스 「할인율로 매출액 수정」 (순수 함수)
+//   basis='list'    : 정가 대비 할인율 → 모든 라인 단가 = 정가 × (1 − r/100)   (덮어쓰기, 누적 안 됨)
+//   basis='current' : 현재 매출액에서 추가 할인 → 단가 = 현재 실효단가 × (1 − r/100)
+//   단가는 소수 2자리, 라인금액 = 단가 × 수량 → 엑셀 「수량 × 최종단가 = 금액」이 정확히 맞는다.
+//   소계(IVA 제외) = Σ 라인금액, IVA = 소계 × 세율, 총계 = 소계 + IVA (computeInvoiceTotals 와 동일).
+//   lines: [{ id, qty, list_price, unit_price, line_amount_mxn }]
+//   반환: { ok, lines:[{ id, unit_price, line_amount_mxn, discount_rate }], subtotal, iva, total }
+//        또는 { error: 'bad_basis'|'bad_rate'|'no_lines'|'no_list_price'|'zero_qty', codes? }
+// =====================================================================
+export function repriceByDiscount(lines, { basis, rate, ivaRate = 16 } = {}) {
+  if (basis !== 'list' && basis !== 'current') return { error: 'bad_basis' };
+  const r = Number(rate);
+  if (rate === '' || rate == null || !Number.isFinite(r) || r < 0 || r >= 100) return { error: 'bad_rate' };
+  if (!Array.isArray(lines) || !lines.length) return { error: 'no_lines' };
+  if (basis === 'list') {
+    const np = lines.filter((l) => !(Number(l.list_price) > 0));
+    if (np.length) return { error: 'no_list_price', codes: np.map((l) => l.code || String(l.id)) };
+  }
+  const out = [];
+  for (const l of lines) {
+    const qty = Number(l.qty) || 0;
+    const list = Number(l.list_price) || 0;
+    let unit;
+    if (basis === 'list') unit = round2(list * (1 - r / 100));
+    else {
+      if (!(qty > 0)) return { error: 'zero_qty', codes: [l.code || String(l.id)] };
+      // 실효단가 = 라인금액 ÷ 수량 (총액 비례 수정 뒤에는 단가×수량이 라인금액과 몇 센트 다를 수 있어 라인금액을 기준으로)
+      const eff = Number(l.line_amount_mxn) / qty;
+      unit = round2(eff * (1 - r / 100));
+    }
+    const amt = round2(unit * qty);
+    // 정가 대비 실효 할인율(라인 discount_rate 를 실제 값과 맞춘다). 정가 0 이면 기존 값 유지.
+    const disc = list > 0 ? Math.min(999.99, Math.max(-999.99, round2((1 - unit / list) * 100))) : (Number(l.discount_rate) || 0);
+    out.push({ id: l.id, qty, list_price: list, unit_price: unit, line_amount_mxn: amt, discount_rate: basis === 'list' ? round2(r) : disc });
+  }
+  const subtotal = round2(out.reduce((s, l) => s + l.line_amount_mxn, 0));
+  const iva = round2(subtotal * Number(ivaRate) / 100);
+  const total = round2(subtotal + iva);
+  return { ok: true, lines: out, subtotal, iva, total };
+}
+
+// 정가 대비 가중 실효 할인율(%) — 화면에 「현재 정가 대비 N%」 표시용. 정가 합이 0 이면 null.
+export function effectiveDiscountPct(lines) {
+  let list = 0, amt = 0;
+  for (const l of lines || []) { list += (Number(l.list_price) || 0) * (Number(l.qty) || 0); amt += Number(l.line_amount_mxn) || 0; }
+  if (!(list > 0)) return null;
+  return round2((1 - amt / list) * 100);
+}
