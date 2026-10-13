@@ -30,7 +30,11 @@ export const PARTES = ['Horquilla (brazo de control)', 'Rótula', 'Terminal exte
 let callOverride = null;                     // 시험용 — (prompt) => {ok, text}
 export function setMetaAiCaller(fn) { callOverride = fn || null; }
 
-async function callClaude(prompt) {
+// 0272 · 분석이 끝나면 부품번호 매칭(metaLeadsMatch.js)이 이어 달린다 — 순환 import 피하려고 등록식
+let afterAnalyze = null;
+export function setAfterAnalyze(fn) { afterAnalyze = fn || null; }
+
+export async function callClaude(prompt) {
   if (callOverride) return callOverride(prompt);
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -167,11 +171,13 @@ export async function analyzeThreads({ all = false, ids = null, q = query } = {}
     return { analyzed: aiState.done, errors: aiState.errors, total: aiState.total };
   } finally {
     aiState.running = false; aiState.finished_at = new Date().toISOString();
+    if (afterAnalyze) setTimeout(() => { try { afterAnalyze(); } catch (_) { /* 매칭 실패는 분석 결과와 무관 */ } }, 50);
   }
 }
 
-// 가져오기 끝나면 바뀐 대화만 이어서 분석(기다리지 않음)
+// 가져오기 끝나면 바뀐 대화만 이어서 분석(기다리지 않음) — AI 가 없으면 부품번호 매칭만(규칙)
 export function kickAnalyze(log = null) {
-  if (!aiReady() || aiState.running) return;
+  if (!aiReady()) { if (afterAnalyze) afterAnalyze(); return; }
+  if (aiState.running) return;
   setTimeout(() => { analyzeThreads({}).catch((e) => log && log.warn({ err: String(e && e.message) }, '[meta-leads] ai failed')); }, 200);
 }

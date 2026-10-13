@@ -81,15 +81,48 @@ test('A3. 0271 · AI 입력 · 출력 정리 — 봇 안내문 제외 · 주 이
   assert.equal(AI.normalizeAi({ estado: 'Texas' }).state, null, '32개 주 밖은 버린다'); assert.equal(AI.normalizeAi({ telefono: '5512345678' }).phone, '5512345678');
 });
 
+test('A4. 0272 · 부품번호 매칭 규칙 — 부품 종류 · 좌우 · 연식 · 차종 나누기 · 결정', async () => {
+  const MM = await import('../src/metaLeadsMatch.js');
+  assert.equal(MM.partRule('Horquilla (brazo de control)').p, 'Horquilla (brazo de control)');
+  assert.equal(MM.partRule('rotulas inferiores').p, 'Rótula');
+  assert.equal(MM.partRule('Terminal exterior').p, 'Terminal exterior');
+  assert.equal(MM.partRule('Suspensión completa (kit)'), null, '키트 · 브레이크는 매칭 안 함');
+  const H = MM.partRule('Horquilla (brazo de control)');
+  assert.ok(H.re.test('HORQUILLA INFERIOR DERECHA') && !H.re.test('BUJE DE HORQUILLA'.replace('HORQUILLA', 'X')));
+  assert.equal(MM.sideOf('CQ0271L', 'HORQUILLA'), 'L'); assert.equal(MM.sideOf('CQ0271R', ''), 'R');
+  assert.equal(MM.sideOf('X1', 'HORQUILLA INFERIOR IZQUIERDA'), 'L'); assert.equal(MM.sideOf('CB0318', 'ROTULA INFERIOR'), null);
+  assert.equal(MM.slotOf('HORQUILLA INFERIOR IZQUIERDA'), MM.slotOf('Horquilla inferior derecha'));
+  assert.deepEqual(MM.yearsOf('2018'), [2018, 2018]); assert.deepEqual(MM.yearsOf('2013-2019'), [2013, 2019]); assert.deepEqual(MM.yearsOf('17'), [2017, 2017]); assert.deepEqual(MM.yearsOf(null), [null, null]);
+  assert.deepEqual(MM.splitVehicle('Nissan Versa 2018'), { marca: 'Nissan', modelo: 'Versa', anio: '2018' });
+  assert.deepEqual(MM.splitVehicle('Np300 2009-2015'), { marca: null, modelo: 'Np300', anio: '2009-2015' });
+  const line = { marca: 'Nissan', modelo: 'Versa', anio: '2018', piezas: [], cantidad: 2 };
+  const pair = [{ pid: 1, code: 'CQ1L', name: 'HORQUILLA INFERIOR IZQUIERDA' }, { pid: 2, code: 'CQ1R', name: 'HORQUILLA INFERIOR DERECHA' }];
+  let d = MM.decide(line, 'Horquilla (brazo de control)', pair, null);
+  assert.equal(d.ambiguous, false); assert.deepEqual(d.items.map((i) => [i.code, i.qty, i.qty_src, i.conf]), [['CQ1L', 1, 'dicho', 'alta'], ['CQ1R', 1, 'dicho', 'alta']], '「par」 = 쪽당 1');
+  d = MM.decide({ ...line, cantidad: null }, 'Horquilla (brazo de control)', pair, 'R');
+  assert.deepEqual(d.items.map((i) => [i.code, i.qty, i.qty_src]), [['CQ1R', 1, 'supuesto']], '고객이 오른쪽만');
+  d = MM.decide({ ...line, anio: null }, 'Horquilla (brazo de control)', [...pair, { pid: 3, code: 'CQ2L', name: 'HORQUILLA INFERIOR IZQ' }], null);
+  assert.equal(d.ambiguous, true, '같은 쪽에 두 세대 → 못 정함'); assert.ok(d.items.every((i) => i.status === 'candidato'));
+  assert.equal(MM.decide(line, 'Rótula', [], null).items[0].status, 'sin_catalogo');
+  assert.equal(MM.decide({ ...line, modelo: null }, 'Rótula', [], null).items[0].status, 'sin_vehiculo');
+  assert.equal(MM.sideHint([{ me: false, text: 'la del lado izquierdo' }, { me: true, text: 'derecha?' }]), 'L', '우리 말은 안 봄');
+});
+
 test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는 HTML 없음' }, async (t) => {
   const tick = (ms = 150) => new Promise((r) => setTimeout(r, ms));
   const ITEMS = [
-    { id: 1, platform: 'messenger', name: 'Antonio Lopez', last_mx: '2026-10-12 10:00', first_mx: '2026-10-11', tipo: 'Taxi / app', tipo_btn: null, state: 'Morelos', city: 'Jiutepec', phone: '7771234567', vehicles: 'Nissan Versa 2024', parts: 'Horquilla (brazo de control); Bieleta / tornillo estabilizador', intent: 'Precio', customer_text: 'tengo un versa 2024\nvivo en Jiutepec', status: 'nuevo', edited: false },
+    { id: 1, platform: 'messenger', name: 'Antonio Lopez', last_mx: '2026-10-12 10:00', first_mx: '2026-10-11', tipo: 'Taxi / app', tipo_btn: null, state: 'Morelos', city: 'Jiutepec', phone: '7771234567', vehicles: 'Nissan Versa 2024', parts: 'Horquilla (brazo de control); Bieleta / tornillo estabilizador', intent: 'Precio', customer_text: 'tengo un versa 2024\nvivo en Jiutepec', status: 'nuevo', edited: false,
+      items: [{ model: 'Nissan Versa', veh: 'Nissan Versa 2024', pieza: 'Horquilla (brazo de control)', code: 'CQ9L', name: 'HORQUILLA INF IZQ', qty: 1, qty_src: 'supuesto', conf: 'alta', src: 'regla', status: 'ok' },
+        { model: 'Nissan Versa', veh: 'Nissan Versa 2024', pieza: 'Horquilla (brazo de control)', code: 'CQ9R', name: 'HORQUILLA INF DER', qty: 1, qty_src: 'supuesto', conf: 'alta', src: 'regla', status: 'ok' },
+        { model: 'Nissan Versa', veh: 'Nissan Versa 2024', pieza: 'Bieleta / tornillo estabilizador', status: 'sin_catalogo', qty: 1 }] },
     { id: 2, platform: 'instagram', name: null, username: 'taller.garza', last_mx: '2026-10-12 09:00', tipo: null, tipo_btn: 'Refaccionaria', state: 'Morelos', city: null, phone: null, vehicles: 'Nissan Versa 2018; Chevrolet Aveo 2016', parts: 'Horquilla (brazo de control)', customer_text: 'x', status: 'derivado', derived_to: 'Refacc. X', edited: true },
     { id: 3, platform: 'messenger', name: 'Sin datos', last_mx: '2026-10-11 09:00', tipo: null, state: null, parts: null, vehicles: null, customer_text: '', status: 'nuevo' },
     { id: 4, platform: 'whatsapp', name: 'Pepe Garza', last_mx: '2026-10-12 11:00', tipo: 'Flotilla', tipo_src: 'dicho', state: 'Morelos', city: 'Cuernavaca', phone: '7779990000',
       vehicles: 'Nissan Versa 2018; Nissan March 2015', parts: 'Horquilla (brazo de control); Rótula', summary: 'Flotilla de 12 Versa busca horquillas y rótulas para March', customer_text: 'tengo flotilla',
-      demand: [{ marca: 'Nissan', modelo: 'Versa', anio: '2018', piezas: ['Horquilla (brazo de control)'] }, { marca: 'Nissan', modelo: 'March', anio: '2015', piezas: ['Rótula'] }], status: 'nuevo' },
+      demand: [{ marca: 'Nissan', modelo: 'Versa', anio: '2018', piezas: ['Horquilla (brazo de control)'] }, { marca: 'Nissan', modelo: 'March', anio: '2015', piezas: ['Rótula'] }], status: 'nuevo',
+      items: [{ model: 'Nissan Versa', veh: 'Nissan Versa 2018', code: 'CQ8L', name: 'HORQUILLA INF IZQ', qty: 12, qty_src: 'dicho', conf: 'media', src: 'ia', status: 'ok' },
+        { model: 'Nissan Versa', veh: 'Nissan Versa 2018', code: 'CQ9L', name: 'HORQUILLA INF IZQ', qty: 2, qty_src: 'dicho', conf: 'alta', src: 'ia', status: 'ok' },
+        { model: 'Nissan March', veh: 'Nissan March 2015', pieza: 'Rótula', code: 'CB1', name: 'ROTULA INF', status: 'candidato' }, { model: 'Nissan March', veh: 'Nissan March 2015', pieza: 'Rótula', code: 'CB2', name: 'ROTULA SUP', status: 'candidato' }] },
   ];
   const calls = []; let written = null;
   const dom = new JSDOM(readFileSync(HTML, 'utf-8').replace(/<script src="https:\/\/cdn[^>]+><\/script>/, ''), {
@@ -106,7 +139,8 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
           counts: { total: 4, messenger: 2, instagram: 1, whatsapp: 1, demand: 3, with_state: 3, with_phone: 2, with_tipo: 2, nuevo: 3, ai_done: 1, ai_pending: 0 },
           ai: { ready: true, model: 'claude-haiku-4-5-20251001', running: false, done: 0, total: 0, errors: 0 }, last_run: { ok: true, threads: 3, inserted: 3, finished_at: '2026-10-12T16:00:00Z' }, last_ok_at: '2026-10-12T16:00:00Z', auto: true,
           states: ['Jalisco', 'Morelos', 'Nuevo León'] });
-        if (u.includes('/api/meta-leads/list')) return json({ items: ITEMS });
+        if (u.includes('/api/meta-leads/list')) return json({ items: ITEMS, stock: { CQ9L: 2, CQ8L: 40 } });
+        if (u.includes('/api/meta-leads/match')) return json({ started: true });
         if (u.includes('/api/meta-leads/sync')) return json({ started: true });
         if (u.includes('/api/meta-leads/ai')) return json({ started: true });
         if (/\/api\/meta-leads\/1$/.test(u) && method === 'GET') return json({ ...ITEMS[0], meta_name: 'Antonio Lopez', a_state: 'Morelos', a_city: 'Jiutepec', a_phone: '7771234567', a_vehicles: 'Nissan Versa 2024', a_parts: 'Horquilla', a_tipo: 'Taxi / app',
@@ -121,7 +155,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1013pv/);
+    assert.match(d.title, /mtl-1013pn/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
     assert.match(d.getElementById('sKpis').textContent, /전체 문의4/); assert.match(d.getElementById('sKpis').textContent, /WhatsApp1/);
     assert.match(d.getElementById('sAi').textContent, /AI 분석 1건 완료/);
@@ -140,13 +174,19 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     d.getElementById('eSave').click(); await tick(200);
     const p = calls.filter((c) => c.method === 'PATCH').pop();
     assert.equal(p.body.status, 'derivado'); assert.equal(p.body.derived_to, 'Refacc. Cuernavaca'); assert.equal(p.body.state, '', '안 고친 칸은 빈 값(=자동값)');
+    assert.equal(p.body.items, undefined, '부품번호를 안 고치면 보내지 않음');
+    assert.match(d.getElementById('oItems').textContent, /CQ9R/); assert.match(d.getElementById('oItems').textContent, /개발 필요/);
+    d.getElementById('eItems').value = 'CQ9L 4'; d.getElementById('eSave').click(); await tick(200);
+    assert.equal(calls.filter((c) => c.method === 'PATCH').pop().body.items, 'CQ9L 4');
+    d.getElementById('bMatch').click(); await tick();
+    assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/match') && c.body.all === true));
   });
   await t.test('C3. 가져오기 · AI 버튼 · 엑셀 7개 시트(차종·연식 × 부품) · 요약', async () => {
     d.getElementById('bSync').click(); await tick();
     assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/sync') && c.method === 'POST' && c.body.full === false));
     d.getElementById('bXls').click(); await tick();
     assert.ok(written && /refatrix_meta_consultas_\d{4}-\d{2}-\d{2}\.xlsx/.test(written.name));
-    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Oportunidades por tipo', 'Oportunidades por vehículo', 'Demanda vehículo-pieza', 'Por tipo', 'Por estado', 'Por vehículo', 'Por pieza']);
+    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Oportunidades por tipo', 'Oportunidades por vehículo', 'Demanda por código CTR', 'Por confirmar - sin catálogo', 'Demanda vehículo-pieza', 'Por tipo', 'Por estado', 'Por vehículo', 'Por pieza']);
     const contacts = written.wb.sheets[0][1]; assert.equal(contacts.length, 5); assert.equal(contacts[1][2], 'Antonio Lopez'); assert.equal(contacts[2][2], 'taller.garza');
     const waRow = contacts[4]; assert.equal(waRow[3], 'WhatsApp'); assert.equal(waRow[4], 'Flotilla'); assert.equal(waRow[5], 'Lo dijo'); assert.equal(waRow[8], '7779990000'); assert.match(waRow[13], /Flotilla de 12/);
     assert.equal(contacts[2][4], 'Refaccionaria'); assert.equal(contacts[2][5], 'Botón del anuncio');
@@ -157,24 +197,35 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     assert.ok(byTipo[1].find((r) => r[0] === 'Flotilla' && r[1] === 1 && /Morelos/.test(r[4]) && /Versa 2018/.test(r[5])), '고객 유형별 판매기회');
     const byVeh = written.wb.sheets[3]; assert.equal(byVeh[0], 'Oportunidades por vehículo');
     const vRow = byVeh[1].find((r) => r[0] === 'Nissan Versa'); assert.equal(vRow[1], 3); assert.match(vRow[4], /2018 \(2\)/);
-    const dem = written.wb.sheets[4][1];
+    const byCode = written.wb.sheets[4][1];
+    const cq9 = byCode.find((r) => r[0] === 'CQ9L'); assert.deepEqual([cq9[3], cq9[4], cq9[5], cq9[6]], [2, 3, 2, 2], 'CQ9L: 문의 2 · 수량 1+2 · 말한 수량 2 · 재고 2');
+    assert.equal(byCode[1][0], 'CQ8L', '수량 많은 순'); assert.equal(byCode[1][4], 12);
+    const open = written.wb.sheets[5][1];
+    assert.ok(open.find((r) => /Sin catálogo/.test(r[0]) && r[2] === 'Bieleta / tornillo estabilizador'));
+    assert.ok(open.find((r) => /Por confirmar/.test(r[0]) && r[1] === 'Nissan March 2015' && r[5] === 'CB1, CB2'));
+    assert.equal(contacts[1][18], 'CQ9L x1; CQ9R x1', 'Contactos 마지막 열 = 부품번호 × 수량');
+    const dem = written.wb.sheets[6][1];
     const versaH = dem.find((r) => r[0] === 'Nissan Versa' && r[1] === 'Horquilla (brazo de control)');
     assert.equal(versaH[2], 3); assert.match(versaH[3], /2018 \(2\)/); assert.match(versaH[3], /2024 \(1\)/); assert.match(versaH[4], /Morelos \(3\)/);
     assert.ok(dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Rótula'), 'AI 가 짝지은 차종-부품');
     assert.ok(!dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Horquilla (brazo de control)'), 'AI 짝(demand)이 있으면 곱하지 않는다');
-    const veh = written.wb.sheets[7][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 3]);
+    const veh = written.wb.sheets[9][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 3]);
     d.querySelector('#tabs .tab[data-p="sum"]').click(); await tick();
     // 기본 보기 = 차종
     assert.match(d.getElementById('sumPivotTitle').textContent, /차종별/);
     assert.match(d.getElementById('sumPivot').textContent, /Nissan Versa/);
     assert.match(d.getElementById('sumDemand').textContent, /Nissan Versa/);
     assert.ok(!d.getElementById('sumDemandBox').classList.contains('hidden'));
+    assert.match(d.getElementById('sumPivot').textContent, /CQ8L \(12\)/, '차종별 판매기회에 부품번호 (수량)');
+    const sc = d.getElementById('sumCodes').textContent; assert.match(sc, /CQ9L/); assert.match(sc, /합계 3개 품목/);
+    assert.match(d.getElementById('sumOpen').textContent, /카탈로그 없음/); assert.match(d.getElementById('sumOpen').textContent, /CB2/);
+    assert.match(d.getElementById('lTable').textContent, /CQ9R ×1/, '목록에 부품번호');
     // 지역
     d.querySelector('#sumDim button[data-d="state"]').click(); await tick();
     assert.match(d.getElementById('sumPivotTitle').textContent, /지역/);
     assert.match(d.getElementById('sumPivot').textContent, /Morelos/);
     assert.match(d.getElementById('sumMain').textContent, /Morelos/);
-    assert.ok(d.getElementById('sumDemandBox').classList.contains('hidden'));
+    assert.ok(d.getElementById('sumDemandBox').classList.contains('hidden')); assert.ok(d.getElementById('sumCodesBox').classList.contains('hidden'));
     // 고객 유형 → 행 클릭 = 연락처
     d.querySelector('#sumDim button[data-d="tipo"]').click(); await tick();
     assert.match(d.getElementById('sumPivotTitle').textContent, /고객 유형별/);
@@ -412,7 +463,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
       const r = await call(D, 'POST', '/api/meta-leads/ai', { all: true }); assert.equal(r.statusCode, 200, r.body);
       for (let i = 0; i < 100 && AI.aiState.running; i++) await wait(30);
       await wait(50);
-      const sent = prompts.join('\n').match(/### id=/g).length;
+      const sent = prompts.filter((x) => !x.includes('Pedidos:')).join('\n').match(/### id=/g).length;   // 0272 부품번호 매칭 질의는 제외
       const withText = (await query(`SELECT count(*)::int n FROM meta_threads WHERE in_count > 0`)).rows[0].n;
       assert.equal(sent, withText, '고객이 쓴 말이 있는 대화만 AI 로');
       assert.ok(!prompts.join('\n').includes('Qué gusto saludarte'), '봇 안내문은 안 보냄');
@@ -439,5 +490,69 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     } finally { AI.setMetaAiCaller(null); if (keepKey) process.env.ANTHROPIC_API_KEY = keepKey; else delete process.env.ANTHROPIC_API_KEY; }
   });
 
-});
+  await t.test('B9. 0272 · 부품번호 × 수량 — 규칙 확정 · AI 가 고름 · 카탈로그 없음 · 실패는 다음에 다시 · 사람이 고친 코드', async () => {
+    const MM = await import('../src/metaLeadsMatch.js');
+    await wait(400); await MM.matchThreads({ ids: [0] });   // 앞 시험(B8)이 남긴 자동 매칭이 끝날 때까지
+    await query(`DELETE FROM meta_threads`);
+    const prod = async (code, name, model, y1, y2, stock = 0) => {
+      const p = await one(`INSERT INTO products (code, name, stock_qty) VALUES ($1,$2,$3) ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, stock_qty = EXCLUDED.stock_qty, deleted_at = NULL RETURNING id`, [code, name, stock]);
+      await query(`DELETE FROM product_applications WHERE product_id = $1`, [p.id]);
+      await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,'NISSAN',$3,$4,$5)`, [p.id, `NISSAN ${model} ${y1}-${y2}`, model, y1, y2]);
+    };
+    const P = 'ZT' + SFX.toUpperCase();
+    await prod(P + '01L', 'HORQUILLA INFERIOR IZQUIERDA', 'Versa', 2012, 2019, 7);
+    await prod(P + '01R', 'HORQUILLA INFERIOR DERECHA', 'Versa', 2012, 2019, 5);
+    await prod(P + '02L', 'HORQUILLA INFERIOR IZQUIERDA', 'Versa', 2020, 2024);
+    await prod(P + '02R', 'HORQUILLA INFERIOR DERECHA', 'Versa', 2020, 2024);
+    await prod(P + '11', 'AMORTIGUADOR DELANTERO', 'March', 2011, 2020);
+    await prod(P + '12', 'AMORTIGUADOR TRASERO', 'March', 2011, 2020);
+    const th = async (tid, demand, msgs) => Number((await one(`INSERT INTO meta_threads (platform, thread_id, messages, in_count, ai_demand, last_at) VALUES ('messenger',$1,$2::jsonb,1,$3::jsonb, now()) RETURNING id`,
+      [tid + SFX, JSON.stringify(msgs.map((t, i) => ({ at: new Date().toISOString(), me: false, text: t }))), JSON.stringify(demand)])).id);
+    const v = (modelo, anio, piezas, cantidad = null) => [{ marca: 'Nissan', modelo, anio, piezas, cantidad }];
+    const t1 = await th('x1', v('Versa', '2018', ['Horquilla (brazo de control)']), ['horquillas versa 2018']);
+    const t2 = await th('x2', v('Versa', null, ['Horquilla (brazo de control)'], 2), ['ocupo el par de horquillas del versa nuevo, el sense 2022']);
+    const t3 = await th('x3', v('March', '2016', ['Amortiguador']), ['amortiguadores march 2016']);
+    const t4 = await th('x4', v('Tsuru', '2015', ['Rótula']), ['rotulas tsuru']);
+    const t5 = await th('x5', v('Versa', '2018', ['Horquilla (brazo de control)']), ['solo la del lado izquierdo, versa 2018']);
+    const keepKey = process.env.ANTHROPIC_API_KEY; process.env.ANTHROPIC_API_KEY = 'test-key';
+    const prompts = [];
+    AI.setMetaAiCaller(async (prompt) => {
+      prompts.push(prompt);
+      const ids = [...prompt.matchAll(/### id=(\d+)/g)].map((m) => Number(m[1]));
+      return { ok: true, text: JSON.stringify(ids.filter((id) => id !== t3).map((id) => ({ id, pedidos: [{ n: 1, partes: [
+        { codigo: P + '02L', cantidad: 1, cantidad_dicha: true, confianza: 'alta' }, { codigo: P + '02R', cantidad: 1, cantidad_dicha: true, confianza: 'alta' }, { codigo: 'NOEXISTE', cantidad: 9 }] }] }))) };
+    });
+    try {
+      await MM.matchThreads({});
+      const get = async (id) => (await call(D, 'GET', `/api/meta-leads/${id}`)).json();
+      const it = (x) => x.items.map((i) => [i.code || null, i.qty, i.status, i.src || null]);
+      assert.deepEqual(it(await get(t1)), [[P + '01L', 1, 'ok', 'regla'], [P + '01R', 1, 'ok', 'regla']], '연식 2018 → 1세대 좌우 확정(AI 안 씀)');
+      assert.deepEqual(it(await get(t2)), [[P + '02L', 1, 'ok', 'ia'], [P + '02R', 1, 'ok', 'ia']], '연식 없음 → AI 가 대화(sense 2022)로 2세대 고름 · 후보 밖 코드 버림');
+      assert.equal((await get(t2)).items[0].qty_src, 'dicho');
+      const x3 = await get(t3); assert.ok(x3.items.every((i) => i.status === 'candidato')); assert.equal(x3.items.length, 2); assert.match(x3.items_error, /응답 형식/);
+      assert.deepEqual(it(await get(t4)), [[null, 1, 'sin_catalogo', null]], '카탈로그 없음 = 개발 필요');
+      assert.deepEqual(it(await get(t5)), [[P + '01L', 1, 'ok', 'regla']], '고객이 왼쪽만');
+      assert.equal(prompts.length, 1, '애매한 대화만 한 번에 AI 로'); assert.ok(prompts[0].includes(P + '02R') && prompts[0].includes('Pedidos:'));
+      assert.ok(!prompts[0].includes(`### id=${t1}\n`), '정해진 대화는 AI 에 안 보냄');
+      // 다시: 지문이 같으면 건너뜀 · 실패한 건(t3)만 다시
+      prompts.length = 0; await MM.matchThreads({});
+      assert.equal(prompts.length, 1); assert.deepEqual([...prompts[0].matchAll(/### id=(\d+)/g)].map((m) => Number(m[1])), [t3]);
+      // 목록: 부품번호 · 재고 · 상태 건수
+      const l = (await call(D, 'GET', '/api/meta-leads/list')).json();
+      assert.equal(l.stock[P + '01L'], 7); assert.equal(l.stock[P + '01R'], 5);
+      assert.equal((await call(D, 'GET', '/api/meta-leads/status')).json().counts.with_code, 3);
+      // 사람이 고친 코드 × 수량 — 모르는 코드는 알려줌 · 빈 값이면 자동으로
+      let r = (await call(D, 'PATCH', `/api/meta-leads/${t3}`, { items: `${P}11 4\nNOPE9` })).json();
+      assert.equal(r.items_manual, true); assert.deepEqual(r.items.map((i) => [i.code, i.qty, i.src]), [[P + '11', 4, 'manual']]); assert.deepEqual(r.unknown_codes, ['NOPE9']);
+      assert.equal((await call(D, 'PATCH', `/api/meta-leads/${t3}`, { items: 'NOPE9' })).statusCode, 400);
+      r = (await call(D, 'PATCH', `/api/meta-leads/${t3}`, { items: '' })).json(); assert.equal(r.items_manual, false); assert.equal(r.items[0].status, 'candidato');
+      // 한 건 다시 매칭(API)
+      const one1 = (await call(D, 'POST', '/api/meta-leads/match', { id: t1 })).json(); assert.equal(one1.items.length, 2);
+    } finally {
+      AI.setMetaAiCaller(null); if (keepKey) process.env.ANTHROPIC_API_KEY = keepKey; else delete process.env.ANTHROPIC_API_KEY;
+      await query(`DELETE FROM product_applications WHERE product_id IN (SELECT id FROM products WHERE code LIKE $1)`, [P + '%']);
+      await query(`DELETE FROM products WHERE code LIKE $1`, [P + '%']);
+    }
+  });
 
+});
