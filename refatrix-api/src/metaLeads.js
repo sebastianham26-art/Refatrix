@@ -144,13 +144,19 @@ export async function internalWaPhones(q = query) {
   add(process.env.DAILY_SUMMARY_WA_TO);
   return set;
 }
-export async function syncWhatsAppThreads({ since = null, q = query } = {}) {
+export async function syncWhatsAppThreads({ since = null, full = false, q = query } = {}) {
   const bp = { threads: 0, inserted: 0, error: null };
   try {
     const skip = await internalWaPhones(q);
+    // 2026-10-13 hotfix: 기준 시각(마지막 Graph 가져오기)과 무관하게 「목록에 없거나 새 메시지가 생긴 번호」를 읽는다.
+    //   (예전엔 since 이후만 → WhatsApp 출처 배포 전 대화가 영영 안 들어왔다) since 는 더 이상 거르는 데 쓰지 않음.
     const phones = (await q(
-      `SELECT m.phone, max(m.at) AS last_at FROM wa_messages m GROUP BY m.phone
-        HAVING bool_or(m.direction = 'in') ${since ? 'AND max(m.at) >= $1' : ''} ORDER BY 2 DESC LIMIT ${MAX_THREADS}`, since ? [since] : [])).rows;
+      `SELECT m.phone, max(m.at) AS last_at FROM wa_messages m
+         LEFT JOIN meta_threads t ON t.thread_id = 'wa:' || m.phone
+        GROUP BY m.phone, t.last_at
+       HAVING bool_or(m.direction = 'in')
+          ${full ? '' : 'AND (t.last_at IS NULL OR date_trunc(\'milliseconds\', max(m.at)) > t.last_at)'}
+        ORDER BY 2 DESC LIMIT ${MAX_THREADS}`)).rows;
     for (const ph of phones) {
       if (skip.has(ph.phone)) continue;
       const msgs = (await q(`SELECT direction, kind, body, at FROM wa_messages WHERE phone = $1 ORDER BY at DESC LIMIT ${MSG_KEEP}`, [ph.phone])).rows.reverse()
@@ -192,7 +198,7 @@ export async function syncMetaLeads({ full = false, trigger = 'manual', userId =
     }
     // ① WhatsApp — ERP 안의 대화라 토큰 없이도 된다
     syncState.progress.platform = 'whatsapp';
-    const wa = await syncWhatsAppThreads({ since: full ? null : cutoff, q });
+    const wa = await syncWhatsAppThreads({ full, q });
     out.by_platform.whatsapp = wa; out.threads += wa.threads; out.inserted += wa.inserted;
     if (wa.error) out.errors.push(`whatsapp: ${wa.error}`);
     // ② Messenger · Instagram — Graph API

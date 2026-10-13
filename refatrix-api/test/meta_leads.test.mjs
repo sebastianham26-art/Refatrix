@@ -445,6 +445,16 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const one = (await call(D, 'GET', `/api/meta-leads/${w.id}`)).json();
     assert.deepEqual(one.messages.map((m) => [m.me, m.text]), [[false, 'Hola, soy mecánico en Saltillo, ocupo rótulas para tsuru 2015'], [true, 'Claro, ¿cuántas piezas?'], [false, '(imagen)']]);
     assert.equal((await call(D, 'GET', '/api/meta-leads/status')).json().counts.whatsapp, 1);
+    // 2026-10-13 hotfix: 마지막 성공 가져오기보다 오래된 WhatsApp 대화도(목록에 없으면) 「새 문의 가져오기」로 들어온다
+    await query(`INSERT INTO wa_messages (direction, phone, kind, body, source, at) VALUES ('in','528187776655','text','horquillas versa 2017','inbound', now() - interval '20 days')`);
+    await call(D, 'POST', '/api/meta-leads/sync', {}); await untilDone();
+    const l2 = (await call(D, 'GET', '/api/meta-leads/list?platform=whatsapp')).json().items;
+    assert.ok(l2.some((x) => x.phone === '8187776655'), '오래된 WhatsApp 대화도 들어옴');
+    // 바뀐 게 없으면 다시 읽지 않음 · 새 메시지가 생기면 그 번호만
+    const r0 = (await query(`SELECT by_platform FROM meta_sync_runs ORDER BY id DESC LIMIT 1`)).rows[0].by_platform.whatsapp;
+    assert.equal(r0.threads, 1, '이번에 새로 생긴 번호 1개만 읽음');
+    await call(D, 'POST', '/api/meta-leads/sync', {}); await untilDone();
+    assert.equal((await query(`SELECT by_platform FROM meta_sync_runs ORDER BY id DESC LIMIT 1`)).rows[0].by_platform.whatsapp.threads, 0, '변화 없으면 0');
   });
 
   await t.test('B8. 0271 · AI 분석 — 바뀐 대화만 · 고객 말 없는 대화는 안 보냄 · 우선순위 사람 > AI > 규칙', async () => {
