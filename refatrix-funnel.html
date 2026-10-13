@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부 · build 20261013dc</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 20261013dd</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -290,7 +290,7 @@
         const satCell = o.temp_sat
           ? '<span style="background:#fde7c9;color:#9a6512;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:700">임시 · 클릭해 SAT 입력</span>'
           : esc(o.sat_no||'');
-        h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+poCell(o.customer_po_no)+'</td><td>'+esc(o.inv_date||'')+'</td><td>'+satCell+'</td><td>'+esc(o.customer_name||'')+'</td><td>'+(o.owner_name?('<b>'+esc(o.owner_name)+'</b>'):'<span class="hint">미지정</span>')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+'</td></tr>';
+        h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+poCell(o.customer_po_no)+'</td><td>'+esc(o.inv_date||'')+'</td><td>'+satCell+'</td><td>'+esc(o.customer_name||'')+'</td><td>'+(o.owner_name?('<b>'+esc(o.owner_name)+'</b>'):'<span class="hint">미지정</span>')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+adjBadge(o)+'</td></tr>';
         if(openRows['i'+o.invoice_id]) h+='<tr class="sub"><td colspan="9">'+(openRows['i'+o.invoice_id]==='loading'?'불러오는 중…':openRows['i'+o.invoice_id])+'</td></tr>';
       });
       h+='</tbody></table>'; }
@@ -333,7 +333,7 @@
     try{ const d=await fetch(session.api+'/api/dashboard/funnel/invoice-lines?invoice_id='+id,{headers:auth()}).then(r=>r.json());
       invCache[id]=d;
       const inv=d.invoice||{}; const items=d.items||[]; const IVA=0.16;
-      let t='<div class="inv-scroll"><table style="margin:0;width:100%;table-layout:fixed" data-sort="funnel:invlines">'
+      let t=adjBanner(inv)+'<div class="inv-scroll"><table style="margin:0;width:100%;table-layout:fixed" data-sort="funnel:invlines">'
         +'<colgroup><col style="width:16%"><col style="width:30%"><col style="width:8%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"></colgroup>'
         +'<thead><tr>'
         +'<th>CTR Code / SYD</th><th>품명 / 적용(application)</th><th class="r">수량</th><th class="r">단가</th><th class="r">총계</th><th class="r">IVA</th><th class="r">총계(IVA 포함)</th></tr></thead><tbody>';
@@ -343,7 +343,7 @@
         const appx=l.app?('<div class="clamp2" style="font-size:10.5px;color:var(--muted);margin-top:2px" title="'+esc(l.app)+'">'+esc(l.app)+'</div>'):'';
         t+='<tr><td><span class="inv-code">'+esc(l.ctr_code||'')+'</span>'+syd+'</td>'
           +'<td><div class="clamp2" title="'+esc(l.product_name||'')+'">'+esc(l.product_name||'')+'</div>'+appx+'</td>'
-          +'<td class="r">'+nf(l.qty)+'</td><td class="r">'+money(l.unit_price)+'</td>'
+          +'<td class="r">'+nf(l.qty)+'</td><td class="r">'+adjUnitCell(l,inv)+'</td>'
           +'<td class="r">'+money(sub)+'</td><td class="r">'+money(iva)+'</td><td class="r"><b>'+money(tot)+'</b></td></tr>';
       });
       t+='</tbody></table>'
@@ -814,6 +814,39 @@
       await loadImmediate(); if(wasOpen) toggleInvoice(id);
     }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
   }
+  // ===== 0274 · 매출액 수정 내역 표시 — 「추가 할인 N% 적용」 =====
+  function adjLabel(basis,rate){
+    const r=(rate==null||rate==='')?'':(Number(rate).toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1'));
+    if(basis==='current') return '추가 할인 '+r+'%';
+    if(basis==='list') return '정가 대비 '+r+'% 할인';
+    if(basis==='total') return '총액 직접 수정';
+    return '';
+  }
+  function adjBadge(o){
+    if(!o||!o.price_adj_basis) return '';
+    const lab=adjLabel(o.price_adj_basis,o.price_adj_rate);
+    const tip=lab+(o.pre_adj_total_mxn!=null?(' · 수정 전 총계(IVA 포함) '+money(o.pre_adj_total_mxn)):'');
+    return '<div title="'+esc(tip)+'"><span style="background:#fdecd2;color:#9a4a12;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800;white-space:nowrap">🏷 '+esc(lab)+'</span></div>';
+  }
+  function adjBanner(inv){
+    const a=inv&&inv.price_adj; if(!a) return '';
+    const lab=adjLabel(a.basis,a.rate);
+    const pre=a.pre_subtotal_mxn, now=Number(inv.subtotal_mxn)||0;
+    const diff=pre==null?null:Math.round((now-pre)*100)/100;
+    return '<div style="margin-bottom:8px;padding:8px 12px;border:1px solid #f0c890;border-radius:10px;background:#fff6e8;display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12.5px">'
+      +'<b style="color:#9a4a12;font-size:13px">🏷 '+esc(lab)+' 적용</b>'
+      +(pre!=null?('<span>총계(IVA 미포함): <s style="color:var(--muted)">'+money(pre)+'</s> → <b>'+money(now)+'</b>'
+        +' <b style="color:'+(diff<0?'var(--expense)':'var(--income)')+'">('+(diff>0?'+':'')+money(diff)+')</b></span>'):'')
+      +(a.pre_total_mxn!=null?('<span>총계(IVA 포함): <s style="color:var(--muted)">'+money(a.pre_total_mxn)+'</s> → <b>'+money(inv.total_mxn)+'</b></span>'):'')
+      +'<span class="hint" style="margin-left:auto">'+esc(a.at||'')+(a.by_name?(' · '+esc(a.by_name)):'')+'</span>'
+      +'</div>';
+  }
+  function adjUnitCell(l,inv){
+    const pre=l.pre_adj_unit_price;
+    if(!(inv&&inv.price_adj)||pre==null||Math.abs(Number(pre)-Number(l.unit_price))<0.005) return money(l.unit_price);
+    return '<div style="font-size:10.5px;color:var(--muted)"><s>'+money(pre)+'</s></div><b>'+money(l.unit_price)+'</b>';
+  }
+
   // ===== 2026-10-13 · 할인율로 매출액 수정 + 최종단가 엑셀 =====
   //   서버 repriceByDiscount(src/sales.js)와 같은 계산 — 미리보기 숫자 = 적용 후 숫자.
   //   정가 대비: 단가 = 정가×(1−r) (몇 번 적용해도 누적되지 않음) / 현재 매출액 대비: 단가 = 현재 실효단가×(1−r) (적용할 때마다 누적)
@@ -902,8 +935,14 @@
     aoa.push(['Cliente', (inv.customer_code?inv.customer_code+' · ':'')+(inv.customer_name||''), '', 'RFC', inv.customer_rfc||'']);
     aoa.push(['SAT', inv.sat_no||'—', '', 'Folio', inv.folio_no||'']);
     aoa.push(['Fecha factura', inv.inv_date_str||String(inv.inv_date||'').slice(0,10), '', 'Descargado', mxHoy()]);
+    const adj=inv.price_adj||null;
+    if(adj){
+      const r=adj.rate==null?'':(Number(adj.rate)+'%');
+      const lab=adj.basis==='current'?('Descuento adicional '+r):(adj.basis==='list'?('Descuento sobre precio lista '+r):'Ajuste manual del total');
+      aoa.push(['Ajuste aplicado', lab, '', 'Subtotal antes (sin IVA)', adj.pre_subtotal_mxn==null?'':Number(adj.pre_subtotal_mxn), 'Subtotal final (sin IVA)', Number(inv.subtotal_mxn)||0]);
+    }
     aoa.push([]);
-    const head=['#','Código CTR','SYD','Descripción','Cant.','Precio lista','Desc. %','Precio unit. final (sin IVA)','Importe (sin IVA)','IVA','Importe (con IVA)'];
+    const head=['#','Código CTR','SYD','Descripción','Cant.','Precio lista','Desc. %','Precio unit. final (sin IVA)','Importe (sin IVA)','IVA','Importe (con IVA)'].concat(adj?['Precio unit. antes del ajuste']:[]);
     aoa.push(head);
     let sumAmt=0, sumQty=0, exact=true;
     items.forEach((l,i)=>{
@@ -912,7 +951,7 @@
       const disc=list>0? rpxR2((1-(qty>0?amt/qty:0)/list)*100) : '';
       const iva=rpxR2(amt*ivaR);
       sumAmt=rpxR2(sumAmt+amt); sumQty+=qty;
-      aoa.push([i+1, l.ctr_code||'', l.syd_codes||'', l.product_name||'', qty, list||'', disc, u, amt, iva, rpxR2(amt+iva)]);
+      aoa.push([i+1, l.ctr_code||'', l.syd_codes||'', l.product_name||'', qty, list||'', disc, u, amt, iva, rpxR2(amt+iva)].concat(adj?[l.pre_adj_unit_price==null?'':Number(l.pre_adj_unit_price)]:[]));
     });
     aoa.push([]);
     aoa.push(['','','','Total', sumQty,'','', 'Subtotal (sin IVA)', Number(inv.subtotal_mxn)||0]);
@@ -922,7 +961,7 @@
     aoa.push([]);
     aoa.push(['Verificación', (okSum?'✔ Σ Importe = Subtotal de la factura':'✖ Σ Importe ('+sumAmt.toFixed(2)+') ≠ Subtotal ('+(Number(inv.subtotal_mxn)||0).toFixed(2)+')')
       +(exact?' · Cant. × Precio unit. = Importe en todas las líneas':' · Algunas líneas usan precio con 6 decimales para cuadrar el importe')]);
-    return {aoa, headRow:5, okSum, exact};
+    return {aoa, headRow:aoa.findIndex(r=>r[0]==='#'), okSum, exact};
   }
   function downloadFinalPriceXls(id){
     const d=invCache[id];
@@ -931,11 +970,11 @@
     const inv=d.invoice;
     const b=pxlsBuildAoa(d);
     const ws=XLSX.utils.aoa_to_sheet(b.aoa);
-    ws['!cols']=[{wch:4},{wch:14},{wch:18},{wch:34},{wch:7},{wch:12},{wch:8},{wch:16},{wch:16},{wch:12},{wch:16}];
+    ws['!cols']=[{wch:4},{wch:14},{wch:18},{wch:34},{wch:7},{wch:12},{wch:8},{wch:16},{wch:16},{wch:12},{wch:16},{wch:16}];
     // 숫자 서식: 단가는 6자리까지 보이게, 금액은 2자리
     const rng=XLSX.utils.decode_range(ws['!ref']);
     for(let R=b.headRow+1;R<=rng.e.r;R++){
-      for(const C of [5,7,8,9,10]){ const cell=ws[XLSX.utils.encode_cell({r:R,c:C})]; if(cell&&cell.t==='n') cell.z=(C===7?'#,##0.00####':'#,##0.00'); }
+      for(const C of [5,7,8,9,10,11]){ const cell=ws[XLSX.utils.encode_cell({r:R,c:C})]; if(cell&&cell.t==='n') cell.z=(C===7?'#,##0.00####':'#,##0.00'); }
     }
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Precios finales');
     const safe=String(inv.sat_no&&!String(inv.sat_no).startsWith('TMP-')?inv.sat_no:('inv_'+id)).replace(/[^\w\-]+/g,'_').slice(0,40);

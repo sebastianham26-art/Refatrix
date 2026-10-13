@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { visibleTeamIds, canViewTeam } from '../teams.js';
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEdit } from '../middleware/authGuard.js';
-import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd, repriceByDiscount } from '../sales.js';
+import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd, repriceByDiscount, priceAdjMeta } from '../sales.js';
 import { isClosedMonth } from '../importCost.js';
 import { round2, allowPastMonthSalesEdit } from '../permissions.js';
 import { logEvent } from '../audit.js';
@@ -385,6 +385,30 @@ export default async function salesRoutes(app) {
   });
 
 
+  // 0274 · 매출액 수정 내역 기록(「추가 할인 N% 적용」 표시용). 마이그레이션 전이면 기록만 건너뛴다(수정 자체는 그대로 동작).
+  let _priceAdjReady = false;
+  async function priceAdjReady(c) {
+    if (_priceAdjReady) return true;
+    const r = await c.query(`SELECT COUNT(*)::int AS n FROM information_schema.columns
+      WHERE table_name IN ('sales_invoices','sales_invoice_lines') AND column_name IN ('price_adj_basis','pre_adj_unit_price')`);
+    _priceAdjReady = Number(r.rows[0].n) >= 2;
+    return _priceAdjReady;
+  }
+  // inv: 수정 직전 인보이스 행(SELECT *) · lines: [{id, unit_price, pre_adj_unit_price}] (수정 직전 값)
+  async function recordPriceAdj(c, inv, lines, { basis, rate }, userId) {
+    if (!(await priceAdjReady(c))) return null;
+    const m = priceAdjMeta(inv, { subtotal: Number(inv.subtotal_mxn), total: Number(inv.total_mxn) }, { basis, rate });
+    await c.query(
+      `UPDATE sales_invoices SET price_adj_basis=$1, price_adj_rate=$2, pre_adj_subtotal_mxn=$3, pre_adj_total_mxn=$4,
+              price_adj_at=now(), price_adj_by=$5 WHERE id=$6`,
+      [m.basis, m.rate, m.pre_subtotal, m.pre_total, userId, inv.id]);
+    for (const l of lines) {
+      const pre = m.keepLinePre && l.pre_adj_unit_price != null ? Number(l.pre_adj_unit_price) : Number(l.unit_price);
+      await c.query(`UPDATE sales_invoice_lines SET pre_adj_unit_price=$1 WHERE id=$2`, [round2(pre), l.id]);
+    }
+    return m;
+  }
+
   // body: { total_mxn (IVA 포함 총액), iva_mxn } → subtotal = total - iva, 라인 단가를 비례로 역산
   app.post('/api/sales/:id/adjust-total', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
@@ -403,7 +427,7 @@ export default async function salesRoutes(app) {
       if (!inv) return { error: 'not_found', code: 404 };
       // 당월 매출만 수정 가능 (마이그레이션 기간엔 ALLOW_PAST_MONTH_SALES_EDIT=1 로 과거 달도 허용)
       if (!allowPastMonthSalesEdit() && inv.inv_ym !== inv.now_ym) return { error: 'not_current_month', code: 409, note: '당월에 발행된 매출만 수정할 수 있습니다.' };
-      const lines = (await c.query(`SELECT id, qty, line_amount_mxn FROM sales_invoice_lines WHERE invoice_id=$1 ORDER BY id`, [id])).rows;
+      const lines = (await c.query(`SELECT l.id, l.qty, l.line_amount_mxn, l.unit_price, (to_jsonb(l)->>'pre_adj_unit_price')::numeric AS pre_adj_unit_price FROM sales_invoice_lines l WHERE l.invoice_id=$1 ORDER BY l.id`, [id])).rows;
       if (!lines.length) return { error: 'no_lines', code: 409 };
       const oldSub = round2(lines.reduce((s, l) => s + Number(l.line_amount_mxn), 0));
       if (!(oldSub > 0)) return { error: 'cannot_scale', code: 409, note: '기존 매출액이 0이라 비례 조정할 수 없습니다.' };
@@ -416,6 +440,7 @@ export default async function salesRoutes(app) {
         let bi = 0; for (let i = 1; i < newAmts.length; i++) if (newAmts[i] > newAmts[bi]) bi = i;
         newAmts[bi] = round2(newAmts[bi] + residual);
       }
+      await recordPriceAdj(c, inv, lines, { basis: 'total', rate: null }, userId);   // 0274 · 수정 전 값 기록(라인 갱신 전에)
       for (let i = 0; i < lines.length; i++) {
         const qty = Number(lines[i].qty) || 0;
         const amt = newAmts[i];
@@ -454,7 +479,8 @@ export default async function salesRoutes(app) {
       if (inv.status !== 'posted') return { error: 'not_posted', code: 409, note: '게시된 인보이스만 수정할 수 있습니다.' };
       if (!allowPastMonthSalesEdit() && inv.inv_ym !== inv.now_ym) return { error: 'not_current_month', code: 409, note: '당월에 발행된 매출만 수정할 수 있습니다.' };
       const lines = (await c.query(
-        `SELECT l.id, l.qty, l.list_price, l.discount_rate, l.unit_price, l.line_amount_mxn, p.code
+        `SELECT l.id, l.qty, l.list_price, l.discount_rate, l.unit_price, l.line_amount_mxn, p.code,
+                (to_jsonb(l)->>'pre_adj_unit_price')::numeric AS pre_adj_unit_price
            FROM sales_invoice_lines l LEFT JOIN products p ON p.id=l.product_id
           WHERE l.invoice_id=$1 ORDER BY l.id`, [id])).rows;
       const rp = repriceByDiscount(lines, { basis, rate, ivaRate: inv.iva_rate == null ? 16 : Number(inv.iva_rate) });
@@ -468,6 +494,7 @@ export default async function salesRoutes(app) {
         };
         return { error: rp.error, code: rp.error === 'bad_basis' || rp.error === 'bad_rate' ? 400 : 409, note: notes[rp.error], codes: rp.codes };
       }
+      const meta = await recordPriceAdj(c, inv, lines, { basis, rate }, userId);   // 0274 · 수정 전 값 기록(라인 갱신 전에)
       for (const l of rp.lines) {
         await c.query(`UPDATE sales_invoice_lines SET unit_price=$1, line_amount_mxn=$2, discount_rate=$3 WHERE id=$4`,
           [l.unit_price, l.line_amount_mxn, l.discount_rate, l.id]);
@@ -476,7 +503,7 @@ export default async function salesRoutes(app) {
         [rp.subtotal, rp.iva, rp.total, userId, id]);
       if (inv.txn_id) await c.query(`UPDATE transactions SET amount=$1, amount_mxn=$1, updated_by=$2 WHERE id=$3`, [rp.total, userId, inv.txn_id]);
       return {
-        ok: true, basis, rate: round2(Number(rate)),
+        ok: true, basis, rate: round2(Number(rate)), cumulative_rate: meta ? meta.rate : null, pre_subtotal: meta ? meta.pre_subtotal : null,
         before: { subtotal: Number(inv.subtotal_mxn), iva: Number(inv.iva_mxn), total: Number(inv.total_mxn) },
         after: { subtotal: rp.subtotal, iva: rp.iva, total: rp.total },
         lines: rp.lines.length,

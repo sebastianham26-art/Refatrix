@@ -139,3 +139,35 @@ test('최종단가 엑셀 — 총액 직접 입력으로 비례 조정된 줄은
   assert.equal(b.exact, false); assert.equal(b.okSum, true);
   assert.match(JSON.stringify(b.aoa), /6 decimales/);
 });
+
+test('0274 · 추가 할인 적용 내역 — 펼침 배너·품목 단가(취소선 → 최종)·엑셀 「Ajuste aplicado」', async () => {
+  const data = INV({ subtotal_mxn: 2400.02, iva_mxn: 384, total_mxn: 2784.02,
+    price_adj: { basis: 'current', rate: 10, pre_subtotal_mxn: 2666.69, pre_total_mxn: 3093.36, at: '2026-10-13 14:50', by_name: 'Sebastian' } });
+  data.items[0].unit_price = 450; data.items[0].line_amount_mxn = 1350; data.items[0].pre_adj_unit_price = 500;
+  data.items[1].unit_price = 150; data.items[1].line_amount_mxn = 1050.02; data.items[1].pre_adj_unit_price = 166.67;
+  const { w } = boot(data, 'sales_support');
+  await w.toggleInvoice(7); await settle();
+  const txt = w.document.body.textContent;
+  assert.match(txt, /🏷 추가 할인 10% 적용/);
+  assert.match(txt, /2,666\.69\s*→\s*2,400\.02/);
+  assert.match(txt, /\(-266\.67\)/);
+  assert.match(txt, /Sebastian/);
+  const unitCell = w.document.querySelector('table[data-sort="funnel:invlines"] tbody tr').cells[3];
+  assert.equal(unitCell.querySelector('s').textContent, '500.00');
+  assert.match(unitCell.textContent, /450\.00/);
+  const b = w.pxlsBuildAoa(data);
+  const flat = JSON.stringify(b.aoa);
+  assert.match(flat, /"Ajuste aplicado","Descuento adicional 10%"/);
+  assert.equal(b.aoa[b.headRow][11], 'Precio unit. antes del ajuste');
+  assert.equal(b.aoa[b.headRow + 1][11], 500);
+});
+
+test('0274 · 목록 총액 옆 배지 (추가 할인 / 정가 대비 / 총액 수정 / 없음)', () => {
+  const { w } = boot(INV());
+  assert.match(w.adjBadge({ price_adj_basis: 'current', price_adj_rate: 19, pre_adj_total_mxn: 3093.36 }), /🏷 추가 할인 19%/);
+  assert.match(w.adjBadge({ price_adj_basis: 'list', price_adj_rate: 50 }), /정가 대비 50% 할인/);
+  assert.match(w.adjBadge({ price_adj_basis: 'total' }), /총액 직접 수정/);
+  assert.match(w.adjBadge({ price_adj_basis: 'current', price_adj_rate: 12.5 }), /12\.5%/);
+  assert.equal(w.adjBadge({}), '');
+  assert.equal(w.adjBanner({}), '');
+});

@@ -175,3 +175,27 @@ export function effectiveDiscountPct(lines) {
   if (!(list > 0)) return null;
   return round2((1 - amt / list) * 100);
 }
+
+// =====================================================================
+// 2026-10-13 · 매출액 수정 내역(0274) — 화면·엑셀에 「추가 할인 N% 적용」을 보이기 위한 기록값 계산 (순수 함수)
+//   「수정 전」 금액 = 같은 방식의 수정이 이어지는 동안 처음 값을 유지한다.
+//     예) 추가 할인 10% → 또 10%  : 수정 전 = 첫 10% 직전 금액, 누적 추가 할인율 = 19%
+//         정가 대비 45% → 50%     : 수정 전 = 첫 수정 직전 금액, 할인율 = 50
+//     방식이 바뀌면(추가 할인 → 정가 대비 등) 그 직전 금액이 새 「수정 전」이 된다.
+//   prev : { price_adj_basis, price_adj_rate, pre_adj_subtotal_mxn, pre_adj_total_mxn }
+//   cur  : { subtotal, total }  — 이번 수정 직전 인보이스 금액
+//   반환 : { basis, rate, pre_subtotal, pre_total, keepLinePre }  (keepLinePre=true → 라인 pre_adj_unit_price 유지)
+// =====================================================================
+export function priceAdjMeta(prev, cur, { basis, rate }) {
+  const p = prev || {};
+  const same = p.price_adj_basis === basis && p.pre_adj_subtotal_mxn != null;
+  const preSub = same ? round2(p.pre_adj_subtotal_mxn) : round2(cur.subtotal);
+  const preTot = same && p.pre_adj_total_mxn != null ? round2(p.pre_adj_total_mxn) : round2(cur.total);
+  let r = null;
+  if (basis === 'list') r = round2(Number(rate));
+  else if (basis === 'current') {
+    const prevR = same ? Number(p.price_adj_rate) || 0 : 0;
+    r = round2((1 - (1 - prevR / 100) * (1 - Number(rate) / 100)) * 100);
+  }
+  return { basis, rate: r, pre_subtotal: preSub, pre_total: preTot, keepLinePre: same };
+}

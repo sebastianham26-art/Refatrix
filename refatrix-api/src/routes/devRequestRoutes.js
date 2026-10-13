@@ -736,6 +736,8 @@ export default async function devRequestRoutes(app) {
               ${poSelectFrag(poReady)} AS customer_po_no,
               c.id AS customer_id, c.name AS customer_name,
               i.total_mxn, cu.name AS cust_owner_name,
+              to_jsonb(i)->>'price_adj_basis' AS price_adj_basis, (to_jsonb(i)->>'price_adj_rate')::numeric AS price_adj_rate,
+              (to_jsonb(i)->>'pre_adj_total_mxn')::numeric AS pre_adj_total_mxn,
               (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_sku,
               (SELECT COALESCE(SUM(sl.qty),0)::numeric FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_qty
          FROM sales_invoices i
@@ -773,7 +775,8 @@ export default async function devRequestRoutes(app) {
       // 검색어가 있으면 목록은 **전 기간**에서 찾은 결과다 — 화면이 그 사실을 알려 줘야 한다.
       search: kw || null, search_all_periods: !!kw,
       able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_po_no: o.customer_po_no || null, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
-      done: done.map((o) => ({ id: o.invoice_id, quote_no: o.quote_no || '(직접)', invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no || '', temp_sat: !!o.temp_sat, customer_po_no: o.customer_po_no || null, customer_name: o.customer_name, owner_name: o.cust_owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
+      done: done.map((o) => ({ id: o.invoice_id, quote_no: o.quote_no || '(직접)', invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no || '', temp_sat: !!o.temp_sat, customer_po_no: o.customer_po_no || null, customer_name: o.customer_name, owner_name: o.cust_owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty),
+        price_adj_basis: o.price_adj_basis || null, price_adj_rate: o.price_adj_rate == null ? null : Number(o.price_adj_rate), pre_adj_total_mxn: o.pre_adj_total_mxn == null ? null : Number(o.pre_adj_total_mxn) })),
     };
   });
 
@@ -790,7 +793,11 @@ export default async function devRequestRoutes(app) {
               c.owner_id AS owner_id, cu.name AS owner_name,
               (to_jsonb(s)->>'seller_id')::bigint AS seller_id,
               (SELECT us.name FROM users us WHERE us.id = (to_jsonb(s)->>'seller_id')::bigint) AS seller_name,
-              c.credit_days AS base_credit_days, s.credit_days_req, s.credit_req_memo, ru.name AS credit_req_by_name
+              c.credit_days AS base_credit_days, s.credit_days_req, s.credit_req_memo, ru.name AS credit_req_by_name,
+              to_jsonb(s)->>'price_adj_basis' AS price_adj_basis, (to_jsonb(s)->>'price_adj_rate')::numeric AS price_adj_rate,
+              (to_jsonb(s)->>'pre_adj_subtotal_mxn')::numeric AS pre_adj_subtotal_mxn, (to_jsonb(s)->>'pre_adj_total_mxn')::numeric AS pre_adj_total_mxn,
+              to_char((to_jsonb(s)->>'price_adj_at')::timestamptz AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS price_adj_at,
+              (SELECT ua.name FROM users ua WHERE ua.id = (to_jsonb(s)->>'price_adj_by')::bigint) AS price_adj_by_name
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
               LEFT JOIN users cu ON cu.id=c.owner_id
               LEFT JOIN users ru ON ru.id=s.credit_req_by
@@ -798,7 +805,7 @@ export default async function devRequestRoutes(app) {
     if (!inv) return reply.code(404).send({ error: 'not_found' });
     if (!canViewTeam(req.ctx.perm, inv.customer_team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const lines = (await query(
-      `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn, sl.list_price, sl.discount_rate,
+      `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn, sl.list_price, sl.discount_rate, (to_jsonb(sl)->>'pre_adj_unit_price')::numeric AS pre_adj_unit_price,
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
          FROM sales_invoice_lines sl JOIN products p ON p.id=sl.product_id WHERE sl.invoice_id=$1 ORDER BY sl.id`, [id])).rows;
     // 삭제/일자변경/매출액수정 버튼 노출용 플래그.
@@ -823,9 +830,16 @@ export default async function devRequestRoutes(app) {
         seller_id: inv.seller_id == null ? null : Number(inv.seller_id), seller_name: inv.seller_name || inv.owner_name || null,
         subtotal_mxn: Number(inv.subtotal_mxn) || 0, iva_mxn: Number(inv.iva_mxn) || 0, total_mxn: Number(inv.total_mxn) || 0,
         iva_rate: inv.iva_rate == null ? 16 : Number(inv.iva_rate),
+        // 0274 · 매출액 수정 내역(추가 할인 등) — 없으면 price_adj=null
+        price_adj: inv.price_adj_basis ? {
+          basis: inv.price_adj_basis, rate: inv.price_adj_rate == null ? null : Number(inv.price_adj_rate),
+          pre_subtotal_mxn: inv.pre_adj_subtotal_mxn == null ? null : Number(inv.pre_adj_subtotal_mxn),
+          pre_total_mxn: inv.pre_adj_total_mxn == null ? null : Number(inv.pre_adj_total_mxn),
+          at: inv.price_adj_at || null, by_name: inv.price_adj_by_name || null,
+        } : null,
         can_adjust: canAdjust, is_director: isDirector, past_edit_enabled: allowPastMonthSalesEdit(), can_price_xls: canPriceXls,
       },
-      items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn), list_price: Number(l.list_price) || 0, discount_rate: Number(l.discount_rate) || 0 })),
+      items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn), list_price: Number(l.list_price) || 0, discount_rate: Number(l.discount_rate) || 0, pre_adj_unit_price: l.pre_adj_unit_price == null ? null : Number(l.pre_adj_unit_price) })),
     };
   });
 

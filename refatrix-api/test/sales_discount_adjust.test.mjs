@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 if (process.env.TEST_PG_URL) process.env.DATABASE_URL = process.env.TEST_PG_URL;
-const { repriceByDiscount, effectiveDiscountPct } = await import('../src/sales.js');
+const { repriceByDiscount, effectiveDiscountPct, priceAdjMeta } = await import('../src/sales.js');
 
 const L = [
   { id: 1, code: 'A', qty: 3, list_price: 1000, unit_price: 550, line_amount_mxn: 1650 },
@@ -63,6 +63,16 @@ test('오류 — 기준·할인율 범위·정가 0·수량 0·라인 없음', (
 test('effectiveDiscountPct', () => {
   assert.equal(effectiveDiscountPct(L), Math.round((1 - (1650 + 1283.31 + 54.99) / (3000 + 333.33 * 7 + 99.99)) * 10000) / 100);
   assert.equal(effectiveDiscountPct([{ qty: 1, list_price: 0, line_amount_mxn: 5 }]), null);
+});
+
+test('priceAdjMeta — 추가 할인 연속은 누적·수정 전 유지, 방식이 바뀌면 새 기준', () => {
+  const a = priceAdjMeta(null, { subtotal: 100, total: 116 }, { basis: 'current', rate: 10 });
+  assert.deepEqual(a, { basis: 'current', rate: 10, pre_subtotal: 100, pre_total: 116, keepLinePre: false });
+  const b = priceAdjMeta({ price_adj_basis: 'current', price_adj_rate: 10, pre_adj_subtotal_mxn: 100, pre_adj_total_mxn: 116 }, { subtotal: 90, total: 104.4 }, { basis: 'current', rate: 10 });
+  assert.deepEqual(b, { basis: 'current', rate: 19, pre_subtotal: 100, pre_total: 116, keepLinePre: true });
+  const c = priceAdjMeta({ price_adj_basis: 'current', price_adj_rate: 19, pre_adj_subtotal_mxn: 100, pre_adj_total_mxn: 116 }, { subtotal: 81, total: 93.96 }, { basis: 'list', rate: 50 });
+  assert.deepEqual(c, { basis: 'list', rate: 50, pre_subtotal: 81, pre_total: 93.96, keepLinePre: false });
+  assert.equal(priceAdjMeta(null, { subtotal: 1, total: 1.16 }, { basis: 'total', rate: null }).rate, null);
 });
 
 // ── 종단 ──
@@ -156,6 +166,14 @@ test('adjust-discount — 정가 대비 50%: 라인·인보이스·입금예정 
   assert.equal(Number(tx.amount), 3093.36); assert.equal(Number(tx.amount_mxn), 3093.36);
   const log = (await query(`SELECT detail FROM audit_log WHERE user_id=$1 AND target=$2 ORDER BY id DESC LIMIT 1`, [ID.dir, `sales_invoice:${ID.cur.inv}`])).rows[0];
   assert.ok(log && JSON.stringify(log.detail).includes('adjustDiscount'));
+  // 0274 · 수정 내역이 남아 보인다
+  const pa = (await get('dir', `/api/dashboard/funnel/invoice-lines?invoice_id=${ID.cur.inv}`)).json();
+  assert.equal(pa.invoice.price_adj.basis, 'list');
+  assert.equal(pa.invoice.price_adj.rate, 50);
+  assert.equal(pa.invoice.price_adj.pre_subtotal_mxn, 2933.31);
+  assert.equal(pa.invoice.price_adj.pre_total_mxn, 3402.64);
+  assert.match(pa.invoice.price_adj.by_name, /DISCTEST/);
+  assert.deepEqual(pa.items.map((l) => l.pre_adj_unit_price), [550, 183.33]);
   // 엑셀이 읽는 응답도 새 값
   const d = (await get('sup', `/api/dashboard/funnel/invoice-lines?invoice_id=${ID.cur.inv}`)).json();
   assert.equal(d.invoice.subtotal_mxn, 2666.69);
@@ -169,6 +187,26 @@ test('adjust-discount — 같은 정가 대비 재적용은 그대로 · 현재 
   assert.equal(cur.after.subtotal, 450 * 3 + 150 * 7);   // 500×0.9, 166.67×0.9=150.003→150.00
   const lines = (await query(`SELECT discount_rate FROM sales_invoice_lines WHERE invoice_id=$1 ORDER BY id`, [ID.cur.inv])).rows;
   assert.deepEqual(lines.map((l) => Number(l.discount_rate)), [55, 55]);
+  // 추가 할인 10% 를 두 번 → 누적 19%, 수정 전 = 첫 추가 할인 직전(정가 대비 50% 결과)
+  assert.equal(cur.cumulative_rate, 10);
+  const cur2 = (await post('dir', `/api/sales/${ID.cur.inv}/adjust-discount`, { basis: 'current', rate: 10 })).json();
+  assert.equal(cur2.cumulative_rate, 19);
+  const pa = (await get('dir', `/api/dashboard/funnel/invoice-lines?invoice_id=${ID.cur.inv}`)).json();
+  assert.equal(pa.invoice.price_adj.basis, 'current');
+  assert.equal(pa.invoice.price_adj.rate, 19);
+  assert.equal(pa.invoice.price_adj.pre_subtotal_mxn, 2666.69);
+  assert.deepEqual(pa.items.map((l) => l.pre_adj_unit_price), [500, 166.67]);
+  // 목록 행에도 배지용 값
+  const app2 = app;
+  const m = (await query(`SELECT to_char(inv_date,'YYYY-MM') AS ym FROM sales_invoices WHERE id=$1`, [ID.cur.inv])).rows[0].ym;
+  const lst = (await app2.inject({ method: 'GET', url: `/api/dashboard/funnel/immediate?months=${m}`, headers: { authorization: 'Bearer ' + tok.dir } })).json();
+  const row = (lst.done || []).find((o) => Number(o.invoice_id) === ID.cur.inv);
+  assert.ok(row, '목록에 있음');
+  assert.equal(row.price_adj_basis, 'current'); assert.equal(row.price_adj_rate, 19); assert.equal(row.pre_adj_total_mxn, 3093.36);
+  // 총액 직접 수정도 기록
+  await post('dir', `/api/sales/${ID.cur.inv}/adjust-total`, { total_mxn: 2900, iva_mxn: 400 });
+  const pt = (await get('dir', `/api/dashboard/funnel/invoice-lines?invoice_id=${ID.cur.inv}`)).json();
+  assert.equal(pt.invoice.price_adj.basis, 'total'); assert.equal(pt.invoice.price_adj.rate, null);
 });
 
 test('adjust-discount — 400/404/409 · 게시 안 된 인보이스', { skip: SKIP }, async () => {
