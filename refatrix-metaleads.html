@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013ai</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013pv</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -65,6 +65,11 @@
   .bars .b .t{flex:1;background:#f1eee6;border-radius:6px;height:16px;position:relative}
   .bars .b .f{background:var(--brand);height:100%;border-radius:6px}
   .bars .b .n{width:48px;text-align:right;font-weight:700}
+  .seg{display:inline-flex;border:1px solid var(--brand);border-radius:999px;overflow:hidden}
+  .seg button{border:none;background:#fff;color:var(--brand);padding:7px 14px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--brand)}
+  .seg button.on{background:var(--brand);color:#fff}
+  tr.pv.sel{background:#eef5f1}
   .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
   .modal{position:fixed;inset:0;background:rgba(20,20,20,.45);display:none;align-items:flex-start;justify-content:center;z-index:50;padding:24px 12px;overflow:auto}
   .modal.on{display:flex}
@@ -110,7 +115,7 @@
 
     <div class="tabs" id="tabs">
       <button type="button" class="tab on" data-p="list">📋 문의 목록</button>
-      <button type="button" class="tab" data-p="sum">📊 지역 · 수요 요약</button>
+      <button type="button" class="tab" data-p="sum">📊 수요 요약 (차종 · 지역 · 고객 유형)</button>
     </div>
 
     <!-- 목록 -->
@@ -132,18 +137,30 @@
 
     <!-- 요약 -->
     <section class="pane card" id="p-sum">
-      <div class="hint">지금 목록 필터(채널 · 주 · 고객 유형 · 기간 …) 그대로 집계합니다. 고객 유형 · 지역 · 차종+연식 · 부품은 <b>AI 가 대화 전체를 읽고</b> 뽑은 값입니다(사람이 고친 값이 우선). 「지역」은 고객이 대화에서 말한 곳입니다.</div>
+      <div class="row" style="align-items:center;gap:10px">
+        <b style="color:var(--brand);font-size:13.5px">보기 기준</b>
+        <div class="seg" id="sumDim">
+          <button type="button" data-d="veh" class="on">🚗 차종</button>
+          <button type="button" data-d="state">📍 지역</button>
+          <button type="button" data-d="tipo">👤 고객 유형</button>
+        </div>
+        <span class="hint">행을 누르면 그 묶음의 연락처가 아래에 나옵니다.</span>
+      </div>
+      <div class="hint" style="margin-top:8px">지금 목록 필터(채널 · 주 · 고객 유형 · 기간 …) 그대로 집계합니다. 고객 유형 · 지역 · 차종+연식 · 부품은 <b>AI 가 대화 전체를 읽고</b> 뽑은 값입니다(사람이 고친 값이 우선). 「지역」은 고객이 대화에서 말한 곳입니다.</div>
       <div class="kpis" id="sumKpis" style="margin-top:12px"></div>
       <div class="grid3" style="margin-top:14px">
-        <div><h2>고객 유형</h2><div class="bars" id="sumTipo"></div></div>
-        <div><h2>주(지역)</h2><div class="bars" id="sumState"></div></div>
+        <div><h2 id="sumBarTitle">차종</h2><div class="bars" id="sumMain"></div></div>
         <div><h2>부품</h2><div class="bars" id="sumPart"></div></div>
       </div>
-      <h2 style="margin-top:18px">차종 · 연식 × 부품 — 무엇을 얼마나 찾나</h2>
-      <div class="hint">같은 차종 · 부품을 찾은 문의 수 · 연식 분포 · 어느 주에서 · 어떤 고객이.</div>
-      <div class="tblwrap" id="sumDemand"></div>
-      <h2 style="margin-top:18px">주별 판매기회 — refaccionaria 에 넘길 목록</h2>
-      <div class="tblwrap" id="sumOpp"></div>
+      <h2 style="margin-top:18px" id="sumPivotTitle"></h2>
+      <div class="hint" id="sumPivotHint"></div>
+      <div class="tblwrap" id="sumPivot"></div>
+      <div id="sumDetail"></div>
+      <div id="sumDemandBox">
+        <h2 style="margin-top:18px">차종 · 연식 × 부품 — 무엇을 얼마나 찾나</h2>
+        <div class="hint">같은 차종 · 부품을 찾은 문의 수 · 연식 분포 · 어느 주에서 · 어떤 고객이.</div>
+        <div class="tblwrap" id="sumDemand"></div>
+      </div>
     </section>
   </div>
 </div>
@@ -173,7 +190,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1013ai';
+  const MTL_BUILD='mtl-1013pv';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -379,35 +396,81 @@
     }
     return [...by.values()].sort((a,b)=>b.n-a.n);
   }
-  function opportunities(items){
+  // 보기 기준 — 차종 / 지역 / 고객 유형. 한 문의가 여러 차종을 말하면 차종마다 한 번씩 센다.
+  const UNK={veh:'(차종 미상)',state:'(지역 모름)',tipo:'(유형 모름)'};
+  const DIM={
+    veh:{label:'차종',es:'Vehículo',icon:'🚗',keys:x=>{ const m=[...new Set(demandLines(x).map(l=>l.model).filter(m=>m!=='(차종 미상)'))]; return m.length?m:[UNK.veh]; }},
+    state:{label:'지역(주)',es:'Estado',icon:'📍',keys:x=>[x.state||UNK.state]},
+    tipo:{label:'고객 유형',es:'Tipo de cliente',icon:'👤',keys:x=>[tipoKey(x)||UNK.tipo]},
+  };
+  function pivot(items,dim){
     const by=new Map();
     for(const x of items){
-      const st=x.state||'(지역 모름)';
-      const g=by.get(st)||{state:st,n:0,demand:0,phones:0,tipos:new Map(),veh:new Map(),part:new Map()};
-      g.n++; inc(g.tipos,tipoKey(x)); if(x.phone) g.phones++;
-      const ls=demandLines(x); if(ls.length) g.demand++;
-      new Set(ls.map(l=>l.model+(l.year?' '+l.year:'')).filter(v=>!v.startsWith('(차종'))).forEach(v=>inc(g.veh,v));
-      new Set(ls.map(l=>l.part).filter(p=>!p.startsWith('(부품'))).forEach(p=>inc(g.part,p));
-      by.set(st,g);
+      const ls=demandLines(x);
+      for(const k of DIM[dim].keys(x)){
+        const g=by.get(k)||{key:k,n:0,demand:0,phones:0,ids:[],tipos:new Map(),states:new Map(),veh:new Map(),years:new Map(),part:new Map(),cities:new Map()};
+        g.n++; g.ids.push(x.id); if(x.phone) g.phones++;
+        inc(g.tipos,tipoKey(x)); inc(g.states,x.state||null); inc(g.cities,x.city||null);
+        const mine=dim==='veh'?ls.filter(l=>l.model===k):ls;
+        if(mine.length) g.demand++;
+        new Set(mine.map(l=>l.model+(l.year?' '+l.year:'')).filter(v=>!v.startsWith('(차종'))).forEach(v=>inc(g.veh,v));
+        new Set(mine.map(l=>l.year).filter(Boolean)).forEach(y=>inc(g.years,y));
+        new Set(mine.map(l=>l.part).filter(p=>!p.startsWith('(부품'))).forEach(p=>inc(g.part,p));
+        by.set(k,g);
+      }
     }
-    return [...by.values()].sort((a,b)=>(a.state==='(지역 모름)')-(b.state==='(지역 모름)')||b.demand-a.demand||b.n-a.n)
-      .map(g=>({state:g.state,n:g.n,demand:g.demand,phones:g.phones,tipos:[...g.tipos.entries()].sort((a,b)=>b[1]-a[1]).map(([t,n])=>(TIPO_SHORT[t]||t)+' '+n).join(' · '),veh:topTxt(g.veh,5),part:topTxt(g.part,5)}));
+    const unk=UNK[dim];
+    return [...by.values()].sort((a,b)=>(a.key===unk)-(b.key===unk)||b.demand-a.demand||b.n-a.n);
   }
+  const tiposTxt=(m)=>[...m.entries()].sort((a,b)=>b[1]-a[1]).map(([t,n])=>(TIPO_SHORT[t]||t)+' '+n).join(' · ');
+  // 기준마다 보여줄 열 — 기준 자신은 빼고 나머지 둘 + 부품
+  function pivotCols(dim){
+    const c=[];
+    if(dim==='veh') c.push(['연식',g=>topTxt(g.years,6)]);
+    if(dim!=='state') c.push(['주(지역)',g=>topTxt(g.states,5)]); else c.push(['도시',g=>topTxt(g.cities,5)]);
+    if(dim!=='tipo') c.push(['고객 유형',g=>tiposTxt(g.tipos)]);
+    if(dim!=='veh') c.push(['많이 찾는 차종 · 연식',g=>topTxt(g.veh,5)]);
+    c.push(['많이 찾는 부품',g=>topTxt(g.part,5)]);
+    return c;
+  }
+  // 엑셀 · 예전 호출용
+  function opportunities(items){ return pivot(items,'state').map(g=>({state:g.key,n:g.n,demand:g.demand,phones:g.phones,tipos:tiposTxt(g.tipos),veh:topTxt(g.veh,5),part:topTxt(g.part,5)})); }
+
+  S.dim=(()=>{ try{ const v=localStorage.getItem('mtl_sum_dim'); return DIM[v]?v:'veh'; }catch(e){ return 'veh'; } })();
+  S.sel=null;
+  $('sumDim').addEventListener('click',e=>{ const b=e.target.closest('button[data-d]'); if(!b) return; S.dim=b.dataset.d; S.sel=null;
+    try{ localStorage.setItem('mtl_sum_dim',S.dim); }catch(e){} renderSummary(); });
+  $('sumPivot').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-k]'); if(!tr) return; S.sel=S.sel===tr.dataset.k?null:tr.dataset.k; renderSummary(); });
+  $('sumDetail').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id)); });
+
   function renderSummary(){
-    const it=S.items; const s=summaries(it);
+    const it=S.items; const s=summaries(it); const dim=S.dim; const D=DIM[dim];
+    document.querySelectorAll('#sumDim button').forEach(b=>b.classList.toggle('on',b.dataset.d===dim));
     const n=(f)=>it.filter(f).length;
     $('sumKpis').innerHTML=[['문의',it.length],['차종·부품 확인',n(x=>demandLines(x).length)],['고객 유형 확인',n(x=>tipoKey(x))],['지역 확인',n(x=>x.state)],['전화 있음',n(x=>x.phone)],['AI 요약 있음',n(x=>x.summary)]]
       .map(([k,v])=>'<div class="kpi"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="hint">'+(it.length?Math.round(v/it.length*100):0)+'%</div></div>').join('');
-    bars(s.tipo,'sumTipo',10); bars(s.state,'sumState',20); bars(s.part,'sumPart',15);
+    $('sumBarTitle').textContent=D.label;
+    bars(dim==='veh'?s.veh:dim==='state'?s.state:s.tipo,'sumMain',dim==='state'?20:15); bars(s.part,'sumPart',15);
+    const P=pivot(it,dim); const cols=pivotCols(dim);
+    $('sumPivotTitle').textContent=D.icon+' '+D.label+'별 판매기회';
+    $('sumPivotHint').textContent=dim==='veh'?'한 문의에서 차종을 여러 개 말하면 차종마다 한 번씩 셉니다. 「수요 확인」= 그 차종의 부품까지 확인된 문의.'
+      :dim==='tipo'?'P 개인 · T 정비소 · R 부품점 · M 도매 · F 플리트 · Taxi. 「수요 확인」= 차종 · 부품이 확인된 문의.'
+      :'refaccionaria 에 넘길 목록 — 「수요 확인」= 차종 · 부품이 확인된 문의.';
+    $('sumPivot').innerHTML=P.length?'<table><thead><tr><th>'+D.label+'</th><th class="num">문의</th><th class="num">수요 확인</th><th class="num">전화</th>'+cols.map(c=>'<th>'+c[0]+'</th>').join('')+'</tr></thead><tbody>'
+      +P.map(g=>'<tr class="click pv'+(S.sel===g.key?' sel':'')+'" data-k="'+esc(g.key)+'"><td><b>'+esc(g.key)+'</b></td><td class="num">'+g.n+'</td><td class="num">'+g.demand+'</td><td class="num">'+g.phones+'</td>'+cols.map(c=>'<td>'+esc(c[1](g)||'—')+'</td>').join('')+'</tr>').join('')
+      +'</tbody></table>':'<div class="hint">문의가 없습니다.</div>';
+    const g=S.sel&&P.find(p=>p.key===S.sel);
+    if(g){ const ids=new Set(g.ids); const rows=it.filter(x=>ids.has(x.id));
+      $('sumDetail').innerHTML='<h2 style="margin-top:16px">'+esc(g.key)+' — 연락처 '+rows.length+'건</h2><div class="tblwrap"><table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>고객 유형</th><th>지역</th><th>전화</th><th>차종</th><th>부품</th><th>상태</th></tr></thead><tbody>'
+        +rows.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b></td><td><span class="tag ch-'+x.platform+'">'+(CH[x.platform]||[x.platform])[0]+'</span></td><td>'+esc(tipoKey(x)||'—')+'</td><td>'+esc([x.state,x.city].filter(Boolean).join(' · ')||'—')+'</td><td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+'</td><td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span></td></tr>').join('')
+        +'</tbody></table></div>'; }
+    else $('sumDetail').innerHTML='';
+    $('sumDemandBox').classList.toggle('hidden',dim!=='veh');
     const dt=demandTable(it);
     $('sumDemand').innerHTML=dt.length?'<table><thead><tr><th>차종</th><th>부품</th><th class="num">문의</th><th>연식</th><th>주</th><th>고객 유형</th><th class="num">전화</th></tr></thead><tbody>'
       +dt.slice(0,80).map(g=>'<tr><td><b>'+esc(g.model)+'</b></td><td>'+esc(g.part)+'</td><td class="num"><b>'+g.n+'</b></td><td>'+esc(topTxt(g.years,6))+'</td><td>'+esc(topTxt(g.states,4))+'</td><td>'+esc(topTxt(g.tipos,4))+'</td><td class="num">'+g.phones+'</td></tr>').join('')
       +'</tbody></table>'+(dt.length>80?'<div class="hint">상위 80줄 — 전체는 엑셀 「Demanda vehículo-pieza」</div>':'')
       :'<div class="hint">차종 · 부품이 확인된 문의가 아직 없습니다.</div>';
-    const o=opportunities(it);
-    $('sumOpp').innerHTML=o.length?'<table><thead><tr><th>주</th><th class="num">문의</th><th class="num">수요 확인</th><th class="num">전화</th><th>고객 유형 (P 개인 · T 정비소 · R 부품점 · F 플리트 · Taxi)</th><th>많이 찾는 차종 · 연식</th><th>많이 찾는 부품</th></tr></thead><tbody>'
-      +o.map(g=>'<tr><td><b>'+esc(g.state)+'</b></td><td class="num">'+g.n+'</td><td class="num">'+g.demand+'</td><td class="num">'+g.phones+'</td><td>'+esc(g.tipos||'—')+'</td><td>'+esc(g.veh)+'</td><td>'+esc(g.part)+'</td></tr>').join('')+'</tbody></table>'
-      :'<div class="hint">문의가 없습니다.</div>';
   }
 
   // ───── 엑셀 ─────
@@ -424,6 +487,12 @@
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,sheet(aoa,[16,11,26,10,16,14,18,16,13,22,30,36,18,50,60,18,22,30]),'Contactos');
     XLSX.utils.book_append_sheet(wb,sheet([['Estado','Consultas','Con vehículo/pieza','Con teléfono','Tipo de cliente (P particular · T taller · R refaccionaria · F flotilla · Taxi)','Vehículos más buscados (año)','Piezas más buscadas']].concat(o.map(g=>[g.state,g.n,g.demand,g.phones,g.tipos,g.veh,g.part])),[22,11,14,12,40,55,60],'143D34'),'Oportunidades por estado');
+    const pvSheet=(dim)=>{ const P=pivot(it,dim); const hdr=[DIM[dim].es,'Consultas','Con vehículo/pieza','Con teléfono'];
+      const cols=[]; if(dim==='veh') cols.push(['Años',g=>topTxt(g.years,10)]); cols.push(dim==='state'?['Ciudades',g=>topTxt(g.cities,8)]:['Estados',g=>topTxt(g.states,8)]);
+      if(dim!=='tipo') cols.push(['Tipo de cliente',g=>tiposTxt(g.tipos)]); if(dim!=='veh') cols.push(['Vehículos más buscados (año)',g=>topTxt(g.veh,8)]); cols.push(['Piezas más buscadas',g=>topTxt(g.part,8)]);
+      return sheet([hdr.concat(cols.map(c=>c[0]))].concat(P.map(g=>[g.key,g.n,g.demand,g.phones].concat(cols.map(c=>c[1](g))))),[26,11,14,12].concat(cols.map(()=>50)),'143D34'); };
+    XLSX.utils.book_append_sheet(wb,pvSheet('tipo'),'Oportunidades por tipo');
+    XLSX.utils.book_append_sheet(wb,pvSheet('veh'),'Oportunidades por vehículo');
     XLSX.utils.book_append_sheet(wb,sheet([['Vehículo','Pieza','Consultas','Años','Estados','Tipo de cliente','Con teléfono']].concat(dt.map(g=>[g.model,g.part,g.n,topTxt(g.years,10),topTxt(g.states,8),topTxt(g.tipos,6),g.phones])),[26,32,11,40,45,40,12],'143D34'),'Demanda vehículo-pieza');
     XLSX.utils.book_append_sheet(wb,sheet([['Tipo de cliente','Consultas']].concat(s.tipo),[26,12],'143D34'),'Por tipo');
     XLSX.utils.book_append_sheet(wb,sheet([['Estado','Consultas']].concat(s.state),[26,12],'143D34'),'Por estado');

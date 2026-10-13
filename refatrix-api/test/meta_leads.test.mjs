@@ -121,7 +121,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1013ai/);
+    assert.match(d.title, /mtl-1013pv/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
     assert.match(d.getElementById('sKpis').textContent, /전체 문의4/); assert.match(d.getElementById('sKpis').textContent, /WhatsApp1/);
     assert.match(d.getElementById('sAi').textContent, /AI 분석 1건 완료/);
@@ -146,23 +146,42 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/sync') && c.method === 'POST' && c.body.full === false));
     d.getElementById('bXls').click(); await tick();
     assert.ok(written && /refatrix_meta_consultas_\d{4}-\d{2}-\d{2}\.xlsx/.test(written.name));
-    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Demanda vehículo-pieza', 'Por tipo', 'Por estado', 'Por vehículo', 'Por pieza']);
+    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Oportunidades por tipo', 'Oportunidades por vehículo', 'Demanda vehículo-pieza', 'Por tipo', 'Por estado', 'Por vehículo', 'Por pieza']);
     const contacts = written.wb.sheets[0][1]; assert.equal(contacts.length, 5); assert.equal(contacts[1][2], 'Antonio Lopez'); assert.equal(contacts[2][2], 'taller.garza');
     const waRow = contacts[4]; assert.equal(waRow[3], 'WhatsApp'); assert.equal(waRow[4], 'Flotilla'); assert.equal(waRow[5], 'Lo dijo'); assert.equal(waRow[8], '7779990000'); assert.match(waRow[13], /Flotilla de 12/);
     assert.equal(contacts[2][4], 'Refaccionaria'); assert.equal(contacts[2][5], 'Botón del anuncio');
     const opp = written.wb.sheets[1][1]; assert.equal(opp[1][0], 'Morelos'); assert.equal(opp[1][1], 3); assert.equal(opp[1][2], 3);
     assert.match(opp[1][4], /Taxi 1/); assert.match(opp[1][4], /F 1/); assert.match(opp[1][4], /R 1/);
     assert.match(opp[1][5], /Nissan Versa 2018 \(2\)/, '연식 포함 차종');
-    const dem = written.wb.sheets[2][1];
+    const byTipo = written.wb.sheets[2]; assert.equal(byTipo[0], 'Oportunidades por tipo');
+    assert.ok(byTipo[1].find((r) => r[0] === 'Flotilla' && r[1] === 1 && /Morelos/.test(r[4]) && /Versa 2018/.test(r[5])), '고객 유형별 판매기회');
+    const byVeh = written.wb.sheets[3]; assert.equal(byVeh[0], 'Oportunidades por vehículo');
+    const vRow = byVeh[1].find((r) => r[0] === 'Nissan Versa'); assert.equal(vRow[1], 3); assert.match(vRow[4], /2018 \(2\)/);
+    const dem = written.wb.sheets[4][1];
     const versaH = dem.find((r) => r[0] === 'Nissan Versa' && r[1] === 'Horquilla (brazo de control)');
     assert.equal(versaH[2], 3); assert.match(versaH[3], /2018 \(2\)/); assert.match(versaH[3], /2024 \(1\)/); assert.match(versaH[4], /Morelos \(3\)/);
     assert.ok(dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Rótula'), 'AI 가 짝지은 차종-부품');
     assert.ok(!dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Horquilla (brazo de control)'), 'AI 짝(demand)이 있으면 곱하지 않는다');
-    const veh = written.wb.sheets[5][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 3]);
+    const veh = written.wb.sheets[7][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 3]);
     d.querySelector('#tabs .tab[data-p="sum"]').click(); await tick();
-    assert.match(d.getElementById('sumOpp').textContent, /Morelos/);
+    // 기본 보기 = 차종
+    assert.match(d.getElementById('sumPivotTitle').textContent, /차종별/);
+    assert.match(d.getElementById('sumPivot').textContent, /Nissan Versa/);
     assert.match(d.getElementById('sumDemand').textContent, /Nissan Versa/);
-    assert.match(d.getElementById('sumTipo').textContent, /Flotilla/);
+    assert.ok(!d.getElementById('sumDemandBox').classList.contains('hidden'));
+    // 지역
+    d.querySelector('#sumDim button[data-d="state"]').click(); await tick();
+    assert.match(d.getElementById('sumPivotTitle').textContent, /지역/);
+    assert.match(d.getElementById('sumPivot').textContent, /Morelos/);
+    assert.match(d.getElementById('sumMain').textContent, /Morelos/);
+    assert.ok(d.getElementById('sumDemandBox').classList.contains('hidden'));
+    // 고객 유형 → 행 클릭 = 연락처
+    d.querySelector('#sumDim button[data-d="tipo"]').click(); await tick();
+    assert.match(d.getElementById('sumPivotTitle').textContent, /고객 유형별/);
+    assert.match(d.getElementById('sumMain').textContent, /Flotilla/);
+    d.querySelector('#sumPivot tr[data-k="Flotilla"]').click(); await tick();
+    assert.match(d.getElementById('sumDetail').textContent, /Flotilla — 연락처 1건/);
+    assert.match(d.getElementById('sumDetail').textContent, /7779990000/);
     d.getElementById('bAi').click(); await tick();
     assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/ai') && c.method === 'POST' && c.body.all === true));
   });
