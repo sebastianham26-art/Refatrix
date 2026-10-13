@@ -16,7 +16,7 @@ import { query } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll,
+  metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll, internalWaPhones, importWaAppThreads,
 } from '../metaLeads.js';
 import { META_STATES } from '../metaLeadExtract.js';
 import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
@@ -30,7 +30,7 @@ const STATUSES = ['nuevo', 'contactado', 'derivado', 'venta', 'descartado'];
 const idOf = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 const ymd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? s : null;
 
-const COLS = `t.id, t.platform, t.thread_id, COALESCE(t.m_name, t.name) AS name, t.username, t.first_at, t.last_at, t.last_in_at, t.msg_count, t.in_count,
+const COLS = `t.id, t.platform, t.thread_id, CASE WHEN t.thread_id LIKE 'wab:%' THEN 'wa_app' END AS source, COALESCE(t.m_name, t.name) AS name, t.username, t.first_at, t.last_at, t.last_in_at, t.msg_count, t.in_count,
   -- 0271 · 우선순위: 사람(m_) > AI(ai_) > 규칙(a_)
   COALESCE(t.m_tipo, t.ai_tipo, t.a_tipo) AS tipo, CASE WHEN t.m_tipo IS NOT NULL THEN 'manual' WHEN t.ai_tipo IS NOT NULL THEN t.ai_tipo_src ELSE NULL END AS tipo_src,
   t.a_tipo_btn AS tipo_btn, COALESCE(t.m_state, t.ai_state, t.a_state) AS state, COALESCE(t.m_city, t.ai_city, t.a_city) AS city,
@@ -66,7 +66,19 @@ export default async function metaLeadsRoutes(app) {
       last = (await query(`SELECT id, started_at, finished_at, trigger, full_scan, ok, threads, inserted, by_platform, error FROM meta_sync_runs ORDER BY id DESC LIMIT 1`)).rows[0] || null;
       lastOk = (await query(`SELECT max(finished_at) AS t FROM meta_sync_runs WHERE ok = true`)).rows[0].t || null;
     } catch (_) { return { configured: metaLeadsConfigured(), migrated: false }; }
-    return { configured: metaLeadsConfigured(), migrated: true, token_source: metaTokenSource(), page_id: metaPageId(), page, page_error: pageError, page_warning: pageWarning,
+    // 2026-10-13 · WhatsApp(ERP 번호) 진단 — 「안 들어온다」 때 어디서 막혔는지(받은 메시지 없음 / 전부 사내 번호 / 가져오기 대기)
+    let wa = null;
+    try {
+      const r = (await query(`SELECT m.phone, max(m.at) FILTER (WHERE m.direction = 'in') AS last_in, bool_or(t.id IS NOT NULL) AS listed
+                                FROM wa_messages m LEFT JOIN meta_threads t ON t.thread_id = 'wa:' || m.phone
+                               GROUP BY m.phone HAVING bool_or(m.direction = 'in')`)).rows;
+      const skip = await internalWaPhones();
+      const ext = r.filter((x) => !skip.has(x.phone));
+      const last = r.reduce((a, x) => (x.last_in && (!a || new Date(x.last_in) > new Date(a)) ? x.last_in : a), null);
+      const outN = (await query(`SELECT count(*)::int n FROM wa_messages WHERE direction = 'out'`)).rows[0].n;
+      wa = { in_phones: r.length, internal: r.length - ext.length, customers: ext.length, listed: ext.filter((x) => x.listed).length, last_in_at: last, out_msgs: outN };
+    } catch (_) { wa = null; }
+    return { configured: metaLeadsConfigured(), migrated: true, wa, token_source: metaTokenSource(), page_id: metaPageId(), page, page_error: pageError, page_warning: pageWarning,
       running: syncState.running, progress: syncState.running ? syncState.progress : null, counts, last_run: last, last_ok_at: lastOk,
       auto: process.env.META_LEADS_AUTO !== '0', states: META_STATES,
       ai: { ready: aiReady(), model: aiModel(), running: aiState.running, done: aiState.done, total: aiState.total, errors: aiState.errors, last_error: aiState.last_error, finished_at: aiState.finished_at },
@@ -158,5 +170,14 @@ export default async function metaLeadsRoutes(app) {
     if (all) matchThreads({ all: true }).catch((e) => app.log.warn({ err: String(e && e.message) }, '[meta-leads] match failed'));
     else kickMatch(app.log);
     return { started: true };
+  });
+
+  // 2026-10-13 · WhatsApp 앱 번호(8118250003) 대화 파일 올리기 {threads:[{phone,name,key,messages:[{at,me,text}]}]}
+  app.post('/api/meta-leads/import-wa-app', { ...W, bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
+    const th = req.body && req.body.threads;
+    if (!Array.isArray(th) || !th.length) return reply.code(400).send({ error: 'no_threads' });
+    const r = await importWaAppThreads(th);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'meta_leads_import_wa_app', detail: r });
+    return r;
   });
 }

@@ -155,7 +155,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1013pn/);
+    assert.match(d.title, /mtl-1013wb/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
     assert.match(d.getElementById('sKpis').textContent, /전체 문의4/); assert.match(d.getElementById('sKpis').textContent, /WhatsApp1/);
     assert.match(d.getElementById('sAi').textContent, /AI 분석 1건 완료/);
@@ -455,6 +455,20 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal(r0.threads, 1, '이번에 새로 생긴 번호 1개만 읽음');
     await call(D, 'POST', '/api/meta-leads/sync', {}); await untilDone();
     assert.equal((await query(`SELECT by_platform FROM meta_sync_runs ORDER BY id DESC LIMIT 1`)).rows[0].by_platform.whatsapp.threads, 0, '변화 없으면 0');
+    // 2026-10-13 · WhatsApp 앱 번호(8118250003) 대화 파일 올리기 — 'wab:' 로 따로 · 사내 번호 제외 · 다시 올리면 덮어씀
+    const up = { threads: [
+      { key: 'x1', name: 'Marcos Puc', phone: '+52 1 998 110 5335', messages: [{ at: Date.now() - 5000, me: false, text: 'Soy Particular de MTY, quiero comprar producto CTR' }, { at: Date.now() - 4000, me: false, text: 'horquillas versa 2018' }, { at: Date.now() - 3000, me: true, text: 'Claro, ¿cuántas?' }] },
+      { key: 'x2', name: 'Dir', phone: '528110001111', messages: [{ at: Date.now(), me: false, text: 'interno' }] },
+      { key: 'x3', name: 'Vacío', phone: '5215500000000', messages: [] }] };
+    let ir = (await call(D, 'POST', '/api/meta-leads/import-wa-app', up)).json();
+    assert.deepEqual([ir.threads, ir.inserted, ir.skipped], [1, 1, 2]);
+    ir = (await call(D, 'POST', '/api/meta-leads/import-wa-app', up)).json(); assert.deepEqual([ir.threads, ir.inserted], [1, 0], '다시 올리면 덮어씀');
+    const wab = (await call(D, 'GET', '/api/meta-leads/list?platform=whatsapp&q=Marcos')).json().items[0];
+    assert.equal(wab.source, 'wa_app'); assert.equal(wab.phone, '9981105335'); assert.equal(wab.thread_id, 'wab:529981105335'); assert.match(wab.vehicles || '', /Versa/);
+    assert.equal((await call(R, 'POST', '/api/meta-leads/import-wa-app', up)).statusCode, 403);
+    await query(`DELETE FROM meta_threads WHERE thread_id LIKE 'wab:%'`);
+    const wd = (await call(D, 'GET', '/api/meta-leads/status')).json().wa;
+    assert.deepEqual([wd.in_phones, wd.internal, wd.customers, wd.listed], [3, 1, 2, 2], '진단: 받은 번호 · 사내 · 고객 · 목록');
   });
 
   await t.test('B8. 0271 · AI 분석 — 바뀐 대화만 · 고객 말 없는 대화는 안 보냄 · 우선순위 사람 > AI > 규칙', async () => {

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013pn</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013wb</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -107,12 +107,14 @@
         <span style="margin-left:auto"></span>
         <button type="button" class="btn" id="bSync">⟳ 새 문의 가져오기</button>
         <button type="button" class="btn ghost" id="bFull" title="최근 180일을 처음부터 다시 읽습니다(사람이 고친 값 · 상태 · 메모는 그대로)">전체 다시 가져오기</button>
+        <button type="button" class="btn ghost" id="bWaApp" title="WhatsApp 앱 번호(8118250003) 대화 — Meta 받은 메시지함에서 읽어 만든 파일(.json)을 올립니다. 다시 올리면 덮어씀(사람이 고친 값 · 상태 · 메모는 그대로)">📥 WhatsApp 앱 대화 올리기</button><input type="file" id="fWaApp" accept=".json,application/json" class="hidden">
         <button type="button" class="btn ghost" id="bMatch" title="차종 · 연식 · 부품 → CTR 부품번호 × 수량을 카탈로그(적용차종)로 다시 찾습니다 — 여럿이면 AI 가 대화를 읽고 고릅니다. 사람이 고친 코드는 그대로">🔢 부품번호 다시 매칭</button>
         <button type="button" class="btn ghost" id="bAi" title="AI 가 대화 전체를 읽고 고객 유형 · 지역 · 차종+연식 · 부품 · 요약을 다시 뽑습니다(사람이 고친 값은 그대로)">🤖 AI 전체 다시 분석</button>
       </div>
       <div class="hint" id="sRun" style="margin-top:6px"></div>
       <div class="hint" id="sAi" style="margin-top:2px"></div>
       <div class="hint" id="sMatch" style="margin-top:2px"></div>
+      <div class="hint" id="sWa" style="margin-top:2px"></div>
       <div class="kpis" id="sKpis" style="margin-top:10px"></div>
       <div class="note hidden" id="sGuide"></div>
       <div class="msg" id="msg"></div>
@@ -205,7 +207,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1013pn';
+  const MTL_BUILD='mtl-1013wb';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -290,6 +292,11 @@
       :'🔢 부품번호 확정 '+(c.with_code||0)+'건 — 카탈로그 적용차종으로 찾고, 연식 · 버전 · 위치가 애매하면 '+(ai.ready?'AI 가 대화를 읽고 고릅니다':'<span class="warn-t">후보로 남깁니다(AI 꺼짐)</span>')
         +(mt.errors?' · <span class="bad-t">AI 오류 '+mt.errors+'건(다음에 다시)</span>':'');
     $('bMatch').disabled=!!mt.running;
+    const wa=s.wa;
+    $('sWa').innerHTML=!wa?'':(!wa.in_phones?'💬 WhatsApp(ERP 번호): <span class="warn-t">ERP 가 받은 고객 메시지가 아직 0건</span> — 고객이 <b>ERP API 번호</b>로 보낸 메시지만 들어옵니다(8118250003 제외). 그 번호로 보낸 메시지도 없다면 WhatsApp 웹훅 연결을 확인하세요(관리 › 외부 서비스 키 › WhatsApp).'
+      :'💬 WhatsApp(ERP 번호): 메시지를 보낸 번호 '+wa.in_phones+'개 — 사내 번호 '+wa.internal+'개 제외 · 고객 '+wa.customers+'개 중 목록에 '+wa.listed+'개'+(wa.last_in_at?' · 마지막 수신 '+fmtT(wa.last_in_at):'')
+        +(wa.customers&&wa.listed<wa.customers?' · <span class="warn-t">「⟳ 새 문의 가져오기」로 나머지를 가져옵니다</span>':'')
+        +(!wa.customers&&wa.internal?' · <span class="warn-t">받은 메시지가 모두 사내 번호(사용자 WhatsApp · 견적 알림 수신자 · 일일요약)라 문의로 보지 않습니다</span>':''));
     const needGuide=!s.configured||!!s.page_error||(lr&&!lr.ok);
     $('sGuide').innerHTML=GUIDE; $('sGuide').classList.toggle('hidden',!needGuide);
     $('bSync').disabled=$('bFull').disabled=!!s.running;
@@ -311,6 +318,15 @@
     catch(e){ say(false,e.message==='ai_not_configured'?'Anthropic 키가 없습니다(관리 › 외부 서비스 키).':errText(e)); }
   });
 
+  $('bWaApp').addEventListener('click',()=>$('fWaApp').click());
+  $('fWaApp').addEventListener('change',async()=>{
+    const f=$('fWaApp').files[0]; $('fWaApp').value=''; if(!f) return;
+    let data; try{ data=JSON.parse(await f.text()); }catch(e){ say(false,'파일을 읽을 수 없습니다(.json).'); return; }
+    const threads=Array.isArray(data)?data:(data&&data.threads);
+    if(!Array.isArray(threads)||!threads.length){ say(false,'파일에 대화가 없습니다.'); return; }
+    try{ const r=await api('POST','/api/meta-leads/import-wa-app',{threads}); say(true,'WhatsApp 앱 대화 '+r.threads+'건 반영(새 '+r.inserted+'건'+(r.skipped?' · 건너뜀 '+r.skipped+'건':'')+') — AI 분석 · 부품번호 매칭이 이어서 돌아갑니다.'); loadStatus(); loadList(); }
+    catch(e){ say(false,errText(e)); }
+  });
   $('bMatch').addEventListener('click',async()=>{
     try{ await api('POST','/api/meta-leads/match',{all:true}); say(true,'부품번호 매칭을 시작했습니다 — 끝나면 목록이 새로 고쳐집니다.'); setTimeout(loadStatus,800); }
     catch(e){ say(false,errText(e)); }
@@ -345,7 +361,7 @@
     if(!it.length){ $('lTable').innerHTML='<div class="hint" style="margin-top:10px">문의가 없습니다'+(S.status&&S.status.counts&&!S.status.counts.total?' — 위에서 「⟳ 새 문의 가져오기」를 누르세요.':'.')+'</div>'; return; }
     $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품 · 부품번호</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
       +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b>'+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</td>'
-        +'<td><span class="tag ch-'+x.platform+'">'+(CH[x.platform]||[x.platform])[0]+'</span></td><td>'+tipoOf(x)+'</td>'
+        +'<td><span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td><td>'+tipoOf(x)+'</td>'
         +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
         +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
         +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'

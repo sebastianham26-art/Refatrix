@@ -178,6 +178,34 @@ export async function syncWhatsAppThreads({ since = null, full = false, q = quer
   return bp;
 }
 
+// ── 2026-10-13 · WhatsApp 앱 번호(8118250003) 대화 1회 가져오기 ──
+//   이 번호는 휴대폰 WhatsApp Business 앱이라 API 로 못 읽는다 → Meta 받은 메시지함(브라우저)에서 읽은 파일을 올린다.
+//   thread_id = 'wab:' + 번호(52…) — ERP API 번호의 'wa:' 와 따로. 다시 올리면 덮어씀(사람이 고친 값 · 상태 · 메모는 그대로).
+export async function importWaAppThreads(threads, q = query) {
+  const out = { threads: 0, inserted: 0, skipped: 0 };
+  const skip = await internalWaPhones(q);
+  for (const raw of (Array.isArray(threads) ? threads : []).slice(0, 5000)) {
+    const phone = normalizeWaNumber(raw && raw.phone);
+    const key = phone || String((raw && raw.key) || '').replace(/[^\w.:-]/g, '').slice(0, 60);
+    if (!key || (phone && skip.has(phone))) { out.skipped++; continue; }
+    const msgs = (Array.isArray(raw.messages) ? raw.messages : []).slice(-MSG_KEEP)
+      .map((m) => ({ at: new Date(Number(m.at) || m.at || Date.now()).toISOString(), me: !!m.me, text: String(m.text || '').slice(0, 2000) }))
+      .filter((m) => m.text).sort((a, b) => a.at.localeCompare(b.at));
+    if (!msgs.length) { out.skipped++; continue; }
+    const inMsgs = msgs.filter((m) => !m.me);
+    const customerText = inMsgs.map((m) => m.text).join('\n');
+    const ex = extractLead(customerText);
+    if (phone) { const local = phone.slice(-10); ex.phone = [local].concat(ex.phone ? ex.phone.split(', ').filter((x) => x !== local) : []).join(', '); }
+    const t = { platform: 'whatsapp', thread_id: 'wab:' + key, user_id: phone || key, name: String(raw.name || '').slice(0, 120) || null, username: null,
+      first_at: msgs[0].at, last_at: msgs[msgs.length - 1].at, last_in_at: inMsgs.length ? inMsgs[inMsgs.length - 1].at : null,
+      msg_count: msgs.length, in_count: inMsgs.length, messages: msgs, customer_text: customerText.slice(0, 8000), ex };
+    if (await upsertThread(t, q)) out.inserted++;
+    out.threads++;
+  }
+  if (out.threads) kickAnalyze();
+  return out;
+}
+
 // ── 가져오기 ──
 export const syncState = { running: false, started_at: null, progress: null, last: null };
 
