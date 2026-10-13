@@ -10,7 +10,7 @@ const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
 
 const {
-  windowState, purchasePrice, usedDiscount, posicionMontaje, stockValue, catalogStockRange,
+  windowState, purchasePrice, usedDiscount, posicionMontaje, stockValue, catalogStockRange, zeroStockAs,
   excludePrefixes, refSource, scodeRefs, testCallLimit,
   encodeCursor, decodeCursor, pageLimit, normCode, notaOf, buildProducto, mxIso,
 } = await import('../src/catalogPull.js');
@@ -99,6 +99,21 @@ test('기본은 구간 — 수량은 설정을 바꿔야 나온다', () => {
   assert.equal(stockValue(-3, 'qty'), 0);
   assert.equal(stockValue('12.7', 'qty'), 12);
 });
+
+test('★ 재고 0 을 1-3 으로 — 사내 약속이 섞이지 않는다', () => {
+  assert.equal(zeroStockAs({}), 'real', '설정이 없으면 있는 그대로');
+  assert.equal(zeroStockAs({ zero_stock_as: 'MIN' }), 'min');
+  assert.equal(zeroStockAs({ zero_stock_as: '이상한값' }), 'real', '이상한 값은 안전한 기본으로');
+
+  assert.equal(stockValue(0, 'range', 'min'), '1-3', '재고 0 → 1-3');
+  assert.equal(stockValue(-7, 'range', 'min'), '1-3', '마이너스도 결품이다');
+  assert.equal(stockValue(0, 'range', 'real'), '0', '설정을 끄면 그대로 0');
+  assert.equal(stockValue(1, 'range', 'min'), '1-5', '실재고 1~5 는 1-5 — 1-3 과 섞이지 않는다');
+  assert.equal(stockValue(5, 'range', 'min'), '1-5');
+  assert.equal(stockValue(24, 'range', 'min'), '21-50', '있는 재고는 건드리지 않는다');
+  assert.equal(stockValue(0, 'qty', 'min'), 2, '수량 모드에서는 2');
+  assert.equal(stockValue(0, 'qty', 'real'), 0);
+}, { concurrency: 1 });
 
 test('제외 접두어 — 기본은 PRO', () => {
   assert.deepEqual(excludePrefixes({}), ['PRO'], '칼럼이 없으면 안전한 쪽으로 — PRO 를 막는다');
@@ -227,6 +242,9 @@ if (!PG) {
   const custId = Number((await query(
     `INSERT INTO customers (code, name, discount) VALUES ($1,'Cliente Multimarca 0221',20) RETURNING id`,
     [CUST])).rows[0].id);
+  // 0235 서류 관문: 09-28 이후 등록 고객은 서류가 없으면 할인이 0 으로 깎인다.
+  //   이 스위트는 가격 계산을 보는 것이므로 관문 밖(기존 고객)으로 둔다.
+  await query(`UPDATE customers SET doc_gate=false, discount=20 WHERE id=$1`, [custId]);
 
   // PRO 로 시작하는 제품 — 고객에게 나가면 안 된다
   await query(
@@ -318,6 +336,33 @@ if (!PG) {
     assert.equal(d.producto.referencias.some((x) => x.marca === 'MOOG'), true);
     await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
       headers: bearer(dirId), payload: { ref_source: 'scode' } });
+  });
+
+  test('★ 재고 0 제품이 고객에게 1-3 으로 나간다 — 설정으로 켜고 끈다', async () => {
+    await query(`UPDATE products SET stock_qty=0 WHERE code='K022101'`);
+    const leer = async () => (await app.inject({ method: 'GET', url: '/api/catalog/v1/products/K022101',
+      headers: { 'x-api-key': KEY } })).json().producto.existencia;
+
+    assert.equal(await leer(), '0', '기본은 있는 그대로');
+    const r = await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
+      headers: bearer(dirId), payload: { zero_stock_as: 'min' } });
+    assert.equal(r.statusCode, 200);
+    const lista = (await app.inject({ method: 'GET', url: '/api/catalog/admin/clients',
+      headers: bearer(dirId) })).json();
+    assert.equal(lista.items.find((x) => x.id === clientId).zero_stock_as, 'min');
+    assert.equal(await leer(), '1-3', '재고 0 → 1-3');
+
+    await query(`UPDATE products SET stock_qty=4 WHERE code='K022101'`);
+    assert.equal(await leer(), '1-5', '실재고 4 는 1-5 — 사내 약속과 섞이지 않는다');
+
+    const malo = await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
+      headers: bearer(dirId), payload: { zero_stock_as: 'cero' } });
+    assert.equal(malo.statusCode, 400);
+    assert.ok(malo.json().fields.includes('zero_stock_as_invalid'));
+
+    await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
+      headers: bearer(dirId), payload: { zero_stock_as: 'real' } });
+    await query(`UPDATE products SET stock_qty=7 WHERE code='K022101'`);
   });
 
   test('★ PRO 제품은 단건 조회로도 안 나온다 — 404', async () => {

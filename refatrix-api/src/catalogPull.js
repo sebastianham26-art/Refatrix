@@ -141,11 +141,29 @@ export function catalogStockRange(qty) {
  *   'qty' 로 바꾸면 정확한 수량(숫자)이 나간다 — 그때는 필드 타입이 문자열에서 숫자로
  *   바뀌므로 상대 개발자에게 미리 알려야 한다.
  */
-export function stockValue(qty, mode) {
+/**
+ * 재고 0 을 고객에게 어떻게 보일지 (0273 · 디렉터 결정 2026-10-13).
+ *   'real' (기본) — 있는 그대로 0.
+ *   'min'         — '1-3' 으로 내보낸다(수량 모드에서는 2).
+ *                   **사내 약속: 고객 쪽에 '1-3' 으로 보이는 제품은 실제 재고 0 이다.**
+ *                   실재고가 1~5 개인 제품은 종전대로 '1-5' 이므로 둘은 섞이지 않는다.
+ */
+export function zeroStockAs(client) {
+  const v = client && client.zero_stock_as != null ? String(client.zero_stock_as).trim().toLowerCase() : '';
+  return v === 'min' ? 'min' : 'real';
+}
+
+export const ZERO_MIN_RANGE = '1-3';
+export const ZERO_MIN_QTY = 2;
+
+export function stockValue(qty, mode, zeroAs) {
+  const n0 = Math.trunc(Number(qty));
+  const vacio = !Number.isFinite(n0) || n0 <= 0;
   if (mode === 'qty') {
-    const n = Number(qty);
-    return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+    if (vacio) return zeroAs === 'min' ? ZERO_MIN_QTY : 0;
+    return Math.max(0, n0);
   }
+  if (vacio) return zeroAs === 'min' ? ZERO_MIN_RANGE : '0';
   return catalogStockRange(qty);
 }
 
@@ -174,7 +192,7 @@ export function pageLimit(asked, dflt = 500) {
  *   row       — products 한 줄
  *   refs      — [{marca, codigo}]
  *   apps      — product_applications 줄들
- *   opt       — { discount, stockMode, imgBase }
+ *   opt       — { discount, stockMode, zeroAs, imgBase }
  */
 export function buildProducto(row, refs, apps, opt = {}, oeItems = []) {
   const descripcion = String(row.name || '').trim();
@@ -211,7 +229,7 @@ export function buildProducto(row, refs, apps, opt = {}, oeItems = []) {
       ivaIncluido: false,
     },
 
-    existencia: stockValue(row.stock_qty, opt.stockMode),
+    existencia: stockValue(row.stock_qty, opt.stockMode, opt.zeroAs),
 
     caracteristicas: {
       material: row.material == null || String(row.material).trim() === ''
@@ -462,7 +480,8 @@ async function decorate(client, rows) {
   }
 
   const imgBase = await imgBaseFor(client);
-  const opt = { discount: client.customer_discount, stockMode: client.stock_mode, imgBase };
+  const opt = { discount: client.customer_discount, stockMode: client.stock_mode,
+    zeroAs: zeroStockAs(client), imgBase };
   const oeMap = await oeByProduct(ids);   // 0228 — 마이그레이션 전이면 빈 Map → referenciasOE: []
   return rows.map((r) => buildProducto(r, byRef.get(Number(r.id)) || [], byApp.get(Number(r.id)) || [], opt,
     oeMap.get(Number(r.id)) || []));

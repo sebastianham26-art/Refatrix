@@ -127,6 +127,10 @@
       <div class="grid">
         <div><label>페이지 크기(기본)</label><input id="fPage" type="number" min="10" max="1000"></div>
         <div><label>재고 표기</label><select id="fStock"><option value="range">구간 (0 / 1-5 / 6-10 / 11-20 / 21-50 / 51-100 / 101+)</option><option value="qty">수량 그대로 (숫자)</option></select></div>
+        <div><label>재고 0 인 제품</label><select id="fZero">
+          <option value="real">있는 그대로 0 으로 보낸다</option>
+          <option value="min">1-3 으로 보낸다 — 주문을 받아 결품 수요를 본다</option></select>
+          <div class="hint" style="margin-top:3px">사내 약속: 고객 쪽 <b>1-3</b> = 실제 재고 0. 실재고 1~5 개는 종전대로 <b>1-5</b> 라 섞이지 않는다.</div></div>
         <div><label>단종품 포함</label><select id="fInactive"><option value="1">포함(activo:false 로)</option><option value="0">제외</option></select></div>
         <div><label>대응품번 출처</label><select id="fRefSrc">
           <option value="scode">제품찾기 화면과 같음 (SYD · products.scode)</option>
@@ -280,7 +284,7 @@
     $('fDow').value=c.window_dow==null?'':String(c.window_dow);
     $('fStart').value=c.window_start_hour; $('fEnd').value=c.window_end_hour;
     $('fMaxCalls').value=c.max_calls; $('fPage').value=c.page_limit;
-    $('fStock').value=c.stock_mode; $('fInactive').value=c.include_inactive?'1':'0';
+    $('fStock').value=c.stock_mode; $('fZero').value=c.zero_stock_as||'real'; $('fInactive').value=c.include_inactive?'1':'0';
     $('fBrands').value=c.brands||''; $('fImg').value=c.img_base_url||''; $('fIp').value=c.ip_allow||'';
     $('fExclude').value=c.exclude_prefixes==null?'PRO':c.exclude_prefixes;
     $('fRefSrc').value=c.ref_source||'scode';
@@ -298,6 +302,7 @@
     page_limit_invalid:'페이지 크기는 10~1000 이어야 합니다.',
     max_calls_invalid:'호출 한도는 1 이상이어야 합니다.',
     stock_mode_invalid:'재고 표기 값이 올바르지 않습니다.',
+    zero_stock_as_invalid:'재고 0 표기 값이 올바르지 않습니다.',
     img_base_invalid:'사진 주소는 http:// 또는 https:// 로 시작해야 합니다.',
     img_base_space:'사진 주소에 공백이 들어 있습니다.',
     exclude_prefixes_invalid:'제외 접두어에는 영문·숫자·. _ - 만 쓸 수 있습니다.',
@@ -318,6 +323,7 @@
       max_calls:Number($('fMaxCalls').value),
       page_limit:Number($('fPage').value),
       stock_mode:$('fStock').value,
+      zero_stock_as:$('fZero').value,
       include_inactive:$('fInactive').value==='1',
       brands:$('fBrands').value.trim(),
       exclude_prefixes:$('fExclude').value.trim(),
@@ -391,7 +397,8 @@
         +'<div class="card-h" style="margin-top:14px">고객이 받는 범위 — 지금 설정</div>'
         +'<div class="hint">'
         +'대응품번: <b>'+({scode:'제품찾기 화면과 같음 (SYD)',xref:'교차참조표 (BAW·GROB·MOOG…)',both:'둘 다 합침'}[c0.ref_source]||c0.ref_source)+'</b> · '
-        +'재고: <b>'+(c0.stock_mode==='qty'?'수량 그대로(숫자)':'구간(문자열)')+'</b><br>'
+        +'재고: <b>'+(c0.stock_mode==='qty'?'수량 그대로(숫자)':'구간(문자열)')+'</b>'
+        +(c0.zero_stock_as==='min'?' · <b>재고 0 → '+(c0.stock_mode==='qty'?'2':'1-3')+'</b> (사내 약속: 결품)':'')+'<br>'
         +'제외 접두어: <b>'+esc(c0.exclude_prefixes||'(없음 — 전부 나감)')+'</b> · '
         +'단종품: <b>'+(c0.include_inactive?'포함 (activo:false)':'제외')+'</b> · '
         +'사진 주소: <b>'+(c0.img_base_url?'직접 지정':'제품전송 설정 물려받음')+'</b>'
@@ -451,6 +458,9 @@
         {'항목':'제품 수','값':d.total},
         {'항목':'대응품번 출처','값':REF[c0.ref_source]||c0.ref_source},
         {'항목':'재고 표기','값':c0.stock_mode==='qty'?'수량 그대로(숫자)':'구간(문자열)'},
+        {'항목':'재고 0 인 제품','값':c0.zero_stock_as==='min'
+          ?('1-3 으로 보냄 — 사내 약속: 실제 재고 0 ('+prod.filter(x=>String(x['existencia (재고구간)'])===(c0.stock_mode==='qty'?'2':'1-3')).length+'건)')
+          :'있는 그대로 0'},
         {'항목':'제외 접두어','값':c0.exclude_prefixes||'(없음)'},
         {'항목':'단종품','값':c0.include_inactive?'포함 (activo=NO 로 표시)':'제외'},
         {'항목':'사진 주소 규칙','값':c0.img_base_url||'(제품전송 설정 물려받음)'},
