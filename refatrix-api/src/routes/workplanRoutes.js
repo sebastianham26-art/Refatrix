@@ -11,7 +11,7 @@ import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import {
   isYmd, mxClock, addDays, loadSettings, cleanSettingsInput, saveSettings, isWorkday, isTarget, loadDay, ensureCarry,
   savePlan, saveDone, WpError, loadTeam, teamKpi, loadMarks, summarySvg, summaryText, sendSummary, summaryRecipients,
-  maskPhone, nextRuns, DEFAULT_DEPS, startWorkplanWorker, saveDirComment, loadInbox, markInboxSeen, hideDirComments,
+  maskPhone, nextRuns, DEFAULT_DEPS, startWorkplanWorker, saveDirComment, loadInbox, loadUnseen, markInboxSeen, hideDirComments,
 } from '../workplan.js';
 
 const MIGRATION_MSG = '업무일지 테이블이 없습니다. 서버에서 npm run migrate 를 실행하세요. (0263_staff_workplan · 0266_workplan_comments)';
@@ -110,6 +110,11 @@ export async function registerWorkplan(app, { startWorker = true } = {}) {
     const r = await saveDirComment({ targetId, date, itemId, body: b.body, directorId: Number(req.ctx.perm.userId), clock: mxClock(), settings: await loadSettings() });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `workplan_comment:${targetId}:${date}${itemId ? ':' + itemId : ''}` });
     return { ok: true, ...r };
+  }));
+  // 로그인·화면 진입 팝업용 — 디렉터 본인은 항상 빈 목록(쓴 사람)
+  app.get('/api/workplan/inbox/unseen', { preHandler: [authGuard] }, wrap(async (req) => {
+    if (req.ctx.perm.role === 'director') return { items: [] };
+    return { items: await loadUnseen(Number(req.ctx.perm.userId), mxClock().ymd) };
   }));
   app.post('/api/workplan/inbox/seen', { preHandler: [authGuard] }, wrap(async (req) => {
     const n = await markInboxSeen(Number(req.ctx.perm.userId), (req.body || {}).dates, mxClock());

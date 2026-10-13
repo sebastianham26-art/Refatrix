@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  var BUILD = 'wp-1008b';
+  var BUILD = 'wp-1013a';
   try { console.log('[workplan] build ' + BUILD); } catch (_) {}
   var WP_LAUNCH = '2026-10-08';   // 이 날 이전의 빈 날짜는 「미작성」으로 표시하지 않는다(도입일)
   var STAT = { done: { t: '완료', c: 'on' }, partial: { t: '일부', c: 'part' }, missed: { t: '못함', c: 'miss' } };
@@ -361,6 +361,16 @@
   document.addEventListener('keydown', function (e) {
     if (e.target && e.target.getAttribute && e.target.getAttribute('data-wpin') === 'new' && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addNew(); }
   });
+
+  // 팝업(refatrix-wpnotice.js)에서 「확인했습니다」 → 이 화면의 달력 표식·코멘트 박스도 확인됨으로
+  window.wpOnSeen = function (dates) {
+    var set = {}; (dates || []).forEach(function (d) { set[d] = 1; });
+    INBOX.forEach(function (x) { if (set[x.work_date]) x.seen_at = x.seen_at || new Date().toISOString(); });
+    Object.keys(W.marks).forEach(function (k) { if (W.marks[k].dir === 'new') W.marks[k].dir = 'seen'; });
+    var b = $('wpBox');
+    if (b && b.querySelector('.wpinbox')) { if (D) { syncInputs(); render(); } else { b.querySelector('.wpinbox').outerHTML = inboxHtml(); } }
+    refreshGrid();
+  };
 
   // ═════════ 팀 업무 ═════════
   var T = { date: null, data: null };

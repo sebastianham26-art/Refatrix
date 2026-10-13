@@ -457,3 +457,28 @@ test('C6 직원 코멘트 — 완료 항목에도 코멘트 저장(마감 때 �
   assert.equal(r.status, 200);
   assert.ok(r.out.items.every((i, k) => i.note === '완료 코멘트 ' + k));
 });
+
+// ─────────── 1013 · 팝업용 미확인 코멘트 ───────────
+test('U1 /inbox/unseen — 표시 날짜가 된 미확인만 · 본인 것만 · 디렉터는 빈 목록 · 확인하면 사라짐', async () => {
+  assert.ok(R['GET /api/workplan/inbox/unseen']);
+  setNow('2026-10-13 08:00');
+  await query(`UPDATE workplan_days SET dir_seen_at=now() WHERE dir_show_date IS NOT NULL`);   // 앞 테스트 것 정리
+  // 어제(10/12) 업무 코멘트 → 오늘(10/13) 표시
+  const it = (await call('GET /api/workplan/me', { user: OSCAR, q: { date: '2026-10-12' } })).out.items[0];
+  const r = await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: OSCAR, date: '2026-10-12', item_id: it.id, body: '<script>x</script> 잘했어요' } });
+  assert.equal(r.out.show_date, '2026-10-13');
+  // 오늘(10/13) 업무 코멘트 → 내일 표시 → 팝업에는 아직 안 나옴
+  await call('PUT /api/workplan/comment', { user: DIR, role: 'director', body: { user_id: OSCAR, date: '2026-10-13', body: '내일 볼 것' } });
+  const u = await call('GET /api/workplan/inbox/unseen', { user: OSCAR });
+  assert.equal(u.out.items.length, 1);
+  assert.equal(u.out.items[0].work_date, '2026-10-12');
+  assert.equal(u.out.items[0].items[0].dir_comment, '<script>x</script> 잘했어요', '원문 그대로(화면에서 이스케이프)');
+  assert.deepEqual((await call('GET /api/workplan/inbox/unseen', { user: MARIA })).out.items, [], '다른 직원 것은 안 나옴');
+  assert.deepEqual((await call('GET /api/workplan/inbox/unseen', { user: DIR, role: 'director' })).out.items, []);
+  await call('POST /api/workplan/inbox/seen', { user: OSCAR, body: { dates: ['2026-10-12'] } });
+  assert.equal((await call('GET /api/workplan/inbox/unseen', { user: OSCAR })).out.items.length, 0);
+  // 다음날이 되면 10/13 코멘트가 나온다
+  setNow('2026-10-14 08:00');
+  const u2 = await call('GET /api/workplan/inbox/unseen', { user: OSCAR });
+  assert.deepEqual(u2.out.items.map((x) => [x.work_date, x.day_comment]), [['2026-10-13', '내일 볼 것']]);
+});

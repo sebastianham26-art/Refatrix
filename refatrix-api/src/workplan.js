@@ -344,6 +344,21 @@ export async function loadInbox(userId, date, today, q = query) {
     items: its.filter((i) => i.work_date === r.work_date).map(itemOut),
   })).filter((x) => x.day_comment || x.items.length);
 }
+// 팝업용(마이그레이션 없음) — 오늘까지 표시 날짜가 된, 아직 확인 안 한 디렉터 코멘트 전부
+export async function loadUnseen(userId, today, q = query) {
+  const rows = (await q(`SELECT ${DAY_COLS} FROM workplan_days d
+                          WHERE d.user_id=$1 AND d.dir_show_date IS NOT NULL AND d.dir_show_date <= $2::date AND d.dir_seen_at IS NULL
+                          ORDER BY d.work_date LIMIT 31`, [userId, today])).rows;
+  if (!rows.length) return [];
+  const dates = rows.map((r) => r.work_date);
+  const its = (await q(`SELECT ${ITEM_COLS} FROM workplan_items i
+                         WHERE i.user_id=$1 AND i.work_date = ANY($2::date[]) AND i.deleted_at IS NULL AND i.dir_comment <> ''
+                         ORDER BY i.work_date, i.sort, i.id`, [userId, dates])).rows;
+  return rows.map((r) => ({
+    work_date: r.work_date, show_date: r.dir_show_date, day_comment: r.dir_comment || '', day_comment_at: ts(r.dir_comment_at),
+    items: its.filter((i) => i.work_date === r.work_date).map(itemOut),
+  })).filter((x) => x.day_comment || x.items.length);
+}
 export async function markInboxSeen(userId, workDates, clock, q = query) {
   const ds = (Array.isArray(workDates) ? workDates : []).filter(isYmd).slice(0, 31);
   if (!ds.length) return 0;
