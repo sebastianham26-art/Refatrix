@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013b</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013ai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -46,7 +46,9 @@
   tbody tr.click{cursor:pointer}tbody tr.click:hover{background:#faf8f3}
   td.num,th.num{text-align:right}
   .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
-  .ch-messenger{background:#e7f0fe;color:var(--fb)}.ch-instagram{background:#fbe7f2;color:var(--ig)}
+  .ch-messenger{background:#e7f0fe;color:var(--fb)}.ch-instagram{background:#fbe7f2;color:var(--ig)}.ch-whatsapp{background:#e3f6ea;color:#128C4A}
+  .sumrow{display:flex;gap:6px;flex-wrap:wrap}.chip{font-size:11px;padding:1px 7px;border-radius:999px;background:#f1eee6;white-space:nowrap}
+  .aisum{background:#f4f8f6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.5;margin-bottom:6px}
   .st-nuevo{background:#eef0f2;color:#555}.st-contactado{background:var(--warn-bg);color:var(--warn)}.st-derivado{background:#e7f0fe;color:var(--fb)}
   .st-venta{background:var(--ok-bg);color:var(--ok)}.st-descartado{background:var(--bad-bg);color:var(--bad)}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
@@ -97,8 +99,10 @@
         <span style="margin-left:auto"></span>
         <button type="button" class="btn" id="bSync">⟳ 새 문의 가져오기</button>
         <button type="button" class="btn ghost" id="bFull" title="최근 180일을 처음부터 다시 읽습니다(사람이 고친 값 · 상태 · 메모는 그대로)">전체 다시 가져오기</button>
+        <button type="button" class="btn ghost" id="bAi" title="AI 가 대화 전체를 읽고 고객 유형 · 지역 · 차종+연식 · 부품 · 요약을 다시 뽑습니다(사람이 고친 값은 그대로)">🤖 AI 전체 다시 분석</button>
       </div>
       <div class="hint" id="sRun" style="margin-top:6px"></div>
+      <div class="hint" id="sAi" style="margin-top:2px"></div>
       <div class="kpis" id="sKpis" style="margin-top:10px"></div>
       <div class="note hidden" id="sGuide"></div>
       <div class="msg" id="msg"></div>
@@ -113,9 +117,9 @@
     <section class="pane on card" id="p-list">
       <div class="row">
         <div><label>검색(이름 · 메시지 · 메모 · 전화)</label><input id="fQ" type="text" style="width:220px" placeholder="versa, horquilla…"></div>
-        <div><label>채널</label><select id="fCh"><option value="">전체</option><option value="messenger">Messenger</option><option value="instagram">Instagram</option></select></div>
+        <div><label>채널</label><select id="fCh"><option value="">전체</option><option value="messenger">Messenger</option><option value="instagram">Instagram</option><option value="whatsapp">WhatsApp</option></select></div>
         <div><label>주(지역)</label><select id="fState"><option value="">전체</option><option value="__none">— 지역 모름</option></select></div>
-        <div><label>업종</label><select id="fTipo"><option value="">전체</option><option>Refaccionaria</option><option>Mayorista</option><option>Taller</option><option>Flotilla</option><option>Taxi</option><option>Particular</option></select></div>
+        <div><label>고객 유형</label><select id="fTipo"><option value="">전체</option><option>Particular</option><option value="Taller">Taller mecánico</option><option>Refaccionaria</option><option>Mayorista</option><option>Flotilla</option><option value="Taxi">Taxi / app</option></select></div>
         <div><label>상태</label><select id="fStatus"><option value="">전체</option><option value="nuevo">신규</option><option value="contactado">연락함</option><option value="derivado">refaccionaria 연결</option><option value="venta">판매</option><option value="descartado">제외</option></select></div>
         <div><label>마지막 대화</label><div class="row" style="gap:4px"><input id="fFrom" type="date"><input id="fTo" type="date"></div></div>
         <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:600;color:var(--ink)"><input type="checkbox" id="fDemand"> 차종·부품 있는 것만</label>
@@ -128,13 +132,17 @@
 
     <!-- 요약 -->
     <section class="pane card" id="p-sum">
-      <div class="hint">지금 목록 필터 그대로 집계합니다. 「지역」은 고객이 대화에서 말한 곳입니다(Facebook 프로필 거주지는 Meta 가 API 로 주지 않습니다).</div>
-      <div class="grid3" style="margin-top:12px">
-        <div><h2>주(지역)별 문의</h2><div class="bars" id="sumState"></div></div>
-        <div><h2>차종</h2><div class="bars" id="sumVeh"></div></div>
+      <div class="hint">지금 목록 필터(채널 · 주 · 고객 유형 · 기간 …) 그대로 집계합니다. 고객 유형 · 지역 · 차종+연식 · 부품은 <b>AI 가 대화 전체를 읽고</b> 뽑은 값입니다(사람이 고친 값이 우선). 「지역」은 고객이 대화에서 말한 곳입니다.</div>
+      <div class="kpis" id="sumKpis" style="margin-top:12px"></div>
+      <div class="grid3" style="margin-top:14px">
+        <div><h2>고객 유형</h2><div class="bars" id="sumTipo"></div></div>
+        <div><h2>주(지역)</h2><div class="bars" id="sumState"></div></div>
         <div><h2>부품</h2><div class="bars" id="sumPart"></div></div>
       </div>
-      <h2 style="margin-top:18px">지역 × 수요 — refaccionaria 에 넘길 판매기회</h2>
+      <h2 style="margin-top:18px">차종 · 연식 × 부품 — 무엇을 얼마나 찾나</h2>
+      <div class="hint">같은 차종 · 부품을 찾은 문의 수 · 연식 분포 · 어느 주에서 · 어떤 고객이.</div>
+      <div class="tblwrap" id="sumDemand"></div>
+      <h2 style="margin-top:18px">주별 판매기회 — refaccionaria 에 넘길 목록</h2>
       <div class="tblwrap" id="sumOpp"></div>
     </section>
   </div>
@@ -146,7 +154,8 @@
   <div class="mbody">
     <div><div class="chat" id="oChat"></div></div>
     <div class="ed">
-      <div class="hint">비워 두면 대화에서 뽑은 <span class="auto">자동값</span>을 씁니다. 고친 값은 다시 가져와도 지워지지 않습니다.</div>
+      <div id="oAi"></div>
+      <div class="hint">비워 두면 대화에서 뽑은 <span class="auto">자동값</span>(AI → 규칙)을 씁니다. 고친 값은 다시 가져와도 지워지지 않습니다.</div>
       <label>이름</label><input id="eName">
       <label>업종</label><input id="eTipo" list="dlTipo"><datalist id="dlTipo"><option>Refaccionaria</option><option>Mayorista</option><option>Taller mecánico</option><option>Flotilla</option><option>Taxi / app</option><option>Particular</option></datalist>
       <div class="row" style="gap:8px"><div style="flex:1"><label>주</label><select id="eState"></select></div><div style="flex:1"><label>도시</label><input id="eCity"></div></div>
@@ -164,7 +173,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1013b';
+  const MTL_BUILD='mtl-1013ai';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -223,14 +232,14 @@
   async function loadStatus(){
     let s; try{ s=await api('GET','/api/meta-leads/status'); }catch(e){ $('sKpis').innerHTML='<div class="hint">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; return; }
     S.status=s;
-    if(s.migrated===false){ $('sKpis').innerHTML='<div class="hint bad-t">마이그레이션 대기 — Railway 에서 npm run migrate (0270)</div>'; return; }
+    if(s.migrated===false){ $('sKpis').innerHTML='<div class="hint bad-t">마이그레이션 대기 — Railway 에서 npm run migrate (0270 · 0271)</div>'; return; }
     if(!$('fState').dataset.filled&&s.states){ $('fState').insertAdjacentHTML('beforeend',s.states.map(x=>'<option>'+esc(x)+'</option>').join('')); $('fState').dataset.filled='1';
       $('eState').innerHTML='<option value="">(자동값)</option>'+s.states.map(x=>'<option>'+esc(x)+'</option>').join(''); }
     $('sPage').innerHTML=s.page?('페이지 <b>'+esc(s.page.name||s.page_id)+'</b>'+(s.page.ig_username?' · Instagram <b>@'+esc(s.page.ig_username)+'</b>':(s.page_warning?'':' · <span class="warn-t">Instagram 연결 안 됨</span>'))+' · 토큰: '+esc(s.token_source)
         +(s.page_warning?'<br><span class="warn-t" title="'+esc(s.page_warning)+'">ⓘ 대화는 정상으로 가져옵니다 — 페이지 이름 · Instagram 계정 정보는 이 토큰 권한으로 읽지 않습니다</span>':''))
       :(s.configured?'<span class="bad-t">Meta 연결 오류: '+esc(s.page_error||'')+'</span>':'<span class="bad-t">Meta 토큰 없음</span>');
     const c=s.counts||{};
-    $('sKpis').innerHTML=[['전체 문의',c.total,''],['Messenger',c.messenger,'var(--fb)'],['Instagram',c.instagram,'var(--ig)'],['차종·부품 있음',c.demand,'var(--ok)'],['지역 확인',c.with_state,''],['전화 있음',c.with_phone,''],['신규(미처리)',c.nuevo,'var(--warn)']]
+    $('sKpis').innerHTML=[['전체 문의',c.total,''],['Messenger',c.messenger,'var(--fb)'],['Instagram',c.instagram,'var(--ig)'],['WhatsApp',c.whatsapp,'#128C4A'],['차종·부품 있음',c.demand,'var(--ok)'],['고객 유형 확인',c.with_tipo,''],['지역 확인',c.with_state,''],['전화 있음',c.with_phone,''],['신규(미처리)',c.nuevo,'var(--warn)']]
       .map(([k,v,col])=>'<div class="kpi"><div class="k">'+k+'</div><div class="v"'+(col?' style="color:'+col+'"':'')+'>'+(v||0)+'</div></div>').join('');
     const lr=s.last_run;
     let run='';
@@ -239,11 +248,18 @@
       +(lr.error?' · <span class="bad-t">'+esc(lr.error)+'</span>':'')+(s.auto&&s.last_ok_at?' · 이후 30분마다 자동':'');
     else run='아직 가져온 적이 없습니다.';
     $('sRun').innerHTML=run;
+    const ai=s.ai||{};
+    $('sAi').innerHTML=!ai.ready?'🤖 AI 분석 꺼짐 — 관리 › 외부 서비스 키 › Anthropic 키가 있어야 고객 유형 · 차종+연식 · 부품을 대화 문맥으로 뽑습니다(지금은 규칙으로만).'
+      :(ai.running?'<span class="warn-t">🤖 AI 분석 중… '+(ai.done||0)+' / '+(ai.total||0)+'건</span>'
+        :'🤖 AI 분석 '+(c.ai_done||0)+'건 완료'+(c.ai_pending?' · <span class="warn-t">대기 '+c.ai_pending+'건(다음 가져오기 때 이어서)</span>':'')+(ai.errors?' · <span class="bad-t">오류 '+ai.errors+'건: '+esc(ai.last_error||'')+'</span>':'')+' · 모델 '+esc(ai.model||''));
+    $('bAi').disabled=!ai.ready||!!ai.running;
     const needGuide=!s.configured||!!s.page_error||(lr&&!lr.ok);
     $('sGuide').innerHTML=GUIDE; $('sGuide').classList.toggle('hidden',!needGuide);
-    $('bSync').disabled=$('bFull').disabled=!!s.running||!s.configured;
+    $('bSync').disabled=$('bFull').disabled=!!s.running;
     clearTimeout(S.poll);
-    if(s.running){ S.poll=setTimeout(async()=>{ const was=true; await loadStatus(); if(was&&!S.status.running) loadList(); },3000); }
+    const busy=s.running||(s.ai&&s.ai.running);
+    if(busy){ S.wasBusy=true; S.poll=setTimeout(loadStatus,3000); }
+    else if(S.wasBusy){ S.wasBusy=false; loadList(); }
   }
   async function sync(full){
     if(full&&!confirm('최근 180일 대화를 처음부터 다시 읽습니다(몇 분). 사람이 고친 값 · 상태 · 메모는 그대로 둡니다. 진행할까요?')) return;
@@ -252,6 +268,11 @@
   }
   $('bSync').addEventListener('click',()=>sync(false));
   $('bFull').addEventListener('click',()=>sync(true));
+  $('bAi').addEventListener('click',async()=>{
+    if(!confirm('AI 가 모든 대화를 처음부터 다시 읽고 고객 유형 · 지역 · 차종+연식 · 부품 · 요약을 다시 뽑습니다(500건이면 몇 분 · Anthropic 사용료). 사람이 고친 값은 그대로 둡니다. 진행할까요?')) return;
+    try{ await api('POST','/api/meta-leads/ai',{all:true}); say(true,'AI 분석을 시작했습니다 — 끝나면 목록이 새로 고쳐집니다.'); setTimeout(loadStatus,800); }
+    catch(e){ say(false,e.message==='ai_not_configured'?'Anthropic 키가 없습니다(관리 › 외부 서비스 키).':errText(e)); }
+  });
 
   // ───── 목록 ─────
   function qs(){ const p=new URLSearchParams(); const v=(id)=>$(id).value;
@@ -262,17 +283,22 @@
     try{ const d=await api('GET','/api/meta-leads/list?'+qs()); S.items=d.items||[]; renderList(); if(S.tab==='sum') renderSummary(); }
     catch(e){ $('lTable').innerHTML='<div class="hint">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
   }
-  const tipoOf=(x)=>x.tipo?esc(x.tipo):(x.tipo_btn?'<span class="auto" title="광고 버튼으로만 고름">'+esc(x.tipo_btn)+' (버튼)</span>':'<span class="muted">—</span>');
+  const CH={messenger:['FB','Messenger'],instagram:['IG','Instagram'],whatsapp:['WA','WhatsApp']};
+  const tipoOf=(x)=>{
+    if(x.tipo&&x.tipo_src==='boton') return '<span class="auto" title="광고 버튼으로만 고름">'+esc(x.tipo)+' (버튼)</span>';
+    if(x.tipo) return esc(x.tipo)+(x.tipo_src==='inferido'?' <span class="muted" title="대화 문맥으로 추정">(추정)</span>':'');
+    return x.tipo_btn?'<span class="auto" title="광고 버튼으로만 고름">'+esc(x.tipo_btn)+' (버튼)</span>':'<span class="muted">—</span>'; };
+  const tipoKey=(x)=>x.tipo||x.tipo_btn||null;
   function renderList(){
     const it=S.items;
     $('lCount').textContent=it.length+'건'+(it.length>=5000?' (최대 5,000건 표시 — 필터로 좁히세요)':'');
     if(!it.length){ $('lTable').innerHTML='<div class="hint" style="margin-top:10px">문의가 없습니다'+(S.status&&S.status.counts&&!S.status.counts.total?' — 위에서 「⟳ 새 문의 가져오기」를 누르세요.':'.')+'</div>'; return; }
-    $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품</th><th>고객 메시지</th><th>상태</th></tr></thead><tbody>'
+    $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
       +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b>'+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</td>'
-        +'<td><span class="tag ch-'+x.platform+'">'+(x.platform==='instagram'?'IG':'FB')+'</span></td><td>'+tipoOf(x)+'</td>'
+        +'<td><span class="tag ch-'+x.platform+'">'+(CH[x.platform]||[x.platform])[0]+'</span></td><td>'+tipoOf(x)+'</td>'
         +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
         +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+'</td>'
-        +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+esc((x.customer_text||'').replace(/\n/g,' / '))+'</td>'
+        +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
         +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
@@ -286,7 +312,8 @@
     let d; try{ d=await api('GET','/api/meta-leads/'+id); }catch(e){ say(false,errText(e)); return; }
     S.cur=d;
     $('oTitle').textContent=(d.name||d.username||'—')+(d.username?' (@'+d.username+')':'');
-    $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(d.platform==='instagram'?'Instagram':'Messenger')+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
+    $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(CH[d.platform]||['',d.platform])[1]+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
+    $('oAi').innerHTML=d.summary?'<div class="aisum">🤖 '+esc(d.summary)+(d.intent?'<br><span class="muted">관심: '+esc(d.intent)+'</span>':'')+'</div>':(d.ai_error?'<div class="aisum bad-t">AI 분석 오류: '+esc(d.ai_error)+'</div>':'');
     $('oChat').innerHTML=(d.messages||[]).map(m=>'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+fmtT(m.at)+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
     const ph=(el,auto)=>{ el.placeholder=auto?('자동: '+auto):el.placeholder; };
     $('eName').value=d.name&&d.name!==d.meta_name?d.name:''; ph($('eName'),d.meta_name);
@@ -311,45 +338,94 @@
 
   // ───── 요약 ─────
   const splitList=(s)=>String(s||'').split(/;\s*/).map(x=>x.trim()).filter(Boolean);
-  const modelOf=(v)=>v.replace(/\s+((19|20)\d\d)(-\d{4})?$/,'');
+  const YEAR_RE=/\s+((?:19|20)\d\d(?:-(?:19|20)\d\d)?)$/;
+  const modelOf=(v)=>String(v||'').replace(YEAR_RE,'').trim();
+  const yearOf=(v)=>{ const m=String(v||'').match(YEAR_RE); return m?m[1]:null; };
+  const TIPO_SHORT={'Particular':'P','Taller mecánico':'T','Refaccionaria':'R','Mayorista':'M','Flotilla':'F','Taxi / app':'Taxi'};
   function counter(items,fn){ const m=new Map(); for(const x of items) for(const k of fn(x)) m.set(k,(m.get(k)||0)+1); return [...m.entries()].sort((a,b)=>b[1]-a[1]); }
   function bars(rows,el,max){ const top=rows.slice(0,max||15); const mx=top.length?top[0][1]:1;
     $(el).innerHTML=top.length?top.map(([k,n])=>'<div class="b"><div class="l" title="'+esc(k)+'">'+esc(k)+'</div><div class="t"><div class="f" style="width:'+Math.max(3,Math.round(n/mx*100))+'%"></div></div><div class="n">'+n+'</div></div>').join(''):'<div class="hint">—</div>'; }
+  const inc=(m,k,n)=>{ if(k) m.set(k,(m.get(k)||0)+(n||1)); };
+  const topTxt=(m,k)=>[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,k).map(([a,n])=>a+' ('+n+')').join(', ');
+  // 한 문의의 수요 줄 — AI 는 차종별 부품을 짝지어 준다(demand). 없으면 차종 × 부품을 그대로 곱한다.
+  function demandLines(x){
+    if(Array.isArray(x.demand)&&x.demand.length){
+      return x.demand.flatMap(d=>{ const model=[d.marca,d.modelo].filter(Boolean).join(' ')||'(차종 미상)'; const ps=(d.piezas&&d.piezas.length)?d.piezas:['(부품 미상)'];
+        return ps.map(p=>({model,year:d.anio||null,part:p})); });
+    }
+    const vs=splitList(x.vehicles), ps=splitList(x.parts);
+    if(!vs.length&&!ps.length) return [];
+    return (vs.length?vs:['(차종 미상)']).flatMap(v=>(ps.length?ps:['(부품 미상)']).map(p=>({model:modelOf(v)||v,year:yearOf(v),part:p})));
+  }
   function summaries(items){
     return {
+      tipo: counter(items,x=>[tipoKey(x)||'(모름)']),
       state: counter(items,x=>[x.state||'(지역 모름)']),
-      veh: counter(items,x=>splitList(x.vehicles).map(modelOf)),
-      part: counter(items,x=>splitList(x.parts)),
+      channel: counter(items,x=>[(CH[x.platform]||['',x.platform])[1]]),
+      veh: counter(items,x=>[...new Set(demandLines(x).map(l=>l.model).filter(m=>m!=='(차종 미상)'))]),
+      part: counter(items,x=>[...new Set(demandLines(x).map(l=>l.part).filter(p=>p!=='(부품 미상)'))]),
     };
+  }
+  function demandTable(items){
+    const by=new Map();
+    for(const x of items){
+      const seen=new Set();
+      for(const l of demandLines(x)){
+        const k=l.model+'|'+l.part; if(seen.has(k)) continue; seen.add(k);
+        const g=by.get(k)||{model:l.model,part:l.part,n:0,years:new Map(),states:new Map(),tipos:new Map(),phones:0};
+        g.n++; inc(g.years,l.year||'연식 미상'); inc(g.states,x.state||null); inc(g.tipos,tipoKey(x)); if(x.phone) g.phones++;
+        by.set(k,g);
+      }
+    }
+    return [...by.values()].sort((a,b)=>b.n-a.n);
   }
   function opportunities(items){
     const by=new Map();
-    for(const x of items){ if(!x.state||(!x.parts&&!x.vehicles)) continue; const g=by.get(x.state)||{state:x.state,n:0,veh:new Map(),part:new Map(),phones:0}; g.n++; if(x.phone) g.phones++;
-      splitList(x.vehicles).map(modelOf).forEach(v=>g.veh.set(v,(g.veh.get(v)||0)+1)); splitList(x.parts).forEach(p=>g.part.set(p,(g.part.get(p)||0)+1)); by.set(x.state,g); }
-    const top=(m,k)=>[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,k).map(([a,n])=>a+' ('+n+')').join(', ');
-    return [...by.values()].sort((a,b)=>b.n-a.n).map(g=>({state:g.state,n:g.n,phones:g.phones,veh:top(g.veh,4),part:top(g.part,5)}));
+    for(const x of items){
+      const st=x.state||'(지역 모름)';
+      const g=by.get(st)||{state:st,n:0,demand:0,phones:0,tipos:new Map(),veh:new Map(),part:new Map()};
+      g.n++; inc(g.tipos,tipoKey(x)); if(x.phone) g.phones++;
+      const ls=demandLines(x); if(ls.length) g.demand++;
+      new Set(ls.map(l=>l.model+(l.year?' '+l.year:'')).filter(v=>!v.startsWith('(차종'))).forEach(v=>inc(g.veh,v));
+      new Set(ls.map(l=>l.part).filter(p=>!p.startsWith('(부품'))).forEach(p=>inc(g.part,p));
+      by.set(st,g);
+    }
+    return [...by.values()].sort((a,b)=>(a.state==='(지역 모름)')-(b.state==='(지역 모름)')||b.demand-a.demand||b.n-a.n)
+      .map(g=>({state:g.state,n:g.n,demand:g.demand,phones:g.phones,tipos:[...g.tipos.entries()].sort((a,b)=>b[1]-a[1]).map(([t,n])=>(TIPO_SHORT[t]||t)+' '+n).join(' · '),veh:topTxt(g.veh,5),part:topTxt(g.part,5)}));
   }
   function renderSummary(){
-    const s=summaries(S.items); bars(s.state,'sumState',20); bars(s.veh,'sumVeh',15); bars(s.part,'sumPart',15);
-    const o=opportunities(S.items);
-    $('sumOpp').innerHTML=o.length?'<table><thead><tr><th>주</th><th class="num">수요 문의</th><th class="num">전화 있음</th><th>많이 찾는 차종</th><th>많이 찾는 부품</th></tr></thead><tbody>'
-      +o.map(g=>'<tr><td><b>'+esc(g.state)+'</b></td><td class="num">'+g.n+'</td><td class="num">'+g.phones+'</td><td>'+esc(g.veh)+'</td><td>'+esc(g.part)+'</td></tr>').join('')+'</tbody></table>'
-      :'<div class="hint">지역과 차종·부품이 함께 확인된 문의가 아직 없습니다.</div>';
+    const it=S.items; const s=summaries(it);
+    const n=(f)=>it.filter(f).length;
+    $('sumKpis').innerHTML=[['문의',it.length],['차종·부품 확인',n(x=>demandLines(x).length)],['고객 유형 확인',n(x=>tipoKey(x))],['지역 확인',n(x=>x.state)],['전화 있음',n(x=>x.phone)],['AI 요약 있음',n(x=>x.summary)]]
+      .map(([k,v])=>'<div class="kpi"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="hint">'+(it.length?Math.round(v/it.length*100):0)+'%</div></div>').join('');
+    bars(s.tipo,'sumTipo',10); bars(s.state,'sumState',20); bars(s.part,'sumPart',15);
+    const dt=demandTable(it);
+    $('sumDemand').innerHTML=dt.length?'<table><thead><tr><th>차종</th><th>부품</th><th class="num">문의</th><th>연식</th><th>주</th><th>고객 유형</th><th class="num">전화</th></tr></thead><tbody>'
+      +dt.slice(0,80).map(g=>'<tr><td><b>'+esc(g.model)+'</b></td><td>'+esc(g.part)+'</td><td class="num"><b>'+g.n+'</b></td><td>'+esc(topTxt(g.years,6))+'</td><td>'+esc(topTxt(g.states,4))+'</td><td>'+esc(topTxt(g.tipos,4))+'</td><td class="num">'+g.phones+'</td></tr>').join('')
+      +'</tbody></table>'+(dt.length>80?'<div class="hint">상위 80줄 — 전체는 엑셀 「Demanda vehículo-pieza」</div>':'')
+      :'<div class="hint">차종 · 부품이 확인된 문의가 아직 없습니다.</div>';
+    const o=opportunities(it);
+    $('sumOpp').innerHTML=o.length?'<table><thead><tr><th>주</th><th class="num">문의</th><th class="num">수요 확인</th><th class="num">전화</th><th>고객 유형 (P 개인 · T 정비소 · R 부품점 · F 플리트 · Taxi)</th><th>많이 찾는 차종 · 연식</th><th>많이 찾는 부품</th></tr></thead><tbody>'
+      +o.map(g=>'<tr><td><b>'+esc(g.state)+'</b></td><td class="num">'+g.n+'</td><td class="num">'+g.demand+'</td><td class="num">'+g.phones+'</td><td>'+esc(g.tipos||'—')+'</td><td>'+esc(g.veh)+'</td><td>'+esc(g.part)+'</td></tr>').join('')+'</tbody></table>'
+      :'<div class="hint">문의가 없습니다.</div>';
   }
 
   // ───── 엑셀 ─────
   function sheet(aoa,widths,color){ const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=widths.map(w=>({wch:w}));
     for(let c=0;c<aoa[0].length;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:color||'C00000'}},alignment:{vertical:'center',wrapText:true}}; }
     ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})}; ws['!freeze']={xSplit:0,ySplit:1}; return ws; }
+  const SRC_ES={dicho:'Lo dijo',boton:'Botón del anuncio',inferido:'Deducido',manual:'Capturado'};
   $('bXls').addEventListener('click',()=>{
     const it=S.items; if(!it.length){ say(false,'내보낼 문의가 없습니다.'); return; }
-    const aoa=[['Último mensaje','Primer mensaje','Nombre','Canal','Tipo de cliente','Tipo (botón del anuncio)','Estado','Ciudad','Teléfono','Correo','Vehículo','Piezas buscadas','Interés','Mensaje del cliente','Estatus','Refaccionaria asignada','Nota']];
-    for(const x of it) aoa.push([x.last_mx||'',x.first_mx||'',x.name||x.username||'',x.platform==='instagram'?'Instagram':'Messenger',x.tipo||'',x.tipo_btn||'',x.state||'',x.city||'',x.phone||'',x.email||'',x.vehicles||'',x.parts||'',x.intent||'',(x.customer_text||'').replace(/\n/g,' / ').slice(0,500),
+    const aoa=[['Último mensaje','Primer mensaje','Nombre','Canal','Tipo de cliente','Fuente del tipo','Estado','Ciudad','Teléfono','Correo','Vehículo (año)','Piezas buscadas','Interés','Resumen (IA)','Mensaje del cliente','Estatus','Refaccionaria asignada','Nota']];
+    for(const x of it) aoa.push([x.last_mx||'',x.first_mx||'',x.name||x.username||'',(CH[x.platform]||['',x.platform])[1],tipoKey(x)||'',x.tipo?(SRC_ES[x.tipo_src]||''):(x.tipo_btn?'Botón del anuncio':''),x.state||'',x.city||'',x.phone||'',x.email||'',x.vehicles||'',x.parts||'',x.intent||'',x.summary||'',(x.customer_text||'').replace(/\n/g,' / ').slice(0,500),
       ({nuevo:'Nuevo',contactado:'Contactado',derivado:'Derivado a refaccionaria',venta:'Venta',descartado:'Descartado'})[x.status]||x.status,x.derived_to||'',x.note||'']);
-    const s=summaries(it); const o=opportunities(it);
+    const s=summaries(it); const o=opportunities(it); const dt=demandTable(it);
     const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,sheet(aoa,[16,11,26,10,16,16,18,16,13,22,30,36,18,60,18,22,30]),'Contactos');
-    XLSX.utils.book_append_sheet(wb,sheet([['Estado','Refaccionarias potenciales: consultas con demanda','Con teléfono','Vehículos más buscados','Piezas más buscadas']].concat(o.map(g=>[g.state,g.n,g.phones,g.veh,g.part])),[22,16,12,50,60],'143D34'),'Oportunidades por estado');
+    XLSX.utils.book_append_sheet(wb,sheet(aoa,[16,11,26,10,16,14,18,16,13,22,30,36,18,50,60,18,22,30]),'Contactos');
+    XLSX.utils.book_append_sheet(wb,sheet([['Estado','Consultas','Con vehículo/pieza','Con teléfono','Tipo de cliente (P particular · T taller · R refaccionaria · F flotilla · Taxi)','Vehículos más buscados (año)','Piezas más buscadas']].concat(o.map(g=>[g.state,g.n,g.demand,g.phones,g.tipos,g.veh,g.part])),[22,11,14,12,40,55,60],'143D34'),'Oportunidades por estado');
+    XLSX.utils.book_append_sheet(wb,sheet([['Vehículo','Pieza','Consultas','Años','Estados','Tipo de cliente','Con teléfono']].concat(dt.map(g=>[g.model,g.part,g.n,topTxt(g.years,10),topTxt(g.states,8),topTxt(g.tipos,6),g.phones])),[26,32,11,40,45,40,12],'143D34'),'Demanda vehículo-pieza');
+    XLSX.utils.book_append_sheet(wb,sheet([['Tipo de cliente','Consultas']].concat(s.tipo),[26,12],'143D34'),'Por tipo');
     XLSX.utils.book_append_sheet(wb,sheet([['Estado','Consultas']].concat(s.state),[26,12],'143D34'),'Por estado');
     XLSX.utils.book_append_sheet(wb,sheet([['Vehículo','Consultas']].concat(s.veh),[32,12],'143D34'),'Por vehículo');
     XLSX.utils.book_append_sheet(wb,sheet([['Pieza','Consultas']].concat(s.part),[36,12],'143D34'),'Por pieza');

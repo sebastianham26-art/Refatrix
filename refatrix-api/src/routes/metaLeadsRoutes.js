@@ -17,6 +17,7 @@ import {
   metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll,
 } from '../metaLeads.js';
 import { META_STATES } from '../metaLeadExtract.js';
+import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -27,9 +28,14 @@ const idOf = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ?
 const ymd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? s : null;
 
 const COLS = `t.id, t.platform, t.thread_id, COALESCE(t.m_name, t.name) AS name, t.username, t.first_at, t.last_at, t.last_in_at, t.msg_count, t.in_count,
-  COALESCE(t.m_tipo, t.a_tipo) AS tipo, t.a_tipo_btn AS tipo_btn, COALESCE(t.m_state, t.a_state) AS state, COALESCE(t.m_city, t.a_city) AS city,
-  COALESCE(t.m_phone, t.a_phone) AS phone, t.a_email AS email, COALESCE(t.m_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.a_parts) AS parts,
-  t.a_intent AS intent, t.status, t.derived_to, t.note,
+  -- 0271 · 우선순위: 사람(m_) > AI(ai_) > 규칙(a_)
+  COALESCE(t.m_tipo, t.ai_tipo, t.a_tipo) AS tipo, CASE WHEN t.m_tipo IS NOT NULL THEN 'manual' WHEN t.ai_tipo IS NOT NULL THEN t.ai_tipo_src ELSE NULL END AS tipo_src,
+  t.a_tipo_btn AS tipo_btn, COALESCE(t.m_state, t.ai_state, t.a_state) AS state, COALESCE(t.m_city, t.ai_city, t.a_city) AS city,
+  COALESCE(t.m_phone, t.ai_phone, t.a_phone) AS phone, t.a_email AS email,
+  COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts,
+  CASE WHEN t.m_vehicles IS NULL AND t.m_parts IS NULL THEN t.ai_demand END AS demand,
+  COALESCE(t.ai_intent, t.a_intent) AS intent, t.ai_summary AS summary, (t.ai_at IS NOT NULL AND t.ai_error IS NULL AND t.ai_hash IS NOT NULL) AS ai_done,
+  t.status, t.derived_to, t.note,
   (t.m_name IS NOT NULL OR t.m_tipo IS NOT NULL OR t.m_state IS NOT NULL OR t.m_city IS NOT NULL OR t.m_phone IS NOT NULL OR t.m_vehicles IS NOT NULL OR t.m_parts IS NOT NULL) AS edited,
   to_char(t.last_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD HH24:MI') AS last_mx,
   to_char(t.first_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS first_mx`;
@@ -42,21 +48,25 @@ export default async function metaLeadsRoutes(app) {
     try {
       counts = (await query(`SELECT count(*)::int AS total,
           count(*) FILTER (WHERE platform='messenger')::int AS messenger, count(*) FILTER (WHERE platform='instagram')::int AS instagram,
-          count(*) FILTER (WHERE COALESCE(m_parts, a_parts) IS NOT NULL OR COALESCE(m_vehicles, a_vehicles) IS NOT NULL)::int AS demand,
-          count(*) FILTER (WHERE COALESCE(m_state, a_state) IS NOT NULL)::int AS with_state,
-          count(*) FILTER (WHERE COALESCE(m_phone, a_phone) IS NOT NULL)::int AS with_phone,
-          count(*) FILTER (WHERE status='nuevo')::int AS nuevo
+          count(*) FILTER (WHERE platform='whatsapp')::int AS whatsapp,
+          count(*) FILTER (WHERE COALESCE(m_parts, ai_parts, a_parts) IS NOT NULL OR COALESCE(m_vehicles, ai_vehicles, a_vehicles) IS NOT NULL)::int AS demand,
+          count(*) FILTER (WHERE COALESCE(m_state, ai_state, a_state) IS NOT NULL)::int AS with_state,
+          count(*) FILTER (WHERE COALESCE(m_phone, ai_phone, a_phone) IS NOT NULL)::int AS with_phone,
+          count(*) FILTER (WHERE COALESCE(m_tipo, ai_tipo, a_tipo) IS NOT NULL)::int AS with_tipo,
+          count(*) FILTER (WHERE status='nuevo')::int AS nuevo,
+          count(*) FILTER (WHERE ai_at IS NOT NULL AND ai_error IS NULL)::int AS ai_done,
+          count(*) FILTER (WHERE in_count > 0 AND (ai_at IS NULL OR ai_error IS NOT NULL))::int AS ai_pending
         FROM meta_threads`)).rows[0];
       last = (await query(`SELECT id, started_at, finished_at, trigger, full_scan, ok, threads, inserted, by_platform, error FROM meta_sync_runs ORDER BY id DESC LIMIT 1`)).rows[0] || null;
       lastOk = (await query(`SELECT max(finished_at) AS t FROM meta_sync_runs WHERE ok = true`)).rows[0].t || null;
     } catch (_) { return { configured: metaLeadsConfigured(), migrated: false }; }
     return { configured: metaLeadsConfigured(), migrated: true, token_source: metaTokenSource(), page_id: metaPageId(), page, page_error: pageError, page_warning: pageWarning,
       running: syncState.running, progress: syncState.running ? syncState.progress : null, counts, last_run: last, last_ok_at: lastOk,
-      auto: process.env.META_LEADS_AUTO !== '0', states: META_STATES };
+      auto: process.env.META_LEADS_AUTO !== '0', states: META_STATES,
+      ai: { ready: aiReady(), model: aiModel(), running: aiState.running, done: aiState.done, total: aiState.total, errors: aiState.errors, last_error: aiState.last_error, finished_at: aiState.finished_at } };
   });
 
   app.post('/api/meta-leads/sync', W, async (req, reply) => {
-    if (!metaLeadsConfigured()) return reply.code(400).send({ error: 'no_token' });
     if (syncState.running) return reply.code(409).send({ error: 'already_running', progress: syncState.progress });
     const full = !!(req.body && req.body.full);
     syncMetaLeads({ full, trigger: 'manual', userId: req.ctx.perm.userId })
@@ -69,13 +79,13 @@ export default async function metaLeadsRoutes(app) {
     const args = []; const conds = ['true'];
     const add = (v) => { args.push(v); return '$' + args.length; };
     const kw = String(req.query.q || '').trim();
-    if (kw) { const p = add('%' + kw + '%'); conds.push(`(COALESCE(t.m_name,t.name) ILIKE ${p} OR t.customer_text ILIKE ${p} OR t.note ILIKE ${p} OR COALESCE(t.m_phone,t.a_phone) ILIKE ${p})`); }
-    if (['messenger', 'instagram'].includes(req.query.platform)) conds.push(`t.platform = ${add(req.query.platform)}`);
-    if (req.query.state === '__none') conds.push(`COALESCE(t.m_state,t.a_state) IS NULL`);
-    else if (req.query.state) conds.push(`COALESCE(t.m_state,t.a_state) = ${add(String(req.query.state))}`);
-    if (req.query.tipo) conds.push(`COALESCE(t.m_tipo,t.a_tipo,t.a_tipo_btn) ILIKE ${add('%' + String(req.query.tipo) + '%')}`);
+    if (kw) { const p = add('%' + kw + '%'); conds.push(`(COALESCE(t.m_name,t.name) ILIKE ${p} OR t.customer_text ILIKE ${p} OR t.note ILIKE ${p} OR COALESCE(t.m_phone,t.ai_phone,t.a_phone) ILIKE ${p} OR t.ai_summary ILIKE ${p} OR COALESCE(t.m_vehicles,t.ai_vehicles,t.a_vehicles) ILIKE ${p} OR COALESCE(t.m_parts,t.ai_parts,t.a_parts) ILIKE ${p})`); }
+    if (['messenger', 'instagram', 'whatsapp'].includes(req.query.platform)) conds.push(`t.platform = ${add(req.query.platform)}`);
+    if (req.query.state === '__none') conds.push(`COALESCE(t.m_state,t.ai_state,t.a_state) IS NULL`);
+    else if (req.query.state) conds.push(`COALESCE(t.m_state,t.ai_state,t.a_state) = ${add(String(req.query.state))}`);
+    if (req.query.tipo) conds.push(`COALESCE(t.m_tipo,t.ai_tipo,t.a_tipo,t.a_tipo_btn) ILIKE ${add('%' + String(req.query.tipo) + '%')}`);
     if (STATUSES.includes(req.query.status)) conds.push(`t.status = ${add(req.query.status)}`);
-    if (req.query.demand === '1') conds.push(`(COALESCE(t.m_parts,t.a_parts) IS NOT NULL OR COALESCE(t.m_vehicles,t.a_vehicles) IS NOT NULL)`);
+    if (req.query.demand === '1') conds.push(`(COALESCE(t.m_parts,t.ai_parts,t.a_parts) IS NOT NULL OR COALESCE(t.m_vehicles,t.ai_vehicles,t.a_vehicles) IS NOT NULL)`);
     if (ymd(req.query.from)) conds.push(`(t.last_at AT TIME ZONE 'America/Mexico_City')::date >= ${add(req.query.from)}::date`);
     if (ymd(req.query.to)) conds.push(`(t.last_at AT TIME ZONE 'America/Mexico_City')::date <= ${add(req.query.to)}::date`);
     const limit = Math.min(Number(req.query.limit) || 5000, 10000);
@@ -86,7 +96,7 @@ export default async function metaLeadsRoutes(app) {
 
   app.get('/api/meta-leads/:id', R, async (req, reply) => {
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
-    const r = (await query(`SELECT ${COLS}, t.messages, t.a_tipo, t.a_state, t.a_city, t.a_phone, t.a_vehicles, t.a_parts, t.name AS meta_name FROM meta_threads t WHERE t.id = $1`, [id])).rows[0];
+    const r = (await query(`SELECT ${COLS}, t.messages, COALESCE(t.ai_tipo, t.a_tipo) AS a_tipo, COALESCE(t.ai_state, t.a_state) AS a_state, COALESCE(t.ai_city, t.a_city) AS a_city, COALESCE(t.ai_phone, t.a_phone) AS a_phone, COALESCE(t.ai_vehicles, t.a_vehicles) AS a_vehicles, COALESCE(t.ai_parts, t.a_parts) AS a_parts, t.name AS meta_name, t.ai_error FROM meta_threads t WHERE t.id = $1`, [id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
     return { ...r, id: Number(r.id) };
   });
@@ -112,4 +122,13 @@ export default async function metaLeadsRoutes(app) {
   });
 
   app.post('/api/meta-leads/reextract', W, async () => ({ updated: await reextractAll() }));
+
+  // 0271 · AI 분석 — all=true 면 전체 다시(규칙 · 모델 바꾼 뒤), 아니면 새로 바뀐 대화만. 백그라운드 — 진행은 status.ai
+  app.post('/api/meta-leads/ai', W, async (req, reply) => {
+    if (!aiReady()) return reply.code(400).send({ error: 'ai_not_configured' });
+    if (aiState.running) return reply.code(409).send({ error: 'already_running' });
+    const all = !!(req.body && req.body.all); const id = idOf(req.body && req.body.id);
+    analyzeThreads({ all, ids: id ? [id] : null }).catch((e) => app.log.warn({ err: String(e && e.message) }, '[meta-leads] ai failed'));
+    return { started: true };
+  });
 }

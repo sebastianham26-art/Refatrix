@@ -16,6 +16,7 @@ const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-meta-leads';
 const X = await import('../src/metaLeadExtract.js');
+const AI = await import('../src/metaLeadsAi.js');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -61,12 +62,34 @@ test('A2. 광고 버튼 문구 — 「de MTY」는 지역이 아니고, 업종�
 let JSDOM = null;
 try { ({ JSDOM } = await import('jsdom')); } catch { /* skip */ }
 const HTML = path.join(ROOT, 'refatrix-metaleads.html');
+test('A3. 0271 · AI 입력 · 출력 정리 — 봇 안내문 제외 · 주 이름 맞추기 · 우리 번호 제거 · 차종-부품 짝', () => {
+  const msgs = [{ me: true, text: 'Hola Juan, Qué gusto saludarte. Para empezar…' }, { me: false, text: 'tengo una flotilla de 12 verzas' },
+    { me: true, text: '¿Confirmas que es para un Nissan Versa 2018?' }, { me: false, text: 'si, horquillas, estoy en cuernavaca' },
+    { me: true, text: 'Claro, te comparto el link de nuestra pagina https://refatrix.com.mx' }];
+  const tx = AI.conversationText(msgs);
+  assert.equal(tx, 'C: tengo una flotilla de 12 verzas\nR: ¿Confirmas que es para un Nissan Versa 2018?\nC: si, horquillas, estoy en cuernavaca', '봇 정형 안내는 빼고 직원 확인 질문은 남긴다');
+  assert.equal(AI.convHash(msgs), AI.convHash(JSON.parse(JSON.stringify(msgs)))); assert.notEqual(AI.convHash(msgs), AI.convHash(msgs.slice(1)));
+  const pr = AI.buildPrompt([{ id: 7, text: tx }]); assert.match(pr, /### id=7/); assert.match(pr, /Taxi \/ app/); assert.match(pr, /"Quintana Roo"/); assert.match(pr, /de MTY.*NO es la ubicación/s);
+  assert.deepEqual(AI.parseAiJson('aquí va:\n[{"id":7}]\nfin'), [{ id: 7 }]); assert.equal(AI.parseAiJson('nada'), null);
+  const n = AI.normalizeAi({ id: 7, tipo: 'flotilla', tipo_fuente: 'dicho', estado: 'morelos', ciudad: 'Cuernavaca', telefono: '+52 81 1825 0003',
+    vehiculos: [{ marca: 'Nissan', modelo: 'Versa', anio: '2018', piezas: ['Horquilla (brazo de control)'], cantidad: 12 }, { marca: null, modelo: null, anio: null, piezas: ['Rótula'] }],
+    intencion: ['precio', 'precio'], resumen: 'Flotilla de 12 Versa 2018 pide horquillas' });
+  assert.equal(n.tipo, 'Flotilla'); assert.equal(n.tipo_src, 'dicho'); assert.equal(n.state, 'Morelos', '대소문자 · 악센트 무시'); assert.equal(n.city, 'Cuernavaca');
+  assert.equal(n.phone, null, '우리 번호는 고객 전화가 아니다'); assert.equal(n.vehicles, 'Nissan Versa 2018'); assert.equal(n.parts, 'Horquilla (brazo de control); Rótula');
+  assert.equal(n.demand[0].cantidad, 12); assert.equal(n.intent, 'precio');
+  assert.equal(AI.normalizeAi({ tipo: 'Cliente VIP', estado: 'Texas', telefono: '5512345678' }).tipo, null);
+  assert.equal(AI.normalizeAi({ estado: 'Texas' }).state, null, '32개 주 밖은 버린다'); assert.equal(AI.normalizeAi({ telefono: '5512345678' }).phone, '5512345678');
+});
+
 test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는 HTML 없음' }, async (t) => {
   const tick = (ms = 150) => new Promise((r) => setTimeout(r, ms));
   const ITEMS = [
     { id: 1, platform: 'messenger', name: 'Antonio Lopez', last_mx: '2026-10-12 10:00', first_mx: '2026-10-11', tipo: 'Taxi / app', tipo_btn: null, state: 'Morelos', city: 'Jiutepec', phone: '7771234567', vehicles: 'Nissan Versa 2024', parts: 'Horquilla (brazo de control); Bieleta / tornillo estabilizador', intent: 'Precio', customer_text: 'tengo un versa 2024\nvivo en Jiutepec', status: 'nuevo', edited: false },
     { id: 2, platform: 'instagram', name: null, username: 'taller.garza', last_mx: '2026-10-12 09:00', tipo: null, tipo_btn: 'Refaccionaria', state: 'Morelos', city: null, phone: null, vehicles: 'Nissan Versa 2018; Chevrolet Aveo 2016', parts: 'Horquilla (brazo de control)', customer_text: 'x', status: 'derivado', derived_to: 'Refacc. X', edited: true },
     { id: 3, platform: 'messenger', name: 'Sin datos', last_mx: '2026-10-11 09:00', tipo: null, state: null, parts: null, vehicles: null, customer_text: '', status: 'nuevo' },
+    { id: 4, platform: 'whatsapp', name: 'Pepe Garza', last_mx: '2026-10-12 11:00', tipo: 'Flotilla', tipo_src: 'dicho', state: 'Morelos', city: 'Cuernavaca', phone: '7779990000',
+      vehicles: 'Nissan Versa 2018; Nissan March 2015', parts: 'Horquilla (brazo de control); Rótula', summary: 'Flotilla de 12 Versa busca horquillas y rótulas para March', customer_text: 'tengo flotilla',
+      demand: [{ marca: 'Nissan', modelo: 'Versa', anio: '2018', piezas: ['Horquilla (brazo de control)'] }, { marca: 'Nissan', modelo: 'March', anio: '2015', piezas: ['Rótula'] }], status: 'nuevo' },
   ];
   const calls = []; let written = null;
   const dom = new JSDOM(readFileSync(HTML, 'utf-8').replace(/<script src="https:\/\/cdn[^>]+><\/script>/, ''), {
@@ -80,10 +103,12 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
         const u = String(url); const method = opt.method || 'GET'; const body = opt.body ? JSON.parse(opt.body) : null; calls.push({ u, method, body });
         const json = (d, s = 200) => ({ ok: s < 400, status: s, json: async () => d });
         if (u.includes('/api/meta-leads/status')) return json({ configured: true, migrated: true, token_source: 'META_PAGE_TOKEN', page_id: '1', page: { name: 'CTR', ig_username: 'ctrmexico_' },
-          counts: { total: 3, messenger: 2, instagram: 1, demand: 2, with_state: 2, with_phone: 1, nuevo: 2 }, last_run: { ok: true, threads: 3, inserted: 3, finished_at: '2026-10-12T16:00:00Z' }, last_ok_at: '2026-10-12T16:00:00Z', auto: true,
+          counts: { total: 4, messenger: 2, instagram: 1, whatsapp: 1, demand: 3, with_state: 3, with_phone: 2, with_tipo: 2, nuevo: 3, ai_done: 1, ai_pending: 0 },
+          ai: { ready: true, model: 'claude-haiku-4-5-20251001', running: false, done: 0, total: 0, errors: 0 }, last_run: { ok: true, threads: 3, inserted: 3, finished_at: '2026-10-12T16:00:00Z' }, last_ok_at: '2026-10-12T16:00:00Z', auto: true,
           states: ['Jalisco', 'Morelos', 'Nuevo León'] });
         if (u.includes('/api/meta-leads/list')) return json({ items: ITEMS });
         if (u.includes('/api/meta-leads/sync')) return json({ started: true });
+        if (u.includes('/api/meta-leads/ai')) return json({ started: true });
         if (/\/api\/meta-leads\/1$/.test(u) && method === 'GET') return json({ ...ITEMS[0], meta_name: 'Antonio Lopez', a_state: 'Morelos', a_city: 'Jiutepec', a_phone: '7771234567', a_vehicles: 'Nissan Versa 2024', a_parts: 'Horquilla', a_tipo: 'Taxi / app',
           messages: [{ at: '2026-10-12T15:00:00Z', me: true, text: 'Hola' }, { at: '2026-10-12T15:01:00Z', me: false, text: 'tengo un versa' }] });
         if (/\/api\/meta-leads\/1$/.test(u) && method === 'PATCH') return json({ ...ITEMS[0], status: body.status, derived_to: body.derived_to, edited: true });   // 서버는 빈 칸을 자동값으로 돌려준다
@@ -96,10 +121,12 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1013b/);
+    assert.match(d.title, /mtl-1013ai/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
-    assert.match(d.getElementById('sKpis').textContent, /전체 문의3/);
-    assert.equal(d.querySelectorAll('#lTable tbody tr').length, 3);
+    assert.match(d.getElementById('sKpis').textContent, /전체 문의4/); assert.match(d.getElementById('sKpis').textContent, /WhatsApp1/);
+    assert.match(d.getElementById('sAi').textContent, /AI 분석 1건 완료/);
+    assert.equal(d.querySelectorAll('#lTable tbody tr').length, 4);
+    const wa = d.querySelector('#lTable tr[data-id="4"]').textContent; assert.match(wa, /WA/); assert.match(wa, /🤖 Flotilla de 12 Versa/, 'AI 요약 표시');
     assert.match(d.getElementById('lTable').textContent, /Refaccionaria \(버튼\)/, '버튼으로만 고른 업종 표시');
     assert.equal(d.getElementById('sGuide').classList.contains('hidden'), true, '정상이면 안내 숨김');
     assert.equal(d.querySelectorAll('#fState option').length, 5);
@@ -114,18 +141,30 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     const p = calls.filter((c) => c.method === 'PATCH').pop();
     assert.equal(p.body.status, 'derivado'); assert.equal(p.body.derived_to, 'Refacc. Cuernavaca'); assert.equal(p.body.state, '', '안 고친 칸은 빈 값(=자동값)');
   });
-  await t.test('C3. 가져오기 버튼 · 엑셀 5개 시트 · 요약', async () => {
+  await t.test('C3. 가져오기 · AI 버튼 · 엑셀 7개 시트(차종·연식 × 부품) · 요약', async () => {
     d.getElementById('bSync').click(); await tick();
     assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/sync') && c.method === 'POST' && c.body.full === false));
     d.getElementById('bXls').click(); await tick();
     assert.ok(written && /refatrix_meta_consultas_\d{4}-\d{2}-\d{2}\.xlsx/.test(written.name));
-    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Por estado', 'Por vehículo', 'Por pieza']);
-    const contacts = written.wb.sheets[0][1]; assert.equal(contacts.length, 4); assert.equal(contacts[1][2], 'Antonio Lopez'); assert.equal(contacts[2][2], 'taller.garza');
-    const opp = written.wb.sheets[1][1]; assert.equal(opp[1][0], 'Morelos'); assert.equal(opp[1][1], 2);
-    assert.match(opp[1][3], /Nissan Versa \(2\)/, '연식을 뗀 모델로 묶는다');
-    const veh = written.wb.sheets[3][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 2]);
+    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Demanda vehículo-pieza', 'Por tipo', 'Por estado', 'Por vehículo', 'Por pieza']);
+    const contacts = written.wb.sheets[0][1]; assert.equal(contacts.length, 5); assert.equal(contacts[1][2], 'Antonio Lopez'); assert.equal(contacts[2][2], 'taller.garza');
+    const waRow = contacts[4]; assert.equal(waRow[3], 'WhatsApp'); assert.equal(waRow[4], 'Flotilla'); assert.equal(waRow[5], 'Lo dijo'); assert.equal(waRow[8], '7779990000'); assert.match(waRow[13], /Flotilla de 12/);
+    assert.equal(contacts[2][4], 'Refaccionaria'); assert.equal(contacts[2][5], 'Botón del anuncio');
+    const opp = written.wb.sheets[1][1]; assert.equal(opp[1][0], 'Morelos'); assert.equal(opp[1][1], 3); assert.equal(opp[1][2], 3);
+    assert.match(opp[1][4], /Taxi 1/); assert.match(opp[1][4], /F 1/); assert.match(opp[1][4], /R 1/);
+    assert.match(opp[1][5], /Nissan Versa 2018 \(2\)/, '연식 포함 차종');
+    const dem = written.wb.sheets[2][1];
+    const versaH = dem.find((r) => r[0] === 'Nissan Versa' && r[1] === 'Horquilla (brazo de control)');
+    assert.equal(versaH[2], 3); assert.match(versaH[3], /2018 \(2\)/); assert.match(versaH[3], /2024 \(1\)/); assert.match(versaH[4], /Morelos \(3\)/);
+    assert.ok(dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Rótula'), 'AI 가 짝지은 차종-부품');
+    assert.ok(!dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Horquilla (brazo de control)'), 'AI 짝(demand)이 있으면 곱하지 않는다');
+    const veh = written.wb.sheets[5][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 3]);
     d.querySelector('#tabs .tab[data-p="sum"]').click(); await tick();
     assert.match(d.getElementById('sumOpp').textContent, /Morelos/);
+    assert.match(d.getElementById('sumDemand').textContent, /Nissan Versa/);
+    assert.match(d.getElementById('sumTipo').textContent, /Flotilla/);
+    d.getElementById('bAi').click(); await tick();
+    assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/ai') && c.method === 'POST' && c.body.all === true));
   });
   await t.test('C4. 새 코드에 인라인 onclick 없음 · 메뉴 등록', () => {
     const h = readFileSync(HTML, 'utf-8'); assert.ok(!/onclick=/.test(h));
@@ -175,7 +214,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   t.after(() => app.close());
   const SFX = Date.now().toString(36).slice(-5);
   const one = async (sql, a) => (await query(sql, a)).rows[0];
-  await query(`DELETE FROM meta_threads; DELETE FROM meta_sync_runs;`);
+  await query(`DELETE FROM meta_threads; DELETE FROM meta_sync_runs; DELETE FROM wa_messages;`);
   const dir = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`, [`ML Dir ${SFX}`, `mldir${SFX}`]);
   const rep = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'sales','x',$2) RETURNING id`, [`ML Rep ${SFX}`, `mlrep${SFX}`]);
   const D = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(dir.id), role: 'director' }) };
@@ -197,7 +236,9 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     delete process.env.META_PAGE_TOKEN; delete process.env.WHATSAPP_TOKEN;
     let s = (await call(D, 'GET', '/api/meta-leads/status')).json();
     assert.equal(s.configured, false); assert.equal(s.migrated, true);
-    assert.equal((await call(D, 'POST', '/api/meta-leads/sync', {})).statusCode, 400);
+    assert.equal((await call(D, 'POST', '/api/meta-leads/sync', {})).statusCode, 200, '토큰 없어도 WhatsApp 은 가져온다');
+    await untilDone();
+    assert.match((await call(D, 'GET', '/api/meta-leads/status')).json().last_run.error, /no_token/);
     process.env.META_PAGE_TOKEN = keepTok; if (keepWa) process.env.WHATSAPP_TOKEN = keepWa;
     assert.equal((await call(R, 'GET', '/api/meta-leads/list')).statusCode, 403, '마케팅 화면 권한이 없으면 못 본다');
     assert.equal((await call(R, 'POST', '/api/meta-leads/sync', {})).statusCode, 403, '가져오기는 마케팅 편집 권한');
@@ -315,5 +356,69 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const r = (await call(D, 'POST', '/api/meta-leads/reextract', {})).json(); assert.equal(r.updated, 8);
     const l = (await call(D, 'GET', '/api/meta-leads/list?state=Coahuila')).json().items; assert.equal(l.length, 1, '저장된 대화로 다시 추출');
   });
+  await t.test('B7. 0271 · WhatsApp 문의 — ERP 가 받은 대화를 같은 목록에 · 번호 = 연락처 · 프로필 이름 · 사내 번호 제외', async () => {
+    const at = (m) => new Date(Date.now() - m * 60000).toISOString();
+    await query(`INSERT INTO wa_messages (direction, phone, kind, body, source, at) VALUES
+      ('in','528112223344','text','Hola, soy mecánico en Saltillo, ocupo rótulas para tsuru 2015',  'inbound',$1),
+      ('out','528112223344','text','Claro, ¿cuántas piezas?','manual',$2),
+      ('in','528112223344','image',NULL,'inbound',$3),
+      ('in','528110001111','text','ok gracias','inbound',$1)`, [at(30), at(20), at(10)]);
+    await query(`INSERT INTO wa_inbound (wa_from, last_at, msg_count, profile_name) VALUES ('528112223344', now(), 2, 'Taller Ramírez')
+                 ON CONFLICT (wa_from) DO UPDATE SET profile_name = EXCLUDED.profile_name`);
+    await query(`UPDATE users SET wa_phone = '528110001111' WHERE id = $1`, [dir.id]);   // 사내(디렉터) 번호는 문의가 아니다
+    await call(D, 'POST', '/api/meta-leads/sync', {}); await untilDone();
+    const l = (await call(D, 'GET', '/api/meta-leads/list?platform=whatsapp')).json().items;
+    assert.equal(l.length, 1, '사내 번호 제외');
+    const w = l[0];
+    assert.equal(w.name, 'Taller Ramírez'); assert.equal(w.phone, '8112223344', 'WhatsApp 번호가 연락처');
+    assert.equal(w.tipo, 'Taller mecánico'); assert.equal(w.state, 'Coahuila'); assert.equal(w.vehicles, 'Nissan Tsuru 2015'); assert.equal(w.parts, 'Rótula');
+    const one = (await call(D, 'GET', `/api/meta-leads/${w.id}`)).json();
+    assert.deepEqual(one.messages.map((m) => [m.me, m.text]), [[false, 'Hola, soy mecánico en Saltillo, ocupo rótulas para tsuru 2015'], [true, 'Claro, ¿cuántas piezas?'], [false, '(imagen)']]);
+    assert.equal((await call(D, 'GET', '/api/meta-leads/status')).json().counts.whatsapp, 1);
+  });
+
+  await t.test('B8. 0271 · AI 분석 — 바뀐 대화만 · 고객 말 없는 대화는 안 보냄 · 우선순위 사람 > AI > 규칙', async () => {
+    const keepKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    assert.equal((await call(D, 'POST', '/api/meta-leads/ai', {})).json().error, 'ai_not_configured');
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    const prompts = [];
+    AI.setMetaAiCaller(async (prompt) => {
+      prompts.push(prompt);
+      const ids = [...prompt.matchAll(/### id=(\d+)/g)].map((m) => Number(m[1]));
+      return { ok: true, text: JSON.stringify(ids.map((id) => ({ id, tipo: 'Flotilla', tipo_fuente: 'dicho', estado: 'Yucatán', ciudad: 'Mérida',
+        vehiculos: [{ marca: 'Nissan', modelo: 'March', anio: '2016', piezas: ['Amortiguador'] }], intencion: ['precio'], resumen: 'R' + id }))) };
+    });
+    try {
+      const r = await call(D, 'POST', '/api/meta-leads/ai', { all: true }); assert.equal(r.statusCode, 200, r.body);
+      for (let i = 0; i < 100 && AI.aiState.running; i++) await wait(30);
+      await wait(50);
+      const sent = prompts.join('\n').match(/### id=/g).length;
+      const withText = (await query(`SELECT count(*)::int n FROM meta_threads WHERE in_count > 0`)).rows[0].n;
+      assert.equal(sent, withText, '고객이 쓴 말이 있는 대화만 AI 로');
+      assert.ok(!prompts.join('\n').includes('Qué gusto saludarte'), '봇 안내문은 안 보냄');
+      const ant = (await call(D, 'GET', `/api/meta-leads/${idAnt}`)).json();
+      assert.equal(ant.summary, 'R' + idAnt); assert.equal(ant.tipo, 'Flotilla'); assert.equal(ant.tipo_src, 'dicho');
+      assert.equal(ant.state, 'Yucatán', 'AI 가 규칙(Morelos)보다 우선'); assert.equal(ant.vehicles, 'Nissan March 2016');
+      assert.equal(ant.phone, '5511112222', '사람이 고친 전화는 AI 보다 우선');
+      assert.deepEqual(ant.demand, [{ marca: 'Nissan', modelo: 'March', anio: '2016', piezas: ['Amortiguador'], cantidad: null }]);
+      const st = (await call(D, 'GET', '/api/meta-leads/status')).json();
+      assert.equal(st.counts.ai_done, (await query(`SELECT count(*)::int n FROM meta_threads`)).rows[0].n); assert.equal(st.counts.ai_pending, 0); assert.equal(st.ai.ready, true);
+      // 다시 돌려도(all 아님) 바뀐 대화가 없으면 AI 호출 없음
+      prompts.length = 0;
+      await AI.analyzeThreads({});
+      assert.equal(prompts.length, 0, '같은 대화는 다시 보내지 않는다');
+      // 사람이 차종을 고치면 AI 짝(demand)은 숨긴다(사람 값 기준으로 집계)
+      const p = (await call(D, 'PATCH', `/api/meta-leads/${idAnt}`, { vehicles: 'Nissan Versa 2024' })).json();
+      assert.equal(p.vehicles, 'Nissan Versa 2024'); assert.equal(p.demand, null);
+      // AI 응답이 깨지면 오류로 남기고 대기(다음에 다시)
+      AI.setMetaAiCaller(async () => ({ ok: true, text: 'lo siento' }));
+      await query(`UPDATE meta_threads SET ai_hash = NULL WHERE id = $1`, [idAnt]);
+      await AI.analyzeThreads({});
+      const e = (await call(D, 'GET', `/api/meta-leads/${idAnt}`)).json(); assert.match(e.ai_error, /응답 형식/);
+      assert.equal((await call(D, 'GET', '/api/meta-leads/status')).json().counts.ai_pending, 1);
+    } finally { AI.setMetaAiCaller(null); if (keepKey) process.env.ANTHROPIC_API_KEY = keepKey; else delete process.env.ANTHROPIC_API_KEY; }
+  });
+
 });
 

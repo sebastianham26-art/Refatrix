@@ -17,6 +17,8 @@
 // =====================================================================
 import { query } from './db.js';
 import { extractLead } from './metaLeadExtract.js';
+import { normalizeWaNumber } from './waSend.js';
+import { kickAnalyze } from './metaLeadsAi.js';
 
 export const metaPageId = () => process.env.META_PAGE_ID || '1338649012669713';
 const apiVer = () => process.env.META_GRAPH_VERSION || process.env.WHATSAPP_API_VERSION || 'v20.0';
@@ -130,6 +132,46 @@ async function upsertThread(t, q = query) {
   return !!(r.rows[0] && r.rows[0].inserted);
 }
 
+// ── WhatsApp(0271) — ERP 의 WhatsApp Cloud API 번호로 받은 대화(wa_messages)를 같은 목록에 ──
+//   번호 = 연락처. 사내 수신자(사용자 wa_phone · 신규견적 알림 수신자 · 일일요약 번호)는 뺀다.
+const WA_KIND = { image: '(imagen)', audio: '(audio)', video: '(video)', document: '(documento)', sticker: '(sticker)', location: '(ubicación)' };
+export async function internalWaPhones(q = query) {
+  const set = new Set();
+  const add = (v) => { const n = normalizeWaNumber(v); if (n) set.add(n); };
+  for (const sql of [`SELECT wa_phone AS p FROM users WHERE wa_phone IS NOT NULL`, `SELECT phone AS p FROM quote_wa_recipients`]) {
+    try { for (const r of (await q(sql)).rows) add(r.p); } catch (_) { /* 테이블 없음 */ }
+  }
+  add(process.env.DAILY_SUMMARY_WA_TO);
+  return set;
+}
+export async function syncWhatsAppThreads({ since = null, q = query } = {}) {
+  const bp = { threads: 0, inserted: 0, error: null };
+  try {
+    const skip = await internalWaPhones(q);
+    const phones = (await q(
+      `SELECT m.phone, max(m.at) AS last_at FROM wa_messages m GROUP BY m.phone
+        HAVING bool_or(m.direction = 'in') ${since ? 'AND max(m.at) >= $1' : ''} ORDER BY 2 DESC LIMIT ${MAX_THREADS}`, since ? [since] : [])).rows;
+    for (const ph of phones) {
+      if (skip.has(ph.phone)) continue;
+      const msgs = (await q(`SELECT direction, kind, body, at FROM wa_messages WHERE phone = $1 ORDER BY at DESC LIMIT ${MSG_KEEP}`, [ph.phone])).rows.reverse()
+        .map((m) => ({ at: new Date(m.at).toISOString(), me: m.direction === 'out', text: String(m.body || '').trim() || WA_KIND[m.kind] || '' }));
+      const who = (await q(`SELECT (SELECT name FROM wa_contacts WHERE phone = $1 AND deleted_at IS NULL LIMIT 1) AS cname,
+                                   (SELECT profile_name FROM wa_inbound WHERE wa_from = $1) AS pname`, [ph.phone]).catch(() => ({ rows: [{}] }))).rows[0] || {};
+      const inMsgs = msgs.filter((m) => !m.me && m.text);
+      const customerText = inMsgs.map((m) => m.text).join('\n');
+      const ex = extractLead(customerText);
+      const local = String(ph.phone).replace(/\D/g, '').slice(-10);   // 52 · 521 어느 쪽이든 10자리
+      ex.phone = [local].concat(ex.phone ? ex.phone.split(', ').filter((x) => x !== local) : []).join(', ');   // WhatsApp 번호 자체가 연락처
+      const t = { platform: 'whatsapp', thread_id: 'wa:' + ph.phone, user_id: ph.phone, name: who.cname || who.pname || null, username: null,
+        first_at: msgs.length ? msgs[0].at : null, last_at: new Date(ph.last_at).toISOString(), last_in_at: inMsgs.length ? inMsgs[inMsgs.length - 1].at : null,
+        msg_count: msgs.length, in_count: inMsgs.length, messages: msgs, customer_text: customerText.slice(0, 8000), ex };
+      if (await upsertThread(t, q)) bp.inserted++;
+      bp.threads++;
+    }
+  } catch (e) { bp.error = String((e && e.message) || e).slice(0, 200); }
+  return bp;
+}
+
 // ── 가져오기 ──
 export const syncState = { running: false, started_at: null, progress: null, last: null };
 
@@ -142,14 +184,20 @@ export async function syncMetaLeads({ full = false, trigger = 'manual', userId =
   } catch (_) { /* 0270 전 */ }
   const out = { threads: 0, inserted: 0, by_platform: {}, errors: [] };
   try {
-    const pg = await resolvePage();
-    if (pg.error) throw new Error(pg.error === 'no_token' ? 'no_token' : 'page: ' + pg.error);
     // 언제까지 내려갈지: 전체 = 최근 N일 · 아니면 마지막 성공 실행 1시간 전까지
     let cutoff = new Date(Date.now() - DAYS() * 86400000);
     if (!full) {
       const last = (await q(`SELECT max(started_at) AS t FROM meta_sync_runs WHERE ok = true`).catch(() => ({ rows: [] }))).rows[0];
       if (last && last.t) cutoff = new Date(new Date(last.t).getTime() - 3600000);
     }
+    // ① WhatsApp — ERP 안의 대화라 토큰 없이도 된다
+    syncState.progress.platform = 'whatsapp';
+    const wa = await syncWhatsAppThreads({ since: full ? null : cutoff, q });
+    out.by_platform.whatsapp = wa; out.threads += wa.threads; out.inserted += wa.inserted;
+    if (wa.error) out.errors.push(`whatsapp: ${wa.error}`);
+    // ② Messenger · Instagram — Graph API
+    const pg = await resolvePage();
+    if (pg.error) throw new Error(pg.error === 'no_token' ? 'no_token' : 'page: ' + pg.error);
     const me = { id: metaPageId(), ig_id: pg.page.ig_id };
     for (const platform of ['messenger', 'instagram']) {
       syncState.progress.platform = platform;
@@ -184,10 +232,11 @@ export async function syncMetaLeads({ full = false, trigger = 'manual', userId =
     out.ok = ok;
   } catch (e) {
     out.ok = false; out.error = String((e && e.message) || e).slice(0, 300);
-    if (runId) await q(`UPDATE meta_sync_runs SET finished_at = now(), ok = false, threads = $2, inserted = $3, error = $4 WHERE id = $1`,
-      [runId, out.threads, out.inserted, out.error]).catch(() => {});
+    if (runId) await q(`UPDATE meta_sync_runs SET finished_at = now(), ok = false, threads = $2, inserted = $3, by_platform = $5::jsonb, error = $4 WHERE id = $1`,
+      [runId, out.threads, out.inserted, out.error, JSON.stringify(out.by_platform)]).catch(() => {});
   } finally {
     syncState.running = false; syncState.last = { ...out, finished_at: new Date().toISOString() };
+    if (out.threads) kickAnalyze();   // 0271 · 바뀐 대화만 AI 분석(기다리지 않음)
   }
   return out;
 }
@@ -206,7 +255,7 @@ export async function reextractAll(q = query) {
 export function startMetaLeadsWorker(app) {
   if (globalThis.__refatrixMetaLeadsWorker) return;
   const tick = async () => {
-    if (process.env.META_LEADS_AUTO === '0' || !metaLeadsConfigured() || syncState.running) return;
+    if (process.env.META_LEADS_AUTO === '0' || syncState.running) return;
     try {
       const done = (await query(`SELECT count(*)::int AS n FROM meta_sync_runs WHERE ok = true`)).rows[0].n;
       if (!done) return;   // 첫 가져오기는 사람이 화면에서 누른다(토큰 · 권한 확인 겸)

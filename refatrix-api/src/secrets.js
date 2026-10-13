@@ -63,9 +63,10 @@ export const SERVICES = [
       { name: 'META_PAGE_TOKEN', label: '페이지 · 시스템 사용자 토큰', secret: true, required: true, hint: '권한: pages_show_list · pages_read_engagement · pages_manage_metadata · pages_messaging (+ Instagram: instagram_basic · instagram_manage_messages). 비우면 WhatsApp 영구 토큰으로 시도' },
       { name: 'META_PAGE_ID', label: '페이지 ID', secret: false, hint: '비우면 1338649012669713 (Business Suite 주소의 asset_id)' },
       { name: 'META_LEADS_DAYS', label: '첫 가져오기 기간(일)', secret: false, hint: '비우면 180' },
+      { name: 'META_LEADS_AI_MODEL', label: '문의 분석 AI 모델', secret: false, hint: 'Anthropic 키로 대화를 읽어 고객 유형 · 지역 · 차종+연식 · 부품을 뽑는다. 비우면 claude-haiku-4-5-20251001' },
     ],
     uses: [
-      '제품·마케팅 › Meta 광고 문의 — Messenger · Instagram 대화 목록 · 지역 · 차종 · 부품 정리 · 엑셀',
+      '제품·마케팅 › Meta 광고 문의 — Messenger · Instagram · WhatsApp 대화 목록 · 지역 · 차종 · 부품 정리 · 엑셀(AI 분석은 Anthropic 키 사용)',
     ],
   },
   {

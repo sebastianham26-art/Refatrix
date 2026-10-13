@@ -126,6 +126,8 @@ export async function applyWebhook(body, q = query) {
           }
         }
       }
+      // 0271 · 보낸 사람 WhatsApp 프로필 이름(Meta 광고 문의 목록에 이름으로 쓴다)
+      const pname = new Map((v.contacts || []).map((c) => [normalizeWaNumber(c && c.wa_id), c && c.profile && c.profile.name]).filter((x) => x[0] && x[1]));
       for (const m of v.messages || []) {
         const from = normalizeWaNumber(m && m.from);
         if (!from) continue;
@@ -136,6 +138,7 @@ export async function applyWebhook(body, q = query) {
              last_type = CASE WHEN EXCLUDED.last_at >= wa_inbound.last_at THEN EXCLUDED.last_type ELSE wa_inbound.last_type END,
              msg_count = wa_inbound.msg_count + 1, updated_at = now()`,
           [from, tsOf(m.timestamp).toISOString(), String(m.type || '').slice(0, 30) || null]);
+        if (pname.get(from)) { try { await q(`UPDATE wa_inbound SET profile_name=$2 WHERE wa_from=$1`, [from, String(pname.get(from)).slice(0, 120)]); } catch (_) { /* 0271 전 */ } }
         out.inbound++;
         try { const h = await handleInbound(m, q); if (h && h.stored) out.stored = (out.stored || 0) + 1; }
         catch (_) { /* 0260 전이면 테이블 없음 — 24시간 창 기록은 위에서 끝남 */ }
