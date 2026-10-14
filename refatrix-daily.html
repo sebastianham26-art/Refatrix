@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 오늘 요약 · build daily-1008a</title>
+<title>Refatrix ERP · 오늘 요약 · build daily-1014wa</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -195,7 +195,7 @@
 </div>
 
 <script>
-  console.log('[daily] build daily-1008a (나의 기록 반영 + 기간 묶음 요약)');
+  console.log('[daily] build daily-1014wa (팀 업무 반영 + WhatsApp 요약본 템플릿)');
   let session={token:null,user:null,api:''};
   let isDirector=false, aiEnabled=false;
   let selDates=new Set();            // 선택된 날짜(YYYY-MM-DD, 월 이동해도 유지)
@@ -752,7 +752,8 @@
       let h='';
       if(d.enabled){
         h+='<div class="hint" style="font-size:12.5px;color:var(--income)"><b>✅ 자동 발송 사용 중</b> — 매일 멕시코 시각 '+esc(d.send_time||(d.send_hour_mx+':00'))+', '+(d.target_day==='today'?'당일':'전일')+' 요약'+(d.schedule_enabled===false?' <b style="color:var(--expense)">(자동 발송 꺼짐)</b>':'')+' (<a href="refatrix-wasched.html">시각 변경</a>) → <b>'+esc(d.to_masked||'?')+'</b>'
-          +(d.template?' · 템플릿 폴백: '+esc(d.template)+' ('+esc(d.template_lang)+')':' · 템플릿 폴백 미설정')+'</div>';
+          +(d.summary_template?' · 창 밖 요약본 템플릿: <b>'+esc(d.summary_template)+'</b> ('+esc(d.summary_template_lang||'ko')+')':'')
+          +(d.template?' · 한 줄 폴백: '+esc(d.template)+' ('+esc(d.template_lang)+')':'')+'</div>';
       }else{
         h+='<div class="hint" style="font-size:12.5px;color:var(--expense)"><b>⚠ 자동 발송 미설정</b> — Railway 환경변수 필요: '
           +(d.token_set?'':'<code>WHATSAPP_TOKEN</code> ')+(d.phone_id_set?'':'<code>WHATSAPP_PHONE_ID</code> ')
@@ -783,7 +784,7 @@
       const res=await fetch(session.api+'/api/daily-summary/wa/send',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:'{}'});
       const d=await res.json();
       if(!res.ok||d.error){ hint.style.color='var(--expense)'; hint.textContent='발송 실패: '+(d.detail||d.error||res.status); }
-      else{ hint.style.color='var(--income)'; hint.textContent='✅ '+d.date+' 요약 발송 완료 ('+(d.mode==='template'?'템플릿 헤드라인':'전체 텍스트')+')'; }
+      else{ hint.style.color='var(--income)'; hint.textContent='✅ '+d.date+' 요약 발송 완료 ('+(d.mode==='template_summary'?'요약본 템플릿 — 팀 업무·나의 기록·ERP 기록'+(d.sections_source==='fallback'?' (AI 없이 원본으로 작성)':''):d.mode==='template'?'한 줄 헤드라인 템플릿':'전체 텍스트')+')'+(d.note?' · 참고: '+d.note:''); }
       loadWaStatus(); loadList();
     }catch(e){ hint.style.color='var(--expense)'; hint.textContent='서버에 연결할 수 없습니다.'; }
     finally{ btn.textContent=prev; btn.disabled=false; }

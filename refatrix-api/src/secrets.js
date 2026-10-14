@@ -82,6 +82,8 @@ export const SERVICES = [
       { name: 'WHATSAPP_TEMPLATE_LANG', label: '템플릿 언어', secret: false, hint: '비우면 es_MX' },
       { name: 'OFFERSHEET_WA_TEMPLATE', label: '오퍼시트 템플릿명', secret: false },
       { name: 'DAILY_SUMMARY_WA_TO', label: '일일요약 수신 번호', secret: false, hint: '52 + 10자리' },
+      { name: 'DAILY_SUMMARY_WA_TEMPLATE', label: '오늘 요약 템플릿명', secret: false, hint: '유틸리티 · Korean · 본문 변수 5개({{1}} 날짜 {{2}} 팀 업무 {{3}} 나의 기록 {{4}} ERP 기록 {{5}} 챙길 일) + 빠른 답장 「전체 보기」 — 24시간 창 밖에서도 요약이 감. 비우면 daily_summary_ko' },
+      { name: 'DAILY_SUMMARY_WA_TEMPLATE_LANG', label: '오늘 요약 템플릿 언어', secret: false, hint: 'Meta 에서 승인받은 언어 코드 — Korean = ko. 비우면 ko' },
       { name: 'PROMO_CONSENT_TEMPLATE', label: '마케팅 동의 요청 템플릿명', secret: false, hint: '마케팅 · 버튼 「Sí, quiero」「No, gracias」 · 비우면 promo_consentimiento' },
       { name: 'PROMO_IMAGE_TEMPLATE', label: '마케팅 이미지 템플릿명', secret: false, hint: '마케팅 · 헤더 이미지 + 본문 {{1}} · 비우면 promo_imagen' },
       { name: 'PROMO_WA_DAILY_CAP', label: '마케팅 하루 발송 상한', secret: false, hint: '동의 요청 + 정기 발송 합계. 비우면 150 (Meta 한도 250을 내부 알림과 함께 씀)' },

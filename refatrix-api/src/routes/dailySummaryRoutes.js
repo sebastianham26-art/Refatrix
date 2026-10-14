@@ -35,6 +35,8 @@ import { buildDailyPrompt, buildPeriodPrompt, periodLabel, digestStats, extractT
 import { waEnabled, waConfig, sendDailySummaryWa } from '../waSend.js';
 import { windowState } from '../waWebhook.js';   // 1009 · 창 밖·모름이면 템플릿 먼저
 import { loadSchedule, isDue, targetDate, mxParts } from '../waSchedule.js';   // 0262 · 발송 시각 설정
+import { loadSettings as loadWorkplanSettings, isWorkday as isWorkplanDay, loadTargets as loadWorkplanTargets } from '../workplan.js';   // 1014 · 팀 업무
+import { dailyWaTemplate, dailyWaTemplateLang, buildDailyWaSections } from '../dailySummaryWa.js';   // 1014 · 요약본 템플릿
 
 const MODEL = process.env.DAILY_SUMMARY_MODEL || 'claude-sonnet-4-5-20250929';
 const MAX_DATES = 7;               // 한 번에 생성할 최대 날짜 수(순차 처리)
@@ -111,6 +113,52 @@ export async function collectDayDigest(dateStr) {
       updated_at: r.updated_at || null,
     }));
   })) : []) || [];
+
+  // ⓪-b 「👥 팀 업무」(직원 업무일지 workplan, 0263) — 1014 디렉터 지시로 요약에 포함.
+  //    직원별 「오늘 할 일」 체크리스트 · 실적(완료/일부/못함) · 계획 외 한 일 · 지연 · 미작성자.
+  //    0263 미적용(테이블 없음)이면 조용히 건너뛴다.
+  dg.workplan = (await safe('workplan', async () => {
+    const items = (await query(
+      `SELECT i.user_id, u.name, i.title, i.status, i.note, i.carry_count, i.added_late
+         FROM workplan_items i JOIN users u ON u.id = i.user_id
+        WHERE i.work_date = $1 AND i.deleted_at IS NULL
+        ORDER BY u.name, i.user_id, i.sort, i.id`, [dateStr])).rows;
+    const days = (await query(
+      `SELECT d.user_id, u.name, d.plan_saved_at, d.plan_late, d.done_saved_at, d.done_late, d.extra_done
+         FROM workplan_days d JOIN users u ON u.id = d.user_id
+        WHERE d.work_date = $1`, [dateStr])).rows;
+    const by = new Map();
+    const member = (uid, name) => {
+      const k = Number(uid);
+      if (!by.has(k)) by.set(k, { name: name || null, plan_hm: null, plan_late: false, done_hm: null, done_late: false, extra_done: '', items: [] });
+      return by.get(k);
+    };
+    for (const d of days) {
+      const m = member(d.user_id, d.name);
+      m.plan_hm = mxHmOf(d.plan_saved_at); m.plan_late = !!d.plan_late;
+      m.done_hm = mxHmOf(d.done_saved_at); m.done_late = !!d.done_late;
+      m.extra_done = clip(d.extra_done, 600);
+    }
+    for (const r of items) {
+      member(r.user_id, r.name).items.push({
+        title: clip(r.title, 200), status: r.status || 'open', note: clip(r.note, 200) || null,
+        carry_count: n(r.carry_count), added_late: !!r.added_late,
+      });
+    }
+    const members = [...by.values()]
+      .filter((m) => m.items.length || m.plan_hm || m.done_hm || m.extra_done)
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    // 미작성자 — 그날이 근무일일 때만(대상 직원 중 아무것도 안 쓴 사람)
+    let missing = [];
+    try {
+      const st = await loadWorkplanSettings();
+      if (isWorkplanDay(st, dateStr)) {
+        const written = new Set([...by.keys()]);
+        missing = (await loadWorkplanTargets()).filter((t) => !written.has(Number(t.id))).map((t) => t.name).filter(Boolean);
+      }
+    } catch (_) { /* 설정·대상 조회 실패 — 미작성 목록만 생략 */ }
+    return { members, missing };
+  })) || { members: [], missing: [] };
 
   // ① 일정 — 전 직원·전 scope(개인 포함). 타임드는 event_at 의 MX 날짜로 판정(±1일 조회 후 필터).
   dg.schedule = (await safe('schedule', async () => {
@@ -447,9 +495,11 @@ export async function runDailyWaJob({ force = false, dateStr = null, userId = nu
 
   // 요약 확보 — 스케줄러는 항상 재생성(하루 전체 확정 데이터), 수동은 있으면 재사용
   let content, digest;
-  if (force && row && row.content_md) {
+  const stored = row && row.content_md ? (typeof row.digest === 'string' ? safeParse(row.digest) : (row.digest || {})) : null;
+  // 1014 · 팀 업무가 들어가기 전에 만든 요약(digest 에 workplan 없음)은 재사용하지 않고 새로 만든다
+  if (force && stored && stored.workplan) {
     content = row.content_md;
-    digest = typeof row.digest === 'string' ? safeParse(row.digest) : (row.digest || {});
+    digest = stored;
   } else {
     const gen = await generateAndStore(target, userId);
     if (!gen.ok) {
@@ -460,13 +510,20 @@ export async function runDailyWaJob({ force = false, dateStr = null, userId = nu
   }
 
   const ws = await windowState(process.env.DAILY_SUMMARY_WA_TO).catch(() => ({ open: null }));
-  const res = await sendDailySummaryWa({ dateLabel: krDate(target), content_md: content, stats: digestStats(digest), windowOpen: ws.open });
+  // 1014 · 창 밖·모름이면 요약본 템플릿(팀 업무 · 나의 기록 · ERP 기록 · 챙길 일)을 만든다 — 창이 열려 있으면 전체 텍스트라 필요 없음
+  let summaryTpl = null;
+  let sections = null;
+  if (ws.open !== true && dailyWaTemplate()) {
+    sections = await buildDailyWaSections(target, digest, content).catch(() => null);
+    if (sections) summaryTpl = { name: dailyWaTemplate(), lang: dailyWaTemplateLang(), params: sections.params, payload: 'DSUM:' + target };
+  }
+  const res = await sendDailySummaryWa({ dateLabel: krDate(target), content_md: content, stats: digestStats(digest), windowOpen: ws.open, summaryTpl });
   if (res.ok) {
     await query(
-      `UPDATE daily_summaries SET wa_sent_at=now(), wa_status=$2, wa_error=NULL, wa_attempts=COALESCE(wa_attempts,0)+1 WHERE summary_date=$1`,
-      [target, 'sent_' + res.mode]);
-    logEvent({ userId, action: 'export', target: `daily_summary_wa:${target}`, detail: { mode: res.mode } });
-    return { ok: true, date: target, mode: res.mode };
+      `UPDATE daily_summaries SET wa_sent_at=now(), wa_status=$2, wa_error=$3, wa_attempts=COALESCE(wa_attempts,0)+1 WHERE summary_date=$1`,
+      [target, 'sent_' + res.mode, res.text_error ? String(res.text_error).slice(0, 400) : null]);
+    logEvent({ userId, action: 'export', target: `daily_summary_wa:${target}`, detail: { mode: res.mode, sections: sections ? sections.source : null } });
+    return { ok: true, date: target, mode: res.mode, sections_source: sections ? sections.source : null, note: res.text_error || null };
   }
   await query(
     `UPDATE daily_summaries SET wa_status='failed', wa_error=$2, wa_attempts=COALESCE(wa_attempts,0)+1 WHERE summary_date=$1`,
@@ -581,7 +638,8 @@ export default async function dailySummaryRoutes(app) {
         .map((r) => ({ summary_date: d10(r.summary_date), wa_sent_at: r.wa_sent_at, wa_status: r.wa_status, wa_error: r.wa_error, wa_attempts: Number(r.wa_attempts) }));
     } catch (_) { /* 0161 미적용 시 */ }
     const sc = await loadSchedule('daily_summary');
-    return { ...waConfig(), ai_enabled: aiEnabled(), send_hour_mx: Number(sc.send_time.slice(0, 2)), send_time: sc.send_time, target_day: sc.target_day, schedule_enabled: sc.enabled, recent };
+    return { ...waConfig(), summary_template: dailyWaTemplate() || null, summary_template_lang: dailyWaTemplateLang(),
+      ai_enabled: aiEnabled(), send_hour_mx: Number(sc.send_time.slice(0, 2)), send_time: sc.send_time, target_day: sc.target_day, schedule_enabled: sc.enabled, recent };
   });
 
   // ── WhatsApp 즉시(테스트) 발송 — 디렉터 전용. body {date?} 기본=MX 어제 ──

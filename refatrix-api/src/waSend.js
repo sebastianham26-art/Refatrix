@@ -168,14 +168,27 @@ export async function sendWaTo({ to, text, headline, templateName = null, templa
   return { ok: false, mode: null, error: `text: ${first.error}` + (fb.error !== 'no_template' ? ` / template: ${fb.error}` : ''), code: first.code };
 }
 
-// 요약 1건 발송: ① 자유 텍스트 → ② 실패 시(24h 창 밖 등) 템플릿 헤드라인 폴백
-export async function sendDailySummaryWa({ dateLabel, content_md, stats, windowOpen = true }) {
+// 요약 1건 발송
+//   창 열림 → ① 자유 텍스트(전체) → 실패 시 템플릿
+//   창 닫힘·모름(1009) → ① 요약본 템플릿(1014 · 팀 업무·나의 기록·ERP 기록·챙길 일 + 「전체 보기」 버튼)
+//                        → ② 한 줄 헤드라인 템플릿(WHATSAPP_TEMPLATE) → ③ (모름일 때만) 자유 텍스트
+//   summaryTpl: { name, lang, params:[5개], payload } — 없으면 ①을 건너뛴다(예전 동작).
+export async function sendDailySummaryWa({ dateLabel, content_md, stats, windowOpen = true, summaryTpl = null }) {
   if (!waEnabled()) return { ok: false, mode: null, error: 'wa_not_configured' };
   const text = mdToWaText(`📋 Refatrix 오늘 요약 · ${dateLabel}`, content_md);
   if (windowOpen !== true) {   // 1009 · 창 닫힘·모름 → 템플릿 먼저
+    let tplErr = null;
+    if (summaryTpl && summaryTpl.name) {
+      const base = { to: process.env.DAILY_SUMMARY_WA_TO, name: summaryTpl.name, lang: summaryTpl.lang, params: summaryTpl.params };
+      let s = await sendWaTemplateParams({ ...base, quickReplies: summaryTpl.payload ? [summaryTpl.payload] : [] });
+      // 버튼 없이 승인된 템플릿이면 버튼 파라미터 때문에 거절된다 → 버튼 빼고 한 번 더
+      if (!s.ok && summaryTpl.payload && [132000, 132012, 131008, 100].includes(Number(s.code))) s = await sendWaTemplateParams(base);
+      if (s.ok) return { ok: true, mode: 'template_summary', message_id: s.message_id };
+      tplErr = `요약본 템플릿 ${summaryTpl.name}: ${s.error}${s.code ? ' #' + s.code : ''}`;
+    }
     const t0 = await sendWaTemplate(buildWaHeadline(dateLabel, stats));
-    if (t0.ok) return { ok: true, mode: 'template', message_id: t0.message_id };
-    if (windowOpen === false) return { ok: false, mode: null, error: `template: ${t0.error} (24시간 창 밖)`, code: t0.code };
+    if (t0.ok) return { ok: true, mode: 'template', message_id: t0.message_id, text_error: tplErr };
+    if (windowOpen === false) return { ok: false, mode: null, error: `${tplErr ? tplErr + ' / ' : ''}template: ${t0.error} (24시간 창 밖)`, code: t0.code };
   }
   const first = await sendWaText(text);
   if (first.ok) return { ok: true, mode: 'text', message_id: first.message_id };
@@ -228,11 +241,15 @@ export const waParam = (v) => {
   const s = String(v == null ? '' : v).replace(/[\n\t\r]+/g, ' ').replace(/ {4,}/g, '   ').trim().slice(0, 1024);
   return s || '—';
 };
-export async function sendWaTemplateParams({ to, name, lang = null, mediaId = null, params = [] }) {
+//   quickReplies: 빠른 답장 버튼 payload(버튼 순서대로) — 누르면 웹훅에 이 payload 가 돌아온다(1014 · 오늘 요약 「전체 보기」).
+export async function sendWaTemplateParams({ to, name, lang = null, mediaId = null, params = [], quickReplies = [] }) {
   if (!name) return { ok: false, code: null, error: 'no_template' };
   const components = [];
   if (mediaId) components.push({ type: 'header', parameters: [{ type: 'image', image: { id: String(mediaId) } }] });
   components.push({ type: 'body', parameters: (params || []).map((p) => ({ type: 'text', text: waParam(p) })) });
+  (quickReplies || []).forEach((payload, i) => {
+    if (payload) components.push({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: String(payload).slice(0, 128) }] });
+  });
   return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'template',
     template: { name, language: { code: lang || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX' }, components } });
 }

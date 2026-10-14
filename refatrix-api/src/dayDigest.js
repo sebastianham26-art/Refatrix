@@ -38,6 +38,51 @@ function listLines(arr, fn, max) {
   return out;
 }
 
+// ── 팀 업무(직원 업무일지) ────────────────────────────────────────────
+//   dg.workplan = { members: [{ name, plan_hm, plan_late, done_hm, done_late, extra_done,
+//                               items: [{ title, status, note, carry_count, added_late }] }],
+//                   missing: [이름…] }   (collectDayDigest 가 만든다)
+const WP_ST = { done: '완료', partial: '일부', missed: '못함', open: '미체크' };
+export function workplanCounts(wp) {
+  const members = (wp && Array.isArray(wp.members)) ? wp.members : [];
+  const c = { members: members.length, items: 0, done: 0, partial: 0, missed: 0, open: 0,
+    missing: (wp && Array.isArray(wp.missing)) ? wp.missing.length : 0 };
+  for (const m of members) {
+    for (const it of (Array.isArray(m.items) ? m.items : [])) {
+      c.items++;
+      const s = WP_ST[it.status] ? it.status : 'open';
+      c[s]++;
+    }
+  }
+  return c;
+}
+export function condenseWorkplan(wp) {
+  const L = [];
+  const members = (wp && Array.isArray(wp.members)) ? wp.members : [];
+  const missing = (wp && Array.isArray(wp.missing)) ? wp.missing : [];
+  if (!members.length && !missing.length) { L.push('[팀 업무] 기록 없음'); return L; }
+  const c = workplanCounts(wp);
+  L.push(`[팀 업무] 작성 ${c.members}명 · 항목 ${c.items} (완료 ${c.done} · 일부 ${c.partial} · 못함 ${c.missed} · 미체크 ${c.open})${missing.length ? ` · 미작성 ${missing.length}명` : ''}`);
+  for (const m of members.slice(0, 25)) {
+    const head = [];
+    head.push(m.plan_hm ? `할 일 ${m.plan_hm} 작성${m.plan_late ? '(지연)' : ''}` : '할 일 미작성');
+    head.push(m.done_hm ? `한 일 ${m.done_hm} 작성${m.done_late ? '(지연)' : ''}` : '한 일 미작성');
+    L.push(`  · ${m.name || '?'} — ${head.join(' / ')}`);
+    const items = Array.isArray(m.items) ? m.items : [];
+    for (const it of items.slice(0, 15)) {
+      const extra = [];
+      if (n0(it.carry_count) > 0) extra.push(`이월 ${n0(it.carry_count)}회`);
+      if (it.added_late) extra.push('마감 후 추가');
+      L.push(`    - [${WP_ST[it.status] || '미체크'}] ${clip(it.title, 120)}${it.note ? ' — ' + clip(it.note, 120) : ''}${extra.length ? ' (' + extra.join(', ') + ')' : ''}`);
+    }
+    if (items.length > 15) L.push(`    - (외 ${items.length - 15}건)`);
+    if (m.extra_done && String(m.extra_done).trim()) L.push(`    - 계획 외 한 일: ${clip(m.extra_done, 300)}`);
+  }
+  if (members.length > 25) L.push(`  · (외 ${members.length - 25}명)`);
+  if (missing.length) L.push(`  · 미작성: ${missing.slice(0, 30).join(', ')}`);
+  return L;
+}
+
 // 하루치 digest JSON → 압축 텍스트(프롬프트 삽입용, 최대 ~9천자)
 export function condenseDigest(dateStr, dg) {
   dg = dg || {};
@@ -57,6 +102,9 @@ export function condenseDigest(dateStr, dg) {
   } else {
     L.push('[나의 기록] 없음');
   }
+
+  // ⓪-b 팀 업무(직원 업무일지 workplan, 0263) — 직원별 「오늘 할 일」 체크리스트 · 실적 · 계획 외 한 일 · 미작성자
+  L.push(...condenseWorkplan(dg.workplan));
 
   // ① 일정 (직원 작성 — 최우선 보존)
   const sch = Array.isArray(dg.schedule) ? dg.schedule : [];
@@ -176,7 +224,8 @@ export function buildDailyPrompt(dateStr, dg) {
     '### 오늘 한눈에',
     '(그날의 핵심을 3~5개 불릿으로 — 숫자 포함. 「나의 기록」이 있으면 그 관점을 먼저 반영)',
     '### 일정·할일 활동',
-    '(가장 중요한 섹션. 직원별로 누가 어떤 일정·할일·메모를 기록/완료했는지 이름을 들어 구체적으로 정리)',
+    '(가장 중요한 섹션. 「팀 업무」(직원 업무일지)를 먼저 — 직원별 계획 대비 완료·일부·못함, 계획 외 한 일, 지연·미작성자를 이름을 들어 정리하고,',
+    ' 이어서 누가 어떤 일정·할일·메모를 기록/완료했는지 구체적으로 정리)',
     '### 영업 활동',
     '(견적·미팅/방문·단계 이동·신규 고객)',
     '### 매출·자금',
@@ -292,6 +341,7 @@ export function digestStats(dg) {
   const td = dg.todos || {};
   return {
     journal: (Array.isArray(dg.journal) ? dg.journal : []).length,
+    workplan: workplanCounts(dg.workplan).members,
     schedule: (Array.isArray(dg.schedule) ? dg.schedule : []).length,
     todos: (Array.isArray(td.created) ? td.created.length : 0) + (Array.isArray(td.done) ? td.done.length : 0),
     quotes: n0((dg.quotes || {}).count),
@@ -306,4 +356,186 @@ export function digestStats(dg) {
 export function extractText(resp) {
   if (!resp || !Array.isArray(resp.content)) return '';
   return resp.content.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n').trim();
+}
+
+// =====================================================================
+// 1014 · 「오늘 요약」 WhatsApp 템플릿(24시간 창 밖에서도 내용이 가는 형식)
+//   디렉터 지시(2026-10-14): "템플릿이 없어 24시간 룰에 해당할 때만 발송된다 → 템플릿으로 보내되
+//   발송 내용은 그날 팀 업무 · 나의 기록 · ERP 당일 기록을 스캔해서 작성".
+//
+//   Meta 템플릿 규칙 → 이 형식이 된 이유
+//   · 변수에는 줄바꿈·탭·연속 공백 4칸 이상 금지(#132018) → 섹션마다 변수 1개, 항목은 「 | 」로 한 줄.
+//   · 변수를 채운 본문 전체가 1,024자를 넘으면 거절(#132005) → 섹션별 글자 예산 + 합계 상한.
+//   · 그래서 템플릿은 「요약본」, 전체 요약(A4 한 장)은 템플릿의 「전체 보기」 버튼을 누르면
+//     웹훅으로 그 자리에서 보낸다(버튼을 누르면 24시간 창이 열리므로 자유 텍스트가 도착한다).
+//
+//   Meta 에 승인받을 템플릿(카테고리 유틸리티 · 언어 Korean · 이름 기본 daily_summary_ko):
+//     본문 = DAILY_WA_TPL_BODY 그대로 · 빠른 답장 버튼 1개 「전체 보기」
+// =====================================================================
+export const DAILY_WA_TPL_BODY = [
+  '📋 Refatrix 오늘 요약 · {{1}}',
+  '',
+  '👥 팀 업무: {{2}}',
+  '',
+  '📝 나의 기록: {{3}}',
+  '',
+  '📊 ERP 기록: {{4}}',
+  '',
+  '⚠️ 챙길 일: {{5}}',
+  '',
+  '전체 요약은 아래 「전체 보기」 버튼을 누르면 바로 보내 드립니다.',
+].join('\n');
+export const DAILY_WA_BUTTON_PREFIX = 'DSUM:';     // 빠른 답장 버튼 payload = DSUM:YYYY-MM-DD
+const WA_BODY_MAX = 1024;
+const WA_SAFETY = 24;                               // 이모지·서로게이트 등 글자 셈 차이 여유
+export const DAILY_WA_SECTION_KEYS = ['team', 'journal', 'erp', 'followup'];
+export const DAILY_WA_BUDGET = Object.freeze({ team: 300, journal: 190, erp: 220, followup: 150 });
+const SECTION_LBL = { team: '팀 업무', journal: '나의 기록', erp: 'ERP 기록', followup: '챙길 일' };
+
+// 템플릿 변수 1개로 쓸 수 있게: 줄바꿈·탭 → 「 | 」, 공백 정리, 마크다운 기호 제거, 길이 제한
+export function waOneLine(s, max = 1024) {
+  let t = String(s == null ? '' : s)
+    .replace(/\r/g, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/^\s*[-*•]\s+/gm, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[\n\t]+/g, ' | ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/(\s*\|\s*){2,}/g, ' | ')
+    .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
+    .trim();
+  if ([...t].length > max) t = [...t].slice(0, Math.max(1, max - 1)).join('').replace(/\s*\|?\s*$/, '') + '…';
+  return t;
+}
+
+// 섹션 4개를 예산 안으로 맞추고, 본문 전체(1,024자) 상한도 지킨다. 빈 값은 Meta 가 거절하므로 대체 문구.
+export function fitWaSections(sec, dateLabel = '') {
+  const out = {};
+  for (const k of DAILY_WA_SECTION_KEYS) {
+    out[k] = waOneLine(sec && sec[k], DAILY_WA_BUDGET[k]) || (k === 'followup' ? '특이사항 없음' : '기록 없음');
+  }
+  const date = waOneLine(dateLabel, 40) || '-';
+  const staticLen = [...DAILY_WA_TPL_BODY.replace(/\{\{\d\}\}/g, '')].length;
+  const room = WA_BODY_MAX - WA_SAFETY - staticLen - [...date].length;
+  let total = DAILY_WA_SECTION_KEYS.reduce((a, k) => a + [...out[k]].length, 0);
+  // 넘치면 가장 긴 섹션부터 깎는다
+  while (total > room) {
+    const k = DAILY_WA_SECTION_KEYS.slice().sort((a, b) => [...out[b]].length - [...out[a]].length)[0];
+    const len = [...out[k]].length;
+    const cut = Math.max(20, len - (total - room));
+    if (cut >= len) break;
+    out[k] = waOneLine(out[k], cut);
+    total = DAILY_WA_SECTION_KEYS.reduce((a, kk) => a + [...out[kk]].length, 0);
+  }
+  return { date, ...out };
+}
+
+// 템플릿 본문 변수 순서({{1}}~{{5}})
+export function waSectionParams(fitted) {
+  return [fitted.date, fitted.team, fitted.journal, fitted.erp, fitted.followup];
+}
+
+// 미리보기·테스트용: 변수를 채운 실제 본문
+export function renderDailyWaBody(params) {
+  return DAILY_WA_TPL_BODY.replace(/\{\{(\d)\}\}/g, (_, i) => String(params[Number(i) - 1] ?? ''));
+}
+
+// AI 로 섹션 4개 작성 — 원본 기록(팀 업무 · 나의 기록 · ERP)과 이미 만든 전체 요약을 함께 준다
+export function buildWaSectionsPrompt(dateStr, dg, contentMd) {
+  const B = DAILY_WA_BUDGET;
+  return [
+    '너는 Refatrix ERP(멕시코 자동차부품 유통, 통화 MXN)의 경영 비서다.',
+    `${krDate(dateStr)} 하루를 디렉터에게 WhatsApp 한 통으로 보고할 「요약본」을 만든다.`,
+    '아래 원본 기록과 전체 일일 요약을 읽고, 4개 칸을 JSON 으로만 출력하라(설명·코드블록 없이 JSON 한 개).',
+    '',
+    `{"team": "...", "journal": "...", "erp": "...", "followup": "..."}`,
+    '',
+    `- team (${B.team}자 이내): 「팀 업무」(직원 업무일지) 중심. 직원별로 "이름: 핵심 한 일(완료/일부/못함)" 형식,`,
+    '  계획 외 한 일·지연·미작성자도 짧게. 업무일지가 없으면 일정·할일 기록으로 대신.',
+    `- journal (${B.journal}자 이내): 「나의 기록」(디렉터 일지)의 핵심 판단·결정·숙제. 없으면 "기록 없음".`,
+    `- erp (${B.erp}자 이내): ERP 당일 기록 — 견적·영업활동·매출 인보이스·입출금·신규 고객 등 수치 위주.`,
+    `- followup (${B.followup}자 이내): 디렉터가 챙길 일 1~3개(지연·미결·이상 징후·일지의 숙제).`,
+    '',
+    '형식 규칙(어기면 WhatsApp 이 거절한다):',
+    '- 각 칸은 한 줄. 줄바꿈·탭 금지. 항목 사이는 " | " 로 구분.',
+    '- 마크다운 기호(**, #, -) 금지. 이모지 금지.',
+    '- 자료에 없는 내용은 쓰지 말 것. 숫자는 원본 그대로. 직원 이름은 원본 표기 그대로.',
+    '- 한국어로.',
+    '',
+    '── 전체 일일 요약 ──',
+    String(contentMd || '(없음)').slice(0, 6000),
+    '',
+    '── 원본 기록 ──',
+    condenseDigest(dateStr, dg),
+  ].join('\n');
+}
+
+// AI 응답에서 JSON 4칸 꺼내기. 실패하면 null
+export function parseWaSections(text) {
+  const s = String(text || '');
+  const a = s.indexOf('{');
+  const b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  let o;
+  try { o = JSON.parse(s.slice(a, b + 1)); } catch { return null; }
+  if (!o || typeof o !== 'object') return null;
+  const out = {};
+  let any = false;
+  for (const k of DAILY_WA_SECTION_KEYS) {
+    const v = o[k];
+    out[k] = typeof v === 'string' ? v : (Array.isArray(v) ? v.join(' | ') : '');
+    if (out[k].trim()) any = true;
+  }
+  return any ? out : null;
+}
+
+// AI 를 못 쓸 때(키 없음·오류) 원본 기록에서 바로 만든다
+export function fallbackWaSections(dg) {
+  dg = dg || {};
+  const wp = dg.workplan || {};
+  const members = Array.isArray(wp.members) ? wp.members : [];
+  const team = [];
+  for (const m of members) {
+    const items = Array.isArray(m.items) ? m.items : [];
+    const done = items.filter((i) => i.status === 'done');
+    const part = items.filter((i) => i.status === 'partial').length;
+    const miss = items.filter((i) => i.status === 'missed').length;
+    const titles = done.slice(0, 2).map((i) => clip(i.title, 40)).join(', ');
+    team.push(`${m.name || '?'}: 완료 ${done.length}/${items.length}${part ? ` 일부 ${part}` : ''}${miss ? ` 못함 ${miss}` : ''}${titles ? ` (${titles})` : ''}`);
+  }
+  if (Array.isArray(wp.missing) && wp.missing.length) team.push(`미작성: ${wp.missing.join(', ')}`);
+  if (!team.length) {
+    const sch = Array.isArray(dg.schedule) ? dg.schedule : [];
+    for (const e of sch.slice(0, 4)) team.push(`${e.owner || e.created_by || '?'}: ${clip(e.content, 50)}`);
+  }
+  const jr = Array.isArray(dg.journal) ? dg.journal : [];
+  const journal = jr.length ? jr.map((j) => clip(j.content, 180)).join(' | ') : '';
+  const st = digestStats(dg);
+  const erp = [];
+  if (st.quotes) erp.push(`견적 ${st.quotes}건 ${mxn((dg.quotes || {}).total_mxn)}`);
+  const mt = n0((dg.meetings || {}).count); if (mt) erp.push(`영업활동 ${mt}건`);
+  if (st.invoices) erp.push(`매출 인보이스 ${st.invoices}건 ${mxn((dg.invoices || {}).total_mxn)}`);
+  if (st.txn_in || st.txn_out) erp.push(`입금 ${mxn(st.txn_in)} · 출금 ${mxn(st.txn_out)}`);
+  const nc = Array.isArray(dg.new_customers) ? dg.new_customers.length : 0; if (nc) erp.push(`신규 고객 ${nc}`);
+  const td = dg.todos || {};
+  const tdn = (Array.isArray(td.created) ? td.created.length : 0); if (tdn) erp.push(`할일 신규 ${tdn}`);
+  const follow = [];
+  const c = workplanCounts(wp);
+  if (c.missing) follow.push(`업무일지 미작성 ${c.missing}명`);
+  if (c.missed) follow.push(`못한 일 ${c.missed}건`);
+  return { team: team.join(' | '), journal, erp: erp.join(' | '), followup: follow.join(' | ') || '상세는 「전체 보기」' };
+}
+
+// 긴 텍스트를 WhatsApp 한 통(4,096자) 이하로 줄 단위 분할
+export function splitWaText(text, max = 3800) {
+  const lines = String(text || '').split('\n');
+  const parts = [];
+  let cur = '';
+  for (const line of lines) {
+    const piece = line.length > max ? line.slice(0, max) : line;
+    if (cur && (cur.length + 1 + piece.length) > max) { parts.push(cur); cur = piece; }
+    else cur = cur ? cur + '\n' + piece : piece;
+  }
+  if (cur.trim()) parts.push(cur);
+  return parts.length ? parts : [''];
 }
