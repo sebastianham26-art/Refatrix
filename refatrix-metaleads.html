@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1013wb</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1014cd</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -150,6 +150,7 @@
           <button type="button" data-d="veh" class="on">🚗 차종</button>
           <button type="button" data-d="state">📍 지역</button>
           <button type="button" data-d="tipo">👤 고객 유형</button>
+          <button type="button" data-d="code">📦 부품번호</button>
         </div>
         <span class="hint">행을 누르면 그 묶음의 연락처가 아래에 나옵니다.</span>
       </div>
@@ -207,7 +208,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1013wb';
+  const MTL_BUILD='mtl-1014cd';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -466,7 +467,40 @@
     veh:{label:'차종',es:'Vehículo',icon:'🚗',keys:x=>{ const m=[...new Set(demandLines(x).map(l=>l.model).filter(m=>m!=='(차종 미상)'))]; return m.length?m:[UNK.veh]; }},
     state:{label:'지역(주)',es:'Estado',icon:'📍',keys:x=>[x.state||UNK.state]},
     tipo:{label:'고객 유형',es:'Tipo de cliente',icon:'👤',keys:x=>[tipoKey(x)||UNK.tipo]},
+    code:{label:'부품번호',es:'Código CTR',icon:'📦'},   // 2026-10-14 · 수량 많은 순 · 고객 유형별 수량
   };
+  // 부품번호 × 고객 유형 — 수량 많은 순(tipo 를 고르면 그 유형 수량 순)
+  const TIPO_ORDER=['Particular','Taller mecánico','Refaccionaria','Mayorista','Flotilla','Taxi / app','(유형 모름)'];
+  const tipoOf2=(x)=>tipoKey(x)||'(유형 모름)';
+  function codeByTipo(items,tipo){
+    const by=new Map();
+    for(const x of items){ const t=tipoOf2(x); const seen=new Set();
+      for(const i of okItems(x)){
+        const g=by.get(i.code)||{code:i.code,name:i.name||'',qty:0,said:0,n:0,byTipo:new Map(),nTipo:new Map(),veh:new Map(),states:new Map(),ids:[]};
+        const q=i.qty||1; g.qty+=q; if(i.qty_src==='dicho'||i.qty_src==='manual') g.said+=q; inc(g.byTipo,t,q); inc(g.veh,i.veh||i.model||null);
+        if(!seen.has(i.code)){ seen.add(i.code); g.n++; g.ids.push(x.id); inc(g.nTipo,t); inc(g.states,x.state||null); }
+        by.set(i.code,g);
+      }
+    }
+    const val=(g)=>tipo?(g.byTipo.get(tipo)||0):g.qty;
+    return [...by.values()].filter(g=>val(g)>0).sort((a,b)=>val(b)-val(a)||b.qty-a.qty||b.n-a.n||a.code.localeCompare(b.code));
+  }
+  function codeTable(rows,tipo,opts){
+    opts=opts||{}; const stk=S.stock||{};
+    const tipos=TIPO_ORDER.filter(t=>rows.some(g=>g.byTipo.get(t)));
+    if(!rows.length) return '<div class="hint">정해진 부품번호가 없습니다 — 위 「🔢 부품번호 다시 매칭」.</div>';
+    const lim=opts.limit||rows.length;
+    return '<table><thead><tr><th>#</th><th>CTR 코드</th><th>품명</th><th>차종 · 연식</th><th class="num">'+(tipo?esc(TIPO_SHORT[tipo]||tipo)+' 수량':'수량 합계')+'</th>'
+      +(opts.noTipoCols?'':tipos.map(t=>'<th class="num" title="'+esc(t)+'">'+esc(TIPO_SHORT[t]||t)+'</th>').join(''))
+      +'<th class="num">문의</th><th class="num">고객이 말한 수량</th><th class="num">현재고</th><th>주</th></tr></thead><tbody>'
+      +rows.slice(0,lim).map((g,ix)=>{ const st=stk[g.code]; const v=tipo?(g.byTipo.get(tipo)||0):g.qty;
+        return '<tr class="click pv'+(S.sel===g.code&&S.dim==='code'?' sel':'')+'" data-k="'+esc(g.code)+'"><td class="num muted">'+(ix+1)+'</td><td><span class="code">'+esc(g.code)+'</span></td><td>'+esc(g.name)+'</td><td>'+esc(topTxt(g.veh,3))+'</td><td class="num"><b>'+v+'</b></td>'
+          +(opts.noTipoCols?'':tipos.map(t=>'<td class="num'+(t===tipo?' ok-t':'')+'">'+(g.byTipo.get(t)||'')+'</td>').join(''))
+          +'<td class="num">'+g.n+'</td><td class="num">'+(g.said||'—')+'</td><td class="num'+(st!=null&&st<g.qty?' bad-t':'')+'">'+(st==null?'—':st)+'</td><td>'+esc(topTxt(g.states,3))+'</td></tr>'; }).join('')
+      +(opts.noTotal?'':'<tr><td></td><td colspan="3"><b>합계 '+rows.length+'개 품목</b></td><td class="num"><b>'+rows.reduce((a,g)=>a+(tipo?(g.byTipo.get(tipo)||0):g.qty),0)+'</b></td>'
+        +(opts.noTipoCols?'':tipos.map(t=>'<td class="num"><b>'+rows.reduce((a,g)=>a+(g.byTipo.get(t)||0),0)+'</b></td>').join(''))+'<td colspan="4"></td></tr>')
+      +'</tbody></table>'+(rows.length>lim?'<div class="hint">상위 '+lim+'개 — 전체는 「📦 부품번호」 보기 · 엑셀 「Códigos por tipo de cliente」</div>':'');
+  }
   function pivot(items,dim){
     const by=new Map();
     for(const x of items){
@@ -506,7 +540,8 @@
   S.sel=null;
   $('sumDim').addEventListener('click',e=>{ const b=e.target.closest('button[data-d]'); if(!b) return; S.dim=b.dataset.d; S.sel=null;
     try{ localStorage.setItem('mtl_sum_dim',S.dim); }catch(e){} renderSummary(); });
-  $('sumPivot').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-k]'); if(!tr) return; S.sel=S.sel===tr.dataset.k?null:tr.dataset.k; renderSummary(); });
+  S.codeTipo='';
+  $('sumPivot').addEventListener('click',e=>{ const cb=e.target.closest('button[data-ct]'); if(cb){ S.codeTipo=cb.dataset.ct; S.sel=null; renderSummary(); return; } const tr=e.target.closest('tr[data-k]'); if(!tr) return; S.sel=S.sel===tr.dataset.k?null:tr.dataset.k; renderSummary(); });
   $('sumDetail').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id)); });
 
   // 0272 · 부품번호별 수요(확정분) · 못 정한 수요
@@ -537,13 +572,38 @@
     }
     return [...by.values()].sort((a,b)=>(a.status>b.status?1:a.status<b.status?-1:0)||b.n-a.n);
   }
+  function contactsHTML(title,rows){
+    return '<h2 style="margin-top:16px">'+esc(title)+' — 연락처 '+rows.length+'건</h2><div class="tblwrap"><table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>고객 유형</th><th>지역</th><th>전화</th><th>차종</th><th>부품</th><th>부품번호</th><th>상태</th></tr></thead><tbody>'
+      +rows.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b></td><td><span class="tag ch-'+x.platform+'">'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td><td>'+esc(tipoKey(x)||'—')+'</td><td>'+esc([x.state,x.city].filter(Boolean).join(' · ')||'—')+'</td><td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+'</td><td>'+codesHTML(x)+'</td><td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span></td></tr>').join('')
+      +'</tbody></table></div>';
+  }
+  // 2026-10-14 · 📦 부품번호 보기 — 수량 많은 순 · 고객 유형별 수량 · 유형을 고르면 그 유형 수량 순
+  function renderCodeView(it,s){
+    const tipo=S.codeTipo||''; const all=codeByTipo(it,''); const rows=codeByTipo(it,tipo);
+    bars(rows.slice(0,15).map(g=>[g.code+' · '+g.name,tipo?(g.byTipo.get(tipo)||0):g.qty]),'sumMain',15); bars(s.part,'sumPart',15);
+    $('sumPivotTitle').textContent='📦 부품번호별 판매기회 — 수량 많은 순'+(tipo?' · '+tipo:'');
+    $('sumPivotHint').textContent='문의에서 정한 CTR 부품번호의 수량 합계(수량을 말하지 않은 문의는 1개 · 좌우면 쪽당 1개). P 개인 · T 정비소 · R 부품점 · M 도매 · F 플리트 · Taxi — 유형을 고르면 그 유형 수량 순으로 정렬합니다. 행을 누르면 그 부품을 찾은 연락처.';
+    const present=TIPO_ORDER.filter(t=>all.some(g=>g.byTipo.get(t)));
+    const chips='<div class="seg" style="margin:8px 0 4px">'+[['','전체']].concat(present.map(t=>[t,t])).map(([v,l])=>'<button type="button" data-ct="'+esc(v)+'" class="'+(v===tipo?'on':'')+'">'+esc(l)+'</button>').join('')+'</div>';
+    $('sumPivot').innerHTML=chips+codeTable(rows,tipo);
+    const g=S.sel&&rows.find(r=>r.code===S.sel);
+    if(g){ const ids=new Set(g.ids); const cs=it.filter(x=>ids.has(x.id)&&(!tipo||tipoOf2(x)===tipo)); $('sumDetail').innerHTML=contactsHTML(g.code+' '+g.name,cs); }
+    else $('sumDetail').innerHTML='';
+    $('sumDemandBox').classList.add('hidden'); $('sumCodesBox').classList.remove('hidden');
+    [...$('sumCodesBox').children].slice(0,3).forEach(el=>el.classList.add('hidden'));   // 위 표와 같은 내용 — 못 정한 수요만 남김
+    const od=openDemand(it);
+    $('sumOpen').innerHTML=od.length?'<table><thead><tr><th>상태</th><th>차종 · 연식</th><th>부품</th><th class="num">문의</th><th class="num">수량</th><th>후보 코드</th><th>주</th></tr></thead><tbody>'
+      +od.map(g=>'<tr><td>'+(g.status==='candidato'?'<span class="warn-t">후보</span>':'<span class="bad-t">카탈로그 없음</span>')+'</td><td><b>'+esc(g.veh)+'</b></td><td>'+esc(g.pieza)+'</td><td class="num">'+g.n+'</td><td class="num">'+g.qty+'</td><td>'+[...g.cands].slice(0,8).map(c=>'<span class="code c-cand">'+esc(c)+'</span>').join('')+(g.cands.size>8?' …':'')+'</td><td>'+esc(topTxt(g.states,3))+'</td></tr>').join('')+'</tbody></table>'
+      :'<div class="hint">없음.</div>';
+  }
   function renderSummary(){
     const it=S.items; const s=summaries(it); const dim=S.dim; const D=DIM[dim];
     document.querySelectorAll('#sumDim button').forEach(b=>b.classList.toggle('on',b.dataset.d===dim));
     const n=(f)=>it.filter(f).length;
     $('sumKpis').innerHTML=[['문의',it.length],['차종·부품 확인',n(x=>demandLines(x).length)],['고객 유형 확인',n(x=>tipoKey(x))],['지역 확인',n(x=>x.state)],['전화 있음',n(x=>x.phone)],['AI 요약 있음',n(x=>x.summary)]]
       .map(([k,v])=>'<div class="kpi"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="hint">'+(it.length?Math.round(v/it.length*100):0)+'%</div></div>').join('');
-    $('sumBarTitle').textContent=D.label;
+    $('sumBarTitle').textContent=dim==='code'?'부품번호 (수량)':D.label;
+    if(dim==='code'){ renderCodeView(it,s); return; }
     bars(dim==='veh'?s.veh:dim==='state'?s.state:s.tipo,'sumMain',dim==='state'?20:15); bars(s.part,'sumPart',15);
     const P=pivot(it,dim); const cols=pivotCols(dim);
     $('sumPivotTitle').textContent=D.icon+' '+D.label+'별 판매기회';
@@ -555,11 +615,13 @@
       +'</tbody></table>':'<div class="hint">문의가 없습니다.</div>';
     const g=S.sel&&P.find(p=>p.key===S.sel);
     if(g){ const ids=new Set(g.ids); const rows=it.filter(x=>ids.has(x.id));
-      $('sumDetail').innerHTML='<h2 style="margin-top:16px">'+esc(g.key)+' — 연락처 '+rows.length+'건</h2><div class="tblwrap"><table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>고객 유형</th><th>지역</th><th>전화</th><th>차종</th><th>부품</th><th>부품번호</th><th>상태</th></tr></thead><tbody>'
+      const codesPart=dim==='tipo'?'<h2 style="margin-top:16px">📦 '+esc(g.key)+' — 부품번호 × 수량 (많은 순)</h2><div class="tblwrap">'+codeTable(codeByTipo(rows,''),'',{noTipoCols:true,limit:30})+'</div>':'';
+      $('sumDetail').innerHTML=codesPart+'<h2 style="margin-top:16px">'+esc(g.key)+' — 연락처 '+rows.length+'건</h2><div class="tblwrap"><table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>고객 유형</th><th>지역</th><th>전화</th><th>차종</th><th>부품</th><th>부품번호</th><th>상태</th></tr></thead><tbody>'
         +rows.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b></td><td><span class="tag ch-'+x.platform+'">'+(CH[x.platform]||[x.platform])[0]+'</span></td><td>'+esc(tipoKey(x)||'—')+'</td><td>'+esc([x.state,x.city].filter(Boolean).join(' · ')||'—')+'</td><td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+'</td><td>'+codesHTML(x)+'</td><td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span></td></tr>').join('')
         +'</tbody></table></div>'; }
     else $('sumDetail').innerHTML='';
     $('sumDemandBox').classList.toggle('hidden',dim!=='veh'); $('sumCodesBox').classList.toggle('hidden',dim!=='veh');
+    [...$('sumCodesBox').children].slice(0,3).forEach(el=>el.classList.remove('hidden'));
     const cd=codeDemand(it); const stk=S.stock||{};
     $('sumCodes').innerHTML=cd.length?'<table><thead><tr><th>CTR 코드</th><th>품명</th><th>차종 · 연식</th><th class="num">문의</th><th class="num">수량 합계</th><th class="num">고객이 말한 수량</th><th class="num">현재고</th><th>확신</th><th>주</th><th>고객 유형</th></tr></thead><tbody>'
       +cd.map(g=>{ const st=stk[g.code]; return '<tr><td><span class="code">'+esc(g.code)+'</span></td><td>'+esc(g.name)+'</td><td>'+esc(topTxt(g.veh,3))+'</td><td class="num">'+g.n+'</td><td class="num"><b>'+g.qty+'</b></td><td class="num">'+(g.said||'—')+'</td>'
@@ -597,6 +659,10 @@
       return sheet([hdr.concat(cols.map(c=>c[0]))].concat(P.map(g=>[g.key,g.n,g.demand,g.phones].concat(cols.map(c=>c[1](g))))),[26,11,14,12].concat(cols.map(()=>50)),'143D34'); };
     XLSX.utils.book_append_sheet(wb,pvSheet('tipo'),'Oportunidades por tipo');
     XLSX.utils.book_append_sheet(wb,pvSheet('veh'),'Oportunidades por vehículo');
+    { const cr=codeByTipo(it,''); const tps=TIPO_ORDER.filter(t=>cr.some(g=>g.byTipo.get(t))); const T_ES={'(유형 모름)':'Sin tipo'};
+      XLSX.utils.book_append_sheet(wb,sheet([['Código CTR','Descripción','Vehículo (año)','Cantidad total'].concat(tps.map(t=>T_ES[t]||t)).concat(['Consultas','Cantidad dicha por el cliente','Existencia','Estados'])]
+        .concat(cr.map(g=>[g.code,g.name,topTxt(g.veh,6),g.qty].concat(tps.map(t=>g.byTipo.get(t)||0)).concat([g.n,g.said,(S.stock||{})[g.code]==null?'':(S.stock||{})[g.code],topTxt(g.states,8)]))),
+        [16,34,34,13].concat(tps.map(()=>12)).concat([11,16,11,40]),'143D34'),'Códigos por tipo de cliente'); }
     const stk=S.stock||{}; const CONF_ES={'확실':'Alta','거의 확실':'Media','불확실':'Baja','사람이 입력':'Capturado'};
     XLSX.utils.book_append_sheet(wb,sheet([['Código CTR','Descripción','Vehículo (año)','Consultas','Cantidad total','Cantidad dicha por el cliente','Existencia','Confianza','Elegido por IA','Estados','Tipo de cliente']]
       .concat(codeDemand(it).map(g=>[g.code,g.name,topTxt(g.veh,6),g.n,g.qty,g.said,stk[g.code]==null?'':stk[g.code],[...g.conf.entries()].map(([k,n])=>(CONF_ES[k]||k)+' ('+n+')').join(', '),g.ai,topTxt(g.states,8),tiposTxt(g.tipos)])),[16,34,34,11,13,16,11,22,12,40,30],'143D34'),'Demanda por código CTR');

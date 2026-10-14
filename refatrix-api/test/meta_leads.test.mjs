@@ -155,7 +155,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1013wb/);
+    assert.match(d.title, /mtl-1014cd/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
     assert.match(d.getElementById('sKpis').textContent, /전체 문의4/); assert.match(d.getElementById('sKpis').textContent, /WhatsApp1/);
     assert.match(d.getElementById('sAi').textContent, /AI 분석 1건 완료/);
@@ -186,7 +186,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/sync') && c.method === 'POST' && c.body.full === false));
     d.getElementById('bXls').click(); await tick();
     assert.ok(written && /refatrix_meta_consultas_\d{4}-\d{2}-\d{2}\.xlsx/.test(written.name));
-    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Oportunidades por tipo', 'Oportunidades por vehículo', 'Demanda por código CTR', 'Por confirmar - sin catálogo', 'Demanda vehículo-pieza', 'Por tipo', 'Por estado', 'Por vehículo', 'Por pieza']);
+    assert.deepEqual([...written.wb.sheets.map((s) => s[0])], ['Contactos', 'Oportunidades por estado', 'Oportunidades por tipo', 'Oportunidades por vehículo', 'Códigos por tipo de cliente', 'Demanda por código CTR', 'Por confirmar - sin catálogo', 'Demanda vehículo-pieza', 'Por tipo', 'Por estado', 'Por vehículo', 'Por pieza']);
     const contacts = written.wb.sheets[0][1]; assert.equal(contacts.length, 5); assert.equal(contacts[1][2], 'Antonio Lopez'); assert.equal(contacts[2][2], 'taller.garza');
     const waRow = contacts[4]; assert.equal(waRow[3], 'WhatsApp'); assert.equal(waRow[4], 'Flotilla'); assert.equal(waRow[5], 'Lo dijo'); assert.equal(waRow[8], '7779990000'); assert.match(waRow[13], /Flotilla de 12/);
     assert.equal(contacts[2][4], 'Refaccionaria'); assert.equal(contacts[2][5], 'Botón del anuncio');
@@ -197,19 +197,23 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     assert.ok(byTipo[1].find((r) => r[0] === 'Flotilla' && r[1] === 1 && /Morelos/.test(r[4]) && /Versa 2018/.test(r[5])), '고객 유형별 판매기회');
     const byVeh = written.wb.sheets[3]; assert.equal(byVeh[0], 'Oportunidades por vehículo');
     const vRow = byVeh[1].find((r) => r[0] === 'Nissan Versa'); assert.equal(vRow[1], 3); assert.match(vRow[4], /2018 \(2\)/);
-    const byCode = written.wb.sheets[4][1];
+    const ct = written.wb.sheets[4][1];
+    assert.deepEqual([...ct[0]].slice(0, 6), ['Código CTR', 'Descripción', 'Vehículo (año)', 'Cantidad total', 'Flotilla', 'Taxi / app'], '유형 열(정해진 순서 · 있는 유형만)');
+    assert.equal(ct[1][0], 'CQ8L'); assert.equal(ct[1][3], 12); assert.equal(ct[1][4], 12, 'CQ8L 은 Flotilla 12');
+    const cq9t = ct.find((r) => r[0] === 'CQ9L'); assert.deepEqual([cq9t[3], cq9t[4], cq9t[5]], [3, 2, 1], 'CQ9L: 합계 3 = Flotilla 2 + Taxi 1');
+    const byCode = written.wb.sheets[5][1];
     const cq9 = byCode.find((r) => r[0] === 'CQ9L'); assert.deepEqual([cq9[3], cq9[4], cq9[5], cq9[6]], [2, 3, 2, 2], 'CQ9L: 문의 2 · 수량 1+2 · 말한 수량 2 · 재고 2');
     assert.equal(byCode[1][0], 'CQ8L', '수량 많은 순'); assert.equal(byCode[1][4], 12);
-    const open = written.wb.sheets[5][1];
+    const open = written.wb.sheets[6][1];
     assert.ok(open.find((r) => /Sin catálogo/.test(r[0]) && r[2] === 'Bieleta / tornillo estabilizador'));
     assert.ok(open.find((r) => /Por confirmar/.test(r[0]) && r[1] === 'Nissan March 2015' && r[5] === 'CB1, CB2'));
     assert.equal(contacts[1][18], 'CQ9L x1; CQ9R x1', 'Contactos 마지막 열 = 부품번호 × 수량');
-    const dem = written.wb.sheets[6][1];
+    const dem = written.wb.sheets[7][1];
     const versaH = dem.find((r) => r[0] === 'Nissan Versa' && r[1] === 'Horquilla (brazo de control)');
     assert.equal(versaH[2], 3); assert.match(versaH[3], /2018 \(2\)/); assert.match(versaH[3], /2024 \(1\)/); assert.match(versaH[4], /Morelos \(3\)/);
     assert.ok(dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Rótula'), 'AI 가 짝지은 차종-부품');
     assert.ok(!dem.find((r) => r[0] === 'Nissan March' && r[1] === 'Horquilla (brazo de control)'), 'AI 짝(demand)이 있으면 곱하지 않는다');
-    const veh = written.wb.sheets[9][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 3]);
+    const veh = written.wb.sheets[10][1]; assert.deepEqual([...veh[1]], ['Nissan Versa', 3]);
     d.querySelector('#tabs .tab[data-p="sum"]').click(); await tick();
     // 기본 보기 = 차종
     assert.match(d.getElementById('sumPivotTitle').textContent, /차종별/);
@@ -231,8 +235,22 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     assert.match(d.getElementById('sumPivotTitle').textContent, /고객 유형별/);
     assert.match(d.getElementById('sumMain').textContent, /Flotilla/);
     d.querySelector('#sumPivot tr[data-k="Flotilla"]').click(); await tick();
+    assert.match(d.getElementById('sumDetail').textContent, /Flotilla — 부품번호 × 수량/, '유형 행 → 그 유형의 부품번호 수량 순');
+    assert.ok(d.getElementById('sumDetail').textContent.indexOf('CQ8L') < d.getElementById('sumDetail').textContent.indexOf('CQ9L'), 'CQ8L(12) 이 CQ9L(2) 보다 위');
     assert.match(d.getElementById('sumDetail').textContent, /Flotilla — 연락처 1건/);
     assert.match(d.getElementById('sumDetail').textContent, /7779990000/);
+    // 2026-10-14 · 📦 부품번호 보기 — 수량 많은 순 · 유형별 열 · 유형 고르면 그 유형 순
+    d.querySelector('#sumDim button[data-d="code"]').click(); await tick();
+    const codeRows = () => [...d.querySelectorAll('#sumPivot tr[data-k]')].map((tr) => tr.dataset.k);
+    assert.deepEqual(codeRows(), ['CQ8L', 'CQ9L', 'CQ9R'], '수량 많은 순(12 · 3 · 1)');
+    assert.match(d.getElementById('sumPivotTitle').textContent, /부품번호별 판매기회/);
+    assert.match(d.getElementById('sumMain').textContent, /CQ8L/);
+    d.querySelector('#sumPivot button[data-ct="Taxi / app"]').click(); await tick();
+    assert.deepEqual(codeRows(), ['CQ9L', 'CQ9R'], 'Taxi 만: Taxi 수량 순, 없는 코드는 빠짐');
+    d.querySelector('#sumPivot tr[data-k="CQ9L"]').click(); await tick();
+    assert.match(d.getElementById('sumDetail').textContent, /CQ9L .*연락처 1건/, 'Taxi 로 고른 상태에선 Taxi 연락처만');
+    d.querySelector('#sumPivot button[data-ct=""]').click(); await tick();
+    d.querySelector('#sumDim button[data-d="tipo"]').click(); await tick();
     d.getElementById('bAi').click(); await tick();
     assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/ai') && c.method === 'POST' && c.body.all === true));
   });
