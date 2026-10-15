@@ -28,6 +28,7 @@ import { computeQuoteTotals } from '../quotes.js';
 import { buildLines, nextQuoteNo, assignReservations, normalizePoNo, poColumnReady, stampLineMeta } from '../quoteBuild.js';
 import { reserveExpiresAt } from '../quoteExpiry.js';
 import { kickOrderStatus } from '../orderStatusSync.js';   // 0227 · 접수 즉시 CRM 에 「Solicitud nueva」
+import { syncQuoteShortages } from '../quoteShortage.js';   // 2026-10-15 · 포털 견적도 부족분 즉시 기록
 import { recordQuoteDevDemand } from '../quoteDevDemand.js';   // 2026-09-21 · 포털로 온 미등록 코드도 즉시 개발요청 대장에   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 
 export const QUOTE_KEY = 'crm_quote_request';
@@ -330,6 +331,7 @@ export default async function crmQuoteRoutes(app) {
         }
         await stampLineMeta(c, q.id, lines);   // 0228 · OE 로 들어온 줄인지 기록(응답 모양은 그대로)
         await assignReservations(c, q.id);
+        await syncQuoteShortages(c, q.id, { userId: null });   // 2026-10-15 · 화면 견적과 같은 규칙
         // 2026-09-21 · 카탈로그에 없는 코드는 받는 즉시 개발요청 대장에 적는다(화면 견적과 같은 규칙).
         await recordQuoteDevDemand(c, q.id, { userId: null });
         return { q, lines };

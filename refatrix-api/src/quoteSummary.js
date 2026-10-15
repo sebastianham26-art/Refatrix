@@ -50,6 +50,7 @@ export async function computeQuoteSummary({ yms = [], all = false, scope = null 
                      OR (ss.source_quote_id IS NULL AND qs.invoice_id IS NOT NULL AND ss.sales_invoice_id = qs.invoice_id))
          LEFT JOIN products p ON p.id = ss.product_id
         WHERE ss.status <> 'cancelled'
+          AND qs.status IN ('converted','expired')   -- 2026-10-15 · 미결 견적의 부족은 저장 즉시 기록되지만 「실기」가 아니다(아래 op 로 따로)
      ), qsku AS MATERIALIZED (
        SELECT COALESCE(ql.product_id::text, 'X:' || regexp_replace(upper(COALESCE(ql.input_code,'')), '[^A-Z0-9]', '', 'g')) AS k
          FROM quote_lines ql JOIN qs ON qs.id = ql.quote_id

@@ -7,6 +7,7 @@ import { round2, allowPastMonthSalesEdit } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { autoStage } from '../stageAuto.js';
 import { allocateShortagesOnSale, reverseInvoiceResolutions, scanResolveShortages } from '../shortageResolve.js';
+import { syncQuoteShortages } from '../quoteShortage.js';   // 2026-10-15 · 견적 부족 기록은 지우지 않고 다시 맞춘다
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { isInternalCall } from '../internalCall.js';   // 0224c · 견적 전환 내부 호출 식별
 import { noPriceItems, NO_PRICE_NOTE } from '../noPrice.js';   // 2026-09-24 · 정가 없는 제품은 매출 불가
@@ -568,8 +569,10 @@ export default async function salesRoutes(app) {
     if (!inv) return reply.code(404).send({ error: 'not_found' });
     if (!canViewTeam(req.ctx.perm, inv.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const shortages = (await query(
-      `SELECT sh.id, p.code, p.name, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.occurred_at, sh.status
+      `SELECT sh.id, p.code, p.name, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.occurred_at, sh.status,
+              sh.source_quote_id, qq.quote_no
          FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
+         LEFT JOIN quotes qq ON qq.id=sh.source_quote_id
         WHERE sh.sales_invoice_id=$1 ORDER BY sh.id`, [id])).rows;
     const pending = (await query(
       `SELECT sp.id, sp.code, sp.qty, sp.occurred_at, sp.status,
@@ -744,16 +747,24 @@ export default async function salesRoutes(app) {
       `SELECT sh.id, sh.occurred_at, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.resolved_qty,
               (sh.shortage_qty - sh.resolved_qty) AS remaining_qty, sh.status, sh.resolved_at,
               sh.product_id, p.code, p.name, sh.customer_id, c.code AS customer_code, c.name AS customer_name,
-              sh.sales_invoice_id, sh.shortage_amount_mxn
+              sh.sales_invoice_id, sh.shortage_amount_mxn,
+              sh.source_quote_id, sh.note, qq.quote_no, qq.status AS quote_status,
+              (qq.deleted_at IS NOT NULL) AS quote_deleted, si.sat_no AS invoice_sat_no
          FROM stock_shortages sh
          JOIN products p ON p.id=sh.product_id
          LEFT JOIN customers c ON c.id=sh.customer_id
+         LEFT JOIN quotes qq ON qq.id=sh.source_quote_id
+         LEFT JOIN sales_invoices si ON si.id=sh.sales_invoice_id
         WHERE ${conds.join(' AND ')}
         ORDER BY sh.occurred_at DESC, sh.id DESC LIMIT ${limit}`, args)).rows;
     return { items: rows.map((r) => ({ ...r,
       requested_qty: Number(r.requested_qty), fulfilled_qty: Number(r.fulfilled_qty),
       shortage_qty: Number(r.shortage_qty), resolved_qty: Number(r.resolved_qty),
-      remaining_qty: Number(r.remaining_qty), shortage_amount_mxn: Number(r.shortage_amount_mxn || 0) })) };
+      remaining_qty: Number(r.remaining_qty), shortage_amount_mxn: Number(r.shortage_amount_mxn || 0),
+      // 2026-10-15 · 어느 견적에서 생긴 부족인가(삭제된 견적도 번호는 남는다)
+      source_quote_id: r.source_quote_id == null ? null : Number(r.source_quote_id),
+      quote_no: r.quote_no || null, quote_status: r.quote_status || null, quote_deleted: !!r.quote_deleted,
+      invoice_sat_no: r.invoice_sat_no || null })) };
   });
 
   // ---- 부족분 고객별×월별 요약: 발생·해소·잔여 매트릭스 (부족분 화면 「고객별 요약」 탭) ----
@@ -938,10 +949,19 @@ export default async function salesRoutes(app) {
       // 이 인보이스가 해소했던 부족분 되돌림(원장 삭제 + 잔여 복원) → 그 다음 이 인보이스의 부족 기록 삭제
       await reverseInvoiceResolutions(c.query.bind(c), id, userId);
       // 이 인보이스에 연결된 부족분 기록 / 미지급 커미션 정리
-      await c.query(`DELETE FROM stock_shortages WHERE sales_invoice_id=$1`, [id]);
+      // 2026-10-15 · 견적에서 온 부족 기록(source_quote_id)은 지우지 않는다 — 견적 저장 때부터의 로그다.
+      //   인보이스 연결만 끊고, 견적이 확정으로 돌아온 뒤 그 견적의 현재 상태로 다시 맞춘다.
+      //   견적과 무관한 직접 매출의 부족 기록만 예전처럼 지운다.
+      const shQuoteIds = (await c.query(
+        `UPDATE stock_shortages SET sales_invoice_id=NULL
+          WHERE sales_invoice_id=$1 AND source_quote_id IS NOT NULL RETURNING source_quote_id`, [id])).rows
+        .map((r) => Number(r.source_quote_id));
+      await c.query(`DELETE FROM stock_shortages WHERE sales_invoice_id=$1 AND source_quote_id IS NULL`, [id]);
       await c.query(`DELETE FROM commission_payouts WHERE invoice_id=$1 AND paid=false`, [id]);
       // 연결된 견적 → 미전환(확정)으로 되돌림 (재전환 가능)
-      await c.query(`UPDATE quotes SET status='confirmed', invoice_id=NULL, updated_by=$1, updated_at=now() WHERE invoice_id=$2 AND status='converted'`, [userId, inv.id]);
+      const revQ = (await c.query(`UPDATE quotes SET status='confirmed', invoice_id=NULL, updated_by=$1, updated_at=now() WHERE invoice_id=$2 AND status='converted' RETURNING id`, [userId, inv.id])).rows
+        .map((r) => Number(r.id));
+      for (const qid of new Set([...revQ, ...shQuoteIds])) await syncQuoteShortages(c, qid, { userId });
       // 인보이스 소프트 삭제
       await c.query(`UPDATE sales_invoices SET status='deleted', deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.id]);
       // 정산차액 기록(마감월 등 회계 보정)

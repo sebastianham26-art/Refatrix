@@ -18,6 +18,7 @@ import { packingDeadline } from '../workingHours.js';
 import { reserveExpiresAt } from '../quoteExpiry.js';
 import { recordQuoteDevDemand, quoteDevLines, esDevNote } from '../quoteDevDemand.js';   // 2026-09-21 · 미등록 코드는 저장 즉시 개발요청 대장에   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 import { maybeMarkPacked } from '../packedGate.js';
+import { syncQuoteShortages, syncQuoteShortagesMany, markQuoteShortages } from '../quoteShortage.js';   // 2026-10-15 · 부족분은 견적 저장 즉시 기록
 import { kickOrderStatus } from '../orderStatusSync.js';   // 0227 · 단계 전진 → CRM 오더상태
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
@@ -250,30 +251,14 @@ export default async function quoteRoutes(app) {
       const id = row.id;
       try {
         await withTx(async (c) => {
+          // 2026-10-15 · 부족분은 저장 시점부터 이미 적혀 있다. 만료 직전 상태로 한 번 더 맞추고(배포 전 견적 포함),
+          //   만료 뒤에는 그대로 얼려 둔다 — 수요 신호로 남는다(예전: 여기서 처음 INSERT 했다).
+          await syncQuoteShortages(c, id);
           const won = (await c.query(
             `UPDATE quotes SET status='expired', updated_at=now()
-              WHERE id=$1 AND status IN ('draft','confirmed') RETURNING id, quote_no, customer_id`, [id])).rows[0];
+              WHERE id=$1 AND status IN ('draft','confirmed') RETURNING id, quote_no, customer_id, created_by`, [id])).rows[0];
           if (!won) return;                       // 다른 틱이 이미 처리 — 백로그 중복 방지
-          const today = d10(new Date());
-          // 매칭 라인: 현재고로 못 채우는 부족분만 stock_shortages 에 적재(즉시분은 재고 복귀 → 미적재)
-          const mlines = (await c.query(
-            `SELECT ql.product_id, ql.qty, ql.final_price, p.stock_qty
-               FROM quote_lines ql JOIN products p ON p.id=ql.product_id
-              WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL`, [id])).rows;
-          for (const l of mlines) {
-            const qty = Number(l.qty) || 0;
-            const physical = l.stock_qty != null ? Number(l.stock_qty) : 0;
-            const short = Math.max(0, qty - Math.max(physical, 0));
-            if (short <= 0) continue;
-            const shAmount = round2(Number(l.final_price || 0) * short * 1.16);
-            await c.query(
-              `INSERT INTO stock_shortages
-                 (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty,
-                  shortage_amount_mxn, occurred_at, source_quote_id, note, created_by)
-               VALUES ($1,$2,NULL,$3,0,$4,$5,$6,$7,$8,$9)`,
-              [l.product_id, won.customer_id, qty, short, shAmount, today, id,
-               `견적 ${won.quote_no} 만료(미확정) — 부족 수요신호`, won.created_by || null]);
-          }
+          await markQuoteShortages(c, id, ' · 견적 만료(미확정) — 부족 수요신호');
           // 미매칭 라인: 제품개발요청 — 2026-09-21 부터는 저장 시점에 이미 적혀 있다.
           //   여기서는 **안전망**으로 한 번 더 부른다(배포 전 견적·예외 경로). 같은 견적·같은 코드는 중복되지 않는다.
           //   (status 를 방금 expired 로 바꿨으므로 취소 판정에 걸리지 않는다)
@@ -288,7 +273,13 @@ export default async function quoteRoutes(app) {
     // 2026-09-30 · 만료 처리 뒤 곧바로 풀린 재고를 부족한 미결 견적에 접수 순서대로 채운다(Q-2026-0280).
     const sweep = () => finalizeExpiredQuotes().catch(() => {})
       .then(() => topUpReservations({ query, withTx }))
-      .then((ch) => { if (ch && ch.length) app.log.info({ topped_up: ch.length }, 'quote reservations topped up'); })
+      .then(async (ch) => {
+        if (ch && ch.length) {
+          app.log.info({ topped_up: ch.length }, 'quote reservations topped up');
+          // 2026-10-15 · 예약이 채워진 견적은 부족분 기록도 맞춘다(채워진 만큼 줄고, 다 채워지면 정리 — 기록은 보존)
+          await syncQuoteShortagesMany(withTx, ch.map((x) => x.quote_id));
+        }
+      })
       .catch(() => {});
     globalThis.__refatrixExpirySweeper = setInterval(sweep, 60000);
     if (globalThis.__refatrixExpirySweeper.unref) globalThis.__refatrixExpirySweeper.unref();
@@ -385,6 +376,8 @@ export default async function quoteRoutes(app) {
       }
       await stampLineMeta(c, q.id, lines);   // 0228 · 무엇으로 찾았나 + OE 스냅샷
       await assignReservations(c, q.id);   // 선착순 재고 예약(블럭)
+      // 2026-10-15 · 예약으로 못 채운 부족분을 **지금** 부족분 대장에 적는다(전환·만료를 기다리지 않는다).
+      await syncQuoteShortages(c, q.id, { userId: req.ctx.perm.userId });
       // 2026-09-21 · 카탈로그에 없는 코드는 **지금** 개발요청 대장에 적는다(전환·만료를 기다리지 않는다).
       await recordQuoteDevDemand(c, q.id, { userId: req.ctx.perm.userId });
       const devLines = await quoteDevLines(c, q.id);
@@ -474,6 +467,7 @@ export default async function quoteRoutes(app) {
       }
       await stampLineMeta(c, id, lines);   // 0228
       await assignReservations(c, id);   // 라인 교체 후 예약 재배분(만료시각은 생성 기준 유지)
+      await syncQuoteShortages(c, id, { userId: req.ctx.perm.userId });   // 2026-10-15 · 수정 후 부족분 다시 맞춤(행은 지우지 않음)
       // 2026-09-21 · 수정으로 새로 들어온 미등록 코드도 바로 적는다(같은 견적·같은 코드는 한 줄).
       await recordQuoteDevDemand(c, id, { userId: req.ctx.perm.userId });
       hit.devLines = await quoteDevLines(c, id);
@@ -514,7 +508,12 @@ export default async function quoteRoutes(app) {
           items: bad.map((r) => ({ line_no: Number(r.line_no), code: r.input_code, issue: r.issue })) });
       }
     }
-    await query(`UPDATE quotes SET status=$1, updated_by=$2, updated_at=now() WHERE id=$3`, [st, req.ctx.perm.userId, id]);
+    await withTx(async (c) => {
+      await c.query(`UPDATE quotes SET status=$1, updated_by=$2, updated_at=now() WHERE id=$3`, [st, req.ctx.perm.userId, id]);
+      // 2026-10-15 · 취소해도 부족 기록은 남긴다(사연만 덧붙임). 작성중·확정으로 돌아오면 다시 현재 상태로 맞춘다.
+      if (st === 'cancelled') await markQuoteShortages(c, id, ' · 견적 취소(기록 보존)');
+      else await syncQuoteShortages(c, id, { userId: req.ctx.perm.userId });
+    });
     return { ok: true, status: st };
   });
 
@@ -908,7 +907,11 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT status FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status !== 'delete_pending') return reply.code(409).send({ error: 'not_pending' });
-    await query(`UPDATE quotes SET deleted_at=now(), updated_by=$1, updated_at=now() WHERE id=$2`, [req.ctx.perm.userId, id]);
+    await withTx(async (c) => {
+      await c.query(`UPDATE quotes SET deleted_at=now(), updated_by=$1, updated_at=now() WHERE id=$2`, [req.ctx.perm.userId, id]);
+      // 2026-10-15 · 견적을 지워도 부족분 기록은 **지우지 않는다**(로그로 보존 — 디렉터 지시). 사연만 덧붙인다.
+      await markQuoteShortages(c, id, ' · 견적 삭제됨(기록 보존)');
+    });
     await logEvent({ userId: req.ctx.perm.userId, action: 'delete_approve', target: `quote:${id}` });
     return { ok: true };
   });
@@ -923,6 +926,7 @@ export default async function quoteRoutes(app) {
     await query(
       `UPDATE quotes SET status=$1, del_reason=NULL, del_requested_by=NULL, del_requested_at=NULL, del_prev_status=NULL, updated_by=$2, updated_at=now() WHERE id=$3`,
       [back, req.ctx.perm.userId, id]);
+    try { await withTx(async (c) => { await syncQuoteShortages(c, id, { userId: req.ctx.perm.userId }); }); } catch (_) { /* best-effort */ }
     await logEvent({ userId: req.ctx.perm.userId, action: 'delete_reject', target: `quote:${id}` });
     return { ok: true, status: back };
   });
@@ -1308,15 +1312,12 @@ export default async function quoteRoutes(app) {
     // 미확보 부족분 백로그 + 미등록 개발요청 + 견적 종료(converted) — 한 트랜잭션
     const devIds = [];
     await withTx(async (c) => {
-      for (const s of shortRows) {
-        await c.query(
-          `INSERT INTO stock_shortages
-             (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty,
-              shortage_amount_mxn, occurred_at, source_quote_id, note, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [s.product_id, customerId, invoiceId || null, s.requested, s.fulfilled, s.shortage,
-           s.amount_mxn || 0, invDate, id, `견적 ${q.quote_no} 전환 — 미확보 부족분`, req.ctx.perm.userId]);
-      }
+      // 2026-10-15 · 부족 기록은 견적 저장 때 이미 있다 — 새로 INSERT 하지 않고 **실제 출고량으로 마지막으로 맞춘다**
+      //   (인보이스 연결 · 전량 출고된 제품은 정리 · 저장 때 없던 부족은 새로). 이중 기록이 생기지 않는다.
+      const shipped = new Map();
+      for (const sl of shipLines) shipped.set(Number(sl.product_id), round2((shipped.get(Number(sl.product_id)) || 0) + Number(sl.qty)));
+      await syncQuoteShortages(c, id, { mode: 'convert', invoiceId: invoiceId || null, customerId, fulfilled: shipped,
+        occurredAt: invDate, userId: req.ctx.perm.userId });
       // 미등록 코드 → 개발요청(2026-09-21 부터는 저장 시점에 이미 적혀 있다 — 여기는 안전망).
       //   불특정 견적을 전환하며 고객을 지정했다면 그 고객을 요청에 붙인다.
       const dev = await recordQuoteDevDemand(c, id, { customerId, userId: req.ctx.perm.userId });
@@ -1371,7 +1372,10 @@ export default async function quoteRoutes(app) {
                        WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL
                        ORDER BY ql.line_no, ql.id`;
     const before = (await query(LINE_SQL, [id])).rows;
-    await withTx(async (c) => { await assignReservations(c, id, { stamp: false }); });   // 추이 스냅샷(stock_flag) 보존
+    await withTx(async (c) => {
+      await assignReservations(c, id, { stamp: false });   // 추이 스냅샷(stock_flag) 보존
+      await syncQuoteShortages(c, id, { userId: req.ctx.perm.userId });   // 2026-10-15 · 부족분 기록도 함께
+    });
     const after = (await query(LINE_SQL, [id])).rows;
 
     const wasBy = new Map(before.map((l) => [Number(l.id), Number(l.reserved_qty) || 0]));
@@ -1413,7 +1417,7 @@ export default async function quoteRoutes(app) {
     //   만료된 견적을 살리는 경로인데 PO 만 사라지면 창고가 다시 대조를 못 한다.
     const poReady = await poColumnReady();
     const src = (await query(
-      `SELECT id, customer_id, quote_no, memo, ${poSelectFrag(poReady)} AS customer_po_no
+      `SELECT id, customer_id, quote_no, memo, status, ${poSelectFrag(poReady)} AS customer_po_no
          FROM quotes q WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];   // 0224c · 별칭 q 누락 → 복제 500 (poSelectFrag 는 q.customer_po_no)
     if (!src) return reply.code(404).send({ error: 'not_found' });
     const customerId = src.customer_id;
@@ -1452,6 +1456,18 @@ export default async function quoteRoutes(app) {
       }
       await stampLineMeta(c, q.id, lines);   // 0228
       await assignReservations(c, q.id);
+      // 2026-10-15 · 새 견적의 부족분을 바로 기록. 만료·취소된 원본의 미해소 부족 기록은 이 복제본이 이어받으므로
+      //   원본 쪽은 정리(cancelled — 지우지 않음)해 같은 수요가 두 번 잡히지 않게 한다.
+      await syncQuoteShortages(c, q.id, { userId: req.ctx.perm.userId });
+      if (['expired', 'cancelled'].includes(src.status)) {
+        await c.query(
+          `UPDATE stock_shortages
+              SET status='cancelled', resolved_at=NULL, resolved_by=NULL,
+                  note = COALESCE(note,'') || $2
+            WHERE source_quote_id=$1 AND status='open' AND resolved_qty=0
+              AND COALESCE(note,'') NOT LIKE '%[devreq:%'`,
+          [srcId, ` · 복제 견적 ${q.quote_no} 로 이어짐(기록 보존)`]);
+      }
       await recordQuoteDevDemand(c, q.id, { userId: req.ctx.perm.userId });   // 2026-09-21
       const devLines = await quoteDevLines(c, q.id);
       return { ...q, lines, devLines };

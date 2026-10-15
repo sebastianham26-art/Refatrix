@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 매출 등록 · sl0929ex</title>
+<title>Refatrix ERP · 매출 등록 · sl1015sq</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -536,8 +536,8 @@
         <tbody>${sum.map(r=>`<tr><td class="code">${r.code}</td><td>${r.name||''}</td><td class="num">${Number(r.stock_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.open_shortage).toLocaleString()}</td><td class="num">${r.records}</td><td>${r.last_occurred?String(r.last_occurred).slice(0,10):''}</td></tr>`).join('')}</tbody></table>`
         :'<div class="hint">미해소 부족 기록이 없습니다.</div>';
       const led=s2.items||[];
-      $('shortLedger').innerHTML = led.length?`<table><thead><tr><th>발생일</th><th>코드</th><th>제품</th><th>고객</th><th class="num">요청</th><th class="num">출고</th><th class="num">부족</th><th>인보이스</th></tr></thead>
-        <tbody>${led.map(r=>`<tr><td>${mxDia(r.occurred_at)}</td><td class="code">${r.code}</td><td>${r.name||''}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.sales_invoice_id?('#'+r.sales_invoice_id):'미발행'}</td></tr>`).join('')}</tbody></table>`
+      $('shortLedger').innerHTML = led.length?`<table><thead><tr><th>발생일</th><th>코드</th><th>제품</th><th>고객</th><th class="num">요청</th><th class="num">출고</th><th class="num">부족</th><th>견적</th><th>인보이스</th></tr></thead>
+        <tbody>${led.map(r=>`<tr><td>${mxDia(r.occurred_at)}</td><td class="code">${r.code}</td><td>${r.name||''}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.quote_no?(r.quote_deleted?`<b>${r.quote_no}</b> <span class="badge" style="background:#fde0db;color:#b3402e">견적 삭제됨</span>`:`<a href="refatrix-quotelist.html?q=${encodeURIComponent(r.quote_no)}" target="_blank" rel="noopener">${r.quote_no}</a>`):'—'}</td><td>${r.sales_invoice_id?(r.invoice_sat_no||('#'+r.sales_invoice_id)):'미발행'}</td></tr>`).join('')}</tbody></table>`
         :'<div class="hint">부족 원장이 비어 있습니다.</div>';
     }catch(e){$('shortSummary').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
     try{
@@ -605,8 +605,8 @@
       if(sh.length){
         html+=`<div style="margin-top:6px;border:1px solid #f0c5bf;background:#fdf3f1;border-radius:8px;padding:10px 12px">
           <b style="color:var(--expense);font-size:13px">부족분 (${sh.length}건)</b>
-          <table><thead><tr><th>코드</th><th>제품</th><th class="num">요청</th><th class="num">출고</th><th class="num">부족</th><th>상태</th></tr></thead>
-          <tbody>${sh.map(r=>`<tr><td class="code">${r.code}</td><td>${r.name||''}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.status==='open'?'미해소':r.status}</td></tr>`).join('')}</tbody></table>
+          <table><thead><tr><th>코드</th><th>제품</th><th class="num">요청</th><th class="num">출고</th><th class="num">부족</th><th>상태</th><th>견적</th></tr></thead>
+          <tbody>${sh.map(r=>`<tr><td class="code">${r.code}</td><td>${r.name||''}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.status==='open'?'미해소':r.status}</td><td>${r.quote_no||'—'}</td></tr>`).join('')}</tbody></table>
         </div>`;
       }
       if(pe.length){
@@ -971,6 +971,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261015m"></script>
+<script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>

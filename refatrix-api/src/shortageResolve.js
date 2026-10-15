@@ -6,6 +6,9 @@
 //   · 해소 원장(stock_shortage_resolutions)에 건별 기록. 잔여 0 → status='resolved'.
 //   · 같은 인보이스가 만든 부족 기록은 그 인보이스의 출고분으로 해소하지 않는다
 //     (부족분 자체가 그 인보이스의 미출고 잔량이므로).
+//   · 2026-10-15 · **아직 살아 있는 견적(작성중·확정)의 부족 기록**은 해소 대상이 아니다.
+//     견적 저장 즉시 기록되는 행이라(quoteShortage.js) 그 견적이 전환될 때 스스로 정리된다 —
+//     여기서 다른 판매(또는 그 견적 자신의 전환 출고분)로 해소하면 이중 정리가 된다.
 //   · 인보이스 삭제·수정 시 reverseInvoiceResolutions 로 되돌린다(원장 삭제 + 캐시 복원).
 //   호출처: salesRoutes(매출 등록·삭제·수정승인), 소급 스캔(resolve-scan).
 // =====================================================================
@@ -27,6 +30,8 @@ export async function allocateShortagesOnSale(q, { productId, customerId, qty, i
       WHERE product_id=$1 AND customer_id=$2 AND status='open'
         AND occurred_at <= $3::date
         AND ($4::bigint IS NULL OR sales_invoice_id IS DISTINCT FROM $4::bigint)
+        AND (source_quote_id IS NULL OR source_quote_id NOT IN (
+              SELECT id FROM quotes WHERE status IN ('draft','confirmed') AND deleted_at IS NULL))
       ORDER BY occurred_at, id
       FOR UPDATE`, [productId, customerId, invDate, invoiceId])).rows;
   const entries = [];

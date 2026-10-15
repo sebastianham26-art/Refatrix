@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 부족분 집계 · build 20261012do</title>
+<title>Refatrix ERP · 부족분 집계 · build 20261015sq</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--radius:12px;}
@@ -46,6 +46,11 @@
   .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800}
   .pill.ready{background:#fdf3d7;color:#8a6d1a}.pill.sent{background:var(--income-bg);color:var(--income)}.pill.cancelled{background:#eee;color:#888}
   .pill.off{background:#5b544a;color:#fff}
+  .qtag{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:6px;background:#eef2ee;color:var(--brand);font-size:11.5px;font-weight:700;white-space:nowrap}
+  .qtag.none{background:#f1efe9;color:#8a857a;font-weight:600}
+  .qtag a.qno{color:var(--brand);text-decoration:underline}
+  .qst{display:inline-block;margin-left:4px;padding:0 6px;border-radius:999px;background:#fff;color:#6d685d;font-size:10.5px;font-weight:700;border:1px solid #ddd8cc}
+  .qst.del{background:#fde0db;color:#b3402e;border-color:#f3c1b8}
   tr.offrow td{opacity:.55}
   .modalBg{position:fixed;inset:0;background:rgba(20,30,25,.45);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;z-index:50;overflow:auto}
   .modal{background:var(--card);border-radius:14px;max-width:860px;width:100%;padding:20px}
@@ -166,6 +171,17 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
   const fmtm=(n)=> '$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  // 2026-10-15 · 부족 기록이 생긴 견적(번호 + 현재 상태). 삭제된 견적도 번호는 남는다(기록 보존).
+  const Q_ST={draft:'작성중',confirmed:'확정',converted:'매출전환',expired:'만료',cancelled:'취소',delete_pending:'삭제대기',pricelist:'가용재고'};
+  function quoteTag(x){
+    if(!x||!x.quote_no) return x&&x.source_quote_id?('<span class="qtag">견적 #'+esc(x.source_quote_id)+'</span>'):'<span class="qtag none">견적 없음(직접 매출)</span>';
+    const st=x.quote_deleted?'<span class="qst del">삭제됨</span>':(x.quote_status?'<span class="qst">'+esc(Q_ST[x.quote_status]||x.quote_status)+'</span>':'');
+    const no=x.quote_deleted
+      ? '<b>'+esc(x.quote_no)+'</b>'
+      : '<a class="qno" href="refatrix-quotelist.html?q='+encodeURIComponent(x.quote_no)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">'+esc(x.quote_no)+'</a>';
+    const inv=x.sales_invoice_id?(' <span class="qst">인보이스 '+esc(x.invoice_sat_no||('#'+x.sales_invoice_id))+'</span>'):'';
+    return '<span class="qtag">견적 '+no+' '+st+inv+'</span>';
+  }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -229,7 +245,7 @@
         +'</tr>';
       if(openDetail[r.product_id]){
         const dets=openDetail[r.product_id];
-        html+='<tr class="detail"><td colspan="7">'+(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+(Number(x.resolved_qty)>0?(', 해소 '+fmtq(x.resolved_qty)+', 잔여 '+fmtq(x.remaining_qty)):'')+' ('+esc(mxDia(x.occurred_at||''))+')').join('<br>'):'세부 내역 불러오는 중…')+'</td></tr>';
+        html+='<tr class="detail"><td colspan="7">'+(dets===LOADING?'세부 내역 불러오는 중…':(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+(Number(x.resolved_qty)>0?(', 해소 '+fmtq(x.resolved_qty)+', 잔여 '+fmtq(x.remaining_qty)):'')+' ('+esc(mxDia(x.occurred_at||''))+') '+quoteTag(x)).join('<br>'):'세부 내역이 없습니다.'))+'</td></tr>';
       }
     });
     html+='</tbody></table>';
@@ -238,11 +254,13 @@
     html+='<div class="hint" style="margin-top:8px">SKU '+rows.length+'종 · 총 부족 '+fmtq(total)+'개 · 매출 불가 금액 합계 '+fmtm(totalAmt)+'. 행 클릭 시 요청 고객 내역 표시.</div>';
     $('listWrap').innerHTML=html;
   }
+  const LOADING=[];
   async function toggle(i,pid){
     if(openDetail[pid]){ delete openDetail[pid]; render(); return; }
-    openDetail[pid]=[]; render();
-    try{ const d=await fetch(session.api+'/api/shortages?status=open',{headers:auth()}).then(r=>r.json());
-      openDetail[pid]=(d.items||[]).filter(x=>x.product_id===pid||x.code===rows[i].ctr_code); render();
+    openDetail[pid]=LOADING; render();
+    // 2026-10-15 · 제품으로 걸러 받는다(예전: 전체 open 200건만 받아 걸러서 오래된 기록이 빠질 수 있었다)
+    try{ const d=await fetch(session.api+'/api/shortages?status=open&product_id='+pid+'&limit=1000',{headers:auth()}).then(r=>r.json());
+      openDetail[pid]=(d.items||[]).filter(x=>Number(x.product_id)===Number(pid)&&Number(x.remaining_qty)>0); render();
     }catch(e){ openDetail[pid]=[]; render(); }
   }
   function exportExcel(){
@@ -316,7 +334,7 @@
     }catch(e){ $('cmDetail').innerHTML='<div class="hint">세부 내역을 불러오지 못했습니다.</div>'; }
   }
   function cmStatusPill(r){
-    if(r.status==='cancelled') return '<span class="pill cancelled">취소</span>';
+    if(r.status==='cancelled') return '<span class="pill cancelled">'+(r.source_quote_id?'정리(현재 부족 없음)':'취소')+'</span>';
     if(r.status==='resolved') return '<span class="pill sent">해소완료</span>';
     if(Number(r.resolved_qty)>0) return '<span class="pill ready">일부해소</span>';
     return '<span class="pill" style="background:var(--expense-bg);color:var(--expense)">미해소</span>';
@@ -326,10 +344,11 @@
     let h='<div style="margin-top:14px;font-weight:800;color:var(--brand)">'+esc(sel.name)+' — '+esc(sel.ym)+' 부족분 세부 기록 '
       +'<button class="btn ghost sm" onclick="cmSel=null;$(\'cmDetail\').innerHTML=\'\'">닫기 ✕</button></div>';
     if(!cmRecords.length){ $('cmDetail').innerHTML=h+'<div class="hint">기록이 없습니다.</div>'; return; }
-    h+='<table><thead><tr><th>발생일</th><th>CTR 코드</th><th>제품명</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족(발생)</th><th class="r">해소</th><th class="r">잔여</th><th>상태</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th>발생일</th><th>견적</th><th>CTR 코드</th><th>제품명</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족(발생)</th><th class="r">해소</th><th class="r">잔여</th><th>상태</th></tr></thead><tbody>';
     for(const r of cmRecords){
       h+='<tr style="cursor:pointer" onclick="cmToggleRes('+r.id+')">'
         +'<td>'+esc(mxDia(r.occurred_at||''))+'</td>'
+        +'<td>'+quoteTag(r)+'</td>'
         +'<td><b>'+esc(r.code||'')+'</b></td><td>'+esc(r.name||'')+'</td>'
         +'<td class="r">'+fmtq(r.requested_qty)+'</td>'
         +'<td class="r">'+fmtq(r.fulfilled_qty)+'</td>'
@@ -348,7 +367,8 @@
           const who=x.resolved_by_name?(' · '+esc(x.resolved_by_name)):'';
           return '↳ '+mxDia(x.resolved_at||'')+' · <b>'+fmtq(x.qty)+'개 해소</b> · '+src+inv+who;
         }).join('<br>');
-        h+='<tr class="detail"><td colspan="9">'+inner+'</td></tr>';
+        if(r.note) inner='<span style="color:#7a756a">메모: '+esc(r.note)+'</span><br>'+inner;
+        h+='<tr class="detail"><td colspan="10">'+inner+'</td></tr>';
       }
     }
     h+='</tbody></table>';
@@ -745,6 +765,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261015m"></script>
+<script src="refatrix-nav.js?v=20261008ws"></script>
 </body>
 </html>
