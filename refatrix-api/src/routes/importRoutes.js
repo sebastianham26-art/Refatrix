@@ -5,6 +5,7 @@ import { logEvent } from '../audit.js';
 import { fieldVisible, flatAvgCostEnabled } from '../permissions.js';
 import { flatAvgCost } from '../flatAvgCost.js';
 import { consumeBackorder } from '../poBackorder.js';
+import { resolveBatchReceipt } from '../shortageReceipt.js';   // 0277 · 입고 시 부족분 해소
 import { generateOfferSheets } from '../offerSheets.js';
 
 export default async function importRoutes(app) {
@@ -244,7 +245,16 @@ export default async function importRoutes(app) {
         const bo = await consumeBackorder(cqb, Number(cl.product_id), boQty);
         boConsumed += bo.consumed;
       }
-      return { ok: true, lines: computedLines, backorder_consumed: Math.round(boConsumed * 1000) / 1000 };
+      // 0277 · 입고(재고 등재)된 수량으로 그 SKU 의 미해소 부족분을 오래된 것부터 해소(원장 source='receipt').
+      //   SAVEPOINT 격리 — 해소 기록이 실패해도 입고 승인은 그대로 간다.
+      let shRes = { resolved: 0, entries: 0 };
+      try {
+        await c.query('SAVEPOINT sh_receipt');
+        shRes = await resolveBatchReceipt(cqb, id, userId);
+        await c.query('RELEASE SAVEPOINT sh_receipt');
+      } catch (_) { await c.query('ROLLBACK TO SAVEPOINT sh_receipt').catch(() => {}); }
+      return { ok: true, lines: computedLines, backorder_consumed: Math.round(boConsumed * 1000) / 1000,
+        shortage_resolved: shRes.resolved };
     });
 
     if (out.error) return reply.code(409).send({ error: out.error });

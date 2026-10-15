@@ -3,6 +3,7 @@ import { authGuard, requirePage, requirePageAny, requirePageEditAny, requireDire
 import { logEvent } from '../audit.js';
 import { fieldVisible } from '../permissions.js';
 import { releaseBackorder } from '../poBackorder.js';
+import { reverseReceiptResolutions } from '../shortageReceipt.js';   // 0277
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -300,6 +301,7 @@ export default async function stockRoutes(app) {
         // 입고 되돌림 → 발주 backorder 복원(received_qty 역순 감소, 0 미만 금지)
         if (r.move_type === 'in') await releaseBackorder(c.query.bind(c), Number(r.product_id), Math.abs(qty));
       }
+      await reverseReceiptResolutions(c.query.bind(c), batchId, req.ctx.perm.userId);   // 0277 · 입고 해소 되돌림
       await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
       return { ok: true, deleted: rows.length };
     });

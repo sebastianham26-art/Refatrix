@@ -1,6 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
+import { orderCoverage } from '../shortageReceipt.js';   // 2026-10-15 · 부족분 ↔ 발주 ↔ 입고
 import { fobAtDate, fobMismatchByPo, fobStatus, mxToday, isYmd } from '../priceMaster.js';   // 0229 — 가격 마스터 FOB 로 구매 단가 검증
 
 // 구매단가(USD) 열람 권한: 디렉터·소시오만 공개. 그 외 역할은 값 자체를 내려주지 않음(null).
@@ -230,12 +231,17 @@ export default async function purchaseRoutes(app) {
                   GROUP BY sil.product_id) sold ON sold.product_id=p.id
       LEFT JOIN v_backorder bo ON bo.product_id=p.id
       LEFT JOIN (SELECT product_id, SUM(shortage_qty - resolved_qty) AS qty
-                   FROM stock_shortages WHERE status='open' GROUP BY product_id) sh ON sh.product_id=p.id`;
+                   FROM stock_shortages WHERE status='open' GROUP BY product_id) sh ON sh.product_id=p.id
+      LEFT JOIN inbound_prestock ps ON ps.product_id=p.id`;
+    // 2026-10-15 · 부족 잔여를 「발주(또는 창고 입고·승인 대기)로 덮인 몫」과 「미발주」로 나눈다.
+    //   미발주 = 아직 아무 주문도 안 걸린 부족 — 이것만 새로 주문하면 된다(같은 부족 반복 발주 방지).
+    const COVER = `(COALESCE(bo.backorder_qty,0) + COALESCE(ps.qty,0))`;
+    const UNORD = `GREATEST(COALESCE(sh.qty,0) - ${COVER}, 0)`;
     let where2 = where;
     if (onlyDemand) where2 += ' AND (COALESCE(bo.backorder_qty,0) > 0 OR COALESCE(sh.qty,0) > 0)';
     const SORTS = {
       code: 'p.code', stock: 'p.stock_qty', backorder: 'COALESCE(bo.backorder_qty,0)',
-      sold: 'COALESCE(sold.qty,0)', shortage: 'COALESCE(sh.qty,0)',
+      sold: 'COALESCE(sold.qty,0)', shortage: 'COALESCE(sh.qty,0)', unordered: UNORD,
     };
     const orderCol = SORTS[String(req.query.sort || '').toLowerCase()] || 'p.code';
     const orderBy = orderCol === 'p.code' ? `p.code ${dir}` : `${orderCol} ${dir} NULLS LAST, p.code ASC`;
@@ -245,7 +251,10 @@ export default async function purchaseRoutes(app) {
       `SELECT p.id, p.code AS ctr, p.name, p.stock_qty,
               COALESCE(sold.qty,0)          AS sold_qty,
               COALESCE(bo.backorder_qty,0)  AS backorder_qty,
-              COALESCE(sh.qty,0)            AS shortage_qty
+              COALESCE(sh.qty,0)            AS shortage_qty,
+              LEAST(COALESCE(sh.qty,0), ${COVER}) AS shortage_covered,
+              ${UNORD}                      AS shortage_unordered,
+              COALESCE(ps.qty,0)            AS prestock_qty
          FROM products p ${joins}
         WHERE ${where2}
         ORDER BY ${orderBy}
@@ -255,7 +264,8 @@ export default async function purchaseRoutes(app) {
               COALESCE(SUM(p.stock_qty),0)                 AS stock,
               COALESCE(SUM(COALESCE(bo.backorder_qty,0)),0) AS backorder,
               COALESCE(SUM(COALESCE(sold.qty,0)),0)         AS sold,
-              COALESCE(SUM(COALESCE(sh.qty,0)),0)           AS shortage
+              COALESCE(SUM(COALESCE(sh.qty,0)),0)           AS shortage,
+              COALESCE(SUM(${UNORD}),0)                     AS unordered
          FROM products p ${joins}
         WHERE ${where2}`, params)).rows[0];
 
@@ -275,6 +285,9 @@ export default async function purchaseRoutes(app) {
       backorder_qty: Number(r.backorder_qty) || 0,
       sold_qty: Number(r.sold_qty) || 0,
       shortage_qty: Number(r.shortage_qty) || 0,
+      shortage_covered_qty: Number(r.shortage_covered) || 0,     // 발주·입고대기로 이미 덮인 부족
+      shortage_unordered_qty: Number(r.shortage_unordered) || 0, // 미발주 부족(새로 주문할 몫)
+      prestock_qty: Number(r.prestock_qty) || 0,
     }));
     return {
       items, total: Number(agg.n), limit, offset,
@@ -284,7 +297,86 @@ export default async function purchaseRoutes(app) {
         total_backorder: Math.round(Number(agg.backorder) * 1000) / 1000,
         total_sold: Math.round(Number(agg.sold) * 1000) / 1000,
         total_shortage: Math.round(Number(agg.shortage) * 1000) / 1000,
+        total_unordered: Math.round(Number(agg.unordered) * 1000) / 1000,
       },
+    };
+  });
+
+  // 2026-10-15 · 구매검토 드릴다운 ②: 이 SKU 의 부족분이 어디까지 왔나 — 발생(견적·고객) → 발주됨 → 입고 해소 / 판매 해소.
+  //   발주 연결은 FIFO 계산(shortageReceipt.orderCoverage): 오래된 발주 잔량이 오래된 부족분부터 덮는다.
+  //   해소 이력은 원장(stock_shortage_resolutions): receipt=입고(배치) · sale/scan=판매(인보이스) · manual=수동.
+  app.get('/api/purchases/review/:productId/shortages', gate, async (req, reply) => {
+    const pid = Number(req.params.productId);
+    if (!pid) return reply.code(400).send({ error: 'bad_id' });
+    const prod = (await query(`SELECT id, code, name, stock_qty FROM products WHERE id=$1`, [pid])).rows[0];
+    if (!prod) return reply.code(404).send({ error: 'not_found' });
+    const cov = await orderCoverage(query, pid);
+    const covBy = new Map(cov.rows.map((r) => [r.id, r]));
+    // 미해소 전부 + 해소·정리된 최근 200건
+    const rows = (await query(
+      `(SELECT sh.id FROM stock_shortages sh WHERE sh.product_id=$1 AND sh.status='open')
+       UNION
+       (SELECT sh.id FROM stock_shortages sh WHERE sh.product_id=$1 AND sh.status<>'open'
+         ORDER BY sh.occurred_at DESC, sh.id DESC LIMIT 200)`, [pid])).rows.map((r) => Number(r.id));
+    if (!rows.length) {
+      return { product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty) || 0 },
+        summary: { remaining: 0, covered: 0, unordered: 0, backorder: cov.backorder }, po: cov.po, items: [] };
+    }
+    const det = (await query(
+      `SELECT sh.id, to_char(sh.occurred_at,'YYYY-MM-DD') AS occurred_at, sh.status, sh.note,
+              sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.resolved_qty,
+              (sh.shortage_qty - sh.resolved_qty) AS remaining_qty,
+              c.name AS customer_name, sh.source_quote_id, qq.quote_no, qq.status AS quote_status,
+              (qq.deleted_at IS NOT NULL) AS quote_deleted, sh.sales_invoice_id, si.sat_no AS invoice_sat_no
+         FROM stock_shortages sh
+         LEFT JOIN customers c ON c.id=sh.customer_id
+         LEFT JOIN quotes qq ON qq.id=sh.source_quote_id
+         LEFT JOIN sales_invoices si ON si.id=sh.sales_invoice_id
+        WHERE sh.id = ANY($1::bigint[])
+        ORDER BY (sh.status='open') DESC, sh.occurred_at, sh.id`, [rows])).rows;
+    const res = (await query(
+      `SELECT r.shortage_id, r.qty, r.source, r.resolved_at, r.note, r.sales_invoice_id,
+              si.sat_no, ib.batch_no, NULLIF(to_jsonb(r)->>'import_batch_id','')::bigint AS import_batch_id,
+              u.name AS resolved_by_name
+         FROM stock_shortage_resolutions r
+         LEFT JOIN sales_invoices si ON si.id=r.sales_invoice_id
+         LEFT JOIN import_batches ib ON ib.id = NULLIF(to_jsonb(r)->>'import_batch_id','')::bigint
+         LEFT JOIN users u ON u.id=r.resolved_by
+        WHERE r.shortage_id = ANY($1::bigint[])
+        ORDER BY r.resolved_at, r.id`, [rows])).rows;
+    const resBy = new Map();
+    for (const r of res) {
+      const k = Number(r.shortage_id);
+      if (!resBy.has(k)) resBy.set(k, []);
+      resBy.get(k).push({ qty: Number(r.qty), source: r.source, resolved_at: r.resolved_at, note: r.note || null,
+        sat_no: r.sat_no || null, sales_invoice_id: r.sales_invoice_id == null ? null : Number(r.sales_invoice_id),
+        batch_no: r.batch_no || null, import_batch_id: r.import_batch_id == null ? null : Number(r.import_batch_id),
+        resolved_by_name: r.resolved_by_name || null });
+    }
+    const items = det.map((r) => {
+      const cv = covBy.get(Number(r.id));
+      const remaining = Number(r.remaining_qty) || 0;
+      const ordered = cv ? cv.ordered : 0;
+      return {
+        id: Number(r.id), occurred_at: r.occurred_at, status: r.status, note: r.note || null,
+        customer_name: r.customer_name || null,
+        source_quote_id: r.source_quote_id == null ? null : Number(r.source_quote_id),
+        quote_no: r.quote_no || null, quote_status: r.quote_status || null, quote_deleted: !!r.quote_deleted,
+        sales_invoice_id: r.sales_invoice_id == null ? null : Number(r.sales_invoice_id), invoice_sat_no: r.invoice_sat_no || null,
+        requested_qty: Number(r.requested_qty) || 0, fulfilled_qty: Number(r.fulfilled_qty) || 0,
+        shortage_qty: Number(r.shortage_qty) || 0, resolved_qty: Number(r.resolved_qty) || 0,
+        remaining_qty: remaining,
+        ordered_qty: ordered,                                       // 발주(또는 창고 입고 대기)로 덮인 몫
+        unordered_qty: r.status === 'open' ? Math.max(0, Math.round((remaining - ordered) * 1000) / 1000) : 0,
+        covers: cv ? cv.covers : [],                                // [{kind, ref_no, order_date, qty}]
+        live_quote: !!(cv && cv.live),
+        resolutions: resBy.get(Number(r.id)) || [],
+      };
+    });
+    return {
+      product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty) || 0 },
+      summary: { remaining: cov.remaining, covered: cov.covered, unordered: cov.unordered, backorder: cov.backorder },
+      po: cov.po, items,
     };
   });
 

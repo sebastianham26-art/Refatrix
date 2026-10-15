@@ -6,6 +6,7 @@ import { computeRecost } from '../recost.js';
 import { getRateForDate } from '../fx.js';
 import { logEvent } from '../audit.js';
 import { consumeBackorder, releaseBackorder } from '../poBackorder.js';
+import { resolveBatchReceipt, reverseReceiptResolutions } from '../shortageReceipt.js';   // 0277
 
 // 한 입고 건의 총수량 (분배 비율 기준)
 async function batchTotalQty(c, batchId) {
@@ -425,6 +426,7 @@ export default async function importCostRoutes(app) {
         // 입고 되돌림 → 발주 backorder 복원(received_qty 역순 감소, 0 미만 금지)
         if (r.move_type === 'in') await releaseBackorder(c.query.bind(c), Number(r.product_id), Math.abs(qty));
       }
+      await reverseReceiptResolutions(c.query.bind(c), batchId, userId);   // 0277 · 이 배치가 해소한 부족분 되돌림
       if (mv.length) await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
       // 배치 기록 soft-delete → 목록·정정 엑셀에서 제외(import_lines 는 비삭제 배치 조인이라 자동 숨김)
       await c.query(`UPDATE import_batches SET deleted_at=now() WHERE id=$1`, [batchId]);
@@ -474,6 +476,7 @@ export default async function importCostRoutes(app) {
         for (const l of lines) {
           await consumeBackorder(c.query.bind(c), Number(l.product_id), Math.abs(Number(l.qty) || 0));
         }
+        await resolveBatchReceipt(c.query.bind(c), batchId, userId);   // 0277 · 복원된 입고로 다시 해소
       }
       await c.query(`UPDATE import_batches SET deleted_at=NULL WHERE id=$1`, [batchId]);
       // 영향 제품 재고 = 이동원장 합계로 재계산(in − out)
@@ -523,6 +526,7 @@ export default async function importCostRoutes(app) {
         await releaseBackorder(c.query.bind(c), Number(r.product_id), Q);
         lines.push({ product_id: Number(r.product_id), code: r.code, name: r.name, batch_qty: Q, removed, remaining: Q - removed });
       }
+      await reverseReceiptResolutions(c.query.bind(c), batchId, userId);   // 0277
       if (mv.length) await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
       await c.query(`UPDATE import_batches SET deleted_at=now() WHERE id=$1`, [batchId]);
       const removedTotal = lines.reduce((s, l) => s + l.removed, 0);

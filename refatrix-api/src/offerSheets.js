@@ -82,13 +82,17 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
   // ① 부족 기록(전환확정·매출등록·만료) — 살아있는 시트에 없는 것만
   const shortRows = (await q(
     `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id, sh.note AS sh_note,
-            (sh.shortage_qty - sh.resolved_qty) AS demand_qty,
+            (sh.shortage_qty - sh.resolved_qty) + COALESCE(rr.rq, 0) AS demand_qty,
             sh.occurred_at::text AS occurred_at,
             NULL AS quote_id, NULL AS quote_line_id,
             p.list_price, p.iva_rate, p.stock_qty,
             c.discount AS cust_discount
        FROM stock_shortages sh
        JOIN products  p ON p.id = sh.product_id AND p.deleted_at IS NULL AND p.is_active
+       -- 0277 · 입고로 해소된 수량도 재오퍼 대상이다(입고 = 고객에게 「들어왔습니다」를 알릴 때).
+       --   해소는 입고 승인 트랜잭션에서 먼저 일어나므로, 그 몫을 수요에 더해야 시트가 빠지지 않는다.
+       LEFT JOIN (SELECT shortage_id, SUM(qty) AS rq FROM stock_shortage_resolutions
+                   WHERE source = 'receipt' GROUP BY shortage_id) rr ON rr.shortage_id = sh.id
        JOIN customers c ON c.id = sh.customer_id AND c.deleted_at IS NULL
        LEFT JOIN (SELECT DISTINCT oi.shortage_id
                     FROM offer_sheet_items oi
@@ -104,9 +108,9 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
                      AND (os2.status <> 'cancelled' OR os2.disabled_at IS NOT NULL)
                      AND oi2.quote_id IS NOT NULL) uq
               ON uq.quote_id = sh.source_quote_id AND uq.product_id = sh.product_id
-      WHERE sh.status = 'open'
+      WHERE sh.status IN ('open','resolved')
         AND sh.customer_id IS NOT NULL
-        AND (sh.shortage_qty - sh.resolved_qty) > 0
+        AND (sh.shortage_qty - sh.resolved_qty) + COALESCE(rr.rq, 0) > 0
         AND p.stock_qty > 0
         AND used.shortage_id IS NULL
         AND uq.quote_id IS NULL
