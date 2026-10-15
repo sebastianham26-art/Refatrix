@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261008ws loaded (+ 관리 › WhatsApp 발송 시각)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261015m loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -593,8 +593,20 @@
   window.addEventListener('resize', function(){ clearTimeout(mRT); mRT=setTimeout(mApply,120); });
   window.addEventListener('orientationchange', function(){ setTimeout(mApply,240); });
 
+  /* 모바일 보완 레이어(터치 영역·표 첫 열 고정·팝업 하단시트) — 별도 파일로 분리해 nav.js 수정 없이 조정 가능 (2026-10-15) */
+  function loadMobileLayer(){
+    if(window.__rfxMobileLoaded || document.getElementById('rfx-mobile-js')) return;
+    try{
+      var cur=document.currentScript||document.querySelector('script[src*="refatrix-nav.js"]');
+      var src=(cur&&cur.getAttribute('src'))||'refatrix-nav.js';
+      var base=src.split('?')[0].replace(/refatrix-nav\.js$/,'');
+      var s=document.createElement('script'); s.id='rfx-mobile-js'; s.src=base+'refatrix-mobile.js?v=20261015m';
+      (document.head||document.body).appendChild(s);
+    }catch(e){}
+  }
   function mount(){
     styles();
+    loadMobileLayer();
     // 헤더 삽입 전, 화면 고유의 본문 상단 여백을 저장(가림 방지 + 원래 여백 유지)
     try{ window.__rnavBaseTop=parseInt(getComputedStyle(document.body).paddingTop,10)||0; }catch(e){ window.__rnavBaseTop=0; }
     try{ window.__rnavBasePB=getComputedStyle(document.body).paddingBottom||''; }catch(e){ window.__rnavBasePB=''; }
