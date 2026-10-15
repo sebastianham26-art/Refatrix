@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   plan_deadline: '10:00', done_deadline: '18:00', workdays: [1, 2, 3, 4, 5, 6],
   remind_enabled: true, remind_plan_at: '09:30', remind_done_at: '17:30',
   remind_template: null, remind_template_lang: 'es_MX',
+  remind_template_format: 'custom4', remind_template_address: 'Monterrey, Nuevo León, México',
   summary_enabled: true, summary_plan_at: '10:15', summary_done_at: '18:15', summary_user_ids: [],
 });
 export function parseWorkdays(s) {
@@ -57,6 +58,8 @@ export function rowToSettings(r) {
     plan_deadline: r.plan_deadline, done_deadline: r.done_deadline, workdays: parseWorkdays(r.workdays),
     remind_enabled: !!r.remind_enabled, remind_plan_at: r.remind_plan_at, remind_done_at: r.remind_done_at,
     remind_template: r.remind_template || null, remind_template_lang: r.remind_template_lang || 'es_MX',
+    remind_template_format: r.remind_template_format === 'event5' ? 'event5' : 'custom4',
+    remind_template_address: r.remind_template_address || DEFAULT_SETTINGS.remind_template_address,
     summary_enabled: !!r.summary_enabled, summary_plan_at: r.summary_plan_at, summary_done_at: r.summary_done_at,
     summary_user_ids: (r.summary_user_ids || []).map(Number),
     updated_at: ts(r.updated_at),
@@ -91,12 +94,22 @@ export function cleanSettingsInput(b, cur = DEFAULT_SETTINGS) {
     if (!/^[a-z]{2}(_[A-Z]{2})?$/.test(l)) return { ok: false, error: 'bad_lang' };
     o.remind_template_lang = l;
   }
+  if (b.remind_template_format !== undefined) {
+    if (!TEMPLATE_FORMATS.includes(b.remind_template_format)) return { ok: false, error: 'bad_format' };
+    o.remind_template_format = b.remind_template_format;
+  }
+  if (b.remind_template_address !== undefined) {
+    const a = String(b.remind_template_address || '').replace(/\s+/g, ' ').trim();
+    if (a.length < 5 || a.length > 200) return { ok: false, error: 'bad_address', message: '주소는 5~200자로 적어 주세요(Meta 가 실제 주소만 받습니다).' };
+    o.remind_template_address = a;
+  }
   if (b.summary_user_ids !== undefined) {
     if (!Array.isArray(b.summary_user_ids)) return { ok: false, error: 'bad_recipients' };
     o.summary_user_ids = [...new Set(b.summary_user_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
   }
   return { ok: true, value: o };
 }
+export const TEMPLATE_FORMATS = ['custom4', 'event5'];
 export async function saveSettings(v, userId, q = query) {
   await q(`INSERT INTO workplan_settings (id, plan_deadline, done_deadline, workdays, remind_enabled, remind_plan_at, remind_done_at,
              remind_template, remind_template_lang, summary_enabled, summary_plan_at, summary_done_at, summary_user_ids, updated_at, updated_by)
@@ -109,6 +122,11 @@ export async function saveSettings(v, userId, q = query) {
              summary_user_ids=EXCLUDED.summary_user_ids, updated_at=now(), updated_by=EXCLUDED.updated_by`,
   [v.plan_deadline, v.done_deadline, v.workdays.join(','), v.remind_enabled, v.remind_plan_at, v.remind_done_at,
     v.remind_template, v.remind_template_lang, v.summary_enabled, v.summary_plan_at, v.summary_done_at, v.summary_user_ids, userId || null]);
+  // 0275 — 템플릿 형식·주소(마이그레이션 전이면 42703 → 라우트가 migration_required 로 응답)
+  if (v.remind_template_format !== undefined) {
+    await q(`UPDATE workplan_settings SET remind_template_format=$1, remind_template_address=$2 WHERE id=1`,
+      [v.remind_template_format || 'custom4', v.remind_template_address || DEFAULT_SETTINGS.remind_template_address]);
+  }
   return loadSettings(q);
 }
 export const isWorkday = (s, ymd) => (s.workdays || []).includes(dowOf(ymd));
@@ -442,12 +460,26 @@ export function reminderText(kind, user, date, s) {
 }
 // 템플릿 변수 4개: {{1}} 이름 · {{2}} 무엇 · {{3}} 날짜 · {{4}} 마감시각 (Meta: 줄바꿈 금지)
 export function reminderParams(kind, user, date, s) {
+  if (s.remind_template_format === 'event5') return eventReminderParams(kind, user, date, s);
   const es = user.lang !== 'ko';
   const [, m, d] = date.split('-').map(Number);
   return [firstName(user.name) || '-',
     kind === 'remind_plan' ? (es ? 'tus pendientes' : '할 일') : (es ? 'lo que hiciste' : '한 일'),
     es ? `${d}/${m}` : `${m}/${d}`,
     kind === 'remind_plan' ? s.plan_deadline : s.done_deadline];
+}
+
+// Meta 라이브러리 「이벤트 상세정보 알림」 — 변수 5개(위치형)
+//   "Reminder: You RSVP'ed to {{1}} by {{2}}. The event starts on {{3}} at {{4}} at {{5}} location."
+//   {{1}} 무엇(업무일지) · {{2}} 직원 이름 · {{3}} 날짜(YYYY-MM-DD — Meta DATE 형식) · {{4}} 마감시각 · {{5}} 주소(설정)
+export function eventReminderParams(kind, user, date, s) {
+  const es = user.lang !== 'ko';
+  const what = kind === 'remind_plan'
+    ? (es ? 'Bitácora Refatrix: registrar tus pendientes de hoy' : 'Refatrix 업무일지: 오늘 할 일 작성')
+    : (es ? 'Bitácora Refatrix: registrar lo que hiciste hoy' : 'Refatrix 업무일지: 오늘 한 일 작성');
+  return [what, firstName(user.name) || '-', date,
+    kind === 'remind_plan' ? s.plan_deadline : s.done_deadline,
+    s.remind_template_address || DEFAULT_SETTINGS.remind_template_address];
 }
 
 const L = {

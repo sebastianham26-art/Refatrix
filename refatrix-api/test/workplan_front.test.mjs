@@ -299,3 +299,23 @@ test('F12 디렉터 — 항목·종합 코멘트 달기/수정 → PUT · 확인
   // 직원 선택 바
   assert.match($('wpPick').textContent, /업무일지 사용 직원 2명/);
 });
+
+test('F13 템플릿 형식 — 라이브러리(event5) 선택 시 주소 칸·en_US · 저장 PUT', async () => {
+  const { w, calls, $ } = boot({ director: true, enabled: false });
+  await tick(); click(w, $('wpTeamBtn')); await tick(30);
+  click(w, $('wpAdmin').querySelector('[data-wpa="toggle"]'));
+  const sel = $('wpAdmin').querySelector('select[data-wpf="remind_template_format"]');
+  assert.equal(sel.value, 'custom4');
+  assert.equal($('wpAdmin').querySelector('[data-wph="event5"]').style.display, 'none');
+  sel.value = 'event5'; sel.dispatchEvent(new w.Event('change', { bubbles: true }));
+  assert.equal($('wpAdmin').querySelector('[data-wph="event5"]').style.display, '');
+  assert.equal($('wpAdmin').querySelector('[data-wph="custom4"]').style.display, 'none');
+  assert.equal($('wpAdmin').querySelector('input[data-wpk="remind_template_lang"]').value, 'en_US');
+  $('wpAdmin').querySelector('input[data-wpk="remind_template"]').value = 'todo_list';
+  $('wpAdmin').querySelector('input[data-wpk="remind_template_address"]').value = 'Monterrey, Nuevo León, México';
+  click(w, $('wpAdmin').querySelector('[data-wpa="save"]')); await tick();
+  const put = calls.find((c) => c.method === 'PUT' && c.url.endsWith('/api/workplan/settings'));
+  assert.equal(put.body.remind_template_format, 'event5'); assert.equal(put.body.remind_template, 'todo_list');
+  assert.equal(put.body.remind_template_lang, 'en_US'); assert.equal(put.body.remind_template_address, 'Monterrey, Nuevo León, México');
+  assert.ok(/^\d\d:\d\d$/.test(put.body.done_deadline), '시간 선택은 그대로(형식 select 와 섞이지 않음)');
+});

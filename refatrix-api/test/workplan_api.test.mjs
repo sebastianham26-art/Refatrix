@@ -36,7 +36,9 @@ async function reset() {
   await query(`DELETE FROM workplan_wa_sends; DELETE FROM workplan_items; DELETE FROM workplan_days;
                UPDATE workplan_settings SET plan_deadline='10:00', done_deadline='18:00', workdays='1,2,3,4,5,6',
                  remind_enabled=true, remind_plan_at='09:30', remind_done_at='17:30', remind_template=NULL,
-                 summary_enabled=true, summary_plan_at='10:15', summary_done_at='18:15', summary_user_ids='{}'`);
+                 summary_enabled=true, summary_plan_at='10:15', summary_done_at='18:15', summary_user_ids='{}',
+                 remind_template_lang='es_MX'`);
+  try { await query(`UPDATE workplan_settings SET remind_template_format='custom4'`); } catch (_) { /* 0275 전 */ }
 }
 test.before(async () => {
   await query(readFileSync(new URL('../migrations/0263_staff_workplan.sql', import.meta.url), 'utf8'));   // 멱등 재적용
@@ -481,4 +483,53 @@ test('U1 /inbox/unseen — 표시 날짜가 된 미확인만 · 본인 것만 ·
   setNow('2026-10-14 08:00');
   const u2 = await call('GET /api/workplan/inbox/unseen', { user: OSCAR });
   assert.deepEqual(u2.out.items.map((x) => [x.work_date, x.day_comment]), [['2026-10-13', '내일 볼 것']]);
+});
+
+// ─────────── 1015 · Meta 라이브러리 「이벤트 상세정보 알림」 (0275) ───────────
+test('E1 템플릿 형식 event5 — 설정 검증·저장 · 변수 5개(위치형) · 날짜/주소 형식', async () => {
+  const s0 = WP.DEFAULT_SETTINGS;
+  assert.equal(WP.cleanSettingsInput({ remind_template_format: 'zzz' }).error, 'bad_format');
+  assert.equal(WP.cleanSettingsInput({ remind_template_address: 'x' }).error, 'bad_address');
+  const ok = WP.cleanSettingsInput({ remind_template_format: 'event5', remind_template_address: '  Av.  Constitución 100,  Monterrey, N.L. ' });
+  assert.equal(ok.value.remind_template_address, 'Av. Constitución 100, Monterrey, N.L.');
+  const s = { ...s0, remind_template_format: 'event5', remind_template_address: 'Monterrey, Nuevo León, México' };
+  assert.deepEqual(WP.reminderParams('remind_plan', { name: 'Maria Lopez', lang: 'es' }, '2026-10-15', s),
+    ['Bitácora Refatrix: registrar tus pendientes de hoy', 'Maria', '2026-10-15', '10:00', 'Monterrey, Nuevo León, México']);
+  assert.deepEqual(WP.reminderParams('remind_done', { name: 'Oscar', lang: 'es' }, '2026-10-15', s),
+    ['Bitácora Refatrix: registrar lo que hiciste hoy', 'Oscar', '2026-10-15', '18:00', 'Monterrey, Nuevo León, México']);
+  assert.equal(WP.reminderParams('remind_plan', { name: 'M', lang: 'es' }, '2026-10-15', s0).length, 4, '기본(custom4)은 그대로 4개');
+  // 라우트로 저장·조회
+  await query(readFileSync(new URL('../migrations/0275_workplan_tpl_format.sql', import.meta.url), 'utf8'));   // 멱등 재적용
+  const put = await call('PUT /api/workplan/settings', { user: DIR, role: 'director',
+    body: { remind_template: 'todo_list', remind_template_lang: 'en_US', remind_template_format: 'event5', remind_template_address: 'Monterrey, Nuevo León, México' } });
+  assert.equal(put.status, 200);
+  assert.equal(put.out.settings.remind_template_format, 'event5'); assert.equal(put.out.settings.remind_template_lang, 'en_US');
+  const pub = await call('GET /api/workplan/settings', { user: MARIA });
+  assert.equal(pub.out.settings.remind_template_format, undefined, '직원에게는 템플릿 설정 비공개');
+  const bad = await call('PUT /api/workplan/settings', { user: DIR, role: 'director', body: { remind_template_format: 'x' } });
+  assert.equal(bad.status, 400);
+});
+
+test('E2 event5 알림 발송 — 템플릿 이름·언어·변수 5개가 Meta 로', async () => {
+  await query(`DELETE FROM workplan_wa_sends`);
+  const { log, deps } = stubDeps({ windowOpen: false });
+  const settings = await WP.loadSettings();
+  const user = { id: OSCAR, name: 'Oscar R', lang: 'es', wa_phone: '528199999999' };
+  const r = await WP.sendReminder({ kind: 'remind_plan', date: '2026-10-16', user, settings, deps });
+  assert.equal(r.ok, true);
+  const t = log.find((l) => l[0] === 'template');
+  assert.equal(t[2], 'todo_list');
+  assert.deepEqual(t[3], ['Bitácora Refatrix: registrar tus pendientes de hoy', 'Oscar', '2026-10-16', '10:00', 'Monterrey, Nuevo León, México']);
+  // 실제 Graph 요청 본문(sendTemplateParams) — 위치형 body 파라미터 5개, 언어 en_US
+  const realFetch = globalThis.fetch; let sent = null;
+  process.env.WHATSAPP_TOKEN = 't'; process.env.WHATSAPP_PHONE_ID = 'p';
+  globalThis.fetch = async (url, opt) => { sent = { url: String(url), body: JSON.parse(opt.body) }; return { ok: true, json: async () => ({ messages: [{ id: 'wamid.1' }] }) }; };
+  try {
+    const g = await WP.sendTemplateParams({ to: '8199999999', name: 'todo_list', lang: 'en_US', params: t[3] });
+    assert.equal(g.ok, true);
+    assert.equal(sent.body.to, '528199999999');
+    assert.deepEqual(sent.body.template.language, { code: 'en_US' });
+    assert.deepEqual(sent.body.template.components[0].parameters.map((p) => [p.type, p.text]), t[3].map((v) => ['text', v]));
+  } finally { globalThis.fetch = realFetch; delete process.env.WHATSAPP_TOKEN; delete process.env.WHATSAPP_PHONE_ID; }
+  await query(`UPDATE workplan_settings SET remind_template=NULL, remind_template_format='custom4', remind_template_lang='es_MX'`);
 });

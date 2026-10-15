@@ -8,7 +8,7 @@
    ===================================================================== */
 (function () {
   'use strict';
-  var BUILD = 'wp-1013a';
+  var BUILD = 'wp-1015a';
   try { console.log('[workplan] build ' + BUILD); } catch (_) {}
   var WP_LAUNCH = '2026-10-08';   // 이 날 이전의 빈 날짜는 「미작성」으로 표시하지 않는다(도입일)
   var STAT = { done: { t: '완료', c: 'on' }, partial: { t: '일부', c: 'part' }, missed: { t: '못함', c: 'miss' } };
@@ -551,9 +551,16 @@
       + '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-wpk="remind_enabled" style="width:auto"' + (s.remind_enabled ? ' checked' : '') + '> 사용</label>'
       + '<label>할 일 알림</label>' + tmSel('remind_plan_at', s.remind_plan_at)
       + '<label>한 일 알림</label>' + tmSel('remind_done_at', s.remind_done_at)
-      + '<label>Meta 승인 템플릿 이름 (24시간 창 밖용)</label><input type="text" data-wpk="remind_template" value="' + esc(s.remind_template || '') + '" placeholder="예: recordatorio_bitacora">'
-      + '<div class="hint">변수 4개: {{1}} 이름 · {{2}} 무엇 · {{3}} 날짜 · {{4}} 마감시각. 비워 두면 직원이 최근 24시간 안에 회사 번호로 메시지를 보낸 경우에만 도착합니다.</div>'
-      + '<label>템플릿 언어</label><input type="text" data-wpk="remind_template_lang" value="' + esc(s.remind_template_lang || 'es_MX') + '" style="width:110px"></div>'
+      + '<label>Meta 승인 템플릿 이름 (24시간 창 밖용)</label><input type="text" data-wpk="remind_template" value="' + esc(s.remind_template || '') + '" placeholder="예: todo_list">'
+      + '<label>템플릿 형식</label><select data-wpf="remind_template_format">'
+        + '<option value="custom4"' + (s.remind_template_format !== 'event5' ? ' selected' : '') + '>직접 만든 템플릿 (변수 4개)</option>'
+        + '<option value="event5"' + (s.remind_template_format === 'event5' ? ' selected' : '') + '>라이브러리 「이벤트 상세정보 알림」 (변수 5개)</option></select>'
+      + '<div class="hint" data-wph="custom4"' + (s.remind_template_format === 'event5' ? ' style="display:none"' : '') + '>변수 4개: {{1}} 이름 · {{2}} 무엇 · {{3}} 날짜 · {{4}} 마감시각.</div>'
+      + '<div data-wph="event5"' + (s.remind_template_format === 'event5' ? '' : ' style="display:none"') + '>'
+        + '<div class="hint">You RSVP\'ed to {{1}} 업무일지 · by {{2}} 직원 이름 · on {{3}} 날짜(YYYY-MM-DD) · at {{4}} 마감시각 · at {{5}} 아래 주소</div>'
+        + '<label>{{5}} 주소 (Meta 가 실제 주소만 받음)</label><input type="text" data-wpk="remind_template_address" maxlength="200" value="' + esc(s.remind_template_address || '') + '"></div>'
+      + '<div class="hint">템플릿을 비워 두면 직원이 최근 24시간 안에 회사 번호로 메시지를 보낸 경우에만 도착합니다.</div>'
+      + '<label>템플릿 언어 (Meta 에서 고른 언어 — 영어면 en_US)</label><input type="text" data-wpk="remind_template_lang" value="' + esc(s.remind_template_lang || 'es_MX') + '" style="width:110px"></div>'
       + '<div class="bx"><h4>📊 디렉터 요약 (이미지)</h4>'
       + '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-wpk="summary_enabled" style="width:auto"' + (s.summary_enabled ? ' checked' : '') + '> 사용</label>'
       + '<label>아침 요약 (계획)</label>' + tmSel('summary_plan_at', s.summary_plan_at)
@@ -590,6 +597,7 @@
     });
     document.querySelectorAll('#wpAdmin input[type=checkbox][data-wpk]').forEach(function (el) { s[el.getAttribute('data-wpk')] = el.checked; });
     document.querySelectorAll('#wpAdmin input[type=text][data-wpk]').forEach(function (el) { s[el.getAttribute('data-wpk')] = el.value.trim(); });
+    document.querySelectorAll('#wpAdmin select[data-wpf]').forEach(function (el) { s[el.getAttribute('data-wpf')] = el.value; });
     s.summary_user_ids = []; document.querySelectorAll('#wpAdmin input[data-wpa="rcpt"]:checked').forEach(function (el) { s.summary_user_ids.push(Number(el.value)); });
     return s;
   }
@@ -636,6 +644,12 @@
   });
   document.addEventListener('change', function (e) {
     var t = e.target; if (!t || !t.getAttribute) return;
+    if (t.getAttribute('data-wpf') === 'remind_template_format') {   // 형식에 맞는 안내·주소 칸만 보이기
+      document.querySelectorAll('#wpAdmin [data-wph]').forEach(function (el) { el.style.display = el.getAttribute('data-wph') === t.value ? '' : 'none'; });
+      var lg = document.querySelector('#wpAdmin input[data-wpk="remind_template_lang"]');
+      if (lg && t.value === 'event5' && lg.value === 'es_MX') lg.value = 'en_US';   // 라이브러리는 보통 영어
+      return;
+    }
     if (t.getAttribute('data-wpa') === 'target') {
       var id = Number(t.value), on = t.checked;
       api('/api/workplan/users/' + id, { method: 'PUT', body: { enabled: on } }).then(function (j) {
