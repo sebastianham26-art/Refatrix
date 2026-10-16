@@ -66,6 +66,21 @@ test('A6 부품군 · L/R 짝', () => {
   assert.equal(S.pairCode('CB0401'), null); assert.equal(S.pairCode('GY2438G'), null);
 });
 
+test('A7 화면 카테고리(5대 + PRO + 기타)', () => {
+  const c = S.trendCat;
+  assert.equal(c('ROTULA INFERIOR', 'CB0401'), 'rotula');
+  assert.equal(c('HORQUILLA INFERIOR CON ROTULA', 'CQ0546R'), 'horquilla');
+  assert.equal(c('TERMINAL EXTERIOR "R"', 'CE0351R'), 'terminal_ext');
+  assert.equal(c('TERMINAL INTERIOR', 'CR0160'), 'terminal_int');
+  assert.equal(c('TORNILLO ESTABILIZADOR TRASERO', 'CL0962'), 'tornillo');
+  assert.equal(c('GOMA DE ESTABILIZADOR', 'GV1'), 'etc');
+  assert.equal(c('BUJE', 'GV0273'), 'etc');
+  assert.equal(c('AMORTIGUADOR DELANTERO GAS', 'GY2438G'), 'etc');
+  assert.equal(c('GORRA REFATRIX', 'PRO-CAP'), 'pro'); assert.equal(c('ROTULA', ' pro01'), 'pro');
+  assert.equal(c('', 'CE0022L'), 'terminal_ext'); assert.equal(c('', 'ZZ1'), 'etc');
+  assert.deepEqual(S.TREND_CATS.map((x) => x.key), ['rotula', 'terminal_ext', 'terminal_int', 'horquilla', 'tornillo', 'pro']);
+});
+
 // ---------------- B. E2E (실제 PostgreSQL) ----------------
 let app = null, pool = null;
 after(async () => {
@@ -164,7 +179,8 @@ test('B E2E 판매 이력·주기 API', { skip: !PG && 'TEST_PG_URL 없음' }, a
     assert.equal(a.series[23], 4); assert.equal(a.series[22], 10);
     assert.equal(a.fc, 10); assert.equal(a.stock, 15); assert.equal(a.backorder, 20); assert.equal(a.incoming, 8);
     assert.equal(a.supply, 35); assert.equal(a.top_share, 0.53);   // C1 = 홀수달 12×10 + 이번 달 4 = 124/234
-    assert.equal(a.kind, 'RÓTULA'); assert.equal(a.last_ym, cur); assert.equal(L.done_months, 23);
+    assert.equal(a.kind, 'RÓTULA'); assert.equal(a.cat, 'rotula'); assert.equal(by.TT0002L.cat, 'terminal_ext'); assert.equal(by.TT0005, undefined);
+    assert.deepEqual(L.cats.map((x) => x.key), ['rotula', 'terminal_ext', 'terminal_int', 'horquilla', 'tornillo', 'pro']); assert.equal(a.last_ym, cur); assert.equal(L.done_months, 23);
     // 화면 공식(커버·제안)은 서버 analyzeSku 와 같아야 한다
     assert.equal(Math.round(a.supply / a.fc * 10) / 10, 3.5); assert.equal(Math.max(0, Math.ceil(a.fc * 5 - a.supply)), 15);
     assert.equal(by.TT0002L.type, 'inter'); assert.equal(by.TT0002L.pair, 'TT0002R'); assert.equal(by.TT0002L.kind, 'TERMINAL EXTERIOR');
@@ -191,7 +207,7 @@ test('B E2E 판매 이력·주기 API', { skip: !PG && 'TEST_PG_URL 없음' }, a
   });
   await t.test('상세: 고객·인보이스·짝·404', async () => {
     const d = (await get('tt_soc', '/api/salestrend/' + P.TT0001 + '?months=24')).json();
-    assert.equal(d.product.code, 'TT0001'); assert.equal(d.total, 234);
+    assert.equal(d.product.code, 'TT0001'); assert.equal(d.total, 234); assert.equal(d.product.cat, 'rotula');
     assert.equal(d.months.length, 24, '월 라벨 배열 유지'); assert.equal(d.sale_months, 23); assert.equal(d.series.length, 24); assert.equal(d.type, 'smooth');
     assert.equal(d.customers.length, 2);
     assert.equal(d.customers.reduce((s, c) => s + c.qty, 0), 234);

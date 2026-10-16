@@ -185,6 +185,31 @@ export function partKind(name, code) {
   return ({ CB: 'RÓTULA', CQ: 'HORQUILLA', CL: 'TORNILLO ESTABILIZADOR', CR: 'TERMINAL INTERIOR', CE: 'TERMINAL EXTERIOR', GV: 'BUJE', GY: 'AMORTIGUADOR' })[p] || '기타';
 }
 
+// 2026-10-16b · 화면 카테고리 토글(디렉터 지시: 5대 카테고리 + PRO, 중복 선택).
+//   5대 = CTR 주력 라인: 볼조인트 · 타이로드엔드(외측) · 타이로드엔드(내측) · 컨트롤암 · 스태빌라이저 링크.
+//   PRO = 코드가 PRO 로 시작하는 마케팅 상품(제품찾기 · CRM 전송 제외 규칙과 같은 기준). 나머지 = etc.
+//   이름 규칙은 devDemand.classifyCategory 와 같은 판정(이름 우선) + 이름 없을 때 코드 접두어.
+export const TREND_CATS = [
+  { key: 'rotula', ko: '볼조인트', es: 'Rótula' },
+  { key: 'terminal_ext', ko: '타이로드엔드(외측)', es: 'Terminal exterior' },
+  { key: 'terminal_int', ko: '타이로드엔드(내측)', es: 'Terminal interior' },
+  { key: 'horquilla', ko: '컨트롤암', es: 'Horquilla' },
+  { key: 'tornillo', ko: '스태빌라이저 링크', es: 'Tornillo estabilizador' },
+  { key: 'pro', ko: 'PRO', es: 'PRO (marketing)' },
+];
+export function trendCat(name, code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (c.startsWith('PRO')) return 'pro';
+  const n = String(name || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (n.includes('GOMA')) return 'etc';
+  if (n.includes('ROTULA')) return n.includes('HORQUILLA') ? 'horquilla' : 'rotula';
+  if (n.includes('TERMINAL')) return n.includes('INTERIOR') ? 'terminal_int' : (n.includes('EXTERIOR') ? 'terminal_ext' : 'etc');
+  if (n.includes('HORQUILLA')) return 'horquilla';
+  if ((n.includes('TORNILLO') && n.includes('ESTABILIZADOR')) || n.includes('STABILIZER LINK')) return 'tornillo';
+  if (n.trim()) return 'etc';
+  return ({ CB: 'rotula', CE: 'terminal_ext', CR: 'terminal_int', CQ: 'horquilla', CL: 'tornillo' })[c.slice(0, 2)] || 'etc';
+}
+
 // L/R 짝 코드(CE0351R ↔ CE0351L). 짝이 없으면 null.
 export function pairCode(code) {
   const c = String(code || '').trim().toUpperCase();

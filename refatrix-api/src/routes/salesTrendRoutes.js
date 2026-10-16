@@ -9,7 +9,7 @@ import { gzipSync } from 'node:zlib';
 import { query } from '../db.js';
 import { authGuard, requireRoles, DIR_SOCIO } from '../middleware/authGuard.js';
 import { mxToday } from '../priceMaster.js';
-import { monthKeys, analyzeSku, partKind, pairCode, DEFAULT_LEAD, DEFAULT_SAFE } from '../salesTrend.js';
+import { monthKeys, analyzeSku, partKind, pairCode, trendCat, TREND_CATS, DEFAULT_LEAD, DEFAULT_SAFE } from '../salesTrend.js';
 
 const ONLY = requireRoles(DIR_SOCIO);
 const MONTH_OPTS = [12, 24, 36];
@@ -117,7 +117,7 @@ export default async function salesTrendRoutes(app) {
       // 목록은 가볍게(전 카탈로그 1만+ SKU): 커버·제안은 화면이 fc·supply 로 계산(같은 공식), 상세 항목은 상세 API 에서.
       items.push({
         product_id: id, code: p.code, name: p.name || '', app: String(p.app || '').slice(0, 160), syd: p.syd || '',
-        kind: partKind(p.name, p.code), pair: pairCode(p.code), is_active: p.is_active !== false,
+        kind: partKind(p.name, p.code), cat: trendCat(p.name, p.code), pair: pairCode(p.code), is_active: p.is_active !== false,
         stock, backorder, incoming: Number(p.incoming_qty) || 0, shortage_open: shortOpen,
         series, lost: lostS.some((q) => q > 0) ? lostS : null,
         top_share: c && c.tot > 0 ? Math.round((c.top / c.tot) * 100) / 100 : null,
@@ -126,7 +126,7 @@ export default async function salesTrendRoutes(app) {
       });
     }
     const body = { months: w.months, cur_ym: w.curYm, today: w.to, lead, safe, all,
-      done_months: w.n - 1, count: items.length, items };
+      done_months: w.n - 1, cats: TREND_CATS, count: items.length, items };
     // 응답이 수 MB(전 카탈로그) → 브라우저가 gzip 을 받으면 압축해서 보낸다(Node 내장 zlib · 새 의존성 없음).
     if (/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
       return reply.header('Content-Encoding', 'gzip').header('Vary', 'Accept-Encoding')
@@ -211,7 +211,7 @@ export default async function salesTrendRoutes(app) {
       months: w.months, cur_ym: w.curYm, today: w.to, lead, safe,
       product: {
         id: Number(prod.id), code: prod.code, name: prod.name || '', app: prod.app || '', syd: syd.rows[0]?.syd || '',
-        kind: partKind(prod.name, prod.code), stock: Number(prod.stock_qty) || 0, backorder: Number(prod.backorder_qty) || 0,
+        kind: partKind(prod.name, prod.code), cat: trendCat(prod.name, prod.code), stock: Number(prod.stock_qty) || 0, backorder: Number(prod.backorder_qty) || 0,
         incoming: Number(prod.incoming_qty) || 0, incoming_eta: prod.incoming_eta || null,
       },
       ...main,

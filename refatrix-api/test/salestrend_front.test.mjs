@@ -5,14 +5,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { JSDOM } from 'jsdom';
-import { analyzeSku, monthKeys, partKind, pairCode } from '../src/salesTrend.js';
+import { analyzeSku, monthKeys, partKind, pairCode, trendCat, TREND_CATS } from '../src/salesTrend.js';
 
 const HTML = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'refatrix-salestrend.html'), 'utf8')
   .replace(/<script src="https:[^"]+"><\/script>/g, '').replace(/<script src="refatrix-nav[^"]+"><\/script>/, '');
 const months = monthKeys('2026-10', 24);
 function item(id, code, name, series, stock, backorder, extra = {}) {
   const a = analyzeSku({ series, months, curYm: '2026-10', firstSaleYm: extra.first || '2024-11', stock, backorder, lead: 4, safe: 1, lostSeries: extra.lost });
-  return { product_id: id, code, name, app: 'TOYOTA Yaris 2018', syd: 'S' + id, kind: partKind(name, code), pair: pairCode(code), is_active: true,
+  return { product_id: id, code, name, app: 'TOYOTA Yaris 2018', syd: 'S' + id, kind: partKind(name, code), cat: trendCat(name, code), pair: pairCode(code), is_active: true,
     stock, backorder, incoming: extra.incoming || 0, shortage_open: extra.open || 0, series, lost: extra.lost || null, top_share: 0.6,
     type: a.type, total: a.total, sale_months: a.sale_months, adi: a.adi, cv2: a.cv2, avg6: a.avg6, trend: a.trend, since_last: a.since_last,
     last_ym: a.last_ym, fc: a.fc, fc_lost: a.fc_lost, lost_total: a.lost_total, supply: a.supply };
@@ -24,7 +24,8 @@ const lostOnly = new Array(24).fill(0); lostOnly[21] = 4; lostOnly[22] = 5;
 const ITEMS = [item(1, 'CB0401', 'ROTULA INFERIOR', steady, 15, 20, { incoming: 8 }), item(2, 'CE0351L', 'TERMINAL EXTERIOR "L"', inter, 0, 0),
   item(3, 'CQ0001', 'HORQUILLA', dead, 30, 0, { first: '2024-04' }), item(4, 'CB9999', 'ROTULA SUPERIOR', new Array(24).fill(0), 0, 0, { lost: lostOnly, open: 5, first: null })];
 for (let i = 0; i < 400; i++) ITEMS.push(item(100 + i, 'LD' + String(i).padStart(4, '0'), 'BUJE', steady.map((q) => q % 3), 1, 0));
-const LIST = { months, cur_ym: '2026-10', today: '2026-10-16', lead: 4, safe: 1, all: false, done_months: 23, count: ITEMS.length, items: ITEMS };
+ITEMS.push(item(900, 'PRO-CAP', 'GORRA', [...new Array(23).fill(1), 0], 50, 0), item(901, 'CL0387', 'TORNILLO ESTABILIZADOR', steady, 3, 0));
+const LIST = { months, cur_ym: '2026-10', today: '2026-10-16', lead: 4, safe: 1, all: false, done_months: 23, cats: TREND_CATS, count: ITEMS.length, items: ITEMS };
 
 function setup({ status = 200 } = {}) {
   const calls = [];
@@ -58,8 +59,8 @@ test('F1 자동 로그인 → 목록·칩·KPI·페이지 300행', async () => {
   assert.match(calls[0], /\/api\/salestrend\?months=24&lead=4&safe=1/);
   assert.equal(d.querySelectorAll('#tb tr.clk').length, 300);
   assert.ok(!d.getElementById('moreBox').classList.contains('hidden'));
-  click(w, d.getElementById('bMore')); assert.equal(d.querySelectorAll('#tb tr.clk').length, 404);
-  assert.match(d.getElementById('chips').textContent, /전체404/);
+  click(w, d.getElementById('bMore')); assert.equal(d.querySelectorAll('#tb tr.clk').length, 406);
+  assert.match(d.getElementById('chips').textContent, /전체406/);
   assert.match(d.getElementById('chips').textContent, /간헐1/);
   assert.match(d.getElementById('kpis').textContent, /정지 SKU/);
   const r = rowOf(d, 'CB0401'); const cells = r.querySelectorAll('td');
@@ -88,7 +89,7 @@ test('F3 검색·유형 칩·정렬', async () => {
   click(w, d.querySelector('th[data-s="code"]'));
   assert.equal(d.querySelector('#tb tr.clk .code').textContent.slice(0, 6), 'CB0401');
   click(w, d.querySelector('th[data-s="code"]'));
-  assert.equal(d.querySelector('#tb tr.clk .code').textContent.slice(0, 6), 'LD0399');
+  assert.equal(d.querySelector('#tb tr.clk .code').textContent.slice(0, 6), 'PRO-CA');
 });
 test('F4 행 클릭 → 상세(차트·고객 집중 경고·짝·인보이스)', async () => {
   const { w, d, calls } = setup(); await tick();
@@ -109,6 +110,31 @@ test('F5 403 → 디렉터·소시오 안내 · 엑셀 라이브러리 없음 �
   // XLSX 스텁 → 시트 머리글·월 열·진행 표시
   let written = null; b.w.XLSX = { utils: { aoa_to_sheet: (a) => (written = a, {}), book_new: () => ({}), book_append_sheet() {} }, writeFile: (wb, name) => { written.name = name; } };
   click(b.w, b.d.getElementById('bXls'));
-  assert.equal(written.name, 'refatrix_sales_trend_20261016.xlsx'); assert.equal(written[2][6], '2024-11'); assert.equal(written[2][29], '2026-10(진행)');
-  assert.equal(written.length, 3 + 404);
+  assert.equal(written.name, 'refatrix_sales_trend_20261016.xlsx'); assert.equal(written[2][7], '2024-11'); assert.equal(written[2][30], '2026-10(진행)');
+  assert.equal(written.length, 3 + 406); assert.equal(written[2][2], '카테고리');
+});
+
+test('F6 카테고리 토글: 중복 선택 · 선택한 제품군만 · PRO · 전체 보기 · 기억', async () => {
+  const { w, d } = setup(); await tick();
+  const cats = () => [...d.querySelectorAll('#cats .chip[data-cat]')].filter((b) => b.dataset.cat !== '__all');
+  assert.deepEqual(cats().map((b) => b.dataset.cat), ['rotula', 'terminal_ext', 'terminal_int', 'horquilla', 'tornillo', 'pro']);
+  assert.match(d.getElementById('cats').textContent, /볼조인트2/); assert.match(d.getElementById('cats').textContent, /PRO1/);
+  assert.match(d.getElementById('cats').textContent, /그 외 부품 400개/);
+  const btn = (k) => d.querySelector(`#cats .chip[data-cat="${k}"]`);
+  click(w, btn('rotula'));
+  let codes = [...d.querySelectorAll('#tb tr.clk .code')].map((e) => e.textContent.slice(0, 6));
+  assert.deepEqual(codes.sort(), ['CB0401', 'CB9999']);
+  assert.equal(btn('rotula').getAttribute('aria-pressed'), 'true');
+  click(w, btn('pro'));                                  // 중복 선택
+  codes = [...d.querySelectorAll('#tb tr.clk .code')].map((e) => e.textContent.replace(/S\d+$/, ''));
+  assert.equal(codes.length, 3); assert.ok(codes.some((c) => c.startsWith('PRO-CAP')));
+  assert.match(d.getElementById('kpis').textContent, /^3SKU/);
+  click(w, btn('tornillo')); assert.equal(d.querySelectorAll('#tb tr.clk').length, 4);
+  click(w, btn('rotula'));   assert.equal(d.querySelectorAll('#tb tr.clk').length, 2);   // 다시 누르면 해제
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('refatrix_salestrend_pref')).cats.sort(), ['pro', 'tornillo']);
+  // 카테고리 + 수요유형 칩 함께
+  click(w, d.querySelector('.chip[data-t="smooth"]')); assert.equal(d.querySelectorAll('#tb tr.clk').length, 2);   // CL0387·PRO-CAP 모두 꾸준
+  click(w, d.querySelector('.chip[data-t=""]'));
+  click(w, d.querySelector('#cats .chip[data-cat="__all"]'));
+  assert.equal(d.querySelectorAll('#tb tr.clk').length, 300); assert.ok(!d.querySelector('#cats .chip.on'));
 });
