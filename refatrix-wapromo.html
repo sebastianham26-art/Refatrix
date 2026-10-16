@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1013ds</title>
+<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1016ib</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -95,7 +95,65 @@
   .oldimgs .oi div{padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .radio{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin:4px 0}
   .radio label{display:flex;align-items:center;gap:5px;margin:0;color:var(--ink);font-weight:600;font-size:13px}
-  @media (max-width:820px){ .split{grid-template-columns:1fr} .cal{grid-template-columns:repeat(2,1fr)} .chat{height:360px} }
+  /* 2026-10-16 · 월간 달력 — 이미지 크기와 상관없이 7칸 고정(찌그러짐 방지) */
+  .cal{grid-template-columns:repeat(7,minmax(0,1fr))}
+  .calwrap{overflow-x:auto;margin-top:10px}
+  .calwrap>.calhead,.calwrap>.cal{min-width:760px}
+  .calhead{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;font-size:11.5px;font-weight:700;color:var(--muted);text-align:center}
+  .cal.month{margin-top:4px}
+  .cal.month .day{height:136px;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden}
+  .cal.month .day.out{opacity:.42}
+  .cal.month .day.drop{outline:2px dashed var(--ctr);outline-offset:-2px;background:#fff4f3}
+  .cal.month .day .d{display:flex;justify-content:space-between}
+  .camp{min-width:0;flex:none}
+  .camp img{height:48px;width:100%;object-fit:cover}
+  .camp .cb>div{min-width:0}
+  .mosum{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .mosum .tag{font-size:11.5px}
+  .mstrip{display:flex;gap:6px;overflow-x:auto;padding:6px 2px;margin-top:6px;min-height:72px;align-items:center}
+  .mstrip .si{flex:none;width:64px;cursor:grab;text-align:center;font-size:9.5px;color:var(--muted)}
+  .mstrip .si img{width:64px;height:64px;object-fit:cover;border-radius:7px;border:2px solid var(--line);display:block;background:#eee}
+  .mstrip .si.on img{border-color:var(--ctr)}
+  .mstrip .si span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 이미지 뱅크 */
+  .seg{display:inline-flex;border:1px solid var(--brand);border-radius:999px;overflow:hidden;flex-wrap:wrap}
+  .seg button{border:none;background:#fff;color:var(--brand);padding:7px 12px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--brand)}
+  .seg button.on{background:var(--brand);color:#fff}
+  .drop-zone{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;color:var(--muted);font-size:13px;background:#fdfcf9;transition:background .15s}
+  .drop-zone.over{border-color:var(--brand);background:#eef5f1;color:var(--brand)}
+  .drop-zone .row{justify-content:center}
+  .prog{margin-top:8px;font-size:12.5px}
+  .prog .bar{height:6px;border-radius:6px;background:#eee;overflow:hidden;margin-top:4px}
+  .prog .bar i{display:block;height:100%;background:var(--brand);width:0}
+  .bgrid{display:grid;gap:10px;margin-top:10px}
+  .bgrid.v-xl{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+  .bgrid.v-l{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+  .bgrid.v-m{grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
+  .bgrid.v-s{grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px}
+  .bcard{position:relative;border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;cursor:pointer;min-width:0}
+  .bcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.08)}
+  .bcard.sel{outline:2px solid var(--ctr);outline-offset:-1px}
+  .bcard .th{aspect-ratio:1/1;background:#f1eee6;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .bcard .th img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+  .bcard .nm{font-size:12px;font-weight:600;padding:5px 7px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bcard .mt{font-size:10.5px;color:var(--muted);padding:1px 7px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bgrid.v-s .bcard .nm{font-size:10.5px;padding:3px 5px 4px}
+  .bgrid.v-s .bcard .mt{display:none}
+  .bcard .ck{position:absolute;top:6px;left:6px;width:18px;height:18px;margin:0;accent-color:var(--ctr)}
+  .bcard .use{position:absolute;top:6px;right:6px;background:rgba(20,61,52,.88);color:#fff;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px}
+  .bdet td .thm{width:44px;height:44px;object-fit:cover;border-radius:6px;display:block;background:#eee}
+  .hday{margin-top:14px}
+  .hday h3{font-size:13px;margin:0 0 6px;color:var(--brand);border-bottom:1px solid var(--line);padding-bottom:4px}
+  .hrow{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px 4px;border-bottom:1px dashed var(--line);cursor:pointer}
+  .hrow:hover{background:#faf8f3}
+  .hrow img{width:72px;height:72px;object-fit:cover;border-radius:8px;background:#eee;display:block}
+  .hrow .cap{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mi-wrap{flex:1 1 520px;min-width:260px;background:#f1eee6;border-radius:10px;display:flex;align-items:center;justify-content:center;min-height:300px;max-height:72vh;overflow:hidden}
+  .mi-wrap img{max-width:100%;max-height:72vh;object-fit:contain;display:block}
+  .kbank{display:flex;align-items:center;gap:6px;font-size:12px}
+  .kbank img{width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+  @media (max-width:820px){ .split{grid-template-columns:1fr} .chat{height:360px} .bgrid.v-xl{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))} }
 </style>
 </head>
 <body>
@@ -113,6 +171,7 @@
     <div class="tabs" id="tabs">
       <button type="button" class="tab on" data-p="contacts">👥 연락처</button>
       <button type="button" class="tab" data-p="camps">🗓 발송 일정</button>
+      <button type="button" class="tab" data-p="bank">🖼 이미지 뱅크</button>
       <button type="button" class="tab" data-p="inbox">💬 받은 메시지 <span class="n hidden" id="inboxN"></span></button>
       <button type="button" class="tab" data-p="rules">🤖 자동응답</button>
       <button type="button" class="tab" data-p="setup">⚙ 설정 · 원장</button>
@@ -165,7 +224,8 @@
         <div class="row">
           <div><label>발송일</label><input type="date" id="kDate"></div>
           <div><label>시각(멕시코)</label><input type="time" id="kTime" value="10:00"></div>
-          <div><label>이미지 (JPG · PNG · 5MB 이하)</label><input type="file" id="kImg" accept="image/jpeg,image/png"></div>
+          <div><label>이미지 (JPG · PNG · 5MB 이하)</label><input type="file" id="kImg" accept="image/jpeg,image/png">
+            <div class="kbank" style="margin-top:4px"><button type="button" class="btn ghost sm" id="kBank">📁 이미지 뱅크에서</button><span id="kBankSel"></span></div></div>
           <div><label>대상</label><select id="kAud"><option value="">✅ 동의 전체</option><option value="memo">✅ 동의 중 메모에 … 포함</option></select></div>
           <div id="kMemoWrap" class="hidden"><label>메모에 들어간 말</label><input id="kMemo" placeholder="Monterrey" style="width:150px"></div>
         </div>
@@ -178,9 +238,50 @@
         <div class="hint" style="margin-top:8px">같은 승인 템플릿으로 <b>이미지와 문구를 매번 바꿔</b> 보냅니다 — 재승인 불필요. 24시간 안에 답장한 사람에게는 무료 일반 이미지로, 나머지는 마케팅 템플릿으로 자동 선택합니다. 하루 발송 상한을 넘으면 남은 사람은 다음 날 이어서 보냅니다.</div>
       </div>
       <div class="card">
-        <div class="row"><h2 style="margin:0" id="wkTitle"></h2><span style="margin-left:auto"></span><button type="button" class="btn ghost sm" id="wkPrev">◀ 이전 주</button><button type="button" class="btn ghost sm" id="wkToday">이번 주</button><button type="button" class="btn ghost sm" id="wkNext">다음 주 ▶</button></div>
-        <div class="cal" id="cal"></div>
+        <div class="row"><h2 style="margin:0" id="wkTitle"></h2><span style="margin-left:auto"></span><button type="button" class="btn ghost sm" id="wkPrev">◀ 이전 달</button><button type="button" class="btn ghost sm" id="wkToday">이번 달</button><button type="button" class="btn ghost sm" id="wkNext">다음 달 ▶</button></div>
+        <div class="mosum" id="moSum"></div>
+        <div class="hint" style="margin-top:8px">🖼 아래 이미지 뱅크 그림을 <b>날짜 칸으로 끌어다 놓으면</b>(또는 그림을 누른 뒤 날짜를 누르면) 그날 · 그 이미지로 예약 칸이 채워집니다 — 한 달 계획을 한 화면에서.</div>
+        <div class="mstrip" id="calStrip"></div>
+        <div class="calwrap"><div class="calhead"><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div><div>일</div></div><div class="cal month" id="cal"></div></div>
         <div class="hint" style="margin-top:8px">빈 날을 누르면 위 예약 칸에 날짜가 들어갑니다. 예약된 칸을 누르면 미리보기 · 수정 · 취소 · 시험 발송 · 발송 결과를 봅니다.</div>
+      </div>
+    </section>
+
+    <!-- 🖼 이미지 뱅크 (2026-10-16) -->
+    <section class="pane" id="p-bank">
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <div class="seg" id="bMode"><button type="button" data-m="imgs" class="on">🖼 이미지</button><button type="button" data-m="hist">📜 광고 이력</button></div>
+          <span class="hint" id="bCount" style="margin-left:auto"></span>
+        </div>
+        <div id="bImgs">
+          <div class="drop-zone" id="bDrop" style="margin-top:12px">
+            <div style="font-weight:700;font-size:14px">⬇ 이미지를 여기로 끌어다 놓으세요 — 여러 장 한 번에</div>
+            <div class="row" style="margin-top:8px">
+              <button type="button" class="btn" id="bPick">＋ 파일 고르기 (여러 장)</button><input type="file" id="bFiles" multiple accept="image/*" class="hidden">
+              <div><input id="bUpFolder" list="bFolderList" placeholder="넣을 폴더(선택) 예) 2026-11 Versa" style="width:230px"></div>
+            </div>
+            <div class="hint" style="margin-top:6px">JPG · PNG 그대로 저장 · 그 밖의 형식(WEBP 등)은 JPG 로 바꿈 · 5MB 가 넘으면 자동으로 줄임 · 같은 파일은 한 번만 저장</div>
+            <div class="prog hidden" id="bProg"><span id="bProgT"></span><div class="bar"><i id="bProgBar"></i></div></div>
+          </div>
+          <div class="row" style="margin-top:12px;align-items:flex-end">
+            <div><label>검색</label><input id="bQ" placeholder="파일 이름 · 폴더" style="width:180px"></div>
+            <div><label>폴더</label><select id="bFolder"><option value="">전체</option></select></div>
+            <div><label>정렬</label><select id="bSort"><option value="new">최근 올린 순</option><option value="name">이름순</option><option value="used">최근 사용 순</option><option value="uses">많이 쓴 순</option></select></div>
+            <div><label>보기</label><div class="seg" id="bView"><button type="button" data-v="xl">아주 큰 아이콘</button><button type="button" data-v="l">큰 아이콘</button><button type="button" data-v="m">보통 아이콘</button><button type="button" data-v="s">작은 아이콘</button><button type="button" data-v="d">자세히</button></div></div>
+          </div>
+          <div class="selbar hidden" id="bSelBar"><span class="cnt" id="bSelN"></span><button type="button" class="btn ghost sm" id="bSelAll">보이는 것 모두 선택</button>
+            <input id="bMoveTo" list="bFolderList" placeholder="옮길 폴더" style="width:150px"><button type="button" class="btn ghost sm" id="bMove">폴더로 옮기기</button>
+            <button type="button" class="btn danger sm" id="bDel">삭제</button><button type="button" class="btn ghost sm" id="bSelClear">선택 해제</button></div>
+          <datalist id="bFolderList"></datalist>
+          <div id="bGrid"></div>
+        </div>
+        <div id="bHist" class="hidden">
+          <div class="row" style="margin-top:12px"><h2 style="margin:0" id="hTitle"></h2><span style="margin-left:auto"></span>
+            <button type="button" class="btn ghost sm" id="hPrev">◀ 이전 달</button><button type="button" class="btn ghost sm" id="hNow">이번 달</button><button type="button" class="btn ghost sm" id="hNext">다음 달 ▶</button></div>
+          <div class="mosum" id="hSum"></div>
+          <div id="hList"></div>
+        </div>
       </div>
     </section>
 
@@ -277,9 +378,10 @@
         <label>받는 사람 (✅ 동의자만)</label>
         <div class="who-list" id="sdWho"></div>
         <div style="margin-top:12px"><label>이미지</label>
-          <div class="radio"><label><input type="radio" name="sdSrc" value="new" checked>새 이미지 올리기</label><label><input type="radio" name="sdSrc" value="old">지난 발송 이미지 다시 쓰기</label></div>
+          <div class="radio"><label><input type="radio" name="sdSrc" value="new" checked>새 이미지 올리기</label><label><input type="radio" name="sdSrc" value="old">지난 발송 이미지 다시 쓰기</label><label><input type="radio" name="sdSrc" value="bank">📁 이미지 뱅크</label></div>
           <div id="sdNewWrap"><input type="file" id="sdImg" accept="image/jpeg,image/png"><div class="hint">JPG · PNG · 5MB 이하</div></div>
           <div id="sdOldWrap" class="hidden"><div class="oldimgs" id="sdOld"></div></div>
+          <div id="sdBankWrap" class="hidden"><div class="kbank"><button type="button" class="btn ghost sm" id="sdBankPick">📁 고르기</button><span id="sdBankSel" class="hint">아직 안 골랐습니다</span></div></div>
         </div>
         <div style="margin-top:12px"><label>문구 — 이미지 아래 글 (템플릿 {{1}} · 900자 이하)</label><textarea id="sdCap" maxlength="900" placeholder="Amortiguadores CTR para Versa 2015-2019 · 15% esta semana"></textarea></div>
         <div style="margin-top:8px"><label>보내는 때</label>
@@ -292,6 +394,41 @@
       </div>
       <div><label>미리보기(템플릿으로 갈 때)</label><div class="phone" id="sdPhone"></div></div>
     </div>
+  </div>
+</div></div>
+
+<!-- 🖼 이미지 크게 보기 · 광고 이력 -->
+<div class="modal" id="mImg" role="dialog" aria-modal="true"><div class="mbox" style="max-width:1120px">
+  <div class="mtop"><b id="miTitle" style="color:var(--brand);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
+    <button type="button" class="btn ghost sm" id="miPrev" style="margin-left:auto" title="이전 (←)">◀</button><button type="button" class="btn ghost sm" id="miNext" title="다음 (→)">▶</button>
+    <button type="button" class="btn ghost sm" data-close="mImg">닫기 ✕</button></div>
+  <div class="mbody">
+    <div class="row" style="align-items:flex-start;gap:16px">
+      <div class="mi-wrap"><img id="miImg" alt=""></div>
+      <div style="flex:1 1 320px;min-width:0;max-width:100%">
+        <label>파일 이름</label><input id="miName" style="width:100%">
+        <label style="margin-top:8px">폴더</label><input id="miFolder" list="bFolderList" style="width:100%">
+        <div class="hint" id="miMeta" style="margin-top:6px"></div>
+        <div class="row" style="margin-top:10px">
+          <button type="button" class="btn sm" id="miSave">저장</button>
+          <button type="button" class="btn red sm" id="miUse">🗓 이 이미지로 발송 예약</button>
+          <button type="button" class="btn ghost sm" id="miDown">⬇ 내려받기</button>
+          <button type="button" class="btn danger sm" id="miDel">삭제</button>
+        </div>
+        <div class="msg" id="miMsg"></div>
+        <h2 style="margin-top:14px">📜 광고 이력 (날짜순)</h2>
+        <div id="miHist" style="overflow-x:auto"></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- 이미지 뱅크에서 고르기 -->
+<div class="modal" id="mPick" role="dialog" aria-modal="true"><div class="mbox" style="max-width:1000px">
+  <div class="mtop"><b style="color:var(--brand)">📁 이미지 뱅크에서 고르기</b><button type="button" class="btn ghost sm" data-close="mPick" style="margin-left:auto">닫기 ✕</button></div>
+  <div class="mbody">
+    <div class="row"><input id="pkQ" placeholder="파일 이름 · 폴더" style="width:200px"><select id="pkFolder"><option value="">전체 폴더</option></select><span class="hint">그림을 누르면 고릅니다</span></div>
+    <div id="pkGrid" class="bgrid v-m" style="max-height:62vh;overflow:auto"></div>
   </div>
 </div></div>
 
@@ -320,10 +457,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const WAP_BUILD='wap-1013ds';
+  const WAP_BUILD='wap-1016ib';
   try{ console.log('[wapromo] build '+WAP_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
-  const S={tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
+  const S={month:null,kBankId:null,bank:[],bankFolders:[],bSel:new Set(),bView:'l',bMode:'imgs',hMonth:null,thCache:{},fileCache:{},calPick:null,tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
     convs:[],cur:null,rules:[],status:null,imp:null,impSource:null,survey:null,camp:null};
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -370,11 +507,11 @@
       try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
       $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
       $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
-      S.weekStart=monday(mxToday()); $('kDate').value=addDays(mxToday(),1);
+      S.weekStart=monday(mxToday()); S.month=mxToday().slice(0,7); S.hMonth=S.month; $('kDate').value=addDays(mxToday(),1);
       $('xFrom').value=mxToday().slice(0,8)+'01'; $('xTo').value=mxToday();
       api('GET','/api/wa-promo/users').then(d=>{ S.users=d.items||[]; $('iAssignee').innerHTML='<option value="">담당 전체</option>'+S.users.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join(''); }).catch(()=>{});
       const t0=new URLSearchParams(location.hash.slice(1)).get('tab');
-      setTab(['contacts','camps','inbox','rules','setup'].includes(t0)?t0:'contacts');
+      setTab(['contacts','camps','bank','inbox','rules','setup'].includes(t0)?t0:'contacts');
     }catch(e){ say(false,'서버에 연결할 수 없습니다.',m); }
     finally{ $('go').disabled=false; }
   }
@@ -386,7 +523,8 @@
     document.querySelectorAll('#tabs .tab').forEach(b=>b.classList.toggle('on',b.dataset.p===t));
     document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='p-'+t));
     if(t==='contacts') loadContacts();
-    if(t==='camps') loadCamps();
+    if(t==='camps'){ loadCamps(); loadStrip(); }
+    if(t==='bank') loadBank();
     if(t==='inbox') loadConvs();
     if(t==='rules') loadRules();
     if(t==='setup') loadSetup();
@@ -482,7 +620,7 @@
   const sdVal=(n)=>{ const r=document.querySelector('input[name="'+n+'"]:checked'); return r?r.value:''; };
   async function openSend(people){
     if(!people.length) return;
-    SD.people=people; SD.old=null;
+    SD.people=people; SD.old=null; SD.bank=null; $('sdBankSel').textContent='아직 안 골랐습니다';
     $('sdTitle').textContent='📣 이미지 보내기 — '+people.length+'명';
     $('sdWho').innerHTML=people.map(p=>'<div>✅ <b>'+esc(p.name)+'</b> <span class="hint">'+esc(p.phone_masked)+(p.memo?' · '+esc(p.memo):'')+'</span></div>').join('');
     $('sdImg').value=''; $('sdCap').value=''; $('sdMsg').className='msg'; $('sdCap0').textContent='';
@@ -499,7 +637,7 @@
   }
   function syncSendForm(){
     const src=sdVal('sdSrc'), when=sdVal('sdWhen');
-    $('sdNewWrap').classList.toggle('hidden',src!=='new'); $('sdOldWrap').classList.toggle('hidden',src!=='old');
+    $('sdNewWrap').classList.toggle('hidden',src!=='new'); $('sdOldWrap').classList.toggle('hidden',src!=='old'); $('sdBankWrap').classList.toggle('hidden',src!=='bank');
     $('sdAtWrap').classList.toggle('hidden',when!=='at');
     $('sdGo').textContent=when==='now'?'📣 '+SD.people.length+'명에게 지금 보내기':'🗓 '+SD.people.length+'명에게 예약';
   }
@@ -507,12 +645,14 @@
   async function sdPreview(){
     let u='';
     if(sdVal('sdSrc')==='new'){ const f=$('sdImg').files&&$('sdImg').files[0]; if(f){ try{ if(sdUrl) URL.revokeObjectURL(sdUrl); sdUrl=URL.createObjectURL(f); u=sdUrl; }catch(e){} } }
+    else if(sdVal('sdSrc')==='bank'){ if(SD.bank) u=await thumbUrl(SD.bank); }
     else if(SD.old) u=await imgUrl(SD.old);
     const cap=($('sdCap').value||'…').replace(/[\n\t]+/g,' ');
     $('sdPhone').innerHTML='<div class="bub">'+(u?'<img src="'+u+'" alt="">':'<div class="hint" style="padding:18px;text-align:center;background:#eee;border-radius:6px;margin-bottom:5px">이미지</div>')+'Novedades de Refatrix: '+esc(cap)+'. Responda BAJA si no desea recibir más mensajes.</div><div class="qr"><span>Quiero cotizar</span><span>Ver catálogo</span><span>BAJA</span></div>';
   }
   document.querySelectorAll('input[name="sdSrc"],input[name="sdWhen"]').forEach(r=>r.addEventListener('change',()=>{ syncSendForm(); sdPreview(); }));
   $('sdImg').addEventListener('change',sdPreview);
+  $('sdBankPick').addEventListener('click',()=>openPicker(id=>{ SD.bank=id; const it=S.bank.find(x=>x.id===id); $('sdBankSel').textContent='✓ '+(it?it.name:'#'+id); sdPreview(); }));
   $('sdCap').addEventListener('input',sdPreview);
   $('sdOld').addEventListener('click',e=>{ const o=e.target.closest('[data-old]'); if(!o) return; SD.old=Number(o.dataset.old);
     document.querySelectorAll('#sdOld .oi').forEach(x=>x.classList.toggle('on',x===o));
@@ -524,6 +664,7 @@
     if(!body.caption.trim()){ say(false,ERR.caption_required,$('sdMsg')); return; }
     if(src==='new'){ const f=$('sdImg').files&&$('sdImg').files[0]; if(!f){ say(false,ERR.image_required,$('sdMsg')); return; } if(f.size>5*1024*1024){ say(false,ERR.image_too_large,$('sdMsg')); return; }
       body.image_b64=await fileB64(f); body.image_mime=f.type; body.image_name=f.name; }
+    else if(src==='bank'){ if(!SD.bank){ say(false,'이미지 뱅크에서 이미지를 고르세요.',$('sdMsg')); return; } body.image_id=SD.bank; }
     else { if(!SD.old){ say(false,'다시 쓸 이미지를 고르세요.',$('sdMsg')); return; } body.from_campaign_id=SD.old; }
     if(!confirm(SD.people.length+'명에게 '+(when==='now'?'지금':'예약 시각에')+' 이미지를 보냅니다(마케팅 템플릿 요금 · 24시간 안에 답장한 사람은 무료). 진행할까요?')) return;
     $('sdGo').disabled=true;
@@ -612,10 +753,15 @@
     if(S.imgCache[id]) return S.imgCache[id];
     try{ const r=await fetch(session.api+'/api/wa-promo/campaigns/'+id+'/image',{headers:{'Authorization':'Bearer '+session.token}}); if(!r.ok) return ''; const u=URL.createObjectURL(await r.blob()); S.imgCache[id]=u; return u; }catch(e){ return ''; }
   }
+  // 2026-10-16 · 월간 달력 — 그달 1일이 든 주의 월요일부터 그달 말일이 든 주의 일요일까지
+  const monthEnd=(ym)=>{ const d=new Date(ym+'-01T12:00:00Z'); d.setUTCMonth(d.getUTCMonth()+1); d.setUTCDate(0); return d.toISOString().slice(0,10); };
+  const addMonths=(ym,n)=>{ const d=new Date(ym+'-01T12:00:00Z'); d.setUTCMonth(d.getUTCMonth()+n); return d.toISOString().slice(0,7); };
+  function monthGrid(ym){ const from=monday(ym+'-01'); const last=monthEnd(ym); const to=addDays(monday(last),6); return {from,to}; }
   async function loadCamps(){
-    const from=S.weekStart, to=addDays(S.weekStart,6);
-    $('wkTitle').textContent=from.slice(5).replace('-','/')+' ~ '+to.slice(5).replace('-','/');
-    try{ const d=await api('GET','/api/wa-promo/campaigns?from='+from+'&to='+to); S.camps=d.items||[]; S.audYes=d.audience_yes; renderCal(); audHint(); }
+    if(!S.month) S.month=(S.weekStart||mxToday()).slice(0,7);
+    const g=monthGrid(S.month);
+    $('wkTitle').textContent=S.month.slice(0,4)+'년 '+Number(S.month.slice(5))+'월 발송 계획';
+    try{ const d=await api('GET','/api/wa-promo/campaigns?from='+g.from+'&to='+g.to); S.camps=d.items||[]; S.audYes=d.audience_yes; renderCal(); audHint(); }
     catch(e){ $('cal').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; }
   }
   function campState(c){
@@ -626,21 +772,46 @@
     return '<span class="tag t-no">취소</span>';
   }
   function renderCal(){
-    const today=mxToday(); const W=['월','화','수','목','금','토','일'];
-    $('cal').innerHTML=[0,1,2,3,4,5,6].map(i=>{
-      const day=addDays(S.weekStart,i); const cs=S.camps.filter(c=>c.send_at_mx.slice(0,10)===day);
-      return '<div class="day'+(day<today?' past':'')+(day===today?' today':'')+'" data-day="'+day+'"><div class="d">'+W[i]+' '+day.slice(5).replace('-','/')+'</div>'
+    const today=mxToday(); const g=monthGrid(S.month); const days=[]; for(let d=g.from;d<=g.to;d=addDays(d,1)) days.push(d);
+    const inM=S.camps.filter(c=>c.send_at_mx.slice(0,7)===S.month);
+    const cnt=(st)=>inM.filter(c=>c.status===st).length; const sum=(k)=>inM.reduce((a,c)=>a+((c.stats&&c.stats[k])||0),0);
+    $('moSum').innerHTML='<span class="tag t-asked">예약 '+cnt('scheduled')+'</span><span class="tag t-asked">발송 중 '+cnt('sending')+'</span><span class="tag t-yes">완료 '+cnt('done')+'</span>'
+      +'<span class="tag t-unknown">발송일 '+new Set(inM.map(c=>c.send_at_mx.slice(0,10))).size+'일</span><span class="tag t-unknown">보냄 '+sum('sent')+' · 도착 '+sum('delivered')+' · 답장 '+sum('replied')+'</span>';
+    $('cal').innerHTML=days.map(day=>{
+      const cs=S.camps.filter(c=>c.send_at_mx.slice(0,10)===day);
+      return '<div class="day'+(day<today?' past':'')+(day===today?' today':'')+(day.slice(0,7)!==S.month?' out':'')+'" data-day="'+day+'"><div class="d"><span>'+(day.slice(8)==='01'?Number(day.slice(5,7))+'/':'')+Number(day.slice(8))+'</span>'+(cs.length>1?'<span class="tag t-unknown">'+cs.length+'건</span>':'')+'</div>'
         +cs.map(c=>'<div class="camp" data-camp="'+c.id+'"><img data-img="'+c.id+'" alt=""><div class="cb">'+campState(c)+(c.target_sel?' <span class="tag t-unknown" title="연락처 화면에서 고른 사람에게만">👥 '+c.target_sel+'</span>':'')+'<div style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.caption)+'</div></div></div>').join('')+'</div>';
     }).join('');
     document.querySelectorAll('#cal img[data-img]').forEach(async im=>{ im.src=await imgUrl(im.dataset.img); });
   }
   $('cal').addEventListener('click',e=>{
     const cp=e.target.closest('[data-camp]'); if(cp){ openCamp(Number(cp.dataset.camp)); return; }
-    const d=e.target.closest('[data-day]'); if(d&&d.dataset.day>=mxToday()){ $('kDate').value=d.dataset.day; $('kCap').focus(); window.scrollTo({top:0,behavior:'smooth'}); }
+    const d=e.target.closest('[data-day]'); if(d&&d.dataset.day>=mxToday()){ planDay(d.dataset.day,S.calPick); S.calPick=null; document.querySelectorAll('#calStrip .si.on').forEach(x=>x.classList.remove('on')); }
   });
-  $('wkPrev').addEventListener('click',()=>{ S.weekStart=addDays(S.weekStart,-7); loadCamps(); });
-  $('wkNext').addEventListener('click',()=>{ S.weekStart=addDays(S.weekStart,7); loadCamps(); });
-  $('wkToday').addEventListener('click',()=>{ S.weekStart=monday(mxToday()); loadCamps(); });
+  $('wkPrev').addEventListener('click',()=>{ S.month=addMonths(S.month,-1); loadCamps(); });
+  $('wkNext').addEventListener('click',()=>{ S.month=addMonths(S.month,1); loadCamps(); });
+  $('wkToday').addEventListener('click',()=>{ S.month=mxToday().slice(0,7); loadCamps(); });
+  // 달력 위 이미지 뱅크 띠 — 끌어다 날짜에 놓기 · 눌러 고른 뒤 날짜 누르기
+  async function loadStrip(){
+    try{ const d=await api('GET','/api/wa-promo/images'); S.bank=d.items||[]; S.bankFolders=d.folders||[]; }catch(e){ $('calStrip').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; }
+    const list=S.bank.slice().sort((a,b)=>String(b.created_mx).localeCompare(String(a.created_mx))).slice(0,60);
+    $('calStrip').innerHTML=list.length?list.map(i=>'<div class="si'+(S.calPick===i.id?' on':'')+'" draggable="true" data-bimg="'+i.id+'" title="'+esc(i.name)+'"><img data-th="'+i.id+'" alt="" draggable="false"><span>'+esc(i.name)+'</span></div>').join('')
+      :'<div class="hint">이미지 뱅크가 비어 있습니다 — 「🖼 이미지 뱅크」 탭에서 올리세요.</div>';
+    lazyThumbs($('calStrip'));
+  }
+  $('calStrip').addEventListener('dragstart',e=>{ const si=e.target.closest('[data-bimg]'); if(!si) return; try{ e.dataTransfer.setData('text/plain','wa-image:'+si.dataset.bimg); e.dataTransfer.effectAllowed='copy'; }catch(_){ } });
+  $('calStrip').addEventListener('click',e=>{ const si=e.target.closest('[data-bimg]'); if(!si) return; const id=Number(si.dataset.bimg); S.calPick=S.calPick===id?null:id;
+    document.querySelectorAll('#calStrip .si').forEach(x=>x.classList.toggle('on',Number(x.dataset.bimg)===S.calPick)); });
+  $('cal').addEventListener('dragover',e=>{ const d=e.target.closest('[data-day]'); if(!d||d.dataset.day<mxToday()) return; e.preventDefault(); document.querySelectorAll('#cal .day.drop').forEach(x=>{ if(x!==d) x.classList.remove('drop'); }); d.classList.add('drop'); });
+  $('cal').addEventListener('dragleave',e=>{ const d=e.target.closest('[data-day]'); if(d&&!d.contains(e.relatedTarget)) d.classList.remove('drop'); });
+  $('cal').addEventListener('drop',e=>{ const d=e.target.closest('[data-day]'); document.querySelectorAll('#cal .day.drop').forEach(x=>x.classList.remove('drop')); if(!d||d.dataset.day<mxToday()) return; e.preventDefault();
+    let v=''; try{ v=e.dataTransfer.getData('text/plain')||''; }catch(_){ } const m=v.match(/^wa-image:(\d+)$/); if(!m) return; planDay(d.dataset.day,Number(m[1])); });
+  function planDay(day,imageId){
+    if(S.editId) endEdit();
+    $('kDate').value=day; if(imageId) setKBank(imageId);
+    $('kCap').focus(); window.scrollTo({top:0,behavior:'smooth'});
+    say(true,day+(imageId?' · 「'+((S.bank.find(x=>x.id===imageId)||{}).name||'')+'」':'')+' — 문구를 넣고 「예약」을 누르세요.');
+  }
   $('kAud').addEventListener('change',()=>{ $('kMemoWrap').classList.toggle('hidden',$('kAud').value!=='memo'); audHint(); });
   function audHint(){ $('kAudN').textContent=$('kAud').value==='memo'?'메모 조건에 맞는 ✅ 동의자에게만':'지금 ✅ 동의 '+(S.audYes||0)+'명(발송 시점에 다시 셈)'; }
   const fileB64=(f)=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
@@ -649,19 +820,30 @@
     const body={send_at:$('kDate').value+'T'+($('kTime').value||'10:00'),caption:$('kCap').value,memo_filter:$('kAud').value==='memo'?$('kMemo').value:''};
     if(!$('kDate').value){ say(false,ERR.bad_send_at); return; }
     if(f){ if(f.size>5*1024*1024){ say(false,ERR.image_too_large); return; } body.image_b64=await fileB64(f); body.image_mime=f.type; body.image_name=f.name; }
+    else if(S.kBankId){ body.image_id=S.kBankId; }
     else if(!S.editId){ say(false,ERR.image_required); return; }
     $('kSave').disabled=true;
     try{
       if(S.editId){ await api('PATCH','/api/wa-promo/campaigns/'+S.editId,body); delete S.imgCache[S.editId]; say(true,'수정했습니다.'); endEdit(); }
-      else{ const d=await api('POST','/api/wa-promo/campaigns',body); say(true,(d.past?'지난 시각이라 1분 안에 바로 발송합니다. ':'예약했습니다. ')+'지금 기준 대상 '+d.audience+'명.'); $('kCap').value=''; $('kImg').value=''; }
-      S.weekStart=monday($('kDate').value); loadCamps();
+      else{ const d=await api('POST','/api/wa-promo/campaigns',body); say(true,(d.past?'지난 시각이라 1분 안에 바로 발송합니다. ':'예약했습니다. ')+'지금 기준 대상 '+d.audience+'명.'); $('kCap').value=''; $('kImg').value=''; setKBank(null); }
+      S.month=$('kDate').value.slice(0,7); loadCamps();
     }catch(err){ say(false,errText(err)); }
     finally{ $('kSave').disabled=false; }
   });
-  function endEdit(){ S.editId=null; $('kTitle').textContent='새 발송 예약'; $('kSave').textContent='예약'; $('kCancelEdit').classList.add('hidden'); $('kCap').value=''; $('kImg').value=''; }
+  function endEdit(){ S.editId=null; $('kTitle').textContent='새 발송 예약'; $('kSave').textContent='예약'; $('kCancelEdit').classList.add('hidden'); $('kCap').value=''; $('kImg').value=''; setKBank(null); }
+  async function setKBank(id){
+    S.kBankId=id||null; if(id) $('kImg').value='';
+    if(!id){ $('kBankSel').innerHTML=''; return; }
+    const it=S.bank.find(x=>x.id===id);
+    $('kBankSel').innerHTML='<img alt="" id="kBankImg"><b>'+esc(it?it.name:'#'+id)+'</b> <button type="button" class="btn ghost sm" id="kBankClr" title="이미지 빼기">✕</button>';
+    const u=await thumbUrl(id); const im=$('kBankImg'); if(im) im.src=u;
+  }
+  $('kImg').addEventListener('change',()=>{ if($('kImg').files&&$('kImg').files[0]) setKBank(null); });
+  $('kBankSel').addEventListener('click',e=>{ if(e.target.closest('#kBankClr')) setKBank(null); });
+  $('kBank').addEventListener('click',()=>openPicker(id=>setKBank(id)));
   $('kCancelEdit').addEventListener('click',endEdit);
-  async function openCamp(id){
-    const c=S.camps.find(x=>x.id===id); if(!c) return; S.camp=c;
+  async function openCamp(id,list){
+    const c=(list||S.camps).find(x=>x.id===id); if(!c) return; S.camp=c;
     $('mcTitle').textContent='발송 #'+c.id+' · '+c.send_at_mx.replace('T',' ')+' (멕시코)';
     const u=await imgUrl(id);
     $('mcPhone').innerHTML='<div class="bub"><img src="'+u+'" alt="">Novedades de Refatrix: '+esc(c.caption.replace(/[\n\t]+/g,' '))+'. Responda BAJA si no desea recibir más mensajes.</div><div class="qr"><span>Quiero cotizar</span><span>Ver catálogo</span><span>BAJA</span></div><div class="hint" style="margin-top:6px">템플릿으로 나갈 때 모습(창이 열린 사람은 이미지 + 문구만)</div>';
@@ -669,6 +851,7 @@
     $('mcInfo').innerHTML='<div>'+campState(c)+'</div><div class="hint" style="margin-top:6px">대상: '+(c.target_sel?'👥 연락처 화면에서 고른 '+c.target_sel+'명(그중 ✅ 동의자)':c.memo_filter?'✅ 동의 중 메모에 「'+esc(c.memo_filter)+'」':'✅ 동의 전체')+(c.target_n!=null?' · 시작 때 '+c.target_n+'명':'')
       +'<br>보냄 '+(st.sent||0)+' · 도착 '+(st.delivered||0)+' · 읽음 '+(st.read||0)+' · 실패 '+((st.failed||0)+(st.dlv_failed||0))+' · 답장 '+(st.replied||0)+'명'
       +'<br>이미지 '+esc(c.image_name||'')+' · '+Math.round((c.image_bytes||0)/1024)+'KB · 작성 '+esc(c.created_by_name||'')+'</div>';
+    $('mcInfo').insertAdjacentHTML('beforeend',c.image_id?'<div class="hint">🖼 이미지 뱅크 #'+c.image_id+' <button type="button" class="btn ghost sm" id="mcBank">뱅크에서 보기</button></div>':'');
     $('mcEdit').disabled=c.status!=='scheduled'; $('mcCancel').disabled=!['scheduled','sending'].includes(c.status);
     $('mcMsg').className='msg'; $('mcSends').innerHTML='';
     $('mCamp').classList.add('on');
@@ -696,13 +879,195 @@
     if(!S.camp||!confirm('이 발송을 취소할까요? 아직 안 보낸 사람에게는 가지 않습니다.')) return;
     try{ await api('DELETE','/api/wa-promo/campaigns/'+S.camp.id); $('mCamp').classList.remove('on'); say(true,'취소했습니다.'); loadCamps(); }catch(err){ say(false,errText(err),$('mcMsg')); }
   });
+  $('mcInfo').addEventListener('click',e=>{ if(e.target.closest('#mcBank')&&S.camp&&S.camp.image_id){ const id=S.camp.image_id; $('mCamp').classList.remove('on'); setTab('bank'); setTimeout(()=>openImg(id),300); } });
   $('mcEdit').addEventListener('click',()=>{
-    const c=S.camp; if(!c) return; S.editId=c.id;
+    const c=S.camp; if(!c) return; if(S.tab!=='camps') setTab('camps'); S.editId=c.id; setKBank(null);
     $('kTitle').textContent='발송 #'+c.id+' 수정 (이미지는 바꿀 때만 고르세요)'; $('kSave').textContent='수정 저장'; $('kCancelEdit').classList.remove('hidden');
     $('kDate').value=c.send_at_mx.slice(0,10); $('kTime').value=c.send_at_mx.slice(11,16); $('kCap').value=c.caption;
     $('kAud').value=c.memo_filter?'memo':''; $('kMemo').value=c.memo_filter||''; $('kMemoWrap').classList.toggle('hidden',!c.memo_filter);
     $('mCamp').classList.remove('on'); window.scrollTo({top:0,behavior:'smooth'});
   });
+
+  // ───── 🖼 이미지 뱅크 (2026-10-16) ─────
+  async function blobUrl(path,cache,key){
+    if(cache[key]) return cache[key];
+    try{ const r=await fetch(session.api+path,{headers:{'Authorization':'Bearer '+session.token}}); if(!r.ok) return ''; const u=URL.createObjectURL(await r.blob()); cache[key]=u; return u; }catch(e){ return ''; }
+  }
+  const thumbUrl=(id)=>blobUrl('/api/wa-promo/images/'+id+'/thumb',S.thCache,id);
+  const fileUrl=(id)=>blobUrl('/api/wa-promo/images/'+id+'/file',S.fileCache,id);
+  // 보이는 썸네일만 불러오기(수백 장도 가볍게)
+  let thumbIO=null;
+  function lazyThumbs(root){
+    const ims=root.querySelectorAll('img[data-th]:not([data-ld])');
+    const load=async(im)=>{ im.dataset.ld='1'; im.src=await thumbUrl(Number(im.dataset.th)); };
+    if(typeof IntersectionObserver==='undefined'){ ims.forEach(load); return; }
+    if(!thumbIO) thumbIO=new IntersectionObserver(es=>es.forEach(en=>{ if(en.isIntersecting){ thumbIO.unobserve(en.target); load(en.target); } }),{rootMargin:'300px'});
+    ims.forEach(im=>thumbIO.observe(im));
+  }
+  const kb=(n)=>n>=1048576?(n/1048576).toFixed(1)+'MB':Math.max(1,Math.round(n/1024))+'KB';
+  const dmy=(s)=>s?String(s).slice(0,10):'';
+  try{ const v=localStorage.getItem('wap_bank_view'); if(['xl','l','m','s','d'].includes(v)) S.bView=v; }catch(e){}
+  async function loadBank(){
+    if(S.bMode==='hist'){ loadHist(); return; }
+    try{ const d=await api('GET','/api/wa-promo/images'); S.bank=d.items||[]; S.bankFolders=d.folders||[]; }
+    catch(e){ $('bGrid').innerHTML='<div class="hint" style="margin-top:10px">'+esc(errText(e))+'</div>'; return; }
+    const cur=$('bFolder').value;
+    $('bFolder').innerHTML='<option value="">전체 ('+S.bank.length+')</option>'+S.bankFolders.map(f=>'<option value="'+(f.folder==null?'__none':esc(f.folder))+'">'+esc(f.folder==null?'(폴더 없음)':f.folder)+' ('+f.n+')</option>').join('');
+    $('bFolder').value=cur; if($('bFolder').value!==cur) $('bFolder').value='';
+    $('bFolderList').innerHTML=S.bankFolders.filter(f=>f.folder).map(f=>'<option value="'+esc(f.folder)+'">').join('');
+    renderBank();
+  }
+  function bankRows(){
+    const q=$('bQ').value.trim().toLowerCase(); const fo=$('bFolder').value; const so=$('bSort').value;
+    let r=S.bank.filter(i=>(!q||(i.name||'').toLowerCase().includes(q)||(i.folder||'').toLowerCase().includes(q))&&(!fo||(fo==='__none'?i.folder==null:i.folder===fo)));
+    const cmp={new:(a,b)=>String(b.created_mx).localeCompare(String(a.created_mx))||b.id-a.id,name:(a,b)=>String(a.name).localeCompare(String(b.name),'es',{numeric:true}),
+      used:(a,b)=>String(b.last_used_mx||'').localeCompare(String(a.last_used_mx||''))||b.id-a.id,uses:(a,b)=>(b.uses||0)-(a.uses||0)||b.id-a.id}[so]||(()=>0);
+    return r.sort(cmp);
+  }
+  function renderBank(){
+    const rows=bankRows(); S.bVisible=rows.map(i=>i.id);
+    document.querySelectorAll('#bView button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.bView));
+    $('bCount').textContent='이미지 '+S.bank.length+'장'+(rows.length!==S.bank.length?' · 보이는 것 '+rows.length+'장':'')+' · '+kb(S.bank.reduce((a,i)=>a+(i.size||0),0));
+    const meta=(i)=>(i.uses?'사용 '+i.uses+'회 · 최근 '+dmy(i.last_used_mx).slice(5).replace('-','/'):'미사용')+' · '+kb(i.size);
+    if(!rows.length){ $('bGrid').innerHTML='<div class="hint" style="margin-top:12px">'+(S.bank.length?'조건에 맞는 이미지가 없습니다.':'아직 이미지가 없습니다 — 위에 끌어다 놓거나 「＋ 파일 고르기」.')+'</div>'; syncBankSel(); return; }
+    if(S.bView==='d'){
+      $('bGrid').innerHTML='<div class="tblwrap" style="margin-top:10px"><table class="bdet"><thead><tr><th><input type="checkbox" id="bAllCk"></th><th></th><th>파일 이름</th><th>폴더</th><th class="num">크기</th><th>해상도</th><th>올린 날</th><th>올린 사람</th><th class="num">사용</th><th>최근 사용</th></tr></thead><tbody>'
+        +rows.map(i=>'<tr class="'+(S.bSel.has(i.id)?'sel':'')+'" data-bid="'+i.id+'" style="cursor:pointer"><td><input type="checkbox" class="ck" data-ck="'+i.id+'"'+(S.bSel.has(i.id)?' checked':'')+'></td><td><img class="thm" data-th="'+i.id+'" alt=""></td><td><b>'+esc(i.name)+'</b></td><td>'+esc(i.folder||'—')+'</td><td class="num">'+kb(i.size)+'</td><td>'+(i.width?i.width+'×'+i.height:'—')+'</td><td>'+esc(dmy(i.created_mx))+'</td><td>'+esc(i.created_by_name||'')+'</td><td class="num">'+(i.uses||0)+'</td><td>'+esc(dmy(i.last_used_mx)||'—')+'</td></tr>').join('')
+        +'</tbody></table></div>';
+    } else {
+      $('bGrid').innerHTML='<div class="bgrid v-'+S.bView+'">'+rows.map(i=>'<div class="bcard'+(S.bSel.has(i.id)?' sel':'')+'" data-bid="'+i.id+'" title="'+esc(i.name)+'"><div class="th"><img data-th="'+i.id+'" alt=""></div>'
+        +'<input type="checkbox" class="ck" data-ck="'+i.id+'"'+(S.bSel.has(i.id)?' checked':'')+' aria-label="선택">'+(i.uses?'<span class="use">'+i.uses+'회</span>':'')
+        +'<div class="nm">'+esc(i.name)+'</div><div class="mt">'+esc(meta(i))+'</div></div>').join('')+'</div>';
+    }
+    lazyThumbs($('bGrid')); syncBankSel();
+  }
+  function syncBankSel(){ const n=S.bSel.size; $('bSelBar').classList.toggle('hidden',!n); $('bSelN').textContent=n+'장 선택'; }
+  $('bView').addEventListener('click',e=>{ const b=e.target.closest('button[data-v]'); if(!b) return; S.bView=b.dataset.v; try{ localStorage.setItem('wap_bank_view',S.bView); }catch(_){ } renderBank(); });
+  $('bMode').addEventListener('click',e=>{ const b=e.target.closest('button[data-m]'); if(!b) return; S.bMode=b.dataset.m;
+    document.querySelectorAll('#bMode button').forEach(x=>x.classList.toggle('on',x===b)); $('bImgs').classList.toggle('hidden',S.bMode!=='imgs'); $('bHist').classList.toggle('hidden',S.bMode!=='hist'); loadBank(); });
+  ['bQ'].forEach(id=>$(id).addEventListener('input',renderBank)); ['bFolder','bSort'].forEach(id=>$(id).addEventListener('change',renderBank));
+  $('bGrid').addEventListener('click',e=>{
+    if(e.target.id==='bAllCk'){ (S.bVisible||[]).forEach(id=>e.target.checked?S.bSel.add(id):S.bSel.delete(id)); renderBank(); return; }
+    const ck=e.target.closest('[data-ck]'); if(ck){ const id=Number(ck.dataset.ck); ck.checked?S.bSel.add(id):S.bSel.delete(id); const card=ck.closest('[data-bid]'); if(card) card.classList.toggle('sel',ck.checked); syncBankSel(); return; }
+    const c=e.target.closest('[data-bid]'); if(c) openImg(Number(c.dataset.bid));
+  });
+  $('bSelAll').addEventListener('click',()=>{ (S.bVisible||[]).forEach(id=>S.bSel.add(id)); renderBank(); });
+  $('bSelClear').addEventListener('click',()=>{ S.bSel.clear(); renderBank(); });
+  $('bMove').addEventListener('click',async()=>{ const ids=[...S.bSel]; if(!ids.length) return;
+    try{ const d=await api('POST','/api/wa-promo/images/bulk',{ids,action:'move',folder:$('bMoveTo').value}); say(true,d.updated+'장을 「'+($('bMoveTo').value.trim()||'폴더 없음')+'」(으)로 옮겼습니다.'); S.bSel.clear(); loadBank(); }catch(err){ say(false,errText(err)); } });
+  $('bDel').addEventListener('click',async()=>{ const ids=[...S.bSel]; if(!ids.length) return;
+    if(!confirm(ids.length+'장을 이미지 뱅크에서 지울까요? 이미 예약 · 발송된 광고는 그대로 남습니다.')) return;
+    try{ const d=await api('POST','/api/wa-promo/images/bulk',{ids,action:'delete'}); say(true,d.updated+'장을 지웠습니다.'); S.bSel.clear(); loadBank(); }catch(err){ say(false,errText(err)); } });
+  // 올리기 — 여러 장 · 끌어다 놓기 · 큰 파일 자동 축소 · 썸네일은 화면에서 만듦
+  const canCanvas=(()=>{ let r=null; return ()=>{ if(r===null){ try{ r=!!(document.createElement('canvas').getContext('2d')); }catch(e){ r=false; } } return r; }; })();
+  const loadImg=(blob)=>new Promise(res=>{ const u=URL.createObjectURL(blob); const im=new Image(); const done=(ok)=>{ clearTimeout(t); res(ok?{im,u}:null); }; const t=setTimeout(()=>done(false),15000); im.onload=()=>done(true); im.onerror=()=>done(false); im.src=u; });
+  const toBlob=(cv,type,q)=>new Promise(res=>cv.toBlob(res,type,q));
+  const b64Of=(blob)=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(blob); });
+  async function prepFile(f){
+    const okType=/^image\/(jpeg|png)$/.test(f.type); const MAX=5*1024*1024;
+    if(!canCanvas()){ if(!okType) throw new Error('bad_image_type'); if(f.size>MAX) throw new Error('image_too_large'); return {name:f.name,mime:f.type,image_b64:await b64Of(f)}; }
+    const L=await loadImg(f); if(!L){ if(okType&&f.size<=MAX) return {name:f.name,mime:f.type,image_b64:await b64Of(f)}; throw new Error('bad_image'); }
+    const W=L.im.naturalWidth, H=L.im.naturalHeight; let blob=f, mime=f.type, name=f.name;
+    if(!okType||f.size>MAX){
+      let side=Math.min(Math.max(W,H),f.size>MAX?2560:Math.max(W,H)), q=0.9;
+      for(let k=0;k<6;k++){ const sc=Math.min(1,side/Math.max(W,H)); const cv=document.createElement('canvas'); cv.width=Math.round(W*sc); cv.height=Math.round(H*sc);
+        const g=cv.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,cv.width,cv.height); g.drawImage(L.im,0,0,cv.width,cv.height);
+        blob=await toBlob(cv,'image/jpeg',q); if(blob&&blob.size<=MAX) break; side=Math.round(side*0.8); q=Math.max(0.7,q-0.05); }
+      if(!blob||blob.size>MAX){ URL.revokeObjectURL(L.u); throw new Error('image_too_large'); }
+      mime='image/jpeg'; name=name.replace(/\.[^.]+$/,'')+'.jpg';
+    }
+    const ts=360, sc=Math.min(1,ts/Math.max(W,H)); const tc=document.createElement('canvas'); tc.width=Math.max(1,Math.round(W*sc)); tc.height=Math.max(1,Math.round(H*sc));
+    const tg=tc.getContext('2d'); tg.fillStyle='#fff'; tg.fillRect(0,0,tc.width,tc.height); tg.drawImage(L.im,0,0,tc.width,tc.height);
+    const tb=await toBlob(tc,'image/jpeg',0.82); URL.revokeObjectURL(L.u);
+    return {name,mime,image_b64:await b64Of(blob),thumb_b64:tb?await b64Of(tb):null,width:W,height:H};
+  }
+  async function uploadFiles(files){
+    files=[...files].filter(f=>f&&(/^image\//.test(f.type)||/\.(jpe?g|png|webp|gif|bmp|heic)$/i.test(f.name||''))); if(!files.length){ say(false,'이미지 파일이 없습니다.'); return; }
+    const folder=$('bUpFolder').value.trim(); const st={done:0,ok:0,dup:0,fail:[]};
+    $('bProg').classList.remove('hidden');
+    const show=()=>{ $('bProgT').textContent='올리는 중 '+st.done+' / '+files.length+' · 저장 '+st.ok+(st.dup?' · 이미 있음 '+st.dup:'')+(st.fail.length?' · 실패 '+st.fail.length:''); $('bProgBar').style.width=Math.round(st.done/files.length*100)+'%'; };
+    show(); let i=0;
+    const worker=async()=>{ while(i<files.length){ const f=files[i++];
+      try{ const p=await prepFile(f); const d=await api('POST','/api/wa-promo/images',{...p,folder}); if(d.duplicate) st.dup++; else st.ok++; }
+      catch(e){ st.fail.push((f.name||'?')+' — '+(ERR[e.message]||e.message)); }
+      st.done++; show(); } };
+    await Promise.all([worker(),worker()]);
+    $('bProgT').textContent='끝 — 저장 '+st.ok+'장'+(st.dup?' · 이미 있던 같은 파일 '+st.dup+'장':'')+(st.fail.length?' · 실패 '+st.fail.length+'장: '+st.fail.slice(0,5).join(' / '):'');
+    loadBank();
+  }
+  $('bPick').addEventListener('click',()=>$('bFiles').click());
+  $('bFiles').addEventListener('change',()=>{ const fs=$('bFiles').files; if(fs&&fs.length) uploadFiles([...fs]); $('bFiles').value=''; });
+  const dz=$('bDrop');
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{ e.preventDefault(); dz.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{ e.preventDefault(); if(ev==='dragleave'&&dz.contains(e.relatedTarget)) return; dz.classList.remove('over'); }));
+  dz.addEventListener('drop',e=>{ const fs=e.dataTransfer&&e.dataTransfer.files; if(fs&&fs.length) uploadFiles([...fs]); });
+  // 크게 보기 · 이름/폴더 · 광고 이력
+  async function openImg(id){
+    let it=S.bank.find(x=>x.id===id);
+    if(!it){ try{ const d=await api('GET','/api/wa-promo/images'); S.bank=d.items||[]; it=S.bank.find(x=>x.id===id); }catch(e){} }
+    if(!it){ say(false,'이미지를 찾지 못했습니다(지워졌을 수 있음).'); return; }
+    S.img=it; $('miTitle').textContent=it.name; $('miName').value=it.name; $('miFolder').value=it.folder||''; $('miMsg').className='msg';
+    $('miMeta').innerHTML=(it.width?it.width+'×'+it.height+' · ':'')+kb(it.size)+' · '+esc(it.mime.replace('image/','').toUpperCase())+' · 올림 '+esc(dmy(it.created_mx))+(it.created_by_name?' · '+esc(it.created_by_name):'');
+    $('miImg').src=await thumbUrl(id); $('mImg').classList.add('on');
+    fileUrl(id).then(u=>{ if(S.img&&S.img.id===id&&u) $('miImg').src=u; });
+    const vis=S.bVisible||[]; const ix=vis.indexOf(id); $('miPrev').disabled=ix<=0; $('miNext').disabled=ix<0||ix>=vis.length-1;
+    $('miHist').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{ const d=await api('GET','/api/wa-promo/images/'+id+'/history'); S.imgHist=d.items||[];
+      $('miHist').innerHTML=S.imgHist.length?'<table><thead><tr><th>날짜 (멕시코)</th><th>상태</th><th>문구</th><th class="num">대상</th></tr></thead><tbody>'
+        +S.imgHist.map(c=>'<tr class="click" data-hc="'+c.id+'" style="cursor:pointer"><td style="white-space:nowrap"><b>'+esc(c.send_at_mx.replace('T',' '))+'</b></td><td>'+campState(c)+'</td><td><div style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(c.caption)+'">'+esc(c.caption)+'</div></td><td class="num">'+(c.target_n!=null?c.target_n:(c.target_sel||'—'))+'</td></tr>').join('')+'</tbody></table>'
+        :'<div class="hint">아직 이 이미지로 나간 광고가 없습니다.</div>';
+    }catch(e){ $('miHist').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; }
+  }
+  const stepImg=(k)=>{ const vis=S.bVisible||[]; const ix=vis.indexOf(S.img&&S.img.id); const n=vis[ix+k]; if(n) openImg(n); };
+  $('miPrev').addEventListener('click',()=>stepImg(-1)); $('miNext').addEventListener('click',()=>stepImg(1));
+  document.addEventListener('keydown',e=>{ if(!$('mImg').classList.contains('on')||/INPUT|TEXTAREA|SELECT/.test((e.target&&e.target.tagName)||'')) return; if(e.key==='ArrowLeft') stepImg(-1); if(e.key==='ArrowRight') stepImg(1); if(e.key==='Escape') $('mImg').classList.remove('on'); });
+  $('miHist').addEventListener('click',e=>{ const r=e.target.closest('[data-hc]'); if(r){ $('mImg').classList.remove('on'); openCamp(Number(r.dataset.hc),S.imgHist); } });
+  $('miSave').addEventListener('click',async()=>{ if(!S.img) return;
+    try{ await api('PATCH','/api/wa-promo/images/'+S.img.id,{name:$('miName').value,folder:$('miFolder').value}); say(true,'저장했습니다.',$('miMsg')); const id=S.img.id; await loadBank(); const it=S.bank.find(x=>x.id===id); if(it){ S.img=it; $('miTitle').textContent=it.name; } }
+    catch(err){ say(false,errText(err),$('miMsg')); } });
+  $('miDel').addEventListener('click',async()=>{ if(!S.img||!confirm('「'+S.img.name+'」을(를) 이미지 뱅크에서 지울까요? 이미 예약 · 발송된 광고는 그대로 남습니다.')) return;
+    try{ await api('DELETE','/api/wa-promo/images/'+S.img.id); $('mImg').classList.remove('on'); S.bSel.delete(S.img.id); say(true,'지웠습니다.'); loadBank(); }catch(err){ say(false,errText(err),$('miMsg')); } });
+  $('miDown').addEventListener('click',async()=>{ if(!S.img) return; const u=await fileUrl(S.img.id); if(!u) return; const a=document.createElement('a'); a.href=u; a.download=S.img.name; document.body.appendChild(a); a.click(); a.remove(); });
+  $('miUse').addEventListener('click',()=>{ if(!S.img) return; const id=S.img.id; $('mImg').classList.remove('on'); setTab('camps'); if(S.editId) endEdit(); setKBank(id); $('kCap').focus(); say(true,'「'+S.img.name+'」 — 발송일 · 문구를 넣고 「예약」을 누르세요(달력의 날짜를 눌러도 됩니다).'); });
+  // 고르기 창
+  let pickCb=null;
+  async function openPicker(cb){
+    pickCb=cb; $('mPick').classList.add('on');
+    if(!S.bank.length){ try{ const d=await api('GET','/api/wa-promo/images'); S.bank=d.items||[]; S.bankFolders=d.folders||[]; }catch(e){ $('pkGrid').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; } }
+    $('pkFolder').innerHTML='<option value="">전체 폴더</option>'+S.bankFolders.filter(f=>f.folder).map(f=>'<option>'+esc(f.folder)+'</option>').join('');
+    renderPicker();
+  }
+  function renderPicker(){
+    const q=$('pkQ').value.trim().toLowerCase(), fo=$('pkFolder').value;
+    const rows=S.bank.filter(i=>(!q||(i.name||'').toLowerCase().includes(q)||(i.folder||'').toLowerCase().includes(q))&&(!fo||i.folder===fo));
+    $('pkGrid').innerHTML=rows.length?rows.map(i=>'<div class="bcard" data-pk="'+i.id+'" title="'+esc(i.name)+'"><div class="th"><img data-th="'+i.id+'" alt=""></div><div class="nm">'+esc(i.name)+'</div><div class="mt">'+(i.uses?'사용 '+i.uses+'회':'미사용')+'</div></div>').join('')
+      :'<div class="hint">이미지가 없습니다 — 「🖼 이미지 뱅크」 탭에서 올리세요.</div>';
+    lazyThumbs($('pkGrid'));
+  }
+  $('pkQ').addEventListener('input',renderPicker); $('pkFolder').addEventListener('change',renderPicker);
+  $('pkGrid').addEventListener('click',e=>{ const c=e.target.closest('[data-pk]'); if(!c) return; $('mPick').classList.remove('on'); if(pickCb) pickCb(Number(c.dataset.pk)); });
+  // 📜 광고 이력 — 날짜별
+  async function loadHist(){
+    if(!S.hMonth) S.hMonth=mxToday().slice(0,7);
+    const from=S.hMonth+'-01', to=monthEnd(S.hMonth);
+    $('hTitle').textContent='📜 '+S.hMonth.slice(0,4)+'년 '+Number(S.hMonth.slice(5))+'월 광고 이력';
+    let items=[];
+    try{ const d=await api('GET','/api/wa-promo/campaigns?from='+from+'&to='+to+'&cancelled=1'); items=(d.items||[]).slice().sort((a,b)=>String(b.send_at_mx).localeCompare(String(a.send_at_mx))||b.id-a.id); S.hItems=items; }
+    catch(e){ $('hList').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; }
+    const sum=(k)=>items.reduce((a,c)=>a+((c.stats&&c.stats[k])||0),0);
+    $('hSum').innerHTML='<span class="tag t-unknown">광고 '+items.filter(c=>c.status!=='cancelled').length+'건</span><span class="tag t-unknown">이미지 '+new Set(items.map(c=>c.image_id).filter(Boolean)).size+'종</span><span class="tag t-yes">보냄 '+sum('sent')+' · 도착 '+sum('delivered')+' · 읽음 '+sum('read')+'</span><span class="tag t-asked">답장 '+sum('replied')+'명</span>';
+    if(!items.length){ $('hList').innerHTML='<div class="hint" style="margin-top:12px">이 달에는 광고가 없습니다.</div>'; return; }
+    const days=[...new Set(items.map(c=>c.send_at_mx.slice(0,10)))]; const W=['일','월','화','수','목','금','토'];
+    $('hList').innerHTML=days.map(day=>'<div class="hday"><h3>'+day+' ('+W[new Date(day+'T12:00:00Z').getUTCDay()]+')</h3>'
+      +items.filter(c=>c.send_at_mx.slice(0,10)===day).map(c=>{ const st=c.stats||{};
+        return '<div class="hrow" data-hc="'+c.id+'"><img data-img="'+c.id+'" alt=""><div style="min-width:0"><div><b>'+esc(c.send_at_mx.slice(11,16))+'</b> · '+campState(c)+(c.image_name?' <span class="hint">🖼 '+esc(c.image_name)+'</span>':'')+'</div><div class="cap">'+esc(c.caption)+'</div>'
+          +'<div class="hint">대상 '+(c.target_n!=null?c.target_n:(c.target_sel?'👥 '+c.target_sel:'동의 전체'))+' · 보냄 '+(st.sent||0)+' · 도착 '+(st.delivered||0)+' · 읽음 '+(st.read||0)+' · 답장 '+(st.replied||0)+(c.created_by_name?' · '+esc(c.created_by_name):'')+'</div></div><div class="hint">#'+c.id+'</div></div>'; }).join('')+'</div>').join('');
+    document.querySelectorAll('#hList img[data-img]').forEach(async im=>{ im.src=await imgUrl(im.dataset.img); });
+  }
+  $('hList').addEventListener('click',e=>{ const r=e.target.closest('[data-hc]'); if(r) openCamp(Number(r.dataset.hc),S.hItems); });
+  $('hPrev').addEventListener('click',()=>{ S.hMonth=addMonths(S.hMonth,-1); loadHist(); });
+  $('hNext').addEventListener('click',()=>{ S.hMonth=addMonths(S.hMonth,1); loadHist(); });
+  $('hNow').addEventListener('click',()=>{ S.hMonth=mxToday().slice(0,7); loadHist(); });
 
   // ───── ③ 받은 메시지 ─────
   async function loadConvs(){

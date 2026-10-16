@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1013ds) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016ib) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -41,6 +41,13 @@ function boot() {
         if (u.includes('/api/wa-promo/contacts') && method === 'POST') return body.phone ? json({ id: 9 }) : json({ error: 'bad_phone' }, 400);
         if (u.includes('/api/wa-promo/consent/ask')) return json({ queued: body.ids ? body.ids.length : 1, remaining_today: 140, cap: 150 });
         if (u.match(/\/api\/wa-promo\/contacts\/\d+/)) return json({ ...CONTACTS[1], ...body });
+        // 2026-10-16 · 이미지 뱅크
+        if (u.match(/\/api\/wa-promo\/images\/\d+\/history/)) return json({ items: [{ id: 7, send_at_mx: '2026-10-14T10:00', caption: 'Amortiguadores', status: 'done', target_n: 2, image_id: 31, stats: { sent: 2, delivered: 2, read: 1, replied: 1 } }] });
+        if (u.match(/\/api\/wa-promo\/images\/\d+\/(thumb|file)/)) return json({});
+        if (u.includes('/api/wa-promo/images/bulk')) return json({ updated: body.ids.length });
+        if (u.match(/\/api\/wa-promo\/images\/\d+$/)) return json({ ok: true });
+        if (u.endsWith('/api/wa-promo/images') && method === 'POST') return json({ id: 40 + calls.filter((x) => x.u.endsWith('/api/wa-promo/images') && x.method === 'POST').length, duplicate: body.name === 'dup.png' });
+        if (u.includes('/api/wa-promo/images')) return json({ items: BANK, folders: [{ folder: '2026-11 Versa', n: 1 }, { folder: null, n: 1 }] });
         if (u.includes('/api/wa-promo/campaigns?')) return json({ items: [{ id: 7, send_at_mx: '2026-10-14T10:00', caption: 'Amortiguadores', status: 'done', target_n: 2, stats: { sent: 2, delivered: 2, read: 1, replied: 1 }, image_name: 'a.png', image_bytes: 2048 }], audience_yes: 1 });
         if (u.includes('/api/wa-promo/campaigns/7/sends')) return json({ items: [{ name: 'Juan', phone_masked: '528****0001', status: 'sent_template', dlv_status: 'read', sent_at: '2026-10-14T16:00:00Z' }] });
         if (u.includes('/api/wa-promo/campaigns/7/image')) return json({});
@@ -64,13 +71,16 @@ function boot() {
   const w = dom.window;
   return { w, d: w.document, calls, close: () => w.close(), ready: new Promise((r) => { if (w.document.readyState === 'complete') r(); else w.addEventListener('load', r); }) };
 }
+const BANK = [
+  { id: 31, name: 'versa_horquilla.jpg', mime: 'image/jpeg', size: 204800, width: 1080, height: 1080, folder: '2026-11 Versa', created_mx: '2026-10-15T09:00', uses: 2, last_used_mx: '2026-10-14T10:00', created_by_name: 'Sebastian' },
+  { id: 32, name: 'amortiguador_aveo.png', mime: 'image/png', size: 1048576, width: 1200, height: 628, folder: null, created_mx: '2026-10-16T08:00', uses: 0, last_used_mx: null, created_by_name: 'Maria' }];
 const click = (c, id) => c.d.getElementById(id).click();
 const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).click(); await tick(); };
 
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1013ds/);
+    assert.match(c.d.title, /wap-1016ib/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -138,8 +148,17 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     await tab(c, 'camps');
     // 그 주로 이동: 2026-10-14 가 있는 주
     // 스텁은 어느 주를 물어도 같은 발송을 돌려준다 — 10/14 가 들어 있는 주로 맞춘다
-    c.w.eval("S.weekStart='2026-10-12'"); click(c, 'wkToday'); c.w.eval("S.weekStart='2026-10-12'"); c.w.eval('loadCamps()'); await tick();
+    // 2026-10-16 · 월간 달력 — 그달 1일이 든 주 월요일 ~ 말일이 든 주 일요일
+    c.w.eval("S.month='2026-10'"); c.w.eval('loadCamps()'); await tick();
     assert.match(c.d.getElementById('cal').textContent, /✓ 2\/2 도착/);
+    assert.match(c.d.getElementById('wkTitle').textContent, /2026년 10월/);
+    const days = [...c.d.querySelectorAll('#cal [data-day]')].map((x) => x.dataset.day);
+    assert.equal(days[0], '2026-09-28'); assert.equal(days[days.length - 1], '2026-11-01'); assert.equal(days.length, 35, '5주');
+    assert.ok(c.d.querySelector('#cal [data-day="2026-09-30"]').classList.contains('out'), '다른 달은 흐리게');
+    assert.match(c.d.getElementById('moSum').textContent, /완료 1/);
+    const fc = c.calls.filter((x) => x.u.includes('/campaigns?from=')).pop().u; assert.match(fc, /from=2026-09-28&to=2026-11-01/);
+    const css = readFileSync(HTML, 'utf-8'); assert.match(css, /\.cal\{grid-template-columns:repeat\(7,minmax\(0,1fr\)\)\}/, '이미지 크기에 안 밀리는 7칸');
+    click(c, 'wkNext'); await tick(); assert.match(c.d.getElementById('wkTitle').textContent, /11월/); click(c, 'wkPrev'); await tick();
     c.d.querySelector('[data-camp="7"]').click(); await tick(300);
     assert.ok(c.d.getElementById('mCamp').classList.contains('on'));
     assert.match(c.d.getElementById('mcInfo').textContent, /읽음 1/);
@@ -178,6 +197,69 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     await tab(c, 'setup');
     const k = c.d.getElementById('sKpis').textContent;
     assert.match(k, /12 \/ 150/); assert.match(k, /promo_consentimiento/); assert.match(k, /높음/);
+    c.close();
+  });
+
+  await t.test('⑦ 이미지 뱅크 — 목록(썸네일 · 이름) · 보기 크기 · 여러 장 올리기(중복) · 크게 보기 · 광고 이력 · 달력에 끌어다 놓기 · 뱅크 이미지로 예약', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    await tab(c, 'bank');
+    const grid = () => c.d.getElementById('bGrid');
+    assert.equal(grid().querySelectorAll('[data-bid]').length, 2);
+    assert.match(grid().textContent, /versa_horquilla\.jpg/); assert.match(grid().textContent, /사용 2회/);
+    assert.ok(grid().querySelector('img[data-th="31"]'), '썸네일');
+    c.d.querySelector('#bView button[data-v="s"]').click(); await tick(50); assert.ok(grid().querySelector('.bgrid.v-s'), '작은 아이콘');
+    c.d.querySelector('#bView button[data-v="xl"]').click(); await tick(50); assert.ok(grid().querySelector('.bgrid.v-xl'), '아주 큰 아이콘');
+    c.d.querySelector('#bView button[data-v="d"]').click(); await tick(50); assert.match(grid().textContent, /1080×1080/, '자세히 = 표(해상도)');
+    c.d.getElementById('bSort').value = 'name'; c.d.getElementById('bSort').dispatchEvent(new c.w.Event('change')); await tick(50);
+    assert.deepEqual([...grid().querySelectorAll('tr[data-bid]')].map((x) => x.dataset.bid), ['32', '31'], '이름순');
+    c.d.getElementById('bFolder').value = '2026-11 Versa'; c.d.getElementById('bFolder').dispatchEvent(new c.w.Event('change')); await tick(50);
+    assert.equal(grid().querySelectorAll('tr[data-bid]').length, 1, '폴더 거르기');
+    c.d.getElementById('bFolder').value = ''; c.d.getElementById('bFolder').dispatchEvent(new c.w.Event('change')); await tick(50);
+    // 여러 장 올리기 — 폴더 · 중복은 「이미 있음」 · JPG/PNG 아닌 것은 캔버스 없으면 실패로
+    c.d.getElementById('bUpFolder').value = '2026-11 Versa';
+    const F = (n, t) => new c.w.File(['abc'], n, { type: t });
+    await c.w.eval('uploadFiles')([F('a.jpg', 'image/jpeg'), F('dup.png', 'image/png'), F('b.webp', 'image/webp')]); await tick();
+    const ups = c.calls.filter((x) => x.u.endsWith('/api/wa-promo/images') && x.method === 'POST');
+    assert.equal(ups.length, 2); assert.equal(ups[0].body.folder, '2026-11 Versa'); assert.ok(ups[0].body.image_b64); assert.equal(ups[0].body.mime, 'image/jpeg');
+    assert.match(c.d.getElementById('bProgT').textContent, /저장 1장 · 이미 있던 같은 파일 1장 · 실패 1장/);
+    // 크게 보기 + 광고 이력
+    grid().querySelector('[data-bid="31"]').click(); await tick(200);
+    assert.ok(c.d.getElementById('mImg').classList.contains('on'));
+    assert.equal(c.d.getElementById('miName').value, 'versa_horquilla.jpg');
+    assert.match(c.d.getElementById('miHist').textContent, /2026-10-14 10:00/); assert.match(c.d.getElementById('miHist').textContent, /✓ 2\/2 도착/);
+    c.d.getElementById('miFolder').value = 'Promo'; click(c, 'miSave'); await tick();
+    assert.deepEqual(c.calls.filter((x) => x.method === 'PATCH' && x.u.includes('/images/31')).pop().body, { name: 'versa_horquilla.jpg', folder: 'Promo' });
+    click(c, 'miUse'); await tick(200);
+    assert.ok(c.d.getElementById('p-camps').classList.contains('on'), '발송 일정으로');
+    assert.match(c.d.getElementById('kBankSel').textContent, /versa_horquilla\.jpg/);
+    c.d.getElementById('kDate').value = '2099-01-05'; c.d.getElementById('kCap').value = 'Horquillas Versa'; click(c, 'kSave'); await tick();
+    const cp = c.calls.filter((x) => x.u.endsWith('/api/wa-promo/campaigns') && x.method === 'POST').pop().body;
+    assert.equal(cp.image_id, 31); assert.equal(cp.image_b64, undefined); assert.equal(cp.send_at, '2099-01-05T10:00');
+    // 달력: 뱅크 띠의 그림을 날짜로 끌어다 놓기
+    await tick(200);
+    assert.ok(c.d.querySelector('#calStrip [data-bimg="32"]'), '달력 위 이미지 띠');
+    c.w.eval("S.month='2099-01'"); c.w.eval('loadCamps()'); await tick();
+    const day = c.d.querySelector('#cal [data-day="2099-01-12"]');
+    const drop = new c.w.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(drop, 'dataTransfer', { value: { getData: () => 'wa-image:32' } });
+    day.dispatchEvent(drop); await tick(100);
+    assert.equal(c.d.getElementById('kDate').value, '2099-01-12'); assert.match(c.d.getElementById('kBankSel').textContent, /amortiguador_aveo\.png/);
+    // 누르고 → 날짜 누르기
+    c.d.querySelector('#calStrip [data-bimg="31"]').click(); c.d.querySelector('#cal [data-day="2099-01-20"]').click(); await tick(100);
+    assert.equal(c.d.getElementById('kDate').value, '2099-01-20'); assert.match(c.d.getElementById('kBankSel').textContent, /versa_horquilla/);
+    // 고르기 창(뱅크에서)
+    click(c, 'kBank'); await tick(100); assert.ok(c.d.getElementById('mPick').classList.contains('on'));
+    c.d.querySelector('#pkGrid [data-pk="32"]').click(); await tick(100); assert.match(c.d.getElementById('kBankSel').textContent, /amortiguador_aveo/);
+    // 📜 광고 이력 — 날짜별
+    await tab(c, 'bank'); c.d.querySelector('#bMode button[data-m="hist"]').click(); await tick();
+    assert.match(c.d.getElementById('hList').textContent, /2026-10-14 \(수\)/); assert.match(c.d.getElementById('hList').textContent, /Amortiguadores/);
+    assert.match(c.calls.filter((x) => x.u.includes('/campaigns?from=')).pop().u, /cancelled=1/);
+    // 여러 장 골라 지우기
+    c.d.querySelector('#bMode button[data-m="imgs"]').click(); await tick();
+    c.d.querySelector('#bView button[data-v="m"]').click(); await tick(50);
+    grid().querySelector('[data-ck="31"]').click(); grid().querySelector('[data-ck="32"]').click(); await tick(50);
+    assert.match(c.d.getElementById('bSelN').textContent, /2장 선택/);
+    click(c, 'bDel'); await tick();
+    assert.deepEqual(c.calls.filter((x) => x.u.includes('/images/bulk')).pop().body, { ids: [31, 32], action: 'delete' });
     c.close();
   });
 

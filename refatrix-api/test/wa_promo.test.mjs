@@ -66,7 +66,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const app = buildApp(); await app.ready();
   t.after(() => app.close());
 
-  await query(`DELETE FROM wa_campaign_sends; DELETE FROM wa_messages; DELETE FROM wa_campaigns; DELETE FROM wa_contacts; DELETE FROM wa_inbound; DELETE FROM wa_message_status;`);
+  await query(`DELETE FROM wa_campaign_sends; DELETE FROM wa_messages; DELETE FROM wa_campaigns; DELETE FROM wa_images; DELETE FROM wa_contacts; DELETE FROM wa_inbound; DELETE FROM wa_message_status;`);
   const one = async (sql, a) => (await query(sql, a)).rows[0];
   const SFX = Date.now().toString(36).slice(-5);
   const dir = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`, [`WP Dir ${SFX}`, `wpdir${SFX}`]);
@@ -289,5 +289,70 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal(lst[0].target_sel, 2);
     assert.equal((await call(D, 'POST', '/api/wa-promo/campaigns', { send_now: true, caption: 'x', image_b64: png.toString('base64'), image_mime: 'image/png', contact_ids: [] })).statusCode, 400);
     await call(D, 'DELETE', `/api/wa-promo/campaigns/${r2.id}`);
+  });
+
+  await t.test('B8. 0281 이미지 뱅크 — 올리기 · 같은 파일 중복 · 썸네일 · 목록(사용 횟수) · 뱅크 이미지로 예약 · 직접 올린 이미지도 뱅크로 · 이력 · 옮기기/삭제 · 권한 · 기존 발송 옮겨 담기', async () => {
+    const { readFileSync } = await import('node:fs');
+    const v = (tag) => Buffer.concat([png, Buffer.from(tag)]).toString('base64');
+    const thumb = Buffer.from('fakejpegthumb').toString('base64');
+    // 권한: 영업 403
+    assert.equal((await call(Rp, 'GET', '/api/wa-promo/images')).statusCode, 403);
+    // 올리기 + 중복
+    const a = (await call(D, 'POST', '/api/wa-promo/images', { name: 'versa.png', mime: 'image/png', image_b64: v('A'), thumb_b64: thumb, width: 1080, height: 1080, folder: '2026-11 Versa' })).json();
+    assert.ok(a.id); assert.equal(a.duplicate, false);
+    const a2 = (await call(D, 'POST', '/api/wa-promo/images', { name: 'otro_nombre.png', mime: 'image/png', image_b64: v('A') })).json();
+    assert.deepEqual(a2, { id: a.id, duplicate: true }, '같은 파일은 한 번만');
+    const b = (await call(D, 'POST', '/api/wa-promo/images', { name: 'aveo.png', mime: 'image/png', image_b64: v('B') })).json();
+    assert.equal((await call(D, 'POST', '/api/wa-promo/images', { name: 'x.gif', mime: 'image/gif', image_b64: v('C') })).json().error, 'bad_image_type');
+    // 썸네일(있으면 썸네일 · 없으면 원본) · 원본
+    const th = await call(D, 'GET', `/api/wa-promo/images/${a.id}/thumb`); assert.equal(th.headers['content-type'], 'image/jpeg'); assert.equal(th.rawPayload.toString(), 'fakejpegthumb');
+    assert.equal((await call(D, 'GET', `/api/wa-promo/images/${b.id}/thumb`)).headers['content-type'], 'image/png');
+    assert.equal((await call(D, 'GET', `/api/wa-promo/images/${a.id}/file`)).rawPayload.length, png.length + 1);
+    // 뱅크 이미지로 예약 → 목록에 사용 1회 · 이력
+    const c1 = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-03-02T10:00', caption: 'Horquillas Versa', image_id: a.id })).json();
+    assert.ok(c1.id);
+    const crow = await one(`SELECT image_id, octet_length(image) n, image_name FROM wa_campaigns WHERE id=$1`, [c1.id]);
+    assert.equal(Number(crow.image_id), a.id); assert.equal(Number(crow.n), png.length + 1, '발송은 자기 사본'); assert.equal(crow.image_name, 'versa.png');
+    // 직접 올린 이미지 → 뱅크에도(폴더 「발송에서 올림」) · 같은 파일이면 있던 것과 이어짐
+    const c2 = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-03-05T10:00', caption: 'Aveo', image_b64: v('B'), image_mime: 'image/png', image_name: 'aveo_copia.png' })).json();
+    assert.equal(Number((await one(`SELECT image_id FROM wa_campaigns WHERE id=$1`, [c2.id])).image_id), b.id);
+    const c3 = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-03-09T10:00', caption: 'Nueva', image_b64: v('N'), image_mime: 'image/png', image_name: 'nueva.png' })).json();
+    const nid = Number((await one(`SELECT image_id FROM wa_campaigns WHERE id=$1`, [c3.id])).image_id);
+    let L = (await call(D, 'GET', '/api/wa-promo/images')).json();
+    const byId = (id) => L.items.find((x) => x.id === id);
+    assert.equal(byId(nid).folder, '발송에서 올림'); assert.equal(byId(nid).name, 'nueva.png');
+    assert.equal(byId(a.id).uses, 1); assert.equal(byId(a.id).last_used_mx, '2099-03-02T10:00'); assert.equal(byId(a.id).has_thumb, true); assert.equal(byId(a.id).width, 1080);
+    assert.ok(L.folders.some((f) => f.folder === '2026-11 Versa' && f.n === 1));
+    // 이력: 같은 이미지 두 번 → 날짜 내림차순 · 취소한 것은 사용 횟수에서 빠짐
+    const c4 = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-04-01T10:00', caption: 'Versa otra vez', from_campaign_id: c1.id })).json();
+    assert.equal(Number((await one(`SELECT image_id FROM wa_campaigns WHERE id=$1`, [c4.id])).image_id), a.id, '지난 발송 다시 쓰기도 같은 뱅크 이미지');
+    const h = (await call(D, 'GET', `/api/wa-promo/images/${a.id}/history`)).json().items;
+    assert.deepEqual(h.map((x) => x.send_at_mx), ['2099-04-01T10:00', '2099-03-02T10:00']);
+    await call(D, 'DELETE', `/api/wa-promo/campaigns/${c4.id}`);
+    L = (await call(D, 'GET', '/api/wa-promo/images')).json(); assert.equal(byId(a.id).uses, 1);
+    // 발송 목록에 image_id
+    assert.equal((await call(D, 'GET', '/api/wa-promo/campaigns?from=2099-03-02&to=2099-03-02')).json().items[0].image_id, a.id);
+    // 수정: 뱅크 이미지로 바꾸기
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/campaigns/${c3.id}`, { image_id: b.id })).statusCode, 200);
+    assert.equal(Number((await one(`SELECT image_id FROM wa_campaigns WHERE id=$1`, [c3.id])).image_id), b.id);
+    // 이름 · 폴더 · 여러 장 옮기기 · 검색
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/images/${b.id}`, { name: 'aveo_final.png', folder: 'Aveo' })).statusCode, 200);
+    assert.equal((await call(D, 'POST', '/api/wa-promo/images/bulk', { ids: [a.id, b.id], action: 'move', folder: 'Promo noviembre' })).json().updated, 2);
+    L = (await call(D, 'GET', '/api/wa-promo/images?folder=' + encodeURIComponent('Promo noviembre'))).json(); assert.equal(L.items.length, 2);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/images?q=aveo_final')).json().items.length, 1);
+    // 삭제(소프트) — 예약은 그대로 · 같은 파일을 다시 올리면 새로 저장
+    assert.equal((await call(D, 'POST', '/api/wa-promo/images/bulk', { ids: [a.id], action: 'delete' })).json().updated, 1);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/images')).json().items.some((x) => x.id === a.id), false);
+    assert.equal((await one(`SELECT status FROM wa_campaigns WHERE id=$1`, [c1.id])).status, 'scheduled', '예약은 그대로');
+    assert.equal((await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-05-01T10:00', caption: 'x', image_id: a.id })).json().error, 'image_source_not_found');
+    const a3 = (await call(D, 'POST', '/api/wa-promo/images', { name: 'versa.png', mime: 'image/png', image_b64: v('A') })).json(); assert.equal(a3.duplicate, false); assert.notEqual(a3.id, a.id);
+    // 0281 옮겨 담기 — image_id 없는 옛 발송(마이그레이션 다시 실행 · 멱등)
+    const old = await one(`INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name) VALUES (now() + interval '400 days', 'viejo', $1, 'image/png', 'viejo.png') RETURNING id`, [Buffer.concat([png, Buffer.from('OLD')])]);
+    const sql = readFileSync(new URL('../migrations/0281_wa_image_bank.sql', import.meta.url), 'utf-8');
+    await query(sql); await query(sql);
+    const oi = await one(`SELECT c.image_id, i.folder, i.name FROM wa_campaigns c JOIN wa_images i ON i.id = c.image_id WHERE c.id=$1`, [old.id]);
+    assert.equal(oi.folder, '지난 발송'); assert.equal(oi.name, 'viejo.png');
+    assert.equal(Number((await one(`SELECT count(*) n FROM wa_images WHERE hash = md5($1::bytea) AND deleted_at IS NULL`, [Buffer.concat([png, Buffer.from('OLD')])])).n), 1, '두 번 실행해도 하나');
+    for (const id of [c1.id, c2.id, c3.id, old.id]) await call(D, 'DELETE', `/api/wa-promo/campaigns/${id}`);
   });
 });

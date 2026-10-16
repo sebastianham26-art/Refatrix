@@ -21,6 +21,14 @@
 //   GET    /api/wa-promo/campaigns/:id/image             이미지
 //   GET    /api/wa-promo/campaigns/:id/sends             발송 원장(실제 전달 상태)
 //   POST   /api/wa-promo/campaigns/:id/test {phone}      한 번호로 시험 발송(동의·상한 무시)
+//   이미지 뱅크(0281 · 2026-10-16)
+//   GET    /api/wa-promo/images?q&folder                 목록(원본 제외) + 사용 횟수 · 최근 사용일 · 폴더 목록
+//   POST   /api/wa-promo/images {name, mime, image_b64, thumb_b64?, width?, height?, folder?}  1장(화면이 여러 장을 차례로) · 같은 파일은 duplicate
+//   PATCH  /api/wa-promo/images/:id {name?, folder?} · DELETE /api/wa-promo/images/:id (소프트 · 발송은 그대로)
+//   POST   /api/wa-promo/images/bulk {ids, action: delete|move, folder?}
+//   GET    /api/wa-promo/images/:id/file · /thumb       원본 · 썸네일
+//   GET    /api/wa-promo/images/:id/history             이 이미지로 나간 광고(날짜순)
+//   POST/PATCH campaigns 에 image_id(뱅크에서 고름) — 새로 올린 이미지는 뱅크에도 자동 저장
 //   받은 메시지
 //   GET    /api/wa-promo/conversations?state&assignee    대화 목록(번호별 마지막 메시지)
 //   GET    /api/wa-promo/conversations/:phone            대화 내용
@@ -203,7 +211,7 @@ export default async function waPromoRoutes(app) {
 
   // ───────── 발송 일정 ─────────
   const CAMP_COLS = `c.id, ${MXT('c.send_at')} AS send_at_mx, c.send_at, c.caption, c.image_mime, c.image_name, octet_length(c.image) AS image_bytes,
-                     c.memo_filter, COALESCE(cardinality(c.target_ids), 0) AS target_sel, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
+                     c.memo_filter, COALESCE(cardinality(c.target_ids), 0) AS target_sel, c.image_id, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
   async function campaignStats(ids) {
     if (!ids.length) return new Map();
     const rows = (await query(
@@ -229,7 +237,7 @@ export default async function waPromoRoutes(app) {
     const rows = (await query(`SELECT ${CAMP_COLS} FROM wa_campaigns c LEFT JOIN users u ON u.id=c.created_by
                                 WHERE ${conds.map((x) => `(${x})`).join(' AND ')} ORDER BY c.send_at, c.id`, args)).rows;
     const st = await campaignStats(rows.map((r) => Number(r.id)));
-    return { items: rows.map((r) => ({ ...r, id: Number(r.id), image_bytes: Number(r.image_bytes), target_sel: Number(r.target_sel), stats: st.get(Number(r.id)) || null })),
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), image_id: r.image_id != null ? Number(r.image_id) : null, image_bytes: Number(r.image_bytes), target_sel: Number(r.target_sel), stats: st.get(Number(r.id)) || null })),
       audience_yes: await audienceCount(null) };
   });
 
@@ -241,6 +249,20 @@ export default async function waPromoRoutes(app) {
     if (!buf.length) return { error: 'bad_image' };
     if (buf.length > MAX_IMAGE_BYTES) return { error: 'image_too_large' };
     return { buf, mime, name: String(b.image_name || '').slice(0, 120) || null };
+  }
+  // 0281 · 이미지 뱅크에 넣기(같은 파일이면 있던 것) → id
+  async function saveToBank(img, userId, extra = {}, q = query) {
+    const ex = (await q(`SELECT id FROM wa_images WHERE deleted_at IS NULL AND hash = md5($1::bytea)`, [img.buf])).rows[0];
+    if (ex) return { id: Number(ex.id), duplicate: true };
+    const r = (await q(
+      `INSERT INTO wa_images (name, mime, bytes, size, hash, width, height, thumb, folder, created_by)
+       VALUES ($1,$2,$3,$4,md5($3::bytea),$5,$6,$7,$8,$9)
+       ON CONFLICT (hash) WHERE deleted_at IS NULL DO UPDATE SET updated_at = wa_images.updated_at RETURNING id, (xmax = 0) AS inserted`,
+      [img.name || 'imagen', img.mime, img.buf, img.buf.length, extra.width || null, extra.height || null, extra.thumb || null, extra.folder || null, userId])).rows[0];
+    return { id: Number(r.id), duplicate: !r.inserted };
+  }
+  async function bankImage(id) {
+    return (await query(`SELECT id, bytes, mime, name FROM wa_images WHERE id=$1 AND deleted_at IS NULL`, [idOf(id)])).rows[0] || null;
   }
   app.get('/api/wa-promo/campaigns/recent-images', R, async () => {
     const rows = (await query(
@@ -258,12 +280,18 @@ export default async function waPromoRoutes(app) {
     if (caption.length > 900) return reply.code(400).send({ error: 'caption_too_long' });
     let img = readImage(b);
     if (img.error) return reply.code(400).send({ error: img.error });
-    if (img.none && b.from_campaign_id) {   // 지난 발송 이미지 다시 쓰기
-      const src = (await query(`SELECT image, image_mime, image_name FROM wa_campaigns WHERE id=$1`, [idOf(b.from_campaign_id)])).rows[0];
+    let bankId = null;
+    if (img.none && b.image_id) {           // 0281 · 이미지 뱅크에서 고름
+      const bi = await bankImage(b.image_id);
+      if (!bi) return reply.code(404).send({ error: 'image_source_not_found' });
+      img = { buf: bi.bytes, mime: bi.mime, name: bi.name }; bankId = Number(bi.id);
+    } else if (img.none && b.from_campaign_id) {   // 지난 발송 이미지 다시 쓰기
+      const src = (await query(`SELECT image, image_mime, image_name, image_id FROM wa_campaigns WHERE id=$1`, [idOf(b.from_campaign_id)])).rows[0];
       if (!src) return reply.code(404).send({ error: 'image_source_not_found' });
-      img = { buf: src.image, mime: src.image_mime, name: src.image_name };
+      img = { buf: src.image, mime: src.image_mime, name: src.image_name }; bankId = src.image_id != null ? Number(src.image_id) : null;
     }
     if (img.none) return reply.code(400).send({ error: 'image_required' });
+    if (!bankId) { try { bankId = (await saveToBank(img, req.ctx.perm.userId, { folder: '발송에서 올림' })).id; } catch (_) { bankId = null; /* 0281 전 */ } }
     // 0261 · 고른 연락처 — 그중 ✅ 동의자만 대상. 동의자가 없으면 만들지 않는다.
     let targets = null; let picked = null;
     if (b.contact_ids != null) {
@@ -277,10 +305,10 @@ export default async function waPromoRoutes(app) {
       if (!targets.length) return reply.code(400).send({ error: 'no_consented', picked });
     }
     const r = (await query(
-      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, target_ids, created_by)
-       VALUES (CASE WHEN $8 THEN now() ELSE ($1::timestamp AT TIME ZONE 'America/Mexico_City') END,$2,$3,$4,$5,$6,$7::bigint[],$9)
+      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, target_ids, created_by${bankId ? ', image_id' : ''})
+       VALUES (CASE WHEN $8 THEN now() ELSE ($1::timestamp AT TIME ZONE 'America/Mexico_City') END,$2,$3,$4,$5,$6,$7::bigint[],$9${bankId ? ',$10' : ''})
        RETURNING id, (send_at <= now()) AS past`,
-      [now ? null : b.send_at, caption, img.buf, img.mime, img.name, targets ? null : (String(b.memo_filter || '').trim() || null), targets, now, req.ctx.perm.userId])).rows[0];
+      [now ? null : b.send_at, caption, img.buf, img.mime, img.name, targets ? null : (String(b.memo_filter || '').trim() || null), targets, now, req.ctx.perm.userId].concat(bankId ? [bankId] : []))).rows[0];
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_campaign:${r.id}`,
       detail: { send_at: now ? 'now' : b.send_at, targets: targets ? targets.length : null } });
     return { id: Number(r.id), past: r.past === true, audience: await audienceCount({ memo_filter: b.memo_filter, target_ids: targets }), picked,
@@ -293,9 +321,12 @@ export default async function waPromoRoutes(app) {
     if (b.send_at != null) { if (!localMx(b.send_at)) return reply.code(400).send({ error: 'bad_send_at' }); put(`send_at=(?::timestamp AT TIME ZONE 'America/Mexico_City')`, b.send_at); }
     if (b.caption != null) { const c = String(b.caption).trim(); if (!c) return reply.code(400).send({ error: 'caption_required' }); if (c.length > 900) return reply.code(400).send({ error: 'caption_too_long' }); put('caption=?', c); }
     if (b.memo_filter !== undefined) put('memo_filter=?', String(b.memo_filter || '').trim() || null);
-    const img = readImage(b);
+    let img = readImage(b);
     if (img.error) return reply.code(400).send({ error: img.error });
-    if (!img.none) { put('image=?', img.buf); put('image_mime=?', img.mime); put('image_name=?', img.name); sets.push('media_id=NULL', 'media_at=NULL'); }
+    let bankId = null;
+    if (img.none && b.image_id) { const bi = await bankImage(b.image_id); if (!bi) return reply.code(404).send({ error: 'image_source_not_found' }); img = { buf: bi.bytes, mime: bi.mime, name: bi.name }; bankId = Number(bi.id); }
+    else if (!img.none) { try { bankId = (await saveToBank(img, req.ctx.perm.userId, { folder: '발송에서 올림' })).id; } catch (_) { bankId = null; } }
+    if (!img.none) { put('image=?', img.buf); put('image_mime=?', img.mime); put('image_name=?', img.name); sets.push('media_id=NULL', 'media_at=NULL'); if (bankId) put('image_id=?', bankId); }
     if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
     args.push(id);
     const r = (await query(`UPDATE wa_campaigns SET ${sets.join(', ')}, updated_at=now() WHERE id=$${args.length} AND status='scheduled' RETURNING id`, args)).rows[0];
@@ -334,6 +365,86 @@ export default async function waPromoRoutes(app) {
     if (!up.ok) return reply.code(502).send({ error: 'upload_failed', detail: up.error });
     const res = await sendCampaignTo({ id: Number(c.id), caption: c.caption }, { id: null, phone: to }, up.id, { source: 'test' });
     return res.ok ? { ok: true, kind: res.kind } : reply.code(502).send({ error: 'send_failed', detail: res.error, kind: res.kind });
+  });
+
+  // ───────── 0281 · 이미지 뱅크 ─────────
+  const IMG_COLS = `i.id, i.name, i.mime, i.size, i.width, i.height, i.folder, i.created_at, ${MXT('i.created_at')} AS created_mx, (i.thumb IS NOT NULL) AS has_thumb, u.name AS created_by_name`;
+  app.get('/api/wa-promo/images', R, async (req) => {
+    const args = []; const conds = ['i.deleted_at IS NULL'];
+    const kw = String(req.query.q || '').trim();
+    if (kw) { args.push('%' + kw + '%'); conds.push(`(i.name ILIKE $${args.length} OR i.folder ILIKE $${args.length})`); }
+    if (req.query.folder === '__none') conds.push(`i.folder IS NULL`);
+    else if (req.query.folder) { args.push(String(req.query.folder)); conds.push(`i.folder = $${args.length}`); }
+    const rows = (await query(
+      `SELECT ${IMG_COLS},
+              count(c.id) FILTER (WHERE c.status <> 'cancelled')::int AS uses,
+              ${MXT("max(c.send_at) FILTER (WHERE c.status <> 'cancelled')")} AS last_used_mx
+         FROM wa_images i LEFT JOIN users u ON u.id = i.created_by LEFT JOIN wa_campaigns c ON c.image_id = i.id
+        WHERE ${conds.join(' AND ')}
+        GROUP BY i.id, u.name ORDER BY i.created_at DESC, i.id DESC LIMIT 3000`, args)).rows;
+    const folders = (await query(`SELECT folder, count(*)::int n FROM wa_images WHERE deleted_at IS NULL GROUP BY folder ORDER BY folder NULLS LAST`)).rows;
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id) })), folders };
+  });
+  app.post('/api/wa-promo/images', IMG_LIMIT, async (req, reply) => {
+    const b0 = req.body || {};
+    const b = { ...b0, image_mime: b0.image_mime || b0.mime, image_name: b0.image_name || b0.name };
+    const img = readImage(b);
+    if (img.error) return reply.code(400).send({ error: img.error });
+    if (img.none) return reply.code(400).send({ error: 'image_required' });
+    let thumb = null;
+    if (b.thumb_b64) { thumb = Buffer.from(String(b.thumb_b64).replace(/^data:[^,]*,/, ''), 'base64'); if (!thumb.length || thumb.length > 600 * 1024) thumb = null; }
+    const dim = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 && n < 20000 ? n : null; };
+    const folder = String(b.folder || '').trim().slice(0, 60) || null;
+    const r = await saveToBank(img, req.ctx.perm.userId, { thumb, width: dim(b.width), height: dim(b.height), folder });
+    if (!r.duplicate) await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_image:${r.id}`, detail: { name: img.name, size: img.buf.length } });
+    return { id: r.id, duplicate: r.duplicate };
+  });
+  app.patch('/api/wa-promo/images/:id', W, async (req, reply) => {
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {}; const sets = []; const args = [id];
+    if (b.name !== undefined) { const n = String(b.name || '').trim().slice(0, 120); if (!n) return reply.code(400).send({ error: 'name_required' }); args.push(n); sets.push(`name=$${args.length}`); }
+    if (b.folder !== undefined) { args.push(String(b.folder || '').trim().slice(0, 60) || null); sets.push(`folder=$${args.length}`); }
+    if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    const r = (await query(`UPDATE wa_images SET ${sets.join(', ')}, updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id`, args)).rows[0];
+    return r ? { ok: true } : reply.code(404).send({ error: 'not_found' });
+  });
+  app.delete('/api/wa-promo/images/:id', W, async (req, reply) => {
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`UPDATE wa_images SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `wa_image:${id}` });
+    return { ok: true };
+  });
+  app.post('/api/wa-promo/images/bulk', W, async (req, reply) => {
+    const b = req.body || {};
+    const ids = (Array.isArray(b.ids) ? b.ids : []).map(idOf).filter(Boolean).slice(0, 3000);
+    if (!ids.length) return reply.code(400).send({ error: 'no_images' });
+    if (b.action === 'delete') {
+      const n = (await query(`UPDATE wa_images SET deleted_at=now() WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`, [ids])).rowCount;
+      await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: 'wa_images', detail: { n } });
+      return { updated: n };
+    }
+    if (b.action === 'move') {
+      const n = (await query(`UPDATE wa_images SET folder=$2, updated_at=now() WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`, [ids, String(b.folder || '').trim().slice(0, 60) || null])).rowCount;
+      return { updated: n };
+    }
+    return reply.code(400).send({ error: 'bad_action' });
+  });
+  app.get('/api/wa-promo/images/:id/file', R, async (req, reply) => {
+    const r = (await query(`SELECT bytes, mime, name FROM wa_images WHERE id=$1`, [idOf(req.params.id)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return reply.type(r.mime).header('cache-control', 'private, max-age=86400').send(r.bytes);
+  });
+  app.get('/api/wa-promo/images/:id/thumb', R, async (req, reply) => {
+    const r = (await query(`SELECT COALESCE(thumb, bytes) AS b, CASE WHEN thumb IS NULL THEN mime ELSE 'image/jpeg' END AS t FROM wa_images WHERE id=$1`, [idOf(req.params.id)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return reply.type(r.t).header('cache-control', 'private, max-age=86400').send(r.b);
+  });
+  app.get('/api/wa-promo/images/:id/history', R, async (req, reply) => {
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const rows = (await query(`SELECT ${CAMP_COLS} FROM wa_campaigns c LEFT JOIN users u ON u.id=c.created_by WHERE c.image_id=$1 ORDER BY c.send_at DESC, c.id DESC`, [id])).rows;
+    const st = await campaignStats(rows.map((r) => Number(r.id)));
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), image_id: Number(r.image_id), image_bytes: Number(r.image_bytes), target_sel: Number(r.target_sel), stats: st.get(Number(r.id)) || null })) };
   });
 
   // ───────── 받은 메시지 ─────────
