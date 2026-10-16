@@ -2,9 +2,13 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { sortRacks, rackGroup, splitRacks } from './zoneRoutes.js';
-import { rackSafe, relocate } from '../rackStock.js';   // 0245 · 위치변경 = 랙별 재고 이동
+import { rackSafe, relocate, reverseByRef, rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 위치변경 = 랙별 재고 이동
 
-// build 20260827a-relocate
+// build 20261016rl1 (20260827a-relocate)
+//   2026-10-16 — 랙 목록·제품 조회가 제품마스터(rack_location)만 보던 문제:
+//     실사 랙 업로드(0269)로 들어간 2·3번째 랙은 product_rack_stock 에만 있고 마스터에는 없다.
+//     → 그 랙을 스캔하면 「등록되지 않은 코드」가 났다. 랙 목록 = 마스터 ∪ 랙별 재고 ∪ 유형 지정 랙.
+//     → 제품 조회는 랙별 재고(랙 × 수량)를 같이 돌려주고, 화면은 그 목록으로 기존 위치를 확인한다.
 // 창고 위치변경(Cambio de ubicación) — 카톤 랙 → fast moving rack 박스 이동 기록 (0187)
 //   읽기: 창고 권한 / 이동 기록: 창고 권한 / 랙 유형 지정: 디렉터 전용
 //
@@ -60,6 +64,7 @@ export function parseCartonLabel(raw) {
 }
 
 export default async function rackMoveRoutes(app) {
+  try { console.log('[rackMoveRoutes] loaded 20261016rl1'); } catch (_) {}
   const g = { preHandler: [authGuard, requirePage('warehouse')] };
   const gDir = { preHandler: [authGuard, requireDirector] };
 
@@ -91,6 +96,20 @@ export default async function rackMoveRoutes(app) {
 
     const seen = new Map();
     for (const r of rackRows) seen.set(normRack(r.rack), { rack: r.rack, products: r.products });
+    // 랙별 재고(0245·0269 실사 랙 업로드)에 있는 랙 — 다중 랙 SKU 의 2·3번째 랙은 여기에만 있다(2026-10-16).
+    //   제품수는 마스터·랙별 재고 중 큰 쪽.
+    if (await rackStockReady()) {
+      const stockRows = (await query(
+        `SELECT rack, COUNT(DISTINCT product_id)::int AS cnt FROM product_rack_stock WHERE qty > 0 GROUP BY rack`
+      )).rows;
+      for (const r of stockRows) {
+        const k = normRack(r.rack);
+        if (!k) continue;
+        const ex = seen.get(k);
+        if (ex) ex.products = Math.max(Number(ex.products) || 0, Number(r.cnt) || 0);
+        else seen.set(k, { rack: r.rack, products: Number(r.cnt) || 0 });
+      }
+    }
     // 제품이 아직 없는 랙(신규 fast moving rack)도 목록에 넣는다 — 그래야 스캔이 인식된다.
     for (const r of kindRows) {
       const k = normRack(r.rack);
@@ -226,10 +245,19 @@ export default async function rackMoveRoutes(app) {
     // 마스터에 랙이 여러 개면(콤마) 유형은 **첫 랙** 기준으로 본다 — 통짜 문자열로는 매칭이 안 됐다.
     const rackList = splitRacks(rack);
     const kind = rackList.length ? await kindOf(rackList[0]) : null;
+    // 랙별 재고(실제 위치 × 수량) — 마스터는 랙 1개만 들고 있는 경우가 많다(2026-10-16)
+    let rackStock = null, unassigned = null;
+    if (await rackStockReady()) {
+      rackStock = ((await rackMap(null, [Number(row.id)])).get(Number(row.id)) || [])
+        .map((x) => ({ rack: x.rack, qty: x.qty, kind: x.kind }));
+      const located = rackStock.reduce((s, x) => s + Number(x.qty || 0), 0);
+      unassigned = Math.max(0, Math.round((Number(row.stock_qty || 0) - located) * 1000) / 1000);
+    }
     return {
       product: {
         id: Number(row.id), code: row.code, name: row.name || null,
         rack: rack || null, racks: rackList, rack_kind: kind, stock_qty: Number(row.stock_qty || 0),
+        rack_stock: rackStock, unassigned,
       },
       label: { raw, code: parsed.code, qty: parsed.qty || 0, prefix: parsed.prefix || '' },
     };
@@ -323,8 +351,9 @@ export default async function rackMoveRoutes(app) {
         )).rows[0];
 
         // 0245 · 랙별 재고도 같이 옮긴다(출발 랙 −, 도착 랙 +). 소입수량이 없는 라벨(EA 0)은 수량 이동 없음.
+        let rs = null;
         if (cartons * per > 0) {
-          await rackSafe(c, 'relocate', (run) => relocate(run, Number(prod.id), fromRack, toRack, cartons * per,
+          rs = await rackSafe(c, 'relocate', (run) => relocate(run, Number(prod.id), fromRack, toRack, cartons * per,
             { userId: uid, ref: 'rack_move:' + ins.id, note }));
         }
 
@@ -332,6 +361,8 @@ export default async function rackMoveRoutes(app) {
           id: Number(ins.id), product_id: Number(prod.id), code: prod.code,
           from_rack: fromRack, to_rack: toRack, cartons, per_carton: per, qty_ea: cartons * per,
           master_updated: willUpdate, master_from: masterFrom,
+          // 랙별 재고 반영 결과 — short > 0 이면 출발 랙·위치 미지정 기록이 모자라 도착 랙에 다 못 올렸다
+          rack: rs ? { taken: rs.taken, added: rs.added, short: rs.short, from_had: rs.from_had, others: rs.others } : null,
         });
       }
       return { moved };
@@ -457,9 +488,9 @@ export default async function rackMoveRoutes(app) {
           m.cartons, m.per_carton, m.qty_ea, m.label, willUpdate, masterFrom,
           '되돌리기 #' + id, uid]
       )).rows[0];
-      if (Number(m.qty_ea) > 0) {   // 0245 · 랙별 재고도 되돌린다(도착 랙 → 출발 랙)
-        await rackSafe(c, 'relocate_undo', (run) => relocate(run, Number(m.product_id), m.to_rack, m.from_rack, Number(m.qty_ea),
-          { userId: uid, ref: 'rack_move:' + ins.id, note: '되돌리기 #' + id }));
+      if (Number(m.qty_ea) > 0) {   // 0245 · 랙별 재고도 되돌린다 — 그 이동이 실제로 바꾼 랙 수량을 그대로(2026-10-16)
+        //   예전: 도착 → 출발로 qty_ea 를 다시 「이동」 → 이동 때 도착 랙에 일부만 올라간 경우(초과 방지) 출발 랙이 부풀었다.
+        await rackSafe(c, 'relocate_undo', (run) => reverseByRef(run, 'rack_move:' + id, 'relocate', uid));
       }
       return { undo_id: Number(ins.id), master_updated: willUpdate };
     });

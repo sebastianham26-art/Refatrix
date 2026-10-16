@@ -77,6 +77,9 @@ async function seed() {
   await query(`DELETE FROM rack_moves`);
   await query(`DELETE FROM rack_kinds`);
   await query(`DELETE FROM rack_zones`);
+  // 0245 이후: 랙별 재고·원장이 제품을 참조한다 → 재실행 때 먼저 지운다
+  await query(`DELETE FROM product_rack_moves WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'TST%')`);
+  await query(`DELETE FROM product_rack_stock WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'TST%')`);
   await query(`DELETE FROM products WHERE code LIKE 'TST%'`);
   const u = (await query(
     `INSERT INTO users (name, role, pin_hash) VALUES ('테스트창고','warehouse','x') RETURNING id`
@@ -270,6 +273,8 @@ console.log('\n⑦ DB 제약');
 
 await query(`DELETE FROM rack_moves`);
 await query(`DELETE FROM rack_kinds`);
+await query(`DELETE FROM product_rack_moves WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'TST%')`);
+await query(`DELETE FROM product_rack_stock WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'TST%')`);
 await query(`DELETE FROM products WHERE code LIKE 'TST%'`);
 await query(`DELETE FROM audit_log WHERE user_id=$1`, [UID.v]);
 await query(`DELETE FROM users WHERE id=$1`, [UID.v]);

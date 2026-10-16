@@ -28,7 +28,7 @@
 // =====================================================================
 import { query } from './db.js';
 
-export const RACK_BUILD = '20261012re1';
+export const RACK_BUILD = '20261016rl1';
 
 // ---- 스키마 준비 여부(마이그레이션 0245 전 배포 대비) ----------------------
 let readyFlag = false, probeAt = 0;
@@ -407,15 +407,23 @@ export async function applyCountToRacks(exec, countId, { only = null, skip = nul
 }
 
 /** 위치변경(rack_moves) — 출발 랙에서 빼고 도착 랙에 더한다. 출발 랙 기록이 모자라면
- *  모자란 분량은 위치 미지정에서 올라온 것으로 본다(도착 랙에는 옮긴 수량 전부를 더한다). */
+ *  모자란 분량은 위치 미지정에서 올라온 것으로 본다.
+ *  2026-10-16: 위치 미지정도 모자라면 **도착 랙에는 채울 수 있는 만큼만** 더한다 — 예전에는 옮긴 수량 전부를
+ *  더해서, 출발 랙 기록이 없던 SKU(다중 랙 중 2·3번째 랙)는 랙 합이 등록 재고를 넘었다(「초과」).
+ *  못 올린 분량은 short 로 돌려주고 화면이 「📍 랙별 재고 → 위치수정」 안내를 띄운다. */
 export async function relocate(exec, productId, fromRack, toRack, qty, { userId = null, ref = null, note = null } = {}) {
   const run = runner(exec);
   const q = n3(qty);
-  if (q <= 0 || !normRack(toRack)) return { taken: 0, added: 0 };
+  if (q <= 0 || !normRack(toRack)) return { taken: 0, added: 0, short: 0 };
   const meta = { reason: 'relocate', ref, userId, note };
+  const st = await skuState(run, productId, { lock: true });
   const taken = fromRack ? await takeFromRack(run, productId, fromRack, q, meta) : 0;
-  await addToRack(run, productId, toRack, q, meta);
-  return { taken, added: q };
+  const fromUn = Math.min(n3(q - taken), st.unassigned);       // 위치 미지정에서 올라온 것으로 볼 수 있는 분량
+  const add = n3(taken + Math.max(0, fromUn));
+  if (add > 0) await addToRack(run, productId, toRack, add, meta);
+  const others = fromRack ? [...st.racks].filter(([rk, x]) => rk !== normRack(fromRack) && rk !== normRack(toRack) && x > 0)
+    .map(([rk, x]) => ({ rack: rk, qty: x })) : [];
+  return { taken, added: add, short: n3(q - add), from_had: fromRack ? n3(st.racks.get(normRack(fromRack)) || 0) : null, others };
 }
 
 /** 특정 참조(예: 'inbound_item:91')로 더했던 랙 수량을 그대로 되돌린다(적치 리셋 등). 여러 번 불러도 안전. */

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 위치변경 Cambio de ubicación · build rel-0827b</title>
+<title>Refatrix · 위치변경 Cambio de ubicación · build rel-1016a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
@@ -175,7 +175,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='rel-0827b';
+  var BUILD='rel-1016a';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-relocate] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
 
@@ -225,7 +225,7 @@
   function toast(msg){
     var el=$('toast'); if(!el) return;
     el.textContent=msg; el.style.display='block';
-    clearTimeout(toastT); toastT=setTimeout(function(){ el.style.display='none'; },2600);
+    clearTimeout(toastT); toastT=setTimeout(function(){ el.style.display='none'; },String(msg).length>60?8000:2600);
   }
 
   /* ===== 스캐너 입력 보정 — 스페인어 자판에서 `-` 가 `'` 로 들어온다 ===== */
@@ -428,6 +428,13 @@
       +'<span style="margin-left:auto">'+L('이동 수량','Cantidad')+' <b>'+fmt(cur.cartons*cur.per)+' EA</b>'
       +' <small style="color:var(--muted)">('+fmt(cur.cartons)+' × '+fmt(cur.per)+')</small></span>'
       +'</div>';
+    if(p.rs){   // 랙별 재고 — 실제 위치 × 수량(마스터는 랙 1개만인 경우가 많다 · 2026-10-16)
+      h+='<div class="z" id="relRs"><span>'+L('랙별 재고','Existencia por ubicación')+'</span> '
+        +(p.rs.length?p.rs.map(function(x){ return '<b class="mono">'+esc(x.rack)+'</b> '+fmt(x.qty); }).join(' · ')
+          :'<b>'+L('랙 기록 없음','sin registro')+'</b>')
+        +(p.un>0?' · <span style="color:var(--muted)">'+L('위치 미지정','Sin ubicación')+' '+fmt(p.un)+'</span>':'')
+        +'</div>';
+    }
     if(cur.warn) h+='<div class="z"><b style="color:var(--gold)">⚠ '+esc(cur.warn)+'</b></div>';
     if(cur.info) h+='<div class="z"><b style="color:var(--green)">'+esc(cur.info)+'</b></div>';
     h+='</div>';
@@ -547,7 +554,8 @@
         return;
       }
       var p=o.body.product, lb=o.body.label||{};
-      cur.prod={id:p.id,code:p.code,name:p.name,rack:p.rack,stock:p.stock_qty};
+      cur.prod={id:p.id,code:p.code,name:p.name,rack:p.rack,stock:p.stock_qty,
+        rs:Array.isArray(p.rack_stock)?p.rack_stock:null, un:p.unassigned==null?null:Number(p.unassigned)};
       cur.label=lb.raw||input;
       cur.per=Number(lb.qty||0)||0;
       cur.cartons=1;
@@ -563,7 +571,17 @@
   function onRackScan(rack){
     if(!cur.from){
       // ② 기존 위치
-      if(cur.prod&&cur.prod.rack&&!bareEq(cur.prod.rack,rack)){
+      var rs=cur.prod&&cur.prod.rs;
+      if(rs){
+        // 랙별 재고 기준으로 확인 — 다중 랙 SKU 의 2·3번째 랙도 맞는 위치로 본다(2026-10-16)
+        var hit=null; rs.forEach(function(x){ if(!hit&&bareEq(x.rack,rack)) hit=x; });
+        if(hit){ cur.warn=null; cur.info=L('기존 위치 확인','Ubicación confirmada')+' · '+hit.rack+' '+fmt(hit.qty); sndInfo(); }
+        else {
+          cur.warn=L('이 랙에는 이 제품 재고 기록이 없습니다','Esta ubicación no tiene registro de este producto')
+            +(rs.length?' ('+rs.map(function(x){ return x.rack+' '+fmt(x.qty); }).join(' · ')+')':'');
+          sndWarn();
+        }
+      } else if(cur.prod&&cur.prod.rack&&!bareEq(cur.prod.rack,rack)){
         cur.warn=L('제품마스터 위치와 다릅니다','Difiere de la ubicación maestra')+' ('+cur.prod.rack+')';
         sndWarn();
       } else sndInfo();
@@ -613,6 +631,15 @@
         sessLog.unshift({t:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2),
           code:cur.prod.code, from:m.from_rack||cur.from||'', to:cur.to, cartons:cur.cartons, qty:cur.cartons*cur.per});
         if(sessLog.length>50) sessLog.pop();
+        var rk=m.rack||null;
+        if(rk&&rk.short>0){
+          // 출발 랙·위치 미지정 기록이 모자라 도착 랙에 일부만 올라감 → 랙별 재고에서 위치수정 필요
+          sndWarn();
+          toast('⚠ '+L('이동은 저장됐지만 랙별 재고는 ','Movimiento guardado, pero en existencia por ubicación solo ')+fmt(rk.added)+' / '+fmt(rk.added+rk.short)
+            +L(' 개만 옮겨졌습니다 — ',' pzas — ')+(cur.from||'')+L(' 에 기록된 수량이 ',' tenía ')+fmt(rk.from_had||0)
+            +((rk.others&&rk.others.length)?L(' (다른 랙: ',' (otras: ')+rk.others.map(function(x){ return x.rack+' '+fmt(x.qty); }).join(' · ')+')':'')
+            +L('. 재고실사 › 📍 랙별 재고 › 위치수정으로 맞추세요.','. Corrija en Inventario › Existencia por ubicación.'));
+        } else
         toast('✔ '+L('이동 저장','Movimiento guardado')+' '+cur.prod.code+' '+(cur.from||'')+' → '+cur.to);
         // 마스터 위치가 바뀌었으므로 랙 목록의 제품수도 흔들린다 → 가볍게 갱신
         resetBox(); refreshMove(); loadRacks();
