@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 판매 이력·주기 · build st-1016a</title>
+<!-- 2026-10-16 · 구매 › 판매 이력·주기 (디렉터·소시오 전용) — API /api/salestrend · 계산 refatrix-api/src/salesTrend.js -->
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--warn:#B7791F;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1360px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:16px}
+  .card h2{margin:0 0 4px;font-size:15px;color:var(--brand)}
+  .cdesc{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--muted);font-size:12.5px;margin:0}
+  .chk input{width:auto;margin:0}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .chip b{font-weight:800;margin-left:4px}
+  .sbrow{display:flex;gap:10px;flex-wrap:wrap}
+  .sb{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .sb.red .v{color:var(--expense)}.sb.amb .v{color:var(--warn)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #bfe0d2}
+  .hidden{display:none!important}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .tblwrap{overflow:auto;max-height:640px;margin-top:12px;border:1px solid var(--line);border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+  th{color:var(--muted);font-size:11px;font-weight:600;background:#faf8f3;position:sticky;top:0;z-index:1}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--brand)}
+  th .arr{color:var(--brand)}
+  tr.clk{cursor:pointer}tr.clk:hover td{background:#f7f5ef}tr.sel td{background:#eef4f1}
+  .code{font-weight:800;color:var(--brand)}
+  .nm{font-size:11.5px;color:#444;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+  .small{font-size:11px;color:var(--muted)}
+  .heat{display:flex;gap:2px}
+  .heat i{display:block;width:11px;height:20px;border-radius:2px;background:#EFECE4}
+  .heat i.cur{outline:1.5px dashed var(--gold);outline-offset:-1px}
+  .tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px}
+  .t-smooth{background:#e7f3ee;color:var(--income)}.t-erratic{background:#e8eef8;color:#2b5797}
+  .t-inter{background:#fdf1dc;color:#8a5a00}.t-lumpy{background:#f6e5f0;color:#8a2e6a}
+  .t-new{background:#e9f6fb;color:#1f6f8b}.t-dead{background:#f3e7e5;color:var(--expense)}.t-none{background:#eee;color:#888}
+  .up{color:var(--income);font-weight:700}.down{color:var(--expense);font-weight:700}.flat{color:var(--muted)}
+  .cov-red{color:var(--expense);font-weight:800}.cov-amb{color:var(--warn);font-weight:800}.cov-ok{color:var(--income);font-weight:700}
+  .sug{font-weight:800;color:var(--brand)}
+  .lost{color:#b3402e;font-weight:700}
+  .more{margin-top:10px;text-align:center}
+  .note{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:10px}
+  .drill{margin-top:16px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:18px}
+  .drill h3{margin:0;font-size:15px;color:var(--brand)}
+  .drill .x{float:right;border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer;font-size:13px;font-family:inherit}
+  .dgrid{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:12px}
+  .dgrid.half{grid-template-columns:1fr 1fr}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+  .panel h4{margin:0 0 8px;font-size:12.5px;color:var(--brand)}
+  .panel table{font-size:12px}.panel .scroll{max-height:300px;overflow:auto}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:5px 10px;font-size:12.5px}
+  .kv span:nth-child(odd){color:var(--muted)}.kv span:nth-child(even){font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  svg text{font-family:inherit}
+  @media (max-width:900px){ body{padding:12px} .dgrid,.dgrid.half{grid-template-columns:1fr} }
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><h1>판매 이력 · 판매 주기</h1><div class="sub">전체 카탈로그 SKU별 판매 흐름 · 수요유형 · 예측 · 구매 제안 (디렉터·소시오)</div></div>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="toolbar">
+      <div style="min-width:160px"><label>아이디</label><input id="lid" autocomplete="username"></div>
+      <div style="min-width:160px"><label>PIN</label><input id="pin" type="password" autocomplete="current-password"></div>
+    </div>
+    <div class="api"><label>서버 주소</label><input id="api" value="https://refatrix-production.up.railway.app"></div>
+    <div style="margin-top:12px"><button class="btn" id="go" type="button">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <div><label>기간</label><select id="fPeriod"><option value="12">최근 12개월</option><option value="24" selected>최근 24개월</option><option value="36">최근 36개월</option></select></div>
+        <div><label>검색 (CTR·SYD·품명·차종)</label><input id="fQ" placeholder="예: CB0401 · Yaris · ROTULA" style="width:250px"></div>
+        <div><label>부품군</label><select id="fKind"><option value="">전체</option></select></div>
+        <div><label>리드타임(개월)</label><input id="fLead" type="number" min="1" max="12" step="0.5" value="4" style="width:84px"></div>
+        <div><label>안전재고(개월)</label><input id="fSafe" type="number" min="0" max="6" step="0.5" value="1" style="width:84px"></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label class="chk"><input type="checkbox" id="fLost"> 견적 부족(못 판 수량)도 예측에 포함</label>
+          <label class="chk"><input type="checkbox" id="fAll"> 전체 카탈로그(판매·재고 없는 SKU 포함)</label>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn ghost sm" id="bReload" type="button">↻ 새로고침</button>
+          <button class="btn ghost sm" id="bXls" type="button">⬇ 엑셀</button>
+        </div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="sbrow" id="kpis"></div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr id="thead"></tr></thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+      <div class="more hidden" id="moreBox"><button class="btn ghost sm" id="bMore" type="button">더 보기</button> <span class="small" id="moreInfo"></span></div>
+      <div class="note">
+        · <b>판매</b> = ERP 매출(발행 posted 인보이스) 수량. 이번 달(점선 칸)은 진행 중이라 예측·간격·추세 계산에서 빼고, 기간 합계·마지막 판매에는 넣습니다.<br>
+        · <b>공급</b> = 재고 + 발주 잔량(운송중 포함). <b>커버</b> = 공급 ÷ 예측 월판매 — 리드타임보다 짧으면 <span class="cov-red">빨강</span>, 리드타임+안전재고보다 짧으면 <span class="cov-amb">주황</span>.<br>
+        · <b>구매 제안</b> = 예측 월판매 × (리드타임 + 안전재고) − 공급 (0 미만은 0). L/R 짝 제품은 상세에서 짝의 판매·제안을 함께 봅니다.<br>
+        · <b>견적 부족</b> = 재고가 없어 못 판 수량(견적·매출 부족 − 나중에 판매로 해소된 몫). 기본은 별도 열이고, 위 체크 시 예측에 더합니다.
+      </div>
+    </div>
+
+    <div class="drill hidden" id="drill"></div>
+
+    <div class="card">
+      <h2>수요유형 기준</h2>
+      <div class="note" style="margin-top:4px">
+        <span class="tag t-smooth">꾸준</span> 거의 매달, 수량도 고름 → 최근 6개월 가중평균 · 정기 발주 대상 ·
+        <span class="tag t-erratic">변동</span> 매달 팔리나 수량 기복 큼 → 가중평균 + 안전재고 여유<br>
+        <span class="tag t-inter">간헐</span> 몇 달에 한 번, 비슷한 수량 → 간헐수요 예측(Croston) · 판매 주기에 맞춰 발주 ·
+        <span class="tag t-lumpy">불규칙</span> 가끔, 수량도 들쭉날쭉 → 예측 신뢰 낮음 · 견적·고객 확인 후 발주<br>
+        <span class="tag t-new">신규</span> 첫 판매 3개월 이내 · <span class="tag t-dead">정지</span> 마지막 판매 후 6개월 이상(재고 보유 시 악성재고 후보) · <span class="tag t-none">무판매</span> 기간 내 판매 없음<br>
+        기준: 판매 간격(ADI) 1.32개월 · 판매 1회 수량 변동(CV²) 0.49.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  let session={token:null,user:null,api:''};
+  let DATA=null;            // 목록 응답
+  let view=[];              // 필터·정렬된 행
+  let shown=0; const PAGE=300;
+  const st={type:'',sort:'total',dir:-1,sel:null};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmt=(n)=>n==null?'—':Math.round(Number(n)).toLocaleString('es-MX');
+  const f1=(n)=>n==null?'—':(Math.round(Number(n)*10)/10).toLocaleString('es-MX');
+  const TYPE={smooth:['꾸준','t-smooth'],erratic:['변동','t-erratic'],inter:['간헐','t-inter'],lumpy:['불규칙','t-lumpy'],new:['신규','t-new'],dead:['정지','t-dead'],none:['무판매','t-none']};
+  const TYPE_ORDER=['smooth','erratic','inter','lumpy','new','dead','none'];
+
+  // ---- 화면 설정(리드타임 등)은 이 브라우저에만 기억 ----
+  const PREF_KEY='refatrix_salestrend_pref';
+  function loadPref(){ try{ const o=JSON.parse(localStorage.getItem(PREF_KEY)||'{}');
+    if(o.months)$('fPeriod').value=String(o.months); if(o.lead)$('fLead').value=o.lead; if(o.safe!=null)$('fSafe').value=o.safe; $('fLost').checked=!!o.lost; }catch(e){} }
+  function savePref(){ try{ localStorage.setItem(PREF_KEY,JSON.stringify({months:+$('fPeriod').value,lead:+$('fLead').value,safe:+$('fSafe').value,lost:$('fLost').checked})); }catch(e){} }
+
+  function params(){
+    const lead=Math.min(12,Math.max(1,Number($('fLead').value)||4));
+    const sv=Number($('fSafe').value); const safe=Math.min(6,Math.max(0,Number.isFinite(sv)?sv:1));
+    return {months:+$('fPeriod').value||24,lead,safe,useLost:$('fLost').checked,all:$('fAll').checked};
+  }
+  // 서버 계산(fc · fc_lost · supply)으로 리드타임·안전재고만 바꿔 다시 계산 — 서버 공식과 같음.
+  function plan(it,p){
+    const fc=p.useLost?it.fc_lost:it.fc; const supply=Number(it.supply)||0;
+    const cover=fc>0?Math.round(supply/fc*10)/10:null;
+    const sug=fc>0?Math.max(0,Math.ceil(fc*(p.lead+p.safe)-supply)):0;
+    return {fc,cover,sug};
+  }
+
+  // ---------------- 로그인 ----------------
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify(session));}catch(e){}
+      onLoggedIn(d.user);
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+  function onLoggedIn(user){
+    $('who').innerHTML='<b>'+esc(user&&user.name||'')+'</b><br>역할: '+esc(user&&user.role||'-');
+    $('loginCard').classList.add('hidden'); $('main').classList.remove('hidden');
+    loadPref(); load();
+  }
+
+  // ---------------- 목록 ----------------
+  async function load(){
+    const p=params(); savePref();
+    const m=$('msg'); m.className='msg ok'; m.textContent='판매 이력을 불러오는 중…';
+    $('bReload').disabled=true;
+    try{
+      const q=new URLSearchParams({months:p.months,lead:p.lead,safe:p.safe}); if(p.all)q.set('all','1');
+      const res=await fetch(session.api+'/api/salestrend?'+q.toString(),{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(res.status===403){ m.className='msg err'; m.textContent='디렉터·소시오 전용 화면입니다.'; DATA=null; render(); return; }
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='불러오기 실패: '+(d.error||res.status); return; }
+      DATA=d; m.className='msg'; m.textContent='';
+      fillKinds();
+      render();
+      if(st.sel){ const it=DATA.items.find(x=>Number(x.product_id)===Number(st.sel)); if(it) openDrill(it.product_id); else closeDrill(); }
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; console.error(e); }
+    finally{ $('bReload').disabled=false; }
+  }
+  function fillKinds(){
+    const sel=$('fKind'), cur=sel.value; const kinds=[...new Set(DATA.items.map(x=>x.kind))].sort();
+    sel.innerHTML='<option value="">전체</option>'+kinds.map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('');
+    if(kinds.includes(cur)) sel.value=cur;
+  }
+  function filtered(){
+    if(!DATA) return [];
+    const q=$('fQ').value.trim().toLowerCase(), kind=$('fKind').value, p=params();
+    return DATA.items.filter(x=>(!kind||x.kind===kind)&&(!q||(x.code+' '+x.syd+' '+x.name+' '+x.app).toLowerCase().includes(q)))
+      .map(x=>Object.assign({},x,{_p:plan(x,p)}));
+  }
+  const SORTS={code:x=>x.code,total:x=>x.total,avg6:x=>x.avg6,trend:x=>x.trend==null?-9:x.trend,months:x=>x.sale_months,
+    gap:x=>x.adi==null?999:x.adi,last:x=>x.since_last==null?999:x.since_last,stock:x=>x.stock,supply:x=>x.backorder,lostq:x=>x.lost_total+x.shortage_open,
+    cover:x=>x._p.cover==null?99999:x._p.cover,fc:x=>x._p.fc,sug:x=>x._p.sug,type:x=>TYPE_ORDER.indexOf(x.type)};
+  const COLS=[['code','CTR'],[null,'품명 · 차종'],[null,'판매 흐름 (월별, 오래된 → 이번 달)'],['total','기간판매',1],['avg6','월평균<br><span class="small">최근6</span>',1],
+    ['trend','추세<br><span class="small">3개월 vs 이전3</span>',1],['months','판매월',1],['gap','평균간격',1],['last','마지막 판매',1],['type','수요유형'],
+    ['stock','재고',1],['supply','발주잔량<br><span class="small">운송중</span>',1],['lostq','견적 부족<br><span class="small">기간 · 미해소</span>',1],
+    ['cover','커버',1],['fc','예측<br><span class="small">월</span>',1],['sug','구매 제안',1]];
+  function renderHead(){
+    $('thead').innerHTML=COLS.map(([k,t,n])=>`<th class="${n?'num ':''}${k?'sortable':''}" ${k?`data-s="${k}"`:''}>${t}${k&&st.sort===k?` <span class="arr">${st.dir>0?'▲':'▼'}</span>`:''}</th>`).join('');
+  }
+  function render(){
+    renderHead();
+    const all=filtered(), p=params();
+    const counts={}; all.forEach(x=>counts[x.type]=(counts[x.type]||0)+1);
+    $('chips').innerHTML=[['','전체',all.length],...TYPE_ORDER.map(k=>[k,TYPE[k][0],counts[k]||0])]
+      .map(([k,l,c])=>`<button type="button" class="chip${st.type===k?' on':''}" data-t="${k}">${l}<b>${fmt(c)}</b></button>`).join('');
+    view=all.filter(x=>!st.type||x.type===st.type);
+    const key=SORTS[st.sort]||SORTS.total;
+    view.sort((a,b)=>{const A=key(a),B=key(b);return (A>B?1:A<B?-1:(a.code>b.code?1:-1))*st.dir;});
+    const red=all.filter(x=>x._p.cover!=null&&x._p.cover<p.lead), amb=all.filter(x=>x._p.cover!=null&&x._p.cover>=p.lead&&x._p.cover<p.lead+p.safe);
+    const dead=all.filter(x=>x.type==='dead'&&x.stock>0);
+    $('kpis').innerHTML=`<div class="sb"><div class="v">${fmt(all.length)}</div><div class="l">SKU (필터 기준)</div></div>
+      <div class="sb"><div class="v">${fmt(all.filter(x=>x.total>0).length)}</div><div class="l">기간 내 판매된 SKU</div></div>
+      <div class="sb red"><div class="v">${fmt(red.length)}</div><div class="l">리드타임 ${p.lead}개월 안에 소진 예상</div></div>
+      <div class="sb amb"><div class="v">${fmt(amb.length)}</div><div class="l">안전재고 구간 진입</div></div>
+      <div class="sb"><div class="v">${fmt(all.reduce((a,x)=>a+x._p.sug,0))}</div><div class="l">구매 제안 수량 합계</div></div>
+      <div class="sb red"><div class="v">${fmt(dead.length)} · ${fmt(dead.reduce((a,x)=>a+x.stock,0))}개</div><div class="l">정지 SKU · 보유재고 (악성재고 후보)</div></div>`;
+    shown=0; $('tb').innerHTML=''; more();
+  }
+  function heat(series){
+    const mx=Math.max(1,...series); const ms=DATA.months;
+    return '<div class="heat">'+series.map((q,i)=>{const a=q?0.18+0.82*q/mx:0;const cur=i===series.length-1;
+      return `<i class="${cur?'cur':''}" title="${ms[i]}${cur?' (진행 중)':''} · ${fmt(q)}개" style="${q?`background:rgba(20,61,52,${a.toFixed(2)})`:''}"></i>`;}).join('')+'</div>';
+  }
+  function rowHtml(x){
+    const t=TYPE[x.type]||TYPE.none, p=params(), P=x._p;
+    const tr=x.trend==null?'<span class="flat">—</span>':(x.trend>0.1?`<span class="up">▲ ${Math.round(x.trend*100)}%</span>`:x.trend<-0.1?`<span class="down">▼ ${Math.round(-x.trend*100)}%</span>`:'<span class="flat">＝</span>');
+    const cv=P.cover==null?'<span class="flat">—</span>':`<span class="${P.cover<p.lead?'cov-red':P.cover<p.lead+p.safe?'cov-amb':'cov-ok'}">${f1(P.cover)}개월</span>`;
+    const lostTxt=(x.lost_total>0||x.shortage_open>0)?`<span class="lost">${fmt(x.lost_total)}</span><div class="small">미해소 ${fmt(x.shortage_open)}</div>`:'<span class="flat">—</span>';
+    return `<tr class="clk${Number(st.sel)===Number(x.product_id)?' sel':''}" data-id="${x.product_id}">
+      <td class="code">${esc(x.code)}${x.is_active?'':' <span class="small down">판매중지</span>'}<div class="small">${esc(x.syd)}</div></td>
+      <td><div style="font-weight:600;font-size:12px">${esc(x.name)}</div><div class="nm" title="${esc(x.app)}">${esc(x.app)}</div></td>
+      <td>${heat(x.series)}</td>
+      <td class="num"><b>${fmt(x.total)}</b></td>
+      <td class="num">${f1(x.avg6)}</td>
+      <td class="num">${tr}</td>
+      <td class="num">${x.sale_months}/${DATA.done_months}</td>
+      <td class="num">${x.adi==null?'—':f1(x.adi)+'개월'}</td>
+      <td class="num">${x.last_ym||'—'}${x.since_last!=null&&x.since_last>=3?`<div class="small down">${x.since_last}개월 전</div>`:''}</td>
+      <td><span class="tag ${t[1]}">${t[0]}</span></td>
+      <td class="num">${fmt(x.stock)}</td>
+      <td class="num">${x.backorder?fmt(x.backorder):'<span class="flat">—</span>'}${x.incoming?`<div class="small">🚢 ${fmt(x.incoming)}</div>`:''}</td>
+      <td class="num">${lostTxt}</td>
+      <td class="num">${cv}</td>
+      <td class="num">${P.fc?f1(P.fc):'—'}</td>
+      <td class="num">${P.sug?`<span class="sug">${fmt(P.sug)}</span>`:'<span class="flat">0</span>'}</td></tr>`;
+  }
+  function more(){
+    const next=view.slice(shown,shown+PAGE);
+    $('tb').insertAdjacentHTML('beforeend',next.map(rowHtml).join('')||(shown?'':`<tr><td colspan="16" class="small" style="padding:18px">${DATA?'조건에 맞는 SKU가 없습니다.':'—'}</td></tr>`));
+    shown+=next.length;
+    $('moreBox').classList.toggle('hidden',shown>=view.length);
+    $('moreInfo').textContent=`${fmt(shown)} / ${fmt(view.length)}`;
+  }
+
+  // ---------------- 상세 ----------------
+  function chart(d,fc){
+    const m=d.series, lost=d.useLost?d.lost:null, ms=d.months, W=780,H=220,pl=36,pb=26,pt=12,fcN=3,N=m.length+fcN,bw=(W-pl-8)/N;
+    const tops=m.map((q,i)=>q+(lost?lost[i]:0));
+    const mx=Math.max(1,...tops,fc||0)*1.15; const y=v=>pt+(H-pt-pb)*(1-v/mx);
+    let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="월별 판매">`;
+    for(let g=0;g<=4;g++){const v=mx*g/4;s+=`<line x1="${pl}" x2="${W-4}" y1="${y(v)}" y2="${y(v)}" stroke="#E2DDD2"/><text x="${pl-5}" y="${y(v)+4}" font-size="10" fill="#6B6B6B" text-anchor="end">${Math.round(v)}</text>`;}
+    const step=m.length>24?3:(m.length>12?2:1);
+    m.forEach((q,i)=>{const x=pl+i*bw+2,w=Math.max(1,bw-4),cur=i===m.length-1;
+      s+=`<rect x="${x}" y="${y(q)}" width="${w}" height="${Math.max(0,H-pb-y(q))}" rx="2" fill="#143D34" opacity="${cur?0.45:1}"><title>${ms[i]}${cur?' (진행 중)':''}: ${fmt(q)}개</title></rect>`;
+      if(lost&&lost[i]>0) s+=`<rect x="${x}" y="${y(q+lost[i])}" width="${w}" height="${Math.max(0,y(q)-y(q+lost[i]))}" rx="2" fill="#D9897D"><title>${ms[i]} 못 판 수량: ${fmt(lost[i])}개</title></rect>`;
+      if(i%step===0) s+=`<text x="${pl+i*bw+bw/2}" y="${H-8}" font-size="10" fill="#6B6B6B" text-anchor="middle">${ms[i].slice(2)}</text>`;});
+    const done=m.slice(0,-1); let path='';
+    done.forEach((_,i)=>{ if(i<2) return; const v=(done[i]+done[i-1]+done[i-2])/3; path+=(path?'L':'M')+(pl+i*bw+bw/2)+' '+y(v); });
+    if(path) s+=`<path d="${path}" fill="none" stroke="#B8893B" stroke-width="2"/>`;
+    if(fc>0) for(let k=0;k<fcN;k++){const i=m.length+k;
+      s+=`<rect x="${pl+i*bw+2}" y="${y(fc)}" width="${Math.max(1,bw-4)}" height="${H-pb-y(fc)}" rx="2" fill="none" stroke="#9A7B16" stroke-width="1.5" stroke-dasharray="4 3"><title>예측 ${f1(fc)}개/월</title></rect>`;
+      s+=`<text x="${pl+i*bw+bw/2}" y="${H-8}" font-size="10" fill="#9A7B16" text-anchor="middle">+${k+1}</text>`;}
+    return s+'</svg>';
+  }
+  async function openDrill(id){
+    st.sel=Number(id); document.querySelectorAll('#tb tr.clk').forEach(tr=>tr.classList.toggle('sel',Number(tr.dataset.id)===st.sel));
+    const box=$('drill'); box.classList.remove('hidden'); box.innerHTML='<div class="small">불러오는 중…</div>';
+    if(box.scrollIntoView) box.scrollIntoView({behavior:'smooth',block:'start'});
+    const p=params();
+    try{
+      const res=await fetch(`${session.api}/api/salestrend/${encodeURIComponent(id)}?months=${p.months}&lead=${p.lead}&safe=${p.safe}`,{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ box.innerHTML=`<div class="msg err" style="display:block">상세 불러오기 실패: ${esc(d.error||res.status)}</div>`; return; }
+      d.useLost=p.useLost; renderDrill(d,p);
+    }catch(e){ console.error('salestrend drill',e); box.innerHTML='<div class="msg err" style="display:block">'+(e&&e.name==='TypeError'&&!/fetch/i.test(e.message)?'상세 표시 중 오류: '+esc(e.message):'서버에 연결할 수 없습니다.')+'</div>'; }
+  }
+  function closeDrill(){ st.sel=null; $('drill').classList.add('hidden'); document.querySelectorAll('#tb tr.sel').forEach(tr=>tr.classList.remove('sel')); }
+  function renderDrill(d,p){
+    const pr=d.product, t=TYPE[d.type]||TYPE.none, P=plan(d,p);
+    const method=(d.type==='inter'||d.type==='lumpy')?'간헐수요 Croston':(d.type==='dead'||d.type==='none'?'예측 없음':'최근 6개월 가중평균');
+    const end=P.cover==null?'—':(()=>{const t0=new Date(d.today+'T12:00:00Z');t0.setUTCDate(t0.getUTCDate()+Math.round(P.cover*30.4));return t0.toISOString().slice(0,10);})();
+    const top=d.customers[0];
+    const pair=d.pair?(()=>{const q=d.pair,pp={sug:q.suggest};   // 서버가 같은 리드타임·안전재고로 계산(판매 기준)
+      return `<div class="panel" style="margin-top:12px"><h4>L/R 짝 — ${esc(q.code)}</h4><div class="kv">
+        <span>기간 판매</span><span>${fmt(q.total)}개 (이 제품 ${fmt(d.total)}개)</span>
+        <span>수요유형</span><span><span class="tag ${(TYPE[q.type]||TYPE.none)[1]}">${(TYPE[q.type]||TYPE.none)[0]}</span></span>
+        <span>재고 + 발주잔량</span><span>${fmt(q.stock)} + ${fmt(q.backorder)}</span>
+        <span>예측 월판매</span><span>${f1(q.fc)}개</span>
+        <span>구매 제안</span><span class="sug">${fmt(pp.sug)}개</span></div>
+        <div class="note">짝은 보통 한 차량에 같이 나갑니다. 두 제안 수량 차이가 크면 판매 편차인지 재고 편차인지 확인하세요.</div></div>`;})():'';
+    $('drill').innerHTML=`<button class="x" id="dX" type="button">닫기 ✕</button>
+      <h3>${esc(pr.code)} · ${esc(pr.name)} <span class="tag ${t[1]}">${t[0]}</span></h3>
+      <div class="small">${esc(pr.kind)} · SYD ${esc(pr.syd||'—')} · ${esc(pr.app)}</div>
+      <div class="dgrid">
+        <div class="panel"><h4>월별 판매 · 3개월 이동평균 · 향후 3개월 예측</h4>${chart(d,P.fc)}
+          <div class="legend"><span><i style="background:#143D34"></i>판매</span>${d.useLost?'<span><i style="background:#D9897D"></i>못 판 수량(견적 부족)</span>':''}<span><i style="background:#B8893B"></i>3개월 이동평균</span><span><i style="border:1.5px dashed #9A7B16"></i>예측 (${method})</span></div></div>
+        <div class="panel"><h4>판매 주기 · 구매 판단</h4><div class="kv">
+          <span>기간 판매</span><span>${fmt(d.total)}개</span>
+          <span>판매 있었던 달</span><span>${d.sale_months} / ${d.done_months}개월</span>
+          <span>평균 판매 간격</span><span>${d.adi==null?'—':f1(d.adi)+'개월'}</span>
+          <span>판매 1회 평균 수량</span><span>${d.sale_months?f1(d.avg_size)+'개':'—'}</span>
+          <span>수량 변동(CV²)</span><span>${d.cv2==null?'—':d.cv2.toFixed(2)}</span>
+          <span>마지막 판매</span><span>${d.last_ym||'—'}${d.since_last?` (${d.since_last}개월 전)`:''}</span>
+          <span>다음 판매 예상</span><span>${d.next_in==null?'—':(d.next_in<=0?'이번 달':'약 '+f1(d.next_in)+'개월 후')}</span>
+          <span>견적 부족(기간)</span><span>${fmt(d.lost_total)}개</span>
+          <span>예측 월판매${p.useLost?' (부족 포함)':''}</span><span>${P.fc?f1(P.fc)+'개':'—'}</span>
+          <span>재고 + 발주잔량</span><span>${fmt(pr.stock)} + ${fmt(pr.backorder)}</span>
+          <span>운송중 (ETA)</span><span>${pr.incoming?fmt(pr.incoming)+(pr.incoming_eta?' · '+esc(pr.incoming_eta):''):'—'}</span>
+          <span>커버 · 예상 소진</span><span>${P.cover==null?'—':f1(P.cover)+'개월 · '+end}</span>
+          <span>구매 제안 (리드 ${p.lead} + 안전 ${p.safe})</span><span class="sug">${fmt(P.sug)}개</span></div>${pair}</div>
+      </div>
+      <div class="dgrid half">
+        <div class="panel"><h4>고객별 판매 (${d.customers.length}곳)</h4><div class="scroll"><table><thead><tr><th>고객</th><th class="num">수량</th><th class="num">비중</th><th class="num">인보이스</th><th>마지막</th></tr></thead><tbody>
+          ${d.customers.map(c=>`<tr><td>${esc(c.name)}</td><td class="num">${fmt(c.qty)}</td><td class="num">${Math.round(c.share*100)}%</td><td class="num">${c.inv_n}</td><td>${esc(c.last_date)}</td></tr>`).join('')||'<tr><td colspan="5" class="small">기간 내 판매 없음</td></tr>'}</tbody></table></div>
+          ${top&&top.share>0.5&&d.customers.length>0?`<div class="note down">⚠ ${esc(top.name)} 한 곳이 ${Math.round(top.share*100)}% — 이 고객 주문이 끊기면 예측이 크게 빗나갈 수 있습니다.</div>`:''}</div>
+        <div class="panel"><h4>인보이스 (최근 ${d.invoices.length}건)</h4><div class="scroll"><table><thead><tr><th>일자</th><th>SAT</th><th>고객</th><th class="num">수량</th><th class="num">단가</th></tr></thead><tbody>
+          ${d.invoices.map(v=>`<tr><td>${esc(v.inv_date)}</td><td>${esc(v.sat_no||'—')}</td><td>${esc(v.customer_name)}</td><td class="num">${fmt(v.qty)}</td><td class="num">${v.unit_price==null?'—':'$'+Number(v.unit_price).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`).join('')||'<tr><td colspan="5" class="small">기간 내 판매 없음</td></tr>'}</tbody></table></div></div>
+      </div>`;
+    $('dX').addEventListener('click',closeDrill);
+  }
+
+  // ---------------- 엑셀 ----------------
+  function exportExcel(){
+    if(!DATA||!view.length){ const m=$('msg'); m.className='msg err'; m.textContent='내보낼 행이 없습니다.'; return; }
+    if(typeof XLSX==='undefined'){ const m=$('msg'); m.className='msg err'; m.textContent='엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'; return; }
+    const p=params(), ms=DATA.months;
+    const head=['CTR','SYD','부품군','품명','적용차종','수요유형',...ms.map((m,i)=>i===ms.length-1?m+'(진행)':m),'기간판매','월평균(최근6)','추세(%)','판매월','평균간격(개월)','마지막판매','재고','발주잔량','운송중','견적부족(기간)','견적부족(미해소)','예측(월)','커버(개월)','구매제안','L/R 짝'];
+    const rows=view.map(x=>[x.code,x.syd,x.kind,x.name,x.app,(TYPE[x.type]||TYPE.none)[0],...x.series,x.total,x.avg6,x.trend==null?'':Math.round(x.trend*100),x.sale_months,x.adi==null?'':x.adi,x.last_ym||'',
+      x.stock,x.backorder,x.incoming,x.lost_total,x.shortage_open,x._p.fc,x._p.cover==null?'':x._p.cover,x._p.sug,x.pair||'']);
+    const info=[[`판매 이력·주기 · ${DATA.today} · 기간 ${p.months}개월 · 리드타임 ${p.lead} · 안전재고 ${p.safe} · 견적부족 예측포함 ${p.useLost?'예':'아니오'}${st.type?' · 유형 '+TYPE[st.type][0]:''}${$('fKind').value?' · '+$('fKind').value:''}${$('fQ').value.trim()?' · 검색 '+$('fQ').value.trim():''}`],[]];
+    const ws=XLSX.utils.aoa_to_sheet([...info,head,...rows]);
+    ws['!cols']=head.map((h,i)=>({wch:i<1?10:i===3?28:i===4?40:i<6?12:9}));
+    ws['!freeze']={xSplit:1,ySplit:3};
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'판매이력');
+    XLSX.writeFile(wb,'refatrix_sales_trend_'+DATA.today.replace(/-/g,'')+'.xlsx');
+  }
+
+  // ---------------- 이벤트 ----------------
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  $('bReload').addEventListener('click',load);
+  $('bXls').addEventListener('click',exportExcel);
+  $('bMore').addEventListener('click',more);
+  $('fPeriod').addEventListener('change',load);
+  $('fAll').addEventListener('change',load);
+  let tq=null; $('fQ').addEventListener('input',()=>{ clearTimeout(tq); tq=setTimeout(render,200); });
+  $('fKind').addEventListener('change',render);
+  ['fLead','fSafe','fLost'].forEach(id=>$(id).addEventListener(id==='fLost'?'change':'input',()=>{ savePref(); render(); if(st.sel) openDrill(st.sel); }));
+  document.addEventListener('click',e=>{
+    const ch=e.target.closest('.chip'); if(ch){ st.type=ch.dataset.t; render(); return; }
+    const th=e.target.closest('th.sortable'); if(th){ const s=th.dataset.s; st.dir=st.sort===s?-st.dir:(['code','cover','gap','last','type'].includes(s)?1:-1); st.sort=s; render(); return; }
+    const tr=e.target.closest('#tb tr.clk'); if(tr){ openDrill(tr.dataset.id); }
+  });
+
+  // 포털 세션 자동 로그인
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  try{ const ps=portalSession(); if(ps&&ps.token){
+    session={token:ps.token,user:ps.user||{},api:(ps.api||$('api').value||'https://refatrix-production.up.railway.app').replace(/\/+$/,'')};
+    onLoggedIn(ps.user||{});
+  } }catch(e){ console.error('auto-login',e); }
+  window.__salestrend={plan,params};   // 테스트용
+})();
+</script>
+<script src="refatrix-nav.js?v=20261016st"></script>
+</body>
+</html>

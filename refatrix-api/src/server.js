@@ -84,6 +84,7 @@ import { startLeadNotifyWorker } from './leadWaNotify.js';      // 0268 · 놓�
 import waPromoRoutes from './routes/waPromoRoutes.js';          // 0260 · WhatsApp 마케팅(잠재고객·발송 일정·받은 메시지·자동응답)
 import { startWaPromoWorker } from './waPromo.js';
 import metaLeadsRoutes from './routes/metaLeadsRoutes.js';   // 0270 · Meta 광고 문의(Messenger · Instagram) 가져오기
+import salesTrendRoutes from './routes/salesTrendRoutes.js';     // 2026-10-16 · 구매 › 판매 이력·주기(디렉터·소시오)
 import { startMetaLeadsWorker } from './metaLeads.js';       // 0270 · 30분마다 새 대화               // 0260 · 예약 발송·동의 요청 대기열(60초)
 import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
 import { startCrmSyncWorker } from './crmSync.js';
@@ -187,6 +188,7 @@ export function buildApp() {
   app.register(leadWaRoutes);       // 0268 · 고객등록 › 웹 가입 신청 WhatsApp 알림(접수·담당자 지정)
   app.register(metaLeadsRoutes);    // 0270 · 제품·마케팅 › Meta 광고 문의
   app.register(waPromoRoutes);      // 0260 · 제품·마케팅 › WhatsApp 마케팅
+  app.register(salesTrendRoutes);   // 2026-10-16 · 구매 › 판매 이력·주기 — 월별 판매 흐름·수요유형·예측·구매 제안
 
   // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
   startSecretRefresh(app);

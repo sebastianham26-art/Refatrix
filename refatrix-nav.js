@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261015m loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261016st loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -154,6 +154,7 @@
     import:{file:'refatrix-import.html',name:'수입 입고',desc:'배치 등록'},
     purchase:{file:'refatrix-purchase.html',name:'구매 내역',desc:'발주·구매원가(USD) 엑셀 기록·조회'},
     purchasereview:{file:'refatrix-purchasereview.html',name:'구매 검토',desc:'SKU 종합: CTR·SYD·차종·재고·backorder·누적판매·견적부족'},
+    salestrend:{file:'refatrix-salestrend.html',name:'판매 이력·주기',desc:'전체 카탈로그 월별 판매 흐름·수요유형·예측·구매 제안'},   // 2026-10-16 · 디렉터·소시오 전용
     products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고',tab:'find'},
     vehicleparts:{file:'refatrix-vehicleparts.html',name:'차종별 부품',desc:'차종 검색·카테고리별 CTR/SYD·VIO'},
     viofinder:{file:'refatrix-viofinder.html',name:'VIO 차량모델 제품찾기',desc:'VIO 순위·연식·CTR/SYD·재고·누적판매·가격'},
@@ -198,7 +199,7 @@
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finDaily:'__director__', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
     boardNotice:null, boardTodo:null, wbr:'wbr', daily:'__director__',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
-    settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
+    settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase', salestrend:'__dirsocio__',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
     marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'__dirsocio__', metaleads:['products','marketing','pricemaster','devrequest','quote','sales'],   // 2026-10-13 — WhatsApp 마케팅 = 디렉터·소시오 전용 · Meta 광고 문의 = 제품·마케팅 메뉴에 들어가는 사람 모두(서버 PM_KEYS 와 같은 목록)   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
@@ -210,7 +211,7 @@
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','approval','salesperf','commission','guiaCom','dashboard','rnr','coverage','devmap']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','consult','fieldsurvey','fsanalysis','quote','quotelist','reservations','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','reservations','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
-    {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
+    {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview','salestrend']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','wapromo','metaleads','prodFind','prodUpload','prodHistory','priceMaster']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
