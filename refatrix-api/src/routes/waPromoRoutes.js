@@ -1,6 +1,8 @@
 // =====================================================================
 // Refatrix ERP · waPromoRoutes.js — 제품·마케팅 › WhatsApp 마케팅 (0260)
-//   2026-10-13 디렉터 지시: 디렉터 · 소시오 전용(화면 권한과 무관 — requireRoles). 로직은 src/waPromo.js.
+//   2026-10-13 디렉터 지시: 디렉터 · 소시오 전용. 로직은 src/waPromo.js.
+//   2026-10-16 디렉터 지시: 관리자 화면에서 **사용자별로** 열 수 있게 — 화면 권한 키 `wapromo`(없음 · 열람 · 수정).
+//     디렉터 · 소시오는 지금처럼 항상 연다. 그 밖의 역할은 wapromo 권한이 있어야 하고, 쓰기(POST · PATCH · DELETE)는 「수정」만.
 //   (이전: 열람 requirePage('marketing') · 쓰기 requirePageEdit('marketing'))
 //
 //   연락처
@@ -42,7 +44,8 @@
 //   GET    /api/wa-promo/users                           담당자 선택용
 // =====================================================================
 import { query } from '../db.js';
-import { authGuard, requireRoles, DIR_SOCIO } from '../middleware/authGuard.js';
+import { authGuard, DIR_SOCIO } from '../middleware/authGuard.js';
+import { pageAllowed } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
@@ -51,10 +54,19 @@ import {
   sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage, targetIdsOf,
 } from '../waPromo.js';
 
-const ONLY = requireRoles(DIR_SOCIO);
-const R = { preHandler: [authGuard, ONLY] };
-const W = { preHandler: [authGuard, ONLY] };
-const IMG_LIMIT = { preHandler: [authGuard, ONLY], bodyLimit: 9 * 1024 * 1024 };
+export const WA_PAGE = 'wapromo';
+// 읽기: 디렉터 · 소시오 또는 wapromo 권한(열람/수정) · 쓰기: 디렉터 · 소시오 또는 wapromo 「수정」
+function waGuard(write) {
+  return async (req, reply) => {
+    const { perm, isRegistered } = req.ctx;
+    if (DIR_SOCIO.includes(perm.role)) return;
+    if (!pageAllowed(perm, WA_PAGE, isRegistered)) return reply.code(403).send({ error: 'forbidden', page: WA_PAGE });
+    if (write && ((perm.pageAccess && perm.pageAccess[WA_PAGE]) || 'edit') !== 'edit') return reply.code(403).send({ error: 'read_only', page: WA_PAGE });
+  };
+}
+const R = { preHandler: [authGuard, waGuard(false)] };
+const W = { preHandler: [authGuard, waGuard(true)] };
+const IMG_LIMIT = { preHandler: [authGuard, waGuard(true)], bodyLimit: 9 * 1024 * 1024 };
 const IMG_MIMES = ['image/jpeg', 'image/png'];
 const CONSENTS = ['unknown', 'asked', 'yes', 'no'];
 const ACTIONS = ['none', 'consent_yes', 'consent_no', 'lead'];

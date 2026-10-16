@@ -108,7 +108,20 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'marketing','anywhere','edit')`, [mk.id]);
     const Mk = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(mk.id), role: 'marketing' }) };
     const rm = await call(Mk, 'GET', '/api/wa-promo/contacts');
-    assert.equal(rm.statusCode, 403, '마케팅 권한(edit)만으로는 안 됨'); assert.equal(rm.json().error, 'director_or_socio_only');
+    assert.equal(rm.statusCode, 403, '마케팅 권한(edit)만으로는 안 됨'); assert.equal(rm.json().error, 'forbidden'); assert.equal(rm.json().page, 'wapromo');
+    // 2026-10-16 · 관리자 화면에서 사용자별 wapromo 권한 — 열람 = 읽기만 · 수정 = 쓰기까지
+    await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'wapromo','anywhere','view')`, [mk.id]);
+    assert.equal((await call(Mk, 'GET', '/api/wa-promo/contacts')).statusCode, 200, 'wapromo 열람 → 목록');
+    assert.equal((await call(Mk, 'GET', '/api/wa-promo/images')).statusCode, 200);
+    const rv = await call(Mk, 'POST', '/api/wa-promo/contacts', { name: 'X', phone: '8110000077' });
+    assert.equal(rv.statusCode, 403); assert.equal(rv.json().error, 'read_only', '열람은 쓰기 불가');
+    assert.equal((await call(Mk, 'DELETE', '/api/wa-promo/images/999999')).statusCode, 403);
+    await query(`UPDATE user_page_access SET access='edit' WHERE user_id=$1 AND page_key='wapromo'`, [mk.id]);
+    const re = await call(Mk, 'POST', '/api/wa-promo/contacts', { name: 'Mkt alta', phone: '8110000077' });
+    assert.ok(re.statusCode < 300, 'wapromo 수정 → 쓰기 ' + re.statusCode);
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE phone LIKE '%8110000077'`);
+    await query(`UPDATE user_page_access SET device_req='blocked' WHERE user_id=$1 AND page_key='wapromo'`, [mk.id]);
+    assert.equal((await call(Mk, 'GET', '/api/wa-promo/contacts')).statusCode, 403, '차단');
     const so = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'socio','x',$2) RETURNING id`, [`WP Socio ${SFX}`, `wpsoc${SFX}`]);
     const So = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(so.id), role: 'socio' }) };
     assert.equal((await call(So, 'GET', '/api/wa-promo/contacts')).statusCode, 200, '소시오는 연다');
