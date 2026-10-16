@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016pa) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016gr) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -16,8 +16,9 @@ try { ({ JSDOM } = await import('jsdom')); } catch { /* skip */ }
 const SKIP = !JSDOM || !existsSync(HTML);
 const tick = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
+const GROUPS = [{ id: 11, name: 'Talleres MTY', color: '#2a78d6', memo: 'Monterrey', n: 740, yes: 410 }, { id: 12, name: 'Flotillas', color: '#11743b', memo: null, n: 2, yes: 1 }];
 const CONTACTS = [
-  { id: 1, name: 'Juan Pérez', phone: '528110000001', phone_masked: '528****0001', memo: 'Expo', consent: 'yes', consent_via: 'button', consent_at: '2026-10-08T15:00:00Z', lead: false, last_in_at: '2026-10-08T15:00:00Z' },
+  { id: 1, groups: [11, 12], name: 'Juan Pérez', phone: '528110000001', phone_masked: '528****0001', memo: 'Expo', consent: 'yes', consent_via: 'button', consent_at: '2026-10-08T15:00:00Z', lead: false, last_in_at: '2026-10-08T15:00:00Z' },
   { id: 2, name: 'María', phone: '528110000002', phone_masked: '528****0002', memo: '', consent: 'unknown', ask_queued: false },
   { id: 3, name: 'Pedro', phone: '528110000003', phone_masked: '528****0003', memo: '', consent: 'asked', asked_at: '2026-10-08T15:00:00Z' },
 ];
@@ -37,7 +38,13 @@ function boot() {
         const json = (d, s = 200) => ({ ok: s < 400, status: s, json: async () => d, blob: async () => new w.Blob(['x']) });
         if (u.includes('/api/wa-promo/users')) return json({ items: [{ id: 5, name: 'Maria', role: 'sales_support' }] });
         if (u.includes('/api/wa-promo/contacts/bulk')) return json({ dry_run: body.dry_run !== false, added: 2, rows: body.rows.map((r, i) => ({ i, name: r.name, phone: '52' + r.phone.replace(/\D/g, ''), raw_phone: r.phone, status: 'new' })), summary: { total: 2, new: 2, exists: 0, dup_in_file: 0, bad_phone: 0, no_name: 0 } });
-        if (u.includes('/api/wa-promo/contacts') && method === 'GET') return json({ items: CONTACTS, counts: { total: 3, yes: 1, asked: 1, unknown: 1, no: 0, queued: 0, inbox_open: 2 } });
+        // 0283 · 그룹
+        if (u.endsWith('/api/wa-promo/groups') && method === 'GET') return json({ items: GROUPS, none: { n: 1, yes: 0 } });
+        if (u.endsWith('/api/wa-promo/groups') && method === 'POST') return body.name === 'Talleres MTY' ? json({ error: 'group_exists', id: 11 }, 409) : json({ id: 13 });
+        if (u.endsWith('/api/wa-promo/groups/assign')) return json({ group_id: body.group_id || 13, created: !body.group_id, action: body.action, matched: 2, changed: 2, unchanged: 0, unknown_phones: body.phones ? ['12'] : [], unknown_n: body.phones ? 1 : 0 });
+        if (u.match(/\/api\/wa-promo\/groups\/\d+$/)) return json({ ok: true });
+        if (u.includes('/api/wa-promo/audience')) return json({ n: 7 });
+        if (u.includes('/api/wa-promo/contacts') && method === 'GET') return json({ items: CONTACTS, counts: { total: 3, yes: 1, asked: 1, unknown: 1, no: 0, queued: 0, inbox_open: 2 }, matched: u.includes('group=11') ? 740 : 3 });
         if (u.includes('/api/wa-promo/contacts') && method === 'POST') return body.phone ? json({ id: 9 }) : json({ error: 'bad_phone' }, 400);
         if (u.includes('/api/wa-promo/consent/ask')) return json({ queued: body.ids ? body.ids.length : 1, remaining_today: 140, cap: 150 });
         if (u.match(/\/api\/wa-promo\/contacts\/\d+/)) return json({ ...CONTACTS[1], ...body });
@@ -80,7 +87,7 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1016pa/);
+    assert.match(c.d.title, /wap-1016gr/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -228,7 +235,7 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     assert.equal(c.d.getElementById('miName').value, 'versa_horquilla.jpg');
     assert.match(c.d.getElementById('miHist').textContent, /2026-10-14 10:00/); assert.match(c.d.getElementById('miHist').textContent, /✓ 2\/2 도착/);
     c.d.getElementById('miFolder').value = 'Promo'; click(c, 'miSave'); await tick();
-    assert.deepEqual(c.calls.filter((x) => x.method === 'PATCH' && x.u.includes('/images/31')).pop().body, { name: 'versa_horquilla.jpg', folder: 'Promo' });
+    assert.deepEqual(c.calls.filter((x) => x.method === 'PATCH' && x.u.includes('/images/31')).pop().body, { name: 'versa_horquilla.jpg', folder: 'Promo', memo: '' });
     click(c, 'miUse'); await tick(200);
     assert.ok(c.d.getElementById('p-camps').classList.contains('on'), '발송 일정으로');
     assert.match(c.d.getElementById('kBankSel').textContent, /versa_horquilla\.jpg/);
@@ -260,6 +267,78 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     assert.match(c.d.getElementById('bSelN').textContent, /2장 선택/);
     click(c, 'bDel'); await tick();
     assert.deepEqual(c.calls.filter((x) => x.u.includes('/images/bulk')).pop().body, { ids: [31, 32], action: 'delete' });
+    c.close();
+  });
+
+  await t.test('⑧ 0283 연락처 그룹 — 칩 · 표 · 거르기 · 일괄 구분(고른 사람/조건 전체/번호) · 관리 · 엑셀 저장 때 그룹 · 그룹 대상 예약', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    const bar = c.d.getElementById('cGroups');
+    assert.match(bar.textContent, /전체 3/); assert.match(bar.textContent, /Talleres MTY 740 · ✅410/); assert.match(bar.textContent, /그룹 없음 1/);
+    assert.equal(c.d.querySelectorAll('tr[data-id="1"] .gtag').length, 2, '표에 그룹 태그');
+    // 칩으로 거르기 → 서버에 group=11 · 500명 넘으면 안내
+    bar.querySelector('[data-g="11"]').click(); await tick(300);
+    assert.ok(c.calls.some((x) => x.u.includes('/api/wa-promo/contacts?group=11')));
+    assert.ok(bar.querySelector('[data-g="11"]').classList.contains('on'));
+    assert.match(c.d.getElementById('cList').textContent, /조건에 맞는 740명 중 최근 3명만/);
+    // 조건 전체 → 다른 그룹에 넣기
+    click(c, 'cGroupBulk'); await tick();
+    assert.ok(c.d.getElementById('mGAssign').classList.contains('on'));
+    assert.match(c.d.getElementById('gaFilterL').textContent, /740명/); assert.match(c.d.getElementById('gaFilterL').textContent, /그룹 「Talleres MTY」/);
+    assert.ok(c.d.querySelector('input[name="gaMode"][value="sel"]').disabled, '고른 사람 없으면 막힘');
+    assert.ok(c.d.querySelector('input[name="gaMode"][value="filter"]').checked);
+    c.d.getElementById('gaGroup').value = '12'; click(c, 'gaAdd'); await tick(300);
+    assert.deepEqual(c.calls.filter((x) => x.u.endsWith('/groups/assign')).pop().body, { action: 'add', group_id: 12, filter: { group: '11' } });
+    assert.ok(!c.d.getElementById('mGAssign').classList.contains('on'));
+    // 고른 사람 → 새 그룹 이름으로
+    bar.querySelector('[data-g=""]').click(); await tick(300);
+    const ck = c.d.querySelector('tr[data-id="2"] input[data-sel]'); ck.checked = true; ck.dispatchEvent(new c.w.Event('change', { bubbles: true }));
+    click(c, 'cSelGroup'); await tick();
+    assert.ok(c.d.querySelector('input[name="gaMode"][value="sel"]').checked); assert.match(c.d.getElementById('gaSelL').textContent, /1명/);
+    const gs = c.d.getElementById('gaGroup'); gs.value = '__new'; gs.dispatchEvent(new c.w.Event('change'));
+    assert.ok(!c.d.getElementById('gaNewWrap').classList.contains('hidden'));
+    c.d.getElementById('gaNew').value = 'Expo 2026'; click(c, 'gaAdd'); await tick(300);
+    assert.deepEqual(c.calls.filter((x) => x.u.endsWith('/groups/assign')).pop().body, { action: 'add', group_name: 'Expo 2026', ids: [2] });
+    // 번호 붙여넣기 · 모르는 번호는 창에 남겨 보여줌 · 빼기
+    click(c, 'cGroupBulk'); await tick();
+    const ph = c.d.querySelector('input[name="gaMode"][value="phones"]'); ph.checked = true; ph.dispatchEvent(new c.w.Event('change', { bubbles: true }));
+    assert.ok(!c.d.getElementById('gaPhones').classList.contains('hidden'));
+    c.d.getElementById('gaPhones').value = '8110000001\n12'; c.d.getElementById('gaGroup').value = '11'; click(c, 'gaRemove'); await tick(300);
+    assert.deepEqual(c.calls.filter((x) => x.u.endsWith('/groups/assign')).pop().body, { action: 'remove', group_id: 11, phones: '8110000001\n12' });
+    assert.ok(c.d.getElementById('mGAssign').classList.contains('on'), '모르는 번호가 있으면 창 유지');
+    assert.match(c.d.getElementById('gaMsg').textContent, /연락처에 없는 번호 1개: 12/);
+    // 관리 — 만들기 · 저장 · 삭제
+    bar.querySelector('[data-gmgr]').click(); await tick();
+    assert.ok(c.d.getElementById('mGroups').classList.contains('on'));
+    assert.equal(c.d.querySelectorAll('#gList tr[data-gid]').length, 2);
+    c.d.getElementById('gNewName').value = 'Refacc Mérida'; click(c, 'gCreate'); await tick(300);
+    assert.equal(c.calls.filter((x) => x.method === 'POST' && x.u.endsWith('/api/wa-promo/groups')).pop().body.name, 'Refacc Mérida');
+    const row = c.d.querySelector('#gList tr[data-gid="12"]'); row.querySelector('[data-gf="name"]').value = 'Flotas'; row.querySelector('[data-gsave]').click(); await tick(300);
+    assert.deepEqual(c.calls.filter((x) => x.method === 'PATCH' && x.u.endsWith('/groups/12')).pop().body, { name: 'Flotas', color: '#11743b', memo: '' });
+    c.d.querySelector('#gList tr[data-gid="12"] [data-gdel]').click(); await tick(300);
+    assert.ok(c.calls.some((x) => x.method === 'DELETE' && x.u.endsWith('/groups/12')));
+    c.d.getElementById('mGroups').classList.remove('on');
+    // 엑셀 저장 때 그룹 — 새 그룹 이름이 이미 있으면 그 그룹으로
+    const f = c.d.getElementById('cFile');
+    Object.defineProperty(f, 'files', { value: [{ name: 'c.xlsx', arrayBuffer: async () => new ArrayBuffer(4) }] });
+    f.dispatchEvent(new c.w.Event('change')); await tick(300);
+    const ig = c.d.getElementById('mImpGroup'); assert.match(ig.options[0].textContent, /넣지 않음/);
+    ig.value = '__new'; ig.dispatchEvent(new c.w.Event('change'));
+    assert.match(c.d.getElementById('mImpSave').textContent, /저장 \+ 그룹에 넣기/);
+    c.d.getElementById('mImpNewG').value = 'Talleres MTY'; click(c, 'mImpSave'); await tick(300);
+    const sv = c.calls.filter((x) => x.u.includes('/contacts/bulk')).pop().body; assert.equal(sv.dry_run, false); assert.equal(sv.group_id, 11);
+    // 그룹 대상 예약 — 대상 수 미리보기 · target_groups
+    await tab(c, 'camps'); await tick(300);
+    const aud = c.d.getElementById('kAud'); aud.value = 'group'; aud.dispatchEvent(new c.w.Event('change'));
+    assert.ok(!c.d.getElementById('kGroupWrap').classList.contains('hidden'));
+    assert.match(c.d.getElementById('kAudN').textContent, /하나 이상/);
+    const k11 = c.d.querySelector('#kGroups input[value="11"]'); k11.checked = true; k11.dispatchEvent(new c.w.Event('change', { bubbles: true })); await tick(400);
+    assert.ok(c.calls.some((x) => x.u.includes('/audience?groups=11')));
+    assert.match(c.d.getElementById('kAudN').textContent, /✅ 동의 7명/);
+    c.d.getElementById('kDate').value = '2099-01-05'; c.d.getElementById('kCap').value = 'Promo talleres';
+    const img = c.d.getElementById('kImg'); Object.defineProperty(img, 'files', { value: [new c.w.File(['x'], 'a.png', { type: 'image/png' })] });
+    click(c, 'kSave'); await tick(400);
+    const cb = c.calls.filter((x) => x.method === 'POST' && x.u.endsWith('/api/wa-promo/campaigns')).pop().body;
+    assert.deepEqual(cb.target_groups, [11]); assert.equal(cb.memo_filter, '');
     c.close();
   });
 

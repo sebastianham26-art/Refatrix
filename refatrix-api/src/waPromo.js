@@ -179,6 +179,7 @@ export async function processConsentAsks(budget, q = query) {
 // ───────────────────────── ③ 정기 발송 ─────────────────────────
 export const oneLine = (s) => String(s || '').replace(/[\n\t\r]+/g, ' ').replace(/ {4,}/g, '   ').trim().slice(0, 1000);
 // 대상 조건(0261): target_ids 가 있으면 「고른 연락처 중 ✅ 동의자」, 없으면 「✅ 동의 전체(+메모 조건)」.
+//   0283: target_groups 가 있으면 「그 그룹들 중 하나라도 들어 있는 ✅ 동의자」(발송 시점 소속 · 지운 그룹 제외) — 메모 조건과 함께 쓸 수 있다.
 //   args 는 $2 부터 쓴다($1 = campaign_id).
 export const targetIdsOf = (v) => {
   const a = (Array.isArray(v) ? v : []).map(Number).filter((x) => Number.isInteger(x) && x > 0);
@@ -187,11 +188,14 @@ export const targetIdsOf = (v) => {
 const audienceSql = (c, base = 1) => {
   const args = []; let extra = '';
   const ids = targetIdsOf(c.target_ids);
-  if (ids) { args.push(ids); extra = ` AND w.id = ANY($${args.length + base}::bigint[])`; }
-  else if (c.memo_filter && String(c.memo_filter).trim()) { args.push('%' + String(c.memo_filter).trim() + '%'); extra = ` AND w.memo ILIKE $${args.length + base}`; }
+  if (ids) { args.push(ids); extra = ` AND w.id = ANY($${args.length + base}::bigint[])`; return { args, extra }; }
+  const gs = targetIdsOf(c.target_groups);
+  if (gs) { args.push(gs); extra += ` AND EXISTS (SELECT 1 FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL
+                                              WHERE cg.contact_id = w.id AND cg.group_id = ANY($${args.length + base}::bigint[]))`; }
+  if (c.memo_filter && String(c.memo_filter).trim()) { args.push('%' + String(c.memo_filter).trim() + '%'); extra += ` AND w.memo ILIKE $${args.length + base}`; }
   return { args, extra };
 };
-// audienceCount('메모') 또는 audienceCount({ memo_filter, target_ids })
+// audienceCount('메모') 또는 audienceCount({ memo_filter, target_ids, target_groups })
 export async function audienceCount(spec, q = query) {
   const c = spec && typeof spec === 'object' ? spec : { memo_filter: spec };
   const { args, extra } = audienceSql(c, 0);
@@ -276,7 +280,7 @@ export async function runPromoJob({ q = query } = {}) {
   if (!promoReady()) return { skipped: 'wa_not_configured' };
   let budget = Math.min(MAX_PER_TICK, await remainingToday(q));
   const out = { campaigns: [], asks: null, budget };
-  const due = (await q(`SELECT id, caption, memo_filter, target_ids, status, media_id, media_at FROM wa_campaigns
+  const due = (await q(`SELECT id, caption, memo_filter, target_ids, target_groups, status, media_id, media_at FROM wa_campaigns
                          WHERE status IN ('scheduled','sending') AND send_at <= now() ORDER BY send_at, id`)).rows;
   for (const c of due) {
     const r = await processCampaign({ ...c, id: Number(c.id) }, budget, q);

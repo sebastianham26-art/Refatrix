@@ -66,7 +66,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const app = buildApp(); await app.ready();
   t.after(() => app.close());
 
-  await query(`DELETE FROM wa_campaign_sends; DELETE FROM wa_messages; DELETE FROM wa_campaigns; DELETE FROM wa_images; DELETE FROM wa_contacts; DELETE FROM wa_inbound; DELETE FROM wa_message_status;`);
+  await query(`DELETE FROM wa_campaign_sends; DELETE FROM wa_messages; DELETE FROM wa_campaigns; DELETE FROM wa_images; DELETE FROM wa_contact_groups; DELETE FROM wa_groups; DELETE FROM wa_contacts; DELETE FROM wa_inbound; DELETE FROM wa_message_status;`);
   const one = async (sql, a) => (await query(sql, a)).rows[0];
   const SFX = Date.now().toString(36).slice(-5);
   const dir = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`, [`WP Dir ${SFX}`, `wpdir${SFX}`]);
@@ -367,5 +367,149 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal(oi.folder, '지난 발송'); assert.equal(oi.name, 'viejo.png');
     assert.equal(Number((await one(`SELECT count(*) n FROM wa_images WHERE hash = md5($1::bytea) AND deleted_at IS NULL`, [Buffer.concat([png, Buffer.from('OLD')])])).n), 1, '두 번 실행해도 하나');
     for (const id of [c1.id, c2.id, c3.id, old.id]) await call(D, 'DELETE', `/api/wa-promo/campaigns/${id}`);
+  });
+
+  await t.test('B9. 0282 REFATRIX Platform(본사) 이미지 — 플랫폼 세션 확인 · 올리기 → ERP 뱅크 「본사(CTR)」 · 자기 것만 · ERP 차단 · 지우기(안 쓴 것만)', async () => {
+    const V = await import('../src/surveyViewer.js');
+    const keepLog = V.platformApi.log; const logs = [];
+    V.platformApi.log = async (tok, txt) => { logs.push([tok, txt]); return tok.startsWith('aaaaaaaa') ? { ok: true } : tok.startsWith('eeeeeeee') ? { ok: false, error: 'platform_timeout' } : { ok: false, invalid: true }; };
+    t.after(() => { V.platformApi.log = keepLog; });
+    const T1 = 'aaaaaaaa-1111-4111-8111-111111111111';
+    // 세션 확인
+    assert.equal((await call({}, 'POST', '/api/pf-images/login', { token: 'nope' })).statusCode, 401, 'uuid 아님 → 플랫폼에 묻지 않음');
+    assert.equal(logs.length, 0);
+    assert.equal((await call({}, 'POST', '/api/pf-images/login', { token: 'bbbbbbbb-1111-4111-8111-111111111111' })).statusCode, 401);
+    assert.equal((await call({}, 'POST', '/api/pf-images/login', { token: 'eeeeeeee-1111-4111-8111-111111111111' })).statusCode, 502);
+    const l1 = await call({}, 'POST', '/api/pf-images/login', { token: T1, name: 'Kim HQ', user_key: '7' });
+    assert.equal(l1.statusCode, 200); assert.equal(l1.json().folder, '본사(CTR)');
+    assert.match(logs.pop()[1], /마케팅 이미지 뱅크 접속/);
+    const H1 = { authorization: 'Bearer ' + l1.json().token };
+    const H2 = { authorization: 'Bearer ' + (await call({}, 'POST', '/api/pf-images/login', { token: T1, name: 'Lee HQ', user_key: '8' })).json().token };
+    // 업로드 토큰으로 ERP API 는 전부 401 · ERP 토큰으로 플랫폼 API 401
+    assert.equal((await call(H1, 'GET', '/api/wa-promo/images')).statusCode, 401);
+    assert.equal((await call(H1, 'GET', '/api/wa-promo/contacts')).statusCode, 401);
+    assert.equal((await call(D, 'GET', '/api/pf-images')).statusCode, 401);
+    assert.equal((await call({}, 'GET', '/api/pf-images')).statusCode, 401);
+    // 올리기 → ERP 뱅크
+    const v = (tag) => Buffer.concat([png, Buffer.from(tag)]).toString('base64');
+    const u1 = (await call(H1, 'POST', '/api/pf-images', { name: 'buenfin.png', mime: 'image/png', image_b64: v('PF1'), thumb_b64: Buffer.from('pfthumb').toString('base64'), width: 1080, height: 1350, memo: '  Buen Fin · Versa  ' })).json();
+    assert.ok(u1.id); assert.equal(u1.duplicate, false);
+    assert.equal((await call(H1, 'POST', '/api/pf-images', { name: 'otra.png', mime: 'image/png', image_b64: v('PF1') })).json().duplicate, true, '같은 파일 한 번');
+    assert.equal((await call(H1, 'POST', '/api/pf-images', { name: 'x.gif', mime: 'image/gif', image_b64: v('X') })).json().error, 'bad_image_type');
+    const u2 = (await call(H2, 'POST', '/api/pf-images', { name: 'lee.png', mime: 'image/png', image_b64: v('PF2') })).json();
+    const row = await one(`SELECT folder, source, pf_user, pf_user_name, memo, created_by FROM wa_images WHERE id=$1`, [u1.id]);
+    assert.deepEqual({ ...row, created_by: row.created_by }, { folder: '본사(CTR)', source: 'platform', pf_user: '7', pf_user_name: 'Kim HQ', memo: 'Buen Fin · Versa', created_by: null });
+    // ERP 뱅크 목록에 바로(승인 없음) · 올린 사람 「본사 · 이름」 · 설명
+    const erp = (await call(D, 'GET', '/api/wa-promo/images')).json();
+    const e1 = erp.items.find((x) => x.id === u1.id);
+    assert.equal(e1.source, 'platform'); assert.equal(e1.created_by_name, '본사 · Kim HQ'); assert.equal(e1.memo, 'Buen Fin · Versa');
+    assert.ok(erp.folders.some((f) => f.folder === '본사(CTR)'));
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/images/${u1.id}`, { memo: 'Buen Fin 2026' })).statusCode, 200, 'ERP 에서 설명 고침');
+    // 플랫폼은 자기 것만
+    const m1 = (await call(H1, 'GET', '/api/pf-images')).json();
+    assert.deepEqual(m1.items.map((x) => x.id), [u1.id]); assert.equal(m1.items[0].memo, 'Buen Fin 2026'); assert.equal(m1.items[0].removed, false);
+    assert.ok(!('used' in m1.items[0]) && !('uses' in m1.items[0]), '광고 결과는 보이지 않음');
+    assert.deepEqual((await call(H2, 'GET', '/api/pf-images')).json().items.map((x) => x.id), [u2.id]);
+    const th = await call(H1, 'GET', `/api/pf-images/${u1.id}/thumb`); assert.equal(th.rawPayload.toString(), 'pfthumb');
+    assert.equal((await call(H2, 'GET', `/api/pf-images/${u1.id}/thumb`)).statusCode, 404, '남의 것 404');
+    assert.equal((await call(H2, 'DELETE', `/api/pf-images/${u1.id}`)).statusCode, 404);
+    // ERP 에서 광고에 쓰면 플랫폼에서 못 지움 · 안 쓴 것은 지움 → ERP 목록에서도 빠짐
+    const c = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-04-01T10:00', caption: 'Buen Fin', image_id: u1.id })).json();
+    assert.ok(c.id);
+    const dd = await call(H1, 'DELETE', `/api/pf-images/${u1.id}`); assert.equal(dd.statusCode, 409); assert.equal(dd.json().error, 'already_used');
+    assert.equal((await call(H2, 'DELETE', `/api/pf-images/${u2.id}`)).statusCode, 200);
+    assert.ok(!(await call(D, 'GET', '/api/wa-promo/images')).json().items.some((x) => x.id === u2.id));
+    assert.equal((await call(H2, 'GET', '/api/pf-images')).json().items[0].removed, true);
+    // ERP 에서 정리하면 플랫폼엔 「ERP 에서 정리됨」
+    await call(D, 'DELETE', `/api/wa-promo/campaigns/${c.id}`);
+    await call(D, 'DELETE', `/api/wa-promo/images/${u1.id}`);
+    assert.equal((await call(H1, 'GET', '/api/pf-images')).json().items[0].removed, true);
+    // 0282 재실행 멱등
+    const { readFileSync } = await import('node:fs');
+    await query(readFileSync(new URL('../migrations/0282_wa_image_platform.sql', import.meta.url), 'utf-8'));
+  });
+
+  await t.test('B10. 0283 연락처 그룹 — 만들기 · 고른 사람/조건 전체/번호 붙여넣기로 넣기 · 빼기 · 엑셀 저장 때 그룹 · 목록 거르기 · 그룹 대상 발송 · 지우기', async () => {
+    await query(`DELETE FROM wa_contact_groups; DELETE FROM wa_groups;`);
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE deleted_at IS NULL`);
+    const v = Buffer.concat([png, Buffer.from('G1')]).toString('base64');
+    // 연락처 6명(동의 4)
+    const mk = async (name, phone, consent) => (await one(`INSERT INTO wa_contacts (name, phone, consent, source) VALUES ($1,$2,$3,'manual') RETURNING id`, [name, phone, consent])).id;
+    const c = {
+      a: Number(await mk('Taller A Monterrey', '528120000001', 'yes')), b: Number(await mk('Taller B Monterrey', '528120000002', 'yes')),
+      m: Number(await mk('Refacc Mérida', '529990000003', 'yes')), x: Number(await mk('Flota X', '528120000004', 'unknown')),
+      y: Number(await mk('Flota Y', '528120000005', 'yes')), z: Number(await mk('Nadie', '528120000006', 'no')),
+    };
+    // 권한 · 만들기 · 같은 이름(대소문자 무시) 409
+    assert.equal((await call(Rp, 'GET', '/api/wa-promo/groups')).statusCode, 403);
+    const gT = (await call(D, 'POST', '/api/wa-promo/groups', { name: '  Talleres   MTY ' })).json(); assert.ok(gT.id);
+    const dupG = await call(D, 'POST', '/api/wa-promo/groups', { name: 'talleres mty' }); assert.equal(dupG.statusCode, 409); assert.equal(dupG.json().id, gT.id);
+    assert.equal((await call(D, 'POST', '/api/wa-promo/groups', { name: '  ' })).json().error, 'group_name_required');
+    // ① 고른 사람
+    const r1 = (await call(D, 'POST', '/api/wa-promo/groups/assign', { group_id: gT.id, action: 'add', ids: [c.a, c.b, c.b] })).json();
+    assert.equal(r1.matched, 2); assert.equal(r1.changed, 2);
+    assert.equal((await call(D, 'POST', '/api/wa-promo/groups/assign', { group_id: gT.id, action: 'add', ids: [c.a] })).json().unchanged, 1, '이미 들어 있으면 그대로');
+    // ② 지금 조건에 맞는 전체 + 새 그룹 이름으로 바로
+    const r2 = (await call(D, 'POST', '/api/wa-promo/groups/assign', { group_name: 'Flotillas', action: 'add', filter: { q: 'flota' } })).json();
+    assert.equal(r2.created, true); assert.equal(r2.matched, 2); const gF = r2.group_id;
+    // ③ 번호 붙여넣기(형식 섞임 · 모르는 번호 · 잘못된 번호)
+    const r3 = (await call(D, 'POST', '/api/wa-promo/groups/assign', { group_name: 'Mérida', action: 'add', phones: '999 000 0003\n81 2000 0001; 8199999999\n12' })).json();
+    assert.equal(r3.matched, 2); assert.equal(r3.unknown_n, 2); assert.ok(r3.unknown_phones.includes('12'));
+    const gM = r3.group_id;
+    // 목록 · 인원 · 그룹 없는 사람
+    const gl = (await call(D, 'GET', '/api/wa-promo/groups')).json();
+    const byName = Object.fromEntries(gl.items.map((g) => [g.name, g]));
+    assert.deepEqual([byName['Talleres MTY'].n, byName['Talleres MTY'].yes, byName.Flotillas.n, byName.Flotillas.yes, byName['Mérida'].n], [2, 2, 2, 1, 2]);
+    assert.ok(byName['Talleres MTY'].color);
+    assert.equal(gl.none.n, 1, '그룹 없는 사람 = Nadie');
+    // 연락처 목록: 그룹 표시 · 그룹으로 거르기 · 그룹 없음 · matched
+    const lc = (await call(D, 'GET', `/api/wa-promo/contacts?group=${gT.id}`)).json();
+    assert.equal(lc.matched, 2); assert.deepEqual(lc.items.find((x) => x.id === c.a).groups.sort(), [gT.id, gM].sort());
+    assert.deepEqual((await call(D, 'GET', '/api/wa-promo/contacts?group=none')).json().items.map((x) => x.id), [c.z]);
+    assert.equal((await call(D, 'GET', `/api/wa-promo/contacts?group=${gF}&consent=yes`)).json().matched, 1);
+    // 빼기
+    assert.equal((await call(D, 'POST', '/api/wa-promo/groups/assign', { group_id: gM, action: 'remove', ids: [c.a] })).json().changed, 1);
+    // 엑셀 저장 때 그룹 — 새 번호 + 이미 등록된 번호 모두
+    const xb = (await call(D, 'POST', '/api/wa-promo/contacts/bulk', { dry_run: false, group_id: gF, rows: [{ name: 'Flota Nueva', phone: '8120000007' }, { name: 'Taller A', phone: '8120000001' }, { name: 'Mal', phone: '1' }] })).json();
+    assert.equal(xb.added, 1); assert.equal(xb.grouped, 2);
+    assert.equal((await call(D, 'POST', '/api/wa-promo/contacts/bulk', { dry_run: false, group_id: 999999, rows: [{ name: 'Q', phone: '8120000008' }] })).statusCode, 404);
+    // 대상 수 · 그룹 대상 발송
+    assert.equal((await call(D, 'GET', `/api/wa-promo/audience?groups=${gT.id},${gF}`)).json().n, 3, 'A · B · Y (X 미확인 · 새 연락처 미확인)');
+    assert.equal((await call(D, 'GET', `/api/wa-promo/audience?groups=${gT.id}&memo=zzz`)).json().n, 0);
+    const empty = (await call(D, 'POST', '/api/wa-promo/groups', { name: 'Vacío' })).json();
+    assert.equal((await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-05-01T10:00', caption: 'x', image_b64: v, image_mime: 'image/png', target_groups: [empty.id] })).json().error, 'no_consented_in_groups');
+    const camp = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_now: true, caption: 'Promo talleres', image_b64: v, image_mime: 'image/png', target_groups: [gT.id, gF] })).json();
+    assert.equal(camp.audience, 3);
+    const cl = (await call(D, 'GET', '/api/wa-promo/campaigns?from=2000-01-01&to=2100-01-01')).json().items.find((x) => x.id === camp.id);
+    assert.deepEqual(cl.target_groups.sort(), [gT.id, gF].sort());
+    // 사용 중인 그룹은 못 지움 → 발송 실행 → 대상 3명만
+    assert.equal((await call(D, 'DELETE', `/api/wa-promo/groups/${gT.id}`)).json().error, 'group_in_use');
+    process.env.PROMO_WA_DAILY_CAP = '100';
+    calls.length = 0;
+    await P.runPromoJob({});
+    const sentTo = (await query(`SELECT contact_id FROM wa_campaign_sends WHERE campaign_id=$1 AND sent_at IS NOT NULL`, [camp.id])).rows.map((r) => Number(r.contact_id)).sort((a, b) => a - b);
+    assert.deepEqual(sentTo, [c.a, c.b, c.y].sort((a, b) => a - b));
+    // 예약 수정으로 그룹 바꾸기 · 지우기
+    const later = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-05-02T10:00', caption: 'Mérida', image_b64: v, image_mime: 'image/png', target_groups: [gM] })).json();
+    assert.equal(later.audience, 1);
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/campaigns/${later.id}`, { target_groups: [] })).statusCode, 200);
+    assert.equal((await one(`SELECT target_groups FROM wa_campaigns WHERE id=$1`, [later.id])).target_groups, null, '빈 배열 = 동의 전체');
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/campaigns/${later.id}`, { target_groups: [999999] })).statusCode, 404);
+    await call(D, 'DELETE', `/api/wa-promo/campaigns/${later.id}`);
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/groups/${gM}`, { name: 'Sureste', color: '#AA00CC' })).statusCode, 200);
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/groups/${gM}`, { name: 'flotillas' })).statusCode, 409);
+    assert.equal((await call(D, 'DELETE', `/api/wa-promo/groups/${gM}`)).statusCode, 200);
+    const gl2 = (await call(D, 'GET', '/api/wa-promo/groups')).json();
+    assert.ok(!gl2.items.some((g) => g.id === gM));
+    assert.equal((await call(D, 'GET', `/api/wa-promo/contacts?group=${gT.id}`)).json().items.find((x) => x.id === c.m), undefined);
+    assert.ok(!(await call(D, 'GET', '/api/wa-promo/contacts')).json().items.find((x) => x.id === c.m).groups.includes(gM), '지운 그룹은 안 보임');
+    // 마케팅 열람 권한은 그룹 바꾸기 불가
+    const mkU = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'marketing','x',$2) RETURNING id`, [`WP Mk2 ${SFX}`, `wpmk2${SFX}`]);
+    await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'wapromo','anywhere','view')`, [mkU.id]);
+    const Mk2 = { authorization: 'Bearer ' + app.jwt.sign({ sub: Number(mkU.id), role: 'marketing' }) };
+    assert.equal((await call(Mk2, 'GET', '/api/wa-promo/groups')).statusCode, 200);
+    assert.equal((await call(Mk2, 'POST', '/api/wa-promo/groups/assign', { group_id: gT.id, ids: [c.m] })).statusCode, 403);
+    const { readFileSync } = await import('node:fs');
+    await query(readFileSync(new URL('../migrations/0283_wa_contact_groups.sql', import.meta.url), 'utf-8'));
   });
 });

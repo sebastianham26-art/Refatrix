@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ko" data-auth="platform">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마케팅 이미지 뱅크 · REFATRIX</title>
+<!-- REFATRIX Platform(Netlify) marketing.html — 원본: refatrix-api/templates/marketing_platform.html (0282 · 2026-10-16)
+     플랫폼 세션(sessionStorage rfx_sess)을 ERP 서버가 플랫폼에 직접 확인 → 1시간 업로드 토큰.
+     올린 이미지는 ERP 「WhatsApp 마케팅 › 이미지 뱅크 › 본사(CTR)」 폴더로 바로 들어간다. 이 화면은 자기가 올린 것만 보여준다. -->
+<style>
+:root{--ink:#13171d;--ink2:#39424e;--mut:#6c7682;--paper:#eceef1;--card:#fff;--line:#dde0e4;--line2:#eef0f2;
+--ctr:#d81e25;--ctr-soft:#fbe3e4;--syd:#0a5cab;--syd-soft:#e1edfa;--ok:#11743b;--ok-soft:#e3f5ea;--warn:#b26a00;--warn-soft:#fff4d6}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-size:14px;font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:18px 16px 70px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:14px}
+.brand{font-weight:800;font-size:21px;letter-spacing:-.02em}
+.brand small{display:block;font-weight:600;font-size:12px;color:var(--mut);margin-top:4px;letter-spacing:0}
+.who{margin-left:auto;font-size:12.5px;color:var(--ink2)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.drop{border:2px dashed #b8c0ca;border-radius:12px;padding:26px 16px;text-align:center;background:#fafbfc;transition:.15s}
+.drop.over{border-color:var(--syd);background:var(--syd-soft)}
+.drop b{font-size:15px}.drop .s{font-size:12px;color:var(--mut);margin-top:6px}
+.btn{font:inherit;font-size:13px;font-weight:800;border-radius:9px;padding:8px 14px;border:1px solid var(--syd);background:var(--syd);color:#fff;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.ghost{background:#fff;color:var(--syd)}.btn.sm{font-size:12px;padding:5px 10px}
+.btn.del{background:#fff;color:var(--ctr);border-color:var(--ctr)}
+label.l{display:block;font-size:12px;font-weight:800;color:var(--ink2);margin:12px 0 4px}
+textarea,input[type=search]{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;width:100%;background:#fff}
+.prog{margin-top:12px}.bar{height:8px;background:var(--line2);border-radius:5px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;width:0;background:var(--syd);transition:width .2s}
+.msg{font-size:12.5px;margin-top:8px;min-height:1em}.msg.ok{color:var(--ok)}.msg.err{color:var(--ctr)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{font:inherit;font-size:12px;font-weight:700;border:0;background:#fff;padding:6px 10px;cursor:pointer;color:var(--ink2)}
+.seg button.on{background:var(--ink);color:#fff}
+.sec{font-size:13px;font-weight:800;color:var(--mut);margin:18px 2px 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.grid.sm{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
+.grid.lg{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.it{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0;position:relative}
+.it .th{aspect-ratio:1/1;background:#f1eee6;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:zoom-in}
+.it .th img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.it .nm{font-size:12px;font-weight:700;padding:6px 8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it .mt{font-size:11px;color:var(--mut);padding:2px 8px 4px}
+.it .memo{font-size:11.5px;color:var(--ink2);padding:0 8px 6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.it .ft{display:flex;justify-content:space-between;align-items:center;padding:0 8px 8px;gap:6px}
+.grid.sm .it .memo,.grid.sm .it .mt{display:none}
+.tag{font-size:10.5px;font-weight:800;border-radius:9px;padding:2px 7px;background:var(--ok-soft);color:var(--ok)}
+.tag.off{background:var(--line2);color:var(--mut)}
+.empty{text-align:center;color:var(--mut);padding:30px 10px}
+.hidden{display:none!important}
+.lb{position:fixed;inset:0;background:rgba(10,12,15,.82);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.lb.on{display:flex}.lb img{max-width:100%;max-height:90vh;object-fit:contain;background:#fff;border-radius:6px}
+.lb .x{position:absolute;top:12px;right:16px;color:#fff;font-size:26px;background:none;border:0;cursor:pointer}
+@media (max-width:600px){.grid,.grid.lg{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.sm{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">📸 마케팅 이미지 뱅크<small>여기에 올린 이미지는 REFATRIX 멕시코의 WhatsApp 광고에 바로 쓰입니다.</small></div>
+    <div class="who" id="who"></div>
+    <a class="btn ghost sm hidden" id="back" href="/" style="text-decoration:none">← REFATRIX Platform</a>
+  </header>
+
+  <div id="gate" class="card empty hidden"></div>
+
+  <div id="app" class="hidden">
+    <div class="card">
+      <div class="drop" id="drop">
+        <b>이미지를 여기로 끌어다 놓으세요 (여러 장 가능)</b>
+        <div class="s">JPG · PNG 는 그대로, 그 밖의 형식(WEBP 등)은 JPG 로 바꿔 올립니다. 5MB 가 넘으면 자동으로 줄입니다. 같은 파일은 한 번만 저장됩니다.</div>
+        <div style="margin-top:12px"><button type="button" class="btn" id="pick">＋ 파일 고르기 (여러 장)</button></div>
+        <input type="file" id="files" accept="image/*" multiple class="hidden">
+      </div>
+      <label class="l" for="memo">설명 (선택) — 이번에 올리는 이미지 모두에 붙습니다 · 용도 · 차종 · 부품 · 광고 기간 등</label>
+      <textarea id="memo" rows="2" maxlength="500" placeholder="예) 11월 Buen Fin 프로모션 · Versa 2015-2019 Horquilla"></textarea>
+      <div class="prog hidden" id="prog"><div id="progT" style="font-size:12.5px;font-weight:700"></div><div class="bar"><i id="progBar"></i></div></div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="sec">내가 올린 이미지 <span id="cnt"></span>
+      <span style="margin-left:auto" class="row">
+        <input type="search" id="q" placeholder="이름 · 설명 검색" style="width:180px">
+        <span class="seg" id="view"><button type="button" data-v="lg">크게</button><button type="button" data-v="md" class="on">보통</button><button type="button" data-v="sm">작게</button></span>
+      </span>
+    </div>
+    <div id="list"></div>
+  </div>
+</div>
+<div class="lb" id="lb"><button type="button" class="x" id="lbX" aria-label="닫기">✕</button><img id="lbImg" alt=""></div>
+
+<script>
+(function(){
+  'use strict';
+  const API='https://refatrix-production.up.railway.app';
+  const SK='rfx_pf_images';
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const kb=(n)=>{ n=Number(n||0); return n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB'; };
+  const ERR={network:'서버에 연결하지 못했습니다. 잠시 뒤 다시 해 보세요.',bad_image_type:'JPG · PNG 로 바꿀 수 없는 파일입니다.',bad_image:'이미지를 열 수 없습니다.',
+    image_too_large:'5MB 아래로 줄이지 못했습니다.',image_required:'이미지가 없습니다.',daily_cap:'오늘 올릴 수 있는 수(400장)를 넘었습니다.',
+    already_used:'이미 광고에 쓰인 이미지라 지울 수 없습니다.',not_found:'이미지를 찾지 못했습니다.',platform_session_invalid:'플랫폼 로그인이 끝났습니다. 다시 로그인하세요.',
+    platform_unreachable:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_timeout:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_network:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.'};
+  const S={items:[],view:'md',urls:{}};
+  try{ const v=localStorage.getItem('rfx_pf_img_view'); if(v==='lg'||v==='md'||v==='sm') S.view=v; }catch(e){}
+
+  // ── 플랫폼 세션 → ERP 업로드 토큰 ──
+  let sess=null; try{ sess=JSON.parse(sessionStorage.getItem(SK)||'null'); }catch(e){ sess=null; }
+  const saveSess=()=>{ try{ sess?sessionStorage.setItem(SK,JSON.stringify(sess)):sessionStorage.removeItem(SK); }catch(e){} };
+  let gateMsg='';
+  function platformSession(){ let ps=null; try{ ps=JSON.parse(sessionStorage.getItem('rfx_sess')||'null'); }catch(e){ ps=null; } return ps&&ps.t&&Date.now()<=Number(ps.e||0)?ps:null; }
+  async function exchange(){
+    const ps=platformSession();
+    if(!ps){ gateMsg='REFATRIX Platform 에 로그인한 뒤 이 화면을 여세요.'; return false; }
+    const u=ps.u||{}; const name=u.name||u.nombre||u.login||'';
+    const key=String(u.id!=null?u.id:(u.login||u.user||u.email||name||''));
+    let r; try{ r=await fetch(API+'/api/pf-images/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:ps.t,name,user_key:key})}); }catch(e){ gateMsg=ERR.network; return false; }
+    let b={}; try{ b=await r.json(); }catch(e){}
+    if(!r.ok){ gateMsg=ERR[b.error]||('확인 실패 ('+r.status+')'); return false; }
+    sess={token:b.token,name:b.name,pt:ps.t}; saveSess(); return true;
+  }
+  async function call(method,path,body,retried){
+    const o={method,headers:Object.assign({},sess&&sess.token?{Authorization:'Bearer '+sess.token}:{})};
+    if(body!==undefined){ o.headers['Content-Type']='application/json'; o.body=JSON.stringify(body); }
+    let r; try{ r=await fetch(API+path,o); }catch(e){ throw new Error('network'); }
+    if(r.status===401&&!retried){ if(await exchange()) return call(method,path,body,true); gate(); throw new Error('platform_session_invalid'); }
+    let b={}; try{ b=await r.json(); }catch(e){}
+    if(!r.ok) throw new Error(b.error||('http_'+r.status));
+    return b;
+  }
+  async function thumbUrl(id,retried){
+    if(S.urls[id]) return S.urls[id];
+    let r; try{ r=await fetch(API+'/api/pf-images/'+id+'/thumb',{headers:sess&&sess.token?{Authorization:'Bearer '+sess.token}:{}}); }catch(e){ return ''; }
+    if(r.status===401&&!retried&&await exchange()) return thumbUrl(id,true);
+    if(!r.ok) return '';
+    S.urls[id]=URL.createObjectURL(await r.blob()); return S.urls[id];
+  }
+  function gate(){
+    $('app').classList.add('hidden'); $('who').textContent='';
+    $('gate').innerHTML=esc(gateMsg||'REFATRIX Platform 에 로그인한 뒤 이 화면을 여세요.')+'<br><br><a class="btn" href="/" target="_top" style="text-decoration:none;display:inline-block">REFATRIX Platform 으로</a>';
+    $('gate').classList.remove('hidden');
+  }
+  function say(ok,t){ const m=$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t||''; }
+
+  // ── 목록 ──
+  async function load(){
+    try{ const d=await call('GET','/api/pf-images'); S.items=d.items||[]; render(); }
+    catch(e){ if(e.message!=='platform_session_invalid') $('list').innerHTML='<div class="card empty">'+esc(ERR[e.message]||e.message)+'</div>'; }
+  }
+  function render(){
+    document.querySelectorAll('#view button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.view));
+    const q=$('q').value.trim().toLowerCase();
+    const rows=S.items.filter(i=>!q||(i.name||'').toLowerCase().includes(q)||(i.memo||'').toLowerCase().includes(q));
+    const live=S.items.filter(i=>!i.removed).length;
+    $('cnt').textContent='· '+live+'장'+(rows.length!==S.items.length?' (보이는 것 '+rows.length+')':'');
+    if(!rows.length){ $('list').innerHTML='<div class="card empty">'+(S.items.length?'조건에 맞는 이미지가 없습니다.':'아직 올린 이미지가 없습니다 — 위에 끌어다 놓으세요.')+'</div>'; return; }
+    $('list').innerHTML='<div class="grid '+S.view+'">'+rows.map(i=>'<div class="it" data-id="'+i.id+'"><div class="th" data-zoom="'+i.id+'"><img data-th="'+i.id+'" alt=""></div>'
+      +'<div class="nm" title="'+esc(i.name)+'">'+esc(i.name)+'</div>'
+      +'<div class="mt">'+esc(String(i.created_mx||'').slice(0,16).replace('T',' '))+' · '+kb(i.size)+(i.width?' · '+i.width+'×'+i.height:'')+'</div>'
+      +(i.memo?'<div class="memo" title="'+esc(i.memo)+'">'+esc(i.memo)+'</div>':'')
+      +'<div class="ft">'+(i.removed?'<span class="tag off" title="멕시코 마케팅 담당자가 이미지 뱅크에서 정리했습니다">ERP 에서 정리됨</span>':'<span class="tag">✓ ERP 저장됨</span>')
+      +(i.removed?'':'<button type="button" class="btn del sm" data-del="'+i.id+'">지우기</button>')+'</div></div>').join('')+'</div>';
+    lazy();
+  }
+  let io=null;
+  function lazy(){
+    const imgs=[...document.querySelectorAll('#list img[data-th]')];
+    const fill=async(im)=>{ const u=await thumbUrl(Number(im.dataset.th)); if(u) im.src=u; };
+    if(!('IntersectionObserver' in window)){ imgs.forEach(fill); return; }
+    if(io) io.disconnect();
+    io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); fill(e.target); } }),{rootMargin:'300px'});
+    imgs.forEach(im=>io.observe(im));
+  }
+  $('q').addEventListener('input',render);
+  $('view').addEventListener('click',e=>{ const b=e.target.closest('button[data-v]'); if(!b) return; S.view=b.dataset.v; try{ localStorage.setItem('rfx_pf_img_view',S.view); }catch(_){ } render(); });
+  $('list').addEventListener('click',async e=>{
+    const d=e.target.closest('[data-del]');
+    if(d){ const id=Number(d.dataset.del); const it=S.items.find(x=>x.id===id);
+      if(!confirm('「'+(it?it.name:'')+'」을(를) 지울까요? ERP 이미지 뱅크에서도 빠집니다.')) return;
+      try{ await call('DELETE','/api/pf-images/'+id); say(true,'지웠습니다.'); load(); }catch(err){ say(false,ERR[err.message]||err.message); }
+      return; }
+    const z=e.target.closest('[data-zoom]');
+    if(z){ const u=await thumbUrl(Number(z.dataset.zoom)); if(u){ $('lbImg').src=u; $('lb').classList.add('on'); } }
+  });
+  const closeLb=()=>{ $('lb').classList.remove('on'); $('lbImg').removeAttribute('src'); };
+  $('lbX').addEventListener('click',closeLb); $('lb').addEventListener('click',e=>{ if(e.target===$('lb')) closeLb(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLb(); });
+
+  // ── 올리기 — 여러 장 · 큰 파일 자동 축소 · 썸네일은 화면에서 (ERP 이미지 뱅크와 같은 방식) ──
+  const canCanvas=(()=>{ let r=null; return ()=>{ if(r===null){ try{ r=!!(document.createElement('canvas').getContext('2d')); }catch(e){ r=false; } } return r; }; })();
+  const loadImg=(blob)=>new Promise(res=>{ const u=URL.createObjectURL(blob); const im=new Image(); const done=(ok)=>{ clearTimeout(t); res(ok?{im,u}:null); }; const t=setTimeout(()=>done(false),15000); im.onload=()=>done(true); im.onerror=()=>done(false); im.src=u; });
+  const toBlob=(cv,type,q)=>new Promise(res=>cv.toBlob(res,type,q));
+  const b64Of=(blob)=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(blob); });
+  async function prepFile(f){
+    const okType=/^image\/(jpeg|png)$/.test(f.type); const MAX=5*1024*1024;
+    if(!canCanvas()){ if(!okType) throw new Error('bad_image_type'); if(f.size>MAX) throw new Error('image_too_large'); return {name:f.name,mime:f.type,image_b64:await b64Of(f)}; }
+    const L=await loadImg(f); if(!L){ if(okType&&f.size<=MAX) return {name:f.name,mime:f.type,image_b64:await b64Of(f)}; throw new Error('bad_image'); }
+    const W=L.im.naturalWidth, H=L.im.naturalHeight; let blob=f, mime=f.type, name=f.name;
+    if(!okType||f.size>MAX){
+      let side=Math.min(Math.max(W,H),f.size>MAX?2560:Math.max(W,H)), q=0.9;
+      for(let k=0;k<6;k++){ const sc=Math.min(1,side/Math.max(W,H)); const cv=document.createElement('canvas'); cv.width=Math.round(W*sc); cv.height=Math.round(H*sc);
+        const g=cv.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,cv.width,cv.height); g.drawImage(L.im,0,0,cv.width,cv.height);
+        blob=await toBlob(cv,'image/jpeg',q); if(blob&&blob.size<=MAX) break; side=Math.round(side*0.8); q=Math.max(0.7,q-0.05); }
+      if(!blob||blob.size>MAX){ URL.revokeObjectURL(L.u); throw new Error('image_too_large'); }
+      mime='image/jpeg'; name=name.replace(/\.[^.]+$/,'')+'.jpg';
+    }
+    const ts=360, sc=Math.min(1,ts/Math.max(W,H)); const tc=document.createElement('canvas'); tc.width=Math.max(1,Math.round(W*sc)); tc.height=Math.max(1,Math.round(H*sc));
+    const tg=tc.getContext('2d'); tg.fillStyle='#fff'; tg.fillRect(0,0,tc.width,tc.height); tg.drawImage(L.im,0,0,tc.width,tc.height);
+    const tb=await toBlob(tc,'image/jpeg',0.82); URL.revokeObjectURL(L.u);
+    return {name,mime,image_b64:await b64Of(blob),thumb_b64:tb?await b64Of(tb):null,width:W,height:H};
+  }
+  let busy=false;
+  async function upload(files){
+    if(busy) return;
+    files=[...files].filter(f=>f&&(/^image\//.test(f.type)||/\.(jpe?g|png|webp|gif|bmp|heic)$/i.test(f.name||''))); if(!files.length){ say(false,'이미지 파일이 없습니다.'); return; }
+    busy=true; $('pick').disabled=true; say(true,'');
+    const memo=$('memo').value.trim(); const st={done:0,ok:0,dup:0,fail:[]};
+    $('prog').classList.remove('hidden');
+    const show=()=>{ $('progT').textContent='올리는 중 '+st.done+' / '+files.length+' · 저장 '+st.ok+(st.dup?' · 이미 있음 '+st.dup:'')+(st.fail.length?' · 실패 '+st.fail.length:''); $('progBar').style.width=Math.round(st.done/files.length*100)+'%'; };
+    show(); let i=0;
+    const worker=async()=>{ while(i<files.length){ const f=files[i++];
+      try{ const p=await prepFile(f); const d=await call('POST','/api/pf-images',{...p,memo}); if(d.duplicate) st.dup++; else st.ok++; }
+      catch(e){ st.fail.push((f.name||'?')+' — '+(ERR[e.message]||e.message)); }
+      st.done++; show(); } };
+    await Promise.all([worker(),worker()]);
+    $('progT').textContent='끝 — ERP 에 저장 '+st.ok+'장'+(st.dup?' · 이미 있던 같은 파일 '+st.dup+'장':'')+(st.fail.length?' · 실패 '+st.fail.length+'장':'');
+    if(st.fail.length) say(false,st.fail.slice(0,6).join(' / ')); else if(st.ok) say(true,'멕시코 마케팅 담당자가 바로 WhatsApp 광고에 쓸 수 있습니다.');
+    busy=false; $('pick').disabled=false; load();
+  }
+  $('pick').addEventListener('click',()=>$('files').click());
+  $('files').addEventListener('change',()=>{ const fs=$('files').files; if(fs&&fs.length) upload([...fs]); $('files').value=''; });
+  const dz=$('drop');
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{ e.preventDefault(); dz.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{ e.preventDefault(); if(ev==='dragleave'&&dz.contains(e.relatedTarget)) return; dz.classList.remove('over'); }));
+  dz.addEventListener('drop',e=>{ const fs=e.dataTransfer&&e.dataTransfer.files; if(fs&&fs.length) upload([...fs]); });
+
+  // ── 시작 ── (플랫폼 메뉴 iframe 이 아니라 주소로 바로 열었으면 돌아가기 링크)
+  try{ if(window.top===window) $('back').classList.remove('hidden'); }catch(e){}
+  (async function boot(){
+    if(!platformSession()){ sess=null; saveSess(); gateMsg=''; gate(); return; }
+    const ps=platformSession(); if((!sess||sess.pt!==ps.t)&&!(await exchange())){ gate(); return; }   // 플랫폼에서 다른 사람으로 바꿔 로그인했으면 새로 확인
+    $('gate').classList.add('hidden'); $('app').classList.remove('hidden');
+    $('who').textContent=(sess&&sess.name?sess.name+' · ':'')+'올린 이미지는 ERP 「본사(CTR)」 폴더로';
+    load();
+  })();
+})();
+</script>
+</body>
+</html>

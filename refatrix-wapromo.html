@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1016pa</title>
+<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1016gr</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -83,6 +83,18 @@
   .phone .qr{margin-top:6px;display:flex;flex-direction:column;gap:4px}
   .phone .qr span{background:#fff;border-radius:8px;text-align:center;padding:6px;font-size:12px;color:#0b78c5;font-weight:600}
   .ok-t{color:var(--ok);font-weight:700}.bad-t{color:var(--bad);font-weight:700}.warn-t{color:var(--warn);font-weight:700}
+  .gbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+  .gchip{font:inherit;font-size:12px;font-weight:700;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;cursor:pointer;display:inline-flex;gap:5px;align-items:center;color:inherit}
+  .gchip .dot,.gpick .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .gchip .n{font-weight:600;opacity:.7}
+  .gchip.on{background:#143D34;color:#fff;border-color:#143D34}
+  .gchip.add{border-style:dashed;color:var(--brand)}
+  .gtag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;white-space:nowrap;display:inline-block;margin:1px 2px 1px 0;color:#fff}
+  .gpick{display:flex;flex-wrap:wrap;gap:6px;max-width:520px}
+  .gpick label{display:inline-flex;gap:5px;align-items:center;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:pointer;margin:0}
+  .gpick input{width:auto;margin:0}
+  .gmode label{display:flex;gap:8px;align-items:flex-start;font-weight:600;margin:6px 0;cursor:pointer}
+  .gmode input[type=radio]{width:auto;margin-top:3px}
   .selbar{position:sticky;top:0;z-index:5;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:10px 12px;border-radius:10px;background:#143D34;color:#fff}
   .selbar .btn.ghost{background:#fff}
   .selbar .cnt{font-size:12.5px}
@@ -140,6 +152,9 @@
   .bcard .mt{font-size:10.5px;color:var(--muted);padding:1px 7px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bgrid.v-s .bcard .nm{font-size:10.5px;padding:3px 5px 4px}
   .bgrid.v-s .bcard .mt{display:none}
+  .bcard .pfb{position:absolute;bottom:auto;top:6px;left:30px;font-size:10px;font-weight:700;background:#0a5cab;color:#fff;border-radius:9px;padding:1px 6px}
+  .bgrid.v-s .bcard .pfb{display:none}
+  .pill{display:inline-block;font-size:10.5px;font-weight:700;background:#e1edfa;color:#073f78;border-radius:9px;padding:1px 6px}
   .bcard .ck{position:absolute;top:6px;left:6px;width:18px;height:18px;margin:0;accent-color:var(--ctr)}
   .bcard .use{position:absolute;top:6px;right:6px;background:rgba(20,61,52,.88);color:#fff;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px}
   .bdet td .thm{width:44px;height:44px;object-fit:cover;border-radius:6px;display:block;background:#eee}
@@ -203,12 +218,15 @@
           <input id="cQ" placeholder="이름 · 메모 · 번호 검색" style="width:220px">
           <select id="cConsent"><option value="">상태 전체</option><option value="yes">✅ 동의</option><option value="asked">⏳ 응답 대기</option><option value="unknown">❓ 미확인</option><option value="no">⛔ 거부</option></select>
           <span style="margin-left:auto"></span>
+          <button type="button" class="btn ghost" id="cGroupBulk" title="지금 조건에 맞는 전체 · 고른 사람 · 번호 붙여넣기로 한 번에 그룹 넣기/빼기">🏷 그룹 일괄 구분</button>
           <button type="button" class="btn red" id="cAskAll">✉ 미확인 전체에게 동의 요청</button>
         </div>
+        <div class="gbar" id="cGroups"></div>
         <div class="selbar hidden" id="cSelBar">
           <span class="cnt" id="cSelInfo"></span>
           <span style="margin-left:auto"></span>
           <button type="button" class="btn ghost sm" id="cSelAsk">✉ 동의 요청</button>
+          <button type="button" class="btn ghost sm" id="cSelGroup">🏷 그룹에 넣기 / 빼기</button>
           <button type="button" class="btn red sm" id="cSelSend">📣 이미지 보내기</button>
           <button type="button" class="btn ghost sm" id="cSelClear">선택 해제</button>
         </div>
@@ -226,8 +244,9 @@
           <div><label>시각(멕시코)</label><input type="time" id="kTime" value="10:00"></div>
           <div><label>이미지 (JPG · PNG · 5MB 이하)</label><input type="file" id="kImg" accept="image/jpeg,image/png">
             <div class="kbank" style="margin-top:4px"><button type="button" class="btn ghost sm" id="kBank">📁 이미지 뱅크에서</button><span id="kBankSel"></span></div></div>
-          <div><label>대상</label><select id="kAud"><option value="">✅ 동의 전체</option><option value="memo">✅ 동의 중 메모에 … 포함</option></select></div>
+          <div><label>대상</label><select id="kAud"><option value="">✅ 동의 전체</option><option value="group">🏷 그룹 고르기 (✅ 동의자)</option><option value="memo">✅ 동의 중 메모에 … 포함</option></select></div>
           <div id="kMemoWrap" class="hidden"><label>메모에 들어간 말</label><input id="kMemo" placeholder="Monterrey" style="width:150px"></div>
+          <div id="kGroupWrap" class="hidden"><label>그룹 (하나라도 들어 있으면)</label><div class="gpick" id="kGroups"></div></div>
         </div>
         <div style="margin-top:10px"><label>문구 — 이미지 아래 글 (템플릿 {{1}} · 한 줄로 나감 · 900자 이하)</label><textarea id="kCap" maxlength="900" placeholder="Amortiguadores CTR para Versa 2015-2019 · 15% esta semana"></textarea></div>
         <div class="row" style="margin-top:8px">
@@ -265,7 +284,7 @@
             <div class="prog hidden" id="bProg"><span id="bProgT"></span><div class="bar"><i id="bProgBar"></i></div></div>
           </div>
           <div class="row" style="margin-top:12px;align-items:flex-end">
-            <div><label>검색</label><input id="bQ" placeholder="파일 이름 · 폴더" style="width:180px"></div>
+            <div><label>검색</label><input id="bQ" placeholder="파일 이름 · 폴더 · 설명" style="width:180px"></div>
             <div><label>폴더</label><select id="bFolder"><option value="">전체</option></select></div>
             <div><label>정렬</label><select id="bSort"><option value="new">최근 올린 순</option><option value="name">이름순</option><option value="used">최근 사용 순</option><option value="uses">많이 쓴 순</option></select></div>
             <div><label>보기</label><div class="seg" id="bView"><button type="button" data-v="xl">아주 큰 아이콘</button><button type="button" data-v="l">큰 아이콘</button><button type="button" data-v="m">보통 아이콘</button><button type="button" data-v="s">작은 아이콘</button><button type="button" data-v="d">자세히</button></div></div>
@@ -349,6 +368,44 @@
   </div>
 </div>
 
+<!-- 0283 · 그룹 일괄 구분 -->
+<div class="modal" id="mGAssign" role="dialog" aria-modal="true"><div class="mbox" style="max-width:640px">
+  <div class="mtop"><b style="color:var(--brand)">🏷 그룹 일괄 구분</b><button type="button" class="btn ghost sm" data-close="mGAssign" style="margin-left:auto">닫기 ✕</button></div>
+  <div class="mbody">
+    <label>누구를</label>
+    <div class="gmode" id="gaMode">
+      <label><input type="radio" name="gaMode" value="sel"><span id="gaSelL">고른 사람</span></label>
+      <label><input type="radio" name="gaMode" value="filter"><span id="gaFilterL">지금 조건에 맞는 전체</span></label>
+      <label><input type="radio" name="gaMode" value="phones"><span>번호 붙여넣기 — 엑셀 번호 칸을 통째로 복사해 붙여도 됩니다(줄 · 쉼표 · 탭으로 구분)</span></label>
+    </div>
+    <textarea id="gaPhones" class="hidden" rows="6" placeholder="8112345678&#10;81 2345 6789&#10;5219991234567"></textarea>
+    <div class="row" style="margin-top:10px">
+      <div><label>그룹</label><select id="gaGroup" style="min-width:220px"></select></div>
+      <div id="gaNewWrap" class="hidden"><label>새 그룹 이름</label><input id="gaNew" maxlength="60" placeholder="Flotillas" style="width:200px"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="btn" id="gaAdd">그룹에 넣기</button>
+      <button type="button" class="btn ghost" id="gaRemove">그룹에서 빼기</button>
+    </div>
+    <div class="msg" id="gaMsg"></div>
+    <div class="hint" style="margin-top:6px">한 사람이 여러 그룹에 들어갈 수 있습니다. 넣기는 이미 들어 있는 사람은 그대로 두고, 빼기는 그 그룹에서만 뺍니다(연락처 · 다른 그룹은 그대로).</div>
+  </div>
+</div></div>
+
+<!-- 0283 · 그룹 관리 -->
+<div class="modal" id="mGroups" role="dialog" aria-modal="true"><div class="mbox" style="max-width:780px">
+  <div class="mtop"><b style="color:var(--brand)">⚙ 그룹 관리</b><button type="button" class="btn ghost sm" data-close="mGroups" style="margin-left:auto">닫기 ✕</button></div>
+  <div class="mbody">
+    <div class="row">
+      <div><label>새 그룹</label><input id="gNewName" maxlength="60" placeholder="Talleres Monterrey" style="width:220px"></div>
+      <div><label>색</label><input type="color" id="gNewColor" value="#2a78d6" style="width:52px;padding:2px"></div>
+      <button type="button" class="btn" id="gCreate">＋ 만들기</button>
+    </div>
+    <div class="tblwrap" id="gList" style="margin-top:12px"></div>
+    <div class="msg" id="gMsg"></div>
+  </div>
+</div></div>
+
 <!-- 엑셀/설문 미리보기 -->
 <div class="modal" id="mImport" role="dialog" aria-modal="true"><div class="mbox">
   <div class="mtop"><b id="mImpTitle" style="color:var(--brand)">가져오기 미리보기</b><button type="button" class="btn ghost sm" data-close="mImport" style="margin-left:auto">닫기 ✕</button></div>
@@ -365,7 +422,11 @@
     </div>
     <div id="mImpSum" style="margin-top:10px"></div>
     <div class="tblwrap" id="mImpRows" style="max-height:380px;overflow:auto"></div>
-    <div class="row" style="margin-top:12px"><button type="button" class="btn" id="mImpSave" disabled>새 연락처 저장</button><span class="hint" id="mImpHint"></span></div>
+    <div class="row" style="margin-top:12px">
+      <div><label>넣을 그룹 (선택 — 새로 등록 + 이미 등록된 번호 모두)</label><select id="mImpGroup" style="min-width:200px"></select></div>
+      <div id="mImpNewGWrap" class="hidden"><label>새 그룹 이름</label><input id="mImpNewG" maxlength="60" placeholder="Talleres Monterrey" style="width:180px"></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button type="button" class="btn" id="mImpSave" disabled>새 연락처 저장</button><span class="hint" id="mImpHint"></span></div>
   </div>
 </div></div>
 
@@ -408,6 +469,7 @@
       <div style="flex:1 1 320px;min-width:0;max-width:100%">
         <label>파일 이름</label><input id="miName" style="width:100%">
         <label style="margin-top:8px">폴더</label><input id="miFolder" list="bFolderList" style="width:100%">
+        <label style="margin-top:8px">설명 (용도 · 차종 등)</label><textarea id="miMemo" rows="2" maxlength="500" style="width:100%"></textarea>
         <div class="hint" id="miMeta" style="margin-top:6px"></div>
         <div class="row" style="margin-top:10px">
           <button type="button" class="btn sm" id="miSave">저장</button>
@@ -460,12 +522,12 @@
   const WAP_BUILD='wap-1016ib';
   try{ console.log('[wapromo] build '+WAP_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
-  const S={month:null,kBankId:null,bank:[],bankFolders:[],bSel:new Set(),bView:'l',bMode:'imgs',hMonth:null,thCache:{},fileCache:{},calPick:null,tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
+  const S={groups:[],gNone:{n:0,yes:0},cGroup:'',kGroups:[],matched:0,impSum:null,month:null,kBankId:null,bank:[],bankFolders:[],bSel:new Set(),bView:'l',bMode:'imgs',hMonth:null,thCache:{},fileCache:{},calPick:null,tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
     convs:[],cur:null,rules:[],status:null,imp:null,impSource:null,survey:null,camp:null};
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtT=(t)=>{ if(!t) return '—'; const d=new Date(t); return d.toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
-  const ERR={bad_phone:'번호 형식이 맞지 않습니다(10자리 또는 52+10자리).',name_required:'이름을 넣으세요.',duplicate_phone:'이미 등록된 번호입니다.',
+  const ERR={group_name_required:'그룹 이름을 넣으세요.',group_exists:'같은 이름의 그룹이 이미 있습니다.',group_not_found:'그룹을 찾지 못했습니다(지워졌을 수 있음).',group_required:'그룹을 고르세요.',group_in_use:'이 그룹을 대상으로 한 예약 · 발송 중인 광고가 있어 지울 수 없습니다(먼저 그 발송의 대상을 바꾸거나 취소).',no_consented_in_groups:'고른 그룹에 ✅ 동의한 사람이 없습니다.',no_contacts:'대상이 없습니다.',too_many_contacts:'한 번에 너무 많습니다.',bad_phone:'번호 형식이 맞지 않습니다(10자리 또는 52+10자리).',name_required:'이름을 넣으세요.',duplicate_phone:'이미 등록된 번호입니다.',
     wa_not_configured:'WhatsApp 키가 없습니다(관리 › 외부 서비스 키).',window_closed:'24시간 창이 닫혀 있어 직접 답장은 못 보냅니다(템플릿만 가능). 고객이 먼저 메시지를 보내면 열립니다.',
     image_required:'이미지를 고르세요.',image_too_large:'이미지가 5MB 를 넘습니다.',bad_image_type:'JPG 또는 PNG 만 됩니다.',caption_required:'문구를 넣으세요.',no_consented:'고른 사람 중 ✅ 동의자가 없습니다 — 먼저 동의 요청을 보내세요.',no_contacts:'고른 사람이 없습니다.',image_source_not_found:'다시 쓸 이미지를 찾지 못했습니다.',
     caption_too_long:'문구는 900자 이하로.',bad_send_at:'날짜와 시각을 넣으세요.',not_editable:'예약 상태인 발송만 고칠 수 있습니다.',not_cancellable:'이미 끝났거나 취소된 발송입니다.',
@@ -523,7 +585,7 @@
     document.querySelectorAll('#tabs .tab').forEach(b=>b.classList.toggle('on',b.dataset.p===t));
     document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='p-'+t));
     if(t==='contacts') loadContacts();
-    if(t==='camps'){ loadCamps(); loadStrip(); }
+    if(t==='camps'){ loadGroups().then(loadCamps); loadStrip(); }
     if(t==='bank') loadBank();
     if(t==='inbox') loadConvs();
     if(t==='rules') loadRules();
@@ -534,10 +596,110 @@
 
   // ───── ① 연락처 ─────
   async function loadContacts(){
-    const qs=new URLSearchParams(); if($('cQ').value.trim()) qs.set('q',$('cQ').value.trim()); if($('cConsent').value) qs.set('consent',$('cConsent').value);
-    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
+    const qs=new URLSearchParams(curFilter()); await loadGroups();
+    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
     catch(e){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
   }
+  // ── 0283 · 연락처 그룹 ──
+  function curFilter(){ const f={}; if($('cQ').value.trim()) f.q=$('cQ').value.trim(); if($('cConsent').value) f.consent=$('cConsent').value; if(S.cGroup) f.group=S.cGroup; return f; }
+  const gById=(id)=>S.groups.find(g=>g.id===Number(id));
+  const gTag=(g)=>'<span class="gtag" style="background:'+esc(g.color||'#5b6470')+'" title="'+esc(g.memo||g.name)+'">'+esc(g.name)+'</span>';
+  async function loadGroups(){
+    try{ const d=await api('GET','/api/wa-promo/groups'); S.groups=d.items||[]; S.gNone=d.none||{n:0,yes:0}; }catch(e){ /* 0283 전 */ }
+    if(S.cGroup&&S.cGroup!=='none'&&!gById(S.cGroup)) S.cGroup='';
+    S.kGroups=(S.kGroups||[]).filter(id=>gById(id));
+    renderGroupBar(); renderKGroups(); fillGroupSelects();
+    if($('mGroups').classList.contains('on')) renderGroupList();
+  }
+  function renderGroupBar(){
+    const tot=S.counts&&S.counts.total||0;
+    $('cGroups').innerHTML='<button type="button" class="gchip'+(!S.cGroup?' on':'')+'" data-g="">전체 <span class="n">'+tot+'</span></button>'
+      +S.groups.map(g=>'<button type="button" class="gchip'+(S.cGroup===String(g.id)?' on':'')+'" data-g="'+g.id+'" title="'+esc((g.memo?g.memo+' · ':'')+'전체 '+g.n+'명 · ✅ 동의 '+g.yes+'명')+'"><span class="dot" style="background:'+esc(g.color||'#5b6470')+'"></span>'+esc(g.name)+' <span class="n">'+g.n+' · ✅'+g.yes+'</span></button>').join('')
+      +'<button type="button" class="gchip'+(S.cGroup==='none'?' on':'')+'" data-g="none">그룹 없음 <span class="n">'+(S.gNone.n||0)+'</span></button>'
+      +'<button type="button" class="gchip add" data-gnew="1">＋ 새 그룹</button><button type="button" class="gchip add" data-gmgr="1">⚙ 그룹 관리</button>';
+  }
+  $('cGroups').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    if(b.dataset.gnew||b.dataset.gmgr){ openGroups(!!b.dataset.gnew); return; }
+    S.cGroup=b.dataset.g||''; S.sel.clear(); loadContacts();
+  });
+  function groupOptions(first){ return '<option value="">'+first+'</option>'+S.groups.map(g=>'<option value="'+g.id+'">'+esc(g.name)+' ('+g.n+'명)</option>').join('')+'<option value="__new">＋ 새 그룹 만들기…</option>'; }
+  function fillGroupSelects(){
+    [['gaGroup','— 그룹 고르기 —'],['mImpGroup','— 그룹에 넣지 않음 —']].forEach(([id,first])=>{ const el=$(id); const v=el.value; el.innerHTML=groupOptions(first); if([...el.options].some(o=>o.value===v)) el.value=v; });
+    $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new'); $('mImpNewGWrap').classList.toggle('hidden',$('mImpGroup').value!=='__new');
+  }
+  $('gaGroup').addEventListener('change',()=>{ $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new'); if($('gaGroup').value==='__new') $('gaNew').focus(); });
+  // 그룹 일괄 구분 창 — 고른 사람 · 지금 조건에 맞는 전체 · 번호 붙여넣기
+  function filterLabel(){ const f=curFilter(); const parts=[]; if(f.group) parts.push(f.group==='none'?'그룹 없음':('그룹 「'+((gById(f.group)||{}).name||'')+'」')); if(f.consent) parts.push((CONS[f.consent]||['',''])[1]); if(f.q) parts.push('검색 「'+f.q+'」'); return parts.length?parts.join(' · '):'조건 없음 = 연락처 전체'; }
+  const gaMode=()=>{ const r=document.querySelector('input[name="gaMode"]:checked'); return r?r.value:''; };
+  function openGAssign(mode){
+    const n=S.sel.size; $('gaSelL').textContent='고른 사람 '+n+'명';
+    $('gaFilterL').innerHTML='지금 조건에 맞는 전체 <b>'+(S.matched||0)+'명</b> <span class="hint">('+esc(filterLabel())+')</span>';
+    document.querySelector('input[name="gaMode"][value="sel"]').disabled=!n;
+    const m=mode&&(mode!=='sel'||n)?mode:(n?'sel':'filter'); document.querySelector('input[name="gaMode"][value="'+m+'"]').checked=true; $('gaPhones').classList.toggle('hidden',m!=='phones');
+    $('gaMsg').className='msg'; fillGroupSelects();
+    if(S.cGroup&&S.cGroup!=='none'&&!$('gaGroup').value) $('gaGroup').value=S.cGroup;
+    $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new');
+    $('mGAssign').classList.add('on');
+  }
+  $('gaMode').addEventListener('change',()=>{ $('gaPhones').classList.toggle('hidden',gaMode()!=='phones'); if(gaMode()==='phones') $('gaPhones').focus(); });
+  $('cGroupBulk').addEventListener('click',()=>openGAssign());
+  $('cSelGroup').addEventListener('click',()=>openGAssign('sel'));
+  async function gaRun(action){
+    const mode=gaMode(); const body={action}; const gv=$('gaGroup').value;
+    if(gv==='__new'){ if(action==='remove'){ say(false,'빼기는 이미 있는 그룹에서만 할 수 있습니다.',$('gaMsg')); return; } body.group_name=$('gaNew').value.trim(); if(!body.group_name){ say(false,ERR.group_name_required,$('gaMsg')); return; } }
+    else if(gv) body.group_id=Number(gv); else { say(false,ERR.group_required,$('gaMsg')); return; }
+    let n=0;
+    if(mode==='sel'){ body.ids=[...S.sel]; n=body.ids.length; }
+    else if(mode==='filter'){ body.filter=curFilter(); n=S.matched||0; }
+    else { body.phones=$('gaPhones').value; if(!body.phones.trim()){ say(false,'번호를 붙여 넣으세요.',$('gaMsg')); return; } }
+    if(mode!=='phones'&&!n){ say(false,ERR.no_contacts,$('gaMsg')); return; }
+    const gname=gv==='__new'?body.group_name:((gById(gv)||{}).name||'');
+    if(mode==='filter'&&n>50&&!confirm(n+'명을 「'+gname+'」 그룹'+(action==='add'?'에 넣습니다':'에서 뺍니다')+'. 진행할까요?')) return;
+    $('gaAdd').disabled=$('gaRemove').disabled=true;
+    try{
+      const d=await api('POST','/api/wa-promo/groups/assign',body);
+      const t=(action==='add'?'「'+gname+'」에 '+d.changed+'명 넣었습니다'+(d.unchanged?' (이미 들어 있던 '+d.unchanged+'명은 그대로)':''):'「'+gname+'」에서 '+d.changed+'명 뺐습니다')
+        +(d.unknown_n?' · 연락처에 없는 번호 '+d.unknown_n+'개: '+d.unknown_phones.slice(0,8).join(', ')+(d.unknown_n>8?' …':''):'')+'.';
+      if(gv==='__new') $('gaNew').value='';
+      if(mode==='sel') S.sel.clear();
+      await loadContacts();
+      if(d.group_id) $('gaGroup').value=String(d.group_id);
+      $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new');
+      if(d.unknown_n) say(false,t,$('gaMsg')); else { $('mGAssign').classList.remove('on'); say(true,t); }
+    }catch(err){ say(false,errText(err),$('gaMsg')); }
+    finally{ $('gaAdd').disabled=$('gaRemove').disabled=false; }
+  }
+  $('gaAdd').addEventListener('click',()=>gaRun('add'));
+  $('gaRemove').addEventListener('click',()=>gaRun('remove'));
+  // 그룹 관리 창 — 만들기 · 이름 · 색 · 설명 · 보기 · 삭제
+  function openGroups(focusNew){ $('gMsg').className='msg'; renderGroupList(); $('mGroups').classList.add('on'); if(focusNew) setTimeout(()=>$('gNewName').focus(),30); }
+  function renderGroupList(){
+    if(!S.groups.length){ $('gList').innerHTML='<div class="hint">아직 그룹이 없습니다 — 위에서 만드세요(예: Talleres Monterrey · Flotillas · Refaccionarias Mérida · Expo 2026).</div>'; return; }
+    $('gList').innerHTML='<table><thead><tr><th>색</th><th>이름</th><th>설명</th><th class="num">인원</th><th class="num">✅ 동의</th><th></th></tr></thead><tbody>'
+      +S.groups.map(g=>'<tr data-gid="'+g.id+'"><td><input type="color" data-gf="color" value="'+esc(g.color||'#5b6470')+'" style="width:44px;padding:2px"></td><td><input data-gf="name" value="'+esc(g.name)+'" maxlength="60" style="width:170px"></td><td><input data-gf="memo" value="'+esc(g.memo||'')+'" maxlength="300" style="width:190px" placeholder="용도"></td><td class="num">'+g.n+'</td><td class="num">'+g.yes+'</td>'
+        +'<td style="white-space:nowrap"><button type="button" class="btn sm" data-gsave>저장</button> <button type="button" class="btn ghost sm" data-gview>보기</button> <button type="button" class="btn ghost sm" data-gdel style="color:var(--bad);border-color:var(--bad)">삭제</button></td></tr>').join('')+'</tbody></table>';
+  }
+  $('gCreate').addEventListener('click',async()=>{
+    try{ await api('POST','/api/wa-promo/groups',{name:$('gNewName').value,color:$('gNewColor').value}); $('gNewName').value=''; await loadGroups(); say(true,'만들었습니다. 「🏷 그룹 일괄 구분」으로 사람을 넣으세요.',$('gMsg')); }
+    catch(err){ say(false,errText(err),$('gMsg')); }
+  });
+  $('gNewName').addEventListener('keydown',e=>{ if(e.key==='Enter') $('gCreate').click(); });
+  $('gList').addEventListener('click',async e=>{
+    const tr=e.target.closest('tr[data-gid]'); if(!tr) return; const id=Number(tr.dataset.gid); const g=gById(id); if(!g) return;
+    const val=(f)=>tr.querySelector('[data-gf="'+f+'"]').value;
+    try{
+      if(e.target.closest('[data-gsave]')){ await api('PATCH','/api/wa-promo/groups/'+id,{name:val('name'),color:val('color'),memo:val('memo')}); await loadGroups(); renderContacts(); say(true,'저장했습니다.',$('gMsg')); }
+      else if(e.target.closest('[data-gview]')){ $('mGroups').classList.remove('on'); S.cGroup=String(id); S.sel.clear(); loadContacts(); }
+      else if(e.target.closest('[data-gdel]')){ if(!confirm('그룹 「'+g.name+'」('+g.n+'명)을 지울까요? 연락처는 그대로 남고 이 그룹 표시만 없어집니다.')) return; await api('DELETE','/api/wa-promo/groups/'+id); await loadContacts(); say(true,'지웠습니다.',$('gMsg')); }
+    }catch(err){ say(false,errText(err),$('gMsg')); }
+  });
+  // 발송 예약 — 대상 그룹 고르기
+  function renderKGroups(){
+    const on=new Set(S.kGroups||[]);
+    $('kGroups').innerHTML=S.groups.length?S.groups.map(g=>'<label><input type="checkbox" value="'+g.id+'"'+(on.has(g.id)?' checked':'')+'><span class="dot" style="background:'+esc(g.color||'#5b6470')+'"></span>'+esc(g.name)+' <span class="hint">✅'+g.yes+'</span></label>').join(''):'<span class="hint">그룹이 없습니다 — 📇 연락처 화면에서 만드세요.</span>';
+  }
+  $('kGroups').addEventListener('change',()=>{ S.kGroups=[...$('kGroups').querySelectorAll('input:checked')].map(i=>Number(i.value)); audHint(); });
   function setInboxBadge(n){ const b=$('inboxN'); if(n>0){ b.textContent=n; b.classList.remove('hidden'); } else b.classList.add('hidden'); }
   function renderContacts(){
     const c=S.counts;
@@ -546,8 +708,9 @@
       +(c.queued?'<div class="kpi"><div class="k">✉ 동의 요청 대기열</div><div class="v" style="color:var(--warn)">'+c.queued+'</div><div class="hint">하루 상한 안에서 순서대로 발송</div></div>':'');
     $('cAskAll').textContent='✉ 미확인 '+Math.max(0,(c.unknown||0)-(c.queued||0))+'명에게 동의 요청';
     $('cAskAll').disabled=!Math.max(0,(c.unknown||0)-(c.queued||0));
-    if(!S.contacts.length){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">연락처가 없습니다.</div>'; syncSel(); return; }
-    $('cList').innerHTML='<table><thead><tr><th><input type="checkbox" id="cAll"></th><th>이름</th><th>번호</th><th>메모</th><th>상태</th><th>동의 경로 · 일시</th><th>마지막 메시지</th><th></th></tr></thead><tbody>'
+    renderGroupBar();
+    if(!S.contacts.length){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+(S.cGroup||$('cQ').value.trim()||$('cConsent').value?'조건에 맞는 연락처가 없습니다.':'연락처가 없습니다.')+'</div>'; syncSel(); return; }
+    $('cList').innerHTML='<table><thead><tr><th><input type="checkbox" id="cAll"></th><th>이름</th><th>번호</th><th>메모</th><th>그룹</th><th>상태</th><th>동의 경로 · 일시</th><th>마지막 메시지</th><th></th></tr></thead><tbody>'
       +S.contacts.map(x=>{
         let via='—';
         if(x.consent==='yes'||x.consent==='no') via=(VIA[x.consent_via]||x.consent_via||'')+' · '+fmtT(x.consent_at);
@@ -562,8 +725,9 @@
         if(x.consent==='yes') acts.push('<button type="button" class="btn ghost sm" data-act="optout">⛔ 수신거부</button>');
         if(x.last_in_at) acts.push('<button type="button" class="btn ghost sm" data-act="chat">대화</button>');
         acts.push('<button type="button" class="btn ghost sm" data-act="del" title="삭제" style="color:var(--bad);border-color:var(--bad)">✕</button>');
-        return '<tr data-id="'+x.id+'"'+(S.sel.has(x.id)?' class="sel"':'')+'><td><input type="checkbox" data-sel'+(S.sel.has(x.id)?' checked':'')+'></td><td><b>'+esc(x.name)+'</b>'+(x.lead?' <span class="tag t-asked">🙋</span>':'')+'</td><td>'+esc(x.phone_masked)+'</td><td>'+esc(x.memo||'')+'</td><td>'+consTag(x.consent)+'</td><td>'+via+'</td><td>'+fmtT(x.last_in_at)+'</td><td style="white-space:nowrap">'+acts.join(' ')+'</td></tr>';
-      }).join('')+'</tbody></table>';
+        return '<tr data-id="'+x.id+'"'+(S.sel.has(x.id)?' class="sel"':'')+'><td><input type="checkbox" data-sel'+(S.sel.has(x.id)?' checked':'')+'></td><td><b>'+esc(x.name)+'</b>'+(x.lead?' <span class="tag t-asked">🙋</span>':'')+'</td><td>'+esc(x.phone_masked)+'</td><td>'+esc(x.memo||'')+'</td><td>'+(x.groups||[]).map(gById).filter(Boolean).map(gTag).join('')+'</td><td>'+consTag(x.consent)+'</td><td>'+via+'</td><td>'+fmtT(x.last_in_at)+'</td><td style="white-space:nowrap">'+acts.join(' ')+'</td></tr>';
+      }).join('')+'</tbody></table>'
+      +(S.matched>S.contacts.length?'<div class="hint" style="margin-top:6px">조건에 맞는 '+S.matched+'명 중 최근 '+S.contacts.length+'명만 보입니다 — 전체를 그룹에 넣으려면 「🏷 그룹 일괄 구분 › 지금 조건에 맞는 전체」.</div>':'');
     syncSel();
   }
   // 고른 사람을 상태별로 나눈다 — 동의 요청은 ❓ 미확인(대기열 아님)만, 이미지는 ✅ 동의자만
@@ -705,7 +869,7 @@
       const d=await api('POST','/api/wa-promo/contacts/bulk',{rows,dry_run:true}); showImport(d);
     }catch(err){ say(false,'엑셀을 읽지 못했습니다: '+errText(err)); }
   });
-  function openImport(title,survey){ $('mImpTitle').textContent=title; $('mImpSurvey').classList.toggle('hidden',!survey); $('mImpSum').innerHTML=''; $('mImpRows').innerHTML=''; $('mImpSave').disabled=true; $('mImpHint').textContent=''; $('mImport').classList.add('on'); }
+  function openImport(title,survey){ fillGroupSelects(); $('mImpGroup').value=S.cGroup&&S.cGroup!=='none'?S.cGroup:''; $('mImpNewGWrap').classList.add('hidden'); S.impSum=null; $('mImpTitle').textContent=title; $('mImpSurvey').classList.toggle('hidden',!survey); $('mImpSum').innerHTML=''; $('mImpRows').innerHTML=''; $('mImpSave').disabled=true; $('mImpHint').textContent=''; $('mImport').classList.add('on'); }
   const ST={new:['ok-t','새로 등록'],exists:['warn-t','이미 등록됨'],dup_in_file:['warn-t','파일 안 중복'],bad_phone:['bad-t','번호 형식 오류'],no_name:['bad-t','이름 없음']};
   function showImport(d){
     const s=d.summary||{};
@@ -714,16 +878,30 @@
     const rows=(d.rows||[]).slice().sort((a,b)=>(a.status==='new')-(b.status==='new'));
     $('mImpRows').innerHTML='<table><thead><tr><th>#</th><th>이름</th><th>입력 번호</th><th>정리된 번호</th><th>메모</th><th>결과</th></tr></thead><tbody>'
       +rows.map(r=>{ const t=ST[r.status]||['','']; return '<tr><td>'+(r.i+1)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.raw_phone)+'</td><td>'+esc(r.phone||'—')+'</td><td>'+esc(r.memo||'')+'</td><td class="'+t[0]+'">'+t[1]+(r.existing?' ('+esc(r.existing.name)+')':'')+'</td></tr>'; }).join('')+'</tbody></table>';
-    $('mImpSave').disabled=!(s.new>0); $('mImpSave').textContent='새 연락처 '+(s.new||0)+'명 저장';
-    $('mImpHint').textContent=s.new?'새로 등록만 저장합니다 — 나머지는 건너뜀.':'저장할 새 연락처가 없습니다.';
+    S.impSum=s; syncImpSave();
+    $('mImpHint').textContent=s.new?'새로 등록만 저장합니다 — 나머지는 건너뜀(그룹을 고르면 이미 등록된 번호도 그 그룹에).':'저장할 새 연락처가 없습니다 — 그룹을 고르면 이미 등록된 번호를 그 그룹에 넣을 수 있습니다.';
   }
+  function syncImpSave(){
+    const s=S.impSum||{}; const g=!!$('mImpGroup').value;
+    $('mImpSave').disabled=!(s.new>0||(g&&s.exists>0));
+    $('mImpSave').textContent=g?'저장 + 그룹에 넣기 (새 '+(s.new||0)+' · 이미 등록 '+(s.exists||0)+')':'새 연락처 '+(s.new||0)+'명 저장';
+  }
+  $('mImpGroup').addEventListener('change',()=>{ $('mImpNewGWrap').classList.toggle('hidden',$('mImpGroup').value!=='__new'); syncImpSave(); });
   $('mImpSave').addEventListener('click',async()=>{
     $('mImpSave').disabled=true;
     try{
-      let d;
-      if(S.impSource.kind==='excel') d=await api('POST','/api/wa-promo/contacts/bulk',{rows:S.impSource.rows,dry_run:false});
-      else d=await api('POST','/api/wa-promo/survey-import',{...S.impSource.body,dry_run:false});
-      $('mImport').classList.remove('on'); say(true,d.added+'명을 저장했습니다(❓ 미확인). 다음: 「동의 요청」.'); loadContacts();
+      let d; let gid=null; let gname='';
+      const gv=$('mImpGroup').value;
+      if(gv==='__new'){
+        const nm=$('mImpNewG').value.trim(); if(!nm){ $('mImpHint').textContent=ERR.group_name_required; $('mImpSave').disabled=false; return; }
+        try{ gid=(await api('POST','/api/wa-promo/groups',{name:nm})).id; }
+        catch(err){ if(err.message==='group_exists'&&err.data&&err.data.id) gid=err.data.id; else throw err; }
+        gname=nm;
+      } else if(gv){ gid=Number(gv); gname=(gById(gid)||{}).name||''; }
+      const extra=gid?{group_id:gid}:{};
+      if(S.impSource.kind==='excel') d=await api('POST','/api/wa-promo/contacts/bulk',{rows:S.impSource.rows,dry_run:false,...extra});
+      else d=await api('POST','/api/wa-promo/survey-import',{...S.impSource.body,dry_run:false,...extra});
+      $('mImport').classList.remove('on'); say(true,d.added+'명을 저장했습니다(❓ 미확인)'+(gid?' · 「'+gname+'」 그룹에 '+(d.grouped||0)+'명':'')+'. 다음: 「동의 요청」.'); loadContacts();
     }catch(err){ $('mImpHint').textContent=errText(err); $('mImpSave').disabled=false; }
   });
   // 설문
@@ -780,7 +958,7 @@
     $('cal').innerHTML=days.map(day=>{
       const cs=S.camps.filter(c=>c.send_at_mx.slice(0,10)===day);
       return '<div class="day'+(day<today?' past':'')+(day===today?' today':'')+(day.slice(0,7)!==S.month?' out':'')+'" data-day="'+day+'"><div class="d"><span>'+(day.slice(8)==='01'?Number(day.slice(5,7))+'/':'')+Number(day.slice(8))+'</span>'+(cs.length>1?'<span class="tag t-unknown">'+cs.length+'건</span>':'')+'</div>'
-        +cs.map(c=>'<div class="camp" data-camp="'+c.id+'"><img data-img="'+c.id+'" alt=""><div class="cb">'+campState(c)+(c.target_sel?' <span class="tag t-unknown" title="연락처 화면에서 고른 사람에게만">👥 '+c.target_sel+'</span>':'')+'<div style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.caption)+'</div></div></div>').join('')+'</div>';
+        +cs.map(c=>'<div class="camp" data-camp="'+c.id+'"><img data-img="'+c.id+'" alt=""><div class="cb">'+campState(c)+(c.target_sel?' <span class="tag t-unknown" title="연락처 화면에서 고른 사람에게만">👥 '+c.target_sel+'</span>':'')+((c.target_groups&&c.target_groups.length)?' <span class="tag t-unknown" title="그룹 대상">🏷 '+esc(c.target_groups.map(id=>(gById(id)||{}).name||'?').join(', '))+'</span>':'')+'<div style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.caption)+'</div></div></div>').join('')+'</div>';
     }).join('');
     document.querySelectorAll('#cal img[data-img]').forEach(async im=>{ im.src=await imgUrl(im.dataset.img); });
   }
@@ -812,13 +990,21 @@
     $('kCap').focus(); window.scrollTo({top:0,behavior:'smooth'});
     say(true,day+(imageId?' · 「'+((S.bank.find(x=>x.id===imageId)||{}).name||'')+'」':'')+' — 문구를 넣고 「예약」을 누르세요.');
   }
-  $('kAud').addEventListener('change',()=>{ $('kMemoWrap').classList.toggle('hidden',$('kAud').value!=='memo'); audHint(); });
-  function audHint(){ $('kAudN').textContent=$('kAud').value==='memo'?'메모 조건에 맞는 ✅ 동의자에게만':'지금 ✅ 동의 '+(S.audYes||0)+'명(발송 시점에 다시 셈)'; }
+  $('kAud').addEventListener('change',()=>{ $('kMemoWrap').classList.toggle('hidden',$('kAud').value!=='memo'); $('kGroupWrap').classList.toggle('hidden',$('kAud').value!=='group'); audHint(); });
+  let audT=null;
+  function audHint(){
+    const a=$('kAud').value;
+    if(a==='memo'){ $('kAudN').textContent='메모 조건에 맞는 ✅ 동의자에게만'; return; }
+    if(a==='group'){ const gs=S.kGroups||[]; if(!gs.length){ $('kAudN').textContent='그룹을 하나 이상 고르세요.'; return; }
+      clearTimeout(audT); audT=setTimeout(async()=>{ try{ const d=await api('GET','/api/wa-promo/audience?groups='+gs.join(',')); $('kAudN').textContent='고른 그룹의 ✅ 동의 '+d.n+'명(겹치는 사람은 한 번 · 발송 시점에 다시 셈)'; }catch(e){ $('kAudN').textContent=''; } },200); return; }
+    $('kAudN').textContent='지금 ✅ 동의 '+(S.audYes||0)+'명(발송 시점에 다시 셈)';
+  }
   const fileB64=(f)=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
   $('kSave').addEventListener('click',async()=>{
     const f=$('kImg').files&&$('kImg').files[0];
-    const body={send_at:$('kDate').value+'T'+($('kTime').value||'10:00'),caption:$('kCap').value,memo_filter:$('kAud').value==='memo'?$('kMemo').value:''};
+    const body={send_at:$('kDate').value+'T'+($('kTime').value||'10:00'),caption:$('kCap').value,memo_filter:$('kAud').value==='memo'?$('kMemo').value:'',target_groups:$('kAud').value==='group'?(S.kGroups||[]):[]};
     if(!$('kDate').value){ say(false,ERR.bad_send_at); return; }
+    if($('kAud').value==='group'&&!body.target_groups.length){ say(false,'대상 그룹을 하나 이상 고르세요.'); return; }
     if(f){ if(f.size>5*1024*1024){ say(false,ERR.image_too_large); return; } body.image_b64=await fileB64(f); body.image_mime=f.type; body.image_name=f.name; }
     else if(S.kBankId){ body.image_id=S.kBankId; }
     else if(!S.editId){ say(false,ERR.image_required); return; }
@@ -848,7 +1034,7 @@
     const u=await imgUrl(id);
     $('mcPhone').innerHTML='<div class="bub"><img src="'+u+'" alt="">Novedades de Refatrix: '+esc(c.caption.replace(/[\n\t]+/g,' '))+'. Responda BAJA si no desea recibir más mensajes.</div><div class="qr"><span>Quiero cotizar</span><span>Ver catálogo</span><span>BAJA</span></div><div class="hint" style="margin-top:6px">템플릿으로 나갈 때 모습(창이 열린 사람은 이미지 + 문구만)</div>';
     const st=c.stats||{};
-    $('mcInfo').innerHTML='<div>'+campState(c)+'</div><div class="hint" style="margin-top:6px">대상: '+(c.target_sel?'👥 연락처 화면에서 고른 '+c.target_sel+'명(그중 ✅ 동의자)':c.memo_filter?'✅ 동의 중 메모에 「'+esc(c.memo_filter)+'」':'✅ 동의 전체')+(c.target_n!=null?' · 시작 때 '+c.target_n+'명':'')
+    $('mcInfo').innerHTML='<div>'+campState(c)+'</div><div class="hint" style="margin-top:6px">대상: '+(c.target_sel?'👥 연락처 화면에서 고른 '+c.target_sel+'명(그중 ✅ 동의자)':(c.target_groups&&c.target_groups.length)?'🏷 그룹 '+c.target_groups.map(id=>{ const g=gById(id); return g?gTag(g):'(지운 그룹)'; }).join(' ')+' 의 ✅ 동의자':c.memo_filter?'✅ 동의 중 메모에 「'+esc(c.memo_filter)+'」':'✅ 동의 전체')+(c.target_n!=null?' · 시작 때 '+c.target_n+'명':'')
       +'<br>보냄 '+(st.sent||0)+' · 도착 '+(st.delivered||0)+' · 읽음 '+(st.read||0)+' · 실패 '+((st.failed||0)+(st.dlv_failed||0))+' · 답장 '+(st.replied||0)+'명'
       +'<br>이미지 '+esc(c.image_name||'')+' · '+Math.round((c.image_bytes||0)/1024)+'KB · 작성 '+esc(c.created_by_name||'')+'</div>';
     $('mcInfo').insertAdjacentHTML('beforeend',c.image_id?'<div class="hint">🖼 이미지 뱅크 #'+c.image_id+' <button type="button" class="btn ghost sm" id="mcBank">뱅크에서 보기</button></div>':'');
@@ -884,7 +1070,8 @@
     const c=S.camp; if(!c) return; if(S.tab!=='camps') setTab('camps'); S.editId=c.id; setKBank(null);
     $('kTitle').textContent='발송 #'+c.id+' 수정 (이미지는 바꿀 때만 고르세요)'; $('kSave').textContent='수정 저장'; $('kCancelEdit').classList.remove('hidden');
     $('kDate').value=c.send_at_mx.slice(0,10); $('kTime').value=c.send_at_mx.slice(11,16); $('kCap').value=c.caption;
-    $('kAud').value=c.memo_filter?'memo':''; $('kMemo').value=c.memo_filter||''; $('kMemoWrap').classList.toggle('hidden',!c.memo_filter);
+    const cg=(c.target_groups||[]); S.kGroups=cg.slice(); renderKGroups();
+    $('kAud').value=cg.length?'group':(c.memo_filter?'memo':''); $('kMemo').value=c.memo_filter||''; $('kMemoWrap').classList.toggle('hidden',!c.memo_filter||cg.length>0); $('kGroupWrap').classList.toggle('hidden',!cg.length); audHint();
     $('mCamp').classList.remove('on'); window.scrollTo({top:0,behavior:'smooth'});
   });
 
@@ -919,7 +1106,7 @@
   }
   function bankRows(){
     const q=$('bQ').value.trim().toLowerCase(); const fo=$('bFolder').value; const so=$('bSort').value;
-    let r=S.bank.filter(i=>(!q||(i.name||'').toLowerCase().includes(q)||(i.folder||'').toLowerCase().includes(q))&&(!fo||(fo==='__none'?i.folder==null:i.folder===fo)));
+    let r=S.bank.filter(i=>(!q||(i.name||'').toLowerCase().includes(q)||(i.folder||'').toLowerCase().includes(q)||(i.memo||'').toLowerCase().includes(q))&&(!fo||(fo==='__none'?i.folder==null:i.folder===fo)));
     const cmp={new:(a,b)=>String(b.created_mx).localeCompare(String(a.created_mx))||b.id-a.id,name:(a,b)=>String(a.name).localeCompare(String(b.name),'es',{numeric:true}),
       used:(a,b)=>String(b.last_used_mx||'').localeCompare(String(a.last_used_mx||''))||b.id-a.id,uses:(a,b)=>(b.uses||0)-(a.uses||0)||b.id-a.id}[so]||(()=>0);
     return r.sort(cmp);
@@ -932,11 +1119,11 @@
     if(!rows.length){ $('bGrid').innerHTML='<div class="hint" style="margin-top:12px">'+(S.bank.length?'조건에 맞는 이미지가 없습니다.':'아직 이미지가 없습니다 — 위에 끌어다 놓거나 「＋ 파일 고르기」.')+'</div>'; syncBankSel(); return; }
     if(S.bView==='d'){
       $('bGrid').innerHTML='<div class="tblwrap" style="margin-top:10px"><table class="bdet"><thead><tr><th><input type="checkbox" id="bAllCk"></th><th></th><th>파일 이름</th><th>폴더</th><th class="num">크기</th><th>해상도</th><th>올린 날</th><th>올린 사람</th><th class="num">사용</th><th>최근 사용</th></tr></thead><tbody>'
-        +rows.map(i=>'<tr class="'+(S.bSel.has(i.id)?'sel':'')+'" data-bid="'+i.id+'" style="cursor:pointer"><td><input type="checkbox" class="ck" data-ck="'+i.id+'"'+(S.bSel.has(i.id)?' checked':'')+'></td><td><img class="thm" data-th="'+i.id+'" alt=""></td><td><b>'+esc(i.name)+'</b></td><td>'+esc(i.folder||'—')+'</td><td class="num">'+kb(i.size)+'</td><td>'+(i.width?i.width+'×'+i.height:'—')+'</td><td>'+esc(dmy(i.created_mx))+'</td><td>'+esc(i.created_by_name||'')+'</td><td class="num">'+(i.uses||0)+'</td><td>'+esc(dmy(i.last_used_mx)||'—')+'</td></tr>').join('')
+        +rows.map(i=>'<tr class="'+(S.bSel.has(i.id)?'sel':'')+'" data-bid="'+i.id+'" style="cursor:pointer"><td><input type="checkbox" class="ck" data-ck="'+i.id+'"'+(S.bSel.has(i.id)?' checked':'')+'></td><td><img class="thm" data-th="'+i.id+'" alt=""></td><td><b>'+esc(i.name)+'</b>'+(i.source==='platform'?' <span class="pill" title="REFATRIX Platform(본사)에서 올림">🌐 본사</span>':'')+(i.memo?'<div class="hint">'+esc(i.memo)+'</div>':'')+'</td><td>'+esc(i.folder||'—')+'</td><td class="num">'+kb(i.size)+'</td><td>'+(i.width?i.width+'×'+i.height:'—')+'</td><td>'+esc(dmy(i.created_mx))+'</td><td>'+esc(i.created_by_name||'')+'</td><td class="num">'+(i.uses||0)+'</td><td>'+esc(dmy(i.last_used_mx)||'—')+'</td></tr>').join('')
         +'</tbody></table></div>';
     } else {
       $('bGrid').innerHTML='<div class="bgrid v-'+S.bView+'">'+rows.map(i=>'<div class="bcard'+(S.bSel.has(i.id)?' sel':'')+'" data-bid="'+i.id+'" title="'+esc(i.name)+'"><div class="th"><img data-th="'+i.id+'" alt=""></div>'
-        +'<input type="checkbox" class="ck" data-ck="'+i.id+'"'+(S.bSel.has(i.id)?' checked':'')+' aria-label="선택">'+(i.uses?'<span class="use">'+i.uses+'회</span>':'')
+        +'<input type="checkbox" class="ck" data-ck="'+i.id+'"'+(S.bSel.has(i.id)?' checked':'')+' aria-label="선택">'+(i.uses?'<span class="use">'+i.uses+'회</span>':'')+(i.source==='platform'?'<span class="pfb" title="REFATRIX Platform(본사)에서 올림">🌐 본사</span>':'')
         +'<div class="nm">'+esc(i.name)+'</div><div class="mt">'+esc(meta(i))+'</div></div>').join('')+'</div>';
     }
     lazyThumbs($('bGrid')); syncBankSel();
@@ -1006,8 +1193,8 @@
     let it=S.bank.find(x=>x.id===id);
     if(!it){ try{ const d=await api('GET','/api/wa-promo/images'); S.bank=d.items||[]; it=S.bank.find(x=>x.id===id); }catch(e){} }
     if(!it){ say(false,'이미지를 찾지 못했습니다(지워졌을 수 있음).'); return; }
-    S.img=it; $('miTitle').textContent=it.name; $('miName').value=it.name; $('miFolder').value=it.folder||''; $('miMsg').className='msg';
-    $('miMeta').innerHTML=(it.width?it.width+'×'+it.height+' · ':'')+kb(it.size)+' · '+esc(it.mime.replace('image/','').toUpperCase())+' · 올림 '+esc(dmy(it.created_mx))+(it.created_by_name?' · '+esc(it.created_by_name):'');
+    S.img=it; $('miTitle').textContent=it.name; $('miName').value=it.name; $('miFolder').value=it.folder||''; $('miMemo').value=it.memo||''; $('miMsg').className='msg';
+    $('miMeta').innerHTML=(it.width?it.width+'×'+it.height+' · ':'')+kb(it.size)+' · '+esc(it.mime.replace('image/','').toUpperCase())+' · 올림 '+esc(dmy(it.created_mx))+(it.created_by_name?' · '+esc(it.created_by_name):'')+(it.source==='platform'?' · <b>🌐 REFATRIX Platform(본사)에서 올림</b>':'');
     $('miImg').src=await thumbUrl(id); $('mImg').classList.add('on');
     fileUrl(id).then(u=>{ if(S.img&&S.img.id===id&&u) $('miImg').src=u; });
     const vis=S.bVisible||[]; const ix=vis.indexOf(id); $('miPrev').disabled=ix<=0; $('miNext').disabled=ix<0||ix>=vis.length-1;
@@ -1023,7 +1210,7 @@
   document.addEventListener('keydown',e=>{ if(!$('mImg').classList.contains('on')||/INPUT|TEXTAREA|SELECT/.test((e.target&&e.target.tagName)||'')) return; if(e.key==='ArrowLeft') stepImg(-1); if(e.key==='ArrowRight') stepImg(1); if(e.key==='Escape') $('mImg').classList.remove('on'); });
   $('miHist').addEventListener('click',e=>{ const r=e.target.closest('[data-hc]'); if(r){ $('mImg').classList.remove('on'); openCamp(Number(r.dataset.hc),S.imgHist); } });
   $('miSave').addEventListener('click',async()=>{ if(!S.img) return;
-    try{ await api('PATCH','/api/wa-promo/images/'+S.img.id,{name:$('miName').value,folder:$('miFolder').value}); say(true,'저장했습니다.',$('miMsg')); const id=S.img.id; await loadBank(); const it=S.bank.find(x=>x.id===id); if(it){ S.img=it; $('miTitle').textContent=it.name; } }
+    try{ await api('PATCH','/api/wa-promo/images/'+S.img.id,{name:$('miName').value,folder:$('miFolder').value,memo:$('miMemo').value}); say(true,'저장했습니다.',$('miMsg')); const id=S.img.id; await loadBank(); const it=S.bank.find(x=>x.id===id); if(it){ S.img=it; $('miTitle').textContent=it.name; } }
     catch(err){ say(false,errText(err),$('miMsg')); } });
   $('miDel').addEventListener('click',async()=>{ if(!S.img||!confirm('「'+S.img.name+'」을(를) 이미지 뱅크에서 지울까요? 이미 예약 · 발송된 광고는 그대로 남습니다.')) return;
     try{ await api('DELETE','/api/wa-promo/images/'+S.img.id); $('mImg').classList.remove('on'); S.bSel.delete(S.img.id); say(true,'지웠습니다.'); loadBank(); }catch(err){ say(false,errText(err),$('miMsg')); } });

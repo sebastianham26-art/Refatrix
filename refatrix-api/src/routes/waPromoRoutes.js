@@ -12,6 +12,13 @@
 //   PATCH  /api/wa-promo/contacts/:id                    이름·메모·동의(영업 확인)·담당·메모·처리 상태
 //   DELETE /api/wa-promo/contacts/:id                    삭제(소프트)
 //   POST   /api/wa-promo/consent/ask {ids?}              동의 요청 대기열(미확인만 · 1회)
+//   ── 0283 연락처 그룹 ──
+//   GET    /api/wa-promo/groups                          그룹 목록 + 인원(전체 · ✅ 동의) · 그룹 없는 사람 수
+//   POST   /api/wa-promo/groups {name, color?, memo?} · PATCH /api/wa-promo/groups/:id · DELETE (소프트)
+//   POST   /api/wa-promo/groups/assign {group_id | group_name, action: add|remove, ids? | filter?{q,consent,group} | phones?}
+//          고른 사람 · 지금 조건에 맞는 전체 · 번호 붙여넣기 — 한 번에 수천 명
+//   GET    /api/wa-promo/audience?groups=1,2&memo=        예약 전 대상(✅ 동의) 수
+//   (contacts/bulk · survey-import 저장 때 group_id 를 주면 새로 · 이미 등록된 번호 모두 그 그룹에)
 //   GET    /api/wa-promo/survey-sources                  설문 + 이름/전화 문항 추정
 //   POST   /api/wa-promo/survey-import {survey_id, name_k, phone_k, company_k?, dry_run}
 //   발송 일정
@@ -39,6 +46,12 @@
 //   GET    /api/wa-promo/messages/export?from&to&state   엑셀용 원자료
 //   자동응답
 //   GET/POST /api/wa-promo/autoreplies · PATCH/DELETE /api/wa-promo/autoreplies/:id
+//   REFATRIX Platform(본사) 마케팅 이미지 — 0282 · 플랫폼 화면 marketing.html (원본 templates/marketing_platform.html)
+//   POST   /api/pf-images/login {token, name, user_key}   플랫폼 세션 → 1시간 업로드 토큰(typ pf_img · ERP API 는 전부 401)
+//   GET    /api/pf-images                                 내가 올린 것(이름 · 크기 · 올린 날 · 설명 · ERP 에서 정리됐는지)
+//   POST   /api/pf-images {name, mime, image_b64, thumb_b64?, width?, height?, memo?}  1장 → ERP 뱅크 「본사(CTR)」
+//   GET    /api/pf-images/:id/thumb                       내 것만
+//   DELETE /api/pf-images/:id                             내 것 · 아직 광고에 안 쓴 것만
 //   설정
 //   GET    /api/wa-promo/status                          상한 · 템플릿 · 웹훅 · 품질(가능하면)
 //   GET    /api/wa-promo/users                           담당자 선택용
@@ -46,6 +59,7 @@
 import { query } from '../db.js';
 import { authGuard, DIR_SOCIO } from '../middleware/authGuard.js';
 import { pageAllowed } from '../permissions.js';
+import { platformApi } from '../surveyViewer.js';
 import { logEvent } from '../audit.js';
 import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
@@ -92,16 +106,28 @@ const DLV_COLS = `m.status AS dlv_status, m.delivered_at, m.read_at, m.error_cod
 
 export default async function waPromoRoutes(app) {
   // ───────── 연락처 ─────────
-  app.get('/api/wa-promo/contacts', R, async (req) => {
-    const args = []; const conds = ['w.deleted_at IS NULL'];
-    const kw = String(req.query.q || '').trim();
+  // 연락처 조건(목록 · 「조건에 맞는 전체」 그룹 넣기가 같이 쓴다) — q · consent · queued · group(id | none)
+  function contactConds(f, args) {
+    const conds = ['w.deleted_at IS NULL'];
+    const kw = String((f && f.q) || '').trim();
     if (kw) { args.push('%' + kw + '%'); const d = kw.replace(/\D/g, ''); conds.push(`(w.name ILIKE $${args.length} OR w.memo ILIKE $${args.length}${d.length >= 3 ? ` OR w.phone LIKE '%${d}%'` : ''})`); }
-    if (CONSENTS.includes(req.query.consent)) { args.push(req.query.consent); conds.push(`w.consent = $${args.length}`); }
-    if (req.query.queued === '1') conds.push(`w.ask_queued_at IS NOT NULL AND w.asked_at IS NULL`);
+    if (f && CONSENTS.includes(f.consent)) { args.push(f.consent); conds.push(`w.consent = $${args.length}`); }
+    if (f && String(f.queued) === '1') conds.push(`w.ask_queued_at IS NOT NULL AND w.asked_at IS NULL`);
+    const g = f && f.group;
+    if (g === 'none') conds.push(`NOT EXISTS (SELECT 1 FROM wa_contact_groups cg JOIN wa_groups gg ON gg.id = cg.group_id AND gg.deleted_at IS NULL WHERE cg.contact_id = w.id)`);
+    else if (idOf(g)) { args.push(idOf(g)); conds.push(`EXISTS (SELECT 1 FROM wa_contact_groups cg WHERE cg.contact_id = w.id AND cg.group_id = $${args.length})`); }
+    return conds;
+  }
+  app.get('/api/wa-promo/contacts', R, async (req) => {
+    const args = []; const conds = contactConds(req.query, args);
     const limit = Math.min(Number(req.query.limit) || 500, 2000);
     const rows = (await query(
-      `SELECT w.*, u.name AS assigned_name FROM wa_contacts w LEFT JOIN users u ON u.id = w.assigned_to
+      `SELECT w.*, u.name AS assigned_name,
+              ARRAY(SELECT cg.group_id FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL
+                     WHERE cg.contact_id = w.id ORDER BY lower(g.name)) AS group_ids
+         FROM wa_contacts w LEFT JOIN users u ON u.id = w.assigned_to
         WHERE ${conds.join(' AND ')} ORDER BY w.created_at DESC, w.id DESC LIMIT ${limit}`, args)).rows;
+    const matched = Number((await query(`SELECT count(*)::int n FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows[0].n);
     const counts = (await query(
       `SELECT count(*)::int total,
               count(*) FILTER (WHERE consent='yes')::int yes, count(*) FILTER (WHERE consent='asked')::int asked,
@@ -109,7 +135,7 @@ export default async function waPromoRoutes(app) {
               count(*) FILTER (WHERE consent='unknown' AND ask_queued_at IS NOT NULL AND asked_at IS NULL)::int queued,
               count(*) FILTER (WHERE inbox_state='open')::int inbox_open
          FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
-    return { items: rows.map(contactOut), counts };
+    return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched };
   });
 
   app.post('/api/wa-promo/contacts', W, async (req, reply) => {
@@ -131,9 +157,12 @@ export default async function waPromoRoutes(app) {
       const cls = await classifyRows(rows);
       return { dry_run: true, rows: cls, summary: summarize(cls) };
     }
+    const gid = b.group_id != null ? await liveGroupId(b.group_id) : null;
+    if (b.group_id != null && !gid) return reply.code(404).send({ error: 'group_not_found' });
     const r = await insertContacts(rows, { source: 'excel', userId: req.ctx.perm.userId });
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: 'wa_contacts:bulk', detail: { added: r.added, rows: rows.length } });
-    return { dry_run: false, added: r.added, rows: r.rows, summary: summarize(r.rows) };
+    const grouped = gid ? await addToGroup(gid, importedIds(r.rows), req.ctx.perm.userId) : 0;
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: 'wa_contacts:bulk', detail: { added: r.added, rows: rows.length, group: gid, grouped } });
+    return { dry_run: false, added: r.added, grouped, rows: r.rows, summary: summarize(r.rows) };
   });
 
   app.patch('/api/wa-promo/contacts/:id', W, async (req, reply) => {
@@ -216,14 +245,134 @@ export default async function waPromoRoutes(app) {
         source_ref: `survey:${sid}:${p.red_number || p.id}` };
     }).filter((r) => r.phone);
     if (b.dry_run !== false) { const cls = await classifyRows(rows); return { dry_run: true, rows: cls, summary: summarize(cls), pages: pages.length }; }
+    const gid = b.group_id != null ? await liveGroupId(b.group_id) : null;
+    if (b.group_id != null && !gid) return reply.code(404).send({ error: 'group_not_found' });
     const r = await insertContacts(rows, { source: 'survey', userId: req.ctx.perm.userId });
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_contacts:survey:${sid}`, detail: { added: r.added } });
-    return { dry_run: false, added: r.added, summary: summarize(r.rows), pages: pages.length };
+    const grouped = gid ? await addToGroup(gid, importedIds(r.rows), req.ctx.perm.userId) : 0;
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_contacts:survey:${sid}`, detail: { added: r.added, group: gid, grouped } });
+    return { dry_run: false, added: r.added, grouped, summary: summarize(r.rows), pages: pages.length };
   });
+
+  // ───────── 0283 · 연락처 그룹 ─────────
+  const GROUP_COLORS = ['#2a78d6', '#11743b', '#d81e25', '#b26a00', '#7b4bc4', '#0f8a8a', '#c2417d', '#5b6470'];
+  const cleanColor = (v) => (/^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v).toLowerCase() : null);
+  async function liveGroupId(v) {
+    const id = idOf(v); if (!id) return null;
+    const r = (await query(`SELECT id FROM wa_groups WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    return r ? Number(r.id) : null;
+  }
+  function importedIds(rows) {     // 새로 등록 + 이미 등록된 번호(같은 사람) — 파일 안 중복 · 오류는 뺀다
+    const s = new Set();
+    for (const r of rows || []) { if (r.status === 'new' && r.id) s.add(Number(r.id)); else if (r.status === 'exists' && r.existing && r.existing.id) s.add(Number(r.existing.id)); }
+    return [...s];
+  }
+  async function addToGroup(gid, ids, userId) {
+    if (!ids.length) return 0;
+    return (await query(
+      `INSERT INTO wa_contact_groups (contact_id, group_id, added_by)
+       SELECT w.id, $2, $3 FROM wa_contacts w WHERE w.id = ANY($1::bigint[]) AND w.deleted_at IS NULL
+       ON CONFLICT (contact_id, group_id) DO NOTHING`, [ids, gid, userId])).rowCount;
+  }
+  async function groupList() {
+    const rows = (await query(
+      `SELECT g.id, g.name, g.color, g.memo, ${MXT('g.created_at')} AS created_mx,
+              count(w.id)::int AS n, count(w.id) FILTER (WHERE w.consent='yes')::int AS yes
+         FROM wa_groups g LEFT JOIN wa_contact_groups cg ON cg.group_id = g.id
+         LEFT JOIN wa_contacts w ON w.id = cg.contact_id AND w.deleted_at IS NULL
+        WHERE g.deleted_at IS NULL GROUP BY g.id ORDER BY lower(g.name)`)).rows;
+    const none = (await query(
+      `SELECT count(*)::int n, count(*) FILTER (WHERE consent='yes')::int yes FROM wa_contacts w WHERE w.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL WHERE cg.contact_id = w.id)`)).rows[0];
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id) })), none };
+  }
+  app.get('/api/wa-promo/groups', R, async () => groupList());
+  async function createGroup(name, b, userId) {
+    const n = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!n) return { error: 'group_name_required' };
+    const ex = (await query(`SELECT id FROM wa_groups WHERE lower(name)=lower($1) AND deleted_at IS NULL`, [n])).rows[0];
+    if (ex) return { id: Number(ex.id), exists: true };
+    const cnt = Number((await query(`SELECT count(*)::int n FROM wa_groups`)).rows[0].n);
+    const r = (await query(`INSERT INTO wa_groups (name, color, memo, created_by) VALUES ($1,$2,$3,$4)
+                             ON CONFLICT (lower(name)) WHERE deleted_at IS NULL DO UPDATE SET updated_at = wa_groups.updated_at RETURNING id`,
+      [n, cleanColor(b && b.color) || GROUP_COLORS[cnt % GROUP_COLORS.length], String((b && b.memo) || '').trim().slice(0, 300) || null, userId])).rows[0];
+    return { id: Number(r.id) };
+  }
+  app.post('/api/wa-promo/groups', W, async (req, reply) => {
+    const b = req.body || {};
+    const r = await createGroup(b.name, b, req.ctx.perm.userId);
+    if (r.error) return reply.code(400).send({ error: r.error });
+    if (r.exists) return reply.code(409).send({ error: 'group_exists', id: r.id });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_group:${r.id}`, detail: { name: b.name } });
+    return { id: r.id };
+  });
+  app.patch('/api/wa-promo/groups/:id', W, async (req, reply) => {
+    const id = await liveGroupId(req.params.id); if (!id) return reply.code(404).send({ error: 'not_found' });
+    const b = req.body || {}; const sets = []; const args = [id];
+    if (b.name !== undefined) {
+      const n = String(b.name || '').replace(/\s+/g, ' ').trim().slice(0, 60); if (!n) return reply.code(400).send({ error: 'group_name_required' });
+      if ((await query(`SELECT 1 FROM wa_groups WHERE lower(name)=lower($1) AND deleted_at IS NULL AND id<>$2`, [n, id])).rows[0]) return reply.code(409).send({ error: 'group_exists' });
+      args.push(n); sets.push(`name=$${args.length}`);
+    }
+    if (b.color !== undefined) { args.push(cleanColor(b.color)); sets.push(`color=COALESCE($${args.length}, color)`); }
+    if (b.memo !== undefined) { args.push(String(b.memo || '').trim().slice(0, 300) || null); sets.push(`memo=$${args.length}`); }
+    if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    await query(`UPDATE wa_groups SET ${sets.join(', ')}, updated_at=now() WHERE id=$1`, args);
+    return { ok: true };
+  });
+  app.delete('/api/wa-promo/groups/:id', W, async (req, reply) => {
+    const id = await liveGroupId(req.params.id); if (!id) return reply.code(404).send({ error: 'not_found' });
+    // 예약된 발송이 이 그룹만 대상으로 하면 지우지 못하게(대상이 「동의 전체」로 바뀌는 사고 방지)
+    const used = (await query(`SELECT id FROM wa_campaigns WHERE status IN ('scheduled','sending') AND $1 = ANY(target_groups)`, [id])).rows;
+    if (used.length) return reply.code(409).send({ error: 'group_in_use', campaigns: used.map((r) => Number(r.id)) });
+    await query(`UPDATE wa_groups SET deleted_at=now() WHERE id=$1`, [id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `wa_group:${id}` });
+    return { ok: true };
+  });
+  // 한 번에 그룹에 넣기 / 빼기 — ids(고른 사람) · filter(지금 조건에 맞는 전체) · phones(번호 붙여넣기) 중 하나
+  app.post('/api/wa-promo/groups/assign', W, async (req, reply) => {
+    const b = req.body || {};
+    const action = b.action === 'remove' ? 'remove' : 'add';
+    let gid = null; let created = false;
+    if (b.group_id != null) { gid = await liveGroupId(b.group_id); if (!gid) return reply.code(404).send({ error: 'group_not_found' }); }
+    else if (b.group_name && action === 'add') { const r = await createGroup(b.group_name, b, req.ctx.perm.userId); if (r.error) return reply.code(400).send({ error: r.error }); gid = r.id; created = !r.exists; }
+    else return reply.code(400).send({ error: 'group_required' });
+    let ids = []; let unknownPhones = []; let mode;
+    if (Array.isArray(b.ids)) {
+      mode = 'ids'; ids = targetIdsOf(b.ids) || [];
+      if (ids.length > 20000) return reply.code(400).send({ error: 'too_many_contacts' });
+    } else if (b.filter && typeof b.filter === 'object') {
+      mode = 'filter'; const args = []; const conds = contactConds(b.filter, args);
+      ids = (await query(`SELECT w.id FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows.map((r) => Number(r.id));
+    } else if (Array.isArray(b.phones) || typeof b.phones === 'string') {
+      mode = 'phones';
+      const raw = (Array.isArray(b.phones) ? b.phones : String(b.phones).split(/[\n,;\t]+/)).map((x) => String(x || '').trim()).filter(Boolean).slice(0, 20000);
+      const norm = new Map(); for (const x of raw) { const p = normalizeWaNumber(x); if (p) norm.set(p, x); else unknownPhones.push(x); }
+      const found = (await query(`SELECT id, phone FROM wa_contacts WHERE deleted_at IS NULL AND phone = ANY($1::text[])`, [[...norm.keys()]])).rows;
+      const fset = new Set(found.map((r) => r.phone));
+      for (const [p, x] of norm) if (!fset.has(p)) unknownPhones.push(x);
+      ids = found.map((r) => Number(r.id));
+    } else return reply.code(400).send({ error: 'no_contacts' });
+    let changed = 0;
+    if (action === 'add') changed = await addToGroup(gid, ids, req.ctx.perm.userId);
+    else if (ids.length) changed = (await query(`DELETE FROM wa_contact_groups WHERE group_id=$1 AND contact_id = ANY($2::bigint[])`, [gid, ids])).rowCount;
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `wa_group:${gid}`, detail: { action, mode, matched: ids.length, changed } });
+    return { group_id: gid, created, action, matched: ids.length, changed, unchanged: ids.length - changed,
+      unknown_phones: unknownPhones.slice(0, 200), unknown_n: unknownPhones.length };
+  });
+  // 예약 전 대상 수
+  app.get('/api/wa-promo/audience', R, async (req) => {
+    const groups = String(req.query.groups || '').split(',').map(idOf).filter(Boolean);
+    return { n: await audienceCount({ memo_filter: req.query.memo || null, target_groups: groups }) };
+  });
+  async function cleanGroups(v) {   // 예약 대상 그룹 — 살아 있는 그룹만, 없으면 null
+    const ids = targetIdsOf(v); if (!ids) return null;
+    const ok = (await query(`SELECT id FROM wa_groups WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`, [ids])).rows.map((r) => Number(r.id));
+    return ok.length ? ok : undefined;   // undefined = 고른 그룹이 다 없어짐(오류)
+  }
 
   // ───────── 발송 일정 ─────────
   const CAMP_COLS = `c.id, ${MXT('c.send_at')} AS send_at_mx, c.send_at, c.caption, c.image_mime, c.image_name, octet_length(c.image) AS image_bytes,
-                     c.memo_filter, COALESCE(cardinality(c.target_ids), 0) AS target_sel, c.image_id, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
+                     c.memo_filter, COALESCE(cardinality(c.target_ids), 0) AS target_sel, c.target_groups, c.image_id, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
   async function campaignStats(ids) {
     if (!ids.length) return new Map();
     const rows = (await query(
@@ -249,7 +398,7 @@ export default async function waPromoRoutes(app) {
     const rows = (await query(`SELECT ${CAMP_COLS} FROM wa_campaigns c LEFT JOIN users u ON u.id=c.created_by
                                 WHERE ${conds.map((x) => `(${x})`).join(' AND ')} ORDER BY c.send_at, c.id`, args)).rows;
     const st = await campaignStats(rows.map((r) => Number(r.id)));
-    return { items: rows.map((r) => ({ ...r, id: Number(r.id), image_id: r.image_id != null ? Number(r.image_id) : null, image_bytes: Number(r.image_bytes), target_sel: Number(r.target_sel), stats: st.get(Number(r.id)) || null })),
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), image_id: r.image_id != null ? Number(r.image_id) : null, image_bytes: Number(r.image_bytes), target_sel: Number(r.target_sel), target_groups: (r.target_groups || []).map(Number), stats: st.get(Number(r.id)) || null })),
       audience_yes: await audienceCount(null) };
   });
 
@@ -267,10 +416,11 @@ export default async function waPromoRoutes(app) {
     const ex = (await q(`SELECT id FROM wa_images WHERE deleted_at IS NULL AND hash = md5($1::bytea)`, [img.buf])).rows[0];
     if (ex) return { id: Number(ex.id), duplicate: true };
     const r = (await q(
-      `INSERT INTO wa_images (name, mime, bytes, size, hash, width, height, thumb, folder, created_by)
-       VALUES ($1,$2,$3,$4,md5($3::bytea),$5,$6,$7,$8,$9)
+      `INSERT INTO wa_images (name, mime, bytes, size, hash, width, height, thumb, folder, created_by, source, pf_user, pf_user_name, memo)
+       VALUES ($1,$2,$3,$4,md5($3::bytea),$5,$6,$7,$8,$9,COALESCE($10,'erp'),$11,$12,$13)
        ON CONFLICT (hash) WHERE deleted_at IS NULL DO UPDATE SET updated_at = wa_images.updated_at RETURNING id, (xmax = 0) AS inserted`,
-      [img.name || 'imagen', img.mime, img.buf, img.buf.length, extra.width || null, extra.height || null, extra.thumb || null, extra.folder || null, userId])).rows[0];
+      [img.name || 'imagen', img.mime, img.buf, img.buf.length, extra.width || null, extra.height || null, extra.thumb || null, extra.folder || null, userId,
+        extra.source || null, extra.pf_user || null, extra.pf_user_name || null, extra.memo || null])).rows[0];
     return { id: Number(r.id), duplicate: !r.inserted };
   }
   async function bankImage(id) {
@@ -316,14 +466,21 @@ export default async function waPromoRoutes(app) {
       targets = rows.filter((r) => r.consent === 'yes').map((r) => Number(r.id));
       if (!targets.length) return reply.code(400).send({ error: 'no_consented', picked });
     }
+    // 0283 · 그룹 대상(고른 사람이 아닐 때) — 그룹 중 하나라도 들어 있는 ✅ 동의자 · 0명이면 만들지 않는다
+    let groups = null;
+    if (!targets && b.target_groups != null && targetIdsOf(b.target_groups)) {
+      groups = await cleanGroups(b.target_groups);
+      if (groups === undefined) return reply.code(404).send({ error: 'group_not_found' });
+      if (!(await audienceCount({ memo_filter: b.memo_filter, target_groups: groups }))) return reply.code(400).send({ error: 'no_consented_in_groups' });
+    }
     const r = (await query(
-      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, target_ids, created_by${bankId ? ', image_id' : ''})
-       VALUES (CASE WHEN $8 THEN now() ELSE ($1::timestamp AT TIME ZONE 'America/Mexico_City') END,$2,$3,$4,$5,$6,$7::bigint[],$9${bankId ? ',$10' : ''})
+      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, target_ids, created_by, target_groups${bankId ? ', image_id' : ''})
+       VALUES (CASE WHEN $8 THEN now() ELSE ($1::timestamp AT TIME ZONE 'America/Mexico_City') END,$2,$3,$4,$5,$6,$7::bigint[],$9,$10::bigint[]${bankId ? ',$11' : ''})
        RETURNING id, (send_at <= now()) AS past`,
-      [now ? null : b.send_at, caption, img.buf, img.mime, img.name, targets ? null : (String(b.memo_filter || '').trim() || null), targets, now, req.ctx.perm.userId].concat(bankId ? [bankId] : []))).rows[0];
+      [now ? null : b.send_at, caption, img.buf, img.mime, img.name, targets ? null : (String(b.memo_filter || '').trim() || null), targets, now, req.ctx.perm.userId, groups].concat(bankId ? [bankId] : []))).rows[0];
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_campaign:${r.id}`,
       detail: { send_at: now ? 'now' : b.send_at, targets: targets ? targets.length : null } });
-    return { id: Number(r.id), past: r.past === true, audience: await audienceCount({ memo_filter: b.memo_filter, target_ids: targets }), picked,
+    return { id: Number(r.id), past: r.past === true, audience: await audienceCount({ memo_filter: targets ? null : b.memo_filter, target_ids: targets, target_groups: groups }), picked,
       remaining_today: Math.max(0, promoCfg().cap - await sentToday()) };
   });
   app.patch('/api/wa-promo/campaigns/:id', IMG_LIMIT, async (req, reply) => {
@@ -333,6 +490,11 @@ export default async function waPromoRoutes(app) {
     if (b.send_at != null) { if (!localMx(b.send_at)) return reply.code(400).send({ error: 'bad_send_at' }); put(`send_at=(?::timestamp AT TIME ZONE 'America/Mexico_City')`, b.send_at); }
     if (b.caption != null) { const c = String(b.caption).trim(); if (!c) return reply.code(400).send({ error: 'caption_required' }); if (c.length > 900) return reply.code(400).send({ error: 'caption_too_long' }); put('caption=?', c); }
     if (b.memo_filter !== undefined) put('memo_filter=?', String(b.memo_filter || '').trim() || null);
+    if (b.target_groups !== undefined) {   // 0283 · 빈 배열 = 그룹 조건 없앰(동의 전체)
+      const g = targetIdsOf(b.target_groups) ? await cleanGroups(b.target_groups) : null;
+      if (g === undefined) return reply.code(404).send({ error: 'group_not_found' });
+      put('target_groups=?::bigint[]', g);
+    }
     let img = readImage(b);
     if (img.error) return reply.code(400).send({ error: img.error });
     let bankId = null;
@@ -380,7 +542,8 @@ export default async function waPromoRoutes(app) {
   });
 
   // ───────── 0281 · 이미지 뱅크 ─────────
-  const IMG_COLS = `i.id, i.name, i.mime, i.size, i.width, i.height, i.folder, i.created_at, ${MXT('i.created_at')} AS created_mx, (i.thumb IS NOT NULL) AS has_thumb, u.name AS created_by_name`;
+  const IMG_COLS = `i.id, i.name, i.mime, i.size, i.width, i.height, i.folder, i.created_at, ${MXT('i.created_at')} AS created_mx, (i.thumb IS NOT NULL) AS has_thumb,
+    COALESCE(u.name, CASE WHEN i.source = 'platform' THEN '본사 · ' || COALESCE(i.pf_user_name, '') END) AS created_by_name, i.source, i.memo`;
   app.get('/api/wa-promo/images', R, async (req) => {
     const args = []; const conds = ['i.deleted_at IS NULL'];
     const kw = String(req.query.q || '').trim();
@@ -416,6 +579,7 @@ export default async function waPromoRoutes(app) {
     const b = req.body || {}; const sets = []; const args = [id];
     if (b.name !== undefined) { const n = String(b.name || '').trim().slice(0, 120); if (!n) return reply.code(400).send({ error: 'name_required' }); args.push(n); sets.push(`name=$${args.length}`); }
     if (b.folder !== undefined) { args.push(String(b.folder || '').trim().slice(0, 60) || null); sets.push(`folder=$${args.length}`); }
+    if (b.memo !== undefined) { args.push(String(b.memo || '').trim().slice(0, 500) || null); sets.push(`memo=$${args.length}`); }
     if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
     const r = (await query(`UPDATE wa_images SET ${sets.join(', ')}, updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id`, args)).rows[0];
     return r ? { ok: true } : reply.code(404).send({ error: 'not_found' });
@@ -600,6 +764,82 @@ export default async function waPromoRoutes(app) {
       webhook: !!(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN && process.env.WHATSAPP_APP_SECRET),
       sending_campaigns: due, meta: await quality() };
   });
+  // ───────── REFATRIX Platform(본사) 마케팅 이미지 — 0282 (2026-10-16) ─────────
+  //   플랫폼 로그인한 사람 모두 · 올리면 ERP 뱅크 「본사(CTR)」 폴더에 바로(승인 없음) · 플랫폼은 자기 것만 본다.
+  //   토큰 typ=pf_img → authGuard 가 ERP API 를 전부 401 로 막는다(설문 열람 토큰과 같은 방식).
+  const PF_TYP = 'pf_img';
+  const PF_FOLDER = '본사(CTR)';
+  const PF_DAY_CAP = 400;                                  // 한 사람 하루 업로드 상한(실수 · 남용 방지)
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const pfClean = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n) || null;
+  async function pfGuard(req, reply) {
+    try { await req.jwtVerify(); } catch { return reply.code(401).send({ error: 'unauthorized' }); }
+    const u = req.user || {};
+    if (u.typ !== PF_TYP || !u.uk) return reply.code(401).send({ error: 'unauthorized' });
+    req.pf = { key: String(u.uk), name: String(u.name || 'REFATRIX Platform') };
+  }
+  const PF_R = { preHandler: [pfGuard] };
+  const PF_IMG = { preHandler: [pfGuard], bodyLimit: 9 * 1024 * 1024 };
+  app.post('/api/pf-images/login', async (req, reply) => {
+    const b = req.body || {};
+    const tok = String(b.token || '').trim();
+    if (!UUID_RE.test(tok)) return reply.code(401).send({ error: 'platform_session_invalid' });
+    const chk = await platformApi.log(tok, '마케팅 이미지 뱅크 접속 (ERP 연동)');
+    if (!chk.ok) return reply.code(chk.invalid ? 401 : 502).send({ error: chk.invalid ? 'platform_session_invalid' : (chk.error || 'platform_unreachable') });
+    const name = pfClean(b.name, 80) || 'REFATRIX Platform';
+    const uk = pfClean(b.user_key, 80) || name;
+    await logEvent({ userId: null, action: 'login', target: 'pf_images:' + name, result: 'ok' }).catch(() => {});
+    const token = await reply.jwtSign({ sub: 'pfimg', typ: PF_TYP, uk, name }, { expiresIn: '1h' });
+    return { token, name, folder: PF_FOLDER, max_bytes: MAX_IMAGE_BYTES };
+  });
+  app.get('/api/pf-images', PF_R, async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const rows = (await query(
+      `SELECT i.id, i.name, i.mime, i.size, i.width, i.height, i.memo, ${MXT('i.created_at')} AS created_mx,
+              (i.thumb IS NOT NULL) AS has_thumb, (i.deleted_at IS NOT NULL) AS removed,
+              EXISTS (SELECT 1 FROM wa_campaigns c WHERE c.image_id = i.id AND c.status <> 'cancelled') AS used
+         FROM wa_images i WHERE i.source = 'platform' AND i.pf_user = $1
+        ORDER BY i.created_at DESC, i.id DESC LIMIT 1000`, [req.pf.key])).rows;
+    return { name: req.pf.name, folder: PF_FOLDER, items: rows.map((r) => ({ id: Number(r.id), name: r.name, mime: r.mime, size: r.size, width: r.width, height: r.height,
+      memo: r.memo, created_mx: r.created_mx, has_thumb: r.has_thumb, removed: r.removed })) };
+  });
+  app.post('/api/pf-images', PF_IMG, async (req, reply) => {
+    const b0 = req.body || {};
+    const b = { ...b0, image_mime: b0.image_mime || b0.mime, image_name: b0.image_name || b0.name };
+    const img = readImage(b);
+    if (img.error) return reply.code(400).send({ error: img.error });
+    if (img.none) return reply.code(400).send({ error: 'image_required' });
+    const today = (await query(`SELECT count(*)::int n FROM wa_images WHERE source='platform' AND pf_user=$1 AND created_at > now() - interval '24 hours'`, [req.pf.key])).rows[0].n;
+    if (today >= PF_DAY_CAP) return reply.code(429).send({ error: 'daily_cap', cap: PF_DAY_CAP });
+    let thumb = null;
+    if (b.thumb_b64) { thumb = Buffer.from(String(b.thumb_b64).replace(/^data:[^,]*,/, ''), 'base64'); if (!thumb.length || thumb.length > 600 * 1024) thumb = null; }
+    const dim = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 && n < 20000 ? n : null; };
+    const r = await saveToBank(img, null, { thumb, width: dim(b.width), height: dim(b.height), folder: PF_FOLDER,
+      source: 'platform', pf_user: req.pf.key, pf_user_name: req.pf.name, memo: pfClean(b.memo, 500) });
+    if (!r.duplicate) await logEvent({ userId: null, action: 'create', target: `wa_image:${r.id}`, detail: { platform: req.pf.name, name: img.name, size: img.buf.length } }).catch(() => {});
+    return { id: r.id, duplicate: r.duplicate };
+  });
+  async function pfOwn(req) {
+    const id = idOf(req.params.id);
+    return id && (await query(`SELECT id, thumb, bytes, mime, deleted_at FROM wa_images WHERE id=$1 AND source='platform' AND pf_user=$2`, [id, req.pf.key])).rows[0];
+  }
+  app.get('/api/pf-images/:id/thumb', PF_R, async (req, reply) => {
+    const r = await pfOwn(req);
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    reply.header('Cache-Control', 'private, max-age=600');
+    if (r.thumb) { reply.header('Content-Type', 'image/jpeg'); return reply.send(r.thumb); }
+    reply.header('Content-Type', r.mime); return reply.send(r.bytes);
+  });
+  app.delete('/api/pf-images/:id', PF_R, async (req, reply) => {
+    const r = await pfOwn(req);
+    if (!r || r.deleted_at) return reply.code(404).send({ error: 'not_found' });
+    const used = (await query(`SELECT 1 FROM wa_campaigns WHERE image_id=$1 AND status <> 'cancelled' LIMIT 1`, [r.id])).rows[0];
+    if (used) return reply.code(409).send({ error: 'already_used' });
+    await query(`UPDATE wa_images SET deleted_at=now() WHERE id=$1`, [r.id]);
+    await logEvent({ userId: null, action: 'delete', target: `wa_image:${r.id}`, detail: { platform: req.pf.name } }).catch(() => {});
+    return { ok: true };
+  });
+
   app.get('/api/wa-promo/users', R, async () => ({
     items: (await query(`SELECT id, name, role FROM users WHERE deleted_at IS NULL ORDER BY name`)).rows.map((u) => ({ id: Number(u.id), name: u.name, role: u.role })) }));
 }
