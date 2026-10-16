@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1012mix1</title>
+<title>Refatrix ERP · 제품 조회 · ps-1015vdrill</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1110,12 +1110,23 @@
       const d=await fetch(session.api+'/api/products/by-vehicle?'+params.toString(),{headers:auth()}).then(x=>x.json());
       const items=d.items||[];
       if(!items.length){r.innerHTML='<div class="hint">조건에 맞는 제품이 없습니다.</div>';return;}
+      // 2026-10-15 vf-drill — 차종 결과도 「제품 검색」과 같은 드릴다운(판매 고객·원가·랙·사진·OE·활성 패널)으로 펼친다.
+      // 같은 toggleDrill()/drillHtml()을 그대로 재사용 — 화면 이동 없이 행 클릭 = 펼치기/접기.
       const byCode={};
-      items.forEach(it=>{(byCode[it.code] ||= {code:it.code,name:it.name,apps:[]}).apps.push(it);});
+      items.forEach(it=>{(byCode[it.code] ||= {id:it.id,code:it.code,name:it.name,scode:it.scode||'',app:it.app||'',apps:[]}).apps.push(it);});
       const groups=Object.values(byCode);
+      const VEH_COLN=3;
       r.innerHTML='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th>매칭된 적용차종</th></tr></thead><tbody>'+
-        groups.map(g=>`<tr><td class="code">${g.code}</td><td>${g.name||''}</td><td class="hint" style="margin:0">${g.apps.map(a=>'<span class="tag">'+(a.app_text||'')+'</span>').join(' ')}</td></tr>`).join('')+'</tbody></table>'
-        +`<div class="hint">${groups.length}개 제품 매칭${items.length>=300?' (300건 제한, 더 좁혀주세요)':''}.</div>`;
+        groups.map(g=>{
+          // 드릴다운 상단 「적용차종 전체」 — 서버가 p.app(원문 전체)을 주면 그것, 구버전 API면 매칭된 항목만이라도.
+          const fullApp=g.app||g.apps.map(a=>a.app_text||'').filter(Boolean).join(' // ');
+          return '<tr class="prow vrow" data-pid="'+Number(g.id)+'" data-app="'+escP(fullApp)+'" data-code="'+escP(g.code)+'" data-syd="'+escP(g.scode)+'" data-name="'+escP(g.name||'')+'" style="cursor:pointer">'
+            +'<td class="code"><span class="tri">▸</span>'+escP(g.code)+'</td><td>'+escP(g.name||'')+'</td>'
+            +'<td class="hint" style="margin:0">'+g.apps.map(a=>'<span class="tag">'+escP(a.app_text||'')+'</span>').join(' ')+'</td></tr>';
+        }).join('')+'</tbody></table>'
+        +'<div class="hint">'+groups.length+'개 제품 매칭'+(items.length>=300?' (300건 제한, 더 좁혀주세요)':'')+'. 행을 클릭하면 제품 검색과 같은 상세(판매 고객·수량·재고·랙·사진)가 펼쳐집니다.</div>';
+      r.querySelectorAll('tr.vrow').forEach(tr=>{ const pid=Number(tr.getAttribute('data-pid'));
+        if(pid) tr.addEventListener('click',()=>toggleDrill(tr, pid, VEH_COLN)); });
     }catch(e){r.innerHTML='<div class="hint">검색 실패.</div>';}
   }
 
@@ -2308,7 +2319,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build ps-1012mix1 (FOB·수입부대비용 구성)'); }catch(e){}
+  try{ console.log('[refatrix-products] build ps-1015vdrill (차종 찾기 드릴다운)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);

@@ -1414,7 +1414,7 @@ export default async function productRoutes(app) {
     if (q) { params.push(`%${q}%`); conds.push(`(a.app_text ILIKE $${params.length} OR a.model ILIKE $${params.length})`); }
     if (year != null && Number.isFinite(year)) { params.push(year); conds.push(`a.year_from <= $${params.length} AND a.year_to >= $${params.length}`); }
     const rows = (await query(
-      `SELECT p.id, p.code, p.name, p.scode, a.app_text, a.maker, a.model, a.year_from, a.year_to
+      `SELECT p.id, p.code, p.name, p.scode, p.app, a.app_text, a.maker, a.model, a.year_from, a.year_to
          FROM product_applications a JOIN products p ON p.id=a.product_id
         WHERE ${conds.join(' AND ')}
         ORDER BY p.code, a.year_from
