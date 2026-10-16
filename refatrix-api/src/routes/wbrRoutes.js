@@ -7,14 +7,19 @@ import { summarizeSla } from '../stageSla.js';
 import { buildStageCohorts, getSlaKpi } from '../stageCohorts.js';
 import { extractText } from '../mbrSummary.js';
 import {
-  buildDraftPrompt, parseDraft, draftIsEmpty, condenseEntries,
+  buildDraftPrompt, parseDraft, draftIsEmpty, condenseEntries, DRAFT_TOOL, hasJsonObject,
   isDateStr, daysBetween, MAX_RANGE_DAYS,
 } from '../wbrJournalDraft.js';
 
-// ── 「📝 나의 기록」 → 이슈 초안용 Anthropic 호출(wbrMbrRoutes 와 같은 방식) ──
+// ── 「📝 나의 기록」 → 이슈 초안용 Anthropic 호출 ──
+//   2026-10-15 수정(wjd-1015): 기록이 많은 주에 「찾지 못했습니다(ai_empty)」가 나던 문제.
+//     원인 ① max_tokens 3000 — 한국어 불릿 수십 개를 쓰다 출력이 중간에 잘려 JSON 이 깨짐 → parseDraft null.
+//     원인 ② 자유 텍스트 JSON — 문장 안의 따옴표(15" 휠, "Autozone" 등)가 이스케이프 안 되면 파싱 실패.
+//     → 도구 호출(tool_use, 스키마 강제)로 받아 JSON 깨짐을 없애고, 출력 한도를 늘리고,
+//       잘림(stop_reason=max_tokens)·파싱 실패를 ai_empty 와 구분해 화면에 정확히 알린다.
 const DRAFT_MODEL = process.env.WBR_DRAFT_MODEL || 'claude-sonnet-4-5-20250929';
-const DRAFT_MAX_OUTPUT_TOKENS = 3000;
-const DRAFT_TIMEOUT_MS = 120000;
+const DRAFT_MAX_OUTPUT_TOKENS = 8000;
+const DRAFT_TIMEOUT_MS = 180000;
 
 function journalDraftEnabled() {
   if (process.env.WBR_DRAFT_ENABLED === '0') return false;
@@ -35,6 +40,8 @@ async function callDraftAi(prompt) {
       body: JSON.stringify({
         model: DRAFT_MODEL,
         max_tokens: DRAFT_MAX_OUTPUT_TOKENS,
+        tools: [DRAFT_TOOL],
+        tool_choice: { type: 'tool', name: DRAFT_TOOL.name },
         messages: [{ role: 'user', content: prompt }],
       }),
       signal: ctrl.signal,
@@ -44,7 +51,14 @@ async function callDraftAi(prompt) {
       const msg = (data && data.error && data.error.message) || ('http_' + resp.status);
       return { ok: false, error: msg };
     }
-    return { ok: true, text: extractText(data) };
+    const blocks = Array.isArray(data && data.content) ? data.content : [];
+    const tu = blocks.find((b) => b && b.type === 'tool_use' && b.name === DRAFT_TOOL.name);
+    return {
+      ok: true,
+      input: tu ? tu.input : null,          // 도구 입력 = 이미 파싱된 객체
+      text: extractText(data),              // 도구를 안 쓰고 텍스트로 답한 경우의 대비
+      stop_reason: data && data.stop_reason,
+    };
   } catch (e) {
     return { ok: false, error: e && e.name === 'AbortError' ? 'timeout' : 'network' };
   } finally { clearTimeout(timer); }
@@ -333,8 +347,17 @@ export default async function wbrRoutes(app) {
 
     const ai = await callDraftAi(buildDraftPrompt(entries, from, to));
     if (!ai.ok) return reply.code(502).send({ error: 'ai_failed', detail: ai.error });
-    const draft = parseDraft(ai.text);
-    if (!draft || draftIsEmpty(draft)) return reply.code(502).send({ error: 'ai_empty' });
+    // 도구 입력(객체)을 우선, 없으면 텍스트 JSON. 둘 다 parseDraft 가 같은 규칙으로 정리한다.
+    const draft = parseDraft(ai.input) || parseDraft(ai.text);
+    if (!draft || draftIsEmpty(draft)) {
+      const meta = { from, to, entry_count: entries.length, stop_reason: ai.stop_reason || null };
+      // 출력 한도에 걸려 잘림 — 내용이 없어서가 아니라 너무 많아서
+      if (ai.stop_reason === 'max_tokens') return reply.code(502).send({ error: 'ai_truncated', ...meta });
+      // 응답은 왔는데 형식을 못 읽음
+      if (!ai.input && !hasJsonObject(ai.text)) return reply.code(502).send({ error: 'ai_parse', ...meta });
+      // 정상 응답인데 조직별 항목이 정말 0개
+      return reply.code(502).send({ error: 'ai_empty', ...meta });
+    }
 
     // audit_log.action 은 CHECK 로 표준 액션만 허용 → 'create' + target 으로 구분한다.
     // (본문은 남기지 않는다 — 일지 원문은 감사로그에 들어가지 않는다.)

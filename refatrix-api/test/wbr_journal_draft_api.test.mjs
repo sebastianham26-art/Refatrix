@@ -30,6 +30,7 @@ const TAG = 'WJD';
 // ── Anthropic 스텁 ───────────────────────────────────────────────────
 const realFetch = globalThis.fetch;
 let aiCalls = [];           // 보낸 프롬프트 기록
+let aiBodies = [];          // 보낸 요청 본문(도구·max_tokens 확인용)
 let aiNext = null;          // 다음 응답: {text} | {httpError} | {throw}
 function installFetchStub() {
   globalThis.fetch = async (url, opt) => {
@@ -40,7 +41,12 @@ function installFetchStub() {
       if (aiNext && aiNext.httpError) {
         return { ok: false, status: 500, json: async () => ({ error: { message: 'boom' } }) };
       }
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: (aiNext && aiNext.text) || '' }] }) };
+      aiBodies.push(body);
+      if (aiNext && 'tool' in aiNext) {
+        const content = aiNext.tool == null ? [] : [{ type: 'tool_use', id: 'tu_1', name: 'submit_wbr_draft', input: aiNext.tool }];
+        return { ok: true, status: 200, json: async () => ({ content, stop_reason: aiNext.stop || 'tool_use' }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: (aiNext && aiNext.text) || '' }], stop_reason: (aiNext && aiNext.stop) || 'end_turn' }) };
     }
     return realFetch(url, opt);
   };
@@ -187,9 +193,43 @@ test('⑦ 감사로그가 남는다(본문 없이 행위만)', { skip: SKIP }, a
   assert.ok(!JSON.stringify(rows).includes('Autozone'), '일지 본문은 로그에 남지 않는다');
 });
 
-test('⑧ AI 응답이 JSON 이 아니거나 비면 502 ai_empty', { skip: SKIP }, async () => {
+test('⑤-b 도구 호출(tool_use) 응답 — 따옴표가 섞인 문장도 그대로 받는다', { skip: SKIP }, async () => {
+  aiBodies = [];
+  const obj = JSON.parse(GOOD);
+  obj.sales.this.push('15" 휠 "Autozone" 견적 재발송');
+  aiNext = { tool: obj };
+  const r = await post('dir', WEEK);
+  assert.equal(r.statusCode, 200, r.body);
+  const d = r.json();
+  assert.equal(d.draft.sales.this[1], '15" 휠 "Autozone" 견적 재발송');
+  const b = aiBodies[0];
+  assert.equal(b.tool_choice.name, 'submit_wbr_draft', '도구 사용을 강제해야 한다');
+  assert.ok(b.max_tokens >= 8000, '출력 한도가 넉넉해야 한다: ' + b.max_tokens);
+  assert.deepEqual(b.tools[0].input_schema.required, ['sales', 'support', 'pm', 'wh', 'mgmt']);
+});
+
+test('⑤-c 출력 한도에 걸려 잘리면 ai_truncated (ai_empty 아님)', { skip: SKIP }, async () => {
+  aiNext = { text: '{"sales":{"this":["9/1 Autozone 견적 발송", "9/2 Refacc', stop: 'max_tokens' };
+  let r = await post('dir', WEEK);
+  assert.equal(r.statusCode, 502); assert.equal(r.json().error, 'ai_truncated');
+  assert.equal(r.json().entry_count, 3);
+  aiNext = { tool: {}, stop: 'max_tokens' };
+  r = await post('dir', WEEK);
+  assert.equal(r.json().error, 'ai_truncated');
+});
+
+test('⑤-d 잘렸어도 도구 입력이 완성돼 있으면 그대로 성공', { skip: SKIP }, async () => {
+  aiNext = { tool: JSON.parse(GOOD), stop: 'max_tokens' };
+  const r = await post('dir', WEEK);
+  assert.equal(r.statusCode, 200, r.body);
+});
+
+test('⑧ AI 응답 형식을 못 읽으면 ai_parse, 내용이 정말 비면 ai_empty', { skip: SKIP }, async () => {
   aiNext = { text: '죄송합니다. 요약할 수 없습니다.' };
   let r = await post('dir', WEEK);
+  assert.equal(r.statusCode, 502); assert.equal(r.json().error, 'ai_parse');
+  aiNext = { tool: { sales: { this: [], next: [] }, support: { this: [], next: [] }, pm: { this: [], next: [] }, wh: { this: [], next: [] }, mgmt: { this: [], next: [] } } };
+  r = await post('dir', WEEK);
   assert.equal(r.statusCode, 502); assert.equal(r.json().error, 'ai_empty');
   aiNext = { text: JSON.stringify({ sales: { this: [], next: [] } }) };
   r = await post('dir', WEEK);

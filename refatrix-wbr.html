@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0918a</title>
+<title>Refatrix ERP · WBR · build wbr-1015j</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -475,7 +475,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0918a');
+  console.log('[wbr] build wbr-1015j');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -1439,6 +1439,8 @@
           : d.error==='no_api_key' ? 'AI 키가 설정되지 않았습니다. (Railway 환경변수 ANTHROPIC_API_KEY)'
           : d.error==='migration_required' ? '서버 마이그레이션이 필요합니다(npm run migrate).'
           : d.error==='ai_empty' ? '기록에서 이슈로 정리할 내용을 찾지 못했습니다. 기록을 조금 더 구체적으로 남겨 주세요.'
+          : d.error==='ai_truncated' ? '이번 주 기록이 많아 AI 답변이 중간에 잘렸습니다. 다시 한 번 눌러 주세요. 반복되면 개발 담당에게 알려 주세요.'
+          : d.error==='ai_parse' ? 'AI 답변 형식을 읽지 못했습니다. 다시 한 번 눌러 주세요.'
           : d.error==='ai_failed' ? 'AI 호출 실패: '+(d.detail||'')
           : '초안 생성 실패: '+(d.error||res.status);
         jdHint(m,'var(--expense)'); return;

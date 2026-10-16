@@ -49,6 +49,27 @@ export const MAX_RANGE_DAYS = 14;  // 요청 가능한 최대 기간(월~금이 
 const MAX_THIS = 8;                // 카테고리별 「이번주」 최대 불릿 수
 const MAX_NEXT = 6;                // 카테고리별 「다음주」 최대 불릿 수
 const MAX_BULLET_LEN = 300;
+const MAX_TOTAL = 45;              // 전체 불릿 상한(출력 길이 관리 — 잘림 방지)
+
+// 도구 호출(tool_use) 스키마 — 모델이 이 구조로만 답하게 강제해 JSON 깨짐을 없앤다.
+export const DRAFT_TOOL_NAME = 'submit_wbr_draft';
+const BUCKET_SCHEMA = {
+  type: 'object',
+  properties: {
+    this: { type: 'array', items: { type: 'string' }, description: '이번주 — 실제로 일어난 일' },
+    next: { type: 'array', items: { type: 'string' }, description: '다음주 — 미결·후속조치' },
+  },
+  required: ['this', 'next'],
+};
+export const DRAFT_TOOL = {
+  name: DRAFT_TOOL_NAME,
+  description: 'WBR 팀별 주요 이슈 초안을 제출한다(조직 5개 × 이번주/다음주 불릿).',
+  input_schema: {
+    type: 'object',
+    properties: Object.fromEntries(['sales', 'support', 'pm', 'wh', 'mgmt'].map((k) => [k, BUCKET_SCHEMA])),
+    required: ['sales', 'support', 'pm', 'wh', 'mgmt'],
+  },
+};
 
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -127,24 +148,30 @@ export function buildDraftPrompt(entries, from, to) {
     `7. 개수 상한: 조직별 "this" 최대 ${MAX_THIS}개, "next" 최대 ${MAX_NEXT}개. 중요한 것부터.`,
     '8. 사적인 내용·건강·개인 감정 기록은 제외합니다(업무 이슈만).',
     '',
-    '## 출력 형식 — 아래 JSON 객체 하나만 출력하세요. 코드펜스·설명·머리말 없이 JSON 만.',
-    '{',
-    ORG_KEYS.map((k) => `  "${k}": { "this": ["…"], "next": ["…"] }`).join(',\n'),
-    '}',
+    `9. 전체 합계 불릿은 ${MAX_TOTAL}개 이내로 유지합니다(길이 초과로 잘리지 않도록).`,
+    '',
+    '## 제출 방법',
+    `결과는 반드시 ${DRAFT_TOOL_NAME} 도구로 제출하세요. 5개 조직 키(${ORG_KEYS.join(', ')})를 모두 포함하고,`,
+    '해당 내용이 없는 칸은 빈 배열 [] 로 둡니다.',
   ].join('\n');
 }
 
 // 모델 응답 → 안전한 draft 객체. 실패하면 null(호출측이 502 처리).
-export function parseDraft(text) {
-  let s = String(text || '').trim();
-  if (!s) return null;
-  // ```json … ``` 코드펜스 제거
-  s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-  // 앞뒤에 설명이 붙어 온 경우 첫 { ~ 마지막 } 만 취한다
-  const i = s.indexOf('{'), j = s.lastIndexOf('}');
-  if (i < 0 || j <= i) return null;
+//   입력: 도구 입력 객체(tool_use.input) 또는 JSON 텍스트 — 둘 다 받는다.
+export function parseDraft(input) {
   let obj;
-  try { obj = JSON.parse(s.slice(i, j + 1)); } catch (e) { return null; }
+  if (input && typeof input === 'object') {
+    obj = input;
+  } else {
+    let s = String(input || '').trim();
+    if (!s) return null;
+    // ```json … ``` 코드펜스 제거
+    s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+    // 앞뒤에 설명이 붙어 온 경우 첫 { ~ 마지막 } 만 취한다
+    const i = s.indexOf('{'), j = s.lastIndexOf('}');
+    if (i < 0 || j <= i) return null;
+    try { obj = JSON.parse(s.slice(i, j + 1)); } catch (e) { return null; }
+  }
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
 
   const clean = (arr, max) => {
@@ -172,6 +199,15 @@ export function parseDraft(text) {
   }
   if (!total) return null;
   return draft;
+}
+
+// 텍스트에 읽을 수 있는 JSON 객체가 있는지(내용이 비었는지와 별개로 형식만 판정).
+export function hasJsonObject(text) {
+  const s = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  const i = s.indexOf('{'), j = s.lastIndexOf('}');
+  if (i < 0 || j <= i) return false;
+  try { const o = JSON.parse(s.slice(i, j + 1)); return !!o && typeof o === 'object' && !Array.isArray(o); }
+  catch (e) { return false; }
 }
 
 export function draftIsEmpty(draft) {

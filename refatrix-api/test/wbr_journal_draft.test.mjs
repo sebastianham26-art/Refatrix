@@ -61,7 +61,7 @@ test('buildDraftPrompt — 기록 원문·기간·5개 조직 키가 모두 들�
     assert.ok(p.includes(ORG_LABEL[k]), ORG_LABEL[k] + ' 라벨이 있어야 함');
   }
   assert.ok(p.includes('지어내지 마세요'), '환각 금지 지시');
-  assert.ok(p.includes('JSON'), '출력 형식 지시');
+  assert.ok(p.includes('submit_wbr_draft'), '출력 형식 지시(도구 제출)');
 });
 
 // ── 응답 파싱 ────────────────────────────────────────────────────────
@@ -126,4 +126,19 @@ test('parseDraft — 파싱 불가·빈 결과는 null', () => {
   assert.equal(parseDraft('{ 깨진 JSON '), null);
   assert.equal(parseDraft('[1,2,3]'), null);
   assert.equal(parseDraft(JSON.stringify({ sales: { this: [], next: [] } })), null, '전부 비면 null');
+});
+
+test('parseDraft — 도구 입력(객체)을 그대로 받는다, 따옴표 포함 문장 보존', () => {
+  const d = parseDraft({ sales: { this: ['15" 휠 "Autozone" 견적'], next: [] }, wh: { this: [], next: ['입고'] } });
+  assert.equal(d.sales.this[0], '15" 휠 "Autozone" 견적');
+  assert.deepEqual(d.wh.next, ['입고']);
+  assert.deepEqual(d.mgmt, { this: [], next: [] });
+  assert.equal(parseDraft({}), null);
+  assert.equal(parseDraft([]), null);
+});
+
+test('buildDraftPrompt — 도구 제출 안내 + 전체 상한', () => {
+  const p = buildDraftPrompt([{ date: '2026-10-12', content: '테스트' }], '2026-10-12', '2026-10-16');
+  assert.ok(p.includes('submit_wbr_draft'));
+  assert.ok(p.includes('45개 이내'));
 });

@@ -253,6 +253,8 @@ test('⑭ 서버 오류 종류별 안내 문구', async () => {
     [{ error: 'no_api_key' }, 503, 'ANTHROPIC_API_KEY'],
     [{ error: 'migration_required' }, 503, 'npm run migrate'],
     [{ error: 'ai_empty' }, 502, '찾지 못했습니다'],
+    [{ error: 'ai_truncated' }, 502, '중간에 잘렸습니다'],
+    [{ error: 'ai_parse' }, 502, '형식을 읽지 못했습니다'],
     [{ error: 'ai_failed', detail: 'timeout' }, 502, 'AI 호출 실패'],
   ];
   for (const [payload, status, expect] of cases) {
