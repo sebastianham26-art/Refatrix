@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 판매 이력·주기 · build st-1016a</title>
+<title>Refatrix ERP · 판매 이력·주기 · build st-1016c</title>
 <!-- 2026-10-16 · 구매 › 판매 이력·주기 (디렉터·소시오 전용) — API /api/salestrend · 계산 refatrix-api/src/salesTrend.js -->
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
@@ -36,6 +36,15 @@
   .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .chip b{font-weight:800;margin-left:4px}
+  /* 품목 토글(중복 선택) — 툴바 한 줄 안의 작은 버튼 묶음 */
+  .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+  .seg button{border:none;border-right:1px solid var(--line);background:#fff;color:#555;font-family:inherit;font-size:12px;font-weight:700;
+    padding:0 10px;height:34px;cursor:pointer;white-space:nowrap}
+  .seg button:last-child{border-right:none}
+  .seg button:hover{background:#f7f5ef}
+  .seg button.on{background:var(--brand);color:#fff}
+  .seg button.sep{border-left:2px solid var(--line)}
+  .seg button.pro.on{background:var(--gold)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap}
   .sb{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
   .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
@@ -109,8 +118,8 @@
     <div class="card">
       <div class="toolbar">
         <div><label>기간</label><select id="fPeriod"><option value="12">최근 12개월</option><option value="24" selected>최근 24개월</option><option value="36">최근 36개월</option></select></div>
-        <div><label>검색 (CTR·SYD·품명·차종)</label><input id="fQ" placeholder="예: CB0401 · Yaris · ROTULA" style="width:250px"></div>
-        <div><label>부품군</label><select id="fKind"><option value="">전체</option></select></div>
+        <div><label>검색 (CTR·SYD·품명·차종)</label><input id="fQ" placeholder="예: CB0401 · Yaris · ROTULA" style="width:220px"></div>
+        <div><label>품목 <span class="small" style="font-weight:400">· 여러 개 선택 가능</span></label><div class="seg" id="cats" role="group" aria-label="품목"></div></div>
         <div><label>리드타임(개월)</label><input id="fLead" type="number" min="1" max="12" step="0.5" value="4" style="width:84px"></div>
         <div><label>안전재고(개월)</label><input id="fSafe" type="number" min="0" max="6" step="0.5" value="1" style="width:84px"></div>
         <div style="display:flex;flex-direction:column;gap:6px">
@@ -165,7 +174,7 @@
   let DATA=null;            // 목록 응답
   let view=[];              // 필터·정렬된 행
   let shown=0; const PAGE=300;
-  const st={type:'',sort:'total',dir:-1,sel:null};
+  const st={type:'',cats:new Set(),sort:'total',dir:-1,sel:null};   // cats 비어 있음 = 전체
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -177,8 +186,8 @@
   // ---- 화면 설정(리드타임 등)은 이 브라우저에만 기억 ----
   const PREF_KEY='refatrix_salestrend_pref';
   function loadPref(){ try{ const o=JSON.parse(localStorage.getItem(PREF_KEY)||'{}');
-    if(o.months)$('fPeriod').value=String(o.months); if(o.lead)$('fLead').value=o.lead; if(o.safe!=null)$('fSafe').value=o.safe; $('fLost').checked=!!o.lost; }catch(e){} }
-  function savePref(){ try{ localStorage.setItem(PREF_KEY,JSON.stringify({months:+$('fPeriod').value,lead:+$('fLead').value,safe:+$('fSafe').value,lost:$('fLost').checked})); }catch(e){} }
+    if(o.months)$('fPeriod').value=String(o.months); if(o.lead)$('fLead').value=o.lead; if(o.safe!=null)$('fSafe').value=o.safe; $('fLost').checked=!!o.lost; if(Array.isArray(o.cats)) st.cats=new Set(o.cats); }catch(e){} }
+  function savePref(){ try{ localStorage.setItem(PREF_KEY,JSON.stringify({months:+$('fPeriod').value,lead:+$('fLead').value,safe:+$('fSafe').value,lost:$('fLost').checked,cats:[...st.cats]})); }catch(e){} }
 
   function params(){
     const lead=Math.min(12,Math.max(1,Number($('fLead').value)||4));
@@ -227,22 +236,33 @@
       if(res.status===403){ m.className='msg err'; m.textContent='디렉터·소시오 전용 화면입니다.'; DATA=null; render(); return; }
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='불러오기 실패: '+(d.error||res.status); return; }
       DATA=d; m.className='msg'; m.textContent='';
-      fillKinds();
       render();
       if(st.sel){ const it=DATA.items.find(x=>Number(x.product_id)===Number(st.sel)); if(it) openDrill(it.product_id); else closeDrill(); }
     }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; console.error(e); }
     finally{ $('bReload').disabled=false; }
   }
-  function fillKinds(){
-    const sel=$('fKind'), cur=sel.value; const kinds=[...new Set(DATA.items.map(x=>x.kind))].sort();
-    sel.innerHTML='<option value="">전체</option>'+kinds.map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('');
-    if(kinds.includes(cur)) sel.value=cur;
+  // 카테고리 토글(중복 선택) — 5대 카테고리 + PRO. 아무것도 안 고르면 전체(그 외 부품 포함).
+  const CAT_FALLBACK=[{key:'rotula',ko:'볼조인트'},{key:'terminal_ext',ko:'타이로드엔드(외측)'},{key:'terminal_int',ko:'타이로드엔드(내측)'},{key:'horquilla',ko:'컨트롤암'},{key:'tornillo',ko:'스태빌라이저 링크'},{key:'pro',ko:'PRO'}];
+  const catList=()=>(DATA&&Array.isArray(DATA.cats)&&DATA.cats.length)?DATA.cats:CAT_FALLBACK;
+  const catName=(k)=>{const c=catList().find(x=>x.key===k);return c?c.ko:'기타';};
+  function searched(){
+    if(!DATA) return [];
+    const q=$('fQ').value.trim().toLowerCase();
+    return DATA.items.filter(x=>!q||(x.code+' '+x.syd+' '+x.name+' '+x.app).toLowerCase().includes(q));
+  }
+  // 버튼 글자는 짧게(공간 절약), 전체 이름·SKU 수는 마우스를 올리면 보인다.
+  const CAT_SHORT={rotula:'볼조인트',terminal_ext:'타이로드 외측',terminal_int:'타이로드 내측',horquilla:'컨트롤암',tornillo:'링크',pro:'PRO'};
+  function renderCats(base){
+    const cnt={}; base.forEach(x=>cnt[x.cat]=(cnt[x.cat]||0)+1);
+    const allOn=!st.cats.size;
+    $('cats').innerHTML=`<button type="button" class="${allOn?'on':''}" data-cat="__all" aria-pressed="${allOn}" title="전체 ${fmt(base.length)}개 (그 외 부품 ${fmt(cnt.etc||0)}개 포함)">전체</button>`
+      +catList().map(c=>{const on=st.cats.has(c.key);
+        return `<button type="button" class="${c.key==='pro'?'pro sep':''}${on?' on':''}" data-cat="${esc(c.key)}" aria-pressed="${on}" title="${esc(c.ko)} · ${fmt(cnt[c.key]||0)}개">${on?'✓ ':''}${esc(CAT_SHORT[c.key]||c.ko)}</button>`;}).join('');
   }
   function filtered(){
     if(!DATA) return [];
-    const q=$('fQ').value.trim().toLowerCase(), kind=$('fKind').value, p=params();
-    return DATA.items.filter(x=>(!kind||x.kind===kind)&&(!q||(x.code+' '+x.syd+' '+x.name+' '+x.app).toLowerCase().includes(q)))
-      .map(x=>Object.assign({},x,{_p:plan(x,p)}));
+    const p=params();
+    return searched().filter(x=>!st.cats.size||st.cats.has(x.cat)).map(x=>Object.assign({},x,{_p:plan(x,p)}));
   }
   const SORTS={code:x=>x.code,total:x=>x.total,avg6:x=>x.avg6,trend:x=>x.trend==null?-9:x.trend,months:x=>x.sale_months,
     gap:x=>x.adi==null?999:x.adi,last:x=>x.since_last==null?999:x.since_last,stock:x=>x.stock,supply:x=>x.backorder,lostq:x=>x.lost_total+x.shortage_open,
@@ -255,7 +275,7 @@
     $('thead').innerHTML=COLS.map(([k,t,n])=>`<th class="${n?'num ':''}${k?'sortable':''}" ${k?`data-s="${k}"`:''}>${t}${k&&st.sort===k?` <span class="arr">${st.dir>0?'▲':'▼'}</span>`:''}</th>`).join('');
   }
   function render(){
-    renderHead();
+    renderHead(); renderCats(searched());
     const all=filtered(), p=params();
     const counts={}; all.forEach(x=>counts[x.type]=(counts[x.type]||0)+1);
     $('chips').innerHTML=[['','전체',all.length],...TYPE_ORDER.map(k=>[k,TYPE[k][0],counts[k]||0])]
@@ -357,7 +377,7 @@
         <div class="note">짝은 보통 한 차량에 같이 나갑니다. 두 제안 수량 차이가 크면 판매 편차인지 재고 편차인지 확인하세요.</div></div>`;})():'';
     $('drill').innerHTML=`<button class="x" id="dX" type="button">닫기 ✕</button>
       <h3>${esc(pr.code)} · ${esc(pr.name)} <span class="tag ${t[1]}">${t[0]}</span></h3>
-      <div class="small">${esc(pr.kind)} · SYD ${esc(pr.syd||'—')} · ${esc(pr.app)}</div>
+      <div class="small">${esc(catName(pr.cat))} · ${esc(pr.kind)} · SYD ${esc(pr.syd||'—')} · ${esc(pr.app)}</div>
       <div class="dgrid">
         <div class="panel"><h4>월별 판매 · 3개월 이동평균 · 향후 3개월 예측</h4>${chart(d,P.fc)}
           <div class="legend"><span><i style="background:#143D34"></i>판매</span>${d.useLost?'<span><i style="background:#D9897D"></i>못 판 수량(견적 부족)</span>':''}<span><i style="background:#B8893B"></i>3개월 이동평균</span><span><i style="border:1.5px dashed #9A7B16"></i>예측 (${method})</span></div></div>
@@ -391,12 +411,12 @@
     if(!DATA||!view.length){ const m=$('msg'); m.className='msg err'; m.textContent='내보낼 행이 없습니다.'; return; }
     if(typeof XLSX==='undefined'){ const m=$('msg'); m.className='msg err'; m.textContent='엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'; return; }
     const p=params(), ms=DATA.months;
-    const head=['CTR','SYD','부품군','품명','적용차종','수요유형',...ms.map((m,i)=>i===ms.length-1?m+'(진행)':m),'기간판매','월평균(최근6)','추세(%)','판매월','평균간격(개월)','마지막판매','재고','발주잔량','운송중','견적부족(기간)','견적부족(미해소)','예측(월)','커버(개월)','구매제안','L/R 짝'];
-    const rows=view.map(x=>[x.code,x.syd,x.kind,x.name,x.app,(TYPE[x.type]||TYPE.none)[0],...x.series,x.total,x.avg6,x.trend==null?'':Math.round(x.trend*100),x.sale_months,x.adi==null?'':x.adi,x.last_ym||'',
+    const head=['CTR','SYD','카테고리','부품군','품명','적용차종','수요유형',...ms.map((m,i)=>i===ms.length-1?m+'(진행)':m),'기간판매','월평균(최근6)','추세(%)','판매월','평균간격(개월)','마지막판매','재고','발주잔량','운송중','견적부족(기간)','견적부족(미해소)','예측(월)','커버(개월)','구매제안','L/R 짝'];
+    const rows=view.map(x=>[x.code,x.syd,catName(x.cat),x.kind,x.name,x.app,(TYPE[x.type]||TYPE.none)[0],...x.series,x.total,x.avg6,x.trend==null?'':Math.round(x.trend*100),x.sale_months,x.adi==null?'':x.adi,x.last_ym||'',
       x.stock,x.backorder,x.incoming,x.lost_total,x.shortage_open,x._p.fc,x._p.cover==null?'':x._p.cover,x._p.sug,x.pair||'']);
-    const info=[[`판매 이력·주기 · ${DATA.today} · 기간 ${p.months}개월 · 리드타임 ${p.lead} · 안전재고 ${p.safe} · 견적부족 예측포함 ${p.useLost?'예':'아니오'}${st.type?' · 유형 '+TYPE[st.type][0]:''}${$('fKind').value?' · '+$('fKind').value:''}${$('fQ').value.trim()?' · 검색 '+$('fQ').value.trim():''}`],[]];
+    const info=[[`판매 이력·주기 · ${DATA.today} · 기간 ${p.months}개월 · 리드타임 ${p.lead} · 안전재고 ${p.safe} · 견적부족 예측포함 ${p.useLost?'예':'아니오'}${st.type?' · 유형 '+TYPE[st.type][0]:''}${st.cats.size?' · 카테고리 '+[...st.cats].map(catName).join('+'):''}${$('fQ').value.trim()?' · 검색 '+$('fQ').value.trim():''}`],[]];
     const ws=XLSX.utils.aoa_to_sheet([...info,head,...rows]);
-    ws['!cols']=head.map((h,i)=>({wch:i<1?10:i===3?28:i===4?40:i<6?12:9}));
+    ws['!cols']=head.map((h,i)=>({wch:i<1?10:i===4?28:i===5?40:i<7?14:9}));
     ws['!freeze']={xSplit:1,ySplit:3};
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'판매이력');
     XLSX.writeFile(wb,'refatrix_sales_trend_'+DATA.today.replace(/-/g,'')+'.xlsx');
@@ -411,10 +431,12 @@
   $('fPeriod').addEventListener('change',load);
   $('fAll').addEventListener('change',load);
   let tq=null; $('fQ').addEventListener('input',()=>{ clearTimeout(tq); tq=setTimeout(render,200); });
-  $('fKind').addEventListener('change',render);
   ['fLead','fSafe','fLost'].forEach(id=>$(id).addEventListener(id==='fLost'?'change':'input',()=>{ savePref(); render(); if(st.sel) openDrill(st.sel); }));
   document.addEventListener('click',e=>{
-    const ch=e.target.closest('.chip'); if(ch){ st.type=ch.dataset.t; render(); return; }
+    const cc=e.target.closest('#cats button[data-cat]'); if(cc){ const k=cc.dataset.cat;
+      if(k==='__all') st.cats.clear(); else if(st.cats.has(k)) st.cats.delete(k); else st.cats.add(k);
+      savePref(); render(); return; }
+    const ch=e.target.closest('.chip[data-t]'); if(ch){ st.type=ch.dataset.t; render(); return; }
     const th=e.target.closest('th.sortable'); if(th){ const s=th.dataset.s; st.dir=st.sort===s?-st.dir:(['code','cover','gap','last','type'].includes(s)?1:-1); st.sort=s; render(); return; }
     const tr=e.target.closest('#tb tr.clk'); if(tr){ openDrill(tr.dataset.id); }
   });

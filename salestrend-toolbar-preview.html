@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>판매 이력·주기 툴바 미리보기</title><style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--warn:#B7791F;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1360px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:16px}
+  .card h2{margin:0 0 4px;font-size:15px;color:var(--brand)}
+  .cdesc{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--muted);font-size:12.5px;margin:0}
+  .chk input{width:auto;margin:0}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .chip b{font-weight:800;margin-left:4px}
+  /* 품목 토글(중복 선택) — 툴바 한 줄 안의 작은 버튼 묶음 */
+  .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+  .seg button{border:none;border-right:1px solid var(--line);background:#fff;color:#555;font-family:inherit;font-size:12px;font-weight:700;
+    padding:0 10px;height:34px;cursor:pointer;white-space:nowrap}
+  .seg button:last-child{border-right:none}
+  .seg button:hover{background:#f7f5ef}
+  .seg button.on{background:var(--brand);color:#fff}
+  .seg button.sep{border-left:2px solid var(--line)}
+  .seg button.pro.on{background:var(--gold)}
+  .sbrow{display:flex;gap:10px;flex-wrap:wrap}
+  .sb{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .sb.red .v{color:var(--expense)}.sb.amb .v{color:var(--warn)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #bfe0d2}
+  .hidden{display:none!important}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .tblwrap{overflow:auto;max-height:640px;margin-top:12px;border:1px solid var(--line);border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+  th{color:var(--muted);font-size:11px;font-weight:600;background:#faf8f3;position:sticky;top:0;z-index:1}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--brand)}
+  th .arr{color:var(--brand)}
+  tr.clk{cursor:pointer}tr.clk:hover td{background:#f7f5ef}tr.sel td{background:#eef4f1}
+  .code{font-weight:800;color:var(--brand)}
+  .nm{font-size:11.5px;color:#444;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+  .small{font-size:11px;color:var(--muted)}
+  .heat{display:flex;gap:2px}
+  .heat i{display:block;width:11px;height:20px;border-radius:2px;background:#EFECE4}
+  .heat i.cur{outline:1.5px dashed var(--gold);outline-offset:-1px}
+  .tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px}
+  .t-smooth{background:#e7f3ee;color:var(--income)}.t-erratic{background:#e8eef8;color:#2b5797}
+  .t-inter{background:#fdf1dc;color:#8a5a00}.t-lumpy{background:#f6e5f0;color:#8a2e6a}
+  .t-new{background:#e9f6fb;color:#1f6f8b}.t-dead{background:#f3e7e5;color:var(--expense)}.t-none{background:#eee;color:#888}
+  .up{color:var(--income);font-weight:700}.down{color:var(--expense);font-weight:700}.flat{color:var(--muted)}
+  .cov-red{color:var(--expense);font-weight:800}.cov-amb{color:var(--warn);font-weight:800}.cov-ok{color:var(--income);font-weight:700}
+  .sug{font-weight:800;color:var(--brand)}
+  .lost{color:#b3402e;font-weight:700}
+  .more{margin-top:10px;text-align:center}
+  .note{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:10px}
+  .drill{margin-top:16px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:18px}
+  .drill h3{margin:0;font-size:15px;color:var(--brand)}
+  .drill .x{float:right;border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer;font-size:13px;font-family:inherit}
+  .dgrid{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:12px}
+  .dgrid.half{grid-template-columns:1fr 1fr}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+  .panel h4{margin:0 0 8px;font-size:12.5px;color:var(--brand)}
+  .panel table{font-size:12px}.panel .scroll{max-height:300px;overflow:auto}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:5px 10px;font-size:12.5px}
+  .kv span:nth-child(odd){color:var(--muted)}.kv span:nth-child(even){font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  svg text{font-family:inherit}
+  @media (max-width:900px){ body{padding:12px} .dgrid,.dgrid.half{grid-template-columns:1fr} }
+</style></head><body><div class="wrap">
+<div class="topbar"><div><h1>판매 이력 · 판매 주기</h1><div class="sub">미리보기 — 볼조인트 + 컨트롤암 + PRO 를 동시에 켠 상태(숫자는 예시)</div></div></div>
+<div class="card"><div class="toolbar">
+      <div style="min-width:160px"><label>아이디</label><input id="lid" autocomplete="username"></div>
+      <div style="min-width:160px"><label>PIN</label><input id="pin" type="password" autocomplete="current-password"></div>
+    </div>
+    <div class="api"><label>서버 주소</label><input id="api" value="https://refatrix-production.up.railway.app"></div>
+    <div style="margin-top:12px"><button class="btn" id="go" type="button">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <div><label>기간</label><select id="fPeriod"><option value="12">최근 12개월</option><option value="24" selected>최근 24개월</option><option value="36">최근 36개월</option></select></div>
+        <div><label>검색 (CTR·SYD·품명·차종)</label><input id="fQ" placeholder="예: CB0401 · Yaris · ROTULA" style="width:220px"></div>
+        <div><label>품목 <span class="small" style="font-weight:400">· 여러 개 선택 가능</span></label><div class="seg"><button type="button" title="전체">전체</button><button class="on" type="button">✓ 볼조인트</button><button type="button">타이로드 외측</button><button type="button">타이로드 내측</button><button class="on" type="button">✓ 컨트롤암</button><button type="button">링크</button><button class="pro sep on" type="button">✓ PRO</button></div></div>
+        <div><label>리드타임(개월)</label><input id="fLead" type="number" min="1" max="12" step="0.5" value="4" style="width:84px"></div>
+        <div><label>안전재고(개월)</label><input id="fSafe" type="number" min="0" max="6" step="0.5" value="1" style="width:84px"></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label class="chk"><input type="checkbox" id="fLost"> 견적 부족(못 판 수량)도 예측에 포함</label>
+          <label class="chk"><input type="checkbox" id="fAll"> 전체 카탈로그(판매·재고 없는 SKU 포함)</label>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn ghost sm" id="bReload" type="button">↻ 새로고침</button>
+          <button class="btn ghost sm" id="bXls" type="button">⬇ 엑셀</button>
+        </div>
+      </div><div class="chips"><button class="chip on">전체<b>1,284</b></button><button class="chip">꾸준<b>212</b></button><button class="chip">변동<b>96</b></button><button class="chip">간헐<b>431</b></button><button class="chip">불규칙<b>205</b></button><button class="chip">신규<b>38</b></button><button class="chip">정지<b>174</b></button><button class="chip">무판매<b>128</b></button></div></div></div></body></html>
