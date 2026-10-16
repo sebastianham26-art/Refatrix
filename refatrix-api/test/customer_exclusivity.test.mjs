@@ -83,3 +83,28 @@ test('X10 RFC 없이 개방 상태 + 판매자 없는 인보이스는 기간을 
   const r = computeExclusivity({ invoices: [inv(70, '2026-10-10', null)], today: '2026-10-11' });
   assert.equal(r.current, null); assert.equal(r.invoiceAgent[70], null);
 });
+
+// ── 0280 · 관리자·디렉터는 독점권자가 될 수 없다 ─────────────────────────
+const ADMIN = 99;
+test('X20 관리자 RFC 등록 → 독점 없음(개방), 영업 첫 인보이스가 1년 독점', () => {
+  const r1 = computeExclusivity({ rfcFrom: '2026-10-10', rfcAgent: ADMIN, invoices: [], today: '2026-10-16', excluded: [ADMIN] });
+  assert.equal(r1.current, null); assert.equal(r1.open, true);
+  const r2 = computeExclusivity({ rfcFrom: '2026-10-10', rfcAgent: ADMIN, invoices: [inv(30, '2026-10-17', B)], today: '2026-10-18', excluded: [ADMIN] });
+  assert.equal(r2.current.kind, 'sale'); assert.equal(r2.current.agent, B); assert.equal(r2.invoiceAgent[30], B);
+});
+
+test('X21 개방 상태에서 관리자 이름의 인보이스는 독점을 시작하지 않는다', () => {
+  const r = computeExclusivity({ invoices: [inv(31, '2026-10-05', ADMIN), inv(32, '2026-10-12', A)], today: '2026-10-16', excluded: [ADMIN] });
+  assert.equal(r.invoiceAgent[31], ADMIN);          // 귀속 기록은 그대로
+  assert.equal(r.current.agent, A); assert.equal(r.current.starts_on, '2026-10-12');
+});
+
+test('X22 excluded 미지정이면 기존 동작 그대로(회귀)', () => {
+  const r = computeExclusivity({ rfcFrom: '2026-10-10', rfcAgent: ADMIN, invoices: [], today: '2026-10-16' });
+  assert.equal(r.current.kind, 'rfc'); assert.equal(r.current.agent, ADMIN);
+});
+
+test('X23 영업사원의 독점 기간 중 관리자 인보이스는 독점권자에게 귀속', () => {
+  const r = computeExclusivity({ rfcFrom: '2026-10-01', rfcAgent: A, invoices: [inv(33, '2026-10-05', ADMIN)], today: '2026-10-06', excluded: [ADMIN] });
+  assert.equal(r.invoiceAgent[33], A); assert.equal(r.current.kind, 'sale'); assert.equal(r.current.agent, A);
+});

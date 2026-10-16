@@ -27,6 +27,7 @@ import { MERGE_MOVES, MOVED_TABLES, safeIdent, residualLabel,
          checkMerge, moveTotal, mergeNote } from '../customerMerge.js';
 // 코드 채번은 CRM 수신부(0208)와 **같은 규칙**을 써야 한다 → 공용 모듈로 뺐다.
 import { computeNextCode } from '../customerCode.js';
+import { planOwnerChange, applyOwnerTransfer } from '../exclusivity.js';   // 0280 · 담당자 변경 ↔ 독점 이전
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
@@ -2607,6 +2608,14 @@ export default async function customerRoutes(app) {
     //   이미 RFC 가 있던 고객의 표기 정정은 선점 시점을 다시 찍지 않는다 — 새로 잡은 게 아니다.
     const claimsOn = await claimTableReady();
     const newlyClaimed = claimsOn && rfcChanged && !normalizeClaimKey(c.rfc);
+    // 0280 · 담당자 변경이 독점과 부딪히는지 UPDATE 전에 판정한다(막히면 아무것도 저장하지 않음).
+    const newOwner = nullNum(b.owner_id, c.owner_id);
+    const ownerChanged = newOwner != null && Number(newOwner) !== Number(c.owner_id);
+    const ownerPlan = ownerChanged ? await planOwnerChange(query, id, Number(newOwner)) : { action: 'none' };
+    if (ownerPlan.action === 'block') {
+      const e = new Error(ownerPlan.error); e.claimError = ownerPlan.error; e.claimNote = ownerPlan.note;
+      throw e;
+    }
     // 0185 · CONSTANCIA 번호는 마이그레이션이 적용된 DB 에서만 건드린다
     //   (컬럼이 없는 반쪽 배포 상태에서도 기존 고객 수정이 죽지 않게).
     //   0188 이후 선점 키가 아니므로 **빈값으로 지우는 것도 허용**한다.
@@ -2642,6 +2651,7 @@ export default async function customerRoutes(app) {
           [id, JSON.stringify({ rfc: rfcVal, via: 'customer_edit' }), userId]);
       } catch (_) { /* 이력 실패가 저장을 막지 않음 */ }
     }
+    if (ownerPlan.action === 'transfer') await applyOwnerTransfer(id, Number(newOwner), userId, ownerPlan);
   }
 
   app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {

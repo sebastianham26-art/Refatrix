@@ -20,6 +20,10 @@ import { query, withTx } from './db.js';
 export const RFC_DAYS = 30;          // 기산일 포함 30일
 export const RENEW_MONTHS = 6;       // 1년 안에 서로 다른 6개월
 export const POLICY_START = '2026-09-28';
+// 0280 · 독점권자가 될 수 없는 계정 역할(관리자·디렉터·소시오). 이들이 등록·판매한 고객은
+//   독점이 생기지 않는다(개방) — 처음 인보이스를 낸 영업사원이 1년 독점을 가져간다.
+//   DB 쪽 같은 규칙: migrations/0280 의 refx_excl_eligible().
+export const HOLDER_EXCLUDED_ROLES = ['director', 'socio'];
 
 // ── 날짜(YYYY-MM-DD 문자열) ─────────────────────────────────────────
 const pad = (n) => String(n).padStart(2, '0');
@@ -46,13 +50,16 @@ export function todayMx(now = new Date()) {
 }
 
 // ── 순수 계산 ─────────────────────────────────────────────────────────
-// input: { rfcFrom, rfcAgent, invoices:[{id, date, seller, net}], today }
+// input: { rfcFrom, rfcAgent, invoices:[{id, date, seller, net}], today, excluded:[userId] }
+//   excluded: 독점권자가 될 수 없는 사용자(0280 · 관리자·디렉터). 이들의 RFC 등록은 무시하고,
+//   개방 상태에서 이들 이름의 인보이스는 기간을 시작하지 않는다(귀속 기록은 그대로).
 //   invoices: 삭제되지 않은 인보이스. net = ex-IVA 매출 − 적용 NC. net ≤ 0(전액 반품)은
 //   기간을 시작·연장하지 않는다(귀속만 받는다). 최소 금액은 없다.
 // output: { periods:[{kind, agent, starts_on, ends_on, source_invoice_id, months:[YYYY-MM], renewed}],
 //           invoiceAgent:{id:agent}, current: period|null, open: boolean }
-export function computeExclusivity({ rfcFrom = null, rfcAgent = null, invoices = [], today }) {
+export function computeExclusivity({ rfcFrom = null, rfcAgent = null, invoices = [], today, excluded = [] }) {
   const td = today || todayMx();
+  const ex = new Set((excluded || []).map(Number));
   const invs = [...invoices]
     .filter((i) => i && i.date)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : Number(a.id) - Number(b.id)));
@@ -60,7 +67,7 @@ export function computeExclusivity({ rfcFrom = null, rfcAgent = null, invoices =
   const invoiceAgent = {};
   let cur = null;
 
-  if (rfcFrom && rfcAgent) {
+  if (rfcFrom && rfcAgent && !ex.has(Number(rfcAgent))) {
     cur = { kind: 'rfc', agent: Number(rfcAgent), starts_on: rfcFrom, ends_on: addDays(rfcFrom, RFC_DAYS - 1),
       source_invoice_id: null, months: [], renewed: false };
   }
@@ -85,7 +92,7 @@ export function computeExclusivity({ rfcFrom = null, rfcAgent = null, invoices =
     let agent;
     if (!cur) {
       agent = inv.seller == null ? null : Number(inv.seller);
-      if (counted && agent != null) cur = newSale(agent, inv.date, Number(inv.id));
+      if (counted && agent != null && !ex.has(agent)) cur = newSale(agent, inv.date, Number(inv.id));
     } else if (cur.kind === 'rfc') {
       agent = cur.agent;                         // RFC 독점 중에는 등록자에게 귀속
       if (counted) {
@@ -137,12 +144,22 @@ export async function loadInput(q, customerId) {
   return { customer: c, invoices };
 }
 
+export async function excludedHolderIds(q) {
+  return (await q(`SELECT id FROM users WHERE role = ANY($1::text[])`, [HOLDER_EXCLUDED_ROLES])).rows.map((r) => Number(r.id));
+}
+export async function isHolderEligible(q, userId) {
+  if (!userId) return false;
+  const r = (await q(`SELECT role FROM users WHERE id=$1`, [userId])).rows[0];
+  return !!r && !HOLDER_EXCLUDED_ROLES.includes(String(r.role || ''));
+}
+
 export async function evaluate(q, customerId, today) {
   const inp = await loadInput(q, customerId);
   if (!inp) return null;
   const c = inp.customer;
   if (!c.excl_policy) return { customer: c, policy: false, current: null, open: false, periods: [], invoiceAgent: {} };
-  const r = computeExclusivity({ rfcFrom: c.rfc_excl_from, rfcAgent: c.rfc_excl_agent_id, invoices: inp.invoices, today });
+  const excluded = await excludedHolderIds(q);
+  const r = computeExclusivity({ rfcFrom: c.rfc_excl_from, rfcAgent: c.rfc_excl_agent_id, invoices: inp.invoices, today, excluded });
   return { customer: c, policy: true, ...r };
 }
 
@@ -180,6 +197,47 @@ export async function resolveSeller(q, { customerId, requestedSeller, perm }) {
     return { ok: false, code: 403, error: 'seller_self_only', note: '영업사원은 본인 이름으로만 판매할 수 있습니다.' };
   }
   return { ok: true, seller_id: seller, open: true };
+}
+
+// ── 0280 · 디렉터가 고객 담당자를 바꿀 때 ───────────────────────────────
+//   · RFC 독점 30일 중 → 새 담당자에게 독점권 이전(기산일 = 이전한 날, 30일 새로 시작).
+//   · 판매 독점 1년 중 → 담당자 변경 불가(독점은 첫 인보이스로 확정 — 재계산이 되돌린다).
+//   · 관리자·디렉터를 독점 고객의 담당자로 지정하는 것도 불가.
+//   · 독점 없음(개방·기존 거래 고객) → 아무것도 하지 않는다(트리거가 필요 시 RFC 기산).
+// planOwnerChange 는 UPDATE 전에 판정만, applyOwnerTransfer 는 UPDATE 뒤에 반영.
+export async function planOwnerChange(q, customerId, newOwnerId) {
+  if (!newOwnerId || !(await exclusivityReady())) return { action: 'none' };
+  const ev = await evaluate(q, customerId);
+  if (!ev || !ev.policy || !ev.current) return { action: 'none' };
+  const holder = Number(ev.current.agent);
+  if (holder === Number(newOwnerId)) return { action: 'none' };
+  const name = await userName(q, holder);
+  if (ev.current.kind === 'sale') {
+    return { action: 'block', error: 'excl_sale_locked', holder: { id: holder, name, until: ev.current.ends_on },
+      note: `이 고객은 ${name} 님의 판매 독점 고객입니다(${ev.current.ends_on} 까지). 판매 독점 기간에는 담당자를 바꿀 수 없습니다.` };
+  }
+  if (!(await isHolderEligible(q, newOwnerId))) {
+    return { action: 'block', error: 'excl_owner_ineligible', holder: { id: holder, name, until: ev.current.ends_on },
+      note: `관리자·디렉터 계정은 독점 고객의 담당자가 될 수 없습니다(현재 ${name} 님 RFC 독점, ${ev.current.ends_on} 까지).` };
+  }
+  return { action: 'transfer', from: holder, from_name: name, until: ev.current.ends_on };
+}
+
+export async function applyOwnerTransfer(customerId, newOwnerId, actorId, plan) {
+  if (!plan || plan.action !== 'transfer') return null;
+  const today = todayMx();
+  await query(
+    `UPDATE customers SET rfc_excl_agent_id=$1, rfc_claimed_by=$1, rfc_excl_from=$2::date, updated_by=$3 WHERE id=$4`,
+    [newOwnerId, today, actorId, customerId]);
+  try {
+    await query(
+      `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+       VALUES ($1,'excl_transfer','디렉터 담당자 변경 — RFC 독점 이전',$2,$3)`,
+      [customerId, JSON.stringify({ from: plan.from, from_name: plan.from_name, from_until: plan.until,
+        to: Number(newOwnerId), starts_on: today, ends_on: addDays(today, RFC_DAYS - 1) }), actorId]);
+  } catch (_) { /* 이력 실패가 이전을 막지 않음 */ }
+  await recomputeCustomer(customerId);
+  return { to: Number(newOwnerId), starts_on: today, ends_on: addDays(today, RFC_DAYS - 1) };
 }
 
 async function userName(q, id) {
