@@ -664,4 +664,25 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const { readFileSync } = await import('node:fs');
     await query(readFileSync(new URL('../migrations/0286_wa_contact_tipo.sql', import.meta.url), 'utf-8'));
   });
+
+  await t.test('B14. 연락처 표 정렬 — 서버가 전체를 정렬 · 빈 값은 뒤로 · 잘못된 키는 기본(최근 등록)', async () => {
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE deleted_at IS NULL`);
+    const mk = async (name, phone, tipo, veh, consent, ago) => Number((await one(
+      `INSERT INTO wa_contacts (name, phone, source, tipo, vehiculo, consent, created_at, consent_at) VALUES ($1,$2,'manual',$3,$4,$5, now() - ($6 || ' hours')::interval,
+         CASE WHEN $5 IN ('yes','no') THEN now() - ($6 || ' hours')::interval END) RETURNING id`, [name, phone, tipo, veh, consent, String(ago)])).id);
+    const b = await mk('beto', '528160000001', 'Taxi / app', 'Nissan Versa 2019', 'yes', 3);
+    const a = await mk('Ana', '528160000002', null, 'Chevrolet Aveo 2018', 'unknown', 1);
+    const c = await mk('Carla', '528160000003', 'Particular', null, 'no', 2);
+    const ids = async (qs) => (await call(D, 'GET', '/api/wa-promo/contacts?' + qs)).json().items.map((x) => x.id);
+    assert.deepEqual(await ids(''), [a, c, b], '기본 = 최근 등록 순');
+    assert.deepEqual(await ids('sort=name&dir=asc'), [a, b, c], '이름 — 대소문자 무시');
+    assert.deepEqual(await ids('sort=name&dir=desc'), [c, b, a]);
+    assert.deepEqual(await ids('sort=tipo&dir=asc'), [c, b, a], '직업 빈 값은 뒤');
+    assert.deepEqual(await ids('sort=tipo&dir=desc'), [b, c, a], '내림차순에도 빈 값은 뒤');
+    assert.deepEqual(await ids('sort=veh&dir=asc'), [a, b, c]);
+    assert.deepEqual(await ids('sort=consent&dir=asc'), [b, a, c], '✅ → ❓ → ⛔');
+    assert.deepEqual(await ids('sort=when&dir=desc'), [c, b, a]);
+    assert.deepEqual(await ids('sort=drop%20table&dir=asc'), [a, c, b], '모르는 키 → 기본');
+    assert.deepEqual(await ids('sort=name&dir=asc&tipo=none'), [a], '거르기와 같이');
+  });
 });

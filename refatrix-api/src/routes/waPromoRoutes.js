@@ -6,7 +6,7 @@
 //   (이전: 열람 requirePage('marketing') · 쓰기 requirePageEdit('marketing'))
 //
 //   연락처
-//   GET    /api/wa-promo/contacts?q&consent&limit        목록 + 상태별 건수
+//   GET    /api/wa-promo/contacts?q&consent&limit&sort&dir  목록 + 상태별 건수 · sort = name|tipo|veh|estado|group|consent|when|created|last_in
 //   POST   /api/wa-promo/contacts {name, phone, memo}    1건 추가
 //   POST   /api/wa-promo/contacts/bulk {rows, dry_run}   엑셀 대량(미리보기 → 저장)
 //   PATCH  /api/wa-promo/contacts/:id                    이름·메모·동의(영업 확인)·담당·메모·처리 상태
@@ -121,6 +121,20 @@ export default async function waPromoRoutes(app) {
   // 0286 · 관심 차종 모델 = 연식(2019 · 2008-2018 · 2015/18) 빼고 · 「; 」로 여러 대 나눔 (PostgreSQL 정규식)
   const VEH_YEAR_RE = String.raw`\m(19|20)[0-9]{2}(\s*[-/]\s*((19|20)?[0-9]{2}))?\M`;
   const VEH_SPLIT_RE = String.raw`\s*;\s*`;
+  // 2026-10-16 · 연락처 표 제목 눌러 정렬 — 서버가 조건에 맞는 전체를 정렬(화면은 앞 500명만 받으므로). 빈 값은 늘 뒤로.
+  const CONTACT_SORTS = {
+    name: 'lower(w.name)', tipo: 'lower(w.tipo)', veh: 'lower(w.vehiculo)', estado: 'lower(w.estado)',
+    group: `(SELECT min(lower(g.name)) FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL WHERE cg.contact_id = w.id)`,
+    consent: `CASE w.consent WHEN 'yes' THEN 1 WHEN 'asked' THEN 2 WHEN 'unknown' THEN 3 ELSE 4 END`,
+    when: 'COALESCE(w.consent_at, w.asked_at)', created: 'w.created_at', last_in: 'w.last_in_at',
+  };
+  function contactOrder(qs) {
+    const known = !!(qs && Object.prototype.hasOwnProperty.call(CONTACT_SORTS, qs.sort));
+    if (!known) return 'w.created_at DESC NULLS LAST, w.id DESC';   // 모르는 키 → 기본(최근 등록 순) · 방향도 무시
+    const k = qs.sort;
+    const dir = (qs && qs.dir === 'asc') ? 'ASC' : (qs && qs.dir === 'desc') ? 'DESC' : (k === 'created' || k === 'when' || k === 'last_in' ? 'DESC' : 'ASC');
+    return `${CONTACT_SORTS[k]} ${dir} NULLS LAST, w.id DESC`;
+  }
   // 연락처 조건(목록 · 「조건에 맞는 전체」 그룹 넣기가 같이 쓴다) — q · consent · queued · group(id | none)
   function contactConds(f, args) {
     const conds = ['w.deleted_at IS NULL'];
@@ -151,7 +165,7 @@ export default async function waPromoRoutes(app) {
               ARRAY(SELECT cg.group_id FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL
                      WHERE cg.contact_id = w.id ORDER BY lower(g.name)) AS group_ids
          FROM wa_contacts w LEFT JOIN users u ON u.id = w.assigned_to ${ASK_JOIN}
-        WHERE ${conds.join(' AND ')} ORDER BY w.created_at DESC, w.id DESC LIMIT ${limit}`, args)).rows;
+        WHERE ${conds.join(' AND ')} ORDER BY ${contactOrder(req.query)} LIMIT ${limit}`, args)).rows;
     const mm = (await query(
       `SELECT count(*)::int n, count(*) FILTER (WHERE w.consent='unknown' AND w.asked_at IS NULL AND w.ask_queued_at IS NULL)::int askable
          FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows[0];

@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016tp) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016so) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -98,7 +98,7 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1016tp/);
+    assert.match(c.d.title, /wap-1016so/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -428,6 +428,25 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     const pb = c.calls.filter((x) => x.method === 'PATCH' && x.u.endsWith('/contacts/1')).pop().body;
     assert.deepEqual(pb, { name: 'Juan Pérez', tipo: 'Flotilla', vehiculo: 'Nissan Versa 2020', estado: 'Nuevo León', piezas: 'Horquilla (brazo de control)', memo: 'Expo' });
     assert.ok(!c.d.getElementById('mCEdit').classList.contains('on'));
+    c.close();
+  });
+
+  await t.test('⑫ 표 제목 눌러 정렬 — 오름 → 내림 → 풀기 · 서버에 sort/dir · 표시 ▲▼', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    const th = () => c.d.querySelector('#cList th[data-sort="tipo"]');
+    assert.equal(c.d.querySelectorAll('#cList th[data-sort]').length, 6);
+    const last = () => c.calls.filter((x) => x.u.includes('/api/wa-promo/contacts?') || x.u.endsWith('/api/wa-promo/contacts')).pop().u;
+    th().click(); await tick(300);
+    assert.match(last(), /sort=tipo&dir=asc/); assert.match(th().textContent, /▲/); assert.equal(th().getAttribute('aria-sort'), 'ascending');
+    th().click(); await tick(300);
+    assert.match(last(), /sort=tipo&dir=desc/); assert.match(th().textContent, /▼/);
+    th().click(); await tick(300);
+    assert.ok(!/sort=/.test(last()), '세 번째 = 기본'); assert.match(th().textContent, /↕/);
+    c.d.querySelector('#cList th[data-sort="when"]').click(); await tick(300);
+    assert.match(last(), /sort=when&dir=desc/, '날짜는 최근부터');
+    // 그룹 일괄 구분 · 동의 요청 조건에는 정렬이 끼지 않음
+    click(c, 'cConsentXls'); await tick();
+    assert.ok(!/sort=/.test(c.calls.filter((x) => x.u.includes('/consent/export')).pop().u));
     c.close();
   });
 
