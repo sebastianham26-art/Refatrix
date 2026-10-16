@@ -625,4 +625,43 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const { readFileSync } = await import('node:fs');
     await query(readFileSync(new URL('../migrations/0285_wa_contact_info.sql', import.meta.url), 'utf-8'));
   });
+
+  await t.test('B13. 0286 직업 · 관심 차종 — Tipo de cliente 저장 · 이미 등록 번호 고침 · 차종 모델 집계(연식 뺌 · 여러 대 나눔) · 직업/차종 거르기 · 수정', async () => {
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE deleted_at IS NULL`);
+    await query(`INSERT INTO wa_contacts (name, phone, source, consent) VALUES ('Ya', '528150000003', 'manual', 'yes')`);
+    const rows = [
+      { name: 'A', phone: '8150000001', tipo: 'Particular', vehiculo: 'Nissan Versa 2019' },
+      { name: 'B', phone: '8150000002', tipo: 'Taxi / app', vehiculo: 'Nissan Versa 2022; Nissan March 2013' },
+      { name: 'Ya otra vez', phone: '8150000003', tipo: 'Flotilla', vehiculo: 'Chevrolet Aveo 2008-2018' },
+      { name: 'C', phone: '8150000004', tipo: '', vehiculo: 'Nissan Versa' },
+      { name: 'D', phone: '8150000005' },
+    ];
+    const dry = (await call(D, 'POST', '/api/wa-promo/contacts/bulk', { rows, dry_run: true })).json();
+    assert.deepEqual(dry.rows.find((r) => r.phone === '528150000003').info_update, ['vehiculo', 'tipo']);
+    const sv = (await call(D, 'POST', '/api/wa-promo/contacts/bulk', { rows, dry_run: false })).json();
+    assert.equal(sv.added, 4); assert.equal(sv.updated, 1);
+    const l = (await call(D, 'GET', '/api/wa-promo/contacts')).json();
+    const by = Object.fromEntries(l.items.map((x) => [x.phone, x]));
+    assert.equal(by['528150000002'].tipo, 'Taxi / app'); assert.equal(by['528150000003'].tipo, 'Flotilla'); assert.equal(by['528150000003'].name, 'Ya', '이름 그대로');
+    const veh = Object.fromEntries(l.facets.vehicles.map((v) => [v.model, v]));
+    assert.equal(veh['Nissan Versa'].n, 3, 'Versa 2019 · Versa 2022 · Versa(연식 없음)');
+    assert.equal(veh['Nissan March'].n, 1); assert.equal(veh['Chevrolet Aveo'].n, 1, '2008-2018 연식 범위도 뺌');
+    assert.equal(veh['Chevrolet Aveo'].yes, 1); assert.equal(l.facets.no_veh, 1);
+    const tp = Object.fromEntries(l.facets.tipos.map((t) => [t.tipo, t.n]));
+    assert.deepEqual(tp, { Particular: 1, 'Taxi / app': 1, Flotilla: 1 }); assert.equal(l.facets.no_tipo, 2);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/contacts?veh=Nissan%20Versa')).json().matched, 3);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/contacts?veh=Nissan%20Versa&tipo=Taxi%20%2F%20app')).json().matched, 1);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/contacts?tipo=none')).json().matched, 2);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/contacts?veh=none')).json().matched, 1);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/contacts?q=taxi')).json().matched, 1, '검색이 직업도 찾음');
+    // 조건(차종) 전체를 그룹에 · 동의 요청 조건으로도 같은 거르기
+    const ga = (await call(D, 'POST', '/api/wa-promo/groups/assign', { group_name: 'Versa', action: 'add', filter: { veh: 'Nissan Versa' } })).json();
+    assert.equal(ga.matched, 3);
+    const id = by['528150000005'].id;
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/contacts/${id}`, { tipo: '  Taller   mecánico ', vehiculo: 'Nissan Tsuru 2010' })).statusCode, 200);
+    assert.deepEqual(await one(`SELECT tipo, vehiculo FROM wa_contacts WHERE id=$1`, [id]), { tipo: 'Taller mecánico', vehiculo: 'Nissan Tsuru 2010' });
+    assert.equal((await call(D, 'GET', '/api/wa-promo/consent/export?tipo=Flotilla')).json().items[0].tipo, 'Flotilla');
+    const { readFileSync } = await import('node:fs');
+    await query(readFileSync(new URL('../migrations/0286_wa_contact_tipo.sql', import.meta.url), 'utf-8'));
+  });
 });

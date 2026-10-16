@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016mi) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016tp) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -18,7 +18,7 @@ const tick = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
 const GROUPS = [{ id: 11, name: 'Talleres MTY', color: '#2a78d6', memo: 'Monterrey', n: 740, yes: 410 }, { id: 12, name: 'Flotillas', color: '#11743b', memo: null, n: 2, yes: 1 }];
 const CONTACTS = [
-  { id: 1, groups: [11, 12], name: 'Juan Pérez', phone: '528110000001', phone_masked: '528****0001', memo: 'Expo', consent: 'yes', consent_via: 'button', consent_at: '2026-10-08T15:00:00Z', lead: false, last_in_at: '2026-10-08T15:00:00Z' },
+  { id: 1, groups: [11, 12], tipo: 'Taller mecánico', vehiculo: 'Nissan Versa 2019; Nissan March 2017; Chevrolet Aveo 2018', piezas: 'Horquilla (brazo de control)', estado: 'Nuevo León', name: 'Juan Pérez', phone: '528110000001', phone_masked: '528****0001', memo: 'Expo', consent: 'yes', consent_via: 'button', consent_at: '2026-10-08T15:00:00Z', lead: false, last_in_at: '2026-10-08T15:00:00Z' },
   { id: 2, name: 'María', phone: '528110000002', phone_masked: '528****0002', memo: '', consent: 'unknown', ask_queued: false },
   { id: 3, name: 'Pedro', phone: '528110000003', phone_masked: '528****0003', memo: '', consent: 'asked', asked_at: '2026-10-08T15:00:00Z', ask_dlv: 'read', consent_reply: '¿Cuánto cuesta?' },
 ];
@@ -54,6 +54,7 @@ function boot() {
         if (u.includes('/api/wa-promo/consent/export')) return json({ items: [{ name: 'Pedro', phone: '528110000003', consent: 'asked', asked_mx: '2026-10-16T12:01:00', dlv: 'read', read_mx: '2026-10-16T12:05:00', reply: '¿Cuánto cuesta?', groups: 'Talleres MTY' }] });
         if (u.includes('/api/wa-promo/consent/retry')) return json({ queued: 4, remaining_today: 140, cap: 150 });
         if (u.includes('/api/wa-promo/contacts') && method === 'GET') return json({ items: CONTACTS, counts: { total: 3, yes: 1, asked: 1, unknown: 1, no: 0, queued: 0, inbox_open: 2 }, matched: u.includes('group=11') ? 740 : 3,
+          facets: { vehicles: [{ model: 'Nissan Versa', n: 132, yes: 40 }, { model: 'Nissan March', n: 21, yes: 5 }], tipos: [{ tipo: 'Particular', n: 29, yes: 9 }, { tipo: 'Taller mecánico', n: 2, yes: 1 }], no_veh: 70, no_tipo: 166 },
           askable: u.includes('group=11') ? 120 : 1, ask: { sent: 50, delivered: 44, read: 30, failed: 4, noreply: 20, yes: 22, no: 4, send_error: 0 } });
         if (u.includes('/api/wa-promo/contacts') && method === 'POST') return body.phone ? json({ id: 9 }) : json({ error: 'bad_phone' }, 400);
         if (u.includes('/api/wa-promo/consent/ask')) return json({ queued: body.ids ? body.ids.length : 1, remaining_today: 140, cap: 150 });
@@ -97,7 +98,7 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1016mi/);
+    assert.match(c.d.title, /wap-1016tp/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -392,8 +393,42 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     const rowsFromSheet = new Function(hdr + fn + '; return rowsFromSheet;')();
     const aoa = [['Último mensaje', 'Nombre', 'Canal', 'Tipo de cliente', 'Estado', 'Ciudad', 'Teléfono', 'Vehículo (año)', 'Piezas buscadas', 'Estatus', 'Nota'],
       ['2026-10-15', 'Ismael', 'WhatsApp', 'Particular', 'Nuevo León', 'Monterrey', '7223451302', 'Nissan Versa 2024', 'Horquilla (brazo de control)', 'Nuevo', '']];
-    assert.deepEqual(rowsFromSheet(aoa), [{ name: 'Ismael', phone: '7223451302', memo: '', estado: 'Nuevo León', vehiculo: 'Nissan Versa 2024', piezas: 'Horquilla (brazo de control)' }]);
-    assert.deepEqual(rowsFromSheet([['Nombre', 'Teléfono'], ['Ana', '8111111111']]), [{ name: 'Ana', phone: '8111111111', memo: '', estado: '', vehiculo: '', piezas: '' }]);
+    assert.deepEqual(rowsFromSheet(aoa), [{ name: 'Ismael', phone: '7223451302', memo: '', estado: 'Nuevo León', vehiculo: 'Nissan Versa 2024', piezas: 'Horquilla (brazo de control)', tipo: 'Particular' }]);
+    assert.deepEqual(rowsFromSheet([['Nombre', 'Teléfono'], ['Ana', '8111111111']]), [{ name: 'Ana', phone: '8111111111', memo: '', estado: '', vehiculo: '', piezas: '', tipo: '' }]);
+  });
+
+  await t.test('⑪ 0286 직업 · 관심 차종 — 표 칸 · 차종/직업 칩 거르기 · ✏ 고치기 · 표 넘침 방지', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    const r1 = c.d.querySelector('tr[data-id="1"]');
+    assert.equal(r1.querySelector('.ttag').textContent, 'Taller mecánico');
+    const vc = [...r1.querySelectorAll('.vchip')].map((x) => x.textContent);
+    assert.deepEqual(vc, ['🚗 Nissan Versa 2019', '🚗 Nissan March 2017', '+1'], '두 대 + 나머지 수');
+    assert.match(r1.textContent, /🔧 Horquilla/); assert.match(r1.textContent, /📍 Nuevo León/);
+    assert.ok(c.d.querySelector('#cList table.ctbl'), '칸 폭 고정 표'); assert.equal(c.d.querySelectorAll('#cList colgroup col').length, 8);
+    assert.ok(r1.querySelector('button.ib[data-act="send"]') && r1.querySelector('button.ib[data-act="edit"]'), '아이콘 버튼');
+    assert.ok(![...r1.querySelectorAll('td.acts button')].some((b) => b.textContent.length > 2), '동작 칸은 아이콘만(글자 없음)');
+    const css = c.d.querySelector('style').textContent;
+    assert.match(css, /#cList\{max-height:min\(66vh,760px\);overflow:auto/); assert.match(css, /position:sticky;top:0/);
+    // 칩
+    const vb = c.d.getElementById('cVehBar'); assert.match(vb.textContent, /Nissan Versa132/); assert.match(vb.textContent, /차종 없음70/);
+    assert.match(c.d.getElementById('cTipoBar').textContent, /Particular29/);
+    vb.querySelector('[data-v="Nissan Versa"]').click(); await tick(300);
+    assert.ok(c.calls.some((x) => x.u.includes('/api/wa-promo/contacts?') && x.u.includes('veh=Nissan+Versa')));
+    c.d.querySelector('#cTipoBar [data-v="Particular"]').click(); await tick(300);
+    assert.ok(c.calls.some((x) => x.u.includes('veh=Nissan+Versa') && x.u.includes('tipo=Particular')));
+    click(c, 'cGroupBulk'); await tick();
+    assert.match(c.d.getElementById('gaFilterL').textContent, /🚗 Nissan Versa · 💼 Particular/);
+    c.d.getElementById('mGAssign').classList.remove('on');
+    // ✏ 고치기
+    c.d.querySelector('tr[data-id="1"] button[data-act="edit"]').click(); await tick();
+    assert.ok(c.d.getElementById('mCEdit').classList.contains('on'));
+    assert.equal(c.d.getElementById('ceTipo').value, 'Taller mecánico'); assert.equal(c.d.getElementById('ceVeh').value, 'Nissan Versa 2019; Nissan March 2017; Chevrolet Aveo 2018');
+    assert.ok(c.d.querySelectorAll('#ceEstadoList option').length >= 32);
+    c.d.getElementById('ceTipo').value = 'Flotilla'; c.d.getElementById('ceVeh').value = 'Nissan Versa 2020'; click(c, 'ceSave'); await tick(300);
+    const pb = c.calls.filter((x) => x.method === 'PATCH' && x.u.endsWith('/contacts/1')).pop().body;
+    assert.deepEqual(pb, { name: 'Juan Pérez', tipo: 'Flotilla', vehiculo: 'Nissan Versa 2020', estado: 'Nuevo León', piezas: 'Horquilla (brazo de control)', memo: 'Expo' });
+    assert.ok(!c.d.getElementById('mCEdit').classList.contains('on'));
+    c.close();
   });
 
   await t.test('⑥ 메뉴 등록 · 인라인 onclick 없음', () => {

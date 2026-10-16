@@ -109,7 +109,7 @@ export async function classifyRows(rows, q = query) {
     // 0285 · 주 · 차종(연식) · 찾는 부품(Meta 문의 엑셀 등)
     const info = (k, n) => String(r[k] == null ? '' : r[k]).replace(/\s+/g, ' ').trim().slice(0, n) || null;
     const row = { i, name, phone, raw_phone: String(r.phone || '').trim(), memo, status: 'new',
-      estado: info('estado', 80), vehiculo: info('vehiculo', 200), piezas: info('piezas', 300) };
+      estado: info('estado', 80), vehiculo: info('vehiculo', 200), piezas: info('piezas', 300), tipo: info('tipo', 60) };
     if (!phone) row.status = 'bad_phone';
     else if (!name) row.status = 'no_name';
     else if (seen.has(phone)) { row.status = 'dup_in_file'; row.dup_of = seen.get(phone); }
@@ -118,14 +118,14 @@ export async function classifyRows(rows, q = query) {
   }
   const phones = out.filter((r) => r.status === 'new').map((r) => r.phone);
   if (phones.length) {
-    const ex = new Map((await q(`SELECT id, phone, name, estado, vehiculo, piezas FROM wa_contacts WHERE deleted_at IS NULL AND phone = ANY($1::text[])`, [phones])).rows
+    const ex = new Map((await q(`SELECT id, phone, name, estado, vehiculo, piezas, tipo FROM wa_contacts WHERE deleted_at IS NULL AND phone = ANY($1::text[])`, [phones])).rows
       .map((x) => [x.phone, x]));
     for (const r of out) {
       if (r.status !== 'new' || !ex.has(r.phone)) continue;
       const e = ex.get(r.phone);
       r.status = 'exists'; r.existing = { id: Number(e.id), name: e.name };
       // 이미 등록된 번호 — 파일에 값이 있고 지금과 다른 칸만 고친다
-      const ch = ['estado', 'vehiculo', 'piezas'].filter((k) => r[k] && r[k] !== (e[k] || null));
+      const ch = ['estado', 'vehiculo', 'piezas', 'tipo'].filter((k) => r[k] && r[k] !== (e[k] || null));
       if (ch.length) r.info_update = ch;
     }
   }
@@ -137,17 +137,17 @@ export async function insertContacts(rows, { source = 'manual', userId = null },
   for (const r of cls) {
     if (r.status !== 'new') continue;
     const x = (await q(
-      `INSERT INTO wa_contacts (name, phone, memo, source, source_ref, created_by, estado, vehiculo, piezas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `INSERT INTO wa_contacts (name, phone, memo, source, source_ref, created_by, estado, vehiculo, piezas, tipo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (phone) WHERE deleted_at IS NULL DO NOTHING RETURNING id`,
-      [r.name, r.phone, r.memo, source, (rows[r.i] && rows[r.i].source_ref) || null, userId, r.estado, r.vehiculo, r.piezas])).rows[0];
+      [r.name, r.phone, r.memo, source, (rows[r.i] && rows[r.i].source_ref) || null, userId, r.estado, r.vehiculo, r.piezas, r.tipo])).rows[0];
     if (x) { added++; ids.push(Number(x.id)); r.id = Number(x.id); } else r.status = 'exists';
   }
-  // 0285 · 이미 등록된 번호 — 주 · 차종 · 부품 칸 고치기(파일에 값이 있는 칸만)
+  // 0285 · 이미 등록된 번호 — 주 · 차종 · 부품 · 직업(0286) 칸 고치기(파일에 값이 있는 칸만)
   let updated = 0;
   for (const r of cls) {
     if (r.status !== 'exists' || !r.info_update || !r.existing) continue;
-    const u = await q(`UPDATE wa_contacts SET estado=COALESCE($2, estado), vehiculo=COALESCE($3, vehiculo), piezas=COALESCE($4, piezas), updated_at=now()
-                        WHERE id=$1 AND deleted_at IS NULL`, [r.existing.id, r.estado, r.vehiculo, r.piezas]);
+    const u = await q(`UPDATE wa_contacts SET estado=COALESCE($2, estado), vehiculo=COALESCE($3, vehiculo), piezas=COALESCE($4, piezas), tipo=COALESCE($5, tipo), updated_at=now()
+                        WHERE id=$1 AND deleted_at IS NULL`, [r.existing.id, r.estado, r.vehiculo, r.piezas, r.tipo]);
     if (u.rowCount) { updated++; r.updated = true; }
   }
   return { rows: cls, added, ids, updated };

@@ -102,7 +102,7 @@ function contactOut(r) {
     ask_dlv: r.ask_dlv || null, ask_delivered_at: r.ask_delivered_at || null, ask_read_at: r.ask_read_at || null,
     ask_dlv_reason: r.ask_dlv === 'failed' ? explainWaError(r.ask_dlv_code, r.ask_dlv_title) + (r.ask_dlv_detail ? ` — ${r.ask_dlv_detail}` : '') : null,
     consent_reply: r.consent_reply || null,
-    estado: r.estado || null, vehiculo: r.vehiculo || null, piezas: r.piezas || null };
+    estado: r.estado || null, vehiculo: r.vehiculo || null, piezas: r.piezas || null, tipo: r.tipo || null };
 }
 function dlv(x) {
   const o = { dlv_status: x.dlv_status || null, delivered_at: x.delivered_at || null, read_at: x.read_at || null };
@@ -118,13 +118,21 @@ export default async function waPromoRoutes(app) {
   const ASK_COLS = `am.status AS ask_dlv, am.delivered_at AS ask_delivered_at, am.read_at AS ask_read_at, am.error_code AS ask_dlv_code, am.error_title AS ask_dlv_title, am.error_detail AS ask_dlv_detail,
                     (SELECT e.text FROM wa_consent_events e WHERE e.contact_id = w.id AND e.kind IN ('yes','no','reply') ORDER BY e.at DESC, e.id DESC LIMIT 1) AS consent_reply`;
   const ASK_JOIN = `LEFT JOIN wa_message_status am ON am.message_id = w.ask_message_id`;
+  // 0286 · 관심 차종 모델 = 연식(2019 · 2008-2018 · 2015/18) 빼고 · 「; 」로 여러 대 나눔 (PostgreSQL 정규식)
+  const VEH_YEAR_RE = String.raw`\m(19|20)[0-9]{2}(\s*[-/]\s*((19|20)?[0-9]{2}))?\M`;
+  const VEH_SPLIT_RE = String.raw`\s*;\s*`;
   // 연락처 조건(목록 · 「조건에 맞는 전체」 그룹 넣기가 같이 쓴다) — q · consent · queued · group(id | none)
   function contactConds(f, args) {
     const conds = ['w.deleted_at IS NULL'];
     const kw = String((f && f.q) || '').trim();
-    if (kw) { args.push('%' + kw + '%'); const d = kw.replace(/\D/g, ''); conds.push(`(w.name ILIKE $${args.length} OR w.memo ILIKE $${args.length} OR w.estado ILIKE $${args.length} OR w.vehiculo ILIKE $${args.length} OR w.piezas ILIKE $${args.length}${d.length >= 3 ? ` OR w.phone LIKE '%${d}%'` : ''})`); }
+    if (kw) { args.push('%' + kw + '%'); const d = kw.replace(/\D/g, ''); conds.push(`(w.name ILIKE $${args.length} OR w.memo ILIKE $${args.length} OR w.estado ILIKE $${args.length} OR w.vehiculo ILIKE $${args.length} OR w.piezas ILIKE $${args.length} OR w.tipo ILIKE $${args.length}${d.length >= 3 ? ` OR w.phone LIKE '%${d}%'` : ''})`); }
     if (f && CONSENTS.includes(f.consent)) { args.push(f.consent); conds.push(`w.consent = $${args.length}`); }
     if (f && String(f.queued) === '1') conds.push(`w.ask_queued_at IS NOT NULL AND w.asked_at IS NULL`);
+    // 0286 · 직업 · 관심 차종(모델명, 연식 무시)으로 거르기
+    if (f && f.tipo === 'none') conds.push(`w.tipo IS NULL`);
+    else if (f && f.tipo) { args.push(String(f.tipo)); conds.push(`w.tipo = $${args.length}`); }
+    if (f && f.veh === 'none') conds.push(`w.vehiculo IS NULL`);
+    else if (f && f.veh) { args.push('%' + String(f.veh).replace(/[%_]/g, '') + '%'); conds.push(`w.vehiculo ILIKE $${args.length}`); }
     // 0284 · 동의 요청 상태로 거르기
     if (f && f.ask === 'failed') conds.push(`w.consent='asked' AND EXISTS (SELECT 1 FROM wa_message_status ms WHERE ms.message_id = w.ask_message_id AND ms.status='failed')`);
     if (f && f.ask === 'noreply') conds.push(`w.consent='asked' AND NOT EXISTS (SELECT 1 FROM wa_message_status ms WHERE ms.message_id = w.ask_message_id AND ms.status='failed')`);
@@ -170,7 +178,21 @@ export default async function waPromoRoutes(app) {
               count(*) FILTER (WHERE consent='unknown' AND ask_queued_at IS NOT NULL AND asked_at IS NULL)::int queued,
               count(*) FILTER (WHERE inbox_state='open')::int inbox_open
          FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
-    return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched, askable: Number(mm.askable), ask };
+    // 0286 · 관심 차종(모델 · 연식 뺌 · 여러 대는 나눔) · 직업별 인원(전체 연락처)
+    let facets = null;
+    try {
+      const veh = (await query(
+        `SELECT model, count(DISTINCT id)::int n, count(DISTINCT id) FILTER (WHERE consent='yes')::int yes FROM (
+           SELECT w.id, w.consent, btrim(regexp_replace(regexp_replace(v, $1, '', 'g'), $2, ' ', 'g')) AS model
+             FROM wa_contacts w, regexp_split_to_table(w.vehiculo, $3) v
+            WHERE w.deleted_at IS NULL AND w.vehiculo IS NOT NULL) x
+          WHERE model <> '' GROUP BY model ORDER BY n DESC, model LIMIT 30`, [VEH_YEAR_RE, String.raw`\s+`, VEH_SPLIT_RE])).rows;
+      const tip = (await query(`SELECT tipo, count(*)::int n, count(*) FILTER (WHERE consent='yes')::int yes FROM wa_contacts
+                                 WHERE deleted_at IS NULL AND tipo IS NOT NULL GROUP BY tipo ORDER BY n DESC, tipo LIMIT 30`)).rows;
+      const nn = (await query(`SELECT count(*) FILTER (WHERE vehiculo IS NULL)::int veh, count(*) FILTER (WHERE tipo IS NULL)::int tipo FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
+      facets = { vehicles: veh, tipos: tip, no_veh: nn.veh, no_tipo: nn.tipo };
+    } catch (_) { facets = null; /* 0285/0286 전 */ }
+    return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched, askable: Number(mm.askable), ask, facets };
   });
 
   app.post('/api/wa-promo/contacts', W, async (req, reply) => {
@@ -207,7 +229,7 @@ export default async function waPromoRoutes(app) {
     if (b.name != null) { const n = String(b.name).trim().slice(0, 120); if (!n) return reply.code(400).send({ error: 'name_required' }); put('name=?', n); }
     if (b.memo !== undefined) put('memo=?', String(b.memo || '').trim().slice(0, 300) || null);
     if (b.note !== undefined) put('note=?', String(b.note || '').trim().slice(0, 1000) || null);
-    for (const [k, n] of [['estado', 80], ['vehiculo', 200], ['piezas', 300]]) if (b[k] !== undefined) put(`${k}=?`, String(b[k] || '').replace(/\s+/g, ' ').trim().slice(0, n) || null);
+    for (const [k, n] of [['estado', 80], ['vehiculo', 200], ['piezas', 300], ['tipo', 60]]) if (b[k] !== undefined) put(`${k}=?`, String(b[k] || '').replace(/\s+/g, ' ').trim().slice(0, n) || null);
     if (b.phone != null) {
       const p = normalizeWaNumber(b.phone); if (!p) return reply.code(400).send({ error: 'bad_phone' });
       const dup = (await query(`SELECT id FROM wa_contacts WHERE phone=$1 AND deleted_at IS NULL AND id<>$2`, [p, id])).rows[0];
@@ -285,7 +307,7 @@ export default async function waPromoRoutes(app) {
   app.get('/api/wa-promo/consent/export', R, async (req) => {
     const args = []; const conds = contactConds(req.query, args);
     const rows = (await query(
-      `SELECT w.name, w.phone, w.memo, w.estado, w.vehiculo, w.piezas, w.consent, w.consent_via, ${MXT('w.consent_at')} AS consent_mx, ${MXT('w.asked_at')} AS asked_mx,
+      `SELECT w.name, w.phone, w.memo, w.estado, w.tipo, w.vehiculo, w.piezas, w.consent, w.consent_via, ${MXT('w.consent_at')} AS consent_mx, ${MXT('w.asked_at')} AS asked_mx,
               ${MXT('am.delivered_at')} AS delivered_mx, ${MXT('am.read_at')} AS read_mx, am.status AS dlv, am.error_code, am.error_title,
               (SELECT e.text FROM wa_consent_events e WHERE e.contact_id = w.id AND e.kind IN ('yes','no','reply') ORDER BY e.at DESC, e.id DESC LIMIT 1) AS reply,
               (SELECT u2.name FROM wa_consent_events e JOIN users u2 ON u2.id = e.user_id WHERE e.contact_id = w.id AND e.kind IN ('manual_yes','manual_no','reset') ORDER BY e.at DESC LIMIT 1) AS changed_by,
@@ -927,7 +949,7 @@ export default async function waPromoRoutes(app) {
 function summarize(rows) {
   const s = { total: rows.length, new: 0, exists: 0, dup_in_file: 0, bad_phone: 0, no_name: 0 };
   for (const r of rows) { s[r.status] = (s[r.status] || 0) + 1; if (r.info_update) s.info_update = (s.info_update || 0) + 1; }
-  const wi = rows.filter((r) => r.status === 'new' && (r.estado || r.vehiculo || r.piezas)).length;
+  const wi = rows.filter((r) => r.status === 'new' && (r.estado || r.vehiculo || r.piezas || r.tipo)).length;
   if (wi) s.with_info = wi;
   return s;
 }
