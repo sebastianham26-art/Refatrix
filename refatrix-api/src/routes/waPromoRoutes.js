@@ -11,7 +11,10 @@
 //   POST   /api/wa-promo/contacts/bulk {rows, dry_run}   엑셀 대량(미리보기 → 저장)
 //   PATCH  /api/wa-promo/contacts/:id                    이름·메모·동의(영업 확인)·담당·메모·처리 상태
 //   DELETE /api/wa-promo/contacts/:id                    삭제(소프트)
-//   POST   /api/wa-promo/consent/ask {ids?}              동의 요청 대기열(미확인만 · 1회)
+//   POST   /api/wa-promo/consent/ask {ids? | filter?}    동의 요청 대기열(미확인만 · 1회) · filter = 지금 조건에 맞는 미확인 전체(0284)
+//   POST   /api/wa-promo/consent/retry {ids?}            요청이 「전달 실패」한 사람만 다시 요청(0284)
+//   GET    /api/wa-promo/contacts/:id/consent-log        동의 기록(요청 · 도착 · 읽음 · 회신 원문 · 사람이 바꿈)(0284)
+//   GET    /api/wa-promo/consent/export?<연락처 조건>     동의 기록 엑셀용 원자료(0284)
 //   ── 0283 연락처 그룹 ──
 //   GET    /api/wa-promo/groups                          그룹 목록 + 인원(전체 · ✅ 동의) · 그룹 없는 사람 수
 //   POST   /api/wa-promo/groups {name, color?, memo?} · PATCH /api/wa-promo/groups/:id · DELETE (소프트)
@@ -64,7 +67,7 @@ import { logEvent } from '../audit.js';
 import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
 import {
-  promoCfg, promoReady, insertContacts, classifyRows, queueConsentAsk, sentToday, audienceCount,
+  promoCfg, promoReady, insertContacts, classifyRows, queueConsentAsk, sentToday, audienceCount, retryFailedConsent, consentEvent,
   sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage, targetIdsOf,
 } from '../waPromo.js';
 
@@ -94,7 +97,12 @@ function contactOut(r) {
     ask_queued: !!r.ask_queued_at && !r.asked_at, asked_at: r.asked_at || null, ask_error: r.ask_error || null,
     inbox_state: r.inbox_state, lead: r.lead === true, assigned_to: r.assigned_to != null ? Number(r.assigned_to) : null,
     assigned_name: r.assigned_name || null, note: r.note || null, last_in_at: r.last_in_at || null, last_out_at: r.last_out_at || null,
-    created_at: r.created_at };
+    created_at: r.created_at,
+    // 0284 · 동의 요청 메시지의 실제 전달 상태 · 마지막 회신 원문
+    ask_dlv: r.ask_dlv || null, ask_delivered_at: r.ask_delivered_at || null, ask_read_at: r.ask_read_at || null,
+    ask_dlv_reason: r.ask_dlv === 'failed' ? explainWaError(r.ask_dlv_code, r.ask_dlv_title) + (r.ask_dlv_detail ? ` — ${r.ask_dlv_detail}` : '') : null,
+    consent_reply: r.consent_reply || null,
+    estado: r.estado || null, vehiculo: r.vehiculo || null, piezas: r.piezas || null };
 }
 function dlv(x) {
   const o = { dlv_status: x.dlv_status || null, delivered_at: x.delivered_at || null, read_at: x.read_at || null };
@@ -106,13 +114,22 @@ const DLV_COLS = `m.status AS dlv_status, m.delivered_at, m.read_at, m.error_cod
 
 export default async function waPromoRoutes(app) {
   // ───────── 연락처 ─────────
+  // 0284 · 동의 요청 전달 상태 + 마지막 회신 원문
+  const ASK_COLS = `am.status AS ask_dlv, am.delivered_at AS ask_delivered_at, am.read_at AS ask_read_at, am.error_code AS ask_dlv_code, am.error_title AS ask_dlv_title, am.error_detail AS ask_dlv_detail,
+                    (SELECT e.text FROM wa_consent_events e WHERE e.contact_id = w.id AND e.kind IN ('yes','no','reply') ORDER BY e.at DESC, e.id DESC LIMIT 1) AS consent_reply`;
+  const ASK_JOIN = `LEFT JOIN wa_message_status am ON am.message_id = w.ask_message_id`;
   // 연락처 조건(목록 · 「조건에 맞는 전체」 그룹 넣기가 같이 쓴다) — q · consent · queued · group(id | none)
   function contactConds(f, args) {
     const conds = ['w.deleted_at IS NULL'];
     const kw = String((f && f.q) || '').trim();
-    if (kw) { args.push('%' + kw + '%'); const d = kw.replace(/\D/g, ''); conds.push(`(w.name ILIKE $${args.length} OR w.memo ILIKE $${args.length}${d.length >= 3 ? ` OR w.phone LIKE '%${d}%'` : ''})`); }
+    if (kw) { args.push('%' + kw + '%'); const d = kw.replace(/\D/g, ''); conds.push(`(w.name ILIKE $${args.length} OR w.memo ILIKE $${args.length} OR w.estado ILIKE $${args.length} OR w.vehiculo ILIKE $${args.length} OR w.piezas ILIKE $${args.length}${d.length >= 3 ? ` OR w.phone LIKE '%${d}%'` : ''})`); }
     if (f && CONSENTS.includes(f.consent)) { args.push(f.consent); conds.push(`w.consent = $${args.length}`); }
     if (f && String(f.queued) === '1') conds.push(`w.ask_queued_at IS NOT NULL AND w.asked_at IS NULL`);
+    // 0284 · 동의 요청 상태로 거르기
+    if (f && f.ask === 'failed') conds.push(`w.consent='asked' AND EXISTS (SELECT 1 FROM wa_message_status ms WHERE ms.message_id = w.ask_message_id AND ms.status='failed')`);
+    if (f && f.ask === 'noreply') conds.push(`w.consent='asked' AND NOT EXISTS (SELECT 1 FROM wa_message_status ms WHERE ms.message_id = w.ask_message_id AND ms.status='failed')`);
+    if (f && f.ask === 'read') conds.push(`w.consent='asked' AND EXISTS (SELECT 1 FROM wa_message_status ms WHERE ms.message_id = w.ask_message_id AND ms.status='read')`);
+    if (f && f.ask === 'askable') conds.push(`w.consent='unknown' AND w.asked_at IS NULL AND w.ask_queued_at IS NULL`);
     const g = f && f.group;
     if (g === 'none') conds.push(`NOT EXISTS (SELECT 1 FROM wa_contact_groups cg JOIN wa_groups gg ON gg.id = cg.group_id AND gg.deleted_at IS NULL WHERE cg.contact_id = w.id)`);
     else if (idOf(g)) { args.push(idOf(g)); conds.push(`EXISTS (SELECT 1 FROM wa_contact_groups cg WHERE cg.contact_id = w.id AND cg.group_id = $${args.length})`); }
@@ -122,12 +139,30 @@ export default async function waPromoRoutes(app) {
     const args = []; const conds = contactConds(req.query, args);
     const limit = Math.min(Number(req.query.limit) || 500, 2000);
     const rows = (await query(
-      `SELECT w.*, u.name AS assigned_name,
+      `SELECT w.*, u.name AS assigned_name, ${ASK_COLS},
               ARRAY(SELECT cg.group_id FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL
                      WHERE cg.contact_id = w.id ORDER BY lower(g.name)) AS group_ids
-         FROM wa_contacts w LEFT JOIN users u ON u.id = w.assigned_to
+         FROM wa_contacts w LEFT JOIN users u ON u.id = w.assigned_to ${ASK_JOIN}
         WHERE ${conds.join(' AND ')} ORDER BY w.created_at DESC, w.id DESC LIMIT ${limit}`, args)).rows;
-    const matched = Number((await query(`SELECT count(*)::int n FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows[0].n);
+    const mm = (await query(
+      `SELECT count(*)::int n, count(*) FILTER (WHERE w.consent='unknown' AND w.asked_at IS NULL AND w.ask_queued_at IS NULL)::int askable
+         FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows[0];
+    const matched = Number(mm.n);
+    // 0284 · 동의 요청 현황(전체) — 요청 보냄 · 도착 · 읽음 · 동의 · 거부 · 무응답 · 전달 실패
+    let ask = null;
+    try {
+      ask = (await query(
+        `SELECT count(*) FILTER (WHERE w.ask_message_id IS NOT NULL OR EXISTS (SELECT 1 FROM wa_consent_events e WHERE e.contact_id=w.id AND e.kind='asked'))::int AS sent,
+                count(*) FILTER (WHERE m.status IN ('delivered','read'))::int AS delivered,
+                count(*) FILTER (WHERE m.status = 'read')::int AS read,
+                count(*) FILTER (WHERE w.consent='asked' AND m.status = 'failed')::int AS failed,
+                count(*) FILTER (WHERE w.consent='asked' AND (m.status IS NULL OR m.status <> 'failed'))::int AS noreply,
+                count(*) FILTER (WHERE w.consent='yes' AND w.consent_via IN ('button','message'))::int AS yes,
+                count(*) FILTER (WHERE w.consent='no' AND w.consent_via IN ('button','message'))::int AS no,
+                count(*) FILTER (WHERE w.ask_error IS NOT NULL AND w.asked_at IS NULL)::int AS send_error
+           FROM wa_contacts w LEFT JOIN wa_message_status m ON m.message_id = w.ask_message_id
+          WHERE w.deleted_at IS NULL`)).rows[0];
+    } catch (_) { ask = null; /* 0284 전 */ }
     const counts = (await query(
       `SELECT count(*)::int total,
               count(*) FILTER (WHERE consent='yes')::int yes, count(*) FILTER (WHERE consent='asked')::int asked,
@@ -135,7 +170,7 @@ export default async function waPromoRoutes(app) {
               count(*) FILTER (WHERE consent='unknown' AND ask_queued_at IS NOT NULL AND asked_at IS NULL)::int queued,
               count(*) FILTER (WHERE inbox_state='open')::int inbox_open
          FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
-    return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched };
+    return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched, askable: Number(mm.askable), ask };
   });
 
   app.post('/api/wa-promo/contacts', W, async (req, reply) => {
@@ -161,8 +196,8 @@ export default async function waPromoRoutes(app) {
     if (b.group_id != null && !gid) return reply.code(404).send({ error: 'group_not_found' });
     const r = await insertContacts(rows, { source: 'excel', userId: req.ctx.perm.userId });
     const grouped = gid ? await addToGroup(gid, importedIds(r.rows), req.ctx.perm.userId) : 0;
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: 'wa_contacts:bulk', detail: { added: r.added, rows: rows.length, group: gid, grouped } });
-    return { dry_run: false, added: r.added, grouped, rows: r.rows, summary: summarize(r.rows) };
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: 'wa_contacts:bulk', detail: { added: r.added, updated: r.updated, rows: rows.length, group: gid, grouped } });
+    return { dry_run: false, added: r.added, updated: r.updated || 0, grouped, rows: r.rows, summary: summarize(r.rows) };
   });
 
   app.patch('/api/wa-promo/contacts/:id', W, async (req, reply) => {
@@ -172,6 +207,7 @@ export default async function waPromoRoutes(app) {
     if (b.name != null) { const n = String(b.name).trim().slice(0, 120); if (!n) return reply.code(400).send({ error: 'name_required' }); put('name=?', n); }
     if (b.memo !== undefined) put('memo=?', String(b.memo || '').trim().slice(0, 300) || null);
     if (b.note !== undefined) put('note=?', String(b.note || '').trim().slice(0, 1000) || null);
+    for (const [k, n] of [['estado', 80], ['vehiculo', 200], ['piezas', 300]]) if (b[k] !== undefined) put(`${k}=?`, String(b[k] || '').replace(/\s+/g, ' ').trim().slice(0, n) || null);
     if (b.phone != null) {
       const p = normalizeWaNumber(b.phone); if (!p) return reply.code(400).send({ error: 'bad_phone' });
       const dup = (await query(`SELECT id FROM wa_contacts WHERE phone=$1 AND deleted_at IS NULL AND id<>$2`, [p, id])).rows[0];
@@ -194,7 +230,11 @@ export default async function waPromoRoutes(app) {
     if (typeof b.lead === 'boolean') put('lead=?', b.lead);
     if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
     args.push(id);
+    const prev = b.consent != null ? (await query(`SELECT consent FROM wa_contacts WHERE id=$1`, [id])).rows[0] : null;
     const r = (await query(`UPDATE wa_contacts SET ${sets.join(', ')}, updated_at=now() WHERE id=$${args.length} AND deleted_at IS NULL RETURNING *`, args)).rows[0];
+    if (r && b.consent != null && prev && prev.consent !== b.consent) {   // 0284 · 사람이 바꾼 동의 — 누가 · 언제
+      await consentEvent(query, { contactId: id, kind: b.consent === 'unknown' ? 'reset' : 'manual_' + b.consent, via: 'sales', userId: req.ctx.perm.userId });
+    }
     if (!r) return reply.code(404).send({ error: 'not_found' });
     if (b.consent != null) await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `wa_contact:${id}`, detail: { consent: b.consent, via: 'sales' } });
     return contactOut(r);
@@ -210,9 +250,49 @@ export default async function waPromoRoutes(app) {
 
   app.post('/api/wa-promo/consent/ask', W, async (req) => {
     const b = req.body || {};
-    const r = await queueConsentAsk({ ids: Array.isArray(b.ids) ? b.ids : null });
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'wa_contacts:consent_ask', detail: r });
+    let ids = Array.isArray(b.ids) ? b.ids : null;
+    if (!ids && b.filter && typeof b.filter === 'object') {   // 0284 · 지금 조건(그룹 · 검색 · 상태)에 맞는 미확인 전체
+      const args = []; const conds = contactConds(b.filter, args);
+      ids = (await query(`SELECT w.id FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows.map((r) => Number(r.id));
+    }
+    const r = await queueConsentAsk({ ids, userId: req.ctx.perm.userId });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'wa_contacts:consent_ask', detail: { ...r, filter: b.filter ? true : undefined } });
     return { ...r, remaining_today: Math.max(0, promoCfg().cap - await sentToday()), cap: promoCfg().cap };
+  });
+  app.post('/api/wa-promo/consent/retry', W, async (req) => {
+    const b = req.body || {};
+    const r = await retryFailedConsent({ ids: Array.isArray(b.ids) ? b.ids : null, userId: req.ctx.perm.userId });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'wa_contacts:consent_retry', detail: r });
+    return { ...r, remaining_today: Math.max(0, promoCfg().cap - await sentToday()), cap: promoCfg().cap };
+  });
+  const EV_COLS = `e.id, e.kind, e.via, e.text, e.message_id, e.backfill, e.at, ${MXT('e.at')} AS at_mx, u.name AS user_name`;
+  app.get('/api/wa-promo/contacts/:id/consent-log', R, async (req, reply) => {
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const ct = (await query(`SELECT w.*, ${ASK_COLS} FROM wa_contacts w ${ASK_JOIN} WHERE w.id=$1`, [id])).rows[0];
+    if (!ct) return reply.code(404).send({ error: 'not_found' });
+    const ev = (await query(`SELECT ${EV_COLS} FROM wa_consent_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.contact_id=$1 ORDER BY e.at, e.id`, [id])).rows;
+    // 요청 메시지별 전달 상태(다시 요청한 적이 있으면 여러 개)
+    const mids = [...new Set(ev.map((e) => e.message_id).filter(Boolean))];
+    const st = mids.length ? (await query(`SELECT message_id, status, ${MXT('sent_at')} AS sent_mx, ${MXT('delivered_at')} AS delivered_mx, ${MXT('read_at')} AS read_mx,
+                                                 error_code, error_title, error_detail, ${MXT('updated_at')} AS updated_mx
+                                            FROM wa_message_status WHERE message_id = ANY($1::text[])`, [mids])).rows : [];
+    const stm = new Map(st.map((x) => [x.message_id, { status: x.status, delivered_mx: x.delivered_mx, read_mx: x.read_mx, updated_mx: x.updated_mx,
+      reason: x.status === 'failed' ? explainWaError(x.error_code, x.error_title) + (x.error_detail ? ` — ${x.error_detail}` : '') : null }]));
+    return { contact: contactOut(ct),
+      items: ev.map((e) => ({ id: Number(e.id), kind: e.kind, via: e.via, text: e.text, at_mx: e.at_mx, user_name: e.user_name || null, backfill: e.backfill === true,
+        dlv: e.message_id ? (stm.get(e.message_id) || null) : null })) };
+  });
+  app.get('/api/wa-promo/consent/export', R, async (req) => {
+    const args = []; const conds = contactConds(req.query, args);
+    const rows = (await query(
+      `SELECT w.name, w.phone, w.memo, w.estado, w.vehiculo, w.piezas, w.consent, w.consent_via, ${MXT('w.consent_at')} AS consent_mx, ${MXT('w.asked_at')} AS asked_mx,
+              ${MXT('am.delivered_at')} AS delivered_mx, ${MXT('am.read_at')} AS read_mx, am.status AS dlv, am.error_code, am.error_title,
+              (SELECT e.text FROM wa_consent_events e WHERE e.contact_id = w.id AND e.kind IN ('yes','no','reply') ORDER BY e.at DESC, e.id DESC LIMIT 1) AS reply,
+              (SELECT u2.name FROM wa_consent_events e JOIN users u2 ON u2.id = e.user_id WHERE e.contact_id = w.id AND e.kind IN ('manual_yes','manual_no','reset') ORDER BY e.at DESC LIMIT 1) AS changed_by,
+              (SELECT string_agg(g.name, ', ' ORDER BY lower(g.name)) FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL WHERE cg.contact_id = w.id) AS groups
+         FROM wa_contacts w ${ASK_JOIN}
+        WHERE ${conds.join(' AND ')} ORDER BY w.name, w.id LIMIT 20000`, args)).rows;
+    return { items: rows.map((r) => ({ ...r, dlv_reason: r.dlv === 'failed' ? explainWaError(r.error_code, r.error_title) : null })) };
   });
 
   // 설문 응답자 가져오기 — 이름·전화 문항은 화면에서 고른다(추정값을 미리 채움)
@@ -846,6 +926,8 @@ export default async function waPromoRoutes(app) {
 
 function summarize(rows) {
   const s = { total: rows.length, new: 0, exists: 0, dup_in_file: 0, bad_phone: 0, no_name: 0 };
-  for (const r of rows) s[r.status] = (s[r.status] || 0) + 1;
+  for (const r of rows) { s[r.status] = (s[r.status] || 0) + 1; if (r.info_update) s.info_update = (s.info_update || 0) + 1; }
+  const wi = rows.filter((r) => r.status === 'new' && (r.estado || r.vehiculo || r.piezas)).length;
+  if (wi) s.with_info = wi;
   return s;
 }

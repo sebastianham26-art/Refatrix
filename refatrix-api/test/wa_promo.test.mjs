@@ -66,7 +66,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const app = buildApp(); await app.ready();
   t.after(() => app.close());
 
-  await query(`DELETE FROM wa_campaign_sends; DELETE FROM wa_messages; DELETE FROM wa_campaigns; DELETE FROM wa_images; DELETE FROM wa_contact_groups; DELETE FROM wa_groups; DELETE FROM wa_contacts; DELETE FROM wa_inbound; DELETE FROM wa_message_status;`);
+  await query(`DELETE FROM wa_campaign_sends; DELETE FROM wa_messages; DELETE FROM wa_campaigns; DELETE FROM wa_images; DELETE FROM wa_contact_groups; DELETE FROM wa_groups; DELETE FROM wa_consent_events; DELETE FROM wa_contacts; DELETE FROM wa_inbound; DELETE FROM wa_message_status;`);
   const one = async (sql, a) => (await query(sql, a)).rows[0];
   const SFX = Date.now().toString(36).slice(-5);
   const dir = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`, [`WP Dir ${SFX}`, `wpdir${SFX}`]);
@@ -511,5 +511,118 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal((await call(Mk2, 'POST', '/api/wa-promo/groups/assign', { group_id: gT.id, ids: [c.m] })).statusCode, 403);
     const { readFileSync } = await import('node:fs');
     await query(readFileSync(new URL('../migrations/0283_wa_contact_groups.sql', import.meta.url), 'utf-8'));
+  });
+
+  await t.test('B11. 0284 수신 동의 기록 — 그룹 조건으로 요청 · 요청 나감 · 도착/읽음/전달 실패(웹훅) · 회신 원문 · 다른 말 회신 · 실패만 다시 요청 · 사람이 바꿈 · 엑셀 · 옮겨 담기', async () => {
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE deleted_at IS NULL`);
+    process.env.PROMO_WA_DAILY_CAP = '150';
+    const mk = async (name, phone) => Number((await one(`INSERT INTO wa_contacts (name, phone, source) VALUES ($1,$2,'manual') RETURNING id`, [name, phone])).id);
+    const a = await mk('Ana Expo', '528130000001'), b = await mk('Beto Expo', '528130000002'), c = await mk('Caro Expo', '528130000003'), d = await mk('Dani fuera', '528130000004');
+    const g = (await call(D, 'POST', '/api/wa-promo/groups', { name: 'Expo Consent' })).json().id;
+    await call(D, 'POST', '/api/wa-promo/groups/assign', { group_id: g, action: 'add', ids: [a, b, c] });
+    // 조건에 맞는 미확인 수 → 그 조건으로 요청
+    const l0 = (await call(D, 'GET', `/api/wa-promo/contacts?group=${g}`)).json();
+    assert.equal(l0.askable, 3);
+    const q = (await call(D, 'POST', '/api/wa-promo/consent/ask', { filter: { group: String(g) } })).json();
+    assert.equal(q.queued, 3, '그룹 밖 Dani 는 안 들어감');
+    assert.equal((await one(`SELECT ask_queued_at FROM wa_contacts WHERE id=$1`, [d])).ask_queued_at, null);
+    assert.equal(Number((await one(`SELECT count(*) n FROM wa_consent_events WHERE kind='queued' AND user_id=$1 AND contact_id = ANY($2::bigint[])`, [dir.id, [a, b, c]])).n), 3, '누가 요청했는지');
+    calls.length = 0; await P.runPromoJob({});
+    assert.equal(calls.length, 3);
+    const mid = async (id) => (await one(`SELECT ask_message_id FROM wa_contacts WHERE id=$1`, [id])).ask_message_id;
+    const [ma, mb, mc] = [await mid(a), await mid(b), await mid(c)];
+    assert.ok(ma && mb && mc);
+    assert.equal(Number((await one(`SELECT count(*) n FROM wa_consent_events WHERE kind='asked' AND message_id = ANY($1::text[])`, [[ma, mb, mc]])).n), 3);
+    // 전달 상태 — 실제 웹훅 경로(statuses)
+    const st = async (statuses) => {
+      const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'W', changes: [{ field: 'messages', value: { statuses } }] }] });
+      const r = await app.inject({ method: 'POST', url: '/api/wa/webhook', payload: raw,
+        headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=' + crypto.createHmac('sha256', 'sec').update(raw).digest('hex') } });
+      assert.equal(r.statusCode, 200); await P.flushPromo();
+    };
+    const t0 = Math.floor(Date.now() / 1000);
+    await st([{ id: ma, status: 'delivered', timestamp: String(t0), recipient_id: '528130000001' }, { id: ma, status: 'read', timestamp: String(t0 + 5), recipient_id: '528130000001' },
+      { id: mb, status: 'failed', timestamp: String(t0), recipient_id: '528130000002', errors: [{ code: 131026, title: 'Message undeliverable', error_data: { details: 'no WhatsApp' } }] },
+      { id: mc, status: 'delivered', timestamp: String(t0), recipient_id: '528130000003' }]);
+    const l1 = (await call(D, 'GET', `/api/wa-promo/contacts?group=${g}`)).json();
+    const by = Object.fromEntries(l1.items.map((x) => [x.id, x]));
+    assert.equal(by[a].ask_dlv, 'read'); assert.ok(by[a].ask_read_at);
+    assert.equal(by[b].ask_dlv, 'failed'); assert.ok(by[b].ask_dlv_reason);
+    assert.equal(by[c].ask_dlv, 'delivered');
+    assert.deepEqual({ sent: l1.ask.sent, delivered: l1.ask.delivered, read: l1.ask.read, failed: l1.ask.failed, noreply: l1.ask.noreply }, { sent: 3, delivered: 2, read: 1, failed: 1, noreply: 2 });
+    assert.deepEqual((await call(D, 'GET', '/api/wa-promo/contacts?ask=failed')).json().items.map((x) => x.id), [b]);
+    assert.deepEqual((await call(D, 'GET', '/api/wa-promo/contacts?ask=read')).json().items.map((x) => x.id), [a]);
+    // 회신 — 버튼 「Sí, quiero」 → yes + 원문 · 다른 말 → reply(상태 그대로)
+    await hook([btn('5218130000001', 'Sí, quiero')]);
+    await hook([txt('5218130000003', '¿Cuánto cuesta la horquilla?')]);
+    const l2 = Object.fromEntries((await call(D, 'GET', `/api/wa-promo/contacts?group=${g}`)).json().items.map((x) => [x.id, x]));
+    assert.equal(l2[a].consent, 'yes'); assert.equal(l2[a].consent_via, 'button'); assert.equal(l2[a].consent_reply, 'Sí, quiero');
+    assert.equal(l2[c].consent, 'asked', '다른 말은 상태 그대로'); assert.equal(l2[c].consent_reply, '¿Cuánto cuesta la horquilla?');
+    await hook([btn('5218130000001', 'Sí, quiero')]);
+    assert.equal(Number((await one(`SELECT count(*) n FROM wa_consent_events WHERE contact_id=$1 AND kind='yes'`, [a])).n), 1, '같은 답 두 번이면 한 줄');
+    // 실패만 다시 요청 → 새 메시지
+    const rt = (await call(D, 'POST', '/api/wa-promo/consent/retry', {})).json();
+    assert.equal(rt.queued, 1);
+    assert.equal((await call(D, 'POST', '/api/wa-promo/consent/retry', {})).json().queued, 0);
+    calls.length = 0; await P.runPromoJob({});
+    assert.deepEqual(calls.map((x) => x.to), ['528130000002']);
+    const mb2 = await mid(b); assert.ok(mb2 && mb2 !== mb);
+    // 사람이 바꿈 — 누가
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/contacts/${c}`, { consent: 'yes' })).statusCode, 200);
+    // 기록 창
+    const lb = (await call(D, 'GET', `/api/wa-promo/contacts/${b}/consent-log`)).json();
+    assert.deepEqual(lb.items.map((e) => e.kind), ['queued', 'asked', 'retry', 'asked']);
+    assert.equal(lb.items[1].dlv.status, 'failed'); assert.ok(lb.items[1].dlv.reason);
+    assert.equal(lb.items[0].user_name, `WP Dir ${SFX}`);
+    const la = (await call(D, 'GET', `/api/wa-promo/contacts/${a}/consent-log`)).json();
+    assert.deepEqual(la.items.map((e) => e.kind), ['queued', 'asked', 'yes']);
+    assert.equal(la.items[1].dlv.status, 'read'); assert.ok(la.items[1].dlv.read_mx); assert.equal(la.items[2].text, 'Sí, quiero');
+    const lc = (await call(D, 'GET', `/api/wa-promo/contacts/${c}/consent-log`)).json();
+    assert.deepEqual(lc.items.map((e) => e.kind), ['queued', 'asked', 'reply', 'manual_yes']);
+    assert.equal(lc.items[3].user_name, `WP Dir ${SFX}`);
+    assert.equal((await call(Rp, 'GET', `/api/wa-promo/contacts/${c}/consent-log`)).statusCode, 403);
+    // 엑셀 원자료 — 조건(그룹)
+    const ex = (await call(D, 'GET', `/api/wa-promo/consent/export?group=${g}`)).json().items;
+    assert.equal(ex.length, 3);
+    const ea = ex.find((r) => r.name === 'Ana Expo');
+    assert.equal(ea.consent, 'yes'); assert.equal(ea.dlv, 'read'); assert.equal(ea.reply, 'Sí, quiero'); assert.equal(ea.groups, 'Expo Consent'); assert.ok(ea.asked_mx && ea.read_mx);
+    assert.equal(ex.find((r) => r.name === 'Caro Expo').changed_by, `WP Dir ${SFX}`);
+    // 0284 옮겨 담기: 재실행 멱등 · 기존 연락처 상태가 한 줄씩
+    const { readFileSync } = await import('node:fs');
+    const sql = readFileSync(new URL('../migrations/0284_wa_consent_events.sql', import.meta.url), 'utf-8');
+    const old = Number((await one(`INSERT INTO wa_contacts (name, phone, source, consent, consent_via, consent_at, asked_at, ask_message_id) VALUES ('Viejo','528130000009','manual','yes','button',now(),now() - interval '1 day','wamid.OLD') RETURNING id`)).id);
+    await query(sql); const n1 = Number((await one(`SELECT count(*) n FROM wa_consent_events WHERE backfill`)).n);
+    await query(sql); const n2 = Number((await one(`SELECT count(*) n FROM wa_consent_events WHERE backfill`)).n);
+    assert.equal(n1, n2, '두 번 실행해도 같음');
+    assert.deepEqual((await query(`SELECT kind FROM wa_consent_events WHERE contact_id=$1 ORDER BY at`, [old])).rows.map((r) => r.kind), ['asked', 'yes']);
+  });
+
+  await t.test('B12. 0285 주 · 차종(연식) · 찾는 부품 — Meta 문의 엑셀 행 · 번호 없는 Messenger 빠짐 · 이미 등록 번호는 그 칸만 고침 · 검색 · 수정 · 엑셀', async () => {
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE deleted_at IS NULL`);
+    const ex = Number((await one(`INSERT INTO wa_contacts (name, phone, source, memo, estado) VALUES ('Ya está','528140000002','manual','Expo','Coahuila') RETURNING id`)).id);
+    const rows = [
+      { name: 'Danonino', phone: '', estado: 'Estado de México', vehiculo: 'Nissan Sentra 2017', piezas: 'Horquilla (brazo de control)' },   // Messenger · 번호 없음
+      { name: 'Ismael', phone: '7223451302', estado: '', vehiculo: 'Nissan Versa 2024', piezas: 'Horquilla (brazo de control)' },
+      { name: 'Otro nombre', phone: '8140000002', estado: '', vehiculo: '  Chevrolet   Aveo 2018 ', piezas: 'Amortiguador' },
+      { name: 'Sin info', phone: '8140000003' },
+    ];
+    const dry = (await call(D, 'POST', '/api/wa-promo/contacts/bulk', { rows, dry_run: true })).json();
+    assert.equal(dry.summary.new, 2); assert.equal(dry.summary.exists, 1); assert.equal(dry.summary.bad_phone, 1);
+    assert.equal(dry.summary.info_update, 1); assert.equal(dry.summary.with_info, 1);
+    assert.deepEqual(dry.rows.find((r) => r.phone === '528140000002').info_update, ['vehiculo', 'piezas'], '빈 Estado 는 고치지 않음');
+    const sv = (await call(D, 'POST', '/api/wa-promo/contacts/bulk', { rows, dry_run: false })).json();
+    assert.equal(sv.added, 2); assert.equal(sv.updated, 1);
+    const e = await one(`SELECT name, memo, estado, vehiculo, piezas FROM wa_contacts WHERE id=$1`, [ex]);
+    assert.deepEqual(e, { name: 'Ya está', memo: 'Expo', estado: 'Coahuila', vehiculo: 'Chevrolet Aveo 2018', piezas: 'Amortiguador' }, '이름 · 메모 · 주는 그대로');
+    const l = (await call(D, 'GET', '/api/wa-promo/contacts?q=versa')).json();
+    assert.equal(l.matched, 1); assert.equal(l.items[0].vehiculo, 'Nissan Versa 2024'); assert.equal(l.items[0].piezas, 'Horquilla (brazo de control)');
+    assert.equal((await call(D, 'GET', '/api/wa-promo/contacts?q=coahuila')).json().matched, 1);
+    const id = l.items[0].id;
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/contacts/${id}`, { estado: 'Nuevo León', piezas: '' })).statusCode, 200);
+    assert.deepEqual(await one(`SELECT estado, piezas FROM wa_contacts WHERE id=$1`, [id]), { estado: 'Nuevo León', piezas: null });
+    const xr = (await call(D, 'GET', '/api/wa-promo/consent/export?q=aveo')).json().items[0];
+    assert.equal(xr.vehiculo, 'Chevrolet Aveo 2018'); assert.equal(xr.estado, 'Coahuila');
+    const { readFileSync } = await import('node:fs');
+    await query(readFileSync(new URL('../migrations/0285_wa_contact_info.sql', import.meta.url), 'utf-8'));
   });
 });

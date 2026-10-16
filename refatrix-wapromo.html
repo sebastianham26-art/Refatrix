@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1016gr</title>
+<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1016mi</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -83,6 +83,19 @@
   .phone .qr{margin-top:6px;display:flex;flex-direction:column;gap:4px}
   .phone .qr span{background:#fff;border-radius:8px;text-align:center;padding:6px;font-size:12px;color:#0b78c5;font-weight:600}
   .ok-t{color:var(--ok);font-weight:700}.bad-t{color:var(--bad);font-weight:700}.warn-t{color:var(--warn);font-weight:700}
+  .afun{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fbfaf6}
+  .afun b.t{font-size:12.5px;margin-right:4px}
+  .afun .st{font:inherit;font-size:12px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 9px;cursor:pointer;color:inherit}
+  .afun .st b{font-size:14px;margin-left:3px}
+  .afun .st.on{background:#143D34;color:#fff;border-color:#143D34}
+  .afun .ar{color:var(--muted);font-size:12px}
+  .dlv{font-size:11px;font-weight:700;white-space:nowrap}
+  .dlv.r{color:#0a5cab}.dlv.d{color:var(--ok)}.dlv.f{color:var(--bad)}.dlv.s{color:var(--muted)}
+  .rq{font-size:11.5px;color:var(--ink2,#39424e);display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .clog{list-style:none;margin:0;padding:0}
+  .clog li{display:grid;grid-template-columns:130px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .clog .t{font-size:12px;color:var(--muted);white-space:nowrap}
+  .clog .k{font-weight:700}
   .gbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
   .gchip{font:inherit;font-size:12px;font-weight:700;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;cursor:pointer;display:inline-flex;gap:5px;align-items:center;color:inherit}
   .gchip .dot,.gpick .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -197,6 +210,7 @@
     <section class="pane on" id="p-contacts">
       <div class="card">
         <div class="kpis" id="cKpis"></div>
+        <div class="afun" id="cAskFun"></div>
         <div class="note"><b>발송 규칙</b> — 정기 이미지는 <b>✅ 동의</b>한 사람에게만 갑니다. ❓ 미확인에게는 <b>동의 요청을 딱 한 번</b> 보내고, 「Sí, quiero」를 누르면 ✅, 「No, gracias」나 BAJA면 ⛔ 로 자동으로 바뀝니다. 영업이 전화로 동의를 받았으면 「✅ 영업 확인」으로 바꿀 수 있습니다(누가 · 언제 기록).</div>
       </div>
       <div class="card">
@@ -211,13 +225,15 @@
           <button type="button" class="btn ghost" id="cTpl">⬇ 양식 받기</button>
           <button type="button" class="btn ghost" id="cSurvey">📋 설문 응답자 가져오기</button>
         </div>
-        <div class="hint" style="margin-top:8px">엑셀은 <b>이름 · 전화번호</b> 두 칸이면 됩니다(머리글 「Nombre / Teléfono」 · 「이름 / 전화」 자동 인식, 「메모」 칸은 선택). 저장 전에 미리보기에서 번호 형식 오류 · 파일 안 중복 · 이미 등록된 번호를 보여 줍니다.</div>
+        <div class="hint" style="margin-top:8px">엑셀은 <b>이름 · 전화번호</b> 두 칸이면 됩니다(머리글 「Nombre / Teléfono」 · 「이름 / 전화」 자동 인식, 「메모」 칸은 선택). <b>Meta 문의 엑셀</b>(refatrix_meta_consultas)을 그대로 올리면 「Estado · Vehículo (año) · Piezas buscadas」도 함께 들어가고, 이미 등록된 번호는 그 칸만 고칩니다(번호가 없는 Messenger 문의는 「번호 오류 · 없음」으로 빠짐). 저장 전에 미리보기에서 번호 형식 오류 · 파일 안 중복 · 이미 등록된 번호를 보여 줍니다.</div>
       </div>
       <div class="card">
         <div class="row">
-          <input id="cQ" placeholder="이름 · 메모 · 번호 검색" style="width:220px">
+          <input id="cQ" placeholder="이름 · 메모 · 번호 · 주 · 차종 · 부품 검색" style="width:220px">
           <select id="cConsent"><option value="">상태 전체</option><option value="yes">✅ 동의</option><option value="asked">⏳ 응답 대기</option><option value="unknown">❓ 미확인</option><option value="no">⛔ 거부</option></select>
+          <select id="cAsk" title="동의 요청 상태"><option value="">동의 요청 전체</option><option value="askable">✉ 아직 요청 안 함(미확인)</option><option value="noreply">⏳ 요청 후 응답 없음</option><option value="read">👁 읽고 응답 없음</option><option value="failed">⚠ 전달 실패</option></select>
           <span style="margin-left:auto"></span>
+          <button type="button" class="btn ghost" id="cConsentXls" title="지금 조건의 연락처 — 요청 · 도착 · 읽음 · 회신 원문 · 동의 일시">⬇ 동의 기록 엑셀</button>
           <button type="button" class="btn ghost" id="cGroupBulk" title="지금 조건에 맞는 전체 · 고른 사람 · 번호 붙여넣기로 한 번에 그룹 넣기/빼기">🏷 그룹 일괄 구분</button>
           <button type="button" class="btn red" id="cAskAll">✉ 미확인 전체에게 동의 요청</button>
         </div>
@@ -367,6 +383,12 @@
     </section>
   </div>
 </div>
+
+<!-- 0284 · 동의 기록 -->
+<div class="modal" id="mCLog" role="dialog" aria-modal="true"><div class="mbox" style="max-width:640px">
+  <div class="mtop"><b id="clTitle" style="color:var(--brand)">📜 동의 기록</b><button type="button" class="btn ghost sm" data-close="mCLog" style="margin-left:auto">닫기 ✕</button></div>
+  <div class="mbody"><div id="clHead"></div><ul class="clog" id="clList"></ul><div class="hint" style="margin-top:8px">도착 · 읽음 · 전달 실패는 WhatsApp(Meta)이 알려 준 것입니다. 상대가 읽음 표시를 꺼 두면 「읽음」은 오지 않습니다.</div></div>
+</div></div>
 
 <!-- 0283 · 그룹 일괄 구분 -->
 <div class="modal" id="mGAssign" role="dialog" aria-modal="true"><div class="mbox" style="max-width:640px">
@@ -597,11 +619,75 @@
   // ───── ① 연락처 ─────
   async function loadContacts(){
     const qs=new URLSearchParams(curFilter()); await loadGroups();
-    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
+    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; S.askable=d.askable!=null?d.askable:null; S.ask=d.ask||null; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
     catch(e){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
   }
+  // ── 0284 · 동의 요청 현황 ──
+  function renderAskFun(){
+    const a=S.ask; const el=$('cAskFun');
+    if(!a){ el.classList.add('hidden'); return; } el.classList.remove('hidden');
+    const cur=$('cAsk').value;
+    const st=(k,label,n)=>'<button type="button" class="st'+(cur===k?' on':'')+'" data-ask="'+k+'" title="이 사람들만 보기">'+label+'<b>'+(n||0)+'</b></button>';
+    el.innerHTML='<b class="t">📨 동의 요청 현황</b>'
+      +'<span class="st" style="cursor:default">요청 보냄<b>'+(a.sent||0)+'</b></span><span class="ar">→</span>'
+      +'<span class="st" style="cursor:default">✓✓ 도착<b>'+(a.delivered||0)+'</b></span><span class="ar">→</span>'
+      +'<span class="st" style="cursor:default">👁 읽음<b>'+(a.read||0)+'</b></span><span class="ar">→</span>'
+      +'<span class="st" style="cursor:default;color:var(--ok)">✅ 회신 동의<b>'+(a.yes||0)+'</b></span>'
+      +'<span class="st" style="cursor:default;color:var(--bad)">⛔ 회신 거부<b>'+(a.no||0)+'</b></span>'
+      +st('noreply','⏳ 응답 없음',a.noreply)+st('failed','⚠ 전달 실패',a.failed)
+      +(a.failed?'<button type="button" class="btn red sm" id="cRetry" title="받지 못한 사람만 — 「딱 한 번」 원칙에 걸리지 않음">⚠ 전달 실패 '+a.failed+'명 다시 요청</button>':'')
+      +(a.send_error?'<span class="hint" title="보내기 자체가 실패(번호 · 템플릿 등) — 미확인으로 남아 다시 요청할 수 있음">보내기 실패 '+a.send_error+'</span>':'');
+  }
+  $('cAskFun').addEventListener('click',async e=>{
+    const b=e.target.closest('[data-ask]'); if(b){ $('cAsk').value=$('cAsk').value===b.dataset.ask?'':b.dataset.ask; S.sel.clear(); loadContacts(); return; }
+    if(e.target.closest('#cRetry')){
+      const n=S.ask&&S.ask.failed||0;
+      if(!confirm('전달 실패한 '+n+'명에게 동의 요청을 다시 보냅니다(받지 못한 사람만 · 마케팅 템플릿 요금).\n번호에 WhatsApp 이 없으면 다시 실패할 수 있습니다. 진행할까요?')) return;
+      try{ const d=await api('POST','/api/wa-promo/consent/retry',{}); say(true,d.queued+'명을 다시 대기열에 넣었습니다. 오늘 남은 발송 가능 수 '+d.remaining_today+' / '+d.cap+'.'); loadContacts(); }
+      catch(err){ say(false,errText(err)); }
+    }
+  });
+  const DLV={read:['r','👁 읽음'],delivered:['d','✓✓ 도착'],sent:['s','✓ 출발'],failed:['f','⚠ 전달 실패']};
+  const dlvTag=(x)=>{ const d=DLV[x.ask_dlv]; return d?'<span class="dlv '+d[0]+'"'+(x.ask_dlv_reason?' title="'+esc(x.ask_dlv_reason)+'"':'')+'>'+d[1]+'</span>':'<span class="dlv s">접수</span>'; };
+  // 동의 기록 창
+  const EVK={queued:'✉ 요청 대기열에 넣음',asked:'📨 동의 요청 보냄',ask_failed:'✗ 보내기 실패',retry:'↻ 전달 실패 — 다시 요청',yes:'✅ 회신: 동의',no:'⛔ 회신: 거부',reply:'💬 다른 말로 답함(상태 그대로)',manual_yes:'✅ 사람이 동의로 바꿈',manual_no:'⛔ 사람이 수신거부로 바꿈',reset:'❓ 사람이 미확인으로 되돌림'};
+  const EVV={template:'템플릿',interactive:'버튼 메시지(창 열림 · 무료)',button:'버튼',message:'글',sales:'영업 확인'};
+  async function openCLog(id){
+    const x=S.contacts.find(c=>c.id===id); $('clTitle').textContent='📜 동의 기록 — '+(x?x.name:''); $('clHead').innerHTML=''; $('clList').innerHTML='<li><span></span><span class="hint">불러오는 중…</span></li>'; $('mCLog').classList.add('on');
+    try{
+      const d=await api('GET','/api/wa-promo/contacts/'+id+'/consent-log'); const ct=d.contact;
+      $('clHead').innerHTML='<div class="row" style="gap:8px;margin-bottom:6px">'+consTag(ct.consent)+' <span class="hint">'+esc(ct.phone_masked)+(ct.consent_at&&(ct.consent==='yes'||ct.consent==='no')?' · '+esc(VIA[ct.consent_via]||ct.consent_via||'')+' '+fmtT(ct.consent_at):'')+'</span></div>';
+      $('clList').innerHTML=(d.items||[]).length?d.items.map(e=>{
+        let det=[];
+        if(e.via) det.push(EVV[e.via]||e.via);
+        if(e.user_name) det.push(e.user_name);
+        if(e.backfill) det.push('이전 기록에서 옮김');
+        let body='<div class="k">'+esc(EVK[e.kind]||e.kind)+'</div>'+(det.length?'<div class="hint">'+esc(det.join(' · '))+'</div>':'');
+        if(e.text) body+='<div style="margin-top:3px">'+(e.kind==='ask_failed'?'<span class="bad-t">'+esc(e.text)+'</span>':'「'+esc(e.text)+'」')+'</div>';
+        if(e.dlv){ const v=e.dlv; body+='<div class="hint" style="margin-top:3px">'+(v.status==='failed'?'<span class="bad-t">⚠ 전달 실패'+(v.reason?' — '+esc(v.reason):'')+'</span>':
+          (v.delivered_mx?'✓✓ 도착 '+esc(String(v.delivered_mx).slice(5,16).replace('T',' ')):'✓ 출발')+(v.read_mx?' · 👁 읽음 '+esc(String(v.read_mx).slice(5,16).replace('T',' ')):''))+'</div>'; }
+        else if(e.kind==='asked'&&e.message_id) body+='<div class="hint">전달 상태 아직 없음</div>';
+        return '<li><span class="t">'+esc(String(e.at_mx||'').slice(0,16).replace('T',' '))+'</span><div>'+body+'</div></li>';
+      }).join(''):'<li><span></span><span class="hint">기록이 없습니다(아직 동의 요청을 보내지 않음).</span></li>';
+    }catch(err){ $('clList').innerHTML='<li><span></span><span class="bad-t">'+esc(errText(err))+'</span></li>'; }
+  }
+  // 동의 기록 엑셀 — 지금 조건
+  $('cConsentXls').addEventListener('click',async()=>{
+    try{
+      const d=await api('GET','/api/wa-promo/consent/export?'+new URLSearchParams(curFilter()));
+      const CN={yes:'동의',asked:'응답 대기',unknown:'미확인',no:'거부'}; const DV={read:'읽음',delivered:'도착',sent:'출발',failed:'전달 실패'};
+      const aoa=[['이름','번호','메모','주','차종(연식)','찾는 부품','그룹','동의 상태','동의 경로','동의 · 거부 일시','요청 보낸 일시','전달','도착 일시','읽은 일시','회신 원문','전달 실패 사유','사람이 바꾼 사람']]
+        .concat(d.items.map(x=>[x.name,x.phone,x.memo||'',x.estado||'',x.vehiculo||'',x.piezas||'',x.groups||'',CN[x.consent]||x.consent,VIA[x.consent_via]||x.consent_via||'',x.consent&&(x.consent==='yes'||x.consent==='no')?String(x.consent_mx||'').slice(0,16).replace('T',' '):'',
+          String(x.asked_mx||'').slice(0,16).replace('T',' '),DV[x.dlv]||(x.asked_mx?'접수':''),String(x.delivered_mx||'').slice(0,16).replace('T',' '),String(x.read_mx||'').slice(0,16).replace('T',' '),x.reply||'',x.dlv_reason||'',x.changed_by||'']));
+      const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:24},{wch:14},{wch:20},{wch:16},{wch:20},{wch:26},{wch:20},{wch:9},{wch:10},{wch:16},{wch:16},{wch:9},{wch:16},{wch:16},{wch:36},{wch:30},{wch:12}];
+      for(let c=0;c<17;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}}}; }
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Consentimiento');
+      XLSX.writeFile(wb,'refatrix_whatsapp_consentimiento_'+mxToday()+'.xlsx');
+      say(true,d.items.length+'명의 동의 기록을 내려받았습니다.');
+    }catch(err){ say(false,errText(err)); }
+  });
   // ── 0283 · 연락처 그룹 ──
-  function curFilter(){ const f={}; if($('cQ').value.trim()) f.q=$('cQ').value.trim(); if($('cConsent').value) f.consent=$('cConsent').value; if(S.cGroup) f.group=S.cGroup; return f; }
+  function curFilter(){ const f={}; if($('cQ').value.trim()) f.q=$('cQ').value.trim(); if($('cConsent').value) f.consent=$('cConsent').value; if(S.cGroup) f.group=S.cGroup; if($('cAsk').value) f.ask=$('cAsk').value; return f; }
   const gById=(id)=>S.groups.find(g=>g.id===Number(id));
   const gTag=(g)=>'<span class="gtag" style="background:'+esc(g.color||'#5b6470')+'" title="'+esc(g.memo||g.name)+'">'+esc(g.name)+'</span>';
   async function loadGroups(){
@@ -630,7 +716,8 @@
   }
   $('gaGroup').addEventListener('change',()=>{ $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new'); if($('gaGroup').value==='__new') $('gaNew').focus(); });
   // 그룹 일괄 구분 창 — 고른 사람 · 지금 조건에 맞는 전체 · 번호 붙여넣기
-  function filterLabel(){ const f=curFilter(); const parts=[]; if(f.group) parts.push(f.group==='none'?'그룹 없음':('그룹 「'+((gById(f.group)||{}).name||'')+'」')); if(f.consent) parts.push((CONS[f.consent]||['',''])[1]); if(f.q) parts.push('검색 「'+f.q+'」'); return parts.length?parts.join(' · '):'조건 없음 = 연락처 전체'; }
+  const ASKL={askable:'아직 요청 안 함',noreply:'요청 후 응답 없음',read:'읽고 응답 없음',failed:'전달 실패'};
+  function filterLabel(){ const f=curFilter(); const parts=[]; if(f.ask) parts.push(ASKL[f.ask]); if(f.group) parts.push(f.group==='none'?'그룹 없음':('그룹 「'+((gById(f.group)||{}).name||'')+'」')); if(f.consent) parts.push((CONS[f.consent]||['',''])[1]); if(f.q) parts.push('검색 「'+f.q+'」'); return parts.length?parts.join(' · '):'조건 없음 = 연락처 전체'; }
   const gaMode=()=>{ const r=document.querySelector('input[name="gaMode"]:checked'); return r?r.value:''; };
   function openGAssign(mode){
     const n=S.sel.size; $('gaSelL').textContent='고른 사람 '+n+'명';
@@ -706,26 +793,31 @@
     $('cKpis').innerHTML=[['전체',c.total,''],['✅ 동의',c.yes,'var(--ok)'],['⏳ 동의 요청 보냄(응답 대기)',c.asked,'var(--warn)'],['❓ 미확인',c.unknown,''],['⛔ 거부 · 수신거부',c.no,'var(--bad)']]
       .map(([k,v,col])=>'<div class="kpi"><div class="k">'+k+'</div><div class="v"'+(col?' style="color:'+col+'"':'')+'>'+(v||0)+'</div></div>').join('')
       +(c.queued?'<div class="kpi"><div class="k">✉ 동의 요청 대기열</div><div class="v" style="color:var(--warn)">'+c.queued+'</div><div class="hint">하루 상한 안에서 순서대로 발송</div></div>':'');
-    $('cAskAll').textContent='✉ 미확인 '+Math.max(0,(c.unknown||0)-(c.queued||0))+'명에게 동의 요청';
-    $('cAskAll').disabled=!Math.max(0,(c.unknown||0)-(c.queued||0));
+    const filtered=Object.keys(curFilter()).length>0;
+    const askN=S.askable!=null?S.askable:Math.max(0,(c.unknown||0)-(c.queued||0));
+    $('cAskAll').textContent='✉ '+(filtered?'지금 조건의 ':'')+'미확인 '+askN+'명에게 동의 요청';
+    $('cAskAll').disabled=!askN;
+    renderAskFun();
     renderGroupBar();
     if(!S.contacts.length){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+(S.cGroup||$('cQ').value.trim()||$('cConsent').value?'조건에 맞는 연락처가 없습니다.':'연락처가 없습니다.')+'</div>'; syncSel(); return; }
     $('cList').innerHTML='<table><thead><tr><th><input type="checkbox" id="cAll"></th><th>이름</th><th>번호</th><th>메모</th><th>그룹</th><th>상태</th><th>동의 경로 · 일시</th><th>마지막 메시지</th><th></th></tr></thead><tbody>'
       +S.contacts.map(x=>{
         let via='—';
         if(x.consent==='yes'||x.consent==='no') via=(VIA[x.consent_via]||x.consent_via||'')+' · '+fmtT(x.consent_at);
-        else if(x.consent==='asked') via='요청 '+fmtT(x.asked_at);
+        else if(x.consent==='asked') via='요청 '+fmtT(x.asked_at)+' · '+dlvTag(x);
         else if(x.ask_queued) via='<span class="warn-t">대기열</span>';
         if(x.ask_error) via+='<br><span class="bad-t" title="'+esc(x.ask_error)+'">요청 실패: '+esc(x.ask_error.slice(0,60))+'</span>';
+        if(x.consent_reply) via+='<span class="rq" title="'+esc(x.consent_reply)+'">💬 「'+esc(x.consent_reply)+'」</span>';
         const acts=[];
         const selfOut=x.consent==='no'&&(x.consent_via==='button'||x.consent_via==='message');   // 본인이 수신거부 — 다시 받으려면 본인이 「Sí, quiero」를 보내야 함
         if(x.consent==='unknown'&&!x.ask_queued) acts.push('<button type="button" class="btn ghost sm" data-act="ask" title="이 사람에게만 동의 요청(1회)">✉ 동의 요청</button>');
         if(x.consent==='yes') acts.push('<button type="button" class="btn red sm" data-act="send" title="이 사람에게만 이미지 보내기">📣 보내기</button>');
         if(x.consent!=='yes'&&!selfOut) acts.push('<button type="button" class="btn ghost sm" data-act="sales" title="영업이 전화 등으로 동의를 받았을 때">✅ 영업 확인</button>');
         if(x.consent==='yes') acts.push('<button type="button" class="btn ghost sm" data-act="optout">⛔ 수신거부</button>');
+        if(x.asked_at||x.consent==='yes'||x.consent==='no'||x.consent==='asked') acts.push('<button type="button" class="btn ghost sm" data-act="clog" title="요청 · 도착 · 읽음 · 회신 기록">📜 기록</button>');
         if(x.last_in_at) acts.push('<button type="button" class="btn ghost sm" data-act="chat">대화</button>');
         acts.push('<button type="button" class="btn ghost sm" data-act="del" title="삭제" style="color:var(--bad);border-color:var(--bad)">✕</button>');
-        return '<tr data-id="'+x.id+'"'+(S.sel.has(x.id)?' class="sel"':'')+'><td><input type="checkbox" data-sel'+(S.sel.has(x.id)?' checked':'')+'></td><td><b>'+esc(x.name)+'</b>'+(x.lead?' <span class="tag t-asked">🙋</span>':'')+'</td><td>'+esc(x.phone_masked)+'</td><td>'+esc(x.memo||'')+'</td><td>'+(x.groups||[]).map(gById).filter(Boolean).map(gTag).join('')+'</td><td>'+consTag(x.consent)+'</td><td>'+via+'</td><td>'+fmtT(x.last_in_at)+'</td><td style="white-space:nowrap">'+acts.join(' ')+'</td></tr>';
+        return '<tr data-id="'+x.id+'"'+(S.sel.has(x.id)?' class="sel"':'')+'><td><input type="checkbox" data-sel'+(S.sel.has(x.id)?' checked':'')+'></td><td><b>'+esc(x.name)+'</b>'+(x.lead?' <span class="tag t-asked">🙋</span>':'')+((x.estado||x.vehiculo||x.piezas)?'<div class="hint" style="max-width:260px">'+[x.estado?'📍 '+esc(x.estado):'',x.vehiculo?'🚗 '+esc(x.vehiculo):'',x.piezas?'🔧 '+esc(x.piezas):''].filter(Boolean).join(' · ')+'</div>':'')+'</td><td>'+esc(x.phone_masked)+'</td><td>'+esc(x.memo||'')+'</td><td>'+(x.groups||[]).map(gById).filter(Boolean).map(gTag).join('')+'</td><td>'+consTag(x.consent)+'</td><td>'+via+'</td><td>'+fmtT(x.last_in_at)+'</td><td style="white-space:nowrap">'+acts.join(' ')+'</td></tr>';
       }).join('')+'</tbody></table>'
       +(S.matched>S.contacts.length?'<div class="hint" style="margin-top:6px">조건에 맞는 '+S.matched+'명 중 최근 '+S.contacts.length+'명만 보입니다 — 전체를 그룹에 넣으려면 「🏷 그룹 일괄 구분 › 지금 조건에 맞는 전체」.</div>':'');
     syncSel();
@@ -755,6 +847,7 @@
       else if(act==='optout'){ if(!confirm(x.name+' — ⛔ 수신거부로 바꿀까요? 더 이상 정기 발송을 받지 않습니다.')) return; await api('PATCH','/api/wa-promo/contacts/'+id,{consent:'no'}); say(true,'⛔ 수신거부로 바꿨습니다.'); }
       else if(act==='del'){ if(!confirm(x.name+' 연락처를 삭제할까요?')) return; await api('DELETE','/api/wa-promo/contacts/'+id); say(true,'삭제했습니다.'); }
       else if(act==='chat'){ S.cur=x.phone; setTab('inbox'); return; }
+      else if(act==='clog'){ openCLog(id); return; }
       else if(act==='ask'){ await askConsent([id],[x]); return; }
       else if(act==='send'){ openSend([x]); return; }
       loadContacts();
@@ -762,15 +855,17 @@
   });
   let cqT=null; $('cQ').addEventListener('input',()=>{ clearTimeout(cqT); cqT=setTimeout(loadContacts,300); });
   $('cConsent').addEventListener('change',loadContacts);
+  $('cAsk').addEventListener('change',()=>{ S.sel.clear(); loadContacts(); });
   $('cAdd').addEventListener('click',async()=>{
     try{ await api('POST','/api/wa-promo/contacts',{name:$('cName').value,phone:$('cPhone').value,memo:$('cMemo').value}); $('cName').value='';$('cPhone').value=''; say(true,'추가했습니다. ❓ 미확인 상태 — 동의 요청을 보내야 정기 발송 대상이 됩니다.'); loadContacts(); }
     catch(err){ say(false,errText(err)); }
   });
   async function askConsent(ids,people){
-    const n=ids?ids.length:Math.max(0,(S.counts.unknown||0)-(S.counts.queued||0));
+    const n=ids?ids.length:(S.askable!=null?S.askable:Math.max(0,(S.counts.unknown||0)-(S.counts.queued||0)));
+    const fl=!ids&&Object.keys(curFilter()).length?' — 조건: '+filterLabel():'';
     const who=people&&people.length<=5?' ('+people.map(p=>p.name).join(', ')+')':'';
-    if(!confirm('미확인 '+n+'명'+who+'에게 동의 요청을 보냅니다(사람마다 딱 한 번 · 마케팅 템플릿 요금).\n하루 상한 안에서 순서대로 나가고, 넘치면 다음 날 이어서 보냅니다. 진행할까요?')) return;
-    try{ const d=await api('POST','/api/wa-promo/consent/ask',ids?{ids}:{}); say(true,d.queued+'명을 대기열에 넣었습니다. 오늘 남은 발송 가능 수 '+d.remaining_today+' / '+d.cap+' — 1분 안에 발송이 시작됩니다.');
+    if(!confirm('미확인 '+n+'명'+who+fl+'에게 동의 요청을 보냅니다(사람마다 딱 한 번 · 마케팅 템플릿 요금).\n하루 상한 안에서 순서대로 나가고, 넘치면 다음 날 이어서 보냅니다. 진행할까요?')) return;
+    try{ const d=await api('POST','/api/wa-promo/consent/ask',ids?{ids}:(Object.keys(curFilter()).length?{filter:curFilter()}:{})); say(true,d.queued+'명을 대기열에 넣었습니다. 오늘 남은 발송 가능 수 '+d.remaining_today+' / '+d.cap+' — 1분 안에 발송이 시작됩니다.');
       if(ids) ids.forEach(i=>S.sel.delete(i)); loadContacts(); }
     catch(err){ say(false,errText(err)); }
   }
@@ -843,18 +938,20 @@
 
   // 엑셀
   $('cTpl').addEventListener('click',()=>{
-    const ws=XLSX.utils.aoa_to_sheet([['Nombre','Teléfono','Memo'],['Juan Pérez','8112345678','Expo 2026'],['Taller Garza','528187654321','Monterrey']]);
-    ws['!cols']=[{wch:26},{wch:16},{wch:26}];
+    const ws=XLSX.utils.aoa_to_sheet([['Nombre','Teléfono','Memo','Estado','Vehículo (año)','Piezas buscadas'],['Juan Pérez','8112345678','Expo 2026','Nuevo León','Nissan Versa 2019','Horquilla (brazo de control)'],['Taller Garza','528187654321','Monterrey','','','']]);
+    ws['!cols']=[{wch:26},{wch:16},{wch:26},{wch:18},{wch:22},{wch:30}];
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Contactos'); XLSX.writeFile(wb,'refatrix_contactos_whatsapp.xlsx');
   });
-  const HDR={name:/^(nombre|name|이름|성명|cliente|contacto)$/i,phone:/^(tel[eé]fono|telefono|tel|celular|whats ?app|phone|전화|전화번호|휴대폰|번호)$/i,memo:/^(memo|nota|notas|메모|비고|empresa|taller)$/i};
+  const HDR={name:/^(nombre|name|이름|성명|cliente|contacto)$/i,phone:/^(tel[eé]fono|telefono|tel|celular|whats ?app|phone|전화|전화번호|휴대폰|번호)$/i,memo:/^(memo|nota|notas|메모|비고|empresa|taller)$/i,
+    estado:/^(estado|state|주|지역)$/i,vehiculo:/^(veh[ií]culo|차종|차량|vehicle)/i,piezas:/^(piezas?( buscadas?)?|부품|찾는 부품|parts?)$/i};   // 0285 · Meta 문의 엑셀 머리글
   function rowsFromSheet(aoa){
     const rows=aoa.filter(r=>Array.isArray(r)&&r.some(v=>String(v==null?'':v).trim()));
     if(!rows.length) return [];
     let hi=-1,ci={};
     for(let i=0;i<Math.min(rows.length,5);i++){ const m={}; rows[i].forEach((v,j)=>{ const s=String(v==null?'':v).trim(); for(const k in HDR) if(m[k]==null&&HDR[k].test(s)) m[k]=j; }); if(m.name!=null&&m.phone!=null){ hi=i; ci=m; break; } }
     if(hi<0){ ci={name:0,phone:1,memo:2}; hi=-1; }   // 머리글 없으면 A=이름, B=전화, C=메모
-    return rows.slice(hi+1).map(r=>({name:String(r[ci.name]==null?'':r[ci.name]).trim(),phone:String(r[ci.phone]==null?'':r[ci.phone]).trim(),memo:ci.memo!=null?String(r[ci.memo]==null?'':r[ci.memo]).trim():''}))
+    const cell=(r,k)=>ci[k]!=null?String(r[ci[k]]==null?'':r[ci[k]]).trim():'';
+    return rows.slice(hi+1).map(r=>({name:cell(r,'name'),phone:cell(r,'phone'),memo:cell(r,'memo'),estado:cell(r,'estado'),vehiculo:cell(r,'vehiculo'),piezas:cell(r,'piezas')}))
       .filter(r=>r.name||r.phone);
   }
   $('cFile').addEventListener('change',async e=>{
@@ -873,18 +970,22 @@
   const ST={new:['ok-t','새로 등록'],exists:['warn-t','이미 등록됨'],dup_in_file:['warn-t','파일 안 중복'],bad_phone:['bad-t','번호 형식 오류'],no_name:['bad-t','이름 없음']};
   function showImport(d){
     const s=d.summary||{};
-    $('mImpSum').innerHTML='<div class="kpis">'+[['전체',s.total],['새로 등록',s.new],['이미 등록됨',s.exists],['파일 안 중복',s.dup_in_file],['번호 오류',s.bad_phone],['이름 없음',s.no_name]]
+    $('mImpSum').innerHTML='<div class="kpis">'+[['전체',s.total],['새로 등록',s.new],['이미 등록됨',s.exists]].concat(s.info_update?[['🚗 정보 고침(이미 등록)',s.info_update]]:[]).concat([['파일 안 중복',s.dup_in_file],['번호 오류 · 없음',s.bad_phone],['이름 없음',s.no_name]])
       .map(([k,v])=>'<div class="kpi"><div class="k">'+k+'</div><div class="v">'+(v||0)+'</div></div>').join('')+'</div>';
     const rows=(d.rows||[]).slice().sort((a,b)=>(a.status==='new')-(b.status==='new'));
-    $('mImpRows').innerHTML='<table><thead><tr><th>#</th><th>이름</th><th>입력 번호</th><th>정리된 번호</th><th>메모</th><th>결과</th></tr></thead><tbody>'
-      +rows.map(r=>{ const t=ST[r.status]||['','']; return '<tr><td>'+(r.i+1)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.raw_phone)+'</td><td>'+esc(r.phone||'—')+'</td><td>'+esc(r.memo||'')+'</td><td class="'+t[0]+'">'+t[1]+(r.existing?' ('+esc(r.existing.name)+')':'')+'</td></tr>'; }).join('')+'</tbody></table>';
+    const hasInfo=(d.rows||[]).some(r=>r.estado||r.vehiculo||r.piezas);
+    $('mImpRows').innerHTML='<table><thead><tr><th>#</th><th>이름</th><th>입력 번호</th><th>정리된 번호</th><th>메모</th>'+(hasInfo?'<th>주</th><th>차종(연식)</th><th>찾는 부품</th>':'')+'<th>결과</th></tr></thead><tbody>'
+      +rows.map(r=>{ const t=ST[r.status]||['','']; return '<tr><td>'+(r.i+1)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.raw_phone)+'</td><td>'+esc(r.phone||'—')+'</td><td>'+esc(r.memo||'')+'</td>'
+        +(hasInfo?'<td>'+esc(r.estado||'')+'</td><td>'+esc(r.vehiculo||'')+'</td><td>'+esc(r.piezas||'')+'</td>':'')
+        +'<td class="'+t[0]+'">'+t[1]+(r.existing?' ('+esc(r.existing.name)+')':'')+(r.info_update?' <span class="ok-t">· 정보 고침</span>':'')+'</td></tr>'; }).join('')+'</tbody></table>';
     S.impSum=s; syncImpSave();
     $('mImpHint').textContent=s.new?'새로 등록만 저장합니다 — 나머지는 건너뜀(그룹을 고르면 이미 등록된 번호도 그 그룹에).':'저장할 새 연락처가 없습니다 — 그룹을 고르면 이미 등록된 번호를 그 그룹에 넣을 수 있습니다.';
   }
   function syncImpSave(){
     const s=S.impSum||{}; const g=!!$('mImpGroup').value;
-    $('mImpSave').disabled=!(s.new>0||(g&&s.exists>0));
-    $('mImpSave').textContent=g?'저장 + 그룹에 넣기 (새 '+(s.new||0)+' · 이미 등록 '+(s.exists||0)+')':'새 연락처 '+(s.new||0)+'명 저장';
+    const up=s.info_update||0;
+    $('mImpSave').disabled=!(s.new>0||up>0||(g&&s.exists>0));
+    $('mImpSave').textContent=g?'저장 + 그룹에 넣기 (새 '+(s.new||0)+' · 이미 등록 '+(s.exists||0)+')':'새 연락처 '+(s.new||0)+'명 저장'+(up?' · 정보 고침 '+up+'명':'');
   }
   $('mImpGroup').addEventListener('change',()=>{ $('mImpNewGWrap').classList.toggle('hidden',$('mImpGroup').value!=='__new'); syncImpSave(); });
   $('mImpSave').addEventListener('click',async()=>{
@@ -901,7 +1002,7 @@
       const extra=gid?{group_id:gid}:{};
       if(S.impSource.kind==='excel') d=await api('POST','/api/wa-promo/contacts/bulk',{rows:S.impSource.rows,dry_run:false,...extra});
       else d=await api('POST','/api/wa-promo/survey-import',{...S.impSource.body,dry_run:false,...extra});
-      $('mImport').classList.remove('on'); say(true,d.added+'명을 저장했습니다(❓ 미확인)'+(gid?' · 「'+gname+'」 그룹에 '+(d.grouped||0)+'명':'')+'. 다음: 「동의 요청」.'); loadContacts();
+      $('mImport').classList.remove('on'); say(true,d.added+'명을 저장했습니다(❓ 미확인)'+(d.updated?' · 이미 등록된 '+d.updated+'명의 주 · 차종 · 부품을 고쳤습니다':'')+(gid?' · 「'+gname+'」 그룹에 '+(d.grouped||0)+'명':'')+'. 다음: 「동의 요청」.'); loadContacts();
     }catch(err){ $('mImpHint').textContent=errText(err); $('mImpSave').disabled=false; }
   });
   // 설문

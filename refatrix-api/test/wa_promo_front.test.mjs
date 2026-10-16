@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016gr) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016mi) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -20,7 +20,7 @@ const GROUPS = [{ id: 11, name: 'Talleres MTY', color: '#2a78d6', memo: 'Monterr
 const CONTACTS = [
   { id: 1, groups: [11, 12], name: 'Juan Pérez', phone: '528110000001', phone_masked: '528****0001', memo: 'Expo', consent: 'yes', consent_via: 'button', consent_at: '2026-10-08T15:00:00Z', lead: false, last_in_at: '2026-10-08T15:00:00Z' },
   { id: 2, name: 'María', phone: '528110000002', phone_masked: '528****0002', memo: '', consent: 'unknown', ask_queued: false },
-  { id: 3, name: 'Pedro', phone: '528110000003', phone_masked: '528****0003', memo: '', consent: 'asked', asked_at: '2026-10-08T15:00:00Z' },
+  { id: 3, name: 'Pedro', phone: '528110000003', phone_masked: '528****0003', memo: '', consent: 'asked', asked_at: '2026-10-08T15:00:00Z', ask_dlv: 'read', consent_reply: '¿Cuánto cuesta?' },
 ];
 function boot() {
   const calls = [];
@@ -44,7 +44,17 @@ function boot() {
         if (u.endsWith('/api/wa-promo/groups/assign')) return json({ group_id: body.group_id || 13, created: !body.group_id, action: body.action, matched: 2, changed: 2, unchanged: 0, unknown_phones: body.phones ? ['12'] : [], unknown_n: body.phones ? 1 : 0 });
         if (u.match(/\/api\/wa-promo\/groups\/\d+$/)) return json({ ok: true });
         if (u.includes('/api/wa-promo/audience')) return json({ n: 7 });
-        if (u.includes('/api/wa-promo/contacts') && method === 'GET') return json({ items: CONTACTS, counts: { total: 3, yes: 1, asked: 1, unknown: 1, no: 0, queued: 0, inbox_open: 2 }, matched: u.includes('group=11') ? 740 : 3 });
+        // 0284 · 동의 기록
+        if (u.match(/\/api\/wa-promo\/contacts\/\d+\/consent-log/)) return json({ contact: { ...CONTACTS[2], consent: 'asked' }, items: [
+          { id: 1, kind: 'queued', at_mx: '2026-10-16T09:00:00', user_name: 'Sebastian' },
+          { id: 2, kind: 'asked', via: 'template', message_id: 'wamid.A', at_mx: '2026-10-16T09:01:00', dlv: { status: 'failed', reason: '번호에 WhatsApp 없음' } },
+          { id: 3, kind: 'retry', at_mx: '2026-10-16T12:00:00', user_name: 'Sebastian' },
+          { id: 4, kind: 'asked', via: 'template', message_id: 'wamid.B', at_mx: '2026-10-16T12:01:00', dlv: { status: 'read', delivered_mx: '2026-10-16T12:01:30', read_mx: '2026-10-16T12:05:00' } },
+          { id: 5, kind: 'reply', via: 'message', text: '¿Cuánto cuesta?', at_mx: '2026-10-16T12:06:00' }] });
+        if (u.includes('/api/wa-promo/consent/export')) return json({ items: [{ name: 'Pedro', phone: '528110000003', consent: 'asked', asked_mx: '2026-10-16T12:01:00', dlv: 'read', read_mx: '2026-10-16T12:05:00', reply: '¿Cuánto cuesta?', groups: 'Talleres MTY' }] });
+        if (u.includes('/api/wa-promo/consent/retry')) return json({ queued: 4, remaining_today: 140, cap: 150 });
+        if (u.includes('/api/wa-promo/contacts') && method === 'GET') return json({ items: CONTACTS, counts: { total: 3, yes: 1, asked: 1, unknown: 1, no: 0, queued: 0, inbox_open: 2 }, matched: u.includes('group=11') ? 740 : 3,
+          askable: u.includes('group=11') ? 120 : 1, ask: { sent: 50, delivered: 44, read: 30, failed: 4, noreply: 20, yes: 22, no: 4, send_error: 0 } });
         if (u.includes('/api/wa-promo/contacts') && method === 'POST') return body.phone ? json({ id: 9 }) : json({ error: 'bad_phone' }, 400);
         if (u.includes('/api/wa-promo/consent/ask')) return json({ queued: body.ids ? body.ids.length : 1, remaining_today: 140, cap: 150 });
         if (u.match(/\/api\/wa-promo\/contacts\/\d+/)) return json({ ...CONTACTS[1], ...body });
@@ -87,7 +97,7 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1016gr/);
+    assert.match(c.d.title, /wap-1016mi/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -340,6 +350,50 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     const cb = c.calls.filter((x) => x.method === 'POST' && x.u.endsWith('/api/wa-promo/campaigns')).pop().body;
     assert.deepEqual(cb.target_groups, [11]); assert.equal(cb.memo_filter, '');
     c.close();
+  });
+
+  await t.test('⑨ 0284 수신 동의 — 요청 현황 · 조건으로 요청 · 전달 상태 · 회신 원문 · 기록 창 · 실패 다시 요청 · 엑셀', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    const fun = c.d.getElementById('cAskFun').textContent;
+    assert.match(fun, /요청 보냄50/); assert.match(fun, /도착44/); assert.match(fun, /읽음30/); assert.match(fun, /회신 동의22/); assert.match(fun, /응답 없음20/); assert.match(fun, /전달 실패4/);
+    assert.match(c.d.getElementById('cAskAll').textContent, /^✉ 미확인 1명에게/);
+    const row = c.d.querySelector('tr[data-id="3"]').textContent;
+    assert.match(row, /👁 읽음/); assert.match(row, /¿Cuánto cuesta\?/);
+    // 그룹 조건 → 「지금 조건의 미확인 120명」 → 조건으로 요청
+    c.d.querySelector('#cGroups [data-g="11"]').click(); await tick(300);
+    assert.match(c.d.getElementById('cAskAll').textContent, /지금 조건의 미확인 120명/);
+    click(c, 'cAskAll'); await tick();
+    assert.deepEqual(c.calls.filter((x) => x.u.includes('/consent/ask')).pop().body, { filter: { group: '11' } });
+    // 현황의 「전달 실패」 → 거르기
+    c.d.querySelector('#cAskFun [data-ask="failed"]').click(); await tick(300);
+    assert.equal(c.d.getElementById('cAsk').value, 'failed');
+    assert.ok(c.calls.some((x) => x.u.includes('/api/wa-promo/contacts?') && x.u.includes('ask=failed')));
+    // 실패 다시 요청
+    click(c, 'cRetry'); await tick();
+    assert.ok(c.calls.some((x) => x.method === 'POST' && x.u.endsWith('/consent/retry')));
+    assert.match(c.d.getElementById('msg').textContent, /4명을 다시/);
+    // 기록 창
+    c.d.querySelector('tr[data-id="3"] button[data-act="clog"]').click(); await tick(300);
+    assert.ok(c.d.getElementById('mCLog').classList.contains('on'));
+    const lg = c.d.getElementById('clList').textContent;
+    assert.match(lg, /요청 대기열에 넣음/); assert.match(lg, /Sebastian/); assert.match(lg, /전달 실패 — 번호에 WhatsApp 없음/);
+    assert.match(lg, /다시 요청/); assert.match(lg, /👁 읽음 10-16 12:05/); assert.match(lg, /「¿Cuánto cuesta\?」/);
+    assert.equal(c.d.querySelectorAll('#clList li').length, 5);
+    // 엑셀 — 지금 조건
+    click(c, 'cConsentXls'); await tick();
+    assert.ok(c.calls.some((x) => x.u.includes('/consent/export?') && x.u.includes('group=11') && x.u.includes('ask=failed')));
+    assert.ok(c.calls.some((x) => /XLSX:refatrix_whatsapp_consentimiento_/.test(x.u)));
+    c.close();
+  });
+
+  await t.test('⑩ 0285 Meta 문의 엑셀 머리글 — Estado · Vehículo (año) · Piezas buscadas (Estatus 는 아님)', () => {
+    const src = readFileSync(HTML, 'utf-8');
+    const hdr = src.match(/const HDR=\{[\s\S]*?\};/)[0]; const fn = src.match(/function rowsFromSheet\(aoa\)\{[\s\S]*?\n  \}/)[0];
+    const rowsFromSheet = new Function(hdr + fn + '; return rowsFromSheet;')();
+    const aoa = [['Último mensaje', 'Nombre', 'Canal', 'Tipo de cliente', 'Estado', 'Ciudad', 'Teléfono', 'Vehículo (año)', 'Piezas buscadas', 'Estatus', 'Nota'],
+      ['2026-10-15', 'Ismael', 'WhatsApp', 'Particular', 'Nuevo León', 'Monterrey', '7223451302', 'Nissan Versa 2024', 'Horquilla (brazo de control)', 'Nuevo', '']];
+    assert.deepEqual(rowsFromSheet(aoa), [{ name: 'Ismael', phone: '7223451302', memo: '', estado: 'Nuevo León', vehiculo: 'Nissan Versa 2024', piezas: 'Horquilla (brazo de control)' }]);
+    assert.deepEqual(rowsFromSheet([['Nombre', 'Teléfono'], ['Ana', '8111111111']]), [{ name: 'Ana', phone: '8111111111', memo: '', estado: '', vehiculo: '', piezas: '' }]);
   });
 
   await t.test('⑥ 메뉴 등록 · 인라인 onclick 없음', () => {

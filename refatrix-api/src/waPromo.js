@@ -106,7 +106,10 @@ export async function classifyRows(rows, q = query) {
     const name = String(r.name || '').trim().slice(0, 120);
     const phone = normalizeWaNumber(r.phone);
     const memo = String(r.memo || '').trim().slice(0, 300) || null;
-    const row = { i, name, phone, raw_phone: String(r.phone || '').trim(), memo, status: 'new' };
+    // 0285 · 주 · 차종(연식) · 찾는 부품(Meta 문의 엑셀 등)
+    const info = (k, n) => String(r[k] == null ? '' : r[k]).replace(/\s+/g, ' ').trim().slice(0, n) || null;
+    const row = { i, name, phone, raw_phone: String(r.phone || '').trim(), memo, status: 'new',
+      estado: info('estado', 80), vehiculo: info('vehiculo', 200), piezas: info('piezas', 300) };
     if (!phone) row.status = 'bad_phone';
     else if (!name) row.status = 'no_name';
     else if (seen.has(phone)) { row.status = 'dup_in_file'; row.dup_of = seen.get(phone); }
@@ -115,9 +118,16 @@ export async function classifyRows(rows, q = query) {
   }
   const phones = out.filter((r) => r.status === 'new').map((r) => r.phone);
   if (phones.length) {
-    const ex = new Map((await q(`SELECT id, phone, name FROM wa_contacts WHERE deleted_at IS NULL AND phone = ANY($1::text[])`, [phones])).rows
+    const ex = new Map((await q(`SELECT id, phone, name, estado, vehiculo, piezas FROM wa_contacts WHERE deleted_at IS NULL AND phone = ANY($1::text[])`, [phones])).rows
       .map((x) => [x.phone, x]));
-    for (const r of out) if (r.status === 'new' && ex.has(r.phone)) { r.status = 'exists'; r.existing = { id: Number(ex.get(r.phone).id), name: ex.get(r.phone).name }; }
+    for (const r of out) {
+      if (r.status !== 'new' || !ex.has(r.phone)) continue;
+      const e = ex.get(r.phone);
+      r.status = 'exists'; r.existing = { id: Number(e.id), name: e.name };
+      // 이미 등록된 번호 — 파일에 값이 있고 지금과 다른 칸만 고친다
+      const ch = ['estado', 'vehiculo', 'piezas'].filter((k) => r[k] && r[k] !== (e[k] || null));
+      if (ch.length) r.info_update = ch;
+    }
   }
   return out;
 }
@@ -127,22 +137,54 @@ export async function insertContacts(rows, { source = 'manual', userId = null },
   for (const r of cls) {
     if (r.status !== 'new') continue;
     const x = (await q(
-      `INSERT INTO wa_contacts (name, phone, memo, source, source_ref, created_by) VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO wa_contacts (name, phone, memo, source, source_ref, created_by, estado, vehiculo, piezas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (phone) WHERE deleted_at IS NULL DO NOTHING RETURNING id`,
-      [r.name, r.phone, r.memo, source, (rows[r.i] && rows[r.i].source_ref) || null, userId])).rows[0];
+      [r.name, r.phone, r.memo, source, (rows[r.i] && rows[r.i].source_ref) || null, userId, r.estado, r.vehiculo, r.piezas])).rows[0];
     if (x) { added++; ids.push(Number(x.id)); r.id = Number(x.id); } else r.status = 'exists';
   }
-  return { rows: cls, added, ids };
+  // 0285 · 이미 등록된 번호 — 주 · 차종 · 부품 칸 고치기(파일에 값이 있는 칸만)
+  let updated = 0;
+  for (const r of cls) {
+    if (r.status !== 'exists' || !r.info_update || !r.existing) continue;
+    const u = await q(`UPDATE wa_contacts SET estado=COALESCE($2, estado), vehiculo=COALESCE($3, vehiculo), piezas=COALESCE($4, piezas), updated_at=now()
+                        WHERE id=$1 AND deleted_at IS NULL`, [r.existing.id, r.estado, r.vehiculo, r.piezas]);
+    if (u.rowCount) { updated++; r.updated = true; }
+  }
+  return { rows: cls, added, ids, updated };
 }
 
 // ───────────────────────── ② 동의 요청 ─────────────────────────
-export async function queueConsentAsk({ ids = null } = {}, q = query) {
+// 0284 · 동의 기록 한 줄 — 기록이 실패해도 발송 · 회신 처리는 멈추지 않는다(0284 전이면 표가 없음)
+export async function consentEvent(q, { contactId, kind, via = null, text = null, messageId = null, userId = null }) {
+  try {
+    await q(`INSERT INTO wa_consent_events (contact_id, kind, via, text, message_id, user_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [contactId, kind, via, text == null ? null : String(text).slice(0, 1000), messageId, userId]);
+  } catch (_) { /* 0284 전 */ }
+}
+export async function queueConsentAsk({ ids = null, userId = null } = {}, q = query) {
   const args = []; let cond = '';
   if (Array.isArray(ids)) { args.push(ids.map(Number).filter(Boolean)); cond = ` AND id = ANY($1::bigint[])`; }
   const r = await q(
     `UPDATE wa_contacts SET ask_queued_at = now(), ask_error = NULL, updated_at = now()
       WHERE deleted_at IS NULL AND consent = 'unknown' AND asked_at IS NULL AND ask_queued_at IS NULL${cond} RETURNING id`, args);
-  return { queued: (r.rows || []).length };
+  const got = (r.rows || []).map((x) => Number(x.id));
+  if (got.length) {
+    try { await q(`INSERT INTO wa_consent_events (contact_id, kind, user_id) SELECT unnest($1::bigint[]), 'queued', $2`, [got, userId]); } catch (_) { /* 0284 전 */ }
+  }
+  return { queued: got.length };
+}
+// 0284 · 요청이 「전달 실패」(Meta 가 실패로 알려 줌)한 사람만 다시 요청 — 받지 못했으니 「딱 한 번」 원칙에 걸리지 않는다
+export async function retryFailedConsent({ ids = null, userId = null } = {}, q = query) {
+  const args = []; let cond = '';
+  if (Array.isArray(ids)) { args.push(ids.map(Number).filter(Boolean)); cond = ` AND w.id = ANY($1::bigint[])`; }
+  const rows = (await q(
+    `SELECT w.id FROM wa_contacts w JOIN wa_message_status m ON m.message_id = w.ask_message_id
+      WHERE w.deleted_at IS NULL AND w.consent = 'asked' AND m.status = 'failed'${cond}`, args)).rows.map((x) => Number(x.id));
+  if (!rows.length) return { queued: 0 };
+  await q(`UPDATE wa_contacts SET consent='unknown', asked_at=NULL, ask_message_id=NULL, ask_error=NULL, ask_queued_at=now(), updated_at=now()
+            WHERE id = ANY($1::bigint[]) AND consent='asked'`, [rows]);
+  try { await q(`INSERT INTO wa_consent_events (contact_id, kind, user_id) SELECT unnest($1::bigint[]), 'retry', $2`, [rows, userId]); } catch (_) { /* 0284 전 */ }
+  return { queued: rows.length };
 }
 
 async function sendConsentAsk(c, q) {
@@ -159,7 +201,9 @@ async function sendConsentAsk(c, q) {
   if (res.ok) {
     await q(`UPDATE wa_contacts SET consent = CASE WHEN consent='unknown' THEN 'asked' ELSE consent END, ask_message_id=$2, ask_queued_at=NULL, ask_error=NULL, updated_at=now() WHERE id=$1`,
       [c.id, res.message_id || null]);
+    await consentEvent(q, { contactId: c.id, kind: 'asked', via: kind, messageId: res.message_id || null });
   } else {
+    await consentEvent(q, { contactId: c.id, kind: 'ask_failed', via: kind, text: String(res.error || 'error').slice(0, 300) });
     // 실패하면 대기열에서 빼고 사유를 남긴다(사람이 보고 다시 요청) — 같은 번호로 계속 두드리지 않는다
     await q(`UPDATE wa_contacts SET asked_at=NULL, ask_queued_at=NULL, ask_error=$2, updated_at=now() WHERE id=$1`, [c.id, String(res.error || 'error').slice(0, 300)]);
   }
@@ -369,13 +413,21 @@ export async function handleInbound(m, q = query) {
   const rules = await loadRules(q);
   const rule = pickRule(rules, p.body || p.payload);
   let inbox = 'open';
+  const via = p.kind === 'text' ? 'message' : 'button';
+  const said = String(p.body || p.payload || '').slice(0, 1000);
   if (rule && rule.action === 'consent_yes') {
-    await q(`UPDATE wa_contacts SET consent='yes', consent_at=now(), consent_via=$2, ask_queued_at=NULL WHERE id=$1`, [cid, p.kind === 'text' ? 'message' : 'button']);
+    await q(`UPDATE wa_contacts SET consent='yes', consent_at=now(), consent_via=$2, ask_queued_at=NULL WHERE id=$1`, [cid, via]);
+    if (ct.consent !== 'yes') await consentEvent(q, { contactId: cid, kind: 'yes', via, text: said });
     inbox = null;
   } else if (rule && rule.action === 'consent_no') {
-    await q(`UPDATE wa_contacts SET consent='no', consent_at=now(), consent_via=$2, ask_queued_at=NULL WHERE id=$1`, [cid, p.kind === 'text' ? 'message' : 'button']);
+    await q(`UPDATE wa_contacts SET consent='no', consent_at=now(), consent_via=$2, ask_queued_at=NULL WHERE id=$1`, [cid, via]);
+    if (ct.consent !== 'no') await consentEvent(q, { contactId: cid, kind: 'no', via, text: said });
     inbox = null;
-  } else if (rule && rule.action === 'lead') {
+  } else if (ct.consent === 'asked') {
+    // 동의 요청을 받고 「Sí / No」 가 아닌 다른 말로 답함 — 상태는 그대로, 기록만(받은 메시지함에서 사람이 판단)
+    await consentEvent(q, { contactId: cid, kind: 'reply', via, text: said });
+  }
+  if (rule && rule.action === 'lead') {
     await q(`UPDATE wa_contacts SET lead=true WHERE id=$1`, [cid]);
   }
   await q(`UPDATE wa_contacts SET last_in_at=GREATEST(COALESCE(last_in_at, $2::timestamptz), $2::timestamptz),
