@@ -82,6 +82,11 @@ export function mapInbound(body) {
     ciudad: S(pick(f, ['ciudad', 'city', 'municipio'])),
     direccion: S(pick(f, ['direccion', 'address', 'domicilio', 'calle'])),
     estatusCrm: S(pick(f, ['estatusCrm', 'estatus', 'status', 'estado_crm'])),
+    // 0278 · 유입경로(CRM 의 `CUS_Origin`). nk() 가 대소문자와 `_ - .` 공백을 지우므로
+    //   CUS_Origin · cus_origin · cusOrigin 은 **이미 같은 키**다. 아래는 상대가 이름을
+    //   달리 쓸 때를 대비한 다른 표기들이다.
+    origin: S(pick(f, ['CUS_Origin', 'origin', 'origen', 'fuente', 'canal', 'source',
+      'utm_source', 'procedencia'])),
     constanciaNo: S(pick(f, ['constanciaNo', 'constancia', 'folioConstancia'])),
     transactionUser: S(pick(f, ['transactionUser', 'usuario', 'user', 'usuarioCrm'])) || 'crm',
     solicitadoEn: S(pick(f, ['solicitadoEn', 'fechaRegistro', 'createdAt', 'fecha'])),
@@ -249,6 +254,31 @@ export const REQUIRED = ['rfc', 'nombre', 'apellido', 'telefono', 'correo'];
 /** 필수 5개 검사 — 없으면 어느 필드인지 이름으로 돌려준다(상대가 고치기 쉽게). */
 export function missingRequired(m) {
   return REQUIRED.filter((k) => !m[k]);
+}
+
+// ── 0278 · 광고 유입(GOOGLE · FACEBOOK)은 들어오는 대로 받는다 ────────────
+//
+//   디렉터 지시(2026-10-16): CUS_Origin 이 GOOGLE·FACEBOOK 이면 ERP 가 필수로 정한 항목이
+//   없어도 가입을 받아 준다. 광고를 보고 바로 가입하는 사람에게 RFC·성(apellido)까지
+//   요구하면 거기서 끝난다 — 그 사람을 잃는 것이 불완전한 고객 한 줄보다 비싸다.
+//
+//   ⚠ 목록을 **판정 한 곳**에만 둔다. 라우트에 문자열을 흩어 놓으면 나중에 유입경로를
+//     하나 더 받을 때 한 곳만 고치고 다른 곳을 놓친다.
+export const OPEN_ORIGINS = ['GOOGLE', 'FACEBOOK'];
+
+/** 유입경로 원문 → 비교용 형태. 대소문자·공백·흔한 표기 차이를 흡수한다. */
+export function normalizeOrigin(v) {
+  const s = String(v == null ? '' : v).trim().toUpperCase().replace(/[\s_\-.]/g, '');
+  if (!s) return '';
+  // 상대가 'Google Ads' · 'facebook_ads' · 'FB' 처럼 보내도 같은 유입으로 본다.
+  if (s.startsWith('GOOGLE') || s === 'GADS' || s === 'ADWORDS') return 'GOOGLE';
+  if (s.startsWith('FACEBOOK') || s === 'FB' || s.startsWith('META')) return 'FACEBOOK';
+  return s;
+}
+
+/** 이 유입경로는 「들어오는 대로 받는」 대상인가. */
+export function isOpenOrigin(v) {
+  return OPEN_ORIGINS.includes(normalizeOrigin(v));
 }
 
 /**

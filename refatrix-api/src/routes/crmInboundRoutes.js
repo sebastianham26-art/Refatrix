@@ -19,13 +19,52 @@ import { getEndpoint, invalidateEndpointCache, envTokenColsReady, maskSecret, ac
          INBOUND_KEY_FALLBACK } from '../integrations.js';
 import { writeInboundLog, inboundLogReady } from '../crmInboundLog.js';
 import { mapInbound, missingRequired, readInboundKey, verifyInboundKey, scrubPayload,
-         errBody, keyFailNote, keyFailMensaje } from '../crmInbound.js';
+         errBody, keyFailNote, keyFailMensaje, isOpenOrigin, normalizeOrigin } from '../crmInbound.js';
 import { validateRfcOptional, normalizeClaimKey, computeBaselineDiscount,
          MAX_DISCOUNT_PCT } from '../customerClaim.js';
 import { computeNextCode } from '../customerCode.js';
 
 export const INBOUND_KEY = 'crm_customer_registration';
 const SYD_BASE_CODE = String(process.env.SYD_BASE_CODE || '1516049').trim();
+
+// ── 0278 · 광고 유입(GOOGLE · FACEBOOK) 자동 가입 규칙 ────────────────────
+//
+//   디렉터 지시(2026-10-16):
+//     "CUS_Origin 이 GOOGLE · FACEBOOK 이면 보내오는 것만 데이타를 받고, ERP 가 꼭
+//      필요하다고 규정한 항목이 없어도 회원가입을 받아줘. 고객팀을 07_Pagina 로
+//      정의하고 할인률을 10% 로 정해서 가입을 진행" · "RFC 가 없을 수 있어 …
+//      고객구분을 MECANICO 로 저장"
+//
+//   ★ 이 네 값이 **규칙의 전부**다. 흐트리지 않게 한 고에 모아 둔다 —
+//     나중에 할인율이나 팀을 바꿀 때 고칠 곣이 여기 하나여야 한다.
+const WEB_TEAM_NAME = '07_Pagina';        // 0278 마이그레이션이 시드한다
+const WEB_DISCOUNT = 10;                   // %
+const WEB_CUSTOMER_TYPE = 'MECANICO';      // 고객구분(customers.customer_type)
+
+// 0278(crm_origin) 준비 여부 — 마이그레이션 전에도 수신은 되어야 한다.
+//   ⚠ 긍정만 캐싱하고 30초 뒤 다시 본다(배포 직후 migrate 가 늦어도 반영되게).
+let originCol = false; let originColProbe = 0;
+async function originColReady() {
+  if (originCol) return true;
+  if (Date.now() - originColProbe < 30000) return false;
+  originColProbe = Date.now();
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name='customers' AND column_name='crm_origin' LIMIT 1`);
+    originCol = r.rows.length > 0;
+  } catch (_) { originCol = false; }
+  return originCol;
+}
+
+/** 광고 유입 고객이 들어갈 팀. 없으면 null — 팀이 없다고 가입을 막지는 않는다. */
+async function webTeamId() {
+  try {
+    const r = (await query(
+      `SELECT id FROM sales_teams WHERE name=$1 AND deleted_at IS NULL LIMIT 1`, [WEB_TEAM_NAME])).rows[0];
+    return r ? Number(r.id) : null;
+  } catch (_) { return null; }
+}
 
 const ESTATUS = { pending: 'pendiente', approved: 'aprobado', rejected: 'rechazado' };
 
@@ -143,37 +182,61 @@ export default async function crmInboundRoutes(app) {
     const base = { remote_ip: ip, auth_in: where, auth_ok: true, payload: safe,
       rfc: m.rfc || null, crm_code: m.crmCode || null };
 
-    const miss = missingRequired(m);
-    if (miss.length) {
-      const body = errBody('ERR_REQUIRED_FIELD', `Falta(n) campo(s) obligatorio(s): ${miss.join(', ')}.`);
-      await writeLog({ ...base, http_status: 400, result: 'rejected',
-        codigo_error: body.codigoError, mensaje: body.mensaje });
-      return reply.code(400).send(body);
+    // ── 0278 · 광고 유입이면 **ERP 의 필수 규정을 적용하지 않는다** ──────
+    //   디렉터 지시: "보내오는 것만 데이타를 받고, ERP에서 꼭 필요하다고 규정한 항목이
+    //   없어도 회원가입을 받아줘." 광고를 보고 바로 가입하는 사람에게 RFC·성까지 요구하면
+    //   거기서 끝난다 — 그 사람을 잃는 것이 불완전한 고객 한 줄보다 비싸다.
+    const openOrigin = isOpenOrigin(m.origin);
+
+    if (!openOrigin) {
+      const miss = missingRequired(m);
+      if (miss.length) {
+        const body = errBody('ERR_REQUIRED_FIELD', `Falta(n) campo(s) obligatorio(s): ${miss.join(', ')}.`);
+        await writeLog({ ...base, http_status: 400, result: 'rejected',
+          codigo_error: body.codigoError, mensaje: body.mensaje });
+        return reply.code(400).send(body);
+      }
     }
 
+    // RFC: 일반 경로는 **필수**, 광고 유입은 **선택**.
+    //   ⚠ 광고 유입이라도 **넣어 보냈으면 형식은 그대로 엄격히 본다.** 형식이 깨진 RFC 를
+    //     받아 두면 나중에 팩투라가 막히고, 그때는 어디서 들어온 값인지 아무도 모른다.
     const rfcChk = validateRfcOptional(m.rfc);
-    if (!rfcChk.ok || !rfcChk.value) {
+    if (!rfcChk.ok || (!openOrigin && !rfcChk.value)) {
       const body = errBody('ERR_RFC_INVALID', RFC_ES[rfcChk.error] || RFC_ES.rfc_invalid);
       await writeLog({ ...base, http_status: 400, result: 'rejected',
         codigo_error: body.codigoError, mensaje: body.mensaje });
       return reply.code(400).send(body);
     }
-    const rfc = rfcChk.value;
-    const rfcNorm = normalizeClaimKey(rfc);
+    const rfc = rfcChk.value || null;              // 광고 유입은 null 일 수 있다
+    const rfcNorm = rfc ? normalizeClaimKey(rfc) : null;
 
     try {
       // ── ③ 이미 있는 RFC 인가 (멱등) ────────────────────────────────
       //   같은 고객을 두 번 만들지 않는다. 있으면 **비어 있는 연락처만** 채운다 —
       //   디렉터가 손본 값을 카달록 입력으로 덮어쓰면 안 된다.
       const crmCols = await crmOriginColsReady();
-      const exist = (await query(
-        `SELECT id, code, name, contact, phone, ship_address,
-                ${crmCols ? 'crm_customer_code' : 'NULL::text AS crm_customer_code'},
-                COALESCE(approval_status,'approved') AS approval_status
-           FROM customers
-          WHERE deleted_at IS NULL AND rfc_norm = $1
-            AND COALESCE(approval_status,'approved') <> 'rejected'
-          ORDER BY id LIMIT 1`, [rfcNorm])).rows[0];
+      // 0278 · RFC 가 없을 수 있게 되면서 **멱등 축이 하나로는 부족**해졌다.
+      //   순서: RFC → CRM 코드 → 이메일. 앞의 것이 있으면 그것만 본다(뒤로 갈수록 약한 키다).
+      //     · RFC      — 법적 식별자. 가장 강하다.
+      //     · CRM 코드 — uq_customers_crm_code 유니크가 이미 지키고 있다.
+      //     · 이메일   — 디렉터·영업이 나중에 고치는 값이라 가장 약하다. 그래도 없는 것보다는
+      //                  낫다(없으면 같은 사람이 두 번 누를 때마다 고객이 새로 생긴다).
+      const dupBy = rfcNorm ? 'rfc' : (crmCols && m.crmCode ? 'crm_code' : (m.correo ? 'correo' : null));
+      const DUP_WHERE = {
+        rfc: 'c.rfc_norm = $1',
+        crm_code: 'c.crm_customer_code = $1',
+        correo: 'lower(btrim(c.contact)) = lower(btrim($1))',
+      };
+      const dupVal = dupBy === 'rfc' ? rfcNorm : (dupBy === 'crm_code' ? m.crmCode : m.correo);
+      const exist = !dupBy ? null : (await query(
+        `SELECT c.id, c.code, c.name, c.contact, c.phone, c.ship_address,
+                ${crmCols ? 'c.crm_customer_code' : 'NULL::text AS crm_customer_code'},
+                COALESCE(c.approval_status,'approved') AS approval_status
+           FROM customers c
+          WHERE c.deleted_at IS NULL AND ${DUP_WHERE[dupBy]}
+            AND COALESCE(c.approval_status,'approved') <> 'rejected'
+          ORDER BY c.id LIMIT 1`, [dupVal])).rows[0];
 
       if (exist) {
         const sets = []; const params = [];
@@ -200,45 +263,82 @@ export default async function crmInboundRoutes(app) {
         return reply.code(200).send(body);
       }
 
-      // ── ④ 신규 — P-#### 로 채번해 승인 대기함에 넣는다 ──────────────
+      // ── ④ 신규 — P-#### 로 채번해 등록한다 ──────────────────────────
       const asesor = await findAsesor(m);
       const bl = await baselineFrom(m);
-      const disc = (m.discountPercent != null && Number.isFinite(m.discountPercent)
+      const sentDisc = (m.discountPercent != null && Number.isFinite(m.discountPercent)
         && m.discountPercent >= 0 && m.discountPercent <= MAX_DISCOUNT_PCT) ? m.discountPercent : 0;
+      // 0278 · 광고 유입은 **우리가 정한 10%** 다. CRM 이 보낸 값이 있어도 따르지 않는다
+      //   (디렉터 지시: "할인률을 10%로 정해서"). 보내온 값은 아래 이력 스냅샷에 남긴다.
+      const disc = openOrigin ? WEB_DISCOUNT : sentDisc;
       const days = (m.paymentDays != null && Number.isFinite(m.paymentDays) && m.paymentDays >= 0)
         ? Math.round(m.paymentDays) : 0;
-      const nombre = [m.nombre, m.apellido].filter(Boolean).join(' ').trim();
+      // 이름이 하나도 없을 수 있다(광고 유입). customers.name 은 NOT NULL 이므로
+      //   **빈 문자열로 두지 않고** 남은 단서로 채운다 — 목록에서 사람이 알아볼 수 있어야 한다.
+      const nombre = [m.nombre, m.apellido].filter(Boolean).join(' ').trim()
+        || String(m.nombreComercial || '').trim()
+        || String(m.correo || '').trim()
+        || String(m.telefono || '').trim()
+        || (m.crmCode ? `CRM ${m.crmCode}` : '')
+        || '(이름 미기재 · 웹 가입)';
       const addr = [m.direccion, m.ciudad, m.estado].filter(Boolean).join(', ') || null;
+      // 0278 · 팀·고객구분. 팀이 없으면(마이그레이션 전) null 로 두고 가입은 진행한다 —
+      //   팀 하나 때문에 고객을 잃지 않는다. 화면에서 나중에 지정할 수 있다.
+      const originCols = await originColReady();
+      const teamId = openOrigin ? (await webTeamId()) : (asesor?.team_id || null);
+      const custType = openOrigin ? WEB_CUSTOMER_TYPE : (m.tipo || null);
 
       let row = null; let dupRace = false;
       let conNo = m.constanciaNo || null;
       for (let attempt = 0; attempt < 5; attempt++) {
         const code = await computeNextCode('P');
+        // 0278 · 컬럼이 조건부로 늘어나면서 $번호를 손으로 세는 것이 위험해졌다.
+        //   (crm_customer_code · crm_origin 이 각각 마이그레이션 적용 여부에 따라 붙는다)
+        //   그래서 이름과 값을 **짝으로** 모아 번호를 기계가 붙이게 한다.
+        const cols = []; const vals = []; const params = [];
+        const add = (col, v) => { params.push(v); cols.push(col); vals.push('$' + params.length); };
+        const raw = (col, expr) => { cols.push(col); vals.push(expr); };
+        add('code', code);
+        add('name', nombre);
+        add('rfc', rfc);
+        add('contact', m.correo || null);
+        add('phone', m.telefono || null);
+        add('discount', disc);
+        add('credit_days', days);
+        add('team_id', teamId);
+        add('owner_id', asesor?.id || null);
+        add('customer_type', custType);
+        add('memo', ['CRM 웹카달록 등록',
+          openOrigin ? `유입: ${normalizeOrigin(m.origin)}` : null,
+          m.nombreComercial ? `상호명: ${m.nombreComercial}` : null,
+          m.crmCode ? `CRM 코드: ${m.crmCode}` : null, m.memo].filter(Boolean).join(' · '));
+        add('ship_address', addr);
+        add('constancia_no', conNo);
+        add('syd_ref_code', bl?.baseCode || null);
+        add('syd_ref_buy_price', bl?.buy ?? null);
+        add('syd_ref_list_price', bl?.sydLP ?? null);
+        add('syd_ref_discount', bl?.calc?.syd_discount ?? null);
+        add('ctr_ref_code', bl?.ctrCode || null);
+        add('ctr_ref_list_price', bl?.ctrLP ?? null);
+        add('suggested_discount', bl?.calc?.suggested_discount ?? null);
+        // 0267 · **등록은 승인을 기다리지 않는다**(디렉터 지시 2026-10-16: "CRM 수신 전부
+        //   사후승인으로"). 예전에는 'pending' 이라 CRM 에서 들어온 고객은 승인 전까지
+        //   견적에 쓸 수 없었고 카달록에서도 정가를 봤다 — ERP 화면 등록만 10/09 에
+        //   바뀌고 이 창구가 남아 있었다. ratified_at 은 비워 두므로 사후승인 목록에 모인다.
+        raw('approval_status', `'approved'`);
+        raw('submitted_at', 'now()');
+        if (rfc) raw('rfc_claimed_at', 'now()');     // RFC 가 없으면 선점도 없다
+        if (crmCols) { add('crm_customer_code', m.crmCode || null); raw('crm_registered_at', 'now()'); }
+        if (originCols) add('crm_origin', m.origin || null);
+        // 0278 · 광고 유입은 서류 관문 대상이 아니다. 광고를 보고 가입한 사람에게서
+        //   Constancia·주소증빙을 받을 일이 없는데 관문을 걸어 두면 **10% 가 실효 0 으로
+        //   깎여** 지시가 무효가 된다(0235/0247 트리거). 그래서 여기서 명시적으로 끈다.
+        if (openOrigin) raw('doc_gate', 'false');
         try {
           row = (await query(
-            `INSERT INTO customers
-               (code, name, rfc, contact, phone, discount, credit_days, team_id, owner_id,
-                customer_type, memo, ship_address, constancia_no,
-                syd_ref_code, syd_ref_buy_price, syd_ref_list_price, syd_ref_discount,
-                ctr_ref_code, ctr_ref_list_price, suggested_discount,
-                approval_status, submitted_at, rfc_claimed_at
-                ${crmCols ? ', crm_customer_code, crm_registered_at' : ''})
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
-                     $10,$11,$12,$13,
-                     $14,$15,$16,$17,
-                     $18,$19,$20,
-                     'pending', now(), now()
-                     ${crmCols ? ', $21, now()' : ''})
-             RETURNING id, code`,
-            [code, nombre, rfc, m.correo || null, m.telefono || null, disc, days,
-             asesor?.team_id || null, asesor?.id || null,
-             m.tipo || null,
-             ['CRM 웹카달록 등록', m.nombreComercial ? `상호명: ${m.nombreComercial}` : null,
-              m.crmCode ? `CRM 코드: ${m.crmCode}` : null, m.memo].filter(Boolean).join(' · '),
-             addr, conNo,
-             bl?.baseCode || null, bl?.buy ?? null, bl?.sydLP ?? null, bl?.calc?.syd_discount ?? null,
-             bl?.ctrCode || null, bl?.ctrLP ?? null, bl?.calc?.suggested_discount ?? null,
-             ...(crmCols ? [m.crmCode || null] : [])])).rows[0];
+            `INSERT INTO customers (${cols.join(', ')})
+             VALUES (${vals.join(', ')})
+             RETURNING id, code`, params)).rows[0];
           break;
         } catch (e) {
           const msg = String(e.message || '');
@@ -253,6 +353,7 @@ export default async function crmInboundRoutes(app) {
 
       if (dupRace) {
         // 방금 사이에 같은 RFC 가 들어왔다 → 멱등 경로로 되돌아간다.
+        //   (이 분기는 uq_customers_rfc_claim 충돌에서만 오므로 rfcNorm 이 반드시 있다)
         const again = (await query(
           `SELECT id, code, COALESCE(approval_status,'approved') AS approval_status FROM customers
             WHERE deleted_at IS NULL AND rfc_norm = $1
@@ -278,6 +379,14 @@ export default async function crmInboundRoutes(app) {
            VALUES ($1,'submit',$2,$3,NULL)`,
           [row.id, 'CRM(웹카달록) 등록 요청', JSON.stringify({
             origin: 'crm', crm_customer_code: m.crmCode, crm_customer_id: m.crmId,
+            // 0278 · 어떤 유입경로였고 그래서 무엇을 **우리가 정했는지** 박제한다.
+            //   나중에 「왜 이 고객만 10% 냐」를 이 한 줄로 답할 수 있어야 한다.
+            cus_origin: m.origin || null, open_origin: openOrigin,
+            applied: openOrigin
+              ? { team: WEB_TEAM_NAME, team_id: teamId, discount: WEB_DISCOUNT,
+                  customer_type: WEB_CUSTOMER_TYPE, doc_gate: false,
+                  required_fields_waived: true, sent_discount: sentDisc }
+              : null,
             estatus_crm: m.estatusCrm, transaction_user: m.transactionUser,
             solicitado_en: m.solicitadoEn,
             asesor: asesor ? { id: Number(asesor.id), name: asesor.name, matched_by: asesor.matched_by }
@@ -294,8 +403,10 @@ export default async function crmInboundRoutes(app) {
       await safeLog({ userId: null, action: 'create', target: `customer:${row.id}`,
         detail: { origin: 'crm', crm_customer_code: m.crmCode || null, rfc } });
 
-      const body = errBody('0', 'Cliente recibido, pendiente de aprobación del director.', {
-        erpCustomerCode: row.code, estatus: 'pendiente',
+      // 0267/0278 · 고객은 **이미 활성**이다. 상대에게 「승인 대기」라고 말하면
+      //   카달록이 그 고객을 기다리게 만든다 — 사실과 다른 상태를 전하면 안 된다.
+      const body = errBody('0', 'Cliente registrado y activo en el ERP.', {
+        erpCustomerCode: row.code, estatus: 'aprobado',
         asesor: asesor ? asesor.name : null,
       });
       await writeLog({ ...base, customer_id: Number(row.id), erp_code: row.code,

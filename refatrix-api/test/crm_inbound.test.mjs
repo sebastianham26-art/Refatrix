@@ -281,7 +281,10 @@ dbTest('수신 → 승인 대기 고객(P-####) 생성 · 멱등 · 인증 (실 
     assert.equal(r.json().codigoError, 'ERR_RFC_INVALID');
   });
 
-  await t.test('정상 수신 → P-#### · pending · 담당 영업 자동 배정', async () => {
+  // 0278 · 2026-10-16 디렉터 지시로 **CRM 수신도 사후승인**이 됐다(0267 과 같은 규칙).
+  //   예전에는 pending 이라 CRM 에서 들어온 고객은 승인 전까지 견적에 쓸 수 없었고
+  //   카달록에서도 정가를 봤다 — ERP 화면 등록만 10/09 에 바뀌고 이 창구가 남아 있었다.
+  await t.test('정상 수신 → P-#### · 즉시 활성 + 사후승인 대기 · 담당 영업 자동 배정', async () => {
     const r = await post({
       rfc: rfc1, nombre: 'COMERCIALIZADORA QUALI', apellido: 'LIRA',
       telefono: '8113843028', correo: 'quali@ejemplo.com',
@@ -294,7 +297,7 @@ dbTest('수신 → 승인 대기 고객(P-####) 생성 · 멱등 · 인증 (실 
     assert.equal(r.statusCode, 200);
     const b = r.json();
     assert.equal(b.codigoError, '0');
-    assert.equal(b.estatus, 'pendiente');
+    assert.equal(b.estatus, 'aprobado', '상대에게도 사실대로 — 고객은 이미 쓸 수 있다');
     assert.match(b.erpCustomerCode, /^P-\d{4}$/, 'CRM 유입 고객은 P 계열이어야 구분이 된다');
 
     // 0235 · 신규 고객은 서류 관문 대상 — CRM 이 보낸 할인·외상일은 **약정값**으로 들어가고,
@@ -303,10 +306,12 @@ dbTest('수신 → 승인 대기 고객(P-####) 생성 · 멱등 · 인증 (실 
       `SELECT id, code, name, rfc, phone, contact,
               COALESCE((to_jsonb(customers)->>'discount_agreed')::numeric, discount) AS discount,
               COALESCE((to_jsonb(customers)->>'credit_days_agreed')::int, credit_days) AS credit_days,
-              owner_id, team_id, approval_status, crm_customer_code, ship_address
+              owner_id, team_id, approval_status, crm_customer_code, ship_address,
+              (to_jsonb(customers)->>'ratified_at') AS ratified_at
          FROM customers WHERE code=$1`, [b.erpCustomerCode])).rows[0];
     madeIds.push(Number(c.id));
-    assert.equal(c.approval_status, 'pending', '수신 즉시 승인되면 디렉터 통제가 무너진다');
+    assert.equal(c.approval_status, 'approved', '0278 · 등록은 승인을 기다리지 않는다');
+    assert.equal(c.ratified_at, null, '디렉터 통제는 사후승인 목록으로 남는다(0267 축)');
     assert.equal(c.name, 'COMERCIALIZADORA QUALI LIRA');
     assert.equal(c.rfc, rfc1);
     assert.equal(c.crm_customer_code, 'WEB-' + TAG);
