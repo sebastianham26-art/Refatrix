@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 도면 Mapa del almacén · build wm-1019b</title>
+<title>Refatrix · 창고 도면 Mapa del almacén · build wm-1019c</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
@@ -59,6 +59,26 @@
   .bay.dim{background:#E4E1DA;color:#A9A397}
   .bay.hit{background:var(--gold);color:#fff}
   .bay.sel{background:var(--ink);color:#fff}
+  /* 2026-10-19 · 포장 피킹 — 포장지시서의 피킹 위치(주황) */
+  .bay.pick{background:#E8730C;color:#fff;box-shadow:0 0 0 2px #B4540A inset}
+  .bay.pickdone{background:#F6C9A0;color:#8A4A12}
+  .bay.pick.sel,.bay.pickdone.sel{background:var(--ink);color:#fff;box-shadow:0 0 0 3px #E8730C inset}
+  .pq{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 8px;border-bottom:1px solid var(--line);cursor:pointer;border-left:4px solid #F3B27A}
+  .pq:hover{background:#FDF3EA}
+  .pq.over{border-left-color:var(--red)}
+  .pq .n{font-weight:800;font-size:15px} .pq .c{font-size:12.5px;color:var(--muted)} .pq .p{grid-row:1 / span 2;grid-column:2;align-self:center;font-weight:800;font-size:13px;color:#B4540A}
+  .pk{margin-top:10px;border:1px solid #F3B27A;border-radius:10px;overflow:hidden}
+  .pk .bh{display:flex;justify-content:space-between;align-items:center;background:#E8730C;color:#fff;padding:6px 10px;font-weight:800;font-size:14px;cursor:pointer}
+  .pk .bh small{font-weight:600;opacity:.9}
+  .pk.sel .bh{background:var(--ink)}
+  .pk .pr{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;padding:7px 10px;border-top:1px solid #F8D9BD;background:#FDF3EA;font-size:12.5px}
+  .pk .pr.done{background:#F4F1EA;color:#9A948A;text-decoration:line-through}
+  .pk .pr .q{font-weight:800;font-size:14px;color:#B4540A;text-decoration:none}
+  .pk .pr.done .q{color:#9A948A}
+  .pk.off .bh{background:#9A948A}
+  .pk.done{border-color:#F3D3B5} .pk.done .bh{background:#F6C9A0;color:#8A4A12}
+  .pbar{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin-top:6px}
+  .pbar i{display:block;height:100%;background:#E8730C}
   .map.setup .bay{cursor:inherit}
   .hd{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;background:var(--gold);border:2px solid #fff;border-radius:3px;z-index:3}
   .draft{position:absolute;border:2px dashed var(--gold);background:rgba(184,137,59,.12);pointer-events:none}
@@ -106,7 +126,7 @@
     <h1 id="ttl">창고 도면 · Mapa del almacén</h1>
     <span class="sub" id="sub">랙 번호를 누르면 SKU · 수량이 보입니다</span>
     <span class="right">
-      <span class="seg" id="modeSeg" style="display:none"><button type="button" data-m="view" class="cur">운영</button><button type="button" data-m="setup">설정</button></span>
+      <span class="seg" id="modeSeg"><button type="button" data-m="view" class="cur">재고</button><button type="button" data-m="pick">포장 피킹</button><button type="button" data-m="setup" style="display:none">설정</button></span>
       <input class="search" id="q" type="search" autocomplete="off" placeholder="제품번호 · 품명 검색">
       <button type="button" class="langbtn" id="langToggle">🌐 Español</button>
       <a href="refatrix-portal.html" class="portalBtn">← 포털</a>
@@ -132,7 +152,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='wm-1019b';
+  var BUILD='wm-1019c';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-whmap] build '+BUILD); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -155,7 +175,7 @@
   $('sub').textContent=L('랙 번호를 누르면 SKU · 수량이 보입니다','Toque un rack para ver SKU y cantidades');
   $('q').placeholder=L('제품번호 · 품명 검색','Buscar clave o nombre');
   (function(){ var a=document.querySelector('a.portalBtn'); if(a) a.textContent=L('← 포털','← Portal');
-    var sb=document.querySelectorAll('#modeSeg button'); if(sb.length===2){ sb[0].textContent=L('운영','Operar'); sb[1].textContent=L('설정','Configurar'); } })();
+    var sb=document.querySelectorAll('#modeSeg button'); if(sb.length===3){ sb[0].textContent=L('재고','Existencia'); sb[1].textContent=L('📦 포장 피킹','📦 Surtido'); sb[2].textContent=L('설정','Configurar'); } })();
   if(!S){ $('app').innerHTML='<div class="card"><div class="hint">'+L('세션이 없습니다. 포털에서 다시 여세요.','Sin sesión. Abra desde el portal.')+'</div></div>'; return; }
 
   /* ---------- 상태 ---------- */
@@ -165,6 +185,9 @@
   var MODE='view', SELZ=null, SELB=null, Q='', HITS=null, SEARCH=[], BAYITEMS=null;
   var DRAW=false, DRAFT=null, DRAG=null;
   var DIRTY=false;
+  // 포장 피킹(2026-10-19) — 포장지시서가 나온 오더의 피킹 위치를 주황으로
+  var PICKQ=null, PICKQERR=null, PICKO=null, PICKID=null, PICKB={}, PICKOFF=[], PICKT=null;
+  var URLPICK=(function(){ try{ var v=new URLSearchParams(location.search).get('pick'); return v&&/^\d+$/.test(v)?Number(v):null; }catch(e){ return null; } })();
 
   function bayOf(rack){ var s=String(rack||'').trim().toUpperCase(); var m=s.match(/^(.*\S)-\d+$/); return m?m[1]:s; }
   function natKey(v){ return String(v||'').toUpperCase().replace(/\d+/g,function(d){ return ('000000'+d).slice(-6); }); }
@@ -193,8 +216,9 @@
       RACKS={}; (b.racks||[]).forEach(function(r){ RACKS[String(r.rack).toUpperCase()]=r; });
       KNOWN={}; (b.known||[]).forEach(function(r){ KNOWN[String(r).toUpperCase()]=1; });
       buildBays(); DIRTY=false;
+      if(URLPICK&&MODE!=='pick'){ setMode('pick'); selectPick(URLPICK); URLPICK=null; return; }
       CANEDIT=!!b.can_edit;
-      $('modeSeg').style.display=CANEDIT?'':'none';
+      var sb=document.querySelector('#modeSeg button[data-m="setup"]'); if(sb) sb.style.display=CANEDIT?'':'none';
       render();
     });
   }
@@ -210,10 +234,16 @@
   function mapHead(){
     var h=MODE==='setup'
       ?(DRAW?L('도면 위를 드래그해 새 구역을 그리세요','Arrastre sobre el mapa para dibujar una zona'):L('구역을 끌어 이동 · 금색 핸들로 크기 조절','Arrastre para mover · manijas para tamaño'))
+      :MODE==='pick'?(PICKO?L('주황 = 피킹할 위치 · 연주황 = 다 담음','Naranja = surtir aquí · claro = ya empacado'):L('오른쪽 포장 목록에서 오더를 고르세요','Elija una orden de la lista de empaque'))
       :(Q?L('검색된 제품이 있는 랙만 금색','Racks con resultados en dorado'):L('구역 또는 랙을 누르세요','Toque una zona o un rack'));
     return '<div class="maphead"><b>'+L('창고 도면','Mapa')+(DIRTY?'<span class="dirty">'+L('저장 안 됨','Sin guardar')+'</span>':'')+'</b><span class="hint">'+esc(h)+'</span></div>';
   }
   function legend(){
+    if(MODE==='pick') return '<div class="legend">'
+      +'<span><i style="background:#E8730C"></i>'+L('피킹할 위치','Surtir aquí')+'</span>'
+      +'<span><i style="background:#F6C9A0"></i>'+L('다 담음','Ya empacado')+'</span>'
+      +'<span><i style="background:#E4E1DA"></i>'+L('이 오더와 무관','Sin relación')+'</span>'
+      +'<span><i style="background:var(--ink)"></i>'+L('선택','Seleccionado')+'</span></div>';
     return '<div class="legend">'
       +'<span><i style="background:var(--brand)"></i>'+L('재고 있음','Con existencia')+'</span>'
       +'<span><i style="background:var(--green-bg);border:1px solid #cfe2da"></i>'+L('빈 랙','Vacío')+'</span>'
@@ -233,11 +263,14 @@
         h+='<div class="zrow">';
         row.forEach(function(b){
           var st=bayStat(b), cls='bay ';
-          if(SELB===b) cls+='sel';
+          var pk=(MODE==='pick'&&PICKO)?PICKB[b]:null;
+          if(MODE==='pick'&&PICKO){ cls+=pk?(pk.left>0?'pick':'pickdone'):'dim'; if(SELB===b) cls+=' sel'; }
+          else if(SELB===b) cls+='sel';
           else if(HITS) cls+=(HITS[b]?'hit':'dim');
           else cls+=!st.registered?'unreg':(st.qty>0?'stock':'empty');
           var tip=b+(st.registered?(' · '+st.skus+' SKU · '+fmt(st.qty)+' EA'):(' · '+L('ERP 미등록','no registrado')));
-          h+='<div class="'+cls+'" data-b="'+esc(b)+'" data-z="'+esc(z.id)+'" title="'+esc(tip)+'">'+esc(b)+(st.fast?'<small>⚡</small>':'')+'</div>';
+          if(pk) tip=b+' · '+L('피킹','surtir')+' '+fmt(pk.left)+' / '+fmt(pk.qty)+' EA';
+          h+='<div class="'+cls+'" data-b="'+esc(b)+'" data-z="'+esc(z.id)+'" title="'+esc(tip)+'">'+esc(b)+(pk?'<small>'+fmt(pk.left>0?pk.left:pk.qty)+'</small>':(st.fast?'<small>⚡</small>':''))+'</div>';
         });
         h+='</div>';
       });
@@ -254,6 +287,7 @@
   /* ---------- 오른쪽 ---------- */
   function sideHtml(){
     if(MODE==='setup') return setupHtml();
+    if(MODE==='pick') return pickHtml();
     if(Q) return searchHtml();
     if(SELB) return bayHtml();
     if(SELZ) return zoneHtml();
@@ -381,6 +415,9 @@
     m.addEventListener('click',function(e){
       if(MODE==='setup') return;
       var bEl=e.target.closest('.bay'), zEl=e.target.closest('.zone');
+      if(bEl&&MODE==='pick'){ var pb=bEl.getAttribute('data-b'); SELB=(SELB===pb?null:pb); renderMap(); renderSide();
+        var g=document.querySelector('#side .pk[data-pb="'+(window.CSS&&CSS.escape?CSS.escape(pb):pb)+'"]'); if(g&&g.scrollIntoView) try{ g.scrollIntoView({behavior:'smooth',block:'nearest'}); }catch(_){}
+        return; }
       if(bEl){ selectBay(bEl.getAttribute('data-b')); return; }
       if(zEl&&!zEl.classList.contains('area')){ SELZ=zEl.getAttribute('data-z'); SELB=null; renderMap(); renderSide(); }
     });
@@ -430,6 +467,13 @@
     Array.prototype.forEach.call(s.querySelectorAll('[data-selb]'),function(el){ el.addEventListener('click',function(){ selectBay(el.getAttribute('data-selb')); }); });
     Array.prototype.forEach.call(s.querySelectorAll('[data-back]'),function(el){ el.addEventListener('click',function(){
       if(el.getAttribute('data-back')==='zone'){ SELB=null; } else { SELB=null; SELZ=null; } renderMap(); renderSide(); }); });
+    if(MODE==='pick'){
+      Array.prototype.forEach.call(s.querySelectorAll('[data-pick]'),function(el){ el.addEventListener('click',function(){ selectPick(Number(el.getAttribute('data-pick'))); }); });
+      Array.prototype.forEach.call(s.querySelectorAll('[data-selpb]'),function(el){ el.addEventListener('click',function(){ var b=el.getAttribute('data-selpb'); SELB=(SELB===b?null:b); renderMap(); renderSide(); }); });
+      var bk=$('pkBack'); if(bk) bk.addEventListener('click',function(){ PICKID=null; PICKO=null; PICKB={}; PICKOFF=[]; SELB=null; setUrlPick(null); loadPickQueue(); renderMap(); renderSide(); });
+      var rl=$('pkReload'); if(rl) rl.addEventListener('click',function(){ if(PICKID) loadPick(PICKID,false); });
+      return;
+    }
     if(MODE!=='setup') return;
     var on=function(id,fn){ var el=$(id); if(el) el.addEventListener('click',fn); };
     on('bSave',save);
@@ -480,14 +524,104 @@
   }
 
   /* ---------- 상단: 모드 · 검색 ---------- */
+  function setMode(m){
+    MODE=m; DRAW=false; SELB=null; SELZ=null; Q=''; HITS=null; $('q').value='';
+    Array.prototype.forEach.call(document.querySelectorAll('#modeSeg button'),function(x){ x.classList.toggle('cur',x.getAttribute('data-m')===MODE); });
+    $('q').disabled=(MODE!=='view');
+    clearInterval(PICKT); PICKT=null;
+    if(MODE==='pick'){ loadPickQueue(); PICKT=setInterval(function(){ if(document.hidden) return; if(PICKID) loadPick(PICKID,true); else loadPickQueue(); },20000); }
+    else { PICKO=null; PICKID=null; PICKB={}; PICKOFF=[]; setUrlPick(null); }
+    render();
+  }
   Array.prototype.forEach.call(document.querySelectorAll('#modeSeg button'),function(b){ b.addEventListener('click',function(){
     var m=b.getAttribute('data-m'); if(m===MODE) return;
     if(MODE==='setup'&&DIRTY&&!confirm(L('저장하지 않은 도면 변경이 있습니다. 버리고 나갈까요?','Hay cambios sin guardar. ¿Descartar?'))) return;
     if(MODE==='setup'&&DIRTY){ ZONES=JSON.parse(SAVED); DIRTY=false; }
-    MODE=m; DRAW=false; SELB=null; SELZ=null; Q=''; HITS=null; $('q').value='';
-    Array.prototype.forEach.call(document.querySelectorAll('#modeSeg button'),function(x){ x.classList.toggle('cur',x.getAttribute('data-m')===MODE); });
-    $('q').disabled=(MODE==='setup');
-    render(); }); });
+    setMode(m); }); });
+
+  /* ---------- 포장 피킹 (2026-10-19) ----------------------------------------------
+     창고 홈의 포장지시(포장작업지시서 출력된 오더) → 피킹 위치를 도면에 주황으로.
+     · 목록 = /api/warehouse/packing-queue · 오더 = /api/warehouse/packing/:id (지시서 위치 picks · 남은 수량)
+     · 칸 = 랙 열(bay). 다 담은 품목(남은 0)은 연주황 · 취소선. 20초마다 새로 읽는다. */
+  function setUrlPick(id){ try{ var u=new URL(location.href); if(id) u.searchParams.set('pick',id); else u.searchParams.delete('pick'); history.replaceState(null,'',u.pathname+u.search+u.hash); }catch(e){} }
+  function loadPickQueue(){
+    api('/api/warehouse/packing-queue').then(function(o){
+      if(MODE!=='pick') return;
+      if(!o.ok){ PICKQ=[]; PICKQERR=o.status===403?L('창고 권한이 있어야 포장 목록을 볼 수 있습니다.','Necesita permiso de almacén para ver la lista.'):L('포장 목록을 불러오지 못했습니다','No se pudo cargar la lista'); }
+      else { PICKQ=o.body.items||[]; PICKQERR=null; }
+      if(!PICKID) renderSide();
+    });
+  }
+  function selectPick(id){ PICKID=id; PICKO=null; PICKB={}; PICKOFF=[]; SELB=null; setUrlPick(id); render(); loadPick(id,false); }
+  function loadPick(id,quiet){
+    api('/api/warehouse/packing/'+id).then(function(o){
+      if(MODE!=='pick'||PICKID!==id) return;
+      if(!o.ok||o.body.error){ if(!quiet){ toast(L('포장지시를 불러오지 못했습니다','No se pudo cargar la orden')+' ('+esc(o.body.error||o.status)+')'); PICKID=null; setUrlPick(null); renderSide(); } return; }
+      PICKO=o.body; buildPick(); render();
+    });
+  }
+  function bayPos(){ var m={}; ZONES.forEach(function(z,zi){ (z.rows||[]).forEach(function(r,ri){ r.forEach(function(b,ci){ m[b]=[zi,ri,ci]; }); }); }); return m; }
+  function buildPick(){
+    PICKB={}; PICKOFF=[];
+    var idx=bayIndex();
+    (PICKO.items||[]).forEach(function(it){
+      var done=Number(it.remaining)<=0, picks=(it.picks&&it.picks.length)?it.picks:[{rack:null,qty:it.required}];
+      // 남은 수량을 지시서 위치 순서대로 나눠 「아직 집을 것」을 칸별로 센다
+      var left=Math.max(0,Number(it.remaining)||0);
+      picks.forEach(function(pk){
+        var q=Number(pk.qty)||0, l=Math.min(left,q); left-=l;
+        var row={code:it.ctr_code,syd:it.syd_code,rack:pk.rack||null,qty:q,left:done?0:l,done:done||l<=0,picked:!!pk.picked};
+        if(!pk.rack){ PICKOFF.push(row); return; }
+        var b=bayOf(pk.rack); if(!idx[b]&&idx[String(pk.rack).toUpperCase()]) b=String(pk.rack).toUpperCase();
+        row.bay=b; row.onmap=!!idx[b];
+        var g=PICKB[b]||(PICKB[b]={bay:b,qty:0,left:0,rows:[],onmap:row.onmap}); g.qty+=q; g.left+=row.left; g.rows.push(row);
+      });
+    });
+  }
+  function pickHtml(){
+    if(!PICKID){
+      var h='<div class="k">'+L('포장 피킹','Surtido')+'</div><h2>'+L('포장 목록','Lista de empaque')+(PICKQ?' <span style="color:#E8730C">'+PICKQ.length+'</span>':'')+'</h2>'
+        +'<div class="hint">'+L('포장작업지시서가 나온 오더입니다. 오더를 누르면 피킹할 위치가 도면에 주황색으로 표시됩니다.','Órdenes con hoja de empaque. Toque una para ver en naranja dónde surtir.')+'</div>';
+      if(PICKQ==null) return h+'<div class="hint" style="margin-top:10px">'+L('불러오는 중…','Cargando…')+'</div>';
+      if(PICKQERR) return h+'<div class="note red">'+esc(PICKQERR)+'</div>';
+      if(!PICKQ.length) return h+'<div class="note green">'+L('대기 중인 포장지시가 없습니다.','No hay órdenes de empaque pendientes.')+'</div>';
+      h+='<div style="border-top:2px solid var(--ink);margin-top:10px">';
+      PICKQ.forEach(function(q){
+        var pq=Number(q.packed_qty)||0, tq=q.total_qty==null?null:Number(q.total_qty);
+        h+='<div class="pq'+(q.overdue?' over':'')+'" data-pick="'+q.quote_id+'"><span class="n">'+esc(q.quote_no||('#'+q.quote_id))+(q.overdue?' <small style="color:var(--red)">⚠ '+L('지연','atraso')+'</small>':'')+'</span>'
+          +'<span class="p">'+fmt(pq)+' / '+(tq==null?'—':fmt(tq))+'</span><span class="c">'+esc(q.customer||'')+'</span></div>';
+      });
+      return h+'</div>';
+    }
+    var d=PICKO;
+    var head='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div class="k">'+L('포장 피킹','Surtido')+'</div>'
+      +'<h2>'+esc(d?(d.quote_no||('#'+d.quote_id)):('#'+PICKID))+'</h2>'+(d?'<div class="hint">'+esc(d.customer||'')+'</div>':'')+'</div>'
+      +'<button type="button" class="btn ghost sm" id="pkBack">← '+L('포장 목록','Lista')+'</button></div>';
+    if(!d) return head+'<div class="hint" style="margin-top:10px">'+L('불러오는 중…','Cargando…')+'</div>';
+    var req=Number(d.required_total)||0, sc=Number(d.scanned_total)||0, pct=req?Math.round(sc/req*100):0;
+    var h=head+'<div class="hint" style="margin-top:6px">'+L('포장','Empacado')+' <b>'+fmt(sc)+'</b> / '+fmt(req)+' EA ('+pct+'%)</div><div class="pbar"><i style="width:'+pct+'%"></i></div>';
+    var pos=bayPos(), groups=Object.keys(PICKB).map(function(k){ return PICKB[k]; });
+    groups.sort(function(a,b){ var pa=pos[a.bay], pb=pos[b.bay];
+      if(pa&&pb){ return pa[0]-pb[0]||pa[1]-pb[1]||pa[2]-pb[2]; } if(pa) return -1; if(pb) return 1; return natKey(a.bay)<natKey(b.bay)?-1:1; });
+    var leftBays=groups.filter(function(g){ return g.left>0; }).length;
+    h+='<div class="hint" style="margin-top:8px">'+L('들를 랙','Racks a visitar')+' <b style="color:#E8730C">'+leftBays+'</b>'+(groups.length>leftBays?' · '+L('끝난 랙','terminados')+' '+(groups.length-leftBays):'')+'</div>';
+    groups.forEach(function(g){
+      h+='<div class="pk'+(SELB===g.bay?' sel':'')+(g.onmap?'':' off')+(g.left>0?'':' done')+'" data-pb="'+esc(g.bay)+'"><div class="bh" data-selpb="'+esc(g.bay)+'"><span>'+esc(g.bay)+(g.onmap?'':' <small>· '+L('도면 밖','fuera del mapa')+'</small>')+'</span><small>'+(g.left>0?fmt(g.left)+' EA':'✓')+'</small></div>';
+      g.rows.forEach(function(r){
+        h+='<div class="pr'+(r.done?' done':'')+'"><span class="mono">'+esc(r.rack)+'</span><span><b class="mono">'+esc(r.code)+'</b>'+(r.syd?' <span class="hint">'+esc(r.syd)+'</span>':'')+'</span><span class="q">'+(r.done?'✓ ':'')+fmt(r.done?r.qty:r.left)+'</span></div>';
+      });
+      h+='</div>';
+    });
+    if(PICKOFF.length){
+      h+='<div class="pk off"><div class="bh"><span>'+L('위치 미지정','Sin ubicación')+'</span><small>'+fmt(PICKOFF.reduce(function(a,r){ return a+(r.done?0:r.left); },0))+' EA</small></div>';
+      PICKOFF.forEach(function(r){ h+='<div class="pr'+(r.done?' done':'')+'"><span class="mono">—</span><span><b class="mono">'+esc(r.code)+'</b></span><span class="q">'+fmt(r.done?r.qty:r.left)+'</span></div>'; });
+      h+='</div><div class="hint">'+L('랙 기록이 없는 재고입니다 — 제품 위치 찾기로 확인하세요.','Sin ubicación registrada — use Buscar ubicación.')+'</div>';
+    }
+    if(!groups.length&&!PICKOFF.length) h+='<div class="note green">'+L('피킹할 품목이 없습니다.','Nada que surtir.')+'</div>';
+    h+='<div class="rowb"><a class="btn sm" style="text-decoration:none;background:#E8730C" href="refatrix-warehouse.html">📦 '+L('포장 작업으로','Ir a empaque')+'</a>'
+      +'<button type="button" class="btn ghost sm" id="pkReload">↻ '+L('새로고침','Actualizar')+'</button></div>';
+    return h;
+  }
   var qT=null, qSeq=0;
   $('q').addEventListener('input',function(){
     clearTimeout(qT); var v=$('q').value.trim();

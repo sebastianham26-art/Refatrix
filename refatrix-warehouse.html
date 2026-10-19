@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 1012lk1</title>
+<title>Refatrix · 창고 포장 · build 1019pm1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -48,6 +48,9 @@
   .panel.on{display:flex;flex-direction:column}
   .ptop{flex:0 0 auto;width:100%;max-width:980px;margin:0 auto;padding:14px 16px 0}
   .pscroll{flex:1 1 auto;min-height:0;overflow:auto;width:100%;max-width:980px;margin:0 auto;padding:0 16px 16px;scrollbar-gutter:stable}
+  /* 2026-10-19 · 도면에서 피킹 위치 보기(창고 도면 피킹 모드로 이동) */
+  .mapgo{background:#E8730C;color:#fff;border:none;border-radius:9px;padding:6px 12px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+  .qcard .qmap{grid-column:1;justify-self:start;margin-top:4px;background:#FDEBD9;color:#B4540A;border:1px solid #F3B27A;border-radius:8px;padding:4px 10px;font-size:12.5px;font-weight:800;cursor:pointer}
   .back{background:var(--steel);color:#fff;border:none;border-radius:9px;padding:6px 12px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .back:active{background:var(--steel-d)}
   .headrow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:12px 0 10px}
@@ -440,6 +443,7 @@
   <div class="ptop">
     <div class="pdarow">
       <button class="back" id="backBtn">← 목록으로</button>
+      <button class="mapgo" id="mapBtn" type="button">🗺 도면에서 피킹 위치 보기</button>
       <button class="pdabtn" type="button" data-pda>📱</button>
     </div>
     <div class="headrow">
@@ -500,7 +504,7 @@
   function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
 
 (function(){
-  try{ console.log('[refatrix-warehouse] build 1012lk1 — 제품 위치 찾기(총 재고 + 랙 × 수량)'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 1019pm1 — 포장지시 → 창고 도면 피킹 위치'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -511,6 +515,8 @@
 
   // ================= 한국어 ↔ 스페인어 (앱 내장 번역) =================
   var I18N=[
+    ['🗺 도면에서 피킹 위치 보기','🗺 Ver ubicaciones en el mapa'],
+    ['🗺 도면','🗺 Mapa'],
     /* 2026-10-12 · 제품 위치 찾기 · 피킹 기록(0269) */
     ["🔍 제품 위치 찾기","🔍 Buscar ubicación de producto"],
     ["제품번호 · 바코드 · SYD 입력 후 Enter","Código CTR · código de barras · SYD y Enter"],
@@ -1141,6 +1147,7 @@
       return '<div class="qcard'+(it.overdue?' overdue':'')+'" data-id="'+it.quote_id+'">'
         +'<div class="no">'+esc(it.quote_no||('#'+it.quote_id))+poBadge(it.customer_po_no)+'</div>'
         +'<div class="cu">'+esc(it.customer)+'</div>'
+        +'<button type="button" class="qmap" data-id="'+it.quote_id+'">🗺 도면</button>'
         +'<div class="meta"><span><span class="lab">포장지시</span> <span class="val">'+fmtDT(it.printed_at)+'</span></span>'
         +'<span class="elap"><span class="lab">경과(업무)</span> <span class="t">'+fmtHoursDec(it.elapsed_biz_sec)+'</span>'
         +(it.overdue?'<span class="badge b-over">⚠ 지연 중</span>':'')+'</span></div>'
@@ -1148,6 +1155,10 @@
     }).join('');
     Array.prototype.forEach.call(box.querySelectorAll('.qcard'),function(el){
       el.addEventListener('click',function(){ if(Date.now()<suppressCard) return; openPacking(Number(el.getAttribute('data-id'))); });
+    });
+    // 2026-10-19 · 카드의 [🗺 도면] — 포장지시서의 피킹 위치를 창고 도면에 주황색으로 표시
+    Array.prototype.forEach.call(box.querySelectorAll('.qmap'),function(b){
+      b.addEventListener('click',function(e){ e.stopPropagation(); goMap(Number(b.getAttribute('data-id'))); });
     });
   }
   function checkNew(items){
@@ -1213,6 +1224,8 @@
 
   // ---------- 패킹 ----------
   var PK=null, curBox=null, pollTimer=null, drillElapsedSec=0;
+  function goMap(id){ if(!id) return; var u='refatrix-whmap.html?pick='+encodeURIComponent(id); if(typeof window.__whGo==='function') window.__whGo(u); else location.href=u; }   // __whGo = 시험용 훅
+  (function(){ var mb=$('mapBtn'); if(mb) mb.addEventListener('click',function(){ if(PK) goMap(PK.quote_id); }); })();
   function openPacking(id){ loadPacking(id, true); pollStart(); }
   function loadPacking(id, open){
     fetch(API+'/api/warehouse/packing/'+id,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
