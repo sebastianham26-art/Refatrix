@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260827rack</title>
+<title>Refatrix · 수입 입고 Recepción · build 20261019paste</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -43,6 +43,17 @@
   .drop{border:2px dashed var(--line);border-radius:14px;padding:26px 16px;text-align:center;background:var(--paper);cursor:pointer}
   .drop:hover,.drop.over{border-color:var(--steel);background:#EFF3F7}
   .drop .ic{font-size:30px} .drop .t{font-weight:700;margin-top:5px}
+  /* 업로드 방식 탭(2026-10-19) — 패킹리스트 엑셀 / 붙여넣기(패킹리스트 없음) */
+  .umode{display:flex;gap:6px;margin:4px 0 12px;flex-wrap:wrap}
+  .umode button{font-family:inherit;font-size:13px;font-weight:700;padding:8px 14px;border-radius:10px;border:2px solid var(--line);background:#fff;color:var(--steel-d);cursor:pointer}
+  .umode button.cur{border-color:var(--steel);background:#EFF3F7;color:var(--ink)}
+  .paste{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;padding:10px 12px;border:2px dashed var(--line);border-radius:12px;background:var(--paper);resize:vertical}
+  .paste:focus{outline:none;border-color:var(--steel);background:#fff}
+  .ptbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+  .ptbl th,.ptbl td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+  .ptbl th{font-size:11.5px;color:var(--muted)} .ptbl td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .ptbl tr.bad td{color:var(--red);background:#FDF3F1}
+  .pbox{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:8px}
   .field{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
   .field label{font-size:12.5px;font-weight:700;color:var(--steel-d)}
   input[type=date],input[type=text],input[type=password]{font-family:inherit;padding:9px 11px;border:2px solid var(--gold);border-radius:10px;font-size:14px;background:#fff}
@@ -261,7 +272,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260827rack';
+  var BUILD='20261019paste';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -540,7 +551,7 @@
       var items=o.body.items||[];
       pollSig=sigList(items);
       var html='<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">'+L('선적 목록','Embarques')+'</h2>'
-        +'<button class="btn g sm" id="btnNew">＋ '+L('새 선적 (패킹리스트 업로드)','Nuevo (subir lista)')+'</button></div>';
+        +'<button class="btn g sm" id="btnNew">＋ '+L('새 선적 (패킹리스트 · 붙여넣기)','Nuevo (lista o pegar)')+'</button></div>';
       if(!items.length) html+='<div class="idle" style="padding:20px">'+L('선적이 없습니다. 패킹리스트를 업로드하세요.','Sin embarques. Suba una lista de empaque.')+'</div>';
       html+=items.map(function(s){
         var pct=s.pallets?Math.round(s.pallets_checked/s.pallets*100):0;
@@ -603,10 +614,13 @@
   }
 
   /* ============ 업로드 ============ */
+  var UMODE='file';   // 'file' = 패킹리스트 엑셀 / 'paste' = 엑셀 영역 붙여넣기(패킹리스트 없음 · 2026-10-19)
   function showUpload(){
     VIEW='upload';
+    if(UMODE==='paste'){ showPaste(); return; }
     $('app').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">'+L('패킹리스트 업로드','Subir lista de empaque')+'</h2>'
       +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
+      +umodeHtml()
       +'<p class="hint">'+L('공급자 패킹리스트만 올립니다. 인보이스(단가)는 필요 없습니다.','Solo la lista de empaque. La factura (precios) no es necesaria.')+'</p>'
       +'<div class="drop" id="drop"><div class="ic">📄</div><div class="t">'+L('엑셀을 끌어놓거나 클릭','Arrastre el Excel o haga clic')+'</div>'
       +'<div class="hint" style="margin:4px 0 0"><span class="mono">packing list_details</span> '+L('시트를 자동으로 찾습니다','se busca automáticamente')+'</div>'
@@ -614,6 +628,7 @@
       +'<div class="field"><label>'+L('도착 예정일 (ETA)','Fecha estimada (ETA)')+'</label><input type="date" id="eta"></div>'
       +'<div id="pout"></div></div>';
     $('btnBack').addEventListener('click',loadList);
+    wireUmode();
     var drop=$('drop');
     drop.addEventListener('click',function(){$('file').click();});
     ['dragover','dragenter'].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.add('over');});});
@@ -621,6 +636,105 @@
     drop.addEventListener('drop',function(ev){ var f=ev.dataTransfer.files[0]; if(f) readFile(f); });
     $('file').addEventListener('change',function(ev){ var f=ev.target.files[0]; if(f) readFile(f); });
   }
+  function umodeHtml(){
+    return '<div class="umode">'
+      +'<button type="button" data-m="file" class="'+(UMODE==='file'?'cur':'')+'">📄 '+L('패킹리스트 엑셀','Lista de empaque (Excel)')+'</button>'
+      +'<button type="button" data-m="paste" class="'+(UMODE==='paste'?'cur':'')+'">📋 '+L('붙여넣기 (패킹리스트 없음)','Pegar (sin lista de empaque)')+'</button>'
+      +'</div>';
+  }
+  function wireUmode(){
+    Array.prototype.forEach.call(document.querySelectorAll('.umode button'),function(b){
+      b.addEventListener('click',function(){ var m=b.getAttribute('data-m'); if(m!==UMODE){ UMODE=m; showUpload(); } });
+    });
+  }
+
+  /* ---- 붙여넣기(패킹리스트 없음 · 2026-10-19 디렉터 요청) -------------------------
+     엑셀에서 「SKU · 수량 · 참조 오더번호」 영역을 복사해 그대로 붙여넣는다(탭 구분).
+     · 머리글 줄이 있으면 열 이름으로 찾는다(SKU/CODIGO/CTR/제품번호 · QTY/CANTIDAD/수량 · ORDER/PEDIDO/REF/오더).
+     · 머리글이 없으면 순서 = SKU · 수량 · 오더번호. 오더번호 열이 없거나 빈 칸이면 아래 「참조 오더번호」 칸 값을 쓴다.
+     · 수량의 천단위 콤마·공백 허용. 같은 SKU 가 여러 줄이면 줄마다 그대로 등재(합산 안 함 — 패킹리스트와 같은 규칙).
+     · 카톤 정보가 없으므로 카톤 0(스캔 대상 아님)으로 등재 → 마감 때 수량 그대로 입고 반영. 오더번호별 팔렛 1개. */
+  function parsePasteRows(text,defOrder){
+    var lines=String(text==null?'':text).replace(/\r\n?/g,'\n').split('\n');
+    var grid=[];
+    lines.forEach(function(ln){
+      if(!ln.replace(/[\t ,;]/g,'')) return;
+      var cells=ln.indexOf('\t')>=0?ln.split('\t'):(ln.indexOf(';')>=0?ln.split(';'):ln.trim().split(/\s+/));
+      grid.push(cells.map(function(c){ return String(c==null?'':c).trim(); }));
+    });
+    var cSku=0,cQty=1,cOrd=2, start=0, headerFound=false;
+    if(grid.length){
+      var H=grid[0].map(function(x){ return x.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); });
+      var fi=function(re){ for(var i=0;i<H.length;i++) if(re.test(H[i])) return i; return -1; };
+      var hs=fi(/SKU|CODIGO|CLAVE|CTR|CODE|제품|코드|품번/), hq=fi(/QTY|CANT|PIEZA|PZA|수량|TOTAL/), ho=fi(/ORDER|ORDEN|PEDIDO|REF|PO\b|오더|주문|발주/);
+      if(hs>=0&&hq>=0){ headerFound=true; start=1; cSku=hs; cQty=hq; cOrd=ho; }
+      else if(grid[0].length>=2&&!/\d/.test(grid[0][cQty]||'')){ start=1; headerFound=true; }   // 이름 모를 머리글
+    }
+    var dOrd=String(defOrder==null?'':defOrder).trim();
+    var rows=[], bad=[], fileQty=0;
+    for(var i=start;i<grid.length;i++){
+      var r=grid[i];
+      var code=String(r[cSku]||'').toUpperCase().replace(/\s+/g,'');
+      var qRaw=String(r[cQty]==null?'':r[cQty]).replace(/[,\s]/g,'');
+      var qty=qRaw===''?NaN:Number(qRaw);
+      var ord=(cOrd>=0?String(r[cOrd]||'').trim():'')||dOrd;
+      var err=!code?L('SKU 없음','sin SKU'):(!isFinite(qty)||qty<=0)?L('수량 오류','cantidad inválida'):(!ord?L('오더번호 없음','sin orden'):null);
+      var item={line:i+1,code:code,qty:isFinite(qty)?qty:null,order_no:ord,err:err};
+      if(err){ bad.push(item); continue; }
+      fileQty+=qty;
+      rows.push({order_no:ord,pl_no:1,code:code,cartons:0,qty:qty,desc:'',box_from:null,box_to:null,_line:i+1});
+    }
+    return {rows:rows,bad:bad,header:headerFound,fileQty:fileQty,lines:grid.length-start};
+  }
+  var PASTE_TXT='', PASTE_ORD='';
+  function showPaste(){
+    $('app').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">'+L('입고 품목 붙여넣기','Pegar artículos de entrada')+'</h2>'
+      +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
+      +umodeHtml()
+      +'<p class="hint">'+L('패킹리스트가 없을 때 — 엑셀에서 <b>SKU · 수량 · 참조 오더번호</b> 세 열을 선택해 복사(Ctrl+C)한 뒤 아래 칸에 붙여넣기(Ctrl+V) 하세요. 머리글 줄은 있어도 없어도 됩니다. 오더번호가 모두 같으면 두 열(SKU · 수량)만 붙이고 아래에 오더번호를 한 번 적으면 됩니다.',
+         'Sin lista de empaque: en Excel seleccione las columnas <b>SKU · Cantidad · Orden de referencia</b>, copie (Ctrl+C) y pegue (Ctrl+V) abajo. El encabezado es opcional. Si todo es de la misma orden, pegue solo SKU y Cantidad y escriba la orden abajo.')+'</p>'
+      +'<textarea class="paste" id="pasteIn" spellcheck="false" placeholder="'+L('여기에 붙여넣기','Pegue aquí')+'&#10;CE0839L&#9;40&#9;PO-2610-01&#10;CB0568&#9;24&#9;PO-2610-01"></textarea>'
+      +'<div class="field"><label>'+L('참조 오더번호 (열이 없거나 빈 칸일 때)','Orden de referencia (si falta la columna)')+'</label><input type="text" id="defOrd" class="mono" style="width:200px" placeholder="PO-…"></div>'
+      +'<div class="field"><label>'+L('도착 예정일 (ETA)','Fecha estimada (ETA)')+'</label><input type="date" id="eta"></div>'
+      +'<div id="pparse"></div><div id="pout"></div></div>';
+    $('btnBack').addEventListener('click',loadList);
+    wireUmode();
+    var ta=$('pasteIn'), od=$('defOrd');
+    ta.value=PASTE_TXT; od.value=PASTE_ORD;
+    var t=null;
+    function upd(){ PASTE_TXT=ta.value; PASTE_ORD=od.value; clearTimeout(t); t=setTimeout(renderPasteParse,150); }
+    ta.addEventListener('input',upd); od.addEventListener('input',upd);
+    try{ ta.focus(); }catch(e){}
+    if(PASTE_TXT) renderPasteParse();
+  }
+  function renderPasteParse(){
+    var box=$('pparse'); if(!box) return;
+    $('pout').innerHTML='';
+    var res=parsePasteRows($('pasteIn').value,$('defOrd').value);
+    if(!res.rows.length&&!res.bad.length){ box.innerHTML=''; return; }
+    var orders={}; res.rows.forEach(function(r){ orders[r.order_no]=(orders[r.order_no]||0)+r.qty; });
+    var all=res.rows.map(function(r){ return {line:r._line,code:r.code,qty:r.qty,order_no:r.order_no,err:null}; }).concat(res.bad)
+      .sort(function(a,b){ return a.line-b.line; });
+    var h='<div class="note '+(res.bad.length?'':'green')+'" style="margin-top:10px">'
+      +(res.bad.length?'⚠ ':'✔ ')+'<b>'+L('읽은 줄','Filas')+' '+res.rows.length+'</b> · '+fmt(res.fileQty)+' EA · '
+      +L('오더','Órdenes')+' '+Object.keys(orders).length
+      +(res.bad.length?' · <b style="color:var(--red)">'+L('제외','Excluidas')+' '+res.bad.length+'</b>':'')
+      +(res.header?' · <span style="color:var(--muted)">'+L('머리글 인식','encabezado detectado')+'</span>':'')+'</div>'
+      +'<div class="pbox"><table class="ptbl"><thead><tr><th>#</th><th>SKU</th><th class="n">'+L('수량','Cant.')+'</th><th>'+L('참조 오더','Orden')+'</th><th></th></tr></thead><tbody>'
+      +all.slice(0,500).map(function(r){
+        return '<tr'+(r.err?' class="bad"':'')+'><td>'+r.line+'</td><td class="mono">'+esc(r.code||'—')+'</td><td class="n">'+(r.qty==null?'—':fmt(r.qty))+'</td>'
+          +'<td class="mono">'+esc(r.order_no||'—')+'</td><td>'+(r.err?esc(r.err):'')+'</td></tr>';
+      }).join('')+'</tbody></table></div>'
+      +(res.rows.length?'<div class="row" style="margin-top:10px"><button class="btn g" id="btnPasteCheck">'+L('확인 (SKU 매칭)','Verificar (SKU)')+' →</button>'
+        +(res.bad.length?'<span class="hint" style="margin:0">'+L('빨간 줄은 등재되지 않습니다','Las filas en rojo no se registran')+'</span>':'')+'</div>':'');
+    box.innerHTML=h;
+    var b=$('btnPasteCheck'); if(b) b.addEventListener('click',function(){
+      doPreview({rows:res.rows.map(function(r){ var o={}; for(var k in r) if(k!=='_line') o[k]=r[k]; return o; }),
+        invoice_no:null,fileQty:res.fileQty,cartonBasis:L('붙여넣기','pegado'),skipped:0,skipQ:0,dropped:0,droppedQ:0,cuMismatch:[],_file:null,_paste:true},
+        L('붙여넣기','Pegado')+' · '+res.rows.length+L('줄',' filas'));
+    });
+  }
+
   function parseWorkbook(wb){
     var name=wb.SheetNames.filter(function(n){return /packing/i.test(n)&&/detail/i.test(n);})[0]
           || wb.SheetNames.filter(function(n){return /packing/i.test(n);})[0];
@@ -748,9 +862,9 @@
       if(!o.ok||o.body.error){ $('pout').innerHTML='<div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red)">'+L('검증 실패','Error de validación')+': '+(o.body.error||o.status)+'</div>'; return; }
       var s=o.body.summary;
       var invGuess=o.body.invoice_no||res.invoice_no||'';
-      $('pout').innerHTML='<div class="note green" style="margin-top:12px">✔ <b>'+esc(fname)+'</b> · '+L('인보이스','Factura')+' '
+      $('pout').innerHTML='<div class="note green" style="margin-top:12px">✔ <b>'+esc(fname)+'</b> · '+(res._paste?L('인보이스·참조번호(선택)','Factura / referencia (opcional)'):L('인보이스','Factura'))+' '
           +'<input id="invNo" type="text" class="mono" style="padding:5px 9px;font-size:13px;width:180px" value="'+esc(invGuess)+'" placeholder="'+L('인보이스 번호 입력','Núm. de factura')+'">'
-          +(invGuess?'':' <b style="color:var(--red)">⚠ '+L('파일에서 못 찾음 — 직접 입력하세요','no encontrado — ingrese manualmente')+'</b>')
+          +(invGuess||res._paste?'':' <b style="color:var(--red)">⚠ '+L('파일에서 못 찾음 — 직접 입력하세요','no encontrado — ingrese manualmente')+'</b>')
           +(res._file?' · 📎 '+L('원본 파일 함께 저장됨','archivo original se guardará'):(res._fileTooBig?' · <span style="color:var(--red)">📎 8MB 초과 — 원본 미저장</span>':''))+'</div>'
         +'<div class="kpis" style="margin-top:9px">'
         +'<div class="kpi"><div class="l">'+L('팔렛','Pallets')+'</div><div class="v">'+s.pallets+'</div></div>'
@@ -763,6 +877,7 @@
         +((res.fileQty!=null)?('<div class="vrow">'+(Math.abs((res.fileQty||0)-(s.qty||0))<0.001
             ?('✅ <b>'+L('수량 대사 일치','Cantidad conciliada')+'</b> <span style="color:var(--muted)">'+L('파일 합계','Total archivo')+' '+fmt(res.fileQty)+' EA = '+L('등재','Registrado')+' '+fmt(s.qty)+' EA · '+L('카톤 기준','Cajas por')+' '+esc(res.cartonBasis||'FROM/TO')+'</span>')
             :('⚠️ <b style="color:var(--red)">'+L('수량 불일치','Cantidad no concilia')+'</b> <span style="color:var(--red)">'+L('파일 합계','Total archivo')+' '+fmt(res.fileQty)+' EA ≠ '+L('등재','Registrado')+' '+fmt(s.qty)+' EA — '+L('제외된 행을 확인하세요','revise filas excluidas')+'</span>'))+'</div>'):'')
+        +(res._paste?'<div class="vrow">📋 <b>'+L('패킹리스트 없음 — 카톤 정보 없이 등재','Sin lista de empaque — sin cajas')+'</b> <span style="color:var(--muted)">'+L('박스 스캔 없이 수량 그대로 입고 반영됩니다(검수 확정 → 마감)','se recibe la cantidad tal cual (sin escaneo de cajas)')+'</span></div>':'')
         +(res.skipped?'<div class="vrow">📦 <b>'+L('카톤번호 없음','Sin número de caja')+' '+res.skipped+'</b> <span style="color:var(--muted)">'+fmt(res.skipQ)+' EA — '+L('수량에 포함됨(카톤 스캔 대상 아님)','incluido en cantidad, sin escaneo')+'</span></div>':'')
         +(res.dropped?'<div class="vrow">⚠️ <b style="color:var(--red)">'+L('제외된 행','Filas excluidas')+' '+res.dropped+'</b> <span style="color:var(--red)">'+fmt(res.droppedQ)+' EA — '+L('ORDER NO 를 찾지 못함(파일 확인 필요)','sin ORDER NO')+'</span></div>':'')
         +((res.cuMismatch&&res.cuMismatch.length)?'<div class="vrow">⚠️ <b style="color:var(--red)">'+L('카톤수×소입수 ≠ 총수량 행','CTN×QTY≠TOTAL')+' '+res.cuMismatch.length+'</b> <span class="mono" style="color:var(--muted);font-size:11px">'+esc(res.cuMismatch.slice(0,4).join(' · '))+(res.cuMismatch.length>4?' …':'')+'</span></div>':'')
@@ -783,6 +898,7 @@
     api('/api/inbound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(o){
       if(!o.ok||o.body.error){ toast(L('생성 실패','Error')+': '+(o.body.error||o.status)); $('btnCreate').disabled=false; return; }
       toast(L('✔ 선적 생성 — 입고예정 재고가 판매팀에 반영됩니다','✔ Creado — stock entrante visible para ventas'));
+      if(parsed&&parsed._paste){ PASTE_TXT=''; PASTE_ORD=''; }
       openShip(o.body.id);
     });
   }
