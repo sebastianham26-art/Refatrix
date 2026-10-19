@@ -54,6 +54,10 @@
         +'<div class="rcf-f rcf-grow"><label>수정이유 *</label><textarea id="rcf-treason" rows="2" placeholder="예: 월 구매액 증가에 따른 할인율 상향"></textarea></div>'
         +'<div class="rcf-f rcf-grow"><label>제공 조건 *</label><textarea id="rcf-tcond" rows="2" placeholder="예: 월 최소 매입 $50,000 MXN 유지 조건"></textarea></div>'
       +'</div>'
+      // 20261019dpin · 디렉터가 기본할인(%)을 바꿀 때만 PIN(최초 등록·외상일만 변경은 PIN 없음)
+      +'<div class="rcf-row" id="rcf-dpinrow" style="display:none;align-items:center;gap:8px;margin-top:6px">'
+        +'<div class="rcf-f"><label>디렉터 PIN * (할인율 수정)</label><input id="rcf-dpin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" style="width:120px"></div>'
+      +'</div>'
       +'<div class="rcf-msg" id="rcf-termshint" style="color:#9a6512"></div>'
     +'</div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>메모</label><input id="rcf-memo" type="text"></div></div>'
@@ -177,7 +181,7 @@
     var parts=[];
     if(nd!==origTerms.discount) parts.push('기본할인 '+origTerms.discount+'% → '+nd+'%');
     if(nc!==origTerms.credit) parts.push('외상일 '+origTerms.credit+'일 → '+nc+'일');
-    return parts.length?{parts:parts}:null;
+    return parts.length?{parts:parts,discount:nd!==origTerms.discount}:null;
   }
   // 변경 감지 시 수정이유·제공조건 입력 박스 표시/숨김
   function updateTermsBox(){
@@ -185,10 +189,14 @@
     var d=termsDiff();
     box.style.display=d?'':'none';
     var w=$('rcf-termswhat'); if(w) w.textContent=d?('('+d.parts.join(' · ')+')'):'';
+    // 20261019dpin · PIN 칸은 「디렉터 + 할인율 변경 + 즉시반영(타팀 요청 아님)」일 때만
+    var needPin=!!(d&&d.discount&&cfg.isDirector&&!crossTeam);
+    var pr=$('rcf-dpinrow'); if(pr) pr.style.display=needPin?'flex':'none';
+    if(!needPin&&$('rcf-dpin')) $('rcf-dpin').value='';
     var h=$('rcf-termshint');
     if(h) h.textContent=d?(cfg.isDirector?'디렉터 수정: 작성 즉시 반영되며 변경이력에 기록됩니다.':'저장 시 디렉터 승인 대기로 전송되며, 승인 후 변경이력에 기록됩니다.'):'';
   }
-  function clearTermsInputs(){ if($('rcf-treason'))$('rcf-treason').value=''; if($('rcf-tcond'))$('rcf-tcond').value=''; updateTermsBox(); }
+  function clearTermsInputs(){ if($('rcf-treason'))$('rcf-treason').value=''; if($('rcf-tcond'))$('rcf-tcond').value=''; if($('rcf-dpin'))$('rcf-dpin').value=''; updateTermsBox(); }
 
   // ===== 0188 · RFC 형식 검증 (서버 src/customerClaim.js validateRfc 와 같은 규칙) =====
   //   RFC 입력이 곧 선점이므로, 아무 문자열이나 통과하면 선점 장치가 무의미해진다.
@@ -625,6 +633,11 @@
       var tc=$('rcf-tcond')?$('rcf-tcond').value.trim():'';
       if(!tr||!tc){ updateTermsBox(); setMsg('err','기본할인·외상일 변경 시 수정이유와 제공 조건을 모두 작성해야 합니다.'); return; }
       b.terms_reason=tr; b.terms_conditions=tc;
+      if(td.discount&&cfg.isDirector&&!crossTeam){
+        var dp=$('rcf-dpin')?$('rcf-dpin').value.trim():'';
+        if(!dp){ updateTermsBox(); setMsg('err','기본할인(%)을 수정하려면 디렉터 PIN 을 입력하세요.'); if($('rcf-dpin'))try{$('rcf-dpin').focus();}catch(e){} return; }
+        b.discount_pin=dp;
+      }
     }
     $('rcf-save').disabled=true;
     try{
@@ -641,6 +654,8 @@
           :d.error==='forbidden_team_move'?'그 팀으로 옮길 권한이 없습니다.'
           :d.error==='cross_team_request_denied'?'타팀 고객 수정요청 권한이 없습니다. 디렉터에게 요청하세요.'
           :d.error==='terms_reason_required'?(d.note||'기본할인·외상일 변경 시 수정이유와 제공 조건을 반드시 입력해야 합니다.')
+          :d.error==='pin_required'?(d.note||'기본할인(%)을 수정하려면 디렉터 PIN 을 입력하세요.')
+          :d.error==='bad_pin'?'디렉터 PIN 이 올바르지 않습니다.'
           // 0185 / 0188
           :(d.error==='rfc_taken'||d.error==='constancia_taken'||d.error==='rfc_claim_pending')?('⛔ '+(d.note||RFC_NOTE[d.error]||'이미 등록된 고객입니다.'))
           :(d.error==='rfc_required'||d.error==='rfc_invalid'||d.error==='rfc_invalid_date'||d.error==='rfc_generic')

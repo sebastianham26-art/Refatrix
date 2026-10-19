@@ -4,13 +4,12 @@
 //   GET /api/exclusivity/check          견적·매출 화면: 이 고객을 누가 팔 수 있나
 //   GET /api/sellers                    판매 영업사원 드롭다운
 //   POST /api/exclusivity/recompute     (디렉터) 전체 재계산
-//   POST /api/customers/:id/terms-override  (디렉터 PIN) 서류 관문 예외 — 0247
+//   POST /api/customers/:id/terms-override  (디렉터) 서류 관문 예외 — 0247 · PIN 없음(20261019dpin)
 // =====================================================================
 import { query } from '../db.js';
 import { authGuard, requirePageAny, requireDirector } from '../middleware/authGuard.js';
 import { canViewTeam } from '../teams.js';
 import { statusFor, resolveSeller, sweepAll, exclusivityReady, RFC_DAYS, RENEW_MONTHS } from '../exclusivity.js';
-import { verifyPin } from '../auth.js';
 import { enqueueCustomerSync } from '../crmSync.js';
 import { logEvent } from '../audit.js';
 
@@ -68,21 +67,22 @@ export default async function exclusivityRoutes(app) {
     return { items: rows.map((u) => ({ id: Number(u.id), name: u.name, role: u.role, team_id: u.team_id == null ? null : Number(u.team_id) })) };
   });
 
-  // ── 0247 · 서류 관문 디렉터 PIN 승인 예외 ─────────────────────────────
-  //   body: { discount?: bool, credit?: bool, pin, reason }  — 보낸 항목만 바꾼다.
+  // ── 0247 · 서류 관문 디렉터 승인 예외 ─────────────────────────────────
+  //   body: { discount?: bool, credit?: bool, reason? }  — 보낸 항목만 바꾼다.
   //   켜면 서류가 없어도 약정 할인·외상일이 실효값이 되고 CRM 에도 그 값이 나간다.
-  //   끄면 즉시 서류 기준으로 돌아간다(끌 때도 PIN 필요 — 조건이 바뀌는 건 같다).
+  //   끄면 즉시 서류 기준으로 돌아간다.
+  //   20261019dpin · 디렉터 지시: 「최초 등록 할인 승인은 PIN 없이, 할인율 수정만 PIN」.
+  //     이 승인은 **등록 때 정한 약정 할인을 그대로 켜는 것**이라 PIN 을 받지 않는다(디렉터 전용은 유지).
+  //     사유도 선택이다 — 비우면 이력에 「디렉터 승인」으로 남는다.
+  //     할인율 **값을 바꾸는** 경로(고객 수정 PATCH · 수정요청 승인)가 PIN 을 받는다 → customerRoutes.js
   app.post('/api/customers/:id/terms-override', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const b = req.body || {};
     if (!(await overrideReady())) return reply.code(503).send({ error: 'migration_required', note: 'migrate(0247) 필요' });
-    const me = (await query(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [req.ctx.perm.userId])).rows[0];
-    if (!me || !verifyPin(String(b.pin || ''), me.pin_hash)) return reply.code(403).send({ error: 'bad_pin', note: 'PIN이 올바르지 않습니다.' });
     const hasD = typeof b.discount === 'boolean', hasC = typeof b.credit === 'boolean';
     if (!hasD && !hasC) return reply.code(400).send({ error: 'nothing_to_change' });
-    const reason = String(b.reason || '').trim();
     const turningOn = (hasD && b.discount) || (hasC && b.credit);
-    if (turningOn && !reason) return reply.code(400).send({ error: 'reason_required', note: '승인 사유를 입력하세요.' });
+    const reason = String(b.reason || '').trim() || (turningOn ? '디렉터 승인' : '');
     const before = (await query(
       `SELECT id, doc_gate, approval_status, discount, credit_days, discount_override, credit_override
          FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];

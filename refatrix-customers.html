@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (build tx-1012leadwa)</title>
+<title>Refatrix ERP · 고객 등록 (build tx-1019dpin)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -431,23 +431,22 @@
             if(cGap) parts.push('외상 <b>'+n(g.credit_days_agreed)+'일</b>(ERP 는 '+n(g.credit_days_effective)+'일)');
             h+='<div class="hint" style="margin-top:4px">🌐 CRM(웹카달록)에는 <b>약정 조건</b>이 이미 전송돼 있습니다 — '
               +parts.join(' · ')+'. ERP 의 견적·매출은 위 실효값으로 계산되니, 서류가 모일 때까지 두 쪽이 다릅니다.'
-              +' 지금 맞추려면 아래 디렉터 PIN 승인을 쓰세요.</div>';
+              +' 지금 맞추려면 아래 디렉터 승인을 쓰세요.</div>';
           })();
-          // 0247 · 디렉터 PIN 승인 예외 — 서류가 없어도 약정 조건 적용 + CRM 전송
+          // 0247 · 디렉터 승인 예외 — 서류가 없어도 약정 조건 적용 + CRM 전송 (20261019dpin · PIN 없음)
           if(g.discount_override||g.credit_override){
             h+='<div class="hint" style="margin-top:4px">🔑 디렉터 승인: '+[g.discount_override?'할인':'',g.credit_override?'외상':''].filter(Boolean).join(' · ')
               +(g.override_by_name?' — '+esc(g.override_by_name):'')+(g.override_at?' · '+esc(g.override_at):'')+(g.override_reason?' · 사유: '+esc(g.override_reason):'')+'</div>';
           }
           if(isDirector()&&(!g.discount_docs_ok||!g.credit_docs_ok||g.discount_override||g.credit_override)){
             h+='<div id="ovBox" style="margin-top:8px;padding:8px 10px;border:1px dashed #b8893b;border-radius:8px;background:#fffdf4">'
-              +'<div style="font-weight:700;font-size:12.5px;color:#7a6212;margin-bottom:4px">🔑 디렉터 PIN 승인 — 서류 없이 조건 적용</div>'
+              +'<div style="font-weight:700;font-size:12.5px;color:#7a6212;margin-bottom:4px">🔑 디렉터 승인 — 서류 없이 조건 적용</div>'
               +'<div class="hint" style="margin-bottom:6px">체크하면 서류가 없어도 약정 할인율·외상일이 적용되고 CRM 에도 전송됩니다. 체크를 풀면 서류 기준으로 돌아갑니다.</div>'
               +(g.discount_docs_ok?'':'<label style="display:inline-flex;gap:5px;align-items:center;margin-right:14px;font-size:12.5px"><input type="checkbox" id="ovDisc"'+(g.discount_override?' checked':'')+'> 할인 '+(g.discount_agreed==null?0:g.discount_agreed)+'% 적용</label>')
               +(g.credit_docs_ok?'':'<label style="display:inline-flex;gap:5px;align-items:center;margin-right:14px;font-size:12.5px"><input type="checkbox" id="ovCred"'+(g.credit_override?' checked':'')+'> 외상 '+((g.credit_days_agreed||30))+'일 적용</label>')
               +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">'
-              +'<input id="ovReason" type="text" placeholder="승인 사유 (켤 때 필수)" style="flex:1;min-width:180px;font-size:12px" value="'+esc(g.override_reason||'')+'">'
-              +'<input id="ovPin" type="password" inputmode="numeric" autocomplete="off" placeholder="디렉터 PIN" style="width:110px;font-size:12px">'
-              +'<button class="btn gold sm" id="ovSave" type="button">PIN 승인 저장</button></div>'
+              +'<input id="ovReason" type="text" placeholder="승인 사유 (선택)" style="flex:1;min-width:180px;font-size:12px" value="'+esc(g.override_reason||'')+'">'
+              +'<button class="btn gold sm" id="ovSave" type="button">승인 저장</button></div>'
               +'<div id="ovMsg" class="hint" style="margin-top:4px"></div></div>';
           }
         }
@@ -462,21 +461,19 @@
       const ovs=$('ovSave'); if(ovs) ovs.addEventListener('click',()=>saveOverride(cid));
     }catch(e){ /* 0235 미적용 백엔드 — 조용히 숨김 */ }
   }
-  // 0247 · 서류 관문 디렉터 PIN 승인
+  // 0247 · 서류 관문 디렉터 승인 — 20261019dpin · 최초 할인 승인은 PIN 없이(사유 선택)
   async function saveOverride(cid){
     const msg=$('ovMsg'); msg.style.color='';
-    const body={pin:($('ovPin').value||'').trim(), reason:($('ovReason').value||'').trim()};
+    const body={reason:($('ovReason').value||'').trim()};
     if($('ovDisc')) body.discount=$('ovDisc').checked;
     if($('ovCred')) body.credit=$('ovCred').checked;
-    if(!body.pin){ msg.style.color='#a33'; msg.textContent='디렉터 PIN 을 입력하세요.'; return; }
-    if((body.discount||body.credit)&&!body.reason){ msg.style.color='#a33'; msg.textContent='승인 사유를 입력하세요.'; return; }
     $('ovSave').disabled=true;
     try{
       const res=await fetch(session.api+'/api/customers/'+cid+'/terms-override',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){
         msg.style.color='#a33';
-        msg.textContent=d.error==='bad_pin'?'PIN 이 올바르지 않습니다.':d.error==='reason_required'?'승인 사유를 입력하세요.':(d.note||('저장 실패: '+(d.error||res.status)));
+        msg.textContent=d.note||('저장 실패: '+(d.error||res.status));
         $('ovSave').disabled=false; return;
       }
       await loadExcl(cid);
@@ -819,9 +816,43 @@
     }catch(e){ box.innerHTML=''; }
   }
 
+  // 20261019dpin · 수정요청 승인 — 할인율이 바뀌는 요청이면 서버가 PIN 을 요구한다(pin_required).
+  //   그때만 PIN 창을 띄워 다시 보낸다. 할인율이 그대로인 요청은 지금처럼 바로 승인된다.
+  function askPin(title){
+    return new Promise(resolve=>{
+      const ov=document.createElement('div');
+      ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+      ov.innerHTML='<div style="background:#fff;border-radius:12px;padding:16px 18px;max-width:340px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.2)">'
+        +'<div style="font-weight:700;margin-bottom:6px">🔑 '+esc(title||'디렉터 PIN')+'</div>'
+        +'<input id="askPinIn" type="password" inputmode="numeric" autocomplete="off" placeholder="디렉터 PIN" style="width:100%;font-size:15px;padding:8px;box-sizing:border-box">'
+        +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">'
+        +'<button class="btn ghost sm" id="askPinNo" type="button">취소</button><button class="btn gold sm" id="askPinOk" type="button">확인</button></div></div>';
+      document.body.appendChild(ov);
+      const inp=ov.querySelector('#askPinIn');
+      const done=v=>{ ov.remove(); resolve(v); };
+      ov.querySelector('#askPinOk').addEventListener('click',()=>done((inp.value||'').trim()||null));
+      ov.querySelector('#askPinNo').addEventListener('click',()=>done(null));
+      inp.addEventListener('keydown',e=>{ if(e.key==='Enter') done((inp.value||'').trim()||null); if(e.key==='Escape') done(null); });
+      setTimeout(()=>{ try{inp.focus();}catch(e){} },20);
+    });
+  }
+  async function postChangeApprove(id){
+    const url=session.api+'/api/customer-change-requests/'+id+'/approve';
+    let res=await fetch(url,{method:'POST',headers:auth()});
+    let d=null; try{ d=await res.clone().json(); }catch(e){}
+    let title='할인율 변경 승인 — 디렉터 PIN';
+    while(!res.ok&&d&&(d.error==='pin_required'||d.error==='bad_pin')){
+      const pin=await askPin(d.error==='bad_pin'?'PIN 이 올바르지 않습니다 — 다시 입력':title);
+      if(!pin) return {ok:false,cancelled:true};
+      res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({pin})});
+      d=null; try{ d=await res.clone().json(); }catch(e){}
+    }
+    return {ok:res.ok, d};
+  }
   async function approveChangeDetail(id,custId){
-    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/approve',{method:'POST',headers:auth()});
-    if(res.ok){ if(typeof loadApproveBadge==='function')loadApproveBadge(); loadCustomers(); openCustomer(custId); } else alert('승인 실패');
+    const r=await postChangeApprove(id);
+    if(r.cancelled) return;
+    if(r.ok){ if(typeof loadApproveBadge==='function')loadApproveBadge(); loadCustomers(); openCustomer(custId); } else alert('승인 실패'+(r.d&&r.d.note?': '+r.d.note:''));
   }
   async function rejectChangeDetail(id,custId){
     const reason=prompt('반려 사유(선택):')||null;
@@ -1010,9 +1041,10 @@
     }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   async function approveChange(id){
-    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/approve',{method:'POST',headers:auth()});
-    if(res.ok){ loadApprovals(); loadApproveBadge(); loadCustomers(); }
-    else alert('승인 실패');
+    const r=await postChangeApprove(id);
+    if(r.cancelled) return;
+    if(r.ok){ loadApprovals(); loadApproveBadge(); loadCustomers(); }
+    else alert('승인 실패'+(r.d&&r.d.note?': '+r.d.note:''));
   }
   async function rejectChange(id){
     const reason=prompt('반려 사유(선택):')||null;
@@ -2351,7 +2383,7 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20261009ratify"></script>
+<script src="refatrix-custform.js?v=20261019dpin"></script>
 <!-- 0268 · 웹 가입 신슭 WhatsApp 알림 패널(디렉터) -->
 <script src="refatrix-leadwa.js?v=20261012leadwa"></script>
 <script src="refatrix-nav.js?v=20261016wp"></script>

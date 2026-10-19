@@ -163,11 +163,11 @@ test('F5 견적 목록 출력 · 인보이스 PDF 에 Vendedor(판매 영업사�
   assert.match(sl, /seller_id:\$\('s-seller'\)\.value\?Number/);
 });
 
-// ── 0247 · 고객 상세 디렉터 PIN 승인 패널 ─────────────────────────────
-test('F6 고객 상세: 디렉터에게만 PIN 승인 패널 — 체크·사유·PIN 으로 저장, 결과 표시', async () => {
+// ── 0247 · 고객 상세 디렉터 승인 패널 ─────────────────────────────
+test('F6 고객 상세: 디렉터에게만 승인 패널 — PIN 없이 체크만으로 저장(20261019dpin), 결과 표시', async () => {
   const html = readFileSync(root('refatrix-customers.html'), 'utf-8');
-  // 화면이 바뀔 때마다 올린다(하드 리프레시 확인용). 20261012 CRM 약정조건 전송 → tx-1012leadwa.
-  assert.match(html, /<title>[^<]*tx-1012leadwa\)?<\/title>/, '빌드 토큰');
+  // 화면이 바뀔 때마다 올린다(하드 리프레시 확인용). 20261019 할인 PIN 정리 → tx-1019dpin.
+  assert.match(html, /<title>[^<]*tx-1019dpin\)?<\/title>/, '빌드 토큰');
   const boot = async (role) => {
     const dom = new JSDOM(html.replace(/<script src="[^"]+"><\/script>/g, ''), { runScripts: 'dangerously', url: 'http://localhost/' });
     const w = dom.window;
@@ -182,7 +182,7 @@ test('F6 고객 상세: 디렉터에게만 PIN 승인 패널 — 체크·사유�
           credit_days_effective: state.credit_override ? 45 : 0, override_by_name: state.discount_override ? 'Sebastian' : null } }) };
       if (u.endsWith('/terms-override')) {
         const b = JSON.parse(opt.body);
-        if (b.pin !== '4321') return { ok: false, status: 403, json: async () => ({ error: 'bad_pin' }) };
+        if ('pin' in b) return { ok: false, status: 400, json: async () => ({ error: 'pin_should_not_be_sent' }) };
         state = { discount_override: !!b.discount, credit_override: !!b.credit };
         return { ok: true, json: async () => ({ ok: true, discount: b.discount ? 38 : 0, credit_days: b.credit ? 45 : 0, crm_queued: true }) };
       }
@@ -200,17 +200,41 @@ test('F6 고객 상세: 디렉터에게만 PIN 승인 패널 — 체크·사유�
   assert.match(doc.getElementById('d-excl').textContent, /할인 미적용/);
   doc.getElementById('ovDisc').checked = true;
   doc.getElementById('ovCred').checked = true;
-  doc.getElementById('ovSave').click(); await tick(20);
-  assert.match(doc.getElementById('ovMsg').textContent, /PIN 을 입력/, 'PIN 없이 저장 안 됨');
-  doc.getElementById('ovPin').value = '4321';
-  doc.getElementById('ovSave').click(); await tick(20);
-  assert.match(doc.getElementById('ovMsg').textContent, /사유/, '켤 때 사유 필수');
-  assert.ok(!calls.some((c) => c.u.endsWith('/terms-override')), '검증 실패 시 서버 호출 없음');
-  doc.getElementById('ovReason').value = '서류 추후 제출';
+  assert.equal(doc.getElementById('ovPin'), null, 'PIN 칸이 없다');
   doc.getElementById('ovSave').click(); await tick(60);
   const post = calls.find((c) => c.u.endsWith('/terms-override'));
-  assert.deepEqual(JSON.parse(post.opt.body), { pin: '4321', reason: '서류 추후 제출', discount: true, credit: true });
+  assert.deepEqual(JSON.parse(post.opt.body), { reason: '', discount: true, credit: true }, 'PIN·사유 없이 바로 저장');
   assert.match(doc.getElementById('d-excl').textContent, /할인 적용 38% · 디렉터 승인/);
   assert.match(doc.getElementById('d-excl').textContent, /외상 45일 · 디렉터 승인/);
   assert.match(doc.getElementById('ovMsg').textContent, /CRM 전송/);
+});
+
+// 20261019dpin · 수정요청 승인: 할인 변경이면 서버 pin_required → PIN 창 → 재전송
+test('F7 수정요청 승인 — pin_required 일 때만 PIN 창을 띄워 다시 보낸다', async () => {
+  const html = readFileSync(root('refatrix-customers.html'), 'utf-8');
+  const dom = new JSDOM(html.replace(/<script src="[^"]+"><\/script>/g, ''), { runScripts: 'dangerously', url: 'http://localhost/' });
+  const w = dom.window; const calls = [];
+  w.fetch = async (url, opt) => {
+    const u = String(url); calls.push({ u, opt });
+    if (u.includes('/approve')) {
+      const b = opt && opt.body ? JSON.parse(opt.body) : {};
+      const j = !b.pin ? { error: 'pin_required' } : b.pin !== '4321' ? { error: 'bad_pin' } : { ok: true };
+      const ok = !j.error;
+      return { ok, status: ok ? 200 : 403, json: async () => j, clone() { return { json: async () => j }; } };
+    }
+    return { ok: true, json: async () => ({ items: [] }), clone() { return { json: async () => ({}) }; } };
+  };
+  await tick(20);
+  w.eval(`session={token:'t',api:'',user:{id:1,name:'X',role:'director'}};`);
+  const p = w.eval('postChangeApprove(7)');
+  await tick(30);
+  let inp = w.document.getElementById('askPinIn'); assert.ok(inp, 'PIN 창');
+  inp.value = '0000'; w.document.getElementById('askPinOk').click(); await tick(30);
+  inp = w.document.getElementById('askPinIn'); assert.ok(inp, '틀리면 다시');
+  inp.value = '4321'; w.document.getElementById('askPinOk').click();
+  const r = await p;
+  assert.equal(r.ok, true);
+  const ap = calls.filter((c) => c.u.includes('/approve'));
+  assert.equal(ap.length, 3); assert.equal(JSON.parse(ap[2].opt.body).pin, '4321');
+  assert.equal(w.document.getElementById('askPinIn'), null, '창 닫힘');
 });

@@ -28,6 +28,7 @@ import { MERGE_MOVES, MOVED_TABLES, safeIdent, residualLabel,
 // 코드 채번은 CRM 수신부(0208)와 **같은 규칙**을 써야 한다 → 공용 모듈로 뺐다.
 import { computeNextCode } from '../customerCode.js';
 import { planOwnerChange, applyOwnerTransfer } from '../exclusivity.js';   // 0280 · 담당자 변경 ↔ 독점 이전
+import { verifyPin } from '../auth.js';   // 20261019dpin · 할인율 수정 PIN
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
@@ -743,6 +744,19 @@ export default async function customerRoutes(app) {
     if (nd !== (Number(c.discount) || 0)) out.push({ field: 'discount', old: Number(c.discount) || 0, nv: nd });
     if (nc !== (Number(c.credit_days) || 0)) out.push({ field: 'credit_days', old: Number(c.credit_days) || 0, nv: nc });
     return out;
+  }
+  // 20261019dpin · 디렉터 지시: 「최초 등록은 PIN 없이, **할인율을 수정할 때만** PIN」.
+  //   기본할인(%) 값이 실제로 바뀌는 디렉터 경로(고객 수정 즉시반영 · 수정요청 승인)만 PIN 을 받는다.
+  //   신규 등록 · 사후승인 · 서류 관문 승인(약정값을 켜는 것)은 PIN 없이 간다.
+  //   외상일만 바뀌면 PIN 없음(지시가 할인율에 한정).
+  //   반환: null = 통과, 아니면 { code, body } 로 그대로 응답.
+  async function discountPinError(changes, userId, pin) {
+    if (!(changes || []).some((ch) => ch.field === 'discount')) return null;
+    const p = String(pin == null ? '' : pin).trim();
+    if (!p) return { code: 403, body: { error: 'pin_required', note: '기본할인(%)을 수정하려면 디렉터 PIN 이 필요합니다.' } };
+    const me = (await query(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [userId])).rows[0];
+    if (!me || !verifyPin(p, me.pin_hash)) return { code: 403, body: { error: 'bad_pin', note: 'PIN 이 올바르지 않습니다.' } };
+    return null;
   }
   // 변경이력 기록(변경 필드당 1행, 같은 이유·조건 공유)
   async function logTermsHistory(customerId, changes, { reason, conditions, changedBy, approvedBy }) {
@@ -2690,6 +2704,8 @@ export default async function customerRoutes(app) {
     // 디렉터: 즉시 반영(+이력 기록) / 그 외: 디렉터 승인 대기로 보관
     // (crossTeam 은 디렉터에게 항상 false — 방어적으로 한 번 더 명시)
     if (perm.role === 'director' && !crossTeam) {
+      const pinErr = await discountPinError(termsChanges, perm.userId, b.discount_pin);
+      if (pinErr) return reply.code(pinErr.code).send(pinErr.body);
       try {
         await applyCustomerUpdate(id, c, b, perm.userId);
       } catch (e) {
@@ -2885,6 +2901,9 @@ export default async function customerRoutes(app) {
     if (!c) return reply.code(404).send({ error: 'customer_gone' });
     // 승인 전 현재값 기준으로 할인/외상일 실변경 산출 → 반영 후 이력 기록
     const approvedTerms = detectTermsChanges(c, r.proposed || {});
+    // 20261019dpin · 할인율이 바뀌는 수정요청은 승인할 때 디렉터 PIN
+    const pinErr = await discountPinError(approvedTerms, req.ctx.perm.userId, (req.body || {}).pin);
+    if (pinErr) return reply.code(pinErr.code).send(pinErr.body);
     try {
       await applyCustomerUpdate(r.customer_id, c, r.proposed, req.ctx.perm.userId);
     } catch (e) {
