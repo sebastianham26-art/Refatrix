@@ -188,19 +188,24 @@ export function buildDays({ from, to, base, opens = [], txns = [], pending = [],
 //   startOpen: 오늘 기초(= 어제 실적 마감) · todayActual: 오늘 이미 들어온 실적 거래(목록)
 //   invoices : 미수 인보이스 [{id, due, outstanding, customer_name, sat_no}] (MXN)
 //   planIn/planOut: 예정 거래 [{id, d, direction, currency, amount, amount_mxn, …}]
-//   planIn/planOut: 거래목록 예정 거래(각자 기록된 날짜). 오늘 이전 날짜는 칸에 넣지 않고 overdue 로 모은다.
+//   planIn/planOut: 거래목록 예정 거래(각자 기록된 날짜). 오늘 이전 날짜: AR(수금)은 첫 예정일(today) 칸으로 이월(rolled), AP 는 overdue 경고로 모은다.
 export function planSrc(t) { return t.sales_invoice_id ? 'inv' : (t.recurring_rule_id ? 'fix' : (t.direction === 'in' ? 'man' : 'plan')); }
 export function projectDays({ today, to, startOpen, todayActual = [], planIn = [], planOut = [], fx = new Map() }) {
   const days = [];
   let run = { MXN: r2(startOpen.MXN || 0), USD: r2(startOpen.USD || 0) };
   const bucket = new Map();
   const overdue = [];
+  const rolled = [];
   const push = (d, it) => { if (d > to) return; if (!bucket.has(d)) bucket.set(d, []); bucket.get(d).push(it); };
   for (const t of todayActual) push(today, toItem(t, { state: 'actual' }));
   for (const t of [...planIn, ...planOut]) {
     const d0 = String(t.d).slice(0, 10);
     const it = toItem(t, { state: 'plan', src: planSrc(t), due: d0 });
-    if (d0 < today) overdue.push({ ...it, late_days: Math.round((Date.parse(today) - Date.parse(d0)) / 86400000) });
+    const late = Math.round((Date.parse(today) - Date.parse(d0)) / 86400000);
+    // 1019 · AR(수금) 예정이 날짜가 지나도 안 들어왔으면 「오늘」(첫 예정일)로 하루씩 밀어 표시 — 오늘 안 들어오면 내일 들어올 것으로 본다.
+    //        AP(지급)는 그대로 경고만(잔고 예측 제외).
+    if (d0 < today && it.dir === 'in') { const r = { ...it, rolled: true, late_days: late }; rolled.push(r); push(today, r); }
+    else if (d0 < today) overdue.push({ ...it, late_days: late });
     else push(d0, it);
   }
   for (const d of dateList(today, to)) {
@@ -218,7 +223,7 @@ export function projectDays({ today, to, startOpen, todayActual = [], planIn = [
       items, pending: { n: 0, amount_mxn: 0 }, moved: items.length > 0 });
     run = close;
   }
-  if (days.length) days[0].overdue = summarizeOverdue(overdue);
+  if (days.length) { days[0].overdue = summarizeOverdue(overdue); days[0].rolled = summarizeOverdue(rolled); }
   return days;
 }
 export function summarizeOverdue(list) {
@@ -533,9 +538,56 @@ export async function computePlanDays(today, to, q = query) {
   return days;
 }
 
+// 1019 · 사후 반영(늦게 들어온 실적): 실적일 마감 시각(일일 발송 시각, 기본 18:00 MX) 이후에 등록·수정·승인·삭제된 승인 실적.
+//   예) 금요일 업무 종료 후·주말·월요일에 금요일 날짜로 기록 → 금요일 칸이 그날 보고 뒤에 바뀐 것.
+export async function loadLateEntries(from, to, cutoffHm = '18:00', q = query, scopeIds = null) {
+  if (to < from) return [];
+  const ids = scopeIds || (await loadAccountScope(q)).ids;
+  const rows = (await q(
+    `SELECT ${TXN_NAME_COLS}, a.currency, to_char(t.txn_date,'YYYY-MM-DD') AS d,
+            GREATEST(t.updated_at, COALESCE(t.deleted_at, t.updated_at)) AS changed_at, (t.deleted_at IS NOT NULL) AS deleted
+       FROM transactions t JOIN accounts a ON a.id=t.account_id ${TXN_NAME_JOINS}
+      WHERE t.status='actual' AND t.approved=true AND a.id = ANY($3) AND t.txn_date >= $1 AND t.txn_date <= $2
+        AND GREATEST(t.updated_at, COALESCE(t.deleted_at, t.updated_at))
+            > (((t.txn_date + $4::time) - ($5::int * interval '1 minute')) AT TIME ZONE 'UTC')
+      ORDER BY t.txn_date, t.id`, [from, to, ids, cutoffHm, MX_OFFSET_MIN])).rows;
+  const seen = new Set();
+  return rows.filter((r) => { const k = Number(r.id); if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((r) => ({ ...toItem({ ...r, amount: Number(r.amount), amount_mxn: Number(r.amount_mxn) }), d: r.d, changed_at: r.changed_at, deleted: r.deleted === true }));
+}
+function markLate(days, late) {
+  const byDay = new Map();
+  for (const x of late) { if (!byDay.has(x.d)) byDay.set(x.d, []); byDay.get(x.d).push(x); }
+  for (const d of days) {
+    const xs = byDay.get(d.date);
+    if (!xs) continue;
+    const ids = new Set(xs.map((x) => x.id));
+    for (const it of d.items || []) if (ids.has(it.id)) it.late_entry = true;
+    d.late = { n: xs.length, deleted_n: xs.filter((x) => x.deleted).length, items: xs.map((x) => ({ id: x.id, name: x.private ? null : x.name, dir: x.dir, cur: x.cur, amount: x.amount, deleted: x.deleted, changed_at: x.changed_at })) };
+  }
+}
+
 // 주간 보기(유첨 양식): 월~일 — 과거는 실적, 오늘부터 예정. 일요일은 화면에서 거래가 있을 때만 표시
 //   (일요일 거래를 빼면 토요일 마감 ≠ 다음 월요일 기초가 되므로 서버는 7일을 모두 준다)
-export async function computeWeek(anyDate, today, q = query) {
+//   1019 · opts.weeks=2 이거나 지난 주 날짜에 사후 반영이 있으면 지난 주(prev)도 함께 준다(이번 주를 볼 때만 자동).
+export async function computeWeek(anyDate, today, q = query, opts = {}) {
+  const w = await computeOneWeek(anyDate, today, q);
+  const yday = addDays(today, -1);
+  const prevFrom = addDays(w.from, -7), prevTo = addDays(w.from, -1);
+  let cutoff = '18:00';
+  try { cutoff = (await loadSchedules(q)).treasury_daily.send_time || '18:00'; } catch (_) { /* 0262 전 */ }
+  let late = [];
+  try { late = await loadLateEntries(prevFrom, w.to < yday ? w.to : yday, cutoff, q); } catch (_) { late = []; }
+  markLate(w.days, late);
+  const prevLate = late.filter((x) => x.d <= prevTo);
+  const isCurrent = today >= w.from && today <= w.to;
+  const reason = opts.weeks === 2 ? 'manual' : (opts.weeks !== 1 && isCurrent && prevLate.length ? 'late' : null);   // weeks=1 = 직접 접음
+  let prev = null;
+  if (reason) { prev = await computeOneWeek(prevFrom, today, q); markLate(prev.days, late); }
+  return { ...w, prev, expand_reason: reason, late_cutoff: cutoff,
+    late_summary: { n: late.length, prev_n: prevLate.length, days: [...new Set(late.map((x) => x.d))] } };
+}
+async function computeOneWeek(anyDate, today, q = query) {
   const from = weekStart(anyDate), to = addDays(from, 6);
   const actualTo = to < today ? to : addDays(today, -1);
   const actual = actualTo >= from ? await computeActualDays(from, actualTo, q) : [];

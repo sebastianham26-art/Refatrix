@@ -2,7 +2,7 @@
 // Refatrix ERP · treasuryRoutes.js — 재무 › 일일 자금 · 월간실적 (0240)
 //   전부 디렉터 전용. 숫자 계산은 src/treasuryDaily.js(순수 함수 + 적재).
 //
-//   GET    /api/treasury/week?date=YYYY-MM-DD      유첨 양식(월~토): 과거=실적, 오늘부터=예정
+//   GET    /api/treasury/week?date=YYYY-MM-DD&weeks=1|2  유첨 양식(월~토): 과거=실적, 오늘부터=예정 · 사후 반영이 있으면 지난 주(prev)도(1019)
 //   GET    /api/treasury/month?month=YYYY-MM       월간실적(원장 실시간 재계산) + 스냅샷 대비 사후수정 표시
 //   POST   /api/treasury/snapshots/refresh {month} 그 달 스냅샷 지금 재계산(최초본 보존)
 //   GET    /api/treasury/accounts                  집계 대상 계좌(금고·불공제 자동 제외) · PATCH /:id {mode:auto|include|exclude}
@@ -46,7 +46,8 @@ export default async function treasuryRoutes(app) {
   app.get('/api/treasury/week', G, async (req, reply) => {
     const today = mxNow().ymd;
     const date = isYmd(req.query.date) ? req.query.date : today;
-    const [w, sc] = await Promise.all([computeWeek(date, today), loadAccountScope()]);
+    const weeks = String(req.query.weeks) === '2' ? 2 : (String(req.query.weeks) === '1' ? 1 : null);   // 1019 · 없으면 자동(사후 반영 시 2주)
+    const [w, sc] = await Promise.all([computeWeek(date, today, undefined, { weeks }), loadAccountScope()]);
     return { ...w, scope: scopeBrief(sc) };
   });
 

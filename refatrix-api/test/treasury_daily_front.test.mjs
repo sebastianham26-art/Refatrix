@@ -15,13 +15,13 @@ if (PG) process.env.DATABASE_URL = PG;
 
 test('F0 정적 — 인라인 핸들러 없음 · 빌드 토큰 · nav 토큰 · 외부 스크립트는 허용 CDN 만', () => {
   assert.doesNotMatch(HTML, /\son(click|change|input|submit|keydown)=/i, 'addEventListener 만 사용');
-  assert.match(HTML, /<title>[^<]*build cashd-1008a<\/title>/);
+  assert.match(HTML, /<title>[^<]*build cashd-1019a<\/title>/);
   // 10/07: 내역이 길어도 칸 폭 고정 — 고정 표 배치 + 이름 2줄 제한 + 금액 줄바꿈 금지
   assert.match(HTML, /table\.ws\{[^}]*table-layout:fixed/);
   assert.match(HTML, /\.it \.nm\{[^}]*-webkit-line-clamp:2/);
   assert.match(HTML, /\.it \.am\{[^}]*white-space:nowrap/);
   assert.match(HTML, /\.ap \.l1,\.ap \.l2\{[^}]*text-overflow:ellipsis/);
-  assert.match(HTML, /refatrix-nav\.js\?v=20261008ws/);
+  assert.match(HTML, /refatrix-nav\.js\?v=\d{8}\w*/);   // 버전 값 일치는 integration_nav 가 확인
   for (const m of HTML.matchAll(/src=['"](https?:[^'"]+)/g)) assert.match(m[1], /^https:\/\/cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 });
 
@@ -111,7 +111,7 @@ test('F1 주간(유첨 양식) → 월간 → 수신자 관리 → 미리보기'
     assert.deepEqual(names, ['SAT', 'Nomina Oscar', 'Nomina Maria', 'Nomina Luis Mendez', 'Nomina Luis Guzman']);
     assert.ok(fri.querySelector('.it.plan'), '예정 = 파랑');
     const tue = [...d.querySelectorAll('tr.sec')].find((tr) => /AR/.test(tr.textContent)).querySelectorAll('td.num')[1];
-    assert.equal(tue.querySelector('.it.actual .nm').textContent, 'Luemi', '실적 = 회색 · 고객명');
+    assert.equal(tue.querySelector('.it.actual .nm').textContent.replace(/사후$/, ''), 'Luemi', '실적 = 회색 · 고객명');
     // 항목 표시 끄기 / 지난 주 이동
     $('#wItems').checked = false; $('#wItems').dispatchEvent(new w.Event('change', { bubbles: true }));
     assert.equal(d.querySelectorAll('.it').length, 0);

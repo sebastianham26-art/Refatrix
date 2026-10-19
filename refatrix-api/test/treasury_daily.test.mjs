@@ -66,6 +66,29 @@ test('A2 projectDays — 예정은 기록된 날짜에만 · 지난 날짜 미�
   assert.match(txt, /지난 날짜 예정 미처리 2건 · MXN 10,000/);
 });
 
+test('A2b 1019 · AR 예정이 날짜가 지나도 안 들어오면 첫 예정일 칸으로 하루씩 이월(잔고 포함) · AP 는 경고만', () => {
+  const days = T.projectDays({
+    today: '2026-10-19', to: '2026-10-21', startOpen: { MXN: 1000, USD: 0 }, fx: fx18('2026-10-19', '2026-10-21'),
+    planIn: [
+      { id: 71, d: '2026-10-16', direction: 'in', currency: 'MXN', amount: 500, amount_mxn: 500, customer_name: 'Luemi', sales_invoice_id: 71 },
+      { id: 72, d: '2026-10-20', direction: 'in', currency: 'MXN', amount: 300, amount_mxn: 300, customer_name: 'Sur' },
+    ],
+    planOut: [{ id: 81, d: '2026-10-15', direction: 'out', currency: 'MXN', amount: 200, amount_mxn: 200, rule_name: 'Renta', recurring_rule_id: 3 }],
+  });
+  const mon = days[0];
+  const r = mon.items.find((i) => i.id === 71);
+  assert.ok(r && r.rolled && r.due === '2026-10-16' && r.late_days === 3, '금요일 미입금 → 월요일 칸');
+  assert.equal(mon.in.MXN, 500); assert.equal(mon.close.MXN, 1500, '이월분은 잔고 예측에 포함');
+  assert.deepEqual([mon.rolled.n, mon.rolled.in_mxn], [1, 500]);
+  assert.deepEqual([mon.overdue.n, mon.overdue.out_mxn, mon.overdue.in_mxn], [1, 200, 0], 'AP 는 그대로 경고(잔고 제외)');
+  assert.ok(!mon.items.some((i) => i.id === 81));
+  assert.equal(days[1].items[0].id, 72, '앞으로 예정은 제 날짜');
+  // 당일 마감 발송(18:00): 내일부터 예정 → 오늘 못 받은 수금은 내일 칸으로
+  const tmr = T.projectDays({ today: '2026-10-20', to: '2026-10-21', startOpen: { MXN: 0, USD: 0 },
+    planIn: [{ id: 73, d: '2026-10-19', direction: 'in', currency: 'MXN', amount: 90, amount_mxn: 90 }] });
+  assert.equal(tmr[0].items[0].id, 73); assert.equal(tmr[0].items[0].late_days, 1);
+});
+
 test('A3 summarizeMonth — 합계·상위·최저잔고·비공개 마스킹·계좌개설 조정', () => {
   const days = T.buildDays({
     from: '2026-09-01', to: '2026-09-03', base: { MXN: 1000, USD: 100 }, fx: T.fxFill([], '2026-09-01', '2026-09-03', 20),
@@ -180,7 +203,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-1008a/);
+  assert.match(page, /build cashd-1019a/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -504,4 +527,43 @@ E('C5 API — 디렉터 전용 · 수신자 CRUD(번호 정규화·중복) · �
   assert.equal((await call(D, 'DELETE', '/api/treasury/recipients/' + rc.id)).json().ok, true);
   assert.equal((await call(D, 'GET', '/api/treasury/recipients')).json().items.length, 0);
   await cleanup();
+});
+
+E('C9 1019 · 사후 반영(마감 18:00 뒤 기록) → 이번 주 화면에 지난 주 자동 포함 · weeks=1 접기 · weeks=2 펼치기 · AR 이월', async () => {
+  const { query } = await import('../src/db.js');
+  const one = async (sql, a) => (await query(sql, a)).rows[0];
+  const acc = await one(`INSERT INTO accounts (name, currency, open_balance) VALUES ($1,'MXN',0) RETURNING id`, ['TLATE-' + Date.now()]);
+  const ins = async (d, dir, amt, status, at, extra = '') => Number((await one(
+    `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, status, approved, memo, created_at, updated_at${extra ? ', deleted_at' : ''})
+     VALUES ($1,$2,$3,$4,'MXN',1,$4,$5,true,'tlate',$6,$6${extra ? ',' + extra : ''}) RETURNING id`, [acc.id, d, dir, amt, status, at])).id);
+  try {
+    const t1 = await ins('2026-10-16', 'in', 1000, 'actual', '2026-10-16T12:00:00-06:00');   // 금 낮 — 정상
+    let w = await T.computeWeek('2026-10-19', '2026-10-19');
+    const mine = (wk) => (wk ? wk.days : []).flatMap((d) => (d.late ? d.late.items.filter((x) => [t1].includes(x.id)) : []));
+    assert.equal(mine(w).length + mine(w.prev).length, 0, '마감 전 기록은 사후 아님');
+    const t2 = await ins('2026-10-16', 'out', 300, 'actual', '2026-10-16T20:30:00-06:00');   // 금 업무 종료 후
+    w = await T.computeWeek('2026-10-19', '2026-10-19');
+    assert.equal(w.expand_reason, 'late'); assert.equal(w.prev.from, '2026-10-12'); assert.equal(w.late_cutoff, '18:00');
+    const fri = w.prev.days.find((d) => d.date === '2026-10-16');
+    assert.ok(fri.late.items.some((x) => x.id === t2), '금요일 칸 사후 표시');
+    assert.ok(fri.items.find((i) => i.id === t2).late_entry); assert.ok(!fri.items.find((i) => i.id === t1).late_entry);
+    assert.equal((await T.computeWeek('2026-10-19', '2026-10-19', undefined, { weeks: 1 })).prev, null, '직접 접기');
+    const past = await T.computeWeek('2026-10-05', '2026-10-19');
+    assert.equal(past.prev, null, '지난 주를 볼 때는 자동 펼침 없음');
+    assert.equal((await T.computeWeek('2026-10-05', '2026-10-19', undefined, { weeks: 2 })).expand_reason, 'manual');
+    // 삭제도 사후 반영(토요일에 금요일 건 삭제)
+    const t3 = await ins('2026-10-14', 'in', 50, 'actual', '2026-10-14T10:00:00-06:00', "'2026-10-17T10:00:00-06:00'");
+    const late = await T.loadLateEntries('2026-10-12', '2026-10-18', '18:00');
+    assert.ok(late.find((x) => x.id === t3 && x.deleted));
+    // AR 이월: 금요일 수금 예정이 안 들어옴 → 이번 주 월요일(오늘) 칸
+    const p1 = await ins('2026-10-16', 'in', 700, 'plan', '2026-10-10T10:00:00-06:00');
+    w = await T.computeWeek('2026-10-19', '2026-10-19');
+    const mon = w.days.find((d) => d.date === '2026-10-19');
+    const it = mon.items.find((i) => i.id === p1);
+    assert.ok(it && it.rolled && it.due === '2026-10-16');
+    assert.ok(mon.rolled.items.some((x) => x.id === p1));
+  } finally {
+    await query(`DELETE FROM transactions WHERE account_id=$1`, [acc.id]);
+    await query(`DELETE FROM accounts WHERE id=$1`, [acc.id]);
+  }
 });

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1008a</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1019a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -82,6 +82,12 @@
   .ap .l2{opacity:.85}
   .it.plan{color:var(--plan)}.it.actual{color:var(--done)}
   .it .late{font-size:10px;color:var(--expense);margin-left:3px}
+  .it .roll{font-size:10px;color:#8a5a00;margin-left:3px}
+  .it.lateent{background:#FFF1D6;border-radius:3px}
+  .it .new{font-size:9.5px;color:#8a5a00;font-weight:700;margin-left:3px}
+  .wkhead{display:flex;align-items:center;gap:8px;margin:12px 0 4px;font-weight:700;font-size:13px}
+  .wkhead .sub{font-weight:400;color:#8a5a00;font-size:12px}
+  table.ws th.lated{box-shadow:inset 0 -3px 0 #E8A33A}
   .dash{color:#b0b0b0;text-align:right;line-height:1.35}
   .tag{display:inline-block;font-size:10px;font-weight:700;border-radius:4px;padding:0 5px;margin-left:5px;vertical-align:1px}
   .tag.a{background:#eee;color:#555}.tag.t{background:#ffd84d;color:#3a2d00}.tag.p{background:#dbeafe;color:#1e40af}
@@ -168,12 +174,14 @@
           <button class="btn ghost sm" id="wNext">▶</button>
           <button class="btn ghost sm" id="wThis">이번 주</button>
           <label class="chk" style="margin-left:10px"><input type="checkbox" id="wItems" checked> 항목 표시</label>
+          <label class="chk" style="margin-left:10px" title="사후 반영이 있으면 자동으로 펼쳐집니다"><input type="checkbox" id="wTwo"> 지난 주도 보기(2주)</label>
           <span class="spacer"></span>
           <button class="btn ghost sm noprint" id="wPrint">🖨 인쇄</button>
         </div>
         <div class="hint scopeLine" id="wScope"></div>
         <div class="hint scopeLine" id="wRecon"></div>
         <div id="wOverdue"></div>
+        <div id="wPrevBox"></div>
         <div class="scroll" style="margin-top:8px"><div id="wTable"><div class="hint" style="padding:14px">불러오는 중…</div></div></div>
         <div class="legend">
           <span><i style="background:var(--bank)"></i>은행잔고 · 마감잔고</span>
@@ -264,7 +272,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-1008a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-1019a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -333,7 +341,7 @@
   // ═════════ 주간(유첨 양식) ═════════
   async function loadWeek(){
     $('wTable').innerHTML='<div class="hint" style="padding:14px">불러오는 중…</div>';
-    try{ const d=await api('/api/treasury/week?date='+S.week); S.wdata=d; $('wScope').innerHTML=scopeText(d.scope); renderRecon(d); renderWeek(d); }
+    try{ const d=await api('/api/treasury/week?date='+S.week+(S.two===true?'&weeks=2':(S.two===false?'&weeks=1':''))); S.wdata=d; $('wScope').innerHTML=scopeText(d.scope); renderRecon(d); renderWeek(d); }
     catch(e){ $('wTable').innerHTML='<div class="msg err" style="margin:12px">'+esc(errTxt(e))+'</div>'; }
   }
   // 거래목록 예정과의 대사 · 지난 날짜 미처리 예정(오늘 칸으로 옮기지 않음)
@@ -343,11 +351,17 @@
     if(!r){ $('wRecon').innerHTML=''; $('wOverdue').innerHTML=''; return; }
     const ex=[]; if(r.excluded.inactive_rule.n) ex.push('비활성 고정비 '+r.excluded.inactive_rule.n+'건'); if(r.excluded.account.n) ex.push('집계 제외 계좌 '+r.excluded.account.n+'건');
     $('wRecon').innerHTML='🔗 예정 = 거래목록 「예정」 그대로 · 오늘 이후 '+r.list_n+'건 중 '+r.shown_n+'건 표시'+(ex.length?' (제외: '+ex.join(', ')+')':' · 일치');
+    const rl=t&&t.rolled; let oh='';
+    if(rl&&rl.n){
+      oh+='<div class="msg" style="display:block;background:#FFF9EC;color:#7a5200;border:1px solid #F1D79A">⏩ <b>미입금 수금 예정 '+rl.n+'건 · MXN '+f0(rl.in_mxn)+'</b> — 예정일이 지났는데 아직 안 들어와서 <b>'+md(t.date)+'</b> 칸으로 하루씩 밀어 표시합니다(잔고 예측 포함). 들어오면 거래목록에서 실적 전환, 안 받을 돈이면 날짜 변경·삭제하세요.'
+        +'<div style="margin-top:6px;font-size:12px">'+rl.items.slice(0,12).map(i=>'#'+i.id+' '+esc(md(i.due))+'→'+esc(md(t.date))+' '+esc(i.private?'비공개':i.name)+' +'+f0(i.amount)).join(' · ')+(rl.items.length>12?' …':'')+'</div></div>';
+    }
     if(o&&o.n){
-      $('wOverdue').innerHTML='<div class="msg err" style="display:block;background:#FFF6E0;color:#8A5A00;border-color:#F1D79A">⚠ <b>지난 날짜 예정 미처리 '+o.n+'건</b> · 수금 MXN '+f0(o.in_mxn)+' · 지급 MXN '+f0(o.out_mxn)
+      oh+='<div class="msg err" style="display:block;background:#FFF6E0;color:#8A5A00;border-color:#F1D79A;margin-top:6px">⚠ <b>지난 날짜 지급 예정 미처리 '+o.n+'건</b> · 지급 MXN '+f0(o.out_mxn)
         +' — 날짜가 지났지만 거래목록에 「예정」으로 남아 있는 건입니다. 실제로 처리됐으면 거래목록에서 실적 전환, 아니면 날짜 변경·삭제하세요. (잔고 예측에는 넣지 않음)'
         +'<div style="margin-top:6px;font-size:12px">'+o.items.slice(0,12).map(i=>'#'+i.id+' '+esc(i.due)+' '+esc(i.private?'비공개':i.name)+' '+(i.dir==='in'?'+':'−')+f0(i.amount)).join(' · ')+(o.items.length>12?' …':'')+'</div></div>';
-    } else $('wOverdue').innerHTML='';
+    }
+    $('wOverdue').innerHTML=oh;
   }
   // 전자결재 항목 2줄 표시(비공개는 이름 숨김 유지)
   function apHtml(it){
@@ -357,8 +371,19 @@
   }
   function renderWeek(w){
     $('wRng').textContent=md(w.from)+' (월) ~ '+md(addDays(w.from,5))+' (토)';
+    $('wTwo').checked=!!w.prev;
+    if(w.prev){
+      const ls=w.late_summary||{}, why=w.expand_reason==='late'
+        ? '사후 반영 '+(ls.prev_n||0)+'건 — 마감('+esc(w.late_cutoff||'18:00')+') 뒤에 기록·수정·승인·삭제된 실적이 있어 지난 주를 함께 보여줍니다'
+        : '직접 펼침';
+      $('wPrevBox').innerHTML='<div class="wkhead">지난 주 · '+md(w.prev.from)+' (월) ~ '+md(addDays(w.prev.from,5))+' (토) <span class="sub">'+why+'</span></div>'
+        +'<div class="scroll">'+weekTable(w.prev,w.today)+'</div><div class="wkhead">이번 주 · '+md(w.from)+' (월) ~ '+md(addDays(w.from,5))+' (토)</div>';
+    } else $('wPrevBox').innerHTML='';
+    $('wTable').innerHTML=weekTable(w,w.today);
+  }
+  function weekTable(w,today){
     const ds=w.days.filter(d=>d.dow!==0||d.moved), show=$('wItems').checked;
-    const isT=(d)=>d.date===w.today;
+    const isT=(d)=>d.date===today;
     const tdc=(d,extra)=>' class="num'+(isT(d)?' today':'')+(extra?' '+extra:'')+'"';
     const listCell=(d,dir,cur)=>{
       const xs=d.items.filter(i=>i.dir===dir&&i.cur===cur);
@@ -367,17 +392,18 @@
       let h='';
       for(const it of xs){
         const st=it.state||'actual';
-        const nm=apHtml(it)||(esc(it.name)+(it.late_days?'<span class="late">⏰'+it.late_days+'d</span>':''));
+        const nm=(apHtml(it)||esc(it.name))+(it.rolled?'<span class="roll" title="원래 예정일 '+esc(it.due)+' · 미입금 → 하루씩 이월">⏩'+esc(md(it.due))+'</span>':(it.late_days?'<span class="late">⏰'+it.late_days+'d</span>':''))+(it.late_entry?'<span class="new">사후</span>':'');
         const SRC={inv:'매출 입금예정',fix:'고정비',man:'수동 예정수입',plan:'예정지출'};
         const tip=[it.private?'비공개':it.name,it.id?('거래 #'+it.id):null,st==='plan'?('거래목록 예정 · '+(SRC[it.src]||'예정')):'거래목록 실제',it.sat_no,it.category,it.account].filter(Boolean).join(' · ');
-        h+='<div class="it '+(st==='plan'?'plan':'actual')+'" title="'+esc(tip)+'"><span class="nm'+(it.appr&&!it.private?' ap':'')+'">'+nm+'</span><span class="am">'+f0(it.amount)+'</span></div>';
+        h+='<div class="it '+(st==='plan'?'plan':'actual')+(it.late_entry?' lateent':'')+'" title="'+esc(tip+(it.rolled?' · 원래 예정일 '+it.due+' (미입금 이월)':'')+(it.late_entry?' · 마감 뒤 사후 반영':''))+'"><span class="nm'+(it.appr&&!it.private?' ap':'')+'">'+nm+'</span><span class="am">'+f0(it.amount)+'</span></div>';
       }
       for(let i=xs.length;i<min;i++) h+='<div class="dash">-</div>';
       return '<td'+tdc(d)+'>'+h+'</td>';
     };
     const numRow=(fnv,cls)=>ds.map(d=>{const v=fnv(d);return '<td'+tdc(d,(cls||'')+(v<0?' neg':''))+'>'+fn(v)+'</td>';}).join('');
     const tag=(d)=> d.kind==='actual'?'<span class="tag a">실적</span>':(d.kind==='today'?'<span class="tag t">오늘</span>':'<span class="tag p">예정</span>');
-    const pend=(d)=> d.pending&&d.pending.n?' <span class="badge warn" title="승인 대기 실적 — 잔고 미반영">대기 '+d.pending.n+'</span>':'';
+    const pend=(d)=> (d.pending&&d.pending.n?' <span class="badge warn" title="승인 대기 실적 — 잔고 미반영">대기 '+d.pending.n+'</span>':'')
+      +(d.late&&d.late.n?' <span class="badge warn" title="그날 마감 뒤 기록·수정·승인·삭제된 실적'+(d.late.deleted_n?' (삭제 '+d.late.deleted_n+'건 포함)':'')+'">사후 '+d.late.n+'</span>':'');
     const adjRow=ds.some(d=>d.adj&&(d.adj.MXN||d.adj.USD));
     let h='<table class="ws"><colgroup><col style="width:76px"><col style="width:52px">'+ds.map(()=>'<col>').join('')+'</colgroup><tbody>';
     h+='<tr class="bank"><td class="g" rowspan="2">Bank<br>Account</td><td class="c">MXN</td>'+numRow(d=>d.open.MXN)+'</tr>';
@@ -388,7 +414,7 @@
     h+='<tr class="sec"><td class="c">USD</td>'+ds.map(d=>listCell(d,'in','USD')).join('')+'</tr>';
     h+='<tr class="tot"><td class="c">Total</td>'+numRow(d=>d.in.USD)+'</tr>';
     h+='<tr class="fx"><td class="g" colspan="2">Exchange rate</td>'+ds.map(d=>'<td'+tdc(d)+'>'+(d.fx?Number(d.fx).toFixed(2):'')+'</td>').join('')+'</tr>';
-    h+='<tr class="date"><th colspan="2">Date</th>'+ds.map(d=>'<th>'+md(d.date)+' ('+DOWE[d.dow]+')'+tag(d)+pend(d)+'</th>').join('')+'</tr>';
+    h+='<tr class="date"><th colspan="2">Date</th>'+ds.map(d=>'<th'+(d.late&&d.late.n?' class="lated"':'')+'>'+md(d.date)+' ('+DOWE[d.dow]+')'+tag(d)+pend(d)+'</th>').join('')+'</tr>';
     h+='<tr class="sec"><td class="g" rowspan="4">AP</td><td class="c">MXN</td>'+ds.map(d=>listCell(d,'out','MXN')).join('')+'</tr>';
     h+='<tr class="tot"><td class="c">Total</td>'+numRow(d=>d.out.MXN)+'</tr>';
     h+='<tr class="sec"><td class="c">USD</td>'+ds.map(d=>listCell(d,'out','USD')).join('')+'</tr>';
@@ -397,7 +423,7 @@
     h+='<tr class="close"><td class="c">USD</td>'+numRow(d=>d.close.USD)+'</tr>';
     h+='<tr class="eq"><td colspan="2"></td>'+ds.map(d=>'<td class="v num'+(d.close_eq<0?' neg':'')+'">'+fn(d.close_eq)+'</td>').join('')+'</tr>';
     h+='</tbody></table>';
-    $('wTable').innerHTML=h;
+    return h;
   }
 
   // ═════════ 월간실적 ═════════
@@ -619,6 +645,7 @@
   $('wPrev').addEventListener('click',()=>{ S.week=addDays(S.week,-7); loadWeek(); });
   $('wNext').addEventListener('click',()=>{ S.week=addDays(S.week,7); loadWeek(); });
   $('wThis').addEventListener('click',()=>{ S.week=mxToday(); loadWeek(); });
+  $('wTwo').addEventListener('change',()=>{ S.two=$('wTwo').checked; loadWeek(); });
   $('wItems').addEventListener('change',()=>{ if(S.wdata) renderWeek(S.wdata); });
   $('wPrint').addEventListener('click',()=>window.print());
   $('mPrev').addEventListener('click',()=>{ S.month=shiftMonth(S.month,-1); loadMonth(); });
