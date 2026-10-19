@@ -1,5 +1,5 @@
 // =====================================================================
-// VIO 제품찾기·프로모션 화면 (jsdom · build vf16p · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
+// VIO 제품찾기·프로모션 화면 (jsdom · build vf16q · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
 //   대기열(VIO 순 · 재고 품목 수) · 품목 넣기/빼기(재고 자동 + 손) · 이미지 뱅크 저장 · WhatsApp 발송 본문 · 예전 차종별 부품 주소
 //   실행: node --test test/viopromo_front.test.mjs   (jsdom 필요)
 // =====================================================================
@@ -86,7 +86,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16p/);
+  assert.match(d.title, /vf16q/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -197,4 +197,15 @@ test('예전 「차종별 부품」 주소는 새 화면 찾기 탭으로 · 메
   const pm = nav.match(/\{key:'pm'[^}]*\}/)[0];
   assert.ok(pm.includes("'viofinder'") && !pm.includes("'vehicleparts'"));
   assert.match(nav, /viofinder:\{file:'refatrix-viofinder\.html',name:'VIO 제품찾기·프로모션'/);
+});
+
+test('CTR 정식 로고 · OE 마크 파일이 있고 화면이 쓴다 (vf16q)', () => {
+  for (const f of ['ctr-logo.png', 'ctr-logo-white.png', 'oe-badge.png', 'oe-badge-white.png']) {
+    const p = resolve(ROOT, 'img', 'promo', f);
+    assert.ok(existsSync(p), f + ' 없음');
+    assert.equal(readFileSync(p).subarray(1, 4).toString(), 'PNG', f + ' PNG 아님');
+  }
+  const html = readFileSync(HTML, 'utf-8');
+  assert.match(html, /img\/promo\/ctr-logo\.png/); assert.match(html, /img\/promo\/oe-badge-white\.png/);
+  assert.match(html, /id="vpOeOn"/);
 });

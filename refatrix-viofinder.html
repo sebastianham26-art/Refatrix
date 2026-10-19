@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf16p</title>
+<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf16q</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
@@ -414,6 +414,7 @@
           </div>
           <div id="vpTplA"><label class="vpFld">머리 문구 (앞에 CTR)<input type="text" id="vpHlA"></label><label class="vpFld">아래 띠 문구<input type="text" id="vpCta"></label></div>
           <div id="vpTplB"><label class="vpFld">첫째 줄<input type="text" id="vpHlB1"></label><label class="vpFld">둘째 줄<input type="text" id="vpHlB2"></label><label class="vpFld">작은 문구<input type="text" id="vpSub"></label></div>
+          <div class="vpRow"><label class="vpInl"><input type="checkbox" id="vpOeOn"> OE 마크 (Global Supplier · Est. 1952)</label></div>
           <div class="vpRow"><label class="vpInl"><input type="checkbox" id="vpDiscOn"> 할인 배지</label><label class="vpInl"><input type="number" id="vpDisc" min="1" max="90" style="width:60px"> % OFF</label></div>
           <label class="vpFld">맨 아래 연락처 (모든 차종 공통으로 기억)<input type="text" id="vpContact" placeholder="WhatsApp 81 0000 0000 · refatrix.com"></label>
         </section>
@@ -428,9 +429,9 @@
         </section>
         <section class="vpSec">
           <div class="vpSecH">⑤ 로고 · 배경 <span class="vpMuted">(선택)</span></div>
-          <div class="vpRow"><label class="vpBtnP sec sm vpFile">CTR 로고 이미지<input type="file" id="vpLogoFile" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="vpLink" id="vpLogoX">글자 로고로</button></div>
+          <div class="vpRow"><label class="vpBtnP sec sm vpFile">다른 로고로 바꾸기<input type="file" id="vpLogoFile" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="vpLink" id="vpLogoX">CTR 정식 로고로</button></div>
           <div class="vpRow"><label class="vpBtnP sec sm vpFile">B 배경 사진<input type="file" id="vpBgFile" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="vpLink" id="vpBgX">기본 배경으로</button></div>
-          <div class="vpHint">올린 로고·배경은 페이지를 새로 고칠 때까지 모든 차종에 쓰입니다.</div>
+          <div class="vpHint">로고는 기본으로 CTR 정식 로고(A=빨강, B=흰색)를 씁니다. 바꿔 올린 로고·배경은 페이지를 새로 고칠 때까지 쓰입니다.</div>
         </section>
       </div>
     </div>
@@ -1226,7 +1227,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
 </script>
 <script>
 /* =====================================================================
-   2026-10-19 · VIO 제품찾기 + 차종별 부품 + 프로모션 이미지 → 한 화면 (build vf16p)
+   2026-10-19 · VIO 제품찾기 + 차종별 부품 + 프로모션 이미지 → 한 화면 (build vf16q)
    ① 프로모션 대기열: VIO 높은 순서로 차종을 훑어 재고 있는 품목 수를 세고 후보를 고른다
    ② 프로모션 만들기: 세대 선택 · 품목별 넣기/빼기(재고 기준 자동 + 손으로 바꾸기) · 1080×1350 이미지
    ③ WhatsApp: 이미지 뱅크(폴더 「VIO 프로모션」) 저장 → 동의자 전체 · 그룹 · 이 차종 관심 고객에게 발송/예약
@@ -1359,13 +1360,14 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   // ===================================================================
   const ST={ open:false, m:null, d:null, vars:[], ovr:{}, minStock:1, tpl:'A',
     title:'', years:'', hlA:'se adapta a tu auto', hlB1:'La seguridad', hlB2:'no es una opción', sub:'CONFIABLE CUANDO LA SEGURIDAD ES PRIORIDAD',
-    cta:'VER MÁS DETALLES', contact:'', discOn:false, disc:15,
+    cta:'VER MÁS DETALLES', contact:'', discOn:false, disc:15, oeOn:true,
     veh:{ cands:[], idx:0, img:null, file:false, scale:1, dx:0, dy:0, fade:true, loading:false },
     logo:null, bg:null, gens:[], genIdx:-1, yearFilter:false };
   function cfgKey(){ return 'vp_cfg_'+(ST.m?keyOf(ST.m):''); }
-  function saveCfg(){ if(!ST.m) return; ls.set(cfgKey(),{ ovr:ST.ovr, tpl:ST.tpl, title:ST.title, years:ST.years, vars:ST.vars.filter(v=>v.on).map(v=>v.key), discOn:ST.discOn, disc:ST.disc, cta:ST.cta, contact:ST.contact, hlA:ST.hlA, hlB1:ST.hlB1, hlB2:ST.hlB2, sub:ST.sub, vidx:ST.veh.idx, vs:ST.veh.scale, vx:ST.veh.dx, vy:ST.veh.dy, vf:ST.veh.fade, minStock:ST.minStock }); }
+  function saveCfg(){ if(!ST.m) return; ls.set(cfgKey(),{ ovr:ST.ovr, tpl:ST.tpl, title:ST.title, years:ST.years, vars:ST.vars.filter(v=>v.on).map(v=>v.key), discOn:ST.discOn, disc:ST.disc, cta:ST.cta, contact:ST.contact, hlA:ST.hlA, hlB1:ST.hlB1, hlB2:ST.hlB2, sub:ST.sub, vidx:ST.veh.idx, vs:ST.veh.scale, vx:ST.veh.dx, vy:ST.veh.dy, vf:ST.veh.fade, minStock:ST.minStock, oeOn:ST.oeOn }); }
   const G=ls.get('vp_global')||{}; // 화면 전체 기본값(연락처 문구 · 최소 재고)
   if(G.contact) ST.contact=G.contact;
+  if(G.oeOn===false) ST.oeOn=false;
   function selVarKeys(){ return ST.vars.filter(v=>v.on).map(v=>v.key); }
   function allItems(){ return itemsOf(ST.d,selVarKeys()); }
   function autoInc(it){
@@ -1396,8 +1398,20 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     const s=Math.min(w/iw,h/ih); const dw=iw*s, dh=ih*s; const dx=x+(w-dw)/2, dy=anchorBottom?(y+h-dh):(y+(h-dh)/2);
     c.drawImage(im,dx,dy,dw,dh); return {x:dx,y:dy,w:dw,h:dh};
   }
+  // 2026-10-19 · 디렉터가 준 CTR 정식 로고 · OE 마크(img/promo/) — 같은 출처라 캔버스가 오염되지 않는다
+  const BRAND={};
+  const BRAND_P=Promise.all([['red','img/promo/ctr-logo.png'],['white','img/promo/ctr-logo-white.png'],['oe','img/promo/oe-badge.png'],['oeW','img/promo/oe-badge-white.png']].map(([k,u])=>
+    new Promise(res=>{ const im=new Image(); im.onload=()=>{ BRAND[k]=im; res(); }; im.onerror=()=>res(); im.src=u+'?v=20261019'; })));
+  function logoImg(color){ return ST.logo||(String(color).toLowerCase()==='#fff'?BRAND.white:BRAND.red)||null; }
+  function logoW(size,color){ const im=logoImg(color); return im?size*0.95*((im.naturalWidth||im.width)/(im.naturalHeight||im.height)):null; }
+  function oeMark(c,cx,cy,d,white){
+    if(!ST.oeOn) return; const im=white?BRAND.oeW:BRAND.oe; if(!im) return;
+    c.save(); if(!white){ c.shadowColor='rgba(28,35,51,.22)'; c.shadowBlur=14; c.shadowOffsetY=4; } else { c.shadowColor='rgba(0,0,0,.45)'; c.shadowBlur=10; }
+    c.drawImage(im,cx-d/2,cy-d/2,d,d); c.restore();
+  }
   function wordmark(c,x,y,size,color,stroke){
-    if(ST.logo){ const im=ST.logo; const h=size*0.95, w=h*(im.width/im.height); c.drawImage(im,x,y-h*0.82,w,h); return w; }
+    const lim=logoImg(color);
+    if(lim){ const h=size*0.95, w=h*((lim.naturalWidth||lim.width)/(lim.naturalHeight||lim.height)); c.drawImage(lim,x,y-h*0.86,w,h); return w; }
     c.save(); c.font='italic 900 '+size+'px '+FONT; c.textBaseline='alphabetic';
     if(stroke){ c.lineWidth=size*0.06; c.strokeStyle=stroke; c.strokeText('CTR',x,y); }
     c.fillStyle=color; c.fillText('CTR',x,y); const w=c.measureText('CTR').width;
@@ -1438,6 +1452,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   }
 
   async function render(cv){
+    await BRAND_P;
     const c=cv.getContext('2d'); c.clearRect(0,0,W,H);
     const items=allItems(); const cards=cardsOf(items,isInc);
     for(const cd of cards){ cd.img=await prodImage(cd.codes); }
@@ -1464,15 +1479,17 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     // 머리글
     const X=86; c.textBaseline='alphabetic';
     c.font='800 70px '+FONT; c.fillStyle=RED; c.fillText('CTR',X,150); const wC=c.measureText('CTR ').width;
-    c.fillStyle=NAVY; fitFont(c,ST.hlA,'700',66,40,1080-X-60-wC-(ST.discOn?200:0)); c.fillText(ST.hlA,X+wC,150);
+    const rTop=(ST.oeOn&&BRAND.oe)?200:(ST.discOn?200:0);
+    c.fillStyle=NAVY; fitFont(c,ST.hlA,'700',66,40,1080-X-60-wC-rTop); c.fillText(ST.hlA,X+wC,150);
     const title=String(ST.title||'').toUpperCase();
-    c.fillStyle=NAVY; const ts=fitFont(c,title,'900',122,64,1080-X*2-(ST.discOn?150:0));
+    c.fillStyle=NAVY; const ts=fitFont(c,title,'900',122,64,1080-X*2-(rTop?170:0));
     c.save(); c.shadowColor='rgba(0,0,0,.18)'; c.shadowBlur=10; c.shadowOffsetY=4; c.fillText(title,X,150+ts+10); c.restore();
     const yBase=150+ts+10+82;
     c.font='800 54px '+FONT; c.fillStyle=RED; c.fillText(ST.years||'',X,yBase); const wy=c.measureText(ST.years||'').width;
     g=c.createLinearGradient(X+wy+30,0,860,0); g.addColorStop(0,RED); g.addColorStop(1,'rgba(28,35,51,.7)');
-    c.fillStyle=g; c.fillRect(X+wy+30,yBase-20,Math.max(40,840-(X+wy+30)),3);
-    discBadge(c,950,140,92);
+    const oeA=ST.oeOn&&BRAND.oe, lineEnd=(oeA&&ST.discOn)?860:840;
+    c.fillStyle=g; c.fillRect(X+wy+30,yBase-20,Math.max(40,lineEnd-(X+wy+30)),3);
+    if(oeA){ oeMark(c,946,150,190,false); discBadge(c,958,yBase-22,62); } else discBadge(c,950,140,92);
 
     // 카드
     const n=cards.length, top=yBase+44, L=X, R=1080-X, gap=18;
@@ -1506,7 +1523,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     c.fillStyle=g; c.beginPath(); c.moveTo(360,1196); c.lineTo(1080,1196); c.lineTo(1080,1282); c.lineTo(330,1282); c.closePath(); c.fill(); c.restore();
     c.save(); c.fillStyle='#fff'; c.textAlign='right'; fitFont(c,ST.cta,'800',46,28,560,true); c.fillText(ST.cta,968,1256);
     c.lineWidth=7; c.strokeStyle='#fff'; c.lineJoin='round'; c.beginPath(); c.moveTo(992,1218); c.lineTo(1018,1239); c.lineTo(992,1260); c.stroke(); c.restore();
-    wordmark(c,X,1272,96,RED);
+    wordmark(c,X,1266,BRAND.red&&!ST.logo?70:96,RED);
     if(ST.contact){ c.save(); c.fillStyle='#4a4a52'; c.textAlign='center'; fitFont(c,ST.contact,'600',26,16,980); c.fillText(ST.contact,540,1326); c.restore(); }
   }
 
@@ -1527,16 +1544,17 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
 
     // 머리글
     c.save(); c.textAlign='center'; c.fillStyle='#fff'; c.shadowColor='rgba(0,0,0,.55)'; c.shadowBlur=16; c.shadowOffsetY=5;
-    const hw=ST.discOn?720:960;
+    const oeB=ST.oeOn&&BRAND.oeW; const hw=(ST.discOn||oeB)?680:960;
     fitFont(c,ST.hlB1,'800',108,56,hw,true); c.fillText(ST.hlB1,540,180);
     fitFont(c,ST.hlB2,'800',108,56,960,true); c.fillText(ST.hlB2,540,292);
     c.font='italic 800 100px '+FONT; const wEs=c.measureText('Es ').width;
-    c.font='italic 900 110px '+FONT; const wL=ST.logo?(110*0.95*(ST.logo.width/ST.logo.height)):c.measureText('CTR').width;
+    c.font='italic 900 110px '+FONT; const wL=logoW(110,'#fff')||c.measureText('CTR').width;
     const sx=540-(wEs+wL)/2; c.textAlign='left'; c.font='italic 800 100px '+FONT; c.fillText('Es',sx,404);
     c.restore();
     c.save(); c.shadowColor='rgba(255,30,30,.8)'; c.shadowBlur=30; wordmark(c,540-(wEs+wL)/2+wEs,404,110,'#fff',RED); c.restore();
     if(ST.sub){ c.save(); c.textAlign='center'; c.fillStyle='#fff'; c.shadowColor='rgba(0,0,0,.6)'; c.shadowBlur=8; fitFont(c,ST.sub,'700',32,18,940,true); c.fillText(ST.sub,540,458); c.restore(); }
     discBadge(c,975,112,78);
+    if(oeB) oeMark(c,112,118,170,true);
 
     // 품목 줄
     const n=cards.length; let labBottom=700;
@@ -1567,7 +1585,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     const brand=String((ST.title||'').split(' ')[0]||'').toUpperCase(), rest=String(ST.title||'').split(' ').slice(1).join(' ');
     fitFont(c,brand,'800',58,30,420); c.fillText(brand,1040,1204);
     const line2=(rest?rest+' ':'')+(ST.years||''); fitFont(c,line2,'700',42,22,440,true); c.fillText(line2,1040,1254); c.restore();
-    wordmark(c,86,1250,96,'#fff');
+    wordmark(c,80,1248,BRAND.white&&!ST.logo?82:96,'#fff');
     if(ST.contact){ c.save(); c.fillStyle='#fff'; c.textAlign='center'; c.shadowColor='rgba(0,0,0,.6)'; c.shadowBlur=6; fitFont(c,ST.contact,'600',26,16,980); c.fillText(ST.contact,540,1328); c.restore(); }
   }
 
@@ -1605,7 +1623,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     // 저장해 둔 설정
     const sv=ls.get(cfgKey());
     if(sv){
-      ['tpl','title','years','discOn','disc','cta','hlA','hlB1','hlB2','sub'].forEach(k=>{ if(sv[k]!=null) ST[k]=sv[k]; });
+      ['tpl','title','years','discOn','disc','cta','hlA','hlB1','hlB2','sub','oeOn'].forEach(k=>{ if(sv[k]!=null) ST[k]=sv[k]; });
       if(sv.contact!=null) ST.contact=sv.contact; if(sv.minStock!=null) ST.minStock=sv.minStock;
       ST.ovr=sv.ovr||{}; if(Array.isArray(sv.vars)&&sv.vars.length){ ST.vars.forEach(v=>{ v.on=sv.vars.indexOf(v.key)>=0; }); if(!ST.vars.some(v=>v.on)&&ST.vars[0]) ST.vars[0].on=true; }
       ST.veh.scale=sv.vs||1; ST.veh.dx=sv.vx||0; ST.veh.dy=sv.vy||0; if(sv.vf!=null) ST.veh.fade=sv.vf;
@@ -1635,7 +1653,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     document.querySelectorAll('#vpTpl .vpChip').forEach(b=>b.classList.toggle('on',b.dataset.tpl===ST.tpl));
     $('vpTitle').value=ST.title; $('vpYears').value=ST.years; $('vpCta').value=ST.cta; $('vpContact').value=ST.contact;
     $('vpHlA').value=ST.hlA; $('vpHlB1').value=ST.hlB1; $('vpHlB2').value=ST.hlB2; $('vpSub').value=ST.sub;
-    $('vpDiscOn').checked=ST.discOn; $('vpDisc').value=ST.disc; $('vpMinStock').value=ST.minStock;
+    $('vpDiscOn').checked=ST.discOn; $('vpOeOn').checked=ST.oeOn!==false; $('vpDisc').value=ST.disc; $('vpMinStock').value=ST.minStock;
     $('vpTplA').style.display=ST.tpl==='A'?'':'none'; $('vpTplB').style.display=ST.tpl==='B'?'':'none';
     // 세대
     const gens=ST.gens.map((g,i)=>'<span class="vpChip sm'+(ST.genIdx===i?' on':'')+'" data-gen="'+i+'">'+esc(g.label||'')+' '+g.ys+(g.ye&&g.ye!==g.ys?'-'+g.ye:'')+' · '+nf(g.units)+'대</span>').join('');
@@ -1867,6 +1885,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     Object.keys(txt).forEach(id=>$(id).addEventListener('input',()=>{ ST[txt[id]]=$(id).value; redraw(); saveCfg(); }));
     $('vpContact').addEventListener('input',()=>{ ST.contact=$('vpContact').value; G.contact=ST.contact; ls.set('vp_global',G); redraw(); saveCfg(); });
     $('vpDiscOn').addEventListener('change',()=>{ ST.discOn=$('vpDiscOn').checked; redraw(); saveCfg(); });
+    $('vpOeOn').addEventListener('change',()=>{ ST.oeOn=$('vpOeOn').checked; G.oeOn=ST.oeOn; ls.set('vp_global',G); redraw(); saveCfg(); });
     $('vpDisc').addEventListener('input',()=>{ const n=parseInt($('vpDisc').value,10); if(!isNaN(n)){ ST.disc=Math.max(1,Math.min(90,n)); redraw(); saveCfg(); } });
     $('vpMinStock').addEventListener('change',()=>{ ST.minStock=Math.max(1,Number($('vpMinStock').value)||1); paintParts(); redraw(); saveCfg(); });
     $('vpGens').addEventListener('change',e=>{

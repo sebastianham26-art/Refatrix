@@ -1,6 +1,6 @@
 # REFATRIX 인수인계 — VIO 제품찾기 · 차종별 부품 · 프로모션 → 한 화면 (2026-10-19)
 
-**마이그레이션 없음** · 화면 `refatrix-viofinder.html` build `vf16p` · 새 백엔드 라우트 `GET /api/promo-img` · 산출물 `refatrix_vio_promo_v1.zip` (9파일 · 이 문서 포함) · 기준 커밋 `d1cafed`(2026-10-19 09:37 main)
+**마이그레이션 없음** · 화면 `refatrix-viofinder.html` build `vf16q`(로고·OE 반영) · 새 백엔드 라우트 `GET /api/promo-img` · 산출물 `refatrix_vio_promo_v2.zip` (13파일 · 이 문서 포함) · 기준 커밋 `d1cafed`(2026-10-19 09:37 main)
 
 ## ① 설명
 
@@ -37,13 +37,20 @@
 3. 문구 자동(스페인어, 고칠 수 있음) → **지금 보내기** 또는 **예약**(멕시코 시각)
 4. 하루 상한·24시간 창·재시도·✅ 동의자만 규칙은 WhatsApp 마케팅과 같다. 결과는 WhatsApp 마케팅 › 🗓 발송 일정
 
+
+### 추가(같은 날 vf16q) — CTR 정식 로고 · OE 마크
+- 디렉터가 준 로고 파일로 `img/promo/ctr-logo.png`(빨강) · `ctr-logo-white.png`(흰색)을 만들어 기본 로고로 씀. 템플릿 A 아래 왼쪽=빨강, B 「Es CTR」·아래 왼쪽=흰색. 글자 로고는 파일을 못 읽을 때만.
+- 디렉터가 준 Amortiguadores 브로슈어의 「GLOBAL SUPPLIER · OE · EST. 1952」 마크를 잘라 배경을 지우고 두 벌로 만듦: `oe-badge.png`(흰 원 + 검은 선, 밝은 배경용) · `oe-badge-white.png`(흰 선, 어두운 배경용).
+- 배치: A 오른쪽 위(할인 배지는 연식 줄 오른쪽으로 이동) · B 왼쪽 위(할인 배지는 오른쪽 위). ③ 디자인에 「OE 마크」 체크(기본 켬, 모든 차종 공통으로 기억).
+- 「다른 로고로 바꾸기」로 올린 로고가 있으면 그것을 우선, 「CTR 정식 로고로」로 되돌림.
+
 ## ② 배포단계
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull** (오늘 09:37 이후 바뀐 파일이 있으면 그 파일은 덮지 말고 알려 주세요)
 2. **백엔드 먼저**: `refatrix-api/src/routes/promoImgRoutes.js` · `refatrix-api/src/server.js` Commit → Push → Railway **Success**
 3. `npm run migrate` **불필요**(마이그레이션 없음)
-4. 프론트: `refatrix-viofinder.html` · `refatrix-vehicleparts.html` · `refatrix-nav.js` · `refatrix-portal.html` Push
-5. Ctrl+Shift+R → 탭 제목에 `vf16p` 확인. 메뉴 이름이 안 바뀌어 보이면 한 번 더 Ctrl+Shift+R(nav 캐시 표식 `?v=20261016wp`는 저장소 관례대로 그대로 둠)
+4. 프론트: `refatrix-viofinder.html` · `refatrix-vehicleparts.html` · `refatrix-nav.js` · `refatrix-portal.html` · **`img/promo/` 4개 PNG** Push
+5. Ctrl+Shift+R → 탭 제목에 `vf16q` 확인. 메뉴 이름이 안 바뀌어 보이면 한 번 더 Ctrl+Shift+R(nav 캐시 표식 `?v=20261016wp`는 저장소 관례대로 그대로 둠)
 
 ## ③ 테스트방법
 
@@ -65,13 +72,15 @@
 | `refatrix-vehicleparts.html` (루트) | 새 화면 찾기 탭으로 넘기는 페이지(`#q=` 유지) |
 | `refatrix-nav.js` (루트) | 메뉴 이름 「VIO 제품찾기·프로모션」 · 제품·마케팅 그룹에서 `vehicleparts` 뺌(화면 정의·권한 키는 남김) |
 | `refatrix-portal.html` (루트) | 포털 메뉴도 같게 |
+| `img/promo/ctr-logo.png` · `img/promo/ctr-logo-white.png` | **신규** — CTR 정식 로고(빨강·흰색, 투명 배경, 1400×386) |
+| `img/promo/oe-badge.png` · `img/promo/oe-badge-white.png` | **신규** — OE 마크(밝은/어두운 배경용, 600×600) |
 | `refatrix-api/test/promo_img.test.mjs` | **신규** 7건 |
-| `refatrix-api/test/viopromo_front.test.mjs` | **신규** 5건 (jsdom) |
+| `refatrix-api/test/viopromo_front.test.mjs` | **신규** 6건 (jsdom · 로고·OE 파일 확인 포함) |
 
 ## ⑤ 검증결과
 
 - `promo_img` **7/7** — 주소 검사(http · 다른 호스트 · `.evil.com` 꼬리 · 사용자정보 · 포트 · 사설 IP 거부), 허용 밖이면 받으러 가지 않음, 그대로 전달 + 두 번째 캐시, 이미지 아님 415, 404, 502, 시간 초과, 8MB 413(헤더·실제), 리다이렉트 끝 검사, server.js 등록
-- `viopromo_front` **5/5** (jsdom, 운영 HTML · 실제 커버리지 VIO 자료, 2회 연속) — 대기열 20차종 · 품목 수 · 후보/전부 · 발송 표시 · 최소 수량 반영 / 재고 0 자동 제외 · 손으로 넣고 빼기 · ✋ · 자동 되돌리기 · 설정 기억 · L/R 줄임 / 이미지 뱅크 본문(폴더·1080×1350·JPEG·메모) / 발송 본문(관심 차종 `contact_ids`+지금, 그룹+예약, 그룹 미선택 막음) / 찾기 탭 ★ 버튼은 펼치지 않음 · 줄 클릭은 펼침 · 인라인 onclick 없음 / 예전 주소 · 메뉴
+- `viopromo_front` **6/6** (jsdom, 운영 HTML · 실제 커버리지 VIO 자료, 2회 연속) — 대기열 20차종 · 품목 수 · 후보/전부 · 발송 표시 · 최소 수량 반영 / 재고 0 자동 제외 · 손으로 넣고 빼기 · ✋ · 자동 되돌리기 · 설정 기억 · L/R 줄임 / 이미지 뱅크 본문(폴더·1080×1350·JPEG·메모) / 발송 본문(관심 차종 `contact_ids`+지금, 그룹+예약, 그룹 미선택 막음) / 찾기 탭 ★ 버튼은 펼치지 않음 · 줄 클릭은 펼침 · 인라인 onclick 없음 / 예전 주소 · 메뉴
 - **헤드리스 Chromium** 실제 렌더 31/31 (1366px · 390px) — 템플릿 A/B 이미지 확인, 내보낸 JPEG 1080×1350, 모바일 가로 스크롤 없음, 상단 메뉴 위로 창이 뜸, 페이지 오류 0
 - 전체 앱 `buildApp()` 기동 + `/api/promo-img` 등록 확인(미인증 401) · `node --check` 전 파일 · 화면 인라인 스크립트 4블록
 - 회귀(관련 34개 파일): 바뀐 것 없음. 원래 main 에서도 실패하던 것 그대로 — integration_nav ④(nav 캐시 표식 `1016wp` ↔ nav.js 로그 `1016st`) · reservations · salestrend_front · service_secrets · treasury_daily_front · wa_schedule
@@ -87,7 +96,6 @@
 ## ⑦ 오픈이슈
 
 - 위키백과 차량 사진은 배경이 있는 사진이라 레퍼런스처럼 깔끔하지 않음. 차종별 **배경 없는 PNG**를 한 번 올려 두는 방식(이미지 뱅크 또는 R2 `vehicles/` 폴더)을 다음에 붙이면 좋음.
-- CTR 로고는 기본이 글자 로고. 정식 로고 PNG를 올리면 그대로 쓰지만 페이지를 새로 고치면 다시 올려야 함 → 회사 정보(관리 › 회사)의 로고를 자동으로 쓰게 할지 결정 필요.
 - 제품 사진이 없는 코드(R2 미등록)는 카드에 글자만 나옴.
 - 「재고로 치는 최소 수량」은 L/R 짝을 따로 셈(L 재고 있고 R 재고 0이면 L만 들어감).
 
@@ -95,4 +103,3 @@
 
 1. 배포 후 Top 20 대기열에서 후보 1~2차종으로 본인 번호 시험 발송
 2. 차량 PNG 저장 위치 결정(이미지 뱅크 폴더 vs R2) → 차종별 기본 사진 연결
-3. 로고 출처 결정(회사 정보 로고 자동 사용 여부)
