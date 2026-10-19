@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix · 창고 도면 Mapa del almacén · build wm-1019a</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
+    --gold:#9A6512;--gold-bg:#FDF8EE;--blue:#2E6F9E;--blue-bg:#E8F1F7;--area:#E9E5DC}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px}
+  .wrap{max-width:1400px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:21px;color:var(--brand)}
+  header .sub{font-size:12.5px;color:var(--muted)}
+  header .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  a.portalBtn{color:var(--brand);font-size:12px;text-decoration:none;border:1px solid var(--brand);padding:5px 10px;border-radius:7px}
+  .langbtn{padding:5px 10px;border:1px solid var(--brand);background:#fff;color:var(--brand);border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.6}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn.red{background:#fff;color:var(--red);border:1px solid var(--red)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .seg{display:inline-flex;border:1px solid var(--brand);border-radius:8px;overflow:hidden}
+  .seg button{border:0;background:#fff;color:var(--brand);font:700 12.5px/1 inherit;font-family:inherit;padding:7px 14px;cursor:pointer}
+  .seg button.cur{background:var(--brand);color:#fff}
+  .search{font-family:inherit;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;width:240px;max-width:100%;background:#fff}
+  .search:focus{outline:none;border-color:var(--brand)}
+  .grid{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+  .mapcol{flex:1 1 640px;min-width:0}
+  .side{flex:0 1 380px;min-width:280px;max-width:100%}
+  .maphead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .maphead b{font-size:13px;color:var(--brand)}
+  .mapscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .map{position:relative;width:100%;min-width:640px;aspect-ratio:7/6;background-color:#FBFAF7;border:2px solid var(--ink);border-radius:4px;overflow:hidden;user-select:none;
+    background-image:linear-gradient(to right,#EEEAE1 1px,transparent 1px),linear-gradient(to bottom,#EEEAE1 1px,transparent 1px);background-size:5% 5%}
+  .map.setup{touch-action:none}
+  .map.draw{cursor:crosshair}
+  .zone{position:absolute;border:2px solid var(--ink);background:#fff;display:flex;flex-direction:column;gap:2px;padding:3px;border-radius:2px}
+  .zone.area{background:var(--area);border-style:solid}
+  .zone.sel{outline:3px solid var(--gold);outline-offset:2px}
+  .zone .zn{font-weight:800;font-size:10.5px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);cursor:pointer}
+  .map.setup .zone{cursor:move}
+  .zrow{flex:1;display:flex;gap:2px;min-height:0}
+  .bay{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;flex-direction:column;border-radius:2px;
+    font-weight:800;font-size:11px;line-height:1.05;overflow:hidden;white-space:nowrap;cursor:pointer;padding:0 2px}
+  .bay small{font-weight:600;font-size:9px;opacity:.85}
+  .bay.stock{background:var(--brand);color:#fff}
+  .bay.empty{background:var(--green-bg);color:var(--green)}
+  .bay.unreg{background:repeating-linear-gradient(45deg,#ECE8E0,#ECE8E0 4px,#F6F3EE 4px,#F6F3EE 8px);color:#A59E91}
+  .bay.dim{background:#E4E1DA;color:#A9A397}
+  .bay.hit{background:var(--gold);color:#fff}
+  .bay.sel{background:var(--ink);color:#fff}
+  .map.setup .bay{cursor:inherit}
+  .hd{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;background:var(--gold);border:2px solid #fff;border-radius:3px;z-index:3}
+  .draft{position:absolute;border:2px dashed var(--gold);background:rgba(184,137,59,.12);pointer-events:none}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{display:inline-block;width:13px;height:13px;border-radius:2px}
+  .side h2{margin:0 0 4px;font-size:22px;color:var(--brand);line-height:1.15}
+  .side .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+  .zl{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer;align-items:baseline;font-size:13px}
+  .zl:hover{background:var(--green-bg)}
+  .zl .n{font-weight:700}
+  .zl .m{color:var(--muted);font-size:12px}
+  .baygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:5px;margin-top:10px}
+  .baybtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 8px;text-align:left;cursor:pointer;font-family:inherit}
+  .baybtn b{display:block;font-size:14px}
+  .baybtn span{font-size:11px;color:var(--muted)}
+  .baybtn.stock{border-color:var(--brand)}
+  .baybtn.unreg{opacity:.55}
+  table.items{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+  table.items th{font-size:11px;color:var(--muted);text-align:left;padding:5px 6px;border-bottom:2px solid var(--ink)}
+  table.items td{padding:6px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.items td.q{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.items tr.lv td{background:var(--paper);font-weight:800;color:var(--brand);font-size:12px;padding:5px 6px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:14px;padding:3px 9px;font-size:11.5px;cursor:pointer;font-weight:700}
+  .note{padding:9px 11px;border-radius:8px;font-size:12.5px;background:var(--gold-bg);color:var(--gold);border-left:3px solid var(--gold);margin-top:10px}
+  .note.green{background:var(--green-bg);color:var(--green);border-left-color:var(--green)}
+  .note.red{background:var(--red-bg);color:var(--red);border-left-color:var(--red)}
+  .fld{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+  .fld label{font-size:11.5px;font-weight:700;color:var(--brand)}
+  .fld input,.fld textarea{font-family:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:#fff;width:100%}
+  .fld textarea{font-family:ui-monospace,Menlo,Consolas,monospace;min-height:130px;resize:vertical}
+  .g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+  .g4 span{font-size:10.5px;color:var(--muted)}
+  .rowb{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .dirty{display:inline-block;background:var(--gold);color:#fff;font-size:11px;font-weight:800;border-radius:10px;padding:2px 8px;margin-left:6px}
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;z-index:50;max-width:90vw}
+  @media (max-width:760px){ body{padding:10px} .side{flex:1 1 100%} .search{width:100%} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="ttl">창고 도면 · Mapa del almacén</h1>
+    <span class="sub" id="sub">랙 번호를 누르면 SKU · 수량이 보입니다</span>
+    <span class="right">
+      <span class="seg" id="modeSeg" style="display:none"><button type="button" data-m="view" class="cur">운영</button><button type="button" data-m="setup">설정</button></span>
+      <input class="search" id="q" type="search" autocomplete="off" placeholder="제품번호 · 품명 검색">
+      <button type="button" class="langbtn" id="langToggle">🌐 Español</button>
+      <a href="refatrix-portal.html" class="portalBtn">← 포털</a>
+    </span>
+  </header>
+  <div id="app"><div class="card"><div class="hint" id="boot">불러오는 중…</div></div></div>
+</div>
+<div id="toast"></div>
+
+<script src="refatrix-nav.js?v=20261019wm"></script>
+<script>
+(function(){
+  /* =====================================================================
+     Refatrix · 창고 도면 (Mapa del almacén) — build wm-1019a · 백엔드 whMapRoutes 20261019wm1 · 0288
+     디렉터 요청(2026-10-19): 창고 도면 위에 랙 위치를 표시하고, 랙 번호를 누르면 그 랙에
+       어떤 SKU 가 몇 개 있는지 보여 준다. 배치는 디렉터가 준 warehouse_image.html 을 그대로 옮겼다.
+     · 도면 칸 = 랙 열(bay, 예 AA1). 실제 랙 AA1-1 … AA1-6 의 SKU 를 층별로 보여 준다.
+     · 수량은 ERP 랙별 재고(product_rack_stock) — 이 화면에서 수량을 바꾸지 않는다(위치수정은 📍 랙별 재고).
+     · 설정(디렉터): 구역 이동·크기·그리기·랙 열 편집 → 저장하면 모든 사용자에게 같은 도면.
+     ===================================================================== */
+  function sess(){
+    try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
+    return null;
+  }
+  var BUILD='wm-1019a';
+  var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
+  try{ console.log('[refatrix-whmap] build '+BUILD); }catch(e){}
+  var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
+  function L(ko,es){ return LANG==='es'?es:ko; }
+  var isDir=!!(S&&S.user&&S.user.role==='director');
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var fmt=function(n){return Number(n||0).toLocaleString(LANG==='es'?'es-MX':'ko-KR');};
+  var toastT=null;
+  function toast(m){ var el=$('toast'); el.textContent=m; el.style.display='block'; clearTimeout(toastT); toastT=setTimeout(function(){ el.style.display='none'; },String(m).length>60?7000:2600); }
+  function api(path,opt){ opt=opt||{}; opt.headers=Object.assign({},AUTH,opt.headers||{});
+    return fetch(API+path,opt).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,status:r.status,body:j||{}}; })
+      .catch(function(){ return {ok:r.ok,status:r.status,body:{}}; }); })
+      .catch(function(){ return {ok:false,status:0,body:{error:'network'}}; }); }
+
+  $('langToggle').textContent=LANG==='es'?'🌐 한국어':'🌐 Español';
+  $('langToggle').addEventListener('click',function(){ var n=LANG==='es'?'ko':'es'; try{localStorage.setItem('wh_lang',n);}catch(e){} location.reload(); });
+  $('ttl').textContent=L('창고 도면 · Mapa del almacén','Mapa del almacén');
+  $('sub').textContent=L('랙 번호를 누르면 SKU · 수량이 보입니다','Toque un rack para ver SKU y cantidades');
+  $('q').placeholder=L('제품번호 · 품명 검색','Buscar clave o nombre');
+  (function(){ var a=document.querySelector('a.portalBtn'); if(a) a.textContent=L('← 포털','← Portal');
+    var sb=document.querySelectorAll('#modeSeg button'); if(sb.length===2){ sb[0].textContent=L('운영','Operar'); sb[1].textContent=L('설정','Configurar'); } })();
+  if(!S){ $('app').innerHTML='<div class="card"><div class="hint">'+L('세션이 없습니다. 포털에서 다시 여세요.','Sin sesión. Abra desde el portal.')+'</div></div>'; return; }
+
+  /* ---------- 상태 ---------- */
+  var ZONES=[], SAVED='', VERSION=0, SEEDED=false, UPDATED=null, UPDBY=null;
+  var RACKS={}, KNOWN={};            // 랙 → {skus,qty,kind} / ERP 에 있는 랙 이름
+  var BAYS={};                       // bay → {qty, skus, racks:[..], fast, registered}
+  var MODE='view', SELZ=null, SELB=null, Q='', HITS=null, SEARCH=[], BAYITEMS=null;
+  var DRAW=false, DRAFT=null, DRAG=null;
+  var DIRTY=false;
+
+  function bayOf(rack){ var s=String(rack||'').trim().toUpperCase(); var m=s.match(/^(.*\S)-\d+$/); return m?m[1]:s; }
+  function natKey(v){ return String(v||'').toUpperCase().replace(/\d+/g,function(d){ return ('000000'+d).slice(-6); }); }
+  function clone(o){ return JSON.parse(JSON.stringify(o)); }
+  function zone(id){ for(var i=0;i<ZONES.length;i++) if(ZONES[i].id===id) return ZONES[i]; return null; }
+  function bayIndex(){ var m={}; ZONES.forEach(function(z){ (z.rows||[]).forEach(function(r){ r.forEach(function(b){ m[b]=z.id; }); }); }); return m; }
+  function zoneName(z){ if(!z) return ''; var n=String(z.name||''); var p=n.split(' · '); return p.length===2?(LANG==='es'?p[1]:p[0]):n; }
+
+  function buildBays(){
+    BAYS={};
+    function g(b){ return BAYS[b]||(BAYS[b]={qty:0,skus:0,racks:[],fast:false,registered:false}); }
+    Object.keys(KNOWN).forEach(function(r){ var x=g(bayOf(r)); x.registered=true; if(x.racks.indexOf(r)<0) x.racks.push(r); });
+    Object.keys(RACKS).forEach(function(r){ var s=RACKS[r], x=g(bayOf(r)); x.registered=true; x.qty+=s.qty; x.skus+=s.skus; if(s.kind==='fast') x.fast=true; if(x.racks.indexOf(r)<0) x.racks.push(r); });
+    // 칸 이름에 「-」가 있으면(예 FM-01) 그 랙 하나와 정확히 맞춘다
+    var idx=bayIndex();
+    Object.keys(idx).forEach(function(b){ if(b.indexOf('-')>=0 && !BAYS[b]){ var x=g(b); if(KNOWN[b]){ x.registered=true; x.racks=[b]; } if(RACKS[b]){ x.qty=RACKS[b].qty; x.skus=RACKS[b].skus; x.fast=RACKS[b].kind==='fast'; } } });
+  }
+  function bayStat(b){ return BAYS[b]||{qty:0,skus:0,racks:[],fast:false,registered:false}; }
+
+  /* ---------- 로딩 ---------- */
+  function load(){
+    api('/api/wh-map').then(function(o){
+      if(!o.ok||!o.body.ok){ $('app').innerHTML='<div class="card"><div class="note red">'+L('도면을 불러오지 못했습니다','No se pudo cargar el mapa')+' ('+esc(o.body.error||o.status)+')</div></div>'; return; }
+      var b=o.body;
+      ZONES=clone(b.zones||[]); SAVED=JSON.stringify(ZONES); VERSION=b.version||0; SEEDED=!!b.seeded; UPDATED=b.updated_at; UPDBY=b.updated_by;
+      RACKS={}; (b.racks||[]).forEach(function(r){ RACKS[String(r.rack).toUpperCase()]=r; });
+      KNOWN={}; (b.known||[]).forEach(function(r){ KNOWN[String(r).toUpperCase()]=1; });
+      buildBays(); DIRTY=false;
+      if(isDir){ $('modeSeg').style.display=''; }
+      render();
+    });
+  }
+
+  /* ---------- 화면 ---------- */
+  function render(){
+    $('app').innerHTML='<div class="grid"><div class="mapcol card">'+mapHead()+'<div class="mapscroll"><div class="map'+(MODE==='setup'?' setup':'')+(DRAW?' draw':'')+'" id="map">'+mapInner()+'</div></div>'+legend()+'</div>'
+      +'<div class="side card" id="side">'+sideHtml()+'</div></div>';
+    wireMap(); wireSide();
+  }
+  function renderMap(){ var m=$('map'); if(!m){ render(); return; } m.innerHTML=mapInner(); m.className='map'+(MODE==='setup'?' setup':'')+(DRAW?' draw':''); }
+  function renderSide(){ var s=$('side'); if(!s){ render(); return; } s.innerHTML=sideHtml(); wireSide(); }
+  function mapHead(){
+    var h=MODE==='setup'
+      ?(DRAW?L('도면 위를 드래그해 새 구역을 그리세요','Arrastre sobre el mapa para dibujar una zona'):L('구역을 끌어 이동 · 금색 핸들로 크기 조절','Arrastre para mover · manijas para tamaño'))
+      :(Q?L('검색된 제품이 있는 랙만 금색','Racks con resultados en dorado'):L('구역 또는 랙을 누르세요','Toque una zona o un rack'));
+    return '<div class="maphead"><b>'+L('창고 도면','Mapa')+(DIRTY?'<span class="dirty">'+L('저장 안 됨','Sin guardar')+'</span>':'')+'</b><span class="hint">'+esc(h)+'</span></div>';
+  }
+  function legend(){
+    return '<div class="legend">'
+      +'<span><i style="background:var(--brand)"></i>'+L('재고 있음','Con existencia')+'</span>'
+      +'<span><i style="background:var(--green-bg);border:1px solid #cfe2da"></i>'+L('빈 랙','Vacío')+'</span>'
+      +'<span><i style="background:repeating-linear-gradient(45deg,#ECE8E0,#ECE8E0 3px,#F6F3EE 3px,#F6F3EE 6px);border:1px solid #ddd"></i>'+L('ERP 미등록 랙','No registrado en ERP')+'</span>'
+      +'<span><i style="background:var(--gold)"></i>'+L('검색 결과','Resultado')+'</span>'
+      +'<span><i style="background:var(--ink)"></i>'+L('선택','Seleccionado')+'</span>'
+      +(UPDATED?'<span style="margin-left:auto">'+L('도면 저장','Mapa guardado')+' '+esc(String(UPDATED).slice(0,10))+(UPDBY?' · '+esc(UPDBY):'')+'</span>':(SEEDED?'<span style="margin-left:auto">'+L('기본 도면(아직 저장 안 함)','Mapa base (sin guardar)')+'</span>':''))
+      +'</div>';
+  }
+  function mapInner(){
+    var setup=MODE==='setup', h='';
+    ZONES.forEach(function(z){
+      var area=z.type==='area', sel=SELZ===z.id;
+      h+='<div class="zone'+(area?' area':'')+(sel?' sel':'')+'" data-z="'+esc(z.id)+'" style="left:'+z.x+'%;top:'+z.y+'%;width:'+z.w+'%;height:'+z.h+'%">'
+        +'<div class="zn" data-zn="'+esc(z.id)+'">'+esc(zoneName(z))+'</div>';
+      if(!area) (z.rows||[]).forEach(function(row){
+        h+='<div class="zrow">';
+        row.forEach(function(b){
+          var st=bayStat(b), cls='bay ';
+          if(SELB===b) cls+='sel';
+          else if(HITS) cls+=(HITS[b]?'hit':'dim');
+          else cls+=!st.registered?'unreg':(st.qty>0?'stock':'empty');
+          var tip=b+(st.registered?(' · '+st.skus+' SKU · '+fmt(st.qty)+' EA'):(' · '+L('ERP 미등록','no registrado')));
+          h+='<div class="'+cls+'" data-b="'+esc(b)+'" data-z="'+esc(z.id)+'" title="'+esc(tip)+'">'+esc(b)+(st.fast?'<small>⚡</small>':'')+'</div>';
+        });
+        h+='</div>';
+      });
+      if(setup&&sel&&!DRAW){
+        [['nw',0,0,'nwse-resize'],['n',50,0,'ns-resize'],['ne',100,0,'nesw-resize'],['e',100,50,'ew-resize'],['se',100,100,'nwse-resize'],['s',50,100,'ns-resize'],['sw',0,100,'nesw-resize'],['w',0,50,'ew-resize']]
+          .forEach(function(d){ h+='<div class="hd" data-hd="'+d[0]+'" style="left:'+d[1]+'%;top:'+d[2]+'%;cursor:'+d[3]+'"></div>'; });
+      }
+      h+='</div>';
+    });
+    if(DRAFT) h+='<div class="draft" style="left:'+DRAFT.x+'%;top:'+DRAFT.y+'%;width:'+DRAFT.w+'%;height:'+DRAFT.h+'%"></div>';
+    return h;
+  }
+
+  /* ---------- 오른쪽 ---------- */
+  function sideHtml(){
+    if(MODE==='setup') return setupHtml();
+    if(Q) return searchHtml();
+    if(SELB) return bayHtml();
+    if(SELZ) return zoneHtml();
+    return overviewHtml();
+  }
+  function overviewHtml(){
+    var h='<div class="k">'+L('전체','General')+'</div><h2>'+L('구역을 선택하세요','Elija una zona')+'</h2>'
+      +'<div class="hint">'+L('도면에서 구역이나 랙을 누르면 SKU · 수량이 나옵니다. 위 검색칸으로 제품 위치를 찾을 수 있습니다.','Toque una zona o rack para ver SKU y cantidades. Use la búsqueda para ubicar un producto.')+'</div>'
+      +'<div style="border-top:2px solid var(--ink);margin-top:10px">';
+    ZONES.filter(function(z){ return z.type!=='area'; }).forEach(function(z){
+      var bays=[].concat.apply([],z.rows||[]), q=0, n=0;
+      bays.forEach(function(b){ var s=bayStat(b); q+=s.qty; n+=s.skus; });
+      h+='<div class="zl" data-selz="'+esc(z.id)+'"><span class="n">'+esc(zoneName(z))+'</span><span class="m">'+L('랙','Racks')+' '+bays.length+'</span><span class="m"><b>'+fmt(q)+'</b> EA</span></div>';
+    });
+    h+='</div>';
+    // ERP 에는 있는데 도면에 없는 랙 열 — 도면 설정에서 넣어야 보인다
+    var idx=bayIndex(), off=Object.keys(BAYS).filter(function(b){ return !idx[b] && BAYS[b].qty>0; }).sort(function(a,b){ return natKey(a)<natKey(b)?-1:1; });
+    if(off.length){
+      h+='<div class="note" style="margin-top:14px">'+L('도면에 없는 랙(재고 있음)','Racks con existencia fuera del mapa')+' '+off.length
+        +'<div class="chips">'+off.map(function(b){ return '<span class="chip" data-selb="'+esc(b)+'">'+esc(b)+' · '+fmt(BAYS[b].qty)+'</span>'; }).join('')+'</div>'
+        +(isDir?'<div class="hint" style="margin-top:6px">'+L('설정 탭에서 구역에 추가하면 도면에 표시됩니다.','Agréguelos a una zona en Configuración.')+'</div>':'')+'</div>';
+    }
+    return h;
+  }
+  function zoneHtml(){
+    var z=zone(SELZ); if(!z){ SELZ=null; return overviewHtml(); }
+    var bays=[].concat.apply([],z.rows||[]);
+    var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div class="k">'+L('구역','Zona')+' · '+L('랙','Racks')+' '+bays.length+'</div><h2>'+esc(zoneName(z))+'</h2></div>'
+      +'<button type="button" class="btn ghost sm" data-back="1">'+L('전체','Todas')+'</button></div><div class="baygrid">';
+    bays.forEach(function(b){ var s=bayStat(b);
+      h+='<button type="button" class="baybtn '+(!s.registered?'unreg':(s.qty>0?'stock':''))+'" data-selb="'+esc(b)+'"><b>'+esc(b)+(s.fast?' ⚡':'')+'</b><span>'+(s.registered?(s.skus+' SKU · '+fmt(s.qty)):L('미등록','no reg.'))+'</span></button>'; });
+    return h+'</div>';
+  }
+  function bayHtml(){
+    var b=SELB, s=bayStat(b), z=zone(bayIndex()[b]);
+    var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div class="k">'+(z?esc(zoneName(z)):L('도면 밖','Fuera del mapa'))+'</div>'
+      +'<h2 style="font-size:34px">'+esc(b)+(s.fast?' <small style="font-size:14px">⚡ fast</small>':'')+'</h2></div>'
+      +'<button type="button" class="btn ghost sm" data-back="'+(z?'zone':'1')+'">← '+(z?L('구역','Zona'):L('전체','Todas'))+'</button></div>';
+    if(!s.registered) return h+'<div class="note">'+L('ERP 에 등록되지 않은 랙 번호입니다 — 랙별 재고가 없습니다. 실제 랙 번호와 다르면 설정에서 고쳐 주세요.','Este rack no existe en el ERP. Si el número es distinto, corríjalo en Configuración.')+'</div>';
+    if(BAYITEMS==null||BAYITEMS.bay!==b) return h+'<div class="hint" style="margin-top:10px">'+L('불러오는 중…','Cargando…')+'</div>';
+    var it=BAYITEMS.items, tot=it.reduce(function(a,x){ return a+x.qty; },0), codes={};
+    it.forEach(function(x){ codes[x.code]=1; });
+    h+='<div class="hint">'+Object.keys(codes).length+' SKU · '+L('합계','Total')+' <b>'+fmt(tot)+'</b> EA · '+L('층','Niveles')+' '+s.racks.length+'</div>';
+    if(!it.length) h+='<div class="note green">'+L('이 랙에는 재고 기록이 없습니다.','Sin existencia registrada en este rack.')+'</div>';
+    else{
+      h+='<table class="items"><thead><tr><th>'+L('제품번호','Clave')+'</th><th>'+L('품명','Descripción')+'</th><th style="text-align:right">'+L('수량','Cant.')+'</th></tr></thead><tbody>';
+      var last=null;
+      it.forEach(function(x){
+        if(x.rack!==last){ var lvq=it.filter(function(y){ return y.rack===x.rack; }).reduce(function(a,y){ return a+y.qty; },0);
+          h+='<tr class="lv"><td colspan="2">'+esc(x.rack)+'</td><td class="q">'+fmt(lvq)+'</td></tr>'; last=x.rack; }
+        h+='<tr><td class="mono"><b>'+esc(x.code)+'</b></td><td>'+esc(x.name)+'</td><td class="q">'+fmt(x.qty)+'</td></tr>';
+      });
+      h+='</tbody></table>';
+    }
+    h+='<div class="rowb"><a class="btn ghost sm" href="refatrix-stockcount.html" style="text-decoration:none">📍 '+L('랙별 재고 · 위치수정','Existencia por ubicación')+'</a>'
+      +'<a class="btn ghost sm" href="refatrix-relocate.html" style="text-decoration:none">↔ '+L('위치변경','Cambio de ubicación')+'</a></div>'
+      +'<div class="hint" style="margin-top:6px">'+L('수량은 ERP 랙별 재고입니다. 이 화면에서는 바꾸지 않습니다.','Cantidades del ERP; no se modifican aquí.')+'</div>';
+    return h;
+  }
+  function searchHtml(){
+    var h='<div class="k">'+L('검색','Búsqueda')+' · '+esc(Q)+'</div><h2>'+L('검색 결과','Resultados')+' <span style="color:var(--gold)">'+SEARCH.length+'</span></h2>';
+    if(Q.length<2) return h+'<div class="hint">'+L('두 글자 이상 입력하세요','Escriba al menos 2 caracteres')+'</div>';
+    if(!SEARCH.length) return h+'<div class="hint">'+L('랙에 기록된 제품이 없습니다','Sin productos en racks')+'</div>';
+    var idx=bayIndex();
+    h+='<table class="items"><thead><tr><th>'+L('랙','Rack')+'</th><th>'+L('제품','Producto')+'</th><th style="text-align:right">'+L('수량','Cant.')+'</th></tr></thead><tbody>';
+    SEARCH.forEach(function(x){
+      h+='<tr style="cursor:pointer" data-selb="'+esc(x.bay)+'"><td class="mono"><b>'+esc(x.rack)+'</b>'+(idx[x.bay]?'':' <small style="color:var(--muted)">'+L('도면 밖','fuera')+'</small>')+'</td>'
+        +'<td><b class="mono">'+esc(x.code)+'</b><br><span class="hint">'+esc(x.name)+'</span></td><td class="q">'+fmt(x.qty)+'</td></tr>';
+    });
+    return h+'</tbody></table>';
+  }
+
+  /* ---------- 설정(디렉터) ---------- */
+  function setupHtml(){
+    var h='<div class="k">'+L('설정','Configuración')+' · '+L('디렉터','Director')+'</div><h2>'+L('도면 설정','Configurar mapa')+'</h2>'
+      +'<div class="hint">'+L('구역을 끌어 이동하고 금색 핸들로 크기를 맞춘 뒤, 랙 열 번호를 적고 [저장]하세요. 저장하면 모든 사용자에게 같은 도면이 보입니다.','Mueva y ajuste zonas, escriba los racks y guarde. Todos verán el mismo mapa.')+'</div>'
+      +'<div class="rowb"><button type="button" class="btn" id="bSave"'+(DIRTY?'':' disabled')+'>💾 '+L('저장','Guardar')+'</button>'
+      +'<button type="button" class="btn ghost" id="bUndo"'+(DIRTY?'':' disabled')+'>'+L('되돌리기','Descartar')+'</button>'
+      +'<button type="button" class="btn ghost" id="bAdd">＋ '+L('구역','Zona')+'</button>'
+      +'<button type="button" class="btn ghost" id="bDraw">'+(DRAW?L('그리기 취소','Cancelar'):'✎ '+L('그려서 추가','Dibujar'))+'</button></div>';
+    var z=zone(SELZ);
+    if(!z){
+      h+='<div style="border-top:2px solid var(--ink);margin-top:12px">';
+      ZONES.forEach(function(x){ h+='<div class="zl" data-selz="'+esc(x.id)+'"><span class="n">'+esc(x.name)+'</span><span class="m">'+(x.type==='area'?L('일반 공간','Área'):L('랙','Racks')+' '+[].concat.apply([],x.rows||[]).length)+'</span><span class="m">›</span></div>'; });
+      h+='</div><div class="rowb"><button type="button" class="btn red sm" id="bSeed">'+L('기본 도면으로','Restaurar base')+'</button></div>';
+      return h;
+    }
+    var bays=[].concat.apply([],z.rows||[]), others={};
+    ZONES.forEach(function(x){ if(x.id!==z.id) [].concat.apply([],x.rows||[]).forEach(function(b){ others[b]=x.name; }); });
+    var dup=bays.filter(function(b,i){ return others[b]||bays.indexOf(b)!==i; });
+    var unreg=bays.filter(function(b){ return !bayStat(b).registered; });
+    h+='<div style="border-top:2px solid var(--ink);margin-top:12px;padding-top:6px;display:flex;justify-content:space-between;align-items:center"><b>'+esc(z.name)+'</b>'
+      +'<span><button type="button" class="btn ghost sm" data-back="1">'+L('목록','Lista')+'</button> <button type="button" class="btn red sm" id="bDel">'+L('삭제','Eliminar')+'</button></span></div>'
+      +'<div class="fld"><label>'+L('구역 이름 (한국어 · Español)','Nombre (coreano · español)')+'</label><input id="eName" value="'+esc(z.name)+'"></div>'
+      +'<div class="fld"><label>'+L('위치 · 크기 (도면 대비 %)','Posición · tamaño (%)')+'</label><div class="g4">'
+      +[['x','X'],['y','Y'],['w',L('너비','Ancho')],['h',L('높이','Alto')]].map(function(g){ return '<div><span>'+g[1]+'</span><input class="eg" data-g="'+g[0]+'" type="number" step="0.5" min="0" max="100" value="'+z[g[0]]+'"></div>'; }).join('')+'</div></div>'
+      +'<div class="fld"><label>'+L('유형','Tipo')+'</label><span class="seg"><button type="button" class="'+(z.type!=='area'?'cur':'')+'" data-type="storage">'+L('보관 구역(랙)','Racks')+'</button><button type="button" class="'+(z.type==='area'?'cur':'')+'" data-type="area">'+L('일반 공간','Área')+'</button></span></div>';
+    if(z.type!=='area'){
+      h+='<div class="fld"><label>'+L('랙 열 번호 — 한 줄 = 도면의 한 줄, 공백으로 구분','Racks — una línea por fila, separados por espacio')+'</label>'
+        +'<textarea id="eRacks" spellcheck="false" placeholder="AA1 AA2 AA3">'+esc((z.rows||[]).map(function(r){ return r.join(' '); }).join('\n'))+'</textarea>'
+        +'<div class="hint">'+L('랙','Racks')+' '+bays.length+L('개',' ')+' · '+L('예: AA1 은 AA1-1 … AA1-6 을 모두 보여 줍니다. FM-01 처럼 쓰면 그 랙 하나만.','AA1 incluye AA1-1 … AA1-6; FM-01 solo ese rack.')+'</div>'
+        +(dup.length?'<div class="note red">'+L('중복','Duplicado')+': '+esc(dup.join(' '))+'</div>':'')
+        +(unreg.length?'<div class="note">'+L('ERP 미등록','No registrado')+' '+unreg.length+': '+esc(unreg.slice(0,30).join(' '))+(unreg.length>30?' …':'')+'</div>':'')
+        +'</div>';
+    }
+    return h;
+  }
+  function markDirty(){ DIRTY=JSON.stringify(ZONES)!==SAVED; }
+
+  /* ---------- 이벤트 ---------- */
+  function pt(e){ var m=$('map'), r=m.getBoundingClientRect(); var c=function(v){ return Math.max(0,Math.min(100,v)); };
+    return {x:c((e.clientX-r.left)/r.width*100), y:c((e.clientY-r.top)/r.height*100)}; }
+  var q2=function(v){ return Math.round(v*2)/2; };
+  function wireMap(){
+    var m=$('map'); if(!m) return;
+    m.addEventListener('pointerdown',function(e){
+      if(MODE!=='setup') return;
+      var hd=e.target.closest('.hd'), zEl=e.target.closest('.zone'), p=pt(e);
+      if(DRAW){ e.preventDefault(); DRAG={kind:'draw',sx:p.x,sy:p.y}; DRAFT={x:p.x,y:p.y,w:0,h:0}; return; }
+      if(hd&&SELZ){ e.preventDefault(); var z=zone(SELZ); DRAG={kind:'resize',dir:hd.getAttribute('data-hd'),sx:p.x,sy:p.y,o:{x:z.x,y:z.y,w:z.w,h:z.h}}; return; }
+      if(zEl){ e.preventDefault(); var id=zEl.getAttribute('data-z'), z2=zone(id);
+        if(SELZ!==id){ SELZ=id; renderSide(); }
+        DRAG={kind:'move',id:id,sx:p.x,sy:p.y,ox:z2.x,oy:z2.y,moved:false}; renderMap(); }
+    });
+    m.addEventListener('click',function(e){
+      if(MODE==='setup') return;
+      var bEl=e.target.closest('.bay'), zEl=e.target.closest('.zone');
+      if(bEl){ selectBay(bEl.getAttribute('data-b')); return; }
+      if(zEl&&!zEl.classList.contains('area')){ SELZ=zEl.getAttribute('data-z'); SELB=null; renderMap(); renderSide(); }
+    });
+  }
+  window.addEventListener('pointermove',function(e){
+    var d=DRAG; if(!d||!$('map')) return;
+    var p=pt(e), dx=p.x-d.sx, dy=p.y-d.sy;
+    if(d.kind==='draw'){ DRAFT={x:Math.min(p.x,d.sx),y:Math.min(p.y,d.sy),w:Math.abs(dx),h:Math.abs(dy)}; renderMap(); return; }
+    var z=zone(d.id||SELZ); if(!z) return;
+    if(d.kind==='move'){ if(Math.abs(dx)+Math.abs(dy)<0.3&&!d.moved) return; d.moved=true;
+      z.x=q2(Math.max(0,Math.min(100-z.w,d.ox+dx))); z.y=q2(Math.max(0,Math.min(100-z.h,d.oy+dy))); }
+    else if(d.kind==='resize'){
+      var o=d.o, M=3, g={x:o.x,y:o.y,w:o.w,h:o.h};
+      if(d.dir.indexOf('e')>=0) g.w=Math.max(M,Math.min(100-o.x,o.w+dx));
+      if(d.dir.indexOf('s')>=0) g.h=Math.max(M,Math.min(100-o.y,o.h+dy));
+      if(d.dir.indexOf('w')>=0){ var nx=Math.max(0,Math.min(o.x+o.w-M,o.x+dx)); g.w=o.w+(o.x-nx); g.x=nx; }
+      if(d.dir.indexOf('n')>=0){ var ny=Math.max(0,Math.min(o.y+o.h-M,o.y+dy)); g.h=o.h+(o.y-ny); g.y=ny; }
+      z.x=q2(g.x); z.y=q2(g.y); z.w=q2(g.w); z.h=q2(g.h);
+    }
+    renderMap();
+  });
+  window.addEventListener('pointerup',function(){
+    var d=DRAG; DRAG=null; if(!d) return;
+    if(d.kind==='draw'){
+      var f=DRAFT; DRAFT=null;
+      if(f&&f.w>2&&f.h>2){ var id='z'+Date.now(); ZONES.push({id:id,name:L('새 구역','Zona nueva'),type:'storage',x:q2(f.x),y:q2(f.y),w:q2(f.w),h:q2(f.h),rows:[]}); SELZ=id; DRAW=false; }
+      markDirty(); render(); return;
+    }
+    markDirty(); render();
+  });
+  window.addEventListener('beforeunload',function(e){ if(DIRTY){ e.preventDefault(); e.returnValue=''; } });
+
+  function selectBay(b){
+    SELB=b; var z=bayIndex()[b]; if(z) SELZ=z; BAYITEMS=null;
+    if(Q){ Q=''; HITS=null; $('q').value=''; }
+    renderMap(); renderSide();
+    if(!bayStat(b).registered) return;
+    api('/api/wh-map/bay?bay='+encodeURIComponent(b)).then(function(o){
+      if(SELB!==b) return;
+      BAYITEMS={bay:b,items:(o.ok&&o.body.items)||[]}; renderSide();
+      if((window.innerWidth||9999)<=760){ var sd=$('side'); if(sd&&sd.scrollIntoView) try{ sd.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} }
+    });
+  }
+  function wireSide(){
+    var s=$('side'); if(!s) return;
+    Array.prototype.forEach.call(s.querySelectorAll('[data-selz]'),function(el){ el.addEventListener('click',function(){ SELZ=el.getAttribute('data-selz'); SELB=null; renderMap(); renderSide(); }); });
+    Array.prototype.forEach.call(s.querySelectorAll('[data-selb]'),function(el){ el.addEventListener('click',function(){ selectBay(el.getAttribute('data-selb')); }); });
+    Array.prototype.forEach.call(s.querySelectorAll('[data-back]'),function(el){ el.addEventListener('click',function(){
+      if(el.getAttribute('data-back')==='zone'){ SELB=null; } else { SELB=null; SELZ=null; } renderMap(); renderSide(); }); });
+    if(MODE!=='setup') return;
+    var on=function(id,fn){ var el=$(id); if(el) el.addEventListener('click',fn); };
+    on('bSave',save);
+    on('bUndo',function(){ ZONES=JSON.parse(SAVED); SELZ=null; DIRTY=false; render(); });
+    on('bAdd',function(){ var id='z'+Date.now(); ZONES.push({id:id,name:L('새 구역','Zona nueva'),type:'storage',x:40,y:40,w:20,h:15,rows:[]}); SELZ=id; DRAW=false; markDirty(); render(); });
+    on('bDraw',function(){ DRAW=!DRAW; render(); });
+    on('bSeed',function(){ if(!confirm(L('처음 받은 기본 도면으로 되돌릴까요? (저장해야 반영)','¿Restaurar el mapa base? (debe guardar)'))) return;
+      api('/api/wh-map').then(function(o){ if(o.ok&&o.body.ok&&o.body.seeded){ ZONES=clone(o.body.zones); } else { ZONES=clone(SEED_FALLBACK()); } SELZ=null; markDirty(); render(); }); });
+    on('bDel',function(){ var z=zone(SELZ); if(!z||!confirm(L('「'+z.name+'」 구역을 삭제할까요?','¿Eliminar la zona «'+z.name+'»?'))) return;
+      ZONES=ZONES.filter(function(x){ return x.id!==z.id; }); SELZ=null; markDirty(); render(); });
+    var z=zone(SELZ); if(!z) return;
+    var en=$('eName'); if(en) en.addEventListener('change',function(){ z.name=en.value.trim().slice(0,60)||z.name; markDirty(); render(); });
+    Array.prototype.forEach.call(s.querySelectorAll('.eg'),function(inp){ inp.addEventListener('change',function(){
+      var k=inp.getAttribute('data-g'), n=parseFloat(inp.value); if(isNaN(n)) return;
+      if(k==='w'||k==='h') n=Math.max(3,n); z[k]=Math.max(0,n);
+      z.w=Math.min(z.w,100-z.x); z.h=Math.min(z.h,100-z.y); z.x=Math.min(z.x,100-z.w); z.y=Math.min(z.y,100-z.h);
+      markDirty(); render(); }); });
+    Array.prototype.forEach.call(s.querySelectorAll('[data-type]'),function(b){ b.addEventListener('click',function(){ z.type=b.getAttribute('data-type'); markDirty(); render(); }); });
+    var er=$('eRacks'); if(er) er.addEventListener('change',function(){
+      z.rows=er.value.split('\n').map(function(l){ return l.trim().toUpperCase().replace(/['’`]/g,'-').split(/[\s,]+/).filter(Boolean); }).filter(function(r){ return r.length; });
+      markDirty(); buildBays(); render(); });
+  }
+  // 서버에 저장된 도면이 있을 때 「기본 도면으로」 — 서버 SEED 를 다시 못 받으므로 같은 값을 화면에도 둔다
+  function SEED_FALLBACK(){
+    var r=function(p,a,b){ var o=[]; for(var i=a;i<=b;i++) o.push(p+i); return o; };
+    return [
+      {id:'office',name:'사무실 · Oficina',type:'area',x:1.2,y:2.3,w:17.5,h:51,rows:[]},
+      {id:'cage',name:'케이지 · Jaula',type:'storage',x:21,y:2.8,w:23,h:45,rows:[['B2','C1'],['B1','C2'],['A2','D1'],['A1','D2'],['E1','E2'],['E3','E4']]},
+      {id:'za',name:'A 랙 · Racks A',type:'storage',x:46.3,y:5.1,w:35,h:41,rows:[r('AA',1,6),r('AB',1,5),r('AC',1,5),r('AD',1,6),r('AE',1,6)]},
+      {id:'af',name:'AF',type:'storage',x:82,y:14,w:4.8,h:26,rows:[['AF1'],['AF2'],['AF3']]},
+      {id:'wc',name:'화장실·식당 · Baños/Comedor',type:'area',x:88,y:2.3,w:9.5,h:52,rows:[]},
+      {id:'mez',name:'메자닌 2층 · Mezzanine',type:'storage',x:44.3,y:58,w:53,h:36,rows:[r('BA',1,7),r('BB',1,6),r('BC',1,6),r('BD',1,7)]},
+      {id:'entry',name:'입구 · Entrada →',type:'area',x:1.2,y:60,w:12,h:7,rows:[]},
+      {id:'ramp',name:'램프(상하차) · Rampa',type:'area',x:1.2,y:71,w:18,h:25,rows:[]}
+    ];
+  }
+  function save(){
+    var b=$('bSave'); if(b) b.disabled=true;
+    api('/api/wh-map',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({zones:ZONES,version:VERSION})}).then(function(o){
+      if(o.status===409&&o.body.error==='version_conflict'){ toast(L('다른 사람이 먼저 도면을 저장했습니다 — 새로고침 후 다시 하세요.','Otro usuario guardó primero — recargue.')); if(b) b.disabled=false; return; }
+      if(!o.ok||!o.body.ok){
+        var e=o.body||{}, msg=e.error==='dup_bay'?L('중복된 랙: ','Rack duplicado: ')+e.bay:e.error==='bad_bay'?L('잘못된 랙 번호: ','Rack inválido: ')+e.bay:(e.note||e.error||o.status);
+        toast(L('저장 실패','Error al guardar')+' — '+msg); if(b) b.disabled=false; return; }
+      ZONES=clone(o.body.zones); SAVED=JSON.stringify(ZONES); VERSION=o.body.version; SEEDED=false; UPDATED=o.body.updated_at; UPDBY=(S.user&&S.user.name)||null; DIRTY=false;
+      toast('✔ '+L('도면을 저장했습니다','Mapa guardado')); render();
+    });
+  }
+
+  /* ---------- 상단: 모드 · 검색 ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('#modeSeg button'),function(b){ b.addEventListener('click',function(){
+    var m=b.getAttribute('data-m'); if(m===MODE) return;
+    if(MODE==='setup'&&DIRTY&&!confirm(L('저장하지 않은 도면 변경이 있습니다. 버리고 나갈까요?','Hay cambios sin guardar. ¿Descartar?'))) return;
+    if(MODE==='setup'&&DIRTY){ ZONES=JSON.parse(SAVED); DIRTY=false; }
+    MODE=m; DRAW=false; SELB=null; SELZ=null; Q=''; HITS=null; $('q').value='';
+    Array.prototype.forEach.call(document.querySelectorAll('#modeSeg button'),function(x){ x.classList.toggle('cur',x.getAttribute('data-m')===MODE); });
+    $('q').disabled=(MODE==='setup');
+    render(); }); });
+  var qT=null, qSeq=0;
+  $('q').addEventListener('input',function(){
+    clearTimeout(qT); var v=$('q').value.trim();
+    qT=setTimeout(function(){
+      Q=v; SELB=null;
+      if(!Q){ HITS=null; SEARCH=[]; renderMap(); renderSide(); return; }
+      if(Q.length<2){ HITS={}; SEARCH=[]; renderMap(); renderSide(); return; }
+      var my=++qSeq;
+      api('/api/wh-map/search?q='+encodeURIComponent(Q)).then(function(o){
+        if(my!==qSeq) return;
+        SEARCH=(o.ok&&o.body.items)||[]; HITS={}; SEARCH.forEach(function(x){ HITS[x.bay]=1; HITS[x.rack]=1; });
+        renderMap(); renderSide();
+      });
+    },220);
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -184,7 +184,8 @@
     stockcount:{file:'refatrix-stockcount.html',name:'재고실사',desc:'실물 재고조사·대조·실물맞추기'},
     inbound:{file:'refatrix-inbound.html',name:'수입 입고',desc:'패킹리스트·검수·적치·마감'},
     zones:{file:'refatrix-zones.html',name:'존 지정',desc:'랙 → 존 이동용 임시 팔렛 배정'},
-    relocate:{file:'refatrix-relocate.html',name:'위치변경',desc:'카톤 라벨·랙 스캔으로 보관 위치 이동'}
+    relocate:{file:'refatrix-relocate.html',name:'위치변경',desc:'카톤 라벨·랙 스캔으로 보관 위치 이동'},
+    whmap:{file:'refatrix-whmap.html',name:'창고 도면',desc:'도면에서 랙 위치 · SKU · 수량 보기'}   // 2026-10-19 · 0288
   };
   // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터, __dirsocio__=디렉터·소시오)
   var PAGEKEY={
@@ -204,7 +205,7 @@
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
     marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'__socio_or__wapromo', metaleads:['products','marketing','pricemaster','devrequest','quote','sales'],   // 2026-10-16 — WhatsApp 마케팅 = 디렉터·소시오 항상 + 사용자별 wapromo 권한(관리자 화면) · 2026-10-13 디렉터·소시오 전용이던 것 · Meta 광고 문의 = 제품·마케팅 메뉴에 들어가는 사람 모두(서버 PM_KEYS 와 같은 목록)   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__', waSched:'__director__',
-    whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
+    whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse', whmap:['warehouse','products']
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
@@ -215,7 +216,7 @@
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','viofinder','devrequest','marketing','mktspend','survey','wapromo','metaleads','prodFind','prodUpload','prodHistory','priceMaster']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
-    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','approval','stockcount','inbound','relocate','zones']},
+    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','approval','stockcount','inbound','relocate','whmap','zones']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','waSched','processKpi']}
   ];
 
@@ -520,7 +521,7 @@
   };
   var MTAB_DEFAULT=['portal','salesperf','customers','board'];
   var MTAB_FALLBACK=['portal','salesperf','customers','pipeline','quotelist','quote','fieldsurvey','board','finance','products','whHome','dashboard'];
-  var MTAB_ICON={approval:'✍',portal:'⌂',salesperf:'📈',customers:'🏢',pipeline:'🧭',consult:'💬',quotelist:'🧾',quote:'✎',fieldsurvey:'📋',fsanalysis:'🧮',board:'🗓',finance:'💳',settlement:'⚖',budget:'💰',products:'📦',stock:'📦',whHome:'🏬',inbound:'🚚',stockcount:'🔢',relocate:'↔',dashboard:'📊',targets:'🎯',commission:'💵'};
+  var MTAB_ICON={approval:'✍',portal:'⌂',salesperf:'📈',customers:'🏢',pipeline:'🧭',consult:'💬',quotelist:'🧾',quote:'✎',fieldsurvey:'📋',fsanalysis:'🧮',board:'🗓',finance:'💳',settlement:'⚖',budget:'💰',products:'📦',stock:'📦',whHome:'🏬',inbound:'🚚',stockcount:'🔢',relocate:'↔',whmap:'🗺',dashboard:'📊',targets:'🎯',commission:'💵'};
 
   function mNarrow(){
     try{ if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches) return true; }catch(e){}
@@ -531,7 +532,7 @@
   var MTAB_LABEL={approval:'결재',portal:'홈',customers:'고객',pipeline:'영업활동',consult:'상담',quotelist:'견적',quote:'견적작성',
     fieldsurvey:'현장조사',fsanalysis:'소진분석',board:'일정',salesperf:'실적',commission:'커미션',targets:'목표',
     finance:'재무',settlement:'정산',budget:'예산',products:'제품',stock:'재고',dashboard:'현황',
-    whHome:'창고',inbound:'입고',stockcount:'실사',relocate:'위치'};
+    whHome:'창고',inbound:'입고',stockcount:'실사',relocate:'위치',whmap:'도면'};
   function mShort(k){ var n=MTAB_LABEL[k]; if(n) return n;
     var s=String((SCREENS[k]&&SCREENS[k].name)||'').replace(/\s*[··].*$/,''); return s.length>4?(s.slice(0,4)+'…'):s; }
   function mTabKeys(){

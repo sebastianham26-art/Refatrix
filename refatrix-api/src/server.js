@@ -51,6 +51,7 @@ import inboundRoutes from './routes/inboundRoutes.js';
 import zoneRoutes from './routes/zoneRoutes.js';
 import rackMoveRoutes from './routes/rackMoveRoutes.js';
 import rackStockRoutes from './routes/rackStockRoutes.js';   // 0245 · 제품×랙×수량(랙별 재고) 조회·수동조정
+import whMapRoutes from './routes/whMapRoutes.js';   // 0288 · 창고 도면(구역·랙 열 배치 + 랙별 재고 보기)
 import visitRoutes from './routes/visitRoutes.js';
 import visitRecRoutes from './routes/visitRecRoutes.js';
 import consultRoutes from './routes/consultRoutes.js';
@@ -143,6 +144,7 @@ export function buildApp() {
   app.register(zoneRoutes);
   app.register(rackMoveRoutes);
   app.register(rackStockRoutes);
+  app.register(whMapRoutes);
   app.register(devRequestRoutes);
   app.register(userRoutes);
   app.register(commissionRoutes);
