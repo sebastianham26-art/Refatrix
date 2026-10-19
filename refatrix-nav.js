@@ -157,7 +157,7 @@
     salestrend:{file:'refatrix-salestrend.html',name:'판매 이력·주기',desc:'전체 카탈로그 월별 판매 흐름·수요유형·예측·구매 제안'},   // 2026-10-16 · 디렉터·소시오 전용
     products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고',tab:'find'},
     vehicleparts:{file:'refatrix-vehicleparts.html',name:'차종별 부품',desc:'차종 검색·카테고리별 CTR/SYD·VIO'},
-    viofinder:{file:'refatrix-viofinder.html',name:'VIO 차량모델 제품찾기',desc:'VIO 순위·연식·CTR/SYD·재고·누적판매·가격'},
+    viofinder:{file:'refatrix-viofinder.html',name:'VIO 제품찾기·프로모션',desc:'VIO 순위 · 차종별 부품 · 재고 기준 프로모션 이미지 → WhatsApp'},   // 2026-10-19 차종별 부품·프로모션 통합
     prodFind:{file:'refatrix-products.html',name:'제품 찾기',desc:'검색·경쟁사코드·차종',tab:'find'},
     prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
     prodHistory:{file:'refatrix-products.html',name:'제품 변경이력',desc:'마스터 변경·판매상태 + 이후 movement',tab:'history'},
@@ -213,7 +213,7 @@
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','reservations','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview','salestrend']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
-    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','wapromo','metaleads','prodFind','prodUpload','prodHistory','priceMaster']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','viofinder','devrequest','marketing','mktspend','survey','wapromo','metaleads','prodFind','prodUpload','prodHistory','priceMaster']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','approval','stockcount','inbound','relocate','zones']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','waSched','processKpi']}

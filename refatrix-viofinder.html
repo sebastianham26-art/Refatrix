@@ -6,7 +6,9 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf15</title>
+<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf16p</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -143,12 +145,100 @@
   .pm-meta{padding:8px 12px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);line-height:1.7}
   .pm-meta b{color:var(--ink)}
   @media (max-width:640px){.pm-body{grid-template-columns:1fr}}
+
+  /* ── 2026-10-19 vf16p · 탭 · 프로모션 대기열 · 프로모션 만들기 ── */
+  .vpTabs{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+  .vpTab{padding:9px 16px;border-radius:10px 10px 0 0;border:1px solid var(--line);border-bottom:none;background:#ECE8DE;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
+  .vpTab.on{background:var(--card);color:var(--brand)}
+  .vpTabs+.card,.vpTabs+#findPane>.card:first-child{margin-top:0;border-top-left-radius:0}
+  .vpOpen{flex:0 0 auto;border:1px solid #e3b4b6;background:#fff4f4;color:#b0121b;font-weight:800;font-size:11.5px;padding:5px 10px;border-radius:999px;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .vpOpen:hover{background:#fde3e4}
+  .vpQbar{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+  .vpQbar select,.vpQbar input{padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  table.vpQ{width:100%;border-collapse:collapse;margin-top:12px}
+  table.vpQ th{font-size:11px;color:var(--muted);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);background:#FCFBF7;white-space:nowrap}
+  table.vpQ td{font-size:12.5px;padding:8px;border-bottom:1px solid #F0EDE4;vertical-align:middle}
+  table.vpQ tr.dim td{opacity:.55}
+  table.vpQ tr.wait td{opacity:.75}
+  table.vpQ td.rk{font-weight:800;color:var(--brand);font-size:17px;white-space:nowrap}
+  table.vpQ td.rk small{font-size:10px;color:var(--muted);margin-left:1px}
+  table.vpQ td.rk .u{font-size:10px;color:var(--muted);font-weight:600}
+  .six{display:inline-block;font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:5px;margin:1px 2px 1px 0;border:1px solid var(--line);color:#b7b1a4;background:#fff}
+  .six.s1{color:var(--expense);background:var(--expense-bg);border-color:#efcfca}
+  .six.s2{color:var(--income);background:var(--income-bg);border-color:#cfe4db}
+  .vpTag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;margin:1px 3px 1px 0;white-space:nowrap}
+  .vpTag.made{background:#EEF1F6;color:#43597a}
+  .vpTag.sent{background:#E3F7EA;color:#127a3b}
+  .vpBtnP{padding:8px 14px;border:1px solid var(--brand);border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .vpBtnP.sec{background:#fff;color:var(--brand)}
+  .vpBtnP.wa{background:#25D366;border-color:#1da851;color:#06371c}
+  .vpBtnP.sm{padding:5px 10px;font-size:12px}
+  .vpBtnP:disabled{opacity:.55;cursor:wait}
+  .vpLink{background:none;border:none;color:var(--syd);font-size:12px;cursor:pointer;text-decoration:underline;font-family:inherit;padding:0 4px}
+  .vpMuted{color:var(--muted);font-weight:500;font-size:11.5px}
+  .vpHint{font-size:11.5px;color:var(--muted);line-height:1.6}
+  .vpHint.err,.vpMsg.err{color:var(--expense)}
+  #vpOverlay{position:fixed;inset:0;z-index:9500;background:rgba(18,24,22,.62);display:none;padding:14px}
+  #vpOverlay.open{display:flex}
+  .vpBox{max-height:100%;background:var(--paper);border-radius:14px;width:100%;max-width:1320px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.4)}
+  .vpTop{display:flex;align-items:center;gap:12px;padding:11px 16px;background:var(--brand);color:#fff;flex-wrap:wrap}
+  .vpTopT{font-weight:800;font-size:14px}
+  #vpHead{font-size:13px}
+  .vpRank{display:inline-block;margin-left:6px;font-size:11px;background:rgba(255,255,255,.14);padding:2px 8px;border-radius:999px;color:#e6efe9}
+  .vpX{background:none;border:none;color:#cfe0d8;font-size:20px;cursor:pointer;font-family:inherit}
+  .vpMain{flex:1;display:flex;gap:16px;padding:14px 16px;overflow:auto;min-height:0}
+  .vpPrevCol{flex:0 0 auto;width:min(46vw,520px);position:relative}
+  #vpCanvas{width:100%;height:auto;display:block;border-radius:8px;box-shadow:0 6px 26px rgba(0,0,0,.18);background:#fff}
+  .vpOut{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .vpMsg{font-size:12.5px;margin-top:8px;line-height:1.6}
+  .vpSend{display:none;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .vpSend.open{display:block}
+  .vpSend textarea{width:100%;font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+  .vpRad{display:block;font-size:12.5px;margin:4px 0}
+  .vpSide{flex:1;min-width:300px;display:flex;flex-direction:column;gap:10px}
+  .vpSec{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .vpSecH{font-weight:800;color:var(--brand);font-size:13px;margin-bottom:7px}
+  .vpSubT{font-size:11.5px;font-weight:700;color:var(--muted);margin:9px 0 4px}
+  .vpRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0}
+  .vpFld{display:block;flex:1;min-width:120px;font-size:11.5px;color:var(--muted);font-weight:700;margin:5px 0}
+  .vpFld input{display:block;width:100%;margin-top:3px}
+  .vpInl{font-size:12px;display:inline-flex;align-items:center;gap:5px;color:var(--ink);font-weight:500;margin:0}
+  .vpRng{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-weight:700;margin:4px 0}
+  .vpRng input{flex:1}
+  .vpFile{position:relative;overflow:hidden;display:inline-block}
+  .vpFile input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .vpChips{display:flex;gap:6px;flex-wrap:wrap}
+  .vpChip{cursor:pointer;font-size:12px;font-weight:700;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#555;user-select:none;display:inline-flex;align-items:center}
+  .vpChip.sm{font-size:11px;padding:4px 9px}
+  .vpChip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .vpVar{display:block;font-size:12.5px;margin:3px 0}
+  .vpSum{font-size:12px;margin:6px 0}
+  .vpParts{max-height:340px;overflow:auto;border-top:1px solid #F0EDE4;padding-top:4px}
+  .vpGrp{padding:5px 0;border-bottom:1px dashed #EEE9DD}
+  .vpGrp.off .vpGrpH{color:#b7b1a4;text-decoration:line-through}
+  .vpGrpH{font-size:12px;font-weight:800;color:var(--ink);margin-bottom:2px}
+  .vpCode{display:flex;align-items:center;gap:7px;font-size:12px;padding:2px 0 2px 4px;cursor:pointer;color:#9a958a}
+  .vpCode.on{color:var(--ink)}
+  .vpCode .cd{font-family:ui-monospace,Consolas,monospace;font-weight:800;color:var(--ctr);min-width:84px}
+  .vpCode:not(.on) .cd{color:#c8a3a5}
+  .vpCode .stk{font-size:10.5px;font-weight:800;color:var(--income);background:var(--income-bg);border-radius:5px;padding:1px 6px}
+  .vpCode .stk0{font-size:10.5px;font-weight:800;color:var(--expense);background:var(--expense-bg);border-radius:5px;padding:1px 6px}
+  .vpCode .sold{font-size:10.5px;font-weight:700;color:#8a6414;background:var(--gold-bg);border-radius:5px;padding:1px 6px}
+  .vpCode .man{font-size:11px}
+  @media (max-width:860px){
+    #vpOverlay{padding:0}
+    .vpBox{border-radius:0}
+    .vpMain{flex-direction:column;padding:10px}
+    .vpPrevCol{width:100%}
+    .vpSide{min-width:0}
+    table.vpQ th:nth-child(3),table.vpQ td:nth-child(3){display:none}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><h1>Refatrix ERP</h1><div class="sub">제품·마케팅 · VIO 차량모델 제품찾기</div></div>
+    <div><h1>Refatrix ERP</h1><div class="sub">제품·마케팅 · VIO 제품찾기 · 차종별 부품 · 프로모션</div></div>
     <a href="refatrix-portal.html" class="portalBtn">← 포털</a>
     <div class="who" id="who"></div>
   </div>
@@ -165,6 +255,23 @@
   </div>
 
   <div class="hidden" id="app">
+    <div class="vpTabs" id="vpTabs">
+      <button type="button" class="vpTab on" data-tab="queue">🏁 프로모션 대기열 (VIO 순)</button>
+      <button type="button" class="vpTab" data-tab="find">🔎 차종·제품 찾기</button>
+    </div>
+    <div class="card" id="vpQueueCard">
+      <div class="vpQbar">
+        <div><label>VIO 범위</label><select id="vpQn"><option value="20">Top 20</option><option value="50">Top 50</option><option value="100">Top 100</option></select></div>
+        <div><label>재고 품목 기준</label><select id="vpQmin"><option value="1">1개 이상</option><option value="2">2개 이상</option><option value="3">3개 이상</option><option value="4">4개 이상</option><option value="5">5개 이상</option><option value="6">6개 이상</option></select></div>
+        <div><label>재고로 치는 최소 수량</label><input type="number" id="vpQstock" min="1" step="1" style="width:80px"></div>
+        <div><label>보기</label><select id="vpQshow"><option value="cand">후보만</option><option value="todo">후보 중 아직 안 보낸 것</option><option value="all">전부</option></select></div>
+        <div><button type="button" class="btn ghost" id="vpQreload">↻ 다시 훑기</button></div>
+      </div>
+      <div class="hint" style="margin-top:8px">VIO(멕시코 등록대수)가 높은 차종부터 재고를 확인합니다. <b>품목</b> = Rótula·Terminal·Brazo·Bieleta… 처럼 이미지 카드 한 장. 6대 품목 칸: <span class="six s2">초록</span> 재고 있음 · <span class="six s1">빨강</span> 제품은 있으나 재고 없음 · 회색 제품 없음. 「★ 프로모션 만들기」에서 품목을 넣고 빼서 이미지를 만들고 WhatsApp으로 보냅니다.</div>
+      <div class="msg" id="vpQInfo"></div>
+      <div id="vpQueue" style="overflow-x:auto"></div>
+    </div>
+    <div id="findPane" style="display:none">
     <div class="card">
       <div class="filters">
         <div style="flex:1;min-width:200px">
@@ -229,6 +336,7 @@
 
     <div id="list"></div>
     <div class="pager" id="pager"></div>
+    </div>
   </div>
 </div>
 
@@ -259,6 +367,71 @@
           <div class="pm-noimg" id="pmSydNo"><span class="big">🖼</span>사진 없음</div>
         </div>
         <div class="pm-meta" id="pmSydMeta"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2026-10-19 vf16p · 프로모션 만들기 창 -->
+<div id="vpOverlay" role="dialog" aria-modal="true" aria-label="프로모션 만들기">
+  <div class="vpBox">
+    <div class="vpTop">
+      <span class="vpTopT">★ 프로모션 만들기</span><span id="vpHead"></span>
+      <button type="button" class="vpBtnP sec sm" id="vpNextCar" style="margin-left:auto">다음 후보 차종 →</button>
+      <button type="button" class="vpX" id="vpClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="vpMain">
+      <div class="vpPrevCol">
+        <canvas id="vpCanvas" width="1080" height="1350"></canvas>
+        <div class="vpOut">
+          <button type="button" class="vpBtnP sec" id="vpJpg">⬇ JPEG</button>
+          <button type="button" class="vpBtnP sec" id="vpBank">🖼 이미지 뱅크에 저장</button>
+          <button type="button" class="vpBtnP wa" id="vpWa">📣 WhatsApp 발송</button>
+        </div>
+        <div class="vpMsg" id="vpMsg"></div>
+        <div class="vpSend" id="vpSend"><div id="vpSendBody"></div></div>
+      </div>
+      <div class="vpSide">
+        <section class="vpSec">
+          <div class="vpSecH">① 넣을 품목 <span class="vpMuted">재고 기준으로 자동 · 체크로 넣고 빼기</span></div>
+          <div class="vpRow">
+            <label class="vpInl">최소 재고 <input type="number" id="vpMinStock" min="1" step="1" style="width:64px"> 개 이상이면 자동으로 넣음</label>
+          </div>
+          <div class="vpRow"><button type="button" class="vpBtnP sec sm" id="vpStockOnly">재고 있는 것만(자동)</button><button type="button" class="vpBtnP sec sm" id="vpAllOn">전부 넣기</button></div>
+          <div id="vpSum" class="vpSum"></div>
+          <div id="vpParts" class="vpParts"></div>
+        </section>
+        <section class="vpSec">
+          <div class="vpSecH">② 차종 · 연식</div>
+          <div class="vpRow"><label class="vpFld" style="flex:2">차종 표기<input type="text" id="vpTitle"></label><label class="vpFld">연식<input type="text" id="vpYears" placeholder="2012-2019"></label></div>
+          <div id="vpGens"></div>
+        </section>
+        <section class="vpSec">
+          <div class="vpSecH">③ 디자인</div>
+          <div class="vpChips" id="vpTpl">
+            <span class="vpChip" data-tpl="A">A · CTR se adapta a tu auto</span>
+            <span class="vpChip" data-tpl="B">B · La seguridad es CTR</span>
+          </div>
+          <div id="vpTplA"><label class="vpFld">머리 문구 (앞에 CTR)<input type="text" id="vpHlA"></label><label class="vpFld">아래 띠 문구<input type="text" id="vpCta"></label></div>
+          <div id="vpTplB"><label class="vpFld">첫째 줄<input type="text" id="vpHlB1"></label><label class="vpFld">둘째 줄<input type="text" id="vpHlB2"></label><label class="vpFld">작은 문구<input type="text" id="vpSub"></label></div>
+          <div class="vpRow"><label class="vpInl"><input type="checkbox" id="vpDiscOn"> 할인 배지</label><label class="vpInl"><input type="number" id="vpDisc" min="1" max="90" style="width:60px"> % OFF</label></div>
+          <label class="vpFld">맨 아래 연락처 (모든 차종 공통으로 기억)<input type="text" id="vpContact" placeholder="WhatsApp 81 0000 0000 · refatrix.com"></label>
+        </section>
+        <section class="vpSec">
+          <div class="vpSecH">④ 차량 사진</div>
+          <div class="vpRow"><button type="button" class="vpBtnP sec sm" id="vpPrev">◀</button><span id="vpVehInfo" class="vpMuted" style="flex:1;text-align:center"></span><button type="button" class="vpBtnP sec sm" id="vpNext">▶</button></div>
+          <div class="vpRow"><label class="vpBtnP sec sm vpFile">📁 내 사진 올리기 (배경 없는 PNG 권장)<input type="file" id="vpVehFile" accept="image/png,image/jpeg,image/webp"></label></div>
+          <label class="vpRng">크기 <input type="range" id="vpScale" min="0.5" max="1.6" step="0.02"></label>
+          <label class="vpRng">좌우 <input type="range" id="vpDx" min="-400" max="400" step="5"></label>
+          <label class="vpRng">위아래 <input type="range" id="vpDy" min="-300" max="200" step="5"></label>
+          <label class="vpInl"><input type="checkbox" id="vpFade"> 사진 가장자리 부드럽게(배경 있는 사진)</label>
+        </section>
+        <section class="vpSec">
+          <div class="vpSecH">⑤ 로고 · 배경 <span class="vpMuted">(선택)</span></div>
+          <div class="vpRow"><label class="vpBtnP sec sm vpFile">CTR 로고 이미지<input type="file" id="vpLogoFile" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="vpLink" id="vpLogoX">글자 로고로</button></div>
+          <div class="vpRow"><label class="vpBtnP sec sm vpFile">B 배경 사진<input type="file" id="vpBgFile" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="vpLink" id="vpBgX">기본 배경으로</button></div>
+          <div class="vpHint">올린 로고·배경은 페이지를 새로 고칠 때까지 모든 차종에 쓰입니다.</div>
+        </section>
       </div>
     </div>
   </div>
@@ -676,6 +849,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
         +'<div class="veh-t"><div class="name" title="'+escP(m.modelo)+'">'+escP((m.marca+' '+dispModel(m.modelo)).toUpperCase())+'</div>'
         +'<div class="yrs">연식 <b>'+escP(yrs||'—')+'</b>'+(gensTxt?(' · '+gensTxt):'')+'</div></div>'
         +pieSlot
+        +(m.extra?'':'<button type="button" class="vpOpen" data-vprank="'+m.rank+'" title="이 차종 프로모션 이미지 만들기">★ 프로모션</button>')
         +'<div class="veh-stats" id="st'+rid2+'"><span class="caret">'+(openSet[m.rank]?'▼':'▶')+'</span></div>'
         +'</div>'
         +'<div class="veh-body" id="vb'+rid2+'" style="display:'+(openSet[m.rank]?'block':'none')+'"></div>'
@@ -982,6 +1156,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   }
 
   function init(){
+    if(window.VP&&!init._vp){ init._vp=1; try{ VP.boot(); }catch(e){ console.warn('[vp] boot',e); } }
     renderCatChips();
     loadBaseline();
     $('msg').textContent='차량 목록을 불러오는 중…'; $('msg').className='msg';
@@ -1048,6 +1223,700 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       $('who').innerHTML='<b>'+escP(ps.user?.name||'')+'</b><br>역할: '+escP(ps.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');init(); }
   });
+</script>
+<script>
+/* =====================================================================
+   2026-10-19 · VIO 제품찾기 + 차종별 부품 + 프로모션 이미지 → 한 화면 (build vf16p)
+   ① 프로모션 대기열: VIO 높은 순서로 차종을 훑어 재고 있는 품목 수를 세고 후보를 고른다
+   ② 프로모션 만들기: 세대 선택 · 품목별 넣기/빼기(재고 기준 자동 + 손으로 바꾸기) · 1080×1350 이미지
+   ③ WhatsApp: 이미지 뱅크(폴더 「VIO 프로모션」) 저장 → 동의자 전체 · 그룹 · 이 차종 관심 고객에게 발송/예약
+   사진은 /api/promo-img(서버 중계)로 받아 캔버스가 오염되지 않게 한다. 실패하면 직접(crossOrigin) 시도.
+   ===================================================================== */
+(function(){
+  'use strict';
+  const W=1080, H=1350;
+  const FONT="'Montserrat','Arial Black','Helvetica Neue',Arial,sans-serif";
+  const RED='#E30613', NAVY='#1C2333';
+  const R2U=(c)=>'https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/'+encodeURIComponent(c)+'/'+encodeURIComponent(c)+'_1.webp';
+  const BANK_FOLDER='VIO 프로모션';
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const nf=(n)=>Number(n||0).toLocaleString('es-MX');
+  const ls={ get(k){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):null; }catch(e){ return null; } },
+             set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
+
+  // ── 품목 이름(스페인어) · 카드 순서 ──
+  const LABEL={ rotula:'Rótula', terminal_ext:'Terminal exterior de dirección', terminal_int:'Terminal interior de dirección',
+    horquilla:'Brazo de control', tornillo:'Bieleta', buje:'Buje', amortiguador:'Amortiguador', junta:'Junta homocinética',
+    maza:'Maza / Balero', mangueta:'Mangueta', resorte:'Resorte', cremallera:'Cremallera', soporte:'Soporte', goma:'Goma' };
+  const ORDER=['rotula','terminal_ext','tornillo','horquilla','terminal_int','buje','amortiguador','junta','maza','mangueta','resorte','cremallera','soporte','goma','otros'];
+  const SIX=['rotula','terminal_ext','terminal_int','horquilla','tornillo','buje'];
+  const SHORT={rotula:'Rótula',terminal_ext:'T.ext',terminal_int:'T.int',horquilla:'Brazo',tornillo:'Bieleta',buje:'Buje'};
+  function tc(s){ return String(s||'').toLowerCase().replace(/(^|\s)\S/g,c=>c.toUpperCase()); }
+  function labelOf(it,cat){
+    const n=String(it.name||'').toUpperCase();
+    if((cat==='tornillo'||/ESTABILIZADOR|BIELETA/.test(n)) && /HIBRID/.test(n)) return 'Bieleta híbrida';
+    if(LABEL[cat]) return LABEL[cat];
+    const w=String(it.name||'').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ ]+/g,' ').trim().split(/\s+/).slice(0,3).join(' ');
+    return tc(w)||'Refacción';
+  }
+  function pairText(codes){
+    const by={}, order=[];
+    codes.forEach(c=>{ const m=String(c).match(/^(.*\d)([LR])$/i); const base=m?m[1]:c; if(!by[base]){by[base]=[];order.push(base);} by[base].push(m?m[2].toUpperCase():''); });
+    return order.map(b=>{ const s=by[b]; return (s.indexOf('L')>=0&&s.indexOf('R')>=0)?(b+' L/R'):(s[0]?b+s[0]:b); });
+  }
+  function brandOf(m){ return String(m.marca||'').replace(/\bGeneral Motors\b/i,'Chevrolet').replace(/\bFord Motor\b/i,'Ford').replace(/\bMitsubishi Motors\b/i,'Mitsubishi').trim(); }
+  function modelName(m){ return (typeof dispModel==='function')?dispModel(m.modelo):String(m.modelo||''); }
+  function keyOf(m){ return normS(m.modelo); }
+  function yrsOf(m){ return (m.ys?m.ys:'')+(m.ye&&m.ye!==m.ys?('-'+m.ye):''); }
+  function yearRange(s){ const mm=String(s||'').match(/(\d{4})\s*[-–~]?\s*(\d{4})?/); if(!mm) return null; const a=+mm[1], b=mm[2]?+mm[2]:a; return [Math.min(a,b),Math.max(a,b)]; }
+
+  // ── by-model 응답 → 품목 목록(선택 세대만) ──
+  function itemsOf(d,varKeys){
+    const out=[], seen={};
+    (d&&d.categories||[]).forEach(c=>{
+      (varKeys||Object.keys(c.cells||{})).forEach(vk=>{
+        ((c.cells||{})[vk]||[]).forEach(x=>{
+          if(!x.ctr||seen[x.ctr]) return; seen[x.ctr]=1;
+          out.push({ ctr:x.ctr, syd:x.syd||[], name:x.name||'', stock:Number(x.stock)||0, sold:Number(x.sold)||0, year:x.year||'', cat:c.key, label:labelOf(x,c.key) });
+        });
+      });
+    });
+    return out;
+  }
+  function cardsOf(items,inc){
+    const by={}, list=[];
+    items.forEach(it=>{ if(!inc(it)) return; const k=it.label; if(!by[k]){ by[k]={label:k,cat:it.cat,codes:[],items:[]}; list.push(by[k]); } by[k].codes.push(it.ctr); by[k].items.push(it); });
+    list.forEach(c=>c.codes.sort());
+    list.sort((a,b)=>{ const ia=ORDER.indexOf(a.cat), ib=ORDER.indexOf(b.cat); return ((ia<0?99:ia)-(ib<0?99:ib))||a.label.localeCompare(b.label); });
+    return list;
+  }
+
+  // ── 사진: 서버 중계 → 실패하면 직접 ──
+  const _img={};
+  function loadUrlImage(url){
+    if(_img[url]) return _img[url];
+    _img[url]=(async()=>{
+      try{
+        if(session&&session.token){
+          const r=await fetch(session.api+'/api/promo-img?u='+encodeURIComponent(url),{headers:auth()});
+          if(r.ok){ const b=await r.blob(); const im=await blobImage(b); if(im) return im; }
+          if(r.status===404) return null;
+        }
+      }catch(e){}
+      return await new Promise(res=>{ const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=url; });
+    })();
+    return _img[url];
+  }
+  function blobImage(b){ return new Promise(res=>{ const u=URL.createObjectURL(b); const im=new Image(); im.onload=()=>res(im); im.onerror=()=>res(null); im.src=u; }); }
+  // 흰 배경 → 투명(어두운 배경 템플릿에서 사진 상자가 보이지 않게)
+  const _cut=new WeakMap();
+  function whiteCut(im){
+    if(!im) return null; if(_cut.has(im)) return _cut.get(im);
+    let out=im;
+    try{
+      const s=Math.min(1,700/Math.max(im.naturalWidth||im.width,im.naturalHeight||im.height));
+      const w=Math.max(1,Math.round((im.naturalWidth||im.width)*s)), h=Math.max(1,Math.round((im.naturalHeight||im.height)*s));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const c=cv.getContext('2d');
+      c.drawImage(im,0,0,w,h); const px=c.getImageData(0,0,w,h); const a=px.data;
+      for(let i=0;i<a.length;i+=4){ const mn=Math.min(a[i],a[i+1],a[i+2]); if(mn>238){ a[i+3]=Math.round(a[i+3]*Math.max(0,(255-mn)/17)); } }
+      c.putImageData(px,0,0); out=cv;
+    }catch(e){ out=im; }
+    _cut.set(im,out); return out;
+  }
+  async function prodImage(codes){
+    for(const c of codes){ const im=await loadUrlImage(R2U(c)); if(im) return im; }
+    return null;
+  }
+
+  // ── 차량 사진 후보(위키백과 es/en) ──
+  async function vehCandidates(m,years){
+    const marca=brandOf(m), model=modelName(m), out=[];
+    const add=(u)=>{ if(u&&!/\.svg/i.test(u)&&!/logo/i.test(u)&&out.indexOf(u)<0) out.push(u); };
+    const yr=yearRange(years); const y0=yr?Math.round((yr[0]+yr[1])/2):'';
+    const search=async(lang,q)=>{
+      try{
+        const u='https://'+lang+'.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize=1400&generator=search&gsrlimit=6&gsrsearch='+encodeURIComponent(q);
+        const d=await fetch(u).then(r=>r.ok?r.json():null); const pg=d&&d.query&&d.query.pages; if(!pg) return;
+        Object.keys(pg).map(k=>pg[k]).sort((a,b)=>(a.index||0)-(b.index||0)).forEach(p=>add(p.thumbnail&&p.thumbnail.source));
+      }catch(e){}
+    };
+    try{
+      const key=normS(marca+' '+model); const mapped=(typeof WIKI_TITLE!=='undefined')&&(WIKI_TITLE[key]||WIKI_TITLE[normS(model)]);
+      const titles=[mapped,(marca+' '+model)].filter(Boolean);
+      for(const lang of ['es','en']) for(const t of titles){
+        try{ const d=await fetch('https://'+lang+'.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(t.replace(/\s+/g,'_'))).then(r=>r.ok?r.json():null);
+          if(d) add((d.originalimage||d.thumbnail||{}).source); }catch(e){}
+      }
+    }catch(e){}
+    await search('es',marca+' '+model+' '+y0);
+    await search('en',marca+' '+model+' '+y0+' car');
+    return out.slice(0,12);
+  }
+
+  // ===================================================================
+  // 상태
+  // ===================================================================
+  const ST={ open:false, m:null, d:null, vars:[], ovr:{}, minStock:1, tpl:'A',
+    title:'', years:'', hlA:'se adapta a tu auto', hlB1:'La seguridad', hlB2:'no es una opción', sub:'CONFIABLE CUANDO LA SEGURIDAD ES PRIORIDAD',
+    cta:'VER MÁS DETALLES', contact:'', discOn:false, disc:15,
+    veh:{ cands:[], idx:0, img:null, file:false, scale:1, dx:0, dy:0, fade:true, loading:false },
+    logo:null, bg:null, gens:[], genIdx:-1, yearFilter:false };
+  function cfgKey(){ return 'vp_cfg_'+(ST.m?keyOf(ST.m):''); }
+  function saveCfg(){ if(!ST.m) return; ls.set(cfgKey(),{ ovr:ST.ovr, tpl:ST.tpl, title:ST.title, years:ST.years, vars:ST.vars.filter(v=>v.on).map(v=>v.key), discOn:ST.discOn, disc:ST.disc, cta:ST.cta, contact:ST.contact, hlA:ST.hlA, hlB1:ST.hlB1, hlB2:ST.hlB2, sub:ST.sub, vidx:ST.veh.idx, vs:ST.veh.scale, vx:ST.veh.dx, vy:ST.veh.dy, vf:ST.veh.fade, minStock:ST.minStock }); }
+  const G=ls.get('vp_global')||{}; // 화면 전체 기본값(연락처 문구 · 최소 재고)
+  if(G.contact) ST.contact=G.contact;
+  function selVarKeys(){ return ST.vars.filter(v=>v.on).map(v=>v.key); }
+  function allItems(){ return itemsOf(ST.d,selVarKeys()); }
+  function autoInc(it){
+    if(it.stock<ST.minStock) return false;
+    if(ST.yearFilter && ST.genIdx>=0){ const g=ST.gens[ST.genIdx]; const yr=yearRange(it.year); if(g&&yr&&g.ys&&g.ye&&(yr[1]<g.ys||yr[0]>g.ye)) return false; }
+    return true;
+  }
+  function isInc(it){ return (it.ctr in ST.ovr)?!!ST.ovr[it.ctr]:autoInc(it); }
+
+  // ===================================================================
+  // 그리기
+  // ===================================================================
+  function rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+  function fitFont(c,text,weight,max,min,width,italic){
+    let s=max; for(;s>min;s-=2){ c.font=(italic?'italic ':'')+weight+' '+s+'px '+FONT; if(c.measureText(text).width<=width) break; }
+    c.font=(italic?'italic ':'')+weight+' '+s+'px '+FONT; return s;
+  }
+  function wrap(c,text,width,maxLines){
+    const words=String(text||'').split(/\s+/).filter(Boolean), lines=[]; let cur='';
+    words.forEach(w=>{ const t=cur?cur+' '+w:w; if(c.measureText(t).width<=width||!cur) cur=t; else { lines.push(cur); cur=w; } });
+    if(cur) lines.push(cur);
+    if(maxLines&&lines.length>maxLines){ const keep=lines.slice(0,maxLines); keep[maxLines-1]=keep[maxLines-1].replace(/\s*\S+$/,'')+'…'; return keep; }
+    return lines;
+  }
+  function contain(c,im,x,y,w,h,anchorBottom){
+    if(!im) return null;
+    const iw=im.naturalWidth||im.width, ih=im.naturalHeight||im.height; if(!iw||!ih) return null;
+    const s=Math.min(w/iw,h/ih); const dw=iw*s, dh=ih*s; const dx=x+(w-dw)/2, dy=anchorBottom?(y+h-dh):(y+(h-dh)/2);
+    c.drawImage(im,dx,dy,dw,dh); return {x:dx,y:dy,w:dw,h:dh};
+  }
+  function wordmark(c,x,y,size,color,stroke){
+    if(ST.logo){ const im=ST.logo; const h=size*0.95, w=h*(im.width/im.height); c.drawImage(im,x,y-h*0.82,w,h); return w; }
+    c.save(); c.font='italic 900 '+size+'px '+FONT; c.textBaseline='alphabetic';
+    if(stroke){ c.lineWidth=size*0.06; c.strokeStyle=stroke; c.strokeText('CTR',x,y); }
+    c.fillStyle=color; c.fillText('CTR',x,y); const w=c.measureText('CTR').width;
+    c.font='700 '+Math.round(size*0.2)+'px '+FONT; c.fillText('®',x+w+2,y-size*0.05); c.restore(); return w;
+  }
+  function discBadge(c,cx,cy,r){
+    if(!ST.discOn) return;
+    c.save(); c.shadowColor='rgba(0,0,0,.25)'; c.shadowBlur=18; c.shadowOffsetY=6;
+    c.beginPath(); c.arc(cx,cy,r,0,Math.PI*2); c.fillStyle=RED; c.fill(); c.restore();
+    c.save(); c.beginPath(); c.arc(cx,cy,r-8,0,Math.PI*2); c.strokeStyle='rgba(255,255,255,.7)'; c.lineWidth=3; c.stroke();
+    c.fillStyle='#fff'; c.textAlign='center'; c.font='900 '+Math.round(r*0.62)+'px '+FONT; c.fillText(ST.disc+'%',cx,cy+r*0.12);
+    c.font='800 '+Math.round(r*0.3)+'px '+FONT; c.fillText('OFF',cx,cy+r*0.48); c.restore();
+  }
+  function drawCar(c,box){
+    const v=ST.veh, im=v.img; if(!im) return;
+    const iw=im.naturalWidth||im.width, ih=im.naturalHeight||im.height; if(!iw||!ih) return;
+    const s=Math.min(box.w/iw,box.h/ih)*v.scale; const dw=iw*s, dh=ih*s;
+    const dx=box.x+(box.w-dw)/2+v.dx, dy=box.y+box.h-dh+v.dy;
+    // 그림자
+    c.save(); const g=c.createRadialGradient(dx+dw/2,dy+dh-6,10,dx+dw/2,dy+dh-6,dw*0.5);
+    g.addColorStop(0,'rgba(0,0,0,.38)'); g.addColorStop(1,'rgba(0,0,0,0)');
+    c.fillStyle=g; c.beginPath(); c.ellipse(dx+dw/2,dy+dh-6,dw*0.5,Math.max(18,dh*0.07),0,0,Math.PI*2); c.fill(); c.restore();
+    if(v.fade && !v.file){
+      const off=document.createElement('canvas'); off.width=Math.round(dw); off.height=Math.round(dh); const o=off.getContext('2d');
+      o.drawImage(im,0,0,off.width,off.height); o.globalCompositeOperation='destination-in';
+      const gx=o.createLinearGradient(0,0,off.width,0); gx.addColorStop(0,'rgba(0,0,0,0)'); gx.addColorStop(0.14,'rgba(0,0,0,1)'); gx.addColorStop(0.86,'rgba(0,0,0,1)'); gx.addColorStop(1,'rgba(0,0,0,0)');
+      o.fillStyle=gx; o.fillRect(0,0,off.width,off.height);
+      const gy=o.createLinearGradient(0,0,0,off.height); gy.addColorStop(0,'rgba(0,0,0,0)'); gy.addColorStop(0.2,'rgba(0,0,0,1)'); gy.addColorStop(0.9,'rgba(0,0,0,1)'); gy.addColorStop(1,'rgba(0,0,0,0)');
+      o.fillStyle=gy; o.fillRect(0,0,off.width,off.height);
+      c.drawImage(off,dx,dy);
+    } else c.drawImage(im,dx,dy,dw,dh);
+  }
+  function speckle(c,y0,y1,n,color){
+    c.save(); c.fillStyle=color; let s=1234567;
+    const rnd=()=>{ s=(s*16807)%2147483647; return s/2147483647; };
+    for(let i=0;i<n;i++){ const x=rnd()*W, y=y0+rnd()*(y1-y0), r=rnd()*1.8+0.3; c.globalAlpha=0.15+rnd()*0.35; c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fill(); }
+    c.restore();
+  }
+
+  async function render(cv){
+    const c=cv.getContext('2d'); c.clearRect(0,0,W,H);
+    const items=allItems(); const cards=cardsOf(items,isInc);
+    for(const cd of cards){ cd.img=await prodImage(cd.codes); }
+    if(ST.tpl==='B') drawB(c,cards); else drawA(c,cards);
+    return cards;
+  }
+
+  // ── 템플릿 A: 「CTR se adapta a tu auto」 카드형 ──
+  function drawA(c,cards){
+    // 배경
+    c.fillStyle='#EFEFF1'; c.fillRect(0,0,W,H);
+    let g=c.createRadialGradient(540,430,40,540,430,820); g.addColorStop(0,'#FFFFFF'); g.addColorStop(1,'rgba(255,255,255,0)'); c.fillStyle=g; c.fillRect(0,0,W,H);
+    c.save(); c.strokeStyle='rgba(28,35,51,.045)'; c.lineWidth=70; c.beginPath(); c.arc(1020,-60,560,0,Math.PI*2); c.stroke(); c.lineWidth=40; c.beginPath(); c.arc(1180,360,430,0,Math.PI*2); c.stroke(); c.restore();
+    g=c.createLinearGradient(0,1060,0,H); g.addColorStop(0,'rgba(210,210,214,0)'); g.addColorStop(1,'rgba(200,200,205,.9)'); c.fillStyle=g; c.fillRect(0,1060,W,H-1060);
+    speckle(c,1080,H,900,'#8a8a90');
+    // 빨간 사선
+    c.save(); g=c.createLinearGradient(0,820,320,1300); g.addColorStop(0,'#F0141E'); g.addColorStop(1,'#8E0A10');
+    c.fillStyle=g; c.beginPath(); c.moveTo(0,830); c.lineTo(250,1010); c.lineTo(250,1060); c.lineTo(0,1290); c.closePath(); c.fill();
+    c.fillStyle='#2A0D12'; c.globalAlpha=.85; c.beginPath(); c.moveTo(0,770); c.lineTo(36,770); c.lineTo(310,968); c.lineTo(250,1010); c.lineTo(0,830); c.closePath(); c.fill(); c.restore();
+    c.save(); g=c.createLinearGradient(1080,600,850,1250); g.addColorStop(0,'#F0141E'); g.addColorStop(1,'#9B0B12');
+    c.fillStyle=g; c.beginPath(); c.moveTo(1080,640); c.lineTo(1080,1190); c.lineTo(860,1190); c.closePath(); c.fill();
+    c.fillStyle='#2A0D12'; c.globalAlpha=.8; c.beginPath(); c.moveTo(1080,560); c.lineTo(1080,640); c.lineTo(830,1010); c.lineTo(800,1010); c.closePath(); c.fill(); c.restore();
+
+    // 머리글
+    const X=86; c.textBaseline='alphabetic';
+    c.font='800 70px '+FONT; c.fillStyle=RED; c.fillText('CTR',X,150); const wC=c.measureText('CTR ').width;
+    c.fillStyle=NAVY; fitFont(c,ST.hlA,'700',66,40,1080-X-60-wC-(ST.discOn?200:0)); c.fillText(ST.hlA,X+wC,150);
+    const title=String(ST.title||'').toUpperCase();
+    c.fillStyle=NAVY; const ts=fitFont(c,title,'900',122,64,1080-X*2-(ST.discOn?150:0));
+    c.save(); c.shadowColor='rgba(0,0,0,.18)'; c.shadowBlur=10; c.shadowOffsetY=4; c.fillText(title,X,150+ts+10); c.restore();
+    const yBase=150+ts+10+82;
+    c.font='800 54px '+FONT; c.fillStyle=RED; c.fillText(ST.years||'',X,yBase); const wy=c.measureText(ST.years||'').width;
+    g=c.createLinearGradient(X+wy+30,0,860,0); g.addColorStop(0,RED); g.addColorStop(1,'rgba(28,35,51,.7)');
+    c.fillStyle=g; c.fillRect(X+wy+30,yBase-20,Math.max(40,840-(X+wy+30)),3);
+    discBadge(c,950,140,92);
+
+    // 카드
+    const n=cards.length, top=yBase+44, L=X, R=1080-X, gap=18;
+    let bottom=top;
+    if(n){
+      const cols=n<=3?n:(n===4?2:3), rows=Math.ceil(n/cols);
+      const ch=rows===1?250:(rows===2?205:160), cw=(R-L-gap*(cols-1))/cols;
+      cards.forEach((cd,i)=>{
+        const r=Math.floor(i/cols), inRow=(r===rows-1)?(n-r*cols):cols, k=i-r*cols;
+        const x=R-(inRow-k)*cw-(inRow-k-1)*gap, y=top+r*(ch+gap);
+        c.save(); c.shadowColor='rgba(28,35,51,.16)'; c.shadowBlur=22; c.shadowOffsetY=8; rr(c,x,y,cw,ch,6); c.fillStyle='#fff'; c.fill(); c.restore();
+        c.save(); rr(c,x,y,cw,ch,6); c.clip(); const gg=c.createLinearGradient(0,y+ch*0.45,0,y+ch); gg.addColorStop(0,'rgba(255,255,255,0)'); gg.addColorStop(1,'rgba(248,205,208,.85)'); c.fillStyle=gg; c.fillRect(x,y,cw,ch);
+        // 사진(오른쪽)
+        const bw=cw*0.42, bh=ch-30; if(cd.img) contain(c,whiteCut(cd.img),x+cw-bw-10,y+15,bw,bh,false);
+        c.restore();
+        const pad=18, tw=cw*0.58-pad;
+        c.fillStyle=RED; c.font='italic 800 '+(ch<200?36:42)+'px '+FONT; c.fillText(String(i+1).padStart(2,'0'),x+pad,y+(ch<200?44:52));
+        let ty=y+(ch<200?76:90); c.fillStyle=NAVY; c.font='700 '+(ch<200?17:20)+'px '+FONT;
+        const lines=wrap(c,cd.label.toUpperCase(),tw,ch<200?2:3); lines.forEach(t=>{ c.fillText(t,x+pad,ty); ty+=ch<200?21:24; });
+        ty+=4; c.fillStyle=RED; c.font='700 '+(ch<200?18:21)+'px '+FONT;
+        const maxC=ch<200?2:3; const cs=cd.codes.length>maxC?cd.codes.slice(0,maxC-1).concat(['+'+(cd.codes.length-maxC+1)]):cd.codes;
+        cs.forEach(t=>{ if(ty<y+ch-8){ c.fillText(t,x+pad,ty); ty+=ch<200?22:25; } });
+      });
+      bottom=top+rows*ch+(rows-1)*gap;
+    }
+    // 차량
+    const carTop=Math.max(bottom+12,560);
+    drawCar(c,{x:70,y:carTop,w:940,h:1196-carTop});
+    // 아래 띠 + 로고
+    c.save(); g=c.createLinearGradient(400,0,1080,0); g.addColorStop(0,'rgba(196,5,16,0)'); g.addColorStop(0.18,'#C40510'); g.addColorStop(1,RED);
+    c.fillStyle=g; c.beginPath(); c.moveTo(360,1196); c.lineTo(1080,1196); c.lineTo(1080,1282); c.lineTo(330,1282); c.closePath(); c.fill(); c.restore();
+    c.save(); c.fillStyle='#fff'; c.textAlign='right'; fitFont(c,ST.cta,'800',46,28,560,true); c.fillText(ST.cta,968,1256);
+    c.lineWidth=7; c.strokeStyle='#fff'; c.lineJoin='round'; c.beginPath(); c.moveTo(992,1218); c.lineTo(1018,1239); c.lineTo(992,1260); c.stroke(); c.restore();
+    wordmark(c,X,1272,96,RED);
+    if(ST.contact){ c.save(); c.fillStyle='#4a4a52'; c.textAlign='center'; fitFont(c,ST.contact,'600',26,16,980); c.fillText(ST.contact,540,1326); c.restore(); }
+  }
+
+  // ── 템플릿 B: 「La seguridad no es una opción」 라인업형 ──
+  function drawB(c,cards){
+    if(ST.bg){ const im=ST.bg; const iw=im.naturalWidth||im.width, ih=im.naturalHeight||im.height; const s=Math.max(W/iw,H/ih); c.drawImage(im,(W-iw*s)/2,(H-ih*s)/2,iw*s,ih*s);
+      const ov=c.createLinearGradient(0,0,0,H); ov.addColorStop(0,'rgba(10,10,14,.25)'); ov.addColorStop(.55,'rgba(10,10,14,.15)'); ov.addColorStop(1,'rgba(90,5,10,.55)'); c.fillStyle=ov; c.fillRect(0,0,W,H); }
+    else {
+      let g=c.createLinearGradient(0,0,0,1000); g.addColorStop(0,'#262C38'); g.addColorStop(.6,'#4A1218'); g.addColorStop(1,'#8E0D14'); c.fillStyle=g; c.fillRect(0,0,W,1000);
+      g=c.createRadialGradient(540,330,40,540,330,620); g.addColorStop(0,'rgba(255,60,60,.28)'); g.addColorStop(1,'rgba(255,60,60,0)'); c.fillStyle=g; c.fillRect(0,0,W,1000);
+    }
+    // 바닥(원근 격자)
+    const hz=990; let g=c.createLinearGradient(0,hz,0,H); g.addColorStop(0,'#C3121C'); g.addColorStop(1,'#5A060B'); c.fillStyle=g; c.fillRect(0,hz,W,H-hz);
+    c.save(); c.strokeStyle='rgba(255,255,255,.10)'; c.lineWidth=2;
+    for(let x=-1400;x<=2480;x+=150){ c.beginPath(); c.moveTo(540,hz-60); c.lineTo(x,H); c.stroke(); }
+    for(let i=1;i<9;i++){ const y=hz+Math.pow(i/9,1.8)*(H-hz); c.beginPath(); c.moveTo(0,y); c.lineTo(W,y); c.stroke(); }
+    c.restore(); c.fillStyle='rgba(0,0,0,.25)'; c.fillRect(0,hz-60,W,60); g=c.createLinearGradient(0,hz-60,0,hz); g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,.35)'); c.fillStyle=g; c.fillRect(0,hz-60,W,60);
+
+    // 머리글
+    c.save(); c.textAlign='center'; c.fillStyle='#fff'; c.shadowColor='rgba(0,0,0,.55)'; c.shadowBlur=16; c.shadowOffsetY=5;
+    const hw=ST.discOn?720:960;
+    fitFont(c,ST.hlB1,'800',108,56,hw,true); c.fillText(ST.hlB1,540,180);
+    fitFont(c,ST.hlB2,'800',108,56,960,true); c.fillText(ST.hlB2,540,292);
+    c.font='italic 800 100px '+FONT; const wEs=c.measureText('Es ').width;
+    c.font='italic 900 110px '+FONT; const wL=ST.logo?(110*0.95*(ST.logo.width/ST.logo.height)):c.measureText('CTR').width;
+    const sx=540-(wEs+wL)/2; c.textAlign='left'; c.font='italic 800 100px '+FONT; c.fillText('Es',sx,404);
+    c.restore();
+    c.save(); c.shadowColor='rgba(255,30,30,.8)'; c.shadowBlur=30; wordmark(c,540-(wEs+wL)/2+wEs,404,110,'#fff',RED); c.restore();
+    if(ST.sub){ c.save(); c.textAlign='center'; c.fillStyle='#fff'; c.shadowColor='rgba(0,0,0,.6)'; c.shadowBlur=8; fitFont(c,ST.sub,'700',32,18,940,true); c.fillText(ST.sub,540,458); c.restore(); }
+    discBadge(c,975,112,78);
+
+    // 품목 줄
+    const n=cards.length; let labBottom=700;
+    if(n){
+      const perRow=n<=5?n:Math.ceil(n/2), rows=Math.ceil(n/perRow);
+      const boxH=rows===1?210:128, y0=rows===1?500:488;
+      cards.forEach((cd,i)=>{
+        const r=Math.floor(i/perRow), inRow=Math.min(perRow,n-r*perRow), k=i-r*perRow;
+        const sw=1040/inRow, cx=20+sw*k+sw/2, cy=y0+r*(boxH+(rows===1?120:96))+boxH/2;
+        const glow=c.createRadialGradient(cx,cy,10,cx,cy,Math.min(sw,boxH*1.4)*0.62);
+        glow.addColorStop(0,'rgba(255,70,60,.75)'); glow.addColorStop(.5,'rgba(255,30,30,.30)'); glow.addColorStop(1,'rgba(255,30,30,0)');
+        c.fillStyle=glow; c.beginPath(); c.ellipse(cx,cy,Math.min(sw,boxH*1.5)*0.62,boxH*0.62,0,0,Math.PI*2); c.fill();
+        c.save(); c.strokeStyle='rgba(255,255,255,.55)'; c.lineWidth=3; c.beginPath(); c.ellipse(cx,cy+boxH*0.18,Math.min(sw,boxH*1.5)*0.48,boxH*0.22,0,0.15*Math.PI,0.85*Math.PI); c.stroke(); c.restore();
+        if(cd.img){ c.save(); c.shadowColor='rgba(0,0,0,.45)'; c.shadowBlur=14; c.shadowOffsetY=8; contain(c,whiteCut(cd.img),cx-sw*0.42,cy-boxH/2,sw*0.84,boxH,false); c.restore(); }
+        c.save(); c.textAlign='center'; c.fillStyle='#fff'; c.shadowColor='rgba(0,0,0,.75)'; c.shadowBlur=8; c.shadowOffsetY=2;
+        const fs=rows===1?(inRow<=3?32:28):24; c.font='italic 700 '+fs+'px '+FONT;
+        let ty=cy+boxH/2+fs+6; wrap(c,cd.label,sw-14,2).forEach(t=>{ c.fillText(t,cx,ty); ty+=fs+2; });
+        pairText(cd.codes).slice(0,2).forEach(t=>{ c.fillText(t,cx,ty); ty+=fs+2; });
+        c.restore(); labBottom=Math.max(labBottom,ty-fs+8);
+      });
+    }
+    const carTopB=Math.min(Math.max(labBottom+10,760),960);
+    drawCar(c,{x:110,y:carTopB,w:860,h:1222-carTopB});
+    // 오른쪽 아래 차종 배지
+    c.save(); g=c.createLinearGradient(600,0,1080,0); g.addColorStop(0,'#5C060C'); g.addColorStop(1,'#A30E17');
+    c.shadowColor='rgba(0,0,0,.4)'; c.shadowBlur=18; c.fillStyle=g; c.beginPath(); c.moveTo(650,1140); c.lineTo(1080,1140); c.lineTo(1080,1276); c.lineTo(600,1276); c.closePath(); c.fill(); c.restore();
+    c.save(); c.fillStyle='#fff'; c.textAlign='right';
+    const brand=String((ST.title||'').split(' ')[0]||'').toUpperCase(), rest=String(ST.title||'').split(' ').slice(1).join(' ');
+    fitFont(c,brand,'800',58,30,420); c.fillText(brand,1040,1204);
+    const line2=(rest?rest+' ':'')+(ST.years||''); fitFont(c,line2,'700',42,22,440,true); c.fillText(line2,1040,1254); c.restore();
+    wordmark(c,86,1250,96,'#fff');
+    if(ST.contact){ c.save(); c.fillStyle='#fff'; c.textAlign='center'; c.shadowColor='rgba(0,0,0,.6)'; c.shadowBlur=6; fitFont(c,ST.contact,'600',26,16,980); c.fillText(ST.contact,540,1328); c.restore(); }
+  }
+
+  // ===================================================================
+  // 화면: 프로모션 만들기 창
+  // ===================================================================
+  let _rt=null, _drawing=false, _again=false;
+  function redraw(){ clearTimeout(_rt); _rt=setTimeout(doDraw,60); }
+  async function doDraw(){
+    if(_drawing){ _again=true; return; } _drawing=true;
+    try{ const cv=$('vpCanvas'); if(cv) await render(cv); }catch(e){ console.warn('[vp] render',e); }
+    _drawing=false; if(_again){ _again=false; doDraw(); }
+  }
+
+  async function openStudio(m){
+    if(!m) return;
+    ST.open=true; ST.m=m; ST.d=null; ST.ovr={}; ST.genIdx=-1; ST.yearFilter=false;
+    ST.veh={ cands:[], idx:0, img:null, file:false, scale:1, dx:0, dy:0, fade:true, loading:true };
+    ST.title=(brandOf(m)+' '+modelName(m)).trim(); ST.years=yrsOf(m);
+    ST.gens=(m.gens||[]).filter(g=>g.units>0&&g.ys).map(g=>({label:g.label,ys:g.ys,ye:g.ye||g.ys,units:g.units}));
+    ST.minStock=Number(G.minStock)||1;
+    $('vpOverlay').classList.add('open'); document.body.style.overflow='hidden';
+    $('vpHead').innerHTML='<b>'+esc((brandOf(m)+' '+modelName(m)).toUpperCase())+'</b>'+(m.rank>0?(' <span class="vpRank">VIO '+m.rank+'위 · '+nf(m.units)+'대</span>'):'');
+    $('vpParts').innerHTML='<div class="vpHint">제품을 불러오는 중…</div>';
+    $('vpMsg').textContent=''; closeSend();
+    await ensureFont();
+    const d=await fetchByModel(m); if(!ST.open||ST.m!==m) return;
+    ST.d=d;
+    // 세대(by-model variants) — 기본: 재고 있는 품목이 가장 많은 세대(같으면 최신)
+    const vs=(d&&d.variants)||[];
+    const score=(v)=>itemsOf(d,[v.key]).filter(it=>it.stock>=ST.minStock).length;
+    let best=null,bs=-1; vs.forEach(v=>{ const s=score(v); const y=yearRange(v.years); if(s>bs||(s===bs&&y&&best&&yearRange(best.years)&&y[0]>yearRange(best.years)[0])){ best=v; bs=s; } });
+    ST.vars=vs.map(v=>({key:v.key,model:v.model,years:v.years,on:vs.length<=1||v===best}));
+    if(best&&vs.length>1) ST.years=best.years||ST.years;
+    // 저장해 둔 설정
+    const sv=ls.get(cfgKey());
+    if(sv){
+      ['tpl','title','years','discOn','disc','cta','hlA','hlB1','hlB2','sub'].forEach(k=>{ if(sv[k]!=null) ST[k]=sv[k]; });
+      if(sv.contact!=null) ST.contact=sv.contact; if(sv.minStock!=null) ST.minStock=sv.minStock;
+      ST.ovr=sv.ovr||{}; if(Array.isArray(sv.vars)&&sv.vars.length){ ST.vars.forEach(v=>{ v.on=sv.vars.indexOf(v.key)>=0; }); if(!ST.vars.some(v=>v.on)&&ST.vars[0]) ST.vars[0].on=true; }
+      ST.veh.scale=sv.vs||1; ST.veh.dx=sv.vx||0; ST.veh.dy=sv.vy||0; if(sv.vf!=null) ST.veh.fade=sv.vf;
+    }
+    paintControls(); redraw();
+    // 차량 사진 후보
+    const cands=await vehCandidates(m,ST.years); if(!ST.open||ST.m!==m) return;
+    ST.veh.cands=cands; ST.veh.loading=false; ST.veh.idx=Math.min((sv&&sv.vidx)||0,Math.max(0,cands.length-1));
+    await pickVeh(ST.veh.idx);
+  }
+  async function pickVeh(i){
+    const v=ST.veh; if(!v.cands.length){ v.img=null; paintVeh(); redraw(); return; }
+    v.idx=(i+v.cands.length)%v.cands.length; v.file=false; paintVeh('불러오는 중…');
+    const im=await loadUrlImage(v.cands[v.idx]); if(ST.veh!==v) return;
+    v.img=im; paintVeh(im?'':'이 사진은 불러오지 못했습니다 — ▶ 다음 후보'); redraw(); saveCfg();
+  }
+  function closeStudio(){ ST.open=false; $('vpOverlay').classList.remove('open'); document.body.style.overflow=''; if(Q.rows.length) paintQueue(); }
+  let _fontP=null;
+  function ensureFont(){
+    if(_fontP) return _fontP;
+    _fontP=(async()=>{ try{ if(document.fonts&&document.fonts.load){ await Promise.all(['700','800','900','italic 700','italic 800','italic 900','600'].map(w=>document.fonts.load(w+' 40px Montserrat'))); } }catch(e){} })();
+    return _fontP;
+  }
+
+  function paintControls(){
+    // 디자인
+    document.querySelectorAll('#vpTpl .vpChip').forEach(b=>b.classList.toggle('on',b.dataset.tpl===ST.tpl));
+    $('vpTitle').value=ST.title; $('vpYears').value=ST.years; $('vpCta').value=ST.cta; $('vpContact').value=ST.contact;
+    $('vpHlA').value=ST.hlA; $('vpHlB1').value=ST.hlB1; $('vpHlB2').value=ST.hlB2; $('vpSub').value=ST.sub;
+    $('vpDiscOn').checked=ST.discOn; $('vpDisc').value=ST.disc; $('vpMinStock').value=ST.minStock;
+    $('vpTplA').style.display=ST.tpl==='A'?'':'none'; $('vpTplB').style.display=ST.tpl==='B'?'':'none';
+    // 세대
+    const gens=ST.gens.map((g,i)=>'<span class="vpChip sm'+(ST.genIdx===i?' on':'')+'" data-gen="'+i+'">'+esc(g.label||'')+' '+g.ys+(g.ye&&g.ye!==g.ys?'-'+g.ye:'')+' · '+nf(g.units)+'대</span>').join('');
+    $('vpGens').innerHTML=(ST.vars.length>1?ST.vars.map((v,i)=>'<label class="vpVar"><input type="checkbox" data-var="'+i+'"'+(v.on?' checked':'')+'> '+esc(v.model)+' <span class="vpMuted">'+esc(v.years||'')+'</span></label>').join(''):'')
+      +(gens?'<div class="vpSubT">VIO 세대(연식) — 누르면 연식 칸에 넣고, 「연식 밖 코드 자동 빼기」를 켤 수 있습니다</div><div class="vpChips">'+gens+'</div>'
+        +'<label class="vpVar"><input type="checkbox" id="vpYearFilter"'+(ST.yearFilter?' checked':'')+'> 연식 밖 코드 자동 빼기</label>':'');
+    paintParts(); paintVeh();
+  }
+  function paintParts(){
+    if(!ST.d){ return; }
+    const items=allItems();
+    if(!items.length){ $('vpParts').innerHTML='<div class="vpHint">이 차종(선택한 세대)에 연결된 CTR 제품이 없습니다.</div>'; $('vpSum').textContent=''; return; }
+    const groups={}, order=[];
+    items.forEach(it=>{ if(!groups[it.label]){ groups[it.label]={cat:it.cat,items:[]}; order.push(it.label); } groups[it.label].items.push(it); });
+    order.sort((a,b)=>{ const ia=ORDER.indexOf(groups[a].cat), ib=ORDER.indexOf(groups[b].cat); return ((ia<0?99:ia)-(ib<0?99:ib))||a.localeCompare(b); });
+    let incN=0, cardN=0, h='';
+    order.forEach(lb=>{
+      const g=groups[lb]; const anyInc=g.items.some(isInc); if(anyInc) cardN++;
+      h+='<div class="vpGrp'+(anyInc?'':' off')+'"><div class="vpGrpH">'+esc(lb)+(SIX.indexOf(g.cat)>=0?'':' <span class="vpMuted">기타</span>')+'</div>';
+      g.items.sort((a,b)=>a.ctr.localeCompare(b.ctr)).forEach(it=>{
+        const inc=isInc(it); if(inc) incN++;
+        const man=(it.ctr in ST.ovr);
+        h+='<label class="vpCode'+(inc?' on':'')+'"><input type="checkbox" data-code="'+esc(it.ctr)+'"'+(inc?' checked':'')+'>'
+          +'<span class="cd">'+esc(it.ctr)+'</span>'
+          +'<span class="'+(it.stock>0?'stk':'stk0')+'">재고 '+nf(it.stock)+'</span>'
+          +(it.sold?'<span class="sold">판매 '+nf(it.sold)+'</span>':'')
+          +(it.year?'<span class="vpMuted">'+esc(it.year)+'</span>':'')
+          +(man?'<span class="man" title="손으로 바꿈">✋</span>':'')+'</label>';
+      });
+      h+='</div>';
+    });
+    $('vpParts').innerHTML=h;
+    $('vpSum').innerHTML='이미지에 <b>'+cardN+'</b>개 품목 · 코드 <b>'+incN+'</b>/'+items.length+(Object.keys(ST.ovr).length?' · ✋ 손으로 바꾼 것 '+Object.keys(ST.ovr).length+' <button type="button" class="vpLink" id="vpAuto">자동으로 되돌리기</button>':'');
+  }
+  function paintVeh(note){
+    const v=ST.veh;
+    $('vpVehInfo').textContent=v.file?'내 파일 사진':(v.loading?'차량 사진 찾는 중…':(v.cands.length?('후보 '+(v.idx+1)+' / '+v.cands.length):'자동 사진 없음 — 파일을 올려 주세요'))+(note?(' · '+note):'');
+    $('vpScale').value=v.scale; $('vpDx').value=v.dx; $('vpDy').value=v.dy; $('vpFade').checked=v.fade;
+  }
+
+  // ── 캡션 ──
+  function defaultCaption(cards){
+    const names=cards.map(c=>c.label); const list=names.length>3?names.slice(0,3).join(', ')+' y más':names.join(', ');
+    return 'Refacciones CTR para '+ST.title+' '+ST.years+': '+list+(ST.discOn?(' con '+ST.disc+'% de descuento'):'')+'. ¡En existencia!';
+  }
+
+  // ===================================================================
+  // 내보내기 · 이미지 뱅크 · WhatsApp
+  // ===================================================================
+  function canvasBlob(cv,q){ return new Promise((res,rej)=>{ try{ cv.toBlob(b=>b?res(b):rej(new Error('blob')),'image/jpeg',q||0.92); }catch(e){ rej(e); } }); }
+  function blobB64(b){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result)); r.readAsDataURL(b); }); }
+  function fileBase(){ const a=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,''); return 'promo_'+(a(ST.title)||'vio')+'_'+(a(ST.years)||''); }
+  async function finalCanvas(){ const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const cards=await render(cv); return {cv,cards}; }
+  function msg(t,err){ const el=$('vpMsg'); el.className='vpMsg'+(err?' err':''); el.innerHTML=t; }
+  async function downloadJpg(){
+    try{ const {cv}=await finalCanvas(); const b=await canvasBlob(cv); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=fileBase()+'.jpg'; document.body.appendChild(a); a.click(); a.remove(); msg('JPEG 를 내려받았습니다.'); }
+    catch(e){ msg('이미지를 만들 수 없습니다(다른 사이트 사진이 막혔을 수 있음). 차량 사진을 다른 후보나 내 파일로 바꿔 보세요.',true); }
+  }
+  async function api(path,opt){
+    const o=Object.assign({headers:{}},opt||{}); o.headers=Object.assign({},auth(),o.body?{'Content-Type':'application/json'}:{},o.headers);
+    const r=await fetch(session.api+path,o); let j=null; try{ j=await r.json(); }catch(e){}
+    return {ok:r.ok,status:r.status,j:j||{}};
+  }
+  const ERR={ forbidden:'WhatsApp 마케팅 권한이 없습니다(관리 › 사용자·권한에서 wapromo).', read_only:'WhatsApp 마케팅이 「열람」 권한이라 저장·발송할 수 없습니다.',
+    no_consented:'고른 사람 중 ✅ 동의자가 없습니다.', no_consented_in_groups:'고른 그룹에 ✅ 동의자가 없습니다.', caption_required:'문구를 입력하세요.', caption_too_long:'문구는 900자까지입니다.',
+    bad_send_at:'예약 시각을 확인하세요.', image_too_large:'이미지가 5MB를 넘습니다.', bad_image_type:'이미지 형식 오류', no_contacts:'보낼 사람이 없습니다.', group_not_found:'그룹을 찾지 못했습니다.' };
+  const errTxt=(r)=>ERR[r.j.error]||((r.j.error||('HTTP '+r.status))+'');
+  async function saveBank(){
+    const {cv,cards}=await finalCanvas();
+    const b=await canvasBlob(cv,0.9);
+    const th=document.createElement('canvas'); th.width=320; th.height=400; th.getContext('2d').drawImage(cv,0,0,320,400);
+    const tb=await canvasBlob(th,0.8);
+    const name=('VIO'+(ST.m.rank>0?(' '+String(ST.m.rank).padStart(2,'0')):'')+' · '+ST.title+' '+ST.years).slice(0,120);
+    const r=await api('/api/wa-promo/images',{method:'POST',body:JSON.stringify({ image_b64:await blobB64(b), mime:'image/jpeg', name:name, folder:BANK_FOLDER, width:W, height:H, thumb_b64:await blobB64(tb) })});
+    if(!r.ok) throw new Error(errTxt(r));
+    const id=Number(r.j.id);
+    const memo='vio:'+keyOf(ST.m)+' | '+cards.map(c=>c.codes.join('/')).join(' · ');
+    await api('/api/wa-promo/images/'+id,{method:'PATCH',body:JSON.stringify({memo:memo.slice(0,500)})}).catch(()=>{});
+    Q.bankLoaded=false;
+    return {id,cards,duplicate:!!r.j.duplicate};
+  }
+  async function doSaveBank(btn){
+    busy(btn,true,'저장 중…');
+    try{ const r=await saveBank(); msg('이미지 뱅크 「'+BANK_FOLDER+'」 폴더에 '+(r.duplicate?'이미 같은 이미지가 있습니다':'저장했습니다')+' (#'+r.id+'). WhatsApp 마케팅 화면에서도 쓸 수 있습니다.'); }
+    catch(e){ msg(esc(e.message||'저장 실패')+' — JPEG 로 내려받아 쓰세요.',true); }
+    busy(btn,false);
+  }
+  function busy(b,on,t){ if(!b) return; if(on){ b.dataset._t=b.textContent; b.textContent=t; b.disabled=true; } else { b.textContent=b.dataset._t||b.textContent; b.disabled=false; } }
+
+  // 발송 창
+  const SD={ groups:null, aud:null, veh:null };
+  async function openSend(){
+    $('vpSend').classList.add('open');
+    const cards=cardsOf(allItems(),isInc);
+    if(!cards.length){ $('vpSendBody').innerHTML='<div class="vpHint err">이미지에 넣은 품목이 없습니다. 품목을 하나 이상 고르세요.</div>'; return; }
+    const cap=defaultCaption(cards);
+    const now=new Date(Date.now()-360*60000+30*60000).toISOString().slice(0,16);
+    $('vpSendBody').innerHTML=
+      '<div class="vpSubT">받는 사람 (✅ 수신 동의자에게만 갑니다)</div>'
+      +'<label class="vpRad"><input type="radio" name="vpAud" value="all" checked> 동의자 전체 <span class="vpMuted" id="vpAudAll">…</span></label>'
+      +'<label class="vpRad"><input type="radio" name="vpAud" value="veh"> 관심 차종 「'+esc(modelName(ST.m))+'」 적은 고객 <span class="vpMuted" id="vpAudVeh">…</span></label>'
+      +'<label class="vpRad"><input type="radio" name="vpAud" value="grp"> 그룹 고르기</label><div id="vpGrpList" class="vpChips" style="margin:4px 0 6px 22px"></div>'
+      +'<div class="vpSubT">문구 (Novedades de Refatrix: … 다음에 들어감)</div><textarea id="vpCap" rows="3" maxlength="900">'+esc(cap)+'</textarea>'
+      +'<div class="vpSubT">보내는 때 (멕시코 시각)</div>'
+      +'<label class="vpRad"><input type="radio" name="vpWhen" value="now" checked> 지금 보내기</label>'
+      +'<label class="vpRad"><input type="radio" name="vpWhen" value="at"> 예약 <input type="datetime-local" id="vpAt" value="'+now+'"></label>'
+      +'<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="vpBtnP wa" id="vpDoSend">📣 이미지 저장 + 발송</button><button type="button" class="vpBtnP sec" id="vpSendX">닫기</button></div>'
+      +'<div class="vpHint" style="margin-top:6px">하루 상한·24시간 창·재시도 규칙은 WhatsApp 마케팅과 같습니다. 결과는 WhatsApp 마케팅 › 🗓 발송 일정에서 봅니다.</div>';
+    // 숫자 채우기
+    api('/api/wa-promo/audience').then(r=>{ const el=$('vpAudAll'); if(el) el.textContent=r.ok?('· '+nf(r.j.n)+'명'):('· '+errTxt(r)); });
+    api('/api/wa-promo/contacts?consent=yes&limit=2000&veh='+encodeURIComponent(modelName(ST.m))).then(r=>{
+      SD.veh=r.ok?(r.j.items||[]).filter(x=>x.consent==='yes').map(x=>x.id):[];
+      const el=$('vpAudVeh'); if(el) el.textContent=r.ok?('· ✅ '+nf(SD.veh.length)+'명'):'';
+    });
+    api('/api/wa-promo/groups').then(r=>{
+      SD.groups=r.ok?(r.j.items||[]):[];
+      const el=$('vpGrpList'); if(!el) return;
+      el.innerHTML=SD.groups.length?SD.groups.map(g=>'<label class="vpChip sm"><input type="checkbox" data-grp="'+g.id+'" style="margin:0 4px 0 0"> '+esc(g.name)+' <span class="vpMuted">✅'+nf(g.yes)+'</span></label>').join(''):'<span class="vpMuted">그룹 없음</span>';
+    });
+  }
+  function closeSend(){ const s=$('vpSend'); if(s) s.classList.remove('open'); }
+  async function doSend(btn){
+    const aud=(document.querySelector('input[name=vpAud]:checked')||{}).value||'all';
+    const when=(document.querySelector('input[name=vpWhen]:checked')||{}).value||'now';
+    const caption=String($('vpCap').value||'').trim();
+    const body={caption};
+    if(when==='now') body.send_now=true; else { const at=$('vpAt').value; if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)){ msg('예약 시각을 확인하세요.',true); return; } body.send_at=at; }
+    if(aud==='veh'){ if(!SD.veh||!SD.veh.length){ msg('관심 차종이 「'+esc(modelName(ST.m))+'」인 ✅ 동의 고객이 없습니다.',true); return; } body.contact_ids=SD.veh; }
+    if(aud==='grp'){ const g=[...document.querySelectorAll('#vpGrpList input[data-grp]:checked')].map(x=>Number(x.dataset.grp)); if(!g.length){ msg('그룹을 하나 이상 고르세요.',true); return; } body.target_groups=g; }
+    if(!caption){ msg('문구를 입력하세요.',true); return; }
+    const who=aud==='veh'?('관심 차종 고객 '+SD.veh.length+'명'):(aud==='grp'?'고른 그룹':'동의자 전체');
+    if(!confirm(who+'에게 '+(when==='now'?'지금':body.send_at+' 에')+' 보냅니다. 진행할까요?')) return;
+    busy(btn,true,'보내는 중…');
+    try{
+      const s=await saveBank(); body.image_id=s.id;
+      const r=await api('/api/wa-promo/campaigns',{method:'POST',body:JSON.stringify(body)});
+      if(!r.ok) throw new Error(errTxt(r));
+      msg('✅ '+(when==='now'?'1분 안에 보냅니다':'예약했습니다')+' · 대상 '+nf(r.j.audience)+'명'+(r.j.remaining_today!=null?(' · 오늘 남은 발송 '+nf(r.j.remaining_today)):'')+' · 발송 #'+r.j.id);
+      closeSend(); Q.bankLoaded=false;
+    }catch(e){ msg(esc(e.message||'발송 실패'),true); }
+    busy(btn,false);
+  }
+
+  // ===================================================================
+  // 프로모션 대기열 (VIO 순)
+  // ===================================================================
+  const Q={ n:Number(G.qn)||20, minCards:Number(G.minCards)||3, show:G.show||'cand', rows:[], running:false, bank:{}, bankLoaded:false, bankErr:null, token:0 };
+  function qStats(m,d){
+    const its=itemsOf(d); const inS=its.filter(it=>it.stock>=(Number(G.minStock)||1));
+    const cardSet={}; inS.forEach(it=>{ cardSet[it.label]=1; });
+    const six={}; SIX.forEach(k=>{ six[k]=its.some(it=>it.cat===k)?(inS.some(it=>it.cat===k)?2:1):0; });
+    return { total:its.length, inCodes:inS.length, cards:Object.keys(cardSet).length, six, stock:inS.reduce((a,b)=>a+b.stock,0) };
+  }
+  async function loadBank(){
+    if(Q.bankLoaded) return; Q.bankLoaded=true; Q.bank={}; Q.bankErr=null;
+    try{
+      const r=await api('/api/wa-promo/images?folder='+encodeURIComponent(BANK_FOLDER));
+      if(!r.ok){ Q.bankErr=errTxt(r); return; }
+      (r.j.items||[]).forEach(it=>{ const mm=String(it.memo||'').match(/^vio:([^|]+)/); if(!mm) return; const k=mm[1].trim();
+        const o=Q.bank[k]||(Q.bank[k]={made:null,sent:null,uses:0,ids:[]}); o.ids.push(it.id);
+        if(!o.made||String(it.created_mx)>o.made) o.made=it.created_mx; o.uses+=Number(it.uses)||0; if(it.last_used_mx&&(!o.sent||it.last_used_mx>o.sent)) o.sent=it.last_used_mx; });
+    }catch(e){ Q.bankErr='network'; }
+  }
+  async function runQueue(){
+    const tok=++Q.token; Q.running=true;
+    await loadVio(); if(tok!==Q.token) return;
+    const models=(VIO&&VIO.models||[]).slice(0,Q.n);
+    Q.rows=models.map(m=>({m,st:null}));
+    paintQueue(); loadBank().then(()=>{ if(tok===Q.token) paintQueue(); });
+    for(let i=0;i<Q.rows.length;i++){
+      if(tok!==Q.token) return;
+      const row=Q.rows[i];
+      try{ const d=await fetchByModel(row.m); row.st=(d&&d.__err)?{err:d.__err}:qStats(row.m,d); }catch(e){ row.st={err:'exception'}; }
+      if(i%3===2||i===Q.rows.length-1) paintQueue();
+    }
+    Q.running=false; paintQueue();
+  }
+  function isCand(r){ return r.st&&!r.st.err&&r.st.cards>=Q.minCards; }
+  function paintQueue(){
+    const el=$('vpQueue'); if(!el) return;
+    const done=Q.rows.filter(r=>r.st).length, cands=Q.rows.filter(isCand);
+    $('vpQInfo').innerHTML=(Q.running?('훑는 중 '+done+' / '+Q.rows.length+' · '):'')+'후보 <b>'+cands.length+'</b>차종 (재고 있는 품목 '+Q.minCards+'개 이상)'
+      +(Q.bankErr?' · <span class="vpMuted">작성·발송 표시는 WhatsApp 마케팅 권한이 있어야 보입니다</span>':'');
+    let rows=Q.rows;
+    if(Q.show==='cand') rows=rows.filter(r=>!r.st||isCand(r));
+    if(Q.show==='todo') rows=rows.filter(r=>(!r.st||isCand(r))&&!(Q.bank[keyOf(r.m)]&&Q.bank[keyOf(r.m)].sent));
+    if(!rows.length){ el.innerHTML='<div class="vpHint" style="padding:14px">조건에 맞는 차종이 없습니다. 「재고 품목 기준」을 낮추거나 범위를 넓혀 보세요.</div>'; return; }
+    el.innerHTML='<table class="vpQ"><thead><tr><th>VIO</th><th>차종</th><th>6대 품목 재고</th><th>재고 있는 품목</th><th>상태</th><th></th></tr></thead><tbody>'
+      +rows.map(r=>{
+        const m=r.m, st=r.st, b=Q.bank[keyOf(m)];
+        const six=st&&!st.err?SIX.map(k=>'<span class="six s'+st.six[k]+'" title="'+esc(LABEL[k])+(st.six[k]===2?' · 재고 있음':st.six[k]===1?' · 재고 없음':' · 제품 없음')+'">'+esc(SHORT[k])+'</span>').join(''):'';
+        const stat=b?((b.sent?'<span class="vpTag sent">📣 발송 '+esc(String(b.sent).slice(5,10).replace('-','/'))+'</span>':'')+'<span class="vpTag made">🖼 작성 '+esc(String(b.made||'').slice(5,10).replace('-','/'))+'</span>'):'';
+        const cand=isCand(r);
+        return '<tr class="'+(st?(cand?'':'dim'):'wait')+'"><td class="rk">'+m.rank+'<small>위</small><div class="u">'+nf(m.units)+'대</div></td>'
+          +'<td><b>'+esc((brandOf(m)+' '+modelName(m)).toUpperCase())+'</b><div class="vpMuted">'+esc(yrsOf(m)||'')+'</div></td>'
+          +'<td>'+(st?(st.err?'<span class="vpMuted">조회 오류</span>':six):'<span class="vpMuted">…</span>')+'</td>'
+          +'<td>'+(st&&!st.err?('<b>'+st.cards+'</b>품목 · 코드 '+st.inCodes+'/'+st.total+' · 재고 '+nf(st.stock)):'')+'</td>'
+          +'<td>'+stat+'</td>'
+          +'<td><button type="button" class="vpBtnP sm'+(cand?'':' sec')+'" data-qrank="'+m.rank+'">★ 프로모션 만들기</button></td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+  function nextCand(){
+    if(!ST.m) return null; const i=Q.rows.findIndex(r=>r.m===ST.m);
+    for(let k=i+1;k<Q.rows.length;k++){ const r=Q.rows[k]; if(isCand(r)&&!(Q.bank[keyOf(r.m)]&&Q.bank[keyOf(r.m)].sent)) return r.m; }
+    return null;
+  }
+
+  // ===================================================================
+  // 이벤트
+  // ===================================================================
+  function bind(){
+    // 탭
+    document.querySelectorAll('#vpTabs .vpTab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.tab)));
+    // 대기열 조건
+    $('vpQn').value=String(Q.n); $('vpQmin').value=String(Q.minCards); $('vpQshow').value=Q.show; $('vpQstock').value=String(Number(G.minStock)||1);
+    $('vpQn').addEventListener('change',()=>{ Q.n=Number($('vpQn').value)||20; G.qn=Q.n; ls.set('vp_global',G); runQueue(); });
+    $('vpQmin').addEventListener('change',()=>{ Q.minCards=Number($('vpQmin').value)||1; G.minCards=Q.minCards; ls.set('vp_global',G); paintQueue(); });
+    $('vpQshow').addEventListener('change',()=>{ Q.show=$('vpQshow').value; G.show=Q.show; ls.set('vp_global',G); paintQueue(); });
+    $('vpQstock').addEventListener('change',()=>{ G.minStock=Math.max(1,Number($('vpQstock').value)||1); ls.set('vp_global',G); Q.rows.forEach(r=>{ const d=cache[normS(r.m.modelo)]; if(r.st&&!r.st.err&&d) r.st=qStats(r.m,d); }); paintQueue(); });
+    $('vpQreload').addEventListener('click',()=>{ Q.bankLoaded=false; runQueue(); });
+    $('vpQueue').addEventListener('click',e=>{ const b=e.target.closest('[data-qrank]'); if(!b) return; const m=modelByRank(Number(b.dataset.qrank)); if(m) openStudio(m); });
+    // 찾기 목록의 ★ 프로모션
+    $('list').addEventListener('click',e=>{ const b=e.target.closest('.vpOpen'); if(!b) return; e.stopPropagation(); const m=modelByRank(Number(b.dataset.vprank)); if(m) openStudio(m); },true);
+    // 창
+    $('vpClose').addEventListener('click',closeStudio);
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&ST.open){ if($('vpSend').classList.contains('open')) closeSend(); else closeStudio(); } });
+    $('vpTpl').addEventListener('click',e=>{ const b=e.target.closest('[data-tpl]'); if(!b) return; ST.tpl=b.dataset.tpl; paintControls(); redraw(); saveCfg(); });
+    const txt={vpTitle:'title',vpYears:'years',vpCta:'cta',vpHlA:'hlA',vpHlB1:'hlB1',vpHlB2:'hlB2',vpSub:'sub'};
+    Object.keys(txt).forEach(id=>$(id).addEventListener('input',()=>{ ST[txt[id]]=$(id).value; redraw(); saveCfg(); }));
+    $('vpContact').addEventListener('input',()=>{ ST.contact=$('vpContact').value; G.contact=ST.contact; ls.set('vp_global',G); redraw(); saveCfg(); });
+    $('vpDiscOn').addEventListener('change',()=>{ ST.discOn=$('vpDiscOn').checked; redraw(); saveCfg(); });
+    $('vpDisc').addEventListener('input',()=>{ const n=parseInt($('vpDisc').value,10); if(!isNaN(n)){ ST.disc=Math.max(1,Math.min(90,n)); redraw(); saveCfg(); } });
+    $('vpMinStock').addEventListener('change',()=>{ ST.minStock=Math.max(1,Number($('vpMinStock').value)||1); paintParts(); redraw(); saveCfg(); });
+    $('vpGens').addEventListener('change',e=>{
+      const v=e.target.closest('[data-var]'); if(v){ ST.vars[Number(v.dataset.var)].on=v.checked; if(!ST.vars.some(x=>x.on)){ v.checked=true; ST.vars[Number(v.dataset.var)].on=true; } paintParts(); redraw(); saveCfg(); return; }
+      if(e.target.id==='vpYearFilter'){ ST.yearFilter=e.target.checked; paintParts(); redraw(); }
+    });
+    $('vpGens').addEventListener('click',e=>{ const g=e.target.closest('[data-gen]'); if(!g) return; const i=Number(g.dataset.gen); ST.genIdx=(ST.genIdx===i)?-1:i;
+      if(ST.genIdx>=0){ const gg=ST.gens[i]; ST.years=gg.ys+(gg.ye&&gg.ye!==gg.ys?'-'+gg.ye:''); $('vpYears').value=ST.years; }
+      paintControls(); redraw(); saveCfg(); });
+    $('vpParts').addEventListener('change',e=>{ const cb=e.target.closest('input[data-code]'); if(!cb) return; const code=cb.dataset.code; const it=allItems().find(x=>x.ctr===code); if(!it) return;
+      if(cb.checked===autoInc(it)) delete ST.ovr[code]; else ST.ovr[code]=cb.checked; paintParts(); redraw(); saveCfg(); });
+    $('vpSum').addEventListener('click',e=>{ if(e.target.id==='vpAuto'){ ST.ovr={}; paintParts(); redraw(); saveCfg(); } });
+    $('vpAllOn').addEventListener('click',()=>{ allItems().forEach(it=>{ if(autoInc(it)) delete ST.ovr[it.ctr]; else ST.ovr[it.ctr]=true; }); paintParts(); redraw(); saveCfg(); });
+    $('vpStockOnly').addEventListener('click',()=>{ ST.ovr={}; paintParts(); redraw(); saveCfg(); });
+    // 차량 사진
+    $('vpPrev').addEventListener('click',()=>pickVeh(ST.veh.idx-1));
+    $('vpNext').addEventListener('click',()=>pickVeh(ST.veh.idx+1));
+    $('vpScale').addEventListener('input',()=>{ ST.veh.scale=Number($('vpScale').value); redraw(); saveCfg(); });
+    $('vpDx').addEventListener('input',()=>{ ST.veh.dx=Number($('vpDx').value); redraw(); saveCfg(); });
+    $('vpDy').addEventListener('input',()=>{ ST.veh.dy=Number($('vpDy').value); redraw(); saveCfg(); });
+    $('vpFade').addEventListener('change',()=>{ ST.veh.fade=$('vpFade').checked; redraw(); saveCfg(); });
+    $('vpVehFile').addEventListener('change',e=>fileImg(e.target,im=>{ ST.veh.img=im; ST.veh.file=true; paintVeh(); redraw(); }));
+    $('vpLogoFile').addEventListener('change',e=>fileImg(e.target,im=>{ ST.logo=im; redraw(); }));
+    $('vpBgFile').addEventListener('change',e=>fileImg(e.target,im=>{ ST.bg=im; redraw(); }));
+    $('vpLogoX').addEventListener('click',()=>{ ST.logo=null; redraw(); });
+    $('vpBgX').addEventListener('click',()=>{ ST.bg=null; redraw(); });
+    // 출력
+    $('vpJpg').addEventListener('click',downloadJpg);
+    $('vpBank').addEventListener('click',e=>doSaveBank(e.currentTarget));
+    $('vpWa').addEventListener('click',openSend);
+    $('vpSend').addEventListener('click',e=>{ if(e.target.id==='vpSendX') closeSend(); if(e.target.id==='vpDoSend') doSend(e.target); });
+    $('vpNextCar').addEventListener('click',()=>{ const m=nextCand(); if(m) openStudio(m); else msg('대기열에 다음 후보(아직 안 보낸 차종)가 없습니다. 「🏁 프로모션 대기열」에서 범위를 넓혀 보세요.'); });
+  }
+  function fileImg(input,cb){ const f=input.files&&input.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const im=new Image(); im.onload=()=>cb(im); im.src=String(r.result); }; r.readAsDataURL(f); input.value=''; }
+  let _qStarted=false;
+  function setTab(t){
+    document.querySelectorAll('#vpTabs .vpTab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
+    $('vpQueueCard').style.display=t==='queue'?'':'none';
+    $('findPane').style.display=t==='find'?'':'none';
+    if(t==='queue'&&!_qStarted){ _qStarted=true; runQueue(); }
+  }
+  function boot(){
+    bind();
+    let tab='queue';
+    try{ const p=new URLSearchParams(location.hash.slice(1)); if(p.get('q')){ tab='find'; $('q').value=p.get('q'); } if(p.get('tab')) tab=p.get('tab'); }catch(e){}
+    setTab(tab==='find'?'find':'queue');
+    if(tab==='find'&&$('q').value){ loadVio().then(()=>runSearch($('q').value)); }
+  }
+  window.VP={ open:openStudio, boot:boot, _st:ST, _q:Q, _render:render, _cardsOf:cardsOf, _itemsOf:itemsOf, _pairText:pairText, _labelOf:labelOf, _isInc:isInc, _run:runQueue };
+})();
 </script>
 <script src="refatrix-nav.js?v=20261016wp"></script>
 </body>
