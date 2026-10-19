@@ -1,5 +1,5 @@
 // =====================================================================
-// VIO 제품찾기·프로모션 화면 (jsdom · build vf16t · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
+// VIO 제품찾기·프로모션 화면 (jsdom · build vf16u · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
 //   대기열(VIO 순 · 재고 품목 수) · 품목 넣기/빼기(재고 자동 + 손) · 이미지 뱅크 저장 · WhatsApp 발송 본문 · 예전 차종별 부품 주소
 //   실행: node --test test/viopromo_front.test.mjs   (jsdom 필요)
 // =====================================================================
@@ -67,6 +67,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
         if (p.pathname === '/api/products/by-model') return json(byModel(p.searchParams.get('q') || ''));
         if (p.pathname === '/api/products/applied-models') return json({ items: [] });
         if (p.pathname === '/api/products/syd-baseline') return json({ found: true, list_price_syd: 500 });
+        if (p.pathname === '/api/promo-img/marks') return json({ marks: [{ x: 0.4, y: 0.5, w: 0.1, h: 0.08, kind: 'emblem' }] });
         if (p.pathname === '/api/promo-img') return /GV1043/.test(p.searchParams.get('u')) ? json({ error: 'not_found' }, 404) : json({});
         if (p.pathname === '/api/wa-promo/images' && method === 'GET') return json({ items: [{ id: 9, memo: 'vio:aveo | CB0166', uses: 1, created_mx: '2026-10-15T10:00', last_used_mx: '2026-10-16T09:00' }] });
         if (p.pathname === '/api/wa-promo/images' && method === 'POST') return json({ id: 41, duplicate: false });
@@ -95,7 +96,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16t/);
+  assert.match(d.title, /vf16u/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -252,4 +253,16 @@ test('전화번호 직접 입력: 여러 개 · 이름 붙여도 됨 · 새 번�
   assert.match(d.getElementById('vpMsg').textContent, /✅ 1/); assert.match(d.getElementById('vpMsg').textContent, /동의 요청 2명/);
   // 입력한 번호는 다음에도 남아 있음
   assert.match(w.localStorage.getItem('vp_global'), /8187654321/);
+});
+
+test('자동차 로고 자동 가리기: 사진이 들어오면 위치를 찾고 가린 사진을 만든다', { skip: SKIP }, async () => {
+  const { w, d, calls } = boot();
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => w.VP._st.veh.mstate === 'ok'), 'mstate=' + w.VP._st.veh.mstate);
+  assert.ok(calls.some((c) => c.u.endsWith('/api/promo-img/marks') && /^data:image\/jpeg/.test(c.body.image_b64)));
+  assert.equal(w.VP._st.veh.marks.length, 1);
+  assert.ok(w.VP._st.veh.clean, '가린 사진');
+  assert.match(d.getElementById('vpMarkInfo').textContent, /1곳 가림/);
+  assert.ok(d.getElementById('vpMarkMode') && d.getElementById('vpMarkUndo'));
 });

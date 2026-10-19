@@ -93,3 +93,39 @@ test('server.js 에 등록되어 있다', async () => {
   assert.match(src, /import promoImgRoutes from '\.\/routes\/promoImgRoutes\.js'/);
   assert.match(src, /app\.register\(promoImgRoutes\)/);
 });
+
+// ───── 2026-10-19 vf16u · 자동차 로고 위치 찾기 ─────
+const { parseMarks, _setPromoMarkCallerForTest, MARK_PROMPT } = mod;
+const postMarks = (a, body) => a.inject({ method: 'POST', url: '/api/promo-img/marks', payload: body, headers: { 'x-test-user': '5:sales' } });
+
+test('parseMarks: JSON 만 골라 비율 상자로 · 이상한 값 버림', () => {
+  const m = parseMarks('Here: {"marks":[{"x":0.4,"y":0.5,"w":0.1,"h":0.05,"kind":"emblem"},{"x":120,"y":40,"w":30,"h":20},{"x":0.9,"y":0.9,"w":0.3,"h":0.3,"kind":"plate"},{"x":0.1,"y":0.1,"w":0.8,"h":0.8},{"x":"a"}]} ok');
+  assert.equal(m.length, 2);
+  assert.deepEqual(m[0], { x: 0.4, y: 0.5, w: 0.1, h: 0.05, kind: 'emblem' });
+  assert.equal(m[1].kind, 'plate'); assert.ok(Math.abs(m[1].w - 0.1) < 1e-6, '범위 밖은 잘라냄');
+  assert.equal(parseMarks('no json'), null);
+  assert.deepEqual(parseMarks('{"marks":[]}'), []);
+  assert.match(MARK_PROMPT, /license plates/); assert.match(MARK_PROMPT, /emblems/);
+});
+
+test('POST /api/promo-img/marks: 사진 → 상자 · 같은 사진은 캐시 · 형식/크기/AI 오류', async () => {
+  const a = await app();
+  let n = 0;
+  _setPromoMarkCallerForTest(async (b64, mime) => { n++; assert.equal(mime, 'image/jpeg'); assert.ok(b64.length > 0); return { ok: true, text: '{"marks":[{"x":0.45,"y":0.55,"w":0.1,"h":0.08,"kind":"emblem"}]}' }; });
+  const img = 'data:image/jpeg;base64,' + Buffer.from('fakejpegbytes-1').toString('base64');
+  let r = await postMarks(a, { image_b64: img, mime: 'image/jpeg' });
+  assert.equal(r.statusCode, 200); assert.equal(r.json().marks.length, 1); assert.equal(r.json().cached, false);
+  r = await postMarks(a, { image_b64: img, mime: 'image/jpeg' });
+  assert.equal(r.json().cached, true); assert.equal(n, 1);
+  r = await postMarks(a, { image_b64: img, mime: 'image/gif' }); assert.equal(r.statusCode, 400);
+  r = await postMarks(a, { image_b64: '' }); assert.equal(r.statusCode, 400);
+  _setPromoMarkCallerForTest(async () => ({ ok: false, error: 'ai: timeout' }));
+  r = await postMarks(a, { image_b64: Buffer.from('other').toString('base64') }); assert.equal(r.statusCode, 502); assert.equal(r.json().error, 'ai_failed');
+  _setPromoMarkCallerForTest(async () => ({ ok: true, text: 'sorry' }));
+  r = await postMarks(a, { image_b64: Buffer.from('other2').toString('base64') }); assert.equal(r.statusCode, 502); assert.equal(r.json().error, 'ai_bad_answer');
+  _setPromoMarkCallerForTest(null);
+  const k = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY;
+  r = await postMarks(a, { image_b64: Buffer.from('other3').toString('base64') }); assert.equal(r.statusCode, 503); assert.equal(r.json().error, 'ai_not_configured');
+  if (k) process.env.ANTHROPIC_API_KEY = k;
+  await a.close();
+});
