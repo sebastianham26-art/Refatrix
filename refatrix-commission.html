@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1006ctr</title>
+<title>Refatrix ERP · 커미션 · build b1019cap</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -49,6 +49,19 @@
   .agentbar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
   .payCard{background:#fbf6ec;border-color:#ecd9b0}
   .payform{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}
+  /* ── 0287 커미션 지급승인 전자결재 · 현금 수령증 ── */
+  .apbox{margin-top:12px;background:#fff;border:1px solid #e3cf9f;border-radius:10px;padding:12px 14px}
+  .apbox .aph{font-size:13px;font-weight:800;color:var(--brand);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .apflow{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 10px}
+  .apflow span{font-size:11px;padding:3px 9px;border-radius:20px;background:#f0ece2;color:#8a8676;font-weight:700;white-space:nowrap}
+  .apflow span.done{background:var(--income-bg);color:var(--income)}
+  .apflow span.now{background:var(--brand);color:#fff}
+  .apflow i{font-style:normal;color:#c9c2ae;font-size:11px;align-self:center}
+  .aprow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:8px}
+  .apdoc{font:700 12.5px ui-monospace,Menlo,Consolas,monospace;color:var(--brand)}
+  a.btn{text-decoration:none;display:inline-block}
+  .payform.locked{opacity:.5}
+  .payform.locked input,.payform.locked button{pointer-events:none}
   /* ── 진척(목표 대비) 패널 ── */
   .prog2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:820px){.prog2{grid-template-columns:1fr}}
@@ -196,9 +209,12 @@
     <!-- ② 재무 지급(반제) 패널 — 디렉터·재무담당 -->
     <div class="card payCard hidden" id="payPanel">
       <div class="card-h">커미션 지급(반제) · <span class="hint" style="font-weight:400">재무담당·디렉터 · 송금 후 증빙 첨부 시 지급 확정</span></div>
+      <div class="aprow" id="payMonthRow" style="margin:0 0 8px"><div><label>지급 월(반제 완료월)</label><select id="payMonth" style="width:190px"><option value="">선택</option></select></div></div>
       <div id="payBody"><div class="hint">위에서 영업사원을 선택하면 그 사원의 확정·미지급 커미션과 지급 입력칸이 나타납니다.</div></div>
+      <!-- 0287 커미션 지급승인 전자결재 → 현금 지급 → 서명 수령증 업로드로 마감 -->
+      <div class="apbox hidden" id="apBox"></div>
+      <div class="hint hidden" id="legacyHint" style="margin-top:12px;font-weight:700;color:var(--brand)">송금으로 지급(결재 없이 · 기존 방식)</div>
       <div class="payform hidden" id="payForm">
-        <div><label>지급 월(반제 완료월)</label><select id="payMonth" style="width:150px"><option value="">선택</option></select></div>
         <div><label>지급액(MXN)</label><input id="payAmt" type="number" step="0.01" style="width:140px"></div>
         <div><label>지급일</label><input id="payDate" type="date" style="width:150px"></div>
         <div><label>증빙(송금증·캡처 · 이미지/PDF)</label><input id="payFile" type="file" accept="image/*,application/pdf" style="width:230px"></div>
@@ -333,6 +349,7 @@
       $('agentSel').innerHTML=opts.join('');
       agentsPopulated=true;
       window.__agents=d.items||[];
+      applyDeepLink();
     }catch(e){ window.__agents=[]; window.__agentsErr='서버에 연결할 수 없습니다.'; }
   }
 
@@ -856,7 +873,7 @@
       const d=await fetch(session.api+'/api/commission/batches',{headers:auth()}).then(r=>r.json());
       window.__batchPerm={can_confirm:!!d.can_confirm,can_hand:!!d.can_hand};
       if(d.not_migrated){ $('batchBody').innerHTML='<div class="hint">배치 테이블이 없습니다. 서버 마이그레이션(0088)을 실행하세요.</div>'; return; }
-      const items=d.items||[]; window.__batches=items; populatePayMonths(items);
+      const items=d.items||[]; window.__batches=items; populatePayMonths(items); applyDeepLink();
       if(!items.length){ $('batchBody').innerHTML='<div class="hint">표시할 월이 없습니다. (반제 완료된 커미션이 생기면 월이 나타납니다)</div>'; return; }
       let h='<table><thead><tr><th>반제 완료월</th><th class="r">확정 커미션</th><th class="r">지급완료</th><th class="r">미지급</th><th class="r">사원</th><th>지급예정</th><th>상태</th><th></th></tr></thead><tbody>';
       for(const m of items){
@@ -992,21 +1009,24 @@
   async function loadPayable(aid, ym){
     if(!canPay()) return;
     ym = ym || ($('payMonth')?$('payMonth').value:'');
-    if(!aid){ $('payBody').innerHTML='<div class="hint">위에서 영업사원을 선택하고, 아래에서 확정된 지급 월을 고르면 그 달의 미지급 커미션과 입력칸이 나타납니다.</div>'; $('payForm').classList.add('hidden'); return; }
-    if(!ym){ $('payBody').innerHTML='<div class="hint">지급할 <b>확정 월(반제 완료월)</b>을 선택하세요. 디렉터가 확정한 달만 지급할 수 있습니다.</div>'; $('payForm').classList.remove('hidden'); $('payAmt').value=''; return; }
+    apHide();
+    if(!aid){ $('payBody').innerHTML='<div class="hint">위에서 영업사원을 선택하고, 확정된 지급 월을 고르면 그 달의 미지급 커미션과 지급 절차가 나타납니다.</div>'; $('payForm').classList.add('hidden'); return; }
+    if(!ym){ $('payBody').innerHTML='<div class="hint">지급할 <b>확정 월(반제 완료월)</b>을 선택하세요. 디렉터가 확정한 달만 지급할 수 있습니다.</div>'; $('payForm').classList.add('hidden'); $('payAmt').value=''; return; }
     $('payBody').innerHTML='<div class="hint">불러오는 중…</div>';
     try{
       const d=await fetch(session.api+'/api/commission/payable?agent_id='+aid+'&settle_ym='+ym,{headers:auth()}).then(r=>r.json());
       if(d.not_migrated){ $('payBody').innerHTML='<div class="msg err" style="display:block">지급 테이블이 없습니다. 마이그레이션(0086~0088)을 실행하세요.</div>'; $('payForm').classList.add('hidden'); return; }
       const lines=d.lines||[]; const bn=d.bonus||null; const adj=d.adjustments||[];
-      if(!lines.length&&!bn){ $('payBody').innerHTML='<div class="hint">'+ym+' 월, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.</div>'; $('payForm').classList.remove('hidden'); $('payAmt').value=''; return; }
+      if(!lines.length&&!bn){ $('payBody').innerHTML='<div class="hint">'+ym+' 월, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.</div>'; $('payForm').classList.add('hidden'); $('payAmt').value=''; await loadApproval(aid, ym, null); return; }
       let h='<div class="hint" style="margin-bottom:6px">'+ym+' 월 · 커미션 <b>'+lines.length+'건 '+fmtm(d.commission_total!=null?d.commission_total:d.total)+'</b>'
         +(bn?(' · 성과급 <b>'+fmtm(bn.amount)+'</b>'+(bn.achieved_rate!=null?(' (달성률 '+bn.achieved_rate+'%)'):'')):'')
         +(adj.length?(' · 지급 후 조정 <b class="'+(d.adjustment_total<0?'short':'conf')+'">'+(d.adjustment_total<0?'−':'+')+fmtm(Math.abs(d.adjustment_total))+'</b>'):'')
         +' · 지급 합계 <b>'+fmtm(d.total)+'</b></div>';
       if(lines.length){
-        h+='<table><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">확정 커미션</th></tr></thead><tbody>';
-        for(const l of lines) h+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+(l.mode==='payment'?' '+basisChip('collection','payment'):'')+'</td><td>'+l.inv_date+'</td><td>'+esc(l.customer_name)+'</td><td class="r">'+fmtm(l.mode==='payment'&&l.collected_base!=null?l.collected_base:l.base)+(l.mode==='payment'&&Math.abs(Number(l.collected_base)-Number(l.base))>0.5?'<div class="hint" style="font-size:11px">기간 내 수금분 (매출 '+fmtm(l.base)+')</div>':'')+'</td><td class="r">'+l.rate+'%</td><td class="r conf">'+fmtm(l.expected)+'</td></tr>';
+        h+='<table><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th class="r">매출(ex-IVA)</th><th>수금일 · 수금액</th><th class="r">율</th><th class="r">확정 커미션</th></tr></thead><tbody>';
+        for(const l of lines) h+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+(l.mode==='payment'?' '+basisChip('collection','payment'):'')+'</td><td>'+l.inv_date+'</td><td>'+esc(l.customer_name)+'</td><td class="r">'+fmtm(l.mode==='payment'&&l.collected_base!=null?l.collected_base:l.base)+(l.mode==='payment'&&Math.abs(Number(l.collected_base)-Number(l.base))>0.5?'<div class="hint" style="font-size:11px">기간 내 수금분 (매출 '+fmtm(l.base)+')</div>':'')+'</td>'
+          +'<td>'+(l.basis==='revenue'?'<span class="hint">매출 기준</span>':(esc(l.last_pay_date||'—')+'<div class="hint" style="font-size:11px">수금 '+fmtm(l.paid_amount)+'</div>'))+'</td>'
+          +'<td class="r">'+l.rate+'%</td><td class="r conf">'+fmtm(l.expected)+'</td></tr>';
         h+='</tbody></table>';
       }
       if(adj.length) h+='<div class="hint" style="margin-top:8px">지급 후 매출 조정 '+adj.length+'건 — 이미 지급한 커미션의 차액을 이번 지급에서 함께 정산합니다(지급 당시 율 기준).</div>'+adjTable(adj)
@@ -1017,11 +1037,12 @@
       if(!$('payDate').value) $('payDate').value=mxHoy();
       $('payForm').classList.remove('hidden');
       $('payMsg').className='msg';
+      await loadApproval(aid, ym, d);
     }catch(e){ $('payBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
 
   // 증빙 파일 → dataURL (이미지=축소·압축, PDF=원본·용량제한)
-  async function fileToEvidence(file){
+  async function fileToEvidence(file, maxPx){
     if(file.type==='application/pdf'){
       if(file.size>6*1024*1024) throw new Error('PDF가 6MB를 초과합니다. 더 작게 만들어 첨부하세요.');
       const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);});
@@ -1030,7 +1051,7 @@
     if(!file.type.startsWith('image/')) throw new Error('이미지(JPG/PNG) 또는 PDF만 첨부할 수 있습니다.');
     const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);});
     const img=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=dataUrl;});
-    const max=1600; let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+    const max=maxPx||1600; let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
     const sc=Math.min(1,max/Math.max(w,h)); w=Math.round(w*sc); h=Math.round(h*sc);
     const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
     cv.getContext('2d').drawImage(img,0,0,w,h);
@@ -1064,6 +1085,224 @@
       loadOverview(); loadBatches(); loadPayable(aid, ym); loadVouchers(aid); loadProgress(); loadPerf();
     }catch(e){ payMsg('err', e.message||'서버에 연결할 수 없습니다.'); }
     finally{ $('paySubmit').disabled=false; $('paySubmit').textContent='지급 등록(반제)'; }
+  }
+
+  // ══ 0287 커미션 지급승인 전자결재 → 현금 지급 → 서명된 수령증 업로드로 마감 ══
+  //   ① 월 확정 ② 전자문서 생성(내용 자동) ③ 결재(결재선은 디렉터가 지정해 상신) ④ 현금 지급·수령증 서명 ⑤ 스캔 업로드 → 지급 전표(반제) + 문서 집행 마감
+  let AP=null, apCtx={aid:0,ym:'',pay:null}, apCompany=null, apFlash=null;   // apFlash: 다시 그린 뒤에도 남길 결과 메시지
+  const AP_PHASE_STEP={none:2,deleted:2,rejected:3,draft:3,progress:3,approved:4,settled:6};
+  const AP_STEPS=['월 확정','전자문서 생성','결재','현금 지급 · 수령증 서명','스캔 업로드 → 마감'];
+  const AP_URL=id=>'refatrix-approval.html#doc='+id;
+  function apHide(){ const b=$('apBox'); if(b){ b.classList.add('hidden'); b.innerHTML=''; } AP=null; apLockLegacy(false); }
+  function apLockLegacy(on){
+    const f=$('payForm'); if(!f) return;
+    f.classList.toggle('locked',!!on);
+    ['payAmt','payDate','payFile','payNote','paySubmit'].forEach(id=>{ const el=$(id); if(el) el.disabled=!!on; });
+    const lh=$('legacyHint'); if(lh) lh.classList.toggle('hidden', !!on || f.classList.contains('hidden'));
+  }
+  async function loadApproval(aid, ym, pay){
+    apCtx={aid:Number(aid)||0, ym:ym||'', pay:pay};
+    const box=$('apBox'); if(!box) return;
+    if(!apCtx.aid||!apCtx.ym){ apHide(); return; }
+    try{
+      const r=await fetch(session.api+'/api/commission/approval-docs?agent_id='+apCtx.aid+'&settle_ym='+apCtx.ym,{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ box.classList.remove('hidden'); box.innerHTML='<div class="hint">전자결재 연동 정보를 불러오지 못했습니다: '+esc(d.note||d.error||r.status)+'</div>'; return; }
+      // 응답이 늦게 와서 다른 사원·월을 보고 있으면 버린다
+      if(apCtx.aid!==Number(aid)||apCtx.ym!==ym) return;
+      AP=d; renderApproval();
+    }catch(e){ box.classList.remove('hidden'); box.innerHTML='<div class="hint">전자결재 연동 정보를 불러오지 못했습니다.</div>'; }
+  }
+  function apFlowHtml(phase){
+    const cur=AP_PHASE_STEP[phase]||1;
+    return '<div class="apflow">'+AP_STEPS.map((t,i)=>{ const n=i+1; const cls=n<cur?'done':(n===cur||(phase==='approved'&&n===5)?'now':''); return (i?'<i>›</i>':'')+'<span class="'+cls+'">'+(cls==='done'?'✓ ':'')+n+'. '+t+'</span>'; }).join('')+'</div>';
+  }
+  function apHandler(){
+    const p=(AP&&AP.lines||[]).find(l=>l.status==='pending');
+    if(!p) return '';
+    const lbl={approve:'중간결재',agree:'합의',pass:'경유',director:'디렉터 결재',pre_ceo:'대표이사 사전승인',post_ceo:'대표이사 사후승인'}[p.step_type]||p.step_type;
+    return ' · 현재 <b>'+esc(p.name)+'</b> ('+esc(lbl)+')';
+  }
+  function renderApproval(){
+    const box=$('apBox'); if(!box) return;
+    const d=AP||{}; const ph=d.phase||'none'; const doc=d.doc; const link=d.link; const pay=apCtx.pay;
+    const hasPay=!!(pay&&((pay.lines||[]).length||pay.bonus));
+    if(!d.ready){ box.classList.remove('hidden'); box.innerHTML='<div class="hint">전자결재 연동이 아직 서버에 없습니다. '+esc(d.note||'npm run migrate(0287)')+'</div>'; apLockLegacy(false); return; }
+    if(ph==='settled'&&!hasPay&&!link){ apHide(); return; }
+    if(ph==='none'&&!hasPay){ apHide(); return; }
+    let h='<div class="aph">💵 현금 지급 · 전자결재 승인 '+(doc&&doc.doc_no?'<span class="apdoc">'+esc(doc.doc_no)+'</span>':'')+'</div>'+apFlowHtml(ph);
+    const openBtn=doc?'<a class="btn ghost sm" href="'+AP_URL(doc.id)+'" target="_blank">전자결재에서 열기 ↗</a>':'';
+    if(ph==='none'||ph==='deleted'||ph==='rejected'){
+      if(ph==='deleted') h+='<div class="hint">이전 지급승인 문서'+(doc&&doc.doc_no?' '+esc(doc.doc_no):'')+'가 삭제되었습니다.</div>';
+      if(ph==='rejected') h+='<div class="hint">지급승인 문서'+(doc&&doc.doc_no?' <b>'+esc(doc.doc_no)+'</b>':'')+'가 <b class="short">반려</b>되었습니다. 전자결재에서 수정 후 재기안하거나, 지금 내역으로 새 문서를 만드세요. '+openBtn+'</div>';
+      if(hasPay){
+        h+='<div class="hint" style="margin:6px 0">위 확정·미지급 내역 <b>'+((pay.lines||[]).length)+'건 · '+fmtm(pay.total)+'</b>'+(pay.bonus?' (성과급 포함)':'')+'으로 전자결재 문서를 만듭니다. 지급 대상·기간·고객·인보이스·매출/수금·율·커미션만 자동으로 채우고, <b>결재선과 나머지는 전자결재 화면에서 디렉터가 작성</b>해 상신합니다.</div>';
+        if(d.can_create) h+='<button class="btn gold" data-ap="create"'+(pay.total>0?'':' disabled')+'>📝 커미션 지급승인 전자문서 생성</button>';
+        else h+='<div class="hint">문서 생성은 디렉터만 할 수 있습니다.</div>';
+      }
+      box.innerHTML=h; box.classList.remove('hidden'); apLockLegacy(false); return;
+    }
+    if(ph==='draft'){
+      h+='<div class="hint">임시저장 문서가 만들어졌습니다 — 전자결재에서 <b>결재선·참조를 지정하고 상신</b>하세요. 결재가 끝나면 이곳에서 수령증을 인쇄해 현금으로 지급합니다.</div><div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
+    } else if(ph==='progress'){
+      h+='<div class="hint">결재 진행 중'+apHandler()+'. 승인완료 전에는 지급할 수 없습니다.</div><div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
+    } else if(ph==='approved'){
+      const s=link&&link.snapshot||{};
+      h+='<div class="msg ok" style="display:block;margin:0 0 8px">결재 승인완료 — <b>'+fmtm(link&&link.total)+'</b> 현금 지급 가능. ① 수령증 인쇄 → ② 현금 지급 · '+esc(s.agent_name||'수령인')+' 서명 → ③ 서명본 스캔 업로드.</div>'
+        +'<div class="aprow"><button class="btn" data-ap="print">🖨 수령증 인쇄 (Recibo)</button>'+openBtn+'</div>'
+        +'<div class="payform" style="margin-top:10px">'
+        +'<div><label>현금 지급일(서명일)</label><input id="apDate" type="date" style="width:150px" value="'+mxHoy()+'"></div>'
+        +'<div><label>서명된 수령증 스캔 (이미지/PDF)</label><input id="apFile" type="file" accept="image/*,application/pdf" style="width:250px"></div>'
+        +'<button class="btn gold" data-ap="settle">수령증 업로드 · 지급 확정(반제) · 문서 마감</button></div>'
+        +'<div class="hint" style="margin-top:6px">업로드하면 한 번에 처리됩니다: 커미션 지급 전표 등록(인보이스 반제·증빙=수령증) + 전자결재 집행완료(현금 · 증빙 「수령증」) → 대표이사 사후승인 대기.</div>';
+    } else if(ph==='settled'){
+      h+='<div class="msg ok" style="display:block;margin:0 0 8px">지급·마감 완료 — 전표 #'+esc(link&&link.commission_payment_id)+' · '+fmtm(link&&link.total)+(link&&link.settled_at?(' · '+esc(mxHora(link.settled_at))):'')+(doc?(' · 문서 '+(doc.post_status==='confirmed'?'완결(사후승인)':doc.exec_status==='done'?'사후승인 대기':'')):'')+'</div>'
+        +'<div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="print">🖨 수령증 다시 인쇄</button></div>';
+      if(hasPay) h+='<div class="hint" style="margin-top:8px">이후 새로 확정된 미지급 내역이 있습니다 ('+fmtm(pay.total)+').'+(d.can_create?' <button class="btn gold sm" data-ap="create">📝 남은 내역으로 새 지급승인 문서 생성</button>':'')+'</div>';
+    }
+    h+='<div class="msg" id="apMsg"></div>';
+    box.innerHTML=h; box.classList.remove('hidden');
+    if(apFlash){ const m=$('apMsg'); m.className='msg '+apFlash.kind; m.innerHTML=apFlash.html; apFlash=null; }
+    apLockLegacy(['draft','progress','approved'].includes(ph));
+  }
+  function apMsg(kind,text){ const m=$('apMsg'); if(m){ m.className='msg '+kind; m.innerHTML=text; } else payMsg(kind,text); }
+  async function apCreate(btn){
+    if(!confirm(apCtx.ym+' 월 · 확정·미지급 '+fmtm(apCtx.pay&&apCtx.pay.total)+' 으로 커미션 지급승인 전자결재 문서(임시저장)를 만듭니다.\n결재선은 전자결재 화면에서 지정해 상신하세요. 진행할까요?')) return;
+    btn.disabled=true; btn.textContent='생성 중…';
+    try{
+      const r=await fetch(session.api+'/api/commission/approval-docs',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({agent_id:apCtx.aid,settle_ym:apCtx.ym})});
+      const d=await r.json();
+      if(!r.ok||d.error){ apMsg('err','문서 생성 실패: '+esc(d.note||d.error||r.status)); btn.disabled=false; btn.textContent='📝 커미션 지급승인 전자문서 생성'; return; }
+      apFlash={kind:'ok',html:'임시저장 문서를 만들었습니다 (인보이스 '+d.invoice_count+'건 · '+fmtm(d.total)+'). <a href="'+AP_URL(d.document_id)+'" target="_blank"><b>전자결재에서 열어 결재선 지정 · 상신 ↗</b></a>'};
+      await loadApproval(apCtx.aid, apCtx.ym, apCtx.pay);
+    }catch(e){ apMsg('err','서버에 연결할 수 없습니다.'); btn.disabled=false; btn.textContent='📝 커미션 지급승인 전자문서 생성'; }
+  }
+  async function apSettle(btn){
+    const doc=AP&&AP.doc; const link=AP&&AP.link; if(!doc||!link) return;
+    const date=$('apDate').value; const file=$('apFile').files[0];
+    if(!date){ apMsg('err','현금 지급일(수령증 서명일)을 입력하세요.'); return; }
+    if(!file){ apMsg('err','서명된 수령증 스캔을 첨부하세요.'); return; }
+    if(!confirm(fmtm(link.total)+' 현금 지급을 등록하고 전자결재 '+(doc.doc_no||'')+' 를 집행완료로 마감합니다. 진행할까요?')) return;
+    btn.disabled=true; const t0=btn.textContent; btn.textContent='처리 중…';
+    try{
+      const evi=await fileToEvidence(file, 2200);
+      const r=await fetch(session.api+'/api/commission/approval-docs/'+doc.id+'/settle',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({paid_date:date,evi_name:evi.name,evidence:evi.dataUrl})});
+      const d=await r.json();
+      if(!r.ok||d.error){
+        let msg='처리 실패: '+esc(d.note||d.error||r.status);
+        if(d.diffs&&d.diffs.length) msg+='<ul style="margin:6px 0 0 16px;padding:0">'+d.diffs.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+        apMsg('err',msg); return;
+      }
+      const ym=apCtx.ym, aid=apCtx.aid;
+      apFlash={kind:'ok',html:'지급 등록·반제 완료 — 커미션 '+d.settled_count+'건 '+fmtm(d.commission_settled)+(d.bonus_settled>0?(' · 성과급 '+fmtm(d.bonus_settled)):'')+' · 전표 #'+d.payment_id+' · 전자결재 '+esc(d.doc_no||'')+' '+(d.approval_finished?'집행완료 → 대표이사 사후승인 대기':'수령증 첨부')};
+      loadOverview(); loadBatches(); loadVouchers(aid); loadProgress(); loadPerf();
+      await loadPayable(aid, ym);
+    }catch(e){ apMsg('err', esc(e.message||'서버에 연결할 수 없습니다.')); }
+    finally{ btn.disabled=false; btn.textContent=t0; }
+  }
+
+  // ── 수령증(Recibo) — 스페인어 · A4 1장 · 서명란 ──
+  const MES_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  function mesEs(ym){ const m=/^(\d{4})-(\d{2})$/.exec(ym||''); return m?(MES_ES[Number(m[2])-1]+' de '+m[1]):(ym||''); }
+  // 금액 → 스페인어 (멕시코 수표·수령증 관례: 「MIL DOSCIENTOS PESOS 50/100 M.N.」)
+  function numLetras(v){
+    const U=['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISEIS','DIECISIETE','DIECIOCHO','DIECINUEVE','VEINTE','VEINTIUN','VEINTIDOS','VEINTITRES','VEINTICUATRO','VEINTICINCO','VEINTISEIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
+    const D=['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+    const C=['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+    const c999=(n)=>{ if(n===0) return ''; if(n===100) return 'CIEN'; const c=Math.floor(n/100), r=n%100; let out=C[c]; let t='';
+      if(r<30) t=U[r]; else { t=D[Math.floor(r/10)]; if(r%10) t+=' Y '+U[r%10]; }
+      return (out+(out&&t?' ':'')+t).trim(); };
+    const neg=Number(v)<0; let x=Math.abs(Math.round(Number(v||0)*100));
+    const cents=x%100; let ent=Math.floor(x/100);
+    const mill=Math.floor(ent/1000000), miles=Math.floor((ent%1000000)/1000), rest=ent%1000;
+    let w=[];
+    if(mill) w.push(mill===1?'UN MILLON':c999(mill)+' MILLONES');
+    if(miles) w.push(miles===1?'MIL':c999(miles)+' MIL');
+    if(rest) w.push(c999(rest));
+    let txt=w.join(' ')||'CERO';
+    if(ent>0 && rest===0 && miles===0 && mill>0) txt+=' DE';
+    txt+=(ent===1?' PESO ':' PESOS ')+String(cents).padStart(2,'0')+'/100 M.N.';
+    return (neg?'MENOS ':'')+txt;
+  }
+  async function apCompanyInfo(){
+    if(apCompany) return apCompany;
+    try{ apCompany=await fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()); }catch(e){ apCompany={}; }
+    return apCompany||{};
+  }
+  function receiptHtml(snap, doc, lines, co, preview){
+    const e=esc; const f2=(v)=>'$'+Number(v||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const L=snap.lines||[]; const p=snap.period||{};
+    const baseLbl=(l)=> l.basis==='revenue'?'Venta':(l.mode==='payment'?'Cobro en periodo':'Cobro (liquidada)');
+    let rows=L.map((l,i)=>'<tr><td class="c">'+(i+1)+'</td><td>'+e(l.sat_no||('#'+l.invoice_id))+'</td><td>'+e(l.inv_date||'')+'</td><td>'+e(l.customer_name)+'</td>'
+      +'<td>'+e(baseLbl(l))+(l.basis!=='revenue'&&l.last_pay_date?'<br><span class="g">cobro '+e(l.last_pay_date)+'</span>':'')+'</td>'
+      +'<td class="r">'+f2(l.commission_base)+'</td><td class="r">'+Number(l.rate||0)+'%</td><td class="r b">'+f2(l.expected)+'</td></tr>').join('');
+    if(snap.bonus) rows+='<tr><td class="c">+</td><td colspan="6">Bono por cumplimiento de meta'+(snap.bonus.achieved_rate!=null?(' ('+snap.bonus.achieved_rate+'%)'):'')+'</td><td class="r b">'+f2(snap.bonus.amount)+'</td></tr>';
+    for(const a of (snap.adjustments||[])) rows+='<tr><td class="c">±</td><td>'+e(a.sat_no||('#'+a.invoice_id))+'</td><td colspan="5">Ajuste por cambio en venta ya comisionada · '+e(a.customer_name)+'</td><td class="r b">'+(a.amount<0?'−':'')+f2(Math.abs(a.amount))+'</td></tr>';
+    const dirL=(lines||[]).find(l=>l.step_type==='director'&&l.status==='done');
+    const ceoL=(lines||[]).find(l=>l.step_type==='pre_ceo'&&l.status==='done');
+    const aprob=dirL?('Aprobado: '+e(dirL.name)+' · '+e(mxDia(dirL.acted_at))+(ceoL?(' / '+e(ceoL.name)+' · '+e(mxDia(ceoL.acted_at))):'')):'';
+    const logo=co.logo_data&&/^data:image\//.test(co.logo_data)?'<img class="logo" src="'+e(co.logo_data)+'" alt="">':'';
+    const emisor=co.emisor||'REFATRIX';
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Recibo '+e(doc&&doc.doc_no||'')+' · '+e(snap.agent_name)+'</title><style>'
+      +'@page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10.5pt;margin:0}'
+      +'.hd{display:flex;align-items:flex-start;gap:12px;border-bottom:2pt solid #143D34;padding-bottom:6px}.logo{max-height:46px;max-width:150px}'
+      +'.co{flex:1;font-size:8.5pt;color:#333;line-height:1.35}.co b{font-size:10.5pt;color:#111}.tt{text-align:right}.tt h1{margin:0;font-size:14pt;color:#143D34;letter-spacing:.3px}'
+      +'.tt .fo{font:700 11pt ui-monospace,Consolas,monospace;margin-top:3px}.tt .g{font-size:8pt}'
+      +'.box{border:1pt solid #143D34;border-radius:4px;padding:8px 10px;margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px}'
+      +'.amt{font-size:17pt;font-weight:700}.let{font-size:9.5pt;font-weight:700;margin-top:2px}.pr{line-height:1.55;margin:10px 0 6px;text-align:justify}'
+      +'table{width:100%;border-collapse:collapse;font-size:8.6pt;margin-top:4px}th{background:#eef1ef;text-align:left;padding:3px 4px;border:.5pt solid #aaa;font-size:8pt}'
+      +'td{padding:3px 4px;border:.5pt solid #ccc;vertical-align:top}td.r,th.r{text-align:right;white-space:nowrap}td.c{text-align:center;color:#666}td.b{font-weight:700}'
+      +'tfoot td{font-weight:700;background:#f6f6f2;font-size:9.5pt}.g{color:#666;font-size:7.5pt}'
+      +'.sig{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:16px;margin-top:34px;page-break-inside:avoid}.sig div{border-top:1pt solid #111;padding-top:4px;font-size:8.5pt;text-align:center;line-height:1.4}'
+      +'.sig b{display:block;font-size:9.5pt}.decl{font-size:8.3pt;color:#333;margin-top:12px;line-height:1.45;page-break-inside:avoid}'
+      +'.ft{margin-top:14px;border-top:.5pt solid #bbb;padding-top:4px;font-size:7.2pt;color:#666;display:flex;justify-content:space-between;gap:10px}'
+      +'.pv{position:fixed;top:40%;left:0;right:0;text-align:center;font-size:54pt;color:rgba(178,58,46,.13);transform:rotate(-24deg);font-weight:700;pointer-events:none}'
+      +'.fill{display:inline-block;min-width:150px;border-bottom:.8pt solid #111}'
+      +'@media screen{body{padding:14mm;max-width:210mm;margin:0 auto;background:#fff}}'
+      +'</style></head><body>'
+      +(preview?'<div class="pv">BORRADOR · SIN APROBAR</div>':'')
+      +'<div class="hd">'+logo+'<div class="co"><b>'+e(emisor)+'</b>'+(co.rfc?'<br>RFC: '+e(co.rfc):'')+(co.domicilio?'<br>'+e(co.domicilio):'')+'</div>'
+      +'<div class="tt"><h1>RECIBO DE PAGO DE COMISIONES</h1><div class="fo">'+e(doc&&doc.doc_no||'(sin folio)')+'</div><div class="g">Pago en efectivo · '+e(mesEs(snap.settle_ym))+'</div></div></div>'
+      +'<div class="box"><div><div class="g">BUENO POR</div><div class="amt">'+f2(snap.total)+' MXN</div><div class="let">('+e(numLetras(snap.total))+')</div></div>'
+      +'<div style="text-align:right;font-size:9pt">Lugar y fecha:<br><span class="fill">&nbsp;</span></div></div>'
+      +'<p class="pr">Recibí de <b>'+e(emisor)+'</b> la cantidad de <b>'+f2(snap.total)+' MXN</b> ('+e(numLetras(snap.total))+') <b>en efectivo</b>, por concepto de pago de comisiones por ventas correspondientes a las facturas liquidadas en <b>'+e(mesEs(snap.settle_ym))+'</b>'
+      +(p.inv_from?(' (facturas emitidas del '+e(p.inv_from)+' al '+e(p.inv_to)+')'):'')+', conforme al documento de aprobación interno <b>'+e(doc&&doc.doc_no||'')+'</b>, de acuerdo con el siguiente detalle:</p>'
+      +'<table><thead><tr><th>#</th><th>Factura</th><th>Fecha</th><th>Cliente</th><th>Base</th><th class="r">Importe base (sin IVA)</th><th class="r">%</th><th class="r">Comisión</th></tr></thead><tbody>'+rows+'</tbody>'
+      +'<tfoot><tr><td colspan="7" class="r">TOTAL RECIBIDO</td><td class="r">'+f2(snap.total)+'</td></tr></tfoot></table>'
+      +'<div class="decl">Declaro que recibí a mi entera satisfacción la cantidad arriba indicada en efectivo y que el detalle corresponde a las comisiones aprobadas a mi favor para el periodo señalado. '
+      +'Cualquier ajuste posterior por notas de crédito, devoluciones o cancelaciones de las facturas listadas se aplicará en el siguiente pago de comisiones.</div>'
+      +'<div class="sig"><div><b>RECIBÍ DE CONFORMIDAD</b>'+e(snap.agent_name)+'<br>Nombre, firma y fecha</div><div><b>ENTREGÓ</b>Finanzas<br>Nombre y firma</div><div><b>AUTORIZÓ</b>'+(dirL?e(dirL.name):'Dirección')+'<br>'+(aprob?'<span class="g">'+aprob+'</span>':'Nombre y firma')+'</div></div>'
+      +'<div class="ft"><span>Refatrix ERP · '+e(doc&&doc.doc_no||'')+' · '+e(snap.agent_name)+' · '+e(snap.settle_ym)+' · '+L.length+' facturas</span><span>Escanee este recibo firmado y cárguelo en Finanzas › Comisiones para cerrar el documento.</span></div>'
+      +'</body></html>';
+  }
+  async function apPrint(preview){
+    const link=AP&&AP.link; if(!link||!link.snapshot){ apMsg('err','지급 내역이 없습니다.'); return; }
+    const w=window.open('','_blank'); if(!w){ apMsg('err','팝업이 차단되었습니다. 브라우저에서 팝업을 허용하세요.'); return; }
+    w.document.write('<p style="font-family:sans-serif">Cargando…</p>');
+    const co=await apCompanyInfo();
+    w.document.open(); w.document.write(receiptHtml(link.snapshot, AP.doc, AP.lines, co, !!preview)); w.document.close();
+    setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} }, 350);
+  }
+  document.addEventListener('click',e=>{
+    const b=e.target&&e.target.closest&&e.target.closest('[data-ap]'); if(!b) return;
+    const a=b.dataset.ap;
+    if(a==='create') apCreate(b);
+    else if(a==='settle') apSettle(b);
+    else if(a==='print') apPrint(false);
+    else if(a==='preview') apPrint(true);
+  });
+  // 전자결재 화면에서 넘어온 링크: #cm_agent=..&cm_ym=.. → 사원·월 자동 선택
+  let apDeep=(function(){ try{ const p=new URLSearchParams(location.hash.slice(1)); const a=p.get('cm_agent'), y=p.get('cm_ym'); return a&&/^\d{4}-\d{2}$/.test(y||'')?{agent:a,ym:y}:null; }catch(e){ return null; } })();
+  function applyDeepLink(){
+    if(!apDeep) return;
+    const sel=$('agentSel'), ms=$('payMonth');
+    if(!sel||![...sel.options].some(o=>o.value===apDeep.agent)) return;
+    if(!ms||!window.__batches) return;
+    sel.value=apDeep.agent; agentId=apDeep.agent;
+    if(![...ms.options].some(o=>o.value===apDeep.ym)) ms.insertAdjacentHTML('beforeend','<option value="'+apDeep.ym+'">'+apDeep.ym+'</option>');
+    ms.value=apDeep.ym; const ym=apDeep.ym; apDeep=null;
+    loadProgress(); loadPerf(); loadOverview(); loadPayable(agentId, ym); loadVouchers(agentId);
+    setTimeout(()=>{ const pp=$('payPanel'); if(pp&&pp.scrollIntoView) pp.scrollIntoView({behavior:'smooth',block:'start'}); }, 400);
   }
 
   // ── 지급 전표 내역 + 증빙 열람 ──

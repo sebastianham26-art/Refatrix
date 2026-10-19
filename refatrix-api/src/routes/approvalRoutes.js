@@ -8,6 +8,7 @@ import { getUsdMxnRate } from '../fx.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE } from '../approvalFinance.js';   // 0258 자금 연동
+import { commissionApprovalReady, linkForDoc } from '../commissionApproval.js';   // 0287 커미션 지급승인 문서
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
   n, round2, sameId, decodeApprovalFile, sha256Hex, parseCfdi, guessKind, normKind, calcAmounts,
@@ -202,10 +203,131 @@ const ERR = {
 function fail(reply, code, extra) {
   return reply.code(ERR[code] || 400).send({ error: code, ...(extra || {}) });
 }
-class Stop extends Error { constructor(code, extra) { super(code); this.code = code; this.extra = extra; } }
+export class Stop extends Error { constructor(code, extra) { super(code); this.code = code; this.extra = extra; } }
 async function tx(reply, fn) {
   try { return await withTx((c) => fn(c.query.bind(c))); }
   catch (e) { if (e instanceof Stop) return fail(reply, e.code, e.extra); throw e; }
+}
+
+// 임시저장 입력 → 원통화 금액 · 결제 방식 일정 · 본문(문단+그림)
+//   금액은 문서 통화(orig_*) 로 받는다(구 클라이언트 planned_sub 도 허용). MXN 환산은 applyMoney.
+function draftFields(body) {
+  const b = body || {};
+  const title = cleanText(b.title, 200);
+  if (!title || !title.trim()) return { error: 'title_required' };
+  const currency = CURRENCIES.includes(b.currency) ? b.currency : 'MXN';
+  const ptype = PAYMENT_TYPES.includes(b.payment_type) ? b.payment_type : 'once';
+  const iva = b.iva_applied !== false;
+  const plan = b.payment_plan && typeof b.payment_plan === 'object' ? b.payment_plan : null;
+  let sub = round2(b.orig_sub ?? b.planned_sub);
+  if (ptype === 'recurring' && plan && plan.per_sub != null) sub = round2(n(plan.per_sub) * n(plan.count));
+  if (sub < 0) return { error: 'bad_amount' };
+  const amt = calcAmounts(sub, iva);
+  const sch = buildSchedule({ type: ptype, total: amt.planned_total, pay_due: b.pay_due, plan, rows: b.schedule });
+  if (sch.error) return { error: sch.error };
+  const rich = normalizeBodyRich(b.body_rich ?? null, b.body);
+  if (!rich.ok) return { error: rich.error };
+  return {
+    category_id: b.category_id ? Number(b.category_id) : null,
+    title: title.trim(),
+    vendor: cleanText(b.vendor, 200),
+    body: rich.plain,
+    body_rich: rich.nodes.length ? JSON.stringify(rich.nodes) : null,
+    pay_due: sch.rows[0].due_date || (isYmd(b.pay_due) ? b.pay_due : null),
+    pay_method: PAY_METHODS.includes(b.pay_method) ? b.pay_method : '계좌이체',
+    iva_applied: iva,
+    include_finance: b.include_finance !== false,
+    currency, payment_type: ptype,
+    payment_plan: sch.plan ? JSON.stringify(sch.plan) : null,
+    orig_sub: amt.planned_sub, orig_iva: amt.planned_iva, orig_total: amt.planned_total,
+    schedule: sch.rows,
+    refs: Array.isArray(b.refs) ? [...new Set(b.refs.map(Number).filter(Boolean))] : [],
+    shares: Array.isArray(b.shares) ? [...new Set(b.shares.map(Number).filter(Boolean))] : [],
+  };
+}
+// 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
+async function saveSchedule(q, docId, rows) {
+  await q(`DELETE FROM approval_payments WHERE document_id=$1`, [docId]);
+  for (const r of rows) {
+    await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn) VALUES ($1,$2,$3,$4,$4)`,
+      [docId, r.seq, r.due_date, r.amount]);
+  }
+}
+const DRAFT_SET = `category_id=$2, title=$3, vendor=$4, body=$5, body_rich=$6, pay_due=$7, pay_method=$8, iva_applied=$9,
+  include_finance=$10, currency=$11, payment_type=$12, payment_plan=$13, orig_sub=$14, orig_iva=$15, orig_total=$16`;
+const draftArgs = (id, f) => [id, f.category_id, f.title, f.vendor, f.body, f.body_rich, f.pay_due, f.pay_method, f.iva_applied,
+  f.include_finance, f.currency, f.payment_type, f.payment_plan, f.orig_sub, f.orig_iva, f.orig_total];
+
+// ── 다른 화면이 자동으로 만드는 임시저장 문서(0287 커미션 지급승인) ─────────────
+//   POST /api/approvals 와 같은 검증·회차·환율 처리. 참조/공람·결재선은 비워 둔다(기안자가 작성 화면에서 지정).
+//   반환 { id } · 입력 오류는 Stop('bad_input').
+export async function createApprovalDraft(q, uid, body) {
+  const f = draftFields(body);
+  if (f.error) throw new Stop('bad_input', { detail: f.error });
+  const id = Number((await q(`INSERT INTO approval_documents(title, drafter_id) VALUES ($1,$2) RETURNING id`, [f.title, uid])).rows[0].id);
+  await q(`UPDATE approval_documents SET ${DRAFT_SET} WHERE id=$1`, draftArgs(id, f));
+  await saveSchedule(q, id, f.schedule);
+  const m = await applyMoney(q, id);
+  await event(q, id, uid, 'auto_draft', null, cleanText(body && body.auto_note, 300) || '자동 생성');
+  return { id, planned_total: m.planned_total };
+}
+
+async function finishIfAllPaid(q, b, ctx) {
+  const pays = await loadPayments(q, b.doc.id);
+  const done = pays.filter((p) => p.status === 'done');
+  const actual = round2(done.reduce((s2, p) => s2 + n(p.actual_mxn), 0));
+  if (pays.some((p) => p.status === 'planned')) {
+    await q(`UPDATE approval_documents SET actual_total=$2, updated_at=now() WHERE id=$1`, [b.doc.id, actual]);
+    return false;
+  }
+  const last = [...done].sort((a, c) => String(a.exec_date || '').localeCompare(String(c.exec_date || '')) || a.seq - c.seq).pop();
+  await q(`UPDATE approval_documents SET exec_status='done', actual_total=$2, exec_date=$3, exec_pay_method=$4,
+             exec_at=now(), exec_by=$5, post_status='pending', updated_at=now() WHERE id=$1`,
+    [b.doc.id, actual, last ? last.exec_date : null, last ? last.pay_method : null, ctx.uid]);
+  const pl = postLine(b.lines);
+  if (pl) await q(`UPDATE approval_lines SET status='pending', pending_at=now() WHERE id=$1`, [pl.id]);
+  if (pays.length > 1) await event(q, b.doc.id, ctx.uid, 'exec_done', null, `전 회차 처리 완료 · 실적 합계 MXN ${actual.toFixed(2)}`);
+  if (pl) await notify(q, pl.user_id, b.doc.id, '사후승인 요청', null, ctx.uid);
+  await notify(q, b.doc.drafter_id, b.doc.id, '집행완료', null, ctx.uid);
+  return true;
+}
+
+// ── 0287 커미션 현금 지급: 서명된 수령증 스캔으로 집행 마감 ─────────────────────
+//   호출자(커미션 지급 전표 등록)와 **같은 트랜잭션** q 안에서 실행된다 — 지급 전표와 문서 마감이 함께 되거나 함께 취소.
+//   · 문서가 승인완료·집행대기면: 미집행 회차(1회차)를 실적 = amount · 현금 · 지급일 date 로 집행 → 전 회차 끝 → 사후승인 대기.
+//   · 이미 집행완료(디렉터가 「집행 단계 없음」으로 둔 문서)면: 수령증만 증빙으로 붙이고 이력을 남긴다.
+//   · file = { name, mime, bytes, buf } (decodeApprovalFile 결과). 종류 '수령증'(실적 증빙).
+//   반환 { executed, finished, file_id }
+export async function executeWithReceipt(q, { docId, uid, amount, date, memo, file }) {
+  const b = await loadBundle(q, docId, true);
+  if (!b) throw new Stop('not_found');
+  if (b.doc.status !== 'approved') throw new Stop('bad_state', { detail: 'not_approved' });
+  const pays = await loadPayments(q, docId);
+  const open = pays.filter((p) => p.status === 'planned');
+  const execPending = b.doc.exec_status === 'pending';
+  const target = execPending ? open[0] : null;
+  if (execPending && !target) throw new Stop('bad_state', { detail: 'payment_not_open' });
+  const hash = sha256Hex(file.buf);
+  const row = (await q(
+    `INSERT INTO approval_files(document_id, kind, stage, file_name, mime_type, file_size, sha256, file_data, uploaded_by, payment_id)
+     VALUES ($1,'수령증',$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [docId, fileStage(b.doc), file.name, file.mime, file.bytes, hash, file.buf, uid, target ? target.id : null])).rows[0];
+  const fileId = Number(row.id);
+  if (!execPending) {
+    await event(q, docId, uid, 'receipt', null, `현금 수령증 첨부 · MXN ${round2(amount).toFixed(2)} · 지급일 ${date}${memo ? '\n' + memo : ''}`);
+    return { executed: false, finished: b.doc.exec_status === 'done', file_id: fileId };
+  }
+  const amt = round2(amount);
+  const fxRate = b.doc.currency === 'USD' ? n(b.doc.fx_rate) : 1;
+  const mxn = round2(amt * fxRate);
+  await q(`UPDATE approval_payments SET status='done', actual_amount=$2, actual_mxn=$3, fx_rate=$4, fx_date=$5, exec_date=$6,
+             pay_method='현금', memo=$7, exec_at=now(), exec_by=$8, exec_source='approval' WHERE id=$1`,
+    [target.id, amt, mxn, fxRate, b.doc.currency === 'USD' ? b.doc.fx_date : null, date, memo, uid]);
+  await event(q, docId, uid, 'execute', null,
+    `${pays.length > 1 ? `${target.seq}/${pays.length}회차 · ` : ''}실적 MXN ${mxn.toFixed(2)} · 현금 · 지급일 ${date} · 서명된 수령증 첨부${memo ? '\n' + memo : ''}`);
+  const finished = await finishIfAllPaid(q, b, { uid });
+  await syncApprovalDoc(q, docId, uid);   // 0258 자금계획 예정 정리(다른 집행과 같은 규칙)
+  return { executed: true, finished, file_id: fileId };
 }
 
 export default async function approvalRoutes(app) {
@@ -338,7 +460,17 @@ export default async function approvalRoutes(app) {
       .map((x) => { let ch = []; try { ch = JSON.parse(x.changes); } catch { /* 손상 무시 */ } return { id: Number(x.id), editor_id: Number(x.editor_id), step_type: x.step_type, reason: x.reason, created_at: x.created_at, changes: ch }; });
     const rich = normalizeBodyRich(b.doc.body_rich ?? null, b.doc.body);
     const { body_rich: _raw, ...docOut } = b.doc;
+    // 0287 커미션 지급승인 문서면 결재받는 지급 내역(인보이스별 표) — 재무 › 커미션에서 자동 생성된 스냅샷
+    let commission = null;
+    try {
+      if (await commissionApprovalReady(query)) {
+        const l = await linkForDoc(query, id);
+        if (l) commission = { link_id: l.id, agent_id: l.agent_id, settle_ym: l.settle_ym, total: l.total, snapshot: l.snapshot,
+          commission_payment_id: l.commission_payment_id, settled_at: l.settled_at, settled_document_id: l.settled_document_id };
+      }
+    } catch (e) { if (!e || e.code !== '42P01') throw e; }
     return {
+      commission,
       doc: { ...docOut, stage: stageKey(b.doc, b.lines), variance_pct: variancePct(b.doc), parent_no: parent ? parent.doc_no : null },
       body_nodes: rich.ok ? rich.nodes : [{ t: 'p', v: b.doc.body || '' }],
       payments,
@@ -375,42 +507,6 @@ export default async function approvalRoutes(app) {
   });
 
   // ── 임시저장(생성/수정) · 삭제 ─────────────────────────────────────────
-  // 임시저장 입력 → 원통화 금액 · 결제 방식 일정 · 본문(문단+그림)
-  //   금액은 문서 통화(orig_*) 로 받는다(구 클라이언트 planned_sub 도 허용). MXN 환산은 applyMoney.
-  function draftFields(body) {
-    const b = body || {};
-    const title = cleanText(b.title, 200);
-    if (!title || !title.trim()) return { error: 'title_required' };
-    const currency = CURRENCIES.includes(b.currency) ? b.currency : 'MXN';
-    const ptype = PAYMENT_TYPES.includes(b.payment_type) ? b.payment_type : 'once';
-    const iva = b.iva_applied !== false;
-    const plan = b.payment_plan && typeof b.payment_plan === 'object' ? b.payment_plan : null;
-    let sub = round2(b.orig_sub ?? b.planned_sub);
-    if (ptype === 'recurring' && plan && plan.per_sub != null) sub = round2(n(plan.per_sub) * n(plan.count));
-    if (sub < 0) return { error: 'bad_amount' };
-    const amt = calcAmounts(sub, iva);
-    const sch = buildSchedule({ type: ptype, total: amt.planned_total, pay_due: b.pay_due, plan, rows: b.schedule });
-    if (sch.error) return { error: sch.error };
-    const rich = normalizeBodyRich(b.body_rich ?? null, b.body);
-    if (!rich.ok) return { error: rich.error };
-    return {
-      category_id: b.category_id ? Number(b.category_id) : null,
-      title: title.trim(),
-      vendor: cleanText(b.vendor, 200),
-      body: rich.plain,
-      body_rich: rich.nodes.length ? JSON.stringify(rich.nodes) : null,
-      pay_due: sch.rows[0].due_date || (isYmd(b.pay_due) ? b.pay_due : null),
-      pay_method: PAY_METHODS.includes(b.pay_method) ? b.pay_method : '계좌이체',
-      iva_applied: iva,
-      include_finance: b.include_finance !== false,
-      currency, payment_type: ptype,
-      payment_plan: sch.plan ? JSON.stringify(sch.plan) : null,
-      orig_sub: amt.planned_sub, orig_iva: amt.planned_iva, orig_total: amt.planned_total,
-      schedule: sch.rows,
-      refs: Array.isArray(b.refs) ? [...new Set(b.refs.map(Number).filter(Boolean))] : [],
-      shares: Array.isArray(b.shares) ? [...new Set(b.shares.map(Number).filter(Boolean))] : [],
-    };
-  }
   async function saveViewers(q, docId, drafterId, f) {
     await q(`DELETE FROM approval_viewers WHERE document_id=$1`, [docId]);
     for (const [kind, arr] of [['ref', f.refs], ['share', f.shares]]) {
@@ -433,18 +529,6 @@ export default async function approvalRoutes(app) {
     const execReq = req.ctx.perm.role === 'director' ? req.body?.exec_required !== false : true;
     await q(`UPDATE approval_documents SET custom_steps=$2, exec_required=$3 WHERE id=$1`, [id, val, execReq]);
   }
-  // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
-  async function saveSchedule(q, docId, rows) {
-    await q(`DELETE FROM approval_payments WHERE document_id=$1`, [docId]);
-    for (const r of rows) {
-      await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn) VALUES ($1,$2,$3,$4,$4)`,
-        [docId, r.seq, r.due_date, r.amount]);
-    }
-  }
-  const DRAFT_SET = `category_id=$2, title=$3, vendor=$4, body=$5, body_rich=$6, pay_due=$7, pay_method=$8, iva_applied=$9,
-    include_finance=$10, currency=$11, payment_type=$12, payment_plan=$13, orig_sub=$14, orig_iva=$15, orig_total=$16`;
-  const draftArgs = (id, f) => [id, f.category_id, f.title, f.vendor, f.body, f.body_rich, f.pay_due, f.pay_method, f.iva_applied,
-    f.include_finance, f.currency, f.payment_type, f.payment_plan, f.orig_sub, f.orig_iva, f.orig_total];
   const docGuard = { preHandler: [authGuard], bodyLimit: APPROVAL_DOC_BODY_LIMIT };   // 본문 그림 포함
   app.post('/api/approvals', docGuard, async (req, reply) => {
     const f = draftFields(req.body);
@@ -723,25 +807,6 @@ export default async function approvalRoutes(app) {
   //   · 회차 증빙: 그 회차에 연결된 Factura·송금증 1건 이상(link_file_ids 로 기존 증빙 연결 가능).
   //     회차가 1개뿐인 문서는 문서에 붙은 실적 증빙도 인정(0234 방식 호환).
   //   · 모든 회차가 집행/중단되면 문서 집행완료 → 대표이사 사후승인 요청.
-  async function finishIfAllPaid(q, b, ctx) {
-    const pays = await loadPayments(q, b.doc.id);
-    const done = pays.filter((p) => p.status === 'done');
-    const actual = round2(done.reduce((s2, p) => s2 + n(p.actual_mxn), 0));
-    if (pays.some((p) => p.status === 'planned')) {
-      await q(`UPDATE approval_documents SET actual_total=$2, updated_at=now() WHERE id=$1`, [b.doc.id, actual]);
-      return false;
-    }
-    const last = [...done].sort((a, c) => String(a.exec_date || '').localeCompare(String(c.exec_date || '')) || a.seq - c.seq).pop();
-    await q(`UPDATE approval_documents SET exec_status='done', actual_total=$2, exec_date=$3, exec_pay_method=$4,
-               exec_at=now(), exec_by=$5, post_status='pending', updated_at=now() WHERE id=$1`,
-      [b.doc.id, actual, last ? last.exec_date : null, last ? last.pay_method : null, ctx.uid]);
-    const pl = postLine(b.lines);
-    if (pl) await q(`UPDATE approval_lines SET status='pending', pending_at=now() WHERE id=$1`, [pl.id]);
-    if (pays.length > 1) await event(q, b.doc.id, ctx.uid, 'exec_done', null, `전 회차 처리 완료 · 실적 합계 MXN ${actual.toFixed(2)}`);
-    if (pl) await notify(q, pl.user_id, b.doc.id, '사후승인 요청', null, ctx.uid);
-    await notify(q, b.doc.drafter_id, b.doc.id, '집행완료', null, ctx.uid);
-    return true;
-  }
   async function execPrelude(q, req, id) {
     const settings = await loadSettings(q);
     const ctx = ctxOf(req, settings);
@@ -762,6 +827,10 @@ export default async function approvalRoutes(app) {
     if (!(amt > 0) || !isYmd(date)) return fail(reply, 'bad_input');
     return tx(reply, async (q) => {
       const { ctx, b, pays } = await execPrelude(q, req, id);
+      // 0287 커미션 지급승인 문서는 재무 › 커미션의 「서명된 수령증 업로드」로만 집행한다(지급 전표·반제와 함께 마감)
+      if (await commissionApprovalReady(q) && await linkForDoc(q, id)) {
+        throw new Stop('bad_state', { detail: 'commission_doc', note: '커미션 지급승인 문서입니다. 재무 › 커미션에서 서명된 수령증을 올리면 지급 전표와 함께 집행·마감됩니다.' });
+      }
       const pid = req.body?.payment_id ? Number(req.body.payment_id) : (pays.find((p) => p.status === 'planned') || {}).id;
       const row = pays.find((p) => p.id === pid);
       if (!row || row.status !== 'planned') throw new Stop('bad_state', { detail: 'payment_not_open' });

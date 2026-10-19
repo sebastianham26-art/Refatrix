@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261007gb</title>
+<title>Refatrix ERP · 전자결재 · b20261019cap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -381,7 +381,7 @@ const ERRMSG={bad_pin:'PIN이 올바르지 않습니다',pin_required:'PIN을 �
  ceo_unset:'설정에서 대표이사 계정을 먼저 지정해야 합니다',too_large:'20MB를 넘는 파일입니다',bad_type:'지원하지 않는 파일 형식입니다',
  director_only:'디렉터만 할 수 있습니다',forbidden:'권한이 없습니다',not_found:'문서를 찾을 수 없거나 열람 권한이 없습니다',
  category_required:'카테고리를 선택하세요',amount_required:'예정금액을 입력하세요',title_required:'제목을 입력하세요',duplicate:'이미 있는 단계입니다',
- doc_not_found:'문서번호를 확인하세요',bad_user:'사용할 수 없는 사용자입니다',bad_comment:'댓글을 확인하세요',unauthorized:'로그인이 만료되었습니다. 다시 로그인하세요'};
+ doc_not_found:'문서번호를 확인하세요',bad_user:'사용할 수 없는 사용자입니다',bad_comment:'댓글을 확인하세요',unauthorized:'로그인이 만료되었습니다. 다시 로그인하세요',commission_doc:'커미션 지급승인 문서는 재무 › 커미션에서 서명된 수령증을 올려 집행합니다'};
 const errText=d=>ERRMSG[d&&d.detail]||ERRMSG[d&&d.error]||(d&&(d.detail||d.error))||'오류';
 
 async function api(method,path,body){
@@ -579,7 +579,7 @@ function fileRow(f,d){
   ${f.voided_at?`<div class="fm">무효 처리 · ${esc(U(f.voided_by))} · ${tm(f.voided_at)} · ${esc(f.void_reason)}</div>`:''}
  </div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button>${f.can_delete?`<button class="btn sm danger" data-act="fdel" data-fid="${f.id}">삭제</button>`:''}${f.can_void?`<button class="btn sm danger" data-act="fvoid" data-fid="${f.id}">무효</button>`:''}</div></div>`;
 }
-const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단',exec_skip:'집행 생략 · 예정 금액으로 집행완료',delete:'삭제',restore:'복구'};
+const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단',exec_skip:'집행 생략 · 예정 금액으로 집행완료',delete:'삭제',restore:'복구',auto_draft:'자동 생성 (커미션)',receipt:'현금 수령증 첨부'};
 function timeline(){
  const it=[];
  DET.events.forEach(e=>it.push({k:'ev',at:e.created_at,e}));
@@ -623,7 +623,7 @@ function actionsHtml(){
  if(a.includes('flag'))b.push(btn('flag','이의제기','danger'));
  if(a.includes('post_confirm'))b.push(btn('approve','사후승인 확인','pri'));
  if(a.includes('close_flag'))b.push(btn('postclose','이의 종결 · 사후 확인','pri'));
- if(a.includes('execute'))b.push(btn('exec','집행 처리','gold'));
+ if(a.includes('execute'))b.push(DET.commission?(DET.commission.commission_payment_id?'':`<a class="btn gold" href="${CM_URL(DET.commission)}" target="_blank" title="커미션 지급승인 문서 — 재무 › 커미션에서 서명된 수령증을 올리면 지급 전표와 함께 집행·마감됩니다">💵 커미션 화면에서 수령증으로 지급</a>`):btn('exec','집행 처리','gold'));
  if(a.includes('withdraw'))b.push(btn('withdraw','회수',''));
  if(a.includes('edit'))b.push(btn('edit','편집',''));
  if(a.includes('submit'))b.push(btn('submitd','상신','pri'));
@@ -631,6 +631,34 @@ function actionsHtml(){
  if(d.status==='draft'&&same(d.drafter_id,B.me.id))b.unshift(btn('deldraft','🗑 임시저장 삭제','danger'));
  if(B.me.isDirector&&d.status!=='draft')b.push(btn('docdel','🗑 문서 삭제','danger'));
  return b.join('');
+}
+/* ═════════ 0287 커미션 지급승인 문서 — 지급 내역 표(재무 › 커미션 자동 생성 스냅샷) ═════════ */
+const CM_URL=c=>`refatrix-commission.html#cm_agent=${encodeURIComponent(c.agent_id)}&cm_ym=${encodeURIComponent(c.settle_ym)}`;
+const CM_REASON={deleted:'매출 삭제',nota_credito:'크레딧 노트',amount_change:'금액 수정'};
+const cmBasis=l=>l.basis==='revenue'?'매출':(l.mode==='payment'?'수금일':'수금(완납)');
+const cmYm=ym=>{const m=/^(\d{4})-(\d{2})$/.exec(ym||'');return m?`${m[1]}년 ${Number(m[2])}월`:(ym||'');};
+function commissionCardHtml(c){
+ const s=c.snapshot||{},L=s.lines||[],p=s.period||{};
+ const rows=L.map(l=>`<tr><td>${esc(l.customer_name)}</td><td>${esc(l.sat_no||('#'+l.invoice_id))}</td><td>${esc(l.inv_date||'')}</td><td>${money(l.base)}</td><td>${esc(cmBasis(l))}</td>
+  <td>${l.basis==='revenue'?'<span class="sub">—</span>':`${esc(l.last_pay_date||'—')}<div class="sub">${money(l.paid_amount)}</div>`}</td><td>${money(l.commission_base)}</td><td>${Number(l.rate||0)}%</td><td><b>${money(l.expected)}</b></td></tr>`).join('');
+ const bon=s.bonus?`<tr><td colspan="8">＋ 성과급(Bono)${s.bonus.achieved_rate!=null?` · 달성률 ${s.bonus.achieved_rate}%`:''}${s.bonus.target_amount!=null?` · 목표 ${money(s.bonus.target_amount)} / 실적 ${money(s.bonus.actual_amount)}`:''}</td><td><b>${money(s.bonus.amount)}</b></td></tr>`:'';
+ const adj=(s.adjustments||[]).map(a=>`<tr><td>${esc(a.customer_name)}</td><td>${esc(a.sat_no||('#'+a.invoice_id))}</td><td colspan="6">지급 후 매출 조정 · ${esc(CM_REASON[a.reason]||a.reason||'')} · 지급 당시 매출 ${money(a.paid_base)} → 현재 ${money(a.new_base)}</td><td><b>${a.amount<0?'−':'+'}${money(Math.abs(a.amount))}</b></td></tr>`).join('');
+ const st=c.commission_payment_id?`<div class="warn info" style="margin-top:10px">💵 현금 지급·마감 완료 — 커미션 지급 전표 #${esc(c.commission_payment_id)}${c.settled_at?` · ${tm(c.settled_at)}`:''} · 서명된 수령증이 증빙(「수령증」)으로 첨부되었습니다.</div>`
+  :`<div class="warn info" style="margin-top:10px">결재가 끝나면 <b>재무 › 커미션</b>에서 수령증(Recibo)을 인쇄해 현금으로 지급하고, 서명본 스캔을 올리면 커미션 지급 전표(반제)와 이 문서의 집행이 함께 마감됩니다. <a class="lnk" style="margin:0" href="${CM_URL(c)}" target="_blank">커미션 화면 열기 ↗</a></div>`;
+ return `<div class="card sec"><h3>커미션 지급 내역 <span class="sub">재무 › 커미션에서 자동 생성 · 인보이스 ${L.length}건</span></h3>
+  <dl class="kv"><dt>지급 대상</dt><dd><b>${esc(s.agent_name||'')}</b></dd><dt>기간</dt><dd>${esc(cmYm(s.settle_ym))} 반제(완납) 확정분${p.inv_from?` <span class="sub">· 발행 ${esc(p.inv_from)} ~ ${esc(p.inv_to)}</span>`:''}${p.pay_from?` <span class="sub">· 수금 ${esc(p.pay_from)} ~ ${esc(p.pay_to)}</span>`:''}</dd>
+  <dt>지급 합계</dt><dd class="big">${money(s.total)}</dd><dt>구성</dt><dd>커미션 ${money(s.commission_total)}${s.bonus?` · 성과급 ${money(s.bonus.amount)}`:''}${(s.adjustments||[]).length?` · 조정 ${s.adjustment_total<0?'−':'+'}${money(Math.abs(s.adjustment_total))}`:''}</dd></dl>
+  <div class="scroll" style="margin-top:8px"><table class="tbl"><thead><tr><th>고객명</th><th>인보이스</th><th>발행일</th><th>매출(ex-IVA)</th><th>기준</th><th>수금일 · 수금액</th><th>커미션 기준액</th><th>율</th><th>커미션</th></tr></thead>
+  <tbody>${rows}${bon}${adj}</tbody><tfoot><tr><td colspan="8">지급 합계 (MXN · 현금 · IVA 없음)</td><td>${money(s.total)}</td></tr></tfoot></table></div>${st}</div>`;
+}
+function commissionPrintHtml(c){
+ const s=c.snapshot||{},L=s.lines||[],p=s.period||{};
+ const rows=L.map(l=>`<tr><td class="ptx">${esc(cut(l.customer_name,28))}</td><td class="pnw">${esc(l.sat_no||('#'+l.invoice_id))}</td><td class="pnw">${esc((l.inv_date||'').slice(2))}</td><td class="pr pnw">${money(l.base)}</td><td class="pnw">${esc(cmBasis(l))}${l.basis!=='revenue'&&l.last_pay_date?` ${esc(l.last_pay_date.slice(2))}`:''}</td><td class="pr pnw">${money(l.commission_base)}</td><td class="pr pnw">${Number(l.rate||0)}%</td><td class="pr pnw"><b>${money(l.expected)}</b></td></tr>`);
+ if(s.bonus)rows.push(`<tr><td class="ptx" colspan="7">＋ 성과급${s.bonus.achieved_rate!=null?` (달성률 ${s.bonus.achieved_rate}%)`:''}</td><td class="pr pnw"><b>${money(s.bonus.amount)}</b></td></tr>`);
+ for(const a of (s.adjustments||[]))rows.push(`<tr><td class="ptx" colspan="7">지급 후 조정 · ${esc(a.sat_no||('#'+a.invoice_id))} ${esc(cut(a.customer_name,20))} · ${esc(CM_REASON[a.reason]||'')}</td><td class="pr pnw"><b>${a.amount<0?'−':'+'}${money(Math.abs(a.amount))}</b></td></tr>`);
+ rows.push(`<tr><td class="ptx" colspan="7"><b>지급 합계 (현금)</b></td><td class="pr pnw"><b>${money(s.total)}</b></td></tr>`);
+ const head='<tr><th>고객명</th><th>인보이스</th><th>발행일</th><th class="pr">매출(ex-IVA)</th><th>기준·수금일</th><th class="pr">기준액</th><th class="pr">율</th><th class="pr">커미션</th></tr>';
+ return `<div class="psec"><h4>커미션 지급 내역 · ${esc(s.agent_name||'')} · ${esc(cmYm(s.settle_ym))} 반제분${p.inv_from?` <span class="pg">(발행 ${esc(p.inv_from)}~${esc(p.inv_to)})</span>`:''} · ${L.length}건</h4><table class="ptb">${head}${rows.join('')}</table></div>`;
 }
 function renderDetail(){
  if(!DET)return '<div class="loading">불러오는 중…</div>';
@@ -672,9 +700,10 @@ function renderDetail(){
   <td>${p.status==='done'?`${cm(p.actual_amount,d.currency)}${usd?`<div class="sub">× ${p.fx_rate} (${esc(p.fx_date||'')}) = ${money(p.actual_mxn)} MXN</div>`:''}`:p.status==='skipped'?`<span class="sub">${esc(p.skip_reason||'')}</span>`:''}</td>
   <td>${esc(p.exec_date||'')}${p.exec_by?`<div class="sub">${esc(U(p.exec_by))}</div>`:''}</td><td>${ev?`📎 ${ev}`:''}${p.fin==='actual'?`${ev?'<br>':''}<span class="sub">📄 결재문서</span>`:''}</td>
   <td>${finCell(p)}</td>
-  <td>${canExec&&p.status==='planned'?`${B.fin_link?`<a class="btn sm gold" href="${finExecUrl(p.id)}" target="_blank" rel="noopener" title="재무 › 거래등록에서 실제 지급을 등록 — 이 결재 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다">거래등록에서 집행</a> `:''}<button class="btn sm ${B.fin_link?'ghost':'gold'}" data-act="exec" data-pid="${p.id}" ${B.fin_link?'title="전자결재에 집행 기록 — 자금계획 예정은 거래등록 실적이 연결될 때까지 남음"':''}>${B.fin_link?'여기서 집행':'집행'}</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
+  <td>${canExec&&p.status==='planned'&&DET.commission?`<a class="btn sm gold" href="${CM_URL(DET.commission)}" target="_blank" title="재무 › 커미션에서 수령증을 인쇄해 현금 지급 → 서명본 업로드로 지급 전표와 이 문서를 함께 마감합니다">커미션 화면에서 수령증으로 지급</a>`:canExec&&p.status==='planned'?`${B.fin_link?`<a class="btn sm gold" href="${finExecUrl(p.id)}" target="_blank" rel="noopener" title="재무 › 거래등록에서 실제 지급을 등록 — 이 결재 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다">거래등록에서 집행</a> `:''}<button class="btn sm ${B.fin_link?'ghost':'gold'}" data-act="exec" data-pid="${p.id}" ${B.fin_link?'title="전자결재에 집행 기록 — 자금계획 예정은 거래등록 실적이 연결될 때까지 남음"':''}>${B.fin_link?'여기서 집행':'집행'}</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
  </tbody></table></div>
  ${warns.join('')}<div class="warn info">${B.fin_link?'결재가 끝나면 회차가 <b>재무 › 미래자금계획(예정)</b>에 들어가고, 거래등록 실적이 연결될 때까지 남습니다. 재무가 거래등록에서 실제 지급을 등록하면 이 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다.':'예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.'}</div></div>
+ ${DET.commission?commissionCardHtml(DET.commission):''}
  <div class="card sec"><h3>내용<span class="sp"></span>${DET.can_edit_content?'<button class="btn sm" data-act="revise">✎ 내용 수정</button>':''}${DET.can_addend?'<button class="btn sm" data-act="addend">＋ 추가 작성</button>':''}</h3>
   <p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')} · 원문 ${esc(U(d.drafter_id))}${DET.revisions.length?` · 마지막 수정 ${esc(U(DET.revisions[DET.revisions.length-1].editor_id))} ${tm(DET.revisions[DET.revisions.length-1].created_at)}`:''}</p>
   <div class="rbody">${renderBodyNodes(DET.body_nodes)}</div>
@@ -713,6 +742,7 @@ function guessKind(name){
  if(s.endsWith('.xml'))return 'Factura XML';
  if(/factura|cfdi/.test(s)&&s.endsWith('.pdf'))return 'Factura PDF';
  if(/송금|spei|transfer|comprobante/.test(s))return '송금증';
+ if(/수령증|recibo/.test(s))return '수령증';
  if(/견적|cotiz|quote/.test(s))return '견적서';
  if(/계약|contrato/.test(s))return '계약서';
  if(/\.(jpe?g|png|heic|heif|webp|gif)$/.test(s))return '영수증';
@@ -1185,7 +1215,7 @@ function printSheetHtml(){
   <td class="pr"><div class="pno">${esc(d.doc_no||'임시저장')}</div><div class="p0">${esc(status)}</div></td></tr></table>
   ${stamps}
   <table class="pkv">${kvRows.join('')}</table>
-  ${pays}${body}${files}${histHtml}
+  ${pays}${DET.commission?commissionPrintHtml(DET.commission):''}${body}${files}${histHtml}
   <div class="pfoot">출력 ${fmtT(new Date().toISOString(),'America/Mexico_City').slice(0,16)} (멕시코) · ${esc(B.me.name)} · 예정·실적 금액은 결재 모듈 기준(재무상태 미반영)</div>`;
 }
 // A4 세로(여백 8mm) 한 장 높이에 맞춘다. 반환: { zoom, fits }

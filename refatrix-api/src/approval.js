@@ -14,8 +14,8 @@ export { cleanFileName };
 
 export const APPROVAL_FILE_MAX_BYTES = 20 * 1024 * 1024;       // 파일당 20MB(디렉터 결정 2026-09-29)
 export const APPROVAL_FILE_BODY_LIMIT = 29 * 1024 * 1024;      // base64(×4/3) + JSON 여유 — 파일 업로드 라우트 전용
-export const KINDS = ['견적서', '계약서', 'Factura XML', 'Factura PDF', '송금증', '영수증', '결재문서', '기타'];
-export const EXEC_KINDS = ['Factura XML', 'Factura PDF', '송금증'];   // 집행완료에 필요한 실적 증빙
+export const KINDS = ['견적서', '계약서', 'Factura XML', 'Factura PDF', '송금증', '수령증', '영수증', '결재문서', '기타'];
+export const EXEC_KINDS = ['Factura XML', 'Factura PDF', '송금증', '수령증'];   // 집행완료에 필요한 실적 증빙 · 0287 수령증 = 현금 지급 서명본
 export const PAY_METHODS = ['계좌이체', '법인카드', '현금', '수표'];
 export const IVA_RATE = 0.16;
 
@@ -99,6 +99,7 @@ export function guessKind(name) {
   if (s.endsWith('.xml')) return 'Factura XML';
   if (/factura|cfdi/.test(s) && s.endsWith('.pdf')) return 'Factura PDF';
   if (/송금|spei|transfer|comprobante/.test(s)) return '송금증';
+  if (/수령증|recibo/.test(s)) return '수령증';
   if (/견적|cotiz|quote/.test(s)) return '견적서';
   if (/계약|contrato/.test(s)) return '계약서';
   if (/\.(jpe?g|png|heic|heif|webp|gif)$/.test(s)) return '영수증';

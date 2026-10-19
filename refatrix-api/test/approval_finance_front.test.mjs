@@ -22,7 +22,7 @@ after(async () => {
 
 test('G0 정적 — 빌드 토큰 · 버튼 · 인라인 핸들러 없음(새 코드)', () => {
   assert.match(FIN, /<title>[^<]*fin-1013fr<\/title>/);
-  assert.match(APR, /<title>[^<]*b20261007gb<\/title>/);
+  assert.match(APR, /<title>[^<]*b20261019cap<\/title>/);
   assert.match(FIN, /id="t-ap-btn"/); assert.match(FIN, /🖼 사진·파일에서 선택/);
   const block = FIN.slice(FIN.indexOf('0258 전자결재 문서를 증빙'), FIN.indexOf('// 거래목록 영수증 열'));
   assert.doesNotMatch(block, /\son(click|change|input)=/i);

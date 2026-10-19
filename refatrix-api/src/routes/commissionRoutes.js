@@ -6,6 +6,13 @@ import { logEvent } from '../audit.js';
 import { AR_PAID_EPS } from '../ar.js';
 // 성과급(Bono) — 목표 달성률 기반. 커미션과 분리된 축(0190).
 import { registerBonusRoutes, snapshotBonusForMonth, payableBonus, markBonusPaid } from './commissionBonus.js';
+// 0287 커미션 지급승인 전자결재 문서 — 자동 기안 · 서명된 수령증으로 지급·문서 마감
+import {
+  COMMISSION_CATEGORY, buildSnapshot, compareSnapshot, docTitle, bodyNodes, docPhase, canCreateAgain,
+  commissionApprovalReady, resolveCurrentDoc, linkForDoc, normLink, ymLabel,
+} from '../commissionApproval.js';
+import { createApprovalDraft, executeWithReceipt, Stop as ApprovalStop } from './approvalRoutes.js';
+import { decodeApprovalFile } from '../approval.js';
 
 // 반제(완납) 다음 달 15일
 function nextMonth15(ym) {
@@ -308,6 +315,7 @@ async function payableLines(agentId, settleYm) {
       customer_name: r.customer_name, customer_code: r.customer_code, basis: c.basis, mode: c.mode,
       rate: c.rate, base: c.base, collected_base: c.collected_base, expected: c.expected, settle_ym: c.settleYm,
       due_date: c.settleYm ? nextMonth15(c.settleYm) : null,
+      paid_amount: round2(Number(r.paid_amount) || 0), last_pay_date: r.last_pay_date ? String(r.last_pay_date).slice(0, 10) : null,
     });
   }
   return out;
@@ -371,6 +379,130 @@ async function confirmedMonthLines() {
   }
   return out;
 }
+
+
+// ── 지급 전표 공통(0287 리팩터) ────────────────────────────────────────
+//   preparePayment: 트랜잭션 밖 검증·계산(확정 월·지급 대상·FIFO 충당). 막히면 PayStop(status, body).
+//   writePayment  : 트랜잭션 안 기록(전표·배분·payouts·차액 정산·성과급). cx = PoolClient.
+//   일반 지급(송금증)과 전자결재 수령증 지급이 같은 규칙을 쓴다.
+export class PayStop extends Error { constructor(status, body) { super(body && body.error); this.status = status; this.body = body; } }
+
+// node-pg는 DATE를 JS Date 객체로 반환 → String().slice(0,10)="Mon Jul 13"(연도 잘림)이 되어 INSERT가 터짐. 안전 변환.
+const _ymd = (v) => { if (v == null) return null; if (v instanceof Date) { if (isNaN(v.getTime())) return null; return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`; } const s = String(v).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
+
+export async function preparePayment(agentId, amt, settleYm, paidDate) {
+  // 그 달이 디렉터 확정(또는 인사전달) 상태여야 지급 가능
+  let batch;
+  try { batch = (await query(`SELECT settle_ym, status, pay_date FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0]; }
+  catch (e) { if (e && e.code === '42P01') throw new PayStop(503, { error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
+  if (!batch) throw new PayStop(409, { error: 'not_confirmed', note: '먼저 디렉터가 그 달을 확정해야 지급할 수 있습니다.' });
+  const payDate = (paidDate && /^\d{4}-\d{2}-\d{2}$/.test(paidDate)) ? paidDate
+    : (_ymd(batch.pay_date) || new Date().toISOString().slice(0, 10));
+
+  let lines;
+  try { lines = await payableLines(agentId, settleYm); }
+  catch (e) { if (e && e.code === '42P01') throw new PayStop(503, { error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
+  // 확정·미지급 성과급(월 1건). 커미션 라인이 없어도 성과급만으로 지급할 수 있다.
+  const bonus = await payableBonus(agentId, settleYm);
+  if (!lines.length && !bonus) throw new PayStop(409, { error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.' });
+
+  // 지급 후 매출 조정 차액은 이번 전표에서 전액 정산(차감=음수·추가=양수). 차감이 지급할 금액보다 크면 이월.
+  const adjustments = await pendingAdjustments(agentId);
+  const adjTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0));
+  const grossDue = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0) + (bonus ? bonus.amount : 0));
+  if (adjTotal < 0 && grossDue + adjTotal < -0.001) {
+    throw new PayStop(409, { error: 'adjustment_exceeds', note: `지급 후 매출 조정으로 차감할 금액(${-adjTotal})이 이번 달 지급 대상(${grossDue})보다 큽니다. 차감액은 다음 지급으로 이월됩니다.` });
+  }
+  // 입력액 + 차감액(또는 − 추가액)만큼 커미션 라인을 FIFO 충당.
+  const { allocs, settled, leftover } = allocateFifo(lines, round2(amt - adjTotal));
+  // 성과급은 커미션 라인을 FIFO 로 충당하고 남은 금액으로 충당(부분충당 없음).
+  const bonusPaid = (bonus && leftover + 0.001 >= bonus.amount) ? bonus : null;
+  // 차감은 이번 전표로 실제 충당되는 커미션·성과급 범위 안에서만 반영(현금 지급 < 0 이 되는 정산 방지).
+  if (adjustments.length && round2(settled + (bonusPaid ? bonusPaid.amount : 0) + adjTotal) < -0.001) {
+    throw new PayStop(409, { error: 'amount_too_small', note: `지급액이 작아 차감(${-adjTotal})을 반영할 수 없습니다. 기본 지급액(커미션 + 성과급 − 차감)으로 등록하세요.` });
+  }
+  if (!allocs.length && !bonusPaid && !(adjustments.length && adjTotal > 0)) {
+    const smallest = lines.length ? round2(lines[0].expected) : (bonus ? bonus.amount : 0);
+    throw new PayStop(409, { error: 'amount_too_small', note: `충당할 수 있는 가장 작은 단위(${smallest})보다 지급액이 적습니다. 커미션은 인보이스 단위, 성과급은 월 단위로 충당됩니다.` });
+  }
+  const baseReady = await payoutBaseReady();
+  return { agentId, amt, settleYm, payDate, lines, bonus, adjustments, adjTotal, allocs, settled, leftover, bonusPaid, baseReady };
+}
+
+export async function writePayment(cx, prep, { uid, note, evi, eviName }) {
+  const { agentId, amt, payDate, lines, adjustments, adjTotal, allocs, settled, bonusPaid, baseReady } = prep;
+  const baseOf = Object.fromEntries(lines.map((l) => [String(l.invoice_id), l.base]));
+  const pay = (await cx.query(
+    `INSERT INTO commission_payments (agent_id, amount, settled, paid_date, note, evi_name, evi_mime, evi_data, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [agentId, amt, round2(settled + adjTotal), payDate, note || null, (eviName || null), evi.mime, evi.b64, uid])).rows[0];
+  const paymentId = pay.id;
+  for (const a of allocs) {
+    await cx.query(
+      `INSERT INTO commission_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
+      [paymentId, a.invoice_id, a.amount]);
+    await cx.query(
+      `INSERT INTO commission_payouts (invoice_id, agent_id, amount, settle_ym, due_date, paid, paid_date, payment_id, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,$8)
+       ON CONFLICT (invoice_id) DO UPDATE SET amount=$3, settle_ym=$4, due_date=$5, paid=true, paid_date=$6, payment_id=$7, updated_by=$8, updated_at=now()`,
+      [a.invoice_id, agentId, a.amount, a.settle_ym, a.settle_ym ? nextMonth15(a.settle_ym) : null, payDate, paymentId, uid]);
+    // 지급 시점 순매출 스냅샷 — 이후 매출 조정 차액 계산의 기준(0232)
+    if (baseReady) await cx.query(`UPDATE commission_payouts SET base_mxn=$2 WHERE invoice_id=$1`, [a.invoice_id, baseOf[String(a.invoice_id)] ?? null]);
+  }
+  // 차액 정산: 전표 배분(음수 가능) + 지급액·기준 순매출을 조정 후 값으로 갱신 → 같은 차액이 다시 잡히지 않음
+  for (const adj of adjustments) {
+    await cx.query(
+      `INSERT INTO commission_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
+      [paymentId, adj.invoice_id, adj.amount]);
+    await cx.query(
+      `UPDATE commission_payouts SET amount=$2, base_mxn=$3, payment_id=$4, updated_by=$5, updated_at=now() WHERE invoice_id=$1 AND paid=true`,
+      [adj.invoice_id, adj.new_amount, adj.new_base, paymentId, uid]);
+  }
+  if (bonusPaid) await markBonusPaid(cx, bonusPaid.id, payDate, paymentId, uid);
+  return { paymentId };
+}
+
+async function paymentResponse(prep, result, uid, extra = {}) {
+  const { agentId, amt, allocs, settled, leftover, bonusPaid, adjustments, adjTotal } = prep;
+  const bonusAmt = bonusPaid ? bonusPaid.amount : 0;
+  const settledAll = round2(settled + bonusAmt + adjTotal);
+  await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled: settledAll, count: allocs.length, bonus: bonusAmt, adjustments: adjustments.length, adjustment_total: adjTotal, ...extra } });
+  return {
+    ok: true, payment_id: Number(result.paymentId), settled_count: allocs.length,
+    settled: settledAll, commission_settled: settled, bonus_settled: bonusAmt,
+    adjustment_count: adjustments.length, adjustment_settled: adjTotal,
+    leftover: round2(leftover - bonusAmt), total_paid_amount: amt, ...extra,
+  };
+}
+
+
+// ── 0287 커미션 지급승인 전자결재 문서 ─────────────────────────────────
+// 사원·월의 최신 연결 문서(재기안 최신 버전) + 단계. 테이블 없으면 null.
+export async function activeApprovalDoc(agentId, settleYm) {
+  if (!(await commissionApprovalReady(query))) return null;
+  const l = (await query(`SELECT * FROM commission_approval_docs WHERE agent_id=$1 AND settle_ym=$2 ORDER BY id DESC LIMIT 1`, [agentId, settleYm])).rows[0];
+  if (!l) return null;
+  const link = normLink(l);
+  const curId = await resolveCurrentDoc(query, link.document_id);
+  const doc = (await query(
+    `SELECT id, doc_no, version, title, status, exec_status, post_status, planned_total, deleted_at, submitted_at, approved_at,
+            to_char(exec_date,'YYYY-MM-DD') AS exec_date
+       FROM approval_documents WHERE id=$1`, [curId])).rows[0] || null;
+  if (doc) { doc.id = Number(doc.id); doc.planned_total = Number(doc.planned_total); doc.version = Number(doc.version); }
+  return { link, doc, phase: docPhase(doc, link) };
+}
+
+// 지금 지급 대상 → 스냅샷
+async function currentSnapshot(agentId, settleYm) {
+  const lines = await payableLines(agentId, settleYm);
+  const bonus = await payableBonus(agentId, settleYm);
+  const adjustments = await pendingAdjustments(agentId);
+  const u = (await query(`SELECT name FROM users WHERE id=$1`, [agentId])).rows[0];
+  const b = (await query(`SELECT to_char(pay_date,'YYYY-MM-DD') AS pay_date FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0];
+  return buildSnapshot({ agentId, agentName: u ? u.name : '', settleYm, payDate: b ? b.pay_date : nextMonth15(settleYm), lines, bonus, adjustments });
+}
+
+const EXT_OF = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic' };
 
 export default async function commissionRoutes(app) {
   // 성과급(Bono) 라우트 등록 — /api/commission/bonus/*, /progress, /performance, /my-bonus
@@ -731,6 +863,7 @@ export default async function commissionRoutes(app) {
   });
 
   // ── 지급 전표 등록 + 반제(FIFO) + 증빙 (디렉터·재무) ──
+  //   0287: 그 사원·그 달에 진행 중인 커미션 지급승인 전자결재 문서가 있으면 여기서는 막는다(문서 기준 현금 지급 → 수령증 업로드로 등록).
   app.post('/api/commission/payments', { preHandler: [authGuard, requirePageEdit('commission')] }, async (req, reply) => {
     const perm = req.ctx.perm; const uid = perm.userId;
     const { agent_id, amount, paid_date, note, evidence } = req.body || {};
@@ -741,87 +874,157 @@ export default async function commissionRoutes(app) {
     if (!settleYm) return reply.code(400).send({ error: 'settle_ym_required', note: '지급할 확정 월(반제 완료월)을 지정해야 합니다.' });
     const evi = parseDataUrl(evidence);
     if (!evi) return reply.code(400).send({ error: 'evidence_required', note: '인사 송금 내역(은행 송금증·화면 캡처, 이미지/PDF)을 증빙으로 첨부해야 지급으로 인정됩니다.' });
-
-    // 그 달이 디렉터 확정(또는 인사전달) 상태여야 지급 가능
-    let batch;
-    try { batch = (await query(`SELECT settle_ym, status, pay_date FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0]; }
-    catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
-    if (!batch) return reply.code(409).send({ error: 'not_confirmed', note: '먼저 디렉터가 그 달을 확정해야 지급할 수 있습니다.' });
-
-    // node-pg는 DATE를 JS Date 객체로 반환 → String().slice(0,10)="Mon Jul 13"(연도 잘림)이 되어 INSERT가 터짐. 안전 변환.
-    const _ymd = (v) => { if (v == null) return null; if (v instanceof Date) { if (isNaN(v.getTime())) return null; return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`; } const s = String(v).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
-    const payDate = (paid_date && /^\d{4}-\d{2}-\d{2}$/.test(paid_date)) ? paid_date
-      : (_ymd(batch.pay_date) || new Date().toISOString().slice(0, 10));
-
-    let lines;
-    try { lines = await payableLines(agentId, settleYm); }
-    catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
-    // 확정·미지급 성과급(월 1건). 커미션 라인이 없어도 성과급만으로 지급할 수 있다.
-    const bonus = await payableBonus(agentId, settleYm);
-    if (!lines.length && !bonus) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.' });
-
-    // 지급 후 매출 조정 차액은 이번 전표에서 전액 정산(차감=음수·추가=양수). 차감이 지급할 금액보다 크면 이월.
-    const adjustments = await pendingAdjustments(agentId);
-    const adjTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0));
-    const grossDue = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0) + (bonus ? bonus.amount : 0));
-    if (adjTotal < 0 && grossDue + adjTotal < -0.001) {
-      return reply.code(409).send({ error: 'adjustment_exceeds', note: `지급 후 매출 조정으로 차감할 금액(${-adjTotal})이 이번 달 지급 대상(${grossDue})보다 큽니다. 차감액은 다음 지급으로 이월됩니다.` });
+    const active = await activeApprovalDoc(agentId, settleYm);
+    if (active && ['draft', 'progress', 'approved'].includes(active.phase)) {
+      return reply.code(409).send({ error: 'approval_doc_active', doc_no: active.doc.doc_no || null, document_id: active.doc.id,
+        note: `이 사원·이 달은 커미션 지급승인 전자결재 문서(${active.doc.doc_no || '임시저장'})로 진행 중입니다. 결재 승인 후 서명된 수령증을 올려 지급하세요.` });
     }
-    // 입력액 + 차감액(또는 − 추가액)만큼 커미션 라인을 FIFO 충당.
-    const { allocs, settled, leftover } = allocateFifo(lines, round2(amt - adjTotal));
-    // 성과급은 커미션 라인을 FIFO 로 충당하고 남은 금액으로 충당(부분충당 없음).
-    const bonusPaid = (bonus && leftover + 0.001 >= bonus.amount) ? bonus : null;
-    // 차감은 이번 전표로 실제 충당되는 커미션·성과급 범위 안에서만 반영(현금 지급 < 0 이 되는 정산 방지).
-    if (adjustments.length && round2(settled + (bonusPaid ? bonusPaid.amount : 0) + adjTotal) < -0.001) {
-      return reply.code(409).send({ error: 'amount_too_small', note: `지급액이 작아 차감(${-adjTotal})을 반영할 수 없습니다. 기본 지급액(커미션 + 성과급 − 차감)으로 등록하세요.` });
-    }
-    if (!allocs.length && !bonusPaid && !(adjustments.length && adjTotal > 0)) {
-      const smallest = lines.length ? round2(lines[0].expected) : (bonus ? bonus.amount : 0);
-      return reply.code(409).send({ error: 'amount_too_small', note: `충당할 수 있는 가장 작은 단위(${smallest})보다 지급액이 적습니다. 커미션은 인보이스 단위, 성과급은 월 단위로 충당됩니다.` });
-    }
+    let prep;
+    try { prep = await preparePayment(agentId, amt, settleYm, paid_date); }
+    catch (e) { if (e instanceof PayStop) return reply.code(e.status).send(e.body); throw e; }
+    const result = await withTx(async (cx) => writePayment(cx, prep, { uid, note, evi, eviName: req.body?.evi_name }));
+    return paymentResponse(prep, result, uid);
+  });
 
-    const baseReady = await payoutBaseReady();
-    const baseOf = Object.fromEntries(lines.map((l) => [String(l.invoice_id), l.base]));
-    const result = await withTx(async (cx) => {
-      const pay = (await cx.query(
-        `INSERT INTO commission_payments (agent_id, amount, settled, paid_date, note, evi_name, evi_mime, evi_data, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-        [agentId, amt, round2(settled + adjTotal), payDate, note || null, (req.body?.evi_name || null), evi.mime, evi.b64, uid])).rows[0];
-    const paymentId = pay.id;
-      for (const a of allocs) {
-        await cx.query(
-          `INSERT INTO commission_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
-          [paymentId, a.invoice_id, a.amount]);
-        await cx.query(
-          `INSERT INTO commission_payouts (invoice_id, agent_id, amount, settle_ym, due_date, paid, paid_date, payment_id, created_by, updated_by)
-           VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,$8)
-           ON CONFLICT (invoice_id) DO UPDATE SET amount=$3, settle_ym=$4, due_date=$5, paid=true, paid_date=$6, payment_id=$7, updated_by=$8, updated_at=now()`,
-          [a.invoice_id, agentId, a.amount, a.settle_ym, a.settle_ym ? nextMonth15(a.settle_ym) : null, payDate, paymentId, uid]);
-        // 지급 시점 순매출 스냅샷 — 이후 매출 조정 차액 계산의 기준(0232)
-        if (baseReady) await cx.query(`UPDATE commission_payouts SET base_mxn=$2 WHERE invoice_id=$1`, [a.invoice_id, baseOf[String(a.invoice_id)] ?? null]);
+
+  // ── 0287 · 커미션 지급승인 전자결재 문서 상태 (디렉터·재무) ──
+  //   phase: none · draft · progress · rejected · approved(현금 지급·수령증 대기) · settled · deleted
+  app.get('/api/commission/approval-docs', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (!PAY_ROLES.includes(perm.role)) return reply.code(403).send({ error: 'forbidden' });
+    const agentId = Number(req.query.agent_id || 0);
+    const settleYm = /^\d{4}-\d{2}$/.test(req.query.settle_ym || '') ? req.query.settle_ym : null;
+    if (!agentId || !settleYm) return reply.code(400).send({ error: 'agent_month_required' });
+    if (!(await commissionApprovalReady(query))) return { ready: false, phase: 'none', can_create: false, note: 'npm run migrate(0287)을 실행하세요.' };
+    const a = await activeApprovalDoc(agentId, settleYm);
+    const isDir = perm.role === 'director';
+    const out = { ready: true, is_director: isDir, phase: a ? a.phase : 'none', can_create: isDir && canCreateAgain(a ? a.phase : 'none'), doc: null, link: null, lines: [] };
+    if (!a) return out;
+    out.doc = a.doc ? {
+      id: a.doc.id, doc_no: a.doc.doc_no, version: a.doc.version, title: a.doc.title, status: a.doc.status, exec_status: a.doc.exec_status,
+      post_status: a.doc.post_status, planned_total: a.doc.planned_total, deleted: !!a.doc.deleted_at, approved_at: a.doc.approved_at, exec_date: a.doc.exec_date,
+    } : null;
+    out.link = { id: a.link.id, document_id: a.link.document_id, total: a.link.total, snapshot: a.link.snapshot,
+      commission_payment_id: a.link.commission_payment_id, settled_at: a.link.settled_at, created_at: a.link.created_at };
+    if (a.doc) {
+      // 결재선(수령증의 승인 표시 · 현재 처리자)
+      out.lines = (await query(
+        `SELECT l.step_order, l.step_type, l.status, l.acted_at, l.pending_at, u.name
+           FROM approval_lines l JOIN users u ON u.id=l.user_id WHERE l.document_id=$1 ORDER BY l.step_order, l.id`, [a.doc.id])).rows
+        .map((r) => ({ step_order: Number(r.step_order), step_type: r.step_type, status: r.status, acted_at: r.acted_at, pending_at: r.pending_at, name: r.name }));
+    }
+    return out;
+  });
+
+  // ── 0287 · 커미션 지급승인 전자문서 생성 (디렉터) ──
+  //   확정된 달의 확정·미지급 내역(인보이스 + 성과급 + 지급 후 조정)으로 전자결재 임시저장 문서를 만든다.
+  //   내용(대상·기간·고객·인보이스·매출/수금·율·커미션)만 채우고 결재선·참조·나머지는 디렉터가 작성 화면에서 지정해 상신한다.
+  app.post('/api/commission/approval-docs', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const uid = Number(req.ctx.perm.userId);
+    const agentId = Number(req.body?.agent_id || 0);
+    const settleYm = /^\d{4}-\d{2}$/.test(req.body?.settle_ym || '') ? req.body.settle_ym : null;
+    if (!agentId || !settleYm) return reply.code(400).send({ error: 'agent_month_required', note: '영업사원과 지급 월을 선택하세요.' });
+    if (!(await commissionApprovalReady(query))) return reply.code(503).send({ error: 'migration_required', migration: '0287', note: 'npm run migrate(0287)을 실행하세요.' });
+    const batch = (await query(`SELECT settle_ym FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0];
+    if (!batch) return reply.code(409).send({ error: 'not_confirmed', note: '먼저 그 달을 확정하세요. 확정된 달만 지급승인 문서를 만들 수 있습니다.' });
+    const a = await activeApprovalDoc(agentId, settleYm);
+    if (a && !canCreateAgain(a.phase)) {
+      return reply.code(409).send({ error: 'approval_doc_active', document_id: a.doc ? a.doc.id : a.link.document_id, doc_no: a.doc ? a.doc.doc_no : null,
+        note: `이미 이 사원·이 달의 지급승인 문서(${(a.doc && a.doc.doc_no) || '임시저장'})가 있습니다. 그 문서로 진행하세요.` });
+    }
+    const snap = await currentSnapshot(agentId, settleYm);
+    if (!snap.lines.length && !snap.bonus) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.' });
+    if (!(snap.total > 0)) return reply.code(409).send({ error: 'nothing_payable', note: `지급 합계가 0 이하입니다(${snap.total}). 차감액은 다음 지급으로 이월됩니다.` });
+    const cat = (await query(`SELECT id FROM approval_categories WHERE name=$1 ORDER BY active DESC, id LIMIT 1`, [COMMISSION_CATEGORY])).rows[0];
+    let created;
+    try {
+      created = await withTx(async (cx) => {
+        const q = cx.query.bind(cx);
+        const d = await createApprovalDraft(q, uid, {
+          title: docTitle(snap), vendor: snap.agent_name, category_id: cat ? Number(cat.id) : null,
+          body_rich: bodyNodes(snap), pay_due: snap.pay_date, pay_method: '현금', iva_applied: false,
+          currency: 'MXN', payment_type: 'once', orig_sub: snap.total,
+          auto_note: `재무 › 커미션에서 자동 생성 · ${snap.agent_name} · ${ymLabel(settleYm)} · 인보이스 ${snap.invoice_count}건 · MXN ${snap.total.toFixed(2)}`,
+        });
+        const l = (await q(
+          `INSERT INTO commission_approval_docs (document_id, agent_id, settle_ym, total, snapshot, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [d.id, agentId, settleYm, snap.total, JSON.stringify(snap), uid])).rows[0];
+        return { document_id: d.id, link_id: Number(l.id) };
+      });
+    } catch (e) {
+      if (e instanceof ApprovalStop) return reply.code(400).send({ error: e.code, ...(e.extra || {}) });
+      throw e;
+    }
+    await logEvent({ userId: uid, action: 'create', target: `commission_approval_doc:${created.link_id}`, detail: { document_id: created.document_id, agent_id: agentId, settle_ym: settleYm, total: snap.total, invoices: snap.invoice_count } });
+    return { ok: true, ...created, total: snap.total, invoice_count: snap.invoice_count, url: `refatrix-approval.html#doc=${created.document_id}` };
+  });
+
+  // ── 0287 · 서명된 수령증 업로드 → 커미션 지급 전표(반제) + 전자결재 집행 마감 (디렉터·재무) ──
+  //   한 트랜잭션: 지급 전표 등록(FIFO 반제 · 증빙 = 수령증 스캔) + 결재 문서 회차 집행(현금 · 증빙 '수령증') → 사후승인 대기.
+  //   결재받은 내역과 지금 지급 대상이 다르면 막는다(승인 후 반제·NC·매출수정으로 바뀐 경우) — 새 문서로 다시 결재.
+  app.post('/api/commission/approval-docs/:docId/settle', { preHandler: [authGuard, requirePageEdit('commission')] }, async (req, reply) => {
+    const perm = req.ctx.perm; const uid = Number(perm.userId);
+    if (!PAY_ROLES.includes(perm.role)) return reply.code(403).send({ error: 'forbidden', note: '디렉터·재무만 지급을 등록할 수 있습니다.' });
+    if (!(await commissionApprovalReady(query))) return reply.code(503).send({ error: 'migration_required', migration: '0287' });
+    const docId = Number(req.params.docId);
+    const link = await linkForDoc(query, docId);
+    if (!link) return reply.code(404).send({ error: 'not_found', note: '커미션 지급승인 문서가 아닙니다.' });
+    if (link.commission_payment_id) return reply.code(409).send({ error: 'already_settled', payment_id: link.commission_payment_id, note: '이미 수령증으로 지급·마감된 문서입니다.' });
+    const curId = await resolveCurrentDoc(query, link.document_id);
+    if (curId !== docId) return reply.code(409).send({ error: 'not_current', document_id: curId, note: '재기안된 최신 문서로 처리하세요.' });
+    const doc = (await query(`SELECT id, doc_no, status, exec_status, planned_total, deleted_at FROM approval_documents WHERE id=$1`, [docId])).rows[0];
+    if (!doc || doc.deleted_at) return reply.code(404).send({ error: 'not_found', note: '삭제된 문서입니다.' });
+    if (doc.status !== 'approved') return reply.code(409).send({ error: 'not_approved', note: '결재가 끝난(승인완료) 문서만 지급할 수 있습니다.' });
+    if (Math.abs(Number(doc.planned_total) - Number(link.total)) > 0.009) {
+      return reply.code(409).send({ error: 'amount_mismatch', note: `결재 금액(${Number(doc.planned_total).toFixed(2)})이 커미션 지급 내역 합계(${Number(link.total).toFixed(2)})와 다릅니다. 문서 금액을 내역 합계로 맞추거나 새 문서를 만드세요.` });
+    }
+    const pays = (await query(`SELECT status FROM approval_payments WHERE document_id=$1`, [docId])).rows;
+    if (doc.exec_status === 'pending' && pays.filter((p) => p.status === 'planned').length !== 1) {
+      return reply.code(409).send({ error: 'schedule_not_once', note: '지급 일정이 일시불(1회)이 아닙니다. 커미션 현금 지급은 1회로 처리합니다.' });
+    }
+    const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.paid_date || '') ? req.body.paid_date : null;
+    if (!paidDate) return reply.code(400).send({ error: 'paid_date_required', note: '현금 지급일(수령증 서명일)을 입력하세요.' });
+    const evi = parseDataUrl(req.body?.evidence);
+    if (!evi) return reply.code(400).send({ error: 'evidence_required', note: '서명된 수령증 스캔(이미지/PDF)을 첨부하세요.' });
+    const ext = EXT_OF[evi.mime] || 'jpg';
+    const fname = `수령증_${doc.doc_no || ('doc' + docId)}_${paidDate}.${ext}`;           // 전자결재 증빙 파일명
+    const eviName = `recibo_${doc.doc_no || ('doc' + docId)}_${paidDate}.${ext}`;            // 지급 전표 증빙 파일명(ASCII)
+    const dec = decodeApprovalFile(req.body.evidence.replace(/^data:image\/jpg;/, 'data:image/jpeg;'), fname);
+    if (!dec.ok) return reply.code(400).send({ error: 'bad_evidence', detail: dec.error, note: '수령증 파일을 읽을 수 없습니다(이미지/PDF · 20MB 이하).' });
+
+    // 결재받은 내역 = 지금 지급 대상?
+    const cur = await currentSnapshot(link.agent_id, link.settle_ym);
+    const cmp = compareSnapshot(link.snapshot, cur);
+    if (!cmp.ok) return reply.code(409).send({ error: 'payable_changed', diffs: cmp.diffs, note: '결재받은 지급 내역과 지금 지급 대상이 다릅니다. 이 문서는 그대로 두고(필요 시 삭제) 커미션 화면에서 새 지급승인 문서를 만드세요.' });
+    let prep;
+    try { prep = await preparePayment(link.agent_id, round2(link.total), link.settle_ym, paidDate); }
+    catch (e) { if (e instanceof PayStop) return reply.code(e.status).send(e.body); throw e; }
+    if (prep.allocs.length !== cur.lines.length || (cur.bonus && !prep.bonusPaid) || Math.abs(round2(prep.leftover - (prep.bonusPaid ? prep.bonusPaid.amount : 0))) > 0.009) {
+      return reply.code(409).send({ error: 'allocation_mismatch', note: '지급 합계로 결재 내역 전부를 충당하지 못했습니다. 커미션 화면을 새로고침한 뒤 다시 시도하세요.' });
+    }
+    let result;
+    try {
+      result = await withTx(async (cx) => {
+        const q = cx.query.bind(cx);
+        const lk = (await q(`SELECT commission_payment_id FROM commission_approval_docs WHERE id=$1 FOR UPDATE`, [link.id])).rows[0];
+        if (!lk || lk.commission_payment_id) throw new ApprovalStop('already_settled');
+        const w = await writePayment(cx, prep, { uid, note: `전자결재 ${doc.doc_no || ''} · 현금 지급 · 서명 수령증`.trim(), evi, eviName });
+        const ex = await executeWithReceipt(q, { docId, uid, amount: round2(link.total), date: prep.payDate,
+          memo: `커미션 지급 전표 #${w.paymentId} · ${ymLabel(link.settle_ym)} 반제분`, file: dec });
+        await q(`UPDATE commission_approval_docs SET commission_payment_id=$2, settled_document_id=$3, settled_at=now(), settled_by=$4 WHERE id=$1`,
+          [link.id, w.paymentId, docId, uid]);
+        return { ...w, executed: ex.executed, finished: ex.finished, file_id: ex.file_id };
+      });
+    } catch (e) {
+      if (e instanceof ApprovalStop) {
+        const why = { already_settled: '이미 지급·마감된 문서입니다.', bad_state: '문서 상태가 바뀌었습니다(승인완료·집행대기 아님). 새로고침하세요.', not_found: '문서를 찾을 수 없습니다.' };
+        return reply.code(409).send({ error: e.code, ...(e.extra || {}), note: why[e.code] || '문서를 마감할 수 없습니다.' });
       }
-      // 차액 정산: 전표 배분(음수 가능) + 지급액·기준 순매출을 조정 후 값으로 갱신 → 같은 차액이 다시 잡히지 않음
-      for (const adj of adjustments) {
-        await cx.query(
-          `INSERT INTO commission_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
-          [paymentId, adj.invoice_id, adj.amount]);
-        await cx.query(
-          `UPDATE commission_payouts SET amount=$2, base_mxn=$3, payment_id=$4, updated_by=$5, updated_at=now() WHERE invoice_id=$1 AND paid=true`,
-          [adj.invoice_id, adj.new_amount, adj.new_base, paymentId, uid]);
-      }
-      if (bonusPaid) await markBonusPaid(cx, bonusPaid.id, payDate, paymentId, uid);
-      return { paymentId };
+      throw e;
+    }
+    return paymentResponse(prep, { paymentId: result.paymentId }, uid, {
+      document_id: docId, doc_no: doc.doc_no, approval_executed: result.executed, approval_finished: result.finished, receipt_file_id: result.file_id,
     });
-
-    const bonusAmt = bonusPaid ? bonusPaid.amount : 0;
-    const settledAll = round2(settled + bonusAmt + adjTotal);
-    await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled: settledAll, count: allocs.length, bonus: bonusAmt, adjustments: adjustments.length, adjustment_total: adjTotal } });
-    return {
-      ok: true, payment_id: result.paymentId, settled_count: allocs.length,
-      settled: settledAll, commission_settled: settled, bonus_settled: bonusAmt,
-      adjustment_count: adjustments.length, adjustment_settled: adjTotal,
-      leftover: round2(leftover - bonusAmt), total_paid_amount: amt,
-    };
   });
 
   // ── 지급 전표 목록 (전체열람자 or 본인) — 증빙 데이터 제외 ──
@@ -863,7 +1066,10 @@ export default async function commissionRoutes(app) {
     if (!canSeeAll(perm) && Number(r.agent_id) !== Number(perm.userId)) return reply.code(403).send({ error: 'forbidden' });
     const buf = Buffer.from(r.evi_data, 'base64');
     reply.header('Content-Type', r.evi_mime || 'application/octet-stream');
-    reply.header('Content-Disposition', `inline; filename="${(r.evi_name || ('evidence-' + id)).replace(/"/g, '')}"`);
+    // 0287: 파일명에 한글 등 비 ASCII 가 있으면 헤더 오류(500) → ASCII 대체명 + RFC 5987 원래 이름
+    const fn = String(r.evi_name || ('evidence-' + id)).replace(/["\r\n]/g, '');
+    const ascii = fn.replace(/[^\x20-\x7E]/g, '_');
+    reply.header('Content-Disposition', `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fn)}`);
     return reply.send(buf);
   });
 
