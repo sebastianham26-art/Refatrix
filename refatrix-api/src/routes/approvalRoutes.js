@@ -7,7 +7,7 @@ import { query, withTx } from '../db.js';
 import { getUsdMxnRate } from '../fx.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
-import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE } from '../approvalFinance.js';   // 0258 자금 연동
+import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE, detachPlans } from '../approvalFinance.js';   // 0258 자금 연동
 import { commissionApprovalReady, linkForDoc } from '../commissionApproval.js';   // 0287 커미션 지급승인 문서
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
@@ -247,6 +247,7 @@ function draftFields(body) {
 }
 // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
 async function saveSchedule(q, docId, rows) {
+  await detachPlans(q, docId);   // 0287c 회차 교체 전 예정 행 정리(커미션 문서는 임시저장부터 예정이 있다)
   await q(`DELETE FROM approval_payments WHERE document_id=$1`, [docId]);
   for (const r of rows) {
     await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn) VALUES ($1,$2,$3,$4,$4)`,
@@ -557,6 +558,7 @@ export default async function approvalRoutes(app) {
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
       const m = await applyMoney(q, id);
+      await syncApprovalDoc(q, id, uid);   // 0287c 커미션 임시저장 → 예정 금액·일자 갱신(일반 문서는 승인 전이라 변화 없음)
       return { id, planned_total: m.planned_total, fx: m.fx };
     });
   });
@@ -570,6 +572,7 @@ export default async function approvalRoutes(app) {
       await q(`UPDATE approval_documents SET deleted_at=now(), updated_at=now() WHERE id=$1`, [id]);
       await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL`, [id]);
       await event(q, id, uid, 'delete', null, b.doc.doc_no ? `임시저장 삭제 (문서번호 ${b.doc.doc_no} 결번)` : '임시저장 삭제');
+      await syncApprovalDoc(q, id, uid);   // 0287c 커미션 임시저장 삭제 → 예정 숨김
       return { ok: true, doc_no: b.doc.doc_no || null };
     });
   });
@@ -723,6 +726,7 @@ export default async function approvalRoutes(app) {
         await q(`UPDATE approval_documents SET status='rejected', updated_at=now() WHERE id=$1`, [id]);
         await event(q, id, ctx.uid, mine.step_type === 'agree' ? 'disagree' : 'reject', mine.step_type, comment);
         await notify(q, b.doc.drafter_id, id, mine.step_type === 'agree' ? '반대 (반려)' : '반려', comment, ctx.uid);
+        await syncApprovalDoc(q, id, ctx.uid);   // 0287c 커미션 문서 반려 → 예정 숨김
         return { ok: true, status: 'rejected' };
       }
       await q(`UPDATE approval_lines SET status='done', acted_at=now(), comment=$2 WHERE id=$1`, [mine.id, comment]);
@@ -885,6 +889,7 @@ export default async function approvalRoutes(app) {
       await q(`UPDATE approval_documents SET status='draft', ceo_pre_required=false, updated_at=now() WHERE id=$1`, [id]);
       await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL AND kind LIKE '%요청'`, [id]);
       await event(q, id, ctx.uid, 'withdraw', null, '회수 · 임시저장으로 전환');
+      await syncApprovalDoc(q, id, ctx.uid);   // 0287c 커미션 문서는 임시저장도 예정 유지
       return { ok: true };
     });
   });
@@ -916,6 +921,7 @@ export default async function approvalRoutes(app) {
       await q(`INSERT INTO approval_links(document_id, linked_document_id, created_by) VALUES ($1,$2,$3)`, [nid, id, ctx.uid]);
       await event(q, nid, ctx.uid, 'resubmit_from', null, `${d.doc_no} 반려 건 재기안 (v${d.version + 1})`);
       await event(q, id, ctx.uid, 'resubmitted', null, '재기안 문서 작성');
+      await syncApprovalDoc(q, nid, ctx.uid);   // 0287c 커미션 재기안(임시저장) → 예정 다시
       return { id: nid };
     });
   });
@@ -1071,6 +1077,7 @@ export default async function approvalRoutes(app) {
         done.delete(Number(b.doc.drafter_id));
         for (const u of done) await notify(q, u, id, '승인 후 금액 변경', changes.filter((c) => ['amount', 'amount_mxn', 'schedule'].includes(c.field)).map((c) => `${c.label} ${c.old} → ${c.new}`).join(' · '), ctx.uid);
       }
+      await syncApprovalDoc(q, id, ctx.uid);   // 0287c 결재 중 금액·일정 수정 → 예정 맞춤
       return { ok: true, changes, pre_added: preAdded, planned_total: money.planned_total };
     });
   });

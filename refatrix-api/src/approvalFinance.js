@@ -11,6 +11,7 @@
 //   전자결재 라우트(approvalRoutes.js)는 거래 테이블을 직접 다루지 않고 이 모듈만 부른다.
 //   재무 라우트(financeRoutes.js)는 거래가 바뀐 뒤 syncApprovalByTxn 을 부른다.
 import { n, round2 } from './approval.js';
+import { commissionApprovalReady, linkForDoc } from './commissionApproval.js';   // 0287c 커미션 문서는 생성 즉시 예정
 
 export const APPROVAL_MEMO_PREFIX = '[전자결재]';
 export const DEFAULT_EXP_CODE = '6130';            // 기타경비 — 카테고리에 과목이 없을 때
@@ -118,7 +119,9 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
   if (finTouched) pays = await loadPays(q, docId);
 
   // ③ 예정 행 맞추기
-  const live = doc.status === 'approved' && !doc.deleted_at;
+  // 0287c 커미션 지급승인 문서는 **생성(임시저장)·결재 중에도** 미래자금계획에 예정으로 둔다(디렉터 2026-10-19). 반려·삭제되면 빠진다.
+  const early = !doc.deleted_at && ['draft', 'progress'].includes(doc.status) && await isCommissionDoc(q, docId);
+  const live = (doc.status === 'approved' && !doc.deleted_at) || early;
   const code = doc.fin_code || DEFAULT_EXP_CODE;
   const codeOk = (await q(`SELECT 1 FROM categories WHERE code=$1`, [code])).rows.length ? code : null;
   const fx = doc.currency === 'USD' ? n(doc.fx_rate) || 1 : 1;
@@ -188,6 +191,23 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
   }
   out.changed = finTouched || out.plans.created + out.plans.updated + out.plans.removed > 0;
   return out;
+}
+
+// 0287c 커미션 지급승인 문서인가(재기안 버전 포함). 0287 미적용 DB 면 false.
+async function isCommissionDoc(q, docId) {
+  try { return (await commissionApprovalReady(q)) && !!(await linkForDoc(q, docId)); }
+  catch (e) { if (e && e.code === '42P01') return false; throw e; }
+}
+
+// 0287c 회차를 새로 짜기 직전(임시저장·결재 중 내용 수정) — 지금 회차에 달린 예정 행을 숨긴다.
+//   회차 행이 지워지면 연결이 끊겨 예정이 고아로 남기 때문. 새 회차의 예정은 이어서 syncApprovalDoc 이 다시 만든다.
+export async function detachPlans(q, docId, actorId = null) {
+  if (!(await approvalFinReady(q))) return 0;
+  const r = await q(
+    `UPDATE transactions t SET deleted_at=now(), updated_by=$2
+       FROM approval_payments p
+      WHERE p.document_id=$1 AND t.id=p.txn_id AND t.status='plan' AND t.deleted_at IS NULL`, [docId, actorId]);
+  return r.rowCount || 0;
 }
 
 // 거래가 바뀐 뒤(실적 처리·삭제·반려·수정) 그 거래와 연결된 전자결재 문서를 맞춘다.

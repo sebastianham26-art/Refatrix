@@ -13,6 +13,7 @@ import {
 } from '../commissionApproval.js';
 import { createApprovalDraft, executeWithReceipt, Stop as ApprovalStop } from './approvalRoutes.js';
 import { decodeApprovalFile } from '../approval.js';
+import { syncApprovalDoc } from '../approvalFinance.js';   // 0287c 생성 즉시 미래자금계획 예정
 
 // 반제(완납) 다음 달 15일
 function nextMonth15(ym) {
@@ -907,6 +908,14 @@ export default async function commissionRoutes(app) {
     out.link = { id: a.link.id, document_id: a.link.document_id, total: a.link.total, snapshot: a.link.snapshot,
       commission_payment_id: a.link.commission_payment_id, settled_at: a.link.settled_at, created_at: a.link.created_at };
     if (a.doc) {
+      // 0287c 현금흐름: 회차의 미래자금계획 예정 / 거래등록 실적(수동) 연결 상태
+      try {
+        const pr = (await query(
+          `SELECT p.id, p.status, t.status AS fin, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount_mxn
+             FROM approval_payments p LEFT JOIN transactions t ON t.id=p.txn_id AND t.deleted_at IS NULL
+            WHERE p.document_id=$1 ORDER BY p.seq LIMIT 1`, [a.doc.id])).rows[0];
+        out.payment = pr ? { id: Number(pr.id), status: pr.status, fin: pr.fin || null, txn_date: pr.txn_date || null, amount: pr.amount_mxn == null ? null : Number(pr.amount_mxn) } : null;
+      } catch (e) { if (!e || !['42P01', '42703'].includes(e.code)) throw e; out.payment = null; }
       // 결재선(수령증의 승인 표시 · 현재 처리자)
       out.lines = (await query(
         `SELECT l.step_order, l.step_type, l.status, l.acted_at, l.pending_at, u.name
@@ -949,6 +958,7 @@ export default async function commissionRoutes(app) {
         const l = (await q(
           `INSERT INTO commission_approval_docs (document_id, agent_id, settle_ym, total, snapshot, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
           [d.id, agentId, settleYm, snap.total, JSON.stringify(snap), uid])).rows[0];
+        await syncApprovalDoc(q, d.id, uid);   // 0287c 임시저장부터 미래자금계획에 지출 예정(지급예정일 · 실적은 거래등록에서 수동)
         return { document_id: d.id, link_id: Number(l.id) };
       });
     } catch (e) {

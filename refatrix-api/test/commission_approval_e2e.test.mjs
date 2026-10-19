@@ -80,6 +80,16 @@ async function call(who, method, url, payload) {
 }
 async function ok(...a) { const r = await call(...a); assert.ok(r.code < 300, `${a[1]} ${a[2]} → ${r.code} ${JSON.stringify(r.body)}`); return r.body; }
 
+// 문서의 회차에 달린 현금흐름 행(살아 있는 것) + 그 문서 회차 메모로 남은 예정(고아 검사)
+async function finOf(docId) {
+  return (await query(`SELECT t.id, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS d, t.amount, t.category_code, t.account_id
+                         FROM approval_payments p JOIN transactions t ON t.id=p.txn_id AND t.deleted_at IS NULL WHERE p.document_id=$1`, [docId])).rows
+    .map((r) => ({ id: Number(r.id), status: r.status, d: r.d, amount: Number(r.amount), cat: r.category_code, acc: r.account_id == null ? null : Number(r.account_id) }));
+}
+async function livePlansByMemo(likeTitle) {
+  return Number((await query(`SELECT count(*) FROM transactions WHERE status='plan' AND deleted_at IS NULL AND memo LIKE $1`, [`%${likeTitle}%`])).rows[0].count);
+}
+
 async function cleanup() {
   const U = `(SELECT id FROM users WHERE login_id LIKE 'captest%')`;
   const D = `(SELECT id FROM approval_documents WHERE drafter_id IN ${U})`;
@@ -123,6 +133,7 @@ test('E0 준비 — 사용자·고객·인보이스·수금·커미션 기간·7
   await query(`UPDATE approval_settings SET director_user_id=$1, ceo_user_id=$2, finance_user_id=$3, ceo_pre_threshold=100000 WHERE id=1`, [ID.dir, ID.ceo, ID.fin]);
   for (const k of ['dir', 'fin', 'ceo', 'rep']) T[k] = app.jwt.sign({ sub: ID[k] });
   ID.acc = Number((await query(`INSERT INTO accounts (name, type, currency, open_balance, created_by) VALUES ($1,'bank','MXN',0,$2) RETURNING id`, [`${TAG}은행`, ID.dir])).rows[0].id);
+  ID.cash = Number((await query(`INSERT INTO accounts (name, type, currency, open_balance, created_by) VALUES ($1,'현금','MXN',5000,$2) RETURNING id`, [`${TAG}Caja`, ID.dir])).rows[0].id);
   ID.cust = Number((await query(`INSERT INTO customers (name, code, credit_days, owner_id, phone, created_by) VALUES ($1,$2,30,$3,'+52 81 0000 0000',$4) RETURNING id`, [`${TAG}고객`, `${TAG}-1`, ID.rep, ID.dir])).rows[0].id);
   await query(`INSERT INTO commission_agents (user_id, default_rate, active, created_by, updated_by) VALUES ($1,4,true,$2,$2)`, [ID.rep, ID.dir]);
   await query(`INSERT INTO commission_agent_periods (user_id, start_date, end_date, basis, rate, match_on, created_by, updated_by) VALUES ($1,'2026-06-01',NULL,'collection',4,'invoice',$2,$2)`, [ID.rep, ID.dir]);
@@ -173,6 +184,10 @@ test('E1 문서 생성 — 디렉터만 · 내용 자동 · 임시저장 · 중�
   assert.equal((await call('dir', 'POST', '/api/commission/approval-docs', { agent_id: ID.rep, settle_ym: '2026-07' })).body.error, 'approval_doc_active');
   const leg = await call('fin', 'POST', '/api/commission/payments', { agent_id: ID.rep, settle_ym: '2026-07', amount: 600, evidence: PNG });
   assert.equal(leg.code, 409); assert.equal(leg.body.error, 'approval_doc_active');
+  // 0287c 생성(임시저장) 즉시 미래자금계획 지출 예정 — 지급예정일 · 6030 · 계좌 없음
+  const f1 = await finOf(ID.doc);
+  assert.deepEqual(f1.map((x) => [x.status, x.d, x.amount, x.cat, x.acc]), [['plan', '2026-08-15', 600, '6030', null]]);
+  ID.planId = f1[0].id;
   // 승인 전 지급 불가
   assert.equal((await call('fin', 'POST', `/api/commission/approval-docs/${ID.doc}/settle`, { paid_date: '2026-08-15', evidence: PNG })).body.error, 'not_approved');
 });
@@ -187,8 +202,11 @@ test('E2 상신 → 승인 — 직접 집행 버튼(API) 막힘', { skip: SKIP }
     det = await ok('dir', 'GET', `/api/approvals/${ID.doc}`);
   }
   assert.equal(det.doc.status, 'approved'); assert.equal(det.doc.exec_status, 'pending');
+  const f2 = await finOf(ID.doc);
+  assert.deepEqual(f2.map((x) => [x.id, x.status, x.d, x.amount]), [[ID.planId, 'plan', '2026-08-15', 600]], '상신·승인 후에도 같은 예정 1행');
   const s = await ok('fin', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-07`);
-  assert.equal(s.phase, 'approved'); assert.ok(s.doc.doc_no); assert.ok(s.lines.some((l) => l.step_type === 'director' && l.status === 'done'));
+  assert.equal(s.phase, 'approved');
+  assert.equal(s.payment.fin, 'plan'); assert.equal(s.payment.txn_date, '2026-08-15'); assert.ok(s.doc.doc_no); assert.ok(s.lines.some((l) => l.step_type === 'director' && l.status === 'done'));
   const pid = det.payments[0].id;
   const ex = await call('fin', 'POST', `/api/approvals/${ID.doc}/execute`, { payment_id: pid, actual_amount: 600, exec_date: '2026-08-15', pay_method: '현금' });
   assert.equal(ex.code, 409); assert.equal(ex.body.detail, 'commission_doc');
@@ -259,6 +277,18 @@ test('E5 수령증 업로드 → 지급 전표(반제) + 문서 집행완료(현
   const det = await ok('dir', 'GET', `/api/approvals/${ID.doc}`);
   assert.equal(det.commission.commission_payment_id, r.payment_id);
   assert.ok(det.events.some((e) => e.action === 'execute' && /현금/.test(e.detail)));
+  // 0287c 실적은 수동 — 업로드 후에도 예정 1행(지급일·실적 금액으로) · 실적 없음
+  const f5 = await finOf(ID.doc);
+  assert.deepEqual(f5.map((x) => [x.status, x.d, x.amount, x.acc]), [['plan', '2026-08-15', 600, null]]);
+  const s5 = await ok('dir', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-07`);
+  assert.equal(s5.payment.fin, 'plan');
+  // 재무 › 거래등록에서 이 문서 회차를 골라 현금 출금 실적 등록(디렉터) → 예정 행이 그대로 실적
+  const apPay = det.payments[0].id;
+  const t = await ok('dir', 'POST', '/api/transactions', { direction: 'out', currency: 'MXN', amount: 600, txn_date: '2026-08-16', status: 'actual', account_id: ID.cash, category_code: '6030', approval_payment_id: apPay, memo: '커미션 현금' });
+  const f5b = await finOf(ID.doc);
+  assert.deepEqual(f5b.map((x) => [x.id, x.status, x.d, x.acc]), [[ID.planId, 'actual', '2026-08-16', ID.cash]]);
+  assert.equal(Number(t.id), ID.planId);
+  assert.equal((await ok('dir', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-07`)).payment.fin, 'actual');
   // 대표이사 사후승인 → 완결
   await ok('ceo', 'POST', `/api/approvals/${ID.doc}/act`, { action: 'approve' });
   assert.equal((await query(`SELECT post_status FROM approval_documents WHERE id=$1`, [ID.doc])).rows[0].post_status, 'confirmed');
@@ -282,9 +312,19 @@ test('E6 반려되면 새 문서 생성 가능 · 결재 금액을 바꾸면 지
     await ok(who, 'POST', `/api/approvals/${c.document_id}/act`, { action: 'reject', comment: '재확인' });
     const s = await ok('dir', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-08`);
     assert.equal(s.phase, 'rejected'); assert.equal(s.can_create, true);
+    assert.deepEqual(await finOf(c.document_id), [], '반려 → 예정 빠짐');
   }
   // 새 문서 → 승인 → 결재 금액 임의 변경 → 지급 막힘
   const c2 = await ok('dir', 'POST', '/api/commission/approval-docs', { agent_id: ID.rep, settle_ym: '2026-08' });
+  assert.deepEqual((await finOf(c2.document_id)).map((x) => [x.status, x.d, x.amount]), [['plan', '2026-09-15', 100]]);
+  // 임시저장 수정(금액) → 예정도 따라감 · 고아 예정 없음
+  const d2 = (await ok('dir', 'GET', `/api/approvals/${c2.document_id}`)).doc;
+  const body = (sub) => ({ title: d2.title, vendor: d2.vendor, category_id: d2.category_id, orig_sub: sub, iva_applied: false, pay_method: '현금', payment_type: 'once', pay_due: '2026-09-15', currency: 'MXN' });
+  await ok('dir', 'PUT', `/api/approvals/${c2.document_id}`, body(120));
+  assert.deepEqual((await finOf(c2.document_id)).map((x) => [x.status, x.amount]), [['plan', 120]]);
+  await ok('dir', 'PUT', `/api/approvals/${c2.document_id}`, body(100));
+  assert.deepEqual((await finOf(c2.document_id)).map((x) => [x.status, x.amount]), [['plan', 100]]);
+  assert.equal(await livePlansByMemo(d2.title), 1, '회차 교체 후 고아 예정 없음');
   await ok('dir', 'POST', `/api/approvals/${c2.document_id}/submit`, {});
   det = await ok('dir', 'GET', `/api/approvals/${c2.document_id}`);
   for (let i = 0; i < 4 && det.doc.status === 'progress'; i++) {

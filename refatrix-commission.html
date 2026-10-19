@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1019cap</title>
+<title>Refatrix ERP · 커미션 · build b1019cg</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -1143,9 +1143,9 @@
       box.innerHTML=h; box.classList.remove('hidden'); apLockLegacy(false); return;
     }
     if(ph==='draft'){
-      h+='<div class="hint">임시저장 문서가 만들어졌습니다 — 전자결재에서 <b>결재선·참조를 지정하고 상신</b>하세요. 결재가 끝나면 이곳에서 수령증을 인쇄해 현금으로 지급합니다.</div><div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
+      h+='<div class="hint">임시저장 문서가 만들어졌습니다 — 전자결재에서 <b>결재선·참조를 지정하고 상신</b>하세요. 결재가 끝나면 이곳에서 수령증을 인쇄해 현금으로 지급합니다.</div>'+apFinHtml()+'<div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
     } else if(ph==='progress'){
-      h+='<div class="hint">결재 진행 중'+apHandler()+'. 승인완료 전에는 지급할 수 없습니다.</div><div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
+      h+='<div class="hint">결재 진행 중'+apHandler()+'. 승인완료 전에는 지급할 수 없습니다.</div>'+apFinHtml()+'<div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
     } else if(ph==='approved'){
       const s=link&&link.snapshot||{};
       h+='<div class="msg ok" style="display:block;margin:0 0 8px">결재 승인완료 — <b>'+fmtm(link&&link.total)+'</b> 현금 지급 가능. ① 수령증 인쇄 → ② 현금 지급 · '+esc(s.agent_name||'수령인')+' 서명 → ③ 서명본 스캔 업로드.</div>'
@@ -1154,16 +1154,26 @@
         +'<div><label>현금 지급일(서명일)</label><input id="apDate" type="date" style="width:150px" value="'+mxHoy()+'"></div>'
         +'<div><label>서명된 수령증 스캔 (이미지/PDF)</label><input id="apFile" type="file" accept="image/*,application/pdf" style="width:250px"></div>'
         +'<button class="btn gold" data-ap="settle">수령증 업로드 · 지급 확정(반제) · 문서 마감</button></div>'
-        +'<div class="hint" style="margin-top:6px">업로드하면 한 번에 처리됩니다: 커미션 지급 전표 등록(인보이스 반제·증빙=수령증) + 전자결재 집행완료(현금 · 증빙 「수령증」) → 대표이사 사후승인 대기.</div>';
+        +'<div class="hint" style="margin-top:6px">업로드하면 한 번에 처리됩니다: 커미션 지급 전표 등록(인보이스 반제·증빙=수령증) + 전자결재 집행완료(현금 · 증빙 「수령증」) → 대표이사 사후승인 대기. <b>현금 출금 실적은 재무 › 거래등록에서 직접 등록</b>합니다.</div>'+apFinHtml();
     } else if(ph==='settled'){
       h+='<div class="msg ok" style="display:block;margin:0 0 8px">지급·마감 완료 — 전표 #'+esc(link&&link.commission_payment_id)+' · '+fmtm(link&&link.total)+(link&&link.settled_at?(' · '+esc(mxHora(link.settled_at))):'')+(doc?(' · 문서 '+(doc.post_status==='confirmed'?'완결(사후승인)':doc.exec_status==='done'?'사후승인 대기':'')):'')+'</div>'
-        +'<div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="print">🖨 수령증 다시 인쇄</button></div>';
+        +apFinHtml()
+        +'<div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="print">🖨 수령증 다시 인쇄</button>'
+        +(AP.payment&&AP.payment.fin!=='actual'?' <a class="btn gold sm" href="'+FIN_URL(AP.payment.id)+'" target="_blank" title="재무 › 거래등록 — 이 결재 문서를 증빙으로 골라 현금 출금 실적을 등록합니다">💰 거래등록에서 실적 등록 ↗</a>':'')+'</div>';
       if(hasPay) h+='<div class="hint" style="margin-top:8px">이후 새로 확정된 미지급 내역이 있습니다 ('+fmtm(pay.total)+').'+(d.can_create?' <button class="btn gold sm" data-ap="create">📝 남은 내역으로 새 지급승인 문서 생성</button>':'')+'</div>';
     }
     h+='<div class="msg" id="apMsg"></div>';
     box.innerHTML=h; box.classList.remove('hidden');
     if(apFlash){ const m=$('apMsg'); m.className='msg '+apFlash.kind; m.innerHTML=apFlash.html; apFlash=null; }
     apLockLegacy(['draft','progress','approved'].includes(ph));
+  }
+  // 0287c 현금흐름 표시 — 미래자금계획 예정(생성 즉시) · 거래등록 실적(수동)
+  const FIN_URL=pid=>'refatrix-finance.html#tab=new&apay='+pid;
+  function apFinHtml(){
+    const p=AP&&AP.payment; if(!p) return '';
+    if(p.fin==='actual') return '<div class="hint" style="margin-top:6px">💰 현금흐름: <b class="conf">거래등록 실적 등록됨</b>'+(p.txn_date?(' · '+esc(p.txn_date)):'')+'</div>';
+    if(p.fin==='plan') return '<div class="hint" style="margin-top:6px">💰 현금흐름: <b>미래자금계획 지출 예정</b> '+esc(p.txn_date||'')+' · '+fmtm(p.amount)+' — 실적은 현금 지급 후 <b>재무 › 거래등록</b>에서 이 문서를 골라 직접 등록합니다.</div>';
+    return '';
   }
   function apMsg(kind,text){ const m=$('apMsg'); if(m){ m.className='msg '+kind; m.innerHTML=text; } else payMsg(kind,text); }
   async function apCreate(btn){
@@ -1173,7 +1183,7 @@
       const r=await fetch(session.api+'/api/commission/approval-docs',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({agent_id:apCtx.aid,settle_ym:apCtx.ym})});
       const d=await r.json();
       if(!r.ok||d.error){ apMsg('err','문서 생성 실패: '+esc(d.note||d.error||r.status)); btn.disabled=false; btn.textContent='📝 커미션 지급승인 전자문서 생성'; return; }
-      apFlash={kind:'ok',html:'임시저장 문서를 만들었습니다 (인보이스 '+d.invoice_count+'건 · '+fmtm(d.total)+'). <a href="'+AP_URL(d.document_id)+'" target="_blank"><b>전자결재에서 열어 결재선 지정 · 상신 ↗</b></a>'};
+      apFlash={kind:'ok',html:'임시저장 문서를 만들었습니다 (인보이스 '+d.invoice_count+'건 · '+fmtm(d.total)+' · 미래자금계획에 지출 예정 반영). <a href="'+AP_URL(d.document_id)+'" target="_blank"><b>전자결재에서 열어 결재선 지정 · 상신 ↗</b></a>'};
       await loadApproval(apCtx.aid, apCtx.ym, apCtx.pay);
     }catch(e){ apMsg('err','서버에 연결할 수 없습니다.'); btn.disabled=false; btn.textContent='📝 커미션 지급승인 전자문서 생성'; }
   }
@@ -1194,7 +1204,7 @@
         apMsg('err',msg); return;
       }
       const ym=apCtx.ym, aid=apCtx.aid;
-      apFlash={kind:'ok',html:'지급 등록·반제 완료 — 커미션 '+d.settled_count+'건 '+fmtm(d.commission_settled)+(d.bonus_settled>0?(' · 성과급 '+fmtm(d.bonus_settled)):'')+' · 전표 #'+d.payment_id+' · 전자결재 '+esc(d.doc_no||'')+' '+(d.approval_finished?'집행완료 → 대표이사 사후승인 대기':'수령증 첨부')};
+      apFlash={kind:'ok',html:'지급 등록·반제 완료 — 커미션 '+d.settled_count+'건 '+fmtm(d.commission_settled)+(d.bonus_settled>0?(' · 성과급 '+fmtm(d.bonus_settled)):'')+' · 전표 #'+d.payment_id+' · 전자결재 '+esc(d.doc_no||'')+' '+(d.approval_finished?'집행완료 → 대표이사 사후승인 대기':'수령증 첨부')+' · 현금 출금 실적은 거래등록에서 등록하세요'};
       loadOverview(); loadBatches(); loadVouchers(aid); loadProgress(); loadPerf();
       await loadPayable(aid, ym);
     }catch(e){ apMsg('err', esc(e.message||'서버에 연결할 수 없습니다.')); }

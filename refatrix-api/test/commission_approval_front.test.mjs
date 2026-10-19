@@ -25,8 +25,8 @@ after(async () => {
 });
 
 test('S0 정적 — 빌드 토큰 · 새 코드에 인라인 onclick 없음 · 수령증/문서생성 문구', () => {
-  assert.match(COM, /<title>[^<]*b1019cap<\/title>/);
-  assert.match(APR, /<title>[^<]*b20261019cap<\/title>/);
+  assert.match(COM, /<title>[^<]*b1019cg<\/title>/);
+  assert.match(APR, /<title>[^<]*b20261019cg<\/title>/);
   const start = COM.indexOf('// ══ 0287'); const end = COM.indexOf('// ── 지급 전표 내역 + 증빙 열람 ──');
   assert.ok(start > 0 && end > start);
   const block = COM.slice(start, end);
@@ -121,6 +121,7 @@ test('S1 화면 흐름 — 확정 월 → 전자문서 생성 → (상신·승�
     const link = c.$('#apMsg a'); assert.match(link.getAttribute('href'), /^refatrix-approval\.html#doc=\d+$/);
     const docId = Number(link.getAttribute('href').split('=')[1]);
     assert.match(c.$('#apBox').textContent, /결재선·참조를 지정하고 상신/);
+    assert.match(c.$('#apBox').textContent, /현금흐름: 미래자금계획 지출 예정 2026-06-15/, '생성 즉시 미래자금계획 예정 표시');
     assert.ok(c.$('#payForm').classList.contains('locked'), '문서 진행 중엔 송금 지급 폼 잠김');
     // 미리보기(초안) 수령증
     click(c, c.$('[data-ap="preview"]'));
@@ -183,6 +184,9 @@ test('S1 화면 흐름 — 확정 월 → 전자문서 생성 → (상신·승�
     await until(() => /지급 등록·반제 완료/.test(f.$('#apMsg') ? f.$('#apMsg').textContent : ''), 10000);
     assert.match(f.$('#apMsg').textContent, /집행완료 → 대표이사 사후승인 대기/);
     await until(() => /지급·마감 완료/.test(f.$('#apBox').textContent));
+    const finLink = [...f.d.querySelectorAll('#apBox a')].find((x) => /^refatrix-finance\.html#tab=new&apay=\d+$/.test(x.getAttribute('href') || ''));
+    assert.ok(finLink, '거래등록에서 실적 등록 링크(수동)');
+    assert.match(f.$('#apBox').textContent, /거래등록에서 이 문서를 골라 직접 등록/);
     assert.ok(!f.$('#payForm').classList.contains('locked') || f.$('#payForm').classList.contains('hidden'));
     const row = (await q(`SELECT cp.amount, cp.evi_mime, d.exec_status, d.post_status FROM commission_approval_docs l JOIN commission_payments cp ON cp.id=l.commission_payment_id JOIN approval_documents d ON d.id=l.document_id WHERE l.document_id=$1`, [docId])).rows[0];
     assert.deepEqual([Number(row.amount), row.evi_mime, row.exec_status, row.post_status], [1234.53, 'application/pdf', 'done', 'pending']);
