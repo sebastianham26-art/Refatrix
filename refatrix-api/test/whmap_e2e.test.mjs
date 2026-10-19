@@ -1,7 +1,7 @@
 /* 2026-10-19 · 창고 도면(0288 · whMapRoutes 20261019wm1) — 운영 라우트를 실 PostgreSQL 에서 그대로 실행.
    ⚠ db.js 가 import 시점에 DATABASE_URL 을 읽으므로 DATABASE_URL 도 같이 지정할 것.
    실행: TEST_PG_URL=postgres://... node test/whmap_e2e.test.mjs  (없으면 순수 함수만) */
-import { bayOf, cleanZones, SEED_ZONES } from '../src/routes/whMapRoutes.js';
+import { bayOf, cleanZones, SEED_ZONES, canEditMap } from '../src/routes/whMapRoutes.js';
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n); } else { fail++; console.log('  ❌ ' + n + (x !== undefined ? '  → ' + JSON.stringify(x) : '')); } };
 
@@ -20,6 +20,15 @@ ok('같은 구역 id 거부', cleanZones([{ id: 'a', x: 0, y: 0, w: 5, h: 5 }, {
 const clip = cleanZones([{ id: 'a', type: 'area', x: 90, y: 95, w: 30, h: 30, rows: [['X1']] }]).zones[0];
 ok('범위 밖 크기는 잘라냄 · area 는 rows 비움', clip.w === 10 && clip.h === 5 && clip.rows.length === 0, clip);
 
+console.log('\n①-2 도면 수정 권한(whmap)');
+ok('디렉터 = 항상', canEditMap({ role: 'director' }, false));
+ok('whmap 수정 = 가능', canEditMap({ role: 'warehouse', pages: { whmap: 'anywhere' }, pageAccess: { whmap: 'edit' } }, false));
+ok('whmap 열람 = 불가', !canEditMap({ role: 'warehouse', pages: { whmap: 'anywhere' }, pageAccess: { whmap: 'view' } }, false));
+ok('권한 없음(창고만) = 불가', !canEditMap({ role: 'warehouse', pages: { warehouse: 'anywhere' }, pageAccess: { warehouse: 'edit' } }, false));
+ok('등록기기 전용인데 미등록 기기 = 불가', !canEditMap({ role: 'warehouse', pages: { whmap: 'registered_only' }, pageAccess: { whmap: 'edit' } }, false)
+  && canEditMap({ role: 'warehouse', pages: { whmap: 'registered_only' }, pageAccess: { whmap: 'edit' } }, true));
+ok('소시오도 권한 없으면 불가', !canEditMap({ role: 'socio', pages: {} }, false));
+
 const URL = process.env.TEST_PG_URL;
 if (!URL) { console.log(`\n결과: ${pass} 통과 / ${fail} 실패`); process.exit(fail ? 1 : 0); }
 process.env.DATABASE_URL = URL;
@@ -27,13 +36,15 @@ const { pool, query } = await import('../src/db.js');
 const rs = await import('../src/rackStock.js'); rs.setRackStockReady(true);
 const routes = (await import('../src/routes/whMapRoutes.js')).default;
 const H = {}; const app = {};
-for (const m of ['get', 'post', 'put', 'patch', 'delete']) app[m] = (p, o, h) => { H[m.toUpperCase() + ' ' + p] = (typeof o === 'function' ? o : h); };
+const OPTS = {};
+for (const m of ['get', 'post', 'put', 'patch', 'delete']) app[m] = (p, o, h) => { H[m.toUpperCase() + ' ' + p] = (typeof o === 'function' ? o : h); OPTS[m.toUpperCase() + ' ' + p] = o; };
 await routes(app);
 const TAG = 'TSTWM';
+const DIRPERM = { role: 'director' };
 const uid = Number((await query(`INSERT INTO users (name, role, pin_hash) VALUES ('${TAG}','director','x') RETURNING id`)).rows[0].id);
 async function call(k, { body = {}, q = {} } = {}) {
   const r = { _c: 200, _s: null, code(c) { this._c = c; return this; }, send(b) { this._s = b; return b; } };
-  const out = await H[k]({ user: { sub: uid }, ctx: { deviceId: null }, body, query: q, params: {} }, r);
+  const out = await H[k]({ user: { sub: uid }, ctx: { deviceId: null, perm: DIRPERM, isRegistered: false }, body, query: q, params: {} }, r);
   return { out, code: r._c };
 }
 await query(`DELETE FROM warehouse_maps WHERE id='main'`);
@@ -48,6 +59,17 @@ let g = await call('GET /api/wh-map');
 ok('저장 전 → 기본 도면 · seeded', g.out.ok && g.out.seeded && g.out.zones.length === 8 && g.out.version === 0);
 ok('랙 요약에 ZQ1-1 30', g.out.racks.some((x) => x.rack === 'ZQ1-1' && x.qty === 30));
 ok('known 에 랙별 재고 랙 포함', g.out.known.includes('ZQ1-2'));
+ok('디렉터 → can_edit true', g.out.can_edit === true);
+{
+  const pre = OPTS['PUT /api/wh-map'].preHandler[1];
+  const mkR = () => ({ _c: 200, _s: null, code(c) { this._c = c; return this; }, send(b) { this._s = b; return b; } });
+  let rr = mkR(); await pre({ ctx: { perm: { role: 'warehouse', pages: { warehouse: 'anywhere' }, pageAccess: {} }, isRegistered: false } }, rr);
+  ok('저장 가드: 창고 권한만 → 403', rr._c === 403 && rr._s.page === 'whmap');
+  rr = mkR(); await pre({ ctx: { perm: { role: 'warehouse', pages: { whmap: 'anywhere' }, pageAccess: { whmap: 'edit' } }, isRegistered: false } }, rr);
+  ok('저장 가드: whmap 수정 → 통과', rr._c === 200 && rr._s === null);
+  const gr = OPTS['GET /api/wh-map'].preHandler.length === 2;
+  ok('읽기 가드 존재', gr);
+}
 
 console.log('\n③ 칸(bay) 상세');
 let b = await call('GET /api/wh-map/bay', { q: { bay: 'zq1' } });

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 도면 Mapa del almacén · build wm-1019a</title>
+<title>Refatrix · 창고 도면 Mapa del almacén · build wm-1019b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
@@ -132,12 +132,13 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='wm-1019a';
+  var BUILD='wm-1019b';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-whmap] build '+BUILD); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
   function L(ko,es){ return LANG==='es'?es:ko; }
   var isDir=!!(S&&S.user&&S.user.role==='director');
+  var CANEDIT=false;   // 서버가 판단: 디렉터 또는 「창고 도면 수정(whmap)」 권한 수정 (2026-10-19 wm-1019b)
   var $=function(id){return document.getElementById(id);};
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
   var fmt=function(n){return Number(n||0).toLocaleString(LANG==='es'?'es-MX':'ko-KR');};
@@ -192,7 +193,8 @@
       RACKS={}; (b.racks||[]).forEach(function(r){ RACKS[String(r.rack).toUpperCase()]=r; });
       KNOWN={}; (b.known||[]).forEach(function(r){ KNOWN[String(r).toUpperCase()]=1; });
       buildBays(); DIRTY=false;
-      if(isDir){ $('modeSeg').style.display=''; }
+      CANEDIT=!!b.can_edit;
+      $('modeSeg').style.display=CANEDIT?'':'none';
       render();
     });
   }
@@ -272,7 +274,7 @@
     if(off.length){
       h+='<div class="note" style="margin-top:14px">'+L('도면에 없는 랙(재고 있음)','Racks con existencia fuera del mapa')+' '+off.length
         +'<div class="chips">'+off.map(function(b){ return '<span class="chip" data-selb="'+esc(b)+'">'+esc(b)+' · '+fmt(BAYS[b].qty)+'</span>'; }).join('')+'</div>'
-        +(isDir?'<div class="hint" style="margin-top:6px">'+L('설정 탭에서 구역에 추가하면 도면에 표시됩니다.','Agréguelos a una zona en Configuración.')+'</div>':'')+'</div>';
+        +(CANEDIT?'<div class="hint" style="margin-top:6px">'+L('설정 탭에서 구역에 추가하면 도면에 표시됩니다.','Agréguelos a una zona en Configuración.')+'</div>':'')+'</div>';
     }
     return h;
   }
@@ -326,7 +328,7 @@
 
   /* ---------- 설정(디렉터) ---------- */
   function setupHtml(){
-    var h='<div class="k">'+L('설정','Configuración')+' · '+L('디렉터','Director')+'</div><h2>'+L('도면 설정','Configurar mapa')+'</h2>'
+    var h='<div class="k">'+L('설정','Configuración')+'</div><h2>'+L('도면 설정','Configurar mapa')+'</h2>'
       +'<div class="hint">'+L('구역을 끌어 이동하고 금색 핸들로 크기를 맞춘 뒤, 랙 열 번호를 적고 [저장]하세요. 저장하면 모든 사용자에게 같은 도면이 보입니다.','Mueva y ajuste zonas, escriba los racks y guarde. Todos verán el mismo mapa.')+'</div>'
       +'<div class="rowb"><button type="button" class="btn" id="bSave"'+(DIRTY?'':' disabled')+'>💾 '+L('저장','Guardar')+'</button>'
       +'<button type="button" class="btn ghost" id="bUndo"'+(DIRTY?'':' disabled')+'>'+L('되돌리기','Descartar')+'</button>'
@@ -467,6 +469,7 @@
   function save(){
     var b=$('bSave'); if(b) b.disabled=true;
     api('/api/wh-map',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({zones:ZONES,version:VERSION})}).then(function(o){
+      if(o.status===403){ toast(L('창고 도면 수정 권한이 없습니다 — 관리자에게 요청하세요.','No tiene permiso para editar el mapa.')); if(b) b.disabled=false; return; }
       if(o.status===409&&o.body.error==='version_conflict'){ toast(L('다른 사람이 먼저 도면을 저장했습니다 — 새로고침 후 다시 하세요.','Otro usuario guardó primero — recargue.')); if(b) b.disabled=false; return; }
       if(!o.ok||!o.body.ok){
         var e=o.body||{}, msg=e.error==='dup_bay'?L('중복된 랙: ','Rack duplicado: ')+e.bay:e.error==='bad_bay'?L('잘못된 랙 번호: ','Rack inválido: ')+e.bay:(e.note||e.error||o.status);

@@ -205,7 +205,7 @@
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
     marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'__socio_or__wapromo', metaleads:['products','marketing','pricemaster','devrequest','quote','sales'],   // 2026-10-16 — WhatsApp 마케팅 = 디렉터·소시오 항상 + 사용자별 wapromo 권한(관리자 화면) · 2026-10-13 디렉터·소시오 전용이던 것 · Meta 광고 문의 = 제품·마케팅 메뉴에 들어가는 사람 모두(서버 PM_KEYS 와 같은 목록)   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__', waSched:'__director__',
-    whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse', whmap:['warehouse','products']
+    whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse', whmap:['warehouse','products','whmap']
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[

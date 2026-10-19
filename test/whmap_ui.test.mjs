@@ -1,4 +1,4 @@
-// 2026-10-19 · 창고 도면 화면(wm-1019a) — 운영 HTML 인라인 스크립트를 jsdom 에서 그대로 실행.
+// 2026-10-19 · 창고 도면 화면(wm-1019b) — 운영 HTML 인라인 스크립트를 jsdom 에서 그대로 실행.
 //   실행: JSDOM=<jsdom 경로> node test/whmap_ui.test.mjs
 import fs from 'fs';
 import path from 'path';
@@ -16,7 +16,7 @@ const SEED = [
   { id: 'za', name: 'A 랙 · Racks A', type: 'storage', x: 46, y: 5, w: 35, h: 41, rows: [['AA1', 'AB1', 'AD2']] },
   { id: 'office', name: '사무실 · Oficina', type: 'area', x: 1, y: 2, w: 17, h: 51, rows: [] },
 ];
-function boot({ role = 'director', lang = 'ko', put = null } = {}) {
+function boot({ role = 'director', lang = 'ko', put = null, canEdit = null } = {}) {
   const calls = [];
   const dom = new JSDOM(HTML, { url: 'https://erp.refatrix.com/refatrix-whmap.html', runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(w) {
@@ -26,7 +26,7 @@ function boot({ role = 'director', lang = 'ko', put = null } = {}) {
         const u = new URL(String(url)); const m = (opt && opt.method) || 'GET'; const body = opt && opt.body ? JSON.parse(opt.body) : null;
         calls.push({ p: u.pathname, q: Object.fromEntries(u.searchParams), m, body });
         let out = {}, status = 200;
-        if (u.pathname === '/api/wh-map' && m === 'GET') out = { ok: true, seeded: true, version: 0, zones: SEED,
+        if (u.pathname === '/api/wh-map' && m === 'GET') out = { ok: true, seeded: true, version: 0, zones: SEED, can_edit: canEdit == null ? role === 'director' : canEdit,
           racks: [{ rack: 'AD2-1', skus: 2, qty: 54, kind: 'carton' }, { rack: 'AD2-5', skus: 1, qty: 24, kind: 'carton' }, { rack: 'B2-1', skus: 1, qty: 5, kind: 'fast' }, { rack: 'FM-01', skus: 1, qty: 7, kind: 'fast' }],
           known: ['AA1-1', 'AA1-2', 'AD2-1', 'AD2-5', 'B2-1', 'C1-1', 'A1-1', 'D2-1', 'FM-01'] };
         else if (u.pathname === '/api/wh-map/bay') out = { ok: true, bay: u.searchParams.get('bay'), items: [
@@ -43,7 +43,7 @@ function boot({ role = 'director', lang = 'ko', put = null } = {}) {
 let { dom, w, d, calls } = boot();
 await sleep(100);
 const bay = (b) => d.querySelector('.bay[data-b="' + b + '"]');
-t('빌드 토큰', /build wm-1019a<\/title>/.test(HTML) && d.title.includes('wm-1019a'));
+t('빌드 토큰', /build wm-1019b<\/title>/.test(HTML) && d.title.includes('wm-1019b'));
 t('재고 있는 칸(AD2) = stock', bay('AD2').classList.contains('stock'));
 t('ERP 랙 있지만 빈 칸(AA1) = empty', bay('AA1').classList.contains('empty'));
 t('ERP 미등록 칸(AB1) = unreg', bay('AB1').classList.contains('unreg'));
@@ -99,6 +99,20 @@ await sleep(100);
 t('창고 계정: 설정 토글 숨김 · 스페인어', d.getElementById('modeSeg').style.display === 'none' && /Mapa del almacén/.test(d.getElementById('ttl').textContent) && /Elija una zona/.test(d.getElementById('side').textContent));
 const ko = (d.getElementById('app').textContent.match(/[가-힣]+/g) || []).filter((x) => !/^(케이지|랙|사무실)$/.test(x));
 t('스페인어 화면에 남은 한국어 없음', ko.length === 0, ko);
+dom.window.close();
+// 6) 창고 직원 + 「창고 도면 수정」 권한 → 설정 보임, 서버가 403 이면 안내
+({ dom, w, d, calls } = boot({ role: 'warehouse', lang: 'ko', canEdit: true, put: { status: 403, body: { error: 'forbidden', page: 'whmap' } } }));
+await sleep(100);
+t('whmap 수정 권한 직원: 설정 토글 보임', d.getElementById('modeSeg').style.display === '');
+d.querySelector('#modeSeg button[data-m="setup"]').click(); await sleep(20);
+t('설정 제목에 「디렉터」 표기 없음', !/디렉터/.test(d.getElementById('side').textContent));
+d.getElementById('bAdd').click(); await sleep(20); d.getElementById('bSave').click(); await sleep(60);
+t('서버 403 → 권한 없음 안내', /수정 권한이 없습니다/.test(d.getElementById('toast').textContent));
+dom.window.close();
+// 7) 디렉터라도 서버가 can_edit false 면(가정) 설정 숨김 — 판단은 서버가 한다
+({ dom, w, d, calls } = boot({ role: 'director', canEdit: false }));
+await sleep(100);
+t('can_edit false → 설정 숨김', d.getElementById('modeSeg').style.display === 'none');
 dom.window.close();
 console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

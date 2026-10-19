@@ -1,5 +1,6 @@
 import { query } from '../db.js';
-import { authGuard, requirePageAny, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePageAny } from '../middleware/authGuard.js';
+import { pageAllowed } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { rackStockReady, normRack, rackNatKey } from '../rackStock.js';
 
@@ -12,9 +13,19 @@ import { rackStockReady, normRack, rackNatKey } from '../rackStock.js';
 //     칸 이름에 「-」가 있으면(예 FM-01) 그 랙 하나와 정확히 맞춘다.
 //   · 수량은 랙별 재고(product_rack_stock)를 그대로 읽는다 — 도면 화면에서 수량을 바꾸지 않는다
 //     (재고를 벗어나지 않게: 위치수정은 📍 랙별 재고 · 위치변경 화면에서).
-//   권한: 읽기 = 창고·제품 화면 열람 / 도면 저장 = 디렉터.
+//   권한: 읽기 = 창고·제품·창고도면 화면 열람 / 도면 저장 = 디렉터 또는 「창고 도면 수정(whmap)」 권한 수정.
 // =====================================================================
-export const WHMAP_BUILD = '20261019wm1';
+export const WHMAP_BUILD = '20261019wm2';
+//   2026-10-19 wm2 — 도면 수정 권한을 관리 › 사용자·권한의 「창고 도면 수정(whmap)」 으로 부여한다.
+//     디렉터는 항상. whmap 권한 「수정」 = 도면 저장 가능 · 「열람」 = 보기만.
+export const WHMAP_PAGE = 'whmap';
+/** 도면 저장 가능 여부 — 디렉터 또는 whmap 권한 「수정」 */
+export function canEditMap(perm, isRegistered) {
+  if (!perm) return false;
+  if (perm.role === 'director') return true;
+  if (!pageAllowed(perm, WHMAP_PAGE, isRegistered)) return false;
+  return ((perm.pageAccess && perm.pageAccess[WHMAP_PAGE]) || 'edit') === 'edit';
+}
 
 const r = (p, a, b) => Array.from({ length: b - a + 1 }, (_, i) => p + (a + i));
 /** 기본 도면 — 디렉터가 준 warehouse_image.html 의 배치 그대로 */
@@ -74,8 +85,11 @@ export function cleanZones(raw) {
 
 export default async function whMapRoutes(app) {
   try { console.log('[whMapRoutes] loaded ' + WHMAP_BUILD); } catch (_) {}
-  const gRead = { preHandler: [authGuard, requirePageAny(['warehouse', 'products'])] };
-  const gDir = { preHandler: [authGuard, requireDirector] };
+  const gRead = { preHandler: [authGuard, requirePageAny(['warehouse', 'products', WHMAP_PAGE])] };
+  const gEdit = { preHandler: [authGuard, async (req, reply) => {
+    const ctx = req.ctx || {};
+    if (!canEditMap(ctx.perm, ctx.isRegistered)) return reply.code(403).send({ error: 'forbidden', page: WHMAP_PAGE, note: '창고 도면 수정 권한이 없습니다 (관리 › 사용자·권한).' });
+  }] };
   let tableOk = false;
   async function ready() {
     if (tableOk) return true;
@@ -84,7 +98,7 @@ export default async function whMapRoutes(app) {
   }
 
   /* 도면 + 랙별 재고 요약 + ERP 에 등록된 랙 이름 */
-  app.get('/api/wh-map', gRead, async () => {
+  app.get('/api/wh-map', gRead, async (req) => {
     let map = null;
     if (await ready()) {
       map = (await query(`SELECT m.zones, m.version, m.updated_at, u.name AS by_name
@@ -102,6 +116,7 @@ export default async function whMapRoutes(app) {
     for (const x of racks) if (!known.includes(x.rack)) known.push(x.rack);
     return {
       ok: true, build: WHMAP_BUILD, table: await ready(),
+      can_edit: canEditMap(req.ctx && req.ctx.perm, req.ctx && req.ctx.isRegistered),
       zones: map ? map.zones : SEED_ZONES, seeded: !map, version: map ? Number(map.version) : 0,
       updated_at: map ? map.updated_at : null, updated_by: map ? map.by_name : null,
       racks, known,
@@ -136,8 +151,8 @@ export default async function whMapRoutes(app) {
     return { ok: true, items: rows.map((x) => ({ rack: x.rack, bay: bayOf(x.rack), product_id: Number(x.product_id), code: x.code, name: x.name || '', qty: Number(x.qty) })) };
   });
 
-  /* 도면 저장(디렉터) — body { zones, version } · version 이 다르면 409(다른 사람이 먼저 저장) */
-  app.put('/api/wh-map', gDir, async (req, reply) => {
+  /* 도면 저장(디렉터 · whmap 「수정」 권한) — body { zones, version } · version 이 다르면 409(다른 사람이 먼저 저장) */
+  app.put('/api/wh-map', gEdit, async (req, reply) => {
     if (!(await ready())) return reply.code(409).send({ error: 'not_ready', note: '마이그레이션 0288 을 먼저 실행하세요 (npm run migrate).' });
     const c = cleanZones(req.body && req.body.zones);
     if (c.error) return reply.code(400).send(c);
