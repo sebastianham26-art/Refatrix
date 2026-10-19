@@ -1,6 +1,6 @@
 # REFATRIX 인수인계 — VIO 제품찾기 · 차종별 부품 · 프로모션 → 한 화면 (2026-10-19)
 
-**마이그레이션 없음** · 화면 `refatrix-viofinder.html` build `vf16q`(로고·OE 반영) · 새 백엔드 라우트 `GET /api/promo-img` · 산출물 `refatrix_vio_promo_v2.zip` (13파일 · 이 문서 포함) · 기준 커밋 `d1cafed`(2026-10-19 09:37 main)
+**마이그레이션 없음** · 화면 `refatrix-viofinder.html` build `vf16s`(로고·OE · 미리보기 고정 · 번호 직접 입력) · 새 백엔드 라우트 `GET /api/promo-img` · 산출물 `refatrix_vio_promo_v2.zip` (13파일 · 이 문서 포함) · 기준 커밋 `d1cafed`(2026-10-19 09:37 main)
 
 ## ① 설명
 
@@ -44,13 +44,17 @@
 - 배치: A 오른쪽 위(할인 배지는 연식 줄 오른쪽으로 이동) · B 왼쪽 위(할인 배지는 오른쪽 위). ③ 디자인에 「OE 마크」 체크(기본 켬, 모든 차종 공통으로 기억).
 - 「다른 로고로 바꾸기」로 올린 로고가 있으면 그것을 우선, 「CTR 정식 로고로」로 되돌림.
 
-## ② 배포단계
+### 추가(같은 날 vf16r) — 미리보기 고정
+- 디렉터 확인: 화면 높이가 낮으면(726px) 오른쪽 선택칸을 내리는 순간 미리보기가 같이 올라가 사라져, 바꾼 내용이 반영 안 되는 것처럼 보였음(운영에서 사진 중계 · 차량 · 제품 사진 4장은 정상 확인).
+- 이제 왼쪽 미리보기는 고정, 오른쪽 선택칸만 따로 스크롤. 미리보기 높이는 화면 높이에 맞춤. 모바일은 위쪽 절반에 미리보기 고정, 아래 선택칸 스크롤.
+- 다시 그릴 때 화면 밖 캔버스에 먼저 그린 뒤 한 번에 바꿔 깜빡임 없음 · 0.25초 넘게 걸리면 「그리는 중…」 표시.
+
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull** (오늘 09:37 이후 바뀐 파일이 있으면 그 파일은 덮지 말고 알려 주세요)
 2. **백엔드 먼저**: `refatrix-api/src/routes/promoImgRoutes.js` · `refatrix-api/src/server.js` Commit → Push → Railway **Success**
 3. `npm run migrate` **불필요**(마이그레이션 없음)
 4. 프론트: `refatrix-viofinder.html` · `refatrix-vehicleparts.html` · `refatrix-nav.js` · `refatrix-portal.html` · **`img/promo/` 4개 PNG** Push
-5. Ctrl+Shift+R → 탭 제목에 `vf16q` 확인. 메뉴 이름이 안 바뀌어 보이면 한 번 더 Ctrl+Shift+R(nav 캐시 표식 `?v=20261016wp`는 저장소 관례대로 그대로 둠)
+5. Ctrl+Shift+R → 탭 제목에 `vf16s` 확인. 메뉴 이름이 안 바뀌어 보이면 한 번 더 Ctrl+Shift+R(nav 캐시 표식 `?v=20261016wp`는 저장소 관례대로 그대로 둠)
 
 ## ③ 테스트방법
 
@@ -75,12 +79,12 @@
 | `img/promo/ctr-logo.png` · `img/promo/ctr-logo-white.png` | **신규** — CTR 정식 로고(빨강·흰색, 투명 배경, 1400×386) |
 | `img/promo/oe-badge.png` · `img/promo/oe-badge-white.png` | **신규** — OE 마크(밝은/어두운 배경용, 600×600) |
 | `refatrix-api/test/promo_img.test.mjs` | **신규** 7건 |
-| `refatrix-api/test/viopromo_front.test.mjs` | **신규** 6건 (jsdom · 로고·OE 파일 확인 포함) |
+| `refatrix-api/test/viopromo_front.test.mjs` | **신규** 7건 (jsdom · 로고·OE 파일 · 번호 직접 입력 포함) |
 
 ## ⑤ 검증결과
 
 - `promo_img` **7/7** — 주소 검사(http · 다른 호스트 · `.evil.com` 꼬리 · 사용자정보 · 포트 · 사설 IP 거부), 허용 밖이면 받으러 가지 않음, 그대로 전달 + 두 번째 캐시, 이미지 아님 415, 404, 502, 시간 초과, 8MB 413(헤더·실제), 리다이렉트 끝 검사, server.js 등록
-- `viopromo_front` **6/6** (jsdom, 운영 HTML · 실제 커버리지 VIO 자료, 2회 연속) — 대기열 20차종 · 품목 수 · 후보/전부 · 발송 표시 · 최소 수량 반영 / 재고 0 자동 제외 · 손으로 넣고 빼기 · ✋ · 자동 되돌리기 · 설정 기억 · L/R 줄임 / 이미지 뱅크 본문(폴더·1080×1350·JPEG·메모) / 발송 본문(관심 차종 `contact_ids`+지금, 그룹+예약, 그룹 미선택 막음) / 찾기 탭 ★ 버튼은 펼치지 않음 · 줄 클릭은 펼침 · 인라인 onclick 없음 / 예전 주소 · 메뉴
+- `viopromo_front` **7/7** (jsdom, 운영 HTML · 실제 커버리지 VIO 자료, 2회 연속) — 대기열 20차종 · 품목 수 · 후보/전부 · 발송 표시 · 최소 수량 반영 / 재고 0 자동 제외 · 손으로 넣고 빼기 · ✋ · 자동 되돌리기 · 설정 기억 · L/R 줄임 / 이미지 뱅크 본문(폴더·1080×1350·JPEG·메모) / 발송 본문(관심 차종 `contact_ids`+지금, 그룹+예약, 그룹 미선택 막음) / 찾기 탭 ★ 버튼은 펼치지 않음 · 줄 클릭은 펼침 · 인라인 onclick 없음 / 예전 주소 · 메뉴
 - **헤드리스 Chromium** 실제 렌더 31/31 (1366px · 390px) — 템플릿 A/B 이미지 확인, 내보낸 JPEG 1080×1350, 모바일 가로 스크롤 없음, 상단 메뉴 위로 창이 뜸, 페이지 오류 0
 - 전체 앱 `buildApp()` 기동 + `/api/promo-img` 등록 확인(미인증 401) · `node --check` 전 파일 · 화면 인라인 스크립트 4블록
 - 회귀(관련 34개 파일): 바뀐 것 없음. 원래 main 에서도 실패하던 것 그대로 — integration_nav ④(nav 캐시 표식 `1016wp` ↔ nav.js 로그 `1016st`) · reservations · salestrend_front · service_secrets · treasury_daily_front · wa_schedule

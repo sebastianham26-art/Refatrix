@@ -1,5 +1,5 @@
 // =====================================================================
-// VIO 제품찾기·프로모션 화면 (jsdom · build vf16q · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
+// VIO 제품찾기·프로모션 화면 (jsdom · build vf16s · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
 //   대기열(VIO 순 · 재고 품목 수) · 품목 넣기/빼기(재고 자동 + 손) · 이미지 뱅크 저장 · WhatsApp 발송 본문 · 예전 차종별 부품 주소
 //   실행: node --test test/viopromo_front.test.mjs   (jsdom 필요)
 // =====================================================================
@@ -74,6 +74,15 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
         if (p.pathname === '/api/wa-promo/audience') return json({ n: 57 });
         if (p.pathname === '/api/wa-promo/contacts') return json({ items: [{ id: 3, consent: 'yes' }, { id: 4, consent: 'yes' }] });
         if (p.pathname === '/api/wa-promo/groups') return json({ items: [{ id: 11, name: 'Talleres MTY', yes: 40 }] });
+        if (p.pathname === '/api/wa-promo/contacts/bulk') {
+          const rows = body.rows.map((r, i) => { const d = String(r.phone).replace(/\D/g, ''); const ph = d.length === 10 ? '52' + d : (d.length === 13 && d.startsWith('521') ? '52' + d.slice(3) : d);
+            if (ph.length < 11 || ph.length > 15) return { i, status: 'bad_phone', raw_phone: r.phone, name: r.name };
+            return ph === '528111111111' ? { i, status: 'exists', phone: ph, name: r.name, existing: { id: 7, name: 'Ana' } } : { i, status: 'new', phone: ph, name: r.name, id: body.dry_run === false ? 100 + i : undefined }; });
+          const summary = { new: rows.filter((x) => x.status === 'new').length, exists: rows.filter((x) => x.status === 'exists').length, bad_phone: rows.filter((x) => x.status === 'bad_phone').length };
+          return json({ dry_run: body.dry_run !== false, rows, summary });
+        }
+        if (p.pathname === '/api/wa-promo/consent/ask') return json({ queued: body.ids.length - 1, remaining_today: 130 });
+        if (p.pathname === '/api/wa-promo/campaigns' && method === 'POST' && body.contact_ids && body.contact_ids.includes(7)) return json({ id: 90, audience: 1, picked: { selected: body.contact_ids.length, yes: 1, unknown: body.contact_ids.length - 1, asked: 0, no: 0 }, remaining_today: 139 });
         if (p.pathname === '/api/wa-promo/campaigns' && method === 'POST') return body.contact_ids && !body.contact_ids.length ? json({ error: 'no_contacts' }, 400) : json({ id: 88, audience: 2, remaining_today: 140 });
         if (/wikipedia\.org/.test(u)) return /summary/.test(u) ? json({ originalimage: { source: 'https://upload.wikimedia.org/x/car.jpg' } }) : json({ query: { pages: {} } });
         return json({ error: 'stub' }, 404);
@@ -86,7 +95,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16q/);
+  assert.match(d.title, /vf16s/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -208,4 +217,35 @@ test('CTR 정식 로고 · OE 마크 파일이 있고 화면이 쓴다 (vf16q)',
   const html = readFileSync(HTML, 'utf-8');
   assert.match(html, /img\/promo\/ctr-logo\.png/); assert.match(html, /img\/promo\/oe-badge-white\.png/);
   assert.match(html, /id="vpOeOn"/);
+});
+
+test('전화번호 직접 입력: 여러 개 · 이름 붙여도 됨 · 새 번호 등록 → 동의자만 발송 + 미동의엔 동의 요청', { skip: SKIP }, async () => {
+  const { w, d, calls } = boot();
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length === 8));
+  d.getElementById('vpWa').click();
+  assert.ok(await until(() => d.getElementById('vpPhones')));
+  const ta = d.getElementById('vpPhones');
+  ta.value = '81 1111 1111\nJuan Pérez 8187654321, +52 1 81 5555 0000; 123';
+  ta.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.ok(await until(() => /번호 4개/.test(d.getElementById('vpPhChk').textContent)), d.getElementById('vpPhChk').textContent);
+  assert.match(d.getElementById('vpPhChk').textContent, /이미 등록 1 · 새 번호 2/);
+  assert.match(d.getElementById('vpPhChk').textContent, /형식 오류 1/);
+  assert.ok(d.querySelector('input[name=vpAud][value=man]').checked, '입력하면 「직접 입력」이 선택됨');
+  const dry = calls.filter((c) => c.u.endsWith('/contacts/bulk')).pop();
+  assert.equal(dry.body.dry_run, true);
+  assert.deepEqual(dry.body.rows.map((r) => r.name), ['Manual 1111', 'Juan Pérez', 'Manual 0000', 'Manual 123']);
+  calls.length = 0;
+  d.getElementById('vpDoSend').click();
+  assert.ok(await until(() => /발송 #90/.test(d.getElementById('vpMsg').textContent)), d.getElementById('vpMsg').textContent);
+  const reg = calls.find((c) => c.u.endsWith('/contacts/bulk'));
+  assert.equal(reg.body.dry_run, false);
+  const camp = calls.find((c) => c.u.endsWith('/api/wa-promo/campaigns') && c.method === 'POST');
+  assert.deepEqual(camp.body.contact_ids, [7, 101, 102]);
+  const ask = calls.find((c) => c.u.endsWith('/consent/ask'));
+  assert.deepEqual(ask.body.ids, [7, 101, 102]);
+  assert.match(d.getElementById('vpMsg').textContent, /✅ 1/); assert.match(d.getElementById('vpMsg').textContent, /동의 요청 2명/);
+  // 입력한 번호는 다음에도 남아 있음
+  assert.match(w.localStorage.getItem('vp_global'), /8187654321/);
 });

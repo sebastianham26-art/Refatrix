@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf16q</title>
+<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf16s</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
@@ -180,22 +180,27 @@
   .vpHint.err,.vpMsg.err{color:var(--expense)}
   #vpOverlay{position:fixed;inset:0;z-index:9500;background:rgba(18,24,22,.62);display:none;padding:14px}
   #vpOverlay.open{display:flex}
-  .vpBox{max-height:100%;background:var(--paper);border-radius:14px;width:100%;max-width:1320px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.4)}
+  .vpBox{height:100%;background:var(--paper);border-radius:14px;width:100%;max-width:1320px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.4)}
   .vpTop{display:flex;align-items:center;gap:12px;padding:11px 16px;background:var(--brand);color:#fff;flex-wrap:wrap}
   .vpTopT{font-weight:800;font-size:14px}
   #vpHead{font-size:13px}
   .vpRank{display:inline-block;margin-left:6px;font-size:11px;background:rgba(255,255,255,.14);padding:2px 8px;border-radius:999px;color:#e6efe9}
   .vpX{background:none;border:none;color:#cfe0d8;font-size:20px;cursor:pointer;font-family:inherit}
-  .vpMain{flex:1;display:flex;gap:16px;padding:14px 16px;overflow:auto;min-height:0}
-  .vpPrevCol{flex:0 0 auto;width:min(46vw,520px);position:relative}
-  #vpCanvas{width:100%;height:auto;display:block;border-radius:8px;box-shadow:0 6px 26px rgba(0,0,0,.18);background:#fff}
+  /* 2026-10-19 vf16r · 왼쪽 미리보기 고정 · 오른쪽 선택칸만 따로 스크롤 */
+  .vpMain{flex:1;display:flex;gap:16px;padding:14px 16px;overflow:hidden;min-height:0}
+  .vpPrevCol{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-start;overflow-y:auto;min-height:0;position:relative;max-width:min(48vw,600px)}
+  #vpCanvas{display:block;height:min(calc(100vh - 190px),calc(48vw * 1.25),750px);width:auto;max-width:100%;border-radius:8px;box-shadow:0 6px 26px rgba(0,0,0,.18);background:#fff;flex:0 0 auto}
+  .vpPrevCol .vpOut,.vpPrevCol .vpMsg,.vpPrevCol .vpSend{width:100%}
+  .vpDrawing{position:absolute;top:8px;left:8px;background:rgba(20,61,52,.85);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;display:none}
+  .vpDrawing.on{display:block}
   .vpOut{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .vpMsg{font-size:12.5px;margin-top:8px;line-height:1.6}
   .vpSend{display:none;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
   .vpSend.open{display:block}
-  .vpSend textarea{width:100%;font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+  .vpSend textarea{width:100%;box-sizing:border-box;font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:7px 9px}
   .vpRad{display:block;font-size:12.5px;margin:4px 0}
-  .vpSide{flex:1;min-width:300px;display:flex;flex-direction:column;gap:10px}
+  .vpSide{flex:1;min-width:300px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0;padding-right:4px;overscroll-behavior:contain}
+  .vpSide>.vpSec{flex:0 0 auto}
   .vpSec{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px}
   .vpSecH{font-weight:800;color:var(--brand);font-size:13px;margin-bottom:7px}
   .vpSubT{font-size:11.5px;font-weight:700;color:var(--muted);margin:9px 0 4px}
@@ -228,9 +233,11 @@
   @media (max-width:860px){
     #vpOverlay{padding:0}
     .vpBox{border-radius:0}
-    .vpMain{flex-direction:column;padding:10px}
-    .vpPrevCol{width:100%}
-    .vpSide{min-width:0}
+    .vpMain{flex-direction:column;padding:8px 10px;gap:8px}
+    .vpPrevCol{max-width:100%;width:100%;max-height:52vh;flex:0 0 auto;align-items:center}
+    #vpCanvas{height:calc(52vh - 64px)}
+    .vpOut{justify-content:center}
+    .vpSide{min-width:0;flex:1}
     table.vpQ th:nth-child(3),table.vpQ td:nth-child(3){display:none}
   }
 </style>
@@ -382,7 +389,7 @@
     </div>
     <div class="vpMain">
       <div class="vpPrevCol">
-        <canvas id="vpCanvas" width="1080" height="1350"></canvas>
+        <canvas id="vpCanvas" width="1080" height="1350"></canvas><span class="vpDrawing" id="vpDrawing">그리는 중…</span>
         <div class="vpOut">
           <button type="button" class="vpBtnP sec" id="vpJpg">⬇ JPEG</button>
           <button type="button" class="vpBtnP sec" id="vpBank">🖼 이미지 뱅크에 저장</button>
@@ -1227,7 +1234,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
 </script>
 <script>
 /* =====================================================================
-   2026-10-19 · VIO 제품찾기 + 차종별 부품 + 프로모션 이미지 → 한 화면 (build vf16q)
+   2026-10-19 · VIO 제품찾기 + 차종별 부품 + 프로모션 이미지 → 한 화면 (build vf16s)
    ① 프로모션 대기열: VIO 높은 순서로 차종을 훑어 재고 있는 품목 수를 세고 후보를 고른다
    ② 프로모션 만들기: 세대 선택 · 품목별 넣기/빼기(재고 기준 자동 + 손으로 바꾸기) · 1080×1350 이미지
    ③ WhatsApp: 이미지 뱅크(폴더 「VIO 프로모션」) 저장 → 동의자 전체 · 그룹 · 이 차종 관심 고객에게 발송/예약
@@ -1596,7 +1603,9 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   function redraw(){ clearTimeout(_rt); _rt=setTimeout(doDraw,60); }
   async function doDraw(){
     if(_drawing){ _again=true; return; } _drawing=true;
-    try{ const cv=$('vpCanvas'); if(cv) await render(cv); }catch(e){ console.warn('[vp] render',e); }
+    const ind=$('vpDrawing'); const tmo=setTimeout(()=>{ if(ind) ind.classList.add('on'); },250);
+    try{ const cv=$('vpCanvas'); if(cv){ const off=document.createElement('canvas'); off.width=W; off.height=H; await render(off); cv.getContext('2d').clearRect(0,0,W,H); cv.getContext('2d').drawImage(off,0,0); } }catch(e){ console.warn('[vp] render',e); }
+    clearTimeout(tmo); if(ind) ind.classList.remove('on');
     _drawing=false; if(_again){ _again=false; doDraw(); }
   }
 
@@ -1744,7 +1753,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   function busy(b,on,t){ if(!b) return; if(on){ b.dataset._t=b.textContent; b.textContent=t; b.disabled=true; } else { b.textContent=b.dataset._t||b.textContent; b.disabled=false; } }
 
   // 발송 창
-  const SD={ groups:null, aud:null, veh:null };
+  const SD={ groups:null, aud:null, veh:null, man:null };
   async function openSend(){
     $('vpSend').classList.add('open');
     const cards=cardsOf(allItems(),isInc);
@@ -1756,6 +1765,10 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       +'<label class="vpRad"><input type="radio" name="vpAud" value="all" checked> 동의자 전체 <span class="vpMuted" id="vpAudAll">…</span></label>'
       +'<label class="vpRad"><input type="radio" name="vpAud" value="veh"> 관심 차종 「'+esc(modelName(ST.m))+'」 적은 고객 <span class="vpMuted" id="vpAudVeh">…</span></label>'
       +'<label class="vpRad"><input type="radio" name="vpAud" value="grp"> 그룹 고르기</label><div id="vpGrpList" class="vpChips" style="margin:4px 0 6px 22px"></div>'
+      +'<label class="vpRad"><input type="radio" name="vpAud" value="man"> 전화번호 직접 입력 (여러 개)</label>'
+      +'<div id="vpManBox" style="margin:4px 0 6px 22px"><textarea id="vpPhones" rows="4" placeholder="한 줄에 하나씩 (쉼표도 됨) · 이름을 앞에 붙여도 됨&#10;81 1234 5678&#10;Juan Pérez 8187654321&#10;+52 1 81 5555 0000">'+esc(G.phones||'')+'</textarea>'
+      +'<div class="vpHint" id="vpPhChk">10자리 멕시코 번호는 앞에 52를 붙입니다. 처음 보는 번호는 연락처(❓ 미확인)로 등록됩니다.</div>'
+      +'<label class="vpInl" style="margin-top:4px"><input type="checkbox" id="vpAskConsent" checked> 아직 동의하지 않은 번호에는 동의 요청 메시지 보내기 (동의하면 다음 발송부터 받음)</label></div>'
       +'<div class="vpSubT">문구 (Novedades de Refatrix: … 다음에 들어감)</div><textarea id="vpCap" rows="3" maxlength="900">'+esc(cap)+'</textarea>'
       +'<div class="vpSubT">보내는 때 (멕시코 시각)</div>'
       +'<label class="vpRad"><input type="radio" name="vpWhen" value="now" checked> 지금 보내기</label>'
@@ -1763,6 +1776,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       +'<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="vpBtnP wa" id="vpDoSend">📣 이미지 저장 + 발송</button><button type="button" class="vpBtnP sec" id="vpSendX">닫기</button></div>'
       +'<div class="vpHint" style="margin-top:6px">하루 상한·24시간 창·재시도 규칙은 WhatsApp 마케팅과 같습니다. 결과는 WhatsApp 마케팅 › 🗓 발송 일정에서 봅니다.</div>';
     // 숫자 채우기
+    if(G.phones) checkPhones();
     api('/api/wa-promo/audience').then(r=>{ const el=$('vpAudAll'); if(el) el.textContent=r.ok?('· '+nf(r.j.n)+'명'):('· '+errTxt(r)); });
     api('/api/wa-promo/contacts?consent=yes&limit=2000&veh='+encodeURIComponent(modelName(ST.m))).then(r=>{
       SD.veh=r.ok?(r.j.items||[]).filter(x=>x.consent==='yes').map(x=>x.id):[];
@@ -1775,6 +1789,28 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     });
   }
   function closeSend(){ const s=$('vpSend'); if(s) s.classList.remove('open'); }
+  // 2026-10-19 vf16s · 전화번호 직접 입력 — 「이름 번호」 또는 번호만, 줄바꿈·쉼표·세미콜론으로 여러 개
+  function parsePhones(txt){
+    return String(txt||'').split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean).map(x=>{
+      const m=x.match(/^(.*?)(\+?[\d][\d\s().-]{6,}\d)\s*$/);
+      const phone=m?m[2]:x; const name=(m?m[1]:'').replace(/[:\-–]+\s*$/,'').trim();
+      return { name:name||('Manual '+String(phone).replace(/\D/g,'').slice(-4)), phone:phone, memo:'VIO 프로모션 수동 입력' };
+    });
+  }
+  let _phT=null;
+  function checkPhones(){
+    clearTimeout(_phT); _phT=setTimeout(async()=>{
+      const el=$('vpPhChk'), ta=$('vpPhones'); if(!el||!ta) return;
+      G.phones=ta.value; ls.set('vp_global',G);
+      const rows=parsePhones(ta.value); if(!rows.length){ el.textContent='번호를 입력하세요.'; SD.man=null; return; }
+      const r=await api('/api/wa-promo/contacts/bulk',{method:'POST',body:JSON.stringify({rows,dry_run:true})});
+      if(!r.ok){ el.textContent=errTxt(r); SD.man=null; return; }
+      const sm=r.j.summary||{}, bad=(r.j.rows||[]).filter(x=>x.status==='bad_phone').map(x=>x.raw_phone);
+      SD.man={rows, cls:r.j.rows||[]};
+      el.innerHTML='번호 <b>'+rows.length+'</b>개 · 이미 등록 '+nf(sm.exists||0)+' · 새 번호 '+nf(sm.new||0)+(sm.dup_in_file?' · 중복 '+sm.dup_in_file:'')
+        +(bad.length?' · <span style="color:var(--expense)">형식 오류 '+bad.length+' ('+esc(bad.slice(0,3).join(', '))+')</span>':'');
+    },350);
+  }
   async function doSend(btn){
     const aud=(document.querySelector('input[name=vpAud]:checked')||{}).value||'all';
     const when=(document.querySelector('input[name=vpWhen]:checked')||{}).value||'now';
@@ -1783,15 +1819,34 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     if(when==='now') body.send_now=true; else { const at=$('vpAt').value; if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)){ msg('예약 시각을 확인하세요.',true); return; } body.send_at=at; }
     if(aud==='veh'){ if(!SD.veh||!SD.veh.length){ msg('관심 차종이 「'+esc(modelName(ST.m))+'」인 ✅ 동의 고객이 없습니다.',true); return; } body.contact_ids=SD.veh; }
     if(aud==='grp'){ const g=[...document.querySelectorAll('#vpGrpList input[data-grp]:checked')].map(x=>Number(x.dataset.grp)); if(!g.length){ msg('그룹을 하나 이상 고르세요.',true); return; } body.target_groups=g; }
+    let manRows=null; const askC=!!($('vpAskConsent')&&$('vpAskConsent').checked);
+    if(aud==='man'){ manRows=parsePhones($('vpPhones').value); if(!manRows.length){ msg('전화번호를 입력하세요.',true); return; } }
     if(!caption){ msg('문구를 입력하세요.',true); return; }
-    const who=aud==='veh'?('관심 차종 고객 '+SD.veh.length+'명'):(aud==='grp'?'고른 그룹':'동의자 전체');
+    const who=aud==='veh'?('관심 차종 고객 '+SD.veh.length+'명'):(aud==='grp'?'고른 그룹':(aud==='man'?('입력한 번호 '+manRows.length+'개 중 ✅ 동의자'+(askC?'(미동의 번호엔 동의 요청)':'')):'동의자 전체'));
     if(!confirm(who+'에게 '+(when==='now'?'지금':body.send_at+' 에')+' 보냅니다. 진행할까요?')) return;
     busy(btn,true,'보내는 중…');
     try{
+      let askIds=[], picked=null;
+      if(manRows){
+        // 처음 보는 번호는 연락처로 등록 → id 모으기(이미 등록된 번호는 그 id)
+        const r0=await api('/api/wa-promo/contacts/bulk',{method:'POST',body:JSON.stringify({rows:manRows,dry_run:false})});
+        if(!r0.ok) throw new Error(errTxt(r0));
+        const ids=[]; (r0.j.rows||[]).forEach(x=>{ const id=x.id||(x.existing&&x.existing.id); if(id&&ids.indexOf(Number(id))<0) ids.push(Number(id)); });
+        if(!ids.length) throw new Error('올바른 번호가 없습니다(형식을 확인하세요).');
+        body.contact_ids=ids; askIds=ids;
+      }
       const s=await saveBank(); body.image_id=s.id;
       const r=await api('/api/wa-promo/campaigns',{method:'POST',body:JSON.stringify(body)});
-      if(!r.ok) throw new Error(errTxt(r));
-      msg('✅ '+(when==='now'?'1분 안에 보냅니다':'예약했습니다')+' · 대상 '+nf(r.j.audience)+'명'+(r.j.remaining_today!=null?(' · 오늘 남은 발송 '+nf(r.j.remaining_today)):'')+' · 발송 #'+r.j.id);
+      if(manRows) picked=(r.j&&r.j.picked)||null;
+      let ask=null;
+      if(manRows&&askC&&askIds.length){ const ra=await api('/api/wa-promo/consent/ask',{method:'POST',body:JSON.stringify({ids:askIds})}); ask=ra.ok?ra.j:null; }
+      const askTxt=ask?(' · 동의 요청 '+nf(ask.queued||0)+'명 대기열'):'';
+      const pickTxt=picked?(' (입력 '+nf(picked.selected)+' · ✅ '+nf(picked.yes||0)+' · ❓ '+nf((picked.unknown||0)+(picked.asked||0))+(picked.no?' · ⛔ '+nf(picked.no):'')+')'):'';
+      if(!r.ok){
+        if(manRows&&r.j.error==='no_consented'){ msg('입력한 번호 중 ✅ 동의자가 없어 이미지는 보내지 않았습니다'+pickTxt+askTxt+'. 동의하면 다음 발송부터 받습니다.'); closeSend(); Q.bankLoaded=false; busy(btn,false); return; }
+        throw new Error(errTxt(r));
+      }
+      msg('✅ '+(when==='now'?'1분 안에 보냅니다':'예약했습니다')+' · 대상 '+nf(r.j.audience)+'명'+pickTxt+askTxt+(r.j.remaining_today!=null?(' · 오늘 남은 발송 '+nf(r.j.remaining_today)):'')+' · 발송 #'+r.j.id);
       closeSend(); Q.bankLoaded=false;
     }catch(e){ msg(esc(e.message||'발송 실패'),true); }
     busy(btn,false);
@@ -1917,6 +1972,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     $('vpBank').addEventListener('click',e=>doSaveBank(e.currentTarget));
     $('vpWa').addEventListener('click',openSend);
     $('vpSend').addEventListener('click',e=>{ if(e.target.id==='vpSendX') closeSend(); if(e.target.id==='vpDoSend') doSend(e.target); });
+    $('vpSend').addEventListener('input',e=>{ if(e.target.id==='vpPhones'){ const rb=document.querySelector('input[name=vpAud][value=man]'); if(rb) rb.checked=true; checkPhones(); } });
     $('vpNextCar').addEventListener('click',()=>{ const m=nextCand(); if(m) openStudio(m); else msg('대기열에 다음 후보(아직 안 보낸 차종)가 없습니다. 「🏁 프로모션 대기열」에서 범위를 넓혀 보세요.'); });
   }
   function fileImg(input,cb){ const f=input.files&&input.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const im=new Image(); im.onload=()=>cb(im); im.src=String(r.result); }; r.readAsDataURL(f); input.value=''; }
