@@ -1,5 +1,5 @@
 // =====================================================================
-// VIO 제품찾기·프로모션 화면 (jsdom · build vf16u · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
+// VIO 제품찾기·프로모션 화면 (jsdom · build vf16v · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
 //   대기열(VIO 순 · 재고 품목 수) · 품목 넣기/빼기(재고 자동 + 손) · 이미지 뱅크 저장 · WhatsApp 발송 본문 · 예전 차종별 부품 주소
 //   실행: node --test test/viopromo_front.test.mjs   (jsdom 필요)
 // =====================================================================
@@ -96,7 +96,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16u/);
+  assert.match(d.title, /vf16v/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -255,14 +255,22 @@ test('전화번호 직접 입력: 여러 개 · 이름 붙여도 됨 · 새 번�
   assert.match(w.localStorage.getItem('vp_global'), /8187654321/);
 });
 
-test('자동차 로고 자동 가리기: 사진이 들어오면 위치를 찾고 가린 사진을 만든다', { skip: SKIP }, async () => {
+test('자동차 로고 가리기: 자동 찾기 없음(서버 호출 안 함) · 직접 가리기만', { skip: SKIP }, async () => {
   const { w, d, calls } = boot();
   assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
   d.querySelector('#vpQueue [data-qrank="1"]').click();
-  assert.ok(await until(() => w.VP._st.veh.mstate === 'ok'), 'mstate=' + w.VP._st.veh.mstate);
-  assert.ok(calls.some((c) => c.u.endsWith('/api/promo-img/marks') && /^data:image\/jpeg/.test(c.body.image_b64)));
-  assert.equal(w.VP._st.veh.marks.length, 1);
-  assert.ok(w.VP._st.veh.clean, '가린 사진');
+  assert.ok(await until(() => w.VP._st.veh.img));
+  await tick(300);
+  assert.ok(!calls.some((c) => c.u.includes('/api/promo-img/marks')), '자동 찾기를 부르면 안 됨');
+  assert.equal(w.VP._st.veh.marks.length, 0);
+  assert.match(d.getElementById('vpMarkInfo').textContent, /아직 가린 곳 없음/);
+  assert.ok(!d.getElementById('vpMarkAgain'));
+  // 직접 가리기 → 1곳
+  const v = w.VP._st.veh; v.rect = { dx: 100, dy: 800, dw: 880, dh: 400 };
+  d.getElementById('vpMarkMode').click();
+  const cv = d.getElementById('vpCanvas'); cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1080, height: 1350 });
+  cv.dispatchEvent(new w.MouseEvent('click', { clientX: 540, clientY: 1000, bubbles: true }));
+  assert.equal(v.man.length, 1); assert.ok(v.clean);
   assert.match(d.getElementById('vpMarkInfo').textContent, /1곳 가림/);
-  assert.ok(d.getElementById('vpMarkMode') && d.getElementById('vpMarkUndo'));
+  d.getElementById('vpMarkUndo').click(); assert.equal(v.man.length, 0);
 });
