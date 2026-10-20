@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-1019av2</title>
+<title>Refatrix ERP · 구매 검토 · build pr-1019av3</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -36,7 +36,9 @@
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
   .app{max-width:340px;font-size:12px;color:#4a4a4a;line-height:1.4}
-  .syd{font-size:12px;color:#4a4a4a}
+  /* 2026-10-19 · SYD 는 참고용 — 평소엔 좁게 한 줄(말줄임), 마우스를 올리면 전체 */
+  .syd{font-size:11.5px;color:#8a8a8a;max-width:84px;width:84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
+  th.syd-h{width:84px;max-width:84px}
   .warn-cell{color:var(--expense);font-weight:700}
   .ok-cell{color:var(--income)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
@@ -220,19 +222,21 @@
     let h='<tr>';
     for(const c of COLS){
       if(c.sort){ const ar=(SORTS_ACTIVE(c))?(sortDir==='asc'?' ▲':' ▼'):''; h+='<th class="'+(c.num?'num ':'')+'sortable" data-s="'+c.sort+'">'+c.t+ar+'</th>'; }
-      else h+='<th class="'+(c.num?'num ':'')+'">'+c.t+'</th>';
+      else h+='<th class="'+(c.num?'num ':'')+(c.k==='syd'?'syd-h':'')+'">'+c.t+'</th>';
     }
     h+='</tr>';
     if(!items.length){ h+='<tr><td colspan="'+COLS.length+'" style="color:var(--muted)">데이터 없음</td></tr>'; }
     for(const it of items){
       const sydTxt=(it.syd&&it.syd.length)?it.syd.join(', '):'—';
+      const tip='CTR: '+(it.ctr||'')+(it.name?(' · '+it.name):'')+'\nSYD: '+((it.syd&&it.syd.length)?it.syd.join(', '):'없음')
+        +'\n적용차종: '+((it.applications&&it.applications.length)?it.applications.join(' / '):'—');
       const appAll=(it.applications&&it.applications.length)?it.applications.join('  /  '):'';
       const appShort=appAll.length>70?appAll.slice(0,70)+'…':(appAll||'—');
       const boCls=Number(it.backorder_qty)>0?'ok-cell':'';
       const shCls=Number(it.shortage_qty)>0?'warn-cell':'';
       h+='<tr class="clk" data-pid="'+it.product_id+'">'+
-        '<td><b>'+esc(it.ctr)+'</b>'+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
-        '<td class="syd">'+esc(sydTxt)+'</td>'+
+        '<td title="'+esc(tip)+'"><b>'+esc(it.ctr)+'</b>'+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
+        '<td class="syd" title="'+esc(tip)+'">'+esc(sydTxt)+'</td>'+
         '<td class="app" title="'+esc(appAll)+'">'+esc(appShort)+'</td>'+
         '<td class="num">'+num(it.stock_qty)+'</td>'+
         '<td class="num" title="'+(Number(it.reserved_qty)>0?('진행 중 견적 예약 '+num(it.reserved_qty)+'개 제외'):'예약 없음')+'">'+num(it.avail_qty)+'</td>'+
