@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-1019av4</title>
+<title>Refatrix ERP · 구매 검토 · build pr-1020moq</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -67,6 +67,16 @@
   .unord-cell{color:#b3402e;font-weight:800;background:#fdf1ee}
   .need-cell{color:#fff;font-weight:800;background:#b3402e}
   .miss-cell{color:#8a6d1a;font-weight:700}
+  /* 2026-10-20 · 추천발주수량 · MOQ · 별도관리 · 비활성 */
+  .rec-cell{color:#fff;font-weight:800;background:#143D34}
+  .rec-sub{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:2px;white-space:nowrap}
+  .rec-cell .rec-sub{color:#cfe0d8}
+  .badge{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:4px;vertical-align:1px;white-space:nowrap}
+  .badge.inact{background:#eee;color:#777;border:1px solid #ccc}
+  .badge.manual{background:#fdf3d7;color:#8a6d1a;border:1px solid #e9d39a}
+  tr.inactive td{color:#9a9a9a}
+  tr.manual-row{background:#fffbef}
+  .muted-cell{color:#b5b5b5 !important;background:none !important;font-weight:400 !important}
   .stg.miss{background:#f1ead6;color:#8a6d1a}
   .defs{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
   .defs h3{margin:0 0 8px;font-size:13px;color:var(--brand)}
@@ -137,9 +147,11 @@
         <dt>총 부족 잔여</dt><dd>고객이 원했는데 재고가 없어 못 준 수량 중, 아직 정리되지 않은 것 전부입니다.</dd>
         <dt>총 미발주 부족</dt><dd>부족 중에서 <b>아직 주문을 걸지 않은</b> 수량입니다. 만료·취소·삭제된 견적의 부족은 빼고 셉니다(→ 「놓친 수요」에 따로 표시).</dd>
         <dt>총 실구매 필요</dt><dd>미발주 부족 중 가용재고로도 못 채워서 <b>지금 새로 사야 하는</b> 수량입니다. 구매는 이 숫자를 보고 정하세요.</dd>
-        <dt>총 놓친 수요</dt><dd>견적이 만료·취소돼서 이제는 팔 수 없는 부족입니다. 살 필요는 없지만, 재고가 있으면 그 고객에게 다시 연락할 대상입니다.</dd>
+        <dt>총 놓친 수요</dt><dd>견적이 만료·취소돼서 이제는 팔 수 없는 부족입니다. 재고가 있으면 그 고객에게 다시 연락할 대상입니다.</dd>
+        <dt>총 추천발주수량</dt><dd><b>실구매 필요 + 최근 6개월 놓친 수요</b>를 합친 발주 추천 수량입니다. 놓친 수요도 남는 재고·주문분으로 먼저 채우고 모자란 만큼만 더합니다. 원산지별 최소주문수량(MOQ)을 반영합니다: <b>중국(CN) 10개, 터키(TR) 40개</b>, 한국·베트남은 계산값 그대로. 계산값이 MOQ보다 작으면 MOQ로 올립니다.</dd>
       </dl>
-      <div class="hint" style="margin-top:8px"><b>예)</b> 부족 10개 → 이미 주문한 2개를 빼면 <b>미발주 부족 8개</b> → 바로 팔 수 있는 재고 5개를 빼면 <b>실구매 필요 3개</b>.</div>
+      <div class="hint" style="margin-top:8px"><span class="badge manual" style="margin:0">별도관리</span> CQ0280L/R · CQ1291L/R — 시장 수요가 많아 실구매 필요·추천발주수량을 쓰지 않고 구매·판매 의지로 수량을 직접 정합니다(상단 합계에서도 제외). <span class="badge inact" style="margin:0">inactive</span> 비활성 SKU(단종·판매중단 등)입니다.</div>
+      <div class="hint" style="margin-top:4px"><b>예)</b> 부족 10개 → 이미 주문한 2개를 빼면 <b>미발주 부족 8개</b> → 바로 팔 수 있는 재고 5개를 빼면 <b>실구매 필요 3개</b>.</div>
     </div>
     <div class="hint">※ 열 제목(숫자·CTR) 클릭으로 정렬합니다. 행을 누르면 그 SKU의 부족분 진행과 입출고 이력이 열립니다.<br>※ [⬇ 엑셀 다운로드]는 <b>현재 조회 조건(검색어·수요만·정렬)의 전체 SKU</b>를 페이지 구분 없이 모두 받습니다. 적용차종은 화면과 달리 <b>전체 문구</b>가 들어갑니다.</div>
   </div>
@@ -168,6 +180,7 @@
     {k:'shortage_unordered_qty',t:'미발주 부족',num:true,sort:'unordered'},
     {k:'need_qty',t:'실구매 필요',num:true,sort:'need'},
     {k:'shortage_missed_qty',t:'놓친 수요',num:true,sort:'missed'},
+    {k:'rec_qty',t:'추천발주수량',num:true,sort:'rec'},
   ];
 
   async function login(){
@@ -212,7 +225,8 @@
       sb(num(s.sku_count),'SKU 수')+sb(num(s.total_stock),'총 현재재고')+sb(num(s.total_avail),'총 가용재고')+sb(num(s.total_backorder),'총 backorder')+
       sb(num(s.total_sold),'총 누적판매')+sb(num(s.total_shortage),'총 부족 잔여')+sb(num(s.total_unordered),'총 미발주 부족')+
       '<div class="sb" style="border-color:#e6b8af"><div class="v" style="color:#b3402e">'+num(s.total_need)+'</div><div class="l">총 실구매 필요</div></div>'+
-      sb(num(s.total_missed),'총 놓친 수요');
+      sb(num(s.total_missed),'총 놓친 수요')+
+      '<div class="sb" style="border-color:#143D34;background:#eef4f1"><div class="v">'+num(s.total_rec)+'</div><div class="l">총 추천발주수량 · '+num(s.rec_skus||0)+' SKU</div></div>';
     render(d.items||[]);
     updatePager(d.items?d.items.length:0);
   }
@@ -234,8 +248,10 @@
       const appShort=appAll.length>70?appAll.slice(0,70)+'…':(appAll||'—');
       const boCls=Number(it.backorder_qty)>0?'ok-cell':'';
       const shCls=Number(it.shortage_qty)>0?'warn-cell':'';
-      h+='<tr class="clk" data-pid="'+it.product_id+'">'+
-        '<td title="'+esc(tip)+'"><b>'+esc(it.ctr)+'</b>'+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
+      h+='<tr class="clk'+(it.is_active===false?' inactive':'')+(it.manual?' manual-row':'')+'" data-pid="'+it.product_id+'">'+
+        '<td title="'+esc(tip)+'"><b>'+esc(it.ctr)+'</b>'+
+          (it.is_active===false?'<span class="badge inact" title="비활성 SKU'+(it.inactive_reason?(' — '+esc(it.inactive_reason)):'')+'">inactive</span>':'')+
+          (it.manual?'<span class="badge manual" title="시장 수요가 많아 실구매 필요를 쓰지 않고 구매·판매 의지로 수량을 직접 정하는 품목">별도관리</span>':'')+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
         '<td class="syd" title="'+esc(tip)+'">'+esc(sydTxt)+'</td>'+
         '<td class="app" title="'+esc(appAll)+'">'+esc(appShort)+'</td>'+
         '<td class="num">'+num(it.stock_qty)+'</td>'+
@@ -245,8 +261,11 @@
         '<td class="num '+shCls+'">'+num(it.shortage_qty)+'</td>'+
         '<td class="num'+(Number(it.shortage_covered_qty)>0?' ok-cell':'')+'" title="'+(Number(it.prestock_qty)>0?('창고 입고·원가 승인 대기 '+num(it.prestock_qty)+' 포함'):'열린 발주로 덮인 부족')+'">'+num(it.shortage_covered_qty)+'</td>'+
         '<td class="num'+(Number(it.shortage_unordered_qty)>0?' unord-cell':'')+'">'+num(it.shortage_unordered_qty)+'</td>'+
-        '<td class="num'+(Number(it.need_qty)>0?' need-cell':'')+'">'+num(it.need_qty)+'</td>'+
-        '<td class="num'+(Number(it.shortage_missed_qty)>0?' miss-cell':'')+'" title="원 견적이 만료·취소·삭제된 부족 — 구매 판단에서 제외, 고객 재오퍼 참고용">'+num(it.shortage_missed_qty)+'</td>'+
+        (it.manual
+          ? '<td class="num muted-cell" title="별도관리 품목 — 참고값(합계 제외)">'+num(it.need_qty)+'</td>'
+          : '<td class="num'+(Number(it.need_qty)>0?' need-cell':'')+'">'+num(it.need_qty)+'</td>')+
+        '<td class="num'+(Number(it.shortage_missed_qty)>0?' miss-cell':'')+'" title="원 견적이 만료·취소·삭제된 부족 — 최근 6개월분 '+num(it.missed6_qty)+'개는 추천발주수량에 반영">'+num(it.shortage_missed_qty)+'</td>'+
+        recCell(it)+
       '</tr>';
     }
     $('tbl').innerHTML=h;
@@ -257,6 +276,16 @@
       offset=0; load();
     }));
     $('tbl').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>openDrill(tr.dataset.pid)));
+  }
+  // 추천발주수량 칸: 값 + (원산지 · MOQ · MOQ 적용 전 계산값)
+  function recCell(it){
+    if(it.manual) return '<td class="num"><span class="badge manual" style="margin:0">직접 결정</span></td>';
+    const rec=Number(it.rec_qty)||0, raw=Number(it.rec_raw_qty)||0, moq=Number(it.moq)||0;
+    const org=it.origin_code||'원산지 미등록';
+    let sub=esc(org)+(moq?(' · MOQ '+moq):' · MOQ 없음');
+    if(rec>0 && moq && raw<moq) sub+=' (계산 '+num(raw)+')';
+    const tip='실구매 필요 + 놓친 수요(최근 6개월 '+num(it.missed6_qty)+') − 남는 가용재고·발주 = '+num(raw)+(moq?(' → MOQ '+moq+' 적용'):'');
+    return '<td class="num'+(rec>0?' rec-cell':'')+'" title="'+esc(tip)+'">'+num(rec)+(rec>0||moq?'<span class="rec-sub">'+sub+'</span>':'')+'</td>';
   }
   function SORTS_ACTIVE(c){ return c.sort===sortKey; }
 
@@ -414,6 +443,12 @@
       '미발주 부족': Number(it.shortage_unordered_qty)||0,
       '실구매 필요': Number(it.need_qty)||0,
       '놓친 수요': Number(it.shortage_missed_qty)||0,
+      '놓친 수요(6개월)': Number(it.missed6_qty)||0,
+      '원산지': it.origin_code||it.origin||'',
+      'MOQ': Number(it.moq)||0,
+      '추천발주수량': it.manual?'직접 결정':(Number(it.rec_qty)||0),
+      '상태': it.is_active===false?'inactive':'active',
+      '별도관리': it.manual?'Y':'',
     };
   }
   function xlsFileName(){
@@ -450,7 +485,7 @@
       }
       if(!rows.length){ m.className='msg err'; m.textContent='내보낼 데이터가 없습니다.'; return; }
       const ws=XLSX.utils.json_to_sheet(rows.map(xlsRow));
-      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:11},{wch:12},{wch:11},{wch:11},{wch:10},{wch:12},{wch:12},{wch:11}];
+      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:11},{wch:12},{wch:11},{wch:11},{wch:10},{wch:12},{wch:12},{wch:11},{wch:12},{wch:8},{wch:6},{wch:12},{wch:9},{wch:8}];
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매검토');
       XLSX.writeFile(wb,xlsFileName());
       if(tot&&rows.length<tot){ m.className='msg err'; m.textContent='※ 안전 상한에 걸려 '+rows.length.toLocaleString()+'행만 받았습니다(전체 '+tot.toLocaleString()+'). 검색어로 범위를 좁혀 다시 받으세요.'; }

@@ -210,6 +210,16 @@ export default async function purchaseRoutes(app) {
 
   // 구매검토: 보유 SKU 전체 종합 — CTR · SYD · 적용차종 · 현재재고 · backorder · 누적판매 · 견적부족.
   //   순수 읽기·집계(원가 없음 → 마스킹 불필요). q 검색 · 서버정렬 · 페이지네이션. 누적판매는 전사 기준(구매 판단용).
+  // 2026-10-20 · 디렉터 결정
+  //   ① 별도관리 SKU — 시장 수요가 커서 「실구매 필요」 계산을 쓰지 않고 구매·판매 의지로 수량을 정한다.
+  //      추천발주수량을 계산하지 않고(0), 상단 실구매·추천 합계에서도 뺀다. 목록을 바꾸려면 여기만 고치면 된다.
+  //   ② 추천발주수량 = 실구매 필요 + 놓친 수요(최근 6개월) — 단, 놓친 수요도 남는 가용재고·발주로 먼저 채우고 모자란 만큼만.
+  //      (그대로 더하면 재고 80개인 CB0089 에도 발주가 추천된다.) 6개월 기준일 = 원 견적일(없으면 부족 기록일).
+  //   ③ MOQ — 원산지 CN 10개 · TR 40개 · 한국(KR)·베트남(VN)·미등록은 MOQ 없음(추천발주수량 그대로).
+  //      추천이 0 보다 크고 MOQ 보다 작으면 MOQ 로 올린다.
+  const MANUAL_SKUS = ['CQ0280L', 'CQ0280R', 'CQ1291L', 'CQ1291R', 'CQ280L', 'CQ280R'];
+  const MISSED_MONTHS = 6;
+  const MOQ_BY_ORIGIN = { CN: 10, TR: 40 };
   app.get('/api/purchases/review', gate, async (req) => {
     const q = (req.query.q || '').trim();
     const dir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
@@ -238,7 +248,9 @@ export default async function purchaseRoutes(app) {
       LEFT JOIN (SELECT ss.product_id,
                         SUM(ss.shortage_qty - ss.resolved_qty) AS qty,
                         SUM(CASE WHEN ${DEAD_Q} THEN ss.shortage_qty - ss.resolved_qty ELSE 0 END) AS missed,
-                        SUM(CASE WHEN ${DEAD_Q} THEN 0 ELSE ss.shortage_qty - ss.resolved_qty END) AS live
+                        SUM(CASE WHEN ${DEAD_Q} THEN 0 ELSE ss.shortage_qty - ss.resolved_qty END) AS live,
+                        SUM(CASE WHEN ${DEAD_Q} AND COALESCE(sq.quote_date, ss.occurred_at::date) >= (CURRENT_DATE - interval '${MISSED_MONTHS} months')
+                                 THEN ss.shortage_qty - ss.resolved_qty ELSE 0 END) AS missed6
                    FROM stock_shortages ss LEFT JOIN quotes sq ON sq.id=ss.source_quote_id
                   WHERE ss.status='open' GROUP BY ss.product_id) sh ON sh.product_id=p.id
       LEFT JOIN inbound_prestock ps ON ps.product_id=p.id
@@ -255,12 +267,23 @@ export default async function purchaseRoutes(app) {
     //   이미 다른 견적에 잡힌 재고로 부족을 메운 것처럼 보이면 필요한 발주를 빠뜨린다.
     const AVAIL = `GREATEST(COALESCE(p.stock_qty,0) - COALESCE(rsv.qty,0), 0)`;
     const NEED = `GREATEST(COALESCE(sh.live,0) - ${COVER} - ${AVAIL}, 0)`;
+    // 원산지 정규화 — 마스터에 CN/China/CHINA/Chino 등 섞여 있어도 같은 나라로 본다.
+    const ORIG = `(CASE
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(CN|CHN)$|CHIN' THEN 'CN'
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(TR|TUR)$|TURK|TURQ|TÜRK' THEN 'TR'
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(KR|KOR)$|KOREA|COREA' THEN 'KR'
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(VN|VNM)$|VIET' THEN 'VN'
+        ELSE NULLIF(UPPER(TRIM(COALESCE(p.origin,''))),'') END)`;
+    const MOQ = `(CASE ${ORIG} ${Object.entries(MOQ_BY_ORIGIN).map(([k, v]) => `WHEN '${k}' THEN ${Number(v)}`).join(' ')} ELSE 0 END)`;
+    const MANUAL = `(UPPER(p.code) IN (${MANUAL_SKUS.map((c) => `'${c}'`).join(',')}))`;
+    const REC_RAW = `GREATEST(COALESCE(sh.live,0) + COALESCE(sh.missed6,0) - ${COVER} - ${AVAIL}, 0)`;
+    const REC = `(CASE WHEN ${MANUAL} THEN 0 WHEN ${REC_RAW} > 0 THEN GREATEST(${REC_RAW}, ${MOQ}) ELSE 0 END)`;
     let where2 = where;
     if (onlyDemand) where2 += ' AND (COALESCE(bo.backorder_qty,0) > 0 OR COALESCE(sh.qty,0) > 0)';
     const SORTS = {
       code: 'p.code', stock: 'p.stock_qty', backorder: 'COALESCE(bo.backorder_qty,0)',
       sold: 'COALESCE(sold.qty,0)', shortage: 'COALESCE(sh.qty,0)', unordered: UNORD,
-      missed: 'COALESCE(sh.missed,0)', need: NEED, avail: AVAIL,
+      missed: 'COALESCE(sh.missed,0)', need: NEED, avail: AVAIL, rec: REC,
     };
     const orderCol = SORTS[String(req.query.sort || '').toLowerCase()] || 'p.code';
     const orderBy = orderCol === 'p.code' ? `p.code ${dir}` : `${orderCol} ${dir} NULLS LAST, p.code ASC`;
@@ -277,7 +300,14 @@ export default async function purchaseRoutes(app) {
               ${NEED}                       AS need_qty,
               COALESCE(rsv.qty,0)           AS reserved_qty,
               ${AVAIL}                      AS avail_qty,
-              COALESCE(ps.qty,0)            AS prestock_qty
+              COALESCE(ps.qty,0)            AS prestock_qty,
+              COALESCE(sh.missed6,0)        AS missed6_qty,
+              ${REC_RAW}                    AS rec_raw,
+              ${REC}                        AS rec_qty,
+              ${MOQ}                        AS moq,
+              ${ORIG}                       AS origin_code,
+              p.origin, p.is_active, p.inactive_reason,
+              ${MANUAL}                     AS manual
          FROM products p ${joins}
         WHERE ${where2}
         ORDER BY ${orderBy}
@@ -290,7 +320,10 @@ export default async function purchaseRoutes(app) {
               COALESCE(SUM(COALESCE(sh.qty,0)),0)           AS shortage,
               COALESCE(SUM(${UNORD}),0)                     AS unordered,
               COALESCE(SUM(COALESCE(sh.missed,0)),0)        AS missed,
-              COALESCE(SUM(${NEED}),0)                      AS need,
+              COALESCE(SUM(CASE WHEN ${MANUAL} THEN 0 ELSE ${NEED} END),0) AS need,
+              COALESCE(SUM(${REC}),0)                       AS rec,
+              COUNT(*) FILTER (WHERE ${REC} > 0)::int       AS rec_skus,
+              COUNT(*) FILTER (WHERE p.is_active = FALSE)::int AS inactive_skus,
               COALESCE(SUM(COALESCE(rsv.qty,0)),0)          AS reserved,
               COALESCE(SUM(${AVAIL}),0)                     AS avail
          FROM products p ${joins}
@@ -319,6 +352,13 @@ export default async function purchaseRoutes(app) {
       reserved_qty: Number(r.reserved_qty) || 0,                 // 살아 있는 견적 예약분
       avail_qty: Number(r.avail_qty) || 0,                       // 가용재고(현재재고 − 예약)
       prestock_qty: Number(r.prestock_qty) || 0,
+      missed6_qty: Number(r.missed6_qty) || 0,                   // 놓친 수요 중 최근 6개월
+      rec_raw_qty: Number(r.rec_raw) || 0,                       // MOQ 적용 전 계산 수량
+      moq: Number(r.moq) || 0,
+      rec_qty: Number(r.rec_qty) || 0,                           // 추천발주수량(MOQ 반영)
+      origin: r.origin || null, origin_code: r.origin_code || null,
+      is_active: r.is_active !== false, inactive_reason: r.inactive_reason || null,
+      manual: !!r.manual,                                        // 별도관리(수량 직접 결정)
     }));
     return {
       items, total: Number(agg.n), limit, offset,
@@ -332,6 +372,11 @@ export default async function purchaseRoutes(app) {
         total_missed: Math.round(Number(agg.missed) * 1000) / 1000,
         total_need: Math.round(Number(agg.need) * 1000) / 1000,
         total_reserved: Math.round(Number(agg.reserved) * 1000) / 1000,
+        total_rec: Math.round(Number(agg.rec) * 1000) / 1000,
+        rec_skus: Number(agg.rec_skus) || 0,
+        inactive_skus: Number(agg.inactive_skus) || 0,
+        manual_skus: MANUAL_SKUS.filter((c) => !/^CQ280/.test(c)),
+        missed_months: MISSED_MONTHS, moq_by_origin: MOQ_BY_ORIGIN,
         total_avail: Math.round(Number(agg.avail) * 1000) / 1000,
       },
     };
