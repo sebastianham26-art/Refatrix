@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1016so</title>
+<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1020cu</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -123,6 +123,10 @@
   .fchip .n{opacity:.65;margin-left:3px}
   .fchip.on{background:#0a5cab;color:#fff;border-color:#0a5cab}
   .fchip.more{border-style:dashed;color:var(--brand)}
+  .cst{display:inline-block;font-size:11px;font-weight:800;border-radius:6px;padding:1px 7px;white-space:nowrap}
+  .cst.a{background:#e3f5ea;color:#11743b}.cst.p{background:#eef0f2;color:#5b6470}
+  .ctbl .amt{display:block;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+  .gchip.auto{border-color:#c9cfd6;background:#f6f7f9}
   .gbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
   .gchip{font:inherit;font-size:12px;font-weight:700;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;cursor:pointer;display:inline-flex;gap:5px;align-items:center;color:inherit}
   .gchip .dot,.gpick .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -256,15 +260,17 @@
       </div>
       <div class="card">
         <div class="row">
-          <input id="cQ" placeholder="이름 · 번호 · 직업 · 차종 · 부품 · 주 · 메모 검색" style="width:220px">
+          <input id="cQ" placeholder="이름 · 번호 · 고객번호 · RFC · 담당 · 직업 · 차종 검색" style="width:220px">
           <select id="cConsent"><option value="">상태 전체</option><option value="yes">✅ 동의</option><option value="asked">⏳ 응답 대기</option><option value="unknown">❓ 미확인</option><option value="no">⛔ 거부</option></select>
           <select id="cAsk" title="동의 요청 상태"><option value="">동의 요청 전체</option><option value="askable">✉ 아직 요청 안 함(미확인)</option><option value="noreply">⏳ 요청 후 응답 없음</option><option value="read">👁 읽고 응답 없음</option><option value="failed">⚠ 전달 실패</option></select>
           <span style="margin-left:auto"></span>
           <button type="button" class="btn ghost" id="cConsentXls" title="지금 조건의 연락처 — 요청 · 도착 · 읽음 · 회신 원문 · 동의 일시">⬇ 동의 기록 엑셀</button>
+          <button type="button" class="btn ghost" id="cCustSync" title="영업 고객(고객 화면) 연락처를 가져와 액티브 · 잠재로 나누고 영업담당자 그룹을 만듭니다 — 매일 자동으로도 갱신">🏢 영업 고객 가져오기</button>
           <button type="button" class="btn ghost" id="cGroupBulk" title="지금 조건에 맞는 전체 · 고른 사람 · 번호 붙여넣기로 한 번에 그룹 넣기/빼기">🏷 그룹 일괄 구분</button>
           <button type="button" class="btn red" id="cAskAll">✉ 미확인 전체에게 동의 요청</button>
         </div>
         <div class="gbar" id="cGroups"></div>
+        <div class="fbar" id="cCustBar"></div>
         <div class="fbar" id="cVehBar"></div>
         <div class="fbar" id="cTipoBar"></div>
         <div class="selbar hidden" id="cSelBar">
@@ -291,6 +297,7 @@
             <div class="kbank" style="margin-top:4px"><button type="button" class="btn ghost sm" id="kBank">📁 이미지 뱅크에서</button><span id="kBankSel"></span></div></div>
           <div><label>대상</label><select id="kAud"><option value="">✅ 동의 전체</option><option value="group">🏷 그룹 고르기 (✅ 동의자)</option><option value="memo">✅ 동의 중 메모에 … 포함</option></select></div>
           <div id="kMemoWrap" class="hidden"><label>메모에 들어간 말</label><input id="kMemo" placeholder="Monterrey" style="width:150px"></div>
+          <div id="kCustWrap"><label>영업 고객</label><select id="kCust"><option value="">전체</option><option value="active">🟢 액티브만(인보이스 발행)</option><option value="potential">⚪ 잠재만(발행 없음)</option></select></div>
           <div id="kGroupWrap" class="hidden"><label>그룹 (하나라도 들어 있으면)</label><div class="gpick" id="kGroups"></div></div>
         </div>
         <div style="margin-top:10px"><label>문구 — 이미지 아래 글 (템플릿 {{1}} · 한 줄로 나감 · 900자 이하)</label><textarea id="kCap" maxlength="900" placeholder="Amortiguadores CTR para Versa 2015-2019 · 15% esta semana"></textarea></div>
@@ -592,12 +599,12 @@
   const WAP_BUILD='wap-1016ib';
   try{ console.log('[wapromo] build '+WAP_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
-  const S={cVeh:'',cTipo:'',facets:null,vehOpen:false,groups:[],gNone:{n:0,yes:0},cGroup:'',kGroups:[],matched:0,impSum:null,month:null,kBankId:null,bank:[],bankFolders:[],bSel:new Set(),bView:'l',bMode:'imgs',hMonth:null,thCache:{},fileCache:{},calPick:null,tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
+  const S={cCust:'',custSync:null,cVeh:'',cTipo:'',facets:null,vehOpen:false,groups:[],gNone:{n:0,yes:0},cGroup:'',kGroups:[],matched:0,impSum:null,month:null,kBankId:null,bank:[],bankFolders:[],bSel:new Set(),bView:'l',bMode:'imgs',hMonth:null,thCache:{},fileCache:{},calPick:null,tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
     convs:[],cur:null,rules:[],status:null,imp:null,impSource:null,survey:null,camp:null};
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtT=(t)=>{ if(!t) return '—'; const d=new Date(t); return d.toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
-  const ERR={group_name_required:'그룹 이름을 넣으세요.',group_exists:'같은 이름의 그룹이 이미 있습니다.',group_not_found:'그룹을 찾지 못했습니다(지워졌을 수 있음).',group_required:'그룹을 고르세요.',group_in_use:'이 그룹을 대상으로 한 예약 · 발송 중인 광고가 있어 지울 수 없습니다(먼저 그 발송의 대상을 바꾸거나 취소).',no_consented_in_groups:'고른 그룹에 ✅ 동의한 사람이 없습니다.',no_contacts:'대상이 없습니다.',too_many_contacts:'한 번에 너무 많습니다.',bad_phone:'번호 형식이 맞지 않습니다(10자리 또는 52+10자리).',name_required:'이름을 넣으세요.',duplicate_phone:'이미 등록된 번호입니다.',
+  const ERR={auto_group:'영업담당자 자동 그룹은 이름 · 사람을 바꾸거나 지울 수 없습니다(「🏢 영업 고객 가져오기」가 정함 · 색과 설명만 고칠 수 있음).',group_name_required:'그룹 이름을 넣으세요.',group_exists:'같은 이름의 그룹이 이미 있습니다.',group_not_found:'그룹을 찾지 못했습니다(지워졌을 수 있음).',group_required:'그룹을 고르세요.',group_in_use:'이 그룹을 대상으로 한 예약 · 발송 중인 광고가 있어 지울 수 없습니다(먼저 그 발송의 대상을 바꾸거나 취소).',no_consented_in_groups:'고른 그룹에 ✅ 동의한 사람이 없습니다.',no_contacts:'대상이 없습니다.',too_many_contacts:'한 번에 너무 많습니다.',bad_phone:'번호 형식이 맞지 않습니다(10자리 또는 52+10자리).',name_required:'이름을 넣으세요.',duplicate_phone:'이미 등록된 번호입니다.',
     wa_not_configured:'WhatsApp 키가 없습니다(관리 › 외부 서비스 키).',window_closed:'24시간 창이 닫혀 있어 직접 답장은 못 보냅니다(템플릿만 가능). 고객이 먼저 메시지를 보내면 열립니다.',
     image_required:'이미지를 고르세요.',image_too_large:'이미지가 5MB 를 넘습니다.',bad_image_type:'JPG 또는 PNG 만 됩니다.',caption_required:'문구를 넣으세요.',no_consented:'고른 사람 중 ✅ 동의자가 없습니다 — 먼저 동의 요청을 보내세요.',no_contacts:'고른 사람이 없습니다.',image_source_not_found:'다시 쓸 이미지를 찾지 못했습니다.',
     caption_too_long:'문구는 900자 이하로.',bad_send_at:'날짜와 시각을 넣으세요.',not_editable:'예약 상태인 발송만 고칠 수 있습니다.',not_cancellable:'이미 끝났거나 취소된 발송입니다.',
@@ -666,6 +673,7 @@
 
   // ───── ① 연락처 ─────
   async function loadContacts(){
+    if(!S.custSync) loadCustSync().then(()=>renderFacets());
     const qs=new URLSearchParams(curFilter()); if(S.cSort){ qs.set('sort',S.cSort.k); qs.set('dir',S.cSort.d); } await loadGroups();
     try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; S.askable=d.askable!=null?d.askable:null; S.ask=d.ask||null; S.facets=d.facets||null; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
     catch(e){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
@@ -724,11 +732,12 @@
     try{
       const d=await api('GET','/api/wa-promo/consent/export?'+new URLSearchParams(curFilter()));
       const CN={yes:'동의',asked:'응답 대기',unknown:'미확인',no:'거부'}; const DV={read:'읽음',delivered:'도착',sent:'출발',failed:'전달 실패'};
-      const aoa=[['이름','번호','메모','직업','관심 차종(연식)','찾는 부품','주','그룹','동의 상태','동의 경로','동의 · 거부 일시','요청 보낸 일시','전달','도착 일시','읽은 일시','회신 원문','전달 실패 사유','사람이 바꾼 사람']]
-        .concat(d.items.map(x=>[x.name,x.phone,x.memo||'',x.tipo||'',x.vehiculo||'',x.piezas||'',x.estado||'',x.groups||'',CN[x.consent]||x.consent,VIA[x.consent_via]||x.consent_via||'',x.consent&&(x.consent==='yes'||x.consent==='no')?String(x.consent_mx||'').slice(0,16).replace('T',' '):'',
+      const CS={active:'Activo',potential:'Potencial'};
+      const aoa=[['이름','번호','메모','직업','관심 차종(연식)','찾는 부품','주','영업 고객','고객번호','RFC','구매액(IVA 제외)','영업담당자','팀','그룹','동의 상태','동의 경로','동의 · 거부 일시','요청 보낸 일시','전달','도착 일시','읽은 일시','회신 원문','전달 실패 사유','사람이 바꾼 사람']]
+        .concat(d.items.map(x=>[x.name,x.phone,x.memo||'',x.tipo||'',x.vehiculo||'',x.piezas||'',x.estado||'',CS[x.cust_status]||'',x.cust_code||'',x.rfc||'',x.purchase_mxn!=null?Number(x.purchase_mxn):'',x.rep_name||'',x.team_name||'',x.groups||'',CN[x.consent]||x.consent,VIA[x.consent_via]||x.consent_via||'',x.consent&&(x.consent==='yes'||x.consent==='no')?String(x.consent_mx||'').slice(0,16).replace('T',' '):'',
           String(x.asked_mx||'').slice(0,16).replace('T',' '),DV[x.dlv]||(x.asked_mx?'접수':''),String(x.delivered_mx||'').slice(0,16).replace('T',' '),String(x.read_mx||'').slice(0,16).replace('T',' '),x.reply||'',x.dlv_reason||'',x.changed_by||'']));
-      const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:24},{wch:14},{wch:20},{wch:16},{wch:28},{wch:26},{wch:16},{wch:20},{wch:9},{wch:10},{wch:16},{wch:16},{wch:9},{wch:16},{wch:16},{wch:36},{wch:30},{wch:12}];
-      for(let c=0;c<18;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}}}; }
+      const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:24},{wch:14},{wch:20},{wch:16},{wch:28},{wch:26},{wch:16},{wch:10},{wch:12},{wch:15},{wch:14},{wch:16},{wch:14},{wch:20},{wch:9},{wch:10},{wch:16},{wch:16},{wch:9},{wch:16},{wch:16},{wch:36},{wch:30},{wch:12}];
+      for(let c=0;c<24;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}}}; }
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Consentimiento');
       XLSX.writeFile(wb,'refatrix_whatsapp_consentimiento_'+mxToday()+'.xlsx');
       say(true,d.items.length+'명의 동의 기록을 내려받았습니다.');
@@ -736,7 +745,7 @@
   });
   // ── 표 제목 눌러 정렬(서버가 전체를 정렬) — 같은 제목을 다시 누르면 방향이 바뀌고, 세 번째엔 기본(최근 등록 순)으로 ──
   try{ const v=JSON.parse(localStorage.getItem('wap_csort')||'null'); if(v&&v.k) S.cSort=v; }catch(_){ }
-  const SORT_DEF={name:'asc',tipo:'asc',veh:'asc',group:'asc',consent:'asc',when:'desc'};
+  const SORT_DEF={purchase:'desc',name:'asc',tipo:'asc',veh:'asc',group:'asc',consent:'asc',when:'desc'};
   function sortTh(k,label){
     const on=S.cSort&&S.cSort.k===k; const ar=on?(S.cSort.d==='asc'?'▲':'▼'):'↕';
     return '<th data-sort="'+k+'" class="'+(on?'on':'')+'" title="눌러서 정렬 — '+(on?(S.cSort.d==='asc'?'오름차순 · 한 번 더 누르면 내림차순':'내림차순 · 한 번 더 누르면 정렬 풀기'):'오름/내림 차순')+'" aria-sort="'+(on?(S.cSort.d==='asc'?'ascending':'descending'):'none')+'">'+label+'<span class="ar">'+ar+'</span></th>';
@@ -748,10 +757,28 @@
     try{ S.cSort?localStorage.setItem('wap_csort',JSON.stringify(S.cSort)):localStorage.removeItem('wap_csort'); }catch(_){ }
     loadContacts();
   });
+  // ── 0291 · 영업 고객 가져오기 ──
+  async function loadCustSync(){ try{ S.custSync=await api('GET','/api/wa-promo/customers/sync-status'); }catch(e){ S.custSync=null; } }
+  $('cCustSync').addEventListener('click',async()=>{
+    const b=$('cCustSync'); b.disabled=true; const old=b.textContent; b.textContent='가져오는 중…';
+    try{
+      const d=await api('POST','/api/wa-promo/customers/sync',{});
+      say(true,'영업 고객 '+d.customers+'곳 중 번호 있는 '+d.with_phone+'곳 → 연락처 새로 '+d.inserted+' · 기존 연락처에 연결 '+d.linked+' · 🟢 액티브 '+d.active+' · ⚪ 잠재 '+d.potential+' · 담당자 그룹 '+d.groups+'개'
+        +(d.no_phone?' · 번호 없는 고객 '+d.no_phone+'곳(고객 화면에서 전화 입력 필요)':'')+(d.dup_phone?' · 같은 번호 고객 '+d.dup_phone+'곳은 하나로':'')+(d.unlinked?' · 연결 풀림 '+d.unlinked:'')+'.');
+      await loadCustSync(); loadContacts();
+    }catch(err){ say(false,errText(err)); }
+    finally{ b.disabled=false; b.textContent=old; }
+  });
   // ── 0286 · 관심 차종 · 직업 칩 ──
   function renderFacets(){
-    const f=S.facets; const vb=$('cVehBar'), tb=$('cTipoBar');
-    if(!f){ vb.innerHTML=''; tb.innerHTML=''; return; }
+    const f=S.facets; const vb=$('cVehBar'), tb=$('cTipoBar'), cb=$('cCustBar');
+    if(!f){ vb.innerHTML=''; tb.innerHTML=''; cb.innerHTML=''; return; }
+    const cu=f.cust;
+    cb.innerHTML=cu&&(cu.active||cu.potential)?'<span class="lb">🏢 영업 고객</span>'
+      +'<button type="button" class="fchip'+(S.cCust==='active'?' on':'')+'" data-f="cust" data-v="active" title="1페소 이상 SAT 인보이스를 한 번이라도 발행 · ✅ 동의 '+(cu.active_yes||0)+'명">🟢 액티브<span class="n">'+cu.active+'</span></button>'
+      +'<button type="button" class="fchip'+(S.cCust==='potential'?' on':'')+'" data-f="cust" data-v="potential" title="발행한 SAT 인보이스 없음 · ✅ 동의 '+(cu.potential_yes||0)+'명">⚪ 잠재<span class="n">'+cu.potential+'</span></button>'
+      +'<button type="button" class="fchip'+(S.cCust==='none'?' on':'')+'" data-f="cust" data-v="none">영업 고객 아님<span class="n">'+(cu.none||0)+'</span></button>'
+      +(S.custSync&&S.custSync.last_mx?'<span class="hint" style="margin-left:4px">마지막 가져옴 '+esc(S.custSync.last_mx.slice(5).replace('T',' '))+' · 매일 자동</span>':''):'';
     const ch=(kind,val,label,n,yes,on)=>'<button type="button" class="fchip'+(on?' on':'')+'" data-f="'+kind+'" data-v="'+esc(val)+'" title="'+esc(label)+' — 전체 '+n+'명'+(yes!=null?' · ✅ 동의 '+yes+'명':'')+'">'+esc(label)+'<span class="n">'+n+'</span></button>';
     const vs=f.vehicles||[];
     const shown=S.vehOpen?vs:vs.filter((v,i)=>i<10||S.cVeh===v.model);   // 접힌 때는 많은 순 10개(+고른 것)
@@ -762,10 +789,10 @@
     tb.innerHTML=ts.length?'<span class="lb">💼 직업</span>'+ts.map(t=>ch('tipo',t.tipo,t.tipo,t.n,t.yes,S.cTipo===t.tipo)).join('')+(f.no_tipo?ch('tipo','none','직업 없음',f.no_tipo,null,S.cTipo==='none'):''):'';
     $('ceTipoList').innerHTML=ts.map(t=>'<option value="'+esc(t.tipo)+'">').join('')+['Particular','Taller mecánico','Refaccionaria','Mayorista','Flotilla','Taxi / app'].filter(x=>!ts.some(t=>t.tipo===x)).map(x=>'<option value="'+esc(x)+'">').join('');
   }
-  ['cVehBar','cTipoBar'].forEach(id=>$(id).addEventListener('click',e=>{
+  ['cVehBar','cTipoBar','cCustBar'].forEach(id=>$(id).addEventListener('click',e=>{
     if(e.target.closest('[data-vmore]')){ S.vehOpen=!S.vehOpen; renderFacets(); return; }
     const b=e.target.closest('[data-f]'); if(!b) return;
-    if(b.dataset.f==='veh') S.cVeh=S.cVeh===b.dataset.v?'':b.dataset.v; else S.cTipo=S.cTipo===b.dataset.v?'':b.dataset.v;
+    if(b.dataset.f==='veh') S.cVeh=S.cVeh===b.dataset.v?'':b.dataset.v; else if(b.dataset.f==='cust') S.cCust=S.cCust===b.dataset.v?'':b.dataset.v; else S.cTipo=S.cTipo===b.dataset.v?'':b.dataset.v;
     S.sel.clear(); loadContacts();
   }));
   // 연락처 정보 고치기
@@ -784,7 +811,7 @@
     catch(err){ say(false,errText(err),$('ceMsg')); }
   });
   // ── 0283 · 연락처 그룹 ──
-  function curFilter(){ const f={}; if($('cQ').value.trim()) f.q=$('cQ').value.trim(); if($('cConsent').value) f.consent=$('cConsent').value; if(S.cGroup) f.group=S.cGroup; if($('cAsk').value) f.ask=$('cAsk').value; if(S.cVeh) f.veh=S.cVeh; if(S.cTipo) f.tipo=S.cTipo; return f; }
+  function curFilter(){ const f={}; if($('cQ').value.trim()) f.q=$('cQ').value.trim(); if($('cConsent').value) f.consent=$('cConsent').value; if(S.cGroup) f.group=S.cGroup; if($('cAsk').value) f.ask=$('cAsk').value; if(S.cVeh) f.veh=S.cVeh; if(S.cTipo) f.tipo=S.cTipo; if(S.cCust) f.cust=S.cCust; return f; }
   const gById=(id)=>S.groups.find(g=>g.id===Number(id));
   const gTag=(g)=>'<span class="gtag" style="background:'+esc(g.color||'#5b6470')+'" title="'+esc(g.memo||g.name)+'">'+esc(g.name)+'</span>';
   async function loadGroups(){
@@ -797,7 +824,7 @@
   function renderGroupBar(){
     const tot=S.counts&&S.counts.total||0;
     $('cGroups').innerHTML='<button type="button" class="gchip'+(!S.cGroup?' on':'')+'" data-g="">전체 <span class="n">'+tot+'</span></button>'
-      +S.groups.map(g=>'<button type="button" class="gchip'+(S.cGroup===String(g.id)?' on':'')+'" data-g="'+g.id+'" title="'+esc((g.memo?g.memo+' · ':'')+'전체 '+g.n+'명 · ✅ 동의 '+g.yes+'명')+'"><span class="dot" style="background:'+esc(g.color||'#5b6470')+'"></span>'+esc(g.name)+' <span class="n">'+g.n+' · ✅'+g.yes+'</span></button>').join('')
+      +S.groups.map(g=>'<button type="button" class="gchip'+(g.auto?' auto':'')+(S.cGroup===String(g.id)?' on':'')+'" data-g="'+g.id+'" title="'+esc((g.auto?'영업담당자 자동 그룹 · ':'')+(g.memo&&!g.auto?g.memo+' · ':'')+'전체 '+g.n+'명 · ✅ 동의 '+g.yes+'명')+'">'+(g.auto?'👤':'<span class="dot" style="background:'+esc(g.color||'#5b6470')+'"></span>')+esc(g.name)+' <span class="n">'+g.n+' · ✅'+g.yes+'</span></button>').join('')
       +'<button type="button" class="gchip'+(S.cGroup==='none'?' on':'')+'" data-g="none">그룹 없음 <span class="n">'+(S.gNone.n||0)+'</span></button>'
       +'<button type="button" class="gchip add" data-gnew="1">＋ 새 그룹</button><button type="button" class="gchip add" data-gmgr="1">⚙ 그룹 관리</button>';
   }
@@ -806,7 +833,7 @@
     if(b.dataset.gnew||b.dataset.gmgr){ openGroups(!!b.dataset.gnew); return; }
     S.cGroup=b.dataset.g||''; S.sel.clear(); loadContacts();
   });
-  function groupOptions(first){ return '<option value="">'+first+'</option>'+S.groups.map(g=>'<option value="'+g.id+'">'+esc(g.name)+' ('+g.n+'명)</option>').join('')+'<option value="__new">＋ 새 그룹 만들기…</option>'; }
+  function groupOptions(first){ return '<option value="">'+first+'</option>'+S.groups.filter(g=>!g.auto).map(g=>'<option value="'+g.id+'">'+esc(g.name)+' ('+g.n+'명)</option>').join('')+'<option value="__new">＋ 새 그룹 만들기…</option>'; }
   function fillGroupSelects(){
     [['gaGroup','— 그룹 고르기 —'],['mImpGroup','— 그룹에 넣지 않음 —']].forEach(([id,first])=>{ const el=$(id); const v=el.value; el.innerHTML=groupOptions(first); if([...el.options].some(o=>o.value===v)) el.value=v; });
     $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new'); $('mImpNewGWrap').classList.toggle('hidden',$('mImpGroup').value!=='__new');
@@ -814,7 +841,7 @@
   $('gaGroup').addEventListener('change',()=>{ $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new'); if($('gaGroup').value==='__new') $('gaNew').focus(); });
   // 그룹 일괄 구분 창 — 고른 사람 · 지금 조건에 맞는 전체 · 번호 붙여넣기
   const ASKL={askable:'아직 요청 안 함',noreply:'요청 후 응답 없음',read:'읽고 응답 없음',failed:'전달 실패'};
-  function filterLabel(){ const f=curFilter(); const parts=[]; if(f.ask) parts.push(ASKL[f.ask]); if(f.veh) parts.push(f.veh==='none'?'차종 없음':'🚗 '+f.veh); if(f.tipo) parts.push(f.tipo==='none'?'직업 없음':'💼 '+f.tipo); if(f.group) parts.push(f.group==='none'?'그룹 없음':('그룹 「'+((gById(f.group)||{}).name||'')+'」')); if(f.consent) parts.push((CONS[f.consent]||['',''])[1]); if(f.q) parts.push('검색 「'+f.q+'」'); return parts.length?parts.join(' · '):'조건 없음 = 연락처 전체'; }
+  function filterLabel(){ const f=curFilter(); const parts=[]; if(f.ask) parts.push(ASKL[f.ask]); if(f.veh) parts.push(f.veh==='none'?'차종 없음':'🚗 '+f.veh); if(f.tipo) parts.push(f.tipo==='none'?'직업 없음':'💼 '+f.tipo); if(f.cust) parts.push({active:'🟢 액티브 고객',potential:'⚪ 잠재 고객',customer:'🏢 영업 고객',none:'영업 고객 아님'}[f.cust]||f.cust); if(f.group) parts.push(f.group==='none'?'그룹 없음':('그룹 「'+((gById(f.group)||{}).name||'')+'」')); if(f.consent) parts.push((CONS[f.consent]||['',''])[1]); if(f.q) parts.push('검색 「'+f.q+'」'); return parts.length?parts.join(' · '):'조건 없음 = 연락처 전체'; }
   const gaMode=()=>{ const r=document.querySelector('input[name="gaMode"]:checked'); return r?r.value:''; };
   function openGAssign(mode){
     const n=S.sel.size; $('gaSelL').textContent='고른 사람 '+n+'명';
@@ -822,7 +849,7 @@
     document.querySelector('input[name="gaMode"][value="sel"]').disabled=!n;
     const m=mode&&(mode!=='sel'||n)?mode:(n?'sel':'filter'); document.querySelector('input[name="gaMode"][value="'+m+'"]').checked=true; $('gaPhones').classList.toggle('hidden',m!=='phones');
     $('gaMsg').className='msg'; fillGroupSelects();
-    if(S.cGroup&&S.cGroup!=='none'&&!$('gaGroup').value) $('gaGroup').value=S.cGroup;
+    if(S.cGroup&&S.cGroup!=='none'&&!$('gaGroup').value&&!(gById(S.cGroup)||{}).auto) $('gaGroup').value=S.cGroup;
     $('gaNewWrap').classList.toggle('hidden',$('gaGroup').value!=='__new');
     $('mGAssign').classList.add('on');
   }
@@ -861,8 +888,8 @@
   function renderGroupList(){
     if(!S.groups.length){ $('gList').innerHTML='<div class="hint">아직 그룹이 없습니다 — 위에서 만드세요(예: Talleres Monterrey · Flotillas · Refaccionarias Mérida · Expo 2026).</div>'; return; }
     $('gList').innerHTML='<table><thead><tr><th>색</th><th>이름</th><th>설명</th><th class="num">인원</th><th class="num">✅ 동의</th><th></th></tr></thead><tbody>'
-      +S.groups.map(g=>'<tr data-gid="'+g.id+'"><td><input type="color" data-gf="color" value="'+esc(g.color||'#5b6470')+'" style="width:44px;padding:2px"></td><td><input data-gf="name" value="'+esc(g.name)+'" maxlength="60" style="width:170px"></td><td><input data-gf="memo" value="'+esc(g.memo||'')+'" maxlength="300" style="width:190px" placeholder="용도"></td><td class="num">'+g.n+'</td><td class="num">'+g.yes+'</td>'
-        +'<td style="white-space:nowrap"><button type="button" class="btn sm" data-gsave>저장</button> <button type="button" class="btn ghost sm" data-gview>보기</button> <button type="button" class="btn ghost sm" data-gdel style="color:var(--bad);border-color:var(--bad)">삭제</button></td></tr>').join('')+'</tbody></table>';
+      +S.groups.map(g=>'<tr data-gid="'+g.id+'"><td><input type="color" data-gf="color" value="'+esc(g.color||'#5b6470')+'" style="width:44px;padding:2px"></td><td><input data-gf="name" value="'+esc(g.name)+'" maxlength="60" style="width:170px"'+(g.auto?' disabled title="영업담당자 자동 그룹 — 이름 · 사람은 「🏢 영업 고객 가져오기」가 정합니다"':'')+'>'+(g.auto?'<div class="hint">👤 자동(영업담당자)</div>':'')+'</td><td><input data-gf="memo" value="'+esc(g.memo||'')+'" maxlength="300" style="width:190px" placeholder="용도"></td><td class="num">'+g.n+'</td><td class="num">'+g.yes+'</td>'
+        +'<td style="white-space:nowrap"><button type="button" class="btn sm" data-gsave>저장</button> <button type="button" class="btn ghost sm" data-gview>보기</button> '+(g.auto?'':'<button type="button" class="btn ghost sm" data-gdel style="color:var(--bad);border-color:var(--bad)">삭제</button>')+'</td></tr>').join('')+'</tbody></table>';
   }
   $('gCreate').addEventListener('click',async()=>{
     try{ await api('POST','/api/wa-promo/groups',{name:$('gNewName').value,color:$('gNewColor').value}); $('gNewName').value=''; await loadGroups(); say(true,'만들었습니다. 「🏷 그룹 일괄 구분」으로 사람을 넣으세요.',$('gMsg')); }
@@ -897,8 +924,8 @@
     renderAskFun();
     renderGroupBar(); renderFacets();
     if(!S.contacts.length){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+(Object.keys(curFilter()).length?'조건에 맞는 연락처가 없습니다.':'연락처가 없습니다.')+'</div>'; syncSel(); return; }
-    $('cList').innerHTML='<table class="ctbl"><colgroup><col style="width:34px"><col style="width:21%"><col style="width:11%"><col style="width:19%"><col style="width:11%"><col style="width:84px"><col style="width:19%"><col style="width:150px"></colgroup>'
-      +'<thead><tr><th><input type="checkbox" id="cAll"></th>'+sortTh('name','이름 · 번호')+sortTh('tipo','직업')+sortTh('veh','관심 차종 · 찾는 부품')+sortTh('group','그룹')+sortTh('consent','상태')+sortTh('when','동의 경로 · 일시')+'<th style="text-align:right">동작</th></tr></thead><tbody>'
+    $('cList').innerHTML='<table class="ctbl"><colgroup><col style="width:34px"><col style="width:20%"><col style="width:10%"><col style="width:16%"><col style="width:10%"><col style="width:104px"><col style="width:80px"><col style="width:17%"><col style="width:150px"></colgroup>'
+      +'<thead><tr><th><input type="checkbox" id="cAll"></th>'+sortTh('name','이름 · 번호')+sortTh('tipo','직업')+sortTh('veh','관심 차종 · 찾는 부품')+sortTh('group','그룹')+sortTh('purchase','영업 고객 · 구매액')+sortTh('consent','상태')+sortTh('when','동의 경로 · 일시')+'<th style="text-align:right">동작</th></tr></thead><tbody>'
       +S.contacts.map(x=>{
         let via='—';
         if(x.consent==='yes'||x.consent==='no') via=(VIA[x.consent_via]||x.consent_via||'')+' · '+fmtT(x.consent_at);
@@ -921,11 +948,14 @@
         const vehs=String(x.vehiculo||'').split(/\s*;\s*/).filter(Boolean);
         const vehHtml=vehs.length?vehs.slice(0,2).map(v=>'<span class="vchip" title="'+esc(v)+'">🚗 '+esc(v)+'</span>').join('')+(vehs.length>2?'<span class="vchip" title="'+esc(vehs.slice(2).join('; '))+'">+'+(vehs.length-2)+'</span>':''):'<span class="sub">—</span>';
         const sub1=[esc(x.phone_masked),x.estado?'📍 '+esc(x.estado):''].filter(Boolean).join(' · ');
+        const custSub=x.customer_id?'<span class="sub" title="'+esc([x.cust_name,x.rfc,x.rep_name,x.team_name].filter(Boolean).join(' · '))+'">🏢 '+esc(x.cust_code||'')+(x.rfc?' · '+esc(x.rfc):'')+'</span><span class="sub">👤 '+esc(x.rep_name||'담당 없음')+(x.team_name?' · '+esc(x.team_name):'')+'</span>':'';
+        const custCell=x.customer_id?'<span class="cst '+(x.cust_status==='active'?'a':'p')+'" title="'+(x.cust_status==='active'?'1페소 이상 SAT 인보이스 발행':'발행한 SAT 인보이스 없음')+'">'+(x.cust_status==='active'?'🟢 액티브':'⚪ 잠재')+'</span>'+(x.purchase_mxn?'<span class="amt" title="발행 인보이스 합계(IVA 제외)">$'+Math.round(x.purchase_mxn).toLocaleString('es-MX')+'</span>':'')+(x.last_inv_date?'<span class="sub" title="마지막 SAT 인보이스 날짜">🧾 '+esc(x.last_inv_date)+'</span>':''):'<span class="sub">—</span>';
         return '<tr data-id="'+x.id+'"'+(S.sel.has(x.id)?' class="sel"':'')+'><td><input type="checkbox" data-sel'+(S.sel.has(x.id)?' checked':'')+'></td>'
-          +'<td><b class="nm" title="'+esc(x.name)+'">'+esc(x.name)+(x.lead?' <span class="tag t-asked">🙋</span>':'')+'</b><span class="sub">'+sub1+'</span>'+(x.memo?'<span class="sub" title="'+esc(x.memo)+'">'+esc(x.memo)+'</span>':'')+'</td>'
+          +'<td><b class="nm" title="'+esc(x.name)+'">'+esc(x.name)+(x.lead?' <span class="tag t-asked">🙋</span>':'')+'</b><span class="sub">'+sub1+'</span>'+(x.memo?'<span class="sub" title="'+esc(x.memo)+'">'+esc(x.memo)+'</span>':'')+custSub+'</td>'
           +'<td>'+(x.tipo?'<span class="ttag" title="'+esc(x.tipo)+'">'+esc(x.tipo)+'</span>':'<span class="sub">—</span>')+'</td>'
           +'<td>'+vehHtml+(x.piezas?'<span class="sub" title="'+esc(x.piezas)+'">🔧 '+esc(x.piezas)+'</span>':'')+'</td>'
           +'<td>'+(x.groups||[]).map(gById).filter(Boolean).map(gTag).join('')+'</td>'
+          +'<td>'+custCell+'</td>'
           +'<td>'+consTag(x.consent)+'</td><td>'+via+'</td><td class="acts">'+acts.join('')+'</td></tr>';
       }).join('')+'</tbody></table>'
       +(S.matched>S.contacts.length?'<div class="hint" style="margin-top:6px">조건에 맞는 '+S.matched+'명 중 최근 '+S.contacts.length+'명만 보입니다 — 전체를 그룹에 넣으려면 「🏷 그룹 일괄 구분 › 지금 조건에 맞는 전체」.</div>':'');
@@ -1076,7 +1106,7 @@
       const d=await api('POST','/api/wa-promo/contacts/bulk',{rows,dry_run:true}); showImport(d);
     }catch(err){ say(false,'엑셀을 읽지 못했습니다: '+errText(err)); }
   });
-  function openImport(title,survey){ fillGroupSelects(); $('mImpGroup').value=S.cGroup&&S.cGroup!=='none'?S.cGroup:''; $('mImpNewGWrap').classList.add('hidden'); S.impSum=null; $('mImpTitle').textContent=title; $('mImpSurvey').classList.toggle('hidden',!survey); $('mImpSum').innerHTML=''; $('mImpRows').innerHTML=''; $('mImpSave').disabled=true; $('mImpHint').textContent=''; $('mImport').classList.add('on'); }
+  function openImport(title,survey){ fillGroupSelects(); $('mImpGroup').value=S.cGroup&&S.cGroup!=='none'&&!(gById(S.cGroup)||{}).auto?S.cGroup:''; $('mImpNewGWrap').classList.add('hidden'); S.impSum=null; $('mImpTitle').textContent=title; $('mImpSurvey').classList.toggle('hidden',!survey); $('mImpSum').innerHTML=''; $('mImpRows').innerHTML=''; $('mImpSave').disabled=true; $('mImpHint').textContent=''; $('mImport').classList.add('on'); }
   const ST={new:['ok-t','새로 등록'],exists:['warn-t','이미 등록됨'],dup_in_file:['warn-t','파일 안 중복'],bad_phone:['bad-t','번호 형식 오류'],no_name:['bad-t','이름 없음']};
   function showImport(d){
     const s=d.summary||{};
@@ -1169,7 +1199,7 @@
     $('cal').innerHTML=days.map(day=>{
       const cs=S.camps.filter(c=>c.send_at_mx.slice(0,10)===day);
       return '<div class="day'+(day<today?' past':'')+(day===today?' today':'')+(day.slice(0,7)!==S.month?' out':'')+'" data-day="'+day+'"><div class="d"><span>'+(day.slice(8)==='01'?Number(day.slice(5,7))+'/':'')+Number(day.slice(8))+'</span>'+(cs.length>1?'<span class="tag t-unknown">'+cs.length+'건</span>':'')+'</div>'
-        +cs.map(c=>'<div class="camp" data-camp="'+c.id+'"><img data-img="'+c.id+'" alt=""><div class="cb">'+campState(c)+(c.target_sel?' <span class="tag t-unknown" title="연락처 화면에서 고른 사람에게만">👥 '+c.target_sel+'</span>':'')+((c.target_groups&&c.target_groups.length)?' <span class="tag t-unknown" title="그룹 대상">🏷 '+esc(c.target_groups.map(id=>(gById(id)||{}).name||'?').join(', '))+'</span>':'')+'<div style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.caption)+'</div></div></div>').join('')+'</div>';
+        +cs.map(c=>'<div class="camp" data-camp="'+c.id+'"><img data-img="'+c.id+'" alt=""><div class="cb">'+campState(c)+(c.target_sel?' <span class="tag t-unknown" title="연락처 화면에서 고른 사람에게만">👥 '+c.target_sel+'</span>':'')+((c.target_groups&&c.target_groups.length)?' <span class="tag t-unknown" title="그룹 대상">🏷 '+esc(c.target_groups.map(id=>(gById(id)||{}).name||'?').join(', '))+'</span>':'')+(c.target_cust?' <span class="tag t-unknown">'+(c.target_cust==='active'?'🟢 액티브':'⚪ 잠재')+'</span>':'')+'<div style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.caption)+'</div></div></div>').join('')+'</div>';
     }).join('');
     document.querySelectorAll('#cal img[data-img]').forEach(async im=>{ im.src=await imgUrl(im.dataset.img); });
   }
@@ -1201,19 +1231,22 @@
     $('kCap').focus(); window.scrollTo({top:0,behavior:'smooth'});
     say(true,day+(imageId?' · 「'+((S.bank.find(x=>x.id===imageId)||{}).name||'')+'」':'')+' — 문구를 넣고 「예약」을 누르세요.');
   }
+  $('kCust').addEventListener('change',audHint);
   $('kAud').addEventListener('change',()=>{ $('kMemoWrap').classList.toggle('hidden',$('kAud').value!=='memo'); $('kGroupWrap').classList.toggle('hidden',$('kAud').value!=='group'); audHint(); });
   let audT=null;
   function audHint(){
     const a=$('kAud').value;
     if(a==='memo'){ $('kAudN').textContent='메모 조건에 맞는 ✅ 동의자에게만'; return; }
+    const cu=$('kCust').value; const cuL=cu==='active'?' 🟢 액티브 고객':cu==='potential'?' ⚪ 잠재 고객':'';
     if(a==='group'){ const gs=S.kGroups||[]; if(!gs.length){ $('kAudN').textContent='그룹을 하나 이상 고르세요.'; return; }
-      clearTimeout(audT); audT=setTimeout(async()=>{ try{ const d=await api('GET','/api/wa-promo/audience?groups='+gs.join(',')); $('kAudN').textContent='고른 그룹의 ✅ 동의 '+d.n+'명(겹치는 사람은 한 번 · 발송 시점에 다시 셈)'; }catch(e){ $('kAudN').textContent=''; } },200); return; }
+      clearTimeout(audT); audT=setTimeout(async()=>{ try{ const d=await api('GET','/api/wa-promo/audience?groups='+gs.join(',')+(cu?'&cust='+cu:'')); $('kAudN').textContent='고른 그룹의'+cuL+' ✅ 동의 '+d.n+'명(겹치는 사람은 한 번 · 발송 시점에 다시 셈)'; }catch(e){ $('kAudN').textContent=''; } },200); return; }
+    if(cu){ clearTimeout(audT); audT=setTimeout(async()=>{ try{ const d=await api('GET','/api/wa-promo/audience?cust='+cu); $('kAudN').textContent=cuL.trim()+' ✅ 동의 '+d.n+'명(발송 시점에 다시 셈)'; }catch(e){ $('kAudN').textContent=''; } },200); return; }
     $('kAudN').textContent='지금 ✅ 동의 '+(S.audYes||0)+'명(발송 시점에 다시 셈)';
   }
   const fileB64=(f)=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
   $('kSave').addEventListener('click',async()=>{
     const f=$('kImg').files&&$('kImg').files[0];
-    const body={send_at:$('kDate').value+'T'+($('kTime').value||'10:00'),caption:$('kCap').value,memo_filter:$('kAud').value==='memo'?$('kMemo').value:'',target_groups:$('kAud').value==='group'?(S.kGroups||[]):[]};
+    const body={send_at:$('kDate').value+'T'+($('kTime').value||'10:00'),caption:$('kCap').value,memo_filter:$('kAud').value==='memo'?$('kMemo').value:'',target_groups:$('kAud').value==='group'?(S.kGroups||[]):[],target_cust:$('kCust').value||null};
     if(!$('kDate').value){ say(false,ERR.bad_send_at); return; }
     if($('kAud').value==='group'&&!body.target_groups.length){ say(false,'대상 그룹을 하나 이상 고르세요.'); return; }
     if(f){ if(f.size>5*1024*1024){ say(false,ERR.image_too_large); return; } body.image_b64=await fileB64(f); body.image_mime=f.type; body.image_name=f.name; }
@@ -1245,7 +1278,7 @@
     const u=await imgUrl(id);
     $('mcPhone').innerHTML='<div class="bub"><img src="'+u+'" alt="">Novedades de Refatrix: '+esc(c.caption.replace(/[\n\t]+/g,' '))+'. Responda BAJA si no desea recibir más mensajes.</div><div class="qr"><span>Quiero cotizar</span><span>Ver catálogo</span><span>BAJA</span></div><div class="hint" style="margin-top:6px">템플릿으로 나갈 때 모습(창이 열린 사람은 이미지 + 문구만)</div>';
     const st=c.stats||{};
-    $('mcInfo').innerHTML='<div>'+campState(c)+'</div><div class="hint" style="margin-top:6px">대상: '+(c.target_sel?'👥 연락처 화면에서 고른 '+c.target_sel+'명(그중 ✅ 동의자)':(c.target_groups&&c.target_groups.length)?'🏷 그룹 '+c.target_groups.map(id=>{ const g=gById(id); return g?gTag(g):'(지운 그룹)'; }).join(' ')+' 의 ✅ 동의자':c.memo_filter?'✅ 동의 중 메모에 「'+esc(c.memo_filter)+'」':'✅ 동의 전체')+(c.target_n!=null?' · 시작 때 '+c.target_n+'명':'')
+    $('mcInfo').innerHTML='<div>'+campState(c)+'</div><div class="hint" style="margin-top:6px">대상: '+(c.target_sel?'👥 연락처 화면에서 고른 '+c.target_sel+'명(그중 ✅ 동의자)':(c.target_groups&&c.target_groups.length)?'🏷 그룹 '+c.target_groups.map(id=>{ const g=gById(id); return g?gTag(g):'(지운 그룹)'; }).join(' ')+' 의'+(c.target_cust==='active'?' 🟢 액티브 고객':c.target_cust==='potential'?' ⚪ 잠재 고객':'')+' ✅ 동의자':c.target_cust?(c.target_cust==='active'?'🟢 액티브 고객':'⚪ 잠재 고객')+' 중 ✅ 동의자':c.memo_filter?'✅ 동의 중 메모에 「'+esc(c.memo_filter)+'」':'✅ 동의 전체')+(c.target_n!=null?' · 시작 때 '+c.target_n+'명':'')
       +'<br>보냄 '+(st.sent||0)+' · 도착 '+(st.delivered||0)+' · 읽음 '+(st.read||0)+' · 실패 '+((st.failed||0)+(st.dlv_failed||0))+' · 답장 '+(st.replied||0)+'명'
       +'<br>이미지 '+esc(c.image_name||'')+' · '+Math.round((c.image_bytes||0)/1024)+'KB · 작성 '+esc(c.created_by_name||'')+'</div>';
     $('mcInfo').insertAdjacentHTML('beforeend',c.image_id?'<div class="hint">🖼 이미지 뱅크 #'+c.image_id+' <button type="button" class="btn ghost sm" id="mcBank">뱅크에서 보기</button></div>':'');
@@ -1281,7 +1314,7 @@
     const c=S.camp; if(!c) return; if(S.tab!=='camps') setTab('camps'); S.editId=c.id; setKBank(null);
     $('kTitle').textContent='발송 #'+c.id+' 수정 (이미지는 바꿀 때만 고르세요)'; $('kSave').textContent='수정 저장'; $('kCancelEdit').classList.remove('hidden');
     $('kDate').value=c.send_at_mx.slice(0,10); $('kTime').value=c.send_at_mx.slice(11,16); $('kCap').value=c.caption;
-    const cg=(c.target_groups||[]); S.kGroups=cg.slice(); renderKGroups();
+    const cg=(c.target_groups||[]); S.kGroups=cg.slice(); renderKGroups(); $('kCust').value=c.target_cust||'';
     $('kAud').value=cg.length?'group':(c.memo_filter?'memo':''); $('kMemo').value=c.memo_filter||''; $('kMemoWrap').classList.toggle('hidden',!c.memo_filter||cg.length>0); $('kGroupWrap').classList.toggle('hidden',!cg.length); audHint();
     $('mCamp').classList.remove('on'); window.scrollTo({top:0,behavior:'smooth'});
   });

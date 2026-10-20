@@ -237,6 +237,8 @@ const audienceSql = (c, base = 1) => {
   if (gs) { args.push(gs); extra += ` AND EXISTS (SELECT 1 FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL
                                               WHERE cg.contact_id = w.id AND cg.group_id = ANY($${args.length + base}::bigint[]))`; }
   if (c.memo_filter && String(c.memo_filter).trim()) { args.push('%' + String(c.memo_filter).trim() + '%'); extra += ` AND w.memo ILIKE $${args.length + base}`; }
+  // 0291 · 영업 고객 구분 — active(1페소 이상 SAT 인보이스 발행) | potential
+  if (c.target_cust === 'active' || c.target_cust === 'potential') { args.push(c.target_cust); extra += ` AND w.cust_status = $${args.length + base}`; }
   return { args, extra };
 };
 // audienceCount('메모') 또는 audienceCount({ memo_filter, target_ids, target_groups })
@@ -324,7 +326,7 @@ export async function runPromoJob({ q = query } = {}) {
   if (!promoReady()) return { skipped: 'wa_not_configured' };
   let budget = Math.min(MAX_PER_TICK, await remainingToday(q));
   const out = { campaigns: [], asks: null, budget };
-  const due = (await q(`SELECT id, caption, memo_filter, target_ids, target_groups, status, media_id, media_at FROM wa_campaigns
+  const due = (await q(`SELECT id, caption, memo_filter, target_ids, target_groups, target_cust, status, media_id, media_at FROM wa_campaigns
                          WHERE status IN ('scheduled','sending') AND send_at <= now() ORDER BY send_at, id`)).rows;
   for (const c of due) {
     const r = await processCampaign({ ...c, id: Number(c.id) }, budget, q);
@@ -342,6 +344,9 @@ export function startWaPromoWorker(app) {
     if (busy) return; busy = true;
     try { await runPromoJob({}); }
     catch (e) { app && app.log && app.log.warn({ err: String(e && e.message) }, '[wa-promo] job failed'); }   // 0260 전이면 테이블 없음
+    // 0291 · 영업 고객 → 연락처 하루 한 번 자동 갱신(액티브/잠재 · 담당자 그룹)
+    try { const m = await import('./waCustomerSync.js'); await m.maybeAutoSync(); }
+    catch (e) { app && app.log && app.log.warn({ err: String(e && e.message) }, '[wa-promo] customer sync failed'); }   // 0291 전
     finally { busy = false; }
   };
   globalThis.__refatrixPromoWorker = setInterval(() => { tick(); }, 60000);

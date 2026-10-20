@@ -20,7 +20,10 @@
 //   POST   /api/wa-promo/groups {name, color?, memo?} · PATCH /api/wa-promo/groups/:id · DELETE (소프트)
 //   POST   /api/wa-promo/groups/assign {group_id | group_name, action: add|remove, ids? | filter?{q,consent,group} | phones?}
 //          고른 사람 · 지금 조건에 맞는 전체 · 번호 붙여넣기 — 한 번에 수천 명
-//   GET    /api/wa-promo/audience?groups=1,2&memo=        예약 전 대상(✅ 동의) 수
+//   GET    /api/wa-promo/audience?groups=1,2&memo=&cust=  예약 전 대상(✅ 동의) 수 · cust = active|potential(0291)
+//   ── 0291 영업 고객 ──
+//   POST   /api/wa-promo/customers/sync                  영업 고객 → 연락처(액티브/잠재 · 담당자 그룹) — 하루 한 번 자동도 돔
+//   GET    /api/wa-promo/customers/sync-status           마지막 가져온 시각 · 액티브/잠재 수
 //   (contacts/bulk · survey-import 저장 때 group_id 를 주면 새로 · 이미 등록된 번호 모두 그 그룹에)
 //   GET    /api/wa-promo/survey-sources                  설문 + 이름/전화 문항 추정
 //   POST   /api/wa-promo/survey-import {survey_id, name_k, phone_k, company_k?, dry_run}
@@ -63,6 +66,7 @@ import { query } from '../db.js';
 import { authGuard, DIR_SOCIO } from '../middleware/authGuard.js';
 import { pageAllowed } from '../permissions.js';
 import { platformApi } from '../surveyViewer.js';
+import { syncCustomerContacts } from '../waCustomerSync.js';
 import { logEvent } from '../audit.js';
 import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
@@ -102,7 +106,11 @@ function contactOut(r) {
     ask_dlv: r.ask_dlv || null, ask_delivered_at: r.ask_delivered_at || null, ask_read_at: r.ask_read_at || null,
     ask_dlv_reason: r.ask_dlv === 'failed' ? explainWaError(r.ask_dlv_code, r.ask_dlv_title) + (r.ask_dlv_detail ? ` — ${r.ask_dlv_detail}` : '') : null,
     consent_reply: r.consent_reply || null,
-    estado: r.estado || null, vehiculo: r.vehiculo || null, piezas: r.piezas || null, tipo: r.tipo || null };
+    estado: r.estado || null, vehiculo: r.vehiculo || null, piezas: r.piezas || null, tipo: r.tipo || null,
+    // 0291 · 영업 고객
+    customer_id: r.customer_id != null ? Number(r.customer_id) : null, cust_status: r.cust_status || null, cust_code: r.cust_code || null, cust_name: r.cust_name || null,
+    rfc: r.rfc || null, purchase_mxn: r.purchase_mxn != null ? Number(r.purchase_mxn) : null, last_inv_date: r.last_inv_date ? String(r.last_inv_date instanceof Date ? r.last_inv_date.toISOString() : r.last_inv_date).slice(0, 10) : null,
+    rep_name: r.rep_name || null, team_name: r.team_name || null };
 }
 function dlv(x) {
   const o = { dlv_status: x.dlv_status || null, delivered_at: x.delivered_at || null, read_at: x.read_at || null };
@@ -127,19 +135,20 @@ export default async function waPromoRoutes(app) {
     group: `(SELECT min(lower(g.name)) FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL WHERE cg.contact_id = w.id)`,
     consent: `CASE w.consent WHEN 'yes' THEN 1 WHEN 'asked' THEN 2 WHEN 'unknown' THEN 3 ELSE 4 END`,
     when: 'COALESCE(w.consent_at, w.asked_at)', created: 'w.created_at', last_in: 'w.last_in_at',
+    purchase: 'w.purchase_mxn', cust: `CASE w.cust_status WHEN 'active' THEN 1 WHEN 'potential' THEN 2 END`,
   };
   function contactOrder(qs) {
     const known = !!(qs && Object.prototype.hasOwnProperty.call(CONTACT_SORTS, qs.sort));
     if (!known) return 'w.created_at DESC NULLS LAST, w.id DESC';   // 모르는 키 → 기본(최근 등록 순) · 방향도 무시
     const k = qs.sort;
-    const dir = (qs && qs.dir === 'asc') ? 'ASC' : (qs && qs.dir === 'desc') ? 'DESC' : (k === 'created' || k === 'when' || k === 'last_in' ? 'DESC' : 'ASC');
+    const dir = (qs && qs.dir === 'asc') ? 'ASC' : (qs && qs.dir === 'desc') ? 'DESC' : (k === 'created' || k === 'when' || k === 'last_in' || k === 'purchase' ? 'DESC' : 'ASC');
     return `${CONTACT_SORTS[k]} ${dir} NULLS LAST, w.id DESC`;
   }
   // 연락처 조건(목록 · 「조건에 맞는 전체」 그룹 넣기가 같이 쓴다) — q · consent · queued · group(id | none)
   function contactConds(f, args) {
     const conds = ['w.deleted_at IS NULL'];
     const kw = String((f && f.q) || '').trim();
-    if (kw) { args.push('%' + kw + '%'); const d = kw.replace(/\D/g, ''); conds.push(`(w.name ILIKE $${args.length} OR w.memo ILIKE $${args.length} OR w.estado ILIKE $${args.length} OR w.vehiculo ILIKE $${args.length} OR w.piezas ILIKE $${args.length} OR w.tipo ILIKE $${args.length}${d.length >= 3 ? ` OR w.phone LIKE '%${d}%'` : ''})`); }
+    if (kw) { args.push('%' + kw + '%'); const d = kw.replace(/\D/g, ''); conds.push(`(w.name ILIKE $${args.length} OR w.memo ILIKE $${args.length} OR w.estado ILIKE $${args.length} OR w.vehiculo ILIKE $${args.length} OR w.piezas ILIKE $${args.length} OR w.tipo ILIKE $${args.length} OR w.cust_code ILIKE $${args.length} OR w.cust_name ILIKE $${args.length} OR w.rfc ILIKE $${args.length} OR w.rep_name ILIKE $${args.length}${d.length >= 3 ? ` OR w.phone LIKE '%${d}%'` : ''})`); }
     if (f && CONSENTS.includes(f.consent)) { args.push(f.consent); conds.push(`w.consent = $${args.length}`); }
     if (f && String(f.queued) === '1') conds.push(`w.ask_queued_at IS NOT NULL AND w.asked_at IS NULL`);
     // 0286 · 직업 · 관심 차종(모델명, 연식 무시)으로 거르기
@@ -147,6 +156,10 @@ export default async function waPromoRoutes(app) {
     else if (f && f.tipo) { args.push(String(f.tipo)); conds.push(`w.tipo = $${args.length}`); }
     if (f && f.veh === 'none') conds.push(`w.vehiculo IS NULL`);
     else if (f && f.veh) { args.push('%' + String(f.veh).replace(/[%_]/g, '') + '%'); conds.push(`w.vehiculo ILIKE $${args.length}`); }
+    // 0291 · 영업 고객 구분 — active · potential · customer(둘 다) · none(영업 고객 아님)
+    if (f && (f.cust === 'active' || f.cust === 'potential')) { args.push(f.cust); conds.push(`w.cust_status = $${args.length}`); }
+    else if (f && f.cust === 'customer') conds.push(`w.customer_id IS NOT NULL`);
+    else if (f && f.cust === 'none') conds.push(`w.customer_id IS NULL`);
     // 0284 · 동의 요청 상태로 거르기
     if (f && f.ask === 'failed') conds.push(`w.consent='asked' AND EXISTS (SELECT 1 FROM wa_message_status ms WHERE ms.message_id = w.ask_message_id AND ms.status='failed')`);
     if (f && f.ask === 'noreply') conds.push(`w.consent='asked' AND NOT EXISTS (SELECT 1 FROM wa_message_status ms WHERE ms.message_id = w.ask_message_id AND ms.status='failed')`);
@@ -205,6 +218,12 @@ export default async function waPromoRoutes(app) {
                                  WHERE deleted_at IS NULL AND tipo IS NOT NULL GROUP BY tipo ORDER BY n DESC, tipo LIMIT 30`)).rows;
       const nn = (await query(`SELECT count(*) FILTER (WHERE vehiculo IS NULL)::int veh, count(*) FILTER (WHERE tipo IS NULL)::int tipo FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
       facets = { vehicles: veh, tipos: tip, no_veh: nn.veh, no_tipo: nn.tipo };
+      try {
+        facets.cust = (await query(`SELECT count(*) FILTER (WHERE cust_status='active')::int active, count(*) FILTER (WHERE cust_status='potential')::int potential,
+                                           count(*) FILTER (WHERE cust_status='active' AND consent='yes')::int active_yes, count(*) FILTER (WHERE cust_status='potential' AND consent='yes')::int potential_yes,
+                                           count(*) FILTER (WHERE customer_id IS NULL)::int none
+                                      FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
+      } catch (_) { /* 0291 전 */ }
     } catch (_) { facets = null; /* 0285/0286 전 */ }
     return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched, askable: Number(mm.askable), ask, facets };
   });
@@ -321,7 +340,9 @@ export default async function waPromoRoutes(app) {
   app.get('/api/wa-promo/consent/export', R, async (req) => {
     const args = []; const conds = contactConds(req.query, args);
     const rows = (await query(
-      `SELECT w.name, w.phone, w.memo, w.estado, w.tipo, w.vehiculo, w.piezas, w.consent, w.consent_via, ${MXT('w.consent_at')} AS consent_mx, ${MXT('w.asked_at')} AS asked_mx,
+      `SELECT w.name, w.phone, w.memo, w.estado, w.tipo, w.vehiculo, w.piezas, w.consent,
+              (to_jsonb(w)->>'cust_status') AS cust_status, (to_jsonb(w)->>'cust_code') AS cust_code, (to_jsonb(w)->>'rfc') AS rfc,
+              (to_jsonb(w)->>'purchase_mxn')::numeric AS purchase_mxn, (to_jsonb(w)->>'rep_name') AS rep_name, (to_jsonb(w)->>'team_name') AS team_name, w.consent_via, ${MXT('w.consent_at')} AS consent_mx, ${MXT('w.asked_at')} AS asked_mx,
               ${MXT('am.delivered_at')} AS delivered_mx, ${MXT('am.read_at')} AS read_mx, am.status AS dlv, am.error_code, am.error_title,
               (SELECT e.text FROM wa_consent_events e WHERE e.contact_id = w.id AND e.kind IN ('yes','no','reply') ORDER BY e.at DESC, e.id DESC LIMIT 1) AS reply,
               (SELECT u2.name FROM wa_consent_events e JOIN users u2 ON u2.id = e.user_id WHERE e.contact_id = w.id AND e.kind IN ('manual_yes','manual_no','reset') ORDER BY e.at DESC LIMIT 1) AS changed_by,
@@ -369,6 +390,19 @@ export default async function waPromoRoutes(app) {
     return { dry_run: false, added: r.added, grouped, summary: summarize(r.rows), pages: pages.length };
   });
 
+  // ───────── 0291 · 영업 고객 가져오기 ─────────
+  app.post('/api/wa-promo/customers/sync', W, async (req) => {
+    const st = await syncCustomerContacts({ userId: req.ctx.perm.userId });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'wa_contacts:customer_sync',
+      detail: { ...st, no_phone_list: undefined } }).catch(() => {});
+    return st;
+  });
+  app.get('/api/wa-promo/customers/sync-status', R, async () => {
+    const r = (await query(`SELECT ${MXT('max(cust_synced_at)')} AS at_mx, count(*) FILTER (WHERE cust_status='active')::int active,
+                                   count(*) FILTER (WHERE cust_status='potential')::int potential FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
+    return { last_mx: r.at_mx || null, active: r.active, potential: r.potential };
+  });
+
   // ───────── 0283 · 연락처 그룹 ─────────
   const GROUP_COLORS = ['#2a78d6', '#11743b', '#d81e25', '#b26a00', '#7b4bc4', '#0f8a8a', '#c2417d', '#5b6470'];
   const cleanColor = (v) => (/^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v).toLowerCase() : null);
@@ -391,7 +425,7 @@ export default async function waPromoRoutes(app) {
   }
   async function groupList() {
     const rows = (await query(
-      `SELECT g.id, g.name, g.color, g.memo, ${MXT('g.created_at')} AS created_mx,
+      `SELECT g.id, g.name, g.color, g.memo, ${MXT('g.created_at')} AS created_mx, (to_jsonb(g)->>'auto_key') AS auto_key,
               count(w.id)::int AS n, count(w.id) FILTER (WHERE w.consent='yes')::int AS yes
          FROM wa_groups g LEFT JOIN wa_contact_groups cg ON cg.group_id = g.id
          LEFT JOIN wa_contacts w ON w.id = cg.contact_id AND w.deleted_at IS NULL
@@ -399,7 +433,7 @@ export default async function waPromoRoutes(app) {
     const none = (await query(
       `SELECT count(*)::int n, count(*) FILTER (WHERE consent='yes')::int yes FROM wa_contacts w WHERE w.deleted_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM wa_contact_groups cg JOIN wa_groups g ON g.id = cg.group_id AND g.deleted_at IS NULL WHERE cg.contact_id = w.id)`)).rows[0];
-    return { items: rows.map((r) => ({ ...r, id: Number(r.id) })), none };
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), auto: !!r.auto_key })), none };
   }
   app.get('/api/wa-promo/groups', R, async () => groupList());
   async function createGroup(name, b, userId) {
@@ -421,9 +455,18 @@ export default async function waPromoRoutes(app) {
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_group:${r.id}`, detail: { name: b.name } });
     return { id: r.id };
   });
+  // 0291 · 영업담당자 자동 그룹 — 이름 · 소속은 가져오기가 정한다(색 · 설명만 고칠 수 있음, 지우기 · 손으로 넣기/빼기 불가)
+  async function isAutoGroup(id) {
+    try { return !!(await query(`SELECT 1 FROM wa_groups WHERE id=$1 AND auto_key IS NOT NULL`, [id])).rows[0]; } catch (_) { return false; }
+  }
   app.patch('/api/wa-promo/groups/:id', W, async (req, reply) => {
     const id = await liveGroupId(req.params.id); if (!id) return reply.code(404).send({ error: 'not_found' });
     const b = req.body || {}; const sets = []; const args = [id];
+    if (b.name !== undefined && await isAutoGroup(id)) {
+      const cur = (await query(`SELECT name FROM wa_groups WHERE id=$1`, [id])).rows[0];
+      if (!cur || String(b.name || '').replace(/\s+/g, ' ').trim() !== cur.name) return reply.code(409).send({ error: 'auto_group' });
+      delete b.name;
+    }
     if (b.name !== undefined) {
       const n = String(b.name || '').replace(/\s+/g, ' ').trim().slice(0, 60); if (!n) return reply.code(400).send({ error: 'group_name_required' });
       if ((await query(`SELECT 1 FROM wa_groups WHERE lower(name)=lower($1) AND deleted_at IS NULL AND id<>$2`, [n, id])).rows[0]) return reply.code(409).send({ error: 'group_exists' });
@@ -437,6 +480,7 @@ export default async function waPromoRoutes(app) {
   });
   app.delete('/api/wa-promo/groups/:id', W, async (req, reply) => {
     const id = await liveGroupId(req.params.id); if (!id) return reply.code(404).send({ error: 'not_found' });
+    if (await isAutoGroup(id)) return reply.code(409).send({ error: 'auto_group' });
     // 예약된 발송이 이 그룹만 대상으로 하면 지우지 못하게(대상이 「동의 전체」로 바뀌는 사고 방지)
     const used = (await query(`SELECT id FROM wa_campaigns WHERE status IN ('scheduled','sending') AND $1 = ANY(target_groups)`, [id])).rows;
     if (used.length) return reply.code(409).send({ error: 'group_in_use', campaigns: used.map((r) => Number(r.id)) });
@@ -449,7 +493,7 @@ export default async function waPromoRoutes(app) {
     const b = req.body || {};
     const action = b.action === 'remove' ? 'remove' : 'add';
     let gid = null; let created = false;
-    if (b.group_id != null) { gid = await liveGroupId(b.group_id); if (!gid) return reply.code(404).send({ error: 'group_not_found' }); }
+    if (b.group_id != null) { gid = await liveGroupId(b.group_id); if (!gid) return reply.code(404).send({ error: 'group_not_found' }); if (await isAutoGroup(gid)) return reply.code(409).send({ error: 'auto_group' }); }
     else if (b.group_name && action === 'add') { const r = await createGroup(b.group_name, b, req.ctx.perm.userId); if (r.error) return reply.code(400).send({ error: r.error }); gid = r.id; created = !r.exists; }
     else return reply.code(400).send({ error: 'group_required' });
     let ids = []; let unknownPhones = []; let mode;
@@ -478,7 +522,7 @@ export default async function waPromoRoutes(app) {
   // 예약 전 대상 수
   app.get('/api/wa-promo/audience', R, async (req) => {
     const groups = String(req.query.groups || '').split(',').map(idOf).filter(Boolean);
-    return { n: await audienceCount({ memo_filter: req.query.memo || null, target_groups: groups }) };
+    return { n: await audienceCount({ memo_filter: req.query.memo || null, target_groups: groups, target_cust: req.query.cust || null }) };
   });
   async function cleanGroups(v) {   // 예약 대상 그룹 — 살아 있는 그룹만, 없으면 null
     const ids = targetIdsOf(v); if (!ids) return null;
@@ -488,7 +532,7 @@ export default async function waPromoRoutes(app) {
 
   // ───────── 발송 일정 ─────────
   const CAMP_COLS = `c.id, ${MXT('c.send_at')} AS send_at_mx, c.send_at, c.caption, c.image_mime, c.image_name, octet_length(c.image) AS image_bytes,
-                     c.memo_filter, COALESCE(cardinality(c.target_ids), 0) AS target_sel, c.target_groups, c.image_id, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
+                     c.memo_filter, COALESCE(cardinality(c.target_ids), 0) AS target_sel, c.target_groups, (to_jsonb(c)->>'target_cust') AS target_cust, c.image_id, c.status, c.target_n, c.created_at, c.started_at, c.finished_at, u.name AS created_by_name`;
   async function campaignStats(ids) {
     if (!ids.length) return new Map();
     const rows = (await query(
@@ -584,19 +628,20 @@ export default async function waPromoRoutes(app) {
     }
     // 0283 · 그룹 대상(고른 사람이 아닐 때) — 그룹 중 하나라도 들어 있는 ✅ 동의자 · 0명이면 만들지 않는다
     let groups = null;
+    const cust = !targets && (b.target_cust === 'active' || b.target_cust === 'potential') ? b.target_cust : null;   // 0291
     if (!targets && b.target_groups != null && targetIdsOf(b.target_groups)) {
       groups = await cleanGroups(b.target_groups);
       if (groups === undefined) return reply.code(404).send({ error: 'group_not_found' });
-      if (!(await audienceCount({ memo_filter: b.memo_filter, target_groups: groups }))) return reply.code(400).send({ error: 'no_consented_in_groups' });
-    }
+      if (!(await audienceCount({ memo_filter: b.memo_filter, target_groups: groups, target_cust: cust }))) return reply.code(400).send({ error: 'no_consented_in_groups' });
+    } else if (cust && !(await audienceCount({ memo_filter: b.memo_filter, target_cust: cust }))) return reply.code(400).send({ error: 'no_consented_in_groups' });
     const r = (await query(
-      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, target_ids, created_by, target_groups${bankId ? ', image_id' : ''})
-       VALUES (CASE WHEN $8 THEN now() ELSE ($1::timestamp AT TIME ZONE 'America/Mexico_City') END,$2,$3,$4,$5,$6,$7::bigint[],$9,$10::bigint[]${bankId ? ',$11' : ''})
+      `INSERT INTO wa_campaigns (send_at, caption, image, image_mime, image_name, memo_filter, target_ids, created_by, target_groups${cust ? ', target_cust' : ''}${bankId ? ', image_id' : ''})
+       VALUES (CASE WHEN $8 THEN now() ELSE ($1::timestamp AT TIME ZONE 'America/Mexico_City') END,$2,$3,$4,$5,$6,$7::bigint[],$9,$10::bigint[]${cust ? ',$11' : ''}${bankId ? ',$' + (cust ? 12 : 11) : ''})
        RETURNING id, (send_at <= now()) AS past`,
-      [now ? null : b.send_at, caption, img.buf, img.mime, img.name, targets ? null : (String(b.memo_filter || '').trim() || null), targets, now, req.ctx.perm.userId, groups].concat(bankId ? [bankId] : []))).rows[0];
+      [now ? null : b.send_at, caption, img.buf, img.mime, img.name, targets ? null : (String(b.memo_filter || '').trim() || null), targets, now, req.ctx.perm.userId, groups].concat(cust ? [cust] : []).concat(bankId ? [bankId] : []))).rows[0];
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `wa_campaign:${r.id}`,
       detail: { send_at: now ? 'now' : b.send_at, targets: targets ? targets.length : null } });
-    return { id: Number(r.id), past: r.past === true, audience: await audienceCount({ memo_filter: targets ? null : b.memo_filter, target_ids: targets, target_groups: groups }), picked,
+    return { id: Number(r.id), past: r.past === true, audience: await audienceCount({ memo_filter: targets ? null : b.memo_filter, target_ids: targets, target_groups: groups, target_cust: cust }), picked,
       remaining_today: Math.max(0, promoCfg().cap - await sentToday()) };
   });
   app.patch('/api/wa-promo/campaigns/:id', IMG_LIMIT, async (req, reply) => {
@@ -611,6 +656,7 @@ export default async function waPromoRoutes(app) {
       if (g === undefined) return reply.code(404).send({ error: 'group_not_found' });
       put('target_groups=?::bigint[]', g);
     }
+    if (b.target_cust !== undefined) put('target_cust=?', b.target_cust === 'active' || b.target_cust === 'potential' ? b.target_cust : null);   // 0291
     let img = readImage(b);
     if (img.error) return reply.code(400).send({ error: img.error });
     let bankId = null;

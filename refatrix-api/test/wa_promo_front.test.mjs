@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1016so) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1020cu) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -16,9 +16,10 @@ try { ({ JSDOM } = await import('jsdom')); } catch { /* skip */ }
 const SKIP = !JSDOM || !existsSync(HTML);
 const tick = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
-const GROUPS = [{ id: 11, name: 'Talleres MTY', color: '#2a78d6', memo: 'Monterrey', n: 740, yes: 410 }, { id: 12, name: 'Flotillas', color: '#11743b', memo: null, n: 2, yes: 1 }];
+const GROUPS = [{ id: 11, name: 'Talleres MTY', color: '#2a78d6', memo: 'Monterrey', n: 740, yes: 410 }, { id: 12, name: 'Flotillas', color: '#11743b', memo: null, n: 2, yes: 1 },
+  { id: 21, name: '영업 · Palomino', color: '#5b6470', memo: '자동', n: 85, yes: 12, auto: true }];
 const CONTACTS = [
-  { id: 1, groups: [11, 12], tipo: 'Taller mecánico', vehiculo: 'Nissan Versa 2019; Nissan March 2017; Chevrolet Aveo 2018', piezas: 'Horquilla (brazo de control)', estado: 'Nuevo León', name: 'Juan Pérez', phone: '528110000001', phone_masked: '528****0001', memo: 'Expo', consent: 'yes', consent_via: 'button', consent_at: '2026-10-08T15:00:00Z', lead: false, last_in_at: '2026-10-08T15:00:00Z' },
+  { id: 1, groups: [11, 12, 21], customer_id: 501, cust_status: 'active', cust_code: 'C-0501', cust_name: 'Refacciones Norte', rfc: 'RNO850101AB1', purchase_mxn: 123456.4, last_inv_date: '2026-10-14', rep_name: 'Palomino', team_name: '01_Monterrey', tipo: 'Taller mecánico', vehiculo: 'Nissan Versa 2019; Nissan March 2017; Chevrolet Aveo 2018', piezas: 'Horquilla (brazo de control)', estado: 'Nuevo León', name: 'Juan Pérez', phone: '528110000001', phone_masked: '528****0001', memo: 'Expo', consent: 'yes', consent_via: 'button', consent_at: '2026-10-08T15:00:00Z', lead: false, last_in_at: '2026-10-08T15:00:00Z' },
   { id: 2, name: 'María', phone: '528110000002', phone_masked: '528****0002', memo: '', consent: 'unknown', ask_queued: false },
   { id: 3, name: 'Pedro', phone: '528110000003', phone_masked: '528****0003', memo: '', consent: 'asked', asked_at: '2026-10-08T15:00:00Z', ask_dlv: 'read', consent_reply: '¿Cuánto cuesta?' },
 ];
@@ -39,6 +40,8 @@ function boot() {
         if (u.includes('/api/wa-promo/users')) return json({ items: [{ id: 5, name: 'Maria', role: 'sales_support' }] });
         if (u.includes('/api/wa-promo/contacts/bulk')) return json({ dry_run: body.dry_run !== false, added: 2, rows: body.rows.map((r, i) => ({ i, name: r.name, phone: '52' + r.phone.replace(/\D/g, ''), raw_phone: r.phone, status: 'new' })), summary: { total: 2, new: 2, exists: 0, dup_in_file: 0, bad_phone: 0, no_name: 0 } });
         // 0283 · 그룹
+        if (u.includes('/api/wa-promo/customers/sync-status')) return json({ last_mx: '2026-10-20T13:05', active: 210, potential: 340 });
+        if (u.includes('/api/wa-promo/customers/sync')) return json({ customers: 600, with_phone: 550, no_phone: 50, dup_phone: 3, inserted: 400, linked: 147, unlinked: 0, active: 210, potential: 340, groups: 6 });
         if (u.endsWith('/api/wa-promo/groups') && method === 'GET') return json({ items: GROUPS, none: { n: 1, yes: 0 } });
         if (u.endsWith('/api/wa-promo/groups') && method === 'POST') return body.name === 'Talleres MTY' ? json({ error: 'group_exists', id: 11 }, 409) : json({ id: 13 });
         if (u.endsWith('/api/wa-promo/groups/assign')) return json({ group_id: body.group_id || 13, created: !body.group_id, action: body.action, matched: 2, changed: 2, unchanged: 0, unknown_phones: body.phones ? ['12'] : [], unknown_n: body.phones ? 1 : 0 });
@@ -54,7 +57,7 @@ function boot() {
         if (u.includes('/api/wa-promo/consent/export')) return json({ items: [{ name: 'Pedro', phone: '528110000003', consent: 'asked', asked_mx: '2026-10-16T12:01:00', dlv: 'read', read_mx: '2026-10-16T12:05:00', reply: '¿Cuánto cuesta?', groups: 'Talleres MTY' }] });
         if (u.includes('/api/wa-promo/consent/retry')) return json({ queued: 4, remaining_today: 140, cap: 150 });
         if (u.includes('/api/wa-promo/contacts') && method === 'GET') return json({ items: CONTACTS, counts: { total: 3, yes: 1, asked: 1, unknown: 1, no: 0, queued: 0, inbox_open: 2 }, matched: u.includes('group=11') ? 740 : 3,
-          facets: { vehicles: [{ model: 'Nissan Versa', n: 132, yes: 40 }, { model: 'Nissan March', n: 21, yes: 5 }], tipos: [{ tipo: 'Particular', n: 29, yes: 9 }, { tipo: 'Taller mecánico', n: 2, yes: 1 }], no_veh: 70, no_tipo: 166 },
+          facets: { cust: { active: 210, potential: 340, active_yes: 30, potential_yes: 4, none: 623 }, vehicles: [{ model: 'Nissan Versa', n: 132, yes: 40 }, { model: 'Nissan March', n: 21, yes: 5 }], tipos: [{ tipo: 'Particular', n: 29, yes: 9 }, { tipo: 'Taller mecánico', n: 2, yes: 1 }], no_veh: 70, no_tipo: 166 },
           askable: u.includes('group=11') ? 120 : 1, ask: { sent: 50, delivered: 44, read: 30, failed: 4, noreply: 20, yes: 22, no: 4, send_error: 0 } });
         if (u.includes('/api/wa-promo/contacts') && method === 'POST') return body.phone ? json({ id: 9 }) : json({ error: 'bad_phone' }, 400);
         if (u.includes('/api/wa-promo/consent/ask')) return json({ queued: body.ids ? body.ids.length : 1, remaining_today: 140, cap: 150 });
@@ -98,7 +101,7 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1016so/);
+    assert.match(c.d.title, /wap-1020cu/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -285,7 +288,7 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     const c = boot(); await c.ready; await tick(400);
     const bar = c.d.getElementById('cGroups');
     assert.match(bar.textContent, /전체 3/); assert.match(bar.textContent, /Talleres MTY 740 · ✅410/); assert.match(bar.textContent, /그룹 없음 1/);
-    assert.equal(c.d.querySelectorAll('tr[data-id="1"] .gtag').length, 2, '표에 그룹 태그');
+    assert.equal(c.d.querySelectorAll('tr[data-id="1"] .gtag').length, 3, '표에 그룹 태그');
     // 칩으로 거르기 → 서버에 group=11 · 500명 넘으면 안내
     bar.querySelector('[data-g="11"]').click(); await tick(300);
     assert.ok(c.calls.some((x) => x.u.includes('/api/wa-promo/contacts?group=11')));
@@ -320,7 +323,7 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     // 관리 — 만들기 · 저장 · 삭제
     bar.querySelector('[data-gmgr]').click(); await tick();
     assert.ok(c.d.getElementById('mGroups').classList.contains('on'));
-    assert.equal(c.d.querySelectorAll('#gList tr[data-gid]').length, 2);
+    assert.equal(c.d.querySelectorAll('#gList tr[data-gid]').length, 3);
     c.d.getElementById('gNewName').value = 'Refacc Mérida'; click(c, 'gCreate'); await tick(300);
     assert.equal(c.calls.filter((x) => x.method === 'POST' && x.u.endsWith('/api/wa-promo/groups')).pop().body.name, 'Refacc Mérida');
     const row = c.d.querySelector('#gList tr[data-gid="12"]'); row.querySelector('[data-gf="name"]').value = 'Flotas'; row.querySelector('[data-gsave]').click(); await tick(300);
@@ -404,7 +407,7 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     const vc = [...r1.querySelectorAll('.vchip')].map((x) => x.textContent);
     assert.deepEqual(vc, ['🚗 Nissan Versa 2019', '🚗 Nissan March 2017', '+1'], '두 대 + 나머지 수');
     assert.match(r1.textContent, /🔧 Horquilla/); assert.match(r1.textContent, /📍 Nuevo León/);
-    assert.ok(c.d.querySelector('#cList table.ctbl'), '칸 폭 고정 표'); assert.equal(c.d.querySelectorAll('#cList colgroup col').length, 8);
+    assert.ok(c.d.querySelector('#cList table.ctbl'), '칸 폭 고정 표'); assert.equal(c.d.querySelectorAll('#cList colgroup col').length, 9);
     assert.ok(r1.querySelector('button.ib[data-act="send"]') && r1.querySelector('button.ib[data-act="edit"]'), '아이콘 버튼');
     assert.ok(![...r1.querySelectorAll('td.acts button')].some((b) => b.textContent.length > 2), '동작 칸은 아이콘만(글자 없음)');
     const css = c.d.querySelector('style').textContent;
@@ -434,7 +437,7 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
   await t.test('⑫ 표 제목 눌러 정렬 — 오름 → 내림 → 풀기 · 서버에 sort/dir · 표시 ▲▼', async () => {
     const c = boot(); await c.ready; await tick(400);
     const th = () => c.d.querySelector('#cList th[data-sort="tipo"]');
-    assert.equal(c.d.querySelectorAll('#cList th[data-sort]').length, 6);
+    assert.equal(c.d.querySelectorAll('#cList th[data-sort]').length, 7);
     const last = () => c.calls.filter((x) => x.u.includes('/api/wa-promo/contacts?') || x.u.endsWith('/api/wa-promo/contacts')).pop().u;
     th().click(); await tick(300);
     assert.match(last(), /sort=tipo&dir=asc/); assert.match(th().textContent, /▲/); assert.equal(th().getAttribute('aria-sort'), 'ascending');
@@ -447,6 +450,50 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     // 그룹 일괄 구분 · 동의 요청 조건에는 정렬이 끼지 않음
     click(c, 'cConsentXls'); await tick();
     assert.ok(!/sort=/.test(c.calls.filter((x) => x.u.includes('/consent/export')).pop().u));
+    c.close();
+  });
+
+  await t.test('⑬ 0291 영업 고객 — 가져오기 · 액티브/잠재 칩 · 표 칸 · 담당자 자동 그룹(손으로 못 바꿈) · 그룹 + 액티브만 예약', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    const cb = c.d.getElementById('cCustBar');
+    assert.match(cb.textContent, /🟢 액티브210/); assert.match(cb.textContent, /⚪ 잠재340/); assert.match(cb.textContent, /마지막 가져옴 10-20 13:05/);
+    const r1 = c.d.querySelector('tr[data-id="1"]');
+    assert.match(r1.textContent, /🏢 C-0501 · RNO850101AB1/); assert.match(r1.textContent, /👤 Palomino · 01_Monterrey/);
+    assert.match(r1.querySelector('.cst').textContent, /액티브/); assert.match(r1.textContent, /\$123,456/);
+    // 가져오기
+    click(c, 'cCustSync'); await tick(300);
+    assert.ok(c.calls.some((x) => x.method === 'POST' && x.u.endsWith('/customers/sync')));
+    assert.match(c.d.getElementById('msg').textContent, /번호 있는 550곳 → 연락처 새로 400 · 기존 연락처에 연결 147 · 🟢 액티브 210 · ⚪ 잠재 340 · 담당자 그룹 6개 · 번호 없는 고객 50곳/);
+    // 담당자 그룹 + 액티브만
+    c.d.querySelector('#cGroups [data-g="21"]').click(); await tick(300);
+    assert.ok(c.d.querySelector('#cGroups [data-g="21"]').classList.contains('auto'));
+    cb.querySelector('[data-v="active"]').click(); await tick(300);
+    assert.ok(c.calls.some((x) => x.u.includes('group=21') && x.u.includes('cust=active')));
+    // 일괄 구분 · 가져오기 창 그룹 목록에 자동 그룹 없음(손으로 못 넣음) · 조건 표시
+    click(c, 'cGroupBulk'); await tick();
+    assert.ok(![...c.d.querySelectorAll('#gaGroup option')].some((o) => o.value === '21'));
+    assert.match(c.d.getElementById('gaFilterL').textContent, /🟢 액티브 고객/);
+    c.d.getElementById('mGAssign').classList.remove('on');
+    // 그룹 관리 — 자동 그룹은 이름 잠김 · 삭제 없음
+    c.d.querySelector('#cGroups [data-gmgr]').click(); await tick();
+    const ar = c.d.querySelector('#gList tr[data-gid="21"]');
+    assert.ok(ar.querySelector('[data-gf="name"]').disabled); assert.ok(!ar.querySelector('[data-gdel]')); assert.match(ar.textContent, /자동/);
+    c.d.getElementById('mGroups').classList.remove('on');
+    // 표 정렬 — 구매액(큰 순부터)
+    c.d.querySelector('#cList th[data-sort="purchase"]').click(); await tick(300);
+    assert.ok(c.calls.some((x) => /sort=purchase&dir=desc/.test(x.u)));
+    // 예약 — 담당자 그룹 + 액티브만
+    await tab(c, 'camps'); await tick(300);
+    const aud = c.d.getElementById('kAud'); aud.value = 'group'; aud.dispatchEvent(new c.w.Event('change'));
+    const k21 = c.d.querySelector('#kGroups input[value="21"]'); k21.checked = true; k21.dispatchEvent(new c.w.Event('change', { bubbles: true }));
+    const kc = c.d.getElementById('kCust'); kc.value = 'active'; kc.dispatchEvent(new c.w.Event('change')); await tick(400);
+    assert.ok(c.calls.some((x) => x.u.includes('/audience?groups=21&cust=active')));
+    assert.match(c.d.getElementById('kAudN').textContent, /고른 그룹의 🟢 액티브 고객 ✅ 동의 7명/);
+    c.d.getElementById('kDate').value = '2099-01-05'; c.d.getElementById('kCap').value = 'Clientes Palomino';
+    const img = c.d.getElementById('kImg'); Object.defineProperty(img, 'files', { value: [new c.w.File(['x'], 'a.png', { type: 'image/png' })] });
+    click(c, 'kSave'); await tick(400);
+    const cbd = c.calls.filter((x) => x.method === 'POST' && x.u.endsWith('/api/wa-promo/campaigns')).pop().body;
+    assert.deepEqual(cbd.target_groups, [21]); assert.equal(cbd.target_cust, 'active');
     c.close();
   });
 

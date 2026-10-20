@@ -685,4 +685,92 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.deepEqual(await ids('sort=drop%20table&dir=asc'), [a, c, b], '모르는 키 → 기본');
     assert.deepEqual(await ids('sort=name&dir=asc&tipo=none'), [a], '거르기와 같이');
   });
+
+  await t.test('B15. 0291 영업 고객 가져오기 — 액티브(1페소 이상 SAT 인보이스)/잠재 · 주 · RFC · 고객번호 · 구매액 · 담당 · 팀 · 담당자 자동 그룹 · 기존 번호 연결 · 담당 변경 · 연결 풀기 · 발송 조건', async () => {
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE deleted_at IS NULL`);
+    await query(`DELETE FROM wa_contact_groups; DELETE FROM wa_groups;`);
+    await query(`UPDATE customers SET deleted_at=now() WHERE deleted_at IS NULL`);   // 테스트 DB 의 다른 고객(이전 실행 · 다른 테스트)은 빼고 센다
+    const PH = '81' + String(1000 + Math.floor(Math.random() * 8999));   // 이 실행만의 번호 앞자리(테스트 DB 에 남은 이전 고객과 안 겹치게)
+    const team = Number((await one(`INSERT INTO sales_teams (name, sort_order) VALUES ($1, 9) ON CONFLICT (name) DO UPDATE SET sort_order=9 RETURNING id`, [`T-WA ${SFX}`])).id);
+    const pal = Number((await one(`INSERT INTO users (name, role, pin_hash, login_id, team_id) VALUES ($1,'sales','x',$2,$3) RETURNING id`, [`Palomino ${SFX}`, `wapal${SFX}`, team])).id);
+    const gar = Number((await one(`INSERT INTO users (name, role, pin_hash, login_id, team_id) VALUES ($1,'sales','x',$2,$3) RETURNING id`, [`Garza ${SFX}`, `wagar${SFX}`, team])).id);
+    const cu = async (code, name, phone, owner, extra = {}) => Number((await one(
+      `INSERT INTO customers (code, name, rfc, phone, buyer_phone, owner_id, team_id, ship_address, contact) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [`${code}-${SFX}`, name, extra.rfc || null, phone, extra.buyer || null, owner, team, extra.addr || null, extra.contact || null])).id);
+    let satN = 0;
+    const inv = async (cid, total, sat = true, status = 'posted') => query(
+      `INSERT INTO sales_invoices (customer_id, inv_date, subtotal_mxn, iva_mxn, total_mxn, status, sat_no) VALUES ($1, current_date - 3, $2/1.16, $2 - $2/1.16, $2, $3, $4)`,
+      [cid, total, status, sat === true ? `SAT-${SFX}-${++satN}` : sat]);
+    const A = await cu('C1', 'Refacciones Norte', `${PH.slice(0,2)} ${PH.slice(2)} 1111`, pal, { rfc: `rno-850101-${SFX}`, addr: 'Av. Lincoln 200, Monterrey, N.L.', contact: 'Don Pepe' });
+    await inv(A, 11600); await inv(A, 2320);
+    const B = await cu('C2', 'Taller Sur', `${PH}2222`, pal, { addr: 'Mérida, Yucatán' });
+    await inv(B, 0.5); await inv(B, 5000, `TMP-${SFX}`); await inv(B, 9000, true, 'deleted');   // 1페소 미만 · 임시번호 · 삭제 → 잠재
+    const C = await cu('C3', 'Flotilla Garza', '', gar, { buyer: `${PH}-3333 / 81 9999 0000` });   // 고객 전화 없음 → 구매 담당 전화의 첫 번호
+    await inv(C, 1.0);                                                                                          // 정확히 1페소 → 액티브
+    const D2 = await cu('C4', 'Sin teléfono', null, gar);
+    const E = await cu('C5', 'Sin dueño', `${PH}5555`, null);
+    const F = await cu('C6', 'Mismo número viejo', `${PH}1111`, pal);   // A 와 같은 번호 — 인보이스 없음 → A 가 대표
+    await query(`INSERT INTO crm_web_leads (empresa, telefono, estado, customer_id) VALUES ('Taller Sur',$2,'Jalisco',$1)`, [B, `${PH}2222`]);
+    // 같은 번호의 기존 연락처(Meta 문의) — 연결만, 이름 · 동의 유지
+    const metaC = Number((await one(`INSERT INTO wa_contacts (name, phone, source, consent, consent_via) VALUES ('Pepe Meta',$1,'excel','yes','button') RETURNING id`, [`52${PH}1111`])).id);
+    assert.equal((await call(Rp, 'POST', '/api/wa-promo/customers/sync', {})).statusCode, 403, '영업(권한 없음) 불가');
+    const st = (await call(D, 'POST', '/api/wa-promo/customers/sync', {})).json();
+    const mine = (await query(`SELECT * FROM wa_contacts WHERE deleted_at IS NULL AND customer_id = ANY($1::bigint[])`, [[A, B, C, D2, E, F]])).rows;
+    const byC = Object.fromEntries(mine.map((r) => [Number(r.customer_id), r]));
+    assert.equal(mine.length, 4, 'A(기존 연락처) · B · C · E — 번호 없는 D2 · 같은 번호 F 는 빠짐');
+    assert.ok(st.no_phone >= 1 && st.dup_phone >= 1 && st.no_phone_list.some((x) => x.id === D2));
+    const a = byC[A];
+    assert.equal(Number(a.id), metaC, '기존 연락처에 연결'); assert.equal(a.name, 'Pepe Meta'); assert.equal(a.consent, 'yes');
+    assert.equal(a.cust_status, 'active'); assert.equal(a.cust_code, `C1-${SFX}`); assert.equal(a.cust_name, 'Refacciones Norte');
+    assert.equal(a.rfc, `RNO850101${SFX.toUpperCase()}`); assert.equal(Number(a.purchase_mxn), 12000, 'IVA 제외 합계'); assert.equal(a.estado, 'Nuevo León', '주소에서');
+    assert.equal(a.rep_name, `Palomino ${SFX}`); assert.equal(a.team_name, `T-WA ${SFX}`);
+    assert.equal(byC[B].cust_status, 'potential', '1페소 미만 · TMP · 삭제는 발행 아님'); assert.equal(byC[B].estado, 'Jalisco', 'CRM 가입 주가 먼저');
+    assert.equal(byC[B].source, 'customer'); assert.equal(byC[B].name, 'Taller Sur');
+    assert.equal(byC[C].phone, `52${PH}3333`); assert.equal(byC[C].cust_status, 'active', '정확히 1페소');
+    assert.equal(byC[E].rep_name, null);
+    // 담당자 자동 그룹
+    const gl = (await call(D, 'GET', '/api/wa-promo/groups')).json().items;
+    const gp = gl.find((g) => g.name === `영업 · Palomino ${SFX}`); const gg = gl.find((g) => g.name === `영업 · Garza ${SFX}`); const gn = gl.find((g) => g.name === '영업 · 담당 없음');
+    assert.ok(gp && gg && gn && gp.auto); assert.equal(gp.n, 2); assert.equal(gp.yes, 1); assert.equal(gg.n, 1); assert.equal(gn.n, 1);
+    // 「Palomino 그룹의 액티브만」 · 「잠재만」
+    assert.equal((await call(D, 'GET', `/api/wa-promo/contacts?group=${gp.id}&cust=active`)).json().matched, 1);
+    assert.equal((await call(D, 'GET', `/api/wa-promo/contacts?group=${gp.id}&cust=potential`)).json().matched, 1);
+    const lc = (await call(D, 'GET', `/api/wa-promo/contacts?cust=customer&sort=purchase`)).json();
+    assert.equal(lc.items[0].customer_id, A, '구매액 큰 순'); assert.equal(lc.items[0].purchase_mxn, 12000);
+    assert.deepEqual({ active: lc.facets.cust.active, potential: lc.facets.cust.potential, active_yes: lc.facets.cust.active_yes }, { active: 2, potential: 2, active_yes: 1 });
+    assert.equal((await call(D, 'GET', `/api/wa-promo/contacts?q=${encodeURIComponent('C2-' + SFX)}`)).json().matched, 1, '고객번호로 검색');
+    // 자동 그룹은 이름 바꾸기 · 지우기 · 손으로 넣기 불가(색은 가능)
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/groups/${gp.id}`, { name: 'otro' })).json().error, 'auto_group');
+    assert.equal((await call(D, 'PATCH', `/api/wa-promo/groups/${gp.id}`, { name: gp.name, color: '#112233' })).statusCode, 200);
+    assert.equal((await call(D, 'DELETE', `/api/wa-promo/groups/${gp.id}`)).json().error, 'auto_group');
+    assert.equal((await call(D, 'POST', '/api/wa-promo/groups/assign', { group_id: gp.id, action: 'add', ids: [byC[E].id] })).json().error, 'auto_group');
+    // 발송 조건 — Palomino 그룹 · 액티브만 · ✅ 동의 → 1명
+    assert.equal((await call(D, 'GET', `/api/wa-promo/audience?groups=${gp.id}&cust=active`)).json().n, 1);
+    assert.equal((await call(D, 'GET', `/api/wa-promo/audience?groups=${gp.id}&cust=potential`)).json().n, 0);
+    const v = Buffer.concat([png, Buffer.from('CS')]).toString('base64');
+    assert.equal((await call(D, 'POST', '/api/wa-promo/campaigns', { send_at: '2099-06-01T10:00', caption: 'x', image_b64: v, image_mime: 'image/png', target_groups: [gp.id], target_cust: 'potential' })).json().error, 'no_consented_in_groups');
+    const camp = (await call(D, 'POST', '/api/wa-promo/campaigns', { send_now: true, caption: 'Clientes activos Palomino', image_b64: v, image_mime: 'image/png', target_groups: [gp.id], target_cust: 'active' })).json();
+    assert.equal(camp.audience, 1);
+    assert.equal((await call(D, 'GET', '/api/wa-promo/campaigns?from=2000-01-01&to=2100-01-01')).json().items.find((x) => x.id === camp.id).target_cust, 'active');
+    process.env.PROMO_WA_DAILY_CAP = '150'; calls.length = 0; await P.runPromoJob({});
+    assert.deepEqual(calls.map((x) => x.to), [`52${PH}1111`], '액티브 · 동의자 한 명에게만');
+    // 담당 변경 · 번호 변경 → 다시 가져오면 그룹 옮김 · 연결 풀림 · 인보이스 생기면 액티브
+    await query(`UPDATE customers SET owner_id=$2 WHERE id=$1`, [B, gar]);
+    await query(`UPDATE customers SET phone=NULL WHERE id=$1`, [E]);
+    await inv(B, 50);
+    const st2 = (await call(D, 'POST', '/api/wa-promo/customers/sync', {})).json();
+    assert.ok(st2.unlinked >= 1);
+    const gl2 = Object.fromEntries((await call(D, 'GET', '/api/wa-promo/groups')).json().items.map((g) => [g.name, g]));
+    assert.equal(gl2[`영업 · Palomino ${SFX}`].n, 1); assert.equal(gl2[`영업 · Garza ${SFX}`].n, 2); assert.equal(gl2['영업 · 담당 없음'].n, 0);
+    const b2 = await one(`SELECT cust_status, rep_name FROM wa_contacts WHERE customer_id=$1 AND deleted_at IS NULL`, [B]);
+    assert.deepEqual(b2, { cust_status: 'active', rep_name: `Garza ${SFX}` });
+    const e2 = await one(`SELECT customer_id, cust_status FROM wa_contacts WHERE phone=$1 AND deleted_at IS NULL`, [`52${PH}5555`]);
+    assert.deepEqual(e2, { customer_id: null, cust_status: null }, '연결 풀림 · 연락처는 남음');
+    // 하루 한 번 자동(방금 가져왔으면 건너뜀)
+    const S = await import('../src/waCustomerSync.js');
+    assert.equal((await S.maybeAutoSync()).skipped, 'recent');
+    assert.equal(S.firstWaNumber('', '81 2000 7777 y 81 1111 1111'), '528120007777');
+    const { readFileSync } = await import('node:fs');
+    await query(readFileSync(new URL('../migrations/0291_wa_customer_sync.sql', import.meta.url), 'utf-8'));
+  });
 });
