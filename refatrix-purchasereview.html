@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-1020moq</title>
+<title>Refatrix ERP · 구매 검토 · build pr-1020lr</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -77,6 +77,26 @@
   tr.inactive td{color:#9a9a9a}
   tr.manual-row{background:#fffbef}
   .muted-cell{color:#b5b5b5 !important;background:none !important;font-weight:400 !important}
+  /* 2026-10-20 · 공장 상태 · L/R 짝 · 공장 정보 업로드 · 발주서 초안 */
+  .badge.fs-discontinued{background:#fde0db;color:#b3402e;border:1px solid #f0b8ae}
+  .badge.fs-development{background:#e3ecf7;color:#2c5a8a;border:1px solid #bcd0e8}
+  .badge.fs-dev_hold{background:#efe7f6;color:#6a4a8a;border:1px solid #d6c4e6}
+  .badge.fs-production{background:#e7f3ee;color:var(--income);border:1px solid #bfdccf}
+  .pairtag{display:block;font-size:10.5px;color:#7a5a17;margin-top:1px}
+  tr.pair-a td:first-child{box-shadow:inset 3px 0 0 #c9a94a}
+  tr.pair-b td:first-child{box-shadow:inset 3px 0 0 #c9a94a}
+  tr.pair-a td{border-bottom-style:dashed}
+  .rec-cell .pairnote,.pairnote{display:block;font-size:10.5px;font-weight:700;color:#f3dfa0;white-space:nowrap}
+  .tbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+  .fpanel{margin-top:14px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .fpanel h3{margin:0 0 6px;font-size:14px;color:var(--brand)}
+  .fpanel textarea{width:100%;min-height:110px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:8px}
+  .fpanel .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .fpanel .ok{color:var(--income);font-weight:700}
+  .fpanel .bad{color:var(--expense);font-weight:700}
+  .chg{font-size:11.5px}.chg s{color:#a0a0a0}
+  .fprev{max-height:320px;overflow:auto;margin-top:8px;background:#fff;border:1px solid var(--line);border-radius:8px}
+  @media (max-width:640px){.tbtns{margin-top:6px}}
   .stg.miss{background:#f1ead6;color:#8a6d1a}
   .defs{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
   .defs h3{margin:0 0 8px;font-size:13px;color:var(--brand)}
@@ -126,6 +146,34 @@
       <div><label>페이지당</label><select id="pageSize"><option value="200">200</option><option value="500">500</option><option value="2000">2000</option></select></div>
       <div><button class="btn sm" id="searchBtn" type="button" style="margin-top:22px">조회</button></div>
       <div><button class="btn ghost sm" id="xlsxBtn" type="button" style="margin-top:22px">⬇ 엑셀 다운로드</button></div>
+      <div class="tbtns">
+        <button class="btn ghost sm" id="factoryBtn" type="button">🏭 공장 SKU 정보 업로드</button>
+        <button class="btn sm" id="poBtn" type="button">📄 이번달 발주검토 · 발주서 출력</button>
+      </div>
+    </div>
+    <!-- 2026-10-20 · 공장 SKU 정보(원산지 · MOQ · 생산 상태) 업로드 -->
+    <div class="fpanel hidden" id="fpanel">
+      <button class="close" style="float:right;border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer" onclick="toggleFactory(false)">✕ 닫기</button>
+      <h3>🏭 공장 SKU 정보 업로드 — 원산지 · MOQ · 생산 상태</h3>
+      <div class="hint" style="margin-top:0">
+        ① 양식을 내려받아 채운 뒤 업로드하거나, 엑셀에서 복사해 아래 칸에 붙여넣으세요. 칸 순서: <b>CTR · 원산지 · MOQ · 생산 상태</b> (머리글이 있으면 머리글로 찾습니다. 제품명 칸은 무시).<br>
+        ② <b>빈 칸 = 바꾸지 않음</b>, <b>「-」 = 값 지우기</b>. 원산지는 CN·TR·KR·VN(China·Turquía·Corea·Vietnam 표기도 인식). 생산 상태는 <b>생산중 · 단산 · 개발 · 개발보류</b>.<br>
+        ③ MOQ를 비워 두면 원산지 기본값(CN 10 · TR 40 · 그 외 없음)을 씁니다. SKU별 MOQ가 있으면 그 값이 우선입니다. 단산·개발·개발보류 SKU는 추천발주수량을 0으로 둡니다.<br>
+        ④ 「미리보기」로 바뀔 내용을 확인한 뒤 「반영」하세요. 반영은 디렉터만 할 수 있고 이력이 남습니다.
+      </div>
+      <div class="row">
+        <button class="btn ghost sm" type="button" onclick="dlFactoryTemplate(false)">⬇ 빈 양식</button>
+        <button class="btn ghost sm" type="button" onclick="dlFactoryTemplate(true)">⬇ 현재값 양식(전체 SKU)</button>
+        <label class="btn ghost sm" style="display:inline-block;margin:0;color:var(--brand)">📂 엑셀 파일 선택<input type="file" id="fFile" accept=".xlsx,.xls,.csv" style="display:none"></label>
+        <span id="fFileName" class="hint" style="margin:0"></span>
+      </div>
+      <div style="margin-top:10px"><textarea id="fPaste" placeholder="엑셀에서 복사해 붙여넣기 (예)&#10;CTR	원산지	MOQ	생산 상태&#10;CQ0280L	CN	20	생산중&#10;CB0089	KR		단산"></textarea></div>
+      <div class="row">
+        <button class="btn sm" type="button" id="fPrevBtn" onclick="factoryPreview()">미리보기</button>
+        <button class="btn sm" type="button" id="fApplyBtn" onclick="factoryApply()" disabled>반영</button>
+        <span id="fMsg" class="hint" style="margin:0"></span>
+      </div>
+      <div id="fResult"></div>
     </div>
     <div class="sbrow" id="summary" style="margin-top:12px"></div>
     <div class="msg" id="msg"></div>
@@ -148,9 +196,12 @@
         <dt>총 미발주 부족</dt><dd>부족 중에서 <b>아직 주문을 걸지 않은</b> 수량입니다. 만료·취소·삭제된 견적의 부족은 빼고 셉니다(→ 「놓친 수요」에 따로 표시).</dd>
         <dt>총 실구매 필요</dt><dd>미발주 부족 중 가용재고로도 못 채워서 <b>지금 새로 사야 하는</b> 수량입니다. 구매는 이 숫자를 보고 정하세요.</dd>
         <dt>총 놓친 수요</dt><dd>견적이 만료·취소돼서 이제는 팔 수 없는 부족입니다. 재고가 있으면 그 고객에게 다시 연락할 대상입니다.</dd>
-        <dt>총 추천발주수량</dt><dd><b>실구매 필요 + 최근 6개월 놓친 수요</b>를 합친 발주 추천 수량입니다. 놓친 수요도 남는 재고·주문분으로 먼저 채우고 모자란 만큼만 더합니다. 원산지별 최소주문수량(MOQ)을 반영합니다: <b>중국(CN) 10개, 터키(TR) 40개</b>, 한국·베트남은 계산값 그대로. 계산값이 MOQ보다 작으면 MOQ로 올립니다.</dd>
+        <dt>총 추천발주수량</dt><dd><b>실구매 필요 + 최근 6개월 놓친 수요</b>를 합친 발주 추천 수량입니다. 놓친 수요도 남는 재고·주문분으로 먼저 채우고 모자란 만큼만 더합니다.
+          <br>· <b>MOQ</b>: SKU별 MOQ(공장 정보 업로드)가 있으면 그 값, 없으면 원산지 기본값 <b>중국(CN) 10개, 터키(TR) 40개</b>, 한국·베트남은 계산값 그대로. 계산값이 MOQ보다 작으면 MOQ로 올립니다.
+          <br>· <b>L/R 짝</b>: L과 R은 나란히 보여주고, 둘 중 수요가 큰 쪽을 양쪽 수요로 봅니다. 각 쪽은 자기 재고·주문분을 빼고 모자란 만큼만 추천해서, 발주 뒤 L·R 재고가 맞춰집니다.
+          <br>· <b>공장 상태</b>가 단산·개발·개발보류이면 지금 주문할 수 없어 0입니다.</dd>
       </dl>
-      <div class="hint" style="margin-top:8px"><span class="badge manual" style="margin:0">별도관리</span> CQ0280L/R · CQ1291L/R — 시장 수요가 많아 실구매 필요·추천발주수량을 쓰지 않고 구매·판매 의지로 수량을 직접 정합니다(상단 합계에서도 제외). <span class="badge inact" style="margin:0">inactive</span> 비활성 SKU(단종·판매중단 등)입니다.</div>
+      <div class="hint" style="margin-top:8px"><span class="badge manual" style="margin:0">별도관리</span> CQ0280L/R · CQ1291L/R — 시장 수요가 많아 실구매 필요·추천발주수량을 쓰지 않고 구매·판매 의지로 수량을 직접 정합니다(상단 합계에서도 제외). <span class="badge inact" style="margin:0">inactive</span> 우리 쪽 판매 비활성 SKU입니다. <span class="badge fs-discontinued" style="margin:0">단산</span><span class="badge fs-development">개발</span><span class="badge fs-dev_hold">개발보류</span> 공장이 정한 생산 상태입니다(생산중은 표시 안 함). 노란 세로줄로 묶인 두 줄은 L/R 짝입니다.</div>
       <div class="hint" style="margin-top:4px"><b>예)</b> 부족 10개 → 이미 주문한 2개를 빼면 <b>미발주 부족 8개</b> → 바로 팔 수 있는 재고 5개를 빼면 <b>실구매 필요 3개</b>.</div>
     </div>
     <div class="hint">※ 열 제목(숫자·CTR) 클릭으로 정렬합니다. 행을 누르면 그 SKU의 부족분 진행과 입출고 이력이 열립니다.<br>※ [⬇ 엑셀 다운로드]는 <b>현재 조회 조건(검색어·수요만·정렬)의 전체 SKU</b>를 페이지 구분 없이 모두 받습니다. 적용차종은 화면과 달리 <b>전체 문구</b>가 들어갑니다.</div>
@@ -248,10 +299,13 @@
       const appShort=appAll.length>70?appAll.slice(0,70)+'…':(appAll||'—');
       const boCls=Number(it.backorder_qty)>0?'ok-cell':'';
       const shCls=Number(it.shortage_qty)>0?'warn-cell':'';
-      h+='<tr class="clk'+(it.is_active===false?' inactive':'')+(it.manual?' manual-row':'')+'" data-pid="'+it.product_id+'">'+
+      const pcls=it.pair_code?(String(it.ctr).toUpperCase().endsWith('L')?' pair-a':' pair-b'):'';
+      h+='<tr class="clk'+(it.is_active===false?' inactive':'')+(it.manual?' manual-row':'')+pcls+'" data-pid="'+it.product_id+'">'+
         '<td title="'+esc(tip)+'"><b>'+esc(it.ctr)+'</b>'+
           (it.is_active===false?'<span class="badge inact" title="비활성 SKU'+(it.inactive_reason?(' — '+esc(it.inactive_reason)):'')+'">inactive</span>':'')+
-          (it.manual?'<span class="badge manual" title="시장 수요가 많아 실구매 필요를 쓰지 않고 구매·판매 의지로 수량을 직접 정하는 품목">별도관리</span>':'')+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
+          (it.manual?'<span class="badge manual" title="시장 수요가 많아 실구매 필요를 쓰지 않고 구매·판매 의지로 수량을 직접 정하는 품목">별도관리</span>':'')+
+          fsBadge(it.factory_status)+
+          (it.pair_code?'<span class="pairtag">↔ 짝 '+esc(it.pair_code)+'</span>':'')+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
         '<td class="syd" title="'+esc(tip)+'">'+esc(sydTxt)+'</td>'+
         '<td class="app" title="'+esc(appAll)+'">'+esc(appShort)+'</td>'+
         '<td class="num">'+num(it.stock_qty)+'</td>'+
@@ -278,14 +332,21 @@
     $('tbl').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>openDrill(tr.dataset.pid)));
   }
   // 추천발주수량 칸: 값 + (원산지 · MOQ · MOQ 적용 전 계산값)
+  const FS={production:'생산중',discontinued:'단산',development:'개발',dev_hold:'개발보류'};
+  function fsBadge(fs){ return (fs&&fs!=='production'&&FS[fs])?'<span class="badge fs-'+fs+'" title="공장 생산 상태">'+FS[fs]+'</span>':''; }
+  // 추천발주수량 칸: 값 + (원산지 · MOQ · 계산값 · 짝 맞춤)
   function recCell(it){
     if(it.manual) return '<td class="num"><span class="badge manual" style="margin:0">직접 결정</span></td>';
-    const rec=Number(it.rec_qty)||0, raw=Number(it.rec_raw_qty)||0, moq=Number(it.moq)||0;
+    const rec=Number(it.rec_qty)||0, raw=Number(it.rec_raw_qty)||0, own=Number(it.rec_own_qty)||0, moq=Number(it.moq)||0;
+    if(it.blocked) return '<td class="num muted-cell" title="공장 상태가 '+esc(FS[it.factory_status]||'')+' — 지금 주문할 수 없어 추천하지 않습니다. 계산값 '+num(raw)+'">0<span class="rec-sub">'+esc(FS[it.factory_status]||'')+' · 주문 불가</span></td>';
     const org=it.origin_code||'원산지 미등록';
-    let sub=esc(org)+(moq?(' · MOQ '+moq):' · MOQ 없음');
+    let sub=esc(org)+(moq?(' · MOQ '+moq+(it.moq_source==='sku'?'(SKU)':'')):' · MOQ 없음');
     if(rec>0 && moq && raw<moq) sub+=' (계산 '+num(raw)+')';
-    const tip='실구매 필요 + 놓친 수요(최근 6개월 '+num(it.missed6_qty)+') − 남는 가용재고·발주 = '+num(raw)+(moq?(' → MOQ '+moq+' 적용'):'');
-    return '<td class="num'+(rec>0?' rec-cell':'')+'" title="'+esc(tip)+'">'+num(rec)+(rec>0||moq?'<span class="rec-sub">'+sub+'</span>':'')+'</td>';
+    let tip='실구매 필요 + 놓친 수요(최근 6개월 '+num(it.missed6_qty)+') − 남는 가용재고·발주 = '+num(own);
+    if(it.pair_code) tip+='\nL/R 짝 '+it.pair_code+' 기준 수요 '+num(it.pair_demand)+' → 이 쪽 필요 '+num(raw);
+    if(moq) tip+='\nMOQ '+moq+(it.moq_source==='sku'?' (SKU별)':' (원산지 기본)')+' 적용';
+    const pn=it.pair_adjusted?'<span class="pairnote">짝 맞춤 +'+num(raw-own)+'</span>':'';
+    return '<td class="num'+(rec>0?' rec-cell':'')+'" title="'+esc(tip)+'">'+num(rec)+pn+(rec>0||moq?'<span class="rec-sub">'+sub+'</span>':'')+'</td>';
   }
   function SORTS_ACTIVE(c){ return c.sort===sortKey; }
 
@@ -448,6 +509,9 @@
       'MOQ': Number(it.moq)||0,
       '추천발주수량': it.manual?'직접 결정':(Number(it.rec_qty)||0),
       '상태': it.is_active===false?'inactive':'active',
+      '공장 상태': FS[it.factory_status]||'',
+      'L/R 짝': it.pair_code||'',
+      '짝 맞춤 추가': it.pair_adjusted?Math.max(0,(Number(it.rec_raw_qty)||0)-(Number(it.rec_own_qty)||0)):'',
       '별도관리': it.manual?'Y':'',
     };
   }
@@ -485,13 +549,182 @@
       }
       if(!rows.length){ m.className='msg err'; m.textContent='내보낼 데이터가 없습니다.'; return; }
       const ws=XLSX.utils.json_to_sheet(rows.map(xlsRow));
-      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:11},{wch:12},{wch:11},{wch:11},{wch:10},{wch:12},{wch:12},{wch:11},{wch:12},{wch:8},{wch:6},{wch:12},{wch:9},{wch:8}];
+      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:11},{wch:12},{wch:11},{wch:11},{wch:10},{wch:12},{wch:12},{wch:11},{wch:12},{wch:8},{wch:6},{wch:12},{wch:9},{wch:8},{wch:10},{wch:10},{wch:10}];
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매검토');
       XLSX.writeFile(wb,xlsFileName());
       if(tot&&rows.length<tot){ m.className='msg err'; m.textContent='※ 안전 상한에 걸려 '+rows.length.toLocaleString()+'행만 받았습니다(전체 '+tot.toLocaleString()+'). 검색어로 범위를 좁혀 다시 받으세요.'; }
     }catch(e){ m.className='msg err'; m.textContent='엑셀 다운로드 실패: '+e.message; }
     finally{ exporting=false; btn.disabled=false; btn.textContent=label; }
   }
+
+  // ===== 2026-10-20 · 공장 SKU 정보(원산지 · MOQ · 생산 상태) 업로드 =====
+  let fTable=null, fSource='excel', fReady=null;
+  function toggleFactory(show){
+    const el=$('fpanel'); const on=(show==null)?el.classList.contains('hidden'):show;
+    el.classList.toggle('hidden',!on);
+    if(on && typeof el.scrollIntoView==='function') el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  function xlsxReady(){
+    if(typeof XLSX==='undefined'){ const m=$('fMsg'); m.innerHTML='<span class="bad">엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.</span>'; return false; }
+    return true;
+  }
+  const FS_KO={production:'생산중',discontinued:'단산',development:'개발',dev_hold:'개발보류'};
+  async function dlFactoryTemplate(withCurrent){
+    if(!xlsxReady()) return;
+    const head=['CTR','제품명','원산지','MOQ','생산 상태'];
+    let rows=[head];
+    if(withCurrent){
+      $('fMsg').textContent='현재값 불러오는 중…';
+      try{
+        const r=await fetch(session.api+'/api/purchases/factory-info',{headers:auth()}); const d=await r.json();
+        if(!r.ok||d.error) throw new Error(d.error||r.status);
+        for(const it of d.items||[]) rows.push([it.code,it.name||'',it.origin||'',it.moq==null?'':it.moq,FS_KO[it.factory_status]||'']);
+        $('fMsg').textContent=(rows.length-1).toLocaleString()+'개 SKU 현재값을 담았습니다.';
+      }catch(e){ $('fMsg').innerHTML='<span class="bad">현재값을 불러오지 못했습니다: '+esc(e.message)+'</span>'; return; }
+    } else {
+      rows.push(['CQ0280L','(참고용 · 무시됨)','CN',20,'생산중'],['CB0089','','KR','','단산']);
+    }
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:14},{wch:34},{wch:10},{wch:8},{wch:12}];
+    const guide=XLSX.utils.aoa_to_sheet([
+      ['공장 SKU 정보 업로드 양식 — 안내'],[''],
+      ['칸','쓰는 법'],
+      ['CTR','CTR 코드(필수). 제품마스터에 없는 코드는 「미등록 CTR」로 따로 보여주고 반영하지 않습니다.'],
+      ['제품명','참고용 — 업로드할 때 무시합니다.'],
+      ['원산지','CN · TR · KR · VN 등. China·Chino·Turquía·Corea·Vietnam 표기도 코드로 바꿔 저장합니다.'],
+      ['MOQ','최소주문수량(0 이상 숫자). 비워 두면 원산지 기본값: CN 10 · TR 40 · 그 외 없음.'],
+      ['생산 상태','생산중 · 단산 · 개발 · 개발보류 (Producción · Descontinuado · Desarrollo · En pausa 도 인식). 단산·개발·개발보류는 추천발주수량 0.'],
+      [''],['빈 칸','바꾸지 않음(지금 값 유지)'],['-','값 지우기'],
+      ['같은 CTR 여러 줄','마지막 줄이 반영됩니다.'],
+    ]);
+    guide['!cols']=[{wch:16},{wch:90}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'공장SKU정보'); XLSX.utils.book_append_sheet(wb,guide,'안내');
+    const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    XLSX.writeFile(wb,'refatrix_factory_sku_'+(withCurrent?'current_':'template_')+ymd+'.xlsx');
+  }
+  async function onFactoryFile(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    if(!xlsxReady()) return;
+    try{
+      const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      fTable=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:'',blankrows:false});
+      fSource='excel'; $('fPaste').value='';
+      $('fFileName').textContent=f.name+' · '+Math.max(0,fTable.length-1).toLocaleString()+'줄';
+      resetFactoryPreview(); factoryPreview();
+    }catch(e){ $('fMsg').innerHTML='<span class="bad">엑셀을 읽지 못했습니다: '+esc(e.message)+'</span>'; }
+    ev.target.value='';
+  }
+  function resetFactoryPreview(){ fReady=null; $('fApplyBtn').disabled=true; $('fResult').innerHTML=''; }
+  function factoryPayload(){
+    const txt=$('fPaste').value;
+    if(txt.trim()) return {table:txt.replace(/\r/g,'').split('\n').map(l=>l.split('\t')), source:'paste'};
+    if(fTable&&fTable.length) return {table:fTable, source:fSource};
+    return null;
+  }
+  const fmtV=(f,v)=> v==null||v===''?'(없음)':(f==='factory_status'?(FS_KO[v]||v):String(v));
+  function chgCell(c,f){ if(!c) return '<td style="color:var(--muted)">—</td>'; return '<td class="chg"><s>'+esc(fmtV(f,c.from))+'</s> → <b>'+esc(fmtV(f,c.to))+'</b></td>'; }
+  async function factoryPreview(){
+    const body=factoryPayload(); const m=$('fMsg');
+    if(!body){ m.innerHTML='<span class="bad">엑셀 파일을 고르거나 붙여넣기 칸에 내용을 넣으세요.</span>'; return; }
+    resetFactoryPreview(); m.textContent='확인 중…';
+    try{
+      const r=await fetch(session.api+'/api/purchases/factory-info/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||r.status);
+      m.innerHTML='전체 <b>'+num(d.total)+'</b>줄 · <span class="ok">바뀜 '+num(d.changed)+'</span> · 그대로 '+num(d.unchanged)
+        +(d.error_count?' · <span class="bad">오류 '+num(d.error_count)+'</span>':'')
+        +(d.not_found_count?' · <span class="bad">미등록 CTR '+num(d.not_found_count)+'</span>':'')
+        +(d.dup?' · 중복 '+num(d.dup)+'(마지막 줄 반영)':'');
+      let h='';
+      if(d.items&&d.items.length){
+        h+='<div class="fprev"><table style="margin-top:0"><tr><th>줄</th><th>CTR</th><th>제품명</th><th>원산지</th><th>MOQ</th><th>생산 상태</th></tr>';
+        for(const it of d.items.slice(0,500)) h+='<tr><td>'+it.row+'</td><td><b>'+esc(it.code)+'</b></td><td style="font-size:12px">'+esc(it.name||'')+'</td>'
+          +chgCell(it.changes.origin,'origin')+chgCell(it.changes.moq,'moq')+chgCell(it.changes.factory_status,'factory_status')+'</tr>';
+        h+='</table></div>'+(d.items.length>500?'<div class="hint">앞 500줄만 표시 — 반영은 '+num(d.changed)+'줄 전부.</div>':'');
+      }
+      if(d.errors&&d.errors.length) h+='<div class="hint"><span class="bad">오류(반영 안 함)</span><br>'+d.errors.slice(0,50).map(e=>e.row+'줄 '+esc(e.code||'')+' — '+esc(e.msg)).join('<br>')+(d.error_count>50?'<br>… 외 '+(d.error_count-50)+'건':'')+'</div>';
+      if(d.not_found&&d.not_found.length) h+='<div class="hint"><span class="bad">제품마스터에 없는 CTR(반영 안 함)</span>: '+d.not_found.slice(0,80).map(esc).join(', ')+(d.not_found_count>80?' … 외 '+(d.not_found_count-80)+'개':'')+'</div>';
+      $('fResult').innerHTML=h;
+      if(d.changed>0){ fReady=body; $('fApplyBtn').disabled=false; }
+    }catch(e){ m.innerHTML='<span class="bad">미리보기 실패: '+esc(e.message)+'</span>'; }
+  }
+  async function factoryApply(){
+    if(!fReady) return; const m=$('fMsg'); const btn=$('fApplyBtn'); btn.disabled=true; m.textContent='반영 중…';
+    try{
+      const r=await fetch(session.api+'/api/purchases/factory-info/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(fReady)});
+      const d=await r.json();
+      if(r.status===403){ m.innerHTML='<span class="bad">반영은 디렉터만 할 수 있습니다. 미리보기 결과를 디렉터에게 전달하세요.</span>'; return; }
+      if(!r.ok||d.error) throw new Error(d.error||r.status);
+      m.innerHTML='<span class="ok">✔ '+num(d.updated)+'개 SKU 반영 완료</span> (이력 번호 '+esc(d.batch_id)+')'
+        +(d.error_count?' · 오류 '+num(d.error_count)+'줄 제외':'')+(d.not_found_count?' · 미등록 CTR '+num(d.not_found_count)+'개 제외':'');
+      fReady=null; $('fResult').innerHTML=''; fTable=null; $('fFileName').textContent=''; $('fPaste').value='';
+      load();
+    }catch(e){ m.innerHTML='<span class="bad">반영 실패: '+esc(e.message)+'</span>'; btn.disabled=false; }
+  }
+
+  // ===== 2026-10-20 · 이번달 발주검토 · 발주서 초안(출력) =====
+  //   추천발주수량 > 0 인 SKU(짝 포함)를 원산지별로 묶는다. 별도관리 품목은 수량 기입 칸만 둔다.
+  let poDraft=null;
+  async function openPoDraft(){
+    const w=window.open('','_blank');
+    if(w){ w.document.write('<p style="font-family:sans-serif;padding:20px">발주서 초안 불러오는 중…</p>'); }
+    try{
+      const r=await fetch(session.api+'/api/purchases/review/po-draft',{headers:auth()}); const d=await r.json();
+      if(!r.ok||d.error) throw new Error(d.error||r.status);
+      poDraft=d;
+      if(!w){ $('msg').className='msg err'; $('msg').textContent='팝업이 막혔습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 누르세요.'; return; }
+      w.document.open(); w.document.write(poDraftHtml(d)); w.document.close();
+    }catch(e){ if(w) w.close(); $('msg').className='msg err'; $('msg').textContent='발주서 초안을 만들지 못했습니다: '+e.message; }
+  }
+  function poDraftHtml(d){
+    const e=esc, n=num;
+    let body='';
+    for(const g of d.groups||[]){
+      body+='<h2>원산지 '+e(g.origin)+' <small>· '+n(g.items.filter(x=>x.rec_qty>0).length)+' SKU · '+n(g.qty)+'개</small></h2>'
+        +'<table><thead><tr><th>#</th><th>CTR</th><th>제품명</th><th>SYD</th><th>L/R 짝</th><th class="r">현재고</th><th class="r">가용</th><th class="r">미입고</th><th class="r">MOQ</th><th class="r">추천</th><th class="r">발주수량</th><th>비고</th></tr></thead><tbody>';
+      g.items.forEach((it,i)=>{
+        const note=[]; if(it.pair_adjusted) note.push('짝 맞춤 +'+n((it.rec_raw_qty||0)-(it.rec_own_qty||0)));
+        if(it.rec_qty>0 && it.moq && it.rec_raw_qty<it.moq) note.push('MOQ 적용(계산 '+n(it.rec_raw_qty)+')');
+        if(it.is_active===false) note.push('inactive'); if(it.blocked) note.push((FS_KO[it.factory_status]||'')+' · 주문 불가');
+        if(!it.rec_qty) note.push('짝 참고');
+        body+='<tr'+(it.rec_qty?'':' class="ref"')+'><td>'+(i+1)+'</td><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td><td>'+e((it.syd||[]).join(', '))+'</td><td>'+e(it.pair_code||'')+'</td>'
+          +'<td class="r">'+n(it.stock_qty)+'</td><td class="r">'+n(it.avail_qty)+'</td><td class="r">'+n(it.backorder_qty)+'</td><td class="r">'+(it.moq?n(it.moq):'—')+'</td>'
+          +'<td class="r"><b>'+n(it.rec_qty)+'</b></td><td class="r blank">'+(it.rec_qty?n(it.rec_qty):'')+'</td><td>'+e(note.join(' · '))+'</td></tr>';
+      });
+      body+='</tbody></table>';
+    }
+    if((d.manual||[]).length){
+      body+='<h2>별도관리 품목 <small>· 구매·판매 의지로 수량 직접 기입</small></h2><table><thead><tr><th>CTR</th><th>제품명</th><th class="r">현재고</th><th class="r">가용</th><th class="r">미입고</th><th class="r">부족 잔여</th><th class="r">참고: 실구매 필요</th><th class="r">발주수량</th></tr></thead><tbody>'
+        +d.manual.map(it=>'<tr><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td><td class="r">'+n(it.stock_qty)+'</td><td class="r">'+n(it.avail_qty)+'</td><td class="r">'+n(it.backorder_qty)+'</td><td class="r">'+n(it.shortage_qty)+'</td><td class="r">'+n(it.need_qty)+'</td><td class="r blank"></td></tr>').join('')
+        +'</tbody></table>';
+    }
+    if(!body) body='<p>이번달 추천발주 SKU가 없습니다.</p>';
+    return '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>발주서 초안 '+e(d.month)+'</title><style>'
+      +'body{font-family:"IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif;color:#1a1a1a;margin:24px;font-size:12px}'
+      +'h1{font-size:18px;margin:0 0 4px;color:#143D34}h2{font-size:14px;margin:18px 0 6px;color:#143D34}h2 small{font-weight:400;color:#6b6b6b}'
+      +'.meta{color:#6b6b6b;margin-bottom:8px}.bar{margin:10px 0}.bar button{padding:7px 14px;margin-right:6px;border:1px solid #143D34;background:#fff;color:#143D34;border-radius:6px;font-weight:700;cursor:pointer}'
+      +'table{width:100%;border-collapse:collapse;margin-top:4px}th,td{border:1px solid #d9d4c8;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f4f1ea;font-size:11px}'
+      +'.r{text-align:right;font-variant-numeric:tabular-nums}.blank{min-width:60px;background:#fffdf5}tr.ref td{color:#8a8a8a}'
+      +'@media print{.bar{display:none}body{margin:10mm}h2{page-break-after:avoid}tr{page-break-inside:avoid}}'
+      +'</style></head><body>'
+      +'<h1>발주서 초안 · '+e(d.month)+'</h1><div class="meta">작성일 '+e(d.date)+' · 추천 SKU '+n(d.total_skus)+'개 · 추천 수량 합계 '+n(d.total_qty)+'개 · Refatrix 구매검토 기준(실구매 필요 + 최근 6개월 놓친 수요, L/R 짝 · MOQ · 공장 상태 반영)</div>'
+      +'<div class="bar"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button><button onclick="window.opener&&window.opener.poDraftExcel&&window.opener.poDraftExcel()">⬇ 엑셀</button></div>'
+      +body+'<p class="meta" style="margin-top:14px">「발주수량」 칸은 추천값으로 채워져 있습니다. 확정 수량은 손으로 고쳐 적으세요. 회색 줄은 짝 참고용(추천 0)입니다.</p></body></html>';
+  }
+  function poDraftExcel(){
+    if(!poDraft||typeof XLSX==='undefined') return;
+    const rows=[];
+    for(const g of poDraft.groups||[]) for(const it of g.items) rows.push({'원산지':g.origin,'CTR':it.ctr,'제품명':it.name||'','SYD':(it.syd||[]).join(', '),'L/R 짝':it.pair_code||'',
+      '현재재고':it.stock_qty,'가용재고':it.avail_qty,'backorder':it.backorder_qty,'MOQ':it.moq||0,'추천발주수량':it.rec_qty,'발주수량':it.rec_qty,
+      '짝 맞춤 추가':it.pair_adjusted?Math.max(0,(it.rec_raw_qty||0)-(it.rec_own_qty||0)):'','공장 상태':FS_KO[it.factory_status]||'','상태':it.is_active===false?'inactive':'active'});
+    for(const it of poDraft.manual||[]) rows.push({'원산지':'별도관리','CTR':it.ctr,'제품명':it.name||'','SYD':(it.syd||[]).join(', '),'L/R 짝':it.pair_code||'',
+      '현재재고':it.stock_qty,'가용재고':it.avail_qty,'backorder':it.backorder_qty,'MOQ':it.moq||0,'추천발주수량':'직접 결정','발주수량':'','짝 맞춤 추가':'','공장 상태':FS_KO[it.factory_status]||'','상태':it.is_active===false?'inactive':'active'});
+    const ws=XLSX.utils.json_to_sheet(rows);
+    ws['!cols']=[{wch:10},{wch:12},{wch:28},{wch:16},{wch:10},{wch:9},{wch:9},{wch:9},{wch:6},{wch:11},{wch:9},{wch:10},{wch:9},{wch:8}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'발주서초안 '+poDraft.month);
+    XLSX.writeFile(wb,'refatrix_po_draft_'+String(poDraft.month).replace('-','')+'.xlsx');
+  }
+  window.poDraftExcel=poDraftExcel;
 
   function updatePager(shown){
     const from=total===0?0:offset+1, to=offset+shown;
@@ -508,6 +741,10 @@
   $('prevBtn').addEventListener('click',()=>{ offset=Math.max(0,offset-pageSize()); load(); });
   $('nextBtn').addEventListener('click',()=>{ offset=offset+pageSize(); load(); });
   $('xlsxBtn').addEventListener('click',exportExcel);
+  $('factoryBtn').addEventListener('click',()=>toggleFactory());
+  $('poBtn').addEventListener('click',openPoDraft);
+  $('fFile').addEventListener('change',onFactoryFile);
+  $('fPaste').addEventListener('input',()=>{ if(fReady) resetFactoryPreview(); });
 
   // 포털 세션 자동 로그인
   function portalSession(){

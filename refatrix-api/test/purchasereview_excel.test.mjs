@@ -79,7 +79,7 @@ test('열 구성 = CTR·제품명·SYD·적용차종(전체)·현재재고·가�
   const { w, written } = await boot({ total: 1, pageOf: pager(1) });
   await w.exportExcel();
   const row = written[0].wb.sheets[0].ws.rows[0];
-  assert.deepEqual(Object.keys(row), ['CTR', '제품명', 'SYD', '적용차종', '현재재고', '가용재고', 'backorder', '누적판매', '부족 잔여', '발주됨', '미발주 부족', '실구매 필요', '놓친 수요', '놓친 수요(6개월)', '원산지', 'MOQ', '추천발주수량', '상태', '별도관리']);
+  assert.deepEqual(Object.keys(row), ['CTR', '제품명', 'SYD', '적용차종', '현재재고', '가용재고', 'backorder', '누적판매', '부족 잔여', '발주됨', '미발주 부족', '실구매 필요', '놓친 수요', '놓친 수요(6개월)', '원산지', 'MOQ', '추천발주수량', '상태', '공장 상태', 'L/R 짝', '짝 맞춤 추가', '별도관리']);
   assert.equal(row.CTR, 'CA0001');
   assert.equal(row['제품명'], 'BALATA 1');
   assert.equal(row.SYD, 'SYD-1, SYD-1B');

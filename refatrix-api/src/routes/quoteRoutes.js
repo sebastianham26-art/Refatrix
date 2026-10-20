@@ -38,7 +38,8 @@ async function isPendingCustomer(customerId) {
 }
 
 import { resolveSeller, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
-import { rackStockReady, quotePicks, snapshotQuotePicks, rackMap } from '../rackStock.js';   // 0245 · 피킹 위치(fast moving 우선)
+import { rackStockReady, quotePicks, snapshotQuotePicks, rackMap } from '../rackStock.js';
+import { pairHints } from '../lrPair.js';   // 2026-10-20 · L/R 짝맞춤 안내(막지 않음)   // 0245 · 피킹 위치(fast moving 우선)
 
 // 0235 · 견적의 판매 영업사원. 독점 중이면 독점권자로 고정, 영업이 남의 독점 고객 견적을 만들면 차단.
 //   개방 고객은 견적 단계에서 판매자를 비워 둘 수 있다(전환 때 정한다).
@@ -233,7 +234,10 @@ export default async function quoteRoutes(app) {
       });
     }
     const totals = computeQuoteTotals(out.filter((l) => l.matched).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
-    return { discountRate, ivaRate, lines: out, totals };
+    // 2026-10-20 · L/R 짝맞춤 — L 또는 R 만 있으면 짝도 넣으라고 안내(재고 표시). 견적 진행은 막지 않는다.
+    let pair_hints = [];
+    try { pair_hints = await pairHints(query, out.filter((l) => l.matched && l.ctr_code)); } catch (_) { pair_hints = []; }
+    return { discountRate, ivaRate, lines: out, totals, pair_hints };
   });
 
 

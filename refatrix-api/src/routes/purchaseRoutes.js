@@ -2,7 +2,9 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { orderCoverage } from '../shortageReceipt.js';
-import { ACTIVE_RESERVATION_SQL } from '../reservations.js';   // 2026-10-19 · 가용재고 = 재고 − 살아 있는 견적 예약   // 2026-10-15 · 부족분 ↔ 발주 ↔ 입고
+import { ACTIVE_RESERVATION_SQL } from '../reservations.js';
+import { PAIR_KEY_SQL, pairCode } from '../lrPair.js';   // 2026-10-20 · L/R 짝맞춤
+import { FACTORY_STATUS, MOQ_BY_ORIGIN, planFactoryChanges, tableToRows } from '../factoryInfo.js';   // 2026-10-20 · 공장 SKU 정보   // 2026-10-19 · 가용재고 = 재고 − 살아 있는 견적 예약   // 2026-10-15 · 부족분 ↔ 발주 ↔ 입고
 import { fobAtDate, fobMismatchByPo, fobStatus, mxToday, isYmd } from '../priceMaster.js';   // 0229 — 가격 마스터 FOB 로 구매 단가 검증
 
 // 구매단가(USD) 열람 권한: 디렉터·소시오만 공개. 그 외 역할은 값 자체를 내려주지 않음(null).
@@ -215,171 +217,301 @@ export default async function purchaseRoutes(app) {
   //      추천발주수량을 계산하지 않고(0), 상단 실구매·추천 합계에서도 뺀다. 목록을 바꾸려면 여기만 고치면 된다.
   //   ② 추천발주수량 = 실구매 필요 + 놓친 수요(최근 6개월) — 단, 놓친 수요도 남는 가용재고·발주로 먼저 채우고 모자란 만큼만.
   //      (그대로 더하면 재고 80개인 CB0089 에도 발주가 추천된다.) 6개월 기준일 = 원 견적일(없으면 부족 기록일).
-  //   ③ MOQ — 원산지 CN 10개 · TR 40개 · 한국(KR)·베트남(VN)·미등록은 MOQ 없음(추천발주수량 그대로).
+  //   ③ MOQ — SKU 별 MOQ(공장 정보 업로드)가 우선, 없으면 원산지 기본값 CN 10 · TR 40 · 그 외 없음.
   //      추천이 0 보다 크고 MOQ 보다 작으면 MOQ 로 올린다.
+  //   ④ 공장 생산 상태 단산·개발·개발보류 = 지금 주문할 수 없음 → 추천 0(계산값은 참고로 보여준다).
+  //   ⑤ L/R 짝맞춤 — 짝(CE0351L ↔ CE0351R)은 나란히 보여주고, 수요는 짝 중 큰 쪽을 양쪽에 적용한다
+  //      (L 만 팔렸어도 R 도 같은 만큼 필요하다고 본다). 각 쪽은 자기 재고·발주를 빼고 모자란 만큼만 추천 →
+  //      발주 뒤 L·R 재고가 맞춰진다. 검색·「수요만」도 짝 단위 — L 만 걸려도 R 이 같이 나온다.
   const MANUAL_SKUS = ['CQ0280L', 'CQ0280R', 'CQ1291L', 'CQ1291R', 'CQ280L', 'CQ280R'];
   const MISSED_MONTHS = 6;
-  const MOQ_BY_ORIGIN = { CN: 10, TR: 40 };
+  const BLOCKED_FACTORY = ['discontinued', 'development', 'dev_hold'];
+
+  // 구매검토 집계 SQL — 목록·합계·발주서 초안이 같은 식을 쓴다.
+  //   반환: { sql(CTE … fin), params }  · fin 의 각 행 = SKU 1개(필터 반영)
+  function reviewSql({ q = '', onlyDemand = false } = {}) {
+    const params = [];
+    let hit = 'TRUE';
+    if (q) {
+      params.push(`%${q}%`); const i = params.length;
+      hit = `(p.code ILIKE $${i} OR p.name ILIKE $${i} OR p.scode ILIKE $${i} OR p.app ILIKE $${i}
+              OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
+              OR EXISTS (SELECT 1 FROM product_xref_codes xc WHERE xc.product_id=p.id AND xc.xref_code ILIKE $${i})
+              OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
+    }
+    // 원 견적이 끝난(만료·취소·삭제대기·삭제) 부족 = 「놓친 수요」
+    const DEAD_Q = `(sq.id IS NOT NULL AND (sq.deleted_at IS NOT NULL OR sq.status IN ('expired','cancelled','delete_pending')))`;
+    const ORIG = `(CASE
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(CN|CHN)$|CHIN' THEN 'CN'
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(TR|TUR)$|TURK|TURQ' THEN 'TR'
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(KR|KOR)$|KOREA|COREA' THEN 'KR'
+        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(VN|VNM)$|VIET' THEN 'VN'
+        ELSE NULLIF(UPPER(TRIM(COALESCE(p.origin,''))),'') END)`;
+    const ORIG_MOQ = `(CASE ${ORIG} ${Object.entries(MOQ_BY_ORIGIN).map(([k, v]) => `WHEN '${k}' THEN ${Number(v)}`).join(' ')} ELSE 0 END)`;
+    const COVER = `(COALESCE(bo.backorder_qty,0) + COALESCE(ps.qty,0))`;
+    const AVAIL = `GREATEST(COALESCE(p.stock_qty,0) - COALESCE(rsv.qty,0), 0)`;
+    const sql = `
+      WITH base AS (
+        SELECT p.id, p.code AS ctr, p.name, p.stock_qty, p.origin, p.is_active, p.inactive_reason,
+               p.moq AS sku_moq, p.factory_status,
+               ${PAIR_KEY_SQL} AS pk,
+               ${hit} AS hit,
+               COALESCE(sold.qty,0)          AS sold_qty,
+               COALESCE(bo.backorder_qty,0)  AS backorder_qty,
+               COALESCE(sh.qty,0)            AS shortage_qty,
+               COALESCE(sh.live,0)           AS live_qty,
+               COALESCE(sh.missed,0)         AS missed_qty,
+               COALESCE(sh.missed6,0)        AS missed6_qty,
+               ${COVER}                      AS cover_qty,
+               COALESCE(ps.qty,0)            AS prestock_qty,
+               COALESCE(rsv.qty,0)           AS reserved_qty,
+               ${AVAIL}                      AS avail_qty,
+               ${ORIG}                       AS origin_code,
+               COALESCE(p.moq, ${ORIG_MOQ})  AS moq_eff,
+               (UPPER(p.code) IN (${MANUAL_SKUS.map((c) => `'${c}'`).join(',')})) AS manual,
+               (COALESCE(p.factory_status,'') IN (${BLOCKED_FACTORY.map((c) => `'${c}'`).join(',')})) AS blocked,
+               (COALESCE(bo.backorder_qty,0) > 0 OR COALESCE(sh.qty,0) > 0) AS has_demand
+          FROM products p
+          LEFT JOIN (SELECT sil.product_id, SUM(sil.qty) AS qty
+                       FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id=sil.invoice_id
+                      WHERE si.status='posted' AND si.deleted_at IS NULL
+                      GROUP BY sil.product_id) sold ON sold.product_id=p.id
+          LEFT JOIN v_backorder bo ON bo.product_id=p.id
+          LEFT JOIN (SELECT ss.product_id,
+                            SUM(ss.shortage_qty - ss.resolved_qty) AS qty,
+                            SUM(CASE WHEN ${DEAD_Q} THEN ss.shortage_qty - ss.resolved_qty ELSE 0 END) AS missed,
+                            SUM(CASE WHEN ${DEAD_Q} THEN 0 ELSE ss.shortage_qty - ss.resolved_qty END) AS live,
+                            SUM(CASE WHEN ${DEAD_Q} AND COALESCE(sq.quote_date, ss.occurred_at::date) >= (CURRENT_DATE - interval '${MISSED_MONTHS} months')
+                                     THEN ss.shortage_qty - ss.resolved_qty ELSE 0 END) AS missed6
+                       FROM stock_shortages ss LEFT JOIN quotes sq ON sq.id=ss.source_quote_id
+                      WHERE ss.status='open' GROUP BY ss.product_id) sh ON sh.product_id=p.id
+          LEFT JOIN inbound_prestock ps ON ps.product_id=p.id
+          LEFT JOIN (SELECT ql.product_id, SUM(ql.reserved_qty) AS qty
+                       FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
+                      WHERE ${ACTIVE_RESERVATION_SQL} AND ql.reserved_qty > 0
+                      GROUP BY ql.product_id) rsv ON rsv.product_id=p.id
+         WHERE p.deleted_at IS NULL
+      ),
+      calc AS (
+        SELECT b.*,
+               LEAST(live_qty, cover_qty)                              AS covered_qty,
+               GREATEST(live_qty - cover_qty, 0)                       AS unordered_qty,
+               GREATEST(live_qty - cover_qty - avail_qty, 0)           AS need_qty,
+               GREATEST(live_qty + missed6_qty - cover_qty - avail_qty, 0) AS rec_own,
+               (live_qty + missed6_qty)                                AS demand6
+          FROM base b
+      ),
+      pr AS (
+        SELECT c.*,
+               COUNT(*) OVER w                                         AS pair_n,
+               BOOL_OR(hit) OVER w                                     AS pair_hit,
+               BOOL_OR(has_demand) OVER w                              AS pair_has_demand,
+               MAX(CASE WHEN manual OR blocked THEN 0 ELSE demand6 END) OVER w AS pair_demand
+          FROM calc c
+        WINDOW w AS (PARTITION BY pk)
+      ),
+      fin AS (
+        SELECT pr.*,
+               (CASE WHEN pair_n > 1 THEN GREATEST(pair_demand - cover_qty - avail_qty, 0) ELSE rec_own END) AS rec_raw,
+               (CASE WHEN manual OR blocked THEN 0
+                     ELSE (CASE WHEN (CASE WHEN pair_n > 1 THEN GREATEST(pair_demand - cover_qty - avail_qty, 0) ELSE rec_own END) > 0
+                                THEN GREATEST((CASE WHEN pair_n > 1 THEN GREATEST(pair_demand - cover_qty - avail_qty, 0) ELSE rec_own END), moq_eff)
+                                ELSE 0 END) END) AS rec_qty
+          FROM pr
+         WHERE pair_hit ${onlyDemand ? 'AND pair_has_demand' : ''}
+      )`;
+    return { sql, params };
+  }
+
+  const REVIEW_SORTS = {
+    code: null, stock: 'stock_qty', backorder: 'backorder_qty', sold: 'sold_qty', shortage: 'shortage_qty',
+    unordered: 'unordered_qty', missed: 'missed_qty', need: 'need_qty', avail: 'avail_qty', rec: 'rec_qty',
+  };
+
+  function reviewItem(r, sydBy = {}, appBy = {}) {
+    const n = (v) => Number(v) || 0;
+    const moqSrc = r.sku_moq != null ? 'sku' : (n(r.moq_eff) > 0 ? 'origin' : null);
+    return {
+      product_id: Number(r.id), ctr: r.ctr, name: r.name,
+      syd: sydBy[r.id] || [], applications: appBy[r.id] || [],
+      stock_qty: n(r.stock_qty), backorder_qty: n(r.backorder_qty), sold_qty: n(r.sold_qty),
+      shortage_qty: n(r.shortage_qty),
+      shortage_covered_qty: n(r.covered_qty),         // 발주·입고대기로 이미 덮인 부족
+      shortage_unordered_qty: n(r.unordered_qty),     // 미발주 부족(살아 있는 견적 기준)
+      shortage_missed_qty: n(r.missed_qty),           // 놓친 수요(원 견적 만료·취소·삭제)
+      missed6_qty: n(r.missed6_qty),                  // 놓친 수요 중 최근 6개월
+      need_qty: n(r.need_qty),                        // 실구매 필요(미발주 부족 − 가용재고)
+      reserved_qty: n(r.reserved_qty), avail_qty: n(r.avail_qty), prestock_qty: n(r.prestock_qty),
+      rec_own_qty: n(r.rec_own),                      // 짝 맞춤 전 자기 수요 기준
+      rec_raw_qty: n(r.rec_raw),                      // MOQ 적용 전(짝 맞춤 후)
+      rec_qty: n(r.rec_qty),                          // 추천발주수량(짝 · MOQ · 공장상태 반영)
+      moq: n(r.moq_eff), moq_source: moqSrc, sku_moq: r.sku_moq == null ? null : n(r.sku_moq),
+      origin: r.origin || null, origin_code: r.origin_code || null,
+      factory_status: r.factory_status || null, blocked: !!r.blocked,
+      is_active: r.is_active !== false, inactive_reason: r.inactive_reason || null,
+      manual: !!r.manual,
+      pair_code: Number(r.pair_n) > 1 ? pairCode(r.ctr) : null,   // 짝이 마스터에 있을 때만
+      pair_demand: Number(r.pair_n) > 1 ? n(r.pair_demand) : null,
+      pair_adjusted: Number(r.pair_n) > 1 && n(r.rec_raw) > n(r.rec_own),
+    };
+  }
+
+  // SYD 표시 — 제품마스터 SYD(product_syd_codes) + 제품 카탈로그 교차참조의 SYD 브랜드(product_xref_codes).
+  async function sydAndApps(ids) {
+    const sydBy = {}, appBy = {};
+    if (!ids.length) return { sydBy, appBy };
+    const sy = await query(
+      `SELECT product_id, syd_code FROM (
+         SELECT product_id, syd_code, 1 AS pri FROM product_syd_codes WHERE product_id = ANY($1)
+         UNION ALL
+         SELECT product_id, xref_code, 2 FROM product_xref_codes
+          WHERE product_id = ANY($1) AND UPPER(COALESCE(brand,'')) LIKE 'SYD%'
+       ) t ORDER BY product_id, pri, syd_code`, [ids]);
+    for (const s of sy.rows) {
+      const a = (sydBy[s.product_id] ||= []);
+      const k = String(s.syd_code || '').trim();
+      if (k && !a.some((x) => x.replace(/[^0-9A-Z]/gi, '').toUpperCase() === k.replace(/[^0-9A-Z]/gi, '').toUpperCase())) a.push(k);
+    }
+    const ap = await query(`SELECT product_id, app_text FROM product_applications WHERE product_id = ANY($1)`, [ids]);
+    for (const a of ap.rows) (appBy[a.product_id] ||= []).push(a.app_text);
+    return { sydBy, appBy };
+  }
+
+  // 구매검토: 보유 SKU 전체 종합 — CTR · SYD · 적용차종 · 현재재고 · backorder · 누적판매 · 견적부족 · 추천발주.
+  //   q 검색 · 서버정렬 · 페이지네이션. 짝(L/R)은 정렬·페이지가 갈라 놓지 않게 짝 단위로 묶어 정렬한다.
   app.get('/api/purchases/review', gate, async (req) => {
     const q = (req.query.q || '').trim();
     const dir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
     const limit = Math.min(Number(req.query.limit) || 500, 5000);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const onlyDemand = ['1', 'true', 'yes'].includes(String(req.query.demand || '').toLowerCase());
-    const params = [];
-    let where = 'p.deleted_at IS NULL';
-    if (q) {
-      params.push(`%${q}%`); const i = params.length;
-      where += ` AND (p.code ILIKE $${i} OR p.name ILIKE $${i} OR p.scode ILIKE $${i} OR p.app ILIKE $${i}
-                   OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
-                   OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
-    }
-    // 2026-10-19 · 원 견적이 끝난(만료·취소·삭제대기·삭제) 부족은 「놓친 수요」 — 그 고객에게는 더 이상 팔 견적이 없다.
-    //   구매 판단(발주됨·미발주·실구매 필요)은 살아 있는 부족(견적 없음 포함)만으로 계산하고, 놓친 수요는 따로 보여준다.
-    //   (부족분 대장 자체는 그대로 둔다 — 오퍼시트·판매 자동해소가 같은 기록을 쓴다.)
-    const DEAD_Q = `(sq.id IS NOT NULL AND (sq.deleted_at IS NOT NULL OR sq.status IN ('expired','cancelled','delete_pending')))`;
-    // 공통 조인: 누적판매(posted 매출) · backorder(v_backorder) · 견적부족(open stock_shortages)
-    const joins = `
-      LEFT JOIN (SELECT sil.product_id, SUM(sil.qty) AS qty
-                   FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id=sil.invoice_id
-                  WHERE si.status='posted' AND si.deleted_at IS NULL
-                  GROUP BY sil.product_id) sold ON sold.product_id=p.id
-      LEFT JOIN v_backorder bo ON bo.product_id=p.id
-      LEFT JOIN (SELECT ss.product_id,
-                        SUM(ss.shortage_qty - ss.resolved_qty) AS qty,
-                        SUM(CASE WHEN ${DEAD_Q} THEN ss.shortage_qty - ss.resolved_qty ELSE 0 END) AS missed,
-                        SUM(CASE WHEN ${DEAD_Q} THEN 0 ELSE ss.shortage_qty - ss.resolved_qty END) AS live,
-                        SUM(CASE WHEN ${DEAD_Q} AND COALESCE(sq.quote_date, ss.occurred_at::date) >= (CURRENT_DATE - interval '${MISSED_MONTHS} months')
-                                 THEN ss.shortage_qty - ss.resolved_qty ELSE 0 END) AS missed6
-                   FROM stock_shortages ss LEFT JOIN quotes sq ON sq.id=ss.source_quote_id
-                  WHERE ss.status='open' GROUP BY ss.product_id) sh ON sh.product_id=p.id
-      LEFT JOIN inbound_prestock ps ON ps.product_id=p.id
-      LEFT JOIN (SELECT ql.product_id, SUM(ql.reserved_qty) AS qty
-                   FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
-                  WHERE ${ACTIVE_RESERVATION_SQL} AND ql.reserved_qty > 0
-                  GROUP BY ql.product_id) rsv ON rsv.product_id=p.id`;
-    // 2026-10-15 · 부족 잔여를 「발주(또는 창고 입고·승인 대기)로 덮인 몫」과 「미발주」로 나눈다.
-    //   미발주 = 아직 아무 주문도 안 걸린 부족 — 이것만 새로 주문하면 된다(같은 부족 반복 발주 방지).
-    const COVER = `(COALESCE(bo.backorder_qty,0) + COALESCE(ps.qty,0))`;
-    const UNORD = `GREATEST(COALESCE(sh.live,0) - ${COVER}, 0)`;
-    // 2026-10-19 · 실구매 필요 = 미발주 부족에서 가용재고까지 뺀 몫. 재고로 채울 수 있는 부족(예: 개발완료 후 재고 있는 품목)은
-    //   발주가 아니라 고객 오퍼 대상이라 0 이 된다. 가용재고 = 현재재고 − 살아 있는 견적 예약분(견적화면과 같은 정의) —
-    //   이미 다른 견적에 잡힌 재고로 부족을 메운 것처럼 보이면 필요한 발주를 빠뜨린다.
-    const AVAIL = `GREATEST(COALESCE(p.stock_qty,0) - COALESCE(rsv.qty,0), 0)`;
-    const NEED = `GREATEST(COALESCE(sh.live,0) - ${COVER} - ${AVAIL}, 0)`;
-    // 원산지 정규화 — 마스터에 CN/China/CHINA/Chino 등 섞여 있어도 같은 나라로 본다.
-    const ORIG = `(CASE
-        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(CN|CHN)$|CHIN' THEN 'CN'
-        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(TR|TUR)$|TURK|TURQ|TÜRK' THEN 'TR'
-        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(KR|KOR)$|KOREA|COREA' THEN 'KR'
-        WHEN UPPER(TRIM(COALESCE(p.origin,''))) ~ '^(VN|VNM)$|VIET' THEN 'VN'
-        ELSE NULLIF(UPPER(TRIM(COALESCE(p.origin,''))),'') END)`;
-    const MOQ = `(CASE ${ORIG} ${Object.entries(MOQ_BY_ORIGIN).map(([k, v]) => `WHEN '${k}' THEN ${Number(v)}`).join(' ')} ELSE 0 END)`;
-    const MANUAL = `(UPPER(p.code) IN (${MANUAL_SKUS.map((c) => `'${c}'`).join(',')}))`;
-    const REC_RAW = `GREATEST(COALESCE(sh.live,0) + COALESCE(sh.missed6,0) - ${COVER} - ${AVAIL}, 0)`;
-    const REC = `(CASE WHEN ${MANUAL} THEN 0 WHEN ${REC_RAW} > 0 THEN GREATEST(${REC_RAW}, ${MOQ}) ELSE 0 END)`;
-    let where2 = where;
-    if (onlyDemand) where2 += ' AND (COALESCE(bo.backorder_qty,0) > 0 OR COALESCE(sh.qty,0) > 0)';
-    const SORTS = {
-      code: 'p.code', stock: 'p.stock_qty', backorder: 'COALESCE(bo.backorder_qty,0)',
-      sold: 'COALESCE(sold.qty,0)', shortage: 'COALESCE(sh.qty,0)', unordered: UNORD,
-      missed: 'COALESCE(sh.missed,0)', need: NEED, avail: AVAIL, rec: REC,
-    };
-    const orderCol = SORTS[String(req.query.sort || '').toLowerCase()] || 'p.code';
-    const orderBy = orderCol === 'p.code' ? `p.code ${dir}` : `${orderCol} ${dir} NULLS LAST, p.code ASC`;
-
+    const { sql, params } = reviewSql({ q, onlyDemand });
+    const col = REVIEW_SORTS[String(req.query.sort || '').toLowerCase()];
+    // 짝 단위 정렬 키: 내림차순은 짝 중 큰 값, 오름차순은 작은 값 → 그다음 짝 키 → CTR(L 이 R 앞)
+    const orderBy = col
+      ? `${dir === 'DESC' ? 'MAX' : 'MIN'}(${col}) OVER (PARTITION BY pk) ${dir} NULLS LAST, pk ASC, ctr ASC`
+      : `pk ${dir}, ctr ASC`;
     const pageParams = params.slice(); pageParams.push(limit, offset);
     const rows = (await query(
-      `SELECT p.id, p.code AS ctr, p.name, p.stock_qty,
-              COALESCE(sold.qty,0)          AS sold_qty,
-              COALESCE(bo.backorder_qty,0)  AS backorder_qty,
-              COALESCE(sh.qty,0)            AS shortage_qty,
-              LEAST(COALESCE(sh.live,0), ${COVER}) AS shortage_covered,
-              ${UNORD}                      AS shortage_unordered,
-              COALESCE(sh.missed,0)         AS shortage_missed,
-              ${NEED}                       AS need_qty,
-              COALESCE(rsv.qty,0)           AS reserved_qty,
-              ${AVAIL}                      AS avail_qty,
-              COALESCE(ps.qty,0)            AS prestock_qty,
-              COALESCE(sh.missed6,0)        AS missed6_qty,
-              ${REC_RAW}                    AS rec_raw,
-              ${REC}                        AS rec_qty,
-              ${MOQ}                        AS moq,
-              ${ORIG}                       AS origin_code,
-              p.origin, p.is_active, p.inactive_reason,
-              ${MANUAL}                     AS manual
-         FROM products p ${joins}
-        WHERE ${where2}
-        ORDER BY ${orderBy}
+      `${sql} SELECT * FROM fin ORDER BY ${orderBy}
         LIMIT $${pageParams.length - 1} OFFSET $${pageParams.length}`, pageParams)).rows;
     const agg = (await query(
-      `SELECT COUNT(*)::int AS n,
-              COALESCE(SUM(p.stock_qty),0)                 AS stock,
-              COALESCE(SUM(COALESCE(bo.backorder_qty,0)),0) AS backorder,
-              COALESCE(SUM(COALESCE(sold.qty,0)),0)         AS sold,
-              COALESCE(SUM(COALESCE(sh.qty,0)),0)           AS shortage,
-              COALESCE(SUM(${UNORD}),0)                     AS unordered,
-              COALESCE(SUM(COALESCE(sh.missed,0)),0)        AS missed,
-              COALESCE(SUM(CASE WHEN ${MANUAL} THEN 0 ELSE ${NEED} END),0) AS need,
-              COALESCE(SUM(${REC}),0)                       AS rec,
-              COUNT(*) FILTER (WHERE ${REC} > 0)::int       AS rec_skus,
-              COUNT(*) FILTER (WHERE p.is_active = FALSE)::int AS inactive_skus,
-              COALESCE(SUM(COALESCE(rsv.qty,0)),0)          AS reserved,
-              COALESCE(SUM(${AVAIL}),0)                     AS avail
-         FROM products p ${joins}
-        WHERE ${where2}`, params)).rows[0];
-
-    // SYD·적용차종 보조 조회(현재 페이지 SKU만)
-    const ids = rows.map((r) => Number(r.id));
-    const sydBy = {}, appBy = {};
-    if (ids.length) {
-      const sy = await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids]);
-      for (const s of sy.rows) (sydBy[s.product_id] ||= []).push(s.syd_code);
-      const ap = await query(`SELECT product_id, app_text FROM product_applications WHERE product_id = ANY($1)`, [ids]);
-      for (const a of ap.rows) (appBy[a.product_id] ||= []).push(a.app_text);
-    }
-    const items = rows.map((r) => ({
-      product_id: Number(r.id), ctr: r.ctr, name: r.name,
-      syd: sydBy[r.id] || [], applications: appBy[r.id] || [],
-      stock_qty: Number(r.stock_qty) || 0,
-      backorder_qty: Number(r.backorder_qty) || 0,
-      sold_qty: Number(r.sold_qty) || 0,
-      shortage_qty: Number(r.shortage_qty) || 0,
-      shortage_covered_qty: Number(r.shortage_covered) || 0,     // 발주·입고대기로 이미 덮인 부족
-      shortage_unordered_qty: Number(r.shortage_unordered) || 0, // 미발주 부족(살아 있는 견적 기준, 발주로 안 덮인 몫)
-      shortage_missed_qty: Number(r.shortage_missed) || 0,       // 놓친 수요(원 견적 만료·취소·삭제)
-      need_qty: Number(r.need_qty) || 0,                         // 실구매 필요(미발주 부족 − 가용재고)
-      reserved_qty: Number(r.reserved_qty) || 0,                 // 살아 있는 견적 예약분
-      avail_qty: Number(r.avail_qty) || 0,                       // 가용재고(현재재고 − 예약)
-      prestock_qty: Number(r.prestock_qty) || 0,
-      missed6_qty: Number(r.missed6_qty) || 0,                   // 놓친 수요 중 최근 6개월
-      rec_raw_qty: Number(r.rec_raw) || 0,                       // MOQ 적용 전 계산 수량
-      moq: Number(r.moq) || 0,
-      rec_qty: Number(r.rec_qty) || 0,                           // 추천발주수량(MOQ 반영)
-      origin: r.origin || null, origin_code: r.origin_code || null,
-      is_active: r.is_active !== false, inactive_reason: r.inactive_reason || null,
-      manual: !!r.manual,                                        // 별도관리(수량 직접 결정)
-    }));
+      `${sql} SELECT COUNT(*)::int AS n,
+              COALESCE(SUM(stock_qty),0) AS stock, COALESCE(SUM(backorder_qty),0) AS backorder,
+              COALESCE(SUM(sold_qty),0) AS sold, COALESCE(SUM(shortage_qty),0) AS shortage,
+              COALESCE(SUM(unordered_qty),0) AS unordered, COALESCE(SUM(missed_qty),0) AS missed,
+              COALESCE(SUM(CASE WHEN manual THEN 0 ELSE need_qty END),0) AS need,
+              COALESCE(SUM(reserved_qty),0) AS reserved, COALESCE(SUM(avail_qty),0) AS avail,
+              COALESCE(SUM(rec_qty),0) AS rec,
+              COUNT(*) FILTER (WHERE rec_qty > 0)::int AS rec_skus,
+              COUNT(*) FILTER (WHERE is_active = FALSE)::int AS inactive_skus,
+              COUNT(*) FILTER (WHERE blocked)::int AS blocked_skus
+         FROM fin`, params)).rows[0];
+    const { sydBy, appBy } = await sydAndApps(rows.map((r) => Number(r.id)));
+    const items = rows.map((r) => reviewItem(r, sydBy, appBy));
+    const r3 = (v) => Math.round(Number(v) * 1000) / 1000;
     return {
       items, total: Number(agg.n), limit, offset,
       summary: {
         sku_count: Number(agg.n),
-        total_stock: Math.round(Number(agg.stock) * 1000) / 1000,
-        total_backorder: Math.round(Number(agg.backorder) * 1000) / 1000,
-        total_sold: Math.round(Number(agg.sold) * 1000) / 1000,
-        total_shortage: Math.round(Number(agg.shortage) * 1000) / 1000,
-        total_unordered: Math.round(Number(agg.unordered) * 1000) / 1000,
-        total_missed: Math.round(Number(agg.missed) * 1000) / 1000,
-        total_need: Math.round(Number(agg.need) * 1000) / 1000,
-        total_reserved: Math.round(Number(agg.reserved) * 1000) / 1000,
-        total_rec: Math.round(Number(agg.rec) * 1000) / 1000,
-        rec_skus: Number(agg.rec_skus) || 0,
-        inactive_skus: Number(agg.inactive_skus) || 0,
+        total_stock: r3(agg.stock), total_backorder: r3(agg.backorder), total_sold: r3(agg.sold),
+        total_shortage: r3(agg.shortage), total_unordered: r3(agg.unordered), total_missed: r3(agg.missed),
+        total_need: r3(agg.need), total_reserved: r3(agg.reserved), total_avail: r3(agg.avail),
+        total_rec: r3(agg.rec), rec_skus: Number(agg.rec_skus) || 0,
+        inactive_skus: Number(agg.inactive_skus) || 0, blocked_skus: Number(agg.blocked_skus) || 0,
         manual_skus: MANUAL_SKUS.filter((c) => !/^CQ280/.test(c)),
         missed_months: MISSED_MONTHS, moq_by_origin: MOQ_BY_ORIGIN,
-        total_avail: Math.round(Number(agg.avail) * 1000) / 1000,
       },
     };
+  });
+
+  // 2026-10-20 · 이번달 발주검토 · 발주서 초안 — 추천발주수량 > 0 인 SKU 전부(짝 포함), 원산지별로 묶어 출력용으로.
+  //   발주서 정식 출력 기능이 생기면 이 목록을 그대로 넘기면 된다.
+  app.get('/api/purchases/review/po-draft', gate, async () => {
+    const { sql, params } = reviewSql({});
+    const rows = (await query(
+      `${sql} SELECT * FROM (SELECT f.*, MAX(rec_qty) OVER (PARTITION BY pk) AS pair_rec FROM fin f) x
+        WHERE rec_qty > 0 OR (pair_n > 1 AND pair_rec > 0) OR manual
+        ORDER BY COALESCE(origin_code,'~'), pk, ctr`, params)).rows;
+    const { sydBy, appBy } = await sydAndApps(rows.map((r) => Number(r.id)));
+    const items = rows.map((r) => reviewItem(r, sydBy, appBy));
+    const groups = new Map();
+    const manual = items.filter((x) => x.manual);
+    for (const it of items.filter((x) => !x.manual)) {
+      const k = it.origin_code || '원산지 미등록';
+      if (!groups.has(k)) groups.set(k, { origin: k, items: [], skus: 0, qty: 0 });
+      const g = groups.get(k); g.items.push(it); g.skus++; g.qty += it.rec_qty;
+    }
+    const month = (await query(`SELECT to_char(now() AT TIME ZONE 'America/Mexico_City','YYYY-MM') AS m, to_char(now() AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD') AS d`)).rows[0];
+    return { month: month.m, date: month.d, groups: [...groups.values()], manual,
+      total_skus: items.filter((x) => x.rec_qty > 0).length, total_qty: items.reduce((a, x) => a + x.rec_qty, 0) };
+  });
+
+  // ── 2026-10-20 · 공장 SKU 정보(원산지 · MOQ · 생산 상태) — 구매검토 화면 업로드/붙여넣기 ──
+  //   GET  현재값(양식 내려받기용) · POST preview(바뀔 내용만) · POST apply(디렉터, 한 트랜잭션 + 이력)
+  async function factoryCurrent(codes) {
+    const r = codes
+      ? await query(`SELECT id, UPPER(code) AS code, name, origin, moq, factory_status FROM products WHERE deleted_at IS NULL AND UPPER(code) = ANY($1::text[])`, [codes])
+      : await query(`SELECT id, UPPER(code) AS code, name, origin, moq, factory_status, is_active FROM products WHERE deleted_at IS NULL ORDER BY code`);
+    return r.rows;
+  }
+  function factoryPlanFromBody(b) {
+    // 화면은 표(엑셀 시트·붙여넣기)를 그대로 보낸다 — 머리글 해석은 서버 한 곳(factoryInfo.tableToRows)에서.
+    if (Array.isArray(b.table)) return tableToRows(b.table.slice(0, 20001)).rows;
+    const rows = Array.isArray(b.rows) ? b.rows.slice(0, 20000) : [];
+    return rows.map((r, i) => ({
+      row: Number(r.row) || i + 1, code: String(r.code == null ? '' : r.code).trim().toUpperCase(),
+      origin: r.origin, moq: r.moq, status: r.status,
+    }));
+  }
+  app.get('/api/purchases/factory-info', gate, async () => {
+    const rows = await factoryCurrent(null);
+    return { items: rows.map((r) => ({ code: r.code, name: r.name, origin: r.origin || '', moq: r.moq == null ? null : Number(r.moq),
+      factory_status: r.factory_status || null, is_active: r.is_active !== false })), statuses: FACTORY_STATUS, moq_by_origin: MOQ_BY_ORIGIN };
+  });
+  app.post('/api/purchases/factory-info/preview', gate, async (req, reply) => {
+    const rows = factoryPlanFromBody(req.body || {});
+    if (!rows.length) return reply.code(400).send({ error: 'no_rows' });
+    const cur = new Map((await factoryCurrent([...new Set(rows.map((r) => r.code).filter(Boolean))])).map((p) => [p.code, p]));
+    const plan = planFactoryChanges(rows, cur);
+    return { total: rows.length, changed: plan.items.length, unchanged: plan.unchanged, dup: plan.dup,
+      errors: plan.errors.slice(0, 500), error_count: plan.errors.length,
+      not_found: plan.not_found.slice(0, 500), not_found_count: plan.not_found.length,
+      items: plan.items.slice(0, 3000), statuses: FACTORY_STATUS };
+  });
+  app.post('/api/purchases/factory-info/apply', { preHandler: [authGuard, requirePage('purchase'), requireDirector] }, async (req, reply) => {
+    const b = req.body || {};
+    const rows = factoryPlanFromBody(b);
+    if (!rows.length) return reply.code(400).send({ error: 'no_rows' });
+    const source = b.source === 'paste' ? 'paste' : 'excel';
+    const uid = Number(req.ctx.perm.userId) || null;
+    const batchId = `F${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`.toUpperCase();
+    const res = await withTx(async (c) => {
+      const exec = (s, p) => c.query(s, p);
+      const cur = new Map((await exec(
+        `SELECT id, UPPER(code) AS code, name, origin, moq, factory_status FROM products
+          WHERE deleted_at IS NULL AND UPPER(code) = ANY($1::text[]) FOR UPDATE`,
+        [[...new Set(rows.map((r) => r.code).filter(Boolean))]])).rows.map((p) => [p.code, p]));
+      const plan = planFactoryChanges(rows, cur);
+      for (const it of plan.items) {
+        const ch = it.changes;
+        const sets = [], vals = [];
+        for (const f of ['origin', 'moq', 'factory_status']) if (ch[f]) { vals.push(ch[f].to); sets.push(`${f}=$${vals.length}`); }
+        vals.push(uid); sets.push(`factory_info_updated_by=$${vals.length}`, 'factory_info_updated_at=now()');
+        vals.push(it.product_id);
+        await exec(`UPDATE products SET ${sets.join(', ')} WHERE id=$${vals.length}`, vals);
+        for (const [f, v] of Object.entries(ch)) {
+          await exec(`INSERT INTO product_factory_log (batch_id, product_id, code, field, old_value, new_value, source, changed_by)
+                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [batchId, it.product_id, it.code, f, v.from == null ? null : String(v.from), v.to == null ? null : String(v.to), source, uid]);
+        }
+      }
+      return plan;
+    });
+    logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'product_factory_info',
+      detail: { batch_id: batchId, source, rows: rows.length, changed: res.items.length, errors: res.errors.length, not_found: res.not_found.length } });
+    return { ok: true, batch_id: batchId, updated: res.items.length, unchanged: res.unchanged,
+      error_count: res.errors.length, errors: res.errors.slice(0, 200), not_found_count: res.not_found.length, not_found: res.not_found.slice(0, 200) };
   });
 
   // 2026-10-15 · 구매검토 드릴다운 ②: 이 SKU 의 부족분이 어디까지 왔나 — 발생(견적·고객) → 발주됨 → 입고 해소 / 판매 해소.
