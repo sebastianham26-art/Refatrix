@@ -253,7 +253,7 @@ export default async function purchaseRoutes(app) {
     const sql = `
       WITH base AS (
         SELECT p.id, p.code AS ctr, p.name, p.stock_qty, p.origin, p.is_active, p.inactive_reason,
-               p.moq AS sku_moq, p.factory_status,
+               p.moq AS sku_moq, p.factory_status, p.fob_usd,
                ${PAIR_KEY_SQL} AS pk,
                ${hit} AS hit,
                COALESCE(sold.qty,0)          AS sold_qty,
@@ -291,6 +291,7 @@ export default async function purchaseRoutes(app) {
                       WHERE ${ACTIVE_RESERVATION_SQL} AND ql.reserved_qty > 0
                       GROUP BY ql.product_id) rsv ON rsv.product_id=p.id
          WHERE p.deleted_at IS NULL
+           AND UPPER(p.code) NOT LIKE 'PRO%'   -- 2026-10-20 · PRO(마케팅 판촉물)는 구매 대상이 아니다
       ),
       calc AS (
         SELECT b.*,
@@ -427,24 +428,47 @@ export default async function purchaseRoutes(app) {
 
   // 2026-10-20 · 이번달 발주검토 · 발주서 초안 — 추천발주수량 > 0 인 SKU 전부(짝 포함), 원산지별로 묶어 출력용으로.
   //   발주서 정식 출력 기능이 생기면 이 목록을 그대로 넘기면 된다.
-  app.get('/api/purchases/review/po-draft', gate, async () => {
+  // 2026-10-20 · 발주서(스페인어 Orden de Compra) 초안 — 추천발주수량 > 0 인 SKU, 원산지별 · CTR 알파벳순.
+  //   FOB 단가 = 가격 마스터(오늘 기준 유효 FOB, 없으면 가장 이른 FOB) → 없으면 products.fob_usd.
+  //   금액 = 수량 × FOB. 원산지별 소계 + 총계(USD). 구매단가 열람 권한(디렉터·소시오)이 없으면 단가·금액을 내려주지 않는다.
+  //   별도관리 품목은 수량을 직접 정하므로 금액에 넣지 않고 따로(단가만) 준다.
+  const ORIGIN_ES = { CN: 'China', TR: 'Turquía', KR: 'Corea', VN: 'Vietnam' };
+  app.get('/api/purchases/review/po-draft', gate, async (req) => {
+    const seeCost = canSeeCost(req.ctx.perm);
     const { sql, params } = reviewSql({});
     const rows = (await query(
-      `${sql} SELECT * FROM (SELECT f.*, MAX(rec_qty) OVER (PARTITION BY pk) AS pair_rec FROM fin f) x
-        WHERE rec_qty > 0 OR (pair_n > 1 AND pair_rec > 0) OR manual
-        ORDER BY COALESCE(origin_code,'~'), pk, ctr`, params)).rows;
+      `${sql} SELECT * FROM fin WHERE rec_qty > 0 OR manual
+        ORDER BY COALESCE(origin_code,'~'), ctr`, params)).rows;
     const { sydBy, appBy } = await sydAndApps(rows.map((r) => Number(r.id)));
-    const items = rows.map((r) => reviewItem(r, sydBy, appBy));
+    const today = mxToday();
+    let fobMap = null;
+    try { fobMap = await fobAtDate(rows.map((r) => Number(r.id)), today); } catch (_) { fobMap = null; }
+    const r2 = (n) => Math.round(n * 100) / 100;
+    const items = rows.map((r) => {
+      const it = reviewItem(r, sydBy, appBy);
+      let fob = fobMap && fobMap.get(Number(r.id)) != null ? fobMap.get(Number(r.id)) : null;
+      if (fob == null && r.fob_usd != null) fob = Number(r.fob_usd);
+      it.fob_usd = seeCost ? (fob == null ? null : Number(fob)) : null;
+      it.amount_usd = seeCost && fob != null && !it.manual ? r2(Number(fob) * it.rec_qty) : null;
+      it.no_fob = fob == null;
+      return it;
+    });
     const groups = new Map();
     const manual = items.filter((x) => x.manual);
     for (const it of items.filter((x) => !x.manual)) {
-      const k = it.origin_code || '원산지 미등록';
-      if (!groups.has(k)) groups.set(k, { origin: k, items: [], skus: 0, qty: 0 });
+      const k = it.origin_code || 'SIN ORIGEN';
+      if (!groups.has(k)) groups.set(k, { origin: k, origin_es: ORIGIN_ES[k] || (k === 'SIN ORIGEN' ? 'Sin origen registrado' : k), items: [], skus: 0, qty: 0, amount_usd: 0, no_fob: 0 });
       const g = groups.get(k); g.items.push(it); g.skus++; g.qty += it.rec_qty;
+      if (it.amount_usd != null) g.amount_usd = r2(g.amount_usd + it.amount_usd);
+      if (it.no_fob) g.no_fob++;
     }
-    const month = (await query(`SELECT to_char(now() AT TIME ZONE 'America/Mexico_City','YYYY-MM') AS m, to_char(now() AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD') AS d`)).rows[0];
-    return { month: month.m, date: month.d, groups: [...groups.values()], manual,
-      total_skus: items.filter((x) => x.rec_qty > 0).length, total_qty: items.reduce((a, x) => a + x.rec_qty, 0) };
+    const gl = [...groups.values()];
+    if (!seeCost) for (const g of gl) g.amount_usd = null;
+    const month = (await query(`SELECT to_char(now() AT TIME ZONE 'America/Mexico_City','YYYY-MM') AS m`)).rows[0].m;
+    return { month, date: today, currency: 'USD', cost_visible: seeCost, groups: gl, manual,
+      total_skus: gl.reduce((a, g) => a + g.skus, 0), total_qty: gl.reduce((a, g) => a + g.qty, 0),
+      total_amount_usd: seeCost ? r2(gl.reduce((a, g) => a + (g.amount_usd || 0), 0)) : null,
+      no_fob: gl.reduce((a, g) => a + g.no_fob, 0) };
   });
 
   // ── 2026-10-20 · 공장 SKU 정보(원산지 · MOQ · 생산 상태) — 구매검토 화면 업로드/붙여넣기 ──
@@ -452,7 +476,7 @@ export default async function purchaseRoutes(app) {
   async function factoryCurrent(codes) {
     const r = codes
       ? await query(`SELECT id, UPPER(code) AS code, name, origin, moq, factory_status FROM products WHERE deleted_at IS NULL AND UPPER(code) = ANY($1::text[])`, [codes])
-      : await query(`SELECT id, UPPER(code) AS code, name, origin, moq, factory_status, is_active FROM products WHERE deleted_at IS NULL ORDER BY code`);
+      : await query(`SELECT id, UPPER(code) AS code, name, origin, moq, factory_status, is_active FROM products WHERE deleted_at IS NULL AND UPPER(code) NOT LIKE 'PRO%' ORDER BY code`);
     return r.rows;
   }
   function factoryPlanFromBody(b) {

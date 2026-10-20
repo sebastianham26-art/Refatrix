@@ -18,9 +18,10 @@ const P = 'ZX9';          // 짝 규칙(영문 2자 + 숫자 + L/R)에 맞는 �
 const TAG = 'PRFP';
 
 async function cleanup() {
-  const pids = (await query(`SELECT id FROM products WHERE code LIKE '${P}%'`)).rows.map((r) => Number(r.id));
+  const pids = (await query(`SELECT id FROM products WHERE code LIKE '${P}%' OR code = 'PROZX91'`)).rows.map((r) => Number(r.id));
   const cids = (await query(`SELECT id FROM customers WHERE name LIKE '${TAG}%'`)).rows.map((r) => Number(r.id));
   await query(`DELETE FROM product_factory_log WHERE product_id = ANY($1::bigint[])`, [pids]);
+  await query(`DELETE FROM product_price_history WHERE product_id = ANY($1::bigint[])`, [pids]);
   await query(`DELETE FROM product_xref_codes WHERE product_id = ANY($1::bigint[])`, [pids]);
   await query(`DELETE FROM product_syd_codes WHERE product_id = ANY($1::bigint[])`, [pids]);
   await query(`DELETE FROM stock_shortages WHERE product_id = ANY($1::bigint[])`, [pids]);
@@ -58,13 +59,19 @@ test('boot', { skip: SKIP }, async () => {
   ID.cL = await mkP(`${P}003L`, 0, 'KR');   // 나중에 단산
   ID.cR = await mkP(`${P}003R`, 0, 'KR');
   ID.single = await mkP(`${P}004`, 0, 'TR');
+  ID.pro = await mkP('PROZX91', 0, 'CN');   // PRO(마케팅 판촉물) — 구매에서 제외
+  // FOB: 001L 은 가격 마스터 이력(오늘 이전 유효) 2.50 이 products.fob_usd 1.00 보다 우선 · 001R 은 fob_usd 3 · 002L/R 1.2 · 004 없음
+  await query(`UPDATE products SET fob_usd=1 WHERE id=$1`, [ID.aL]);
+  await query(`UPDATE products SET fob_usd=3 WHERE id=$1`, [ID.aR]);
+  await query(`UPDATE products SET fob_usd=1.2 WHERE id = ANY($1::bigint[])`, [[ID.bL, ID.bR]]);
+  await query(`INSERT INTO product_price_history (product_id, price_type, effective_date, new_price, source) VALUES ($1,'fob',CURRENT_DATE - 10,2.5,'manual')`, [ID.aL]);
   ID.c = Number((await query(
     `INSERT INTO customers (name, code, credit_days, rfc, owner_id, created_by, discount) VALUES ($1,$2,30,$3,$4,$4,0) RETURNING id`,
     [`${TAG}고객`, `${TAG}-C`, `PFP${String(Date.now()).slice(-6)}AB1`, ID.dir])).rows[0].id);
   const mkS = (pid, qty) => query(
     `INSERT INTO stock_shortages (product_id, customer_id, requested_qty, fulfilled_qty, shortage_qty, shortage_amount_mxn, occurred_at, note)
      VALUES ($1,$2,$3,0,$3,0,CURRENT_DATE,'${TAG}')`, [pid, ID.c, qty]);
-  await mkS(ID.aL, 4); await mkS(ID.bL, 3); await mkS(ID.cL, 5); await mkS(ID.single, 2);
+  await mkS(ID.aL, 4); await mkS(ID.bL, 3); await mkS(ID.cL, 5); await mkS(ID.single, 2); await mkS(ID.pro, 9);
   await query(`INSERT INTO product_syd_codes (product_id, syd_code) VALUES ($1,'1010101')`, [ID.aL]);
   await query(`INSERT INTO product_xref_codes (product_id, xref_code, norm_code, brand) VALUES ($1,'1010101','1010101','SYD1'),($1,'2020202','2020202','SYD1'),($1,'K-777','K777','MOOG')`, [ID.aL]);
   await query(`INSERT INTO product_xref_codes (product_id, xref_code, norm_code, brand) VALUES ($1,'3030303','3030303','SYD')`, [ID.aR]);
@@ -154,15 +161,37 @@ test('⑥ 반영 — 디렉터만 · 이력 · SKU MOQ 우선 · 단산은 추�
   assert.equal(cur.factory_status, 'discontinued');
 });
 
-test('⑦ 발주서 초안 — 원산지별 묶음 · 짝 포함 · 합계', { skip: SKIP }, async () => {
+test('⑦ 발주서(Orden de Compra) — 원산지별 · CTR 알파벳순 · FOB 단가(가격 마스터 우선) · 소계 · 총계', { skip: SKIP }, async () => {
   const d = (await get('/api/purchases/review/po-draft')).json();
   assert.match(d.month, /^\d{4}-\d{2}$/);
+  assert.deepEqual([d.currency, d.cost_visible], ['USD', true]);
   const g = Object.fromEntries(d.groups.map((x) => [x.origin, x]));
-  const kr = g.KR.items.filter((x) => x.ctr.startsWith(P)).map((x) => [x.ctr, x.rec_qty]);
-  assert.deepEqual(kr, [[`${P}001L`, 6], [`${P}001R`, 3]]);
-  assert.deepEqual(g.CN.items.filter((x) => x.ctr.startsWith(P)).map((x) => x.rec_qty), [10, 10]);
-  assert.deepEqual(g.TR.items.filter((x) => x.ctr.startsWith(P)).map((x) => [x.ctr, x.rec_qty]), [[`${P}004`, 40]]);
-  assert.ok(!d.groups.some((x) => x.items.some((i) => i.ctr === `${P}003L`)), '단산·추천 0 은 빠진다');
+  const kr = g.KR.items.filter((x) => x.ctr.startsWith(P));
+  assert.deepEqual(kr.map((x) => [x.ctr, x.rec_qty, x.fob_usd, x.amount_usd]), [[`${P}001L`, 6, 2.5, 15], [`${P}001R`, 3, 3, 9]]);
+  assert.equal(g.KR.origin_es, 'Corea');
+  assert.deepEqual(g.CN.items.filter((x) => x.ctr.startsWith(P)).map((x) => [x.ctr, x.amount_usd]), [[`${P}002L`, 12], [`${P}002R`, 12]]);
+  const tr = g.TR.items.find((x) => x.ctr === `${P}004`);
+  assert.deepEqual([tr.rec_qty, tr.fob_usd, tr.amount_usd, tr.no_fob], [40, null, null, true], 'FOB 없음 → 금액 없음, 합계 제외');
+  for (const grp of d.groups) {
+    const codes = grp.items.map((x) => x.ctr);
+    assert.deepEqual(codes, [...codes].sort(), `${grp.origin} CTR 알파벳순`);
+    const sum = Math.round(grp.items.reduce((a, x) => a + (x.amount_usd || 0), 0) * 100) / 100;
+    assert.equal(grp.amount_usd, sum, `${grp.origin} 소계`);
+  }
+  assert.equal(d.total_amount_usd, Math.round(d.groups.reduce((a, x) => a + x.amount_usd, 0) * 100) / 100);
+  assert.ok(!d.groups.some((x) => x.items.some((i) => i.ctr === `${P}003L` || i.ctr === `${P}003R`)), '추천 0 은 발주서에 없다');
+  assert.ok(!d.groups.some((x) => x.items.some((i) => i.ctr.startsWith('PRO'))), 'PRO 제외');
+  const staff = (await get('/api/purchases/review/po-draft', 'staff')).json();
+  assert.equal(staff.cost_visible, false);
+  assert.equal(staff.total_amount_usd, null);
+  assert.ok(staff.groups.every((x) => x.items.every((i) => i.fob_usd == null && i.amount_usd == null)), '구매단가 권한 없으면 FOB 숨김');
+});
+
+test('⑦-b PRO 코드는 구매검토 목록·합계·공장 정보 양식에서 빠진다', { skip: SKIP }, async () => {
+  const d = await list('q=PROZX91');
+  assert.equal(d.total, 0);
+  const cur = (await get('/api/purchases/factory-info')).json().items;
+  assert.ok(!cur.some((x) => x.code.startsWith('PRO')));
 });
 
 test('⑧ 견적 미리보기 — L 만 넣으면 R 안내(재고 표시) · 짝 다 있으면 안내 없음 · 견적은 그대로 계산', { skip: SKIP }, async () => {

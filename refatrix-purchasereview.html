@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-1020lr</title>
+<title>Refatrix ERP · 구매 검토 · build pr-1020po</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -37,8 +37,8 @@
   th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
   .app{max-width:340px;font-size:12px;color:#4a4a4a;line-height:1.4}
   /* 2026-10-19 · SYD 는 참고용 — 평소엔 좁게 한 줄(말줄임), 마우스를 올리면 전체 */
-  .syd{font-size:11.5px;color:#8a8a8a;max-width:84px;width:84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
-  th.syd-h{width:84px;max-width:84px}
+  .syd{font-size:11px;color:#8a8a8a;max-width:64px;width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
+  th.syd-h{width:64px;max-width:64px}
   .warn-cell{color:var(--expense);font-weight:700}
   .ok-cell{color:var(--income)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
@@ -201,7 +201,7 @@
           <br>· <b>L/R 짝</b>: L과 R은 나란히 보여주고, 둘 중 수요가 큰 쪽을 양쪽 수요로 봅니다. 각 쪽은 자기 재고·주문분을 빼고 모자란 만큼만 추천해서, 발주 뒤 L·R 재고가 맞춰집니다.
           <br>· <b>공장 상태</b>가 단산·개발·개발보류이면 지금 주문할 수 없어 0입니다.</dd>
       </dl>
-      <div class="hint" style="margin-top:8px"><span class="badge manual" style="margin:0">별도관리</span> CQ0280L/R · CQ1291L/R — 시장 수요가 많아 실구매 필요·추천발주수량을 쓰지 않고 구매·판매 의지로 수량을 직접 정합니다(상단 합계에서도 제외). <span class="badge inact" style="margin:0">inactive</span> 우리 쪽 판매 비활성 SKU입니다. <span class="badge fs-discontinued" style="margin:0">단산</span><span class="badge fs-development">개발</span><span class="badge fs-dev_hold">개발보류</span> 공장이 정한 생산 상태입니다(생산중은 표시 안 함). 노란 세로줄로 묶인 두 줄은 L/R 짝입니다.</div>
+      <div class="hint" style="margin-top:8px"><span class="badge manual" style="margin:0">별도관리</span> CQ0280L/R · CQ1291L/R — 시장 수요가 많아 실구매 필요·추천발주수량을 쓰지 않고 구매·판매 의지로 수량을 직접 정합니다(상단 합계에서도 제외). <span class="badge inact" style="margin:0">inactive</span> 우리 쪽 판매 비활성 SKU입니다. <span class="badge fs-discontinued" style="margin:0">단산</span><span class="badge fs-development">개발</span><span class="badge fs-dev_hold">개발보류</span> 공장이 정한 생산 상태입니다(생산중은 표시 안 함). 노란 세로줄로 묶인 두 줄은 L/R 짝입니다. PRO 코드(마케팅 판촉물)는 구매 대상이 아니라 이 화면에서 뺍니다.</div>
       <div class="hint" style="margin-top:4px"><b>예)</b> 부족 10개 → 이미 주문한 2개를 빼면 <b>미발주 부족 8개</b> → 바로 팔 수 있는 재고 5개를 빼면 <b>실구매 필요 3개</b>.</div>
     </div>
     <div class="hint">※ 열 제목(숫자·CTR) 클릭으로 정렬합니다. 행을 누르면 그 SKU의 부족분 진행과 입출고 이력이 열립니다.<br>※ [⬇ 엑셀 다운로드]는 <b>현재 조회 조건(검색어·수요만·정렬)의 전체 SKU</b>를 페이지 구분 없이 모두 받습니다. 적용차종은 화면과 달리 <b>전체 문구</b>가 들어갑니다.</div>
@@ -667,7 +667,7 @@
   let poDraft=null;
   async function openPoDraft(){
     const w=window.open('','_blank');
-    if(w){ w.document.write('<p style="font-family:sans-serif;padding:20px">발주서 초안 불러오는 중…</p>'); }
+    if(w){ w.document.write('<p style="font-family:sans-serif;padding:20px">Generando orden de compra…</p>'); }
     try{
       const r=await fetch(session.api+'/api/purchases/review/po-draft',{headers:auth()}); const d=await r.json();
       if(!r.ok||d.error) throw new Error(d.error||r.status);
@@ -676,53 +676,103 @@
       w.document.open(); w.document.write(poDraftHtml(d)); w.document.close();
     }catch(e){ if(w) w.close(); $('msg').className='msg err'; $('msg').textContent='발주서 초안을 만들지 못했습니다: '+e.message; }
   }
+  // 발주서 — 스페인어 일반 양식(Orden de Compra). 원산지별 표 · 소계 · 총계(USD, FOB).
+  const FS_ES={production:'En producción',discontinued:'Descontinuado',development:'En desarrollo',dev_hold:'Desarrollo en pausa'};
+  const usd=(v)=> v==null?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const qn=(v)=> Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:3});
+  function sydShort(it){ const a=it.syd||[]; return a.length?(a[0]+(a.length>1?' +'+(a.length-1):'')):''; }
+  function poNotes(it){
+    const n=[];
+    if(it.pair_adjusted) n.push('Par L/R +'+qn((it.rec_raw_qty||0)-(it.rec_own_qty||0)));
+    if(it.rec_qty>0 && it.moq && it.rec_raw_qty<it.moq) n.push('MOQ aplicado (calc. '+qn(it.rec_raw_qty)+')');
+    if(it.is_active===false) n.push('Inactivo');
+    if(it.no_fob) n.push('Sin precio FOB');
+    return n.join(' · ');
+  }
   function poDraftHtml(d){
-    const e=esc, n=num;
+    const e=esc, cv=d.cost_visible!==false;
+    const ocNo='OC-'+String(d.month).replace('-','')+'-BORRADOR';
     let body='';
-    for(const g of d.groups||[]){
-      body+='<h2>원산지 '+e(g.origin)+' <small>· '+n(g.items.filter(x=>x.rec_qty>0).length)+' SKU · '+n(g.qty)+'개</small></h2>'
-        +'<table><thead><tr><th>#</th><th>CTR</th><th>제품명</th><th>SYD</th><th>L/R 짝</th><th class="r">현재고</th><th class="r">가용</th><th class="r">미입고</th><th class="r">MOQ</th><th class="r">추천</th><th class="r">발주수량</th><th>비고</th></tr></thead><tbody>';
+    (d.groups||[]).forEach((g,gi)=>{
+      body+='<div class="sec"><h2>'+(gi+1)+'. Origen: '+e(g.origin_es)+(g.origin_es!==g.origin?' ('+e(g.origin)+')':'')+'</h2>'
+        +'<table><colgroup><col style="width:28px"><col style="width:92px"><col><col style="width:76px"><col style="width:66px"><col style="width:44px"><col style="width:58px"><col style="width:84px"><col style="width:96px"><col style="width:130px"></colgroup>'
+        +'<thead><tr><th>#</th><th>Código CTR</th><th>Descripción</th><th>SYD</th><th>Par L/R</th><th class="r">MOQ</th><th class="r">Cantidad</th><th class="r">Precio FOB<br>unit. (USD)</th><th class="r">Importe<br>(USD)</th><th>Notas</th></tr></thead><tbody>';
       g.items.forEach((it,i)=>{
-        const note=[]; if(it.pair_adjusted) note.push('짝 맞춤 +'+n((it.rec_raw_qty||0)-(it.rec_own_qty||0)));
-        if(it.rec_qty>0 && it.moq && it.rec_raw_qty<it.moq) note.push('MOQ 적용(계산 '+n(it.rec_raw_qty)+')');
-        if(it.is_active===false) note.push('inactive'); if(it.blocked) note.push((FS_KO[it.factory_status]||'')+' · 주문 불가');
-        if(!it.rec_qty) note.push('짝 참고');
-        body+='<tr'+(it.rec_qty?'':' class="ref"')+'><td>'+(i+1)+'</td><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td><td>'+e((it.syd||[]).join(', '))+'</td><td>'+e(it.pair_code||'')+'</td>'
-          +'<td class="r">'+n(it.stock_qty)+'</td><td class="r">'+n(it.avail_qty)+'</td><td class="r">'+n(it.backorder_qty)+'</td><td class="r">'+(it.moq?n(it.moq):'—')+'</td>'
-          +'<td class="r"><b>'+n(it.rec_qty)+'</b></td><td class="r blank">'+(it.rec_qty?n(it.rec_qty):'')+'</td><td>'+e(note.join(' · '))+'</td></tr>';
+        body+='<tr><td class="c">'+(i+1)+'</td><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td>'
+          +'<td class="syd" title="'+e((it.syd||[]).join(', '))+'">'+e(sydShort(it))+'</td><td>'+e(it.pair_code||'')+'</td>'
+          +'<td class="r">'+(it.moq?qn(it.moq):'—')+'</td><td class="r"><b>'+qn(it.rec_qty)+'</b></td>'
+          +'<td class="r">'+(cv?(it.fob_usd==null?'<span class="warn">Sin FOB</span>':usd(it.fob_usd)):'—')+'</td>'
+          +'<td class="r">'+(cv&&it.amount_usd!=null?usd(it.amount_usd):'—')+'</td><td class="nt">'+e(poNotes(it))+'</td></tr>';
       });
-      body+='</tbody></table>';
-    }
+      body+='</tbody><tfoot><tr><td colspan="6" class="r">Subtotal '+e(g.origin_es)+' — '+qn(g.skus)+' artículos</td><td class="r">'+qn(g.qty)+'</td><td></td><td class="r">'+(cv?usd(g.amount_usd):'—')+'</td><td class="nt">'+(g.no_fob?g.no_fob+' sin FOB (no incluidos)':'')+'</td></tr></tfoot></table></div>';
+    });
+    if(!(d.groups||[]).length) body+='<p>No hay artículos sugeridos para este mes.</p>';
+    // 원산지별 요약 + 총계
+    let sum='<div class="sec sum"><h2>Resumen por origen</h2><table class="small"><thead><tr><th>Origen</th><th class="r">Artículos</th><th class="r">Piezas</th><th class="r">Importe (USD)</th></tr></thead><tbody>'
+      +(d.groups||[]).map(g=>'<tr><td>'+e(g.origin_es)+(g.origin_es!==g.origin?' ('+e(g.origin)+')':'')+'</td><td class="r">'+qn(g.skus)+'</td><td class="r">'+qn(g.qty)+'</td><td class="r">'+(cv?usd(g.amount_usd):'—')+'</td></tr>').join('')
+      +'</tbody><tfoot><tr class="tot"><td>TOTAL GENERAL</td><td class="r">'+qn(d.total_skus)+'</td><td class="r">'+qn(d.total_qty)+'</td><td class="r">'+(cv?'USD '+usd(d.total_amount_usd):'—')+'</td></tr></tfoot></table>'
+      +(d.no_fob?'<div class="warn" style="margin-top:4px">'+qn(d.no_fob)+' artículo(s) sin precio FOB no están incluidos en el total.</div>':'')
+      +(cv?'':'<div class="warn" style="margin-top:4px">Sin permiso para ver costos: precios e importes ocultos.</div>')+'</div>';
+    let man='';
     if((d.manual||[]).length){
-      body+='<h2>별도관리 품목 <small>· 구매·판매 의지로 수량 직접 기입</small></h2><table><thead><tr><th>CTR</th><th>제품명</th><th class="r">현재고</th><th class="r">가용</th><th class="r">미입고</th><th class="r">부족 잔여</th><th class="r">참고: 실구매 필요</th><th class="r">발주수량</th></tr></thead><tbody>'
-        +d.manual.map(it=>'<tr><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td><td class="r">'+n(it.stock_qty)+'</td><td class="r">'+n(it.avail_qty)+'</td><td class="r">'+n(it.backorder_qty)+'</td><td class="r">'+n(it.shortage_qty)+'</td><td class="r">'+n(it.need_qty)+'</td><td class="r blank"></td></tr>').join('')
-        +'</tbody></table>';
+      man='<div class="sec"><h2>Artículos de gestión manual — cantidad por definir</h2><table class="small"><thead><tr><th>Código CTR</th><th>Descripción</th><th class="r">Existencia</th><th class="r">Disponible</th><th class="r">Pedido pendiente</th><th class="r">Precio FOB<br>unit. (USD)</th><th class="r">Cantidad</th><th class="r">Importe (USD)</th></tr></thead><tbody>'
+        +d.manual.map(it=>'<tr><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td><td class="r">'+qn(it.stock_qty)+'</td><td class="r">'+qn(it.avail_qty)+'</td><td class="r">'+qn(it.backorder_qty)+'</td><td class="r">'+(cv?(it.fob_usd==null?'Sin FOB':usd(it.fob_usd)):'—')+'</td><td class="blank"></td><td class="blank"></td></tr>').join('')
+        +'</tbody></table><div class="nt" style="margin-top:3px">No incluidos en el total: la cantidad se define según la estrategia de compra y venta.</div></div>';
     }
-    if(!body) body='<p>이번달 추천발주 SKU가 없습니다.</p>';
-    return '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>발주서 초안 '+e(d.month)+'</title><style>'
-      +'body{font-family:"IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif;color:#1a1a1a;margin:24px;font-size:12px}'
-      +'h1{font-size:18px;margin:0 0 4px;color:#143D34}h2{font-size:14px;margin:18px 0 6px;color:#143D34}h2 small{font-weight:400;color:#6b6b6b}'
-      +'.meta{color:#6b6b6b;margin-bottom:8px}.bar{margin:10px 0}.bar button{padding:7px 14px;margin-right:6px;border:1px solid #143D34;background:#fff;color:#143D34;border-radius:6px;font-weight:700;cursor:pointer}'
-      +'table{width:100%;border-collapse:collapse;margin-top:4px}th,td{border:1px solid #d9d4c8;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f4f1ea;font-size:11px}'
-      +'.r{text-align:right;font-variant-numeric:tabular-nums}.blank{min-width:60px;background:#fffdf5}tr.ref td{color:#8a8a8a}'
-      +'@media print{.bar{display:none}body{margin:10mm}h2{page-break-after:avoid}tr{page-break-inside:avoid}}'
+    return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Orden de Compra '+e(ocNo)+'</title><style>'
+      +'body{font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;color:#1a1a1a;margin:22px;font-size:11.5px}'
+      +'.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #143D34;padding-bottom:10px}'
+      +'.brand{font-size:22px;font-weight:800;color:#143D34;letter-spacing:.5px}.brand small{display:block;font-size:11px;font-weight:400;color:#555;letter-spacing:0}'
+      +'.doc{text-align:right}.doc h1{margin:0;font-size:18px;color:#143D34}.doc .st{display:inline-block;margin-top:3px;padding:1px 8px;border:1px solid #c9a94a;color:#7a5a17;border-radius:4px;font-size:10.5px;font-weight:700}'
+      +'.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.box{border:1px solid #d9d4c8;border-radius:6px;padding:8px 10px}.box b{display:inline-block;min-width:118px;color:#555;font-weight:600}'
+      +'h2{font-size:13px;margin:16px 0 5px;color:#143D34}.bar{margin:10px 0}.bar button{padding:7px 14px;margin-right:6px;border:1px solid #143D34;background:#fff;color:#143D34;border-radius:6px;font-weight:700;cursor:pointer}'
+      +'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #d9d4c8;padding:4px 6px;text-align:left;vertical-align:top;overflow:hidden;text-overflow:ellipsis}'
+      +'th{background:#143D34;color:#fff;font-size:10.5px;font-weight:600}td.syd{white-space:nowrap;font-size:10.5px;color:#666}'
+      +'table.small{table-layout:auto}.r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.nt{font-size:10px;color:#666}'
+      +'tfoot td{background:#f4f1ea;font-weight:700}tr.tot td{background:#143D34;color:#fff;font-size:12.5px}.warn{color:#b3402e;font-weight:700}.blank{background:#fffdf5;min-width:60px}'
+      +'.sum{max-width:520px;margin-left:auto}.sign{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;margin-top:40px}.sign div{border-top:1px solid #555;padding-top:4px;text-align:center;color:#555}'
+      +'.terms{margin-top:14px;font-size:10.5px;color:#444;line-height:1.6}'
+      +'@media print{.bar{display:none}body{margin:10mm}.sec{page-break-inside:auto}tr{page-break-inside:avoid}thead{display:table-header-group}h2{page-break-after:avoid}}'
       +'</style></head><body>'
-      +'<h1>발주서 초안 · '+e(d.month)+'</h1><div class="meta">작성일 '+e(d.date)+' · 추천 SKU '+n(d.total_skus)+'개 · 추천 수량 합계 '+n(d.total_qty)+'개 · Refatrix 구매검토 기준(실구매 필요 + 최근 6개월 놓친 수요, L/R 짝 · MOQ · 공장 상태 반영)</div>'
-      +'<div class="bar"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button><button onclick="window.opener&&window.opener.poDraftExcel&&window.opener.poDraftExcel()">⬇ 엑셀</button></div>'
-      +body+'<p class="meta" style="margin-top:14px">「발주수량」 칸은 추천값으로 채워져 있습니다. 확정 수량은 손으로 고쳐 적으세요. 회색 줄은 짝 참고용(추천 0)입니다.</p></body></html>';
+      +'<div class="hd"><div class="brand">REFATRIX<small>Refatrix · Monterrey, N.L., México · Distribuidor CTR</small></div>'
+      +'<div class="doc"><h1>ORDEN DE COMPRA</h1><div>No. <b>'+e(ocNo)+'</b></div><span class="st">BORRADOR — SUGERENCIA DEL SISTEMA</span></div></div>'
+      +'<div class="meta"><div class="box"><div><b>Fecha:</b> '+e(d.date)+'</div><div><b>Periodo:</b> '+e(d.month)+'</div><div><b>Moneda:</b> USD</div><div><b>Incoterm:</b> FOB</div></div>'
+      +'<div class="box"><div><b>Comprador:</b> Refatrix</div><div><b>Proveedor:</b> según origen (ver secciones)</div><div><b>Artículos:</b> '+qn(d.total_skus)+' · <b style="min-width:0">Piezas:</b> '+qn(d.total_qty)+'</div>'
+      +'<div><b>Importe total:</b> '+(cv?'<span style="font-weight:800">USD '+usd(d.total_amount_usd)+'</span>':'—')+'</div></div></div>'
+      +'<div class="bar"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button><button onclick="window.opener&&window.opener.poDraftExcel&&window.opener.poDraftExcel()">⬇ Descargar Excel</button></div>'
+      +body+sum+man
+      +'<div class="terms"><b>Notas:</b><br>1. Precios FOB según la lista de precios vigente al '+e(d.date)+' (USD por pieza).<br>'
+      +'2. Cantidades sugeridas por el sistema (faltantes + demanda no atendida de los últimos 6 meses, pares L/R y MOQ por origen). Revise y ajuste antes de enviar al proveedor.<br>'
+      +'3. Artículos ordenados por código CTR dentro de cada origen.</div>'
+      +'<div class="sign"><div>Elaboró</div><div>Revisó</div><div>Autorizó (Dirección General)</div></div>'
+      +'</body></html>';
   }
   function poDraftExcel(){
     if(!poDraft||typeof XLSX==='undefined') return;
-    const rows=[];
-    for(const g of poDraft.groups||[]) for(const it of g.items) rows.push({'원산지':g.origin,'CTR':it.ctr,'제품명':it.name||'','SYD':(it.syd||[]).join(', '),'L/R 짝':it.pair_code||'',
-      '현재재고':it.stock_qty,'가용재고':it.avail_qty,'backorder':it.backorder_qty,'MOQ':it.moq||0,'추천발주수량':it.rec_qty,'발주수량':it.rec_qty,
-      '짝 맞춤 추가':it.pair_adjusted?Math.max(0,(it.rec_raw_qty||0)-(it.rec_own_qty||0)):'','공장 상태':FS_KO[it.factory_status]||'','상태':it.is_active===false?'inactive':'active'});
-    for(const it of poDraft.manual||[]) rows.push({'원산지':'별도관리','CTR':it.ctr,'제품명':it.name||'','SYD':(it.syd||[]).join(', '),'L/R 짝':it.pair_code||'',
-      '현재재고':it.stock_qty,'가용재고':it.avail_qty,'backorder':it.backorder_qty,'MOQ':it.moq||0,'추천발주수량':'직접 결정','발주수량':'','짝 맞춤 추가':'','공장 상태':FS_KO[it.factory_status]||'','상태':it.is_active===false?'inactive':'active'});
-    const ws=XLSX.utils.json_to_sheet(rows);
-    ws['!cols']=[{wch:10},{wch:12},{wch:28},{wch:16},{wch:10},{wch:9},{wch:9},{wch:9},{wch:6},{wch:11},{wch:9},{wch:10},{wch:9},{wch:8}];
-    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'발주서초안 '+poDraft.month);
-    XLSX.writeFile(wb,'refatrix_po_draft_'+String(poDraft.month).replace('-','')+'.xlsx');
+    const cv=poDraft.cost_visible!==false;
+    const head=['Origen','#','Código CTR','Descripción','SYD','Par L/R','MOQ','Cantidad','Precio FOB unit. (USD)','Importe (USD)','Notas'];
+    const aoa=[['ORDEN DE COMPRA (BORRADOR) OC-'+String(poDraft.month).replace('-','')+'-BORRADOR'],['Fecha',poDraft.date,'Moneda','USD','Incoterm','FOB'],[],head];
+    for(const g of poDraft.groups||[]){
+      g.items.forEach((it,i)=>aoa.push([g.origin_es,i+1,it.ctr,it.name||'',(it.syd||[]).join(', '),it.pair_code||'',it.moq||'',it.rec_qty,
+        cv&&it.fob_usd!=null?it.fob_usd:'',cv&&it.amount_usd!=null?it.amount_usd:'',poNotes(it)]));
+      aoa.push(['Subtotal '+g.origin_es,'','','','','','',g.qty,'',cv?g.amount_usd:'',g.no_fob?g.no_fob+' sin FOB':'']);
+      aoa.push([]);
+    }
+    aoa.push(['TOTAL GENERAL','','','','','','',poDraft.total_qty,'',cv?poDraft.total_amount_usd:'','']);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:12},{wch:4},{wch:12},{wch:30},{wch:14},{wch:10},{wch:6},{wch:9},{wch:12},{wch:13},{wch:28}];
+    const sum=[['Origen','Artículos','Piezas','Importe (USD)']];
+    for(const g of poDraft.groups||[]) sum.push([g.origin_es,g.skus,g.qty,cv?g.amount_usd:'']);
+    sum.push(['TOTAL GENERAL',poDraft.total_skus,poDraft.total_qty,cv?poDraft.total_amount_usd:'']);
+    const ws2=XLSX.utils.aoa_to_sheet(sum); ws2['!cols']=[{wch:22},{wch:10},{wch:10},{wch:14}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Orden de compra'); XLSX.utils.book_append_sheet(wb,ws2,'Resumen');
+    if((poDraft.manual||[]).length){
+      const m=[['Código CTR','Descripción','Existencia','Disponible','Pedido pendiente','Precio FOB unit. (USD)','Cantidad','Importe (USD)']];
+      for(const it of poDraft.manual) m.push([it.ctr,it.name||'',it.stock_qty,it.avail_qty,it.backorder_qty,cv&&it.fob_usd!=null?it.fob_usd:'','','']);
+      const ws3=XLSX.utils.aoa_to_sheet(m); ws3['!cols']=[{wch:12},{wch:30},{wch:10},{wch:10},{wch:14},{wch:16},{wch:10},{wch:13}];
+      XLSX.utils.book_append_sheet(wb,ws3,'Gestión manual');
+    }
+    XLSX.writeFile(wb,'Refatrix_Orden_de_Compra_'+String(poDraft.month).replace('-','')+'.xlsx');
   }
   window.poDraftExcel=poDraftExcel;
 
