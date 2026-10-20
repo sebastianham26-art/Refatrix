@@ -60,9 +60,9 @@ test('boot', { skip: SKIP }, async () => {
   ID.cR = await mkP(`${P}003R`, 0, 'KR');
   ID.single = await mkP(`${P}004`, 0, 'TR');
   ID.pro = await mkP('PROZX91', 0, 'CN');   // PRO(마케팅 판촉물) — 구매에서 제외
-  // FOB: 001L 은 가격 마스터 이력(오늘 이전 유효) 2.50 이 products.fob_usd 1.00 보다 우선 · 001R 은 fob_usd 3 · 002L/R 1.2 · 004 없음
+  // FOB: 가격 마스터 화면 값(products.fob_usd)이 우선 — 001L 은 fob_usd 1.00(이력 2.50 무시) · 001R 은 fob_usd 없음 → 이력 3.00 · 002L/R 1.2 · 004 없음
   await query(`UPDATE products SET fob_usd=1 WHERE id=$1`, [ID.aL]);
-  await query(`UPDATE products SET fob_usd=3 WHERE id=$1`, [ID.aR]);
+  await query(`INSERT INTO product_price_history (product_id, price_type, effective_date, new_price, source) VALUES ($1,'fob',CURRENT_DATE - 5,3,'manual')`, [ID.aR]);
   await query(`UPDATE products SET fob_usd=1.2 WHERE id = ANY($1::bigint[])`, [[ID.bL, ID.bR]]);
   await query(`INSERT INTO product_price_history (product_id, price_type, effective_date, new_price, source) VALUES ($1,'fob',CURRENT_DATE - 10,2.5,'manual')`, [ID.aL]);
   ID.c = Number((await query(
@@ -161,13 +161,13 @@ test('⑥ 반영 — 디렉터만 · 이력 · SKU MOQ 우선 · 단산은 추�
   assert.equal(cur.factory_status, 'discontinued');
 });
 
-test('⑦ 발주서(Orden de Compra) — 원산지별 · CTR 알파벳순 · FOB 단가(가격 마스터 우선) · 소계 · 총계', { skip: SKIP }, async () => {
+test('⑦ 발주서(Orden de Compra) — 원산지별 · CTR 알파벳순 · FOB 단가(가격 마스터 현재값 → 이력) · 소계 · 총계', { skip: SKIP }, async () => {
   const d = (await get('/api/purchases/review/po-draft')).json();
   assert.match(d.month, /^\d{4}-\d{2}$/);
-  assert.deepEqual([d.currency, d.cost_visible], ['USD', true]);
+  assert.deepEqual([d.currency, d.cost_visible, d.api_build], ['USD', true, 'pr-1020fob']);
   const g = Object.fromEntries(d.groups.map((x) => [x.origin, x]));
   const kr = g.KR.items.filter((x) => x.ctr.startsWith(P));
-  assert.deepEqual(kr.map((x) => [x.ctr, x.rec_qty, x.fob_usd, x.amount_usd]), [[`${P}001L`, 6, 2.5, 15], [`${P}001R`, 3, 3, 9]]);
+  assert.deepEqual(kr.map((x) => [x.ctr, x.rec_qty, x.fob_usd, x.amount_usd]), [[`${P}001L`, 6, 1, 6], [`${P}001R`, 3, 3, 9]]);
   assert.equal(g.KR.origin_es, 'Corea');
   assert.deepEqual(g.CN.items.filter((x) => x.ctr.startsWith(P)).map((x) => [x.ctr, x.amount_usd]), [[`${P}002L`, 12], [`${P}002R`, 12]]);
   const tr = g.TR.items.find((x) => x.ctr === `${P}004`);

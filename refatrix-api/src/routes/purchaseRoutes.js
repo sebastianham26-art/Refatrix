@@ -429,7 +429,7 @@ export default async function purchaseRoutes(app) {
   // 2026-10-20 · 이번달 발주검토 · 발주서 초안 — 추천발주수량 > 0 인 SKU 전부(짝 포함), 원산지별로 묶어 출력용으로.
   //   발주서 정식 출력 기능이 생기면 이 목록을 그대로 넘기면 된다.
   // 2026-10-20 · 발주서(스페인어 Orden de Compra) 초안 — 추천발주수량 > 0 인 SKU, 원산지별 · CTR 알파벳순.
-  //   FOB 단가 = 가격 마스터(오늘 기준 유효 FOB, 없으면 가장 이른 FOB) → 없으면 products.fob_usd.
+  //   FOB 단가 = 가격 마스터 화면의 현재 FOB(products.fob_usd) → 없으면 가격 이력(오늘 기준 유효 FOB, 없으면 가장 이른 FOB).
   //   금액 = 수량 × FOB. 원산지별 소계 + 총계(USD). 구매단가 열람 권한(디렉터·소시오)이 없으면 단가·금액을 내려주지 않는다.
   //   별도관리 품목은 수량을 직접 정하므로 금액에 넣지 않고 따로(단가만) 준다.
   const ORIGIN_ES = { CN: 'China', TR: 'Turquía', KR: 'Corea', VN: 'Vietnam' };
@@ -446,8 +446,8 @@ export default async function purchaseRoutes(app) {
     const r2 = (n) => Math.round(n * 100) / 100;
     const items = rows.map((r) => {
       const it = reviewItem(r, sydBy, appBy);
-      let fob = fobMap && fobMap.get(Number(r.id)) != null ? fobMap.get(Number(r.id)) : null;
-      if (fob == null && r.fob_usd != null) fob = Number(r.fob_usd);
+      let fob = r.fob_usd != null ? Number(r.fob_usd) : null;
+      if (fob == null && fobMap && fobMap.get(Number(r.id)) != null) fob = fobMap.get(Number(r.id));
       it.fob_usd = seeCost ? (fob == null ? null : Number(fob)) : null;
       it.amount_usd = seeCost && fob != null && !it.manual ? r2(Number(fob) * it.rec_qty) : null;
       it.no_fob = fob == null;
@@ -465,7 +465,7 @@ export default async function purchaseRoutes(app) {
     const gl = [...groups.values()];
     if (!seeCost) for (const g of gl) g.amount_usd = null;
     const month = (await query(`SELECT to_char(now() AT TIME ZONE 'America/Mexico_City','YYYY-MM') AS m`)).rows[0].m;
-    return { month, date: today, currency: 'USD', cost_visible: seeCost, groups: gl, manual,
+    return { api_build: 'pr-1020fob', month, date: today, currency: 'USD', cost_visible: seeCost, groups: gl, manual,
       total_skus: gl.reduce((a, g) => a + g.skus, 0), total_qty: gl.reduce((a, g) => a + g.qty, 0),
       total_amount_usd: seeCost ? r2(gl.reduce((a, g) => a + (g.amount_usd || 0), 0)) : null,
       no_fob: gl.reduce((a, g) => a + g.no_fob, 0) };

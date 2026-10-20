@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-1020po</title>
+<title>Refatrix ERP · 구매 검토 · build pr-1020fob</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -672,6 +672,13 @@
       const r=await fetch(session.api+'/api/purchases/review/po-draft',{headers:auth()}); const d=await r.json();
       if(!r.ok||d.error) throw new Error(d.error||r.status);
       poDraft=d;
+      // 서버가 이전 버전이면(FOB·통화 항목이 없음) 발주서를 만들지 않고 알린다 — 화면(GitHub Pages)만 새 버전으로 뜬 경우
+      if(d.currency!=='USD' || !('total_amount_usd' in d)){
+        if(w) w.close();
+        $('msg').className='msg err';
+        $('msg').textContent='서버(백엔드)가 이전 버전이라 FOB 단가를 받지 못했습니다. Railway 배포가 끝났는지(Success) 확인한 뒤 다시 누르세요.';
+        return;
+      }
       if(!w){ $('msg').className='msg err'; $('msg').textContent='팝업이 막혔습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 누르세요.'; return; }
       w.document.open(); w.document.write(poDraftHtml(d)); w.document.close();
     }catch(e){ if(w) w.close(); $('msg').className='msg err'; $('msg').textContent='발주서 초안을 만들지 못했습니다: '+e.message; }
@@ -695,10 +702,10 @@
     let body='';
     (d.groups||[]).forEach((g,gi)=>{
       body+='<div class="sec"><h2>'+(gi+1)+'. Origen: '+e(g.origin_es)+(g.origin_es!==g.origin?' ('+e(g.origin)+')':'')+'</h2>'
-        +'<table><colgroup><col style="width:28px"><col style="width:92px"><col><col style="width:76px"><col style="width:66px"><col style="width:44px"><col style="width:58px"><col style="width:84px"><col style="width:96px"><col style="width:130px"></colgroup>'
+        +'<table><colgroup><col style="width:28px"><col style="width:84px"><col style="width:150px"><col style="width:74px"><col style="width:64px"><col style="width:42px"><col style="width:58px"><col style="width:80px"><col style="width:92px"><col></colgroup>'
         +'<thead><tr><th>#</th><th>Código CTR</th><th>Descripción</th><th>SYD</th><th>Par L/R</th><th class="r">MOQ</th><th class="r">Cantidad</th><th class="r">Precio FOB<br>unit. (USD)</th><th class="r">Importe<br>(USD)</th><th>Notas</th></tr></thead><tbody>';
       g.items.forEach((it,i)=>{
-        body+='<tr><td class="c">'+(i+1)+'</td><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td>'
+        body+='<tr><td class="c">'+(i+1)+'</td><td><b>'+e(it.ctr)+'</b></td><td class="ds" title="'+e(it.name||'')+'">'+e(it.name||'')+'</td>'
           +'<td class="syd" title="'+e((it.syd||[]).join(', '))+'">'+e(sydShort(it))+'</td><td>'+e(it.pair_code||'')+'</td>'
           +'<td class="r">'+(it.moq?qn(it.moq):'—')+'</td><td class="r"><b>'+qn(it.rec_qty)+'</b></td>'
           +'<td class="r">'+(cv?(it.fob_usd==null?'<span class="warn">Sin FOB</span>':usd(it.fob_usd)):'—')+'</td>'
@@ -716,7 +723,7 @@
     let man='';
     if((d.manual||[]).length){
       man='<div class="sec"><h2>Artículos de gestión manual — cantidad por definir</h2><table class="small"><thead><tr><th>Código CTR</th><th>Descripción</th><th class="r">Existencia</th><th class="r">Disponible</th><th class="r">Pedido pendiente</th><th class="r">Precio FOB<br>unit. (USD)</th><th class="r">Cantidad</th><th class="r">Importe (USD)</th></tr></thead><tbody>'
-        +d.manual.map(it=>'<tr><td><b>'+e(it.ctr)+'</b></td><td>'+e(it.name||'')+'</td><td class="r">'+qn(it.stock_qty)+'</td><td class="r">'+qn(it.avail_qty)+'</td><td class="r">'+qn(it.backorder_qty)+'</td><td class="r">'+(cv?(it.fob_usd==null?'Sin FOB':usd(it.fob_usd)):'—')+'</td><td class="blank"></td><td class="blank"></td></tr>').join('')
+        +d.manual.map(it=>'<tr><td><b>'+e(it.ctr)+'</b></td><td class="ds" title="'+e(it.name||'')+'">'+e(it.name||'')+'</td><td class="r">'+qn(it.stock_qty)+'</td><td class="r">'+qn(it.avail_qty)+'</td><td class="r">'+qn(it.backorder_qty)+'</td><td class="r">'+(cv?(it.fob_usd==null?'Sin FOB':usd(it.fob_usd)):'—')+'</td><td class="blank"></td><td class="blank"></td></tr>').join('')
         +'</tbody></table><div class="nt" style="margin-top:3px">No incluidos en el total: la cantidad se define según la estrategia de compra y venta.</div></div>';
     }
     return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Orden de Compra '+e(ocNo)+'</title><style>'
@@ -727,7 +734,7 @@
       +'.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.box{border:1px solid #d9d4c8;border-radius:6px;padding:8px 10px}.box b{display:inline-block;min-width:118px;color:#555;font-weight:600}'
       +'h2{font-size:13px;margin:16px 0 5px;color:#143D34}.bar{margin:10px 0}.bar button{padding:7px 14px;margin-right:6px;border:1px solid #143D34;background:#fff;color:#143D34;border-radius:6px;font-weight:700;cursor:pointer}'
       +'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #d9d4c8;padding:4px 6px;text-align:left;vertical-align:top;overflow:hidden;text-overflow:ellipsis}'
-      +'th{background:#143D34;color:#fff;font-size:10.5px;font-weight:600}td.syd{white-space:nowrap;font-size:10.5px;color:#666}'
+      +'th{background:#143D34;color:#fff;font-size:10.5px;font-weight:600}td.syd{white-space:nowrap;font-size:10.5px;color:#666}td.ds{white-space:nowrap;max-width:150px}'
       +'table.small{table-layout:auto}.r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.nt{font-size:10px;color:#666}'
       +'tfoot td{background:#f4f1ea;font-weight:700}tr.tot td{background:#143D34;color:#fff;font-size:12.5px}.warn{color:#b3402e;font-weight:700}.blank{background:#fffdf5;min-width:60px}'
       +'.sum{max-width:520px;margin-left:auto}.sign{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;margin-top:40px}.sign div{border-top:1px solid #555;padding-top:4px;text-align:center;color:#555}'
