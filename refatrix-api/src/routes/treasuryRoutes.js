@@ -5,6 +5,7 @@
 //   GET    /api/treasury/week?date=YYYY-MM-DD&weeks=1|2  유첨 양식(월~토): 과거=실적, 오늘부터=예정 · 사후 반영이 있으면 지난 주(prev)도(1019)
 //   GET    /api/treasury/month?month=YYYY-MM       월간실적(원장 실시간 재계산) + 스냅샷 대비 사후수정 표시
 //   POST   /api/treasury/snapshots/refresh {month} 그 달 스냅샷 지금 재계산(최초본 보존)
+//   GET/PUT /api/treasury/settings              {ar_roll} 미입금 AR 이월 표시(디렉터 선택, 0290)
 //   GET    /api/treasury/accounts                  집계 대상 계좌(금고·불공제 자동 제외) · PATCH /:id {mode:auto|include|exclude}
 //   GET    /api/treasury/recipients                수신자 목록
 //   POST   /api/treasury/recipients                {name, phone, lang, get_daily, get_monthly}
@@ -25,7 +26,7 @@ import { loadSchedules } from '../waSchedule.js';
 import {
   isYmd, isMonth, mxNow, addDays, monthBounds, prevMonth, computeWeek, computeActualDays, summarizeMonth,
   upsertSnapshots, loadSnapshotMeta, driftOf, flatOf, prepareDaily, prepareMonthly, sendReport, maskPhone,
-  activeRecipients, loadAccountScope, imageFormatOn, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl, treasuryImageTemplate, treasuryTemplateLang,
+  activeRecipients, loadAccountScope, imageFormatOn, SEND_HOUR_MX, DAILY_SEND_UNTIL_MX, MONTHLY_CATCHUP_DAYS, MAX_ATTEMPTS, reportUrl, treasuryImageTemplate, treasuryTemplateLang, loadTreasurySettings,
 } from '../treasuryDaily.js';
 
 const G = { preHandler: [authGuard, requireDirector] };
@@ -49,6 +50,24 @@ export default async function treasuryRoutes(app) {
     const weeks = String(req.query.weeks) === '2' ? 2 : (String(req.query.weeks) === '1' ? 1 : null);   // 1019 · 없으면 자동(사후 반영 시 2주)
     const [w, sc] = await Promise.all([computeWeek(date, today, undefined, { weeks }), loadAccountScope()]);
     return { ...w, scope: scopeBrief(sc) };
+  });
+
+  // ── 0290 · 설정(디렉터): 미입금 AR 이월 표시 여부 — 화면·WhatsApp 공통 ──
+  app.get('/api/treasury/settings', G, async () => loadTreasurySettings());
+  app.put('/api/treasury/settings', G, async (req, reply) => {
+    const b = req.body || {};
+    if (typeof b.ar_roll !== 'boolean') return reply.code(400).send({ error: 'bad_value', detail: 'ar_roll: true|false' });
+    const before = await loadTreasurySettings();
+    try {
+      await query(`INSERT INTO treasury_settings (id, ar_roll, updated_by, updated_at) VALUES (1,$1,$2,now())
+                   ON CONFLICT (id) DO UPDATE SET ar_roll=EXCLUDED.ar_roll, updated_by=EXCLUDED.updated_by, updated_at=now()`,
+        [b.ar_roll, req.ctx.perm.userId]);
+    } catch (e) {
+      if (/treasury_settings/.test(String(e && e.message))) return reply.code(503).send({ error: 'migration_required', detail: 'npm run migrate (0290)' });
+      throw e;
+    }
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'treasury_settings', detail: { ar_roll: { from: before.ar_roll, to: b.ar_roll } } });
+    return loadTreasurySettings();
   });
 
   // ── 월간실적 ──

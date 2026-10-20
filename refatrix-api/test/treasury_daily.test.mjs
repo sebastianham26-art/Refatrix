@@ -87,6 +87,11 @@ test('A2b 1019 · AR 예정이 날짜가 지나도 안 들어오면 첫 예정�
   const tmr = T.projectDays({ today: '2026-10-20', to: '2026-10-21', startOpen: { MXN: 0, USD: 0 },
     planIn: [{ id: 73, d: '2026-10-19', direction: 'in', currency: 'MXN', amount: 90, amount_mxn: 90 }] });
   assert.equal(tmr[0].items[0].id, 73); assert.equal(tmr[0].items[0].late_days, 1);
+  // 0290 · 디렉터가 이월 표시를 끄면 → 예전처럼 경고만(예측 제외)
+  const off = T.projectDays({ today: '2026-10-19', to: '2026-10-19', startOpen: { MXN: 1000, USD: 0 }, rollAr: false,
+    planIn: [{ id: 71, d: '2026-10-16', direction: 'in', currency: 'MXN', amount: 500, amount_mxn: 500 }] });
+  assert.equal(off[0].items.length, 0); assert.equal(off[0].close.MXN, 1000);
+  assert.deepEqual([off[0].overdue.n, off[0].overdue.in_mxn, off[0].rolled.n], [1, 500, 0]);
 });
 
 test('A3 summarizeMonth — 합계·상위·최저잔고·비공개 마스킹·계좌개설 조정', () => {
@@ -203,7 +208,7 @@ test('B1 server.js 등록 · 워커 기동 · 마이그레이션 · nav 화면�
   assert.match(nav, /finDaily:'__director__'/);
   assert.match(nav, /screens:\['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily'/);
   const page = read(join(REPO, 'refatrix-cashdaily.html'));
-  assert.match(page, /build cashd-1019a/);
+  assert.match(page, /build cashd-1019b/);
   const ver = (/refatrix-nav\.js\?v=([0-9a-z]+)/.exec(page) || [])[1];
   assert.ok(ver, 'nav 버전');
   assert.ok(read(join(REPO, 'refatrix-finance.html')).includes('refatrix-nav.js?v=' + ver), '모든 화면 nav 버전 동일');
@@ -524,6 +529,13 @@ E('C5 API — 디렉터 전용 · 수신자 CRUD(번호 정규화·중복) · �
   assert.equal(m2.summary.close.MXN, 9031.8 + 50000 - 1500, '금고 강제 포함 → 금고 잔고·지출 반영');
   await call(D, 'PATCH', '/api/treasury/accounts/' + S.safe, { mode: 'auto' });
   assert.equal((await call(D, 'GET', '/api/treasury/month?month=2026-09')).json().summary.close.MXN, 9031.8);
+  // 0290 · 설정 API(디렉터 전용)
+  assert.equal((await call(D, 'GET', '/api/treasury/settings')).json().ar_roll, true);
+  assert.equal((await call(D, 'PUT', '/api/treasury/settings', { ar_roll: 'x' })).statusCode, 400);
+  assert.equal((await call(X, 'PUT', '/api/treasury/settings', { ar_roll: false })).statusCode, 403, '디렉터 전용');
+  assert.equal((await call(D, 'PUT', '/api/treasury/settings', { ar_roll: false })).json().ar_roll, false);
+  assert.equal((await call(D, 'GET', '/api/treasury/week?date=2026-09-28')).json().settings.ar_roll, false);
+  assert.equal((await call(D, 'PUT', '/api/treasury/settings', { ar_roll: true })).json().ar_roll, true);
   assert.equal((await call(D, 'DELETE', '/api/treasury/recipients/' + rc.id)).json().ok, true);
   assert.equal((await call(D, 'GET', '/api/treasury/recipients')).json().items.length, 0);
   await cleanup();
@@ -562,6 +574,14 @@ E('C9 1019 · 사후 반영(마감 18:00 뒤 기록) → 이번 주 화면에 �
     const it = mon.items.find((i) => i.id === p1);
     assert.ok(it && it.rolled && it.due === '2026-10-16');
     assert.ok(mon.rolled.items.some((x) => x.id === p1));
+    assert.equal(w.settings.ar_roll, true);
+    // 0290 · 디렉터 설정 끄기 → 이월 안 함(경고로) · 다시 켜기
+    await query(`UPDATE treasury_settings SET ar_roll=false WHERE id=1`);
+    w = await T.computeWeek('2026-10-19', '2026-10-19');
+    const mon2 = w.days.find((d) => d.date === '2026-10-19');
+    assert.equal(w.settings.ar_roll, false); assert.ok(!mon2.items.some((i) => i.id === p1));
+    assert.ok(mon2.overdue.items.some((x) => x.id === p1)); assert.equal(mon2.ar_roll, false);
+    await query(`UPDATE treasury_settings SET ar_roll=true WHERE id=1`);
   } finally {
     await query(`DELETE FROM transactions WHERE account_id=$1`, [acc.id]);
     await query(`DELETE FROM accounts WHERE id=$1`, [acc.id]);

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1019a</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1019b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -175,6 +175,7 @@
           <button class="btn ghost sm" id="wThis">이번 주</button>
           <label class="chk" style="margin-left:10px"><input type="checkbox" id="wItems" checked> 항목 표시</label>
           <label class="chk" style="margin-left:10px" title="사후 반영이 있으면 자동으로 펼쳐집니다"><input type="checkbox" id="wTwo"> 지난 주도 보기(2주)</label>
+          <label class="chk" style="margin-left:10px" title="디렉터 설정 · 예정일이 지났는데 안 들어온 수금을 오늘(첫 예정일) 칸으로 하루씩 밀어 보여주고 잔고 예측에 넣습니다. 끄면 지난 날짜 미처리 경고만 하고 예측에서 뺍니다. WhatsApp 일일 보고서에도 같이 적용됩니다."><input type="checkbox" id="wRoll"> 미입금 수금 이월 표시</label>
           <span class="spacer"></span>
           <button class="btn ghost sm noprint" id="wPrint">🖨 인쇄</button>
         </div>
@@ -272,7 +273,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-1019a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-1019b (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -357,7 +358,7 @@
         +'<div style="margin-top:6px;font-size:12px">'+rl.items.slice(0,12).map(i=>'#'+i.id+' '+esc(md(i.due))+'→'+esc(md(t.date))+' '+esc(i.private?'비공개':i.name)+' +'+f0(i.amount)).join(' · ')+(rl.items.length>12?' …':'')+'</div></div>';
     }
     if(o&&o.n){
-      oh+='<div class="msg err" style="display:block;background:#FFF6E0;color:#8A5A00;border-color:#F1D79A;margin-top:6px">⚠ <b>지난 날짜 지급 예정 미처리 '+o.n+'건</b> · 지급 MXN '+f0(o.out_mxn)
+      oh+='<div class="msg err" style="display:block;background:#FFF6E0;color:#8A5A00;border-color:#F1D79A;margin-top:6px">⚠ <b>지난 날짜 '+(o.in_mxn?'':'지급 ')+'예정 미처리 '+o.n+'건</b>'+(o.in_mxn?' · 수금 MXN '+f0(o.in_mxn)+' (이월 표시 꺼짐)':'')+' · 지급 MXN '+f0(o.out_mxn)
         +' — 날짜가 지났지만 거래목록에 「예정」으로 남아 있는 건입니다. 실제로 처리됐으면 거래목록에서 실적 전환, 아니면 날짜 변경·삭제하세요. (잔고 예측에는 넣지 않음)'
         +'<div style="margin-top:6px;font-size:12px">'+o.items.slice(0,12).map(i=>'#'+i.id+' '+esc(i.due)+' '+esc(i.private?'비공개':i.name)+' '+(i.dir==='in'?'+':'−')+f0(i.amount)).join(' · ')+(o.items.length>12?' …':'')+'</div></div>';
     }
@@ -372,6 +373,7 @@
   function renderWeek(w){
     $('wRng').textContent=md(w.from)+' (월) ~ '+md(addDays(w.from,5))+' (토)';
     $('wTwo').checked=!!w.prev;
+    $('wRoll').checked=!(w.settings&&w.settings.ar_roll===false);
     if(w.prev){
       const ls=w.late_summary||{}, why=w.expand_reason==='late'
         ? '사후 반영 '+(ls.prev_n||0)+'건 — 마감('+esc(w.late_cutoff||'18:00')+') 뒤에 기록·수정·승인·삭제된 실적이 있어 지난 주를 함께 보여줍니다'
@@ -646,6 +648,11 @@
   $('wNext').addEventListener('click',()=>{ S.week=addDays(S.week,7); loadWeek(); });
   $('wThis').addEventListener('click',()=>{ S.week=mxToday(); loadWeek(); });
   $('wTwo').addEventListener('change',()=>{ S.two=$('wTwo').checked; loadWeek(); });
+  $('wRoll').addEventListener('change',async()=>{
+    const on=$('wRoll').checked;
+    try{ await api('/api/treasury/settings',{method:'PUT',body:JSON.stringify({ar_roll:on})}); loadWeek(); }
+    catch(e){ $('wRoll').checked=!on; $('wOverdue').innerHTML='<div class="msg err" style="display:block">'+esc(e.code==='migration_required'?'설정 저장에 마이그레이션이 필요합니다 — npm run migrate (0290)':errTxt(e))+'</div>'; }
+  });
   $('wItems').addEventListener('change',()=>{ if(S.wdata) renderWeek(S.wdata); });
   $('wPrint').addEventListener('click',()=>window.print());
   $('mPrev').addEventListener('click',()=>{ S.month=shiftMonth(S.month,-1); loadMonth(); });

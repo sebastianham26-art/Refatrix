@@ -190,7 +190,7 @@ export function buildDays({ from, to, base, opens = [], txns = [], pending = [],
 //   planIn/planOut: 예정 거래 [{id, d, direction, currency, amount, amount_mxn, …}]
 //   planIn/planOut: 거래목록 예정 거래(각자 기록된 날짜). 오늘 이전 날짜: AR(수금)은 첫 예정일(today) 칸으로 이월(rolled), AP 는 overdue 경고로 모은다.
 export function planSrc(t) { return t.sales_invoice_id ? 'inv' : (t.recurring_rule_id ? 'fix' : (t.direction === 'in' ? 'man' : 'plan')); }
-export function projectDays({ today, to, startOpen, todayActual = [], planIn = [], planOut = [], fx = new Map() }) {
+export function projectDays({ today, to, startOpen, todayActual = [], planIn = [], planOut = [], fx = new Map(), rollAr = true }) {
   const days = [];
   let run = { MXN: r2(startOpen.MXN || 0), USD: r2(startOpen.USD || 0) };
   const bucket = new Map();
@@ -204,7 +204,7 @@ export function projectDays({ today, to, startOpen, todayActual = [], planIn = [
     const late = Math.round((Date.parse(today) - Date.parse(d0)) / 86400000);
     // 1019 · AR(수금) 예정이 날짜가 지나도 안 들어왔으면 「오늘」(첫 예정일)로 하루씩 밀어 표시 — 오늘 안 들어오면 내일 들어올 것으로 본다.
     //        AP(지급)는 그대로 경고만(잔고 예측 제외).
-    if (d0 < today && it.dir === 'in') { const r = { ...it, rolled: true, late_days: late }; rolled.push(r); push(today, r); }
+    if (d0 < today && it.dir === 'in' && rollAr) { const r = { ...it, rolled: true, late_days: late }; rolled.push(r); push(today, r); }
     else if (d0 < today) overdue.push({ ...it, late_days: late });
     else push(d0, it);
   }
@@ -528,13 +528,21 @@ export async function loadPlanInputs(today, to, q = query, scopeIds = null) {
 }
 
 // 오늘~to 예정 일자 (기초 = 어제 실적 마감)
+// 0290 · 일일 자금 설정(디렉터) — 마이그레이션 전이면 기본값
+export const TREASURY_SETTINGS_DEFAULT = { ar_roll: true };
+export async function loadTreasurySettings(q = query) {
+  try {
+    const r = (await q(`SELECT ar_roll, updated_at FROM treasury_settings WHERE id = 1`)).rows[0];
+    return r ? { ar_roll: r.ar_roll !== false, updated_at: r.updated_at } : { ...TREASURY_SETTINGS_DEFAULT };
+  } catch (_) { return { ...TREASURY_SETTINGS_DEFAULT, missing: true }; }
+}
 export async function computePlanDays(today, to, q = query) {
   const yday = addDays(today, -1);
-  const [prev, plan, fx] = await Promise.all([
-    computeActualDays(yday, yday, q), loadPlanInputs(today, to, q), loadFx(today, to),
+  const [prev, plan, fx, set] = await Promise.all([
+    computeActualDays(yday, yday, q), loadPlanInputs(today, to, q), loadFx(today, to), loadTreasurySettings(q),
   ]);
-  const days = projectDays({ today, to, startOpen: prev[0].close, ...plan, fx });
-  if (days.length) days[0].reconcile = plan.reconcile;
+  const days = projectDays({ today, to, startOpen: prev[0].close, ...plan, fx, rollAr: set.ar_roll });
+  if (days.length) { days[0].reconcile = plan.reconcile; days[0].ar_roll = set.ar_roll; }
   return days;
 }
 
@@ -584,7 +592,7 @@ export async function computeWeek(anyDate, today, q = query, opts = {}) {
   const reason = opts.weeks === 2 ? 'manual' : (opts.weeks !== 1 && isCurrent && prevLate.length ? 'late' : null);   // weeks=1 = 직접 접음
   let prev = null;
   if (reason) { prev = await computeOneWeek(prevFrom, today, q); markLate(prev.days, late); }
-  return { ...w, prev, expand_reason: reason, late_cutoff: cutoff,
+  return { ...w, prev, expand_reason: reason, settings: await loadTreasurySettings(q), late_cutoff: cutoff,
     late_summary: { n: late.length, prev_n: prevLate.length, days: [...new Set(late.map((x) => x.d))] } };
 }
 async function computeOneWeek(anyDate, today, q = query) {
