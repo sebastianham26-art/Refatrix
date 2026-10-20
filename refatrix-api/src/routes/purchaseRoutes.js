@@ -1,7 +1,8 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { orderCoverage } from '../shortageReceipt.js';   // 2026-10-15 · 부족분 ↔ 발주 ↔ 입고
+import { orderCoverage } from '../shortageReceipt.js';
+import { ACTIVE_RESERVATION_SQL } from '../reservations.js';   // 2026-10-19 · 가용재고 = 재고 − 살아 있는 견적 예약   // 2026-10-15 · 부족분 ↔ 발주 ↔ 입고
 import { fobAtDate, fobMismatchByPo, fobStatus, mxToday, isYmd } from '../priceMaster.js';   // 0229 — 가격 마스터 FOB 로 구매 단가 검증
 
 // 구매단가(USD) 열람 권한: 디렉터·소시오만 공개. 그 외 역할은 값 자체를 내려주지 않음(null).
@@ -223,6 +224,10 @@ export default async function purchaseRoutes(app) {
                    OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
                    OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
     }
+    // 2026-10-19 · 원 견적이 끝난(만료·취소·삭제대기·삭제) 부족은 「놓친 수요」 — 그 고객에게는 더 이상 팔 견적이 없다.
+    //   구매 판단(발주됨·미발주·실구매 필요)은 살아 있는 부족(견적 없음 포함)만으로 계산하고, 놓친 수요는 따로 보여준다.
+    //   (부족분 대장 자체는 그대로 둔다 — 오퍼시트·판매 자동해소가 같은 기록을 쓴다.)
+    const DEAD_Q = `(sq.id IS NOT NULL AND (sq.deleted_at IS NOT NULL OR sq.status IN ('expired','cancelled','delete_pending')))`;
     // 공통 조인: 누적판매(posted 매출) · backorder(v_backorder) · 견적부족(open stock_shortages)
     const joins = `
       LEFT JOIN (SELECT sil.product_id, SUM(sil.qty) AS qty
@@ -230,18 +235,32 @@ export default async function purchaseRoutes(app) {
                   WHERE si.status='posted' AND si.deleted_at IS NULL
                   GROUP BY sil.product_id) sold ON sold.product_id=p.id
       LEFT JOIN v_backorder bo ON bo.product_id=p.id
-      LEFT JOIN (SELECT product_id, SUM(shortage_qty - resolved_qty) AS qty
-                   FROM stock_shortages WHERE status='open' GROUP BY product_id) sh ON sh.product_id=p.id
-      LEFT JOIN inbound_prestock ps ON ps.product_id=p.id`;
+      LEFT JOIN (SELECT ss.product_id,
+                        SUM(ss.shortage_qty - ss.resolved_qty) AS qty,
+                        SUM(CASE WHEN ${DEAD_Q} THEN ss.shortage_qty - ss.resolved_qty ELSE 0 END) AS missed,
+                        SUM(CASE WHEN ${DEAD_Q} THEN 0 ELSE ss.shortage_qty - ss.resolved_qty END) AS live
+                   FROM stock_shortages ss LEFT JOIN quotes sq ON sq.id=ss.source_quote_id
+                  WHERE ss.status='open' GROUP BY ss.product_id) sh ON sh.product_id=p.id
+      LEFT JOIN inbound_prestock ps ON ps.product_id=p.id
+      LEFT JOIN (SELECT ql.product_id, SUM(ql.reserved_qty) AS qty
+                   FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
+                  WHERE ${ACTIVE_RESERVATION_SQL} AND ql.reserved_qty > 0
+                  GROUP BY ql.product_id) rsv ON rsv.product_id=p.id`;
     // 2026-10-15 · 부족 잔여를 「발주(또는 창고 입고·승인 대기)로 덮인 몫」과 「미발주」로 나눈다.
     //   미발주 = 아직 아무 주문도 안 걸린 부족 — 이것만 새로 주문하면 된다(같은 부족 반복 발주 방지).
     const COVER = `(COALESCE(bo.backorder_qty,0) + COALESCE(ps.qty,0))`;
-    const UNORD = `GREATEST(COALESCE(sh.qty,0) - ${COVER}, 0)`;
+    const UNORD = `GREATEST(COALESCE(sh.live,0) - ${COVER}, 0)`;
+    // 2026-10-19 · 실구매 필요 = 미발주 부족에서 가용재고까지 뺀 몫. 재고로 채울 수 있는 부족(예: 개발완료 후 재고 있는 품목)은
+    //   발주가 아니라 고객 오퍼 대상이라 0 이 된다. 가용재고 = 현재재고 − 살아 있는 견적 예약분(견적화면과 같은 정의) —
+    //   이미 다른 견적에 잡힌 재고로 부족을 메운 것처럼 보이면 필요한 발주를 빠뜨린다.
+    const AVAIL = `GREATEST(COALESCE(p.stock_qty,0) - COALESCE(rsv.qty,0), 0)`;
+    const NEED = `GREATEST(COALESCE(sh.live,0) - ${COVER} - ${AVAIL}, 0)`;
     let where2 = where;
     if (onlyDemand) where2 += ' AND (COALESCE(bo.backorder_qty,0) > 0 OR COALESCE(sh.qty,0) > 0)';
     const SORTS = {
       code: 'p.code', stock: 'p.stock_qty', backorder: 'COALESCE(bo.backorder_qty,0)',
       sold: 'COALESCE(sold.qty,0)', shortage: 'COALESCE(sh.qty,0)', unordered: UNORD,
+      missed: 'COALESCE(sh.missed,0)', need: NEED, avail: AVAIL,
     };
     const orderCol = SORTS[String(req.query.sort || '').toLowerCase()] || 'p.code';
     const orderBy = orderCol === 'p.code' ? `p.code ${dir}` : `${orderCol} ${dir} NULLS LAST, p.code ASC`;
@@ -252,8 +271,12 @@ export default async function purchaseRoutes(app) {
               COALESCE(sold.qty,0)          AS sold_qty,
               COALESCE(bo.backorder_qty,0)  AS backorder_qty,
               COALESCE(sh.qty,0)            AS shortage_qty,
-              LEAST(COALESCE(sh.qty,0), ${COVER}) AS shortage_covered,
+              LEAST(COALESCE(sh.live,0), ${COVER}) AS shortage_covered,
               ${UNORD}                      AS shortage_unordered,
+              COALESCE(sh.missed,0)         AS shortage_missed,
+              ${NEED}                       AS need_qty,
+              COALESCE(rsv.qty,0)           AS reserved_qty,
+              ${AVAIL}                      AS avail_qty,
               COALESCE(ps.qty,0)            AS prestock_qty
          FROM products p ${joins}
         WHERE ${where2}
@@ -265,7 +288,11 @@ export default async function purchaseRoutes(app) {
               COALESCE(SUM(COALESCE(bo.backorder_qty,0)),0) AS backorder,
               COALESCE(SUM(COALESCE(sold.qty,0)),0)         AS sold,
               COALESCE(SUM(COALESCE(sh.qty,0)),0)           AS shortage,
-              COALESCE(SUM(${UNORD}),0)                     AS unordered
+              COALESCE(SUM(${UNORD}),0)                     AS unordered,
+              COALESCE(SUM(COALESCE(sh.missed,0)),0)        AS missed,
+              COALESCE(SUM(${NEED}),0)                      AS need,
+              COALESCE(SUM(COALESCE(rsv.qty,0)),0)          AS reserved,
+              COALESCE(SUM(${AVAIL}),0)                     AS avail
          FROM products p ${joins}
         WHERE ${where2}`, params)).rows[0];
 
@@ -286,7 +313,11 @@ export default async function purchaseRoutes(app) {
       sold_qty: Number(r.sold_qty) || 0,
       shortage_qty: Number(r.shortage_qty) || 0,
       shortage_covered_qty: Number(r.shortage_covered) || 0,     // 발주·입고대기로 이미 덮인 부족
-      shortage_unordered_qty: Number(r.shortage_unordered) || 0, // 미발주 부족(새로 주문할 몫)
+      shortage_unordered_qty: Number(r.shortage_unordered) || 0, // 미발주 부족(살아 있는 견적 기준, 발주로 안 덮인 몫)
+      shortage_missed_qty: Number(r.shortage_missed) || 0,       // 놓친 수요(원 견적 만료·취소·삭제)
+      need_qty: Number(r.need_qty) || 0,                         // 실구매 필요(미발주 부족 − 가용재고)
+      reserved_qty: Number(r.reserved_qty) || 0,                 // 살아 있는 견적 예약분
+      avail_qty: Number(r.avail_qty) || 0,                       // 가용재고(현재재고 − 예약)
       prestock_qty: Number(r.prestock_qty) || 0,
     }));
     return {
@@ -298,6 +329,10 @@ export default async function purchaseRoutes(app) {
         total_sold: Math.round(Number(agg.sold) * 1000) / 1000,
         total_shortage: Math.round(Number(agg.shortage) * 1000) / 1000,
         total_unordered: Math.round(Number(agg.unordered) * 1000) / 1000,
+        total_missed: Math.round(Number(agg.missed) * 1000) / 1000,
+        total_need: Math.round(Number(agg.need) * 1000) / 1000,
+        total_reserved: Math.round(Number(agg.reserved) * 1000) / 1000,
+        total_avail: Math.round(Number(agg.avail) * 1000) / 1000,
       },
     };
   });
@@ -305,6 +340,7 @@ export default async function purchaseRoutes(app) {
   // 2026-10-15 · 구매검토 드릴다운 ②: 이 SKU 의 부족분이 어디까지 왔나 — 발생(견적·고객) → 발주됨 → 입고 해소 / 판매 해소.
   //   발주 연결은 FIFO 계산(shortageReceipt.orderCoverage): 오래된 발주 잔량이 오래된 부족분부터 덮는다.
   //   해소 이력은 원장(stock_shortage_resolutions): receipt=입고(배치) · sale/scan=판매(인보이스) · manual=수동.
+  const DEAD_ST = new Set(['expired', 'cancelled', 'delete_pending']);
   app.get('/api/purchases/review/:productId/shortages', gate, async (req, reply) => {
     const pid = Number(req.params.productId);
     if (!pid) return reply.code(400).send({ error: 'bad_id' });
@@ -320,7 +356,7 @@ export default async function purchaseRoutes(app) {
          ORDER BY sh.occurred_at DESC, sh.id DESC LIMIT 200)`, [pid])).rows.map((r) => Number(r.id));
     if (!rows.length) {
       return { product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty) || 0 },
-        summary: { remaining: 0, covered: 0, unordered: 0, backorder: cov.backorder }, po: cov.po, items: [] };
+        summary: { remaining: 0, covered: 0, unordered: 0, missed: 0, need: 0, reserved: 0, avail: 0, backorder: cov.backorder }, po: cov.po, items: [] };
     }
     const det = (await query(
       `SELECT sh.id, to_char(sh.occurred_at,'YYYY-MM-DD') AS occurred_at, sh.status, sh.note,
@@ -357,7 +393,10 @@ export default async function purchaseRoutes(app) {
       const cv = covBy.get(Number(r.id));
       const remaining = Number(r.remaining_qty) || 0;
       const ordered = cv ? cv.ordered : 0;
+      // 2026-10-19 · 원 견적이 끝난 부족 = 놓친 수요 — 구매 판단(미발주)에서 뺀다(목록 화면과 같은 기준)
+      const missed = r.status === 'open' && !!r.source_quote_id && (!!r.quote_deleted || DEAD_ST.has(r.quote_status));
       return {
+        missed,
         id: Number(r.id), occurred_at: r.occurred_at, status: r.status, note: r.note || null,
         customer_name: r.customer_name || null,
         source_quote_id: r.source_quote_id == null ? null : Number(r.source_quote_id),
@@ -367,15 +406,27 @@ export default async function purchaseRoutes(app) {
         shortage_qty: Number(r.shortage_qty) || 0, resolved_qty: Number(r.resolved_qty) || 0,
         remaining_qty: remaining,
         ordered_qty: ordered,                                       // 발주(또는 창고 입고 대기)로 덮인 몫
-        unordered_qty: r.status === 'open' ? Math.max(0, Math.round((remaining - ordered) * 1000) / 1000) : 0,
+        unordered_qty: r.status === 'open' && !missed ? Math.max(0, Math.round((remaining - ordered) * 1000) / 1000) : 0,
         covers: cv ? cv.covers : [],                                // [{kind, ref_no, order_date, qty}]
         live_quote: !!(cv && cv.live),
         resolutions: resBy.get(Number(r.id)) || [],
       };
     });
+    // 요약은 목록 화면과 같은 식: 살아 있는 부족만 발주·재고로 차감, 놓친 수요는 따로.
+    const rr = (n) => Math.round(n * 1000) / 1000;
+    const openItems = items.filter((x) => x.status === 'open');
+    const liveRem = rr(openItems.filter((x) => !x.missed).reduce((a, x) => a + x.remaining_qty, 0));
+    const missedRem = rr(openItems.filter((x) => x.missed).reduce((a, x) => a + x.remaining_qty, 0));
+    const covered = rr(Math.min(liveRem, cov.backorder));
+    const unordered = rr(Math.max(0, liveRem - covered));
+    const rsvQ = Number((await query(
+      `SELECT COALESCE(SUM(ql.reserved_qty),0) AS r FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
+        WHERE ql.product_id=$1 AND ql.reserved_qty > 0 AND ${ACTIVE_RESERVATION_SQL}`, [pid])).rows[0].r) || 0;
+    const stockQ = Math.max(0, (Number(prod.stock_qty) || 0) - rsvQ);
     return {
       product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty) || 0 },
-      summary: { remaining: cov.remaining, covered: cov.covered, unordered: cov.unordered, backorder: cov.backorder },
+      summary: { remaining: cov.remaining, covered, unordered, missed: missedRem,
+        need: rr(Math.max(0, unordered - stockQ)), reserved: rr(rsvQ), avail: rr(stockQ), backorder: cov.backorder },
       po: cov.po, items,
     };
   });

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-1015sh</title>
+<title>Refatrix ERP · 구매 검토 · build pr-1019av</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -63,6 +63,16 @@
   .sh-sub{font-size:11.5px;color:var(--muted);line-height:1.5}
   .sh-sub a{color:var(--brand)}
   .unord-cell{color:#b3402e;font-weight:800;background:#fdf1ee}
+  .need-cell{color:#fff;font-weight:800;background:#b3402e}
+  .miss-cell{color:#8a6d1a;font-weight:700}
+  .stg.miss{background:#f1ead6;color:#8a6d1a}
+  .defs{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+  .defs h3{margin:0 0 8px;font-size:13px;color:var(--brand)}
+  .defs dl{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;margin:0;font-size:12.5px;line-height:1.55}
+  .defs dt{font-weight:700;color:var(--ink)}
+  .defs dd{margin:0;color:#4a4a4a}
+  .defs code{font-size:12px;background:#f4f1ea;padding:1px 5px;border-radius:4px}
+  @media (max-width:640px){.defs dl{grid-template-columns:1fr}.defs dd{margin-bottom:6px}}
   .mtag.out{background:#fdeceb;color:var(--expense)}
   .mtag.adj{background:#eee;color:#555}
   .bar{position:relative;height:14px;background:#ece7dc;border-radius:4px;min-width:60px}
@@ -114,7 +124,22 @@
       <span id="pageInfo">—</span>
       <button class="btn ghost sm" id="nextBtn" type="button">다음 ▶</button>
     </div>
-    <div class="hint">※ 누적판매=발행(posted) 매출 합계(전사 기준). backorder=미입고 발주잔량(구매내역). 견적부족=재고부족으로 기록된 미해소(open) 수량. 열 제목(숫자·CTR) 클릭으로 정렬합니다.<br>※ [⬇ 엑셀 다운로드]는 <b>현재 조회 조건(검색어·수요만·정렬)의 전체 SKU</b>를 페이지 구분 없이 모두 받습니다. 적용차종은 화면과 달리 <b>전체 문구</b>가 들어갑니다.</div>
+    <div class="defs" id="defs">
+      <h3>상단 지표 정의</h3>
+      <dl>
+        <dt>SKU 수</dt><dd>현재 조회 조건(검색어·수요만)에 해당하는 활성 제품 수입니다.</dd>
+        <dt>총 현재재고</dt><dd>제품마스터의 등록 재고(<code>stock_qty</code>) 합계입니다. 견적 예약분도 포함된 전체 수량이며, 지점 구분 없이 전사 기준입니다.</dd>
+        <dt>총 가용재고</dt><dd>현재재고에서 <b>진행 중 견적(작성중·확정)이 예약한 수량</b>을 뺀 값입니다. 예약은 견적화면과 같은 기준으로, 예약 만료 전이거나 포장지시서가 인쇄된 견적만 셉니다. 실제로 새 주문에 쓸 수 있는 재고입니다.</dd>
+        <dt>총 backorder</dt><dd>발주했지만 아직 입고되지 않은 잔량(발주수량 − 입고수량) 합계입니다. 취소·삭제된 발주는 빠집니다.</dd>
+        <dt>총 누적판매</dt><dd>발행(posted) 매출 인보이스의 판매 수량 합계입니다. 기간 제한 없는 전사 누적입니다.</dd>
+        <dt>총 부족 잔여</dt><dd>부족분 대장에 열려(open) 있는 부족 수량 전체입니다. 견적 저장 시 재고가 모자라 기록된 것, 직접 매출 부족, 개발완료 자동 매칭으로 기록된 고객 수요가 모두 들어갑니다. 판매·입고·수동으로 해소되면 줄어듭니다.</dd>
+        <dt>총 미발주 부족</dt><dd><b>살아 있는 부족</b>(원 견적이 진행 중이거나 견적 없이 기록된 것) 중 backorder와 창고 입고·원가 승인 대기 수량으로 덮이지 않은 몫입니다. 식: <code>살아 있는 부족 − (backorder + 입고 대기)</code>, 0 미만은 0.</dd>
+        <dt>총 실구매 필요</dt><dd>미발주 부족에서 <b>가용재고까지 뺀</b> 몫으로, 실제로 새로 주문해야 하는 수량입니다. 식: <code>미발주 부족 − 가용재고</code>, 0 미만은 0. 재고로 채울 수 있는 부족(예: 코드 매칭이 바뀌어 지금은 재고가 있는 품목의 수요)은 발주가 아니라 고객 오퍼 대상이라 0이 됩니다. 다른 견적에 이미 예약된 재고는 빼지 않으므로, 필요한 발주가 빠지지 않습니다. 조회할 때마다 다시 계산됩니다.</dd>
+        <dt>총 놓친 수요</dt><dd>원 견적이 <b>만료·취소·삭제</b>된 열린 부족입니다. 그 견적으로는 더 팔 수 없어 구매 판단(미발주·실구매 필요)에서는 빼고 따로 보여줍니다. 재고가 생긴 품목은 해당 고객에게 다시 오퍼할 근거로 쓰세요.</dd>
+      </dl>
+      <div class="hint" style="margin-top:8px">표의 같은 이름 열도 SKU별로 같은 식입니다. 발주됨 = 살아 있는 부족 중 backorder·입고 대기로 덮인 몫. 부족 잔여 = 발주됨 + 미발주 부족 + 놓친 수요.</div>
+    </div>
+    <div class="hint">※ 열 제목(숫자·CTR) 클릭으로 정렬합니다. 행을 누르면 그 SKU의 부족분 진행과 입출고 이력이 열립니다.<br>※ [⬇ 엑셀 다운로드]는 <b>현재 조회 조건(검색어·수요만·정렬)의 전체 SKU</b>를 페이지 구분 없이 모두 받습니다. 적용차종은 화면과 달리 <b>전체 문구</b>가 들어갑니다.</div>
   </div>
 </div>
 
@@ -133,11 +158,14 @@
     {k:'syd',t:'SYD'},
     {k:'app',t:'적용차종'},
     {k:'stock_qty',t:'현재재고',num:true,sort:'stock'},
+    {k:'avail_qty',t:'가용재고',num:true,sort:'avail'},
     {k:'backorder_qty',t:'backorder',num:true,sort:'backorder'},
     {k:'sold_qty',t:'누적판매',num:true,sort:'sold'},
     {k:'shortage_qty',t:'부족 잔여',num:true,sort:'shortage'},
     {k:'shortage_covered_qty',t:'발주됨',num:true},
     {k:'shortage_unordered_qty',t:'미발주 부족',num:true,sort:'unordered'},
+    {k:'need_qty',t:'실구매 필요',num:true,sort:'need'},
+    {k:'shortage_missed_qty',t:'놓친 수요',num:true,sort:'missed'},
   ];
 
   async function login(){
@@ -179,8 +207,10 @@
     total=d.total||0;
     const s=d.summary||{};
     $('summary').innerHTML=
-      sb(num(s.sku_count),'SKU 수')+sb(num(s.total_stock),'총 현재재고')+sb(num(s.total_backorder),'총 backorder')+
-      sb(num(s.total_sold),'총 누적판매')+sb(num(s.total_shortage),'총 부족 잔여')+sb(num(s.total_unordered),'총 미발주 부족');
+      sb(num(s.sku_count),'SKU 수')+sb(num(s.total_stock),'총 현재재고')+sb(num(s.total_avail),'총 가용재고')+sb(num(s.total_backorder),'총 backorder')+
+      sb(num(s.total_sold),'총 누적판매')+sb(num(s.total_shortage),'총 부족 잔여')+sb(num(s.total_unordered),'총 미발주 부족')+
+      '<div class="sb" style="border-color:#e6b8af"><div class="v" style="color:#b3402e">'+num(s.total_need)+'</div><div class="l">총 실구매 필요</div></div>'+
+      sb(num(s.total_missed),'총 놓친 수요');
     render(d.items||[]);
     updatePager(d.items?d.items.length:0);
   }
@@ -205,11 +235,14 @@
         '<td class="syd">'+esc(sydTxt)+'</td>'+
         '<td class="app" title="'+esc(appAll)+'">'+esc(appShort)+'</td>'+
         '<td class="num">'+num(it.stock_qty)+'</td>'+
+        '<td class="num" title="'+(Number(it.reserved_qty)>0?('진행 중 견적 예약 '+num(it.reserved_qty)+'개 제외'):'예약 없음')+'">'+num(it.avail_qty)+'</td>'+
         '<td class="num '+boCls+'">'+num(it.backorder_qty)+'</td>'+
         '<td class="num">'+num(it.sold_qty)+'</td>'+
         '<td class="num '+shCls+'">'+num(it.shortage_qty)+'</td>'+
         '<td class="num'+(Number(it.shortage_covered_qty)>0?' ok-cell':'')+'" title="'+(Number(it.prestock_qty)>0?('창고 입고·원가 승인 대기 '+num(it.prestock_qty)+' 포함'):'열린 발주로 덮인 부족')+'">'+num(it.shortage_covered_qty)+'</td>'+
         '<td class="num'+(Number(it.shortage_unordered_qty)>0?' unord-cell':'')+'">'+num(it.shortage_unordered_qty)+'</td>'+
+        '<td class="num'+(Number(it.need_qty)>0?' need-cell':'')+'">'+num(it.need_qty)+'</td>'+
+        '<td class="num'+(Number(it.shortage_missed_qty)>0?' miss-cell':'')+'" title="원 견적이 만료·취소·삭제된 부족 — 구매 판단에서 제외, 고객 재오퍼 참고용">'+num(it.shortage_missed_qty)+'</td>'+
       '</tr>';
     }
     $('tbl').innerHTML=h;
@@ -235,6 +268,7 @@
       if((x.resolutions||[]).some(r=>r.source==='sale'||r.source==='scan')) return '<span class="stg sale">판매 해소</span>';
       return '<span class="stg cl">수동 해소</span>';
     }
+    if(x.missed) return '<span class="stg miss">놓친 수요</span>';
     if(Number(x.unordered_qty)>0 && Number(x.ordered_qty)>0) return '<span class="stg ord">일부 발주</span>';
     if(Number(x.unordered_qty)>0) return '<span class="stg un">미발주</span>';
     return '<span class="stg ord">발주됨</span>';
@@ -268,6 +302,8 @@
     let h='<h3 style="margin-top:16px">부족분 진행 — 발생 → 발주됨 → 입고 해소</h3>'
       +'<div class="sbrow" style="margin-top:8px">'+sb(num(s.remaining),'부족 잔여')+sb(num(s.covered),'발주됨(입고 대기)')
       +'<div class="sb"><div class="v" style="color:#b3402e">'+num(s.unordered)+'</div><div class="l">미발주 부족 — 새로 주문할 몫</div></div>'
+      +'<div class="sb"><div class="v" style="color:#b3402e">'+num(s.need)+'</div><div class="l">실구매 필요 (− 가용재고 '+num(s.avail)+')</div></div>'
+      +sb(num(s.missed),'놓친 수요 (만료·취소 견적)')
       +sb(num(s.backorder),'열린 발주 잔량')+'</div>';
     if(!items.length) return h+'<div class="hint">이 SKU 의 부족 기록이 없습니다.</div>';
     h+='<table style="margin-top:8px"><tr><th>발생일</th><th>고객</th><th>견적</th><th class="num">부족</th><th class="num">해소</th><th class="num">잔여</th><th class="num">발주됨</th><th class="num">미발주</th><th>단계 · 이력</th></tr>';
@@ -279,9 +315,9 @@
         +'<td class="num">'+num(x.shortage_qty)+'</td>'
         +'<td class="num ok-cell">'+num(x.resolved_qty)+'</td>'
         +'<td class="num">'+num(x.status==='open'?x.remaining_qty:0)+'</td>'
-        +'<td class="num">'+num(x.status==='open'?x.ordered_qty:0)+'</td>'
+        +'<td class="num">'+num(x.status==='open'&&!x.missed?x.ordered_qty:0)+'</td>'
         +'<td class="num'+(Number(x.unordered_qty)>0?' unord-cell':'')+'">'+num(x.unordered_qty)+'</td>'
-        +'<td>'+shStage(x)+shTrail(x)+'</td>'
+        +'<td>'+shStage(x)+shTrail(x)+(x.note?('<div class="sh-sub">'+esc(x.note)+'</div>'):'')+'</td>'
       +'</tr>';
     }
     h+='</table><div class="hint" style="margin-top:6px">발주 연결은 자동 FIFO — 오래된 발주 잔량이 오래된 부족분부터 덮습니다. 입고(수입배치 승인) 때 같은 순서로 해소됩니다. 고객이 먼저 사 가면 판매로 해소됩니다.</div>';
@@ -366,11 +402,14 @@
       'SYD': (it.syd&&it.syd.length)?it.syd.join(', '):'',
       '적용차종': (it.applications&&it.applications.length)?it.applications.join(' / '):'',
       '현재재고': Number(it.stock_qty)||0,
+      '가용재고': Number(it.avail_qty)||0,
       'backorder': Number(it.backorder_qty)||0,
       '누적판매': Number(it.sold_qty)||0,
       '부족 잔여': Number(it.shortage_qty)||0,
       '발주됨': Number(it.shortage_covered_qty)||0,
       '미발주 부족': Number(it.shortage_unordered_qty)||0,
+      '실구매 필요': Number(it.need_qty)||0,
+      '놓친 수요': Number(it.shortage_missed_qty)||0,
     };
   }
   function xlsFileName(){
@@ -407,7 +446,7 @@
       }
       if(!rows.length){ m.className='msg err'; m.textContent='내보낼 데이터가 없습니다.'; return; }
       const ws=XLSX.utils.json_to_sheet(rows.map(xlsRow));
-      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:12},{wch:11},{wch:11}];
+      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:11},{wch:12},{wch:11},{wch:11},{wch:10},{wch:12},{wch:12},{wch:11}];
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매검토');
       XLSX.writeFile(wb,xlsFileName());
       if(tot&&rows.length<tot){ m.className='msg err'; m.textContent='※ 안전 상한에 걸려 '+rows.length.toLocaleString()+'행만 받았습니다(전체 '+tot.toLocaleString()+'). 검색어로 범위를 좁혀 다시 받으세요.'; }

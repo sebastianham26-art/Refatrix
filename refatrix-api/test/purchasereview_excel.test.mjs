@@ -13,7 +13,7 @@ function mkItem(i, over = {}) {
   return {
     product_id: i, ctr: 'CA' + String(i).padStart(4, '0'), name: 'BALATA ' + i,
     syd: ['SYD-' + i, 'SYD-' + i + 'B'], applications: ['NISSAN Frontier 2010-2015', 'TOYOTA Hilux 2016-'],
-    stock_qty: i, backorder_qty: i * 2, sold_qty: i * 3, shortage_qty: i * 4, ...over,
+    stock_qty: i, backorder_qty: i * 2, sold_qty: i * 3, shortage_qty: i * 4, shortage_covered_qty: i, shortage_unordered_qty: i * 2, need_qty: i, shortage_missed_qty: i, avail_qty: i, ...over,
   };
 }
 
@@ -75,11 +75,11 @@ test('전체가 한 청크에 들어오면 1회 호출 후 파일을 쓴다', as
   assert.equal(written[0].wb.sheets[0].ws.rows.length, 3);
 });
 
-test('열 구성 = CTR·제품명·SYD·적용차종(전체)·현재재고·backorder·누적판매·견적부족', async () => {
+test('열 구성 = CTR·제품명·SYD·적용차종(전체)·현재재고·가용재고·backorder·누적판매·부족 잔여·발주됨·미발주·실구매 필요·놓친 수요', async () => {
   const { w, written } = await boot({ total: 1, pageOf: pager(1) });
   await w.exportExcel();
   const row = written[0].wb.sheets[0].ws.rows[0];
-  assert.deepEqual(Object.keys(row), ['CTR', '제품명', 'SYD', '적용차종', '현재재고', 'backorder', '누적판매', '견적부족']);
+  assert.deepEqual(Object.keys(row), ['CTR', '제품명', 'SYD', '적용차종', '현재재고', '가용재고', 'backorder', '누적판매', '부족 잔여', '발주됨', '미발주 부족', '실구매 필요', '놓친 수요']);
   assert.equal(row.CTR, 'CA0001');
   assert.equal(row['제품명'], 'BALATA 1');
   assert.equal(row.SYD, 'SYD-1, SYD-1B');
@@ -87,7 +87,8 @@ test('열 구성 = CTR·제품명·SYD·적용차종(전체)·현재재고·back
   assert.equal(row['현재재고'], 1);
   assert.equal(row.backorder, 2);
   assert.equal(row['누적판매'], 3);
-  assert.equal(row['견적부족'], 4);
+  assert.equal(row['부족 잔여'], 4);
+  assert.deepEqual([row['발주됨'], row['미발주 부족'], row['실구매 필요'], row['놓친 수요']], [1, 2, 1, 1]);
 });
 
 test('페이지(200)를 넘어 전체 12,000행을 3회 나눠 모두 받는다', async () => {
