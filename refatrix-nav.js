@@ -279,10 +279,32 @@
       if(document.visibilityState==='visible') ping(); // 다시 보일 때 즉시 갱신
     });
   }
+  // 2026-10-21 로그인 게이트 — 만료(6시간)·손상 토큰은 세션으로 보지 않는다.
+  var BAD_TOK={};   // 서버가 거절(401/403)한 토큰 — 같은 토큰으로 다시 시도하지 않음(무한 재시도 방지)
+  function tokenAlive(tk){
+    if(BAD_TOK[tk]) return false;
+    try{
+      var p=JSON.parse(atob(String(tk).split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      if(!p) return false;
+      return !p.exp || (p.exp*1000)>Date.now();
+    }catch(e){ return false; }
+  }
+  function isPortalPage(){
+    var f=(location.pathname.split('/').pop()||'').toLowerCase();
+    return f===''||f==='index.html'||f==='refatrix-portal.html';
+  }
   function getSession(){
-    try{ var raw=sessionStorage.getItem('refatrix_session'); if(raw){ var o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
-    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var tk=p.get('token'); if(tk) return {token:tk,api:p.get('api')||'',user:{}}; } }catch(e){}
+    try{ var raw=sessionStorage.getItem('refatrix_session'); if(raw){ var o=JSON.parse(raw); if(o&&o.token){ if(tokenAlive(o.token)) return o;
+      try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(_){} } } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var tk=p.get('token'); if(tk&&tk!=='undefined'&&tokenAlive(tk)) return {token:tk,api:p.get('api')||'',user:{}}; } }catch(e){}
     return null;
+  }
+  // 로그인 안 된 상태: 포털이 아니면 포털 로그인으로 보낸다(화면 내용을 보이지 않게).
+  function gotoLogin(){
+    if(isPortalPage()) return false;
+    try{ document.documentElement.style.visibility='hidden'; }catch(e){}
+    location.replace('refatrix-portal.html');
+    return true;
   }
   function canSee(key){
     if(sum && !sum.isDirector){
@@ -315,6 +337,7 @@
   }
   function nav(key, fromGroup){
     var s=SCREENS[key]; if(!s) return;
+    if(!sess||!sess.token){ if(!gotoLogin()) location.href='refatrix-portal.html'; return; }
     try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
     var g=fromGroup||openGroup||'';
     var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g='+encodeURIComponent(g);
@@ -545,7 +568,7 @@
   function renderMTab(){
     var on=document.documentElement.classList.contains('rfxm');
     var el=document.getElementById('rmtab');
-    if(!on){ if(el&&el.parentNode) el.parentNode.removeChild(el); document.body.style.paddingBottom=window.__rnavBasePB||''; return; }
+    if(!on || !sess || !sess.token || !sum){ if(el&&el.parentNode) el.parentNode.removeChild(el); document.body.style.paddingBottom=window.__rnavBasePB||''; return; }
     if(!el){ el=document.createElement('nav'); el.id='rmtab'; document.body.appendChild(el); }
     var cur=curScreen(), keys=mTabKeys();
     var h=keys.map(function(k){
@@ -575,6 +598,7 @@
   }
   window.__rnavDrawer=function(open){
     var d=document.getElementById('rmdrawer');
+    if(open && (!sess || !sum)) return;
     if(open){ renderDrawer(); d=document.getElementById('rmdrawer'); d.classList.add('show'); }
     else if(d){ d.classList.remove('show'); }
   };
@@ -1100,7 +1124,10 @@
     applyEnvFlag();
     sess=getSession();
     if(!sess||!sess.token){
-      nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE+'<span class="rwho">로그인 필요</span></div>'; syncOffset();
+      sum=null;
+      if(gotoLogin()) return;
+      nv.innerHTML=''; nv.style.display='none'; document.body.style.paddingTop=(window.__rnavBaseTop||0)+'px';
+      __rnavDrawer(0); renderMTab();
       if(!window.__rnavWatch){
         window.__rnavWatch=setInterval(function(){
           applyEnvFlag();                       // 로그인 전 서버주소 변경/세션 생성 즉시 반영
@@ -1111,20 +1138,25 @@
       return;
     }
     if(window.__rnavWatch){ clearInterval(window.__rnavWatch); window.__rnavWatch=null; }
+    nv.style.display='';
     var api=(sess.api||'').replace(/\/+$/,'');
     startHeartbeat(api);   // 접속 현황 하트비트 시작(세션 확인 후 1회만)
     var authFailed=false;
     fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){
       if(r.status===401||r.status===403){
         authFailed=true;
-        try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
-        var nv2=document.getElementById('rnav');
-        if(nv2) nv2.innerHTML='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE+'<span class="rwho">세션 만료 — 새로고침 후 다시 로그인하세요</span></div>';
-        syncOffset();
+        var bad=sess&&sess.token; if(bad) BAD_TOK[bad]=1;
+        try{
+          var cur=JSON.parse(sessionStorage.getItem('refatrix_session')||'null');
+          if(!cur || cur.token===bad){ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }
+        }catch(e){}
+        // 그 사이 새로 로그인했으면(토큰이 바뀜) 새 세션으로 다시 그림, 아니면 로그인 화면/감시 상태
+        setTimeout(boot,0);
         throw new Error('unauthorized');
       }
       return r.json();
     }).then(function(d){
+      var now=getSession(); if(!now || now.token!==sess.token){ boot(); return; }   // 응답 사이 세션이 바뀜 → 다시
       sum=d||{pages:[],isDirector:false};
       if(enforceRoleAccess()) return;   // 차단·리다이렉트 시 렌더 생략
       render();
