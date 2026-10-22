@@ -1,5 +1,5 @@
 // =====================================================================
-// VIO 제품찾기·프로모션 화면 (jsdom · build vf16x · 2026-10-22) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
+// VIO 제품찾기·프로모션 화면 (jsdom · build vf16y · 2026-10-22) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
 //   대기열(VIO 순 · 재고 품목 수) · 품목 넣기/빼기(재고 자동 + 손) · 이미지 뱅크 저장 · WhatsApp 발송 본문 · 예전 차종별 부품 주소
 //   실행: node --test test/viopromo_front.test.mjs   (jsdom 필요)
 // =====================================================================
@@ -97,7 +97,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16x/);
+  assert.match(d.title, /vf16y/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -316,4 +316,40 @@ test('연식 = VIO 세대: 기본은 재고 품목이 가장 많은 세대 · �
   assert.equal(JSON.parse(w.localStorage.getItem(key)).gen, '2020-2025');
   const cards = w.VP._cardsOf(w.VP._itemsOf(w.VP._st.d, null, 'versa').filter((it) => it.rng.some((r) => r[0] <= 2025 && r[1] >= 2020)), w.VP._isInc);
   assert.equal(JSON.stringify([...cards].map((c) => c.label)), '["BUJE"]');
+});
+
+test('차종 선택: 누르면 VIO 순 목록 · 입력하면 찾기(연식 포함) · 키보드/클릭으로 프로모션 열기 (vf16y)', { skip: SKIP }, async () => {
+  const { w, d } = boot();
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  const inp = d.getElementById('vpPick'), list = d.getElementById('vpPickList');
+  const items = () => [...list.querySelectorAll('.vpPi')];
+  inp.dispatchEvent(new w.Event('focus'));
+  assert.ok(await until(() => items().length === 150), 'VIO 상위 150');
+  assert.match(items()[0].textContent, /^1위NISSAN VERSA/);
+  assert.match(items()[0].textContent, /재고 \d+품목/, '대기열에서 훑은 차종은 재고 표시');
+  assert.match(list.textContent, /더 아래 순위는 이름으로 찾으세요/);
+  // 찾기
+  inp.value = 'sportage'; inp.dispatchEvent(new w.Event('input'));
+  assert.ok(items().length >= 1 && /SPORTAGE/.test(items()[0].textContent), list.textContent.slice(0, 200));
+  // 연식으로 좁히기: 범위 밖 연식이면 빠짐
+  inp.value = 'versa 2015'; inp.dispatchEvent(new w.Event('input'));
+  assert.ok(items().some((x) => /NISSAN VERSA/.test(x.textContent)));
+  inp.value = 'versa 1980'; inp.dispatchEvent(new w.Event('input'));
+  assert.ok(!items().some((x) => /NISSAN VERSA/.test(x.textContent)));
+  inp.value = 'zzqqxx'; inp.dispatchEvent(new w.Event('input'));
+  assert.match(list.textContent, /맞는 차종이 없습니다/);
+  // 키보드: 찾고 ↓ Enter → 두 번째 결과로 열림
+  inp.value = 'nissan'; inp.dispatchEvent(new w.Event('input'));
+  const second = items()[1].querySelector('.nm').firstChild.textContent;
+  inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  assert.ok(await until(() => d.getElementById('vpOverlay').classList.contains('open')));
+  assert.equal(d.getElementById('vpHead').querySelector('b').textContent, second);
+  assert.ok(!list.classList.contains('open'), '고르면 목록 닫힘');
+  d.getElementById('vpClose').click();
+  // 클릭: 대기열(Top 20) 밖 차종도 열림
+  inp.dispatchEvent(new w.Event('focus')); inp.value = 'sportage'; inp.dispatchEvent(new w.Event('input'));
+  items()[0].dispatchEvent(new w.MouseEvent('mousedown', { bubbles: true }));
+  assert.ok(await until(() => /SPORTAGE/.test(d.getElementById('vpHead').textContent)));
+  assert.ok(w.VP._st.m.rank > 20, 'Top 20 밖');
 });
