@@ -1,5 +1,5 @@
 // =====================================================================
-// VIO 제품찾기·프로모션 화면 (jsdom · build vf16v · 2026-10-19) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
+// VIO 제품찾기·프로모션 화면 (jsdom · build vf16w · 2026-10-22) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
 //   대기열(VIO 순 · 재고 품목 수) · 품목 넣기/빼기(재고 자동 + 손) · 이미지 뱅크 저장 · WhatsApp 발송 본문 · 예전 차종별 부품 주소
 //   실행: node --test test/viopromo_front.test.mjs   (jsdom 필요)
 // =====================================================================
@@ -19,16 +19,17 @@ const SKIP = !JSDOM || !existsSync(HTML) || !existsSync(COVER);
 const tick = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, ms = 8000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (fn()) return true; } catch {} await tick(40); } return false; }
 
-const it = (ctr, name, stock, year = '2012-2019') => ({ ctr, syd: ['1' + ctr.slice(-4)], name, year, stock, sold: 3, sold_by: [], lp_syd: 500 });
+const LP = { CB0336: 291, CE0536L: 448, CE0536R: 448, CQ0280L: 1333, CQ0280R: 1333, CL0477: 343, PL0477: 1898.88 };   // GV1043 = 가격 없음
+const it = (ctr, name, stock, year = '2012-2019') => ({ ctr, syd: ['1' + ctr.slice(-4)], name, year, stock, sold: 3, sold_by: [], lp_syd: 500, lp: LP[ctr] ?? null });
 function byModel(q) {
   const term = q.split('||')[0]; const vk = term;
   const versa = /versa/i.test(term);
   const cats = [
-    ['rotula', [it('CB0336', 'ROTULA INFERIOR', 12)]],
-    ['terminal_ext', [it('CE0536L', 'TERMINAL EXTERIOR IZQ', 8), it('CE0536R', 'TERMINAL EXTERIOR DER', 0)]],
+    ['rotula', [it('CB0336', 'RÓTULA', 12)]],
+    ['terminal_ext', [it('CE0536L', 'TERMINAL EXTERIOR', 8), it('CE0536R', 'TERMINAL EXTERIOR', 0)]],
     ['horquilla', [it('CQ0280L', 'HORQUILLA IZQ', 6), it('CQ0280R', 'HORQUILLA DER', 6)]],
-    ['tornillo', [it('CL0477', 'TORNILLO ESTABILIZADOR', 4), it('PL0477', 'TORNILLO ESTABILIZADOR HIBRIDO', 0)]],
-    ['buje', [it('GV1043', 'BUJE BARRA', 2, '2020-2024')]],
+    ['tornillo', [it('CL0477', 'TORNILLO ESTABILIZADOR', 4), it('PL0477', 'HYBRID STABILIZER LINK', 0)]],
+    ['buje', [it('GV1043', 'BUJE', 2, '2020-2024')]],
   ].slice(0, versa ? 5 : 2);   // Versa 만 5품목, 나머지는 2품목(후보 기준 3 미만)
   return { query: term, variants: [{ key: vk, model: vk, years: '2012-2024' }], categories: cats.map(([key, v]) => ({ key, es: key, ko: '', cells: { [vk]: v } })), total: 8, price_included: true };
 }
@@ -96,11 +97,11 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16v/);
+  assert.match(d.title, /vf16w/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
-  assert.equal(versa.st.cards, 5, 'Versa: 재고 있는 품목 5(Rótula·Terminal ext·Brazo·Bieleta·Buje) — Bieleta híbrida 는 재고 0');
+  assert.equal(versa.st.cards, 5, 'Versa: 재고 있는 품목 5(RÓTULA·TERMINAL EXTERIOR·HORQUILLA·TORNILLO ESTABILIZADOR·BUJE) — HYBRID STABILIZER LINK 은 재고 0');
   // 후보만(기본 3개 이상): Versa 만
   assert.equal(d.querySelectorAll('#vpQueue tbody tr').length, 1);
   d.getElementById('vpQshow').value = 'all'; d.getElementById('vpQshow').dispatchEvent(new w.Event('change'));
@@ -124,8 +125,14 @@ test('프로모션 만들기: 재고 기준 자동 · 손으로 넣고 빼기 ·
   cb('CB0336').checked = false; cb('CB0336').dispatchEvent(new w.Event('change', { bubbles: true }));
   cb('PL0477').checked = true; cb('PL0477').dispatchEvent(new w.Event('change', { bubbles: true }));
   const cards = w.VP._cardsOf(w.VP._itemsOf(w.VP._st.d), w.VP._isInc);
-  assert.ok(!cards.some((c) => c.label === 'Rótula'));
-  assert.ok(cards.some((c) => c.label === 'Bieleta híbrida' && c.codes[0] === 'PL0477'));
+  assert.ok(!cards.some((c) => c.label === 'RÓTULA'));
+  assert.ok(cards.some((c) => c.label === 'HYBRID STABILIZER LINK' && c.codes[0] === 'PL0477'));
+  // vf16w · 카탈로그 명칭(IZQ/DER 는 한 카드) · Brazo de control 없음 · 코드 옆 List price
+  assert.ok(cards.some((c) => c.label === 'HORQUILLA' && c.codes.join() === 'CQ0280L,CQ0280R'));
+  const heads = [...d.querySelectorAll('#vpParts .vpGrpH')].map((x) => x.textContent);
+  assert.ok(heads.some((h) => h.startsWith('HORQUILLA')) && !heads.some((h) => /Brazo de control|Bieleta/.test(h)), heads.join('|'));
+  const lp = (code) => d.querySelector('#vpParts input[data-code="' + code + '"]').closest('.vpCode').querySelector('.lp').textContent;
+  assert.equal(lp('CQ0280L'), '$1,333'); assert.equal(lp('PL0477'), '$1,898.88'); assert.equal(lp('GV1043'), 'List —');
   assert.equal(d.querySelectorAll('#vpParts .man').length, 2);
   assert.match(d.getElementById('vpSum').textContent, /손으로 바꾼 것 2/);
   // 최소 재고 7 → CQ0280L/R(6) 자동 제외, 손으로 넣은 PL0477 유지
@@ -273,4 +280,12 @@ test('자동차 로고 가리기: 자동 찾기 없음(서버 호출 안 함) ·
   assert.equal(v.man.length, 1); assert.ok(v.clean);
   assert.match(d.getElementById('vpMarkInfo').textContent, /1곳 가림/);
   d.getElementById('vpMarkUndo').click(); assert.equal(v.man.length, 0);
+});
+
+test('누끼(배경 지우기) · 이미지 List price 칸이 있다 (vf16w)', { skip: SKIP }, () => {
+  const html = readFileSync(HTML, 'utf-8');
+  for (const id of ['vpCutOnUp', 'vpCutNow', 'vpCutUndo', 'vpCutInfo', 'vpPriceOn']) assert.match(html, new RegExp('id="' + id + '"'), id);
+  assert.match(html, /onnxruntime-web@1\.20\.1\/dist\//); assert.match(html, /isnet-general-use-q8\.onnx/);
+  assert.match(html, /ort\.env\.wasm\.proxy=true/, '웹 워커로 돌려 화면이 멈추지 않게');
+  assert.ok(!/Brazo de control|Bieleta híbrida/.test(html.replace(/\/\/.*$/gm, '')), '옛 번역 이름이 남아 있으면 안 됨');
 });
