@@ -41,7 +41,12 @@ export function promoCfg() {
 }
 
 // 창 안(무료)에서 보내는 동의 요청 — 템플릿 본문과 같은 뜻
-export const CONSENT_TEXT = 'Gracias por participar en nuestra encuesta de Refatrix. ¿Desea recibir promociones y novedades de autopartes por WhatsApp?';
+// 2026-10-22 · Meta 승인 템플릿 promo_consentimiento(Spanish MEX)과 같은 문구 — 대화 창이 열린 사람에게 무료 버튼 메시지로 보낼 때 · 기록에 남는 글
+export const CONSENT_HEADER = 'CTR Aftermarket Mexico';
+export const CONSENT_TEXT = 'Hola, le saluda Refatrix, distribuidor oficial en México de CTR, fabricante de suspensión y dirección desde 1952 y proveedor de equipo original (OE) para armadoras de todo el mundo.\n\n'
+  + '¿Le gustaría recibir por WhatsApp nuestras promociones, lanzamientos y kits disponibles para su vehículo o negocio?\n\n'
+  + 'Puede dejar de recibir mensajes en cualquier momento respondiendo BAJA.';
+export const CONSENT_FOOTER = 'Distribuidor Oficial de CTR en México';
 export const CONSENT_BUTTONS = ['Sí, quiero', 'No, gracias'];
 
 // ── 발송 API (테스트에서 바꿔 끼움) ──
@@ -173,6 +178,18 @@ export async function queueConsentAsk({ ids = null, userId = null } = {}, q = qu
   }
   return { queued: got.length };
 }
+// 2026-10-22 · 사용자가 고른 사람에게 (새 문구로) 동의 요청 — 예전에 요청을 받고 답이 없는 사람(⏳ asked)도 다시 넣는다.
+//   ✅ 동의 · ⛔ 거부(본인 · 영업)는 절대 넣지 않는다. 미확인은 queueConsentAsk 와 같다.
+export async function resendConsentAsk({ ids = [], userId = null } = {}, q = query) {
+  const list = (Array.isArray(ids) ? ids : []).map(Number).filter(Boolean);
+  if (!list.length) return { queued: 0, resent: 0 };
+  const re = (await q(
+    `UPDATE wa_contacts SET consent='unknown', asked_at=NULL, ask_message_id=NULL, ask_error=NULL, ask_queued_at=now(), updated_at=now()
+      WHERE deleted_at IS NULL AND consent='asked' AND id = ANY($1::bigint[]) RETURNING id`, [list])).rows.map((x) => Number(x.id));
+  if (re.length) { try { await q(`INSERT INTO wa_consent_events (contact_id, kind, user_id) SELECT unnest($1::bigint[]), 'resend', $2`, [re, userId]); } catch (_) { /* 0284 전 */ } }
+  const fresh = await queueConsentAsk({ ids: list.filter((x) => !re.includes(x)), userId }, q);
+  return { queued: fresh.queued + re.length, resent: re.length, fresh: fresh.queued };
+}
 // 0284 · 요청이 「전달 실패」(Meta 가 실패로 알려 줌)한 사람만 다시 요청 — 받지 못했으니 「딱 한 번」 원칙에 걸리지 않는다
 export async function retryFailedConsent({ ids = null, userId = null } = {}, q = query) {
   const args = []; let cond = '';
@@ -194,10 +211,10 @@ async function sendConsentAsk(c, q) {
   const open = await windowOpen(c.phone, q);
   let res; let kind;
   try {
-    if (open === true) { kind = 'interactive'; res = await api.buttons({ to: c.phone, text: CONSENT_TEXT, buttons: CONSENT_BUTTONS }); }
+    if (open === true) { kind = 'interactive'; res = await api.buttons({ to: c.phone, text: CONSENT_TEXT, buttons: CONSENT_BUTTONS, header: CONSENT_HEADER, footer: CONSENT_FOOTER }); }
     else { kind = 'template'; res = await api.bare({ to: c.phone, name: cfg.consentTpl, lang: cfg.lang }); }
   } catch (e) { res = { ok: false, error: String((e && e.message) || e).slice(0, 200) }; }
-  await logOut(q, { phone: c.phone, contactId: c.id, kind, body: kind === 'template' ? `[${cfg.consentTpl}] ${CONSENT_TEXT}` : CONSENT_TEXT, source: 'consent', res });
+  await logOut(q, { phone: c.phone, contactId: c.id, kind, body: kind === 'template' ? `[${cfg.consentTpl}] ${oneLine(CONSENT_TEXT)}` : oneLine(CONSENT_TEXT), source: 'consent', res });
   if (res.ok) {
     await q(`UPDATE wa_contacts SET consent = CASE WHEN consent='unknown' THEN 'asked' ELSE consent END, ask_message_id=$2, ask_queued_at=NULL, ask_error=NULL, updated_at=now() WHERE id=$1`,
       [c.id, res.message_id || null]);

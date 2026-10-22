@@ -773,4 +773,52 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const { readFileSync } = await import('node:fs');
     await query(readFileSync(new URL('../migrations/0291_wa_customer_sync.sql', import.meta.url), 'utf-8'));
   });
+
+  await t.test('B16. 2026-10-22 새 문구로 다시 요청 — 고른 사람 · 조건 전체 · ⏳ 응답 없음만 다시 · ✅ · ⛔ 는 절대 안 감 · 승인 문구 · 버튼 메시지 헤더/바닥글', async () => {
+    await query(`UPDATE wa_contacts SET deleted_at=now() WHERE deleted_at IS NULL`);
+    process.env.PROMO_WA_DAILY_CAP = '150';
+    const mk = async (name, phone, consent, via = null) => Number((await one(
+      `INSERT INTO wa_contacts (name, phone, source, consent, consent_via, asked_at, ask_message_id) VALUES ($1,$2,'manual',$3,$4,
+         CASE WHEN $3 IN ('asked','yes','no') THEN now() - interval '5 days' END, CASE WHEN $3='asked' THEN 'wamid.OLD-'||$2 END) RETURNING id`, [name, phone, consent, via])).id);
+    const u = await mk('Nuevo', '528170000001', 'unknown');
+    const a = await mk('Viejo sin respuesta', '528170000002', 'asked');
+    const y = await mk('Ya aceptó', '528170000003', 'yes', 'button');
+    const n = await mk('BAJA', '528170000004', 'no', 'message');
+    const g = (await call(D, 'POST', '/api/wa-promo/groups', { name: 'Reask G' })).json().id;
+    await call(D, 'POST', '/api/wa-promo/groups/assign', { group_id: g, action: 'add', ids: [u, a, y, n] });
+    const l = (await call(D, 'GET', `/api/wa-promo/contacts?group=${g}`)).json();
+    assert.equal(l.askable, 1); assert.equal(l.reaskable, 1);
+    // resend 없이(예전과 같음) → 미확인만
+    assert.equal((await call(D, 'POST', '/api/wa-promo/consent/ask', { ids: [u, a, y, n] })).json().queued, 1);
+    await query(`UPDATE wa_contacts SET ask_queued_at=NULL WHERE id=$1`, [u]);
+    // 고른 사람 · resend → 미확인 + 응답 없음 · ✅ · ⛔ 빠짐
+    const r = (await call(D, 'POST', '/api/wa-promo/consent/ask', { ids: [u, a, y, n], resend: true })).json();
+    assert.equal(r.queued, 2); assert.equal(r.resent, 1);
+    calls.length = 0; await P.runPromoJob({});
+    assert.deepEqual(calls.map((x) => x.to).sort(), ['528170000001', '528170000002']);
+    assert.ok(calls.every((x) => x.kind === 'bare' && x.name === 'promo_consentimiento' && x.lang === 'es_MX'));
+    assert.deepEqual((await one(`SELECT consent FROM wa_contacts WHERE id=$1`, [y])).consent, 'yes');
+    assert.deepEqual((await one(`SELECT consent FROM wa_contacts WHERE id=$1`, [n])).consent, 'no');
+    const am = await one(`SELECT consent, ask_message_id FROM wa_contacts WHERE id=$1`, [a]);
+    assert.equal(am.consent, 'asked'); assert.notEqual(am.ask_message_id, 'wamid.OLD-528170000002', '새 메시지');
+    const lg = (await call(D, 'GET', `/api/wa-promo/contacts/${a}/consent-log`)).json().items.map((e) => e.kind);
+    assert.deepEqual(lg.slice(-2), ['resend', 'asked']);
+    // 기록 글 = 승인 문구
+    const body = (await one(`SELECT body FROM wa_messages WHERE source='consent' AND contact_id=$1 ORDER BY id DESC LIMIT 1`, [a])).body;
+    assert.match(body, /^\[promo_consentimiento\] Hola, le saluda Refatrix, distribuidor oficial en México de CTR/);
+    assert.ok(!/encuesta/.test(body));
+    // 조건 전체 · resend → 다시 응답 없는 사람만(방금 보낸 사람도 「응답 없음」이면 다시 들어감 — 고른 사람 책임)
+    const r2 = (await call(D, 'POST', '/api/wa-promo/consent/ask', { filter: { group: String(g), ask: 'noreply' }, resend: true })).json();
+    assert.equal(r2.resent, 2);
+    // 창 열린 사람 — 버튼 메시지(무료)에 헤더 · 바닥글 · 승인 문구
+    await query(`DELETE FROM wa_inbound WHERE wa_from='528170000001'`);
+    await query(`INSERT INTO wa_inbound (wa_from, last_at, last_type, msg_count) VALUES ('528170000001', now(), 'text', 1)`);
+    calls.length = 0; await P.runPromoJob({});
+    const bt = calls.find((x) => x.to === '528170000001');
+    assert.equal(bt.kind, 'buttons'); assert.equal(bt.header, 'CTR Aftermarket Mexico'); assert.equal(bt.footer, 'Distribuidor Oficial de CTR en México');
+    assert.match(bt.text, /proveedor de equipo original \(OE\)/); assert.deepEqual(bt.buttons, ['Sí, quiero', 'No, gracias']);
+    // 「Sí, quiero」 버튼 → ✅
+    await hook([btn('5218170000001', 'Sí, quiero')]);
+    assert.equal((await one(`SELECT consent FROM wa_contacts WHERE id=$1`, [u])).consent, 'yes');
+  });
 });

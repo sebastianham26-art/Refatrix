@@ -1,5 +1,5 @@
 // =====================================================================
-// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1020cu) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
+// WhatsApp 마케팅 화면 (jsdom, 0260 · 0261 고른 사람에게 보내기 · wap-1022ca) — 운영 HTML 을 그대로 띄우고 fetch 만 스텁
 //   실행: node --test test/wa_promo_front.test.mjs   (jsdom 필요)
 // =====================================================================
 import { test } from 'node:test';
@@ -58,9 +58,9 @@ function boot() {
         if (u.includes('/api/wa-promo/consent/retry')) return json({ queued: 4, remaining_today: 140, cap: 150 });
         if (u.includes('/api/wa-promo/contacts') && method === 'GET') return json({ items: CONTACTS, counts: { total: 3, yes: 1, asked: 1, unknown: 1, no: 0, queued: 0, inbox_open: 2 }, matched: u.includes('group=11') ? 740 : 3,
           facets: { cust: { active: 210, potential: 340, active_yes: 30, potential_yes: 4, none: 623 }, vehicles: [{ model: 'Nissan Versa', n: 132, yes: 40 }, { model: 'Nissan March', n: 21, yes: 5 }], tipos: [{ tipo: 'Particular', n: 29, yes: 9 }, { tipo: 'Taller mecánico', n: 2, yes: 1 }], no_veh: 70, no_tipo: 166 },
-          askable: u.includes('group=11') ? 120 : 1, ask: { sent: 50, delivered: 44, read: 30, failed: 4, noreply: 20, yes: 22, no: 4, send_error: 0 } });
+          askable: u.includes('group=11') ? 120 : 1, reaskable: u.includes('group=11') ? 40 : 286, ask: { sent: 50, delivered: 44, read: 30, failed: 4, noreply: 20, yes: 22, no: 4, send_error: 0 } });
         if (u.includes('/api/wa-promo/contacts') && method === 'POST') return body.phone ? json({ id: 9 }) : json({ error: 'bad_phone' }, 400);
-        if (u.includes('/api/wa-promo/consent/ask')) return json({ queued: body.ids ? body.ids.length : 1, remaining_today: 140, cap: 150 });
+        if (u.includes('/api/wa-promo/consent/ask')) return json({ queued: body.ids ? body.ids.length : 1, resent: body.resend ? 1 : 0, remaining_today: 140, cap: 150 });
         if (u.match(/\/api\/wa-promo\/contacts\/\d+/)) return json({ ...CONTACTS[1], ...body });
         // 2026-10-16 · 이미지 뱅크
         if (u.match(/\/api\/wa-promo\/images\/\d+\/history/)) return json({ items: [{ id: 7, send_at_mx: '2026-10-14T10:00', caption: 'Amortiguadores', status: 'done', target_n: 2, image_id: 31, stats: { sent: 2, delivered: 2, read: 1, replied: 1 } }] });
@@ -101,7 +101,7 @@ const tab = async (c, p) => { c.d.querySelector(`#tabs .tab[data-p="${p}"]`).cli
 test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('① 연락처 — 숫자 · 상태 · 버튼 · 추가 · 동의 요청 · 영업 확인 · 엑셀 미리보기→저장', async () => {
     const c = boot(); await c.ready; await tick(400);
-    assert.match(c.d.title, /wap-1020cu/);
+    assert.match(c.d.title, /wap-1022ca/);
     assert.match(c.d.getElementById('cKpis').textContent, /✅ 동의1/);
     assert.equal(c.d.getElementById('inboxN').textContent, '2');
     const tbl = c.d.getElementById('cList').textContent;
@@ -116,10 +116,10 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     click(c, 'cAskAll'); await tick();
     assert.deepEqual(c.calls.find((x) => x.u.includes('/consent/ask')).body, {});
     const all = c.d.getElementById('cAll'); all.checked = true; all.dispatchEvent(new c.w.Event('change', { bubbles: true }));
-    assert.match(c.d.getElementById('cSelInfo').textContent, /3명 선택 · ✅ 동의 1 · ❓ 미확인 1 · 그 밖 1/);
-    assert.match(c.d.getElementById('cSelAsk').textContent, /1명/); assert.match(c.d.getElementById('cSelSend').textContent, /1명/);
+    assert.match(c.d.getElementById('cSelInfo').textContent, /3명 선택 · ✅ 동의 1 · ❓ 미확인 1 · ⏳ 응답 대기 1/);
+    assert.match(c.d.getElementById('cSelAsk').textContent, /2명 · 다시 1/); assert.match(c.d.getElementById('cSelSend').textContent, /1명/);
     click(c, 'cSelAsk'); await tick();
-    assert.deepEqual(c.calls.filter((x) => x.u.includes('/consent/ask')).pop().body, { ids: [2] });
+    assert.deepEqual(c.calls.filter((x) => x.u.includes('/consent/ask')).pop().body, { ids: [2, 3], resend: true }, '응답 없는 사람도 새 문구로 다시');
     c.d.querySelector('tr[data-id="2"] button[data-act="sales"]').click(); await tick();
     assert.deepEqual(c.calls.find((x) => x.method === 'PATCH').body, { consent: 'yes' });
     // 엑셀
@@ -494,6 +494,23 @@ test('WhatsApp 마케팅 화면 (jsdom)', { skip: SKIP && 'jsdom 또는 HTML 없
     click(c, 'kSave'); await tick(400);
     const cbd = c.calls.filter((x) => x.method === 'POST' && x.u.endsWith('/api/wa-promo/campaigns')).pop().body;
     assert.deepEqual(cbd.target_groups, [21]); assert.equal(cbd.target_cust, 'active');
+    c.close();
+  });
+
+  await t.test('⑭ 2026-10-22 새 문구로 다시 요청 — 버튼(전체 · 조건) · 설정 안내 문구', async () => {
+    const c = boot(); await c.ready; await tick(400);
+    const b = c.d.getElementById('cReAsk');
+    assert.ok(!b.classList.contains('hidden')); assert.match(b.textContent, /응답 없는 286명에게 새 문구로 다시 요청/);
+    click(c, 'cReAsk'); await tick();
+    assert.deepEqual(c.calls.filter((x) => x.u.includes('/consent/ask')).pop().body, { filter: {}, resend: true });
+    assert.match(c.d.getElementById('msg').textContent, /그중 새 문구로 다시 1명/);
+    c.d.querySelector('#cGroups [data-g="11"]').click(); await tick(300);
+    assert.match(c.d.getElementById('cReAsk').textContent, /지금 조건의 응답 없는 40명/);
+    click(c, 'cReAsk'); await tick();
+    assert.deepEqual(c.calls.filter((x) => x.u.includes('/consent/ask')).pop().body, { filter: { group: '11' }, resend: true });
+    const html = readFileSync(HTML, 'utf-8');
+    assert.ok(!/Gracias por participar en nuestra encuesta/.test(html), '예전 설문 문구 없음');
+    assert.match(html, /CTR Aftermarket Mexico/); assert.match(html, /Distribuidor Oficial de CTR en México/);
     c.close();
   });
 

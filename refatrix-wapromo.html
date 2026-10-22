@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1020cu</title>
+<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1022ca</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -269,6 +269,7 @@
           <button type="button" class="btn ghost" id="cCustSync" title="영업 고객(고객 화면) 연락처를 가져와 액티브 · 잠재로 나누고 영업담당자 그룹을 만듭니다 — 매일 자동으로도 갱신">🏢 영업 고객 가져오기</button>
           <button type="button" class="btn ghost" id="cGroupBulk" title="지금 조건에 맞는 전체 · 고른 사람 · 번호 붙여넣기로 한 번에 그룹 넣기/빼기">🏷 그룹 일괄 구분</button>
           <button type="button" class="btn red" id="cAskAll">✉ 미확인 전체에게 동의 요청</button>
+          <button type="button" class="btn ghost hidden" id="cReAsk" title="예전 문구로 요청을 받고 답이 없는 사람(⏳)에게 지금 승인된 새 문구로 한 번 더 — ✅ 동의 · ⛔ 거부는 빠짐">↻ 새 문구로 다시 요청</button>
         </div>
         <div class="gbar" id="cGroups"></div>
         <div class="fbar" id="cCustBar"></div>
@@ -407,7 +408,7 @@
         <h2>Meta 에서 할 일 (한 번만)</h2>
         <ol class="hint" style="font-size:12.5px;line-height:1.8;margin:0;padding-left:20px">
           <li>WhatsApp Manager › 메시지 템플릿 › 템플릿 만들기 › 카테고리 <b>마케팅</b> · 언어 <b>Spanish (MEX)</b></li>
-          <li><b>promo_consentimiento</b> — 헤더 없음 · 본문 「Gracias por participar en nuestra encuesta de Refatrix. ¿Desea recibir promociones y novedades de autopartes por WhatsApp?」 · 버튼 › 빠른 답장 「Sí, quiero」「No, gracias」</li>
+          <li><b>promo_consentimiento</b> (2026-10-22 승인) — 헤더 「CTR Aftermarket Mexico」 · 본문 「Hola, le saluda Refatrix, distribuidor oficial en México de CTR, fabricante de suspensión y dirección desde 1952 y proveedor de equipo original (OE) para armadoras de todo el mundo. ¿Le gustaría recibir por WhatsApp nuestras promociones, lanzamientos y kits disponibles para su vehículo o negocio? Puede dejar de recibir mensajes en cualquier momento respondiendo BAJA.」 · 바닥글 「Distribuidor Oficial de CTR en México」 · 버튼 › 빠른 답장 「Sí, quiero」「No, gracias」 <b>(버튼 글자를 바꾸면 자동 기록이 안 됨)</b></li>
           <li><b>promo_imagen</b> — 헤더 <b>이미지</b>(샘플 1장) · 본문 「Novedades de Refatrix: {{1}}. Responda BAJA si no desea recibir más mensajes.」 · 변수 유형 숫자 · 버튼 › 빠른 답장 「Quiero cotizar」「Ver catálogo」「BAJA」</li>
           <li>승인(활성)되면 이름이 다를 때만 관리 › 외부 서비스 키 › WhatsApp 에서 템플릿명을 바꿉니다</li>
           <li>Meta 앱 › WhatsApp › 구성 › 웹훅 필드 <b>messages</b> 구독 확인(받은 메시지 · 버튼 · 자동응답에 필요)</li>
@@ -676,7 +677,7 @@
   async function loadContacts(){
     if(!S.custSync) loadCustSync().then(()=>renderFacets());
     const qs=new URLSearchParams(curFilter()); if(S.cSort){ qs.set('sort',S.cSort.k); qs.set('dir',S.cSort.d); } await loadGroups();
-    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; S.askable=d.askable!=null?d.askable:null; S.ask=d.ask||null; S.facets=d.facets||null; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
+    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; S.askable=d.askable!=null?d.askable:null; S.reaskable=d.reaskable||0; S.ask=d.ask||null; S.facets=d.facets||null; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
     catch(e){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
   }
   // ── 0284 · 동의 요청 현황 ──
@@ -707,7 +708,7 @@
   const DLV={read:['r','👁 읽음'],delivered:['d','✓✓ 도착'],sent:['s','✓ 출발'],failed:['f','⚠ 전달 실패']};
   const dlvTag=(x)=>{ const d=DLV[x.ask_dlv]; return d?'<span class="dlv '+d[0]+'"'+(x.ask_dlv_reason?' title="'+esc(x.ask_dlv_reason)+'"':'')+'>'+d[1]+'</span>':'<span class="dlv s">접수</span>'; };
   // 동의 기록 창
-  const EVK={queued:'✉ 요청 대기열에 넣음',asked:'📨 동의 요청 보냄',ask_failed:'✗ 보내기 실패',retry:'↻ 전달 실패 — 다시 요청',yes:'✅ 회신: 동의',no:'⛔ 회신: 거부',reply:'💬 다른 말로 답함(상태 그대로)',manual_yes:'✅ 사람이 동의로 바꿈',manual_no:'⛔ 사람이 수신거부로 바꿈',reset:'❓ 사람이 미확인으로 되돌림'};
+  const EVK={resend:'↻ 새 문구로 다시 요청(사람이 고름)',queued:'✉ 요청 대기열에 넣음',asked:'📨 동의 요청 보냄',ask_failed:'✗ 보내기 실패',retry:'↻ 전달 실패 — 다시 요청',yes:'✅ 회신: 동의',no:'⛔ 회신: 거부',reply:'💬 다른 말로 답함(상태 그대로)',manual_yes:'✅ 사람이 동의로 바꿈',manual_no:'⛔ 사람이 수신거부로 바꿈',reset:'❓ 사람이 미확인으로 되돌림'};
   const EVV={template:'템플릿',interactive:'버튼 메시지(창 열림 · 무료)',button:'버튼',message:'글',sales:'영업 확인'};
   async function openCLog(id){
     const x=S.contacts.find(c=>c.id===id); $('clTitle').textContent='📜 동의 기록 — '+(x?x.name:''); $('clHead').innerHTML=''; $('clList').innerHTML='<li><span></span><span class="hint">불러오는 중…</span></li>'; $('mCLog').classList.add('on');
@@ -922,6 +923,8 @@
     const askN=S.askable!=null?S.askable:Math.max(0,(c.unknown||0)-(c.queued||0));
     $('cAskAll').textContent='✉ '+(filtered?'지금 조건의 ':'')+'미확인 '+askN+'명에게 동의 요청';
     $('cAskAll').disabled=!askN;
+    const ra=S.reaskable||0; $('cReAsk').classList.toggle('hidden',!ra);
+    $('cReAsk').textContent='↻ '+(filtered?'지금 조건의 ':'')+'응답 없는 '+ra+'명에게 새 문구로 다시 요청';
     renderAskFun();
     renderGroupBar(); renderFacets();
     if(!S.contacts.length){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+(Object.keys(curFilter()).length?'조건에 맞는 연락처가 없습니다.':'연락처가 없습니다.')+'</div>'; syncSel(); return; }
@@ -964,15 +967,17 @@
   }
   // 고른 사람을 상태별로 나눈다 — 동의 요청은 ❓ 미확인(대기열 아님)만, 이미지는 ✅ 동의자만
   function selGroups(){
-    const g={all:[],yes:[],ask:[],other:[]};
-    S.contacts.forEach(c=>{ if(!S.sel.has(c.id)) return; g.all.push(c); if(c.consent==='yes') g.yes.push(c); else if(c.consent==='unknown'&&!c.ask_queued) g.ask.push(c); else g.other.push(c); });
+    const g={all:[],yes:[],ask:[],reask:[],other:[]};
+    S.contacts.forEach(c=>{ if(!S.sel.has(c.id)) return; g.all.push(c); if(c.consent==='yes') g.yes.push(c); else if(c.consent==='unknown'&&!c.ask_queued) g.ask.push(c); else if(c.consent==='asked') g.reask.push(c); else g.other.push(c); });
     return g;
   }
   function syncSel(){
     const g=selGroups(); const bar=$('cSelBar');
     bar.classList.toggle('hidden',!g.all.length);
-    $('cSelInfo').innerHTML='<b>'+g.all.length+'명 선택</b> · ✅ 동의 '+g.yes.length+' · ❓ 미확인 '+g.ask.length+(g.other.length?' · 그 밖 '+g.other.length+'(보낼 것 없음)':'');
-    $('cSelAsk').disabled=!g.ask.length; $('cSelAsk').textContent='✉ 동의 요청 ('+g.ask.length+'명)';
+    $('cSelInfo').innerHTML='<b>'+g.all.length+'명 선택</b> · ✅ 동의 '+g.yes.length+' · ❓ 미확인 '+g.ask.length+(g.reask.length?' · ⏳ 응답 대기 '+g.reask.length:'')+(g.other.length?' · 그 밖 '+g.other.length+'(보낼 것 없음)':'');
+    const askN=g.ask.length+g.reask.length;
+    $('cSelAsk').disabled=!askN; $('cSelAsk').textContent='✉ 동의 요청 ('+askN+'명'+(g.reask.length?' · 다시 '+g.reask.length:'')+')';
+    $('cSelAsk').title=g.reask.length?'미확인 '+g.ask.length+'명 + 예전 문구를 받고 답이 없는 '+g.reask.length+'명(새 문구로 다시)':'미확인에게 동의 요청';
     $('cSelSend').disabled=!g.yes.length; $('cSelSend').textContent='📣 이미지 보내기 ('+g.yes.length+'명)';
     const all=$('cAll'); if(all){ const n=document.querySelectorAll('#cList input[data-sel]').length; all.checked=n>0&&g.all.length>=n; }
   }
@@ -1001,17 +1006,24 @@
     try{ await api('POST','/api/wa-promo/contacts',{name:$('cName').value,phone:$('cPhone').value,memo:$('cMemo').value}); $('cName').value='';$('cPhone').value=''; say(true,'추가했습니다. ❓ 미확인 상태 — 동의 요청을 보내야 정기 발송 대상이 됩니다.'); loadContacts(); }
     catch(err){ say(false,errText(err)); }
   });
-  async function askConsent(ids,people){
-    const n=ids?ids.length:(S.askable!=null?S.askable:Math.max(0,(S.counts.unknown||0)-(S.counts.queued||0)));
-    const fl=!ids&&Object.keys(curFilter()).length?' — 조건: '+filterLabel():'';
+  // 2026-10-22 · resend = 예전 문구를 받고 답이 없는 사람(⏳)에게도 새 문구로 다시(고른 사람 · 지금 조건)
+  async function askConsent(ids,people,opt){
+    opt=opt||{}; const resend=!!opt.resend; const filtered=Object.keys(curFilter()).length>0;
+    const n=ids?ids.length:(opt.n!=null?opt.n:(S.askable!=null?S.askable:Math.max(0,(S.counts.unknown||0)-(S.counts.queued||0))));
+    const fl=!ids&&filtered?' — 조건: '+filterLabel():'';
     const who=people&&people.length<=5?' ('+people.map(p=>p.name).join(', ')+')':'';
-    if(!confirm('미확인 '+n+'명'+who+fl+'에게 동의 요청을 보냅니다(사람마다 딱 한 번 · 마케팅 템플릿 요금).\n하루 상한 안에서 순서대로 나가고, 넘치면 다음 날 이어서 보냅니다. 진행할까요?')) return;
-    try{ const d=await api('POST','/api/wa-promo/consent/ask',ids?{ids}:(Object.keys(curFilter()).length?{filter:curFilter()}:{})); say(true,d.queued+'명을 대기열에 넣었습니다. 오늘 남은 발송 가능 수 '+d.remaining_today+' / '+d.cap+' — 1분 안에 발송이 시작됩니다.');
+    const what=opt.label||('미확인 '+n+'명');
+    if(!confirm(what+who+fl+'에게 승인된 동의 요청 템플릿(promo_consentimiento)을 보냅니다 · 마케팅 템플릿 요금.\n'+(resend?'예전 문구를 받고 답이 없는 사람에게도 한 번 더 갑니다(✅ 동의 · ⛔ 거부는 빠짐).\n':'')+'하루 상한 안에서 순서대로 나가고, 넘치면 다음 날 이어서 보냅니다. 진행할까요?')) return;
+    const body=ids?{ids}:(filtered?{filter:curFilter()}:{}); if(resend){ body.resend=true; if(!ids&&!filtered) body.filter={}; }
+    try{ const d=await api('POST','/api/wa-promo/consent/ask',body); say(true,d.queued+'명을 대기열에 넣었습니다'+(d.resent?'(그중 새 문구로 다시 '+d.resent+'명)':'')+'. 오늘 남은 발송 가능 수 '+d.remaining_today+' / '+d.cap+' — 1분 안에 발송이 시작됩니다.');
       if(ids) ids.forEach(i=>S.sel.delete(i)); loadContacts(); }
     catch(err){ say(false,errText(err)); }
   }
   $('cAskAll').addEventListener('click',()=>askConsent(null));
-  $('cSelAsk').addEventListener('click',()=>{ const g=selGroups(); askConsent(g.ask.map(c=>c.id),g.ask); });
+  $('cSelAsk').addEventListener('click',()=>{ const g=selGroups(); const list=g.ask.concat(g.reask);
+    askConsent(list.map(c=>c.id),list,{resend:g.reask.length>0,label:(g.ask.length?'미확인 '+g.ask.length+'명':'')+(g.ask.length&&g.reask.length?' + ':'')+(g.reask.length?'응답 없는 '+g.reask.length+'명':'')}); });
+  $('cReAsk').addEventListener('click',()=>{ const n=S.reaskable||0; if(!n) return;
+    askConsent(null,null,{resend:true,n,label:'예전에 요청을 받고 답이 없는 '+n+'명'+(S.askable?' + 미확인 '+S.askable+'명':'')}); });
   $('cSelSend').addEventListener('click',()=>openSend(selGroups().yes));
   $('cSelClear').addEventListener('click',()=>{ S.sel.clear(); renderContacts(); });
 

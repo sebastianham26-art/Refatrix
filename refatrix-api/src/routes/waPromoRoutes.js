@@ -11,7 +11,8 @@
 //   POST   /api/wa-promo/contacts/bulk {rows, dry_run}   엑셀 대량(미리보기 → 저장)
 //   PATCH  /api/wa-promo/contacts/:id                    이름·메모·동의(영업 확인)·담당·메모·처리 상태
 //   DELETE /api/wa-promo/contacts/:id                    삭제(소프트)
-//   POST   /api/wa-promo/consent/ask {ids? | filter?}    동의 요청 대기열(미확인만 · 1회) · filter = 지금 조건에 맞는 미확인 전체(0284)
+//   POST   /api/wa-promo/consent/ask {ids? | filter?, resend?}  동의 요청 대기열(미확인만 · 1회) · filter = 지금 조건에 맞는 미확인 전체(0284)
+//            resend:true(2026-10-22) = 고른 사람 중 예전에 요청을 받고 답 없는(⏳) 사람에게도 새 문구로 다시 · ✅ · ⛔ 는 빠짐
 //   POST   /api/wa-promo/consent/retry {ids?}            요청이 「전달 실패」한 사람만 다시 요청(0284)
 //   GET    /api/wa-promo/contacts/:id/consent-log        동의 기록(요청 · 도착 · 읽음 · 회신 원문 · 사람이 바꿈)(0284)
 //   GET    /api/wa-promo/consent/export?<연락처 조건>     동의 기록 엑셀용 원자료(0284)
@@ -71,7 +72,7 @@ import { logEvent } from '../audit.js';
 import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
 import {
-  promoCfg, promoReady, insertContacts, classifyRows, queueConsentAsk, sentToday, audienceCount, retryFailedConsent, consentEvent,
+  promoCfg, promoReady, insertContacts, classifyRows, queueConsentAsk, sentToday, audienceCount, retryFailedConsent, consentEvent, resendConsentAsk,
   sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage, targetIdsOf,
 } from '../waPromo.js';
 
@@ -180,7 +181,8 @@ export default async function waPromoRoutes(app) {
          FROM wa_contacts w LEFT JOIN users u ON u.id = w.assigned_to ${ASK_JOIN}
         WHERE ${conds.join(' AND ')} ORDER BY ${contactOrder(req.query)} LIMIT ${limit}`, args)).rows;
     const mm = (await query(
-      `SELECT count(*)::int n, count(*) FILTER (WHERE w.consent='unknown' AND w.asked_at IS NULL AND w.ask_queued_at IS NULL)::int askable
+      `SELECT count(*)::int n, count(*) FILTER (WHERE w.consent='unknown' AND w.asked_at IS NULL AND w.ask_queued_at IS NULL)::int askable,
+              count(*) FILTER (WHERE w.consent='asked')::int reaskable
          FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows[0];
     const matched = Number(mm.n);
     // 0284 · 동의 요청 현황(전체) — 요청 보냄 · 도착 · 읽음 · 동의 · 거부 · 무응답 · 전달 실패
@@ -225,7 +227,7 @@ export default async function waPromoRoutes(app) {
                                       FROM wa_contacts WHERE deleted_at IS NULL`)).rows[0];
       } catch (_) { /* 0291 전 */ }
     } catch (_) { facets = null; /* 0285/0286 전 */ }
-    return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched, askable: Number(mm.askable), ask, facets };
+    return { items: rows.map((r) => ({ ...contactOut(r), groups: (r.group_ids || []).map(Number) })), counts, matched, askable: Number(mm.askable), reaskable: Number(mm.reaskable || 0), ask, facets };
   });
 
   app.post('/api/wa-promo/contacts', W, async (req, reply) => {
@@ -310,8 +312,9 @@ export default async function waPromoRoutes(app) {
       const args = []; const conds = contactConds(b.filter, args);
       ids = (await query(`SELECT w.id FROM wa_contacts w WHERE ${conds.join(' AND ')}`, args)).rows.map((r) => Number(r.id));
     }
-    const r = await queueConsentAsk({ ids, userId: req.ctx.perm.userId });
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'wa_contacts:consent_ask', detail: { ...r, filter: b.filter ? true : undefined } });
+    // 2026-10-22 · resend = 고른 사람(또는 조건 전체) 중 예전에 요청을 받고 답이 없는 사람에게도 새 문구로 다시 — ✅ · ⛔ 는 빠짐
+    const r = b.resend === true && ids ? await resendConsentAsk({ ids, userId: req.ctx.perm.userId }) : await queueConsentAsk({ ids, userId: req.ctx.perm.userId });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'wa_contacts:consent_ask', detail: { ...r, filter: b.filter ? true : undefined, resend: b.resend === true || undefined } });
     return { ...r, remaining_today: Math.max(0, promoCfg().cap - await sentToday()), cap: promoCfg().cap };
   });
   app.post('/api/wa-promo/consent/retry', W, async (req) => {

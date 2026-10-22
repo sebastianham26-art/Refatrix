@@ -262,10 +262,12 @@ export async function sendWaTemplateBare({ to, name, lang = null }) {
     template: { name, language: { code: lang || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX' } } });
 }
 // 24시간 창 안 — 선택 버튼(최대 3개, 버튼 글자 20자) 달린 답장
-export async function sendWaButtons({ to, text, buttons = [] }) {
+export async function sendWaButtons({ to, text, buttons = [], header = null, footer = null }) {
   const bs = (Array.isArray(buttons) ? buttons : []).map((b) => String(b || '').trim()).filter(Boolean).slice(0, 3);
   if (!bs.length) return sendWaText(text, to);
-  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'interactive',
-    interactive: { type: 'button', body: { text: String(text || '').slice(0, 1024) },
-      action: { buttons: bs.map((t, i) => ({ type: 'reply', reply: { id: `b${i + 1}`, title: t.slice(0, 20) } })) } } });
+  const interactive = { type: 'button', body: { text: String(text || '').slice(0, 1024) },
+    action: { buttons: bs.map((t, i) => ({ type: 'reply', reply: { id: `b${i + 1}`, title: t.slice(0, 20) } })) } };
+  if (header) interactive.header = { type: 'text', text: String(header).slice(0, 60) };   // 2026-10-22 · 동의 요청(승인 템플릿과 같은 모양)
+  if (footer) interactive.footer = { text: String(footer).slice(0, 60) };
+  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'interactive', interactive });
 }
