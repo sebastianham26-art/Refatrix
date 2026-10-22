@@ -40,6 +40,7 @@ async function isPendingCustomer(customerId) {
 import { resolveSeller, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
 import { rackStockReady, quotePicks, snapshotQuotePicks, rackMap } from '../rackStock.js';
 import { pairHints } from '../lrPair.js';   // 2026-10-20 · L/R 짝맞춤 안내(막지 않음)   // 0245 · 피킹 위치(fast moving 우선)
+import { plQty } from '../quoteQtyCols.js';   // 2026-10-22 · 견적 엑셀 수량열 4종(가용·운송중·생산중)
 
 // 0235 · 견적의 판매 영업사원. 독점 중이면 독점권자로 고정, 영업이 남의 독점 고객 견적을 만들면 차단.
 //   개방 고객은 견적 단계에서 판매자를 비워 둘 수 있다(전환 때 정한다).
@@ -1069,6 +1070,21 @@ export default async function quoteRoutes(app) {
     //   동순위(같은 대표차종)는 재고 많은 순 → 코드 순. top 미지정이면 종전대로 전체 SKU(코드순).
     // all=1: 전체 SKU(재고·VIO매칭 무관)를 LEFT JOIN으로 VIO 정보 붙여 반환 — Top500과 동일 양식의 "전체 견적"용.
     //   VIO 미매칭 SKU는 vio_* = null (프런트 정렬에서 맨 뒤 그룹).
+    // 2026-10-22 · 견적 엑셀 수량열 4종(Existencia·Disponible·En tránsito·En producción) — 0901b 정의 복원.
+    //   이 계산이 실서버에서 빠져 있어 화면이 폴백(운송중 0 · 생산중 = 발주잔량 전체 · 가용 = 현재고)으로 찍혔다.
+    //   세 갈래(all/top/기본) 모두 **같은 조각**을 쓴다 — 한 갈래만 고쳐지는 일이 없게.
+    //   · En tránsito  = v_incoming_stock (창고›수입입고에 등록된, 마감 전 선적의 SKU 수량)
+    //   · 예약         = 타 미결(draft·confirmed)·미만료(또는 포장지시 출력) 견적의 reserved_qty 합 — assignReservations 와 동일 조건
+    const PL_QTY_COLS = `COALESCE(inc.incoming_qty,0) AS incoming_qty, inc.incoming_eta::text AS incoming_eta,
+                COALESCE(rs.reserved_qty,0) AS reserved_qty`;
+    const PL_QTY_JOINS = `LEFT JOIN v_incoming_stock inc ON inc.product_id = p.id
+           LEFT JOIN (SELECT ql.product_id, SUM(ql.reserved_qty) AS reserved_qty
+                        FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+                       WHERE ql.product_id IS NOT NULL
+                         AND q.status IN ('draft','confirmed')
+                         AND (q.reserve_expires_at > now() OR q.packing_printed_at IS NOT NULL)
+                         AND q.deleted_at IS NULL
+                       GROUP BY ql.product_id) rs ON rs.product_id = p.id`;
     const topN = Math.min(Math.max(Number(req.query.top) || 0, 0), 1000);
     const wantAll = String(req.query.all || '') === '1';
     let prods;
@@ -1076,9 +1092,11 @@ export default async function quoteRoutes(app) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 COALESCE(bo.backorder_qty,0) AS backorder_qty,
+                ${PL_QTY_COLS},
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
            LEFT JOIN v_backorder bo ON bo.product_id = p.id
+           ${PL_QTY_JOINS}
            LEFT JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
           WHERE p.deleted_at IS NULL
           ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code`)).rows;
@@ -1086,9 +1104,11 @@ export default async function quoteRoutes(app) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 COALESCE(bo.backorder_qty,0) AS backorder_qty,
+                ${PL_QTY_COLS},
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
            LEFT JOIN v_backorder bo ON bo.product_id = p.id
+           ${PL_QTY_JOINS}
            JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
           WHERE p.deleted_at IS NULL
           ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code
@@ -1097,9 +1117,11 @@ export default async function quoteRoutes(app) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 COALESCE(bo.backorder_qty,0) AS backorder_qty,
+                ${PL_QTY_COLS},
                 NULL::bigint AS vio_units, NULL::text AS vio_model, NULL::text AS vio_year
            FROM products p
            LEFT JOIN v_backorder bo ON bo.product_id = p.id
+           ${PL_QTY_JOINS}
           WHERE p.deleted_at IS NULL ORDER BY p.code`)).rows;
     }
     const ids = prods.map((p) => p.id);
@@ -1116,6 +1138,7 @@ export default async function quoteRoutes(app) {
       list_price: Number(p.list_price) || 0,
       stock_qty: p.stock_qty != null ? Number(p.stock_qty) : null,
       backorder_qty: Number(p.backorder_qty) || 0,
+      ...plQty(p),
       material: p.material || null,
       vio_units: p.vio_units != null ? Number(p.vio_units) : null,
       vio_model: p.vio_model || null,
