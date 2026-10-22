@@ -23,7 +23,9 @@ import { logEvent } from '../audit.js';
 import { getEndpoint, INBOUND_KEY_FALLBACK, maskSecret, activeToken } from '../integrations.js';
 import { writeInboundLog } from '../crmInboundLog.js';
 import { mapLead, missingLeadFields, readInboundKey, verifyInboundKey,
-         scrubPayload, errBody, keyFailNote, keyFailMensaje } from '../crmInbound.js';
+         scrubPayload, errBody, keyFailNote, keyFailMensaje,
+         mapInbound, isOpenSignup } from '../crmInbound.js';
+import { registerInbound } from './crmInboundRoutes.js';   // 20261022 · 구글·페이스북 자동 가입
 
 export const LEAD_KEY = 'crm_web_lead';
 
@@ -157,6 +159,55 @@ export default async function crmLeadRoutes(app) {
         codigo_error: body.codigoError, mensaje: body.mensaje });
       return reply.code(503).send(body);
     }
+    // ── 20261022 · 구글·페이스북 가입은 **리드로 두지 않고 바로 고객**이 된다 ─────────
+    //   디렉터 지시: "구글이나 페이스북 이메일로 가입을 요청하면 … 10% 할인을 자동 승인,
+    //   사후승인도 필요없고 constancia·외상 정보도 필요없이 그냥 회원가입이 자동으로".
+    //   이 창구로 와도 결과가 같아야 한다 — 신규고객 등록 창구의 규칙(registerInbound)을
+    //   **그대로** 부른다(규칙을 여기 다시 쓰면 할인율·팀을 바꿀 때 한쪽만 고치게 된다).
+    //   리드 필수 5개(회사·RFC …)는 보지 않는다 — 보면 구글 가입자 대부분이 400 으로 튕긴다.
+    if (isOpenSignup(mapInbound(raw))) {
+      const cap = { status: 200, payload: null,
+        code(c) { this.status = c; return this; }, send(b) { this.payload = b; return b; } };
+      await registerInbound({ raw, safe, ip, where, reply: cap, log: req.log, app, via: LEAD_KEY });
+      const out = cap.payload || errBody('ERR_INTERNAL', 'Error interno del ERP. Reintentar más tarde.');
+      const ok = cap.status === 200 && String(out.codigoError) === '0';
+      // 리드 목록에도 「자동 가입됨」으로 한 줄 남긴다(이미 닫힌 상태 — 팝업은 뜨지 않는다).
+      //   어떤 사람이 언제 웹으로 들어왔는지 「웹 가입 신청」 탭 하나에서 다 보이게.
+      let leadId = null;
+      if (ok && (await leadsReady())) {
+        try {
+          const ml = mapLead(raw);
+          const cust = out.erpCustomerCode ? (await query(
+            `SELECT id FROM customers WHERE code=$1 AND deleted_at IS NULL LIMIT 1`, [out.erpCustomerCode])).rows[0] : null;
+          const dup = ml.crmLeadCode ? (await query(
+            `SELECT id FROM crm_web_leads WHERE crm_lead_code=$1`, [ml.crmLeadCode])).rows[0] : null;
+          if (dup) {
+            leadId = Number(dup.id);
+            await query(
+              `UPDATE crm_web_leads SET status='done', customer_id=COALESCE($1, customer_id),
+                      closed_at=COALESCE(closed_at, now()), close_reason=COALESCE(close_reason, $2)
+                WHERE id=$3`, [cust ? cust.id : null, '자동 가입 (구글·페이스북)', dup.id]);
+          } else {
+            leadId = Number((await query(
+              `INSERT INTO crm_web_leads
+                 (crm_lead_code, empresa, nombre, apellido, telefono, correo, rfc,
+                  ciudad, estado, direccion, mensaje, payload, remote_ip, auth_in,
+                  status, customer_id, closed_at, close_reason)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,'done',$15,now(),$16)
+               RETURNING id`,
+              [ml.crmLeadCode, ml.empresa, ml.nombre, ml.apellido, ml.telefono, ml.correo, ml.rfc,
+               ml.ciudad, ml.estado, ml.direccion, ml.mensaje, JSON.stringify(safe), ip || null, where,
+               cust ? cust.id : null, '자동 가입 (구글·페이스북)'])).rows[0].id);
+          }
+        } catch (_) { /* 리드 기록 실패가 가입을 되돌리지 않는다 — 고객은 이미 생겼다 */ }
+      }
+      await writeLog({ ...base, auth_ok: true, http_status: cap.status,
+        result: ok ? (/ya exist/i.test(String(out.mensaje || '')) ? 'updated' : 'created') : 'rejected',
+        erp_code: out.erpCustomerCode || null, codigo_error: String(out.codigoError || ''),
+        mensaje: `자동 가입(구글·페이스북) → 신규고객 등록으로 처리: ${out.mensaje || ''}`.slice(0, 400) });
+      return reply.code(cap.status).send(leadId ? { ...out, leadId } : out);
+    }
+
     if (!(await leadsReady())) {
       const body = errBody('ERR_INTERNAL', 'El ERP aún no aplicó la migración 0210. Reintentar más tarde.');
       await writeLog({ ...base, auth_ok: true, http_status: 503, result: 'rejected',

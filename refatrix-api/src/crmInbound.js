@@ -60,12 +60,15 @@ export function mapInbound(body) {
     rfc: S(pick(f, ['rfc', 'RFC', 'rfcCliente', 'taxId', 'nrfc'])),
     nombre: S(pick(f, ['nombre', 'name', 'razonSocial', 'nombreRazonSocial', 'nombreCliente', 'businessName', 'companyName'])),
     apellido: S(pick(f, ['apellido', 'apellidos', 'lastName', 'surname', 'apellidoPaterno'])),
-    telefono: S(pick(f, ['telefono', 'phone', 'tel', 'celular', 'telefonoContacto', 'mobile'])),
+    telefono: S(pick(f, ['telefono', 'phone', 'tel', 'celular', 'telefonoContacto', 'mobile', 'whatsapp'])),
     correo: S(pick(f, ['correo', 'email', 'correoElectronico', 'mail', 'correoCliente'])),
 
     crmCode: S(pick(f, ['crmCustomerCode', 'customerCode', 'codigoCliente', 'codigo', 'clienteCodigo', 'crmCode'])),
     crmId: S(pick(f, ['customerId', 'crmCustomerId', 'idCliente', 'clienteId'])),
-    nombreComercial: S(pick(f, ['nombreComercial', 'tradeName', 'aliasComercial'])),
+    // 20261022 · 웹 가입 신청 창구는 회사명을 `empresa` 로 보낸다 — 그 창구가 구글·페이스북
+    //   가입을 이 등록 규칙으로 넘길 때 회사명을 잃지 않게 동의어를 더했다.
+    nombreComercial: S(pick(f, ['nombreComercial', 'tradeName', 'aliasComercial',
+      'empresa', 'nombreEmpresa', 'compania', 'company'])),
     tipo: S(pick(f, ['tipo', 'tipoCliente', 'customerType', 'giro'])),
     tier: S(pick(f, ['tier', 'nivel', 'categoria'])),
 
@@ -279,6 +282,16 @@ export function normalizeOrigin(v) {
 /** 이 유입경로는 「들어오는 대로 받는」 대상인가. */
 export function isOpenOrigin(v) {
   return OPEN_ORIGINS.includes(normalizeOrigin(v));
+}
+
+/**
+ * 20261022 · 이 가입은 「자동 가입(10%)」 대상인가 — **판정은 여기 한 곳**이다.
+ *   디렉터 확정(2026-10-22): "CUS_Origin 으로 보내는 게 있으면 이게 10% 자동할인 고객".
+ *   즉 **CUS_Origin 하나만 본다**(GOOGLE · FACEBOOK). 로그인 방식(provider) 같은 다른 필드나
+ *   이메일 도메인(@gmail.com)은 근거가 아니다 — 서류를 내는 일반 고객 다수가 gmail 을 쓴다.
+ */
+export function isOpenSignup(m) {
+  return isOpenOrigin(m && m.origin);
 }
 
 /**

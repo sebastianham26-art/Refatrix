@@ -188,11 +188,12 @@ dbTest('B. 실 서버 + PostgreSQL', async (t) => {
     assert.ok(c.rfc_claimed_at, 'RFC 를 넣었으면 선점 시각이 찍힌다');
   });
 
-  await t.test('B8. 0267 · CRM 수신 고객은 등록 즉시 활성 + 사후승인 대기', async () => {
+  await t.test('B8. 0267 · CRM 수신 고객은 등록 즉시 활성 · 20261022 구글·페이스북은 사후승인도 없다', async () => {
     const { j } = await mk({ CUS_Origin: 'GOOGLE', nombre: `ACT${SFX}`, correo: `act${SFX}@x.mx` });
     const c = await byCode(j.erpCustomerCode);
     assert.equal(c.approval_status, 'approved', '예전에는 pending 이라 견적에 쓸 수 없었다');
-    assert.equal(c.ratified_at, null, '사후승인 목록에는 남아야 한다');
+    // 20261022 디렉터 지시 "사후승인도 필요없고" — 예전 계약(ratified_at NULL)을 새 계약으로 갱신.
+    assert.ok(c.ratified_at, '자동 가입은 사후승인 목록에 쌓이지 않는다');
     assert.equal(c.approved_by, null, '아무도 승인하지 않았다');
     assert.equal(j.estatus, 'aprobado', '상대에게도 사실대로 — 「승인 대기」라고 하면 안 된다');
   });
@@ -222,6 +223,7 @@ dbTest('B. 실 서버 + PostgreSQL', async (t) => {
     assert.equal(Number(c.discount_agreed), 12, '보내온 할인율을 그대로');
     assert.equal(c.doc_gate, true, '일반 경로는 서류 관문 대상 그대로');
     assert.equal(Number(c.discount), 0, '서류가 없으니 실효는 0 — 기존 동작');
+    assert.equal(c.ratified_at, null, '일반 경로는 여전히 사후승인 대기다(20261022 변경 대상 아님)');
   });
 
   await t.test('B11. 유입경로 원문을 가두지 않고 그대로 담는다', async () => {
