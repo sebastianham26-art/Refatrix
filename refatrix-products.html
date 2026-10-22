@@ -15,7 +15,7 @@
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
     font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
-  .wrap{max-width:920px;margin:0 auto}
+  .wrap{max-width:1320px;margin:0 auto}   /* 2026-10-22 · 920 → 1320: 제품 목록이 찌그러지지 않게 */
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
   .who{margin-left:auto;font-size:13px;text-align:right}
@@ -208,6 +208,15 @@
   .posb.r{background:#FBEFE0;color:#9a5a12;border:1px solid #efd7b6}
   .posb.fr{background:#EFE9F7;color:#5a3f8a;border:1px solid #dacfee}
   .possec{margin:10px 0 14px}
+  /* 2026-10-22 · 제품 목록 폭 정리: 코드 칸은 코드 + 아래 배지 줄, 바코드는 경쟁사 칸 아래 작게 */
+  td.code .cbad{margin:3px 0 0 14px;display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+  td.code .cbad .posb,td.code .cbad .lpc,td.code .cbad .kitb{margin-left:0}
+  td.code .cbad:empty{display:none}
+  td.sydc{font-size:11px;color:#6f6a60;min-width:130px;max-width:190px}
+  th.sortable{white-space:nowrap}
+  tr.prow td.code{min-width:158px}
+  tr.prow td.code .cbad{flex-wrap:nowrap}
+  .eanl{font-size:9.5px;color:#a39d90;margin-top:2px;font-family:ui-monospace,Consolas,monospace;white-space:nowrap}
   /* 0293 · 키트 행 · 구성품 하위 줄 */
   .kitb{display:inline-block;margin-left:6px;font-size:10.5px;font-weight:800;color:#5a3f8a;background:#EFE9F7;border-radius:5px;padding:1px 6px;vertical-align:1px}
   tr.kitsub td{background:#FBFAF6;border-top:none;font-size:12px}
@@ -630,7 +639,8 @@
       prodHasList=items.some(p=>'list_price' in p); prodHasCost=items.some(p=>'avg_cost' in p);
       const isDir=session&&session.user&&session.user.role==='director';
       // 0179: 「상태」 열 +1, 디렉터는 선택 체크박스 열 +1 (드릴다운 colspan 계산에 반영)
-      const colN=10+(isDir?1:0)+(prodHasList?1:0)+(prodHasCost?2:0);
+      // 2026-10-22 · List price 는 코드 옆 칸으로 옮겨 오른쪽 List Price 열은 뺀다(디렉터 지시)
+      const colN=9+(isDir?1:0)+(prodHasCost?2:0);   // 2026-10-22 · 바코드 열 뺌(경쟁사 칸 아래 작게)
       if($('stBar')) $('stBar').classList.toggle('hidden',!isDir);
       // 2026-10-07 — 모든 열 제목 클릭 정렬(서버측·전체 데이터 기준). 4번째 인자 = 추가 속성(title 등).
       const sh=(key,label,cls,attr)=>'<th class="'+(cls==null?'num ':cls)+'nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'"'+(attr||'')+'>'+label
@@ -638,36 +648,33 @@
       let h='<table><thead><tr>'
         +(isDir?'<th class="selc" title="일괄 점검할 SKU 선택 (현재 페이지 전체)"><input type="checkbox" id="stAll"></th>':'')
         +sh('code','코드','')+sh('active','상태','',' title="비활성 = 신규 견적·매출·오퍼시트에서 사용 차단. 과거 내역은 그대로 조회됩니다."')
-        +sh('syd','경쟁사(SyD) · OE','',' title="아래 초록 글씨 = OE(순정) 번호 · 정렬은 SyD 코드 기준"')+sh('app','적용차종','')+sh('ean','바코드','')+sh('rack','랙','')+sh('material','소재','')
+        +sh('syd','경쟁사(SyD) · OE','',' title="아래 초록 글씨 = OE(순정) 번호 · 정렬은 SyD 코드 기준"')+sh('app','적용차종','')+sh('rack','랙','')+sh('material','소재','')
         +sh('stock','재고')+sh('backorder','Backorder')+sh('sold','누적판매')
-        +(prodHasList?sh('listprice','List Price'):'')
         +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
         +'</tr></thead><tbody>';
       items.forEach(function(p){
         var stock=Number(p.stock_qty);
         var val=('avg_cost' in p)&&p.avg_cost!=null?Number(p.avg_cost)*stock:null;
         var syd=(p.scode||'').toString().replace(/\s*\/\/\s*/g,' · '); var app=(p.app||'').toString();
-        if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>40)app=app.slice(0,40)+'…';
+        if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>70)app=app.slice(0,70)+'…';
         var sold=Number(p.sold_qty||0);
         var bo=Number(p.backorder_qty||0);
         var rack=rackCellHtml(p);
         var act=(p.is_active!==false);
         h+='<tr class="prow'+(act?'':' inact')+'" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" data-name="'+escP(p.name||'')+'" data-active="'+(act?'1':'0')+'" style="cursor:pointer">'
           +(isDir?('<td class="selc"><input type="checkbox" class="stChk" data-pid="'+p.id+'"'+(stSel.has(Number(p.id))?' checked':'')+'></td>'):'')
-          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+(p.kit?'<span class="kitb" title="VIO 프로모션 키트 '+escP(p.kit.promo_no)+' — 견적에 넣으면 아래 구성품 줄로 풀려 각 부품 재고로 주문됩니다">🧰 KIT · '+p.kit.items.length+'종</span>':'<span class="posb" data-pcode="'+escP(p.code)+'"></span>')
-            +(('list_price' in p)?'<span class="lpc" title="List price (CTR 정가 · IVA 별도)">'+(p.list_price!=null&&p.list_price!==''?'$'+Number(p.list_price).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}):'List —')+'</span>':'')+'</td>'
+          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'<div class="cbad">'+(p.kit?'<span class="kitb" title="VIO 프로모션 키트 '+escP(p.kit.promo_no)+' — 견적에 넣으면 아래 구성품 줄로 풀려 각 부품 재고로 주문됩니다">🧰 KIT · '+p.kit.items.length+'종</span>':'<span class="posb" data-pcode="'+escP(p.code)+'"></span>')
+            +(('list_price' in p)?'<span class="lpc" title="List price (CTR 정가 · IVA 별도)">'+(p.list_price!=null&&p.list_price!==''?'$'+Number(p.list_price).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}):'List —')+'</span>':'')+'</div></td>'
           // 0224 · 비활성 SKU 는 「중단 후 요청 N건」이 배지 옆에 붙는다(아래 dmdDecorate 가 채운다).
           +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+(act?'':'<span class="dmdtag" data-pid="'+p.id+'"></span>')+'</td>'
-          +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+oeListCell(p.oe)+'</td>'
+          +'<td class="sydc">'+(syd||'—')+oeListCell(p.oe)+(p.ean?'<div class="eanl" title="바코드(EAN)">▥ '+escP(p.ean)+'</div>':'')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+cnBadgeHtml(p.app)+(app||'—')+'</td>'
-          +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
           +'<td class="rack nowrap"'+(p.rack_stock&&p.rack_stock.length?' title="랙별 재고(실사·적치·위치변경·출고로 자동 유지) · FM = fast moving 랙 · 위 → 아래 = 피킹 순서"':'')+'>'+(rack||'—')+'</td>'
           +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
             +(isDir?' title="클릭하면 알루미늄 지정/해제" style="cursor:pointer"':'')+'>'+matBadge(p.material)+'</td>'
           +(p.kit?'<td class="num nowrap '+(p.kit.buildable<=0?'lowstock':'')+'" title="키트는 따로 재고가 없습니다 — 지금 구성품 재고로 만들 수 있는 세트 수">세트 '+qty(p.kit.buildable)+'</td>':'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>')
           +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량(구매내역 backorder)">'+(bo>0?qty(bo):'—')+'</td>'
           +'<td class="num">'+qty(sold)+'</td>'
-          +(prodHasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
           +(prodHasCost?'<td class="num">'+fmt(p.avg_cost)+'</td>':'')
           +(prodHasCost?'<td class="num">'+fmt(val)+'</td>':'')
           +'</tr>';
@@ -2003,16 +2010,14 @@
       return '<tr class="kitsub'+(last?' last':'')+(act?'':' inact')+'" data-kitof="'+k.id+'">'
         +(isDir?'<td class="selc"></td>':'')
         +'<td class="code"><span class="kt">'+(last?'└':'├')+'</span>'+escP(c.code)+'<span class="kq" title="키트 1세트에 들어가는 수량">×'+qty(need)+'</span><span class="posb" data-pcode="'+escP(c.code)+'"></span>'
-          +(('list_price' in c)?'<span class="lpc">'+lp(c.list_price)+'</span>':'')+'</td>'
+          +(('list_price' in c)?'<span class="lpc"'+(need>1&&c.list_price!=null?' title="1세트 ×'+qty(need)+' = '+lp(Number(c.list_price)*need)+'"':'')+'>'+lp(c.list_price)+(need>1&&c.list_price!=null?' <small style="font-weight:600;opacity:.75">×'+qty(need)+' = '+lp(Number(c.list_price)*need)+'</small>':'')+'</span>':'')+'</td>'
         +'<td class="nowrap">'+stBadge(act, c.inactive_reason)+'</td>'
-        +'<td style="font-size:11px;color:#6f6a60" colspan="2">'+escP(c.name||'')+'</td>'
-        +'<td class="nowrap">'+(escP(c.ean)||'—')+'</td>'
+        +'<td style="font-size:11px;color:#6f6a60" colspan="2">'+escP(c.name||'')+(c.ean?'<div class="eanl">▥ '+escP(c.ean)+'</div>':'')+'</td>'
         +'<td class="rack nowrap">'+(rackCellHtml(c)||'—')+'</td>'
         +'<td class="nowrap">'+matBadge(c.material)+'</td>'
         +'<td class="num '+(stock<need?'lowstock':'')+'" title="재고 '+qty(stock)+' ÷ 1세트 '+qty(need)+'개 = '+qty(Math.floor(stock/need))+'세트">'+qty(stock)+'</td>'
         +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량'+(inc>0?(' · 입고 예정 '+qty(inc)+(c.incoming_eta?(' (ETA '+escP(c.incoming_eta)+')'):'')):'')+'">'+(bo>0?qty(bo):'—')+(inc>0?'<div class="kin">입고 '+qty(inc)+(c.incoming_eta?' · '+escP(String(c.incoming_eta).slice(5,10)):'')+'</div>':'')+'</td>'
         +'<td class="num">—</td>'
-        +(prodHasList?'<td class="num">'+fmt(c.list_price)+(need>1&&c.list_price!=null?'<div class="kin">×'+qty(need)+' = '+fmt(Number(c.list_price)*need)+'</div>':'')+'</td>':'')
         +(prodHasCost?'<td class="num">'+fmt(c.avg_cost)+'</td>':'')
         +(prodHasCost?'<td class="num">'+fmt(val)+'</td>':'')
         +'</tr>';

@@ -32,6 +32,15 @@
 - 바뀐 파일: `refatrix-api/src/routes/productRoutes.js` · `refatrix-products.html` · 시험 `vio_promos.test.mjs` · `test/helpers/pos_e2e_server.mjs`
 - 배포: 백엔드 `productRoutes.js` → Railway Success → 프론트 `refatrix-products.html` (마이그레이션 없음)
 
+### 추가 — 제품 찾기 오른쪽 List Price 열 뺌
+- 코드 옆에 List price 칸이 있어 누적판매 오른쪽 List Price 열은 없앰(디렉터 지시). 키트 구성품 줄은 코드 옆 칸에 `×2 = $672.00` 함께 표시. 화면 파일 `refatrix-products.html` 만.
+
+### 추가(같은 날) — 제품 찾기 목록 정리(찌그러짐)
+- 화면 폭 920px → **1320px**(가장 큰 원인 — 큰 화면에서도 920px 안에 12열을 넣고 있었음)
+- 오른쪽 List Price 열 빼기(코드 옆 칸으로 대신) · **바코드 열 빼기** → 경쟁사(SyD)·OE 칸 아래 작은 회색 `▥ 750…`
+- 코드 칸: 코드 한 줄 + 아래 배지 줄(장착 위치 · List price · KIT) · 열 제목 줄바꿈 없음 · 적용차종 40 → 70자
+- 바뀐 파일: `refatrix-products.html` 만(배포 = 그 파일 Push)
+
 ## ② 배포 순서
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull**
