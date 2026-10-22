@@ -1598,10 +1598,13 @@ export default async function productRoutes(app) {
       const byVar = catCells.get(catKey);
       if (!byVar.has(model)) byVar.set(model, new Map());
       const byCtr = byVar.get(model);
-      if (!byCtr.has(r.ctr)) {
-        const yStr = yf != null ? (yt != null && yt !== yf ? yf + '-' + yt : String(yf)) : '';
+      const yStr = yf != null ? (yt != null && yt !== yf ? yf + '-' + yt : String(yf)) : '';
+      if (byCtr.has(r.ctr)) {   // 2026-10-22 · 같은 차종명에 적용 연식이 여러 줄이면 모두 남김(yrs) — VIO 세대별 프로모션 필터용
+        const cell0 = byCtr.get(r.ctr);
+        if (yStr && !cell0.yrs.includes(yStr)) cell0.yrs.push(yStr);
+      } else {
         const cell = {
-          ctr: r.ctr, syd: sydByPid[Number(r.product_id)] || [], name: r.name || '', year: yStr,
+          ctr: r.ctr, syd: sydByPid[Number(r.product_id)] || [], name: r.name || '', year: yStr, yrs: yStr ? [yStr] : [],
           stock: r.stock_qty != null ? Number(r.stock_qty) : 0,
           sold: soldByPid[Number(r.product_id)] || 0,
           sold_by: custByPid[Number(r.product_id)] || [],

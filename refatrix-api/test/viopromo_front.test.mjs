@@ -1,5 +1,5 @@
 // =====================================================================
-// VIO 제품찾기·프로모션 화면 (jsdom · build vf16w · 2026-10-22) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
+// VIO 제품찾기·프로모션 화면 (jsdom · build vf16x · 2026-10-22) — 운영 HTML 을 그대로 띄우고 fetch·canvas 만 스텁
 //   대기열(VIO 순 · 재고 품목 수) · 품목 넣기/빼기(재고 자동 + 손) · 이미지 뱅크 저장 · WhatsApp 발송 본문 · 예전 차종별 부품 주소
 //   실행: node --test test/viopromo_front.test.mjs   (jsdom 필요)
 // =====================================================================
@@ -97,7 +97,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16w/);
+  assert.match(d.title, /vf16x/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -116,7 +116,11 @@ test('프로모션 만들기: 재고 기준 자동 · 손으로 넣고 빼기 ·
   const { w, d } = boot();
   assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
   d.querySelector('#vpQueue [data-qrank="1"]').click();
-  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length === 8));
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length > 0));
+  // vf16x · 전체 연식 + 재고 없는 코드도 보기 → 8개 전부
+  d.querySelector('#vpGens [data-gen="-1"]').click();
+  d.getElementById('vpShowZero').checked = true; d.getElementById('vpShowZero').dispatchEvent(new w.Event('change'));
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length > 0));
   assert.ok(d.getElementById('vpOverlay').classList.contains('open'));
   const checked = () => [...d.querySelectorAll('#vpParts input[data-code]:checked')].map((x) => x.dataset.code).sort();
   assert.deepEqual(checked(), ['CB0336', 'CE0536L', 'CL0477', 'CQ0280L', 'CQ0280R', 'GV1043'], '재고 0(CE0536R · PL0477)은 자동 제외');
@@ -154,7 +158,7 @@ test('이미지 뱅크 저장 → WhatsApp 발송(관심 차종 고객 · 지금
   const { w, d, calls } = boot();
   assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
   d.querySelector('#vpQueue [data-qrank="1"]').click();
-  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length === 8));
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length > 0));
   calls.length = 0;
   d.getElementById('vpBank').click();
   assert.ok(await until(() => /이미지 뱅크/.test(d.getElementById('vpMsg').textContent)), d.getElementById('vpMsg').textContent);
@@ -235,7 +239,7 @@ test('전화번호 직접 입력: 여러 개 · 이름 붙여도 됨 · 새 번�
   const { w, d, calls } = boot();
   assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
   d.querySelector('#vpQueue [data-qrank="1"]').click();
-  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length === 8));
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length > 0));
   d.getElementById('vpWa').click();
   assert.ok(await until(() => d.getElementById('vpPhones')));
   const ta = d.getElementById('vpPhones');
@@ -288,4 +292,28 @@ test('누끼(배경 지우기) · 이미지 List price 칸이 있다 (vf16w)', {
   assert.match(html, /onnxruntime-web@1\.20\.1\/dist\//); assert.match(html, /isnet-general-use-q8\.onnx/);
   assert.match(html, /ort\.env\.wasm\.proxy=true/, '웹 워커로 돌려 화면이 멈추지 않게');
   assert.ok(!/Brazo de control|Bieleta híbrida/.test(html.replace(/\/\/.*$/gm, '')), '옛 번역 이름이 남아 있으면 안 됨');
+});
+
+test('연식 = VIO 세대: 기본은 재고 품목이 가장 많은 세대 · 세대 밖·재고 없는 코드는 목록에서 숨김 (vf16x)', { skip: SKIP }, async () => {
+  const { w, d } = boot();
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length > 0));
+  const codes = () => [...d.querySelectorAll('#vpParts input[data-code]')].map((x) => x.dataset.code).sort();
+  // Versa VIO 세대 = 2012-2019 · 2020-2025 → 기본 2012-2019 (재고 품목 4 > 0)
+  const on = d.querySelector('#vpGens .vpChip.on');
+  assert.match(on.textContent, /^2012-2019 · /); assert.match(on.textContent, /재고 4품목/);
+  assert.equal(d.getElementById('vpYears').value, '2012-2019');
+  assert.ok(!d.querySelector('#vpGens [data-var]') && !d.getElementById('vpYearFilter'), '예전 차종명 체크박스 없음');
+  assert.deepEqual(codes(), ['CB0336', 'CE0536L', 'CL0477', 'CQ0280L', 'CQ0280R'], 'GV1043(2020-2024)·재고 0 코드 숨김');
+  assert.match(d.getElementById('vpSum').textContent, /연식 2012-2019 밖 1개 숨김/);
+  assert.match(d.getElementById('vpSum').textContent, /재고 없는 2개 숨김/);
+  // 2020-2025 세대 → GV1043 만, 연식 칸 바뀜 · 저장
+  d.querySelector('#vpGens [data-gen="1"]').click();
+  assert.deepEqual(codes(), ['GV1043']);
+  assert.equal(d.getElementById('vpYears').value, '2020-2025');
+  const key = Object.keys(w.localStorage).find((k) => k.startsWith('vp_cfg_'));
+  assert.equal(JSON.parse(w.localStorage.getItem(key)).gen, '2020-2025');
+  const cards = w.VP._cardsOf(w.VP._itemsOf(w.VP._st.d, null, 'versa').filter((it) => it.rng.some((r) => r[0] <= 2025 && r[1] >= 2020)), w.VP._isInc);
+  assert.equal(JSON.stringify([...cards].map((c) => c.label)), '["BUJE"]');
 });
