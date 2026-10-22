@@ -201,6 +201,27 @@
   .stlist td{font-size:12px}
   .stlist tr{cursor:pointer}
   .stlist tr:hover td{background:#faf8f3}
+  /* 0292 · 장착 위치 */
+  .posb{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;vertical-align:1px;white-space:nowrap}
+  .posb:empty{display:none}
+  .posb.f{background:#E6EEF9;color:#1e4f9a;border:1px solid #c9d8ef}
+  .posb.r{background:#FBEFE0;color:#9a5a12;border:1px solid #efd7b6}
+  .posb.fr{background:#EFE9F7;color:#5a3f8a;border:1px solid #dacfee}
+  .possec{margin:10px 0 14px}
+  .possec .pgrp{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #E6E1D6;flex-wrap:wrap}
+  .possec .pgrp:last-child{border-bottom:none}
+  .possec .plab{min-width:150px;font-weight:800;font-size:12.5px}
+  .possec .plab small{display:block;font-weight:600;color:var(--muted);font-size:10.5px}
+  .possec .pveh{flex:1;display:flex;gap:5px;flex-wrap:wrap}
+  .possec .pveh span{font-size:11px;background:#fff;border:1px solid #E6E1D6;border-radius:6px;padding:2px 7px}
+  .possec .pveh span.cand{color:#8a8578;border-style:dashed}
+  .possec .pveh span.fix{border-color:#d9b26a}
+  .posup{margin-top:16px;border:1px solid #cfd8e6;background:#F5F8FC;border-radius:12px;padding:12px 14px}
+  .posfile{position:relative;overflow:hidden;cursor:pointer}
+  .posfile input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .posgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:8px 0}
+  .posgrid div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:11.5px;color:var(--muted)}
+  .posgrid div b{display:block;font-size:17px;color:var(--ink)}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
@@ -317,6 +338,18 @@
       </div>
     </div>
     <div class="msg" id="commitMsg"></div>
+
+    <!-- 0292 · 장착 위치 원본 업로드 -->
+    <div class="posup" id="posUp">
+      <div style="font-weight:800;color:var(--brand)">🧭 장착 위치(앞/뒤 · 상/하 · 좌/우) 원본 업로드</div>
+      <div class="hint" style="margin-top:4px">REFATRIX Platform Export(CrossReference 시트)를 그대로 올리세요. <b>Block</b>(Front/Rear) · <b>Position</b>(Front Lower LH …) 과 <b>CTR</b> · <b>4th CTR</b> 열의 코드를 읽어 <b>코드 × 차종마다</b> 위치를 저장합니다. 한 칸에 코드가 여러 개(' // ')면 모두, <b>L/R 짝 코드는 코드 끝 L/R 로 좌우</b>를 정합니다. 올리면 <b>전체 교체</b>(예전 위치 자료는 지워짐) — 먼저 미리보기로 확인하세요. 제품 마스터(이름·가격·재고)는 바뀌지 않습니다.</div>
+      <div class="hint" id="posStatus" style="margin-top:6px"></div>
+      <div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="btn ghost sm posfile">📂 원본 파일 고르기 (.xlsx · .csv)<input type="file" id="posFile" accept=".xlsx,.xls,.csv"></label>
+        <span class="hint" id="posFileName" style="margin:0"></span>
+      </div>
+      <div id="posPrev" style="margin-top:8px"></div>
+    </div>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
       <div class="hint" style="margin-top:0">이미 올린 제품들의 경쟁사 코드·적용차종 분해 데이터를 다시 만들려면 아래를 누르세요(검색이 비어 나올 때).</div>
       <button class="btn ghost sm" id="resyncBtn" style="margin-top:6px">분해 데이터 전체 재동기화</button>
@@ -485,6 +518,7 @@
     if($('histCard')) $('histCard').classList.toggle('hidden', !isHist);
     // 제품 이력은 제품 화면 열람자 전체 — 첫 진입에서 한 번만 자동 조회.
     if(isHist && !phLoaded) phLoad(true);
+    if(isUp) posStatusLoad();   // 0292 장착 위치 업로드 현황
   }
   function applyHashTab(){
     var t='find', q0=''; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'find'; q0=p.get('q')||''; }catch(e){}
@@ -611,7 +645,7 @@
         var act=(p.is_active!==false);
         h+='<tr class="prow'+(act?'':' inact')+'" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" data-name="'+escP(p.name||'')+'" data-active="'+(act?'1':'0')+'" style="cursor:pointer">'
           +(isDir?('<td class="selc"><input type="checkbox" class="stChk" data-pid="'+p.id+'"'+(stSel.has(Number(p.id))?' checked':'')+'></td>'):'')
-          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
+          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'<span class="posb" data-pcode="'+escP(p.code)+'"></span></td>'
           // 0224 · 비활성 SKU 는 「중단 후 요청 N건」이 배지 옆에 붙는다(아래 dmdDecorate 가 채운다).
           +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+(act?'':'<span class="dmdtag" data-pid="'+p.id+'"></span>')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+oeListCell(p.oe)+'</td>'
@@ -642,6 +676,7 @@
       if(pp) pp.addEventListener('click',()=>{ if(prodOffset>0){ prodOffset=Math.max(0,prodOffset-prodLimit); loadProducts(); }});
       r.querySelectorAll('.prow').forEach(tr=>{ tr.addEventListener('click',()=>toggleDrill(tr, Number(tr.getAttribute('data-pid')), colN)); });
       dmdDecorate(r);   // 0224 · 비활성 행에 「중단 후 요청 N건」 표시
+      posDecorate(r);   // 0292 · 장착 위치 배지(앞·하·좌)
       // 0179 — 선택 체크박스(행 클릭 드릴다운과 분리)
       r.querySelectorAll('.stChk').forEach(cb=>{
         cb.addEventListener('click',e=>e.stopPropagation());
@@ -698,6 +733,7 @@
       if(nb) nb.addEventListener('click',function(e){ e.stopPropagation();
         openProductEditor(null, Number(nb.getAttribute('data-pid'))); });
       stBindPanel(dr, pid, d);   // 0179 활성/비활성 패널
+      posDetail(dr, pCode);      // 0292 장착 위치 내역
     }catch(e){ dr.firstChild.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>'; }
   }
   function drillHtml(d, appText, pCode, pSyd, pid){
@@ -729,7 +765,7 @@
       if(asm.length) h+='<div class="oenote">FOR — '+escP(d.oe_for_note||OE_FOR_NOTE)+'</div>';
       return h+'</div>';
     }
-    const appHtml=appSection(appText)+oeSection(d.oe)+statusPanel(d, pid);
+    const appHtml=appSection(appText)+'<div class="possec" data-pcode="'+escP(pCode||'')+'"><div class="dh">장착 위치</div><div class="hint" style="margin:2px 0">불러오는 중…</div></div>'+oeSection(d.oe)+statusPanel(d, pid);
 
     // ── 원가 분석 패널(좌) ──
     function costPanel(c){
@@ -1997,6 +2033,122 @@
     // 비활성 SKU 는 열자마자 수요를 보여 준다 — 버튼을 한 번 더 눌러야 보이면 아무도 안 본다.
     if(d && d.product && d.product.is_active===false) dmdLoad(pid, (d.product.code)||'');
   }
+
+  // ── 0292 · 장착 위치(앞/뒤 · 상/하 · 좌/우) ───────────────────────────────
+  //   원본: 제품 마스터 업로드 탭 맨 아래 「🧭 장착 위치 원본 업로드」(디렉터) → 코드 × 차종마다 저장
+  //   보기: 목록 코드 옆 배지(앞·하·좌) · 행을 펼치면 「장착 위치」 내역(위치별 차종)
+  const POS_KO={front:'앞',rear:'뒤',upper:'상',lower:'하',lh:'좌',rh:'우'};
+  const POS_FULL={front:'앞(Delantera)',rear:'뒤(Trasera)',upper:'상(Superior)',lower:'하(Inferior)',lh:'좌(LH · Izquierda)',rh:'우(RH · Derecha)'};
+  const posCache={};
+  function posCls(sum){ const b=sum.blocks||[]; return b.length>1?'fr':(b[0]==='rear'?'r':'f'); }
+  function posTitle(sum){ return '장착 위치: '+[(sum.blocks||[]).map(k=>POS_FULL[k]).join('/'),(sum.levels||[]).map(k=>POS_FULL[k]).join('/'),(sum.sides||[]).map(k=>POS_FULL[k]).join('/')].filter(Boolean).join(' · '); }
+  async function posLookup(codes,detail){
+    const need=codes.filter(c=>c&&!(c in posCache&&(!detail||posCache[c]&&posCache[c].rows)));
+    if(need.length){
+      try{
+        const d=await fetch(session.api+'/api/products/positions/lookup',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({codes:need,detail:!!detail})}).then(r=>r.ok?r.json():{items:{}});
+        need.forEach(c=>{ posCache[c]=(d.items||{})[c]||null; });
+      }catch(e){ return; }
+    }
+  }
+  /** 목록의 코드 옆에 위치 배지 — 그 페이지 코드를 한 번에 조회. */
+  async function posDecorate(root){
+    const tags=[...root.querySelectorAll('.posb[data-pcode]')]; if(!tags.length) return;
+    const codes=[...new Set(tags.map(t=>String(t.getAttribute('data-pcode')||'').toUpperCase()))];
+    await posLookup(codes,false);
+    tags.forEach(t=>{ const s=posCache[String(t.getAttribute('data-pcode')||'').toUpperCase()]; if(!s||!s.ko) return;
+      t.textContent=s.ko; t.className='posb '+posCls(s); t.title=posTitle(s); });
+  }
+  /** 펼친 행: 위치별로 묶어 차종을 보여 준다. */
+  async function posDetail(dr,code){
+    const box=dr.querySelector('.possec'); if(!box) return;
+    const C=String(code||'').toUpperCase(); await posLookup([C],true);
+    const s=posCache[C];
+    if(!s||!s.rows||!s.rows.length){ box.innerHTML='<div class="dh">장착 위치</div><div class="hint" style="margin:2px 0">장착 위치 자료가 없습니다(제품 마스터 업로드 › 🧭 장착 위치 원본 업로드).</div>'; return; }
+    const g={}, order=[];
+    s.rows.forEach(r=>{ const k=[r.block,r.level||'',r.side||''].join('|'); if(!g[k]){ g[k]={r:r,list:[]}; order.push(k); } g[k].list.push(r); });
+    let h='<div class="dh">장착 위치 <span class="posb '+posCls(s)+'" title="'+escP(posTitle(s))+'">'+escP(s.ko)+'</span> <span style="font-weight:500;color:#6f6a60;font-size:11px">· 차종 '+s.rows.length+'건</span></div>';
+    order.forEach(k=>{ const x=g[k].r;
+      const ko=[POS_KO[x.block],x.level?POS_KO[x.level]:'',x.side?POS_KO[x.side]:''].filter(Boolean).join('·');
+      const raw=[x.block==='front'?'Front':'Rear',x.level==='upper'?'Upper':(x.level==='lower'?'Lower':''),x.side?x.side.toUpperCase():''].filter(Boolean).join(' ');
+      h+='<div class="pgrp"><div class="plab">'+escP(ko)+'<small>'+escP(raw)+'</small></div><div class="pveh">'
+        +g[k].list.map(r=>{ const t=[r.brand,r.model,r.gen&&r.gen!==r.model?r.gen:'',r.years].filter(Boolean).join(' ');
+          const tip=[(r.part||''),(r.pos?'원본: '+r.pos:''),(r.status||''),(r.fixed?'코드 끝 L/R 기준으로 좌우를 정함':'')].filter(Boolean).join(' · ');
+          return '<span class="'+(r.status==='Candidate'?'cand ':'')+(r.fixed?'fix':'')+'" title="'+escP(tip)+'">'+escP(t||'(차종 없음)')+(r.fixed?' ↔':'')+'</span>'; }).join('')
+        +'</div></div>'; });
+    h+='<div class="hint" style="margin:4px 0 0">점선 = Candidate(확정 전) · ↔ = 원본 좌우와 코드 끝 L/R 가 달라 코드 기준으로 정함</div>';
+    box.innerHTML=h;
+  }
+  // ── 업로드(디렉터) ──
+  const POS_HEAD={ ctr:['CTR','CLAVE CTR','CODIGO CTR'], ctr4:['4TH CTR'], block:['BLOCK','BLOQUE'], position:['POSITION','POSICION','POS'],
+    part:['PART','PARTE'], brand:['BRAND','MARCA'], model:['MODEL','MODELO'], gen:['MODEL (GENERATION)','GENERATION','GENERACION'],
+    years:['MODEL YEARS','YEARS','ANOS'], status:['STATUS','ESTADO'] };
+  const posNorm=(v)=>String(v==null?'':v).normalize('NFD').replace(/[̀-ͯ]/g,'').normalize('NFC').toUpperCase().replace(/\s+/g,' ').trim();
+  function posMapHeader(row){ const idx={}; (row||[]).forEach((h,i)=>{ const n=posNorm(h); Object.keys(POS_HEAD).forEach(k=>{ if(idx[k]==null&&POS_HEAD[k].indexOf(n)>=0) idx[k]=i; }); }); return idx; }
+  let posPayload=null;
+  async function posStatusLoad(){
+    const el=$('posStatus'); if(!el) return;
+    try{
+      const d=await fetch(session.api+'/api/products/positions/status',{headers:auth()}).then(r=>r.json());
+      if(!d.ready){ el.innerHTML='⚠ 서버에 장착 위치 표(0292)가 아직 없습니다 — <code>npm run migrate</code> 후 쓰세요.'; return; }
+      el.innerHTML=d.last?('현재: 코드 <b>'+qty(d.current.codes)+'</b>개 · 위치 줄 <b>'+qty(d.current.n)+'</b> · 마지막 업로드 '+escP(mxHora(d.last.uploaded_at))+(d.last.uploaded_by_name?(' · '+escP(d.last.uploaded_by_name)):'')+(d.last.file_name?(' · '+escP(d.last.file_name)):'')):'아직 올린 장착 위치 자료가 없습니다.';
+    }catch(e){ el.textContent=''; }
+  }
+  function posReadFile(file){
+    return new Promise((res,rej)=>{ const fr=new FileReader(); fr.onerror=()=>rej(new Error('read')); fr.onload=()=>{ try{
+      const wb=XLSX.read(new Uint8Array(fr.result),{type:'array'});
+      for(const name of wb.SheetNames){
+        const aoa=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:'',raw:false});
+        for(let i=0;i<Math.min(15,aoa.length);i++){
+          const idx=posMapHeader(aoa[i]);
+          if((idx.block!=null||idx.position!=null)&&(idx.ctr!=null||idx.ctr4!=null)){
+            const g=(r,k)=>idx[k]==null?'':r[idx[k]];
+            const rows=aoa.slice(i+1).filter(r=>String(g(r,'ctr')).trim()||String(g(r,'ctr4')).trim())
+              .map(r=>({ctr:g(r,'ctr'),ctr4:g(r,'ctr4'),block:g(r,'block'),position:g(r,'position'),part:g(r,'part'),brand:g(r,'brand'),model:g(r,'model'),gen:g(r,'gen'),years:g(r,'years'),status:g(r,'status')}));
+            return res({sheet:name,header:i+1,total:aoa.length-i-1,rows:rows,cols:idx});
+          }
+        }
+      }
+      rej(new Error('Block/Position 과 CTR 열이 있는 시트를 찾지 못했습니다.'));
+    }catch(e){ rej(e); } }; fr.readAsArrayBuffer(file); });
+  }
+  async function posPick(file){
+    const box=$('posPrev'); $('posFileName').textContent=file?file.name:''; posPayload=null;
+    if(!file) return;
+    box.innerHTML='<div class="hint">파일을 읽는 중…</div>';
+    let f; try{ f=await posReadFile(file); }catch(e){ box.innerHTML='<div class="msg err">'+escP(e.message||'파일을 읽지 못했습니다.')+'</div>'; return; }
+    posPayload={file_name:file.name,rows:f.rows};
+    box.innerHTML='<div class="hint">시트 「'+escP(f.sheet)+'」 '+qty(f.total)+'줄 중 코드 있는 '+qty(f.rows.length)+'줄을 서버에서 확인 중…</div>';
+    const r=await fetch(session.api+'/api/products/positions/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(posPayload)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ box.innerHTML='<div class="msg err">미리보기 실패: '+escP(d.error==='forbidden'||d.error==='director_only'?'디렉터만 올릴 수 있습니다.':(d.note||d.error||('HTTP '+r.status)))+'</div>'; posPayload=null; return; }
+    const st=d.stats;
+    box.innerHTML='<div class="posgrid">'
+      +'<div><b>'+qty(st.rows_in)+'</b>코드 있는 원본 줄</div><div><b>'+qty(st.rows_saved)+'</b>저장할 위치 줄(코드×차종)</div>'
+      +'<div><b>'+qty(st.codes)+'</b>코드</div><div><b>'+qty(st.codes_known)+'</b>제품 마스터에 있는 코드</div>'
+      +'<div><b>'+qty(st.unknown_n)+'</b>마스터에 없는 코드</div><div><b>'+qty(st.side_fixed)+'</b>L/R 접미사로 좌우 정함</div>'
+      +'<div><b>'+qty(st.no_position)+'</b>앞/뒤를 몰라 뺀 줄</div></div>'
+      +'<div class="hint">예시: '+(d.sample||[]).map(x=>'<b>'+escP(x.code)+'</b> <span class="posb '+posCls(x)+'">'+escP(x.ko)+'</span>').join(' · ')+'</div>'
+      +(st.unknown_n?'<details style="margin:4px 0"><summary class="hint" style="cursor:pointer">마스터에 없는 코드 '+qty(st.unknown_n)+'개 보기 (저장은 됨 — 나중에 제품이 등록되면 바로 보임)</summary><div class="hint" style="font-family:ui-monospace,Consolas,monospace">'+escP((st.unknown_codes||[]).join(' · '))+(st.unknown_n>200?' …':'')+'</div></details>':'')
+      +'<div class="hint">지금 저장된 자료: 코드 '+qty(d.current.codes)+'개 · 줄 '+qty(d.current.n)+' — 반영하면 <b>전부 이 파일 내용으로 바뀝니다</b>.</div>'
+      +'<div style="margin-top:8px;display:flex;gap:8px"><button class="btn gold" type="button" id="posCommit">반영하기(전체 교체)</button><button class="btn ghost" type="button" id="posCancel">취소</button></div>'
+      +'<div class="msg" id="posMsg"></div>';
+    $('posCancel').addEventListener('click',()=>{ posPayload=null; box.innerHTML=''; $('posFileName').textContent=''; });
+    $('posCommit').addEventListener('click',posCommit);
+  }
+  async function posCommit(){
+    if(!posPayload) return; const b=$('posCommit'), m=$('posMsg');
+    if(!confirm('장착 위치 자료를 이 파일 내용으로 전부 바꿉니다. 진행할까요?')) return;
+    b.disabled=true; b.textContent='반영 중…';
+    try{
+      const r=await fetch(session.api+'/api/products/positions/commit',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(posPayload)});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+      m.className='msg ok'; m.innerHTML='✅ 반영했습니다 — 위치 줄 '+qty(d.stats.rows_saved)+' · 코드 '+qty(d.stats.codes)+'개 (이전 자료 '+qty(d.removed)+'줄 교체)';
+      Object.keys(posCache).forEach(k=>delete posCache[k]); posPayload=null; b.remove(); posStatusLoad();
+    }catch(e){ m.className='msg err'; m.textContent='반영 실패: '+(e.message||e); b.disabled=false; b.textContent='반영하기(전체 교체)'; }
+  }
+  (function(){ const f=$('posFile'); if(f) f.addEventListener('change',e=>{ const x=e.target.files&&e.target.files[0]; posPick(x); e.target.value=''; }); })();
 
   // ── 0224 · 판매중단 후 견적요청(수요) ───────────────────────────────
   //   0179 는 비활성 SKU 가 담긴 새 견적을 거절했고, 거절은 아무 기록도 남기지 않았다.

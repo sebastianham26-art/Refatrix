@@ -66,6 +66,16 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
         if (u.startsWith('mx_parts_coverage_dashboard.html')) return { ok: true, status: 200, text: async () => readFileSync(COVER, 'utf-8') };
         const p = new URL(u, 'https://example.test/');
         if (p.pathname === '/api/products/by-model') return json(byModel(p.searchParams.get('q') || ''));
+        if (p.pathname === '/api/products/positions/lookup') {
+          const R = (block, level, side, model, y_from, y_to) => ({ block, level, side, model, y_from, y_to });
+          const all = {
+            CQ0280L: { blocks: ['front'], levels: ['lower'], sides: ['lh'], ko: '앞·하·좌', rows: [R('front', 'lower', 'lh', 'Versa', 2012, 2019)] },
+            CB0336: { blocks: ['front', 'rear'], levels: ['lower'], sides: [], ko: '앞/뒤·하', rows: [R('front', 'lower', null, 'Versa', 2012, 2019), R('rear', 'lower', null, 'Sentra', 2013, 2018)] },
+            CL0477: { blocks: ['rear'], levels: [], sides: ['lh', 'rh'], ko: '뒤·좌/우', rows: [R('rear', null, 'lh', 'Tiida', 2007, 2012)] },
+          };
+          const items = {}; for (const c of body.codes) if (all[c]) items[c] = all[c];
+          return json({ items });
+        }
         if (p.pathname === '/api/products/applied-models') return json({ items: [] });
         if (p.pathname === '/api/products/syd-baseline') return json({ found: true, list_price_syd: 500 });
         if (p.pathname === '/api/promo-img/marks') return json({ marks: [{ x: 0.4, y: 0.5, w: 0.1, h: 0.08, kind: 'emblem' }] });
@@ -97,7 +107,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16y/);
+  assert.match(d.title, /vf16z/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -352,4 +362,20 @@ test('차종 선택: 누르면 VIO 순 목록 · 입력하면 찾기(연식 포�
   items()[0].dispatchEvent(new w.MouseEvent('mousedown', { bubbles: true }));
   assert.ok(await until(() => /SPORTAGE/.test(d.getElementById('vpHead').textContent)));
   assert.ok(w.VP._st.m.rank > 20, 'Top 20 밖');
+});
+
+test('장착 위치 배지: 이 차종·세대 줄이 있으면 그것 · 없으면 코드 전체(점선) · 자료 없으면 — (vf16z)', { skip: SKIP }, async () => {
+  const { w, d, calls } = boot();
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => d.querySelectorAll('#vpParts .vpCode .pos:not(.none)').length >= 3), d.getElementById('vpParts').innerHTML.slice(0, 300));
+  const lk = calls.find((c) => /positions\/lookup/.test(c.u));
+  assert.equal(lk.body.detail, true); assert.ok(lk.body.codes.includes('CQ0280L'));
+  const pos = (c) => d.querySelector('#vpParts input[data-code="' + c + '"]').closest('.vpCode').querySelector('.pos');
+  assert.equal(pos('CQ0280L').textContent, '앞·하·좌'); assert.ok(pos('CQ0280L').classList.contains('f'));
+  assert.ok(!pos('CQ0280L').classList.contains('gen'), 'Versa 2012-2019 줄 = 이 차종');
+  assert.equal(pos('CB0336').textContent, '앞·하', 'Versa 줄만 → 앞(뒤는 Sentra)');
+  assert.equal(pos('CL0477').textContent, '뒤·좌/우'); assert.ok(pos('CL0477').classList.contains('gen'), 'Tiida 뿐 → 코드 전체(점선)');
+  assert.ok(pos('CL0477').classList.contains('r'));
+  assert.equal(pos('CE0536L').textContent, '—'); assert.ok(pos('CE0536L').classList.contains('none'));
 });

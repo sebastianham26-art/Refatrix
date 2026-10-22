@@ -1,6 +1,6 @@
 # REFATRIX 인수인계 — VIO 제품찾기 · 차종별 부품 · 프로모션 → 한 화면 (2026-10-19)
 
-**마이그레이션 없음** · 화면 `refatrix-viofinder.html` build `vf16y`(차종 선택 · VIO 세대 연식 · 카탈로그 품명 · List price · 누끼 · 직접 가리기 · 로고·OE 항상 · 미리보기 고정 · 번호 직접 입력) · 새 백엔드 라우트 `GET /api/promo-img` · 산출물 `refatrix_vio_promo_v2.zip` (13파일 · 이 문서 포함) · 기준 커밋 `d1cafed`(2026-10-19 09:37 main)
+**마이그레이션 없음** · 화면 `refatrix-viofinder.html` build `vf16z`(장착 위치 배지 — 별도 문서 REFATRIX_handover_2026-10-22_product_positions.md · 차종 선택 · VIO 세대 연식 · 카탈로그 품명 · List price · 누끼 · 직접 가리기 · 로고·OE 항상 · 미리보기 고정 · 번호 직접 입력) · 새 백엔드 라우트 `GET /api/promo-img` · 산출물 `refatrix_vio_promo_v2.zip` (13파일 · 이 문서 포함) · 기준 커밋 `d1cafed`(2026-10-19 09:37 main)
 
 ## ① 설명
 
