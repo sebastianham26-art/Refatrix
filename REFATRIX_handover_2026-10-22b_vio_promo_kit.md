@@ -25,6 +25,13 @@
 
 **견적(주문)** — 견적 화면에서 `K0001`을 입력(자동완성에 🧰 KIT 배지)하면 구성 부품 줄로 바뀌고 줄마다 🧰 K0001 표시. 수량 2 → 각 부품 수량 × 2. 고객 할인율·재고 예약·부족분·매출 전환은 일반 부품 줄과 같음. 엑셀 업로드·CRM(웹) 수신 견적도 같은 조립기라 같이 풀림. 외부 카탈로그 API에는 키트 코드(K숫자)를 내보내지 않음.
 
+### 추가(같은 날) — 제품 찾기에서 키트 구성품 하위 줄
+- 키트 행: 코드 옆 `🧰 KIT · 3종` · 재고 칸은 **세트 N**(지금 구성품 재고로 만들 수 있는 수)
+- 바로 아래 구성품 줄(├ └): 코드 · **×1세트 수량** · 장착 위치 · List price · 상태 · 제품명 · 바코드 · **랙(랙별 수량 · FM · 위치 미지정)** · 소재 · **재고**(1세트 수량보다 적으면 빨강) · **Backorder · 입고 예정(수량 · ETA)** · List(×수량 금액) · (권한자) 평균원가 · 재고 평가액
+- 서버: `GET /api/products` 가 키트 행에 `kit:{promo_no, buildable, items:[…]}` 를 붙임(가격·원가는 권한대로)
+- 바뀐 파일: `refatrix-api/src/routes/productRoutes.js` · `refatrix-products.html` · 시험 `vio_promos.test.mjs` · `test/helpers/pos_e2e_server.mjs`
+- 배포: 백엔드 `productRoutes.js` → Railway Success → 프론트 `refatrix-products.html` (마이그레이션 없음)
+
 ## ② 배포 순서
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull**

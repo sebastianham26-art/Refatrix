@@ -208,6 +208,14 @@
   .posb.r{background:#FBEFE0;color:#9a5a12;border:1px solid #efd7b6}
   .posb.fr{background:#EFE9F7;color:#5a3f8a;border:1px solid #dacfee}
   .possec{margin:10px 0 14px}
+  /* 0293 · 키트 행 · 구성품 하위 줄 */
+  .kitb{display:inline-block;margin-left:6px;font-size:10.5px;font-weight:800;color:#5a3f8a;background:#EFE9F7;border-radius:5px;padding:1px 6px;vertical-align:1px}
+  tr.kitsub td{background:#FBFAF6;border-top:none;font-size:12px}
+  tr.kitsub td.code{padding-left:22px;font-weight:700}
+  tr.kitsub .kt{color:#b9b2a3;margin-right:6px;font-family:ui-monospace,Consolas,monospace}
+  tr.kitsub .kq{display:inline-block;margin-left:6px;font-size:10.5px;font-weight:800;color:#6f6a60;background:#EEEAE0;border-radius:5px;padding:0 5px}
+  tr.kitsub .kin{font-size:10px;color:#6f6a60;font-weight:600}
+  tr.kitsub.last td{border-bottom:2px solid #E6DFCF}
   .lpc{display:inline-block;margin-left:6px;font-size:11px;font-weight:800;color:#1f5f4a;background:#E8F3EE;border-radius:5px;padding:1px 6px;font-variant-numeric:tabular-nums;vertical-align:1px}
   .possec .pgrp{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #E6E1D6;flex-wrap:wrap}
   .possec .pgrp:last-child{border-bottom:none}
@@ -646,7 +654,7 @@
         var act=(p.is_active!==false);
         h+='<tr class="prow'+(act?'':' inact')+'" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" data-name="'+escP(p.name||'')+'" data-active="'+(act?'1':'0')+'" style="cursor:pointer">'
           +(isDir?('<td class="selc"><input type="checkbox" class="stChk" data-pid="'+p.id+'"'+(stSel.has(Number(p.id))?' checked':'')+'></td>'):'')
-          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'<span class="posb" data-pcode="'+escP(p.code)+'"></span>'
+          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+(p.kit?'<span class="kitb" title="VIO 프로모션 키트 '+escP(p.kit.promo_no)+' — 견적에 넣으면 아래 구성품 줄로 풀려 각 부품 재고로 주문됩니다">🧰 KIT · '+p.kit.items.length+'종</span>':'<span class="posb" data-pcode="'+escP(p.code)+'"></span>')
             +(('list_price' in p)?'<span class="lpc" title="List price (CTR 정가 · IVA 별도)">'+(p.list_price!=null&&p.list_price!==''?'$'+Number(p.list_price).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}):'List —')+'</span>':'')+'</td>'
           // 0224 · 비활성 SKU 는 「중단 후 요청 N건」이 배지 옆에 붙는다(아래 dmdDecorate 가 채운다).
           +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+(act?'':'<span class="dmdtag" data-pid="'+p.id+'"></span>')+'</td>'
@@ -656,13 +664,14 @@
           +'<td class="rack nowrap"'+(p.rack_stock&&p.rack_stock.length?' title="랙별 재고(실사·적치·위치변경·출고로 자동 유지) · FM = fast moving 랙 · 위 → 아래 = 피킹 순서"':'')+'>'+(rack||'—')+'</td>'
           +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
             +(isDir?' title="클릭하면 알루미늄 지정/해제" style="cursor:pointer"':'')+'>'+matBadge(p.material)+'</td>'
-          +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
+          +(p.kit?'<td class="num nowrap '+(p.kit.buildable<=0?'lowstock':'')+'" title="키트는 따로 재고가 없습니다 — 지금 구성품 재고로 만들 수 있는 세트 수">세트 '+qty(p.kit.buildable)+'</td>':'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>')
           +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량(구매내역 backorder)">'+(bo>0?qty(bo):'—')+'</td>'
           +'<td class="num">'+qty(sold)+'</td>'
           +(prodHasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
           +(prodHasCost?'<td class="num">'+fmt(p.avg_cost)+'</td>':'')
           +(prodHasCost?'<td class="num">'+fmt(val)+'</td>':'')
           +'</tr>';
+        if(p.kit) h+=kitSubRows(p, isDir);   // 0293 · 키트 구성품(하위 줄)
       });
       h+='</tbody></table>';
       // 페이지네이션 바
@@ -1983,6 +1992,32 @@
   // ===================================================================
   // 0245 · 제품찾기 「랙」 열 — 랙별 재고(product_rack_stock)를 피킹 순서(fast moving 먼저)로.
   //   랙 기록이 아직 없는 SKU 는 종전처럼 제품마스터 위치(rack_location)를 회색으로 보여준다.
+  // 0293 · 키트 구성품 하위 줄 — 열은 위 제품 줄과 같게(랙 · 재고 · Backorder · 입고 예정 · List)
+  function kitSubRows(k, isDir){
+    const lp=(v)=>v!=null&&v!==''?'$'+Number(v).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}):'List —';
+    return k.kit.items.map(function(c,i){
+      if(c.missing) return '<tr class="kitsub"><td colspan="99" class="hint">└ '+escP(c.code)+' — 제품 마스터에서 찾을 수 없음</td></tr>';
+      const stock=Number(c.stock_qty||0), bo=Number(c.backorder_qty||0), inc=Number(c.incoming_qty||0), need=Number(c.kit_qty||1);
+      const act=c.is_active!==false; const val=('avg_cost' in c)&&c.avg_cost!=null?Number(c.avg_cost)*stock:null;
+      const last=i===k.kit.items.length-1;
+      return '<tr class="kitsub'+(last?' last':'')+(act?'':' inact')+'" data-kitof="'+k.id+'">'
+        +(isDir?'<td class="selc"></td>':'')
+        +'<td class="code"><span class="kt">'+(last?'└':'├')+'</span>'+escP(c.code)+'<span class="kq" title="키트 1세트에 들어가는 수량">×'+qty(need)+'</span><span class="posb" data-pcode="'+escP(c.code)+'"></span>'
+          +(('list_price' in c)?'<span class="lpc">'+lp(c.list_price)+'</span>':'')+'</td>'
+        +'<td class="nowrap">'+stBadge(act, c.inactive_reason)+'</td>'
+        +'<td style="font-size:11px;color:#6f6a60" colspan="2">'+escP(c.name||'')+'</td>'
+        +'<td class="nowrap">'+(escP(c.ean)||'—')+'</td>'
+        +'<td class="rack nowrap">'+(rackCellHtml(c)||'—')+'</td>'
+        +'<td class="nowrap">'+matBadge(c.material)+'</td>'
+        +'<td class="num '+(stock<need?'lowstock':'')+'" title="재고 '+qty(stock)+' ÷ 1세트 '+qty(need)+'개 = '+qty(Math.floor(stock/need))+'세트">'+qty(stock)+'</td>'
+        +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량'+(inc>0?(' · 입고 예정 '+qty(inc)+(c.incoming_eta?(' (ETA '+escP(c.incoming_eta)+')'):'')):'')+'">'+(bo>0?qty(bo):'—')+(inc>0?'<div class="kin">입고 '+qty(inc)+(c.incoming_eta?' · '+escP(String(c.incoming_eta).slice(5,10)):'')+'</div>':'')+'</td>'
+        +'<td class="num">—</td>'
+        +(prodHasList?'<td class="num">'+fmt(c.list_price)+(need>1&&c.list_price!=null?'<div class="kin">×'+qty(need)+' = '+fmt(Number(c.list_price)*need)+'</div>':'')+'</td>':'')
+        +(prodHasCost?'<td class="num">'+fmt(c.avg_cost)+'</td>':'')
+        +(prodHasCost?'<td class="num">'+fmt(val)+'</td>':'')
+        +'</tr>';
+    }).join('');
+  }
   function rackCellHtml(p){
     var rs=p.rack_stock||[];
     if(!rs.length) return p.rack_location?('<span class="mst" style="color:#6f6a60;font-size:11px">'+escP(p.rack_location)+'</span>'):'';

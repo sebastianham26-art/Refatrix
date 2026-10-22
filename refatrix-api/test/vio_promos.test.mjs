@@ -102,6 +102,23 @@ test('라우트: 저장(번호) → 목록 · 수정 · 키트 제품 → 견적
       q = await qa.inject({ method: 'GET', url: '/api/quotes/resolve-code?code=' + p1.promo_no, headers: DIR });
       assert.equal(q.json().matches[0].kit.promo_no, p1.promo_no);
     } finally { await qa.close(); }
+    // 제품 찾기 목록: 키트 행에 구성품(재고 · Backorder · 랙) + 세트 수 · 판매가 권한 없으면 가격 없음
+    const { default: productRoutes } = await import('../src/routes/productRoutes.js');
+    const pa = Fastify(); await pa.register(productRoutes); await pa.ready();
+    try {
+      await query(`UPDATE products SET rack_location='A-01' WHERE id=$1`, [pid[B]]);
+      let q = await pa.inject({ method: 'GET', url: '/api/products?q=' + p1.promo_no + '&limit=20', headers: DIR });
+      assert.equal(q.statusCode, 200, q.body);
+      const kit = q.json().items.find((x) => x.code === p1.promo_no);
+      assert.ok(kit && kit.kit, JSON.stringify(q.json()).slice(0, 300));
+      assert.equal(kit.kit.promo_no, p1.promo_no); assert.equal(kit.kit.buildable, 3);
+      assert.deepEqual(kit.kit.items.map((c) => [c.code, c.kit_qty, Number(c.stock_qty), Number(c.backorder_qty)]), [[A, 1, 10, 0], [B, 1, 3, 0], [C, 1, 8, 0]]);
+      assert.equal(kit.kit.items[1].rack_location, 'A-01'); assert.equal(Number(kit.kit.items[0].list_price), 623);
+      q = await pa.inject({ method: 'GET', url: '/api/products?q=' + A + '&limit=20', headers: DIR });
+      assert.equal(q.json().items.find((x) => x.code === A).kit, undefined, '부품 행에는 kit 없음');
+      q = await pa.inject({ method: 'GET', url: '/api/products?q=' + p1.promo_no + '&limit=20', headers: MKT });
+      if (q.statusCode === 200) { const k2 = q.json().items.find((x) => x.code === p1.promo_no); assert.ok(k2.kit); assert.equal('list_price' in k2.kit.items[0], false, '판매가 권한 없으면 구성품 가격 없음'); }
+    } finally { await pa.close(); }
   } finally {
     await app.close();
     if (kitPid) { await query(`DELETE FROM product_price_history WHERE product_id=$1`, [kitPid]).catch(() => {}); await query(`DELETE FROM product_change_log WHERE product_id=$1`, [kitPid]).catch(() => {}); }

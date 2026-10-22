@@ -1,13 +1,13 @@
 # REFATRIX 인수인계 — 제품 장착 위치(앞/뒤 · 상/하 · 좌/우) (2026-10-22)
 
-**마이그레이션 0292** · 새 라우트 `/api/products/positions/*` · 화면 `refatrix-products.html`(업로드 · 목록 배지 · 상세) + `refatrix-viofinder.html` build `vf16z`(프로모션 부품 목록 배지) · 기준 커밋 `0b4ce51`(origin/main)
+**마이그레이션 0292** · 새 라우트 `/api/products/positions/*` · 화면 `refatrix-products.html`(업로드 · 목록 배지 · 상세) + `refatrix-viofinder.html` build `vf17a`(프로모션 부품 목록 배지 · List price 코드 바로 옆) · 기준 커밋 `0b4ce51`(origin/main)
 
 ## ① 설명
 
 디렉터 요청: 부품의 장착 위치를 앞/뒤 · 좌/우로 구분. 원본(REFATRIX Platform Export 4th)을 **제품 마스터 업로드** 화면에서 올리고, 그 정보를 다음 세 곳에서 본다:
-- **제품 찾기 목록**: 코드 옆 작은 배지 (예 `앞·하·좌`). 파랑 = 앞, 주황 = 뒤, 보라 = 앞/뒤 둘 다
+- **제품 찾기 목록**: 코드 옆 작은 배지 (예 `앞·하·좌`). 파랑 = 앞, 주황 = 뒤, 보라 = 앞/뒤 둘 다. 그 옆에 **List price**(초록, IVA 별도 · 가격 열람 권한 있을 때만 · 없으면 `List —`). 오른쪽 List Price 열은 그대로
 - **제품 상세(행 펼침)**: 「장착 위치」 칸. 위치별로 묶고 차종 칩(브랜드 · 모델 · 세대 · 연식)을 보여 줌. 점선 칩 = Candidate(확정 전), ↔ = 코드 끝 L/R 로 좌우를 정한 줄
-- **VIO 프로모션 만들기 › ① 넣을 품목**: 코드 옆 배지. **이 차종 + 고른 VIO 세대** 줄이 있으면 그것(실선), 없으면 코드 전체 요약(점선), 자료 없으면 `—`
+- **VIO 프로모션 만들기 › ① 넣을 품목**: 코드 바로 옆에 **List price**(초록 칸 `List $1,333.00`, vf17a — 위치 배지가 코드와 가격 사이에 끼어 가격이 잘 안 보인다는 지적으로 순서 변경), 그 다음 위치 배지. **이 차종 + 고른 VIO 세대** 줄이 있으면 그것(실선), 없으면 코드 전체 요약(점선), 자료 없으면 `—`
 
 **원본 읽기 규칙** (디렉터 지정: H열 Block · J열 Position)
 - 코드: W열 `CTR` + AI열 `4th CTR`(`X` = 없음). 한 칸에 코드가 여러 개(` // `)면 모두
@@ -39,7 +39,7 @@
 | `refatrix-api/src/productPositions.js` | **신규** — 원본 읽기 · 머리글 찾기 · L/R 짝 처리 · 요약(순수 함수) |
 | `refatrix-api/src/routes/positionRoutes.js` | **신규** — `POST preview`·`commit`(디렉터, 20MB) · `POST lookup`(권한 `products`) · `GET status` |
 | `refatrix-api/src/server.js` | import + `app.register(positionRoutes)` 두 줄 |
-| `refatrix-products.html` (루트) | 업로드 칸 · 목록 배지 · 상세 「장착 위치」 |
+| `refatrix-products.html` (루트) | 업로드 칸 · 목록 배지 · 코드 옆 List price · 상세 「장착 위치」 |
 | `refatrix-viofinder.html` (루트) | build `vf16z` · 프로모션 부품 목록 배지 |
 | `refatrix-api/test/product_positions.test.mjs` | **신규** 5건 |
 | `refatrix-api/test/viopromo_front.test.mjs` | 배지 시험 +1 (12건) |
@@ -49,7 +49,7 @@
 
 - `product_positions` **5/5** (실 PostgreSQL 16) — 읽기 규칙(영 · 스페인어 · 한국어) · 코드 나누기 · L/R 짝 · 중복 제거 · 미리보기는 저장 안 함 · 디렉터만 · 전체 교체 · 조회 요약/내역 · **실제 원본 파일**: 14,790줄 · 2,560코드, 반영 약 0.5초 · 본문 2MB
 - `viopromo_front` **12/12** (jsdom) — 이 차종·세대 줄 우선 · 코드 전체(점선) · 자료 없음 `—`
-- **헤드리스 Chromium 실제 화면**(실 PG 서버 + 실제 xlsx 업로드) 7/7 — 업로드 현황 → 미리보기 → 반영 → 현황 갱신 → 목록 배지 4개 → 상세 Sportage 칩 · 페이지 오류 0
+- **헤드리스 Chromium 실제 화면**(실 PG 서버 + 실제 xlsx 업로드) 8/8 — 업로드 현황 → 미리보기 → 반영 → 현황 갱신 → 목록 배지 4개 → 코드 옆 List price($1,333.00 · $875.50 · 가격 없음 `List —`) → 상세 Sportage 칩 · 페이지 오류 0
 
 ## ⑥ 결정사항
 

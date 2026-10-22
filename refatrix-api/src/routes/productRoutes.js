@@ -14,6 +14,7 @@ import { parseOe, formatOe, normOe, oeToken, OE_FOR_NOTE } from '../oeParse.js';
 import { oeReady, oeByProduct, syncOe } from '../oeCodes.js';
 import { recordPriceChange } from '../priceMaster.js';   // 0229 — 정가가 바뀌면 가격 마스터 장부에 1행
 import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품찾기 랙 × 수량
+import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구성품
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -243,8 +244,36 @@ export default async function productRoutes(app) {
         for (const p of items) p.rack_stock = rm.get(Number(p.id)) || [];
       }
     } catch (e) { try { console.error('[products] rack_stock', e.message); } catch (_) {} }
+    // 0293 · VIO 프로모션 키트(K0001 …) — 구성품을 하위 줄로: 부품마다 랙·재고·Backorder·입고 예정(권한대로 최소화)
+    try { await attachKits(perm, items); } catch (e) { try { console.error('[products] kits', e.message); } catch (_) {} }
     return { items, limit, offset, total };
   });
+
+  // 0293 · 목록의 키트 행에 구성품 붙이기 — kit:{promo_no, buildable, items:[{qty, …제품 칸}]}
+  async function attachKits(perm, items) {
+    if (!items.length) return;
+    const kits = await kitsFor({ ids: items.map((p) => p.id) });
+    if (!kits.size) return;
+    const compIds = [...new Set([...kits.values()].flatMap((k) => k.items.map((x) => x.product_id)))];
+    const comps = (await query(
+      `SELECT p.id, p.code, p.name, p.list_price, p.stock_qty, p.avg_cost, p.rack_location, p.material, p.ean,
+              p.is_active, p.inactive_reason,
+              COALESCE(bo.backorder_qty, 0) AS backorder_qty,
+              COALESCE(inc.incoming_qty, 0) AS incoming_qty, inc.incoming_eta::text AS incoming_eta
+         FROM products p
+         LEFT JOIN v_backorder bo ON bo.product_id = p.id
+         LEFT JOIN v_incoming_stock inc ON inc.product_id = p.id
+        WHERE p.id = ANY($1::bigint[])`, [compIds])).rows.map((p) => minimizeProduct(perm, p));
+    const byId = new Map(comps.map((c) => [Number(c.id), c]));
+    try {
+      if (await rackStockReady()) { const rm = await rackMap(null, compIds); for (const c of comps) c.rack_stock = rm.get(Number(c.id)) || []; }
+    } catch (_) {}
+    for (const p of items) {
+      const k = kits.get(Number(p.id)); if (!k) continue;
+      const list = k.items.map((x) => ({ ...(byId.get(x.product_id) || { id: x.product_id, code: x.ctr_code, missing: true }), kit_qty: x.qty }));
+      p.kit = { promo_no: k.promo_no, buildable: kitBuildable(list.map((c) => ({ qty: c.kit_qty, stock_qty: c.stock_qty }))), items: list };
+    }
+  }
 
   // 제품 마스터 다운로드용 전체 목록(프런트가 엑셀로 변환).
   //   - 컬럼은 마스터 "업로드"와 같은 필드 구성 → 내려받아 수정 후 그대로 재업로드 가능.
