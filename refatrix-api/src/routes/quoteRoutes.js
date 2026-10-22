@@ -6,6 +6,7 @@ import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
+import { expandKitLines, kitsFor } from '../vioPromos.js';   // 0293
 import { resolveCode, assignReservations, topUpReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
          normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, quoteLineCodeMatch, stampLineMeta } from '../quoteBuild.js';
@@ -113,7 +114,13 @@ export default async function quoteRoutes(app) {
 
   // 단건 코드 조회 (화면에서 SYD 다중매칭 후보 표시용)
   app.get('/api/quotes/resolve-code', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
-    return await resolveCode(req.query.code);
+    const r = await resolveCode(req.query.code);
+    // 0293 · 키트면 구성품을 같이 — 화면이 담을 때 부품 줄로 푼다
+    try {
+      const kits = await kitsFor({ ids: (r.matches || []).map((m) => m.product_id) });
+      for (const m of r.matches || []) { const k = kits.get(Number(m.product_id)); if (k) m.kit = { promo_no: k.promo_no, items: k.items }; }
+    } catch (_) {}
+    return r;
   });
 
   // 자동완성: CTR 코드 또는 SYD 코드 부분일치 검색 (영업 권한)
@@ -151,6 +158,7 @@ export default async function quoteRoutes(app) {
     const sydByPid = {};
     for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
     const oeMap = await oeByProduct(ids);
+    let kits = new Map(); try { kits = await kitsFor({ ids }); } catch (_) {}   // 0293
     return {
       oe_for_note: OE_FOR_NOTE,
       items: rows.map((r) => {
@@ -163,6 +171,7 @@ export default async function quoteRoutes(app) {
           is_active: r.is_active !== false,   // 0179 — 자동완성에 「비활성」 배지 표시용
           oe_hit: hit ? { code: hit.oe_code, rel: hit.rel } : null,
           oe_count: oe.length,
+          kit: kits.has(Number(r.id)) ? { promo_no: kits.get(Number(r.id)).promo_no, items: kits.get(Number(r.id)).items } : null,   // 0293
         };
       }),
     };
@@ -180,7 +189,12 @@ export default async function quoteRoutes(app) {
     }
     const ivaRate = 16;
     const out = [];
-    for (const ln of (Array.isArray(b.lines) ? b.lines : [])) {
+    // 0293 · 키트(K0001 …)는 구성 부품 줄로 풀어 계산한다. 풀렸으면 풀린 입력 줄(input_lines)을 돌려줘
+    //   화면이 자기 줄 목록을 그것으로 바꾼다(줄 번호·삭제 버튼이 어긋나지 않게).
+    const inRaw = Array.isArray(b.lines) ? b.lines : [];
+    const inLines = await expandKitLines(inRaw);
+    const kitExpanded = inLines.length !== inRaw.length || inLines.some((l, i) => l !== inRaw[i]);
+    for (const ln of inLines) {
       const qty = Number(ln.qty) || 0;
       let prod = null;
       if (ln.product_id) {
@@ -232,13 +246,15 @@ export default async function quoteRoutes(app) {
         is_active: prod.is_active !== false,
         // 2026-09-24 — 정가 없음: 견적은 되지만 매출 전환은 막힌다(화면이 안내한다)
         no_price: lacksListPrice({ code: prod.code, list_price: prod.list_price }),
+        kit_no: ln.kit_no || null,   // 0293 · 키트에서 풀린 줄
       });
     }
     const totals = computeQuoteTotals(out.filter((l) => l.matched).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
     // 2026-10-20 · L/R 짝맞춤 — L 또는 R 만 있으면 짝도 넣으라고 안내(재고 표시). 견적 진행은 막지 않는다.
     let pair_hints = [];
     try { pair_hints = await pairHints(query, out.filter((l) => l.matched && l.ctr_code)); } catch (_) { pair_hints = []; }
-    return { discountRate, ivaRate, lines: out, totals, pair_hints };
+    return { discountRate, ivaRate, lines: out, totals, pair_hints,
+      ...(kitExpanded ? { input_lines: inLines.map((l) => ({ code: l.code, product_id: l.product_id || null, qty: l.qty, ...(l.kit_no ? { kit_no: l.kit_no } : {}) })) } : {}) };
   });
 
 

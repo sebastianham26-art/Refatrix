@@ -316,11 +316,13 @@ export function excludePrefixes(client) {
  * 제외 조건을 SQL 로 만든다. params 배열에 값을 밀어 넣고 조각을 돌려준다.
  *   호출부가 params 를 공유하므로 $n 번호가 어긋나지 않는다.
  */
+// 0293 · VIO 프로모션 키트(K0001 …)는 외부 카탈로그로 내보내지 않는다 — 재고가 부품에 있고 견적에서 풀리는 묶음이다.
+const KIT_SQL = ` AND upper(p.code) !~ '^K[0-9]{4,}$'`;
 function excludeSql(client, params) {
   const list = excludePrefixes(client);
-  if (!list.length) return '';
+  if (!list.length) return KIT_SQL;
   params.push(list.map((x) => `${x}%`));
-  return ` AND upper(p.code) NOT LIKE ALL($${params.length}::text[])`;
+  return ` AND upper(p.code) NOT LIKE ALL($${params.length}::text[])` + KIT_SQL;
 }
 
 /**

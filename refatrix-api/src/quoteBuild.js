@@ -11,6 +11,7 @@ import { query } from './db.js';
 import { computeQuoteLine, stockFlag, formatQuoteNo, round2 } from './quotes.js';
 import { normOe, oeToken } from './oeParse.js';
 import { oeReady, oeByProduct, matchSourceFor } from './oeCodes.js';
+import { expandKitLines } from './vioPromos.js';
 export { stampLineMeta } from './oeCodes.js';
 
 
@@ -355,6 +356,7 @@ export async function nextQuoteNo(c, year) {
  *   지금 가장 위험한 일이다.
  */
 export async function buildLines(customerDiscount, ivaRate, inputLines) {
+  inputLines = await expandKitLines(inputLines);   // 0293 · 키트(K0001 …) → 구성 부품 줄
   const rows = [];
   let lineNo = 0;
   for (const ln of inputLines) {

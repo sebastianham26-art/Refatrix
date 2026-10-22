@@ -86,6 +86,7 @@ import waPromoRoutes from './routes/waPromoRoutes.js';          // 0260 · Whats
 import { startWaPromoWorker } from './waPromo.js';
 import metaLeadsRoutes from './routes/metaLeadsRoutes.js';   // 0270 · Meta 광고 문의(Messenger · Instagram) 가져오기
 import positionRoutes from './routes/positionRoutes.js';       // 0292 · 제품 장착 위치(앞/뒤·상/하·좌/우) 업로드·조회
+import vioPromoRoutes from './routes/vioPromoRoutes.js';   // 0293 · VIO 프로모션(키트) K0001…
 import promoImgRoutes from './routes/promoImgRoutes.js';       // 2026-10-19 · VIO 제품찾기·프로모션 — 홍보 이미지용 사진 중계(캔버스 CORS)
 import salesTrendRoutes from './routes/salesTrendRoutes.js';     // 2026-10-16 · 구매 › 판매 이력·주기(디렉터·소시오)
 import { startMetaLeadsWorker } from './metaLeads.js';       // 0270 · 30분마다 새 대화               // 0260 · 예약 발송·동의 요청 대기열(60초)
@@ -193,6 +194,7 @@ export function buildApp() {
   app.register(metaLeadsRoutes);    // 0270 · 제품·마케팅 › Meta 광고 문의
   app.register(waPromoRoutes);      // 0260 · 제품·마케팅 › WhatsApp 마케팅
   app.register(positionRoutes);     // 0292 · /api/products/positions/*
+  app.register(vioPromoRoutes);   // 0293 · /api/vio-promos/*
   app.register(promoImgRoutes);     // 2026-10-19 · GET /api/promo-img (R2·위키미디어·SYD 사진만)
   app.register(salesTrendRoutes);   // 2026-10-16 · 구매 › 판매 이력·주기 — 월별 판매 흐름·수요유형·예측·구매 제안
 

@@ -72,6 +72,7 @@
   /* 0179 — 비활성(판매중단) 제품 표시 */
   .acitem.inact{background:#fdf6f5;opacity:.75}
   .cand.inact{background:#fdf6f5;opacity:.75}
+  .kitbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#E8F3EE;color:#1f5f4a;font-size:10.5px;font-weight:800;white-space:nowrap}
   .inactbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#fbe9e7;color:#b23a2e;
     font-size:10px;font-weight:800;line-height:16px;vertical-align:middle}
   /* 전체 견적 — 차종 지역 선택 모달 (qt-0924rg) */
@@ -394,6 +395,7 @@
       '<div class="acitem'+(i===acSel?' sel':'')+(it.is_active===false?' inact':'')+'" onmousedown="event.preventDefault()" onclick="pickAc('+i+')">'
       +'<div><span class="c">'+esc(it.ctr_code)+'</span>'
       +(it.is_active===false?' <span class="inactbadge">비활성</span>':'')
+      +(it.kit?' <span class="kitbadge" title="VIO 프로모션 키트 — 담으면 구성 부품 줄로 풀립니다">🧰 KIT · 부품 '+it.kit.items.length+'종</span>':'')
       +(it.syd_codes&&it.syd_codes.length?' <span class="s">· SYD '+esc(it.syd_codes.join(' / '))+'</span>':'')
       +(it.oe_hit?(' <span class="s" style="color:'+(it.oe_hit.rel==='for'?'#7a5a17':'#143D34')+';font-weight:700"'+(it.oe_hit.rel==='for'?' title="'+esc(OE_FOR_NOTE)+'"':'')+'>· '+(it.oe_hit.rel==='for'?'FOR ':'OE ')+esc(it.oe_hit.code)+' 로 찾음</span>'):'')
       +'<div class="s">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div></div>'
@@ -1651,6 +1653,12 @@
     const body=isGuest ? {discount_rate:curDisc,lines} : {customer_id:Number(cid),lines};
     try{
       const d=await fetch(session.api+'/api/quotes/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
+      // 0293 · 키트(K0001 …)는 서버가 구성 부품 줄로 풀어 준다 — 화면 줄 목록도 그것으로 바꾼다
+      if(Array.isArray(d.input_lines)){
+        const kits=[...new Set(d.input_lines.filter(l=>l.kit_no&&!lines.some(x=>x.kit_no===l.kit_no&&x.code===l.code)).map(l=>l.kit_no))];
+        lines=d.input_lines.map(l=>{ const o={code:l.code,qty:l.qty}; if(l.product_id) o.product_id=l.product_id; if(l.kit_no) o.kit_no=l.kit_no; return o; });
+        if(kits.length){ const m=$('lineMsg'); if(m){ m.className='msg ok'; m.textContent='🧰 키트 '+kits.join(', ')+' → 구성 부품 줄로 풀어 넣었습니다(각 부품 재고로 예약·출고). Kit desglosado en sus piezas.'; } }
+      }
       renderLines(d);
     }catch(e){ $('linesWrap').innerHTML='<div class="hint">계산 실패</div>'; }
   }
@@ -1673,7 +1681,7 @@
       html+='<tr>'
         +'<td class="l" title="'+esc(l.ctr_code||'')+'">'+esc(l.ctr_code||'—')+'</td>'
         +'<td class="l" title="'+esc((l.syd_codes||[]).join(' / '))+'">'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
-        +'<td class="prod'+(clickable?'':'" style="cursor:default;text-decoration:none')+'" '+(clickable?'onclick="showHistory('+l.product_id+',\''+esc(l.ctr_code)+'\')"':'')+' title="'+esc(l.product_name||'')+'">'+esc(l.product_name||'')+(l.app_text?'<span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
+        +'<td class="prod'+(clickable?'':'" style="cursor:default;text-decoration:none')+'" '+(clickable?'onclick="showHistory('+l.product_id+',\''+esc(l.ctr_code)+'\')"':'')+' title="'+esc(l.product_name||'')+'">'+(l.kit_no?'<span class="kitbadge" title="VIO 프로모션 키트에서 풀린 줄">🧰 '+esc(l.kit_no)+'</span> ':'')+esc(l.product_name||'')+(l.app_text?'<span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td>'+fmtq(l.qty)+'</td>'
         +'<td>'+(l.matched?(l.no_price?'<span class="flag not_found" title="정가 없음 · Sin precio de lista">정가 없음</span>':fmt(l.list_price)):'—')+'</td>'
         +'<td>'+(l.matched?(l.discount_rate+'%'):'—')+'</td>'

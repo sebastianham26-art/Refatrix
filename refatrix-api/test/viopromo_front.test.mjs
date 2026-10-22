@@ -66,6 +66,17 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
         if (u.startsWith('mx_parts_coverage_dashboard.html')) return { ok: true, status: 200, text: async () => readFileSync(COVER, 'utf-8') };
         const p = new URL(u, 'https://example.test/');
         if (p.pathname === '/api/products/by-model') return json(byModel(p.searchParams.get('q') || ''));
+        if (p.pathname === '/api/vio-promos' && method === 'POST') {
+          const items = body.items.map((x, i) => ({ line_no: i + 1, ctr_code: x.code, qty: x.qty, product_id: 100 + i, stock: 5, list_price: LP[x.code] ?? null }));
+          const tl = Math.round(items.reduce((a, x) => a + (x.list_price || 0) * x.qty, 0) * 100) / 100;
+          return json({ id: 7, promo_no: 'K0007', ...body, items, total_list: tl, total_promo: Math.round(tl * (1 - body.discount_pct / 100) * 100) / 100, kit_code: null, kit_name: 'KIT T VERSA', price_included: true, buildable: 2, created_by_name: 'U', created_at: '2026-10-22T20:00:00Z' });
+        }
+        if (/^\/api\/vio-promos\/\d+$/.test(p.pathname) && method === 'PATCH') return json({ id: 7, promo_no: 'K0007', ...body, items: (body.items || []).map((x) => ({ ctr_code: x.code, qty: x.qty })), price_included: true });
+        if (p.pathname === '/api/vio-promos' && method === 'GET') return json({ ready: true, items: [
+          { id: 3, promo_no: 'K0003', model_key: 'versa', title: 'NISSAN Versa', years: '2012-2019', discount_pct: 10, show_totals: true, kit_code: null, kit_name: 'KIT T VERSA 2012-2019_CB0336_CQ0280Lx2', price_included: true, total_list: 2957, total_promo: 2661.3, buildable: 3, created_by_name: 'Ana', created_at: '2026-10-21T10:00:00Z',
+            items: [{ ctr_code: 'CB0336', qty: 1 }, { ctr_code: 'CQ0280L', qty: 2 }] },
+          { id: 2, promo_no: 'K0002', model_key: 'versa', title: 'NISSAN Versa', years: '2012-2019', discount_pct: 0, show_totals: false, kit_code: 'K0002', kit_name: 'KIT T VERSA 2012-2019_CB0336', kit_list_price: 291, price_included: true, total_list: 291, total_promo: 291, buildable: 12, items: [{ ctr_code: 'CB0336', qty: 1 }] }] });
+        if (/^\/api\/vio-promos\/\d+\/kit$/.test(p.pathname)) return json({ ok: true, product_id: 900, code: 'K0003', name: body.name, list_price: 2957, promo: { id: 3, promo_no: 'K0003', model_key: 'versa', discount_pct: 10, show_totals: true, total_list: 2957, total_promo: 2661.3, title: 'NISSAN Versa', years: '2012-2019', kit_code: 'K0003', kit_name: body.name, kit_list_price: 2957, price_included: true, items: [{ ctr_code: 'CB0336', qty: 1 }, { ctr_code: 'CQ0280L', qty: 2 }], buildable: 3 } });
         if (p.pathname === '/api/products/positions/lookup') {
           const R = (block, level, side, model, y_from, y_to) => ({ block, level, side, model, y_from, y_to });
           const all = {
@@ -107,7 +118,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf16z/);
+  assert.match(d.title, /vf17b/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -146,7 +157,9 @@ test('프로모션 만들기: 재고 기준 자동 · 손으로 넣고 빼기 ·
   const heads = [...d.querySelectorAll('#vpParts .vpGrpH')].map((x) => x.textContent);
   assert.ok(heads.some((h) => h.startsWith('HORQUILLA')) && !heads.some((h) => /Brazo de control|Bieleta/.test(h)), heads.join('|'));
   const lp = (code) => d.querySelector('#vpParts input[data-code="' + code + '"]').closest('.vpCode').querySelector('.lp').textContent;
-  assert.equal(lp('CQ0280L'), '$1,333'); assert.equal(lp('PL0477'), '$1,898.88'); assert.equal(lp('GV1043'), 'List —');
+  assert.equal(lp('CQ0280L'), 'List$1,333.00'); assert.equal(lp('PL0477'), 'List$1,898.88'); assert.equal(lp('GV1043'), 'List—');
+  const row = d.querySelector('#vpParts input[data-code="CQ0280L"]').closest('.vpCode');
+  assert.equal(row.querySelector('.cd').nextElementSibling.className, 'lp', 'List price 는 코드 바로 옆');
   assert.equal(d.querySelectorAll('#vpParts .man').length, 2);
   assert.match(d.getElementById('vpSum').textContent, /손으로 바꾼 것 2/);
   // 최소 재고 7 → CQ0280L/R(6) 자동 제외, 손으로 넣은 PL0477 유지
@@ -378,4 +391,65 @@ test('장착 위치 배지: 이 차종·세대 줄이 있으면 그것 · 없으
   assert.equal(pos('CL0477').textContent, '뒤·좌/우'); assert.ok(pos('CL0477').classList.contains('gen'), 'Tiida 뿐 → 코드 전체(점선)');
   assert.ok(pos('CL0477').classList.contains('r'));
   assert.equal(pos('CE0536L').textContent, '—'); assert.ok(pos('CE0536L').classList.contains('none'));
+});
+
+test('수량 · 정가 합계 · 할인 금액 · 이미지에 넣을지 · 저장(K번호) · 목록 · 열기 · 키트 제품 (vf17b)', { skip: SKIP }, async () => {
+  const { w, d, calls } = boot();
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-qty]').length > 0));
+  const tot = () => d.getElementById('vpTot').textContent;
+  // 기본: 재고 있는 것 · 2012-2019 → CB0336 · CE0536L · CL0477 · CQ0280L · CQ0280R
+  const qIn = (c) => d.querySelector('#vpParts input[data-qty="' + c + '"]');
+  assert.equal(qIn('CQ0280L').value, '1'); assert.equal(qIn('CQ0280L').disabled, false);
+  const base = 291 + 448 + 343 + 1333 + 1333;
+  assert.match(tot(), new RegExp('정가 합계 \\(List × 수량\\)\\$' + base.toLocaleString('en-US') + '\\.00'));
+  // 수량 2 → 합계 · 카드 ×2(L/R 같을 때)
+  qIn('CQ0280L').value = '2'; qIn('CQ0280L').dispatchEvent(new w.Event('input', { bubbles: true }));
+  qIn('CQ0280R').value = '2'; qIn('CQ0280R').dispatchEvent(new w.Event('input', { bubbles: true }));
+  const t2 = base + 1333 * 2;
+  assert.match(tot(), new RegExp('\\$' + t2.toLocaleString('en-US') + '\\.00'));
+  assert.match(tot(), /7개/);
+  assert.equal(w.VP._st.qty.CQ0280L, 2);
+  // 할인 10% → 할인 적용 금액
+  d.getElementById('vpTotDiscOn').checked = true; d.getElementById('vpTotDiscOn').dispatchEvent(new w.Event('change', { bubbles: true }));
+  const di = d.getElementById('vpTotDisc'); di.value = '10'; di.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.equal(d.getElementById('vpDisc').value, '10', '할인 배지와 같은 값');
+  assert.match(tot(), new RegExp('할인 적용 금액\\$' + (t2 * 0.9).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
+  // 이미지에 넣을지 묻기 → 넣기
+  assert.match(tot(), /이 금액을 이미지\(디자인\)에 넣을까요\?/);
+  d.querySelector('input[name=vpTotOn][value="1"]').checked = true; d.querySelector('input[name=vpTotOn][value="1"]').dispatchEvent(new w.Event('change', { bubbles: true }));
+  assert.equal(w.VP._st.totOn, true);
+  // 저장 → K번호
+  d.getElementById('vpPromoSave').click();
+  assert.ok(await until(() => /K0007/.test(tot())), tot());
+  const post = calls.find((c) => c.u.endsWith('/api/vio-promos') && c.method === 'POST');
+  assert.equal(post.body.discount_pct, 10); assert.equal(post.body.show_totals, true); assert.equal(post.body.model, 'Versa');
+  assert.deepEqual(post.body.items.find((x) => x.code === 'CQ0280L'), { code: 'CQ0280L', qty: 2 });
+  assert.ok(!d.getElementById('vpPromoSave'), '바뀐 것 없으면 저장 버튼 없음');
+  // 바꾸면 「다시 저장」 → PATCH
+  qIn('CB0336').value = '3'; qIn('CB0336').dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.match(tot(), /바뀐 내용 있음/);
+  d.getElementById('vpPromoSave').click();
+  assert.ok(await until(() => calls.some((c) => /\/api\/vio-promos\/7$/.test(c.u) && c.method === 'PATCH')));
+  // 목록 탭
+  d.getElementById('vpClose').click();
+  d.querySelector('#vpTabs [data-tab="plist"]').click();
+  assert.ok(await until(() => d.querySelectorAll('#vpPlist tbody tr').length === 2));
+  const t = d.getElementById('vpPlist').textContent;
+  assert.match(t, /K0003/); assert.match(t, /CQ0280L×2/); assert.match(t, /\$2,661\.30/); assert.match(t, /K0002 등록됨/);
+  // 키트 제품 만들기(디렉터): 이름 고쳐서 등록
+  d.querySelector('[data-kit="3"]').click();
+  const kn = d.getElementById('vpKitName'); assert.equal(kn.value, 'KIT T VERSA 2012-2019_CB0336_CQ0280Lx2');
+  kn.value = 'KIT T VERSA 2012-2019_CB0336_CQ0280Lx2 '; d.querySelector('[data-kitgo="3"]').click();
+  assert.ok(await until(() => /제품 마스터에 K0003/.test(d.getElementById('vpPlMsg').textContent)));
+  assert.equal(calls.find((c) => /\/kit$/.test(c.u)).body.name, 'KIT T VERSA 2012-2019_CB0336_CQ0280Lx2');
+  // 열기 → 그 구성·수량
+  d.querySelector('[data-popen="3"]').click();
+  assert.ok(await until(() => d.getElementById('vpOverlay').classList.contains('open') && d.querySelectorAll('#vpParts input[data-qty]').length > 0));
+  assert.ok(await until(() => /K0003/.test(tot())));
+  const on = [...d.querySelectorAll('#vpParts input[data-code]')].filter((x) => x.checked).map((x) => x.dataset.code).sort();
+  assert.deepEqual(on, ['CB0336', 'CQ0280L']);
+  assert.equal(qIn('CQ0280L').value, '2');
+  assert.equal(w.VP._st.discOn, true); assert.equal(w.VP._st.disc, 10); assert.equal(w.VP._st.totOn, true);
 });

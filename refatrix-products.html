@@ -208,6 +208,7 @@
   .posb.r{background:#FBEFE0;color:#9a5a12;border:1px solid #efd7b6}
   .posb.fr{background:#EFE9F7;color:#5a3f8a;border:1px solid #dacfee}
   .possec{margin:10px 0 14px}
+  .lpc{display:inline-block;margin-left:6px;font-size:11px;font-weight:800;color:#1f5f4a;background:#E8F3EE;border-radius:5px;padding:1px 6px;font-variant-numeric:tabular-nums;vertical-align:1px}
   .possec .pgrp{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #E6E1D6;flex-wrap:wrap}
   .possec .pgrp:last-child{border-bottom:none}
   .possec .plab{min-width:150px;font-weight:800;font-size:12.5px}
@@ -645,7 +646,8 @@
         var act=(p.is_active!==false);
         h+='<tr class="prow'+(act?'':' inact')+'" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" data-name="'+escP(p.name||'')+'" data-active="'+(act?'1':'0')+'" style="cursor:pointer">'
           +(isDir?('<td class="selc"><input type="checkbox" class="stChk" data-pid="'+p.id+'"'+(stSel.has(Number(p.id))?' checked':'')+'></td>'):'')
-          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'<span class="posb" data-pcode="'+escP(p.code)+'"></span></td>'
+          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'<span class="posb" data-pcode="'+escP(p.code)+'"></span>'
+            +(('list_price' in p)?'<span class="lpc" title="List price (CTR 정가 · IVA 별도)">'+(p.list_price!=null&&p.list_price!==''?'$'+Number(p.list_price).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}):'List —')+'</span>':'')+'</td>'
           // 0224 · 비활성 SKU 는 「중단 후 요청 N건」이 배지 옆에 붙는다(아래 dmdDecorate 가 채운다).
           +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+(act?'':'<span class="dmdtag" data-pid="'+p.id+'"></span>')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+oeListCell(p.oe)+'</td>'
