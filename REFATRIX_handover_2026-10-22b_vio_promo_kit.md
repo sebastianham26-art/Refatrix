@@ -41,6 +41,12 @@
 - 코드 칸: 코드 한 줄 + 아래 배지 줄(장착 위치 · List price · KIT) · 열 제목 줄바꿈 없음 · 적용차종 40 → 70자
 - 바뀐 파일: `refatrix-products.html` 만(배포 = 그 파일 Push)
 
+### 추가(10-23 · vf17c) — 이미지에 프로모션 번호
+- 저장(번호 받기 · 새 번호)하면 이미지에 **「Producto promoción: K0001」** 알약 표시 — A 왼쪽 위(머리글 위) · B 가운데 위
+- 저장 뒤 수량·품목·할인을 바꾸면 번호를 잠시 뺌(다른 내용에 번호가 붙지 않게) → 다시 저장하면 들어감
+- WhatsApp 문구 끝에도 `Producto promoción: K0001.`
+- 바뀐 파일: `refatrix-viofinder.html`(build `vf17c`) · 시험 `viopromo_front.test.mjs`
+
 ## ② 배포 순서
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull**

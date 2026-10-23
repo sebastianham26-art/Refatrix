@@ -118,7 +118,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf17b/);
+  assert.match(d.title, /vf17c/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -427,9 +427,17 @@ test('수량 · 정가 합계 · 할인 금액 · 이미지에 넣을지 · 저�
   assert.equal(post.body.discount_pct, 10); assert.equal(post.body.show_totals, true); assert.equal(post.body.model, 'Versa');
   assert.deepEqual(post.body.items.find((x) => x.code === 'CQ0280L'), { code: 'CQ0280L', qty: 2 });
   assert.ok(!d.getElementById('vpPromoSave'), '바뀐 것 없으면 저장 버튼 없음');
+  // vf17c · 이미지에 번호 — 저장 뒤 바뀐 것 없을 때만
+  assert.match(tot(), /이미지에 「Producto promoción: K0007」 표시 중/);
+  const texts = []; const cv = d.createElement('canvas'); cv.width = 1080; cv.height = 1350;
+  const ctx = cv.getContext('2d'); ctx.fillText = (t) => texts.push(String(t));
+  await w.VP._render(cv);
+  assert.ok(texts.includes('Producto promoción:') && texts.includes('K0007'), texts.join('|').slice(0, 300));
   // 바꾸면 「다시 저장」 → PATCH
   qIn('CB0336').value = '3'; qIn('CB0336').dispatchEvent(new w.Event('input', { bubbles: true }));
   assert.match(tot(), /바뀐 내용 있음/);
+  { const t2 = []; const cv2 = d.createElement('canvas'); cv2.width = 1080; cv2.height = 1350; const c2 = cv2.getContext('2d'); c2.fillText = (t) => t2.push(String(t));
+    await w.VP._render(cv2); assert.ok(!t2.includes('K0007'), '바뀌면 번호 뺌'); }
   d.getElementById('vpPromoSave').click();
   assert.ok(await until(() => calls.some((c) => /\/api\/vio-promos\/7$/.test(c.u) && c.method === 'PATCH')));
   // 목록 탭
