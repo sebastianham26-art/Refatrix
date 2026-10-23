@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1014cd</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1023ad</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -86,6 +86,11 @@
   .bub.in{background:#fff;align-self:flex-start}.bub.me{background:#d9fdd3;align-self:flex-end}
   .bub .t{font-size:10px;color:var(--muted);margin-top:2px}
   .ed label{margin-top:8px}.ed input,.ed select{width:100%}
+  .adname{font-weight:700}.adid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted)}
+  .ad-chip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#f3ecdf;color:#7a5a1f;white-space:nowrap;display:inline-block}
+  .ad-chip.unreg{background:var(--warn-bg);color:var(--warn)}
+  tr.adrow.sel{background:#eef5f1}tr.adrow.unreg td{background:#fffaf0}
+  .adform input{min-width:0}
 </style>
 </head>
 <body>
@@ -123,6 +128,7 @@
 
     <div class="tabs" id="tabs">
       <button type="button" class="tab on" data-p="list">📋 문의 목록</button>
+      <button type="button" class="tab" data-p="ads">📣 광고별 문의</button>
       <button type="button" class="tab" data-p="sum">📊 수요 요약 (차종 · 지역 · 고객 유형)</button>
     </div>
 
@@ -132,6 +138,7 @@
         <div><label>검색(이름 · 메시지 · 메모 · 전화)</label><input id="fQ" type="text" style="width:220px" placeholder="versa, horquilla…"></div>
         <div><label>채널</label><select id="fCh"><option value="">전체</option><option value="messenger">Messenger</option><option value="instagram">Instagram</option><option value="whatsapp">WhatsApp</option></select></div>
         <div><label>주(지역)</label><select id="fState"><option value="">전체</option><option value="__none">— 지역 모름</option></select></div>
+        <div><label>광고</label><select id="fAd" style="max-width:220px"><option value="">전체</option><option value="__none">— 광고 외 / 직접</option></select></div>
         <div><label>고객 유형</label><select id="fTipo"><option value="">전체</option><option>Particular</option><option value="Taller">Taller mecánico</option><option>Refaccionaria</option><option>Mayorista</option><option>Flotilla</option><option value="Taxi">Taxi / app</option></select></div>
         <div><label>상태</label><select id="fStatus"><option value="">전체</option><option value="nuevo">신규</option><option value="contactado">연락함</option><option value="derivado">refaccionaria 연결</option><option value="venta">판매</option><option value="descartado">제외</option></select></div>
         <div><label>마지막 대화</label><div class="row" style="gap:4px"><input id="fFrom" type="date"><input id="fTo" type="date"></div></div>
@@ -141,6 +148,28 @@
       </div>
       <div class="hint" id="lCount" style="margin-top:8px"></div>
       <div class="tblwrap" id="lTable"></div>
+    </section>
+
+    <!-- 0295 · 광고별 문의 -->
+    <section class="pane card" id="p-ads">
+      <h2>📣 광고 등록</h2>
+      <div class="hint">광고 ID 는 <b>Meta 광고 관리자 › 「광고」 탭</b>(캠페인 · 광고 세트 탭이 아님) › 열 › 맞춤 설정 › 「<b>광고 ID</b>」를 켜면 보입니다(숫자 15~18자리). 이름은 ERP 에서 부를 이름을 직접 붙입니다.
+        「구분 문구」(선택)는 그 광고의 첫 메시지 · 버튼 문구입니다 — 고객 메시지에 이 문구가 들어 있으면 웹훅 기록이 없는 예전 문의도 이 광고로 나눕니다.</div>
+      <div class="row adform" style="margin-top:10px">
+        <div><label>광고 ID</label><input id="aId" type="text" inputmode="numeric" placeholder="120212345678901234" style="width:190px"></div>
+        <div><label>광고 이름</label><input id="aName" type="text" placeholder="Amortiguadores MTY oct" style="width:220px"></div>
+        <div><label>구분 문구 (선택)</label><input id="aMatch" type="text" placeholder="Soy Particular de MTY" style="width:220px"></div>
+        <div style="flex:1;min-width:180px"><label>메모 (지역 · 제품 · 기간)</label><input id="aMemo" type="text" style="width:100%"></div>
+        <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:600;color:var(--ink)"><input type="checkbox" id="aActive" checked> 사용 중</label>
+        <button type="button" class="btn" id="aSave">등록</button>
+        <button type="button" class="btn ghost hidden" id="aCancel">취소</button>
+      </div>
+      <div class="msg" id="aMsg"></div>
+      <div class="hint" id="aHook" style="margin-top:10px"></div>
+      <h2 style="margin-top:18px">광고별 문의</h2>
+      <div class="hint">행을 누르면 그 광고로 들어온 문의(최초 일시 · 이름 · 연락처 · 문의내용 · 대응)가 아래에 나옵니다. 문의를 열면 대화 전체를 보고 광고를 직접 바꿀 수 있습니다.</div>
+      <div class="tblwrap" id="aTable"></div>
+      <div id="aDetail"></div>
     </section>
 
     <!-- 요약 -->
@@ -190,6 +219,7 @@
     <div class="ed">
       <div id="oAi"></div>
       <div class="hint">비워 두면 대화에서 뽑은 <span class="auto">자동값</span>(AI → 규칙)을 씁니다. 고친 값은 다시 가져와도 지워지지 않습니다.</div>
+      <label>광고</label><select id="eAd"></select><div class="hint" id="eAdHint"></div>
       <label>이름</label><input id="eName">
       <label>업종</label><input id="eTipo" list="dlTipo"><datalist id="dlTipo"><option>Refaccionaria</option><option>Mayorista</option><option>Taller mecánico</option><option>Flotilla</option><option>Taxi / app</option><option>Particular</option></datalist>
       <div class="row" style="gap:8px"><div style="flex:1"><label>주</label><select id="eState"></select></div><div style="flex:1"><label>도시</label><input id="eCity"></div></div>
@@ -209,7 +239,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1014cd';
+  const MTL_BUILD='mtl-1023ad';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -248,7 +278,7 @@
       try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
       $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
       $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
-      await loadStatus(); loadList();
+      await loadStatus(); loadList(); loadAds();
     }catch(e){ say(false,'서버에 연결할 수 없습니다.',m); }
     finally{ $('go').disabled=false; }
   }
@@ -256,7 +286,7 @@
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   document.addEventListener('click',e=>{ const c=e.target.closest('[data-close]'); if(c) $(c.dataset.close).classList.remove('on'); });
   $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b) return; S.tab=b.dataset.p;
-    document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.toggle('on',x===b)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='p-'+S.tab)); if(S.tab==='sum') renderSummary(); });
+    document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.toggle('on',x===b)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='p-'+S.tab)); if(S.tab==='sum') renderSummary(); if(S.tab==='ads') loadAds(); });
 
   // ───── 연결 상태 ─────
   const GUIDE='<b>🧩 Meta 연결 (한 번만)</b><ol>'
@@ -337,7 +367,7 @@
   // ───── 목록 ─────
   function qs(){ const p=new URLSearchParams(); const v=(id)=>$(id).value;
     if(v('fQ').trim()) p.set('q',v('fQ').trim()); if(v('fCh')) p.set('platform',v('fCh')); if(v('fState')) p.set('state',v('fState'));
-    if(v('fTipo')) p.set('tipo',v('fTipo')); if(v('fStatus')) p.set('status',v('fStatus')); if(v('fFrom')) p.set('from',v('fFrom')); if(v('fTo')) p.set('to',v('fTo'));
+    if(v('fTipo')) p.set('tipo',v('fTipo')); if(v('fStatus')) p.set('status',v('fStatus')); if(v('fAd')) p.set('ad',v('fAd')); if(v('fFrom')) p.set('from',v('fFrom')); if(v('fTo')) p.set('to',v('fTo'));
     if($('fDemand').checked) p.set('demand','1'); return p; }
   async function loadList(){
     try{ const d=await api('GET','/api/meta-leads/list?'+qs()); S.items=d.items||[]; S.stock=d.stock||{}; renderList(); if(S.tab==='sum') renderSummary(); }
@@ -361,16 +391,16 @@
     const it=S.items;
     $('lCount').textContent=it.length+'건'+(it.length>=5000?' (최대 5,000건 표시 — 필터로 좁히세요)':'');
     if(!it.length){ $('lTable').innerHTML='<div class="hint" style="margin-top:10px">문의가 없습니다'+(S.status&&S.status.counts&&!S.status.counts.total?' — 위에서 「⟳ 새 문의 가져오기」를 누르세요.':'.')+'</div>'; return; }
-    $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품 · 부품번호</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
+    $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>광고</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품 · 부품번호</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
       +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b>'+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</td>'
-        +'<td><span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td><td>'+tipoOf(x)+'</td>'
+        +'<td><span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td><td>'+adCell(x)+'</td><td>'+tipoOf(x)+'</td>'
         +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
         +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
         +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
         +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
-  ['fCh','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
+  ['fCh','fAd','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
   $('bSearch').addEventListener('click',loadList);
   $('fQ').addEventListener('keydown',e=>{ if(e.key==='Enter') loadList(); });
   $('lTable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id)); });
@@ -383,6 +413,7 @@
     $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(CH[d.platform]||['',d.platform])[1]+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
     $('oAi').innerHTML=d.summary?'<div class="aisum">🤖 '+esc(d.summary)+(d.intent?'<br><span class="muted">관심: '+esc(d.intent)+'</span>':'')+'</div>':(d.ai_error?'<div class="aisum bad-t">AI 분석 오류: '+esc(d.ai_error)+'</div>':'');
     $('oChat').innerHTML=(d.messages||[]).map(m=>'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+fmtT(m.at)+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
+    fillAdSelect(d);
     const ph=(el,auto)=>{ el.placeholder=auto?('자동: '+auto):el.placeholder; };
     $('eName').value=d.name&&d.name!==d.meta_name?d.name:''; ph($('eName'),d.meta_name);
     $('eTipo').value=d.tipo&&d.tipo!==d.a_tipo?d.tipo:''; $('eTipo').placeholder='자동: '+(d.a_tipo||d.tipo_btn||'—');
@@ -412,9 +443,9 @@
   $('eSave').addEventListener('click',async()=>{
     const d=S.cur; if(!d) return;
     const body={name:$('eName').value,tipo:$('eTipo').value,state:$('eState').value,city:$('eCity').value,phone:$('ePhone').value,
-      vehicles:$('eVeh').value,parts:$('eParts').value,status:$('eStatus').value,derived_to:$('eDerived').value,note:$('eNote').value};
+      vehicles:$('eVeh').value,parts:$('eParts').value,ad_id:$('eAd').value,status:$('eStatus').value,derived_to:$('eDerived').value,note:$('eNote').value};
     if($('eItems').value!==$('eItems').dataset.orig) body.items=$('eItems').value;
-    try{ const r=await api('PATCH','/api/meta-leads/'+d.id,body); S.items=S.items.map(x=>x.id===r.id?Object.assign({},x,r):x); renderList(); renderItemsBox(r);
+    try{ const r=await api('PATCH','/api/meta-leads/'+d.id,body); S.items=S.items.map(x=>x.id===r.id?Object.assign({},x,r):x); renderList(); renderItemsBox(r); if(r.ad_id!==d.ad_id||r.ad_src!==d.ad_src){ S.cur=Object.assign({},d,r); fillAdSelect(S.cur); loadAds(); }
       say(true,'저장했습니다.'+(r.unknown_codes&&r.unknown_codes.length?' 카탈로그에 없는 코드는 빼고 저장: '+r.unknown_codes.join(', '):''),$('eMsg')); loadStatus(); }
     catch(e){ say(false,e.message==='unknown_codes'?'카탈로그에 없는 코드입니다.':errText(e),$('eMsg')); }
   });
@@ -640,6 +671,106 @@
       :'<div class="hint">차종 · 부품이 확인된 문의가 아직 없습니다.</div>';
   }
 
+  // ───── 0295 · 광고별 문의 ─────
+  const fmtD=(t)=>t?new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(t)):'';
+  const AD_SRC_KO={manual:'직접 지정',meta:'Meta 광고 기록',texto:'구분 문구'};
+  const adLabel=(x)=>x.ad_id?(x.ad_name||('미등록 '+x.ad_id)):'';
+  const adCell=(x)=>x.ad_id?('<span class="ad-chip'+(x.ad_name?'':' unreg')+'" title="'+esc('광고 ID '+x.ad_id+' · '+(AD_SRC_KO[x.ad_src]||''))+'">'+esc(x.ad_name||('미등록 …'+String(x.ad_id).slice(-6)))+'</span>'):'<span class="muted">—</span>';
+  S.ads=null; S.adSel=null; S.adEdit=null;
+  const AERR={bad_ad_id:'광고 ID 는 숫자만(5~25자리) 넣으세요.',name_required:'광고 이름을 넣으세요.',ad_exists:'이미 등록된 광고 ID 입니다 — 표에서 「수정」을 누르세요.',match_text_short:'구분 문구는 3글자 이상이어야 합니다.',not_found:'없는 광고입니다.'};
+  async function loadAds(){
+    let d; try{ d=await api('GET','/api/meta-leads/ads'); }catch(e){ $('aTable').innerHTML='<div class="hint">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 0295 확인).':errText(e))+'</div>'; return; }
+    d=Object.assign({ads:[],unregistered:[],none:null,touches:{}},d||{}); if(!Array.isArray(d.ads)) d.ads=[]; if(!Array.isArray(d.unregistered)) d.unregistered=[];
+    S.ads=d; fillAdFilter(); renderAds(); if(S.tab==='ads'&&S.adSel) loadAdDetail();
+  }
+  function fillAdFilter(){
+    const A=S.ads; if(!A) return; const sel=$('fAd'); const cur=sel.value;
+    sel.innerHTML='<option value="">전체</option><option value="__none">— 광고 외 / 직접</option>'
+      +A.ads.map(a=>'<option value="'+esc(a.ad_id)+'">'+esc(a.name)+(a.active?'':' (종료)')+' · '+a.n+'</option>').join('')
+      +A.unregistered.map(a=>'<option value="'+esc(a.ad_id)+'">미등록 '+esc(a.ad_id)+' · '+a.n+'</option>').join('');
+    if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  }
+  function fillAdSelect(d){
+    const A=S.ads||{ads:[],unregistered:[]}; const opts=A.ads.map(a=>[a.ad_id,a.name]).concat(A.unregistered.map(a=>[a.ad_id,'미등록 '+a.ad_id]));
+    if(d.ad_src==='manual'&&d.ad_id&&!opts.some(o=>o[0]===d.ad_id)) opts.push([d.ad_id,'미등록 '+d.ad_id]);
+    const auto=d.ad_src&&d.ad_src!=='manual'?(d.ad_name||('미등록 '+d.ad_id)):'광고 외 / 직접';
+    $('eAd').innerHTML='<option value="">(자동: '+esc(auto)+')</option>'+opts.map(o=>'<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>').join('');
+    $('eAd').value=d.ad_src==='manual'?d.ad_id:'';
+    $('eAdHint').textContent=d.ad_id?('광고 ID '+d.ad_id+' · '+(AD_SRC_KO[d.ad_src]||'')+(d.ad_src==='manual'?' — 비우면 자동값으로 돌아갑니다':'')):'Meta 광고 기록 · 구분 문구로 찾지 못했습니다 — 광고를 알면 직접 고르세요.';
+  }
+  const stCells=(a)=>'<td class="num"><b>'+a.n+'</b></td><td class="num">'+a.phones+'</td><td class="num">'+(a.nuevo||'')+'</td><td class="num">'+(a.contactado||'')+'</td><td class="num">'+(a.derivado||'')+'</td><td class="num">'+(a.venta?'<span class="ok-t">'+a.venta+'</span>':'')+'</td>'
+    +'<td>'+[['FB',a.messenger],['IG',a.instagram],['WA',a.whatsapp]].filter(x=>x[1]).map(x=>x[0]+' '+x[1]).join(' · ')+'</td>'
+    +'<td class="muted" title="Meta 광고 기록 · 구분 문구 · 직접 지정">'+[['기록',a.by_meta],['문구',a.by_text],['직접',a.by_manual]].filter(x=>x[1]).map(x=>x[0]+' '+x[1]).join(' · ')+'</td>'
+    +'<td style="white-space:nowrap">'+esc(a.last_at?fmtD(a.last_at):'—')+'</td>';
+  function renderAds(){
+    const A=S.ads; if(!A) return;
+    const t=A.touches||{};
+    $('aHook').innerHTML='📡 Meta 광고 기록(웹훅): '+(t.n?('<b>'+t.n+'건</b> · 마지막 '+esc(fmtD(t.last_at))):'<span class="warn-t">아직 0건</span>')
+      +' — 고객이 광고를 눌러 메시지를 보내면 그 광고 ID 가 자동으로 기록됩니다(WhatsApp 은 ERP API 번호로 온 메시지 · Messenger/Instagram 은 페이지 웹훅 연결 필요). 기록이 생기기 전의 예전 문의는 「구분 문구」나 문의를 열어 직접 고르세요.'
+      +' <button type="button" class="btn ghost sm" id="aSub">Messenger 페이지 웹훅 연결</button>';
+    const head='<table><thead><tr><th>광고</th><th class="num">문의</th><th class="num">전화</th><th class="num">신규</th><th class="num">연락함</th><th class="num">연결</th><th class="num">판매</th><th>채널</th><th>광고 구분 근거</th><th>마지막 문의</th><th></th></tr></thead><tbody>';
+    const regRows=A.ads.map(a=>'<tr class="click adrow'+(S.adSel===a.ad_id?' sel':'')+'" data-ad="'+esc(a.ad_id)+'"><td><span class="adname">'+esc(a.name)+'</span>'+(a.active?'':' <span class="muted">(종료)</span>')+'<br><span class="adid">'+esc(a.ad_id)+'</span>'
+        +(a.memo?'<br><span class="muted">'+esc(a.memo)+'</span>':'')+(a.match_text?'<br><span class="muted">구분 문구: 「'+esc(a.match_text)+'」</span>':'')+'</td>'+stCells(a)
+        +'<td style="white-space:nowrap"><button type="button" class="btn ghost sm" data-edit="'+esc(a.ad_id)+'">수정</button> <button type="button" class="btn ghost sm" data-del="'+esc(a.ad_id)+'">삭제</button></td></tr>').join('');
+    const unRows=A.unregistered.map(a=>'<tr class="click adrow unreg'+(S.adSel===a.ad_id?' sel':'')+'" data-ad="'+esc(a.ad_id)+'"><td><span class="warn-t">미등록 광고</span><br><span class="adid">'+esc(a.ad_id)+'</span>'+(a.headline?'<br><span class="muted">Meta 광고 제목: '+esc(a.headline)+'</span>':'')+'</td>'+stCells(a)
+        +'<td style="white-space:nowrap"><input type="text" data-name-for="'+esc(a.ad_id)+'" placeholder="광고 이름" style="width:140px" value="'+esc(a.headline||'')+'"> <button type="button" class="btn sm" data-reg="'+esc(a.ad_id)+'">이름 붙이기</button></td></tr>').join('');
+    const none=A.none||{n:0};
+    const noneRow='<tr class="click adrow'+(S.adSel==='__none'?' sel':'')+'" data-ad="__none"><td><span class="adname">광고 외 / 직접</span><br><span class="muted">광고를 찾지 못한 문의</span></td>'+stCells(none)+'<td></td></tr>';
+    $('aTable').innerHTML=(A.ads.length||A.unregistered.length?'':'<div class="hint" style="margin:8px 0">아직 등록한 광고가 없습니다 — 위에 광고 ID 와 이름을 넣고 「등록」.</div>')+head+regRows+unRows+noneRow+'</tbody></table>';
+  }
+  function resetAdForm(){ S.adEdit=null; ['aId','aName','aMatch','aMemo'].forEach(id=>$(id).value=''); $('aActive').checked=true; $('aId').disabled=false; $('aSave').textContent='등록'; $('aCancel').classList.add('hidden'); }
+  $('aCancel').addEventListener('click',resetAdForm);
+  $('aSave').addEventListener('click',async()=>{
+    const body={name:$('aName').value,match_text:$('aMatch').value,memo:$('aMemo').value,active:$('aActive').checked};
+    try{
+      if(S.adEdit){ await api('PATCH','/api/meta-leads/ads/'+encodeURIComponent(S.adEdit),body); say(true,'저장했습니다.',$('aMsg')); }
+      else{ body.ad_id=$('aId').value.replace(/[\s-]/g,''); await api('POST','/api/meta-leads/ads',body); say(true,'광고를 등록했습니다 — 이 광고 ID 로 들어온 문의가 이 이름으로 묶입니다.',$('aMsg')); }
+      resetAdForm(); await loadAds(); loadList();
+    }catch(e){ say(false,AERR[e.message]||errText(e),$('aMsg')); }
+  });
+  $('aTable').addEventListener('click',async e=>{
+    const ed=e.target.closest('[data-edit]'), del=e.target.closest('[data-del]'), reg=e.target.closest('[data-reg]');
+    if(e.target.closest('input')) return;
+    if(ed){ const a=S.ads.ads.find(x=>x.ad_id===ed.dataset.edit); if(!a) return; S.adEdit=a.ad_id;
+      $('aId').value=a.ad_id; $('aId').disabled=true; $('aName').value=a.name; $('aMatch').value=a.match_text||''; $('aMemo').value=a.memo||''; $('aActive').checked=!!a.active;
+      $('aSave').textContent='저장'; $('aCancel').classList.remove('hidden'); $('aName').focus(); return; }
+    if(del){ const a=S.ads.ads.find(x=>x.ad_id===del.dataset.del); if(!a||!confirm('「'+a.name+'」 등록을 지울까요? 문의는 지워지지 않고, Meta 기록이 있으면 「미등록 광고」로 남습니다.')) return;
+      try{ await api('DELETE','/api/meta-leads/ads/'+encodeURIComponent(a.ad_id)); if(S.adSel===a.ad_id) S.adSel=null; await loadAds(); loadList(); }catch(err){ say(false,AERR[err.message]||errText(err),$('aMsg')); } return; }
+    if(reg){ const inp=$('aTable').querySelector('input[data-name-for="'+reg.dataset.reg+'"]'); const name=inp?inp.value.trim():'';
+      if(!name){ say(false,AERR.name_required,$('aMsg')); return; }
+      try{ await api('POST','/api/meta-leads/ads',{ad_id:reg.dataset.reg,name}); say(true,'이름을 붙였습니다.',$('aMsg')); await loadAds(); loadList(); }catch(err){ say(false,AERR[err.message]||errText(err),$('aMsg')); } return; }
+    if(e.target.closest('button')) return;
+    const tr=e.target.closest('tr[data-ad]'); if(!tr) return;
+    S.adSel=S.adSel===tr.dataset.ad?null:tr.dataset.ad; renderAds(); loadAdDetail();
+  });
+  $('aHook').addEventListener('click',async e=>{ if(!e.target.closest('#aSub')) return;
+    try{ await api('POST','/api/meta-leads/ads/subscribe'); say(true,'Messenger 페이지를 웹훅에 연결했습니다 — 이제 광고를 눌러 온 메시지의 광고 ID 가 기록됩니다.',$('aMsg')); }
+    catch(err){ say(false,err.message==='no_token'?ERR.no_token:('연결 실패: '+((err.data&&err.data.detail)||err.message)+' — 토큰에 pages_manage_metadata 권한이 필요합니다.'),$('aMsg')); }
+  });
+  async function loadAdDetail(){
+    const ad=S.adSel; if(!ad){ $('aDetail').innerHTML=''; return; }
+    const A=S.ads; const a=(A.ads.find(x=>x.ad_id===ad))||(A.unregistered.find(x=>x.ad_id===ad));
+    const title=ad==='__none'?'광고 외 / 직접':(a&&a.name?a.name:'미등록 광고 '+ad);
+    $('aDetail').innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
+    let d; try{ d=await api('GET','/api/meta-leads/list?ad='+encodeURIComponent(ad)); }catch(e){ $('aDetail').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; }
+    if(S.adSel!==ad) return;
+    const rows=(d.items||[]).slice().sort((x,y)=>String(y.first_at||'').localeCompare(String(x.first_at||'')));
+    S.adRows=rows;
+    $('aDetail').innerHTML='<div class="row" style="align-items:center;margin-top:16px"><h2 style="margin:0">'+esc(title)+' — 문의 '+rows.length+'건</h2><span style="margin-left:auto"></span>'
+      +'<button type="button" class="btn ghost sm" id="aToList">이 광고로 목록 · 요약 · 엑셀 보기 →</button></div>'
+      +(rows.length?'<div class="tblwrap"><table><thead><tr><th>최초 일시</th><th>이름 · 계정</th><th>연락처</th><th>채널</th><th>문의내용</th><th>마지막 대응</th><th>상태</th></tr></thead><tbody>'
+        +rows.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.first_mx_t||x.first_mx||'')+'</td><td><b>'+esc(x.name||'—')+'</b>'+(x.username?'<br><span class="muted">@'+esc(x.username)+'</span>':'')+'</td>'
+          +'<td style="white-space:nowrap">'+esc(x.phone||'—')+'</td><td><span class="tag ch-'+x.platform+'">'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td>'
+          +'<td class="clip" style="max-width:320px" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
+          +'<td class="clip" style="max-width:260px" title="'+esc(x.last_reply||'')+'">'+esc(x.last_reply||'—')+'</td>'
+          +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+'</td></tr>').join('')
+        +'</tbody></table></div>':'<div class="hint" style="margin-top:8px">이 광고로 들어온 문의가 아직 없습니다.</div>');
+  }
+  $('aDetail').addEventListener('click',e=>{
+    if(e.target.closest('#aToList')){ $('fAd').value=S.adSel; document.querySelector('#tabs .tab[data-p="list"]').click(); loadList(); return; }
+    const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id));
+  });
+
   // ───── 엑셀 ─────
   function sheet(aoa,widths,color){ const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=widths.map(w=>({wch:w}));
     for(let c=0;c<aoa[0].length;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:color||'C00000'}},alignment:{vertical:'center',wrapText:true}}; }
@@ -647,12 +778,16 @@
   const SRC_ES={dicho:'Lo dijo',boton:'Botón del anuncio',inferido:'Deducido',manual:'Capturado'};
   $('bXls').addEventListener('click',()=>{
     const it=S.items; if(!it.length){ say(false,'내보낼 문의가 없습니다.'); return; }
-    const aoa=[['Último mensaje','Primer mensaje','Nombre','Canal','Tipo de cliente','Fuente del tipo','Estado','Ciudad','Teléfono','Correo','Vehículo (año)','Piezas buscadas','Interés','Resumen (IA)','Mensaje del cliente','Estatus','Refaccionaria asignada','Nota','Códigos CTR (cant.)']];
+    const aoa=[['Último mensaje','Primer mensaje','Nombre','Canal','Tipo de cliente','Fuente del tipo','Estado','Ciudad','Teléfono','Correo','Vehículo (año)','Piezas buscadas','Interés','Resumen (IA)','Mensaje del cliente','Estatus','Refaccionaria asignada','Nota','Códigos CTR (cant.)','Anuncio','ID del anuncio','Primer mensaje (hora)']];
     for(const x of it) aoa.push([x.last_mx||'',x.first_mx||'',x.name||x.username||'',(CH[x.platform]||['',x.platform])[1],tipoKey(x)||'',x.tipo?(SRC_ES[x.tipo_src]||''):(x.tipo_btn?'Botón del anuncio':''),x.state||'',x.city||'',x.phone||'',x.email||'',x.vehicles||'',x.parts||'',x.intent||'',x.summary||'',(x.customer_text||'').replace(/\n/g,' / ').slice(0,500),
-      ({nuevo:'Nuevo',contactado:'Contactado',derivado:'Derivado a refaccionaria',venta:'Venta',descartado:'Descartado'})[x.status]||x.status,x.derived_to||'',x.note||'',codesTxt(x)]);
+      ({nuevo:'Nuevo',contactado:'Contactado',derivado:'Derivado a refaccionaria',venta:'Venta',descartado:'Descartado'})[x.status]||x.status,x.derived_to||'',x.note||'',codesTxt(x),adLabel(x),x.ad_id||'',x.first_mx_t||'']);
     const s=summaries(it); const o=opportunities(it); const dt=demandTable(it);
     const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,sheet(aoa,[16,11,26,10,16,14,18,16,13,22,30,36,18,50,60,18,22,30]),'Contactos');
+    XLSX.utils.book_append_sheet(wb,sheet(aoa,[16,11,26,10,16,14,18,16,13,22,30,36,18,50,60,18,22,30,26,28,20,16]),'Contactos');
+    { const A=S.ads||{}; const rows=(A.ads||[]).map(a=>[a.name,a.ad_id,a.memo||'',a.active?'Sí':'No',a.n,a.phones,a.nuevo,a.contactado,a.derivado,a.venta,a.descartado,a.messenger,a.instagram,a.whatsapp,a.first_at?fmtD(a.first_at):'',a.last_at?fmtD(a.last_at):''])
+        .concat((A.unregistered||[]).map(a=>['(sin nombre)',a.ad_id,'','',a.n,a.phones,a.nuevo,a.contactado,a.derivado,a.venta,a.descartado,a.messenger,a.instagram,a.whatsapp,a.first_at?fmtD(a.first_at):'',a.last_at?fmtD(a.last_at):'']));
+      if(A.none) rows.push(['Sin anuncio / directo','','','',A.none.n,A.none.phones,A.none.nuevo,A.none.contactado,A.none.derivado,A.none.venta,A.none.descartado,A.none.messenger,A.none.instagram,A.none.whatsapp,'','']);
+      if(rows.length) XLSX.utils.book_append_sheet(wb,sheet([['Anuncio','ID del anuncio','Nota','Activo','Consultas','Con teléfono','Nuevo','Contactado','Derivado','Venta','Descartado','Messenger','Instagram','WhatsApp','Primera consulta','Última consulta']].concat(rows),[30,22,30,8,11,12,9,11,10,9,11,11,11,11,16,16],'143D34'),'Por anuncio'); }
     XLSX.utils.book_append_sheet(wb,sheet([['Estado','Consultas','Con vehículo/pieza','Con teléfono','Tipo de cliente (P particular · T taller · R refaccionaria · F flotilla · Taxi)','Vehículos más buscados (año)','Piezas más buscadas']].concat(o.map(g=>[g.state,g.n,g.demand,g.phones,g.tipos,g.veh,g.part])),[22,11,14,12,40,55,60],'143D34'),'Oportunidades por estado');
     const pvSheet=(dim)=>{ const P=pivot(it,dim); const hdr=[DIM[dim].es,'Consultas','Con vehículo/pieza','Con teléfono'];
       const cols=[]; if(dim==='veh') cols.push(['Años',g=>topTxt(g.years,10)]); cols.push(dim==='state'?['Ciudades',g=>topTxt(g.cities,8)]:['Estados',g=>topTxt(g.states,8)]);

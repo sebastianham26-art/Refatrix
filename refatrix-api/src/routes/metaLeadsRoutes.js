@@ -11,6 +11,13 @@
 //   POST  /api/meta-leads/reextract              저장된 대화에 추출 규칙 다시 적용
 //   POST  /api/meta-leads/match {all,id}         0272 · 차종·부품 → CTR 부품번호 × 수량(규칙 + AI) — 진행은 status.match
 //   PATCH /api/meta-leads/:id {items:"CQ0271L 2\n…"}  0272 · 사람이 고친 부품번호 × 수량(빈 문자열 = 자동값)
+//   ── 0295 · 광고별 문의(2026-10-23) ──
+//   GET    /api/meta-leads/ads                     등록 광고 + 문의 집계 · 미등록 광고 ID · 광고 외
+//   POST   /api/meta-leads/ads {ad_id,name,memo,match_text,active}   광고 등록(이름은 디렉터가 붙임)
+//   PATCH  /api/meta-leads/ads/:adId {name,memo,match_text,active}   수정
+//   DELETE /api/meta-leads/ads/:adId               등록만 지움(웹훅 기록은 남아 「미등록」으로 보임)
+//   POST   /api/meta-leads/ads/subscribe           Messenger 페이지를 앱 웹훅에 연결(광고 출처 받기)
+//   GET    /api/meta-leads/list?ad=<광고 ID>|__none    광고별 목록 · PATCH /:id {ad_id}  사람이 고른 광고(빈 값 = 자동)
 // =====================================================================
 import { query } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
@@ -21,6 +28,7 @@ import {
 import { META_STATES } from '../metaLeadExtract.js';
 import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
+import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -43,7 +51,13 @@ const COLS = `t.id, t.platform, t.thread_id, CASE WHEN t.thread_id LIKE 'wab:%' 
   t.status, t.derived_to, t.note,
   (t.m_items IS NOT NULL OR t.m_name IS NOT NULL OR t.m_tipo IS NOT NULL OR t.m_state IS NOT NULL OR t.m_city IS NOT NULL OR t.m_phone IS NOT NULL OR t.m_vehicles IS NOT NULL OR t.m_parts IS NOT NULL) AS edited,
   to_char(t.last_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD HH24:MI') AS last_mx,
-  to_char(t.first_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS first_mx`;
+  to_char(t.first_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS first_mx,
+  to_char(t.first_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD HH24:MI') AS first_mx_t,
+  -- 0295 · 어느 광고에서 왔나: 사람 > Meta 웹훅(광고 ID) > 광고 구분 문구
+  ${AD_EXPR} AS ad_id, ${AD_SRC_EXPR} AS ad_src, (SELECT a.name FROM meta_ads a WHERE a.ad_id = ${AD_EXPR}) AS ad_name`;
+// 0295 · 마지막 대응(우리 쪽 마지막 메시지)
+const LAST_REPLY = `left((SELECT e->>'text' FROM jsonb_array_elements(t.messages) WITH ORDINALITY AS m(e, o) WHERE (e->>'me')::boolean AND COALESCE(e->>'text','') <> '' ORDER BY o DESC LIMIT 1), 300) AS last_reply`;
+const ADS_W = { preHandler: [authGuard, requirePageEditAny(PM_KEYS)] };
 
 export default async function metaLeadsRoutes(app) {
   app.get('/api/meta-leads/status', R, async () => {
@@ -106,9 +120,11 @@ export default async function metaLeadsRoutes(app) {
     if (STATUSES.includes(req.query.status)) conds.push(`t.status = ${add(req.query.status)}`);
     if (req.query.demand === '1') conds.push(`(COALESCE(t.m_parts,t.ai_parts,t.a_parts) IS NOT NULL OR COALESCE(t.m_vehicles,t.ai_vehicles,t.a_vehicles) IS NOT NULL)`);
     if (ymd(req.query.from)) conds.push(`(t.last_at AT TIME ZONE 'America/Mexico_City')::date >= ${add(req.query.from)}::date`);
+    if (req.query.ad === '__none') conds.push(`${AD_EXPR} IS NULL`);
+    else if (req.query.ad) { const ad = cleanAdId(req.query.ad); if (ad) conds.push(`${AD_EXPR} = ${add(ad)}`); }
     if (ymd(req.query.to)) conds.push(`(t.last_at AT TIME ZONE 'America/Mexico_City')::date <= ${add(req.query.to)}::date`);
     const limit = Math.min(Number(req.query.limit) || 5000, 10000);
-    const rows = (await query(`SELECT ${COLS}, left(t.customer_text, 600) AS customer_text FROM meta_threads t WHERE ${conds.join(' AND ')}
+    const rows = (await query(`SELECT ${COLS}, left(t.customer_text, 600) AS customer_text, ${LAST_REPLY} FROM meta_threads t WHERE ${conds.join(' AND ')}
                                ORDER BY t.last_at DESC NULLS LAST LIMIT ${limit}`, args)).rows;
     // 0272 · 나온 부품번호의 현재고(요약 · 엑셀의 「재고」)
     const codes = [...new Set(rows.flatMap((r) => (Array.isArray(r.items) ? r.items : []).map((i) => i && i.code).filter(Boolean)))];
@@ -134,6 +150,11 @@ export default async function metaLeadsRoutes(app) {
       if (b[k] === undefined) continue;
       const v = b[k] == null ? null : String(b[k]).trim().slice(0, k === 'note' ? 2000 : 300);
       put(col, v || null);
+    }
+    if (b.ad_id !== undefined) {           // 0295 · 사람이 고른 광고 — 빈 값이면 자동(웹훅 · 구분 문구)
+      const v = String(b.ad_id == null ? '' : b.ad_id).trim();
+      if (v && !cleanAdId(v)) return reply.code(400).send({ error: 'bad_ad_id' });
+      put('m_ad_id', v ? cleanAdId(v) : null);
     }
     if (b.status !== undefined) { if (!STATUSES.includes(b.status)) return reply.code(400).send({ error: 'bad_status' }); put('status', b.status); }
     let unknown = [];
@@ -179,5 +200,85 @@ export default async function metaLeadsRoutes(app) {
     const r = await importWaAppThreads(th);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'meta_leads_import_wa_app', detail: r });
     return r;
+  });
+
+  // ───── 0295 · 광고별 문의 ─────
+  app.get('/api/meta-leads/ads', R, async () => {
+    // 문의마다 광고 하나(사람 > 웹훅 > 구분 문구) → 광고별 집계
+    const per = (await query(`SELECT x.ad_id, count(*)::int AS n,
+        count(*) FILTER (WHERE x.phone IS NOT NULL)::int AS phones,
+        count(*) FILTER (WHERE x.status = 'nuevo')::int AS nuevo, count(*) FILTER (WHERE x.status = 'contactado')::int AS contactado,
+        count(*) FILTER (WHERE x.status = 'derivado')::int AS derivado, count(*) FILTER (WHERE x.status = 'venta')::int AS venta,
+        count(*) FILTER (WHERE x.status = 'descartado')::int AS descartado,
+        count(*) FILTER (WHERE x.platform = 'messenger')::int AS messenger, count(*) FILTER (WHERE x.platform = 'instagram')::int AS instagram,
+        count(*) FILTER (WHERE x.platform = 'whatsapp')::int AS whatsapp,
+        count(*) FILTER (WHERE x.ad_src = 'manual')::int AS by_manual, count(*) FILTER (WHERE x.ad_src = 'meta')::int AS by_meta,
+        count(*) FILTER (WHERE x.ad_src = 'texto')::int AS by_text,
+        min(x.first_at) AS first_at, max(x.last_at) AS last_at
+      FROM (SELECT ${AD_EXPR} AS ad_id, ${AD_SRC_EXPR} AS ad_src, COALESCE(t.m_phone, t.ai_phone, t.a_phone) AS phone, t.status, t.platform, t.first_at, t.last_at
+              FROM meta_threads t) x
+      GROUP BY x.ad_id`)).rows;
+    const byAd = new Map(per.map((r) => [r.ad_id, r]));
+    const ads = (await query(`SELECT a.ad_id, a.name, a.memo, a.match_text, a.active, a.created_at, a.updated_at, u.name AS updated_by_name,
+                                     (SELECT max(at) FROM meta_ad_touches x WHERE x.ad_id = a.ad_id) AS last_touch_at,
+                                     (SELECT x.headline FROM meta_ad_touches x WHERE x.ad_id = a.ad_id AND x.headline IS NOT NULL ORDER BY x.at DESC LIMIT 1) AS headline
+                                FROM meta_ads a LEFT JOIN users u ON u.id = COALESCE(a.updated_by, a.created_by)
+                               ORDER BY a.active DESC, a.created_at DESC`)).rows;
+    const zero = { n: 0, phones: 0, nuevo: 0, contactado: 0, derivado: 0, venta: 0, descartado: 0, messenger: 0, instagram: 0, whatsapp: 0, by_manual: 0, by_meta: 0, by_text: 0, first_at: null, last_at: null };
+    const reg = new Set(ads.map((a) => a.ad_id));
+    // 웹훅으로 들어왔는데 아직 이름을 안 붙인 광고 ID — 문의가 아직 목록에 없어도(가져오기 전) 보여 준다
+    const touches = (await query(`SELECT ad_id, count(DISTINCT platform || ':' || user_id)::int AS people, max(at) AS last_touch_at,
+                                         (array_agg(headline ORDER BY at DESC) FILTER (WHERE headline IS NOT NULL))[1] AS headline
+                                    FROM meta_ad_touches GROUP BY ad_id`)).rows;
+    const unregistered = touches.filter((x) => !reg.has(x.ad_id)).map((x) => ({ ...zero, ...(byAd.get(x.ad_id) || {}), ad_id: x.ad_id, people: x.people, headline: x.headline, last_touch_at: x.last_touch_at }))
+      .sort((a, b) => b.n - a.n || String(b.last_touch_at).localeCompare(String(a.last_touch_at)));
+    const lastTouch = (await query(`SELECT max(at) AS at, count(*)::int AS n FROM meta_ad_touches`)).rows[0];
+    return { ads: ads.map((a) => ({ ...zero, ...(byAd.get(a.ad_id) || {}), ...a })), unregistered,
+      none: { ...zero, ...(byAd.get(null) || {}) }, touches: { n: lastTouch.n, last_at: lastTouch.at } };
+  });
+
+  const adBody = (b, partial) => {
+    const o = {};
+    if (!partial || b.name !== undefined) { const v = String(b.name == null ? '' : b.name).trim().slice(0, 120); if (!v) return { error: 'name_required' }; o.name = v; }
+    for (const k of ['memo', 'match_text']) if (b[k] !== undefined) { const v = String(b[k] == null ? '' : b[k]).trim().slice(0, k === 'memo' ? 1000 : 200); o[k] = v || null; }
+    if (o.match_text && o.match_text.length < 3) return { error: 'match_text_short' };
+    if (b.active !== undefined) o.active = !!b.active;
+    return { o };
+  };
+  app.post('/api/meta-leads/ads', ADS_W, async (req, reply) => {
+    const b = req.body || {};
+    const ad = cleanAdId(b.ad_id); if (!ad) return reply.code(400).send({ error: 'bad_ad_id' });
+    const { o, error } = adBody(b, false); if (error) return reply.code(400).send({ error });
+    const r = (await query(`INSERT INTO meta_ads (ad_id, name, memo, match_text, active, created_by, updated_by) VALUES ($1,$2,$3,$4,$5,$6,$6)
+                            ON CONFLICT (ad_id) DO NOTHING RETURNING *`,
+      [ad, o.name, o.memo ?? null, o.match_text ?? null, o.active ?? true, req.ctx.perm.userId])).rows[0];
+    if (!r) return reply.code(409).send({ error: 'ad_exists' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: 'meta_ad', detail: { ad_id: ad, name: o.name } });
+    return r;
+  });
+  app.patch('/api/meta-leads/ads/:adId', ADS_W, async (req, reply) => {
+    const ad = cleanAdId(req.params.adId); if (!ad) return reply.code(400).send({ error: 'bad_ad_id' });
+    const { o, error } = adBody(req.body || {}, true); if (error) return reply.code(400).send({ error });
+    const keys = Object.keys(o); if (!keys.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    const args = [ad, ...keys.map((k) => o[k]), req.ctx.perm.userId];
+    const r = (await query(`UPDATE meta_ads SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')}, updated_by = $${keys.length + 2}, updated_at = now() WHERE ad_id = $1 RETURNING *`, args)).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'meta_ad', detail: { ad_id: ad, ...o } });
+    return r;
+  });
+  app.delete('/api/meta-leads/ads/:adId', ADS_W, async (req, reply) => {
+    const ad = cleanAdId(req.params.adId); if (!ad) return reply.code(400).send({ error: 'bad_ad_id' });
+    const r = (await query(`DELETE FROM meta_ads WHERE ad_id = $1 RETURNING ad_id, name`, [ad])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: 'meta_ad', detail: r });
+    return { ok: true };
+  });
+  app.post('/api/meta-leads/ads/subscribe', ADS_W, async (req, reply) => {
+    if (!metaLeadsConfigured()) return reply.code(400).send({ error: 'no_token' });
+    const p = await resolvePage(); if (p.error) return reply.code(400).send({ error: 'page', detail: p.error });
+    const r = await subscribePage({ pageId: metaPageId(), token: p.token, version: process.env.META_GRAPH_VERSION || process.env.WHATSAPP_API_VERSION || 'v20.0' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'meta_page_subscribe', detail: r });
+    if (!r.ok) return reply.code(400).send({ error: 'subscribe_failed', detail: r.error });
+    return { ok: true };
   });
 }

@@ -20,6 +20,7 @@ import { query } from './db.js';
 import { normalizeWaNumber } from './waSend.js';
 import { handleInbound } from './waPromo.js';   // 0260 · 받은 메시지 저장 + 자동응답(WhatsApp 마케팅)
 import { handleDailySummaryButton } from './dailySummaryWa.js';   // 1014 · 오늘 요약 「전체 보기」 버튼
+import { recordWaReferral, applyPageWebhook } from './metaAds.js';   // 0295 · 광고 출처(광고 ID) — 광고별 문의
 
 export const WINDOW_CODES = new Set([131047, 470]);   // 24시간 창 밖(재참여 필요)
 
@@ -73,6 +74,8 @@ const rank = (x) => RANK.replace('%s', x);
 // 웹훅 본문 1건 반영. 반환: 처리 건수 요약(로그·테스트용)
 export async function applyWebhook(body, q = query) {
   const out = { statuses: 0, inbound: 0, failed: 0, reopened: 0 };
+  // 0295 · 같은 앱의 Messenger(page) · Instagram 웹훅도 이 주소로 받는다 — 광고 출처(광고 ID)만 기록
+  if (body && (body.object === 'page' || body.object === 'instagram')) return { ...out, ...(await applyPageWebhook(body, q)) };
   if (!body || body.object !== 'whatsapp_business_account' || !Array.isArray(body.entry)) return out;
   for (const entry of body.entry) {
     for (const ch of (entry && entry.changes) || []) {
@@ -141,6 +144,7 @@ export async function applyWebhook(body, q = query) {
           [from, tsOf(m.timestamp).toISOString(), String(m.type || '').slice(0, 30) || null]);
         if (pname.get(from)) { try { await q(`UPDATE wa_inbound SET profile_name=$2 WHERE wa_from=$1`, [from, String(pname.get(from)).slice(0, 120)]); } catch (_) { /* 0271 전 */ } }
         out.inbound++;
+        if (m.referral && await recordWaReferral(m, q)) out.referrals = (out.referrals || 0) + 1;   // 0295 · 클릭 투 WhatsApp 광고
         let dup = false;
         try { const h = await handleInbound(m, q); if (h && h.stored) out.stored = (out.stored || 0) + 1; dup = !!(h && h.duplicate); }
         catch (_) { /* 0260 전이면 테이블 없음 — 24시간 창 기록은 위에서 끝남 */ }
