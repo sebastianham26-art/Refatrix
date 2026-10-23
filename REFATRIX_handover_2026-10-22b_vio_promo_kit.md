@@ -47,6 +47,14 @@
 - WhatsApp 문구 끝에도 `Producto promoción: K0001.`
 - 바뀐 파일: `refatrix-viofinder.html`(build `vf17c`) · 시험 `viopromo_front.test.mjs`
 
+### 추가(10-23 · vf17d) — 프로모션 삭제
+- 📋 프로모션 목록 각 줄에 **🗑 삭제** — 키트 제품이 제품 카탈로그(제품 마스터)에 **아직 없을 때만** 보이고 동작(서버도 409로 막음)
+- 만든 사람 또는 디렉터만 · 확인 창 후 삭제 · 구성품 줄도 같이 삭제 · 감사 기록
+- **지운 번호는 다시 쓰지 않음**(K0003 지워도 다음은 K0004) — 이미 나간 이미지·WhatsApp 의 번호와 겹치지 않게
+- 열려 있던 만들기 창의 프로모션이면 번호를 비움(이미지에서 번호 빠짐)
+- 바뀐 파일: `refatrix-api/src/routes/vioPromoRoutes.js`(DELETE /api/vio-promos/:id) · `refatrix-viofinder.html`(build `vf17d`) · 시험 2개
+- 배포: 백엔드 → Railway Success → 프론트 (마이그레이션 없음)
+
 ## ② 배포 순서
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull**

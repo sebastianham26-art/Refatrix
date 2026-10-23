@@ -46,7 +46,17 @@ test('라우트: 저장(번호) → 목록 · 수정 · 키트 제품 → 견적
     r = await app.inject({ method: 'POST', url: '/api/vio-promos', headers: DIR, payload: { ...body, items: [{ code: A, qty: 1 }] } });
     const p2 = r.json();
     assert.equal(Number(p2.promo_no.slice(1)), Number(p1.promo_no.slice(1)) + 1, '연번');
-    await query(`DELETE FROM vio_promos WHERE id=$1`, [p2.id]);
+    // 삭제(10-23): 남의 것 403 · 만든 사람/디렉터 200 · 다시 조회 404 · 번호는 다시 안 씀
+    r = await app.inject({ method: 'DELETE', url: '/api/vio-promos/' + p2.id, headers: MKT });
+    assert.equal(r.statusCode, 403);
+    r = await app.inject({ method: 'DELETE', url: '/api/vio-promos/' + p2.id, headers: DIR });
+    assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().promo_no, p2.promo_no);
+    r = await app.inject({ method: 'GET', url: '/api/vio-promos/' + p2.id, headers: DIR });
+    assert.equal(r.statusCode, 404);
+    assert.equal(Number((await query(`SELECT count(*) n FROM vio_promo_items WHERE promo_id=$1`, [p2.id])).rows[0].n), 0, '구성품도 같이 지움');
+    r = await app.inject({ method: 'POST', url: '/api/vio-promos', headers: DIR, payload: { ...body, items: [{ code: A, qty: 1 }] } });
+    assert.equal(Number(r.json().promo_no.slice(1)), Number(p2.promo_no.slice(1)) + 1, '지운 번호는 다시 안 씀');
+    await query(`DELETE FROM vio_promos WHERE id=$1`, [r.json().id]);
     // 오류
     r = await app.inject({ method: 'POST', url: '/api/vio-promos', headers: DIR, payload: { ...body, items: [{ code: 'ZZ00000', qty: 1 }] } });
     assert.equal(r.statusCode, 400); assert.deepEqual(r.json().codes, ['ZZ00000']);
@@ -76,6 +86,8 @@ test('라우트: 저장(번호) → 목록 · 수정 · 키트 제품 → 견적
     assert.equal(r.statusCode, 409);
     r = await app.inject({ method: 'PATCH', url: '/api/vio-promos/' + promoId, headers: DIR, payload: { items: [{ code: A, qty: 3 }] } });
     assert.equal(r.statusCode, 409, '키트 뒤 품목 잠김');
+    r = await app.inject({ method: 'DELETE', url: '/api/vio-promos/' + promoId, headers: DIR });
+    assert.equal(r.statusCode, 409, '제품 카탈로그에 키트가 있으면 삭제 안 됨'); assert.equal(r.json().kit_code, p1.promo_no);
     r = await app.inject({ method: 'GET', url: '/api/vio-promos/' + promoId, headers: DIR });
     assert.equal(r.json().kit_code, p1.promo_no);
     // 견적: 키트 2세트 → 부품 줄(코드로도 · id 로도)

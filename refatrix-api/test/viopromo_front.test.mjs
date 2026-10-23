@@ -76,6 +76,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
           { id: 3, promo_no: 'K0003', model_key: 'versa', title: 'NISSAN Versa', years: '2012-2019', discount_pct: 10, show_totals: true, kit_code: null, kit_name: 'KIT T VERSA 2012-2019_CB0336_CQ0280Lx2', price_included: true, total_list: 2957, total_promo: 2661.3, buildable: 3, created_by_name: 'Ana', created_at: '2026-10-21T10:00:00Z',
             items: [{ ctr_code: 'CB0336', qty: 1 }, { ctr_code: 'CQ0280L', qty: 2 }] },
           { id: 2, promo_no: 'K0002', model_key: 'versa', title: 'NISSAN Versa', years: '2012-2019', discount_pct: 0, show_totals: false, kit_code: 'K0002', kit_name: 'KIT T VERSA 2012-2019_CB0336', kit_list_price: 291, price_included: true, total_list: 291, total_promo: 291, buildable: 12, items: [{ ctr_code: 'CB0336', qty: 1 }] }] });
+        if (/^\/api\/vio-promos\/\d+$/.test(p.pathname) && method === 'DELETE') return json({ ok: true, id: Number(p.pathname.split('/').pop()) });
         if (/^\/api\/vio-promos\/\d+\/kit$/.test(p.pathname)) return json({ ok: true, product_id: 900, code: 'K0003', name: body.name, list_price: 2957, promo: { id: 3, promo_no: 'K0003', model_key: 'versa', discount_pct: 10, show_totals: true, total_list: 2957, total_promo: 2661.3, title: 'NISSAN Versa', years: '2012-2019', kit_code: 'K0003', kit_name: body.name, kit_list_price: 2957, price_included: true, items: [{ ctr_code: 'CB0336', qty: 1 }, { ctr_code: 'CQ0280L', qty: 2 }], buildable: 3 } });
         if (p.pathname === '/api/products/positions/lookup') {
           const R = (block, level, side, model, y_from, y_to) => ({ block, level, side, model, y_from, y_to });
@@ -118,7 +119,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf17c/);
+  assert.match(d.title, /vf17d/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -453,6 +454,17 @@ test('수량 · 정가 합계 · 할인 금액 · 이미지에 넣을지 · 저�
   assert.ok(await until(() => /제품 마스터에 K0003/.test(d.getElementById('vpPlMsg').textContent)));
   assert.equal(calls.find((c) => /\/kit$/.test(c.u)).body.name, 'KIT T VERSA 2012-2019_CB0336_CQ0280Lx2');
   // 열기 → 그 구성·수량
+  // 삭제: 키트 제품 있는 K0002 는 버튼 없음 · K0003 은 키트 만든 뒤라 버튼 없음 → 목록 다시 불러 K0003(키트 전) 삭제
+  assert.ok(!d.querySelector('[data-pdel="2"]'), '카탈로그에 등록된 키트는 삭제 버튼 없음');
+  assert.ok(!d.querySelector('[data-pdel="3"]'), '방금 키트를 만든 K0003 도 삭제 버튼 없음');
+  d.getElementById('vpPlReload').click();
+  assert.ok(await until(() => d.querySelector('[data-pdel="3"]')));
+  d.querySelector('[data-pdel="3"]').click();
+  assert.ok(await until(() => /K0003 을\(를\) 삭제했습니다/.test(d.getElementById('vpPlMsg').textContent)));
+  assert.ok(calls.some((c) => /\/api\/vio-promos\/3$/.test(c.u) && c.method === 'DELETE'));
+  assert.equal(d.querySelectorAll('#vpPlist tbody tr').length, 1);
+  d.getElementById('vpPlReload').click();
+  assert.ok(await until(() => d.querySelector('[data-popen="3"]')));
   d.querySelector('[data-popen="3"]').click();
   assert.ok(await until(() => d.getElementById('vpOverlay').classList.contains('open') && d.querySelectorAll('#vpParts input[data-qty]').length > 0));
   assert.ok(await until(() => /K0003/.test(tot())));

@@ -15,7 +15,7 @@ const C = (id, code, name, kq, st, bo, lp, rack, inc) => ({ id, code, name, kit_
 const KIT = { id: 50, code: 'K0001', name: 'KIT T SPORTAGE 2016-2022_CE0342L_CE0342R_CR0297x2', scode: '', app: 'KIA Sportage 2016-2022', stock_qty: 0, is_active: true, list_price: 2918,
   kit: { promo_no: 'K0001', buildable: 3, items: [C(11, 'CE0342L', 'TERMINAL EXTERIOR IZQ', 1, 35, 0, 623, 'B-12'), C(12, 'CE0342R', 'TERMINAL EXTERIOR DER', 1, 3, 20, 623, 'B-13', 40), C(13, 'CR0297', 'TERMINAL INTERIOR', 2, 32, 0, 336, null)] } };
 app.get('/api/products', async (req) => /^K/i.test(String(req.query.q || '')) ? { total: 1, items: [KIT] }
-  : ({ total: P.length, items: P.map(([code, name], i) => ({ id: i + 1, code, name, scode: '', app: 'KIA SPORTAGE 2011-2016', stock_qty: 5, active: true, list_price: [1333, 1333, 875.5, null][i] })) }));
+  : ({ total: P.length, items: P.map(([code, name], i) => ({ id: i + 1, code, name, scode: '1105006 // 1105007 // 1106038', ean: '7501234567' + (890 + i), oe: '54501-2S000 // 54500-2S000', app: 'KIA SPORTAGE 2011-2016 // HYUNDAI TUCSON 2010-2015 // HYUNDAI IX35 2011-2015', rack_location: 'B-1' + i, sold_qty: 12, backorder_qty: i === 1 ? 20 : 0, stock_qty: 5, active: true, list_price: [1333, 1333, 875.5, null][i] })) }));
 app.get('/api/products/:id/drilldown', async () => ({}));
 app.get('/api/*', async () => ({ items: [] }));
 await app.listen({ port: Number(process.env.PORT || 18787), host: '127.0.0.1' });

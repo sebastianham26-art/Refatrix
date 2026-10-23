@@ -162,6 +162,24 @@ export default async function vioPromoRoutes(app) {
     return p;
   });
 
+  // 10-23 · 삭제 — 키트 제품이 제품 카탈로그(제품 마스터)에 아직 없을 때만. 만든 사람 또는 디렉터.
+  //   번호는 다시 쓰지 않는다(연번 시퀀스 그대로) — 이미지·WhatsApp 에 나간 번호와 겹치지 않게.
+  app.delete('/api/vio-promos/:id', W, async (req, reply) => {
+    if (!(await ready())) return reply.code(503).send({ error: 'migration_required', note: ERR.migration_required });
+    const id = Number(req.params.id); const perm = req.ctx.perm;
+    const cur = (await query(
+      `SELECT v.id, v.promo_no, v.created_by, v.product_id, p.code AS kit_code
+         FROM vio_promos v LEFT JOIN products p ON p.id = v.product_id AND p.deleted_at IS NULL
+        WHERE v.id = $1`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    if (perm.role !== 'director' && Number(cur.created_by) !== Number(perm.userId)) return reply.code(403).send({ error: 'not_owner' });
+    if (cur.kit_code) return reply.code(409).send({ error: 'kit_exists', kit_code: cur.kit_code, note: `키트 제품 ${cur.kit_code} 이(가) 제품 카탈로그에 등록돼 있어 삭제할 수 없습니다.` });
+    const n = (await query(`SELECT count(*)::int n FROM vio_promo_items WHERE promo_id = $1`, [id])).rows[0].n;
+    await query(`DELETE FROM vio_promos WHERE id = $1 AND (product_id IS NULL OR NOT EXISTS (SELECT 1 FROM products p WHERE p.id = vio_promos.product_id AND p.deleted_at IS NULL))`, [id]);
+    await logEvent({ userId: perm.userId, action: 'delete', target: 'vio_promo:' + id, detail: { promo_no: cur.promo_no, items: n } });
+    return { ok: true, id, promo_no: cur.promo_no };
+  });
+
   app.post('/api/vio-promos/:id/kit', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     if (!(await ready())) return reply.code(503).send({ error: 'migration_required', note: ERR.migration_required });
     const id = Number(req.params.id); const userId = req.ctx.perm.userId;
