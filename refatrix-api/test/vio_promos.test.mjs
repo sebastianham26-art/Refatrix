@@ -126,6 +126,34 @@ test('라우트: 저장(번호) → 목록 · 수정 · 키트 제품 → 견적
       assert.equal(got[0].h['content-type'], 'image/png'); assert.equal(got[0].n, png.length);
       r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + p2.id + '/kit-image', headers: DIR, payload: { image_b64: b64 } });
       assert.equal(r.statusCode, 404, '지운 프로모션');
+
+      // ★ 10-23 · R2 점검 — 쓰기·읽기를 따로 알려 준다(사진이 저장되지 않을 때 어디가 막혔는지)
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/r2-check', headers: MKT, payload: {} });
+      assert.equal(r.statusCode, 403, '디렉터만');
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/r2-check', headers: DIR, payload: {} });
+      assert.equal(r.statusCode, 200, r.body);
+      let d = r.json();
+      assert.equal(d.config.ready, true);
+      assert.equal(d.escritura.ok, true, '올리기는 성공');
+      assert.ok(got.some((x) => x.url.startsWith('/fotos/products/_diag/')), '점검 파일만 올린다 — 키트 사진은 안 건드린다');
+
+      // ★ 쓰기가 막히면 무엇을 고쳐야 하는지까지 말해 준다
+      const antes = process.env.R2_ENDPOINT;
+      const malo = createServer((q, s3) => { q.resume(); q.on('end', () => { s3.writeHead(403); s3.end('<Error><Code>AccessDenied</Code></Error>'); }); });
+      await new Promise((res) => malo.listen(0, '127.0.0.1', res));
+      try {
+        process.env.R2_ENDPOINT = 'http://127.0.0.1:' + malo.address().port;
+        r = await app.inject({ method: 'POST', url: '/api/vio-promos/r2-check', headers: DIR, payload: {} });
+        d = r.json();
+        assert.equal(d.escritura.ok, false);
+        assert.match(d.escritura.why, /HTTP 403/);
+        assert.match(d.escritura.why, /쓰기/, '토큰 권한을 올리라고 알려 준다');
+
+        r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/kit-image', headers: DIR, payload: { image_b64: b64 } });
+        assert.equal(r.statusCode, 502);
+        assert.match(r.json().why, /AccessDenied|쓰기/, '화면에 진짜 사유가 간다');
+        assert.match(r.json().note, /R2 저장 실패/);
+      } finally { malo.close(); process.env.R2_ENDPOINT = antes; }
     } finally { srv.close(); for (const k of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ENDPOINT']) { if (k in saved) process.env[k] = saved[k]; else delete process.env[k]; } }
     r = await app.inject({ method: 'GET', url: '/api/vio-promos/' + promoId, headers: DIR });
     assert.equal(r.json().kit_code, p1.promo_no);

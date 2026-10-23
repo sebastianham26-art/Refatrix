@@ -41,6 +41,24 @@ export function sigV4({ method, host, path, query = '', headers = {}, payloadHas
   return { authorization: `AWS4-HMAC-SHA256 Credential=${key}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`, signature, canonicalRequest, stringToSign };
 }
 
+/**
+ * 실패 사유를 사람 말로 — Cloudflare 가 돌려준 XML 에서 Code 를 뽑아 무엇을 고쳐야 하는지 적는다. (10-23)
+ */
+export function r2Why(r) {
+  if (!r || r.ok) return '';
+  if (r.error === 'r2_not_configured') return `Railway 환경변수가 없습니다: ${(r.missing || []).join(' · ')}`;
+  if (r.error === 'r2_unreachable') return `R2 에 닿지 못했습니다 — 계정 주소(R2_ACCOUNT_ID)나 네트워크. ${r.detail || ''}`;
+  const code = (/<Code>([^<]+)<\/Code>/.exec(String(r.detail || '')) || [])[1] || '';
+  const guia = {
+    SignatureDoesNotMatch: '열쇠(R2_SECRET_ACCESS_KEY)가 맞지 않습니다 — 토큰을 다시 만들어 넣으세요.',
+    InvalidAccessKeyId: 'R2_ACCESS_KEY_ID 가 이 계정의 것이 아닙니다.',
+    AccessDenied: '토큰에 쓰기(Object Read & Write) 권한이 없습니다 — Cloudflare 에서 권한을 올리세요.',
+    NoSuchBucket: `버킷 이름이 틀렸습니다(R2_BUCKET).`,
+    Unauthorized: '토큰이 이 버킷에 접근할 수 없습니다 — 토큰의 버킷 범위를 확인하세요.',
+  }[code];
+  return `${r.status ? 'HTTP ' + r.status + ' ' : ''}${code || ''}${guia ? ' — ' + guia : (r.detail ? ' — ' + String(r.detail).slice(0, 160) : '')}`.trim();
+}
+
 /** R2 에 올린다 → { ok, key, url, status } (설정 없으면 { ok:false, error:'r2_not_configured', missing }) */
 export async function r2Put(objectKey, body, { contentType = 'application/octet-stream', cacheControl = 'public, max-age=300', env = process.env, fetchImpl = globalThis.fetch, now = new Date() } = {}) {
   const c = r2Config(env);

@@ -13,7 +13,7 @@ import { fieldVisible } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { recordPriceChange } from '../priceMaster.js';
 import { promoNo, promoTotals, kitName, kitBuildable, setPromosReady } from '../vioPromos.js';
-import { r2Config, r2Put } from '../r2.js';   // 10-23 · 키트 사진 → R2 products/K0001/K0001_1.webp
+import { r2Config, r2Put, r2Why } from '../r2.js';   // 10-23 · 키트 사진 → R2 products/K0001/K0001_1.webp
 
 const MAX_ITEMS = 40;
 const str = (v, n) => { const s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); return s ? s.slice(0, n) : null; };
@@ -172,6 +172,29 @@ export default async function vioPromoRoutes(app) {
   // 10-23 · 키트 사진(구성품 사진을 화면에서 한 장으로 합친 것) → R2 products/{키트코드}/{키트코드}_1.webp
   //   키트 코드 폴더(K + 숫자)에만 쓴다 — 기존 제품 사진은 건드리지 않는다. 디렉터 또는 kit_create 권한(키트 제품 등록과 같은 규칙).
   app.get('/api/vio-promos/r2-status', R, async () => { const c = r2Config(); return { ready: c.ready, missing: c.missing, public_base: c.publicBase }; });
+  /**
+   * 10-23 · R2 점검 — 작은 파일을 올려 보고(쓰기), 공개 주소로 다시 읽어 본다(읽기).
+   *   키트 사진이 저장되지 않을 때 어디가 막혔는지 한 번에 본다. 사진은 건드리지 않는다.
+   */
+  app.post('/api/vio-promos/r2-check', K, async () => {
+    const c = r2Config();
+    const out = { config: { ready: c.ready, missing: c.missing, bucket: c.bucket ? '설정됨' : '(없음)',
+      account: c.account ? c.account.slice(0, 6) + '…' : '(없음)', public_base: c.publicBase } };
+    const key = 'products/_diag/r2_check.txt';
+    const cuerpo = Buffer.from('refatrix r2 check ' + new Date().toISOString());
+    const put = await r2Put(key, cuerpo, { contentType: 'text/plain' });
+    out.escritura = { ok: !!put.ok, status: put.status || null, error: put.error || null, why: put.ok ? '' : r2Why(put) };
+    if (put.ok) {
+      try {
+        const res = await fetch(put.url + '?t=' + Date.now(), { signal: AbortSignal.timeout(10000) });
+        out.lectura = { ok: res.ok, status: res.status, url: put.url,
+          why: res.ok ? '' : '올리기는 됐지만 공개 주소로 읽히지 않습니다 — 버킷의 공개 접근(r2.dev) 또는 R2_PUBLIC_BASE 를 확인하세요.' };
+      } catch (e) { out.lectura = { ok: false, status: null, url: put.url, why: '공개 주소에 닿지 못했습니다: ' + String(e && e.message || e).slice(0, 120) }; }
+    }
+    out.ok = !!(put.ok && out.lectura && out.lectura.ok);
+    return out;
+  });
+
   const IMG_MIME = { 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpeg' };
   app.post('/api/vio-promos/:id/kit-image', { ...K, bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
     if (!(await ready())) return reply.code(503).send({ error: 'migration_required', note: ERR.migration_required });
@@ -193,7 +216,11 @@ export default async function vioPromoRoutes(app) {
     const r = await r2Put(key, buf, { contentType: mime });
     if (!r.ok) {
       const code = r.error === 'r2_not_configured' ? 503 : 502;
-      return reply.code(code).send({ ...r, note: r.error === 'r2_not_configured' ? 'R2 키가 아직 서버에 없습니다(Railway 환경변수 ' + (r.missing || []).join(' · ') + ').' : 'R2 업로드 실패' });
+      const why = r2Why(r);
+      try { console.error('[r2] 키트 사진 저장 실패', cur.kit_code, r.error, r.status || '', String(r.detail || '').slice(0, 300)); } catch (_) {}
+      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'vio_kit_image_fail:' + cur.kit_code,
+        detail: { promo: id, error: r.error, status: r.status || null, why } });
+      return reply.code(code).send({ ...r, why, note: 'R2 저장 실패 — ' + (why || r.error) });
     }
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'vio_kit_image:' + cur.kit_code, detail: { promo: id, key, bytes: buf.length, mime } });
     return { ok: true, code: cur.kit_code, key, url: r.url, bytes: buf.length };
