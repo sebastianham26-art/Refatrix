@@ -16,6 +16,7 @@
 //   환경변수(외부 서비스 키 화면): PROMO_CONSENT_TEMPLATE · PROMO_IMAGE_TEMPLATE · PROMO_TEMPLATE_LANG ·
 //     PROMO_WA_DAILY_CAP · PROMO_WA_ENABLED=0(끄기)
 // =====================================================================
+import { kickWaThread } from './metaLeads.js';   // 1023 · 우리 답장도 바로 문의 목록의 대응내용에
 import { query } from './db.js';
 import {
   normalizeWaNumber, waApiReady, sendWaText, sendWaButtons, sendWaTemplateBare,
@@ -100,6 +101,7 @@ async function logOut(q, { phone, contactId = null, kind, body = null, payload =
     [phone, contactId, (res && res.message_id) || null, kind, body, payload, source, campaignId, ruleId, sentBy, !!(res && res.ok),
       res && !res.ok ? String(res.error || 'error').slice(0, 300) : null]);
   if (contactId && res && res.ok) await q(`UPDATE wa_contacts SET last_out_at=now() WHERE id=$1`, [contactId]);
+  if (res && res.ok) kickWaThread(phone);   // 1023 · 문의 목록에 이미 있거나 고객이 보낸 적 있는 번호만 행이 된다
 }
 
 // ───────────────────────── ① 연락처 ─────────────────────────

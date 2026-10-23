@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1023ad</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1023wa</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -239,7 +239,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1023ad';
+  const MTL_BUILD='mtl-1023wa';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -326,7 +326,7 @@
     $('bMatch').disabled=!!mt.running;
     const wa=s.wa;
     $('sWa').innerHTML=!wa?'':(!wa.in_phones?'💬 WhatsApp(ERP 번호): <span class="warn-t">ERP 가 받은 고객 메시지가 아직 0건</span> — 고객이 <b>ERP API 번호</b>로 보낸 메시지만 들어옵니다(8118250003 제외). 그 번호로 보낸 메시지도 없다면 WhatsApp 웹훅 연결을 확인하세요(관리 › 외부 서비스 키 › WhatsApp).'
-      :'💬 WhatsApp(ERP 번호): 메시지를 보낸 번호 '+wa.in_phones+'개 — 사내 번호 '+wa.internal+'개 제외 · 고객 '+wa.customers+'개 중 목록에 '+wa.listed+'개'+(wa.last_in_at?' · 마지막 수신 '+fmtT(wa.last_in_at):'')
+      :(wa.live?'<span class="ok-t">⚡ 실시간 접수 켜짐</span> — 고객 메시지 · 우리 답장이 바로 목록에 반영'+(wa.live_at?' (마지막 '+fmtT(wa.live_at)+')':'')+(wa.live_error?' · <span class="bad-t">'+esc(wa.live_error)+'</span>':'')+'<br>':'')+'💬 WhatsApp(ERP 번호): 메시지를 보낸 번호 '+wa.in_phones+'개 — 사내 번호 '+wa.internal+'개 제외 · 고객 '+wa.customers+'개 중 목록에 '+wa.listed+'개'+(wa.last_in_at?' · 마지막 수신 '+fmtT(wa.last_in_at):'')
         +(wa.customers&&wa.listed<wa.customers?' · <span class="warn-t">「⟳ 새 문의 가져오기」로 나머지를 가져옵니다</span>':'')
         +(!wa.customers&&wa.internal?' · <span class="warn-t">받은 메시지가 모두 사내 번호(사용자 WhatsApp · 견적 알림 수신자 · 일일요약)라 문의로 보지 않습니다</span>':''));
     const needGuide=!s.configured||!!s.page_error||(lr&&!lr.ok);

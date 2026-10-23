@@ -56,7 +56,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   after(async () => { await pool.end().catch(() => {}); setTimeout(() => process.exit(process.exitCode || 0), 300); });
   const SECRET = 'app-secret-meta-ads';
   process.env.WHATSAPP_APP_SECRET = SECRET; process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = 'vt';
-  process.env.META_PAGE_TOKEN = 'SYS'; process.env.META_LEADS_AUTO = '0';
+  process.env.META_PAGE_TOKEN = 'SYS'; process.env.META_LEADS_AUTO = '0'; process.env.META_LEADS_WA_DELAY_MS = '30';
   const M = await import('../src/metaLeads.js');
   M.setMetaFetch(async (url) => { const u = new URL(url); if (u.pathname.endsWith('/1338649012669713')) return { ok: true, status: 200, json: { id: '1', name: 'CTR', access_token: 'PAGE_TOKEN' } }; return { ok: true, status: 200, json: { data: [] } }; });
   t.after(() => { M.setMetaFetch(null); A.setMetaAdsPost(null); });
@@ -65,7 +65,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   t.after(() => app.close());
   const SFX = Date.now().toString(36).slice(-5);
   const one = async (sql, a) => (await query(sql, a)).rows[0];
-  await query(`DELETE FROM meta_ad_touches; DELETE FROM meta_ads; DELETE FROM meta_threads;`);
+  await query(`DELETE FROM meta_ad_touches; DELETE FROM meta_ads; DELETE FROM meta_threads; DELETE FROM wa_messages WHERE phone IN ('528112345678','523311112222','528188887777');`);
   const dir = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`, [`MA Dir ${SFX}`, `madir${SFX}`]);
   const rep = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'sales','x',$2) RETURNING id`, [`MA Rep ${SFX}`, `marep${SFX}`]);
   const pv = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'ops','x',$2) RETURNING id`, [`MA Prod ${SFX}`, `maprod${SFX}`]);
@@ -160,6 +160,33 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     r = await call(D, 'POST', '/api/meta-leads/ads/subscribe'); assert.equal(r.json().error, 'subscribe_failed'); assert.match(r.json().detail, /#200/);
     await wait(10);
   });
+
+  await t.test('B5. 실시간 접수 — ERP WhatsApp 번호로 온 문의가 가져오기 없이 바로 목록에 · 광고 · 우리 답장 · 사내 번호 제외', async () => {
+    await call(D, 'POST', '/api/meta-leads/ads', { ad_id: AD2, name: 'Horquillas GDL' });
+    const ts = Math.floor(Date.now() / 1000);
+    const wa = (from, id, text, extra = {}) => ({ object: 'whatsapp_business_account', entry: [{ id: 'WABA', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp',
+      contacts: [{ wa_id: from, profile: { name: 'Don Pepe' } }], messages: [{ from, id, timestamp: String(ts), type: 'text', text: { body: text }, ...extra }] } }] }] });
+    assert.equal((await hook(wa('5213311112222', 'wamid.L1', 'Hola, horquillas para Versa 2017', { referral: { source_id: AD2, source_type: 'ad', headline: 'Horquillas GDL' } }))).statusCode, 200);
+    assert.equal((await hook(wa('5213311112222', 'wamid.L2', 'soy de Guadalajara'))).statusCode, 200);
+    let row = null;
+    for (let i = 0; i < 40 && !(row && /Guadalajara/.test(row.customer_text || '')); i++) { await wait(50); row = (await call(D, 'GET', '/api/meta-leads/list?ad=' + AD2)).json().items.find((x) => x.platform === 'whatsapp'); }
+    assert.ok(row, '가져오기를 누르지 않아도 목록에 들어온다');
+    assert.equal(row.name, 'Don Pepe'); assert.equal(row.phone, '3311112222'); assert.equal(row.ad_name, 'Horquillas GDL'); assert.equal(row.ad_src, 'meta');
+    assert.match(row.customer_text, /Versa 2017[\s\S]*Guadalajara/, '두 메시지를 한 문의로');
+    assert.equal((await query(`SELECT count(*)::int n FROM meta_threads WHERE thread_id = 'wa:523311112222'`)).rows[0].n, 1);
+    // 우리 답장(ERP 에서 보낸 메시지) → 대응내용
+    await query(`INSERT INTO wa_messages (direction, phone, kind, body, source, ok, at) VALUES ('out','523311112222','text','Con gusto, le paso precio','reply',true, now() + interval '1 second')`);
+    await M.kickWaThread('523311112222');
+    row = (await call(D, 'GET', '/api/meta-leads/list?ad=' + AD2)).json().items.find((x) => x.platform === 'whatsapp');
+    assert.equal(row.last_reply, 'Con gusto, le paso precio');
+    const s = (await call(D, 'GET', '/api/meta-leads/status')).json();
+    assert.equal(s.wa.live, true); assert.ok(s.wa.live_at); assert.ok(s.wa.live_count >= 2);
+    // 사내 번호(사용자 WhatsApp)는 문의가 아니다
+    await query(`UPDATE users SET wa_phone = '528188887777' WHERE id = $1`, [dir.id]);
+    await hook(wa('5218188887777', 'wamid.L3', 'reporte'));
+    await wait(300);
+    assert.equal((await query(`SELECT count(*)::int n FROM meta_threads WHERE thread_id = 'wa:528188887777'`)).rows[0].n, 0);
+  });
 });
 
 // ── C. 화면 ──
@@ -200,7 +227,7 @@ test('C. 화면 (jsdom) — 광고 탭', { skip: (!JSDOM || !existsSync(HTML)) &
   t.after(() => w.close());
 
   await t.test('C1. 빌드 · 목록 광고 열 · 광고 필터', async () => {
-    assert.match(d.title, /mtl-1023ad/);
+    assert.match(d.title, /mtl-1023wa/);
     assert.match(d.querySelector('#lTable tr[data-id="1"]').textContent, /Amortiguadores MTY/);
     assert.match(d.querySelector('#lTable tr[data-id="2"]').textContent, /미등록/);
     const opts = [...d.querySelectorAll('#fAd option')].map((o) => o.value);

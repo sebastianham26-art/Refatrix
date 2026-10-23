@@ -20,7 +20,8 @@ import { query } from './db.js';
 import { normalizeWaNumber } from './waSend.js';
 import { handleInbound } from './waPromo.js';   // 0260 · 받은 메시지 저장 + 자동응답(WhatsApp 마케팅)
 import { handleDailySummaryButton } from './dailySummaryWa.js';   // 1014 · 오늘 요약 「전체 보기」 버튼
-import { recordWaReferral, applyPageWebhook } from './metaAds.js';   // 0295 · 광고 출처(광고 ID) — 광고별 문의
+import { recordWaReferral, applyPageWebhook } from './metaAds.js';
+import { kickWaThread } from './metaLeads.js';   // 1023 · 받은 메시지를 바로 Meta 광고 문의 목록에   // 0295 · 광고 출처(광고 ID) — 광고별 문의
 
 export const WINDOW_CODES = new Set([131047, 470]);   // 24시간 창 밖(재참여 필요)
 
@@ -148,6 +149,7 @@ export async function applyWebhook(body, q = query) {
         let dup = false;
         try { const h = await handleInbound(m, q); if (h && h.stored) out.stored = (out.stored || 0) + 1; dup = !!(h && h.duplicate); }
         catch (_) { /* 0260 전이면 테이블 없음 — 24시간 창 기록은 위에서 끝남 */ }
+        if (!dup) kickWaThread(from);   // 1023 · 실시간 접수(2초 모아서 · 응답을 막지 않음)
         // 1014 · 오늘 요약 템플릿의 「전체 보기」 버튼 → 그날 전체 요약을 텍스트로 보낸다.
         //   Meta 의 같은 웹훅 재전송(dup)이면 다시 보내지 않는다. 응답(200)을 막지 않게 뒤에서 실행.
         if (!dup && m.type === 'button' && m.button && String(m.button.payload || '').startsWith('DSUM:')) {

@@ -23,7 +23,7 @@ import { query } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll, internalWaPhones, importWaAppThreads,
+  metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll, internalWaPhones, importWaAppThreads, waLive,
 } from '../metaLeads.js';
 import { META_STATES } from '../metaLeadExtract.js';
 import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
@@ -90,7 +90,8 @@ export default async function metaLeadsRoutes(app) {
       const ext = r.filter((x) => !skip.has(x.phone));
       const last = r.reduce((a, x) => (x.last_in && (!a || new Date(x.last_in) > new Date(a)) ? x.last_in : a), null);
       const outN = (await query(`SELECT count(*)::int n FROM wa_messages WHERE direction = 'out'`)).rows[0].n;
-      wa = { in_phones: r.length, internal: r.length - ext.length, customers: ext.length, listed: ext.filter((x) => x.listed).length, last_in_at: last, out_msgs: outN };
+      wa = { in_phones: r.length, internal: r.length - ext.length, customers: ext.length, listed: ext.filter((x) => x.listed).length, last_in_at: last, out_msgs: outN,
+        live: process.env.META_LEADS_WA_LIVE !== '0', live_at: waLive.last_at, live_count: waLive.count, live_error: waLive.last_error };
     } catch (_) { wa = null; }
     return { configured: metaLeadsConfigured(), migrated: true, wa, token_source: metaTokenSource(), page_id: metaPageId(), page, page_error: pageError, page_warning: pageWarning,
       running: syncState.running, progress: syncState.running ? syncState.progress : null, counts, last_run: last, last_ok_at: lastOk,

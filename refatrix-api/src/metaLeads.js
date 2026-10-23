@@ -159,23 +159,52 @@ export async function syncWhatsAppThreads({ since = null, full = false, q = quer
         ORDER BY 2 DESC LIMIT ${MAX_THREADS}`)).rows;
     for (const ph of phones) {
       if (skip.has(ph.phone)) continue;
-      const msgs = (await q(`SELECT direction, kind, body, at FROM wa_messages WHERE phone = $1 ORDER BY at DESC LIMIT ${MSG_KEEP}`, [ph.phone])).rows.reverse()
-        .map((m) => ({ at: new Date(m.at).toISOString(), me: m.direction === 'out', text: String(m.body || '').trim() || WA_KIND[m.kind] || '' }));
-      const who = (await q(`SELECT (SELECT name FROM wa_contacts WHERE phone = $1 AND deleted_at IS NULL LIMIT 1) AS cname,
-                                   (SELECT profile_name FROM wa_inbound WHERE wa_from = $1) AS pname`, [ph.phone]).catch(() => ({ rows: [{}] }))).rows[0] || {};
-      const inMsgs = msgs.filter((m) => !m.me && m.text);
-      const customerText = inMsgs.map((m) => m.text).join('\n');
-      const ex = extractLead(customerText);
-      const local = String(ph.phone).replace(/\D/g, '').slice(-10);   // 52 · 521 어느 쪽이든 10자리
-      ex.phone = [local].concat(ex.phone ? ex.phone.split(', ').filter((x) => x !== local) : []).join(', ');   // WhatsApp 번호 자체가 연락처
-      const t = { platform: 'whatsapp', thread_id: 'wa:' + ph.phone, user_id: ph.phone, name: who.cname || who.pname || null, username: null,
-        first_at: msgs.length ? msgs[0].at : null, last_at: new Date(ph.last_at).toISOString(), last_in_at: inMsgs.length ? inMsgs[inMsgs.length - 1].at : null,
-        msg_count: msgs.length, in_count: inMsgs.length, messages: msgs, customer_text: customerText.slice(0, 8000), ex };
-      if (await upsertThread(t, q)) bp.inserted++;
+      const r = await upsertWaThread(ph.phone, q, ph.last_at);
+      if (!r.ok) continue;
+      if (r.inserted) bp.inserted++;
       bp.threads++;
     }
   } catch (e) { bp.error = String((e && e.message) || e).slice(0, 200); }
   return bp;
+}
+
+// 번호 하나의 대화를 목록 행으로(가져오기 · 실시간 접수가 같이 쓴다). 반환 {ok, inserted}
+export async function upsertWaThread(phone, q = query, lastAt = null) {
+  const msgs = (await q(`SELECT direction, kind, body, at FROM wa_messages WHERE phone = $1 ORDER BY at DESC, id DESC LIMIT ${MSG_KEEP}`, [phone])).rows.reverse()
+    .map((m) => ({ at: new Date(m.at).toISOString(), me: m.direction === 'out', text: String(m.body || '').trim() || WA_KIND[m.kind] || '' }));
+  if (!msgs.length || !msgs.some((m) => !m.me)) return { ok: false };
+  const who = (await q(`SELECT (SELECT name FROM wa_contacts WHERE phone = $1 AND deleted_at IS NULL LIMIT 1) AS cname,
+                               (SELECT profile_name FROM wa_inbound WHERE wa_from = $1) AS pname`, [phone]).catch(() => ({ rows: [{}] }))).rows[0] || {};
+  const inMsgs = msgs.filter((m) => !m.me && m.text);
+  const customerText = inMsgs.map((m) => m.text).join('\n');
+  const ex = extractLead(customerText);
+  const local = String(phone).replace(/\D/g, '').slice(-10);   // 52 · 521 어느 쪽이든 10자리
+  ex.phone = [local].concat(ex.phone ? ex.phone.split(', ').filter((x) => x !== local) : []).join(', ');   // WhatsApp 번호 자체가 연락처
+  const t = { platform: 'whatsapp', thread_id: 'wa:' + phone, user_id: phone, name: who.cname || who.pname || null, username: null,
+    first_at: msgs[0].at, last_at: new Date(lastAt || msgs[msgs.length - 1].at).toISOString(), last_in_at: inMsgs.length ? inMsgs[inMsgs.length - 1].at : null,
+    msg_count: msgs.length, in_count: inMsgs.length, messages: msgs, customer_text: customerText.slice(0, 8000), ex };
+  return { ok: true, inserted: await upsertThread(t, q) };
+}
+
+// ── 2026-10-23 · 실시간 접수 — ERP WhatsApp 번호로 메시지가 오거나(웹훅) 우리가 답하면 30분 기다리지 않고 바로 문의 목록에 ──
+//   같은 번호에 메시지가 몰려 오면 2초 모아서 한 번. 사내 번호는 뺀다. 끝나면 AI 분석을 깨운다.
+const waTimers = new Map();
+export const waLive = { last_at: null, count: 0, last_error: null };
+export function kickWaThread(phone, { q = query, delayMs = Number(process.env.META_LEADS_WA_DELAY_MS || 2000) } = {}) {
+  const p = normalizeWaNumber(phone);
+  if (!p || process.env.META_LEADS_WA_LIVE === '0') return null;
+  clearTimeout(waTimers.get(p));
+  return new Promise((resolve) => {
+    waTimers.set(p, setTimeout(async () => {
+      waTimers.delete(p);
+      try {
+        if ((await internalWaPhones(q)).has(p)) return resolve({ skipped: 'internal' });
+        const r = await upsertWaThread(p, q);
+        if (r.ok) { waLive.last_at = new Date().toISOString(); waLive.count++; kickAnalyze(); }
+        resolve(r);
+      } catch (e) { waLive.last_error = String((e && e.message) || e).slice(0, 200); resolve({ error: waLive.last_error }); }
+    }, delayMs));
+  });
 }
 
 // ── 2026-10-13 · WhatsApp 앱 번호(8118250003) 대화 1회 가져오기 ──
