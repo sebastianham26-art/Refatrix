@@ -4,7 +4,7 @@
 //   GET   /api/vio-promos/:id          한 건
 //   POST  /api/vio-promos              저장 = 번호 받기 (제품 화면 「수정」)
 //   PATCH /api/vio-promos/:id          고치기 — 키트 제품을 만든 뒤에는 품목·수량은 잠김
-//   POST  /api/vio-promos/:id/kit      키트 제품 만들기 (디렉터) — 제품 마스터에 코드 = 번호
+//   POST  /api/vio-promos/:id/kit      키트 제품 만들기 (디렉터 · 0294 kit_create 권한) — 제품 마스터에 코드 = 번호
 //   금액(정가·할인 금액)은 판매가 열람 권한(sale_price)이 있는 사람에게만 보낸다.
 // =====================================================================
 import { query, withTx } from '../db.js';
@@ -13,6 +13,7 @@ import { fieldVisible } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { recordPriceChange } from '../priceMaster.js';
 import { promoNo, promoTotals, kitName, kitBuildable, setPromosReady } from '../vioPromos.js';
+import { r2Config, r2Put } from '../r2.js';   // 10-23 · 키트 사진 → R2 products/K0001/K0001_1.webp
 
 const MAX_ITEMS = 40;
 const str = (v, n) => { const s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); return s ? s.slice(0, n) : null; };
@@ -89,6 +90,10 @@ function readHead(b) {
 export default async function vioPromoRoutes(app) {
   const R = { preHandler: [authGuard, requirePage('products')] };
   const W = { preHandler: [authGuard, requirePageEdit('products')] };
+  // 0294 · 키트 제품 등록·키트 사진 = 디렉터 또는 「🧰 키트 등록」(kit_create) 권한을 받은 사람(제품 화면 수정 권한도 필요)
+  const canKit = (perm) => fieldVisible(perm, 'kit_create');
+  const requireKit = async (req, reply) => { if (!canKit(req.ctx.perm)) return reply.code(403).send({ error: 'kit_permission', note: '키트 제품 등록 권한이 없습니다 — 디렉터에게 관리 › 사용자·권한 「🧰 키트 등록」을 요청하세요.' }); };
+  const K = { preHandler: [authGuard, requirePageEdit('products'), requireKit] };
 
   app.get('/api/vio-promos', R, async (req, reply) => {
     if (!(await ready())) return { ready: false, items: [] };
@@ -99,7 +104,7 @@ export default async function vioPromoRoutes(app) {
       where = `WHERE v.promo_no ILIKE $1 OR v.title ILIKE $1 OR v.years ILIKE $1 OR p.code ILIKE $1
                OR EXISTS (SELECT 1 FROM vio_promo_items i WHERE i.promo_id = v.id AND i.ctr_code ILIKE $1)`;
     }
-    return { ready: true, items: await loadPromos(where, params, req.ctx.perm, Math.min(500, Number(req.query.limit) || 200)) };
+    return { ready: true, can_kit: canKit(req.ctx.perm), items: await loadPromos(where, params, req.ctx.perm, Math.min(500, Number(req.query.limit) || 200)) };
   });
 
   app.get('/api/vio-promos/:id', R, async (req, reply) => {
@@ -164,6 +169,36 @@ export default async function vioPromoRoutes(app) {
 
   // 10-23 · 삭제 — 키트 제품이 제품 카탈로그(제품 마스터)에 아직 없을 때만. 만든 사람 또는 디렉터.
   //   번호는 다시 쓰지 않는다(연번 시퀀스 그대로) — 이미지·WhatsApp 에 나간 번호와 겹치지 않게.
+  // 10-23 · 키트 사진(구성품 사진을 화면에서 한 장으로 합친 것) → R2 products/{키트코드}/{키트코드}_1.webp
+  //   키트 코드 폴더(K + 숫자)에만 쓴다 — 기존 제품 사진은 건드리지 않는다. 디렉터 또는 kit_create 권한(키트 제품 등록과 같은 규칙).
+  app.get('/api/vio-promos/r2-status', R, async () => { const c = r2Config(); return { ready: c.ready, missing: c.missing, public_base: c.publicBase }; });
+  const IMG_MIME = { 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpeg' };
+  app.post('/api/vio-promos/:id/kit-image', { ...K, bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
+    if (!(await ready())) return reply.code(503).send({ error: 'migration_required', note: ERR.migration_required });
+    const id = Number(req.params.id); const b = req.body || {};
+    const cur = (await query(
+      `SELECT v.id, v.promo_no, p.code AS kit_code FROM vio_promos v LEFT JOIN products p ON p.id = v.product_id AND p.deleted_at IS NULL WHERE v.id = $1`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    if (!cur.kit_code) return reply.code(409).send({ error: 'no_kit_product', note: '먼저 키트 제품을 만드세요.' });
+    if (!/^K\d{4,}$/.test(cur.kit_code)) return reply.code(409).send({ error: 'not_kit_code', note: '키트 코드(K숫자)에만 사진을 씁니다.' });
+    const m = /^data:(image\/[a-z]+);base64,(.+)$/s.exec(String(b.image_b64 || ''));
+    const mime = m ? m[1] : String(b.mime || '');
+    if (!IMG_MIME[mime]) return reply.code(415).send({ error: 'bad_image_type' });
+    const buf = Buffer.from(m ? m[2] : String(b.image_b64 || ''), 'base64');
+    if (buf.length < 200) return reply.code(400).send({ error: 'image_required' });
+    if (buf.length > 5 * 1024 * 1024) return reply.code(413).send({ error: 'image_too_large' });
+    const sig = { webp: [0x52, 0x49, 0x46, 0x46], png: [0x89, 0x50, 0x4e, 0x47], jpeg: [0xff, 0xd8, 0xff] }[IMG_MIME[mime]];
+    if (!sig.every((x, i) => buf[i] === x)) return reply.code(415).send({ error: 'bad_image_type', note: '이미지 내용이 형식과 다릅니다.' });
+    const key = `products/${cur.kit_code}/${cur.kit_code}_1.webp`;   // 확장자는 기존 사진 규칙 그대로(내용 형식은 Content-Type 으로)
+    const r = await r2Put(key, buf, { contentType: mime });
+    if (!r.ok) {
+      const code = r.error === 'r2_not_configured' ? 503 : 502;
+      return reply.code(code).send({ ...r, note: r.error === 'r2_not_configured' ? 'R2 키가 아직 서버에 없습니다(Railway 환경변수 ' + (r.missing || []).join(' · ') + ').' : 'R2 업로드 실패' });
+    }
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'vio_kit_image:' + cur.kit_code, detail: { promo: id, key, bytes: buf.length, mime } });
+    return { ok: true, code: cur.kit_code, key, url: r.url, bytes: buf.length };
+  });
+
   app.delete('/api/vio-promos/:id', W, async (req, reply) => {
     if (!(await ready())) return reply.code(503).send({ error: 'migration_required', note: ERR.migration_required });
     const id = Number(req.params.id); const perm = req.ctx.perm;
@@ -180,7 +215,7 @@ export default async function vioPromoRoutes(app) {
     return { ok: true, id, promo_no: cur.promo_no };
   });
 
-  app.post('/api/vio-promos/:id/kit', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+  app.post('/api/vio-promos/:id/kit', K, async (req, reply) => {
     if (!(await ready())) return reply.code(503).send({ error: 'migration_required', note: ERR.migration_required });
     const id = Number(req.params.id); const userId = req.ctx.perm.userId;
     const cur = (await query(`SELECT * FROM vio_promos WHERE id = $1`, [id])).rows[0];

@@ -119,7 +119,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf17d/);
+  assert.match(d.title, /vf17f/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);

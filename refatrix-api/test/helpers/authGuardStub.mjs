@@ -1,4 +1,4 @@
-// 테스트 스텁 — 인증만 대체. 헤더 x-test-user = "id:role", x-test-pages = "pricemaster=view,purchase=edit"
+// 테스트 스텁 — 인증만 대체. 헤더 x-test-user = "id:role", x-test-pages = "pricemaster=view,purchase=edit", x-test-fields = "sale_price,kit_create"
 //   pricemaster 키는 운영 authGuard 와 같은 규칙(pageAllowed + 열람/수정)으로 검사하고, 나머지 화면 키는 통과(기존 테스트 호환).
 import { pageAllowed } from '../../src/permissions.js';
 const STRICT = new Set(['pricemaster']);
@@ -8,7 +8,7 @@ export async function authGuard(req, reply) {
   for (const kv of String(req.headers['x-test-pages'] || '').split(',').filter(Boolean)) {
     const [k, a] = kv.split('='); pages[k] = 'anywhere'; pageAccess[k] = a || 'edit';
   }
-  req.ctx = { perm: { userId: Number(id), role, pages, pageAccess, fields: new Set(), items: {} }, deviceId: null, isRegistered: true };
+  req.ctx = { perm: { userId: Number(id), role, pages, pageAccess, fields: new Set(String(req.headers['x-test-fields'] || '').split(',').filter(Boolean)), items: {} }, deviceId: null, isRegistered: true };
 }
 export function requirePage(pageKey) {
   return async (req, reply) => {

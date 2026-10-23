@@ -55,6 +55,20 @@
 - 바뀐 파일: `refatrix-api/src/routes/vioPromoRoutes.js`(DELETE /api/vio-promos/:id) · `refatrix-viofinder.html`(build `vf17d`) · 시험 2개
 - 배포: 백엔드 → Railway Success → 프론트 (마이그레이션 없음)
 
+### 추가(10-23 · vf17f) — 키트 사진 자동 생성(R2) · 키트 등록 권한
+**키트 사진**
+- 「🧰 키트 제품 만들기」 하면 곧바로 구성품 사진(R2 `{코드}_1~12.webp` 중 처음 찾은 것)을 1200×1200 한 장으로 합쳐 **R2 `products/K0001/K0001_1.webp`** 에 저장 → 제품 찾기 📷 · 견적 · 카탈로그가 코드로 찾는 곳에 그대로 나옴
+- 배치: 2 좌우 · 3 위1+아래2 · 4 2×2 · 5 3+2 · 6 3×3 … · 부품마다 코드 · 품명 · 수량 2 이상 `×2` · 위 「KIT K0001 · 차종 연식」 · 아래 CTR 정식 로고 · 「Producto promoción: K0001」 · OE 마크
+- 목록 키트 칸에 썸네일 + 「🖼 사진 (다시) 만들기」. R2 키가 아직 없으면 **미리보기만** 만들고 안내(Railway 변수 이름 표시)
+- 서버: `src/r2.js`(SDK 없이 AWS SigV4 — botocore 서명값과 같음 검증) · `GET /api/vio-promos/r2-status` · `POST /api/vio-promos/:id/kit-image`(키트 코드 K숫자 폴더만 · PNG/WebP/JPEG 내용 검사 · 5MB)
+- 필요한 Railway 변수: `R2_ACCOUNT_ID` · `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_BUCKET` (· `R2_PUBLIC_BASE` 선택)
+
+**키트 등록 권한 (0294)**
+- 관리 › 사용자·권한 사용자 줄에 **「🧰 키트 등록」** 칩(💲 판매가 옆) — 켜면 그 사람도 키트 제품 등록 · 키트 사진 만들기 가능(제품 화면 「수정」 권한 필요). 디렉터는 항상
+- 마이그레이션 `0294_kit_create_permission.sql`(user_field_access 허용 키에 kit_create)
+- 바뀐 파일: `migrations/0294_kit_create_permission.sql` · `src/r2.js`(신규) · `src/routes/vioPromoRoutes.js` · `refatrix-viofinder.html`(vf17f) · `refatrix-users.html` · 시험 `vio_promos` · `r2`(신규) · `viopromo_front` · `helpers/authGuardStub.mjs`(x-test-fields)
+- 배포: 백엔드 → Railway Success → **`npm run migrate`(0294)** → 프론트 → 관리 › 사용자·권한에서 palomino 「🧰 키트 등록」 체크
+
 ## ② 배포 순서
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull**

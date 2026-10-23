@@ -76,6 +76,19 @@ test('라우트: 저장(번호) → 목록 · 수정 · 키트 제품 → 견적
     // 키트 제품: 디렉터만
     r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/kit', headers: MKT, payload: {} });
     assert.equal(r.statusCode, 403);
+    assert.equal(r.json().error, 'kit_permission');
+    // 0294 · 「🧰 키트 등록」(kit_create) 권한을 받은 영업(palomino 같은)은 만들 수 있음 — 목록에 can_kit
+    const salesId = Number((await query(`INSERT INTO users (name, login_id, role, pin_hash) VALUES ('kitsales'||$1, 'kitsales'||$1, 'sales', 'x') ON CONFLICT DO NOTHING RETURNING id`, [TAG]).catch(() => ({ rows: [] }))).rows[0]?.id || 1);
+    const SALESK = { 'x-test-user': salesId + ':sales', 'x-test-fields': 'sale_price,kit_create' };
+    r = await app.inject({ method: 'GET', url: '/api/vio-promos?limit=5', headers: SALESK }); assert.equal(r.json().can_kit, true);
+    r = await app.inject({ method: 'GET', url: '/api/vio-promos?limit=5', headers: MKT }); assert.equal(r.json().can_kit, false);
+    r = await app.inject({ method: 'POST', url: '/api/vio-promos', headers: SALESK, payload: { ...body, items: [{ code: C, qty: 3 }] } });
+    const p4 = r.json();
+    r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + p4.id + '/kit', headers: SALESK, payload: {} });
+    assert.equal(r.statusCode, 200, r.body); const kit4 = r.json().product_id;
+    await query(`DELETE FROM product_price_history WHERE product_id=$1`, [kit4]).catch(() => {}); await query(`DELETE FROM product_change_log WHERE product_id=$1`, [kit4]).catch(() => {});
+    await query(`DELETE FROM vio_promos WHERE id=$1`, [p4.id]); await query(`DELETE FROM products WHERE id=$1`, [kit4]);
+    if (salesId !== 1) { await query(`DELETE FROM audit_log WHERE user_id=$1`, [salesId]).catch(() => {}); await query(`DELETE FROM users WHERE id=$1`, [salesId]).catch(() => {}); }
     r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/kit', headers: DIR, payload: {} });
     assert.equal(r.statusCode, 200, r.body);
     kitPid = r.json().product_id;
@@ -88,6 +101,32 @@ test('라우트: 저장(번호) → 목록 · 수정 · 키트 제품 → 견적
     assert.equal(r.statusCode, 409, '키트 뒤 품목 잠김');
     r = await app.inject({ method: 'DELETE', url: '/api/vio-promos/' + promoId, headers: DIR });
     assert.equal(r.statusCode, 409, '제품 카탈로그에 키트가 있으면 삭제 안 됨'); assert.equal(r.json().kit_code, p1.promo_no);
+    // 10-23 · 키트 사진 → R2 (키 없으면 503 · 형식 검사 · 키 있으면 서명된 PUT products/K…/K…_1.webp)
+    const { createServer } = await import('node:http');
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(400, 7)]);
+    const b64 = 'data:image/png;base64,' + png.toString('base64');
+    const saved = { ...process.env }; for (const k of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ENDPOINT']) delete process.env[k];
+    const got = []; const srv = createServer((q, s2) => { const ch = []; q.on('data', (c) => ch.push(c)); q.on('end', () => { got.push({ url: q.url, method: q.method, h: q.headers, n: Buffer.concat(ch).length }); s2.writeHead(200); s2.end(); }); });
+    await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+    try {
+      r = await app.inject({ method: 'GET', url: '/api/vio-promos/r2-status', headers: MKT });
+      assert.equal(r.json().ready, false); assert.ok(r.json().missing.includes('R2_BUCKET'));
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/kit-image', headers: DIR, payload: { image_b64: b64 } });
+      assert.equal(r.statusCode, 503); assert.equal(r.json().error, 'r2_not_configured');
+      Object.assign(process.env, { R2_ACCOUNT_ID: 'acct', R2_ACCESS_KEY_ID: 'AK', R2_SECRET_ACCESS_KEY: 'SK', R2_BUCKET: 'fotos', R2_ENDPOINT: 'http://127.0.0.1:' + srv.address().port });
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/kit-image', headers: MKT, payload: { image_b64: b64 } });
+      assert.equal(r.statusCode, 403, '디렉터만');
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/kit-image', headers: DIR, payload: { image_b64: 'data:image/png;base64,' + Buffer.alloc(400, 1).toString('base64') } });
+      assert.equal(r.statusCode, 415, '내용이 PNG 아님');
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/kit-image', headers: DIR, payload: { image_b64: b64 } });
+      assert.equal(r.statusCode, 200, r.body);
+      assert.equal(r.json().key, 'products/' + p1.promo_no + '/' + p1.promo_no + '_1.webp');
+      assert.equal(got.length, 1); assert.equal(got[0].method, 'PUT'); assert.equal(got[0].url, '/fotos/products/' + p1.promo_no + '/' + p1.promo_no + '_1.webp');
+      assert.match(got[0].h.authorization, /^AWS4-HMAC-SHA256 Credential=AK\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=cache-control;content-type;host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/);
+      assert.equal(got[0].h['content-type'], 'image/png'); assert.equal(got[0].n, png.length);
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + p2.id + '/kit-image', headers: DIR, payload: { image_b64: b64 } });
+      assert.equal(r.statusCode, 404, '지운 프로모션');
+    } finally { srv.close(); for (const k of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ENDPOINT']) { if (k in saved) process.env[k] = saved[k]; else delete process.env[k]; } }
     r = await app.inject({ method: 'GET', url: '/api/vio-promos/' + promoId, headers: DIR });
     assert.equal(r.json().kit_code, p1.promo_no);
     // 견적: 키트 2세트 → 부품 줄(코드로도 · id 로도)
