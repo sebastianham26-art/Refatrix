@@ -241,7 +241,7 @@ test('연동 관리 화면에 제품 전송 카드가 있고, 쓰는 id 가 전�
   }
   // 인라인 스크립트는 문법이 맞아야 한다
   const blocks = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/g)];
-  assert.equal(blocks.length, 2);
+  assert.equal(blocks.length, 3);   // 10-23 · 화면에 인라인 블록이 하나 늘었다(기존 2 → 3)
   for (const b of blocks) new Function(b[1]);          // 던지면 테스트 실패
   // 제품 창구에서는 고객 전용 버튼·칸이 숨겨져야 한다(제품 화면의 「전체 동기화」는 고객을 보낸다)
   const dir = html.slice(html.indexOf('function applyDirection'), html.indexOf('function fillCfg'));

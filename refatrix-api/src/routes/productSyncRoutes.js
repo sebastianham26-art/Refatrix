@@ -8,7 +8,7 @@ import { logEvent } from '../audit.js';
 import {
   PRODUCT_KEY, runCatalogSync, listRuns, productTablesReady,
   fetchProducts, buildProduct, buildLote, chunk, mxNowParts, autoRanToday,
-  SENDABLE_WHERE, EXCLUDED_PREFIXES, cancelCatalogSync, pendingProductCount, runErrors,
+  SENDABLE_WHERE, EXCLUDED_PREFIXES, cancelCatalogSync, pendingProductCount, pendingProductStats, runErrors,
   stateReady, baselineCount, computeDelta,
   fetchProductsPick, searchSendable, parseCodes, PICK_MAX, stockQty,
 } from '../productSync.js';
@@ -86,6 +86,8 @@ export default async function productSyncRoutes(app) {
       last_runs: ready ? await listRuns({ limit: 5 }) : [],
       // 20260924 · 진행 표시 — 대기 중인 제품 건 · 연속 전송 상태 · 건 사이 간격
       pending_products: ready ? await pendingProductCount().catch(() => 0) : 0,
+      // 10-23 · 오래 묶인 대기 건 — 더는 변경분을 막지 않지만, 화면에서 보이게 알린다
+      pending_stale: ready ? await pendingProductStats().catch(() => null) : null,
       pump: pumpState(),
       gap_ms: gapMs(),
       // 0236 · 변경분 — 기준 개수 · 마지막 변경분 전송

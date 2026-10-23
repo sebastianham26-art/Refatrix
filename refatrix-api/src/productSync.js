@@ -629,6 +629,26 @@ export async function pendingProductCount() {
 }
 
 /**
+ * 10-23 · 묶인 대기 건이 변경분 자동 전송을 영원히 멈추지 않게.
+ *   종전: 대기가 1건이라도 있으면 변경분을 돌리지 않았다. 그런데 연동이 꺼져 있거나 주소가 비면
+ *   그 건은 시도 횟수도 쓰지 않고 pending 으로 남는다 → **그 한 건이 이후 전송을 전부 막았다.**
+ *   이제 「지금 나가는 중인 전송」(최근 PENDING_FRESH_MIN 분 안에 적재된 대기 건)만 겹침으로 본다.
+ */
+export const PENDING_FRESH_MIN = 15;
+export async function pendingProductStats(freshMin = PENDING_FRESH_MIN) {
+  const r = (await query(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE created_at > now() - ($1 || ' minutes')::interval)::int AS fresh,
+            MIN(created_at) AS oldest,
+            MIN(entity_label) AS example
+       FROM crm_customer_outbox WHERE entity='product' AND status='pending'`, [String(freshMin)])).rows[0];
+  const total = Number(r && r.total) || 0;
+  const fresh = Number(r && r.fresh) || 0;
+  const oldestMin = r && r.oldest ? Math.round((Date.now() - new Date(r.oldest).getTime()) / 60000) : null;
+  return { total, fresh, stale: total - fresh, oldest_min: oldestMin, example: (r && r.example) || null };
+}
+
+/**
  * 최근 실행 목록 + **실행(전송 1회)별 성과** (이력 화면용).
  *   20260924 · 누적이 아니라 **전송 단위**로 본다 — 어제 실행과 오늘 실행의 숫자를 섞지 않는다.
  *     · 집계는 실행마다 LATERAL 로(인덱스 idx_crm_outbox_entity) — 제품 건이 수만 행이어도 그 실행만 센다.
@@ -735,10 +755,16 @@ export function fullDue({ autoSend, weekday, sendHour }, { wd, hour, ranToday })
   return hour >= (Number.isFinite(h) ? h : 6);
 }
 
-/** 변경분 자동 전송을 지금 돌릴 차례인가(순수 함수). */
-export function deltaDue({ deltaAuto, everyMin }, { lastAt, now = Date.now(), pending, baseline }) {
+/**
+ * 변경분 자동 전송을 지금 돌릴 차례인가(순수 함수).
+ *   pendingFresh = 방금(기본 15분 안에) 적재된 대기 건 — 지금 나가는 중이라는 뜻이라 겹치지 않게 쉰다.
+ *   오래 묶인 대기 건(연동이 꺼져 있었다거나 주소가 비었던 건)은 **더 이상 막지 않는다**(10-23).
+ *   pendingFresh 를 주지 않으면 종전처럼 pending 전체로 판단한다.
+ */
+export function deltaDue({ deltaAuto, everyMin }, { lastAt, now = Date.now(), pending, pendingFresh, baseline }) {
   if (!deltaAuto || !baseline) return false;
-  if (pending > 0) return false;                 // 전체 전송이 나가는 중이면 겹쳐 싣지 않는다
+  const bloqueo = pendingFresh == null ? pending : pendingFresh;
+  if (bloqueo > 0) return false;                 // 지금 나가는 중이면 겹쳐 싣지 않는다
   const m = Math.max(5, Math.min(1440, Number(everyMin) || 5));
   if (!lastAt) return true;
   return now - new Date(lastAt).getTime() >= m * 60000 - 5000;   // 틱 오차 5초 허용
@@ -770,9 +796,13 @@ export async function productSyncTick({ app = null, now = Date.now() } = {}) {
     const last = (await query(
       `SELECT max(created_at) AS at FROM product_sync_runs WHERE mode='delta' AND origin <> 'pick'`)).rows[0];
     const lastAt = Math.max(last && last.at ? new Date(last.at).getTime() : 0, lastDeltaCheck) || null;
+    const pend = await pendingProductStats();
     if (!deltaDue({ deltaAuto, everyMin: ep.delta_every_min },
-                  { lastAt, now, pending: await pendingProductCount(), baseline: await baselineCount() })) {
+                  { lastAt, now, pending: pend.total, pendingFresh: pend.fresh, baseline: await baselineCount() })) {
       return { skipped: 'delta_not_due' };
+    }
+    if (pend.stale > 0) {
+      try { console.warn(`[productSync] 묶인 대기 ${pend.stale}건(가장 오래된 ${pend.oldest_min}분) — 변경분은 그대로 보낸다`); } catch (_) {}
     }
     lastDeltaCheck = now;
     const r = await runCatalogSync({ mode: 'delta', origin: 'auto', app });

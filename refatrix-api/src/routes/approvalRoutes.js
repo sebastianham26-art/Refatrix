@@ -10,7 +10,7 @@ import { verifyPin } from '../auth.js';
 import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE, detachPlans } from '../approvalFinance.js';   // 0258 자금 연동
 import { commissionApprovalReady, linkForDoc } from '../commissionApproval.js';   // 0287 커미션 지급승인 문서
 import {
-  APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
+  APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, fileMaxBytes, fileExt, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
   n, round2, sameId, decodeApprovalFile, sha256Hex, parseCfdi, guessKind, normKind, calcAmounts,
   roleCtx, buildLines, advance, postLine, myPending, canSeeDoc, isTodo, stageKey, fileStage, variancePct,
   allowedActions, canDeleteFile, canVoidFile, docNo, reportRows, completenessChecks,
@@ -1109,7 +1109,7 @@ export default async function approvalRoutes(app) {
   app.post('/api/approvals/:id/files', { preHandler: [authGuard], bodyLimit: APPROVAL_FILE_BODY_LIMIT }, async (req, reply) => {
     const id = Number(req.params.id);
     const dec = decodeApprovalFile(req.body?.data_url, req.body?.file_name);
-    if (!dec.ok) return fail(reply, 'bad_input', { detail: dec.error, max_bytes: APPROVAL_FILE_MAX_BYTES });
+    if (!dec.ok) return fail(reply, 'bad_input', { detail: dec.error, max_bytes: fileMaxBytes(fileExt(req.body?.file_name)) });   // 동영상 50MB
     const kind = req.body?.kind ? normKind(req.body.kind) : guessKind(dec.name);
     const commentId = req.body?.comment_id ? Number(req.body.comment_id) : null;
     const paymentId = req.body?.payment_id ? Number(req.body.payment_id) : null;

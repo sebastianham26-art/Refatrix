@@ -13,8 +13,9 @@ import { cleanFileName } from './txnFiles.js';
 export { cleanFileName };
 
 export const APPROVAL_FILE_MAX_BYTES = 20 * 1024 * 1024;       // 파일당 20MB(디렉터 결정 2026-09-29)
-export const APPROVAL_FILE_BODY_LIMIT = 29 * 1024 * 1024;      // base64(×4/3) + JSON 여유 — 파일 업로드 라우트 전용
-export const KINDS = ['견적서', '계약서', 'Factura XML', 'Factura PDF', '송금증', '수령증', '영수증', '결재문서', '기타'];
+export const APPROVAL_VIDEO_MAX_BYTES = 50 * 1024 * 1024;      // 동영상(mp4·mov·m4v·webm) 파일당 50MB — 마케팅 증빙(디렉터 요청 2026-10-23)
+export const APPROVAL_FILE_BODY_LIMIT = Math.ceil(APPROVAL_VIDEO_MAX_BYTES * 4 / 3) + 2 * 1024 * 1024;   // base64(×4/3) + JSON 여유 — 파일 업로드 라우트 전용
+export const KINDS = ['견적서', '계약서', 'Factura XML', 'Factura PDF', '송금증', '수령증', '영수증', '마케팅 자료', '결재문서', '기타'];
 export const EXEC_KINDS = ['Factura XML', 'Factura PDF', '송금증', '수령증'];   // 집행완료에 필요한 실적 증빙 · 0287 수령증 = 현금 지급 서명본
 export const PAY_METHODS = ['계좌이체', '법인카드', '현금', '수표'];
 export const IVA_RATE = 0.16;
@@ -45,7 +46,10 @@ export const EXT_MIME = {
   zip: 'application/zip',
   eml: 'message/rfc822',
   msg: 'application/vnd.ms-outlook',
+  mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/x-m4v', webm: 'video/webm',
 };
+export const VIDEO_EXTS = ['mp4', 'mov', 'm4v', 'webm'];
+export const fileMaxBytes = (ext) => (VIDEO_EXTS.includes(ext) ? APPROVAL_VIDEO_MAX_BYTES : APPROVAL_FILE_MAX_BYTES);
 
 export const n = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 export const round2 = (v) => Math.round((n(v) + Number.EPSILON) * 100) / 100;
@@ -66,6 +70,7 @@ export function decodeApprovalFile(dataUrl, fileName, maxBytes = APPROVAL_FILE_M
   const ext = fileExt(name);
   const mime = EXT_MIME[ext];
   if (!mime) return { ok: false, error: 'bad_type', ext };
+  if (maxBytes === APPROVAL_FILE_MAX_BYTES) maxBytes = fileMaxBytes(ext);   // 동영상은 50MB
   const b64 = m[2].replace(/\s+/g, '');
   const pad = b64.endsWith('==') ? 2 : (b64.endsWith('=') ? 1 : 0);
   const est = Math.floor((b64.length * 3) / 4) - pad;
@@ -103,6 +108,7 @@ export function guessKind(name) {
   if (/견적|cotiz|quote/.test(s)) return '견적서';
   if (/계약|contrato/.test(s)) return '계약서';
   if (/\.(jpe?g|png|heic|heif|webp|gif)$/.test(s)) return '영수증';
+  if (/\.(mp4|mov|m4v|webm)$/.test(s)) return '마케팅 자료';
   return '기타';
 }
 export const normKind = (k) => (KINDS.includes(k) ? k : '기타');

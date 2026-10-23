@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261019cg</title>
+<title>Refatrix ERP · 전자결재 · b20261023va</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -114,7 +114,7 @@ h1{font-size:20px;margin:4px 0 6px;line-height:1.3}
 .file .fm{font-size:11.5px;color:var(--mute)}
 .file.void{opacity:.55}.file.void .fn{text-decoration:line-through}
 .file .acts{margin-left:auto;display:flex;gap:4px;flex:none;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.ic.pdf{background:#b3412e}.ic.doc{background:#2f5d8a}.ic.ppt{background:#c0662b}.ic.xls{background:#2e7d4f}.ic.img{background:#7a6f5a}.ic.xml{background:#143D34}.ic.etc{background:#8a8a82}
+.ic.pdf{background:#b3412e}.ic.doc{background:#2f5d8a}.ic.ppt{background:#c0662b}.ic.xls{background:#2e7d4f}.ic.img{background:#7a6f5a}.ic.xml{background:#143D34}.ic.etc{background:#8a8a82}.ic.vid{background:#6b3fa0}
 .lnk{display:inline-flex;gap:6px;align-items:center;border:1px dashed var(--brand);color:var(--brand);border-radius:8px;padding:4px 9px;font-size:12.5px;cursor:pointer;margin:8px 6px 0 0;background:#fff}
 .btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 14px;min-height:40px;cursor:pointer;font-weight:600;white-space:nowrap}
 .btn.sm{min-height:32px;padding:5px 10px;font-size:12.5px}
@@ -341,7 +341,7 @@ details.revs summary{cursor:pointer;color:var(--brand);font-weight:600}
 <div id="modal" class="modal hidden"><div class="modal-card" id="modalCard"></div></div>
 <div id="toast" class="toast"></div>
 <input type="file" id="imgPick" multiple hidden accept="image/*">
-<input type="file" id="filePick" multiple hidden accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.gif,.heic,.heif,.webp,.xml,.zip,.eml,.msg,image/*">
+<input type="file" id="filePick" multiple hidden accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.gif,.heic,.heif,.webp,.xml,.zip,.eml,.msg,.mp4,.mov,.m4v,.webm,image/*,video/mp4,video/quicktime,video/webm">
 <script>
 'use strict';
 /* ═════════ 세션 · API ═════════ */
@@ -379,7 +379,7 @@ function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('on');c
 
 const ERRMSG={bad_pin:'PIN이 올바르지 않습니다',pin_required:'PIN을 입력하세요',not_your_turn:'이미 처리되었거나 내 차례가 아닙니다',bad_state:'현재 상태에서는 할 수 없습니다',memo_required:'사유를 입력하세요',
  exec_evidence_required:'Factura(XML/PDF) 또는 송금증이 1건 이상 필요합니다',director_unset:'설정에서 디렉터 결재자를 먼저 지정해야 합니다',
- ceo_unset:'설정에서 대표이사 계정을 먼저 지정해야 합니다',too_large:'20MB를 넘는 파일입니다',bad_type:'지원하지 않는 파일 형식입니다',
+ ceo_unset:'설정에서 대표이사 계정을 먼저 지정해야 합니다',too_large:'파일 한도를 넘었습니다 (파일당 20MB · 동영상 50MB)',bad_type:'지원하지 않는 파일 형식입니다',
  director_only:'디렉터만 할 수 있습니다',forbidden:'권한이 없습니다',not_found:'문서를 찾을 수 없거나 열람 권한이 없습니다',
  category_required:'카테고리를 선택하세요',amount_required:'예정금액을 입력하세요',title_required:'제목을 입력하세요',duplicate:'이미 있는 단계입니다',
  doc_not_found:'문서번호를 확인하세요',bad_user:'사용할 수 없는 사용자입니다',bad_comment:'댓글을 확인하세요',unauthorized:'로그인이 만료되었습니다. 다시 로그인하세요',commission_doc:'커미션 지급승인 문서는 재무 › 커미션에서 서명된 수령증을 올려 집행합니다'};
@@ -567,7 +567,7 @@ function revisionHtml(r){
 function extOf(name){const m=String(name||'').toLowerCase().match(/\.([a-z0-9]{1,5})$/);return m?m[1]:'';}
 function fileIcon(name){
  const ext=extOf(name);
- const cls=ext==='pdf'?'pdf':/^docx?$/.test(ext)?'doc':/^pptx?$/.test(ext)?'ppt':/^(xlsx?|csv)$/.test(ext)?'xls':/^(jpe?g|png|heic|heif|webp|gif)$/.test(ext)?'img':ext==='xml'?'xml':'etc';
+ const cls=ext==='pdf'?'pdf':/^docx?$/.test(ext)?'doc':/^pptx?$/.test(ext)?'ppt':/^(xlsx?|csv)$/.test(ext)?'xls':/^(jpe?g|png|heic|heif|webp|gif)$/.test(ext)?'img':ext==='xml'?'xml':/^(mp4|mov|m4v|webm)$/.test(ext)?'vid':'etc';
  return `<div class="ic ${cls}">${esc(ext.toUpperCase().slice(0,4)||'FILE')}</div>`;
 }
 function fileRow(f,d){
@@ -747,6 +747,7 @@ function guessKind(name){
  if(/견적|cotiz|quote/.test(s))return '견적서';
  if(/계약|contrato/.test(s))return '계약서';
  if(/\.(jpe?g|png|heic|heif|webp|gif)$/.test(s))return '영수증';
+ if(/\.(mp4|mov|m4v|webm)$/.test(s))return '마케팅 자료';
  return '기타';
 }
 const readDataUrl=file=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(r.error);r.readAsDataURL(file);});
@@ -759,7 +760,9 @@ async function uploadFiles(docId,arr,commentId,paymentId,addendumId){
   if(r.dup_of)toast(`⚠ ${f.name}: ${r.dup_of}에서 사용된 파일`);
  }
 }
-const MAXB=20*1024*1024;
+const MAXB=20*1024*1024,MAXV=50*1024*1024;   // 동영상(mp4·mov·m4v·webm)은 50MB — 마케팅 증빙
+const isVideo=n=>/\.(mp4|mov|m4v|webm)$/i.test(String(n||''));
+const maxFor=n=>isVideo(n)?MAXV:MAXB;
 
 /* ═════════ 작성 ═════════ */
 /* ─── 0237: 통화 · 결제 방식 · 본문 그림 ─── */
@@ -957,7 +960,7 @@ function renderCompose(){
  <div class="card sec"><h3>내용 <span class="sub">그림은 붙여넣기(Ctrl+V) · 끌어놓기 · 버튼으로 넣을 수 있습니다</span><span class="sp"></span><button class="btn sm" data-act="edimg">🖼 그림 넣기</button></h3>
   <div id="bodyEd" class="ed" contenteditable="true" data-ph="집행 목적, 산출 내역 등 — 견적서 캡처나 사진을 바로 붙여 넣어도 됩니다">${nodesToEdHtml(cd.body_nodes)}</div>
  </div>
- <div class="card sec"><h3>증빙 <span class="sub">선택 · 파일당 20MB</span><span class="sp"></span><button class="btn sm" data-act="pick" data-key="d">+ 파일 추가</button></h3>
+ <div class="card sec"><h3>증빙 <span class="sub">선택 · 파일당 20MB · 동영상 50MB</span><span class="sp"></span><button class="btn sm" data-act="pick" data-key="d">+ 파일 추가</button></h3>
   ${cd.files.length?`<div class="files" style="margin-bottom:6px">${cd.files.map(f=>`<div class="file">${fileIcon(f.file_name)}<div style="flex:1;min-width:0"><div class="fn">${esc(f.file_name)}</div><div class="fm"><span class="bdg b-gray">${esc(f.kind)}</span>${fsize(f.file_size)} · 저장됨</div></div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button><button class="btn sm danger" data-act="cfdel" data-fid="${f.id}">삭제</button></div></div>`).join('')}</div>`:''}
   <div id="pl-d">${pendList(cd.newFiles,'d')}</div>
   <p class="sub" style="margin:8px 0 0">PDF · Word · PowerPoint · Excel · JPG/PNG/HEIC · CFDI XML · ZIP · 이메일(eml/msg). 증빙 없이도 상신할 수 있으며, 결재자가 반려로 보완을 요청할 수 있습니다.</p></div>
@@ -1126,7 +1129,7 @@ function renderSettings(){
   ${B.categories.map(tplRow).join('')}</div>
  <div class="grid2">
   <div class="card sec"><h3>고정 규칙</h3><ul class="chk">
-   <li><span>증빙 파일 한도</span><span class="v">파일당 20MB</span></li>
+   <li><span>증빙 파일 한도</span><span class="v">파일당 20MB · 동영상(mp4·mov) 50MB</span></li>
    <li><span>상신 시 증빙</span><span class="v">선택</span></li>
    <li><span>집행완료 시 실적증빙 (Factura·송금증)</span><span class="v">필수</span></li>
    <li><span>반려 사유 메모</span><span class="v">필수 · 상신자 알림</span></li>
@@ -1318,7 +1321,7 @@ const MODALS={
  pskip:m=>{const p=DET.payments.find(x=>same(x.id,m.pid)),last=DET.payments.filter(x=>x.status==='planned').length===1;return `<h2>${p.seq}회차 지급 중단</h2><p class="sub">계약 종료·취소 등으로 이 회차를 지급하지 않습니다. 되돌릴 수 없습니다.</p><div class="fld"><label>사유 <span class="req">*</span></label><input class="inp" id="mMemo" placeholder="예: 계약 조기 종료"></div>${last?'<div class="warn">마지막 남은 회차라 중단하면 집행이 끝나고 대표이사 사후승인이 요청됩니다.</div>':''}${mBtns('중단','danger')}`;},
  flag:m=>{const d=mdoc(m);return `<h2>이의제기</h2><p class="sub">${esc(d.doc_no)} · 예정 ${money(d.planned_total)} → 실적 ${money(d.actual_total)}</p><div class="fld"><label>이의 내용 <span class="req">*</span></label><textarea class="inp" id="mMemo" placeholder="소명이 필요한 내용"></textarea></div><div class="warn">기안자 ${esc(U(d.drafter_id))}와 디렉터에게 알림이 가고, 소명은 댓글로 받습니다.</div>${mBtns('이의제기','danger')}`;},
  postclose:m=>{const d=mdoc(m);return `<h2>이의 종결 · 사후승인 확인</h2><p class="sub">${esc(d.doc_no)} · ${esc(d.title)}</p><div class="fld"><label>의견 (선택)</label><textarea class="inp" id="mMemo" placeholder="예: 소명 확인, 향후 인원 변경 시 사전 보고 바랍니다"></textarea></div>${mBtns('확인')}`;},
- upload:()=>{const d=DET.doc,st=d.status==='draft'?'기안':d.status!=='approved'?'결재중':d.exec_status==='done'?'사후':'집행';return `<h2>증빙 추가</h2><p class="sub">${esc(d.doc_no||'임시저장')} · 현재 단계 「${st}」로 기록됩니다</p>${upBox()}<p class="sub">PDF · Word · PowerPoint · Excel · 이미지 · CFDI XML · ZIP · 이메일 / 파일당 20MB</p>${mBtns('등록')}`;},
+ upload:()=>{const d=DET.doc,st=d.status==='draft'?'기안':d.status!=='approved'?'결재중':d.exec_status==='done'?'사후':'집행';return `<h2>증빙 추가</h2><p class="sub">${esc(d.doc_no||'임시저장')} · 현재 단계 「${st}」로 기록됩니다</p>${upBox()}<p class="sub">PDF · Word · PowerPoint · Excel · 이미지 · 동영상(mp4·mov) · CFDI XML · ZIP · 이메일 / 파일당 20MB · 동영상 50MB</p>${mBtns('등록')}`;},
  void:m=>{const f=DET.files.find(x=>same(x.id,m.fid));return `<h2>증빙 무효 처리</h2><p class="sub">${esc(f.file_name)} — 승인 이후 증빙은 삭제할 수 없고 무효 표시만 남깁니다.</p><div class="fld"><label>사유 <span class="req">*</span></label><input class="inp" id="mMemo" placeholder="예: 다른 문서의 영수증을 잘못 올림"></div>${mBtns('무효 처리','danger')}`;},
  link:()=>`<h2>결재문서 연결</h2><p class="sub">다른 결재 문서를 증빙으로 연결합니다.</p><div class="fld"><label>문서번호</label><input class="inp" id="mNo" list="docNos" placeholder="EXP-2026-0035"><datalist id="docNos">${LIST.filter(x=>x.doc_no&&!same(x.id,DET.doc.id)).map(x=>`<option value="${esc(x.doc_no)}">${esc(x.title)}</option>`).join('')}</datalist></div>${mBtns('연결')}`,
  cedit:m=>{const c=DET.comments.find(x=>same(x.id,m.cid));return `<h2>댓글 수정 (디렉터)</h2><p class="sub">원문은 수정 이력으로 보존됩니다.</p><div class="fld"><textarea class="inp" id="mMemo">${esc(c.body)}</textarea></div>${mBtns('수정')}`;},
@@ -1526,8 +1529,8 @@ document.addEventListener('change',e=>{
 });
 $('#filePick').addEventListener('change',e=>{
  const key=ui.pick,arr=getArr(key);let skip=0;
- for(const file of [...e.target.files]){if(file.size>MAXB){skip++;continue;}arr.push({file,name:file.name,size:file.size,kind:guessKind(file.name)});}
- if(skip)toast(`${skip}개 파일이 20MB를 넘어 제외되었습니다`);
+ for(const file of [...e.target.files]){if(file.size>maxFor(file.name)){skip++;continue;}arr.push({file,name:file.name,size:file.size,kind:guessKind(file.name)});}
+ if(skip)toast(`${skip}개 파일이 한도(파일당 20MB · 동영상 50MB)를 넘어 제외되었습니다`);
  refreshPend(key);
 });
 

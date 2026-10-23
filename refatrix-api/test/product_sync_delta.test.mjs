@@ -77,6 +77,13 @@ test('일정 — 전체는 설정 요일·시각, 변경분은 주기·기준·�
   assert.equal(ps.deltaDue(dc, { lastAt: now - 6 * 60000, now, pending: 0, baseline: 10 }), true);
   assert.equal(ps.deltaDue(dc, { lastAt: now - 2 * 60000, now, pending: 0, baseline: 10 }), false);
   assert.equal(ps.deltaDue(dc, { lastAt: null, now, pending: 3, baseline: 10 }), false, '전체 전송 중이면 겹치지 않음');
+  // ★ 10-23 · 묶인 대기 건은 더 이상 변경분을 막지 않는다 (연동이 꺼져 있던 동안 쌓인 건 등)
+  assert.equal(ps.deltaDue(dc, { lastAt: null, now, pending: 3, pendingFresh: 0, baseline: 10 }), true,
+    '오래 묶인 대기 3건이 있어도 변경분은 나간다');
+  assert.equal(ps.deltaDue(dc, { lastAt: null, now, pending: 9, pendingFresh: 9, baseline: 10 }), false,
+    '방금 적재된 건이 있으면(지금 나가는 중) 겹치지 않는다');
+  assert.equal(ps.deltaDue(dc, { lastAt: now - 2 * 60000, now, pending: 0, pendingFresh: 0, baseline: 10 }), false,
+    '주기 전이면 그대로 쉰다');
   assert.equal(ps.deltaDue(dc, { lastAt: null, now, pending: 0, baseline: 0 }), false, '기준 없으면 안 돎');
   assert.equal(ps.deltaDue({ deltaAuto: false, everyMin: 5 }, { lastAt: null, now, pending: 0, baseline: 10 }), false);
   assert.equal(ps.mxWeekday(Date.parse('2026-09-27T12:00:00Z')), 0, '2026-09-27 은 일요일');
@@ -192,6 +199,34 @@ test('DB ⑤ 전체 전송은 기준을 새로 잡는다 · 틱: 전체 전송 �
   const t = await ps.productSyncTick({ now: now + 10 * 60000 });
   assert.equal(t.ran, 'delta'); assert.equal(t.result.total_productos, 1);
   assert.equal((await ps.productSyncTick({ now: now + 11 * 60000 })).skipped, 'delta_not_due', '5분 주기');
+});
+
+test('★ DB ⑤-2 묶인 대기 건은 변경분을 막지 않는다 (10-23)', { skip }, async () => {
+  await db();
+  await pool.query(`DELETE FROM crm_customer_outbox`);   // 앞 시험이 남긴 건을 치운다
+  await ps.runCatalogSync({ mode: 'baseline' });
+  // 연동이 꺼져 있던 동안 쌓인 것처럼 — 대기 상태로 20분 전에 적재된 제품 건
+  await pool.query(
+    `INSERT INTO crm_customer_outbox (entity, entity_label, endpoint_key, op, origin, payload, status, created_at)
+     VALUES ('product','묶인 건','product','upsert','auto','{}'::jsonb,'pending', now() - interval '20 minutes')`);
+  const st = await ps.pendingProductStats();
+  assert.equal(st.fresh, 0, '방금 적재된 건은 없다');
+  assert.ok(st.stale >= 1, '묶인 건이 있다');
+  assert.ok(st.oldest_min >= 19, '나이를 분으로 센다');
+
+  await pool.query(`UPDATE products SET list_price=1234 WHERE code='CE0003'`);
+  // 앞 시험들이 메모리에 남긴 「마지막 확인 시각」보다 뒤여야 한다(일요일은 전체 전송이라 피한다)
+  let now = Date.now() + 3 * 86400000; while (ps.mxWeekday(now) === 0 || ps.mxWeekday(now + 11 * 60000) === 0) now += 86400000;
+  const t = await ps.productSyncTick({ now });
+  assert.equal(t.ran, 'delta', '묶인 건이 있어도 변경분은 나간다 — ' + JSON.stringify(t));
+  assert.equal(t.result.total_productos, 1);
+
+  // 방금 적재된 건이 있으면(지금 나가는 중) 종전처럼 쉰다
+  await pool.query(
+    `INSERT INTO crm_customer_outbox (entity, entity_label, endpoint_key, op, origin, payload, status, created_at)
+     VALUES ('product','방금 건','product','upsert','auto','{}'::jsonb,'pending', now())`);
+  await pool.query(`UPDATE products SET list_price=1235 WHERE code='CE0003'`);
+  assert.equal((await ps.productSyncTick({ now: now + 10 * 60000 })).skipped, 'delta_not_due');
 });
 
 test('DB ⑥ 틱: 일요일 06시 이후 전체 자동(auto_send 켬) · 같은 날 두 번 안 돎', { skip }, async () => {

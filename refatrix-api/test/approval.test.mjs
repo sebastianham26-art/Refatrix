@@ -114,6 +114,17 @@ test('A9 파일 검증 — 20MB · 확장자 허용목록 · MIME 교정', () =>
   assert.equal(R.decodeApprovalFile(b64(10), 'virus.exe').error, 'bad_type');
   assert.equal(R.decodeApprovalFile('nope', 'a.pdf').error, 'bad_format');
   for (const f of ['a.docx', 'b.pptx', 'c.xlsx', 'd.jpeg', 'e.heic', 'f.xml', 'g.zip', 'h.eml', 'i.ppt', 'j.doc']) assert.equal(R.decodeApprovalFile(b64(5), f).ok, true, f);
+  // 2026-10-23 동영상(마케팅 증빙) — mp4·mov·m4v·webm, 파일당 50MB · 다른 형식은 20MB 그대로
+  const v = R.decodeApprovalFile(b64(21 * 1024 * 1024), 'Campaña Reel.MP4');
+  assert.equal(v.ok, true, '동영상은 20MB 넘어도 허용'); assert.equal(v.mime, 'video/mp4');
+  assert.equal(R.decodeApprovalFile(b64(5), 'clip.mov').mime, 'video/quicktime');
+  assert.equal(R.decodeApprovalFile(b64(5), 'clip.webm').mime, 'video/webm');
+  assert.equal(R.decodeApprovalFile(b64(5), 'clip.m4v').ok, true);
+  assert.equal(R.decodeApprovalFile(b64(50 * 1024 * 1024), 'a.mp4').ok, true, '정확히 50MB 허용');
+  assert.equal(R.decodeApprovalFile(b64(50 * 1024 * 1024 + 1), 'a.mp4').error, 'too_large');
+  assert.equal(R.decodeApprovalFile(b64(21 * 1024 * 1024), 'a.pdf').error, 'too_large', 'PDF 는 여전히 20MB');
+  assert.equal(R.decodeApprovalFile(b64(21 * 1024 * 1024), 'a.jpg', 20 * 1024 * 1024 - 1).error, 'too_large', '호출부가 정한 한도는 그대로');
+  assert.equal(R.guessKind('reel_octubre.mp4'), '마케팅 자료'); assert.ok(R.KINDS.includes('마케팅 자료'));
 });
 test('A10 CFDI 파싱 · 종류 추정', () => {
   const x = '<?xml version="1.0"?><cfdi:Comprobante Version="4.0" SubTotal="11939.66" Total="13850.00"><cfdi:Emisor Rfc="GNO9203115K2" Nombre="X"/><cfdi:Complemento><tfd:TimbreFiscalDigital UUID="a1f3c2d4-58b1-4e0f-9c21-7f2b11d0a9e3"/></cfdi:Complemento></cfdi:Comprobante>';
@@ -153,6 +164,7 @@ test('B2 라우트는 transactions·cashflow 를 건드리지 않는다', () => 
   assert.doesNotMatch(r.replace(/\/\/[^\n]*/g, ''), /\btransactions\b|cashflow/i);
   assert.match(r, /bodyLimit: APPROVAL_FILE_BODY_LIMIT/);
   assert.ok(R.APPROVAL_FILE_BODY_LIMIT > Math.ceil(R.APPROVAL_FILE_MAX_BYTES * 4 / 3), '20MB base64 가 bodyLimit 안에 들어간다');
+  assert.ok(R.APPROVAL_FILE_BODY_LIMIT > Math.ceil(R.APPROVAL_VIDEO_MAX_BYTES * 4 / 3), '동영상 50MB base64 가 bodyLimit 안에 들어간다');
 });
 test('B3 nav.js — 전자결재 화면(모든 역할) · 마케팅 권한키 복구', () => {
   const nav = read(join(REPO, 'refatrix-nav.js'));
@@ -321,6 +333,16 @@ test('C E2E — 기안·결재·집행·사후승인·이의·반려·재기안�
     assert.equal(big.body.detail, 'too_large');
     const fit = await call('oscar', 'POST', `/api/approvals/${d1}/files`, { file_name: 'fit.pdf', data_url: dataUrl(Buffer.alloc(20 * 1024 * 1024, 9)) });
     assert.equal(fit.code, 200, '20MB 파일은 bodyLimit 안에서 통과');
+    // 2026-10-23 마케팅 동영상 30MB(mp4) 업로드 → 저장·종류·내려받기
+    const vid = Buffer.concat([Buffer.from('000000186674797069736f6d', 'hex'), Buffer.alloc(30 * 1024 * 1024, 3)]);
+    const vup = await call('oscar', 'POST', `/api/approvals/${d1}/files`, { file_name: 'reel_campaña.mp4', kind: '마케팅 자료', data_url: 'data:video/mp4;base64,' + vid.toString('base64') });
+    assert.equal(vup.code, 200, JSON.stringify(vup.body).slice(0, 200));
+    const vrow = (await pool.query(`SELECT kind, mime_type, file_size FROM approval_files WHERE id=$1`, [vup.body.id])).rows[0];
+    assert.deepEqual([vrow.kind, vrow.mime_type, Number(vrow.file_size)], ['마케팅 자료', 'video/mp4', vid.length]);
+    const vget = await app.inject({ method: 'GET', url: `/api/approvals/files/${vup.body.id}`, headers: { authorization: 'Bearer ' + U.oscar.tok } });
+    assert.equal(vget.headers['content-type'], 'video/mp4'); assert.equal(vget.rawPayload.length, vid.length);
+    const vbig = await call('oscar', 'POST', `/api/approvals/${d1}/files`, { file_name: 'big.mp4', data_url: 'data:video/mp4;base64,' + Buffer.alloc(50 * 1024 * 1024 + 10, 1).toString('base64') });
+    assert.equal(vbig.body.detail, 'too_large');
     await ok('maria', 'POST', `/api/approvals/${d3}/links`, { doc_no: s1.doc_no });
     assert.equal((await call('maria', 'POST', `/api/approvals/${d3}/links`, { doc_no: 'EXP-1999-0001' })).body.detail, 'doc_not_found');
     assert.equal((await call('luis', 'GET', '/api/approvals/report')).code, 403);

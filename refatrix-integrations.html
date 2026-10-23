@@ -389,6 +389,7 @@
               <button class="btn ghost sm" id="btnCatalogStop" style="color:var(--expense);border-color:var(--expense)">전송 중지</button>
             </div>
             <div id="catalogProgress" class="hint" style="margin-top:6px"></div>
+            <div id="catalogStale" class="msg warn" style="display:none;margin-top:6px"></div>
             <!-- 2026-10-07 · 고른 제품만 보내기 -->
             <div id="boxPick" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">
               <div style="font-weight:600;margin-bottom:6px">고른 제품만 보내기 <span class="hint">(코드를 골라 담은 뒤 한 번에 · 마감 신호 없음 · 한 번에 최대 500개)</span></div>
@@ -1292,6 +1293,18 @@
       box.querySelectorAll('a.runlink').forEach(a=>a.addEventListener('click',()=>openRunLog(Number(a.dataset.run))));
       // 20260924 · 진행 표시 — 대기 중인 제품이 있으면 5초마다 스스로 새로고침한다.
       const pend=Number(d.pending_products)||0, pump=d.pump||{};
+      // 10-23 · 오래 묶인 대기 건 — 변경분을 막지는 않지만 그대로 두면 CRM 에 영영 안 간다.
+      const st=d.pending_stale||null;
+      const sb=$('catalogStale');
+      if(sb){
+        if(st&&st.stale>0){
+          sb.style.display='block'; sb.className='msg warn';
+          sb.innerHTML='⚠ 대기함에 <b>'+st.stale+'건</b>이 '+(st.oldest_min!=null?('약 '+st.oldest_min+'분째 '):'')+'묶여 있습니다'
+            +(st.example?(' (예: '+esc(String(st.example))+')'):'')
+            +'.<br>변경분 자동 전송은 그대로 돌지만, 이 건들은 CRM 에 가지 않았습니다 — 연동 주소·켜짐을 확인한 뒤 '
+            +'「전체 보내기」나 「고른 제품만 보내기」로 다시 보내세요.';
+        } else sb.style.display='none';
+      }
       const pg=$('catalogProgress');
       if(pg){
         pg.textContent = pend>0
