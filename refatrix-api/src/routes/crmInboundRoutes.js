@@ -42,10 +42,10 @@ const WEB_TEAM_NAME = '07_Pagina';        // 0278 마이그레이션이 시드�
 const WEB_DISCOUNT = 10;                   // %
 const WEB_CUSTOMER_TYPE = 'MECANICO';      // 고객구분(customers.customer_type)
 // 20261022 · 디렉터 지시: "사후승인도 필요없고 … 그냥 회원가입이 자동으로 되도록".
-//   구글·페이스북 가입은 등록과 동시에 **확인 완료(ratified)** 로 닫는다 — 사후승인 목록에 안 쌓인다.
+//   CUS_Origin 자동 가입은 등록과 동시에 **확인 완료(ratified)** 로 닫는다 — 사후승인 목록에 안 쌓인다.
 //   다시 사후승인을 받게 하려면 이 값을 false 로 바꾸면 된다(나머지 규칙은 그대로).
 const WEB_AUTO_RATIFY = true;
-const WEB_RATIFY_NOTE = '자동 가입 (구글·페이스북) — 사후승인 생략 · 디렉터 지시 2026-10-22';
+const WEB_RATIFY_NOTE = '자동 가입 (CRM 웹 · CUS_Origin) — 사후승인 생략 · 디렉터 지시 2026-10-22/23';
 
 // 0267(ratified_*) 준비 여부. 없으면 예전처럼 사후승인 대기로 남는다(가입은 그대로 된다).
 let ratifyCols = false; let ratifyColsProbe = 0;
@@ -163,7 +163,7 @@ async function baselineFrom(m) {
 /**
  * CRM 수신 본문 → 고객 등록(또는 기존 고객 갱신). 인증이 끝난 뒤에 부른다.
  *   · 신규고객 등록 창구(customer-registration)가 그대로 쓴다.
- *   · 웹 가입 신청 창구(customer-lead)는 **구글·페이스북 가입일 때만** 이걸 부른다(20261022).
+ *   · 웹 가입 신청 창구(customer-lead)는 **CUS_Origin 이 있을 때만** 이걸 부른다(20261022·23).
  *   기록은 언제나 신규고객 등록 창구(crm_customer_registration)의 수신 이력에 남는다 —
  *   고객이 생긴 곳이 거기이기 때문이다. 부른 쪽은 자기 이력에 「넘김」만 남긴다.
  */
@@ -193,7 +193,11 @@ export async function registerInbound({ raw, safe, ip, where, reply, log, app, v
   // RFC: 일반 경로는 **필수**, 광고 유입은 **선택**.
   //   ⚠ 광고 유입이라도 **넣어 보냈으면 형식은 그대로 엄격히 본다.** 형식이 깨진 RFC 를
   //     받아 두면 나중에 팩투라가 막히고, 그때는 어디서 들어온 값인지 아무도 모른다.
-  const rfcChk = validateRfcOptional(m.rfc);
+  let rfcChk = validateRfcOptional(m.rfc);
+  // 20261023 · 자동 가입은 **형식이 깨진 RFC 때문에 가입을 잃지 않는다.** 깨진 값은 저장하지 않고
+  //   (팩투라가 막히니까) RFC 없이 가입시킨 뒤 메모·이력에 원문을 남긴다. 일반 경로는 그대로 400.
+  let rfcDropped = null;
+  if (openOrigin && !rfcChk.ok) { rfcDropped = String(m.rfc || '').trim() || null; rfcChk = { ok: true, value: null }; }
   if (!rfcChk.ok || (!openOrigin && !rfcChk.value)) {
     const body = errBody('ERR_RFC_INVALID', RFC_ES[rfcChk.error] || RFC_ES.rfc_invalid);
     await writeLog({ ...base, http_status: 400, result: 'rejected',
@@ -308,6 +312,7 @@ export async function registerInbound({ raw, safe, ip, where, reply, log, app, v
       add('customer_type', custType);
       add('memo', ['CRM 웹카달록 등록',
         openOrigin ? `자동 가입(10%): 유입 ${normalizeOrigin(m.origin)}` : null,
+        rfcDropped ? `⚠ CRM 이 보낸 RFC 형식 오류로 비워 둠: ${rfcDropped}` : null,
         m.nombreComercial ? `상호명: ${m.nombreComercial}` : null,
         m.crmCode ? `CRM 코드: ${m.crmCode}` : null, m.memo].filter(Boolean).join(' · '));
       add('ship_address', addr);
@@ -382,12 +387,12 @@ export async function registerInbound({ raw, safe, ip, where, reply, log, app, v
       await query(
         `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
          VALUES ($1,'submit',$2,$3,NULL)`,
-        [row.id, autoRatify ? 'CRM(웹카달록) 자동 가입 — 구글·페이스북' : 'CRM(웹카달록) 등록 요청', JSON.stringify({
+        [row.id, autoRatify ? 'CRM(웹카달록) 자동 가입 — CUS_Origin' : 'CRM(웹카달록) 등록 요청', JSON.stringify({
           origin: 'crm', crm_customer_code: m.crmCode, crm_customer_id: m.crmId,
           // 0278 · 어떤 유입경로였고 그래서 무엇을 **우리가 정했는지** 박제한다.
           //   나중에 「왜 이 고객만 10% 냐」를 이 한 줄로 답할 수 있어야 한다.
           cus_origin: m.origin || null, open_origin: openOrigin,
-          auto_ratified: !!autoRatify,
+          auto_ratified: !!autoRatify, rfc_dropped: rfcDropped,
           applied: openOrigin
             ? { team: WEB_TEAM_NAME, team_id: teamId, discount: WEB_DISCOUNT,
                 customer_type: WEB_CUSTOMER_TYPE, doc_gate: false,
@@ -479,7 +484,7 @@ export default async function crmInboundRoutes(app) {
     }
 
     // 20261022 · 읽기 이후는 공용 함수로 옮겼다 — 웹 가입 신청 창구(crmLeadRoutes)도
-    //   구글·페이스북 가입이면 **같은 규칙으로** 바로 고객을 만든다(규칙이 두 군데 있으면 갈린다).
+    //   CUS_Origin 이 있으면 **같은 규칙으로** 바로 고객을 만든다(규칙이 두 군데 있으면 갈린다).
     return registerInbound({ raw, safe, ip, where, reply, log: req.log, app });
   });
 

@@ -285,13 +285,16 @@ export function isOpenOrigin(v) {
 }
 
 /**
- * 20261022 · 이 가입은 「자동 가입(10%)」 대상인가 — **판정은 여기 한 곳**이다.
- *   디렉터 확정(2026-10-22): "CUS_Origin 으로 보내는 게 있으면 이게 10% 자동할인 고객".
- *   즉 **CUS_Origin 하나만 본다**(GOOGLE · FACEBOOK). 로그인 방식(provider) 같은 다른 필드나
- *   이메일 도메인(@gmail.com)은 근거가 아니다 — 서류를 내는 일반 고객 다수가 gmail 을 쓴다.
+ * 20261023 · 이 가입은 「자동 가입(10%)」 대상인가 — **판정은 여기 한 곳**이다.
+ *   디렉터 확정(2026-10-23): **CUS_Origin 이 오면(값이 무엇이든) 전부 자동 가입.**
+ *   운영 수신 이력 실측: CRM 은 구글 계정 가입자도 `cus_origin: "WEB"` 으로 보낸다
+ *   (LEAD-9·10·11 — 전부 gmail + WEB). GOOGLE·FACEBOOK 만 보던 10/22 규칙으로는 한 명도
+ *   자동 가입이 안 됐고, 전부 리드 팝업 → 사람 등록 → 승인으로 흘렀다.
+ *   ⚠ **빈 값·공백·null 은 대상이 아니다.** 필드가 없는 본문(ERP 화면·옛 CRM 호출)은 예전 규칙.
+ *   이메일 도메인(@gmail.com)이나 로그인 방식 필드는 여전히 근거가 아니다.
  */
 export function isOpenSignup(m) {
-  return isOpenOrigin(m && m.origin);
+  return normalizeOrigin(m && m.origin) !== '';
 }
 
 /**

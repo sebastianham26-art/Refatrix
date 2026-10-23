@@ -176,11 +176,12 @@ dbTest('B. 실 서버 + PostgreSQL', async (t) => {
       '식별할 단서가 없으면 합칠 근거도 없다 — 사람이 병합한다');
   });
 
-  await t.test('B7. RFC 를 보내면 형식은 그대로 엄격히 본다', async () => {
-    const bad = await post({ CUS_Origin: 'GOOGLE', nombre: `BAD${SFX}`, rfc: 'NOTANRFC' });
-    assert.equal(bad.statusCode, 400);
-    assert.equal(bad.json().codigoError, 'ERR_RFC_INVALID',
-      '깨진 RFC 를 받아 두면 나중에 팩투라가 막힌다');
+  await t.test('B7. 깨진 RFC 는 저장하지 않되 자동 가입은 잃지 않는다(20261023)', async () => {
+    const bad = await mk({ CUS_Origin: 'GOOGLE', nombre: `BAD${SFX}`, rfc: 'NOTANRFC' });
+    assert.equal(bad.r.statusCode, 200, '예전엔 400 — 그러면 그 고객은 영영 가격을 못 본다');
+    const cb = await byCode(bad.j.erpCustomerCode);
+    assert.equal(cb.rfc, null, '깨진 RFC 를 받아 두면 나중에 팩투라가 막힌다');
+    assert.ok(String(cb.memo).includes('NOTANRFC'), '원문은 메모에 남긴다');
     const ok = await mk({ CUS_Origin: 'GOOGLE', nombre: `GOODRFC${SFX}`, rfc: 'AIAC8310204A0' });
     assert.equal(ok.r.statusCode, 200, ok.r.body);
     const c = await byCode(ok.j.erpCustomerCode);
@@ -205,20 +206,19 @@ dbTest('B. 실 서버 + PostgreSQL', async (t) => {
     const msg = miss.json().mensaje;
     for (const f of ['rfc', 'apellido', 'telefono', 'correo']) assert.ok(msg.includes(f), f);
 
-    // 면제 대상이 아닌 유입경로도 마찬가지다.
-    const ig = await post({ CUS_Origin: 'INSTAGRAM', nombre: `IG${SFX}` });
-    assert.equal(ig.statusCode, 400);
-    assert.equal(ig.json().codigoError, 'ERR_REQUIRED_FIELD');
+    // 20261023 · CUS_Origin 이 빈 값이면 여전히 일반 경로다.
+    const blank = await post({ CUS_Origin: '  ', nombre: `IG${SFX}` });
+    assert.equal(blank.statusCode, 400);
+    assert.equal(blank.json().codigoError, 'ERR_REQUIRED_FIELD');
   });
 
-  await t.test('B10. 일반 경로가 다 갖추면 종전대로 등록되고, 유입경로도 보존된다', async () => {
+  await t.test('B10. 일반 경로(CUS_Origin 없음)가 다 갖추면 종전대로 등록된다', async () => {
     const { r, j } = await mk({
-      CUS_Origin: 'INSTAGRAM', rfc: 'FEL990715AB1', nombre: 'Felipe', apellido: 'Lopez',
+      rfc: 'FEL990715AB1', nombre: 'Felipe', apellido: 'Lopez',
       telefono: '8112345678', correo: `fel${SFX}@x.mx`, descuento: 12, tipo: 'B',
     });
     assert.equal(r.statusCode, 200, r.body);
     const c = await byCode(j.erpCustomerCode);
-    assert.equal(c.crm_origin, 'INSTAGRAM', '면제 대상이 아니어도 유입경로는 기록한다');
     assert.equal(c.customer_type, 'B', '보내온 고객구분을 덮어쓰지 않는다');
     assert.equal(Number(c.discount_agreed), 12, '보내온 할인율을 그대로');
     assert.equal(c.doc_gate, true, '일반 경로는 서류 관문 대상 그대로');

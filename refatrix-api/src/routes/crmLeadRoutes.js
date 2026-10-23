@@ -25,7 +25,7 @@ import { writeInboundLog } from '../crmInboundLog.js';
 import { mapLead, missingLeadFields, readInboundKey, verifyInboundKey,
          scrubPayload, errBody, keyFailNote, keyFailMensaje,
          mapInbound, isOpenSignup } from '../crmInbound.js';
-import { registerInbound } from './crmInboundRoutes.js';   // 20261022 · 구글·페이스북 자동 가입
+import { registerInbound } from './crmInboundRoutes.js';   // 20261022·23 · CUS_Origin 자동 가입
 
 export const LEAD_KEY = 'crm_web_lead';
 
@@ -159,7 +159,7 @@ export default async function crmLeadRoutes(app) {
         codigo_error: body.codigoError, mensaje: body.mensaje });
       return reply.code(503).send(body);
     }
-    // ── 20261022 · 구글·페이스북 가입은 **리드로 두지 않고 바로 고객**이 된다 ─────────
+    // ── 20261022·23 · CUS_Origin 이 오면 **리드로 두지 않고 바로 고객**이 된다 ─────────
     //   디렉터 지시: "구글이나 페이스북 이메일로 가입을 요청하면 … 10% 할인을 자동 승인,
     //   사후승인도 필요없고 constancia·외상 정보도 필요없이 그냥 회원가입이 자동으로".
     //   이 창구로 와도 결과가 같아야 한다 — 신규고객 등록 창구의 규칙(registerInbound)을
@@ -186,7 +186,7 @@ export default async function crmLeadRoutes(app) {
             await query(
               `UPDATE crm_web_leads SET status='done', customer_id=COALESCE($1, customer_id),
                       closed_at=COALESCE(closed_at, now()), close_reason=COALESCE(close_reason, $2)
-                WHERE id=$3`, [cust ? cust.id : null, '자동 가입 (구글·페이스북)', dup.id]);
+                WHERE id=$3`, [cust ? cust.id : null, '자동 가입 (CUS_Origin)', dup.id]);
           } else {
             leadId = Number((await query(
               `INSERT INTO crm_web_leads
@@ -197,14 +197,14 @@ export default async function crmLeadRoutes(app) {
                RETURNING id`,
               [ml.crmLeadCode, ml.empresa, ml.nombre, ml.apellido, ml.telefono, ml.correo, ml.rfc,
                ml.ciudad, ml.estado, ml.direccion, ml.mensaje, JSON.stringify(safe), ip || null, where,
-               cust ? cust.id : null, '자동 가입 (구글·페이스북)'])).rows[0].id);
+               cust ? cust.id : null, '자동 가입 (CUS_Origin)'])).rows[0].id);
           }
         } catch (_) { /* 리드 기록 실패가 가입을 되돌리지 않는다 — 고객은 이미 생겼다 */ }
       }
       await writeLog({ ...base, auth_ok: true, http_status: cap.status,
         result: ok ? (/ya exist/i.test(String(out.mensaje || '')) ? 'updated' : 'created') : 'rejected',
         erp_code: out.erpCustomerCode || null, codigo_error: String(out.codigoError || ''),
-        mensaje: `자동 가입(구글·페이스북) → 신규고객 등록으로 처리: ${out.mensaje || ''}`.slice(0, 400) });
+        mensaje: `자동 가입(CUS_Origin) → 신규고객 등록으로 처리: ${out.mensaje || ''}`.slice(0, 400) });
       return reply.code(cap.status).send(leadId ? { ...out, leadId } : out);
     }
 
@@ -429,6 +429,53 @@ export default async function crmLeadRoutes(app) {
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `web_lead:${id}`,
       detail: { op: 'registered', customer_id: cid } });
     return { ok: true, lead: leadRow(await loadLead(id)) };
+  });
+
+  // ── 20261023 · 이미 리드로 쌓인 웹 가입을 **자동 가입으로 전환**(디렉터) ─────────────
+  //   10/22 규칙(GOOGLE·FACEBOOK 만)이 CRM 의 실제 값("WEB")과 안 맞아 자동 가입이 안 된 채
+  //   리드로 쌓인 고객들을 사람이 하나씩 등록·승인하지 않고 풀어 준다. 리드 원문(payload)을
+  //   **수신 때와 똑같은 등록 규칙(registerInbound)** 에 다시 넣는다 — 결과가 갈리지 않게.
+  //   원문에 CUS_Origin 이 없던 옛 리드는 디렉터가 누른 것이므로 'WEB' 으로 채워 넣는다.
+  async function autoRegisterLead(lead, perm) {
+    const payload = (lead.payload && typeof lead.payload === 'object') ? { ...lead.payload } : {};
+    if (!isOpenSignup(mapInbound(payload))) payload.CUS_Origin = 'WEB';
+    const cap = { status: 200, payload: null,
+      code(c) { this.status = c; return this; }, send(b) { this.payload = b; return b; } };
+    await registerInbound({ raw: payload, safe: payload, ip: null, where: 'erp_director',
+      reply: cap, log: null, app, via: 'lead_convert' });
+    const out = cap.payload || {};
+    const ok = cap.status === 200 && String(out.codigoError) === '0';
+    if (!ok) return { ok: false, lead_id: Number(lead.id), error: out.codigoError || 'ERR_INTERNAL', mensaje: out.mensaje || null };
+    const cust = out.erpCustomerCode ? (await query(
+      `SELECT id FROM customers WHERE code=$1 AND deleted_at IS NULL LIMIT 1`, [out.erpCustomerCode])).rows[0] : null;
+    await query(
+      `UPDATE crm_web_leads SET status='done', customer_id=COALESCE($1, customer_id),
+              closed_by=$2, closed_at=now(), close_reason=$3
+        WHERE id=$4`, [cust ? cust.id : null, perm.userId, '자동 가입으로 전환 (CUS_Origin)', lead.id]);
+    await safeLog({ userId: perm.userId, action: 'update', target: `web_lead:${lead.id}`,
+      detail: { op: 'auto_register', customer_code: out.erpCustomerCode || null } });
+    return { ok: true, lead_id: Number(lead.id), customer_code: out.erpCustomerCode || null,
+      mensaje: out.mensaje || null };
+  }
+
+  app.post('/api/crm-leads/:id/auto-register', dirOnly, async (req, reply) => {
+    if (!(await leadsReady())) return reply.code(503).send({ error: 'migration_required' });
+    const lead = (await query(`SELECT * FROM crm_web_leads WHERE id=$1`, [Number(req.params.id)])).rows[0];
+    if (!lead) return reply.code(404).send({ error: 'not_found' });
+    if (!['new', 'assigned', 'registered'].includes(lead.status)) return reply.code(409).send({ error: 'lead_closed' });
+    const r = await autoRegisterLead(lead, req.ctx.perm);
+    return r.ok ? r : reply.code(400).send(r);
+  });
+
+  /** 열린 리드 중 CUS_Origin 이 있는 것 전부를 한 번에 전환(디렉터). */
+  app.post('/api/crm-leads/auto-register-open', dirOnly, async (req, reply) => {
+    if (!(await leadsReady())) return reply.code(503).send({ error: 'migration_required' });
+    const rows = (await query(
+      `SELECT * FROM crm_web_leads WHERE status IN ('new','assigned') AND customer_id IS NULL
+        ORDER BY id`)).rows.filter((l) => isOpenSignup(mapInbound(l.payload || {})));
+    const results = [];
+    for (const l of rows) results.push(await autoRegisterLead(l, req.ctx.perm));
+    return { ok: true, converted: results.filter((x) => x.ok).length, results };
   });
 
   /** 되돌리기(디렉터) — 잘못 닫은 건을 다시 목록에 올린다. 기록은 남는다. */

@@ -34,12 +34,20 @@ test('A1. 판정은 CUS_Origin 하나 — GOOGLE·FACEBOOK 이면 자동 가입'
   }
 });
 
-test('A2. ★ CUS_Origin 이 없으면 로그인 방식(provider)이 구글이어도 대상이 아니다', () => {
+test('A2. ★ CUS_Origin 이 없거나 비었으면 provider 가 구글이어도 대상이 아니다', () => {
   for (const body of [
     {}, { provider: 'google' }, { providerId: 'google.com' }, { proveedor: 'facebook' },
-    { CUS_Origin: '' }, { CUS_Origin: 'INSTAGRAM' }, { CUS_Origin: 'INSTAGRAM', provider: 'google' },
+    { CUS_Origin: '' }, { CUS_Origin: '   ' }, { CUS_Origin: null },
   ]) {
     assert.equal(CI.isOpenSignup(CI.mapInbound(body)), false, JSON.stringify(body));
+  }
+});
+
+test('A2b. ★ 20261023 · CUS_Origin 이 오면 값과 무관하게 대상 — CRM 실측값 "WEB" 포함', () => {
+  for (const body of [
+    { cus_origin: 'WEB' }, { CUS_Origin: 'WEB' }, { CUS_Origin: 'INSTAGRAM' }, { CUS_Origin: 'portal' },
+  ]) {
+    assert.equal(CI.isOpenSignup(CI.mapInbound(body)), true, JSON.stringify(body));
   }
 });
 
@@ -236,6 +244,65 @@ dbTest('B·C. 실 서버 + PostgreSQL', async (t) => {
     const r = await post(REG, { provider: 'google', nombre: `PV${SFX}`, correo: `pv${SFX}@gmail.com` });
     assert.equal(r.statusCode, 400);
     assert.equal(r.json().codigoError, 'ERR_REQUIRED_FIELD');
+  });
+
+  await t.test('C3c. ★ 운영 실측 본문(LEAD-11 형태 · cus_origin WEB)이 바로 고객이 된다', async () => {
+    const { r, j } = await mk(LEAD, { rfc: 'RERS710711F1A', ciudad: 'Tuxtla', correo: `real${SFX}@gmail.com`,
+      estado: 'Chiapas', nombre: 'Sergio', empresa: `Sergio Reyes ${SFX}`, mensaje: 'Estoy interesado',
+      apellido: 'Reyes', telefono: '+529610000000', cus_origin: 'WEB', crmLeadCode: `WEB-${SFX}-R` });
+    assert.equal(r.statusCode, 200, r.body);
+    assert.equal(j.estatus, 'aprobado');
+    assert.equal(j.discountPercent, 10);
+    const c = await byCode(j.erpCustomerCode);
+    assert.ok(c.ratified_at, '승인 없이');
+    assert.equal(Number(c.discount), 10, '바로 10%');
+    const o = (await query(`SELECT status, payload FROM crm_customer_outbox WHERE customer_id=$1 ORDER BY id DESC LIMIT 1`, [c.id])).rows[0];
+    assert.notEqual(o.status, 'skipped', 'RFC 가 있으니 CRM 에 aprobado·10% 가 나간다(카달록 가격 공개)');
+    assert.equal(o.payload.estatus, 'aprobado');
+  });
+
+  await t.test('C3d. 이미 쌓인 리드를 디렉터가 자동 가입으로 전환한다', async () => {
+    // 옛 규칙 시절 리드처럼 직접 넣는다(수신 창구를 타면 이제 바로 고객이 되므로).
+    const lid = Number((await query(
+      `INSERT INTO crm_web_leads (crm_lead_code, empresa, nombre, correo, rfc, payload, status)
+       VALUES ($1,$2,'Luis',$3,'GOCL8110193N1',$4::jsonb,'new') RETURNING id`,
+      [`WEB-${SFX}-OLD`, `Luis ${SFX}`, `old${SFX}@gmail.com`,
+       JSON.stringify({ cus_origin: 'WEB', nombre: 'Luis', empresa: `Luis ${SFX}`, correo: `old${SFX}@gmail.com`,
+         rfc: 'GOCL8110193N1', crmLeadCode: `WEB-${SFX}-OLD` })])).rows[0].id);
+    leads.push(lid);
+    const TAG = `ast_${SFX}_`;
+    const dirId = Number((await query(
+      `INSERT INTO users (name, role, pin_hash, login_id) VALUES ($1,'director','x',$2) RETURNING id`,
+      [`${TAG}디렉터`, `${TAG}dir`.toLowerCase()])).rows[0].id);
+    const jwt = (await import('@fastify/jwt')).default;
+    const app2 = Fastify({ logger: false });
+    await app2.register(jwt, { secret: process.env.JWT_SECRET || 'CHANGE_ME_dev_secret' });
+    app2.register(crmLeadRoutes);
+    await app2.ready();
+    const tok = app2.jwt.sign({ sub: dirId });
+    // 디렉터가 아니면 막혀야 한다.
+    const anon = await app2.inject({ method: 'POST', url: `/api/crm-leads/${lid}/auto-register` });
+    assert.equal(anon.statusCode, 401);
+    const res = await app2.inject({ method: 'POST', url: `/api/crm-leads/${lid}/auto-register`,
+      headers: { authorization: 'Bearer ' + tok } });
+    // 일괄 전환: 방금 닫혔으니 다시 잡히지 않는다(멱등).
+    const bulk = await app2.inject({ method: 'POST', url: '/api/crm-leads/auto-register-open',
+      headers: { authorization: 'Bearer ' + tok } });
+    await app2.close();
+    assert.equal(bulk.statusCode, 200, bulk.body);
+    assert.equal(bulk.json().results.some((x) => x.lead_id === lid), false, '이미 전환된 리드는 다시 안 잡힌다');
+    await query(`UPDATE crm_web_leads SET closed_by=NULL WHERE id=$1`, [lid]);
+    await query(`DELETE FROM audit_log WHERE user_id=$1`, [dirId]).catch(() => {});
+    t.after(async () => { await query(`DELETE FROM users WHERE id=$1`, [dirId]).catch(() => {}); });
+    assert.equal(res.statusCode, 200, res.body);
+    const out = res.json();
+    assert.ok(String(out.customer_code).startsWith('P-'));
+    made.push(out.customer_code);
+    const l = (await query(`SELECT status, customer_id FROM crm_web_leads WHERE id=$1`, [lid])).rows[0];
+    assert.equal(l.status, 'done');
+    const c = await byCode(out.customer_code);
+    assert.equal(Number(c.discount), 10);
+    assert.ok(c.ratified_at);
   });
 
   await t.test('C4. 회귀 — 일반 웹 가입 신청은 예전대로 리드(고객 미생성)', async () => {
