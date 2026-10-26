@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1023wa</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1026lp</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -130,6 +130,7 @@
       <button type="button" class="tab on" data-p="list">📋 문의 목록</button>
       <button type="button" class="tab" data-p="ads">📣 광고별 문의</button>
       <button type="button" class="tab" data-p="sum">📊 수요 요약 (차종 · 지역 · 고객 유형)</button>
+      <button type="button" class="tab" data-p="lp">🔑 고객 접속코드</button>
     </div>
 
     <!-- 목록 -->
@@ -171,6 +172,60 @@
       <div class="tblwrap" id="aTable"></div>
       <div id="aDetail"></div>
     </section>
+
+    <!-- 0297 · 고객 접속코드 -->
+    <style>
+      .lp-dd{position:absolute;z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;min-width:320px;max-height:260px;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+      .lp-dd:empty{display:none}.lp-opt{padding:7px 10px;font-size:12.5px;cursor:pointer}.lp-opt:hover{background:#faf8f3}
+      .lp-ref3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.lp-ref3 b{display:block;font-size:17px}
+      #lpRef:not(:empty){border:1px dashed var(--line);border-radius:10px;padding:10px 12px;background:#fdfcf9;font-size:12.5px;margin-top:10px}
+      .lp-issued{border:2px solid var(--gold);background:#fbf7ee;border-radius:12px;padding:14px;margin-top:12px}
+      .lp-big{font-size:26px;font-weight:700;letter-spacing:2px;color:var(--brand);font-family:ui-monospace,Menlo,Consolas,monospace}
+      .lp-pre{white-space:pre-wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12.5px;line-height:1.55;margin:8px 0}
+      .lp-ck{display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--ink);margin:4px 10px 0 0;font-size:12px}
+      .lp-acts{gap:4px;flex-wrap:wrap}.lp-memo{max-width:180px}.lp-gold{background:var(--gold)}.lp-red{background:#fff;color:var(--bad);border:1px solid var(--bad)}
+      #p-lp .s-on{background:var(--ok-bg);color:var(--ok)}#p-lp .s-soon{background:var(--warn-bg);color:var(--warn)}#p-lp .s-exp{background:#eef0f2;color:#666}#p-lp .s-off{background:var(--bad-bg);color:var(--bad)}
+      input.lp-q{width:70px;text-align:right}#p-lp .mono{font-family:ui-monospace,Menlo,Consolas,monospace}#p-lp .muted{font-size:11.5px}
+    </style>
+    <section class="pane card" id="p-lp">
+      <div class="note hidden" id="lpMig"></div>
+      <div id="lpDirOnly" class="hidden">
+        <h2>🔑 새 접속코드 발급 <span class="hint">· 디렉터만 · 고객은 <b>refatrix-platform.netlify.app/leads</b> 에서 이 코드로만 들어옵니다(ERP 주소 비공개)</span></h2>
+        <div class="row">
+          <div style="position:relative"><label>고객 (ERP 고객 검색)</label><input id="lpCustQ" type="text" style="width:300px" placeholder="이름 · 고객번호 · RFC" autocomplete="off"><div class="lp-dd" id="lpCustList"></div><div class="hint" id="lpCustSel"></div></div>
+          <div><label>기준 금액 (MXN, IVA 제외 · 기록용)</label><input id="lpAmt" type="text" inputmode="decimal" style="width:160px" placeholder="50,000"></div>
+          <div><label>열람 만료일 — 직접 입력</label><input id="lpExp" type="date"><div class="hint" id="lpExpHint"></div></div>
+          <div><label>열람 범위</label><select id="lpScopeMode"><option value="">전체 문의</option><option value="pick">주(州) 선택…</option></select><div class="hidden" id="lpScopeBox" style="max-width:420px"></div></div>
+        </div>
+        <div id="lpRef"></div>
+        <label style="margin-top:10px">조건 메모 (고객에게는 안 보임)</label><textarea id="lpMemo" placeholder="예) 10월 주문 5만 페소 → 1개월. 11월 재주문 시 연장 검토."></textarea>
+        <div class="row" style="margin-top:10px"><button type="button" class="btn" id="lpIssue">🔑 접속코드 발급</button><span class="hint">코드는 발급 직후 한 번만 전체가 보입니다. 잊으면 재발급.</span></div>
+        <div class="msg" id="lpMsg"></div>
+        <div id="lpIssued"></div>
+
+        <h2 style="margin-top:20px">발급된 접속코드</h2>
+        <div class="row" style="align-items:center">
+          <select id="lpFilter"><option value="">상태: 전체</option><option value="on">사용 중</option><option value="soon">7일 내 만료</option><option value="expired">만료</option><option value="paused">정지</option></select>
+          <input id="lpFind" type="text" placeholder="고객 · 메모 검색" style="width:220px">
+          <span class="hint" id="lpSum" style="margin-left:auto"></span>
+        </div>
+        <div class="tblwrap" id="lpCodes"></div>
+        <div class="hint" style="margin-top:6px">정지 · 기한 경과 · 재발급 · 삭제는 <b>즉시</b> 반영 — 고객이 화면을 열어 둔 상태여도 다음 요청부터 막힙니다. 「주문(견적)」 = 포털에서 들어온 견적 건수 · 금액(IVA 포함), 견적 메모는 「🔑 Portal oportunidades」로 시작합니다.</div>
+        <div class="tblwrap" id="lpLog"></div>
+
+        <h2 style="margin-top:20px">연락처 공개 기록 <span class="hint">· 누가 어떤 문의의 연락처를 봤는지(최근 100건)</span></h2>
+        <div class="tblwrap" id="lpReveals"></div>
+      </div>
+
+      <div id="lpShelfBox">
+        <h2 style="margin-top:20px">🏪 고객 매장 재고 <span class="hint">· 담당 영업사원 · 디렉터가 수정 · 고객도 포털 「Mi stock」에서 수정 — 같은 값</span></h2>
+        <div class="row"><div style="position:relative"><label>고객</label><input id="lpShelfQ" type="text" style="width:300px" placeholder="이름 · 고객번호 (담당 고객만)" autocomplete="off"><div class="lp-dd" id="lpShelfList"></div></div></div>
+        <div class="msg" id="lpShelfMsg"></div>
+        <div class="tblwrap" id="lpShelf"></div>
+        <div class="tblwrap" id="lpShelfLog"></div>
+      </div>
+    </section>
+    <!-- /0297 -->
 
     <!-- 요약 -->
     <section class="pane card" id="p-sum">
@@ -239,7 +294,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1023wa';
+  const MTL_BUILD='mtl-1026lp';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -397,7 +452,7 @@
         +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
         +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
         +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
-        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+'</td></tr>').join('')
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳">👁 '+esc(x.revealed_to)+'</span>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
   ['fCh','fAd','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
@@ -815,6 +870,7 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
+<script src="refatrix-leadportal-admin.js?v=20261026lp"></script>
 <script src="refatrix-nav.js?v=20261021lg"></script>
 </body>
 </html>

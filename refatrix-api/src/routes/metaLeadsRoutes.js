@@ -18,6 +18,7 @@
 //   DELETE /api/meta-leads/ads/:adId               등록만 지움(웹훅 기록은 남아 「미등록」으로 보임)
 //   POST   /api/meta-leads/ads/subscribe           Messenger 페이지를 앱 웹훅에 연결(광고 출처 받기)
 //   GET    /api/meta-leads/list?ad=<광고 ID>|__none    광고별 목록 · PATCH /:id {ad_id}  사람이 고른 광고(빈 값 = 자동)
+//   ── 0297 · 고객 포털(2026-10-26) — src/leadPortal.js · list 에 revealed_to(연락처를 본 고객) ──
 // =====================================================================
 import { query } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
@@ -29,6 +30,8 @@ import { META_STATES } from '../metaLeadExtract.js';
 import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
 import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
+// 0297 · 고객 포털(접속코드 · 연락처 공개 · 매장 재고 · 포털 주문) — 같은 플러그인에서 등록(server.js 변경 없음)
+import leadPortalRoutes, { revealedMap } from '../leadPortal.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -60,6 +63,7 @@ const LAST_REPLY = `left((SELECT e->>'text' FROM jsonb_array_elements(t.messages
 const ADS_W = { preHandler: [authGuard, requirePageEditAny(PM_KEYS)] };
 
 export default async function metaLeadsRoutes(app) {
+  await leadPortalRoutes(app);   // 0297 · /api/lead-portal/* (고객) · /api/lead-portal-admin/* (ERP)
   app.get('/api/meta-leads/status', R, async () => {
     let page = null, pageError = null, pageWarning = null;
     if (metaLeadsConfigured()) { const p = await resolvePage(); if (p.error) pageError = p.error; else { page = p.page; pageWarning = p.warning || null; } }
@@ -131,7 +135,8 @@ export default async function metaLeadsRoutes(app) {
     const codes = [...new Set(rows.flatMap((r) => (Array.isArray(r.items) ? r.items : []).map((i) => i && i.code).filter(Boolean)))];
     const stock = {};
     if (codes.length) for (const p of (await query(`SELECT code, stock_qty FROM products WHERE code = ANY($1) AND deleted_at IS NULL`, [codes])).rows) stock[p.code] = Number(p.stock_qty) || 0;
-    return { items: rows.map((r) => ({ ...r, id: Number(r.id) })), stock };
+    const rv = await revealedMap(rows.map((r) => Number(r.id)));   // 0297 · 연락처를 본 refaccionaria
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), revealed_to: rv.get(Number(r.id)) || null })), stock };
   });
 
   app.get('/api/meta-leads/:id', R, async (req, reply) => {

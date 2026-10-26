@@ -1,0 +1,6 @@
+# REFATRIX Platform (Netlify) — 0297 · Meta 문의 고객 포털 (2026-10-26)
+# 고객 화면 leads.html 은 같은 사이트의 /lp-api/* 만 부른다. Netlify 가 서버 쪽에서 ERP 로 넘기므로(200 = proxy)
+# 브라우저 · 개발자도구에는 ERP · Railway 주소가 나타나지 않는다.
+# ⚠ 이미 _redirects 파일이 있으면 이 줄들을 **맨 위에** 붙여 넣는다(Netlify 는 위에서부터 첫 일치 규칙을 쓴다).
+/lp-api/*   https://refatrix-production.up.railway.app/api/lead-portal/:splat   200!
+/leads      /leads.html   200
