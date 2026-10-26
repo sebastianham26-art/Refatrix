@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20261007pk</title>
+<title>Refatrix ERP · 연동 관리 · build 20261026os</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -446,7 +446,7 @@
 
           <!-- 0227 · 오더상태 (전송) — 오더 창구에서만 보인다 -->
           <div id="boxOrder" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
-            <div style="font-weight:600;margin-bottom:8px">오더상태 전송 <span class="hint">(계약서 Contrato_API_Estatus_Pedido v1.0)</span></div>
+            <div style="font-weight:600;margin-bottom:8px">오더상태 전송 <span class="hint">(계약서 Contrato_API_Estatus_Pedido v1.1)</span></div>
             <div class="tblwrap"><table>
               <thead><tr><th style="width:44px">#</th><th style="width:190px">CRM 단계</th><th>ERP 에서 언제 보내나 (수주 SLA 단계)</th><th style="width:110px" class="num">이 단계까지</th></tr></thead>
               <tbody id="orderStepRows"></tbody>
@@ -454,8 +454,8 @@
             <div class="hint" style="margin-top:6px">
               <b>웹카달록에서 들어온 견적(COT-…)만</b> 보냅니다 — ERP 화면에서 만든 견적은 CRM 이 모르는 오더라 보내지 않습니다.
               단계는 <b>앞으로만</b> 갑니다. 포장지시서 없이 바로 전환하는 등 <b>건너뛴 단계는 지어내지 않고</b> 실제로 거친 단계만 순서대로 보냅니다.
-              취소·만료는 이 4단계에 없으므로 보내지 않습니다.<br>
-              단계가 바뀌는 순간(출력·포장완료·전환·SAT 입력·접수) 바로 보내고, 놓친 것은 <b>90초마다</b> 감시가 줍습니다.
+              <b>끝 상태</b>: 24시간 룰로 만료되면 <b>8 Expirado</b>, 디렉터가 삭제를 승인하면 <b>9 Eliminado</b> 를 보냅니다 — 그 뒤로는 그 오더에 아무것도 보내지 않습니다. 취소는 보내지 않습니다.<br>
+              단계가 바뀌는 순간(출력·포장완료·전환·SAT 입력·접수·만료·삭제 승인) 바로 보내고, 놓친 것은 <b>90초마다</b> 감시가 줍습니다.
               <b>꺼져 있는 동안에는 아무것도 쌓지 않습니다</b> — 켜면 지금 단계까지 한 번에 따라잡습니다.
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:end">
@@ -785,11 +785,14 @@
   // 0227 · 오더상태 전송 — 어떤 일이 전송을 일으켰나
   Object.assign(ORIGIN_LABEL,{order_crm_quote_created:'오더상태 · 웹 견적 접수',order_packing_printed:'오더상태 · 포장지시서 출력',
     order_packed:'오더상태 · 포장완료',order_converted:'오더상태 · 전환',order_sat_entered:'오더상태 · SAT 입력',
-    order_sweep:'오더상태 · 감시(놓친 단계)',order_hook:'오더상태'});
+    order_sweep:'오더상태 · 감시(놓친 단계)',order_hook:'오더상태',
+    order_expired:'오더상태 · 24시간 만료',order_delete_approved:'오더상태 · 삭제 승인'});   // 0296
   const ORDER_STEP_RULE={1:'웹 견적이 ERP 에 접수돼 견적이 만들어졌을 때 (견적작성)',
     2:'포장작업지시서를 처음 출력했을 때 (포장작업 중)',
     3:'포장이 끝났거나, 전환돼 SAT 입력을 기다릴 때 (포장완료 · SAT 입력대기)',
-    4:'실제 SAT 번호가 등록돼 수금 단계로 넘어갔을 때 (수금대기 · 수금완료)'};
+    4:'실제 SAT 번호가 등록돼 수금 단계로 넘어갔을 때 (수금대기 · 수금완료)',
+    8:'끝 상태 · 24시간 룰로 견적이 만료됐을 때 (포장지시서 출력 전)',
+    9:'끝 상태 · 디렉터가 견적 삭제를 승인했을 때'};   // 0296
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}

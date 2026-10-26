@@ -6,6 +6,13 @@
 //     3 preparando_despacho  ← packed · await_sat     (포장 완료 → SAT 발행 대기)
 //     4 oc_enviada           ← await_collect · collected (실제 SAT 번호 등록 → 수금 단계)
 //
+//   + 끝 상태 2개(0296, 디렉터 지시 2026-10-26) — 4단계 진행과 별개로, 오더가 **끝났다**는 알림
+//     8 expirado    ← 24시간 룰로 만료(finalizeExpiredQuotes)
+//     9 eliminado   ← 디렉터가 삭제 승인(POST /api/quotes/:id/delete-approve)
+//     번호를 8·9 로 둔 이유: CRM 은 「더 낮은 secuencia 는 무시」 규칙을 이미 갖고 있다.
+//     끝 상태가 언제나 가장 큰 번호여야 늦게 도착한 진행 단계(재시도)가 끝 상태를 덮지 못한다.
+//     만료된 견적도 삭제될 수 있으므로 eliminado(9) > expirado(8).
+//
 //   설계 원칙
 //   ① 판정 규칙을 새로 만들지 않는다. 수주 SLA 와 **같은 함수**를 쓴다 — 두 벌이면 언젠가
 //      「SLA 는 수금인데 CRM 은 포장중」 이 된다.
@@ -35,7 +42,13 @@ export const CRM_ORDER_STEPS = [
   { seq: 3, code: 'preparando_despacho', text: 'Preparando despacho', ko: '출고 준비(SAT 대기)' },
   { seq: 4, code: 'oc_enviada', text: 'OC Enviada', ko: 'SAT 발행 · 수금 단계' },
 ];
-const BY_SEQ = new Map(CRM_ORDER_STEPS.map((s) => [s.seq, s]));
+// 0296 · 끝 상태 — 진행 4단계가 아니다. 이것이 나가면 그 오더에는 더 이상 아무것도 나가지 않는다.
+export const CRM_FINAL_STEPS = [
+  { seq: 8, code: 'expirado', text: 'Expirado', ko: '만료(24시간 룰)', kind: 'expired' },
+  { seq: 9, code: 'eliminado', text: 'Eliminado', ko: '삭제(디렉터 승인)', kind: 'deleted' },
+];
+const FINAL_BY_KIND = new Map(CRM_FINAL_STEPS.map((s) => [s.kind, s]));
+const BY_SEQ = new Map([...CRM_ORDER_STEPS, ...CRM_FINAL_STEPS].map((s) => [s.seq, s]));
 
 /** SLA 단계 → CRM 단계 번호. 보낼 단계가 아니면 0(취소·만료·백오더·가용재고). */
 export function crmSeqForStage(stageKey) {
@@ -103,6 +116,7 @@ export function buildOrderPayload(o, seq, at, transactionUser) {
 //   반쪽 배포에서도 쿼리가 죽지 않게 한다.
 const ORDER_SQL = `
   SELECT q.id, q.quote_no, q.external_quote_no, q.origin, q.status, q.created_at,
+         q.deleted_at, q.reserve_expires_at, q.updated_at,
          q.packing_printed_at, q.packing_due_at, q.packed_at, q.invoice_id,
          (to_jsonb(q)->>'customer_po_no') AS customer_po_no,
          c.rfc, c.code AS customer_code, c.name AS customer_name,
@@ -177,42 +191,107 @@ export async function syncOrderStatus(quoteId, { origin = 'hook', actorUserId = 
 
     const user = await actorName(actorUserId, ep.user_field);
     const steps = reachedSteps(o, seq);
-    const label = `${o.external_quote_no}`;
 
-    const queued = await withTx(async (c) => {
-      const q = c.query.bind(c);
-      // 이미 보낸 가장 높은 단계. 그보다 낮거나 같은 단계는 다시 보내지 않는다(앞으로만).
-      const top = Number((await q(
-        `SELECT COALESCE(MAX(seq),0) AS m FROM crm_order_status_events WHERE quote_id=$1`, [id])).rows[0].m) || 0;
-      const ids = [];
-      for (const s of steps) {
-        if (s.seq <= top) continue;
-        // 기본키가 경합을 정리한다 — 두 요청이 동시에 와도 한 번만 들어간다.
-        const won = (await q(
-          `INSERT INTO crm_order_status_events (quote_id, seq, status, event_at, origin)
-           VALUES ($1,$2,$3,$4,$5) ON CONFLICT (quote_id, seq) DO NOTHING RETURNING quote_id`,
-          [id, s.seq, BY_SEQ.get(s.seq).code, s.at || null, origin])).rows[0];
-        if (!won) continue;
-        const payload = buildOrderPayload(o, s.seq, s.at, user);
-        const ins = (await q(
-          `INSERT INTO crm_customer_outbox
-             (customer_id, entity, entity_id, entity_label, endpoint_key, op, origin, rfc, payload, status, acted_by)
-           VALUES (NULL,'order',$1,$2,$3,'upsert',$4,$5,$6,'pending',$7) RETURNING id`,
-          [id, `${label} · ${BY_SEQ.get(s.seq).text} · ${o.customer_name || ''}`.trim(),
-           ORDER_STATUS_KEY, `order_${origin}`, payload.rfc || null, JSON.stringify(payload),
-           actorUserId || null])).rows[0];
-        await q(`UPDATE crm_order_status_events SET outbox_id=$1 WHERE quote_id=$2 AND seq=$3`,
-          [ins.id, id, s.seq]);
-        ids.push(Number(ins.id));
-      }
-      return ids;
-    });
+    const queued = await enqueueSteps(o, steps, { origin, user, actorUserId });
     if (queued.length) scheduleDrain(app);
     return { ok: true, seq, stage: stage.stage_key, queued };
   } catch (e) {
     try { console.error('[orderStatus] 실패', e && e.message); } catch (_) {}
     return { ok: false, reason: 'error', queued: [] };
   }
+}
+
+/**
+ * 단계들을 장부(crm_order_status_events) + 아웃박스에 적는다 — 진행 단계와 끝 상태가 같은 길을 탄다.
+ *   · 이미 보낸 가장 높은 단계 이하는 다시 보내지 않는다(앞으로만).
+ *   · (견적, 단계) 기본키가 경합을 정리한다 — 훅과 감시가 동시에 와도 한 번만.
+ */
+async function enqueueSteps(o, steps, { origin, user, actorUserId }) {
+  const id = Number(o.id);
+  const label = `${o.external_quote_no}`;
+  return withTx(async (c) => {
+    const q = c.query.bind(c);
+    const top = Number((await q(
+      `SELECT COALESCE(MAX(seq),0) AS m FROM crm_order_status_events WHERE quote_id=$1`, [id])).rows[0].m) || 0;
+    const ids = [];
+    for (const s of steps) {
+      if (s.seq <= top) continue;
+      const won = (await q(
+        `INSERT INTO crm_order_status_events (quote_id, seq, status, event_at, origin)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (quote_id, seq) DO NOTHING RETURNING quote_id`,
+        [id, s.seq, BY_SEQ.get(s.seq).code, s.at || null, origin])).rows[0];
+      if (!won) continue;
+      const payload = buildOrderPayload(o, s.seq, s.at, user);
+      const ins = (await q(
+        `INSERT INTO crm_customer_outbox
+           (customer_id, entity, entity_id, entity_label, endpoint_key, op, origin, rfc, payload, status, acted_by)
+         VALUES (NULL,'order',$1,$2,$3,'upsert',$4,$5,$6,'pending',$7) RETURNING id`,
+        [id, `${label} · ${BY_SEQ.get(s.seq).text} · ${o.customer_name || ''}`.trim(),
+         ORDER_STATUS_KEY, `order_${origin}`, payload.rfc || null, JSON.stringify(payload),
+         actorUserId || null])).rows[0];
+      await q(`UPDATE crm_order_status_events SET outbox_id=$1 WHERE quote_id=$2 AND seq=$3`,
+        [ins.id, id, s.seq]);
+      ids.push(Number(ins.id));
+    }
+    return ids;
+  });
+}
+
+/**
+ * 0296 · 이 견적이 지금 「끝났다」면 그 끝 상태(8 expirado · 9 eliminado), 아니면 null.
+ *   eliminado: 디렉터 삭제 승인 = deleted_at 이 찍혔고 상태가 delete_pending 인 채로 남은 견적.
+ *              (견적의 deleted_at 을 찍는 길은 삭제 승인 하나뿐이다 — 승인 외의 삭제를 eliminado 로 보내지 않는다)
+ *   expirado:  24시간 룰로 status='expired' 가 된, 삭제되지 않은 견적.
+ *   시각은 ERP 에서 실제로 일어난 때 — 삭제는 승인 시각, 만료는 예약 마감 시각.
+ */
+export function finalStepOf(o) {
+  if (!o) return null;
+  if (o.deleted_at && o.status === 'delete_pending') {
+    return { ...FINAL_BY_KIND.get('deleted'), at: o.deleted_at };
+  }
+  if (!o.deleted_at && o.status === 'expired') {
+    return { ...FINAL_BY_KIND.get('expired'), at: o.reserve_expires_at || o.updated_at || null };
+  }
+  return null;
+}
+
+/**
+ * 0296 · 끝 상태 전송 — 만료(24시간 룰)·삭제 승인 때 부른다. 절대 throw 하지 않는다.
+ *   진행 단계를 지어내 채우지 않는다: CRM 은 COT 를 처음부터 알고 있으므로 끝 상태 하나면 충분하다.
+ *   @returns {{ok, queued:number[], seq?, reason?}}
+ */
+export async function syncOrderFinal(quoteId, { origin = 'hook', actorUserId = null, app = null, _ep = null } = {}) {
+  try {
+    const id = Number(quoteId);
+    if (!id) return { ok: false, reason: 'bad_id', queued: [] };
+    if (!(await orderStatusReady())) return { ok: false, reason: 'migration_required', queued: [] };
+    const st = _ep ? { ok: true, ep: _ep } : await endpointState();
+    if (!st.ok) return { ok: false, reason: st.reason, queued: [] };
+    // 삭제된 견적도 읽어야 하므로 deleted_at 조건을 걸지 않는다.
+    const o = (await query(`${ORDER_SQL} WHERE q.id=$1`, [id])).rows[0];
+    if (!o) return { ok: false, reason: 'quote_not_found', queued: [] };
+    if (!String(o.external_quote_no || '').trim()) return { ok: false, reason: 'not_crm_quote', queued: [] };
+    const fin = finalStepOf(o);
+    if (!fin) return { ok: true, reason: 'not_final', queued: [] };
+    const user = await actorName(actorUserId, st.ep.user_field);
+    const queued = await enqueueSteps(o, [{ seq: fin.seq, at: fin.at }], { origin, user, actorUserId });
+    if (queued.length) scheduleDrain(app);
+    return { ok: true, seq: fin.seq, status: fin.code, queued };
+  } catch (e) {
+    try { console.error('[orderStatus] 끝 상태 실패', e && e.message); } catch (_) {}
+    return { ok: false, reason: 'error', queued: [] };
+  }
+}
+
+/** 0296 · 만료·삭제 승인 직후 부르는 훅. 기다리지 않는다(커밋 뒤에 읽도록 잠깐 미룬다). */
+export function kickOrderFinal(quoteId, { origin = 'hook', actorUserId = null, app = null, delayMs = 1500 } = {}) {
+  try {
+    if (!quoteId) return;
+    const t = setTimeout(() => {
+      syncOrderFinal(quoteId, { origin, actorUserId, app }).catch(() => {});
+    }, delayMs);
+    if (t && t.unref) t.unref();
+  } catch (_) { /* 훅은 절대 본 작업을 방해하지 않는다 */ }
 }
 
 /**
@@ -273,7 +352,24 @@ export async function sweepOrderStatus({ app = null, limit = 300 } = {}) {
       const out = await syncOrderStatus(r.id, { origin: 'sweep', app, _ep: st.ep });
       queued += out.queued ? out.queued.length : 0;
     }
-    return { scanned: rows.length, queued };
+    // 0296 · 끝 상태 안전망 — 만료됐는데 expirado 를, 삭제 승인됐는데 eliminado 를 아직 안 보낸 웹 견적.
+    //   (훅이 서버 재시작 등으로 못 나갔을 때, 그리고 연동을 켜는 순간 최근 120일치를 따라잡을 때)
+    const fins = (await query(
+      `SELECT q.id
+         FROM quotes q
+         LEFT JOIN (SELECT quote_id, MAX(seq) AS top FROM crm_order_status_events GROUP BY quote_id) e
+                ON e.quote_id = q.id
+        WHERE q.external_quote_no IS NOT NULL
+          AND q.created_at >= now() - INTERVAL '120 days'
+          AND ( (q.deleted_at IS NOT NULL AND q.status = 'delete_pending' AND COALESCE(e.top,0) < 9)
+             OR (q.deleted_at IS NULL     AND q.status = 'expired'        AND COALESCE(e.top,0) < 8) )
+        ORDER BY q.id
+        LIMIT $1`, [limit])).rows;
+    for (const r of fins) {
+      const out = await syncOrderFinal(r.id, { origin: 'sweep', app, _ep: st.ep });
+      queued += out.queued ? out.queued.length : 0;
+    }
+    return { scanned: rows.length + fins.length, queued };
   } catch (e) {
     try { console.error('[orderStatus] 감시 실패', e && e.message); } catch (_) {}
     return { skipped: 'error' };
@@ -295,12 +391,14 @@ export async function previewOrderStatus(quoteId) {
   const o = (await query(`${ORDER_SQL} WHERE q.id=$1`, [Number(quoteId)])).rows[0];
   if (!o) return null;
   const stage = stageOf(o);
-  const seq = crmSeqForStage(stage.stage_key);
+  const fin = finalStepOf(o);                 // 0296 · 끝났으면 진행 단계 대신 끝 상태
+  const seq = fin ? fin.seq : crmSeqForStage(stage.stage_key);
   const sent = (await orderStatusReady())
     ? (await query(`SELECT seq, status, event_at, outbox_id, created_at FROM crm_order_status_events
                      WHERE quote_id=$1 ORDER BY seq`, [o.id])).rows : [];
   return { quote_id: Number(o.id), quote_no: o.quote_no, external_quote_no: o.external_quote_no,
-    stage: stage.stage_key, crm_seq: seq, crm_status: seq ? BY_SEQ.get(seq).code : null, sent };
+    stage: fin ? (fin.kind === 'deleted' ? 'deleted' : 'expired') : stage.stage_key,
+    deleted: !!o.deleted_at, crm_seq: seq, crm_status: seq ? BY_SEQ.get(seq).code : null, sent };
 }
 
 /** 연결 테스트용 본문 — 가장 최근 웹 견적의 **지금** 단계. 없으면 null(계약서 예시로 대체). */
@@ -308,8 +406,9 @@ export async function testPayload(userName) {
   const o = (await query(
     `${ORDER_SQL} WHERE q.deleted_at IS NULL AND q.external_quote_no IS NOT NULL ORDER BY q.id DESC LIMIT 1`)).rows[0];
   if (!o) return null;
-  const seq = crmSeqForStage(stageOf(o).stage_key) || 1;
-  const at = reachedSteps(o, seq).find((s) => s.seq === seq);
+  const fin = finalStepOf(o);                 // 0296 · 만료된 견적이면 expirado 를 시험한다
+  const seq = fin ? fin.seq : (crmSeqForStage(stageOf(o).stage_key) || 1);
+  const at = fin ? { at: fin.at } : reachedSteps(o, seq).find((s) => s.seq === seq);
   return { payload: buildOrderPayload(o, seq, at ? at.at : null, userName),
     quote: { id: Number(o.id), quote_no: o.quote_no, external_quote_no: o.external_quote_no } };
 }

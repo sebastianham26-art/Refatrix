@@ -9,7 +9,7 @@ import {
 } from '../integrations.js';
 import { sendPayload, isSuccess, crmStatus, buildPayload } from '../crmSync.js';
 import { fetchProducts, buildProduct, buildLote, mxNowParts } from '../productSync.js';
-import { testPayload as orderTestPayload, sweepOrderStatus, orderStatusReady, CRM_ORDER_STEPS,
+import { testPayload as orderTestPayload, sweepOrderStatus, orderStatusReady, CRM_ORDER_STEPS, CRM_FINAL_STEPS,
   previewOrderStatus, endpointState as orderEndpointState } from '../orderStatusSync.js';   // 0227
 import { inboundCounts } from '../crmInboundLog.js';
 import { promoReady, buildPromoPayload, PROMO_COLS, PROMO_CATEGORY, promoCode } from '../promoSync.js';   // 0237
@@ -281,8 +281,9 @@ export default async function integrationRoutes(app) {
          FROM quotes q
          LEFT JOIN (SELECT quote_id, MAX(seq) AS top FROM crm_order_status_events GROUP BY quote_id) e
                 ON e.quote_id = q.id
-        WHERE q.deleted_at IS NULL AND q.external_quote_no IS NOT NULL
+        WHERE q.external_quote_no IS NOT NULL
           AND q.created_at >= now() - INTERVAL '120 days'
+          AND (q.deleted_at IS NULL OR COALESCE(e.top,0) = 9)   -- 0296 · 삭제된 견적은 eliminado 를 보낸 것만 센다
         GROUP BY COALESCE(e.top,0)`)).rows;
     const recent = (await query(
       `SELECT e.quote_id, e.seq, e.status, e.event_at, e.origin, e.created_at, e.outbox_id,
@@ -294,11 +295,11 @@ export default async function integrationRoutes(app) {
          LEFT JOIN crm_customer_outbox o ON o.id = e.outbox_id
         ORDER BY e.created_at DESC, e.seq DESC
         LIMIT 30`)).rows;
-    const counts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+    const counts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 8: 0, 9: 0 };
     for (const r of byTop) counts[Number(r.top)] = Number(r.n);
     return {
       ready: st.ok, reason: st.ok ? null : st.reason,
-      steps: CRM_ORDER_STEPS,
+      steps: [...CRM_ORDER_STEPS, ...CRM_FINAL_STEPS],   // 0296 · 8 expirado · 9 eliminado(끝 상태)
       counts,
       recent: recent.map((r) => ({
         quote_id: Number(r.quote_id), seq: Number(r.seq), status: r.status,
@@ -328,8 +329,8 @@ export default async function integrationRoutes(app) {
     const qno = String(req.query.q || '').trim();
     if (!qno) return reply.code(400).send({ error: 'q_required' });
     const row = (await query(
-      `SELECT id FROM quotes WHERE deleted_at IS NULL AND (quote_no=$1 OR external_quote_no=$1)
-        ORDER BY id DESC LIMIT 1`, [qno])).rows[0];
+      `SELECT id FROM quotes WHERE (quote_no=$1 OR external_quote_no=$1)
+        ORDER BY (deleted_at IS NULL) DESC, id DESC LIMIT 1`, [qno])).rows[0];   // 0296 · 삭제 승인된 견적도 확인(eliminado)
     if (!row) return reply.code(404).send({ error: 'not_found', note: `견적 ${qno} 을(를) 찾지 못했습니다.` });
     return { ok: true, ...(await previewOrderStatus(row.id)) };
   });

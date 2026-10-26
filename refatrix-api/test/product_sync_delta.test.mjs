@@ -295,7 +295,7 @@ test('화면 — 버튼 · 설정 칸 · 빌드 토큰', () => {
   for (const id of ['btnPickSend', 'fPickQ', 'fPickPaste', 'btnPickPaste', 'pickRows', 'btnCatalogDelta', 'btnCatalogDeltaPreview', 'btnCatalogBaseline', 'fDeltaAuto', 'fDeltaEvery', 'fFullWeekday'])
     assert.match(html, new RegExp(`id="${id}"`), id);
   assert.match(html, /\/api\/product-sync\/delta-preview/);
-  assert.match(html, /build 20261006(ex|xl)|build 20261007pk/);
+  assert.match(html, /build 20261006(ex|xl)|build 20261007pk|build 20261026os/);
 });
 
 test.after(async () => { if (pool) await pool.end(); try { (await import('../src/db.js')).pool?.end?.(); } catch (_) {} });

@@ -20,7 +20,7 @@ import { reserveExpiresAt } from '../quoteExpiry.js';
 import { recordQuoteDevDemand, quoteDevLines, esDevNote } from '../quoteDevDemand.js';   // 2026-09-21 · 미등록 코드는 저장 즉시 개발요청 대장에   // 2026-09-21 · 근무시간 밖 접수 → 다음 근무일 07:30 기산
 import { maybeMarkPacked } from '../packedGate.js';
 import { syncQuoteShortages, syncQuoteShortagesMany, markQuoteShortages } from '../quoteShortage.js';   // 2026-10-15 · 부족분은 견적 저장 즉시 기록
-import { kickOrderStatus } from '../orderStatusSync.js';   // 0227 · 단계 전진 → CRM 오더상태
+import { kickOrderStatus, kickOrderFinal } from '../orderStatusSync.js';   // 0227 · 단계 전진 → CRM 오더상태 · 0296 끝 상태(expirado·eliminado)
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { internalHeaders } from '../internalCall.js';
@@ -270,6 +270,7 @@ export default async function quoteRoutes(app) {
         ORDER BY id LIMIT 200`)).rows;
     for (const row of due) {
       const id = row.id;
+      let flipped = false;   // 0296 · 이 틱이 만료를 선점했을 때만 CRM 에 expirado
       try {
         await withTx(async (c) => {
           // 2026-10-15 · 부족분은 저장 시점부터 이미 적혀 있다. 만료 직전 상태로 한 번 더 맞추고(배포 전 견적 포함),
@@ -285,8 +286,12 @@ export default async function quoteRoutes(app) {
           //   (status 를 방금 expired 로 바꿨으므로 취소 판정에 걸리지 않는다)
           await recordQuoteDevDemand(c, id, { userId: won.created_by || null });
           await logEvent({ userId: won.created_by || null, action: 'update', target: `quote:${id}`, detail: { expired: true } });
+          flipped = true;
         });
-      } catch (_) { /* best-effort; 다음 틱에서 재시도 */ }
+      } catch (_) { flipped = false; /* best-effort; 다음 틱에서 재시도 */ }
+      // 0296 · 24시간 룰 만료 → CRM 「Expirado」(커밋 뒤). 웹(COT) 견적이 아니면 안에서 걸러진다.
+      //   훅이 못 나가도 오더상태 감시(90초)가 줍는다.
+      if (flipped) kickOrderFinal(id, { origin: 'expired', app });
     }
   }
   // 서버 기동 시 1회 + 60초 주기 스위퍼(외부 크론 불필요). 테스트(미기동)에선 등록 안 됨.
@@ -934,6 +939,8 @@ export default async function quoteRoutes(app) {
       await markQuoteShortages(c, id, ' · 견적 삭제됨(기록 보존)');
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'delete_approve', target: `quote:${id}` });
+    // 0296 · 디렉터 삭제 승인 → CRM 「Eliminado」(웹 COT 견적만 · 승인한 디렉터가 transactionUser)
+    kickOrderFinal(id, { origin: 'delete_approved', actorUserId: req.ctx.perm.userId, app });
     return { ok: true };
   });
 
