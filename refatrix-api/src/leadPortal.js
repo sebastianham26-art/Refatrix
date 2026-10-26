@@ -32,7 +32,7 @@ import { logEvent } from './audit.js';
 import { authGuard, requirePageAny, requirePageEditAny } from './middleware/authGuard.js';
 import { visibleTeamIds } from './teams.js';
 import { computeQuoteLine, computeQuoteTotals } from './quotes.js';
-import { buildLines, nextQuoteNo, assignReservations, stampLineMeta } from './quoteBuild.js';
+import { buildLines, assignReservations, stampLineMeta } from './quoteBuild.js';
 import { reserveExpiresAt } from './quoteExpiry.js';
 import { syncQuoteShortages } from './quoteShortage.js';
 import { recordQuoteDevDemand } from './quoteDevDemand.js';
@@ -41,7 +41,7 @@ import { resolveSeller, exclusivityReady } from './exclusivity.js';
 import { META_STATES } from './metaLeadExtract.js';
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1026a';
+export const LP_BUILD = 'lp-1026b';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -116,6 +116,19 @@ export function inviteText({ customerName, code, expiresOn, url }) {
   ].join('\n');
 }
 export const portalUrl = () => process.env.LEAD_PORTAL_URL || 'https://refatrix-platform.netlify.app/leads';
+
+// ── 2026-10-26 디렉터 지시: ERP 화면 · CRM 이 아닌 곳(= Meta 광고 문의 포털)에서 온 견적은 「FB」로 시작 ──
+//   FB-YYYY-#### (연도별 일련번호, ERP Q-YYYY-#### 와 같은 모양 · 따로 센다)
+//   같은 순간 두 주문이 같은 번호를 잡지 않도록 트랜잭션 잠금(pg_advisory_xact_lock) 안에서 최대값 + 1.
+export const FB_PREFIX = 'FB';
+export function formatFbQuoteNo(year, seq) { return `${FB_PREFIX}-${year}-${String(seq).padStart(4, '0')}`; }
+export async function nextFbQuoteNo(c, year) {
+  await c.query(`SELECT pg_advisory_xact_lock(hashtext('lead_portal_fb_quote_no'))`);
+  const r = (await c.query(
+    `SELECT COALESCE(MAX((regexp_match(quote_no, '^FB-[0-9]{4}-([0-9]+)$'))[1]::int), 0) AS n
+       FROM quotes WHERE quote_no LIKE $1`, [`${FB_PREFIX}-${year}-%`])).rows[0];
+  return formatFbQuoteNo(year, (Number(r.n) || 0) + 1);
+}
 
 // ── 마스킹 ─────────────────────────────────────────────────────────
 export function maskName(n) {
@@ -446,7 +459,7 @@ export default async function leadPortalRoutes(app) {
     try {
       res = await withTx(async (c) => {
         const year = todayMx().slice(0, 4);
-        const quoteNo = await nextQuoteNo(c, year);
+        const quoteNo = await nextFbQuoteNo(c, year);   // FB-YYYY-####
         const lines = await buildLines(discount, 16, [...merged.entries()].map(([code, qty]) => ({ product_id: Number(byCode.get(code).id), code, qty })));
         const totals = computeQuoteTotals(lines.filter((l) => l.product_id)
           .map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));

@@ -31,6 +31,7 @@ test('A1. 코드 · 정규화 · 해시', () => {
   assert.equal(L.normCode('7K2M Q9PD'), '7K2MQ9PD', 'RFX 생략 · 공백 허용');
   assert.equal(L.normCode('RFX-7K2M'), null);
   assert.equal(L.normCode(null), null);
+  assert.equal(L.formatFbQuoteNo('2026', 7), 'FB-2026-0007');
   assert.equal(L.codeHash('7K2MQ9PD'), L.codeHash(L.normCode('rfx 7k2m q9pd')));
   assert.notEqual(L.codeHash('7K2MQ9PD'), L.codeHash('7K2MQ9PE'));
 });
@@ -179,7 +180,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const KEY = 'ord' + T + 'abcdef';
   const ord = { key: KEY, note: 'Entregar mañana', items: [{ code: P1.code, qty: 2, thread_id: T1.id }, { code: P2.code, qty: 2, thread_id: T2.id }, { code: P1.code, qty: 1, thread_id: T1.id }, { code: P1.code, qty: 1, thread_ids: [T3.id, T1.id] }] };
   r = await call(C, 'POST', '/api/lead-portal/order', ord); assert.equal(r.statusCode, 200, r.body);
-  J = r.json(); assert.match(J.quote_no, /^Q-/); assert.equal(J.asesor, 'Oscar');
+  J = r.json(); assert.match(J.quote_no, /^FB-\d{4}-\d{4}$/, '포털 견적번호는 FB'); assert.equal(J.asesor, 'Oscar');
   const q = await one(`SELECT * FROM quotes WHERE quote_no=$1`, [J.quote_no]);
   assert.equal(q.origin, 'lead_portal'); assert.equal(q.status, 'draft'); assert.equal(Number(q.customer_id), Number(cust.id));
   assert.equal(Number(q.discount_rate), 45); assert.equal(Number(q.assigned_to), Number(rep.id)); assert.equal(Number(q.lead_portal_code_id), codeId);
@@ -192,6 +193,10 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   assert.deepEqual(st.map((x) => x.status), ['derivado', 'derivado', 'descartado']);
   r = await call(C, 'POST', '/api/lead-portal/order', ord); assert.equal(r.json().duplicate, true); assert.equal(r.json().quote_no, J.quote_no, '같은 키 = 같은 견적');
   assert.equal((await one(`SELECT count(*)::int n FROM quotes WHERE lead_portal_key=$1`, [KEY])).n, 1);
+  // FB 번호는 연도별 일련번호 — 다음 주문은 +1, 화면 견적(Q-)과 따로 센다
+  const yr = J.quote_no.slice(3, 7);
+  const { withTx } = await import('../src/db.js');
+  assert.equal(await withTx((c) => L.nextFbQuoteNo(c, yr)), L.formatFbQuoteNo(yr, Number(J.quote_no.slice(-4)) + 1));
   r = await call(C, 'GET', '/api/lead-portal/leads'); assert.equal(r.json().products[P1.code].avail, 3, '내 주문 예약 4 반영');
   r = await call(D, 'GET', '/api/lead-portal-admin/codes'); let it = r.json().items.find((x) => x.id === codeId);
   assert.deepEqual([it.reveals, it.orders, it.orders_total], [1, 1, Number(q.total_mxn)]);
@@ -315,7 +320,7 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
     [/GET \/lp-api\/leads/, () => [200, leads]],
     [/POST \/lp-api\/leads\/1842\/contact/, () => [200, { name: 'Jorge Treviño', phone: '528123456742', wa_link: 'https://wa.me/528123456742', platform: 'whatsapp', first_seen: '2026-10-26 08:14' }]],
     [/PUT \/lp-api\/stock/, (_, b) => [200, { ok: true, code: b.code, shelf: b.qty, shelf_src: 'customer', shelf_at: '2026-10-26' }]],
-    [/POST \/lp-api\/order/, () => [200, { ok: true, quote_no: 'Q-2026-0187', total: 710, asesor: 'Oscar' }]],
+    [/POST \/lp-api\/order/, () => [200, { ok: true, quote_no: 'FB-2026-0187', total: 710, asesor: 'Oscar' }]],
   ];
   const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'https://refatrix-platform.netlify.app/leads', beforeParse(w) {
     w.fetch = fakeFetch(routes, log);
@@ -357,6 +362,6 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
   const o = log.find((x) => x[0] === 'POST' && x[1] === '/lp-api/order')[2];
   assert.deepEqual(o.items.map((i) => [i.code, i.qty, i.thread_ids]).sort(), [['CQ0271L', 1, [1842]], ['CQ0271R', 3, [1842]]]);
   assert.equal(o.note, 'Mañana'); assert.match(o.key, /^[A-Za-z0-9_-]{8,64}$/);
-  assert.ok(d.getElementById('done').textContent.includes('Q-2026-0187') && d.getElementById('done').textContent.includes('Oscar'));
+  assert.ok(d.getElementById('done').textContent.includes('FB-2026-0187') && d.getElementById('done').textContent.includes('Oscar'));
   assert.ok(!/[가-힣]/.test(d.body.textContent), '고객 화면에 한글 없음');
 });
