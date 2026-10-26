@@ -9,7 +9,7 @@ import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { nextReceiptNo } from '../receiptNo.js';   // 영수증 번호 다음번호 제안(순수 함수)
 import { attachBalanceAfter } from '../txnBalance.js';   // 거래목록 「거래 후 잔고」(2026-09-30)
 import { validateTxnFileDataUrl, cleanFileName, txnVisibleTo, canAttachTxnFile, canDeleteTxnFile, TXN_FILE_MAX_PER_TXN } from '../txnFiles.js';   // 거래 영수증 파일(0230)
-import { syncApprovalByTxn, syncApprovalDoc, approvalCloseLock, approvalLinksForTxns, approvalOptions, lockPaymentForLink, approvalFinReady, APPROVAL_MEMO_PREFIX } from '../approvalFinance.js';   // 0258 전자결재 연동
+import { syncApprovalByTxn, syncApprovalDoc, approvalCloseLock, approvalPlanLock, approvalLinksForTxns, approvalOptions, lockPaymentForLink, approvalFinReady, APPROVAL_MEMO_PREFIX } from '../approvalFinance.js';   // 0258 전자결재 연동
 
 // ===== 거래 영수증 파일 테이블(0230) 준비 여부 — 반쪽 배포 안전장치 =====
 //   백엔드를 올리고 `npm run migrate` 를 아직 안 돌렸어도 거래목록이 500 으로 깨지면 안 된다.
@@ -2527,6 +2527,8 @@ export default async function financeRoutes(app) {
     if (t.is_private && req.ctx.perm.role !== 'director') return reply.code(404).send({ error: 'not_found' });
     if (t.status !== 'plan') return reply.code(409).send({ error: 'not_plan' });
     if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
+    const apLock = await approvalPlanLock(query, id);   // 2026-10-26 결재 전 전자결재 예정은 승인 후 실적 처리
+    if (apLock) return reply.code(409).send({ error: 'approval_not_approved', doc_no: apLock.doc_no, note: '결재가 끝난 뒤 실적 처리할 수 있습니다' });
     const accountId = req.body?.account_id || t.account_id;
     if (!accountId) return reply.code(400).send({ error: 'account_required' });
     // 확정 대상 계좌에 운영권한 필요(원래 계좌도 확인).

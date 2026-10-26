@@ -23,7 +23,7 @@ after(async () => {
 });
 
 test('R0 정적 — 빌드 토큰 · 세 경로에 선택기 · 전자결재 선택 후 선택기 갱신 · 인라인 핸들러 없음', () => {
-  assert.match(FIN, /<title>[^<]*fin-1013fr<\/title>/);
+  assert.match(FIN, /<title>[^<]*fin-1026ea<\/title>/);
   assert.match(FIN, /bindFreightPicker\(box\.querySelector\('\.e-cat'\)/);
   assert.match(FIN, /bindFreightPicker\(box\.querySelector\('\.cf-cat'\)/);
   assert.match(FIN, /bindFreightPicker\(tr\.querySelector\('\.pp-cat'\)/);

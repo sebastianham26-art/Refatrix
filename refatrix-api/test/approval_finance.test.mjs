@@ -273,6 +273,46 @@ test('F3 E2E — 승인 → 미래자금계획 · 실적 처리/거래등록/기
     const P6b = await plansOf(d6);
     assert.equal(P6b[0].status, 'plan'); assert.equal(P6b[0].del, false); assert.notEqual(P6b[0].id, P6[0].id);
     assert.equal((await pool.query(`SELECT count(*)::int c FROM transactions WHERE plan_memo=$1 AND deleted_at IS NULL`, ['approval_payment:' + (await ok('sebastian', 'GET', `/api/approvals/${d6}`)).payments[0].id])).rows[0].c, 1);
+
+    // ⑭ 2026-10-26 디렉터가 작성한 문서는 임시저장·결재 중부터 미래자금계획 · 직원 문서는 승인 후 그대로
+    const liveRows = async (docId) => (await pool.query(`SELECT t.id, t.amount::float AS amount, t.memo FROM transactions t
+       WHERE t.plan_memo LIKE 'approval_payment:%' AND t.deleted_at IS NULL AND substring(t.plan_memo from 18)::bigint IN (SELECT id FROM approval_payments WHERE document_id=$1)`, [docId])).rows;
+    const dd = (await ok('sebastian', 'POST', '/api/approvals', { category_id: sobo.id, title: 'HJW 261026', orig_sub: 300000, pay_due: '2026-10-30', custom_steps: [] })).id;
+    let PD = await plansOf(dd);
+    assert.deepEqual([PD[0].status, PD[0].amount, PD[0].d, PD[0].del], ['plan', 348000, '2026-10-30', false], '임시저장부터 예정');
+    assert.equal(PD[0].memo, '[전자결재] HJW 261026', '문서번호 전 메모');
+    let ppd = (await ok('sebastian', 'GET', '/api/transactions/pending-plans?all=1')).items.find((x) => x.approval && x.approval.doc_id === dd);
+    assert.equal(ppd.approval.doc_status, 'draft');
+    // 임시저장 금액·일자 수정 → 예정 1행으로 갱신(고아 없음)
+    await ok('sebastian', 'PUT', `/api/approvals/${dd}`, { category_id: sobo.id, title: 'HJW 261026', orig_sub: 310000, pay_due: '2026-10-31', custom_steps: [] });
+    let rows = await liveRows(dd);
+    assert.equal(rows.length, 1); assert.equal(rows[0].amount, 359600);
+    // 상신 → 기준액 이상이라 대표이사 사전승인 대기(결재 중)인데도 예정 유지 · 메모에 문서번호
+    await ok('sebastian', 'POST', `/api/approvals/${dd}/submit`);
+    PD = await plansOf(dd);
+    const ddDet = await ok('sebastian', 'GET', `/api/approvals/${dd}`);
+    assert.equal(ddDet.doc.status, 'progress'); assert.equal(PD[0].status, 'plan'); assert.equal(PD[0].del, false);
+    assert.equal(PD[0].memo, `[전자결재] ${ddDet.doc.doc_no} HJW 261026`);
+    assert.equal((await liveRows(dd)).length, 1);
+    // 결재 전 예정은 재무가 실적 처리 불가
+    const cpb = await call('christopher', 'POST', `/api/transactions/${PD[0].id}/confirm-pay`, { account_id: acc, pay_date: today, amount: 359600 });
+    assert.equal(cpb.code, 409); assert.equal(cpb.body.error, 'approval_not_approved');
+    // 반려 → 예정 빠짐
+    await ok('jang', 'POST', `/api/approvals/${dd}/act`, { action: 'reject', comment: '금액 재검토' });
+    assert.equal((await liveRows(dd)).length, 0, '반려 → 예정 숨김');
+    // 디렉터 임시저장 삭제 → 예정 숨김
+    const dd2 = (await ok('sebastian', 'POST', '/api/approvals', { category_id: sobo.id, title: '지울 초안', orig_sub: 100, custom_steps: [] })).id;
+    assert.equal((await liveRows(dd2)).length, 1);
+    await ok('sebastian', 'DELETE', `/api/approvals/${dd2}`);
+    assert.equal((await liveRows(dd2)).length, 0);
+    // 직원(오스카) 임시저장·상신은 예정 없음(승인 후 반영 — 기존 규칙)
+    const de = (await ok('oscar', 'POST', '/api/approvals', { category_id: sobo.id, title: '직원 초안', orig_sub: 100 })).id;
+    assert.equal((await liveRows(de)).length, 0);
+    await ok('oscar', 'POST', `/api/approvals/${de}/submit`);
+    assert.equal((await liveRows(de)).length, 0);
+    await ok('maria', 'POST', `/api/approvals/${de}/act`, { action: 'approve' });
+    await ok('sebastian', 'POST', `/api/approvals/${de}/act`, { action: 'approve' });
+    assert.equal((await liveRows(de)).length, 1, '직원 문서는 승인 후 예정');
   } finally {
     await app.close();
   }

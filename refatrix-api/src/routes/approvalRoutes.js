@@ -542,6 +542,7 @@ export default async function approvalRoutes(app) {
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
       const m = await applyMoney(q, id);
+      await syncApprovalDoc(q, id, uid);   // 2026-10-26 디렉터 작성 문서는 임시저장부터 미래자금계획 예정
       return { id, planned_total: m.planned_total, fx: m.fx };
     });
   });
@@ -922,6 +923,7 @@ export default async function approvalRoutes(app) {
       await event(q, nid, ctx.uid, 'resubmit_from', null, `${d.doc_no} 반려 건 재기안 (v${d.version + 1})`);
       await event(q, id, ctx.uid, 'resubmitted', null, '재기안 문서 작성');
       await syncApprovalDoc(q, nid, ctx.uid);   // 0287c 커미션 재기안(임시저장) → 예정 다시
+      await syncApprovalDoc(q, nid, ctx.uid);   // 2026-10-26 디렉터 재기안 → 임시저장 예정
       return { id: nid };
     });
   });

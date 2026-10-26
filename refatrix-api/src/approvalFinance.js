@@ -61,7 +61,8 @@ async function loadDoc(q, docId, lock) {
   return (await q(
     `SELECT d.id, d.doc_no, d.title, d.vendor, d.drafter_id, d.status, d.exec_status, d.post_status, d.currency, d.fx_rate,
             d.pay_method, d.deleted_at, d.category_id, d.planned_total, d.actual_total, to_char(d.pay_due,'YYYY-MM-DD') AS pay_due,
-            (SELECT ac.fin_category_code FROM approval_categories ac WHERE ac.id = d.category_id) AS fin_code
+            (SELECT ac.fin_category_code FROM approval_categories ac WHERE ac.id = d.category_id) AS fin_code,
+            (SELECT u.role FROM users u WHERE u.id = d.drafter_id) AS drafter_role
        FROM approval_documents d WHERE d.id=$1${lock ? ' FOR UPDATE' : ''}`, [docId])).rows[0] || null;
 }
 async function loadPays(q, docId) {
@@ -120,7 +121,9 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
 
   // ③ 예정 행 맞추기
   // 0287c 커미션 지급승인 문서는 **생성(임시저장)·결재 중에도** 미래자금계획에 예정으로 둔다(디렉터 2026-10-19). 반려·삭제되면 빠진다.
-  const early = !doc.deleted_at && ['draft', 'progress'].includes(doc.status) && await isCommissionDoc(q, docId);
+  // 2026-10-26 디렉터가 작성한 문서도 임시저장·결재 중부터 예정으로 둔다(디렉터 「내가 작성하는 건 모두 반영」). 반려·삭제되면 빠진다.
+  const early = !doc.deleted_at && ['draft', 'progress'].includes(doc.status)
+    && (doc.drafter_role === 'director' || await isCommissionDoc(q, docId));
   const live = (doc.status === 'approved' && !doc.deleted_at) || early;
   const code = doc.fin_code || DEFAULT_EXP_CODE;
   const codeOk = (await q(`SELECT 1 FROM categories WHERE code=$1`, [code])).rows.length ? code : null;
@@ -197,6 +200,17 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
 async function isCommissionDoc(q, docId) {
   try { return (await commissionApprovalReady(q)) && !!(await linkForDoc(q, docId)); }
   catch (e) { if (e && e.code === '42P01') return false; throw e; }
+}
+
+// 결재가 끝나지 않은 문서의 예정(디렉터 작성 문서의 결재 전 예정) — 재무 실적 처리는 승인 후에만.
+//   커미션 지급승인 문서(0287c)는 기존대로 막지 않는다. 반환 { doc_no, status } | null
+export async function approvalPlanLock(q, txnId) {
+  if (!(await approvalFinReady(q))) return null;
+  const r = (await q(
+    `SELECT d.id, d.doc_no, d.status FROM approval_payments p JOIN approval_documents d ON d.id=p.document_id
+      WHERE p.txn_id=$1 AND d.deleted_at IS NULL AND d.status <> 'approved'`, [txnId])).rows[0];
+  if (!r || await isCommissionDoc(q, Number(r.id))) return null;
+  return { doc_no: r.doc_no || '임시저장', status: r.status };
 }
 
 // 0287c 회차를 새로 짜기 직전(임시저장·결재 중 내용 수정) — 지금 회차에 달린 예정 행을 숨긴다.
