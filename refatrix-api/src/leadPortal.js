@@ -41,9 +41,10 @@ import { resolveSeller, exclusivityReady } from './exclusivity.js';
 import { META_STATES } from './metaLeadExtract.js';
 import { oeReady, oeByProduct } from './oeCodes.js';
 import { normOe, oeToken } from './oeParse.js';
+import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1026c';
+export const LP_BUILD = 'lp-1026e';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -329,6 +330,47 @@ export async function searchProducts(q, { limit = 15 } = {}, exec = query) {
   }).filter(Boolean);
 }
 
+// 0300 · Meta 문의 목록(ERP)에 「💬 고객명 대화 중 · ~만료일」
+export async function claimMap(threadIds) {
+  const m = new Map();
+  if (!threadIds || !threadIds.length || !(await chatReady())) return m;
+  try {
+    for (const r of (await query(
+      `SELECT DISTINCT ON (c.thread_id) c.thread_id, cu.name, to_char(c.expires_at AT TIME ZONE 'America/Mexico_City','MM-DD') AS until,
+              (SELECT count(*)::int FROM meta_page_messages pm JOIN meta_threads t ON t.id = c.thread_id
+                WHERE pm.psid = t.user_id AND pm.source = 'portal' AND pm.customer_id = c.customer_id) AS sent
+         FROM lead_portal_claims c JOIN customers cu ON cu.id = c.customer_id
+        WHERE c.thread_id = ANY($1::bigint[]) AND c.released_at IS NULL AND c.expires_at > now()
+        ORDER BY c.thread_id, c.claimed_at DESC`, [threadIds])).rows) m.set(Number(r.thread_id), `${r.name} 대화 중 · 보냄 ${r.sent} · ~${r.until}`);
+  } catch (_) { /* 표 없음 */ }
+  return m;
+}
+
+// ── 0299 · 문의 메모 · 디렉터 전용 코드 ─────────────────────────────
+let nReady = false; let nProbe = 0;
+export async function notesReady() {
+  if (nReady) return true;
+  if (Date.now() - nProbe < 30000) return false;
+  nProbe = Date.now();
+  try { nReady = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='lead_portal_notes'`)).rows.length > 0; }
+  catch (_) { nReady = false; }
+  return nReady;
+}
+export function setNotesReady(v) { nReady = !!v; nProbe = Date.now(); }
+export const DIRECTOR_NAME = 'Dirección Refatrix';
+// 포털에 보내는 메모 — 고객 코드에는 작성자 이름을 보내지 않는다(자기 것뿐), 디렉터 코드에는 누가 썼는지
+export function noteOut(n, k) {
+  const mine = isDirCode(k) ? n.customer_id == null : n.customer_id != null && Number(n.customer_id) === Number(k.customer_id);
+  const o = { id: Number(n.id), body: n.body, at: n.at, mine };
+  if (isDirCode(k)) o.author = n.customer_id == null ? DIRECTOR_NAME : n.author;
+  return o;
+}
+export const isDirCode = (k) => !!k && k.kind === 'director';
+export function directorInviteText({ code, expiresOn, url }) {
+  return [`🔐 Código de dirección — REFATRIX`, '', `🔗 ${url}`, `🔑 Código: ${code}`, `📅 Vigente hasta: ${fmtDmy(expiresOn)}`, '',
+    'Ve todas las solicitudes y todas las notas de los clientes. Sin pedidos. No lo compartas.'].join('\n');
+}
+
 // ── 틀린 코드 잠금(IP) ─────────────────────────────────────────────
 const fails = new Map();
 export function clientIp(req) {
@@ -374,7 +416,8 @@ export default async function leadPortalRoutes(app) {
     return (await query(
       `SELECT k.*, to_char(k.expires_on,'YYYY-MM-DD') AS expires_ymd, c.name AS customer_name, c.code AS customer_code,
               c.discount, c.owner_id, COALESCE(c.approval_status,'approved') AS approval_status
-         FROM lead_portal_codes k JOIN customers c ON c.id = k.customer_id WHERE k.id=$1`, [id])).rows[0];
+         FROM lead_portal_codes k LEFT JOIN customers c ON c.id = k.customer_id WHERE k.id=$1`, [id])).rows.map((r) => (
+      isDirCode(r) ? { ...r, customer_name: DIRECTOR_NAME, customer_code: 'DIR', discount: 0, owner_id: null, approval_status: 'approved' } : r))[0];
   }
   function blocked(k) {
     const st = codeState({ ...k, expires_on: k.expires_ymd }, todayMx());
@@ -402,7 +445,7 @@ export default async function leadPortalRoutes(app) {
   const meOut = (k) => {
     const today = todayMx();
     return { customer_name: k.customer_name, expires_on: k.expires_ymd, days_left: daysBetween(today, k.expires_ymd),
-      discount: Number(k.discount) || 0, scope_states: k.scope_states || null, build: LP_BUILD };
+      discount: Number(k.discount) || 0, scope_states: k.scope_states || null, role: isDirCode(k) ? 'director' : 'customer', build: LP_BUILD };
   };
   const sign = (k) => app.jwt.sign({ sub: 'lp:' + k.id, typ: LP_TYP, tv: Number(k.token_version) }, { expiresIn: TOKEN_TTL });
 
@@ -439,7 +482,7 @@ export default async function leadPortalRoutes(app) {
               COALESCE(t.m_tipo, t.ai_tipo, t.a_tipo) AS tipo, ${STATE_EXPR} AS state, COALESCE(t.m_city, t.ai_city, t.a_city) AS city,
               ${PHONE_EXPR} AS phone,
               COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts,
-              t.ai_summary AS summary, COALESCE(t.m_items, t.ai_items) AS items,
+              t.ai_summary AS summary, COALESCE(t.m_items, t.ai_items) AS items, t.user_id AS psid, t.last_in_at,
               EXISTS (SELECT 1 FROM lead_portal_reveals r WHERE r.thread_id = t.id AND r.customer_id = $1) AS revealed
          FROM meta_threads t WHERE ${conds.join(' AND ')}
         ORDER BY t.last_at DESC NULLS LAST LIMIT ${MAX_LEADS}`, args)).rows;
@@ -455,6 +498,23 @@ export default async function leadPortalRoutes(app) {
       }
     }
     for (const l of leads) l.wants = wants.get(l.id) || [];
+    // 0299 · 메모 — 고객 코드는 자기(그 고객) 메모만, 디렉터 코드는 전부(누가 썼는지 포함)
+    const notes = new Map();
+    if (await notesReady()) {
+      const dir = isDirCode(k);
+      for (const n of (await query(
+        `SELECT n.id, n.thread_id, n.body, n.customer_id, COALESCE(c.name, '${DIRECTOR_NAME}') AS author,
+                to_char(n.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at
+           FROM lead_portal_notes n LEFT JOIN customers c ON c.id = n.customer_id
+          WHERE n.deleted_at IS NULL AND ${dir ? 'true' : 'n.customer_id = $1'} ORDER BY n.created_at, n.id`, dir ? [] : [k.customer_id])).rows) {
+        const t = Number(n.thread_id); if (!notes.has(t)) notes.set(t, []);
+        notes.get(t).push(noteOut(n, k));
+      }
+    }
+    for (const l of leads) l.notes = notes.get(l.id) || [];
+    // 0300 · Facebook(Messenger) 대화 — 24시간 창 · 선점(내 것 / 다른 refaccionaria)
+    const chat = await chatInfo(rows.filter((r) => r.platform === 'messenger'), k);
+    for (const l of leads) l.chat = l.platform === 'messenger' ? (chat.get(l.id) || null) : null;
     const products = await productInfo(Number(k.customer_id), Number(k.discount) || 0,
       leads.flatMap((l) => l.parts.map((p) => p.code).concat(l.wants.map((w) => w.code))));
     // 카탈로그에서 사라진 코드는 부품표에서 뺀다(주문할 수 없는 줄을 보여 주지 않게)
@@ -472,6 +532,13 @@ export default async function leadPortalRoutes(app) {
       `SELECT t.id, t.platform, COALESCE(t.m_name, t.name) AS name, t.username, ${PHONE_EXPR} AS phone
          FROM meta_threads t WHERE t.id=$1 AND t.status <> 'descartado'${scope}`, args)).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (isDirCode(k)) {   // 디렉터 코드 — 공개 기록(고객 영업 실적)에 섞지 않는다. 감사 로그에만.
+      await logEvent({ userId: null, action: 'page_view', target: `lead_portal_contact:${id}`, detail: { code_id: Number(k.id), director: true } });
+      const d0 = String(t.phone || '').replace(/\D/g, '');
+      const wa0 = d0.length >= 10 ? (d0.length === 10 ? '52' + d0 : d0.replace(/^521(\d{10})$/, '52$1')) : null;
+      return { id: Number(t.id), platform: t.platform, name: t.name || null, username: t.username || null,
+        phone: t.phone || null, wa_link: null, first_seen: null, first_time: false };   // 0300 · wa.me 버튼 제거(디렉터 결정)
+    }
     const r = (await query(
       `INSERT INTO lead_portal_reveals (customer_id, code_id, thread_id) VALUES ($1,$2,$3)
        ON CONFLICT (customer_id, thread_id) DO UPDATE SET last_at=now(), n=lead_portal_reveals.n+1
@@ -480,12 +547,13 @@ export default async function leadPortalRoutes(app) {
     const digits = String(t.phone || '').replace(/\D/g, '');
     const wa = digits.length >= 10 ? (digits.length === 10 ? '52' + digits : digits.replace(/^521(\d{10})$/, '52$1')) : null;
     return { id: Number(t.id), platform: t.platform, name: t.name || null, username: t.username || null,
-      phone: t.phone || null, wa_link: wa ? 'https://wa.me/' + wa : null, first_seen: r.first_mx, first_time: Number(r.n) === 1 };
+      phone: t.phone || null, wa_link: null, first_seen: r.first_mx, first_time: Number(r.n) === 1 };   // 0300 · wa.me 버튼 제거
   });
 
   // 고객 매장 재고(Mi stock) — 고객이 고침
   app.put('/api/lead-portal/stock', P, async (req, reply) => {
     const k = req.lp; const b = req.body || {};
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
     const q = parseQty(b.qty);
     if (!q.ok) return reply.code(400).send({ error: 'bad_qty' });
     const p = (await query(`SELECT id, code FROM products WHERE code=$1 AND deleted_at IS NULL`, [String(b.code || '').trim()])).rows[0];
@@ -506,6 +574,7 @@ export default async function leadPortalRoutes(app) {
   app.put('/api/lead-portal/leads/:id/wants', P, async (req, reply) => {
     const k = req.lp; const id = idOf(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
     if (!(await wantsReady())) return reply.code(503).send({ error: 'not_ready' });
     const raw = Array.isArray(req.body && req.body.items) ? req.body.items : null;
     if (!raw) return reply.code(400).send({ error: 'bad_items' });
@@ -543,9 +612,187 @@ export default async function leadPortalRoutes(app) {
     return { ok: true, wants: items.map((x) => ({ code: x.code, qty: Number(x.qty), input: x.input_code || null })), products };
   });
 
+  // ════════ 0300 · Facebook(Messenger) 대화 ════════
+  //   디렉터 결정(2026-10-26): Facebook 만(WhatsApp · Instagram 은 대화 없음) · 선점 기본 3일(디렉터가 조정) ·
+  //   refaccionaria 에게는 선점한 뒤의 메시지만 · 선점 중에도 직원(Business Suite) 답장 허용 · 메시지 앞에 [가게 이름]
+  async function lastInMap(threads) {
+    const m = new Map(); const ps = [...new Set(threads.map((t) => t.psid).filter(Boolean))];
+    for (const t of threads) m.set(Number(t.id), t.last_in_at ? new Date(t.last_in_at) : null);
+    if (ps.length && (await chatReady())) {
+      const r = (await query(`SELECT psid, max(at) AS at FROM meta_page_messages WHERE direction='in' AND psid = ANY($1::text[]) GROUP BY psid`, [ps])).rows;
+      const byPs = new Map(r.map((x) => [x.psid, new Date(x.at)]));
+      for (const t of threads) { const a = byPs.get(t.psid); const b = m.get(Number(t.id)); if (a && (!b || a > b)) m.set(Number(t.id), a); }
+    }
+    return m;
+  }
+  async function activeClaims(threadIds) {
+    const m = new Map();
+    if (!threadIds.length || !(await chatReady())) return m;
+    for (const c of (await query(
+      `SELECT DISTINCT ON (c.thread_id) c.id, c.thread_id, c.customer_id, c.claimed_at, c.expires_at
+         FROM lead_portal_claims c WHERE c.thread_id = ANY($1::bigint[]) AND c.released_at IS NULL AND c.expires_at > now()
+        ORDER BY c.thread_id, c.claimed_at DESC`, [threadIds])).rows) m.set(Number(c.thread_id), c);
+    return m;
+  }
+  async function chatInfo(threads, k) {
+    const out = new Map();
+    if (!threads.length || !(await chatReady())) return out;
+    const li = await lastInMap(threads);
+    const cl = await activeClaims(threads.map((t) => Number(t.id)));
+    const now = Date.now();
+    for (const t of threads) {
+      const id = Number(t.id); const last = li.get(id);
+      const until = last ? new Date(last.getTime() + WINDOW_MS) : null;
+      const c = cl.get(id);
+      out.set(id, {
+        window_until: until ? until.toISOString() : null, open: !!(until && until.getTime() > now),
+        claim: c ? (!isDirCode(k) && Number(c.customer_id) === Number(k.customer_id) ? 'mine' : 'other') : null,
+        claim_until: c ? new Date(c.expires_at).toISOString() : null,
+      });
+    }
+    return out;
+  }
+  async function messengerThread(k, id) {
+    const args = [id]; let scope = '';
+    if (!isDirCode(k) && Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($2::text[])`; }
+    return (await query(
+      `SELECT t.id, t.platform, t.user_id AS psid, t.last_in_at, t.status, t.ai_summary AS summary,
+              COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts
+         FROM meta_threads t WHERE t.id=$1 AND t.status <> 'descartado'${scope}`, args)).rows[0] || null;
+  }
+  async function chatState(k, t) {
+    const info = (await chatInfo([t], k)).get(Number(t.id)) || { open: false };
+    const c = (await activeClaims([Number(t.id)])).get(Number(t.id)) || null;
+    return { info, claim: c };
+  }
+
+  // 선점 — 그 문의를 이 refaccionaria 가 맡는다(기본 3일 · 메시지마다 연장)
+  app.post('/api/lead-portal/leads/:id/claim', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
+    if (!(await chatReady())) return reply.code(503).send({ error: 'not_ready' });
+    const t = await messengerThread(k, id);
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.platform !== 'messenger') return reply.code(409).send({ error: 'chat_not_allowed' });   // WhatsApp · Instagram 은 대화 없음
+    const days = await claimDays();
+    const res = await withTx(async (c) => {
+      await c.query(`SELECT pg_advisory_xact_lock(hashtext('lp_claim:' || $1::text))`, [id]);
+      const cur = (await c.query(
+        `SELECT id, customer_id, expires_at FROM lead_portal_claims WHERE thread_id=$1 AND released_at IS NULL AND expires_at > now() ORDER BY claimed_at DESC LIMIT 1`, [id])).rows[0];
+      if (cur && Number(cur.customer_id) !== Number(k.customer_id)) return { other: true, until: cur.expires_at };
+      if (cur) return { claim: cur, again: true };
+      const n = (await c.query(
+        `INSERT INTO lead_portal_claims (thread_id, customer_id, code_id, expires_at) VALUES ($1,$2,$3, now() + ($4 || ' days')::interval)
+         RETURNING id, customer_id, claimed_at, expires_at`, [id, k.customer_id, k.id, String(days)])).rows[0];
+      await c.query(
+        `UPDATE meta_threads SET status='derivado', derived_customer_id=$2, derived_to=$3, updated_at=now()
+          WHERE id=$1 AND status IN ('nuevo','contactado')`, [id, k.customer_id, k.customer_name]);
+      return { claim: n };
+    });
+    if (res.other) return reply.code(409).send({ error: 'claimed_other', until: new Date(res.until).toISOString() });
+    await logEvent({ userId: null, action: 'update', target: `meta_thread:${id}`, detail: { op: 'lead_portal_claim', customer_id: Number(k.customer_id), code_id: Number(k.id), days } });
+    return { ok: true, claim_until: new Date(res.claim.expires_at).toISOString(), again: !!res.again };
+  });
+
+  function msgOut(m, k) {
+    const who = m.source === 'customer' ? 'cliente'
+      : m.source === 'staff' ? 'refatrix'
+      : (isDirCode(k) ? 'portal' : (Number(m.customer_id) === Number(k.customer_id) ? 'yo' : 'otro'));
+    const o = { id: Number(m.id), dir: m.direction, who, text: m.text || '', at: new Date(m.at).toISOString() };
+    if (isDirCode(k) && m.source === 'portal') o.shop = m.shop || null;
+    return o;
+  }
+  // 대화 보기 — refaccionaria: 자기 선점 이후 메시지만 · 디렉터 코드: 웹훅으로 받은 전부(읽기 전용)
+  app.get('/api/lead-portal/leads/:id/chat', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await chatReady())) return reply.code(503).send({ error: 'not_ready' });
+    const t = await messengerThread(k, id);
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.platform !== 'messenger') return reply.code(409).send({ error: 'chat_not_allowed' });
+    const { info, claim } = await chatState(k, t);
+    let since = null;
+    if (!isDirCode(k)) {
+      if (!claim || Number(claim.customer_id) !== Number(k.customer_id)) return reply.code(409).send({ error: claim ? 'claimed_other' : 'not_claimed', until: claim ? new Date(claim.expires_at).toISOString() : null });
+      since = claim.claimed_at;
+    }
+    const rows = (await query(
+      `SELECT m.id, m.direction, m.source, m.text, m.at, m.customer_id, c.name AS shop
+         FROM meta_page_messages m LEFT JOIN customers c ON c.id = m.customer_id
+        WHERE m.psid = $1 ${since ? 'AND m.at >= $2' : ''} ORDER BY m.at, m.id LIMIT 500`, since ? [t.psid, since] : [t.psid])).rows;
+    return { messages: rows.map((m) => msgOut(m, k)), window_until: info.window_until || null, open: !!info.open,
+      claim_until: claim ? new Date(claim.expires_at).toISOString() : null, summary: clip(t.summary, 300) || clip([t.vehicles, t.parts].filter(Boolean).join(' · '), 300),
+      can_send: !isDirCode(k) && !!info.open };
+  });
+
+  // 보내기 — 자기 선점 · 24시간 창 안 · 앞에 [가게 이름]
+  app.post('/api/lead-portal/leads/:id/chat', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
+    if (!(await chatReady())) return reply.code(503).send({ error: 'not_ready' });
+    const text = String((req.body && req.body.text) || '').replace(/\r/g, '').trim();
+    if (!text) return reply.code(400).send({ error: 'empty' });
+    if (text.length > 1000) return reply.code(400).send({ error: 'too_long' });
+    const t = await messengerThread(k, id);
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.platform !== 'messenger' || !t.psid) return reply.code(409).send({ error: 'chat_not_allowed' });
+    const { info, claim } = await chatState(k, t);
+    if (!claim || Number(claim.customer_id) !== Number(k.customer_id)) return reply.code(409).send({ error: claim ? 'claimed_other' : 'not_claimed' });
+    if (!info.open) return reply.code(409).send({ error: 'window_closed', window_until: info.window_until || null });
+    const full = `[${k.customer_name}] ${text}`;
+    const s0 = await sendMessenger(t.psid, full);
+    if (!s0.ok) {
+      const closed = /outside of allowed window|#10\b|#551\b|2018278/.test(String(s0.error));
+      req.log?.warn({ err: s0.error }, 'lead portal messenger send failed');
+      return reply.code(closed ? 409 : 502).send({ error: closed ? 'window_closed' : 'send_failed', detail: s0.error });
+    }
+    const m = (await query(
+      `INSERT INTO meta_page_messages (psid, mid, direction, source, text, at, customer_id, code_id) VALUES ($1,$2,'out','portal',$3,now(),$4,$5)
+       ON CONFLICT (mid) DO UPDATE SET source='portal', customer_id=EXCLUDED.customer_id, code_id=EXCLUDED.code_id, text=EXCLUDED.text
+       RETURNING id, direction, source, text, at, customer_id`, [t.psid, s0.mid, full, k.customer_id, k.id])).rows[0];
+    const days = await claimDays();
+    await query(`UPDATE lead_portal_claims SET expires_at = GREATEST(expires_at, now() + ($2 || ' days')::interval) WHERE id=$1`, [claim.id, String(days)]);
+    return { ok: true, message: msgOut(m, k) };
+  });
+
+  // 0299 · 문의 메모 — 쓰기 · 지우기(자기 것만). 지운 메모는 디렉터 화면에 「삭제됨」으로 남는다.
+  async function threadVisible(k, id) {
+    const args = [id]; let scope = '';
+    if (!isDirCode(k) && Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($2::text[])`; }
+    return !!(await query(`SELECT 1 FROM meta_threads t WHERE t.id=$1 AND t.status <> 'descartado'${scope}`, args)).rows[0];
+  }
+  app.post('/api/lead-portal/leads/:id/notes', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await notesReady())) return reply.code(503).send({ error: 'not_ready' });
+    const body = String((req.body && req.body.body) || '').replace(/\r/g, '').trim();
+    if (!body) return reply.code(400).send({ error: 'empty' });
+    if (body.length > 1000) return reply.code(400).send({ error: 'too_long' });
+    if (!(await threadVisible(k, id))) return reply.code(404).send({ error: 'not_found' });
+    const n = (await query(
+      `INSERT INTO lead_portal_notes (thread_id, customer_id, code_id, body) VALUES ($1,$2,$3,$4)
+       RETURNING id, thread_id, body, customer_id, to_char(created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at`,
+      [id, isDirCode(k) ? null : k.customer_id, k.id, body])).rows[0];
+    return { ok: true, note: noteOut({ ...n, author: k.customer_name }, k) };
+  });
+  app.delete('/api/lead-portal/notes/:nid', P, async (req, reply) => {
+    const k = req.lp; const nid = idOf(req.params.nid);
+    if (!nid) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await notesReady())) return reply.code(503).send({ error: 'not_ready' });
+    // 고객 = 그 고객이 쓴 것만 · 디렉터 코드 = 디렉터 코드로 쓴 것만(고객 메모는 못 지움)
+    const r = (await query(
+      `UPDATE lead_portal_notes SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL AND ${isDirCode(k) ? 'customer_id IS NULL' : 'customer_id = $2'} RETURNING id`,
+      isDirCode(k) ? [nid] : [nid, k.customer_id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
+
   // 주문 → ERP 견적(초안)
   app.post('/api/lead-portal/order', P, async (req, reply) => {
     const k = req.lp; const b = req.body || {};
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
     if (k.approval_status === 'pending') return reply.code(409).send({ error: 'customer_pending' });
     const key = String(b.key || '').trim();
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(key)) return reply.code(400).send({ error: 'bad_key' });
@@ -701,15 +948,16 @@ export default async function leadPortalRoutes(app) {
   });
 
   const CODE_SELECT = `
-    SELECT k.id, k.customer_id, c.code AS customer_code, c.name AS customer_name, k.code_last4,
+    SELECT k.id, k.customer_id, COALESCE(c.code, 'DIR') AS customer_code, COALESCE(c.name, '${DIRECTOR_NAME}') AS customer_name, k.code_last4,
+           (to_jsonb(k)->>'kind') AS kind,
            to_char(k.expires_on,'YYYY-MM-DD') AS expires_on, k.basis_amount, k.memo, k.scope_states, k.active,
            k.last_seen_at, k.created_at, to_char(k.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD') AS created_on,
            (SELECT count(*)::int FROM lead_portal_reveals r WHERE r.code_id = k.id) AS reveals,
            (SELECT count(*)::int FROM quotes q WHERE q.lead_portal_code_id = k.id AND q.deleted_at IS NULL AND q.status <> 'cancelled') AS orders,
            (SELECT COALESCE(SUM(q.total_mxn),0) FROM quotes q WHERE q.lead_portal_code_id = k.id AND q.deleted_at IS NULL AND q.status <> 'cancelled') AS orders_total
-      FROM lead_portal_codes k JOIN customers c ON c.id = k.customer_id`;
+      FROM lead_portal_codes k LEFT JOIN customers c ON c.id = k.customer_id`;
   const codeOut = (r, today) => ({
-    id: Number(r.id), customer_id: Number(r.customer_id), customer_code: r.customer_code, customer_name: r.customer_name,
+    id: Number(r.id), customer_id: r.customer_id == null ? null : Number(r.customer_id), kind: r.kind || 'customer', customer_code: r.customer_code, customer_name: r.customer_name,
     last4: r.code_last4, expires_on: r.expires_on, days_left: daysBetween(today, r.expires_on),
     basis_amount: num(r.basis_amount), memo: r.memo || null, scope_states: r.scope_states || null, active: !!r.active,
     state: codeState(r, today), last_seen_at: r.last_seen_at, created_on: r.created_on,
@@ -727,6 +975,24 @@ export default async function leadPortalRoutes(app) {
     if (!(await need(reply))) return;
     const b = req.body || {};
     const cid = idOf(b.customer_id); const exp = ymd(b.expires_on); const amt = cleanAmount(b.basis_amount);
+    // 0299 · 디렉터 전용 코드 — 고객 없음 · 전체 문의 · 모든 메모 · 주문 불가
+    if (b.kind === 'director') {
+      if (!(await notesReady())) return reply.code(503).send({ error: 'migration_required', note: '0299 마이그레이션이 필요합니다(npm run migrate).' });
+      if (!exp) return reply.code(400).send({ error: 'expires_required', note: '만료일을 입력하세요.' });
+      if (exp < todayMx()) return reply.code(400).send({ error: 'expires_past', note: '만료일이 오늘보다 앞입니다.' });
+      const code = newCode(); const norm = normCode(code);
+      const row = await withTx(async (c) => {
+        const k = (await c.query(
+          `INSERT INTO lead_portal_codes (customer_id, kind, code_hash, code_last4, expires_on, memo, created_by, updated_by)
+           VALUES (NULL,'director',$1,$2,$3,$4,$5,$5) RETURNING id`,
+          [codeHash(norm), norm.slice(-4), exp, clip(b.memo, 500), req.ctx.perm.userId])).rows[0];
+        await clog(c, k.id, 'issue', { kind: 'director', expires_on: exp }, req.ctx.perm.userId);
+        return k;
+      });
+      await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `lead_portal_code:${row.id}`, detail: { kind: 'director', expires_on: exp } });
+      const r0 = (await query(`${CODE_SELECT} WHERE k.id=$1`, [row.id])).rows[0];
+      return { ok: true, code, invite: directorInviteText({ code, expiresOn: exp, url: portalUrl() }), item: codeOut(r0, todayMx()) };
+    }
     if (!cid) return reply.code(400).send({ error: 'customer_required', note: '고객을 고르세요.' });
     if (!exp) return reply.code(400).send({ error: 'expires_required', note: '만료일을 입력하세요.' });
     if (exp < todayMx()) return reply.code(400).send({ error: 'expires_past', note: '만료일이 오늘보다 앞입니다.' });
@@ -789,7 +1055,7 @@ export default async function leadPortalRoutes(app) {
   app.post('/api/lead-portal-admin/codes/:id/reissue', DIR, async (req, reply) => {
     if (!(await need(reply))) return;
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
-    const cur = (await query(`SELECT k.id, to_char(k.expires_on,'YYYY-MM-DD') AS exp, c.name FROM lead_portal_codes k JOIN customers c ON c.id=k.customer_id WHERE k.id=$1 AND k.deleted_at IS NULL`, [id])).rows[0];
+    const cur = (await query(`SELECT k.id, to_char(k.expires_on,'YYYY-MM-DD') AS exp, COALESCE(c.name, '${DIRECTOR_NAME}') AS name, (to_jsonb(k)->>'kind') AS kind FROM lead_portal_codes k LEFT JOIN customers c ON c.id=k.customer_id WHERE k.id=$1 AND k.deleted_at IS NULL`, [id])).rows[0];
     if (!cur) return reply.code(404).send({ error: 'not_found' });
     const code = newCode(); const norm = normCode(code);
     await withTx(async (c) => {
@@ -799,7 +1065,7 @@ export default async function leadPortalRoutes(app) {
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `lead_portal_code:${id}`, detail: { op: 'reissue' } });
     const today = todayMx();
-    return { ok: true, code, invite: inviteText({ customerName: cur.name, code, expiresOn: cur.exp, url: portalUrl() }),
+    return { ok: true, code, invite: cur.kind === 'director' ? directorInviteText({ code, expiresOn: cur.exp, url: portalUrl() }) : inviteText({ customerName: cur.name, code, expiresOn: cur.exp, url: portalUrl() }),
       item: codeOut((await query(`${CODE_SELECT} WHERE k.id=$1`, [id])).rows[0], today) };
   });
 
@@ -842,6 +1108,78 @@ export default async function leadPortalRoutes(app) {
          JOIN meta_threads t ON t.id = r.thread_id
         WHERE ${w} ORDER BY r.first_at DESC LIMIT ${limit}`, args)).rows;
     return { items: rows.map((r) => ({ ...r, thread_id: Number(r.thread_id), n: Number(r.n) })) };
+  });
+
+  // ════════ 0300 · 대화 선점 관리(디렉터) ════════
+  app.get('/api/lead-portal-admin/settings', DIR, async (req, reply) => {
+    if (!(await chatReady())) return reply.code(503).send({ error: 'migration_required', note: '0300 마이그레이션이 필요합니다(npm run migrate).' });
+    return { claim_days: await claimDays() };
+  });
+  app.put('/api/lead-portal-admin/settings', DIR, async (req, reply) => {
+    if (!(await chatReady())) return reply.code(503).send({ error: 'migration_required', note: '0300 마이그레이션이 필요합니다(npm run migrate).' });
+    const d = Number(req.body && req.body.claim_days);
+    if (!Number.isInteger(d) || d < 1 || d > 30) return reply.code(400).send({ error: 'bad_days', note: '1~30일 사이 정수로 입력하세요.' });
+    await query(`UPDATE lead_portal_settings SET claim_days=$1, updated_by=$2, updated_at=now() WHERE id=1`, [d, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'lead_portal_settings', detail: { claim_days: d } });
+    return { ok: true, claim_days: d };
+  });
+  app.get('/api/lead-portal-admin/claims', DIR, async (req, reply) => {
+    if (!(await chatReady())) return reply.code(503).send({ error: 'migration_required', note: '0300 마이그레이션이 필요합니다(npm run migrate).' });
+    const rows = (await query(
+      `SELECT c.id, c.thread_id, cu.name AS customer_name, k.code_last4,
+              to_char(c.claimed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS claimed_mx,
+              to_char(c.expires_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS expires_mx,
+              to_char(c.released_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS released_mx,
+              (c.released_at IS NULL AND c.expires_at > now()) AS active,
+              COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_name, t.name) AS lead_name,
+              (SELECT count(*)::int FROM meta_page_messages pm WHERE pm.psid = t.user_id AND pm.source='portal' AND pm.customer_id = c.customer_id AND pm.at >= c.claimed_at) AS sent,
+              (SELECT count(*)::int FROM meta_page_messages pm WHERE pm.psid = t.user_id AND pm.direction='in' AND pm.at >= c.claimed_at) AS received,
+              (SELECT to_char(max(pm.at) AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') FROM meta_page_messages pm WHERE pm.psid = t.user_id AND pm.at >= c.claimed_at) AS last_mx
+         FROM lead_portal_claims c JOIN customers cu ON cu.id = c.customer_id JOIN meta_threads t ON t.id = c.thread_id
+         LEFT JOIN lead_portal_codes k ON k.id = c.code_id
+        WHERE c.claimed_at > now() - interval '60 days'
+        ORDER BY (c.released_at IS NULL AND c.expires_at > now()) DESC, c.claimed_at DESC LIMIT 300`)).rows;
+    return { claim_days: await claimDays(), items: rows.map((r) => ({ ...r, id: Number(r.id), thread_id: Number(r.thread_id) })) };
+  });
+  app.post('/api/lead-portal-admin/claims/:id/release', DIR, async (req, reply) => {
+    if (!(await chatReady())) return reply.code(503).send({ error: 'migration_required' });
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`UPDATE lead_portal_claims SET released_at=now(), released_by=$2 WHERE id=$1 AND released_at IS NULL RETURNING thread_id`, [id, req.ctx.perm.userId])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `lead_portal_claim:${id}`, detail: { op: 'release' } });
+    return { ok: true };
+  });
+  app.post('/api/lead-portal-admin/claims/:id/extend', DIR, async (req, reply) => {
+    if (!(await chatReady())) return reply.code(503).send({ error: 'migration_required' });
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const d = Number(req.body && req.body.days);
+    if (!Number.isInteger(d) || d < 1 || d > 60) return reply.code(400).send({ error: 'bad_days', note: '1~60일' });
+    const r = (await query(
+      `UPDATE lead_portal_claims SET expires_at = GREATEST(expires_at, now()) + ($2 || ' days')::interval
+        WHERE id=$1 AND released_at IS NULL RETURNING to_char(expires_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS expires_mx`, [id, String(d)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `lead_portal_claim:${id}`, detail: { op: 'extend', days: d } });
+    return { ok: true, expires_mx: r.expires_mx };
+  });
+
+  // 0299 · 문의 메모 전체(디렉터) — 언제 · 누가(고객 · 코드) · 어느 문의에 · 무엇을 · 지웠는지
+  app.get('/api/lead-portal-admin/notes', DIR, async (req, reply) => {
+    if (!(await notesReady())) return reply.code(503).send({ error: 'migration_required', note: '0299 마이그레이션이 필요합니다(npm run migrate).' });
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
+    const args = []; const conds = ['true'];
+    const cid = idOf(req.query.customer_id); if (cid) { args.push(cid); conds.push(`n.customer_id=$${args.length}`); }
+    const tid = idOf(req.query.thread_id); if (tid) { args.push(tid); conds.push(`n.thread_id=$${args.length}`); }
+    const kw = String(req.query.q || '').trim();
+    if (kw) { args.push('%' + kw + '%'); conds.push(`(n.body ILIKE $${args.length} OR c.name ILIKE $${args.length})`); }
+    const rows = (await query(
+      `SELECT n.id, n.thread_id, n.body, n.customer_id, COALESCE(c.name, '${DIRECTOR_NAME}') AS author, k.code_last4,
+              to_char(n.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at,
+              to_char(n.deleted_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS deleted_at,
+              t.platform, COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles
+         FROM lead_portal_notes n LEFT JOIN customers c ON c.id = n.customer_id
+         JOIN lead_portal_codes k ON k.id = n.code_id JOIN meta_threads t ON t.id = n.thread_id
+        WHERE ${conds.join(' AND ')} ORDER BY n.created_at DESC, n.id DESC LIMIT ${limit}`, args)).rows;
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), thread_id: Number(r.thread_id), customer_id: r.customer_id == null ? null : Number(r.customer_id) })) };
   });
 
   // 고객 매장 재고 — 담당 영업사원 · 디렉터(자기가 볼 수 있는 고객만)

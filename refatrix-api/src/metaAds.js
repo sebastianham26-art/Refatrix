@@ -12,6 +12,7 @@
 //   Graph API 의 대화 목록(/conversations)에는 광고 정보가 없다 — 그래서 웹훅으로 받아 둔다.
 // =====================================================================
 import { query } from './db.js';
+import { savePageMessages } from './metaPageMsgs.js';   // 0300
 import { normalizeWaNumber } from './waSend.js';
 
 export const AD_ID_RE = /^[0-9]{5,25}$/;
@@ -83,6 +84,8 @@ export async function applyPageWebhook(body, q = query) {
     out.referrals++;
     try { if (await saveTouch(q, t)) out.stored++; } catch (_) { /* 0295 전 */ }
   }
+  // 0300 · Messenger 메시지 실시간 기록(고객 포털 대화) — 실패해도 광고 기록은 그대로
+  try { const m = await savePageMessages(body, q); out.messages = m.stored; } catch (_) { /* 0300 전 */ }
   return out;
 }
 
@@ -90,7 +93,8 @@ export async function applyPageWebhook(body, q = query) {
 //   POST /{page-id}/subscribed_apps?subscribed_fields=messages,messaging_referrals,messaging_postbacks — 페이지 토큰 · pages_manage_metadata 필요
 let postOverride = null;          // 시험용 — (url) => {ok,status,json}
 export function setMetaAdsPost(fn) { postOverride = fn || null; }
-export const PAGE_FIELDS = 'messages,messaging_referrals,messaging_postbacks';
+// 0300 · message_echoes — 직원이 Business Suite 에서 보낸 답장도 받아 포털 대화창 · ERP 에 같이 보인다
+export const PAGE_FIELDS = 'messages,messaging_referrals,messaging_postbacks,message_echoes';
 export async function subscribePage({ pageId, token, version = 'v20.0' }) {
   const url = `https://graph.facebook.com/${version}/${encodeURIComponent(pageId)}/subscribed_apps?subscribed_fields=${PAGE_FIELDS}&access_token=${encodeURIComponent(token)}`;
   let r;

@@ -31,7 +31,7 @@ import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
 import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
 // 0297 · 고객 포털(접속코드 · 연락처 공개 · 매장 재고 · 포털 주문) — 같은 플러그인에서 등록(server.js 변경 없음)
-import leadPortalRoutes, { revealedMap } from '../leadPortal.js';
+import leadPortalRoutes, { revealedMap, claimMap } from '../leadPortal.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -136,7 +136,8 @@ export default async function metaLeadsRoutes(app) {
     const stock = {};
     if (codes.length) for (const p of (await query(`SELECT code, stock_qty FROM products WHERE code = ANY($1) AND deleted_at IS NULL`, [codes])).rows) stock[p.code] = Number(p.stock_qty) || 0;
     const rv = await revealedMap(rows.map((r) => Number(r.id)));   // 0297 · 연락처를 본 refaccionaria
-    return { items: rows.map((r) => ({ ...r, id: Number(r.id), revealed_to: rv.get(Number(r.id)) || null })), stock };
+    const cm = await claimMap(rows.filter((r) => r.platform === 'messenger').map((r) => Number(r.id)));   // 0300 · 포털 대화 선점
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), revealed_to: rv.get(Number(r.id)) || null, chat_by: cm.get(Number(r.id)) || null })), stock };
   });
 
   app.get('/api/meta-leads/:id', R, async (req, reply) => {

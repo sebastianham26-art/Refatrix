@@ -155,7 +155,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.ok(!a.ads.some((x) => x.ad_id === AD1)); assert.equal(a.unregistered.find((x) => x.ad_id === AD1).n, 2, '문의는 그대로 미등록 광고로');
     let seen = null; A.setMetaAdsPost(async (url) => { seen = url; return { ok: true, status: 200, json: { success: true } }; });
     r = await call(D, 'POST', '/api/meta-leads/ads/subscribe'); assert.equal(r.statusCode, 200);
-    assert.match(seen, /\/1338649012669713\/subscribed_apps\?subscribed_fields=messages,messaging_referrals,messaging_postbacks&access_token=PAGE_TOKEN/);
+    assert.match(seen, /\/1338649012669713\/subscribed_apps\?subscribed_fields=messages,messaging_referrals,messaging_postbacks,message_echoes&access_token=PAGE_TOKEN/);
     A.setMetaAdsPost(async () => ({ ok: false, status: 400, json: { error: { code: 200, message: 'Requires pages_manage_metadata' } } }));
     r = await call(D, 'POST', '/api/meta-leads/ads/subscribe'); assert.equal(r.json().error, 'subscribe_failed'); assert.match(r.json().detail, /#200/);
     await wait(10);
@@ -227,7 +227,7 @@ test('C. 화면 (jsdom) — 광고 탭', { skip: (!JSDOM || !existsSync(HTML)) &
   t.after(() => w.close());
 
   await t.test('C1. 빌드 · 목록 광고 열 · 광고 필터', async () => {
-    assert.match(d.title, /mtl-1026lpc/);
+    assert.match(d.title, /mtl-1026lpe/);
     assert.match(d.querySelector('#lTable tr[data-id="1"]').textContent, /Amortiguadores MTY/);
     assert.match(d.querySelector('#lTable tr[data-id="2"]').textContent, /미등록/);
     const opts = [...d.querySelectorAll('#fAd option')].map((o) => o.value);

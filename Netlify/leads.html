@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1026c)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1026e)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -88,6 +88,32 @@
   .draft .dl:last-child{border-bottom:none}
   .draft .dl .t{flex:1;min-width:0}
   .wants-h{font-size:11.5px;font-weight:800;color:var(--brand);margin-top:10px}
+  /* notas (0299) */
+  .notes{margin-top:9px;border-top:1px dashed var(--line);padding-top:8px}
+  .note{background:#fffdf6;border:1px solid #efe6cf;border-radius:8px;padding:6px 8px;margin-top:6px;font-size:12.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word;position:relative}
+  .note .nm{font-size:10.5px;color:var(--muted);white-space:normal;margin-bottom:2px}
+  .note .x{position:absolute;top:2px;right:2px;font-size:13px}
+  .nadd{background:none;border:none;color:var(--brand);font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;padding:2px 0}
+  .notes textarea{margin-top:6px;font-size:13px}
+  .dirbar{background:#fbf7ee;border:1px solid var(--gold);color:#6b4f1d;border-radius:9px;padding:7px 10px;font-size:12px;margin-bottom:8px}
+  /* chat Messenger (0300) */
+  .cpill{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;margin-top:8px}
+  .cp-ok{background:var(--ok-bg);color:var(--ok)}.cp-off{background:#eef0f2;color:#666}.cp-warn{background:var(--warn-bg);color:var(--warn)}
+  .chatbtn{background:#1877F2;color:#fff;border:none;border-radius:8px;padding:7px 11px;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;margin-top:8px}
+  .chat{margin-top:9px;border:1px solid #cfdcf3;border-radius:12px;overflow:hidden;background:#f3f6fb}
+  .chat .ctop{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 10px;background:#e7f0fe;font-size:12px}
+  .chat .cmsgs{padding:8px 10px;display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto}
+  .bub{max-width:84%;padding:7px 10px;border-radius:12px;font-size:12.5px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+  .bub .t{font-size:10px;color:var(--muted);margin-top:2px;white-space:normal}
+  .b-in{background:#fff;border:1px solid var(--line);align-self:flex-start}
+  .b-yo{background:#1877F2;color:#fff;align-self:flex-end}.b-yo .t{color:#d6e4ff}
+  .b-rf{background:#fbf7ee;border:1px solid #efe6cf;align-self:flex-start}
+  .b-ot{background:#e9ecef;align-self:flex-end}
+  .csys{align-self:center;font-size:11px;color:var(--muted);background:#fff;border:1px dashed var(--line);border-radius:999px;padding:3px 10px;text-align:center}
+  .ccomp{display:flex;gap:6px;padding:8px;border-top:1px solid #cfdcf3;background:#fff}
+  .ccomp textarea{flex:1;font-size:13px;resize:none}
+  .ccomp .btn{background:#1877F2}
+  .cart-hidden{}
   .cartbar{position:fixed;left:0;right:0;bottom:0;background:#1c1b19;color:#fff;padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;z-index:6}
   .cartbar .in{max-width:760px;margin:0 auto;width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px}
   /* cart */
@@ -180,7 +206,8 @@
   var API = '/lp-api';                       // fijo — Netlify lo pasa al ERP (no se puede cambiar por URL)
   var TK = 'rfx_lp_token';
   var PAGE = 40;
-  var S = { me:null, leads:[], products:{}, states:[], shown:PAGE, cart:{}, over:{}, contacts:{}, key:null, ms:null, find:null, results:[], draft:[], fq:'' };
+  var S = { me:null, leads:[], products:{}, states:[], shown:PAGE, cart:{}, over:{}, contacts:{}, key:null, ms:null, find:null, results:[], draft:[], fq:'', nOpen:null, chatOpen:null, chat:null, chatTimer:null };
+  function isDir(){ return !!(S.me && S.me.role==='director'); }
   function $(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function money(n){ return '$' + Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
@@ -243,7 +270,7 @@
   }
   $('enter').addEventListener('click', login);
   $('code').addEventListener('keydown', function(e){ if(e.key==='Enter') login(); });
-  function logout(){ setTok(null); S.cart = {}; S.over = {}; S.contacts = {}; show('sLogin'); }
+  function logout(){ stopChatPoll(); S.chatOpen = null; setTok(null); S.cart = {}; S.over = {}; S.contacts = {}; show('sLogin'); }
   $('out').addEventListener('click', logout);
   $('expOut').addEventListener('click', logout);
 
@@ -260,6 +287,11 @@
     $('vig').textContent = v || 'Oportunidades de venta';
     $('cust').textContent = m.customer_name || '';
     $('vig2').textContent = v;
+    var bar = $('dirbar');
+    if(isDir()){
+      if(!bar){ bar = document.createElement('div'); bar.id = 'dirbar'; bar.className = 'dirbar'; $('list').parentNode.insertBefore(bar, $('count')); }
+      bar.textContent = '🔐 Vista de dirección — todas las solicitudes y las notas de todos los clientes · precios de lista · sin pedidos.';
+    } else if(bar){ bar.parentNode.removeChild(bar); }
   }
   function fillStates(){
     var sel = $('fState'), cur = sel.value;
@@ -281,6 +313,7 @@
   var CH = { whatsapp:'WhatsApp', messenger:'Facebook', instagram:'Instagram' };
   function shelfCell(code){
     var p = S.products[code] || {};
+    if(isDir()) return '<span class="pn">—</span>';
     var who = p.shelf==null ? 'sin dato' : ((p.shelf_src==='customer'?'tú':'Refatrix') + (p.shelf_at?' · '+dm(p.shelf_at):''));
     var zero = p.shelf==null || Number(p.shelf)===0;
     return '<button type="button" class="ms'+(zero?' zero':'')+'" data-code="'+esc(code)+'">'+(p.shelf==null?'—':esc(p.shelf))+' ✎</button><div class="pn">'+esc(who)+'</div>';
@@ -302,15 +335,14 @@
       + '<td class="num">'+stockCell(p)+'</td>'
       + '<td class="num">'+shelfCell(p.code)+'</td>'
       + '<td class="num">'+money(p.price)+'</td>'
-      + '<td class="num"><button type="button" class="add'+(inCart?' on':(need?' sug':''))+'" data-id="'+l.id+'" data-code="'+esc(p.code)+'" data-qty="'+esc(part.qty)+'"'+(p.active?'':' disabled')+'>'+(inCart?'✓ ':'+ ')+esc(q)+'</button></td></tr>';
+      + '<td class="num">'+(isDir() ? '<span class="pn">×'+esc(part.qty)+'</span>' : '<button type="button" class="add'+(inCart?' on':(need?' sug':''))+'" data-id="'+l.id+'" data-code="'+esc(p.code)+'" data-qty="'+esc(part.qty)+'"'+(p.active?'':' disabled')+'>'+(inCart?'✓ ':'+ ')+esc(q)+'</button>')+'</td></tr>';
   }
   function contactHTML(l){
     var c = S.contacts[l.id];
-    var fb = l.revealed ? '<button type="button" class="findbtn" data-find="'+l.id+'">🔎 '+(l.wants && l.wants.length ? 'Editar piezas que busca' : 'Registrar piezas que busca')+'</button>' : '';
+    var fb = l.revealed && !isDir() ? '<button type="button" class="findbtn" data-find="'+l.id+'">🔎 '+(l.wants && l.wants.length ? 'Editar piezas que busca' : 'Registrar piezas que busca')+'</button>' : '';
     if(c){
       var who = [c.name, c.username ? '@'+c.username : null].filter(Boolean).join(' · ');
       return '<span class="shown">👤 '+esc(who||'Sin nombre')+(c.phone?' · 📞 '+esc(c.phone):'')+'</span>'
-        + (c.wa_link?'<a class="wa" href="'+esc(c.wa_link)+'" target="_blank" rel="noopener noreferrer">WhatsApp</a>':'')
         + (!c.phone && !c.wa_link ? '<span class="hint">Sin teléfono — escríbele por '+esc(CH[c.platform]||c.platform)+'</span>' : '') + fb;
     }
     var m = [l.name_masked ? '👤 '+esc(l.name_masked) : null, l.phone_masked ? '📞 '+esc(l.phone_masked) : null].filter(Boolean).join(' · ');
@@ -328,8 +360,118 @@
       + (l.wants && l.wants.length ? '<div class="wants-h">Piezas que busca este cliente · registradas por ti</div><table class="pt"><thead><tr><th>Pieza CTR</th><th class="num">Refatrix</th><th class="num">Mi stock</th><th class="num">Tu precio</th><th></th></tr></thead><tbody>'
           + l.wants.map(function(w){ return partRow(l, { code:w.code, qty:w.qty }); }).join('') + '</tbody></table>' : '')
       + '<div class="contact" id="ct'+l.id+'">'+contactHTML(l)+'</div>'
-      + (S.find===l.id ? finderHTML(l) : '') + '</div>';
+      + (S.find===l.id ? finderHTML(l) : '')
+      + '<div id="cw'+l.id+'">'+chatBlockHTML(l)+'</div>'
+      + '<div class="notes" id="nt'+l.id+'">'+notesHTML(l)+'</div></div>';
   }
+
+  // ── conversación por Messenger (0300) — solo Facebook; WhatsApp e Instagram no ──
+  function hm(iso){ if(!iso) return ''; var d = new Date(iso); return new Intl.DateTimeFormat('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}).format(d); }
+  function chatBlockHTML(l){
+    if(l.platform==='whatsapp') return '<div class="pn" style="margin-top:8px">Las solicitudes de WhatsApp no se atienden por chat aquí.</div>';
+    if(l.platform!=='messenger' || !l.chat) return '';
+    var c = l.chat, h = '';
+    if(c.claim==='other' && !isDir()) return '<span class="cpill cp-warn">🔒 Otra refaccionaria está atendiendo esta solicitud (hasta '+esc(hm(c.claim_until))+')</span>';
+    h += c.open ? '<span class="cpill cp-ok">🟢 Puedes responder hasta '+esc(hm(c.window_until))+'</span>'
+                : '<span class="cpill cp-off">⏸ La ventana de 24 h se cerró — podrás escribir cuando el cliente vuelva a escribir</span>';
+    if(S.chatOpen===l.id) return h + chatPanelHTML(l);
+    if(isDir()) return h + '<br><button type="button" class="chatbtn" data-copen="'+l.id+'">💬 Ver conversación</button>';
+    if(c.claim==='mine') return h + '<br><button type="button" class="chatbtn" data-copen="'+l.id+'">💬 Abrir conversación</button> <span class="pn">Reservada para ti hasta '+esc(hm(c.claim_until))+'</span>';
+    return h + '<br><button type="button" class="chatbtn" data-ctake="'+l.id+'">💬 Atender por Messenger</button><div class="pn">Al atender, esta solicitud queda reservada para ti unos días. Tus mensajes salen desde la página de Refatrix con el nombre de tu negocio.</div>';
+  }
+  function chatPanelHTML(l){
+    var ch = S.chat || {};
+    var top = '<div class="ctop"><span><b>💬 Messenger</b>'+(ch.claim_until && !isDir() ? ' · reservada hasta '+esc(hm(ch.claim_until)) : '')+'</span><button type="button" class="btn sm ghost" data-cclose="'+l.id+'">Cerrar</button></div>';
+    var comp = isDir() ? '<div class="pn" style="padding:6px 10px;background:#fff">Vista de dirección — solo lectura.</div>'
+      : (ch.can_send ? '<div class="ccomp"><textarea rows="2" maxlength="1000" id="ct_'+l.id+'" placeholder="Escribe al cliente…"></textarea><button type="button" class="btn" data-csend="'+l.id+'">Enviar</button></div>'
+                     : '<div class="pn" style="padding:6px 10px;background:#fff">No puedes escribir: la ventana de 24 h está cerrada. Se abre cuando el cliente vuelva a escribir.</div>');
+    return '<div class="chat">'+top+'<div class="cmsgs" id="cm'+l.id+'">'+msgsHTML(ch)+'</div>'+comp+'<div class="msg" id="cmsg'+l.id+'"></div></div>';
+  }
+  function msgsHTML(ch){
+    var h = ch.summary ? '<div class="csys">Consulta: '+esc(ch.summary)+'</div>' : '';
+    var ms = ch.messages || [];
+    if(!ms.length) h += '<div class="csys">'+(isDir() ? 'Sin mensajes registrados.' : 'Aún no hay mensajes desde que atiendes esta solicitud.')+'</div>';
+    ms.forEach(function(m){
+      var cls = m.who==='cliente' ? 'b-in' : (m.who==='yo' ? 'b-yo' : (m.who==='refatrix' ? 'b-rf' : 'b-ot'));
+      var lab = m.who==='refatrix' ? 'Refatrix · ' : (m.who==='otro' ? 'Otra refaccionaria · ' : (m.who==='portal' ? (m.shop||'Refaccionaria')+' · ' : ''));
+      h += '<div class="bub '+cls+'">'+esc(m.text)+'<div class="t">'+esc(lab)+esc(hm(m.at))+'</div></div>';
+    });
+    return h;
+  }
+  function redrawChat(id){ var l = leadOf(id); var el = $('cw'+id); if(el && l) el.innerHTML = chatBlockHTML(l); var box = $('cm'+id); if(box) box.scrollTop = box.scrollHeight; }
+  function stopChatPoll(){ if(S.chatTimer){ clearInterval(S.chatTimer); S.chatTimer = null; } }
+  function loadChat(id, first){
+    return api('GET','/leads/'+id+'/chat').then(function(d){
+      if(S.chatOpen!==id) return;
+      var l = leadOf(id);
+      if(l && l.chat){ l.chat.open = d.open; l.chat.window_until = d.window_until; if(d.claim_until){ l.chat.claim_until = d.claim_until; } }
+      var keep = $('ct_'+id) ? $('ct_'+id).value : '';
+      var changed = !S.chat || JSON.stringify(S.chat.messages)!==JSON.stringify(d.messages) || S.chat.can_send!==d.can_send;
+      S.chat = d;
+      if(first || changed){ redrawChat(id); var ta = $('ct_'+id); if(ta && keep) ta.value = keep; }
+    }).catch(function(e){
+      if(ended(e)) return;
+      if(e.message==='not_claimed' || e.message==='claimed_other'){
+        var l = leadOf(id); if(l && l.chat){ l.chat.claim = e.message==='claimed_other' ? 'other' : null; if(e.data && e.data.until) l.chat.claim_until = e.data.until; }
+        S.chatOpen = null; S.chat = null; stopChatPoll(); redrawChat(id);
+      } else { var m = $('cmsg'+id); if(m) m.textContent = errMsg(e); }
+    });
+  }
+  function openChat(id){
+    var prev = S.chatOpen; stopChatPoll(); S.chatOpen = id; S.chat = { messages:[] };
+    if(prev && prev!==id) redrawChat(prev);
+    redrawChat(id);
+    loadChat(id, true);
+    S.chatTimer = setInterval(function(){ if(S.chatOpen===id && !document.hidden) loadChat(id, false); }, 20000);
+  }
+  function closeChat(){ var id = S.chatOpen; S.chatOpen = null; S.chat = null; stopChatPoll(); if(id) redrawChat(id); }
+  function takeLead(id, btn){
+    btn.disabled = true;
+    api('POST','/leads/'+id+'/claim').then(function(d){
+      var l = leadOf(id); if(l && l.chat){ l.chat.claim = 'mine'; l.chat.claim_until = d.claim_until; }
+      openChat(id);
+    }).catch(function(e){
+      btn.disabled = false; if(ended(e)) return;
+      if(e.message==='claimed_other'){ var l = leadOf(id); if(l && l.chat){ l.chat.claim = 'other'; l.chat.claim_until = e.data && e.data.until; } redrawChat(id); return; }
+      $('listMsg').textContent = errMsg(e);
+    });
+  }
+  function sendChat(id, btn){
+    var ta = $('ct_'+id); var text = ta ? ta.value.trim() : ''; if(!text) return;
+    btn.disabled = true; var m0 = $('cmsg'+id); if(m0) m0.textContent = '';
+    api('POST','/leads/'+id+'/chat',{ text: text }).then(function(d){
+      if(S.chat){ S.chat.messages = (S.chat.messages||[]).concat([d.message]); }
+      if(ta) ta.value = '';
+      redrawChat(id);
+    }).catch(function(e){
+      btn.disabled = false; if(ended(e)) return;
+      var m = $('cmsg'+id);
+      var t = e.message==='window_closed' ? 'La ventana de 24 h se cerró. Podrás escribir cuando el cliente vuelva a escribir.'
+        : e.message==='claimed_other' || e.message==='not_claimed' ? 'Esta solicitud ya no está reservada para ti.'
+        : e.message==='send_failed' ? 'Facebook no aceptó el mensaje. Intenta de nuevo en unos minutos.'
+        : e.message==='too_long' ? 'Máximo 1000 caracteres.' : errMsg(e);
+      if(m) m.textContent = t;
+      if(e.message==='window_closed' && S.chat){ S.chat.can_send = false; var l = leadOf(id); if(l && l.chat) l.chat.open = false; redrawChat(id); var m2 = $('cmsg'+id); if(m2) m2.textContent = t; }
+    });
+  }
+
+  // ── notas por solicitud (0299) — el cliente ve solo las suyas; dirección ve todas ──
+  function notesHTML(l){
+    var ns = l.notes || [];
+    var h = ns.map(function(n){
+      return '<div class="note"><div class="nm">'+esc(n.at)+(isDir() && n.author ? ' · <b>'+esc(n.author)+'</b>' : '')+'</div>'+esc(n.body)
+        + (n.mine ? '<button type="button" class="x" data-ndel="'+n.id+'" data-nl="'+l.id+'" aria-label="Borrar nota">✕</button>' : '') + '</div>';
+    }).join('');
+    if(S.nOpen===l.id){
+      h += '<textarea rows="2" maxlength="1000" id="nb'+l.id+'" placeholder="'+(isDir()?'Nota de dirección (los clientes no la ven)':'Ej. Le llamé, pide cotización mañana')+'"></textarea>'
+        + '<div class="row2" style="margin-top:6px"><button type="button" class="btn sm ghost" data-ncancel="'+l.id+'">Cancelar</button><button type="button" class="btn sm" data-nsave="'+l.id+'">Guardar nota</button></div>'
+        + '<div class="pn" style="margin-top:4px">'+(isDir()?'Solo dirección ve esta nota.':'Solo tú y Refatrix ven tus notas.')+'</div><div class="msg" id="nm'+l.id+'"></div>';
+    } else {
+      h += '<button type="button" class="nadd" data-nadd="'+l.id+'">📝 '+(ns.length ? 'Agregar nota ('+ns.length+')' : 'Agregar nota')+'</button>';
+    }
+    return h;
+  }
+  function redrawNotes(id){ var l = S.leads.filter(function(x){ return x.id===id; })[0]; var el = $('nt'+id); if(el && l) el.innerHTML = notesHTML(l); }
 
   // ── buscador de piezas para el cliente del anuncio (0298) ──
   function finderHTML(l){
@@ -366,6 +508,22 @@
       return '<div class="dl"><div class="t"><span class="pc">'+esc(d.code)+'</span> <span class="pn">'+esc(p.name||'')+(d.input && d.input!==d.code ? ' · buscado como '+esc(d.input) : '')+'</span></div>'
         + '<input type="number" inputmode="numeric" min="1" max="9999" step="1" value="'+d.qty+'" data-dq="'+esc(d.code)+'"><button type="button" class="x" data-drm="'+esc(d.code)+'" aria-label="Quitar">✕</button></div>';
     }).join('');
+  }
+  function saveNote(id, btn){
+    var ta = $('nb'+id); var body = ta ? ta.value.trim() : '';
+    if(!body){ var m0 = $('nm'+id); if(m0) m0.textContent = 'Escribe la nota.'; return; }
+    btn.disabled = true;
+    api('POST','/leads/'+id+'/notes',{ body: body }).then(function(d){
+      var l = leadOf(id); if(l){ l.notes = (l.notes||[]).concat([d.note]); }
+      S.nOpen = null; redrawNotes(id);
+    }).catch(function(e){ btn.disabled = false; if(ended(e)) return; var m = $('nm'+id); if(m) m.textContent = e.message==='too_long' ? 'Máximo 1000 caracteres.' : errMsg(e); });
+  }
+  function delNote(id, nid){
+    if(!confirm('¿Borrar esta nota?')) return;
+    api('DELETE','/notes/'+nid).then(function(){
+      var l = leadOf(id); if(l) l.notes = (l.notes||[]).filter(function(n){ return n.id!==nid; });
+      redrawNotes(id);
+    }).catch(function(e){ if(!ended(e)) $('listMsg').textContent = errMsg(e); });
   }
   function leadOf(id){ return S.leads.filter(function(x){ return x.id===id; })[0]; }
   function redrawLead(id){
@@ -425,6 +583,14 @@
     if((b = e.target.closest('[data-contact]'))){ reveal(Number(b.getAttribute('data-contact')), b); return; }
     if((b = e.target.closest('.add'))){ if(b.disabled) return; toggle(Number(b.getAttribute('data-id')), b.getAttribute('data-code'), Number(b.getAttribute('data-qty'))||1); return; }
     if((b = e.target.closest('.ms'))){ openShelf(b.getAttribute('data-code')); return; }
+    if((b = e.target.closest('[data-ctake]'))){ takeLead(Number(b.getAttribute('data-ctake')), b); return; }
+    if((b = e.target.closest('[data-copen]'))){ openChat(Number(b.getAttribute('data-copen'))); return; }
+    if((b = e.target.closest('[data-cclose]'))){ closeChat(); return; }
+    if((b = e.target.closest('[data-csend]'))){ sendChat(Number(b.getAttribute('data-csend')), b); return; }
+    if((b = e.target.closest('[data-nadd]'))){ var pv = S.nOpen; S.nOpen = Number(b.getAttribute('data-nadd')); if(pv) redrawNotes(pv); redrawNotes(S.nOpen); var ta = $('nb'+S.nOpen); if(ta) try{ ta.focus(); }catch(_){ } return; }
+    if((b = e.target.closest('[data-ncancel]'))){ var ci = S.nOpen; S.nOpen = null; if(ci) redrawNotes(ci); return; }
+    if((b = e.target.closest('[data-nsave]'))){ saveNote(Number(b.getAttribute('data-nsave')), b); return; }
+    if((b = e.target.closest('[data-ndel]'))){ delNote(Number(b.getAttribute('data-nl')), Number(b.getAttribute('data-ndel'))); return; }
     if((b = e.target.closest('[data-find]'))){ openFinder(Number(b.getAttribute('data-find'))); return; }
     if((b = e.target.closest('[data-fcancel]'))){ closeFinder(); return; }
     if((b = e.target.closest('[data-fsave]'))){ saveWants(Number(b.getAttribute('data-fsave')), b); return; }
@@ -501,7 +667,7 @@
   }
   function renderCartBar(){
     var lines = cartLines(), pcs = lines.reduce(function(a,l){ return a+l.qty; }, 0);
-    var on = lines.length>0 && !$('sList').classList.contains('hidden');
+    var on = !isDir() && lines.length>0 && !$('sList').classList.contains('hidden');
     $('cartbar').classList.toggle('hidden', !on);
     if(on) $('cartInfo').innerHTML = '🛒 <b>'+lines.length+(lines.length===1?' pieza':' piezas')+' · '+pcs+' pz</b> · '+esc(money2(totals().sub))+' + IVA';
   }

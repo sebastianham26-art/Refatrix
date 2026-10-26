@@ -1,5 +1,5 @@
 // =====================================================================
-// refatrix-leadportal-admin.js — 제품·마케팅 › Meta 광고 문의 › 「🔑 고객 접속코드」 탭 (0297 · 2026-10-26 · build lp-1026c)
+// refatrix-leadportal-admin.js — 제품·마케팅 › Meta 광고 문의 › 「🔑 고객 접속코드」 탭 (0297 · 2026-10-26 · build lp-1026e)
 //   refatrix-metaleads.html 의 본 스크립트 뒤에 로드된다 — 그 페이지의 전역 api() · session · esc() · $() 를 쓴다.
 //   · 디렉터: 접속코드 발급(만료일 직접 입력 · 기준 금액 · 조건 메모 · 열람 범위) · 목록(기한 변경 · 정지/재개 · 재발급 · 삭제 · 이력) · 연락처 공개 기록
 //   · 담당 영업사원 · 디렉터: 고객 매장 재고(고객이 포털에서 고친 값과 같은 칸) — 칸을 벗어나면 저장, 이력
@@ -11,7 +11,7 @@
   var money = function (n) { return n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }); };
   var money2 = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); };
   var STATE = { active: ['사용 중', 's-on'], soon: ['곧 만료', 's-soon'], expired: ['만료', 's-exp'], paused: ['정지', 's-off'] };
-  var ERRK = { director_only: '디렉터만 할 수 있습니다.', migration_required: '서버에 0297 마이그레이션이 아직 없습니다 — Railway 콘솔에서 npm run migrate.',
+  var ERRK = { bad_days: '1~30일(연장은 1~60일) 사이 정수로 입력하세요.', director_only: '디렉터만 할 수 있습니다.', migration_required: '서버에 0297 마이그레이션이 아직 없습니다 — Railway 콘솔에서 npm run migrate.',
     customer_required: '고객을 고르세요.', expires_required: '만료일을 입력하세요.', expires_past: '만료일이 오늘보다 앞입니다.', bad_amount: '기준 금액은 숫자로 입력하세요.',
     customer_pending: '승인 대기 고객에게는 발급할 수 없습니다.', not_your_customer: '담당 고객이 아닙니다.', unknown_code: '없는 부품번호입니다.', bad_qty: '0 이상의 정수를 입력하세요.' };
   function say(ok, t, el) { var m = g(el || 'lpMsg'); if (!m) return; m.className = 'msg ' + (ok ? 'ok' : 'err'); m.textContent = t; if (ok) setTimeout(function () { if (m.textContent === t) m.className = 'msg'; }, 5000); }
@@ -29,7 +29,7 @@
       var box = g('lpScopeBox');
       box.innerHTML = (LP.st.states || []).map(function (s) { return '<label class="lp-ck"><input type="checkbox" value="' + esc(s) + '"> ' + esc(s) + '</label>'; }).join('');
       if (!g('lpExp').value) { var d = new Date(Date.UTC(+today().slice(0, 4), +today().slice(5, 7) - 1, +today().slice(8, 10) + 30)); g('lpExp').value = d.toISOString().slice(0, 10); expHint(); }
-      if (LP.st.ready) { loadCodes(); loadReveals(); }
+      if (LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); }
     }
     LP.loaded = true;
   }
@@ -107,15 +107,16 @@
       + it.map(function (c) {
         var s = STATE[c.state] || [c.state, ''];
         var lab = c.state === 'active' ? s[0] + ' · ' + c.days_left + '일' : (c.state === 'soon' ? c.days_left + '일 남음' : s[0]);
+        var isDir = c.kind === 'director';
         var act = '<button type="button" class="btn sm ' + (c.state === 'expired' || c.state === 'soon' ? 'lp-gold' : 'ghost') + '" data-act="ext" data-id="' + c.id + '">' + (c.state === 'expired' || c.state === 'soon' ? '연장' : '기한 변경') + '</button>'
           + (c.active ? '<button type="button" class="btn sm ghost" data-act="pause" data-id="' + c.id + '">정지</button>' : '<button type="button" class="btn sm ghost" data-act="resume" data-id="' + c.id + '">재개</button>')
           + '<button type="button" class="btn sm ghost" data-act="memo" data-id="' + c.id + '">메모</button>'
-          + '<button type="button" class="btn sm ghost" data-act="scope" data-id="' + c.id + '">범위</button>'
+          + (isDir ? '' : '<button type="button" class="btn sm ghost" data-act="scope" data-id="' + c.id + '">범위</button>')
           + '<button type="button" class="btn sm ghost" data-act="reissue" data-id="' + c.id + '">재발급</button>'
-          + '<button type="button" class="btn sm ghost" data-act="shelf" data-id="' + c.id + '">매장 재고</button>'
+          + (isDir ? '' : '<button type="button" class="btn sm ghost" data-act="shelf" data-id="' + c.id + '">매장 재고</button>')
           + '<button type="button" class="btn sm ghost" data-act="log" data-id="' + c.id + '">이력</button>'
           + '<button type="button" class="btn sm lp-red" data-act="del" data-id="' + c.id + '">삭제</button>';
-        return '<tr><td><b>' + esc(c.customer_name) + '</b><div class="muted">' + esc(c.customer_code) + '</div></td>'
+        return '<tr' + (isDir ? ' style="background:#fbf7ee"' : '') + '><td><b>' + (isDir ? '🔐 디렉터 전용' : esc(c.customer_name)) + '</b><div class="muted">' + (isDir ? '전체 문의 · 모든 메모' : esc(c.customer_code)) + '</div></td>'
           + '<td class="mono" style="white-space:nowrap">…' + esc(c.last4) + '</td><td class="num">' + money(c.basis_amount) + '</td><td class="muted lp-memo">' + esc(c.memo || '') + '</td>'
           + '<td>' + (c.scope_states && c.scope_states.length ? esc(c.scope_states.join(', ')) : '전체') + '</td>'
           + '<td style="white-space:nowrap">' + esc(c.created_on) + '</td><td style="white-space:nowrap">' + esc(c.expires_on) + '</td><td><span class="tag ' + s[1] + '">' + esc(lab) + '</span></td>'
@@ -198,6 +199,66 @@
     } catch (e) { g('lpReveals').innerHTML = '<div class="hint">' + esc(errT(e)) + '</div>'; }
   }
 
+  // ── 0299 · 디렉터 전용 코드 · 문의 메모 ─────────────────────
+  async function issueDirector() {
+    var d0 = new Date(Date.UTC(+today().slice(0, 4), +today().slice(5, 7) - 1, +today().slice(8, 10) + 365)).toISOString().slice(0, 10);
+    var v = prompt('디렉터 전용 코드 — 만료일 (YYYY-MM-DD)', d0); if (v == null) return; v = v.trim();
+    if (!ymd(v)) { say(false, '날짜 형식은 YYYY-MM-DD 입니다.'); return; }
+    try {
+      var d = await api('POST', '/api/lead-portal-admin/codes', { kind: 'director', expires_on: v, memo: (session.user && session.user.name) || '' });
+      showIssued(d, '🔐 디렉터 전용', v); say(true, '디렉터 코드를 발급했습니다 — 코드는 지금 한 번만 보입니다.'); loadCodes();
+    } catch (e) { say(false, errT(e)); }
+  }
+  async function loadNotes() {
+    var q = g('lpNotesQ') ? g('lpNotesQ').value.trim() : '';
+    try {
+      var d = await api('GET', '/api/lead-portal-admin/notes?limit=200' + (q ? '&q=' + encodeURIComponent(q) : ''));
+      var CHN = { whatsapp: 'WA', messenger: 'FB', instagram: 'IG' };
+      g('lpNotes').innerHTML = d.items.length ? '<table><thead><tr><th>작성 일시</th><th>누가</th><th>문의</th><th>메모</th><th>상태</th></tr></thead><tbody>'
+        + d.items.map(function (n) {
+          return '<tr' + (n.deleted_at ? ' style="opacity:.6"' : '') + '><td style="white-space:nowrap">' + esc(n.at) + '</td><td>' + esc(n.author) + ' <span class="muted">…' + esc(n.code_last4) + '</span></td>'
+            + '<td>#' + n.thread_id + ' <span class="tag ch-' + esc(n.platform) + '">' + esc(CHN[n.platform] || n.platform) + '</span> ' + esc(n.vehicles || '') + '</td>'
+            + '<td style="white-space:pre-wrap;max-width:420px">' + esc(n.body) + '</td><td>' + (n.deleted_at ? '<span class="tag s-exp">삭제됨 ' + esc(n.deleted_at) + '</span>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+        : '<div class="hint">아직 메모가 없습니다.</div>';
+    } catch (e) { g('lpNotes').innerHTML = '<div class="hint">' + esc(errT(e)) + '</div>'; }
+  }
+
+  // ── 0300 · Messenger 대화 선점 ─────────────────────────
+  async function loadClaims() {
+    if (!g('lpClaims')) return;
+    try {
+      var d = await api('GET', '/api/lead-portal-admin/claims');
+      if (g('lpClaimDays') && document.activeElement !== g('lpClaimDays')) g('lpClaimDays').value = d.claim_days;
+      g('lpClaims').innerHTML = d.items.length ? '<table><thead><tr><th>상태</th><th>고객(코드)</th><th>문의</th><th>선점</th><th>만료</th><th class="num">보냄</th><th class="num">받음</th><th>마지막 메시지</th><th></th></tr></thead><tbody>'
+        + d.items.map(function (c) {
+          return '<tr' + (c.active ? '' : ' style="opacity:.6"') + '><td>' + (c.active ? '<span class="tag s-on">대화 중</span>' : (c.released_mx ? '<span class="tag s-exp">해제 ' + esc(c.released_mx) + '</span>' : '<span class="tag s-exp">만료</span>')) + '</td>'
+            + '<td>' + esc(c.customer_name) + ' <span class="muted">…' + esc(c.code_last4 || '') + '</span></td><td>#' + c.thread_id + ' · ' + esc([c.lead_name, c.vehicles].filter(Boolean).join(' · ')) + '</td>'
+            + '<td style="white-space:nowrap">' + esc(c.claimed_mx) + '</td><td style="white-space:nowrap">' + esc(c.expires_mx) + '</td><td class="num">' + c.sent + '</td><td class="num">' + c.received + '</td><td style="white-space:nowrap">' + esc(c.last_mx || '—') + '</td>'
+            + '<td>' + (c.active ? '<div class="row lp-acts"><button type="button" class="btn sm ghost" data-cext="' + c.id + '">연장</button><button type="button" class="btn sm lp-red" data-crel="' + c.id + '">해제</button></div>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+        : '<div class="hint">아직 포털 대화가 없습니다.</div>';
+    } catch (e) { g('lpClaims').innerHTML = '<div class="hint">' + esc(errT(e)) + '</div>'; }
+  }
+  async function saveClaimDays() {
+    var v = Number(g('lpClaimDays').value);
+    try { await api('PUT', '/api/lead-portal-admin/settings', { claim_days: v }); say(true, '선점 기본 일수를 ' + v + '일로 저장했습니다(새로 선점 · 메시지부터 적용).'); loadClaims(); }
+    catch (e) { say(false, errT(e)); }
+  }
+  async function onClaimAct(e) {
+    var b = e.target.closest('[data-cext],[data-crel]'); if (!b) return;
+    try {
+      if (b.dataset.crel) {
+        if (!confirm('이 선점을 해제할까요? 그 고객의 대화창이 닫히고 다른 고객이 맡을 수 있게 됩니다.')) return;
+        await api('POST', '/api/lead-portal-admin/claims/' + b.dataset.crel + '/release'); say(true, '해제했습니다.');
+      } else {
+        var dd = prompt('며칠 연장할까요? (1~60)', '3'); if (dd == null) return;
+        var r = await api('POST', '/api/lead-portal-admin/claims/' + b.dataset.cext + '/extend', { days: Number(dd) }); say(true, '연장했습니다 — ' + r.expires_mx + '까지.');
+      }
+      loadClaims();
+    } catch (e2) { say(false, errT(e2)); }
+  }
+
   // ── 고객 매장 재고 ─────────────────────────────────────
   async function loadShelf() {
     var c = LP.shelfCust; if (!c) { g('lpShelf').innerHTML = ''; return; }
@@ -243,13 +304,18 @@
     g('lpExp').addEventListener('input', expHint); g('lpExp').addEventListener('change', expHint);
     g('lpScopeMode').addEventListener('change', function () { g('lpScopeBox').classList.toggle('hidden', g('lpScopeMode').value !== 'pick'); });
     g('lpIssue').addEventListener('click', issue);
+    if (g('lpDirIssue')) g('lpDirIssue').addEventListener('click', issueDirector);
+    if (g('lpClaimSave')) g('lpClaimSave').addEventListener('click', saveClaimDays);
+    if (g('lpClaims')) g('lpClaims').addEventListener('click', onClaimAct);
+    if (g('lpNotesGo')) g('lpNotesGo').addEventListener('click', loadNotes);
+    if (g('lpNotesQ')) g('lpNotesQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') loadNotes(); });
     g('lpCodes').addEventListener('click', onAct);
     g('lpFilter').addEventListener('change', renderCodes);
     g('lpFind').addEventListener('input', renderCodes);
     g('lpShelf').addEventListener('change', function (e) { var i = e.target.closest('input.lp-q'); if (i) saveShelf(i.dataset.code, i.value.trim(), false); });
     g('lpShelf').addEventListener('click', function (e) { var b = e.target.closest('[data-hist]'); if (b) shelfHist(b.dataset.hist); });
     var tabs = g('tabs');
-    if (tabs) tabs.addEventListener('click', function (e) { var b = e.target.closest('.tab'); if (b && b.dataset.p === 'lp') { if (!LP.loaded) load(); else if (LP.st && LP.st.director && LP.st.ready) { loadCodes(); loadReveals(); } } });
+    if (tabs) tabs.addEventListener('click', function (e) { var b = e.target.closest('.tab'); if (b && b.dataset.p === 'lp') { if (!LP.loaded) load(); else if (LP.st && LP.st.director && LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); } } });
   }
   var fmtT = function (t) { return new Date(t).toLocaleString('ko-KR', { timeZone: 'America/Mexico_City', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); };
   wire();
