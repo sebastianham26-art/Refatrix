@@ -330,6 +330,16 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   r = await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.statusCode, 200, r.body);
   assert.deepEqual(r.json().messages.map((m) => [m.who, m.text]), [['cliente', '¿Tienen para Aveo 2018?'], ['yo', `[Refacc El Puente ${T}] Sí, $1,350 c/u`], ['refatrix', 'Gracias, le atiende la refaccionaria']], '선점 뒤만 · 에코 중복 없음 · 직원 답장 보임');
   assert.equal(r.json().can_send, true);
+  // 2026-10-26f · ERP 한 건 열기 — 웹훅 메시지가 바로 합쳐져 보인다(포털 = 가게 이름, 직원, 손님)
+  r = await call(D, 'GET', `/api/meta-leads/${T4.id}`); assert.equal(r.statusCode, 200, r.body);
+  const em = r.json().messages;
+  const pm = em.find((m) => m.src === 'portal'); assert.ok(pm && pm.me && pm.shop === `Refacc El Puente ${T}` && pm.text.endsWith('Sí, $1,350 c/u'));
+  assert.ok(em.some((m) => m.src === 'staff' && m.text === 'Gracias, le atiende la refaccionaria'));
+  assert.ok(em.some((m) => !m.me && m.text === '¿Tienen para Aveo 2018?'));
+  assert.equal(em.filter((m) => m.src === 'portal').length, 1, '에코 중복 없음');
+  assert.ok(!('psid' in r.json()), 'psid 응답에 없음');
+  assert.deepEqual(L.mergeConversation([{ at: '2026-10-26T20:00:00Z', me: true, text: 'Hola  a' }], [{ direction: 'out', source: 'portal', text: 'Hola a', at: '2026-10-26T20:01:00Z', shop: 'X' }, { direction: 'in', source: 'customer', text: 'ok', at: '2026-10-26T19:00:00Z' }]).map((m) => [m.text, m.src || null, !!m.live]),
+    [['ok', null, true], ['Hola  a', 'portal', false]], '같은 메시지는 하나(그래프 쪽에 표시) · 시간순');
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'x'.repeat(1001) })).statusCode, 400);
   failNext = { code: 100, message: 'Invalid parameter' };
   r = await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'hola' }); assert.equal(r.statusCode, 502); assert.equal(r.json().error, 'send_failed');

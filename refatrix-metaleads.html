@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1026lpe</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1026lpf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -303,7 +303,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1026lpe';
+  const MTL_BUILD='mtl-1026lpf';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -476,7 +476,7 @@
     $('oTitle').textContent=(d.name||d.username||'—')+(d.username?' (@'+d.username+')':'');
     $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(CH[d.platform]||['',d.platform])[1]+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
     $('oAi').innerHTML=d.summary?'<div class="aisum">🤖 '+esc(d.summary)+(d.intent?'<br><span class="muted">관심: '+esc(d.intent)+'</span>':'')+'</div>':(d.ai_error?'<div class="aisum bad-t">AI 분석 오류: '+esc(d.ai_error)+'</div>':'');
-    $('oChat').innerHTML=(d.messages||[]).map(m=>'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+fmtT(m.at)+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
+    $('oChat').innerHTML=(d.messages||[]).map(m=>'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+(m.src==='portal'?'🔑 '+esc(m.shop||'포털')+' · ':(m.src==='staff'?'직원 · ':''))+fmtT(m.at)+(m.live?' · 실시간':'')+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
     fillAdSelect(d);
     const ph=(el,auto)=>{ el.placeholder=auto?('자동: '+auto):el.placeholder; };
     $('eName').value=d.name&&d.name!==d.meta_name?d.name:''; ph($('eName'),d.meta_name);

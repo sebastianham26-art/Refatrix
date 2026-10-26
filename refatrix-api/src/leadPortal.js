@@ -44,7 +44,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1026e';
+export const LP_BUILD = 'lp-1026f';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -328,6 +328,31 @@ export async function searchProducts(q, { limit = 15 } = {}, exec = query) {
       img: imgOf(p.code),
     };
   }).filter(Boolean);
+}
+
+// 2026-10-26f · ERP 「한 건 열기」 대화에 웹훅 메시지(포털 · 직원 · 손님)를 바로 합친다.
+//   기존 대화(meta_threads.messages)는 Graph 동기화(30분)로만 갱신돼 포털에서 보낸 「hola」가 바로 안 보였다.
+//   같은 메시지(방향 · 글자 같고 2분 안)는 하나로 — 포털에서 보낸 것은 「🔑 가게 이름」 표시를 붙인다.
+export async function liveMessages(psid) {
+  if (!psid || !(await chatReady())) return [];
+  try {
+    return (await query(
+      `SELECT m.direction, m.source, m.text, m.at, c.name AS shop FROM meta_page_messages m LEFT JOIN customers c ON c.id = m.customer_id
+        WHERE m.psid = $1 ORDER BY m.at, m.id LIMIT 500`, [String(psid)])).rows;
+  } catch (_) { return []; }
+}
+export function mergeConversation(graph, live) {
+  const out = (Array.isArray(graph) ? graph : []).map((m) => ({ ...m }));
+  const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+  for (const l of live || []) {
+    const me = l.direction === 'out'; const at = new Date(l.at).getTime(); const tx = norm(l.text);
+    const hit = out.find((g) => !!g.me === me && norm(g.text) === tx && Math.abs(new Date(g.at).getTime() - at) <= 120000);
+    const tag = l.source === 'portal' ? { src: 'portal', shop: l.shop || null } : (l.source === 'staff' ? { src: 'staff' } : {});
+    if (hit) Object.assign(hit, tag);
+    else out.push({ at: new Date(l.at).toISOString(), me, text: l.text || '', live: true, ...tag });
+  }
+  out.sort((a, b) => new Date(a.at) - new Date(b.at));
+  return out;
 }
 
 // 0300 · Meta 문의 목록(ERP)에 「💬 고객명 대화 중 · ~만료일」
