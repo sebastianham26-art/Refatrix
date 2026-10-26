@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1026a)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1026c)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -68,6 +68,26 @@
   .shown{font-weight:800}
   a.wa{background:var(--wa);color:#fff;text-decoration:none;border-radius:8px;padding:6px 11px;font-weight:800;font-size:12.5px}
   .more{display:block;width:100%;margin:6px 0 14px}
+  /* buscador de piezas (0298) */
+  .findbtn{background:#fff;color:var(--brand);border:1px dashed var(--brand);border-radius:8px;padding:6px 10px;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer}
+  .finder{margin-top:10px;border:1px solid var(--line);background:#faf8f3;border-radius:10px;padding:10px}
+  .finder h3{margin:0 0 6px;font-size:13.5px;color:var(--brand)}
+  .res{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px;margin-top:8px;display:flex;gap:9px}
+  .res img{width:56px;height:56px;object-fit:contain;border-radius:6px;background:#f4f1ea;flex:0 0 56px}
+  .res .b{flex:1;min-width:0}
+  .res .nm{font-size:12.5px;font-weight:700}
+  .res .ap{font-size:11px;color:var(--muted);line-height:1.35;max-height:2.7em;overflow:hidden}
+  .chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .chip{font-size:10.5px;background:#f1eee6;border-radius:999px;padding:1px 7px;white-space:nowrap}
+  .chip.hit{background:#e7f0fe;color:#1453a8;font-weight:700}
+  .res .meta{font-size:11.5px;margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .res .act{display:flex;gap:6px;align-items:center;margin-top:6px}
+  .res .act input,.draft input{width:64px;text-align:right;padding:6px}
+  .draft{margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px}
+  .draft .dl{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .draft .dl:last-child{border-bottom:none}
+  .draft .dl .t{flex:1;min-width:0}
+  .wants-h{font-size:11.5px;font-weight:800;color:var(--brand);margin-top:10px}
   .cartbar{position:fixed;left:0;right:0;bottom:0;background:#1c1b19;color:#fff;padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;z-index:6}
   .cartbar .in{max-width:760px;margin:0 auto;width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px}
   /* cart */
@@ -160,7 +180,7 @@
   var API = '/lp-api';                       // fijo — Netlify lo pasa al ERP (no se puede cambiar por URL)
   var TK = 'rfx_lp_token';
   var PAGE = 40;
-  var S = { me:null, leads:[], products:{}, states:[], shown:PAGE, cart:{}, over:{}, contacts:{}, key:null, ms:null };
+  var S = { me:null, leads:[], products:{}, states:[], shown:PAGE, cart:{}, over:{}, contacts:{}, key:null, ms:null, find:null, results:[], draft:[], fq:'' };
   function $(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function money(n){ return '$' + Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
@@ -250,9 +270,9 @@
     var st = $('fState').value, q = $('fQ').value.trim().toLowerCase(), onlyCodes = $('fCodes').checked;
     return S.leads.filter(function(l){
       if(st && l.state!==st) return false;
-      if(onlyCodes && !l.parts.length) return false;
+      if(onlyCodes && !l.parts.length && !(l.wants||[]).length) return false;
       if(q){
-        var hay = [l.vehicles,l.summary,l.parts_text,l.city,l.state,l.tipo].concat(l.parts.map(function(p){ var x=S.products[p.code]; return p.code+' '+(x?x.name:''); })).concat(l.open_parts).join(' ').toLowerCase();
+        var hay = [l.vehicles,l.summary,l.parts_text,l.city,l.state,l.tipo].concat(l.parts.concat(l.wants||[]).map(function(p){ var x=S.products[p.code]; return p.code+' '+(x?x.name:''); })).concat(l.open_parts).join(' ').toLowerCase();
         if(hay.indexOf(q)<0) return false;
       }
       return true;
@@ -286,14 +306,15 @@
   }
   function contactHTML(l){
     var c = S.contacts[l.id];
+    var fb = l.revealed ? '<button type="button" class="findbtn" data-find="'+l.id+'">🔎 '+(l.wants && l.wants.length ? 'Editar piezas que busca' : 'Registrar piezas que busca')+'</button>' : '';
     if(c){
       var who = [c.name, c.username ? '@'+c.username : null].filter(Boolean).join(' · ');
       return '<span class="shown">👤 '+esc(who||'Sin nombre')+(c.phone?' · 📞 '+esc(c.phone):'')+'</span>'
         + (c.wa_link?'<a class="wa" href="'+esc(c.wa_link)+'" target="_blank" rel="noopener noreferrer">WhatsApp</a>':'')
-        + (!c.phone && !c.wa_link ? '<span class="hint">Sin teléfono — escríbele por '+esc(CH[c.platform]||c.platform)+'</span>' : '');
+        + (!c.phone && !c.wa_link ? '<span class="hint">Sin teléfono — escríbele por '+esc(CH[c.platform]||c.platform)+'</span>' : '') + fb;
     }
     var m = [l.name_masked ? '👤 '+esc(l.name_masked) : null, l.phone_masked ? '📞 '+esc(l.phone_masked) : null].filter(Boolean).join(' · ');
-    return '<span class="masked">'+(m || (l.has_phone ? '' : 'Sin teléfono'))+'</span><button type="button" class="btn sm" data-contact="'+l.id+'">'+(l.revealed?'Ver de nuevo':'Ver contacto')+'</button>';
+    return '<span class="masked">'+(m || (l.has_phone ? '' : 'Sin teléfono'))+'</span><button type="button" class="btn sm" data-contact="'+l.id+'">'+(l.revealed?'Ver de nuevo':'Ver contacto')+'</button>' + fb;
   }
   function leadHTML(l){
     var where = [l.city, l.state].filter(Boolean).join(', ');
@@ -304,7 +325,87 @@
       + (l.summary ? '<div class="sum">'+esc(l.summary)+'</div>' : (l.parts_text ? '<div class="sum">'+esc(l.parts_text)+'</div>' : ''))
       + (rows ? '<table class="pt"><thead><tr><th>Pieza CTR</th><th class="num">Refatrix</th><th class="num">Mi stock</th><th class="num">Tu precio</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>' : '')
       + (l.open_parts && l.open_parts.length ? '<div class="open">Sin código CTR: '+l.open_parts.map(function(x){ return '«'+esc(x)+'»'; }).join(', ')+' — pregúntale a tu asesor.</div>' : '')
-      + '<div class="contact" id="ct'+l.id+'">'+contactHTML(l)+'</div></div>';
+      + (l.wants && l.wants.length ? '<div class="wants-h">Piezas que busca este cliente · registradas por ti</div><table class="pt"><thead><tr><th>Pieza CTR</th><th class="num">Refatrix</th><th class="num">Mi stock</th><th class="num">Tu precio</th><th></th></tr></thead><tbody>'
+          + l.wants.map(function(w){ return partRow(l, { code:w.code, qty:w.qty }); }).join('') + '</tbody></table>' : '')
+      + '<div class="contact" id="ct'+l.id+'">'+contactHTML(l)+'</div>'
+      + (S.find===l.id ? finderHTML(l) : '') + '</div>';
+  }
+
+  // ── buscador de piezas para el cliente del anuncio (0298) ──
+  function finderHTML(l){
+    return '<div class="finder" id="fd'+l.id+'"><h3>Buscar pieza — código CTR, SYD, OE o equivalencia</h3>'
+      + '<input type="search" id="fq'+l.id+'" data-fq="'+l.id+'" placeholder="Ej. CQ0271L, 54500-4Z000, horquilla versa" value="'+esc(S.fq)+'" autocomplete="off">'
+      + '<div id="fr'+l.id+'">'+resultsHTML(l.id)+'</div>'
+      + '<div class="draft" id="fdr'+l.id+'">'+draftHTML(l.id)+'</div>'
+      + '<div class="row2" style="margin-top:10px"><button type="button" class="btn ghost" data-fcancel="'+l.id+'">Cancelar</button><button type="button" class="btn" data-fsave="'+l.id+'">Guardar</button></div>'
+      + '<div class="msg" id="fm'+l.id+'"></div></div>';
+  }
+  function resultsHTML(id){
+    if(S.fq.replace(/[^A-Za-z0-9]/g,'').length < 2) return '<p class="hint" style="margin:8px 2px 0">Escribe al menos 2 letras o números.</p>';
+    if(!S.results.length) return '<p class="hint" style="margin:8px 2px 0">Sin resultados para «'+esc(S.fq)+'».</p>';
+    return S.results.map(function(r){
+      var chips = (r.hit ? '<span class="chip hit">'+esc(r.hit)+'</span>' : '')
+        + (r.syd||[]).map(function(c){ return '<span class="chip">SYD '+esc(c)+'</span>'; }).join('')
+        + (r.oe||[]).map(function(c){ return '<span class="chip">OE '+esc(c)+'</span>'; }).join('');
+      var stock = !r.active ? '<span class="pn">Descontinuado</span>'
+        : 'Refatrix <b class="'+(r.avail>0?'okc':'warnc')+'">'+esc(r.avail)+'</b>' + (r.incoming>0 ? ' · 🚢 '+esc(r.incoming)+(r.eta?' '+esc(dm(r.eta)):'') : '');
+      return '<div class="res"><img src="'+esc(r.img)+'" alt="" loading="lazy" referrerpolicy="no-referrer" data-img="1">'
+        + '<div class="b"><div><span class="pc">'+esc(r.code)+'</span> <span class="nm">'+esc(r.name)+'</span></div>'
+        + (r.app ? '<div class="ap">'+esc(r.app)+'</div>' : '')
+        + (chips ? '<div class="chips">'+chips+'</div>' : '')
+        + '<div class="meta"><span>'+stock+'</span><span>Tu precio <b>'+money(r.price)+'</b></span>'
+        + '<span>Mi stock <b>'+(r.shelf==null?'—':esc(r.shelf))+'</b></span>' + (r.bought12>0 ? '<span class="pn">Compraste '+esc(r.bought12)+'</span>' : '') + '</div>'
+        + (r.active ? '<div class="act"><input type="number" inputmode="numeric" min="1" max="9999" step="1" value="1" data-rq="'+esc(r.code)+'"><button type="button" class="btn sm" data-addw="'+esc(r.code)+'">Agregar</button></div>' : '')
+        + '</div></div>';
+    }).join('');
+  }
+  function draftHTML(id){
+    if(!S.draft.length) return '<p class="hint" style="margin:2px">Aún no hay piezas para este cliente. Búscalas arriba y agrégalas.</p>';
+    return '<div class="wants-h" style="margin:0 0 4px">Piezas que busca este cliente</div>' + S.draft.map(function(d){
+      var p = S.products[d.code] || {};
+      return '<div class="dl"><div class="t"><span class="pc">'+esc(d.code)+'</span> <span class="pn">'+esc(p.name||'')+(d.input && d.input!==d.code ? ' · buscado como '+esc(d.input) : '')+'</span></div>'
+        + '<input type="number" inputmode="numeric" min="1" max="9999" step="1" value="'+d.qty+'" data-dq="'+esc(d.code)+'"><button type="button" class="x" data-drm="'+esc(d.code)+'" aria-label="Quitar">✕</button></div>';
+    }).join('');
+  }
+  function leadOf(id){ return S.leads.filter(function(x){ return x.id===id; })[0]; }
+  function redrawLead(id){
+    var el = document.querySelector('[data-lead="'+id+'"]'), l = leadOf(id);
+    if(!el || !l) return;
+    var tmp = document.createElement('div'); tmp.innerHTML = leadHTML(l); el.parentNode.replaceChild(tmp.firstChild, el);
+  }
+  function openFinder(id){
+    var l = leadOf(id); if(!l) return;
+    var prev = S.find; S.find = id; S.fq = ''; S.results = [];
+    S.draft = (l.wants||[]).map(function(w){ return { code:w.code, qty:w.qty, input:w.input }; });
+    if(prev && prev!==id) redrawLead(prev);
+    redrawLead(id);
+    setTimeout(function(){ var i = $('fq'+id); if(i) try{ i.focus(); }catch(e){} }, 30);
+  }
+  function closeFinder(){ var id = S.find; S.find = null; S.results = []; S.draft = []; S.fq = ''; if(id) redrawLead(id); }
+  var fqT, fqSeq = 0;
+  function runSearch(id){
+    var q = S.fq, seq = ++fqSeq;
+    if(q.replace(/[^A-Za-z0-9]/g,'').length < 2){ S.results = []; var e0 = $('fr'+id); if(e0) e0.innerHTML = resultsHTML(id); return; }
+    api('GET','/search?q='+encodeURIComponent(q)).then(function(d){
+      if(seq!==fqSeq || S.find!==id) return;
+      S.results = d.items || [];
+      S.results.forEach(function(r){ if(!S.products[r.code]) S.products[r.code] = { code:r.code, name:r.name, active:r.active, avail:r.avail, incoming:r.incoming, eta:r.eta, price:r.price, bought12:r.bought12, bought_last:r.bought_last, shelf:r.shelf, shelf_src:r.shelf_src, shelf_at:r.shelf_at }; });
+      var el = $('fr'+id); if(el) el.innerHTML = resultsHTML(id);
+    }).catch(function(e){ if(!ended(e)){ var m = $('fm'+id); if(m) m.textContent = errMsg(e); } });
+  }
+  function addWant(id, code, qty){
+    var r = S.results.filter(function(x){ return x.code===code; })[0];
+    var d = S.draft.filter(function(x){ return x.code===code; })[0];
+    if(d) d.qty = Math.min(9999, d.qty + qty); else S.draft.push({ code:code, qty:qty, input: S.fq.trim() || null });
+    var el = $('fdr'+id); if(el) el.innerHTML = draftHTML(id);
+  }
+  function saveWants(id, btn){
+    btn.disabled = true; var m = $('fm'+id); if(m) m.textContent = '';
+    api('PUT','/leads/'+id+'/wants',{ items: S.draft.map(function(d){ return { code:d.code, qty:d.qty, input:d.input }; }) }).then(function(d){
+      var l = leadOf(id); if(l) l.wants = d.wants || [];
+      Object.keys(d.products||{}).forEach(function(k){ S.products[k] = d.products[k]; });
+      closeFinder();
+    }).catch(function(e){ btn.disabled = false; if(ended(e)) return; if(m) m.textContent = e.message==='not_revealed' ? 'Primero toca «Ver contacto».' : errMsg(e); });
   }
   function render(){
     var it = filtered();
@@ -324,7 +425,24 @@
     if((b = e.target.closest('[data-contact]'))){ reveal(Number(b.getAttribute('data-contact')), b); return; }
     if((b = e.target.closest('.add'))){ if(b.disabled) return; toggle(Number(b.getAttribute('data-id')), b.getAttribute('data-code'), Number(b.getAttribute('data-qty'))||1); return; }
     if((b = e.target.closest('.ms'))){ openShelf(b.getAttribute('data-code')); return; }
+    if((b = e.target.closest('[data-find]'))){ openFinder(Number(b.getAttribute('data-find'))); return; }
+    if((b = e.target.closest('[data-fcancel]'))){ closeFinder(); return; }
+    if((b = e.target.closest('[data-fsave]'))){ saveWants(Number(b.getAttribute('data-fsave')), b); return; }
+    if((b = e.target.closest('[data-addw]'))){ var code = b.getAttribute('data-addw'); var qi = b.parentNode.querySelector('[data-rq]'); var q = Math.max(1, Math.min(9999, Math.round(Number(qi && qi.value)||1))); addWant(S.find, code, q); return; }
+    if((b = e.target.closest('[data-drm]'))){ var c2 = b.getAttribute('data-drm'); S.draft = S.draft.filter(function(x){ return x.code!==c2; }); var el = $('fdr'+S.find); if(el) el.innerHTML = draftHTML(S.find); return; }
   });
+  $('list').addEventListener('input', function(e){
+    var i = e.target.closest('[data-fq]'); if(!i) return;
+    S.fq = i.value; var id = Number(i.getAttribute('data-fq'));
+    clearTimeout(fqT); fqT = setTimeout(function(){ runSearch(id); }, 300);
+  });
+  $('list').addEventListener('change', function(e){
+    var i = e.target.closest('[data-dq]'); if(!i) return;
+    var code = i.getAttribute('data-dq'); var v = Math.max(1, Math.min(9999, Math.round(Number(i.value)||1)));
+    S.draft.forEach(function(d){ if(d.code===code) d.qty = v; }); i.value = v;
+  });
+  // imagen faltante → se oculta (sin onerror en línea)
+  $('list').addEventListener('error', function(e){ var t = e.target; if(t && t.tagName==='IMG' && t.getAttribute('data-img')) t.style.visibility = 'hidden'; }, true);
   function reveal(id, btn){
     btn.disabled = true;
     api('POST','/leads/'+id+'/contact').then(function(c){

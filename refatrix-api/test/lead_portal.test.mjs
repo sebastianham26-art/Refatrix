@@ -84,7 +84,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const call = (h, method, url, payload, extra = {}) => app.inject({ method, url, payload, headers: { ...h, ...extra } });
   const cust = await one(`INSERT INTO customers (name, code, discount, owner_id, created_by, doc_gate) VALUES ($1,$2,45,$3,$4,false) RETURNING id`, [`Refacc El Puente ${T}`, `LP${T}`, rep.id, dir.id]);
   const P1 = await one(`INSERT INTO products (code, name, list_price, stock_qty) VALUES ($1,'HORQUILLA INF IZQ',1000,10) RETURNING id, code`, [`LQ${T}L`]);
-  const P2 = await one(`INSERT INTO products (code, name, list_price, stock_qty) VALUES ($1,'AMORTIGUADOR DEL',2000,0) RETURNING id, code`, [`LS${T}`]);
+  const P2 = await one(`INSERT INTO products (code, name, list_price, stock_qty) VALUES ($1,$2,2000,0) RETURNING id, code`, [`LS${T}`, `AMORTIGUADOR DEL ${T}`]);
   const P3 = await one(`INSERT INTO products (code, name, list_price, stock_qty, is_active) VALUES ($1,'DESCONTINUADO',500,5,false) RETURNING id, code`, [`LX${T}`]);
   // 운송중 P2 40개 · 다른 견적이 P1 3개 예약
   const sh = await one(`INSERT INTO inbound_shipments (status, eta) VALUES ('incoming', '2026-11-18') RETURNING id`);
@@ -157,6 +157,34 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   r = await call(D, 'GET', '/api/meta-leads/list'); const row = r.json().items.find((x) => x.id === Number(T1.id));
   assert.equal(row.revealed_to, `Refacc El Puente ${T}`, 'ERP 목록에 「공개된 곳」');
   r = await call(C, 'GET', '/api/lead-portal/leads'); assert.equal(r.json().leads.find((l) => l.id === Number(T1.id)).revealed, true);
+
+  // ── 0298 · 제품 찾기 · 찾는 부품 기록 ──
+  await query(`INSERT INTO product_syd_codes (product_id, syd_code) VALUES ($1,$2)`, [P1.id, `SY-${T}-77`]);
+  await query(`INSERT INTO product_oe_codes (product_id, oe_code, oe_norm) VALUES ($1,$2,$3)`, [P2.id, `54500-${T}A`, `54500${T}A`]);
+  const srch = async (q) => (await call(C, 'GET', '/api/lead-portal/search?q=' + encodeURIComponent(q))).json().items;
+  let it0 = await srch(P1.code.toLowerCase()); assert.equal(it0[0].code, P1.code, 'CTR 코드'); assert.equal(it0[0].exact, true);
+  assert.equal(it0[0].avail, 7); assert.equal(it0[0].price, 550); assert.equal(it0[0].bought12, 6); assert.ok(it0[0].img.includes(P1.code));
+  it0 = await srch(`sy ${T} 77`); assert.equal(it0[0].code, P1.code, 'SYD 코드(표기 흔들림)'); assert.equal(it0[0].via, 'syd'); assert.ok(it0[0].hit.startsWith('SYD'));
+  it0 = await srch(`54500 ${T}a`); assert.equal(it0[0].code, P2.code, 'OE 번호'); assert.equal(it0[0].via, 'oe'); assert.equal(it0[0].incoming, 40);
+  it0 = await srch(`amortiguador del ${T}`); assert.ok(it0.some((x) => x.code === P2.code), '품명');
+  assert.deepEqual(await srch('x'), [], '두 글자 미만');
+  assert.ok(!JSON.stringify(await srch(P1.code)).includes('cost'), '원가 없음');
+  // 연락처를 보지 않은 문의에는 기록 불가
+  assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T2.id}/wants`, { items: [{ code: P1.code, qty: 1 }] })).statusCode, 409);
+  assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [{ code: 'NADA' + T, qty: 1 }] })).statusCode, 400);
+  r = await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [{ code: P2.code, qty: 2, input: `54500-${T}A` }, { code: P1.code, qty: 1 }, { code: P2.code, qty: 1 }] });
+  assert.equal(r.statusCode, 200, r.body);
+  assert.deepEqual(r.json().wants.map((x) => [x.code, x.qty]), [[P2.code, 3], [P1.code, 1]], '같은 코드 합침');
+  assert.equal(r.json().products[P2.code].avail, 0);
+  r = await call(C, 'GET', '/api/lead-portal/leads'); let lw = r.json().leads.find((l) => l.id === Number(T1.id));
+  assert.deepEqual(lw.wants.map((x) => [x.code, x.qty, x.input]), [[P2.code, 3, `54500-${T}A`], [P1.code, 1, null]]);
+  assert.ok(r.json().products[P2.code], '찾는 부품 정보도 같이');
+  r = await call(D, 'GET', '/api/meta-leads/list'); assert.ok(r.json().items.find((x) => x.id === Number(T1.id)).revealed_to.includes(`${P2.code}×3`), 'ERP 목록에 찾는 부품');
+  r = await call(D, 'GET', '/api/lead-portal-admin/reveals'); assert.ok(r.json().items.find((x) => x.thread_id === Number(T1.id)).wants.includes(`${P1.code}×1`));
+  r = await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [{ code: P1.code, qty: 4 }] });
+  assert.deepEqual(r.json().wants.map((x) => [x.code, x.qty]), [[P1.code, 4]], '목록 통째 교체(빠진 건 지움)');
+  r = await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [] }); assert.deepEqual(r.json().wants, [], '전부 지우기');
+  await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [{ code: P2.code, qty: 2 }] });
 
   // ── 매장 재고 ──
   r = await call(C, 'PUT', '/api/lead-portal/stock', { code: P1.code, qty: 3 }); assert.equal(r.statusCode, 200, r.body);
@@ -272,7 +300,7 @@ test('C1. ERP 「🔑 고객 접속코드」 탭 — 발급 · 안내문 · 목�
   const routes = [
     [/GET \/api\/lead-portal-admin\/status/, () => [200, { ready: true, director: true, states: ['Nuevo León', 'Tamaulipas'], url: 'https://x/leads', today: '2026-10-26' }]],
     [/GET \/api\/lead-portal-admin\/codes$/, () => [200, { today: '2026-10-26', items: codes }]],
-    [/GET \/api\/lead-portal-admin\/reveals/, () => [200, { items: [{ first_mx: '2026-10-26 08:14', customer_name: 'El Puente', code_last4: 'Q9PD', thread_id: 1842, platform: 'whatsapp', status: 'nuevo', vehicles: 'Versa 2017', parts: 'Horquilla', n: 1 }] }]],
+    [/GET \/api\/lead-portal-admin\/reveals/, () => [200, { items: [{ first_mx: '2026-10-26 08:14', customer_name: 'El Puente', code_last4: 'Q9PD', thread_id: 1842, platform: 'whatsapp', status: 'nuevo', vehicles: 'Versa 2017', parts: 'Horquilla', n: 1, wants: 'CS1188×2' }] }]],
     [/GET \/api\/lead-portal-admin\/customers/, () => [200, { items: [{ id: 9, code: 'C-0052', name: 'El Puente', discount: 45 }] }]],
     [/GET \/api\/lead-portal-admin\/customer-ref\/9/, () => [200, { d30: 18420, d90: 61950, d365: 214300, last_date: '2026-10-21', last_amount: 12880, codes: 0 }]],
     [/POST \/api\/lead-portal-admin\/codes$/, (_, b) => [200, { ok: true, code: 'RFX-7K2M-Q9PD', invite: 'Hola El Puente RFX-7K2M-Q9PD', item: { ...codes[0], expires_on: b.expires_on } }]],
@@ -285,7 +313,7 @@ test('C1. ERP 「🔑 고객 접속코드」 탭 — 발급 · 안내문 · 목�
   d.querySelector('[data-p="lp"]').click(); await tick(80);
   assert.ok(d.getElementById('lpCodes').textContent.includes('El Puente'), '목록');
   assert.ok(d.getElementById('lpCodes').textContent.includes('…Q9PD'));
-  assert.ok(d.getElementById('lpReveals').textContent.includes('Versa 2017'));
+  assert.ok(d.getElementById('lpReveals').textContent.includes('Versa 2017') && d.getElementById('lpReveals').textContent.includes('CS1188×2'));
   // 발급
   d.getElementById('lpCustQ').value = 'Puente'; d.getElementById('lpCustQ').dispatchEvent(new w.Event('input')); await tick(400);
   d.querySelector('#lpCustList [data-cid="9"]').click(); await tick(60);
@@ -319,6 +347,8 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
     [/GET \/lp-api\/me/, () => [200, { token: 'TOK2', me }]],
     [/GET \/lp-api\/leads/, () => [200, leads]],
     [/POST \/lp-api\/leads\/1842\/contact/, () => [200, { name: 'Jorge Treviño', phone: '528123456742', wa_link: 'https://wa.me/528123456742', platform: 'whatsapp', first_seen: '2026-10-26 08:14' }]],
+    [/GET \/lp-api\/search\?q=54500/, () => [200, { items: [{ code: 'CS1188', name: 'Amortiguador del', app: 'Chevrolet Aveo 2012-2018', active: true, syd: ['8-1188'], oe: ['54500-4Z000'], via: 'oe', exact: true, hit: 'OE 54500-4Z000', img: 'https://img/x.webp', avail: 0, incoming: 40, eta: '2026-11-18', price: 1085, bought12: 0, shelf: null }] }]],
+    [/PUT \/lp-api\/leads\/1842\/wants/, (_, b) => [200, { ok: true, wants: b.items.map((x) => ({ code: x.code, qty: x.qty, input: x.input })), products: { CS1188: { code: 'CS1188', name: 'Amortiguador del', active: true, avail: 0, incoming: 40, eta: '2026-11-18', price: 1085, bought12: 0, shelf: null } } }]],
     [/PUT \/lp-api\/stock/, (_, b) => [200, { ok: true, code: b.code, shelf: b.qty, shelf_src: 'customer', shelf_at: '2026-10-26' }]],
     [/POST \/lp-api\/order/, () => [200, { ok: true, quote_no: 'FB-2026-0187', total: 710, asesor: 'Oscar' }]],
   ];
@@ -343,11 +373,24 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
   d.querySelector('[data-contact="1842"]').click(); await tick(60);
   assert.ok(d.getElementById('list').textContent.includes('Jorge Treviño'));
   assert.ok(d.querySelector('a[href="https://wa.me/528123456742"]'));
+  // 0298 · 연락처를 본 문의 → 찾는 부품 기록(OE 로 찾기 → 수량 → 저장)
+  d.querySelector('[data-find="1842"]').click(); await tick(40);
+  const fq = d.getElementById('fq1842'); assert.ok(fq, '찾기 칸');
+  fq.value = '54500-4Z000'; fq.dispatchEvent(new w.Event('input', { bubbles: true })); await tick(420);
+  assert.ok(d.getElementById('fr1842').textContent.includes('CS1188') && d.getElementById('fr1842').textContent.includes('OE 54500-4Z000'));
+  d.querySelector('[data-rq="CS1188"]').value = '2'; d.querySelector('[data-addw="CS1188"]').click(); await tick(20);
+  assert.ok(d.getElementById('fdr1842').textContent.includes('CS1188'));
+  d.querySelector('[data-fsave="1842"]').click(); await tick(60);
+  assert.deepEqual(log.find((x) => x[0] === 'PUT' && x[1].includes('/wants'))[2], { items: [{ code: 'CS1188', qty: 2, input: '54500-4Z000' }] });
+  assert.ok(!d.getElementById('fd1842'), '저장 후 닫힘');
+  assert.ok(d.getElementById('list').textContent.includes('Piezas que busca este cliente'));
+  assert.ok(d.querySelector('.add[data-code="CS1188"]'), '찾은 부품도 주문 버튼');
+
   // Mi stock — 아래 시트에서 5 입력
   d.querySelector('.ms[data-code="CQ0271R"]').click(); await tick(20);
   assert.ok(!d.getElementById('msSheet').classList.contains('hidden'));
   d.getElementById('msQty').value = '5'; d.getElementById('msSave').click(); await tick(60);
-  assert.deepEqual(log.find((x) => x[0] === 'PUT')[2], { code: 'CQ0271R', qty: 5 });
+  assert.deepEqual(log.find((x) => x[0] === 'PUT' && x[1] === '/lp-api/stock')[2], { code: 'CQ0271R', qty: 5 });
   assert.ok(d.getElementById('msSheet').classList.contains('hidden'));
   assert.ok(!addR().classList.contains('sug'), '재고 5 → 강조 해제');
   // 장바구니 → 주문

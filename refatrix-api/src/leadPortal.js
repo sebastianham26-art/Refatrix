@@ -39,9 +39,11 @@ import { recordQuoteDevDemand } from './quoteDevDemand.js';
 import { kickQuoteNotify } from './quoteWaNotify.js';
 import { resolveSeller, exclusivityReady } from './exclusivity.js';
 import { META_STATES } from './metaLeadExtract.js';
+import { oeReady, oeByProduct } from './oeCodes.js';
+import { normOe, oeToken } from './oeParse.js';
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1026b';
+export const LP_BUILD = 'lp-1026c';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -247,12 +249,84 @@ export async function revealedMap(threadIds) {
   const m = new Map();
   if (!threadIds || !threadIds.length || !(await portalReady())) return m;
   try {
+    // 0298 · 그 refaccionaria 가 기록한 「찾는 부품」을 이름 옆에 — 「El Puente (CQ0271L×2, CB0412×1)」
+    const w = await wantsReady();
     for (const r of (await query(
-      `SELECT r.thread_id, string_agg(c.name, ' · ' ORDER BY r.first_at) AS names
+      `SELECT r.thread_id, string_agg(c.name ${w ? `|| COALESCE(' (' || (SELECT string_agg(p.code || '×' || x.qty, ', ' ORDER BY p.code)
+                                                    FROM lead_portal_wants x JOIN products p ON p.id = x.product_id
+                                                   WHERE x.customer_id = r.customer_id AND x.thread_id = r.thread_id) || ')', '')` : ''}, ' · ' ORDER BY r.first_at) AS names
          FROM lead_portal_reveals r JOIN customers c ON c.id = r.customer_id
         WHERE r.thread_id = ANY($1::bigint[]) GROUP BY r.thread_id`, [threadIds])).rows) m.set(Number(r.thread_id), r.names);
   } catch (_) { /* 표 없음 등 — 목록은 그대로 */ }
   return m;
+}
+
+// ── 0298 · 「이 손님이 찾는 부품」(연락처를 본 문의에 refaccionaria 가 기록) ─────────────
+let wReady = false; let wProbe = 0;
+export async function wantsReady() {
+  if (wReady) return true;
+  if (Date.now() - wProbe < 30000) return false;
+  wProbe = Date.now();
+  try { wReady = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='lead_portal_wants'`)).rows.length > 0; }
+  catch (_) { wReady = false; }
+  return wReady;
+}
+export function setWantsReady(v) { wReady = !!v; wProbe = Date.now(); }
+export const IMG_BASE = () => (process.env.PRODUCT_IMG_BASE || 'https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products').replace(/\/$/, '');
+const imgOf = (code) => `${IMG_BASE()}/${encodeURIComponent(code)}/${encodeURIComponent(code)}_1.webp`;
+let xrefOk = null;
+async function xrefReady() {
+  if (xrefOk !== null) return xrefOk;
+  try { xrefOk = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='product_xref_codes'`)).rows.length > 0; } catch (_) { xrefOk = false; }
+  return xrefOk;
+}
+
+// 제품 찾기 — ERP 견적 자동완성 · 제품찾기와 같은 규칙: CTR 코드 · 품명 · SYD 코드 · OE(정규화, 4자 이상) · 경쟁사 교차참조.
+//   정확히 같은 번호가 먼저, 그다음 부분일치, 품명 일치는 맨 뒤. 최대 limit 건.
+export async function searchProducts(q, { limit = 15 } = {}, exec = query) {
+  const raw = String(q == null ? '' : q).trim().slice(0, 60);
+  const n = normOe(raw);
+  if (n.length < 2) return [];
+  const like = '%' + n + '%';
+  const nameLike = '%' + raw.replace(/[%_\\]/g, '') + '%';
+  const parts = [
+    `SELECT p.id, CASE WHEN regexp_replace(upper(p.code),'[^A-Z0-9]','','g') = $1 THEN 0 ELSE 1 END AS pri, 'ctr' AS via
+       FROM products p WHERE p.deleted_at IS NULL AND regexp_replace(upper(p.code),'[^A-Z0-9]','','g') LIKE $2`,
+    `SELECT s.product_id, CASE WHEN regexp_replace(upper(s.syd_code),'[^A-Z0-9]','','g') = $1 THEN 0 ELSE 1 END, 'syd'
+       FROM product_syd_codes s WHERE regexp_replace(upper(s.syd_code),'[^A-Z0-9]','','g') LIKE $2`,
+    `SELECT p.id, 2, 'name' FROM products p WHERE p.deleted_at IS NULL AND (p.name ILIKE $3 OR p.app ILIKE $3)`,
+  ];
+  if (n.length >= 4 && (await oeReady(exec))) {
+    parts.push(`SELECT o.product_id, CASE WHEN o.oe_norm = $1 THEN 0 ELSE 1 END, 'oe' FROM product_oe_codes o WHERE o.oe_norm LIKE $2`);
+  }
+  if (await xrefReady()) {
+    parts.push(`SELECT x.product_id, CASE WHEN x.norm_code = $1 THEN 0 ELSE 1 END, 'xref' FROM product_xref_codes x WHERE x.norm_code LIKE $2`);
+  }
+  const hits = (await exec(
+    `SELECT h.id, MIN(h.pri) AS pri, (array_agg(h.via ORDER BY h.pri))[1] AS via
+       FROM (${parts.join(' UNION ALL ')}) h JOIN products p ON p.id = h.id AND p.deleted_at IS NULL
+      GROUP BY h.id, p.code ORDER BY MIN(h.pri), p.code LIMIT ${Math.max(1, Math.min(30, Number(limit) || 15))}`,
+    [n, like, nameLike])).rows;
+  if (!hits.length) return [];
+  const ids = hits.map((h) => Number(h.id));
+  const prods = (await exec(`SELECT id, code, name, app, is_active FROM products WHERE id = ANY($1::bigint[])`, [ids])).rows;
+  const byId = new Map(prods.map((p) => [Number(p.id), p]));
+  const syd = {};
+  for (const r of (await exec(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1::bigint[])`, [ids])).rows) (syd[Number(r.product_id)] ||= []).push(r.syd_code);
+  let oe = new Map(); try { if (await oeReady(exec)) oe = await oeByProduct(ids, exec); } catch (_) { oe = new Map(); }
+  return hits.map((h) => {
+    const p = byId.get(Number(h.id)); if (!p) return null;
+    const oeList = oe.get(Number(h.id)) || [];
+    const oeHit = h.via === 'oe' ? oeList.find((x) => x.oe_norm && x.oe_norm.includes(n)) : null;
+    const sydHit = h.via === 'syd' ? (syd[Number(h.id)] || []).find((c) => normOe(c).includes(n)) : null;
+    return {
+      code: p.code, name: p.name || '', app: clip(p.app, 300), active: p.is_active !== false,
+      syd: (syd[Number(h.id)] || []).slice(0, 4), oe: oeList.filter((x) => x.rel !== 'for').slice(0, 3).map((x) => x.oe_code),
+      via: h.via, exact: Number(h.pri) === 0,
+      hit: h.via === 'oe' && oeHit ? 'OE ' + oeHit.oe_code : (h.via === 'syd' && sydHit ? 'SYD ' + sydHit : (h.via === 'xref' ? 'Equivalencia' : null)),
+      img: imgOf(p.code),
+    };
+  }).filter(Boolean);
 }
 
 // ── 틀린 코드 잠금(IP) ─────────────────────────────────────────────
@@ -370,7 +444,19 @@ export default async function leadPortalRoutes(app) {
          FROM meta_threads t WHERE ${conds.join(' AND ')}
         ORDER BY t.last_at DESC NULLS LAST LIMIT ${MAX_LEADS}`, args)).rows;
     const leads = rows.map(shapeLead);
-    const products = await productInfo(Number(k.customer_id), Number(k.discount) || 0, leads.flatMap((l) => l.parts.map((p) => p.code)));
+    // 0298 · 이 고객이 기록한 「찾는 부품」
+    const wants = new Map();
+    if (await wantsReady()) {
+      for (const w of (await query(
+        `SELECT w.thread_id, p.code, w.qty, w.input_code FROM lead_portal_wants w JOIN products p ON p.id = w.product_id AND p.deleted_at IS NULL
+          WHERE w.customer_id = $1 ORDER BY w.created_at, w.id`, [k.customer_id])).rows) {
+        const t = Number(w.thread_id); if (!wants.has(t)) wants.set(t, []);
+        wants.get(t).push({ code: w.code, qty: Number(w.qty), input: w.input_code || null });
+      }
+    }
+    for (const l of leads) l.wants = wants.get(l.id) || [];
+    const products = await productInfo(Number(k.customer_id), Number(k.discount) || 0,
+      leads.flatMap((l) => l.parts.map((p) => p.code).concat(l.wants.map((w) => w.code))));
     // 카탈로그에서 사라진 코드는 부품표에서 뺀다(주문할 수 없는 줄을 보여 주지 않게)
     for (const l of leads) l.parts = l.parts.filter((p) => products[p.code]);
     const states = [...new Set(leads.map((l) => l.state).filter(Boolean))].sort((a, b) => META_STATES.indexOf(a) - META_STATES.indexOf(b));
@@ -406,6 +492,55 @@ export default async function leadPortalRoutes(app) {
     if (!p) return reply.code(404).send({ error: 'unknown_code' });
     await withTx((c) => saveShelf(c, { customerId: Number(k.customer_id), productId: Number(p.id), qty: q.qty, src: 'customer', codeId: Number(k.id) }));
     return { ok: true, code: p.code, shelf: q.qty, shelf_src: q.qty == null ? null : 'customer', shelf_at: todayMx() };
+  });
+
+  // 0298 · 제품 찾기(포털) — SYD · CTR · OE · 경쟁사 번호 · 품명. 결과마다 가용 · 운송중 · 고객가 · 12개월 구매 · 매장 재고.
+  app.get('/api/lead-portal/search', P, async (req) => {
+    const k = req.lp;
+    const items = await searchProducts(req.query.q, { limit: 15 });
+    const info = await productInfo(Number(k.customer_id), Number(k.discount) || 0, items.map((x) => x.code));
+    return { q: String(req.query.q || ''), items: items.map((x) => ({ ...x, ...(info[x.code] || {}), code: x.code, name: x.name, active: x.active })) };
+  });
+
+  // 0298 · 「이 손님이 찾는 부품」 저장 — 그 문의의 목록을 통째로 바꾼다. 연락처를 본 문의에만.
+  app.put('/api/lead-portal/leads/:id/wants', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await wantsReady())) return reply.code(503).send({ error: 'not_ready' });
+    const raw = Array.isArray(req.body && req.body.items) ? req.body.items : null;
+    if (!raw) return reply.code(400).send({ error: 'bad_items' });
+    if (raw.length > 30) return reply.code(400).send({ error: 'too_many_lines' });
+    const want = new Map();
+    for (const it of raw) {
+      const code = String((it && it.code) || '').trim(); const qty = Number(it && it.qty);
+      if (!code || !Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) return reply.code(400).send({ error: 'bad_line', code });
+      const prev = want.get(code);
+      want.set(code, { qty: (prev ? prev.qty : 0) + qty, input: clip(it.input, 60) || (prev && prev.input) || null });
+    }
+    const args = [id, k.customer_id]; let scope = '';
+    if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($3::text[])`; }
+    const t = (await query(
+      `SELECT t.id FROM meta_threads t JOIN lead_portal_reveals r ON r.thread_id = t.id AND r.customer_id = $2
+        WHERE t.id = $1 AND t.status <> 'descartado'${scope}`, args)).rows[0];
+    if (!t) return reply.code(409).send({ error: 'not_revealed' });
+    const prods = want.size ? (await query(`SELECT id, code FROM products WHERE code = ANY($1::text[]) AND deleted_at IS NULL`, [[...want.keys()]])).rows : [];
+    const byCode = new Map(prods.map((p) => [p.code, Number(p.id)]));
+    const unknown = [...want.keys()].filter((c) => !byCode.has(c));
+    if (unknown.length) return reply.code(400).send({ error: 'unknown_code', codes: unknown });
+    await withTx(async (c) => {
+      await c.query(`DELETE FROM lead_portal_wants WHERE customer_id=$1 AND thread_id=$2 AND NOT (product_id = ANY($3::bigint[]))`, [k.customer_id, id, [...byCode.values()]]);
+      for (const [code, w] of want) {
+        await c.query(
+          `INSERT INTO lead_portal_wants (customer_id, thread_id, product_id, qty, input_code, code_id) VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (customer_id, thread_id, product_id) DO UPDATE SET qty=EXCLUDED.qty, input_code=COALESCE(EXCLUDED.input_code, lead_portal_wants.input_code), code_id=EXCLUDED.code_id, updated_at=now()`,
+          [k.customer_id, id, byCode.get(code), w.qty, w.input, k.id]);
+      }
+    });
+    const items = (await query(
+      `SELECT p.code, w.qty, w.input_code FROM lead_portal_wants w JOIN products p ON p.id = w.product_id
+        WHERE w.customer_id=$1 AND w.thread_id=$2 ORDER BY w.created_at, w.id`, [k.customer_id, id])).rows;
+    const products = await productInfo(Number(k.customer_id), Number(k.discount) || 0, items.map((x) => x.code));
+    return { ok: true, wants: items.map((x) => ({ code: x.code, qty: Number(x.qty), input: x.input_code || null })), products };
   });
 
   // 주문 → ERP 견적(초안)
@@ -700,7 +835,9 @@ export default async function leadPortalRoutes(app) {
       `SELECT r.thread_id, r.n, to_char(r.first_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS first_mx,
               to_char(r.last_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS last_mx,
               c.name AS customer_name, k.code_last4, t.platform, t.status,
-              COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts
+              COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts,
+              ${(await wantsReady()) ? `(SELECT string_agg(p.code || '×' || x.qty, ', ' ORDER BY p.code) FROM lead_portal_wants x JOIN products p ON p.id = x.product_id
+                                        WHERE x.customer_id = r.customer_id AND x.thread_id = r.thread_id)` : 'NULL::text'} AS wants
          FROM lead_portal_reveals r JOIN customers c ON c.id = r.customer_id JOIN lead_portal_codes k ON k.id = r.code_id
          JOIN meta_threads t ON t.id = r.thread_id
         WHERE ${w} ORDER BY r.first_at DESC LIMIT ${limit}`, args)).rows;

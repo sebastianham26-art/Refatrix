@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1026lp</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1026lpc</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -294,7 +294,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1026lp';
+  const MTL_BUILD='mtl-1026lpc';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -452,7 +452,7 @@
         +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
         +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
         +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
-        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳">👁 '+esc(x.revealed_to)+'</span>':'')+'</td></tr>').join('')
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</span>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
   ['fCh','fAd','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
@@ -870,7 +870,7 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
-<script src="refatrix-leadportal-admin.js?v=20261026lp"></script>
+<script src="refatrix-leadportal-admin.js?v=20261026lpc"></script>
 <script src="refatrix-nav.js?v=20261021lg"></script>
 </body>
 </html>

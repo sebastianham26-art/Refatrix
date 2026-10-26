@@ -1,5 +1,5 @@
 // =====================================================================
-// refatrix-leadportal-admin.js — 제품·마케팅 › Meta 광고 문의 › 「🔑 고객 접속코드」 탭 (0297 · 2026-10-26 · build lp-1026a)
+// refatrix-leadportal-admin.js — 제품·마케팅 › Meta 광고 문의 › 「🔑 고객 접속코드」 탭 (0297 · 2026-10-26 · build lp-1026c)
 //   refatrix-metaleads.html 의 본 스크립트 뒤에 로드된다 — 그 페이지의 전역 api() · session · esc() · $() 를 쓴다.
 //   · 디렉터: 접속코드 발급(만료일 직접 입력 · 기준 금액 · 조건 메모 · 열람 범위) · 목록(기한 변경 · 정지/재개 · 재발급 · 삭제 · 이력) · 연락처 공개 기록
 //   · 담당 영업사원 · 디렉터: 고객 매장 재고(고객이 포털에서 고친 값과 같은 칸) — 칸을 벗어나면 저장, 이력
@@ -192,8 +192,8 @@
       var d = await api('GET', '/api/lead-portal-admin/reveals?limit=100');
       var ST = { nuevo: '신규', contactado: '연락함', derivado: '연결', venta: '판매', descartado: '제외' };
       var CHN = { whatsapp: 'WA', messenger: 'FB', instagram: 'IG' };
-      g('lpReveals').innerHTML = d.items.length ? '<table><thead><tr><th>처음 본 일시</th><th>고객(코드)</th><th>문의</th><th>채널</th><th class="num">횟수</th><th>문의 상태(ERP)</th></tr></thead><tbody>'
-        + d.items.map(function (r) { return '<tr><td>' + esc(r.first_mx) + '</td><td>' + esc(r.customer_name) + ' <span class="muted">…' + esc(r.code_last4) + '</span></td><td>#' + r.thread_id + ' · ' + esc([r.vehicles, r.parts].filter(Boolean).join(' · ')) + '</td><td><span class="tag ch-' + esc(r.platform) + '">' + esc(CHN[r.platform] || r.platform) + '</span></td><td class="num">' + r.n + '</td><td>' + esc(ST[r.status] || r.status) + '</td></tr>'; }).join('') + '</tbody></table>'
+      g('lpReveals').innerHTML = d.items.length ? '<table><thead><tr><th>처음 본 일시</th><th>고객(코드)</th><th>문의</th><th>채널</th><th class="num">횟수</th><th>고객이 기록한 찾는 부품</th><th>문의 상태(ERP)</th></tr></thead><tbody>'
+        + d.items.map(function (r) { return '<tr><td>' + esc(r.first_mx) + '</td><td>' + esc(r.customer_name) + ' <span class="muted">…' + esc(r.code_last4) + '</span></td><td>#' + r.thread_id + ' · ' + esc([r.vehicles, r.parts].filter(Boolean).join(' · ')) + '</td><td><span class="tag ch-' + esc(r.platform) + '">' + esc(CHN[r.platform] || r.platform) + '</span></td><td class="num">' + r.n + '</td><td class="mono">' + esc(r.wants || '—') + '</td><td>' + esc(ST[r.status] || r.status) + '</td></tr>'; }).join('') + '</tbody></table>'
         : '<div class="hint">아직 연락처를 본 고객이 없습니다.</div>';
     } catch (e) { g('lpReveals').innerHTML = '<div class="hint">' + esc(errT(e)) + '</div>'; }
   }
