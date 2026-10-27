@@ -821,3 +821,56 @@ export function startProductSyncWorker(app) {
   setTimeout(tick, 25000);                    // 기동 25초 뒤 한 번(밀린 날 따라잡기)
   try { app?.log?.info?.('[productSync] 카탈로그 자동 전송 감시 시작 — 1분 주기(전체: 주 1회 · 변경분: 설정 주기)'); } catch (_) {}
 }
+
+// ===== 2026-10-27 · 제품 수정 → CRM 즉시 전송 (0302 · 디렉터 지시) ==========================
+//   「ERP 에서 고치든 플랫폼에서 CTR 이 확인하든, 그 순간 CRM 도 같은 카탈로그를 가져야 한다.」
+//   변경분 자동 전송(5분 주기)을 기다리지 않고, 고친 제품만 곧바로 「고른 제품 전송(pick)」으로 싣는다.
+//     · 3초 안에 연달아 고친 것은 한 번에 묶는다(엑셀처럼 쏟아지는 경로는 여기를 타지 않는다).
+//     · 창구가 꺼져 있거나 주소가 없거나, 디렉터가 변경분 자동 전송을 꺼 두었으면 **아무것도 싣지 않는다**
+//       — 꺼진 창구에 대기 건을 쌓아 두면 나중에 켜는 순간 한꺼번에 쏟아진다. 그때는 5분 주기가 따라잡는다.
+//     · pick 은 보낸 값의 지문을 기준(product_sync_state)에 남기므로, 5분 주기가 같은 제품을 두 번 보내지 않는다.
+//     · 절대 throw 하지 않는다 — 전송 예약 실패가 제품 저장을 깨면 안 된다.
+const PUSH_DEBOUNCE_MS = Number(process.env.PRODUCT_PUSH_DEBOUNCE_MS || 3000);
+const pushQueue = new Map();          // code → actorUserId
+let pushTimer = null;
+let pushApp = null;
+let pushRunning = null;
+
+/** 시험용 — 마지막 즉시 전송 결과와, 예약된 것을 지금 바로 보내는 함수. */
+export const pushState = { last: null };
+
+export function pushProductsSoon(codes, { actorUserId = null, app = null } = {}) {
+  try {
+    for (const c of (Array.isArray(codes) ? codes : [codes])) {
+      const v = String(c == null ? '' : c).trim();
+      if (v && !isExcludedCode(v)) pushQueue.set(v, actorUserId);
+    }
+    if (app) pushApp = app;
+    if (!pushQueue.size) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => { pushTimer = null; flushProductPush().catch(() => {}); }, PUSH_DEBOUNCE_MS);
+    if (pushTimer.unref) pushTimer.unref();
+  } catch (_) { /* 예약 실패가 저장을 막지 않는다 */ }
+}
+
+export async function flushProductPush() {
+  if (pushRunning) { await pushRunning.catch(() => {}); }
+  if (!pushQueue.size) return pushState.last;
+  const entries = [...pushQueue.entries()];
+  pushQueue.clear();
+  pushRunning = (async () => {
+    try {
+      if (!(await productTablesReady())) return (pushState.last = { skipped: 'migration_required' });
+      const ep = await getEndpoint(PRODUCT_KEY);
+      if (!ep || !ep.enabled || !activeUrl(ep)) return (pushState.last = { skipped: 'endpoint_not_ready', codes: entries.map((e) => e[0]) });
+      if (ep.delta_auto !== true) return (pushState.last = { skipped: 'delta_off', codes: entries.map((e) => e[0]) });
+      const actor = entries.map((e) => e[1]).find((x) => x) || null;
+      const r = await runCatalogSync({ mode: 'pick', codes: entries.map((e) => e[0]), actorUserId: actor, app: pushApp });
+      return (pushState.last = { ran: true, codes: entries.map((e) => e[0]), result: r });
+    } catch (e) {
+      try { console.error('[productSync] 즉시 전송 실패', e && e.message); } catch (_) {}
+      return (pushState.last = { skipped: 'error' });
+    }
+  })();
+  try { return await pushRunning; } finally { pushRunning = null; }
+}

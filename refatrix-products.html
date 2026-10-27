@@ -450,6 +450,18 @@
     <div class="msg" id="phMsg"></div>
   </div>
 
+  <!-- 0302 · REFATRIX Platform 제품 카탈로그 엑셀 다운로드 기록 (디렉터) -->
+  <div class="card hidden" id="pfxCard">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">🌐 플랫폼 카탈로그 다운로드 기록</h2>
+      <button class="btn ghost sm" id="pfxReload" type="button">새로고침</button>
+    </div>
+    <div class="hint" style="margin-top:6px">REFATRIX Platform 「제품 카탈로그」에서 엑셀을 내려받을 때마다 <b>누가 · 언제 · 어디서(GPS 좌표, 없으면 IP 추정 도시)</b> 받았는지 남습니다. 위치 권한을 거부하면 다운로드되지 않습니다. 디렉터만 봅니다.</div>
+    <div id="pfxBox" style="margin-top:8px"></div>
+    <div style="margin-top:8px"><button class="btn ghost sm hidden" id="pfxMore" type="button">더 보기</button></div>
+    <div class="msg" id="pfxMsg"></div>
+  </div>
+
 
   <!-- 제품 마스터 업로드 (디렉터) -->
   
@@ -534,6 +546,8 @@
     $('vehCard').classList.toggle('hidden',!isFind);
     $('upCard').classList.toggle('hidden', !isUp);
     if($('histCard')) $('histCard').classList.toggle('hidden', !isHist);
+    if($('pfxCard')) $('pfxCard').classList.toggle('hidden', !(isHist && isDir));
+    if(isHist && isDir && !pfxLoaded) pfxLoad(true);   // 0302
     // 제품 이력은 제품 화면 열람자 전체 — 첫 진입에서 한 번만 자동 조회.
     if(isHist && !phLoaded) phLoad(true);
     if(isUp) posStatusLoad();   // 0292 장착 위치 업로드 현황
@@ -1204,7 +1218,7 @@
   // ===== 화면 직접 추가/수정 + 제품 변경 이력 =====
   const PE_LABEL=Object.assign({},{code:'Clave CTR',material:'Material',rack_location:'Rack 위치',
     _deleted:'삭제된 제품',_removed:'함께 정리된 항목',_reason:'사유'},FIELD_LABEL);
-  const PE_SRC={manual:'화면',import:'엑셀 업로드',material:'소재(인라인)',material_bulk:'소재(일괄)'};
+  const PE_SRC={manual:'화면',import:'엑셀 업로드',material:'소재(인라인)',material_bulk:'소재(일괄)',platform:'CTR 확인(Platform)'};
   let peEsc=null, peEditId=null;
   // 모달 세대 번호 — 모달을 열 때마다 +1. 늦게 도착한 응답이 「지금 열려 있는 다른 모달」에
   //   값을 쏟아붓는 사고를 막는다(느린 회선에서 참조 불러오기 중 다른 제품을 여는 경우).
@@ -1619,6 +1633,7 @@
     const parts=[];
     Object.keys(chg).forEach(f=>{
       const c=chg[f]||{};
+      if(f==='_pf') return;   // 0302 · 플랫폼 확인자(변경자 칸에 보인다)
       if(f==='_syd'){ parts.push('<div class="chg">Clave SyD: <span style="color:var(--expense)">'+escP((c.from||[]).join(' // ')||'—')+'</span> → <b>'+escP((c.to||[]).join(' // ')||'—')+'</b></div>'); return; }
       if(f==='_app'){ parts.push('<div class="chg">적용차종: '+escP(String(c.from))+'종 → <b>'+escP(String(c.to))+'종</b></div>'); return; }
       if(f==='_oe'){ parts.push('<div class="chg">OE: <span style="color:var(--expense)">'+escP(oeShort(c.from))+'</span> → <b>'+escP(oeShort(c.to))+'</b></div>'); return; }
@@ -2538,7 +2553,7 @@
   // 마스터 변경(product_change_log) + 판매 활성/비활성 전환(product_status_log)을
   // 서버가 통합·중복제거해 내려준다(GET /api/products/history).
   // 행 클릭 → GET /api/products/:id/movements?since=… 로 그 변경 이후의 movement.
-  const PH_SRC={manual:'화면 입력',import:'엑셀 업로드',material:'소재 지정',material_bulk:'소재 일괄지정',status:'판매상태',status_check:'일괄 점검'};
+  const PH_SRC={manual:'화면 입력',import:'엑셀 업로드',material:'소재 지정',material_bulk:'소재 일괄지정',status:'판매상태',status_check:'일괄 점검',platform:'CTR 확인(Platform)'};
   const PH_ACT={create:'생성',update:'수정',delete:'삭제',activate:'판매재개',deactivate:'판매중단'};
   let phOffset=0, phTotal=0, phItems=[], phLoaded=false, phOpenKey=null, phCanPrice=true;
 
@@ -2584,6 +2599,57 @@
     $('phSum').innerHTML='총 <b>'+phTotal+'</b>건 중 '+phItems.length+'건 표시 · 행을 클릭하면 그 변경 이후의 movement 가 열립니다.';
     $('phMore').classList.toggle('hidden', phItems.length>=phTotal);
   }
+
+  // ===== 0302 · 플랫폼 카탈로그 다운로드 기록 (디렉터) =====
+  let pfxLoaded=false, pfxOffset=0, pfxItems=[], pfxTotal=0;
+  const PFX_ST={pending:'미검토',draft:'작성중',ok:'확인완료',changed:'재확인'};
+  function pfxWhere(it){
+    if(it.gps){
+      const u='https://www.google.com/maps?q='+it.gps.lat+','+it.gps.lng;
+      return '<a href="'+escP(u)+'" target="_blank" rel="noopener">📍 '+it.gps.lat.toFixed(5)+', '+it.gps.lng.toFixed(5)+'</a>'
+        +(it.gps.acc!=null?' <span style="font-size:11px;color:#6f6a60">±'+escP(it.gps.acc)+'m</span>':'')
+        +(it.city?'<div style="font-size:11px;color:#6f6a60">IP: '+escP([it.city,it.region,it.country].filter(Boolean).join(', '))+'</div>':'');
+    }
+    const ipCity=[it.city,it.region,it.country].filter(Boolean).join(', ');
+    return '<span style="color:var(--expense)">GPS 없음</span>'+(ipCity?'<div style="font-size:11px;color:#6f6a60">IP 추정: '+escP(ipCity)+'</div>':'');
+  }
+  function pfxCond(f){
+    f=f||{}; const p=[];
+    if(f.status) p.push(PFX_ST[f.status]||f.status);
+    p.push(f.active==='1'?'판매중만':'전체');
+    if(f.q) p.push('검색 「'+f.q+'」');
+    return p.join(' · ');
+  }
+  function pfxRender(){
+    const box=$('pfxBox');
+    if(!pfxItems.length){ box.innerHTML='<span class="hint">아직 다운로드 기록이 없습니다.</span>'; $('pfxMore').classList.add('hidden'); return; }
+    box.innerHTML='<div class="hint" style="margin-bottom:4px">전체 '+pfxTotal+'건</div><table><thead><tr>'
+      +'<th class="nowrap">#</th><th class="nowrap">일시</th><th class="nowrap">사용자</th><th class="nowrap">품목 수</th><th>조건</th><th>위치</th><th class="nowrap">IP</th>'
+      +'</tr></thead><tbody>'
+      +pfxItems.map(it=>'<tr>'
+        +'<td class="nowrap">'+escP(it.id)+'</td>'
+        +'<td class="nowrap" style="font-size:12px">'+escP(phDate(it.at))+'</td>'
+        +'<td class="nowrap">'+escP(it.user||'—')+'</td>'
+        +'<td class="nowrap" style="text-align:right">'+escP(Number(it.rows||0).toLocaleString('en-US'))+'</td>'
+        +'<td style="font-size:12px">'+escP(pfxCond(it.filters))+'</td>'
+        +'<td style="font-size:12px">'+pfxWhere(it)+'</td>'
+        +'<td class="nowrap" style="font-size:11px;color:#6f6a60" title="'+escP(it.user_agent||'')+'">'+escP(it.ip||'—')+'</td>'
+        +'</tr>').join('')+'</tbody></table>';
+    $('pfxMore').classList.toggle('hidden', pfxItems.length>=pfxTotal);
+  }
+  async function pfxLoad(reset){
+    const m=$('pfxMsg'); m.className='msg'; m.style.display='none';
+    if(reset){ pfxOffset=0; pfxItems=[]; $('pfxBox').innerHTML='<span class="hint">불러오는 중…</span>'; }
+    try{
+      const res=await fetch(session.api+'/api/pf-catalog/admin/exports?limit=50&offset='+pfxOffset,{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok){ $('pfxBox').innerHTML=''; m.className='msg err'; m.style.display=''; m.textContent=d.error==='migration_required'?'서버 준비 중(0302 마이그레이션 필요)':('불러오지 못했습니다 ('+res.status+')'); return; }
+      pfxItems=pfxItems.concat(d.items||[]); pfxTotal=Number(d.total||0); pfxOffset=pfxItems.length; pfxLoaded=true;
+      pfxRender();
+    }catch(e){ m.className='msg err'; m.style.display=''; m.textContent='서버에 연결할 수 없습니다.'; }
+  }
+  if($('pfxReload')) $('pfxReload').addEventListener('click',()=>pfxLoad(true));
+  if($('pfxMore')) $('pfxMore').addEventListener('click',()=>pfxLoad(false));
 
   async function phLoad(reset){
     const m=$('phMsg'); m.className='msg'; m.style.display='none';

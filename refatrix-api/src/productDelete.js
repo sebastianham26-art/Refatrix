@@ -38,6 +38,7 @@ export const CLEANUP_TABLES = {
   product_status_check_notes: '판매상태 점검 메모',
   product_price_history: '정가 이력',          // 0229 — 가격 마스터 장부(제품 전용)
   price_change_items: '가격 변경 대상',         // 0229 — 예약·적용 묶음의 대상 목록
+  pf_catalog_review: '플랫폼 카탈로그 점검 상태',   // 0302
 };
 
 // ── 연결만 끊는 표(기록 자체는 남긴다) ────────────────────────────────
@@ -45,6 +46,7 @@ export const CLEANUP_TABLES = {
 // 「이 코드에 무슨 일이 있었나」가 그대로 보존된다(제품 이력 화면은 LEFT JOIN 이라 계속 보인다).
 export const NULLIFY_TABLES = {
   product_change_log: '제품 변경 이력',
+  pf_catalog_confirms: '플랫폼 확인완료 이력',   // 0302 — code 사본을 따로 가진다
 };
 
 // ── 차단 표시용 이름(없으면 표 이름 그대로 보여 준다) ─────────────────

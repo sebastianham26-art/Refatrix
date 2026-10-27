@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="ko" data-auth="platform">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>제품 카탈로그 점검 · REFATRIX</title>
+<!-- REFATRIX Platform(Netlify) catalog.html — 원본: refatrix-api/templates/catalog_platform.html (0302 · 2026-10-27)
+     ERP 제품 카탈로그를 CTR 개발담당자가 부품별로 점검한다. 화면은 ERP 의 지금 값을 직접 읽는다(사본 없음).
+     [확인완료] = 그 자리에서 ERP 제품 마스터 반영(승인 없음) → CRM · 고객 카탈로그에도 같은 값.
+     플랫폼 세션(sessionStorage rfx_sess)을 ERP 서버가 플랫폼에 직접 확인 → 1시간 토큰. 가격 · 재고는 오가지 않는다. -->
+<style>
+:root{--ink:#13171d;--ink2:#39424e;--mut:#6c7682;--faint:#9aa3ad;--paper:#eceef1;--card:#fff;--line:#dde0e4;--line2:#eef0f2;
+--ctr:#d81e25;--ctr-soft:#fbe3e4;--syd:#0a5cab;--syd-soft:#e1edfa;--ok:#11743b;--ok-soft:#e3f5ea;--warn:#a35f00;--warn-soft:#fff4d6;
+--draft:#5b4bc4;--draft-soft:#ece9fb}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-size:14px;font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,"SF Mono","Roboto Mono",Consolas,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1320px;margin:0 auto;padding:18px 16px 70px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:14px}
+.brand{font-weight:800;font-size:21px;letter-spacing:-.02em}
+.brand small{display:block;font-weight:600;font-size:12px;color:var(--mut);margin-top:4px;letter-spacing:0;max-width:760px;line-height:1.5}
+.who{margin-left:auto;font-size:12.5px;color:var(--ink2)}
+.btn{font:inherit;font-size:13px;font-weight:800;border-radius:9px;padding:8px 14px;border:1px solid var(--syd);background:var(--syd);color:#fff;cursor:pointer;white-space:nowrap}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.ghost{background:#fff;color:var(--syd)}.btn.sm{font-size:12px;padding:5px 10px}
+.btn.ok{background:var(--ok);border-color:var(--ok)}
+.btn.plain{background:#fff;color:var(--ink2);border-color:var(--line)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.empty{text-align:center;color:var(--mut);padding:30px 10px}
+.hidden{display:none!important}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chip{font:inherit;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:118px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 13px;cursor:pointer;text-align:left}
+.chip b{font-size:19px}.chip span{font-size:11.5px;font-weight:700;color:var(--mut)}
+.chip.on{outline:2.5px solid var(--ink);outline-offset:-1px}
+.chip.pending b{color:var(--ink2)}.chip.draft b{color:var(--draft)}.chip.changed b{color:var(--warn)}.chip.ok b{color:var(--ok)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.bar input[type=search]{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:8px 11px;flex:1 1 260px;background:#fff}
+.bar select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:#fff}
+.bar label{font-size:12.5px;font-weight:700;color:var(--ink2);display:flex;gap:6px;align-items:center;cursor:pointer}
+.tw{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:auto}
+table.list{border-collapse:collapse;width:100%;min-width:900px}
+table.list th{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);text-align:left;padding:9px 10px;border-bottom:2px solid var(--ink);background:#fafbfc;white-space:nowrap;position:sticky;top:0}
+table.list td{padding:8px 10px;border-bottom:1px solid var(--line2);font-size:12.5px;vertical-align:top}
+table.list tr{cursor:pointer}table.list tbody tr:hover{background:var(--line2)}
+table.list tr.cur{background:var(--syd-soft)}
+.code{font-weight:800;white-space:nowrap}
+.clip{max-width:340px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--ink2)}
+.st{display:inline-block;font-size:10.5px;font-weight:800;border-radius:9px;padding:2px 8px;white-space:nowrap}
+.st.pending{background:var(--line2);color:var(--ink2)}.st.draft{background:var(--draft-soft);color:var(--draft)}
+.st.changed{background:var(--warn-soft);color:var(--warn)}.st.ok{background:var(--ok-soft);color:var(--ok)}
+.st.inact{background:#fbe9e7;color:#a2321f}
+.sub{font-size:11px;color:var(--mut);margin-top:2px;white-space:nowrap}
+.pager{display:flex;gap:8px;align-items:center;justify-content:center;margin:12px 0;font-size:12.5px;color:var(--mut)}
+/* 편집 서랍 */
+.ov{position:fixed;inset:0;background:rgba(19,23,29,.45);z-index:40;display:none}
+.ov.on{display:block}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(760px,100vw);background:var(--paper);z-index:41;transform:translateX(100%);transition:transform .2s;display:flex;flex-direction:column;box-shadow:-10px 0 40px rgba(0,0,0,.18)}
+.drawer.on{transform:none}
+.dh{background:#fff;border-bottom:2px solid var(--ink);padding:12px 16px;display:flex;gap:12px;align-items:center}
+.dh .t{flex:1;min-width:0}.dh .t b{font-size:17px}.dh .t div{font-size:12px;color:var(--mut);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dh .x{font:inherit;border:0;background:none;font-size:24px;line-height:1;color:var(--mut);cursor:pointer;padding:2px 6px}
+.dh img{width:64px;height:64px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:8px}
+.db{flex:1;overflow:auto;padding:14px 16px 20px}
+.df{background:#fff;border-top:1px solid var(--line);padding:11px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.df .sp{flex:1}
+.df label{font-size:12px;font-weight:700;color:var(--ink2);display:flex;gap:5px;align-items:center;cursor:pointer}
+.fld{background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:10px}
+.fld.chg{border-color:var(--syd);box-shadow:inset 3px 0 0 var(--syd)}
+.fld.conf{border-color:var(--warn);box-shadow:inset 3px 0 0 var(--warn)}
+.fl{display:flex;gap:8px;align-items:baseline;margin-bottom:6px}
+.fl b{font-size:12.5px}.fl small{font-size:11px;color:var(--mut)}
+.fl .tag{margin-left:auto;font-size:10.5px;font-weight:800;color:var(--syd)}
+.fld input[type=text],.fld textarea{font:inherit;font-size:13px;width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
+.fld textarea{resize:vertical;min-height:62px;line-height:1.5}
+.was{font-size:11.5px;color:var(--mut);margin-top:6px;word-break:break-word}
+.was s{color:#a2321f}
+.cbox{margin-top:8px;background:var(--warn-soft);border:1px solid #ecc770;border-radius:9px;padding:9px 11px;font-size:12.5px}
+.cbox b{color:var(--warn)}
+.cbox label{display:flex;gap:7px;align-items:flex-start;margin-top:6px;cursor:pointer}
+.cbox .v{word-break:break-word}
+.pv{margin-top:8px;font-size:11.5px}
+.pv table{border-collapse:collapse;width:100%}
+.pv td,.pv th{border-bottom:1px solid var(--line2);padding:3px 6px;text-align:left}
+.pv th{font-size:10px;color:var(--mut);font-weight:800}
+.sec{font-size:12.5px;font-weight:800;color:var(--mut);margin:16px 2px 8px}
+.hist{background:#fff;border:1px solid var(--line);border-radius:11px;padding:4px 12px}
+.hi{padding:7px 0;border-bottom:1px dashed var(--line2);font-size:12px}
+.hi:last-child{border-bottom:0}
+.hi .h{display:flex;gap:8px;flex-wrap:wrap;color:var(--mut);font-size:11px}
+.hi .h b{color:var(--ink2)}
+.hi .p{margin-top:3px;word-break:break-word}
+.hi .p s{color:#a2321f}
+.note{width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;resize:vertical;min-height:52px}
+.msg{font-size:12.5px;min-height:1em}.msg.err{color:var(--ctr)}.msg.ok{color:var(--ok)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:9px;padding:11px 18px;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:92vw}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (max-width:700px){
+  table.list{min-width:0}table.list thead{display:none}
+  table.list tr{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:9px 10px;border-bottom:1px solid var(--line2)}
+  table.list td{border:0;padding:0}
+  table.list td.c-syd,table.list td.c-oe{display:none}
+  table.list td.c-app{grid-column:1/-1}
+  .chip{min-width:0;flex:1 1 30%}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">📋 제품 카탈로그 점검<small>ERP 제품 카탈로그를 부품별로 확인합니다. 고칠 곳을 고치고 <b>[확인완료]</b>를 누르면 그 즉시 ERP에 반영되고, CRM과 고객 카탈로그에도 같은 내용이 나갑니다. 가격 · 재고는 여기서 다루지 않습니다.</small></div>
+    <div class="who" id="who"></div>
+    <a class="btn ghost sm hidden" id="back" href="/" style="text-decoration:none">← REFATRIX Platform</a>
+  </header>
+
+  <div id="gate" class="card empty hidden"></div>
+
+  <div id="app" class="hidden">
+    <div class="chips" id="chips"></div>
+    <div class="bar">
+      <input type="search" id="q" placeholder="코드 · 제품명 · SYD · 적용차종 · OE 검색" translate="no">
+      <select id="sort" aria-label="정렬">
+        <option value="code">코드순</option>
+        <option value="recent">ERP 최근 수정순</option>
+        <option value="confirmed">최근 확인순</option>
+      </select>
+      <label><input type="checkbox" id="act" checked> 판매중인 품목만</label>
+      <button type="button" class="btn ghost" id="bXlsx" title="지금 거르기 조건의 품목 전부 · 다운로드 기록(위치 · 일시)이 남습니다">⬇ 엑셀 다운로드</button>
+    </div>
+    <div class="msg" id="xMsg" style="margin:-4px 0 8px"></div>
+    <div class="tw"><table class="list">
+      <thead><tr><th>코드</th><th>제품명</th><th>SYD</th><th>적용차종</th><th>OE</th><th>상태</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <div class="pager" id="pager"></div>
+  </div>
+</div>
+
+<div class="ov" id="ov"></div>
+<aside class="drawer" id="dr" aria-hidden="true">
+  <div class="dh">
+    <img id="dImg" alt="" class="hidden">
+    <div class="t"><b class="mono" id="dCode" translate="no"></b> <span id="dSt"></span><div id="dSub"></div></div>
+    <button type="button" class="x" id="dX" aria-label="닫기">✕</button>
+  </div>
+  <div class="db" id="dBody"></div>
+  <div class="df">
+    <label><input type="checkbox" id="goNext" checked> 확인 후 다음 부품</label>
+    <span class="sp"></span>
+    <span class="msg" id="dMsg"></span>
+    <button type="button" class="btn plain sm" id="bDiscard">수정 취소</button>
+    <button type="button" class="btn ghost" id="bSave">임시저장</button>
+    <button type="button" class="btn ok" id="bOk">✅ 확인완료</button>
+  </div>
+</aside>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  'use strict';
+  const API='https://refatrix-production.up.railway.app';
+  const SK='rfx_pf_catalog';
+  const CTR_IMG=(c)=>'https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/'+encodeURIComponent(c)+'/'+encodeURIComponent(c)+'_1.webp';
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const FIELDS=['name','scode','app','oe','material'];
+  const LABEL={name:'제품명',scode:'SYD 코드',app:'적용차종',oe:'OE 번호',material:'소재'};
+  const MULTI={scode:1,app:1,oe:1};                      // 한 줄에 하나 — 저장할 때 ' // ' 로 잇는다
+  const HINT={name:'Nombre del producto',scode:'한 줄에 하나',app:'한 줄에 한 차종 · 예) NISSAN Versa 2012-2019',oe:'한 줄에 하나 · 조립품 OE 는 앞에 FOR',material:'예) aluminio'};
+  const ST={pending:'미검토',draft:'작성중',changed:'재확인',ok:'확인완료'};
+  const STHELP={pending:'아직 확인하지 않은 품목',draft:'수정안을 저장해 둔 품목',changed:'확인한 뒤 ERP에서 바뀐 품목',ok:'확인한 그대로인 품목'};
+  const SRC={manual:'ERP 현장 수정',import:'ERP 엑셀 업로드',platform:'CTR 확인(Platform)',material:'ERP 소재 지정',material_bulk:'ERP 소재 일괄',status:'판매상태',status_check:'일괄 점검'};
+  const ERR={network:'서버에 연결하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_session_invalid:'플랫폼 로그인이 끝났습니다. 다시 로그인하세요.',
+    platform_unreachable:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_timeout:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',
+    platform_network:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',migration_required:'ERP 서버 준비가 끝나지 않았습니다(0302). 관리자에게 알려 주세요.',
+    name_required:'제품명은 비울 수 없습니다.',not_found:'품목을 찾지 못했습니다(삭제되었을 수 있음).',
+    location_required:'위치 권한이 필요합니다. 브라우저 주소창의 위치 아이콘에서 허용한 뒤 다시 누르세요.'};
+  const F={status:'',active:'1',q:'',sort:'code',offset:0,limit:50};
+  const S={items:[],total:0,sum:null,cur:null,ix:-1,dirty:false,resolve:{},loaded:null,rev:null};
+
+  // ── 플랫폼 세션 → ERP 토큰 (마케팅 이미지 뱅크와 같은 방식) ──
+  let sess=null; try{ sess=JSON.parse(sessionStorage.getItem(SK)||'null'); }catch(e){ sess=null; }
+  const saveSess=()=>{ try{ sess?sessionStorage.setItem(SK,JSON.stringify(sess)):sessionStorage.removeItem(SK); }catch(e){} };
+  let gateMsg='';
+  function platformSession(){ let ps=null; try{ ps=JSON.parse(sessionStorage.getItem('rfx_sess')||'null'); }catch(e){ ps=null; } return ps&&ps.t&&Date.now()<=Number(ps.e||0)?ps:null; }
+  async function exchange(){
+    const ps=platformSession();
+    if(!ps){ gateMsg='REFATRIX Platform 에 로그인한 뒤 이 화면을 여세요.'; return false; }
+    const u=ps.u||{}; const name=u.name||u.login||'';
+    const key=String(u.id!=null?u.id:(u.login||name||''));
+    let r; try{ r=await fetch(API+'/api/pf-catalog/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:ps.t,name,user_key:key})}); }catch(e){ gateMsg=ERR.network; return false; }
+    let b={}; try{ b=await r.json(); }catch(e){}
+    if(!r.ok){ gateMsg=ERR[b.error]||('확인 실패 ('+r.status+')'); return false; }
+    sess={token:b.token,name:b.name,pt:ps.t}; saveSess(); return true;
+  }
+  async function call(method,path,body,retried){
+    const o={method,headers:Object.assign({},sess&&sess.token?{Authorization:'Bearer '+sess.token}:{})};
+    if(body!==undefined){ o.headers['Content-Type']='application/json'; o.body=JSON.stringify(body); }
+    let r; try{ r=await fetch(API+path,o); }catch(e){ const er=new Error('network'); er.code='network'; throw er; }
+    if(r.status===401&&!retried){ if(await exchange()) return call(method,path,body,true); gate(); const er=new Error('platform_session_invalid'); er.code=er.message; throw er; }
+    let b={}; try{ b=await r.json(); }catch(e){}
+    if(!r.ok){ const er=new Error(ERR[b.error]||b.error||('http_'+r.status)); er.code=b.error||('http_'+r.status); er.status=r.status; er.body=b; throw er; }
+    return b;
+  }
+  function gate(){
+    $('app').classList.add('hidden'); closeDrawer(true);
+    const g=$('gate'); g.classList.remove('hidden');
+    g.innerHTML=esc(gateMsg||'REFATRIX Platform 에 로그인한 뒤 이 화면을 여세요.')+'<div style="margin-top:12px"><a class="btn" href="/" style="text-decoration:none">REFATRIX Platform 으로</a></div>';
+  }
+  function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('on'); clearTimeout(el._h); el._h=setTimeout(()=>el.classList.remove('on'),3400); }
+  const fmtAt=(s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('sv-SE').slice(0,16); }catch(e){ return String(s).slice(0,16); } };
+  const lines=(v)=>String(v==null?'':v).split(/\s*\/\/\s*/).map(x=>x.trim()).filter(Boolean);
+  const same=(a,b)=>String(a==null?'':a).trim()===String(b==null?'':b).trim();
+  // 서버(pfCatalog.normValue)와 같은 뜻으로 비교 — 구분자 모양(A//B · A // B)이 달라도 같은 값
+  function nv(f,v){
+    if(MULTI[f]) return lines(v).map(x=>x.replace(/\s+/g,' ')).join(' // ');
+    const s=String(v==null?'':v).trim();
+    if(f==='material'){ const l=s.toLowerCase(); if(l.includes('alumin')||l.includes('알루미늄')||l==='al') return 'aluminio'; }
+    return s;
+  }
+  const eqF=(f,a,b)=>nv(f,a)===nv(f,b);
+  function setCur(item){ S.cur=item; S.rev=item.rev||''; S.loaded={}; FIELDS.forEach(f=>{ S.loaded[f]=item[f]==null?null:item[f]; }); }
+
+  // ── 목록 ──
+  function renderChips(){
+    const s=S.sum&&(F.active==='1'?S.sum.active:S.sum.all); if(!s) return;
+    const keys=[['', '전체', s.total],['pending',ST.pending,s.pending],['changed',ST.changed,s.changed],['draft',ST.draft,s.draft],['ok',ST.ok,s.ok]];
+    $('chips').innerHTML=keys.map(([k,l,n])=>'<button type="button" class="chip '+(k||'all')+(F.status===k?' on':'')+'" data-s="'+k+'" title="'+esc(STHELP[k]||'')+'"><b class="mono">'+Number(n||0).toLocaleString('en-US')+'</b><span>'+esc(l)+'</span></button>').join('');
+    $('chips').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ F.status=b.dataset.s; F.offset=0; renderChips(); loadList(); });
+  }
+  async function loadSummary(){ try{ S.sum=await call('GET','/api/pf-catalog/summary'); renderChips(); }catch(e){} }
+  async function loadList(keepScroll){
+    const qs='?q='+encodeURIComponent(F.q)+'&status='+F.status+'&active='+(F.active==='1'?'1':'all')+'&sort='+F.sort+'&limit='+F.limit+'&offset='+F.offset;
+    try{ const r=await call('GET','/api/pf-catalog/items'+qs); S.items=r.items; S.total=r.total; renderRows(); if(!keepScroll) window.scrollTo({top:0}); }
+    catch(e){ $('rows').innerHTML='<tr><td colspan="6" class="empty">'+esc(e.message)+'</td></tr>'; }
+  }
+  function stBadge(it){
+    let h='<span class="st '+it.status+'">'+esc(ST[it.status]||it.status)+(it.status==='draft'&&it.draft_conflicts?' · 겹침 '+it.draft_conflicts:'')+'</span>';
+    if(!it.activo) h+=' <span class="st inact">판매중단</span>';
+    return h;
+  }
+  function renderRows(){
+    if(!S.items.length){ $('rows').innerHTML='<tr><td colspan="6" class="empty">조건에 맞는 품목이 없습니다.</td></tr>'; $('pager').innerHTML=''; return; }
+    $('rows').innerHTML=S.items.map((it,i)=>{
+      const sub=it.status==='ok'||it.status==='changed'?(it.confirmed_by_name?esc(it.confirmed_by_name)+' · ':'')+fmtAt(it.confirmed_at)
+        :it.status==='draft'?(it.draft_by_name?esc(it.draft_by_name)+' · ':'')+fmtAt(it.draft_at):'';
+      return '<tr data-i="'+i+'"'+(S.cur&&S.cur.id===it.id?' class="cur"':'')+'>'
+        +'<td><span class="code mono" translate="no">'+esc(it.code)+'</span></td>'
+        +'<td><div class="clip">'+esc(it.name)+'</div></td>'
+        +'<td class="c-syd"><div class="clip mono" translate="no">'+esc(lines(it.scode).join(' · '))+'</div></td>'
+        +'<td class="c-app"><div class="clip">'+esc(lines(it.app).join(' · '))+'</div></td>'
+        +'<td class="c-oe"><div class="clip mono" translate="no">'+esc(lines(it.oe).join(' · '))+'</div></td>'
+        +'<td>'+stBadge(it)+(sub?'<div class="sub">'+sub+'</div>':'')+'</td></tr>';
+    }).join('');
+    $('rows').querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>openItem(+tr.dataset.i));
+    const from=F.offset+1, to=Math.min(F.offset+F.limit,S.total);
+    $('pager').innerHTML='<button type="button" class="btn plain sm" id="pPrev"'+(F.offset<=0?' disabled':'')+'>← 이전</button>'
+      +'<span>'+from.toLocaleString('en-US')+'–'+to.toLocaleString('en-US')+' / '+S.total.toLocaleString('en-US')+'</span>'
+      +'<button type="button" class="btn plain sm" id="pNext"'+(to>=S.total?' disabled':'')+'>다음 →</button>';
+    $('pPrev').onclick=()=>{ F.offset=Math.max(0,F.offset-F.limit); loadList(); };
+    $('pNext').onclick=()=>{ F.offset+=F.limit; loadList(); };
+  }
+
+  // ── 편집 서랍 ──
+  function edVal(f){ const el=$('e_'+f); if(!el) return null; const v=el.value; return MULTI[f]?v.split(/\n+/).map(x=>x.trim()).filter(Boolean).join(' // '):v.trim(); }
+  function edFields(){ const o={}; FIELDS.forEach(f=>{ o[f]=edVal(f); }); return o; }
+  function changedFields(){ const it=S.cur; if(!it) return []; return FIELDS.filter(f=>!eqF(f,edVal(f),it[f])); }
+  function startVal(f){ const it=S.cur; const d=it.draft&&it.draft[f]; return d&&d.state!=='moot'?d.value:it[f]; }
+  function fieldHtml(f){
+    const it=S.cur; const d=it.draft&&it.draft[f];
+    const v=startVal(f); const val=MULTI[f]?lines(v).join('\n'):(v==null?'':v);
+    const input=MULTI[f]
+      ? '<textarea id="e_'+f+'" rows="'+Math.min(10,Math.max(2,lines(v).length+1))+'"'+(f!=='app'?' class="mono" translate="no"':'')+' spellcheck="false">'+esc(val)+'</textarea>'
+      : '<input type="text" id="e_'+f+'" value="'+esc(val)+'"'+(f==='material'?' list="matList"':'')+' spellcheck="false">';
+    let conf='';
+    if(d&&d.state==='conflict'){
+      const pick=S.resolve[f]||'';
+      conf='<div class="cbox"><b>⚠ 수정안을 쓰는 동안 ERP에서 이 칸이 바뀌었습니다(현장 수정).</b> 어느 값을 쓸지 골라 주세요.'
+        +'<label><input type="radio" name="r_'+f+'" value="erp"'+(pick==='erp'?' checked':'')+'> <span class="v">ERP(현장) 값 그대로: <b>'+esc(d.erp||'(빈칸)')+'</b></span></label>'
+        +'<label><input type="radio" name="r_'+f+'" value="mine"'+(pick==='mine'?' checked':'')+'> <span class="v">내 수정안으로 바꿈: <b>'+esc(d.value||'(빈칸)')+'</b></span></label>'
+        +'<div class="was" style="margin-top:6px">수정을 시작할 때 값: '+esc(d.base||'(빈칸)')+'</div></div>';
+    }
+    return '<div class="fld" id="w_'+f+'"><div class="fl"><b>'+LABEL[f]+'</b><small>'+esc(HINT[f]||'')+'</small><span class="tag" id="t_'+f+'"></span></div>'
+      +input+'<div class="was hidden" id="was_'+f+'"></div>'+conf
+      +(f==='app'?'<div class="pv" id="pvApp"></div>':'')+'</div>';
+  }
+  function markFields(){
+    const it=S.cur; if(!it) return;
+    FIELDS.forEach(f=>{
+      const ch=!eqF(f,edVal(f),it[f]); const d=it.draft&&it.draft[f];
+      const w=$('w_'+f); if(!w) return;
+      w.classList.toggle('chg',ch); w.classList.toggle('conf',!!(d&&d.state==='conflict'));
+      $('t_'+f).textContent=ch?'수정됨':'';
+      const was=$('was_'+f);
+      if(ch){ was.classList.remove('hidden'); was.innerHTML='ERP 지금 값: <s>'+esc(it[f]==null||it[f]===''?'(빈칸)':(MULTI[f]?lines(it[f]).join(' · '):it[f]))+'</s>'; }
+      else was.classList.add('hidden');
+    });
+    const n=changedFields().length;
+    $('bOk').textContent=n?('✅ 확인완료 · '+n+'칸 ERP 반영'):'✅ 확인완료 (그대로 맞음)';
+    S.dirty=!draftMatches();
+  }
+  function draftMatches(){ return FIELDS.every(f=>eqF(f,edVal(f),startVal(f))); }
+  let pvTimer=null;
+  function schedulePreview(){
+    clearTimeout(pvTimer);
+    pvTimer=setTimeout(async()=>{
+      const el=$('pvApp'); if(!el) return;
+      try{
+        const r=await call('POST','/api/pf-catalog/preview',{app:edVal('app'),scode:edVal('scode'),oe:edVal('oe')});
+        if(!r.apps.length){ el.innerHTML=''; return; }
+        el.innerHTML='<table><thead><tr><th>ERP가 나눠 저장할 모양 — 메이커</th><th>모델</th><th>연식</th><th>메모</th></tr></thead><tbody>'
+          +r.apps.map(a=>{ const bad=!a.marca||!a.desde; const nota=(a.texto.match(/\[([^\]]+)\]/)||[])[1]||'';
+            return '<tr'+(bad?' style="background:var(--warn-soft)"':'')+'><td>'+esc(a.marca||'⚠ 못 찾음')+'</td><td>'+esc(a.modelo||'')+'</td><td class="mono">'+(a.desde?(a.desde+(a.hasta&&a.hasta!==a.desde?'–'+a.hasta:'')):'⚠')+'</td><td>'+esc(nota)+'</td></tr>'; }).join('')
+          +'</tbody></table>'+(r.apps.some(a=>!a.marca||!a.desde)?'<div class="was">⚠ 노란 줄은 메이커(대문자)나 연식(4자리)을 못 찾았습니다 — 검색 · VIO 매칭에서 빠질 수 있습니다.</div>':'');
+      }catch(e){}
+    },350);
+  }
+  function histHtml(it){
+    const parts=(h)=>h.parts.map(p=>'<div class="p">'+esc(LABEL[p.field]||p.field)+': <s>'+esc(p.from==null||p.from===''?'(빈칸)':p.from)+'</s> → <b>'+esc(p.to==null||p.to===''?'(빈칸)':p.to)+'</b></div>').join('');
+    const hs=(it.history||[]).map(h=>'<div class="hi"><div class="h"><b>'+esc(SRC[h.source]||h.source)+'</b><span>'+esc(h.by||'')+'</span><span>'+fmtAt(h.at)+'</span>'+(h.action==='create'?'<span>신규 등록</span>':'')+'</div>'+parts(h)+'</div>').join('');
+    const cs=(it.confirms||[]).map(c=>{ const n=Object.keys(c.applied||{}).length;
+      return '<div class="hi"><div class="h"><b>확인완료</b><span>'+esc(c.by||'')+'</span><span>'+fmtAt(c.at)+'</span><span>'+(n?'수정 '+n+'칸':'그대로 맞음')+'</span>'
+        +(c.conflicts?'<span>겹침 '+Object.keys(c.conflicts).length+'칸 선택</span>':'')+'</div>'+(c.note?'<div class="p">메모: '+esc(c.note)+'</div>':'')+'</div>'; }).join('');
+    return '<div class="sec">확인 이력</div><div class="hist">'+(cs||'<div class="hi" style="color:var(--mut)">아직 없음</div>')+'</div>'
+      +'<div class="sec">ERP 카탈로그 변경 이력 (최근)</div><div class="hist">'+(hs||'<div class="hi" style="color:var(--mut)">기록 없음</div>')+'</div>';
+  }
+  function renderDrawer(){
+    const it=S.cur;
+    $('dCode').textContent=it.code;
+    $('dSt').innerHTML=stBadge(it);
+    $('dSub').textContent=(it.status==='changed'?'확인한 뒤 ERP에서 바뀌었습니다 — 다시 확인해 주세요 · ':'')+(it.confirmed_at?('마지막 확인 '+(it.confirmed_by_name||'')+' '+fmtAt(it.confirmed_at)):'아직 확인 기록 없음');
+    const img=$('dImg'); img.classList.add('hidden'); img.onload=()=>img.classList.remove('hidden'); img.onerror=()=>img.classList.add('hidden'); img.src=CTR_IMG(it.code);
+    $('dBody').innerHTML=FIELDS.map(fieldHtml).join('')
+      +'<datalist id="matList"><option value="aluminio"></datalist>'
+      +'<div class="fld"><div class="fl"><b>근거 메모</b><small>무엇을 보고 확인했는지 (선택) · 확인 이력에 남습니다</small></div>'
+      +'<textarea class="note" id="eNote" rows="2" maxlength="1000" placeholder="예) CTR 카탈로그 2026 · 실물 대조">'+esc(it.draft_note||'')+'</textarea></div>'
+      +histHtml(it);
+    FIELDS.forEach(f=>{ const el=$('e_'+f); el.addEventListener('input',()=>{ markFields(); if(f==='app') schedulePreview(); }); });
+    // 겹친 칸 고르기 — 고른 값을 편집칸에도 채워 「무엇이 ERP에 들어가는지」 눈에 보이게
+    $('dBody').querySelectorAll('input[type=radio]').forEach(r=>r.onchange=()=>{
+      const f=r.name.slice(2); const d=S.cur.draft[f]; S.resolve[f]=r.value;
+      const v=r.value==='erp'?d.erp:d.value; $('e_'+f).value=MULTI[f]?lines(v).join('\n'):(v==null?'':v);
+      markFields(); if(f==='app') schedulePreview();
+    });
+    $('bDiscard').classList.toggle('hidden',it.status!=='draft');
+    $('dMsg').textContent=''; $('dMsg').className='msg';
+    markFields(); schedulePreview();
+  }
+  async function openItem(i){
+    const it=S.items[i]; if(!it) return;
+    if(S.cur&&S.dirty&&!window.confirm('저장하지 않은 수정이 있습니다. 버리고 다른 품목을 열까요?')) return;
+    S.ix=i; S.resolve={};
+    try{ setCur(await call('GET','/api/pf-catalog/items/'+it.id)); }catch(e){ toast(e.message); return; }
+    renderDrawer(); renderRows();
+    $('ov').classList.add('on'); $('dr').classList.add('on'); $('dr').setAttribute('aria-hidden','false'); $('dBody').scrollTop=0;
+  }
+  function closeDrawer(force){
+    if(!force&&S.cur&&S.dirty&&!window.confirm('저장하지 않은 수정이 있습니다. 닫을까요?')) return;
+    $('ov').classList.remove('on'); $('dr').classList.remove('on'); $('dr').setAttribute('aria-hidden','true');
+    S.cur=null; S.dirty=false; renderRows();
+  }
+  function replaceRow(item){
+    const k=S.items.findIndex(x=>x.id===item.id);
+    if(k>=0) S.items[k]=Object.assign({},S.items[k],item);
+  }
+  function busy(on){ ['bOk','bSave','bDiscard'].forEach(id=>{ $(id).disabled=on; }); }
+  async function saveDraft(){
+    busy(true);
+    try{
+      const r=await call('PUT','/api/pf-catalog/items/'+S.cur.id+'/draft',{fields:edFields(),note:$('eNote').value,loaded:S.loaded,rev:S.rev});
+      setCur(r.item); replaceRow(r.item); renderDrawer(); renderRows(); loadSummary();
+      $('dMsg').className='msg ok'; $('dMsg').textContent=r.fields.length?('임시저장 · '+r.fields.length+'칸 (ERP는 아직 그대로)'):'바뀐 칸이 없어 수정안을 비웠습니다';
+    }catch(e){
+      if(e.code==='stale_review'&&e.body&&e.body.item){ setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
+        $('dMsg').className='msg err'; $('dMsg').textContent='그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 확인 후 다시 저장하세요.'; }
+      else{ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
+    }
+    finally{ busy(false); }
+  }
+  async function discard(){
+    if(!window.confirm('저장해 둔 수정안을 버릴까요? (ERP 값은 그대로입니다)')) return;
+    busy(true);
+    try{ const r=await call('DELETE','/api/pf-catalog/items/'+S.cur.id+'/draft'); setCur(r.item); S.resolve={}; replaceRow(r.item); renderDrawer(); renderRows(); loadSummary(); toast('수정안을 버렸습니다'); }
+    catch(e){ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
+    finally{ busy(false); }
+  }
+  async function confirmIt(){
+    const it=S.cur; const ch=changedFields();
+    const unresolved=FIELDS.filter(f=>it.draft&&it.draft[f]&&it.draft[f].state==='conflict'&&!S.resolve[f]);
+    if(unresolved.length){ $('dMsg').className='msg err'; $('dMsg').textContent='현장 수정과 겹친 칸('+unresolved.map(f=>LABEL[f]).join(', ')+')에서 쓸 값을 먼저 고르세요.'; $('w_'+unresolved[0]).scrollIntoView({block:'center',behavior:'smooth'}); return; }
+    const msg=ch.length?(it.code+' — '+ch.map(f=>LABEL[f]).join(', ')+' 을(를) ERP에 바로 반영하고 확인완료합니다.\nCRM과 고객 카탈로그에도 같은 내용이 나갑니다.'):(it.code+' — 지금 ERP 내용이 맞다고 확인완료합니다.');
+    if(!window.confirm(msg)) return;
+    busy(true);
+    try{
+      const r=await call('POST','/api/pf-catalog/items/'+it.id+'/confirm',{fields:edFields(),resolve:S.resolve,note:$('eNote').value,loaded:S.loaded,rev:S.rev});
+      const n=Object.keys(r.applied||{}).length;
+      toast('✅ '+r.code+' 확인완료'+(n?' · '+n+'칸 ERP 반영':' · 변경 없음'));
+      S.dirty=false; S.resolve={}; replaceRow(r.item); loadSummary();
+      // 지금 거르기에서 빠지는 품목이면 목록에서도 빠진다 — 그 자리의 다음 품목이 「다음」이다
+      const leaves=F.status&&F.status!==r.item.status;
+      if(leaves){ S.items.splice(S.ix,1); S.total=Math.max(0,S.total-1); }
+      const nextIx=leaves?S.ix:S.ix+1;
+      if($('goNext').checked&&S.items[nextIx]){ S.cur=null; renderRows(); await openItem(nextIx); }
+      else{ setCur(r.item); renderDrawer(); renderRows(); }
+      if(leaves&&S.items.length<5) loadList(true);
+    }catch(e){
+      if((e.code==='conflict'||e.code==='stale'||e.code==='stale_review')&&e.body&&e.body.item){
+        setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
+        $('dMsg').className='msg err';
+        $('dMsg').textContent=e.code==='conflict'?'그사이 ERP에서 바뀐 칸이 있어 아무것도 반영하지 않았습니다. 쓸 값을 고른 뒤 다시 확인완료를 누르세요.'
+          :e.code==='stale'?('화면을 연 뒤 ERP에서 '+(e.body.fields||[]).map(f=>LABEL[f]||f).join(', ')+' 이(가) 바뀌었습니다. 최신 값을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.')
+          :'그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.';
+        const f0=(e.body.conflicts||[])[0]||{field:(e.body.fields||[])[0]}; if(f0&&f0.field&&$('w_'+f0.field)) $('w_'+f0.field).scrollIntoView({block:'center',behavior:'smooth'});
+      }else{ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
+    }finally{ busy(false); }
+  }
+
+  // ── 엑셀 다운로드 — 위치(GPS)를 받아 서버에 기록한 뒤에만 데이터가 온다 ──
+  function getGps(){
+    return new Promise(res=>{
+      if(!navigator.geolocation) return res({status:'unavailable',gps:null});
+      navigator.geolocation.getCurrentPosition(
+        p=>res({status:'ok',gps:{lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}}),
+        e=>res({status:e&&e.code===1?'denied':'unavailable',gps:null}),
+        {timeout:10000,maximumAge:60000,enableHighAccuracy:false});
+    });
+  }
+  function loadSheetJS(){
+    if(window.XLSX) return Promise.resolve(true);
+    return new Promise(res=>{ const sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload=()=>res(!!window.XLSX); sc.onerror=()=>res(false); document.head.appendChild(sc); });
+  }
+  const ST_ES={pending:'Sin revisar',draft:'En edición',changed:'Revisar de nuevo',ok:'Confirmado'};
+  function stamp(d){ const p=x=>String(x).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()); }
+  async function downloadXlsx(){
+    const btn=$('bXlsx'), m=$('xMsg'); m.className='msg'; m.textContent='';
+    btn.disabled=true; btn.textContent='위치 확인 중…';
+    try{
+      const g=await getGps();
+      if(g.status==='denied'){ m.className='msg err'; m.textContent=ERR.location_required; return; }
+      btn.textContent='준비 중…';
+      const [ok,d]=await Promise.all([loadSheetJS(),call('POST','/api/pf-catalog/export',{filters:{q:F.q,status:F.status,active:F.active==='1'?'1':'all'},gps:g.gps,gps_status:g.status})]);
+      if(!ok){ m.className='msg err'; m.textContent='엑셀 도구를 불러오지 못했습니다(네트워크). 다운로드 기록은 #'+d.export_id+' 로 남았습니다.'; return; }
+      const at=new Date(d.at);
+      const cat=d.items.map(it=>({'Clave CTR':it.code,'Producto':it.name||'','Activo':it.activo?'Sí':'No','Clave SyD':it.scode||'',
+        'Aplicación':it.app||'','OE':it.oe||'','Material':it.material||'','Revisión CTR':ST_ES[it.status]||it.status,
+        'Confirmado por':it.confirmed_by_name||'','Fecha confirmación':it.confirmed_at?new Date(it.confirmed_at).toLocaleString('sv-SE').slice(0,16):''}));
+      const apps=d.apps.map(a=>({'Clave CTR':a.code,'Marca':a.marca||'','Modelo':a.modelo||'','Año desde':a.desde==null?'':a.desde,'Año hasta':a.hasta==null?'':a.hasta,'Texto original':a.texto||''}));
+      const info=[['REFATRIX — Catálogo de productos (sin precios ni existencias)'],[''],
+        ['Descargado por',d.by],['Fecha y hora',at.toLocaleString('sv-SE')],['ID de descarga','#'+d.export_id],
+        ['Productos',d.items.length+(d.truncated?' (límite '+d.max+')':'')],['Ubicación',g.gps?(g.gps.lat.toFixed(5)+', '+g.gps.lng.toFixed(5)+' (±'+Math.round(g.gps.acc)+' m)'):'GPS no disponible — registrada por IP'],
+        [''],['CONFIDENCIAL — Propiedad de REFATRIX. Prohibida su reproducción o entrega a terceros. Esta descarga quedó registrada con usuario, fecha, hora y ubicación.']];
+      const wb=XLSX.utils.book_new();
+      const ws1=XLSX.utils.json_to_sheet(cat.length?cat:[{'Clave CTR':''}]); ws1['!cols']=[{wch:12},{wch:34},{wch:7},{wch:22},{wch:60},{wch:30},{wch:10},{wch:16},{wch:16},{wch:17}];
+      XLSX.utils.book_append_sheet(wb,ws1,'Catalogo');
+      const ws2=XLSX.utils.json_to_sheet(apps.length?apps:[{'Clave CTR':''}]); ws2['!cols']=[{wch:12},{wch:16},{wch:26},{wch:10},{wch:10},{wch:44}];
+      XLSX.utils.book_append_sheet(wb,ws2,'Aplicaciones');
+      const ws3=XLSX.utils.aoa_to_sheet(info); ws3['!cols']=[{wch:18},{wch:70}];
+      XLSX.utils.book_append_sheet(wb,ws3,'Info');
+      XLSX.writeFile(wb,'REFATRIX_Catalogo_'+stamp(at)+'_'+d.export_id+'.xlsx');
+      m.className='msg ok'; m.textContent='다운로드 '+d.items.length.toLocaleString('en-US')+'건 · 기록 #'+d.export_id+(g.gps?'':' (GPS를 받지 못해 IP 위치로 기록)')+(d.truncated?' · 최대 '+d.max+'건까지':'');
+    }catch(e){ m.className='msg err'; m.textContent=e.message; }
+    finally{ btn.disabled=false; btn.textContent='⬇ 엑셀 다운로드'; }
+  }
+  $('bXlsx').onclick=downloadXlsx;
+
+  $('dX').onclick=()=>closeDrawer(); $('ov').onclick=()=>closeDrawer();
+  $('bSave').onclick=saveDraft; $('bDiscard').onclick=discard; $('bOk').onclick=confirmIt;
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('dr').classList.contains('on')) closeDrawer(); });
+  let qTimer=null;
+  $('q').addEventListener('input',()=>{ clearTimeout(qTimer); qTimer=setTimeout(()=>{ F.q=$('q').value.trim(); F.offset=0; loadList(); },300); });
+  $('sort').onchange=()=>{ F.sort=$('sort').value; F.offset=0; loadList(); };
+  $('act').onchange=()=>{ F.active=$('act').checked?'1':'all'; F.offset=0; renderChips(); loadList(); };
+  window.addEventListener('beforeunload',e=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
+
+  (async function boot(){
+    if(platformSession()) $('back').classList.remove('hidden');
+    if(!sess||!sess.token){ if(!(await exchange())){ gate(); return; } }
+    $('who').textContent=(sess.name||'')+' · CTR 확인';
+    $('app').classList.remove('hidden');
+    await Promise.all([loadSummary(),loadList()]);
+  })();
+})();
+</script>
+</body>
+</html>

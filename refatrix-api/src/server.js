@@ -61,6 +61,7 @@ import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
 import crmSyncRoutes from './routes/crmSyncRoutes.js';
 import integrationRoutes from './routes/integrationRoutes.js';
 import productSyncRoutes from './routes/productSyncRoutes.js';
+import pfCatalogRoutes from './routes/pfCatalogRoutes.js';   // 0302 · REFATRIX Platform 제품 카탈로그 점검
 import crmInboundRoutes from './routes/crmInboundRoutes.js';
 import catalogApiRoutes from './routes/catalogApiRoutes.js';
 import crmLeadRoutes from './routes/crmLeadRoutes.js';
@@ -175,6 +176,7 @@ export function buildApp() {
   app.register(crmSyncRoutes);
   app.register(integrationRoutes);
   app.register(productSyncRoutes);
+  app.register(pfCatalogRoutes);    // 0302 · /api/pf-catalog/* — CTR 확인완료 → ERP 즉시 반영
   app.register(crmInboundRoutes);   // CRM → ERP 수신(웹카달록 신규고객)
   app.register(catalogApiRoutes);   // 고객 → ERP 조회(카탈로그 풀 API · 0221)
   app.register(crmLeadRoutes);      // CRM → ERP 수신(웹 가입 신청 알림) + 팝업·이력

@@ -8,13 +8,14 @@ import { visibleTeamIds } from '../teams.js';
 import { sweepDevRequestMatches, scheduleDevMatchSweep } from '../devMatchSweep.js';
 import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js';
 import { demandSummary, demandRows } from '../inactiveDemand.js';
-import { changeParts, describeRow, sydForRow, signedQty, stockAtChange } from '../productHistory.js';
+import { changeParts, describeRow, sydForRow, signedQty, stockAtChange, platformActor } from '../productHistory.js';
 import { refColumns, scanReferences, buildDeleteCheck, purgeReferences, describeCleanup } from '../productDelete.js';
 import { parseOe, formatOe, normOe, oeToken, OE_FOR_NOTE } from '../oeParse.js';
 import { oeReady, oeByProduct, syncOe } from '../oeCodes.js';
 import { recordPriceChange } from '../priceMaster.js';   // 0229 — 정가가 바뀌면 가격 마스터 장부에 1행
 import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품찾기 랙 × 수량
 import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구성품
+import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -670,6 +671,7 @@ export default async function productRoutes(app) {
     // 신규 제품 생성 → 개발목록 자동 매칭 점검(매칭 시 개발완료 전환) — 실패해도 생성은 유지
     let devMatch = null;
     try { devMatch = await sweepDevRequestMatches({ userId }); } catch (_) {}
+    pushProductsSoon([code], { actorUserId: userId, app });   // 0302 · 신규 품목도 CRM 에 곧바로
     return { ok: true, id: Number(created.id), code, dev_match: devMatch ? { matched: devMatch.matched } : null };
   });
 
@@ -749,6 +751,8 @@ export default async function productRoutes(app) {
     // 2026-10-12 — 코드·SYD·OE 가 바뀌면 개발목록 자동 매칭(응답을 기다리게 하지 않음 · 연속 수정은 1회로 묶음)
     const devMatchQueued = !!(changes.code || wantSyd || wantOe);
     if (devMatchQueued) scheduleDevMatchSweep({ userId });
+    // 0302 · 현장 수정은 그 즉시 CRM 에도 — 코드가 바뀌었으면 옛 코드(비활성으로 알림은 5분 주기가)와 새 코드 둘 다
+    if (chFields.length) pushProductsSoon([nextVals.code || cur.code], { actorUserId: userId, app });
     return { ok: true, changed: chFields, dev_match_queued: devMatchQueued };
   });
 
@@ -779,7 +783,9 @@ export default async function productRoutes(app) {
         id: Number(r.id), product_id: r.product_id != null ? Number(r.product_id) : null,
         code: r.code, action: r.action, source: r.source,
         changes: typeof r.changes === 'string' ? JSON.parse(r.changes) : r.changes,
-        changed_by_name: r.changed_by_name || null, created_at: r.created_at,
+        changed_by_name: r.changed_by_name
+          || platformActor(typeof r.changes === 'string' ? JSON.parse(r.changes) : r.changes) || null,
+        created_at: r.created_at,
       })),
       total, limit, offset,
     };
@@ -916,7 +922,7 @@ export default async function productRoutes(app) {
           estado_active: r.estado_active !== false,
           current_active: r.cur_active !== false,
           product_deleted: !!r.prod_deleted_at,
-          changed_by_name: r.changed_by_name || null,
+          changed_by_name: r.changed_by_name || platformActor(changes) || null,
         };
       }),
       total, limit, offset,
@@ -1340,6 +1346,7 @@ export default async function productRoutes(app) {
       await logProductChange(query, {
         productId: Number(r.id), code: r.code, action: 'update', source: 'material',
         changes: { material: { from: prev ? prev.material : null, to: material } }, userId: req.ctx.perm.userId });
+      pushProductsSoon([r.code], { actorUserId: req.ctx.perm.userId, app });   // 0302
     }
     return { ok: true, id: r.id, code: r.code, material: r.material };
   });
@@ -1840,6 +1847,7 @@ export default async function productRoutes(app) {
       userId: perm.userId, action: 'update', target: 'product_active',
       detail: { id, code: cur.code, to: active ? 'active' : 'inactive', reason, open_total: snap ? snap.open_total : null },
     });
+    pushProductsSoon([cur.code], { actorUserId: perm.userId, app });   // 0302 · 판매 중단/재개도 CRM 에 곧바로
     return { ok: true, id, is_active: active, open_total: snap ? snap.open_total : 0 };
   });
 

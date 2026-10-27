@@ -34,7 +34,14 @@ export const FIELD_LABELS = {
 export const SOURCE_LABELS = {
   manual: '화면 입력', import: '엑셀 업로드', material: '소재 지정', material_bulk: '소재 일괄지정',
   status: '판매상태', status_check: '일괄 점검',
+  platform: 'CTR 확인(Platform)',   // 0302 · REFATRIX Platform 제품 카탈로그 점검 · 확인완료
 };
+
+// 0302 · 플랫폼 확인완료 이력의 확인자 — changes._pf.to (ERP 사용자가 아니라 changed_by 가 비어 있다)
+export function platformActor(changes) {
+  const x = changes && changes._pf;
+  return x && x.to ? String(x.to) : null;
+}
 
 const isNil = (v) => v === null || v === undefined || v === '';
 
@@ -53,6 +60,7 @@ export function changeParts(changes, canPrice = true) {
   let hidden = 0;
   if (!changes || typeof changes !== 'object') return { parts, hidden_price: 0 };
   for (const field of Object.keys(changes)) {
+    if (field === '_pf') continue;   // 0302 · 확인자 이름은 변경 항목이 아니다(변경자 칸에 보인다)
     if (!canPrice && PRICE_FIELDS.has(field)) { hidden += 1; continue; }
     const c = changes[field] || {};
     parts.push({
