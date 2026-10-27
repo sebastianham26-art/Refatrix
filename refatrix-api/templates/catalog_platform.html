@@ -20,6 +20,10 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;border-
 .brand{font-weight:800;font-size:21px;letter-spacing:-.02em}
 .brand small{display:block;font-weight:600;font-size:12px;color:var(--mut);margin-top:4px;letter-spacing:0;max-width:760px;line-height:1.5}
 .who{margin-left:auto;font-size:12.5px;color:var(--ink2)}
+.lang{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+.lang button{font:inherit;font-size:12px;font-weight:800;border:0;background:none;color:var(--mut);padding:6px 10px;cursor:pointer}
+.lang button+button{border-left:1px solid var(--line)}
+.lang button.on{background:var(--ink);color:#fff}
 .btn{font:inherit;font-size:13px;font-weight:800;border-radius:9px;padding:8px 14px;border:1px solid var(--syd);background:var(--syd);color:#fff;cursor:pointer;white-space:nowrap}
 .btn:disabled{opacity:.5;cursor:default}
 .btn.ghost{background:#fff;color:var(--syd)}.btn.sm{font-size:12px;padding:5px 10px}
@@ -139,8 +143,9 @@ table.list tr.cur{background:var(--syd-soft)}
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand">📋 제품 카탈로그 점검<small>ERP 제품 카탈로그를 부품별로 확인합니다. 고칠 곳을 고치고 <b>[확인완료]</b>를 누르면 그 즉시 ERP에 반영되고, CRM과 고객 카탈로그에도 같은 내용이 나갑니다. 가격 · 재고는 여기서 다루지 않습니다.</small></div>
+    <div class="brand"><span data-i18n="brand">📋 제품 카탈로그 점검</span><small data-i18n-html="brandSub">ERP 제품 카탈로그를 부품별로 확인합니다. 고칠 곳을 고치고 <b>[확인완료]</b>를 누르면 그 즉시 ERP에 반영되고, CRM과 고객 카탈로그에도 같은 내용이 나갑니다. 가격 · 재고는 여기서 다루지 않습니다.</small></div>
     <div class="who" id="who"></div>
+    <div class="lang" id="lang" role="group" data-i18n-aria="langTitle" aria-label="화면 언어"><button type="button" data-l="ko" lang="ko">한국어</button><button type="button" data-l="en" lang="en">EN</button><button type="button" data-l="es" lang="es">ES</button></div>
     <a class="btn ghost sm hidden" id="back" href="/" style="text-decoration:none">← REFATRIX Platform</a>
   </header>
 
@@ -149,29 +154,29 @@ table.list tr.cur{background:var(--syd-soft)}
   <div id="app" class="hidden">
     <div class="chips" id="chips"></div>
     <div class="bar">
-      <input type="search" id="q" placeholder="코드 · 제품명 · SYD · 적용차종 · OE 검색" translate="no">
-      <select id="round" aria-label="차수">
-        <option value="">차수 전체</option>
-        <option value="1">1차 검토</option><option value="2">2차 검토</option><option value="3">3차 검토</option><option value="4">4차 검토</option>
-        <option value="5">5차 검토</option><option value="none">차수 기록 없음</option>
+      <input type="search" id="q" placeholder="코드 · 제품명 · SYD · 적용차종 · OE 검색" data-i18n-ph="search" translate="no">
+      <select id="round" aria-label="차수" data-i18n-aria="roundAria">
+        <option value="" data-i18n="roundAll">차수 전체</option>
+        <option value="1" data-i18n="roundN" data-n="1">1차 검토</option><option value="2" data-i18n="roundN" data-n="2">2차 검토</option><option value="3" data-i18n="roundN" data-n="3">3차 검토</option><option value="4" data-i18n="roundN" data-n="4">4차 검토</option>
+        <option value="5" data-i18n="roundN" data-n="5">5차 검토</option><option value="none" data-i18n="roundNone">차수 기록 없음</option>
       </select>
-      <select id="tag" aria-label="구분">
-        <option value="">구분 전체</option>
-        <option value="kr">① 한국차</option><option value="vio">② VIO 1~30위</option><option value="cn">③ 중국차</option>
-        <option value="sold">매출 있음</option><option value="quoted">견적 있음</option><option value="none">매출 · 견적 없음</option>
+      <select id="tag" aria-label="구분" data-i18n-aria="tagAria">
+        <option value="" data-i18n="tagAll">구분 전체</option>
+        <option value="kr" data-i18n="tagKr">① 한국차</option><option value="vio" data-i18n="tagVio">② VIO 1~30위</option><option value="cn" data-i18n="tagCn">③ 중국차</option>
+        <option value="sold" data-i18n="tagSold">매출 있음</option><option value="quoted" data-i18n="tagQuoted">견적 있음</option><option value="none" data-i18n="tagNone">매출 · 견적 없음</option>
       </select>
-      <select id="sort" aria-label="정렬">
-        <option value="code">코드순</option>
-        <option value="prio">중요도순 (한국차 → VIO 1~30 → 중국차)</option>
-        <option value="recent">ERP 최근 수정순</option>
-        <option value="confirmed">최근 확인순</option>
+      <select id="sort" aria-label="정렬" data-i18n-aria="sortAria">
+        <option value="code" data-i18n="sortCode">코드순</option>
+        <option value="prio" data-i18n="sortPrio">중요도순 (한국차 → VIO 1~30 → 중국차)</option>
+        <option value="recent" data-i18n="sortRecent">ERP 최근 수정순</option>
+        <option value="confirmed" data-i18n="sortConfirmed">최근 확인순</option>
       </select>
-      <label><input type="checkbox" id="act" checked> 판매중인 품목만</label>
-      <button type="button" class="btn ghost" id="bXlsx" title="지금 거르기 조건의 품목 전부 · 다운로드 기록(위치 · 일시)이 남습니다">⬇ 엑셀 다운로드</button>
+      <label><input type="checkbox" id="act" checked> <span data-i18n="activeOnly">판매중인 품목만</span></label>
+      <button type="button" class="btn ghost" id="bXlsx" data-i18n="xlsx" data-i18n-title="xlsxTitle" title="지금 거르기 조건의 품목 전부 · 다운로드 기록(위치 · 일시)이 남습니다">⬇ 엑셀 다운로드</button>
     </div>
     <div class="msg" id="xMsg" style="margin:-4px 0 8px"></div>
     <div class="tw"><table class="list">
-      <thead><tr><th>코드</th><th>제품명</th><th>SYD</th><th>적용차종</th><th>OE</th><th>상태</th></tr></thead>
+      <thead><tr><th data-i18n="thCode">코드</th><th data-i18n="thName">제품명</th><th data-i18n="thSyd">SYD</th><th data-i18n="thApp">적용차종</th><th data-i18n="thOe">OE</th><th data-i18n="thSt">상태</th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
     <div class="pager" id="pager"></div>
@@ -183,15 +188,15 @@ table.list tr.cur{background:var(--syd-soft)}
   <div class="dh">
     <img id="dImg" alt="" class="hidden">
     <div class="t"><b class="mono" id="dCode" translate="no"></b> <span id="dSt"></span><div id="dSub"></div></div>
-    <button type="button" class="x" id="dX" aria-label="닫기">✕</button>
+    <button type="button" class="x" id="dX" aria-label="닫기" data-i18n-aria="close">✕</button>
   </div>
   <div class="db" id="dBody"></div>
   <div class="df">
-    <label><input type="checkbox" id="goNext" checked> 확인 후 다음 부품</label>
+    <label><input type="checkbox" id="goNext" checked> <span data-i18n="goNext">확인 후 다음 부품</span></label>
     <span class="sp"></span>
     <span class="msg" id="dMsg"></span>
-    <button type="button" class="btn plain sm" id="bDiscard">수정 취소</button>
-    <button type="button" class="btn ghost" id="bSave">임시저장</button>
+    <button type="button" class="btn plain sm" id="bDiscard" data-i18n="discardBtn">수정 취소</button>
+    <button type="button" class="btn ghost" id="bSave" data-i18n="saveBtn">임시저장</button>
     <button type="button" class="btn ok" id="bOk">✅ 확인완료</button>
   </div>
 </aside>
@@ -207,39 +212,204 @@ table.list tr.cur{background:var(--syd-soft)}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const FIELDS=['name','scode','app','oe','material'];
-  const LABEL={name:'제품명',scode:'SYD 코드',app:'적용차종',oe:'OE 번호',material:'소재'};
   const MULTI={scode:1,app:1,oe:1};                      // 한 줄에 하나 — 저장할 때 ' // ' 로 잇는다
-  const HINT={name:'목록에서 고르기 · 없으면 직접 입력',scode:'한 줄에 하나 · 고치면 왼쪽 SYD 사진도 바뀝니다',app:'한 줄에 한 차종 · 예) NISSAN Versa 2012-2019',oe:'한 줄에 하나 · 조립품 OE 는 앞에 FOR',material:'목록에서 고르기 · 없으면 직접 입력'};
-  const ST={pending:'미검토',draft:'작성중',changed:'재확인',ok:'확인완료'};
-  const STHELP={pending:'아직 확인하지 않은 품목',draft:'수정안을 저장해 둔 품목',changed:'확인한 뒤 ERP에서 바뀐 품목 — 다시 열려 있음',ok:'CTR 확인완료 또는 ERP 검토완료 후 그대로인 품목 — 다시 고쳐서 확인할 수 있음'};
+  // ── 화면 언어 (한국어 · English · Español) — 고른 언어는 이 브라우저에 기억 ──
+  const I18N={
+  ko:{
+    title:'제품 카탈로그 점검 · REFATRIX', brand:'📋 제품 카탈로그 점검',
+    brandSub:'ERP 제품 카탈로그를 부품별로 확인합니다. 고칠 곳을 고치고 <b>[확인완료]</b>를 누르면 그 즉시 ERP에 반영되고, CRM과 고객 카탈로그에도 같은 내용이 나갑니다. 가격 · 재고는 여기서 다루지 않습니다.',
+    langTitle:'화면 언어', who:'{name} · CTR 확인',
+    search:'코드 · 제품명 · SYD · 적용차종 · OE 검색',
+    roundAria:'차수', roundAll:'차수 전체', roundN:'{n}차 검토', roundNone:'차수 기록 없음',
+    tagAria:'구분', tagAll:'구분 전체', tagKr:'① 한국차', tagVio:'② VIO 1~30위', tagCn:'③ 중국차', tagSold:'매출 있음', tagQuoted:'견적 있음', tagNone:'매출 · 견적 없음',
+    sortAria:'정렬', sortCode:'코드순', sortPrio:'중요도순 (한국차 → VIO 1~30 → 중국차)', sortRecent:'ERP 최근 수정순', sortConfirmed:'최근 확인순',
+    activeOnly:'판매중인 품목만', xlsx:'⬇ 엑셀 다운로드', xlsxTitle:'지금 거르기 조건의 품목 전부 · 다운로드 기록(위치 · 일시)이 남습니다',
+    thCode:'코드', thName:'제품명', thSyd:'SYD', thApp:'적용차종', thOe:'OE', thSt:'상태',
+    close:'닫기', goNext:'확인 후 다음 부품', discardBtn:'수정 취소', saveBtn:'임시저장',
+    f_name:'제품명', f_scode:'SYD 코드', f_app:'적용차종', f_oe:'OE 번호', f_material:'소재',
+    h_name:'목록에서 고르기 · 없으면 직접 입력', h_scode:'한 줄에 하나 · 고치면 왼쪽 SYD 사진도 바뀝니다', h_app:'한 줄에 한 차종 · 예) NISSAN Versa 2012-2019',
+    h_oe:'한 줄에 하나 · 조립품 OE 는 앞에 FOR', h_material:'목록에서 고르기 · 없으면 직접 입력',
+    st_all:'전체', st_pending:'미검토', st_draft:'작성중', st_changed:'재확인', st_ok:'확인완료', st_bulk:'검토완료',
+    sh_pending:'아직 확인하지 않은 품목', sh_draft:'수정안을 저장해 둔 품목', sh_changed:'확인한 뒤 ERP에서 바뀐 품목 — 다시 열려 있음',
+    sh_ok:'CTR 확인완료 또는 ERP 검토완료 후 그대로인 품목 — 다시 고쳐서 확인할 수 있음',
+    src_manual:'ERP 현장 수정', src_import:'ERP 엑셀 업로드', src_platform:'CTR 확인(Platform)', src_material:'ERP 소재 지정', src_material_bulk:'ERP 소재 일괄', src_status:'판매상태', src_status_check:'일괄 점검',
+    e_network:'서버에 연결하지 못했습니다. 잠시 뒤 다시 해 보세요.', e_platform_session_invalid:'플랫폼 로그인이 끝났습니다. 다시 로그인하세요.',
+    e_platform:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.', e_migration_required:'ERP 서버 준비가 끝나지 않았습니다(0302). 관리자에게 알려 주세요.',
+    e_name_required:'제품명은 비울 수 없습니다.', e_not_found:'품목을 찾지 못했습니다(삭제되었을 수 있음).',
+    e_location_required:'위치 권한이 필요합니다. 브라우저 주소창의 위치 아이콘에서 허용한 뒤 다시 누르세요.',
+    gateLogin:'REFATRIX Platform 에 로그인한 뒤 이 화면을 여세요.', gateBtn:'REFATRIX Platform 으로', checkFail:'확인 실패 ({s})',
+    noRows:'조건에 맞는 품목이 없습니다.', lastConfirm:'마지막 확인 {at}', overlap:'겹침 {n}', cntTitle:'확인 · 검토 {n}회',
+    sold:'매출', soldTitle:'매출 이력 있음(한 번 이상)', quoted:'견적', quotedTitle:'견적 이력 있음(한 번 이상)', inactive:'판매중단',
+    pKr:'① 한국차', pKrT:'적용차종에 현대 · 기아', pVio:'② VIO {n}위', pVioT:'멕시코 VIO 순위', pCn:'③ 중국차', pCnT:'적용차종에 중국 브랜드',
+    rdChip:'{n}차', rdTitle:'CTR {n}차 검토 {on}', prev:'← 이전', next:'다음 →',
+    pickNone:'— 없음 —', pickManual:'✎ 목록에 없음 — 직접 입력', manualPh:'직접 입력',
+    confHead:'⚠ 수정안을 쓰는 동안 ERP에서 이 칸이 바뀌었습니다(현장 수정).', confAsk:'어느 값을 쓸지 골라 주세요.',
+    confErp:'ERP(현장) 값 그대로:', confMine:'내 수정안으로 바꿈:', confBase:'수정을 시작할 때 값: {v}',
+    blank:'(빈칸)', edited:'수정됨', erpNow:'ERP 지금 값:', okN:'✅ 확인완료 · {n}칸 ERP 반영', ok0:'✅ 확인완료 (그대로 맞음)',
+    pvMaker:'ERP가 나눠 저장할 모양 — 메이커', pvModel:'모델', pvYears:'연식', pvNote:'메모', pvMiss:'⚠ 못 찾음',
+    pvWarn:'⚠ 노란 줄은 메이커(대문자)나 연식(4자리)을 못 찾았습니다 — 검색 · VIO 매칭에서 빠질 수 있습니다.',
+    created:'신규 등록', bulkDone:'검토완료(ERP 일괄)', confirmed:'확인완료', editedN:'수정 {n}칸', asIs:'그대로 맞음', overlapPick:'겹침 {n}칸 선택', memo:'메모: {v}',
+    secConf:'확인 이력', noneYet:'아직 없음', secHist:'ERP 카탈로그 변경 이력 (최근)', noRec:'기록 없음',
+    subChanged:'확인한 뒤 ERP에서 바뀌었습니다 — 다시 확인해 주세요 · ', subLast:'마지막 확인 {by} {at}', subNever:'아직 확인 기록 없음',
+    cflHead:'확인완료 {n}회', cflHint:'— 확인한 뒤에도 고쳐서 다시 확인할 수 있습니다', dtEdited:' · 수정 {n}칸', dtNoChange:' · 변경 없음', dtBulk:' · 검토', dtN:' · {n}칸',
+    rdHead:'CTR 차수 검토', rdItem:'{n}차 · {on}',
+    noteLabel:'근거 메모', noteHint:'무엇을 보고 확인했는지 (선택) · 확인 이력에 남습니다', notePh:'예) CTR 카탈로그 2026 · 실물 대조',
+    gPrev:'이전', gNext:'다음', gZoom:'크게 보기(새 탭)', noCtr:'CTR 사진이 없습니다', noSyd:'SYD 코드가 없습니다', noPhoto:'{b} 사진 없음 · {c}',
+    leaveAsk:'저장하지 않은 수정이 있습니다. 버리고 다른 품목을 열까요?', closeAsk:'저장하지 않은 수정이 있습니다. 닫을까요?',
+    savedN:'임시저장 · {n}칸 (ERP는 아직 그대로)', saved0:'바뀐 칸이 없어 수정안을 비웠습니다',
+    staleSave:'그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 확인 후 다시 저장하세요.',
+    discardAsk:'저장해 둔 수정안을 버릴까요? (ERP 값은 그대로입니다)', discarded:'수정안을 버렸습니다',
+    pickFirst:'현장 수정과 겹친 칸({f})에서 쓸 값을 먼저 고르세요.',
+    askApply:'{code} — {f} 을(를) ERP에 바로 반영하고 확인완료합니다.\nCRM과 고객 카탈로그에도 같은 내용이 나갑니다.', askAsIs:'{code} — 지금 ERP 내용이 맞다고 확인완료합니다.',
+    toastOk:'✅ {code} 확인완료', toastN:' · {n}칸 ERP 반영', toast0:' · 변경 없음',
+    cConflict:'그사이 ERP에서 바뀐 칸이 있어 아무것도 반영하지 않았습니다. 쓸 값을 고른 뒤 다시 확인완료를 누르세요.',
+    cStale:'화면을 연 뒤 ERP에서 {f} 이(가) 바뀌었습니다. 최신 값을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.',
+    cStaleReview:'그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.',
+    xGps:'위치 확인 중…', xPrep:'준비 중…', xNoLib:'엑셀 도구를 불러오지 못했습니다(네트워크). 다운로드 기록은 #{id} 로 남았습니다.',
+    xDone:'다운로드 {n}건 · 기록 #{id}', xIp:' (GPS를 받지 못해 IP 위치로 기록)', xMax:' · 최대 {max}건까지'
+  },
+  en:{
+    title:'Product Catalog Review · REFATRIX', brand:'📋 Product Catalog Review',
+    brandSub:'Review the ERP product catalog part by part. Fix what needs fixing and press <b>[Confirm]</b>: the change goes into the ERP immediately, and the CRM and customer catalog get the same content. Prices and stock are not handled here.',
+    langTitle:'Screen language', who:'{name} · CTR review',
+    search:'Search code · product name · SYD · application · OE',
+    roundAria:'Round', roundAll:'All rounds', roundN:'Round {n} review', roundNone:'No round recorded',
+    tagAria:'Type', tagAll:'All types', tagKr:'① Korean vehicles', tagVio:'② VIO top 1–30', tagCn:'③ Chinese vehicles', tagSold:'Has sales', tagQuoted:'Has quotes', tagNone:'No sales · no quotes',
+    sortAria:'Sort', sortCode:'By code', sortPrio:'By priority (Korean → VIO 1–30 → Chinese)', sortRecent:'Recently edited in ERP', sortConfirmed:'Recently confirmed',
+    activeOnly:'Active items only', xlsx:'⬇ Download Excel', xlsxTitle:'All items in the current filter · the download is logged (location · date and time)',
+    thCode:'Code', thName:'Product name', thSyd:'SYD', thApp:'Application', thOe:'OE', thSt:'Status',
+    close:'Close', goNext:'Next part after confirming', discardBtn:'Discard edits', saveBtn:'Save draft',
+    f_name:'Product name', f_scode:'SYD code', f_app:'Application', f_oe:'OE number', f_material:'Material',
+    h_name:'Pick from the list · type it if missing', h_scode:'One per line · editing it also changes the SYD photo', h_app:'One vehicle per line · e.g. NISSAN Versa 2012-2019',
+    h_oe:'One per line · prefix assembly OEs with FOR', h_material:'Pick from the list · type it if missing',
+    st_all:'All', st_pending:'Not reviewed', st_draft:'Draft', st_changed:'Re-check', st_ok:'Confirmed', st_bulk:'Reviewed',
+    sh_pending:'Items not checked yet', sh_draft:'Items with a saved draft', sh_changed:'Changed in the ERP after confirmation — open again',
+    sh_ok:'Confirmed by CTR or reviewed in the ERP and unchanged since — can still be edited and confirmed again',
+    src_manual:'ERP field edit', src_import:'ERP Excel upload', src_platform:'CTR review (Platform)', src_material:'ERP material set', src_material_bulk:'ERP material (bulk)', src_status:'Sales status', src_status_check:'Bulk check',
+    e_network:'Could not reach the server. Please try again shortly.', e_platform_session_invalid:'Your Platform login has ended. Please log in again.',
+    e_platform:'Could not verify your Platform login. Please try again shortly.', e_migration_required:'The ERP server is not ready yet (0302). Please tell the administrator.',
+    e_name_required:'Product name cannot be empty.', e_not_found:'Item not found (it may have been deleted).',
+    e_location_required:'Location permission is required. Allow it from the location icon in the address bar, then press again.',
+    gateLogin:'Log in to REFATRIX Platform first, then open this screen.', gateBtn:'Go to REFATRIX Platform', checkFail:'Check failed ({s})',
+    noRows:'No items match the filter.', lastConfirm:'Last confirmed {at}', overlap:'conflicts {n}', cntTitle:'Confirmed · reviewed {n} times',
+    sold:'Sold', soldTitle:'Has been sold at least once', quoted:'Quoted', quotedTitle:'Has been quoted at least once', inactive:'Discontinued',
+    pKr:'① Korean', pKrT:'Applications include Hyundai · Kia', pVio:'② VIO #{n}', pVioT:'Mexico VIO rank', pCn:'③ Chinese', pCnT:'Applications include a Chinese brand',
+    rdChip:'R{n}', rdTitle:'CTR round {n} review {on}', prev:'← Previous', next:'Next →',
+    pickNone:'— None —', pickManual:'✎ Not in the list — type it', manualPh:'Type it',
+    confHead:'⚠ This field changed in the ERP (field edit) while you were editing.', confAsk:'Choose which value to keep.',
+    confErp:'Keep the ERP (field) value:', confMine:'Use my edit:', confBase:'Value when you started editing: {v}',
+    blank:'(empty)', edited:'Edited', erpNow:'Current ERP value:', okN:'✅ Confirm · apply {n} field(s) to ERP', ok0:'✅ Confirm (correct as is)',
+    pvMaker:'How the ERP will split it — Make', pvModel:'Model', pvYears:'Years', pvNote:'Note', pvMiss:'⚠ Not found',
+    pvWarn:'⚠ Yellow rows have no make (upper case) or year (4 digits) — they may be missed by search and VIO matching.',
+    created:'New item', bulkDone:'Reviewed (ERP bulk)', confirmed:'Confirmed', editedN:'{n} field(s) edited', asIs:'Correct as is', overlapPick:'{n} conflict(s) resolved', memo:'Note: {v}',
+    secConf:'Confirmation history', noneYet:'None yet', secHist:'ERP catalog change history (recent)', noRec:'No records',
+    subChanged:'Changed in the ERP after confirmation — please check again · ', subLast:'Last confirmed {by} {at}', subNever:'Not confirmed yet',
+    cflHead:'Confirmed {n} time(s)', cflHint:'— you can still edit and confirm again', dtEdited:' · {n} field(s) edited', dtNoChange:' · no change', dtBulk:' · review', dtN:' · {n} field(s)',
+    rdHead:'CTR review rounds', rdItem:'Round {n} · {on}',
+    noteLabel:'Evidence note', noteHint:'What you checked against (optional) · saved in the confirmation history', notePh:'e.g. CTR catalog 2026 · checked the real part',
+    gPrev:'Previous', gNext:'Next', gZoom:'View large (new tab)', noCtr:'No CTR photo', noSyd:'No SYD code', noPhoto:'No {b} photo · {c}',
+    leaveAsk:'You have unsaved edits. Discard them and open another item?', closeAsk:'You have unsaved edits. Close anyway?',
+    savedN:'Draft saved · {n} field(s) (ERP not changed yet)', saved0:'Nothing changed, so the draft was cleared',
+    staleSave:'Someone else saved or confirmed this item in the meantime. The latest content was reloaded — check it and save again.',
+    discardAsk:'Discard the saved draft? (ERP values stay as they are)', discarded:'Draft discarded',
+    pickFirst:'First choose which value to keep in the field(s) that conflict with a field edit ({f}).',
+    askApply:'{code} — apply {f} to the ERP now and confirm.\nThe CRM and customer catalog get the same content.', askAsIs:'{code} — confirm that the current ERP content is correct.',
+    toastOk:'✅ {code} confirmed', toastN:' · {n} field(s) applied to ERP', toast0:' · no change',
+    cConflict:'Some fields changed in the ERP in the meantime, so nothing was applied. Choose the values to keep and press Confirm again.',
+    cStale:'{f} changed in the ERP after you opened this screen. The latest values were reloaded — review them and press Confirm again.',
+    cStaleReview:'Someone else saved or confirmed this item in the meantime. The latest content was reloaded — review it and press Confirm again.',
+    xGps:'Checking location…', xPrep:'Preparing…', xNoLib:'Could not load the Excel tool (network). The download was logged as #{id}.',
+    xDone:'Downloaded {n} item(s) · log #{id}', xIp:' (no GPS — logged by IP location)', xMax:' · up to {max} items'
+  },
+  es:{
+    title:'Revisión del catálogo · REFATRIX', brand:'📋 Revisión del catálogo de productos',
+    brandSub:'Revise el catálogo de productos del ERP pieza por pieza. Corrija lo necesario y presione <b>[Confirmar]</b>: el cambio entra al ERP al instante, y el CRM y el catálogo de clientes reciben el mismo contenido. Aquí no se manejan precios ni existencias.',
+    langTitle:'Idioma de la pantalla', who:'{name} · revisión CTR',
+    search:'Buscar clave · producto · SYD · aplicación · OE',
+    roundAria:'Ronda', roundAll:'Todas las rondas', roundN:'Revisión {n}ª', roundNone:'Sin ronda registrada',
+    tagAria:'Tipo', tagAll:'Todos los tipos', tagKr:'① Vehículos coreanos', tagVio:'② VIO top 1–30', tagCn:'③ Vehículos chinos', tagSold:'Con ventas', tagQuoted:'Con cotizaciones', tagNone:'Sin ventas ni cotizaciones',
+    sortAria:'Ordenar', sortCode:'Por clave', sortPrio:'Por prioridad (Corea → VIO 1–30 → China)', sortRecent:'Editado recientemente en ERP', sortConfirmed:'Confirmado recientemente',
+    activeOnly:'Solo productos activos', xlsx:'⬇ Descargar Excel', xlsxTitle:'Todos los productos del filtro actual · la descarga queda registrada (ubicación · fecha y hora)',
+    thCode:'Clave', thName:'Producto', thSyd:'SYD', thApp:'Aplicación', thOe:'OE', thSt:'Estado',
+    close:'Cerrar', goNext:'Siguiente pieza al confirmar', discardBtn:'Descartar cambios', saveBtn:'Guardar borrador',
+    f_name:'Producto', f_scode:'Clave SYD', f_app:'Aplicación', f_oe:'Número OE', f_material:'Material',
+    h_name:'Elegir de la lista · si no está, escribirlo', h_scode:'Una por línea · al cambiarla cambia también la foto SYD', h_app:'Un vehículo por línea · ej. NISSAN Versa 2012-2019',
+    h_oe:'Uno por línea · OE de ensamble con FOR delante', h_material:'Elegir de la lista · si no está, escribirlo',
+    st_all:'Todos', st_pending:'Sin revisar', st_draft:'En edición', st_changed:'Revisar de nuevo', st_ok:'Confirmado', st_bulk:'Revisado',
+    sh_pending:'Productos aún no revisados', sh_draft:'Productos con borrador guardado', sh_changed:'Cambiado en el ERP después de confirmar — abierto otra vez',
+    sh_ok:'Confirmado por CTR o revisado en el ERP y sin cambios — se puede corregir y confirmar de nuevo',
+    src_manual:'Edición en ERP', src_import:'Carga de Excel en ERP', src_platform:'Revisión CTR (Platform)', src_material:'Material en ERP', src_material_bulk:'Material en ERP (masivo)', src_status:'Estado de venta', src_status_check:'Revisión masiva',
+    e_network:'No se pudo conectar con el servidor. Intente de nuevo en un momento.', e_platform_session_invalid:'Su sesión de Platform terminó. Inicie sesión de nuevo.',
+    e_platform:'No se pudo verificar su sesión de Platform. Intente de nuevo en un momento.', e_migration_required:'El servidor ERP aún no está listo (0302). Avise al administrador.',
+    e_name_required:'El nombre del producto no puede quedar vacío.', e_not_found:'No se encontró el producto (puede haberse eliminado).',
+    e_location_required:'Se necesita permiso de ubicación. Permítalo desde el ícono de ubicación de la barra de direcciones y presione de nuevo.',
+    gateLogin:'Inicie sesión en REFATRIX Platform y luego abra esta pantalla.', gateBtn:'Ir a REFATRIX Platform', checkFail:'Falló la verificación ({s})',
+    noRows:'Ningún producto coincide con el filtro.', lastConfirm:'Última confirmación {at}', overlap:'conflictos {n}', cntTitle:'Confirmado · revisado {n} veces',
+    sold:'Vendido', soldTitle:'Se ha vendido al menos una vez', quoted:'Cotizado', quotedTitle:'Se ha cotizado al menos una vez', inactive:'Descontinuado',
+    pKr:'① Corea', pKrT:'Aplicaciones con Hyundai · Kia', pVio:'② VIO #{n}', pVioT:'Lugar en el VIO de México', pCn:'③ China', pCnT:'Aplicaciones con una marca china',
+    rdChip:'{n}ª', rdTitle:'Revisión CTR {n}ª {on}', prev:'← Anterior', next:'Siguiente →',
+    pickNone:'— Ninguno —', pickManual:'✎ No está en la lista — escribirlo', manualPh:'Escribir',
+    confHead:'⚠ Este campo cambió en el ERP (edición en campo) mientras usted editaba.', confAsk:'Elija qué valor conservar.',
+    confErp:'Conservar el valor del ERP:', confMine:'Usar mi cambio:', confBase:'Valor al empezar a editar: {v}',
+    blank:'(vacío)', edited:'Editado', erpNow:'Valor actual en ERP:', okN:'✅ Confirmar · aplicar {n} campo(s) al ERP', ok0:'✅ Confirmar (correcto tal cual)',
+    pvMaker:'Cómo lo separará el ERP — Marca', pvModel:'Modelo', pvYears:'Años', pvNote:'Nota', pvMiss:'⚠ No encontrado',
+    pvWarn:'⚠ Las filas amarillas no tienen marca (mayúsculas) o año (4 dígitos) — pueden quedar fuera de la búsqueda y del cruce con VIO.',
+    created:'Alta nueva', bulkDone:'Revisado (ERP masivo)', confirmed:'Confirmado', editedN:'{n} campo(s) editado(s)', asIs:'Correcto tal cual', overlapPick:'{n} conflicto(s) resuelto(s)', memo:'Nota: {v}',
+    secConf:'Historial de confirmaciones', noneYet:'Aún no hay', secHist:'Historial de cambios del catálogo ERP (reciente)', noRec:'Sin registros',
+    subChanged:'Cambió en el ERP después de confirmar — revíselo de nuevo · ', subLast:'Última confirmación {by} {at}', subNever:'Aún sin confirmar',
+    cflHead:'Confirmado {n} vez/veces', cflHint:'— aun confirmado, se puede corregir y confirmar de nuevo', dtEdited:' · {n} campo(s) editado(s)', dtNoChange:' · sin cambios', dtBulk:' · revisión', dtN:' · {n} campo(s)',
+    rdHead:'Rondas de revisión CTR', rdItem:'Revisión {n}ª · {on}',
+    noteLabel:'Nota de respaldo', noteHint:'Contra qué se verificó (opcional) · queda en el historial de confirmaciones', notePh:'ej. Catálogo CTR 2026 · comparado con la pieza real',
+    gPrev:'Anterior', gNext:'Siguiente', gZoom:'Ver grande (pestaña nueva)', noCtr:'No hay foto CTR', noSyd:'No hay clave SYD', noPhoto:'Sin foto {b} · {c}',
+    leaveAsk:'Hay cambios sin guardar. ¿Descartarlos y abrir otro producto?', closeAsk:'Hay cambios sin guardar. ¿Cerrar de todos modos?',
+    savedN:'Borrador guardado · {n} campo(s) (el ERP aún no cambia)', saved0:'No hubo cambios; se vació el borrador',
+    staleSave:'Otra persona guardó o confirmó este producto mientras tanto. Se volvió a cargar lo más reciente — revíselo y guarde de nuevo.',
+    discardAsk:'¿Descartar el borrador guardado? (Los valores del ERP no cambian)', discarded:'Borrador descartado',
+    pickFirst:'Primero elija qué valor conservar en los campos en conflicto con una edición en campo ({f}).',
+    askApply:'{code} — aplicar {f} al ERP ahora y confirmar.\nEl CRM y el catálogo de clientes reciben el mismo contenido.', askAsIs:'{code} — confirmar que el contenido actual del ERP es correcto.',
+    toastOk:'✅ {code} confirmado', toastN:' · {n} campo(s) aplicado(s) al ERP', toast0:' · sin cambios',
+    cConflict:'Algunos campos cambiaron en el ERP mientras tanto, así que no se aplicó nada. Elija los valores a conservar y presione Confirmar de nuevo.',
+    cStale:'{f} cambió en el ERP después de abrir esta pantalla. Se volvieron a cargar los valores más recientes — revíselos y presione Confirmar de nuevo.',
+    cStaleReview:'Otra persona guardó o confirmó este producto mientras tanto. Se volvió a cargar lo más reciente — revíselo y presione Confirmar de nuevo.',
+    xGps:'Verificando ubicación…', xPrep:'Preparando…', xNoLib:'No se pudo cargar la herramienta de Excel (red). La descarga quedó registrada como #{id}.',
+    xDone:'Descargados {n} producto(s) · registro #{id}', xIp:' (sin GPS — registrado por ubicación IP)', xMax:' · hasta {max} productos'
+  }};
+  const LANGS=['ko','en','es'];
+  let LANG='ko';
+  try{ const v=localStorage.getItem('rfx_pf_lang'); if(LANGS.includes(v)) LANG=v; }catch(e){}
+  const t=(k,v)=>{ let s=(I18N[LANG]&&I18N[LANG][k]); if(s==null) s=I18N.ko[k]; if(s==null) return k;
+    return v?String(s).replace(/\{(\w+)\}/g,(m,x)=>v[x]==null?'':String(v[x])):s; };
+  const LABEL=new Proxy({},{get:(o,f)=>typeof f==='string'?t('f_'+f):undefined});
+  const HINT=new Proxy({},{get:(o,f)=>typeof f==='string'?t('h_'+f):undefined});
+  const ST=new Proxy({},{get:(o,s)=>typeof s==='string'?t('st_'+s):undefined});
+  const STHELP=new Proxy({},{get:(o,s)=>typeof s==='string'&&I18N.ko['sh_'+s]?t('sh_'+s):''});
+  const SRC=new Proxy({},{get:(o,s)=>typeof s==='string'&&I18N.ko['src_'+s]?t('src_'+s):undefined});
+  const ERRK={network:'e_network',platform_session_invalid:'e_platform_session_invalid',platform_unreachable:'e_platform',platform_timeout:'e_platform',
+    platform_network:'e_platform',migration_required:'e_migration_required',name_required:'e_name_required',not_found:'e_not_found',location_required:'e_location_required'};
+  const ERR=new Proxy({},{get:(o,c)=>typeof c==='string'&&ERRK[c]?t(ERRK[c]):undefined});
   // 한 품목의 상태 이름 — 확인완료(CTR 이 플랫폼에서) · 검토완료(디렉터가 ERP 에서 엑셀로)
-  const stLabel=(it)=>it.status==='ok'?(it.confirmed_source==='bulk'?'검토완료':'확인완료'):(ST[it.status]||it.status);
+  const stLabel=(it)=>it.status==='ok'?(it.confirmed_source==='bulk'?t('st_bulk'):t('st_ok')):(ST[it.status]||it.status);
   const SYD_IMG=(c)=>'https://syd.com.mx/Catalogo/fotos/'+encodeURIComponent(c)+'.jpg';
   const CTR_N=(c,n)=>'https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/'+encodeURIComponent(c)+'/'+encodeURIComponent(c)+'_'+n+'.webp';
   const CTR_MAX=12;
   let OPTS=null;   // 고르기 목록 {names:[{v,n}], materials:[{v,n}]}
-  const SRC={manual:'ERP 현장 수정',import:'ERP 엑셀 업로드',platform:'CTR 확인(Platform)',material:'ERP 소재 지정',material_bulk:'ERP 소재 일괄',status:'판매상태',status_check:'일괄 점검'};
-  const ERR={network:'서버에 연결하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_session_invalid:'플랫폼 로그인이 끝났습니다. 다시 로그인하세요.',
-    platform_unreachable:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_timeout:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',
-    platform_network:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',migration_required:'ERP 서버 준비가 끝나지 않았습니다(0302). 관리자에게 알려 주세요.',
-    name_required:'제품명은 비울 수 없습니다.',not_found:'품목을 찾지 못했습니다(삭제되었을 수 있음).',
-    location_required:'위치 권한이 필요합니다. 브라우저 주소창의 위치 아이콘에서 허용한 뒤 다시 누르세요.'};
   const F={status:'',active:'1',q:'',sort:'code',round:'',tag:'',offset:0,limit:50};
   const S={items:[],total:0,sum:null,cur:null,ix:-1,dirty:false,resolve:{},loaded:null,rev:null};
 
   // ── 플랫폼 세션 → ERP 토큰 (마케팅 이미지 뱅크와 같은 방식) ──
   let sess=null; try{ sess=JSON.parse(sessionStorage.getItem(SK)||'null'); }catch(e){ sess=null; }
   const saveSess=()=>{ try{ sess?sessionStorage.setItem(SK,JSON.stringify(sess)):sessionStorage.removeItem(SK); }catch(e){} };
-  let gateMsg='';
+  let gateMsg='';   // 키(I18N) — 언어를 바꿔도 다시 그릴 수 있게
+  let gateRaw='';
   function platformSession(){ let ps=null; try{ ps=JSON.parse(sessionStorage.getItem('rfx_sess')||'null'); }catch(e){ ps=null; } return ps&&ps.t&&Date.now()<=Number(ps.e||0)?ps:null; }
   async function exchange(){
     const ps=platformSession();
-    if(!ps){ gateMsg='REFATRIX Platform 에 로그인한 뒤 이 화면을 여세요.'; return false; }
+    if(!ps){ gateMsg='gateLogin'; gateRaw=''; return false; }
     const u=ps.u||{}; const name=u.name||u.login||'';
     const key=String(u.id!=null?u.id:(u.login||name||''));
-    let r; try{ r=await fetch(API+'/api/pf-catalog/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:ps.t,name,user_key:key})}); }catch(e){ gateMsg=ERR.network; return false; }
+    let r; try{ r=await fetch(API+'/api/pf-catalog/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:ps.t,name,user_key:key})}); }catch(e){ gateMsg='e_network'; gateRaw=''; return false; }
     let b={}; try{ b=await r.json(); }catch(e){}
-    if(!r.ok){ gateMsg=ERR[b.error]||('확인 실패 ('+r.status+')'); return false; }
+    if(!r.ok){ gateMsg=ERRK[b.error]||''; gateRaw=gateMsg?'':t('checkFail',{s:r.status}); return false; }
     sess={token:b.token,name:b.name,pt:ps.t}; saveSess(); return true;
   }
   async function call(method,path,body,retried){
@@ -254,7 +424,7 @@ table.list tr.cur{background:var(--syd-soft)}
   function gate(){
     $('app').classList.add('hidden'); closeDrawer(true);
     const g=$('gate'); g.classList.remove('hidden');
-    g.innerHTML=esc(gateMsg||'REFATRIX Platform 에 로그인한 뒤 이 화면을 여세요.')+'<div style="margin-top:12px"><a class="btn" href="/" style="text-decoration:none">REFATRIX Platform 으로</a></div>';
+    g.innerHTML=esc(gateRaw||t(gateMsg||'gateLogin'))+'<div style="margin-top:12px"><a class="btn" href="/" style="text-decoration:none">'+esc(t('gateBtn'))+'</a></div>';
   }
   function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('on'); clearTimeout(el._h); el._h=setTimeout(()=>el.classList.remove('on'),3400); }
   const fmtAt=(s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('sv-SE').slice(0,16); }catch(e){ return String(s).slice(0,16); } };
@@ -273,7 +443,7 @@ table.list tr.cur{background:var(--syd-soft)}
   // ── 목록 ──
   function renderChips(){
     const s=S.sum&&(F.active==='1'?S.sum.active:S.sum.all); if(!s) return;
-    const keys=[['', '전체', s.total],['pending',ST.pending,s.pending],['changed',ST.changed,s.changed],['draft',ST.draft,s.draft],['ok',ST.ok,s.ok]];
+    const keys=[['', ST.all, s.total],['pending',ST.pending,s.pending],['changed',ST.changed,s.changed],['draft',ST.draft,s.draft],['ok',ST.ok,s.ok]];
     $('chips').innerHTML=keys.map(([k,l,n])=>'<button type="button" class="chip '+(k||'all')+(F.status===k?' on':'')+'" data-s="'+k+'" title="'+esc(STHELP[k]||'')+'"><b class="mono">'+Number(n||0).toLocaleString('en-US')+'</b><span>'+esc(l)+'</span></button>').join('');
     $('chips').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ F.status=b.dataset.s; F.offset=0; renderChips(); loadList(); });
   }
@@ -283,35 +453,37 @@ table.list tr.cur{background:var(--syd-soft)}
     try{ const r=await call('GET','/api/pf-catalog/items'+qs); S.items=r.items; S.total=r.total; renderRows(); if(!keepScroll) window.scrollTo({top:0}); }
     catch(e){ $('rows').innerHTML='<tr><td colspan="6" class="empty">'+esc(e.message)+'</td></tr>'; }
   }
-  const md=(s)=>{ if(!s) return ''; const t=fmtAt(s); return t?t.slice(5,10).replace('-','/'):''; };
+  // 짧은 날짜 — 스페인어는 일/월, 그 외 월/일
+  const dm=(ymd)=>{ const m=String(ymd||'').match(/^\d{4}-(\d{2})-(\d{2})/); if(!m) return ''; return LANG==='es'?(m[2]+'/'+m[1]):(m[1]+'/'+m[2]); };
+  const md=(s)=>{ if(!s) return ''; return dm(fmtAt(s)); };
   function stBadge(it){
     // 확인완료는 날짜로(예 「확인완료 10/27」) · 여러 번이면 횟수 칩(×3)
     let h='<span class="st '+it.status+'">'+esc(stLabel(it))+(it.status==='ok'&&it.confirmed_at?' '+esc(md(it.confirmed_at)):'')
-      +(it.status==='draft'&&it.draft_conflicts?' · 겹침 '+it.draft_conflicts:'')+'</span>';
-    if(it.confirm_count>1) h+='<span class="cnt" title="확인 · 검토 '+it.confirm_count+'회">×'+it.confirm_count+'</span>';
+      +(it.status==='draft'&&it.draft_conflicts?' · '+esc(t('overlap',{n:it.draft_conflicts})):'')+'</span>';
+    if(it.confirm_count>1) h+='<span class="cnt" title="'+esc(t('cntTitle',{n:it.confirm_count}))+'">×'+it.confirm_count+'</span>';
     // 한 번이라도 매출 · 견적이 있었던 품목
-    if(it.sold) h+='<span class="mk sold" title="매출 이력 있음(한 번 이상)">매출</span>';
-    if(it.quoted) h+='<span class="mk quoted" title="견적 이력 있음(한 번 이상)">견적</span>';
-    if(!it.activo) h+=' <span class="st inact">판매중단</span>';
+    if(it.sold) h+='<span class="mk sold" title="'+esc(t('soldTitle'))+'">'+esc(t('sold'))+'</span>';
+    if(it.quoted) h+='<span class="mk quoted" title="'+esc(t('quotedTitle'))+'">'+esc(t('quoted'))+'</span>';
+    if(!it.activo) h+=' <span class="st inact">'+esc(t('inactive'))+'</span>';
     return h;
   }
   /** 중요도 칩 — ① 한국차 · ② VIO n위(1~30) · ③ 중국차 (해당하는 것 모두) */
   function prioHtml(it){
     let h='';
-    if(it.kr) h+='<span class="pr p1" title="적용차종에 현대 · 기아">① 한국차</span>';
-    if(it.vio_rank!=null&&it.vio_rank<=30) h+='<span class="pr p2" title="멕시코 VIO 순위">② VIO '+it.vio_rank+'위</span>';
-    if(it.cn) h+='<span class="pr p3" title="적용차종에 중국 브랜드">③ 중국차</span>';
+    if(it.kr) h+='<span class="pr p1" title="'+esc(t('pKrT'))+'">'+esc(t('pKr'))+'</span>';
+    if(it.vio_rank!=null&&it.vio_rank<=30) h+='<span class="pr p2" title="'+esc(t('pVioT'))+'">'+esc(t('pVio',{n:it.vio_rank}))+'</span>';
+    if(it.cn) h+='<span class="pr p3" title="'+esc(t('pCnT'))+'">'+esc(t('pCn'))+'</span>';
     return h?'<div>'+h+'</div>':'';
   }
   /** CTR 차수별 검토 칩 — 「1차 10/02」 */
   function roundsHtml(it){
     const r=it.rounds||[]; if(!r.length) return '';
-    return '<div class="rds">'+r.map(x=>'<span class="rd" title="CTR '+x.round+'차 검토 '+esc(x.on||'')+'">'+x.round+'차 '+esc((x.on||'').slice(5).replace('-','/'))+'</span>').join('')+'</div>';
+    return '<div class="rds">'+r.map(x=>'<span class="rd" title="'+esc(t('rdTitle',{n:x.round,on:x.on||''}))+'">'+esc(t('rdChip',{n:x.round}))+' '+esc(dm(x.on))+'</span>').join('')+'</div>';
   }
   function renderRows(){
-    if(!S.items.length){ $('rows').innerHTML='<tr><td colspan="6" class="empty">조건에 맞는 품목이 없습니다.</td></tr>'; $('pager').innerHTML=''; return; }
+    if(!S.items.length){ $('rows').innerHTML='<tr><td colspan="6" class="empty">'+esc(t('noRows'))+'</td></tr>'; $('pager').innerHTML=''; return; }
     $('rows').innerHTML=S.items.map((it,i)=>{
-      const sub=it.status==='changed'?('마지막 확인 '+fmtAt(it.confirmed_at))
+      const sub=it.status==='changed'?esc(t('lastConfirm',{at:fmtAt(it.confirmed_at)}))
         :it.status==='draft'?(it.draft_by_name?esc(it.draft_by_name)+' · ':'')+fmtAt(it.draft_at):'';
       return '<tr data-i="'+i+'"'+(S.cur&&S.cur.id===it.id?' class="cur"':'')+'>'
         +'<td><span class="code mono" translate="no">'+esc(it.code)+'</span>'+prioHtml(it)+'</td>'
@@ -323,9 +495,9 @@ table.list tr.cur{background:var(--syd-soft)}
     }).join('');
     $('rows').querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>openItem(+tr.dataset.i));
     const from=F.offset+1, to=Math.min(F.offset+F.limit,S.total);
-    $('pager').innerHTML='<button type="button" class="btn plain sm" id="pPrev"'+(F.offset<=0?' disabled':'')+'>← 이전</button>'
+    $('pager').innerHTML='<button type="button" class="btn plain sm" id="pPrev"'+(F.offset<=0?' disabled':'')+'>'+esc(t('prev'))+'</button>'
       +'<span>'+from.toLocaleString('en-US')+'–'+to.toLocaleString('en-US')+' / '+S.total.toLocaleString('en-US')+'</span>'
-      +'<button type="button" class="btn plain sm" id="pNext"'+(to>=S.total?' disabled':'')+'>다음 →</button>';
+      +'<button type="button" class="btn plain sm" id="pNext"'+(to>=S.total?' disabled':'')+'>'+esc(t('next'))+'</button>';
     $('pPrev').onclick=()=>{ F.offset=Math.max(0,F.offset-F.limit); loadList(); };
     $('pNext').onclick=()=>{ F.offset+=F.limit; loadList(); };
   }
@@ -340,10 +512,10 @@ table.list tr.cur{background:var(--syd-soft)}
     const list=(OPTS&&OPTS[PICK[f]])||null;
     if(!list) return '<input type="text" id="e_'+f+'" value="'+esc(val)+'" spellcheck="false">';
     const inList=list.some(o=>o.v===val)||(f==='material'&&!val);
-    const opts=(f==='material'?'<option value=""'+(!val?' selected':'')+'>— 없음 —</option>':'')
+    const opts=(f==='material'?'<option value=""'+(!val?' selected':'')+'>'+esc(t('pickNone'))+'</option>':'')
       +list.map(o=>'<option value="'+esc(o.v)+'"'+(o.v===val?' selected':'')+'>'+esc(o.v)+(o.n?' ('+o.n+')':'')+'</option>').join('')
-      +'<option value="__manual"'+(!inList?' selected':'')+'>✎ 목록에 없음 — 직접 입력</option>';
-    return '<select id="s_'+f+'">'+opts+'</select><input type="text" id="e_'+f+'" value="'+esc(val)+'" spellcheck="false" placeholder="직접 입력"'+(inList?' class="hidden"':'')+'>';
+      +'<option value="__manual"'+(!inList?' selected':'')+'>'+esc(t('pickManual'))+'</option>';
+    return '<select id="s_'+f+'">'+opts+'</select><input type="text" id="e_'+f+'" value="'+esc(val)+'" spellcheck="false" placeholder="'+esc(t('manualPh'))+'"'+(inList?' class="hidden"':'')+'>';
   }
   function bindPicker(f){
     const sel=$('s_'+f), inp=$('e_'+f); if(!sel||!inp) return;
@@ -363,12 +535,12 @@ table.list tr.cur{background:var(--syd-soft)}
     let conf='';
     if(d&&d.state==='conflict'){
       const pick=S.resolve[f]||'';
-      conf='<div class="cbox"><b>⚠ 수정안을 쓰는 동안 ERP에서 이 칸이 바뀌었습니다(현장 수정).</b> 어느 값을 쓸지 골라 주세요.'
-        +'<label><input type="radio" name="r_'+f+'" value="erp"'+(pick==='erp'?' checked':'')+'> <span class="v">ERP(현장) 값 그대로: <b>'+esc(d.erp||'(빈칸)')+'</b></span></label>'
-        +'<label><input type="radio" name="r_'+f+'" value="mine"'+(pick==='mine'?' checked':'')+'> <span class="v">내 수정안으로 바꿈: <b>'+esc(d.value||'(빈칸)')+'</b></span></label>'
-        +'<div class="was" style="margin-top:6px">수정을 시작할 때 값: '+esc(d.base||'(빈칸)')+'</div></div>';
+      conf='<div class="cbox"><b>'+esc(t('confHead'))+'</b> '+esc(t('confAsk'))
+        +'<label><input type="radio" name="r_'+f+'" value="erp"'+(pick==='erp'?' checked':'')+'> <span class="v">'+esc(t('confErp'))+' <b>'+esc(d.erp||t('blank'))+'</b></span></label>'
+        +'<label><input type="radio" name="r_'+f+'" value="mine"'+(pick==='mine'?' checked':'')+'> <span class="v">'+esc(t('confMine'))+' <b>'+esc(d.value||t('blank'))+'</b></span></label>'
+        +'<div class="was" style="margin-top:6px">'+esc(t('confBase',{v:d.base||t('blank')}))+'</div></div>';
     }
-    return '<div class="fld" id="w_'+f+'"><div class="fl"><b>'+LABEL[f]+'</b><small>'+esc(HINT[f]||'')+'</small><span class="tag" id="t_'+f+'"></span></div>'
+    return '<div class="fld" id="w_'+f+'"><div class="fl"><b>'+esc(LABEL[f])+'</b><small>'+esc(HINT[f]||'')+'</small><span class="tag" id="t_'+f+'"></span></div>'
       +input+'<div class="was hidden" id="was_'+f+'"></div>'+conf
       +(f==='app'?'<div class="pv" id="pvApp"></div>':'')+'</div>';
   }
@@ -378,13 +550,13 @@ table.list tr.cur{background:var(--syd-soft)}
       const ch=!eqF(f,edVal(f),it[f]); const d=it.draft&&it.draft[f];
       const w=$('w_'+f); if(!w) return;
       w.classList.toggle('chg',ch); w.classList.toggle('conf',!!(d&&d.state==='conflict'));
-      $('t_'+f).textContent=ch?'수정됨':'';
+      $('t_'+f).textContent=ch?t('edited'):'';
       const was=$('was_'+f);
-      if(ch){ was.classList.remove('hidden'); was.innerHTML='ERP 지금 값: <s>'+esc(it[f]==null||it[f]===''?'(빈칸)':(MULTI[f]?lines(it[f]).join(' · '):it[f]))+'</s>'; }
+      if(ch){ was.classList.remove('hidden'); was.innerHTML=esc(t('erpNow'))+' <s>'+esc(it[f]==null||it[f]===''?t('blank'):(MULTI[f]?lines(it[f]).join(' · '):it[f]))+'</s>'; }
       else was.classList.add('hidden');
     });
     const n=changedFields().length;
-    $('bOk').textContent=n?('✅ 확인완료 · '+n+'칸 ERP 반영'):'✅ 확인완료 (그대로 맞음)';
+    $('bOk').textContent=n?t('okN',{n}):t('ok0');
     S.dirty=!draftMatches();
   }
   function draftMatches(){ return FIELDS.every(f=>eqF(f,edVal(f),startVal(f))); }
@@ -396,37 +568,37 @@ table.list tr.cur{background:var(--syd-soft)}
       try{
         const r=await call('POST','/api/pf-catalog/preview',{app:edVal('app'),scode:edVal('scode'),oe:edVal('oe')});
         if(!r.apps.length){ el.innerHTML=''; return; }
-        el.innerHTML='<table><thead><tr><th>ERP가 나눠 저장할 모양 — 메이커</th><th>모델</th><th>연식</th><th>메모</th></tr></thead><tbody>'
+        el.innerHTML='<table><thead><tr><th>'+esc(t('pvMaker'))+'</th><th>'+esc(t('pvModel'))+'</th><th>'+esc(t('pvYears'))+'</th><th>'+esc(t('pvNote'))+'</th></tr></thead><tbody>'
           +r.apps.map(a=>{ const bad=!a.marca||!a.desde; const nota=(a.texto.match(/\[([^\]]+)\]/)||[])[1]||'';
-            return '<tr'+(bad?' style="background:var(--warn-soft)"':'')+'><td>'+esc(a.marca||'⚠ 못 찾음')+'</td><td>'+esc(a.modelo||'')+'</td><td class="mono">'+(a.desde?(a.desde+(a.hasta&&a.hasta!==a.desde?'–'+a.hasta:'')):'⚠')+'</td><td>'+esc(nota)+'</td></tr>'; }).join('')
-          +'</tbody></table>'+(r.apps.some(a=>!a.marca||!a.desde)?'<div class="was">⚠ 노란 줄은 메이커(대문자)나 연식(4자리)을 못 찾았습니다 — 검색 · VIO 매칭에서 빠질 수 있습니다.</div>':'');
+            return '<tr'+(bad?' style="background:var(--warn-soft)"':'')+'><td>'+esc(a.marca||t('pvMiss'))+'</td><td>'+esc(a.modelo||'')+'</td><td class="mono">'+(a.desde?(a.desde+(a.hasta&&a.hasta!==a.desde?'–'+a.hasta:'')):'⚠')+'</td><td>'+esc(nota)+'</td></tr>'; }).join('')
+          +'</tbody></table>'+(r.apps.some(a=>!a.marca||!a.desde)?'<div class="was">'+esc(t('pvWarn'))+'</div>':'');
       }catch(e){}
     },350);
   }
   function histHtml(it){
-    const parts=(h)=>h.parts.map(p=>'<div class="p">'+esc(LABEL[p.field]||p.field)+': <s>'+esc(p.from==null||p.from===''?'(빈칸)':p.from)+'</s> → <b>'+esc(p.to==null||p.to===''?'(빈칸)':p.to)+'</b></div>').join('');
-    const hs=(it.history||[]).map(h=>'<div class="hi"><div class="h"><b>'+esc(SRC[h.source]||h.source)+'</b><span>'+esc(h.by||'')+'</span><span>'+fmtAt(h.at)+'</span>'+(h.action==='create'?'<span>신규 등록</span>':'')+'</div>'+parts(h)+'</div>').join('');
+    const parts=(h)=>h.parts.map(p=>'<div class="p">'+esc(I18N.ko['f_'+p.field]?LABEL[p.field]:p.field)+': <s>'+esc(p.from==null||p.from===''?t('blank'):p.from)+'</s> → <b>'+esc(p.to==null||p.to===''?t('blank'):p.to)+'</b></div>').join('');
+    const hs=(it.history||[]).map(h=>'<div class="hi"><div class="h"><b>'+esc(SRC[h.source]||h.source)+'</b><span>'+esc(h.by||'')+'</span><span>'+fmtAt(h.at)+'</span>'+(h.action==='create'?'<span>'+esc(t('created'))+'</span>':'')+'</div>'+parts(h)+'</div>').join('');
     const cs=(it.confirms||[]).map(c=>{ const n=Object.keys(c.applied||{}).length;
-      return '<div class="hi"><div class="h"><b>'+(c.source==='bulk'?'검토완료(ERP 일괄)':'확인완료')+'</b><span>'+esc(c.by||'')+'</span><span>'+fmtAt(c.at)+'</span><span>'+(n?'수정 '+n+'칸':'그대로 맞음')+'</span>'
-        +(c.conflicts?'<span>겹침 '+Object.keys(c.conflicts).length+'칸 선택</span>':'')+'</div>'+(c.note?'<div class="p">메모: '+esc(c.note)+'</div>':'')+'</div>'; }).join('');
-    return '<div class="sec">확인 이력</div><div class="hist">'+(cs||'<div class="hi" style="color:var(--mut)">아직 없음</div>')+'</div>'
-      +'<div class="sec">ERP 카탈로그 변경 이력 (최근)</div><div class="hist">'+(hs||'<div class="hi" style="color:var(--mut)">기록 없음</div>')+'</div>';
+      return '<div class="hi"><div class="h"><b>'+esc(c.source==='bulk'?t('bulkDone'):t('confirmed'))+'</b><span>'+esc(c.by||'')+'</span><span>'+fmtAt(c.at)+'</span><span>'+esc(n?t('editedN',{n}):t('asIs'))+'</span>'
+        +(c.conflicts?'<span>'+esc(t('overlapPick',{n:Object.keys(c.conflicts).length}))+'</span>':'')+'</div>'+(c.note?'<div class="p">'+esc(t('memo',{v:c.note}))+'</div>':'')+'</div>'; }).join('');
+    return '<div class="sec">'+esc(t('secConf'))+'</div><div class="hist">'+(cs||'<div class="hi" style="color:var(--mut)">'+esc(t('noneYet'))+'</div>')+'</div>'
+      +'<div class="sec">'+esc(t('secHist'))+'</div><div class="hist">'+(hs||'<div class="hi" style="color:var(--mut)">'+esc(t('noRec'))+'</div>')+'</div>';
   }
   function renderDrawer(){
     const it=S.cur;
     $('dCode').textContent=it.code;
     $('dSt').innerHTML=stBadge(it)+roundsHtml(it)+prioHtml(it);
-    $('dSub').textContent=(it.status==='changed'?'확인한 뒤 ERP에서 바뀌었습니다 — 다시 확인해 주세요 · ':'')+(it.confirmed_at?('마지막 확인 '+(it.confirmed_by_name||'')+' '+fmtAt(it.confirmed_at)):'아직 확인 기록 없음');
+    $('dSub').textContent=(it.status==='changed'?t('subChanged'):'')+(it.confirmed_at?t('subLast',{by:it.confirmed_by_name||'',at:fmtAt(it.confirmed_at)}):t('subNever'));
     const img=$('dImg'); img.classList.add('hidden'); img.onload=()=>img.classList.remove('hidden'); img.onerror=()=>img.classList.add('hidden'); img.src=CTR_IMG(it.code);
     // 확인완료 날짜 전부 — 몇 번 확인했는지 바로 보이게(최근 순)
     const cf=(it.confirms||[]);
-    const cfl=cf.length?('<div class="cfl"><b>확인완료 '+cf.length+'회</b>'+(cf.length>1?' <small style="color:var(--mut)">— 확인한 뒤에도 고쳐서 다시 확인할 수 있습니다</small>':'')
+    const cfl=cf.length?('<div class="cfl"><b>'+esc(t('cflHead',{n:cf.length}))+'</b>'+(cf.length>1?' <small style="color:var(--mut)">'+esc(t('cflHint'))+'</small>':'')
       +'<div class="dts">'+cf.map(c=>{ const n=Object.keys(c.applied||{}).length;
-        return '<span class="dt'+(c.source==='bulk'?' bulk':'')+'" title="'+esc((c.by||'')+(n?' · 수정 '+n+'칸':' · 변경 없음')+(c.note?' · '+c.note:''))+'">'+esc(fmtAt(c.at))+(c.source==='bulk'?' · 검토':'')+(n?' · '+n+'칸':'')+'</span>'; }).join('')+'</div></div>'):'';
-    const rdl=(it.rounds||[]).length?('<div class="cfl"><b>CTR 차수 검토</b><div class="dts">'+it.rounds.map(x=>'<span class="dt bulk">'+x.round+'차 · '+esc(x.on||'')+'</span>').join('')+'</div></div>'):'';
+        return '<span class="dt'+(c.source==='bulk'?' bulk':'')+'" title="'+esc((c.by||'')+(n?t('dtEdited',{n}):t('dtNoChange'))+(c.note?' · '+c.note:''))+'">'+esc(fmtAt(c.at)+(c.source==='bulk'?t('dtBulk'):'')+(n?t('dtN',{n}):''))+'</span>'; }).join('')+'</div></div>'):'';
+    const rdl=(it.rounds||[]).length?('<div class="cfl"><b>'+esc(t('rdHead'))+'</b><div class="dts">'+it.rounds.map(x=>'<span class="dt bulk">'+esc(t('rdItem',{n:x.round,on:x.on||''}))+'</span>').join('')+'</div></div>'):'';
     $('dBody').innerHTML=cfl+rdl+'<div id="ppIn"></div>'+FIELDS.map(fieldHtml).join('')
-      +'<div class="fld"><div class="fl"><b>근거 메모</b><small>무엇을 보고 확인했는지 (선택) · 확인 이력에 남습니다</small></div>'
-      +'<textarea class="note" id="eNote" rows="2" maxlength="1000" placeholder="예) CTR 카탈로그 2026 · 실물 대조">'+esc(it.draft_note||'')+'</textarea></div>'
+      +'<div class="fld"><div class="fl"><b>'+esc(t('noteLabel'))+'</b><small>'+esc(t('noteHint'))+'</small></div>'
+      +'<textarea class="note" id="eNote" rows="2" maxlength="1000" placeholder="'+esc(t('notePh'))+'">'+esc(it.draft_note||'')+'</textarea></div>'
       +histHtml(it);
     FIELDS.forEach(f=>{ const el=$('e_'+f); el.addEventListener('input',()=>{ markFields(); if(f==='app') schedulePreview(); if(f==='scode') sydFromEditor(); }); });
     Object.keys(PICK).forEach(bindPicker);
@@ -446,10 +618,10 @@ table.list tr.cur{background:var(--syd-soft)}
   const G={ctr:{list:[],i:0},syd:{list:[],i:0},seq:0};
   function galBox(id,label,cls){
     return '<div class="gal" id="g_'+id+'"><div class="gh"><span class="k '+cls+'" translate="no">'+label+'</span><span class="mono" id="gc_'+id+'" translate="no"></span><span class="sp"></span><span class="gc" id="gn_'+id+'"></span></div>'
-      +'<div class="gi"><button type="button" class="ar l" id="gl_'+id+'" aria-label="이전">‹</button>'
-      +'<a id="ga_'+id+'" target="_blank" rel="noopener noreferrer" title="크게 보기(새 탭)"><img id="gim_'+id+'" referrerpolicy="no-referrer" alt=""></a>'
+      +'<div class="gi"><button type="button" class="ar l" id="gl_'+id+'" aria-label="'+esc(t('gPrev'))+'">‹</button>'
+      +'<a id="ga_'+id+'" target="_blank" rel="noopener noreferrer" title="'+esc(t('gZoom'))+'"><img id="gim_'+id+'" referrerpolicy="no-referrer" alt=""></a>'
       +'<div class="none hidden" id="gx_'+id+'"></div>'
-      +'<button type="button" class="ar r" id="gr_'+id+'" aria-label="다음">›</button></div></div>';
+      +'<button type="button" class="ar r" id="gr_'+id+'" aria-label="'+esc(t('gNext'))+'">›</button></div></div>';
   }
   function galShow(id){
     const g=G[id], it=g.list[g.i], img=$('gim_'+id); if(!img) return;
@@ -457,10 +629,10 @@ table.list tr.cur{background:var(--syd-soft)}
     $('gl_'+id).disabled=g.i<=0; $('gr_'+id).disabled=g.i>=g.list.length-1;
     $('gl_'+id).classList.toggle('hidden',g.list.length<2); $('gr_'+id).classList.toggle('hidden',g.list.length<2);
     $('gn_'+id).textContent=g.list.length>1?((g.i+1)+' / '+g.list.length):'';
-    if(!it){ a.classList.add('hidden'); none.classList.remove('hidden'); none.textContent=id==='ctr'?'CTR 사진이 없습니다':'SYD 코드가 없습니다'; $('gc_'+id).textContent=''; return; }
+    if(!it){ a.classList.add('hidden'); none.classList.remove('hidden'); none.textContent=id==='ctr'?t('noCtr'):t('noSyd'); $('gc_'+id).textContent=''; return; }
     $('gc_'+id).textContent=it.code+(id==='ctr'&&it.n>1?' #'+it.n:'');
     none.classList.add('hidden'); a.classList.remove('hidden'); a.href=it.url;
-    img.onerror=()=>{ a.classList.add('hidden'); none.classList.remove('hidden'); none.textContent=(id==='ctr'?'CTR':'SYD')+' 사진 없음 · '+it.code; };
+    img.onerror=()=>{ a.classList.add('hidden'); none.classList.remove('hidden'); none.textContent=t('noPhoto',{b:id==='ctr'?'CTR':'SYD',c:it.code}); };
     img.src=it.url;
   }
   function probe(url){ return new Promise(res=>{ const im=new Image(); im.referrerPolicy='no-referrer'; im.onload=()=>res(true); im.onerror=()=>res(false); im.src=url; }); }
@@ -490,14 +662,14 @@ table.list tr.cur{background:var(--syd-soft)}
   }
   async function openItem(i){
     const it=S.items[i]; if(!it) return;
-    if(S.cur&&S.dirty&&!window.confirm('저장하지 않은 수정이 있습니다. 버리고 다른 품목을 열까요?')) return;
+    if(S.cur&&S.dirty&&!window.confirm(t('leaveAsk'))) return;
     S.ix=i; S.resolve={};
     try{ setCur(await call('GET','/api/pf-catalog/items/'+it.id)); }catch(e){ toast(e.message); return; }
     renderDrawer(); renderRows();
     $('ov').classList.add('on'); $('dr').classList.add('on'); $('dr').setAttribute('aria-hidden','false'); $('dBody').scrollTop=0;
   }
   function closeDrawer(force){
-    if(!force&&S.cur&&S.dirty&&!window.confirm('저장하지 않은 수정이 있습니다. 닫을까요?')) return;
+    if(!force&&S.cur&&S.dirty&&!window.confirm(t('closeAsk'))) return;
     $('ov').classList.remove('on'); $('dr').classList.remove('on'); $('dr').setAttribute('aria-hidden','true');
     $('pp').classList.remove('on'); $('pp').setAttribute('aria-hidden','true'); $('pp').innerHTML=''; G.seq++;
     S.cur=null; S.dirty=false; renderRows();
@@ -512,32 +684,32 @@ table.list tr.cur{background:var(--syd-soft)}
     try{
       const r=await call('PUT','/api/pf-catalog/items/'+S.cur.id+'/draft',{fields:edFields(),note:$('eNote').value,loaded:S.loaded,rev:S.rev});
       setCur(r.item); replaceRow(r.item); renderDrawer(); renderRows(); loadSummary();
-      $('dMsg').className='msg ok'; $('dMsg').textContent=r.fields.length?('임시저장 · '+r.fields.length+'칸 (ERP는 아직 그대로)'):'바뀐 칸이 없어 수정안을 비웠습니다';
+      $('dMsg').className='msg ok'; $('dMsg').textContent=r.fields.length?t('savedN',{n:r.fields.length}):t('saved0');
     }catch(e){
       if(e.code==='stale_review'&&e.body&&e.body.item){ setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
-        $('dMsg').className='msg err'; $('dMsg').textContent='그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 확인 후 다시 저장하세요.'; }
+        $('dMsg').className='msg err'; $('dMsg').textContent=t('staleSave'); }
       else{ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
     }
     finally{ busy(false); }
   }
   async function discard(){
-    if(!window.confirm('저장해 둔 수정안을 버릴까요? (ERP 값은 그대로입니다)')) return;
+    if(!window.confirm(t('discardAsk'))) return;
     busy(true);
-    try{ const r=await call('DELETE','/api/pf-catalog/items/'+S.cur.id+'/draft'); setCur(r.item); S.resolve={}; replaceRow(r.item); renderDrawer(); renderRows(); loadSummary(); toast('수정안을 버렸습니다'); }
+    try{ const r=await call('DELETE','/api/pf-catalog/items/'+S.cur.id+'/draft'); setCur(r.item); S.resolve={}; replaceRow(r.item); renderDrawer(); renderRows(); loadSummary(); toast(t('discarded')); }
     catch(e){ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
     finally{ busy(false); }
   }
   async function confirmIt(){
     const it=S.cur; const ch=changedFields();
     const unresolved=FIELDS.filter(f=>it.draft&&it.draft[f]&&it.draft[f].state==='conflict'&&!S.resolve[f]);
-    if(unresolved.length){ $('dMsg').className='msg err'; $('dMsg').textContent='현장 수정과 겹친 칸('+unresolved.map(f=>LABEL[f]).join(', ')+')에서 쓸 값을 먼저 고르세요.'; $('w_'+unresolved[0]).scrollIntoView({block:'center',behavior:'smooth'}); return; }
-    const msg=ch.length?(it.code+' — '+ch.map(f=>LABEL[f]).join(', ')+' 을(를) ERP에 바로 반영하고 확인완료합니다.\nCRM과 고객 카탈로그에도 같은 내용이 나갑니다.'):(it.code+' — 지금 ERP 내용이 맞다고 확인완료합니다.');
+    if(unresolved.length){ $('dMsg').className='msg err'; $('dMsg').textContent=t('pickFirst',{f:unresolved.map(f=>LABEL[f]).join(', ')}); $('w_'+unresolved[0]).scrollIntoView({block:'center',behavior:'smooth'}); return; }
+    const msg=ch.length?t('askApply',{code:it.code,f:ch.map(f=>LABEL[f]).join(', ')}):t('askAsIs',{code:it.code});
     if(!window.confirm(msg)) return;
     busy(true);
     try{
       const r=await call('POST','/api/pf-catalog/items/'+it.id+'/confirm',{fields:edFields(),resolve:S.resolve,note:$('eNote').value,loaded:S.loaded,rev:S.rev});
       const n=Object.keys(r.applied||{}).length;
-      toast('✅ '+r.code+' 확인완료'+(n?' · '+n+'칸 ERP 반영':' · 변경 없음'));
+      toast(t('toastOk',{code:r.code})+(n?t('toastN',{n}):t('toast0')));
       S.dirty=false; S.resolve={}; replaceRow(r.item); loadSummary();
       // 지금 거르기에서 빠지는 품목이면 목록에서도 빠진다 — 그 자리의 다음 품목이 「다음」이다
       const leaves=F.status&&F.status!==r.item.status;
@@ -550,9 +722,9 @@ table.list tr.cur{background:var(--syd-soft)}
       if((e.code==='conflict'||e.code==='stale'||e.code==='stale_review')&&e.body&&e.body.item){
         setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
         $('dMsg').className='msg err';
-        $('dMsg').textContent=e.code==='conflict'?'그사이 ERP에서 바뀐 칸이 있어 아무것도 반영하지 않았습니다. 쓸 값을 고른 뒤 다시 확인완료를 누르세요.'
-          :e.code==='stale'?('화면을 연 뒤 ERP에서 '+(e.body.fields||[]).map(f=>LABEL[f]||f).join(', ')+' 이(가) 바뀌었습니다. 최신 값을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.')
-          :'그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.';
+        $('dMsg').textContent=e.code==='conflict'?t('cConflict')
+          :e.code==='stale'?t('cStale',{f:(e.body.fields||[]).map(f=>I18N.ko['f_'+f]?LABEL[f]:f).join(', ')})
+          :t('cStaleReview');
         const f0=(e.body.conflicts||[])[0]||{field:(e.body.fields||[])[0]}; if(f0&&f0.field&&$('w_'+f0.field)) $('w_'+f0.field).scrollIntoView({block:'center',behavior:'smooth'});
       }else{ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
     }finally{ busy(false); }
@@ -577,13 +749,13 @@ table.list tr.cur{background:var(--syd-soft)}
   function stamp(d){ const p=x=>String(x).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()); }
   async function downloadXlsx(){
     const btn=$('bXlsx'), m=$('xMsg'); m.className='msg'; m.textContent='';
-    btn.disabled=true; btn.textContent='위치 확인 중…';
+    btn.disabled=true; btn.textContent=t('xGps');
     try{
       const g=await getGps();
       if(g.status==='denied'){ m.className='msg err'; m.textContent=ERR.location_required; return; }
-      btn.textContent='준비 중…';
+      btn.textContent=t('xPrep');
       const [ok,d]=await Promise.all([loadSheetJS(),call('POST','/api/pf-catalog/export',{filters:{q:F.q,status:F.status,active:F.active==='1'?'1':'all',round:F.round,tag:F.tag},gps:g.gps,gps_status:g.status})]);
-      if(!ok){ m.className='msg err'; m.textContent='엑셀 도구를 불러오지 못했습니다(네트워크). 다운로드 기록은 #'+d.export_id+' 로 남았습니다.'; return; }
+      if(!ok){ m.className='msg err'; m.textContent=t('xNoLib',{id:d.export_id}); return; }
       const at=new Date(d.at);
       const cat=d.items.map(it=>({'Clave CTR':it.code,'Producto':it.name||'','Activo':it.activo?'Sí':'No','Clave SyD':it.scode||'',
         'Aplicación':it.app||'','OE':it.oe||'','Material':it.material||'','Revisión CTR':(it.status==='ok'&&it.confirmed_source==='bulk'?ST_ES.bulk:(ST_ES[it.status]||it.status)),
@@ -606,9 +778,9 @@ table.list tr.cur{background:var(--syd-soft)}
       const ws3=XLSX.utils.aoa_to_sheet(info); ws3['!cols']=[{wch:18},{wch:70}];
       XLSX.utils.book_append_sheet(wb,ws3,'Info');
       XLSX.writeFile(wb,'REFATRIX_Catalogo_'+stamp(at)+'_'+d.export_id+'.xlsx');
-      m.className='msg ok'; m.textContent='다운로드 '+d.items.length.toLocaleString('en-US')+'건 · 기록 #'+d.export_id+(g.gps?'':' (GPS를 받지 못해 IP 위치로 기록)')+(d.truncated?' · 최대 '+d.max+'건까지':'');
+      m.className='msg ok'; m.textContent=t('xDone',{n:d.items.length.toLocaleString('en-US'),id:d.export_id})+(g.gps?'':t('xIp'))+(d.truncated?t('xMax',{max:d.max}):'');
     }catch(e){ m.className='msg err'; m.textContent=e.message; }
-    finally{ btn.disabled=false; btn.textContent='⬇ 엑셀 다운로드'; }
+    finally{ btn.disabled=false; btn.textContent=t('xlsx'); }
   }
   $('bXlsx').onclick=downloadXlsx;
 
@@ -623,10 +795,42 @@ table.list tr.cur{background:var(--syd-soft)}
   $('act').onchange=()=>{ F.active=$('act').checked?'1':'all'; F.offset=0; renderChips(); loadList(); };
   window.addEventListener('beforeunload',e=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
 
+  // ── 화면 언어 바꾸기 — 열려 있는 품목의 고친 내용은 그대로 둔다 ──
+  function applyStatic(){
+    document.documentElement.lang=LANG; document.title=t('title');
+    document.querySelectorAll('[data-i18n]').forEach(el=>{ el.textContent=t(el.dataset.i18n,{n:el.dataset.n}); });
+    document.querySelectorAll('[data-i18n-html]').forEach(el=>{ el.innerHTML=t(el.dataset.i18nHtml); });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el=>{ el.placeholder=t(el.dataset.i18nPh); });
+    document.querySelectorAll('[data-i18n-title]').forEach(el=>{ el.title=t(el.dataset.i18nTitle); });
+    document.querySelectorAll('[data-i18n-aria]').forEach(el=>{ el.setAttribute('aria-label',t(el.dataset.i18nAria)); });
+    $('lang').querySelectorAll('button').forEach(b=>{ b.classList.toggle('on',b.dataset.l===LANG); b.setAttribute('aria-pressed',b.dataset.l===LANG?'true':'false'); });
+  }
+  function setLang(l){
+    if(!LANGS.includes(l)||l===LANG) return;
+    LANG=l; try{ localStorage.setItem('rfx_pf_lang',l); }catch(e){}
+    applyStatic();
+    if(sess&&sess.name&&!$('app').classList.contains('hidden')) $('who').textContent=t('who',{name:sess.name});
+    if(!$('gate').classList.contains('hidden')) gate();
+    $('xMsg').textContent=''; $('xMsg').className='msg';
+    renderChips(); if(S.items.length||!$('app').classList.contains('hidden')) renderRows();
+    if(S.cur&&$('dr').classList.contains('on')){
+      const keep={}; FIELDS.forEach(f=>{ const e=$('e_'+f), s2=$('s_'+f); keep[f]={v:e?e.value:null,s:s2?s2.value:null}; });
+      const note=$('eNote')?$('eNote').value:null, msg=$('dMsg').textContent, msgCls=$('dMsg').className, dirty=S.dirty;
+      renderDrawer();
+      FIELDS.forEach(f=>{ const e=$('e_'+f), s2=$('s_'+f), k=keep[f]; if(e&&k.v!=null) e.value=k.v;
+        if(s2&&k.s!=null){ s2.value=k.s; if(e) e.classList.toggle('hidden',k.s!=='__manual'); } });
+      if(note!=null) $('eNote').value=note;
+      markFields(); sydFromEditor(); schedulePreview(); S.dirty=dirty||!draftMatches();
+      $('dMsg').textContent=msg; $('dMsg').className=msgCls;
+    }
+  }
+  $('lang').querySelectorAll('button').forEach(b=>b.onclick=()=>setLang(b.dataset.l));
+  applyStatic();
+
   (async function boot(){
     if(platformSession()) $('back').classList.remove('hidden');
     if(!sess||!sess.token){ if(!(await exchange())){ gate(); return; } }
-    $('who').textContent=(sess.name||'')+' · CTR 확인';
+    $('who').textContent=t('who',{name:sess.name||''});
     $('app').classList.remove('hidden');
     await Promise.all([loadSummary(),loadList(),call('GET','/api/pf-catalog/options').then(o=>{ OPTS=o; }).catch(()=>{ OPTS=null; })]);
   })();

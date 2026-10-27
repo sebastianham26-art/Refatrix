@@ -73,11 +73,12 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   await mk('PFF003', 'BUJE', 'CHEVROLET Aveo 2008-2018', null);
 
   const fetchCalls = [];
-  function boot({ pf = { t: T1, e: Date.now() + 3600e3, u: { id: 12, name: 'Park CTR', role: 'dev' } } } = {}) {
+  function boot({ pf = { t: T1, e: Date.now() + 3600e3, u: { id: 12, name: 'Park CTR', role: 'dev' } }, lang = null } = {}) {
     return new JSDOM(readFileSync(HTML_PATH, 'utf-8'), {
       runScripts: 'dangerously', url: 'https://refatrix-platform.netlify.app/catalog.html',
       beforeParse(w) {
         if (pf) w.sessionStorage.setItem('rfx_sess', JSON.stringify(pf));
+        if (lang) w.localStorage.setItem('rfx_pf_lang', lang);
         w.confirm = () => true;
         w.scrollTo = () => {};
         // 위치 · 엑셀 도구 흉내 — geoMode: ok | denied | timeout
@@ -263,7 +264,48 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   await until(() => fetchCalls.some((c) => c.u.includes('tag=quoted')));
   await until(() => $5('rows').querySelectorAll('tr[data-i]').length === 1);
   assert.equal($5('rows').querySelector('.code').textContent, 'PFF003');
+
+  // ⑥ 화면 언어 — 한국어 기본 · EN · ES, 고친 내용은 언어를 바꿔도 남는다 · 이 브라우저에 기억
+  const lb = (l) => $5('lang').querySelector(`button[data-l="${l}"]`);
+  assert.ok(lb('ko').classList.contains('on'), '기본 한국어');
+  assert.equal(w5.document.documentElement.lang, 'ko');
+  lb('en').click();
+  assert.equal(w5.document.documentElement.lang, 'en');
+  assert.equal(w5.localStorage.getItem('rfx_pf_lang'), 'en');
+  assert.match(w5.document.querySelector('.brand span').textContent, /Product Catalog Review/);
+  assert.equal(w5.document.querySelector('th').textContent, 'Code');
+  assert.match($5('tag').selectedOptions[0].textContent, /Has quotes/);
+  assert.match($5('rows').textContent, /Not reviewed/); assert.match($5('rows').textContent, /③ Chinese/);
+  assert.match($5('rows').querySelector('.mk.quoted').textContent, /Quoted/);
+  assert.match($5('chips').textContent, /Not reviewed/);
+  assert.match($5('who').textContent, /Park CTR · CTR review/);
+  assert.ok(!/[가-힣]/.test($5('app').textContent), '목록 화면에 한국어가 남지 않음: ' + ($5('app').textContent.match(/[가-힣][^ ]*/g) || []).slice(0, 5));
+  $5('rows').querySelector('tr[data-i]').click();
+  await until(() => $5('dr').classList.contains('on') && $5('e_app'));
+  assert.match($5('dBody').textContent, /Evidence note/);
+  assert.match($5('bOk').textContent, /Confirm \(correct as is\)/);
+  $5('e_app').value = 'CHERY Tiggo 2019-2024'; $5('e_app').dispatchEvent(new w5.Event('input'));
+  $5('eNote').value = 'nota de prueba';
+  lb('es').click();
+  assert.equal($5('e_app').value, 'CHERY Tiggo 2019-2024', '언어를 바꿔도 고친 값 유지');
+  assert.equal($5('eNote').value, 'nota de prueba');
+  assert.match($5('bOk').textContent, /Confirmar · aplicar 1 campo/);
+  assert.match($5('dBody').textContent, /Aplicación/);
+  assert.match($5('t_app').textContent, /Editado/);
+  assert.ok(!/[가-힣]/.test($5('dr').textContent), '서랍에 한국어가 남지 않음: ' + ($5('dr').textContent.match(/[가-힣][^ ]*/g) || []).slice(0, 5));
+  w5.confirm = () => true;
+  lb('ko').click();
+  assert.match($5('bOk').textContent, /확인완료 · 1칸/);
   dom5.window.close();
+  // 다음에 열 때도 고른 언어(이 브라우저에 기억된 값)
+  const dom6 = boot({ lang: 'es' }); const $6 = (id) => dom6.window.document.getElementById(id);
+  await until(() => !$6('app').classList.contains('hidden'));
+  assert.equal(dom6.window.document.documentElement.lang, 'es');
+  assert.match(dom6.window.document.title, /Revisión del catálogo/);
+  assert.match($6('bXlsx').textContent, /Descargar Excel/);
+  await until(() => $6('rows').querySelectorAll('tr[data-i]').length > 0);
+  assert.match($6('rows').textContent, /Sin revisar/);
+  dom6.window.close();
 
   // ④ 플랫폼 세션 없음 → 안내 · ERP 호출 없음
   fetchCalls.length = 0;
