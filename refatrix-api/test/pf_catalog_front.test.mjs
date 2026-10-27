@@ -29,6 +29,12 @@ async function until(fn, ms = 4000) {
   const t0 = Date.now();
   for (;;) { const v = fn(); if (v) return v; if (Date.now() - t0 > ms) return v; await tick(40); }
 }
+/** until 과 같지만 시간 안에 안 되면 실패 */
+async function untilOk(fn, ms = 4000) {
+  const v = await until(fn, ms);
+  assert.ok(v, 'timeout: ' + String(fn).slice(0, 140));
+  return v;
+}
 
 test('정적 — 인라인 onclick 없음 · 가격/재고 칸 없음 · 플랫폼 세션 키', () => {
   const html = readFileSync(HTML_PATH, 'utf-8');
@@ -73,12 +79,13 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   await mk('PFF003', 'BUJE', 'CHEVROLET Aveo 2008-2018', null);
 
   const fetchCalls = [];
-  function boot({ pf = { t: T1, e: Date.now() + 3600e3, u: { id: 12, name: 'Park CTR', role: 'dev' } }, lang = null } = {}) {
+  function boot({ pf = { t: T1, e: Date.now() + 3600e3, u: { id: 12, name: 'Park CTR', role: 'dev' } }, lang = null, view = null } = {}) {
     return new JSDOM(readFileSync(HTML_PATH, 'utf-8'), {
       runScripts: 'dangerously', url: 'https://refatrix-platform.netlify.app/catalog.html',
       beforeParse(w) {
         if (pf) w.sessionStorage.setItem('rfx_sess', JSON.stringify(pf));
         if (lang) w.localStorage.setItem('rfx_pf_lang', lang);
+        if (view) w.localStorage.setItem('rfx_pf_view', JSON.stringify(view));
         w.confirm = () => true;
         w.scrollTo = () => {};
         // 위치 · 엑셀 도구 흉내 — geoMode: ok | denied | timeout
@@ -246,13 +253,13 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   const fq = await one(`INSERT INTO quotes (memo) VALUES ('PFFTEST') RETURNING id`);
   await query(`INSERT INTO quote_lines (quote_id, product_id) SELECT $1, id FROM products WHERE code = 'PFF003'`, [fq.id]);
   const dom5 = boot(); const w5 = dom5.window; const $5 = (id) => w5.document.getElementById(id);
-  await until(() => !$5('app').classList.contains('hidden'));
+  await untilOk(() => !$5('app').classList.contains('hidden'));
   $5('q').value = 'PFF'; $5('q').dispatchEvent(new w5.Event('input'));
-  await until(() => $5('rows').querySelectorAll('tr[data-i]').length === 3);
+  await untilOk(() => $5('rows').querySelectorAll('tr[data-i]').length === 3);
   fetchCalls.length = 0;
   $5('sort').value = 'prio'; $5('sort').onchange();
-  await until(() => fetchCalls.some((c) => c.u.includes('sort=prio')));
-  await until(() => $5('rows').querySelector('tr[data-i] .code')?.textContent === 'PFF002');
+  await untilOk(() => fetchCalls.some((c) => c.u.includes('sort=prio')));
+  await untilOk(() => $5('rows').querySelector('tr[data-i] .code')?.textContent === 'PFF002');
   const r5 = [...$5('rows').querySelectorAll('tr[data-i]')];
   assert.deepEqual(r5.map((r) => r.querySelector('.code').textContent), ['PFF002', 'PFF003', 'PFF001'], 'VIO 30위 안 → 중국차 → 나머지');
   assert.match(r5[0].textContent, /② VIO 7위/);
@@ -261,8 +268,8 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   assert.ok(!r5[2].querySelector('.pr'), '해당 없음은 칩 없음');
   fetchCalls.length = 0;
   $5('tag').value = 'quoted'; $5('tag').onchange();
-  await until(() => fetchCalls.some((c) => c.u.includes('tag=quoted')));
-  await until(() => $5('rows').querySelectorAll('tr[data-i]').length === 1);
+  await untilOk(() => fetchCalls.some((c) => c.u.includes('tag=quoted')));
+  await untilOk(() => $5('rows').querySelectorAll('tr[data-i]').length === 1);
   assert.equal($5('rows').querySelector('.code').textContent, 'PFF003');
 
   // ⑥ 화면 언어 — 한국어 기본 · EN · ES, 고친 내용은 언어를 바꿔도 남는다 · 이 브라우저에 기억
@@ -281,7 +288,7 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   assert.match($5('who').textContent, /Park CTR · CTR review/);
   assert.ok(!/[가-힣]/.test($5('app').textContent), '목록 화면에 한국어가 남지 않음: ' + ($5('app').textContent.match(/[가-힣][^ ]*/g) || []).slice(0, 5));
   $5('rows').querySelector('tr[data-i]').click();
-  await until(() => $5('dr').classList.contains('on') && $5('e_app'));
+  await untilOk(() => $5('dr').classList.contains('on') && $5('e_app'));
   assert.match($5('dBody').textContent, /Evidence note/);
   assert.match($5('bOk').textContent, /Confirm \(correct as is\)/);
   $5('e_app').value = 'CHERY Tiggo 2019-2024'; $5('e_app').dispatchEvent(new w5.Event('input'));
@@ -299,13 +306,68 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   dom5.window.close();
   // 다음에 열 때도 고른 언어(이 브라우저에 기억된 값)
   const dom6 = boot({ lang: 'es' }); const $6 = (id) => dom6.window.document.getElementById(id);
-  await until(() => !$6('app').classList.contains('hidden'));
+  await untilOk(() => !$6('app').classList.contains('hidden'));
   assert.equal(dom6.window.document.documentElement.lang, 'es');
   assert.match(dom6.window.document.title, /Revisión del catálogo/);
   assert.match($6('bXlsx').textContent, /Descargar Excel/);
-  await until(() => $6('rows').querySelectorAll('tr[data-i]').length > 0);
+  await untilOk(() => $6('rows').querySelectorAll('tr[data-i]').length > 0);
   assert.match($6('rows').textContent, /Sin revisar/);
   dom6.window.close();
+
+  // ⑦ 페이지 넘기기 — 번호 입력 · 처음/끝 · 쪽당 개수 · 마지막 페이지 기억 · 중요도 칩으로 그것만
+  await query(`INSERT INTO products (code, name, app, list_price, stock_qty, is_active)
+               SELECT 'PFFP' || lpad(g::text, 3, '0'), 'PIEZA ' || g, 'FORD Ka 2016-2020', 1, 1, true FROM generate_series(1, 120) g`);
+  const dom7 = boot(); const w7 = dom7.window; const $7 = (id) => w7.document.getElementById(id);
+  await untilOk(() => !$7('app').classList.contains('hidden'));
+  $7('q').value = 'PFF'; $7('q').dispatchEvent(new w7.Event('input'));
+  await untilOk(() => $7('pNum') && /\/ 123/.test($7('pager').textContent));
+  assert.match($7('pager').textContent, /\/ 3/, '123건 · 50개씩 = 3페이지');
+  assert.ok($7('pFirst').disabled && $7('pPrev').disabled && !$7('pLast').disabled);
+  fetchCalls.length = 0;
+  $7('pNum').value = '3'; $7('pNum').dispatchEvent(new w7.KeyboardEvent('keydown', { key: 'Enter' }));
+  await untilOk(() => fetchCalls.some((c) => c.u.includes('offset=100')));
+  await untilOk(() => $7('rows').querySelectorAll('tr[data-i]').length === 23);
+  assert.equal($7('pNum').value, '3'); assert.ok($7('pLast').disabled && $7('pNext').disabled);
+  const saved = JSON.parse(w7.localStorage.getItem('rfx_pf_view'));
+  assert.equal(saved.offset, 100); assert.equal(saved.q, 'PFF');
+  $7('pNum').value = '999'; $7('pNum').dispatchEvent(new w7.KeyboardEvent('keydown', { key: 'Enter' }));
+  await tick(200); assert.equal($7('pNum').value, '3', '없는 페이지는 마지막 페이지로');
+  $7('pFirst').click();
+  await untilOk(() => $7('pNum').value === '1');
+  $7('pSize').value = '100'; $7('pSize').dispatchEvent(new w7.Event('change'));
+  await untilOk(() => $7('rows').querySelectorAll('tr[data-i]').length === 100);
+  assert.match($7('pager').textContent, /\/ 2/);
+  $7('pLast').click();
+  await untilOk(() => $7('rows').querySelectorAll('tr[data-i]').length === 23);
+  // 중요도 칩 — 숫자 · 누르면 그것만 · 다시 누르면 해제
+  await untilOk(() => $7('pchips').querySelectorAll('.pchip').length === 4);
+  assert.match($7('pchips').textContent, /①②③ 전체/);
+  fetchCalls.length = 0;
+  $7('pchips').querySelector('.pchip[data-t="cn"]').click();
+  await untilOk(() => fetchCalls.some((c) => c.u.includes('tag=cn') && c.u.includes('offset=0')));
+  await untilOk(() => $7('rows').querySelectorAll('tr[data-i]').length === 1);
+  assert.equal($7('rows').querySelector('.code').textContent, 'PFF003');
+  assert.equal($7('tag').value, 'cn', '구분 고르기도 같이');
+  assert.ok($7('pchips').querySelector('.pchip[data-t="cn"]').classList.contains('on'));
+  $7('pchips').querySelector('.pchip[data-t="prio"]').click();
+  await untilOk(() => $7('rows').querySelectorAll('tr[data-i]').length === 2);
+  assert.deepEqual([...$7('rows').querySelectorAll('.code')].map((x) => x.textContent).sort(), ['PFF002', 'PFF003']);
+  $7('pchips').querySelector('.pchip[data-t="prio"]').click();
+  await untilOk(() => $7('rows').querySelectorAll('tr[data-i]').length === 100);
+  assert.equal($7('tag').value, '');
+  dom7.window.close();
+  // 다시 열면 기억해 둔 곳(PFF · 100개씩 · 2페이지)에서
+  const dom8 = boot({ view: { q: 'PFF', status: '', active: '1', sort: 'code', round: '', tag: '', offset: 100, limit: 100 } });
+  const $8 = (id) => dom8.window.document.getElementById(id);
+  await untilOk(() => $8('pNum') && $8('rows').querySelectorAll('tr[data-i]').length === 23);
+  assert.equal($8('q').value, 'PFF'); assert.equal($8('pNum').value, '2');
+  await untilOk(() => /2페이지에서 이어/.test($8('toast').textContent));
+  dom8.window.close();
+  // 기억해 둔 페이지가 이제 없으면 마지막 페이지로
+  const dom9 = boot({ view: { q: 'PFF', offset: 5000, limit: 50 } });
+  const $9 = (id) => dom9.window.document.getElementById(id);
+  await untilOk(() => $9('pNum') && $9('pNum').value === '3');
+  dom9.window.close();
 
   // ④ 플랫폼 세션 없음 → 안내 · ERP 호출 없음
   fetchCalls.length = 0;

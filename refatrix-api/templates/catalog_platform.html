@@ -54,7 +54,18 @@ table.list tr.cur{background:var(--syd-soft)}
 .st.changed{background:var(--warn-soft);color:var(--warn)}.st.ok{background:var(--ok-soft);color:var(--ok)}
 .st.inact{background:#fbe9e7;color:#a2321f}
 .sub{font-size:11px;color:var(--mut);margin-top:2px;white-space:nowrap}
-.pager{display:flex;gap:8px;align-items:center;justify-content:center;margin:12px 0;font-size:12.5px;color:var(--mut)}
+.pager{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin:12px 0;font-size:12.5px;color:var(--mut)}
+.pager label{display:flex;gap:6px;align-items:center;font-weight:700;color:var(--ink2)}
+.pager input[type=number]{font:inherit;font-size:13px;width:84px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;text-align:right;background:#fff}
+.pager select{font:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:5px 7px;background:#fff}
+.pager .rng{white-space:nowrap}
+.pchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-4px 0 12px}
+.pchips .pl{font-size:11.5px;font-weight:800;color:var(--mut);margin-right:2px}
+.pchip{font:inherit;font-size:12px;font-weight:800;border-radius:9px;padding:5px 11px;cursor:pointer;border:1.5px solid transparent;color:#fff;display:inline-flex;gap:7px;align-items:baseline}
+.pchip b{font-size:13px}
+.pchip.k0{background:#39424e}.pchip.k1{background:#c2185b}.pchip.k2{background:#1f6feb}.pchip.k3{background:#d97706}
+.pchip.on{outline:3px solid var(--ink);outline-offset:1px}
+.pchip.off{opacity:.55}
 /* 편집 서랍 */
 .ov{position:fixed;inset:0;background:rgba(19,23,29,.45);z-index:40;display:none}
 .ov.on{display:block}
@@ -153,6 +164,7 @@ table.list tr.cur{background:var(--syd-soft)}
 
   <div id="app" class="hidden">
     <div class="chips" id="chips"></div>
+    <div class="pchips" id="pchips"></div>
     <div class="bar">
       <input type="search" id="q" placeholder="코드 · 제품명 · SYD · 적용차종 · OE 검색" data-i18n-ph="search" translate="no">
       <select id="round" aria-label="차수" data-i18n-aria="roundAria">
@@ -161,7 +173,7 @@ table.list tr.cur{background:var(--syd-soft)}
         <option value="5" data-i18n="roundN" data-n="5">5차 검토</option><option value="none" data-i18n="roundNone">차수 기록 없음</option>
       </select>
       <select id="tag" aria-label="구분" data-i18n-aria="tagAria">
-        <option value="" data-i18n="tagAll">구분 전체</option>
+        <option value="" data-i18n="tagAll">구분 전체</option><option value="prio" data-i18n="tagPrio">①②③ 중요 전체</option>
         <option value="kr" data-i18n="tagKr">① 한국차</option><option value="vio" data-i18n="tagVio">② VIO 1~30위</option><option value="cn" data-i18n="tagCn">③ 중국차</option>
         <option value="sold" data-i18n="tagSold">매출 있음</option><option value="quoted" data-i18n="tagQuoted">견적 있음</option><option value="none" data-i18n="tagNone">매출 · 견적 없음</option>
       </select>
@@ -266,7 +278,10 @@ table.list tr.cur{background:var(--syd-soft)}
     cStale:'화면을 연 뒤 ERP에서 {f} 이(가) 바뀌었습니다. 최신 값을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.',
     cStaleReview:'그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.',
     xGps:'위치 확인 중…', xPrep:'준비 중…', xNoLib:'엑셀 도구를 불러오지 못했습니다(네트워크). 다운로드 기록은 #{id} 로 남았습니다.',
-    xDone:'다운로드 {n}건 · 기록 #{id}', xIp:' (GPS를 받지 못해 IP 위치로 기록)', xMax:' · 최대 {max}건까지'
+    xDone:'다운로드 {n}건 · 기록 #{id}', xIp:' (GPS를 받지 못해 IP 위치로 기록)', xMax:' · 최대 {max}건까지',
+    tagPrio:'①②③ 중요 전체', pLabel:'개발 중요도', prioAll:'①②③ 전체', pAllT:'한국차 · VIO 1~30위 · 중국차 중 하나라도 해당 — 누르면 이것만 보기 · 다시 누르면 해제',
+    pOnlyT:'누르면 이것만 보기 · 다시 누르면 해제',
+    first:'« 처음', last:'끝 »', page:'페이지', pageOf:'/ {n}', pageAria:'페이지 번호 — 입력하고 Enter', perPage:'{n}개씩', resumed:'지난번에 보던 {p}페이지에서 이어 봅니다'
   },
   en:{
     title:'Product Catalog Review · REFATRIX', brand:'📋 Product Catalog Review',
@@ -319,7 +334,10 @@ table.list tr.cur{background:var(--syd-soft)}
     cStale:'{f} changed in the ERP after you opened this screen. The latest values were reloaded — review them and press Confirm again.',
     cStaleReview:'Someone else saved or confirmed this item in the meantime. The latest content was reloaded — review it and press Confirm again.',
     xGps:'Checking location…', xPrep:'Preparing…', xNoLib:'Could not load the Excel tool (network). The download was logged as #{id}.',
-    xDone:'Downloaded {n} item(s) · log #{id}', xIp:' (no GPS — logged by IP location)', xMax:' · up to {max} items'
+    xDone:'Downloaded {n} item(s) · log #{id}', xIp:' (no GPS — logged by IP location)', xMax:' · up to {max} items',
+    tagPrio:'①②③ All priority', pLabel:'Development priority', prioAll:'①②③ All', pAllT:'Korean · VIO top 1–30 · Chinese (any of them) — click to show only these · click again to clear',
+    pOnlyT:'Click to show only these · click again to clear',
+    first:'« First', last:'Last »', page:'Page', pageOf:'of {n}', pageAria:'Page number — type it and press Enter', perPage:'{n} per page', resumed:'Continuing from page {p}, where you left off'
   },
   es:{
     title:'Revisión del catálogo · REFATRIX', brand:'📋 Revisión del catálogo de productos',
@@ -372,7 +390,10 @@ table.list tr.cur{background:var(--syd-soft)}
     cStale:'{f} cambió en el ERP después de abrir esta pantalla. Se volvieron a cargar los valores más recientes — revíselos y presione Confirmar de nuevo.',
     cStaleReview:'Otra persona guardó o confirmó este producto mientras tanto. Se volvió a cargar lo más reciente — revíselo y presione Confirmar de nuevo.',
     xGps:'Verificando ubicación…', xPrep:'Preparando…', xNoLib:'No se pudo cargar la herramienta de Excel (red). La descarga quedó registrada como #{id}.',
-    xDone:'Descargados {n} producto(s) · registro #{id}', xIp:' (sin GPS — registrado por ubicación IP)', xMax:' · hasta {max} productos'
+    xDone:'Descargados {n} producto(s) · registro #{id}', xIp:' (sin GPS — registrado por ubicación IP)', xMax:' · hasta {max} productos',
+    tagPrio:'①②③ Toda prioridad', pLabel:'Prioridad de desarrollo', prioAll:'①②③ Todos', pAllT:'Corea · VIO top 1–30 · China (cualquiera) — clic para ver solo estos · otro clic para quitar',
+    pOnlyT:'Clic para ver solo estos · otro clic para quitar',
+    first:'« Primera', last:'Última »', page:'Página', pageOf:'de {n}', pageAria:'Número de página — escríbalo y presione Enter', perPage:'{n} por página', resumed:'Continuando en la página {p}, donde se quedó'
   }};
   const LANGS=['ko','en','es'];
   let LANG='ko';
@@ -394,6 +415,24 @@ table.list tr.cur{background:var(--syd-soft)}
   const CTR_MAX=12;
   let OPTS=null;   // 고르기 목록 {names:[{v,n}], materials:[{v,n}]}
   const F={status:'',active:'1',q:'',sort:'code',round:'',tag:'',offset:0,limit:50};
+  // 마지막으로 보던 화면(페이지 · 거르기 · 정렬)을 이 브라우저에 기억 — 다음에 열면 거기서 이어 본다
+  const VK='rfx_pf_view';
+  function saveView(){ try{ localStorage.setItem(VK,JSON.stringify({q:F.q,status:F.status,active:F.active,sort:F.sort,round:F.round,tag:F.tag,offset:F.offset,limit:F.limit})); }catch(e){} }
+  function loadView(){
+    let v=null; try{ v=JSON.parse(localStorage.getItem(VK)||'null'); }catch(e){ v=null; }
+    if(!v||typeof v!=='object') return false;
+    const opt=(id,val)=>[...$(id).options].some(o=>o.value===val);
+    if(typeof v.q==='string') F.q=v.q.slice(0,80);
+    if(['','pending','draft','changed','ok'].includes(v.status)) F.status=v.status;
+    if(v.active==='1'||v.active==='all') F.active=v.active;
+    if(typeof v.sort==='string'&&opt('sort',v.sort)) F.sort=v.sort;
+    if(typeof v.round==='string'&&opt('round',v.round)) F.round=v.round;
+    if(typeof v.tag==='string'&&opt('tag',v.tag)) F.tag=v.tag;
+    if([50,100,200].includes(v.limit)) F.limit=v.limit;
+    const o=parseInt(v.offset,10); if(o>0&&o<=1000000) F.offset=Math.floor(o/F.limit)*F.limit;
+    $('q').value=F.q; $('sort').value=F.sort; $('round').value=F.round; $('tag').value=F.tag; $('act').checked=F.active==='1';
+    return F.offset>0;
+  }
   const S={items:[],total:0,sum:null,cur:null,ix:-1,dirty:false,resolve:{},loaded:null,rev:null};
 
   // ── 플랫폼 세션 → ERP 토큰 (마케팅 이미지 뱅크와 같은 방식) ──
@@ -446,11 +485,20 @@ table.list tr.cur{background:var(--syd-soft)}
     const keys=[['', ST.all, s.total],['pending',ST.pending,s.pending],['changed',ST.changed,s.changed],['draft',ST.draft,s.draft],['ok',ST.ok,s.ok]];
     $('chips').innerHTML=keys.map(([k,l,n])=>'<button type="button" class="chip '+(k||'all')+(F.status===k?' on':'')+'" data-s="'+k+'" title="'+esc(STHELP[k]||'')+'"><b class="mono">'+Number(n||0).toLocaleString('en-US')+'</b><span>'+esc(l)+'</span></button>').join('');
     $('chips').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ F.status=b.dataset.s; F.offset=0; renderChips(); loadList(); });
+    // 개발 중요도 — 누르면 그것만 · 다시 누르면 해제 (「구분」 고르기와 같은 거르기)
+    const tg=s.tags||{};
+    const pk=[['prio',t('prioAll'),tg.prio,0,t('pAllT')],['kr',t('tagKr'),tg.kr,1,t('pOnlyT')],['vio',t('tagVio'),tg.vio,2,t('pOnlyT')],['cn',t('tagCn'),tg.cn,3,t('pOnlyT')]];
+    const anyP=pk.some(x=>x[0]===F.tag);
+    $('pchips').innerHTML='<span class="pl">'+esc(t('pLabel'))+'</span>'+pk.map(([k,l,n,c,ti])=>'<button type="button" class="pchip k'+c+(F.tag===k?' on':(anyP?' off':''))+'" data-t="'+k+'" title="'+esc(ti)+'" aria-pressed="'+(F.tag===k)+'">'+esc(l)+' <b class="mono">'+Number(n||0).toLocaleString('en-US')+'</b></button>').join('');
+    $('pchips').querySelectorAll('.pchip').forEach(b=>b.onclick=()=>{ F.tag=F.tag===b.dataset.t?'':b.dataset.t; $('tag').value=F.tag; F.offset=0; renderChips(); loadList(); });
   }
   async function loadSummary(){ try{ S.sum=await call('GET','/api/pf-catalog/summary'); renderChips(); }catch(e){} }
   async function loadList(keepScroll){
     const qs='?q='+encodeURIComponent(F.q)+'&status='+F.status+'&active='+(F.active==='1'?'1':'all')+'&sort='+F.sort+'&round='+encodeURIComponent(F.round)+'&tag='+encodeURIComponent(F.tag)+'&limit='+F.limit+'&offset='+F.offset;
-    try{ const r=await call('GET','/api/pf-catalog/items'+qs); S.items=r.items; S.total=r.total; renderRows(); if(!keepScroll) window.scrollTo({top:0}); }
+    try{ const r=await call('GET','/api/pf-catalog/items'+qs);
+      // 기억해 둔 페이지가 이제 없으면(품목이 줄었을 때) 마지막 페이지로
+      if(!r.items.length&&r.total>0&&F.offset>0){ F.offset=Math.floor((r.total-1)/F.limit)*F.limit; return loadList(keepScroll); }
+      S.items=r.items; S.total=r.total; renderRows(); saveView(); if(!keepScroll) window.scrollTo({top:0}); }
     catch(e){ $('rows').innerHTML='<tr><td colspan="6" class="empty">'+esc(e.message)+'</td></tr>'; }
   }
   // 짧은 날짜 — 스페인어는 일/월, 그 외 월/일
@@ -495,11 +543,21 @@ table.list tr.cur{background:var(--syd-soft)}
     }).join('');
     $('rows').querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>openItem(+tr.dataset.i));
     const from=F.offset+1, to=Math.min(F.offset+F.limit,S.total);
-    $('pager').innerHTML='<button type="button" class="btn plain sm" id="pPrev"'+(F.offset<=0?' disabled':'')+'>'+esc(t('prev'))+'</button>'
-      +'<span>'+from.toLocaleString('en-US')+'–'+to.toLocaleString('en-US')+' / '+S.total.toLocaleString('en-US')+'</span>'
-      +'<button type="button" class="btn plain sm" id="pNext"'+(to>=S.total?' disabled':'')+'>'+esc(t('next'))+'</button>';
-    $('pPrev').onclick=()=>{ F.offset=Math.max(0,F.offset-F.limit); loadList(); };
-    $('pNext').onclick=()=>{ F.offset+=F.limit; loadList(); };
+    const pages=Math.max(1,Math.ceil(S.total/F.limit)), pg=Math.floor(F.offset/F.limit)+1;
+    const fmtN=(n)=>Number(n).toLocaleString('en-US');
+    $('pager').innerHTML='<button type="button" class="btn plain sm" id="pFirst"'+(pg<=1?' disabled':'')+'>'+esc(t('first'))+'</button>'
+      +'<button type="button" class="btn plain sm" id="pPrev"'+(pg<=1?' disabled':'')+'>'+esc(t('prev'))+'</button>'
+      +'<label>'+esc(t('page'))+' <input type="number" id="pNum" min="1" max="'+pages+'" step="1" value="'+pg+'" inputmode="numeric" aria-label="'+esc(t('pageAria'))+'" title="'+esc(t('pageAria'))+'"> '+esc(t('pageOf',{n:fmtN(pages)}))+'</label>'
+      +'<button type="button" class="btn plain sm" id="pNext"'+(pg>=pages?' disabled':'')+'>'+esc(t('next'))+'</button>'
+      +'<button type="button" class="btn plain sm" id="pLast"'+(pg>=pages?' disabled':'')+'>'+esc(t('last'))+'</button>'
+      +'<span class="rng">'+fmtN(from)+'–'+fmtN(to)+' / '+fmtN(S.total)+'</span>'
+      +'<select id="pSize" aria-label="'+esc(t('perPage',{n:''}))+'">'+[50,100,200].map(n=>'<option value="'+n+'"'+(F.limit===n?' selected':'')+'>'+esc(t('perPage',{n}))+'</option>').join('')+'</select>';
+    const go=(p)=>{ const n=Math.min(pages,Math.max(1,Math.round(Number(p))||1)); if(n===pg){ $('pNum').value=pg; return; } F.offset=(n-1)*F.limit; loadList(); };
+    $('pFirst').onclick=()=>go(1); $('pLast').onclick=()=>go(pages);
+    $('pPrev').onclick=()=>go(pg-1); $('pNext').onclick=()=>go(pg+1);
+    $('pNum').onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault(); go($('pNum').value); } };
+    $('pNum').onchange=()=>go($('pNum').value);
+    $('pSize').onchange=()=>{ const n=Number($('pSize').value); F.offset=Math.floor(F.offset/n)*n; F.limit=n; loadList(); };
   }
 
   // ── 편집 서랍 ──
@@ -791,7 +849,7 @@ table.list tr.cur{background:var(--syd-soft)}
   $('q').addEventListener('input',()=>{ clearTimeout(qTimer); qTimer=setTimeout(()=>{ F.q=$('q').value.trim(); F.offset=0; loadList(); },300); });
   $('sort').onchange=()=>{ F.sort=$('sort').value; F.offset=0; loadList(); };
   $('round').onchange=()=>{ F.round=$('round').value; F.offset=0; loadList(); };
-  $('tag').onchange=()=>{ F.tag=$('tag').value; F.offset=0; loadList(); };
+  $('tag').onchange=()=>{ F.tag=$('tag').value; F.offset=0; renderChips(); loadList(); };
   $('act').onchange=()=>{ F.active=$('act').checked?'1':'all'; F.offset=0; renderChips(); loadList(); };
   window.addEventListener('beforeunload',e=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
 
@@ -832,7 +890,8 @@ table.list tr.cur{background:var(--syd-soft)}
     if(!sess||!sess.token){ if(!(await exchange())){ gate(); return; } }
     $('who').textContent=t('who',{name:sess.name||''});
     $('app').classList.remove('hidden');
-    await Promise.all([loadSummary(),loadList(),call('GET','/api/pf-catalog/options').then(o=>{ OPTS=o; }).catch(()=>{ OPTS=null; })]);
+    const resumed=loadView();
+    await Promise.all([loadSummary(),loadList().then(()=>{ if(resumed&&F.offset>0) toast(t('resumed',{p:Math.floor(F.offset/F.limit)+1})); }),call('GET','/api/pf-catalog/options').then(o=>{ OPTS=o; }).catch(()=>{ OPTS=null; })]);
   })();
 })();
 </script>

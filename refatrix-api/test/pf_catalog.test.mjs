@@ -491,6 +491,14 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   assert.deepEqual(await codesOf('sold'), ['PFC201']);
   assert.deepEqual(await codesOf('quoted'), ['PFC201', 'PFC203']);
   assert.deepEqual(await codesOf('none'), ['PFC202', 'PFC204', 'PFC205']);
+  assert.deepEqual(await codesOf('prio'), ['PFC201', 'PFC202', 'PFC203'], '①②③ 중 하나라도');
+  const sm = (await call(H, 'GET', '/api/pf-catalog/summary')).json();
+  for (const k of ['kr', 'vio', 'cn', 'prio']) {
+    assert.ok(Number.isInteger(sm.active.tags[k]) && Number.isInteger(sm.all.tags[k]), '중요도 숫자 ' + k);
+    assert.ok(sm.all.tags[k] >= sm.active.tags[k]);
+  }
+  assert.ok(sm.active.tags.kr >= 1 && sm.active.tags.vio >= 2 && sm.active.tags.cn >= 1);
+  assert.ok(sm.active.tags.prio >= 3 && sm.active.tags.prio <= sm.active.tags.kr + sm.active.tags.vio + sm.active.tags.cn, '겹치는 품목은 한 번만');
   const qg1 = (await call(H, 'GET', `/api/pf-catalog/items/${qc.id}`)).json();
   assert.equal(qg1.cn, true); assert.equal(qg1.quoted, true); assert.equal(qg1.prio, 3);
   const qex = await call(H, 'POST', '/api/pf-catalog/export', { filters: { q: 'PFC20', tag: 'quoted' }, gps: null, gps_status: 'unavailable' });

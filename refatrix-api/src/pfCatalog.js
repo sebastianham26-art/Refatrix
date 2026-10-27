@@ -215,6 +215,7 @@ const PRIO_SQL = (a = 'x') => `CASE WHEN ${a}.kr THEN 1 WHEN ${a}.vio_rank <= ${
 // 구분 거르기 — 값은 이 목록에 있는 것만 SQL 에 쓴다
 const TAGS = {
   kr: 'x.kr', vio: `x.vio_rank <= ${VIO_TOP}`, cn: 'x.cn',
+  prio: `(x.kr OR x.vio_rank <= ${VIO_TOP} OR x.cn)`,   // 중요 ①②③ 중 하나라도
   sold: 'x.sold', quoted: 'x.quoted', none: 'NOT x.sold AND NOT x.quoted',
 };
 
@@ -313,11 +314,11 @@ export async function listItems({ q = '', status = '', active = 'all', round = '
   const order = SORTS[sort] || SORTS.code;
   const lim = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
   const off = Math.min(1000000, Math.max(0, parseInt(offset, 10) || 0));
-  const rows = (await query(
-    `SELECT * FROM (${inner}) x ${outerWhere} ORDER BY ${order} LIMIT ${lim} OFFSET ${off}`, params)).rows;
-  const total = Number((await query(
-    `SELECT count(*)::int AS n FROM (${inner}) x ${outerWhere}`, params)).rows[0].n);
-  return { items: rows.map(rowView), total };
+  // 쪽 데이터와 전체 건수를 함께 묻는다(10만 품목에서 기다리는 시간 절반)
+  const [pg, cnt] = await Promise.all([
+    query(`SELECT * FROM (${inner}) x ${outerWhere} ORDER BY ${order} LIMIT ${lim} OFFSET ${off}`, params),
+    query(`SELECT count(*)::int AS n FROM (${inner}) x ${outerWhere}`, params)]);
+  return { items: pg.rows.map(rowView), total: Number(cnt.rows[0].n) };
 }
 
 /** 상태별 건수 — 화면 위 숫자 칸. 판매중/전체 둘 다. */
@@ -333,6 +334,21 @@ export async function summary() {
     all[r.status] += r.n; all.total += r.n;
     if (r.activo) { act[r.status] += r.n; act.total += r.n; }
   }
+  // 중요도 칩 숫자 — ① 한국차 · ② VIO 1~30위 · ③ 중국차 · 그중 하나라도(prio)
+  const tg = (await query(
+    `SELECT (p.is_active IS NOT FALSE) AS activo,
+            count(*) FILTER (WHERE mk.kr)::int AS kr,
+            count(*) FILTER (WHERE vr.vio_rank <= ${VIO_TOP})::int AS vio,
+            count(*) FILTER (WHERE mk.cn)::int AS cn,
+            count(*) FILTER (WHERE COALESCE(mk.kr, false) OR vr.vio_rank <= ${VIO_TOP} OR COALESCE(mk.cn, false))::int AS prio
+       FROM ${LIST_FROM}
+      WHERE ${TARGET_SQL}
+      GROUP BY 1`)).rows;
+  const tags = { all: { kr: 0, vio: 0, cn: 0, prio: 0 }, active: { kr: 0, vio: 0, cn: 0, prio: 0 } };
+  for (const r of tg) for (const k of ['kr', 'vio', 'cn', 'prio']) {
+    tags.all[k] += r[k]; if (r.activo) tags.active[k] += r[k];
+  }
+  all.tags = tags.all; act.tags = tags.active;
   return { all, active: act };
 }
 
