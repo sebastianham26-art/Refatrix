@@ -92,6 +92,27 @@ table.list tr.cur{background:var(--syd-soft)}
 .hi .p s{color:#a2321f}
 .note{width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;resize:vertical;min-height:52px}
 .msg{font-size:12.5px;min-height:1em}.msg.err{color:var(--ctr)}.msg.ok{color:var(--ok)}
+.lockb{background:var(--ok-soft);border:1px solid #9fd3b0;color:var(--ok);border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px}
+.fld select{font:inherit;font-size:13px;width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
+.fld select+input{margin-top:6px}
+.fld :disabled{background:#f4f5f7;color:var(--ink2);cursor:not-allowed}
+/* 사진 창 — 편집 서랍 반대쪽(왼쪽). 좁은 화면에서는 서랍 안 맨 위로 */
+.ppane{position:fixed;top:0;bottom:0;left:0;right:min(760px,100vw);z-index:41;background:#1b1f26;display:none;flex-direction:column;gap:12px;padding:14px;overflow:auto}
+.ppane.on{display:flex}
+@media (max-width:1179px){.ppane{display:none!important}}
+@media (min-width:1180px){#ppIn{display:none}}
+.gal{background:#fff;border-radius:12px;padding:10px 12px;flex:1 1 0;min-height:250px;display:flex;flex-direction:column}
+#ppIn .gal{min-height:220px;margin-bottom:10px;border:1px solid var(--line)}
+.gal .gh{display:flex;gap:8px;align-items:center;font-weight:800;font-size:13px}
+.gal .gh .k{font-size:10.5px;font-weight:800;border-radius:7px;padding:2px 8px;color:#fff}
+.gal .gh .k.c{background:var(--ctr)}.gal .gh .k.s{background:var(--syd)}
+.gal .gh .sp{flex:1}.gal .gc{font-size:12px;color:var(--mut);font-weight:700}
+.gal .gi{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:170px;margin-top:6px}
+.gal .gi a{display:flex;align-items:center;justify-content:center;max-width:100%;max-height:100%;height:100%}
+.gal .gi img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in}
+.gal .ar{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);z-index:2}
+.gal .ar.l{left:2px}.gal .ar.r{right:2px}.gal .ar:disabled{opacity:.3;cursor:default}
+.gal .none{color:var(--mut);font-size:12.5px;text-align:center}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:9px;padding:11px 18px;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:92vw}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 @media (max-width:700px){
@@ -152,6 +173,7 @@ table.list tr.cur{background:var(--syd-soft)}
     <button type="button" class="btn ok" id="bOk">✅ 확인완료</button>
   </div>
 </aside>
+<aside class="ppane" id="pp" aria-hidden="true"></aside>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -165,9 +187,15 @@ table.list tr.cur{background:var(--syd-soft)}
   const FIELDS=['name','scode','app','oe','material'];
   const LABEL={name:'제품명',scode:'SYD 코드',app:'적용차종',oe:'OE 번호',material:'소재'};
   const MULTI={scode:1,app:1,oe:1};                      // 한 줄에 하나 — 저장할 때 ' // ' 로 잇는다
-  const HINT={name:'Nombre del producto',scode:'한 줄에 하나',app:'한 줄에 한 차종 · 예) NISSAN Versa 2012-2019',oe:'한 줄에 하나 · 조립품 OE 는 앞에 FOR',material:'예) aluminio'};
-  const ST={pending:'미검토',draft:'작성중',changed:'재확인',ok:'확인완료'};
-  const STHELP={pending:'아직 확인하지 않은 품목',draft:'수정안을 저장해 둔 품목',changed:'확인한 뒤 ERP에서 바뀐 품목',ok:'확인한 그대로인 품목'};
+  const HINT={name:'목록에서 고르기 · 없으면 직접 입력',scode:'한 줄에 하나 · 고치면 왼쪽 SYD 사진도 바뀝니다',app:'한 줄에 한 차종 · 예) NISSAN Versa 2012-2019',oe:'한 줄에 하나 · 조립품 OE 는 앞에 FOR',material:'목록에서 고르기 · 없으면 직접 입력'};
+  const ST={pending:'미검토',draft:'작성중',changed:'재확인',ok:'확인·검토완료'};
+  const STHELP={pending:'아직 확인하지 않은 품목',draft:'수정안을 저장해 둔 품목',changed:'확인한 뒤 ERP에서 바뀐 품목 — 다시 열려 있음',ok:'CTR 확인완료 또는 ERP 검토완료 — 수정 잠김'};
+  // 한 품목의 상태 이름 — 확인완료(CTR 이 플랫폼에서) · 검토완료(디렉터가 ERP 에서 엑셀로)
+  const stLabel=(it)=>it.status==='ok'?(it.confirmed_source==='bulk'?'검토완료':'확인완료'):(ST[it.status]||it.status);
+  const SYD_IMG=(c)=>'https://syd.com.mx/Catalogo/fotos/'+encodeURIComponent(c)+'.jpg';
+  const CTR_N=(c,n)=>'https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/'+encodeURIComponent(c)+'/'+encodeURIComponent(c)+'_'+n+'.webp';
+  const CTR_MAX=12;
+  let OPTS=null;   // 고르기 목록 {names:[{v,n}], materials:[{v,n}]}
   const SRC={manual:'ERP 현장 수정',import:'ERP 엑셀 업로드',platform:'CTR 확인(Platform)',material:'ERP 소재 지정',material_bulk:'ERP 소재 일괄',status:'판매상태',status_check:'일괄 점검'};
   const ERR={network:'서버에 연결하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_session_invalid:'플랫폼 로그인이 끝났습니다. 다시 로그인하세요.',
     platform_unreachable:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',platform_timeout:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',
@@ -234,7 +262,7 @@ table.list tr.cur{background:var(--syd-soft)}
     catch(e){ $('rows').innerHTML='<tr><td colspan="6" class="empty">'+esc(e.message)+'</td></tr>'; }
   }
   function stBadge(it){
-    let h='<span class="st '+it.status+'">'+esc(ST[it.status]||it.status)+(it.status==='draft'&&it.draft_conflicts?' · 겹침 '+it.draft_conflicts:'')+'</span>';
+    let h='<span class="st '+it.status+'">'+(it.locked?'🔒 ':'')+esc(stLabel(it))+(it.status==='draft'&&it.draft_conflicts?' · 겹침 '+it.draft_conflicts:'')+'</span>';
     if(!it.activo) h+=' <span class="st inact">판매중단</span>';
     return h;
   }
@@ -265,12 +293,31 @@ table.list tr.cur{background:var(--syd-soft)}
   function edFields(){ const o={}; FIELDS.forEach(f=>{ o[f]=edVal(f); }); return o; }
   function changedFields(){ const it=S.cur; if(!it) return []; return FIELDS.filter(f=>!eqF(f,edVal(f),it[f])); }
   function startVal(f){ const it=S.cur; const d=it.draft&&it.draft[f]; return d&&d.state!=='moot'?d.value:it[f]; }
+  const PICK={name:'names',material:'materials'};   // 고르기 우선 · 목록에 없으면 직접 입력
+  function pickerHtml(f,val){
+    const list=(OPTS&&OPTS[PICK[f]])||null;
+    if(!list) return '<input type="text" id="e_'+f+'" value="'+esc(val)+'" spellcheck="false">';
+    const inList=list.some(o=>o.v===val)||(f==='material'&&!val);
+    const opts=(f==='material'?'<option value=""'+(!val?' selected':'')+'>— 없음 —</option>':'')
+      +list.map(o=>'<option value="'+esc(o.v)+'"'+(o.v===val?' selected':'')+'>'+esc(o.v)+(o.n?' ('+o.n+')':'')+'</option>').join('')
+      +'<option value="__manual"'+(!inList?' selected':'')+'>✎ 목록에 없음 — 직접 입력</option>';
+    return '<select id="s_'+f+'">'+opts+'</select><input type="text" id="e_'+f+'" value="'+esc(val)+'" spellcheck="false" placeholder="직접 입력"'+(inList?' class="hidden"':'')+'>';
+  }
+  function bindPicker(f){
+    const sel=$('s_'+f), inp=$('e_'+f); if(!sel||!inp) return;
+    sel.addEventListener('change',()=>{
+      if(sel.value==='__manual'){ inp.classList.remove('hidden'); inp.focus(); inp.select(); }
+      else{ inp.value=sel.value; inp.classList.add('hidden'); }
+      inp.dispatchEvent(new Event('input'));
+    });
+  }
   function fieldHtml(f){
     const it=S.cur; const d=it.draft&&it.draft[f];
     const v=startVal(f); const val=MULTI[f]?lines(v).join('\n'):(v==null?'':v);
     const input=MULTI[f]
       ? '<textarea id="e_'+f+'" rows="'+Math.min(10,Math.max(2,lines(v).length+1))+'"'+(f!=='app'?' class="mono" translate="no"':'')+' spellcheck="false">'+esc(val)+'</textarea>'
-      : '<input type="text" id="e_'+f+'" value="'+esc(val)+'"'+(f==='material'?' list="matList"':'')+' spellcheck="false">';
+      : PICK[f] ? pickerHtml(f,val)
+      : '<input type="text" id="e_'+f+'" value="'+esc(val)+'" spellcheck="false">';
     let conf='';
     if(d&&d.state==='conflict'){
       const pick=S.resolve[f]||'';
@@ -318,7 +365,7 @@ table.list tr.cur{background:var(--syd-soft)}
     const parts=(h)=>h.parts.map(p=>'<div class="p">'+esc(LABEL[p.field]||p.field)+': <s>'+esc(p.from==null||p.from===''?'(빈칸)':p.from)+'</s> → <b>'+esc(p.to==null||p.to===''?'(빈칸)':p.to)+'</b></div>').join('');
     const hs=(it.history||[]).map(h=>'<div class="hi"><div class="h"><b>'+esc(SRC[h.source]||h.source)+'</b><span>'+esc(h.by||'')+'</span><span>'+fmtAt(h.at)+'</span>'+(h.action==='create'?'<span>신규 등록</span>':'')+'</div>'+parts(h)+'</div>').join('');
     const cs=(it.confirms||[]).map(c=>{ const n=Object.keys(c.applied||{}).length;
-      return '<div class="hi"><div class="h"><b>확인완료</b><span>'+esc(c.by||'')+'</span><span>'+fmtAt(c.at)+'</span><span>'+(n?'수정 '+n+'칸':'그대로 맞음')+'</span>'
+      return '<div class="hi"><div class="h"><b>'+(c.source==='bulk'?'검토완료(ERP 일괄)':'확인완료')+'</b><span>'+esc(c.by||'')+'</span><span>'+fmtAt(c.at)+'</span><span>'+(n?'수정 '+n+'칸':'그대로 맞음')+'</span>'
         +(c.conflicts?'<span>겹침 '+Object.keys(c.conflicts).length+'칸 선택</span>':'')+'</div>'+(c.note?'<div class="p">메모: '+esc(c.note)+'</div>':'')+'</div>'; }).join('');
     return '<div class="sec">확인 이력</div><div class="hist">'+(cs||'<div class="hi" style="color:var(--mut)">아직 없음</div>')+'</div>'
       +'<div class="sec">ERP 카탈로그 변경 이력 (최근)</div><div class="hist">'+(hs||'<div class="hi" style="color:var(--mut)">기록 없음</div>')+'</div>';
@@ -329,21 +376,75 @@ table.list tr.cur{background:var(--syd-soft)}
     $('dSt').innerHTML=stBadge(it);
     $('dSub').textContent=(it.status==='changed'?'확인한 뒤 ERP에서 바뀌었습니다 — 다시 확인해 주세요 · ':'')+(it.confirmed_at?('마지막 확인 '+(it.confirmed_by_name||'')+' '+fmtAt(it.confirmed_at)):'아직 확인 기록 없음');
     const img=$('dImg'); img.classList.add('hidden'); img.onload=()=>img.classList.remove('hidden'); img.onerror=()=>img.classList.add('hidden'); img.src=CTR_IMG(it.code);
-    $('dBody').innerHTML=FIELDS.map(fieldHtml).join('')
-      +'<datalist id="matList"><option value="aluminio"></datalist>'
+    const lockMsg=it.locked?('<div class="lockb">🔒 '+(it.confirmed_source==='bulk'?'ERP에서 검토완료로 표시된 품목입니다':'확인완료된 품목입니다')
+      +' — 수정할 수 없습니다. ERP에서 값이 바뀌면 「재확인」으로 다시 열립니다.</div>'):'';
+    $('dBody').innerHTML=lockMsg+'<div id="ppIn"></div>'+FIELDS.map(fieldHtml).join('')
       +'<div class="fld"><div class="fl"><b>근거 메모</b><small>무엇을 보고 확인했는지 (선택) · 확인 이력에 남습니다</small></div>'
       +'<textarea class="note" id="eNote" rows="2" maxlength="1000" placeholder="예) CTR 카탈로그 2026 · 실물 대조">'+esc(it.draft_note||'')+'</textarea></div>'
       +histHtml(it);
-    FIELDS.forEach(f=>{ const el=$('e_'+f); el.addEventListener('input',()=>{ markFields(); if(f==='app') schedulePreview(); }); });
+    FIELDS.forEach(f=>{ const el=$('e_'+f); el.addEventListener('input',()=>{ markFields(); if(f==='app') schedulePreview(); if(f==='scode') sydFromEditor(); }); });
+    Object.keys(PICK).forEach(bindPicker);
     // 겹친 칸 고르기 — 고른 값을 편집칸에도 채워 「무엇이 ERP에 들어가는지」 눈에 보이게
     $('dBody').querySelectorAll('input[type=radio]').forEach(r=>r.onchange=()=>{
       const f=r.name.slice(2); const d=S.cur.draft[f]; S.resolve[f]=r.value;
       const v=r.value==='erp'?d.erp:d.value; $('e_'+f).value=MULTI[f]?lines(v).join('\n'):(v==null?'':v);
+      const sel=$('s_'+f); if(sel){ const has=[...sel.options].some(o=>o.value===(v||'')); sel.value=has?(v||''):'__manual'; $('e_'+f).classList.toggle('hidden',has); }
       markFields(); if(f==='app') schedulePreview();
     });
-    $('bDiscard').classList.toggle('hidden',it.status!=='draft');
+    $('bDiscard').classList.toggle('hidden',it.status!=='draft'||!!it.locked);
     $('dMsg').textContent=''; $('dMsg').className='msg';
-    markFields(); schedulePreview();
+    // 확인 · 검토완료 → 잠금: 칸을 막고 저장 · 확인 버튼을 숨긴다(서버도 같은 이유로 거절한다)
+    $('dBody').querySelectorAll('input,select,textarea').forEach(el=>{ el.disabled=!!it.locked; });
+    ['bOk','bSave'].forEach(id=>$(id).classList.toggle('hidden',!!it.locked));
+    $('goNext').parentNode.classList.toggle('hidden',!!it.locked);
+    markFields(); schedulePreview(); renderPhotos();
+  }
+
+  // ── 사진 창 — CTR 사진(최대 12장) · SYD 코드별 사진, 화살표로 넘김 ──
+  const G={ctr:{list:[],i:0},syd:{list:[],i:0},seq:0};
+  function galBox(id,label,cls){
+    return '<div class="gal" id="g_'+id+'"><div class="gh"><span class="k '+cls+'" translate="no">'+label+'</span><span class="mono" id="gc_'+id+'" translate="no"></span><span class="sp"></span><span class="gc" id="gn_'+id+'"></span></div>'
+      +'<div class="gi"><button type="button" class="ar l" id="gl_'+id+'" aria-label="이전">‹</button>'
+      +'<a id="ga_'+id+'" target="_blank" rel="noopener noreferrer" title="크게 보기(새 탭)"><img id="gim_'+id+'" referrerpolicy="no-referrer" alt=""></a>'
+      +'<div class="none hidden" id="gx_'+id+'"></div>'
+      +'<button type="button" class="ar r" id="gr_'+id+'" aria-label="다음">›</button></div></div>';
+  }
+  function galShow(id){
+    const g=G[id], it=g.list[g.i], img=$('gim_'+id); if(!img) return;
+    const none=$('gx_'+id), a=$('ga_'+id);
+    $('gl_'+id).disabled=g.i<=0; $('gr_'+id).disabled=g.i>=g.list.length-1;
+    $('gl_'+id).classList.toggle('hidden',g.list.length<2); $('gr_'+id).classList.toggle('hidden',g.list.length<2);
+    $('gn_'+id).textContent=g.list.length>1?((g.i+1)+' / '+g.list.length):'';
+    if(!it){ a.classList.add('hidden'); none.classList.remove('hidden'); none.textContent=id==='ctr'?'CTR 사진이 없습니다':'SYD 코드가 없습니다'; $('gc_'+id).textContent=''; return; }
+    $('gc_'+id).textContent=it.code+(id==='ctr'&&it.n>1?' #'+it.n:'');
+    none.classList.add('hidden'); a.classList.remove('hidden'); a.href=it.url;
+    img.onerror=()=>{ a.classList.add('hidden'); none.classList.remove('hidden'); none.textContent=(id==='ctr'?'CTR':'SYD')+' 사진 없음 · '+it.code; };
+    img.src=it.url;
+  }
+  function probe(url){ return new Promise(res=>{ const im=new Image(); im.referrerPolicy='no-referrer'; im.onload=()=>res(true); im.onerror=()=>res(false); im.src=url; }); }
+  function sydFromEditor(){
+    const codes=lines(edVal('scode')!=null?edVal('scode'):(S.cur&&S.cur.scode));
+    const keep=G.syd.list[G.syd.i]&&G.syd.list[G.syd.i].code;
+    G.syd.list=codes.map(c=>({code:c,url:SYD_IMG(c)}));
+    const k=G.syd.list.findIndex(x=>x.code===keep); G.syd.i=k>=0?k:0; galShow('syd');
+  }
+  async function renderPhotos(){
+    const it=S.cur; if(!it) return;
+    const wide=window.matchMedia&&window.matchMedia('(min-width:1180px)').matches;
+    const host=wide?$('pp'):$('ppIn'); if(!host) return;
+    if(wide){ $('pp').classList.add('on'); $('pp').setAttribute('aria-hidden','false'); }
+    const other=wide?$('ppIn'):$('pp'); if(other){ other.innerHTML=''; }
+    host.innerHTML=galBox('ctr','CTR','c')+galBox('syd','SYD','s');
+    ['ctr','syd'].forEach(id=>{ $('gl_'+id).onclick=()=>{ G[id].i=Math.max(0,G[id].i-1); galShow(id); }; $('gr_'+id).onclick=()=>{ G[id].i=Math.min(G[id].list.length-1,G[id].i+1); galShow(id); }; });
+    G.syd.i=0; sydFromEditor();
+    const seq=++G.seq; const code=it.code;
+    G.ctr={list:[{code,url:CTR_N(code,1),n:1}],i:0}; galShow('ctr');
+    // 2번째 사진부터는 있는지 차례로 확인해 붙인다(없으면 거기서 멈춘다)
+    for(let n=2;n<=CTR_MAX;n++){
+      const ok=await probe(CTR_N(code,n)); if(seq!==G.seq) return;
+      if(!ok) break;
+      G.ctr.list.push({code,url:CTR_N(code,n),n}); galShow('ctr');
+    }
   }
   async function openItem(i){
     const it=S.items[i]; if(!it) return;
@@ -356,6 +457,7 @@ table.list tr.cur{background:var(--syd-soft)}
   function closeDrawer(force){
     if(!force&&S.cur&&S.dirty&&!window.confirm('저장하지 않은 수정이 있습니다. 닫을까요?')) return;
     $('ov').classList.remove('on'); $('dr').classList.remove('on'); $('dr').setAttribute('aria-hidden','true');
+    $('pp').classList.remove('on'); $('pp').setAttribute('aria-hidden','true'); $('pp').innerHTML=''; G.seq++;
     S.cur=null; S.dirty=false; renderRows();
   }
   function replaceRow(item){
@@ -370,7 +472,7 @@ table.list tr.cur{background:var(--syd-soft)}
       setCur(r.item); replaceRow(r.item); renderDrawer(); renderRows(); loadSummary();
       $('dMsg').className='msg ok'; $('dMsg').textContent=r.fields.length?('임시저장 · '+r.fields.length+'칸 (ERP는 아직 그대로)'):'바뀐 칸이 없어 수정안을 비웠습니다';
     }catch(e){
-      if(e.code==='stale_review'&&e.body&&e.body.item){ setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
+      if((e.code==='stale_review'||e.code==='locked')&&e.body&&e.body.item){ setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
         $('dMsg').className='msg err'; $('dMsg').textContent='그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 확인 후 다시 저장하세요.'; }
       else{ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
     }
@@ -403,10 +505,11 @@ table.list tr.cur{background:var(--syd-soft)}
       else{ setCur(r.item); renderDrawer(); renderRows(); }
       if(leaves&&S.items.length<5) loadList(true);
     }catch(e){
-      if((e.code==='conflict'||e.code==='stale'||e.code==='stale_review')&&e.body&&e.body.item){
+      if((e.code==='conflict'||e.code==='stale'||e.code==='stale_review'||e.code==='locked')&&e.body&&e.body.item){
         setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
         $('dMsg').className='msg err';
         $('dMsg').textContent=e.code==='conflict'?'그사이 ERP에서 바뀐 칸이 있어 아무것도 반영하지 않았습니다. 쓸 값을 고른 뒤 다시 확인완료를 누르세요.'
+          :e.code==='locked'?'이미 확인·검토완료된 품목이라 수정할 수 없습니다.'
           :e.code==='stale'?('화면을 연 뒤 ERP에서 '+(e.body.fields||[]).map(f=>LABEL[f]||f).join(', ')+' 이(가) 바뀌었습니다. 최신 값을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.')
           :'그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.';
         const f0=(e.body.conflicts||[])[0]||{field:(e.body.fields||[])[0]}; if(f0&&f0.field&&$('w_'+f0.field)) $('w_'+f0.field).scrollIntoView({block:'center',behavior:'smooth'});
@@ -429,7 +532,7 @@ table.list tr.cur{background:var(--syd-soft)}
     return new Promise(res=>{ const sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
       sc.onload=()=>res(!!window.XLSX); sc.onerror=()=>res(false); document.head.appendChild(sc); });
   }
-  const ST_ES={pending:'Sin revisar',draft:'En edición',changed:'Revisar de nuevo',ok:'Confirmado'};
+  const ST_ES={pending:'Sin revisar',draft:'En edición',changed:'Revisar de nuevo',ok:'Confirmado (CTR)',bulk:'Revisado (ERP)'};
   function stamp(d){ const p=x=>String(x).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()); }
   async function downloadXlsx(){
     const btn=$('bXlsx'), m=$('xMsg'); m.className='msg'; m.textContent='';
@@ -442,7 +545,7 @@ table.list tr.cur{background:var(--syd-soft)}
       if(!ok){ m.className='msg err'; m.textContent='엑셀 도구를 불러오지 못했습니다(네트워크). 다운로드 기록은 #'+d.export_id+' 로 남았습니다.'; return; }
       const at=new Date(d.at);
       const cat=d.items.map(it=>({'Clave CTR':it.code,'Producto':it.name||'','Activo':it.activo?'Sí':'No','Clave SyD':it.scode||'',
-        'Aplicación':it.app||'','OE':it.oe||'','Material':it.material||'','Revisión CTR':ST_ES[it.status]||it.status,
+        'Aplicación':it.app||'','OE':it.oe||'','Material':it.material||'','Revisión CTR':(it.status==='ok'&&it.confirmed_source==='bulk'?ST_ES.bulk:(ST_ES[it.status]||it.status)),
         'Confirmado por':it.confirmed_by_name||'','Fecha confirmación':it.confirmed_at?new Date(it.confirmed_at).toLocaleString('sv-SE').slice(0,16):''}));
       const apps=d.apps.map(a=>({'Clave CTR':a.code,'Marca':a.marca||'','Modelo':a.modelo||'','Año desde':a.desde==null?'':a.desde,'Año hasta':a.hasta==null?'':a.hasta,'Texto original':a.texto||''}));
       const info=[['REFATRIX — Catálogo de productos (sin precios ni existencias)'],[''],
@@ -477,7 +580,7 @@ table.list tr.cur{background:var(--syd-soft)}
     if(!sess||!sess.token){ if(!(await exchange())){ gate(); return; } }
     $('who').textContent=(sess.name||'')+' · CTR 확인';
     $('app').classList.remove('hidden');
-    await Promise.all([loadSummary(),loadList()]);
+    await Promise.all([loadSummary(),loadList(),call('GET','/api/pf-catalog/options').then(o=>{ OPTS=o; }).catch(()=>{ OPTS=null; })]);
   })();
 })();
 </script>

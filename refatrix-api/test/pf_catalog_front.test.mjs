@@ -122,6 +122,29 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   await until(() => $('dr').classList.contains('on') && $('e_app'));
   assert.equal($('dCode').textContent, 'PFF001');
   assert.match($('bOk').textContent, /그대로 맞음/);
+  // 사진 창(좁은 화면 → 서랍 안) — CTR 사진 · SYD 사진, SYD 코드가 여럿이면 화살표로 넘김
+  assert.ok($('ppIn').querySelector('#g_ctr') && $('ppIn').querySelector('#g_syd'), 'CTR · SYD 사진 칸');
+  assert.match($('gim_ctr').getAttribute('src'), /r2\.dev\/products\/PFF001\/PFF001_1\.webp$/);
+  assert.match($('gim_syd').getAttribute('src'), /syd\.com\.mx\/Catalogo\/fotos\/1603100\.jpg$/);
+  assert.ok($('gr_syd').classList.contains('hidden'), 'SYD 코드 하나면 화살표 없음');
+  $('e_scode').value = '1603100\n1603101\n1603102'; $('e_scode').dispatchEvent(new w.Event('input'));
+  assert.equal($('gn_syd').textContent, '1 / 3');
+  $('gr_syd').click(); $('gr_syd').click();
+  assert.equal($('gc_syd').textContent, '1603102'); assert.match($('gim_syd').getAttribute('src'), /1603102\.jpg$/);
+  assert.ok($('gr_syd').disabled, '끝에서는 다음 없음');
+  $('gl_syd').click(); assert.equal($('gc_syd').textContent, '1603101');
+  $('e_scode').value = '1603100'; $('e_scode').dispatchEvent(new w.Event('input'));
+  // 제품명 · 소재 — 고르기 우선, 목록에 없으면 직접 입력
+  const sName = $('s_name'), sMat = $('s_material');
+  assert.ok(sName && sMat, '고르기 칸');
+  assert.equal(sName.value, 'ROTULA SUPERIOR'); assert.ok($('e_name').classList.contains('hidden'), '목록에 있으면 입력칸 숨김');
+  assert.ok([...sMat.options].some((o) => o.value === 'aluminio'), '알루미늄 고르기');
+  sMat.value = 'aluminio'; sMat.dispatchEvent(new w.Event('change'));
+  assert.equal($('e_material').value, 'aluminio'); assert.ok($('w_material').classList.contains('chg'));
+  sMat.value = '__manual'; sMat.dispatchEvent(new w.Event('change'));
+  assert.ok(!$('e_material').classList.contains('hidden'), '직접 입력 칸 열림');
+  sMat.value = ''; sMat.dispatchEvent(new w.Event('change'));
+  assert.ok(!$('w_material').classList.contains('chg'), '없음으로 되돌리면 변경 아님');
   $('e_app').value = 'NISSAN Tsuru 1992-2017\nNISSAN Sentra 1991-1994';
   $('e_app').dispatchEvent(new w.Event('input'));
   assert.match($('bOk').textContent, /1칸 ERP 반영/);
@@ -157,6 +180,11 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   assert.match($('toast').textContent, /PFF002 확인완료 · 변경 없음/);
   assert.equal((await one(`SELECT name FROM products WHERE id=$1`, [b.id])).name, 'HORQUILLA INF. IZQ.', '현장 값 유지');
   assert.match($('dSt').textContent, /확인완료/);
+  // 확인완료 → 잠금: 칸이 막히고 저장 · 확인 버튼이 사라진다
+  assert.ok($('dBody').querySelector('.lockb'), '잠금 안내');
+  assert.ok($('e_name').disabled && $('e_app').disabled && $('s_name').disabled, '칸 막힘');
+  assert.ok($('bOk').classList.contains('hidden') && $('bSave').classList.contains('hidden'), '버튼 숨김');
+  assert.match($('rows').textContent, /🔒 확인완료/);
   dom.window.close();
 
   // ⑤ 엑셀 다운로드 — 위치 거부면 막고, 허용이면 기록 후 파일(카탈로그 · 적용차종 · Info)
@@ -182,7 +210,7 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   const cat = file.wb.sheets[0].ws.rows;
   assert.deepEqual(cat.map((r) => r['Clave CTR']), ['PFF001', 'PFF002', 'PFF003']);
   assert.ok(!Object.keys(cat[0]).some((k) => /precio|existencia|stock|price/i.test(k)), '가격 · 재고 열 없음');
-  assert.equal(cat[0]['Revisión CTR'], 'Confirmado');
+  assert.equal(cat[0]['Revisión CTR'], 'Confirmado (CTR)');
   assert.ok(file.wb.sheets[1].ws.rows.some((r) => r['Clave CTR'] === 'PFF001' && r.Marca === 'NISSAN' && r['Año desde'] === 1991));
   assert.ok(file.wb.sheets[2].ws.a.some((row) => row[0] === 'Descargado por' && row[1] === 'Park CTR'));
   const exRow = await one(`SELECT pf_user_name, row_count, gps_status, gps_lat, gps_lng, filters FROM pf_catalog_exports ORDER BY id DESC LIMIT 1`);

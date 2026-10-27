@@ -18,6 +18,7 @@
 // =====================================================================
 import geoip from 'geoip-lite';
 import { logEvent } from '../audit.js';
+import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { platformApi } from '../surveyViewer.js';
 import { scheduleDevMatchSweep } from '../devMatchSweep.js';
@@ -25,6 +26,7 @@ import { pushProductsSoon } from '../productSync.js';
 import {
   pfCatalogReady, listItems, summary, getItem, saveDraft, discardDraft, confirmItem,
   previewDerived, normValue, PF_FIELDS, exportItems, logExport, listExports, EXPORT_MAX,
+  options, markReviewed, listBulkBatches,
 } from '../pfCatalog.js';
 
 // 접속 IP — 사설 · 로컬 주소는 위치를 알 수 없으니 비운다(presenceRoutes 와 같은 규칙).
@@ -124,7 +126,7 @@ export default async function pfCatalogRoutes(app) {
     const b = req.body || {};
     const r = await saveDraft(id, { fields: pickFields(b.fields), note: b.note === undefined ? undefined : b.note, pf: req.pf,
       loaded: pickLoaded(b.loaded), rev: pickRev(b.rev) });
-    if (r.error === 'stale_review') return reply.code(409).send({ ...r, item: await getItem(id) });
+    if (r.error === 'stale_review' || r.error === 'locked') return reply.code(409).send({ ...r, item: await getItem(id) });
     if (r.error) return reply.code(r.error === 'not_found' ? 404 : 400).send(r);
     return { ok: true, fields: r.fields, item: await getItem(id) };
   });
@@ -164,6 +166,29 @@ export default async function pfCatalogRoutes(app) {
     return { export_id: rec.id, at: rec.created_at, by: req.pf.name, max: EXPORT_MAX, ...data };
   });
 
+  // ── 고르기 목록(제품명 · 소재) ──
+  app.get('/api/pf-catalog/options', G, async () => options());
+
+  // ── 디렉터(ERP) — CTR 코드 엑셀 일괄 「검토완료」 ──
+  //   body { codes:[...], file_name }  — 화면이 엑셀을 읽어 코드만 보낸다(최대 30,000)
+  app.post('/api/pf-catalog/admin/mark-reviewed', { preHandler: [authGuard, requireDirector], bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {
+    if (!(await pfCatalogReady())) return reply.code(503).send({ error: 'migration_required' });
+    const b = req.body || {};
+    const codes = Array.isArray(b.codes) ? b.codes.slice(0, 30000) : [];
+    if (!codes.length) return reply.code(400).send({ error: 'no_codes' });
+    const uid = req.ctx && req.ctx.perm ? req.ctx.perm.userId : null;
+    let uname = null;
+    try { uname = (await query(`SELECT name FROM users WHERE id=$1`, [uid])).rows[0]?.name || null; } catch (_) {}
+    const r = await markReviewed(codes, { userId: uid, userName: uname, fileName: b.file_name });
+    await logEvent({ userId: uid, action: 'update', target: 'pf_catalog_bulk_reviewed', detail: { batch: r.batch_id, marked: r.marked, codes: r.codes_in } }).catch(() => {});
+    return r;
+  });
+  app.get('/api/pf-catalog/admin/bulk', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    if (!(await pfCatalogReady())) return reply.code(503).send({ error: 'migration_required' });
+    reply.header('cache-control', 'no-store');
+    return { items: await listBulkBatches({ limit: (req.query || {}).limit }) };
+  });
+
   // ── 디렉터(ERP) — 다운로드 기록 보기 ──
   app.get('/api/pf-catalog/admin/exports', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     if (!(await pfCatalogReady())) return reply.code(503).send({ error: 'migration_required' });
@@ -180,7 +205,7 @@ export default async function pfCatalogRoutes(app) {
       note: b.note === undefined ? undefined : b.note, pf: req.pf, loaded: pickLoaded(b.loaded), rev: pickRev(b.rev),
     });
     if (r.error === 'not_found') return reply.code(404).send(r);
-    if (r.error === 'conflict' || r.error === 'stale' || r.error === 'stale_review') return reply.code(409).send({ ...r, item: await getItem(id) });
+    if (r.error === 'conflict' || r.error === 'stale' || r.error === 'stale_review' || r.error === 'locked') return reply.code(409).send({ ...r, item: await getItem(id) });
     if (r.error) return reply.code(400).send(r);
 
     const changed = Object.keys(r.applied);

@@ -34,8 +34,9 @@ export async function pfCatalogReady() {
   probeAt = Date.now();
   try {
     const r = await query(`SELECT to_regclass('public.pf_catalog_review') AS a, to_regclass('public.pf_catalog_confirms') AS b,
-                                  to_regclass('public.pf_catalog_exports') AS c`);
-    readyFlag = !!(r.rows[0] && r.rows[0].a && r.rows[0].b && r.rows[0].c);
+                                  to_regclass('public.pf_catalog_exports') AS c, to_regclass('public.pf_catalog_bulk_batches') AS d`);
+    // 0303(잠금 · 일괄 검토완료)까지 있어야 연다 — 반쪽 상태로 쓰기 시작하면 확인완료 저장이 실패한다
+    readyFlag = !!(r.rows[0] && r.rows[0].a && r.rows[0].b && r.rows[0].c && r.rows[0].d);
   } catch (_) { readyFlag = false; }
   return readyFlag;
 }
@@ -216,13 +217,15 @@ export function rowView(r) {
     confirmed_by_name: r.confirmed_by_name || null,
     confirm_count: Number(r.confirm_count || 0),
     erp_changed_at: r.erp_changed_at || null,
-    rev: r.rev || '',   // 점검 상태 행의 판(수정안 · 확인 때마다 바뀐다) — 다른 사람이 그사이 저장했는지 알아본다
+    rev: r.rev || '',
+    confirmed_source: r.confirmed_source || null,   // platform = CTR 확인완료 · bulk = ERP 엑셀 일괄 검토완료
+    locked: r.status === 'ok',                      // 확인 · 검토완료 그대로면 플랫폼에서 고칠 수 없다(ERP 에서 바뀌면 다시 열림)   // 점검 상태 행의 판(수정안 · 확인 때마다 바뀐다) — 다른 사람이 그사이 저장했는지 알아본다
   };
 }
 
 const LIST_COLS = `p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, p.is_active,
   r.draft, r.draft_note, r.draft_by_name, r.draft_at, r.confirmed_at, r.confirmed_by_name, r.confirm_count,
-  r.updated_at::text AS rev,
+  r.updated_at::text AS rev, r.confirmed_source,
   (SELECT max(l.created_at) FROM product_change_log l WHERE l.product_id = p.id) AS erp_changed_at,
   ${STATUS_SQL} AS status`;
 
@@ -294,7 +297,7 @@ export async function getItem(id) {
        FROM product_change_log l LEFT JOIN users u ON u.id = l.changed_by
       WHERE l.product_id = $1 ORDER BY l.id DESC LIMIT 15`, [Number(id)])).rows;
   const confirms = (await query(
-    `SELECT created_at, pf_user_name, applied, conflicts, note FROM pf_catalog_confirms
+    `SELECT created_at, pf_user_name, applied, conflicts, note, source FROM pf_catalog_confirms
       WHERE product_id = $1 ORDER BY id DESC LIMIT 10`, [Number(id)])).rows;
   const view = rowView(r);
   view.preview = previewDerived(view);
@@ -306,11 +309,19 @@ export async function getItem(id) {
   }).filter((h) => h.parts.length || h.action === 'create');
   view.confirms = confirms.map((c) => ({
     at: c.created_at, by: c.pf_user_name, applied: c.applied || {}, conflicts: c.conflicts || null, note: c.note || null,
+    source: c.source || 'platform',
   }));
   return view;
 }
 
 /** 수정안 저장(또는 비우기). returns { ok, item } | { error } */
+/** 확인 · 검토완료 그대로인가 — 그러면 플랫폼에서 더 고치지 못한다(디렉터 지시 2026-10-27). */
+export function isLocked(review, fp) {
+  if (!review || !review.confirmed_hash) return false;
+  const d = review.draft && typeof review.draft === 'object' ? Object.keys(review.draft).length : 0;
+  return d === 0 && review.confirmed_hash === fp;
+}
+
 /** 화면이 열 때 본 판(rev)과 지금 판이 다르면 — 그사이 다른 사람이 수정안을 저장했거나 확인했다. */
 async function revChanged(c, productId, rev) {
   if (rev === undefined || rev === null) return false;   // 보내지 않으면 검사하지 않는다(옛 화면 호환)
@@ -321,10 +332,11 @@ async function revChanged(c, productId, rev) {
 export async function saveDraft(id, { fields = {}, note, pf, loaded = null, rev }) {
   return withTx(async (c) => {
     const cur = (await c.query(
-      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material FROM products p
+      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, ${FP_SQL('p')} AS fp FROM products p
         WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE`, [Number(id)])).rows[0];
     if (!cur) return { error: 'not_found' };
-    const prev = (await c.query(`SELECT draft, draft_note FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
+    const prev = (await c.query(`SELECT draft, draft_note, confirmed_hash FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
+    if (isLocked(prev, cur.fp)) return { error: 'locked' };
     if (await revChanged(c, cur.id, rev)) return { error: 'stale_review' };
     const { draft, errors } = mergeDraft(cur, prev ? prev.draft : {}, fields, loaded);
     if (errors.length) return { error: errors[0].error, field: errors[0].field };
@@ -363,10 +375,11 @@ export async function discardDraft(id) {
 export async function confirmItem(id, { fields = {}, resolve = {}, note, pf, loaded = null, rev }) {
   return withTx(async (c) => {
     const cur = (await c.query(
-      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material FROM products p
+      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, ${FP_SQL('p')} AS fp FROM products p
         WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE`, [Number(id)])).rows[0];
     if (!cur) return { error: 'not_found' };
-    const prev = (await c.query(`SELECT draft, draft_note FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
+    const prev = (await c.query(`SELECT draft, draft_note, confirmed_hash FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
+    if (isLocked(prev, cur.fp)) return { error: 'locked' };
     if (await revChanged(c, cur.id, rev)) return { error: 'stale_review' };
     const { draft, errors } = mergeDraft(cur, prev ? prev.draft : {}, fields, loaded);
     if (errors.length) return { error: errors[0].error, field: errors[0].field };
@@ -418,13 +431,13 @@ export async function confirmItem(id, { fields = {}, resolve = {}, note, pf, loa
     const noteV = note === undefined ? (prev && prev.draft_note) || null : (String(note || '').trim().slice(0, 1000) || null);
     const fp = (await c.query(`SELECT ${FP_SQL('p')} AS h FROM products p WHERE p.id = $1`, [cur.id])).rows[0].h;
     await c.query(
-      `INSERT INTO pf_catalog_review (product_id, draft, confirmed_hash, confirmed_at, confirmed_by, confirmed_by_name, confirm_count, updated_at)
-       VALUES ($1, '{}'::jsonb, $2, now(), $3, $4, 1, now())
+      `INSERT INTO pf_catalog_review (product_id, draft, confirmed_hash, confirmed_at, confirmed_by, confirmed_by_name, confirm_count, confirmed_source, updated_at)
+       VALUES ($1, '{}'::jsonb, $2, now(), $3, $4, 1, 'platform', now())
        ON CONFLICT (product_id) DO UPDATE
           SET draft = '{}'::jsonb, draft_note = NULL, draft_by = NULL, draft_by_name = NULL, draft_at = NULL,
               confirmed_hash = EXCLUDED.confirmed_hash, confirmed_at = now(),
               confirmed_by = EXCLUDED.confirmed_by, confirmed_by_name = EXCLUDED.confirmed_by_name,
-              confirm_count = pf_catalog_review.confirm_count + 1, updated_at = now()`,
+              confirm_count = pf_catalog_review.confirm_count + 1, confirmed_source = 'platform', updated_at = now()`,
       [cur.id, fp, pf.key, pf.name]);
     await c.query(
       `INSERT INTO pf_catalog_confirms (product_id, code, pf_user, pf_user_name, applied, conflicts, note, crm_queued)
@@ -494,4 +507,92 @@ export async function listExports({ limit = 50, offset = 0 } = {}) {
     })),
     total, limit: lim, offset: off,
   };
+}
+
+// ─────────────────────────── 선택 목록 (제품명 · 소재) ───────────────────────────
+/** 화면의 고르기 목록 — ERP 에 이미 있는 제품명 · 소재. 알루미늄(aluminio)은 늘 들어간다. */
+export async function options() {
+  const names = (await query(
+    `SELECT btrim(p.name) AS v, count(*)::int AS n FROM products p
+      WHERE ${TARGET_SQL} AND COALESCE(btrim(p.name),'') <> ''
+      GROUP BY 1 ORDER BY 1 LIMIT 3000`)).rows;
+  const mats = (await query(
+    `SELECT btrim(p.material) AS v, count(*)::int AS n FROM products p
+      WHERE ${TARGET_SQL} AND COALESCE(btrim(p.material),'') <> ''
+      GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 200`)).rows;
+  if (!mats.some((m) => m.v === 'aluminio')) mats.unshift({ v: 'aluminio', n: 0 });
+  return { names: names.map((x) => ({ v: x.v, n: x.n })), materials: mats.map((x) => ({ v: x.v, n: x.n })) };
+}
+
+// ─────────────────────────── ERP 엑셀 일괄 검토완료 (디렉터) ───────────────────────────
+/** 코드 목록 정리 — 앞뒤 공백 · 대소문자 · 중복. */
+export function cleanCodes(list) {
+  const seen = new Set(); const out = [];
+  for (const c of (Array.isArray(list) ? list : [])) {
+    const v = String(c == null ? '' : c).trim().toUpperCase();
+    if (!v || v.length > 40 || seen.has(v)) continue;
+    seen.add(v); out.push(v);
+  }
+  return out;
+}
+
+/**
+ * 올린 CTR 코드들을 「검토완료」 로 표시한다(지금 ERP 값 기준 · 잠금).
+ *   · CTR 수정안이 있는 품목은 건너뛴다(그 사람의 작업을 지우지 않는다) — 목록으로 알려 준다.
+ *   · 이미 확인 · 검토완료인 품목은 그대로 둔다(CTR 확인완료를 일괄로 덮지 않는다).
+ *   · 재확인(확인 뒤 ERP 에서 바뀜) · 미검토는 검토완료가 된다.
+ *   returns { batch_id, codes_in, marked, already, skipped_draft:[], missing:[] }
+ */
+export async function markReviewed(codes, { userId = null, userName = null, fileName = null } = {}) {
+  const list = cleanCodes(codes);
+  return withTx(async (c) => {
+    const rows = list.length ? (await c.query(
+      `SELECT p.id, upper(btrim(p.code)) AS code, ${FP_SQL('p')} AS fp,
+              r.draft, r.confirmed_hash
+         FROM products p LEFT JOIN pf_catalog_review r ON r.product_id = p.id
+        WHERE ${TARGET_SQL} AND upper(btrim(p.code)) = ANY($1::text[])
+        FOR UPDATE OF p`, [list])).rows : [];
+    const found = new Set(rows.map((r) => r.code));
+    const missing = list.filter((x) => !found.has(x));
+    const skipped = []; const todo = []; let already = 0;
+    for (const r of rows) {
+      const hasDraft = r.draft && Object.keys(r.draft).length > 0;
+      if (hasDraft) { skipped.push(r.code); continue; }
+      if (r.confirmed_hash && r.confirmed_hash === r.fp) { already++; continue; }
+      todo.push(r);
+    }
+    const who = userName || 'ERP';
+    const batch = (await c.query(
+      `INSERT INTO pf_catalog_bulk_batches (created_by, file_name, codes_in, marked, already, skipped_draft, missing)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) RETURNING id`,
+      [userId, fileName ? String(fileName).slice(0, 200) : null, list.length, todo.length, already,
+        JSON.stringify(skipped), JSON.stringify(missing.slice(0, 5000))])).rows[0];
+    if (todo.length) {
+      const ids = todo.map((r) => Number(r.id)); const fps = todo.map((r) => r.fp);
+      await c.query(
+        `INSERT INTO pf_catalog_review (product_id, draft, confirmed_hash, confirmed_at, confirmed_by, confirmed_by_name, confirm_count, confirmed_source, updated_at)
+         SELECT t.id, '{}'::jsonb, t.fp, now(), $3, $4, 1, 'bulk', now() FROM unnest($1::bigint[], $2::text[]) AS t(id, fp)
+         ON CONFLICT (product_id) DO UPDATE
+            SET confirmed_hash = EXCLUDED.confirmed_hash, confirmed_at = now(), confirmed_by = EXCLUDED.confirmed_by,
+                confirmed_by_name = EXCLUDED.confirmed_by_name, confirm_count = pf_catalog_review.confirm_count + 1,
+                confirmed_source = 'bulk', updated_at = now()`,
+        [ids, fps, userId == null ? 'erp' : `erp:${userId}`, who]);
+      await c.query(
+        `INSERT INTO pf_catalog_confirms (product_id, code, pf_user, pf_user_name, applied, note, source)
+         SELECT p.id, p.code, $2, $3, '{}'::jsonb, $4, 'bulk' FROM products p WHERE p.id = ANY($1::bigint[])`,
+        [ids, userId == null ? 'erp' : `erp:${userId}`, who, `ERP 엑셀 일괄 검토완료 #${batch.id}${fileName ? ' · ' + String(fileName).slice(0, 120) : ''}`]);
+    }
+    return { batch_id: Number(batch.id), codes_in: list.length, marked: todo.length, already, skipped_draft: skipped, missing };
+  });
+}
+
+/** 일괄 검토완료 업로드 기록 — 최신순. */
+export async function listBulkBatches({ limit = 20 } = {}) {
+  const lim = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+  const rows = (await query(
+    `SELECT b.*, u.name AS by_name FROM pf_catalog_bulk_batches b LEFT JOIN users u ON u.id = b.created_by
+      ORDER BY b.id DESC LIMIT ${lim}`)).rows;
+  return rows.map((r) => ({ id: Number(r.id), at: r.created_at, by: r.by_name || null, file: r.file_name || null,
+    codes_in: r.codes_in, marked: r.marked, already: r.already,
+    skipped_draft: r.skipped_draft || [], missing: r.missing || [] }));
 }
