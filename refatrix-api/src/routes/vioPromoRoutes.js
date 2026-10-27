@@ -66,6 +66,10 @@ async function loadPromos(where, params, perm, limit = 200) {
       image_id: v.image_id ? Number(v.image_id) : null, status: v.status, memo: v.memo,
       created_by: v.created_by ? Number(v.created_by) : null, created_by_name: v.created_by_name, created_at: v.created_at, updated_at: v.updated_at,
       buildable: kitBuildable(its),
+      // 0301 · 디자인(다시 열면 그대로)
+      design: v.design || null,
+      veh_url: v.veh_key ? r2Config().publicBase + '/' + v.veh_key : null,
+      bg_url: v.bg_key ? r2Config().publicBase + '/' + v.bg_key : null,
       items: its.map((it) => ({ line_no: it.line_no, product_id: Number(it.product_id), ctr_code: it.ctr_code, name: it.name, qty: Number(it.qty), stock: Number(it.stock_qty) || 0,
         ...(canPrice ? { list_price: it.list_price == null ? null : Number(it.list_price), cur_price: it.cur_price == null ? null : Number(it.cur_price) } : {}) })),
       price_included: canPrice,
@@ -240,6 +244,48 @@ export default async function vioPromoRoutes(app) {
     await query(`DELETE FROM vio_promos WHERE id = $1 AND (product_id IS NULL OR NOT EXISTS (SELECT 1 FROM products p WHERE p.id = vio_promos.product_id AND p.deleted_at IS NULL))`, [id]);
     await logEvent({ userId: perm.userId, action: 'delete', target: 'vio_promo:' + id, detail: { promo_no: cur.promo_no, items: n } });
     return { ok: true, id, promo_no: cur.promo_no };
+  });
+
+  // 0301 · 디자인 저장 — 만든 사람 또는 디렉터. 화면이 바뀔 때마다 조용히(1.5초 모아서) 부른다.
+  async function ownPromo(req, reply) {
+    if (!(await ready())) { reply.code(503).send({ error: 'migration_required', note: ERR.migration_required }); return null; }
+    const id = Number(req.params.id); const perm = req.ctx.perm;
+    const cur = (await query(`SELECT id, promo_no, created_by FROM vio_promos WHERE id = $1`, [id])).rows[0];
+    if (!cur) { reply.code(404).send({ error: 'not_found' }); return null; }
+    if (perm.role !== 'director' && Number(cur.created_by) !== Number(perm.userId)) { reply.code(403).send({ error: 'not_owner' }); return null; }
+    return cur;
+  }
+  app.put('/api/vio-promos/:id/design', { ...W, bodyLimit: 256 * 1024 }, async (req, reply) => {
+    const cur = await ownPromo(req, reply); if (!cur) return;
+    const d = req.body && req.body.design;
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return reply.code(400).send({ error: 'design_required' });
+    const txt = JSON.stringify(d);
+    if (txt.length > 60000) return reply.code(413).send({ error: 'design_too_large' });
+    const set = ['design = $2::jsonb']; const vals = [cur.id, txt];
+    if (req.body.veh_key === null) set.push('veh_key = NULL');   // 위키 사진으로 바꾸면 저장한 차량 사진은 안 씀
+    if (req.body.bg_key === null) set.push('bg_key = NULL');
+    try { await query(`UPDATE vio_promos SET ${set.join(', ')}, updated_at = now() WHERE id = $1`, vals); }
+    catch (e) { if (/design|veh_key|bg_key/.test(String(e.message))) return reply.code(503).send({ error: 'migration_required', note: 'npm run migrate (0301) 를 먼저 실행하세요.' }); throw e; }
+    return { ok: true };
+  });
+  // 0301 · 차량 사진(내 사진 · 누끼) / B 배경 → R2 vio-promos/{번호}/{veh|bg}-{시각}.{png|webp|jpg}
+  app.post('/api/vio-promos/:id/asset', { ...W, bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
+    const cur = await ownPromo(req, reply); if (!cur) return;
+    const b = req.body || {}; const kind = b.kind === 'bg' ? 'bg' : (b.kind === 'veh' ? 'veh' : null);
+    if (!kind) return reply.code(400).send({ error: 'bad_kind' });
+    const m = /^data:(image\/(png|webp|jpeg));base64,(.+)$/s.exec(String(b.image_b64 || ''));
+    if (!m) return reply.code(415).send({ error: 'bad_image_type' });
+    const buf = Buffer.from(m[3], 'base64');
+    if (buf.length < 100) return reply.code(400).send({ error: 'image_required' });
+    if (buf.length > 8 * 1024 * 1024) return reply.code(413).send({ error: 'image_too_large' });
+    const sig = { webp: [0x52, 0x49, 0x46, 0x46], png: [0x89, 0x50, 0x4e, 0x47], jpeg: [0xff, 0xd8, 0xff] }[m[2]];
+    if (!sig.every((x, i) => buf[i] === x)) return reply.code(415).send({ error: 'bad_image_type' });
+    const key = `vio-promos/${cur.promo_no}/${kind}-${Date.now()}.${m[2] === 'jpeg' ? 'jpg' : m[2]}`;
+    const r = await r2Put(key, buf, { contentType: m[1], cacheControl: 'public, max-age=31536000, immutable' });
+    if (!r.ok) return reply.code(r.error === 'r2_not_configured' ? 503 : 502).send({ ...r, why: r2Why(r) });
+    try { await query(`UPDATE vio_promos SET ${kind === 'veh' ? 'veh_key' : 'bg_key'} = $2, updated_at = now() WHERE id = $1`, [cur.id, key]); }
+    catch (e) { return reply.code(503).send({ error: 'migration_required', note: 'npm run migrate (0301) 를 먼저 실행하세요.' }); }
+    return { ok: true, key, url: r.url, bytes: buf.length };
   });
 
   app.post('/api/vio-promos/:id/kit', K, async (req, reply) => {

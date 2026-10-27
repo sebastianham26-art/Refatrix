@@ -108,6 +108,12 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
         if (p.pathname === '/api/wa-promo/consent/ask') return json({ queued: body.ids.length - 1, remaining_today: 130 });
         if (p.pathname === '/api/wa-promo/campaigns' && method === 'POST' && body.contact_ids && body.contact_ids.includes(7)) return json({ id: 90, audience: 1, picked: { selected: body.contact_ids.length, yes: 1, unknown: body.contact_ids.length - 1, asked: 0, no: 0 }, remaining_today: 139 });
         if (p.pathname === '/api/wa-promo/campaigns' && method === 'POST') return body.contact_ids && !body.contact_ids.length ? json({ error: 'no_contacts' }, 400) : json({ id: 88, audience: 2, remaining_today: 140 });
+        if (/commons\.wikimedia\.org/.test(u)) return json({ query: { pages: { 1: { index: 1, title: 'File:Nissan Versa 2015.jpg', imageinfo: [{ url: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Versa_2015.jpg', thumburl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Versa_2015.jpg/1280px-Versa_2015.jpg', width: 3000, height: 2000 }] },
+          2: { index: 2, title: 'File:Nissan Versa interior.jpg', imageinfo: [{ url: 'https://upload.wikimedia.org/i.jpg', width: 3000, height: 2000 }] } } } });
+        if (p.pathname === '/api/promo-img/rank') return json({ scores: body.urls.map((x, i) => ({ i, url: x, score: /Versa_2015/.test(x) ? 93 : 40, view: 'side', note: /Versa_2015/.test(x) ? 'generación correcta' : 'otra' })).sort((a, b) => b.score - a.score) });
+        if (p.pathname === '/api/vio-promos/9' && method === 'GET') return json({ id: 9, promo_no: 'K0009', model_key: 'versa', title: 'NISSAN Versa', years: '2012-2019', discount_pct: 0, price_included: true, items: [{ ctr_code: 'CB0336', qty: 1 }],
+          design: { v: 1, tpl: 'B', hlB1: 'Guardado', veh: { src: 'url', url: 'https://upload.wikimedia.org/c/saved-car.jpg', cut: false, scale: 1.3, dx: 40, dy: -20, fade: false, man: [{ x: 0.4, y: 0.5, w: 0.07, h: 0.05, kind: 'manual' }] }, bg: false } });
+        if (p.pathname === '/api/vio-promos/9/design' && method === 'PUT') return json({ ok: true });
         if (/wikipedia\.org/.test(u)) return /summary/.test(u) ? json({ originalimage: { source: 'https://upload.wikimedia.org/x/car.jpg' } }) : json({ query: { pages: {} } });
         return json({ error: 'stub' }, 404);
       };
@@ -119,7 +125,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf17f/);
+  assert.match(d.title, /vf17g/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -472,4 +478,37 @@ test('수량 · 정가 합계 · 할인 금액 · 이미지에 넣을지 · 저�
   assert.deepEqual(on, ['CB0336', 'CQ0280L']);
   assert.equal(qIn('CQ0280L').value, '2');
   assert.equal(w.VP._st.discOn, true); assert.equal(w.VP._st.disc, 10); assert.equal(w.VP._st.totOn, true);
+});
+
+test('다시 열면 저장한 디자인 그대로(템플릿·문구·차량 사진·위치·가린 곳) · 바꾸면 자동 저장 · 후보 갤러리 · AI 고르기 (vf17g)', { skip: SKIP }, async () => {
+  const { w, d, calls } = boot();
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => w.VP._st.veh.cands.length > 0 && !w.VP._st.veh.loading));
+  // 위키미디어 공용 후보(실내 사진은 뺌) · 갤러리
+  assert.ok(w.VP._st.veh.cands.some((u) => /Versa_2015/.test(u)), '공용 후보'); assert.ok(!w.VP._st.veh.cands.some((u) => /i\.jpg$/.test(u)), '실내 사진 제외');
+  assert.ok(await until(() => d.querySelectorAll('#vpGal .gi').length >= 2));
+  // 처음 여는 차종 → AI 가 자동으로 고름
+  assert.ok(await until(() => calls.some((c) => /\/api\/promo-img\/rank$/.test(c.u))));
+  assert.ok(await until(() => /Versa_2015/.test(w.VP._st.veh.cands[w.VP._st.veh.idx]) && /93/.test(d.getElementById('vpGal').textContent)), d.getElementById('vpAiInfo').textContent);
+  const rk = calls.find((c) => /promo-img\/rank$/.test(c.u)).body;
+  assert.equal(rk.model, 'Versa'); assert.ok(rk.urls.every((x) => !/\/1280px-/.test(x)), '작은 썸네일로 평가');
+  d.getElementById('vpClose').click();
+  // 저장한 프로모션(K0009)으로 다시 열기 → 서버 디자인 그대로
+  const key = Object.keys(w.localStorage).find((k) => k.startsWith('vp_cfg_'));
+  const cfg = JSON.parse(w.localStorage.getItem(key)); cfg.promoId = 9; w.localStorage.setItem(key, JSON.stringify(cfg));
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => w.VP._st.promo && w.VP._st.promo.promo_no === 'K0009' && !w.VP._st.veh.loading && w.VP._st.veh.img));
+  const v = w.VP._st.veh;
+  assert.equal(w.VP._st.tpl, 'B'); assert.equal(w.VP._st.hlB1, 'Guardado');
+  assert.equal(v.cands[v.idx], 'https://upload.wikimedia.org/c/saved-car.jpg', '저장한 차량 사진');
+  assert.equal(v.scale, 1.3); assert.equal(v.dx, 40); assert.equal(v.dy, -20); assert.equal(v.fade, false); assert.equal(v.man.length, 1, '직접 가린 곳');
+  assert.match(d.getElementById('vpSaveSt').textContent, /저장한 디자인을 불러왔습니다 \(K0009\)/);
+  assert.ok(!calls.some((c) => /\/api\/vio-promos\/9\/design$/.test(c.u)), '불러오는 동안은 저장 안 함');
+  // 바꾸면 1.5초 뒤 자동 저장
+  d.getElementById('vpScale').value = '1.1'; d.getElementById('vpScale').dispatchEvent(new w.Event('input'));
+  assert.ok(await until(() => calls.some((c) => /\/api\/vio-promos\/9\/design$/.test(c.u)), 4000));
+  const put = calls.filter((c) => /\/api\/vio-promos\/9\/design$/.test(c.u)).at(-1).body;
+  assert.equal(put.design.veh.scale, 1.1); assert.equal(put.design.veh.src, 'url'); assert.equal(put.design.veh.url, 'https://upload.wikimedia.org/c/saved-car.jpg'); assert.equal(put.veh_key, null);
+  assert.ok(await until(() => /디자인 자동 저장/.test(d.getElementById('vpSaveSt').textContent)));
 });

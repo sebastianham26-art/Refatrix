@@ -129,3 +129,33 @@ test('POST /api/promo-img/marks: 사진 → 상자 · 같은 사진은 캐시 ·
   if (k) process.env.ANTHROPIC_API_KEY = k;
   await a.close();
 });
+
+// 10-27 · 차량 사진 후보 AI 고르기
+test('rank: 허용 호스트만 · 받은 사진만 AI 에 · 점수 순 · 캐시 · 키 없으면 503', async () => {
+  const mod = await import('../src/routes/promoImgRoutes.js');
+  const { default: promoImgRoutes, _setPromoImgFetcherForTest, _setPromoRankCallerForTest, _resetPromoImgCacheForTest, parseRank } = mod;
+  assert.deepEqual(parseRank('x {"scores":[{"i":1,"score":120,"view":"side"},{"i":0,"score":40},{"i":9,"score":3},{"i":1,"score":1}]} y', 2).map((x) => [x.i, x.score]), [[1, 100], [0, 40]]);
+  assert.equal(parseRank('nope', 2), null);
+  _resetPromoImgCacheForTest();
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(300, 1)]);
+  _setPromoImgFetcherForTest(async (u) => /bad/.test(u) ? { ok: false, status: 404, headers: { get: () => 'text/html' }, arrayBuffer: async () => new ArrayBuffer(0) }
+    : { ok: true, status: 200, headers: { get: (k) => (k === 'content-type' ? 'image/png' : null) }, arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.length) });
+  let seen = null;
+  _setPromoRankCallerForTest(async (images, q) => { seen = { n: images.length, q }; return { ok: true, text: JSON.stringify({ scores: [{ i: 0, score: 35, match: false, note: 'otro modelo' }, { i: 1, score: 91, view: '3/4 front', note: 'generación correcta' }] }) }; });
+  const app = Fastify(); await app.register(promoImgRoutes); await app.ready();
+  try {
+    const A = 'https://upload.wikimedia.org/a/640px-a.jpg', B = 'https://upload.wikimedia.org/b/640px-b.jpg', BAD = 'https://upload.wikimedia.org/bad.jpg';
+    const body = { brand: 'NISSAN', model: 'March', years: '2011-2020', gen: 'K13', urls: [A, 'https://evil.com/x.jpg', BAD, B] };
+    let r = await app.inject({ method: 'POST', url: '/api/promo-img/rank', payload: body });
+    assert.equal(r.statusCode, 200, r.body);
+    assert.equal(seen.n, 2, '허용 밖 · 못 받은 사진은 빼고 2장'); assert.equal(seen.q.gen, 'K13');
+    assert.deepEqual(r.json().scores.map((x) => [x.url, x.score]), [[B, 91], [A, 35]]);
+    seen = null; r = await app.inject({ method: 'POST', url: '/api/promo-img/rank', payload: body });
+    assert.equal(r.json().cached, true); assert.equal(seen, null);
+    r = await app.inject({ method: 'POST', url: '/api/promo-img/rank', payload: { model: 'March', urls: ['https://evil.com/x.jpg'] } });
+    assert.equal(r.statusCode, 400);
+    _setPromoRankCallerForTest(null); const k = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY;
+    r = await app.inject({ method: 'POST', url: '/api/promo-img/rank', payload: { ...body, years: '2012' } });
+    assert.equal(r.statusCode, 503); if (k) process.env.ANTHROPIC_API_KEY = k;
+  } finally { await app.close(); _setPromoImgFetcherForTest(null); _setPromoRankCallerForTest(null); }
+});

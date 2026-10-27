@@ -126,6 +126,26 @@ test('라우트: 저장(번호) → 목록 · 수정 · 키트 제품 → 견적
       assert.equal(got[0].h['content-type'], 'image/png'); assert.equal(got[0].n, png.length);
       r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + p2.id + '/kit-image', headers: DIR, payload: { image_b64: b64 } });
       assert.equal(r.statusCode, 404, '지운 프로모션');
+      // 0301 · 디자인 저장 — 만든 사람·디렉터만 · 차량 사진(asset) → R2 vio-promos/{번호}/veh-….png · 다시 열면 그대로
+      const dz = { v: 1, tpl: 'B', hlB1: 'Hola', veh: { src: 'saved', cut: true, scale: 1.2, dx: 30, dy: -10, fade: false, man: [{ x: 0.4, y: 0.5, w: 0.07, h: 0.05, kind: 'manual' }] }, bg: false };
+      r = await app.inject({ method: 'PUT', url: '/api/vio-promos/' + promoId + '/design', headers: MKT, payload: { design: dz } });
+      assert.equal(r.statusCode, 403);
+      r = await app.inject({ method: 'PUT', url: '/api/vio-promos/' + promoId + '/design', headers: DIR, payload: { design: 'x' } });
+      assert.equal(r.statusCode, 400);
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/asset', headers: DIR, payload: { kind: 'veh', image_b64: b64 } });
+      assert.equal(r.statusCode, 200, r.body);
+      assert.match(r.json().key, new RegExp('^vio-promos/' + p1.promo_no + '/veh-\\d+\\.png$'));
+      assert.equal(got.at(-1).h['cache-control'], 'public, max-age=31536000, immutable');
+      r = await app.inject({ method: 'POST', url: '/api/vio-promos/' + promoId + '/asset', headers: DIR, payload: { kind: 'other', image_b64: b64 } });
+      assert.equal(r.statusCode, 400);
+      r = await app.inject({ method: 'PUT', url: '/api/vio-promos/' + promoId + '/design', headers: DIR, payload: { design: dz } });
+      assert.equal(r.statusCode, 200, r.body);
+      r = await app.inject({ method: 'GET', url: '/api/vio-promos/' + promoId, headers: MKT });
+      assert.deepEqual(r.json().design, dz); assert.match(r.json().veh_url, new RegExp('/vio-promos/' + p1.promo_no + '/veh-'));
+      // 위키 사진으로 바꾸면 저장한 차량 사진은 안 씀
+      r = await app.inject({ method: 'PUT', url: '/api/vio-promos/' + promoId + '/design', headers: DIR, payload: { design: { ...dz, veh: { src: 'url', url: 'https://upload.wikimedia.org/a.jpg' } }, veh_key: null } });
+      r = await app.inject({ method: 'GET', url: '/api/vio-promos/' + promoId, headers: DIR });
+      assert.equal(r.json().veh_url, null); assert.equal(r.json().design.veh.src, 'url');
 
       // ★ 10-23 · R2 점검 — 쓰기·읽기를 따로 알려 준다(사진이 저장되지 않을 때 어디가 막혔는지)
       r = await app.inject({ method: 'POST', url: '/api/vio-promos/r2-check', headers: MKT, payload: {} });

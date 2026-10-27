@@ -69,6 +69,23 @@
 - 바뀐 파일: `migrations/0294_kit_create_permission.sql` · `src/r2.js`(신규) · `src/routes/vioPromoRoutes.js` · `refatrix-viofinder.html`(vf17f) · `refatrix-users.html` · 시험 `vio_promos` · `r2`(신규) · `viopromo_front` · `helpers/authGuardStub.mjs`(x-test-fields)
 - 배포: 백엔드 → Railway Success → **`npm run migrate`(0294)** → 프론트 → 관리 › 사용자·권한에서 palomino 「🧰 키트 등록」 체크
 
+### 추가(10-27 · vf17g) — 다시 열면 전에 작업하던 그대로 · 차량 사진 AI 고르기 · 후보 갤러리
+**디자인 저장 (0301)**
+- 저장한 프로모션(K번호)은 화면을 바꿀 때마다 1.5초 뒤 **서버에 자동 저장**: 템플릿 · 문구 · 할인/가격 표시 · 세대 · 차량 사진 출처 · 크기/좌우/위아래 · 가장자리 · **직접 가린 곳** · B 배경
+- 내가 올린 차량 사진 · 누끼 딴 사진 · B 배경은 R2 `vio-promos/K0001/veh-….webp|png` · `bg-…` 에 저장(이름에 시각 → 캐시 문제 없음). 위키 사진은 주소만 저장
+- 다시 열면(목록 「열기」 · 대기열에서 같은 차종) 서버 디자인을 먼저 불러 그대로 보여 줌 → 「저장한 디자인을 불러왔습니다 (K0001)」. 불러오는 동안은 저장하지 않음
+- 저장 전(번호 없음) 차종도 이 브라우저에 **고른 사진 주소**를 기억(예전엔 후보 번호라 순서가 바뀌면 다른 사진이 나왔음)
+- 만든 사람·디렉터만 저장(다른 사람 프로모션은 안내만). 「＋ 새 번호」로 저장하면 사진도 새 번호 폴더로 다시 올림
+- 서버: `PUT /api/vio-promos/:id/design` · `POST /api/vio-promos/:id/asset` · 목록/한 건에 `design · veh_url · bg_url`
+
+**차량 사진 후보 · AI**
+- 후보: 위키백과(es·en) + **위키미디어 공용(Commons)** — 차종+연식, VIO 세대 코드(예: K13 · SL · NX4)로 찾음 · 실내/엔진/로고/세로 사진 제외 · 최대 20장 · 「후보 더 찾기」
+- ④ 아래 **후보 갤러리**(썸네일) — 눌러서 바로 고름 · AI 점수 배지
+- **🤖 AI로 맞는 사진 찾기**: 후보 12장(작은 썸네일)을 AI 가 보고 「이 모델·이 세대 · 차 전체 · 3/4 앞이나 옆 · 깔끔한 배경」 기준 0~100점 → 점수 순 정렬 + 가장 맞는 사진 선택. 처음 여는 차종은 자동으로 한 번(결과는 이 브라우저에 기억). 저장한 사진이 있으면 자동 선택은 안 함
+- 서버: `POST /api/promo-img/rank`(허용 호스트 사진만 · 요청 20MB 안 · 결과 캐시) — **`ANTHROPIC_API_KEY` 필요**(없으면 버튼이 안내만, 갤러리에서 직접 고르기)
+- 바뀐 파일: `migrations/0301_vio_promo_design.sql` · `src/routes/vioPromoRoutes.js` · `src/routes/promoImgRoutes.js` · `refatrix-viofinder.html`(vf17g) · 시험 `vio_promos` · `promo_img` · `viopromo_front`
+- 배포: 백엔드 → Railway Success → **migrate(0301)** (`/mise/installs/node/18.20.8/bin/node scripts/migrate.js`) → 프론트
+
 ## ② 배포 순서
 
 1. zip을 repo 루트에 풀기 → GitHub Desktop **Fetch/Pull**

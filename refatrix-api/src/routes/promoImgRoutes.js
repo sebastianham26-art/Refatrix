@@ -110,6 +110,53 @@ export function parseMarks(text) {
 }
 const markCache = new Map();   // md5 -> marks (최근 300장)
 
+// ───────── 10-27 · 차량 사진 후보 AI 고르기 — 이 차종·세대에 가장 맞는 사진 순서 ─────────
+//   POST /api/promo-img/rank { brand, model, years, gen, urls:[…최대 12] } → { scores:[{i, url, score, match, view, note}] }
+//   허용 호스트 사진만 서버가 받아 한 번에 AI 에 보낸다. AI 키가 없으면 503(화면은 후보 고르기만).
+export const RANK_PROMPT = (q) => `You are choosing a vehicle photo for a Mexican auto-parts advertisement.
+Target vehicle: ${q.brand} ${q.model}${q.years ? ', model years ' + q.years : ''}${q.gen ? ' (generation: ' + q.gen + ')' : ''}.
+Below are ${q.n} candidate photos numbered 0..${q.n - 1}. Score EACH from 0 to 100 for how well it works:
+- It must show THIS model and THIS generation/body style (wrong model or clearly different generation => score below 30).
+- Whole exterior of the car visible (not interior, engine, wheel, badge, logo, drawing, multiple cars, or a person in front).
+- Prefer a 3/4 front or side view, sharp, well lit, with a simple background; a race car, heavily modified car or police car scores lower.
+Return ONLY JSON, no prose: {"scores":[{"i":0,"score":87,"match":true,"view":"3/4 front","note":"short reason in Spanish"}]}
+Include every candidate exactly once.`;
+export const rankModel = () => process.env.PROMO_RANK_AI_MODEL || markModel();
+let rankCaller = null;
+export function _setPromoRankCallerForTest(fn) { rankCaller = fn || null; }
+async function callRankAi(images, q) {
+  if (rankCaller) return rankCaller(images, q);
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 90000);
+  try {
+    const content = [];
+    images.forEach((im, i) => { content.push({ type: 'text', text: 'Candidate ' + i + ':' }); content.push({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.b64 } }); });
+    content.push({ type: 'text', text: RANK_PROMPT({ ...q, n: images.length }) });
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: rankModel(), max_tokens: 2000, temperature: 0, messages: [{ role: 'user', content }] }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, error: 'ai: ' + String((d.error && d.error.message) || 'http_' + r.status).slice(0, 200) };
+    return { ok: true, text: (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n') };
+  } catch (e) {
+    return { ok: false, error: e && e.name === 'AbortError' ? 'ai: timeout' : 'ai: network' };
+  } finally { clearTimeout(t); }
+}
+export function parseRank(text, n) {
+  const s = String(text || ''); const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  let j = null; if (a >= 0 && b > a) { try { j = JSON.parse(s.slice(a, b + 1)); } catch { j = null; } }
+  if (!j || !Array.isArray(j.scores)) return null;
+  const out = new Map();
+  for (const x of j.scores) {
+    const i = Number(x && x.i); const sc = Number(x && x.score);
+    if (!Number.isInteger(i) || i < 0 || i >= n || !Number.isFinite(sc) || out.has(i)) continue;
+    out.set(i, { i, score: Math.max(0, Math.min(100, Math.round(sc))), match: x.match !== false, view: String(x.view || '').slice(0, 40), note: String(x.note || '').slice(0, 160) });
+  }
+  return [...out.values()];
+}
+const rankCache = new Map();   // md5(query+urls) -> scores (최근 200)
+
 export default async function promoImgRoutes(app) {
   app.post('/api/promo-img/marks', { preHandler: [authGuard, requirePage('products')], bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
     const b = req.body || {};
@@ -128,6 +175,43 @@ export default async function promoImgRoutes(app) {
     if (!marks) return reply.code(502).send({ error: 'ai_bad_answer' });
     markCache.set(key, marks); if (markCache.size > 300) markCache.delete(markCache.keys().next().value);
     return { marks, cached: false };
+  });
+
+  app.post('/api/promo-img/rank', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
+    const b = req.body || {};
+    const q = { brand: String(b.brand || '').slice(0, 60), model: String(b.model || '').slice(0, 80), years: String(b.years || '').slice(0, 30), gen: String(b.gen || '').slice(0, 60) };
+    if (!q.model) return reply.code(400).send({ error: 'model_required' });
+    const urls = [...new Set((Array.isArray(b.urls) ? b.urls : []).map(String))].filter((u) => allowedUrl(u)).slice(0, 12);
+    if (!urls.length) return reply.code(400).send({ error: 'no_candidates' });
+    const key = crypto.createHash('md5').update(JSON.stringify([q, urls])).digest('hex');
+    if (rankCache.has(key)) return { scores: rankCache.get(key), cached: true, model: rankModel() };
+    if (!rankCaller && !process.env.ANTHROPIC_API_KEY) return reply.code(503).send({ error: 'ai_not_configured' });
+    // 사진 받기(캐시 · 허용 호스트 · 이미지만 · 3.5MB 이하) — 못 받은 후보는 빼고 보낸다
+    const imgs = []; const idx = [];
+    await Promise.all(urls.map(async (u, k) => {
+      try {
+        let e = cacheGet(u);
+        if (!e) {
+          const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+          const r = await fetcher(u, { signal: ctrl.signal, headers: { 'user-agent': 'RefatrixERP/1.0 (promo-img)' } }).finally(() => clearTimeout(t));
+          const type = String(r.headers && r.headers.get ? r.headers.get('content-type') || '' : '').split(';')[0].trim().toLowerCase();
+          if (!r.ok || !/^image\/(jpeg|png|webp|gif)$/.test(type)) return;
+          const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > MAX_BYTES) return;
+          cachePut(u, buf, type); e = { buf, type };
+        }
+        if (e.buf.length > 3.5 * 1024 * 1024 || !/^image\/(jpeg|png|webp|gif)$/.test(e.type)) return;
+        imgs[k] = { mime: e.type, b64: e.buf.toString('base64') }; idx[k] = u;
+      } catch (_) {}
+    }));
+    let tot = 0; const okK = urls.map((_, k) => k).filter((k) => imgs[k] && (tot += imgs[k].b64.length) <= 20 * 1024 * 1024);   // API 요청 크기 한도 안에서
+    if (!okK.length) return reply.code(502).send({ error: 'no_images' });
+    const r = await callRankAi(okK.map((k) => imgs[k]), q);
+    if (!r.ok) return reply.code(502).send({ error: 'ai_failed', detail: r.error });
+    const sc = parseRank(r.text, okK.length);
+    if (!sc) return reply.code(502).send({ error: 'ai_bad_answer' });
+    const scores = sc.map((x) => ({ ...x, i: okK[x.i], url: urls[okK[x.i]] })).sort((a2, b2) => b2.score - a2.score);
+    rankCache.set(key, scores); if (rankCache.size > 200) rankCache.delete(rankCache.keys().next().value);
+    return { scores, cached: false, model: rankModel() };
   });
 
   app.get('/api/promo-img', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
