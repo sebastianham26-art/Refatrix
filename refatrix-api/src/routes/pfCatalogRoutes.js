@@ -101,7 +101,7 @@ export default async function pfCatalogRoutes(app) {
   app.get('/api/pf-catalog/items', G, async (req) => {
     const q = req.query || {};
     const r = await listItems({
-      q: String(q.q || '').slice(0, 80), status: String(q.status || ''), active: String(q.active || 'all'),
+      q: String(q.q || '').slice(0, 80), status: String(q.status || ''), active: String(q.active || 'all'), round: String(q.round || ''), tag: String(q.tag || ''),
       sort: String(q.sort || 'code'), limit: q.limit, offset: q.offset,
     });
     return { ...r, limit: Math.max(1, Math.min(200, parseInt(q.limit, 10) || 50)), offset: Math.min(1000000, Math.max(0, parseInt(q.offset, 10) || 0)) };
@@ -151,7 +151,8 @@ export default async function pfCatalogRoutes(app) {
     const lat = num(g0.lat, 90); const lng = num(g0.lng, 180); const acc = num(g0.acc, 1e7);
     const hasGps = lat != null && lng != null;
     const f0 = b.filters && typeof b.filters === 'object' ? b.filters : {};
-    const filters = { q: String(f0.q || '').slice(0, 80), status: String(f0.status || ''), active: f0.active === '1' ? '1' : 'all' };
+    const filters = { q: String(f0.q || '').slice(0, 80), status: String(f0.status || ''), active: f0.active === '1' ? '1' : 'all',
+      round: String(f0.round || '').slice(0, 8), tag: String(f0.tag || '').slice(0, 10) };
     const data = await exportItems(filters);
     const ip = publicIp(req);
     let geo = null; if (ip) { try { geo = geoip.lookup(ip); } catch (_) { geo = null; } }
@@ -179,8 +180,15 @@ export default async function pfCatalogRoutes(app) {
     const uid = req.ctx && req.ctx.perm ? req.ctx.perm.userId : null;
     let uname = null;
     try { uname = (await query(`SELECT name FROM users WHERE id=$1`, [uid])).rows[0]?.name || null; } catch (_) {}
-    const r = await markReviewed(codes, { userId: uid, userName: uname, fileName: b.file_name });
-    await logEvent({ userId: uid, action: 'update', target: 'pf_catalog_bulk_reviewed', detail: { batch: r.batch_id, marked: r.marked, codes: r.codes_in } }).catch(() => {});
+    // 0304 · 차수(1~9)와 검토일(YYYY-MM-DD) — 검토일은 내일 이후면 거절(입력 실수)
+    const round = b.round == null || b.round === '' ? null : parseInt(b.round, 10);
+    if (round != null && !(round >= 1 && round <= 9)) return reply.code(400).send({ error: 'bad_round' });
+    const day = b.reviewed_on ? String(b.reviewed_on).slice(0, 10) : null;
+    if (day && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day + 'T00:00:00Z')) || day > new Date(Date.now() + 18 * 3600e3).toISOString().slice(0, 10))) {
+      return reply.code(400).send({ error: 'bad_date' });
+    }
+    const r = await markReviewed(codes, { userId: uid, userName: uname, fileName: b.file_name, round, reviewedOn: day });
+    await logEvent({ userId: uid, action: 'update', target: 'pf_catalog_bulk_reviewed', detail: { batch: r.batch_id, marked: r.marked, codes: r.codes_in, round: r.round, reviewed_on: r.reviewed_on } }).catch(() => {});
     return r;
   });
   app.get('/api/pf-catalog/admin/bulk', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {

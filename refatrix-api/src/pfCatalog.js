@@ -34,9 +34,10 @@ export async function pfCatalogReady() {
   probeAt = Date.now();
   try {
     const r = await query(`SELECT to_regclass('public.pf_catalog_review') AS a, to_regclass('public.pf_catalog_confirms') AS b,
-                                  to_regclass('public.pf_catalog_exports') AS c, to_regclass('public.pf_catalog_bulk_batches') AS d`);
+                                  to_regclass('public.pf_catalog_exports') AS c, to_regclass('public.pf_catalog_bulk_batches') AS d,
+                                  to_regclass('public.pf_catalog_rounds') AS e`);
     // 0303(잠금 · 일괄 검토완료)까지 있어야 연다 — 반쪽 상태로 쓰기 시작하면 확인완료 저장이 실패한다
-    readyFlag = !!(r.rows[0] && r.rows[0].a && r.rows[0].b && r.rows[0].c && r.rows[0].d);
+    readyFlag = !!(r.rows[0] && r.rows[0].a && r.rows[0].b && r.rows[0].c && r.rows[0].d && r.rows[0].e);
   } catch (_) { readyFlag = false; }
   return readyFlag;
 }
@@ -198,6 +199,25 @@ export const TARGET_SQL = `p.deleted_at IS NULL AND p.code IS NOT NULL AND btrim
 
 export const STATUSES = ['pending', 'draft', 'ok', 'changed'];
 
+// ── 중요도 (디렉터 지시 2026-10-27): ① 한국차 → ② VIO 1~30위 → ③ 중국차 ──
+//   한국차 · 중국차 = 적용차종(product_applications.maker)에 그 메이커가 하나라도 있으면.
+//   VIO 순위 = ctr_vio_rank(코드별 최고 순위 · 0078/0079). 30위 안이면 ②.
+//   한 품목이 여럿에 해당하면 가장 높은 쪽(숫자가 작은 쪽)이 중요도다. 칩은 해당하는 것 모두 보여 준다.
+export const KR_MAKERS = ['HYUNDAI', 'KIA'];
+// productRoutes.CN_MAKERS 와 같은 목록(제품 찾기 「중국 브랜드」 필터)
+export const CN_MAKERS = ['MG', 'JAC', 'CHIREY', 'CHERY', 'OMODA', 'JAECOO', 'CHANGAN', 'BYD',
+  'GWM', 'GREAT WALL', 'HAVAL', 'GEELY', 'DONGFENG', 'FAW', 'BAIC', 'FOTON', 'JETOUR', 'EXEED', 'WULING',
+  'BAOJUN', 'MAXUS', 'JMC', 'ZEEKR', 'HONGQI', 'LYNK', 'NIO', 'XPENG', 'LEAPMOTOR', 'SERES', 'BESTUNE', 'ORA',
+  'TANK', 'ROEWE'];
+export const VIO_TOP = 30;
+const sqlList = (arr) => arr.map((x) => `'${String(x).replace(/'/g, "''")}'`).join(',');
+const PRIO_SQL = (a = 'x') => `CASE WHEN ${a}.kr THEN 1 WHEN ${a}.vio_rank <= ${VIO_TOP} THEN 2 WHEN ${a}.cn THEN 3 ELSE 9 END`;
+// 구분 거르기 — 값은 이 목록에 있는 것만 SQL 에 쓴다
+const TAGS = {
+  kr: 'x.kr', vio: `x.vio_rank <= ${VIO_TOP}`, cn: 'x.cn',
+  sold: 'x.sold', quoted: 'x.quoted', none: 'NOT x.sold AND NOT x.quoted',
+};
+
 /** 화면에 보낼 1행. 가격·재고 칸은 처음부터 SELECT 하지 않는다. */
 export function rowView(r) {
   const cur = { name: r.name, scode: r.scode, app: r.app, oe: r.oe, material: r.material };
@@ -219,20 +239,44 @@ export function rowView(r) {
     erp_changed_at: r.erp_changed_at || null,
     rev: r.rev || '',
     confirmed_source: r.confirmed_source || null,   // platform = CTR 확인완료 · bulk = ERP 엑셀 일괄 검토완료
-    locked: r.status === 'ok',                      // 확인 · 검토완료 그대로면 플랫폼에서 고칠 수 없다(ERP 에서 바뀌면 다시 열림)   // 점검 상태 행의 판(수정안 · 확인 때마다 바뀐다) — 다른 사람이 그사이 저장했는지 알아본다
+    // 0304 · CTR 차수별 검토 [{round, on:'YYYY-MM-DD'}] (차수 순)
+    // 매출 · 견적 이력(한 번이라도) · 중요도 — 금액 · 수량은 내보내지 않는다
+    sold: !!r.sold, quoted: !!r.quoted,
+    kr: !!r.kr, cn: !!r.cn, vio_rank: r.vio_rank == null ? null : Number(r.vio_rank),
+    prio: r.kr ? 1 : (r.vio_rank != null && Number(r.vio_rank) <= VIO_TOP ? 2 : (r.cn ? 3 : null)),
+    rounds: Array.isArray(r.rounds) ? r.rounds.map((x) => ({ round: Number(x.r), on: x.d ? String(x.d).slice(0, 10) : null })) : [],
   };
 }
+
+// 목록용 FROM — 메이커 구분은 적용차종 표를 한 번 묶어서(품목마다 따로 찾으면 15,000개에서 4초+),
+//   VIO 순위는 코드로 바로(ctr_code 기본키).
+const LIST_FROM = `products p
+  LEFT JOIN pf_catalog_review r ON r.product_id = p.id
+  LEFT JOIN (SELECT pa.product_id,
+                    bool_or(upper(btrim(pa.maker)) IN (${sqlList(KR_MAKERS)})) AS kr,
+                    bool_or(upper(btrim(pa.maker)) IN (${sqlList(CN_MAKERS)})) AS cn
+               FROM product_applications pa GROUP BY pa.product_id) mk ON mk.product_id = p.id
+  LEFT JOIN ctr_vio_rank vr ON vr.ctr_code = upper(btrim(p.code))`;
 
 const LIST_COLS = `p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, p.is_active,
   r.draft, r.draft_note, r.draft_by_name, r.draft_at, r.confirmed_at, r.confirmed_by_name, r.confirm_count,
   r.updated_at::text AS rev, r.confirmed_source,
+  (SELECT json_agg(json_build_object('r', rd.round, 'd', rd.reviewed_on) ORDER BY rd.round)
+     FROM pf_catalog_rounds rd WHERE rd.product_id = p.id) AS rounds,
   (SELECT max(l.created_at) FROM product_change_log l WHERE l.product_id = p.id) AS erp_changed_at,
+  EXISTS (SELECT 1 FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id = sil.invoice_id
+           WHERE sil.product_id = p.id AND si.deleted_at IS NULL AND si.status <> 'deleted') AS sold,
+  EXISTS (SELECT 1 FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+           WHERE ql.product_id = p.id AND q.deleted_at IS NULL) AS quoted,
+  COALESCE(mk.kr, false) AS kr, COALESCE(mk.cn, false) AS cn, vr.vio_rank,
   ${STATUS_SQL} AS status`;
 
 const SORTS = {
   code: 'code ASC',
   recent: 'erp_changed_at DESC NULLS LAST, code ASC',
   confirmed: 'confirmed_at DESC NULLS LAST, code ASC',
+  // 중요도순: ① 한국차 → ② VIO 1~30위 → ③ 중국차 → 나머지. 같은 등급 안에서는 VIO 순위 · 코드
+  prio: `${PRIO_SQL('x')} ASC, vio_rank ASC NULLS LAST, code ASC`,
 };
 
 /**
@@ -240,7 +284,7 @@ const SORTS = {
  *   returns { items, total }
  */
 /** 거르기 조건 → SQL. 상태는 목록에 있는 값만(그 밖의 값은 무시) — 문자열을 그대로 SQL 에 넣지 않는다. */
-function filterSql({ q = '', status = '', active = 'all' } = {}) {
+function filterSql({ q = '', status = '', active = 'all', round = '', tag = '' } = {}) {
   const params = [];
   let where = TARGET_SQL;
   const s = String(q || '').trim();
@@ -251,15 +295,21 @@ function filterSql({ q = '', status = '', active = 'all' } = {}) {
   }
   if (active === '1') where += ` AND p.is_active IS NOT FALSE`;
   if (active === '0') where += ` AND p.is_active IS FALSE`;
-  const inner = `SELECT ${LIST_COLS} FROM products p LEFT JOIN pf_catalog_review r ON r.product_id = p.id WHERE ${where}`;
+  // 0304 · 차수 거르기: '1'~'9' = 그 차수 검토 있음 · 'none' = 차수 기록 없음
+  const rn = parseInt(round, 10);
+  if (rn >= 1 && rn <= 9) { params.push(rn); where += ` AND EXISTS (SELECT 1 FROM pf_catalog_rounds rd WHERE rd.product_id = p.id AND rd.round = $${params.length})`; }
+  else if (round === 'none') where += ` AND NOT EXISTS (SELECT 1 FROM pf_catalog_rounds rd WHERE rd.product_id = p.id)`;
+  const inner = `SELECT ${LIST_COLS} FROM ${LIST_FROM} WHERE ${where}`;
   const st = STATUSES.includes(status) ? status : '';
-  if (st) params.push(st);
-  const outerWhere = st ? `WHERE x.status = $${params.length}` : '';
+  const outer = [];
+  if (st) { params.push(st); outer.push(`x.status = $${params.length}`); }
+  if (TAGS[tag]) outer.push(TAGS[tag]);
+  const outerWhere = outer.length ? `WHERE ${outer.join(' AND ')}` : '';
   return { inner, outerWhere, params, status: st };
 }
 
-export async function listItems({ q = '', status = '', active = 'all', sort = 'code', limit = 50, offset = 0 } = {}) {
-  const { inner, outerWhere, params } = filterSql({ q, status, active });
+export async function listItems({ q = '', status = '', active = 'all', round = '', tag = '', sort = 'code', limit = 50, offset = 0 } = {}) {
+  const { inner, outerWhere, params } = filterSql({ q, status, active, round, tag });
   const order = SORTS[sort] || SORTS.code;
   const lim = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
   const off = Math.min(1000000, Math.max(0, parseInt(offset, 10) || 0));
@@ -289,7 +339,7 @@ export async function summary() {
 /** 1건 + 최근 ERP 이력(카탈로그 칸) + 확인 이력. */
 export async function getItem(id) {
   const r = (await query(
-    `SELECT ${LIST_COLS} FROM products p LEFT JOIN pf_catalog_review r ON r.product_id = p.id
+    `SELECT ${LIST_COLS} FROM ${LIST_FROM}
       WHERE ${TARGET_SQL} AND p.id = $1`, [Number(id)])).rows[0];
   if (!r) return null;
   const hist = (await query(
@@ -298,7 +348,7 @@ export async function getItem(id) {
       WHERE l.product_id = $1 ORDER BY l.id DESC LIMIT 15`, [Number(id)])).rows;
   const confirms = (await query(
     `SELECT created_at, pf_user_name, applied, conflicts, note, source FROM pf_catalog_confirms
-      WHERE product_id = $1 ORDER BY id DESC LIMIT 10`, [Number(id)])).rows;
+      WHERE product_id = $1 ORDER BY created_at DESC, id DESC LIMIT 100`, [Number(id)])).rows;
   const view = rowView(r);
   view.preview = previewDerived(view);
   view.history = hist.map((h) => {
@@ -315,13 +365,6 @@ export async function getItem(id) {
 }
 
 /** 수정안 저장(또는 비우기). returns { ok, item } | { error } */
-/** 확인 · 검토완료 그대로인가 — 그러면 플랫폼에서 더 고치지 못한다(디렉터 지시 2026-10-27). */
-export function isLocked(review, fp) {
-  if (!review || !review.confirmed_hash) return false;
-  const d = review.draft && typeof review.draft === 'object' ? Object.keys(review.draft).length : 0;
-  return d === 0 && review.confirmed_hash === fp;
-}
-
 /** 화면이 열 때 본 판(rev)과 지금 판이 다르면 — 그사이 다른 사람이 수정안을 저장했거나 확인했다. */
 async function revChanged(c, productId, rev) {
   if (rev === undefined || rev === null) return false;   // 보내지 않으면 검사하지 않는다(옛 화면 호환)
@@ -336,7 +379,6 @@ export async function saveDraft(id, { fields = {}, note, pf, loaded = null, rev 
         WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE`, [Number(id)])).rows[0];
     if (!cur) return { error: 'not_found' };
     const prev = (await c.query(`SELECT draft, draft_note, confirmed_hash FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
-    if (isLocked(prev, cur.fp)) return { error: 'locked' };
     if (await revChanged(c, cur.id, rev)) return { error: 'stale_review' };
     const { draft, errors } = mergeDraft(cur, prev ? prev.draft : {}, fields, loaded);
     if (errors.length) return { error: errors[0].error, field: errors[0].field };
@@ -379,7 +421,6 @@ export async function confirmItem(id, { fields = {}, resolve = {}, note, pf, loa
         WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE`, [Number(id)])).rows[0];
     if (!cur) return { error: 'not_found' };
     const prev = (await c.query(`SELECT draft, draft_note, confirmed_hash FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
-    if (isLocked(prev, cur.fp)) return { error: 'locked' };
     if (await revChanged(c, cur.id, rev)) return { error: 'stale_review' };
     const { draft, errors } = mergeDraft(cur, prev ? prev.draft : {}, fields, loaded);
     if (errors.length) return { error: errors[0].error, field: errors[0].field };
@@ -543,8 +584,12 @@ export function cleanCodes(list) {
  *   · 재확인(확인 뒤 ERP 에서 바뀜) · 미검토는 검토완료가 된다.
  *   returns { batch_id, codes_in, marked, already, skipped_draft:[], missing:[] }
  */
-export async function markReviewed(codes, { userId = null, userName = null, fileName = null } = {}) {
+export async function markReviewed(codes, { userId = null, userName = null, fileName = null, round = null, reviewedOn = null } = {}) {
   const list = cleanCodes(codes);
+  const rnd = parseInt(round, 10) >= 1 && parseInt(round, 10) <= 9 ? parseInt(round, 10) : null;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(reviewedOn || '')) ? String(reviewedOn) : null;
+  // 검토일 정오(멕시코 중부시간 UTC-6) — 확인 이력 · 확인일에 그 날짜로 남긴다
+  const at = day ? `${day}T12:00:00-06:00` : null;
   return withTx(async (c) => {
     const rows = list.length ? (await c.query(
       `SELECT p.id, upper(btrim(p.code)) AS code, ${FP_SQL('p')} AS fp,
@@ -563,26 +608,37 @@ export async function markReviewed(codes, { userId = null, userName = null, file
     }
     const who = userName || 'ERP';
     const batch = (await c.query(
-      `INSERT INTO pf_catalog_bulk_batches (created_by, file_name, codes_in, marked, already, skipped_draft, missing)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) RETURNING id`,
+      `INSERT INTO pf_catalog_bulk_batches (created_by, file_name, codes_in, marked, already, skipped_draft, missing, round, reviewed_on)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9) RETURNING id`,
       [userId, fileName ? String(fileName).slice(0, 200) : null, list.length, todo.length, already,
-        JSON.stringify(skipped), JSON.stringify(missing.slice(0, 5000))])).rows[0];
+        JSON.stringify(skipped), JSON.stringify(missing.slice(0, 5000)), rnd, day])).rows[0];
+    // 0304 · 차수 기록 — 찾은 코드 전부(수정안이 있어도 「그 차수에 검토했다」 는 사실은 남긴다). 같은 차수면 날짜만 새로.
+    if (rnd && rows.length) {
+      await c.query(
+        `INSERT INTO pf_catalog_rounds (product_id, code, round, reviewed_on, batch_id)
+         SELECT t.id, t.code, $3, $4::date, $5 FROM unnest($1::bigint[], $2::text[]) AS t(id, code)
+         ON CONFLICT (product_id, round) WHERE product_id IS NOT NULL
+         DO UPDATE SET reviewed_on = EXCLUDED.reviewed_on, batch_id = EXCLUDED.batch_id, updated_at = now()`,
+        [rows.map((r) => Number(r.id)), rows.map((r) => r.code), rnd, day || new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10), batch.id]);
+    }
     if (todo.length) {
       const ids = todo.map((r) => Number(r.id)); const fps = todo.map((r) => r.fp);
       await c.query(
         `INSERT INTO pf_catalog_review (product_id, draft, confirmed_hash, confirmed_at, confirmed_by, confirmed_by_name, confirm_count, confirmed_source, updated_at)
-         SELECT t.id, '{}'::jsonb, t.fp, now(), $3, $4, 1, 'bulk', now() FROM unnest($1::bigint[], $2::text[]) AS t(id, fp)
+         SELECT t.id, '{}'::jsonb, t.fp, COALESCE($5::timestamptz, now()), $3, $4, 1, 'bulk', now() FROM unnest($1::bigint[], $2::text[]) AS t(id, fp)
          ON CONFLICT (product_id) DO UPDATE
-            SET confirmed_hash = EXCLUDED.confirmed_hash, confirmed_at = now(), confirmed_by = EXCLUDED.confirmed_by,
+            SET confirmed_hash = EXCLUDED.confirmed_hash, confirmed_at = EXCLUDED.confirmed_at, confirmed_by = EXCLUDED.confirmed_by,
                 confirmed_by_name = EXCLUDED.confirmed_by_name, confirm_count = pf_catalog_review.confirm_count + 1,
                 confirmed_source = 'bulk', updated_at = now()`,
-        [ids, fps, userId == null ? 'erp' : `erp:${userId}`, who]);
+        [ids, fps, userId == null ? 'erp' : `erp:${userId}`, who, at]);
       await c.query(
-        `INSERT INTO pf_catalog_confirms (product_id, code, pf_user, pf_user_name, applied, note, source)
-         SELECT p.id, p.code, $2, $3, '{}'::jsonb, $4, 'bulk' FROM products p WHERE p.id = ANY($1::bigint[])`,
-        [ids, userId == null ? 'erp' : `erp:${userId}`, who, `ERP 엑셀 일괄 검토완료 #${batch.id}${fileName ? ' · ' + String(fileName).slice(0, 120) : ''}`]);
+        `INSERT INTO pf_catalog_confirms (product_id, code, pf_user, pf_user_name, applied, note, source, created_at)
+         SELECT p.id, p.code, $2, $3, '{}'::jsonb, $4, 'bulk', COALESCE($5::timestamptz, now()) FROM products p WHERE p.id = ANY($1::bigint[])`,
+        [ids, userId == null ? 'erp' : `erp:${userId}`, who,
+          `${rnd ? rnd + '차 검토' : 'ERP 엑셀 일괄 검토완료'} #${batch.id}${fileName ? ' · ' + String(fileName).slice(0, 120) : ''}`, at]);
     }
-    return { batch_id: Number(batch.id), codes_in: list.length, marked: todo.length, already, skipped_draft: skipped, missing };
+    return { batch_id: Number(batch.id), codes_in: list.length, marked: todo.length, already, skipped_draft: skipped, missing,
+      round: rnd, reviewed_on: day, round_recorded: rnd ? rows.length : 0 };
   });
 }
 
@@ -590,9 +646,10 @@ export async function markReviewed(codes, { userId = null, userName = null, file
 export async function listBulkBatches({ limit = 20 } = {}) {
   const lim = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
   const rows = (await query(
-    `SELECT b.*, u.name AS by_name FROM pf_catalog_bulk_batches b LEFT JOIN users u ON u.id = b.created_by
+    `SELECT b.*, b.reviewed_on::text AS reviewed_txt, u.name AS by_name FROM pf_catalog_bulk_batches b LEFT JOIN users u ON u.id = b.created_by
       ORDER BY b.id DESC LIMIT ${lim}`)).rows;
   return rows.map((r) => ({ id: Number(r.id), at: r.created_at, by: r.by_name || null, file: r.file_name || null,
     codes_in: r.codes_in, marked: r.marked, already: r.already,
+    round: r.round == null ? null : Number(r.round), reviewed_on: r.reviewed_txt || null,
     skipped_draft: r.skipped_draft || [], missing: r.missing || [] }));
 }

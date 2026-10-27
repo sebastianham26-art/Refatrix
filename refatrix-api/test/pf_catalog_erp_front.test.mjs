@@ -40,8 +40,8 @@ async function boot({ role = 'director', evil = null, sheet = null } = {}) {
       w.fetch = async (url, o = {}) => {
         const u = String(url); calls.push(u);
         const json = (d) => ({ ok: true, status: 200, json: async () => d });
-        if (u.includes('/api/pf-catalog/admin/mark-reviewed')) { posts.push(JSON.parse(o.body)); return json({ batch_id: 3, codes_in: 3, marked: 2, already: 1, skipped_draft: [], missing: ['ZZ9'] }); }
-        if (u.includes('/api/pf-catalog/admin/bulk')) return json({ items: posts.length ? [{ id: 3, at: '2026-10-27T20:00:00Z', by: 'Dir', file: 'rev.xlsx', codes_in: 3, marked: 2, already: 1, skipped_draft: [], missing: ['ZZ9'] }] : [] });
+        if (u.includes('/api/pf-catalog/admin/mark-reviewed')) { posts.push(JSON.parse(o.body)); const b = JSON.parse(o.body); return json({ batch_id: 3, codes_in: 3, marked: 2, already: 1, skipped_draft: [], missing: ['ZZ9'], round: b.round, reviewed_on: b.reviewed_on, round_recorded: 2 }); }
+        if (u.includes('/api/pf-catalog/admin/bulk')) return json({ items: posts.length ? [{ id: 3, at: '2026-10-27T20:00:00Z', by: 'Dir', file: 'rev.xlsx', codes_in: 3, marked: 2, already: 1, skipped_draft: [], missing: ['ZZ9'], round: 2, reviewed_on: '2026-10-15' }] : [] });
         if (u.includes('/api/pf-catalog/admin/exports')) return json(EXPORTS(evil));
         if (u.includes('/api/products/history')) return json({ can_price: true, total: 0, limit: 50, offset: 0, items: [] });
         return json({ items: [], total: 0 });
@@ -82,11 +82,13 @@ test('플랫폼 다운로드 기록 카드 — jsdom', { skip: SKIP && 'jsdom �
     await new Promise((r) => setTimeout(r, 30));
     assert.match(d.getElementById('pfbPrev').textContent, /「Clave CTR」 열에서 코드 3개/);
     assert.equal(d.getElementById('pfbGo').disabled, false);
+    assert.match(d.getElementById('pfbDate').value, /^\d{4}-\d{2}-\d{2}$/, '검토일 기본 = 오늘');
+    d.getElementById('pfbRound').value = '2'; d.getElementById('pfbDate').value = '2026-10-15';
     d.getElementById('pfbGo').click();
     await new Promise((r) => setTimeout(r, 60));
-    assert.deepEqual(posts[0], { codes: ['CA0011', 'CB0318', 'ZZ9'], file_name: 'rev.xlsx' });
-    assert.match(d.getElementById('pfbMsg').textContent, /검토완료 2건 · 이미 확인·검토완료 1건 · 수정안 있어 건너뜀 0건 · ERP에 없는 코드 1건/);
-    assert.match(d.getElementById('pfbList').textContent, /rev\.xlsx/);
+    assert.deepEqual(posts[0], { codes: ['CA0011', 'CB0318', 'ZZ9'], file_name: 'rev.xlsx', round: 2, reviewed_on: '2026-10-15' });
+    assert.match(d.getElementById('pfbMsg').textContent, /2차 검토\(2026-10-15\) 2건 표시 · 그중 새로 검토완료 2건 · ERP에 없는 코드 1건 \(ZZ9\)/);
+    assert.match(d.getElementById('pfbList').textContent, /2차/); assert.match(d.getElementById('pfbList').textContent, /2026-10-15/);
   });
   await t.test('④-2 머리글 없는 첫 열', async () => {
     const { w, d, posts } = await boot({ sheet: [['CA0011'], ['CB0318']] });

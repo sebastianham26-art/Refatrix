@@ -42,7 +42,8 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   const { query, pool } = await import('../src/db.js');
   const MINE = `SELECT id FROM products WHERE code LIKE 'PFF%'`;
   async function cleanup() {
-    await query(`DELETE FROM pf_catalog_confirms WHERE product_id IN (${MINE}); DELETE FROM pf_catalog_review WHERE product_id IN (${MINE});`);
+    await query(`DELETE FROM pf_catalog_confirms WHERE product_id IN (${MINE}); DELETE FROM pf_catalog_review WHERE product_id IN (${MINE}); DELETE FROM pf_catalog_rounds WHERE product_id IN (${MINE});`);
+    await query(`DELETE FROM quote_lines WHERE product_id IN (${MINE}); DELETE FROM quotes WHERE memo = 'PFFTEST'; DELETE FROM ctr_vio_rank WHERE ctr_code LIKE 'PFF%';`);
     for (const tb of ['product_change_log', 'product_syd_codes', 'product_applications', 'product_oe_codes']) await query(`DELETE FROM ${tb} WHERE product_id IN (${MINE})`);
     await query(`DELETE FROM products WHERE id IN (${MINE})`);
   }
@@ -180,15 +181,28 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   assert.match($('toast').textContent, /PFF002 확인완료 · 변경 없음/);
   assert.equal((await one(`SELECT name FROM products WHERE id=$1`, [b.id])).name, 'HORQUILLA INF. IZQ.', '현장 값 유지');
   assert.match($('dSt').textContent, /확인완료/);
-  // 확인완료 → 잠금: 칸이 막히고 저장 · 확인 버튼이 사라진다
-  assert.ok($('dBody').querySelector('.lockb'), '잠금 안내');
-  assert.ok($('e_name').disabled && $('e_app').disabled && $('s_name').disabled, '칸 막힘');
-  assert.ok($('bOk').classList.contains('hidden') && $('bSave').classList.contains('hidden'), '버튼 숨김');
-  assert.match($('rows').textContent, /🔒 확인완료/);
+  // 확인완료 뒤에도 고칠 수 있다 — 날짜 표시 · 다시 확인하면 횟수 · 날짜가 쌓인다
+  const today = (() => { const t = new Date(); return String(t.getMonth() + 1).padStart(2, '0') + '/' + String(t.getDate()).padStart(2, '0'); })();
+  assert.match($('dSt').textContent, new RegExp('확인완료 ' + today));
+  assert.ok(!$('e_name').disabled && !$('bOk').classList.contains('hidden'), '잠기지 않는다');
+  assert.match($('dBody').querySelector('.cfl').textContent, /확인완료 1회/);
+  $('e_app').value = 'VOLKSWAGEN Jetta 2006-2011'; $('e_app').dispatchEvent(new w.Event('input'));
+  $('bOk').click();
+  await until(() => /1칸 ERP 반영/.test($('toast').textContent));
+  await until(() => /확인완료 2회/.test(($('dBody').querySelector('.cfl') || {}).textContent || ''));
+  assert.equal($('dBody').querySelectorAll('.cfl .dt').length, 2, '확인 날짜 2개');
+  assert.match($('dSt').textContent, /×2/, '횟수 칩');
+  assert.match([...$('rows').querySelectorAll('tr[data-i]')][1].textContent, /×2/, '목록에도 횟수');
+  // 차수 칩 — ERP 에서 올린 1차 · 2차
+  await query(`INSERT INTO pf_catalog_rounds (product_id, code, round, reviewed_on) VALUES ($1,'PFF002',1,'2026-10-02'),($1,'PFF002',2,'2026-10-15')`, [b.id]);
+  $('round').value = '2'; $('round').dispatchEvent(new w.Event('change'));
+  await until(() => $('rows').querySelectorAll('tr[data-i]').length === 1);
+  assert.match($('rows').textContent, /PFF002/); assert.match($('rows').textContent, /1차 10\/02/); assert.match($('rows').textContent, /2차 10\/15/);
   dom.window.close();
 
   // ⑤ 엑셀 다운로드 — 위치 거부면 막고, 허용이면 기록 후 파일(카탈로그 · 적용차종 · Info)
   await query(`DELETE FROM pf_catalog_exports`);
+  await query(`DELETE FROM pf_catalog_rounds WHERE code LIKE 'PFF%'`);
   const dom3 = boot(); const w3 = dom3.window; const $3 = (id) => w3.document.getElementById(id);
   await until(() => !$3('app').classList.contains('hidden'));
   fetchCalls.length = 0;
@@ -224,6 +238,32 @@ test('jsdom + 실제 ERP 서버', { skip: SKIP }, async (t) => {
   assert.equal((await one(`SELECT gps_status FROM pf_catalog_exports ORDER BY id DESC LIMIT 1`)).gps_status, 'unavailable');
   dom3.window.close();
   await query(`DELETE FROM pf_catalog_exports`);
+
+  // ⑤ 매출 · 견적 표시 · 중요도 칩 · 중요도순 정렬
+  await query(`INSERT INTO product_applications (product_id, app_text, maker) SELECT id, 'CHERY Tiggo', 'CHERY' FROM products WHERE code = 'PFF003'`);
+  await query(`INSERT INTO ctr_vio_rank (ctr_code, vio_rank) VALUES ('PFF002', 7)`);
+  const fq = await one(`INSERT INTO quotes (memo) VALUES ('PFFTEST') RETURNING id`);
+  await query(`INSERT INTO quote_lines (quote_id, product_id) SELECT $1, id FROM products WHERE code = 'PFF003'`, [fq.id]);
+  const dom5 = boot(); const w5 = dom5.window; const $5 = (id) => w5.document.getElementById(id);
+  await until(() => !$5('app').classList.contains('hidden'));
+  $5('q').value = 'PFF'; $5('q').dispatchEvent(new w5.Event('input'));
+  await until(() => $5('rows').querySelectorAll('tr[data-i]').length === 3);
+  fetchCalls.length = 0;
+  $5('sort').value = 'prio'; $5('sort').onchange();
+  await until(() => fetchCalls.some((c) => c.u.includes('sort=prio')));
+  await until(() => $5('rows').querySelector('tr[data-i] .code')?.textContent === 'PFF002');
+  const r5 = [...$5('rows').querySelectorAll('tr[data-i]')];
+  assert.deepEqual(r5.map((r) => r.querySelector('.code').textContent), ['PFF002', 'PFF003', 'PFF001'], 'VIO 30위 안 → 중국차 → 나머지');
+  assert.match(r5[0].textContent, /② VIO 7위/);
+  assert.match(r5[1].textContent, /③ 중국차/); assert.ok(r5[1].querySelector('.mk.quoted'), '견적 표시');
+  assert.ok(!r5[1].querySelector('.mk.sold'), '매출 없음');
+  assert.ok(!r5[2].querySelector('.pr'), '해당 없음은 칩 없음');
+  fetchCalls.length = 0;
+  $5('tag').value = 'quoted'; $5('tag').onchange();
+  await until(() => fetchCalls.some((c) => c.u.includes('tag=quoted')));
+  await until(() => $5('rows').querySelectorAll('tr[data-i]').length === 1);
+  assert.equal($5('rows').querySelector('.code').textContent, 'PFF003');
+  dom5.window.close();
 
   // ④ 플랫폼 세션 없음 → 안내 · ERP 호출 없음
   fetchCalls.length = 0;

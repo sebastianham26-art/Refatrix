@@ -452,13 +452,15 @@
 
   <!-- 0303 · 플랫폼 카탈로그 — CTR 코드 엑셀 일괄 「검토완료」 (디렉터) -->
   <div class="card hidden" id="pfbCard">
-    <h2 style="margin:0">✅ 플랫폼 카탈로그 — CTR 코드 일괄 검토완료</h2>
-    <div class="hint" style="margin-top:6px">CTR 코드가 들어 있는 엑셀을 올리면 그 품목들을 REFATRIX Platform 「제품 카탈로그」에서 <b>검토완료</b>로 표시하고 잠급니다(지금 ERP 값 기준).
-      코드 열은 머리글이 <b>Clave CTR · CTR · 코드 · Code</b> 인 열, 없으면 첫 번째 열을 읽습니다.
-      CTR 담당자가 수정안을 써 둔 품목은 건너뛰고, 이미 확인·검토완료인 품목은 그대로 둡니다. ERP에서 값이 바뀌면 「재확인」으로 다시 열립니다.</div>
+    <h2 style="margin:0">✅ 플랫폼 카탈로그 — CTR 차수별 검토 (엑셀)</h2>
+    <div class="hint" style="margin-top:6px">차수와 검토일을 고르고 그 차수에 CTR이 검토한 코드 엑셀을 올리면, REFATRIX Platform 「제품 카탈로그」에 <b>「1차 10/02」</b>처럼 차수 · 날짜가 표시됩니다.
+      같은 차수를 다시 올리면 날짜만 새 값으로 바뀝니다. 아직 확인 기록이 없던 품목은 그 날짜로 <b>검토완료</b>가 됩니다(ERP 값은 바꾸지 않음 · 플랫폼에서 계속 고칠 수 있음).
+      코드 열은 머리글이 <b>Clave CTR · CTR · 코드 · Code</b> 인 열, 없으면 첫 번째 열을 읽습니다.</div>
     <div class="row" style="margin-top:10px;align-items:flex-end">
-      <div><input type="file" id="pfbFile" accept=".xlsx,.xls,.csv"></div>
-      <div style="flex:0 0 auto"><button class="btn" id="pfbGo" type="button" disabled>검토완료로 표시</button></div>
+      <div style="flex:0 0 auto"><label>차수</label><select id="pfbRound"><option value="1">1차</option><option value="2">2차</option><option value="3">3차</option><option value="4">4차</option><option value="5">5차</option><option value="6">6차</option></select></div>
+      <div style="flex:0 0 auto"><label>검토일</label><input type="date" id="pfbDate"></div>
+      <div><label>CTR 코드 엑셀</label><input type="file" id="pfbFile" accept=".xlsx,.xls,.csv"></div>
+      <div style="flex:0 0 auto"><button class="btn" id="pfbGo" type="button" disabled>차수 검토로 표시</button></div>
     </div>
     <div id="pfbPrev" class="hint" style="margin-top:8px"></div>
     <div class="msg" id="pfbMsg"></div>
@@ -2680,6 +2682,7 @@
     for(let i=start;i<rows.length;i++){ const v=String((rows[i]||[])[ci]||'').trim().toUpperCase(); if(!v||seen.has(v)) continue; seen.add(v); codes.push(v); }
     return {codes,col};
   }
+  if($('pfbDate')&&!$('pfbDate').value){ const d0=new Date(); $('pfbDate').value=d0.getFullYear()+'-'+String(d0.getMonth()+1).padStart(2,'0')+'-'+String(d0.getDate()).padStart(2,'0'); }
   if($('pfbFile')) $('pfbFile').addEventListener('change',async()=>{
     const f=$('pfbFile').files[0]; const m=$('pfbMsg'); m.className='msg'; m.style.display='none';
     pfbCodes=[]; pfbFileName=''; $('pfbGo').disabled=true; $('pfbPrev').textContent='';
@@ -2693,14 +2696,16 @@
   });
   if($('pfbGo')) $('pfbGo').addEventListener('click',async()=>{
     if(!pfbCodes.length) return;
-    if(!confirm('코드 '+pfbCodes.length+'개를 플랫폼 「검토완료」로 표시하고 잠급니다.\n(CTR 수정안이 있는 품목은 건너뜁니다) 진행할까요?')) return;
+    const rnd=$('pfbRound').value, day=$('pfbDate').value;
+    if(!day){ const m0=$('pfbMsg'); m0.className='msg err'; m0.style.display=''; m0.textContent='검토일을 고르세요.'; return; }
+    if(!confirm('코드 '+pfbCodes.length+'개를 「'+rnd+'차 검토 ('+day+')」로 표시합니다. 진행할까요?')) return;
     const m=$('pfbMsg'); $('pfbGo').disabled=true;
     try{
-      const res=await fetch(session.api+'/api/pf-catalog/admin/mark-reviewed',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({codes:pfbCodes,file_name:pfbFileName})});
+      const res=await fetch(session.api+'/api/pf-catalog/admin/mark-reviewed',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({codes:pfbCodes,file_name:pfbFileName,round:Number(rnd),reviewed_on:day})});
       const d=await res.json().catch(()=>({}));
-      if(!res.ok) throw new Error(d.error==='migration_required'?'서버 준비 중(0303 마이그레이션 필요)':(d.error||('HTTP '+res.status)));
+      if(!res.ok) throw new Error(d.error==='migration_required'?'서버 준비 중(0304 마이그레이션 필요)':d.error==='bad_date'?'검토일이 올바르지 않습니다(내일 이후 불가)':(d.error||('HTTP '+res.status)));
       m.className='msg ok'; m.style.display='';
-      m.textContent='검토완료 '+d.marked+'건 · 이미 확인·검토완료 '+d.already+'건 · 수정안 있어 건너뜀 '+d.skipped_draft.length+'건 · ERP에 없는 코드 '+d.missing.length+'건';
+      m.textContent=d.round+'차 검토('+d.reviewed_on+') '+d.round_recorded+'건 표시 · 그중 새로 검토완료 '+d.marked+'건 · ERP에 없는 코드 '+d.missing.length+'건'+(d.missing.length?' ('+d.missing.slice(0,10).join(', ')+(d.missing.length>10?' …':'')+')':'');
       pfbCodes=[]; $('pfbFile').value=''; $('pfbPrev').textContent=''; pfbLoad();
     }catch(e){ m.className='msg err'; m.style.display=''; m.textContent='실패: '+e.message; $('pfbGo').disabled=false; }
   });
@@ -2710,10 +2715,9 @@
       const d=await res.json().catch(()=>({})); if(!res.ok) return;
       pfbLoaded=true;
       const it=d.items||[];
-      $('pfbList').innerHTML=it.length?('<table><thead><tr><th class="nowrap">#</th><th class="nowrap">일시</th><th class="nowrap">올린 사람</th><th>파일</th><th class="nowrap">코드</th><th class="nowrap">검토완료</th><th class="nowrap">이미 완료</th><th>건너뜀(수정안)</th><th>ERP에 없음</th></tr></thead><tbody>'
-        +it.map(b=>'<tr><td>'+escP(b.id)+'</td><td class="nowrap" style="font-size:12px">'+escP(phDate(b.at))+'</td><td class="nowrap">'+escP(b.by||'—')+'</td><td style="font-size:12px">'+escP(b.file||'—')+'</td>'
-          +'<td style="text-align:right">'+escP(b.codes_in)+'</td><td style="text-align:right"><b>'+escP(b.marked)+'</b></td><td style="text-align:right">'+escP(b.already)+'</td>'
-          +'<td style="font-size:11.5px">'+escP((b.skipped_draft||[]).join(', ')||'—')+'</td><td style="font-size:11.5px" title="'+escP((b.missing||[]).join(', '))+'">'+escP((b.missing||[]).slice(0,15).join(', ')+((b.missing||[]).length>15?' 외 '+((b.missing||[]).length-15)+'건':'')||'—')+'</td></tr>').join('')
+      $('pfbList').innerHTML=it.length?('<table><thead><tr><th class="nowrap">#</th><th class="nowrap">차수</th><th class="nowrap">검토일</th><th class="nowrap">올린 일시</th><th class="nowrap">올린 사람</th><th>파일</th><th class="nowrap">코드</th><th class="nowrap">새 검토완료</th><th>ERP에 없음</th></tr></thead><tbody>'
+        +it.map(b=>'<tr><td>'+escP(b.id)+'</td><td class="nowrap"><b>'+escP(b.round?b.round+'차':'—')+'</b></td><td class="nowrap">'+escP(b.reviewed_on||'—')+'</td><td class="nowrap" style="font-size:12px">'+escP(phDate(b.at))+'</td><td class="nowrap">'+escP(b.by||'—')+'</td><td style="font-size:12px">'+escP(b.file||'—')+'</td>'
+          +'<td style="text-align:right">'+escP(b.codes_in)+'</td><td style="text-align:right">'+escP(b.marked)+'</td><td style="font-size:11.5px" title="'+escP((b.missing||[]).join(', '))+'">'+escP((b.missing||[]).slice(0,15).join(', ')+((b.missing||[]).length>15?' 외 '+((b.missing||[]).length-15)+'건':'')||'—')+'</td></tr>').join('')
         +'</tbody></table>'):'<span class="hint">아직 올린 기록이 없습니다.</span>';
     }catch(e){}
   }

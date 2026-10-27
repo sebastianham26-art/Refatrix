@@ -92,7 +92,18 @@ table.list tr.cur{background:var(--syd-soft)}
 .hi .p s{color:#a2321f}
 .note{width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;resize:vertical;min-height:52px}
 .msg{font-size:12.5px;min-height:1em}.msg.err{color:var(--ctr)}.msg.ok{color:var(--ok)}
-.lockb{background:var(--ok-soft);border:1px solid #9fd3b0;color:var(--ok);border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px}
+.mk{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:3px;white-space:nowrap}
+.mk.sold{background:#fff1d6;color:#8a5200;border:1px solid #f0c46a}
+.mk.quoted{background:#e1edfa;color:#073f78;border:1px solid #9cc2ea}
+.pr{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;margin:3px 3px 0 0;white-space:nowrap;color:#fff}
+.pr.p1{background:#c2185b}.pr.p2{background:#1f6feb}.pr.p3{background:#d97706}
+.rds{display:inline-flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.rd{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;background:#efe9ff;color:#4b3aa8;border:1px solid #d6ccff;white-space:nowrap}
+.cnt{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;background:var(--ok);color:#fff;margin-left:3px}
+.cfl{background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px;margin-bottom:10px;font-size:12.5px}
+.cfl b{font-size:12.5px}.cfl .dts{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.cfl .dt{font-size:11.5px;border:1px solid #9fd3b0;background:var(--ok-soft);color:var(--ok);border-radius:7px;padding:2px 7px;white-space:nowrap}
+.cfl .dt.bulk{border-color:#d6ccff;background:#efe9ff;color:#4b3aa8}
 .fld select{font:inherit;font-size:13px;width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
 .fld select+input{margin-top:6px}
 .fld :disabled{background:#f4f5f7;color:var(--ink2);cursor:not-allowed}
@@ -139,8 +150,19 @@ table.list tr.cur{background:var(--syd-soft)}
     <div class="chips" id="chips"></div>
     <div class="bar">
       <input type="search" id="q" placeholder="코드 · 제품명 · SYD · 적용차종 · OE 검색" translate="no">
+      <select id="round" aria-label="차수">
+        <option value="">차수 전체</option>
+        <option value="1">1차 검토</option><option value="2">2차 검토</option><option value="3">3차 검토</option><option value="4">4차 검토</option>
+        <option value="5">5차 검토</option><option value="none">차수 기록 없음</option>
+      </select>
+      <select id="tag" aria-label="구분">
+        <option value="">구분 전체</option>
+        <option value="kr">① 한국차</option><option value="vio">② VIO 1~30위</option><option value="cn">③ 중국차</option>
+        <option value="sold">매출 있음</option><option value="quoted">견적 있음</option><option value="none">매출 · 견적 없음</option>
+      </select>
       <select id="sort" aria-label="정렬">
         <option value="code">코드순</option>
+        <option value="prio">중요도순 (한국차 → VIO 1~30 → 중국차)</option>
         <option value="recent">ERP 최근 수정순</option>
         <option value="confirmed">최근 확인순</option>
       </select>
@@ -188,8 +210,8 @@ table.list tr.cur{background:var(--syd-soft)}
   const LABEL={name:'제품명',scode:'SYD 코드',app:'적용차종',oe:'OE 번호',material:'소재'};
   const MULTI={scode:1,app:1,oe:1};                      // 한 줄에 하나 — 저장할 때 ' // ' 로 잇는다
   const HINT={name:'목록에서 고르기 · 없으면 직접 입력',scode:'한 줄에 하나 · 고치면 왼쪽 SYD 사진도 바뀝니다',app:'한 줄에 한 차종 · 예) NISSAN Versa 2012-2019',oe:'한 줄에 하나 · 조립품 OE 는 앞에 FOR',material:'목록에서 고르기 · 없으면 직접 입력'};
-  const ST={pending:'미검토',draft:'작성중',changed:'재확인',ok:'확인·검토완료'};
-  const STHELP={pending:'아직 확인하지 않은 품목',draft:'수정안을 저장해 둔 품목',changed:'확인한 뒤 ERP에서 바뀐 품목 — 다시 열려 있음',ok:'CTR 확인완료 또는 ERP 검토완료 — 수정 잠김'};
+  const ST={pending:'미검토',draft:'작성중',changed:'재확인',ok:'확인완료'};
+  const STHELP={pending:'아직 확인하지 않은 품목',draft:'수정안을 저장해 둔 품목',changed:'확인한 뒤 ERP에서 바뀐 품목 — 다시 열려 있음',ok:'CTR 확인완료 또는 ERP 검토완료 후 그대로인 품목 — 다시 고쳐서 확인할 수 있음'};
   // 한 품목의 상태 이름 — 확인완료(CTR 이 플랫폼에서) · 검토완료(디렉터가 ERP 에서 엑셀로)
   const stLabel=(it)=>it.status==='ok'?(it.confirmed_source==='bulk'?'검토완료':'확인완료'):(ST[it.status]||it.status);
   const SYD_IMG=(c)=>'https://syd.com.mx/Catalogo/fotos/'+encodeURIComponent(c)+'.jpg';
@@ -202,7 +224,7 @@ table.list tr.cur{background:var(--syd-soft)}
     platform_network:'플랫폼 로그인을 확인하지 못했습니다. 잠시 뒤 다시 해 보세요.',migration_required:'ERP 서버 준비가 끝나지 않았습니다(0302). 관리자에게 알려 주세요.',
     name_required:'제품명은 비울 수 없습니다.',not_found:'품목을 찾지 못했습니다(삭제되었을 수 있음).',
     location_required:'위치 권한이 필요합니다. 브라우저 주소창의 위치 아이콘에서 허용한 뒤 다시 누르세요.'};
-  const F={status:'',active:'1',q:'',sort:'code',offset:0,limit:50};
+  const F={status:'',active:'1',q:'',sort:'code',round:'',tag:'',offset:0,limit:50};
   const S={items:[],total:0,sum:null,cur:null,ix:-1,dirty:false,resolve:{},loaded:null,rev:null};
 
   // ── 플랫폼 세션 → ERP 토큰 (마케팅 이미지 뱅크와 같은 방식) ──
@@ -257,27 +279,47 @@ table.list tr.cur{background:var(--syd-soft)}
   }
   async function loadSummary(){ try{ S.sum=await call('GET','/api/pf-catalog/summary'); renderChips(); }catch(e){} }
   async function loadList(keepScroll){
-    const qs='?q='+encodeURIComponent(F.q)+'&status='+F.status+'&active='+(F.active==='1'?'1':'all')+'&sort='+F.sort+'&limit='+F.limit+'&offset='+F.offset;
+    const qs='?q='+encodeURIComponent(F.q)+'&status='+F.status+'&active='+(F.active==='1'?'1':'all')+'&sort='+F.sort+'&round='+encodeURIComponent(F.round)+'&tag='+encodeURIComponent(F.tag)+'&limit='+F.limit+'&offset='+F.offset;
     try{ const r=await call('GET','/api/pf-catalog/items'+qs); S.items=r.items; S.total=r.total; renderRows(); if(!keepScroll) window.scrollTo({top:0}); }
     catch(e){ $('rows').innerHTML='<tr><td colspan="6" class="empty">'+esc(e.message)+'</td></tr>'; }
   }
+  const md=(s)=>{ if(!s) return ''; const t=fmtAt(s); return t?t.slice(5,10).replace('-','/'):''; };
   function stBadge(it){
-    let h='<span class="st '+it.status+'">'+(it.locked?'🔒 ':'')+esc(stLabel(it))+(it.status==='draft'&&it.draft_conflicts?' · 겹침 '+it.draft_conflicts:'')+'</span>';
+    // 확인완료는 날짜로(예 「확인완료 10/27」) · 여러 번이면 횟수 칩(×3)
+    let h='<span class="st '+it.status+'">'+esc(stLabel(it))+(it.status==='ok'&&it.confirmed_at?' '+esc(md(it.confirmed_at)):'')
+      +(it.status==='draft'&&it.draft_conflicts?' · 겹침 '+it.draft_conflicts:'')+'</span>';
+    if(it.confirm_count>1) h+='<span class="cnt" title="확인 · 검토 '+it.confirm_count+'회">×'+it.confirm_count+'</span>';
+    // 한 번이라도 매출 · 견적이 있었던 품목
+    if(it.sold) h+='<span class="mk sold" title="매출 이력 있음(한 번 이상)">매출</span>';
+    if(it.quoted) h+='<span class="mk quoted" title="견적 이력 있음(한 번 이상)">견적</span>';
     if(!it.activo) h+=' <span class="st inact">판매중단</span>';
     return h;
+  }
+  /** 중요도 칩 — ① 한국차 · ② VIO n위(1~30) · ③ 중국차 (해당하는 것 모두) */
+  function prioHtml(it){
+    let h='';
+    if(it.kr) h+='<span class="pr p1" title="적용차종에 현대 · 기아">① 한국차</span>';
+    if(it.vio_rank!=null&&it.vio_rank<=30) h+='<span class="pr p2" title="멕시코 VIO 순위">② VIO '+it.vio_rank+'위</span>';
+    if(it.cn) h+='<span class="pr p3" title="적용차종에 중국 브랜드">③ 중국차</span>';
+    return h?'<div>'+h+'</div>':'';
+  }
+  /** CTR 차수별 검토 칩 — 「1차 10/02」 */
+  function roundsHtml(it){
+    const r=it.rounds||[]; if(!r.length) return '';
+    return '<div class="rds">'+r.map(x=>'<span class="rd" title="CTR '+x.round+'차 검토 '+esc(x.on||'')+'">'+x.round+'차 '+esc((x.on||'').slice(5).replace('-','/'))+'</span>').join('')+'</div>';
   }
   function renderRows(){
     if(!S.items.length){ $('rows').innerHTML='<tr><td colspan="6" class="empty">조건에 맞는 품목이 없습니다.</td></tr>'; $('pager').innerHTML=''; return; }
     $('rows').innerHTML=S.items.map((it,i)=>{
-      const sub=it.status==='ok'||it.status==='changed'?(it.confirmed_by_name?esc(it.confirmed_by_name)+' · ':'')+fmtAt(it.confirmed_at)
+      const sub=it.status==='changed'?('마지막 확인 '+fmtAt(it.confirmed_at))
         :it.status==='draft'?(it.draft_by_name?esc(it.draft_by_name)+' · ':'')+fmtAt(it.draft_at):'';
       return '<tr data-i="'+i+'"'+(S.cur&&S.cur.id===it.id?' class="cur"':'')+'>'
-        +'<td><span class="code mono" translate="no">'+esc(it.code)+'</span></td>'
+        +'<td><span class="code mono" translate="no">'+esc(it.code)+'</span>'+prioHtml(it)+'</td>'
         +'<td><div class="clip">'+esc(it.name)+'</div></td>'
         +'<td class="c-syd"><div class="clip mono" translate="no">'+esc(lines(it.scode).join(' · '))+'</div></td>'
         +'<td class="c-app"><div class="clip">'+esc(lines(it.app).join(' · '))+'</div></td>'
         +'<td class="c-oe"><div class="clip mono" translate="no">'+esc(lines(it.oe).join(' · '))+'</div></td>'
-        +'<td>'+stBadge(it)+(sub?'<div class="sub">'+sub+'</div>':'')+'</td></tr>';
+        +'<td>'+stBadge(it)+(sub?'<div class="sub">'+sub+'</div>':'')+roundsHtml(it)+'</td></tr>';
     }).join('');
     $('rows').querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>openItem(+tr.dataset.i));
     const from=F.offset+1, to=Math.min(F.offset+F.limit,S.total);
@@ -373,12 +415,16 @@ table.list tr.cur{background:var(--syd-soft)}
   function renderDrawer(){
     const it=S.cur;
     $('dCode').textContent=it.code;
-    $('dSt').innerHTML=stBadge(it);
+    $('dSt').innerHTML=stBadge(it)+roundsHtml(it)+prioHtml(it);
     $('dSub').textContent=(it.status==='changed'?'확인한 뒤 ERP에서 바뀌었습니다 — 다시 확인해 주세요 · ':'')+(it.confirmed_at?('마지막 확인 '+(it.confirmed_by_name||'')+' '+fmtAt(it.confirmed_at)):'아직 확인 기록 없음');
     const img=$('dImg'); img.classList.add('hidden'); img.onload=()=>img.classList.remove('hidden'); img.onerror=()=>img.classList.add('hidden'); img.src=CTR_IMG(it.code);
-    const lockMsg=it.locked?('<div class="lockb">🔒 '+(it.confirmed_source==='bulk'?'ERP에서 검토완료로 표시된 품목입니다':'확인완료된 품목입니다')
-      +' — 수정할 수 없습니다. ERP에서 값이 바뀌면 「재확인」으로 다시 열립니다.</div>'):'';
-    $('dBody').innerHTML=lockMsg+'<div id="ppIn"></div>'+FIELDS.map(fieldHtml).join('')
+    // 확인완료 날짜 전부 — 몇 번 확인했는지 바로 보이게(최근 순)
+    const cf=(it.confirms||[]);
+    const cfl=cf.length?('<div class="cfl"><b>확인완료 '+cf.length+'회</b>'+(cf.length>1?' <small style="color:var(--mut)">— 확인한 뒤에도 고쳐서 다시 확인할 수 있습니다</small>':'')
+      +'<div class="dts">'+cf.map(c=>{ const n=Object.keys(c.applied||{}).length;
+        return '<span class="dt'+(c.source==='bulk'?' bulk':'')+'" title="'+esc((c.by||'')+(n?' · 수정 '+n+'칸':' · 변경 없음')+(c.note?' · '+c.note:''))+'">'+esc(fmtAt(c.at))+(c.source==='bulk'?' · 검토':'')+(n?' · '+n+'칸':'')+'</span>'; }).join('')+'</div></div>'):'';
+    const rdl=(it.rounds||[]).length?('<div class="cfl"><b>CTR 차수 검토</b><div class="dts">'+it.rounds.map(x=>'<span class="dt bulk">'+x.round+'차 · '+esc(x.on||'')+'</span>').join('')+'</div></div>'):'';
+    $('dBody').innerHTML=cfl+rdl+'<div id="ppIn"></div>'+FIELDS.map(fieldHtml).join('')
       +'<div class="fld"><div class="fl"><b>근거 메모</b><small>무엇을 보고 확인했는지 (선택) · 확인 이력에 남습니다</small></div>'
       +'<textarea class="note" id="eNote" rows="2" maxlength="1000" placeholder="예) CTR 카탈로그 2026 · 실물 대조">'+esc(it.draft_note||'')+'</textarea></div>'
       +histHtml(it);
@@ -391,12 +437,8 @@ table.list tr.cur{background:var(--syd-soft)}
       const sel=$('s_'+f); if(sel){ const has=[...sel.options].some(o=>o.value===(v||'')); sel.value=has?(v||''):'__manual'; $('e_'+f).classList.toggle('hidden',has); }
       markFields(); if(f==='app') schedulePreview();
     });
-    $('bDiscard').classList.toggle('hidden',it.status!=='draft'||!!it.locked);
+    $('bDiscard').classList.toggle('hidden',it.status!=='draft');
     $('dMsg').textContent=''; $('dMsg').className='msg';
-    // 확인 · 검토완료 → 잠금: 칸을 막고 저장 · 확인 버튼을 숨긴다(서버도 같은 이유로 거절한다)
-    $('dBody').querySelectorAll('input,select,textarea').forEach(el=>{ el.disabled=!!it.locked; });
-    ['bOk','bSave'].forEach(id=>$(id).classList.toggle('hidden',!!it.locked));
-    $('goNext').parentNode.classList.toggle('hidden',!!it.locked);
     markFields(); schedulePreview(); renderPhotos();
   }
 
@@ -472,7 +514,7 @@ table.list tr.cur{background:var(--syd-soft)}
       setCur(r.item); replaceRow(r.item); renderDrawer(); renderRows(); loadSummary();
       $('dMsg').className='msg ok'; $('dMsg').textContent=r.fields.length?('임시저장 · '+r.fields.length+'칸 (ERP는 아직 그대로)'):'바뀐 칸이 없어 수정안을 비웠습니다';
     }catch(e){
-      if((e.code==='stale_review'||e.code==='locked')&&e.body&&e.body.item){ setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
+      if(e.code==='stale_review'&&e.body&&e.body.item){ setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
         $('dMsg').className='msg err'; $('dMsg').textContent='그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 확인 후 다시 저장하세요.'; }
       else{ $('dMsg').className='msg err'; $('dMsg').textContent=e.message; }
     }
@@ -505,11 +547,10 @@ table.list tr.cur{background:var(--syd-soft)}
       else{ setCur(r.item); renderDrawer(); renderRows(); }
       if(leaves&&S.items.length<5) loadList(true);
     }catch(e){
-      if((e.code==='conflict'||e.code==='stale'||e.code==='stale_review'||e.code==='locked')&&e.body&&e.body.item){
+      if((e.code==='conflict'||e.code==='stale'||e.code==='stale_review')&&e.body&&e.body.item){
         setCur(e.body.item); replaceRow(e.body.item); renderDrawer(); renderRows();
         $('dMsg').className='msg err';
         $('dMsg').textContent=e.code==='conflict'?'그사이 ERP에서 바뀐 칸이 있어 아무것도 반영하지 않았습니다. 쓸 값을 고른 뒤 다시 확인완료를 누르세요.'
-          :e.code==='locked'?'이미 확인·검토완료된 품목이라 수정할 수 없습니다.'
           :e.code==='stale'?('화면을 연 뒤 ERP에서 '+(e.body.fields||[]).map(f=>LABEL[f]||f).join(', ')+' 이(가) 바뀌었습니다. 최신 값을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.')
           :'그사이 다른 사람이 이 품목을 저장 · 확인했습니다. 최신 내용을 다시 불러왔으니 보고 나서 다시 확인완료를 누르세요.';
         const f0=(e.body.conflicts||[])[0]||{field:(e.body.fields||[])[0]}; if(f0&&f0.field&&$('w_'+f0.field)) $('w_'+f0.field).scrollIntoView({block:'center',behavior:'smooth'});
@@ -541,12 +582,17 @@ table.list tr.cur{background:var(--syd-soft)}
       const g=await getGps();
       if(g.status==='denied'){ m.className='msg err'; m.textContent=ERR.location_required; return; }
       btn.textContent='준비 중…';
-      const [ok,d]=await Promise.all([loadSheetJS(),call('POST','/api/pf-catalog/export',{filters:{q:F.q,status:F.status,active:F.active==='1'?'1':'all'},gps:g.gps,gps_status:g.status})]);
+      const [ok,d]=await Promise.all([loadSheetJS(),call('POST','/api/pf-catalog/export',{filters:{q:F.q,status:F.status,active:F.active==='1'?'1':'all',round:F.round,tag:F.tag},gps:g.gps,gps_status:g.status})]);
       if(!ok){ m.className='msg err'; m.textContent='엑셀 도구를 불러오지 못했습니다(네트워크). 다운로드 기록은 #'+d.export_id+' 로 남았습니다.'; return; }
       const at=new Date(d.at);
       const cat=d.items.map(it=>({'Clave CTR':it.code,'Producto':it.name||'','Activo':it.activo?'Sí':'No','Clave SyD':it.scode||'',
         'Aplicación':it.app||'','OE':it.oe||'','Material':it.material||'','Revisión CTR':(it.status==='ok'&&it.confirmed_source==='bulk'?ST_ES.bulk:(ST_ES[it.status]||it.status)),
-        'Confirmado por':it.confirmed_by_name||'','Fecha confirmación':it.confirmed_at?new Date(it.confirmed_at).toLocaleString('sv-SE').slice(0,16):''}));
+        'Confirmado por':it.confirmed_by_name||'','Fecha confirmación':it.confirmed_at?new Date(it.confirmed_at).toLocaleString('sv-SE').slice(0,16):'',
+        'Veces confirmado':it.confirm_count||0,
+        'Prioridad':it.prio===1?'1 Corea':it.prio===2?'2 VIO top 30':it.prio===3?'3 China':'',
+        'VIO (rank)':it.vio_rank==null?'':it.vio_rank,
+        'Vendido':it.sold?'Sí':'No','Cotizado':it.quoted?'Sí':'No',
+        ...Object.fromEntries([1,2,3,4,5].map(n=>{ const x=(it.rounds||[]).find(r=>r.round===n); return ['Revisión '+n+'ª',x?x.on:'']; }))}));
       const apps=d.apps.map(a=>({'Clave CTR':a.code,'Marca':a.marca||'','Modelo':a.modelo||'','Año desde':a.desde==null?'':a.desde,'Año hasta':a.hasta==null?'':a.hasta,'Texto original':a.texto||''}));
       const info=[['REFATRIX — Catálogo de productos (sin precios ni existencias)'],[''],
         ['Descargado por',d.by],['Fecha y hora',at.toLocaleString('sv-SE')],['ID de descarga','#'+d.export_id],
@@ -572,6 +618,8 @@ table.list tr.cur{background:var(--syd-soft)}
   let qTimer=null;
   $('q').addEventListener('input',()=>{ clearTimeout(qTimer); qTimer=setTimeout(()=>{ F.q=$('q').value.trim(); F.offset=0; loadList(); },300); });
   $('sort').onchange=()=>{ F.sort=$('sort').value; F.offset=0; loadList(); };
+  $('round').onchange=()=>{ F.round=$('round').value; F.offset=0; loadList(); };
+  $('tag').onchange=()=>{ F.tag=$('tag').value; F.offset=0; loadList(); };
   $('act').onchange=()=>{ F.active=$('act').checked?'1':'all'; F.offset=0; renderChips(); loadList(); };
   window.addEventListener('beforeunload',e=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
 

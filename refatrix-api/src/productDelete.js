@@ -47,6 +47,7 @@ export const CLEANUP_TABLES = {
 export const NULLIFY_TABLES = {
   product_change_log: '제품 변경 이력',
   pf_catalog_confirms: '플랫폼 확인완료 이력',   // 0302 — code 사본을 따로 가진다
+  pf_catalog_rounds: 'CTR 차수 검토 기록',      // 0304 — code 사본을 따로 가진다
 };
 
 // ── 차단 표시용 이름(없으면 표 이름 그대로 보여 준다) ─────────────────

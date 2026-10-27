@@ -95,7 +95,13 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   let epKeep = null;
   const MINE = `SELECT id FROM products WHERE code LIKE 'PFC%' OR code LIKE 'PROPF%' OR code = 'K0991'`;
   async function cleanup() {   // 다른 스위트는 「제품 표에 자기 것만 있다」고 센다 — 남기지 않는다
-    await query(`DELETE FROM pf_catalog_confirms; DELETE FROM pf_catalog_review; DELETE FROM pf_catalog_exports; DELETE FROM pf_catalog_bulk_batches;`);
+    await query(`DELETE FROM pf_catalog_confirms; DELETE FROM pf_catalog_review; DELETE FROM pf_catalog_exports; DELETE FROM pf_catalog_rounds; DELETE FROM pf_catalog_bulk_batches;`);
+    await query(`DELETE FROM sales_invoice_lines WHERE product_id IN (${MINE})`);
+    await query(`DELETE FROM sales_invoices WHERE memo = 'PFTEST'`);
+    await query(`DELETE FROM quote_lines WHERE product_id IN (${MINE})`);
+    await query(`DELETE FROM quotes WHERE memo = 'PFTEST'`);
+    await query(`DELETE FROM customers WHERE code = 'PFTESTC'`).catch(() => {});
+    await query(`DELETE FROM ctr_vio_rank WHERE ctr_code LIKE 'PFC%'`);
     await query(`DELETE FROM crm_customer_outbox WHERE entity='product'`);
     await query(`DELETE FROM product_sync_state; DELETE FROM product_sync_runs;`);
     for (const tb of ['product_change_log', 'product_syd_codes', 'product_applications', 'product_oe_codes', 'product_status_log', 'product_price_history']) {
@@ -217,13 +223,9 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const log1 = await one(`SELECT source, changes, changed_by FROM product_change_log WHERE product_id=$1 ORDER BY id DESC LIMIT 1`, [p1.id]);
   assert.equal(log1.source, 'platform'); assert.equal(log1.changes._pf.to, 'Park CTR'); assert.equal(log1.changed_by, null);
   assert.equal(r.json().item.status, 'ok');
-  assert.equal(r.json().item.locked, true, '확인완료 → 잠금');
   assert.equal(r.json().item.confirmed_source, 'platform');
-  // 잠긴 품목은 플랫폼에서 더 고칠 수 없다
-  let lk = await call(H, 'PUT', `/api/pf-catalog/items/${p1.id}/draft`, { fields: { name: 'X' } });
-  assert.equal(lk.statusCode, 409); assert.equal(lk.json().error, 'locked');
-  lk = await call(H, 'POST', `/api/pf-catalog/items/${p1.id}/confirm`, { fields: { name: 'X' } });
-  assert.equal(lk.statusCode, 409); assert.equal(lk.json().error, 'locked');
+  assert.equal(r.json().item.confirm_count, 1);
+  assert.equal(r.json().item.confirms.length, 1, '확인 날짜 1건');
   assert.equal(r.json().item.confirmed_by_name, 'Park CTR');
   assert.equal(r.json().item.draft_note, null, '확인하면 수정안·메모 비움');
   assert.equal((await one(`SELECT note FROM pf_catalog_confirms WHERE product_id=$1`, [p1.id])).note, '카탈로그 대조', '메모는 확인 이력에');
@@ -283,7 +285,6 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   assert.equal(r.json().item.status, 'ok');
   // 내 것을 쓰기로 — 확인완료라 잠겨 있으니 ERP 수정으로 먼저 다시 연다(재확인)
   await call(D, 'PATCH', `/api/products/${p2.id}`, { name: 'TERMINAL EXT' });
-  assert.equal((await call(H, 'GET', `/api/pf-catalog/items/${p2.id}`)).json().locked, false, 'ERP 에서 바뀌면 다시 열림');
   r = await call(H, 'PUT', `/api/pf-catalog/items/${p2.id}/draft`, { fields: { app: 'MITSUBISHI Asx 2013-2019' } });
   assert.equal(r.statusCode, 200, r.body);
   await call(D, 'PATCH', `/api/products/${p2.id}`, { app: 'MITSUBISHI Asx 2014-2018' });
@@ -406,30 +407,93 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   assert.equal((await call(H, 'POST', `/api/pf-catalog/items/${b4.id}/confirm`, {})).statusCode, 200);
   await call(D, 'PATCH', `/api/products/${b4.id}`, { name: 'BUJE D2' });
   assert.equal((await call(H, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: ['PFCB01'] })).statusCode, 401, '플랫폼 토큰으로 일괄 불가');
-  r = await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: [' pfcb01 ', 'PFCB02', 'PFCB03', 'PFCB04', 'PFCB01', 'NOPE-1', 'PROPF1'], file_name: 'revisados.xlsx' });
+  assert.equal((await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: ['PFCB01'], round: 12 })).statusCode, 400, '차수 1~9');
+  assert.equal((await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: ['PFCB01'], round: 1, reviewed_on: '2099-01-01' })).statusCode, 400, '미래 날짜 거절');
+  // 1차 검토 (2026-10-02)
+  r = await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: [' pfcb01 ', 'PFCB02', 'PFCB03', 'PFCB04', 'PFCB01', 'NOPE-1', 'PROPF1'], file_name: '1차.xlsx', round: 1, reviewed_on: '2026-10-02' });
   assert.equal(r.statusCode, 200, r.body);
   const bk = r.json();
   assert.equal(bk.codes_in, 6, '중복 · 공백 정리'); assert.equal(bk.marked, 2); assert.equal(bk.already, 1);
+  assert.equal(bk.round, 1); assert.equal(bk.reviewed_on, '2026-10-02'); assert.equal(bk.round_recorded, 4, '찾은 코드 전부에 차수 기록(수정안 품목 포함)');
   assert.deepEqual(bk.skipped_draft, ['PFCB03']); assert.deepEqual(bk.missing.sort(), ['NOPE-1', 'PROPF1']);
   let ib = (await call(H, 'GET', `/api/pf-catalog/items/${b1.id}`)).json();
-  assert.equal(ib.status, 'ok'); assert.equal(ib.confirmed_source, 'bulk'); assert.equal(ib.locked, true);
+  assert.equal(ib.status, 'ok'); assert.equal(ib.confirmed_source, 'bulk');
+  assert.deepEqual(ib.rounds, [{ round: 1, on: '2026-10-02' }]);
+  assert.equal(new Date(ib.confirmed_at).toISOString().slice(0, 10), '2026-10-02', '검토완료일 = 그 차수 검토일');
   assert.equal(ib.confirmed_by_name, `PF Dir ${SFX}`);
-  assert.equal(ib.confirms[0].source, 'bulk'); assert.match(ib.confirms[0].note, /ERP 엑셀 일괄 검토완료 #\d+ · revisados\.xlsx/);
+  assert.equal(ib.confirms[0].source, 'bulk'); assert.match(ib.confirms[0].note, /1차 검토 #\d+ · 1차\.xlsx/);
   assert.equal((await call(H, 'GET', `/api/pf-catalog/items/${b4.id}`)).json().confirmed_source, 'bulk', '재확인 → 검토완료');
   assert.equal((await call(H, 'GET', `/api/pf-catalog/items/${b2.id}`)).json().confirmed_source, 'platform', 'CTR 확인완료는 덮지 않음');
   const ib3 = (await call(H, 'GET', `/api/pf-catalog/items/${b3.id}`)).json();
   assert.equal(ib3.status, 'draft', '수정안 품목은 그대로'); assert.equal(ib3.draft.name.value, 'BUJE C2');
-  lk = await call(H, 'PUT', `/api/pf-catalog/items/${b1.id}/draft`, { fields: { name: 'X' } });
-  assert.equal(lk.statusCode, 409); assert.equal(lk.json().error, 'locked', '검토완료도 잠금');
+  assert.deepEqual(ib3.rounds, [{ round: 1, on: '2026-10-02' }], '차수 기록은 남는다');
   assert.equal((await one(`SELECT name FROM products WHERE id=$1`, [b1.id])).name, 'BUJE A', '검토완료는 ERP 값을 바꾸지 않는다');
-  const bl = (await call(D, 'GET', '/api/pf-catalog/admin/bulk')).json();
-  assert.equal(bl.items[0].file, 'revisados.xlsx'); assert.equal(bl.items[0].marked, 2); assert.equal(bl.items[0].by, `PF Dir ${SFX}`);
-  assert.equal((await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: [] })).statusCode, 400);
-  // ERP 에서 바뀌면 다시 열린다
-  await call(D, 'PATCH', `/api/products/${b1.id}`, { name: 'BUJE A2' });
+  // 2차 검토 (10-15) · 1차 다시(날짜 정정 10-03)
+  r = await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: ['PFCB01', 'PFCB02'], file_name: '2차.xlsx', round: 2, reviewed_on: '2026-10-15' });
+  assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().marked, 0, '이미 검토완료면 상태는 그대로'); assert.equal(r.json().round_recorded, 2);
+  r = await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: ['PFCB01'], round: 1, reviewed_on: '2026-10-03' });
   ib = (await call(H, 'GET', `/api/pf-catalog/items/${b1.id}`)).json();
-  assert.equal(ib.status, 'changed'); assert.equal(ib.locked, false);
-  // 상태 거르기 「ok」 에 두 출처가 함께
-  const okList = (await call(H, 'GET', '/api/pf-catalog/items?q=PFCB&status=ok')).json();
-  assert.deepEqual(okList.items.map((x) => [x.code, x.confirmed_source]), [['PFCB02', 'platform'], ['PFCB04', 'bulk']]);
+  assert.deepEqual(ib.rounds, [{ round: 1, on: '2026-10-03' }, { round: 2, on: '2026-10-15' }], '같은 차수는 날짜만 새로');
+  // 차수 거르기
+  const rq = async (x) => (await call(H, 'GET', `/api/pf-catalog/items?q=PFCB&round=${x}`)).json().items.map((i) => i.code);
+  assert.deepEqual(await rq('1'), ['PFCB01', 'PFCB02', 'PFCB03', 'PFCB04']);
+  assert.deepEqual(await rq('2'), ['PFCB01', 'PFCB02']);
+  assert.deepEqual(await rq('none'), []);
+  const bl = (await call(D, 'GET', '/api/pf-catalog/admin/bulk')).json();
+  assert.equal(bl.items[1].file, '2차.xlsx'); assert.equal(bl.items[1].round, 2); assert.equal(bl.items[1].reviewed_on, '2026-10-15');
+  assert.equal(bl.items[2].marked, 2); assert.equal(bl.items[2].by, `PF Dir ${SFX}`);
+  assert.equal((await call(D, 'POST', '/api/pf-catalog/admin/mark-reviewed', { codes: [] })).statusCode, 400);
+  // 확인 · 검토완료 뒤에도 고칠 수 있다 — 다시 확인하면 횟수 · 날짜가 쌓인다
+  r = await call(H, 'PUT', `/api/pf-catalog/items/${b1.id}/draft`, { fields: { name: 'BUJE A-1' } });
+  assert.equal(r.statusCode, 200, '검토완료여도 수정안 저장 가능'); assert.equal(r.json().item.status, 'draft');
+  r = await call(H, 'POST', `/api/pf-catalog/items/${b1.id}/confirm`, {});
+  assert.equal(r.statusCode, 200, r.body);
+  assert.equal((await one(`SELECT name FROM products WHERE id=$1`, [b1.id])).name, 'BUJE A-1');
+  r = await call(H, 'POST', `/api/pf-catalog/items/${b1.id}/confirm`, { fields: { name: 'BUJE A-2' } });
+  assert.equal(r.statusCode, 200, '확인완료 직후 바로 또 고쳐서 확인');
+  ib = r.json().item;
+  // 1차 일괄(검토완료 1) + 2차 · 1차 재업로드(이미 완료라 상태 그대로) + CTR 확인 2번 = 3회
+  assert.equal(ib.confirm_count, 3); assert.equal(ib.confirms.length, 3);
+  assert.deepEqual(ib.confirms.map((c) => c.source), ['platform', 'platform', 'bulk'], '최근 순 · 날짜 모두');
+  assert.equal(ib.status, 'ok'); assert.equal(ib.confirmed_source, 'platform');
+  assert.equal(ib.rounds.length, 2, '차수 기록은 그대로');
+
+  // ── 매출 · 견적 표시, 중요도(한국차 → VIO 1~30위 → 중국차) ──
+  const qk = await mk('PFC201', 'ROTULA', 'HYUNDAI Accent 2018-2022', null);
+  const qv = await mk('PFC202', 'ROTULA', 'NISSAN Versa 2012-2019', null);
+  const qc = await mk('PFC203', 'ROTULA', 'CHERY Tiggo 2019-2023', null);
+  const qn = await mk('PFC204', 'ROTULA', 'FORD Ka 2016-2020', null);
+  const qv40 = await mk('PFC205', 'ROTULA', 'NISSAN Tsuru 1992-2017', null);
+  for (const [p_, mk_] of [[qk, 'HYUNDAI'], [qv, 'NISSAN'], [qc, 'CHERY'], [qn, 'FORD'], [qv40, 'NISSAN']]) {
+    await query(`INSERT INTO product_applications (product_id, app_text, maker) VALUES ($1,$2,$3)`, [p_.id, mk_ + ' X', mk_]);
+  }
+  await query(`INSERT INTO ctr_vio_rank (ctr_code, vio_rank) VALUES ('PFC202', 4), ('PFC205', 40), ('PFC201', 12)`);
+  const qcu = await one(`INSERT INTO customers (code, name) VALUES ('PFTESTC','PF Test Cliente') RETURNING id`);
+  const qinv = await one(`INSERT INTO sales_invoices (customer_id, inv_date, memo) VALUES ($1, CURRENT_DATE, 'PFTEST') RETURNING id`, [qcu.id]);
+  await query(`INSERT INTO sales_invoice_lines (invoice_id, product_id, qty, list_price, unit_price, line_amount_mxn) VALUES ($1,$2,1,10,10,10)`, [qinv.id, qk.id]);
+  const qdel = await one(`INSERT INTO sales_invoices (customer_id, inv_date, memo, deleted_at) VALUES ($1, CURRENT_DATE, 'PFTEST', now()) RETURNING id`, [qcu.id]);
+  await query(`INSERT INTO sales_invoice_lines (invoice_id, product_id, qty, list_price, unit_price, line_amount_mxn) VALUES ($1,$2,1,10,10,10)`, [qdel.id, qn.id]);
+  const qq = await one(`INSERT INTO quotes (memo) VALUES ('PFTEST') RETURNING id`);
+  await query(`INSERT INTO quote_lines (quote_id, product_id) VALUES ($1,$2), ($1,$3)`, [qq.id, qk.id, qc.id]);
+
+  const P2 = (await call(H, 'GET', '/api/pf-catalog/items?q=PFC20&sort=prio&limit=50')).json();
+  const qby = Object.fromEntries(P2.items.map((x) => [x.code, x]));
+  assert.deepEqual(P2.items.map((x) => x.code), ['PFC201', 'PFC202', 'PFC203', 'PFC205', 'PFC204'], '정렬: 한국차 → VIO 30위 안 → 중국차 → 나머지(그 안은 VIO 순위 순)');
+  assert.deepEqual([qby.PFC201.prio, qby.PFC202.prio, qby.PFC203.prio, qby.PFC204.prio, qby.PFC205.prio], [1, 2, 3, null, null]);
+  assert.equal(qby.PFC205.vio_rank, 40, '31위 이하는 순위만 보이고 중요도 없음');
+  assert.equal(qby.PFC201.sold, true); assert.equal(qby.PFC201.quoted, true);
+  assert.equal(qby.PFC203.sold, false); assert.equal(qby.PFC203.quoted, true);
+  assert.equal(qby.PFC204.sold, false, '지운 송장은 매출 아님');
+  const codesOf = async (tag) => (await call(H, 'GET', `/api/pf-catalog/items?q=PFC20&tag=${tag}&limit=50`)).json().items.map((x) => x.code).sort();
+  assert.deepEqual(await codesOf('kr'), ['PFC201']);
+  assert.deepEqual(await codesOf('vio'), ['PFC201', 'PFC202']);
+  assert.deepEqual(await codesOf('cn'), ['PFC203']);
+  assert.deepEqual(await codesOf('sold'), ['PFC201']);
+  assert.deepEqual(await codesOf('quoted'), ['PFC201', 'PFC203']);
+  assert.deepEqual(await codesOf('none'), ['PFC202', 'PFC204', 'PFC205']);
+  const qg1 = (await call(H, 'GET', `/api/pf-catalog/items/${qc.id}`)).json();
+  assert.equal(qg1.cn, true); assert.equal(qg1.quoted, true); assert.equal(qg1.prio, 3);
+  const qex = await call(H, 'POST', '/api/pf-catalog/export', { filters: { q: 'PFC20', tag: 'quoted' }, gps: null, gps_status: 'unavailable' });
+  assert.equal(qex.statusCode, 200);
+  assert.deepEqual(qex.json().items.map((x) => x.code).sort(), ['PFC201', 'PFC203'], '엑셀도 같은 거름');
 });
