@@ -166,8 +166,8 @@ test('F5 견적 목록 출력 · 인보이스 PDF 에 Vendedor(판매 영업사�
 // ── 0247 · 고객 상세 디렉터 승인 패널 ─────────────────────────────
 test('F6 고객 상세: 디렉터에게만 승인 패널 — PIN 없이 체크만으로 저장(20261019dpin), 결과 표시', async () => {
   const html = readFileSync(root('refatrix-customers.html'), 'utf-8');
-  // 화면이 바뀔 때마다 올린다(하드 리프레시 확인용). 20261019 할인 PIN 정리 → tx-1019dpin.
-  assert.match(html, /<title>[^<]*tx-1019dpin\)?<\/title>/, '빌드 토큰');
+  // 화면이 바뀔 때마다 올린다(하드 리프레시 확인용). 20261019 할인 PIN 정리 → tx-1019dpin · 20261027 고객 메모 기록 → tx-1027cn.
+  assert.match(html, /<title>[^<]*tx-1027cn\)?<\/title>/, '빌드 토큰');
   const boot = async (role) => {
     const dom = new JSDOM(html.replace(/<script src="[^"]+"><\/script>/g, ''), { runScripts: 'dangerously', url: 'http://localhost/' });
     const w = dom.window;

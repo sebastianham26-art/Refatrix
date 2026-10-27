@@ -1897,7 +1897,7 @@ export default async function customerRoutes(app) {
   async function mergeMoveCounts(customerId) {
     const out = [];
     for (const m of MERGE_MOVES) {
-      const soft = m.table === 'sales_visits' || m.table === 'sales_consults';
+      const soft = m.table === 'sales_visits' || m.table === 'sales_consults' || m.table === 'customer_notes';
       const row = (await query(
         `SELECT count(*) FILTER (WHERE ${soft ? 'deleted_at IS NULL' : 'true'})::int AS live,
                 count(*) FILTER (WHERE ${soft ? 'deleted_at IS NOT NULL' : 'false'})::int AS gone
@@ -2023,7 +2023,7 @@ export default async function customerRoutes(app) {
       // 다만 안내 문구의 건수는 **화면에 보이는 살아있는 기록** 기준이어야 한다 — 둘을 따로 센다.
       const counts = {}; const countsAll = {};
       for (const m of MERGE_MOVES) {
-        const soft = m.table === 'sales_visits' || m.table === 'sales_consults';
+        const soft = m.table === 'sales_visits' || m.table === 'sales_consults' || m.table === 'customer_notes';
         const r = await client.query(
           `UPDATE ${m.table} SET ${m.col} = $2 WHERE ${m.col} = $1
            RETURNING ${soft ? 'deleted_at' : 'NULL::timestamptz AS deleted_at'}`, [fromId, intoId]);
@@ -2764,6 +2764,63 @@ export default async function customerRoutes(app) {
     await query(`UPDATE customers SET ship_address=$1, updated_by=$2 WHERE id=$3`, [val, perm.userId, id]);
     await safeLog({ userId: perm.userId, action: 'update', target: `customer:${id}`, detail: { field: 'ship_address' } });
     return { ok: true, ship_address: val };
+  });
+
+  // ── 0304 · 고객 메모 기록(고객 상세 「고객정보」 아래) ─────────────────
+  //   보기 = 고객을 볼 수 있는 사람(canViewTeam) · 쓰기 = 편집권 + 팀 편집권 · 승인 없음(즉시).
+  //   삭제 = 작성자 본인 또는 디렉터, deleted_at 만 찍는다.
+  const NOTE_MAX = 2000;
+  const noteRow = (r, perm) => ({
+    id: Number(r.id), body: r.body, created_at: r.created_at_str,
+    created_by: r.created_by == null ? null : Number(r.created_by), author: r.author || null,
+    can_delete: perm.role === 'director' || (r.created_by != null && Number(r.created_by) === Number(perm.userId)),
+  });
+  const NOTE_SELECT = `SELECT n.id, n.body, n.created_by, u.name AS author,
+            to_char(n.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS created_at_str
+       FROM customer_notes n LEFT JOIN users u ON u.id = n.created_by`;
+
+  app.get('/api/customers/:id/notes', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    const c = (await query(`SELECT id, team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const rows = (await query(`${NOTE_SELECT} WHERE n.customer_id=$1 AND n.deleted_at IS NULL ORDER BY n.created_at DESC, n.id DESC LIMIT 200`, [id])).rows;
+    const pageEdit = perm.role === 'director' || ((perm.pageAccess && perm.pageAccess.customers) || 'edit') === 'edit';
+    return { items: rows.map((r) => { const x = noteRow(r, perm); x.can_delete = x.can_delete && pageEdit; return x; }), can_write: pageEdit && canEditTeam(perm, c.team_id) };
+  });
+
+  app.post('/api/customers/:id/notes', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    const c = (await query(`SELECT id, team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canEditTeam(perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team', note: '다른 팀 고객에는 메모를 쓸 수 없습니다.' });
+    const raw = (req.body || {}).body;
+    const body = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').trim();
+    if (!body) return reply.code(400).send({ error: 'note_empty', note: '메모 내용을 입력하세요.' });
+    if (body.length > NOTE_MAX) return reply.code(400).send({ error: 'note_too_long', note: `메모는 ${NOTE_MAX}자까지입니다.` });
+    const ins = (await query(`INSERT INTO customer_notes (customer_id, body, created_by) VALUES ($1,$2,$3) RETURNING id`,
+      [id, body, perm.userId])).rows[0];
+    const row = (await query(`${NOTE_SELECT} WHERE n.id=$1`, [ins.id])).rows[0];
+    await safeLog({ userId: perm.userId, action: 'create', target: `customer:${id}`, detail: { field: 'note', note_id: Number(ins.id) } });
+    return { ok: true, item: noteRow(row, perm) };
+  });
+
+  app.delete('/api/customers/:id/notes/:noteId', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const noteId = Number(req.params.noteId);
+    const perm = req.ctx.perm;
+    const n = (await query(
+      `SELECT n.id, n.created_by, c.team_id FROM customer_notes n JOIN customers c ON c.id=n.customer_id
+        WHERE n.id=$1 AND n.customer_id=$2 AND n.deleted_at IS NULL`, [noteId, id])).rows[0];
+    if (!n) return reply.code(404).send({ error: 'not_found' });
+    const mine = n.created_by != null && Number(n.created_by) === Number(perm.userId);
+    if (perm.role !== 'director' && !mine) return reply.code(403).send({ error: 'forbidden', note: '본인이 쓴 메모만 지울 수 있습니다(디렉터는 전부).' });
+    if (perm.role !== 'director' && !canEditTeam(perm, n.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    await query(`UPDATE customer_notes SET deleted_at=now(), deleted_by=$1 WHERE id=$2`, [perm.userId, noteId]);
+    await safeLog({ userId: perm.userId, action: 'delete', target: `customer:${id}`, detail: { field: 'note', note_id: noteId } });
+    return { ok: true };
   });
 
   // 단계별 고객수 요약(팀별 + 합계) — 견적30/협상40/수주50/거래중60

@@ -9,7 +9,7 @@
 //     · **복사가 아니라 이관**이다. customer_id 만 바꾼다.
 //       사본을 만들면 녹음 요약에서 자동 등록된 후속조치까지 복제되어
 //       영업사원 화면에 같은 할 일이 두 번 뜬다. 원장은 하나여야 한다.
-//     · 옮기는 것은 **상담·방문 계열 3종뿐**이다(아래 MERGE_MOVES).
+//     · 옮기는 것은 **상담·방문 계열 3종 + 고객 메모(0304)**다(아래 MERGE_MOVES).
 //       견적·매출·미수는 회계 영향이 있어 이 화면에서 건드리지 않는다 —
 //       대신 미리보기에서 「남는 것」으로 전부 세어 보여 주고, 디렉터가 확인(ack)해야 실행된다.
 //     · 녹음·후속조치는 visit_id / consult_id 로 매달려 있어 **따라온다**(별도 UPDATE 불필요).
@@ -42,6 +42,11 @@ export const MERGE_MOVES = [
       { table: 'sales_consult_pendings', fk: 'consult_id', label: '후속조치' },
       { table: 'sales_consult_recordings', fk: 'consult_id', label: '녹음' },
     ],
+  },
+  {
+    // 0304 · 고객 상세 메모 기록 — 상담·방문처럼 고객을 따라가야 반쪽이 안 된다(지운 메모도 같이).
+    key: 'notes', table: 'customer_notes', col: 'customer_id', label: '고객 메모',
+    children: [],
   },
 ];
 

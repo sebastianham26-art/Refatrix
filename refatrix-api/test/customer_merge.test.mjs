@@ -18,9 +18,9 @@ const C = (o = {}) => ({
 });
 
 // ---------------------------------------------------------------- 대상 정의
-test('이관 대상은 상담·방문 3종뿐 — 견적·매출은 들어 있지 않다', () => {
+test('이관 대상은 상담·방문 3종 + 고객 메모 — 견적·매출은 들어 있지 않다', () => {
   assert.deepEqual(MERGE_MOVES.map((m) => m.table),
-    ['sales_visits', 'customer_meetings', 'sales_consults']);
+    ['sales_visits', 'customer_meetings', 'sales_consults', 'customer_notes']);
   for (const t of ['quotes', 'sales', 'invoices', 'ar_plans']) {
     assert.equal(MOVED_TABLES.has(t), false, `${t} 는 옮기지 않는다`);
   }
