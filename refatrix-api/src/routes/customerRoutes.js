@@ -114,8 +114,16 @@ async function claimTableReady() {
 // 0193 · 이 RFC 를 지금 잡을 수 있는가 — 확정 선점(customers) + 대기 선점(claims) 둘 다 본다.
 //   returns null(비어 있음) | { kind:'customer'|'claim', ... }
 //   ⚠ rfc_claim_exempt(레거시 중복) 행도 여기서는 선점자로 본다(0188 결정 ④ 유지).
+// 20261028 · 'null'·'undefined' 등은 RFC 가 아니라 **값이 없다는 표시**가 문자열로 굳은 것이다.
+//   이 값끼리 「같은 RFC」 로 묶이면 RFC 없는 고객들이 서로 선점 충돌을 일으킨다.
+const PLACEHOLDER_RFC_KEYS = new Set(['NULL', 'UNDEFINED', 'NONE', 'NA']);
+function isPlaceholderRfc(v) {
+  const k = normalizeClaimKey(v);
+  return !!k && PLACEHOLDER_RFC_KEYS.has(k);
+}
+
 async function findRfcHolder(rfcNorm, { excludeCustomerId = null, claimsOn = true } = {}) {
-  if (!rfcNorm) return null;
+  if (!rfcNorm || PLACEHOLDER_RFC_KEYS.has(String(rfcNorm).toUpperCase())) return null;
   const cur = (await query(
     `SELECT c.id, c.name, u.name AS owner_name, c.owner_id,
             to_char(COALESCE(c.rfc_claimed_at, c.created_at),'YYYY-MM-DD') AS claimed_at
@@ -2605,7 +2613,15 @@ export default async function customerRoutes(app) {
     //   ② 형식 검증은 **하지 않는다** — 신규 등록(=선점이 생기는 순간)에서만 본다.
     //   ③ 남의 선점을 뺏는 것만 막는다. 이건 어차피 DB 유니크가 던지므로,
     //      500 대신 "누가 갖고 있는지" 를 알려 주려고 미리 조회한다.
-    const rfcVal = (b.rfc !== undefined && String(b.rfc).trim() !== '') ? String(b.rfc).trim() : (c.rfc || null);
+    //   20261028 · ⚠ `b.rfc` 가 **null** 이면 String(null) = 'null' 이 되어 「null」 이라는 RFC 가
+    //     새로 입력된 것으로 취급됐다. 수정 요청의 proposed JSON 은 RFC 없는 고객이면 rfc:null 을
+    //     싣고 오므로, 승인할 때마다 'NULL' 선점키로 충돌 검사가 돌아 같은 'null' 이 저장된
+    //     엉뚱한 고객(예: JOEL FUANTOS LUNA · 담당 dante)이 「이미 등록된 고객」 으로 잡혔다.
+    //     충돌이 없던 때에는 'null' 문자열이 그대로 RFC 로 저장됐다(그렇게 생긴 행이 그 고객).
+    //   → null·'null'·'undefined' 같은 자리표시 값은 **입력이 없는 것**으로 본다(현재값 유지).
+    const rfcIn = (b.rfc === undefined || b.rfc === null) ? '' : String(b.rfc).trim();
+    const rfcGiven = rfcIn !== '' && !/^(null|undefined|none|n\/?a)$/i.test(rfcIn);
+    const rfcVal = rfcGiven ? rfcIn : (isPlaceholderRfc(c.rfc) ? null : (c.rfc || null));
     const rfcChanged = !!rfcVal && normalizeClaimKey(rfcVal) !== normalizeClaimKey(c.rfc);
     if (rfcChanged) {
       // 0193 · 확정 선점뿐 아니라 **대기 중인 선점 요청**도 막는다.

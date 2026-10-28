@@ -367,14 +367,33 @@ test('D9e. 애플리케이션 사전조회는 예외 행도 선점자로 본다(
 
 test('D9f. 수정은 RFC 를 요구하지 않는다 — 빈값이면 기존값 유지(오류 아님)', () => {
   // 전화·배송지만 고치려는 사람에게 RFC 를 강요하면 일상 업무가 막힌다.
-  assert.ok(/rfcVal = \(b\.rfc !== undefined && String\(b\.rfc\)\.trim\(\) !== ''\) \? String\(b\.rfc\)\.trim\(\) : \(c\.rfc \|\| null\)/
-    .test(custRoutes), '빈값이면 현재값 유지 — 지워서 선점이 풀리는 일만 막으면 된다');
+  // 20261028 · null 도 빈값이다(String(null)='null' 이 RFC 로 취급되던 버그 수정).
+  assert.ok(/const rfcIn = \(b\.rfc === undefined \|\| b\.rfc === null\) \? '' : String\(b\.rfc\)\.trim\(\);/.test(custRoutes)
+    && /const rfcVal = rfcGiven \? rfcIn : \(isPlaceholderRfc\(c\.rfc\) \? null : \(c\.rfc \|\| null\)\);/.test(custRoutes),
+    '빈값(null 포함)이면 현재값 유지 — 지워서 선점이 풀리는 일만 막으면 된다');
   const apply = custRoutes.match(/async function applyCustomerUpdate[\s\S]*?\n  \}/)[0];
   assert.ok(!apply.includes('validateRfc'),
     '수정 경로에 RFC 형식 검증이 들어가면 레거시 고객(RFC 없음·형식 지저분)을 못 고친다');
   for (const k of ['rfc_required', 'rfc_invalid', 'rfc_invalid_date', 'rfc_generic']) {
     assert.ok(!apply.includes(k), `수정 경로가 ${k} 로 막으면 안 된다`);
   }
+});
+
+test('D9f2. 20261028 · 수정요청 proposed.rfc=null 이 \'null\' RFC 로 충돌 검사되지 않는다', () => {
+  // 실제 사고: P-0024 Luis Gurrola 수정 승인 → 「이미 등록된 고객 — JOEL FUANTOS LUNA · 담당 dante」.
+  const apply = custRoutes.match(/async function applyCustomerUpdate[\s\S]*?\n  \}/)[0];
+  const body = apply.slice(apply.indexOf('const rfcIn'), apply.indexOf('const rfcChanged'));
+  const fn = new Function('b', 'c', 'normalizeClaimKey', 'isPlaceholderRfc',
+    body + '\nreturn rfcVal;');
+  const nk = (v) => (String(v == null ? '' : v).replace(/[^A-Za-z0-9]/g, '').toUpperCase() || null);
+  const ph = (v) => ['NULL', 'UNDEFINED', 'NONE', 'NA'].includes(nk(v));
+  assert.equal(fn({ rfc: null }, { rfc: null }, nk, ph), null, 'rfc:null → 입력 없음');
+  assert.equal(fn({ rfc: 'null' }, { rfc: null }, nk, ph), null, "'null' 문자열 → 입력 없음");
+  assert.equal(fn({ rfc: null }, { rfc: 'null' }, nk, ph), null, "기존 'null' 은 비운다");
+  assert.equal(fn({ rfc: null }, { rfc: 'ABC800101AB1' }, nk, ph), 'ABC800101AB1', '기존 RFC 유지');
+  assert.equal(fn({ rfc: 'GULU800101AB1' }, { rfc: null }, nk, ph), 'GULU800101AB1', '새 RFC 는 그대로');
+  assert.ok(/PLACEHOLDER_RFC_KEYS\.has\(String\(rfcNorm\)\.toUpperCase\(\)\)\) return null/.test(custRoutes),
+    'findRfcHolder 는 자리표시 키로 선점자를 찾지 않는다');
 });
 
 test('D9g. 수정으로 남의 선점을 뺏는 것만 막는다', () => {
