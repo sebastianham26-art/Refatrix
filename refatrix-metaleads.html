@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1026lpf</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1028lpa</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -216,9 +216,9 @@
         <h2 style="margin-top:20px">연락처 공개 기록 <span class="hint">· 누가 어떤 문의의 연락처를 봤는지(최근 100건)</span></h2>
         <div class="tblwrap" id="lpReveals"></div>
 
-        <h2 style="margin-top:20px">💬 Messenger 대화 선점 <span class="hint">· refaccionaria 가 포털에서 Facebook 문의 손님과 대화(WhatsApp · Instagram 은 대화 없음)</span></h2>
+        <h2 style="margin-top:20px">🔒 문의 선점 <span class="hint">· 「Ver contacto」로 연락처를 본 뒤 연락 내용을 기록(메모 · Messenger 메시지)하면 그 refaccionaria 가 선점 — 그 기간 동안 다른 refaccionaria 는 연락처를 못 봄(모든 채널)</span></h2>
         <div class="row" style="align-items:center"><label style="margin:0">선점 기본 일수</label><input id="lpClaimDays" type="number" min="1" max="30" style="width:70px"><button type="button" class="btn sm" id="lpClaimSave">저장</button>
-          <span class="hint">「Atender」를 누르면 그 문의는 이 일수 동안 그 고객 전용 · 메시지를 주고받을 때마다 다시 이 일수만큼 늘어납니다.</span></div>
+          <span class="hint">선점하면 이 일수 동안 그 고객 전용 · 메모를 더 남기거나 Messenger 메시지를 주고받을 때마다 다시 이 일수만큼 늘어납니다. 포털에는 「거짓으로 입력하면 접속코드를 잃을 수 있다」고 안내됩니다.</span></div>
         <div class="tblwrap" id="lpClaims"></div>
 
         <h2 style="margin-top:20px">📝 문의 메모 <span class="hint">· refaccionaria 가 포털에서 쓴 메모 — 고객은 자기 것만 보고, 여기서는 전부(지운 것 포함)</span></h2>
@@ -303,7 +303,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1026lpf';
+  const MTL_BUILD='mtl-1028lpa';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -461,7 +461,7 @@
         +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
         +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
         +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
-        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</span>':'')+(x.chat_by?'<br><span class="muted" title="고객 포털 Messenger 대화 선점">💬 '+esc(x.chat_by)+'</span>':'')+'</td></tr>').join('')
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</span>':'')+(x.chat_by?'<br><span class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</span>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
   ['fCh','fAd','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
@@ -879,7 +879,7 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
-<script src="refatrix-leadportal-admin.js?v=20261026lpe"></script>
+<script src="refatrix-leadportal-admin.js?v=20261028lpa"></script>
 <script src="refatrix-nav.js?v=20261021lg"></script>
 </body>
 </html>

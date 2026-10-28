@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1026e)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1028a)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -95,6 +95,10 @@
   .note .x{position:absolute;top:2px;right:2px;font-size:13px}
   .nadd{background:none;border:none;color:var(--brand);font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;padding:2px 0}
   .notes textarea{margin-top:6px;font-size:13px}
+  .rulebar{background:#eef6f2;border:1px solid #bfdccf;color:#0f4d3c;border-radius:9px;padding:8px 10px;font-size:12px;line-height:1.5;margin-bottom:8px}
+  .rulebar b{color:#0a3a2d}.rulebar .warn{display:block;margin-top:3px;color:var(--bad);font-weight:700}
+  .lockbox{margin-top:8px;background:var(--warn-bg);color:var(--warn);border-radius:9px;padding:7px 10px;font-size:12px;font-weight:700}
+  .findbtn:disabled{opacity:.45;cursor:not-allowed}
   .dirbar{background:#fbf7ee;border:1px solid var(--gold);color:#6b4f1d;border-radius:9px;padding:7px 10px;font-size:12px;margin-bottom:8px}
   /* chat Messenger (0300) */
   .cpill{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;margin-top:8px}
@@ -292,6 +296,14 @@
       if(!bar){ bar = document.createElement('div'); bar.id = 'dirbar'; bar.className = 'dirbar'; $('list').parentNode.insertBefore(bar, $('count')); }
       bar.textContent = '🔐 Vista de dirección — todas las solicitudes y las notas de todos los clientes · precios de lista · sin pedidos.';
     } else if(bar){ bar.parentNode.removeChild(bar); }
+    var rb = $('rulebar');
+    if(!isDir()){
+      if(!rb){ rb = document.createElement('div'); rb.id = 'rulebar'; rb.className = 'rulebar'; $('list').parentNode.insertBefore(rb, $('count')); }
+      var dd = m.claim_days || 3;
+      rb.innerHTML = '🔒 <b>Para reservar a un cliente</b>, consulta su información, contáctalo y registra lo que hablaron: durante <b>'+dd+' días</b> ninguna otra refaccionaria podrá ver su contacto.'
+        + ' Para reservarlo, toca «Ver contacto» y escribe lo que hablaste con él.'
+        + '<span class="warn">⚠ Si registras información falsa, puedes perder tu código de acceso.</span>';
+    } else if(rb){ rb.parentNode.removeChild(rb); }
   }
   function fillStates(){
     var sel = $('fState'), cur = sel.value;
@@ -337,16 +349,25 @@
       + '<td class="num">'+money(p.price)+'</td>'
       + '<td class="num">'+(isDir() ? '<span class="pn">×'+esc(part.qty)+'</span>' : '<button type="button" class="add'+(inCart?' on':(need?' sug':''))+'" data-id="'+l.id+'" data-code="'+esc(p.code)+'" data-qty="'+esc(part.qty)+'"'+(p.active?'':' disabled')+'>'+(inCart?'✓ ':'+ ')+esc(q)+'</button>')+'</td></tr>';
   }
+  function claimOther(l){ return !isDir() && l.claim && l.claim.state==='other'; }
+  function claimMine(l){ return !isDir() && l.claim && l.claim.state==='mine'; }
   function contactHTML(l){
     var c = S.contacts[l.id];
-    var fb = l.revealed && !isDir() ? '<button type="button" class="findbtn" data-find="'+l.id+'">🔎 '+(l.wants && l.wants.length ? 'Editar piezas que busca' : 'Registrar piezas que busca')+'</button>' : '';
+    // «Registrar piezas que busca» en TODAS las solicitudes (2026-10-28); deshabilitado si otra refaccionaria la reservó
+    var fb = isDir() ? '' : (claimOther(l)
+      ? '<button type="button" class="findbtn" disabled title="Reservada por otra refaccionaria">🔎 Registrar piezas que busca</button>'
+      : '<button type="button" class="findbtn" data-find="'+l.id+'">🔎 '+(l.wants && l.wants.length ? 'Editar piezas que busca' : 'Registrar piezas que busca')+'</button>');
+    if(claimOther(l)){
+      return '<div class="lockbox">🔒 Otra refaccionaria ya contactó a este cliente. Su contacto estará oculto hasta el '+esc(hm(l.claim.until))+'</div>' + fb;
+    }
+    var mineTag = claimMine(l) ? '<span class="cpill cp-ok" style="margin:0">✅ Reservado para ti hasta '+esc(hm(l.claim.until))+'</span>' : '';
     if(c){
       var who = [c.name, c.username ? '@'+c.username : null].filter(Boolean).join(' · ');
       return '<span class="shown">👤 '+esc(who||'Sin nombre')+(c.phone?' · 📞 '+esc(c.phone):'')+'</span>'
-        + (!c.phone && !c.wa_link ? '<span class="hint">Sin teléfono — escríbele por '+esc(CH[c.platform]||c.platform)+'</span>' : '') + fb;
+        + (!c.phone && !c.wa_link ? '<span class="hint">Sin teléfono — escríbele por '+esc(CH[c.platform]||c.platform)+'</span>' : '') + mineTag + fb;
     }
     var m = [l.name_masked ? '👤 '+esc(l.name_masked) : null, l.phone_masked ? '📞 '+esc(l.phone_masked) : null].filter(Boolean).join(' · ');
-    return '<span class="masked">'+(m || (l.has_phone ? '' : 'Sin teléfono'))+'</span><button type="button" class="btn sm" data-contact="'+l.id+'">'+(l.revealed?'Ver de nuevo':'Ver contacto')+'</button>' + fb;
+    return '<span class="masked">'+(m || (l.has_phone ? '' : 'Sin teléfono'))+'</span><button type="button" class="btn sm" data-contact="'+l.id+'">'+(l.revealed?'Ver de nuevo':'Ver contacto')+'</button>' + mineTag + fb;
   }
   function leadHTML(l){
     var where = [l.city, l.state].filter(Boolean).join(', ');
@@ -371,26 +392,28 @@
     if(l.platform==='whatsapp') return '<div class="pn" style="margin-top:8px">Las solicitudes de WhatsApp no se atienden por chat aquí.</div>';
     if(l.platform!=='messenger' || !l.chat) return '';
     var c = l.chat, h = '';
-    if(c.claim==='other' && !isDir()) return '<span class="cpill cp-warn">🔒 Otra refaccionaria está atendiendo esta solicitud (hasta '+esc(hm(c.claim_until))+')</span>';
-    h += c.open ? '<span class="cpill cp-ok">🟢 Puedes responder hasta '+esc(hm(c.window_until))+'</span>'
+    if(claimOther(l)) return '';
+    h += c.open ? '<span class="cpill cp-ok">🟢 Puedes responder por Messenger hasta '+esc(hm(c.window_until))+'</span>'
                 : '<span class="cpill cp-off">⏸ La ventana de 24 h se cerró — podrás escribir cuando el cliente vuelva a escribir</span>';
     if(S.chatOpen===l.id) return h + chatPanelHTML(l);
-    if(isDir()) return h + '<br><button type="button" class="chatbtn" data-copen="'+l.id+'">💬 Ver conversación</button>';
-    if(c.claim==='mine') return h + '<br><button type="button" class="chatbtn" data-copen="'+l.id+'">💬 Abrir conversación</button> <span class="pn">Reservada para ti hasta '+esc(hm(c.claim_until))+'</span>';
-    return h + '<br><button type="button" class="chatbtn" data-ctake="'+l.id+'">💬 Atender por Messenger</button><div class="pn">Al atender, esta solicitud queda reservada para ti unos días. Tus mensajes salen desde la página de Refatrix con el nombre de tu negocio.</div>';
+    if(!isDir() && !l.revealed) return h + '<div class="pn" style="margin-top:4px">Toca «Ver contacto» para ver la conversación completa y responder por Messenger.</div>';
+    return h + '<br><button type="button" class="chatbtn" data-copen="'+l.id+'">💬 Ver conversación</button>'
+      + (!isDir() && !claimMine(l) ? '<div class="pn">Tu primer mensaje cuenta como contacto: el cliente queda reservado para ti '+esc((S.me&&S.me.claim_days)||3)+' días.</div>' : '');
   }
   function chatPanelHTML(l){
     var ch = S.chat || {};
-    var top = '<div class="ctop"><span><b>💬 Messenger</b>'+(ch.claim_until && !isDir() ? ' · reservada hasta '+esc(hm(ch.claim_until)) : '')+'</span><button type="button" class="btn sm ghost" data-cclose="'+l.id+'">Cerrar</button></div>';
+    var top = '<div class="ctop"><span><b>💬 Messenger</b>'+(ch.claim_until && !isDir() ? ' · reservado para ti hasta '+esc(hm(ch.claim_until)) : '')+'</span><button type="button" class="btn sm ghost" data-cclose="'+l.id+'">Cerrar</button></div>';
     var comp = isDir() ? '<div class="pn" style="padding:6px 10px;background:#fff">Vista de dirección — solo lectura.</div>'
       : (ch.can_send ? '<div class="ccomp"><textarea rows="2" maxlength="1000" id="ct_'+l.id+'" placeholder="Escribe al cliente…"></textarea><button type="button" class="btn" data-csend="'+l.id+'">Enviar</button></div>'
+                       + (!ch.claimed ? '<div class="pn" style="padding:0 10px 6px;background:#fff">Al enviar, el cliente queda reservado para ti '+esc((S.me&&S.me.claim_days)||3)+' días. Sale desde la página de Refatrix con el nombre de tu negocio.</div>' : '')
                      : '<div class="pn" style="padding:6px 10px;background:#fff">No puedes escribir: la ventana de 24 h está cerrada. Se abre cuando el cliente vuelva a escribir.</div>');
     return '<div class="chat">'+top+'<div class="cmsgs" id="cm'+l.id+'">'+msgsHTML(ch)+'</div>'+comp+'<div class="msg" id="cmsg'+l.id+'"></div></div>';
   }
   function msgsHTML(ch){
-    var h = ch.summary ? '<div class="csys">Consulta: '+esc(ch.summary)+'</div>' : '';
+    var h = ch.summary ? '<div class="csys">Resumen: '+esc(ch.summary)+'</div>' : '';
     var ms = ch.messages || [];
-    if(!ms.length) h += '<div class="csys">'+(isDir() ? 'Sin mensajes registrados.' : 'Aún no hay mensajes desde que atiendes esta solicitud.')+'</div>';
+    h += '<div class="csys" style="font-weight:700">Conversación completa</div>';
+    if(!ms.length) h += '<div class="csys">'+(ch.loading ? 'Cargando…' : 'Sin mensajes registrados.')+'</div>';
     ms.forEach(function(m){
       var cls = m.who==='cliente' ? 'b-in' : (m.who==='yo' ? 'b-yo' : (m.who==='refatrix' ? 'b-rf' : 'b-ot'));
       var lab = m.who==='refatrix' ? 'Refatrix · ' : (m.who==='otro' ? 'Otra refaccionaria · ' : (m.who==='portal' ? (m.shop||'Refaccionaria')+' · ' : ''));
@@ -411,43 +434,37 @@
       if(first || changed){ redrawChat(id); var ta = $('ct_'+id); if(ta && keep) ta.value = keep; }
     }).catch(function(e){
       if(ended(e)) return;
-      if(e.message==='not_claimed' || e.message==='claimed_other'){
-        var l = leadOf(id); if(l && l.chat){ l.chat.claim = e.message==='claimed_other' ? 'other' : null; if(e.data && e.data.until) l.chat.claim_until = e.data.until; }
-        S.chatOpen = null; S.chat = null; stopChatPoll(); redrawChat(id);
+      if(e.message==='need_contact' || e.message==='claimed_other'){
+        var l = leadOf(id); if(l && e.message==='claimed_other'){ l.claim = { state:'other', until: e.data && e.data.until }; }
+        S.chatOpen = null; S.chat = null; stopChatPoll(); redrawLead(id);
       } else { var m = $('cmsg'+id); if(m) m.textContent = errMsg(e); }
     });
   }
   function openChat(id){
-    var prev = S.chatOpen; stopChatPoll(); S.chatOpen = id; S.chat = { messages:[] };
+    var prev = S.chatOpen; stopChatPoll(); S.chatOpen = id; S.chat = { messages:[], loading:true };
     if(prev && prev!==id) redrawChat(prev);
     redrawChat(id);
     loadChat(id, true);
     S.chatTimer = setInterval(function(){ if(S.chatOpen===id && !document.hidden) loadChat(id, false); }, 20000);
   }
   function closeChat(){ var id = S.chatOpen; S.chatOpen = null; S.chat = null; stopChatPoll(); if(id) redrawChat(id); }
-  function takeLead(id, btn){
-    btn.disabled = true;
-    api('POST','/leads/'+id+'/claim').then(function(d){
-      var l = leadOf(id); if(l && l.chat){ l.chat.claim = 'mine'; l.chat.claim_until = d.claim_until; }
-      openChat(id);
-    }).catch(function(e){
-      btn.disabled = false; if(ended(e)) return;
-      if(e.message==='claimed_other'){ var l = leadOf(id); if(l && l.chat){ l.chat.claim = 'other'; l.chat.claim_until = e.data && e.data.until; } redrawChat(id); return; }
-      $('listMsg').textContent = errMsg(e);
-    });
-  }
   function sendChat(id, btn){
     var ta = $('ct_'+id); var text = ta ? ta.value.trim() : ''; if(!text) return;
     btn.disabled = true; var m0 = $('cmsg'+id); if(m0) m0.textContent = '';
     api('POST','/leads/'+id+'/chat',{ text: text }).then(function(d){
       if(S.chat){ S.chat.messages = (S.chat.messages||[]).concat([d.message]); }
+      var l = leadOf(id);
+      if(l && d.claim){ l.claim = { state:'mine', until:d.claim.until }; if(S.chat){ S.chat.claimed = true; S.chat.claim_until = d.claim.until; } }
       if(ta) ta.value = '';
+      var ct = $('ct'+id); if(ct && l) ct.innerHTML = contactHTML(l);
+      redrawNotes(id);
       redrawChat(id);
     }).catch(function(e){
       btn.disabled = false; if(ended(e)) return;
       var m = $('cmsg'+id);
       var t = e.message==='window_closed' ? 'La ventana de 24 h se cerró. Podrás escribir cuando el cliente vuelva a escribir.'
-        : e.message==='claimed_other' || e.message==='not_claimed' ? 'Esta solicitud ya no está reservada para ti.'
+        : e.message==='claimed_other' ? 'Otra refaccionaria ya reservó a este cliente.'
+        : e.message==='need_contact' ? 'Primero toca «Ver contacto».'
         : e.message==='send_failed' ? 'Facebook no aceptó el mensaje. Intenta de nuevo en unos minutos.'
         : e.message==='too_long' ? 'Máximo 1000 caracteres.' : errMsg(e);
       if(m) m.textContent = t;
@@ -462,12 +479,16 @@
       return '<div class="note"><div class="nm">'+esc(n.at)+(isDir() && n.author ? ' · <b>'+esc(n.author)+'</b>' : '')+'</div>'+esc(n.body)
         + (n.mine ? '<button type="button" class="x" data-ndel="'+n.id+'" data-nl="'+l.id+'" aria-label="Borrar nota">✕</button>' : '') + '</div>';
     }).join('');
+    var willClaim = !isDir() && l.revealed && !l.claim;
     if(S.nOpen===l.id){
-      h += '<textarea rows="2" maxlength="1000" id="nb'+l.id+'" placeholder="'+(isDir()?'Nota de dirección (los clientes no la ven)':'Ej. Le llamé, pide cotización mañana')+'"></textarea>'
-        + '<div class="row2" style="margin-top:6px"><button type="button" class="btn sm ghost" data-ncancel="'+l.id+'">Cancelar</button><button type="button" class="btn sm" data-nsave="'+l.id+'">Guardar nota</button></div>'
-        + '<div class="pn" style="margin-top:4px">'+(isDir()?'Solo dirección ve esta nota.':'Solo tú y Refatrix ven tus notas.')+'</div><div class="msg" id="nm'+l.id+'"></div>';
+      h += '<textarea rows="2" maxlength="1000" id="nb'+l.id+'" placeholder="'+(isDir()?'Nota de dirección (los clientes no la ven)':'Ej. Le llamé, pide 2 horquillas, pasa mañana')+'"></textarea>'
+        + '<div class="row2" style="margin-top:6px"><button type="button" class="btn sm ghost" data-ncancel="'+l.id+'">Cancelar</button><button type="button" class="btn sm" data-nsave="'+l.id+'">'+(willClaim?'Guardar y reservar':'Guardar nota')+'</button></div>'
+        + '<div class="pn" style="margin-top:4px">'+(isDir()?'Solo dirección ve esta nota.':'Solo tú y Refatrix ven tus notas.')
+        + (willClaim ? '<br><b>Al guardar, el cliente queda reservado para ti '+esc((S.me&&S.me.claim_days)||3)+' días.</b> Si registras información falsa, puedes perder tu código de acceso.' : '')
+        + (!isDir() && !l.revealed && !claimOther(l) ? '<br>Para reservar al cliente, primero toca «Ver contacto».' : '')
+        + '</div><div class="msg" id="nm'+l.id+'"></div>';
     } else {
-      h += '<button type="button" class="nadd" data-nadd="'+l.id+'">📝 '+(ns.length ? 'Agregar nota ('+ns.length+')' : 'Agregar nota')+'</button>';
+      h += '<button type="button" class="nadd" data-nadd="'+l.id+'">📝 '+(willClaim ? 'Registrar lo que hablaron (reserva '+esc((S.me&&S.me.claim_days)||3)+' días)' : (ns.length ? 'Agregar nota ('+ns.length+')' : 'Agregar nota'))+'</button>';
     }
     return h;
   }
@@ -514,8 +535,8 @@
     if(!body){ var m0 = $('nm'+id); if(m0) m0.textContent = 'Escribe la nota.'; return; }
     btn.disabled = true;
     api('POST','/leads/'+id+'/notes',{ body: body }).then(function(d){
-      var l = leadOf(id); if(l){ l.notes = (l.notes||[]).concat([d.note]); }
-      S.nOpen = null; redrawNotes(id);
+      var l = leadOf(id); if(l){ l.notes = (l.notes||[]).concat([d.note]); if(d.claim && d.claim.state==='mine') l.claim = { state:'mine', until:d.claim.until }; else if(d.claim && d.claim.state==='other') l.claim = { state:'other', until:d.claim.until }; }
+      S.nOpen = null; redrawLead(id);
     }).catch(function(e){ btn.disabled = false; if(ended(e)) return; var m = $('nm'+id); if(m) m.textContent = e.message==='too_long' ? 'Máximo 1000 caracteres.' : errMsg(e); });
   }
   function delNote(id, nid){
@@ -563,7 +584,7 @@
       var l = leadOf(id); if(l) l.wants = d.wants || [];
       Object.keys(d.products||{}).forEach(function(k){ S.products[k] = d.products[k]; });
       closeFinder();
-    }).catch(function(e){ btn.disabled = false; if(ended(e)) return; if(m) m.textContent = e.message==='not_revealed' ? 'Primero toca «Ver contacto».' : errMsg(e); });
+    }).catch(function(e){ btn.disabled = false; if(ended(e)) return; if(e.message==='claimed_other'){ var l2 = leadOf(id); if(l2){ l2.claim = { state:'other', until: e.data && e.data.until }; } closeFinder(); return; } if(m) m.textContent = errMsg(e); });
   }
   function render(){
     var it = filtered();
@@ -583,7 +604,6 @@
     if((b = e.target.closest('[data-contact]'))){ reveal(Number(b.getAttribute('data-contact')), b); return; }
     if((b = e.target.closest('.add'))){ if(b.disabled) return; toggle(Number(b.getAttribute('data-id')), b.getAttribute('data-code'), Number(b.getAttribute('data-qty'))||1); return; }
     if((b = e.target.closest('.ms'))){ openShelf(b.getAttribute('data-code')); return; }
-    if((b = e.target.closest('[data-ctake]'))){ takeLead(Number(b.getAttribute('data-ctake')), b); return; }
     if((b = e.target.closest('[data-copen]'))){ openChat(Number(b.getAttribute('data-copen'))); return; }
     if((b = e.target.closest('[data-cclose]'))){ closeChat(); return; }
     if((b = e.target.closest('[data-csend]'))){ sendChat(Number(b.getAttribute('data-csend')), b); return; }
@@ -614,8 +634,12 @@
     api('POST','/leads/'+id+'/contact').then(function(c){
       S.contacts[id] = c;
       var l = S.leads.filter(function(x){ return x.id===id; })[0]; if(l) l.revealed = true;
-      var el = $('ct'+id); if(el && l) el.innerHTML = contactHTML(l);
-    }).catch(function(e){ btn.disabled = false; if(!ended(e)) $('listMsg').textContent = errMsg(e); });
+      redrawLead(id);
+    }).catch(function(e){
+      btn.disabled = false; if(ended(e)) return;
+      if(e.message==='claimed_other'){ var l = leadOf(id); if(l){ l.claim = { state:'other', until: e.data && e.data.until }; l.name_masked = null; l.phone_masked = null; redrawLead(id); } return; }
+      $('listMsg').textContent = errMsg(e);
+    });
   }
   function toggle(id, code, qty){
     var k = lineKey(id, code);

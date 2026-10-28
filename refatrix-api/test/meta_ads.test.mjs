@@ -227,7 +227,7 @@ test('C. 화면 (jsdom) — 광고 탭', { skip: (!JSDOM || !existsSync(HTML)) &
   t.after(() => w.close());
 
   await t.test('C1. 빌드 · 목록 광고 열 · 광고 필터', async () => {
-    assert.match(d.title, /mtl-1026lpf/);
+    assert.match(d.title, /mtl-1028lpa/);
     assert.match(d.querySelector('#lTable tr[data-id="1"]').textContent, /Amortiguadores MTY/);
     assert.match(d.querySelector('#lTable tr[data-id="2"]').textContent, /미등록/);
     const opts = [...d.querySelectorAll('#fAd option')].map((o) => o.value);

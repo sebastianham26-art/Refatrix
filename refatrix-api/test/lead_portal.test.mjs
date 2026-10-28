@@ -172,8 +172,10 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   it0 = await srch(`amortiguador del ${T}`); assert.ok(it0.some((x) => x.code === P2.code), '품명');
   assert.deepEqual(await srch('x'), [], '두 글자 미만');
   assert.ok(!JSON.stringify(await srch(P1.code)).includes('cost'), '원가 없음');
-  // 연락처를 보지 않은 문의에는 기록 불가
-  assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T2.id}/wants`, { items: [{ code: P1.code, qty: 1 }] })).statusCode, 409);
+  // 2026-10-28 · 연락처를 안 본 문의에도 기록 가능(모든 문의에 「Registrar piezas que busca」)
+  r = await call(C, 'PUT', `/api/lead-portal/leads/${T2.id}/wants`, { items: [{ code: P1.code, qty: 1 }] }); assert.equal(r.statusCode, 200, r.body);
+  await call(C, 'PUT', `/api/lead-portal/leads/${T2.id}/wants`, { items: [] });
+  assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T3.id}/wants`, { items: [] })).statusCode, 404, '제외 문의');
   assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [{ code: 'NADA' + T, qty: 1 }] })).statusCode, 400);
   r = await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [{ code: P2.code, qty: 2, input: `54500-${T}A` }, { code: P1.code, qty: 1 }, { code: P2.code, qty: 1 }] });
   assert.equal(r.statusCode, 200, r.body);
@@ -295,47 +297,66 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   MP.setMessengerPost(async (url, body) => { sent.push({ url, body }); if (failNext) { const e = failNext; failNext = null; return { ok: false, status: 400, json: { error: e } }; } return { ok: true, status: 200, json: { recipient_id: body.recipient.id, message_id: 'm_out_' + T + '_' + sent.length } }; });
   t.after(() => { M.setMetaFetch(null); MP.setMessengerPost(null); });
   const PS4 = 'ps4' + T, PS5 = 'ps5' + T;
-  const T4 = await one(`INSERT INTO meta_threads (platform, thread_id, user_id, name, first_at, last_at, last_in_at, in_count, msg_count, ai_state, ai_vehicles, ai_summary, status)
-                        VALUES ('messenger',$1,$2,'Mario',now() - interval '2 hours',now() - interval '1 hour',now() - interval '1 hour',1,1,'Nuevo León','Chevrolet Aveo 2018','Amortiguadores','nuevo') RETURNING id`, ['t_' + PS4, PS4]);
+  await query(`UPDATE lead_portal_settings SET claim_days=3 WHERE id=1`);   // 앞선 실행이 바꿔 둔 값 초기화
+  const orig = [{ at: new Date(Date.now() - 7200e3).toISOString(), me: false, text: 'Hola, busco amortiguadores para Aveo' }];
+  const T4 = await one(`INSERT INTO meta_threads (platform, thread_id, user_id, name, first_at, last_at, last_in_at, in_count, msg_count, messages, ai_state, ai_vehicles, ai_summary, status)
+                        VALUES ('messenger',$1,$2,'Mario',now() - interval '2 hours',now() - interval '1 hour',now() - interval '1 hour',1,1,$3::jsonb,'Nuevo León','Chevrolet Aveo 2018','Amortiguadores','nuevo') RETURNING id`, ['t_' + PS4, PS4, JSON.stringify(orig)]);
   const T5 = await one(`INSERT INTO meta_threads (platform, thread_id, user_id, name, first_at, last_at, last_in_at, in_count, msg_count, ai_state, status)
                         VALUES ('messenger',$1,$2,'Luis',now() - interval '5 days',now() - interval '3 days',now() - interval '3 days',1,1,'Nuevo León','nuevo') RETURNING id`, ['t_' + PS5, PS5]);
-  // 선점 전 메시지(직원 대화) — refaccionaria 에게는 안 보여야 한다
-  await query(`INSERT INTO meta_page_messages (psid, mid, direction, source, text, at) VALUES ($1,$2,'out','staff','Hola, soy de Refatrix',now() - interval '50 minutes')`, [PS4, 'm_pre_' + T]);
+  // 예전 직원 대화(웹훅) — 2026-10-28 디렉터: 포털 대화창에 「실제로 이루어진 대화」 전체를 보여 준다
+  await query(`INSERT INTO meta_page_messages (psid, mid, direction, source, text, at) VALUES ($1,$2,'out','staff','Hola, soy de Refatrix',now() - interval '110 minutes')`, [PS4, 'm_pre_' + T]);
   const hook = (body) => { const raw = JSON.stringify(body); return app.inject({ method: 'POST', url: '/api/wa/webhook', payload: raw,
     headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=' + crypto.createHmac('sha256', WSECRET).update(raw).digest('hex') } }); };
   const PAGE = '1338649012669713';
-  assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/claim`)).json().error, 'chat_not_allowed', 'WhatsApp 문의는 대화 없음');
+  assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T1.id}/chat`)).json().error, 'chat_not_allowed', 'WhatsApp 문의는 대화 없음');
+  assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/claim`)).statusCode, 404, '「Atender」(선점 버튼) 없앰');
   r = await call(C, 'GET', '/api/lead-portal/leads'); let L4 = r.json().leads.find((l) => l.id === Number(T4.id)); let L5 = r.json().leads.find((l) => l.id === Number(T5.id));
-  assert.deepEqual([L4.chat.open, L4.chat.claim, L5.chat.open], [true, null, false]);
+  assert.deepEqual([L4.chat.open, L4.claim, L5.chat.open, r.json().me.claim_days], [true, null, false, 3]);
   assert.equal(r.json().leads.find((l) => l.id === Number(T1.id)).chat, null);
   assert.ok(!r.body.includes(PS4), 'PSID 안 보냄');
-  assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`)).json().error, 'not_claimed');
-  r = await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/claim`); assert.equal(r.statusCode, 200, r.body);
-  const cu = new Date(r.json().claim_until).getTime(); assert.ok(Math.abs(cu - (Date.now() + 3 * 86400000)) < 120000, '기본 3일');
-  assert.equal((await one(`SELECT status, derived_to FROM meta_threads WHERE id=$1`, [T4.id])).status, 'derivado');
-  r = await call(CB, 'POST', `/api/lead-portal/leads/${T4.id}/claim`); assert.equal(r.statusCode, 409); assert.equal(r.json().error, 'claimed_other');
-  assert.equal((await call(CB, 'GET', '/api/lead-portal/leads')).json().leads.find((l) => l.id === Number(T4.id)).chat.claim, 'other');
-  assert.equal((await call(CB, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'hola' })).json().error, 'claimed_other');
-  // 손님 답장(웹훅) · 보내기 · 에코
-  await new Promise((res) => setTimeout(res, 20));
-  r = await hook({ object: 'page', entry: [{ id: PAGE, messaging: [{ sender: { id: PS4 }, recipient: { id: PAGE }, timestamp: Date.now(), message: { mid: 'm_in1_' + T, text: '¿Tienen para Aveo 2018?' } }] }] });
-  assert.equal(r.statusCode, 200);
+  assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`)).json().error, 'need_contact', '연락처를 봐야 대화');
+  assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'hola' })).json().error, 'need_contact');
+
+  // ── 0305 · 선점 = 「Ver contacto」 + 연락 내용 기록(모든 채널) ──
+  r = await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/notes`, { body: 'Le llamé, quiere 1 horquilla, pasa mañana' }); assert.equal(r.statusCode, 200, r.body);
+  assert.equal(r.json().claim.state, 'mine'); assert.equal(r.json().claim.created, true);
+  assert.ok(Math.abs(new Date(r.json().claim.until).getTime() - (Date.now() + 3 * 86400000)) < 120000, '기본 3일');
+  r = await call(CB, 'GET', '/api/lead-portal/leads'); let b1 = r.json().leads.find((l) => l.id === Number(T1.id));
+  assert.deepEqual([b1.claim.state, b1.name_masked, b1.phone_masked, b1.has_phone], ['other', null, null, false], '다른 곳: 가린 연락처도 안 보냄');
+  r = await call(CB, 'POST', `/api/lead-portal/leads/${T1.id}/contact`); assert.equal(r.statusCode, 409); assert.equal(r.json().error, 'claimed_other');
+  assert.equal((await call(CB, 'PUT', `/api/lead-portal/leads/${T1.id}/wants`, { items: [{ code: P1.code, qty: 1 }] })).json().error, 'claimed_other');
+  r = await call(CB, 'POST', `/api/lead-portal/leads/${T1.id}/notes`, { body: 'nota B' }); assert.equal(r.statusCode, 200); assert.equal(r.json().claim.state, 'need_contact', 'B 메모는 저장되지만 선점 아님');
+  r = await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/notes`, { body: 'Segunda llamada' }); assert.equal(r.json().claim.state, 'mine'); assert.equal(r.json().claim.created, false, '메모 더 쓰면 연장');
+  r = await call(C, 'POST', `/api/lead-portal/leads/${T2.id}/notes`, { body: 'Sin contacto aún' }); assert.equal(r.json().claim.state, 'need_contact', '연락처 안 본 메모 = 선점 아님');
+  r = await call(C, 'GET', '/api/lead-portal/leads'); assert.equal(r.json().leads.find((l) => l.id === Number(T1.id)).claim.state, 'mine');
+
+  // Messenger: 연락처 보기 → 대화 전체 → 첫 메시지 = 선점
+  assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/contact`)).statusCode, 200);
+  r = await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.statusCode, 200, r.body);
+  assert.deepEqual(r.json().messages.map((m) => [m.who, m.text]), [['cliente', 'Hola, busco amortiguadores para Aveo'], ['refatrix', 'Hola, soy de Refatrix']], '선점 전에도 실제 대화 전체');
+  assert.equal(r.json().claimed, false); assert.equal(r.json().summary, 'Amortiguadores');
   r = await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'Sí, $1,350 c/u' }); assert.equal(r.statusCode, 200, r.body);
+  assert.equal(r.json().claim.state, 'mine'); assert.equal(r.json().claim.created, true, '첫 메시지로 선점');
   assert.equal(sent.at(-1).body.recipient.id, PS4); assert.equal(sent.at(-1).body.messaging_type, 'RESPONSE');
   assert.equal(sent.at(-1).body.message.text, `[Refacc El Puente ${T}] Sí, $1,350 c/u`, '앞에 [가게 이름]');
+  assert.equal((await one(`SELECT status FROM meta_threads WHERE id=$1`, [T4.id])).status, 'derivado');
   const outMid = 'm_out_' + T + '_' + sent.length;
+  await new Promise((res) => setTimeout(res, 20));
   await hook({ object: 'page', entry: [{ id: PAGE, messaging: [
     { sender: { id: PAGE }, recipient: { id: PS4 }, timestamp: Date.now(), message: { mid: outMid, is_echo: true, text: `[Refacc El Puente ${T}] Sí, $1,350 c/u` } },
-    { sender: { id: PAGE }, recipient: { id: PS4 }, timestamp: Date.now() + 1, message: { mid: 'm_staff_' + T, is_echo: true, text: 'Gracias, le atiende la refaccionaria' } }] }] });
+    { sender: { id: PS4 }, recipient: { id: PAGE }, timestamp: Date.now() + 5, message: { mid: 'm_in1_' + T, text: '¿Dónde están?' } },
+    { sender: { id: PAGE }, recipient: { id: PS4 }, timestamp: Date.now() + 10, message: { mid: 'm_staff_' + T, is_echo: true, text: 'Gracias, le atiende la refaccionaria' } }] }] });
   r = await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.statusCode, 200, r.body);
-  assert.deepEqual(r.json().messages.map((m) => [m.who, m.text]), [['cliente', '¿Tienen para Aveo 2018?'], ['yo', `[Refacc El Puente ${T}] Sí, $1,350 c/u`], ['refatrix', 'Gracias, le atiende la refaccionaria']], '선점 뒤만 · 에코 중복 없음 · 직원 답장 보임');
-  assert.equal(r.json().can_send, true);
-  // 2026-10-26f · ERP 한 건 열기 — 웹훅 메시지가 바로 합쳐져 보인다(포털 = 가게 이름, 직원, 손님)
+  assert.deepEqual(r.json().messages.map((m) => [m.who, m.text]), [['cliente', 'Hola, busco amortiguadores para Aveo'], ['refatrix', 'Hola, soy de Refatrix'], ['yo', `[Refacc El Puente ${T}] Sí, $1,350 c/u`], ['cliente', '¿Dónde están?'], ['refatrix', 'Gracias, le atiende la refaccionaria']], '대화 전체 · 에코 중복 없음');
+  assert.equal(r.json().claimed, true); assert.equal(r.json().can_send, true);
+  assert.equal((await call(CB, 'GET', `/api/lead-portal/leads/${T4.id}/chat`)).json().error, 'claimed_other');
+  assert.equal((await call(CB, 'POST', `/api/lead-portal/leads/${T4.id}/contact`)).json().error, 'claimed_other');
+  // ERP 한 건 열기 — 웹훅 메시지 합침
   r = await call(D, 'GET', `/api/meta-leads/${T4.id}`); assert.equal(r.statusCode, 200, r.body);
   const em = r.json().messages;
   const pm = em.find((m) => m.src === 'portal'); assert.ok(pm && pm.me && pm.shop === `Refacc El Puente ${T}` && pm.text.endsWith('Sí, $1,350 c/u'));
   assert.ok(em.some((m) => m.src === 'staff' && m.text === 'Gracias, le atiende la refaccionaria'));
-  assert.ok(em.some((m) => !m.me && m.text === '¿Tienen para Aveo 2018?'));
+  assert.ok(em.some((m) => !m.me && m.text === '¿Dónde están?'));
   assert.equal(em.filter((m) => m.src === 'portal').length, 1, '에코 중복 없음');
   assert.ok(!('psid' in r.json()), 'psid 응답에 없음');
   assert.deepEqual(L.mergeConversation([{ at: '2026-10-26T20:00:00Z', me: true, text: 'Hola  a' }], [{ direction: 'out', source: 'portal', text: 'Hola a', at: '2026-10-26T20:01:00Z', shop: 'X' }, { direction: 'in', source: 'customer', text: 'ok', at: '2026-10-26T19:00:00Z' }]).map((m) => [m.text, m.src || null, !!m.live]),
@@ -343,33 +364,44 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'x'.repeat(1001) })).statusCode, 400);
   failNext = { code: 100, message: 'Invalid parameter' };
   r = await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'hola' }); assert.equal(r.statusCode, 502); assert.equal(r.json().error, 'send_failed');
-  // 24시간 지난 문의
-  await call(C, 'POST', `/api/lead-portal/leads/${T5.id}/claim`);
+  assert.equal((await one(`SELECT count(*)::int n FROM lead_portal_claims WHERE thread_id=$1 AND released_at IS NULL`, [T4.id])).n, 1, '실패해도 기존 선점 유지');
+  // 24시간 지난 문의 → 손님이 다시 쓰면 열림 · 첫 전송 실패 시 방금 만든 선점은 되돌림
+  await call(C, 'POST', `/api/lead-portal/leads/${T5.id}/contact`);
   const nSent = sent.length;
   r = await call(C, 'POST', `/api/lead-portal/leads/${T5.id}/chat`, { text: 'hola' }); assert.equal(r.statusCode, 409); assert.equal(r.json().error, 'window_closed'); assert.equal(sent.length, nSent, 'Meta 에 보내지 않음');
-  // 손님이 다시 쓰면 열림
+  assert.equal((await one(`SELECT count(*)::int n FROM lead_portal_claims WHERE thread_id=$1`, [T5.id])).n, 0, '창 닫힘 = 선점 없음');
   await hook({ object: 'page', entry: [{ id: PAGE, messaging: [{ sender: { id: PS5 }, recipient: { id: PAGE }, timestamp: Date.now(), message: { mid: 'm_in5_' + T, text: 'Hola de nuevo' } }] }] });
+  failNext = { code: 100, message: 'Invalid parameter' };
+  assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T5.id}/chat`, { text: 'Buenas' })).statusCode, 502);
+  assert.equal((await one(`SELECT count(*)::int n FROM lead_portal_claims WHERE thread_id=$1`, [T5.id])).n, 0, '첫 전송 실패 → 선점 되돌림');
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T5.id}/chat`, { text: 'Buenas' })).statusCode, 200, '창 다시 열림');
-  // 디렉터 코드 — 선점 전 메시지까지 전부 · 보내기 불가
+  // 디렉터 코드 — 대화 전체 · 보내기 불가 · 선점 무관
   r = await call(D, 'POST', '/api/lead-portal-admin/codes', { kind: 'director', expires_on: '2099-12-31' });
   const CD2 = { authorization: 'Bearer ' + (await call({}, 'POST', '/api/lead-portal/login', { code: r.json().code }, IP)).json().token };
-  r = await call(CD2, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.json().messages[0].text, 'Hola, soy de Refatrix'); assert.equal(r.json().can_send, false);
+  r = await call(CD2, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.json().messages[0].text, 'Hola, busco amortiguadores para Aveo'); assert.equal(r.json().can_send, false);
   assert.equal(r.json().messages.find((m) => m.who === 'portal').shop, `Refacc El Puente ${T}`);
   assert.equal((await call(CD2, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'x' })).statusCode, 403);
-  assert.equal((await call(CD2, 'POST', `/api/lead-portal/leads/${T4.id}/claim`)).statusCode, 403);
+  r = await call(CD2, 'GET', '/api/lead-portal/leads'); const d1 = r.json().leads.find((l) => l.id === Number(T1.id));
+  assert.equal(d1.claim.state, 'other'); assert.ok(d1.phone_masked, '디렉터는 선점돼도 가린 연락처 그대로');
+  assert.equal((await call(CD2, 'POST', `/api/lead-portal/leads/${T1.id}/contact`)).statusCode, 200, '디렉터는 선점 무관');
   // ERP — 목록 · 설정 · 선점 관리
-  r = await call(D, 'GET', '/api/meta-leads/list'); assert.ok(r.json().items.find((x) => x.id === Number(T4.id)).chat_by.startsWith(`Refacc El Puente ${T} 대화 중 · 보냄 1`));
+  r = await call(D, 'GET', '/api/meta-leads/list');
+  assert.ok(r.json().items.find((x) => x.id === Number(T4.id)).chat_by.startsWith(`Refacc El Puente ${T} 선점 · Messenger 보냄 1`));
+  assert.ok(r.json().items.find((x) => x.id === Number(T1.id)).chat_by.startsWith(`Refacc El Puente ${T} 선점 · ~`), 'WhatsApp 선점도 목록에');
   assert.equal((await call(R1, 'PUT', '/api/lead-portal-admin/settings', { claim_days: 5 })).statusCode, 403);
   assert.equal((await call(D, 'PUT', '/api/lead-portal-admin/settings', { claim_days: 0 })).statusCode, 400);
   assert.equal((await call(D, 'PUT', '/api/lead-portal-admin/settings', { claim_days: 5 })).json().claim_days, 5);
-  r = await call(D, 'GET', '/api/lead-portal-admin/claims'); const cl4 = r.json().items.find((x) => x.thread_id === Number(T4.id));
-  assert.deepEqual([cl4.active, cl4.sent, cl4.received, r.json().claim_days], [true, 1, 1, 5]);
+  r = await call(D, 'GET', '/api/lead-portal-admin/claims'); const cl4 = r.json().items.find((x) => x.thread_id === Number(T4.id)); const cl1 = r.json().items.find((x) => x.thread_id === Number(T1.id));
+  assert.deepEqual([cl4.active, cl4.via, cl4.platform, cl4.sent, cl4.received, cl1.via, cl1.platform, r.json().claim_days], [true, 'messenger', 'messenger', 1, 1, 'note', 'whatsapp', 5]);
   assert.equal((await call(D, 'POST', `/api/lead-portal-admin/claims/${cl4.id}/extend`, { days: 2 })).statusCode, 200);
   assert.equal((await call(D, 'POST', `/api/lead-portal-admin/claims/${cl4.id}/release`)).statusCode, 200);
-  assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`)).json().error, 'not_claimed', '해제 뒤 대화창 닫힘');
-  r = await call(CB, 'POST', `/api/lead-portal/leads/${T4.id}/claim`); assert.equal(r.statusCode, 200);
-  assert.ok(Math.abs(new Date(r.json().claim_until).getTime() - (Date.now() + 5 * 86400000)) < 120000, '바뀐 기본 5일');
-  r = await call(CB, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.deepEqual(r.json().messages, [], 'B 는 자기 선점 이후만 — A 대화 안 보임');
+  // 해제 뒤 B 가 연락처 → 메시지로 선점(바뀐 기본 5일) · B 대화창에 C 메시지는 「다른 refaccionaria」
+  assert.equal((await call(CB, 'POST', `/api/lead-portal/leads/${T4.id}/contact`)).statusCode, 200);
+  r = await call(CB, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'Hola, soy Otra' }); assert.equal(r.statusCode, 200, r.body);
+  assert.ok(Math.abs(new Date(r.json().claim.until).getTime() - (Date.now() + 5 * 86400000)) < 120000, '바뀐 기본 5일');
+  r = await call(CB, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); const bw = r.json().messages.map((m) => m.who);
+  assert.ok(bw.includes('otro') && bw.includes('yo') && !JSON.stringify(r.json()).includes('Refacc El Puente'), '다른 가게 이름은 안 보임');
+  assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`)).json().error, 'claimed_other');
   await call(D, 'PUT', '/api/lead-portal-admin/settings', { claim_days: 3 });
 
   // ── 정지 · 재개 · 만료 ──
@@ -499,7 +531,7 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
     [/POST \/lp-api\/leads\/1842\/contact/, () => [200, { name: 'Jorge Treviño', phone: '528123456742', wa_link: null, platform: 'whatsapp', first_seen: '2026-10-26 08:14' }]],
     [/GET \/lp-api\/search\?q=54500/, () => [200, { items: [{ code: 'CS1188', name: 'Amortiguador del', app: 'Chevrolet Aveo 2012-2018', active: true, syd: ['8-1188'], oe: ['54500-4Z000'], via: 'oe', exact: true, hit: 'OE 54500-4Z000', img: 'https://img/x.webp', avail: 0, incoming: 40, eta: '2026-11-18', price: 1085, bought12: 0, shelf: null }] }]],
     [/PUT \/lp-api\/leads\/1842\/wants/, (_, b) => [200, { ok: true, wants: b.items.map((x) => ({ code: x.code, qty: x.qty, input: x.input })), products: { CS1188: { code: 'CS1188', name: 'Amortiguador del', active: true, avail: 0, incoming: 40, eta: '2026-11-18', price: 1085, bought12: 0, shelf: null } } }]],
-    [/POST \/lp-api\/leads\/1842\/notes/, (_, b) => [200, { ok: true, note: { id: 77, body: b.body, at: '2026-10-26 14:10', mine: true } }]],
+    [/POST \/lp-api\/leads\/1842\/notes/, (_, b) => [200, { ok: true, note: { id: 77, body: b.body, at: '2026-10-26 14:10', mine: true }, claim: { state: 'mine', until: new Date(Date.now() + 3 * 86400000).toISOString(), created: true } }]],
     [/DELETE \/lp-api\/notes\/77/, () => [200, { ok: true }]],
     [/PUT \/lp-api\/stock/, (_, b) => [200, { ok: true, code: b.code, shelf: b.qty, shelf_src: 'customer', shelf_at: '2026-10-26' }]],
     [/POST \/lp-api\/order/, () => [200, { ok: true, quote_no: 'FB-2026-0187', total: 710, asesor: 'Oscar' }]],
@@ -525,7 +557,7 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
   d.querySelector('[data-contact="1842"]').click(); await tick(60);
   assert.ok(d.getElementById('list').textContent.includes('Jorge Treviño'));
   assert.ok(!d.querySelector('a[href*="wa.me"]'), '0300 · WhatsApp 버튼 없음');
-  // 0298 · 연락처를 본 문의 → 찾는 부품 기록(OE 로 찾기 → 수량 → 저장)
+  // 0298 · 찾는 부품 기록(2026-10-28: 모든 문의에서 — 연락처 전에도 버튼)
   d.querySelector('[data-find="1842"]').click(); await tick(40);
   const fq = d.getElementById('fq1842'); assert.ok(fq, '찾기 칸');
   fq.value = '54500-4Z000'; fq.dispatchEvent(new w.Event('input', { bubbles: true })); await tick(420);
@@ -538,11 +570,15 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
   assert.ok(d.getElementById('list').textContent.includes('Piezas que busca este cliente'));
   assert.ok(d.querySelector('.add[data-code="CS1188"]'), '찾은 부품도 주문 버튼');
 
-  // 0299 · 메모 쓰기 · 지우기
+  // 0299/0305 · 메모 = 연락 기록 → 선점 안내 · 쓰기 · 지우기
+  assert.ok(d.getElementById('rulebar').textContent.includes('Ver contacto') && d.getElementById('rulebar').textContent.includes('perder tu código'), '선점 규칙 안내');
+  assert.ok(d.querySelector('[data-nadd="1842"]').textContent.includes('reserva 3 días'), '연락처 본 문의 = 「Registrar lo que hablaron」');
   d.querySelector('[data-nadd="1842"]').click(); await tick(20);
+  assert.ok(d.getElementById('nt1842').textContent.includes('perder tu código'));
   d.getElementById('nb1842').value = 'Le llamé, cotizar mañana'; d.querySelector('[data-nsave="1842"]').click(); await tick(60);
   assert.deepEqual(log.find((x) => x[0] === 'POST' && x[1].endsWith('/notes'))[2], { body: 'Le llamé, cotizar mañana' });
   assert.ok(d.getElementById('nt1842').textContent.includes('Le llamé, cotizar mañana') && d.getElementById('nt1842').textContent.includes('Agregar nota (1)'));
+  assert.ok(d.getElementById('ct1842').textContent.includes('Reservado para ti'), '저장 → 선점 표시');
   w.confirm = () => true; d.querySelector('[data-ndel="77"]').click(); await tick(60);
   assert.ok(log.some((x) => x[0] === 'DELETE' && x[1] === '/lp-api/notes/77')); assert.ok(!d.getElementById('nt1842').textContent.includes('Le llamé'));
 
@@ -588,35 +624,48 @@ test('C3. 플랫폼 leads.html — 디렉터 코드: 전체 메모 · 작성자 
   assert.ok(d.getElementById('cartbar').classList.contains('hidden'));
 });
 
-test('C4. 플랫폼 leads.html — Messenger 대화(선점 → 대화창 → 보내기) · WhatsApp 은 대화 없음', { skip: (!JSDOM || !existsSync(PF_HTML)) && 'jsdom 또는 파일 없음' }, async () => {
+test('C4. 플랫폼 leads.html — 선점 규칙 · 모든 문의 「Registrar」 · Messenger 대화 전체 · 첫 메시지 = 선점 · WhatsApp 대화 없음', { skip: (!JSDOM || !existsSync(PF_HTML)) && 'jsdom 또는 파일 없음' }, async () => {
   const html = readFileSync(PF_HTML, 'utf8'); const log = [];
-  const me = { customer_name: 'El Puente', expires_on: '2026-11-26', days_left: 31, discount: 45, role: 'customer' };
+  const me = { customer_name: 'El Puente', expires_on: '2026-11-26', days_left: 31, discount: 45, role: 'customer', claim_days: 3 };
   const until = new Date(Date.now() + 20 * 3600000).toISOString();
-  let msgs = [{ id: 1, dir: 'in', who: 'cliente', text: '¿Tienen para Aveo?', at: new Date().toISOString() }];
+  const cu = new Date(Date.now() + 3 * 86400000).toISOString();
+  const msgs = [{ dir: 'in', who: 'cliente', text: 'Hola, busco amortiguadores', at: new Date(Date.now() - 7200e3).toISOString() },
+                { dir: 'out', who: 'refatrix', text: 'Hola, ¿delanteros?', at: new Date(Date.now() - 7100e3).toISOString() }];
+  const base = { parts: [], open_parts: [], wants: [], notes: [], revealed: false };
   const routes = [
     [/GET \/lp-api\/me/, () => [200, { token: 'T2', me }]],
     [/GET \/lp-api\/leads$/, () => [200, { me, states: [], products: {}, leads: [
-      { id: 5, platform: 'messenger', last_mx: '2026-10-26 13:52', vehicles: 'Aveo 2018', parts: [], open_parts: [], wants: [], notes: [], revealed: false, has_phone: false, chat: { open: true, window_until: until, claim: null, claim_until: null } },
-      { id: 6, platform: 'messenger', last_mx: '2026-10-26 11:20', vehicles: 'Jetta 2015', parts: [], open_parts: [], wants: [], notes: [], revealed: false, has_phone: false, chat: { open: true, window_until: until, claim: 'other', claim_until: until } },
-      { id: 7, platform: 'whatsapp', last_mx: '2026-10-26 07:52', vehicles: 'Versa', parts: [], open_parts: [], wants: [], notes: [], revealed: false, has_phone: true, chat: null }] }]],
-    [/POST \/lp-api\/leads\/5\/claim/, () => [200, { ok: true, claim_until: until }]],
-    [/GET \/lp-api\/leads\/5\/chat/, () => [200, { messages: msgs, open: true, window_until: until, claim_until: until, summary: 'Amortiguadores', can_send: true }]],
-    [/POST \/lp-api\/leads\/5\/chat/, (_, b) => [200, { ok: true, message: { id: 2, dir: 'out', who: 'yo', text: '[El Puente] ' + b.text, at: new Date().toISOString() } }]],
+      { ...base, id: 5, platform: 'messenger', last_mx: '2026-10-26 13:52', vehicles: 'Aveo 2018', has_phone: false, name_masked: 'M••••', claim: null, chat: { open: true, window_until: until, claim: null } },
+      { ...base, id: 6, platform: 'whatsapp', last_mx: '2026-10-26 11:20', vehicles: 'Jetta 2015', has_phone: false, name_masked: null, phone_masked: null, claim: { state: 'other', until: cu }, chat: null },
+      { ...base, id: 7, platform: 'whatsapp', last_mx: '2026-10-26 07:52', vehicles: 'Versa', has_phone: true, phone_masked: '81 •••• ••42', claim: null, chat: null }] }]],
+    [/POST \/lp-api\/leads\/5\/contact/, () => [200, { name: 'Mario', phone: null, platform: 'messenger' }]],
+    [/GET \/lp-api\/leads\/5\/chat/, () => [200, { messages: msgs, open: true, window_until: until, claim_until: null, claimed: false, summary: 'Amortiguadores delanteros', can_send: true }]],
+    [/POST \/lp-api\/leads\/5\/chat/, (_, b) => [200, { ok: true, message: { dir: 'out', who: 'yo', text: '[El Puente] ' + b.text, at: new Date().toISOString() }, claim: { state: 'mine', until: cu, created: true } }]],
   ];
   const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'https://refatrix-platform.netlify.app/leads', beforeParse(w) { w.localStorage.setItem('rfx_lp_token', 'T1'); w.fetch = fakeFetch(routes, log); } });
   const w = dom.window, d = w.document; await tick(120);
-  assert.ok(d.querySelector('[data-ctake="5"]'), 'Messenger — 대화 버튼');
-  assert.ok(!d.querySelector('[data-ctake="6"]') && d.getElementById('cw6').textContent.includes('Otra refaccionaria'), '선점된 문의');
-  assert.ok(!d.querySelector('[data-ctake="7"]') && d.getElementById('cw7').textContent.includes('WhatsApp no se atienden'), 'WhatsApp — 대화 없음');
-  d.querySelector('[data-ctake="5"]').click(); await tick(120);
-  assert.ok(log.some((x) => x[0] === 'POST' && x[1] === '/lp-api/leads/5/claim'));
-  assert.ok(d.getElementById('cm5').textContent.includes('¿Tienen para Aveo?'));
+  assert.ok(d.getElementById('rulebar').textContent.includes('3 días'), '선점 규칙 · 일수');
+  for (const id of [5, 7]) assert.ok(d.querySelector(`[data-find="${id}"]`), `「Registrar」 — 연락처 전에도 (${id})`);
+  assert.ok(d.querySelector('#ct6 .findbtn[disabled]') && !d.querySelector('[data-contact="6"]'), '다른 곳이 선점: 연락처 버튼 없음 · Registrar 비활성');
+  assert.ok(d.getElementById('ct6').textContent.includes('Otra refaccionaria ya contactó'));
+  assert.ok(!d.querySelector('[data-copen="5"]') && d.getElementById('cw5').textContent.includes('Ver contacto'), 'Messenger — 연락처 전엔 대화 안내만');
+  assert.ok(d.getElementById('cw7').textContent.includes('WhatsApp no se atienden'), 'WhatsApp — 대화 없음');
+  assert.ok(!d.querySelector('[data-ctake]'), '「Atender」 버튼 없음');
+  d.querySelector('[data-contact="5"]').click(); await tick(80);
+  assert.ok(d.querySelector('[data-copen="5"]'), '연락처 본 뒤 「Ver conversación」');
+  d.querySelector('[data-copen="5"]').click(); await tick(120);
+  const cm = d.getElementById('cm5').textContent;
+  assert.ok(cm.includes('Resumen: Amortiguadores delanteros') && cm.includes('Conversación completa') && cm.includes('Hola, busco amortiguadores') && cm.includes('Hola, ¿delanteros?'), '요약 아래 실제 대화');
+  assert.ok(cm.indexOf('Resumen') < cm.indexOf('Hola, busco'));
+  assert.ok(d.getElementById('cw5').textContent.includes('queda reservado para ti 3 días'), '첫 메시지 = 선점 안내');
   d.getElementById('ct_5').value = 'Sí, tenemos'; d.querySelector('[data-csend="5"]').click(); await tick(80);
   assert.deepEqual(log.find((x) => x[0] === 'POST' && x[1] === '/lp-api/leads/5/chat')[2], { text: 'Sí, tenemos' });
   assert.ok(d.getElementById('cm5').textContent.includes('[El Puente] Sí, tenemos'));
-  assert.equal(d.getElementById('ct_5').value, '');
+  assert.ok(d.getElementById('ct5').textContent.includes('Reservado para ti'), '보낸 뒤 선점 표시');
+  assert.ok(!d.getElementById('cw5').textContent.includes('queda reservado para ti 3 días'), '선점 뒤엔 안내 없음');
+  assert.ok(!d.getElementById('nt5').textContent.includes('reserva 3 días'), '메모 버튼도 선점 반영');
   d.querySelector('[data-cclose="5"]').click(); await tick(20);
-  assert.ok(d.querySelector('[data-copen="5"]'), '닫으면 「Abrir conversación」');
+  assert.ok(d.querySelector('[data-copen="5"]'));
   assert.ok(!/[가-힣]/.test(d.body.textContent));
   dom.window.close();
 });

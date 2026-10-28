@@ -136,7 +136,7 @@ export default async function metaLeadsRoutes(app) {
     const stock = {};
     if (codes.length) for (const p of (await query(`SELECT code, stock_qty FROM products WHERE code = ANY($1) AND deleted_at IS NULL`, [codes])).rows) stock[p.code] = Number(p.stock_qty) || 0;
     const rv = await revealedMap(rows.map((r) => Number(r.id)));   // 0297 · 연락처를 본 refaccionaria
-    const cm = await claimMap(rows.filter((r) => r.platform === 'messenger').map((r) => Number(r.id)));   // 0300 · 포털 대화 선점
+    const cm = await claimMap(rows.map((r) => Number(r.id)));   // 0300/0305 · 포털 선점(모든 채널)
     return { items: rows.map((r) => ({ ...r, id: Number(r.id), revealed_to: rv.get(Number(r.id)) || null, chat_by: cm.get(Number(r.id)) || null })), stock };
   });
 

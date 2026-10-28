@@ -1,5 +1,5 @@
 // =====================================================================
-// refatrix-leadportal-admin.js — 제품·마케팅 › Meta 광고 문의 › 「🔑 고객 접속코드」 탭 (0297 · 2026-10-26 · build lp-1026e)
+// refatrix-leadportal-admin.js — 제품·마케팅 › Meta 광고 문의 › 「🔑 고객 접속코드」 탭 (0297 · 2026-10-26 · build lp-1028a)
 //   refatrix-metaleads.html 의 본 스크립트 뒤에 로드된다 — 그 페이지의 전역 api() · session · esc() · $() 를 쓴다.
 //   · 디렉터: 접속코드 발급(만료일 직접 입력 · 기준 금액 · 조건 메모 · 열람 범위) · 목록(기한 변경 · 정지/재개 · 재발급 · 삭제 · 이력) · 연락처 공개 기록
 //   · 담당 영업사원 · 디렉터: 고객 매장 재고(고객이 포털에서 고친 값과 같은 칸) — 칸을 벗어나면 저장, 이력
@@ -230,14 +230,15 @@
     try {
       var d = await api('GET', '/api/lead-portal-admin/claims');
       if (g('lpClaimDays') && document.activeElement !== g('lpClaimDays')) g('lpClaimDays').value = d.claim_days;
-      g('lpClaims').innerHTML = d.items.length ? '<table><thead><tr><th>상태</th><th>고객(코드)</th><th>문의</th><th>선점</th><th>만료</th><th class="num">보냄</th><th class="num">받음</th><th>마지막 메시지</th><th></th></tr></thead><tbody>'
+      g('lpClaims').innerHTML = d.items.length ? '<table><thead><tr><th>상태</th><th>고객(코드)</th><th>문의</th><th>선점 방법</th><th>선점</th><th>만료</th><th class="num">Messenger 보냄</th><th class="num">받음</th><th>마지막 메시지</th><th></th></tr></thead><tbody>'
         + d.items.map(function (c) {
           return '<tr' + (c.active ? '' : ' style="opacity:.6"') + '><td>' + (c.active ? '<span class="tag s-on">대화 중</span>' : (c.released_mx ? '<span class="tag s-exp">해제 ' + esc(c.released_mx) + '</span>' : '<span class="tag s-exp">만료</span>')) + '</td>'
-            + '<td>' + esc(c.customer_name) + ' <span class="muted">…' + esc(c.code_last4 || '') + '</span></td><td>#' + c.thread_id + ' · ' + esc([c.lead_name, c.vehicles].filter(Boolean).join(' · ')) + '</td>'
+            + '<td>' + esc(c.customer_name) + ' <span class="muted">…' + esc(c.code_last4 || '') + '</span></td><td>#' + c.thread_id + ' <span class="tag ch-' + esc(c.platform || '') + '">' + esc(({ whatsapp: 'WA', messenger: 'FB', instagram: 'IG' })[c.platform] || c.platform || '') + '</span> ' + esc([c.lead_name, c.vehicles].filter(Boolean).join(' · ')) + '</td>'
+            + '<td>' + esc(({ note: '📝 연락 기록', messenger: '💬 Messenger', legacy: '(이전 방식)' })[c.via] || c.via || '') + '</td>'
             + '<td style="white-space:nowrap">' + esc(c.claimed_mx) + '</td><td style="white-space:nowrap">' + esc(c.expires_mx) + '</td><td class="num">' + c.sent + '</td><td class="num">' + c.received + '</td><td style="white-space:nowrap">' + esc(c.last_mx || '—') + '</td>'
             + '<td>' + (c.active ? '<div class="row lp-acts"><button type="button" class="btn sm ghost" data-cext="' + c.id + '">연장</button><button type="button" class="btn sm lp-red" data-crel="' + c.id + '">해제</button></div>' : '') + '</td></tr>';
         }).join('') + '</tbody></table>'
-        : '<div class="hint">아직 포털 대화가 없습니다.</div>';
+        : '<div class="hint">아직 선점된 문의가 없습니다.</div>';
     } catch (e) { g('lpClaims').innerHTML = '<div class="hint">' + esc(errT(e)) + '</div>'; }
   }
   async function saveClaimDays() {

@@ -44,7 +44,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1026f';
+export const LP_BUILD = 'lp-1028a';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -337,7 +337,7 @@ export async function liveMessages(psid) {
   if (!psid || !(await chatReady())) return [];
   try {
     return (await query(
-      `SELECT m.direction, m.source, m.text, m.at, c.name AS shop FROM meta_page_messages m LEFT JOIN customers c ON c.id = m.customer_id
+      `SELECT m.direction, m.source, m.text, m.at, m.customer_id, c.name AS shop FROM meta_page_messages m LEFT JOIN customers c ON c.id = m.customer_id
         WHERE m.psid = $1 ORDER BY m.at, m.id LIMIT 500`, [String(psid)])).rows;
   } catch (_) { return []; }
 }
@@ -347,7 +347,7 @@ export function mergeConversation(graph, live) {
   for (const l of live || []) {
     const me = l.direction === 'out'; const at = new Date(l.at).getTime(); const tx = norm(l.text);
     const hit = out.find((g) => !!g.me === me && norm(g.text) === tx && Math.abs(new Date(g.at).getTime() - at) <= 120000);
-    const tag = l.source === 'portal' ? { src: 'portal', shop: l.shop || null } : (l.source === 'staff' ? { src: 'staff' } : {});
+    const tag = l.source === 'portal' ? { src: 'portal', shop: l.shop || null, customer_id: l.customer_id == null ? null : Number(l.customer_id) } : (l.source === 'staff' ? { src: 'staff' } : {});
     if (hit) Object.assign(hit, tag);
     else out.push({ at: new Date(l.at).toISOString(), me, text: l.text || '', live: true, ...tag });
   }
@@ -366,7 +366,7 @@ export async function claimMap(threadIds) {
                 WHERE pm.psid = t.user_id AND pm.source = 'portal' AND pm.customer_id = c.customer_id) AS sent
          FROM lead_portal_claims c JOIN customers cu ON cu.id = c.customer_id
         WHERE c.thread_id = ANY($1::bigint[]) AND c.released_at IS NULL AND c.expires_at > now()
-        ORDER BY c.thread_id, c.claimed_at DESC`, [threadIds])).rows) m.set(Number(r.thread_id), `${r.name} 대화 중 · 보냄 ${r.sent} · ~${r.until}`);
+        ORDER BY c.thread_id, c.claimed_at DESC`, [threadIds])).rows) m.set(Number(r.thread_id), `${r.name} 선점${Number(r.sent) ? ` · Messenger 보냄 ${r.sent}` : ''} · ~${r.until}`);
   } catch (_) { /* 표 없음 */ }
   return m;
 }
@@ -537,6 +537,13 @@ export default async function leadPortalRoutes(app) {
       }
     }
     for (const l of leads) l.notes = notes.get(l.id) || [];
+    // 0305 · 선점(모든 채널) — 다른 refaccionaria 가 선점한 문의는 연락처(가린 것 포함)를 보내지 않는다
+    const cl = await activeClaims(leads.map((l) => l.id));
+    for (const l of leads) {
+      const c = cl.get(l.id);
+      l.claim = c ? { state: !isDirCode(k) && Number(c.customer_id) === Number(k.customer_id) ? 'mine' : 'other', until: new Date(c.expires_at).toISOString() } : null;
+      if (l.claim && l.claim.state === 'other' && !isDirCode(k)) { l.name_masked = null; l.phone_masked = null; l.has_phone = false; l.revealed = false; }
+    }
     // 0300 · Facebook(Messenger) 대화 — 24시간 창 · 선점(내 것 / 다른 refaccionaria)
     const chat = await chatInfo(rows.filter((r) => r.platform === 'messenger'), k);
     for (const l of leads) l.chat = l.platform === 'messenger' ? (chat.get(l.id) || null) : null;
@@ -545,7 +552,7 @@ export default async function leadPortalRoutes(app) {
     // 카탈로그에서 사라진 코드는 부품표에서 뺀다(주문할 수 없는 줄을 보여 주지 않게)
     for (const l of leads) l.parts = l.parts.filter((p) => products[p.code]);
     const states = [...new Set(leads.map((l) => l.state).filter(Boolean))].sort((a, b) => META_STATES.indexOf(a) - META_STATES.indexOf(b));
-    return { me: meOut(k), leads, products, states };
+    return { me: { ...meOut(k), claim_days: await claimDays() }, leads, products, states };
   });
 
   app.post('/api/lead-portal/leads/:id/contact', P, async (req, reply) => {
@@ -557,6 +564,11 @@ export default async function leadPortalRoutes(app) {
       `SELECT t.id, t.platform, COALESCE(t.m_name, t.name) AS name, t.username, ${PHONE_EXPR} AS phone
          FROM meta_threads t WHERE t.id=$1 AND t.status <> 'descartado'${scope}`, args)).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    // 0305 · 다른 refaccionaria 가 선점한 문의 — 연락처를 열 수 없다(선점 기간 동안)
+    if (!isDirCode(k)) {
+      const oc = await otherClaim(k, id);
+      if (oc) return reply.code(409).send({ error: 'claimed_other', until: new Date(oc.expires_at).toISOString() });
+    }
     if (isDirCode(k)) {   // 디렉터 코드 — 공개 기록(고객 영업 실적)에 섞지 않는다. 감사 로그에만.
       await logEvent({ userId: null, action: 'page_view', target: `lead_portal_contact:${id}`, detail: { code_id: Number(k.id), director: true } });
       const d0 = String(t.phone || '').replace(/\D/g, '');
@@ -595,7 +607,8 @@ export default async function leadPortalRoutes(app) {
     return { q: String(req.query.q || ''), items: items.map((x) => ({ ...x, ...(info[x.code] || {}), code: x.code, name: x.name, active: x.active })) };
   });
 
-  // 0298 · 「이 손님이 찾는 부품」 저장 — 그 문의의 목록을 통째로 바꾼다. 연락처를 본 문의에만.
+  // 0298 · 「이 손님이 찾는 부품」 저장 — 그 문의의 목록을 통째로 바꾼다.
+  //   2026-10-28 디렉터: 모든 문의에서 기록(연락처를 안 봐도) — 다른 refaccionaria 가 선점한 문의만 막는다.
   app.put('/api/lead-portal/leads/:id/wants', P, async (req, reply) => {
     const k = req.lp; const id = idOf(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_id' });
@@ -611,12 +624,9 @@ export default async function leadPortalRoutes(app) {
       const prev = want.get(code);
       want.set(code, { qty: (prev ? prev.qty : 0) + qty, input: clip(it.input, 60) || (prev && prev.input) || null });
     }
-    const args = [id, k.customer_id]; let scope = '';
-    if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($3::text[])`; }
-    const t = (await query(
-      `SELECT t.id FROM meta_threads t JOIN lead_portal_reveals r ON r.thread_id = t.id AND r.customer_id = $2
-        WHERE t.id = $1 AND t.status <> 'descartado'${scope}`, args)).rows[0];
-    if (!t) return reply.code(409).send({ error: 'not_revealed' });
+    if (!(await threadVisible(k, id))) return reply.code(404).send({ error: 'not_found' });
+    const oc = await otherClaim(k, id);
+    if (oc) return reply.code(409).send({ error: 'claimed_other', until: new Date(oc.expires_at).toISOString() });
     const prods = want.size ? (await query(`SELECT id, code FROM products WHERE code = ANY($1::text[]) AND deleted_at IS NULL`, [[...want.keys()]])).rows : [];
     const byCode = new Map(prods.map((p) => [p.code, Number(p.id)]));
     const unknown = [...want.keys()].filter((c) => !byCode.has(c));
@@ -681,7 +691,7 @@ export default async function leadPortalRoutes(app) {
     const args = [id]; let scope = '';
     if (!isDirCode(k) && Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($2::text[])`; }
     return (await query(
-      `SELECT t.id, t.platform, t.user_id AS psid, t.last_in_at, t.status, t.ai_summary AS summary,
+      `SELECT t.id, t.platform, t.user_id AS psid, t.last_in_at, t.status, t.ai_summary AS summary, t.messages,
               COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts
          FROM meta_threads t WHERE t.id=$1 AND t.status <> 'descartado'${scope}`, args)).rows[0] || null;
   }
@@ -691,44 +701,58 @@ export default async function leadPortalRoutes(app) {
     return { info, claim: c };
   }
 
-  // 선점 — 그 문의를 이 refaccionaria 가 맡는다(기본 3일 · 메시지마다 연장)
-  app.post('/api/lead-portal/leads/:id/claim', P, async (req, reply) => {
-    const k = req.lp; const id = idOf(req.params.id);
-    if (!id) return reply.code(400).send({ error: 'bad_id' });
-    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
-    if (!(await chatReady())) return reply.code(503).send({ error: 'not_ready' });
-    const t = await messengerThread(k, id);
-    if (!t) return reply.code(404).send({ error: 'not_found' });
-    if (t.platform !== 'messenger') return reply.code(409).send({ error: 'chat_not_allowed' });   // WhatsApp · Instagram 은 대화 없음
+  // ── 0305 · 선점 규칙(2026-10-28 디렉터 결정) ──
+  //   선점 = 「Ver contacto」로 연락처를 본 뒤 연락한 내용을 기록(메모) — Messenger 는 포털에서 보낸 첫 메시지도 기록으로 친다.
+  //   선점하면 기본 일수(디렉터 설정, 기본 3일) 동안 다른 refaccionaria 는 그 문의의 연락처를 열 수 없다.
+  //   이미 내 선점이면 기록할 때마다 만료를 「지금 + 기본 일수」로 늘린다. 「Atender」 버튼(0300)은 없앴다.
+  async function otherClaim(k, id) {
+    if (isDirCode(k) || !(await chatReady())) return null;
+    const c = (await activeClaims([id])).get(Number(id));
+    return c && Number(c.customer_id) !== Number(k.customer_id) ? c : null;
+  }
+  async function hasRevealed(k, id) {
+    return !!(await query(`SELECT 1 FROM lead_portal_reveals WHERE customer_id=$1 AND thread_id=$2`, [k.customer_id, id])).rows[0];
+  }
+  //   → { state: 'mine', until, created } | { state: 'other', until } | { state: 'need_contact' } | null(준비 안 됨 · 디렉터)
+  async function takeClaim(k, id, via, noteId = null) {
+    if (isDirCode(k) || !(await chatReady())) return null;
+    if (!(await hasRevealed(k, id))) return { state: 'need_contact' };
     const days = await claimDays();
     const res = await withTx(async (c) => {
       await c.query(`SELECT pg_advisory_xact_lock(hashtext('lp_claim:' || $1::text))`, [id]);
       const cur = (await c.query(
         `SELECT id, customer_id, expires_at FROM lead_portal_claims WHERE thread_id=$1 AND released_at IS NULL AND expires_at > now() ORDER BY claimed_at DESC LIMIT 1`, [id])).rows[0];
-      if (cur && Number(cur.customer_id) !== Number(k.customer_id)) return { other: true, until: cur.expires_at };
-      if (cur) return { claim: cur, again: true };
+      if (cur && Number(cur.customer_id) !== Number(k.customer_id)) return { state: 'other', until: cur.expires_at };
+      if (cur) {
+        const u = (await c.query(`UPDATE lead_portal_claims SET expires_at = GREATEST(expires_at, now() + ($2 || ' days')::interval) WHERE id=$1 RETURNING expires_at`, [cur.id, String(days)])).rows[0];
+        return { state: 'mine', until: u.expires_at, created: false, id: cur.id };
+      }
       const n = (await c.query(
-        `INSERT INTO lead_portal_claims (thread_id, customer_id, code_id, expires_at) VALUES ($1,$2,$3, now() + ($4 || ' days')::interval)
-         RETURNING id, customer_id, claimed_at, expires_at`, [id, k.customer_id, k.id, String(days)])).rows[0];
+        `INSERT INTO lead_portal_claims (thread_id, customer_id, code_id, expires_at, via, note_id) VALUES ($1,$2,$3, now() + ($4 || ' days')::interval, $5, $6)
+         RETURNING id, expires_at`, [id, k.customer_id, k.id, String(days), via, noteId])).rows[0];
       await c.query(
         `UPDATE meta_threads SET status='derivado', derived_customer_id=$2, derived_to=$3, updated_at=now()
           WHERE id=$1 AND status IN ('nuevo','contactado')`, [id, k.customer_id, k.customer_name]);
-      return { claim: n };
+      return { state: 'mine', until: n.expires_at, created: true, id: n.id };
     });
-    if (res.other) return reply.code(409).send({ error: 'claimed_other', until: new Date(res.until).toISOString() });
-    await logEvent({ userId: null, action: 'update', target: `meta_thread:${id}`, detail: { op: 'lead_portal_claim', customer_id: Number(k.customer_id), code_id: Number(k.id), days } });
-    return { ok: true, claim_until: new Date(res.claim.expires_at).toISOString(), again: !!res.again };
-  });
+    if (res.created) await logEvent({ userId: null, action: 'update', target: `meta_thread:${id}`, detail: { op: 'lead_portal_claim', via, customer_id: Number(k.customer_id), code_id: Number(k.id), days } });
+    return { ...res, until: new Date(res.until).toISOString() };
+  }
 
-  function msgOut(m, k) {
-    const who = m.source === 'customer' ? 'cliente'
-      : m.source === 'staff' ? 'refatrix'
-      : (isDirCode(k) ? 'portal' : (Number(m.customer_id) === Number(k.customer_id) ? 'yo' : 'otro'));
-    const o = { id: Number(m.id), dir: m.direction, who, text: m.text || '', at: new Date(m.at).toISOString() };
-    if (isDirCode(k) && m.source === 'portal') o.shop = m.shop || null;
+  // 대화 한 줄(포털용) — 손님 · Refatrix(직원 · 예전 대화) · 나 · 다른 refaccionaria(이름 숨김) · 디렉터 코드는 가게 이름까지
+  function convOut(m, k) {
+    const who = !m.me ? 'cliente'
+      : m.src === 'portal' ? (isDirCode(k) ? 'portal' : (Number(m.customer_id) === Number(k.customer_id) ? 'yo' : 'otro'))
+      : 'refatrix';
+    let text = m.text || '';
+    // 다른 refaccionaria 가 보낸 메시지 — 앞의 「[가게 이름]」을 가린다(경쟁 가게 이름 노출 방지)
+    if (who === 'otro') text = text.replace(/^\[[^\]]{1,120}\]\s*/, '[Otra refaccionaria] ');
+    const o = { dir: m.me ? 'out' : 'in', who, text, at: new Date(m.at).toISOString() };
+    if (isDirCode(k) && m.src === 'portal') o.shop = m.shop || null;
     return o;
   }
-  // 대화 보기 — refaccionaria: 자기 선점 이후 메시지만 · 디렉터 코드: 웹훅으로 받은 전부(읽기 전용)
+  // 대화 보기 — 2026-10-28 디렉터: 요약 아래에 **실제로 이루어진 대화 전체**(광고 문의부터 · Graph 동기화 + 웹훅 실시간).
+  //   refaccionaria 는 연락처를 본(「Ver contacto」) 뒤에, 다른 곳이 선점하지 않았을 때만. 디렉터 코드는 언제나(읽기 전용).
   app.get('/api/lead-portal/leads/:id/chat', P, async (req, reply) => {
     const k = req.lp; const id = idOf(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_id' });
@@ -737,17 +761,15 @@ export default async function leadPortalRoutes(app) {
     if (!t) return reply.code(404).send({ error: 'not_found' });
     if (t.platform !== 'messenger') return reply.code(409).send({ error: 'chat_not_allowed' });
     const { info, claim } = await chatState(k, t);
-    let since = null;
     if (!isDirCode(k)) {
-      if (!claim || Number(claim.customer_id) !== Number(k.customer_id)) return reply.code(409).send({ error: claim ? 'claimed_other' : 'not_claimed', until: claim ? new Date(claim.expires_at).toISOString() : null });
-      since = claim.claimed_at;
+      if (claim && Number(claim.customer_id) !== Number(k.customer_id)) return reply.code(409).send({ error: 'claimed_other', until: new Date(claim.expires_at).toISOString() });
+      if (!(await hasRevealed(k, id))) return reply.code(409).send({ error: 'need_contact' });
     }
-    const rows = (await query(
-      `SELECT m.id, m.direction, m.source, m.text, m.at, m.customer_id, c.name AS shop
-         FROM meta_page_messages m LEFT JOIN customers c ON c.id = m.customer_id
-        WHERE m.psid = $1 ${since ? 'AND m.at >= $2' : ''} ORDER BY m.at, m.id LIMIT 500`, since ? [t.psid, since] : [t.psid])).rows;
-    return { messages: rows.map((m) => msgOut(m, k)), window_until: info.window_until || null, open: !!info.open,
-      claim_until: claim ? new Date(claim.expires_at).toISOString() : null, summary: clip(t.summary, 300) || clip([t.vehicles, t.parts].filter(Boolean).join(' · '), 300),
+    const conv = mergeConversation(t.messages, await liveMessages(t.psid)).slice(-300);
+    const mine = claim && !isDirCode(k) && Number(claim.customer_id) === Number(k.customer_id);
+    return { messages: conv.map((m) => convOut(m, k)), window_until: info.window_until || null, open: !!info.open,
+      claim_until: mine ? new Date(claim.expires_at).toISOString() : null, claimed: !!mine,
+      summary: clip(t.summary, 300) || clip([t.vehicles, t.parts].filter(Boolean).join(' · '), 300),
       can_send: !isDirCode(k) && !!info.open };
   });
 
@@ -763,12 +785,16 @@ export default async function leadPortalRoutes(app) {
     const t = await messengerThread(k, id);
     if (!t) return reply.code(404).send({ error: 'not_found' });
     if (t.platform !== 'messenger' || !t.psid) return reply.code(409).send({ error: 'chat_not_allowed' });
-    const { info, claim } = await chatState(k, t);
-    if (!claim || Number(claim.customer_id) !== Number(k.customer_id)) return reply.code(409).send({ error: claim ? 'claimed_other' : 'not_claimed' });
+    const { info } = await chatState(k, t);
     if (!info.open) return reply.code(409).send({ error: 'window_closed', window_until: info.window_until || null });
+    // 0305 · 포털에서 보낸 메시지 = 연락 기록 → 선점(이미 내 것이면 연장). 연락처를 먼저 봐야 한다.
+    const cl = await takeClaim(k, id, 'messenger');
+    if (!cl || cl.state === 'need_contact') return reply.code(409).send({ error: 'need_contact' });
+    if (cl.state === 'other') return reply.code(409).send({ error: 'claimed_other', until: cl.until });
     const full = `[${k.customer_name}] ${text}`;
     const s0 = await sendMessenger(t.psid, full);
     if (!s0.ok) {
+      if (cl.created) await query(`DELETE FROM lead_portal_claims WHERE id=$1`, [cl.id]);   // 못 보냈으면 방금 만든 선점은 되돌린다
       const closed = /outside of allowed window|#10\b|#551\b|2018278/.test(String(s0.error));
       req.log?.warn({ err: s0.error }, 'lead portal messenger send failed');
       return reply.code(closed ? 409 : 502).send({ error: closed ? 'window_closed' : 'send_failed', detail: s0.error });
@@ -777,9 +803,7 @@ export default async function leadPortalRoutes(app) {
       `INSERT INTO meta_page_messages (psid, mid, direction, source, text, at, customer_id, code_id) VALUES ($1,$2,'out','portal',$3,now(),$4,$5)
        ON CONFLICT (mid) DO UPDATE SET source='portal', customer_id=EXCLUDED.customer_id, code_id=EXCLUDED.code_id, text=EXCLUDED.text
        RETURNING id, direction, source, text, at, customer_id`, [t.psid, s0.mid, full, k.customer_id, k.id])).rows[0];
-    const days = await claimDays();
-    await query(`UPDATE lead_portal_claims SET expires_at = GREATEST(expires_at, now() + ($2 || ' days')::interval) WHERE id=$1`, [claim.id, String(days)]);
-    return { ok: true, message: msgOut(m, k) };
+    return { ok: true, message: convOut({ me: true, src: 'portal', customer_id: m.customer_id, text: m.text, at: m.at }, k), claim: { state: 'mine', until: cl.until, created: !!cl.created } };
   });
 
   // 0299 · 문의 메모 — 쓰기 · 지우기(자기 것만). 지운 메모는 디렉터 화면에 「삭제됨」으로 남는다.
@@ -800,7 +824,9 @@ export default async function leadPortalRoutes(app) {
       `INSERT INTO lead_portal_notes (thread_id, customer_id, code_id, body) VALUES ($1,$2,$3,$4)
        RETURNING id, thread_id, body, customer_id, to_char(created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at`,
       [id, isDirCode(k) ? null : k.customer_id, k.id, body])).rows[0];
-    return { ok: true, note: noteOut({ ...n, author: k.customer_name }, k) };
+    // 0305 · 연락처를 본 뒤 남긴 메모 = 연락 기록 → 선점(다른 곳이 먼저 선점했으면 메모만 저장)
+    const cl = await takeClaim(k, id, 'note', Number(n.id));
+    return { ok: true, note: noteOut({ ...n, author: k.customer_name }, k), claim: cl ? { state: cl.state, until: cl.until || null, created: !!cl.created } : null };
   });
   app.delete('/api/lead-portal/notes/:nid', P, async (req, reply) => {
     const k = req.lp; const nid = idOf(req.params.nid);
@@ -1151,7 +1177,7 @@ export default async function leadPortalRoutes(app) {
   app.get('/api/lead-portal-admin/claims', DIR, async (req, reply) => {
     if (!(await chatReady())) return reply.code(503).send({ error: 'migration_required', note: '0300 마이그레이션이 필요합니다(npm run migrate).' });
     const rows = (await query(
-      `SELECT c.id, c.thread_id, cu.name AS customer_name, k.code_last4,
+      `SELECT c.id, c.thread_id, cu.name AS customer_name, k.code_last4, (to_jsonb(c)->>'via') AS via, t.platform,
               to_char(c.claimed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS claimed_mx,
               to_char(c.expires_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS expires_mx,
               to_char(c.released_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS released_mx,
