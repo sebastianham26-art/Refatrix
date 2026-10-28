@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 도면 Mapa del almacén · build wm-1019c</title>
+<title>Refatrix · 창고 도면 Mapa del almacén · build wm-1028kit</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
@@ -102,6 +102,7 @@
   table.items th{font-size:11px;color:var(--muted);text-align:left;padding:5px 6px;border-bottom:2px solid var(--ink)}
   table.items td{padding:6px;border-bottom:1px solid var(--line);vertical-align:top}
   table.items td.q{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .kittag{display:inline-block;font-size:10.5px;font-weight:800;color:#3C3489;background:#EEEDFE;border:1px solid #AFA9EC;border-radius:6px;padding:0 4px;white-space:nowrap}   /* 0306 */
   table.items tr.lv td{background:var(--paper);font-weight:800;color:var(--brand);font-size:12px;padding:5px 6px}
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
   .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
@@ -571,7 +572,7 @@
       var left=Math.max(0,Number(it.remaining)||0);
       picks.forEach(function(pk){
         var q=Number(pk.qty)||0, l=Math.min(left,q); left-=l;
-        var row={code:it.ctr_code,syd:it.syd_code,rack:pk.rack||null,qty:q,left:done?0:l,done:done||l<=0,picked:!!pk.picked};
+        var row={code:it.ctr_code,syd:it.syd_code,rack:pk.rack||null,qty:q,left:done?0:l,done:done||l<=0,picked:!!pk.picked,kit:it.kit_no||null};   // 0306 · 키트 번호
         if(!pk.rack){ PICKOFF.push(row); return; }
         var b=bayOf(pk.rack); if(!idx[b]&&idx[String(pk.rack).toUpperCase()]) b=String(pk.rack).toUpperCase();
         row.bay=b; row.onmap=!!idx[b];
@@ -609,7 +610,7 @@
     groups.forEach(function(g){
       h+='<div class="pk'+(SELB===g.bay?' sel':'')+(g.onmap?'':' off')+(g.left>0?'':' done')+'" data-pb="'+esc(g.bay)+'"><div class="bh" data-selpb="'+esc(g.bay)+'"><span>'+esc(g.bay)+(g.onmap?'':' <small>· '+L('도면 밖','fuera del mapa')+'</small>')+'</span><small>'+(g.left>0?fmt(g.left)+' EA':'✓')+'</small></div>';
       g.rows.forEach(function(r){
-        h+='<div class="pr'+(r.done?' done':'')+'"><span class="mono">'+esc(r.rack)+'</span><span><b class="mono">'+esc(r.code)+'</b>'+(r.syd?' <span class="hint">'+esc(r.syd)+'</span>':'')+'</span><span class="q">'+(r.done?'✓ ':'')+fmt(r.done?r.qty:r.left)+'</span></div>';
+        h+='<div class="pr'+(r.done?' done':'')+'"><span class="mono">'+esc(r.rack)+'</span><span><b class="mono">'+esc(r.code)+'</b>'+(r.kit?' <span class="kittag">🧰 '+esc(r.kit)+'</span>':'')+(r.syd?' <span class="hint">'+esc(r.syd)+'</span>':'')+'</span><span class="q">'+(r.done?'✓ ':'')+fmt(r.done?r.qty:r.left)+'</span></div>';
       });
       h+='</div>';
     });

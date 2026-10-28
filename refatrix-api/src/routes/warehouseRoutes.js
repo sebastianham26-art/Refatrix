@@ -10,6 +10,8 @@ import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
 // 0245 · 랙별 피킹 위치(포장작업지시서와 같은 값) — fast moving 랙 먼저
 import { rackStockReady, quotePicks, picksText, rackMap,
   rackEditReady, pickOptions, recordPick, resetPick, RackError } from '../rackStock.js';   // 0269 · 피킹 기록
+// 0306 · 키트 묶음(키트 번호 순) — 포장지시 · Lista de empaque
+import { kitSummaries } from '../vioPromos.js';
 
 // =====================================================================
 // Refatrix ERP · warehouseRoutes.js  (창고 모듈)
@@ -146,6 +148,7 @@ export default async function warehouseRoutes(app) {
   async function packableLines(quoteId, exec = query) {
     const rows = (await exec(
       `SELECT l.line_no, l.ctr_code, l.syd_codes, l.qty, l.product_id, l.reserved_qty,
+              to_jsonb(l)->>'kit_no' AS kit_no,
               p.ean, p.rack_location, p.scode, p.stock_qty
          FROM quote_lines l LEFT JOIN products p ON p.id=l.product_id
         WHERE l.quote_id=$1 ORDER BY l.line_no, l.id`, [quoteId])).rows;
@@ -158,9 +161,43 @@ export default async function warehouseRoutes(app) {
       if (fulfill < qty) continue;
       const syd = (l.syd_codes && String(l.syd_codes).trim()) || (l.scode && String(l.scode).trim()) || '';
       out.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code || '', syd_code: syd,
-                 ean: (l.ean || '').trim(), rack_location: l.rack_location || '', required: qty });
+                 ean: (l.ean || '').trim(), rack_location: l.rack_location || '', required: qty, kit_no: l.kit_no || null });
     }
     return out;
+  }
+
+  // 0306 · 견적 줄 전체의 키트 번호(재고 조건 없이) — 키트 요약 · 박스 줄 표시용
+  async function kitLinesAll(quoteId, exec = query) {
+    return (await exec(
+      `SELECT l.product_id, l.ctr_code, l.qty, to_jsonb(l)->>'kit_no' AS kit_no
+         FROM quote_lines l WHERE l.quote_id=$1 AND l.product_id IS NOT NULL ORDER BY l.line_no, l.id`, [quoteId])).rows
+      .map((r) => ({ product_id: Number(r.product_id), ctr_code: r.ctr_code || '', qty: Number(r.qty) || 0, kit_no: r.kit_no || null }));
+  }
+  // product_id → 대표 키트 번호(그 SKU 의 키트 줄 중 키트 번호가 가장 앞선 것). 키트 줄이 없으면 없음.
+  function kitByProduct(lines) {
+    const m = {};
+    for (const l of lines) { if (!l.kit_no) continue; const k = l.product_id; if (!m[k] || l.kit_no < m[k]) m[k] = l.kit_no; }
+    return m;
+  }
+  // 같은 SKU 가 여러 줄(키트 둘 · 키트+단품)이면 한 줄로 합친다 — 스캔·피킹은 SKU 단위라서.
+  //   kit_parts 는 섞였을 때만: [{kit_no|null, qty}]
+  function mergeByProduct(lines) {
+    const by = new Map();
+    for (const l of lines) {
+      const k = l.product_id;
+      if (!by.has(k)) { by.set(k, { ...l, required: 0, _parts: [] }); }
+      const it = by.get(k); it.required += l.required; it._parts.push({ kit_no: l.kit_no || null, qty: l.required });
+    }
+    return [...by.values()].map((it) => {
+      const kinds = new Set(it._parts.map((p) => p.kit_no || ''));
+      const kitsIn = [...kinds].filter(Boolean).sort();
+      const out = { ...it, kit_no: kitsIn[0] || null };
+      if (kinds.size > 1) {
+        const agg = new Map(); it._parts.forEach((p) => agg.set(p.kit_no || '', (agg.get(p.kit_no || '') || 0) + p.qty));
+        out.kit_parts = [...agg.entries()].map(([kit_no, qty]) => ({ kit_no: kit_no || null, qty }));
+      }
+      delete out._parts; return out;
+    });
   }
 
   // 경쟁사(SYD) 코드 매핑 — 재고 조건 없이 견적 라인 전체 기준.
@@ -234,7 +271,8 @@ export default async function warehouseRoutes(app) {
         WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
 
-    const req2 = await packableLines(id);
+    const packRaw = await packableLines(id);
+    const req2 = mergeByProduct(packRaw);
     const scanned = {};
     (await query(`SELECT product_id, SUM(qty)::int AS q FROM packing_box_line WHERE quote_id=$1 GROUP BY product_id`, [id]))
       .rows.forEach((r) => { scanned[Number(r.product_id)] = Number(r.q) || 0; });
@@ -244,8 +282,20 @@ export default async function warehouseRoutes(app) {
       const sc = scanned[l.product_id] || 0;
       reqTotal += l.required; scanTotal += Math.min(sc, l.required);
       return { product_id: l.product_id, ctr_code: l.ctr_code, syd_code: l.syd_code, ean: l.ean,
-               rack_location: l.rack_location, required: l.required, scanned: sc, remaining: Math.max(0, l.required - sc) };
+               rack_location: l.rack_location, required: l.required, scanned: sc, remaining: Math.max(0, l.required - sc),
+               kit_no: l.kit_no || null, ...(l.kit_parts ? { kit_parts: l.kit_parts } : {}) };
     });
+    // 0306 · 이 오더의 키트(키트 번호 순). partial = 재고 부족으로 포장 목록에서 빠진 구성품이 있다
+    let kits = [];
+    try {
+      const allLines = await kitLinesAll(id);
+      kits = await kitSummaries(allLines);
+      for (const k of kits) {
+        const want = allLines.filter((l) => l.kit_no === k.kit_no).length;
+        const have = packRaw.filter((l) => l.kit_no === k.kit_no).length;
+        k.partial = have < want;
+      }
+    } catch (e) { try { console.error('[warehouse] kits', e.message); } catch (_) {} }
     await attachPicks(id, items, 'required');
 
     // product_id → 경쟁사 코드(SYD) 매핑 — 재고 조건 없이 전체 라인 기준(빈칸 버그 방지)
@@ -260,12 +310,14 @@ export default async function warehouseRoutes(app) {
     (await query(`SELECT box_id, COUNT(*)::int AS n FROM packing_box_photo WHERE quote_id=$1 GROUP BY box_id`, [id]))
       .rows.forEach((r) => { photoCnt[Number(r.box_id)] = Number(r.n) || 0; });
 
+    const kitOfPk = {}; req2.forEach((l) => { if (l.kit_no) kitOfPk[l.product_id] = l.kit_no; });   // 0306
     const boxOut = boxes.map((b) => ({
       box_id: Number(b.id), box_no: b.box_no, sealed: !!b.sealed_at,
       photo_count: photoCnt[Number(b.id)] || 0,
       lines: blines.filter((x) => Number(x.box_id) === Number(b.id))
                    .map((x) => ({ product_id: Number(x.product_id), ctr_code: x.ctr_code || '',
-                                  syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty) })),
+                                  syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty),
+                                  kit_no: kitOfPk[Number(x.product_id)] || null })),
     }));
     // product_id → 담긴 박스번호(여러 개면 모두)
     const boxNoById = {}; boxes.forEach((b) => { boxNoById[Number(b.id)] = b.box_no; });
@@ -286,7 +338,7 @@ export default async function warehouseRoutes(app) {
       required_total: reqTotal, scanned_total: scanTotal, remaining_total: Math.max(0, reqTotal - scanTotal),
       all_done: reqTotal > 0 && scanTotal >= reqTotal,
       photos_ok: photosOk,
-      items, boxes: boxOut,
+      items, boxes: boxOut, kits,
     };
   });
 
@@ -378,7 +430,7 @@ export default async function warehouseRoutes(app) {
 
       if (!prod) { await logScan('unknown', null); return { body: { result: 'unknown', ean } }; }
 
-      const list = await packableLines(id, c.query.bind(c));
+      const list = mergeByProduct(await packableLines(id, c.query.bind(c)));   // 0306 · 같은 SKU 여러 줄(키트 둘 등) → 합계 기준
       const target = list.find((x) => x.product_id === Number(prod.id));
       if (!target) { await logScan('wrong', prod.id); return { body: { result: 'wrong', ean, ctr_code: prod.code || '' } }; }
 
@@ -452,7 +504,7 @@ export default async function warehouseRoutes(app) {
       const prod = (await c.query(`SELECT id, code, ean FROM products WHERE UPPER(TRIM(code))=UPPER($1) AND deleted_at IS NULL LIMIT 1`, [ctr.toUpperCase()])).rows[0];
       if (!prod) return { body: { result: 'wrong', ctr_code: ctr, note: '등록되지 않은 CTR 코드' } };
 
-      const list = await packableLines(id, c.query.bind(c));
+      const list = mergeByProduct(await packableLines(id, c.query.bind(c)));   // 0306 · 같은 SKU 여러 줄(키트 둘 등) → 합계 기준
       const target = list.find((x) => x.product_id === Number(prod.id));
       if (!target) return { body: { result: 'wrong', ctr_code: prod.code || ctr, note: '이 주문(포장목록)에 없는 제품' } };
 
@@ -553,7 +605,7 @@ export default async function warehouseRoutes(app) {
         ORDER BY q.packing_printed_at`)).rows;
     const out = [];
     for (const q of cands) {
-      const lines = await packableLines(q.id);
+      const lines = mergeByProduct(await packableLines(q.id));   // 0306
       if (!lines.length) continue;
       const scanned = {};
       (await query(`SELECT product_id, SUM(qty)::int AS s FROM packing_box_line WHERE quote_id=$1 GROUP BY product_id`, [q.id]))
@@ -645,6 +697,10 @@ export default async function warehouseRoutes(app) {
     // 경쟁사(SYD) 매핑 — 재고 조건 없이 전체 라인 기준
     //   (매출전환 후 재고 차감으로 packableLines에서 라인이 탈락하면 경쟁사 번호가 빈칸이 되던 버그 수정)
     const sydMap = await sydMapAllLines(id);
+    // 0306 · 키트 묶음 — 박스 줄마다 키트 번호, 키트 요약(키트 번호 순)
+    let kitOf = {}, kits = [];
+    try { const all = await kitLinesAll(id); kitOf = kitByProduct(all); kits = await kitSummaries(all); }
+    catch (e) { try { console.error('[warehouse] ship kits', e.message); } catch (_) {} }
 
     const boxes = (await query(`SELECT id, box_no FROM packing_box WHERE quote_id=$1 ORDER BY box_no`, [id])).rows;
     const blines = (await query(
@@ -655,7 +711,8 @@ export default async function warehouseRoutes(app) {
     const boxOut = boxes.map((b) => {
       const lines = blines.filter((x) => Number(x.box_id) === Number(b.id)).map((x) => {
         totQty += Number(x.qty) || 0; skuSet.add(Number(x.product_id));
-        return { ctr_code: x.ctr_code || '', syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty) };
+        return { ctr_code: x.ctr_code || '', syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty),
+                 kit_no: kitOf[Number(x.product_id)] || null };
       });
       const bq = lines.reduce((a, l) => a + l.qty, 0);
       return { box_id: Number(b.id), box_no: b.box_no, lines, box_qty: bq, box_sku: lines.length };
@@ -669,7 +726,7 @@ export default async function warehouseRoutes(app) {
       sat_no: realSat ? q.sat_no : null, has_sat: !!realSat, inv_date: q.inv_date, total_mxn: q.total_mxn != null ? Number(q.total_mxn) : null,
       packed_at: q.packed_at,
       box_count: boxOut.length, total_qty: totQty, sku_count: skuSet.size,
-      boxes: boxOut,
+      boxes: boxOut, kits,
     };
   });
 

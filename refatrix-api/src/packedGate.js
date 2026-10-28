@@ -31,7 +31,9 @@ export async function maybeMarkPacked(quoteId, exec = query) {
   const scanned = {};
   (await exec(`SELECT product_id, SUM(qty)::int AS s FROM packing_box_line WHERE quote_id=$1 GROUP BY product_id`, [id]))
     .rows.forEach((r) => { scanned[Number(r.product_id)] = Number(r.s) || 0; });
-  if (!req.every((l) => (scanned[l.product_id] || 0) >= l.required)) return false;
+  // 0306 · 같은 SKU 가 여러 줄(키트 둘 · 키트+단품)이면 합계로 비교한다
+  const need = {}; req.forEach((l) => { need[l.product_id] = (need[l.product_id] || 0) + l.required; });
+  if (!Object.keys(need).every((k) => (scanned[k] || 0) >= need[k])) return false;
   // ② 박스 1개 이상(사진은 선택 — 필수 아님)
   const boxes = (await exec(`SELECT id FROM packing_box WHERE quote_id=$1`, [id])).rows;
   if (!boxes.length) return false;

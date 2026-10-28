@@ -6,7 +6,7 @@
 <!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 1019pm1</title>
+<title>Refatrix · 창고 포장 · build 1028kit</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -172,6 +172,23 @@
   table.ptbl tr.done td{background:#f7f5ef;color:#9a958b}
   table.ptbl td b.zero{color:var(--green)} table.ptbl td b.pos{color:var(--red);font-size:17px}
   table.ptbl tr:last-child td{border-bottom:none}
+  /* 0306 · 키트 묶음 — 키트 번호 기준. 구성품은 한 봉투 · 같은 박스 */
+  table.ptbl tr.kith td{background:#EEEDFE;color:#3C3489;border-bottom:none;padding:9px 10px;white-space:normal;font-size:14px}
+  table.ptbl tr.kith .kno{font-weight:800;font-size:15px;margin-right:6px}
+  table.ptbl tr.kith .kmeta{color:#534AB7;font-weight:700}
+  table.ptbl tr.kith .kprog{display:inline-block;margin-left:8px;background:#fff;border:1px solid #AFA9EC;border-radius:999px;padding:1px 9px;font-weight:800;font-variant-numeric:tabular-nums}
+  table.ptbl tr.kith.kdone .kprog{background:#E1F5EE;border-color:#5DCAA5;color:#085041}
+  table.ptbl tr.kith .khint{display:block;font-size:12.5px;color:#534AB7;font-weight:700;margin-top:2px}
+  table.ptbl tr.kith .kwarn{display:block;font-size:12.5px;color:#A32D2D;font-weight:800;margin-top:2px}
+  table.ptbl tr.kitr td:first-child{border-left:4px solid #7F77DD;padding-left:14px}
+  table.ptbl tr.kitr td{background:#FAF9FF}
+  table.ptbl tr.kitr.done td{background:#f4f3f8}
+  table.ptbl tr.kitr td .kmix{display:block;font-size:11px;color:#534AB7;font-weight:700}
+  table.ptbl tr.singh td{background:#f3efe6;color:#5f5e5a;font-weight:800;font-size:13.5px;padding:8px 10px}
+  .kitbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .kitchip{font-size:12.5px;font-weight:800;color:#3C3489;background:#EEEDFE;border:1px solid #AFA9EC;border-radius:999px;padding:2px 9px;font-variant-numeric:tabular-nums}
+  .kitchip.done{color:#085041;background:#E1F5EE;border-color:#5DCAA5}
+  .kittag{display:inline-block;margin-left:6px;font-size:11px;font-weight:800;color:#3C3489;background:#EEEDFE;border:1px solid #AFA9EC;border-radius:6px;padding:0 5px;vertical-align:middle;white-space:nowrap}
   .bact2 .pickbox{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
   .bact2 .picknow{font-size:12px;font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:4px 11px;white-space:nowrap}
   #boxGrid{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:6px}
@@ -505,7 +522,7 @@
   function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
 
 (function(){
-  try{ console.log('[refatrix-warehouse] build 1019pm1 — 포장지시 → 창고 도면 피킹 위치'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 1028kit — 0306 키트 묶음(키트 번호 순)'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -936,9 +953,36 @@
       +'</style></head><body>'+pages+'</body></html>';
   }
   function buildPackingListHTML(d){
+    // 0306 · 이 오더의 키트(키트 번호 순) — 고객도 어느 부품이 어느 KIT 인지 확인
+    function kitsBlock(){
+      var ks=(d.kits||[]).slice().sort(function(a,c){ return String(a.kit_no).localeCompare(String(c.kit_no),'en',{numeric:true}); });
+      if(!ks.length) return '';
+      return '<div class="kits"><div class="kt">Kits incluidos ('+ks.length+')</div><table class="pt"><thead><tr><th style="width:22mm">KIT</th><th class="q" style="width:18mm">Juegos</th><th>Componentes por juego</th></tr></thead><tbody>'
+        +ks.map(function(k){ return '<tr><td><b>'+esc(k.kit_no)+'</b></td><td class="q">'+(k.sets!=null?k.sets:'-')+'</td><td>'
+          +esc((k.items||[]).map(function(x){ return x.ctr_code+(Number(x.qty)>1?' \u00d7'+x.qty:''); }).join(', '))+'</td></tr>'; }).join('')
+        +'</tbody></table></div>';
+    }
     function copy(tag){
+      var kitMeta={}; (d.kits||[]).forEach(function(k){ kitMeta[k.kit_no]=k; });
       var boxes=d.boxes.map(function(b){
-        var lines=b.lines.map(function(l,i){ return '<tr><td class="no">'+(i+1)+'</td><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
+        // 0306 · 박스 안에서 키트 번호 순으로 묶고, 남은 것은 「Piezas sueltas」
+        var hasKit=b.lines.some(function(l){ return l.kit_no; });
+        var lines='', n=0;
+        function ln(l,cls){ n++; return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="no">'+n+'</td><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }
+        if(!hasKit){ lines=b.lines.map(function(l){ return ln(l,''); }).join(''); }
+        else {
+          var nos=[]; b.lines.forEach(function(l){ if(l.kit_no&&nos.indexOf(l.kit_no)<0) nos.push(l.kit_no); });
+          nos.sort(function(a,c){ return String(a).localeCompare(String(c),'en',{numeric:true}); });
+          nos.forEach(function(no){
+            var ls=b.lines.filter(function(l){ return l.kit_no===no; });
+            var pz=ls.reduce(function(s2,l){ return s2+Number(l.qty||0); },0);
+            var m=kitMeta[no]||{};
+            var st=(m.sets!=null&&m.sets>0)?(m.sets+(m.sets===1?' juego':' juegos')+' \u00b7 '):'';
+            lines+='<tr class="kh"><td colspan="4">KIT '+esc(no)+' \u00b7 '+st+pz+' pzas</td></tr>'+ls.map(function(l){ return ln(l,'kl'); }).join('');
+          });
+          var sl=b.lines.filter(function(l){ return !l.kit_no; });
+          if(sl.length) lines+='<tr class="sh"><td colspan="4">Piezas sueltas</td></tr>'+sl.map(function(l){ return ln(l,''); }).join('');
+        }
         return '<div class="box"><div class="bh">Caja '+b.box_no+' / '+d.box_count+' \u00b7 '+(b.box_sku!=null?b.box_sku+' SKU \u00b7 ':'')+b.box_qty+' pzas</div>'
           +'<table class="pt"><thead><tr><th class="no">No.</th><th>CTR</th><th>Código competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
       }).join('');
@@ -959,6 +1003,7 @@
         +'<tr><td><b>Fecha:</b> '+esc(d.inv_date||d.quote_date||'')+'</td><td><b>Cajas:</b> '+d.box_count+' \u00b7 <b>SKU:</b> '+d.sku_count+' \u00b7 <b>Piezas:</b> '+d.total_qty+'</td></tr>'
         +(d.ship_address?'<tr><td colspan="2"><b>Entregar en (direcci\u00f3n de env\u00edo):</b> '+esc(d.ship_address)+'</td></tr>':'')
         +'</table>'
+        +kitsBlock()
         +boxes
         +'<div class="tot">Total: '+d.box_count+' cajas \u00b7 '+d.sku_count+' SKU \u00b7 '+d.total_qty+' piezas</div>'
         +'<div class="sign"><div class="sb"><div class="ln"></div>Entreg\u00f3 (Almac\u00e9n)</div><div class="sb"><div class="ln"></div>Recib\u00ed conforme (Cliente)</div></div></section>';
@@ -974,6 +1019,9 @@
       +'.hd{width:100%;border-collapse:collapse;margin-bottom:4mm}.hd td{padding:1.5mm 2mm;border:1px solid #ccc;font-size:10.5pt}'
       +'.box{margin-bottom:4mm}.bh{font-weight:800;background:#eee;padding:2mm 3mm;border:1px solid #999;border-bottom:none}'
       +'.pt{width:100%;border-collapse:collapse;font-size:10pt}.pt th,.pt td{border:1px solid #999;padding:1.5mm 2mm;text-align:left}.pt .q{text-align:right;font-weight:700}.pt .no{width:12mm;text-align:center;font-weight:700}.pt th{background:#f3f3f3}'
+      +'.kits{margin-bottom:4mm;break-inside:avoid}.kits .kt{font-weight:800;background:#EEEDFE;color:#3C3489;padding:2mm 3mm;border:1px solid #AFA9EC;border-bottom:none}'
+      +'.pt tr.kh td{background:#EEEDFE;color:#3C3489;font-weight:800}.pt tr.kl td:first-child{border-left:3px solid #7F77DD}.pt tr.sh td{background:#f3f3f3;font-weight:800}'
+      +'.pt tr{break-inside:avoid}.box .bh{break-after:avoid}'
       +'.tot{margin-top:4mm;font-weight:800;font-size:12pt;text-align:right}.sign{display:flex;gap:20mm;margin-top:16mm}.sb{flex:1;text-align:center;font-size:10pt}.sb .ln{border-top:1px solid #111;margin-bottom:2mm;height:14mm}'
       +'</style></head><body>'+copy('ORIGINAL \u2014 CLIENTE')+copy('COPIA \u2014 ALMAC\u00c9N')+'</body></html>';
   }
@@ -1279,7 +1327,7 @@
   function renderSig(d){
     if(!d) return '';
     var bx=(d.boxes||[]).map(function(b){ return b.box_id+'/'+b.box_no+'/'+(b.sealed?1:0)+'/'+(b.photo_count||0)+'/'+(b.lines||[]).map(function(l){return l.product_id+':'+l.qty;}).join(','); }).join('|');
-    var it=(d.items||[]).map(function(i){ return i.product_id+':'+i.scanned+':'+i.remaining+':'+(i.box_nos||[]).join('.')+':'+(i.picked?1:0)+':'+(i.rack_picks||''); }).join('|');
+    var it=(d.items||[]).map(function(i){ return i.product_id+':'+i.scanned+':'+i.remaining+':'+(i.box_nos||[]).join('.')+':'+(i.picked?1:0)+':'+(i.rack_picks||'')+':'+(i.kit_no||''); }).join('|');
     return bx+'#'+it+'#'+d.scanned_total+'/'+d.required_total+'/'+(d.all_done?1:0)+'/'+(d.photos_ok?1:0);
   }
   // 실시간 자동 갱신 중지: 포장 중 화면이 다시 그려지며 커서가 튀는 문제 방지.
@@ -1314,26 +1362,69 @@
     _boxSelSig=sig;
     sel.innerHTML = boxes.length ? boxes.map(function(b){ return '<option value="'+b.box_id+'"'+(b.box_id===curBox?' selected':'')+'>Box '+b.box_no+(b.sealed?' (마감)':'')+'</option>'; }).join('') : '<option value="">박스 없음</option>';
   }
+  // ===== 0306 · 키트 묶음 — 키트 번호 순(K0009 → K0012 …). 차종 이름으로 묶지 않는다. =====
+  function LK(ko,es){ return LANG==='es'?es:ko; }
+  function kitOfPid(pid){ var it=((PK&&PK.items)||[]).find(function(x){ return Number(x.product_id)===Number(pid); }); return it&&it.kit_no?it.kit_no:null; }
+  function kitGroups(d){
+    var items=(d.items||[]);
+    var nos=[]; items.forEach(function(it){ if(it.kit_no&&nos.indexOf(it.kit_no)<0) nos.push(it.kit_no); });
+    nos.sort(function(a,b){ return String(a).localeCompare(String(b),'en',{numeric:true}); });
+    var meta={}; (d.kits||[]).forEach(function(k){ meta[k.kit_no]=k; });
+    return nos.map(function(no){
+      var its=items.filter(function(it){ return it.kit_no===no; });
+      var req=its.reduce(function(s,it){ return s+(Number(it.required)||0); },0);
+      var sc=its.reduce(function(s,it){ return s+Math.min(Number(it.scanned)||0,Number(it.required)||0); },0);
+      return { kit_no:no, meta:meta[no]||{}, items:its, required:req, scanned:sc };
+    });
+  }
+  function kitHeadRow(g){
+    var m=g.meta, done=g.required>0&&g.scanned>=g.required;
+    var setTxt=(m.sets!=null&&m.sets>0)?LK(m.sets+'세트 · ',m.sets+(m.sets===1?' juego · ':' juegos · ')):'';
+    var meta=setTxt+LK(g.items.length+' SKU '+g.required+'개', g.items.length+' SKU · '+g.required+' pzs');
+    var warn='';
+    if(m.consistent===false) warn+='<span class="kwarn">\u26a0 '+LK('구성 수량이 키트와 다릅니다 \u2014 견적을 확인하세요','Cantidades distintas a la composición del kit \u2014 revise el pedido')+'</span>';
+    if(m.partial) warn+='<span class="kwarn">\u26a0 '+LK('재고 부족으로 빠진 구성품이 있습니다','Faltan piezas del kit por falta de existencia')+'</span>';
+    return '<tr class="kith'+(done?' kdone':'')+'"><td colspan="9">🧰 <span class="kno">KIT '+esc(g.kit_no)+'</span> '
+      +'<span class="kmeta">'+esc(meta)+'</span> <span class="kprog">'+g.scanned+' / '+g.required+'</span>'
+      +'<span class="khint">'+LK('한 봉투에 함께 담고 같은 박스에 \u2014 봉투에 KIT 번호 표시','Empacar juntas en una bolsa · misma caja \u2014 marcar la bolsa con el No. de KIT')+'</span>'
+      +warn+'</td></tr>';
+  }
   function renderItemsTable(){
     var d=PK;
     var cols=[['ctr_code','CTR',false],['syd_code','경쟁사',false],['ean','EAN-13',false],['required','포장할',true],['scanned','포장한',true],['remaining','남은',true],['rack_location','랙위치 · 수량',false],['picked','피킹 기록',false],['box_nos','박스',false]];
     $('itemsHead').innerHTML='<tr>'+cols.map(function(c){ var ar=(itemSortKey===c[0])?('<span class="ar">'+(itemSortDir>0?'\u25b2':'\u25bc')+'</span>'):''; return '<th class="'+(c[2]?'num':'')+'" data-k="'+c[0]+'">'+c[1]+ar+'</th>'; }).join('')+'</tr>';
-    var rows=(d.items||[]).slice().sort(function(a,b){
+    function sorter(a,b){
       var k=itemSortKey, x=a[k], y=b[k];
       if(k==='box_nos'){ x=(a.box_nos&&a.box_nos[0])||0; y=(b.box_nos&&b.box_nos[0])||0; return (x-y)*itemSortDir; }
       if(k==='required'||k==='scanned'||k==='remaining'){ return ((Number(x)||0)-(Number(y)||0))*itemSortDir; }
       if(k==='picked'){ return ((a.picked?1:0)-(b.picked?1:0))*itemSortDir; }
       return String(x||'').localeCompare(String(y||''))*itemSortDir;
-    });
-    $('remBody').innerHTML=rows.map(function(it){
+    }
+    function rowHtml(it,inKit){
       var done=it.remaining<=0;
       var bx=(it.box_nos&&it.box_nos.length)? it.box_nos.map(function(n){return 'Box '+n;}).join(', ') : '\u2014';
-      return '<tr class="'+(done?'done':'')+'">'
-        +'<td>'+esc(it.ctr_code)+'</td><td>'+esc(it.syd_code||'\u2014')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
+      var mix=(inKit&&it.kit_parts&&it.kit_parts.length>1)?('<span class="kmix">'+it.kit_parts.map(function(p){ return (p.kit_no||LK('단품','suelta'))+' \u00d7'+p.qty; }).join(' · ')+'</span>'):'';
+      var cls=[]; if(inKit) cls.push('kitr'); if(done) cls.push('done');
+      return '<tr class="'+cls.join(' ')+'">'
+        +'<td>'+esc(it.ctr_code)+mix+'</td><td>'+esc(it.syd_code||'\u2014')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
         +'<td class="num">'+it.required+'</td><td class="num">'+it.scanned+'</td>'
         +'<td class="num"><b class="'+(done?'zero':'pos')+'">'+it.remaining+'</b></td>'
         +'<td class="rk">'+rackCell(it)+'</td><td class="pkc">'+pickCell(it)+'</td><td>'+esc(bx)+'</td></tr>';
-    }).join('') || '<tr><td colspan="9" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
+    }
+    var groups=kitGroups(d);
+    var html='';
+    if(!groups.length){
+      html=(d.items||[]).slice().sort(sorter).map(function(it){ return rowHtml(it,false); }).join('');
+    } else {
+      groups.forEach(function(g){ html+=kitHeadRow(g)+g.items.slice().sort(sorter).map(function(it){ return rowHtml(it,true); }).join(''); });
+      var singles=(d.items||[]).filter(function(it){ return !it.kit_no; });
+      if(singles.length){
+        var sq=singles.reduce(function(s,it){ return s+(Number(it.required)||0); },0);
+        html+='<tr class="singh"><td colspan="9">'+esc(LK('단품 · '+singles.length+' SKU '+sq+'개','Piezas sueltas · '+singles.length+' SKU · '+sq+' pzs'))+'</td></tr>'
+          +singles.slice().sort(sorter).map(function(it){ return rowHtml(it,false); }).join('');
+      }
+    }
+    $('remBody').innerHTML=html || '<tr><td colspan="9" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
     wirePickBtns();
     Array.prototype.forEach.call($('itemsHead').querySelectorAll('th'),function(th){ th.addEventListener('click',function(){ var k=th.getAttribute('data-k'); if(itemSortKey===k) itemSortDir=-itemSortDir; else { itemSortKey=k; itemSortDir=1; } renderItemsTable(); }); });
   }
@@ -1439,7 +1530,9 @@
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+poBadge(d.customer_po_no)+'</span><span class="cu">'+esc(d.customer)+'</span>'
       +'<span class="el" id="pEl">경과 '+fmtHoursDec(drillElapsedSec)+' (업무시간 기준)</span>';
     var pct=d.required_total? Math.round(d.scanned_total/d.required_total*100):0;
-    $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
+    var kg=kitGroups(d);   // 0306 · 키트별 진행
+    $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>'
+      +(kg.length?('<div class="kitbar">'+kg.map(function(g){ return '<span class="kitchip'+(g.required>0&&g.scanned>=g.required?' done':'')+'">🧰 '+esc(g.kit_no)+' '+g.scanned+'/'+g.required+'</span>'; }).join('')+'</div>'):'');
     $('pDone').innerHTML='';
 
     if(curBox==null || !(d.boxes||[]).some(function(b){return b.box_id===curBox;})){
@@ -1479,7 +1572,8 @@
       ? '<div class="delconf"><span>\u26a0 Box '+b.box_no+' 삭제 — 담긴 내역\u00b7사진이 모두 지워집니다.</span><button class="delyes" data-box="'+b.box_id+'">삭제</button><button class="delno">취소</button></div>'
       : '';
     var lines=(b.lines||[]).slice().sort(function(a,c){return String(a.ctr_code).localeCompare(String(c.ctr_code));}).map(function(l){
-      return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td>'
+      var kn=l.kit_no||kitOfPid(l.product_id);   // 0306
+      return '<tr><td>'+esc(l.ctr_code)+(kn?'<span class="kittag">🧰 '+esc(kn)+'</span>':'')+'</td><td>'+esc(l.syd_code||'\u2014')+'</td>'
         +'<td class="q">'+l.qty+'</td>'+(b.sealed?'':'<td style="text-align:center"><button class="mm" data-box="'+b.box_id+'" data-pid="'+l.product_id+'">\u2212</button></td>')+'</tr>';
     }).join('');
     var ncol=b.sealed?3:4;
@@ -1544,7 +1638,7 @@
     postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/scan',{box_id:curBox,ean:v}).then(function(o){
         if(!o.ok && o.status!==400){ feedback(failMsg(o),'err'); beep(false); focusScan(); return; }
         var res=o.body||{};
-        if(res.result==='ok'){ applyOk(res); feedback('✓ '+res.ctr_code+' → Box '+res.box_no+' (남음 '+res.remaining+')','ok'); beep(true); }
+        if(res.result==='ok'){ var kn=kitOfPid(res.product_id); applyOk(res); feedback('✓ '+res.ctr_code+(kn?' · 🧰 KIT '+kn:'')+' → Box '+res.box_no+' (남음 '+res.remaining+')','ok'); beep(true); }
         else if(res.result==='wrong'){ feedback('⚠ 오품: 이 주문에 없는 제품 '+(res.ctr_code||v),'err'); beep(false); }
         else if(res.result==='excess'){ feedback('⚠ 초과: '+res.ctr_code+' 필요수량('+res.required+') 이미 충족','err'); beep(false); }
         else if(res.result==='unknown'){ feedback('⚠ 미등록 바코드: '+v,'err'); beep(false); }
@@ -1586,7 +1680,7 @@
     postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/add',{box_id:boxId,ctr_code:ctr}).then(function(o){
       if(!o.ok && o.status!==400){ feedback(failMsg(o),'err'); beep(false); return; }
       var res=o.body||{};
-      if(res.result==='ok'){ if(inp) inp.value=''; feedback('\u2713 '+res.ctr_code+' \u2192 Box '+res.box_no+' (남음 '+res.remaining+')','ok'); beep(true); loadPacking(PK.quote_id,false); }
+      if(res.result==='ok'){ if(inp) inp.value=''; var kn=kitOfPid(res.product_id); feedback('\u2713 '+res.ctr_code+(kn?' · 🧰 KIT '+kn:'')+' \u2192 Box '+res.box_no+' (남음 '+res.remaining+')','ok'); beep(true); loadPacking(PK.quote_id,false); }
       else if(res.result==='wrong'){ feedback('\u26a0 '+(res.note||'주문에 없는/미등록 CTR')+': '+ctr,'err'); beep(false); }
       else if(res.result==='excess'){ feedback('\u26a0 초과: '+res.ctr_code+' 필요수량('+res.required+') 이미 충족','err'); beep(false); }
       else if(res.error==='box_sealed'){ feedback('\u26a0 마감된 박스입니다 \u2014 다시 열기 후 추가','warn'); beep(false); }

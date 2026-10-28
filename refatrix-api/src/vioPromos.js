@@ -89,3 +89,101 @@ export async function expandKitLines(lines, q = query) {
   }
   return out;
 }
+
+// =====================================================================
+// 0306 · 견적 줄의 키트 번호(kit_no) — 창고가 구성품을 「키트 단위」로 알아보고 포장하게 (디렉터 지시 2026-10-28)
+//   키트는 **키트 번호(K0001…)로 정리한다** — 차종 이름이 아니다. 같은 차종에 키트가 여럿이어도 번호가 다르면 다른 묶음.
+//   kit_no 는 표시용 라벨이다. 재고·금액·예약은 지금처럼 구성 부품 줄 그대로.
+// =====================================================================
+export function normKitNo(v) {
+  const s = String(v == null ? '' : v).trim().toUpperCase();
+  return /^K\d{3,6}$/.test(s) ? s : null;
+}
+
+// 0306 전(칸 없음)에는 조용히 쉰다 — 견적 저장이 키트 표시 때문에 멈추면 안 된다.
+let kitColFlag = false; let kitColProbe = 0;
+export async function kitColReady(q = query) {
+  if (kitColFlag) return true;
+  if (Date.now() - kitColProbe < 30000) return false;
+  kitColProbe = Date.now();
+  try {
+    kitColFlag = (await q(
+      `SELECT 1 FROM information_schema.columns WHERE table_name='quote_lines' AND column_name='kit_no' LIMIT 1`)).rows.length > 0;
+  } catch (_) { kitColFlag = false; }
+  return kitColFlag;
+}
+export function setKitColReady(v) { kitColFlag = !!v; kitColProbe = Date.now(); }
+
+/**
+ * 키트 구성(comp: [{product_id, qty}]) 대비 견적 줄(lines: [{product_id, qty}])이 몇 세트인가.
+ *   sets = 가장 적게 들어 있는 부품 기준(내림), consistent = 모든 부품이 같은 세트 수 · 구성 밖 부품 없음.
+ */
+export function kitSetCount(comp, lines) {
+  if (!Array.isArray(comp) || !comp.length) return { sets: null, consistent: false };
+  const have = new Map();
+  for (const l of lines || []) { const k = Number(l.product_id); have.set(k, (have.get(k) || 0) + (Number(l.qty) || 0)); }
+  const ratios = comp.map((c) => (have.get(Number(c.product_id)) || 0) / (Number(c.qty) || 1));
+  const sets = Math.floor(Math.min(...ratios));
+  const compIds = new Set(comp.map((c) => Number(c.product_id)));
+  const extra = [...have.keys()].some((k) => !compIds.has(k));
+  const consistent = !extra && sets > 0 && ratios.every((r) => r === sets);
+  return { sets, consistent };
+}
+
+/** 키트 번호들 → 구성. Map(kit_no → {kit_no, kit_code, title, years, items:[{product_id, ctr_code, qty}]}) */
+export async function kitCompositions(nos, q = query) {
+  const out = new Map();
+  const list = [...new Set((nos || []).map(normKitNo).filter(Boolean))];
+  if (!list.length || !(await promosReady(q))) return out;
+  const rows = (await q(
+    `SELECT v.promo_no, v.title, v.years, p.code AS kit_code, i.product_id, i.ctr_code, i.qty, i.line_no
+       FROM vio_promos v
+       LEFT JOIN products p ON p.id = v.product_id
+       JOIN vio_promo_items i ON i.promo_id = v.id
+      WHERE upper(v.promo_no) = ANY($1::text[])
+      ORDER BY v.promo_no, i.line_no`, [list])).rows;
+  for (const r of rows) {
+    const k = String(r.promo_no).toUpperCase();
+    if (!out.has(k)) out.set(k, { kit_no: k, kit_code: r.kit_code || k, title: r.title || '', years: r.years || '', items: [] });
+    out.get(k).items.push({ product_id: Number(r.product_id), ctr_code: r.ctr_code, qty: Number(r.qty) });
+  }
+  return out;
+}
+
+/**
+ * 견적 줄(kit_no 가 붙은 것) → 키트 요약 목록. **키트 번호 순서**로 정렬.
+ *   [{kit_no, kit_code, title, years, sets, consistent, sku, pieces, items:[구성 {ctr_code, qty}]}]
+ *   구성(vio_promos)이 지워졌으면 견적 줄로 items 를 만들고 sets=null.
+ */
+export async function kitSummaries(lines, q = query) {
+  const by = new Map();
+  for (const l of lines || []) {
+    const k = normKitNo(l && l.kit_no); if (!k || !l.product_id) continue;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push({ product_id: Number(l.product_id), ctr_code: l.ctr_code || '', qty: Number(l.qty) || 0 });
+  }
+  if (!by.size) return [];
+  let comps = new Map();
+  try { comps = await kitCompositions([...by.keys()], q); } catch (_) { comps = new Map(); }
+  const out = [];
+  for (const [k, ls] of by) {
+    const comp = comps.get(k);
+    const { sets, consistent } = kitSetCount(comp ? comp.items : null, ls);
+    const items = comp ? comp.items.map((c) => ({ ctr_code: c.ctr_code, qty: c.qty }))
+      : ls.map((x) => ({ ctr_code: x.ctr_code, qty: x.qty }));
+    out.push({ kit_no: k, kit_code: comp ? comp.kit_code : k, title: comp ? comp.title : '', years: comp ? comp.years : '',
+      sets, consistent, sku: new Set(ls.map((x) => x.product_id)).size, pieces: ls.reduce((s, x) => s + x.qty, 0), items });
+  }
+  out.sort((a, b) => a.kit_no.localeCompare(b.kit_no, 'en', { numeric: true }));
+  return out;
+}
+
+/** 저장된 견적 줄에 kit_no 를 찍는다 — INSERT 문(네 경로)을 건드리지 않으려고 뒤에 UPDATE 로. */
+export async function stampKitNos(c, quoteId, lines) {
+  if (!Array.isArray(lines) || !lines.some((l) => l && normKitNo(l.kit_no))) return;
+  if (!(await kitColReady())) return;
+  for (const l of lines) {
+    const k = normKitNo(l && l.kit_no); if (!k) continue;
+    await c.query(`UPDATE quote_lines SET kit_no=$1 WHERE quote_id=$2 AND line_no=$3`, [k, quoteId, l.line_no]);
+  }
+}

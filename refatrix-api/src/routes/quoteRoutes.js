@@ -6,7 +6,7 @@ import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
-import { expandKitLines, kitsFor } from '../vioPromos.js';   // 0293
+import { expandKitLines, kitsFor, kitColReady, kitSummaries } from '../vioPromos.js';   // 0293 · 0306
 import { resolveCode, assignReservations, topUpReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
          normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, quoteLineCodeMatch, stampLineMeta } from '../quoteBuild.js';
@@ -1073,9 +1073,10 @@ export default async function quoteRoutes(app) {
       const rack = (p && p.rack_location != null ? String(p.rack_location) : '').trim();
       const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));   // 예약 확보분(현재고로 캡)
       const short = qty - fulfill;
-      if (short <= 0) inStock.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, rack_location: rack });
+      const kitNo = l.kit_no || null;   // 0306 · 키트에서 풀린 줄(포장작업지시서가 키트 단위로 묶는다)
+      if (short <= 0) inStock.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, rack_location: rack, kit_no: kitNo });
       else {
-        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, fulfill, short, rack_location: rack });
+        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, fulfill, short, rack_location: rack, kit_no: kitNo });
       }
     }
     // 0245 · 피킹 위치(제품 × 랙 × 수량). 지시서로 이미 저장된 위치가 있으면 그것, 없으면 새 계획(저장 안 함).
@@ -1094,6 +1095,8 @@ export default async function quoteRoutes(app) {
       already: q.status === 'converted',
       counts: { in_stock: inStock.length, shortage: shortage.length, new_dev: newDev.length },
       in_stock: inStock, shortage, new_dev: newDev,
+      // 0306 · 이 오더의 키트(키트 번호 순) — 세트 수 · 구성
+      kits: await kitSummaries(lines).catch(() => []),
       // 2026-09-24 — 정가 없는 품목(있으면 전환 버튼이 잠긴다)
       no_price_items: await noPriceItems(lines.map((l) => l.product_id)),
       no_price_note: NO_PRICE_NOTE,
@@ -1494,11 +1497,12 @@ export default async function quoteRoutes(app) {
     if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
     const discountRate = Number(cust.discount) || 0;
     const ivaRate = 16;
-    const srcLines = (await query(`SELECT product_id, input_code, qty FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [srcId])).rows;
+    const kitCol = await kitColReady();   // 0306 · 키트 번호도 복제본으로
+    const srcLines = (await query(`SELECT product_id, input_code, qty, ${kitCol ? 'kit_no' : 'NULL::text AS kit_no'} FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [srcId])).rows;
     if (!srcLines.length) return reply.code(400).send({ error: 'no_lines', note: '복제할 품목이 없습니다.' });
-    const inputLines = srcLines.map((l) => (l.product_id
+    const inputLines = srcLines.map((l) => ({ ...(l.product_id
       ? { product_id: l.product_id, qty: Number(l.qty) }
-      : { code: l.input_code, qty: Number(l.qty) }));
+      : { code: l.input_code, qty: Number(l.qty) }), ...(l.kit_no ? { kit_no: l.kit_no } : {}) }));
     // 0224 — 복제는 "새 견적"이다. 비활성 SKU 가 섞여 있어도 막지 않고 접수하되,
     //   그 줄을 표시해 확정을 잠근다(새 견적 저장과 같은 규칙).
     const result = await withTx(async (c) => {

@@ -11,8 +11,13 @@ import { query } from './db.js';
 import { computeQuoteLine, stockFlag, formatQuoteNo, round2 } from './quotes.js';
 import { normOe, oeToken } from './oeParse.js';
 import { oeReady, oeByProduct, matchSourceFor } from './oeCodes.js';
-import { expandKitLines } from './vioPromos.js';
-export { stampLineMeta } from './oeCodes.js';
+import { expandKitLines, normKitNo, stampKitNos } from './vioPromos.js';
+import { stampLineMeta as stampOeMeta } from './oeCodes.js';
+/** 0228 OE 스냅샷 + 0306 키트 번호 — 저장 경로 네 곳(화면·복제·CRM·리드포털)이 모두 이 함수를 부른다. */
+export async function stampLineMeta(c, quoteId, lines) {
+  await stampOeMeta(c, quoteId, lines);
+  await stampKitNos(c, quoteId, lines);
+}
 
 
 // ============ 고객 PO번호(Orden de compra) 정리 — 0225 ============
@@ -380,7 +385,7 @@ export async function buildLines(customerDiscount, ivaRate, inputLines) {
     }
     if (!prod) {
       rows.push({ line_no: lineNo, product_id: null, input_code: ln.code || null, ctr_code: null, syd_codes: null, product_name: null, app_text: null, qty, list_price: 0, discount_rate: customerDiscount, final_price: 0, line_subtotal: 0, line_iva: 0, line_total: 0, avail_stock: null, stock_flag: 'not_found', issue: issue || 'not_found',
-        match_source: 'none', oe_codes: null });
+        match_source: 'none', oe_codes: null, kit_no: normKitNo(ln.kit_no) });
       continue;
     }
     const oeList = ((await oeByProduct([prod.id])).get(Number(prod.id)) || []).map(oeToken);
@@ -396,6 +401,7 @@ export async function buildLines(customerDiscount, ivaRate, inputLines) {
       avail_stock: avail, stock_flag: stockFlag({ matched: true, qty, availStock: avail }),
       issue,
       match_source: matchSource, oe_codes: oeList.length ? oeList.join(' // ') : null,   // 0228
+      kit_no: normKitNo(ln.kit_no),   // 0306 · 키트에서 풀린 줄(또는 편집 화면이 넘긴 키트 번호)
     });
   }
   return rows;
