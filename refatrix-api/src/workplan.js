@@ -9,7 +9,7 @@ import { query, withTx } from './db.js';
 import { MX_OFFSET_MIN } from './workingHours.js';
 import { waApiReady, normalizeWaNumber, sendWaText, sendWaTo, uploadWaMedia, sendWaImage, sendWaImageTemplate } from './waSend.js';
 import { windowState } from './waWebhook.js';
-import { esc, fit, textWidth, svgToPng } from './treasuryImage.js';
+import { esc, fit, textWidth, svgToWaPng } from './treasuryImage.js';
 
 export const MAX_ITEMS = 30;
 export const MAX_TITLE = 300;
@@ -636,7 +636,7 @@ export async function sendTemplateParams({ to, name, lang = 'es_MX', params = []
 }
 export const DEFAULT_DEPS = {
   ready: waApiReady, text: (to, body) => sendWaText(body, to), template: sendTemplateParams, textOrTemplate: sendWaTo,
-  upload: uploadWaMedia, image: sendWaImage, imageTemplate: sendWaImageTemplate, windowState: (p, q) => windowState(p, q), png: svgToPng,
+  upload: uploadWaMedia, image: sendWaImage, imageTemplate: sendWaImageTemplate, windowState: (p, q) => windowState(p, q), png: (svg) => svgToWaPng(svg),
 };
 export const maskPhone = (p) => { const s = String(p || ''); return s ? s.slice(0, 3) + '****' + s.slice(-4) : null; };
 

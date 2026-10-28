@@ -174,6 +174,10 @@ test('A8 이미지 — 일일(유첨 양식)·월간 SVG 내용 · PNG 렌더(�
     assert.ok(svg.includes(lang === 'ko' ? '일일 자금 요약' : 'Resumen diario de caja'));
     const png = await I.svgToPng(svg);
     assert.ok(png && png.slice(1, 4).toString() === 'PNG', 'PNG 렌더');
+    // 1028 · WhatsApp 발송용은 가로 1280 이하로 가볍게(일부 휴대폰·블루투스 기기 멈춤 대응)
+    const wa = await I.svgToWaPng(svg);
+    assert.ok(wa && wa.slice(1, 4).toString() === 'PNG');
+    assert.ok(wa.readUInt32BE(16) <= 1280, 'width ' + wa.readUInt32BE(16)); assert.ok(wa.length < png.length, '용량 감소');
   }
   const sum = T.summarizeMonth(act, { mask: true });
   const msvg = I.monthlyImageSvg({ sum, days: act, lang: 'ko', partial: true });

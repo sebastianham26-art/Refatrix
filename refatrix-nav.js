@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261016st loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261021lg loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):

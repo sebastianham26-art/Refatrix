@@ -34,7 +34,7 @@ import { getFxRange, getRateForDate } from './fx.js';
 import { AR_PAID_EPS } from './ar.js';
 import { MX_OFFSET_MIN } from './workingHours.js';
 import { waApiReady, sendWaTo, uploadWaMedia, sendWaImage, sendWaImageTemplate } from './waSend.js';
-import { dailyImageSvg, monthlyImageSvg, svgToPng } from './treasuryImage.js';
+import { dailyImageSvg, monthlyImageSvg, svgToWaPng } from './treasuryImage.js';
 import { loadSchedules, isDue, targetDate, toMinutes, mxParts } from './waSchedule.js';
 import { windowState } from './waWebhook.js';   // 0253 · 24시간 창(웹훅이 아는 경우)
 
@@ -773,7 +773,7 @@ export async function sendReport({ kind, period, recipients, prepared, force = f
     const lang = r.lang === 'ko' ? 'ko' : 'es';
     if (!cache[lang]) {
       const b = prepared.build(lang);
-      const png = imageFormatOn() ? await svgToPng(b.svg) : null;
+      const png = imageFormatOn() ? await svgToWaPng(b.svg) : null;   // 1028 · 가로 1280 이하
       cache[lang] = { text: b.text, headline: b.headline, tplParam: b.tplParam || null, png, cacheKey: `${kind}_${period}_${lang}` };
     }
     const opt = { kind, period, rcpt: r, ...cache[lang], mediaCache, force };

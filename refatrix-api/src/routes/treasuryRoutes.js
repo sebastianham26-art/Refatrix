@@ -21,7 +21,7 @@ import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { waApiReady, normalizeWaNumber } from '../waSend.js';
 import { webhookConfigured, explainWaError } from '../waWebhook.js';   // 0253
-import { svgToPng, imageReady } from '../treasuryImage.js';
+import { svgToWaPng, imageReady } from '../treasuryImage.js';
 import { loadSchedules } from '../waSchedule.js';
 import {
   isYmd, isMonth, mxNow, addDays, monthBounds, prevMonth, computeWeek, computeActualDays, summarizeMonth,
@@ -247,7 +247,7 @@ export default async function treasuryRoutes(app) {
     const d = await defaults(kind, req.query.period);
     if (d.error) return reply.code(400).send({ error: d.error });
     const prepared = await prep(kind, d);
-    const png = await svgToPng(prepared.build(lang).svg);
+    const png = await svgToWaPng(prepared.build(lang).svg);   // 1028 · 실제 발송과 같은 크기
     if (!png) return reply.code(503).send({ error: 'image_unavailable' });
     return reply.header('cache-control', 'no-store').type('image/png').send(png);
   });

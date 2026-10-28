@@ -340,6 +340,21 @@ async function loadResvg() {
   return _resvg;
 }
 export function imageReady() { return FONT_FILES.every((f) => existsSync(f)); }
+// 1028 · WhatsApp 발송용 가벼운 PNG — 일부 휴대폰(블루투스 연결 기기·알림 미리보기)이 큰 이미지를 받을 때 멈추는 현상 대응.
+//   가로를 최대 maxW px(기본 1280 · WhatsApp 이 어차피 줄이는 크기 안쪽)로 맞춘다. 화면 미리보기는 기존 1.5배 PNG 그대로.
+//   예) 일일 2073×957 → 1280×591(픽셀 약 1/3, 용량 약 1/3) · 월간 1620×2054 → 1280×1623. 글자 이미지는 JPEG 보다 PNG 가 작고 선명하다.
+export const WA_IMG_MAX_W = () => Number(process.env.TREASURY_WA_IMG_MAX_W) || 1280;
+export async function svgToWaPng(svg, { maxW = WA_IMG_MAX_W() } = {}) {
+  const Resvg = await loadResvg();
+  if (!Resvg || !imageReady()) return null;
+  try {
+    const m = /width="(\d+(?:\.\d+)?)"/.exec(svg);
+    const w0 = m ? Number(m[1]) : 1080;
+    const target = Math.max(480, Math.min(Math.round(maxW), Math.round(w0 * 1.5)));
+    const r = new Resvg(svg, { font: { fontFiles: FONT_FILES, loadSystemFonts: false, defaultFontFamily: DEFAULT_FAMILY }, fitTo: { mode: 'width', value: target } });
+    return Buffer.from(r.render().asPng());
+  } catch (_) { return null; }
+}
 export async function svgToPng(svg, { scale = 1.5 } = {}) {
   const Resvg = await loadResvg();
   if (!Resvg || !imageReady()) return null;
