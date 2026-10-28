@@ -309,7 +309,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=' + crypto.createHmac('sha256', WSECRET).update(raw).digest('hex') } }); };
   const PAGE = '1338649012669713';
   assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T1.id}/chat`)).json().error, 'chat_not_allowed', 'WhatsApp 문의는 대화 없음');
-  assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/claim`)).statusCode, 404, '「Atender」(선점 버튼) 없앰');
+  assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/claim`)).json().error, 'chat_not_allowed', '예전 「Atender」 호환 — WhatsApp 은 대화 없음');
   r = await call(C, 'GET', '/api/lead-portal/leads'); let L4 = r.json().leads.find((l) => l.id === Number(T4.id)); let L5 = r.json().leads.find((l) => l.id === Number(T5.id));
   assert.deepEqual([L4.chat.open, L4.claim, L5.chat.open, r.json().me.claim_days], [true, null, false, 3]);
   assert.equal(r.json().leads.find((l) => l.id === Number(T1.id)).chat, null);
@@ -332,6 +332,11 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
 
   // Messenger: 연락처 보기 → 대화 전체 → 첫 메시지 = 선점
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/contact`)).statusCode, 200);
+  { // 1028b · 예전 페이지(「Atender」) 호환: 대화창만 열어 주고 선점은 만들지 않는다 — 첫 메시지 때 선점
+    const rc = await call(C, 'POST', `/api/lead-portal/leads/${T4.id}/claim`); assert.equal(rc.statusCode, 200, rc.body);
+    assert.equal(rc.json().compat, true); assert.equal(rc.json().claim_until, null);
+    assert.equal((await query(`SELECT count(*)::int AS n FROM lead_portal_claims WHERE thread_id=$1 AND released_at IS NULL`, [T4.id])).rows[0].n, 0, '버튼만으로 선점 안 됨');
+  }
   r = await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.statusCode, 200, r.body);
   assert.deepEqual(r.json().messages.map((m) => [m.who, m.text]), [['cliente', 'Hola, busco amortiguadores para Aveo'], ['refatrix', 'Hola, soy de Refatrix']], '선점 전에도 실제 대화 전체');
   assert.equal(r.json().claimed, false); assert.equal(r.json().summary, 'Amortiguadores');

@@ -44,7 +44,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1028a';
+export const LP_BUILD = 'lp-1028b';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -753,6 +753,22 @@ export default async function leadPortalRoutes(app) {
   }
   // 대화 보기 — 2026-10-28 디렉터: 요약 아래에 **실제로 이루어진 대화 전체**(광고 문의부터 · Graph 동기화 + 웹훅 실시간).
   //   refaccionaria 는 연락처를 본(「Ver contacto」) 뒤에, 다른 곳이 선점하지 않았을 때만. 디렉터 코드는 언제나(읽기 전용).
+  // 1028b · 호환 — 아직 예전 leads.html(「Atender por Messenger」 버튼)이 열려 있는 휴대폰용.
+  //   새 규칙에서는 버튼만으로 선점하지 않는다: 대화창만 열어 주고(claim_until 없음), 첫 메시지를 보내면 그때 선점.
+  app.post('/api/lead-portal/leads/:id/claim', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
+    if (!(await chatReady())) return reply.code(503).send({ error: 'not_ready' });
+    const t = await messengerThread(k, id);
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.platform !== 'messenger') return reply.code(409).send({ error: 'chat_not_allowed' });
+    const oc = await otherClaim(k, id);
+    if (oc) return reply.code(409).send({ error: 'claimed_other', until: new Date(oc.expires_at).toISOString() });
+    if (!(await hasRevealed(k, id))) return reply.code(409).send({ error: 'need_contact' });
+    const mine = (await activeClaims([id])).get(Number(id));
+    return { ok: true, compat: true, claim_until: mine ? new Date(mine.expires_at).toISOString() : null };
+  });
   app.get('/api/lead-portal/leads/:id/chat', P, async (req, reply) => {
     const k = req.lp; const id = idOf(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_id' });
