@@ -69,6 +69,24 @@ test('A3. 문의 모양 — 연락처 · 원문은 없다, 부품번호 · 미�
   assert.ok(t.includes('RFX-7K2M-Q9PD') && t.includes('26/11/2026') && t.includes('https://x/leads'));
 });
 
+test('A4. Meta 기록 · 자동 응답 구분(1028c)', () => {
+  const at = (sec) => new Date(Date.UTC(2026, 9, 28, 10, 45, sec)).toISOString();
+  const g = [{ at: at(0), me: true, text: 'Para comprar con tu descuento automático del 10%' },
+    { at: at(1), me: true, text: 'Se detectó y se capturó la información de clientes potenciales' },
+    { at: at(5), me: false, text: 'dónde se ubican bican soy de Saltillo' },
+    { at: at(6), me: true, text: 'Se detectó y se capturó la información de clientes potenciales' },
+    { at: at(40), me: true, text: 'Hola, estamos en Apodaca' }];
+  const r = L.mergeConversation(g, [{ direction: 'out', source: 'portal', text: '[LUEMI] estamos en monterrey', at: new Date(Date.UTC(2026, 9, 28, 15, 27)).toISOString(), customer_id: 5 }]);
+  assert.deepEqual(r.map((m) => m.kind || '-'), ['auto', 'event', '-', 'event', '-', '-']);
+  assert.ok(L.isMetaEvent('Lead information was captured'));
+  assert.ok(L.isMetaEvent('Respondió a un anuncio'));
+  assert.ok(!L.isMetaEvent('¿Tienen la información de precios?'), '손님 말은 기록 아님');
+  // 손님 메시지 없이 페이지 메시지만 → 자동 응답으로 보지 않음 · 포털 첫 메시지도 자동 응답 아님
+  assert.equal(L.markMetaKinds([{ at: at(0), me: true, text: 'Hola' }])[0].kind, undefined);
+  assert.equal(L.markMetaKinds([{ at: at(0), me: false, text: 'Hola' }, { at: at(3), me: true, src: 'portal', text: '[X] hola' }])[1].kind, undefined);
+  // 늦은 직원 답장은 자동 응답 아님
+  assert.equal(L.markMetaKinds([{ at: at(0), me: false, text: 'Hola' }, { at: new Date(Date.UTC(2026, 9, 28, 11)).toISOString(), me: true, text: 'Hola, buen día' }])[1].kind, undefined);
+});
 test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, async (t) => {
   const { query, pool } = await import('../src/db.js');
   POOL = pool;
@@ -634,7 +652,9 @@ test('C4. 플랫폼 leads.html — 선점 규칙 · 모든 문의 「Registrar�
   const me = { customer_name: 'El Puente', expires_on: '2026-11-26', days_left: 31, discount: 45, role: 'customer', claim_days: 3 };
   const until = new Date(Date.now() + 20 * 3600000).toISOString();
   const cu = new Date(Date.now() + 3 * 86400000).toISOString();
-  const msgs = [{ dir: 'in', who: 'cliente', text: 'Hola, busco amortiguadores', at: new Date(Date.now() - 7200e3).toISOString() },
+  const msgs = [{ dir: 'out', who: 'refatrix', kind: 'auto', text: 'Para comprar con tu descuento automático del 10%', at: new Date(Date.now() - 7201e3).toISOString() },
+    { dir: 'out', who: 'refatrix', kind: 'event', text: 'Se detectó y se capturó la información de clientes potenciales', at: new Date(Date.now() - 7200e3).toISOString() },
+    { dir: 'in', who: 'cliente', text: 'Hola, busco amortiguadores', at: new Date(Date.now() - 7200e3).toISOString() },
                 { dir: 'out', who: 'refatrix', text: 'Hola, ¿delanteros?', at: new Date(Date.now() - 7100e3).toISOString() }];
   const base = { parts: [], open_parts: [], wants: [], notes: [], revealed: false };
   const routes = [
@@ -661,6 +681,13 @@ test('C4. 플랫폼 leads.html — 선점 규칙 · 모든 문의 「Registrar�
   d.querySelector('[data-copen="5"]').click(); await tick(120);
   const cm = d.getElementById('cm5').textContent;
   assert.ok(cm.includes('Resumen: Amortiguadores delanteros') && cm.includes('Conversación completa') && cm.includes('Hola, busco amortiguadores') && cm.includes('Hola, ¿delanteros?'), '요약 아래 실제 대화');
+  { // 1028c · Meta 기록 · 자동 응답은 대화 말풍선과 다른 모양
+    const box = d.getElementById('cm5');
+    const ev = box.querySelector('.cevt'); assert.ok(ev && ev.textContent.includes('⚙️ Meta: Se detectó'), 'Meta 기록 = 가운데 점선 줄');
+    assert.ok(!ev.closest('.bub'), 'Meta 기록은 말풍선 아님');
+    const au = box.querySelector('.bub.b-auto'); assert.ok(au && au.textContent.includes('Respuesta automática del anuncio') && au.textContent.includes('descuento automático'), '자동 응답 = 회색 점선 말풍선 + 표시');
+    assert.equal([...box.querySelectorAll('.bub')].filter((b) => b.textContent.includes('Se detectó')).length, 0);
+  }
   assert.ok(cm.indexOf('Resumen') < cm.indexOf('Hola, busco'));
   assert.ok(d.getElementById('cw5').textContent.includes('queda reservado para ti 3 días'), '첫 메시지 = 선점 안내');
   d.getElementById('ct_5').value = 'Sí, tenemos'; d.querySelector('[data-csend="5"]').click(); await tick(80);

@@ -44,7 +44,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1028b';
+export const LP_BUILD = 'lp-1028c';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -352,7 +352,33 @@ export function mergeConversation(graph, live) {
     else out.push({ at: new Date(l.at).toISOString(), me, text: l.text || '', live: true, ...tag });
   }
   out.sort((a, b) => new Date(a.at) - new Date(b.at));
-  return out;
+  return markMetaKinds(out);
+}
+
+// 1028c · Meta 가 스스로 남기는 「액션」을 대화와 구분 — 2026-10-28 디렉터: 대화처럼 보이면 안 된다.
+//   kind='event' : Meta 시스템 기록(「Se detectó y se capturó la información de clientes potenciales」 등)
+//   kind='auto'  : 광고의 자동 응답(손님 첫 메시지 전 · 직후 60초 안의 첫 페이지 메시지, 포털 메시지 제외)
+const META_EVENT_RE = [
+  /se\s+detect[oó]\s+y\s+se\s+captur[oó]/i,
+  /informaci[oó]n\s+de\s+(los\s+)?clientes\s+potenciales/i,
+  /\blead\s+(info|information|details|form)\b.{0,40}\b(detected|captured|submitted)\b/i,
+  /\b(detected|captured)\b.{0,40}\blead\s+(info|information|details)\b/i,
+  /\b(respondi[oó]|replied)\s+(a|to)\s+(un|an|your|tu)\s+(anuncio|ad)\b/i,
+  /\b(inici[oó]|started)\s+(una\s+|a\s+|this\s+)?(conversaci[oó]n|conversation)\b.{0,40}\b(anuncio|ad)\b/i,
+  /^(t[uú]|you)\s+(asignaste|assigned)\b/i,
+];
+export function isMetaEvent(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  return !!t && t.length <= 220 && META_EVENT_RE.some((re) => re.test(t));
+}
+export function markMetaKinds(list) {
+  const ms = Array.isArray(list) ? list : [];
+  for (const m of ms) if (isMetaEvent(m.text)) m.kind = 'event';
+  const firstIn = ms.find((m) => !m.me && m.kind !== 'event');
+  const limit = firstIn ? new Date(firstIn.at).getTime() + 60000 : -Infinity;   // 손님 메시지가 없으면 자동 응답으로 보지 않는다
+  const firstOut = ms.find((m) => m.me && m.kind !== 'event');
+  if (firstOut && firstOut.src !== 'portal' && new Date(firstOut.at).getTime() <= limit) firstOut.kind = 'auto';
+  return ms;
 }
 
 // 0300 · Meta 문의 목록(ERP)에 「💬 고객명 대화 중 · ~만료일」
@@ -748,6 +774,7 @@ export default async function leadPortalRoutes(app) {
     // 다른 refaccionaria 가 보낸 메시지 — 앞의 「[가게 이름]」을 가린다(경쟁 가게 이름 노출 방지)
     if (who === 'otro') text = text.replace(/^\[[^\]]{1,120}\]\s*/, '[Otra refaccionaria] ');
     const o = { dir: m.me ? 'out' : 'in', who, text, at: new Date(m.at).toISOString() };
+    if (m.kind) o.kind = m.kind;   // 1028c · event(Meta 기록) · auto(자동 응답)
     if (isDirCode(k) && m.src === 'portal') o.shop = m.shop || null;
     return o;
   }

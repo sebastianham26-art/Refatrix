@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1028a)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1028c)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -113,6 +113,11 @@
   .b-yo{background:#1877F2;color:#fff;align-self:flex-end}.b-yo .t{color:#d6e4ff}
   .b-rf{background:#fbf7ee;border:1px solid #efe6cf;align-self:flex-start}
   .b-ot{background:#e9ecef;align-self:flex-end}
+  .cevt{align-self:stretch;display:flex;align-items:center;gap:8px;font-size:10.5px;color:#7a7f87;font-style:italic;margin:2px 0}
+  .cevt:before,.cevt:after{content:"";flex:1;border-top:1px dotted #c9ced6}
+  .cevt span{max-width:80%;text-align:center}
+  .b-auto{background:#f4f5f7;border:1px dashed #b9c0ca;color:#4a5563;align-self:flex-start}
+  .b-auto .tag{display:table;font-size:10px;font-weight:700;color:#5b6573;background:#e6e9ee;border-radius:999px;padding:1px 7px;margin-bottom:3px}
   .csys{align-self:center;font-size:11px;color:var(--muted);background:#fff;border:1px dashed var(--line);border-radius:999px;padding:3px 10px;text-align:center}
   .ccomp{display:flex;gap:6px;padding:8px;border-top:1px solid #cfdcf3;background:#fff}
   .ccomp textarea{flex:1;font-size:13px;resize:none}
@@ -415,6 +420,8 @@
     h += '<div class="csys" style="font-weight:700">Conversación completa</div>';
     if(!ms.length) h += '<div class="csys">'+(ch.loading ? 'Cargando…' : 'Sin mensajes registrados.')+'</div>';
     ms.forEach(function(m){
+      if(m.kind==='event'){ h += '<div class="cevt"><span>⚙️ Meta: '+esc(m.text)+' · '+esc(hm(m.at))+'</span></div>'; return; }
+      if(m.kind==='auto'){ h += '<div class="bub b-auto"><div class="tag">🤖 Respuesta automática del anuncio</div>'+esc(m.text)+'<div class="t">Meta · '+esc(hm(m.at))+'</div></div>'; return; }
       var cls = m.who==='cliente' ? 'b-in' : (m.who==='yo' ? 'b-yo' : (m.who==='refatrix' ? 'b-rf' : 'b-ot'));
       var lab = m.who==='refatrix' ? 'Refatrix · ' : (m.who==='otro' ? 'Otra refaccionaria · ' : (m.who==='portal' ? (m.shop||'Refaccionaria')+' · ' : ''));
       h += '<div class="bub '+cls+'">'+esc(m.text)+'<div class="t">'+esc(lab)+esc(hm(m.at))+'</div></div>';
