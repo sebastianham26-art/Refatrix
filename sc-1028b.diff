@@ -1,0 +1,42 @@
+diff --git a/refatrix-api/src/routes/quoteRoutes.js b/refatrix-api/src/routes/quoteRoutes.js
+index 32b6dd6..0a5f64e 100644
+--- a/refatrix-api/src/routes/quoteRoutes.js
++++ b/refatrix-api/src/routes/quoteRoutes.js
+@@ -144,14 +144,32 @@ export default async function quoteRoutes(app) {
+       params.push(`%${qn}%`);
+       oeSql = ` OR EXISTS (SELECT 1 FROM product_oe_codes o WHERE o.product_id=p.id AND o.oe_norm LIKE $${params.length})`;
+     }
++    // 2026-10-28 sc-1028 — 「K00 으로는 K0001 이 안 보인다」 재발 수정.
++    //   코드순 12건 자르기면 'K00' 이 코드 중간에 든 CK00… 같은 제품이 앞 칸을 다 채워
++    //   정작 K 로 시작하는 코드가 밀려난다(08-25 sc-0825 와 같은 증상 — 그 수정이 덮어써져 사라졌었다).
++    //   → 관련도 순(코드 정확 › 코드 접두 › SYD 정확 › SYD 접두 › 코드 포함 › 제품명 접두 › 그 외) + 50건.
++    //   SYD 는 JOIN 대신 EXISTS — 코드가 2개 이상인 제품이 행을 복제해 LIMIT 을 갉아먹지 않게.
++    params.push(q);
++    const pExact = params.length;
++    params.push(`${q}%`);
++    const pPre = params.length;
+     const rows = (await query(
+-      `SELECT DISTINCT p.id, p.code, p.name, p.app, p.list_price, p.is_active
++      `SELECT p.id, p.code, p.name, p.app, p.list_price, p.is_active,
++              CASE
++                WHEN UPPER(p.code) = UPPER($${pExact}) THEN 0
++                WHEN p.code ILIKE $${pPre} THEN 1
++                WHEN EXISTS (SELECT 1 FROM product_syd_codes s WHERE s.product_id = p.id AND UPPER(s.syd_code) = UPPER($${pExact})) THEN 2
++                WHEN EXISTS (SELECT 1 FROM product_syd_codes s WHERE s.product_id = p.id AND s.syd_code ILIKE $${pPre}) THEN 3
++                WHEN p.code ILIKE $1 THEN 4
++                WHEN p.name ILIKE $${pPre} THEN 5
++                ELSE 6
++              END AS match_rank
+          FROM products p
+-         LEFT JOIN product_syd_codes s ON s.product_id = p.id
+         WHERE p.deleted_at IS NULL
+-          AND (p.code ILIKE $1 OR p.name ILIKE $1 OR s.syd_code ILIKE $1${oeSql})${matSql}
+-        ORDER BY p.code
+-        LIMIT 12`, params)).rows;
++          AND (p.code ILIKE $1 OR p.name ILIKE $1
++               OR EXISTS (SELECT 1 FROM product_syd_codes s WHERE s.product_id = p.id AND s.syd_code ILIKE $1)${oeSql})${matSql}
++        ORDER BY match_rank, p.code
++        LIMIT 50`, params)).rows;
+     if (!rows.length) return { items: [] };
+     const ids = rows.map((r) => r.id);
+     const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
