@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261023va</title>
+<title>Refatrix ERP · 전자결재 · b20261029ref</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -644,19 +644,24 @@ function commissionCardHtml(c){
   <td>${l.basis==='revenue'?'<span class="sub">—</span>':`${esc(l.last_pay_date||'—')}<div class="sub">${money(l.paid_amount)}</div>`}</td><td>${money(l.commission_base)}</td><td>${Number(l.rate||0)}%</td><td><b>${money(l.expected)}</b></td></tr>`).join('');
  const bon=s.bonus?`<tr><td colspan="8">＋ 성과급(Bono)${s.bonus.achieved_rate!=null?` · 달성률 ${s.bonus.achieved_rate}%`:''}${s.bonus.target_amount!=null?` · 목표 ${money(s.bonus.target_amount)} / 실적 ${money(s.bonus.actual_amount)}`:''}</td><td><b>${money(s.bonus.amount)}</b></td></tr>`:'';
  const adj=(s.adjustments||[]).map(a=>`<tr><td>${esc(a.customer_name)}</td><td>${esc(a.sat_no||('#'+a.invoice_id))}</td><td colspan="6">지급 후 매출 조정 · ${esc(CM_REASON[a.reason]||a.reason||'')} · 지급 당시 매출 ${money(a.paid_base)} → 현재 ${money(a.new_base)}</td><td><b>${a.amount<0?'−':'+'}${money(Math.abs(a.amount))}</b></td></tr>`).join('');
+ // 0307 소개 커미션 — 소개한 커미셔너의 완납 매출 × 계약율
+ const ref=(s.referrals||[]).map(l=>`<tr><td>${esc(l.customer_name)}</td><td>${esc(l.sat_no||('#'+l.invoice_id))}</td><td>${esc(l.inv_date||'')}</td><td>${money(l.base)}</td><td>소개 · ${esc(l.referred_name||'')}</td><td>${esc(l.last_pay_date||'—')}</td><td>${money(l.base)}</td><td>${Number(l.rate||0)}%</td><td><b>${money(l.amount)}</b></td></tr>`).join('')
+  +(s.referral_adjustments||[]).map(a=>`<tr><td>${esc(a.customer_name)}</td><td>${esc(a.sat_no||('#'+a.invoice_id))}</td><td colspan="6">소개 커미션 지급 후 매출 조정 · ${esc(CM_REASON[a.reason]||a.reason||'')} · 지급 당시 매출 ${money(a.paid_base)} → 현재 ${money(a.new_base)}</td><td><b>${a.amount<0?'−':'+'}${money(Math.abs(a.amount))}</b></td></tr>`).join('');
  const st=c.commission_payment_id?`<div class="warn info" style="margin-top:10px">💵 현금 지급·마감 완료 — 커미션 지급 전표 #${esc(c.commission_payment_id)}${c.settled_at?` · ${tm(c.settled_at)}`:''} · 서명된 수령증이 증빙(「수령증」)으로 첨부되었습니다.</div>`
   :`<div class="warn info" style="margin-top:10px">이 문서는 <b>만든 때부터 미래자금계획</b>에 지급예정일 지출 예정으로 들어갑니다(반려·삭제 시 빠짐). 결재가 끝나면 <b>재무 › 커미션</b>에서 수령증(Recibo)을 인쇄해 현금으로 지급하고, 서명본 스캔을 올리면 커미션 지급 전표(반제)와 이 문서의 집행이 함께 마감됩니다. 현금 출금 <b>실적은 재무 › 거래등록</b>에서 이 문서를 골라 직접 등록합니다. <a class="lnk" style="margin:0" href="${CM_URL(c)}" target="_blank">커미션 화면 열기 ↗</a></div>`;
  return `<div class="card sec"><h3>커미션 지급 내역 <span class="sub">재무 › 커미션에서 자동 생성 · 인보이스 ${L.length}건</span></h3>
   <dl class="kv"><dt>지급 대상</dt><dd><b>${esc(s.agent_name||'')}</b></dd><dt>기간</dt><dd>${esc(cmYm(s.settle_ym))} 반제(완납) 확정분${p.inv_from?` <span class="sub">· 발행 ${esc(p.inv_from)} ~ ${esc(p.inv_to)}</span>`:''}${p.pay_from?` <span class="sub">· 수금 ${esc(p.pay_from)} ~ ${esc(p.pay_to)}</span>`:''}</dd>
-  <dt>지급 합계</dt><dd class="big">${money(s.total)}</dd><dt>구성</dt><dd>커미션 ${money(s.commission_total)}${s.bonus?` · 성과급 ${money(s.bonus.amount)}`:''}${(s.adjustments||[]).length?` · 조정 ${s.adjustment_total<0?'−':'+'}${money(Math.abs(s.adjustment_total))}`:''}</dd></dl>
+  <dt>지급 합계</dt><dd class="big">${money(s.total)}</dd><dt>구성</dt><dd>커미션 ${money(s.commission_total)}${s.bonus?` · 성과급 ${money(s.bonus.amount)}`:''}${(s.adjustments||[]).length?` · 조정 ${s.adjustment_total<0?'−':'+'}${money(Math.abs(s.adjustment_total))}`:''}${(s.referrals||[]).length?` · 소개 커미션 ${money(s.referral_total)}`:''}${(s.referral_adjustments||[]).length?` · 소개 조정 −${money(Math.abs(s.referral_adjustment_total))}`:''}</dd></dl>
   <div class="scroll" style="margin-top:8px"><table class="tbl"><thead><tr><th>고객명</th><th>인보이스</th><th>발행일</th><th>매출(ex-IVA)</th><th>기준</th><th>수금일 · 수금액</th><th>커미션 기준액</th><th>율</th><th>커미션</th></tr></thead>
-  <tbody>${rows}${bon}${adj}</tbody><tfoot><tr><td colspan="8">지급 합계 (MXN · 현금 · IVA 없음)</td><td>${money(s.total)}</td></tr></tfoot></table></div>${st}</div>`;
+  <tbody>${rows}${bon}${adj}${ref}</tbody><tfoot><tr><td colspan="8">지급 합계 (MXN · 현금 · IVA 없음)</td><td>${money(s.total)}</td></tr></tfoot></table></div>${st}</div>`;
 }
 function commissionPrintHtml(c){
  const s=c.snapshot||{},L=s.lines||[],p=s.period||{};
  const rows=L.map(l=>`<tr><td class="ptx">${esc(cut(l.customer_name,28))}</td><td class="pnw">${esc(l.sat_no||('#'+l.invoice_id))}</td><td class="pnw">${esc((l.inv_date||'').slice(2))}</td><td class="pr pnw">${money(l.base)}</td><td class="pnw">${esc(cmBasis(l))}${l.basis!=='revenue'&&l.last_pay_date?` ${esc(l.last_pay_date.slice(2))}`:''}</td><td class="pr pnw">${money(l.commission_base)}</td><td class="pr pnw">${Number(l.rate||0)}%</td><td class="pr pnw"><b>${money(l.expected)}</b></td></tr>`);
  if(s.bonus)rows.push(`<tr><td class="ptx" colspan="7">＋ 성과급${s.bonus.achieved_rate!=null?` (달성률 ${s.bonus.achieved_rate}%)`:''}</td><td class="pr pnw"><b>${money(s.bonus.amount)}</b></td></tr>`);
  for(const a of (s.adjustments||[]))rows.push(`<tr><td class="ptx" colspan="7">지급 후 조정 · ${esc(a.sat_no||('#'+a.invoice_id))} ${esc(cut(a.customer_name,20))} · ${esc(CM_REASON[a.reason]||'')}</td><td class="pr pnw"><b>${a.amount<0?'−':'+'}${money(Math.abs(a.amount))}</b></td></tr>`);
+ for(const l of (s.referrals||[]))rows.push(`<tr><td class="ptx">${esc(cut(l.customer_name,28))}</td><td class="pnw">${esc(l.sat_no||('#'+l.invoice_id))}</td><td class="pnw">${esc((l.inv_date||'').slice(2))}</td><td class="pr pnw">${money(l.base)}</td><td class="pnw">소개 ${esc(cut(l.referred_name||'',12))}${l.last_pay_date?` ${esc(l.last_pay_date.slice(2))}`:''}</td><td class="pr pnw">${money(l.base)}</td><td class="pr pnw">${Number(l.rate||0)}%</td><td class="pr pnw"><b>${money(l.amount)}</b></td></tr>`);
+ for(const a of (s.referral_adjustments||[]))rows.push(`<tr><td class="ptx" colspan="7">소개 커미션 조정 · ${esc(a.sat_no||('#'+a.invoice_id))} ${esc(cut(a.customer_name,20))} · ${esc(CM_REASON[a.reason]||'')}</td><td class="pr pnw"><b>${a.amount<0?'−':'+'}${money(Math.abs(a.amount))}</b></td></tr>`);
  rows.push(`<tr><td class="ptx" colspan="7"><b>지급 합계 (현금)</b></td><td class="pr pnw"><b>${money(s.total)}</b></td></tr>`);
  const head='<tr><th>고객명</th><th>인보이스</th><th>발행일</th><th class="pr">매출(ex-IVA)</th><th>기준·수금일</th><th class="pr">기준액</th><th class="pr">율</th><th class="pr">커미션</th></tr>';
  return `<div class="psec"><h4>커미션 지급 내역 · ${esc(s.agent_name||'')} · ${esc(cmYm(s.settle_ym))} 반제분${p.inv_from?` <span class="pg">(발행 ${esc(p.inv_from)}~${esc(p.inv_to)})</span>`:''} · ${L.length}건</h4><table class="ptb">${head}${rows.join('')}</table></div>`;

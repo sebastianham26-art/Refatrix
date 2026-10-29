@@ -22,7 +22,8 @@ export function ymLabel(ym) {
 }
 
 // 지급 대상 → 스냅샷(순수). lines 는 payableLines() 결과, bonus 는 payableBonus(), adjustments 는 pendingAdjustments().
-export function buildSnapshot({ agentId, agentName, settleYm, payDate, lines = [], bonus = null, adjustments = [] }) {
+//   0307: referrals = payableReferralLines()(소개자 A 몫) · referralAdjustments = pendingReferralAdjustments(). 없으면 빈 배열(종전 스냅샷과 같음).
+export function buildSnapshot({ agentId, agentName, settleYm, payDate, lines = [], bonus = null, adjustments = [], referrals = [], referralAdjustments = [] }) {
   const L = lines.map((l) => ({
     invoice_id: Number(l.invoice_id),
     sat_no: l.sat_no || null,
@@ -44,13 +45,26 @@ export function buildSnapshot({ agentId, agentName, settleYm, payDate, lines = [
     customer_name: a.customer_name || '', reason: a.reason || null,
     paid_base: r2(a.paid_base), new_base: r2(a.new_base), paid_amount: r2(a.paid_amount), amount: r2(a.amount),
   }));
+  const R = referrals.map((l) => ({
+    referral_id: Number(l.referral_id), invoice_id: Number(l.invoice_id), sat_no: l.sat_no || null,
+    inv_date: l.inv_date ? String(l.inv_date).slice(0, 10) : null, customer_name: l.customer_name || '',
+    referred_name: l.referred_name || '', last_pay_date: l.last_pay_date ? String(l.last_pay_date).slice(0, 10) : null,
+    base: r2(l.base), rate: num(l.rate) ?? 0, amount: r2(l.amount),
+  }));
+  const RA = referralAdjustments.map((a) => ({
+    payout_id: Number(a.payout_id), referral_id: Number(a.referral_id), invoice_id: Number(a.invoice_id), sat_no: a.sat_no || null,
+    inv_date: a.inv_date || null, customer_name: a.customer_name || '', reason: a.reason || null,
+    paid_base: r2(a.paid_base), new_base: r2(a.new_base), paid_amount: r2(a.paid_amount), amount: r2(a.amount),
+  }));
   const commissionTotal = r2(L.reduce((s, l) => s + l.expected, 0));
   const adjustmentTotal = r2(adj.reduce((s, a) => s + a.amount, 0));
+  const referralTotal = r2(R.reduce((s, l) => s + l.amount, 0));
+  const referralAdjustmentTotal = r2(RA.reduce((s, a) => s + a.amount, 0));
   const bonusAmt = bonus ? r2(bonus.amount) : 0;
-  const total = r2(commissionTotal + bonusAmt + adjustmentTotal);
+  const total = r2(commissionTotal + bonusAmt + adjustmentTotal + referralTotal + referralAdjustmentTotal);
   const dates = (arr) => arr.filter(Boolean).sort();
-  const inv = dates(L.map((l) => l.inv_date));
-  const pay = dates(L.map((l) => l.last_pay_date));
+  const inv = dates(L.map((l) => l.inv_date).concat(R.map((l) => l.inv_date)));
+  const pay = dates(L.map((l) => l.last_pay_date).concat(R.map((l) => l.last_pay_date)));
   return {
     v: 1,
     agent_id: Number(agentId), agent_name: agentName || '',
@@ -65,8 +79,10 @@ export function buildSnapshot({ agentId, agentName, settleYm, payDate, lines = [
       target_amount: num(bonus.target_amount), actual_amount: num(bonus.actual_amount), achieved_rate: num(bonus.achieved_rate),
     } : null,
     adjustments: adj,
-    commission_total: commissionTotal, bonus_total: bonusAmt, adjustment_total: adjustmentTotal, total,
-    invoice_count: L.length,
+    referrals: R, referral_adjustments: RA,
+    commission_total: commissionTotal, bonus_total: bonusAmt, adjustment_total: adjustmentTotal,
+    referral_total: referralTotal, referral_adjustment_total: referralAdjustmentTotal, total,
+    invoice_count: L.length, referral_count: R.length,
   };
 }
 
@@ -92,6 +108,17 @@ export function compareSnapshot(snap, cur) {
   if (Math.abs(sb - cb) > 0.009) diffs.push(`성과급 ${sb} → ${cb}`);
   const sa = r2(snap.adjustment_total), ca = r2(cur.adjustment_total);
   if (Math.abs(sa - ca) > 0.009) diffs.push(`지급 후 조정 ${sa} → ${ca}`);
+  // 0307 소개 커미션(이전 스냅샷에는 없음 → 빈 목록)
+  const rk = (l) => `${l.referral_id}:${l.invoice_id}`;
+  const ra = new Map((snap.referrals || []).map((l) => [rk(l), l]));
+  const rb = new Map((cur.referrals || []).map((l) => [rk(l), l]));
+  for (const [k, l] of ra) {
+    if (!rb.has(k)) diffs.push(`결재 내역의 소개 커미션(인보이스 ${l.sat_no || '#' + l.invoice_id})이 지금 지급 대상에 없습니다.`);
+    else if (Math.abs(r2(rb.get(k).amount) - r2(l.amount)) > 0.009) diffs.push(`소개 커미션 ${l.sat_no || '#' + l.invoice_id} ${r2(l.amount)} → ${r2(rb.get(k).amount)}`);
+  }
+  for (const [k, l] of rb) if (!ra.has(k)) diffs.push(`결재 후 소개 커미션 인보이스 ${l.sat_no || '#' + l.invoice_id} (${l.customer_name}) ${r2(l.amount)} 이 추가됐습니다.`);
+  const sra = r2(snap.referral_adjustment_total), cra = r2(cur.referral_adjustment_total);
+  if (Math.abs(sra - cra) > 0.009) diffs.push(`소개 커미션 지급 후 조정 ${sra} → ${cra}`);
   if (!diffs.length && Math.abs(r2(snap.total) - r2(cur.total)) > 0.009) diffs.push(`지급 합계 ${r2(snap.total)} → ${r2(cur.total)}`);
   return { ok: diffs.length === 0, diffs };
 }
@@ -110,7 +137,9 @@ export function bodyNodes(snap) {
     `■ 기간: ${ymLabel(snap.settle_ym)} 반제(완납) 확정분${p.inv_from ? ` · 인보이스 발행 ${p.inv_from} ~ ${p.inv_to}` : ''}${p.pay_from ? ` · 수금 ${p.pay_from} ~ ${p.pay_to}` : ''}`,
     `■ 내역: 인보이스 ${snap.invoice_count}건 · 커미션 MXN ${fm(snap.commission_total)}`
       + (snap.bonus ? ` · 성과급 MXN ${fm(snap.bonus.amount)}` : '')
-      + ((snap.adjustments || []).length ? ` · 지급 후 조정 ${snap.adjustment_total < 0 ? '−' : '+'}MXN ${fm(Math.abs(snap.adjustment_total))}` : ''),
+      + ((snap.adjustments || []).length ? ` · 지급 후 조정 ${snap.adjustment_total < 0 ? '−' : '+'}MXN ${fm(Math.abs(snap.adjustment_total))}` : '')
+      + ((snap.referrals || []).length ? ` · 소개 커미션 ${snap.referrals.length}건 MXN ${fm(snap.referral_total)}` : '')
+      + ((snap.referral_adjustments || []).length ? ` · 소개 커미션 조정 −MXN ${fm(Math.abs(snap.referral_adjustment_total))}` : ''),
     `■ 지급 합계: MXN ${fm(snap.total)} (현금 지급 · IVA 없음)`,
     `■ 지급 방법: 결재 승인 후 현금 지급 → 수령인이 수령증(Recibo)에 서명 → 서명본 스캔을 커미션 화면에서 올리면 지급 전표(반제)와 이 문서의 집행이 함께 마감됩니다.`,
     `※ 인보이스별 고객·매출/수금·율·커미션은 아래 「커미션 지급 내역」 표(재무 › 커미션에서 자동 생성)를 참고하세요.`,

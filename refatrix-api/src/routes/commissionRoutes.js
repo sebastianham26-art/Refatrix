@@ -14,6 +14,8 @@ import {
 import { createApprovalDraft, executeWithReceipt, Stop as ApprovalStop } from './approvalRoutes.js';
 import { decodeApprovalFile } from '../approval.js';
 import { syncApprovalDoc } from '../approvalFinance.js';   // 0287c 생성 즉시 미래자금계획 예정
+// 0307 소개(Referencia) 커미션 — A 의 지급 전표·전자결재에 같이 들어간다(소개 계약이 없으면 모두 빈 값 → 종전과 동일).
+import { payableReferralLines, pendingReferralAdjustments, confirmedReferralMonthLines, writeReferralPayment } from '../commissionReferralData.js';
 
 // 반제(완납) 다음 달 15일
 function nextMonth15(ym) {
@@ -378,6 +380,8 @@ async function confirmedMonthLines() {
     const amt = paid && r.payout_amount != null ? Number(r.payout_amount) : c.expected;
     out.push({ settle_ym: c.settleYm, owner_id: r.owner_id, expected: amt, paid });
   }
+  // 0307 소개 커미션(소개자 A 몫) — 같은 월 배치로 확정·지급
+  for (const l of await confirmedReferralMonthLines()) out.push(l);
   return out;
 }
 
@@ -405,38 +409,57 @@ export async function preparePayment(agentId, amt, settleYm, paidDate) {
   catch (e) { if (e && e.code === '42P01') throw new PayStop(503, { error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
   // 확정·미지급 성과급(월 1건). 커미션 라인이 없어도 성과급만으로 지급할 수 있다.
   const bonus = await payableBonus(agentId, settleYm);
-  if (!lines.length && !bonus) throw new PayStop(409, { error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.' });
+  // 0307 소개 커미션(이 사람이 소개자 A 인 계약) — 확정·미지급 라인 + 지급 후 차감
+  const refLines = await payableReferralLines(agentId, settleYm);
+  const refAdjustments = await pendingReferralAdjustments(agentId);
+  const refAdjTotal = round2(refAdjustments.reduce((s, a) => s + a.amount, 0));
+  if (!lines.length && !bonus && !refLines.length) throw new PayStop(409, { error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급·소개 커미션이 없습니다.' });
 
   // 지급 후 매출 조정 차액은 이번 전표에서 전액 정산(차감=음수·추가=양수). 차감이 지급할 금액보다 크면 이월.
   const adjustments = await pendingAdjustments(agentId);
   const adjTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0));
-  const grossDue = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0) + (bonus ? bonus.amount : 0));
-  if (adjTotal < 0 && grossDue + adjTotal < -0.001) {
-    throw new PayStop(409, { error: 'adjustment_exceeds', note: `지급 후 매출 조정으로 차감할 금액(${-adjTotal})이 이번 달 지급 대상(${grossDue})보다 큽니다. 차감액은 다음 지급으로 이월됩니다.` });
+  const allAdj = round2(adjTotal + refAdjTotal);
+  const refTotal = round2(refLines.reduce((s, l) => s + Number(l.amount || 0), 0));
+  const grossDue = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0) + (bonus ? bonus.amount : 0) + refTotal);
+  if (allAdj < 0 && grossDue + allAdj < -0.001) {
+    throw new PayStop(409, { error: 'adjustment_exceeds', note: `지급 후 매출 조정으로 차감할 금액(${-allAdj})이 이번 달 지급 대상(${grossDue})보다 큽니다. 차감액은 다음 지급으로 이월됩니다.` });
   }
   // 입력액 + 차감액(또는 − 추가액)만큼 커미션 라인을 FIFO 충당.
-  const { allocs, settled, leftover } = allocateFifo(lines, round2(amt - adjTotal));
+  const { allocs, settled, leftover } = allocateFifo(lines, round2(amt - allAdj));
   // 성과급은 커미션 라인을 FIFO 로 충당하고 남은 금액으로 충당(부분충당 없음).
   const bonusPaid = (bonus && leftover + 0.001 >= bonus.amount) ? bonus : null;
-  // 차감은 이번 전표로 실제 충당되는 커미션·성과급 범위 안에서만 반영(현금 지급 < 0 이 되는 정산 방지).
-  if (adjustments.length && round2(settled + (bonusPaid ? bonusPaid.amount : 0) + adjTotal) < -0.001) {
-    throw new PayStop(409, { error: 'amount_too_small', note: `지급액이 작아 차감(${-adjTotal})을 반영할 수 없습니다. 기본 지급액(커미션 + 성과급 − 차감)으로 등록하세요.` });
+  // 소개 커미션은 그다음 남은 금액으로 인보이스 단위 충당(부분충당 없음).
+  let rem = round2(leftover - (bonusPaid ? bonusPaid.amount : 0));
+  const refAllocs = [];
+  for (const l of refLines) {
+    if (!(l.amount > 0)) continue;
+    if (l.amount <= rem + 0.001) { refAllocs.push(l); rem = round2(rem - l.amount); } else break;
   }
-  if (!allocs.length && !bonusPaid && !(adjustments.length && adjTotal > 0)) {
-    const smallest = lines.length ? round2(lines[0].expected) : (bonus ? bonus.amount : 0);
-    throw new PayStop(409, { error: 'amount_too_small', note: `충당할 수 있는 가장 작은 단위(${smallest})보다 지급액이 적습니다. 커미션은 인보이스 단위, 성과급은 월 단위로 충당됩니다.` });
+  const refSettled = round2(refAllocs.reduce((s, l) => s + l.amount, 0));
+  // 차감은 이번 전표로 실제 충당되는 커미션·성과급·소개 커미션 범위 안에서만 반영(현금 지급 < 0 이 되는 정산 방지).
+  if ((adjustments.length || refAdjustments.length) && round2(settled + (bonusPaid ? bonusPaid.amount : 0) + refSettled + allAdj) < -0.001) {
+    throw new PayStop(409, { error: 'amount_too_small', note: `지급액이 작아 차감(${-allAdj})을 반영할 수 없습니다. 기본 지급액(커미션 + 성과급 + 소개 커미션 − 차감)으로 등록하세요.` });
+  }
+  if (!allocs.length && !bonusPaid && !refAllocs.length && !(adjustments.length && adjTotal > 0)) {
+    const smallest = lines.length ? round2(lines[0].expected) : (bonus ? bonus.amount : (refLines.length ? round2(refLines[0].amount) : 0));
+    throw new PayStop(409, { error: 'amount_too_small', note: `충당할 수 있는 가장 작은 단위(${smallest})보다 지급액이 적습니다. 커미션·소개 커미션은 인보이스 단위, 성과급은 월 단위로 충당됩니다.` });
   }
   const baseReady = await payoutBaseReady();
-  return { agentId, amt, settleYm, payDate, lines, bonus, adjustments, adjTotal, allocs, settled, leftover, bonusPaid, baseReady };
+  return {
+    agentId, amt, settleYm, payDate, lines, bonus, adjustments, adjTotal, allocs, settled, leftover, bonusPaid, baseReady,
+    refLines, refAllocs, refSettled, refAdjustments, refAdjTotal, finalLeftover: rem,
+  };
 }
 
 export async function writePayment(cx, prep, { uid, note, evi, eviName }) {
   const { agentId, amt, payDate, lines, adjustments, adjTotal, allocs, settled, bonusPaid, baseReady } = prep;
+  const refAllocs = prep.refAllocs || [], refAdjustments = prep.refAdjustments || [];
+  const refPart = round2((prep.refSettled || 0) + (prep.refAdjTotal || 0));
   const baseOf = Object.fromEntries(lines.map((l) => [String(l.invoice_id), l.base]));
   const pay = (await cx.query(
     `INSERT INTO commission_payments (agent_id, amount, settled, paid_date, note, evi_name, evi_mime, evi_data, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-    [agentId, amt, round2(settled + adjTotal), payDate, note || null, (eviName || null), evi.mime, evi.b64, uid])).rows[0];
+    [agentId, amt, round2(settled + adjTotal + refPart), payDate, note || null, (eviName || null), evi.mime, evi.b64, uid])).rows[0];
   const paymentId = pay.id;
   for (const a of allocs) {
     await cx.query(
@@ -460,19 +483,23 @@ export async function writePayment(cx, prep, { uid, note, evi, eviName }) {
       [adj.invoice_id, adj.new_amount, adj.new_base, paymentId, uid]);
   }
   if (bonusPaid) await markBonusPaid(cx, bonusPaid.id, payDate, paymentId, uid);
+  // 0307 소개 커미션 지급(인보이스별 금액·순매출 동결) + 지급 후 차감 기록
+  await writeReferralPayment(cx, { referrerId: agentId, allocs: refAllocs, adjustments: refAdjustments, payDate, paymentId, uid });
   return { paymentId };
 }
 
 async function paymentResponse(prep, result, uid, extra = {}) {
-  const { agentId, amt, allocs, settled, leftover, bonusPaid, adjustments, adjTotal } = prep;
+  const { agentId, amt, allocs, settled, bonusPaid, adjustments, adjTotal } = prep;
   const bonusAmt = bonusPaid ? bonusPaid.amount : 0;
-  const settledAll = round2(settled + bonusAmt + adjTotal);
-  await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled: settledAll, count: allocs.length, bonus: bonusAmt, adjustments: adjustments.length, adjustment_total: adjTotal, ...extra } });
+  const refSettled = prep.refSettled || 0, refAdjTotal = prep.refAdjTotal || 0, refCount = (prep.refAllocs || []).length;
+  const settledAll = round2(settled + bonusAmt + adjTotal + refSettled + refAdjTotal);
+  await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled: settledAll, count: allocs.length, bonus: bonusAmt, adjustments: adjustments.length, adjustment_total: adjTotal, referral_count: refCount, referral_total: refSettled, referral_adjustment_total: refAdjTotal, ...extra } });
   return {
     ok: true, payment_id: Number(result.paymentId), settled_count: allocs.length,
     settled: settledAll, commission_settled: settled, bonus_settled: bonusAmt,
-    adjustment_count: adjustments.length, adjustment_settled: adjTotal,
-    leftover: round2(leftover - bonusAmt), total_paid_amount: amt, ...extra,
+    adjustment_count: adjustments.length + (prep.refAdjustments || []).length, adjustment_settled: round2(adjTotal + refAdjTotal),
+    referral_count: refCount, referral_settled: refSettled,
+    leftover: round2(prep.finalLeftover != null ? prep.finalLeftover : 0), total_paid_amount: amt, ...extra,
   };
 }
 
@@ -498,9 +525,11 @@ async function currentSnapshot(agentId, settleYm) {
   const lines = await payableLines(agentId, settleYm);
   const bonus = await payableBonus(agentId, settleYm);
   const adjustments = await pendingAdjustments(agentId);
+  const referrals = await payableReferralLines(agentId, settleYm);
+  const referralAdjustments = await pendingReferralAdjustments(agentId);
   const u = (await query(`SELECT name FROM users WHERE id=$1`, [agentId])).rows[0];
   const b = (await query(`SELECT to_char(pay_date,'YYYY-MM-DD') AS pay_date FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0];
-  return buildSnapshot({ agentId, agentName: u ? u.name : '', settleYm, payDate: b ? b.pay_date : nextMonth15(settleYm), lines, bonus, adjustments });
+  return buildSnapshot({ agentId, agentName: u ? u.name : '', settleYm, payDate: b ? b.pay_date : nextMonth15(settleYm), lines, bonus, adjustments, referrals, referralAdjustments });
 }
 
 const EXT_OF = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic' };
@@ -856,10 +885,17 @@ export default async function commissionRoutes(app) {
     // 지급 후 매출 조정 차액(차감은 음수) — 이번 지급에 함께 정산된다.
     const adjustments = await pendingAdjustments(agentId);
     const adjustmentTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0));
-    const total = round2(commissionTotal + (bonus ? bonus.amount : 0) + adjustmentTotal);
+    // 0307 소개 커미션(이 사람이 소개자 A) — 같은 전표로 지급
+    const referrals = await payableReferralLines(agentId, settleYm);
+    const referralTotal = round2(referrals.reduce((s, l) => s + Number(l.amount || 0), 0));
+    const referralAdjustments = await pendingReferralAdjustments(agentId);
+    const referralAdjustmentTotal = round2(referralAdjustments.reduce((s, a) => s + a.amount, 0));
+    const total = round2(commissionTotal + (bonus ? bonus.amount : 0) + adjustmentTotal + referralTotal + referralAdjustmentTotal);
     return {
       agent_id: agentId, settle_ym: settleYm, can_pay: PAY_ROLES.includes(perm.role),
-      lines, commission_total: commissionTotal, bonus, adjustments, adjustment_total: adjustmentTotal, total,
+      lines, commission_total: commissionTotal, bonus, adjustments, adjustment_total: adjustmentTotal,
+      referrals, referral_total: referralTotal, referral_adjustments: referralAdjustments, referral_adjustment_total: referralAdjustmentTotal,
+      total,
     };
   });
 
@@ -942,7 +978,7 @@ export default async function commissionRoutes(app) {
         note: `이미 이 사원·이 달의 지급승인 문서(${(a.doc && a.doc.doc_no) || '임시저장'})가 있습니다. 그 문서로 진행하세요.` });
     }
     const snap = await currentSnapshot(agentId, settleYm);
-    if (!snap.lines.length && !snap.bonus) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.' });
+    if (!snap.lines.length && !snap.bonus && !(snap.referrals || []).length) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급·소개 커미션이 없습니다.' });
     if (!(snap.total > 0)) return reply.code(409).send({ error: 'nothing_payable', note: `지급 합계가 0 이하입니다(${snap.total}). 차감액은 다음 지급으로 이월됩니다.` });
     const cat = (await query(`SELECT id FROM approval_categories WHERE name=$1 ORDER BY active DESC, id LIMIT 1`, [COMMISSION_CATEGORY])).rows[0];
     let created;
@@ -953,7 +989,7 @@ export default async function commissionRoutes(app) {
           title: docTitle(snap), vendor: snap.agent_name, category_id: cat ? Number(cat.id) : null,
           body_rich: bodyNodes(snap), pay_due: snap.pay_date, pay_method: '현금', iva_applied: false,
           currency: 'MXN', payment_type: 'once', orig_sub: snap.total,
-          auto_note: `재무 › 커미션에서 자동 생성 · ${snap.agent_name} · ${ymLabel(settleYm)} · 인보이스 ${snap.invoice_count}건 · MXN ${snap.total.toFixed(2)}`,
+          auto_note: `재무 › 커미션에서 자동 생성 · ${snap.agent_name} · ${ymLabel(settleYm)} · 인보이스 ${snap.invoice_count}건${(snap.referrals || []).length ? ` · 소개 커미션 ${snap.referrals.length}건` : ''} · MXN ${snap.total.toFixed(2)}`,
         });
         const l = (await q(
           `INSERT INTO commission_approval_docs (document_id, agent_id, settle_ym, total, snapshot, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
@@ -1009,7 +1045,7 @@ export default async function commissionRoutes(app) {
     let prep;
     try { prep = await preparePayment(link.agent_id, round2(link.total), link.settle_ym, paidDate); }
     catch (e) { if (e instanceof PayStop) return reply.code(e.status).send(e.body); throw e; }
-    if (prep.allocs.length !== cur.lines.length || (cur.bonus && !prep.bonusPaid) || Math.abs(round2(prep.leftover - (prep.bonusPaid ? prep.bonusPaid.amount : 0))) > 0.009) {
+    if (prep.allocs.length !== cur.lines.length || (cur.bonus && !prep.bonusPaid) || (prep.refAllocs || []).length !== (cur.referrals || []).length || Math.abs(round2(prep.finalLeftover)) > 0.009) {
       return reply.code(409).send({ error: 'allocation_mismatch', note: '지급 합계로 결재 내역 전부를 충당하지 못했습니다. 커미션 화면을 새로고침한 뒤 다시 시도하세요.' });
     }
     let result;

@@ -25,8 +25,8 @@ after(async () => {
 });
 
 test('S0 정적 — 빌드 토큰 · 새 코드에 인라인 onclick 없음 · 수령증/문서생성 문구', () => {
-  assert.match(COM, /<title>[^<]*b1019cg<\/title>/);
-  assert.match(APR, /<title>[^<]*b20261023va<\/title>/);
+  assert.match(COM, /<title>[^<]*b1029ref<\/title>/);
+  assert.match(APR, /<title>[^<]*b20261029ref<\/title>/);
   const start = COM.indexOf('// ══ 0287'); const end = COM.indexOf('// ── 지급 전표 내역 + 증빙 열람 ──');
   assert.ok(start > 0 && end > start);
   const block = COM.slice(start, end);

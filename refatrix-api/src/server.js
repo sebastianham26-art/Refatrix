@@ -32,6 +32,7 @@ import devRequestRoutes from './routes/devRequestRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import commissionRoutes from './routes/commissionRoutes.js';
 import commissionAgreementRoutes from './routes/commissionAgreementRoutes.js';   // 0251 · 커미션 조건 합의(본인 PIN)
+import commissionReferralRoutes from './routes/commissionReferralRoutes.js';   // 0307 · 소개(Referencia) 커미션 계약·전자서명·실적
 import wbrRoutes from './routes/wbrRoutes.js';
 import wbrMbrRoutes from './routes/wbrMbrRoutes.js';
 import presenceRoutes from './routes/presenceRoutes.js';
@@ -152,6 +153,7 @@ export function buildApp() {
   app.register(userRoutes);
   app.register(commissionRoutes);
   app.register(commissionAgreementRoutes);   // 0251 · 커미션 조건 합의
+  app.register(commissionReferralRoutes);   // 0307 · 소개 커미션
   app.register(wbrRoutes);
   app.register(wbrMbrRoutes);
   app.register(presenceRoutes);
