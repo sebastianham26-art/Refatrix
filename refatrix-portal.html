@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 포털 · build 20261013wn</title>
+<title>Refatrix ERP · 포털 · build 20261029cl</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -400,6 +400,23 @@
       return true;
     }
     return false;
+  }
+
+  // ── 사용자별 첫 화면 (2026-10-29 디렉터 결정) ──────────────────────
+  //   Clarisa → 로그인하면 커미션 화면부터. 세션당 한 번만 보낸다 —
+  //   커미션 화면에서 「← 포털」로 돌아오면 포털이 그대로 열린다(재무 규칙처럼 매번 튕기지 않음).
+  //   플래그는 실제 PIN 로그인과 로그아웃에서 지워진다.
+  const USER_LANDING=[{match:'clarisa', file:'refatrix-commission.html'}];
+  function normName(n){ try{ return String(n||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }catch(e){ return String(n||'').trim().toLowerCase(); } }
+  function userLandingRedirect(){
+    try{ if(sessionStorage.getItem('rfx_landing_done')==='1') return false; }catch(e){}
+    const u=session.user||{}; const nm=normName(u.name), lid=normName(u.login_id);
+    const rule=USER_LANDING.find(r=>nm.startsWith(r.match)||lid.startsWith(r.match));
+    if(!rule) return false;
+    try{ sessionStorage.setItem('rfx_landing_done','1'); }catch(e){}
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:u,ts:Date.now()})); }catch(e){}
+    location.href=rule.file+'#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api||'')+'&user='+encodeURIComponent(JSON.stringify(u));
+    return true;
   }
 
   // Constancia 미입력 알림(Maria 전용) — 로그인 시마다, 임시 닫기 가능, 모두 입력되면 안 뜸
@@ -899,6 +916,8 @@
       ensureAudio(); // 로그인 클릭(사용자 제스처) 시점에 오디오 컨텍스트 활성화 → 이후 알림음 재생 가능
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
       if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
+      try{ sessionStorage.removeItem('rfx_landing_done'); }catch(e){}   // 실제 로그인 = 사용자별 첫 화면 다시 한 번
+      if(userLandingRedirect()) return;   // Clarisa → 커미션 화면
       try{ sessionStorage.removeItem('rfx_guide_gate'); }catch(e){}   // 실제 로그인 = 게이트 다시 한 번
       if(await guideGateRedirect()) return;   // 커미셔너 → 안내서 먼저
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
@@ -1370,11 +1389,12 @@
     if(ps&&ps.token){
       session={token:ps.token,user:ps.user||{},api:ps.api||''};
       if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
+      if(userLandingRedirect()) return;   // Clarisa → 커미션 화면(세션당 한 번)
       guideGateRedirect().then(function(sent){ if(sent) return; });   // 커미셔너 → 안내서 먼저(비동기)
       $('who').innerHTML='<b>'+(session.user.name||'')+'</b><br>역할: '+(session.user.role||'-')+' · <a href="#" id="logoutLink">로그아웃</a>';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
       loadSummary();
-      const ll=$('logoutLink'); if(ll) ll.onclick=(e)=>{e.preventDefault();try{sessionStorage.removeItem('refatrix_session');sessionStorage.removeItem('rfx_guide_gate');}catch(_){}location.reload();};
+      const ll=$('logoutLink'); if(ll) ll.onclick=(e)=>{e.preventDefault();try{sessionStorage.removeItem('refatrix_session');sessionStorage.removeItem('rfx_guide_gate');sessionStorage.removeItem('rfx_landing_done');}catch(_){}location.reload();};
     }
   })();
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
