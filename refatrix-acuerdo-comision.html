@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acuerdo de Comisión · build b1030self</title>
+<title>Acuerdo de Comisión · build b1030gd</title>
 <style>
   :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
@@ -58,6 +58,13 @@
   #modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(880px,96vw);max-height:90vh;overflow:auto;z-index:9999;margin:0;box-shadow:0 18px 50px rgba(0,0,0,.35)}
   #backdrop{position:fixed;inset:0;background:rgba(20,20,18,.5);z-index:9998}
   .loginBox input{padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px}
+  /* ── 0309b 등록 강조 카드 · 상단 메뉴에 가려지지 않게 ── */
+  #refView .card,#refView .sign{scroll-margin-top:130px}
+  .regcard{border:2px solid var(--brand);background:#EEF5F1}
+  .regcard h1{font-size:19px}
+  .regcard .why{margin-top:6px;font-size:13px;color:var(--bad);font-weight:700}
+  .regbtns{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .regbtns .btn{font-size:15px;padding:12px 20px}
   /* ── 0307 소개 커미션 계약 ── */
   .rdoc p{font-size:13.5px;line-height:1.62;margin:8px 0;text-align:justify}
   .rdoc ul.cl{list-style:none;padding-left:6px}
@@ -450,7 +457,7 @@
     const k=it?('m'+it.id):'mnew';
     const B=(it&&it.referred_info)||{persona:'fisica'}; const A=(it&&it.referrer_info)||{};
     const myName=(session.user&&session.user.name)||'';
-    let h='<div class="card" id="form-'+k+'"><div class="doc-h"><div><h1>'+(it?'Corregir datos del contrato':'Registrar a un comisionista referido')+'</h1>'
+    let h='<div class="card" id="form-'+k+'"><div class="doc-h"><div><h1>'+(it?'Corregir datos del contrato':'Registrar datos')+'</h1>'
       +'<div class="ver">Estos datos se escriben en el contrato (Declaraciones y cláusula Primera). Refatrix los revisa y aprueba.</div></div></div>';
     h+='<h2><span class="n">1</span> Comisionista referido (empresa B)</h2><div class="dl2">';
     if(!it){
@@ -479,7 +486,7 @@
   }
   function mineDocsHtml(it){
     const k='m'+it.id;
-    let h='<h2>Documentación (cláusula Segunda)</h2><div class="hint" style="margin-bottom:6px">Sube tú mismo los documentos (PDF, foto o Word · máx. 15 MB). La Constancia de Situación Fiscal debe tener 30 días o menos y el comprobante de domicilio 3 meses o menos.</div>'
+    let h='<h2 id="docs-'+it.id+'" style="scroll-margin-top:130px">Documentación (cláusula Segunda)</h2><div class="hint" style="margin-bottom:6px">Sube tú mismo los documentos (PDF, foto o Word · máx. 15 MB). La Constancia de Situación Fiscal debe tener 30 días o menos y el comprobante de domicilio 3 meses o menos.</div>'
       +'<div class="tw"><table><thead><tr><th>De</th><th>Documento</th><th>Estado</th>'+(it.can_edit?'<th>Subir</th>':'')+'</tr></thead><tbody>';
     for(const x of (it.docs.items||[])){
       const key=x.party+'-'+x.type;
@@ -502,8 +509,13 @@
     $('refView').classList.toggle('hidden', !items.length && !canNew);
     let top='';
     if(self && refFormOpen==='new') top=mineFormHtml(null);
-    else if(canNew) top='<div class="card"><div class="doc-h"><div><h1>Comisión por referencia</h1><div class="ver">'+(items.length?'¿Refieres a otro comisionista?':'Si refieres a un comisionista de venta, registra aquí sus datos y los tuyos, sube los documentos y firma el contrato.')+'</div></div>'
-      +'<button class="btn" data-minenew="1" style="margin-left:auto">+ Registrar comisionista referido</button></div></div>';
+    else if(canNew) top=items.length
+      ? '<div class="card"><div class="doc-h"><div><h1>Comisión por referencia</h1><div class="ver">¿Refieres a otro comisionista? Registra sus datos para crear otro contrato.</div></div>'
+        +'<div class="regbtns"><button class="btn ghost" data-guide="1">¿Cómo funciona?</button><button class="btn" data-minenew="1">Registrar datos</button></div></div></div>'
+      : '<div class="card regcard" id="regTop"><div class="doc-h"><div><div class="ver" style="margin:0 0 2px;font-weight:700;color:var(--brand)">PASO 2 DE 6</div><h1>Registrar datos</h1>'
+        +'<div class="ver" style="font-size:13px">Escribe los datos del comisionista que refieres (por ejemplo CDMX) y tus datos.</div>'
+        +'<div class="why">⚠ Con este paso se crea el borrador de tu contrato. Sin él no puedes subir documentos ni firmar.</div></div>'
+        +'<div class="regbtns"><button class="btn ghost" data-guide="1">¿Cómo funciona?</button><button class="btn" data-minenew="1">Registrar datos</button></div></div></div>';
     $('refMine').innerHTML=top+items.map(it=>{
       if(refFormOpen===it.id) return mineFormHtml(it);
       const st=it.sign_status;
@@ -516,7 +528,7 @@
         :'<div class="key" style="background:var(--warn-bg);border:1px solid #F0D9A8;margin-top:0"><b>Pendiente de aprobación de Refatrix.</b> Completa tus datos, sube los documentos y firma. Refatrix revisa y aprueba; mientras tanto puedes corregir todo.'
           +(it.can_edit?' <button class="btn ghost sm" data-mineedit="'+it.id+'" style="margin-left:6px">Corregir datos</button>':'')+'</div>';
       const need=[]; if(!it.docs.complete) need.push('documentos ('+it.docs.missing+' pendientes)'); if(st!=='signed') need.push('tu firma'); if(!it.approved) need.push('aprobación de Refatrix');
-      let h='<div class="card" id="ref-'+it.id+'">'+appr
+      let h='<div class="card" id="ref-'+it.id+'"><div style="display:flex;justify-content:flex-end;margin:-4px 0 8px"><button class="btn ghost sm" data-guide="'+it.id+'">¿Cómo funciona? · Paso '+RefGuide.stepOf(it)+' de 6</button></div>'+appr
         +(need.length?'<div class="hint" style="margin:8px 0 4px">Falta: <b>'+need.join(' · ')+'</b></div>':'')
         +mineDocsHtml(it)
         +'<div style="margin-top:16px">'+refDocHtml(it.doc,{stamp,reNote,verNote:'generada con los datos actuales'})+'</div>';
@@ -542,6 +554,29 @@
     }).join('');
     for(const it of items) if(it.sign_status!=='signed' && refFormOpen!==it.id) initPad(it.id);
   }
+  // ── 단계 안내 팝업 ──
+  //   지금 할 단계에 맞춰 「Ir al paso N」 → 그 위치로 이동(등록 폼 열기 · 서류 표 · 서명란)
+  function openGuide(refId){
+    const items=refMe.items||[];
+    const it=refId?items.find(x=>x.id===refId):(items.find(x=>RefGuide.stepOf(x)<6)||null);
+    const step=it?RefGuide.stepOf(it):2;
+    const label={2:'Registrar datos ›',3:'Ir a Documentación ›',4:'Ir a firmar ›',5:'Entendido',6:'Ir a Comisión ›'}[step];
+    RefGuide.open({step, goLabel:label, onGo:(n)=>{
+      if(n===2){ refFormOpen='new'; renderRefMine(); RefGuide.scrollTo($('form-mnew')); }
+      else if(n===3&&it) RefGuide.scrollTo($('docs-'+it.id));
+      else if(n===4&&it) RefGuide.scrollTo(document.querySelector('[data-refbox="'+it.id+'"]')||$('ref-'+it.id));
+      else if(n===6) location.href='refatrix-commission.html';
+    }});
+  }
+  // 처음 들어왔을 때(이 로그인 세션에서 한 번) — 아직 끝나지 않은 계약이 있거나, 등록 전이면
+  function autoGuide(){
+    const items=refMe.items||[];
+    const pending=items.some(x=>RefGuide.stepOf(x)<5) || (!items.length && refCands && (refCands.items||[]).length && refCands.self_ready!==false);
+    if(!pending) return;
+    try{ if(sessionStorage.getItem('rfx_ref_guide')==='1') return; sessionStorage.setItem('rfx_ref_guide','1'); }catch(e){}
+    if(refFormOpen==='new') return;   // 등록 폼으로 바로 온 경우는 띄우지 않는다
+    setTimeout(()=>openGuide(null),350);
+  }
   function mineVal(k,f){ const el=$(k+'-'+f); return el?el.value:''; }
   async function saveMine(id){
     const k=id==='new'?'mnew':('m'+id); const m=$(k+'-msg'); m.className='msg';
@@ -553,7 +588,7 @@
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){ m.className='msg err'; m.textContent=d.note||('Error: '+(d.error||r.status)); return; }
     refFormOpen=null; await loadRefMe(); await loadRefCands(); renderRefMine();
-    const el=$('ref-'+d.item.id); if(el) window.scrollTo({top:el.offsetTop-10,behavior:'smooth'});
+    RefGuide.scrollTo($('docs-'+d.item.id)||$('ref-'+d.item.id));
   }
   async function mineUpload(refId, key){
     const k='m'+refId; const [party,type]=key.split('-'); const f=$(k+'-f-'+key).files[0]; const m=$(k+'-dmsg'); m.className='msg';
@@ -614,7 +649,7 @@
         return;
       }
       await loadRefMe(); renderRefMine();
-      const el=$('ref-'+id); if(el) window.scrollTo({top:el.offsetTop-10,behavior:'smooth'});
+      RefGuide.scrollTo($('ref-'+id));
     }catch(e){ m.className='msg err'; m.textContent='No hay conexión con el servidor.'; }
     finally{ const b2=$('rsign-'+id); if(b2){ b2.textContent='Firmar contrato'; syncRef(id); } }
   }
@@ -888,7 +923,9 @@
       if(!me.is_agent && !me.see_all && !(refMe.items||[]).length && !((refCands&&refCands.items)||[]).length) $('notAgent').classList.remove('hidden');
       document.documentElement.lang = me.see_all && !me.is_agent && !(refMe.items||[]).length ? 'ko' : 'es';   // 본인(영업·커미셔너) = 스페인어
       try{ document.documentElement.setAttribute('data-ui-lang', document.documentElement.lang); if(window.__rnavRefresh) window.__rnavRefresh(); }catch(e){}   // 메뉴 언어
-      if(location.hash==='#referrals'){ const t=!me.see_all?$('refView'):$('referrals'); if(t) setTimeout(()=>window.scrollTo({top:t.offsetTop-10,behavior:'smooth'}),60); }
+      if(location.hash==='#referrals-new' && !me.see_all && refCands && (refCands.items||[]).length){ refFormOpen='new'; renderRefMine(); setTimeout(()=>RefGuide.scrollTo($('form-mnew')),120); }
+      else if(location.hash.indexOf('#referrals')===0){ const t=!me.see_all?$('refView'):$('referrals'); if(t) setTimeout(()=>RefGuide.scrollTo(t),120); }
+      if(!me.see_all) autoGuide();
     }catch(e){
       session=null; try{ sessionStorage.removeItem('refatrix_session'); }catch(_){}
       $('loginCard').classList.remove('hidden');
@@ -896,11 +933,12 @@
   }
 
   document.addEventListener('click',e=>{
-    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove]');
+    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove],[data-guide]');
     if(!t) return;
     // 0307 소개 커미션
-    if(t.dataset.minenew){ refFormOpen='new'; renderRefMine(); const f=$('form-mnew'); if(f) window.scrollTo({top:f.offsetTop-10,behavior:'smooth'}); return; }
-    if(t.dataset.mineedit){ refFormOpen=Number(t.dataset.mineedit); renderRefMine(); const f=$('form-m'+t.dataset.mineedit); if(f) window.scrollTo({top:f.offsetTop-10,behavior:'smooth'}); return; }
+    if(t.dataset.minenew){ refFormOpen='new'; renderRefMine(); RefGuide.scrollTo($('form-mnew')); return; }
+    if(t.dataset.guide){ openGuide(t.dataset.guide==='1'?null:Number(t.dataset.guide)); return; }
+    if(t.dataset.mineedit){ refFormOpen=Number(t.dataset.mineedit); renderRefMine(); RefGuide.scrollTo($('form-m'+t.dataset.mineedit)); return; }
     if(t.dataset.mineclose){ refFormOpen=null; renderRefMine(); return; }
     if(t.dataset.minesave){ saveMine(t.dataset.minesave==='new'?'new':Number(t.dataset.minesave)); return; }
     if(t.dataset.mineup){ mineUpload(t.dataset.ref, t.dataset.mineup); return; }
@@ -946,6 +984,7 @@
   else { $('loading').classList.add('hidden'); $('loginCard').classList.remove('hidden'); }
 })();
 </script>
+<script src="refatrix-guide-referral.js?v=20261030gd"></script>
 <script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>
