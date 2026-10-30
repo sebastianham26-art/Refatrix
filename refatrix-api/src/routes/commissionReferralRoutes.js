@@ -11,7 +11,7 @@ import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { decodeContractFile, deviceLabel } from './commissionAgreementRoutes.js';
-import { validateReferral, decodeSignature, DOC_TYPES, summarizeReferral, normInfo } from '../commissionReferral.js';
+import { validateReferral, decodeSignature, DOC_TYPES, summarizeReferral, normInfo, referrerInfo } from '../commissionReferral.js';
 import {
   referralsReady, loadReferral, listReferrals, currentDoc, referralState, recomputeDocsComplete, referralLines,
 } from '../commissionReferralData.js';
@@ -37,6 +37,10 @@ export function _resetReferralPinFails() { fails.clear(); }
 async function refOut(ref, perm, { withDoc = false } = {}) {
   const st = await referralState(ref);
   const seeDocs = canSeeAll(perm);
+  const me = Number(perm.userId);
+  const isOwner = me === ref.referrer_id;
+  // A 가 볼 수 있는 파일 = A 서류 + A 가 직접 올린 파일
+  const aSees = (d) => !!d && (d.party === 'referrer' || Number(d.uploaded_by) === me);
   const out = {
     ...ref, version: st.version, sign_status: st.sign_status, first_signed_on: st.first_signed_on,
     effective_from: st.effective_from,
@@ -44,10 +48,15 @@ async function refOut(ref, perm, { withDoc = false } = {}) {
       complete: st.docs_status.complete, missing: st.docs_status.missing,
       items: st.docs_status.items.map((x) => ({
         party: x.party, type: x.type, label_es: x.label_es, label_ko: x.label_ko, ok: x.ok, stale: x.stale,
-        doc: x.doc ? { id: x.doc.id, file_name: seeDocs || x.party === 'referrer' ? x.doc.file_name : null, issued_date: x.doc.issued_date, uploaded_on: x.doc.uploaded_on } : null,
+        doc: x.doc ? { id: x.doc.id, file_name: seeDocs || aSees(x.doc) ? x.doc.file_name : null, issued_date: x.doc.issued_date, uploaded_on: x.doc.uploaded_on,
+          can_open: isDirector(perm) || (isOwner && aSees(x.doc)),
+          can_delete: isDirector(perm) || (isOwner && !ref.approved && Number(x.doc.uploaded_by) === me) } : null,
       })),
     },
     signatures: st.signatures.map((s) => ({ id: s.id, version: s.version, signed_at: s.signed_at, device: deviceLabel(s.user_agent), current: s.version === st.version })),
+    // 0309 본인 작성 — 승인 전에는 소개자가 정보·서류를 고칠 수 있다
+    can_edit: isDirector(perm) || (isOwner && ref.active && !ref.approved),
+    self_requested: ref.requested_by != null && ref.requested_by === ref.referrer_id,
   };
   if (seeDocs) out.files = st.docs.map((d) => ({ id: d.id, party: d.party, doc_type: d.doc_type, file_name: d.file_name, file_size: d.file_size, issued_date: d.issued_date, uploaded_at: d.uploaded_at_local }));
   if (withDoc) { const { doc } = await currentDoc(ref); out.doc = doc; }
@@ -63,6 +72,18 @@ async function capturedReady() {
   _capReady = { v: r.rows.length > 0, at: Date.now() };
   return _capReady.v;
 }
+
+// 0309 본인 작성 열 적용 여부 — 60초 캐시
+let _selfReady = { v: null, at: 0 };
+async function selfReady() {
+  if (_selfReady.v === true) return true;
+  if (_selfReady.v === false && Date.now() - _selfReady.at < 60000) return false;
+  const r = await query(`SELECT 1 FROM information_schema.columns WHERE table_name='commission_referrals' AND column_name='approved_at'`);
+  _selfReady = { v: r.rows.length > 0, at: Date.now() };
+  return _selfReady.v;
+}
+const MIG9 = { error: 'migration_required', migration: '0309', note: 'Esta función aún no está activa en el servidor. (npm run migrate 0309)' };
+const today = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10);
 
 // 이 사람이 이 계약을 볼 수 있나: 전체열람자 또는 소개자 본인
 const canView = (perm, ref) => canSeeAll(perm) || Number(perm.userId) === ref.referrer_id;
@@ -105,10 +126,15 @@ export default async function commissionReferralRoutes(app) {
     if (users.length !== 2) return reply.code(400).send({ error: 'user_not_found', note: '사용자를 찾을 수 없습니다.' });
     const dup = (await query(`SELECT r.id, u.name FROM commission_referrals r JOIN users u ON u.id=r.referrer_id WHERE r.referred_id=$1 AND r.active`, [x.referred_id])).rows[0];
     if (dup) return reply.code(409).send({ error: 'already_referred', referral_id: Number(dup.id), note: `이 커미셔너는 이미 ${dup.name} 님의 소개 계약(#${dup.id})에 있습니다. 그 계약을 수정하거나 해지한 뒤 등록하세요.` });
-    const r = (await query(
-      `INSERT INTO commission_referrals (referrer_id, referred_id, rate, start_date, end_date, referred_info, note, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING id`,
-      [x.referrer_id, x.referred_id, x.rate, x.start_date, x.end_date, JSON.stringify(x.referred_info), x.note, dir])).rows[0];
+    const sr = await selfReady();
+    const ri = referrerInfo((req.body || {}).referrer_info);
+    const r = (await query(sr
+      ? `INSERT INTO commission_referrals (referrer_id, referred_id, rate, start_date, end_date, referred_info, note, created_by, updated_by, referrer_info, approved_at, approved_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,now(),$8) RETURNING id`
+      : `INSERT INTO commission_referrals (referrer_id, referred_id, rate, start_date, end_date, referred_info, note, created_by, updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING id`,
+      sr ? [x.referrer_id, x.referred_id, x.rate, x.start_date, x.end_date, JSON.stringify(x.referred_info), x.note, dir, JSON.stringify(ri || {})]
+         : [x.referrer_id, x.referred_id, x.rate, x.start_date, x.end_date, JSON.stringify(x.referred_info), x.note, dir])).rows[0];
     await logEvent({ userId: dir, action: 'create', target: `commission_referral:${r.id}`, detail: { referrer_id: x.referrer_id, referred_id: x.referred_id, rate: x.rate, start: x.start_date } });
     return { ok: true, item: await refOut(await loadReferral(r.id), req.ctx.perm) };
   });
@@ -126,6 +152,9 @@ export default async function commissionReferralRoutes(app) {
     await withTx(async (cx) => {
       await cx.query(`UPDATE commission_referrals SET rate=$2, start_date=$3, end_date=$4, referred_info=$5, note=$6, updated_by=$7, updated_at=now() WHERE id=$1`,
         [ref.id, x.rate, x.start_date, x.end_date, JSON.stringify(x.referred_info), x.note, dir]);
+      if (req.body && req.body.referrer_info !== undefined && await selfReady()) {
+        await cx.query(`UPDATE commission_referrals SET referrer_info=$2 WHERE id=$1`, [ref.id, JSON.stringify(referrerInfo(req.body.referrer_info) || {})]);
+      }
       await recomputeDocsComplete(cx.query.bind(cx), ref.id);   // 개인↔법인 변경 시 필수 서류가 달라진다
     });
     await logEvent({ userId: dir, action: 'update', target: `commission_referral:${ref.id}`, detail: { rate: x.rate, start: x.start_date, end: x.end_date } });
@@ -143,16 +172,18 @@ export default async function commissionReferralRoutes(app) {
   });
 
   // ── 서류 올리기 (디렉터) ──
+  //   0309: 소개자(A) 본인도 자기 계약의 서류(A·B 모두)를 올릴 수 있다.
   app.post('/api/commission/referrals/:id/docs', { preHandler: [authGuard], bodyLimit: BODY_LIMIT }, async (req, reply) => {
-    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden', note: '디렉터만 올릴 수 있습니다.' });
     if (!(await referralsReady())) return reply.code(503).send(MIG);
     const ref = await loadReferral(req.params.id);
     if (!ref) return reply.code(404).send({ error: 'not_found' });
+    const owner = Number(req.ctx.perm.userId) === ref.referrer_id;
+    if (!isDirector(req.ctx.perm) && !(owner && ref.active)) return reply.code(403).send({ error: 'forbidden', note: 'No puedes subir documentos a este contrato.' });
     const b = req.body || {};
     const party = b.party === 'referrer' ? 'referrer' : (b.party === 'referred' ? 'referred' : null);
-    if (!party || !DOC_TYPES[b.doc_type]) return reply.code(400).send({ error: 'bad_doc_type', note: '대상(A/B)과 서류 종류를 선택하세요.' });
-    if (party === 'referrer' && ['acta', 'poder'].includes(b.doc_type)) return reply.code(400).send({ error: 'bad_doc_type', note: '정관·위임장은 피소개 커미셔너(B) 서류입니다.' });
-    if (party === 'referred' && b.doc_type === 'banco') return reply.code(400).send({ error: 'bad_doc_type', note: '은행계좌 증빙은 소개자(A) 서류입니다.' });
+    if (!party || !DOC_TYPES[b.doc_type]) return reply.code(400).send({ error: 'bad_doc_type', note: '대상(A/B)과 서류 종류를 선택하세요. (Tipo de documento no válido)' });
+    if (party === 'referrer' && ['acta', 'poder'].includes(b.doc_type)) return reply.code(400).send({ error: 'bad_doc_type', note: '정관·위임장은 피소개 커미셔너(B) 서류입니다. (Documento del comisionista referido)' });
+    if (party === 'referred' && b.doc_type === 'banco') return reply.code(400).send({ error: 'bad_doc_type', note: '은행계좌 증빙은 소개자(A) 서류입니다. (Documento de EL REFERIDOR)' });
     const issued = /^\d{4}-\d{2}-\d{2}$/.test(String(b.issued_date || '')) ? b.issued_date : null;
     const dec = decodeContractFile(b.data_url, b.file_name);
     if (!dec.ok) return reply.code(400).send({ error: dec.error, note: dec.note });
@@ -168,7 +199,7 @@ export default async function commissionReferralRoutes(app) {
       const complete = await recomputeDocsComplete(q, ref.id);
       return { id: Number(d.id), complete };
     });
-    if (res.dup) return reply.code(409).send({ error: 'duplicate', note: '같은 파일이 이미 올라가 있습니다.' });
+    if (res.dup) return reply.code(409).send({ error: 'duplicate', note: owner ? 'Ese archivo ya está cargado.' : '같은 파일이 이미 올라가 있습니다.' });
     await logEvent({ userId: dir, action: 'create', target: `commission_referral_doc:${res.id}`, detail: { referral_id: ref.id, party, doc_type: b.doc_type, size: dec.buf.length } });
     return { ok: true, id: res.id, docs_complete_on: res.complete, item: await refOut(await loadReferral(ref.id), req.ctx.perm) };
   });
@@ -178,11 +209,11 @@ export default async function commissionReferralRoutes(app) {
     if (!(await referralsReady())) return reply.code(404).send({ error: 'not_found' });
     const perm = req.ctx.perm;
     const d = (await query(
-      `SELECT d.party, d.file_name, d.mime_type, d.file_data, r.referrer_id, r.id AS referral_id
+      `SELECT d.party, d.file_name, d.mime_type, d.file_data, d.uploaded_by, r.referrer_id, r.id AS referral_id
          FROM commission_referral_docs d JOIN commission_referrals r ON r.id=d.referral_id
         WHERE d.id=$1 AND d.deleted_at IS NULL`, [Number(req.params.docId)])).rows[0];
     if (!d) return reply.code(404).send({ error: 'not_found' });
-    const own = Number(d.referrer_id) === Number(perm.userId) && d.party === 'referrer';
+    const own = Number(d.referrer_id) === Number(perm.userId) && (d.party === 'referrer' || Number(d.uploaded_by) === Number(perm.userId));
     if (!isDirector(perm) && !own) return reply.code(403).send({ error: 'forbidden' });
     await logEvent({ userId: perm.userId, action: 'export', target: `commission_referral_doc:${req.params.docId}`, detail: { referral_id: Number(d.referral_id), kind: 'view' } });
     const fn = String(d.file_name || 'documento').replace(/["\r\n]/g, '');
@@ -193,10 +224,15 @@ export default async function commissionReferralRoutes(app) {
   });
 
   // ── 서류 삭제 (디렉터 · 소프트) — 필수 서류가 빠지면 서류 완비일이 비워진다 ──
+  //   0309: 소개자는 승인 전, 자기가 올린 파일만 지울 수 있다.
   app.delete('/api/commission/referrals/docs/:docId', { preHandler: [authGuard] }, async (req, reply) => {
-    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     if (!(await referralsReady())) return reply.code(404).send({ error: 'not_found' });
     const dir = Number(req.ctx.perm.userId);
+    if (!isDirector(req.ctx.perm)) {
+      const d0 = (await query(`SELECT d.uploaded_by, d.referral_id FROM commission_referral_docs d WHERE d.id=$1 AND d.deleted_at IS NULL`, [Number(req.params.docId)])).rows[0];
+      const ref0 = d0 ? await loadReferral(d0.referral_id) : null;
+      if (!d0 || !ref0 || ref0.referrer_id !== dir || Number(d0.uploaded_by) !== dir || ref0.approved) return reply.code(403).send({ error: 'forbidden', note: 'Solo puedes borrar archivos que tú cargaste, antes de la aprobación.' });
+    }
     const res = await withTx(async (cx) => {
       const q = cx.query.bind(cx);
       const d = (await q(`UPDATE commission_referral_docs SET deleted_at=now(), deleted_by=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING referral_id`, [Number(req.params.docId), dir])).rows[0];
@@ -206,6 +242,74 @@ export default async function commissionReferralRoutes(app) {
     if (!res) return reply.code(404).send({ error: 'not_found' });
     await logEvent({ userId: dir, action: 'delete', target: `commission_referral_doc:${req.params.docId}`, detail: { referral_id: res.referral_id } });
     return { ok: true, docs_complete_on: res.complete };
+  });
+
+  // ══ 0309 소개자 본인 작성 ══════════════════════════════════════════
+  // 선택 가능한 피소개 커미셔너(B) — 영업 계정 중 본인 제외 · 이미 소개된 사람 제외. 이름만.
+  app.get('/api/commission/referrals/candidates', { preHandler: [authGuard] }, async (req) => {
+    const me = Number(req.ctx.perm.userId);
+    if (!(await referralsReady())) return { migrated: false, items: [] };
+    const rows = (await query(
+      `SELECT u.id, u.name FROM users u
+        WHERE u.deleted_at IS NULL AND u.role IN ('sales','sales_support') AND u.id <> $1
+          AND NOT EXISTS (SELECT 1 FROM commission_referrals r WHERE r.referred_id=u.id AND r.active)
+        ORDER BY u.name`, [me])).rows;
+    return { migrated: true, self_ready: await selfReady(), items: rows.map((r) => ({ id: Number(r.id), name: r.name })) };
+  });
+
+  // 신청 — 소개자 = 로그인한 본인. 율은 계약 기본값(1%), 시작일은 본인이 제안(디렉터가 승인 때 조정 가능).
+  app.post('/api/commission/referrals/request', { preHandler: [authGuard] }, async (req, reply) => {
+    const me = Number(req.ctx.perm.userId);
+    if (!(await referralsReady()) || !(await selfReady())) return reply.code(503).send(MIG9);
+    const b = req.body || {};
+    const v = validateReferral({ referrer_id: me, referred_id: b.referred_id, rate: 1, start_date: b.start_date || today(), end_date: null, referred_info: b.referred_info, note: null });
+    if (!v.ok) {
+      const ES = { users_required: 'Selecciona al comisionista que refieres.', same_user: 'No puedes referirte a ti mismo.', name_required: 'Escribe el nombre o razón social del comisionista referido.', bad_start: 'Fecha de inicio no válida.' };
+      return reply.code(400).send({ error: v.error, note: ES[v.error] || v.note });
+    }
+    const x = v.value;
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND role IN ('sales','sales_support')`, [x.referred_id])).rows[0];
+    if (!u) return reply.code(400).send({ error: 'user_not_found', note: 'No se encontró esa cuenta.' });
+    const dup = (await query(`SELECT id FROM commission_referrals WHERE referred_id=$1 AND active`, [x.referred_id])).rows[0];
+    if (dup) return reply.code(409).send({ error: 'already_referred', note: 'Ese comisionista ya está referido por otra persona. Consulta con Refatrix.' });
+    const ri = referrerInfo(b.referrer_info);
+    const r = (await query(
+      `INSERT INTO commission_referrals (referrer_id, referred_id, rate, start_date, referred_info, referrer_info, requested_by, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$1,$1,$1) RETURNING id`,
+      [me, x.referred_id, x.rate, x.start_date, JSON.stringify(x.referred_info), JSON.stringify(ri || {})])).rows[0];
+    await logEvent({ userId: me, action: 'create', target: `commission_referral:${r.id}`, detail: { kind: 'self_request', referred_id: x.referred_id, start: x.start_date } });
+    return { ok: true, item: await refOut(await loadReferral(r.id), req.ctx.perm, { withDoc: true }) };
+  });
+
+  // 소개자 본인 수정 — 승인 전까지. B 정보 · 본인 정보 · 시작일(제안). 율은 못 바꾼다.
+  app.put('/api/commission/referrals/:id/mine', { preHandler: [authGuard] }, async (req, reply) => {
+    const me = Number(req.ctx.perm.userId);
+    if (!(await referralsReady()) || !(await selfReady())) return reply.code(503).send(MIG9);
+    const ref = await loadReferral(req.params.id);
+    if (!ref || ref.referrer_id !== me || !ref.active) return reply.code(404).send({ error: 'not_found', note: 'Contrato no encontrado.' });
+    if (ref.approved) return reply.code(409).send({ error: 'approved', note: 'Refatrix ya aprobó este contrato. Para cambiar datos, comunícate con Refatrix.' });
+    const b = req.body || {};
+    const v = validateReferral({ referrer_id: me, referred_id: ref.referred_id, rate: ref.rate, start_date: b.start_date || ref.start_date, end_date: ref.end_date, referred_info: b.referred_info, note: ref.note });
+    if (!v.ok) return reply.code(400).send({ error: v.error, note: v.error === 'name_required' ? 'Escribe el nombre o razón social del comisionista referido.' : v.note });
+    const x = v.value;
+    await withTx(async (cx) => {
+      await cx.query(`UPDATE commission_referrals SET start_date=$2, referred_info=$3, referrer_info=$4, updated_by=$5, updated_at=now() WHERE id=$1`,
+        [ref.id, x.start_date, JSON.stringify(x.referred_info), JSON.stringify(referrerInfo(b.referrer_info) || {}), me]);
+      await recomputeDocsComplete(cx.query.bind(cx), ref.id);
+    });
+    await logEvent({ userId: me, action: 'update', target: `commission_referral:${ref.id}`, detail: { kind: 'self_edit' } });
+    return { ok: true, item: await refOut(await loadReferral(ref.id), req.ctx.perm, { withDoc: true }) };
+  });
+
+  // 디렉터 승인 — 이후 소개자는 정보를 바꿀 수 없다. 효력일 = 시작일·서류 완비·첫 서명·승인일 중 가장 늦은 날.
+  app.post('/api/commission/referrals/:id/approve', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden', note: '디렉터만 승인할 수 있습니다.' });
+    if (!(await selfReady())) return reply.code(503).send(MIG9);
+    const dir = Number(req.ctx.perm.userId);
+    const r = (await query(`UPDATE commission_referrals SET approved_at=now(), approved_by=$2, updated_by=$2, updated_at=now() WHERE id=$1 AND active AND approved_at IS NULL RETURNING id`, [Number(req.params.id), dir])).rows[0];
+    if (!r) return reply.code(409).send({ error: 'not_pending', note: '승인 대기 중인 계약이 아닙니다.' });
+    await logEvent({ userId: dir, action: 'update', target: `commission_referral:${r.id}`, detail: { approved: true } });
+    return { ok: true, item: await refOut(await loadReferral(r.id), req.ctx.perm) };
   });
 
   // ── 내 소개 계약(소개자) — 계약서 원문 + 서명 상태 ──

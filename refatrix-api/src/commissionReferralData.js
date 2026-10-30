@@ -35,6 +35,12 @@ export function _resetReady() { _ready = { v: null, at: 0 }; }
 export const REF_COLS = `r.id, r.referrer_id, r.referred_id, r.rate, to_char(r.start_date,'YYYY-MM-DD') AS start_date,
   to_char(r.end_date,'YYYY-MM-DD') AS end_date, r.referred_info, r.active, to_char(r.docs_complete_on,'YYYY-MM-DD') AS docs_complete_on,
   r.note, ua.name AS referrer_name, ub.name AS referred_user_name,
+  COALESCE(to_jsonb(r)->'referrer_info','{}'::jsonb) AS referrer_info,
+  (to_jsonb(r) ? 'approved_at') AS approval_ready,
+  to_char(((to_jsonb(r)->>'approved_at')::timestamptz) AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD') AS approved_on,
+  to_char(((to_jsonb(r)->>'approved_at')::timestamptz) AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS approved_at_local,
+  (SELECT name FROM users WHERE id=(to_jsonb(r)->>'approved_by')::bigint) AS approved_by_name,
+  (to_jsonb(r)->>'requested_by')::bigint AS requested_by,
   to_char(r.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS created_at_local`;
 const REF_FROM = `FROM commission_referrals r JOIN users ua ON ua.id=r.referrer_id JOIN users ub ON ub.id=r.referred_id`;
 
@@ -45,6 +51,13 @@ export function normRef(r) {
     start_date: r.start_date, end_date: r.end_date || null, referred_info: normInfo(r.referred_info || {}),
     active: r.active === true, docs_complete_on: r.docs_complete_on || null, note: r.note || null,
     referrer_name: r.referrer_name || '', referred_user_name: r.referred_user_name || '', created_at: r.created_at_local || null,
+    referrer_info: r.referrer_info || {},
+    // 0309 승인 — 열이 없으면(마이그레이션 전) 종전처럼 승인된 것으로 본다(효력 유지)
+    approval_ready: r.approval_ready === true,
+    approved: r.approval_ready === true ? !!r.approved_on : true,
+    approved_on: r.approval_ready === true ? (r.approved_on || null) : undefined,
+    approved_at: r.approved_at_local || null, approved_by_name: r.approved_by_name || null,
+    requested_by: r.requested_by != null ? Number(r.requested_by) : null,
   };
 }
 
@@ -79,11 +92,11 @@ export async function currentDoc(ref) {
 // 서류(파일 내용 제외)
 export async function docsOf(referralId) {
   return (await query(
-    `SELECT id, party, doc_type, to_char(issued_date,'YYYY-MM-DD') AS issued_date, file_name, mime_type, file_size,
+    `SELECT id, party, doc_type, to_char(issued_date,'YYYY-MM-DD') AS issued_date, file_name, mime_type, file_size, uploaded_by,
             to_char(uploaded_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD') AS uploaded_on,
             to_char(uploaded_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS uploaded_at_local
        FROM commission_referral_docs WHERE referral_id=$1 AND deleted_at IS NULL ORDER BY uploaded_at DESC, id DESC`, [Number(referralId)])).rows
-    .map((d) => ({ ...d, id: Number(d.id), file_size: Number(d.file_size) }));
+    .map((d) => ({ ...d, id: Number(d.id), file_size: Number(d.file_size), uploaded_by: d.uploaded_by != null ? Number(d.uploaded_by) : null }));
 }
 
 // 서명 이력
@@ -102,7 +115,7 @@ export async function referralState(ref) {
   const sigs = await signaturesOf(ref.id);
   const { hash } = await currentDoc(ref);
   const first = sigs.length ? sigs[sigs.length - 1].signed_on : null;
-  const eff = ref.active ? effectiveFrom({ start_date: ref.start_date, docs_complete_on: ref.docs_complete_on, first_signed_on: first }) : null;
+  const eff = ref.active ? effectiveFrom({ start_date: ref.start_date, docs_complete_on: ref.docs_complete_on, first_signed_on: first, approved_on: ref.approved_on }) : null;
   return {
     docs, docs_status: ds, signatures: sigs, version: hash,
     sign_status: signStatus(hash, sigs[0] ? { version_hash: sigs[0].version } : null),

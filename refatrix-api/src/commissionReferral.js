@@ -94,7 +94,7 @@ export function validateReferral(b) {
 //   서명 대상 = 계약 문구 버전 + 당사자 + 율 + 기간 + B 정보 + 회사(상호·RFC). 하나라도 바뀌면 재서명.
 export function buildReferralTerms(ref, { referrerName, referredUserName, company } = {}) {
   const info = normInfo(ref.referred_info);
-  return {
+  const out = {
     rules: REFERRAL_RULES_VERSION,
     referral_id: Number(ref.id),
     referrer: { id: Number(ref.referrer_id), name: referrerName || '' },
@@ -104,6 +104,20 @@ export function buildReferralTerms(ref, { referrerName, referredUserName, compan
     end: ref.end_date ? String(ref.end_date).slice(0, 10) : null,
     company: { emisor: (company && company.emisor) || 'REFATRIX', rfc: (company && company.rfc) || '' },
   };
+  // A 본인 정보(0309) — 입력된 경우에만 키를 넣는다(이미 서명한 계약의 버전이 바뀌지 않게)
+  const ri = referrerInfo(ref.referrer_info);
+  if (ri) out.referrer_info = ri;
+  return out;
+}
+
+// A 정보 정규화 — 아무것도 없으면 null
+export function referrerInfo(raw) {
+  const i = raw || {};
+  const v = {
+    name: s(i.name, 200), rfc: s(i.rfc, 20).toUpperCase(), address: s(i.address, 400),
+    phone: s(i.phone, 60), email: s(i.email, 160), persona: i.persona === 'moral' ? 'moral' : 'fisica',
+  };
+  return (v.name || v.rfc || v.address || v.phone || v.email) ? v : null;
 }
 export function referralHash(terms) {
   return createHash('sha256').update(JSON.stringify(terms)).digest('hex').slice(0, 12);
@@ -121,14 +135,20 @@ const rateWords = (n) => (Number(n) === 1 ? 'uno por ciento' : null);
 //   섹션 = { title, paras:[문단], items:[(a) 항목] , table? }
 export function buildReferralDoc(terms) {
   const t = terms, B = t.referred, co = t.company.emisor || 'REFATRIX';
+  const aName = (t.referrer_info && t.referrer_info.name) || t.referrer.name || '';   // 0309 A 가 입력한 정식 이름 우선
   const rw = rateWords(t.rate);
   const rateTxt = `**${pct(t.rate)}${rw ? ` (${rw})` : ''}**`;
   const sec = [];
   sec.push({ key: 'decl', title: 'Declaraciones', paras: [
     `**I. ${co}** declara que es una sociedad mercantil constituida conforme a las leyes mexicanas, dedicada a la distribución de autopartes, y que su representante cuenta con facultades suficientes para celebrar el presente contrato.`,
-    '**II. EL REFERIDOR** declara que tiene capacidad legal para obligarse, que está inscrito en el Registro Federal de Contribuyentes, que puede emitir Comprobantes Fiscales Digitales por Internet (CFDI) y que desea referir a REFATRIX comisionistas de venta.',
+    '**II. EL REFERIDOR** declara que tiene capacidad legal para obligarse, que está inscrito en el Registro Federal de Contribuyentes, que puede emitir Comprobantes Fiscales Digitales por Internet (CFDI) y que desea referir a REFATRIX comisionistas de venta.'
+      + (t.referrer_info ? ' Sus datos son los siguientes:' : ''),
     '**III. LAS PARTES** declaran que es su voluntad celebrar el presente contrato conforme a las siguientes cláusulas.',
-  ] });
+  ], ...(t.referrer_info ? { tableAt: 1, table: { head: ['Dato', 'EL REFERIDOR'], rows: [
+    ['Nombre o razón social', t.referrer_info.name || t.referrer.name || '—'], ['RFC', t.referrer_info.rfc || '—'],
+    ['Domicilio', t.referrer_info.address || '—'], ['Teléfono / WhatsApp', t.referrer_info.phone || '—'],
+    ['Correo electrónico', t.referrer_info.email || '—'], ['Tipo', t.referrer_info.persona === 'moral' ? 'Persona moral' : 'Persona física'],
+  ] } } : {}) });
   sec.push({ key: 'c1', title: 'Primera. Objeto', paras: [
     'EL REFERIDOR se obliga a presentar y referir a REFATRIX a la persona cuyos datos se indican a continuación (en lo sucesivo "EL COMISIONISTA REFERIDO"), a efecto de que REFATRIX y EL COMISIONISTA REFERIDO, en su caso, celebren directamente un contrato de comisión mercantil para la promoción y venta de los productos de REFATRIX (el "Contrato del Comisionista Referido").',
     'La función de EL REFERIDOR se limita exclusivamente a la presentación y referencia de EL COMISIONISTA REFERIDO. La decisión de contratarlo y sus términos corresponden exclusivamente a REFATRIX. EL REFERIDOR no será parte del Contrato del Comisionista Referido ni tendrá derecho alguno derivado del mismo, salvo lo previsto en este instrumento.',
@@ -221,10 +241,10 @@ export function buildReferralDoc(terms) {
     version, rules_version: REFERRAL_RULES_VERSION,
     parties: {
       company: co, company_rfc: t.company.rfc || null,
-      referrer: t.referrer.name || '', referred: B.name || t.referred.user || '',
+      referrer: aName, referred: B.name || t.referred.user || '',
       rate: t.rate, start: t.start, end: t.end,
     },
-    intro: `Contrato de comisión mercantil por referencia que celebran, por una parte, **${co}** (en lo sucesivo "REFATRIX") y, por la otra, **${t.referrer.name || 'EL REFERIDOR'}** (en lo sucesivo "EL REFERIDOR"), a quienes en conjunto se les denominará "LAS PARTES".`,
+    intro: `Contrato de comisión mercantil por referencia que celebran, por una parte, **${co}** (en lo sucesivo "REFATRIX") y, por la otra, **${aName || 'EL REFERIDOR'}** (en lo sucesivo "EL REFERIDOR"), a quienes en conjunto se les denominará "LAS PARTES".`,
     sections: sec,
     declaration: `Leí y acepto el Contrato de Comisión por Referencia (versión #${version}) por la referencia de **${B.name || 'EL COMISIONISTA REFERIDO'}**, con una comisión del **${pct(t.rate)}** sobre lo cobrado sin IVA. Mi firma y mi PIN confirman esta aceptación.`,
   };
@@ -232,9 +252,13 @@ export function buildReferralDoc(terms) {
 
 // ── 효력일 (순수) ───────────────────────────────────────────────────
 //   서류 미완비 또는 서명 전이면 null(아직 효력 없음 → 소개 커미션 0).
-export function effectiveFrom({ start_date, docs_complete_on, first_signed_on }) {
+//   0309: approved_on(디렉터 승인일)도 필요. 인자를 아예 안 넘기면(undefined) 종전 규칙(승인 조건 없음).
+export function effectiveFrom({ start_date, docs_complete_on, first_signed_on, approved_on }) {
   if (!start_date || !docs_complete_on || !first_signed_on) return null;
-  return [String(start_date).slice(0, 10), String(docs_complete_on).slice(0, 10), String(first_signed_on).slice(0, 10)].sort().pop();
+  if (approved_on === null || approved_on === '') return null;
+  const ds = [String(start_date).slice(0, 10), String(docs_complete_on).slice(0, 10), String(first_signed_on).slice(0, 10)];
+  if (approved_on) ds.push(String(approved_on).slice(0, 10));
+  return ds.sort().pop();
 }
 
 // ── 인보이스별 소개 커미션 (순수) ──────────────────────────────────

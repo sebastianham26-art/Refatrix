@@ -262,7 +262,8 @@ test('E2 전자서명 — 서명·PIN·버전 검증 · 기록 수정 불가', {
 
 test('E3 서류 — 완비되면 효력일 = 오늘 · 삭제되면 비워짐 · 파일 열람 권한', { skip: SKIP }, async () => {
   const up = (party, doc_type, n, extra = {}) => call('dir', 'POST', `/api/commission/referrals/${ID.ref}/docs`, { party, doc_type, file_name: `${party}_${doc_type}.pdf`, data_url: pdfN(n), ...extra });
-  assert.equal((await call('A', 'POST', `/api/commission/referrals/${ID.ref}/docs`, { party: 'referrer', doc_type: 'csf', file_name: 'a.pdf', data_url: PDF })).code, 403);
+  // 0309: 소개자(A)도 자기 계약 서류를 올릴 수 있다 → 제3자(X)만 막힌다
+  assert.equal((await call('X', 'POST', `/api/commission/referrals/${ID.ref}/docs`, { party: 'referrer', doc_type: 'csf', file_name: 'a.pdf', data_url: PDF })).code, 403);
   assert.equal((await up('referred', 'banco', 99)).body.error, 'bad_doc_type');
   let i = 0;
   for (const t of ['csf', 'domicilio', 'ine']) assert.ok((await up('referred', t, ++i, t === 'csf' ? { issued_date: todayMx } : {})).code < 300);

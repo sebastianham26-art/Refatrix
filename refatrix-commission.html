@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1029es</title>
+<title>Refatrix ERP · 커미션 · build b1030self</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -427,7 +427,7 @@
       const r=await fetch(session.api+'/api/commission/agreement/me',{headers:auth()});
       if(!r.ok) return;
       const d=await r.json();
-      if(d.is_agent&&!canSeeAll()) $('agreeBtn').classList.remove('hidden');   // 본인 조건·계약 보기
+      if(!canSeeAll()){ $('agreeBtn').classList.remove('hidden'); if(!d.is_agent) $('agreeBtn').setAttribute('href','refatrix-acuerdo-comision.html#referrals'); }   // 본인 조건·소개 계약(직접 작성)
       if(!d.is_agent||d.migrated===false||d.status==='agreed') return;
       if(d.status==='changed'){ $('agreeTitle').textContent='Tus condiciones de comisión cambiaron — acéptalas de nuevo'; }
       $('agreeBanner').classList.remove('hidden');
