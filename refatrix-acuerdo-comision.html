@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acuerdo de Comisión · build b1030inv</title>
+<title>Acuerdo de Comisión · build b1030typ</title>
 <style>
   :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
@@ -461,10 +461,6 @@
     let h='<div class="card" id="form-'+k+'"><div class="doc-h"><div><h1>'+(it?'Corregir datos del contrato':'Registrar datos')+'</h1>'
       +'<div class="ver">Estos datos se escriben en el contrato (Declaraciones y cláusula Primera). Refatrix los revisa y aprueba.</div></div></div>';
     h+='<h2><span class="n">1</span> Comisionista referido (empresa B)</h2><div class="dl2">';
-    if(!it){
-      const opts=((refCands&&refCands.items)||[]).map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('');
-      h+='<div class="wide"><label>Cuenta del comisionista en el ERP</label><select id="'+k+'-bid"><option value="">— Selecciona —</option>'+opts+'</select></div>';
-    }
     h+='<div><label>Tipo</label><select id="'+k+'-bpersona">'+PERS(B.persona)+'</select></div>'
       +'<div class="wide"><label>Nombre o razón social</label><input id="'+k+'-bname" value="'+esc(B.name||'')+'"></div>'
       +'<div><label>RFC</label><input id="'+k+'-brfc" value="'+esc(B.rfc||'')+'"></div>'
@@ -506,7 +502,7 @@
   function renderRefMine(){
     const items=refMe.items||[];
     const self=!me.see_all;
-    const canNew=self && refCands && refCands.self_ready!==false && (refCands.items||[]).length>0;
+    const canNew=self && refCands && refCands.invited && refCands.self_ready!==false;
     $('refView').classList.toggle('hidden', !items.length && !canNew);
     let top='';
     if(self && refFormOpen==='new') top=mineFormHtml(null);
@@ -572,7 +568,7 @@
   // 처음 들어왔을 때(이 로그인 세션에서 한 번) — 아직 끝나지 않은 계약이 있거나, 등록 전이면
   function autoGuide(){
     const items=refMe.items||[];
-    const pending=items.some(x=>RefGuide.stepOf(x)<5) || (!items.length && refCands && (refCands.items||[]).length && refCands.self_ready!==false);
+    const pending=items.some(x=>RefGuide.stepOf(x)<5) || (!items.length && refCands && refCands.invited && refCands.self_ready!==false);
     if(!pending) return;
     try{ if(sessionStorage.getItem('rfx_ref_guide')==='1') return; sessionStorage.setItem('rfx_ref_guide','1'); }catch(e){}
     if(refFormOpen==='new') return;   // 등록 폼으로 바로 온 경우는 띄우지 않는다
@@ -584,7 +580,7 @@
     const body={start_date:mineVal(k,'start'),
       referred_info:{name:mineVal(k,'bname'),rfc:mineVal(k,'brfc'),address:mineVal(k,'baddr'),phone:mineVal(k,'bphone'),email:mineVal(k,'bemail'),legal_rep:mineVal(k,'brep'),persona:mineVal(k,'bpersona')},
       referrer_info:{name:mineVal(k,'aname'),rfc:mineVal(k,'arfc'),address:mineVal(k,'aaddr'),phone:mineVal(k,'aphone'),email:mineVal(k,'aemail'),persona:mineVal(k,'apersona')}};
-    if(id==='new'){ body.referred_id=Number(mineVal(k,'bid')); if(!body.referred_id){ m.className='msg err'; m.textContent='Selecciona la cuenta del comisionista referido.'; return; } }
+    if(!body.referred_info.name){ m.className='msg err'; m.textContent='Escribe el nombre o razón social del comisionista referido.'; return; }
     const r=await api(id==='new'?'/api/commission/referrals/request':('/api/commission/referrals/'+id+'/mine'),{method:id==='new'?'POST':'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){ m.className='msg err'; m.textContent=d.note||('Error: '+(d.error||r.status)); return; }
@@ -677,8 +673,8 @@
       if(!refBoardItems.length){ $('refBoard').innerHTML='<tr><td colspan="7" class="hint">아직 소개자가 작성한 계약이 없습니다.'+(d.is_director?' [+ 소개자 초대]로 소개자(A)를 고르면, A 가 로그인해서 B 와 계약 내용을 직접 작성합니다.':'')+'</td></tr>'; return; }
       $('refBoard').innerHTML=refBoardItems.map(x=>{
         const s=SS[x.sign_status]||['','—']; const cur=(x.signatures||[]).find(z=>z.current)||(x.signatures||[])[0];
-        const B=(x.referred_info&&x.referred_info.name)||x.referred_user_name;
-        return '<tr'+(x.active?'':' style="opacity:.55"')+'><td><b>'+esc(x.referrer_name)+'</b> → <b>'+esc(B)+'</b>'+(B!==x.referred_user_name?' <span class="hint">('+esc(x.referred_user_name)+')</span>':'')+(x.active?'':' <span class="badge old">해지</span>')+'</td>'
+        const B=(x.referred_info&&x.referred_info.name)||x.referred_user_name||'—';
+        return '<tr'+(x.active?'':' style="opacity:.55"')+'><td><b>'+esc(x.referrer_name)+'</b> → <b>'+esc(B)+'</b>'+(!x.referred_id?' <span class="badge no">ERP 계정 미연결</span>':(B!==x.referred_user_name?' <span class="hint">('+esc(x.referred_user_name)+')</span>':''))+(x.active?'':' <span class="badge old">해지</span>')+'</td>'
           +'<td class="r">'+x.rate+'%</td><td>'+esc(x.start_date)+' ~ '+esc(x.end_date||'∞')+'</td>'
           +'<td>'+(x.docs.complete?'<span class="badge ok">완비 '+esc(x.docs_complete_on||'')+'</span>':'<span class="badge no">'+x.docs.missing+'건 미제출</span>')+'</td>'
           +'<td><span class="badge '+s[0]+'">'+s[1]+'</span>'+(cur?' <span class="hint">'+esc(cur.signed_at)+'</span>':'')+'</td>'
@@ -825,7 +821,7 @@
     const I=x.referred_info||{}; const B=I.name||x.referred_user_name; const signed=x.sign_status==='signed';
     const step=(n,t,done)=>'<h2><span class="n" style="'+(done?'background:var(--ok)':'')+'">'+(done?'✓':n)+'</span> '+t+'</h2>';
     let h='<div class="doc-h"><div><h1>소개 계약 진행 · '+esc(x.referrer_name)+' → '+esc(B)+'</h1>'
-      +'<div class="ver">ERP 계정 '+esc(x.referrer_name)+'(A) → '+esc(x.referred_user_name)+'(B) · '+x.rate+'% · '+esc(x.start_date)+' ~ '+esc(x.end_date||'∞')+' · 계약서 버전 #'+esc(x.version)+'</div></div>'
+      +'<div class="ver">ERP 계정 '+esc(x.referrer_name)+'(A) → '+(x.referred_id?esc(x.referred_user_name):'<b style="color:var(--bad)">미연결 — 승인할 때 연결</b>')+'(B) · '+x.rate+'% · '+esc(x.start_date)+' ~ '+esc(x.end_date||'∞')+' · 계약서 버전 #'+esc(x.version)+'</div></div>'
       +'<span class="stamp '+(x.effective_from?'ok':'no')+'">'+(x.effective_from?('효력 '+esc(x.effective_from)):'효력 없음')+'</span></div>'
       +(x.approved?'<div class="hint" style="margin-top:6px">✓ 승인 '+esc(x.approved_at||'')+(x.approved_by_name?(' · '+esc(x.approved_by_name)):'')+'</div>'
         :'<div class="key" style="background:var(--warn-bg);border:1px solid #F0D9A8"><b>승인 대기</b>'+(x.self_requested?' — '+esc(x.referrer_name)+' 님이 직접 작성·신청':'')+'. 정보·서류·서명을 확인한 뒤 승인하세요. 승인 후에는 소개자가 정보를 고칠 수 없습니다. <button class="btn sm" data-refapprove="'+x.id+'" style="margin-left:6px;background:var(--gold)">승인</button></div>')
@@ -937,11 +933,29 @@
     if(!window.confirm(name+' 님의 초대를 취소할까요?\n이미 작성한 계약은 그대로 남고, 새 계약은 작성할 수 없게 됩니다.')) return;
     await api('/api/commission/referrals/invites/'+uid,{method:'DELETE'}); loadRefBoard();
   }
+  // 승인 = B 의 ERP 계정 연결(매출 집계용 · 디렉터만 계정 목록을 본다) + 승인
+  let refApproveFromFlow=false;
   async function approveRef(id){
-    if(!window.confirm('이 소개 계약을 승인할까요?\n승인 후에는 소개자가 정보를 고칠 수 없고, 서류·서명이 갖춰져 있으면 오늘부터 효력이 생깁니다.')) return;
-    const r=await api('/api/commission/referrals/'+id+'/approve',{method:'POST'}); const d=await r.json().catch(()=>({}));
-    if(!r.ok||d.error){ alert('승인 실패: '+(d.note||d.error||r.status)); return; }
-    await loadRefBoard(); if(refFlowOpen) await openRefFlow(id);
+    const x=refBoardItems.find(z=>z.id===Number(id)); if(!x) return;
+    refApproveFromFlow=refFlowOpen;
+    const users=await refUsersList();
+    const bn=((x.referred_info&&x.referred_info.name)||'').trim().toLowerCase();
+    const guess=x.referred_id||((users.find(u=>u.id!==x.referrer_id&&String(u.name||'').trim().toLowerCase()===bn)||{}).id)||'';
+    const opts='<option value="">— 선택 —</option>'+users.filter(u=>u.id!==x.referrer_id).map(u=>'<option value="'+u.id+'"'+(Number(guess)===u.id?' selected':'')+'>'+esc(u.name)+(u.team_name?(' · '+esc(u.team_name)):'')+(u.is_com?' · 커미셔너':'')+'</option>').join('');
+    openModal('<div class="doc-h"><div><h1>소개 계약 승인</h1><div class="ver">'+esc(x.referrer_name)+' → '+esc((x.referred_info&&x.referred_info.name)||'—')+' · 소개자가 입력한 B 회사</div></div></div>'
+      +'<div class="dl2"><div class="wide"><label>B 의 ERP 계정 — 이 계정의 매출·수금으로 소개 커미션을 계산합니다</label><select id="apB">'+opts+'</select>'
+      +'<div class="hint" style="margin-top:4px">소개자(A)에게는 계정 목록이 보이지 않습니다. 계정을 연결해도 계약서 내용은 바뀌지 않아 재서명은 필요 없습니다.</div></div></div>'
+      +'<div class="hint" style="margin-top:10px">승인 후에는 소개자가 정보를 고칠 수 없고, 서류·서명이 갖춰져 있으면 오늘부터 효력이 생깁니다.</div>'
+      +'<div style="margin-top:14px;display:flex;gap:8px"><button class="btn" data-refapprovego="'+x.id+'" style="background:var(--gold)">계정 연결하고 승인</button></div><div class="msg" id="apMsg"></div>');
+  }
+  async function approveRefGo(id){
+    const m=$('apMsg'); m.className='msg';
+    const rid=Number($('apB').value);
+    if(!rid){ m.className='msg err'; m.textContent='B 의 ERP 계정을 선택하세요.'; return; }
+    const r=await api('/api/commission/referrals/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({referred_id:rid})}); const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ m.className='msg err'; m.textContent='승인 실패: '+(d.note||d.error||r.status); return; }
+    await loadRefBoard();
+    if(refApproveFromFlow){ refFlowOpen=true; await openRefFlow(id); } else closeModal();
   }
   async function copyRefLink(btn){
     const url=location.origin+location.pathname+'#referrals';
@@ -960,10 +974,10 @@
       if(me.see_all){ await loadBoard(); await loadRefBoard(); }
       if(me.is_agent) renderMe();
       renderRefMine();
-      if(!me.is_agent && !me.see_all && !(refMe.items||[]).length && !((refCands&&refCands.items)||[]).length) $('notAgent').classList.remove('hidden');
+      if(!me.is_agent && !me.see_all && !(refMe.items||[]).length && !(refCands&&refCands.invited)) $('notAgent').classList.remove('hidden');
       document.documentElement.lang = me.see_all && !me.is_agent && !(refMe.items||[]).length ? 'ko' : 'es';   // 본인(영업·커미셔너) = 스페인어
       try{ document.documentElement.setAttribute('data-ui-lang', document.documentElement.lang); if(window.__rnavRefresh) window.__rnavRefresh(); }catch(e){}   // 메뉴 언어
-      if(location.hash==='#referrals-new' && !me.see_all && refCands && (refCands.items||[]).length){ refFormOpen='new'; renderRefMine(); setTimeout(()=>RefGuide.scrollTo($('form-mnew')),120); }
+      if(location.hash==='#referrals-new' && !me.see_all && refCands && refCands.invited && refCands.self_ready!==false){ refFormOpen='new'; renderRefMine(); setTimeout(()=>RefGuide.scrollTo($('form-mnew')),120); }
       else if(location.hash.indexOf('#referrals')===0){ const t=!me.see_all?$('refView'):$('referrals'); if(t) setTimeout(()=>RefGuide.scrollTo(t),120); }
       if(!me.see_all) autoGuide();
     }catch(e){
@@ -973,7 +987,7 @@
   }
 
   document.addEventListener('click',e=>{
-    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove],[data-guide],[data-invsave],[data-invoff]');
+    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove],[data-refapprovego],[data-guide],[data-invsave],[data-invoff]');
     if(!t) return;
     // 0307 소개 커미션
     if(t.dataset.minenew){ refFormOpen='new'; renderRefMine(); RefGuide.scrollTo($('form-mnew')); return; }
@@ -983,6 +997,7 @@
     if(t.dataset.minesave){ saveMine(t.dataset.minesave==='new'?'new':Number(t.dataset.minesave)); return; }
     if(t.dataset.mineup){ mineUpload(t.dataset.ref, t.dataset.mineup); return; }
     if(t.dataset.minedel){ mineDel(t.dataset.minedel, t.dataset.ref); return; }
+    if(t.dataset.refapprovego){ approveRefGo(t.dataset.refapprovego); return; }
     if(t.dataset.refapprove){ approveRef(t.dataset.refapprove); return; }
     if(t.dataset.invsave){ saveInvite(); return; }
     if(t.dataset.invoff){ cancelInvite(t.dataset.invoff, t.dataset.name||''); return; }
@@ -1026,7 +1041,7 @@
   else { $('loading').classList.add('hidden'); $('loginCard').classList.remove('hidden'); }
 })();
 </script>
-<script src="refatrix-guide-referral.js?v=20261030gd"></script>
+<script src="refatrix-guide-referral.js?v=20261030ty"></script>
 <script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>

@@ -160,7 +160,7 @@ export default async function commissionReferralRoutes(app) {
     const ref = await loadReferral(req.params.id);
     if (!ref) return reply.code(404).send({ error: 'not_found' });
     if (!ref.active) return reply.code(409).send({ error: 'inactive', note: '해지된 계약은 수정할 수 없습니다.' });
-    const v = validateReferral({ ...req.body, referrer_id: ref.referrer_id, referred_id: ref.referred_id });
+    const v = validateReferral({ ...req.body, referrer_id: ref.referrer_id, referred_id: ref.referred_id }, { allowNoReferred: true });
     if (!v.ok) return reply.code(400).send({ error: v.error, note: v.note });
     const x = v.value; const dir = Number(req.ctx.perm.userId);
     await withTx(async (cx) => {
@@ -263,14 +263,9 @@ export default async function commissionReferralRoutes(app) {
   app.get('/api/commission/referrals/candidates', { preHandler: [authGuard] }, async (req) => {
     const me = Number(req.ctx.perm.userId);
     if (!(await referralsReady())) return { migrated: false, items: [] };
-    const rows = (await query(
-      `SELECT u.id, u.name FROM users u
-        WHERE u.deleted_at IS NULL AND u.role IN ('sales','sales_support') AND u.id <> $1
-          AND NOT EXISTS (SELECT 1 FROM commission_referrals r WHERE r.referred_id=u.id AND r.active)
-        ORDER BY u.name`, [me])).rows;
+    // 0311: 다른 사람 이름(계정 목록)은 보내지 않는다 — 소개자는 B 회사 정보를 직접 입력만 한다. 신청 가능 여부만.
     const invited = await isInvited(me);
-    // 초대받지 않은 사람에게는 후보 목록을 주지 않는다(신청 불가)
-    return { migrated: true, self_ready: await selfReady(), invited, items: invited ? rows.map((r) => ({ id: Number(r.id), name: r.name })) : [] };
+    return { migrated: true, self_ready: await selfReady(), invited, items: [] };
   });
 
   // 신청 — 소개자 = 로그인한 본인. 율은 계약 기본값(1%), 시작일은 본인이 제안(디렉터가 승인 때 조정 가능).
@@ -280,22 +275,18 @@ export default async function commissionReferralRoutes(app) {
     if (!(await invitesReady())) return reply.code(503).send({ error: 'migration_required', migration: '0310', note: 'Esta función aún no está activa en el servidor.' });
     if (!(await isInvited(me))) return reply.code(403).send({ error: 'not_invited', note: 'Refatrix aún no te habilitó para la comisión por referencia.' });
     const b = req.body || {};
-    const v = validateReferral({ referrer_id: me, referred_id: b.referred_id, rate: 1, start_date: b.start_date || today(), end_date: null, referred_info: b.referred_info, note: null });
+    const v = validateReferral({ referrer_id: me, referred_id: null, rate: 1, start_date: b.start_date || today(), end_date: null, referred_info: b.referred_info, note: null }, { allowNoReferred: true });
     if (!v.ok) {
       const ES = { users_required: 'Selecciona al comisionista que refieres.', same_user: 'No puedes referirte a ti mismo.', name_required: 'Escribe el nombre o razón social del comisionista referido.', bad_start: 'Fecha de inicio no válida.' };
       return reply.code(400).send({ error: v.error, note: ES[v.error] || v.note });
     }
     const x = v.value;
-    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND role IN ('sales','sales_support')`, [x.referred_id])).rows[0];
-    if (!u) return reply.code(400).send({ error: 'user_not_found', note: 'No se encontró esa cuenta.' });
-    const dup = (await query(`SELECT id FROM commission_referrals WHERE referred_id=$1 AND active`, [x.referred_id])).rows[0];
-    if (dup) return reply.code(409).send({ error: 'already_referred', note: 'Ese comisionista ya está referido por otra persona. Consulta con Refatrix.' });
     const ri = referrerInfo(b.referrer_info);
     const r = (await query(
       `INSERT INTO commission_referrals (referrer_id, referred_id, rate, start_date, referred_info, referrer_info, requested_by, created_by, updated_by)
        VALUES ($1,$2,$3,$4,$5,$6,$1,$1,$1) RETURNING id`,
-      [me, x.referred_id, x.rate, x.start_date, JSON.stringify(x.referred_info), JSON.stringify(ri || {})])).rows[0];
-    await logEvent({ userId: me, action: 'create', target: `commission_referral:${r.id}`, detail: { kind: 'self_request', referred_id: x.referred_id, start: x.start_date } });
+      [me, null, x.rate, x.start_date, JSON.stringify(x.referred_info), JSON.stringify(ri || {})])).rows[0];
+    await logEvent({ userId: me, action: 'create', target: `commission_referral:${r.id}`, detail: { kind: 'self_request', b_name: x.referred_info.name, start: x.start_date } });
     return { ok: true, item: await refOut(await loadReferral(r.id), req.ctx.perm, { withDoc: true }) };
   });
 
@@ -307,7 +298,7 @@ export default async function commissionReferralRoutes(app) {
     if (!ref || ref.referrer_id !== me || !ref.active) return reply.code(404).send({ error: 'not_found', note: 'Contrato no encontrado.' });
     if (ref.approved) return reply.code(409).send({ error: 'approved', note: 'Refatrix ya aprobó este contrato. Para cambiar datos, comunícate con Refatrix.' });
     const b = req.body || {};
-    const v = validateReferral({ referrer_id: me, referred_id: ref.referred_id, rate: ref.rate, start_date: b.start_date || ref.start_date, end_date: ref.end_date, referred_info: b.referred_info, note: ref.note });
+    const v = validateReferral({ referrer_id: me, referred_id: ref.referred_id, rate: ref.rate, start_date: b.start_date || ref.start_date, end_date: ref.end_date, referred_info: b.referred_info, note: ref.note }, { allowNoReferred: true });
     if (!v.ok) return reply.code(400).send({ error: v.error, note: v.error === 'name_required' ? 'Escribe el nombre o razón social del comisionista referido.' : v.note });
     const x = v.value;
     await withTx(async (cx) => {
@@ -358,9 +349,19 @@ export default async function commissionReferralRoutes(app) {
     if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden', note: '디렉터만 승인할 수 있습니다.' });
     if (!(await selfReady())) return reply.code(503).send(MIG9);
     const dir = Number(req.ctx.perm.userId);
-    const r = (await query(`UPDATE commission_referrals SET approved_at=now(), approved_by=$2, updated_by=$2, updated_at=now() WHERE id=$1 AND active AND approved_at IS NULL RETURNING id`, [Number(req.params.id), dir])).rows[0];
+    const ref = await loadReferral(req.params.id);
+    if (!ref || !ref.active || ref.approved) return reply.code(409).send({ error: 'not_pending', note: '승인 대기 중인 계약이 아닙니다.' });
+    // 0311 B 의 ERP 계정(매출 집계 대상) — 소개자가 입력한 회사 정보를 보고 디렉터가 연결
+    const bid = req.body && req.body.referred_id != null && req.body.referred_id !== '' ? Number(req.body.referred_id) : ref.referred_id;
+    if (!bid) return reply.code(400).send({ error: 'b_account_required', note: `피소개 커미셔너(B · ${ref.referred_info.name || '—'})의 ERP 계정을 선택하세요.` });
+    if (bid === ref.referrer_id) return reply.code(400).send({ error: 'same_user', note: '소개자 본인 계정은 B 로 연결할 수 없습니다.' });
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [bid])).rows[0];
+    if (!u) return reply.code(400).send({ error: 'user_not_found', note: '계정을 찾을 수 없습니다.' });
+    const dup = (await query(`SELECT r.id, ua.name FROM commission_referrals r JOIN users ua ON ua.id=r.referrer_id WHERE r.referred_id=$1 AND r.active AND r.id<>$2`, [bid, ref.id])).rows[0];
+    if (dup) return reply.code(409).send({ error: 'already_referred', note: `그 계정은 이미 ${dup.name} 님의 소개 계약(#${dup.id})에 연결되어 있습니다.` });
+    const r = (await query(`UPDATE commission_referrals SET referred_id=$3, approved_at=now(), approved_by=$2, updated_by=$2, updated_at=now() WHERE id=$1 AND active AND approved_at IS NULL RETURNING id`, [ref.id, dir, bid])).rows[0];
     if (!r) return reply.code(409).send({ error: 'not_pending', note: '승인 대기 중인 계약이 아닙니다.' });
-    await logEvent({ userId: dir, action: 'update', target: `commission_referral:${r.id}`, detail: { approved: true } });
+    await logEvent({ userId: dir, action: 'update', target: `commission_referral:${r.id}`, detail: { approved: true, referred_id: bid } });
     return { ok: true, item: await refOut(await loadReferral(r.id), req.ctx.perm) };
   });
 

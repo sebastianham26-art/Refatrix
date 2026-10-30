@@ -42,12 +42,12 @@ export const REF_COLS = `r.id, r.referrer_id, r.referred_id, r.rate, to_char(r.s
   (SELECT name FROM users WHERE id=(to_jsonb(r)->>'approved_by')::bigint) AS approved_by_name,
   (to_jsonb(r)->>'requested_by')::bigint AS requested_by,
   to_char(r.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS created_at_local`;
-const REF_FROM = `FROM commission_referrals r JOIN users ua ON ua.id=r.referrer_id JOIN users ub ON ub.id=r.referred_id`;
+const REF_FROM = `FROM commission_referrals r JOIN users ua ON ua.id=r.referrer_id LEFT JOIN users ub ON ub.id=r.referred_id`;
 
 export function normRef(r) {
   if (!r) return null;
   return {
-    id: Number(r.id), referrer_id: Number(r.referrer_id), referred_id: Number(r.referred_id), rate: Number(r.rate),
+    id: Number(r.id), referrer_id: Number(r.referrer_id), referred_id: r.referred_id != null ? Number(r.referred_id) : null, rate: Number(r.rate),
     start_date: r.start_date, end_date: r.end_date || null, referred_info: normInfo(r.referred_info || {}),
     active: r.active === true, docs_complete_on: r.docs_complete_on || null, note: r.note || null,
     referrer_name: r.referrer_name || '', referred_user_name: r.referred_user_name || '', created_at: r.created_at_local || null,
@@ -168,6 +168,7 @@ function linesSql() {
 
 // 한 소개 계약의 전체 라인(표시·지급 공통). state 를 넘기면 다시 읽지 않는다.
 export async function referralLines(ref, state = null) {
+  if (!ref.referred_id) return [];   // 0311 B 계정 연결 전
   const st = state || await referralState(ref);
   const rows = (await query(linesSql(), [ref.referred_id, ref.id])).rows;
   const ctx = { rate: ref.rate, effective: st.effective_from, end: ref.end_date };

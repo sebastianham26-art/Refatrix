@@ -73,9 +73,11 @@ export function normInfo(info) {
   };
 }
 
-export function validateReferral(b) {
-  const referrer = Number(b && b.referrer_id), referred = Number(b && b.referred_id);
-  if (!(referrer > 0) || !(referred > 0)) return { ok: false, error: 'users_required', note: '소개자(A)와 피소개 커미셔너(B)를 모두 선택하세요.' };
+//   opt.allowNoReferred: B 계정 없이도 통과(0311 · 소개자 본인 작성 — 디렉터가 승인 때 연결)
+export function validateReferral(b, opt = {}) {
+  const referrer = Number(b && b.referrer_id);
+  const referred = b && b.referred_id != null && b.referred_id !== '' ? Number(b.referred_id) : null;
+  if (!(referrer > 0) || (!(referred > 0) && !opt.allowNoReferred)) return { ok: false, error: 'users_required', note: '소개자(A)와 피소개 커미셔너(B)를 모두 선택하세요.' };
   if (referrer === referred) return { ok: false, error: 'same_user', note: '소개자와 피소개 커미셔너가 같은 사람입니다.' };
   const rate = b.rate == null || b.rate === '' ? 1 : Number(b.rate);
   if (!(rate >= 0 && rate <= 100)) return { ok: false, error: 'bad_rate', note: '소개 커미션율은 0~100% 사이여야 합니다.' };
@@ -87,7 +89,7 @@ export function validateReferral(b) {
   const info = normInfo(b.referred_info);
   if (!info.name) return { ok: false, error: 'name_required', note: '피소개 커미셔너(B)의 성명/상호를 입력하세요(계약서 제1조).' };
   const note = b.note != null && String(b.note).trim() ? String(b.note).trim().slice(0, 500) : null;
-  return { ok: true, value: { referrer_id: referrer, referred_id: referred, rate: Math.round(rate * 1000) / 1000, start_date: start, end_date: end, referred_info: info, note } };
+  return { ok: true, value: { referrer_id: referrer, referred_id: referred > 0 ? referred : null, rate: Math.round(rate * 1000) / 1000, start_date: start, end_date: end, referred_info: info, note } };
 }
 
 // ── 조건 · 해시 (순수) ──────────────────────────────────────────────
@@ -98,7 +100,8 @@ export function buildReferralTerms(ref, { referrerName, referredUserName, compan
     rules: REFERRAL_RULES_VERSION,
     referral_id: Number(ref.id),
     referrer: { id: Number(ref.referrer_id), name: referrerName || '' },
-    referred: { id: Number(ref.referred_id), user: referredUserName || '', ...info },
+    // 0311 본인 작성 계약은 B 계정(id·이름)을 계약 조건에 넣지 않는다 — 디렉터가 승인 때 계정을 연결해도 서명 버전이 안 바뀌게
+    referred: ref.requested_by != null ? { ...info } : { id: Number(ref.referred_id), user: referredUserName || '', ...info },
     rate: Number(ref.rate),
     start: String(ref.start_date).slice(0, 10),
     end: ref.end_date ? String(ref.end_date).slice(0, 10) : null,

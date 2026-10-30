@@ -10,7 +10,7 @@
       what: 'Toca el botón <b>Acuerdo y contratos</b>.' },
     { n: 2, icon: '📝', t: 'Registrar datos', key: true,
       where: 'Página <b>Acuerdo y contratos</b> › recuadro verde de arriba › botón <b>Registrar datos</b>',
-      what: 'Elige la cuenta del comisionista (por ejemplo <b>CDMX</b>), escribe los datos de su empresa y <b>tus datos</b> (nombre, RFC, domicilio, teléfono, correo). Toca <b>Guardar y continuar</b>.',
+      what: 'Escribe los datos de la empresa que refieres (por ejemplo <b>CDMX</b>): nombre, RFC, domicilio, teléfono y correo. Después escribe <b>tus datos</b> (nombre, RFC, domicilio, teléfono, correo). Toca <b>Guardar y continuar</b>.',
       note: 'Con este paso se crea el <b>borrador del contrato</b>.' },
     { n: 3, icon: '📎', t: 'Sube los documentos',
       where: 'Debajo, tabla <b>Documentación</b>',
