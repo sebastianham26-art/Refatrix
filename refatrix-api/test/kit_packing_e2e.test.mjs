@@ -200,6 +200,10 @@ test('⑧ Lista de empaque(출고 출력) — 박스 줄 kit_no + kits 구성', 
   assert.deepEqual(d.boxes[0].lines.map((l) => [l.ctr_code, l.kit_no]),
     [[`${TAG}-PRO`, null], [`${TAG}-TEL`, K1], [`${TAG}-TER`, K1], [`${TAG}-TI`, K1]]);
   assert.deepEqual(d.kits.map((k) => [k.kit_no, k.sets]), [[K1, 1], [K2, 2]]);
+  // 2026-10-30 · 패킹리스트·라벨용 — 박스 줄 제품명(PRO 는 SYD 대신 설명), 키트 차종 · 구성품 제품명
+  assert.deepEqual(d.boxes[0].lines.map((l) => l.product_name), [`${TAG}-PRO 부품`, `${TAG}-TEL 부품`, `${TAG}-TER 부품`, `${TAG}-TI 부품`]);
+  assert.deepEqual([d.kits[0].title, d.kits[0].years], ['Nissan Versa', '2012-2019']);
+  assert.deepEqual(d.kits[0].items.map((x) => [x.ctr_code, x.name, x.qty]), [[`${TAG}-TEL`, `${TAG}-TEL 부품`, 1], [`${TAG}-TER`, `${TAG}-TER 부품`, 1], [`${TAG}-TI`, `${TAG}-TI 부품`, 2]]);
 });
 
 test('⑨ 0306 백필 — Q-2026-0339 의 빈 줄만 채운다(이미 있는 값·다른 견적은 그대로)', { skip: SKIP }, async () => {

@@ -20,6 +20,7 @@ let JSDOM;
 try { ({ JSDOM } = await import('jsdom')); } catch { /* skip */ }
 const opts = JSDOM ? {} : { skip: 'jsdom 미설치 — skip (npm i -D jsdom)' };
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+let SHIP_FIX = null;   // ④ 출고 데이터 → ④-2·④-3 라벨 시험에서 재사용
 const DOMS = [];   // 화면 타이머가 남아 프로세스가 끝나지 않으므로 마지막에 닫는다
 after(() => { DOMS.forEach((d) => { try { d.window.close(); } catch (_) {} }); });
 
@@ -82,8 +83,7 @@ test('① 포장지시 — 키트 머리줄 → 구성품 → 단품, 진행 칩
   assert.deepEqual(shape, ['H:KIT K0009', 'k:CE0536L', 'k:CE0536R', 'k:CL0477', 'k:CR0490', 'H:KIT K0012', 'k:CQ0285L', 'k:CQ0285R', 'S', 'r:PRO002', 'r:PRO012']);
   const h1 = text(rows[0]);
   assert.match(h1, /2 \/ 5/, '진행 = 포장한/포장할(키트 줄만)');
-  assert.match(h1, /KIT K0009 1세트 · 4 SKU 5개/);
-  assert.ok(!/Nissan|Versa/.test(text(w.document.getElementById('remBody'))), '차종 이름으로 묶지 않는다');
+  assert.match(h1, /KIT K0009 Nissan Versa 2012-2019 · 1세트 · 4 SKU 5개/, '키트 번호 + 차종(제목)');
   assert.match(h1, /한 봉투에 함께 담고 같은 박스에/);
   assert.match(text(rows[5]), /구성 수량이 키트와 다릅니다/, 'consistent=false → 경고');
   assert.match(text(rows[8]), /단품 · 2 SKU 7개/);
@@ -111,7 +111,7 @@ test('② 스페인어 — 머리줄·단품 문구', opts, async () => {
   await open358(dom);
   const $ = (id) => dom.window.document.getElementById(id);
   const rows = [...$('remBody').querySelectorAll('tr')];
-  assert.match(text(rows[0]), /KIT K0009 1 juego · 4 SKU · 5 pzs/);
+  assert.match(text(rows[0]), /KIT K0009 Nissan Versa 2012-2019 · 1 juego · 4 SKU · 5 pzs/);
   assert.match(text(rows[0]), /Empacar juntas en una bolsa · misma caja/);
   assert.match(text(rows[5]), /Cantidades distintas a la composición del kit/);
   assert.match(text(rows[8]), /Piezas sueltas · 2 SKU · 7 pzs/);
@@ -130,10 +130,11 @@ test('③ 키트 없는 오더 — 머리줄 없이 종전 표', opts, async () 
 test('④ Lista de empaque — Kits incluidos + 박스 안 KIT 머리줄 · Piezas sueltas', opts, async () => {
   const ship = { quote_id: 358, quote_no: 'Q-2026-0339', customer: 'Dante Fernandez', sat_no: 'A1', has_sat: true, packed_at: '2026-10-29T15:00:00Z', box_count: 1, total_qty: 10, sku_count: 5,
     boxes: [{ box_id: 1, box_no: 1, box_qty: 10, box_sku: 5, lines: [
-      { ctr_code: 'PRO002', syd_code: '', ean: '', qty: 5, kit_no: null },
-      { ctr_code: 'CE0536L', syd_code: '1116025', ean: '', qty: 1, kit_no: 'K0009' }, { ctr_code: 'CE0536R', syd_code: '', ean: '', qty: 1, kit_no: 'K0009' },
+      { ctr_code: 'PRO002', syd_code: '9999', ean: '', qty: 5, kit_no: null, product_name: 'material promocion_GUANTES' },
+      { ctr_code: 'CE0536L', syd_code: '1116025', ean: '', qty: 1, kit_no: 'K0009', product_name: 'TERMINAL EXTERIOR' }, { ctr_code: 'CE0536R', syd_code: '', ean: '', qty: 1, kit_no: 'K0009' },
       { ctr_code: 'CR0490', syd_code: '', ean: '', qty: 2, kit_no: 'K0009' }, { ctr_code: 'CL0477', syd_code: '', ean: '', qty: 1, kit_no: 'K0009' }] }],
-    kits: [{ kit_no: 'K0009', title: 'Nissan Versa', years: '2012-2019', sets: 1, consistent: true, items: [{ ctr_code: 'CE0536L', qty: 1 }, { ctr_code: 'CE0536R', qty: 1 }, { ctr_code: 'CR0490', qty: 2 }, { ctr_code: 'CL0477', qty: 1 }] }] };
+    kits: [{ kit_no: 'K0009', title: 'Nissan Versa', years: '2012-2019', sets: 1, consistent: true, items: [{ ctr_code: 'CE0536L', qty: 1, name: 'TERMINAL EXTERIOR' }, { ctr_code: 'CE0536R', qty: 1, name: 'TERMINAL EXTERIOR' }, { ctr_code: 'CR0490', qty: 2, name: 'TERMINAL INTERIOR' }, { ctr_code: 'CL0477', qty: 1, name: 'TORNILLO ESTABILIZADOR' }] }] };
+  SHIP_FIX = ship;
   const dom = await bootWh('ko', PACK(), (u, b, json) => (/\/ship\/358$/.test(u) ? json(ship) : null));
   const btn = dom.window.document.querySelector('.scard .pk[data-id="358"]');
   assert.ok(btn, '출고 대기 카드의 패킹리스트 버튼');
@@ -141,12 +142,83 @@ test('④ Lista de empaque — Kits incluidos + 박스 안 KIT 머리줄 · Piez
   const doc = dom.__printed.find((x) => typeof x === 'string');
   assert.ok(doc, JSON.stringify(dom.__printed));
   assert.match(doc, /Kits incluidos \(1\)/);
-  assert.match(doc, /<td><b>K0009<\/b><\/td><td class="q">1<\/td><td>CE0536L, CE0536R, CR0490 ×2, CL0477<\/td>/);
-  assert.ok(!/Nissan|Versa/.test(doc), '차종 이름 없음');
+  assert.match(doc, /<td><b>K0009<\/b><\/td><td>Nissan Versa 2012-2019<\/td><td class="q">1<\/td><td class="comp"><div><b>CE0536L<\/b> TERMINAL EXTERIOR<\/div><div><b>CE0536R<\/b> TERMINAL EXTERIOR<\/div><div><b>CR0490<\/b> TERMINAL INTERIOR ×2<\/div><div><b>CL0477<\/b> TORNILLO ESTABILIZADOR<\/div><\/td>/, '차종 + 구성품 제품명');
+  // PRO 품목: SYD 대신 설명, 「Producto」 칸은 비움(중복 방지). CTR 부품: SYD + 제품명
+  assert.match(doc, /<td>PRO002<\/td><td>material promocion_GUANTES<\/td><td><\/td><td class="q">5<\/td>/);
+  assert.ok(!/9999/.test(doc), 'PRO 의 SYD 코드는 찍지 않는다');
+  assert.match(doc, /<td>CE0536L<\/td><td>1116025<\/td><td>TERMINAL EXTERIOR<\/td>/);
   const box = doc.slice(doc.indexOf('Caja 1'), doc.indexOf('</table>', doc.indexOf('Caja 1')));
   const order = [...box.matchAll(/<tr( class="(kh|kl|sh)")?><td[^>]*>([^<]*)/g)].map((m) => (m[2] || 'r') + ':' + m[3]);
-  assert.deepEqual(order, ['kh:KIT K0009 · 1 juego · 5 pzas', 'kl:1', 'kl:2', 'kl:3', 'kl:4', 'sh:Piezas sueltas', 'r:5']);
+  assert.deepEqual(order, ['kh:KIT K0009 · Nissan Versa 2012-2019 · 1 juego · 5 pzas', 'kl:1', 'kl:2', 'kl:3', 'kl:4', 'sh:Piezas sueltas', 'r:5']);
   assert.equal((doc.match(/LISTA DE EMPAQUE/g) || []).length, 2, '원본·사본 두 장 그대로');
+});
+
+test('④-2 박스 라벨 — 차종 인쇄 · KIT 머리줄 · PRO 는 SYD 대신 설명', opts, async () => {
+  const ship = SHIP_FIX;
+  assert.ok(ship, '④ 의 출고 데이터');
+  const dom = await bootWh('ko', PACK(), (u, b, json) => (/\/ship\/358$/.test(u) ? json(ship) : null));
+  const w = dom.window;
+  const doc = w.__whPrint.labelsHTML(ship);
+  assert.match(doc, /<div class="veh"><b>Vehículo:<\/b> Nissan Versa 2012-2019<\/div>/);
+  const order = [...doc.matchAll(/<tr( class="(kh|kl|sh)")?><td[^>]*>([^<]*)<\/td>(?:<td>([^<]*)<\/td>)?/g)].map((m) => (m[2] || 'r') + ':' + m[3] + (m[4] != null ? '|' + m[4] : ''));
+  assert.deepEqual(order, ['kh:KIT K0009 · Nissan Versa 2012-2019', 'kl:CE0536L|1116025', 'kl:CE0536R|-', 'kl:CR0490|-', 'kl:CL0477|-', 'sh:Piezas sueltas', 'r:PRO002|material promocion_GUANTES']);
+  assert.ok(!/9999/.test(doc));
+  // 키트 없는 박스는 차종 줄 없음
+  const plain = w.__whPrint.labelsHTML({ ...ship, kits: [], boxes: [{ ...ship.boxes[0], lines: ship.boxes[0].lines.map((l) => ({ ...l, kit_no: null })) }] });
+  assert.ok(!/class="veh"/.test(plain) && !/class="kh"/.test(plain));
+});
+
+// jsPDF 기록용 가짜 — text/rect/addPage 만 기록한다(글자폭 = 글자수 × 크기 × 0.19mm)
+function fakeJsPDF(log) {
+  return function F(opts) {
+    this.fs = 9; this.page = 1; this.h = opts.format[1];
+    this.setFont = () => {}; this.setFontSize = (v) => { this.fs = v; }; this.setDrawColor = () => {}; this.setLineWidth = () => {};
+    this.setFillColor = () => {}; this.setTextColor = () => {}; this.line = () => {}; this.addImage = () => {};
+    this.getTextWidth = (t) => String(t).length * this.fs * 0.19;
+    this.splitTextToSize = (t, w) => { const per = Math.max(1, Math.floor(w / (this.fs * 0.19))); const out = []; let x = String(t); while (x.length > per) { out.push(x.slice(0, per)); x = x.slice(per); } out.push(x); return out; };
+    this.text = (t, x, y) => { (Array.isArray(t) ? t : [t]).forEach((v) => log.push({ p: this.page, t: String(v), x, y, fs: this.fs })); };
+    this.rect = (x, y, w, h) => { log.push({ p: this.page, rect: true, y, h }); };
+    this.addPage = () => { this.page++; };
+  };
+}
+test('④-3 박스 라벨 PDF(실제 출력 경로) — 차종 줄 · KIT 머리줄 · PRO 설명 · 라벨 밖 넘침 없음', opts, async () => {
+  const ship = SHIP_FIX;
+  const dom = await bootWh('ko', PACK(), () => null);
+  const w = dom.window, log = [];
+  w.jspdf = { jsPDF: fakeJsPDF(log) };
+  const doc = w.__whPrint.labelsPDF(ship);
+  assert.ok(doc, 'jsPDF 경로');
+  const txt = log.filter((e) => e.t != null).map((e) => e.t);
+  assert.ok(txt.includes('Vehículo: Nissan Versa 2012-2019'), txt.join(' | '));
+  const iK = txt.indexOf('KIT K0009 · Nissan Versa 2012-2019'), iS = txt.indexOf('Piezas sueltas');
+  assert.ok(iK > 0 && iS > iK, 'KIT 머리줄 → 구성품 → Piezas sueltas');
+  assert.match(txt.join('|'), /material promocion_(\|)?GUANTES/, 'PRO = 설명(한 줄 또는 두 줄)');
+  assert.ok(!txt.includes('9999'), 'PRO 의 SYD 없음');
+  assert.ok(txt.includes('1116025'), 'CTR 부품은 SYD 그대로');
+  assert.ok(txt.includes('Competidor / Descr.'));
+  // 큰 박스: 구성품 30줄 + 단품 10줄 + 긴 주소 → 여러 장, 모든 행이 라벨 본체(피치−3mm) 안
+  const many = { ...ship, ship_address: 'Av. Constitución 1234 Pte, Col. Centro, Monterrey, Nuevo León, C.P. 64000, entre calles Zaragoza y Escobedo', boxes: [{ box_id: 9, box_no: 1, box_qty: 40, box_sku: 40,
+    lines: Array.from({ length: 40 }, (_, i) => ({ ctr_code: i < 30 ? 'CE' + i : 'PRO0' + i, syd_code: 'S' + i, qty: 1, kit_no: i < 30 ? 'K0009' : null, product_name: 'material promocion_ETIQUETA_CTR (HIZO EN CASA MATRIZ) ' + i })) }] };
+  const log2 = []; w.jspdf = { jsPDF: fakeJsPDF(log2) };
+  w.__whPrint.labelsPDF(many);
+  const pages = Math.max(...log2.map((e) => e.p));
+  assert.ok(pages >= 3, '여러 장');
+  const bottom = 153 - 3;
+  assert.ok(log2.filter((e) => e.rect).every((e) => e.y + e.h <= bottom + 0.01), '행이 라벨 밖으로 넘치지 않음');
+  const conts = log2.filter((e) => e.t === 'KIT K0009 · Nissan Versa 2012-2019 (cont.)').length;
+  assert.equal(conts, pages - 2 >= 1 ? conts : conts);
+  assert.ok(conts >= 1, '다음 장으로 넘어간 키트는 머리줄을 다시');
+  // 긴 PRO 설명은 칸 안으로 — 한 줄이 안 되면 같은 칸 두 줄(뒷부분까지 찍힌다)
+  const compW = (100 - 4 - 16) - (4 + 37) - 2;
+  const descs = log2.filter((e) => e.t && e.x === 4 + 37 + 1 && !/^S\d/.test(e.t) && e.t !== 'Competidor / Descr.');
+  assert.ok(descs.length && descs.every((e) => e.t.length * e.fs * 0.19 <= compW + 0.01), '칸 폭 안');
+  const joined = descs.map((e) => e.t).join('');
+  assert.ok(/HIZO EN CASA MATRIZ\) 3[0-9]/.test(joined), '설명 뒷부분까지 출력');
+  // 키트 장 머리줄이 장 끝에 홀로 남지 않는다
+  for (let p = 1; p <= pages; p++) {
+    const rows = log2.filter((e) => e.p === p && e.t && (/^KIT |^Piezas sueltas/.test(e.t) || /^\d+$/.test(e.t)));
+    if (rows.length) assert.ok(!/^KIT |^Piezas/.test(rows[rows.length - 1].t), 'page ' + p + ' ends with header');
+  }
 });
 
 // ---------- 견적목록(포장작업지시서 PDF · 편집) ----------
@@ -193,8 +265,7 @@ test('⑤ 포장작업지시서(PDF) — Kits en este pedido + 줄마다 KIT, �
   const doc = dom.__printed.find((x) => typeof x === 'string');
   assert.ok(doc, JSON.stringify(dom.__printed));
   assert.match(doc, /Kits en este pedido \(1\) — empacar juntas las piezas de cada kit: misma bolsa, misma caja/);
-  assert.match(doc, /<td><b>K0009<\/b><\/td><td style="text-align:center">1<\/td><td>CE0536L, CR0490 ×2<\/td>/);
-  assert.ok(!/Nissan|Versa/.test(doc), '차종 이름 없음');
+  assert.match(doc, /<td><b>K0009<\/b><\/td><td>Nissan Versa 2012-2019<\/td><td style="text-align:center">1<\/td><td>CE0536L, CR0490 ×2<\/td>/, '키트 번호 + 차종');
   const skus = [...doc.matchAll(/<td class="c-sku">([^<]*)<\/td>/g)].map((m) => m[1]);
   assert.deepEqual(skus, ['CR0490', 'CE0536L', 'PRO002'], '랙 순서(AD4-2 → C2-4 → E3-1) 유지');
   assert.match(doc, /<td class="c-name"><span class="kit">KIT K0009<\/span>Prod CR0490/);

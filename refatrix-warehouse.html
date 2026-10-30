@@ -6,7 +6,7 @@
 <!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 1028kit</title>
+<title>Refatrix · 창고 포장 · build 1030kitv</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -176,6 +176,7 @@
   table.ptbl tr.kith td{background:#EEEDFE;color:#3C3489;border-bottom:none;padding:9px 10px;white-space:normal;font-size:14px}
   table.ptbl tr.kith .kno{font-weight:800;font-size:15px;margin-right:6px}
   table.ptbl tr.kith .kmeta{color:#534AB7;font-weight:700}
+  table.ptbl tr.kith .kveh{font-weight:800;color:#26215C}
   table.ptbl tr.kith .kprog{display:inline-block;margin-left:8px;background:#fff;border:1px solid #AFA9EC;border-radius:999px;padding:1px 9px;font-weight:800;font-variant-numeric:tabular-nums}
   table.ptbl tr.kith.kdone .kprog{background:#E1F5EE;border-color:#5DCAA5;color:#085041}
   table.ptbl tr.kith .khint{display:block;font-size:12.5px;color:#534AB7;font-weight:700;margin-top:2px}
@@ -522,7 +523,7 @@
   function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
 
 (function(){
-  try{ console.log('[refatrix-warehouse] build 1028kit — 0306 키트 묶음(키트 번호 순)'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 1030kitv — 0306 키트 묶음(키트 번호 순)'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -928,18 +929,37 @@
     return po ? (ours+'/ '+po) : ours;
   }
 
+  // 2026-10-30 · 출고 출력 공통 — PRO(판촉물)는 SYD 코드 대신 제품 설명, 키트는 번호 + 차종
+  function isPromoCode(c){ return /^PRO/i.test(String(c||'').trim()); }
+  function compOrDesc(l){ return isPromoCode(l.ctr_code) ? (l.product_name||'-') : (l.syd_code||'-'); }
+  function kitVehicle(k){ return k?[k.title,k.years].filter(function(x){ return x&&String(x).trim(); }).join(' '):''; }
+  function kitNosOf(lines){ var nos=[]; lines.forEach(function(l){ if(l.kit_no&&nos.indexOf(l.kit_no)<0) nos.push(l.kit_no); }); return nos.sort(function(a,c){ return String(a).localeCompare(String(c),'en',{numeric:true}); }); }
   function buildLabelsHTML(d){
     var M=d.box_count;
+    var kitMeta={}; (d.kits||[]).forEach(function(k){ kitMeta[k.kit_no]=k; });
     var pages=d.boxes.map(function(b){
       var bc=barcodeSVG(String(d.quote_no||d.quote_id)+'-B'+b.box_no);
-      var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
+      function lr(l,cls){ return '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+esc(l.ctr_code)+'</td><td>'+esc(compOrDesc(l))+'</td><td class="q">'+l.qty+'</td></tr>'; }
+      var nos=kitNosOf(b.lines), lines='';
+      if(!nos.length){ lines=b.lines.map(function(l){ return lr(l,''); }).join(''); }
+      else {
+        nos.forEach(function(no){
+          var v=kitVehicle(kitMeta[no]);
+          lines+='<tr class="kh"><td colspan="3">KIT '+esc(no)+(v?' \u00b7 '+esc(v):'')+'</td></tr>'
+            +b.lines.filter(function(l){ return l.kit_no===no; }).map(function(l){ return lr(l,'kl'); }).join('');
+        });
+        var sl=b.lines.filter(function(l){ return !l.kit_no; });
+        if(sl.length) lines+='<tr class="sh"><td colspan="3">Piezas sueltas</td></tr>'+sl.map(function(l){ return lr(l,''); }).join('');
+      }
+      var vehs=nos.map(function(no){ return kitVehicle(kitMeta[no]); }).filter(Boolean).filter(function(v,i,a){ return a.indexOf(v)===i; });
       return '<section class="lbl"><div class="lhdr"><div class="bx">CAJA '+b.box_no+' / '+M+'</div><div class="dt">'+esc(d.inv_date||d.quote_date||'')+'</div></div>'
         +'<div class="cust">'+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</div>'
         +'<div class="meta"><b>No. de factura:</b> '+esc(d.sat_no||'PENDIENTE')+'</div>'
         +(d.ship_address?'<div class="shipto"><span class="stl">ENTREGAR EN:</span><br>'+esc(d.ship_address)+'</div>':'')
         +'<div class="meta"><b>Pedido:</b> '+esc(pedidoText(d))+' &nbsp; SKU: '+b.box_sku+' &nbsp; Pzas: '+b.box_qty+'</div>'
+        +(vehs.length?'<div class="veh"><b>Veh\u00edculo:</b> '+esc(vehs.join(' / '))+'</div>':'')
         +'<div class="bc">'+bc+'</div>'
-        +'<table class="lt"><thead><tr><th>CTR</th><th>Competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></section>';
+        +'<table class="lt"><thead><tr><th>CTR</th><th>Competidor / Descripci\u00f3n</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></section>';
     }).join('');
     return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Etiquetas '+esc(d.quote_no)+'</title><style>'
       +'@page{size:100mm 150mm;margin:0} *{box-sizing:border-box} html,body{margin:0;padding:0} body{font-family:Arial,Helvetica,sans-serif;color:#111}'
@@ -950,6 +970,8 @@
       +'.shipto{font-size:9.5pt;line-height:1.35;margin:1mm 0;word-break:break-word;white-space:pre-wrap}.shipto .stl{font-weight:800;font-size:8pt}'
       +'.bc{text-align:center;margin:2mm 0}.bc svg{max-width:100%}'
       +'.lt{width:100%;border-collapse:collapse;font-size:9pt;margin-top:1mm}.lt th,.lt td{border:1px solid #999;padding:1mm;text-align:left}.lt .q{text-align:right;font-weight:700}'
+      +'.veh{font-size:11pt;font-weight:800;margin:1mm 0;padding:1mm 2mm;border:1.5px solid #111;border-radius:2mm;word-break:break-word}'
+      +'.lt tr.kh td{font-weight:800;background:#e9e9e9}.lt tr.kl td:first-child{border-left:2.5px solid #111}.lt tr.sh td{font-weight:800;background:#f4f4f4}'
       +'</style></head><body>'+pages+'</body></html>';
   }
   function buildPackingListHTML(d){
@@ -957,9 +979,9 @@
     function kitsBlock(){
       var ks=(d.kits||[]).slice().sort(function(a,c){ return String(a.kit_no).localeCompare(String(c.kit_no),'en',{numeric:true}); });
       if(!ks.length) return '';
-      return '<div class="kits"><div class="kt">Kits incluidos ('+ks.length+')</div><table class="pt"><thead><tr><th style="width:22mm">KIT</th><th class="q" style="width:18mm">Juegos</th><th>Componentes por juego</th></tr></thead><tbody>'
-        +ks.map(function(k){ return '<tr><td><b>'+esc(k.kit_no)+'</b></td><td class="q">'+(k.sets!=null?k.sets:'-')+'</td><td>'
-          +esc((k.items||[]).map(function(x){ return x.ctr_code+(Number(x.qty)>1?' \u00d7'+x.qty:''); }).join(', '))+'</td></tr>'; }).join('')
+      return '<div class="kits"><div class="kt">Kits incluidos ('+ks.length+')</div><table class="pt"><thead><tr><th style="width:18mm">KIT</th><th style="width:50mm">Veh\u00edculo</th><th class="q" style="width:16mm">Juegos</th><th>Componentes por juego</th></tr></thead><tbody>'
+        +ks.map(function(k){ return '<tr><td><b>'+esc(k.kit_no)+'</b></td><td>'+esc(kitVehicle(k)||'-')+'</td><td class="q">'+(k.sets!=null?k.sets:'-')+'</td><td class="comp">'
+          +(k.items||[]).map(function(x){ return '<div><b>'+esc(x.ctr_code)+'</b>'+(x.name?' '+esc(x.name):'')+(Number(x.qty)>1?' \u00d7'+x.qty:'')+'</div>'; }).join('')+'</td></tr>'; }).join('')
         +'</tbody></table></div>';
     }
     function copy(tag){
@@ -968,7 +990,7 @@
         // 0306 · 박스 안에서 키트 번호 순으로 묶고, 남은 것은 「Piezas sueltas」
         var hasKit=b.lines.some(function(l){ return l.kit_no; });
         var lines='', n=0;
-        function ln(l,cls){ n++; return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="no">'+n+'</td><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }
+        function ln(l,cls){ n++; return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="no">'+n+'</td><td>'+esc(l.ctr_code)+'</td><td>'+esc(compOrDesc(l))+'</td><td>'+esc(isPromoCode(l.ctr_code)?'':(l.product_name||''))+'</td><td class="q">'+l.qty+'</td></tr>'; }
         if(!hasKit){ lines=b.lines.map(function(l){ return ln(l,''); }).join(''); }
         else {
           var nos=[]; b.lines.forEach(function(l){ if(l.kit_no&&nos.indexOf(l.kit_no)<0) nos.push(l.kit_no); });
@@ -978,13 +1000,14 @@
             var pz=ls.reduce(function(s2,l){ return s2+Number(l.qty||0); },0);
             var m=kitMeta[no]||{};
             var st=(m.sets!=null&&m.sets>0)?(m.sets+(m.sets===1?' juego':' juegos')+' \u00b7 '):'';
-            lines+='<tr class="kh"><td colspan="4">KIT '+esc(no)+' \u00b7 '+st+pz+' pzas</td></tr>'+ls.map(function(l){ return ln(l,'kl'); }).join('');
+            var v=kitVehicle(m);
+            lines+='<tr class="kh"><td colspan="5">KIT '+esc(no)+(v?' \u00b7 '+esc(v):'')+' \u00b7 '+st+pz+' pzas</td></tr>'+ls.map(function(l){ return ln(l,'kl'); }).join('');
           });
           var sl=b.lines.filter(function(l){ return !l.kit_no; });
-          if(sl.length) lines+='<tr class="sh"><td colspan="4">Piezas sueltas</td></tr>'+sl.map(function(l){ return ln(l,''); }).join('');
+          if(sl.length) lines+='<tr class="sh"><td colspan="5">Piezas sueltas</td></tr>'+sl.map(function(l){ return ln(l,''); }).join('');
         }
         return '<div class="box"><div class="bh">Caja '+b.box_no+' / '+d.box_count+' \u00b7 '+(b.box_sku!=null?b.box_sku+' SKU \u00b7 ':'')+b.box_qty+' pzas</div>'
-          +'<table class="pt"><thead><tr><th class="no">No.</th><th>CTR</th><th>Código competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
+          +'<table class="pt"><thead><tr><th class="no">No.</th><th style="width:28mm">CTR</th><th style="width:48mm">Código competidor / Descripción</th><th>Producto</th><th class="q" style="width:16mm">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
       }).join('');
       var C=COMPANY||{};
       var cohead='';
@@ -1020,6 +1043,7 @@
       +'.box{margin-bottom:4mm}.bh{font-weight:800;background:#eee;padding:2mm 3mm;border:1px solid #999;border-bottom:none}'
       +'.pt{width:100%;border-collapse:collapse;font-size:10pt}.pt th,.pt td{border:1px solid #999;padding:1.5mm 2mm;text-align:left}.pt .q{text-align:right;font-weight:700}.pt .no{width:12mm;text-align:center;font-weight:700}.pt th{background:#f3f3f3}'
       +'.kits{margin-bottom:4mm;break-inside:avoid}.kits .kt{font-weight:800;background:#EEEDFE;color:#3C3489;padding:2mm 3mm;border:1px solid #AFA9EC;border-bottom:none}'
+      +'.kits td.comp div{line-height:1.35}.kits td.comp div+div{border-top:1px dotted #ccc}'
       +'.pt tr.kh td{background:#EEEDFE;color:#3C3489;font-weight:800}.pt tr.kl td:first-child{border-left:3px solid #7F77DD}.pt tr.sh td{background:#f3f3f3;font-weight:800}'
       +'.pt tr{break-inside:avoid}.box .bh{break-after:avoid}'
       +'.tot{margin-top:4mm;font-weight:800;font-size:12pt;text-align:right}.sign{display:flex;gap:20mm;margin-top:16mm}.sb{flex:1;text-align:center;font-size:10pt}.sb .ln{border-top:1px solid #111;margin-bottom:2mm;height:14mm}'
@@ -1108,14 +1132,44 @@
     //   그래서 번호 줄과 수량 줄을 분리하고, 늘어난 3.5mm 를 헤더 높이에 반영해
     //   품목 표 행수를 자동으로 한 줄 줄인다(라벨 밖으로 넘치지 않게).
     var poStr=String((d&&d.customer_po_no)||'').trim();
+    // 2026-10-30 · 키트가 든 박스는 차종(Vehículo) 줄을 헤더에 찍는다 — 박스마다 다르므로 가장 긴 경우로 행수를 잡는다
+    var kitMeta={}; (d.kits||[]).forEach(function(k){ kitMeta[k.kit_no]=k; });
+    function vehLinesOf(b){
+      var vs=kitNosOf(b.lines||[]).map(function(no){ return kitVehicle(kitMeta[no]); }).filter(Boolean).filter(function(v,i,a){ return a.indexOf(v)===i; });
+      if(!vs.length) return null;
+      doc.setFont('helvetica','bold'); doc.setFontSize(10);
+      var L=doc.splitTextToSize('Veh\u00edculo: '+vs.join(' / '), W-2*M); return L.length>2?L.slice(0,2):L;
+    }
+    var maxVeh=0; (d.boxes||[]).forEach(function(b){ var v=vehLinesOf(b); if(v) maxVeh=Math.max(maxVeh,v.length); });
     // 헤더 총높이(표 머리글까지) = 고정부 + 고객명 줄수 + 주소 줄수 (아래 그리기 코드와 동일 수치)
-    var headH=(M+6)+2.5+6 + (custL.length*5+1.5) + 4.6 + (adrL?(3.6+adrL.length*3.8+1.6):0) + 3.5 + (poStr?3.5:0) + 17.5 + 6;
+    var headH=(M+6)+2.5+6 + (custL.length*5+1.5) + 4.6 + (adrL?(3.6+adrL.length*3.8+1.6):0) + 3.5 + (poStr?3.5:0) + (maxVeh?(maxVeh*4.2+1):0) + 17.5 + 6;
     var LIMIT=(PITCH-3)-3;                             // 라벨 본체 끝에서 3mm 여유
     var MAXROWS=Math.min(14, Math.max(3, Math.floor((LIMIT-headH)/5.4)));  // 주소 길면 행수 자동 축소
     var first=true;
     (d.boxes||[]).forEach(function(b){
       var lines=b.lines||[];
-      var sheets=Math.max(1, Math.ceil(lines.length/MAXROWS));
+      // 표 행 = 키트 번호 순으로 [KIT 머리줄 → 구성품] … → [Piezas sueltas → 단품]. 키트가 없으면 예전 그대로.
+      var nos=kitNosOf(lines), rows=[], n=0;
+      if(!nos.length){ lines.forEach(function(l){ rows.push({t:'l', l:l, no:++n}); }); }
+      else {
+        nos.forEach(function(no){
+          var v=kitVehicle(kitMeta[no]);
+          rows.push({t:'kh', text:'KIT '+no+(v?' \u00b7 '+v:''), kit:no});
+          lines.filter(function(l){ return l.kit_no===no; }).forEach(function(l){ rows.push({t:'l', l:l, no:++n, kit:no}); });
+        });
+        var sl=lines.filter(function(l){ return !l.kit_no; });
+        if(sl.length){ rows.push({t:'sh', text:'Piezas sueltas'}); sl.forEach(function(l){ rows.push({t:'l', l:l, no:++n}); }); }
+      }
+      // 라벨 장 나누기 — 장 첫 줄이 키트 구성품이면 그 KIT 머리줄을 다시 붙인다(cont.)
+      var sheetRows=[], cur=[];
+      rows.forEach(function(r){
+        if(cur.length>=MAXROWS || (r.t!=='l' && cur.length>=MAXROWS-1)){ sheetRows.push(cur); cur=[]; }   // 머리줄이 장 끝에 홀로 남지 않게
+        if(!cur.length && r.t==='l' && r.kit){ var h=rows.filter(function(x){ return x.t==='kh'&&x.kit===r.kit; })[0]; if(h) cur.push({t:'kh', text:h.text+' (cont.)', kit:r.kit}); }
+        cur.push(r);
+      });
+      if(cur.length||!sheetRows.length) sheetRows.push(cur);
+      var vehL=vehLinesOf(b);
+      var sheets=sheetRows.length;
       for(var sh=0; sh<sheets; sh++){
         if(!first) doc.addPage([100,PITCH],'portrait');
         first=false;
@@ -1138,7 +1192,7 @@
           doc.text(adrL, M, y); y+=adrL.length*3.8+1.6;
         }
         doc.setFont('helvetica','normal'); doc.setFontSize(9);
-        var sLines=lines.slice(sh*MAXROWS, (sh+1)*MAXROWS);
+        var sLines=sheetRows[sh];
         var bSku=lines.length, bQty=lines.reduce(function(a,l){ return a+(Number(l.qty)||0); },0);
         // 번호 줄(우리번호 / 고객PO) → 수량 줄. PO 가 없으면 예전처럼 한 줄이다.
         var qtyPart='SKU: '+bSku+'    Pzas: '+bQty+(sheets>1?('    Hoja '+(sh+1)+'/'+sheets):'');
@@ -1150,6 +1204,7 @@
         } else {
           doc.text('Pedido: '+String(d.quote_no||'')+'    '+qtyPart, M, y); y+=3.5;
         }
+        if(vehL){ doc.setFont('helvetica','bold'); doc.setFontSize(10); y+=3.2; doc.text(vehL, M, y); y+=(vehL.length-1)*4.2+2; doc.setFont('helvetica','normal'); doc.setFontSize(9); }
         var bc=labelBarcodePNG(String(d.quote_no||d.quote_id)+'-B'+b.box_no);
         if(bc){ var bh=15; doc.addImage(bc,'PNG', M, y, W-2*M, bh); y+=bh+2.5; }
         // ===== 표 헤더(검정 바) — 매 라벨 반복. 열: No | CTR | Competidor | Cant =====
@@ -1158,25 +1213,54 @@
         doc.setFontSize(8.5); doc.setDrawColor(0); doc.setLineWidth(0.3);
         doc.setFillColor(0,0,0); doc.rect(M, y, W-2*M, 6, 'F');
         doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
-        doc.text('No.', cNo+4.5, y+4, {align:'center'}); doc.text('CTR', cCtr+1, y+4); doc.text('Competidor', cComp+1, y+4); doc.text('Cant.', cCantR, y+4, {align:'right'});
+        doc.text('No.', cNo+4.5, y+4, {align:'center'}); doc.text('CTR', cCtr+1, y+4); doc.text('Competidor / Descr.', cComp+1, y+4); doc.text('Cant.', cCantR, y+4, {align:'right'});
         doc.setTextColor(0,0,0); y+=6;
         var bodyTop=y; doc.setFont('helvetica','normal');
         // ===== 이 라벨의 줄(최대 14) — 순번은 박스 전체 기준 연속 =====
-        sLines.forEach(function(l, i){
-          var no=sh*MAXROWS + i + 1;
+        var compW=vCant-cComp-2;
+        var segTop=y;
+        function vlines(t0,t1){ if(t1>t0){ doc.setDrawColor(150); doc.setLineWidth(0.2); doc.line(vNo, t0, vNo, t1); doc.line(vCtr, t0, vCtr, t1); doc.line(vCant, t0, vCant, t1); doc.setDrawColor(0); doc.setLineWidth(0.3); } }
+        sLines.forEach(function(r){
+          if(r.t!=='l'){
+            vlines(segTop, y);
+            doc.setFillColor(r.t==='kh'?225:240, r.t==='kh'?225:240, r.t==='kh'?225:240); doc.rect(M, y, W-2*M, 5.4, 'FD');
+            doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+            var ht=doc.splitTextToSize(String(r.text), W-2*M-3)[0];
+            doc.text(ht, M+1.5, y+3.7); doc.setFont('helvetica','normal');
+            y+=5.4; segTop=y; return;
+          }
+          var l=r.l;
           doc.rect(M, y, W-2*M, 5.4);
-          doc.setFont('helvetica','bold'); doc.text(String(no), cNo+4.5, y+3.7, {align:'center'}); doc.setFont('helvetica','normal');
+          if(r.kit){ doc.setLineWidth(0.9); doc.line(M+0.45, y, M+0.45, y+5.4); doc.setLineWidth(0.3); }
+          doc.setFontSize(8.5);
+          doc.setFont('helvetica','bold'); doc.text(String(r.no), cNo+4.5, y+3.7, {align:'center'}); doc.setFont('helvetica','normal');
           doc.text(String(l.ctr_code||''), cCtr+1, y+3.7);
-          doc.text(String(l.syd_code||'-'), cComp+1, y+3.7);
+          // PRO(판촉물) = 제품 설명, 그 외 = SYD. 칸에 맞게 글자 크기를 줄이고 그래도 길면 …
+          var ct=String(compOrDesc(l)), fs=8.5;
+          while(fs>7.5 && doc.getTextWidth(ct)>compW){ fs-=0.5; doc.setFontSize(fs); }
+          if(doc.getTextWidth(ct)<=compW){ doc.text(ct, cComp+1, y+3.7); }
+          else {
+            // 한 줄에 안 들어가면 같은 칸 안에서 두 줄(6.5pt) — 설명 뒷부분(LLAVEROS AMORTIGUADOR 등)이 잘리지 않게
+            doc.setFontSize(6.5);
+            // 첫 줄을 칸 끝까지 채우고(가능하면 공백·_ 뒤에서 끊음) 나머지를 둘째 줄로
+            var cut=ct.length; while(cut>1 && doc.getTextWidth(ct.slice(0,cut))>compW) cut--;
+            var br=Math.max(ct.lastIndexOf(' ',cut), ct.lastIndexOf('_',cut-1)+1);
+            if(br>cut*0.6) cut=br;
+            var t2=ct.slice(cut).replace(/^\s+/,'');
+            if(doc.getTextWidth(t2)>compW){ while(t2.length>1 && doc.getTextWidth(t2+'\u2026')>compW) t2=t2.slice(0,-1); t2+='\u2026'; }
+            var two=[ct.slice(0,cut).replace(/\s+$/,''), t2];
+            doc.text(two[0], cComp+1, y+2.3); if(two[1]) doc.text(two[1], cComp+1, y+4.7);
+          }
+          doc.setFontSize(8.5);
           doc.setFont('helvetica','bold'); doc.text(String(l.qty), cCantR, y+3.7, {align:'right'}); doc.setFont('helvetica','normal');
           y+=5.4;
         });
-        doc.setDrawColor(150); doc.setLineWidth(0.2);
-        doc.line(vNo, bodyTop, vNo, y); doc.line(vCtr, bodyTop, vCtr, y); doc.line(vCant, bodyTop, vCant, y);
+        vlines(segTop, y);
       }
     });
     return doc;
   }
+  try{ window.__whPrint={ labelsHTML:buildLabelsHTML, labelsPDF:buildLabelsPDF, listHTML:buildPackingListHTML }; }catch(e){}   // 시험용 훅(화면 동작 무관)
   function printLabels(id){
     fetchShip(id).then(function(o){
       if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; }
@@ -1384,7 +1468,8 @@
     var warn='';
     if(m.consistent===false) warn+='<span class="kwarn">\u26a0 '+LK('구성 수량이 키트와 다릅니다 \u2014 견적을 확인하세요','Cantidades distintas a la composición del kit \u2014 revise el pedido')+'</span>';
     if(m.partial) warn+='<span class="kwarn">\u26a0 '+LK('재고 부족으로 빠진 구성품이 있습니다','Faltan piezas del kit por falta de existencia')+'</span>';
-    return '<tr class="kith'+(done?' kdone':'')+'"><td colspan="9">🧰 <span class="kno">KIT '+esc(g.kit_no)+'</span> '
+    var veh=[m.title,m.years].filter(function(x){ return x&&String(x).trim(); }).join(' ');   // 2026-10-30 · 키트 제목(차종)
+    return '<tr class="kith'+(done?' kdone':'')+'"><td colspan="9">🧰 <span class="kno">KIT '+esc(g.kit_no)+'</span> '+(veh?'<span class="kveh">'+esc(veh)+'</span> · ':'')
       +'<span class="kmeta">'+esc(meta)+'</span> <span class="kprog">'+g.scanned+' / '+g.required+'</span>'
       +'<span class="khint">'+LK('한 봉투에 함께 담고 같은 박스에 \u2014 봉투에 KIT 번호 표시','Empacar juntas en una bolsa · misma caja \u2014 marcar la bolsa con el No. de KIT')+'</span>'
       +warn+'</td></tr>';

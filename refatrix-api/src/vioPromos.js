@@ -136,16 +136,18 @@ export async function kitCompositions(nos, q = query) {
   const list = [...new Set((nos || []).map(normKitNo).filter(Boolean))];
   if (!list.length || !(await promosReady(q))) return out;
   const rows = (await q(
-    `SELECT v.promo_no, v.title, v.years, p.code AS kit_code, i.product_id, i.ctr_code, i.qty, i.line_no
+    `SELECT v.promo_no, v.title, v.years, p.code AS kit_code, i.product_id, i.ctr_code, i.qty, i.line_no,
+            COALESCE(NULLIF(TRIM(ip.name), ''), i.name) AS name
        FROM vio_promos v
        LEFT JOIN products p ON p.id = v.product_id
        JOIN vio_promo_items i ON i.promo_id = v.id
+       LEFT JOIN products ip ON ip.id = i.product_id
       WHERE upper(v.promo_no) = ANY($1::text[])
       ORDER BY v.promo_no, i.line_no`, [list])).rows;
   for (const r of rows) {
     const k = String(r.promo_no).toUpperCase();
     if (!out.has(k)) out.set(k, { kit_no: k, kit_code: r.kit_code || k, title: r.title || '', years: r.years || '', items: [] });
-    out.get(k).items.push({ product_id: Number(r.product_id), ctr_code: r.ctr_code, qty: Number(r.qty) });
+    out.get(k).items.push({ product_id: Number(r.product_id), ctr_code: r.ctr_code, qty: Number(r.qty), name: r.name || '' });   // 2026-10-30 · 구성품 제품명
   }
   return out;
 }
@@ -160,7 +162,7 @@ export async function kitSummaries(lines, q = query) {
   for (const l of lines || []) {
     const k = normKitNo(l && l.kit_no); if (!k || !l.product_id) continue;
     if (!by.has(k)) by.set(k, []);
-    by.get(k).push({ product_id: Number(l.product_id), ctr_code: l.ctr_code || '', qty: Number(l.qty) || 0 });
+    by.get(k).push({ product_id: Number(l.product_id), ctr_code: l.ctr_code || '', qty: Number(l.qty) || 0, name: l.product_name || '' });
   }
   if (!by.size) return [];
   let comps = new Map();
@@ -169,8 +171,8 @@ export async function kitSummaries(lines, q = query) {
   for (const [k, ls] of by) {
     const comp = comps.get(k);
     const { sets, consistent } = kitSetCount(comp ? comp.items : null, ls);
-    const items = comp ? comp.items.map((c) => ({ ctr_code: c.ctr_code, qty: c.qty }))
-      : ls.map((x) => ({ ctr_code: x.ctr_code, qty: x.qty }));
+    const items = comp ? comp.items.map((c) => ({ ctr_code: c.ctr_code, qty: c.qty, name: c.name || '' }))
+      : ls.map((x) => ({ ctr_code: x.ctr_code, qty: x.qty, name: x.name || '' }));
     out.push({ kit_no: k, kit_code: comp ? comp.kit_code : k, title: comp ? comp.title : '', years: comp ? comp.years : '',
       sets, consistent, sku: new Set(ls.map((x) => x.product_id)).size, pieces: ls.reduce((s, x) => s + x.qty, 0), items });
   }

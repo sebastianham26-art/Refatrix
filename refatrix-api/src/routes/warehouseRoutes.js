@@ -704,7 +704,7 @@ export default async function warehouseRoutes(app) {
 
     const boxes = (await query(`SELECT id, box_no FROM packing_box WHERE quote_id=$1 ORDER BY box_no`, [id])).rows;
     const blines = (await query(
-      `SELECT bl.box_id, bl.product_id, bl.qty, p.code AS ctr_code, p.ean
+      `SELECT bl.box_id, bl.product_id, bl.qty, p.code AS ctr_code, p.ean, p.name AS product_name
          FROM packing_box_line bl JOIN products p ON p.id=bl.product_id
         WHERE bl.quote_id=$1 AND bl.qty>0 ORDER BY bl.box_id, p.code`, [id])).rows;
     let totQty = 0; const skuSet = new Set();
@@ -712,7 +712,8 @@ export default async function warehouseRoutes(app) {
       const lines = blines.filter((x) => Number(x.box_id) === Number(b.id)).map((x) => {
         totQty += Number(x.qty) || 0; skuSet.add(Number(x.product_id));
         return { ctr_code: x.ctr_code || '', syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty),
-                 kit_no: kitOf[Number(x.product_id)] || null };
+                 kit_no: kitOf[Number(x.product_id)] || null,
+                 product_name: x.product_name || '' };   // 2026-10-30 · PRO 품목은 SYD 대신 설명 · 키트 구성품 이름
       });
       const bq = lines.reduce((a, l) => a + l.qty, 0);
       return { box_id: Number(b.id), box_no: b.box_no, lines, box_qty: bq, box_sku: lines.length };

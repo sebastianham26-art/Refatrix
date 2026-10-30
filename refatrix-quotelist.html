@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1028kit</title>
+<title>Refatrix ERP · 견적 목록 · ql-1030kitv</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -1797,8 +1797,8 @@
     const kits=((pv.kits||[]).slice()).sort((a,b)=>String(a.kit_no).localeCompare(String(b.kit_no),'en',{numeric:true}));
     const kitsHtml=kits.length?(
       '<div class="pk-kits"><div class="kt">Kits en este pedido ('+kits.length+') — empacar juntas las piezas de cada kit: misma bolsa, misma caja, bolsa marcada con el No. de KIT</div>'
-      +'<table><thead><tr><th style="width:16%">KIT</th><th style="width:10%;text-align:center">Juegos</th><th>Componentes por juego</th></tr></thead><tbody>'
-      +kits.map(k=>'<tr><td><b>'+esc(k.kit_no)+'</b></td><td style="text-align:center">'+(k.sets!=null?k.sets:'—')+'</td><td>'
+      +'<table><thead><tr><th style="width:12%">KIT</th><th style="width:26%">Vehículo</th><th style="width:9%;text-align:center">Juegos</th><th>Componentes por juego</th></tr></thead><tbody>'
+      +kits.map(k=>'<tr><td><b>'+esc(k.kit_no)+'</b></td><td>'+esc([k.title,k.years].filter(Boolean).join(' ')||'—')+'</td><td style="text-align:center">'+(k.sets!=null?k.sets:'—')+'</td><td>'
         +esc((k.items||[]).map(x=>x.ctr_code+(Number(x.qty)>1?' ×'+x.qty:'')).join(', '))+(k.consistent===false?' <b style="color:#c0392b">⚠ cantidades distintas al kit</b>':'')+'</td></tr>').join('')
       +'</tbody></table></div>'):'';
     // 줄 높이 어림(1 = 한 줄짜리 행 ≈ 7.4mm). 품명 칸은 한 줄에 약 22자, 「Existencia por rack」 은 약 34자.

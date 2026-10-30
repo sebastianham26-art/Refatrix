@@ -45,7 +45,7 @@ async function boot(lang) {
 
 test('① 카드 [🗺 도면] → 도면 피킹 주소 · 포장 화면은 안 열림', opts, async () => {
   const { w, $, calls, gone } = await boot('ko');
-  assert.match(w.document.title, /build 1028kit/);   // 0306 키트 묶음에서 갱신
+  assert.match(w.document.title, /build 1030kitv/);   // 0306 키트 묶음에서 갱신
   const b = $('queue').querySelector('.qcard[data-id="77"] .qmap');
   assert.ok(b, '카드에 도면 버튼');
   assert.match(b.textContent, /🗺 도면/);
