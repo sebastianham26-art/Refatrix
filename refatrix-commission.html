@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1030gd</title>
+<title>Refatrix ERP · 커미션 · build b1030inv</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -458,10 +458,7 @@
   const dEs=(d)=>{ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(d||''); return m?(Number(m[3])+' '+REF_MES[Number(m[2])-1]+' '+m[1]):'—'; };
   const REF_ST={paid:['paid','Pagada'],confirmed:['wait','Por pagar'],pending:['exp','Con saldo'],before:['prov','Antes del contrato'],inactive:['prov','Contrato sin efecto'],after_end:['prov','Fuera de vigencia']};
   // ── 0309b 소개 계약 안내 — 등록 전이거나 끝나지 않았으면 상단 배너 + (로그인 세션당 한 번) 단계 팝업 ──
-  //   등록 전 안내는 초대 대상에게만(지금은 Clarisa) — 모든 영업사원에게 띄우지 않는다.
-  const REF_INVITE=['clarisa'];
-  const normN=(n)=>{ try{ return String(n||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }catch(e){ return String(n||'').toLowerCase(); } };
-  function refInvited(){ const u=session.user||{}; return REF_INVITE.some(x=>normN(u.name).startsWith(x)||normN(u.login_id).startsWith(x)); }
+  //   등록 전 안내는 디렉터가 「소개자 초대」한 사람에게만 (0310) — 모든 영업사원에게 띄우지 않는다.
   const CTA={
     2:['Registrar datos','Escribe los datos del comisionista que refieres (por ejemplo CDMX) y tus datos. ⚠ Con esto se crea el borrador de tu contrato.','Registrar datos','refatrix-acuerdo-comision.html#referrals-new'],
     3:['Sube los documentos','Tu borrador está listo. Sube la documentación en «Acuerdo y contratos».','Subir documentos','refatrix-acuerdo-comision.html#referrals'],
@@ -473,8 +470,9 @@
     const open=(items||[]).find(x=>RefGuide.stepOf(x)<6);
     let step=null;
     if(open) step=RefGuide.stepOf(open);
-    else if(!(items||[]).length && refInvited()){
-      try{ const c=await fetch(session.api+'/api/commission/referrals/candidates',{headers:auth()}).then(r=>r.json()); if(c&&c.self_ready!==false&&(c.items||[]).length) step=2; }catch(e){}
+    else if(!(items||[]).length){
+      // 0310: 디렉터가 초대한 소개자만(서버가 invited 로 알려준다)
+      try{ const c=await fetch(session.api+'/api/commission/referrals/candidates',{headers:auth()}).then(r=>r.json()); if(c&&c.invited&&c.self_ready!==false&&(c.items||[]).length) step=2; }catch(e){}
     }
     if(!step){ box.classList.add('hidden'); return; }
     const c=CTA[step];

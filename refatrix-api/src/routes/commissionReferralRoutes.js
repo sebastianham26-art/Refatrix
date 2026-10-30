@@ -85,6 +85,20 @@ async function selfReady() {
 const MIG9 = { error: 'migration_required', migration: '0309', note: 'Esta función aún no está activa en el servidor. (npm run migrate 0309)' };
 const today = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10);
 
+// 0310 초대 테이블 적용 여부 — 60초 캐시
+let _invReady = { v: null, at: 0 };
+async function invitesReady() {
+  if (_invReady.v === true) return true;
+  if (_invReady.v === false && Date.now() - _invReady.at < 60000) return false;
+  const r = await query(`SELECT 1 FROM information_schema.tables WHERE table_name='commission_referral_invites'`);
+  _invReady = { v: r.rows.length > 0, at: Date.now() };
+  return _invReady.v;
+}
+async function isInvited(uid) {
+  if (!(await invitesReady())) return false;
+  return (await query(`SELECT 1 FROM commission_referral_invites WHERE user_id=$1 AND active`, [Number(uid)])).rows.length > 0;
+}
+
 // 이 사람이 이 계약을 볼 수 있나: 전체열람자 또는 소개자 본인
 const canView = (perm, ref) => canSeeAll(perm) || Number(perm.userId) === ref.referrer_id;
 
@@ -254,13 +268,17 @@ export default async function commissionReferralRoutes(app) {
         WHERE u.deleted_at IS NULL AND u.role IN ('sales','sales_support') AND u.id <> $1
           AND NOT EXISTS (SELECT 1 FROM commission_referrals r WHERE r.referred_id=u.id AND r.active)
         ORDER BY u.name`, [me])).rows;
-    return { migrated: true, self_ready: await selfReady(), items: rows.map((r) => ({ id: Number(r.id), name: r.name })) };
+    const invited = await isInvited(me);
+    // 초대받지 않은 사람에게는 후보 목록을 주지 않는다(신청 불가)
+    return { migrated: true, self_ready: await selfReady(), invited, items: invited ? rows.map((r) => ({ id: Number(r.id), name: r.name })) : [] };
   });
 
   // 신청 — 소개자 = 로그인한 본인. 율은 계약 기본값(1%), 시작일은 본인이 제안(디렉터가 승인 때 조정 가능).
   app.post('/api/commission/referrals/request', { preHandler: [authGuard] }, async (req, reply) => {
     const me = Number(req.ctx.perm.userId);
     if (!(await referralsReady()) || !(await selfReady())) return reply.code(503).send(MIG9);
+    if (!(await invitesReady())) return reply.code(503).send({ error: 'migration_required', migration: '0310', note: 'Esta función aún no está activa en el servidor.' });
+    if (!(await isInvited(me))) return reply.code(403).send({ error: 'not_invited', note: 'Refatrix aún no te habilitó para la comisión por referencia.' });
     const b = req.body || {};
     const v = validateReferral({ referrer_id: me, referred_id: b.referred_id, rate: 1, start_date: b.start_date || today(), end_date: null, referred_info: b.referred_info, note: null });
     if (!v.ok) {
@@ -299,6 +317,40 @@ export default async function commissionReferralRoutes(app) {
     });
     await logEvent({ userId: me, action: 'update', target: `commission_referral:${ref.id}`, detail: { kind: 'self_edit' } });
     return { ok: true, item: await refOut(await loadReferral(ref.id), req.ctx.perm, { withDoc: true }) };
+  });
+
+  // ── 0310 소개자 초대 — 디렉터는 A 만 고른다 ──
+  app.get('/api/commission/referrals/invites', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    if (!(await invitesReady())) return { migrated: false, items: [] };
+    const rows = (await query(
+      `SELECT i.id, i.user_id, u.name, i.note, to_char(i.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS created_at_local,
+              (SELECT COUNT(*) FROM commission_referrals r WHERE r.referrer_id=i.user_id AND r.active)::int AS referrals
+         FROM commission_referral_invites i JOIN users u ON u.id=i.user_id
+        WHERE i.active ORDER BY i.created_at DESC`)).rows;
+    return { migrated: true, items: rows.map((r) => ({ id: Number(r.id), user_id: Number(r.user_id), name: r.name, note: r.note || null, created_at: r.created_at_local, referrals: r.referrals })) };
+  });
+
+  app.post('/api/commission/referrals/invites', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden', note: '디렉터만 초대할 수 있습니다.' });
+    if (!(await invitesReady())) return reply.code(503).send({ error: 'migration_required', migration: '0310', note: '서버에서 npm run migrate(0310)를 먼저 실행하세요.' });
+    const uid = Number((req.body || {}).user_id);
+    const u = (await query(`SELECT id, name FROM users WHERE id=$1 AND deleted_at IS NULL AND role IN ('sales','sales_support')`, [uid])).rows[0];
+    if (!u) return reply.code(400).send({ error: 'user_not_found', note: '소개자(A)를 선택하세요.' });
+    if (await isInvited(uid)) return reply.code(409).send({ error: 'already_invited', note: `${u.name} 님은 이미 초대되어 있습니다.` });
+    const note = req.body && req.body.note ? String(req.body.note).trim().slice(0, 300) : null;
+    const r = (await query(`INSERT INTO commission_referral_invites (user_id, note, created_by) VALUES ($1,$2,$3) RETURNING id`, [uid, note, Number(req.ctx.perm.userId)])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `commission_referral_invite:${r.id}`, detail: { user_id: uid } });
+    return { ok: true, id: Number(r.id), user_id: uid, name: u.name };
+  });
+
+  app.delete('/api/commission/referrals/invites/:userId', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    if (!(await invitesReady())) return reply.code(404).send({ error: 'not_found' });
+    const r = (await query(`UPDATE commission_referral_invites SET active=false, revoked_at=now(), revoked_by=$2 WHERE user_id=$1 AND active RETURNING id`, [Number(req.params.userId), Number(req.ctx.perm.userId)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `commission_referral_invite:${r.id}`, detail: { active: false } });
+    return { ok: true };
   });
 
   // 디렉터 승인 — 이후 소개자는 정보를 바꿀 수 없다. 효력일 = 시작일·서류 완비·첫 서명·승인일 중 가장 늦은 날.

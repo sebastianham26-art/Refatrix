@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acuerdo de Comisión · build b1030gd</title>
+<title>Acuerdo de Comisión · build b1030inv</title>
 <style>
   :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
@@ -123,8 +123,9 @@
       <div class="doc-h">
         <div><h1>소개(Referencia) 커미션 계약</h1>
           <div class="ver">커미셔너를 소개한 사람(A)에게 피소개 커미셔너(B)의 완납 매출(IVA 제외) × 계약율 · 효력일 = 시작일·서류 완비일·A 전자서명일·디렉터 승인일 중 가장 늦은 날 · 소개자가 직접 신청한 계약은 [승인] 전까지 효력 없음 · 서명 기록은 수정·삭제 불가</div></div>
-        <button class="btn sm noprint hidden" id="refNewBtn" style="margin-left:auto">+ 소개 계약 등록</button>
+        <button class="btn sm noprint hidden" id="refNewBtn" style="margin-left:auto">+ 소개자 초대</button>
       </div>
+      <div id="invBox"></div>
       <div class="tw"><table style="margin-top:12px"><thead><tr><th>소개자(A) → 피소개(B)</th><th class="r">율</th><th>계약 기간</th><th>서류</th><th>전자서명</th><th>효력일</th><th></th></tr></thead><tbody id="refBoard"></tbody></table></div>
       <div class="msg" id="refBoardMsg"></div>
       <div class="hint" style="margin-top:8px">· <b>서류</b> = 계약서 제2조(B: CSF·주소증빙·신분증·법인은 정관·위임장 / A: CSF·주소증빙·신분증·은행계좌) · <b>링크 복사</b> = A 에게 보낼 서명 페이지 주소 · 조건(율·기간·B 정보)을 바꾸면 A 에게 재서명 요청이 보입니다(지급은 막지 않음). 지급은 커미션 화면의 월 확정·지급(전자결재)에 같이 들어갑니다.</div>
@@ -672,7 +673,8 @@
       if(d.migrated===false){ $('refBoardMsg').className='msg err'; $('refBoardMsg').textContent='소개 커미션 테이블이 없습니다. 서버에서 npm run migrate(0307)를 실행하세요.'; $('refBoard').innerHTML=''; return; }
       window.__refDir=!!d.is_director;
       refBoardItems=d.items||[];
-      if(!refBoardItems.length){ $('refBoard').innerHTML='<tr><td colspan="7" class="hint">등록된 소개 계약이 없습니다.'+(d.is_director?' [+ 소개 계약 등록]으로 추가하세요.':'')+'</td></tr>'; return; }
+      await loadInvites(refBoardItems);
+      if(!refBoardItems.length){ $('refBoard').innerHTML='<tr><td colspan="7" class="hint">아직 소개자가 작성한 계약이 없습니다.'+(d.is_director?' [+ 소개자 초대]로 소개자(A)를 고르면, A 가 로그인해서 B 와 계약 내용을 직접 작성합니다.':'')+'</td></tr>'; return; }
       $('refBoard').innerHTML=refBoardItems.map(x=>{
         const s=SS[x.sign_status]||['','—']; const cur=(x.signatures||[]).find(z=>z.current)||(x.signatures||[])[0];
         const B=(x.referred_info&&x.referred_info.name)||x.referred_user_name;
@@ -897,6 +899,44 @@
     finally{ const b2=$('rsign-'+fid); if(b2){ b2.textContent='전자서명 완료 · Firmar'; syncRef(fid); } }
   }
 
+  // ── 0310 소개자 초대 — 디렉터는 A 만 고른다. B 와 계약 내용은 A 가 직접 작성 ──
+  let invItems=[];
+  async function loadInvites(refs){
+    const box=$('invBox'); if(!box) return;
+    let d; try{ d=await api('/api/commission/referrals/invites').then(r=>r.json()); }catch(e){ d={items:[]}; }
+    if(d.migrated===false){ box.innerHTML='<div class="msg err" style="display:block">서버에서 npm run migrate(0310)를 실행하세요.</div>'; return; }
+    invItems=d.items||[];
+    const waiting=invItems.filter(x=>!x.referrals);
+    box.innerHTML=!invItems.length?'':('<div class="tw"><table style="margin-top:12px"><thead><tr><th>초대한 소개자(A)</th><th>초대일</th><th>진행</th><th></th></tr></thead><tbody>'
+      +invItems.map(x=>'<tr><td><b>'+esc(x.name)+'</b>'+(x.note?' <span class="hint">'+esc(x.note)+'</span>':'')+'</td><td>'+esc(x.created_at)+'</td>'
+        +'<td>'+(x.referrals?('<span class="badge ok">계약 '+x.referrals+'건 작성</span>'):'<span class="badge no">A 가 B·계약 내용 작성 전</span>')+'</td>'
+        +'<td style="white-space:nowrap"><button class="lnk" data-copyref="1">링크 복사</button>'+(window.__refDir?' · <button class="lnk" data-invoff="'+x.user_id+'" data-name="'+esc(x.name)+'" style="color:var(--bad)">초대 취소</button>':'')+'</td></tr>').join('')
+      +'</tbody></table></div>'
+      +(waiting.length?'<div class="hint" style="margin-top:6px">초대받은 소개자가 로그인하면 안내 팝업과 「Registrar datos」가 뜨고, B 계정 선택 · B 회사 정보 · 본인 정보 · 서류 · 서명을 직접 합니다. 끝나면 아래 표에 「승인 대기」로 올라옵니다.</div>':''));
+  }
+  async function openInvite(){
+    const users=await refUsersList();
+    const invited=new Set(invItems.map(x=>x.user_id));
+    const opts=users.filter(u=>!invited.has(u.id)).map(u=>'<option value="'+u.id+'">'+esc(u.name)+(u.team_name?(' · '+esc(u.team_name)):'')+'</option>').join('');
+    openModal('<div class="doc-h"><div><h1>소개자 초대</h1><div class="ver">소개자(A)만 고르세요. 피소개 커미셔너(B)와 계약 내용은 A 가 로그인해서 직접 작성합니다. 디렉터는 마지막에 승인만 합니다.</div></div></div>'
+      +'<div class="dl2"><div class="wide"><label>소개자 (A)</label><select id="invUser"><option value="">— 선택 —</option>'+opts+'</select></div>'
+      +'<div class="wide"><label>메모 (내부 · 선택)</label><input id="invNote" placeholder="예: CDMX 소개 예정"></div></div>'
+      +'<div style="margin-top:14px"><button class="btn" id="invSave" data-invsave="1">초대</button></div><div class="msg" id="invMsg"></div>'
+      +'<div class="hint" style="margin-top:10px">순서: ① 디렉터 초대 → ② A 로그인 · 안내 팝업 → ③ A 가 Registrar datos(B 선택 · B 정보 · 본인 정보) → ④ 서류 · 서명 → ⑤ 디렉터 승인</div>');
+  }
+  async function saveInvite(){
+    const m=$('invMsg'); m.className='msg';
+    const uid=Number($('invUser').value); if(!uid){ m.className='msg err'; m.textContent='소개자(A)를 선택하세요.'; return; }
+    const r=await api('/api/commission/referrals/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid,note:$('invNote').value})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ m.className='msg err'; m.textContent='실패: '+(d.note||d.error||r.status); return; }
+    m.className='msg ok'; m.textContent=d.name+' 님을 초대했습니다. 로그인하면 안내가 뜹니다. [링크 복사]로 주소를 보내도 됩니다.';
+    $('invSave').disabled=true; loadRefBoard();
+  }
+  async function cancelInvite(uid,name){
+    if(!window.confirm(name+' 님의 초대를 취소할까요?\n이미 작성한 계약은 그대로 남고, 새 계약은 작성할 수 없게 됩니다.')) return;
+    await api('/api/commission/referrals/invites/'+uid,{method:'DELETE'}); loadRefBoard();
+  }
   async function approveRef(id){
     if(!window.confirm('이 소개 계약을 승인할까요?\n승인 후에는 소개자가 정보를 고칠 수 없고, 서류·서명이 갖춰져 있으면 오늘부터 효력이 생깁니다.')) return;
     const r=await api('/api/commission/referrals/'+id+'/approve',{method:'POST'}); const d=await r.json().catch(()=>({}));
@@ -933,7 +973,7 @@
   }
 
   document.addEventListener('click',e=>{
-    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove],[data-guide]');
+    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove],[data-guide],[data-invsave],[data-invoff]');
     if(!t) return;
     // 0307 소개 커미션
     if(t.dataset.minenew){ refFormOpen='new'; renderRefMine(); RefGuide.scrollTo($('form-mnew')); return; }
@@ -944,6 +984,8 @@
     if(t.dataset.mineup){ mineUpload(t.dataset.ref, t.dataset.mineup); return; }
     if(t.dataset.minedel){ mineDel(t.dataset.minedel, t.dataset.ref); return; }
     if(t.dataset.refapprove){ approveRef(t.dataset.refapprove); return; }
+    if(t.dataset.invsave){ saveInvite(); return; }
+    if(t.dataset.invoff){ cancelInvite(t.dataset.invoff, t.dataset.name||''); return; }
     if(t.dataset.refflow){ openRefFlow(t.dataset.refflow); return; }
     if(t.dataset.flsave){ saveFlowInfo(t.dataset.flsave); return; }
     if(t.dataset.flowsign){ flowSign(t.dataset.flowsign); return; }
@@ -971,7 +1013,7 @@
   $('backdrop').addEventListener('click',closeModal);
   $('printBtn').addEventListener('click',()=>{ const w=window.open('','_blank'); if(!w) return; w.document.write('<html><head><title>Acuerdo</title><style>'+document.querySelector('style').textContent+'</style></head><body><div class="wrap"><div class="card">'+$('modalBody').innerHTML+'</div></div></body></html>'); w.document.close(); w.focus(); w.print(); });
   $('reloadBoard').addEventListener('click',loadBoard);
-  $('refNewBtn').addEventListener('click',()=>openRefForm(null));
+  $('refNewBtn').addEventListener('click',()=>openInvite());
   $('chk').addEventListener('change',syncSign);
   $('pin').addEventListener('input',syncSign);
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!$('signBtn').disabled) sign(); });

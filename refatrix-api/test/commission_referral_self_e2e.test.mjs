@@ -70,6 +70,7 @@ async function cleanup() {
   await query(`ALTER TABLE commission_referral_signatures ENABLE TRIGGER trg_comm_referral_sig_immutable`);
   await query(`DELETE FROM commission_referral_docs WHERE referral_id IN ${R}`);
   await query(`DELETE FROM commission_referrals WHERE id IN ${R}`);
+  await query(`DELETE FROM commission_referral_invites WHERE user_id IN ${U} OR created_by IN ${U} OR revoked_by IN ${U}`);
   await query(`DELETE FROM audit_log WHERE user_id IN ${U}`);
   await query(`DELETE FROM users WHERE login_id LIKE 'selft%'`);
 }
@@ -88,8 +89,25 @@ test('E0 준비 — 디렉터 · Clarisa(A) · CDMX(B) · 다른 영업 X', { sk
   for (const k of ['dir', 'A', 'B', 'X']) T[k] = app.jwt.sign({ sub: ID[k] });
 });
 
+test('E0b 디렉터는 A 만 초대 — 초대 전에는 신청 불가 · 후보 목록 없음', { skip: SKIP }, async () => {
+  const c0 = await ok('A', 'GET', '/api/commission/referrals/candidates');
+  assert.equal(c0.invited, false); assert.equal(c0.items.length, 0);
+  assert.equal((await call('A', 'POST', '/api/commission/referrals/request', { referred_id: ID.B, referred_info: { name: 'x' } })).body.error, 'not_invited');
+  assert.equal((await call('A', 'POST', '/api/commission/referrals/invites', { user_id: ID.A })).code, 403, '본인 초대 불가');
+  const inv = await ok('dir', 'POST', '/api/commission/referrals/invites', { user_id: ID.A });
+  assert.equal(inv.user_id, ID.A);
+  assert.equal((await call('dir', 'POST', '/api/commission/referrals/invites', { user_id: ID.A })).body.error, 'already_invited');
+  const list = await ok('dir', 'GET', '/api/commission/referrals/invites');
+  assert.ok(list.items.some((x) => x.user_id === ID.A && x.referrals === 0));
+  // X 도 초대했다가 취소 → 신청 불가
+  await ok('dir', 'POST', '/api/commission/referrals/invites', { user_id: ID.X });
+  await ok('dir', 'DELETE', `/api/commission/referrals/invites/${ID.X}`);
+  assert.equal((await ok('X', 'GET', '/api/commission/referrals/candidates')).invited, false);
+});
+
 test('E1 Clarisa 가 직접 신청 — B 선택 · B 정보 · 본인 정보 (율 1% 고정 · 미승인)', { skip: SKIP }, async () => {
   const c = await ok('A', 'GET', '/api/commission/referrals/candidates');
+  assert.equal(c.invited, true);
   assert.ok(c.items.some((u) => u.id === ID.B)); assert.ok(!c.items.some((u) => u.id === ID.A), '본인 제외');
   assert.equal((await call('A', 'POST', '/api/commission/referrals/request', { referred_id: ID.B, referred_info: {} })).body.error, 'name_required');
   assert.equal((await call('A', 'POST', '/api/commission/referrals/request', { referred_id: ID.A, referred_info: { name: 'x' } })).body.error, 'same_user');
@@ -104,6 +122,7 @@ test('E1 Clarisa 가 직접 신청 — B 선택 · B 정보 · 본인 정보 (�
   assert.equal(r.item.docs.items.length, 9, '법인 = 정관·위임장 포함');
   const doc = JSON.stringify(r.item.doc);
   for (const k of ['CDMX Refacciones SA de CV', 'CRE210101AB1', 'Clarisa Martínez López', 'MALC900101AA1', 'Calle Hidalgo 10']) assert.ok(doc.includes(k), k);
+  await ok('dir', 'POST', '/api/commission/referrals/invites', { user_id: ID.X });
   assert.equal((await call('X', 'POST', '/api/commission/referrals/request', { referred_id: ID.B, referred_info: { name: 'x' } })).body.error, 'already_referred');
   // 디렉터 현황판에 승인 대기로 보인다
   const board = await ok('dir', 'GET', '/api/commission/referrals');
