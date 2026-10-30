@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261021lg loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261029es loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -471,7 +471,16 @@
     if(!anchors){ anchors=g.screens.filter(function(k){return !SHARED[k];}); if(!anchors.length) anchors=g.screens; }
     return anchors.some(function(k){return SCREENS[k]&&canSee(k);});
   }
+  // ── 화면이 스페인어로 표시 중이면(html data-ui-lang="es") 메뉴도 스페인어 (2026-10-29) ──
+  //   html lang 속성은 보지 않는다 — 한국어 화면 중에도 lang="es" 로 선언된 파일이 있어서.
+  //   data-ui-lang 은 커미션·합의 화면이 사용자 언어를 정한 뒤 붙이고 __rnavRefresh() 로 다시 그린다.
+  var ES_SCREENS={"salesperf": "Tablero de ventas", "commission": "Comisión", "dashboard": "Tablero", "board": "Agenda", "boardNotice": "Avisos", "boardTodo": "Pendientes", "wbr": "WBR", "daily": "Resumen del día", "quote": "Nueva cotización", "quotelist": "Cotizaciones y ventas", "reservations": "Reservas de inventario", "fieldsurvey": "Inventario en cliente", "fsanalysis": "Análisis de desplazamiento", "orderfunnel": "Flujo de pedidos", "funnel": "Solicitudes de cotización", "funnelImm": "Ventas por confirmar", "funnelShort": "Faltantes y pedidos", "funnelDev": "Por desarrollar", "sales": "Registrar venta", "saleslist": "Ventas", "salesshort": "Faltantes / pedidos", "salesapprove": "Aprobación de ventas", "stock": "Movimientos de inventario", "shortage": "Faltantes", "devrequest": "Solicitud de desarrollo", "pipeline": "Actividad comercial", "consult": "Atención a clientes", "customers": "Clientes", "custTeam": "Equipos de clientes", "custApprove": "Aprobar cambios de cliente", "custReg": "Aprobar altas de cliente", "custClaim": "Transferencia de RFC", "custLeads": "Registros web", "targets": "Metas de venta", "finance": "Finanzas · cuentas", "finNew": "Nuevo movimiento", "finTxn": "Movimientos", "finPay": "Aplicación de pagos", "finFixed": "Gastos fijos", "finCash": "Flujo de efectivo", "finDaily": "Resumen diario", "finFx": "Tipo de cambio", "finReport": "Reporte mensual", "finApprove": "Aprobaciones de finanzas", "settlement": "Cobranza", "grossprofit": "Utilidad bruta", "recost": "Corrección de costo", "budget": "Presupuesto", "importcost": "Costo de importación", "import": "Importaciones", "purchase": "Compras", "purchasereview": "Revisión de compras", "salestrend": "Historial de ventas", "products": "Productos", "vehicleparts": "Piezas por vehículo", "viofinder": "Buscador VIO", "prodFind": "Buscar producto", "prodUpload": "Carga de productos", "prodHistory": "Historial de productos", "priceMaster": "Lista de precios", "marketing": "Marketing", "mktspend": "Gasto de marketing", "survey": "Encuestas", "wapromo": "Marketing por WhatsApp", "metaleads": "Mensajes de Meta", "rnr": "Procesos", "coverage": "Coverage", "devmap": "Development Map", "users": "Usuarios", "integrations": "Integraciones", "catalogApi": "API de catálogo", "apikeys": "Claves externas", "waSched": "Horario de WhatsApp", "company": "Empresa", "processKpi": "KPI de procesos", "portal": "Inicio", "approval": "Aprobaciones", "guiaCom": "Guía del Comisionista", "whHome": "Almacén", "stockcount": "Conteo de inventario", "inbound": "Recepción", "zones": "Zonas", "relocate": "Reubicación", "whmap": "Plano del almacén"};
+  var ES_GROUPS={"common": "General", "sales": "Ventas", "support": "Soporte", "purchase": "Compras", "finance": "Finanzas", "pm": "Producto y marketing", "cal": "Agenda", "warehouse": "Almacén", "admin": "Administración"};
+  function isEs(){ try{ return document.documentElement.getAttribute('data-ui-lang')==='es'; }catch(e){ return false; } }
+  function sName(k){ return (isEs()&&ES_SCREENS[k])||SCREENS[k].name; }
+  function gTitle(g){ return (isEs()&&ES_GROUPS[g.key])||g.title; }
   function render(){
+    var es=isEs();
     var vis=GROUPS.filter(groupVisible);
     var cur=curScreen();
     // 현재 화면이 속한 그룹을 항상 연다(트리 g 힌트 우선). 현재 openGroup이 cur를 포함 안 하면 교정.
@@ -487,20 +496,20 @@
       else if(vis[0]) openGroup=vis[0].key;
     }
     applyEnvFlag();
-    var bar='<div class="rbar"><div class="rbarscroll"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE;
-    vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
+    var bar='<div class="rbar"><div class="rbarscroll"><button type="button" class="rhome" title="'+(es?'Inicio':'포털 홈')+'" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE;
+    vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+gTitle(g)+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
     bar+='</div><div class="rbarright"><span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
-    bar+='<span class="rpres" id="rPresBadge" title="접속 현황 보기" onclick="__rnavPresence()">\uD83D\uDFE2 <span id="rPresN">0</span>명 접속</span>';
-    bar+='<button type="button" class="rmtgl" id="rmTgl" title="모바일/전체보기 전환" onclick="__rnavMobile(!__rnavMobileOn())">\uD83D\uDCF1</button>';
-    bar+='<button type="button" class="rlogout" title="로그아웃" onclick="__rnavLogout()">로그아웃</button></div></div>';
+    bar+='<span class="rpres" id="rPresBadge" title="'+(es?'Usuarios conectados':'접속 현황 보기')+'" onclick="__rnavPresence()">\uD83D\uDFE2 <span id="rPresN">0</span>'+(es?' en línea':'명 접속')+'</span>';
+    bar+='<button type="button" class="rmtgl" id="rmTgl" title="'+(es?'Vista móvil / completa':'모바일/전체보기 전환')+'" onclick="__rnavMobile(!__rnavMobileOn())">\uD83D\uDCF1</button>';
+    bar+='<button type="button" class="rlogout" title="'+(es?'Salir':'로그아웃')+'" onclick="__rnavLogout()">'+(es?'Salir':'로그아웃')+'</button></div></div>';
     // 하위 화면
     var g=vis.find(function(x){return x.key===openGroup;});
     var sub='';
     if(g){ var scr=g.screens.filter(function(k){return SCREENS[k]&&canSee(k);});
       // 중복 제거
       var seen={}; scr=scr.filter(function(k){ if(seen[k])return false; seen[k]=1; return true; });
-      sub='<div class="rsub show">'+scr.map(function(k){ return '<span class="rs'+(k===cur?' cur':'')+'" onclick="__rnav(\''+k+'\',\''+openGroup+'\')" title="'+(SCREENS[k].desc||'')+'">'+SCREENS[k].name+'</span>'; }).join('')+'</div>';
+      sub='<div class="rsub show">'+scr.map(function(k){ return '<span class="rs'+(k===cur?' cur':'')+'" onclick="__rnav(\''+k+'\',\''+openGroup+'\')" title="'+(es?sName(k):(SCREENS[k].desc||''))+'">'+sName(k)+'</span>'; }).join('')+'</div>';
     }
     var el=document.getElementById('rnav');
     el.innerHTML=bar+sub;

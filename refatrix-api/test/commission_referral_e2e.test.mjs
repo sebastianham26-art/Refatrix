@@ -378,6 +378,35 @@ test('E6 B 매출 NC → 다음 달 차감 · 전자결재 문서(소개 커미�
   assert.equal((await ok('fin', 'GET', `/api/commission/payable?agent_id=${ID.A}&settle_ym=${YM2}`)).referral_adjustments.length, 0, '차감은 한 번만');
 });
 
+test('E6b 대면 서명(0308) — 디렉터 화면에서 B 정보 수정 → A 손서명 + A PIN · 디렉터 PIN 거부 · 재무 불가', { skip: SKIP }, async () => {
+  const cur = (await ok('dir', 'GET', `/api/commission/referrals?referrer_id=${ID.A}`)).items[0];
+  // 디렉터가 B 정보를 고침 → 버전 변경 → 재서명 필요
+  const u = await ok('dir', 'PUT', `/api/commission/referrals/${ID.ref}`, { rate: cur.rate, start_date: cur.start_date, end_date: null,
+    referred_info: { ...cur.referred_info, address: 'Av. Reforma 500, Col. Juárez, CDMX, C.P. 06600', legal_rep: 'Lic. Ana Ruiz', persona: 'moral' } });
+  assert.equal(u.item.sign_status, 'changed');
+  assert.equal(u.item.docs.complete, false, '법인으로 바꾸면 정관·위임장이 추가로 필요');
+  const pv = await ok('dir', 'GET', `/api/commission/referrals/${ID.ref}/preview`);
+  assert.match(JSON.stringify(pv.doc), /Av\. Reforma 500/);
+  const u2 = `/api/commission/referrals/${ID.ref}/sign`;
+  const body = { agree: true, version: pv.version, signature: SIG };
+  assert.equal((await call('fin', 'POST', u2, { ...body, pin: '2468' })).code, 403, '재무는 대면 서명 불가');
+  // 디렉터 PIN 이 아니라 A 의 PIN — A 의 PIN 을 바꿔 두고 디렉터 PIN(2468)으로 시도 → 거부
+  const { hashPin } = await import('../src/auth.js');
+  await query(`UPDATE users SET pin_hash=$2 WHERE id=$1`, [ID.A, hashPin('1357')]);
+  const bad = await call('dir', 'POST', u2, { ...body, pin: '2468' });
+  assert.equal(bad.body.error, 'bad_pin'); assert.match(bad.body.note, /RFTESTJuan/);
+  const s = await ok('dir', 'POST', u2, { ...body, pin: '1357' });
+  assert.equal(s.in_person, true); assert.equal(s.version, pv.version);
+  const row = (await query(`SELECT user_id, captured_by FROM commission_referral_signatures WHERE id=$1`, [s.id])).rows[0];
+  assert.equal(Number(row.user_id), ID.A, '서명자는 A'); assert.equal(Number(row.captured_by), ID.dir, '받은 화면 = 디렉터');
+  const g = await ok('A', 'GET', `/api/commission/referrals/signatures/${s.id}`);
+  assert.equal(g.captured_by_name, `${TAG}Sebastian`); assert.equal(g.signer_name, `${TAG}Juan`);
+  assert.equal((await ok('A', 'GET', '/api/commission/referrals/me')).items[0].sign_status, 'signed');
+  // A 의 자기 화면 서명은 captured_by 가 비어 있다(E2)
+  assert.equal((await query(`SELECT captured_by FROM commission_referral_signatures WHERE id=$1`, [ID.sig])).rows[0].captured_by, null);
+  await query(`UPDATE users SET pin_hash=$2 WHERE id=$1`, [ID.A, hashPin('2468')]);
+});
+
 test('E7 조건 변경 → 재서명 필요(지급은 막지 않음) · 해지 → A 화면에서 사라짐', { skip: SKIP }, async () => {
   const cur = (await ok('dir', 'GET', `/api/commission/referrals?referrer_id=${ID.A}`)).items[0];
   const u = await ok('dir', 'PUT', `/api/commission/referrals/${ID.ref}`, { rate: 1.5, start_date: cur.start_date, end_date: null, referred_info: cur.referred_info });

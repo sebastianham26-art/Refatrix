@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acuerdo de Comisión · build b1029ref</title>
+<title>Acuerdo de Comisión · build b1029fl</title>
 <style>
   :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
@@ -309,7 +309,7 @@
 
   // ── 모달 ──
   function openModal(html){ $('modalBody').innerHTML=html; $('backdrop').classList.remove('hidden'); $('modal').classList.remove('hidden'); $('closeModal').focus(); }
-  function closeModal(){ $('backdrop').classList.add('hidden'); $('modal').classList.add('hidden'); }
+  function closeModal(){ $('backdrop').classList.add('hidden'); $('modal').classList.add('hidden'); refFlowOpen=false; }
   async function showDoc(id){
     openModal('<div class="hint">Cargando…</div>');
     const r=await api('/api/commission/agreement/doc/'+id); const d=await r.json();
@@ -524,7 +524,7 @@
     const r=await api('/api/commission/referrals/signatures/'+sid); const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){ $('modalBody').innerHTML='<div class="hint">'+esc(d.error||r.status)+'</div>'; return; }
     $('modalBody').innerHTML=refDocHtml(d.doc,{stamp:['ok','Firmado ✓'],verNote:'firmada el '+d.signed_at+(d.device?(' · '+d.device):'')+(d.ip?(' · IP '+d.ip):''),showDecl:true})
-      +'<div class="sigblock"><div><b>EL REFERIDOR</b><img class="sigimg" alt="Firma" src="'+esc(d.signature)+'">'+esc(d.signer_name)+'<br><span class="hint">Firma autógrafa digitalizada + PIN · '+esc(d.signed_at)+' (Monterrey) · Registro #'+d.id+'</span></div>'
+      +'<div class="sigblock"><div><b>EL REFERIDOR</b><img class="sigimg" alt="Firma" src="'+esc(d.signature)+'">'+esc(d.signer_name)+'<br><span class="hint">Firma autógrafa digitalizada + PIN · '+esc(d.signed_at)+' (Monterrey) · Registro #'+d.id+(d.captured_by_name?(' · firmado en presencia de '+esc(d.captured_by_name)):'')+'</span></div>'
       +'<div><b>REFATRIX</b><div style="height:70px;border-bottom:1px solid #111;margin-top:6px"></div>Nombre y firma del representante</div></div>';
   }
   // ── 디렉터·재무·소시오 현황 ──
@@ -547,7 +547,7 @@
           +'<td>'+(x.docs.complete?'<span class="badge ok">완비 '+esc(x.docs_complete_on||'')+'</span>':'<span class="badge no">'+x.docs.missing+'건 미제출</span>')+'</td>'
           +'<td><span class="badge '+s[0]+'">'+s[1]+'</span>'+(cur?' <span class="hint">'+esc(cur.signed_at)+'</span>':'')+'</td>'
           +'<td>'+(x.effective_from?('<b>'+esc(x.effective_from)+'</b>'):'<span class="hint">효력 없음</span>')+'</td>'
-          +'<td style="white-space:nowrap"><button class="lnk" data-refpv="'+x.id+'">계약서</button>'+(cur?' · <button class="lnk" data-refsig="'+cur.id+'">서명본</button>':'')
+          +'<td style="white-space:nowrap">'+(window.__refDir&&x.active?('<button class="btn sm" data-refflow="'+x.id+'">'+(x.sign_status==='signed'?'진행 현황':'진행·서명')+'</button> '):'')+'<button class="lnk" data-refpv="'+x.id+'">계약서</button>'+(cur?' · <button class="lnk" data-refsig="'+cur.id+'">서명본</button>':'')
           +(window.__refDir&&x.active?(' · <button class="lnk" data-refdocs="'+x.id+'">서류</button> · <button class="lnk" data-refedit="'+x.id+'">수정</button> · <button class="lnk" data-refoff="'+x.id+'" style="color:var(--bad)">해지</button>'):'')
           +(x.active?' · <button class="lnk" data-copyref="1">링크 복사</button>':'')+'</td></tr>';
       }).join('');
@@ -600,7 +600,7 @@
       if(!r.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||r.status); return; }
       m.className='msg ok'; m.textContent='저장했습니다.'+(id&&d.item&&d.item.sign_status==='changed'?' 조건이 바뀌어 A 에게 재서명 요청이 표시됩니다.':' 이제 [서류]를 올리고 A 에게 서명 링크를 보내세요.');
       await loadRefBoard();
-      if(!id&&d.item) setTimeout(()=>openRefDocs(d.item.id),700);
+      if(!id&&d.item) setTimeout(()=>openRefFlow(d.item.id),600);
     }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
     finally{ const b=$('rfSave'); if(b) b.disabled=false; }
   }
@@ -614,7 +614,7 @@
   // ── 서류 (디렉터) ──
   let refDocsId=null;
   async function openRefDocs(id, msg){
-    refDocsId=Number(id);
+    refDocsId=Number(id); refFlowOpen=false;
     const d=await api('/api/commission/referrals?referrer_id=').then(r=>r.json()).catch(()=>({items:[]}));
     const x=(d.items||[]).find(z=>z.id===refDocsId); if(!x){ openModal('<div class="hint">계약을 찾을 수 없습니다.</div>'); return; }
     const files=x.files||[];
@@ -646,14 +646,14 @@
       const r=await api('/api/commission/referrals/'+refDocsId+'/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({party,doc_type:type,file_name:f.name,data_url:dataUrl,issued_date:dd&&dd.value||null})});
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error){ m.className='msg err'; m.textContent='실패: '+(d.note||d.error||r.status); return; }
-      await openRefDocs(refDocsId,['ok','올렸습니다.'+(d.docs_complete_on?(' 서류 완비 — '+d.docs_complete_on):'')]);
+      await refReopen(['ok','올렸습니다.'+(d.docs_complete_on?(' 서류 완비 — '+d.docs_complete_on):'')]);
       loadRefBoard();
     }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
   }
   async function refDocDel(id){
     if(!window.confirm('이 서류를 삭제할까요?\n필수 서류가 빠지면 서류 완비일이 비워지고, 다시 완비될 때까지 새 소개 커미션이 생기지 않습니다.')) return;
     const r=await api('/api/commission/referrals/docs/'+id,{method:'DELETE'}); const d=await r.json().catch(()=>({}));
-    await openRefDocs(refDocsId, r.ok&&!d.error?['ok','삭제했습니다.']:['err','삭제 실패: '+(d.error||r.status)]);
+    await refReopen(r.ok&&!d.error?['ok','삭제했습니다.']:['err','삭제 실패: '+(d.error||r.status)]);
     loadRefBoard();
   }
   async function refDocOpen(id, btn){
@@ -666,6 +666,98 @@
       setTimeout(()=>URL.revokeObjectURL(url),60000);
     }catch(e){}
   }
+  // ══ 0308 소개 계약 진행 (디렉터 화면 · 대면) ══
+  //   ① B 회사 정보 입력 → ② 서류 업로드 → ③ 계약서 확인 + 소개자(A) 손서명 + A 본인 PIN → 전자서명 완료
+  let refFlowOpen=false;
+  function refReopen(msg){ return refFlowOpen ? openRefFlow(refDocsId, msg) : openRefDocs(refDocsId, msg); }
+  function refDocRows(x){
+    const PARTY={referred:'B · '+((x.referred_info&&x.referred_info.name)||x.referred_user_name),referrer:'A · '+x.referrer_name};
+    return x.docs.items.map(it=>{ const k=it.party+'-'+it.type;
+      return '<tr><td>'+esc(PARTY[it.party])+'</td><td>'+esc(it.label_ko)+'<div class="hint">'+esc(it.label_es)+'</div></td>'
+        +'<td>'+(it.ok?'<span class="badge ok">확인 '+esc(it.doc.uploaded_on)+'</span>'+(it.doc.issued_date?' <span class="hint">발급 '+esc(it.doc.issued_date)+'</span>':'')+(it.stale?' <span class="badge no">발급일 기한 초과</span>':'')
+          +' <button class="lnk" data-refopen="'+it.doc.id+'" data-name="'+esc(it.doc.file_name||'')+'">열기</button> · <button class="lnk" data-refdel="'+it.doc.id+'" style="color:var(--bad)">삭제</button>':'<span class="badge no">미제출</span>')+'</td>'
+        +'<td style="white-space:nowrap"><input type="file" id="rdf-'+k+'" accept=".pdf,.jpg,.jpeg,.png,.webp,.docx" style="font-size:12px;width:190px">'
+        +(['csf','domicilio'].includes(it.type)?' <input type="date" id="rdd-'+k+'" title="발급일" style="font-size:12px;padding:4px">':'')
+        +' <button class="btn sm" data-refup="'+k+'">'+(it.ok?'교체':'올리기')+'</button></td></tr>'; }).join('');
+  }
+  async function openRefFlow(id, msg){
+    refDocsId=Number(id); refFlowOpen=true;
+    if($('modal').classList.contains('hidden')) openModal('<div class="hint">불러오는 중…</div>');
+    const r=await api('/api/commission/referrals/'+refDocsId+'/preview'); const x=await r.json().catch(()=>({}));
+    if(!r.ok||x.error){ $('modalBody').innerHTML='<div class="hint">'+esc(x.note||x.error||r.status)+'</div>'; return; }
+    const I=x.referred_info||{}; const B=I.name||x.referred_user_name; const signed=x.sign_status==='signed';
+    const step=(n,t,done)=>'<h2><span class="n" style="'+(done?'background:var(--ok)':'')+'">'+(done?'✓':n)+'</span> '+t+'</h2>';
+    let h='<div class="doc-h"><div><h1>소개 계약 진행 · '+esc(x.referrer_name)+' → '+esc(B)+'</h1>'
+      +'<div class="ver">ERP 계정 '+esc(x.referrer_name)+'(A) → '+esc(x.referred_user_name)+'(B) · '+x.rate+'% · '+esc(x.start_date)+' ~ '+esc(x.end_date||'∞')+' · 계약서 버전 #'+esc(x.version)+'</div></div>'
+      +'<span class="stamp '+(x.effective_from?'ok':'no')+'">'+(x.effective_from?('효력 '+esc(x.effective_from)):'효력 없음')+'</span></div>'
+      +'<div class="msg" id="flMsg"></div>';
+    // ① B 정보
+    h+=step(1,'피소개 커미셔너(B) 회사 정보 — 계약서 제1조 표', !!I.name&&!!I.rfc&&!!I.address)
+      +'<div class="dl2">'
+      +'<div><label>B 구분</label><select id="flPersona"><option value="fisica"'+(I.persona!=='moral'?' selected':'')+'>개인(persona física)</option><option value="moral"'+(I.persona==='moral'?' selected':'')+'>법인(persona moral) — 정관·위임장 필요</option></select></div>'
+      +'<div class="wide"><label>성명 / 상호 (razón social)</label><input id="flName" value="'+esc(I.name||'')+'"></div>'
+      +'<div><label>RFC</label><input id="flRfc" value="'+esc(I.rfc||'')+'"></div>'
+      +'<div><label>전화 / WhatsApp</label><input id="flPhone" value="'+esc(I.phone||'')+'"></div>'
+      +'<div class="wide"><label>주소 (상세 · domicilio fiscal)</label><input id="flAddr" value="'+esc(I.address||'')+'"></div>'
+      +'<div><label>이메일</label><input id="flEmail" value="'+esc(I.email||'')+'"></div>'
+      +'<div><label>법정대리인 (법인)</label><input id="flRep" value="'+esc(I.legal_rep||'')+'"></div>'
+      +'<div><label>소개 커미션율 (%)</label><input id="flRate" type="number" step="0.01" min="0" max="100" value="'+esc(x.rate)+'"></div>'
+      +'<div><label>계약 시작일</label><input id="flStart" type="date" value="'+esc(x.start_date)+'"></div>'
+      +'<div><label>계약 종료일 (비우면 1년 자동갱신)</label><input id="flEnd" type="date" value="'+esc(x.end_date||'')+'"></div>'
+      +'</div><div style="margin-top:10px"><button class="btn sm" data-flsave="'+x.id+'">정보 저장</button>'
+      +(signed?' <span class="hint">서명 후 정보를 바꾸면 계약서 버전이 바뀌어 A 의 재서명이 필요합니다.</span>':'')+'</div>';
+    // ② 서류
+    h+=step(2,'제출 서류 — 계약서 제2조 ('+(x.docs.complete?('완비 '+esc(x.docs_complete_on||'')):(x.docs.missing+'건 미제출'))+')', x.docs.complete)
+      +'<div class="tw"><table><thead><tr><th>대상</th><th>서류</th><th>상태</th><th>올리기</th></tr></thead><tbody>'+refDocRows(x)+'</tbody></table></div>'
+      +'<div class="msg" id="rdMsg"></div>';
+    // ③ 계약서 + 서명
+    h+=step(3,'계약서 확인 · '+esc(x.referrer_name)+'(A) 전자서명', signed)
+      +'<details'+(signed?'':' open')+' style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;max-height:340px;overflow:auto"><summary style="cursor:pointer;font-weight:700;color:var(--brand)">계약서 전문 (스페인어 · A 에게 보여 주세요)</summary>'+refDocHtml(x.doc,{verNote:'condiciones actuales del ERP'})+'</details>';
+    if(signed){
+      const cur=(x.signatures||[]).find(z=>z.current)||(x.signatures||[])[0];
+      h+='<div class="done"><b>✓ 전자서명 완료</b> — '+esc(cur.signed_at)+' (몬테레이) · 버전 #'+esc(cur.version)+(cur.device?(' · '+esc(cur.device)):'')+' · <button class="lnk" data-refsig="'+cur.id+'">서명본 보기 / 인쇄</button></div>';
+    } else {
+      const fid='f'+x.id;
+      h+='<div class="sign" style="margin-top:12px">'
+        +(I.name?'':'<div class="msg err" style="display:block;margin:0 0 10px">먼저 ① B 정보(성명/상호)를 저장하세요.</div>')
+        +'<label class="fl">'+esc(x.referrer_name)+' 님이 직접 서명 (손가락·마우스) · Firma de EL REFERIDOR</label><canvas class="sigpad" id="sig-'+fid+'"></canvas>'
+        +'<div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn ghost sm" data-sigclear="'+fid+'">서명 지우기</button></div>'
+        +'<label class="chk" style="margin-top:12px"><input type="checkbox" id="rchk-'+fid+'"> <span>'+md(x.doc.declaration)+'</span></label>'
+        +'<div class="pinrow"><div><label for="rpin-'+fid+'">'+esc(x.referrer_name)+' 님의 ERP PIN · PIN de EL REFERIDOR</label><input type="password" inputmode="numeric" autocomplete="off" placeholder="••••" id="rpin-'+fid+'"></div>'
+        +'<button class="btn" id="rsign-'+fid+'" data-flowsign="'+x.id+'" disabled>전자서명 완료 · Firmar</button></div>'
+        +'<div class="hint" style="margin-top:8px">A 본인이 서명하고 <b>A 의 PIN</b> 을 입력합니다(디렉터 PIN 아님). 서명 이미지·시각·버전·IP·기기와 「디렉터 화면에서 대면 서명」이 기록되며 수정·삭제할 수 없습니다.</div>'
+        +'<div class="msg" id="rmsg-'+fid+'"></div></div>';
+    }
+    $('modalBody').innerHTML=h;
+    if(msg){ const m=$('rdMsg'); if(m){ m.className='msg '+msg[0]; m.textContent=msg[1]; } }
+    if(!signed) initPad('f'+x.id);
+    window.__flow=x;
+  }
+  async function saveFlowInfo(id){
+    const m=$('flMsg'); m.className='msg';
+    const body={rate:$('flRate').value,start_date:$('flStart').value,end_date:$('flEnd').value||null,note:(refBoardItems.find(z=>z.id===Number(id))||{}).note||null,
+      referred_info:{name:$('flName').value,rfc:$('flRfc').value,address:$('flAddr').value,phone:$('flPhone').value,email:$('flEmail').value,legal_rep:$('flRep').value,persona:$('flPersona').value}};
+    const r=await api('/api/commission/referrals/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||r.status); return; }
+    await openRefFlow(id); const m2=$('flMsg'); if(m2){ m2.className='msg ok'; m2.textContent='B 정보를 저장했습니다. 계약서 제1조 표에 반영됐습니다.'; }
+    loadRefBoard();
+  }
+  async function flowSign(id){
+    const x=window.__flow; if(!x||x.id!==Number(id)) return;
+    const fid='f'+id, m=$('rmsg-'+fid); m.className='msg';
+    if(!(x.referred_info&&x.referred_info.name)){ m.className='msg err'; m.textContent='먼저 ① B 정보(성명/상호)를 저장하세요.'; return; }
+    const b=$('rsign-'+fid); b.disabled=true; b.textContent='확인 중…';
+    try{
+      const r=await api('/api/commission/referrals/'+id+'/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:$('rpin-'+fid).value,version:x.version,agree:$('rchk-'+fid).checked,signature:padPng(fid)})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error){ m.className='msg err'; m.textContent=d.note||('실패: '+(d.error||r.status)); $('rpin-'+fid).value='';
+        if(d.error==='version_changed'){ await openRefFlow(id); } return; }
+      await openRefFlow(id); loadRefBoard();
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ const b2=$('rsign-'+fid); if(b2){ b2.textContent='전자서명 완료 · Firmar'; syncRef(fid); } }
+  }
+
   async function copyRefLink(btn){
     const url=location.origin+location.pathname+'#referrals';
     try{ await navigator.clipboard.writeText(url); btn.textContent='복사됨 ✓'; }
@@ -684,6 +776,7 @@
       renderRefMine();
       if(!me.is_agent && !me.see_all && !(refMe.items||[]).length) $('notAgent').classList.remove('hidden');
       document.documentElement.lang = me.see_all && !me.is_agent && !(refMe.items||[]).length ? 'ko' : 'es';
+      try{ document.documentElement.setAttribute('data-ui-lang', document.documentElement.lang); if(window.__rnavRefresh) window.__rnavRefresh(); }catch(e){}   // 메뉴 언어
       if(location.hash==='#referrals'){ const t=(refMe.items||[]).length?$('refView'):$('referrals'); if(t) setTimeout(()=>window.scrollTo({top:t.offsetTop-10,behavior:'smooth'}),60); }
     }catch(e){
       session=null; try{ sessionStorage.removeItem('refatrix_session'); }catch(_){}
@@ -692,9 +785,12 @@
   }
 
   document.addEventListener('click',e=>{
-    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen]');
+    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign]');
     if(!t) return;
     // 0307 소개 커미션
+    if(t.dataset.refflow){ openRefFlow(t.dataset.refflow); return; }
+    if(t.dataset.flsave){ saveFlowInfo(t.dataset.flsave); return; }
+    if(t.dataset.flowsign){ flowSign(t.dataset.flowsign); return; }
     if(t.dataset.refsign){ refSign(t.dataset.refsign); return; }
     if(t.dataset.sigclear){ const p=PADS[t.dataset.sigclear]; if(p&&p.fit) p.fit(); return; }
     if(t.dataset.refsig){ showRefSig(t.dataset.refsig); return; }
@@ -732,6 +828,6 @@
   else { $('loading').classList.add('hidden'); $('loginCard').classList.remove('hidden'); }
 })();
 </script>
-<script src="refatrix-nav.js?v=20261021lg"></script>
+<script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>

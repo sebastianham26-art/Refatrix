@@ -54,6 +54,16 @@ async function refOut(ref, perm, { withDoc = false } = {}) {
   return out;
 }
 
+// 0308 captured_by 열(대면 서명) 적용 여부 — 60초 캐시
+let _capReady = { v: null, at: 0 };
+async function capturedReady() {
+  if (_capReady.v === true) return true;
+  if (_capReady.v === false && Date.now() - _capReady.at < 60000) return false;
+  const r = await query(`SELECT 1 FROM information_schema.columns WHERE table_name='commission_referral_signatures' AND column_name='captured_by'`);
+  _capReady = { v: r.rows.length > 0, at: Date.now() };
+  return _capReady.v;
+}
+
 // 이 사람이 이 계약을 볼 수 있나: 전체열람자 또는 소개자 본인
 const canView = (perm, ref) => canSeeAll(perm) || Number(perm.userId) === ref.referrer_id;
 
@@ -207,13 +217,18 @@ export default async function commissionReferralRoutes(app) {
     return { migrated: true, items };
   });
 
-  // ── 전자서명 (소개자 본인 · 손서명 + PIN) ──
+  // ── 전자서명 (손서명 + 소개자 PIN) ──
+  //   · 소개자 본인 화면: 본인이 서명 + 본인 PIN
+  //   · 디렉터 화면(대면 · 0308): 같은 기기에서 소개자가 서명 + **소개자 PIN**. captured_by = 디렉터.
   app.post('/api/commission/referrals/:id/sign', { preHandler: [authGuard], bodyLimit: 1024 * 1024 }, async (req, reply) => {
-    const perm = req.ctx.perm; const uid = Number(perm.userId);
+    const perm = req.ctx.perm; const me = Number(perm.userId);
     if (!(await referralsReady())) return reply.code(503).send(MIG);
     const ref = await loadReferral(req.params.id);
     if (!ref || !ref.active) return reply.code(404).send({ error: 'not_found', note: 'Contrato no encontrado.' });
-    if (ref.referrer_id !== uid) return reply.code(403).send({ error: 'forbidden', note: 'Solo EL REFERIDOR puede firmar este contrato.' });
+    const inPerson = ref.referrer_id !== me;
+    if (inPerson && !isDirector(perm)) return reply.code(403).send({ error: 'forbidden', note: 'Solo EL REFERIDOR puede firmar este contrato.' });
+    if (inPerson && !(await capturedReady())) return reply.code(503).send({ error: 'migration_required', migration: '0308', note: '서버에서 npm run migrate(0308)를 먼저 실행하세요.' });
+    const uid = ref.referrer_id;   // 서명자 = 항상 소개자(A)
     const b = req.body || {};
     if (b.agree !== true) return reply.code(400).send({ error: 'agree_required', note: 'Marca la casilla de aceptación.' });
     const sig = decodeSignature(b.signature);
@@ -221,36 +236,42 @@ export default async function commissionReferralRoutes(app) {
     const { terms, hash, doc } = await currentDoc(ref);
     if (String(b.version || '') !== hash) return reply.code(409).send({ error: 'version_changed', version: hash, note: 'El contrato cambió mientras lo leías. Revisa la nueva versión y firma de nuevo.' });
     if (tooManyFails(uid)) return reply.code(429).send({ error: 'too_many_attempts', note: 'Demasiados intentos con PIN incorrecto. Intenta de nuevo en 15 minutos.' });
-    const me = (await query(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [uid])).rows[0];
-    if (!me || !verifyPin(String(b.pin || ''), me.pin_hash)) {
+    const signer = (await query(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [uid])).rows[0];
+    if (!signer || !verifyPin(String(b.pin || ''), signer.pin_hash)) {
       noteFail(uid);
-      await logEvent({ userId: uid, action: 'create', target: `commission_referral_sign:${ref.id}`, detail: { reason: 'bad_pin', version: hash }, result: 'denied' });
-      return reply.code(403).send({ error: 'bad_pin', note: 'PIN incorrecto.' });
+      await logEvent({ userId: me, action: 'create', target: `commission_referral_sign:${ref.id}`, detail: { reason: 'bad_pin', version: hash, signer: uid, in_person: inPerson }, result: 'denied' });
+      return reply.code(403).send({ error: 'bad_pin', note: inPerson ? `${ref.referrer_name} 님의 PIN 이 아닙니다. (PIN incorrecto)` : 'PIN incorrecto.' });
     }
     const ua = String(req.headers['user-agent'] || '').slice(0, 300);
+    const cols = inPerson ? ', captured_by' : '';
+    const vals = inPerson ? ',$9' : '';
+    const args = [ref.id, uid, hash, JSON.stringify(terms), JSON.stringify(doc), sig.dataUrl, req.ip || null, ua || null];
+    if (inPerson) args.push(me);
     const r = (await query(
-      `INSERT INTO commission_referral_signatures (referral_id, user_id, version_hash, terms, doc, signature_png, ip, user_agent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING id, to_char(signed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS signed_at_local`,
-      [ref.id, uid, hash, JSON.stringify(terms), JSON.stringify(doc), sig.dataUrl, req.ip || null, ua || null])).rows[0];
+      `INSERT INTO commission_referral_signatures (referral_id, user_id, version_hash, terms, doc, signature_png, ip, user_agent${cols})
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8${vals})
+       RETURNING id, to_char(signed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS signed_at_local`, args)).rows[0];
     fails.delete(uid);
-    await logEvent({ userId: uid, action: 'create', target: `commission_referral_sign:${r.id}`, detail: { referral_id: ref.id, version: hash, kind: 'signature_pin' } });
-    return { ok: true, id: Number(r.id), version: hash, signed_at: r.signed_at_local, device: deviceLabel(ua) };
+    await logEvent({ userId: me, action: 'create', target: `commission_referral_sign:${r.id}`, detail: { referral_id: ref.id, version: hash, kind: inPerson ? 'signature_pin_in_person' : 'signature_pin', signer: uid } });
+    return { ok: true, id: Number(r.id), version: hash, signed_at: r.signed_at_local, device: deviceLabel(ua), in_person: inPerson };
   });
 
   // ── 서명 원문(스냅샷 + 손서명) — 소개자 본인 또는 전체열람자 ──
   app.get('/api/commission/referrals/signatures/:sigId', { preHandler: [authGuard] }, async (req, reply) => {
     if (!(await referralsReady())) return reply.code(404).send({ error: 'not_found' });
     const perm = req.ctx.perm;
+    const cap = await capturedReady();
     const s = (await query(
       `SELECT s.id, s.referral_id, s.user_id, s.version_hash, s.doc, s.signature_png, s.ip, s.user_agent,
               to_char(s.signed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS signed_at_local, u.name AS signer_name
-         FROM commission_referral_signatures s JOIN users u ON u.id=s.user_id WHERE s.id=$1`, [Number(req.params.sigId)])).rows[0];
+              ${cap ? ', cu.name AS captured_by_name' : ''}
+         FROM commission_referral_signatures s JOIN users u ON u.id=s.user_id
+         ${cap ? 'LEFT JOIN users cu ON cu.id=s.captured_by' : ''} WHERE s.id=$1`, [Number(req.params.sigId)])).rows[0];
     if (!s) return reply.code(404).send({ error: 'not_found' });
     if (!canSeeAll(perm) && Number(s.user_id) !== Number(perm.userId)) return reply.code(403).send({ error: 'forbidden' });
     return {
       id: Number(s.id), referral_id: Number(s.referral_id), version: s.version_hash, signed_at: s.signed_at_local,
-      signer_name: s.signer_name, device: deviceLabel(s.user_agent), ip: canSeeAll(perm) ? s.ip : null,
+      signer_name: s.signer_name, captured_by_name: s.captured_by_name || null, device: deviceLabel(s.user_agent), ip: canSeeAll(perm) ? s.ip : null,
       doc: s.doc, signature: s.signature_png,
     };
   });

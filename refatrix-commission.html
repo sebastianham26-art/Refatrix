@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1029ref</title>
+<title>Refatrix ERP · 커미션 · build b1029es</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -119,17 +119,23 @@
   .dtl-tools{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<style>
+  /* 숨김 링크 버튼: a.btn{display:inline-block} 이 .hidden 을 이기던 문제 (조건 합의·소개 계약 버튼이 모두에게 보임) */
+  a.btn.hidden{display:none}
+  /* 좁은 머리글에서 단어가 중간에 끊기지 않게 (Met a · Cumplimien to) */
+  #perfBody th,#dtlBody th,#body th{overflow-wrap:normal;word-break:keep-all}
+</style>
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1006ctr</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1006ctr</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
-    <div class="card-h">로그인</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
-    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="card-h" data-es="Entrar">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label data-es="Usuario">아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px" data-es="Entrar">로그인</button>
     <div class="msg" id="loginMsg"></div>
-    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+    <div class="api"><span data-es="Servidor (API)">서버 주소(API)</span><input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
   </div>
 
   <div class="hidden" id="app">
@@ -140,10 +146,11 @@
           <select id="agentSel"><option value="">전체 (영업사원별 요약)</option></select>
         </div>
         <div id="topWho" class="hint" style="align-self:center"></div>
-        <button class="btn ghost sm" onclick="reloadAll()" style="margin-left:auto">새로고침</button>
+        <button class="btn ghost sm" onclick="reloadAll()" style="margin-left:auto" data-es="Actualizar">새로고침</button>
+        <button class="btn ghost sm" id="langBtn" type="button" title="Idioma · 언어">ES | 한</button>
         <button class="btn ghost sm hidden" id="rateBtn" onclick="openRates()">커미션 설정</button>
         <button class="btn ghost sm hidden" id="bonusBtn" onclick="openBonus()">성과급(Bono) 설정</button>
-        <a class="btn ghost sm hidden" id="agreeBtn" href="refatrix-acuerdo-comision.html" style="text-decoration:none">조건 합의 현황</a>
+        <a class="btn ghost sm hidden" id="agreeBtn" href="refatrix-acuerdo-comision.html" style="text-decoration:none" data-es="Acuerdo y contratos">조건 합의 현황</a>
         <a class="btn ghost sm hidden" id="refBtn" href="refatrix-acuerdo-comision.html#referrals" style="text-decoration:none">소개 계약</a>
       </div>
     </div>
@@ -152,37 +159,37 @@
     <div class="card hidden" id="agreeBanner" style="background:#FBEFD6;border-color:#F0D9A8">
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <div style="flex:1;min-width:220px"><b id="agreeTitle">Tienes condiciones de comisión pendientes de aceptar</b>
-          <div class="hint" id="agreeSub">Revisa tus condiciones y acéptalas con tu PIN. · 커미션 조건을 확인하고 본인 PIN 으로 합의해 주세요.</div></div>
+          <div class="hint" id="agreeSub" data-es="Revisa tus condiciones y acéptalas con tu PIN.">Revisa tus condiciones y acéptalas con tu PIN. · 커미션 조건을 확인하고 본인 PIN 으로 합의해 주세요.</div></div>
         <a class="btn" href="refatrix-acuerdo-comision.html" style="text-decoration:none">Revisar y aceptar ›</a>
       </div>
     </div>
 
     <!-- ⓪-b 이번 달 진척 — 매출목표 대비 매출 / 수금목표 대비 수금 -->
     <div class="card" id="progCard">
-      <div class="card-h">이번 달 진척 <span class="hint" style="font-weight:400" id="progHead"></span></div>
-      <div id="progBody"><div class="hint">불러오는 중…</div></div>
+      <div class="card-h"><span data-es="Avance del mes">이번 달 진척</span> <span class="hint" style="font-weight:400" id="progHead"></span></div>
+      <div id="progBody"><div class="hint" data-es="Cargando…">불러오는 중…</div></div>
     </div>
 
     <!-- ⓪-c 실적 조회 — 월별 정산 / 고객별 / 인보이스별 -->
     <div class="card" id="perfCard">
-      <div class="card-h">실적 조회 <span class="hint" style="font-weight:400">· 매출목표 대비 매출 · 수금목표 대비 수금 · 커미션 · 성과급</span></div>
+      <div class="card-h" data-es="Mis resultados &lt;span class=&quot;hint&quot; style=&quot;font-weight:400&quot;&gt;· venta contra meta · cobranza contra meta · comisión · bono&lt;/span&gt;">실적 조회 <span class="hint" style="font-weight:400">· 매출목표 대비 매출 · 수금목표 대비 수금 · 커미션 · 성과급</span></div>
       <div class="filters">
-        <div><label>시작월</label><input type="month" id="pFrom" style="width:150px"></div>
-        <div><label>종료월</label><input type="month" id="pTo" style="width:150px"></div>
-        <div><label>고객</label><select id="pCust" style="width:220px"><option value="">전체 고객</option></select></div>
+        <div><label data-es="Desde">시작월</label><input type="month" id="pFrom" style="width:150px"></div>
+        <div><label data-es="Hasta">종료월</label><input type="month" id="pTo" style="width:150px"></div>
+        <div><label data-es="Cliente">고객</label><select id="pCust" style="width:220px"><option value="" data-es="Todos los clientes">전체 고객</option></select></div>
         <div class="toggle" id="perfView" style="margin-left:auto">
-          <button data-v="month" class="on">월별</button>
-          <button data-v="customer">고객별</button>
-          <button data-v="invoice">인보이스</button>
+          <button data-v="month" class="on" data-es="Por mes">월별</button>
+          <button data-v="customer" data-es="Por cliente">고객별</button>
+          <button data-v="invoice" data-es="Facturas">인보이스</button>
         </div>
       </div>
-      <div id="perfBody"><div class="hint" style="margin-top:12px">불러오는 중…</div></div>
+      <div id="perfBody"><div class="hint" style="margin-top:12px" data-es="Cargando…">불러오는 중…</div></div>
       <div class="sbrow" id="perfSum" style="margin-top:12px"></div>
     </div>
 
     <!-- 0307 소개 커미션 — 소개자(A) 본인 / 전체열람자는 영업사원 선택 시 -->
     <div class="card hidden" id="refCard">
-      <div class="card-h">Comisión por referencia <span class="hint" style="font-weight:400">· 소개 커미션 · 소개한 커미셔너의 매출·수금·고객 (조회 전용)</span>
+      <div class="card-h">Comisión por referencia <span class="hint" style="font-weight:400" data-es="· ventas, cobranza y clientes del comisionista que referiste (solo consulta)">· 소개 커미션 · 소개한 커미셔너의 매출·수금·고객 (조회 전용)</span>
         <a class="btn ghost sm hidden" id="refAdminBtn" href="refatrix-acuerdo-comision.html#referrals" style="margin-left:auto">소개 계약 관리</a></div>
       <div id="refBody"><div class="hint">Cargando…</div></div>
     </div>
@@ -195,32 +202,32 @@
 
     <!-- ⓪-b 내 커미션 조건 (영업사원 본인만) -->
     <div class="card hidden" id="myCondCard">
-      <div class="card-h">내 커미션 조건 <span class="hint" style="font-weight:400">· 기간별 기준(매출/수금)·지급률 · 디렉터가 설정</span></div>
-      <div id="myCondBody"><div class="hint">불러오는 중…</div></div>
+      <div class="card-h" data-es="Mis condiciones de comisión &lt;span class=&quot;hint&quot; style=&quot;font-weight:400&quot;&gt;· base (venta/cobranza) y tasa por vigencia · las registra la Dirección&lt;/span&gt;">내 커미션 조건 <span class="hint" style="font-weight:400">· 기간별 기준(매출/수금)·지급률 · 디렉터가 설정</span></div>
+      <div id="myCondBody"><div class="hint" data-es="Cargando…">불러오는 중…</div></div>
     </div>
 
     <!-- ① 커미션 내역 -->
     <div class="card">
-      <div class="card-h">커미션 내역
+      <div class="card-h" data-es="Detalle de comisiones &lt;span class=&quot;hint&quot; style=&quot;font-weight:400&quot;&gt;· sobre venta sin IVA · por venta = se confirma al facturar / por cobranza = al liquidar la factura (por fecha de cobro, solo cobros en vigencia) · se paga el día 15 del mes siguiente&lt;/span&gt;">커미션 내역
         <span class="hint" style="font-weight:400">· 매출액(ex-IVA) 기준 · 매출기준=발행 즉시 확정 / 수금기준=반제완납 시 확정(수금일 기준이면 기간 안 수금분만) · 익월 15일 지급</span>
       </div>
       <div class="agentbar">
         <div class="toggle" id="viewToggle">
-          <button data-v="customer" class="on">고객별</button>
-          <button data-v="month">월별</button>
-          <button data-v="all">전체</button>
+          <button data-v="customer" class="on" data-es="Por cliente">고객별</button>
+          <button data-v="month" data-es="Por mes">월별</button>
+          <button data-v="all" data-es="Todo">전체</button>
         </div>
         <div class="toggle" id="statusToggle">
-          <button data-s="all" class="on">전체</button>
-          <button data-s="unpaid">미지급</button>
-          <button data-s="paid">지급완료</button>
+          <button data-s="all" class="on" data-es="Todas">전체</button>
+          <button data-s="unpaid" data-es="Por pagar">미지급</button>
+          <button data-s="paid" data-es="Pagadas">지급완료</button>
         </div>
-        <span class="hint" style="margin-left:auto">인보이스 단위 커미션 상세</span>
+        <span class="hint" style="margin-left:auto" data-es="Comisión por factura">인보이스 단위 커미션 상세</span>
       </div>
       <div class="msg" id="msg"></div>
       <div class="sbrow" id="summary"></div>
       <div id="agentSummary"></div>
-      <div id="body"><div class="hint" style="margin-top:12px">불러오는 중…</div></div>
+      <div id="body"><div class="hint" style="margin-top:12px" data-es="Cargando…">불러오는 중…</div></div>
     </div>
 
     <!-- ② 재무 지급(반제) 패널 — 디렉터·재무담당 -->
@@ -244,8 +251,8 @@
 
     <!-- ③ 지급 전표 내역 -->
     <div class="card" id="voucherCard">
-      <div class="card-h">지급 전표 내역 <span class="hint" style="font-weight:400">· 송금액·반제충당·증빙</span></div>
-      <div id="voucherBody"><div class="hint">불러오는 중…</div></div>
+      <div class="card-h" data-es="Mis pagos de comisión &lt;span class=&quot;hint&quot; style=&quot;font-weight:400&quot;&gt;· monto · aplicado · comprobante&lt;/span&gt;">지급 전표 내역 <span class="hint" style="font-weight:400">· 송금액·반제충당·증빙</span></div>
+      <div id="voucherBody"><div class="hint" data-es="Cargando…">불러오는 중…</div></div>
     </div>
   </div>
 </div>
@@ -279,8 +286,8 @@
 <div class="hidden" id="dtlBackdrop" style="position:fixed;inset:0;background:rgba(20,20,18,.5);z-index:9998"></div>
 <div class="card hidden" id="dtlModal" role="dialog" aria-modal="true" aria-labelledby="dtlTitle">
   <div class="dh">
-    <div style="flex:1;min-width:0"><div class="dt" id="dtlTitle">상세</div><div class="dsub" id="dtlSub"></div></div>
-    <button class="btn ghost sm" id="dtlClose">닫기 ✕</button>
+    <div style="flex:1;min-width:0"><div class="dt" id="dtlTitle" data-es="Detalle">상세</div><div class="dsub" id="dtlSub"></div></div>
+    <button class="btn ghost sm" id="dtlClose" data-es="Cerrar ✕">닫기 ✕</button>
   </div>
   <div id="dtlPush"></div>
   <div class="dtl-tools" id="dtlTools"></div>
@@ -306,7 +313,25 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtm=(n)=> '$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const basisKo=(b)=> b==='revenue'?'매출':'수금';
+  // ── 화면 언어 (2026-10-29) — 디렉터·재무·소시오 = 한국어 / 그 외(영업·커미셔너) = 스페인어. 상단 ES|한 버튼으로 바꾸면 저장 ──
+  const LANG_SEE_ALL=['director','treasury','socio'];
+  function pickLang(role){
+    try{ const p=localStorage.getItem('rfx_lang_commission'); if(p==='es'||p==='ko') return p; }catch(e){}
+    if(role) return LANG_SEE_ALL.includes(role)?'ko':'es';
+    try{ const o=JSON.parse(sessionStorage.getItem('refatrix_session')||localStorage.getItem('refatrix_session')||'null'); const r=o&&o.user&&o.user.role; if(r) return LANG_SEE_ALL.includes(r)?'ko':'es'; }catch(e){}
+    return 'ko';
+  }
+  let LANG=pickLang();
+  function applyStaticLang(){
+    try{ document.documentElement.lang = LANG==='es'?'es':'ko'; document.documentElement.setAttribute('data-ui-lang', LANG); if(window.__rnavRefresh) window.__rnavRefresh(); }catch(e){}
+    document.querySelectorAll('[data-es]').forEach(el=>{
+      if(!el.hasAttribute('data-ko')) el.setAttribute('data-ko', el.innerHTML);
+      el.innerHTML = LANG==='es' ? el.getAttribute('data-es') : el.getAttribute('data-ko');
+    });
+    try{ document.title = LANG==='es' ? document.title.replace('커미션','Comisión') : document.title.replace('Comisión','커미션'); }catch(e){}
+  }
+  const L=(ko,es)=> LANG==='es'?es:ko;
+  const basisKo=(b)=> b==='revenue'?L('매출','venta'):L('수금','cobranza');
   function periodSummary(a){
     const ps=a.periods||[];
     if(!ps.length) return (a.default_rate!=null?a.default_rate+'%':'미설정');
@@ -328,16 +353,17 @@
   async function login(){
     const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
     const m=$('loginMsg');m.className='msg';
-    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
-    $('go').disabled=true;$('go').textContent='확인 중…';
+    if(!login_id||!pin){m.className='msg err';m.textContent=L('아이디와 PIN을 입력하세요.','Escribe tu usuario y PIN.');return;}
+    $('go').disabled=true;$('go').textContent=L('확인 중…','Verificando…');
     try{
       let d,res={ok:true};const ps=portalSession();
       if(ps&&ps.token){d={token:ps.token,user:ps.user};}
       else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
-      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      if(!res.ok||d.error){m.className='msg err';m.textContent=L('로그인 실패: ','No se pudo entrar: ')+(d.error||res.status);return;}
       session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      LANG=pickLang(session.user&&session.user.role); applyStaticLang();   // 화면 언어(영업·커미셔너 = 스페인어)
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
-      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(LANG==='es'?({sales:'Ventas',sales_support:'Soporte de ventas',warehouse:'Almacén'}[d.user?.role]||d.user?.role||'-'):(d.user?.role||'-'));
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       if(canSeeAll()){ $('agentPick').classList.remove('hidden'); $('batchCard').classList.remove('hidden'); loadAgents(); loadBatches(); }
       else { $('myCondCard').classList.remove('hidden'); loadMyPeriods(); }
@@ -347,13 +373,13 @@
       if(canSeeAll()){ $('refBtn').classList.remove('hidden'); $('refAdminBtn').classList.remove('hidden'); }
       loadAgreeBanner();
       loadReferrals();
-      if(!canSeeAll()) $('topWho').textContent='본인 실적만 조회됩니다.';
+      if(!canSeeAll()) $('topWho').textContent=L('본인 실적만 조회됩니다.','Solo se muestran tus resultados.');
       initPerfFilters();
       loadProgress(); loadPerf();
       loadOverview();
       loadVouchers('');
-    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
-    finally{$('go').disabled=false;$('go').textContent='로그인';}
+    }catch(e){m.className='msg err';m.textContent=L('서버에 연결할 수 없습니다.','No hay conexión con el servidor.');}
+    finally{$('go').disabled=false;$('go').textContent=L('로그인','Entrar');}
   }
 
   // 디렉터: 대상·지급률 모달용 전체 영업사원 목록(+예외율)
@@ -361,24 +387,24 @@
     try{
       const res=await fetch(session.api+'/api/commission/agents',{headers:auth()});
       const d=await res.json();
-      if(!res.ok||d.error){ window.__agents=[]; window.__agentsErr=(d.note||d.error||('조회 실패: '+res.status)); return; }
+      if(!res.ok||d.error){ window.__agents=[]; window.__agentsErr=(d.note||d.error||(L('조회 실패: ','Error al consultar: ')+res.status)); return; }
       window.__agentsErr=null;
-      const opts=['<option value="">전체 (영업사원별 요약)</option>']
+      const opts=[L('<option value="">전체 (영업사원별 요약)</option>','<option value="">Todos (resumen por vendedor)</option>')]
         .concat((d.items||[]).filter(a=>a.is_agent&&a.active).map(a=>'<option value="'+a.user_id+'">'+esc(a.name)+(a.team_name?(' · '+esc(a.team_name)):'')+' ('+esc(periodSummary(a))+')</option>'));
       $('agentSel').innerHTML=opts.join('');
       agentsPopulated=true;
       window.__agents=d.items||[];
       applyDeepLink();
-    }catch(e){ window.__agents=[]; window.__agentsErr='서버에 연결할 수 없습니다.'; }
+    }catch(e){ window.__agents=[]; window.__agentsErr=L('서버에 연결할 수 없습니다.','No hay conexión con el servidor.'); }
   }
 
   // 폴백: loadAgents(전체 대상자)가 비었을 때만 overview의 by_agent(실적자)로 채움
   function syncAgentOptions(){
     if(isDir()||!canSeeAll()) return;          // 디렉터는 loadAgents 유지
-    if(!data||!data.by_agent) return;          // by_agent 는 '전체'일 때만 옴
+    if(!data||!data.by_agent) return;          // by_agent 는 L('전체','Todos')일 때만 옴
     if($('agentSel').options.length>1) return; // loadAgents 가 이미 채웠으면 그대로 둠
     const cur=$('agentSel').value;
-    const opts=['<option value="">전체 (영업사원별 요약)</option>']
+    const opts=[L('<option value="">전체 (영업사원별 요약)</option>','<option value="">Todos (resumen por vendedor)</option>')]
       .concat(data.by_agent.map(a=>'<option value="'+a.agent_id+'">'+esc(a.agent_name)+'</option>'));
     $('agentSel').innerHTML=opts.join('');
     $('agentSel').value=cur;
@@ -386,13 +412,13 @@
   }
 
   async function loadOverview(){
-    $('body').innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
+    $('body').innerHTML=L('<div class="hint" style="margin-top:12px">불러오는 중…</div>','<div class="hint" style="margin-top:12px">Cargando…</div>');
     const qs='?view='+view+(agentId?('&agent_id='+agentId):'');
     try{
       data=await fetch(session.api+'/api/commission/overview'+qs,{headers:auth()}).then(r=>r.json());
       syncAgentOptions();
       render();
-    }catch(e){ $('body').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+    }catch(e){ $('body').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); }
   }
 
   // 커미션 조건 합의 상태 — 본인이 커미션 대상이고 아직 현재 조건에 합의하지 않았으면 배너
@@ -401,6 +427,7 @@
       const r=await fetch(session.api+'/api/commission/agreement/me',{headers:auth()});
       if(!r.ok) return;
       const d=await r.json();
+      if(d.is_agent&&!canSeeAll()) $('agreeBtn').classList.remove('hidden');   // 본인 조건·계약 보기
       if(!d.is_agent||d.migrated===false||d.status==='agreed') return;
       if(d.status==='changed'){ $('agreeTitle').textContent='Tus condiciones de comisión cambiaron — acéptalas de nuevo'; }
       $('agreeBanner').classList.remove('hidden');
@@ -428,12 +455,13 @@
       const items=(d.items||[]).filter(x=>x.active);
       REF.items=items; REF.perf={};
       if(!items.length){ card.classList.add('hidden'); return; }
+      if(!canSeeAll()){ const ab=$('agreeBtn'); ab.classList.remove('hidden'); ab.setAttribute('href','refatrix-acuerdo-comision.html#referrals'); }
       card.classList.remove('hidden');
       $('refBody').innerHTML='<div class="hint">Cargando…</div>';
       for(const it of items){
         try{ REF.perf[it.id]=await fetch(session.api+'/api/commission/referrals/'+it.id+'/performance',{headers:auth()}).then(r=>r.json()); }catch(e){ REF.perf[it.id]=null; }
         if(!REF.view[it.id]) REF.view[it.id]='m';
-        if(!REF.month[it.id]){ const p=REF.perf[it.id]; REF.month[it.id]=(p&&p.months&&p.months[0]&&p.months[0].ym)||mxHoy().slice(0,7); }
+        if(!REF.month[it.id]){ const p=REF.perf[it.id]; const sYm=String(it.start_date||'').slice(0,7); const m0=(p&&p.months||[]).find(x=>!sYm||x.ym>=sYm); REF.month[it.id]=(m0&&m0.ym)||mxHoy().slice(0,7); }
       }
       renderReferrals();
     }catch(e){ $('refBody').innerHTML='<div class="hint">No se pudo cargar.</div>'; }
@@ -471,10 +499,11 @@
         +'<div class="sb"><div class="v">'+fmtm(m.collected)+'</div><div class="l">Cobrado al 100% con comisión (sin IVA)</div></div>'
         +'<div class="sb paid"><div class="v">'+fmtm(m.commission)+'</div><div class="l">Tu comisión '+it.rate+'%'+(m.commission>0?(' · '+(m.unpaid<=0.001?'pagada':('se paga '+dEs(nx)))):'')+'</div></div>'
         +'<div class="sb"><div class="v">'+fmtm((p.totals||{}).potential)+'</div><div class="l">En espera (facturas con saldo)</div></div></div>';
-      h+='<div class="filters" style="margin-top:12px"><div><label>Mes</label><input type="month" data-ref-month="'+it.id+'" value="'+esc(ym)+'" style="width:160px"></div>'
+      h+='<div class="filters" style="margin-top:12px"><div><label>Mes</label><input type="month" data-ref-month="'+it.id+'" value="'+esc(ym)+'" min="'+esc(String(it.start_date||'').slice(0,7))+'" style="width:160px"></div>'
         +'<div class="toggle" style="margin-left:auto">'+[['m','Por mes'],['c','Por cliente'],['i','Facturas']].map(([k,t])=>'<button data-ref-view="'+k+'" data-ref-id="'+it.id+'"'+(v===k?' class="on"':'')+'>'+t+'</button>').join('')+'</div></div>';
       if(v==='m'){
-        const ms=p.months||[];
+        const sYm=String(it.start_date||'').slice(0,7);
+        const ms=(p.months||[]).filter(x=>!sYm||x.ym>=sYm);   // 계약 시작월부터
         h+='<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>Mes</th><th class="r">Venta (sin IVA)</th><th class="r">Cobrado con comisión</th><th class="r">Tu comisión</th><th>Fecha de pago</th><th>Estado</th></tr></thead><tbody>'
           +(ms.length?ms.map(x=>'<tr'+(x.ym===ym?' class="gsum"':'')+'><td>'+ymEs(x.ym)+'</td><td class="r">'+fmtm(x.sales)+'</td><td class="r">'+fmtm(x.collected)+'</td><td class="r"><b>'+fmtm(x.commission)+'</b></td><td>'+(x.commission>0?dEs(x.pay_date):'—')+'</td>'
             +'<td>'+(x.commission<=0?'<span class="hint">—</span>':(x.unpaid<=0.001?'<span class="badge paid">Pagada</span>':(x.paid>0?'<span class="badge wait">Pago parcial</span>':'<span class="badge wait">Por pagar · CFDI antes del día 10</span>')))+'</td></tr>').join('')
@@ -502,7 +531,7 @@
   // ══════════════════════════════════════════════════════════════════
   const pct=(n)=> (n==null?'—':(Math.round(Number(n)*10)/10)+'%');
   const agentQS=()=> canSeeAll() ? (agentId?('&agent_id='+agentId):'') : '';
-  function needAgentHtml(){ return '<div class="hint" style="margin-top:8px">위에서 <b>영업사원</b>을 선택하면 그 사원의 목표 대비 진척과 실적이 표시됩니다.</div>'; }
+  function needAgentHtml(){ return L('<div class="hint" style="margin-top:8px">위에서 <b>영업사원</b>을 선택하면 그 사원의 목표 대비 진척과 실적이 표시됩니다.</div>','<div class="hint" style="margin-top:8px">Selecciona un <b>vendedor</b> arriba para ver su avance contra la meta y sus resultados.</div>'); }
 
   function barCell(rate){
     if(rate==null) return '<span class="badge">—</span>';
@@ -514,28 +543,28 @@
     const cls = rate==null?'lo':(rate>=100?'ok':(rate>=el-5?'':'lo'));
     const pace = (rate!=null&&el>0)? Math.round(rate/el*100) : null;
     const gap = Number(d.gap||0);
-    return '<div class="prog click'+(opt.isBonus?' bonusOn':'')+'" data-dtl="'+(kind==='rev'?'p_sales':'p_target')+'" role="button" tabindex="0" title="클릭하면 상세 내역">'
-      +'<div class="ph"><span class="pt">'+(kind==='rev'?'매출 (Venta)':'수금 (Cobranza)')+'</span>'
-      +(kind==='col'?'<span class="badge auto" title="고객 결제조건(외상일)에서 시스템이 산출">목표 자동산출</span>':'')
-      +(opt.isBonus?'<span class="badge exp">성과급 기준</span>':'')
-      +(opt.isCom?'<span class="badge">커미션 기준 '+opt.comRate+'%</span>':'')
-      +'<span class="rt">달성률 <b>'+pct(rate)+'</b></span></div>'
-      +'<div class="big">'+fmtm(d.actual)+' <span>/ 목표 '+fmtm(d.target)+'</span></div>'
+    return '<div class="prog click'+(opt.isBonus?' bonusOn':'')+'" data-dtl="'+(kind==='rev'?'p_sales':'p_target')+L('" role="button" tabindex="0" title="클릭하면 상세 내역">','" role="button" tabindex="0" title="Clic para ver el detalle">')
+      +'<div class="ph"><span class="pt">'+(kind==='rev'?L('매출 (Venta)','Venta'):L('수금 (Cobranza)','Cobranza'))+'</span>'
+      +(kind==='col'?L('<span class="badge auto" title="고객 결제조건(외상일)에서 시스템이 산출">목표 자동산출</span>','<span class="badge auto" title="El sistema la calcula con los días de crédito de cada cliente">Meta automática</span>'):'')
+      +(opt.isBonus?L('<span class="badge exp">성과급 기준</span>','<span class="badge exp">Base del bono</span>'):'')
+      +(opt.isCom?L('<span class="badge">커미션 기준 ','<span class="badge">Base de comisión ')+opt.comRate+'%</span>':'')
+      +L('<span class="rt">달성률 <b>','<span class="rt">Cumplimiento <b>')+pct(rate)+'</b></span></div>'
+      +'<div class="big">'+fmtm(d.actual)+L(' <span>/ 목표 ',' <span>/ meta ')+fmtm(d.target)+'</span></div>'
       +'<div class="track"><i class="'+cls+'" style="width:'+Math.min(rate==null?0:rate,100)+'%"></i>'
       +'<div class="tk" style="left:50%"></div><div class="tk" style="left:80%"></div>'
-      +'<div class="elp" style="left:'+Math.min(el,100)+'%"><span>경과 '+Math.round(el)+'%</span></div></div>'
-      +'<div class="mini"><span>'+(!Number(d.target)?'목표 미설정':(gap>0?('남은 목표 <b>'+fmtm(gap)+'</b>'):('목표 초과 <b>+'+fmtm(-gap)+'</b>')))+'</span>'
-      +'<span>'+(pace!=null?('페이스 <b>'+pace+'%</b> · '):'')+'월말 예상 <b>'+fmtm(d.projected)+'</b></span></div>'
+      +'<div class="elp" style="left:'+Math.min(el,100)+L('%"><span>경과 ','%"><span>Avance del mes ')+Math.round(el)+'%</span></div></div>'
+      +'<div class="mini"><span>'+(!Number(d.target)?L('목표 미설정','Sin meta'):(gap>0?(L('남은 목표 <b>','Falta para la meta <b>')+fmtm(gap)+'</b>'):(L('목표 초과 <b>+','Meta superada <b>+')+fmtm(-gap)+'</b>')))+'</span>'
+      +'<span>'+(pace!=null?(L('페이스 <b>','Ritmo <b>')+pace+'%</b> · '):'')+L('월말 예상 <b>','Estimado al cierre <b>')+fmtm(d.projected)+'</b></span></div>'
       +'</div>';
   }
   async function loadProgress(){
     if(canSeeAll() && !agentId){ $('progBody').innerHTML=needAgentHtml(); $('progHead').textContent=''; return; }
-    $('progBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    $('progBody').innerHTML=L('<div class="hint">불러오는 중…</div>','<div class="hint">Cargando…</div>');
     try{
       const d=await fetch(session.api+'/api/commission/progress?x=1'+agentQS(),{headers:auth()}).then(r=>r.json());
       if(d.need_agent){ $('progBody').innerHTML=needAgentHtml(); return; }
       window.__prog=d; window.__progPerf=null;
-      $('progHead').textContent='· '+d.ym+' · 기준일 '+d.today+' · 진행중(확정 전)';
+      $('progHead').textContent='· '+d.ym+L(' · 기준일 ',' · al ')+d.today+L(' · 진행중(확정 전)',' · en curso (sin confirmar)');
       const b=d.bonus||{};
       const isRevBonus=b.enabled&&b.in_plan&&b.basis==='revenue';
       const isColBonus=b.enabled&&b.in_plan&&b.basis==='collection';
@@ -547,36 +576,36 @@
       const c=d.commission||{};
       const rateTxt=(c.rate!=null?c.rate:cr)+'%';
       h+='<div class="sbrow" style="margin-top:12px">'
-        +sb(fmtm(c.accrued!=null?c.accrued:c.amount),'적립 커미션 (이번 달 수금 × '+rateTxt+')','','p_accrued','인보이스가 완납되면 지급 확정')
-        +sb(fmtm(c.amount),'지급확정 커미션 (완납 인보이스)','paid','p_commission','익월 15일 지급')
-        +sb(fmtm(c.pending||0),'완납 대기 커미션','warn','p_pending',(c.pending_open>0?('잔액 '+fmtm(c.pending_open)+' 수금 시 지급'):'대기 없음'))
-        +sb(b.enabled?(b.in_plan?fmtm(b.amount):'적용기간 밖'):'미사용','기대 성과급 (현재 달성률)','',(b.enabled&&b.in_plan?'p_bonus':''),(b.enabled&&b.in_plan&&b.next_tier?('매출 '+fmtm(b.next_tier.need)+' 더 → '+fmtm(b.next_tier.amount)):''))
-        +sb(b.enabled&&b.in_plan?fmtm(b.projected_amount):'—','월말 예상 성과급 (페이스 유지 시)')
-        +sb(fmtm(d.total_expected),'당월 확정 보상 (확정 커미션 + 성과급)','paid')
+        +sb(fmtm(c.accrued!=null?c.accrued:c.amount),L('적립 커미션 (이번 달 수금 × ','Comisión acumulada (cobranza del mes × ')+rateTxt+')','','p_accrued',L('인보이스가 완납되면 지급 확정','Se confirma al liquidarse la factura'))
+        +sb(fmtm(c.amount),L('지급확정 커미션 (완납 인보이스)','Comisión confirmada (facturas liquidadas)'),'paid','p_commission',L('익월 15일 지급','Se paga el día 15 del mes siguiente'))
+        +sb(fmtm(c.pending||0),L('완납 대기 커미션','Comisión en espera de liquidación'),'warn','p_pending',(c.pending_open>0?(L('잔액 ','Saldo ')+fmtm(c.pending_open)+L(' 수금 시 지급',' por cobrar para pagarla')):L('대기 없음','Nada en espera')))
+        +sb(b.enabled?(b.in_plan?fmtm(b.amount):L('적용기간 밖','Fuera de vigencia')):L('미사용','No aplica'),L('기대 성과급 (현재 달성률)','Bono esperado (cumplimiento actual)'),'',(b.enabled&&b.in_plan?'p_bonus':''),(b.enabled&&b.in_plan&&b.next_tier?(L('매출 ','Venta ')+fmtm(b.next_tier.need)+L(' 더 → ',' más → ')+fmtm(b.next_tier.amount)):''))
+        +sb(b.enabled&&b.in_plan?fmtm(b.projected_amount):'—',L('월말 예상 성과급 (페이스 유지 시)','Bono estimado al cierre (mismo ritmo)'))
+        +sb(fmtm(d.total_expected),L('당월 확정 보상 (확정 커미션 + 성과급)','Total confirmado del mes (comisión + bono)'),'paid')
         +'</div>';
       if(c.match_on==='payment'){
-        h+='<div class="hint" style="margin-top:8px">커미션은 <b>수금일 기준</b>입니다 — 이번 달에 들어온 수금액(ex-IVA) × '+rateTxt+' 가 적립되고, 그 인보이스가 <b>미수 없이 완납</b>되면 지급 확정됩니다(인보이스 발행일 무관). 박스·패널을 누르면 상세 내역이 열립니다.</div>';
+        h+=L('<div class="hint" style="margin-top:8px">커미션은 <b>수금일 기준</b>입니다 — 이번 달에 들어온 수금액(ex-IVA) × ','<div class="hint" style="margin-top:8px">Tu comisión es <b>por fecha de cobro</b>: cada cobro del mes (sin IVA) × ')+rateTxt+L(' 가 적립되고, 그 인보이스가 <b>미수 없이 완납</b>되면 지급 확정됩니다(인보이스 발행일 무관). 박스·패널을 누르면 상세 내역이 열립니다.</div>',' se acumula, y se confirma cuando la factura queda <b>cobrada al 100%</b> (sin importar la fecha de la factura). Toca un recuadro o panel para ver el detalle.</div>');
       }else{
-        h+='<div class="hint" style="margin-top:8px">박스·패널을 누르면 고객·인보이스별 상세 내역이 열립니다.</div>';
+        h+=L('<div class="hint" style="margin-top:8px">박스·패널을 누르면 고객·인보이스별 상세 내역이 열립니다.</div>','<div class="hint" style="margin-top:8px">Toca un recuadro o panel para ver el detalle por cliente y factura.</div>');
       }
       if(!d.bonus_migrated){
-        h+='<div class="msg err" style="display:block;margin-top:10px">성과급 테이블이 아직 서버에 없습니다. <b>npm run migrate (0190)</b> 을 실행하세요. (커미션은 정상 동작)</div>';
+        h+=L('<div class="msg err" style="display:block;margin-top:10px">성과급 테이블이 아직 서버에 없습니다. <b>npm run migrate (0190)</b> 을 실행하세요. (커미션은 정상 동작)</div>','<div class="msg err" style="display:block;margin-top:10px">El bono aún no está activo en el servidor. (La comisión funciona normal.)</div>');
       }else if(!b.enabled){
-        h+='<div class="hint" style="margin-top:10px">이 사원은 <b>성과급 미사용</b> — 커미션만 지급됩니다.'+(isDir()?' 상단 [성과급(Bono) 설정]에서 지정할 수 있습니다.':'')+'</div>';
+        h+=L('<div class="hint" style="margin-top:10px">이 사원은 <b>성과급 미사용</b> — 커미션만 지급됩니다.','<div class="hint" style="margin-top:10px"><b>Sin bono</b> — solo se paga comisión.')+(isDir()?L(' 상단 [성과급(Bono) 설정]에서 지정할 수 있습니다.',' Se configura en [성과급(Bono) 설정].'):'')+'</div>';
       }else if(!b.in_plan){
-        h+='<div class="hint" style="margin-top:10px">'+d.ym+' 은 성과급 적용기간('+(b.plan?b.plan.start_month:'')+' ~ '+((b.plan&&b.plan.end_month)||'지속')+') 밖입니다.</div>';
+        h+='<div class="hint" style="margin-top:10px">'+d.ym+L(' 은 성과급 적용기간(',' está fuera de la vigencia del bono (')+(b.plan?b.plan.start_month:'')+' ~ '+((b.plan&&b.plan.end_month)||L('지속','sin fin'))+L(') 밖입니다.</div>',').</div>');
       }else if(b.next_tier){
-        h+='<div class="hint" style="margin-top:10px">'+(b.basis==='revenue'?'매출':'수금')+' <b>'+fmtm(b.next_tier.need)+'</b> 를 더 채우면 달성률 '+b.next_tier.min_rate+'% 구간(<b>'+fmtm(b.next_tier.amount)+'</b>)에 도달합니다.</div>';
+        h+='<div class="hint" style="margin-top:10px">'+(b.basis==='revenue'?L('매출','Venta'):L('수금','Cobranza'))+' <b>'+fmtm(b.next_tier.need)+L('</b> 를 더 채우면 달성률 ','</b> más y llegas al escalón de ')+b.next_tier.min_rate+L('% 구간(<b>','% (<b>')+fmtm(b.next_tier.amount)+L('</b>)에 도달합니다.</div>','</b>).</div>');
       }else{
-        h+='<div class="hint" style="margin-top:10px">최고 구간 달성 — 현재 달성률 '+pct(b.rate)+'.</div>';
+        h+=L('<div class="hint" style="margin-top:10px">최고 구간 달성 — 현재 달성률 ','<div class="hint" style="margin-top:10px">Escalón máximo alcanzado — cumplimiento actual ')+pct(b.rate)+'.</div>';
       }
       if(b.enabled&&b.in_plan&&(b.tiers||[]).length){
-        h+='<div class="hint" style="margin-top:6px">구간: '+b.tiers.map(t=>t.min_rate+'%↑ '+fmtm(t.amount)).join(' · ')
-          +' · 기준 '+(b.basis==='revenue'?'매출목표':'수금목표')
-          +(b.plan&&b.basis==='collection'?(' · 수금목표 = 당월 만기도래'+(b.plan.include_overdue?' + 연체 이월':'')):'')+'</div>';
+        h+=L('<div class="hint" style="margin-top:6px">구간: ','<div class="hint" style="margin-top:6px">Escalones: ')+b.tiers.map(t=>t.min_rate+'%↑ '+fmtm(t.amount)).join(' · ')
+          +L(' · 기준 ',' · base ')+(b.basis==='revenue'?L('매출목표','meta de venta'):L('수금목표','meta de cobranza'))
+          +(b.plan&&b.basis==='collection'?(L(' · 수금목표 = 당월 만기도래',' · meta de cobranza = facturas que vencen en el mes')+(b.plan.include_overdue?L(' + 연체 이월',' + vencidas de meses anteriores'):'')):'')+'</div>';
       }
       $('progBody').innerHTML=h;
-    }catch(e){ $('progBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+    }catch(e){ $('progBody').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); }
   }
 
   // ── 실적 조회 ──
@@ -587,9 +616,42 @@
     if(!$('pFrom').value) $('pFrom').value=from;
     if(!$('pTo').value) $('pTo').value=cur;
   }
+  // 실적 조회는 계약 시작월부터 (2026-10-29 디렉터 결정)
+  //   계약 시작월 = 커미션 기간의 첫 시작일 월(없으면 소개 계약 시작일 월). 시작월 입력의 기본값·최소값이 된다.
+  let perfStartKey=null, perfStartYm=null;
+  async function contractStartYm(){
+    let starts=[];
+    try{
+      if(canSeeAll()){
+        const a=(window.__agents||[]).find(x=>String(x.user_id)===String(agentId));
+        starts=((a&&a.periods)||[]).map(p=>p.start_date);
+      } else {
+        const d=await fetch(session.api+'/api/commission/my-periods',{headers:auth()}).then(r=>r.json());
+        starts=(d.periods||[]).map(p=>p.start_date);
+      }
+      if(!starts.length){
+        const qs=canSeeAll()?('?referrer_id='+encodeURIComponent(agentId)):'';
+        const r=await fetch(session.api+'/api/commission/referrals'+qs,{headers:auth()}).then(r=>r.json());
+        starts=(r.items||[]).filter(x=>x.active).map(x=>x.start_date);
+      }
+    }catch(e){}
+    starts=starts.filter(Boolean).map(x=>String(x).slice(0,7)).sort();
+    return starts[0]||null;
+  }
+  async function ensurePerfStart(){
+    const key=canSeeAll()?('a'+agentId):'me';
+    if(perfStartKey===key) return;
+    perfStartKey=key; perfStartYm=await contractStartYm();
+    const f=$('pFrom');
+    if(perfStartYm){ f.min=perfStartYm; f.value=perfStartYm; } else { f.removeAttribute('min'); }
+    const cur=new Date(Date.now()-360*60000).toISOString().slice(0,7);
+    if(perfStartYm && $('pTo').value && $('pTo').value<perfStartYm) $('pTo').value=cur;
+  }
   async function loadPerf(){
     if(canSeeAll() && !agentId){ $('perfBody').innerHTML=needAgentHtml(); $('perfSum').innerHTML=''; return; }
-    $('perfBody').innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
+    await ensurePerfStart();
+    if(perfStartYm && $('pFrom').value && $('pFrom').value<perfStartYm) $('pFrom').value=perfStartYm;   // 계약 전 월은 조회하지 않는다
+    $('perfBody').innerHTML=L('<div class="hint" style="margin-top:12px">불러오는 중…</div>','<div class="hint" style="margin-top:12px">Cargando…</div>');
     const from=$('pFrom').value, to=$('pTo').value, cust=$('pCust').value;
     const qs='?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+(cust?('&customer_id='+cust):'')+agentQS();
     try{
@@ -598,26 +660,26 @@
       window.__perf=d;
       syncCustomerOptions(d);
       renderPerf();
-    }catch(e){ $('perfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+    }catch(e){ $('perfBody').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); }
   }
   function syncCustomerOptions(d){
     const sel=$('pCust'); const cur=sel.value;
     const list=(d.customers||[]).slice().sort((a,b)=>String(a.customer_name).localeCompare(String(b.customer_name)));
     if(!cur){ // 고객 필터가 걸려 있으면 목록을 갈아끼우지 않는다(선택이 사라지므로)
-      sel.innerHTML='<option value="">전체 고객</option>'+list.map(c=>'<option value="'+c.customer_id+'">'+esc(c.customer_name)+'</option>').join('');
+      sel.innerHTML=L('<option value="">전체 고객</option>','<option value="">Todos los clientes</option>')+list.map(c=>'<option value="'+c.customer_id+'">'+esc(c.customer_name)+'</option>').join('');
     }
     sel.value=cur;
   }
   function renderPerf(){
     const d=window.__perf; if(!d) return;
     const t=d.totals||{};
-    $('perfSum').innerHTML=sb(fmtm(t.revenue),'기간 매출(ex-IVA)','','sales')
-      +sb(fmtm(t.collection),'기간 수금','','collection')
-      +sb(fmtm(t.open),'미수잔액','','open')
-      +sb(fmtm(t.late),'연체','unpaid','late')
-      +sb(fmtm(t.commission_accrued!=null?t.commission_accrued:t.commission),'적립 커미션','','accrued')
-      +sb(fmtm(t.commission),'지급확정 커미션','','commission')
-      +sb(fmtm(t.bonus),'성과급','paid','bonus');
+    $('perfSum').innerHTML=sb(fmtm(t.revenue),L('기간 매출(ex-IVA)','Venta del periodo (sin IVA)'),'','sales')
+      +sb(fmtm(t.collection),L('기간 수금','Cobranza del periodo'),'','collection')
+      +sb(fmtm(t.open),L('미수잔액','Saldo por cobrar'),'','open')
+      +sb(fmtm(t.late),L('연체','Vencido'),'unpaid','late')
+      +sb(fmtm(t.commission_accrued!=null?t.commission_accrued:t.commission),L('적립 커미션','Comisión acumulada'),'','accrued')
+      +sb(fmtm(t.commission),L('지급확정 커미션','Comisión confirmada'),'','commission')
+      +sb(fmtm(t.bonus),L('성과급','Bono'),'paid','bonus');
     if(perfView==='month') return renderPerfMonth(d);
     if(perfView==='customer') return renderPerfCustomer(d);
     return renderPerfInvoice(d);
@@ -625,64 +687,64 @@
   function renderPerfMonth(d){
     const bEnabled=d.bonus_enabled, cust=!!d.customer_id;
     let h='<table><thead>'
-      +'<tr><th rowspan="2">월</th><th class="grp" colspan="3">매출 (Venta)</th><th class="grp" colspan="3">수금 (Cobranza)</th>'
-      +'<th class="grp" colspan="4">보상</th><th rowspan="2">상태</th></tr>'
-      +'<tr><th class="r">목표</th><th class="r">실적</th><th>달성률</th>'
-      +'<th class="r">목표 <span class="badge auto">자동</span></th><th class="r">실적</th><th>달성률</th>'
-      +'<th class="r" title="그 달 수금분 × 율 (수금일 기준)">적립 커미션</th><th class="r" title="완납 인보이스 — 지급 대상">확정 커미션</th><th class="r">성과급</th><th class="r">합계</th></tr></thead><tbody>';
+      +L('<tr><th rowspan="2">월</th><th class="grp" colspan="3">매출 (Venta)</th><th class="grp" colspan="3">수금 (Cobranza)</th>','<tr><th rowspan="2">Mes</th><th class="grp" colspan="3">Venta</th><th class="grp" colspan="3">Cobranza</th>')
+      +L('<th class="grp" colspan="4">보상</th><th rowspan="2">상태</th></tr>','<th class="grp" colspan="4">Pago</th><th rowspan="2">Estado</th></tr>')
+      +L('<tr><th class="r">목표</th><th class="r">실적</th><th>달성률</th>','<tr><th class="r">Meta</th><th class="r">Real</th><th>Cumplimiento</th>')
+      +L('<th class="r">목표 <span class="badge auto">자동</span></th><th class="r">실적</th><th>달성률</th>','<th class="r">Meta <span class="badge auto">auto</span></th><th class="r">Real</th><th>Cumplimiento</th>')
+      +L('<th class="r" title="그 달 수금분 × 율 (수금일 기준)">적립 커미션</th><th class="r" title="완납 인보이스 — 지급 대상">확정 커미션</th><th class="r">성과급</th><th class="r">합계</th></tr></thead><tbody>','<th class="r" title="Cobros del mes × tasa (por fecha de cobro)">Comisión acumulada</th><th class="r" title="Facturas liquidadas — por pagar">Comisión confirmada</th><th class="r">Bono</th><th class="r">Total</th></tr></thead><tbody>');
     let sc=0,sb2=0,sa=0;
     for(const r of (d.months||[])){
       const b=r.bonus||{};
       const bonusCell = !bEnabled||!b.in_plan ? '<span class="hint">—</span>'
-        : (cust ? '<span class="hint" title="성과급은 월 전체 실적 기준입니다">—</span>'
+        : (cust ? L('<span class="hint" title="성과급은 월 전체 실적 기준입니다">—</span>','<span class="hint" title="El bono se calcula con el total del mes">—</span>')
         : (b.confirmed ? '<b class="conf">'+fmtm(b.amount)+'</b>' : '<span style="color:#c07d16">'+fmtm(b.amount)+'</span>'));
-      const st = b.paid ? '<span class="badge paid">지급완료'+(b.paid_date?(' '+b.paid_date):'')+'</span>'
-        : (b.confirmed ? '<span class="badge conf2">확정</span>'
-        : (r.in_progress ? '<span class="badge wait">진행중</span>'
-        : (r.provisional ? '<span class="badge prov">잠정(미래)</span>' : '<span class="badge">미확정</span>')));
+      const st = b.paid ? L('<span class="badge paid">지급완료','<span class="badge paid">Pagado')+(b.paid_date?(' '+b.paid_date):'')+'</span>'
+        : (b.confirmed ? L('<span class="badge conf2">확정</span>','<span class="badge conf2">Confirmado</span>')
+        : (r.in_progress ? L('<span class="badge wait">진행중</span>','<span class="badge wait">En curso</span>')
+        : (r.provisional ? L('<span class="badge prov">잠정(미래)</span>','<span class="badge prov">Provisional (futuro)</span>') : L('<span class="badge">미확정</span>','<span class="badge">Sin confirmar</span>'))));
       sc+=Number(r.commission||0); sa+=Number(r.commission_accrued||0); if(!cust) sb2+=Number(b.amount||0);
       h+='<tr><td><b>'+r.month+'</b></td>'
         +'<td class="r">'+(r.revenue.target?fmtm(r.revenue.target):'<span class="hint">—</span>')+'</td>'
         +'<td class="r">'+fmtm(r.revenue.actual)+'</td>'
         +'<td'+(bEnabled&&b.basis==='revenue'?' class="hl"':'')+'>'+barCell(r.revenue.rate)+'</td>'
-        +'<td class="r">'+fmtm(r.collection.target)+(r.provisional?' <span class="badge prov">잠정</span>':'')+'</td>'
+        +'<td class="r">'+fmtm(r.collection.target)+(r.provisional?L(' <span class="badge prov">잠정</span>',' <span class="badge prov">provisional</span>'):'')+'</td>'
         +'<td class="r">'+fmtm(r.collection.actual)+'</td>'
         +'<td'+(bEnabled&&b.basis==='collection'?' class="hl"':'')+'>'+barCell(r.collection.rate)+'</td>'
         +'<td class="r hint">'+fmtm(r.commission_accrued!=null?r.commission_accrued:r.commission)+'</td><td class="r exp">'+fmtm(r.commission)+'</td><td class="r">'+bonusCell+'</td>'
         +'<td class="r"><b>'+fmtm(Number(r.commission||0)+(cust?0:Number(b.amount||0)))+'</b></td>'
         +'<td>'+st+'</td></tr>';
     }
-    h+='</tbody><tfoot><tr class="gsum"><td>합계</td><td colspan="6"></td><td class="r">'+fmtm(sa)+'</td><td class="r">'+fmtm(sc)+'</td><td class="r">'+fmtm(sb2)+'</td><td class="r">'+fmtm(sc+sb2)+'</td><td></td></tr></tfoot></table>';
-    h+='<div class="hint" style="margin-top:8px">· <b>적립 커미션</b> = 그 달에 들어온 수금 × 율(수금일 기준) · <b>확정 커미션</b> = 그 달에 미수 없이 완납된 인보이스의 커미션(지급 대상). · <b>수금목표</b> = 그 달 만기도래 인보이스(ex-IVA) 합계 + 설정 시 전월까지의 연체 미수. 미래 월은 아직 발행되지 않은 매출이 있어 <b>잠정</b>입니다. · 아래 박스를 누르면 상세 내역이 열립니다.'
-      +(cust?' · 고객 필터가 걸린 상태에서는 성과급을 표시하지 않습니다(월 전체 실적 기준).':'')+'</div>';
+    h+=L('</tbody><tfoot><tr class="gsum"><td>합계</td><td colspan="6"></td><td class="r">','</tbody><tfoot><tr class="gsum"><td>Total</td><td colspan="6"></td><td class="r">')+fmtm(sa)+'</td><td class="r">'+fmtm(sc)+'</td><td class="r">'+fmtm(sb2)+'</td><td class="r">'+fmtm(sc+sb2)+'</td><td></td></tr></tfoot></table>';
+    h+=L('<div class="hint" style="margin-top:8px">· <b>적립 커미션</b> = 그 달에 들어온 수금 × 율(수금일 기준) · <b>확정 커미션</b> = 그 달에 미수 없이 완납된 인보이스의 커미션(지급 대상). · <b>수금목표</b> = 그 달 만기도래 인보이스(ex-IVA) 합계 + 설정 시 전월까지의 연체 미수. 미래 월은 아직 발행되지 않은 매출이 있어 <b>잠정</b>입니다. · 아래 박스를 누르면 상세 내역이 열립니다.','<div class="hint" style="margin-top:8px">· <b>Comisión acumulada</b> = cobros del mes × tasa (por fecha de cobro) · <b>Comisión confirmada</b> = comisión de las facturas liquidadas al 100% en el mes (por pagar). · <b>Meta de cobranza</b> = facturas que vencen en el mes (sin IVA) + vencidas de meses anteriores si aplica. Los meses futuros son <b>provisionales</b> porque aún faltan facturas. · Toca un recuadro de abajo para ver el detalle.')
+      +(cust?L(' · 고객 필터가 걸린 상태에서는 성과급을 표시하지 않습니다(월 전체 실적 기준).',' · Con filtro de cliente no se muestra el bono (se calcula con el total del mes).'):'')+'</div>';
     $('perfBody').innerHTML=h;
   }
   function renderPerfCustomer(d){
     const rows=d.customers||[];
-    if(!rows.length){ $('perfBody').innerHTML='<div class="hint" style="margin-top:12px">해당 기간에 실적이 없습니다.</div>'; return; }
+    if(!rows.length){ $('perfBody').innerHTML=L('<div class="hint" style="margin-top:12px">해당 기간에 실적이 없습니다.</div>','<div class="hint" style="margin-top:12px">No hay resultados en este periodo.</div>'); return; }
     const T=(k)=>rows.reduce((s,r)=>s+Number(r[k]||0),0);
-    let h='<table><thead><tr><th>고객</th><th>결제조건</th><th class="r">매출</th><th class="r">만기도래</th><th class="r">수금</th><th class="r">미수잔액</th><th class="r">연체</th><th class="r">적립 커미션</th><th class="r">확정 커미션</th></tr></thead><tbody>';
+    let h=L('<table><thead><tr><th>고객</th><th>결제조건</th><th class="r">매출</th><th class="r">만기도래</th><th class="r">수금</th><th class="r">미수잔액</th><th class="r">연체</th><th class="r">적립 커미션</th><th class="r">확정 커미션</th></tr></thead><tbody>','<table><thead><tr><th>Cliente</th><th>Crédito</th><th class="r">Venta</th><th class="r">Vence</th><th class="r">Cobrado</th><th class="r">Saldo por cobrar</th><th class="r">Vencido</th><th class="r">Comisión acumulada</th><th class="r">Comisión confirmada</th></tr></thead><tbody>');
     for(const r of rows){
       h+='<tr><td>'+esc(r.customer_name)+(r.customer_code?(' <span class="hint">'+esc(r.customer_code)+'</span>'):'')+'</td>'
-        +'<td><span class="badge">'+(r.credit_days||0)+'일</span></td>'
+        +'<td><span class="badge">'+(r.credit_days||0)+L('일</span></td>',' días</span></td>')
         +'<td class="r">'+fmtm(r.sales)+'</td><td class="r hint">'+fmtm(r.due)+'</td><td class="r">'+fmtm(r.collected)+'</td>'
         +'<td class="r">'+fmtm(r.open)+'</td><td class="r">'+(r.late?('<span class="short">'+fmtm(r.late)+'</span>'):'—')+'</td>'
         +'<td class="r hint">'+fmtm(r.commission_accrued!=null?r.commission_accrued:r.commission)+'</td><td class="r exp"><b>'+fmtm(r.commission)+'</b></td></tr>';
     }
-    h+='</tbody><tfoot><tr class="gsum"><td colspan="2">합계</td><td class="r">'+fmtm(T('sales'))+'</td><td class="r">'+fmtm(T('due'))+'</td><td class="r">'+fmtm(T('collected'))+'</td><td class="r">'+fmtm(T('open'))+'</td><td class="r">'+fmtm(T('late'))+'</td><td class="r">'+fmtm(T('commission_accrued'))+'</td><td class="r">'+fmtm(T('commission'))+'</td></tr></tfoot></table>';
+    h+=L('</tbody><tfoot><tr class="gsum"><td colspan="2">합계</td><td class="r">','</tbody><tfoot><tr class="gsum"><td colspan="2">Total</td><td class="r">')+fmtm(T('sales'))+'</td><td class="r">'+fmtm(T('due'))+'</td><td class="r">'+fmtm(T('collected'))+'</td><td class="r">'+fmtm(T('open'))+'</td><td class="r">'+fmtm(T('late'))+'</td><td class="r">'+fmtm(T('commission_accrued'))+'</td><td class="r">'+fmtm(T('commission'))+'</td></tr></tfoot></table>';
     $('perfBody').innerHTML=h;
   }
   function renderPerfInvoice(d){
     const rows=d.invoices||[];
-    if(!rows.length){ $('perfBody').innerHTML='<div class="hint" style="margin-top:12px">해당 기간에 인보이스가 없습니다.</div>'; return; }
-    let h='<table><thead><tr><th>인보이스</th><th>고객</th><th>발행일</th><th class="r">매출(ex-IVA)</th><th>만기일</th><th>수금일</th><th>상태</th><th class="r">커미션</th></tr></thead><tbody>';
+    if(!rows.length){ $('perfBody').innerHTML=L('<div class="hint" style="margin-top:12px">해당 기간에 인보이스가 없습니다.</div>','<div class="hint" style="margin-top:12px">No hay facturas en este periodo.</div>'); return; }
+    let h=L('<table><thead><tr><th>인보이스</th><th>고객</th><th>발행일</th><th class="r">매출(ex-IVA)</th><th>만기일</th><th>수금일</th><th>상태</th><th class="r">커미션</th></tr></thead><tbody>','<table><thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th class="r">Venta (sin IVA)</th><th>Vence</th><th>Cobrada</th><th>Estado</th><th class="r">Comisión</th></tr></thead><tbody>');
     // 기간 밖 발행분이라도 미수가 남은 인보이스는 함께 표시(팔로업 대상)
     for(const r of rows){
-      const st = r.status==='paid' ? '<span class="badge paid">수금완료</span>'
-        : r.status==='paid_late' ? '<span class="badge wait">지연수금 +'+r.late_days+'일</span>'
-        : r.status==='overdue' ? '<span class="badge late">연체 +'+r.late_days+'일</span>'
-        : r.status==='due_soon' ? '<span class="badge">만기 D'+(r.late_days<=0?('-'+Math.abs(r.late_days)):('+'+r.late_days))+'</span>'
-        : '<span class="badge">미수</span>';
+      const st = r.status==='paid' ? L('<span class="badge paid">수금완료</span>','<span class="badge paid">Cobrada</span>')
+        : r.status==='paid_late' ? L('<span class="badge wait">지연수금 +','<span class="badge wait">Cobrada con atraso +')+r.late_days+L('일</span>',' días</span>')
+        : r.status==='overdue' ? L('<span class="badge late">연체 +','<span class="badge late">Vencida +')+r.late_days+L('일</span>',' días</span>')
+        : r.status==='due_soon' ? L('<span class="badge">만기 D','<span class="badge">Vence D')+(r.late_days<=0?('-'+Math.abs(r.late_days)):('+'+r.late_days))+'</span>'
+        : L('<span class="badge">미수</span>','<span class="badge">Por cobrar</span>');
       h+='<tr><td>'+esc(r.sat_no||('#'+r.invoice_id))+(r.basis?(' '+basisChip(r.basis,r.mode)):'')+'</td>'
         +'<td>'+esc(r.customer_name)+'</td><td>'+r.inv_date+'</td>'
         +'<td class="r">'+fmtm(r.subtotal)+'</td><td>'+(r.due_date||'—')+'</td>'
@@ -701,11 +763,11 @@
   let dtlState={kind:null,data:null,group:'cust'};
   const badgeHtml=(cls,t)=>'<span class="badge '+cls+'">'+t+'</span>';
   function dueBadge(r){
-    if(r.paid_date) return badgeHtml(r.status==='paid_late'?'wait':'paid', '완납 '+r.paid_date);
-    if(r.due_gap==null) return badgeHtml('', '만기 미정');
-    if(r.due_gap>0) return badgeHtml('late','연체 +'+r.due_gap+'일');
-    if(r.due_gap===0) return badgeHtml('wait','오늘 만기');
-    return badgeHtml('', '만기 D'+r.due_gap);
+    if(r.paid_date) return badgeHtml(r.status==='paid_late'?'wait':'paid', L('완납 ','Liquidada ')+r.paid_date);
+    if(r.due_gap==null) return badgeHtml('', L('만기 미정','Sin vencimiento'));
+    if(r.due_gap>0) return badgeHtml('late',L('연체 +','Vencida +')+r.due_gap+L('일',' días'));
+    if(r.due_gap===0) return badgeHtml('wait',L('오늘 만기','Vence hoy'));
+    return badgeHtml('', L('만기 D','Vence D')+r.due_gap);
   }
   function waDigits(ph){
     let d=String(ph||'').replace(/\D/g,'');
@@ -721,15 +783,15 @@
     const list=invs.slice(0,6).map(r=>(r.sat||'')+' ('+fmtm(r.amt)+(r.due?(', vence '+r.due):'')+')').join(', ');
     const msg='Buen día'+(custName?(' '+custName):'')+'. Le compartimos el saldo pendiente con Refatrix: '+list
       +(invs.length>6?(' y '+(invs.length-6)+' más'):'')+'. Total '+fmtm(total)+' (IVA incluido). ¿Nos podría confirmar la fecha de pago? ¡Gracias!';
-    return '<a class="wa" target="_blank" rel="noopener" href="https://wa.me/'+d+'?text='+encodeURIComponent(msg)+'" title="WhatsApp 창을 열어 결제 요청 메시지를 준비합니다(전송은 직접)">WhatsApp 요청</a>';
+    return '<a class="wa" target="_blank" rel="noopener" href="https://wa.me/'+d+'?text='+encodeURIComponent(msg)+L('" title="WhatsApp 창을 열어 결제 요청 메시지를 준비합니다(전송은 직접)">WhatsApp 요청</a>','" title="Abre WhatsApp con un mensaje de cobro listo (tú lo envías)">Pedir pago por WhatsApp</a>');
   }
   const comCell=(r)=>{
-    if(r.payout_paid) return '<span class="conf">'+fmtm(r.commission_total_accrued)+'</span> '+badgeHtml('paid','지급완료');
-    if(r.mode==='revenue') return r.basis?('<span class="conf">'+fmtm(r.commission_total_accrued)+'</span> '+badgeHtml('exp','매출 확정')):'<span class="hint">—</span>';
+    if(r.payout_paid) return '<span class="conf">'+fmtm(r.commission_total_accrued)+'</span> '+badgeHtml('paid',L('지급완료','Pagado'));
+    if(r.mode==='revenue') return r.basis?('<span class="conf">'+fmtm(r.commission_total_accrued)+'</span> '+badgeHtml('exp',L('매출 확정','Confirmada por venta'))):'<span class="hint">—</span>';
     const acc=Number(r.commission_total_accrued||0), pot=Number(r.commission_potential||0);
     if(!acc&&!pot) return '<span class="hint">—</span>';
-    if(r.paid_date) return '<span class="conf">'+fmtm(acc)+'</span> '+badgeHtml('conf2','확정');
-    return (acc?('<span class="exp">적립 '+fmtm(acc)+'</span>'):'')+(pot?(' <span class="hint">+'+fmtm(pot)+' 완납 시</span>'):'');
+    if(r.paid_date) return '<span class="conf">'+fmtm(acc)+'</span> '+badgeHtml('conf2',L('확정','Confirmada'));
+    return (acc?(L('<span class="exp">적립 ','<span class="exp">Acumulada ')+fmtm(acc)+'</span>'):'')+(pot?(' <span class="hint">+'+fmtm(pot)+L(' 완납 시</span>',' al liquidar</span>')):'');
   };
 
   function closeDtl(){ $('dtlBackdrop').classList.add('hidden'); $('dtlModal').classList.add('hidden'); dtlState.kind=null; }
@@ -744,26 +806,26 @@
     if(canSeeAll()&&!agentId){ return; }
     dtlState.kind=kind; dtlState.group=dtlState.group||'cust';
     $('dtlBackdrop').classList.remove('hidden'); $('dtlModal').classList.remove('hidden');
-    $('dtlTitle').textContent='불러오는 중…'; $('dtlSub').textContent=''; $('dtlPush').innerHTML=''; $('dtlTools').innerHTML=''; $('dtlBody').innerHTML='<div class="hint" style="margin-top:10px">불러오는 중…</div>'; $('dtlFoot').textContent='';
+    $('dtlTitle').textContent=L('불러오는 중…','Cargando…'); $('dtlSub').textContent=''; $('dtlPush').innerHTML=''; $('dtlTools').innerHTML=''; $('dtlBody').innerHTML=L('<div class="hint" style="margin-top:10px">불러오는 중…</div>','<div class="hint" style="margin-top:10px">Cargando…</div>'); $('dtlFoot').textContent='';
     try{
       const d = kind.startsWith('p_') ? await progPerf() : window.__perf;
-      if(!d||d.need_agent){ $('dtlBody').innerHTML='<div class="hint">먼저 영업사원을 선택하세요.</div>'; $('dtlTitle').textContent='상세'; return; }
+      if(!d||d.need_agent){ $('dtlBody').innerHTML=L('<div class="hint">먼저 영업사원을 선택하세요.</div>','<div class="hint">Primero selecciona un vendedor.</div>'); $('dtlTitle').textContent=L('상세','Detalle'); return; }
       dtlState.data=d; renderDtl();
       setTimeout(()=>{ const b=$('dtlClose'); if(b) b.focus(); },0);
-    }catch(e){ $('dtlTitle').textContent='상세'; $('dtlBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+    }catch(e){ $('dtlTitle').textContent=L('상세','Detalle'); $('dtlBody').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); }
   }
   function periodLabel(d){ return d.from===d.to?d.from:(d.from+' ~ '+d.to); }
   function agentLabel(){
-    if(!canSeeAll()) return '내 실적';
+    if(!canSeeAll()) return L('내 실적','Mis resultados');
     const o=$('agentSel').selectedOptions[0]; return o?o.textContent.split(' (')[0]:'';
   }
   function custFilterLabel(d){
     if(!d.customer_id) return '';
     const c=(d.customers||[]).find(x=>String(x.customer_id)===String(d.customer_id));
-    return ' · 고객 '+(c?c.customer_name:'#'+d.customer_id);
+    return L(' · 고객 ',' · cliente ')+(c?c.customer_name:'#'+d.customer_id);
   }
   function groupToggle(){
-    return '<div class="toggle" id="dtlGroup"><button data-g="cust" class="'+(dtlState.group==='cust'?'on':'')+'">고객별</button><button data-g="list" class="'+(dtlState.group==='list'?'on':'')+'">전체 목록</button></div>';
+    return '<div class="toggle" id="dtlGroup"><button data-g="cust" class="'+(dtlState.group==='cust'?'on':'')+L('">고객별</button><button data-g="list" class="','">Por cliente</button><button data-g="list" class="')+(dtlState.group==='list'?'on':'')+L('">전체 목록</button></div>','">Lista completa</button></div>');
   }
   // rows 를 고객별로 묶어 소계 행 + WhatsApp 버튼. cols=[{h,r?,f(row)}], sumKeys=[{i:열번호,k:필드}]
   function table(rows, cols, opt){
@@ -779,7 +841,7 @@
         const f=g.rows[0];
         const sums=(opt.sumKeys||[]).map(x=>({i:x.i,v:g.rows.reduce((s,r)=>s+Number(x.k(r)||0),0)}));
         h+='<tr class="grph"><td colspan="'+(opt.labelSpan||2)+'">'+esc(f.customer_name)+(f.customer_code?(' <span class="hint">'+esc(f.customer_code)+'</span>'):'')
-          +' <span class="hint">· '+g.rows.length+'건</span>'+(opt.waRows?(' '+waLink(f.phone,f.customer_name,opt.waRows(g.rows))):'')
+          +' <span class="hint">· '+g.rows.length+L('건</span>',' fact.</span>')+(opt.waRows?(' '+waLink(f.phone,f.customer_name,opt.waRows(g.rows))):'')
           +(f.phone?(' <span class="hint">'+esc(f.phone)+'</span>'):'')+'</td>';
         for(let i=(opt.labelSpan||2);i<cols.length;i++){ const sm=sums.find(x=>x.i===i); h+='<td class="r">'+(sm?fmtm(sm.v):'')+'</td>'; }
         h+='</tr>'+g.rows.map(line).join('');
@@ -787,7 +849,7 @@
     }else{
       h+=rows.map(line).join('');
     }
-    if(opt.total) h+='</tbody><tfoot><tr class="gsum">'+cols.map((c,i)=>{ const t=opt.total.find(x=>x.i===i); return '<td'+(c.r?' class="r"':'')+'>'+(i===0?'합계':(t?fmtm(t.v):''))+'</td>'; }).join('')+'</tr></tfoot>';
+    if(opt.total) h+='</tbody><tfoot><tr class="gsum">'+cols.map((c,i)=>{ const t=opt.total.find(x=>x.i===i); return '<td'+(c.r?' class="r"':'')+'>'+(i===0?L('합계','Total'):(t?fmtm(t.v):''))+'</td>'; }).join('')+'</tr></tfoot>';
     else h+='</tbody>';
     return h+'</table>';
   }
@@ -800,31 +862,31 @@
     const d=dtlState.data, kind=dtlState.kind; if(!d||!kind) return;
     const k=kind.replace(/^p_/,'');
     const ym=(window.__prog&&window.__prog.ym)||d.to;
-    const scope = kind.startsWith('p_') ? (ym+' (이번 달)') : (periodLabel(d)+custFilterLabel(d));
-    $('dtlSub').textContent=agentLabel()+' · '+scope+' · 금액 ex-IVA 기준(잔액·수금액은 IVA 포함 병기)';
+    const scope = kind.startsWith('p_') ? (ym+L(' (이번 달)',' (este mes)')) : (periodLabel(d)+custFilterLabel(d));
+    $('dtlSub').textContent=agentLabel()+' · '+scope+L(' · 금액 ex-IVA 기준(잔액·수금액은 IVA 포함 병기)',' · importes sin IVA (saldos y cobros también con IVA)');
     let title='', push='', body='', foot='', tools='';
     const comRate=(window.__prog&&window.__prog.commission&&window.__prog.commission.rate)||null;
 
     if(k==='sales'){
       const rows=(d.invoices||[]).filter(r=>r.in_range_sale).sort((a,b)=>b.inv_date.localeCompare(a.inv_date)||b.subtotal-a.subtotal);
       const tot=sumOf(rows,'subtotal'), custN=new Set(rows.map(r=>r.customer_id)).size;
-      title='매출 내역 — '+rows.length+'건 · '+fmtm(tot);
+      title=L('매출 내역 — ','Ventas — ')+rows.length+L('건 · ',' facturas · ')+fmtm(tot);
       const m=(d.months||[]).find(x=>x.month===ym)||(d.months||[])[0];
       const b=m&&m.bonus;
       if(kind==='p_sales'&&b&&b.in_plan&&b.basis==='revenue'){
         push = b.next_tier
-          ? '<div class="push">이번 달 매출목표 <b>'+fmtm(b.target)+'</b> 중 <b>'+fmtm(b.actual)+'</b> 달성('+pct(b.rate)+'). 매출 <b>'+fmtm(b.next_tier.need)+'</b> 를 더 하면 성과급 <b>'+fmtm(b.next_tier.amount)+'</b>'+(b.next_tier.min_rate>100?' (120% 구간)':'')+' 입니다.</div>'
-          : '<div class="push good">최고 구간 달성 — 성과급 <b>'+fmtm(b.amount)+'</b> ('+pct(b.rate)+').</div>';
+          ? L('<div class="push">이번 달 매출목표 <b>','<div class="push">Meta de venta del mes <b>')+fmtm(b.target)+L('</b> 중 <b>','</b>: llevas <b>')+fmtm(b.actual)+L('</b> 달성(','</b> (')+pct(b.rate)+L('). 매출 <b>','). Vende <b>')+fmtm(b.next_tier.need)+L('</b> 를 더 하면 성과급 <b>','</b> más y tu bono será de <b>')+fmtm(b.next_tier.amount)+'</b>'+(b.next_tier.min_rate>100?L(' (120% 구간)',' (escalón 120%)'):'')+L(' 입니다.</div>','.</div>')
+          : L('<div class="push good">최고 구간 달성 — 성과급 <b>','<div class="push good">Escalón máximo alcanzado — bono <b>')+fmtm(b.amount)+'</b> ('+pct(b.rate)+').</div>';
       }
-      tools=groupToggle()+'<span class="hint">'+custN+'개 고객</span>';
+      tools=groupToggle()+'<span class="hint">'+custN+L('개 고객</span>',' clientes</span>');
       body=rows.length?table(rows,[
-        {h:'발행일',f:r=>r.inv_date},{h:'인보이스',f:inv},{h:'고객',f:cust},
-        {h:'매출(ex-IVA)',r:1,f:r=>fmtm(r.subtotal)},{h:'합계(IVA 포함)',r:1,f:r=>fmtm(r.total)},
-        {h:'만기일',f:r=>r.due_date||'—'},{h:'수금',f:r=>r.paid_date?dueBadge(r):(dueBadge(r)+' <span class="hint">잔액 '+fmtm(r.open_total)+'</span>')},
-        {h:'커미션',f:comCell}],
+        {h:L('발행일','Fecha'),f:r=>r.inv_date},{h:L('인보이스','Factura'),f:inv},{h:L('고객','Cliente'),f:cust},
+        {h:L('매출(ex-IVA)','Venta (sin IVA)'),r:1,f:r=>fmtm(r.subtotal)},{h:L('합계(IVA 포함)','Total (con IVA)'),r:1,f:r=>fmtm(r.total)},
+        {h:L('만기일','Vence'),f:r=>r.due_date||'—'},{h:L('수금','Cobranza'),f:r=>r.paid_date?dueBadge(r):(dueBadge(r)+L(' <span class="hint">잔액 ',' <span class="hint">saldo ')+fmtm(r.open_total)+'</span>')},
+        {h:L('커미션','Comisión'),f:comCell}],
         {groupByCust:true,labelSpan:3,sumKeys:[{i:3,k:r=>r.subtotal},{i:4,k:r=>r.total}],groupWeight:g=>sumOf(g,'subtotal'),total:[{i:3,v:tot},{i:4,v:sumOf(rows,'total')}]})
-        :'<div class="hint" style="margin-top:10px">이 기간에 발행된 매출이 없습니다.</div>';
-      foot='· 매출 = 그 기간에 발행된 인보이스(ex-IVA, 크레딧노트 차감 순액). 성과급 매출목표 달성률의 실적입니다.';
+        :L('<div class="hint" style="margin-top:10px">이 기간에 발행된 매출이 없습니다.</div>','<div class="hint" style="margin-top:10px">No hay facturas emitidas en este periodo.</div>');
+      foot=L('· 매출 = 그 기간에 발행된 인보이스(ex-IVA, 크레딧노트 차감 순액). 성과급 매출목표 달성률의 실적입니다.','· Venta = facturas emitidas en el periodo (sin IVA, menos notas de crédito). Es lo que cuenta para la meta de venta del bono.');
     }
 
     else if(k==='collection'||k==='accrued'){
@@ -833,22 +895,22 @@
       const waiting=rows.filter(r=>!r.invoice_fully_paid&&r.commission_accrued>0);
       const waitInv={}; waiting.forEach(r=>{ waitInv[r.invoice_id]=r; });
       const wList=Object.values(waitInv);
-      title=(k==='accrued'?'적립 커미션 — ':'수금 내역 — ')+rows.length+'건 · '+fmtm(tot)+(k==='accrued'?(' → 커미션 '+fmtm(acc)):'');
-      push='<div class="push'+(wList.length?'':' good')+'">수금 <b>'+fmtm(totI)+'</b>(IVA 포함) · ex-IVA <b>'+fmtm(tot)+'</b> → 적립 커미션 <b>'+fmtm(acc)+'</b>.'
-        +(wList.length?(' 이 중 <b>'+wList.length+'건</b>은 인보이스에 잔액 <b>'+fmtm(sumOf(wList,'invoice_open_total'))+'</b>이 남아 아직 지급 확정 전입니다 — 잔액을 마저 걷으면 커미션 <b>'+fmtm(sumOf(wList,r=>Number(r.invoice_commission)+Number(r.invoice_potential)))+'</b>가 지급 확정됩니다.'):' 수금한 인보이스는 모두 완납되어 지급 확정됐습니다.')+'</div>';
+      title=(k==='accrued'?L('적립 커미션 — ','Comisión acumulada — '):L('수금 내역 — ','Cobros — '))+rows.length+L('건 · ',' facturas · ')+fmtm(tot)+(k==='accrued'?(L(' → 커미션 ',' → comisión ')+fmtm(acc)):'');
+      push='<div class="push'+(wList.length?'':' good')+L('">수금 <b>','">Cobrado <b>')+fmtm(totI)+L('</b>(IVA 포함) · ex-IVA <b>','</b> (con IVA) · sin IVA <b>')+fmtm(tot)+L('</b> → 적립 커미션 <b>','</b> → comisión acumulada <b>')+fmtm(acc)+'</b>.'
+        +(wList.length?(L(' 이 중 <b>',' De ellos, <b>')+wList.length+L('건</b>은 인보이스에 잔액 <b>',' factura(s)</b> aún tienen saldo de <b>')+fmtm(sumOf(wList,'invoice_open_total'))+L('</b>이 남아 아직 지급 확정 전입니다 — 잔액을 마저 걷으면 커미션 <b>','</b> y no se confirman todavía — al cobrar el saldo se confirma una comisión de <b>')+fmtm(sumOf(wList,r=>Number(r.invoice_commission)+Number(r.invoice_potential)))+L('</b>가 지급 확정됩니다.','</b>.')):L(' 수금한 인보이스는 모두 완납되어 지급 확정됐습니다.',' Todas las facturas cobradas quedaron liquidadas y su comisión está confirmada.'))+'</div>';
       tools=groupToggle();
       body=rows.length?table(rows,[
-        {h:'수금일',f:r=>r.pay_date},{h:'인보이스',f:inv},{h:'고객',f:cust},
-        {h:'수금액(IVA 포함)',r:1,f:r=>fmtm(r.amount_total)},{h:'수금액(ex-IVA)',r:1,f:r=>fmtm(r.amount)},
-        {h:'적립 커미션',r:1,f:r=>r.mode==='payment'?(r.commission_accrued?('<span class="exp">'+fmtm(r.commission_accrued)+'</span>'+(r.com_rate!=null?' <span class="hint">'+r.com_rate+'%</span>':'')):'<span class="hint" title="수금일이 커미션 기간 밖">기간 밖</span>'):'<span class="hint">'+(r.mode==='revenue'?'매출 기준':'발행일 기준')+'</span>'},
-        {h:'인보이스 상태',f:r=>r.invoice_fully_paid?(badgeHtml('paid','완납 '+r.fully_paid_date)+(r.invoice_commission>0?(' <span class="hint">커미션 '+fmtm(r.invoice_commission)+' '+(r.payout_paid?'지급완료':'확정')+'</span>'):''))
-          :(badgeHtml('wait','잔액 '+fmtm(r.invoice_open_total))+(r.invoice_potential>0||r.invoice_commission>0?(' <span class="hint">걷으면 커미션 '+fmtm(Number(r.invoice_commission)+Number(r.invoice_potential))+' 지급</span>'):''))}],
+        {h:L('수금일','Fecha de cobro'),f:r=>r.pay_date},{h:L('인보이스','Factura'),f:inv},{h:L('고객','Cliente'),f:cust},
+        {h:L('수금액(IVA 포함)','Cobrado (con IVA)'),r:1,f:r=>fmtm(r.amount_total)},{h:L('수금액(ex-IVA)','Cobrado (sin IVA)'),r:1,f:r=>fmtm(r.amount)},
+        {h:L('적립 커미션','Comisión acumulada'),r:1,f:r=>r.mode==='payment'?(r.commission_accrued?('<span class="exp">'+fmtm(r.commission_accrued)+'</span>'+(r.com_rate!=null?' <span class="hint">'+r.com_rate+'%</span>':'')):L('<span class="hint" title="수금일이 커미션 기간 밖">기간 밖</span>','<span class="hint" title="El cobro quedó fuera de la vigencia de la comisión">fuera de vigencia</span>')):'<span class="hint">'+(r.mode==='revenue'?L('매출 기준','por venta'):L('발행일 기준','por fecha de factura'))+'</span>'},
+        {h:L('인보이스 상태','Estado de la factura'),f:r=>r.invoice_fully_paid?(badgeHtml('paid',L('완납 ','Liquidada ')+r.fully_paid_date)+(r.invoice_commission>0?(L(' <span class="hint">커미션 ',' <span class="hint">comisión ')+fmtm(r.invoice_commission)+' '+(r.payout_paid?L('지급완료','Pagado'):L('확정','Confirmada'))+'</span>'):''))
+          :(badgeHtml('wait',L('잔액 ','Saldo ')+fmtm(r.invoice_open_total))+(r.invoice_potential>0||r.invoice_commission>0?(L(' <span class="hint">걷으면 커미션 ',' <span class="hint">al cobrar, comisión de ')+fmtm(Number(r.invoice_commission)+Number(r.invoice_potential))+L(' 지급</span>','</span>')):''))}],
         {groupByCust:true,labelSpan:3,sumKeys:[{i:3,k:r=>r.amount_total},{i:4,k:r=>r.amount},{i:5,k:r=>r.commission_accrued}],groupWeight:g=>sumOf(g,'amount'),
          waRows:g=>{ const seen={}; return g.filter(r=>!r.invoice_fully_paid&&!seen[r.invoice_id]&&(seen[r.invoice_id]=1)).map(r=>({sat:r.sat_no,amt:r.invoice_open_total,due:r.due_date})); },
          total:[{i:3,v:totI},{i:4,v:tot},{i:5,v:acc}]})
-        :'<div class="hint" style="margin-top:10px">이 기간에 들어온 수금이 없습니다.</div>';
-      foot='· 수금 1건 × 인보이스 1건 단위(현금 반제). 커미션은 수금일 기준으로 적립되고, 그 인보이스가 미수 없이 완납된 달에 지급 확정 → 익월 15일 지급.'
-        +(d.totals&&d.totals.collection!=null&&Math.abs(Number(d.totals.collection)-tot)>0.5?(' · 상단 「기간 수금」('+fmtm(d.totals.collection)+')은 성과급 수금 인정 기준(완납분만)이라 실제 수금액과 다를 수 있습니다.'):'');
+        :L('<div class="hint" style="margin-top:10px">이 기간에 들어온 수금이 없습니다.</div>','<div class="hint" style="margin-top:10px">No hay cobros en este periodo.</div>');
+      foot=L('· 수금 1건 × 인보이스 1건 단위(현금 반제). 커미션은 수금일 기준으로 적립되고, 그 인보이스가 미수 없이 완납된 달에 지급 확정 → 익월 15일 지급.','· Un renglón por cobro y factura. La comisión se acumula por fecha de cobro y se confirma en el mes en que la factura queda cobrada al 100% → se paga el día 15 del mes siguiente.')
+        +(d.totals&&d.totals.collection!=null&&Math.abs(Number(d.totals.collection)-tot)>0.5?(L(' · 상단 「기간 수금」(',' · La «Cobranza del periodo» de arriba (')+fmtm(d.totals.collection)+L(')은 성과급 수금 인정 기준(완납분만)이라 실제 수금액과 다를 수 있습니다.',') solo cuenta facturas liquidadas (criterio del bono), por eso puede diferir de lo cobrado.')):'');
     }
 
     else if(k==='open'||k==='late'){
@@ -856,81 +918,81 @@
         .sort((a,b)=>((b.due_gap==null?-999:b.due_gap)-(a.due_gap==null?-999:a.due_gap)));
       const totEnd=sumOf(rows,'open_end'), totNow=sumOf(rows,'open_total'), late=rows.filter(r=>r.late);
       const pot=sumOf(rows,r=>Number(r.commission_potential||0)+(r.paid_date?0:Number(r.commission_total_accrued||0)));
-      title=(k==='late'?'연체 내역 — ':'미수잔액 — ')+rows.length+'건 · '+fmtm(k==='late'?sumOf(rows,'open_amount'):totEnd);
+      title=(k==='late'?L('연체 내역 — ','Vencidas — '):L('미수잔액 — ','Saldo por cobrar — '))+rows.length+L('건 · ',' facturas · ')+fmtm(k==='late'?sumOf(rows,'open_amount'):totEnd);
       push='<div class="push">'+(k==='late'
-        ?('만기가 지난 미수 <b>'+rows.length+'건</b> · 고객 <b>'+new Set(rows.map(r=>r.customer_id)).size+'곳</b> · 고객이 낼 금액 <b>'+fmtm(totNow)+'</b>(IVA 포함). ')
-        :('미수 <b>'+rows.length+'건</b> · 지금 고객이 낼 금액 <b>'+fmtm(totNow)+'</b>(IVA 포함)'+(late.length?(' · 그중 연체 <b>'+late.length+'건 '+fmtm(sumOf(late,'open_total'))+'</b>'):'')+'. '))
-        +(pot>0?('다 걷으면 커미션 <b>'+fmtm(pot)+'</b>가 지급 확정됩니다. '):'')+'고객별 <b>WhatsApp 요청</b> 버튼으로 결제일을 확인하세요.</div>';
+        ?(L('만기가 지난 미수 <b>','Facturas vencidas con saldo: <b>')+rows.length+L('건</b> · 고객 <b>','</b> · clientes: <b>')+new Set(rows.map(r=>r.customer_id)).size+L('곳</b> · 고객이 낼 금액 <b>','</b> · el cliente debe pagar <b>')+fmtm(totNow)+L('</b>(IVA 포함). ','</b> (con IVA). '))
+        :(L('미수 <b>','Por cobrar: <b>')+rows.length+L('건</b> · 지금 고객이 낼 금액 <b>',' factura(s)</b> · el cliente debe pagar hoy <b>')+fmtm(totNow)+L('</b>(IVA 포함)','</b> (con IVA)')+(late.length?(L(' · 그중 연체 <b>',' · de ellas vencidas <b>')+late.length+L('건 ',' fact. ')+fmtm(sumOf(late,'open_total'))+'</b>'):'')+'. '))
+        +(pot>0?(L('다 걷으면 커미션 <b>','Al cobrar todo se confirma una comisión de <b>')+fmtm(pot)+L('</b>가 지급 확정됩니다. ','</b>. ')):'')+L('고객별 <b>WhatsApp 요청</b> 버튼으로 결제일을 확인하세요.</div>','Usa el botón <b>Pedir pago por WhatsApp</b> de cada cliente para confirmar la fecha de pago.</div>');
       tools=groupToggle();
       body=rows.length?table(rows,[
-        {h:'인보이스',f:inv},{h:'발행일',f:r=>r.inv_date},{h:'고객',f:cust},{h:'만기일',f:r=>r.due_date||'—'},{h:'상태',f:dueBadge},
-        {h:(k==='late'?'미수(ex-IVA)':'미수(ex-IVA · 기간말)'),r:1,f:r=>fmtm(k==='late'?r.open_amount:r.open_end)},
-        {h:'지금 낼 금액(IVA 포함)',r:1,f:r=>'<b>'+fmtm(r.open_total)+'</b>'},
-        {h:'걷으면 커미션',r:1,f:r=>{ const v=Number(r.commission_potential||0)+(r.paid_date?0:Number(r.commission_total_accrued||0)); return v>0?('<span class="exp">'+fmtm(v)+'</span>'):'<span class="hint">—</span>'; }}],
+        {h:L('인보이스','Factura'),f:inv},{h:L('발행일','Fecha'),f:r=>r.inv_date},{h:L('고객','Cliente'),f:cust},{h:L('만기일','Vence'),f:r=>r.due_date||'—'},{h:L('상태','Estado'),f:dueBadge},
+        {h:(k==='late'?L('미수(ex-IVA)','Saldo (sin IVA)'):L('미수(ex-IVA · 기간말)','Saldo (sin IVA · fin del periodo)')),r:1,f:r=>fmtm(k==='late'?r.open_amount:r.open_end)},
+        {h:L('지금 낼 금액(IVA 포함)','A pagar hoy (con IVA)'),r:1,f:r=>'<b>'+fmtm(r.open_total)+'</b>'},
+        {h:L('걷으면 커미션','Comisión al cobrar'),r:1,f:r=>{ const v=Number(r.commission_potential||0)+(r.paid_date?0:Number(r.commission_total_accrued||0)); return v>0?('<span class="exp">'+fmtm(v)+'</span>'):'<span class="hint">—</span>'; }}],
         {groupByCust:true,labelSpan:5,sumKeys:[{i:5,k:r=>k==='late'?r.open_amount:r.open_end},{i:6,k:r=>r.open_total}],
          groupWeight:g=>Math.max(...g.map(r=>(r.due_gap==null?-999:r.due_gap)))*1e9+sumOf(g,'open_total'),
          waRows:openWa,total:[{i:5,v:k==='late'?sumOf(rows,'open_amount'):totEnd},{i:6,v:totNow}]})
-        :'<div class="hint" style="margin-top:10px">'+(k==='late'?'연체된 미수가 없습니다. 👍':'미수가 없습니다.')+'</div>';
-      foot=k==='late'?'· 연체 = 오늘 기준 만기일이 지났는데 잔액이 남은 인보이스. 고객 그룹은 가장 오래 연체된 순.'
-        :'· 미수잔액 = 기간 종료월 말 기준 잔액(ex-IVA). 「지금 낼 금액」은 오늘 기준 IVA 포함 잔액입니다. 정렬: 연체 오래된 순 → 만기 임박 순.';
+        :'<div class="hint" style="margin-top:10px">'+(k==='late'?L('연체된 미수가 없습니다. 👍','No hay facturas vencidas. 👍'):L('미수가 없습니다.','No hay saldo por cobrar.'))+'</div>';
+      foot=k==='late'?L('· 연체 = 오늘 기준 만기일이 지났는데 잔액이 남은 인보이스. 고객 그룹은 가장 오래 연체된 순.','· Vencida = factura con saldo cuya fecha de vencimiento ya pasó. Los clientes se ordenan por el atraso más antiguo.')
+        :L('· 미수잔액 = 기간 종료월 말 기준 잔액(ex-IVA). 「지금 낼 금액」은 오늘 기준 IVA 포함 잔액입니다. 정렬: 연체 오래된 순 → 만기 임박 순.','· Saldo por cobrar = saldo al cierre del último mes del periodo (sin IVA). «A pagar hoy» es el saldo actual con IVA. Orden: más vencidas primero, luego las que vencen pronto.');
     }
 
     else if(k==='commission'){
       const rows=(d.invoices||[]).filter(r=>Number(r.commission)>0).sort((a,b)=>String(b.paid_date||b.inv_date).localeCompare(String(a.paid_date||a.inv_date)));
       const tot=sumOf(rows,'commission');
-      title='지급확정 커미션 — '+rows.length+'건 · '+fmtm(tot);
-      push='<div class="push good">미수 없이 완납된 인보이스의 커미션 <b>'+fmtm(tot)+'</b> — 반제 완료월 익월 15일 지급 대상입니다.</div>';
+      title=L('지급확정 커미션 — ','Comisión confirmada — ')+rows.length+L('건 · ',' facturas · ')+fmtm(tot);
+      push=L('<div class="push good">미수 없이 완납된 인보이스의 커미션 <b>','<div class="push good">Comisión de facturas cobradas al 100%: <b>')+fmtm(tot)+L('</b> — 반제 완료월 익월 15일 지급 대상입니다.</div>','</b> — se paga el día 15 del mes siguiente a la liquidación.</div>');
       tools=groupToggle();
       body=rows.length?table(rows,[
-        {h:'완납일',f:r=>r.mode==='revenue'?('<span class="hint">매출 '+r.inv_date+'</span>'):(r.paid_date||'—')},{h:'인보이스',f:inv},{h:'고객',f:cust},
-        {h:'매출(ex-IVA)',r:1,f:r=>fmtm(r.subtotal)},{h:'율',r:1,f:r=>r.rate!=null?(r.rate+'%'):'—'},
-        {h:'커미션',r:1,f:r=>'<b class="conf">'+fmtm(r.commission)+'</b>'},
-        {h:'지급',f:r=>r.payout_paid?badgeHtml('paid','지급완료'):(r.settle_ym?badgeHtml('conf2',nextM15(r.settle_ym)+' 지급예정'):'—')}],
+        {h:L('완납일','Liquidada'),f:r=>r.mode==='revenue'?(L('<span class="hint">매출 ','<span class="hint">venta ')+r.inv_date+'</span>'):(r.paid_date||'—')},{h:L('인보이스','Factura'),f:inv},{h:L('고객','Cliente'),f:cust},
+        {h:L('매출(ex-IVA)','Venta (sin IVA)'),r:1,f:r=>fmtm(r.subtotal)},{h:L('율','Tasa'),r:1,f:r=>r.rate!=null?(r.rate+'%'):'—'},
+        {h:L('커미션','Comisión'),r:1,f:r=>'<b class="conf">'+fmtm(r.commission)+'</b>'},
+        {h:L('지급','Pago'),f:r=>r.payout_paid?badgeHtml('paid',L('지급완료','Pagado')):(r.settle_ym?badgeHtml('conf2',nextM15(r.settle_ym)+L(' 지급예정',' por pagar')):'—')}],
         {groupByCust:true,labelSpan:3,sumKeys:[{i:3,k:r=>r.subtotal},{i:5,k:r=>r.commission}],groupWeight:g=>sumOf(g,'commission'),total:[{i:3,v:sumOf(rows,'subtotal')},{i:5,v:tot}]})
-        :'<div class="hint" style="margin-top:10px">이 기간에 지급 확정된 커미션이 없습니다. 「완납 대기」 인보이스의 잔액을 걷으면 확정됩니다.</div>';
-      foot='· 수금일 기준 사원은 기간 안에 들어온 수금분만 커미션이 붙습니다(기간 전 수금분은 제외). 율은 고객 예외율이 있으면 그 율.';
+        :L('<div class="hint" style="margin-top:10px">이 기간에 지급 확정된 커미션이 없습니다. 「완납 대기」 인보이스의 잔액을 걷으면 확정됩니다.</div>','<div class="hint" style="margin-top:10px">No hay comisión confirmada en este periodo. Se confirma al cobrar el saldo de las facturas «en espera».</div>');
+      foot=L('· 수금일 기준 사원은 기간 안에 들어온 수금분만 커미션이 붙습니다(기간 전 수금분은 제외). 율은 고객 예외율이 있으면 그 율.','· Con comisión por fecha de cobro solo cuentan los cobros dentro de la vigencia. Si el cliente tiene tasa especial, se usa esa tasa.');
     }
 
     else if(k==='pending'){
       const rows=(d.invoices||[]).filter(r=>r.mode==='payment'&&!r.paid_date&&!r.payout_paid&&Number(r.commission_total_accrued)>0)
         .sort((a,b)=>Number(b.open_total)-Number(a.open_total));
       const acc=sumOf(rows,'commission_total_accrued'), pot=sumOf(rows,'commission_potential'), open=sumOf(rows,'open_total');
-      title='완납 대기 커미션 — '+rows.length+'건 · 적립 '+fmtm(acc);
-      push=rows.length?('<div class="push">잔액 <b>'+fmtm(open)+'</b>(IVA 포함)을 마저 걷으면 적립 <b>'+fmtm(acc)+'</b> + 추가 <b>'+fmtm(pot)+'</b> = 커미션 <b>'+fmtm(acc+pot)+'</b>가 지급 확정됩니다. 일부만 들어오면 그 인보이스는 계속 대기입니다.</div>')
-        :'<div class="push good">완납을 기다리는 커미션이 없습니다.</div>';
+      title=L('완납 대기 커미션 — ','Comisión en espera — ')+rows.length+L('건 · 적립 ',' facturas · acumulada ')+fmtm(acc);
+      push=rows.length?(L('<div class="push">잔액 <b>','<div class="push">Al cobrar el saldo de <b>')+fmtm(open)+L('</b>(IVA 포함)을 마저 걷으면 적립 <b>','</b> (con IVA), la acumulada de <b>')+fmtm(acc)+L('</b> + 추가 <b>','</b> + <b>')+fmtm(pot)+L('</b> = 커미션 <b>','</b> adicionales = comisión de <b>')+fmtm(acc+pot)+L('</b>가 지급 확정됩니다. 일부만 들어오면 그 인보이스는 계속 대기입니다.</div>','</b> queda confirmada. Si solo paga una parte, la factura sigue en espera.</div>'))
+        :L('<div class="push good">완납을 기다리는 커미션이 없습니다.</div>','<div class="push good">No hay comisión en espera.</div>');
       tools=groupToggle();
       body=rows.length?table(rows,[
-        {h:'인보이스',f:inv},{h:'고객',f:cust},{h:'만기일',f:r=>r.due_date||'—'},{h:'상태',f:dueBadge},
-        {h:'적립 커미션',r:1,f:r=>'<span class="exp">'+fmtm(r.commission_total_accrued)+'</span>'},
-        {h:'남은 잔액(IVA 포함)',r:1,f:r=>'<b>'+fmtm(r.open_total)+'</b>'},
-        {h:'완납 시 지급 커미션',r:1,f:r=>'<b class="conf">'+fmtm(Number(r.commission_total_accrued)+Number(r.commission_potential))+'</b>'}],
+        {h:L('인보이스','Factura'),f:inv},{h:L('고객','Cliente'),f:cust},{h:L('만기일','Vence'),f:r=>r.due_date||'—'},{h:L('상태','Estado'),f:dueBadge},
+        {h:L('적립 커미션','Comisión acumulada'),r:1,f:r=>'<span class="exp">'+fmtm(r.commission_total_accrued)+'</span>'},
+        {h:L('남은 잔액(IVA 포함)','Saldo (con IVA)'),r:1,f:r=>'<b>'+fmtm(r.open_total)+'</b>'},
+        {h:L('완납 시 지급 커미션','Comisión al liquidar'),r:1,f:r=>'<b class="conf">'+fmtm(Number(r.commission_total_accrued)+Number(r.commission_potential))+'</b>'}],
         {groupByCust:true,labelSpan:4,sumKeys:[{i:4,k:r=>r.commission_total_accrued},{i:5,k:r=>r.open_total},{i:6,k:r=>Number(r.commission_total_accrued)+Number(r.commission_potential)}],
          groupWeight:g=>sumOf(g,'open_total'),waRows:openWa,total:[{i:4,v:acc},{i:5,v:open},{i:6,v:acc+pot}]})
         :'';
-      foot='· 수금일 기준: 수금할 때마다 커미션이 적립되지만, 그 인보이스가 미수 없이 완납되어야 지급됩니다(100 중 99 수금 시 미지급).';
+      foot=L('· 수금일 기준: 수금할 때마다 커미션이 적립되지만, 그 인보이스가 미수 없이 완납되어야 지급됩니다(100 중 99 수금 시 미지급).','· Por fecha de cobro: cada cobro acumula comisión, pero se paga solo cuando la factura queda cobrada al 100% (si cobras 99 de 100, aún no se paga).');
     }
 
     else if(k==='bonus'){
       const ms=(d.months||[]).filter(m=>m.bonus&&m.bonus.in_plan);
-      title='성과급(Bono) — '+(ms.length?ms.map(m=>m.month).join(', '):'적용 월 없음');
+      title=L('성과급(Bono) — ','Bono — ')+(ms.length?ms.map(m=>m.month).join(', '):L('적용 월 없음','sin meses con bono'));
       const cur=ms.find(m=>m.month===ym)||ms[ms.length-1];
       const tiers=(window.__prog&&window.__prog.bonus&&window.__prog.bonus.tiers)||[];
       if(cur){
         const b=cur.bonus;
-        push = b.confirmed ? '<div class="push good">'+cur.month+' 성과급 확정 <b>'+fmtm(b.amount)+'</b>'+(b.paid?' · 지급완료':'')+'.</div>'
+        push = b.confirmed ? '<div class="push good">'+cur.month+L(' 성과급 확정 <b>',' bono confirmado <b>')+fmtm(b.amount)+'</b>'+(b.paid?L(' · 지급완료',' · pagado'):'')+'.</div>'
           : (b.next_tier
-            ? '<div class="push">'+cur.month+' '+(b.basis==='revenue'?'매출':'수금')+'목표 <b>'+fmtm(b.target)+'</b> 중 <b>'+fmtm(b.actual)+'</b>('+pct(b.rate)+'). <b>'+fmtm(b.next_tier.need)+'</b> 를 더 채우면 성과급 <b>'+fmtm(b.next_tier.amount)+'</b> ('+b.next_tier.min_rate+'% 구간). 지금 상태 그대로면 '+(b.amount>0?('<b>'+fmtm(b.amount)+'</b>'):'<b>성과급 없음</b>')+'.</div>'
-            : '<div class="push good">'+cur.month+' 최고 구간 달성 — 성과급 <b>'+fmtm(b.amount)+'</b>.</div>');
+            ? '<div class="push">'+cur.month+' '+(b.basis==='revenue'?L('매출','Venta'):L('수금','Cobranza'))+L('목표 <b>',' · meta <b>')+fmtm(b.target)+L('</b> 중 <b>','</b>: llevas <b>')+fmtm(b.actual)+'</b>('+pct(b.rate)+'). <b>'+fmtm(b.next_tier.need)+L('</b> 를 더 채우면 성과급 <b>','</b> más y tu bono será de <b>')+fmtm(b.next_tier.amount)+'</b> ('+b.next_tier.min_rate+L('% 구간). 지금 상태 그대로면 ','%). Si te quedas así: ')+(b.amount>0?('<b>'+fmtm(b.amount)+'</b>'):L('<b>성과급 없음</b>','<b>sin bono</b>'))+'.</div>'
+            : '<div class="push good">'+cur.month+L(' 최고 구간 달성 — 성과급 <b>',' escalón máximo alcanzado — bono <b>')+fmtm(b.amount)+'</b>.</div>');
       }
-      body=ms.length?('<table><thead><tr><th>월</th><th class="r">목표</th><th class="r">실적</th><th>달성률</th><th class="r">성과급</th><th class="r">다음 구간까지</th><th>상태</th></tr></thead><tbody>'
+      body=ms.length?(L('<table><thead><tr><th>월</th><th class="r">목표</th><th class="r">실적</th><th>달성률</th><th class="r">성과급</th><th class="r">다음 구간까지</th><th>상태</th></tr></thead><tbody>','<table><thead><tr><th>Mes</th><th class="r">Meta</th><th class="r">Real</th><th>Cumplimiento</th><th class="r">Bono</th><th class="r">Para el siguiente escalón</th><th>Estado</th></tr></thead><tbody>')
         +ms.map(m=>{ const b=m.bonus; return '<tr><td><b>'+m.month+'</b></td><td class="r">'+fmtm(b.target)+'</td><td class="r">'+fmtm(b.actual)+'</td><td>'+barCell(b.rate)+'</td>'
           +'<td class="r">'+(b.amount>0?('<b class="conf">'+fmtm(b.amount)+'</b>'):'<span class="hint">0</span>')+'</td>'
-          +'<td class="r">'+(b.confirmed?'—':(b.next_tier?(fmtm(b.next_tier.need)+' <span class="hint">→ '+fmtm(b.next_tier.amount)+'</span>'):'<span class="conf">최고 구간</span>'))+'</td>'
-          +'<td>'+(b.paid?badgeHtml('paid','지급완료'):(b.confirmed?badgeHtml('conf2','확정'):(m.in_progress?badgeHtml('wait','진행중'):(m.provisional?badgeHtml('prov','미래'):badgeHtml('','미확정')))))+'</td></tr>'; }).join('')
-        +'</tbody></table>'):'<div class="hint" style="margin-top:10px">이 기간은 성과급 적용기간이 아닙니다.</div>';
-      if(tiers.length) body+='<div class="hint" style="margin-top:8px">구간: '+tiers.filter(t=>t.amount>0).map(t=>t.min_rate+'% 이상 '+fmtm(t.amount)).join(' · ')+' · 그 미만은 성과급 없음 (가장 높은 구간 하나만, 정액)</div>';
-      tools=(cur&&cur.bonus.basis==='revenue')?'<button class="btn ghost sm" data-dtl="'+(kind.startsWith('p_')?'p_sales':'sales')+'">매출 내역 보기 ›</button>':'<button class="btn ghost sm" data-dtl="'+(kind.startsWith('p_')?'p_target':'open')+'">수금 대상 보기 ›</button>';
-      foot='· 성과급은 월 전체 실적 기준 — 그 달을 확정하면 목표·실적·금액이 스냅샷으로 동결되고 커미션과 같은 전표로 지급됩니다.';
+          +'<td class="r">'+(b.confirmed?'—':(b.next_tier?(fmtm(b.next_tier.need)+' <span class="hint">→ '+fmtm(b.next_tier.amount)+'</span>'):L('<span class="conf">최고 구간</span>','<span class="conf">Escalón máximo</span>')))+'</td>'
+          +'<td>'+(b.paid?badgeHtml('paid',L('지급완료','Pagado')):(b.confirmed?badgeHtml('conf2',L('확정','Confirmada')):(m.in_progress?badgeHtml('wait',L('진행중','En curso')):(m.provisional?badgeHtml('prov',L('미래','Futuro')):badgeHtml('',L('미확정','Sin confirmar'))))))+'</td></tr>'; }).join('')
+        +'</tbody></table>'):L('<div class="hint" style="margin-top:10px">이 기간은 성과급 적용기간이 아닙니다.</div>','<div class="hint" style="margin-top:10px">Este periodo no tiene bono.</div>');
+      if(tiers.length) body+=L('<div class="hint" style="margin-top:8px">구간: ','<div class="hint" style="margin-top:8px">Escalones: ')+tiers.filter(t=>t.amount>0).map(t=>t.min_rate+L('% 이상 ','% o más ')+fmtm(t.amount)).join(' · ')+L(' · 그 미만은 성과급 없음 (가장 높은 구간 하나만, 정액)</div>',' · debajo no hay bono (solo el escalón más alto, monto fijo)</div>');
+      tools=(cur&&cur.bonus.basis==='revenue')?'<button class="btn ghost sm" data-dtl="'+(kind.startsWith('p_')?'p_sales':'sales')+L('">매출 내역 보기 ›</button>','">Ver ventas ›</button>'):'<button class="btn ghost sm" data-dtl="'+(kind.startsWith('p_')?'p_target':'open')+L('">수금 대상 보기 ›</button>','">Ver facturas por cobrar ›</button>');
+      foot=L('· 성과급은 월 전체 실적 기준 — 그 달을 확정하면 목표·실적·금액이 스냅샷으로 동결되고 커미션과 같은 전표로 지급됩니다.','· El bono se calcula con el total del mes. Al cerrar el mes, meta, resultado y monto quedan fijos y se pagan junto con la comisión.');
     }
 
     else if(k==='target'){
@@ -938,21 +1000,21 @@
       const tgt=sumOf(rows,'target_amount'), col=sumOf(rows,'collected');
       const left=rows.filter(r=>!r.paid_by_month_end&&Number(r.open_total)>0.005);
       const m=(d.months||[]).find(x=>x.month===ym);
-      title='수금목표 구성 — '+ym+' · 목표 '+fmtm(m?m.collection.target:tgt);
+      title=L('수금목표 구성 — ','Meta de cobranza — ')+ym+L(' · 목표 ',' · meta ')+fmtm(m?m.collection.target:tgt);
       const actual=m?m.collection.actual:col;
-      push=left.length?('<div class="push">목표 <b>'+fmtm(m?m.collection.target:tgt)+'</b> 중 <b>'+fmtm(actual)+'</b> 수금('+pct(m?m.collection.rate:null)+')'+(actual-col>0.5?(' — 목표 대상 인보이스에서 '+fmtm(col)+', 그 외 '+fmtm(actual-col)):'')+'. 아직 <b>'+left.length+'건</b> · 고객이 낼 금액 <b>'+fmtm(sumOf(left,'open_total'))+'</b>(IVA 포함)이 남았습니다'
-        +(sumOf(left,'commission_potential')>0?(' — 걷으면 커미션 +<b>'+fmtm(sumOf(left,'commission_potential'))+'</b>'):'')+'.</div>')
-        :'<div class="push good">이번 달 수금 대상은 모두 수금됐습니다.</div>';
+      push=left.length?(L('<div class="push">목표 <b>','<div class="push">Meta <b>')+fmtm(m?m.collection.target:tgt)+L('</b> 중 <b>','</b>: llevas <b>')+fmtm(actual)+L('</b> 수금(','</b> cobrado (')+pct(m?m.collection.rate:null)+')'+(actual-col>0.5?(L(' — 목표 대상 인보이스에서 ',' — de facturas de la meta ')+fmtm(col)+L(', 그 외 ',', otras ')+fmtm(actual-col)):'')+L('. 아직 <b>','. Faltan <b>')+left.length+L('건</b> · 고객이 낼 금액 <b>',' factura(s)</b> · el cliente debe pagar <b>')+fmtm(sumOf(left,'open_total'))+L('</b>(IVA 포함)이 남았습니다','</b> (con IVA)')
+        +(sumOf(left,'commission_potential')>0?(L(' — 걷으면 커미션 +<b>',' — al cobrarlas, comisión +<b>')+fmtm(sumOf(left,'commission_potential'))+'</b>'):'')+'.</div>')
+        :L('<div class="push good">이번 달 수금 대상은 모두 수금됐습니다.</div>','<div class="push good">Todo lo que vencía este mes ya se cobró.</div>');
       tools=groupToggle();
       body=rows.length?table(rows.sort((a,b)=>Number(a.paid_by_month_end)-Number(b.paid_by_month_end)||String(a.due_date).localeCompare(String(b.due_date))),[
-        {h:'구분',f:r=>r.kind==='due'?badgeHtml('auto','당월 만기'):badgeHtml('late','연체 이월')},{h:'인보이스',f:inv},{h:'고객',f:cust},{h:'만기일',f:r=>r.due_date||'—'},
-        {h:'목표 반영(ex-IVA)',r:1,f:r=>fmtm(r.target_amount)},{h:'이달 수금(ex-IVA)',r:1,f:r=>r.collected?('<span class="conf">'+fmtm(r.collected)+'</span>'):'<span class="hint">0</span>'},
-        {h:'남은 금액(IVA 포함)',r:1,f:r=>Number(r.open_total)>0.005?('<b>'+fmtm(r.open_total)+'</b>'):badgeHtml('paid','완납')},
-        {h:'상태',f:r=>r.status==='overdue'?badgeHtml('late','연체 +'+r.late_days+'일'):(r.status==='due_soon'?badgeHtml('','D'+r.late_days):(r.status==='paid'||r.status==='paid_late'?badgeHtml('paid','수금완료'):'—'))}],
+        {h:L('구분','Tipo'),f:r=>r.kind==='due'?badgeHtml('auto',L('당월 만기','Vence este mes')):badgeHtml('late',L('연체 이월','Vencida anterior'))},{h:L('인보이스','Factura'),f:inv},{h:L('고객','Cliente'),f:cust},{h:L('만기일','Vence'),f:r=>r.due_date||'—'},
+        {h:L('목표 반영(ex-IVA)','En la meta (sin IVA)'),r:1,f:r=>fmtm(r.target_amount)},{h:L('이달 수금(ex-IVA)','Cobrado este mes (sin IVA)'),r:1,f:r=>r.collected?('<span class="conf">'+fmtm(r.collected)+'</span>'):'<span class="hint">0</span>'},
+        {h:L('남은 금액(IVA 포함)','Saldo (con IVA)'),r:1,f:r=>Number(r.open_total)>0.005?('<b>'+fmtm(r.open_total)+'</b>'):badgeHtml('paid',L('완납','Liquidada'))},
+        {h:L('상태','Estado'),f:r=>r.status==='overdue'?badgeHtml('late',L('연체 +','Vencida +')+r.late_days+L('일',' días')):(r.status==='due_soon'?badgeHtml('','D'+r.late_days):(r.status==='paid'||r.status==='paid_late'?badgeHtml('paid',L('수금완료','Cobrada')):'—'))}],
         {groupByCust:true,labelSpan:4,sumKeys:[{i:4,k:r=>r.target_amount},{i:5,k:r=>r.collected},{i:6,k:r=>r.open_total}],
          groupWeight:g=>sumOf(g,'open_total'),waRows:openWa,total:[{i:4,v:tgt},{i:5,v:col},{i:6,v:sumOf(rows,'open_total')}]})
-        :'<div class="hint" style="margin-top:10px">이번 달 만기도래·연체 이월 인보이스가 없습니다.</div>';
-      foot='· 수금목표 = 이번 달 만기도래 인보이스(ex-IVA) + 전월까지 연체 미수(설정 시). 고객 결제조건(외상일)에서 시스템이 산출합니다.';
+        :L('<div class="hint" style="margin-top:10px">이번 달 만기도래·연체 이월 인보이스가 없습니다.</div>','<div class="hint" style="margin-top:10px">No hay facturas que venzan este mes ni vencidas anteriores.</div>');
+      foot=L('· 수금목표 = 이번 달 만기도래 인보이스(ex-IVA) + 전월까지 연체 미수(설정 시). 고객 결제조건(외상일)에서 시스템이 산출합니다.','· Meta de cobranza = facturas que vencen este mes (sin IVA) + vencidas de meses anteriores (si aplica). El sistema la calcula con los días de crédito de cada cliente.');
     }
 
     $('dtlTitle').textContent=title; $('dtlPush').innerHTML=push; $('dtlTools').innerHTML=tools; $('dtlBody').innerHTML=body; $('dtlFoot').textContent=foot;
@@ -1034,77 +1096,77 @@
     return true;
   }
   const basisChip=(b,mode)=> b==='revenue'
-    ? '<span class="badge exp" title="매출 기준: 인보이스 발행 즉시 확정">매출</span>'
+    ? L('<span class="badge exp" title="매출 기준: 인보이스 발행 즉시 확정">매출</span>','<span class="badge exp" title="Por venta: se confirma al emitir la factura">Venta</span>')
     : (mode==='payment'
-      ? '<span class="badge auto" title="수금 기준(수금일): 기간 안 수금분 × 율 적립, 인보이스 완납 시 확정">수금일</span>'
-      : '<span class="badge" title="수금 기준(발행일): 반제완납 시 확정">수금</span>');
+      ? L('<span class="badge auto" title="수금 기준(수금일): 기간 안 수금분 × 율 적립, 인보이스 완납 시 확정">수금일</span>','<span class="badge auto" title="Por fecha de cobro: cobros en la vigencia × tasa, se confirma al liquidar la factura">Cobro</span>')
+      : L('<span class="badge" title="수금 기준(발행일): 반제완납 시 확정">수금</span>','<span class="badge" title="Por cobranza (fecha de factura): se confirma al liquidar">Cobranza</span>'));
 
   function render(){
     if(!data){return;}
     const s=data.summary||{};
     $('summary').innerHTML=
-      sb(s.invoice_count||0,'인보이스 건수')
-      +sb(fmtm(s.total_expected),'기대 커미션')
-      +sb(fmtm(s.total_confirmed),'확정 커미션')
-      +sb(fmtm(s.total_unpaid),'미지급 확정','unpaid')
-      +sb(fmtm(s.total_paid),'지급완료','paid');
+      sb(s.invoice_count||0,L('인보이스 건수','Facturas'))
+      +sb(fmtm(s.total_expected),L('기대 커미션','Comisión esperada'))
+      +sb(fmtm(s.total_confirmed),L('확정 커미션','Comisión confirmada'))
+      +sb(fmtm(s.total_unpaid),L('미지급 확정','Confirmada por pagar'),'unpaid')
+      +sb(fmtm(s.total_paid),L('지급완료','Pagado'),'paid');
 
     // 전체 열람자: 영업사원별 요약
     if(data.by_agent && data.by_agent.length){
-      $('agentSummary').innerHTML='<div class="card" style="margin-top:12px;background:#faf8f3"><div class="card-h">영업사원별 요약</div>'
-        +'<table><thead><tr><th>영업사원</th><th class="r">건수</th><th class="r">기대 커미션</th><th class="r">확정 커미션</th><th class="r">지급완료</th><th class="r">미지급</th></tr></thead><tbody>'
+      $('agentSummary').innerHTML=L('<div class="card" style="margin-top:12px;background:#faf8f3"><div class="card-h">영업사원별 요약</div>','<div class="card" style="margin-top:12px;background:#faf8f3"><div class="card-h">Resumen por vendedor</div>')
+        +L('<table><thead><tr><th>영업사원</th><th class="r">건수</th><th class="r">기대 커미션</th><th class="r">확정 커미션</th><th class="r">지급완료</th><th class="r">미지급</th></tr></thead><tbody>','<table><thead><tr><th>Vendedor</th><th class="r">Facturas</th><th class="r">Comisión esperada</th><th class="r">Comisión confirmada</th><th class="r">Pagado</th><th class="r">Por pagar</th></tr></thead><tbody>')
         +data.by_agent.map(a=>'<tr><td><b>'+esc(a.agent_name)+'</b></td><td class="r">'+a.invoice_count+'</td><td class="r exp">'+fmtm(a.expected)+'</td><td class="r conf">'+fmtm(a.confirmed)+'</td><td class="r">'+fmtm(a.paid)+'</td><td class="r short">'+fmtm(a.unpaid)+'</td></tr>').join('')
         +'</tbody></table></div>';
     } else { $('agentSummary').innerHTML=''; }
 
-    if(data.not_migrated){ $('body').innerHTML='<div class="msg err" style="display:block">커미션 테이블이 아직 서버에 없습니다. 서버에서 마이그레이션(npm run migrate · 0055/0086)을 실행한 뒤 새로고침하세요.</div>'; $('agentSummary').innerHTML=''; return; }
+    if(data.not_migrated){ $('body').innerHTML=L('<div class="msg err" style="display:block">커미션 테이블이 아직 서버에 없습니다. 서버에서 마이그레이션(npm run migrate · 0055/0086)을 실행한 뒤 새로고침하세요.</div>','<div class="msg err" style="display:block">La comisión aún no está activa en el servidor.</div>'); $('agentSummary').innerHTML=''; return; }
     const groups=data.groups||[];
-    if(!groups.length){ $('body').innerHTML='<div class="hint" style="margin-top:12px">표시할 커미션 내역이 없습니다. (디렉터가 커미션 대상·지급률을 먼저 지정해야 합니다)</div>'; return; }
+    if(!groups.length){ $('body').innerHTML=L('<div class="hint" style="margin-top:12px">표시할 커미션 내역이 없습니다. (디렉터가 커미션 대상·지급률을 먼저 지정해야 합니다)</div>','<div class="hint" style="margin-top:12px">Aún no hay comisiones. (La Dirección debe registrar primero tus condiciones de comisión.)</div>'); return; }
     const seeAgentCol = canSeeAll() && !agentId;
     let html=''; let shown=0;
     for(const g of groups){
       const lines=(g.lines||[]).filter(lineVisible);
       if(!lines.length) continue;
       shown++;
-      html+='<div class="card" style="margin-top:12px"><div class="card-h">'+esc(g.label)
-        +' <span class="hint" style="font-weight:400">· 건수 '+g.invoice_count+' · 매출 '+fmtm(g.base)+' · 기대 '+fmtm(g.expected)+' · 확정 '+fmtm(g.confirmed)+'</span></div>';
-      html+='<table><thead><tr><th>인보이스</th><th>일자</th>'+(view==='customer'?'':'<th>고객</th>')+(seeAgentCol?'<th>영업사원</th>':'')
-        +'<th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">기대</th><th class="r">확정</th><th>지급예상일</th><th>상태</th></tr></thead><tbody>';
+      html+='<div class="card" style="margin-top:12px"><div class="card-h">'+esc(g.key==='all'?L('전체','Todas las facturas'):g.label)
+        +L(' <span class="hint" style="font-weight:400">· 건수 ',' <span class="hint" style="font-weight:400">· facturas ')+g.invoice_count+L(' · 매출 ',' · venta ')+fmtm(g.base)+L(' · 기대 ',' · esperada ')+fmtm(g.expected)+L(' · 확정 ',' · confirmada ')+fmtm(g.confirmed)+'</span></div>';
+      html+=L('<table><thead><tr><th>인보이스</th><th>일자</th>','<table><thead><tr><th>Factura</th><th>Fecha</th>')+(view==='customer'?'':L('<th>고객</th>','<th>Cliente</th>'))+(seeAgentCol?L('<th>영업사원</th>','<th>Vendedor</th>'):'')
+        +L('<th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">기대</th><th class="r">확정</th><th>지급예상일</th><th>상태</th></tr></thead><tbody>','<th class="r">Venta (sin IVA)</th><th class="r">Tasa</th><th class="r">Esperada</th><th class="r">Confirmada</th><th>Pago estimado</th><th>Estado</th></tr></thead><tbody>');
       for(const l of lines){
-        const st = l.paid ? '<span class="badge paid">지급완료'+(l.paid_date?(' '+l.paid_date):'')+'</span>'
-                  : (!l.recognized ? (l.mode==='payment'&&l.accrued>0 ? '<span class="badge wait" title="수금분 적립됨 · 인보이스 완납 시 지급 확정">적립 '+fmtm(l.accrued)+' · 완납 대기</span>' : '<span class="badge exp">기대(수금 전)</span>')
-                  : (l.batch_status==='handed' ? '<span class="badge hand">인사전달됨</span>'
-                  : (l.batch_status==='confirmed' ? '<span class="badge conf2">확정·지급대기</span>'
-                  : '<span class="badge wait">집계중(미확정)</span>')));
+        const st = l.paid ? L('<span class="badge paid">지급완료','<span class="badge paid">Pagado')+(l.paid_date?(' '+l.paid_date):'')+'</span>'
+                  : (!l.recognized ? (l.mode==='payment'&&l.accrued>0 ? L('<span class="badge wait" title="수금분 적립됨 · 인보이스 완납 시 지급 확정">적립 ','<span class="badge wait" title="Cobros acumulados · se confirma al liquidar la factura">Acumulada ')+fmtm(l.accrued)+L(' · 완납 대기</span>',' · en espera</span>') : L('<span class="badge exp">기대(수금 전)</span>','<span class="badge exp">Esperada (sin cobrar)</span>'))
+                  : (l.batch_status==='handed' ? L('<span class="badge hand">인사전달됨</span>','<span class="badge hand">En proceso de pago</span>')
+                  : (l.batch_status==='confirmed' ? L('<span class="badge conf2">확정·지급대기</span>','<span class="badge conf2">Confirmada · por pagar</span>')
+                  : L('<span class="badge wait">집계중(미확정)</span>','<span class="badge wait">En cálculo (sin cerrar)</span>'))));
         html+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+' '+basisChip(l.basis,l.mode)+'</td><td>'+l.inv_date+'</td>'
           +(view==='customer'?'':'<td>'+esc(l.customer_name)+'</td>')
           +(seeAgentCol?'<td>'+esc(l.agent_name)+'</td>':'')
-          +'<td class="r">'+fmtm(l.base)+(l.nc_base>0?('<div class="hint" style="font-size:11px">NC −'+fmtm(l.nc_base)+' 차감</div>'):'')
-          +(l.mode==='payment'&&Number(l.collected_base||0)>0&&Math.abs(Number(l.collected_base||0)-Number(l.base||0))>0.5?('<div class="hint" style="font-size:11px" title="수금일이 커미션 기간 안인 수금분만 대상">기간 내 수금 '+fmtm(l.collected_base)+' 기준</div>'):'')+'</td><td class="r">'+l.rate+'%</td>'
+          +'<td class="r">'+fmtm(l.base)+(l.nc_base>0?('<div class="hint" style="font-size:11px">NC −'+fmtm(l.nc_base)+L(' 차감</div>',' descontada</div>')):'')
+          +(l.mode==='payment'&&Number(l.collected_base||0)>0&&Math.abs(Number(l.collected_base||0)-Number(l.base||0))>0.5?(L('<div class="hint" style="font-size:11px" title="수금일이 커미션 기간 안인 수금분만 대상">기간 내 수금 ','<div class="hint" style="font-size:11px" title="Solo cobros dentro de la vigencia">cobrado en vigencia ')+fmtm(l.collected_base)+L(' 기준</div>','</div>')):'')+'</td><td class="r">'+l.rate+'%</td>'
           +'<td class="r exp">'+fmtm(l.expected)+'</td><td class="r conf">'+(l.confirmed?fmtm(l.confirmed):'—')+'</td>'
           +'<td>'+(l.due_date||'—')+'</td><td>'+st+'</td></tr>';
       }
       html+='</tbody></table></div>';
     }
-    if(!shown){ const lbl=statusFilter==='unpaid'?'미지급(확정)':'지급완료'; html='<div class="hint" style="margin-top:12px">'+lbl+' 상태의 커미션이 없습니다.</div>'; }
+    if(!shown){ const lbl=statusFilter==='unpaid'?L('미지급(확정)','por pagar (confirmada)'):L('지급완료','Pagado'); html='<div class="hint" style="margin-top:12px">'+lbl+L(' 상태의 커미션이 없습니다.</div>',': no hay comisiones.</div>'); }
     const adjs=(data&&data.adjustments)||[];
     if(adjs.length){
       const t=adjs.reduce((s,a)=>s+Number(a.amount||0),0);
-      html='<div class="card" style="margin-top:12px"><div class="card-h">지급 후 매출 조정 — 다음 지급에서 정산 <span class="hint" style="font-weight:400">· '+adjs.length+'건 · '+(t<0?'차감 −':'추가 +')+fmtm(Math.abs(t))+'</span></div>'+adjTable(adjs)+'</div>'+html;
+      html=L('<div class="card" style="margin-top:12px"><div class="card-h">지급 후 매출 조정 — 다음 지급에서 정산 <span class="hint" style="font-weight:400">· ','<div class="card" style="margin-top:12px"><div class="card-h">Ajustes por cambios en ventas ya pagadas — se aplican en el siguiente pago <span class="hint" style="font-weight:400">· ')+adjs.length+L('건 · ',' facturas · ')+(t<0?L('차감 −','descuento −'):L('추가 +','adicional +'))+fmtm(Math.abs(t))+'</span></div>'+adjTable(adjs)+'</div>'+html;
     }
     $('body').innerHTML=html;
   }
   // 요약 박스. kind 를 주면 클릭 → 상세 팝업(openDtl). sub = 박스 아래 보조 문구.
   function sb(v,l,cls,kind,sub){
-    return '<div class="sb'+(cls?(' '+cls):'')+(kind?' click':'')+'"'+(kind?(' data-dtl="'+kind+'" role="button" tabindex="0" title="클릭하면 상세 내역"'):'')+'>'
+    return '<div class="sb'+(cls?(' '+cls):'')+(kind?' click':'')+'"'+(kind?(' data-dtl="'+kind+L('" role="button" tabindex="0" title="클릭하면 상세 내역"','" role="button" tabindex="0" title="Clic para ver el detalle"')):'')+'>'
       +'<div class="v">'+v+'</div><div class="l">'+l+'</div>'+(sub?('<div class="s">'+sub+'</div>'):'')+'</div>';
   }
 
   // ── 지급 후 매출 조정 차액(차감/추가) ──
-  const ADJ_REASON={deleted:'매출 삭제',nota_credito:'크레딧 노트',amount_change:'금액 수정'};
+  const ADJ_REASON={}; Object.defineProperties(ADJ_REASON,{deleted:{get:()=>L('매출 삭제','Venta eliminada')},nota_credito:{get:()=>L('크레딧 노트','Nota de crédito')},amount_change:{get:()=>L('금액 수정','Importe corregido')}});
   function adjTable(list){
     if(!list||!list.length) return '';
-    let h='<table style="margin-top:6px"><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th>사유</th><th class="r">지급 당시 매출</th><th class="r">현재 매출</th><th class="r">지급액</th><th class="r">차액</th></tr></thead><tbody>';
+    let h=L('<table style="margin-top:6px"><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th>사유</th><th class="r">지급 당시 매출</th><th class="r">현재 매출</th><th class="r">지급액</th><th class="r">차액</th></tr></thead><tbody>','<table style="margin-top:6px"><thead><tr><th>Factura</th><th>Fecha</th><th>Cliente</th><th>Motivo</th><th class="r">Venta al pagar</th><th class="r">Venta actual</th><th class="r">Pagado</th><th class="r">Diferencia</th></tr></thead><tbody>');
     for(const a of list) h+='<tr><td>'+esc(a.sat_no||('#'+a.invoice_id))+'</td><td>'+esc(a.inv_date||'')+'</td><td>'+esc(a.customer_name||'')+'</td><td>'+esc(ADJ_REASON[a.reason]||a.reason)+'</td>'
       +'<td class="r">'+fmtm(a.paid_base)+'</td><td class="r">'+fmtm(a.new_base)+'</td><td class="r">'+fmtm(a.paid_amount)+'</td>'
       +'<td class="r '+(a.amount<0?'short':'conf')+'">'+(a.amount<0?'−':'+')+fmtm(Math.abs(a.amount))+'</td></tr>';
@@ -1442,44 +1504,44 @@
     const qs = canSeeAll() ? (aid?('?agent_id='+aid):'') : '';
     try{
       const d=await fetch(session.api+'/api/commission/payments'+qs,{headers:auth()}).then(r=>r.json());
-      if(d.not_migrated){ $('voucherBody').innerHTML='<div class="hint">지급(반제) 테이블이 없습니다. 서버 마이그레이션(0086)을 실행하세요.</div>'; return; }
+      if(d.not_migrated){ $('voucherBody').innerHTML=L('<div class="hint">지급(반제) 테이블이 없습니다. 서버 마이그레이션(0086)을 실행하세요.</div>','<div class="hint">Los pagos aún no están activos en el servidor.</div>'); return; }
       const items=d.items||[];
-      if(!items.length){ $('voucherBody').innerHTML='<div class="hint">지급 전표가 없습니다.</div>'; return; }
+      if(!items.length){ $('voucherBody').innerHTML=L('<div class="hint">지급 전표가 없습니다.</div>','<div class="hint">Aún no hay pagos.</div>'); return; }
       const showAgent = canSeeAll() && !aid;
-      let h='<table><thead><tr><th>지급일</th>'+(showAgent?'<th>영업사원</th>':'')+'<th class="r">지급액</th><th class="r">반제충당</th><th class="r">충당건수</th><th>메모</th><th>증빙</th></tr></thead><tbody>';
+      let h=L('<table><thead><tr><th>지급일</th>','<table><thead><tr><th>Fecha de pago</th>')+(showAgent?L('<th>영업사원</th>','<th>Vendedor</th>'):'')+L('<th class="r">지급액</th><th class="r">반제충당</th><th class="r">충당건수</th><th>메모</th><th>증빙</th></tr></thead><tbody>','<th class="r">Monto</th><th class="r">Aplicado</th><th class="r">Facturas</th><th>Nota</th><th>Comprobante</th></tr></thead><tbody>');
       for(const p of items) h+='<tr><td>'+p.paid_date+'</td>'+(showAgent?'<td>'+esc(p.agent_name)+'</td>':'')
         +'<td class="r">'+fmtm(p.amount)+'</td><td class="r conf">'+fmtm(p.settled)+'</td><td class="r">'+p.alloc_count+'</td>'
-        +'<td>'+esc(p.note||'')+'</td><td>'+(p.has_evidence?'<button class="btn ghost sm" onclick="viewEvidence('+p.id+')">증빙 보기</button>':'—')+'</td></tr>';
+        +'<td>'+esc(p.note||'')+'</td><td>'+(p.has_evidence?'<button class="btn ghost sm" onclick="viewEvidence('+p.id+L(')">증빙 보기</button>',')">Ver comprobante</button>'):'—')+'</td></tr>';
       h+='</tbody></table>';
       $('voucherBody').innerHTML=h;
-    }catch(e){ $('voucherBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+    }catch(e){ $('voucherBody').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); }
   }
   async function viewEvidence(id){
     try{
       const r=await fetch(session.api+'/api/commission/payments/'+id+'/evidence',{headers:auth()});
-      if(!r.ok){ alert('증빙을 불러오지 못했습니다.'); return; }
+      if(!r.ok){ alert(L('증빙을 불러오지 못했습니다.','No se pudo abrir el comprobante.')); return; }
       const blob=await r.blob(); const url=URL.createObjectURL(blob);
       window.open(url,'_blank');
       setTimeout(()=>URL.revokeObjectURL(url),60000);
-    }catch(e){ alert('증빙을 불러오지 못했습니다.'); }
+    }catch(e){ alert(L('증빙을 불러오지 못했습니다.','No se pudo abrir el comprobante.')); }
   }
 
   // ── 내 커미션 조건 (영업사원 본인) ──
   async function loadMyPeriods(){
     try{
       const d=await fetch(session.api+'/api/commission/my-periods',{headers:auth()}).then(r=>r.json());
-      if(d.not_migrated){ $('myCondBody').innerHTML='<div class="hint">커미션 기간 테이블이 아직 없습니다. 서버 마이그레이션(0143)을 실행하세요.</div>'; return; }
+      if(d.not_migrated){ $('myCondBody').innerHTML=L('<div class="hint">커미션 기간 테이블이 아직 없습니다. 서버 마이그레이션(0143)을 실행하세요.</div>','<div class="hint">Las condiciones aún no están activas en el servidor.</div>'); return; }
       const ps=d.periods||[];
-      if(!ps.length){ $('myCondBody').innerHTML='<div class="hint">아직 지정된 커미션 조건이 없습니다. (디렉터가 설정하면 여기에 표시됩니다)</div>'; return; }
-      let h='<table><thead><tr><th>기간</th><th>기준</th><th class="r">지급률</th></tr></thead><tbody>';
+      if(!ps.length){ $('myCondBody').innerHTML=L('<div class="hint">아직 지정된 커미션 조건이 없습니다. (디렉터가 설정하면 여기에 표시됩니다)</div>','<div class="hint">Aún no tienes condiciones de comisión. (Aparecerán aquí cuando la Dirección las registre.)</div>'); return; }
+      let h=L('<table><thead><tr><th>기간</th><th>기준</th><th class="r">지급률</th></tr></thead><tbody>','<table><thead><tr><th>Vigencia</th><th>Base</th><th class="r">Tasa</th></tr></thead><tbody>');
       for(const p of ps){
         const pay=p.basis==='collection'&&p.match_on==='payment';
-        h+='<tr><td>'+p.start_date+' ~ '+(p.end_date||'지속(∞)')+' <span class="hint">('+(pay?'수금일':'발행일')+' 기준)</span></td><td>'+basisChip(p.basis,pay?'payment':'invoice')+' '+basisKo(p.basis)
-          +(p.basis==='revenue'?' · 발행 즉시 확정':(pay?' · 이 기간에 들어온 수금 × 율 적립 → 인보이스 미수 없이 완납 시 지급(발행일 무관)':' · 반제완납 시 확정'))+'</td><td class="r exp">'+p.rate+'%</td></tr>'; }
+        h+='<tr><td>'+p.start_date+' ~ '+(p.end_date||L('지속(∞)','sin fin (∞)'))+' <span class="hint">('+(pay?L('수금일','por fecha de cobro'):L('발행일','por fecha de factura'))+L(' 기준)</span></td><td>',')</span></td><td>')+basisChip(p.basis,pay?'payment':'invoice')+' '+basisKo(p.basis)
+          +(p.basis==='revenue'?L(' · 발행 즉시 확정',' · se confirma al emitir la factura'):(pay?L(' · 이 기간에 들어온 수금 × 율 적립 → 인보이스 미수 없이 완납 시 지급(발행일 무관)',' · cobros en la vigencia × tasa → se paga al liquidar la factura al 100% (sin importar la fecha de la factura)'):L(' · 반제완납 시 확정',' · se confirma al liquidar la factura')))+'</td><td class="r exp">'+p.rate+'%</td></tr>'; }
       h+='</tbody></table>';
       $('myCondBody').innerHTML=h;
       loadMyBonus();
-    }catch(e){ $('myCondBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+    }catch(e){ $('myCondBody').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); }
   }
   // 내 성과급 조건 (영업사원 본인)
   async function loadMyBonus(){
@@ -1487,14 +1549,14 @@
       const d=await fetch(session.api+'/api/commission/my-bonus',{headers:auth()}).then(r=>r.json());
       if(!d.migrated) return;
       const p=d.plan, tiers=d.tiers||[];
-      let h='<div class="card-h" style="margin-top:14px;font-size:13px">내 성과급(Bono) 조건</div>';
-      if(!p||!p.enabled){ h+='<div class="hint">성과급 대상이 아닙니다 — 커미션만 지급됩니다.</div>'; }
+      let h=L('<div class="card-h" style="margin-top:14px;font-size:13px">내 성과급(Bono) 조건</div>','<div class="card-h" style="margin-top:14px;font-size:13px">Mi bono</div>');
+      if(!p||!p.enabled){ h+=L('<div class="hint">성과급 대상이 아닙니다 — 커미션만 지급됩니다.</div>','<div class="hint">No tienes bono — solo se paga comisión.</div>'); }
       else{
-        h+='<div class="hint" style="margin-bottom:4px">'+(p.basis==='revenue'?'<b>매출목표</b>':'<b>수금목표</b>')+' 기준 · 적용 '+p.start_month+' ~ '+(p.end_month||'지속')
-          +(p.basis==='collection'?(' · 수금목표는 고객 결제조건(외상일)에서 시스템이 산출'+(p.include_overdue?' (당월 만기 + 연체 이월)':' (당월 만기도래분만)')):'')+'</div>';
-        h+='<table><thead><tr><th>달성률</th><th class="r">성과급</th></tr></thead><tbody>'
-          +tiers.map((t,i)=>'<tr><td>'+t.min_rate+'%'+(tiers[i+1]?(' ~ '+tiers[i+1].min_rate+'% 미만'):' 이상')+'</td><td class="r conf">'+fmtm(t.amount)+'</td></tr>').join('')
-          +'<tr><td class="hint">'+((tiers[0]?tiers[0].min_rate:0))+'% 미만</td><td class="r hint">미지급</td></tr>'
+        h+='<div class="hint" style="margin-bottom:4px">'+(p.basis==='revenue'?L('<b>매출목표</b>','<b>Meta de venta</b>'):L('<b>수금목표</b>','<b>Meta de cobranza</b>'))+L(' 기준 · 적용 ',' · vigencia ')+p.start_month+' ~ '+(p.end_month||L('지속','sin fin'))
+          +(p.basis==='collection'?(L(' · 수금목표는 고객 결제조건(외상일)에서 시스템이 산출',' · la meta de cobranza la calcula el sistema con los días de crédito de los clientes')+(p.include_overdue?L(' (당월 만기 + 연체 이월)',' (vencen en el mes + vencidas anteriores)'):L(' (당월 만기도래분만)',' (solo lo que vence en el mes)'))):'')+'</div>';
+        h+=L('<table><thead><tr><th>달성률</th><th class="r">성과급</th></tr></thead><tbody>','<table><thead><tr><th>Cumplimiento</th><th class="r">Bono</th></tr></thead><tbody>')
+          +tiers.map((t,i)=>'<tr><td>'+(LANG==='es'?('De '+t.min_rate+'%'+(tiers[i+1]?(' a menos de '+tiers[i+1].min_rate+'%'):' o más')):(t.min_rate+'%'+(tiers[i+1]?(' ~ '+tiers[i+1].min_rate+'% 미만'):' 이상')))+'</td><td class="r conf">'+fmtm(t.amount)+'</td></tr>').join('')
+          +'<tr><td class="hint">'+L('','Menos de ')+((tiers[0]?tiers[0].min_rate:0))+L('% 미만</td><td class="r hint">미지급</td></tr>','%</td><td class="r hint">Sin bono</td></tr>')
           +'</tbody></table>';
       }
       $('myCondBody').insertAdjacentHTML('beforeend',h);
@@ -1807,11 +1869,17 @@
   document.addEventListener('change',e=>{
     if(e.target&&e.target.classList&&e.target.classList.contains('p-basis')){ const m=e.target.closest('tr').querySelector('.p-match'); if(m) m.disabled=e.target.value==='revenue'; }
     if(e.target&&e.target.id==='agentSel'){ agentId=e.target.value; $('pCust').value=''; loadProgress(); loadPerf(); loadOverview(); loadPayable(agentId, $('payMonth').value); loadVouchers(agentId); loadReferrals(); }
-    if(e.target&&e.target.dataset&&e.target.dataset.refMonth){ REF.month[e.target.dataset.refMonth]=e.target.value||mxHoy().slice(0,7); renderReferrals(); }
+    if(e.target&&e.target.dataset&&e.target.dataset.refMonth){ let v=e.target.value||mxHoy().slice(0,7); if(e.target.min&&v<e.target.min) v=e.target.min; REF.month[e.target.dataset.refMonth]=v; renderReferrals(); }
     if(e.target&&e.target.id==='payMonth'){ loadPayable(agentId, e.target.value); }
     if(e.target&&['pFrom','pTo','pCust'].includes(e.target.id)) loadPerf();
   });
 
+  applyStaticLang();
+  $('langBtn').addEventListener('click',()=>{
+    LANG = LANG==='es'?'ko':'es';
+    try{ localStorage.setItem('rfx_lang_commission', LANG); }catch(e){}
+    location.reload();
+  });
   document.addEventListener('click',e=>{
     const b=e.target.closest&&e.target.closest('[data-ref-view]');
     if(b){ REF.view[b.dataset.refId]=b.dataset.refView; renderReferrals(); }
@@ -1820,6 +1888,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261021lg"></script>
+<script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>
