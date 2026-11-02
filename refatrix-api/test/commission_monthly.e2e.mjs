@@ -40,6 +40,21 @@ await query(`INSERT INTO sales_payment_allocations(payment_id,invoice_id,amount)
 await query(`INSERT INTO commission_payouts(invoice_id,agent_id,amount,settle_ym,paid,paid_date) VALUES ($1,$2,40,'2026-09',true,'2026-10-15')`, [a2, ana]);
 // 10월 배치 지급일 지정
 await query(`INSERT INTO commission_batches(settle_ym,status,pay_date) VALUES ('2026-10','confirmed','2026-11-14')`);
+// 만기일 · 지연: b1 만기 10-15 → 10-20 완납(+5일)
+await query(`UPDATE sales_invoices SET due_date='2026-10-15', credit_days=5 WHERE id=$1`, [b1]);
+// 「Oscar 형」: 수금일 판정 기간이 10/1 시작 — 9월 발행 인보이스가 9월 목록에 나오는 이유 재현
+const oscar = await mk('Oscar', 'sales');
+const custO = (await one(`INSERT INTO customers(code,name,owner_id,team_id) VALUES ('C3','Merida Tres',$1,$2) RETURNING id`, [oscar, team.id])).id;
+await query(`INSERT INTO commission_agents(user_id,default_rate,active) VALUES ($1,3,true)`, [oscar]);
+await query(`INSERT INTO commission_agent_periods(user_id,start_date,end_date,basis,rate,match_on) VALUES ($1,'2026-10-01',NULL,'collection',3,'payment')`, [oscar]);
+const o1 = await inv(custO, '2026-09-10', 'F-0101', [[p1, 4, 250]]);   // 1000 + IVA = 1160
+const o2 = await inv(custO, '2026-09-15', 'F-0102', [[p2, 2, 500]]);   // 미수
+const o3 = await inv(custO, '2026-09-05', 'F-0103', [[p1, 1, 100]]);   // 9월에 완납 → 기간 전 수금 → 목록 제외
+await query(`UPDATE sales_invoices SET due_date=inv_date + 30, credit_days=30 WHERE id = ANY($1::bigint[])`, [[o1, o2, o3]]);
+const op = (await one(`INSERT INTO sales_payments(customer_id,pay_date,account_id,amount) VALUES ($1,'2026-10-25',$2,580) RETURNING id`, [custO, acct])).id;
+await query(`INSERT INTO sales_payment_allocations(payment_id,invoice_id,amount) VALUES ($1,$2,580)`, [op, o1]);
+const op0 = (await one(`INSERT INTO sales_payments(customer_id,pay_date,account_id,amount) VALUES ($1,'2026-09-20',$2,116) RETURNING id`, [custO, acct])).id;
+await query(`INSERT INTO sales_payment_allocations(payment_id,invoice_id,amount) VALUES ($1,$2,116)`, [op0, o3]);
 
 // ── 앱 ──
 const app = Fastify();
@@ -53,7 +68,7 @@ console.log('monthly-index (director)');
 let r = await get('/api/commission/monthly-index', dir);
 ok(r.code === 200, '200');
 ok(r.body.see_all === true, 'see_all');
-ok(r.body.agents.map((a) => a.agent_name).join(',') === 'Ana,Beto', '활성 커미션 대상만(Caro 제외)');
+ok(r.body.agents.map((a) => a.agent_name).join(',') === 'Ana,Beto,Oscar', '활성 커미션 대상만(Caro 제외)');
 const cell = (aid, ym) => r.body.cells.find((c) => c.agent_id === aid && c.ym === ym);
 ok(cell(Number(ana), '2026-10').invoice_count === 1 && cell(Number(ana), '2026-10').commission === 88, 'Ana 10월 1건 · 커미션 88 (2200×4%)');
 ok(cell(Number(ana), '2026-09').paid === 40, 'Ana 9월 지급 40');
@@ -84,6 +99,23 @@ r = await get(`/api/commission/monthly-invoices?ym=2026-10`, dir);
 ok(r.code === 400 && r.body.error === 'agents_required', '대상 없으면 400');
 r = await get(`/api/commission/monthly-invoices?agent_ids=${ana}`, dir);
 ok(r.code === 400 && r.body.error === 'ym_required', '월 없으면 400');
+
+console.log('수금·만기·지연');
+r = await get(`/api/commission/monthly-invoices?ym=2026-10&agent_ids=${beto}`, dir);
+const B1x = r.body.lines.find((l) => l.invoice_id === Number(b1));
+ok(B1x.due_date === '2026-10-15' && B1x.last_pay_date === '2026-10-20' && B1x.delay_days === 5 && B1x.delay_open === false, '완납 지연 +5일 (마지막 수금일 − 만기일)');
+ok(B1x.payments.length === 1 && B1x.payments[0].date === '2026-10-20' && B1x.payments[0].amount === 1740, '수금 내역');
+
+console.log('Oscar 형: 9월 발행 · 10/1 시작 수금일 판정 기간');
+r = await get(`/api/commission/monthly-invoices?ym=2026-09&agent_ids=${oscar}`, dir);
+ok(r.body.lines.length === 2, '9월: 미수 잔액이 남은 2건만 (9월에 완납된 건은 제외)');
+const O1 = r.body.lines.find((l) => l.invoice_id === Number(o1));
+ok(O1.in_period === false && O1.match_on === null, '발행일은 기간 밖');
+ok(O1.period_collected === 580 && O1.fully_paid === false && O1.balance === 580, '10월 수금 580 = 기간 안 수금');
+ok(O1.commission === 30 && O1.status === 'expected', '커미션 = (580+잔액580)×(1000/1160)×3% = 30 기대');
+ok(O1.due_date === '2026-10-10' && O1.delay_open === true && O1.delay_days > 0, '만기 10-10 · 미수 지연중');
+const O2 = r.body.lines.find((l) => l.invoice_id === Number(o2));
+ok(O2.period_collected === 0 && O2.last_pay_date === null && O2.payments === null && O2.commission === 30, '수금 0 · 앞으로 수금될 잔액에 대한 기대 커미션');
 
 console.log('영업사원 본인만');
 await query(`INSERT INTO user_page_access(user_id,page_key,device_req) VALUES ($1,'commission','anywhere') ON CONFLICT DO NOTHING`, [beto]);

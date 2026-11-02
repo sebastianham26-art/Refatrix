@@ -541,16 +541,22 @@ export function monthlySql({ owners, ym, withQty }) {
   let cond = '';
   if (owners) { args.push(owners); cond += ` AND ben.uid = ANY($${args.length}::bigint[])`; }
   if (ym) { args.push(ym); cond += ` AND to_char(i.inv_date,'YYYY-MM') = $${args.length}`; }
-  const qtySel = withQty ? `, q.qty, q.sku` : `, NULL::numeric AS qty, NULL::bigint AS sku`;
+  const qtySel = withQty ? `, q.qty, q.sku, pl.pays` : `, NULL::numeric AS qty, NULL::bigint AS sku, NULL::json AS pays`;
   const qtyJoin = withQty ? `
     LEFT JOIN LATERAL (
       SELECT COALESCE(SUM(sil.qty),0) AS qty, COUNT(DISTINCT sil.product_id) AS sku
         FROM sales_invoice_lines sil WHERE sil.invoice_id = i.id
-    ) q ON true` : '';
+    ) q ON true
+    LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object('d', to_char(sp.pay_date,'YYYY-MM-DD'), 'a', spa.amount) ORDER BY sp.pay_date, sp.id) AS pays
+        FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id = spa.payment_id
+       WHERE spa.invoice_id = i.id
+    ) pl ON true` : '';
   const sql = `
   SELECT i.id AS invoice_id, i.sat_no,
          to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.inv_date,'YYYY-MM') AS inv_ym,
          i.subtotal_mxn AS inv_subtotal, i.iva_mxn AS inv_iva, i.total_mxn AS inv_total,
+         to_char(i.due_date,'YYYY-MM-DD') AS due_date, i.credit_days,
          (i.subtotal_mxn - nc.base) AS subtotal_mxn, (i.total_mxn - nc.total) AS total_mxn, nc.base AS nc_base,
          ben.uid AS owner_id, ag.name AS agent_name,
          c.id AS customer_id, c.name AS customer_name, c.code AS customer_code,
@@ -593,7 +599,7 @@ async function batchPayDates() {
 //   confirmed = 확정·미지급 → 확정 금액 · 지급 예정일(배치 지급일 또는 확정월 다음 달 15일)
 //   expected  = 아직 확정 전(수금 기준 미완납) → 기대 금액 · 지급일 없음(완납 후 확정)
 //   커미션과 무관한 줄(수금일 판정·적립 0·더 받을 것 없음, 미지급)은 null.
-export function monthlyLine(r, bmap = {}) {
+export function monthlyLine(r, bmap = {}, opts = {}) {
   const c = computeLine(r);
   const paid = r.payout_paid === true;
   if (!paid && !c.relevant) return null;
@@ -613,6 +619,20 @@ export function monthlyLine(r, bmap = {}) {
   }
   const sub = Number(r.inv_subtotal) || 0, tot = Number(r.inv_total) || 0;
   const iva = r.inv_iva != null ? Number(r.inv_iva) : round2(tot - sub);
+  // 수금·만기·지연 — 커미션 판정 근거를 표에서 바로 보이게 (2026-11-02b)
+  const netTotal = Number(r.total_mxn) || 0;                       // NC 차감 후 받을 금액
+  const paidAmt = round2(Number(r.paid_amount) || 0);
+  const balance = round2(Math.max(0, netTotal - paidAmt));
+  const lastPay = r.last_pay_date ? String(r.last_pay_date).slice(0, 10) : null;
+  const dueDate = r.due_date ? String(r.due_date).slice(0, 10) : null;
+  const today = opts.today || mxToday();
+  let delayDays = null, delayOpen = false;
+  if (dueDate) {
+    if (c.fullyPaid && lastPay) delayDays = daysBetween(dueDate, lastPay);          // 완납: 마지막 수금일 − 만기일
+    else { delayDays = daysBetween(dueDate, today); delayOpen = true; }            // 미수: 오늘 − 만기일 (음수 = 남은 일수)
+  }
+  let pays = r.pays;
+  if (typeof pays === 'string') { try { pays = JSON.parse(pays); } catch { pays = null; } }
   return {
     invoice_id: Number(r.invoice_id), sat_no: r.sat_no || null, inv_date: String(r.inv_date).slice(0, 10), inv_ym: String(r.inv_date).slice(0, 7),
     agent_id: Number(r.owner_id), agent_name: r.agent_name,
@@ -621,7 +641,22 @@ export function monthlyLine(r, bmap = {}) {
     subtotal: round2(sub), iva: round2(iva), total: round2(tot), nc_base: round2(Number(r.nc_base) || 0),
     basis: c.basis, mode: c.mode, rate: c.rate, commission_base: c.base,
     commission: round2(commission || 0), status, settle_ym: c.settleYm, pay_date: payDate, pay_planned: payPlanned,
+    due_date: dueDate, credit_days: r.credit_days != null ? Number(r.credit_days) : null,
+    last_pay_date: lastPay, paid_amount: paidAmt, balance, fully_paid: c.fullyPaid,
+    delay_days: delayDays, delay_open: delayOpen,
+    payments: Array.isArray(pays) ? pays.map((p) => ({ date: p.d, amount: round2(Number(p.a) || 0) })) : null,
+    // 판정 근거: 발행일이 커미션 기간 안인가 · 수금일 판정이면 기간 안 수금액(IVA 포함)
+    in_period: r.basis != null, period_basis: r.basis || null, match_on: r.match_on || null,
+    period_collected: r.pp_amt != null ? round2(Number(r.pp_amt) || 0) : 0,
   };
+}
+
+// 멕시코 중부(UTC−6) 오늘 'YYYY-MM-DD'
+function mxToday() { return new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10); }
+// b − a (일). 'YYYY-MM-DD' 두 개.
+export function daysBetween(a, b) {
+  const t = (s) => { const [y, m, d] = String(s).split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((t(b) - t(a)) / 86400000);
 }
 
 // 대상×월 집계 (순수). 월 = 인보이스 발행월.
