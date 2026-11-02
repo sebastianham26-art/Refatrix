@@ -18,7 +18,7 @@ import {
   canPassThrough, whisperMimeOf, cleanFileName, extOf,
 } from '../src/audioConvert.js';
 import {
-  processOne, prepareFileRecording, consultAiApi, consultConvertApi,
+  processOne, prepareFileRecording, consultAiApi, consultConvertApi, needsConvert,
 } from '../src/routes/consultRoutes.js';
 
 const REAL_TRANSCRIBE = consultAiApi.transcribe;   // beforeEach 스텁 전에 진짜 함수를 잡아 둔다
@@ -349,4 +349,99 @@ test('방문 녹음(visitRecRoutes)도 같은 폴백', async () => {
     const r = await visit.ai.transcribe({ b64: 'eA==', mime: 'audio/webm' });
     assert.deepEqual(sent, ['gpt-4o-mini-transcribe', 'whisper-1']); assert.equal(r.ok, true);
   });
+});
+
+
+// ── ⑤ 아이폰(사파리) mp4 화면 녹음 · ffmpeg 없을 때 원본 전송분의 재변환 (2026-11-02e) ──
+//   사고: whisper-1 이 "Invalid file format" 으로 거절(조각 MP4) + gpt-4o-transcribe 는 1400초 상한.
+test('needsConvert: 파일=항상 · webm 녹음=아니오 · mp4 녹음=예 · 이미 변환(ogg+converted_at)=아니오', () => {
+  assert.equal(needsConvert({ source: 'file', mime: 'audio/mp4' }), true);
+  assert.equal(needsConvert({ source: 'rec', mime: 'audio/webm' }), false);
+  assert.equal(needsConvert({ mime: 'audio/webm;codecs=opus' }), false, '0312 전 행(source 없음)');
+  assert.equal(needsConvert({ source: 'rec', mime: 'audio/mp4' }), true);
+  assert.equal(needsConvert({ source: 'file', mime: 'audio/ogg', converted_at: new Date() }), false);
+  assert.equal(needsConvert({ source: 'file', mime: 'audio/mp4', converted_at: new Date() }), true,
+    'ffmpeg 없을 때 원본 그대로 보냈던 행은 다시 변환');
+});
+
+function insertRec(mime, parts) {
+  return pub.one(`INSERT INTO sales_consult_recordings (consult_id, mime, audio_b64, created_by, status, attempts)
+    VALUES (10, ${esc(mime)}, ${esc(parts.map((p) => Buffer.from(p).toString('base64')).join('|'))}, 2, 'transcribing', 1) RETURNING *`);
+}
+
+test('아이폰 mp4 화면 녹음(2구간)은 구간마다 변환해 순서대로 잇고 ogg 로 전사', async () => {
+  const seen = [];
+  consultConvertApi.convert = async (buf) => {
+    seen.push(buf.toString());
+    const tag = buf.toString();
+    return { ok: true, mime: 'audio/ogg', durationSec: 1500,
+      segments: [Buffer.from(tag + '-a'), Buffer.from(tag + '-b')] };
+  };
+  const got = [];
+  consultAiApi.transcribe = async ({ b64, mime }) => { got.push([Buffer.from(b64, 'base64').toString(), mime]); return { ok: true, text: 't' + got.length }; };
+  const row = insertRec('audio/mp4', ['P1', 'P2']);
+  await processOne(row);
+  const r = pub.one(`SELECT * FROM sales_consult_recordings WHERE id=${row.id}`);
+  assert.equal(r.status, 'done', r.error);
+  assert.deepEqual(seen, ['P1', 'P2']);
+  assert.deepEqual(got.map((g) => g[0]), ['P1-a', 'P1-b', 'P2-a', 'P2-b'], '시간 순서 유지');
+  assert.ok(got.every((g) => g[1] === 'audio/ogg'));
+  assert.equal(Number(r.duration_sec), 3000);
+  assert.ok(r.converted_at);
+});
+
+test('ffmpeg 없음 + mp4 화면 녹음: 예전처럼 원본 그대로 보내고 converted_at 은 비워 둔다', async () => {
+  consultConvertApi.convert = async () => ({ ok: false, error: 'ffmpeg_missing' });
+  const row = insertRec('audio/mp4', ['RAW']);
+  await processOne(row);
+  const r = pub.one(`SELECT * FROM sales_consult_recordings WHERE id=${row.id}`);
+  assert.equal(r.status, 'done', r.error);
+  assert.equal(sttCalls.length, 1); assert.equal(sttCalls[0].mime, 'audio/mp4');
+  assert.equal(r.converted_at, null);
+});
+
+test('ffmpeg 없음 → 원본 전송 실패 → ffmpeg 설치 후 재시도하면 변환해서 성공', async () => {
+  consultConvertApi.convert = async () => ({ ok: false, error: 'ffmpeg_missing' });
+  consultAiApi.transcribe = async () => ({ ok: false, error: "stt: Invalid file format. Supported formats: ['flac', 'm4a']", transient: false });
+  const row = insertFile('voz.m4a', 'audio/mp4', Buffer.from('frag-mp4').toString('base64'));
+  await processOne(row);
+  let r = pub.one(`SELECT * FROM sales_consult_recordings WHERE id=${row.id}`);
+  assert.equal(r.status, 'failed');
+  assert.equal(r.converted_at, null, '원본 전송은 변환으로 치지 않는다');
+  assert.ok(r.audio_b64, '실패 건은 오디오가 남아 재시도 가능');
+  // ffmpeg 설치 후 [↻ 재시도]
+  consultConvertApi.convert = async () => ({ ok: true, mime: 'audio/ogg', durationSec: 2559, segments: [Buffer.from('o1'), Buffer.from('o2'), Buffer.from('o3')] });
+  const n = [];
+  consultAiApi.transcribe = async ({ mime }) => { n.push(mime); return { ok: true, text: 'ok' }; };
+  pub.none(`UPDATE sales_consult_recordings SET status='transcribing', error=NULL WHERE id=${row.id}`);
+  r = pub.one(`SELECT * FROM sales_consult_recordings WHERE id=${row.id}`);
+  await processOne(r);
+  r = pub.one(`SELECT * FROM sales_consult_recordings WHERE id=${row.id}`);
+  assert.equal(r.status, 'done', r.error);
+  assert.deepEqual(n, ['audio/ogg', 'audio/ogg', 'audio/ogg']);
+});
+
+test('예전 배포본이 converted_at 을 찍어 둔 원본(m4a)도 다시 변환한다', async () => {
+  let convs = 0;
+  consultConvertApi.convert = async () => { convs++; return { ok: true, mime: 'audio/ogg', durationSec: 60, segments: [Buffer.from('s')] }; };
+  const row = pub.one(`INSERT INTO sales_consult_recordings (consult_id, mime, audio_b64, created_by, source, file_name, status, attempts, converted_at)
+    VALUES (10, 'audio/mp4', ${esc(Buffer.from('raw').toString('base64'))}, 2, 'file', 'a.m4a', 'transcribing', 1, now()) RETURNING *`);
+  await processOne(row);
+  assert.equal(convs, 1);
+  assert.equal(pub.one(`SELECT status FROM sales_consult_recordings WHERE id=${row.id}`).status, 'done');
+});
+
+const FF2 = spawnSync('ffmpeg', ['-hide_banner', '-version']).status === 0;
+test('실제 ffmpeg: 사파리식 조각 MP4(frag_keyframe+empty_moov)도 ogg 로 변환된다', { skip: !FF2 }, async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'cf-'));
+  try {
+    const out = path.join(dir, 'safari.mp4');
+    const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=500:duration=45',
+      '-c:a', 'aac', '-b:a', '64k', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', out]);
+    assert.equal(r.status, 0, String(r.stderr));
+    const conv = await convertToSegments(readFileSync(out), { segSec: 20 });
+    assert.equal(conv.ok, true, conv.error);
+    assert.equal(conv.segments.length, 3);
+    assert.equal(conv.mime, 'audio/ogg');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

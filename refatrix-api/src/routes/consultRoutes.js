@@ -196,27 +196,56 @@ export function partialDone(t) {
 //   테스트에서 ffmpeg 를 바꿔 끼울 수 있게 export.
 export const consultConvertApi = { convert: (buf) => convertToSegments(buf) };
 
+// 우리가 변환해 만든 오디오(ogg/opus · 폴백 mp3). converted_at 과 함께면 다시 변환하지 않는다.
+const CONVERTED_MIME = /^audio\/(?:ogg|mpeg)$/i;
+
+//   전사 전에 ffmpeg 변환이 필요한가 (2026-11-02e)
+//   · 휴대폰 파일(source=file): 항상 — 형식·길이를 가리지 않고 ogg 20분 구간으로
+//   · 화면 녹음 webm(크롬·안드로이드): 아니오 — Whisper 가 잘 받고 audioSplit 로 이미 20분 구간
+//   · 화면 녹음 그 밖(아이폰 사파리 mp4 등): 예 — 조각 MP4 는 whisper-1 이 'Invalid file format'
+//     으로 거절하고, 서버가 자를 수도 없어 40분 넘는 구간이 gpt-4o-transcribe 1400초 상한에도 걸린다
+export function needsConvert(row) {
+  if (!row) return false;
+  if (row.converted_at && CONVERTED_MIME.test(String(row.mime || ''))) return false;
+  if (row.source === 'file') return true;
+  return !/webm/i.test(String(row.mime || ''));
+}
+
 //   성공하면 row(메모리)와 DB 를 함께 바꾼다: audio_b64 = 구간들('|'), mime, duration_sec, converted_at.
-//   ffmpeg 가 없으면 Whisper 가 받는 형식·24MB 이하일 때만 원본 그대로 보낸다.
-export async function prepareFileRecording(row) {
+//   구간이 여러 개면(끊겼다 이어 녹음) 구간마다 변환해 순서대로 잇는다.
+//   ffmpeg 가 없으면: 파일은 Whisper 가 받는 형식·24MB 이하만 원본 그대로, 화면 녹음은 예전처럼 원본 그대로.
+//   이때 converted_at 은 남기지 않는다 — ffmpeg 설치 후 [재시도]하면 그때 변환된다.
+export async function prepareRecordingAudio(row) {
   const raw = String(row.audio_b64 || '');
   if (!raw) return { error: 'no_audio' };
-  const buf = Buffer.from(raw, 'base64');
-  let segs; let mime; let dur = row.duration_sec != null ? Number(row.duration_sec) : null;
-  const conv = await consultConvertApi.convert(buf);
-  if (conv && conv.ok) {
-    segs = conv.segments.map((b) => b.toString('base64'));
-    mime = conv.mime;
-    if (conv.durationSec) dur = conv.durationSec;
-  } else if (conv && conv.error === 'ffmpeg_missing') {
-    if (!canPassThrough(row.file_name, row.mime, buf.length)) {
-      return { error: buf.length > PASS_MAX_BYTES ? 'ffmpeg_missing: too_big' : 'ffmpeg_missing: format', transient: false };
+  const isFile = row.source === 'file';
+  const parts = raw.split('|').filter(Boolean);
+  const segs = [];
+  let mime = null; let total = 0; let durKnown = true;
+  for (const p of parts) {
+    const buf = Buffer.from(p, 'base64');
+    const conv = await consultConvertApi.convert(buf);
+    if (conv && conv.ok) {
+      segs.push(...conv.segments.map((b) => b.toString('base64')));
+      mime = conv.mime;
+      if (conv.durationSec) total += conv.durationSec; else durKnown = false;
+      continue;
     }
-    segs = [raw];
-    mime = whisperMimeOf(row.file_name, row.mime);
-  } else {
+    if (conv && conv.error === 'ffmpeg_missing') {
+      if (isFile) {
+        if (parts.length > 1 || !canPassThrough(row.file_name, row.mime, buf.length)) {
+          return { error: buf.length > PASS_MAX_BYTES ? 'ffmpeg_missing: too_big' : 'ffmpeg_missing: format', transient: false };
+        }
+        row.mime = whisperMimeOf(row.file_name, row.mime);
+      }
+      return { ok: true, skipped: 'ffmpeg_missing' };
+    }
+    // 변환 실패: 파일은 실패로, 화면 녹음은 예전처럼 원본 그대로 보내 본다
+    if (!isFile) return { ok: true, skipped: 'convert_failed' };
     return { error: (conv && conv.error) || 'convert: failed', transient: !!(conv && conv.transient) };
   }
+  let dur = row.duration_sec != null ? Number(row.duration_sec) : null;
+  if (durKnown && total > 0) dur = total;
   if (dur && dur > DURATION_MAX) return { error: 'too_long', transient: false };
   const audioB64 = segs.join('|');
   await query(
@@ -226,6 +255,7 @@ export async function prepareFileRecording(row) {
   row.audio_b64 = audioB64; row.mime = mime; row.duration_sec = dur; row.converted_at = new Date();
   return { ok: true, segments: segs.length };
 }
+export const prepareFileRecording = prepareRecordingAudio;   // 예전 이름(테스트·진단 호환)
 
 export async function processOne(row) {
   const recId = Number(row.id);
@@ -244,9 +274,9 @@ export async function processOne(row) {
   if (!transcript || donePart) {
     if (!sttReady()) return markFailed(recId, 'no_openai_key', false, row.attempts);
     if (!row.audio_b64) return markFailed(recId, 'no_audio', false, row.attempts);
-    // 휴대폰 녹음 파일: 전사 전에 한 번만 변환(ogg/opus 20분 구간). 재시도 때는 건너뛴다.
-    if (row.source === 'file' && !row.converted_at) {
-      const prep = await prepareFileRecording(row);
+    // 휴대폰 파일·아이폰 mp4 녹음: 전사 전에 한 번만 변환(ogg/opus 20분 구간). 재시도 때는 건너뛴다.
+    if (needsConvert(row)) {
+      const prep = await prepareRecordingAudio(row);
       if (prep && prep.error) return markFailed(recId, prep.error, !!prep.transient, row.attempts);
     }
     const partList = String(row.audio_b64).split('|').filter(Boolean);

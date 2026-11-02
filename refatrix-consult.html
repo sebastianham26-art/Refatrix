@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20261102up1)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20261102up2)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1597,6 +1597,8 @@
     if(/^convert: timeout/.test(s)) return '파일 변환 시간이 초과됐습니다 — [↻ 재시도]';
     if(/^convert:/.test(s)) return '파일을 오디오로 읽지 못했습니다(손상됐거나 지원하지 않는 형식): '+s.slice(9);
     if(s==='too_long') return '녹음이 너무 깁니다(최대 4시간)';
+    if(/Invalid file format/i.test(s)) return '전사 서버가 이 오디오 형식을 읽지 못했습니다(아이폰 녹음 등) — 서버에 ffmpeg 가 설치돼 있으면 [↻ 재시도] 때 자동 변환해 전사합니다';
+    if(/longer than \d+(\.\d+)? seconds/i.test(s)) return '구간이 전사 모델의 길이 상한을 넘었습니다 — [↻ 재시도] (서버가 whisper-1 로 다시 보냅니다)';
     if(/^stt: .*does not exist/i.test(s)) return '전사 모델 설정 오류 — API 키 화면의 「전사 모델」 칸을 확인하세요: '+s;
     return s;
   }
