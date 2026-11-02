@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acuerdo de Comisión · build b1030typ</title>
+<title>Acuerdo de Comisión · build b1102ro</title>
 <style>
   :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
@@ -462,19 +462,19 @@
       +'<div class="ver">Estos datos se escriben en el contrato (Declaraciones y cláusula Primera). Refatrix los revisa y aprueba.</div></div></div>';
     h+='<h2><span class="n">1</span> Comisionista referido (empresa B)</h2><div class="dl2">';
     h+='<div><label>Tipo</label><select id="'+k+'-bpersona">'+PERS(B.persona)+'</select></div>'
-      +'<div class="wide"><label>Nombre o razón social</label><input id="'+k+'-bname" value="'+esc(B.name||'')+'"></div>'
-      +'<div><label>RFC</label><input id="'+k+'-brfc" value="'+esc(B.rfc||'')+'"></div>'
-      +'<div><label>Teléfono / WhatsApp</label><input id="'+k+'-bphone" value="'+esc(B.phone||'')+'"></div>'
-      +'<div class="wide"><label>Domicilio fiscal completo</label><input id="'+k+'-baddr" value="'+esc(B.address||'')+'"></div>'
-      +'<div><label>Correo electrónico</label><input id="'+k+'-bemail" value="'+esc(B.email||'')+'"></div>'
-      +'<div><label>Representante legal (si es empresa)</label><input id="'+k+'-brep" value="'+esc(B.legal_rep||'')+'"></div></div>';
+      +'<div class="wide"><label>Nombre o razón social</label><input id="'+k+'-bname" autocomplete="section-refb organization" name="refb-name" value="'+esc(B.name||'')+'"></div>'
+      +'<div><label>RFC</label><input id="'+k+'-brfc" autocomplete="off" name="refb-rfc" value="'+esc(B.rfc||'')+'"></div>'
+      +'<div><label>Teléfono / WhatsApp</label><input id="'+k+'-bphone" autocomplete="section-refb tel" name="refb-phone" value="'+esc(B.phone||'')+'"></div>'
+      +'<div class="wide"><label>Domicilio fiscal completo</label><input id="'+k+'-baddr" autocomplete="section-refb street-address" name="refb-addr" value="'+esc(B.address||'')+'"></div>'
+      +'<div><label>Correo electrónico</label><input id="'+k+'-bemail" autocomplete="section-refb email" name="refb-email" value="'+esc(B.email||'')+'"></div>'
+      +'<div><label>Representante legal (si es empresa)</label><input id="'+k+'-brep" autocomplete="off" name="refb-rep" value="'+esc(B.legal_rep||'')+'"></div></div>';
     h+='<h2><span class="n">2</span> Tus datos (EL REFERIDOR)</h2><div class="dl2">'
       +'<div><label>Tipo</label><select id="'+k+'-apersona">'+PERS(A.persona)+'</select></div>'
-      +'<div class="wide"><label>Nombre completo o razón social</label><input id="'+k+'-aname" value="'+esc(A.name||myName)+'"></div>'
-      +'<div><label>RFC</label><input id="'+k+'-arfc" value="'+esc(A.rfc||'')+'"></div>'
-      +'<div><label>Teléfono / WhatsApp</label><input id="'+k+'-aphone" value="'+esc(A.phone||'')+'"></div>'
-      +'<div class="wide"><label>Domicilio fiscal completo</label><input id="'+k+'-aaddr" value="'+esc(A.address||'')+'"></div>'
-      +'<div><label>Correo electrónico</label><input id="'+k+'-aemail" value="'+esc(A.email||'')+'"></div></div>';
+      +'<div class="wide"><label>Nombre completo o razón social</label><input id="'+k+'-aname" autocomplete="section-refa name" name="refa-name" value="'+esc(A.name||myName)+'"></div>'
+      +'<div><label>RFC</label><input id="'+k+'-arfc" autocomplete="off" name="refa-rfc" value="'+esc(A.rfc||'')+'"></div>'
+      +'<div><label>Teléfono / WhatsApp</label><input id="'+k+'-aphone" autocomplete="section-refa tel" name="refa-phone" value="'+esc(A.phone||'')+'"></div>'
+      +'<div class="wide"><label>Domicilio fiscal completo</label><input id="'+k+'-aaddr" autocomplete="section-refa street-address" name="refa-addr" value="'+esc(A.address||'')+'"></div>'
+      +'<div><label>Correo electrónico</label><input id="'+k+'-aemail" autocomplete="section-refa email" name="refa-email" value="'+esc(A.email||'')+'"></div></div>';
     h+='<h2><span class="n">3</span> Inicio del contrato</h2><div class="dl2"><div><label>Fecha de inicio (propuesta)</label><input type="date" id="'+k+'-start" value="'+esc((it&&it.start_date)||new Date(Date.now()-360*60000).toISOString().slice(0,10))+'"></div>'
       +'<div><label>Comisión</label><input value="'+esc(it?it.rate:1)+'% sobre lo cobrado sin IVA" disabled></div></div>'
       +'<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-minesave="'+(it?it.id:'new')+'">'+(it?'Guardar cambios':'Guardar y continuar')+'</button>'
@@ -581,6 +581,10 @@
       referred_info:{name:mineVal(k,'bname'),rfc:mineVal(k,'brfc'),address:mineVal(k,'baddr'),phone:mineVal(k,'bphone'),email:mineVal(k,'bemail'),legal_rep:mineVal(k,'brep'),persona:mineVal(k,'bpersona')},
       referrer_info:{name:mineVal(k,'aname'),rfc:mineVal(k,'arfc'),address:mineVal(k,'aaddr'),phone:mineVal(k,'aphone'),email:mineVal(k,'aemail'),persona:mineVal(k,'apersona')}};
     if(!body.referred_info.name){ m.className='msg err'; m.textContent='Escribe el nombre o razón social del comisionista referido.'; return; }
+    { const nz=(v,r)=>{ let x=String(v||'').trim().toLowerCase().replace(/\s+/g,' '); return r?x.replace(/[^a-z0-9ñ&]/g,''):x; };
+      const L={name:'nombre',rfc:'RFC',email:'correo'}, B=body.referred_info, A=body.referrer_info;
+      const same=['name','rfc','email'].filter(f=>{ const a=nz(A[f],f==='rfc'), b=nz(B[f],f==='rfc'); return a&&b&&a===b; });
+      if(same.length){ m.className='msg err'; m.textContent='Los datos de la empresa referida (1) y tus datos (2) son iguales ('+same.map(f=>L[f]).join(', ')+'). Escribe los datos de cada uno por separado.'; return; } }
     const r=await api(id==='new'?'/api/commission/referrals/request':('/api/commission/referrals/'+id+'/mine'),{method:id==='new'?'POST':'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){ m.className='msg err'; m.textContent=d.note||('Error: '+(d.error||r.status)); return; }
@@ -681,7 +685,7 @@
           +'<td>'+(x.effective_from?('<b>'+esc(x.effective_from)+'</b>'):'<span class="hint">효력 없음</span>')
           +(x.approved?'':'<div><span class="badge no">승인 대기</span>'+(x.self_requested?' <span class="hint">본인 신청</span>':'')+'</div>')+'</td>'
           +'<td style="white-space:nowrap">'+(window.__refDir&&x.active&&!x.approved?('<button class="btn sm gold" data-refapprove="'+x.id+'" style="background:var(--gold)">승인</button> '):'')+(window.__refDir&&x.active?('<button class="btn sm" data-refflow="'+x.id+'">'+(x.sign_status==='signed'?'진행 현황':'진행·서명')+'</button> '):'')+'<button class="lnk" data-refpv="'+x.id+'">계약서</button>'+(cur?' · <button class="lnk" data-refsig="'+cur.id+'">서명본</button>':'')
-          +(window.__refDir&&x.active?(' · <button class="lnk" data-refdocs="'+x.id+'">서류</button> · <button class="lnk" data-refedit="'+x.id+'">수정</button> · <button class="lnk" data-refoff="'+x.id+'" style="color:var(--bad)">해지</button>'):'')
+          +(window.__refDir&&x.active&&x.approved?(' · <button class="lnk" data-refreopen="'+x.id+'">수정 다시 열기</button>'):'')+(window.__refDir&&x.active?(' · <button class="lnk" data-refdocs="'+x.id+'">서류</button> · <button class="lnk" data-refedit="'+x.id+'">수정</button> · <button class="lnk" data-refoff="'+x.id+'" style="color:var(--bad)">해지</button>'):'')
           +(x.active?' · <button class="lnk" data-copyref="1">링크 복사</button>':'')+'</td></tr>';
       }).join('');
     }catch(e){ $('refBoard').innerHTML='<tr><td colspan="7" class="hint">불러오지 못했습니다.</td></tr>'; }
@@ -957,6 +961,13 @@
     await loadRefBoard();
     if(refApproveFromFlow){ refFlowOpen=true; await openRefFlow(id); } else closeModal();
   }
+  async function reopenRef(id){
+    const x=refBoardItems.find(z=>z.id===Number(id)); if(!x) return;
+    if(!window.confirm(x.referrer_name+' → '+((x.referred_info&&x.referred_info.name)||'—')+'\n\n승인을 취소하고 소개자가 다시 고칠 수 있게 할까요?\n· 소개자가 [Corregir datos]로 B 정보를 고칩니다\n· 내용이 바뀌면 다시 서명해야 합니다\n· 그다음 다시 승인(B 계정 연결)하세요')) return;
+    const r=await api('/api/commission/referrals/'+id+'/reopen',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ alert('실패: '+(d.note||d.error||r.status)); return; }
+    await loadRefBoard();
+  }
   async function copyRefLink(btn){
     const url=location.origin+location.pathname+'#referrals';
     try{ await navigator.clipboard.writeText(url); btn.textContent='복사됨 ✓'; }
@@ -987,7 +998,7 @@
   }
 
   document.addEventListener('click',e=>{
-    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove],[data-refapprovego],[data-guide],[data-invsave],[data-invoff]');
+    const t=e.target.closest&&e.target.closest('[data-doc],[data-preview],[data-copy],[data-ctr],[data-ctr-open],[data-ctr-del],[data-refsign],[data-sigclear],[data-refsig],[data-refpv],[data-refdocs],[data-refedit],[data-refoff],[data-copyref],[data-refsave],[data-refup],[data-refdel],[data-refopen],[data-refflow],[data-flsave],[data-flowsign],[data-minenew],[data-mineedit],[data-mineclose],[data-minesave],[data-mineup],[data-minedel],[data-refapprove],[data-refapprovego],[data-refreopen],[data-guide],[data-invsave],[data-invoff]');
     if(!t) return;
     // 0307 소개 커미션
     if(t.dataset.minenew){ refFormOpen='new'; renderRefMine(); RefGuide.scrollTo($('form-mnew')); return; }
@@ -997,6 +1008,7 @@
     if(t.dataset.minesave){ saveMine(t.dataset.minesave==='new'?'new':Number(t.dataset.minesave)); return; }
     if(t.dataset.mineup){ mineUpload(t.dataset.ref, t.dataset.mineup); return; }
     if(t.dataset.minedel){ mineDel(t.dataset.minedel, t.dataset.ref); return; }
+    if(t.dataset.refreopen){ reopenRef(t.dataset.refreopen); return; }
     if(t.dataset.refapprovego){ approveRefGo(t.dataset.refapprovego); return; }
     if(t.dataset.refapprove){ approveRef(t.dataset.refapprove); return; }
     if(t.dataset.invsave){ saveInvite(); return; }

@@ -110,6 +110,8 @@ test('E1 Clarisa 가 직접 신청 — B 선택 · B 정보 · 본인 정보 (�
   assert.equal(c.invited, true);
   assert.equal(c.items.length, 0, '0311: 다른 사람 이름(계정 목록)은 보내지 않는다');
   assert.equal((await call('A', 'POST', '/api/commission/referrals/request', { referred_info: {} })).body.error, 'name_required');
+  { const same = await call('A', 'POST', '/api/commission/referrals/request', { referred_info: { name: 'Clarisa  Ruiz', rfc: 'xaxx-010101-000' }, referrer_info: { name: 'clarisa ruiz', rfc: 'XAXX010101000' } });
+    assert.equal(same.code, 400); assert.equal(same.body.error, 'same_party', 'A·B 같은 데이터 거부'); assert.deepEqual(same.body.fields, ['name', 'rfc']); }
   const r = await ok('A', 'POST', '/api/commission/referrals/request', {
     referred_id: ID.B, rate: 9, start_date: '2026-11-01',
     referred_info: { name: 'CDMX Refacciones SA de CV', rfc: 'cre210101ab1', address: 'Av. Insurgentes Sur 1602, CDMX', phone: '+52 55 1234 5678', email: 'cdmx@ejemplo.mx', legal_rep: 'Lic. Ana Ruiz', persona: 'moral' },
@@ -137,6 +139,7 @@ test('E2 Clarisa 가 수정 · 서류 업로드(A·B) · 열기 · 삭제 — �
     referrer_info: { name: 'Clarisa Martínez López', rfc: 'MALC900101AA1', address: 'Calle Hidalgo 10, Monterrey' } });
   assert.match(JSON.stringify(u.item.doc), /Crédito Constructor/);
   assert.equal((await call('X', 'PUT', `/api/commission/referrals/${ID.ref}/mine`, { referred_info: { name: 'x' } })).code, 404);
+  assert.equal((await call('A', 'PUT', `/api/commission/referrals/${ID.ref}/mine`, { referred_info: { name: 'CDMX', email: 'yo@x.mx' }, referrer_info: { name: 'Clarisa', email: 'YO@x.mx' } })).body.error, 'same_party', '수정도 같은 데이터 거부');
   assert.equal((await call('X', 'POST', `/api/commission/referrals/${ID.ref}/docs`, { party: 'referred', doc_type: 'csf', file_name: 'a.pdf', data_url: pdf(0) })).code, 403);
   let n = 0;
   for (const [party, t] of [['referred', 'csf'], ['referred', 'domicilio'], ['referred', 'ine'], ['referred', 'acta'], ['referred', 'poder'], ['referrer', 'csf'], ['referrer', 'domicilio'], ['referrer', 'ine']]) {
@@ -183,6 +186,16 @@ test('E3 Clarisa 서명 → 승인 전에는 효력 없음 → 디렉터 승인 
   const own = it.docs.items.find((x) => x.party === 'referrer' && x.type === 'banco').doc;
   assert.equal(own.can_delete, false);
   assert.equal((await call('A', 'DELETE', `/api/commission/referrals/docs/${own.id}`)).code, 403);
+  // 2026-11-02 승인 취소(수정 다시 열기) → 소개자가 B 정보 수정 → 버전 변경·재서명 필요 → 재승인
+  assert.equal((await call('A', 'POST', `/api/commission/referrals/${ID.ref}/reopen`)).code, 403, '소개자는 못 함');
+  const ro = await ok('dir', 'POST', `/api/commission/referrals/${ID.ref}/reopen`);
+  assert.equal(ro.item.approved, false); assert.equal(ro.item.referred_id, null, '본인 작성 계약은 B 계정 연결도 풀림');
+  assert.equal((await call('dir', 'POST', `/api/commission/referrals/${ID.ref}/reopen`)).body.error, 'not_approved');
+  it = (await ok('A', 'GET', '/api/commission/referrals/me')).items.find((x) => x.id === ID.ref);
+  assert.equal(it.can_edit, true); assert.equal(it.effective_from, null);
+  const fixed = await ok('A', 'PUT', `/api/commission/referrals/${ID.ref}/mine`, { referred_info: { ...it.referred_info, name: 'CDMX Corregido' }, referrer_info: it.referrer_info });
+  assert.equal(fixed.item.referred_info.name, 'CDMX Corregido'); assert.notEqual(fixed.item.version, verBefore); assert.notEqual(fixed.item.sign_status, 'signed', '고치면 재서명');
+  assert.equal((await ok('dir', 'POST', `/api/commission/referrals/${ID.ref}/approve`, { referred_id: ID.B })).item.approved, true);
   // 기존(디렉터 등록) 계약은 등록 즉시 승인
   const d = await ok('dir', 'POST', '/api/commission/referrals', { referrer_id: ID.X, referred_id: ID.dir, rate: 1, start_date: '2026-11-01', referred_info: { name: 'Z' } });
   assert.equal(d.item.approved, true);

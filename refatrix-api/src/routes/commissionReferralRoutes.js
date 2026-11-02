@@ -11,7 +11,7 @@ import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { decodeContractFile, deviceLabel } from './commissionAgreementRoutes.js';
-import { validateReferral, decodeSignature, DOC_TYPES, summarizeReferral, normInfo, referrerInfo } from '../commissionReferral.js';
+import { validateReferral, decodeSignature, DOC_TYPES, summarizeReferral, normInfo, referrerInfo, samePartyFields } from '../commissionReferral.js';
 import {
   referralsReady, loadReferral, listReferrals, currentDoc, referralState, recomputeDocsComplete, referralLines,
 } from '../commissionReferralData.js';
@@ -31,6 +31,11 @@ function tooManyFails(uid) {
   return arr.length >= 5;
 }
 function noteFail(uid) { const arr = fails.get(uid) || []; arr.push(Date.now()); fails.set(uid, arr); }
+const SAME_ES = { name: 'nombre', rfc: 'RFC', email: 'correo' };
+function sameParty(referredInfo, referrerInfoRaw) {
+  const f = samePartyFields(referredInfo, referrerInfoRaw);
+  return f.length ? { error: 'same_party', fields: f, note: `Los datos de la empresa referida (B) y tus datos (A) son iguales (${f.map((k) => SAME_ES[k]).join(', ')}). Escribe los datos de cada uno por separado.` } : null;
+}
 export function _resetReferralPinFails() { fails.clear(); }
 
 // 화면용 요약 한 건
@@ -281,6 +286,7 @@ export default async function commissionReferralRoutes(app) {
       return reply.code(400).send({ error: v.error, note: ES[v.error] || v.note });
     }
     const x = v.value;
+    const sp = sameParty(x.referred_info, b.referrer_info); if (sp) return reply.code(400).send(sp);
     const ri = referrerInfo(b.referrer_info);
     const r = (await query(
       `INSERT INTO commission_referrals (referrer_id, referred_id, rate, start_date, referred_info, referrer_info, requested_by, created_by, updated_by)
@@ -301,6 +307,7 @@ export default async function commissionReferralRoutes(app) {
     const v = validateReferral({ referrer_id: me, referred_id: ref.referred_id, rate: ref.rate, start_date: b.start_date || ref.start_date, end_date: ref.end_date, referred_info: b.referred_info, note: ref.note }, { allowNoReferred: true });
     if (!v.ok) return reply.code(400).send({ error: v.error, note: v.error === 'name_required' ? 'Escribe el nombre o razón social del comisionista referido.' : v.note });
     const x = v.value;
+    const sp = sameParty(x.referred_info, b.referrer_info); if (sp) return reply.code(400).send(sp);
     await withTx(async (cx) => {
       await cx.query(`UPDATE commission_referrals SET start_date=$2, referred_info=$3, referrer_info=$4, updated_by=$5, updated_at=now() WHERE id=$1`,
         [ref.id, x.start_date, JSON.stringify(x.referred_info), JSON.stringify(referrerInfo(b.referrer_info) || {}), me]);
@@ -363,6 +370,24 @@ export default async function commissionReferralRoutes(app) {
     if (!r) return reply.code(409).send({ error: 'not_pending', note: '승인 대기 중인 계약이 아닙니다.' });
     await logEvent({ userId: dir, action: 'update', target: `commission_referral:${r.id}`, detail: { approved: true, referred_id: bid } });
     return { ok: true, item: await refOut(await loadReferral(r.id), req.ctx.perm) };
+  });
+
+  // 2026-11-02 · 승인 취소(수정 다시 열기) — 소개자가 B 정보를 잘못 넣은 채 승인된 경우. 디렉터만.
+  //   승인을 풀면 소개자가 [Corregir datos]로 다시 고칠 수 있고, 내용이 바뀌면 계약서 버전이 바뀌어 재서명 → 다시 승인.
+  //   본인 작성 계약은 B 계정 연결도 함께 푼다(잘못된 회사에 연결됐을 수 있으므로 재승인 때 다시 연결).
+  //   이미 소개 커미션 지급 기록이 있으면 막는다(지급된 근거가 바뀌지 않게).
+  app.post('/api/commission/referrals/:id/reopen', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!isDirector(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden', note: '디렉터만 할 수 있습니다.' });
+    if (!(await selfReady())) return reply.code(503).send(MIG9);
+    const dir = Number(req.ctx.perm.userId);
+    const ref = await loadReferral(req.params.id);
+    if (!ref || !ref.active || !ref.approved) return reply.code(409).send({ error: 'not_approved', note: '승인된 계약이 아닙니다(승인 전이면 소개자가 이미 고칠 수 있습니다).' });
+    const paid = (await query(`SELECT count(*)::int AS n FROM commission_referral_payouts WHERE referral_id=$1`, [ref.id])).rows[0].n;
+    if (paid) return reply.code(409).send({ error: 'has_payouts', note: `이미 소개 커미션 지급 기록이 ${paid}건 있어 승인을 취소할 수 없습니다. 해지 후 새 계약으로 진행하세요.` });
+    const self = ref.requested_by != null;
+    await query(`UPDATE commission_referrals SET approved_at=NULL, approved_by=NULL${self ? ', referred_id=NULL' : ''}, updated_by=$2, updated_at=now() WHERE id=$1`, [ref.id, dir]);
+    await logEvent({ userId: dir, action: 'update', target: `commission_referral:${ref.id}`, detail: { reopened: true, unlinked_referred_id: self ? ref.referred_id : undefined, reason: req.body && req.body.reason ? String(req.body.reason).slice(0, 300) : undefined } });
+    return { ok: true, item: await refOut(await loadReferral(ref.id), req.ctx.perm) };
   });
 
   // ── 내 소개 계약(소개자) — 계약서 원문 + 서명 상태 ──

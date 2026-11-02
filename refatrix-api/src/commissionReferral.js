@@ -122,6 +122,14 @@ export function referrerInfo(raw) {
   };
   return (v.name || v.rfc || v.address || v.phone || v.email) ? v : null;
 }
+// 2026-11-02 · A(소개자)와 B(피소개)가 같은 데이터면 막는다 — 브라우저 자동완성이 두 칸에 같은 값을 넣는 일이 있었다.
+//   성명·RFC·이메일 중 하나라도 같으면 같은 사람으로 본다. 돌려주는 값 = 같은 항목 키 목록(없으면 []).
+export function samePartyFields(referredInfo, referrerInfoRaw) {
+  const B = referredInfo || {}, A = referrerInfoRaw || {};
+  const norm = (v, k) => { let x = String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' ');
+    if (k === 'rfc') x = x.replace(/[^a-z0-9ñ&]/g, ''); return x; };
+  return ['name', 'rfc', 'email'].filter((k) => { const a = norm(A[k], k), b = norm(B[k], k); return a && b && a === b; });
+}
 export function referralHash(terms) {
   return createHash('sha256').update(JSON.stringify(terms)).digest('hex').slice(0, 12);
 }
