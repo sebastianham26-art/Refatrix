@@ -532,6 +532,112 @@ async function currentSnapshot(agentId, settleYm) {
   return buildSnapshot({ agentId, agentName: u ? u.name : '', settleYm, payDate: b ? b.pay_date : nextMonth15(settleYm), lines, bonus, adjustments, referrals, referralAdjustments });
 }
 
+// ── 2026-11-02 · 월별 인보이스·커미션 조회 공통 ────────────────────────
+//   커미션 귀속(ben)·기간·NC·수금 판정은 overview 와 같은 규칙. 월 = 인보이스 발행월.
+//   withQty: 인보이스 라인 합계(총 수량 · SKU 수)까지 붙인다(상세 조회에서만).
+//   owners: null=전체 · [uid…]=그 사람들만.  ym: 'YYYY-MM' 또는 null(전체 월).
+export function monthlySql({ owners, ym, withQty }) {
+  const args = [];
+  let cond = '';
+  if (owners) { args.push(owners); cond += ` AND ben.uid = ANY($${args.length}::bigint[])`; }
+  if (ym) { args.push(ym); cond += ` AND to_char(i.inv_date,'YYYY-MM') = $${args.length}`; }
+  const qtySel = withQty ? `, q.qty, q.sku` : `, NULL::numeric AS qty, NULL::bigint AS sku`;
+  const qtyJoin = withQty ? `
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(sil.qty),0) AS qty, COUNT(DISTINCT sil.product_id) AS sku
+        FROM sales_invoice_lines sil WHERE sil.invoice_id = i.id
+    ) q ON true` : '';
+  const sql = `
+  SELECT i.id AS invoice_id, i.sat_no,
+         to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.inv_date,'YYYY-MM') AS inv_ym,
+         i.subtotal_mxn AS inv_subtotal, i.iva_mxn AS inv_iva, i.total_mxn AS inv_total,
+         (i.subtotal_mxn - nc.base) AS subtotal_mxn, (i.total_mxn - nc.total) AS total_mxn, nc.base AS nc_base,
+         ben.uid AS owner_id, ag.name AS agent_name,
+         c.id AS customer_id, c.name AS customer_name, c.code AS customer_code,
+         per.basis, per.rate, per.match_on, ccr.rate AS cust_rate, pp.amt AS pp_amt, pp.w AS pp_w, po.rate AS po_rate,
+         COALESCE(pa.paid_amount,0) AS paid_amount, pa.last_pay_date,
+         cp.paid AS payout_paid, to_char(cp.paid_date,'YYYY-MM-DD') AS payout_paid_date, cp.amount AS payout_amount${qtySel}
+    FROM sales_invoices i
+    JOIN customers c ON c.id=i.customer_id
+    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id${BENEFICIARY_LATERAL}
+    JOIN commission_agents ca ON ca.user_id=ben.uid AND ca.active=true
+    JOIN users ag ON ag.id=ben.uid
+    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=ben.uid AND ccr.customer_id=i.customer_id${PERIOD_LATERAL}${PAYMODE_LATERAL}${NC_LATERAL}
+    LEFT JOIN (
+      SELECT spa.invoice_id, SUM(spa.amount) AS paid_amount, to_char(MAX(sp.pay_date),'YYYY-MM-DD') AS last_pay_date
+        FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
+       GROUP BY spa.invoice_id
+    ) pa ON pa.invoice_id=i.id${qtyJoin}
+   WHERE i.status <> 'deleted'
+     AND ${COMMISSION_SCOPE}${cond}
+   ORDER BY ag.name ASC, i.inv_date ASC, i.id ASC`;
+  return { sql, args };
+}
+
+async function monthlyRows(opt) {
+  const { sql, args } = monthlySql(opt);
+  return (await query(sql, args)).rows;
+}
+
+// 확정 월 → 지급(예정)일. 배치가 없으면 nextMonth15 로 대신한다.
+async function batchPayDates() {
+  const m = {};
+  try {
+    for (const b of (await query(`SELECT settle_ym, to_char(pay_date,'YYYY-MM-DD') AS pay_date FROM commission_batches`)).rows) m[b.settle_ym] = b.pay_date || null;
+  } catch (e) { if (!(e && e.code === '42P01')) throw e; }
+  return m;
+}
+
+// 인보이스 한 줄 (순수). 상태:
+//   paid      = 지급 완료 → 지급 당시 금액 · 실제 지급일
+//   confirmed = 확정·미지급 → 확정 금액 · 지급 예정일(배치 지급일 또는 확정월 다음 달 15일)
+//   expected  = 아직 확정 전(수금 기준 미완납) → 기대 금액 · 지급일 없음(완납 후 확정)
+//   커미션과 무관한 줄(수금일 판정·적립 0·더 받을 것 없음, 미지급)은 null.
+export function monthlyLine(r, bmap = {}) {
+  const c = computeLine(r);
+  const paid = r.payout_paid === true;
+  if (!paid && !c.relevant) return null;
+  let status, commission, payDate = null, payPlanned = false;
+  if (paid) {
+    status = 'paid';
+    commission = r.payout_amount != null ? round2(Number(r.payout_amount)) : c.confirmed;
+    payDate = r.payout_paid_date ? String(r.payout_paid_date).slice(0, 10) : null;
+  } else if (c.recognized) {
+    status = 'confirmed';
+    commission = c.confirmed;
+    payDate = (c.settleYm && bmap[c.settleYm]) || (c.settleYm ? nextMonth15(c.settleYm) : null);
+    payPlanned = true;
+  } else {
+    status = 'expected';
+    commission = c.expected;
+  }
+  const sub = Number(r.inv_subtotal) || 0, tot = Number(r.inv_total) || 0;
+  const iva = r.inv_iva != null ? Number(r.inv_iva) : round2(tot - sub);
+  return {
+    invoice_id: Number(r.invoice_id), sat_no: r.sat_no || null, inv_date: String(r.inv_date).slice(0, 10), inv_ym: String(r.inv_date).slice(0, 7),
+    agent_id: Number(r.owner_id), agent_name: r.agent_name,
+    customer_id: Number(r.customer_id), customer_name: r.customer_name, customer_code: r.customer_code || null,
+    qty: r.qty != null ? round2(Number(r.qty)) : null, sku: r.sku != null ? Number(r.sku) : null,
+    subtotal: round2(sub), iva: round2(iva), total: round2(tot), nc_base: round2(Number(r.nc_base) || 0),
+    basis: c.basis, mode: c.mode, rate: c.rate, commission_base: c.base,
+    commission: round2(commission || 0), status, settle_ym: c.settleYm, pay_date: payDate, pay_planned: payPlanned,
+  };
+}
+
+// 대상×월 집계 (순수). 월 = 인보이스 발행월.
+export function summarizeAgentMonths(lines) {
+  const by = {};
+  for (const l of lines) {
+    const k = l.agent_id + '|' + l.inv_ym;
+    const g = (by[k] ||= { agent_id: l.agent_id, ym: l.inv_ym, invoice_count: 0, subtotal: 0, commission: 0, paid: 0 });
+    g.invoice_count += 1;
+    g.subtotal = round2(g.subtotal + l.subtotal);
+    g.commission = round2(g.commission + l.commission);
+    if (l.status === 'paid') g.paid = round2(g.paid + l.commission);
+  }
+  return Object.values(by).sort((a, b) => b.ym.localeCompare(a.ym) || a.agent_id - b.agent_id);
+}
+
 const EXT_OF = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic' };
 
 export default async function commissionRoutes(app) {
@@ -1185,6 +1291,71 @@ export default async function commissionRoutes(app) {
     await query(`UPDATE commission_batches SET status='handed', handed_by=$2, handed_at=now(), handed_note=$3 WHERE settle_ym=$1`, [ym, uid, note]);
     await logEvent({ userId: uid, action: 'hand_off', target: `commission_batch:${ym}`, detail: { note } });
     return { ok: true, settle_ym: ym, handed_at: new Date().toISOString() };
+  });
+
+  // ── 2026-11-02 · 월별 인보이스·커미션 조회 ─────────────────────────────
+  //   ① 대상 → 월  ② 월 → 대상(중복 선택).  월 = 인보이스 발행월(매출월).
+  //   열람: 디렉터·재무·소시오 = 전체 / 그 외(영업사원) = 본인만(agent_ids 무시).
+  app.get('/api/commission/monthly-index', { preHandler: [authGuard, requirePage('commission')] }, async (req) => {
+    const perm = req.ctx.perm;
+    const seeAll = canSeeAll(perm);
+    const owners = seeAll ? null : [Number(perm.userId)];
+    let rows, bmap, agents;
+    try {
+      rows = await monthlyRows({ owners, ym: null, withQty: false });
+      bmap = await batchPayDates();
+      agents = (await query(
+        `SELECT ca.user_id, u.name, t.name AS team_name
+           FROM commission_agents ca
+           JOIN users u ON u.id=ca.user_id
+           LEFT JOIN sales_teams t ON t.id=u.team_id
+          WHERE ca.active=true AND u.deleted_at IS NULL
+          ORDER BY t.sort_order NULLS LAST, u.name`)).rows;
+    } catch (e) {
+      if (e && e.code === '42P01') return { see_all: seeAll, not_migrated: true, agents: [], cells: [] };
+      throw e;
+    }
+    const lines = rows.map((r) => monthlyLine(r, bmap)).filter(Boolean);
+    const cells = summarizeAgentMonths(lines);
+    // 대상 목록: 활성 커미션 대상 + (지급 동결 등으로) 실적이 있는 사람. 영업사원은 본인만.
+    const names = {};
+    for (const l of lines) names[String(l.agent_id)] = l.agent_name;
+    let list = agents.map((a) => ({ agent_id: Number(a.user_id), agent_name: a.name, team_name: a.team_name || null }));
+    for (const id of Object.keys(names)) if (!list.some((a) => String(a.agent_id) === id)) list.push({ agent_id: Number(id), agent_name: names[id], team_name: null });
+    if (!seeAll) list = list.filter((a) => a.agent_id === Number(perm.userId));
+    return { see_all: seeAll, me: Number(perm.userId), agents: list, cells };
+  });
+
+  app.get('/api/commission/monthly-invoices', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const seeAll = canSeeAll(perm);
+    const ym = /^\d{4}-\d{2}$/.test(req.query.ym || '') ? req.query.ym : null;
+    if (!ym) return reply.code(400).send({ error: 'ym_required', note: '월을 선택하세요.' });
+    let owners;
+    if (seeAll) {
+      owners = String(req.query.agent_ids || '').split(',').map(Number).filter((n) => n > 0);
+      if (!owners.length) return reply.code(400).send({ error: 'agents_required', note: '대상을 한 명 이상 선택하세요.' });
+    } else owners = [Number(perm.userId)];
+    let rows, bmap;
+    try {
+      rows = await monthlyRows({ owners, ym, withQty: true });
+      bmap = await batchPayDates();
+    } catch (e) {
+      if (e && e.code === '42P01') return { ym, not_migrated: true, lines: [], totals: null };
+      throw e;
+    }
+    const lines = rows.map((r) => monthlyLine(r, bmap)).filter(Boolean);
+    const sum = (k) => round2(lines.reduce((s, l) => s + Number(l[k] || 0), 0));
+    const totals = {
+      invoice_count: lines.length,
+      qty: round2(lines.reduce((s, l) => s + Number(l.qty || 0), 0)),
+      subtotal: sum('subtotal'), iva: sum('iva'), total: sum('total'), nc_base: sum('nc_base'),
+      commission: sum('commission'),
+      commission_paid: round2(lines.filter((l) => l.status === 'paid').reduce((s, l) => s + l.commission, 0)),
+      commission_confirmed: round2(lines.filter((l) => l.status === 'confirmed').reduce((s, l) => s + l.commission, 0)),
+      commission_expected: round2(lines.filter((l) => l.status === 'expected').reduce((s, l) => s + l.commission, 0)),
+    };
+    return { ym, agent_ids: owners, see_all: seeAll, lines, totals };
   });
 
   // ── (레거시) 인보이스별 단건 지급 처리 (디렉터) — 증빙 없는 빠른 마킹. 신규는 전표(payments) 사용 ──

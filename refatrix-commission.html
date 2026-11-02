@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1030typ</title>
+<title>Refatrix ERP · 커미션 · build b1102inv</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -117,6 +117,30 @@
   .refwarn{background:#FBEFD6;border:1px solid #F0D9A8;border-radius:9px;padding:9px 12px;font-size:12.5px;line-height:1.5;margin-bottom:10px}
   .refwarn a{color:var(--brand);font-weight:800}
   .dtl-tools{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  /* ── 2026-11-02 월별 인보이스·커미션 (대상→월 / 월→대상) ── */
+  .mi-step{margin-top:12px}
+  .mi-step .st{font-size:12px;font-weight:800;color:var(--brand);margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .mi-step .st .n{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:var(--brand);color:#fff;font-size:11px}
+  .mi-step .st a{font-size:11.5px;font-weight:700;color:var(--brand);cursor:pointer;text-decoration:underline}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 10px;font-size:12.5px;cursor:pointer;user-select:none;line-height:1.25}
+  .chip:hover{border-color:var(--brand)}
+  .chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .chip.on small{color:#cfe0d8}
+  .chip small{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
+  .chip b{font-weight:700}
+  .chip input{margin:0;accent-color:var(--gold)}
+  .chip.off{opacity:.45}
+  #miTbl table{font-size:12px;margin-top:6px}
+  #miTbl th,#miTbl td{padding:6px 7px}
+  #miTbl td.cust{max-width:210px;overflow:hidden;text-overflow:ellipsis}
+  #miTbl .inv{font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin-left:5px}
+  #miTbl tr.agh td{background:#f3efe6;font-weight:800;color:var(--brand)}
+  #miTbl tr.ags td{background:#faf8f3;font-weight:700}
+  #miTbl tr.tot td{background:#eef3f0;font-weight:800;border-top:2px solid var(--brand)}
+  #miTbl .pd{font-size:11.5px}
+  #miTbl .pd.plan{color:#8a6d1f}
+  #miTbl .nc{display:inline-block;font-size:9.5px;font-weight:800;color:var(--expense);background:var(--expense-bg);border-radius:4px;padding:0 4px;cursor:help;vertical-align:1px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 <style>
@@ -128,7 +152,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1006ctr</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1102inv</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h" data-es="Entrar">로그인</div>
@@ -215,6 +239,22 @@
     <div class="card hidden" id="myCondCard">
       <div class="card-h" data-es="Mis condiciones de comisión &lt;span class=&quot;hint&quot; style=&quot;font-weight:400&quot;&gt;· base (venta/cobranza) y tasa por vigencia · las registra la Dirección&lt;/span&gt;">내 커미션 조건 <span class="hint" style="font-weight:400">· 기간별 기준(매출/수금)·지급률 · 디렉터가 설정</span></div>
       <div id="myCondBody"><div class="hint" data-es="Cargando…">불러오는 중…</div></div>
+    </div>
+
+    <!-- 2026-11-02 월별 인보이스 · 커미션 — 대상→월 / 월→대상(대상 중복 선택) -->
+    <div class="card" id="miCard">
+      <div class="card-h" data-es="Facturas del mes y comisión &lt;span class=&quot;hint&quot; style=&quot;font-weight:400&quot;&gt;· mes = mes de la factura · comisión sobre venta sin IVA&lt;/span&gt;">월별 인보이스 · 커미션 <span class="hint" style="font-weight:400">· 월 = 인보이스 발행월 · 커미션은 IVA 제외 매출 기준</span></div>
+      <div class="agentbar">
+        <div class="toggle hidden" id="miMode">
+          <button data-m="agent" class="on" data-es="Vendedor → mes">대상 → 월</button>
+          <button data-m="month" data-es="Mes → vendedor">월 → 대상</button>
+        </div>
+        <span class="hint" id="miHint" style="margin-left:auto"></span>
+      </div>
+      <div id="miSteps"><div class="hint" style="margin-top:12px" data-es="Cargando…">불러오는 중…</div></div>
+      <div class="msg" id="miMsg"></div>
+      <div class="sbrow" id="miSum" style="margin-top:12px"></div>
+      <div class="tbl-wrap" id="miTbl"></div>
     </div>
 
     <!-- ① 커미션 내역 -->
@@ -388,6 +428,7 @@
       initPerfFilters();
       loadProgress(); loadPerf();
       loadOverview();
+      loadMiIndex();
       loadVouchers('');
     }catch(e){m.className='msg err';m.textContent=L('서버에 연결할 수 없습니다.','No hay conexión con el servidor.');}
     finally{$('go').disabled=false;$('go').textContent=L('로그인','Entrar');}
@@ -445,7 +486,7 @@
     }catch(e){}
   }
 
-  function reloadAll(){ loadProgress(); loadPerf(); loadOverview(); loadBatches(); loadPayable(agentId, $('payMonth')?$('payMonth').value:''); loadVouchers(agentId); loadReferrals(); }
+  function reloadAll(){ loadProgress(); loadPerf(); loadOverview(); loadMiIndex(); loadBatches(); loadPayable(agentId, $('payMonth')?$('payMonth').value:''); loadVouchers(agentId); loadReferrals(); }
 
   // ══════════════════════════════════════════════════════════════════
   //  0307 소개 커미션 (Comisión por referencia) — 조회 전용
@@ -1890,6 +1931,194 @@
     }catch(e){ bm.className='msg err'; bm.textContent='서버에 연결할 수 없습니다.'; }
   }
   function tr_valid(t){ return Number.isFinite(t.min_rate)&&Number.isFinite(t.amount); }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  2026-11-02 · 월별 인보이스 · 커미션
+  //   ① 대상 → 월 : 대상(중복 선택) → 그 대상들의 인보이스가 있는 월 → 인보이스 목록
+  //   ② 월 → 대상 : 월 → 그 달 인보이스가 있는 대상(중복 선택) → 인보이스 목록
+  //   영업사원(본인만 열람)은 월만 고른다. 월 = 인보이스 발행월.
+  // ══════════════════════════════════════════════════════════════════
+  const MI={mode:'agent', agents:new Set(), ym:'', idx:null, data:null, seq:0};
+  const miYm=(ym)=>{ const m=/^(\d{4})-(\d{2})$/.exec(ym||''); if(!m) return ym||''; return LANG==='es'?ymEs(ym):(m[1]+'년 '+Number(m[2])+'월'); };
+  const fmtq=(n)=> Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});
+  // 인보이스 번호는 길다 → 마지막 단락(‑ 뒤)만, 단락이 없으면 끝 8자리. 전체는 마우스 오버(title)로.
+  function shortInv(sat,id){
+    const s=String(sat||'').trim();
+    if(!s) return '#'+id;
+    const parts=s.split('-').filter(Boolean);
+    if(parts.length>1) return parts[parts.length-1];
+    return s.length>10 ? ('…'+s.slice(-8)) : s;
+  }
+  async function loadMiIndex(){
+    try{
+      const r=await fetch(session.api+'/api/commission/monthly-index',{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ $('miSteps').innerHTML='<div class="msg err" style="display:block">'+esc(d.note||d.error||r.status)+'</div>'; return; }
+      MI.idx=d;
+      if(!d.see_all){ MI.mode='month'; MI.agents=new Set([Number(d.me)]); $('miMode').classList.add('hidden'); }
+      else {
+        $('miMode').classList.remove('hidden');
+        // 선택돼 있던 대상 중 지금 목록에 없는 사람은 뺀다
+        const ok=new Set((d.agents||[]).map(a=>Number(a.agent_id)));
+        MI.agents=new Set([...MI.agents].filter(x=>ok.has(x)));
+      }
+      renderMi();
+      if(MI.ym && MI.agents.size) loadMiInvoices(); else { $('miTbl').innerHTML=''; $('miSum').innerHTML=''; }
+    }catch(e){ $('miSteps').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); }
+  }
+  // cells 를 월별로 합친다. only = 대상 집합(없으면 전체)
+  function miMonths(only){
+    const by={};
+    for(const c of (MI.idx&&MI.idx.cells)||[]){
+      if(only && !only.has(Number(c.agent_id))) continue;
+      const g=(by[c.ym] ||= {ym:c.ym,n:0,comm:0});
+      g.n+=c.invoice_count; g.comm+=Number(c.commission||0);
+    }
+    return Object.values(by).sort((a,b)=>b.ym.localeCompare(a.ym));
+  }
+  // 대상별 합계. ym 지정 시 그 달만.
+  function miAgentStat(ym){
+    const by={};
+    for(const c of (MI.idx&&MI.idx.cells)||[]){
+      if(ym && c.ym!==ym) continue;
+      const g=(by[c.agent_id] ||= {n:0,comm:0});
+      g.n+=c.invoice_count; g.comm+=Number(c.commission||0);
+    }
+    return by;
+  }
+  function miAgentStep(num){
+    const all=(MI.idx&&MI.idx.agents)||[];
+    const byMonth = MI.mode==='month';
+    if(byMonth && !MI.ym) return '<div class="mi-step"><div class="st"><span class="n">'+num+'</span>'+L('대상 선택 (중복 가능)','Elige vendedores (varios)')+'</div><div class="hint">'+L('먼저 월을 선택하세요.','Primero elige el mes.')+'</div></div>';
+    const stat=miAgentStat(byMonth?MI.ym:'');
+    const list=byMonth ? all.filter(a=>stat[a.agent_id]) : all;
+    const chips=list.map(a=>{
+      const s=stat[a.agent_id]; const on=MI.agents.has(Number(a.agent_id));
+      const sub = s ? (s.n+L('건 · ',' fact. · ')+fmtm(s.comm)) : L('인보이스 없음','sin facturas');
+      return '<button type="button" class="chip'+(on?' on':'')+(s?'':' off')+'" data-mi-agent="'+a.agent_id+'"><span>'+(on?'☑':'☐')+'</span><span><b>'+esc(a.agent_name)+'</b>'+(a.team_name?' <span style="font-weight:400">· '+esc(a.team_name)+'</span>':'')+'<small>'+sub+'</small></span></button>';
+    }).join('');
+    return '<div class="mi-step"><div class="st"><span class="n">'+num+'</span>'+L('대상 선택 (중복 가능)','Elige vendedores (varios)')
+      +(list.length?' <a data-mi-all="1">'+L('전체 선택','Todos')+'</a> <a data-mi-none="1">'+L('전체 해제','Ninguno')+'</a>':'')
+      +' <span class="hint" style="font-weight:400">'+MI.agents.size+L('명 선택',' seleccionados')+'</span></div>'
+      +(list.length?'<div class="chips">'+chips+'</div>':'<div class="hint">'+(byMonth?L('이 달에 커미션 대상 인보이스가 없습니다.','No hay facturas con comisión en este mes.'):L('커미션 대상이 없습니다. (커미션 설정에서 대상을 지정하세요)','No hay vendedores con comisión.'))+'</div>')+'</div>';
+  }
+  function miMonthStep(num){
+    const byAgent = MI.mode==='agent' && MI.idx && MI.idx.see_all;
+    const head='<div class="mi-step"><div class="st"><span class="n">'+num+'</span>'+L('월 선택','Elige el mes')+'</div>';
+    if(byAgent && !MI.agents.size) return head+'<div class="hint">'+L('먼저 대상을 선택하세요. (중복 선택 가능)','Primero elige uno o varios vendedores.')+'</div></div>';
+    const months=miMonths(byAgent?MI.agents:null);
+    if(!months.length) return head+'<div class="hint">'+L('커미션 대상 인보이스가 있는 월이 없습니다.','No hay meses con facturas con comisión.')+'</div></div>';
+    return head+'<div class="chips">'+months.map(m=>'<button type="button" class="chip'+(m.ym===MI.ym?' on':'')+'" data-mi-ym="'+m.ym+'"><span><b>'+esc(miYm(m.ym))+'</b><small>'+m.n+L('건 · 커미션 ',' fact. · com. ')+fmtm(m.comm)+'</small></span></button>').join('')+'</div></div>';
+  }
+  function renderMi(){
+    if(!MI.idx) return;
+    document.querySelectorAll('#miMode button').forEach(b=>b.classList.toggle('on', b.dataset.m===MI.mode));
+    let html='';
+    if(!MI.idx.see_all) html=miMonthStep(1);
+    else if(MI.mode==='agent') html=miAgentStep(1)+miMonthStep(2);
+    else html=miMonthStep(1)+miAgentStep(2);
+    $('miSteps').innerHTML=html;
+    $('miHint').textContent = MI.idx.see_all
+      ? (MI.mode==='agent'?L('대상을 고른 뒤 월을 고르세요','Elige vendedores y luego el mes'):L('월을 고른 뒤 대상을 고르세요','Elige el mes y luego los vendedores'))
+      : L('본인 인보이스만 표시됩니다','Solo tus facturas');
+  }
+  // 선택이 바뀐 뒤: 유효하지 않은 선택을 정리하고 목록을 다시 읽는다
+  function miAfterChange(){
+    if(MI.idx && MI.idx.see_all){
+      if(MI.mode==='agent'){
+        // 고른 대상들에 그 월 인보이스가 없으면 월 선택 해제
+        if(MI.ym && !miMonths(MI.agents).some(m=>m.ym===MI.ym)) MI.ym='';
+      } else if(MI.ym){
+        const stat=miAgentStat(MI.ym);
+        MI.agents=new Set([...MI.agents].filter(x=>stat[x]));
+      }
+    }
+    renderMi();
+    if(MI.ym && MI.agents.size) loadMiInvoices();
+    else { MI.seq++; MI.data=null; $('miTbl').innerHTML=''; $('miSum').innerHTML=''; $('miMsg').className='msg'; }   // seq++: 진행 중이던 조회 응답은 버린다
+  }
+  async function loadMiInvoices(){
+    const seq=++MI.seq;
+    $('miTbl').innerHTML='<div class="hint" style="margin-top:10px">'+L('불러오는 중…','Cargando…')+'</div>';
+    const qs='?ym='+encodeURIComponent(MI.ym)+(MI.idx&&MI.idx.see_all?('&agent_ids='+[...MI.agents].join(',')):'');
+    try{
+      const r=await fetch(session.api+'/api/commission/monthly-invoices'+qs,{headers:auth()});
+      const d=await r.json();
+      if(seq!==MI.seq) return;          // 그사이 선택이 바뀌었으면 버린다
+      if(!r.ok||d.error){ $('miTbl').innerHTML=''; $('miSum').innerHTML=''; $('miMsg').className='msg err'; $('miMsg').textContent=d.note||d.error||String(r.status); return; }
+      $('miMsg').className='msg';
+      MI.data=d; renderMiTable();
+    }catch(e){ if(seq===MI.seq){ $('miTbl').innerHTML=L('<div class="hint">불러오지 못했습니다.</div>','<div class="hint">No se pudo cargar.</div>'); } }
+  }
+  function miRow(l){
+    const st = l.status==='paid' ? 'conf' : (l.status==='confirmed' ? 'exp' : '');
+    const stTitle = l.status==='paid' ? L('지급 완료','Pagada') : (l.status==='confirmed' ? L('확정 · 미지급','Confirmada · por pagar') : L('기대 커미션 (수금 완납 후 확정)','Esperada (se confirma al liquidar)'));
+    const comm = '<span class="'+st+'" title="'+esc(stTitle+' · '+l.rate+'%')+'"'+(l.status==='expected'?' style="color:var(--muted);font-style:italic"':'')+'>'+fmtm(l.commission)+'</span>';
+    const pd = l.status==='paid' ? '<span class="pd" style="color:var(--income);font-weight:700">✓ '+esc(l.pay_date||'')+'</span>'
+      : (l.status==='confirmed' ? '<span class="pd plan" title="'+L('지급 예정일','Fecha de pago estimada')+'">'+L('예정 ','prev. ')+esc(l.pay_date||'—')+'</span>'
+      : '<span class="pd" style="color:var(--muted)">'+L('완납 후','al liquidar')+'</span>');
+    return '<tr><td class="cust" title="'+esc((l.customer_code?l.customer_code+' ':'')+l.customer_name)+'">'+esc(l.customer_name)+'</td>'
+      +'<td><span class="inv" style="margin-left:0" title="'+esc(l.sat_no||('#'+l.invoice_id))+'">'+esc(shortInv(l.sat_no,l.invoice_id))+'</span></td>'
+      +'<td>'+esc(l.inv_date)+'</td>'
+      +'<td class="r">'+(l.qty!=null?fmtq(l.qty):'—')+'</td><td class="r">'+(l.sku!=null?l.sku:'—')+'</td>'
+      +'<td class="r">'+fmtm(l.subtotal)+(l.nc_base>0?' <span class="nc" title="'+esc('NC −'+fmtm(l.nc_base)+' · '+L('크레딧 노트 차감 — 커미션은 차감 후 금액 기준','Nota de crédito — la comisión se calcula sin ella'))+'">NC</span>':'')+'</td>'
+      +'<td class="r">'+fmtm(l.iva)+'</td><td class="r"><b>'+fmtm(l.total)+'</b></td>'
+      +'<td class="r">'+comm+'</td><td>'+pd+'</td></tr>';
+  }
+  function miSubRow(cls,label,ls){
+    const s=(k)=>ls.reduce((a,l)=>a+Number(l[k]||0),0);
+    return '<tr class="'+cls+'"><td colspan="3">'+label+' <span class="hint" style="font-weight:400">· '+ls.length+L('건',' fact.')+'</span></td>'
+      +'<td class="r">'+fmtq(s('qty'))+'</td><td></td><td class="r">'+fmtm(s('subtotal'))+'</td><td class="r">'+fmtm(s('iva'))+'</td><td class="r">'+fmtm(s('total'))+'</td><td class="r">'+fmtm(s('commission'))+'</td><td></td></tr>';
+  }
+  function renderMiTable(){
+    const d=MI.data; if(!d) return;
+    if(d.not_migrated){ $('miTbl').innerHTML=''; $('miSum').innerHTML=''; return; }
+    const t=d.totals||{}; const lines=d.lines||[];
+    $('miSum').innerHTML=
+      sb(t.invoice_count||0, miYm(d.ym)+L(' 인보이스',' · facturas'))
+      +sb(fmtm(t.subtotal), L('매출 (IVA 제외)','Venta sin IVA'))
+      +sb(fmtm(t.total), L('총 금액 (IVA 포함)','Total con IVA'))
+      +sb(fmtm(t.commission), L('커미션 합계','Comisión total'),'','',L('지급 ','Pagada ')+fmtm(t.commission_paid)+L(' · 확정 ',' · confirmada ')+fmtm(t.commission_confirmed)+L(' · 기대 ',' · esperada ')+fmtm(t.commission_expected));
+    if(!lines.length){ $('miTbl').innerHTML='<div class="hint" style="margin-top:10px">'+L('이 달·선택한 대상의 커미션 대상 인보이스가 없습니다.','No hay facturas con comisión para este mes.')+'</div>'; return; }
+    const multi = new Set(lines.map(l=>l.agent_id)).size>1;
+    let body='';
+    if(multi){
+      const groups=[]; const idx={};
+      for(const l of lines){ if(!(l.agent_id in idx)){ idx[l.agent_id]=groups.length; groups.push({name:l.agent_name,lines:[]}); } groups[idx[l.agent_id]].lines.push(l); }
+      for(const g of groups){
+        body+='<tr class="agh"><td colspan="10">'+esc(g.name)+'</td></tr>';
+        body+=g.lines.map(miRow).join('');
+        body+=miSubRow('ags',esc(g.name)+L(' 소계',' · subtotal'),g.lines);
+      }
+    } else body=lines.map(miRow).join('');
+    body+=miSubRow('tot',L('합계','Total'),lines);
+    $('miTbl').innerHTML='<table><thead><tr>'
+      +L('<th>고객명</th><th>인보이스</th><th>날짜</th><th class="r">총 수량</th><th class="r">SKU</th><th class="r">IVA 제외</th><th class="r">IVA</th><th class="r">총 금액</th><th class="r">커미션</th><th>커미션 지급일</th>',
+         '<th>Cliente</th><th>Factura</th><th>Fecha</th><th class="r">Piezas</th><th class="r">SKU</th><th class="r">Sin IVA</th><th class="r">IVA</th><th class="r">Total</th><th class="r">Comisión</th><th>Pago de comisión</th>')
+      +'</tr></thead><tbody>'+body+'</tbody></table>'
+      +'<div class="hint" style="margin-top:6px">'+L('· 커미션: <b style="color:var(--income)">지급 완료</b> · <b style="color:var(--brand)">확정·미지급</b>(예정일) · <i>기대</i>(수금 완납 후 확정) · 인보이스 번호는 마지막 단락만 — 마우스를 올리면 전체 번호',
+        '· Comisión: <b style="color:var(--income)">pagada</b> · <b style="color:var(--brand)">confirmada</b> (fecha estimada) · <i>esperada</i> (al liquidar) · Factura: último tramo; pasa el mouse para ver el número completo')+'</div>';
+  }
+  document.getElementById('miCard').addEventListener('click',e=>{
+    const t=e.target.closest&&e.target.closest('[data-mi-agent],[data-mi-ym],[data-mi-all],[data-mi-none],#miMode button');
+    if(!t) return;
+    if(t.dataset.m){ if(MI.mode!==t.dataset.m){ MI.mode=t.dataset.m; miAfterChange(); } return; }
+    if(t.dataset.miAgent){ const id=Number(t.dataset.miAgent); if(MI.agents.has(id)) MI.agents.delete(id); else MI.agents.add(id); miAfterChange(); return; }
+    if(t.dataset.miYm){
+      MI.ym = MI.ym===t.dataset.miYm && MI.mode==='agent' ? '' : t.dataset.miYm;
+      // 월 → 대상: 처음 고를 때(또는 남는 대상이 없을 때)는 그 달 인보이스가 있는 대상을 모두 선택해 둔다
+      if(MI.idx&&MI.idx.see_all&&MI.mode==='month'&&MI.ym){
+        const stat=miAgentStat(MI.ym); const keep=[...MI.agents].filter(x=>stat[x]);
+        MI.agents=new Set(keep.length?keep:Object.keys(stat).map(Number));
+      }
+      miAfterChange(); return;
+    }
+    if(t.dataset.miAll){
+      const list=(MI.mode==='month'&&MI.ym) ? Object.keys(miAgentStat(MI.ym)).map(Number) : ((MI.idx&&MI.idx.agents)||[]).map(a=>Number(a.agent_id));
+      MI.agents=new Set(list); miAfterChange(); return;
+    }
+    if(t.dataset.miNone){ MI.agents=new Set(); miAfterChange(); return; }
+  });
 
   // ── 토글/이벤트 ──
   document.querySelectorAll('#viewToggle button').forEach(b=>b.addEventListener('click',()=>{
