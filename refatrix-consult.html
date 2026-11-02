@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20260910ex6)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20261102up1)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -432,6 +432,14 @@
         <button class="btn ghost hidden" type="button" id="cs-recPause">⏸ 일시정지</button>
         <button class="btn gold hidden" type="button" id="cs-recStop">⏹ 녹음 종료</button>
         <span id="cs-recTimer" style="font-weight:800;font-variant-numeric:tabular-nums"></span>
+      </div>
+      <!-- 📁 휴대폰 녹음 파일 올리기 (b20261102up1) -->
+      <div id="cs-fileBox" style="margin-top:10px;padding:10px;border:1px dashed var(--line);border-radius:10px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn ghost" type="button" id="cs-fileBtn">📁 휴대폰 녹음파일 올리기</button>
+          <span class="hint" style="margin:0">휴대폰 녹음앱(음성녹음 · 음성메모 · 통화녹음)으로 녹음한 파일을 고르면 <b>전사 → 카테고리 분류 요약 → 펜딩 등록</b>까지 똑같이 처리됩니다. m4a · mp3 · wav · aac · amr · 3gp · ogg 등, 긴 파일도 됩니다.</span>
+        </div>
+        <input type="file" id="cs-fileIn" class="hidden" accept="audio/*,video/mp4,video/quicktime,.m4a,.mp3,.wav,.aac,.amr,.awb,.3gp,.3ga,.ogg,.oga,.opus,.webm,.flac,.caf,.wma,.mp4,.mov">
       </div>
       <div id="cs-recReady" class="hidden" style="margin-top:10px">
         <span id="cs-recInfo" class="hint" style="margin:0"></span>
@@ -1373,7 +1381,9 @@
     too_long:'녹음이 너무 깁니다.', not_found:'상담을 찾을 수 없습니다.', read_only:'이 화면의 수정 권한이 없습니다.',
     no_parts:'서버에 도착한 조각이 없습니다.', parts_missing:'조각이 일부 누락됐습니다.', parts_gap:'조각 순서가 어긋났습니다.',
     bad_chunk:'조각이 손상됐습니다.', too_many_parts:'조각이 너무 많습니다 — 더 짧게 나눠 녹음해 주세요.',
-    unauthorized:'로그인 세션이 만료됐습니다 — 다시 로그인하면 이어서 올립니다.' };
+    unauthorized:'로그인 세션이 만료됐습니다 — 다시 로그인하면 이어서 올립니다.',
+    file_too_large:'파일이 너무 큽니다 — 녹음앱에서 나눠 저장해 올려주세요.',
+    bad_format:'지원하지 않는 파일 형식입니다 — m4a · mp3 · wav · aac · amr · 3gp · ogg 파일을 골라주세요.' };
 
   function csUpFail(stage, info){
     $('cs-recReady').classList.remove('hidden');
@@ -1467,6 +1477,130 @@
     },5000);
   }
 
+  // =====================================================================
+  // 📁 휴대폰 녹음 파일 올리기 (b20261102up1 · 2026-11-02)
+  //   휴대폰 기본 녹음앱으로 녹음한 파일을 골라 올린다. 녹음과 같은 3MB 조각 전송·재로그인 경로를 쓰고,
+  //   commit 때 source:'file' 을 붙이면 서버가 ffmpeg 로 변환(16kHz 모노 opus · 20분 구간)한 뒤
+  //   전사 → 요약 → 펜딩 등록까지 녹음과 똑같이 처리한다.
+  //   원본 파일은 휴대폰에 그대로 남으므로 이 화면(IndexedDB)에는 따로 보관하지 않는다.
+  // =====================================================================
+  const CS_FILE_EXT=['m4a','mp3','mp4','wav','aac','amr','awb','3gp','3ga','ogg','oga','opus','webm','flac','caf','wma','mpga','mpeg','mov','qta'];
+  const CS_WHISPER_EXT=['mp3','mp4','mpeg','mpga','m4a','wav','webm','ogg','flac'];
+  function csFileExt(name){ const m=/\.([A-Za-z0-9]{1,5})$/.exec(String(name||'')); return m?m[1].toLowerCase():''; }
+  function csFmtMB(b){ return (Number(b||0)/1048576).toFixed(1)+'MB'; }
+
+  // 서버 변환 가능 여부 — 옛 백엔드(라우트 없음)면 null
+  async function csFileCaps(){
+    try{
+      const res=await fetch(session.api+'/api/consults/recordings/capabilities',{headers:auth()});
+      if(!res.ok) return null;
+      return await res.json();
+    }catch(e){ return null; }
+  }
+  // 길이(초) — 브라우저가 못 읽으면 null(서버가 변환하면서 다시 잰다)
+  function csFileDuration(file){
+    return new Promise((resolve)=>{
+      let url=null, done=false;
+      const fin=(v)=>{ if(done) return; done=true; try{ if(url) URL.revokeObjectURL(url); }catch(e){} resolve(v); };
+      try{
+        const a=document.createElement('audio');
+        a.preload='metadata';
+        a.onloadedmetadata=()=>{ const d=Number(a.duration); fin(Number.isFinite(d)&&d>0?Math.round(d):null); };
+        a.onerror=()=>fin(null);
+        url=URL.createObjectURL(file); a.src=url;
+        setTimeout(()=>fin(null),4000);
+      }catch(e){ fin(null); }
+    });
+  }
+
+  // 사전 점검 — 올리기 전에 막을 수 있는 건 여기서 알려준다. 문제 없으면 null.
+  function csFileCheck(file, caps){
+    const ext=csFileExt(file.name);
+    const typeOk=/^(audio|video)\//i.test(file.type||'');
+    if(ext ? CS_FILE_EXT.indexOf(ext)<0 : !typeOk)
+      return '오디오 녹음 파일이 아닙니다 ('+csEsc(ext||file.type||'형식 미상')+'). m4a · mp3 · wav · aac · amr · 3gp · ogg 파일을 골라주세요.';
+    if(!(file.size>0)) return '빈 파일입니다.';
+    const maxMb=(caps&&caps.file_max_mb)||200;
+    if(file.size>maxMb*1048576) return '파일이 너무 큽니다 ('+csFmtMB(file.size)+' · 최대 '+maxMb+'MB). 녹음앱에서 나눠 저장해 올려주세요.';
+    if(caps&&caps.convert_ready===false){
+      const passMb=caps.pass_max_mb||24;
+      const whisperOk=ext?CS_WHISPER_EXT.indexOf(ext)>=0:/^audio\/(mp4|m4a|x-m4a|mpeg|mp3|wav|x-wav|webm|ogg|flac)$/i.test(file.type||'');
+      if(!whisperOk) return '서버에 오디오 변환기(ffmpeg)가 아직 없어 <b>'+csEsc(ext||file.type)+'</b> 형식은 전사할 수 없습니다 — 관리자에게 「ffmpeg 설치」를 요청해 주세요. (m4a · mp3 · wav 는 '+passMb+'MB 이하면 지금도 됩니다)';
+      if(file.size>passMb*1048576) return '서버에 오디오 변환기(ffmpeg)가 아직 없어 '+passMb+'MB가 넘는 파일('+csFmtMB(file.size)+')은 전사할 수 없습니다 — 관리자에게 「ffmpeg 설치」를 요청해 주세요.';
+    }
+    return null;
+  }
+
+  async function csFileUpload(file){
+    if(!file) return;
+    if(csUpBusy){ alert('업로드가 진행 중입니다 — 끝난 뒤에 다시 올려주세요.'); return; }
+    if(csRecActive){ alert('지금 녹음 중입니다 — 녹음을 종료한 뒤에 파일을 올려주세요.'); return; }
+    if(!csRecConsult){ csRecMsgSet('err','먼저 상담을 저장하거나 목록에서 상담을 선택해 주세요.'); return; }
+    const caps=await csFileCaps();
+    const bad=csFileCheck(file,caps);
+    if(bad){ csRecMsgSet('err','<b>올릴 수 없습니다</b> — '+bad); return; }
+    if(!caps){ csRecMsgSet('err','<b>서버가 아직 파일 올리기를 지원하지 않습니다</b> — 백엔드 배포 후 다시 시도해 주세요.'); return; }
+
+    csUpBusy=true; csHoldSession(true);
+    const btn=$('cs-fileBtn'); btn.disabled=true; btn.textContent='올리는 중…';
+    const name=file.name||'audio';
+    const key=csUpNewKey();
+    const total=Math.max(1,Math.ceil(file.size/CS_CHUNK));
+    let done=0;
+    const head='📁 <b>'+csEsc(name)+'</b> ('+csFmtMB(file.size)+') ';
+    const prog=()=>csRecMsgSet('', head+'⬆ 올리는 중… <b>'+done+' / '+total+'</b> 조각 ('+Math.round(done/total*100)+'%)'
+      +(total>3?' <span class="hint" style="margin:0">화면을 켜 두세요</span>':''));
+    const fail=(msg)=>csRecMsgSet('err', head+'— '+msg+' <span class="hint" style="margin:0">원본 파일은 휴대폰에 그대로 있으니 다시 올리면 됩니다.</span>');
+    try{
+      prog();
+      const dur=await csFileDuration(file);
+      for(let pi=0; pi<total; pi++){
+        let b64;
+        try{ b64=await csSliceB64(file, pi*CS_CHUNK, Math.min(file.size,(pi+1)*CS_CHUNK)); }
+        catch(e){ fail('<b>파일을 읽지 못했습니다.</b> 휴대폰에 내려받아진 파일인지(클라우드에만 있는 파일은 아닌지) 확인해 주세요.'); return; }
+        const r=await csPostAuth(session.api+'/api/consults/'+csRecConsult.id+'/recordings/parts',
+          {session_key:key, seg_no:0, part_no:pi, b64});
+        if(!r.ok){
+          if(r.error==='migration_required'){ fail('<b>서버 업데이트(마이그레이션) 후 사용할 수 있습니다.</b>'); return; }
+          fail(r.net?('<b>전송이 끊겼습니다</b> ('+done+'/'+total+' 조각 완료). 통신이 좋은 곳에서 다시 올려주세요.')
+                    :('<b>서버가 거절했습니다</b> — '+(CS_UP_ERR[r.error]||csEsc(String(r.error||'알 수 없는 오류')))+(r.http?' (코드 '+r.http+')':'')));
+          return;
+        }
+        done++; prog();
+      }
+      csRecMsgSet('', head+'⬆ 전송 완료 — 서버에 등록하는 중…');
+      const cm=await csPostAuth(session.api+'/api/consults/'+csRecConsult.id+'/recordings/commit',
+        {session_key:key, source:'file', file_name:name, mime:String(file.type||'').split(';')[0],
+         mode:csRecMode, duration_sec:dur||null, segments:[{parts:total}]});
+      if(!cm.ok){
+        if(cm.error==='migration_required'){ fail('<b>서버 업데이트(0312 마이그레이션) 후 사용할 수 있습니다.</b>'); return; }
+        fail('<b>서버가 거절했습니다</b> — '+(CS_UP_ERR[cm.error]||csEsc(String(cm.error||'알 수 없는 오류')))+(cm.http?' (코드 '+cm.http+')':''));
+        return;
+      }
+      const d=cm.data||{};
+      csRecMsgSet('ok', head+'✔ 올리기 완료 — 서버가 <b>변환 → 전사 → 요약</b>을 처리하고 있습니다 (길이에 따라 2~10분)'
+        +(d.stt_ready===false?' · ⚠ OPENAI_API_KEY 미설정':'')
+        +(d.ai_ready===false?' · ⚠ ANTHROPIC_API_KEY 미설정':''));
+      csLoadRecs(true); csRecStartPoll();
+    } finally {
+      csUpBusy=false; csHoldSession(false);
+      btn.disabled=false; btn.textContent='📁 휴대폰 녹음파일 올리기';
+      try{ $('cs-fileIn').value=''; }catch(e){}
+    }
+  }
+
+  // 실패 사유를 사람이 읽는 말로 (서버 오류 코드 → 한국어)
+  function csRecErrText(e){
+    const s=String(e||'오류');
+    if(/^ffmpeg_missing: too_big/.test(s)) return '서버에 오디오 변환기(ffmpeg)가 없어 24MB가 넘는 파일을 전사할 수 없습니다 — ffmpeg 설치 후 [↻ 재시도]';
+    if(/^ffmpeg_missing/.test(s)) return '서버에 오디오 변환기(ffmpeg)가 없어 이 형식을 전사할 수 없습니다 — ffmpeg 설치 후 [↻ 재시도]';
+    if(/^convert: timeout/.test(s)) return '파일 변환 시간이 초과됐습니다 — [↻ 재시도]';
+    if(/^convert:/.test(s)) return '파일을 오디오로 읽지 못했습니다(손상됐거나 지원하지 않는 형식): '+s.slice(9);
+    if(s==='too_long') return '녹음이 너무 깁니다(최대 4시간)';
+    if(/^stt: .*does not exist/i.test(s)) return '전사 모델 설정 오류 — API 키 화면의 「전사 모델」 칸을 확인하세요: '+s;
+    return s;
+  }
+
   // ===== 녹음 카드 렌더 + 🇰🇷 한국어 토글 =====
   const CS_REC_ST={queued:'⏳ 대기',transcribing:'🎧 전사 중',summarizing:'🤖 요약 중',done:'✅ 완료',failed:'❌ 실패'};
   const csRecLang={};      // 녹음 id → 'es' | 'ko'
@@ -1503,8 +1637,9 @@
     const s=lang==='ko'?csKoMerge(es,es.ko):es;
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px">'
       +'<div><b>'+(CS_REC_ST[r.status]||csEsc(r.status))+'</b> · '+(r.mode==='memo'?'음성 메모':'미팅 전체')
+      +(r.source==='file'?(' · 📁 '+csEsc(r.file_name||'녹음 파일')):'')
       +(r.duration_sec?(' · '+csRecFmt(r.duration_sec)):'')
-      +(r.status==='failed'?('<span style="color:var(--expense)"> — '+csEsc(r.error||'오류')+'</span> <button type="button" class="btn ghost sm cs-recRetry" data-id="'+r.id+'">↻ 재시도</button>'):'')
+      +(r.status==='failed'?('<span style="color:var(--expense)"> — '+csEsc(csRecErrText(r.error))+'</span> <button type="button" class="btn ghost sm cs-recRetry" data-id="'+r.id+'">↻ 재시도</button>'):'')
       +(es.resumen?csKoBtn(r.id,lang,'cs-recKo'):'')+'</div>'
       +csSummaryHtml(s,lang)
       +(r.transcript&&r.status==='done'?('<details style="margin-top:6px"><summary class="hint" style="margin:0;cursor:pointer">전사 원문 보기</summary><div style="white-space:pre-wrap;font-size:12px;margin-top:4px">'+csEsc(r.transcript)+'</div></details>'):'')
@@ -1864,6 +1999,12 @@
   $('cs-recStop').addEventListener('click',csRecStop);
   $('cs-recUpload').addEventListener('click',csRecUpload);
   $('cs-recSave').addEventListener('click',csRecSaveLocal);
+  $('cs-fileBtn').addEventListener('click',()=>{
+    if(csUpBusy){ alert('업로드가 진행 중입니다 — 끝난 뒤에 다시 올려주세요.'); return; }
+    if(csRecActive){ alert('지금 녹음 중입니다 — 녹음을 종료한 뒤에 파일을 올려주세요.'); return; }
+    $('cs-fileIn').click();
+  });
+  $('cs-fileIn').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) csFileUpload(f); });
   $('cs-recDiscard').addEventListener('click',()=>{
     if(csUpBusy){ alert('업로드가 진행 중입니다 — 끝난 뒤에 다시 눌러주세요.'); return; }
     if(csRecSegs.length&&!confirm('지금까지 녹음한 내용을 버리고 다시 녹음할까요?\n\n(이 기기에 저장된 사본도 함께 지웁니다)')) return;

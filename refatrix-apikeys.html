@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 외부 서비스 키</title>
+<title>Refatrix ERP · 외부 서비스 키 (b20261102sk1)</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -223,6 +223,8 @@
 
   function srcPill(f){
     if(f.error==='decrypt') return '<span class="pill p-err">복호화 실패</span>';
+    // 2026-11-02 · 모델명 같은 평문 칸에 API 키가 들어가 있으면 경고 — '-' 저장으로 지운다
+    if(f.misplaced_key) return '<span class="pill p-err" title="이 칸에 API 키(sk-…)가 들어가 있습니다. 칸에 - 한 글자를 넣고 저장하면 지워집니다.">⚠ 키가 잘못 들어감 — - 입력 후 저장해 지우세요</span>';
     if(f.source==='db')  return '<span class="pill p-on">화면에서 설정됨</span>';
     if(f.source==='env') return '<span class="pill p-warn">Railway 환경변수</span>';
     return '<span class="pill p-off">없음</span>';

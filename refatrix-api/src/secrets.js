@@ -11,6 +11,7 @@
 //     기존 코드의 `process.env.ANTHROPIC_API_KEY` 가 그대로 새 값을 읽는다.
 //  3) **비밀값은 암호화해서 넣는다.** AES-256-GCM · 열쇠는 환경변수 APP_SECRET_KEY 하나뿐이라
 //     DB 백업이 유출돼도 키는 읽히지 않는다. 화면으로는 값이 절대 내려가지 않는다.
+import { looksLikeApiKey } from './sttModel.js';
 import crypto from 'node:crypto';
 import { query } from './db.js';
 
@@ -255,7 +256,9 @@ export function publicServices() {
         source: st.source,                       // db(화면에서 넣음) | env(Railway) | none
         has_value: !!st.value,
         // 비밀값은 마스킹만, 설정값은 그대로 — 어느 쪽도 원본 비밀은 나가지 않는다.
-        preview: f.secret ? maskValue(st.value) : String(st.value || ''),
+        // 평문 칸에 키가 잘못 들어가 있으면(2026-11-02 사고) 그것도 가려서 보낸다.
+        preview: (f.secret || looksLikeApiKey(st.value)) ? maskValue(st.value) : String(st.value || ''),
+        misplaced_key: !f.secret && looksLikeApiKey(st.value) ? true : undefined,
         error: st.error || null,
         updated_at: st.updated_at || null,
         updated_by_name: st.updated_by_name || null,
@@ -296,6 +299,11 @@ export async function saveSecrets(values, userId) {
     if (f.secret && !masterKeyReady()) return { error: 'no_master_key' };
     if (f.secret && v.length < 8) return { error: 'too_short', field: name };
     if (/[\r\n]/.test(v)) return { error: 'newline_in_value', field: name };
+    // 평문(모델명 등) 칸에 API 키를 넣으면 화면에 그대로 보이고 엉뚱한 곳으로 전송된다(2026-11-02 사고)
+    if (!f.secret && looksLikeApiKey(v)) {
+      return { error: 'key_in_plain_field', field: name,
+        note: 'API 키(sk-…)는 이 칸에 넣을 수 없습니다 — 「API 키」 칸에 넣고, 이 칸은 비우거나 모델명(예: whisper-1)을 쓰세요.' };
+    }
 
     const enc = f.secret ? encryptValue(v) : 'p1:' + v;
     await query(

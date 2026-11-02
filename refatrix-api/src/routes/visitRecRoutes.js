@@ -37,8 +37,10 @@ import {
   buildTranslatePrompt, parseTranslationJson,
   buildBriefingText, briefingHeadline, esDateLabel,
 } from '../visitAi.js';
+import { sttModelName, redactSecrets } from '../sttModel.js';
 
-const STT_MODEL = () => process.env.VISIT_STT_MODEL || 'whisper-1';
+// 「전사 모델」 칸에 API 키가 잘못 들어가도 whisper-1 로 간다(2026-11-02)
+const STT_MODEL = () => sttModelName(process.env.VISIT_STT_MODEL);
 const AI_MODEL = () => process.env.VISIT_AI_MODEL || 'claude-sonnet-4-5-20250929';
 const KEEP_AUDIO = () => process.env.VISIT_KEEP_AUDIO === '1';
 const BRIEF_HOUR = () => Number(process.env.SALES_BRIEFING_HOUR || 7);
@@ -109,7 +111,7 @@ export const ai = {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         const msg = (data && data.error && data.error.message) || ('http_' + resp.status);
-        return { ok: false, error: 'stt: ' + String(msg).slice(0, 250), transient: resp.status >= 500 || resp.status === 429 };
+        return { ok: false, error: 'stt: ' + redactSecrets(msg).slice(0, 250), transient: resp.status >= 500 || resp.status === 429 };
       }
       return { ok: true, text: String(data.text || '').trim() };
     } catch (e) {

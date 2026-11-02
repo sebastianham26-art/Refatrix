@@ -30,9 +30,15 @@ import {
   splitTranscript, buildConsultMergePrompt, mergeConsultSummaries, TRANSCRIPT_CHUNK_MAX,
 } from '../consultAi.js';
 import { splitB64Segment, SPLIT_MAX_BYTES, SPLIT_MAX_MS } from '../audioSplit.js';
+import { sttModelName, redactSecrets } from '../sttModel.js';
+import {
+  convertToSegments, findFfmpeg, canPassThrough, whisperMimeOf, fileMimeOf, cleanFileName,
+  isUploadAllowed, UPLOAD_EXT, PASS_MAX_BYTES,
+} from '../audioConvert.js';
 
 const PAGE = 'pipeline';                    // 화면 권한키 — 영업활동 권한을 재사용
-const STT_MODEL = () => process.env.VISIT_STT_MODEL || 'whisper-1';
+// 「전사 모델」 칸에 API 키가 잘못 들어가도(2026-11-02 사고) whisper-1 로 간다
+const STT_MODEL = () => sttModelName(process.env.VISIT_STT_MODEL);
 const AI_MODEL = () => process.env.VISIT_AI_MODEL || 'claude-sonnet-4-5-20250929';
 const KEEP_AUDIO = () => process.env.CONSULT_KEEP_AUDIO === '1';
 
@@ -49,6 +55,8 @@ const AI_TIMEOUT_MS = 120000;
 const MAX_AUTO_ATTEMPTS = 5;              // 일시 오류(네트워크·과부하) 자동 재시도 횟수
 const PART_B64_MAX = 6 * 1024 * 1024;       // 분할 업로드 조각 하나(base64 문자) 상한
 const UPLOAD_PARTS_MAX = 200;               // 한 업로드 세션의 조각 수 상한
+// 휴대폰 녹음 파일 업로드(2026-11-02) — 원본 상한. 서버가 변환해 줄이므로 녹음 1건 상한과 별개.
+const FILE_RAW_MAX_BYTES = (Number(process.env.CONSULT_FILE_MAX_MB) || 200) * 1024 * 1024;
 const UPLOAD_PART_TTL_H = Number(process.env.CONSULT_PART_TTL_H || 72);
 //   버려진 조각 청소 기준(시간). 6h 였다가 2026-09-04 에 **72h** 로 늘렸다 —
 //   업로드가 세션 만료(401)로 끊기면 조각은 서버에 남는데, 6시간이면 사람이 알아채기 전에
@@ -87,7 +95,9 @@ export const consultAiApi = {
     const timer = setTimeout(() => ctrl.abort(), STT_TIMEOUT_MS);
     try {
       const buf = Buffer.from(String(b64 || ''), 'base64');
-      const ext = /mp4|m4a/.test(String(mime)) ? 'mp4' : (/ogg/.test(String(mime)) ? 'ogg' : (/mpeg|mp3/.test(String(mime)) ? 'mp3' : 'webm'));
+      const ms = String(mime);
+      const ext = /mp4|m4a/.test(ms) ? 'mp4' : (/ogg/.test(ms) ? 'ogg' : (/mpeg|mp3/.test(ms) ? 'mp3'
+        : (/wav/.test(ms) ? 'wav' : (/flac/.test(ms) ? 'flac' : 'webm'))));
       const fd = new FormData();
       fd.append('file', new Blob([buf], { type: mime || 'audio/webm' }), 'audio.' + ext);
       fd.append('model', STT_MODEL());
@@ -101,7 +111,7 @@ export const consultAiApi = {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         const msg = (data && data.error && data.error.message) || ('http_' + resp.status);
-        return { ok: false, error: 'stt: ' + String(msg).slice(0, 250), transient: resp.status >= 500 || resp.status === 429 };
+        return { ok: false, error: 'stt: ' + redactSecrets(msg).slice(0, 250), transient: resp.status >= 500 || resp.status === 429 };
       }
       return { ok: true, text: String(data.text || '').trim() };
     } catch (e) {
@@ -149,7 +159,7 @@ async function claimNext() {
     `UPDATE sales_consult_recordings
         SET status='transcribing', attempts = attempts + 1
       WHERE id = $1 AND status='queued'
-      RETURNING id, consult_id, mode, mime, audio_b64, transcript, duration_sec, created_by, attempts`,
+      RETURNING *`,                      // * : 0312 전/후 컬럼 차이에 무관(source·file_name·converted_at)
     [Number(next.id)])).rows[0];
   return row || null;
 }
@@ -158,7 +168,7 @@ async function markFailed(id, error, transient, attempts) {
   const requeue = transient && Number(attempts) < MAX_AUTO_ATTEMPTS;
   await query(
     `UPDATE sales_consult_recordings SET status=$2, error=$3 WHERE id=$1`,
-    [id, requeue ? 'queued' : 'failed', String(error || 'error').slice(0, 400)]);
+    [id, requeue ? 'queued' : 'failed', redactSecrets(error || 'error').slice(0, 400)]);
 }
 
 // 전사 진행 표식 — 구간별로 이어받기 위해 전사문 끝에 잠깐 붙여 둔다(완료되면 사라진다)
@@ -168,6 +178,41 @@ export function stripPartial(t) { return String(t || '').replace(PARTIAL_RE, '')
 export function partialDone(t) {
   const m = PARTIAL_RE.exec(String(t || ''));
   return m ? { done: Number(m[1]), total: Number(m[2]) } : null;
+}
+
+// ── 휴대폰 녹음 파일 → 전사용 오디오 (2026-11-02) ─────────────────────
+//   테스트에서 ffmpeg 를 바꿔 끼울 수 있게 export.
+export const consultConvertApi = { convert: (buf) => convertToSegments(buf) };
+
+//   성공하면 row(메모리)와 DB 를 함께 바꾼다: audio_b64 = 구간들('|'), mime, duration_sec, converted_at.
+//   ffmpeg 가 없으면 Whisper 가 받는 형식·24MB 이하일 때만 원본 그대로 보낸다.
+export async function prepareFileRecording(row) {
+  const raw = String(row.audio_b64 || '');
+  if (!raw) return { error: 'no_audio' };
+  const buf = Buffer.from(raw, 'base64');
+  let segs; let mime; let dur = row.duration_sec != null ? Number(row.duration_sec) : null;
+  const conv = await consultConvertApi.convert(buf);
+  if (conv && conv.ok) {
+    segs = conv.segments.map((b) => b.toString('base64'));
+    mime = conv.mime;
+    if (conv.durationSec) dur = conv.durationSec;
+  } else if (conv && conv.error === 'ffmpeg_missing') {
+    if (!canPassThrough(row.file_name, row.mime, buf.length)) {
+      return { error: buf.length > PASS_MAX_BYTES ? 'ffmpeg_missing: too_big' : 'ffmpeg_missing: format', transient: false };
+    }
+    segs = [raw];
+    mime = whisperMimeOf(row.file_name, row.mime);
+  } else {
+    return { error: (conv && conv.error) || 'convert: failed', transient: !!(conv && conv.transient) };
+  }
+  if (dur && dur > DURATION_MAX) return { error: 'too_long', transient: false };
+  const audioB64 = segs.join('|');
+  await query(
+    `UPDATE sales_consult_recordings
+        SET audio_b64=$2, mime=$3, duration_sec=$4, converted_at=now()
+      WHERE id=$1`, [Number(row.id), audioB64, mime, dur]);
+  row.audio_b64 = audioB64; row.mime = mime; row.duration_sec = dur; row.converted_at = new Date();
+  return { ok: true, segments: segs.length };
 }
 
 export async function processOne(row) {
@@ -187,6 +232,11 @@ export async function processOne(row) {
   if (!transcript || donePart) {
     if (!sttReady()) return markFailed(recId, 'no_openai_key', false, row.attempts);
     if (!row.audio_b64) return markFailed(recId, 'no_audio', false, row.attempts);
+    // 휴대폰 녹음 파일: 전사 전에 한 번만 변환(ogg/opus 20분 구간). 재시도 때는 건너뛴다.
+    if (row.source === 'file' && !row.converted_at) {
+      const prep = await prepareFileRecording(row);
+      if (prep && prep.error) return markFailed(recId, prep.error, !!prep.transient, row.attempts);
+    }
     const partList = String(row.audio_b64).split('|').filter(Boolean);
     row.audio_b64 = null;               // 긴 녹음(수십 MB)을 두 번 들고 있지 않도록 즉시 해제
     const from = donePart && donePart.total === partList.length ? donePart.done : 0;
@@ -774,6 +824,35 @@ export default async function consultRoutes(app) {
       const built = assembleUploadParts(rows, Array.isArray(b.segments) ? b.segments : null);
       if (built.error) return reply.code(409).send(built);
       const { joined, totalB64 } = built;
+
+      // ── 휴대폰 녹음 파일(source:'file') — 원본 그대로 저장, 변환·분할은 처리 큐가 한다 ──
+      if (b.source === 'file') {
+        const fileName = cleanFileName(b.file_name);
+        if (!isUploadAllowed(fileName, b.mime)) return reply.code(400).send({ error: 'bad_format', allowed: UPLOAD_EXT });
+        if (joined.includes('|')) return reply.code(400).send({ error: 'bad_audio' });
+        const rawBytes = Buffer.byteLength(joined, 'base64');      // 패딩(=)까지 정확히
+        if (rawBytes > FILE_RAW_MAX_BYTES) {
+          return reply.code(400).send({ error: 'file_too_large', max_mb: Math.round(FILE_RAW_MAX_BYTES / 1048576) });
+        }
+        const fmime = fileMimeOf(fileName, b.mime);
+        let r;
+        try {
+          r = (await query(
+            `INSERT INTO sales_consult_recordings
+               (consult_id, mode, mime, duration_sec, size_bytes, audio_b64, created_by, source, file_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'file',$8) RETURNING id`,
+            [Number(c.id), mode, fmime, dur, rawBytes, joined, perm.userId, fileName || null])).rows[0];
+        } catch (e) {
+          if (e && e.code === '42703') return reply.code(503).send({ error: 'migration_required', migration: '0312' });
+          throw e;
+        }
+        await query(`DELETE FROM sales_consult_upload_parts WHERE session_key = $1`, [key]);
+        await logEvent({ userId: perm.userId, action: 'create', target: `consult_recording:${r.id}`,
+          detail: { consult_id: Number(c.id), mode, source: 'file', file_name: fileName, size_bytes: rawBytes } });
+        setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
+        return { id: Number(r.id), status: 'queued', source: 'file', stt_ready: sttReady(), ai_ready: aiReady(),
+                 convert_ready: !!(await findFfmpeg()) };
+      }
       // 25MB 를 넘는 구간은 서버가 클러스터 경계로 나눠 준다(긴 녹음·복구 업로드)
       const fixed = splitOversizeSegments(joined.split('|'));
       if (fixed.error) return reply.code(400).send(fixed);
@@ -797,6 +876,16 @@ export default async function consultRoutes(app) {
   //   업로드가 도중에 끊기면(세션 만료·통신 끊김·창 닫힘) 조각은 서버에 그대로 남는다.
   //   지금까지는 그걸 볼 방법이 없어 그냥 버려졌다 — 이제 화면에서 「이어서 요약」 할 수 있다.
   //   자기가 올린 것만 보인다(created_by). 조각 본문(b64)은 절대 내보내지 않는다.
+  // ── 파일 업로드 가능 여부(화면이 파일을 고르기 전에 확인) ──
+  //   convert_ready=false 면 Whisper 가 받는 형식·24MB 이하만 전사된다.
+  app.get('/api/consults/recordings/capabilities', { preHandler: [authGuard, requirePage(PAGE)] }, async () => ({
+    stt_ready: sttReady(), ai_ready: aiReady(), rec_enabled: consultRecEnabled(),
+    convert_ready: !!(await findFfmpeg()),
+    file_max_mb: Math.round(FILE_RAW_MAX_BYTES / 1048576),
+    pass_max_mb: Math.floor(PASS_MAX_BYTES / 1048576),
+    allowed: UPLOAD_EXT,
+  }));
+
   app.get('/api/consults/recordings/pending-uploads',
     { preHandler: [authGuard, requirePage(PAGE)] }, async (req) => {
       let rows = [];
@@ -853,9 +942,17 @@ export default async function consultRoutes(app) {
   app.get('/api/consults/:id/recordings', { preHandler: [authGuard, requirePage(PAGE)] }, async (req, reply) => {
     const c = await ownConsult(req.ctx.perm, req.params.id);
     if (!c) return reply.code(404).send({ error: 'not_found' });
-    const rows = (await query(
-      `SELECT id, mode, mime, duration_sec, size_bytes, status, error, attempts, transcript, summary_json, created_at, processed_at
-         FROM sales_consult_recordings WHERE consult_id=$1 ORDER BY id DESC`, [Number(c.id)])).rows;
+    const COLS = `id, mode, mime, duration_sec, size_bytes, status, error, attempts, transcript, summary_json, created_at, processed_at`;
+    let rows;
+    try {
+      rows = (await query(
+        `SELECT ${COLS}, source, file_name
+           FROM sales_consult_recordings WHERE consult_id=$1 ORDER BY id DESC`, [Number(c.id)])).rows;
+    } catch (e) {
+      if (!(e && e.code === '42703')) throw e;          // 0312 전 — 예전 컬럼만
+      rows = (await query(
+        `SELECT ${COLS} FROM sales_consult_recordings WHERE consult_id=$1 ORDER BY id DESC`, [Number(c.id)])).rows;
+    }
     return {
       stt_ready: sttReady(), ai_ready: aiReady(),
       items: rows.map((r) => {
@@ -863,7 +960,8 @@ export default async function consultRoutes(app) {
         if (r.summary_json) { try { summary = typeof r.summary_json === 'string' ? JSON.parse(r.summary_json) : r.summary_json; } catch (_) {} }
         return {
           id: Number(r.id), mode: r.mode, duration_sec: r.duration_sec != null ? Number(r.duration_sec) : null,
-          status: r.status, error: r.error, attempts: Number(r.attempts),
+          status: r.status, error: r.error ? redactSecrets(r.error) : r.error, attempts: Number(r.attempts),
+          source: r.source || 'rec', file_name: r.file_name || null,
           transcript: clip(stripPartial(r.transcript), 8000) || null, summary,
           created_at: r.created_at, processed_at: r.processed_at,
         };
