@@ -32,3 +32,10 @@ export function sttModelName(v) {
 export function redactSecrets(s) {
   return String(s == null ? '' : s).replace(/sk-[A-Za-z0-9_,.*-]{6,}/g, 'sk-***');
 }
+
+// gpt-4o-transcribe / gpt-4o-mini-transcribe 는 오디오 길이 상한(1400초 ≈ 23분)이 있다.
+//   "audio duration 2559.08 seconds is longer than 1400 seconds which is the maximum for this model"
+//   whisper-1 은 길이 상한이 없고(25MB 만) — 이 오류면 whisper-1 로 한 번 더 보낸다(2026-11-02).
+export function isDurationLimitError(msg) {
+  return /longer than \d+(?:\.\d+)? seconds|maximum for this model/i.test(String(msg || ''));
+}

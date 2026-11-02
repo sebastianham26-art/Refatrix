@@ -30,7 +30,7 @@ import {
   splitTranscript, buildConsultMergePrompt, mergeConsultSummaries, TRANSCRIPT_CHUNK_MAX,
 } from '../consultAi.js';
 import { splitB64Segment, SPLIT_MAX_BYTES, SPLIT_MAX_MS } from '../audioSplit.js';
-import { sttModelName, redactSecrets } from '../sttModel.js';
+import { sttModelName, redactSecrets, isDurationLimitError, STT_DEFAULT_MODEL } from '../sttModel.js';
 import {
   convertToSegments, findFfmpeg, canPassThrough, whisperMimeOf, fileMimeOf, cleanFileName,
   isUploadAllowed, UPLOAD_EXT, PASS_MAX_BYTES,
@@ -89,34 +89,46 @@ function daysBetween(aYmd, bYmd) {
 function txt(v, n) { const s = clip(v, n); return s || null; }
 
 // ── 외부 API 호출(테스트에서 모킹 가능하도록 export) ──
+// Whisper/OpenAI 전사 1회 호출 — 모델을 지정할 수 있다(길이 상한 폴백용)
+async function sttOnce({ b64, mime, model }) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), STT_TIMEOUT_MS);
+  try {
+    const buf = Buffer.from(String(b64 || ''), 'base64');
+    const ms = String(mime);
+    const ext = /mp4|m4a/.test(ms) ? 'mp4' : (/ogg/.test(ms) ? 'ogg' : (/mpeg|mp3/.test(ms) ? 'mp3'
+      : (/wav/.test(ms) ? 'wav' : (/flac/.test(ms) ? 'flac' : 'webm'))));
+    const fd = new FormData();
+    fd.append('file', new Blob([buf], { type: mime || 'audio/webm' }), 'audio.' + ext);
+    fd.append('model', model || STT_MODEL());
+    fd.append('response_format', 'json');
+    const resp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: fd,
+      signal: ctrl.signal,
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg = (data && data.error && data.error.message) || ('http_' + resp.status);
+      return { ok: false, error: 'stt: ' + redactSecrets(msg).slice(0, 250), transient: resp.status >= 500 || resp.status === 429 };
+    }
+    return { ok: true, text: String(data.text || '').trim() };
+  } catch (e) {
+    return { ok: false, error: e && e.name === 'AbortError' ? 'stt: timeout' : 'stt: network', transient: true };
+  } finally { clearTimeout(timer); }
+}
+
 export const consultAiApi = {
+  // 설정한 모델이 길이 상한(gpt-4o-*-transcribe 1400초)에 걸리면 whisper-1 로 자동 재시도(2026-11-02)
   async transcribe({ b64, mime }) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), STT_TIMEOUT_MS);
-    try {
-      const buf = Buffer.from(String(b64 || ''), 'base64');
-      const ms = String(mime);
-      const ext = /mp4|m4a/.test(ms) ? 'mp4' : (/ogg/.test(ms) ? 'ogg' : (/mpeg|mp3/.test(ms) ? 'mp3'
-        : (/wav/.test(ms) ? 'wav' : (/flac/.test(ms) ? 'flac' : 'webm'))));
-      const fd = new FormData();
-      fd.append('file', new Blob([buf], { type: mime || 'audio/webm' }), 'audio.' + ext);
-      fd.append('model', STT_MODEL());
-      fd.append('response_format', 'json');
-      const resp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-        body: fd,
-        signal: ctrl.signal,
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        const msg = (data && data.error && data.error.message) || ('http_' + resp.status);
-        return { ok: false, error: 'stt: ' + redactSecrets(msg).slice(0, 250), transient: resp.status >= 500 || resp.status === 429 };
-      }
-      return { ok: true, text: String(data.text || '').trim() };
-    } catch (e) {
-      return { ok: false, error: e && e.name === 'AbortError' ? 'stt: timeout' : 'stt: network', transient: true };
-    } finally { clearTimeout(timer); }
+    const model = STT_MODEL();
+    const r = await sttOnce({ b64, mime, model });
+    if (!r.ok && model !== STT_DEFAULT_MODEL && isDurationLimitError(r.error)) {
+      const r2 = await sttOnce({ b64, mime, model: STT_DEFAULT_MODEL });
+      return r2.ok ? { ...r2, fallback_model: STT_DEFAULT_MODEL } : r2;
+    }
+    return r;
   },
   async summarize(prompt, maxTokens = 1800) {
     const ctrl = new AbortController();

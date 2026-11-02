@@ -308,3 +308,45 @@ test('실패 오류문에 키가 섞여 있어도 DB 에는 가려서 저장된�
 });
 
 test('prepareFileRecording 은 내보내져 있다(진단용)', () => { assert.equal(typeof prepareFileRecording, 'function'); });
+
+// ── ④ 길이 상한 폴백 (2026-11-02 · 42분 녹음이 gpt-4o-transcribe 1400초 상한에 걸린 사고) ──
+async function withFetch(model, handler, fn) {
+  const realFetch = globalThis.fetch; const saved = process.env.VISIT_STT_MODEL;
+  process.env.VISIT_STT_MODEL = model; process.env.OPENAI_API_KEY = 'sk-test';
+  const sent = [];
+  globalThis.fetch = async (url, opts) => { const m = opts.body.get('model'); sent.push(m); return handler(m, sent.length); };
+  try { return await fn(sent); } finally {
+    globalThis.fetch = realFetch;
+    if (saved === undefined) delete process.env.VISIT_STT_MODEL; else process.env.VISIT_STT_MODEL = saved;
+  }
+}
+const LIMIT_MSG = 'audio duration 2559.0813333333335 seconds is longer than 1400 seconds which is the maximum for this model';
+const bad = (msg) => ({ ok: false, status: 400, json: async () => ({ error: { message: msg } }) });
+const good = (text) => ({ ok: true, status: 200, json: async () => ({ text }) });
+
+test('gpt-4o-transcribe 가 길이 상한으로 거절하면 같은 구간을 whisper-1 로 다시 보내 성공한다', async () => {
+  await withFetch('gpt-4o-transcribe', (m) => (m === 'whisper-1' ? good('hola de whisper') : bad(LIMIT_MSG)), async (sent) => {
+    const r = await REAL_TRANSCRIBE.call(consultAiApi, { b64: Buffer.from('x').toString('base64'), mime: 'audio/mp4' });
+    assert.deepEqual(sent, ['gpt-4o-transcribe', 'whisper-1']);
+    assert.equal(r.ok, true); assert.equal(r.text, 'hola de whisper'); assert.equal(r.fallback_model, 'whisper-1');
+  });
+});
+
+test('길이 상한이 아닌 오류는 폴백하지 않는다 · whisper-1 설정이면 한 번만 보낸다', async () => {
+  await withFetch('gpt-4o-transcribe', () => bad('Invalid file format.'), async (sent) => {
+    const r = await REAL_TRANSCRIBE.call(consultAiApi, { b64: 'eA==', mime: 'audio/mp4' });
+    assert.deepEqual(sent, ['gpt-4o-transcribe']); assert.equal(r.ok, false);
+  });
+  await withFetch('whisper-1', () => bad(LIMIT_MSG), async (sent) => {
+    const r = await REAL_TRANSCRIBE.call(consultAiApi, { b64: 'eA==', mime: 'audio/mp4' });
+    assert.deepEqual(sent, ['whisper-1'], '무한 재시도 없음'); assert.equal(r.ok, false);
+  });
+});
+
+test('방문 녹음(visitRecRoutes)도 같은 폴백', async () => {
+  const visit = await import('../src/routes/visitRecRoutes.js');
+  await withFetch('gpt-4o-mini-transcribe', (m) => (m === 'whisper-1' ? good('ok') : bad(LIMIT_MSG)), async (sent) => {
+    const r = await visit.ai.transcribe({ b64: 'eA==', mime: 'audio/webm' });
+    assert.deepEqual(sent, ['gpt-4o-mini-transcribe', 'whisper-1']); assert.equal(r.ok, true);
+  });
+});
