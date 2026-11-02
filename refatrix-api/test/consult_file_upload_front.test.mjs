@@ -85,6 +85,7 @@ test('① 7MB m4a → 3조각 seg0 순서대로 · commit 에 source:file · 파
   const state = { parts: [], commits: [], caps: CAPS_OK };
   const { ctx, page } = await openPage(state);
   assert.ok(await page.locator('#cs-fileBtn').isVisible(), '📁 버튼이 보인다');
+  await page.waitForFunction(() => document.getElementById('cs-fileCap').textContent.includes('✅'));
   const buf = Buffer.alloc(7 * 1024 * 1024 + 5, 7);
   await page.setInputFiles('#cs-fileIn', { name: 'Grabación 2026-11-02.m4a', mimeType: 'audio/mp4', buffer: buf });
   await page.waitForFunction(() => document.getElementById('cs-recMsg').textContent.includes('올리기 완료'), { timeout: 20000 });
@@ -112,6 +113,11 @@ test('② 변환기 없음: 30MB m4a 와 amr 은 올리기 전에 막는다(전�
   await page.setInputFiles('#cs-fileIn', { name: 'Call_811.amr', mimeType: '', buffer: Buffer.alloc(2000, 1) });
   await page.waitForFunction(() => document.getElementById('cs-recMsg').textContent.includes('amr'));
   assert.equal(state.parts.length, 0);
+  // WhatsApp 오디오(.mp4) 는 변환기 없이 막는다(Whisper 가 Invalid file format 으로 거절 — 2026-11-02 사고)
+  await page.setInputFiles('#cs-fileIn', { name: 'WhatsApp Audio 2026-11-02 at 2.39.49 PM.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(5000, 1) });
+  await page.waitForFunction(() => document.getElementById('cs-recMsg').textContent.includes('WhatsApp'));
+  assert.equal(state.parts.length, 0);
+  assert.match(await page.locator('#cs-fileCap').textContent(), /❌ 없음/, '변환기 상태가 버튼 아래 보인다');
   // 같은 조건에서 작은 m4a 는 통과
   await page.setInputFiles('#cs-fileIn', { name: 'corta.m4a', mimeType: '', buffer: Buffer.alloc(1000, 1) });
   await page.waitForFunction(() => document.getElementById('cs-recMsg').textContent.includes('올리기 완료'));

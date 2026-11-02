@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20261102up2)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20261102up3)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -439,6 +439,7 @@
           <button class="btn ghost" type="button" id="cs-fileBtn">📁 휴대폰 녹음파일 올리기</button>
           <span class="hint" style="margin:0">휴대폰 녹음앱(음성녹음 · 음성메모 · 통화녹음)으로 녹음한 파일을 고르면 <b>전사 → 카테고리 분류 요약 → 펜딩 등록</b>까지 똑같이 처리됩니다. m4a · mp3 · wav · aac · amr · 3gp · ogg 등, 긴 파일도 됩니다.</span>
         </div>
+        <div class="hint" id="cs-fileCap" style="margin:6px 0 0"></div>
         <input type="file" id="cs-fileIn" class="hidden" accept="audio/*,video/mp4,video/quicktime,.m4a,.mp3,.wav,.aac,.amr,.awb,.3gp,.3ga,.ogg,.oga,.opus,.webm,.flac,.caf,.wma,.mp4,.mov">
       </div>
       <div id="cs-recReady" class="hidden" style="margin-top:10px">
@@ -1119,7 +1120,7 @@
     csRecConsult={id:Number(consultId),company:company||''};
     const card=$('cs-recCard'); card.classList.remove('hidden');
     $('cs-recTarget').textContent='— '+(company||('상담 #'+consultId));
-    csRecReset(); csLoadRecs(true);
+    csRecReset(); csLoadRecs(true); csFileCapShow();
     try{ card.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
   }
   function csRecReset(){
@@ -1513,6 +1514,17 @@
     });
   }
 
+  // 서버 변환기(ffmpeg) 상태를 버튼 아래에 늘 보여준다 (b20261102up3)
+  //   ❌ 이면 WhatsApp·아이폰 mp4, 24MB 넘는 파일, amr·3gp 는 전사되지 않는다.
+  async function csFileCapShow(){
+    const el=$('cs-fileCap'); if(!el) return;
+    const caps=await csFileCaps();
+    if(!caps){ el.textContent=''; return; }
+    el.innerHTML=caps.convert_ready
+      ? '🔧 서버 오디오 변환기: <b style="color:var(--brand)">✅ 사용 가능</b> — 길이·형식 상관없이 올리면 됩니다.'
+      : '🔧 서버 오디오 변환기: <b style="color:var(--expense)">❌ 없음</b> — WhatsApp·아이폰 mp4, 24MB 넘는 파일, amr·3gp 는 전사되지 않습니다. (관리자: Railway 재배포로 ffmpeg 설치)';
+  }
+
   // 사전 점검 — 올리기 전에 막을 수 있는 건 여기서 알려준다. 문제 없으면 null.
   function csFileCheck(file, caps){
     const ext=csFileExt(file.name);
@@ -1525,6 +1537,7 @@
     if(caps&&caps.convert_ready===false){
       const passMb=caps.pass_max_mb||24;
       const whisperOk=ext?CS_WHISPER_EXT.indexOf(ext)>=0:/^audio\/(mp4|m4a|x-m4a|mpeg|mp3|wav|x-wav|webm|ogg|flac)$/i.test(file.type||'');
+      if(ext==='mp4'||ext==='mov') return '서버에 오디오 변환기(ffmpeg)가 아직 없어 <b>WhatsApp·아이폰 mp4</b> 파일은 전사할 수 없습니다 — 관리자에게 「ffmpeg 설치(Railway 재배포)」를 요청해 주세요.';
       if(!whisperOk) return '서버에 오디오 변환기(ffmpeg)가 아직 없어 <b>'+csEsc(ext||file.type)+'</b> 형식은 전사할 수 없습니다 — 관리자에게 「ffmpeg 설치」를 요청해 주세요. (m4a · mp3 · wav 는 '+passMb+'MB 이하면 지금도 됩니다)';
       if(file.size>passMb*1048576) return '서버에 오디오 변환기(ffmpeg)가 아직 없어 '+passMb+'MB가 넘는 파일('+csFmtMB(file.size)+')은 전사할 수 없습니다 — 관리자에게 「ffmpeg 설치」를 요청해 주세요.';
     }
