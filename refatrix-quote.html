@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-1020lr</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-1102kitf</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -72,6 +72,14 @@
   /* 0179 — 비활성(판매중단) 제품 표시 */
   .acitem.inact{background:#fdf6f5;opacity:.75}
   .cand.inact{background:#fdf6f5;opacity:.75}
+  /* 2026-11-02 kitf · Kit 전체 / Kit만 / Kit 제외 */
+  .kitseg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;vertical-align:middle;background:#fff}
+  .kitseg label{display:inline-flex;align-items:center;margin:0;padding:4px 11px;font-size:12px;font-weight:700;color:#6f6a60;cursor:pointer;border-right:1px solid var(--line);white-space:nowrap}
+  .kitseg label:last-child{border-right:none}
+  .kitseg input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+  .kitseg label.on{background:var(--brand);color:#fff}
+  .kitcomp{color:#1f5f4a;font-size:11.5px;margin-top:2px;line-height:1.35}
+  .kitseg-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#6f6a60}
   .kitbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#E8F3EE;color:#1f5f4a;font-size:10.5px;font-weight:800;white-space:nowrap}
   .inactbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#fbe9e7;color:#b23a2e;
     font-size:10px;font-weight:800;line-height:16px;vertical-align:middle}
@@ -162,6 +170,16 @@
       <label style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:#6f6a60;cursor:pointer;font-weight:500">
         <input type="checkbox" id="inAlu" onchange="onCodeInput()" style="width:auto;margin:0"> 알루미늄만 (체크 시 알루미늄 소재 제품만 검색)
       </label>
+      <!-- 2026-11-02 kitf · 키트(K0001 … K로 시작하는 코드) 보기 — 자동완성 · 전체 가격표 · Top 500 · 전체 견적에 같이 적용 -->
+      <div class="kitseg-wrap">
+        <span style="font-weight:700">🧰 Kit 보기</span>
+        <div class="kitseg" id="kitSeg" role="radiogroup" aria-label="Kit 보기">
+          <label class="on"><input type="radio" name="kitMode" value="all" checked>전체</label>
+          <label><input type="radio" name="kitMode" value="only">Kit만</label>
+          <label><input type="radio" name="kitMode" value="excl">Kit 제외</label>
+        </div>
+        <span class="hint" id="kitHint">자동완성과 엑셀(전체 가격표 · Top 500 · 전체 견적)에 같이 적용됩니다. Kit는 Producto 칸에 구성품 제품명이 표시됩니다.</span>
+      </div>
       <div class="msg" id="lineMsg"></div>
 
       <div id="linesWrap" style="margin-top:12px"></div>
@@ -376,16 +394,56 @@
   // 0228 — FOR(조립품 OE) 부연설명. 서버 oeParse.OE_FOR_NOTE 와 같은 문장.
   const OE_FOR_NOTE='해당 OE번호 부품의 조립품에 해당하는 OE부품입니다';
   const MB_LABEL={syd:'SYD',oe:'OE',oe_for:'FOR (조립품 OE)'};
-  function onCodeInput(){
-    pickedProduct=null; // 직접 타이핑하면 이전 선택 해제
+  // ===== 2026-11-02 kitf · Kit 보기(전체 / Kit만 / Kit 제외) =====
+  //   키트 = K 로 시작하고 바로 숫자가 오는 코드(K0001 …) — 서버 vioPromos.isKitCode 와 같은 규칙.
+  const KIT_MODE_KEY='rfx_quote_kitmode';
+  const KIT_RE=/^K[0-9]/i;
+  function isKitItem(it){ return !!(it&&(it.is_kit||it.kit||KIT_RE.test(String(it.ctr_code||'').trim()))); }
+  function kitMode(){ const r=document.querySelector('input[name=kitMode]:checked'); const v=r?r.value:'all'; return (v==='only'||v==='excl')?v:'all'; }
+  function kitQS(){ const m=kitMode(); return m==='all'?'':('kit='+m); }
+  function kitProd(it,sep){   // Producto 칸: 키트면 구성품 제품명(한 줄에 하나), 아니면 제품명
+    if(!isKitItem(it)) return it.name||'';
+    const its=it.kit_items||(it.kit&&it.kit.items)||[];
+    if(its.length) return its.map(function(x){ const nm=String(x.name||'').replace(/\s+/g,' ').trim()||String(x.ctr_code||''); const q=Number(x.qty)||1; return nm+(q>1?' ×'+q:''); }).join(sep||'\n');
+    if(it.kit_desc) return sep&&sep!=='\n'?String(it.kit_desc).split('\n').join(sep):it.kit_desc;
+    return it.name||'';
+  }
+  function kitFileTag(){ const m=kitMode(); return m==='only'?'kits_':(m==='excl'?'sin_kits_':''); }
+  function kitNote(){ const m=kitMode(); return m==='only'?' · Kit만':(m==='excl'?' · Kit 제외':''); }
+  function setKitMode(v,silent){
+    v=(v==='only'||v==='excl')?v:'all';
+    document.querySelectorAll('input[name=kitMode]').forEach(function(x){ x.checked=(x.value===v); x.parentNode.classList.toggle('on',x.checked); });
+    try{ localStorage.setItem(KIT_MODE_KEY,v); }catch(e){}
+    if(silent) return;
+    const inp=$('inCode');
+    if(v==='only' && inp && !inp.value.trim()) onCodeInput(true);   // Kit만 → 검색어 없이 키트 목록
+    else if(inp && inp.value.trim()) onCodeInput();
+    else hideAc();
+  }
+  document.addEventListener('DOMContentLoaded',function(){
+    let v='all'; try{ v=localStorage.getItem(KIT_MODE_KEY)||'all'; }catch(e){}
+    setKitMode(v,true);
+    document.querySelectorAll('input[name=kitMode]').forEach(function(x){ x.addEventListener('change',function(){ if(x.checked) setKitMode(x.value); }); });
+    const inp=$('inCode');
+    if(inp) inp.addEventListener('focus',function(){ if(kitMode()==='only' && !inp.value.trim()) onCodeInput(true); });
+  });
+  function onCodeInput(keepPick){
+    if(keepPick!==true) pickedProduct=null; // 직접 타이핑하면 이전 선택 해제
     const q=$('inCode').value.trim();
     clearTimeout(acTimer);
-    if(q.length<1){ hideAc(); return; }
+    const km=kitMode();
+    if(q.length<1 && km!=='only'){ hideAc(); return; }   // Kit만이면 빈 칸에서도 키트 목록
     acTimer=setTimeout(async()=>{
       try{
         const alu=($('inAlu')&&$('inAlu').checked)?'&material=aluminio':'';
-        const d=await fetch(session.api+'/api/quotes/search-code?q='+encodeURIComponent(q)+alu,{headers:auth()}).then(r=>r.json());
-        acItems=d.items||[]; acSel=-1; renderAc();
+        const kq=km==='all'?'':('&kit='+km);
+        const d=await fetch(session.api+'/api/quotes/search-code?q='+encodeURIComponent(q)+alu+kq,{headers:auth()}).then(r=>r.json());
+        let its=d.items||[];
+        // 구버전 서버(kit 파라미터 무시)여도 화면에서 한 번 더 거른다
+        if(km==='only') its=its.filter(isKitItem); else if(km==='excl') its=its.filter(function(x){ return !isKitItem(x); });
+        acItems=its; acSel=-1;
+        if(!acItems.length && km==='only'){ $('acBox').innerHTML='<div class="acitem" style="cursor:default;color:#6f6a60">'+(q?'이 검색어에 해당하는 Kit가 없습니다.':'등록된 Kit가 없습니다.')+'</div>'; $('acBox').classList.remove('hidden'); return; }
+        renderAc();
       }catch(e){ hideAc(); }
     },180);
   }
@@ -398,7 +456,10 @@
       +(it.kit?' <span class="kitbadge" title="VIO 프로모션 키트 — 담으면 구성 부품 줄로 풀립니다">🧰 KIT · 부품 '+it.kit.items.length+'종</span>':'')
       +(it.syd_codes&&it.syd_codes.length?' <span class="s">· SYD '+esc(it.syd_codes.join(' / '))+'</span>':'')
       +(it.oe_hit?(' <span class="s" style="color:'+(it.oe_hit.rel==='for'?'#7a5a17':'#143D34')+';font-weight:700"'+(it.oe_hit.rel==='for'?' title="'+esc(OE_FOR_NOTE)+'"':'')+'>· '+(it.oe_hit.rel==='for'?'FOR ':'OE ')+esc(it.oe_hit.code)+' 로 찾음</span>'):'')
-      +'<div class="s">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div></div>'
+      +(isKitItem(it)&&(it.kit&&it.kit.items&&it.kit.items.length||it.kit_desc)
+        ? '<div class="kitcomp" title="'+esc(it.name||'')+'">'+esc(kitProd(it,' · '))+'</div>'+(it.app?'<div class="s">'+esc(it.app)+'</div>':'')
+        : '<div class="s">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div>')
+      +'</div>'
       +'<div class="lp">List '+fmt(it.list_price)+'</div></div>'
     ).join('');
     $('acBox').classList.remove('hidden');
@@ -541,10 +602,15 @@
       const cid=$('custSel').value;
       // 불특정 고객은 기본 가격표를 받아 입력 할인률을 적용. 등록 고객만 customer_id 전달.
       let url=session.api+'/api/quotes/price-list';
-      if(!guest && cid && cid!=='__guest__') url+='?customer_id='+encodeURIComponent(cid);
+      const qs=[];
+      if(!guest && cid && cid!=='__guest__') qs.push('customer_id='+encodeURIComponent(cid));
+      if(kitQS()) qs.push(kitQS());   // kitf
+      if(qs.length) url+='?'+qs.join('&');
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
-      const items=d.items||[];
-      if(!items.length){ m.className='msg err';m.textContent='제품이 없습니다.';return; }
+      const km=kitMode();
+      let items=d.items||[];
+      if(km==='only') items=items.filter(isKitItem); else if(km==='excl') items=items.filter(function(x){ return !isKitItem(x); });
+      if(!items.length){ m.className='msg err';m.textContent=km==='only'?'Kit가 없습니다.':'제품이 없습니다.';return; }
       // 할인률: 불특정=입력값(curDisc), 등록=서버 등록 할인률(null=미등록)
       const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : d.discountRate;
       const rows=[];
@@ -555,11 +621,13 @@
       rows.push(['#','CTR Code','SYD Code','Producto','Application','Existencia','En tránsito','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)','Material','Referencia OE']);   // 0228 · D2 — 맨 끝(Q) · 수식 열 위치 불변
       const headerRow=rows.length, firstData=headerRow+1;
       const aluRows=[];   // 알루미늄 제품 행 번호(엑셀 행) — 음영 표기용
+      const kitRows=[];   // kitf · 키트 행 — Producto 칸 줄바꿈(구성품 한 줄에 하나)
       items.forEach((it,idx)=>{
+        if(isKitItem(it)) kitRows.push({r:firstData+idx,n:Math.max(1,kitProd(it).split('\n').length)});
         const unit=(disc==null)?(Number(it.list_price)||0):(Math.round((Number(it.list_price)||0)*(1-disc/100)*100)/100);
         const isAlu = it.material==='aluminio';
         if(isAlu) aluRows.push(firstData+idx);
-        rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.name||'', it.app||'',
+        rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', kitProd(it), it.app||'',
           it.stock_qty==null?'':Number(it.stock_qty),
           (Number(it.backorder_qty)||0)>0?Number(it.backorder_qty):'',
           unit, null,null,null,null,null, null, null, isAlu?'Aluminio':'', it.oe_ref||'' ]);
@@ -603,11 +671,22 @@
       const sTraP={fill:{patternType:'solid',fgColor:{rgb:'DDEBF7'}},font:{bold:true,color:{rgb:'1F4E79'}}};
       for(let r=firstData;r<=lastData;r++){ if(ws['G'+r]&&ws['G'+r].v!==''&&ws['G'+r].v!=null){ ws['G'+r].s=Object.assign({},ws['G'+r].s,sTraP); ws['G'+r].z='#,##0'; } }
       ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:30},{wch:28},{wch:11},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12},{wch:28}];
+      // kitf · 키트 행: Producto(D) 구성품 줄바꿈 + 행 높이(줄 수만큼)
+      if(kitRows.length){
+        const rowsH=[];
+        kitRows.forEach(function(k){
+          const ref='D'+k.r; if(!ws[ref]) return;
+          ws[ref].s=Object.assign({},ws[ref].s,{alignment:{wrapText:true,vertical:'top'}});
+          ['B','C','E'].forEach(function(c){ const rr=c+k.r; if(ws[rr]) ws[rr].s=Object.assign({},ws[rr].s,{alignment:{vertical:'top',wrapText:c==='E'}}); });
+          rowsH[k.r-1]={hpt:Math.max(15,Math.min(409,15*k.n))};
+        });
+        ws['!rows']=rowsH;
+      }
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Lista');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
-      XLSX.writeFile(wb,'lista_precios_'+safe+'.xlsx');
-      m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+(aluRows.length?(' · 알루미늄 '+aluRows.length+'개 음영 표기'):'')+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
+      XLSX.writeFile(wb,'lista_precios_'+kitFileTag()+safe+'.xlsx');
+      m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+kitNote()+(kitRows.length?(' · Kit '+kitRows.length+'개는 Producto에 구성품 제품명'):'')+(aluRows.length?(' · 알루미늄 '+aluRows.length+'개 음영 표기'):'')+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
       // 견적 목록에 '가용재고 및 견적'으로 기록 (SKU·총수량·금액은 빈칸)
       try{
         const pbody=(!guest && cid && cid!=='__guest__') ? {customer_id:Number(cid)} : {guest_name:$('guestName').value.trim(), discount_rate:(disc==null?0:disc)};
@@ -939,8 +1018,11 @@
     const cid=$('custSel').value;
     let url=session.api+'/api/quotes/price-list?'+(all?'all=1':'top=500');
     if(!guest && cid && cid!=='__guest__') url+='&customer_id='+encodeURIComponent(cid);
+    if(kitQS()) url+='&'+kitQS();   // kitf
     const d=await fetch(url,{headers:auth()}).then(r=>r.json());
-    const items=d.items||[];
+    const km=kitMode();
+    let items=d.items||[];
+    if(km==='only') items=items.filter(isKitItem); else if(km==='excl') items=items.filter(function(x){ return !isKitItem(x); });
     if(!items.length) return {d:d,items:items,plan:null};
     await new Promise(r=>setTimeout(r,20));
     return {d:d,items:items,plan:VEH.buildQuotePlan(items)};
@@ -1017,7 +1099,7 @@
         m.className='msg ok';m.textContent=LBL+' 견적을 불러오는 중…';
         ctx=await loadVioPlan(all);
       }
-      if(!ctx.plan){ m.className='msg err';m.textContent=all?'다운로드할 SKU가 없습니다.':'VIO가 매칭된 SKU가 없습니다.';return; }
+      if(!ctx.plan){ m.className='msg err';m.textContent=(kitMode()==='only'?'Kit만 — ':'')+(all?'다운로드할 SKU가 없습니다.':'VIO가 매칭된 SKU가 없습니다.');return; }
       const d=ctx.d, plan=ctx.plan;
       const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : (d.discountRate==null?0:d.discountRate);
       const rateFrac = (Number(disc)||0)/100;
@@ -1047,13 +1129,13 @@
       });
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       const rgTag=(regs&&!allRegs)?(regs.map(r=>RG_INFO[r].tag).join('_')+'_'):'';
-      XLSX.writeFile(wb,(all?'cotizacion_completa_':'cotizacion_top500_')+rgTag+safe+'.xlsx');
+      XLSX.writeFile(wb,(all?'cotizacion_completa_':'cotizacion_top500_')+kitFileTag()+rgTag+safe+'.xlsx');
       const rgNote=regs?(' · 지역: '+regs.map(r=>RG_INFO[r].ko+' '+(sheets.find(s=>s.name===RG_INFO[r].sheet)||{P:[]}).P.length.toLocaleString('en-US')+'행').join(' / ')
         +(opt.split?(' (시트 '+sheets.length+'개 · 시트별 Subtotal)'):' (한 시트)')):'';
       m.className='msg ok';m.textContent=LBL+' 견적 다운로드 완료 — '+plan.stats.sku.toLocaleString('en-US')+'개 SKU를 차종 '+plan.stats.groups.toLocaleString('en-US')+'그룹으로 재편성('+plan.rows.length.toLocaleString('en-US')+'행, 중복 '+plan.stats.dup.toLocaleString('en-US')+'행·대표 '+plan.stats.reps.toLocaleString('en-US')+'행)'
         +' · 기존 VIO 차종명 매칭 '+plan.stats.matched+'/'+plan.stats.curated
         +(plan.stats.noapp?(' · 적용차종 없음 '+plan.stats.noapp+'건은 맨 아래 Sin aplicación'):'')
-        +rgNote
+        +rgNote+kitNote()
         +' · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함 · Subtotal은 파란 대표행만 합산).';
     }catch(e){ m.className='msg err';m.textContent=LBL+' 견적 다운로드 실패: '+(e&&e.message||e); }
   }
@@ -1116,7 +1198,7 @@
         const pro=(it.production_qty!=null)?Number(it.production_qty)
                  :Math.max(0,(Number(it.backorder_qty)||0)-tra);
         rows.push([ p.label||'—', p.vio!=null?Number(p.vio):'',
-          it.ctr_code||'', it.syd_codes||'', it.name||'', it.app||'',
+          it.ctr_code||'', it.syd_codes||'', kitProd(it), it.app||'',
           stk!=null?stk:'', avl!=null?avl:'',
           tra>0?tra:'', pro>0?pro:'', 1,
           Number(it.list_price)||0, null, null, p.isRep?1:0 ]);
@@ -1145,12 +1227,17 @@
       if(ws['A1'])ws['A1'].s=sLogo; if(ws['A2'])ws['A2'].s=sSub; if(ws['A3'])ws['A3'].s=sTitle; if(ws['A4'])ws['A4'].s=sMeta;
       if(ws['A6'])ws['A6'].s=sLbl; if(ws['B6'])ws['B6'].s=sCli; if(ws['E6'])ws['E6'].s=sLbl; if(ws['A7'])ws['A7'].s=sLeg;
       ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
+      const kitH=[];   // kitf · 키트 행 높이
       for(let i=0;i<P.length;i++){
         const r=firstData+i, p=P[i], rep=p.isRep&&p.isDup;
         if(ws['A'+r])ws['A'+r].s=mk(sVeh,rep); if(ws['B'+r])ws['B'+r].s=mk(sVio,rep);
         if(ws['C'+r])ws['C'+r].s=p.isDup?mk(sCtrDup,rep):mk(sCtr,rep);
         if(ws['D'+r])ws['D'+r].s=p.isDup?mk(sSydDup,rep):mk(sTxt,rep);
         if(ws['E'+r])ws['E'+r].s=mk(sTxt,rep); if(ws['F'+r])ws['F'+r].s=mk(sTxt,rep);
+        if(isKitItem(p.it)&&ws['E'+r]){   // kitf · 키트 Producto = 구성품 제품명(줄바꿈)
+          ws['E'+r].s=Object.assign({},ws['E'+r].s,{alignment:Object.assign({},(ws['E'+r].s||{}).alignment,{wrapText:true,vertical:'top'})});
+          kitH[r-1]={hpt:Math.max(15,Math.min(409,15*String(ws['E'+r].v||'').split('\n').length))};
+        }
         if(ws['G'+r])ws['G'+r].s=rep?mk(sExi,rep):(Number(ws['G'+r].v)>0?sExi:sExi0);
         if(ws['H'+r])ws['H'+r].s=rep?mk(sDisp,rep):(Number(ws['H'+r].v)>0?sDisp:sDisp0);
         if(ws['I'+r])ws['I'+r].s=mk(sTra,rep); if(ws['J'+r])ws['J'+r].s=mk(sProd,rep);
@@ -1165,6 +1252,7 @@
       ws['!autofilter']={ref:'A'+headerRow+':N'+lastData};
       ws['!cols']=[{wch:34},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:11},{wch:12},{wch:12},{wch:15},{wch:14},{wch:15},{wch:10,hidden:true}];
       ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:14},{hpt:30}];
+      kitH.forEach(function(h,i){ if(h) ws['!rows'][i]=h; });   // kitf
       return ws;
   }
 

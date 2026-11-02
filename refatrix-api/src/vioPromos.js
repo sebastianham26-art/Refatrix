@@ -47,22 +47,50 @@ export async function promosReady(q = query) {
 }
 export function setPromosReady(v) { readyFlag = !!v; probeAt = Date.now(); }
 
+// =====================================================================
+// 2026-11-02 kitf · 견적 화면 「Kit 전체 / Kit만 / Kit 제외」 (디렉터 지시)
+//   키트 = **K 로 시작하고 바로 숫자가 오는 코드**(K0001 …). 같은 규칙을 SQL(kitCodeSql)과 JS(isKitCode)가 쓴다.
+//   K 다음이 글자인 코드(예: KXX-…)는 키트가 아니다 — 일반 SKU 를 키트로 잘못 빼지 않게.
+// =====================================================================
+export const KIT_CODE_RE = /^K[0-9]/i;
+export const isKitCode = (code) => KIT_CODE_RE.test(String(code == null ? '' : code).trim());
+/** SQL 조각 — col 은 제품 코드 열(예: 'p.code'). */
+export const kitCodeSql = (col) => `(UPPER(TRIM(${col})) ~ '^K[0-9]')`;
+/** 'only' | 'excl' | null — 화면 값(only/kit/excl/exclude/sin/no) 정규화 */
+export function normKitMode(v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if (s === 'only' || s === 'kit' || s === 'kits' || s === 'solo') return 'only';
+  if (s === 'excl' || s === 'exclude' || s === 'sin' || s === 'no' || s === 'none') return 'excl';
+  return null;
+}
+/** 구성품 → Producto 칸 문자열. 한 줄에 하나(「제품명 ×수량」, 수량 1은 생략). 이름이 없으면 CTR 코드. */
+export function kitDesc(items, sep = '\n') {
+  return (items || []).map((it) => {
+    const nm = String(it.name || '').replace(/\s+/g, ' ').trim() || String(it.ctr_code || '').trim();
+    const q = Number(it.qty) || 1;
+    return nm + (q > 1 ? ' ×' + q : '');
+  }).filter(Boolean).join(sep);
+}
+
 /** 키트 제품 id/코드 → 구성품. Map(product_id → {promo_no, items:[{product_id, ctr_code, qty}]}) */
 export async function kitsFor({ ids = [], codes = [] }, q = query) {
   const out = new Map();
   ids = [...new Set(ids.map(Number).filter(Boolean))]; codes = [...new Set(codes.map((c) => String(c || '').trim().toUpperCase()).filter(Boolean))];
   if ((!ids.length && !codes.length) || !(await promosReady(q))) return out;
   const rows = (await q(
-    `SELECT v.product_id, p.code AS kit_code, v.promo_no, i.product_id AS item_pid, i.ctr_code, i.qty, i.line_no
+    `SELECT v.product_id, p.code AS kit_code, v.promo_no, i.product_id AS item_pid, i.ctr_code, i.qty, i.line_no,
+            COALESCE(NULLIF(TRIM(ip.name), ''), i.name) AS item_name
        FROM vio_promos v
        JOIN products p ON p.id = v.product_id AND p.deleted_at IS NULL
        JOIN vio_promo_items i ON i.promo_id = v.id
+       LEFT JOIN products ip ON ip.id = i.product_id
       WHERE v.product_id = ANY($1::bigint[]) OR upper(p.code) = ANY($2::text[])
       ORDER BY v.product_id, i.line_no`, [ids, codes])).rows;
   for (const r of rows) {
     const k = Number(r.product_id);
     if (!out.has(k)) out.set(k, { product_id: k, kit_code: r.kit_code, promo_no: r.promo_no, items: [] });
-    out.get(k).items.push({ product_id: Number(r.item_pid), ctr_code: r.ctr_code, qty: Number(r.qty) });
+    // 2026-11-02 kitf · 구성품 제품명(name) — 견적 화면 Producto 칸에 구성품 이름을 쓴다
+    out.get(k).items.push({ product_id: Number(r.item_pid), ctr_code: r.ctr_code, qty: Number(r.qty), name: r.item_name || '' });
   }
   return out;
 }

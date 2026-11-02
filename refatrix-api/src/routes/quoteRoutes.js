@@ -6,7 +6,7 @@ import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
-import { expandKitLines, kitsFor, kitColReady, kitSummaries } from '../vioPromos.js';   // 0293 · 0306
+import { expandKitLines, kitsFor, kitColReady, kitSummaries, isKitCode, kitCodeSql, normKitMode, kitDesc } from '../vioPromos.js';   // 0293 · 0306 · kitf
 import { resolveCode, assignReservations, topUpReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
          normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, quoteLineCodeMatch, stampLineMeta } from '../quoteBuild.js';
@@ -126,7 +126,9 @@ export default async function quoteRoutes(app) {
   // 자동완성: CTR 코드 또는 SYD 코드 부분일치 검색 (영업 권한)
   app.get('/api/quotes/search-code', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
     const q = String(req.query.q || '').trim();
-    if (q.length < 1) return { items: [] };
+    // 2026-11-02 kitf · kit=only(키트만) | excl(키트 제외). 「Kit만」은 검색어 없이도 키트 전체 목록을 준다.
+    const kitMode = normKitMode(req.query.kit);
+    if (q.length < 1 && kitMode !== 'only') return { items: [] };
     const like = `%${q}%`;
     // 소재 필터: material=aluminio 이면 알루미늄 제품만 검색 결과에 노출(견적 화면 「알루미늄만」 체크).
     const materialFilter = String(req.query.material || '').trim().toLowerCase();
@@ -136,6 +138,8 @@ export default async function quoteRoutes(app) {
       params.push(materialFilter === 'aluminio' || materialFilter.includes('alumin') ? 'aluminio' : materialFilter);
       matSql = ` AND p.material = $${params.length}`;
     }
+    if (kitMode === 'only') matSql += ` AND ${kitCodeSql('p.code')}`;
+    else if (kitMode === 'excl') matSql += ` AND NOT ${kitCodeSql('p.code')}`;
     // CTR(code/name) 일치 + SYD 일치 (+ 0228 OE 정규화 부분일치, 4자 이상) 를 합쳐 제품 id 수집
     const qn = normOe(q);
     const oeOn = qn.length >= 4 && (await oeReady());
@@ -169,7 +173,7 @@ export default async function quoteRoutes(app) {
           AND (p.code ILIKE $1 OR p.name ILIKE $1
                OR EXISTS (SELECT 1 FROM product_syd_codes s WHERE s.product_id = p.id AND s.syd_code ILIKE $1)${oeSql})${matSql}
         ORDER BY match_rank, p.code
-        LIMIT 50`, params)).rows;
+        LIMIT ${kitMode === 'only' ? 300 : 50}`, params)).rows;
     if (!rows.length) return { items: [] };
     const ids = rows.map((r) => r.id);
     const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
@@ -190,6 +194,8 @@ export default async function quoteRoutes(app) {
           oe_hit: hit ? { code: hit.oe_code, rel: hit.rel } : null,
           oe_count: oe.length,
           kit: kits.has(Number(r.id)) ? { promo_no: kits.get(Number(r.id)).promo_no, items: kits.get(Number(r.id)).items } : null,   // 0293
+          is_kit: kits.has(Number(r.id)) || isKitCode(r.code),                                       // kitf
+          kit_desc: kits.has(Number(r.id)) ? kitDesc(kits.get(Number(r.id)).items, ' · ') : '',      // kitf — 구성품 제품명
         };
       }),
     };
@@ -1168,7 +1174,15 @@ export default async function quoteRoutes(app) {
            ${PL_QTY_JOINS}
           WHERE p.deleted_at IS NULL ORDER BY p.code`)).rows;
     }
+    // 2026-11-02 kitf · kit=only(키트만) | excl(키트 제외) — 세 갈래(all/top/기본) 공통으로 여기서 거른다
+    const kitModePL = normKitMode(req.query.kit);
+    if (kitModePL === 'only') prods = prods.filter((p) => isKitCode(p.code));
+    else if (kitModePL === 'excl') prods = prods.filter((p) => !isKitCode(p.code));
     const ids = prods.map((p) => p.id);
+    // kitf · 키트 구성품(제품명) — Producto 칸에 구성품 이름을 쓰도록 kit_items · kit_desc 로 준다
+    let kitMapPL = new Map();
+    const kitIds = prods.filter((p) => isKitCode(p.code)).map((p) => p.id);
+    if (kitIds.length) { try { kitMapPL = await kitsFor({ ids: kitIds }); } catch (_) { kitMapPL = new Map(); } }
     const sydRows = ids.length ? (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows : [];
     const sydByPid = {};
     for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
@@ -1187,6 +1201,11 @@ export default async function quoteRoutes(app) {
       vio_units: p.vio_units != null ? Number(p.vio_units) : null,
       vio_model: p.vio_model || null,
       vio_year: p.vio_year || null,
+      ...(isKitCode(p.code) ? (() => {   // kitf
+        const k = kitMapPL.get(Number(p.id));
+        const its = k ? k.items.map((x) => ({ ctr_code: x.ctr_code, qty: x.qty, name: x.name || '' })) : [];
+        return { is_kit: true, kit_no: k ? k.promo_no : null, kit_items: its, kit_desc: kitDesc(its) };
+      })() : {}),
     }));
     return { discountRate, top: topN || null, all: wantAll || undefined, count: items.length, items };
   });
