@@ -335,6 +335,20 @@ function parseDataUrl(dataUrl) {
 }
 
 // 월별 배치 집계 (순수·테스트용). lines: 확정 라인 [{settle_ym, owner_id, expected, paid}]
+// 월 × 사원 (순수·테스트용) — 월별 지급 배치를 사원별로 나눠 보여 준다 (2026-11-02d)
+export function summarizeByMonthAgent(lines) {
+  const by = {};
+  for (const l of lines) {
+    if (!l.settle_ym) continue;
+    const k = l.settle_ym + '|' + l.owner_id;
+    const g = (by[k] ||= { settle_ym: l.settle_ym, agent_id: Number(l.owner_id), confirmed: 0, paid: 0, count: 0 });
+    g.confirmed = round2(g.confirmed + Number(l.expected || 0));
+    if (l.paid) g.paid = round2(g.paid + Number(l.expected || 0));
+    g.count += 1;
+  }
+  return Object.values(by).map((g) => ({ ...g, unpaid: round2(g.confirmed - g.paid) }));
+}
+
 export function summarizeByMonth(lines) {
   const by = {};
   for (const l of lines) {
@@ -631,6 +645,9 @@ export function monthlyLine(r, bmap = {}, opts = {}) {
     if (c.fullyPaid && lastPay) delayDays = daysBetween(dueDate, lastPay);          // 완납: 마지막 수금일 − 만기일
     else { delayDays = daysBetween(dueDate, today); delayOpen = true; }            // 미수: 오늘 − 만기일 (음수 = 남은 일수)
   }
+  // 현재 기준 = 지급·확정분 전액, 미확정이면 지금까지 수금으로 적립된 몫(수금일 판정). 발행일 판정 수금 기준은 완납 전 0.
+  const nowAmt = status === 'expected' ? round2(c.accrued || 0) : round2(commission || 0);
+  const pendAmt = status === 'expected' ? round2(Math.max(0, (commission || 0) - nowAmt)) : 0;
   let pays = r.pays;
   if (typeof pays === 'string') { try { pays = JSON.parse(pays); } catch { pays = null; } }
   return {
@@ -641,6 +658,8 @@ export function monthlyLine(r, bmap = {}, opts = {}) {
     subtotal: round2(sub), iva: round2(iva), total: round2(tot), nc_base: round2(Number(r.nc_base) || 0),
     basis: c.basis, mode: c.mode, rate: c.rate, commission_base: c.base,
     commission: round2(commission || 0), status, settle_ym: c.settleYm, pay_date: payDate, pay_planned: payPlanned,
+    // 2026-11-02d 현재 기준(지금까지 수금으로 생긴 커미션) / 펜딩(아직 수금 안 된 잔액에 대한 커미션)
+    commission_now: nowAmt, commission_pending: pendAmt,
     due_date: dueDate, credit_days: r.credit_days != null ? Number(r.credit_days) : null,
     last_pay_date: lastPay, paid_amount: paidAmt, balance, fully_paid: c.fullyPaid,
     delay_days: delayDays, delay_open: delayOpen,
@@ -664,10 +683,12 @@ export function summarizeAgentMonths(lines) {
   const by = {};
   for (const l of lines) {
     const k = l.agent_id + '|' + l.inv_ym;
-    const g = (by[k] ||= { agent_id: l.agent_id, ym: l.inv_ym, invoice_count: 0, subtotal: 0, commission: 0, paid: 0 });
+    const g = (by[k] ||= { agent_id: l.agent_id, ym: l.inv_ym, invoice_count: 0, subtotal: 0, commission: 0, now: 0, pending: 0, paid: 0 });
     g.invoice_count += 1;
     g.subtotal = round2(g.subtotal + l.subtotal);
     g.commission = round2(g.commission + l.commission);
+    g.now = round2(g.now + (l.commission_now || 0));
+    g.pending = round2(g.pending + (l.commission_pending || 0));
     if (l.status === 'paid') g.paid = round2(g.paid + l.commission);
   }
   return Object.values(by).sort((a, b) => b.ym.localeCompare(a.ym) || a.agent_id - b.agent_id);
@@ -1263,9 +1284,13 @@ export default async function commissionRoutes(app) {
   // ── 월별 지급 배치 목록 (반제 완료월 단위) — canSeeAll ──
   app.get('/api/commission/batches', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
     if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
-    let months, batches;
+    let months, batches, agentRows = [], names = {};
     try {
-      months = summarizeByMonth(await confirmedMonthLines());
+      const allLines = await confirmedMonthLines();
+      months = summarizeByMonth(allLines);
+      agentRows = summarizeByMonthAgent(allLines);
+      const ids = [...new Set(agentRows.map((a) => a.agent_id))];
+      if (ids.length) for (const u of (await query(`SELECT id, name FROM users WHERE id = ANY($1::bigint[])`, [ids])).rows) names[String(u.id)] = u.name;
       // pay_date 는 DATE — node-pg 가 Date 객체로 주면 화면에서 "Sat Aug 15" 로 깨지므로 문자열로 고정.
       batches = (await query(`SELECT settle_ym, status, to_char(pay_date,'YYYY-MM-DD') AS pay_date, total_amount, agent_count, confirmed_at, handed_at, handed_note FROM commission_batches`)).rows;
     } catch (e) {
@@ -1284,6 +1309,9 @@ export default async function commissionRoutes(app) {
         confirmed_at: b && b.confirmed_at ? b.confirmed_at : null,
         handed_at: b && b.handed_at ? b.handed_at : null,
         handed_note: b ? (b.handed_note || null) : null,
+        by_agent: agentRows.filter((a) => a.settle_ym === m.settle_ym)
+          .map((a) => ({ agent_id: a.agent_id, agent_name: names[String(a.agent_id)] || ('#' + a.agent_id), count: a.count, confirmed: a.confirmed, paid: a.paid, unpaid: a.unpaid }))
+          .sort((x, y) => String(x.agent_name).localeCompare(String(y.agent_name))),
       };
     });
     return { items, can_confirm: req.ctx.perm.role === 'director', can_hand: PAY_ROLES.includes(req.ctx.perm.role) };
@@ -1389,6 +1417,10 @@ export default async function commissionRoutes(app) {
       commission_paid: round2(lines.filter((l) => l.status === 'paid').reduce((s, l) => s + l.commission, 0)),
       commission_confirmed: round2(lines.filter((l) => l.status === 'confirmed').reduce((s, l) => s + l.commission, 0)),
       commission_expected: round2(lines.filter((l) => l.status === 'expected').reduce((s, l) => s + l.commission, 0)),
+      commission_now: sum('commission_now'), commission_pending: sum('commission_pending'),
+      commission_accrued_waiting: round2(lines.filter((l) => l.status === 'expected').reduce((s, l) => s + l.commission_now, 0)),
+      pending_count: lines.filter((l) => l.commission_pending > 0).length,
+      pending_balance: round2(lines.filter((l) => l.commission_pending > 0).reduce((s, l) => s + l.balance, 0)),
     };
     return { ym, agent_ids: owners, see_all: seeAll, lines, totals };
   });

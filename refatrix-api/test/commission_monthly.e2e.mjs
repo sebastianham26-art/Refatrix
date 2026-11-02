@@ -117,6 +117,23 @@ ok(O1.due_date === '2026-10-10' && O1.delay_open === true && O1.delay_days > 0, 
 const O2 = r.body.lines.find((l) => l.invoice_id === Number(o2));
 ok(O2.period_collected === 0 && O2.last_pay_date === null && O2.payments === null && O2.commission === 30, '수금 0 · 앞으로 수금될 잔액에 대한 기대 커미션');
 
+console.log('현재 기준 / 펜딩 분리');
+ok(O1.commission_now === 15 && O1.commission_pending === 15, 'Oscar 9월 부분수금: 현재 15(수금 580분) · 펜딩 15(잔액 580분)');
+ok(O2.commission_now === 0 && O2.commission_pending === 30, 'Oscar 9월 미수: 현재 0 · 펜딩 30');
+ok(r.body.totals.commission_now === 15 && r.body.totals.commission_pending === 45 && r.body.totals.pending_count === 2 && r.body.totals.pending_balance === 1740, 'Oscar 9월 요약: 현재 15 · 펜딩 45 · 잔액 2건 1,740');
+r = await get(`/api/commission/monthly-invoices?ym=2026-10&agent_ids=${ana},${beto}`, dir);
+ok(r.body.totals.commission_now === 148 && r.body.totals.commission_pending === 20, '10월 Ana+Beto: 현재 88+60 · 펜딩 20(Beto 미수, 발행일 판정 → 완납 전 0)');
+r = await get('/api/commission/monthly-index', dir);
+const oc = r.body.cells.find((c) => c.agent_id === Number(oscar) && c.ym === '2026-09');
+ok(oc.now === 15 && oc.pending === 45, '월 칩 집계에도 현재/펜딩');
+
+console.log('월별 지급 배치 — 사원별');
+r = await get('/api/commission/batches', dir);
+const oct = r.body.items.find((m) => m.settle_ym === '2026-10');
+ok(oct.by_agent.map((a) => a.agent_name + ':' + a.confirmed + '/' + a.unpaid).join(',') === 'Ana:88/88,Beto:60/60', '10월 배치: Ana 88 · Beto 60 (사원별)');
+const sep = r.body.items.find((m) => m.settle_ym === '2026-09');
+ok(sep.by_agent.length === 1 && sep.by_agent[0].paid === 40 && sep.by_agent[0].unpaid === 0, '9월 배치: Ana 지급완료 40');
+
 console.log('영업사원 본인만');
 await query(`INSERT INTO user_page_access(user_id,page_key,device_req) VALUES ($1,'commission','anywhere') ON CONFLICT DO NOTHING`, [beto]);
 // 영업사원이 커미션 화면을 볼 수 있게(역할 기본값이 없을 때만)
