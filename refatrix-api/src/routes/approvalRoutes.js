@@ -8,7 +8,8 @@ import { getUsdMxnRate } from '../fx.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE, detachPlans,
-  replaceReady, normReplaceIds, recurringCandidates, saveReplaceIds, replacesForDoc, copyReplaceIds } from '../approvalFinance.js';   // 0258 자금 연동
+  replaceReady, normReplaceIds, recurringCandidates, saveReplaceIds, replacesForDoc, copyReplaceIds,
+  ruleChoiceReady, normRuleChoice, fixedCostRules, applyRuleChoice, ruleChoiceMissing, ruleChoiceForDoc } from '../approvalFinance.js';   // 0258 자금 연동
 import { commissionApprovalReady, linkForDoc } from '../commissionApproval.js';   // 0287 커미션 지급승인 문서
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, fileMaxBytes, fileExt, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
@@ -245,6 +246,7 @@ function draftFields(body) {
     refs: Array.isArray(b.refs) ? [...new Set(b.refs.map(Number).filter(Boolean))] : [],
     shares: Array.isArray(b.shares) ? [...new Set(b.shares.map(Number).filter(Boolean))] : [],
     replaces: normReplaceIds(b.replaces_txn_ids),   // 0313 대체할 고정비 회차(null = 입력 없음 → 유지)
+    rc: normRuleChoice(b),                          // 0314 고정비 선택(SAT·SUA… / 고정비 아님 / 직접)
   };
 }
 // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
@@ -473,8 +475,9 @@ export default async function approvalRoutes(app) {
       }
     } catch (e) { if (!e || e.code !== '42P01') throw e; }
     const replaces = await replacesForDoc(query, id);   // 0313 이 결재가 대체하는 고정비 회차
+    const ruleChoice = await ruleChoiceForDoc(query, id);   // 0314
     return {
-      commission, replaces,
+      commission, replaces, ...ruleChoice,
       doc: { ...docOut, stage: stageKey(b.doc, b.lines), variance_pct: variancePct(b.doc), parent_no: parent ? parent.doc_no : null },
       body_nodes: rich.ok ? rich.nodes : [{ t: 'p', v: b.doc.body || '' }],
       payments,
@@ -507,8 +510,10 @@ export default async function approvalRoutes(app) {
   // 0313 대체할 수 있는 고정비 회차(예정) — 작성 화면 「고정비 대체」 목록. doc_id 주면 그 문서가 이미 숨긴 회차 포함.
   app.get('/api/approvals/recurring-candidates', guard, async (req) => {
     const docId = Number(req.query.doc_id) || null;
-    return { ready: await replaceReady(query),
-      items: await recurringCandidates(query, { docId, director: req.ctx.perm.role === 'director' }) };
+    const director = req.ctx.perm.role === 'director';
+    return { ready: await replaceReady(query), rule_choice: await ruleChoiceReady(query),
+      items: await recurringCandidates(query, { docId, director }),
+      rules: await fixedCostRules(query, { director }) };   // 0314 고정비 선택 칩(재무 과목별)
   });
   app.get('/api/approvals/:id', guard, async (req, reply) => {
     const r = await detail(req, Number(req.params.id));
@@ -551,6 +556,7 @@ export default async function approvalRoutes(app) {
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
       await saveReplaceIds(q, id, f.replaces, { director: req.ctx.perm.role === 'director' });   // 0313
+      await applyRuleChoice(q, id, f.rc, { director: req.ctx.perm.role === 'director', actorId: uid });   // 0314 지급월 고정비 회차 대체
       const m = await applyMoney(q, id);
       await syncApprovalDoc(q, id, uid);   // 2026-10-26 디렉터 작성 문서는 임시저장부터 미래자금계획 예정
       return { id, planned_total: m.planned_total, fx: m.fx };
@@ -569,6 +575,7 @@ export default async function approvalRoutes(app) {
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
       await saveReplaceIds(q, id, f.replaces, { director: req.ctx.perm.role === 'director' });   // 0313
+      await applyRuleChoice(q, id, f.rc, { director: req.ctx.perm.role === 'director', actorId: uid });   // 0314 지급월 고정비 회차 대체
       const m = await applyMoney(q, id);
       await syncApprovalDoc(q, id, uid);   // 0287c 커미션 임시저장 → 예정 금액·일자 갱신(일반 문서는 승인 전이라 변화 없음)
       return { id, planned_total: m.planned_total, fx: m.fx };
@@ -667,6 +674,10 @@ export default async function approvalRoutes(app) {
       if (!(await loadPayments(q, id)).length) {                    // 0237 이전에 만든 임시저장 — 일시불 1회로
         await saveSchedule(q, id, [{ seq: 1, due_date: b.doc.pay_due, amount: n(b.doc.orig_total ?? b.doc.planned_total) }]);
       }
+      // 0314 고정비 과목(세금과공과 등)은 어느 고정비인지(또는 고정비 아님) 골라야 상신 — 이중 계상 방지
+      const missRules = await ruleChoiceMissing(q, id);
+      if (missRules) throw new Stop('bad_input', { detail: 'fixed_cost_choice_required', rules: missRules });
+      await applyRuleChoice(q, id, {}, { director: req.ctx.perm.role === 'director', actorId: uid });
       // 환율 고정(USD) → MXN 확정 → 기준액·결재선은 확정된 MXN 으로 판단
       const money = await applyMoney(q, id, { lock: true });
       Object.assign(b.doc, { planned_sub: money.planned_sub, planned_iva: money.planned_iva, planned_total: money.planned_total });
@@ -1060,6 +1071,7 @@ export default async function approvalRoutes(app) {
       const before = await docState(q, id);
       await q(`UPDATE approval_documents SET ${DRAFT_SET}, updated_at=now() WHERE id=$1`, draftArgs(id, f));
       await saveSchedule(q, id, f.schedule);                        // 진행 중 = 집행 전이라 회차 교체 안전
+      await applyRuleChoice(q, id, {}, { director: req.ctx.perm.role === 'director', actorId: ctx.uid });   // 0314 지급일이 바뀌면 대체 회차도 그 달로
       const money = await applyMoney(q, id, { lock: true });        // USD 는 상신 때 고정한 환율 그대로
       const after = await docState(q, id);
       const changes = diffContent(before, after);

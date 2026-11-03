@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261103rep</title>
+<title>Refatrix ERP · 전자결재 · b20261103fc</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -382,7 +382,8 @@ const ERRMSG={bad_pin:'PIN이 올바르지 않습니다',pin_required:'PIN을 �
  ceo_unset:'설정에서 대표이사 계정을 먼저 지정해야 합니다',too_large:'파일 한도를 넘었습니다 (파일당 20MB · 동영상 50MB)',bad_type:'지원하지 않는 파일 형식입니다',
  director_only:'디렉터만 할 수 있습니다',forbidden:'권한이 없습니다',not_found:'문서를 찾을 수 없거나 열람 권한이 없습니다',
  category_required:'카테고리를 선택하세요',amount_required:'예정금액을 입력하세요',title_required:'제목을 입력하세요',duplicate:'이미 있는 단계입니다',
- doc_not_found:'문서번호를 확인하세요',bad_user:'사용할 수 없는 사용자입니다',bad_comment:'댓글을 확인하세요',unauthorized:'로그인이 만료되었습니다. 다시 로그인하세요',commission_doc:'커미션 지급승인 문서는 재무 › 커미션에서 서명된 수령증을 올려 집행합니다'};
+ doc_not_found:'문서번호를 확인하세요',bad_user:'사용할 수 없는 사용자입니다',bad_comment:'댓글을 확인하세요',unauthorized:'로그인이 만료되었습니다. 다시 로그인하세요',commission_doc:'커미션 지급승인 문서는 재무 › 커미션에서 서명된 수령증을 올려 집행합니다',
+ fixed_cost_choice_required:'이 카테고리는 고정비가 걸린 과목입니다 — 「고정비 선택」에서 어느 고정비(SAT·SUA 등)인지, 또는 「고정비 아님」을 고르세요'};
 const errText=d=>ERRMSG[d&&d.detail]||ERRMSG[d&&d.error]||(d&&(d.detail||d.error))||'오류';
 
 async function api(method,path,body){
@@ -851,7 +852,7 @@ function edInsertText(text){
 /* ─── 작성 ─── */
 function newCd(){return{id:null,category_id:'',title:'',vendor:'',pay_due:'',pay_method:'계좌이체',orig_sub:'',iva_applied:true,currency:'MXN',payment_type:'once',
  plan:{freq:'weekly',count:4,start:todayMX(),per_sub:''},sched:[{due_date:'',amount:''},{due_date:'',amount:''}],body_nodes:[],
- refs:[],shares:[],include_finance:true,exec:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null,replaces:[]};}
+ refs:[],shares:[],include_finance:true,exec:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null,replaces:[],replace_choice:null,replace_rule_id:null};}
 function cdFromDet(){
  const d=DET.doc,plan=d.payment_plan||{};
  return{id:d.id,category_id:d.category_id||'',title:d.title,vendor:d.vendor||'',pay_due:d.pay_due||'',pay_method:d.pay_method||'계좌이체',
@@ -861,7 +862,7 @@ function cdFromDet(){
   body_nodes:DET.body_nodes||[],
   refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
   include_finance:d.include_finance,exec:d.exec_required!==false,steps:Array.isArray(d.custom_steps)?d.custom_steps.map(x=>({...x})):null,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
-  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:'',replaces:(DET.replaces||[]).map(x=>x.id)};
+  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:'',replaces:(DET.replaces||[]).map(x=>x.id),replace_choice:DET.replace_choice||null,replace_rule_id:DET.replace_rule_id||null};
 }
 // 문서 통화 기준 금액 → { sub, iva, total, per, count, rows:[{due_date,amount}] }
 function cdCalc(cd){
@@ -938,23 +939,51 @@ function repLoad(){
   .then(r=>{ui.repC=r;}).catch(()=>{ui.repC={ready:true,items:[],err:true};})
   .finally(()=>{ui.repKey=key;ui.repLoading=null;repPaint();});
 }
+const FREQ_TXT=r=>r.freq==='week'?'매주':(r.day_of_month?`매월 ${r.day_of_month}일`:'매월');
+function repRules(cd){const r=ui.repC;if(!r||!r.rule_choice)return[];const cat=B.categories.find(x=>same(x.id,cd.category_id)),fc=cat&&cat.fin_category_code;return fc?(r.rules||[]).filter(x=>x.category_code===fc):[];}
 function repPaint(){
  const el=$('#cRep'),cd=ui.cd,r=ui.repC;if(!el||!cd)return;
+ const req=$('#cRepReq');
  if(!r){el.innerHTML='<span class="sub">불러오는 중…</span>';return;}
  if(r.err){el.innerHTML='<span class="sub">고정비 목록을 불러오지 못했습니다</span>';return;}
  if(!r.ready){el.innerHTML='<span class="sub">서버 업데이트(0313) 적용 후 사용할 수 있습니다</span>';return;}
- const cat=B.categories.find(x=>same(x.id,cd.category_id)),fc=cat&&cat.fin_category_code;
- const c=cdCalc(cd),due=String((c.rows[0]&&c.rows[0].due_date)||cd.pay_due||todayMX()).slice(0,7),today=todayMX();
- const sel=new Set((cd.replaces||[]).map(Number));
- const items=(r.items||[]).map(x=>({...x,rec:!!fc&&x.category_code===fc&&Math.abs(monIdx(x.date)-monIdx(due))<=1}))
-  .sort((a,b)=>(b.rec-a.rec)||a.date.localeCompare(b.date)||a.id-b.id);
- if(!items.length){el.innerHTML='<span class="sub">대체할 수 있는 고정비 예정이 없습니다</span>';return;}
- const shown=items.filter(x=>ui.repAll||x.rec||sel.has(x.id));
- const row=x=>`<label class="ck" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line,#e6e1d6)"><input type="checkbox" data-rep="${x.id}" ${sel.has(x.id)?'checked':''}>
-  <span style="flex:1;min-width:0"><b>${esc(x.rule_name||'고정비')}</b> · ${esc(x.date)} · ${cm(x.amount,x.currency||'MXN')} <span class="sub">${esc(x.category_name||'')} · ${esc(x.account_name||'계좌 미지정')}</span></span>
-  ${x.rec?'<span class="bdg b-gold">추천</span>':''}${x.date<today?'<span class="bdg b-gray">지난 예정</span>':''}${x.hidden?'<span class="bdg b-gray">이 결재로 대체됨</span>':''}</label>`;
- el.innerHTML=(shown.length?shown.map(row).join(''):`<span class="sub">${fc?'이 카테고리 과목·지급월 근처의 고정비 예정이 없습니다':'카테고리를 고르면 맞는 고정비를 추천합니다'}</span>`)
-  +`<div style="margin-top:8px"><button class="btn sm" data-act="repall">${ui.repAll?'추천만 보기':`전체 고정비 예정 보기 (${items.length}건)`}</button>${sel.size?` <span class="sub">선택 ${sel.size}건</span>`:''}</div>`;
+ const rules=repRules(cd),today=todayMX();
+ // 카테고리를 바꿔 고른 고정비가 그 과목이 아니면 선택 해제
+ if(cd.replace_choice==='rule'&&!rules.some(x=>same(x.id,cd.replace_rule_id))){cd.replace_choice=null;cd.replace_rule_id=null;}
+ if(req)req.innerHTML=rules.length?'<span class="req">*</span>':'';
+ const c=cdCalc(cd),cur=cd.currency;
+ const chip=(v,label,rid,title)=>`<button class="chip ${cd.replace_choice===v&&(v!=='rule'||same(cd.replace_rule_id,rid))?'on':''}" data-act="rchoose" data-v="${v}"${rid?` data-rid="${rid}"`:''}${title?` title="${esc(title)}"`:''}>${label}</button>`;
+ let h='';
+ if(rules.length){
+  h+=`<div class="seg" style="flex-wrap:wrap">${rules.map(x=>chip('rule',`${esc(x.name)} <span class="sub">· ${FREQ_TXT(x)} · ${cm(x.amount,x.currency)}</span>`,x.id,`${x.account_name||''}`)).join('')}${chip('none','고정비 아님')}${chip('manual','회차 직접 고르기')}</div>`;
+  if(!cd.replace_choice)h+=`<p class="sub" style="margin:6px 0 0;color:var(--red,#B23A2E)">상신하려면 하나를 고르세요 — ${rules.map(x=>esc(x.name)).join(' · ')} 중 이 결재가 내는 고정비, 또는 「고정비 아님」</p>`;
+ }else{
+  h+=`<p class="sub" style="margin:0 0 6px">${cd.category_id?'이 카테고리 과목에는 등록된 고정비가 없습니다':'카테고리를 고르면 그 과목의 고정비(SAT·SUA 등)가 나옵니다'}</p><div class="seg">${chip('manual','회차 직접 고르기')}${cd.replace_choice==='manual'?chip('none','대체 안 함'):''}</div>`;
+ }
+ if(cd.replace_choice==='rule'){
+  const rule=rules.find(x=>same(x.id,cd.replace_rule_id));
+  const rows=c.rows.length?c.rows:[{due_date:cd.pay_due||today,amount:c.total}];
+  const byM={};rows.forEach(x=>{const m=String(x.due_date||today).slice(0,7);byM[m]=r2((byM[m]||0)+(Number(x.amount)||0));});
+  h+=`<div class="warn info" style="margin-top:10px">${Object.entries(byM).map(([m,amt])=>{
+    const fx=(r.items||[]).filter(i=>same(i.rule_id,rule.id)&&String(i.date).slice(0,7)===m);
+    const old=fx.length?fx.map(i=>`${esc(i.date.slice(5))} ${cm(i.amount,i.currency||'MXN')}`).join(' + '):`${cm(rule.amount,rule.currency)} <span class="sub">(아직 생성 안 된 회차 — 저장할 때 대체)</span>`;
+    return `<div>🔁 <b>${esc(m)}</b> ${esc(rule.name)} 고정비 ${old} → <b>이 결재 ${cm(amt,cur)}</b></div>`;}).join('')}
+   <div class="sub" style="margin-top:4px">${B.me.isDirector?'디렉터 작성 문서는 임시저장부터':'결재가 승인되면'} 자금계획의 고정비 금액이 빠지고 이 결재 금액으로 바뀝니다.</div></div>`;
+ }
+ if(cd.replace_choice==='manual'){
+  const fc=(B.categories.find(x=>same(x.id,cd.category_id))||{}).fin_category_code;
+  const due=String((c.rows[0]&&c.rows[0].due_date)||cd.pay_due||today).slice(0,7);
+  const sel=new Set((cd.replaces||[]).map(Number));
+  const items=(r.items||[]).map(x=>({...x,rec:!!fc&&x.category_code===fc&&Math.abs(monIdx(x.date)-monIdx(due))<=1}))
+   .sort((a,b)=>(b.rec-a.rec)||a.date.localeCompare(b.date)||a.id-b.id);
+  const shown=items.filter(x=>ui.repAll||x.rec||sel.has(x.id));
+  const row=x=>`<label class="ck" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line,#e6e1d6)"><input type="checkbox" data-rep="${x.id}" ${sel.has(x.id)?'checked':''}>
+   <span style="flex:1;min-width:0"><b>${esc(x.rule_name||'고정비')}</b> · ${esc(x.date)} · ${cm(x.amount,x.currency||'MXN')} <span class="sub">${esc(x.category_name||'')} · ${esc(x.account_name||'계좌 미지정')}</span></span>
+   ${x.rec?'<span class="bdg b-gold">추천</span>':''}${x.date<today?'<span class="bdg b-gray">지난 예정</span>':''}${x.hidden?'<span class="bdg b-gray">이 결재로 대체됨</span>':''}</label>`;
+  h+=`<div style="margin-top:10px">${items.length?(shown.length?shown.map(row).join(''):'<span class="sub">추천할 회차가 없습니다</span>'):'<span class="sub">대체할 수 있는 고정비 예정이 없습니다</span>'}`
+   +(items.length?`<div style="margin-top:8px"><button class="btn sm" data-act="repall">${ui.repAll?'추천만 보기':`전체 고정비 예정 보기 (${items.length}건)`}</button>${sel.size?` <span class="sub">선택 ${sel.size}건</span>`:''}</div>`:'')+'</div>';
+ }
+ el.innerHTML=h;
 }
 function renderCompose(){
  const cd=ui.cd,isDir=B.me.isDirector,others=B.users.filter(u=>u.active&&!same(u.id,B.me.id));
@@ -993,7 +1022,7 @@ function renderCompose(){
   ${money}
   ${cur==='USD'?`<div class="warn info" id="cFx" style="margin-top:10px"></div>`:''}
  </div>
-${cd.revise?'':` <div class="card sec"><h3>고정비 대체 <span class="sub">선택 · SUA·임차료처럼 고정비로 잡힌 지출을 이 결재로 지급하면 그 회차를 고르세요 — 고정비 예정은 자금계획에서 빠지고 이 결재로 한 번만 잡힙니다(반려·삭제되면 되살아남)</span></h3><div id="cRep"><span class="sub">불러오는 중…</span></div></div>`}
+${cd.revise?'':` <div class="card sec" id="cRepCard"><h3>고정비 선택 <span id="cRepReq"></span><span class="sub">SAT·SUA처럼 고정비로 잡힌 지출을 이 결재로 내면 어느 고정비인지 고르세요 — 지급월의 고정비 금액은 자금계획에서 빠지고 이 결재 금액으로 바뀝니다(반려·삭제되면 고정비가 되살아남)</span></h3><div id="cRep"><span class="sub">불러오는 중…</span></div></div>`}
  <div class="card sec"><h3>내용 <span class="sub">그림은 붙여넣기(Ctrl+V) · 끌어놓기 · 버튼으로 넣을 수 있습니다</span><span class="sp"></span><button class="btn sm" data-act="edimg">🖼 그림 넣기</button></h3>
   <div id="bodyEd" class="ed" contenteditable="true" data-ph="집행 목적, 산출 내역 등 — 견적서 캡처나 사진을 바로 붙여 넣어도 됩니다">${nodesToEdHtml(cd.body_nodes)}</div>
  </div>
@@ -1044,6 +1073,7 @@ async function saveCd(submit){
  if(B.me.isDirector&&!cd.revise){const st=cdSteps(cd),pi=st.findIndex(x=>x.step_type==='pre_ceo');if(pi>=0&&pi!==st.length-1){toast('대표이사 사전승인은 맨 끝에만 둘 수 있습니다');return;}}
  if(cd.revise&&!(c.total>0)){toast('금액을 입력하세요');return;}
  if(submit&&!(c.total>0)){toast('금액을 입력하세요');return;}
+ if(submit&&!cd.revise&&repRules(cd).length&&!cd.replace_choice){toast(ERRMSG.fixed_cost_choice_required);const rc=$('#cRepCard');if(rc&&rc.scrollIntoView)rc.scrollIntoView({block:'center'});return;}
  if(cd.payment_type==='recurring'&&c.rows.length<2){toast('정기 지급은 첫 지급일과 횟수(2회 이상)가 필요합니다');return;}
  if(cd.payment_type==='installment'){
   if(c.rows.some(r=>!(r.amount>0))){toast('회차 금액을 모두 입력하세요');return;}
@@ -1057,7 +1087,8 @@ async function saveCd(submit){
   body_rich:cd.body_nodes,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance,
   custom_steps:B.me.isDirector&&!cd.revise?cdSteps(cd).map(x=>({step_type:x.step_type,user_id:Number(x.user_id)})):undefined,
   exec_required:B.me.isDirector&&!cd.revise?cd.exec!==false:undefined,
-  replaces_txn_ids:cd.revise?undefined:(cd.replaces||[]).map(Number)};
+  replace_choice:cd.revise?undefined:(cd.replace_choice||null),replace_rule_id:cd.revise||cd.replace_choice!=='rule'?undefined:Number(cd.replace_rule_id),
+  replaces_txn_ids:cd.revise?undefined:(cd.replace_choice==='manual'?(cd.replaces||[]).map(Number):(cd.replace_choice==='rule'?undefined:[]))};
  try{
   if(cd.revise){
    const r=await api('PUT',`/api/approvals/${cd.id}/content`,{...body,reason:cd.reason||''});
@@ -1494,6 +1525,7 @@ const H={
  pcdel(a){const k=a.dataset.l;ui.cd[k]=ui.cd[k].filter(u=>!same(u,a.dataset.u));render();},
  csave(){saveCd(false);},
  repall(){ui.repAll=!ui.repAll;repPaint();},
+ rchoose(a){const cd=ui.cd;if(!cd)return;const v=a.dataset.v;cd.replace_choice=v;cd.replace_rule_id=v==='rule'?Number(a.dataset.rid):null;if(v!=='manual')cd.replaces=[];repPaint();},
  csubmit(){saveCd(true);},
  async ssave(){const body={ceo_pre_threshold:r2(val('#sThr')),threshold_basis:$('#sBasis').value,variance_tolerance_pct:r2(val('#sTol')),
    ceo_user_id:val('#sCeo')||null,director_user_id:val('#sDir')||null,finance_user_id:val('#sFin')||null};
@@ -1559,7 +1591,7 @@ document.addEventListener('change',e=>{
  const t=e.target;
  if(t.dataset.fincat){const cid=Number(t.dataset.fincat);run(async()=>{await api('PUT',`/api/approvals/categories/${cid}`,{fin_category_code:t.value||null});await loadBoot();toast('재무 과목을 바꿨습니다 · 남은 자금계획 예정에도 반영');render();});return;}
  if(t.id==='ivaOn'&&ui.cd){ui.cd.iva_applied=t.checked;updateCompose();}
- else if(t.dataset.rep&&ui.cd){const id=Number(t.dataset.rep),s2=new Set((ui.cd.replaces||[]).map(Number));if(t.checked)s2.add(id);else s2.delete(id);ui.cd.replaces=[...s2];repPaint();}
+ else if(t.dataset.rep&&ui.cd){ui.cd.replace_choice='manual';const id=Number(t.dataset.rep),s2=new Set((ui.cd.replaces||[]).map(Number));if(t.checked)s2.add(id);else s2.delete(id);ui.cd.replaces=[...s2];repPaint();}
  else if(t.dataset.cs&&ui.cd){const k=t.dataset.cs,st=cdSteps(ui.cd);if(k==='type')st[Number(t.dataset.i)].step_type=t.value;else if(k==='user')st[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='addT')ui.csAddT=t.value;else if(k==='addU')ui.csAddU=Number(t.value);if(k==='type'||k==='user')updateCompose();}
  else if(t.dataset.le&&ui.le){const k=t.dataset.le;if(k==='type')ui.le.rows[Number(t.dataset.i)].step_type=t.value;else if(k==='user')ui.le.rows[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='post')ui.le.post=Number(t.value);else if(k==='addT')ui.le.addT=t.value;else if(k==='addU')ui.le.addU=Number(t.value);}
  else if(t.dataset.kind){getArr(t.dataset.kind)[Number(t.dataset.i)].kind=t.value;}
