@@ -351,12 +351,12 @@ test('E6 B 매출 NC → 다음 달 차감 · 전자결재 문서(소개 커미�
                VALUES ($1,$2,'devolución',2320,2000,320,'applied',$3,now())`, [ID.b1, custB, ID.dir]);
   // RF-B2 다다음 달 완납 → 소개 50
   await pay(custB, `${YM2}-08`, ID.b2, 4800);
-  await ok('dir', 'POST', `/api/commission/batches/${YM2}/confirm`);
+  const conf6 = await ok('dir', 'POST', `/api/commission/batches/${YM2}/confirm`);   // 2026-11-02h 확정 → 문서 자동 생성
   const pa = await ok('fin', 'GET', `/api/commission/payable?agent_id=${ID.A}&settle_ym=${YM2}`);
   assert.equal(pa.referral_total, 50); assert.equal(pa.referral_adjustment_total, -20); assert.equal(pa.total, 30);
   assert.equal(pa.referral_adjustments[0].reason, 'nota_credito');
   // 전자결재 문서
-  const c = await ok('dir', 'POST', '/api/commission/approval-docs', { agent_id: ID.A, settle_ym: YM2 });
+  const c = conf6.approval_docs.created.find((x) => x.agent_id === ID.A);
   ID.doc = c.document_id; assert.equal(c.total, 30);
   const det = await ok('dir', 'GET', `/api/approvals/${ID.doc}`);
   assert.equal(det.commission.snapshot.referrals.length, 1); assert.equal(det.commission.snapshot.referral_adjustment_total, -20);

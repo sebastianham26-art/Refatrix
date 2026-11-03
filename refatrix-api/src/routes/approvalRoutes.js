@@ -7,7 +7,8 @@ import { query, withTx } from '../db.js';
 import { getUsdMxnRate } from '../fx.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
-import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE, detachPlans } from '../approvalFinance.js';   // 0258 자금 연동
+import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE, detachPlans,
+  replaceReady, normReplaceIds, recurringCandidates, saveReplaceIds, replacesForDoc, copyReplaceIds } from '../approvalFinance.js';   // 0258 자금 연동
 import { commissionApprovalReady, linkForDoc } from '../commissionApproval.js';   // 0287 커미션 지급승인 문서
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, fileMaxBytes, fileExt, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
@@ -243,6 +244,7 @@ function draftFields(body) {
     schedule: sch.rows,
     refs: Array.isArray(b.refs) ? [...new Set(b.refs.map(Number).filter(Boolean))] : [],
     shares: Array.isArray(b.shares) ? [...new Set(b.shares.map(Number).filter(Boolean))] : [],
+    replaces: normReplaceIds(b.replaces_txn_ids),   // 0313 대체할 고정비 회차(null = 입력 없음 → 유지)
   };
 }
 // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
@@ -470,8 +472,9 @@ export default async function approvalRoutes(app) {
           commission_payment_id: l.commission_payment_id, settled_at: l.settled_at, settled_document_id: l.settled_document_id };
       }
     } catch (e) { if (!e || e.code !== '42P01') throw e; }
+    const replaces = await replacesForDoc(query, id);   // 0313 이 결재가 대체하는 고정비 회차
     return {
-      commission,
+      commission, replaces,
       doc: { ...docOut, stage: stageKey(b.doc, b.lines), variance_pct: variancePct(b.doc), parent_no: parent ? parent.doc_no : null },
       body_nodes: rich.ok ? rich.nodes : [{ t: 'p', v: b.doc.body || '' }],
       payments,
@@ -501,6 +504,12 @@ export default async function approvalRoutes(app) {
       priv,
     };
   }
+  // 0313 대체할 수 있는 고정비 회차(예정) — 작성 화면 「고정비 대체」 목록. doc_id 주면 그 문서가 이미 숨긴 회차 포함.
+  app.get('/api/approvals/recurring-candidates', guard, async (req) => {
+    const docId = Number(req.query.doc_id) || null;
+    return { ready: await replaceReady(query),
+      items: await recurringCandidates(query, { docId, director: req.ctx.perm.role === 'director' }) };
+  });
   app.get('/api/approvals/:id', guard, async (req, reply) => {
     const r = await detail(req, Number(req.params.id));
     if (!r) return fail(reply, 'not_found');
@@ -541,6 +550,7 @@ export default async function approvalRoutes(app) {
       await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
+      await saveReplaceIds(q, id, f.replaces, { director: req.ctx.perm.role === 'director' });   // 0313
       const m = await applyMoney(q, id);
       await syncApprovalDoc(q, id, uid);   // 2026-10-26 디렉터 작성 문서는 임시저장부터 미래자금계획 예정
       return { id, planned_total: m.planned_total, fx: m.fx };
@@ -558,6 +568,7 @@ export default async function approvalRoutes(app) {
       await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
+      await saveReplaceIds(q, id, f.replaces, { director: req.ctx.perm.role === 'director' });   // 0313
       const m = await applyMoney(q, id);
       await syncApprovalDoc(q, id, uid);   // 0287c 커미션 임시저장 → 예정 금액·일자 갱신(일반 문서는 승인 전이라 변화 없음)
       return { id, planned_total: m.planned_total, fx: m.fx };
@@ -913,6 +924,7 @@ export default async function approvalRoutes(app) {
            FROM approval_documents WHERE id=$1 RETURNING id`, [id])).rows[0].id);
       await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn)
                SELECT $2, seq, due_date, planned_amount, planned_mxn FROM approval_payments WHERE document_id=$1`, [id, nid]);
+      await copyReplaceIds(q, id, nid);   // 0313 대체 고정비 선택도 이어받는다(반려로 되살아난 회차를 승인 시 다시 숨김)
       await applyMoney(q, nid);       // USD 면 오늘 환율로 미리보기(상신 때 새로 고정)
       await q(`INSERT INTO approval_files(document_id, kind, stage, file_name, mime_type, file_size, sha256, file_data,
                  cfdi_uuid, cfdi_rfc, cfdi_total, uploaded_by, uploaded_at)

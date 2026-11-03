@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261029ref</title>
+<title>Refatrix ERP · 전자결재 · b20261103rep</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -580,7 +580,7 @@ function fileRow(f,d){
   ${f.voided_at?`<div class="fm">무효 처리 · ${esc(U(f.voided_by))} · ${tm(f.voided_at)} · ${esc(f.void_reason)}</div>`:''}
  </div><div class="acts"><button class="btn sm" data-act="fopen" data-fid="${f.id}">열기</button>${f.can_delete?`<button class="btn sm danger" data-act="fdel" data-fid="${f.id}">삭제</button>`:''}${f.can_void?`<button class="btn sm danger" data-act="fvoid" data-fid="${f.id}">무효</button>`:''}</div></div>`;
 }
-const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단',exec_skip:'집행 생략 · 예정 금액으로 집행완료',delete:'삭제',restore:'복구',auto_draft:'자동 생성 (커미션)',receipt:'현금 수령증 첨부'};
+const EV_L={submit:'상신',approve:'승인',agree:'합의',pass:'경유 확인',reject:'반려',disagree:'반대 (반려)',approved:'결재 완료 · 집행대기',execute:'집행완료',flag:'이의제기',close_flag:'이의 종결 · 사후 확인',post_confirm:'사후승인 확인',withdraw:'회수',resubmit_from:'재기안',resubmitted:'재기안 문서 작성',file_delete:'증빙 삭제',file_void:'증빙 무효 처리',link:'결재문서 연결',edit:'내용 수정',lines_edit:'결재선 수정',addend:'추가 작성',exec_done:'전 회차 처리',pay_skip:'회차 중단',exec_skip:'집행 생략 · 예정 금액으로 집행완료',delete:'삭제',restore:'복구',auto_draft:'자동 생성 (커미션)',receipt:'현금 수령증 첨부',recurring_replace:'고정비 대체'};
 function timeline(){
  const it=[];
  DET.events.forEach(e=>it.push({k:'ev',at:e.created_at,e}));
@@ -709,6 +709,7 @@ function renderDetail(){
   <td>${canExec&&p.status==='planned'&&DET.commission?`<a class="btn sm gold" href="${CM_URL(DET.commission)}" target="_blank" title="재무 › 커미션에서 수령증을 인쇄해 현금 지급 → 서명본 업로드로 지급 전표와 이 문서를 함께 마감합니다">커미션 화면에서 수령증으로 지급</a>`:canExec&&p.status==='planned'?`${B.fin_link?`<a class="btn sm gold" href="${finExecUrl(p.id)}" target="_blank" rel="noopener" title="재무 › 거래등록에서 실제 지급을 등록 — 이 결재 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다">거래등록에서 집행</a> `:''}<button class="btn sm ${B.fin_link?'ghost':'gold'}" data-act="exec" data-pid="${p.id}" ${B.fin_link?'title="전자결재에 집행 기록 — 자금계획 예정은 거래등록 실적이 연결될 때까지 남음"':''}>${B.fin_link?'여기서 집행':'집행'}</button> <button class="btn sm ghost" data-act="pskip" data-pid="${p.id}">중단</button>`:''}</td></tr>`;}).join('')}
  </tbody></table></div>
  ${warns.join('')}<div class="warn info">${B.fin_link?'결재가 끝나면 회차가 <b>재무 › 미래자금계획(예정)</b>에 들어가고, 거래등록 실적이 연결될 때까지 남습니다. 재무가 거래등록에서 실제 지급을 등록하면 이 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다.':'예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.'}</div></div>
+ ${(DET.replaces||[]).length?`<div class="warn info" style="margin:10px 0">🔁 <b>고정비 대체</b> — ${DET.replaces.map(x=>`${esc(x.rule_name||'고정비')} ${esc(x.date)} ${cm(x.amount,x.currency||'MXN')}${x.active?'':' <span class="sub">(승인되면 대체)</span>'}`).join(' · ')}<br><span class="sub">이 결재가 그 고정비 회차를 대신합니다 — 고정비 예정은 자금계획에서 빠지고 이 결재로 한 번만 잡힙니다. 반려·삭제되면 고정비 예정이 되살아납니다.</span></div>`:''}
  ${DET.commission?commissionCardHtml(DET.commission):''}
  <div class="card sec"><h3>내용<span class="sp"></span>${DET.can_edit_content?'<button class="btn sm" data-act="revise">✎ 내용 수정</button>':''}${DET.can_addend?'<button class="btn sm" data-act="addend">＋ 추가 작성</button>':''}</h3>
   <p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')} · 원문 ${esc(U(d.drafter_id))}${DET.revisions.length?` · 마지막 수정 ${esc(U(DET.revisions[DET.revisions.length-1].editor_id))} ${tm(DET.revisions[DET.revisions.length-1].created_at)}`:''}</p>
@@ -850,7 +851,7 @@ function edInsertText(text){
 /* ─── 작성 ─── */
 function newCd(){return{id:null,category_id:'',title:'',vendor:'',pay_due:'',pay_method:'계좌이체',orig_sub:'',iva_applied:true,currency:'MXN',payment_type:'once',
  plan:{freq:'weekly',count:4,start:todayMX(),per_sub:''},sched:[{due_date:'',amount:''},{due_date:'',amount:''}],body_nodes:[],
- refs:[],shares:[],include_finance:true,exec:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null};}
+ refs:[],shares:[],include_finance:true,exec:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null,replaces:[]};}
 function cdFromDet(){
  const d=DET.doc,plan=d.payment_plan||{};
  return{id:d.id,category_id:d.category_id||'',title:d.title,vendor:d.vendor||'',pay_due:d.pay_due||'',pay_method:d.pay_method||'계좌이체',
@@ -860,7 +861,7 @@ function cdFromDet(){
   body_nodes:DET.body_nodes||[],
   refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
   include_finance:d.include_finance,exec:d.exec_required!==false,steps:Array.isArray(d.custom_steps)?d.custom_steps.map(x=>({...x})):null,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
-  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:''};
+  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:'',replaces:(DET.replaces||[]).map(x=>x.id)};
 }
 // 문서 통화 기준 금액 → { sub, iva, total, per, count, rows:[{due_date,amount}] }
 function cdCalc(cd){
@@ -925,6 +926,36 @@ function schedEditorHtml(cd){
   <td>${cd.sched.length>2?`<button class="x" data-act="scdel" data-i="${i}" aria-label="삭제">✕</button>`:''}</td></tr>`).join('')}</tbody></table>
   <div class="addstep"><button class="btn sm" data-act="scadd">+ 회차</button><button class="btn sm" data-act="sceven">균등 분할</button><button class="btn sm" data-act="scadv">선급 30% + 잔금</button><span class="sub" id="cSchedSum"></span></div>`;
 }
+/* 0313 고정비 대체 — 이 결재가 지급하는 고정비 회차(예정) 고르기 */
+const monIdx=m=>Number(String(m).slice(0,4))*12+Number(String(m).slice(5,7));
+function repLoad(){
+ const cd=ui.cd;if(!cd||cd.revise)return;
+ const key=String(cd.id||'new');
+ if(ui.repKey===key&&ui.repC){repPaint();return;}
+ if(ui.repLoading===key)return;
+ ui.repLoading=key;ui.repC=null;repPaint();
+ api('GET','/api/approvals/recurring-candidates'+(cd.id?'?doc_id='+cd.id:''))
+  .then(r=>{ui.repC=r;}).catch(()=>{ui.repC={ready:true,items:[],err:true};})
+  .finally(()=>{ui.repKey=key;ui.repLoading=null;repPaint();});
+}
+function repPaint(){
+ const el=$('#cRep'),cd=ui.cd,r=ui.repC;if(!el||!cd)return;
+ if(!r){el.innerHTML='<span class="sub">불러오는 중…</span>';return;}
+ if(r.err){el.innerHTML='<span class="sub">고정비 목록을 불러오지 못했습니다</span>';return;}
+ if(!r.ready){el.innerHTML='<span class="sub">서버 업데이트(0313) 적용 후 사용할 수 있습니다</span>';return;}
+ const cat=B.categories.find(x=>same(x.id,cd.category_id)),fc=cat&&cat.fin_category_code;
+ const c=cdCalc(cd),due=String((c.rows[0]&&c.rows[0].due_date)||cd.pay_due||todayMX()).slice(0,7),today=todayMX();
+ const sel=new Set((cd.replaces||[]).map(Number));
+ const items=(r.items||[]).map(x=>({...x,rec:!!fc&&x.category_code===fc&&Math.abs(monIdx(x.date)-monIdx(due))<=1}))
+  .sort((a,b)=>(b.rec-a.rec)||a.date.localeCompare(b.date)||a.id-b.id);
+ if(!items.length){el.innerHTML='<span class="sub">대체할 수 있는 고정비 예정이 없습니다</span>';return;}
+ const shown=items.filter(x=>ui.repAll||x.rec||sel.has(x.id));
+ const row=x=>`<label class="ck" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line,#e6e1d6)"><input type="checkbox" data-rep="${x.id}" ${sel.has(x.id)?'checked':''}>
+  <span style="flex:1;min-width:0"><b>${esc(x.rule_name||'고정비')}</b> · ${esc(x.date)} · ${cm(x.amount,x.currency||'MXN')} <span class="sub">${esc(x.category_name||'')} · ${esc(x.account_name||'계좌 미지정')}</span></span>
+  ${x.rec?'<span class="bdg b-gold">추천</span>':''}${x.date<today?'<span class="bdg b-gray">지난 예정</span>':''}${x.hidden?'<span class="bdg b-gray">이 결재로 대체됨</span>':''}</label>`;
+ el.innerHTML=(shown.length?shown.map(row).join(''):`<span class="sub">${fc?'이 카테고리 과목·지급월 근처의 고정비 예정이 없습니다':'카테고리를 고르면 맞는 고정비를 추천합니다'}</span>`)
+  +`<div style="margin-top:8px"><button class="btn sm" data-act="repall">${ui.repAll?'추천만 보기':`전체 고정비 예정 보기 (${items.length}건)`}</button>${sel.size?` <span class="sub">선택 ${sel.size}건</span>`:''}</div>`;
+}
 function renderCompose(){
  const cd=ui.cd,isDir=B.me.isDirector,others=B.users.filter(u=>u.active&&!same(u.id,B.me.id));
  const cats=B.categories.filter(c=>c.active||same(c.id,cd.category_id));
@@ -962,6 +993,7 @@ function renderCompose(){
   ${money}
   ${cur==='USD'?`<div class="warn info" id="cFx" style="margin-top:10px"></div>`:''}
  </div>
+${cd.revise?'':` <div class="card sec"><h3>고정비 대체 <span class="sub">선택 · SUA·임차료처럼 고정비로 잡힌 지출을 이 결재로 지급하면 그 회차를 고르세요 — 고정비 예정은 자금계획에서 빠지고 이 결재로 한 번만 잡힙니다(반려·삭제되면 되살아남)</span></h3><div id="cRep"><span class="sub">불러오는 중…</span></div></div>`}
  <div class="card sec"><h3>내용 <span class="sub">그림은 붙여넣기(Ctrl+V) · 끌어놓기 · 버튼으로 넣을 수 있습니다</span><span class="sp"></span><button class="btn sm" data-act="edimg">🖼 그림 넣기</button></h3>
   <div id="bodyEd" class="ed" contenteditable="true" data-ph="집행 목적, 산출 내역 등 — 견적서 캡처나 사진을 바로 붙여 넣어도 됩니다">${nodesToEdHtml(cd.body_nodes)}</div>
  </div>
@@ -980,6 +1012,7 @@ ${cd.revise?` <div class="card sec"><h3>수정 사유 <span class="sub">선택</
 }
 function updateCompose(){
  const cd=ui.cd;if(!cd||!$('#lprev'))return;
+ repLoad();
  if(cd.currency==='USD'&&!cd.fx_locked&&!ui.fx&&!ui.fxLoading&&!ui.fxErr){ui.fxLoading=true;loadFx().finally(()=>{ui.fxLoading=false;});}
  const c=cdCalc(cd),cur=cd.currency,fx=cdRate(cd);
  const set=(id,v)=>{const el=$('#'+id);if(el)el.textContent=v;};
@@ -1023,7 +1056,8 @@ async function saveCd(submit){
   schedule:cd.payment_type==='installment'?c.rows.map(r=>({due_date:r.due_date||null,amount:r.amount})):null,
   body_rich:cd.body_nodes,refs:cd.refs,shares:cd.shares,include_finance:cd.include_finance,
   custom_steps:B.me.isDirector&&!cd.revise?cdSteps(cd).map(x=>({step_type:x.step_type,user_id:Number(x.user_id)})):undefined,
-  exec_required:B.me.isDirector&&!cd.revise?cd.exec!==false:undefined};
+  exec_required:B.me.isDirector&&!cd.revise?cd.exec!==false:undefined,
+  replaces_txn_ids:cd.revise?undefined:(cd.replaces||[]).map(Number)};
  try{
   if(cd.revise){
    const r=await api('PUT',`/api/approvals/${cd.id}/content`,{...body,reason:cd.reason||''});
@@ -1190,6 +1224,7 @@ function printSheetHtml(){
   ['사전승인',d.ceo_pre_required?`대상 (기준 ${money(d.threshold_at_submit)})`:'해당 없음'],
  ];
  if(refs.length||shares.length)kv.push(['참조',esc(refs.join(', ')||'—')],['공람',esc(shares.join(', ')||'—')]);
+ if(DET.replaces&&DET.replaces.length)kv.push(['고정비 대체',DET.replaces.map(x=>`${esc(x.rule_name||'고정비')} ${esc(x.date)} ${cm(x.amount,x.currency||'MXN')}${x.active?'':' <span class="sub">(대기 — 승인되면 대체)</span>'}`).join('<br>')]);
  const kvRows=[];for(let i=0;i<kv.length;i+=4){const g=kv.slice(i,i+4);while(g.length<4)g.push(['','']);kvRows.push(`<tr>${g.map(([k,x])=>`<th>${k}</th><td>${x}</td>`).join('')}</tr>`);}
  // 지급 일정(2회 이상)
  let pays='';
@@ -1458,6 +1493,7 @@ const H={
  ctog(){ui.cd.include_finance=!ui.cd.include_finance;$('#finTog').classList.toggle('on',ui.cd.include_finance);updateCompose();},
  pcdel(a){const k=a.dataset.l;ui.cd[k]=ui.cd[k].filter(u=>!same(u,a.dataset.u));render();},
  csave(){saveCd(false);},
+ repall(){ui.repAll=!ui.repAll;repPaint();},
  csubmit(){saveCd(true);},
  async ssave(){const body={ceo_pre_threshold:r2(val('#sThr')),threshold_basis:$('#sBasis').value,variance_tolerance_pct:r2(val('#sTol')),
    ceo_user_id:val('#sCeo')||null,director_user_id:val('#sDir')||null,finance_user_id:val('#sFin')||null};
@@ -1523,6 +1559,7 @@ document.addEventListener('change',e=>{
  const t=e.target;
  if(t.dataset.fincat){const cid=Number(t.dataset.fincat);run(async()=>{await api('PUT',`/api/approvals/categories/${cid}`,{fin_category_code:t.value||null});await loadBoot();toast('재무 과목을 바꿨습니다 · 남은 자금계획 예정에도 반영');render();});return;}
  if(t.id==='ivaOn'&&ui.cd){ui.cd.iva_applied=t.checked;updateCompose();}
+ else if(t.dataset.rep&&ui.cd){const id=Number(t.dataset.rep),s2=new Set((ui.cd.replaces||[]).map(Number));if(t.checked)s2.add(id);else s2.delete(id);ui.cd.replaces=[...s2];repPaint();}
  else if(t.dataset.cs&&ui.cd){const k=t.dataset.cs,st=cdSteps(ui.cd);if(k==='type')st[Number(t.dataset.i)].step_type=t.value;else if(k==='user')st[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='addT')ui.csAddT=t.value;else if(k==='addU')ui.csAddU=Number(t.value);if(k==='type'||k==='user')updateCompose();}
  else if(t.dataset.le&&ui.le){const k=t.dataset.le;if(k==='type')ui.le.rows[Number(t.dataset.i)].step_type=t.value;else if(k==='user')ui.le.rows[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='post')ui.le.post=Number(t.value);else if(k==='addT')ui.le.addT=t.value;else if(k==='addU')ui.le.addU=Number(t.value);}
  else if(t.dataset.kind){getArr(t.dataset.kind)[Number(t.dataset.i)].kind=t.value;}

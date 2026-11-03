@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1019b</title>
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1103a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -274,7 +274,7 @@
 </div>
 
 <script>
-  console.log('[cashdaily] build cashd-1019b (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  console.log('[cashdaily] build cashd-1103a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
   let session={token:null,user:null,api:''};
   const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
   const $=(id)=>document.getElementById(id);
@@ -351,7 +351,7 @@
     const t=(w.days||[]).find(d=>d.reconcile||d.overdue);
     const r=t&&t.reconcile, o=t&&t.overdue;
     if(!r){ $('wRecon').innerHTML=''; $('wOverdue').innerHTML=''; return; }
-    const ex=[]; if(r.excluded.inactive_rule.n) ex.push('비활성 고정비 '+r.excluded.inactive_rule.n+'건'); if(r.excluded.account.n) ex.push('집계 제외 계좌 '+r.excluded.account.n+'건');
+    const ex=[]; if(r.excluded.inactive_rule.n) ex.push('비활성 고정비 '+r.excluded.inactive_rule.n+'건'); if(r.excluded.account.n) ex.push('집계 제외 계좌 '+r.excluded.account.n+'건'); if(r.excluded.superseded&&r.excluded.superseded.n) ex.push('지난달 미처리 고정비 '+r.excluded.superseded.n+'건(이번 달 회차로 대체)');
     $('wRecon').innerHTML='🔗 예정 = 거래목록 「예정」 그대로 · 오늘 이후 '+r.list_n+'건 중 '+r.shown_n+'건 표시'+(ex.length?' (제외: '+ex.join(', ')+')':' · 일치');
     const rl=t&&t.rolled; let oh='';
     if(rl&&rl.n){

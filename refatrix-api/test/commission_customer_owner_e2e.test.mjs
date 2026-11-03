@@ -23,6 +23,7 @@ const EVI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
 
 async function cleanup() {
   const U = `SELECT id FROM users WHERE login_id LIKE 'owntest%'`;
+  await (await import('./_commission_doc_cleanup.mjs')).cleanupCommissionDocs(query, U);   // 2026-11-02h 확정 시 자동 생성 문서
   await query(`DELETE FROM commission_payment_allocations WHERE payment_id IN (SELECT id FROM commission_payments WHERE agent_id IN (${U}))`);
   await query(`DELETE FROM commission_payouts WHERE invoice_id IN (SELECT id FROM sales_invoices WHERE memo LIKE '${TAG}%')`);
   await query(`DELETE FROM commission_payments WHERE agent_id IN (${U})`);

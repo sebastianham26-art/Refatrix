@@ -694,6 +694,73 @@ export function summarizeAgentMonths(lines) {
   return Object.values(by).sort((a, b) => b.ym.localeCompare(a.ym) || a.agent_id - b.agent_id);
 }
 
+// ── 0287 지급승인 문서 생성 (사원 1명 × 확정월 1개) — 단건 버튼 · 월 확정 자동 생성 · 일괄 생성이 같이 쓴다 ──
+//   막히면 PayStop(status, body). 성공 시 { ok, document_id, link_id, total, invoice_count, url }.
+export async function createCommissionApprovalDoc(uid, agentId, settleYm) {
+  if (!agentId || !settleYm) throw new PayStop(400, { error: 'agent_month_required', note: '영업사원과 지급 월을 선택하세요.' });
+  if (!(await commissionApprovalReady(query))) throw new PayStop(503, { error: 'migration_required', migration: '0287', note: 'npm run migrate(0287)을 실행하세요.' });
+  const batch = (await query(`SELECT settle_ym FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0];
+  if (!batch) throw new PayStop(409, { error: 'not_confirmed', note: '먼저 그 달을 확정하세요. 확정된 달만 지급승인 문서를 만들 수 있습니다.' });
+  const a = await activeApprovalDoc(agentId, settleYm);
+  if (a && !canCreateAgain(a.phase)) {
+    throw new PayStop(409, { error: 'approval_doc_active', document_id: a.doc ? a.doc.id : a.link.document_id, doc_no: a.doc ? a.doc.doc_no : null,
+      note: `이미 이 사원·이 달의 지급승인 문서(${(a.doc && a.doc.doc_no) || '임시저장'})가 있습니다. 그 문서로 진행하세요.` });
+  }
+  const snap = await currentSnapshot(agentId, settleYm);
+  if (!snap.lines.length && !snap.bonus && !(snap.referrals || []).length) throw new PayStop(409, { error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급·소개 커미션이 없습니다.' });
+  if (!(snap.total > 0)) throw new PayStop(409, { error: 'nothing_payable', note: `지급 합계가 0 이하입니다(${snap.total}). 차감액은 다음 지급으로 이월됩니다.` });
+  const cat = (await query(`SELECT id FROM approval_categories WHERE name=$1 ORDER BY active DESC, id LIMIT 1`, [COMMISSION_CATEGORY])).rows[0];
+  let created;
+  try {
+    created = await withTx(async (cx) => {
+      const q = cx.query.bind(cx);
+      const d = await createApprovalDraft(q, uid, {
+        title: docTitle(snap), vendor: snap.agent_name, category_id: cat ? Number(cat.id) : null,
+        body_rich: bodyNodes(snap), pay_due: snap.pay_date, pay_method: '현금', iva_applied: false,
+        currency: 'MXN', payment_type: 'once', orig_sub: snap.total,
+        auto_note: `재무 › 커미션에서 자동 생성 · ${snap.agent_name} · ${ymLabel(settleYm)} · 인보이스 ${snap.invoice_count}건${(snap.referrals || []).length ? ` · 소개 커미션 ${snap.referrals.length}건` : ''} · MXN ${snap.total.toFixed(2)}`,
+      });
+      const l = (await q(
+        `INSERT INTO commission_approval_docs (document_id, agent_id, settle_ym, total, snapshot, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [d.id, agentId, settleYm, snap.total, JSON.stringify(snap), uid])).rows[0];
+      await syncApprovalDoc(q, d.id, uid);   // 0287c 임시저장부터 미래자금계획에 지출 예정(지급예정일 · 실적은 거래등록에서 수동)
+      return { document_id: d.id, link_id: Number(l.id) };
+    });
+  } catch (e) {
+    if (e instanceof ApprovalStop) throw new PayStop(400, { error: e.code, ...(e.extra || {}) });
+    throw e;
+  }
+  await logEvent({ userId: uid, action: 'create', target: `commission_approval_doc:${created.link_id}`, detail: { document_id: created.document_id, agent_id: agentId, settle_ym: settleYm, total: snap.total, invoices: snap.invoice_count } });
+  return { ok: true, ...created, total: snap.total, invoice_count: snap.invoice_count, url: `refatrix-approval.html#doc=${created.document_id}` };
+}
+
+// 그 달 지급 대상이 있는 사원 모두에게 문서를 만든다. 이미 진행 중인 문서·지급 대상 없음은 건너뛴다.
+export async function createDocsForMonth(uid, ym) {
+  const created = [], skipped = [], failed = [];
+  // 후보: 그 달 확정·미지급 커미션/소개 커미션이 있는 사람 + 활성 커미션 대상(성과급만 있는 경우)
+  const ids = new Set();
+  for (const l of await confirmedMonthLines()) if (l.settle_ym === ym && !l.paid) ids.add(Number(l.owner_id));
+  try { for (const r of (await query(`SELECT user_id FROM commission_agents WHERE active=true`)).rows) ids.add(Number(r.user_id)); } catch (e) { if (!(e && e.code === '42P01')) throw e; }
+  const names = {};
+  if (ids.size) for (const u of (await query(`SELECT id, name FROM users WHERE id = ANY($1::bigint[])`, [[...ids]])).rows) names[String(u.id)] = u.name;
+  for (const aid of [...ids].sort((x, y) => String(names[x] || '').localeCompare(String(names[y] || '')))) {
+    try {
+      const r = await createCommissionApprovalDoc(uid, aid, ym);
+      created.push({ agent_id: aid, agent_name: names[aid] || null, document_id: Number(r.document_id), total: r.total });
+    } catch (e) {
+      if (e instanceof PayStop) {
+        const err = e.body && e.body.error;
+        if (err === 'nothing_payable') continue;                       // 이 달 지급할 것 없음 → 조용히 건너뜀
+        if (err === 'approval_doc_active') { skipped.push({ agent_id: aid, agent_name: names[aid] || null, document_id: e.body.document_id || null, doc_no: e.body.doc_no || null }); continue; }
+        failed.push({ agent_id: aid, agent_name: names[aid] || null, error: err, note: e.body && e.body.note });
+        continue;
+      }
+      failed.push({ agent_id: aid, agent_name: names[aid] || null, error: 'server_error', note: String(e && e.message || e) });
+    }
+  }
+  return { created, skipped, failed };
+}
+
 const EXT_OF = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic' };
 
 export default async function commissionRoutes(app) {
@@ -1074,15 +1141,29 @@ export default async function commissionRoutes(app) {
     const evi = parseDataUrl(evidence);
     if (!evi) return reply.code(400).send({ error: 'evidence_required', note: '인사 송금 내역(은행 송금증·화면 캡처, 이미지/PDF)을 증빙으로 첨부해야 지급으로 인정됩니다.' });
     const active = await activeApprovalDoc(agentId, settleYm);
-    if (active && ['draft', 'progress', 'approved'].includes(active.phase)) {
+    // 2026-11-02h 월 확정 때 지급승인 문서(임시저장)가 자동으로 생기므로, 아직 상신 전(임시저장)이면 송금 지급을 막지 않는다.
+    //   송금으로 지급하면 그 임시저장 문서는 같은 트랜잭션에서 삭제(숨김)된다 → 미래자금계획 예정도 빠진다.
+    const replaceDraft = active && active.phase === 'draft' && active.doc ? Number(active.doc.id) : null;
+    if (active && ['progress', 'approved'].includes(active.phase)) {
       return reply.code(409).send({ error: 'approval_doc_active', doc_no: active.doc.doc_no || null, document_id: active.doc.id,
         note: `이 사원·이 달은 커미션 지급승인 전자결재 문서(${active.doc.doc_no || '임시저장'})로 진행 중입니다. 결재 승인 후 서명된 수령증을 올려 지급하세요.` });
     }
     let prep;
     try { prep = await preparePayment(agentId, amt, settleYm, paid_date); }
     catch (e) { if (e instanceof PayStop) return reply.code(e.status).send(e.body); throw e; }
-    const result = await withTx(async (cx) => writePayment(cx, prep, { uid, note, evi, eviName: req.body?.evi_name }));
-    return paymentResponse(prep, result, uid);
+    const result = await withTx(async (cx) => {
+      const r = await writePayment(cx, prep, { uid, note, evi, eviName: req.body?.evi_name });
+      if (replaceDraft) {
+        const q = cx.query.bind(cx);
+        await q(`UPDATE approval_documents SET deleted_at=now(), updated_at=now() WHERE id=$1 AND status='draft' AND deleted_at IS NULL`, [replaceDraft]);
+        await q(`DELETE FROM approval_notifications WHERE document_id=$1 AND read_at IS NULL`, [replaceDraft]);
+        await q(`INSERT INTO approval_events(document_id, actor_id, action, step_type, detail) VALUES ($1,$2,'delete',NULL,$3)`,
+          [replaceDraft, uid, `임시저장 삭제 — 커미션 송금 지급(전표 #${r.paymentId})으로 대체`]);
+        await syncApprovalDoc(q, replaceDraft, uid);   // 예정 숨김
+      }
+      return r;
+    });
+    return paymentResponse(prep, result, uid, replaceDraft ? { replaced_draft_document_id: replaceDraft } : {});
   });
 
 
@@ -1130,41 +1211,19 @@ export default async function commissionRoutes(app) {
     const uid = Number(req.ctx.perm.userId);
     const agentId = Number(req.body?.agent_id || 0);
     const settleYm = /^\d{4}-\d{2}$/.test(req.body?.settle_ym || '') ? req.body.settle_ym : null;
-    if (!agentId || !settleYm) return reply.code(400).send({ error: 'agent_month_required', note: '영업사원과 지급 월을 선택하세요.' });
+    try { return await createCommissionApprovalDoc(uid, agentId, settleYm); }
+    catch (e) { if (e instanceof PayStop) return reply.code(e.status).send(e.body); throw e; }
+  });
+
+  // ── 2026-11-02h · 확정된 달의 지급승인 문서 일괄 생성 (디렉터) — 월 확정 때 자동으로도 실행된다 ──
+  app.post('/api/commission/batches/:ym/approval-docs', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const ym = String(req.params.ym || '');
+    if (!/^\d{4}-\d{2}$/.test(ym)) return reply.code(400).send({ error: 'bad_ym' });
     if (!(await commissionApprovalReady(query))) return reply.code(503).send({ error: 'migration_required', migration: '0287', note: 'npm run migrate(0287)을 실행하세요.' });
-    const batch = (await query(`SELECT settle_ym FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0];
-    if (!batch) return reply.code(409).send({ error: 'not_confirmed', note: '먼저 그 달을 확정하세요. 확정된 달만 지급승인 문서를 만들 수 있습니다.' });
-    const a = await activeApprovalDoc(agentId, settleYm);
-    if (a && !canCreateAgain(a.phase)) {
-      return reply.code(409).send({ error: 'approval_doc_active', document_id: a.doc ? a.doc.id : a.link.document_id, doc_no: a.doc ? a.doc.doc_no : null,
-        note: `이미 이 사원·이 달의 지급승인 문서(${(a.doc && a.doc.doc_no) || '임시저장'})가 있습니다. 그 문서로 진행하세요.` });
-    }
-    const snap = await currentSnapshot(agentId, settleYm);
-    if (!snap.lines.length && !snap.bonus && !(snap.referrals || []).length) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급·소개 커미션이 없습니다.' });
-    if (!(snap.total > 0)) return reply.code(409).send({ error: 'nothing_payable', note: `지급 합계가 0 이하입니다(${snap.total}). 차감액은 다음 지급으로 이월됩니다.` });
-    const cat = (await query(`SELECT id FROM approval_categories WHERE name=$1 ORDER BY active DESC, id LIMIT 1`, [COMMISSION_CATEGORY])).rows[0];
-    let created;
-    try {
-      created = await withTx(async (cx) => {
-        const q = cx.query.bind(cx);
-        const d = await createApprovalDraft(q, uid, {
-          title: docTitle(snap), vendor: snap.agent_name, category_id: cat ? Number(cat.id) : null,
-          body_rich: bodyNodes(snap), pay_due: snap.pay_date, pay_method: '현금', iva_applied: false,
-          currency: 'MXN', payment_type: 'once', orig_sub: snap.total,
-          auto_note: `재무 › 커미션에서 자동 생성 · ${snap.agent_name} · ${ymLabel(settleYm)} · 인보이스 ${snap.invoice_count}건${(snap.referrals || []).length ? ` · 소개 커미션 ${snap.referrals.length}건` : ''} · MXN ${snap.total.toFixed(2)}`,
-        });
-        const l = (await q(
-          `INSERT INTO commission_approval_docs (document_id, agent_id, settle_ym, total, snapshot, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-          [d.id, agentId, settleYm, snap.total, JSON.stringify(snap), uid])).rows[0];
-        await syncApprovalDoc(q, d.id, uid);   // 0287c 임시저장부터 미래자금계획에 지출 예정(지급예정일 · 실적은 거래등록에서 수동)
-        return { document_id: d.id, link_id: Number(l.id) };
-      });
-    } catch (e) {
-      if (e instanceof ApprovalStop) return reply.code(400).send({ error: e.code, ...(e.extra || {}) });
-      throw e;
-    }
-    await logEvent({ userId: uid, action: 'create', target: `commission_approval_doc:${created.link_id}`, detail: { document_id: created.document_id, agent_id: agentId, settle_ym: settleYm, total: snap.total, invoices: snap.invoice_count } });
-    return { ok: true, ...created, total: snap.total, invoice_count: snap.invoice_count, url: `refatrix-approval.html#doc=${created.document_id}` };
+    const b = (await query(`SELECT settle_ym FROM commission_batches WHERE settle_ym=$1`, [ym])).rows[0];
+    if (!b) return reply.code(409).send({ error: 'not_confirmed', note: '먼저 그 달을 확정하세요.' });
+    const r = await createDocsForMonth(Number(req.ctx.perm.userId), ym);
+    return { ok: true, settle_ym: ym, ...r };
   });
 
   // ── 0287 · 서명된 수령증 업로드 → 커미션 지급 전표(반제) + 전자결재 집행 마감 (디렉터·재무) ──
@@ -1314,7 +1373,18 @@ export default async function commissionRoutes(app) {
           .sort((x, y) => String(x.agent_name).localeCompare(String(y.agent_name))),
       };
     });
-    return { items, can_confirm: req.ctx.perm.role === 'director', can_hand: PAY_ROLES.includes(req.ctx.perm.role) };
+    // 사원별 지급승인 전자결재 문서 상태 (2026-11-02h)
+    const docReady = await commissionApprovalReady(query);
+    if (docReady) {
+      for (const m of items) {
+        if (!['confirmed', 'handed', 'paid'].includes(m.status)) continue;
+        for (const a of m.by_agent) {
+          const d = await activeApprovalDoc(a.agent_id, m.settle_ym);
+          a.approval = d ? { phase: d.phase, document_id: d.doc ? d.doc.id : Number(d.link.document_id), doc_no: d.doc ? d.doc.doc_no : null, status: d.doc ? d.doc.status : null } : { phase: 'none' };
+        }
+      }
+    }
+    return { items, approval_ready: docReady, can_confirm: req.ctx.perm.role === 'director', can_hand: PAY_ROLES.includes(req.ctx.perm.role) };
   });
 
   // ── 월 확정 (디렉터) — 제외/조정 없음. 그 달 확정 커미션을 스냅샷으로 잠금 ──
@@ -1337,7 +1407,12 @@ export default async function commissionRoutes(app) {
     let bonusSnap = { skipped: true, count: 0 };
     try { bonusSnap = await snapshotBonusForMonth(ym, uid); } catch (e) { if (app.log && app.log.warn) app.log.warn({ err: e }, 'bonus snapshot failed'); }
     await logEvent({ userId: uid, action: 'confirm', target: `commission_batch:${ym}`, detail: { total: m.confirmed, agents: m.agent_count, bonus_snapshots: bonusSnap.count } });
-    return { ok: true, settle_ym: ym, total_amount: m.confirmed, agent_count: m.agent_count, pay_date: nextMonth15(ym), bonus_snapshots: bonusSnap.count };
+    // 2026-11-02h 디렉터 결정: 확정(승인)하면 사원별 지급승인 전자결재 문서(임시저장)가 자동으로 만들어진다.
+    //   문서 생성이 실패해도 확정은 유지(결과에 failed 로 알림 · 월별 지급 배치의 「결재문서 생성」으로 재시도).
+    let docs = { created: [], skipped: [], failed: [] };
+    try { if (await commissionApprovalReady(query)) docs = await createDocsForMonth(Number(uid), ym); }
+    catch (e) { docs.failed.push({ error: 'server_error', note: String(e && e.message || e) }); if (app.log && app.log.warn) app.log.warn({ err: e }, 'commission approval auto-create failed'); }
+    return { ok: true, settle_ym: ym, total_amount: m.confirmed, agent_count: m.agent_count, pay_date: nextMonth15(ym), bonus_snapshots: bonusSnap.count, approval_docs: docs };
   });
 
   // ── 인사 전달 기록 (재무·디렉터) — 넘긴 시점 + 로그 ──

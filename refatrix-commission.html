@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1102inv4</title>
+<title>Refatrix ERP · 커미션 · build b1102inv6</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -163,7 +163,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1102inv4</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1102inv6</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h" data-es="Entrar">로그인</div>
@@ -242,7 +242,7 @@
 
     <!-- ⓪ 월별 지급 배치 (반제 완료월) — 디렉터·재무·소시오 -->
     <div class="card hidden" id="batchCard">
-      <div class="card-h">월별 지급 배치 <span class="hint" style="font-weight:400">· 반제 완료월 단위 · 디렉터 확정 → 재무 인사전달 → 증빙 지급 · 익월 15일</span></div>
+      <div class="card-h">월별 지급 배치 <span class="hint" style="font-weight:400">· 반제 완료월 단위 · 디렉터 확정(→ 사원별 지급승인 결재문서 자동 생성) → 재무 인사전달 → 증빙 지급 · 익월 15일</span></div>
       <div id="batchBody"><div class="hint">불러오는 중…</div></div>
     </div>
 
@@ -1143,18 +1143,51 @@
         let act='';
         if(d.can_confirm && m.status==='open' && m.confirmed>0) act='<button class="btn sm gold" onclick="confirmBatch(\''+m.settle_ym+'\')">확정</button>';
         else if(d.can_hand && m.status==='confirmed') act='<button class="btn sm" onclick="handOff(\''+m.settle_ym+'\')">인사 전달</button>';
+        // 2026-11-02h 확정된 달인데 결재문서가 없는 사원이 있으면 「결재문서 생성」(디렉터)
+        const needDoc=(m.by_agent||[]).some(a=>a.unpaid>0.001 && a.approval && ['none','deleted','rejected'].includes(a.approval.phase));
+        if(d.can_confirm && d.approval_ready && ['confirmed','handed'].includes(m.status) && needDoc) act+=' <button class="btn sm gold" data-mkdocs="'+m.settle_ym+'">📝 결재문서 생성</button>';
         const handTs=m.handed_at?(' · 전달 '+new Date(m.handed_at).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})):'';
         h+='<tr class="bmonth"><td><b>'+m.settle_ym+'</b></td><td class="r conf">'+fmtm(m.confirmed)+'</td><td class="r">'+fmtm(m.paid)+'</td><td class="r short">'+fmtm(m.unpaid)+'</td><td class="r">'+m.agent_count+'</td><td>'+(m.pay_date||'—')+'</td><td>'+badge+'<span class="hint">'+handTs+'</span></td><td>'+act+'</td></tr>';
         // 사원별 (2026-11-02d)
         for(const a of (m.by_agent||[])){
           const ab = a.unpaid<=0.001 ? '<span class="badge paid">지급완료</span>' : (a.paid>0 ? '<span class="badge wait">일부 지급</span>' : '<span class="badge">미지급</span>');
-          h+='<tr class="bagent"><td>└ '+esc(a.agent_name)+' <span class="hint">· '+a.count+'건</span></td><td class="r">'+fmtm(a.confirmed)+'</td><td class="r">'+fmtm(a.paid)+'</td><td class="r'+(a.unpaid>0.001?' short':'')+'">'+fmtm(a.unpaid)+'</td><td></td><td></td><td>'+ab+'</td><td></td></tr>';
+          h+='<tr class="bagent"><td>└ '+esc(a.agent_name)+' <span class="hint">· '+a.count+'건</span></td><td class="r">'+fmtm(a.confirmed)+'</td><td class="r">'+fmtm(a.paid)+'</td><td class="r'+(a.unpaid>0.001?' short':'')+'">'+fmtm(a.unpaid)+'</td><td></td><td></td><td>'+ab+'</td><td>'+apDocCell(a, m.settle_ym)+'</td></tr>';
         }
       }
       h+='</tbody></table>';
       $('batchBody').innerHTML=h;
     }catch(e){ $('batchBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
+  // 사원별 지급승인 결재문서 상태 칩 → 전자결재 문서로 바로 이동 (2026-11-02h)
+  const AP_PHASE_KO={draft:['임시저장','wait'],progress:['결재 중','conf2'],approved:['승인 · 수령증 대기','hand'],settled:['지급·마감','paid'],rejected:['반려','late'],deleted:['삭제됨','prov']};
+  function apDocCell(a, ym){
+    const ap=a.approval; if(!ap) return '';
+    if(ap.phase==='none') return a.unpaid>0.001 ? '<span class="badge late" title="이 사원·이 달의 지급승인 전자결재 문서가 없습니다">결재문서 없음</span>' : '';
+    const [k,c]=AP_PHASE_KO[ap.phase]||[ap.phase,''];
+    const lbl='📝 '+(ap.doc_no||'')+' '+k;
+    const href=ap.document_id?('refatrix-approval.html#doc='+ap.document_id):'';
+    return href?'<a class="badge '+c+'" style="text-decoration:none" href="'+href+'" title="전자결재 문서 열기">'+esc(lbl.trim())+' ↗</a>':'<span class="badge '+c+'">'+esc(lbl.trim())+'</span>';
+  }
+  async function makeMonthDocs(ym, btn){
+    if(btn){ btn.disabled=true; btn.textContent='생성 중…'; }
+    try{
+      const res=await fetch(session.api+'/api/commission/batches/'+ym+'/approval-docs',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('결재문서 생성 실패: '+(d.note||d.error||res.status)); }
+      else alert(docsResultText(ym, d));
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+    loadBatches();
+  }
+  function docsResultText(ym, r){
+    const c=(r&&r.created)||[], k=(r&&r.skipped)||[], f=(r&&r.failed)||[];
+    let t=ym+' 지급승인 전자결재 문서\n';
+    t+= c.length ? ('· 새로 만듦(임시저장) '+c.length+'건: '+c.map(x=>x.agent_name+' '+fmtm(x.total)).join(', ')+'\n') : '· 새로 만든 문서 없음\n';
+    if(k.length) t+='· 이미 있음 '+k.length+'건: '+k.map(x=>x.agent_name+(x.doc_no?(' '+x.doc_no):'')).join(', ')+'\n';
+    if(f.length) t+='· 실패 '+f.length+'건: '+f.map(x=>(x.agent_name||'')+' — '+(x.note||x.error)).join(' / ')+'\n';
+    if(c.length) t+='\n전자결재에서 결재선을 지정해 상신하세요. (월별 지급 배치의 문서 칩을 누르면 바로 열립니다)';
+    return t;
+  }
+  document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-mkdocs]'); if(b){ e.preventDefault(); makeMonthDocs(b.dataset.mkdocs,b); } });
   function populatePayMonths(items){
     const sel=$('payMonth'); if(!sel) return;
     const cur=sel.value;
@@ -1163,11 +1196,12 @@
     sel.value=cur;
   }
   async function confirmBatch(ym){
-    if(!confirm(ym+' 월을 지급 대상으로 확정합니다.\n확정 후 제외·조정·취소가 불가하며, 지급예정일은 익월 15일입니다. 진행할까요?')) return;
+    if(!confirm(ym+' 월을 지급 대상으로 확정합니다.\n확정 후 제외·조정·취소가 불가하며, 지급예정일은 익월 15일입니다.\n확정하면 사원별 지급승인 전자결재 문서(임시저장)가 자동으로 만들어집니다. 진행할까요?')) return;
     try{
       const res=await fetch(session.api+'/api/commission/batches/'+ym+'/confirm',{method:'POST',headers:auth()});
       const d=await res.json();
       if(!res.ok||d.error){ alert('확정 실패: '+(d.note||d.error||res.status)); return; }
+      if(d.approval_docs) alert(docsResultText(ym, d.approval_docs));
       loadBatches(); loadOverview();
     }catch(e){ alert('서버에 연결할 수 없습니다.'); }
   }
@@ -1440,7 +1474,9 @@
     h+='<div class="msg" id="apMsg"></div>';
     box.innerHTML=h; box.classList.remove('hidden');
     if(apFlash){ const m=$('apMsg'); m.className='msg '+apFlash.kind; m.innerHTML=apFlash.html; apFlash=null; }
-    apLockLegacy(['draft','progress','approved'].includes(ph));
+    // 2026-11-02h 임시저장(상신 전)이면 송금 지급도 가능 — 송금으로 지급하면 그 임시저장 문서는 서버에서 삭제된다
+    apLockLegacy(['progress','approved'].includes(ph));
+    const lh=$('legacyHint'); if(lh && ph==='draft') lh.textContent='송금으로 지급(결재 없이 · 기존 방식) — 지급하면 위 임시저장 결재문서는 삭제됩니다';
   }
   // 0287c 현금흐름 표시 — 미래자금계획 예정(생성 즉시) · 거래등록 실적(수동)
   const FIN_URL=pid=>'refatrix-finance.html#tab=new&apay='+pid;

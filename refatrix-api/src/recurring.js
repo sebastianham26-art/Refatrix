@@ -147,4 +147,30 @@ export function occurrenceDuplicated(sigs, rule, occ) {
   return sigs.has(sigKey(rule.direction, rule.category_code, rule.currency, rule.amount, m, null));
 }
 
+// ===== 지난달 미처리 고정비 예정 숨김 (2026-11-03 디렉터 결정) — 순수 함수 =====
+// 증상: 9·10월 SUA·임차료를 전자결재로 지급했는데 고정비 회차(예정)는 그대로 남아,
+//      「지난 예정은 오늘로 이월」 규칙 때문에 오늘 날짜에 이번 달 회차와 겹쳐 같은 고정비가 한 달에 2~3건 보였다.
+// 규칙: 고정비 회차 예정(plan)의 유효월이 '이번 달 이전'이고, 그 고정비 규칙이 '이번 달에도 돌고 있으면'
+//      (활성 · 시작월 ≤ 이번 달 · 종료월 없음/≥ 이번 달) 그 예정은 이번 달 회차로 대체된 것으로 보고 자금계획에서 뺀다.
+//      → 같은 고정비는 이번 달에 한 건만. 규칙이 끝난(종료월 지난) 고정비의 미처리분은 진짜 미지급일 수 있어 그대로 이월.
+//      데이터는 건드리지 않는다(표시·집계에서만 제외). 실적(actual)은 항상 그대로.
+// rule: { id, active, deleted_at?, start_date:'YYYY-MM-DD', end_month:'YYYY-MM'|null }
+export function ruleRunsInMonth(rule, ym) {
+  if (!rule || rule.active === false || rule.deleted_at) return false;
+  const s = String(rule.start_date || '').slice(0, 7);
+  if (s && s > ym) return false;
+  if (rule.end_month && String(rule.end_month) < ym) return false;
+  return true;
+}
+// t: { status, recurring_rule_id, plan_date?, txn_date }  running: Set(ruleId:number)  thisMonth:'YYYY-MM'
+export function isSupersededRecurringPlan(t, running, thisMonth) {
+  if (!t || t.status !== 'plan' || t.projected || t.recurring_rule_id == null) return false;
+  const eff = String(t.plan_date || t.txn_date || '').slice(0, 7);
+  if (!eff || eff >= thisMonth) return false;
+  return running.has(Number(t.recurring_rule_id));
+}
+export function runningRuleIds(rules, ym) {
+  return new Set((rules || []).filter((r) => ruleRunsInMonth(r, ym)).map((r) => Number(r.id)));
+}
+
 export { ymd, parseYMD, clampDay };

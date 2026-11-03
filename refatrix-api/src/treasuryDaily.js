@@ -30,6 +30,7 @@
 //   · TREASURY_DAILY_ENABLED=0 → 전체 끄기 · TREASURY_WA_TEMPLATE → 24h 창 밖 폴백 템플릿(없으면 WHATSAPP_TEMPLATE)
 // =====================================================================
 import { query } from './db.js';
+import { runningRuleIds, isSupersededRecurringPlan } from './recurring.js';
 import { getFxRange, getRateForDate } from './fx.js';
 import { AR_PAID_EPS } from './ar.js';
 import { MX_OFFSET_MIN } from './workingHours.js';
@@ -511,6 +512,16 @@ export async function loadPlanInputs(today, to, q = query, scopeIds = null) {
   const num = (r) => ({ ...r, amount: Number(r.amount), amount_mxn: Number(r.amount_mxn) });
   const uniq = (rows) => { const s = new Set(); return rows.filter((r) => { const k = Number(r.id); if (s.has(k)) return false; s.add(k); return true; }); };
   const all = uniq(plan.rows).map(num);
+  // 2026-11-03 지난달 미처리 고정비 예정 — 같은 고정비가 이번 달에도 돌고 있으면 이번 달 회차로 대체된 것으로 보고 제외
+  //   (현금흐름·필요자금과 같은 규칙 · recurring.js isSupersededRecurringPlan). 거래목록 데이터는 그대로.
+  if (all.some((r) => r.recurring_rule_id != null && !r.excluded_by)) {
+    const rules = (await q(`SELECT id, active, deleted_at, to_char(start_date,'YYYY-MM-DD') AS start_date, end_month FROM recurring_rules`)).rows;
+    const ym = String(today).slice(0, 7);
+    const running = runningRuleIds(rules, ym);
+    for (const r of all) {
+      if (!r.excluded_by && isSupersededRecurringPlan({ status: 'plan', recurring_rule_id: r.recurring_rule_id, plan_date: r.d }, running, ym)) r.excluded_by = 'superseded';
+    }
+  }
   const planRows = all.filter((r) => !r.excluded_by);
   const ex = (why) => all.filter((r) => r.excluded_by === why);
   const brief = (xs) => ({ n: xs.length, amount_mxn: r2(xs.reduce((s, x) => s + x.amount_mxn, 0)) });
@@ -522,7 +533,8 @@ export async function loadPlanInputs(today, to, q = query, scopeIds = null) {
     reconcile: (() => {
       const inWin = (r) => r.d >= today;
       return { list_n: all.filter(inWin).length, shown_n: planRows.filter(inWin).length,
-        excluded: { account: brief(ex('account').filter(inWin)), inactive_rule: brief(ex('inactive_rule').filter(inWin)) } };
+        excluded: { account: brief(ex('account').filter(inWin)), inactive_rule: brief(ex('inactive_rule').filter(inWin)),
+          superseded: brief(ex('superseded')) } };
     })(),
   };
 }

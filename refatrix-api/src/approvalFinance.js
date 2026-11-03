@@ -163,6 +163,10 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
     }
   }
 
+  // ③-b 0313 고정비 회차 대체 — 결재가 살아 있는 동안 고른 고정비 예정을 숨기고, 반려·삭제되면 되살린다.
+  out.recurring = await syncRecurringReplace(q, docId, live, actorId);
+  if (out.recurring.hidden || out.recurring.restored) out.changed = true;
+
   // ④ 문서 집행 상태 — 거래등록 실적으로 회차가 바뀐 경우에만 손댄다
   if (finTouched) {
     pays = await loadPays(q, docId);
@@ -192,7 +196,114 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
       await q(`UPDATE approval_documents SET actual_total=$2, updated_at=now() WHERE id=$1`, [docId, actual]);
     }
   }
-  out.changed = finTouched || out.plans.created + out.plans.updated + out.plans.removed > 0;
+  out.changed = out.changed || finTouched || out.plans.created + out.plans.updated + out.plans.removed > 0;
+  return out;
+}
+
+// ═══════ 0313 전자결재 ↔ 고정비 회차 대체 (2026-11-03 디렉터) ═══════
+// SUA·임차료처럼 고정비로 등록된 지출을 전자결재로 지급하면 고정비 예정과 전자결재 예정/실적이 따로 남아
+// 한 달에 같은 고정비가 2~3건 잡혔다. 결재 작성 시 「대체할 고정비 회차」를 고르면:
+//   · 문서가 살아 있는 동안(승인완료 · 디렉터/커미션 문서는 임시저장부터) 그 회차 예정을 숨긴다 → replaced_by_doc 표시
+//   · 문서가 반려·삭제되거나 선택을 해제하면 이 문서가 숨긴 회차만 되살린다(직접 지운 회차는 건드리지 않음)
+//   숨겨진 회차는 삭제분으로 남으므로 자동전개(occurrenceExists)가 같은 달을 다시 만들지 않는다.
+let _rep = { at: 0, ok: false };
+export async function replaceReady(q) {
+  if (_rep.ok) return true;
+  const now = Date.now();
+  if (_rep.at && now - _rep.at < 30000) return false;
+  try {
+    const r = await q(`SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='replaced_by_doc'`);
+    _rep = { at: now, ok: r.rows.length > 0 };
+  } catch (_) { _rep = { at: now, ok: false }; }
+  return _rep.ok;
+}
+export function _resetReplaceReady() { _rep = { at: 0, ok: false }; }
+
+export function normReplaceIds(v) {
+  if (!Array.isArray(v)) return null;   // null = 입력 없음(구 클라이언트) → 기존 값 유지
+  return [...new Set(v.map(Number).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 24);
+}
+
+// 대체 가능한 고정비 회차(예정) — 결재 작성 화면 목록. 이 문서가 이미 숨긴 회차도 포함(선택 유지).
+//   기간: 오늘 기준 120일 전 ~ 75일 후(유효일). 비공개 고정비는 디렉터만.
+export async function recurringCandidates(q, { docId = null, director = false, today = null } = {}) {
+  if (!(await replaceReady(q))) return [];
+  const t0 = today || new Date().toISOString().slice(0, 10);
+  const rows = (await q(
+    `SELECT t.id, to_char(COALESCE(t.plan_date, t.txn_date),'YYYY-MM-DD') AS d, t.amount, t.currency, t.amount_mxn,
+            t.category_code, cat.name AS category_name, a.name AS account_name, t.recurring_rule_id AS rule_id, rr.name AS rule_name,
+            t.replaced_by_doc, (t.deleted_at IS NOT NULL) AS hidden
+       FROM transactions t
+       JOIN recurring_rules rr ON rr.id=t.recurring_rule_id
+       LEFT JOIN categories cat ON cat.code=t.category_code
+       LEFT JOIN accounts a ON a.id=t.account_id
+      WHERE t.status='plan' AND t.direction='out' AND t.recurring_rule_id IS NOT NULL
+        AND (t.deleted_at IS NULL OR ($1::bigint IS NOT NULL AND t.replaced_by_doc=$1::bigint))
+        AND COALESCE(t.plan_date, t.txn_date) BETWEEN ($2::date - 120) AND ($2::date + 75)
+        ${director ? '' : 'AND t.is_private=false'}
+      ORDER BY COALESCE(t.plan_date, t.txn_date), t.id`, [docId, t0])).rows;
+  return rows.map((r) => ({
+    id: Number(r.id), date: r.d, amount: Number(r.amount), currency: r.currency, amount_mxn: Number(r.amount_mxn),
+    category_code: r.category_code, category_name: r.category_name, account_name: r.account_name,
+    rule_id: Number(r.rule_id), rule_name: r.rule_name,
+    replaced_by_doc: r.replaced_by_doc == null ? null : Number(r.replaced_by_doc), hidden: r.hidden === true,
+  }));
+}
+
+// 작성 화면에서 고른 회차 저장 — 고를 수 있는 회차만 남긴다(다른 문서가 이미 대체한 회차·실적·비고정비 제외).
+export async function saveReplaceIds(q, docId, ids, { director = false } = {}) {
+  if (ids == null || !(await replaceReady(q))) return null;
+  let ok = [];
+  if (ids.length) {
+    ok = (await q(
+      `SELECT id FROM transactions
+        WHERE id = ANY($1::bigint[]) AND status='plan' AND recurring_rule_id IS NOT NULL
+          AND (deleted_at IS NULL OR replaced_by_doc=$2)${director ? '' : ' AND is_private=false'}`, [ids, docId])).rows.map((r) => Number(r.id));
+  }
+  await q(`UPDATE approval_documents SET replaces_txn_ids=$2 WHERE id=$1`, [docId, ok.length ? ok : null]);
+  return ok;
+}
+
+// 상세 화면용 — 이 결재가 대체(예정)하는 고정비 회차. active=지금 실제로 숨기고 있음.
+export async function replacesForDoc(q, docId) {
+  if (!(await replaceReady(q))) return [];
+  const ids = (await q(`SELECT replaces_txn_ids FROM approval_documents WHERE id=$1`, [docId])).rows[0]?.replaces_txn_ids || [];
+  if (!ids.length) return [];
+  return (await q(
+    `SELECT t.id, to_char(COALESCE(t.plan_date, t.txn_date),'YYYY-MM-DD') AS d, t.amount, t.currency, rr.name AS rule_name,
+            (t.replaced_by_doc IS NOT DISTINCT FROM $2::bigint) AS active
+       FROM transactions t LEFT JOIN recurring_rules rr ON rr.id=t.recurring_rule_id
+      WHERE t.id = ANY($1::bigint[]) ORDER BY 2, t.id`, [ids.map(Number), docId])).rows
+    .map((r) => ({ id: Number(r.id), date: r.d, amount: Number(r.amount), currency: r.currency, rule_name: r.rule_name, active: r.active === true }));
+}
+// 재기안 — 원문서의 대체 선택을 새 문서로 복사
+export async function copyReplaceIds(q, fromId, toId) {
+  if (!(await replaceReady(q))) return;
+  await q(`UPDATE approval_documents n SET replaces_txn_ids=o.replaces_txn_ids FROM approval_documents o WHERE n.id=$2 AND o.id=$1`, [fromId, toId]);
+}
+
+export async function syncRecurringReplace(q, docId, live, actorId = null) {
+  const out = { hidden: 0, restored: 0 };
+  if (!(await replaceReady(q))) return out;
+  const d = (await q(`SELECT replaces_txn_ids FROM approval_documents WHERE id=$1`, [docId])).rows[0];
+  const ids = live && d && Array.isArray(d.replaces_txn_ids) ? d.replaces_txn_ids.map(Number).filter(Boolean) : [];
+  // 되살림은 고정비 규칙이 아직 살아 있을 때만 — 그사이 고정비를 지웠다면 표시만 떼고 숨긴 채로 둔다.
+  const back = await q(
+    `UPDATE transactions SET deleted_at=NULL, replaced_by_doc=NULL, updated_by=$3
+      WHERE replaced_by_doc=$1 AND status='plan' AND NOT (id = ANY($2::bigint[]))
+        AND recurring_rule_id IN (SELECT id FROM recurring_rules WHERE deleted_at IS NULL)`, [docId, ids, actorId]);
+  out.restored = back.rowCount || 0;
+  await q(`UPDATE transactions SET replaced_by_doc=NULL WHERE replaced_by_doc=$1 AND NOT (id = ANY($2::bigint[]))`, [docId, ids]);
+  if (ids.length) {
+    const h = await q(
+      `UPDATE transactions SET deleted_at=now(), replaced_by_doc=$1, updated_by=$3
+        WHERE id = ANY($2::bigint[]) AND status='plan' AND recurring_rule_id IS NOT NULL AND deleted_at IS NULL`, [docId, ids, actorId]);
+    out.hidden = h.rowCount || 0;
+  }
+  if (out.hidden || out.restored) {
+    await event(q, docId, actorId, 'recurring_replace',
+      [out.hidden ? `고정비 회차 ${out.hidden}건을 이 결재로 대체(자금계획에서 숨김)` : '', out.restored ? `고정비 회차 ${out.restored}건 되살림` : ''].filter(Boolean).join(' · '));
+  }
   return out;
 }
 

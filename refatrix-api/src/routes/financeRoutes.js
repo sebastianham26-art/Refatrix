@@ -117,7 +117,7 @@ export async function syncFreightTag(q, txnId, { categoryCode, prevCategoryCode,
   return { allocations: allocIds.length };
 }
 import { validateReceiptDataUrl, AR_PAID_EPS, arIsPaid, arIsOpen, AR_SETTLED_SQL } from '../ar.js';
-import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey } from '../recurring.js';
+import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey, runningRuleIds, isSupersededRecurringPlan } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
@@ -2888,6 +2888,20 @@ export default async function financeRoutes(app) {
          LEFT JOIN recurring_rules rr ON rr.id=t.recurring_rule_id
         WHERE ${cond}`, args)).rows;
   }
+  // 지난달 미처리 고정비 예정 제외 (2026-11-03 디렉터) — 같은 고정비가 이번 달에도 돌고 있으면
+  // 지난달 이전의 미처리 예정은 이번 달 회차로 대체된 것으로 보고 자금계획(현금흐름·필요자금·이번 달 달력)에서 뺀다.
+  // 「지난 예정은 오늘로 이월」과 겹쳐 같은 고정비가 한 달에 2~3건 잡히던 문제. 데이터 불변 · 실적 불변. recurring.js 참고.
+  async function dropSupersededRecurring(txns, thisMonth) {
+    if (!txns.some((t) => t.status === 'plan' && t.recurring_rule_id != null)) return 0;
+    const rules = (await query(
+      `SELECT id, active, deleted_at, to_char(start_date,'YYYY-MM-DD') AS start_date, end_month FROM recurring_rules`)).rows;
+    const running = runningRuleIds(rules, thisMonth);
+    let n = 0;
+    for (let i = txns.length - 1; i >= 0; i--) {
+      if (isSupersededRecurringPlan(txns[i], running, thisMonth)) { txns.splice(i, 1); n++; }
+    }
+    return n;
+  }
   // 미생성 고정비 회차 자동전개 (월 예산 예측 · 은행계좌별 필요자금 공용).
   // months: ['YYYY-MM', ...]. 활성 규칙 → 각 달 전개 → 이미 회차 거래가 존재하는 (rule_id, period) 제외
   // — 삭제분 포함(삭제 의도 보존: 지운 회차는 예측에도 안 살림. deleted_at 조건 없이 조회).
@@ -3017,6 +3031,7 @@ export default async function financeRoutes(app) {
     }
     const txnsAll = await loadCashTxns(req.ctx.perm);
     await adjustArPlansToOutstanding(txnsAll);
+    await dropSupersededRecurring(txnsAll, new Date().toISOString().slice(0, 7));   // 2026-11-03 지난달 미처리 고정비 제외
     // 이월 규칙 기준일 — ⚠ 반드시 아래 hidden 루프보다 먼저 선언할 것.
     // (2026-08-06 수정: 기존엔 이 선언이 hidden 루프 뒤에 있어 TDZ ReferenceError →
     //  보완분에 예정(비공개 고정비 plan)이 있는 비디렉터(소시오·재무 등)에서만 /api/cashflow 가 500으로 죽었음.
@@ -3270,6 +3285,8 @@ export default async function financeRoutes(app) {
     const month = /^\d{4}-\d{2}$/.test(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
     const today = new Date().toISOString().slice(0, 10);
     const txns = await loadCashTxns(req.ctx.perm);
+    // 2026-11-03 이번 달 조회일 때만 지난달 미처리 고정비 제외(과거 달 조회는 이력 그대로)
+    if (month === today.slice(0, 7)) await dropSupersededRecurring(txns, month);
     const mapped = txns.map((t) => ({
       id: t.id, direction: t.direction, status: t.status,
       txn_date: String(t.txn_date).slice(0, 10), amount_mxn: Number(t.amount_mxn) || 0,
@@ -3512,6 +3529,7 @@ export default async function financeRoutes(app) {
       balance_mxn: r2(Number(a.open_balance) * (a.currency === 'USD' ? usd : 1) + Number(a.mxn_txn_sum)),
     }));
     const txns = await loadCashTxns(req.ctx.perm);
+    await dropSupersededRecurring(txns, thisMonth);   // 2026-11-03 지난달 미처리 고정비 제외
     // (2026-08-06) 입금예정 반영: AR(인보이스 수금예정)을 미수잔액 기준으로 보정해 포함하고,
     // 계좌미지정 '수입' 예정(AR 포함)은 수금 기본계좌(ar_default, 현재 BBVA)로 귀속한다.
     // 계좌미지정 '지출' 예정은 종전대로 「(계좌 미지정 예정)」 행 유지.

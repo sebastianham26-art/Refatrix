@@ -149,7 +149,12 @@ test('E0 준비 — 사용자·고객·인보이스·수금·커미션 기간·7
   ID.A = await inv('CAP-A', '2026-06-05', 10000); await pay('2026-07-10', ID.A, 11600);   // 400
   ID.B = await inv('CAP-B', '2026-06-20', 5000); await pay('2026-07-20', ID.B, 5800);     // 200
   ID.C = await inv('CAP-C', '2026-07-01', 3000);                                          // 미수 → 대상 아님
-  await ok('dir', 'POST', '/api/commission/batches/2026-07/confirm');
+  // 2026-11-02h 확정하면 사원별 지급승인 문서(임시저장)가 자동으로 만들어진다
+  const conf = await ok('dir', 'POST', '/api/commission/batches/2026-07/confirm');
+  assert.equal(conf.approval_docs.created.length, 1, '확정 → 문서 자동 생성');
+  assert.equal(conf.approval_docs.created[0].agent_id, ID.rep); assert.equal(conf.approval_docs.created[0].total, 600);
+  assert.equal(conf.approval_docs.failed.length, 0);
+  ID.doc = conf.approval_docs.created[0].document_id;
   const p = await ok('dir', 'GET', `/api/commission/payable?agent_id=${ID.rep}&settle_ym=2026-07`);
   assert.equal(p.total, 600);
   assert.deepEqual(p.lines.map((l) => l.sat_no), ['CAP-A', 'CAP-B']);
@@ -159,14 +164,18 @@ test('E0 준비 — 사용자·고객·인보이스·수금·커미션 기간·7
 
 test('E1 문서 생성 — 디렉터만 · 내용 자동 · 임시저장 · 중복 생성/일반 지급 차단', { skip: SKIP }, async () => {
   const s0 = await ok('dir', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-07`);
-  assert.equal(s0.phase, 'none'); assert.equal(s0.can_create, true);
+  assert.equal(s0.phase, 'draft', '확정 때 자동 생성된 임시저장'); assert.equal(s0.can_create, false);
+  assert.equal(s0.doc.id, ID.doc);
+  // 월별 지급 배치 사원 줄에 문서 상태
+  const bt = await ok('dir', 'GET', '/api/commission/batches');
+  const jul = bt.items.find((m) => m.settle_ym === '2026-07');
+  const ar = jul.by_agent.find((a) => a.agent_id === ID.rep);
+  assert.equal(ar.approval.phase, 'draft'); assert.equal(ar.approval.document_id, ID.doc);
   const sf = await ok('fin', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-07`);
   assert.equal(sf.can_create, false, '재무는 생성 버튼 없음');
   assert.equal((await call('fin', 'POST', '/api/commission/approval-docs', { agent_id: ID.rep, settle_ym: '2026-07' })).code, 403);
   assert.equal((await call('dir', 'POST', '/api/commission/approval-docs', { agent_id: ID.rep, settle_ym: '2026-06' })).body.error, 'not_confirmed');
-  const c = await ok('dir', 'POST', '/api/commission/approval-docs', { agent_id: ID.rep, settle_ym: '2026-07' });
-  ID.doc = c.document_id;
-  assert.equal(c.total, 600); assert.equal(c.invoice_count, 2); assert.equal(c.url, `refatrix-approval.html#doc=${ID.doc}`);
+  // (수동 생성 버튼은 이미 문서가 있어 아래에서 approval_doc_active)
   const d = (await query(`SELECT d.*, c.name AS cat FROM approval_documents d LEFT JOIN approval_categories c ON c.id=d.category_id WHERE d.id=$1`, [ID.doc])).rows[0];
   assert.equal(d.status, 'draft'); assert.equal(Number(d.drafter_id), ID.dir);
   assert.equal(d.cat, '영업 커미션'); assert.equal(d.pay_method, '현금'); assert.equal(d.iva_applied, false);
@@ -182,8 +191,7 @@ test('E1 문서 생성 — 디렉터만 · 내용 자동 · 임시저장 · 중�
   assert.ok(det.events.some((e) => e.action === 'auto_draft'));
   // 중복 생성 · 일반 송금 지급 막힘
   assert.equal((await call('dir', 'POST', '/api/commission/approval-docs', { agent_id: ID.rep, settle_ym: '2026-07' })).body.error, 'approval_doc_active');
-  const leg = await call('fin', 'POST', '/api/commission/payments', { agent_id: ID.rep, settle_ym: '2026-07', amount: 600, evidence: PNG });
-  assert.equal(leg.code, 409); assert.equal(leg.body.error, 'approval_doc_active');
+  // (2026-11-02h 임시저장 단계에선 송금 지급 허용 — 상신 후 막히는지는 E2 에서)
   // 0287c 생성(임시저장) 즉시 미래자금계획 지출 예정 — 지급예정일 · 6030 · 계좌 없음
   const f1 = await finOf(ID.doc);
   assert.deepEqual(f1.map((x) => [x.status, x.d, x.amount, x.cat, x.acc]), [['plan', '2026-08-15', 600, '6030', null]]);
@@ -202,6 +210,8 @@ test('E2 상신 → 승인 — 직접 집행 버튼(API) 막힘', { skip: SKIP }
     det = await ok('dir', 'GET', `/api/approvals/${ID.doc}`);
   }
   assert.equal(det.doc.status, 'approved'); assert.equal(det.doc.exec_status, 'pending');
+  const leg = await call('fin', 'POST', '/api/commission/payments', { agent_id: ID.rep, settle_ym: '2026-07', amount: 600, evidence: PNG });
+  assert.equal(leg.code, 409, '상신·승인된 문서가 있으면 송금 지급 막힘'); assert.equal(leg.body.error, 'approval_doc_active');
   const f2 = await finOf(ID.doc);
   assert.deepEqual(f2.map((x) => [x.id, x.status, x.d, x.amount]), [[ID.planId, 'plan', '2026-08-15', 600]], '상신·승인 후에도 같은 예정 1행');
   const s = await ok('fin', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-07`);
@@ -301,8 +311,8 @@ test('E6 반려되면 새 문서 생성 가능 · 결재 금액을 바꾸면 지
   const p = Number((await query(`INSERT INTO sales_payments (customer_id, pay_date, account_id, amount, memo, created_by) VALUES ($1,'2026-08-03',$2,2900,$3,$4) RETURNING id`, [ID.cust, ID.acc, `${TAG} E`, ID.dir])).rows[0].id);
   await query(`INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,2900)`, [p, ID.E]);
   await query(`DELETE FROM commission_batches WHERE settle_ym='2026-08'`);
-  await ok('dir', 'POST', '/api/commission/batches/2026-08/confirm');
-  const c = await ok('dir', 'POST', '/api/commission/approval-docs', { agent_id: ID.rep, settle_ym: '2026-08' });
+  const conf8 = await ok('dir', 'POST', '/api/commission/batches/2026-08/confirm');
+  const c = conf8.approval_docs.created.find((x) => x.agent_id === ID.rep);   // 확정 때 자동 생성
   assert.equal(c.total, 100);
   await ok('dir', 'POST', `/api/approvals/${c.document_id}/submit`, {});
   let det = await ok('dir', 'GET', `/api/approvals/${c.document_id}`);
@@ -341,6 +351,48 @@ test('E6 반려되면 새 문서 생성 가능 · 결재 금액을 바꾸면 지
   if (pend) assert.notEqual((await call('fin', 'POST', `/api/commission/approval-docs/${c.document_id}/settle`, { paid_date: '2026-09-15', evidence: PNG })).code, 200);
   const r = await ok('dir', 'POST', `/api/commission/approval-docs/${c2.document_id}/settle`, { paid_date: '2026-09-15', evidence: PNG });
   assert.equal(r.commission_settled, 100);
+});
+
+test('E7 이미 확정됐지만 문서가 없는 달(자동 생성 이전에 확정) → 「결재문서 생성」 일괄 생성 · 재실행은 건너뜀', { skip: SKIP }, async () => {
+  ID.F = Number((await query(`INSERT INTO sales_invoices (sat_no, customer_id, inv_date, credit_days, due_date, subtotal_mxn, iva_mxn, total_mxn, status, owner_id, memo, created_by)
+    VALUES ('CAP-F',$1,'2026-08-10',30,'2026-09-09',5000,800,5800,'posted',$2,$3,$2) RETURNING id`, [ID.cust, ID.dir, `${TAG} CAP-F`])).rows[0].id);
+  const p = Number((await query(`INSERT INTO sales_payments (customer_id, pay_date, account_id, amount, memo, created_by) VALUES ($1,'2026-09-05',$2,5800,$3,$4) RETURNING id`, [ID.cust, ID.acc, `${TAG} F`, ID.dir])).rows[0].id);
+  await query(`INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,5800)`, [p, ID.F]);
+  // 운영의 2026-10 처럼: 예전 코드로 확정·인사전달만 되고 문서는 없는 상태
+  await query(`DELETE FROM commission_batches WHERE settle_ym='2026-09'`);
+  await query(`INSERT INTO commission_batches (settle_ym, status, pay_date, total_amount, agent_count, confirmed_by, confirmed_at, handed_at) VALUES ('2026-09','handed','2026-10-15',200,1,$1,now(),now())`, [ID.dir]);
+  let bt = await ok('dir', 'GET', '/api/commission/batches');
+  let sep = bt.items.find((m) => m.settle_ym === '2026-09');
+  assert.equal(sep.by_agent.find((a) => a.agent_id === ID.rep).approval.phase, 'none', '문서 없음 표시');
+  assert.equal((await call('fin', 'POST', '/api/commission/batches/2026-09/approval-docs')).code, 403, '재무는 일괄 생성 불가');
+  assert.equal((await call('dir', 'POST', '/api/commission/batches/2026-05/approval-docs')).body.error, 'not_confirmed');
+  const r1 = await ok('dir', 'POST', '/api/commission/batches/2026-09/approval-docs');
+  assert.equal(r1.created.length, 1); assert.equal(r1.created[0].total, 200); assert.equal(r1.failed.length, 0);
+  bt = await ok('dir', 'GET', '/api/commission/batches');
+  sep = bt.items.find((m) => m.settle_ym === '2026-09');
+  const ap = sep.by_agent.find((a) => a.agent_id === ID.rep).approval;
+  assert.equal(ap.phase, 'draft'); assert.equal(ap.document_id, r1.created[0].document_id);
+  const r2 = await ok('dir', 'POST', '/api/commission/batches/2026-09/approval-docs');
+  assert.equal(r2.created.length, 0); assert.equal(r2.skipped.length, 1, '이미 있으면 건너뜀(중복 문서 없음)');
+  assert.equal(Number((await query(`SELECT COUNT(*) FROM commission_approval_docs WHERE settle_ym='2026-09'`)).rows[0].count), 1);
+});
+
+test('E8 자동 생성 임시저장 → 송금 지급하면 임시저장 문서 삭제(예정도 빠짐)', { skip: SKIP }, async () => {
+  // E7 의 2026-09 임시저장 문서를 송금으로 대체
+  const st = await ok('dir', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-09`);
+  assert.equal(st.phase, 'draft');
+  const docId = st.doc.id;
+  assert.equal((await finOf(docId)).length, 1, '임시저장 예정 1행');
+  const r = await ok('fin', 'POST', '/api/commission/payments', { agent_id: ID.rep, settle_ym: '2026-09', amount: 200, evidence: PNG });
+  assert.equal(r.replaced_draft_document_id, docId); assert.equal(r.settled, 200);
+  const d = (await query(`SELECT deleted_at FROM approval_documents WHERE id=$1`, [docId])).rows[0];
+  assert.ok(d.deleted_at, '임시저장 삭제됨');
+  assert.deepEqual(await finOf(docId), [], '예정 빠짐');
+  const st2 = await ok('dir', 'GET', `/api/commission/approval-docs?agent_id=${ID.rep}&settle_ym=2026-09`);
+  assert.equal(st2.phase, 'deleted');
+  const bt = await ok('dir', 'GET', '/api/commission/batches');
+  const sep = bt.items.find((m) => m.settle_ym === '2026-09');
+  assert.equal(sep.by_agent.find((a) => a.agent_id === ID.rep).unpaid, 0);
 });
 
 test('E9 정리', { skip: SKIP }, async () => { await cleanup(); });
