@@ -125,7 +125,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
   const { w, d } = boot();
   assert.ok(await until(() => w.VP && w.VP._q.rows.length === 20 && !w.VP._q.running, 15000), '대기열이 끝나지 않음');
-  assert.match(d.title, /vf17g/);
+  assert.match(d.title, /vf17s/);
   const q = w.VP._q;
   const versa = q.rows.find((r) => /versa/i.test(r.m.modelo));
   assert.equal(versa.m.rank, 1);
@@ -166,7 +166,10 @@ test('프로모션 만들기: 재고 기준 자동 · 손으로 넣고 빼기 ·
   const lp = (code) => d.querySelector('#vpParts input[data-code="' + code + '"]').closest('.vpCode').querySelector('.lp').textContent;
   assert.equal(lp('CQ0280L'), 'List$1,333.00'); assert.equal(lp('PL0477'), 'List$1,898.88'); assert.equal(lp('GV1043'), 'List—');
   const row = d.querySelector('#vpParts input[data-code="CQ0280L"]').closest('.vpCode');
-  assert.equal(row.querySelector('.cd').nextElementSibling.className, 'lp', 'List price 는 코드 바로 옆');
+  assert.equal(row.querySelector('.cdw').nextElementSibling.className, 'lp', 'List price 는 코드 바로 옆');
+  // vf17s · CTR 코드 아래 SYD 코드(작게)
+  assert.equal(row.querySelector('.cdw .cd').textContent, 'CQ0280L');
+  assert.equal(row.querySelector('.cdw .sy').textContent, 'SYD 1280L');
   assert.equal(d.querySelectorAll('#vpParts .man').length, 2);
   assert.match(d.getElementById('vpSum').textContent, /손으로 바꾼 것 2/);
   // 최소 재고 7 → CQ0280L/R(6) 자동 제외, 손으로 넣은 PL0477 유지

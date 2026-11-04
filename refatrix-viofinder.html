@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf17g</title>
+<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf17s</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
@@ -278,6 +278,9 @@
   .vpCode{display:flex;align-items:center;gap:7px;font-size:12px;padding:2px 0 2px 4px;cursor:pointer;color:#9a958a}
   .vpCode.on{color:var(--ink)}
   .vpCode .cd{font-family:ui-monospace,Consolas,monospace;font-weight:800;color:var(--ctr);min-width:84px}
+  /* 2026-11-04 vf17s · CTR 코드 아래 SYD 코드(작게) — SYD 로 고르는 경우를 위해 */
+  .vpCode .cdw{display:flex;flex-direction:column;line-height:1.15;min-width:84px}
+  .vpCode .cdw .sy{font-family:ui-monospace,Consolas,monospace;font-size:10px;font-weight:600;color:var(--syd);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .vpCode:not(.on) .cd{color:#c8a3a5}
   .vpCode .stk{font-size:10.5px;font-weight:800;color:var(--income);background:var(--income-bg);border-radius:5px;padding:1px 6px}
   .vpCode .stk0{font-size:10.5px;font-weight:800;color:var(--expense);background:var(--expense-bg);border-radius:5px;padding:1px 6px}
@@ -2187,7 +2190,8 @@ window.VP_BRAND={"red": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4QAAAD4C
         const inc=isInc(it); if(inc) incN++;
         const man=(it.ctr in ST.ovr);
         h+='<label class="vpCode'+(inc?' on':'')+'"><input type="checkbox" data-code="'+esc(it.ctr)+'"'+(inc?' checked':'')+'>'
-          +'<span class="cd">'+esc(it.ctr)+'</span>'
+          +'<span class="cdw"><span class="cd">'+esc(it.ctr)+'</span>'
+          +((it.syd&&it.syd.length)?'<span class="sy" title="SYD '+esc(it.syd.join(' / '))+'">SYD '+esc(it.syd.join(' / '))+'</span>':'')+'</span>'   // vf17s
           +(ST.d&&ST.d.price_included===false?'':'<span class="lp'+(it.lp!=null&&money(it.lp)?'':' no')+'" title="List price (CTR 정가 · IVA 별도)"><small>List</small>'+(it.lp!=null&&money(it.lp)?esc(lpMoney(it.lp)):'—')+'</span>')
           +'<input type="number" class="qty" data-qty="'+esc(it.ctr)+'" min="1" max="999" step="1" value="'+qtyOf(it.ctr)+'" title="이 프로모션(키트)에 넣을 수량"'+(inc?'':' disabled')+'><span class="qx">개</span>'
           +(function(){ const ps=posOf(it); if(!ps) return '<span class="pos none" title="장착 위치 자료 없음">—</span>';
