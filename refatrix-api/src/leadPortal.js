@@ -45,7 +45,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1104a';
+export const LP_BUILD = 'lp-1104b';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -782,7 +782,8 @@ export default async function leadPortalRoutes(app) {
     let text = m.text || '';
     // 다른 refaccionaria 가 보낸 메시지 — 앞의 「[가게 이름]」을 가린다(경쟁 가게 이름 노출 방지)
     if (who === 'otro') text = text.replace(/^\[[^\]]{1,120}\]\s*/, '[Otra refaccionaria] ');
-    const o = { dir: m.me ? 'out' : 'in', who, text, at: new Date(m.at).toISOString() };
+    const d0 = m.at ? new Date(m.at) : null;
+    const o = { dir: m.me ? 'out' : 'in', who, text, at: d0 && !isNaN(d0) ? d0.toISOString() : null };   // 1104 · 시각 없는 기록도 안전
     if (m.kind) o.kind = m.kind;   // 1028c · event(Meta 기록) · auto(자동 응답)
     if (isDirCode(k) && m.src === 'portal') o.shop = m.shop || null;
     return o;
@@ -811,6 +812,20 @@ export default async function leadPortalRoutes(app) {
     if (!(await chatReady())) return reply.code(503).send({ error: 'not_ready' });
     const t = await messengerThread(k, id);
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.platform === 'whatsapp') {
+      // 1104 · 2026-11-04 디렉터(방법 1): WhatsApp 대화는 **보기만** — 연락처를 본 뒤, 다른 곳이 선점하지 않았을 때.
+      //   보내기는 없음(refaccionaria 가 자기 전화로 연락 → 메모로 선점). ERP 번호 대화 · 앱 번호 파일 모두 meta_threads.messages.
+      const claim = (await activeClaims([Number(t.id)])).get(Number(t.id)) || null;
+      if (!isDirCode(k)) {
+        if (claim && Number(claim.customer_id) !== Number(k.customer_id)) return reply.code(409).send({ error: 'claimed_other', until: new Date(claim.expires_at).toISOString() });
+        if (!(await hasRevealed(k, id))) return reply.code(409).send({ error: 'need_contact' });
+      }
+      const conv = markMetaKinds((Array.isArray(t.messages) ? t.messages : []).map((m) => ({ ...m }))).slice(-300);
+      const mine = claim && !isDirCode(k) && Number(claim.customer_id) === Number(k.customer_id);
+      return { channel: 'whatsapp', readonly: true, messages: conv.map((m) => convOut(m, k)), window_until: null, open: false,
+        claim_until: mine ? new Date(claim.expires_at).toISOString() : null, claimed: !!mine,
+        summary: clip(t.summary, 300) || clip([t.vehicles, t.parts].filter(Boolean).join(' · '), 300), can_send: false };
+    }
     if (t.platform !== 'messenger') return reply.code(409).send({ error: 'chat_not_allowed' });
     const { info, claim } = await chatState(k, t);
     if (!isDirCode(k)) {

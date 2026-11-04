@@ -338,7 +338,15 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const hook = (body) => { const raw = JSON.stringify(body); return app.inject({ method: 'POST', url: '/api/wa/webhook', payload: raw,
     headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=' + crypto.createHmac('sha256', WSECRET).update(raw).digest('hex') } }); };
   const PAGE = '1338649012669713';
-  assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T1.id}/chat`)).json().error, 'chat_not_allowed', 'WhatsApp 문의는 대화 없음');
+  { // 1104 · WhatsApp 대화 = 보기만(연락처 본 뒤) — 보내기 없음
+    const rw = await call(C, 'GET', `/api/lead-portal/leads/${T1.id}/chat`); assert.equal(rw.statusCode, 200, rw.body);
+    const jw = rw.json(); assert.equal(jw.channel, 'whatsapp'); assert.equal(jw.readonly, true); assert.equal(jw.can_send, false);
+    assert.ok(jw.messages.some((m) => m.who === 'cliente' && m.text === 'secreto'), 'WhatsApp 대화 내용');
+    assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/chat`, { text: 'hola' })).json().error, 'chat_not_allowed', 'WhatsApp 보내기 없음');
+    const T1b = await mk(`wa:LP1b${T}`, 'Nuevo León', '528123450001', []);
+    assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T1b.id}/chat`)).json().error, 'need_contact', '연락처를 봐야 WhatsApp 대화');
+    await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [T1b.id]);
+  }
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/claim`)).json().error, 'chat_not_allowed', '예전 「Atender」 호환 — WhatsApp 은 대화 없음');
   r = await call(C, 'GET', '/api/lead-portal/leads'); let L4 = r.json().leads.find((l) => l.id === Number(T4.id)); let L5 = r.json().leads.find((l) => l.id === Number(T5.id));
   assert.deepEqual([L4.chat.open, L4.claim, L5.chat.open, r.json().me.claim_days], [true, null, false, 3]);
@@ -676,6 +684,10 @@ test('C4. 플랫폼 leads.html — 선점 규칙 · 모든 문의 「Registrar�
       { ...base, id: 6, platform: 'whatsapp', last_mx: '2026-10-26 11:20', vehicles: 'Jetta 2015', has_phone: false, name_masked: null, phone_masked: null, claim: { state: 'other', until: cu }, chat: null },
       { ...base, id: 7, platform: 'whatsapp', last_mx: '2026-10-26 07:52', vehicles: 'Versa', has_phone: true, phone_masked: '81 •••• ••42', claim: null, chat: null }] }]],
     [/POST \/lp-api\/leads\/5\/contact/, () => [200, { name: 'Mario', phone: null, platform: 'messenger' }]],
+    [/POST \/lp-api\/leads\/7\/contact/, () => [200, { name: 'Jorge', phone: '8112345642', platform: 'whatsapp' }]],
+    [/GET \/lp-api\/leads\/7\/chat/, () => [200, { channel: 'whatsapp', readonly: true, can_send: false, open: false, claimed: false, summary: 'Horquilla Versa',
+      messages: [{ dir: 'in', who: 'cliente', text: 'Necesito horquilla Versa', at: new Date(Date.now() - 3600e3).toISOString() },
+        { dir: 'out', who: 'refatrix', kind: 'auto', text: 'Hola Jorge, Qué gusto saludarte.', at: new Date(Date.now() - 3590e3).toISOString() }] }]],
     [/GET \/lp-api\/leads\/5\/chat/, () => [200, { messages: msgs, open: true, window_until: until, claim_until: null, claimed: false, summary: 'Amortiguadores delanteros', can_send: true }]],
     [/POST \/lp-api\/leads\/5\/chat/, (_, b) => [200, { ok: true, message: { dir: 'out', who: 'yo', text: '[El Puente] ' + b.text, at: new Date().toISOString() }, claim: { state: 'mine', until: cu, created: true } }]],
   ];
@@ -686,7 +698,7 @@ test('C4. 플랫폼 leads.html — 선점 규칙 · 모든 문의 「Registrar�
   assert.ok(d.querySelector('#ct6 .findbtn[disabled]') && !d.querySelector('[data-contact="6"]'), '다른 곳이 선점: 연락처 버튼 없음 · Registrar 비활성');
   assert.ok(d.getElementById('ct6').textContent.includes('Otra refaccionaria ya contactó'));
   assert.ok(!d.querySelector('[data-copen="5"]') && d.getElementById('cw5').textContent.includes('Ver contacto'), 'Messenger — 연락처 전엔 대화 안내만');
-  assert.ok(d.getElementById('cw7').textContent.includes('WhatsApp no se atienden'), 'WhatsApp — 대화 없음');
+  assert.ok(d.getElementById('cw7').textContent.includes('Ver contacto') && !d.querySelector('[data-copen="7"]'), 'WhatsApp — 연락처 전엔 안내만');
   assert.ok(!d.querySelector('[data-ctake]'), '「Atender」 버튼 없음');
   d.querySelector('[data-contact="5"]').click(); await tick(80);
   assert.ok(d.querySelector('[data-copen="5"]'), '연락처 본 뒤 「Ver conversación」');
@@ -710,6 +722,13 @@ test('C4. 플랫폼 leads.html — 선점 규칙 · 모든 문의 「Registrar�
   assert.ok(!d.getElementById('nt5').textContent.includes('reserva 3 días'), '메모 버튼도 선점 반영');
   d.querySelector('[data-cclose="5"]').click(); await tick(20);
   assert.ok(d.querySelector('[data-copen="5"]'));
+  // 1104 · WhatsApp 대화 = 보기만
+  d.querySelector('[data-contact="7"]').click(); await tick(80);
+  assert.ok(d.querySelector('[data-copen="7"]') && d.getElementById('cw7').textContent.includes('Solo lectura'), '연락처 본 뒤 「Ver conversación de WhatsApp」');
+  d.querySelector('[data-copen="7"]').click(); await tick(80);
+  const cw7 = d.getElementById('cw7').textContent;
+  assert.ok(cw7.includes('WhatsApp · solo lectura') && cw7.includes('Necesito horquilla Versa') && cw7.includes('Respuesta automática de Refatrix'), 'WhatsApp 대화 · 자동 응답 표시');
+  assert.ok(!d.getElementById('ct_7') && !d.querySelector('[data-csend="7"]'), 'WhatsApp 보내기 칸 없음');
   assert.ok(!/[가-힣]/.test(d.body.textContent));
   dom.window.close();
 });

@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1028c)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1104b)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -394,7 +394,13 @@
   // ── conversación por Messenger (0300) — solo Facebook; WhatsApp e Instagram no ──
   function hm(iso){ if(!iso) return ''; var d = new Date(iso); return new Intl.DateTimeFormat('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}).format(d); }
   function chatBlockHTML(l){
-    if(l.platform==='whatsapp') return '<div class="pn" style="margin-top:8px">Las solicitudes de WhatsApp no se atienden por chat aquí.</div>';
+    if(l.platform==='whatsapp'){   // 1104 · WhatsApp: solo lectura
+      if(claimOther(l)) return '';
+      if(S.chatOpen===l.id) return chatPanelHTML(l);
+      if(!isDir() && !l.revealed) return '<div class="pn" style="margin-top:8px">Toca «Ver contacto» para ver la conversación de WhatsApp.</div>';
+      return '<button type="button" class="chatbtn" data-copen="'+l.id+'">💬 Ver conversación de WhatsApp</button>'
+        + (!isDir() ? '<div class="pn">Solo lectura. Contáctalo desde tu teléfono y registra lo que hablaron para reservarlo.</div>' : '');
+    }
     if(l.platform!=='messenger' || !l.chat) return '';
     var c = l.chat, h = '';
     if(claimOther(l)) return '';
@@ -407,8 +413,10 @@
   }
   function chatPanelHTML(l){
     var ch = S.chat || {};
-    var top = '<div class="ctop"><span><b>💬 Messenger</b>'+(ch.claim_until && !isDir() ? ' · reservado para ti hasta '+esc(hm(ch.claim_until)) : '')+'</span><button type="button" class="btn sm ghost" data-cclose="'+l.id+'">Cerrar</button></div>';
+    var wa = ch.channel==='whatsapp';
+    var top = '<div class="ctop"><span><b>'+(wa ? '💬 WhatsApp · solo lectura' : '💬 Messenger')+'</b>'+(ch.claim_until && !isDir() ? ' · reservado para ti hasta '+esc(hm(ch.claim_until)) : '')+'</span><button type="button" class="btn sm ghost" data-cclose="'+l.id+'">Cerrar</button></div>';
     var comp = isDir() ? '<div class="pn" style="padding:6px 10px;background:#fff">Vista de dirección — solo lectura.</div>'
+      : wa ? '<div class="pn" style="padding:6px 10px;background:#fff">Aquí no se puede escribir por WhatsApp. Llama o escribe al cliente desde tu teléfono y luego registra lo que hablaron.</div>'
       : (ch.can_send ? '<div class="ccomp"><textarea rows="2" maxlength="1000" id="ct_'+l.id+'" placeholder="Escribe al cliente…"></textarea><button type="button" class="btn" data-csend="'+l.id+'">Enviar</button></div>'
                        + (!ch.claimed ? '<div class="pn" style="padding:0 10px 6px;background:#fff">Al enviar, el cliente queda reservado para ti '+esc((S.me&&S.me.claim_days)||3)+' días. Sale desde la página de Refatrix con el nombre de tu negocio.</div>' : '')
                      : '<div class="pn" style="padding:6px 10px;background:#fff">No puedes escribir: la ventana de 24 h está cerrada. Se abre cuando el cliente vuelva a escribir.</div>');
@@ -421,7 +429,7 @@
     if(!ms.length) h += '<div class="csys">'+(ch.loading ? 'Cargando…' : 'Sin mensajes registrados.')+'</div>';
     ms.forEach(function(m){
       if(m.kind==='event'){ h += '<div class="cevt"><span>⚙️ Meta: '+esc(m.text)+' · '+esc(hm(m.at))+'</span></div>'; return; }
-      if(m.kind==='auto'){ h += '<div class="bub b-auto"><div class="tag">🤖 Respuesta automática del anuncio</div>'+esc(m.text)+'<div class="t">Meta · '+esc(hm(m.at))+'</div></div>'; return; }
+      if(m.kind==='auto'){ var wa = ch.channel==='whatsapp'; h += '<div class="bub b-auto"><div class="tag">🤖 '+(wa ? 'Respuesta automática de Refatrix' : 'Respuesta automática del anuncio')+'</div>'+esc(m.text)+'<div class="t">'+(wa ? 'Refatrix' : 'Meta')+' · '+esc(hm(m.at))+'</div></div>'; return; }
       var cls = m.who==='cliente' ? 'b-in' : (m.who==='yo' ? 'b-yo' : (m.who==='refatrix' ? 'b-rf' : 'b-ot'));
       var lab = m.who==='refatrix' ? 'Refatrix · ' : (m.who==='otro' ? 'Otra refaccionaria · ' : (m.who==='portal' ? (m.shop||'Refaccionaria')+' · ' : ''));
       h += '<div class="bub '+cls+'">'+esc(m.text)+'<div class="t">'+esc(lab)+esc(hm(m.at))+'</div></div>';
