@@ -277,7 +277,10 @@ export default async function quoteRoutes(app) {
     // 2026-10-20 · L/R 짝맞춤 — L 또는 R 만 있으면 짝도 넣으라고 안내(재고 표시). 견적 진행은 막지 않는다.
     let pair_hints = [];
     try { pair_hints = await pairHints(query, out.filter((l) => l.matched && l.ctr_code)); } catch (_) { pair_hints = []; }
-    return { discountRate, ivaRate, lines: out, totals, pair_hints,
+    // 2026-11-04 kitc · 이 견적의 키트(키트 번호 순) — 화면·엑셀·인쇄의 KIT 머리줄(번호 · 차종 · 세트 · 구성품 코드)
+    let kits = [];
+    try { kits = await kitSummaries(out.filter((l) => l.matched && l.kit_no)); } catch (_) { kits = []; }
+    return { discountRate, ivaRate, lines: out, totals, pair_hints, kits,
       ...(kitExpanded ? { input_lines: inLines.map((l) => ({ code: l.code, product_id: l.product_id || null, qty: l.qty, ...(l.kit_no ? { kit_no: l.kit_no } : {}) })) } : {}) };
   });
 

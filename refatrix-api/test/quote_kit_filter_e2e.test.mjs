@@ -98,7 +98,7 @@ test('② 자동완성 키트 줄에 구성품 제품명(kit.items[].name · kit
   const r = await get('/api/quotes/search-code?q=K990&kit=only');
   const k = r.items.find((x) => x.ctr_code === 'K9901');
   assert.deepEqual(k.kit.items.map((x) => x.name), ['Rotula inferior', 'Terminal exterior']);
-  assert.equal(k.kit_desc, 'Rotula inferior ×2 · Terminal exterior');
+  assert.equal(k.kit_desc, 'ZKF-A1 Rotula inferior ×2 · ZKF-B1 Terminal exterior');   // kitc — CTR 코드 + 제품명
   const k2 = r.items.find((x) => x.ctr_code === 'K9902');
   assert.equal(k2.kit_desc, 'ZKF-C1', '이름 없는 부품은 CTR 코드');
 });
@@ -121,7 +121,7 @@ test('⑤ 가격표 Kit만 — 키트만 · kit_items 이름 · kit_desc 줄바�
   const k = r.items.find((x) => x.ctr_code === 'K9901');
   assert.equal(k.is_kit, true); assert.equal(k.kit_no, 'K9901');
   assert.deepEqual(k.kit_items, [{ ctr_code: 'ZKF-A1', qty: 2, name: 'Rotula inferior' }, { ctr_code: 'ZKF-B1', qty: 1, name: 'Terminal exterior' }]);
-  assert.equal(k.kit_desc, 'Rotula inferior ×2\nTerminal exterior');
+  assert.equal(k.kit_desc, 'ZKF-A1 Rotula inferior ×2\nZKF-B1 Terminal exterior');
 });
 
 test('⑥ 가격표 Kit 제외 — 키트 없음, KXA- 포함 · 전체는 둘 다', { skip }, async () => {
@@ -145,7 +145,7 @@ test('⑧ 순수 함수 — isKitCode · normKitMode · kitDesc', async () => {
   assert.equal(isKitCode('K0001'), true); assert.equal(isKitCode(' k12 '), true);
   assert.equal(isKitCode('KXA-100'), false); assert.equal(isKitCode('CBKH-26'), false); assert.equal(isKitCode(null), false);
   assert.equal(normKitMode('only'), 'only'); assert.equal(normKitMode('excl'), 'excl'); assert.equal(normKitMode('all'), null); assert.equal(normKitMode(undefined), null);
-  assert.equal(kitDesc([{ name: 'A', qty: 2 }, { ctr_code: 'X1', qty: 1 }]), 'A ×2\nX1');
+  assert.equal(kitDesc([{ name: 'A', qty: 2 }, { ctr_code: 'X1', qty: 1 }, { ctr_code: 'C9', name: 'Rotula', qty: 3 }]), 'A ×2\nX1\nC9 Rotula ×3');
 });
 
 test('⑨ kitq · 키트 수량 = 구성품 세트 수(min) — Rotula 5 · Terminal 7 → 5, 키트 제품 자체 재고 무시', { skip }, async () => {
@@ -182,4 +182,21 @@ test('⑫ kitQty 순수 함수 — 4종 각각 min · 예약 반영 · ETA 가�
   assert.equal(kitQty([{ product_id: 1, qty: 1 }, { product_id: 99, qty: 1 }], m).stock_qty, 0);
   assert.equal(kitQty([], m), null);
   assert.equal(kitQty([{ product_id: 2, qty: 2 }], m).stock_qty, 3);
+});
+
+test('⑬ kitc · 견적 미리보기 — 키트 줄 kit_no + kits 요약(번호 · 차종 · 세트 · 구성품 CTR 코드·제품명)', { skip }, async () => {
+  const a = await boot();
+  const r = (await a.inject({ method: 'POST', url: '/api/quotes/preview', payload: { discount_rate: 10, lines: [{ code: 'K9901', qty: 2 }, { code: 'ZKQ-ROT', qty: 1 }] } })).json();
+  const kl = r.lines.filter((l) => l.kit_no === 'K9901');
+  assert.deepEqual(kl.map((l) => [l.ctr_code, l.qty]), [['ZKF-A1', 4], ['ZKF-B1', 2]]);
+  assert.equal(r.lines.find((l) => l.ctr_code === 'ZKQ-ROT').kit_no, null);
+  assert.equal(r.kits.length, 1);
+  const k = r.kits[0];
+  assert.equal(k.kit_no, 'K9901'); assert.equal(k.title, 'Nissan Versa'); assert.equal(k.years, '2012-2019'); assert.equal(k.sets, 2);
+  assert.deepEqual(k.items.map((x) => [x.ctr_code, x.qty, x.name]), [['ZKF-A1', 2, 'Rotula inferior'], ['ZKF-B1', 1, 'Terminal exterior']]);
+  // 재계산(화면이 풀린 줄 + kit_no 를 다시 보냄)에도 유지
+  const r2 = (await a.inject({ method: 'POST', url: '/api/quotes/preview', payload: { discount_rate: 10, lines: r.input_lines } })).json();
+  assert.equal(r2.kits[0].kit_no, 'K9901'); assert.equal(r2.kits[0].sets, 2);
+  const none = (await a.inject({ method: 'POST', url: '/api/quotes/preview', payload: { discount_rate: 0, lines: [{ code: 'ZKQ-ROT', qty: 1 }] } })).json();
+  assert.deepEqual(none.kits, []);
 });

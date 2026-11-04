@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-1103kitq</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-1104kitc</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -78,6 +78,8 @@
   .kitseg label:last-child{border-right:none}
   .kitseg input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
   .kitseg label.on{background:var(--brand);color:#fff}
+  tr.kithead td{background:#E8F3EE;color:#1f5f4a;font-weight:700;font-size:12px;white-space:normal;text-align:left;border-top:2px solid #b9d8c9}
+  tr.kithead .kc{font-weight:500;color:#2d5a4b}
   .kitcomp{color:#1f5f4a;font-size:11.5px;margin-top:2px;line-height:1.35}
   .kitseg-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#6f6a60}
   .kitbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#E8F3EE;color:#1f5f4a;font-size:10.5px;font-weight:800;white-space:nowrap}
@@ -404,10 +406,16 @@
   function kitProd(it,sep){   // Producto 칸: 키트면 구성품 제품명(한 줄에 하나), 아니면 제품명
     if(!isKitItem(it)) return it.name||'';
     const its=it.kit_items||(it.kit&&it.kit.items)||[];
-    if(its.length) return its.map(function(x){ const nm=String(x.name||'').replace(/\s+/g,' ').trim()||String(x.ctr_code||''); const q=Number(x.qty)||1; return nm+(q>1?' ×'+q:''); }).join(sep||'\n');
+    if(its.length) return its.map(function(x){ const c=String(x.ctr_code||'').trim(), nm=String(x.name||'').replace(/\s+/g,' ').trim(), q=Number(x.qty)||1; return (c&&nm?c+' '+nm:(c||nm))+(q>1?' ×'+q:''); }).join(sep||'\n');   // kitc — CTR 코드 + 제품명
     if(it.kit_desc) return sep&&sep!=='\n'?String(it.kit_desc).split('\n').join(sep):it.kit_desc;
     return it.name||'';
   }
+  // ===== 2026-11-04 kitc · 견적 줄의 KIT 머리줄 — 키트 번호 · 차종 · 세트 · 구성품(CTR 코드 + 제품명) =====
+  function kitMap(d){ const m={}; ((d&&d.kits)||[]).forEach(function(k){ if(k&&k.kit_no) m[String(k.kit_no).toUpperCase()]=k; }); return m; }
+  function kitTitle(k){ return [k.title,k.years].filter(Boolean).join(' '); }
+  function kitCompList(k,sep){ return (k.items||[]).map(function(x){ const c=String(x.ctr_code||'').trim(), n=String(x.name||'').replace(/\s+/g,' ').trim(), q=Number(x.qty)||1; return (c&&n?c+' '+n:(c||n))+(q>1?' ×'+q:''); }).join(sep||' · '); }
+  function kitSetsTxt(k){ return k.sets!=null?(k.sets+(k.sets===1?' juego':' juegos')):''; }
+  function lineProdText(l){ const nm=l.product_name||''; return l.kit_no&&l.ctr_code?(l.ctr_code+' '+nm):nm; }   // 키트 구성 줄: 제품명 앞에 CTR 코드
   function kitFileTag(){ const m=kitMode(); return m==='only'?'kits_':(m==='excl'?'sin_kits_':''); }
   function kitNote(){ const m=kitMode(); return m==='only'?' · Kit만':(m==='excl'?' · Kit 제외':''); }
   function setKitMode(v,silent){
@@ -513,13 +521,19 @@
     const co=await getCompany();
     const L=lastPreview.lines.filter(l=>!l.ambiguous);
     const t=lastPreview.totals||{};
+    const KMp=kitMap(lastPreview), seenP={};   // kitc
     const rowsHtml=L.map(l=>{
       const flag={ok:'',low_stock:'재고부족',not_found:'제품없음'}[l.stock_flag||'ok'];
-      return '<tr>'
+      const kn=l.kit_no?String(l.kit_no).toUpperCase():'';
+      let head='';
+      if(kn&&!seenP[kn]){ seenP[kn]=1; const k=KMp[kn]||{kit_no:kn,items:[]};
+        head='<tr><td colspan="11" class="l" style="background:#E8F3EE;color:#1f5f4a;font-weight:700">KIT '+esc(kn)+(kitTitle(k)?' · '+esc(kitTitle(k)):'')+(kitSetsTxt(k)?' · '+esc(kitSetsTxt(k)):'')
+          +((k.items||[]).length?'<br><span style="font-weight:500">Componentes: '+esc(kitCompList(k,' · '))+'</span>':'')+'</td></tr>'; }
+      return head+'<tr>'
         +'<td>'+esc(l.ctr_code||'—')+'</td>'
         +'<td>'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
         +'<td>'+esc(l.oe_ref||'—')+'</td>'   // 0228 · D2 — 고객 견적서 Referencia OE(직접 OE 만)
-        +'<td class="l">'+esc(l.product_name||'')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
+        +'<td class="l">'+esc(l.kit_no?('['+String(l.kit_no).toUpperCase()+'] '+lineProdText(l)):(l.product_name||''))+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td class="r">'+fmtq(l.qty)+'</td>'
         +'<td class="r">'+(l.matched?fmt(l.list_price):'—')+'</td>'
         +'<td class="r">'+(l.matched?(l.discount_rate+'%'):'—')+'</td>'
@@ -1637,11 +1651,18 @@
     rows.push([]);
     rows.push(['CTR','SYD','Producto / Aplicación','Cantidad','List','Desc%','P.Unit','IVA','Total c/IVA','Stock','Estado','Referencia OE']);   // 0228 · D2 — 맨 끝 열(기존 열 위치 불변)
     const flagLbl={ok:'OK',low_stock:'Stock bajo',not_found:'No encontrado'};
+    const KMx=kitMap(lastPreview), seenX={}, kitHeadRows=[];   // kitc
     (lastPreview.lines||[]).forEach(l=>{
+      const kn=l.kit_no?String(l.kit_no).toUpperCase():'';
+      if(kn&&!seenX[kn]){
+        seenX[kn]=1; const k=KMx[kn]||{kit_no:kn,items:[]};
+        rows.push(['KIT '+kn,'',[kitTitle(k),kitSetsTxt(k)].filter(Boolean).join(' · ')+((k.items||[]).length?((kitTitle(k)||kitSetsTxt(k))?' · ':'')+'Componentes: '+kitCompList(k,' / '):'')]);
+        kitHeadRows.push(rows.length);
+      }
       if(l.ambiguous){ rows.push([l.input_code,'','(múltiples coincidencias)',l.qty]); return; }
       rows.push([
         l.ctr_code||'', (l.syd_codes||[]).join(' / '),
-        (l.product_name||'')+(l.app_text?' · '+l.app_text:''),
+        (kn?('['+kn+'] '+lineProdText(l)):(l.product_name||''))+(l.app_text?' · '+l.app_text:''),
         Number(l.qty)||0,
         l.matched?Number(l.list_price):'', l.matched?Number(l.discount_rate):'',
         l.matched?Number(l.final_price):'', l.matched?Number(l.line_iva):'',
@@ -1656,6 +1677,10 @@
     rows.push(['','','SKU', t.skuCount||0,'','','','Subtotal', Number(t.subtotal)||0]);
     const ws=XLSX.utils.aoa_to_sheet(rows);
     ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:9},{wch:11},{wch:7},{wch:11},{wch:11},{wch:13},{wch:9},{wch:12},{wch:28}];
+    // kitc · KIT 머리줄 강조(연녹색 · 굵게)
+    const sKit={fill:{patternType:'solid',fgColor:{rgb:'E8F3EE'}},font:{bold:true,color:{rgb:'1F5F4A'}}};
+    kitHeadRows.forEach(function(r){ ['A','B','C'].forEach(function(c){ const ref=c+r; if(!ws[ref]) ws[ref]={t:'s',v:''}; ws[ref].s=sKit; }); });
+    if(kitHeadRows.length){ ws['!merges']=(ws['!merges']||[]).concat(kitHeadRows.map(function(r){ return {s:{r:r-1,c:2},e:{r:r-1,c:11}}; })); }
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'Cotizacion');
     const safe=(custName||'cotizacion').replace(/[^\w가-힣]+/g,'_').slice(0,30);
@@ -1757,7 +1782,16 @@
       +'<col style="width:72px"><col style="width:72px"><col style="width:140px"><col style="width:44px"><col style="width:64px"><col style="width:40px"><col style="width:64px"><col style="width:78px"><col style="width:78px"><col style="width:48px"><col style="width:52px"><col style="width:26px">'
       +'</colgroup><thead><tr>'
       +'<th class="l">CTR</th><th class="l">SYD</th><th class="l">제품/적용</th><th>수량</th><th>List</th><th>할인%</th><th>단가</th><th>총계<br>(IVA 미포함)</th><th>총계<br>(IVA 포함)</th><th>가용</th><th>상태</th><th></th></tr></thead><tbody>';
+    const KM=kitMap(d), kitSeen={};
     L.forEach((l,i)=>{
+      // kitc · 키트의 첫 줄 앞에 KIT 머리줄(키트 번호 · 차종 · 세트 · 구성품 CTR 코드)
+      const kn=l.kit_no?String(l.kit_no).toUpperCase():'';
+      if(kn&&!kitSeen[kn]){
+        kitSeen[kn]=1; const k=KM[kn]||{kit_no:kn,items:[]};
+        html+='<tr class="kithead"><td colspan="12">🧰 KIT <b>'+esc(kn)+'</b>'+(kitTitle(k)?' · '+esc(kitTitle(k)):'')+(kitSetsTxt(k)?' · '+esc(kitSetsTxt(k)):'')
+          +((k.items||[]).length?'<br><span class="kc">구성품 · Componentes: '+esc(kitCompList(k,' · '))+'</span>':'')
+          +(k.consistent===false&&k.sets!=null?' <span class="flag low_stock" title="줄 수량이 키트 구성과 맞지 않습니다">구성 불일치</span>':'')+'</td></tr>';
+      }
       if(l.ambiguous){
         html+='<tr><td class="l" colspan="11" style="color:#9a6512;white-space:normal">"'+esc(l.input_code)+'" — 여러 제품과 매칭됩니다. 삭제 후 다시 입력해 후보에서 고르세요.</td><td><button class="delx" onclick="removeLine('+i+')">✕</button></td></tr>';
         return;
@@ -1769,7 +1803,7 @@
       html+='<tr>'
         +'<td class="l" title="'+esc(l.ctr_code||'')+'">'+esc(l.ctr_code||'—')+'</td>'
         +'<td class="l" title="'+esc((l.syd_codes||[]).join(' / '))+'">'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
-        +'<td class="prod'+(clickable?'':'" style="cursor:default;text-decoration:none')+'" '+(clickable?'onclick="showHistory('+l.product_id+',\''+esc(l.ctr_code)+'\')"':'')+' title="'+esc(l.product_name||'')+'">'+(l.kit_no?'<span class="kitbadge" title="VIO 프로모션 키트에서 풀린 줄">🧰 '+esc(l.kit_no)+'</span> ':'')+esc(l.product_name||'')+(l.app_text?'<span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
+        +'<td class="prod'+(clickable?'':'" style="cursor:default;text-decoration:none')+'" '+(clickable?'onclick="showHistory('+l.product_id+',\''+esc(l.ctr_code)+'\')"':'')+' title="'+esc(lineProdText(l))+'">'+(l.kit_no?'<span class="kitbadge" title="VIO 프로모션 키트에서 풀린 줄">🧰 '+esc(l.kit_no)+'</span> ':'')+esc(l.kit_no?lineProdText(l):(l.product_name||''))+(l.app_text?'<span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td>'+fmtq(l.qty)+'</td>'
         +'<td>'+(l.matched?(l.no_price?'<span class="flag not_found" title="정가 없음 · Sin precio de lista">정가 없음</span>':fmt(l.list_price)):'—')+'</td>'
         +'<td>'+(l.matched?(l.discount_rate+'%'):'—')+'</td>'

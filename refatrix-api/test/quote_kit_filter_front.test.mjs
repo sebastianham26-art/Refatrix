@@ -1,4 +1,4 @@
-// jsdom: 견적 작성 「🧰 Kit 보기 — 전체 / Kit만 / Kit 제외」 (qt-1103kitq · 2026-11-02)
+// jsdom: 견적 작성 「🧰 Kit 보기 — 전체 / Kit만 / Kit 제외」 (qt-1104kitc · 2026-11-02)
 //   · 자동완성: kit 파라미터 전달 · Kit만은 빈 칸에서도 목록 · 키트 줄에 구성품 제품명
 //   · 전체 가격표 / 전체 견적: kit 파라미터 · Producto 칸 = 구성품 제품명(줄바꿈 · 행 높이) · 파일명 태그
 //   · 구버전 서버(kit 무시)여도 화면에서 한 번 더 거른다 · 선택은 브라우저에 기억
@@ -61,7 +61,7 @@ test('① 선택 UI · 기본 전체 · 바꾸면 on 표시와 기억(localStora
   assert.ok(w.document.querySelector('input[value=excl]').parentNode.classList.contains('on'));
   assert.ok(!w.document.querySelector('input[value=all]').parentNode.classList.contains('on'));
   assert.equal(w.localStorage.getItem('rfx_quote_kitmode'), 'excl');
-  assert.match(w.document.title, /qt-1103kitq/);
+  assert.match(w.document.title, /qt-1104kitc/);
 });
 
 test('② 기억된 선택(only)으로 시작', async () => {
@@ -80,7 +80,7 @@ test('③ 자동완성 Kit만 — 빈 칸에서도 목록 · kit=only 전달 · 
   const items = [...box.querySelectorAll('.acitem')];
   assert.equal(items.length, 1, '일반 SKU(CB1)는 화면에서 걸러짐');
   assert.match(items[0].textContent, /K0009/);
-  assert.equal(items[0].querySelector('.kitcomp').textContent, 'ROTULA INFERIOR ×2 · TERMINAL EXTERIOR');
+  assert.equal(items[0].querySelector('.kitcomp').textContent, 'CB1 ROTULA INFERIOR ×2 · CE2 TERMINAL EXTERIOR');
   // 포커스만 해도(빈 칸) 다시 목록
   $('acBox').classList.add('hidden'); calls.length = 0;
   $('inCode').dispatchEvent(new w.Event('focus')); await tick();
@@ -115,7 +115,7 @@ test('⑥ 전체 가격표 Kit만 — kit=only · 키트만 · Producto 구성�
   assert.match(files[0].name, /^lista_precios_kits_Taller/);
   const ws = files[0].wb.Sheets.Lista;
   assert.deepEqual(rowsOf(ws, 'B', 6), ['K0009']);
-  assert.equal(ws.D6.v, 'ROTULA INFERIOR ×2\nTERMINAL EXTERIOR');
+  assert.equal(ws.D6.v, 'CB1 ROTULA INFERIOR ×2\nCE2 TERMINAL EXTERIOR');
   const raw = files[0].raw.Sheets.Lista;   // 스타일은 쓰기 전 시트로 확인(읽기 왕복은 alignment 를 버린다)
   assert.equal(raw.D6.s.alignment.wrapText, true);
   assert.equal(raw['!rows'][5].hpt, 30);   // 2줄
@@ -138,7 +138,7 @@ test('⑧ 전체 가격표 전체 — 키트는 구성품, 부품은 제품명 �
   await w.eval('downloadPriceList()'); await tick(120);
   const ws = files[0].wb.Sheets.Lista;
   assert.deepEqual(rowsOf(ws, 'B', 6), ['K0009', 'CB1', 'KXA-100']);
-  assert.equal(ws.D6.v, 'ROTULA INFERIOR ×2\nTERMINAL EXTERIOR');
+  assert.equal(ws.D6.v, 'CB1 ROTULA INFERIOR ×2\nCE2 TERMINAL EXTERIOR');
   assert.equal(ws.D7.v, 'ROTULA INFERIOR');
   assert.match(files[0].name, /^lista_precios_Taller/);
 });
@@ -156,7 +156,7 @@ test('⑨ 전체 견적(지역 선택) Kit만 — kit=only · Producto(E) 구성
   const wb = files[0].raw; const all = [];
   for (const sn of wb.SheetNames) { const ws = wb.Sheets[sn]; for (let r = 9; ws['C' + r]; r++) all.push([ws['C' + r].v, ws['E' + r].v, ws['E' + r].s && ws['E' + r].s.alignment && ws['E' + r].s.alignment.wrapText]); }
   assert.ok(all.length >= 1 && all.every((x) => x[0] === 'K0009'), JSON.stringify(all));
-  assert.equal(all[0][1], 'ROTULA INFERIOR ×2\nTERMINAL EXTERIOR');
+  assert.equal(all[0][1], 'CB1 ROTULA INFERIOR ×2\nCE2 TERMINAL EXTERIOR');
   assert.equal(all[0][2], true);
   assert.match($('lineMsg').textContent, /Kit만/);
 });

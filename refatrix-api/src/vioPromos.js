@@ -63,12 +63,15 @@ export function normKitMode(v) {
   if (s === 'excl' || s === 'exclude' || s === 'sin' || s === 'no' || s === 'none') return 'excl';
   return null;
 }
-/** 구성품 → Producto 칸 문자열. 한 줄에 하나(「제품명 ×수량」, 수량 1은 생략). 이름이 없으면 CTR 코드. */
+/** 구성품 → Producto 칸 문자열. 한 줄에 하나(「CTR코드 제품명 ×수량」, 수량 1은 생략).
+ *  2026-11-04 kitc · 제품명 앞에 CTR 코드(디렉터 지시). 이름이 없으면 CTR 코드만. */
 export function kitDesc(items, sep = '\n') {
   return (items || []).map((it) => {
-    const nm = String(it.name || '').replace(/\s+/g, ' ').trim() || String(it.ctr_code || '').trim();
+    const code = String(it.ctr_code || '').trim();
+    const nm = String(it.name || '').replace(/\s+/g, ' ').trim();
     const q = Number(it.qty) || 1;
-    return nm + (q > 1 ? ' ×' + q : '');
+    const base = code && nm ? code + ' ' + nm : (code || nm);
+    return base ? base + (q > 1 ? ' ×' + q : '') : '';
   }).filter(Boolean).join(sep);
 }
 
