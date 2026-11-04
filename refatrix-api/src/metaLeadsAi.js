@@ -53,10 +53,12 @@ export async function callClaude(prompt) {
 }
 
 // 우리 봇의 정해진 안내문은 AI 에 보낼 필요가 없다(토큰 절약 · 우리 번호 오인 방지)
+// 1104 · 「Hola Gómez👋 Qué gusto saludarte.」(쉼표 없이 이모지)도 같은 안내문 · 광고 환영 문구(descuento automático) 추가
 const BOT_RE = [
-  /^Hola [^,]+, Qué gusto saludarte\./i, /^Para empezar, platícanos/i, /^Claro, te comparto el link de nuestra pagina/i,
+  /^Hola\b[^\n]{0,60}?qu[eé] gusto saludarte/i, /^Para comprar con tu descuento autom[aá]tico/i, /^Para empezar, platícanos/i, /^Claro, te comparto el link de nuestra pagina/i,
   /^En un momento un agente se comunicará/i, /^Puedes enviarnos un WhatsApp directo/i, /^Sí! Hacemos envíos a todo México/i,
 ];
+export function isBotText(text) { const t = String(text || '').replace(/\s+/g, ' ').trim(); return !!t && BOT_RE.some((re) => re.test(t)); }
 export function conversationText(messages, max = 1800) {
   const lines = [];
   for (const m of messages || []) {

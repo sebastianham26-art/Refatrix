@@ -84,6 +84,18 @@ test('A4. Meta 기록 · 자동 응답 구분(1028c)', () => {
   // 손님 메시지 없이 페이지 메시지만 → 자동 응답으로 보지 않음 · 포털 첫 메시지도 자동 응답 아님
   assert.equal(L.markMetaKinds([{ at: at(0), me: true, text: 'Hola' }])[0].kind, undefined);
   assert.equal(L.markMetaKinds([{ at: at(0), me: false, text: 'Hola' }, { at: at(3), me: true, src: 'portal', text: '[X] hola' }])[1].kind, undefined);
+  { // 1104 · 예전 손님이 다시 광고로 — 「Gómez Cuarenta respondió un anuncio.」 + 안내문(쉼표 없이 이모지)
+    const d0 = (h, m, sec = 0) => new Date(Date.UTC(2026, 9, h, m, 0, sec)).toISOString();
+    const k = L.markMetaKinds([
+      { at: d0(23, 9), me: true, text: 'Hola, ¿en qué te ayudamos?' },
+      { at: d0(23, 10), me: false, text: 'Busco las orquillas originales del Versa' },
+      { at: new Date(Date.UTC(2026, 10, 3, 19, 34, 0)).toISOString(), me: true, text: 'Gómez Cuarenta respondió un anuncio.' },
+      { at: new Date(Date.UTC(2026, 10, 3, 19, 34, 1)).toISOString(), me: false, text: 'Gracias mal servicio' },
+      { at: new Date(Date.UTC(2026, 10, 3, 19, 34, 2)).toISOString(), me: true, text: 'Hola Gómez👋 Qué gusto saludarte.\nPara atenderte mejor, cuéntanos' },
+      { at: new Date(Date.UTC(2026, 10, 3, 21, 0, 0)).toISOString(), me: true, text: 'Claro, ¿qué año es tu Versa?' }]);
+    assert.deepEqual(k.map((m) => m.kind || '-'), ['auto', '-', 'event', '-', 'auto', '-']);
+    assert.ok(L.isMetaEvent('Juan respondió a tu anuncio.') && L.isMetaEvent('Ana replied to an ad'));
+  }
   // 늦은 직원 답장은 자동 응답 아님
   assert.equal(L.markMetaKinds([{ at: at(0), me: false, text: 'Hola' }, { at: new Date(Date.UTC(2026, 9, 28, 11)).toISOString(), me: true, text: 'Hola, buen día' }])[1].kind, undefined);
 });

@@ -39,12 +39,13 @@ import { recordQuoteDevDemand } from './quoteDevDemand.js';
 import { kickQuoteNotify } from './quoteWaNotify.js';
 import { resolveSeller, exclusivityReady } from './exclusivity.js';
 import { META_STATES } from './metaLeadExtract.js';
+import { isBotText } from './metaLeadsAi.js';   // 1104 · 우리 정해진 안내문 = 자동 응답
 import { oeReady, oeByProduct } from './oeCodes.js';
 import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1028c';
+export const LP_BUILD = 'lp-1104a';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -363,10 +364,11 @@ const META_EVENT_RE = [
   /informaci[oó]n\s+de\s+(los\s+)?clientes\s+potenciales/i,
   /\blead\s+(info|information|details|form)\b.{0,40}\b(detected|captured|submitted)\b/i,
   /\b(detected|captured)\b.{0,40}\blead\s+(info|information|details)\b/i,
-  /\b(respondi[oó]|replied)\s+(a|to)\s+(un|an|your|tu)\s+(anuncio|ad)\b/i,
+  /\b(respondi[oó]|replied)\s+(a\s+|to\s+)?(un|an|your|tu|el|the)\s+(anuncio|ad)\b/i,   // 1104 · 「X respondió un anuncio.」(a 없음)
   /\b(inici[oó]|started)\s+(una\s+|a\s+|this\s+)?(conversaci[oó]n|conversation)\b.{0,40}\b(anuncio|ad)\b/i,
   /^(t[uú]|you)\s+(asignaste|assigned)\b/i,
 ];
+const AD_EVENT_RE = /\b(respondi[oó]|replied|anuncio|ad)\b/i;
 export function isMetaEvent(text) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
   return !!t && t.length <= 220 && META_EVENT_RE.some((re) => re.test(t));
@@ -378,6 +380,13 @@ export function markMetaKinds(list) {
   const limit = firstIn ? new Date(firstIn.at).getTime() + 60000 : -Infinity;   // 손님 메시지가 없으면 자동 응답으로 보지 않는다
   const firstOut = ms.find((m) => m.me && m.kind !== 'event');
   if (firstOut && firstOut.src !== 'portal' && new Date(firstOut.at).getTime() <= limit) firstOut.kind = 'auto';
+  // 1104 · 같은 손님이 다시 광고로 들어온 경우 — 「X respondió un anuncio」 직후 60초 안의 페이지 메시지 · 우리 정해진 안내문 = 자동 응답
+  let adAt = -Infinity;
+  for (const m of ms) {
+    if (m.kind === 'event') { if (AD_EVENT_RE.test(String(m.text || ''))) adAt = new Date(m.at).getTime(); continue; }
+    if (!m.me || m.kind || m.src === 'portal') continue;
+    if (isBotText(m.text) || new Date(m.at).getTime() - adAt <= 60000) m.kind = 'auto';
+  }
   return ms;
 }
 
