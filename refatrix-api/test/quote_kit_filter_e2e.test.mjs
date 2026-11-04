@@ -20,7 +20,7 @@ const CONN = process.env.DATABASE_URL || '';
 const skip = !CONN && 'DATABASE_URL 없음';
 
 let app = null, pool = null;
-const ids = []; const promoIds = []; const poIds = [];
+const ids = []; const promoIds = []; const poIds = []; const quoteIds = [];
 
 async function boot() {
   if (app) return app;
@@ -78,6 +78,8 @@ const codesOf = (r) => (r.items || []).map((x) => x.ctr_code);
 after(async () => {
   if (app) await app.close();
   if (pool) {
+    await pool.query(`DELETE FROM quote_lines WHERE quote_id = ANY($1)`, [quoteIds]).catch(() => {});
+    await pool.query(`DELETE FROM quotes WHERE id = ANY($1)`, [quoteIds]).catch(() => {});
     await pool.query(`DELETE FROM purchase_order_lines WHERE po_id = ANY($1)`, [poIds]).catch(() => {});
     await pool.query(`DELETE FROM purchase_orders WHERE id = ANY($1)`, [poIds]).catch(() => {});
     await pool.query(`DELETE FROM vio_promos WHERE id = ANY($1)`, [promoIds]).catch(() => {});
@@ -199,4 +201,23 @@ test('⑬ kitc · 견적 미리보기 — 키트 줄 kit_no + kits 요약(번호
   assert.equal(r2.kits[0].kit_no, 'K9901'); assert.equal(r2.kits[0].sets, 2);
   const none = (await a.inject({ method: 'POST', url: '/api/quotes/preview', payload: { discount_rate: 0, lines: [{ code: 'ZKQ-ROT', qty: 1 }] } })).json();
   assert.deepEqual(none.kits, []);
+});
+
+test('⑭ qlkit · 견적 상세 GET /api/quotes/:id — kits(번호 · 차종 · 세트 · 구성품 CTR·이름) · 키트 없으면 []', { skip }, async () => {
+  await boot();
+  const pid = async (c) => (await pool.query(`SELECT id FROM products WHERE code=$1`, [c])).rows[0].id;
+  const qq = (await pool.query(`INSERT INTO quotes (guest_name, status) VALUES ('ZKF','draft') RETURNING id`)).rows[0].id; quoteIds.push(qq);
+  let n = 0;
+  for (const [code, qty, kit] of [['ZKF-A1', 4, 'K9901'], ['ZKF-B1', 2, 'K9901'], ['ZKQ-ROT', 1, null]]) await pool.query(
+    `INSERT INTO quote_lines (quote_id, line_no, product_id, ctr_code, input_code, product_name, qty, kit_no) VALUES ($1,$2,$3,$4,$4,$5,$6,$7)`,
+    [qq, ++n, await pid(code), code, 'n ' + code, qty, kit]);
+  const r = await get('/api/quotes/' + qq);
+  assert.equal(r.lines.length, 3);
+  assert.equal(r.kits.length, 1);
+  const k = r.kits[0];
+  assert.equal(k.kit_no, 'K9901'); assert.equal(k.title, 'Nissan Versa'); assert.equal(k.sets, 2);
+  assert.deepEqual(k.items.map((x) => [x.ctr_code, x.qty, x.name]), [['ZKF-A1', 2, 'Rotula inferior'], ['ZKF-B1', 1, 'Terminal exterior']]);
+  const q2 = (await pool.query(`INSERT INTO quotes (guest_name, status) VALUES ('ZKF2','draft') RETURNING id`)).rows[0].id; quoteIds.push(q2);
+  await pool.query(`INSERT INTO quote_lines (quote_id, line_no, product_id, ctr_code, input_code, qty) VALUES ($1,1,$2,'ZKQ-ROT','ZKQ-ROT',1)`, [q2, await pid('ZKQ-ROT')]);
+  assert.deepEqual((await get('/api/quotes/' + q2)).kits, []);
 });

@@ -930,6 +930,8 @@ export default async function quoteRoutes(app) {
         cls,
       },
       lines: outLines,
+      // 2026-11-04 qlkit · 키트(키트 번호 순) — 상세 표 · 견적서 PDF · 엑셀의 KIT 머리줄(번호 · 차종 · 세트 · 구성품 코드)
+      kits: await kitSummaries(outLines.filter((l) => l.kit_no && l.product_id)).catch(() => []),
     };
   });
 
