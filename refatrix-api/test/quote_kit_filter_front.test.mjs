@@ -1,4 +1,4 @@
-// jsdom: 견적 작성 「🧰 Kit 보기 — 전체 / Kit만 / Kit 제외」 (qt-1102kitf · 2026-11-02)
+// jsdom: 견적 작성 「🧰 Kit 보기 — 전체 / Kit만 / Kit 제외」 (qt-1103kitq · 2026-11-02)
 //   · 자동완성: kit 파라미터 전달 · Kit만은 빈 칸에서도 목록 · 키트 줄에 구성품 제품명
 //   · 전체 가격표 / 전체 견적: kit 파라미터 · Producto 칸 = 구성품 제품명(줄바꿈 · 행 높이) · 파일명 태그
 //   · 구버전 서버(kit 무시)여도 화면에서 한 번 더 거른다 · 선택은 브라우저에 기억
@@ -61,7 +61,7 @@ test('① 선택 UI · 기본 전체 · 바꾸면 on 표시와 기억(localStora
   assert.ok(w.document.querySelector('input[value=excl]').parentNode.classList.contains('on'));
   assert.ok(!w.document.querySelector('input[value=all]').parentNode.classList.contains('on'));
   assert.equal(w.localStorage.getItem('rfx_quote_kitmode'), 'excl');
-  assert.match(w.document.title, /qt-1102kitf/);
+  assert.match(w.document.title, /qt-1103kitq/);
 });
 
 test('② 기억된 선택(only)으로 시작', async () => {

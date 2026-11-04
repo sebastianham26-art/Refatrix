@@ -72,6 +72,37 @@ export function kitDesc(items, sep = '\n') {
   }).filter(Boolean).join(sep);
 }
 
+// =====================================================================
+// 2026-11-03 kitq · 키트 수량 4종 = 구성품으로 만들 수 있는 세트 수 (디렉터 지시)
+//   각 수량(Existencia · Disponible · En tránsito · En producción · 발주잔량)마다
+//   구성품별 floor(구성품 수량 ÷ 키트당 수량) 의 **최소값**. 예) Rotula 5 · Terminal 7 → 5.
+//   Rotula ×2 면 Rotula 5개 → 2세트. 구성품 수량을 모르면(행 없음) 0 으로 본다.
+// =====================================================================
+export const KIT_QTY_KEYS = ['stock_qty', 'avail_qty', 'incoming_qty', 'production_qty', 'backorder_qty'];
+/** items:[{product_id, qty}], qtyByPid: Map(pid → {stock_qty, avail_qty, ...}) → {stock_qty, avail_qty, incoming_qty, production_qty, backorder_qty, incoming_eta} | null */
+export function kitQty(items, qtyByPid) {
+  const list = (items || []).filter((it) => it && it.product_id);
+  if (!list.length) return null;
+  const out = {};
+  for (const k of KIT_QTY_KEYS) {
+    let n = Infinity;
+    for (const it of list) {
+      const per = Math.max(1, Number(it.qty) || 1);
+      const row = qtyByPid.get(Number(it.product_id)) || {};
+      n = Math.min(n, Math.floor(Math.max(0, Number(row[k]) || 0) / per));
+    }
+    out[k] = Number.isFinite(n) ? n : 0;
+  }
+  // 운송중 세트가 있으면 ETA = 구성품 중 가장 늦은 도착(세트가 다 모이는 날)
+  let eta = null;
+  if (out.incoming_qty > 0) for (const it of list) {
+    const e = (qtyByPid.get(Number(it.product_id)) || {}).incoming_eta;
+    if (e && (!eta || String(e) > String(eta))) eta = String(e);
+  }
+  out.incoming_eta = eta;
+  return out;
+}
+
 /** 키트 제품 id/코드 → 구성품. Map(product_id → {promo_no, items:[{product_id, ctr_code, qty}]}) */
 export async function kitsFor({ ids = [], codes = [] }, q = query) {
   const out = new Map();

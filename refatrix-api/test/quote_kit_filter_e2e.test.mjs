@@ -20,7 +20,7 @@ const CONN = process.env.DATABASE_URL || '';
 const skip = !CONN && 'DATABASE_URL 없음';
 
 let app = null, pool = null;
-const ids = []; const promoIds = [];
+const ids = []; const promoIds = []; const poIds = [];
 
 async function boot() {
   if (app) return app;
@@ -45,6 +45,18 @@ async function boot() {
   };
   await addKit('K9901', k1, 'Nissan Versa', [[a, 'ZKF-A1', 2], [b, 'ZKF-B1', 1]]);
   await addKit('K9902', k2, 'Chevrolet Aveo', [[c, 'ZKF-C1', 1]]);
+  // kitq · 디렉터 예시: Rotula 5 · Terminal 7 → 키트 5 / ×2 키트: Rotula 11 → 5세트
+  const r5 = await ins('ZKQ-ROT', 'Rotula'); const t7 = await ins('ZKQ-TER', 'Terminal');
+  await pool.query(`UPDATE products SET stock_qty=5 WHERE id=$1`, [r5]); await pool.query(`UPDATE products SET stock_qty=7 WHERE id=$1`, [t7]);
+  const r11 = await ins('ZKQ-R11', 'Rotula 11'); await pool.query(`UPDATE products SET stock_qty=11 WHERE id=$1`, [r11]);
+  const k3 = await ins('K9903', 'KIT T EJEMPLO', 200);   // 키트 제품 자체 stock_qty=10 — 무시되어야 함
+  const k4 = await ins('K9904', 'KIT T X2', 200);
+  await addKit('K9903', k3, 'Ejemplo', [[r5, 'ZKQ-ROT', 1], [t7, 'ZKQ-TER', 1]]);
+  await addKit('K9904', k4, 'Ejemplo x2', [[r11, 'ZKQ-R11', 2], [t7, 'ZKQ-TER', 1]]);
+  // 발주 미입고(생산중): Rotula 8 · Terminal 3 → 키트 3 (선적 등록 없음 → En tránsito 0 · En producción 3)
+  const po = await pool.query(`INSERT INTO purchase_orders (ref_no) VALUES ('ZKQ-PO') RETURNING id`); poIds.push(po.rows[0].id);
+  for (const [pid, q] of [[r5, 8], [t7, 3]]) await pool.query(
+    `INSERT INTO purchase_order_lines (po_id, input_code, product_id, qty, unit_cost_usd, amount_usd) VALUES ($1,'x',$2,$3,1,$3)`, [po.rows[0].id, pid, q]);
 
   mock.module(resolve(HERE, '../src/middleware/authGuard.js'), {
     namedExports: {
@@ -66,6 +78,8 @@ const codesOf = (r) => (r.items || []).map((x) => x.ctr_code);
 after(async () => {
   if (app) await app.close();
   if (pool) {
+    await pool.query(`DELETE FROM purchase_order_lines WHERE po_id = ANY($1)`, [poIds]).catch(() => {});
+    await pool.query(`DELETE FROM purchase_orders WHERE id = ANY($1)`, [poIds]).catch(() => {});
     await pool.query(`DELETE FROM vio_promos WHERE id = ANY($1)`, [promoIds]).catch(() => {});
     await pool.query(`DELETE FROM products WHERE id = ANY($1)`, [ids]).catch(() => {});
     await pool.end();
@@ -103,7 +117,7 @@ test('④ 자동완성 전체(파라미터 없음) — 종전 그대로 · 빈 �
 
 test('⑤ 가격표 Kit만 — 키트만 · kit_items 이름 · kit_desc 줄바꿈', { skip }, async () => {
   const r = await get('/api/quotes/price-list?kit=only');
-  assert.deepEqual(codesOf(r).sort(), ['K9901', 'K9902']);
+  assert.deepEqual(codesOf(r).sort(), ['K9901', 'K9902', 'K9903', 'K9904']);
   const k = r.items.find((x) => x.ctr_code === 'K9901');
   assert.equal(k.is_kit, true); assert.equal(k.kit_no, 'K9901');
   assert.deepEqual(k.kit_items, [{ ctr_code: 'ZKF-A1', qty: 2, name: 'Rotula inferior' }, { ctr_code: 'ZKF-B1', qty: 1, name: 'Terminal exterior' }]);
@@ -121,7 +135,7 @@ test('⑥ 가격표 Kit 제외 — 키트 없음, KXA- 포함 · 전체는 둘 �
 
 test('⑦ 전체 견적(all=1) · Top N 도 kit 필터 적용', { skip }, async () => {
   const a = codesOf(await get('/api/quotes/price-list?all=1&kit=only'));
-  assert.deepEqual(a.sort(), ['K9901', 'K9902']);
+  assert.deepEqual(a.sort(), ['K9901', 'K9902', 'K9903', 'K9904']);
   const t = codesOf(await get('/api/quotes/price-list?top=500&kit=excl'));
   assert.ok(!t.includes('K9901'));
 });
@@ -132,4 +146,40 @@ test('⑧ 순수 함수 — isKitCode · normKitMode · kitDesc', async () => {
   assert.equal(isKitCode('KXA-100'), false); assert.equal(isKitCode('CBKH-26'), false); assert.equal(isKitCode(null), false);
   assert.equal(normKitMode('only'), 'only'); assert.equal(normKitMode('excl'), 'excl'); assert.equal(normKitMode('all'), null); assert.equal(normKitMode(undefined), null);
   assert.equal(kitDesc([{ name: 'A', qty: 2 }, { ctr_code: 'X1', qty: 1 }]), 'A ×2\nX1');
+});
+
+test('⑨ kitq · 키트 수량 = 구성품 세트 수(min) — Rotula 5 · Terminal 7 → 5, 키트 제품 자체 재고 무시', { skip }, async () => {
+  for (const url of ['/api/quotes/price-list?kit=only', '/api/quotes/price-list', '/api/quotes/price-list?all=1']) {
+    const r = await get(url);
+    const k = r.items.find((x) => x.ctr_code === 'K9903');
+    assert.equal(k.stock_qty, 5, url); assert.equal(k.avail_qty, 5, url);
+    assert.equal(k.production_qty, 3, url + ' — 발주 Rotula 8 · Terminal 3 → 3');
+    assert.equal(k.backorder_qty, 3, url); assert.equal(k.incoming_qty, 0, url);
+    assert.equal(k.kit_qty_from_parts, true);
+  }
+});
+
+test('⑩ kitq · ×2 구성품은 2개당 1세트 — Rotula 11(×2) · Terminal 7 → 5 · 발주 없는 구성품 → 생산중 0', { skip }, async () => {
+  const k = (await get('/api/quotes/price-list?kit=only')).items.find((x) => x.ctr_code === 'K9904');
+  assert.equal(k.stock_qty, 5); assert.equal(k.production_qty, 0); assert.equal(k.backorder_qty, 0);
+  const k1 = (await get('/api/quotes/price-list?kit=only')).items.find((x) => x.ctr_code === 'K9901');
+  assert.equal(k1.stock_qty, 5, 'A 10(×2)=5 · B 10 → 5');
+});
+
+test('⑪ kitq · 일반 SKU 수량은 그대로', { skip }, async () => {
+  const p = (await get('/api/quotes/price-list?kit=excl')).items.find((x) => x.ctr_code === 'ZKQ-ROT');
+  assert.equal(p.stock_qty, 5); assert.equal(p.production_qty, 8); assert.equal(p.kit_qty_from_parts, undefined);
+});
+
+test('⑫ kitQty 순수 함수 — 4종 각각 min · 예약 반영 · ETA 가장 늦은 날 · 구성품 행 없으면 0', async () => {
+  const { kitQty } = await import('../src/vioPromos.js');
+  const m = new Map([
+    [1, { stock_qty: 5, avail_qty: 4, incoming_qty: 6, production_qty: 2, backorder_qty: 8, incoming_eta: '2026-12-01' }],
+    [2, { stock_qty: 7, avail_qty: 7, incoming_qty: 3, production_qty: 9, backorder_qty: 12, incoming_eta: '2026-12-15' }],
+  ]);
+  assert.deepEqual(kitQty([{ product_id: 1, qty: 1 }, { product_id: 2, qty: 1 }], m),
+    { stock_qty: 5, avail_qty: 4, incoming_qty: 3, production_qty: 2, backorder_qty: 8, incoming_eta: '2026-12-15' });
+  assert.equal(kitQty([{ product_id: 1, qty: 1 }, { product_id: 99, qty: 1 }], m).stock_qty, 0);
+  assert.equal(kitQty([], m), null);
+  assert.equal(kitQty([{ product_id: 2, qty: 2 }], m).stock_qty, 3);
 });

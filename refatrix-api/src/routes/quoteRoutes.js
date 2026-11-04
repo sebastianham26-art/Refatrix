@@ -6,7 +6,7 @@ import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, round2 } from '../quotes.js';
 // 조립기는 공용 모듈에 있다 — CRM 수신 창구(crmQuoteRoutes)가 **같은 것**을 쓴다.
-import { expandKitLines, kitsFor, kitColReady, kitSummaries, isKitCode, kitCodeSql, normKitMode, kitDesc } from '../vioPromos.js';   // 0293 · 0306 · kitf
+import { expandKitLines, kitsFor, kitColReady, kitSummaries, isKitCode, kitCodeSql, normKitMode, kitDesc, kitQty } from '../vioPromos.js';   // 0293 · 0306 · kitf
 import { resolveCode, assignReservations, topUpReservations, nextQuoteNo, buildLines,
          screenIssue, inactiveSinceMap,
          normalizePoNo, poColumnReady, poSelectFrag, quoteSearchClause, quoteLineCodeMatch, stampLineMeta } from '../quoteBuild.js';
@@ -1183,6 +1183,18 @@ export default async function quoteRoutes(app) {
     let kitMapPL = new Map();
     const kitIds = prods.filter((p) => isKitCode(p.code)).map((p) => p.id);
     if (kitIds.length) { try { kitMapPL = await kitsFor({ ids: kitIds }); } catch (_) { kitMapPL = new Map(); } }
+    // 2026-11-03 kitq · 키트 수량 4종 = 구성품 세트 수(min). 구성품이 이번 목록에 없을 수도 있어(Kit만) 따로 조회한다.
+    const compQty = new Map();
+    const compIds = [...new Set([...kitMapPL.values()].flatMap((k) => k.items.map((x) => Number(x.product_id))).filter(Boolean))];
+    if (compIds.length) {
+      const cr = (await query(
+        `SELECT p.id, p.stock_qty, COALESCE(bo.backorder_qty,0) AS backorder_qty, ${PL_QTY_COLS}
+           FROM products p
+           LEFT JOIN v_backorder bo ON bo.product_id = p.id
+           ${PL_QTY_JOINS}
+          WHERE p.id = ANY($1::bigint[])`, [compIds])).rows;
+      for (const r of cr) compQty.set(Number(r.id), { stock_qty: Number(r.stock_qty) || 0, backorder_qty: Number(r.backorder_qty) || 0, ...plQty(r) });
+    }
     const sydRows = ids.length ? (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows : [];
     const sydByPid = {};
     for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
@@ -1204,7 +1216,9 @@ export default async function quoteRoutes(app) {
       ...(isKitCode(p.code) ? (() => {   // kitf
         const k = kitMapPL.get(Number(p.id));
         const its = k ? k.items.map((x) => ({ ctr_code: x.ctr_code, qty: x.qty, name: x.name || '' })) : [];
-        return { is_kit: true, kit_no: k ? k.promo_no : null, kit_items: its, kit_desc: kitDesc(its) };
+        const kq = k ? kitQty(k.items, compQty) : null;   // kitq — 구성품 세트 수(없으면 키트 제품 자체 수량 유지)
+        return { is_kit: true, kit_no: k ? k.promo_no : null, kit_items: its, kit_desc: kitDesc(its),
+          ...(kq ? { ...kq, kit_qty_from_parts: true } : {}) };
       })() : {}),
     }));
     return { discountRate, top: topN || null, all: wantAll || undefined, count: items.length, items };
