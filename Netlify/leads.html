@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1104b)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1104d)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -128,6 +128,9 @@
   /* cart */
   .cart td{vertical-align:top}
   .cart input.q{width:62px;text-align:right;padding:6px}
+  .bpanel{position:sticky;top:0;z-index:5;background:#1c1b19;color:#fff;border-radius:12px;padding:10px 12px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  .bpanel .pn{color:#d8d3c8}
+  .bpanel.empty{display:block;background:#fff;color:var(--muted);border:1px dashed var(--line);box-shadow:none;position:static;font-size:12.5px}
   .tot{margin-top:10px;font-size:14px}.tot div{display:flex;justify-content:space-between;padding:3px 4px}
   .tot .g{font-weight:800;font-size:16px;border-top:1px solid var(--line);padding-top:7px}
   .x{background:none;border:none;color:var(--bad);font-size:16px;cursor:pointer;padding:2px 4px}
@@ -167,6 +170,7 @@
     <!-- b. lista -->
     <section id="sList" class="hidden">
       <div class="top"><div><b id="cust"></b><div class="hint" id="vig2"></div></div><button class="btn sm ghost" type="button" id="out">Salir</button></div>
+      <div class="bpanel hidden" id="bpanel"></div>
       <div class="filters">
         <select id="fState"><option value="">Todos los estados</option></select>
         <input id="fQ" type="search" placeholder="Buscar vehículo, pieza o código">
@@ -179,13 +183,14 @@
 
     <!-- d. pedido -->
     <section id="sCart" class="hidden">
-      <div class="top"><b style="font-size:16px">Tu pedido</b><button class="btn sm ghost" type="button" id="back">← Seguir viendo</button></div>
+      <div class="top"><b style="font-size:16px">Pedido del día</b><button class="btn sm ghost" type="button" id="back">← Seguir viendo</button></div>
       <div id="cartBody"></div>
       <div class="tot" id="cartTotal"></div>
       <label class="hint" for="note" style="display:block;margin-top:12px;font-weight:700">Nota para tu asesor (opcional)</label>
       <textarea id="note" rows="2" maxlength="300" placeholder="Ej. entregar mañana temprano"></textarea>
       <p class="hint" id="cartHint"></p>
-      <button class="btn" type="button" id="send" style="width:100%;padding:13px;font-size:15px">Enviar pedido</button>
+      <p class="hint">Revisa las piezas que juntaste hoy. Al confirmar, el pedido llega a Refatrix y tu asesor lo confirma.</p>
+      <button class="btn" type="button" id="send" style="width:100%;padding:13px;font-size:15px">✅ Confirmar y enviar a Refatrix</button>
       <div class="msg" id="cartMsg"></div>
     </section>
 
@@ -215,7 +220,7 @@
   var API = '/lp-api';                       // fijo — Netlify lo pasa al ERP (no se puede cambiar por URL)
   var TK = 'rfx_lp_token';
   var PAGE = 40;
-  var S = { me:null, leads:[], products:{}, states:[], shown:PAGE, cart:{}, over:{}, contacts:{}, key:null, ms:null, find:null, results:[], draft:[], fq:'', nOpen:null, chatOpen:null, chat:null, chatTimer:null };
+  var S = { me:null, leads:[], products:{}, states:[], shown:PAGE, basket:[], contacts:{}, key:null, ms:null, find:null, results:[], draft:[], fq:'', nOpen:null, chatOpen:null, chat:null, chatTimer:null };
   function isDir(){ return !!(S.me && S.me.role==='director'); }
   function $(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -279,14 +284,14 @@
   }
   $('enter').addEventListener('click', login);
   $('code').addEventListener('keydown', function(e){ if(e.key==='Enter') login(); });
-  function logout(){ stopChatPoll(); S.chatOpen = null; setTok(null); S.cart = {}; S.over = {}; S.contacts = {}; show('sLogin'); }
+  function logout(){ stopChatPoll(); S.chatOpen = null; setTok(null); S.basket = []; S.contacts = {}; show('sLogin'); }
   $('out').addEventListener('click', logout);
   $('expOut').addEventListener('click', logout);
 
   // ── b. lista ──
   function start(){
     return api('GET','/me').then(function(d){ setTok(d.token); S.me = d.me; return api('GET','/leads'); }).then(function(d){
-      S.me = d.me || S.me; S.leads = d.leads || []; S.products = d.products || {}; S.states = d.states || [];
+      S.me = d.me || S.me; S.leads = d.leads || []; S.products = d.products || {}; S.states = d.states || []; S.basket = d.basket || [];
       header(); fillStates(); S.shown = PAGE; render(); show('sList');
     }).catch(function(e){ if(!ended(e)){ show('sLogin'); $('loginMsg').textContent = errMsg(e); } });
   }
@@ -341,13 +346,15 @@
     if(p.incoming>0) s += '<div class="pn">🚢 '+esc(p.incoming)+(p.eta?' · '+esc(dm(p.eta)):'')+'</div>';
     return s;
   }
-  function lineKey(id, code){ return id + '|' + code; }
+  // 1104c · Pedido del día (guardado en Refatrix): una línea por código CTR · thread_ids = solicitudes de donde salió
+  function bLine(code){ return S.basket.filter(function(b){ return b.code===code; })[0] || null; }
+  function inBasket(id, code){ var b = bLine(code); return !!(b && (b.thread_ids||[]).indexOf(id) >= 0); }
   function partRow(l, part){
     var p = S.products[part.code]; if(!p) return '';
-    var k = lineKey(l.id, part.code), inCart = !!S.cart[k];
+    var inCart = inBasket(l.id, part.code);
     var need = p.shelf==null || Number(p.shelf)===0;
     var bought = p.bought12>0 ? 'Compraste '+esc(p.bought12)+(p.bought_last?' · '+esc(dm(p.bought_last)):'') : 'Sin compras 12 m';
-    var q = inCart ? S.cart[k].qty : part.qty;
+    var q = inCart ? bLine(part.code).qty : part.qty;
     return '<tr><td><div class="pc">'+esc(p.code)+'</div><div class="pn">'+esc(p.name)+'</div><div class="pn">'+bought+'</div></td>'
       + '<td class="num">'+stockCell(p)+'</td>'
       + '<td class="num">'+shelfCell(p.code)+'</td>'
@@ -404,8 +411,7 @@
     if(l.platform!=='messenger' || !l.chat) return '';
     var c = l.chat, h = '';
     if(claimOther(l)) return '';
-    h += c.open ? '<span class="cpill cp-ok">🟢 Puedes responder por Messenger hasta '+esc(hm(c.window_until))+'</span>'
-                : '<span class="cpill cp-off">⏸ La ventana de 24 h se cerró — podrás escribir cuando el cliente vuelva a escribir</span>';
+    h += '<span class="cpill cp-ok">🟢 Puedes escribir por Messenger'+(c.last_in ? ' · último mensaje del cliente '+esc(hm(c.last_in)) : '')+'</span>';
     if(S.chatOpen===l.id) return h + chatPanelHTML(l);
     if(!isDir() && !l.revealed) return h + '<div class="pn" style="margin-top:4px">Toca «Ver contacto» para ver la conversación completa y responder por Messenger.</div>';
     return h + '<br><button type="button" class="chatbtn" data-copen="'+l.id+'">💬 Ver conversación</button>'
@@ -419,7 +425,7 @@
       : wa ? '<div class="pn" style="padding:6px 10px;background:#fff">Aquí no se puede escribir por WhatsApp. Llama o escribe al cliente desde tu teléfono y luego registra lo que hablaron.</div>'
       : (ch.can_send ? '<div class="ccomp"><textarea rows="2" maxlength="1000" id="ct_'+l.id+'" placeholder="Escribe al cliente…"></textarea><button type="button" class="btn" data-csend="'+l.id+'">Enviar</button></div>'
                        + (!ch.claimed ? '<div class="pn" style="padding:0 10px 6px;background:#fff">Al enviar, el cliente queda reservado para ti '+esc((S.me&&S.me.claim_days)||3)+' días. Sale desde la página de Refatrix con el nombre de tu negocio.</div>' : '')
-                     : '<div class="pn" style="padding:6px 10px;background:#fff">No puedes escribir: la ventana de 24 h está cerrada. Se abre cuando el cliente vuelva a escribir.</div>');
+                     : '<div class="pn" style="padding:6px 10px;background:#fff">No puedes escribir: pasaron 7 días sin mensajes del cliente. Se abre cuando el cliente vuelva a escribir.</div>');
     return '<div class="chat">'+top+'<div class="cmsgs" id="cm'+l.id+'">'+msgsHTML(ch)+'</div>'+comp+'<div class="msg" id="cmsg'+l.id+'"></div></div>';
   }
   function msgsHTML(ch){
@@ -477,13 +483,13 @@
     }).catch(function(e){
       btn.disabled = false; if(ended(e)) return;
       var m = $('cmsg'+id);
-      var t = e.message==='window_closed' ? 'La ventana de 24 h se cerró. Podrás escribir cuando el cliente vuelva a escribir.'
+      var t = e.message==='meta_window' ? 'Facebook no entregó el mensaje porque pasó mucho tiempo desde el último mensaje del cliente. Se podrá cuando el cliente vuelva a escribir.'
         : e.message==='claimed_other' ? 'Otra refaccionaria ya reservó a este cliente.'
         : e.message==='need_contact' ? 'Primero toca «Ver contacto».'
         : e.message==='send_failed' ? 'Facebook no aceptó el mensaje. Intenta de nuevo en unos minutos.'
         : e.message==='too_long' ? 'Máximo 1000 caracteres.' : errMsg(e);
       if(m) m.textContent = t;
-      if(e.message==='window_closed' && S.chat){ S.chat.can_send = false; var l = leadOf(id); if(l && l.chat) l.chat.open = false; redrawChat(id); var m2 = $('cmsg'+id); if(m2) m2.textContent = t; }
+
     });
   }
 
@@ -657,12 +663,28 @@
     });
   }
   function toggle(id, code, qty){
-    var k = lineKey(id, code);
-    if(S.cart[k]) delete S.cart[k]; else S.cart[k] = { code:code, qty:qty, thread_id:id };
-    delete S.over[code]; S.key = null;
-    var lead = document.querySelector('[data-lead="'+id+'"]');
-    if(lead){ var l = S.leads.filter(function(x){ return x.id===id; })[0]; var tmp = document.createElement('div'); tmp.innerHTML = leadHTML(l); lead.parentNode.replaceChild(tmp.firstChild, lead); }
-    renderCartBar();
+    var b = bLine(code), th = b ? (b.thread_ids||[]).slice() : [], nq;
+    if(b && th.indexOf(id) >= 0){ th = th.filter(function(x){ return x!==id; }); nq = th.length ? Math.max(1, b.qty - qty) : 0; }
+    else { th.push(id); nq = (b ? b.qty : 0) + qty; }
+    putLine(code, nq, th, $('listMsg'));
+  }
+  function redrawLeadCard(id){
+    var lead = document.querySelector('[data-lead="'+id+'"]'); var l = leadOf(id);
+    if(lead && l){ var tmp = document.createElement('div'); tmp.innerHTML = leadHTML(l); lead.parentNode.replaceChild(tmp.firstChild, lead); }
+  }
+  // guarda una línea en Refatrix (qty 0 = quitar) y vuelve a dibujar las solicitudes de esa pieza
+  function putLine(code, qty, th, msgEl){
+    var before = bLine(code); var ids = (before ? before.thread_ids : []).concat(th||[]);
+    S.key = null; if(msgEl) msgEl.textContent = '';
+    return api('PUT','/basket',{ code:code, qty:qty, thread_ids:th||[] }).then(function(d){
+      S.basket = d.items || []; Object.keys(d.products||{}).forEach(function(k){ S.products[k] = d.products[k]; });
+      ids.filter(function(x, i){ return ids.indexOf(x)===i; }).forEach(redrawLeadCard);
+      renderCartBar(); if(!$('sCart').classList.contains('hidden')) renderCart();
+    }).catch(function(e){
+      if(ended(e)) return;
+      var m = e.message==='discontinued' ? 'Esta pieza ya no está a la venta.' : e.message==='too_many_lines' ? 'El pedido del día ya tiene el máximo de piezas. Envíalo y empieza otro.' : errMsg(e);
+      if(msgEl) msgEl.textContent = m;
+    });
   }
 
   // Mi stock
@@ -693,22 +715,26 @@
   $('msQty').addEventListener('keydown', function(e){ if(e.key==='Enter') saveShelf(); });
 
   // ── carrito ──
-  // one line per CTR code (sum of qty); a qty edited in the cart (S.over) wins; all lead ids are sent
-  function cartLines(){
-    var by = {};
-    Object.keys(S.cart).forEach(function(k){ var c = S.cart[k]; (by[c.code] = by[c.code] || { code:c.code, qty:0, threads:[] }); by[c.code].qty += c.qty; by[c.code].threads.push(c.thread_id); });
-    return Object.keys(by).map(function(c){ var l = by[c]; if(S.over[c]) l.qty = S.over[c]; return l; });
-  }
+  // líneas del Pedido del día (una por código CTR)
+  function cartLines(){ return (S.basket||[]).map(function(b){ return { code:b.code, qty:b.qty, threads:b.thread_ids||[], added:b.added_mx }; }); }
   function totals(){
     var sub = 0; cartLines().forEach(function(l){ var p = S.products[l.code]; if(p) sub += Math.round(p.price*l.qty*100)/100; });
     sub = Math.round(sub*100)/100; var iva = Math.round(sub*16)/100;
     return { sub:sub, iva:iva, total:Math.round((sub+iva)*100)/100 };
   }
+  // 1104c · arriba de la lista: «Pedido del día» — se junta durante el día y se envía una sola vez
   function renderCartBar(){
+    $('cartbar').classList.add('hidden');
+    var bp = $('bpanel'); if(!bp) return;
+    if(isDir()){ bp.classList.add('hidden'); return; }
+    bp.classList.remove('hidden');
     var lines = cartLines(), pcs = lines.reduce(function(a,l){ return a+l.qty; }, 0);
-    var on = !isDir() && lines.length>0 && !$('sList').classList.contains('hidden');
-    $('cartbar').classList.toggle('hidden', !on);
-    if(on) $('cartInfo').innerHTML = '🛒 <b>'+lines.length+(lines.length===1?' pieza':' piezas')+' · '+pcs+' pz</b> · '+esc(money2(totals().sub))+' + IVA';
+    if(!lines.length){ bp.className = 'bpanel empty'; bp.innerHTML = '🛒 <b>Pedido del día</b> · vacío — toca <b>+</b> en las piezas de cada solicitud para juntarlas aquí. Al final del día lo revisas y lo envías a Refatrix una sola vez.'; return; }
+    var since = lines.map(function(l){ return l.added||''; }).sort()[0] || '';
+    bp.className = 'bpanel';
+    bp.innerHTML = '<div><b>🛒 Pedido del día</b> · '+lines.length+(lines.length===1?' pieza':' piezas')+' · '+pcs+' pz · '+esc(money2(totals().sub))+' + IVA'
+      + (since ? '<div class="pn">Juntando desde '+esc(when(since))+' · aún no se envía a Refatrix</div>' : '')+'</div>'
+      + '<button class="btn gold" type="button" id="openCart2">Revisar y enviar</button>';
   }
   function renderCart(){
     var lines = cartLines();
@@ -726,19 +752,17 @@
     $('cartHint').textContent = 'Precio con tu descuento de cliente' + (S.me && S.me.discount ? ' (-'+S.me.discount+'%)' : '') + '. Las piezas se apartan mientras tu asesor confirma; si falta stock te indica la fecha de llegada.';
   }
   $('openCart').addEventListener('click', function(){ $('cartMsg').textContent=''; renderCart(); show('sCart'); });
+  $('bpanel').addEventListener('click', function(e){ if(e.target.closest('#openCart2')){ $('cartMsg').textContent=''; renderCart(); show('sCart'); } });
   $('back').addEventListener('click', function(){ show('sList'); render(); });
   $('cartBody').addEventListener('change', function(e){
     var i = e.target.closest('input.q'); if(!i) return;
     var code = i.getAttribute('data-code'); var v = Math.max(1, Math.min(9999, Math.round(Number(i.value)||1)));
-    S.over[code] = v; S.key = null;
-    renderCart();
+    var b = bLine(code); putLine(code, v, b ? b.thread_ids : [], $('cartMsg'));
   });
   $('cartBody').addEventListener('click', function(e){
     var b = e.target.closest('[data-rm]'); if(!b) return;
     var code = b.getAttribute('data-rm');
-    Object.keys(S.cart).forEach(function(k){ if(S.cart[k].code===code) delete S.cart[k]; });
-    delete S.over[code]; S.key = null;
-    renderCart();
+    putLine(code, 0, [], $('cartMsg'));
   });
   function newKey(){
     var a = new Uint8Array(12);
@@ -746,17 +770,16 @@
     return 'lp' + Array.prototype.map.call(a, function(x){ return ('0'+x.toString(16)).slice(-2); }).join('');
   }
   $('send').addEventListener('click', function(){
-    var items = cartLines().map(function(l){ return { code:l.code, qty:l.qty, thread_ids:l.threads }; }).filter(function(x){ return x.qty>0; });
-    if(!items.length) return;
+    if(!cartLines().length) return;
     S.key = S.key || newKey();
     $('send').disabled = true; $('cartMsg').textContent = '';
-    api('POST','/order',{ items:items, note:$('note').value.trim(), key:S.key }).then(function(d){
-      S.cart = {}; S.over = {}; S.key = null; $('note').value = '';
-      $('done').innerHTML = '<h1>Pedido recibido</h1><p class="hint">Folio <b>'+esc(d.quote_no)+'</b> · '+esc(money2(d.total))+' con IVA<br>'
+    api('POST','/basket/confirm',{ note:$('note').value.trim(), key:S.key }).then(function(d){
+      S.basket = []; S.key = null; $('note').value = '';
+      $('done').innerHTML = '<h1>Pedido enviado a Refatrix</h1><p class="hint">Folio <b>'+esc(d.quote_no)+'</b> · '+esc(money2(d.total))+' con IVA<br>'
         + (d.asesor ? 'Tu asesor <b>'+esc(d.asesor)+'</b> lo confirma y te avisa.' : 'Tu asesor Refatrix lo confirma y te avisa.')
         + '<br>Las piezas quedan apartadas mientras se confirma.</p>';
       show('sDone');
-      api('GET','/leads').then(function(x){ S.products = x.products || S.products; S.leads = x.leads || S.leads; }).catch(function(){});
+      api('GET','/leads').then(function(x){ S.products = x.products || S.products; S.leads = x.leads || S.leads; S.basket = x.basket || []; }).catch(function(){});
     }).catch(function(e){
       if(ended(e)) return;
       var m = e.message==='discontinued' ? 'Alguna pieza ya no está a la venta: ' + ((e.data&&e.data.codes)||[]).join(', ') + '. Quítala y envía de nuevo.'

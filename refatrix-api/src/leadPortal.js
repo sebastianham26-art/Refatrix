@@ -42,10 +42,10 @@ import { META_STATES } from './metaLeadExtract.js';
 import { isBotText } from './metaLeadsAi.js';   // 1104 · 우리 정해진 안내문 = 자동 응답
 import { oeReady, oeByProduct } from './oeCodes.js';
 import { normOe, oeToken } from './oeParse.js';
-import { chatReady, claimDays, sendMessenger, WINDOW_MS } from './metaPageMsgs.js';   // 0300 · Messenger 대화
+import { chatReady, claimDays, sendMessenger, humanAgentOn } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1104b';
+export const LP_BUILD = 'lp-1104d';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -582,12 +582,13 @@ export default async function leadPortalRoutes(app) {
     // 0300 · Facebook(Messenger) 대화 — 24시간 창 · 선점(내 것 / 다른 refaccionaria)
     const chat = await chatInfo(rows.filter((r) => r.platform === 'messenger'), k);
     for (const l of leads) l.chat = l.platform === 'messenger' ? (chat.get(l.id) || null) : null;
+    const basket = await basketRead(k);   // 1104c · 오늘의 주문 모음
     const products = await productInfo(Number(k.customer_id), Number(k.discount) || 0,
-      leads.flatMap((l) => l.parts.map((p) => p.code).concat(l.wants.map((w) => w.code))));
+      leads.flatMap((l) => l.parts.map((p) => p.code).concat(l.wants.map((w) => w.code))).concat(basket.map((i) => i.code)));
     // 카탈로그에서 사라진 코드는 부품표에서 뺀다(주문할 수 없는 줄을 보여 주지 않게)
     for (const l of leads) l.parts = l.parts.filter((p) => products[p.code]);
     const states = [...new Set(leads.map((l) => l.state).filter(Boolean))].sort((a, b) => META_STATES.indexOf(a) - META_STATES.indexOf(b));
-    return { me: { ...meOut(k), claim_days: await claimDays() }, leads, products, states };
+    return { me: { ...meOut(k), claim_days: await claimDays() }, leads, products, states, basket };
   });
 
   app.post('/api/lead-portal/leads/:id/contact', P, async (req, reply) => {
@@ -712,10 +713,11 @@ export default async function leadPortalRoutes(app) {
     const now = Date.now();
     for (const t of threads) {
       const id = Number(t.id); const last = li.get(id);
-      const until = last ? new Date(last.getTime() + WINDOW_MS) : null;
+      // 1104d · 2026-11-04 디렉터: Facebook 대화는 막지 않는다 — 시간으로 미리 막지 않고 언제나 보내 본다.
+      //   (광고로 시작한 대화는 Meta 가 2026-09-28 부터 최대 7일 보통 답장을 허용. 거절되면 Human Agent 태그로 한 번 더, 그래도 안 되면 안내)
       const c = cl.get(id);
       out.set(id, {
-        window_until: until ? until.toISOString() : null, open: !!(until && until.getTime() > now),
+        window_until: null, open: true, last_in: last ? last.toISOString() : null,
         claim: c ? (!isDirCode(k) && Number(c.customer_id) === Number(k.customer_id) ? 'mine' : 'other') : null,
         claim_until: c ? new Date(c.expires_at).toISOString() : null,
       });
@@ -837,7 +839,7 @@ export default async function leadPortalRoutes(app) {
     return { messages: conv.map((m) => convOut(m, k)), window_until: info.window_until || null, open: !!info.open,
       claim_until: mine ? new Date(claim.expires_at).toISOString() : null, claimed: !!mine,
       summary: clip(t.summary, 300) || clip([t.vehicles, t.parts].filter(Boolean).join(' · '), 300),
-      can_send: !isDirCode(k) && !!info.open };
+      can_send: !isDirCode(k) };
   });
 
   // 보내기 — 자기 선점 · 24시간 창 안 · 앞에 [가게 이름]
@@ -853,18 +855,23 @@ export default async function leadPortalRoutes(app) {
     if (!t) return reply.code(404).send({ error: 'not_found' });
     if (t.platform !== 'messenger' || !t.psid) return reply.code(409).send({ error: 'chat_not_allowed' });
     const { info } = await chatState(k, t);
-    if (!info.open) return reply.code(409).send({ error: 'window_closed', window_until: info.window_until || null });
     // 0305 · 포털에서 보낸 메시지 = 연락 기록 → 선점(이미 내 것이면 연장). 연락처를 먼저 봐야 한다.
     const cl = await takeClaim(k, id, 'messenger');
     if (!cl || cl.state === 'need_contact') return reply.code(409).send({ error: 'need_contact' });
     if (cl.state === 'other') return reply.code(409).send({ error: 'claimed_other', until: cl.until });
     const full = `[${k.customer_name}] ${text}`;
-    const s0 = await sendMessenger(t.psid, full);
+    // 1104d · 보통 답장(RESPONSE) 먼저 → Meta 가 「창 밖」이라 거절하면 Human Agent 태그로 한 번 더(권한이 있으면 7일까지)
+    const isWin = (e) => /outside of allowed window|human.?agent|#10\b|#551\b|2018278|2018065/i.test(String(e || ''));
+    let s0 = await sendMessenger(t.psid, full);
+    if (!s0.ok && isWin(s0.error) && humanAgentOn()) {
+      const s1 = await sendMessenger(t.psid, full, { tag: 'HUMAN_AGENT' });
+      if (s1.ok) s0 = s1; else req.log?.warn({ err: s1.error }, 'lead portal messenger human_agent retry failed');
+    }
     if (!s0.ok) {
       if (cl.created) await query(`DELETE FROM lead_portal_claims WHERE id=$1`, [cl.id]);   // 못 보냈으면 방금 만든 선점은 되돌린다
-      const closed = /outside of allowed window|#10\b|#551\b|2018278/.test(String(s0.error));
+      const closed = isWin(s0.error);
       req.log?.warn({ err: s0.error }, 'lead portal messenger send failed');
-      return reply.code(closed ? 409 : 502).send({ error: closed ? 'window_closed' : 'send_failed', detail: s0.error });
+      return reply.code(closed ? 409 : 502).send({ error: closed ? 'meta_window' : 'send_failed', detail: s0.error });
     }
     const m = (await query(
       `INSERT INTO meta_page_messages (psid, mid, direction, source, text, at, customer_id, code_id) VALUES ($1,$2,'out','portal',$3,now(),$4,$5)
@@ -914,7 +921,17 @@ export default async function leadPortalRoutes(app) {
     if (k.approval_status === 'pending') return reply.code(409).send({ error: 'customer_pending' });
     const key = String(b.key || '').trim();
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(key)) return reply.code(400).send({ error: 'bad_key' });
-    const raw = Array.isArray(b.items) ? b.items : [];
+    return placeOrder(req, reply, k, Array.isArray(b.items) ? b.items : [], b.note, key);
+  });
+  // 1104c · 주문 만들기(바로 주문 · 「주문 모음」 확정이 같이 쓴다)
+  async function placeOrder(req, reply, k, raw, noteIn, key) {
+    const b = { note: noteIn };
+    // 같은 키 = 이미 받은 주문(버튼 두 번 · 재전송)
+    const dupOf = async () => (await query(
+      `SELECT q.quote_no, q.total_mxn FROM quotes q WHERE q.lead_portal_key=$1 AND q.lead_portal_code_id IN (SELECT id FROM lead_portal_codes WHERE customer_id=$2)`,
+      [key, k.customer_id])).rows[0];
+    const d0 = await dupOf();
+    if (d0) return { ok: true, duplicate: true, quote_no: d0.quote_no, total: Number(d0.total_mxn) || 0, asesor: await asesorName(k) };
     if (!raw.length) return reply.code(400).send({ error: 'empty' });
     if (raw.length > MAX_ORDER_LINES) return reply.code(400).send({ error: 'too_many_lines' });
     const merged = new Map(); const threads = new Set();
@@ -926,12 +943,6 @@ export default async function leadPortalRoutes(app) {
       const th = idOf(it && it.thread_id); if (th) threads.add(th);
       if (it && Array.isArray(it.thread_ids)) for (const x of it.thread_ids.slice(0, 50)) { const v = idOf(x); if (v) threads.add(v); }
     }
-    // 같은 키 = 이미 받은 주문(버튼 두 번 · 재전송)
-    const dupOf = async () => (await query(
-      `SELECT q.quote_no, q.total_mxn FROM quotes q WHERE q.lead_portal_key=$1 AND q.lead_portal_code_id IN (SELECT id FROM lead_portal_codes WHERE customer_id=$2)`,
-      [key, k.customer_id])).rows[0];
-    const d0 = await dupOf();
-    if (d0) return { ok: true, duplicate: true, quote_no: d0.quote_no, total: Number(d0.total_mxn) || 0, asesor: await asesorName(k) };
     const prods = (await query(`SELECT id, code, is_active FROM products WHERE code = ANY($1::text[]) AND deleted_at IS NULL`, [[...merged.keys()]])).rows;
     const byCode = new Map(prods.map((p) => [p.code, p]));
     const unknown = [...merged.keys()].filter((c) => !byCode.has(c));
@@ -1005,6 +1016,72 @@ export default async function leadPortalRoutes(app) {
     await logEvent({ userId: null, action: 'create', target: `quote:${res.id}`, detail: { origin: 'lead_portal', code_id: Number(k.id), customer: k.customer_code, threads: threadIds } });
     kickQuoteNotify(res.id, app);
     return { ok: true, quote_no: res.quote_no, total: Number(res.total_mxn) || 0, asesor: await asesorName(k, assignee) };
+  }
+
+  // ── 1104c · 「Pedido del día」 — 하루 동안 모은 주문(서버 저장) → 확인 → 「주문 확정」 1번에 Refatrix 로 ──
+  let bReady = false, bProbe = 0;
+  async function basketReady() {
+    if (bReady) return true;
+    if (Date.now() - bProbe < 30000) return false;
+    bProbe = Date.now();
+    try { bReady = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='lead_portal_basket'`)).rows.length > 0; } catch (_) { bReady = false; }
+    return bReady;
+  }
+  async function basketRead(k) {
+    if (isDirCode(k) || !(await basketReady())) return [];
+    return (await query(
+      `SELECT b.code, b.qty, b.thread_ids, to_char(b.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS added_mx,
+              to_char(b.updated_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS updated_mx
+         FROM lead_portal_basket b WHERE b.customer_id=$1 ORDER BY b.created_at, b.id`, [k.customer_id])).rows
+      .map((r) => ({ code: r.code, qty: Number(r.qty), thread_ids: (r.thread_ids || []).map(Number), added_mx: r.added_mx, updated_mx: r.updated_mx }));
+  }
+  app.get('/api/lead-portal/basket', P, async (req) => {
+    const k = req.lp; const items = await basketRead(k);
+    return { items, products: await productInfo(Number(k.customer_id), Number(k.discount) || 0, items.map((i) => i.code)) };
+  });
+  // 한 줄 저장(수량 · 고른 문의). qty 0 = 줄 삭제
+  app.put('/api/lead-portal/basket', P, async (req, reply) => {
+    const k = req.lp; const b = req.body || {};
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
+    if (!(await basketReady())) return reply.code(503).send({ error: 'not_ready' });
+    const code = String(b.code || '').trim();
+    const qty = Number(b.qty);
+    if (!code || !Number.isInteger(qty) || qty < 0 || qty > MAX_QTY) return reply.code(400).send({ error: 'bad_line' });
+    if (!qty) {
+      await query(`DELETE FROM lead_portal_basket WHERE customer_id=$1 AND code=$2`, [k.customer_id, code]);
+    } else {
+      const p = (await query(`SELECT code, is_active FROM products WHERE code=$1 AND deleted_at IS NULL`, [code])).rows[0];
+      if (!p) return reply.code(400).send({ error: 'unknown_code', codes: [code] });
+      if (p.is_active === false) return reply.code(409).send({ error: 'discontinued', codes: [code] });
+      const n = (await query(`SELECT count(*)::int AS n FROM lead_portal_basket WHERE customer_id=$1 AND code<>$2`, [k.customer_id, code])).rows[0].n;
+      if (n >= MAX_ORDER_LINES) return reply.code(400).send({ error: 'too_many_lines' });
+      let th = [...new Set((Array.isArray(b.thread_ids) ? b.thread_ids : []).slice(0, 50).map(idOf).filter(Boolean))];
+      if (th.length) th = (await query(`SELECT id FROM meta_threads WHERE id = ANY($1::bigint[]) AND status <> 'descartado'`, [th])).rows.map((r) => Number(r.id));
+      await query(
+        `INSERT INTO lead_portal_basket (customer_id, code, qty, thread_ids, code_id) VALUES ($1,$2,$3,$4::bigint[],$5)
+         ON CONFLICT (customer_id, code) DO UPDATE SET qty=EXCLUDED.qty, thread_ids=EXCLUDED.thread_ids, code_id=EXCLUDED.code_id, updated_at=now()`,
+        [k.customer_id, code, qty, th, k.id]);
+    }
+    const items = await basketRead(k);
+    return { ok: true, items, products: await productInfo(Number(k.customer_id), Number(k.discount) || 0, items.map((i) => i.code)) };
+  });
+  // 「Confirmar y enviar a Refatrix」 — 모은 줄 전부 → FB 견적 초안 1건 → 모음 비우기
+  app.post('/api/lead-portal/basket/confirm', P, async (req, reply) => {
+    const k = req.lp; const b = req.body || {};
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
+    if (k.approval_status === 'pending') return reply.code(409).send({ error: 'customer_pending' });
+    if (!(await basketReady())) return reply.code(503).send({ error: 'not_ready' });
+    const key = String(b.key || '').trim();
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(key)) return reply.code(400).send({ error: 'bad_key' });
+    const t0 = (await query(`SELECT clock_timestamp() AS t`)).rows[0].t;
+    const items = await basketRead(k);
+    const r = await placeOrder(req, reply, k, items.map((i) => ({ code: i.code, qty: i.qty, thread_ids: i.thread_ids })), b.note, key);
+    if (r && r.ok) {
+      // 보낸 줄만 지운다(확정하는 사이 다른 기기에서 고친 줄은 남김)
+      await query(`DELETE FROM lead_portal_basket WHERE customer_id=$1 AND code = ANY($2::text[]) AND updated_at <= $3`, [k.customer_id, items.map((i) => i.code), t0]);
+      await logEvent({ userId: null, action: 'update', target: `customer:${k.customer_id}`, detail: { op: 'lead_portal_basket_confirm', quote_no: r.quote_no, lines: items.length, code_id: Number(k.id) } });
+    }
+    return r;
   });
   async function asesorName(k, uid) {
     const id = uid || (k.owner_id ? Number(k.owner_id) : null);

@@ -16,6 +16,11 @@ import { resolvePage, metaPageId } from './metaLeads.js';
 
 const apiVer = () => process.env.META_GRAPH_VERSION || process.env.WHATSAPP_API_VERSION || 'v20.0';
 export const WINDOW_MS = 24 * 3600 * 1000;
+// 1104d · 2026-11-04 디렉터: Facebook 대화는 막지 않는다. ERP 는 시간으로 미리 막지 않고 보내 본다.
+//   Meta: 광고(Click to Messenger)로 시작한 대화는 2026-09-28 부터 보통 답장 창이 최대 7일(권한 불필요).
+//   Meta 가 창 밖이라 거절하면 HUMAN_AGENT 태그로 한 번 더(이 앱에 Human Agent 권한이 있을 때만 통과 · 없으면 그대로 거절).
+export const HUMAN_AGENT_MS = 7 * 24 * 3600 * 1000;
+export const humanAgentOn = () => process.env.META_HUMAN_AGENT !== '0';
 
 let ready = false; let probe = 0;
 export async function chatReady(q = query) {
@@ -82,11 +87,13 @@ export async function savePageMessages(body, q = query) {
 // ── 보내기 ──
 let postOverride = null;               // 시험용 — (url, body) => {ok,status,json}
 export function setMessengerPost(fn) { postOverride = fn || null; }
-export async function sendMessenger(psid, text) {
+export async function sendMessenger(psid, text, { tag = null } = {}) {
   const page = await resolvePage();
   if (!page || page.error) return { ok: false, error: (page && page.error) || 'no_token' };
   const url = `https://graph.facebook.com/${apiVer()}/${encodeURIComponent(metaPageId())}/messages?access_token=${encodeURIComponent(page.token)}`;
-  const body = { recipient: { id: String(psid) }, messaging_type: 'RESPONSE', message: { text: String(text) } };
+  const body = tag
+    ? { recipient: { id: String(psid) }, messaging_type: 'MESSAGE_TAG', tag: String(tag), message: { text: String(text) } }   // 1104c · 24시간 뒤 · 7일 안
+    : { recipient: { id: String(psid) }, messaging_type: 'RESPONSE', message: { text: String(text) } };
   let r;
   if (postOverride) r = await postOverride(url, body);
   else {
