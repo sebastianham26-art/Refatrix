@@ -25,7 +25,7 @@ after(async () => {
 });
 
 test('S0 정적 — 빌드 토큰 · 새 코드에 인라인 onclick 없음 · 수령증/문서생성 문구', () => {
-  assert.match(COM, /<title>[^<]*b1102inv4<\/title>/);
+  assert.match(COM, /<title>[^<]*b1106rcp<\/title>/);
   assert.match(APR, /<title>[^<]*b20261103fc<\/title>/);
   const start = COM.indexOf('// ══ 0287'); const end = COM.indexOf('// ── 지급 전표 내역 + 증빙 열람 ──');
   assert.ok(start > 0 && end > start);
@@ -123,10 +123,11 @@ test('S1 화면 흐름 — 확정 월 → 전자문서 생성 → (상신·승�
     assert.match(c.$('#apBox').textContent, /결재선·참조를 지정하고 상신/);
     assert.match(c.$('#apBox').textContent, /현금흐름: 미래자금계획 지출 예정 2026-06-15/, '생성 즉시 미래자금계획 예정 표시');
     assert.ok(c.$('#payForm').classList.contains('locked'), '문서 진행 중엔 송금 지급 폼 잠김');
-    // 미리보기(초안) 수령증
-    click(c, c.$('[data-ap="preview"]'));
+    // 임시저장 단계에서도 정식 수령증 인쇄 (워터마크 없음)
+    assert.ok(!c.$('[data-ap="preview"]'), '미리보기 버튼 대신 인쇄 버튼');
+    click(c, c.$('[data-ap="print"]'));
     await until(() => c.opened.length && c.opened[0].document.html.includes('RECIBO'));
-    assert.ok(c.opened[0].document.html.includes('BORRADOR'));
+    assert.ok(!c.opened[0].document.html.includes('BORRADOR'), '임시저장 인쇄본에 BORRADOR 없음');
 
     // ── 전자결재 화면(디렉터): 임시저장 상세에 커미션 지급 내역 표
     const a = openPage(APR, 'refatrix-approval.html', 'dir', 'director', `#doc=${docId}`);

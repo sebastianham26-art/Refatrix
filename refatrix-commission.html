@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1102inv6</title>
+<title>Refatrix ERP · 커미션 · build b1106rcp</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -163,7 +163,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1102inv6</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1106rcp</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h" data-es="Entrar">로그인</div>
@@ -1452,9 +1452,9 @@
       box.innerHTML=h; box.classList.remove('hidden'); apLockLegacy(false); return;
     }
     if(ph==='draft'){
-      h+='<div class="hint">임시저장 문서가 만들어졌습니다 — 전자결재에서 <b>결재선·참조를 지정하고 상신</b>하세요. 결재가 끝나면 이곳에서 수령증을 인쇄해 현금으로 지급합니다.</div>'+apFinHtml()+'<div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
+      h+='<div class="hint">임시저장 문서가 만들어졌습니다 — 전자결재에서 <b>결재선·참조를 지정하고 상신</b>하세요. 수령증은 지금 바로 인쇄할 수 있습니다. 지급 확정(스캔 업로드)은 결재 승인 후에 합니다.</div>'+apFinHtml()+'<div class="aprow"><button class="btn" data-ap="print">🖨 수령증 인쇄 (Recibo)</button> '+openBtn+'</div>';
     } else if(ph==='progress'){
-      h+='<div class="hint">결재 진행 중'+apHandler()+'. 승인완료 전에는 지급할 수 없습니다.</div>'+apFinHtml()+'<div class="aprow">'+openBtn+' <button class="btn ghost sm" data-ap="preview">🖨 수령증 미리보기</button></div>';
+      h+='<div class="hint">결재 진행 중'+apHandler()+'. 수령증은 인쇄할 수 있고, 지급 확정(스캔 업로드)은 승인완료 후에 합니다.</div>'+apFinHtml()+'<div class="aprow"><button class="btn" data-ap="print">🖨 수령증 인쇄 (Recibo)</button> '+openBtn+'</div>';
     } else if(ph==='approved'){
       const s=link&&link.snapshot||{};
       h+='<div class="msg ok" style="display:block;margin:0 0 8px">결재 승인완료 — <b>'+fmtm(link&&link.total)+'</b> 현금 지급 가능. ① 수령증 인쇄 → ② 현금 지급 · '+esc(s.agent_name||'수령인')+' 서명 → ③ 서명본 스캔 업로드.</div>'
