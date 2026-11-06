@@ -31,7 +31,7 @@ import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
 import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
 // 0297 · 고객 포털(접속코드 · 연락처 공개 · 매장 재고 · 포털 주문) — 같은 플러그인에서 등록(server.js 변경 없음)
-import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady, portalInfoFor, portalHideInfo, resetPortalHideCache, isInternalPhone } from '../leadPortal.js';
+import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady, portalInfoFor, portalHideInfo, resetPortalHideCache, isInternalPhone, mktExpr } from '../leadPortal.js';
 import { chatReady, sendMessengerSmart, commentRefOf } from '../metaPageMsgs.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
@@ -132,7 +132,8 @@ export default async function metaLeadsRoutes(app) {
     const limit = Math.min(Number(req.query.limit) || 5000, 10000);
     const hi = await portalHideInfo();   // 1105e · 플랫폼 숨김 · 사내 번호
     if (req.query.hidden === '1') conds.push(hi.col ? 't.portal_hidden' : 'false');
-    const rows = (await query(`SELECT ${COLS}, ${hi.col ? 't.portal_hidden' : 'false AS portal_hidden'}, left(t.customer_text, 600) AS customer_text, ${LAST_REPLY} FROM meta_threads t WHERE ${conds.join(' AND ')}
+    if (req.query.mkt === '1') conds.push(mktExpr(hi));   // 1106d · WhatsApp 마케팅 회신만
+    const rows = (await query(`SELECT ${COLS}, ${hi.col ? 't.portal_hidden' : 'false AS portal_hidden'}, ${mktExpr(hi)} AS mkt, ${hi.show ? 't.portal_show' : 'false AS portal_show'}, left(t.customer_text, 600) AS customer_text, ${LAST_REPLY} FROM meta_threads t WHERE ${conds.join(' AND ')}
                                ORDER BY t.last_at DESC NULLS LAST LIMIT ${limit}`, args)).rows;
     // 0272 · 나온 부품번호의 현재고(요약 · 엑셀의 「재고」)
     const codes = [...new Set(rows.flatMap((r) => (Array.isArray(r.items) ? r.items : []).map((i) => i && i.code).filter(Boolean)))];
@@ -156,10 +157,14 @@ export default async function metaLeadsRoutes(app) {
     const portal = await portalInfoFor(id);   // 1105c · 포털 입력(고객관리)
     // 1105e · 플랫폼 숨김 · 사내 번호
     const hi = await portalHideInfo(); let hidden = null;
-    if (hi.col) hidden = (await query(`SELECT t.portal_hidden, to_char(t.portal_hidden_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at, u.name AS by FROM meta_threads t LEFT JOIN users u ON u.id = t.portal_hidden_by WHERE t.id=$1`, [id])).rows[0];
+    if (hi.col) hidden = (await query(`SELECT t.portal_hidden, ${hi.show ? 't.portal_show' : 'false AS portal_show'}, ${mktExpr(hi)} AS mkt,
+        to_char(t.portal_hidden_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at, u.name AS by FROM meta_threads t LEFT JOIN users u ON u.id = t.portal_hidden_by WHERE t.id=$1`, [id])).rows[0];
     const internal = r.platform === 'whatsapp' && (isInternalPhone(psid0, hi.phones) || isInternalPhone(r.phone, hi.phones));
-    return { ...r, id: Number(r.id), portal, portal_hidden: !!(hidden && hidden.portal_hidden), portal_hidden_at: hidden && hidden.portal_hidden ? hidden.at : null,
-      portal_hidden_by: hidden && hidden.portal_hidden ? hidden.by : null, internal, hide_ready: hi.col };
+    // 1106d · 📣 WhatsApp 마케팅 회신 — 기본 숨김 · 「플랫폼에 보이기」를 누른 것만 포털에
+    const mkt = !!(hidden && hidden.mkt), pshow = !!(hidden && hidden.portal_show), phid = !!(hidden && hidden.portal_hidden);
+    const onPortal = !internal && !phid && (!mkt || pshow);
+    return { ...r, id: Number(r.id), portal, portal_hidden: phid, portal_hidden_at: hidden ? hidden.at : null,
+      portal_hidden_by: hidden ? hidden.by : null, internal, hide_ready: hi.col, mkt, portal_show: pshow, show_ready: hi.show, on_portal: onPortal };
   });
 
   // 1105 · 2026-11-05 디렉터: 이 화면에 접근 권한이 있는 직원은 Facebook(Messenger) 손님에게 바로 답장
@@ -199,13 +204,18 @@ export default async function metaLeadsRoutes(app) {
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
     const hi = await portalHideInfo(true);
     if (!hi.col) return reply.code(503).send({ error: 'migration_required', note: '0319 마이그레이션이 필요합니다.' });
-    const on = !!(req.body && req.body.hidden);
-    const r = (await query(`UPDATE meta_threads SET portal_hidden=$2, portal_hidden_by=CASE WHEN $2 THEN $3::bigint END, portal_hidden_at=CASE WHEN $2 THEN now() END, updated_at=now()
-                             WHERE id=$1 RETURNING id`, [id, on, req.ctx.perm.userId || null])).rows[0];
-    if (!r) return reply.code(404).send({ error: 'not_found' });
+    // 1106d · {visible:true|false} — 보이기/숨기기(마케팅 회신이면 portal_show 도 함께) · 예전 {hidden} 도 받음
+    const b = req.body || {};
+    const visible = b.visible !== undefined ? !!b.visible : !b.hidden;
+    const row = (await query(`SELECT id, ${mktExpr(hi)} AS mkt FROM meta_threads t WHERE t.id=$1`, [id])).rows[0];
+    if (!row) return reply.code(404).send({ error: 'not_found' });
+    if (row.mkt && visible && !hi.show) return reply.code(503).send({ error: 'migration_required', note: '0322 마이그레이션이 필요합니다.' });
+    const sets = [`portal_hidden=$2`, `portal_hidden_by=$3::bigint`, `portal_hidden_at=now()`, `updated_at=now()`];
+    if (hi.show) sets.push(`portal_show=$4`);
+    await query(`UPDATE meta_threads SET ${sets.join(', ')} WHERE id=$1`, hi.show ? [id, !visible, req.ctx.perm.userId || null, visible && !!row.mkt] : [id, !visible, req.ctx.perm.userId || null]);
     resetPortalHideCache();
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `meta_thread:${id}`, detail: { op: on ? 'portal_hide' : 'portal_show' } });
-    return { ok: true, portal_hidden: on };
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `meta_thread:${id}`, detail: { op: visible ? 'portal_show' : 'portal_hide', mkt: !!row.mkt } });
+    return { ok: true, portal_hidden: !visible, portal_show: visible && !!row.mkt, mkt: !!row.mkt };
   });
 
   app.patch('/api/meta-leads/:id', W, async (req, reply) => {

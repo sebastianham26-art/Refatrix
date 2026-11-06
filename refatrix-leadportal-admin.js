@@ -71,21 +71,27 @@
     if (!g('lpCards')) return;
     try {
       var d = await api('GET', '/api/lead-portal-admin/cards'); LP.cards = d.items || [];
-      g('lcNew').classList.toggle('hidden', !d.director);
-      g('lpCards').innerHTML = LP.cards.length ? '<table><thead><tr><th>순서</th><th>종류</th><th>제목 · 내용</th><th>이미지</th><th>버튼</th><th class="num">N장마다</th><th>기간</th><th>상태</th><th class="num">클릭</th><th>참여 신청</th><th></th></tr></thead><tbody>'
+      g('lcNew').classList.toggle('hidden', !d.can_edit);   // 1106d · 이 화면을 볼 수 있으면 누구나
+      g('lpCards').innerHTML = LP.cards.length ? '<table><thead><tr><th>순서</th><th>종류</th><th>제목 · 내용</th><th>이미지</th><th>키트</th><th>버튼</th><th class="num">N장마다</th><th>기간</th><th>상태</th><th class="num">클릭</th><th>참여 신청</th><th></th></tr></thead><tbody>'
         + LP.cards.map(function (c) {
           return '<tr><td class="num">' + c.sort + '</td><td>' + esc(CK[c.kind] || c.kind) + '</td><td><b>' + esc(c.title) + '</b><div class="muted lp-memo">' + esc(c.body || '') + '</div></td>'
             + '<td>' + (c.image_url ? (c.bank_id ? '<img data-cbt="' + c.bank_id + '" alt="" style="max-width:80px;max-height:50px;object-fit:contain"><div class="muted" style="font-size:10.5px">뱅크 #' + c.bank_id + '</div>' : '<img src="' + esc(/^img\//.test(c.image_url) ? 'https://refatrix-platform.netlify.app/' + c.image_url : c.image_url) + '" alt="" style="max-width:80px;max-height:50px;object-fit:contain">') : '<span class="muted">—</span>') + '</td>'
+            + '<td>' + (c.kit_no ? '<span class="tag" style="background:#111;color:#fff">🛒 ' + esc(c.kit_no) + '</span>' : '<span class="muted">—</span>') + '</td>'
             + '<td>' + esc(c.cta_text || (c.kind === 'capacitacion' && !c.cta_url ? 'Quiero participar' : '')) + (c.cta_url ? '<div class="muted mono" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + esc(c.cta_url) + '</div>' : '') + '</td>'
             + '<td class="num">' + c.every_n + '</td><td style="white-space:nowrap">' + esc((c.starts_on || '…') + ' ~ ' + (c.ends_on || '…')) + '</td>'
             + '<td>' + (c.active ? '<span class="tag lp-on">사용</span>' : '<span class="tag">꺼짐</span>') + '</td><td class="num">' + c.clicks + '</td><td>' + (c.interests ? c.interests + '곳<div class="muted">' + esc(c.interested || '') + '</div>' : '—') + '</td>'
-            + '<td>' + (d.director ? '<div class="row lp-acts"><button type="button" class="btn sm ghost" data-card="edit" data-id="' + c.id + '">수정</button><button type="button" class="btn sm ghost" data-card="toggle" data-id="' + c.id + '">' + (c.active ? '끄기' : '켜기') + '</button><button type="button" class="btn sm lp-red" data-card="del" data-id="' + c.id + '">삭제</button></div>' : '') + '</td></tr>';
+            + '<td>' + (d.can_edit ? '<div class="row lp-acts"><button type="button" class="btn sm ghost" data-card="edit" data-id="' + c.id + '">수정</button><button type="button" class="btn sm ghost" data-card="toggle" data-id="' + c.id + '">' + (c.active ? '끄기' : '켜기') + '</button><button type="button" class="btn sm lp-red" data-card="del" data-id="' + c.id + '">삭제</button></div>' : '') + '</td></tr>';
         }).join('') + '</tbody></table>' : '<div class="hint">카드가 없습니다.</div>';
       [].forEach.call(g('lpCards').querySelectorAll('img[data-cbt]'), function (im) { bankThumb(Number(im.dataset.cbt)).then(function (u) { if (u) im.src = u; }); });
     } catch (e) { g('lpCards').innerHTML = '<div class="hint">' + esc(e.message === 'migration_required' ? '광고 카드는 서버에 0320 마이그레이션 뒤부터 씁니다(Railway 콘솔 npm run migrate).' : errT(e)) + '</div>'; if (g('lcNew')) g('lcNew').classList.add('hidden'); }
   }
   // 1106c · 카드 이미지 — 이미지 뱅크(bank:id) · 파일 올리기(이미지 뱅크 「포털 광고」 폴더) · 크기 안내
-  var CARD_FOLDER = '포털 광고', REC_W = 1200, REC_H = 520;
+  var CARD_FOLDER = '포털 광고', REC_W = 1200;
+  LP.files = LP.files || {};
+  async function bankFile(id) {   // 1106d · 원본(전체 크기)
+    if (LP.files[id]) return LP.files[id];
+    try { var r = await fetch(session.api + '/api/wa-promo/images/' + id + '/file', { headers: { Authorization: 'Bearer ' + session.token } }); if (!r.ok) return ''; var u = URL.createObjectURL(await r.blob()); LP.files[id] = u; return u; } catch (e) { return ''; }
+  }
   LP.thumbs = LP.thumbs || {};
   async function bankThumb(id) {
     if (LP.thumbs[id]) return LP.thumbs[id];
@@ -93,17 +99,20 @@
   }
   function sizeNote(w, h, bytes) {
     if (!w || !h) return '';
-    var ratio = w / h, ok = ratio >= 1.9 && ratio <= 2.8, big = w >= 900;
-    return '<span class="' + (ok && big ? 'ok-t' : 'warn-t') + '">' + w + ' × ' + h + ' px' + (bytes ? ' · ' + (bytes / 1024 / 1024).toFixed(2) + ' MB' : '') + ' · 비율 ' + ratio.toFixed(2) + ' : 1</span>'
-      + (ok && big ? ' — 좋습니다' : ' — 권장 ' + REC_W + ' × ' + REC_H + '(약 2.3 : 1)와 달라 ' + (!big ? '흐리게 보이거나 ' : '') + '위아래 · 양옆이 잘릴 수 있습니다');
+    // 1106d · 포털은 이미지 전체를 카드 가로에 맞춰 보여 준다(잘림 없음) → 가로 폭 · 세로 길이 · 용량만 본다
+    var ratio = w / h, big = w >= 900, tall = ratio < 0.8, heavy = bytes && bytes > 2 * 1024 * 1024;
+    var ok = big && !tall && !heavy;
+    return '<span class="' + (ok ? 'ok-t' : 'warn-t') + '">' + w + ' × ' + h + ' px' + (bytes ? ' · ' + (bytes / 1024 / 1024).toFixed(2) + ' MB' : '') + '</span>'
+      + (ok ? ' — 좋습니다' : ' — ' + [!big ? '가로가 900 px 보다 작아 흐리게 보일 수 있습니다(권장 ' + REC_W + ' px)' : '', tall ? '세로로 길어 카드가 아주 길어집니다' : '', heavy ? '2 MB 보다 커서 느리게 열릴 수 있습니다' : ''].filter(Boolean).join(' · '));
   }
   async function showPrev() {
     var v = g('lcImg').value.trim(), el = g('lcPrev'); if (!el) return;
     if (!v) { el.innerHTML = '<span class="hint">이미지 없음 — 글자만 있는 카드</span>'; return; }
     var m = v.match(/^bank:(\d+)$/), src = m ? await bankThumb(Number(m[1])) : (/^img\//.test(v) ? 'https://refatrix-platform.netlify.app/' + v : v);
     var meta = m ? ((LP.bank || []).filter(function (x) { return x.id === Number(m[1]); })[0] || LP.lastUp || null) : null;
-    el.innerHTML = '<div style="width:420px;max-width:100%;height:180px;background:#f5f5f5;border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center">'
-      + (src ? '<img src="' + esc(src) + '" alt="" style="' + (/^img\//.test(v) ? 'max-width:100%;max-height:100%;object-fit:contain' : 'width:100%;height:100%;object-fit:cover') + '">' : '<span class="hint">미리보기 없음</span>') + '</div>'
+    if (m) { var full = await bankFile(Number(m[1])); if (full) src = full; }
+    el.innerHTML = '<div style="width:420px;max-width:100%;background:#f5f5f5;border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;' + (/^img\//.test(v) ? 'height:180px;padding:16px' : '') + '">'
+      + (src ? '<img src="' + esc(src) + '" alt="" style="' + (/^img\//.test(v) ? 'max-width:100%;max-height:100%;object-fit:contain' : 'display:block;width:100%;height:auto') + '">' : '<span class="hint">미리보기 없음</span>') + '</div>'
       + '<div class="hint" style="margin-top:3px">카드에서 보이는 모양(미리보기)' + (meta && meta.width ? ' · ' + sizeNote(meta.width, meta.height, meta.size) : '') + '</div>';
   }
   async function openBank() {
@@ -114,16 +123,50 @@
   }
   function renderBank() {
     var q = g('lcBankQ').value.trim().toLowerCase();
-    var it = (LP.bank || []).filter(function (x) { return !q || ((x.name || '') + ' ' + (x.folder || '')).toLowerCase().indexOf(q) >= 0; }).slice(0, 120);
+    var it = (LP.bank || []).filter(function (x) { return !q || ((x.name || '') + ' ' + (x.folder || '') + ' ' + (x.memo || '')).toLowerCase().indexOf(q) >= 0; }).slice(0, 120);
     g('lcBankSum').textContent = it.length + '장' + ((LP.bank || []).length > it.length ? ' / 전체 ' + LP.bank.length : '');
     g('lcBankGrid').innerHTML = it.map(function (x) {
-      return '<button type="button" class="lc-bk" data-bk="' + x.id + '" style="border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px;cursor:pointer;text-align:left">'
-        + '<div style="height:70px;background:#f5f5f5;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center"><img data-bt="' + x.id + '" alt="" style="width:100%;height:100%;object-fit:cover"></div>'
-        + '<div style="font-size:11px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.name || ('#' + x.id)) + '</div>'
-        + '<div class="muted" style="font-size:10.5px">' + (x.width ? x.width + '×' + x.height : '') + (x.folder ? ' · ' + esc(x.folder) : '') + '</div></button>';
+      // 1106d · 이미지 전체가 보이게(잘림 없음 · 칸 크게) · 🔍 = 원본 크게 보기 · K0… = 키트 사진
+      var kn = String((x.name || '') + ' ' + (x.memo || '')).match(/\bK0\d{2,5}\b/i);
+      return '<div class="lc-bk" data-bk="' + x.id + '" title="눌러서 선택" style="position:relative;border:1px solid var(--line);border-radius:10px;background:#fff;padding:6px;cursor:pointer">'
+        + '<div style="height:180px;background:#f5f5f5;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center"><img data-bt="' + x.id + '" alt="" style="max-width:100%;max-height:100%;object-fit:contain"></div>'
+        + '<button type="button" class="btn sm ghost" data-bz="' + x.id + '" title="원본 크게 보기" style="position:absolute;top:10px;right:10px;padding:3px 8px">🔍</button>'
+        + (kn ? '<span class="tag" style="position:absolute;top:10px;left:10px;background:#111;color:#fff">🛒 ' + esc(kn[0].toUpperCase()) + '</span>' : '')
+        + '<div style="font-size:12px;margin-top:5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.name || ('#' + x.id)) + '</div>'
+        + '<div class="muted" style="font-size:11px">' + (x.width ? x.width + ' × ' + x.height + ' px' : '') + (x.folder ? ' · ' + esc(x.folder) : '') + '</div>'
+        + (x.memo ? '<div class="muted" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(x.memo) + '">' + esc(x.memo) + '</div>' : '') + '</div>';
     }).join('') || '<span class="hint">이미지가 없습니다.</span>';
     [].forEach.call(g('lcBankGrid').querySelectorAll('img[data-bt]'), function (im) { bankThumb(Number(im.dataset.bt)).then(function (u) { if (u) im.src = u; }); });
   }
+  async function zoomBank(id) {
+    var x = (LP.bank || []).filter(function (b) { return b.id === id; })[0] || {};
+    LP.zoomId = id; g('lcZoomT').textContent = x.name || ('#' + id); g('lcZoomS').textContent = x.width ? ' · ' + x.width + ' × ' + x.height + ' px' : '';
+    g('lcZoomM').textContent = x.memo || ''; g('lcZoomImg').src = await bankThumb(id) || ''; g('lcZoom').classList.remove('hidden');
+    var u = await bankFile(id); if (u && LP.zoomId === id) g('lcZoomImg').src = u;
+  }
+  function pickBank(id) { g('lcImg').value = 'bank:' + id; g('lcBankBox').classList.add('hidden'); g('lcZoom').classList.add('hidden'); showPrev(); detectKit(id); }
+  // 1106d · 키트 — 번호 확인 · 이미지에서 자동(키트 사진 연결 · 이름/설명 속 K0…)
+  function kitInfoHTML(k) {
+    var money = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    return '<b>' + esc(k.kit_no) + '</b>' + (k.title ? ' · ' + esc(k.title) : '') + ' · 정가 ' + money(k.list) + ' · 지금 만들 수 있는 세트 ' + k.avail + (k.active ? '' : ' · <span class="warn-t">판매중단 구성품 있음</span>')
+      + '<div style="margin-top:3px">' + (k.items || []).map(function (i) { return esc(i.category) + ' ' + esc(i.code) + (i.qty > 1 ? ' ×' + i.qty : ''); }).join(' · ') + '</div>';
+  }
+  async function checkKit(q) {
+    var el = g('lcKitInfo'); if (!el) return;
+    var v = String(g('lcKit').value || '').trim().toUpperCase();
+    if (!q && !v) { el.innerHTML = '비우면 주문 버튼 없음 · 넣으면 포털 카드에 「🛒 Ordenar kit」(구성품 · 정가 · 할인가)'; return; }
+    try {
+      var d = await api('GET', '/api/lead-portal-admin/kit-lookup?' + (q || ('no=' + encodeURIComponent(v))));
+      if (d.kit) {
+        g('lcKit').value = d.kit.kit_no; el.innerHTML = '<span class="ok-t">✓</span> ' + kitInfoHTML(d.kit);
+        // 1106d · 키트를 찾으면 종류 = 우리 제품, 제목이 비어 있으면 키트 이름으로
+        if (!LP.cardEdit && g('lcKind').value !== 'producto') g('lcKind').value = 'producto';
+        if (!g('lcTitle').value.trim()) g('lcTitle').value = 'Kit ' + (d.kit.title || d.kit.kit_no);
+      }
+      else if (!q) el.innerHTML = '<span class="warn-t">' + esc(v) + ' 키트를 찾지 못했습니다(VIO 프로모션에서 만든 키트 번호인지 확인).</span>';
+    } catch (e) { el.innerHTML = '<span class="warn-t">' + esc(errT(e)) + '</span>'; }
+  }
+  function detectKit(imgId) { if (!String(g('lcKit').value || '').trim()) checkKit('image_id=' + imgId); }
   function readFile(f) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = rej; r.readAsDataURL(f); }); }
   function imgSize(url) { return new Promise(function (res) { var im = new Image(); im.onload = function () { res({ w: im.naturalWidth, h: im.naturalHeight, im: im }); }; im.onerror = function () { res(null); }; im.src = url; }); }
   async function uploadCardImage(f) {
@@ -138,7 +181,7 @@
       var r = await api('POST', '/api/wa-promo/images', { name: f.name, mime: f.type, image_b64: data, thumb_b64: thumb, width: sz && sz.w, height: sz && sz.h, folder: CARD_FOLDER });
       LP.lastUp = { id: r.id, width: sz && sz.w, height: sz && sz.h, size: f.size };
       if (LP.bank) LP.bank = null;
-      g('lcImg').value = 'bank:' + r.id; delete LP.thumbs[r.id]; await showPrev();
+      g('lcImg').value = 'bank:' + r.id; delete LP.thumbs[r.id]; await showPrev(); detectKit(r.id);
       say(true, (r.duplicate ? '이미 이미지 뱅크에 있던 파일입니다 — 그 이미지를 씁니다. ' : '이미지 뱅크 「' + CARD_FOLDER + '」 폴더에 올렸습니다. ') + (sz ? '(' + sz.w + ' × ' + sz.h + ' px)' : ''), 'lcMsg');
     } catch (e) { say(false, e.message === 'image_too_large' ? '파일이 너무 큽니다(최대 5 MB).' : errT(e), 'lcMsg'); }
   }
@@ -147,17 +190,19 @@
     g('lcKind').value = c ? c.kind : 'capacitacion'; g('lcTitle').value = c ? c.title : ''; g('lcBody').value = c ? (c.body || '') : '';
     g('lcImg').value = c ? (c.image_url || '') : ''; g('lcCta').value = c ? (c.cta_text || '') : ''; g('lcUrl').value = c ? (c.cta_url || '') : '';
     g('lcBankBox').classList.add('hidden'); setTimeout(showPrev, 0);
+    g('lcKit').value = c ? (c.kit_no || '') : ''; setTimeout(function () { checkKit(); }, 0);
     g('lcEvery').value = c ? c.every_n : 6; g('lcSort').value = c ? c.sort : 0; g('lcFrom').value = c ? (c.starts_on || '') : ''; g('lcTo').value = c ? (c.ends_on || '') : ''; g('lcActive').checked = c ? c.active : true;
     try { g('lcTitle').focus(); } catch (_) {}
   }
   async function saveCard() {
     var body = { kind: g('lcKind').value, title: g('lcTitle').value.trim(), body: g('lcBody').value.trim(), image_url: g('lcImg').value.trim(), cta_text: g('lcCta').value.trim(), cta_url: g('lcUrl').value.trim(),
-      every_n: Number(g('lcEvery').value) || 6, sort: Number(g('lcSort').value) || 0, starts_on: g('lcFrom').value || null, ends_on: g('lcTo').value || null, active: g('lcActive').checked };
+      every_n: Number(g('lcEvery').value) || 6, sort: Number(g('lcSort').value) || 0, starts_on: g('lcFrom').value || null, ends_on: g('lcTo').value || null, active: g('lcActive').checked,
+      kit_no: String(g('lcKit').value || '').trim().toUpperCase() || null };
     if (!body.title) { say(false, '제목을 쓰세요.', 'lcMsg'); return; }
     try {
       if (LP.cardEdit) await api('PATCH', '/api/lead-portal-admin/cards/' + LP.cardEdit, body); else await api('POST', '/api/lead-portal-admin/cards', body);
       g('lpCardForm').classList.add('hidden'); say(true, '저장했습니다 — 고객 포털에 바로 보입니다.', 'lcMsg'); loadCards();
-    } catch (e) { say(false, e.message === 'bad_url' ? '주소는 https:// 로 시작해야 합니다(이미지는 img/… 도 가능).' : errT(e), 'lcMsg'); }
+    } catch (e) { say(false, e.message === 'bad_url' ? '주소는 https:// 로 시작해야 합니다(이미지는 img/… 도 가능).' : e.message === 'unknown_kit' || e.message === 'bad_kit' ? '키트 번호를 찾지 못했습니다(K0001 형식 · VIO 프로모션 키트).' : errT(e), 'lcMsg'); }
   }
   async function onCardAct(e) {
     var b = e.target.closest('[data-card]'); if (!b) return;
@@ -487,7 +532,14 @@
     if (g('lcBank')) g('lcBank').addEventListener('click', openBank);
     if (g('lcBankX')) g('lcBankX').addEventListener('click', function () { g('lcBankBox').classList.add('hidden'); });
     if (g('lcBankQ')) g('lcBankQ').addEventListener('input', renderBank);
-    if (g('lcBankGrid')) g('lcBankGrid').addEventListener('click', function (e) { var b = e.target.closest('[data-bk]'); if (!b) return; g('lcImg').value = 'bank:' + b.dataset.bk; g('lcBankBox').classList.add('hidden'); showPrev(); });
+    if (g('lcBankGrid')) g('lcBankGrid').addEventListener('click', function (e) {
+      var z = e.target.closest('[data-bz]'); if (z) { e.stopPropagation(); zoomBank(Number(z.dataset.bz)); return; }
+      var b = e.target.closest('[data-bk]'); if (b) pickBank(Number(b.dataset.bk)); });
+    if (g('lcZoom')) { g('lcZoom').addEventListener('click', function (e) { if (!e.target.closest('#lcZoomBox')) g('lcZoom').classList.add('hidden'); });   // 바깥을 누르면 닫힘 g('lcZoomX').addEventListener('click', function () { g('lcZoom').classList.add('hidden'); });
+      g('lcZoomPick').addEventListener('click', function () { if (LP.zoomId) pickBank(LP.zoomId); }); }
+    if (g('lcKitGo')) g('lcKitGo').addEventListener('click', function () { checkKit(); });
+    if (g('lcKit')) g('lcKit').addEventListener('change', function () { checkKit(); });
+    if (g('lcKitX')) g('lcKitX').addEventListener('click', function () { g('lcKit').value = ''; checkKit(); });
     if (g('lcFile')) g('lcFile').addEventListener('change', function () { var f = this.files && this.files[0]; uploadCardImage(f); this.value = ''; });
     if (g('lcImgX')) g('lcImgX').addEventListener('click', function () { g('lcImg').value = ''; showPrev(); });
     if (g('lcImg')) g('lcImg').addEventListener('change', showPrev);

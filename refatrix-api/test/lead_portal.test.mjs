@@ -377,7 +377,13 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   { // 1106 · 포털 광고 카드 — 기본 CTR 카드 · 디렉터만 만들기 · 기간 · 클릭/참여 신청
     let cl = await call(R1, 'GET', '/api/lead-portal-admin/cards'); assert.equal(cl.statusCode, 200, cl.body);
     assert.ok(cl.json().items.some((c) => c.title === 'CTR · Equipo Original'), '첫 카드 = CTR Equipo Original');
-    assert.equal((await call(R1, 'POST', '/api/lead-portal-admin/cards', { title: 'x' })).statusCode, 403, '디렉터만');
+    { // 1106d · 이 화면을 볼 수 있으면 누구나 카드 만들기 · 고치기 · 지우기
+      const rr = await call(R1, 'POST', '/api/lead-portal-admin/cards', { kind: 'anuncio', title: 'Rep ' + T }); assert.equal(rr.statusCode, 200, rr.body);
+      assert.equal((await call(R1, 'PATCH', `/api/lead-portal-admin/cards/${rr.json().id}`, { title: 'Rep2 ' + T })).statusCode, 200);
+      assert.equal((await call(R1, 'GET', '/api/lead-portal-admin/cards')).json().can_edit, true);
+      assert.equal((await call(R1, 'DELETE', `/api/lead-portal-admin/cards/${rr.json().id}`)).statusCode, 200);
+      assert.equal((await call({}, 'POST', '/api/lead-portal-admin/cards', { title: 'x' })).statusCode, 401);
+    }
     assert.equal((await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'capacitacion', title: 'Curso', image_url: 'javascript:alert(1)' })).json().error, 'bad_url');
     let rc = await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'capacitacion', title: 'Capacitación de suspensión ' + T, body: 'Invita a tus mecánicos', every_n: 3 }); assert.equal(rc.statusCode, 200, rc.body);
     const CID = rc.json().id;
@@ -408,9 +414,61 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     await call(D, 'PATCH', `/api/lead-portal-admin/cards/${BID}`, { active: false });
     assert.equal((await call({}, 'GET', `/api/lead-portal/card-image/${BID}`)).statusCode, 404, '꺼진 카드 이미지는 안 나감');
     await call(D, 'DELETE', `/api/lead-portal-admin/cards/${BID}`);
+    { // 1106d · 키트 카드 → 구성품(분류 · 정가 · 할인가) · 주문 = 키트 코드 → 견적에서 구성품 줄로
+      const KP1 = await one(`INSERT INTO products (code, name, list_price, stock_qty) VALUES ($1,'ROTULA INFERIOR',500,9) RETURNING id, code`, [`KR${T}`]);
+      const KP2 = await one(`INSERT INTO products (code, name, list_price, stock_qty) VALUES ($1,'HORQUILLA INF DER',1000,3) RETURNING id, code`, [`KH${T}`]);
+      const KNO = 'K0' + String(100 + (Date.now() % 900));
+      const KPR = await one(`INSERT INTO products (code, name, list_price, stock_qty) VALUES ($1,$2,2000,0) RETURNING id, code`, [KNO, 'KIT T VERSA 2017']);
+      const VP = await one(`INSERT INTO vio_promos (promo_no, title, years, product_id, total_list) VALUES ($1,'Nissan Versa','2017',$2,2000) RETURNING id`, [KNO, KPR.id]);
+      await query(`INSERT INTO vio_promo_items (promo_id, line_no, product_id, ctr_code, name, qty) VALUES ($1,1,$2,$3,'ROTULA INFERIOR',2),($1,2,$4,$5,'HORQUILLA INF DER',1)`, [VP.id, KP1.id, KP1.code, KP2.id, KP2.code]);
+      const VS = await import('../src/vioPromos.js'); VS.setPromosReady(true);
+      assert.equal((await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'producto', title: 'kit', kit_no: 'K9' })).json().error, 'bad_kit');
+      assert.equal((await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'producto', title: 'kit', kit_no: 'K0999' })).json().error, 'unknown_kit');
+      const kim = await one(`INSERT INTO wa_images (name, mime, bytes, size, hash, memo) VALUES ($1,'image/png',$2,3,md5($2::bytea),$3) RETURNING id`, ['kitimg' + T, Buffer.from('k' + T), 'Promo Versa ' + KNO + ' rótulas']);
+      const lk = (await call(R1, 'GET', `/api/lead-portal-admin/kit-lookup?image_id=${kim.id}`)).json();
+      assert.equal(lk.kit.kit_no, KNO, '이미지 설명 속 K0… → 키트'); assert.equal(lk.kit.list, 2000); assert.equal(lk.kit.avail, 3, 'min(9/2, 3/1) = 3 세트 … 4/3 → 3');
+      assert.deepEqual(lk.kit.items.map((i) => [i.category, i.code, i.qty]), [['Rótula', KP1.code, 2], ['Horquilla', KP2.code, 1]]);
+      const kc = await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'producto', title: 'Kit Versa ' + T, kit_no: KNO.toLowerCase(), every_n: 2 }); assert.equal(kc.statusCode, 200, kc.body);
+      const KCID = kc.json().id;
+      const card = (await call(C, 'GET', '/api/lead-portal/leads')).json().cards.find((c) => c.id === KCID);
+      assert.equal(card.kit.code, KNO); assert.equal(card.kit.list, 2000); assert.equal(card.kit.price, 1100, '할인 45% · 구성품 합');
+      assert.deepEqual(card.kit.items.map((i) => [i.code, i.list, i.price]), [[KP1.code, 500, 275], [KP2.code, 1000, 550]]);
+      let kb = await call(C, 'PUT', '/api/lead-portal/basket', { code: KNO, qty: 2 }); assert.equal(kb.statusCode, 200, kb.body);
+      assert.equal(kb.json().products[KNO].price, 1100); assert.equal(kb.json().products[KNO].list, 2000); assert.ok(kb.json().products[KNO].kit.items.length === 2, '모음에 키트 구성');
+      const kq = await call(C, 'POST', '/api/lead-portal/order', { key: 'kit' + T + 'abcdef', items: [{ code: KNO, qty: 2 }] }); assert.equal(kq.statusCode, 200, kq.body);
+      const kl = (await query(`SELECT l.ctr_code, l.qty, l.final_price FROM quote_lines l JOIN quotes q ON q.id=l.quote_id WHERE q.quote_no=$1 ORDER BY l.line_no`, [kq.json().quote_no])).rows;
+      assert.deepEqual(kl.map((r) => [r.ctr_code, Number(r.qty), Number(r.final_price)]), [[KP1.code, 4, 275], [KP2.code, 2, 550]], '견적 = 구성품 줄');
+      assert.equal(Number(kq.json().total), Math.round(2200 * 1.16 * 100) / 100);
+      await call(C, 'PUT', '/api/lead-portal/basket', { code: KNO, qty: 0 });
+      await call(D, 'DELETE', `/api/lead-portal-admin/cards/${KCID}`);
+    }
+    // 1106d · 일반 부품에도 정가(list)
+    assert.equal((await call(C, 'GET', '/api/lead-portal/leads')).json().products[P1.code].list, 1000);
     const st = await call({}, 'GET', '/api/lead-portal/stats'); assert.equal(st.statusCode, 200);
     assert.ok(Number.isInteger(st.json().total) && st.json().total >= 1 && Number.isInteger(st.json().week), '로그인 화면 숫자(토큰 없이)');
     assert.ok(!('leads' in st.json()), '숫자만');
+  }
+  { // 1106d · ERP WhatsApp 마케팅을 받은 번호의 회신 — 기본 숨김 · 고객별 「플랫폼에 보이기」
+    const MPH = '5281' + String(Date.now() + 7).slice(-8);
+    const TM = await mk(`wa:MK${T}`, 'Nuevo León', MPH, []);
+    const LPm = await import('../src/leadPortal.js'); LPm.resetPortalHideCache();
+    const ids0 = (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.map((l) => l.id);
+    assert.ok(ids0.includes(Number(TM.id)), '마케팅을 안 받은 번호는 보임');
+    await query(`INSERT INTO wa_messages (direction, phone, kind, body, source, ok) VALUES ('out',$1,'image','Promo CTR','campaign',true)`, [MPH]);
+    let ids = (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.map((l) => l.id);
+    assert.ok(!ids.includes(Number(TM.id)), '마케팅 회신은 기본 숨김');
+    assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${TM.id}/contact`)).statusCode, 404);
+    let dm = (await call(D, 'GET', `/api/meta-leads/${TM.id}`)).json();
+    assert.deepEqual([dm.mkt, dm.on_portal, dm.portal_show], [true, false, false]);
+    const lm = (await call(D, 'GET', '/api/meta-leads/list?mkt=1')).json().items; assert.ok(lm.some((x) => x.id === Number(TM.id) && x.mkt) && lm.every((x) => x.mkt), '「WA 마케팅 회신만」 거르기');
+    let rv = await call(R1, 'POST', `/api/meta-leads/${TM.id}/portal-hidden`, { visible: true }); assert.equal(rv.statusCode, 200, rv.body);
+    assert.deepEqual([rv.json().portal_show, rv.json().portal_hidden, rv.json().mkt], [true, false, true]);
+    assert.ok((await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(TM.id)), '보이기 → 포털에 나옴');
+    dm = (await call(D, 'GET', `/api/meta-leads/${TM.id}`)).json(); assert.equal(dm.on_portal, true); assert.ok(dm.portal_hidden_by);
+    rv = await call(R1, 'POST', `/api/meta-leads/${TM.id}/portal-hidden`, { visible: false }); assert.equal(rv.json().portal_show, false);
+    assert.ok(!(await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(TM.id)), '다시 숨김');
+    const st0 = (await call({}, 'GET', '/api/lead-portal/stats')).json(); assert.ok(Number.isInteger(st0.total));
+    await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [TM.id]); LPm.resetPortalHideCache();
   }
   { // 1105 · 접속 기록 — 로그인 · 화면 열기 → 고객 · 날짜별, 화면 권한이면 영업도 봄
     await call(C, 'GET', '/api/lead-portal/me');

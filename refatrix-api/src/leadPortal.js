@@ -33,6 +33,8 @@ import { authGuard, requirePageAny, requirePageEditAny } from './middleware/auth
 import { visibleTeamIds } from './teams.js';
 import { computeQuoteLine, computeQuoteTotals } from './quotes.js';
 import { buildLines, assignReservations, stampLineMeta } from './quoteBuild.js';
+import { isKitCode, kitsFor, kitCompositions, normKitNo } from './vioPromos.js';   // 1106d · 키트 주문
+import { DEV_CATS, classifyCategory } from './devDemand.js';                         // 1106d · 구성품 분류(Rótula · Horquilla …)
 import { reserveExpiresAt } from './quoteExpiry.js';
 import { syncQuoteShortages } from './quoteShortage.js';
 import { recordQuoteDevDemand } from './quoteDevDemand.js';
@@ -47,7 +49,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessengerSmart, commentRefOf } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1106c';
+export const LP_BUILD = 'lp-1106e';
 
 // 1105c · 개인정보 보호 · 비밀유지 확약서(포털 로그인 후 전자서명) — 2026-11-05 디렉터
 //   본문을 바꾸면 CONSENT_VERSION 을 올린다 → 모든 고객 코드가 다시 서명한다.
@@ -234,14 +236,45 @@ export async function productInfo(customerId, discount, codes, exec = query) {
     const stock = r.stock_qty == null ? 0 : Number(r.stock_qty);
     const price = computeQuoteLine({ listPrice: r.list_price, discountRate: discount, qty: 1, ivaRate: 16 }).finalPrice;
     out[r.code] = {
-      code: r.code, name: r.name || '', active: r.is_active !== false,
+      code: r.code, name: r.name || '', active: r.is_active !== false, list: Number(r.list_price) || 0,   // 1106d · 정가(할인 전)
       avail: Math.max(0, stock - (Number(r.reserved) || 0)),
       incoming: Number(r.incoming_qty) || 0, eta: r.incoming_eta ? String(r.incoming_eta).slice(0, 10) : null,
       price, bought12: bought[pid] ? bought[pid].qty : 0, bought_last: bought[pid] ? bought[pid].last : null,
       shelf: shelf[pid] ? shelf[pid].qty : null, shelf_src: shelf[pid] ? shelf[pid].src : null, shelf_at: shelf[pid] ? shelf[pid].at : null,
     };
   }
+  // 1106d · 키트(K0001 …) — 가격 · 가용은 구성품으로(견적에서 구성품 줄로 풀리므로 같은 금액) + 구성품 목록
+  const kitCodes = Object.keys(out).filter(isKitCode);
+  if (kitCodes.length) {
+    let kits = new Map();
+    try { kits = await kitsFor({ codes: kitCodes }, exec); } catch (_) { kits = new Map(); }
+    for (const kt of kits.values()) {
+      const o = out[kt.kit_code] || out[Object.keys(out).find((c) => c.toUpperCase() === String(kt.kit_code).toUpperCase())];
+      if (!o) continue;
+      const parts = await productInfo(customerId, discount, kt.items.map((i) => i.ctr_code), exec);
+      Object.assign(o, kitShape(kt, parts, discount));
+    }
+  }
   return out;
+}
+// 1106d · 키트 한 세트 — 구성품(분류 · 코드 · 이름 · 수량 · 정가 · 할인가) · 합계 · 만들 수 있는 세트
+const CAT_ES = Object.fromEntries(DEV_CATS.map((c) => [c.key, c.es]));
+export function kitShape(kt, parts, discount) {
+  let list = 0, price = 0, avail = Infinity, incoming = Infinity, active = true;
+  const items = kt.items.map((it) => {
+    const p = parts[it.ctr_code] || {};
+    const q = Math.max(1, Number(it.qty) || 1);
+    const ul = Number(p.list) || 0, up = Number(p.price) || 0;
+    list += ul * q; price += up * q;
+    avail = Math.min(avail, Math.floor((Number(p.avail) || 0) / q));
+    incoming = Math.min(incoming, Math.floor((Number(p.incoming) || 0) / q));
+    if (p.active === false || !parts[it.ctr_code]) active = false;
+    const name = p.name || it.name || '';
+    return { code: it.ctr_code, name, qty: q, category: CAT_ES[classifyCategory(name, it.ctr_code)] || 'Otros', list: ul, price: up };
+  });
+  const r2 = (n) => Math.round(n * 100) / 100;
+  return { kit: { kit_no: kt.promo_no, items }, list: r2(list), price: r2(price), discount: Number(discount) || 0,
+    avail: Number.isFinite(avail) ? avail : 0, incoming: Number.isFinite(incoming) ? incoming : 0, active: active && items.length > 0 };
 }
 
 // 고객 매장 재고 저장(고객 · 직원 공통) — qty null = 지움. 이력 한 줄.
@@ -428,14 +461,30 @@ export function markMetaKinds(list) {
 }
 
 // 1105e · 포털에 안 내보내는 문의 — ① 사내 번호(직원 · 알림 수신 번호)의 WhatsApp ② ERP 에서 「플랫폼에서 숨기기」(0319)
-let hidCache = { at: 0, phones: [], col: false };
+//   ③ (1106d · 0322) ERP WhatsApp 마케팅을 받은 번호의 회신 — 기본 숨김, ERP 「플랫폼에 보이기」(portal_show)를 누른 것만
+let hidCache = { at: 0, phones: [], col: false, show: false, wa: false };
 export async function portalHideInfo(force = false) {
   if (!force && Date.now() - hidCache.at < 60000) return hidCache;
-  let phones = [], col = false;
+  let phones = [], col = false, show = false, wa = false;
   try { phones = [...(await internalWaPhones())].map((p) => String(p).replace(/\D/g, '').slice(-10)).filter((p) => p.length === 10); } catch (_) { phones = []; }
-  try { col = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='meta_threads' AND column_name='portal_hidden'`)).rows.length > 0; } catch (_) { col = false; }
-  hidCache = { at: Date.now(), phones, col };
+  try {
+    const cs = (await query(`SELECT column_name FROM information_schema.columns WHERE table_name='meta_threads' AND column_name IN ('portal_hidden','portal_show')`)).rows.map((r) => r.column_name);
+    col = cs.includes('portal_hidden'); show = cs.includes('portal_show');
+    wa = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='wa_messages'`)).rows.length > 0;
+  } catch (_) { col = false; show = false; wa = false; }
+  hidCache = { at: Date.now(), phones, col, show, wa };
   return hidCache;
+}
+// 1106d · 「ERP WhatsApp 마케팅을 받은 번호」 — 그 번호로 캠페인(이미지 광고) · 동의 요청이 나간 적이 있으면
+export const MKT_SQL = `(t.platform = 'whatsapp' AND EXISTS (SELECT 1 FROM wa_messages wm WHERE wm.phone = t.user_id AND wm.direction = 'out' AND wm.source IN ('campaign','consent')))`;
+export const mktExpr = (hi) => (hi && hi.wa ? MKT_SQL : 'false');
+// 포털에서 빼는 조건(사내 번호 · 숨김 · 허락 안 한 마케팅 회신) — 「 AND …」
+export function portalHideSql(hi, args) {
+  let sql = '';
+  if (hi.phones.length) { args.push(hi.phones); sql += ` AND NOT (t.platform = 'whatsapp' AND right(regexp_replace(COALESCE(t.user_id, ''), '\\D', '', 'g'), 10) = ANY($${args.length}::text[]))`; }
+  if (hi.col) sql += ` AND NOT t.portal_hidden`;
+  if (hi.wa) sql += hi.show ? ` AND NOT (${MKT_SQL} AND NOT t.portal_show)` : ` AND NOT ${MKT_SQL}`;
+  return sql;
 }
 export const resetPortalHideCache = () => { hidCache.at = 0; };
 export const isInternalPhone = (v, phones) => { const d = String(v || '').replace(/\D/g, '').slice(-10); return d.length === 10 && phones.includes(d); };
@@ -539,9 +588,7 @@ export default async function leadPortalRoutes(app) {
   function scopeSql(k, args) {
     let sql = '';
     // 1105e · 사내 번호 WhatsApp · 플랫폼에서 숨긴 문의 — 디렉터 코드도 안 보임(직원 대화 보호)
-    const hi = k.__hide || { phones: [], col: false };
-    if (hi.phones.length) { args.push(hi.phones); sql += ` AND NOT (t.platform = 'whatsapp' AND right(regexp_replace(COALESCE(t.user_id, ''), '\\D', '', 'g'), 10) = ANY($${args.length}::text[]))`; }
-    if (hi.col) sql += ` AND NOT t.portal_hidden`;
+    sql += portalHideSql(k.__hide || { phones: [], col: false }, args);   // 1106d · 마케팅 회신 포함
     if (isDirCode(k)) return sql;
     if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); sql += ` AND ${STATE_EXPR} = ANY($${args.length}::text[])`; }
     if (Array.isArray(k.scope_ads) && k.scope_ads.length) { args.push(k.scope_ads); sql += ` AND ${AD_EXPR} = ANY($${args.length}::text[])`; }
@@ -575,13 +622,29 @@ export default async function leadPortalRoutes(app) {
   const bankId = (u) => { const m = String(u || '').match(/^bank:(\d{1,12})$/); return m ? Number(m[1]) : null; };
   const cardOut = (r, forPortal = true) => ({ id: Number(r.id), kind: r.kind, title: r.title, body: r.body || '',
     image_url: forPortal && bankId(r.image_url) ? `/lp-api/card-image/${Number(r.id)}?v=${bankId(r.image_url)}` : (r.image_url || null),
-    cta_text: r.cta_text || null, cta_url: r.cta_url || null, every_n: Number(r.every_n) || 6 });
-  async function activeCards() {
+    cta_text: r.cta_text || null, cta_url: r.cta_url || null, every_n: Number(r.every_n) || 6, kit_no: r.kit_no || null });
+  async function activeCards(k = null) {
     if (!(await cardsReady())) return [];
-    return (await query(
+    const cards = (await query(
       `SELECT * FROM lead_portal_cards WHERE deleted_at IS NULL AND active
           AND (starts_on IS NULL OR starts_on <= $1::date) AND (ends_on IS NULL OR ends_on >= $1::date)
         ORDER BY sort, id LIMIT 20`, [todayMx()])).rows.map(cardOut);
+    // 1106d · 키트 카드 — 이 고객 할인율로 구성품 · 가격 · 가용(주문 코드 = 키트 제품 코드)
+    const nos = cards.map((c) => c.kit_no).filter(Boolean);
+    if (k && nos.length) {
+      let comps = new Map();
+      try { comps = await kitCompositions(nos); } catch (_) { comps = new Map(); }
+      const codes = [...comps.values()].map((x) => x.kit_code).filter(Boolean);
+      const info = codes.length ? await productInfo(Number(k.customer_id) || 0, isDirCode(k) ? 0 : (Number(k.discount) || 0), codes) : {};
+      for (const c of cards) {
+        const cp = c.kit_no && comps.get(c.kit_no);
+        const p = cp && info[cp.kit_code];
+        c.kit = p && p.kit ? { kit_no: c.kit_no, code: cp.kit_code, title: [cp.title, cp.years].filter(Boolean).join(' '), items: p.kit.items,
+          list: p.list, price: p.price, discount: p.discount, avail: p.avail, incoming: p.incoming, active: p.active } : null;
+        if (p) info[cp.kit_code] = p;
+      }
+    }
+    return cards;
   }
   let ciReady = false, ciProbe = 0;
   async function infoConsentReady() {
@@ -659,9 +722,7 @@ export default async function leadPortalRoutes(app) {
   app.get('/api/lead-portal/stats', async (req, reply) => {
     if (!(await portalReady())) return reply.code(503).send({ error: 'not_ready' });
     if (!statsCache.v || Date.now() - statsCache.at > 300000) {
-      const hi = await portalHideInfo(); const args = []; let extra = '';
-      if (hi.phones.length) { args.push(hi.phones); extra += ` AND NOT (t.platform = 'whatsapp' AND right(regexp_replace(COALESCE(t.user_id, ''), '\\D', '', 'g'), 10) = ANY($${args.length}::text[]))`; }
-      if (hi.col) extra += ` AND NOT t.portal_hidden`;
+      const hi = await portalHideInfo(); const args = []; const extra = portalHideSql(hi, args);
       const r = (await query(
         `SELECT count(*)::int AS total,
                 count(*) FILTER (WHERE t.last_at > now() - interval '7 days')::int AS week,
@@ -790,7 +851,7 @@ export default async function leadPortalRoutes(app) {
     // 카탈로그에서 사라진 코드는 부품표에서 뺀다(주문할 수 없는 줄을 보여 주지 않게)
     for (const l of leads) l.parts = l.parts.filter((p) => products[p.code]);
     const states = [...new Set(leads.map((l) => l.state).filter(Boolean))].sort((a, b) => META_STATES.indexOf(a) - META_STATES.indexOf(b));
-    return { me: { ...meOut(k), claim_days: await claimDays() }, leads, products, states, basket, cards: await activeCards() };
+    return { me: { ...meOut(k), claim_days: await claimDays() }, leads, products, states, basket, cards: await activeCards(k) };
   });
 
   app.post('/api/lead-portal/leads/:id/contact', P, async (req, reply) => {
@@ -1415,12 +1476,45 @@ export default async function leadPortalRoutes(app) {
       o[f] = v || null;
     }
     if (b.cta_text !== undefined) o.cta_text = clip(b.cta_text, 40);
+    if (b.kit_no !== undefined) { const kn = b.kit_no ? normKitNo(b.kit_no) : null; if (b.kit_no && !kn) return { error: 'bad_kit' }; o.kit_no = kn; }
     if (b.every_n !== undefined) { const n = Number(b.every_n); if (!Number.isInteger(n) || n < 1 || n > 50) return { error: 'bad_every_n' }; o.every_n = n; }
     if (b.sort !== undefined) o.sort = Number(b.sort) || 0;
     if (b.active !== undefined) o.active = !!b.active;
     for (const f of ['starts_on', 'ends_on']) if (b[f] !== undefined) { if (b[f] && !ymd(b[f])) return { error: 'bad_date' }; o[f] = b[f] || null; }
     return { o };
   };
+  // 1106d · 키트 번호 확인 — 0321 전이면 칸을 빼고, 없는 키트면 400
+  let ckReady = false;
+  async function kitCheck(o, reply) {
+    if (!('kit_no' in o)) return true;
+    if (!ckReady) { try { ckReady = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='lead_portal_cards' AND column_name='kit_no'`)).rows.length > 0; } catch (_) { ckReady = false; } }
+    if (!ckReady) { if (o.kit_no) { reply.code(503).send({ error: 'migration_required', note: '0321 마이그레이션이 필요합니다.' }); return false; } delete o.kit_no; return true; }
+    if (!o.kit_no) return true;
+    const cp = (await kitCompositions([o.kit_no]).catch(() => new Map())).get(o.kit_no);
+    if (!cp || !cp.kit_code) { reply.code(400).send({ error: 'unknown_kit', kit_no: o.kit_no }); return false; }
+    return true;
+  }
+  // 1106d · 키트 찾기 — 번호(K0001) 또는 이미지 뱅크 이미지(키트 사진 연결 · 이름/설명 속 K0…)
+  app.get('/api/lead-portal-admin/kit-lookup', R, async (req, reply) => {
+    let no = normKitNo(req.query.no);
+    const img = idOf(req.query.image_id);
+    if (!no && img) {
+      const v = (await query(`SELECT promo_no FROM vio_promos WHERE image_id=$1 ORDER BY id DESC LIMIT 1`, [img]).catch(() => ({ rows: [] }))).rows[0];
+      if (v) no = normKitNo(v.promo_no);
+      if (!no) {
+        const im = (await query(`SELECT name, memo FROM wa_images WHERE id=$1`, [img]).catch(() => ({ rows: [] }))).rows[0];
+        const m = im && String((im.name || '') + ' ' + (im.memo || '')).match(/\bK0\d{2,5}\b/i);
+        if (m) no = normKitNo(m[0]);
+      }
+    }
+    if (!no) return { kit: null };
+    const cp = (await kitCompositions([no]).catch(() => new Map())).get(no);
+    if (!cp || !cp.kit_code) return { kit: null, kit_no: no, missing: true };
+    const info = await productInfo(0, 0, [cp.kit_code]);
+    const p = info[cp.kit_code] || {};
+    return { kit: { kit_no: no, code: cp.kit_code, title: [cp.title, cp.years].filter(Boolean).join(' '), items: (p.kit && p.kit.items) || [], list: p.list || 0, avail: p.avail || 0, active: p.active !== false } };
+  });
+
   app.get('/api/lead-portal-admin/cards', R, async (req, reply) => {
     if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required', note: '0320 마이그레이션이 필요합니다.' });
     const rows = (await query(
@@ -1430,23 +1524,26 @@ export default async function leadPortalRoutes(app) {
               (SELECT string_agg(DISTINCT cu.name, ', ') FROM lead_portal_card_clicks x JOIN customers cu ON cu.id=x.customer_id WHERE x.card_id=c.id AND x.kind='interest') AS interested
          FROM lead_portal_cards c WHERE c.deleted_at IS NULL ORDER BY c.sort, c.id`)).rows;
     return { items: rows.map((r) => ({ ...cardOut(r, false), bank_id: bankId(r.image_url), sort: Number(r.sort) || 0, active: !!r.active, starts_on: r.starts_ymd, ends_on: r.ends_ymd,
-      clicks: r.clicks, interests: r.interests, interested: r.interested || null })), kinds: CARD_KINDS, director: req.ctx.perm.role === 'director' };
+      clicks: r.clicks, interests: r.interests, interested: r.interested || null })), kinds: CARD_KINDS, director: req.ctx.perm.role === 'director', can_edit: true };
   });
-  app.post('/api/lead-portal-admin/cards', DIR, async (req, reply) => {
+  // 1106d · 디렉터: 이 화면을 볼 수 있는 직원이면 누구나 광고 카드를 만들고 고친다(R)
+  app.post('/api/lead-portal-admin/cards', R, async (req, reply) => {
     if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required' });
     const b = req.body || {};
-    const c = cleanCard({ kind: b.kind || 'anuncio', title: b.title, body: b.body, image_url: b.image_url, cta_text: b.cta_text, cta_url: b.cta_url, every_n: b.every_n == null ? 6 : b.every_n, sort: b.sort, active: b.active == null ? true : b.active, starts_on: b.starts_on, ends_on: b.ends_on });
+    const c = cleanCard({ kind: b.kind || 'anuncio', title: b.title, body: b.body, image_url: b.image_url, cta_text: b.cta_text, cta_url: b.cta_url, every_n: b.every_n == null ? 6 : b.every_n, sort: b.sort, active: b.active == null ? true : b.active, starts_on: b.starts_on, ends_on: b.ends_on, kit_no: b.kit_no || undefined });
     if (c.error) return reply.code(400).send(c);
+    if (!(await kitCheck(c.o, reply))) return;
     const o = c.o; const cols = Object.keys(o);
     const r = (await query(`INSERT INTO lead_portal_cards (${cols.join(',')}, created_by, updated_by) VALUES (${cols.map((_, i) => '$' + (i + 1)).join(',')}, $${cols.length + 1}, $${cols.length + 1}) RETURNING id`,
       [...cols.map((x) => o[x]), req.ctx.perm.userId])).rows[0];
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `lead_portal_card:${r.id}`, detail: { kind: o.kind, title: o.title } });
     return { ok: true, id: Number(r.id) };
   });
-  app.patch('/api/lead-portal-admin/cards/:id', DIR, async (req, reply) => {
+  app.patch('/api/lead-portal-admin/cards/:id', R, async (req, reply) => {
     if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required' });
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
     const c = cleanCard(req.body || {}); if (c.error) return reply.code(400).send(c);
+    if (!(await kitCheck(c.o, reply))) return;
     const cols = Object.keys(c.o); if (!cols.length) return { ok: true, unchanged: true };
     const r = (await query(`UPDATE lead_portal_cards SET ${cols.map((x, i) => `${x}=$${i + 2}`).join(', ')}, updated_by=$${cols.length + 2}, updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id`,
       [id, ...cols.map((x) => c.o[x]), req.ctx.perm.userId])).rows[0];
@@ -1454,7 +1551,7 @@ export default async function leadPortalRoutes(app) {
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `lead_portal_card:${id}`, detail: { fields: cols } });
     return { ok: true };
   });
-  app.delete('/api/lead-portal-admin/cards/:id', DIR, async (req, reply) => {
+  app.delete('/api/lead-portal-admin/cards/:id', R, async (req, reply) => {
     if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required' });
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
     const r = (await query(`UPDATE lead_portal_cards SET deleted_at=now(), active=false, updated_by=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [id, req.ctx.perm.userId])).rows[0];

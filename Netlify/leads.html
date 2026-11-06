@@ -8,7 +8,7 @@
 <title>Oportunidades de venta · CTR Equipo Original</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1106c)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1106e)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -26,6 +26,7 @@
   .hd .oe{display:flex;align-items:center;gap:10px;margin-left:auto;font-size:12px;color:var(--muted);line-height:1.3}
   .hd .oe img{height:38px;width:38px}
   .hd .oe b{display:block;color:var(--ink);font-size:13px;letter-spacing:.2px}
+  .hd .oe b.red{display:inline;color:var(--accent);font-size:inherit}   /* 1106d · 37 en rojo */
   #vig{font-size:12px;color:var(--muted);white-space:nowrap;border-left:1px solid var(--line);padding-left:18px}
   .brand{display:none}
   main{flex:1;padding:24px 32px 90px;width:100%;max-width:1920px;margin:0 auto}
@@ -98,6 +99,8 @@
   table.pt{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
   .pt th{font-size:10.5px;font-weight:700;color:var(--muted);text-align:left;padding:6px;background:var(--paper);line-height:1.2;text-transform:uppercase;letter-spacing:.3px}
   .pt td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .pt th.num,.pt td.num{text-align:right;white-space:nowrap}   /* 1106d · números alineados a la derecha (también el encabezado) */
+  .cart td.num input.q{text-align:right}
   .pt tr:last-child td{border-bottom:none}
   .num{text-align:right}
   .pc{color:var(--accent);font-weight:800;font-size:13.5px}
@@ -195,10 +198,25 @@
   .x{background:none;border:none;color:var(--bad);font-size:16px;cursor:pointer;padding:2px 4px}
   /* 1106 · 광고 카드(문의 카드와 같은 크기) */
   .promo{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
-  .promo .pimg{height:200px;background:var(--paper);display:flex;align-items:center;justify-content:center;overflow:hidden}
-  .promo .pimg img{max-width:100%;max-height:100%;object-fit:contain}
-  .promo .pimg:not(.cover){padding:24px}
-  .promo .pimg.cover img{width:100%;height:100%;object-fit:cover}
+  /* 1106d · la imagen ocupa el ancho de la tarjeta y se ve completa (alto según la imagen) */
+  .promo .pimg{background:var(--paper);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .promo .pimg img{max-width:100%;max-height:200px;object-fit:contain}
+  .promo .pimg:not(.cover){padding:24px;height:200px}
+  .promo .pimg.cover img{display:block;width:100%;height:auto;max-height:none}
+  /* 1106d · kit: componentes · precio de lista y tu precio */
+  .kitbox{border:1px solid var(--line);border-radius:var(--r);background:var(--paper);padding:12px;margin-top:4px}
+  .kitbox table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .kitbox th{font-size:10.5px;color:var(--muted);text-align:left;padding:5px 6px;text-transform:uppercase;letter-spacing:.3px}
+  .kitbox td{padding:6px;border-top:1px solid var(--line);vertical-align:top}
+  .kitbox th.num,.kitbox td.num{text-align:right;white-space:nowrap}
+  .kitbox tfoot td{font-weight:800;border-top:2px solid var(--ink)}
+  .kitbox .act{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .kitbox .act input{width:74px;text-align:right;padding:7px}
+  .cat{font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+  .lp{color:#9e9e9e;text-decoration:line-through;font-weight:400;font-size:.88em;margin-right:4px}
+  .dp{font-weight:800}
+  .off{display:inline-block;font-size:10px;font-weight:800;color:#fff;background:var(--accent);border-radius:4px;padding:1px 4px;margin-left:4px;vertical-align:1px}
+  .red{color:var(--accent)}
   .promo .pb{padding:20px;display:flex;flex-direction:column;gap:8px;flex:1}
   .promo .kick{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent)}
   .promo.k-capacitacion .kick{color:#1665D8}.promo.k-anuncio .kick{color:var(--muted)}
@@ -237,7 +255,7 @@
       <span class="sep"></span>
       <span class="ttl">Oportunidades de venta</span>
       <div class="brand">REFATRIX · CTR</div>
-      <div class="oe"><img src="img/oe-badge.png" alt="OE Global Supplier"><span><b>Equipo Original</b>Proveedor OE de 37 fabricantes de autos en el mundo</span></div>
+      <div class="oe"><img src="img/oe-badge.png" alt="OE Global Supplier"><span><b>Equipo Original</b>Proveedor OE de <b class="red" style="display:inline">37</b> fabricantes de autos en el mundo</span></div>
       <div id="vig">Oportunidades de venta</div>
     </div>
   </header>
@@ -258,11 +276,11 @@
           <div class="gnum"><span id="gNum">0</span><small>clientes han pedido piezas CTR por nuestros anuncios</small><em id="gWeek"></em></div>
         </div>
         <h1>Equipo <span>Original</span>.<br>Para tus clientes.</h1>
-        <p>CTR fabrica suspensión y dirección y es proveedor de equipo original (OE) de 37 fabricantes de automóviles en el mundo.</p>
+        <p>CTR fabrica suspensión y dirección y es proveedor de equipo original (OE) de <b class="red">37</b> fabricantes de automóviles en el mundo.</p>
         <p>En esta plataforma ves a los clientes que hoy buscan piezas CTR cerca de ti: vehículo, pieza, tu precio y el stock de Refatrix.</p>
         <div class="facts">
           <img src="img/oe-badge.png" alt="OE Global Supplier · Est. 1952">
-          <div><div class="n">37</div><div class="l">fabricantes de autos con equipo original CTR</div></div>
+          <div><div class="n red">37</div><div class="l">fabricantes de autos con equipo original CTR</div></div>
           <div><div class="n">1952</div><div class="l">desde hace más de 70 años</div></div>
         </div>
       </div>
@@ -345,7 +363,7 @@
       <button class="btn ghost" type="button" id="again" style="width:auto;padding:9px 16px;margin-top:12px">Volver a las solicitudes</button>
     </section>
   </main>
-  <footer id="foot" class="hidden"><div class="fb"><img src="img/ctr-logo.png" alt="CTR"><span>Equipo Original · Proveedor OE de 37 fabricantes de autos en el mundo</span></div>Datos de clientes compartidos por Refatrix para la venta de piezas CTR. Uso exclusivo de tu negocio. Precios sin IVA.</footer>
+  <footer id="foot" class="hidden"><div class="fb"><img src="img/ctr-logo.png" alt="CTR"><span>Equipo Original · Proveedor OE de <b class="red">37</b> fabricantes de autos en el mundo</span></div>Datos de clientes compartidos por Refatrix para la venta de piezas CTR. Uso exclusivo de tu negocio. Precios sin IVA.</footer>
 </div>
 
 <div class="cartbar hidden" id="cartbar"><div class="in"><span id="cartInfo"></span><button class="btn gold" type="button" id="openCart">Ver pedido</button></div></div>
@@ -369,6 +387,12 @@
   function $(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function money(n){ return '$' + Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
+  // 1106d · precio de lista tachado + tu precio (con descuento) · el porcentaje
+  function priceHTML(p, qty, two){
+    var f = two ? money2 : money, q = qty || 1, lp = Number(p && p.list) || 0, dp = Number(p && p.price) || 0;
+    var off = lp > 0 && dp < lp ? Math.round((1 - dp/lp)*100) : 0;
+    return (off ? '<span class="lp">'+f(Math.round(lp*q*100)/100)+'</span>' : '') + '<span class="dp">'+f(Math.round(dp*q*100)/100)+'</span>' + (off ? '<span class="off">-'+off+'%</span>' : '');
+  }
   function money2(n){ return '$' + Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function dmy(s){ return s ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : ''; }
   function dm(s){ return s ? s.slice(8,10)+'/'+s.slice(5,7) : ''; }
@@ -388,6 +412,9 @@
     renderCartBar();
     try{ window.scrollTo(0,0); }catch(e){}
   }
+  // 1106d · «Seguir viendo» vuelve a donde estabas en la lista
+  function openCartView(){ try{ S.listY = window.scrollY || window.pageYOffset || 0; }catch(e){ S.listY = 0; } $('cartMsg').textContent=''; renderCart(); show('sCart'); }
+  function backToList(){ var y = S.listY || 0; show('sList'); render(); try{ window.scrollTo(0, y); requestAnimationFrame(function(){ window.scrollTo(0, y); }); }catch(e){} }
   function api(method, path, body){
     var o = { method:method, headers:{} };
     var t = getTok(); if(t) o.headers.Authorization = 'Bearer ' + t;
@@ -581,7 +608,7 @@
     return '<tr><td><div class="pc">'+esc(p.code)+'</div><div class="pn">'+esc(p.name)+'</div><div class="pn">'+bought+'</div></td>'
       + '<td class="num">'+stockCell(p)+'</td>'
       + '<td class="num">'+shelfCell(p.code)+'</td>'
-      + '<td class="num">'+money(p.price)+'</td>'
+      + '<td class="num">'+priceHTML(p)+'</td>'
       + '<td class="num">'+(isDir() ? '<span class="pn">×'+esc(part.qty)+'</span>' : '<button type="button" class="add'+(inCart?' on':(need?' sug':''))+'" data-id="'+l.id+'" data-code="'+esc(p.code)+'" data-qty="'+esc(part.qty)+'"'+(p.active?'':' disabled')+'>'+(inCart?'✓ ':'+ ')+esc(q)+'</button>')+'</td></tr>';
   }
   function claimOther(l){ return !isDir() && l.claim && l.claim.state==='other'; }
@@ -765,7 +792,7 @@
         + '<div class="b"><div><span class="pc">'+esc(r.code)+'</span> <span class="nm">'+esc(r.name)+'</span></div>'
         + (r.app ? '<div class="ap">'+esc(r.app)+'</div>' : '')
         + (chips ? '<div class="chips">'+chips+'</div>' : '')
-        + '<div class="meta"><span>'+stock+'</span><span>Tu precio <b>'+money(r.price)+'</b></span>'
+        + '<div class="meta"><span>'+stock+'</span><span>Precio '+priceHTML(r)+'</span>'
         + '<span>Mi stock <b>'+(r.shelf==null?'—':esc(r.shelf))+'</b></span>' + (r.bought12>0 ? '<span class="pn">Compraste '+esc(r.bought12)+'</span>' : '') + '</div>'
         + (r.active ? '<div class="act"><input type="number" inputmode="numeric" min="1" max="9999" step="1" value="1" data-rq="'+esc(r.code)+'"><button type="button" class="btn sm" data-addw="'+esc(r.code)+'">Agregar</button></div>' : '')
         + '</div></div>';
@@ -854,7 +881,7 @@
     api('GET','/search?q='+encodeURIComponent(q)).then(function(d){
       if(seq!==fqSeq || S.find!==id) return;
       S.results = d.items || [];
-      S.results.forEach(function(r){ if(!S.products[r.code]) S.products[r.code] = { code:r.code, name:r.name, active:r.active, avail:r.avail, incoming:r.incoming, eta:r.eta, price:r.price, bought12:r.bought12, bought_last:r.bought_last, shelf:r.shelf, shelf_src:r.shelf_src, shelf_at:r.shelf_at }; });
+      S.results.forEach(function(r){ if(!S.products[r.code]) S.products[r.code] = { code:r.code, name:r.name, active:r.active, avail:r.avail, incoming:r.incoming, eta:r.eta, price:r.price, list:r.list, bought12:r.bought12, bought_last:r.bought_last, shelf:r.shelf, shelf_src:r.shelf_src, shelf_at:r.shelf_at }; });
       var el = $('fr'+id); if(el) el.innerHTML = resultsHTML(id);
     }).catch(function(e){ if(!ended(e)){ var m = $('fm'+id); if(m) m.textContent = errMsg(e); } });
   }
@@ -879,8 +906,32 @@
     var cta = c.kind==='capacitacion' && !c.cta_url
       ? '<button type="button" class="btn" data-cint="'+c.id+'">'+esc(c.cta_text||'Quiero participar')+'</button>'
       : (c.cta_url ? '<a class="btn" href="'+esc(c.cta_url)+'" target="_blank" rel="noopener" data-cclick="'+c.id+'">'+esc(c.cta_text||'Ver más')+'</a>' : '');
-    return '<div class="promo k-'+esc(c.kind)+'" data-card="'+c.id+'">'+img+'<div class="pb"><div class="kick">'+esc(KIND[c.kind]||'Refatrix')+'</div><h3>'+esc(c.title)+'</h3>'
-      + (c.body ? '<p>'+esc(c.body)+'</p>' : '') + '<div class="pcta">'+cta+'<span class="ad">Refatrix · CTR</span></div><div class="msg ok" id="cm_'+c.id+'"></div></div></div>';
+    var kt = c.kit, kbtn = '', kbox = '';
+    if(kt){
+      var inB = bLine(kt.code);
+      kbtn = isDir() ? '<button type="button" class="btn ghost" data-kopen="'+c.id+'">Ver kit '+esc(kt.kit_no)+'</button>'
+        : '<button type="button" class="btn gold" data-kopen="'+c.id+'">🛒 Ordenar kit '+esc(kt.kit_no)+'</button>';
+      var price = '<div style="margin-top:2px">'+priceHTML(kt, 1, true)+' <span class="pn">por kit · sin IVA</span></div>';
+      if(S.kitOpen && S.kitOpen[c.id]){
+        kbox = '<div class="kitbox"><div style="font-weight:800">Kit '+esc(kt.kit_no)+(kt.title?' · '+esc(kt.title):'')+'</div>'
+          + '<table><thead><tr><th>Categoría · Pieza CTR</th><th class="num">Cant.</th><th class="num">Lista</th><th class="num">Tu precio</th></tr></thead><tbody>'
+          + kt.items.map(function(i){ return '<tr><td><div class="cat">'+esc(i.category)+'</div><span class="pc">'+esc(i.code)+'</span> <span class="pn">'+esc(i.name)+'</span></td>'
+            + '<td class="num">'+esc(i.qty)+'</td><td class="num"><span class="lp" style="text-decoration:none;color:var(--muted)">'+money2(Math.round(i.list*i.qty*100)/100)+'</span></td><td class="num"><span class="dp">'+money2(Math.round(i.price*i.qty*100)/100)+'</span></td></tr>'; }).join('')
+          + '</tbody><tfoot><tr><td>Total por kit</td><td class="num">'+kt.items.reduce(function(a,i){ return a+i.qty; },0)+' pz</td><td class="num"><span class="lp">'+money2(kt.list)+'</span></td><td class="num">'+money2(kt.price)+'</td></tr></tfoot></table>'
+          + '<div class="pn" style="margin-top:6px">'+(kt.avail>0 ? '<span class="okc">Disponibles '+esc(kt.avail)+' kits</span>' : '<span class="warnc">Sin kits completos hoy'+(kt.incoming>0?' · 🚢 '+esc(kt.incoming)+' en camino':'')+'</span>')+' · Precios sin IVA'+(kt.discount?' · tu descuento -'+esc(kt.discount)+'%':'')+'</div>'
+          + (isDir() || !kt.active ? (kt.active ? '' : '<div class="pn warnc">Este kit no está disponible para pedido.</div>')
+            : '<div class="act"><label class="pn" for="kq_'+c.id+'">Kits</label><input type="number" inputmode="numeric" min="1" max="999" step="1" value="'+(inB?inB.qty:1)+'" id="kq_'+c.id+'"><button type="button" class="btn" data-kadd="'+c.id+'">'+(inB?'✓ Actualizar pedido':'Agregar al pedido del día')+'</button></div>')
+          + '<div class="msg" id="km_'+c.id+'"></div></div>';
+      }
+      kbox = price + kbox;
+    }
+    return '<div class="promo k-'+esc(c.kind)+'" data-card="'+c.id+'">'+img+'<div class="pb"><div class="kick">'+esc(KIND[c.kind]||'Refatrix')+(kt?' · Kit '+esc(kt.kit_no):'')+'</div><h3>'+esc(c.title)+'</h3>'
+      + (c.body ? '<p>'+esc(c.body)+'</p>' : '') + kbox + '<div class="pcta">'+kbtn+cta+'<span class="ad">Refatrix · CTR</span></div><div class="msg ok" id="cm_'+c.id+'"></div></div></div>';
+  }
+  function cardOf(id){ return (S.cards||[]).filter(function(c){ return c.id===id; })[0]; }
+  function redrawCard(id){
+    var c = cardOf(id); if(!c) return;
+    [].forEach.call(document.querySelectorAll('[data-card="'+id+'"]'), function(el){ var t = document.createElement('div'); t.innerHTML = cardHTML(c); el.parentNode.replaceChild(t.firstChild, el); });
   }
   // inserta una tarjeta cada N solicitudes (N = la menor de las tarjetas activas), en orden y en ciclo
   function withCards(cards){
@@ -910,6 +961,13 @@
     if((b = e.target.closest('.add'))){ if(b.disabled) return; toggle(Number(b.getAttribute('data-id')), b.getAttribute('data-code'), Number(b.getAttribute('data-qty'))||1); return; }
     if((b = e.target.closest('.ms'))){ openShelf(b.getAttribute('data-code')); return; }
     if((b = e.target.closest('[data-copen]'))){ openChat(Number(b.getAttribute('data-copen'))); return; }
+    if((b = e.target.closest('[data-kopen]'))){ var kc = Number(b.getAttribute('data-kopen')); S.kitOpen = S.kitOpen || {}; S.kitOpen[kc] = !S.kitOpen[kc]; redrawCard(kc);
+      if(S.kitOpen[kc]) api('POST','/cards/'+kc+'/click',{ kind:'click' }).catch(function(){}); return; }
+    if((b = e.target.closest('[data-kadd]'))){ var ka = Number(b.getAttribute('data-kadd')), kcard = cardOf(ka); if(!kcard || !kcard.kit) return;
+      var root = b.closest('[data-card]'), qi = root && root.querySelector('#kq_'+ka), kq = Math.max(1, Math.min(999, Math.round(Number(qi && qi.value)||1)));
+      b.disabled = true;
+      putLine(kcard.kit.code, kq, [], root && root.querySelector('#km_'+ka)).then(function(){ b.disabled = false; if(bLine(kcard.kit.code)){ redrawCard(ka); var m = document.querySelector('[data-card="'+ka+'"] #km_'+ka); if(m){ m.className = 'msg ok'; m.textContent = '✓ '+kq+(kq===1?' kit':' kits')+' en tu pedido del día. Revísalo arriba.'; } } });
+      return; }
     if((b = e.target.closest('[data-cclick]'))){ api('POST','/cards/'+b.getAttribute('data-cclick')+'/click',{ kind:'click' }).catch(function(){}); return; }
     if((b = e.target.closest('[data-cint]'))){ var cid = b.getAttribute('data-cint'); b.disabled = true;
       api('POST','/cards/'+cid+'/click',{ kind:'interest' }).then(function(){ var m = $('cm_'+cid); if(m) m.textContent = '¡Listo! Refatrix te contactará con los detalles.'; b.textContent = '✓ Registrado'; })
@@ -1025,26 +1083,29 @@
     bp.className = 'bpanel';
     bp.innerHTML = '<div><b>🛒 Pedido del día</b> · '+lines.length+(lines.length===1?' pieza':' piezas')+' · '+pcs+' pz · '+esc(money2(totals().sub))+' + IVA'
       + (since ? '<div class="pn">Juntando desde '+esc(when(since))+' · aún no se envía a Refatrix</div>' : '')+'</div>'
-      + '<button class="btn gold" type="button" id="openCart2">Revisar y enviar</button>';
+      + '<button class="btn gold" type="button" id="openCart2">Revisar</button>';
   }
   function renderCart(){
     var lines = cartLines();
     if(!lines.length){ show('sList'); render(); return; }
-    $('cartBody').innerHTML = '<table class="pt cart"><thead><tr><th>Pieza</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Importe</th><th></th></tr></thead><tbody>'
+    $('cartBody').innerHTML = '<table class="pt cart"><colgroup><col><col style="width:96px"><col style="width:170px"><col style="width:170px"><col style="width:40px"></colgroup><thead><tr><th>Pieza</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Importe</th><th></th></tr></thead><tbody>'
       + lines.map(function(l){ var p = S.products[l.code] || {};
         var st = p.avail>=l.qty ? '<div class="pn okc">Disponible '+esc(p.avail)+'</div>' : '<div class="pn warnc">Disponible '+esc(p.avail||0)+(p.incoming?' · 🚢 '+esc(p.incoming)+(p.eta?' · '+esc(dm(p.eta)):''):'')+'</div>';
-        return '<tr><td><div class="pc">'+esc(l.code)+'</div><div class="pn">'+esc(p.name||'')+'</div>'+st+'</td>'
+        var kt = p.kit && p.kit.items ? '<div class="pn" style="margin-top:3px">Kit: '+p.kit.items.map(function(i){ return esc(i.code)+(i.qty>1?' ×'+i.qty:''); }).join(' · ')+'</div>' : '';
+        return '<tr><td><div class="pc">'+esc(l.code)+'</div><div class="pn">'+esc(p.name||'')+'</div>'+kt+st+'</td>'
           + '<td class="num"><input class="q" type="number" inputmode="numeric" min="1" max="9999" step="1" value="'+l.qty+'" data-code="'+esc(l.code)+'"></td>'
-          + '<td class="num">'+money2(p.price)+'</td><td class="num">'+money2(Math.round((p.price||0)*l.qty*100)/100)+'</td>'
+          + '<td class="num">'+priceHTML(p, 1, true)+'</td><td class="num">'+priceHTML(p, l.qty, true)+'</td>'
           + '<td><button type="button" class="x" data-rm="'+esc(l.code)+'" aria-label="Quitar">✕</button></td></tr>'; }).join('')
       + '</tbody></table>';
     var t = totals();
-    $('cartTotal').innerHTML = '<div><span>Subtotal</span><span>'+money2(t.sub)+'</span></div><div><span>IVA 16%</span><span>'+money2(t.iva)+'</span></div><div class="g"><span>Total</span><span>'+money2(t.total)+'</span></div>';
+    var lt = 0; cartLines().forEach(function(l){ var p = S.products[l.code]; if(p) lt += Math.round((Number(p.list)||Number(p.price)||0)*l.qty*100)/100; });
+    $('cartTotal').innerHTML = (lt > t.sub ? '<div class="pn"><span>Precio de lista</span><span class="lp">'+money2(Math.round(lt*100)/100)+'</span></div><div class="pn"><span>Tu ahorro</span><span class="red" style="font-weight:800">-'+money2(Math.round((lt-t.sub)*100)/100)+'</span></div>' : '')
+      + '<div><span>Subtotal</span><span>'+money2(t.sub)+'</span></div><div><span>IVA 16%</span><span>'+money2(t.iva)+'</span></div><div class="g"><span>Total</span><span>'+money2(t.total)+'</span></div>';
     $('cartHint').textContent = 'Precio con tu descuento de cliente' + (S.me && S.me.discount ? ' (-'+S.me.discount+'%)' : '') + '. Las piezas se apartan mientras tu asesor confirma; si falta stock te indica la fecha de llegada.';
   }
-  $('openCart').addEventListener('click', function(){ $('cartMsg').textContent=''; renderCart(); show('sCart'); });
-  $('bpanel').addEventListener('click', function(e){ if(e.target.closest('#openCart2')){ $('cartMsg').textContent=''; renderCart(); show('sCart'); } });
-  $('back').addEventListener('click', function(){ show('sList'); render(); });
+  $('openCart').addEventListener('click', openCartView);
+  $('bpanel').addEventListener('click', function(e){ if(e.target.closest('#openCart2')) openCartView(); });
+  $('back').addEventListener('click', backToList);
   $('cartBody').addEventListener('change', function(e){
     var i = e.target.closest('input.q'); if(!i) return;
     var code = i.getAttribute('data-code'); var v = Math.max(1, Math.min(9999, Math.round(Number(i.value)||1)));
