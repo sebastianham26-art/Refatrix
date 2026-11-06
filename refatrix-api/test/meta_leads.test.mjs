@@ -156,7 +156,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1105b/);
+    assert.match(d.title, /mtl-1105c/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
     assert.match(d.getElementById('sKpis').textContent, /전체 문의4/); assert.match(d.getElementById('sKpis').textContent, /WhatsApp1/);
     assert.match(d.getElementById('sAi').textContent, /AI 분석 1건 완료/);

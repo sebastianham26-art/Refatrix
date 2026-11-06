@@ -31,7 +31,7 @@ import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
 import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
 // 0297 · 고객 포털(접속코드 · 연락처 공개 · 매장 재고 · 포털 주문) — 같은 플러그인에서 등록(server.js 변경 없음)
-import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady } from '../leadPortal.js';
+import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady, portalInfoFor } from '../leadPortal.js';
 import { chatReady, sendMessengerSmart } from '../metaPageMsgs.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
@@ -149,7 +149,8 @@ export default async function metaLeadsRoutes(app) {
     if (r.platform === 'messenger') r.messages = mergeConversation(r.messages, await liveMessages(r.psid));
     else r.messages = markMetaKinds((Array.isArray(r.messages) ? r.messages : []).map((m) => ({ ...m })));   // 1028c · Meta 기록 · 자동 응답 구분
     delete r.psid;
-    return { ...r, id: Number(r.id) };
+    const portal = await portalInfoFor(id);   // 1105c · 포털 입력(고객관리)
+    return { ...r, id: Number(r.id), portal };
   });
 
   // 1105 · 2026-11-05 디렉터: 이 화면에 접근 권한이 있는 직원은 Facebook(Messenger) 손님에게 바로 답장

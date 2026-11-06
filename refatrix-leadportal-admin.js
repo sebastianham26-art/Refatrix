@@ -33,6 +33,7 @@
       if (abox) abox.innerHTML = (LP.st.ads || []).length ? (LP.st.ads || []).map(function (a) { return '<label class="lp-ck"><input type="checkbox" value="' + esc(a.ad_id) + '"> ' + esc(adLabel(a.ad_id)) + ' <span class="muted">' + a.n + '건</span></label>'; }).join('') : '<div class="hint">아직 광고가 없습니다(문의에서 광고 ID 가 보이거나 광고를 등록하면 나타납니다).</div>';
       if (LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); }
     }
+    loadConsents();
     if (LP.st.access) { if (!g('lpAcTo').value) { g('lpAcTo').value = today(); var f0 = new Date(Date.UTC(+today().slice(0, 4), +today().slice(5, 7) - 1, +today().slice(8, 10) - 13)); g('lpAcFrom').value = f0.toISOString().slice(0, 10); } loadAccess(); }
     else if (g('lpAccess')) g('lpAccess').innerHTML = '<div class="hint">접속 기록은 서버에 0317 마이그레이션 뒤부터 쌓입니다(Railway 콘솔 npm run migrate).</div>';
     LP.loaded = true;
@@ -62,6 +63,28 @@
           + '<td class="num">' + x.opens + (x.logins ? '<div class="muted">코드 입력 ' + x.logins + '</div>' : '') + '</td>'
           + '<td class="muted" style="max-width:420px">' + esc((x.times || []).join(' · ')) + '</td></tr>';
       }).join('') + '</tbody></table>';
+  }
+
+  // 1105c · 개인정보 보호 확약서(전자서명) — 이 화면 접근 권한
+  async function loadConsents() {
+    if (!g('lpConsents')) return;
+    try {
+      var d = await api('GET', '/api/lead-portal-admin/consents'); LP.cons = d;
+      g('lpConsSum').textContent = '서명 ' + d.items.filter(function (x) { return x.current; }).length + '건(현재 문안 ' + d.version + ') · 아직 서명 안 한 사용 중 코드 ' + d.pending.length + '개';
+      g('lpConsents').innerHTML = (d.pending.length ? '<div class="hint" style="margin:6px 0">⏳ 아직 서명 안 함: ' + d.pending.map(function (p) { return esc(p.customer_name) + ' …' + esc(p.code_last4); }).join(' · ') + '</div>' : '')
+        + (d.items.length ? '<table><thead><tr><th>서명 일시</th><th>고객</th><th>코드</th><th>이름</th><th>성</th><th>휴대폰</th><th>IP</th><th>문안</th><th></th></tr></thead><tbody>'
+          + d.items.map(function (x) { return '<tr><td style="white-space:nowrap">' + esc(x.signed_mx) + '</td><td><b>' + esc(x.customer_name) + '</b><div class="muted">' + esc(x.customer_code) + '</div></td><td class="mono">…' + esc(x.code_last4) + '</td><td>' + esc(x.first_name) + '</td><td>' + esc(x.last_name) + '</td><td class="mono">' + esc(x.phone) + '</td><td class="muted">' + esc(x.ip || '') + '</td><td>' + (x.current ? esc(x.version) : '<span class="muted">' + esc(x.version) + ' (이전)</span>') + '</td><td><button type="button" class="btn sm ghost" data-cons="' + x.id + '">서명 보기</button></td></tr>'; }).join('') + '</tbody></table>'
+          : '<div class="hint">아직 서명한 고객이 없습니다.</div>');
+    } catch (e) { g('lpConsents').innerHTML = '<div class="hint">' + esc(e.message === 'migration_required' ? '확약서는 서버에 0318 마이그레이션 뒤부터 받습니다(Railway 콘솔 npm run migrate).' : errT(e)) + '</div>'; }
+  }
+  async function viewConsent(id) {
+    try {
+      var d = await api('GET', '/api/lead-portal-admin/consents/' + id);
+      g('lpConsView').innerHTML = '<div class="aisum" style="margin-top:8px"><b>' + esc(d.first_name + ' ' + d.last_name) + '</b> · ' + esc(d.phone) + ' · ' + esc(d.signed_mx) + ' · IP ' + esc(d.ip || '—') + ' <button type="button" class="btn sm ghost" id="lpConsX">닫기</button>'
+        + '<div style="margin:8px 0"><img alt="서명" src="' + esc(d.signature) + '" style="max-width:420px;width:100%;border:1px solid #ddd;border-radius:8px;background:#fff"></div>'
+        + '<pre style="white-space:pre-wrap;font-size:12px;background:#fff;border:1px solid #eee;border-radius:8px;padding:8px">' + esc(d.text) + '</pre><div class="muted mono" style="font-size:11px">문안 ' + esc(d.version) + ' · sha256 ' + esc(d.text_hash) + '<br>' + esc(d.ua || '') + '</div></div>';
+      g('lpConsX').onclick = function () { g('lpConsView').innerHTML = ''; };
+    } catch (e) { say(false, errT(e)); }
   }
 
   // ── 발급 ──────────────────────────────────────────────
@@ -352,6 +375,8 @@
     g('lpScopeMode').addEventListener('change', function () { g('lpScopeBox').classList.toggle('hidden', g('lpScopeMode').value !== 'pick'); });
     if (g('lpAdMode')) g('lpAdMode').addEventListener('change', function () { g('lpAdBox').classList.toggle('hidden', g('lpAdMode').value !== 'pick'); });
     if (g('lpAcGo')) g('lpAcGo').addEventListener('click', function () { loadAccess(); });
+    if (g('lpConsGo')) g('lpConsGo').addEventListener('click', loadConsents);
+    if (g('lpConsents')) g('lpConsents').addEventListener('click', function (e) { var b = e.target.closest('[data-cons]'); if (b) viewConsent(Number(b.dataset.cons)); });
     if (g('lpAcQ')) g('lpAcQ').addEventListener('input', renderAccess);
     if (g('lpAccess')) g('lpAccess').addEventListener('click', function (e) { if (e.target.closest('#lpAcAll')) loadAccess(null); });
     g('lpIssue').addEventListener('click', issue);
@@ -366,7 +391,7 @@
     g('lpShelf').addEventListener('change', function (e) { var i = e.target.closest('input.lp-q'); if (i) saveShelf(i.dataset.code, i.value.trim(), false); });
     g('lpShelf').addEventListener('click', function (e) { var b = e.target.closest('[data-hist]'); if (b) shelfHist(b.dataset.hist); });
     var tabs = g('tabs');
-    if (tabs) tabs.addEventListener('click', function (e) { var b = e.target.closest('.tab'); if (b && b.dataset.p === 'lp') { if (!LP.loaded) load(); else { if (LP.st && LP.st.director && LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); } if (LP.st && LP.st.access) loadAccess(); } } });
+    if (tabs) tabs.addEventListener('click', function (e) { var b = e.target.closest('.tab'); if (b && b.dataset.p === 'lp') { if (!LP.loaded) load(); else { if (LP.st && LP.st.director && LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); } if (LP.st && LP.st.access) loadAccess(); loadConsents(); } } });
   }
   var fmtT = function (t) { return new Date(t).toLocaleString('ko-KR', { timeZone: 'America/Mexico_City', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); };
   wire();

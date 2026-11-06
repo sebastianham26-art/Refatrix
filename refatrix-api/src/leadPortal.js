@@ -46,7 +46,29 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessengerSmart } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1105b';
+export const LP_BUILD = 'lp-1105c';
+
+// 1105c · 개인정보 보호 · 비밀유지 확약서(포털 로그인 후 전자서명) — 2026-11-05 디렉터
+//   본문을 바꾸면 CONSENT_VERSION 을 올린다 → 모든 고객 코드가 다시 서명한다.
+export const CONSENT_VERSION = '2026-11-05';
+export const CONSENT_TEXT = [
+  'CARTA COMPROMISO DE CONFIDENCIALIDAD Y PROTECCIÓN DE DATOS PERSONALES',
+  'Plataforma de oportunidades de venta Refatrix',
+  '',
+  'Declaro que:',
+  '1. Los datos personales de los clientes que consulto en esta plataforma (nombres, teléfonos, conversaciones, ubicación, vehículos y piezas buscadas) me son compartidos por Refatrix únicamente para atender esas solicitudes de venta de piezas CTR.',
+  '2. Usaré estos datos solo dentro de esta plataforma y solo para ese fin. No los copiaré, venderé, compartiré, publicaré ni entregaré a terceros, ni los usaré para otros fines.',
+  '3. Protegeré mi código de acceso y no lo compartiré con personas ajenas a mi negocio.',
+  '4. Registraré con verdad lo que hable con cada cliente.',
+  '5. Si incumplo este compromiso, asumo personalmente toda la responsabilidad civil y penal que corresponda conforme a la legislación mexicana aplicable en materia de protección de datos personales, y Refatrix podrá cancelar mi código de acceso de inmediato.',
+  '',
+  'Al firmar, confirmo que leí y acepto esta carta compromiso.',
+].join('\n');
+const consentHash = () => crypto.createHash('sha256').update(CONSENT_VERSION + '\n' + CONSENT_TEXT).digest('hex');
+// 1105c · 포털에서 입력하는 문의 정보 — ERP 「Meta 광고 문의」 칸과 같은 것(m_*)
+export const INFO_FIELDS = { name: ['m_name', 120], tipo: ['m_tipo', 60], state: ['m_state', 60], city: ['m_city', 80], phone: ['m_phone', 40], vehicles: ['m_vehicles', 300], parts: ['m_parts', 300] };
+export const INFO_TIPOS = ['Refaccionaria', 'Mayorista', 'Taller mecánico', 'Flotilla', 'Taxi / app', 'Particular'];
+export const INFO_RESULTS = ['contactado', 'cotizado', 'vendido', 'no_interesa'];
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -402,6 +424,19 @@ export function markMetaKinds(list) {
   return ms;
 }
 
+// 1105c · ERP 상세 — 포털에서 refaccionaria 가 넣은 문의 정보 · 결과 · 변경 기록
+export async function portalInfoFor(threadId) {
+  try {
+    const items = (await query(
+      `SELECT i.result, i.fields, c.name AS customer_name, to_char(i.updated_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at
+         FROM lead_portal_info i JOIN customers c ON c.id = i.customer_id WHERE i.thread_id=$1 ORDER BY i.updated_at DESC`, [threadId])).rows;
+    const log = (await query(
+      `SELECT l.changes, c.name AS customer_name, to_char(l.at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at
+         FROM lead_portal_info_log l LEFT JOIN customers c ON c.id = l.customer_id WHERE l.thread_id=$1 ORDER BY l.at DESC, l.id DESC LIMIT 30`, [threadId])).rows;
+    return { items, log };
+  } catch (_) { return null; }   // 0318 전
+}
+
 // 0300 · Meta 문의 목록(ERP)에 「💬 고객명 대화 중 · ~만료일」
 export async function claimMap(threadIds) {
   const m = new Map();
@@ -506,6 +541,24 @@ export default async function leadPortalRoutes(app) {
     const ua = String((req && req.headers && req.headers['user-agent']) || '').slice(0, 200) || null;
     await query(`INSERT INTO lead_portal_access (code_id, kind, ip, ua) VALUES ($1,$2,$3,$4)`, [k.id, kind, req ? clientIp(req) : null, ua]).catch(() => {});
   }
+  let ciReady = false, ciProbe = 0;
+  async function infoConsentReady() {
+    if (ciReady) return true;
+    if (Date.now() - ciProbe < 30000) return false;
+    ciProbe = Date.now();
+    try { ciReady = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='lead_portal_consents'`)).rows.length > 0; } catch (_) { ciReady = false; }
+    return ciReady;
+  }
+  // 이 코드가 지금 버전 확약서에 서명했나(디렉터 코드는 필요 없음)
+  const signedCache = new Map();   // code_id → 서명 시각(같은 버전) — 매 요청 조회를 줄인다
+  async function consentOf(k) {
+    if (!k || isDirCode(k) || !(await infoConsentReady())) return { required: false };
+    const ck = k.id + '|' + CONSENT_VERSION;
+    if (signedCache.has(ck)) return { required: false, signed_at: signedCache.get(ck) };
+    const r = (await query(`SELECT id, to_char(signed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at FROM lead_portal_consents WHERE code_id=$1 AND version=$2 ORDER BY id DESC LIMIT 1`, [k.id, CONSENT_VERSION])).rows[0];
+    if (r) { signedCache.set(ck, r.at); return { required: false, signed_at: r.at }; }
+    return { required: true };
+  }
   async function loadCode(id) {
     return (await query(
       `SELECT k.*, to_char(k.expires_on,'YYYY-MM-DD') AS expires_ymd, c.name AS customer_name, c.code AS customer_code,
@@ -531,6 +584,9 @@ export default async function leadPortalRoutes(app) {
     const b = blocked(k);
     if (b) return reply.code(b.code).send(b.body);
     req.lp = k;
+    // 1105c · 확약서 서명 전에는 「내 정보 · 확약서」만
+    const url = String((req.routeOptions && req.routeOptions.url) || req.url || '');
+    if (!/\/api\/lead-portal\/(me|consent)$/.test(url) && (await consentOf(k)).required) return reply.code(403).send({ error: 'consent_required' });
     if (!k.last_seen_at || Date.now() - new Date(k.last_seen_at).getTime() > 5 * 60 * 1000) {
       query(`UPDATE lead_portal_codes SET last_seen_at=now() WHERE id=$1`, [k.id]).catch(() => {});
       recordAccess(k, 'active', req);   // 1105 · 사용 중(5분마다 1번)
@@ -565,7 +621,39 @@ export default async function leadPortalRoutes(app) {
   });
 
   // 열 때마다 토큰을 새로 준다(7일 미접속이면 코드 다시 입력)
-  app.get('/api/lead-portal/me', P, async (req) => { await recordAccess(req.lp, 'open', req); return { token: sign(req.lp), me: meOut(req.lp) }; });
+  app.get('/api/lead-portal/me', P, async (req) => {
+    await recordAccess(req.lp, 'open', req);
+    const c = await consentOf(req.lp);
+    return { token: sign(req.lp), me: { ...meOut(req.lp), consent_required: !!c.required, consent_signed_at: c.signed_at || null } };
+  });
+  // 1105c · 확약서 — 본문 · (같은 고객이 전에 쓴) 이름 · 휴대폰 미리 채우기
+  app.get('/api/lead-portal/consent', P, async (req) => {
+    const k = req.lp; let prev = null;
+    if (!isDirCode(k) && (await infoConsentReady())) {
+      prev = (await query(`SELECT first_name, last_name, phone FROM lead_portal_consents WHERE customer_id=$1 ORDER BY id DESC LIMIT 1`, [k.customer_id])).rows[0] || null;
+    }
+    return { version: CONSENT_VERSION, text: CONSENT_TEXT, customer_name: k.customer_name, prev, ...(await consentOf(k)) };
+  });
+  app.post('/api/lead-portal/consent', P, async (req, reply) => {
+    const k = req.lp; const b = req.body || {};
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
+    if (!(await infoConsentReady())) return reply.code(503).send({ error: 'not_ready' });
+    const fn = clip(b.first_name, 80), ln = clip(b.last_name, 80);
+    const ph = String(b.phone || '').replace(/\D/g, '');
+    const sig = String(b.signature || '');
+    if (!fn || !ln) return reply.code(400).send({ error: 'name_required' });
+    if (ph.length < 10 || ph.length > 13) return reply.code(400).send({ error: 'bad_phone' });
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(sig) || sig.length < 400 || sig.length > 300000) return reply.code(400).send({ error: 'signature_required' });
+    if (b.accept !== true) return reply.code(400).send({ error: 'accept_required' });
+    if (b.version && b.version !== CONSENT_VERSION) return reply.code(409).send({ error: 'consent_changed' });
+    const ua = String(req.headers['user-agent'] || '').slice(0, 300) || null;
+    const r = (await query(
+      `INSERT INTO lead_portal_consents (code_id, customer_id, version, first_name, last_name, phone, signature, text, text_hash, ip, ua)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, to_char(signed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at`,
+      [k.id, k.customer_id, CONSENT_VERSION, fn, ln, ph, sig, CONSENT_TEXT, consentHash(), clientIp(req), ua])).rows[0];
+    await logEvent({ userId: null, action: 'create', target: `lead_portal_consent:${r.id}`, detail: { code_id: Number(k.id), customer_id: Number(k.customer_id), version: CONSENT_VERSION } });
+    return { ok: true, signed_at: r.at };
+  });
 
   app.get('/api/lead-portal/leads', P, async (req) => {
     const k = req.lp;
@@ -608,6 +696,11 @@ export default async function leadPortalRoutes(app) {
       }
     }
     for (const l of leads) l.notes = notes.get(l.id) || [];
+    // 1105c · 이 고객이 입력한 결과(문의 정보)
+    if (!isDirCode(k) && (await infoConsentReady()) && leads.length) {
+      const res = new Map((await query(`SELECT thread_id, result FROM lead_portal_info WHERE customer_id=$1 AND thread_id = ANY($2::bigint[])`, [k.customer_id, leads.map((l) => l.id)])).rows.map((r) => [Number(r.thread_id), r.result]));
+      for (const l of leads) l.result = res.get(l.id) || null;
+    }
     // 0305 · 선점(모든 채널) — 다른 refaccionaria 가 선점한 문의는 연락처(가린 것 포함)를 보내지 않는다
     const cl = await activeClaims(leads.map((l) => l.id));
     for (const l of leads) {
@@ -681,6 +774,70 @@ export default async function leadPortalRoutes(app) {
 
   // 0298 · 「이 손님이 찾는 부품」 저장 — 그 문의의 목록을 통째로 바꾼다.
   //   2026-10-28 디렉터: 모든 문의에서 기록(연락처를 안 봐도) — 다른 refaccionaria 가 선점한 문의만 막는다.
+  // ── 1105c · 문의 정보(고객관리) — 연락처를 본 뒤 · 다른 곳이 선점하지 않았을 때. ERP 같은 칸(m_*)에 들어간다 ──
+  const INFO_COLS = `COALESCE(t.m_name, t.name) AS name, COALESCE(t.m_tipo, t.ai_tipo, t.a_tipo) AS tipo, ${STATE_EXPR} AS state,
+                     COALESCE(t.m_city, t.ai_city, t.a_city) AS city, ${PHONE_EXPR} AS phone,
+                     COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts`;
+  async function infoGate(k, id, reply) {
+    if (!(await infoConsentReady())) { reply.code(503).send({ error: 'not_ready' }); return false; }
+    if (!(await threadVisible(k, id))) { reply.code(404).send({ error: 'not_found' }); return false; }
+    if (isDirCode(k)) return true;
+    const oc = await otherClaim(k, id);
+    if (oc) { reply.code(409).send({ error: 'claimed_other', until: new Date(oc.expires_at).toISOString() }); return false; }
+    if (!(await hasRevealed(k, id))) { reply.code(409).send({ error: 'need_contact' }); return false; }
+    return true;
+  }
+  async function infoOut(k, id) {
+    const t = (await query(`SELECT ${INFO_COLS} FROM meta_threads t WHERE t.id=$1`, [id])).rows[0] || {};
+    const mine = isDirCode(k) ? null : (await query(`SELECT result, to_char(updated_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at FROM lead_portal_info WHERE thread_id=$1 AND customer_id=$2`, [id, k.customer_id])).rows[0];
+    const o = {}; for (const f of Object.keys(INFO_FIELDS)) o[f] = t[f] == null ? '' : String(t[f]);
+    return { fields: o, result: mine ? mine.result : null, updated_mx: mine ? mine.at : null, states: META_STATES, tipos: INFO_TIPOS, results: INFO_RESULTS };
+  }
+  app.get('/api/lead-portal/leads/:id/info', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await infoGate(k, id, reply))) return;
+    return infoOut(k, id);
+  });
+  app.put('/api/lead-portal/leads/:id/info', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id); const b = req.body || {};
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (isDirCode(k)) return reply.code(403).send({ error: 'director_view' });
+    if (!(await infoGate(k, id, reply))) return;
+    const cur = (await query(`SELECT ${INFO_COLS}, t.status FROM meta_threads t WHERE t.id=$1`, [id])).rows[0];
+    const sets = []; const args = [id]; const changes = {}; const vals = {};
+    for (const [f, [col, max]] of Object.entries(INFO_FIELDS)) {
+      if (b[f] === undefined) continue;
+      let v = b[f] == null ? '' : String(b[f]).replace(/\s+/g, ' ').trim().slice(0, max);
+      if (f === 'state' && v && !META_STATES.includes(v)) return reply.code(400).send({ error: 'bad_state' });
+      if (f === 'phone' && v) { v = v.replace(/[^\d+ ]/g, '').trim(); if (v.replace(/\D/g, '').length < 10) return reply.code(400).send({ error: 'bad_phone' }); }
+      vals[f] = v;
+      if (!v || v === String(cur[f] || '')) continue;   // 빈 칸 = 그대로(포털에서 지우지는 않는다) · 같은 값 = 그대로
+      args.push(v); sets.push(`${col} = $${args.length}`); changes[f] = [cur[f] || null, v];
+    }
+    let result = b.result === undefined ? undefined : (b.result || null);
+    if (result && !INFO_RESULTS.includes(result)) return reply.code(400).send({ error: 'bad_result' });
+    // 결과 → ERP 상태: 연락함(신규일 때만) · 판매. 「관심 없음 · 견적함」은 ERP 상태를 바꾸지 않고 기록만
+    if (result === 'contactado' && cur.status === 'nuevo') sets.push(`status = 'contactado'`);
+    if (result === 'vendido' && cur.status !== 'venta') sets.push(`status = 'venta'`);
+    const prev = (await query(`SELECT result FROM lead_portal_info WHERE thread_id=$1 AND customer_id=$2`, [id, k.customer_id])).rows[0];
+    if (result !== undefined && (prev ? prev.result : null) !== result) changes.result = [prev ? prev.result : null, result];
+    if (!Object.keys(changes).length) return { ok: true, unchanged: true, ...(await infoOut(k, id)) };
+    await withTx(async (c) => {
+      if (sets.length) await c.query(`UPDATE meta_threads SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, args);
+      await c.query(
+        `INSERT INTO lead_portal_info (thread_id, customer_id, code_id, result, fields) VALUES ($1,$2,$3,$4,$5::jsonb)
+         ON CONFLICT (thread_id, customer_id) DO UPDATE SET code_id=EXCLUDED.code_id, result=CASE WHEN $6::boolean THEN EXCLUDED.result ELSE lead_portal_info.result END, fields=EXCLUDED.fields, updated_at=now()`,
+        [id, k.customer_id, k.id, result === undefined ? (prev ? prev.result : null) : result, JSON.stringify(vals), result !== undefined]);
+      await c.query(`INSERT INTO lead_portal_info_log (thread_id, customer_id, code_id, changes) VALUES ($1,$2,$3,$4::jsonb)`, [id, k.customer_id, k.id, JSON.stringify(changes)]);
+    });
+    // 차종 · 부품을 고치면 CTR 부품번호 다시 찾기(ERP 와 같은 규칙)
+    if (changes.vehicles || changes.parts) import('./metaLeadsMatch.js').then((m) => m.matchThreads({ ids: [id] })).catch(() => {});
+    // 기록 = 연락 기록 → 선점(0305 규칙)
+    const cl = await takeClaim(k, id, 'info');
+    return { ok: true, ...(await infoOut(k, id)), claim: cl ? { state: cl.state, until: cl.until || null, created: !!cl.created } : null };
+  });
+
   app.put('/api/lead-portal/leads/:id/wants', P, async (req, reply) => {
     const k = req.lp; const id = idOf(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_id' });
@@ -1155,6 +1312,31 @@ export default async function leadPortalRoutes(app) {
     } catch (_) { ads = []; }
     return { ready: await portalReady(), build: LP_BUILD, url: portalUrl(), states: META_STATES,
       director: req.ctx.perm.role === 'director', today: todayMx(), ads, access: await accessReady() };
+  });
+
+  // 1105c · 확약서 서명 기록(이 화면 접근 권한) · 서명 이미지
+  app.get('/api/lead-portal-admin/consents', R, async (req, reply) => {
+    if (!(await infoConsentReady())) return reply.code(503).send({ error: 'migration_required', note: '0318 마이그레이션이 필요합니다.' });
+    const rows = (await query(
+      `SELECT s.id, s.code_id, s.version, s.first_name, s.last_name, s.phone, s.ip,
+              to_char(s.signed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS signed_mx, k.code_last4,
+              COALESCE(c.name, '') AS customer_name, COALESCE(c.code, '') AS customer_code, (s.version = $1) AS current
+         FROM lead_portal_consents s JOIN lead_portal_codes k ON k.id = s.code_id LEFT JOIN customers c ON c.id = s.customer_id
+        ORDER BY s.signed_at DESC, s.id DESC LIMIT 500`, [CONSENT_VERSION])).rows;
+    const pending = (await query(
+      `SELECT k.id AS code_id, k.code_last4, c.name AS customer_name, c.code AS customer_code
+         FROM lead_portal_codes k JOIN customers c ON c.id = k.customer_id
+        WHERE k.deleted_at IS NULL AND k.active AND COALESCE(to_jsonb(k)->>'kind','customer') <> 'director'
+          AND NOT EXISTS (SELECT 1 FROM lead_portal_consents s WHERE s.code_id = k.id AND s.version = $1)
+        ORDER BY c.name`, [CONSENT_VERSION])).rows;
+    return { version: CONSENT_VERSION, text: CONSENT_TEXT, items: rows.map((r) => ({ ...r, id: Number(r.id), code_id: Number(r.code_id) })), pending: pending.map((r) => ({ ...r, code_id: Number(r.code_id) })) };
+  });
+  app.get('/api/lead-portal-admin/consents/:id', R, async (req, reply) => {
+    if (!(await infoConsentReady())) return reply.code(503).send({ error: 'migration_required' });
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`SELECT s.*, to_char(s.signed_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI:SS') AS signed_mx FROM lead_portal_consents s WHERE s.id=$1`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { id: Number(r.id), version: r.version, first_name: r.first_name, last_name: r.last_name, phone: r.phone, signature: r.signature, text: r.text, text_hash: r.text_hash, ip: r.ip, ua: r.ua, signed_mx: r.signed_mx };
   });
 
   // 1105 · 접속 기록 — 고객(접속코드)별 · 날짜별(멕시코 시간) 접속 시각. 이 화면에 접근 권한이 있는 직원 모두(R)

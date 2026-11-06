@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105b</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105c</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -232,6 +232,13 @@
         <div class="tblwrap" id="lpNotes"></div>
       </div>
 
+      <div id="lpConsentBox">
+        <h2 style="margin-top:20px">✍️ 개인정보 보호 확약서 <span class="hint">· 고객이 포털에 들어올 때 전자서명(이름 · 성 · 휴대폰 · 서명) — 서명해야 문의를 볼 수 있음</span></h2>
+        <div class="row" style="align-items:center"><button type="button" class="btn sm ghost" id="lpConsGo">새로고침</button><span class="hint" id="lpConsSum" style="margin-left:auto"></span></div>
+        <div class="tblwrap" id="lpConsents"></div>
+        <div id="lpConsView"></div>
+      </div>
+
       <div id="lpAccessBox">
         <h2 style="margin-top:20px">📈 접속 기록 <span class="hint">· 접속코드를 받은 고객이 언제 포털을 열었는지(멕시코 시간) — 이 화면을 볼 수 있는 직원 모두</span></h2>
         <div class="row" style="align-items:flex-end">
@@ -300,6 +307,7 @@
     <div><div class="chat" id="oChat"></div><div id="oComp"></div></div>
     <div class="ed">
       <div id="oAi"></div>
+      <div id="oPortal"></div>
       <div class="hint">비워 두면 대화에서 뽑은 <span class="auto">자동값</span>(AI → 규칙)을 씁니다. 고친 값은 다시 가져와도 지워지지 않습니다.</div>
       <label>광고</label><select id="eAd"></select><div class="hint" id="eAdHint"></div>
       <label>이름</label><input id="eName">
@@ -321,7 +329,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1105b';
+  const MTL_BUILD='mtl-1105c';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -497,6 +505,17 @@
     if(d.platform!=='messenger'){ comp.innerHTML=''; return; }
     comp.innerHTML='<div class="mcomp"><textarea id="oText" rows="2" maxlength="2000" placeholder="Facebook 으로 손님에게 답장 (Refatrix 페이지 이름으로 나갑니다)"></textarea><button type="button" class="btn" id="oSend">보내기</button></div><div class="msg" id="oSendMsg"></div>';
   }
+  // 1105c · 포털에서 refaccionaria 가 넣은 문의 정보 · 결과
+  const PRES={contactado:'연락함',cotizado:'견적함',vendido:'판매',no_interesa:'관심 없음'};
+  const PFLD={name:'이름',tipo:'업종',state:'주',city:'도시',phone:'전화',vehicles:'차종',parts:'부품',result:'결과'};
+  function renderPortalInfo(d){
+    const el=$('oPortal'); if(!el) return;
+    const p=d.portal; if(!p||(!p.items.length&&!p.log.length)){ el.innerHTML=''; return; }
+    el.innerHTML='<div class="aisum" style="background:#fbf7ee">🔑 <b>포털 입력(refaccionaria)</b>'
+      +p.items.map(x=>'<div>'+esc(x.customer_name)+' · 결과 <b>'+esc(PRES[x.result]||'—')+'</b> · '+esc(x.at)+'</div>').join('')
+      +(p.log.length?'<details style="margin-top:4px"><summary class="muted">변경 기록 '+p.log.length+'건</summary>'+p.log.map(l=>'<div class="muted">'+esc(l.at)+' · '+esc(l.customer_name||'')+' — '+esc(Object.keys(l.changes||{}).map(k=>(PFLD[k]||k)+': '+((l.changes[k]||[])[0]==null?'—':(k==='result'?(PRES[l.changes[k][0]]||l.changes[k][0]):l.changes[k][0]))+' → '+(k==='result'?(PRES[(l.changes[k]||[])[1]]||'—'):((l.changes[k]||[])[1]||'—'))).join(' · '))+'</div>').join('')+'</details>':'')
+      +'<div class="hint">포털에서 넣은 값은 아래 칸(이름 · 업종 · 주 · 도시 · 전화 · 차종 · 부품)에 그대로 들어와 있습니다.</div></div>';
+  }
   async function sendFb(){
     const d=S.cur; const ta=$('oText'); const text=ta?ta.value.trim():''; if(!d||!text) return;
     const btn=$('oSend'); btn.disabled=true; $('oSendMsg').className='msg'; $('oSendMsg').textContent='';
@@ -518,6 +537,7 @@
     $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(CH[d.platform]||['',d.platform])[1]+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
     $('oAi').innerHTML=d.summary?'<div class="aisum">🤖 '+esc(d.summary)+(d.intent?'<br><span class="muted">관심: '+esc(d.intent)+'</span>':'')+'</div>':(d.ai_error?'<div class="aisum bad-t">AI 분석 오류: '+esc(d.ai_error)+'</div>':'');
     renderChat(d);
+    renderPortalInfo(d);
     fillAdSelect(d);
     const ph=(el,auto)=>{ el.placeholder=auto?('자동: '+auto):el.placeholder; };
     $('eName').value=d.name&&d.name!==d.meta_name?d.name:''; ph($('eName'),d.meta_name);
@@ -920,7 +940,7 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
-<script src="refatrix-leadportal-admin.js?v=20261105b"></script>
+<script src="refatrix-leadportal-admin.js?v=20261105c"></script>
 <script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>

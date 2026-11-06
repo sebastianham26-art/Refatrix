@@ -157,6 +157,26 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   assert.equal(r.statusCode, 200, r.body); const TOK = r.json().token;
   assert.equal(r.json().me.customer_name, `Refacc El Puente ${T}`);
   const C = { authorization: 'Bearer ' + TOK };
+  // 1105c · 확약서(전자서명) — 서명 전에는 문의 못 봄
+  const SIGPNG = 'data:image/png;base64,' + crypto.randomBytes(600).toString('base64');
+  const signConsent = async (H, extra = {}) => call(H, 'POST', '/api/lead-portal/consent', { first_name: 'Juan', last_name: 'Pérez López', phone: '81 1234 5678', signature: SIGPNG, accept: true, ...extra });
+  {
+    assert.equal((await call(C, 'GET', '/api/lead-portal/me')).json().me.consent_required, true, '처음엔 서명 필요');
+    const rl = await call(C, 'GET', '/api/lead-portal/leads'); assert.equal(rl.statusCode, 403); assert.equal(rl.json().error, 'consent_required');
+    const ct = (await call(C, 'GET', '/api/lead-portal/consent')).json(); assert.match(ct.text, /responsabilidad civil y penal/); assert.equal(ct.required, true);
+    assert.equal((await signConsent(C, { first_name: '' })).json().error, 'name_required');
+    assert.equal((await signConsent(C, { phone: '123' })).json().error, 'bad_phone');
+    assert.equal((await signConsent(C, { signature: 'data:image/png;base64,AAAA' })).json().error, 'signature_required');
+    assert.equal((await signConsent(C, { accept: false })).json().error, 'accept_required');
+    const sg = await signConsent(C); assert.equal(sg.statusCode, 200, sg.body);
+    assert.equal((await call(C, 'GET', '/api/lead-portal/me')).json().me.consent_required, false);
+    assert.equal((await call(C, 'GET', '/api/lead-portal/leads')).statusCode, 200, '서명 뒤 문의');
+    const cs = (await call(R1, 'GET', '/api/lead-portal-admin/consents')).json();
+    const mine = cs.items.find((x) => x.code_id === codeId); assert.ok(mine && mine.first_name === 'Juan' && mine.phone === '8112345678' && mine.current, 'ERP 에서 서명 기록(화면 권한)');
+    const one1 = (await call(R1, 'GET', `/api/lead-portal-admin/consents/${mine.id}`)).json(); assert.equal(one1.signature, SIGPNG); assert.match(one1.text, /CARTA COMPROMISO/);
+    assert.ok(!cs.pending.some((x) => x.code_id === codeId));
+    assert.equal((await call({}, 'GET', '/api/lead-portal-admin/consents')).statusCode, 401);
+  }
   // 잠금
   const IP2 = { 'x-nf-client-connection-ip': '10.8.8.8' };
   for (let i = 0; i < 8; i++) await call({}, 'POST', '/api/lead-portal/login', { code: 'RFX-3333-333' + (i % 8 + 2) }, IP2);
@@ -184,6 +204,23 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   r = await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/contact`); assert.equal(r.statusCode, 200, r.body);
   assert.equal(r.json().phone, '528123456742'); assert.equal(r.json().wa_link, null, '0300 · wa.me 버튼 제거'); assert.equal(r.json().first_time, true);
   r = await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/contact`); assert.equal(r.json().first_time, false);
+  { // 1105c · 문의 정보(고객관리) → ERP 같은 칸(m_*) · 기록 · 결과 → ERP 상태 · 선점
+    assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${T2.id}/info`)).json().error, 'need_contact', '연락처 전엔 못 씀');
+    let ri = await call(C, 'GET', `/api/lead-portal/leads/${T1.id}/info`); assert.equal(ri.statusCode, 200, ri.body);
+    assert.equal(ri.json().fields.vehicles, 'Nissan Versa 2017'); assert.ok(ri.json().tipos.includes('Taller mecánico'));
+    assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/info`, { state: 'Narnia' })).json().error, 'bad_state');
+    assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/info`, { phone: '12' })).json().error, 'bad_phone');
+    assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/info`, { result: 'ganado' })).json().error, 'bad_result');
+    ri = await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/info`, { name: 'Jorge Treviño Garza', tipo: 'Taller mecánico', state: 'Nuevo León', city: 'Apodaca', phone: '', vehicles: 'Nissan Versa 2017', result: 'contactado' });   // 차종 · 부품을 바꾸면 부품번호 다시 찾기가 돈다(여기선 그대로)
+    assert.equal(ri.statusCode, 200, ri.body); assert.equal(ri.json().result, 'contactado'); assert.equal(ri.json().claim.state, 'mine', '기록 = 선점');
+    const tt = await one(`SELECT m_name, m_tipo, m_city, m_phone, m_vehicles, status FROM meta_threads WHERE id=$1`, [T1.id]);
+    assert.deepEqual([tt.m_name, tt.m_tipo, tt.m_city, tt.m_phone, tt.m_vehicles], ['Jorge Treviño Garza', 'Taller mecánico', 'Apodaca', null, null], 'ERP 칸에 들어감 · 빈 칸 · 같은 값은 그대로');
+    const lg = await one(`SELECT changes FROM lead_portal_info_log WHERE thread_id=$1 ORDER BY id DESC LIMIT 1`, [T1.id]); assert.deepEqual(Object.keys(lg.changes).sort(), ['city', 'name', 'result', 'tipo']);
+    assert.equal((await call(C, 'PUT', `/api/lead-portal/leads/${T1.id}/info`, { city: 'Apodaca' })).json().unchanged, true);
+    const ed = (await call(D, 'GET', `/api/meta-leads/${T1.id}`)).json();
+    assert.equal(ed.city, 'Apodaca'); assert.equal(ed.portal.items[0].result, 'contactado'); assert.ok(ed.portal.log.length >= 1, 'ERP 상세에 포털 입력 · 기록');
+    assert.equal((await call(C, 'GET', '/api/lead-portal/leads')).json().leads.find((l) => l.id === Number(T1.id)).result, 'contactado');    await query(`DELETE FROM lead_portal_claims WHERE thread_id=$1`, [T1.id]);   // 아래 선점 시험은 새로 시작
+  }
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T3.id}/contact`)).statusCode, 404, '제외 문의');
   let rv = await one(`SELECT count(*)::int n, max(n) mx FROM lead_portal_reveals WHERE thread_id=$1`, [T1.id]); assert.deepEqual([rv.n, rv.mx], [1, 2]);
   r = await call(D, 'GET', '/api/meta-leads/list?q=' + encodeURIComponent('LP1') ); // 아무 검색
@@ -327,6 +364,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   const cust2 = await one(`INSERT INTO customers (name, code, discount, owner_id, created_by, doc_gate) VALUES ($1,$2,30,$3,$4,false) RETURNING id`, [`Refacc Otra ${T}`, `LQ${T}`, rep2.id, dir.id]);
   r = await call(D, 'POST', '/api/lead-portal-admin/codes', { customer_id: cust2.id, expires_on: '2099-12-31' }); const CODE_B = r.json().code;
   const CB = { authorization: 'Bearer ' + (await call({}, 'POST', '/api/lead-portal/login', { code: CODE_B }, IP)).json().token };
+  { const pf = (await call(CB, 'GET', '/api/lead-portal/consent')).json(); assert.equal(pf.prev, null); assert.equal((await signConsent(CB)).statusCode, 200); }
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T2.id}/notes`, { body: '   ' })).statusCode, 400, '빈 메모');
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T2.id}/notes`, { body: 'x'.repeat(1001) })).statusCode, 400, '1000자 초과');
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T3.id}/notes`, { body: 'hola' })).statusCode, 404, '제외 문의');

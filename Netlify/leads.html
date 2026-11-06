@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1104d)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1105c)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -99,6 +99,16 @@
   .rulebar b{color:#0a3a2d}.rulebar .warn{display:block;margin-top:3px;color:var(--bad);font-weight:700}
   .lockbox{margin-top:8px;background:var(--warn-bg);color:var(--warn);border-radius:9px;padding:7px 10px;font-size:12px;font-weight:700}
   .findbtn:disabled{opacity:.45;cursor:not-allowed}
+  .infobox{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fbfaf7}
+  .infobox .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .infobox label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin:6px 0 2px}
+  .infobox input,.infobox select{width:100%;box-sizing:border-box;padding:7px 8px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;background:#fff}
+  .rchip{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;background:#eef6f2;color:var(--brand)}
+  .consent{max-width:620px;margin:0 auto;text-align:left}
+  .consent .ctext{white-space:pre-wrap;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12.5px;line-height:1.5;max-height:42vh;overflow:auto}
+  .consent label{display:block;font-size:12px;font-weight:700;margin:10px 0 3px}
+  .consent input[type=text],.consent input[type=tel]{width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:9px;font:inherit}
+  .sigpad{width:100%;height:150px;background:#fff;border:1px dashed var(--brand);border-radius:10px;touch-action:none;display:block}
   .dirbar{background:#fbf7ee;border:1px solid var(--gold);color:#6b4f1d;border-radius:9px;padding:7px 10px;font-size:12px;margin-bottom:8px}
   /* chat Messenger (0300) */
   .cpill{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;margin-top:8px}
@@ -157,6 +167,26 @@
       <button class="btn" type="button" id="enter">Entrar</button>
       <div class="msg" id="loginMsg"></div>
       <p class="hint" style="margin-top:16px">¿No tienes código? Pídelo a tu asesor Refatrix.</p>
+    </section>
+
+    <!-- 1105c · carta compromiso de confidencialidad (firma electrónica) -->
+    <section id="sConsent" class="hidden">
+      <div class="consent">
+        <h1 style="font-size:18px">Carta compromiso de confidencialidad</h1>
+        <p class="hint">Antes de ver las solicitudes, lee y firma este compromiso. Solo se pide una vez.</p>
+        <div class="ctext" id="cText">Cargando…</div>
+        <div class="g2" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label for="cFn">Nombre(s)</label><input type="text" id="cFn" maxlength="80" autocomplete="given-name"></div>
+          <div><label for="cLn">Apellido(s)</label><input type="text" id="cLn" maxlength="80" autocomplete="family-name"></div>
+        </div>
+        <label for="cPh">Celular (10 dígitos)</label><input type="tel" id="cPh" maxlength="16" inputmode="tel" autocomplete="tel" placeholder="81 1234 5678">
+        <label>Firma (con el dedo o el mouse)</label>
+        <canvas class="sigpad" id="cSig"></canvas>
+        <div style="text-align:right;margin-top:4px"><button type="button" class="btn sm ghost" id="cClear" style="width:auto">Borrar firma</button></div>
+        <label class="chk" style="font-weight:600"><input type="checkbox" id="cOk"> Leí y acepto la carta compromiso. Entiendo que si la incumplo, la responsabilidad civil y penal es mía.</label>
+        <button class="btn" type="button" id="cSign" style="width:100%;margin-top:10px">✍️ Firmar y continuar</button>
+        <div class="msg" id="cMsg"></div>
+      </div>
     </section>
 
     <!-- c. vencido / pausado -->
@@ -238,7 +268,7 @@
   function getTok(){ try{ return localStorage.getItem(TK); }catch(e){ return null; } }
   function setTok(t){ try{ if(t) localStorage.setItem(TK,t); else localStorage.removeItem(TK); }catch(e){} }
   function show(id){
-    ['sLogin','sExp','sList','sCart','sDone'].forEach(function(x){ $(x).classList.toggle('hidden', x!==id); });
+    ['sLogin','sExp','sList','sCart','sDone','sConsent'].forEach(function(x){ $(x).classList.toggle('hidden', x!==id); });
     $('foot').classList.toggle('hidden', id!=='sList');
     renderCartBar();
     try{ window.scrollTo(0,0); }catch(e){}
@@ -258,6 +288,7 @@
     if(!e) return false;
     if(e.status===401 && e.message!=='invalid_code'){ setTok(null); show('sLogin'); $('loginMsg').textContent = 'Tu sesión terminó. Ingresa tu código de nuevo.'; return true; }
     if(e.status===403 && (e.message==='expired' || e.message==='paused')){ stopped(e.message, e.data||{}); return true; }
+    if(e.status===403 && e.message==='consent_required'){ showConsent(); return true; }
     return false;
   }
   function stopped(kind, d){
@@ -290,11 +321,53 @@
 
   // ── b. lista ──
   function start(){
-    return api('GET','/me').then(function(d){ setTok(d.token); S.me = d.me; return api('GET','/leads'); }).then(function(d){
+    return api('GET','/me').then(function(d){ setTok(d.token); S.me = d.me; if(d.me && d.me.consent_required){ showConsent(); throw { consent:true }; } return api('GET','/leads'); }).then(function(d){
       S.me = d.me || S.me; S.leads = d.leads || []; S.products = d.products || {}; S.states = d.states || []; S.basket = d.basket || [];
       header(); fillStates(); S.shown = PAGE; render(); show('sList');
-    }).catch(function(e){ if(!ended(e)){ show('sLogin'); $('loginMsg').textContent = errMsg(e); } });
+    }).catch(function(e){ if(e && e.consent) return; if(!ended(e)){ show('sLogin'); $('loginMsg').textContent = errMsg(e); } });
   }
+  // ── 1105c · carta compromiso (firma) ──
+  var SIG = { drawn:false, on:false };
+  function showConsent(){
+    show('sConsent'); $('cMsg').textContent = ''; $('cMsg').className = 'msg';
+    api('GET','/consent').then(function(d){
+      S.consent = d; $('cText').textContent = d.text || '';
+      if(d.prev){ if(!$('cFn').value) $('cFn').value = d.prev.first_name||''; if(!$('cLn').value) $('cLn').value = d.prev.last_name||''; if(!$('cPh').value) $('cPh').value = d.prev.phone||''; }
+      if(!d.required){ start(); }
+    }).catch(function(e){ if(e && e.message==='consent_required') return; $('cMsg').className = 'msg err'; $('cMsg').textContent = errMsg(e); });
+    setTimeout(sigInit, 30);
+  }
+  function sigInit(){
+    var c = $('cSig'); if(!c) return;
+    var r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    c.width = Math.max(300, Math.round((r.width||600) * dpr)); c.height = Math.round((r.height||150) * dpr);
+    var x = c.getContext && c.getContext('2d'); if(!x) return;
+    x.setTransform(dpr,0,0,dpr,0,0); x.lineWidth = 2.2; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#1c1b19';
+    x.fillStyle = '#fff'; x.fillRect(0,0,c.width,c.height); SIG.drawn = false;
+  }
+  function sigPt(e){ var r = $('cSig').getBoundingClientRect(); return { x:(e.clientX - r.left), y:(e.clientY - r.top) }; }
+  $('cSig').addEventListener('pointerdown', function(e){ var x = this.getContext && this.getContext('2d'); if(!x) return; SIG.on = true; var p = sigPt(e); x.beginPath(); x.moveTo(p.x,p.y); try{ this.setPointerCapture(e.pointerId); }catch(_){ } e.preventDefault(); });
+  $('cSig').addEventListener('pointermove', function(e){ if(!SIG.on) return; var x = this.getContext('2d'); var p = sigPt(e); x.lineTo(p.x,p.y); x.stroke(); SIG.drawn = true; e.preventDefault(); });
+  ['pointerup','pointerleave','pointercancel'].forEach(function(ev){ $('cSig').addEventListener(ev, function(){ SIG.on = false; }); });
+  $('cClear').addEventListener('click', sigInit);
+  ['cFn','cLn','cPh','cOk'].forEach(function(id){ $(id).addEventListener('input', function(){ if($('cMsg').className.indexOf('err')>=0){ $('cMsg').className = 'msg'; $('cMsg').textContent = ''; } }); });
+  $('cSign').addEventListener('click', function(){
+    var m = $('cMsg'); m.className = 'msg err';
+    var fn = $('cFn').value.trim(), ln = $('cLn').value.trim(), ph = $('cPh').value.replace(/\D/g,'');
+    if(!fn || !ln){ m.textContent = 'Escribe tu nombre y apellido.'; return; }
+    if(ph.length < 10){ m.textContent = 'Escribe tu celular a 10 dígitos.'; return; }
+    if(!SIG.drawn){ m.textContent = 'Firma en el recuadro.'; return; }
+    if(!$('cOk').checked){ m.textContent = 'Marca la casilla para aceptar.'; return; }
+    var sig = ''; try{ sig = $('cSig').toDataURL('image/png'); }catch(_){ }
+    $('cSign').disabled = true; m.textContent = '';
+    api('POST','/consent',{ first_name:fn, last_name:ln, phone:ph, signature:sig, accept:true, version:S.consent && S.consent.version }).then(function(){
+      m.className = 'msg ok'; m.textContent = 'Firmado. Gracias.'; start();
+    }).catch(function(e){
+      if(ended(e)) return; m.className = 'msg err';
+      m.textContent = e.message==='signature_required' ? 'Firma en el recuadro.' : e.message==='bad_phone' ? 'Revisa tu celular.' : e.message==='consent_changed' ? 'La carta cambió. Vuelve a leerla.' : errMsg(e);
+      if(e.message==='consent_changed') showConsent();
+    }).then(function(){ $('cSign').disabled = false; });
+  });
   function header(){
     var m = S.me || {};
     var v = m.expires_on ? 'Vigente hasta ' + dmy(m.expires_on) + (m.days_left!=null ? ' · ' + m.days_left + (m.days_left===1?' día':' días') : '') : '';
@@ -373,6 +446,8 @@
       return '<div class="lockbox">🔒 Otra refaccionaria ya contactó a este cliente. Su contacto estará oculto hasta el '+esc(hm(l.claim.until))+'</div>' + fb;
     }
     var mineTag = claimMine(l) ? '<span class="cpill cp-ok" style="margin:0">✅ Reservado para ti hasta '+esc(hm(l.claim.until))+'</span>' : '';
+    // 1105c · datos del cliente (como en Refatrix) — después de ver el contacto
+    if(!isDir() && (c || l.revealed)) fb += '<button type="button" class="findbtn" data-info="'+l.id+'">📋 '+(l.result ? 'Datos del cliente · '+esc(RES[l.result]||l.result) : 'Datos del cliente')+'</button>';
     if(c){
       var who = [c.name, c.username ? '@'+c.username : null].filter(Boolean).join(' · ');
       return '<span class="shown">👤 '+esc(who||'Sin nombre')+(c.phone?' · 📞 '+esc(c.phone):'')+'</span>'
@@ -394,6 +469,7 @@
           + l.wants.map(function(w){ return partRow(l, { code:w.code, qty:w.qty }); }).join('') + '</tbody></table>' : '')
       + '<div class="contact" id="ct'+l.id+'">'+contactHTML(l)+'</div>'
       + (S.find===l.id ? finderHTML(l) : '')
+      + (S.info && S.info.id===l.id ? infoHTML(l) : '')
       + '<div id="cw'+l.id+'">'+chatBlockHTML(l)+'</div>'
       + '<div class="notes" id="nt'+l.id+'">'+notesHTML(l)+'</div></div>';
   }
@@ -568,6 +644,43 @@
     }).catch(function(e){ if(!ended(e)) $('listMsg').textContent = errMsg(e); });
   }
   function leadOf(id){ return S.leads.filter(function(x){ return x.id===id; })[0]; }
+  // ── 1105c · Datos del cliente (CRM): se guardan en Refatrix ──
+  var RES = { contactado:'Contactado', cotizado:'Cotizado', vendido:'Vendido', no_interesa:'No le interesa' };
+  function openInfo(id){
+    var prev = S.info && S.info.id; S.info = { id:id, loading:true }; if(prev && prev!==id) redrawLead(prev); redrawLead(id);
+    api('GET','/leads/'+id+'/info').then(function(d){ if(!S.info || S.info.id!==id) return; S.info = { id:id, d:d }; redrawLead(id); })
+      .catch(function(e){ S.info = null; redrawLead(id); if(ended(e)) return; if(e.message==='claimed_other'){ var l = leadOf(id); if(l){ l.claim = { state:'other', until: e.data && e.data.until }; redrawLead(id); } return; } $('listMsg').textContent = e.message==='need_contact' ? 'Primero toca «Ver contacto».' : errMsg(e); });
+  }
+  function infoHTML(l){
+    var st = S.info; if(st.loading || !st.d) return '<div class="infobox"><span class="hint">Cargando…</span></div>';
+    var d = st.d, f = d.fields || {};
+    var inp = function(k, lab, ph, type){ return '<div><label for="if_'+k+'">'+lab+'</label><input id="if_'+k+'" type="'+(type||'text')+'" value="'+esc(f[k]||'')+'" placeholder="'+esc(ph||'')+'"></div>'; };
+    var sel = function(k, lab, opts, cur, blank){ return '<div><label for="if_'+k+'">'+lab+'</label><select id="if_'+k+'"><option value="">'+esc(blank)+'</option>'+opts.map(function(o){ var v = Array.isArray(o)?o[0]:o, t = Array.isArray(o)?o[1]:o; return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(t)+'</option>'; }).join('')+'</select></div>'; };
+    return '<div class="infobox" id="ib'+l.id+'"><b>📋 Datos del cliente</b><div class="pn">Lo que escribas aquí llega a Refatrix (los campos vacíos no borran nada).</div>'
+      + '<div class="g2">' + inp('name','Nombre','Nombre del cliente') + sel('tipo','Tipo de cliente',d.tipos||[],f.tipo,'— elige —')
+      + sel('state','Estado',d.states||[],f.state,'— elige —') + inp('city','Ciudad / municipio','Ej. Apodaca')
+      + inp('phone','Teléfono','81 1234 5678','tel') + sel('result','Resultado',(d.results||[]).map(function(r){ return [r, RES[r]||r]; }),d.result,'— sin resultado —') + '</div>'
+      + inp('vehicles','Vehículo(s)','Ej. Nissan Versa 2017') + inp('parts','Piezas que pide','Ej. horquilla inferior izquierda')
+      + (d.updated_mx ? '<div class="pn">Última actualización tuya: '+esc(d.updated_mx)+'</div>' : '')
+      + (!claimMine(l) ? '<div class="pn">Guardar cuenta como registro de contacto: el cliente queda reservado para ti '+esc((S.me&&S.me.claim_days)||3)+' días. ⚠ Si registras información falsa, puedes perder tu código de acceso.</div>' : '')
+      + '<div class="row" style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn sm ghost" data-icancel="'+l.id+'" style="width:auto">Cancelar</button><button type="button" class="btn sm" data-isave="'+l.id+'" style="width:auto">Guardar datos</button></div>'
+      + '<div class="msg" id="im'+l.id+'"></div></div>';
+  }
+  function saveInfo(id, btn){
+    var g = function(k){ var el = $('if_'+k); return el ? el.value.trim() : ''; };
+    var body = { name:g('name'), tipo:g('tipo'), state:g('state'), city:g('city'), phone:g('phone'), vehicles:g('vehicles'), parts:g('parts'), result:g('result') || null };
+    btn.disabled = true; var m = $('im'+id); if(m){ m.className = 'msg'; m.textContent = ''; }
+    api('PUT','/leads/'+id+'/info', body).then(function(d){
+      var l = leadOf(id);
+      if(l){ var f = d.fields || {}; l.tipo = f.tipo || l.tipo; l.state = f.state || l.state; l.city = f.city || l.city; l.vehicles = f.vehicles || l.vehicles; l.result = d.result || null;
+        if(d.claim && d.claim.state==='mine') l.claim = { state:'mine', until:d.claim.until }; }
+      S.info = null; redrawLead(id);
+    }).catch(function(e){
+      btn.disabled = false; if(ended(e)) return;
+      var t = e.message==='bad_phone' ? 'Revisa el teléfono (10 dígitos).' : e.message==='claimed_other' ? 'Otra refaccionaria ya reservó a este cliente.' : e.message==='need_contact' ? 'Primero toca «Ver contacto».' : errMsg(e);
+      if(m){ m.className = 'msg err'; m.textContent = t; }
+    });
+  }
   function redrawLead(id){
     var el = document.querySelector('[data-lead="'+id+'"]'), l = leadOf(id);
     if(!el || !l) return;
@@ -626,6 +739,9 @@
     if((b = e.target.closest('.add'))){ if(b.disabled) return; toggle(Number(b.getAttribute('data-id')), b.getAttribute('data-code'), Number(b.getAttribute('data-qty'))||1); return; }
     if((b = e.target.closest('.ms'))){ openShelf(b.getAttribute('data-code')); return; }
     if((b = e.target.closest('[data-copen]'))){ openChat(Number(b.getAttribute('data-copen'))); return; }
+    if((b = e.target.closest('[data-info]'))){ var ii = Number(b.getAttribute('data-info')); if(S.info && S.info.id===ii){ S.info = null; redrawLead(ii); } else openInfo(ii); return; }
+    if((b = e.target.closest('[data-icancel]'))){ var ic = Number(b.getAttribute('data-icancel')); S.info = null; redrawLead(ic); return; }
+    if((b = e.target.closest('[data-isave]'))){ saveInfo(Number(b.getAttribute('data-isave')), b); return; }
     if((b = e.target.closest('[data-cclose]'))){ closeChat(); return; }
     if((b = e.target.closest('[data-csend]'))){ sendChat(Number(b.getAttribute('data-csend')), b); return; }
     if((b = e.target.closest('[data-nadd]'))){ var pv = S.nOpen; S.nOpen = Number(b.getAttribute('data-nadd')); if(pv) redrawNotes(pv); redrawNotes(S.nOpen); var ta = $('nb'+S.nOpen); if(ta) try{ ta.focus(); }catch(_){ } return; }
