@@ -39,14 +39,15 @@ import { recordQuoteDevDemand } from './quoteDevDemand.js';
 import { kickQuoteNotify } from './quoteWaNotify.js';
 import { resolveSeller, exclusivityReady } from './exclusivity.js';
 import { META_STATES } from './metaLeadExtract.js';
-import { AD_EXPR, cleanAdId } from './metaAds.js';   // 1105 · 광고별 열람 범위
+import { AD_EXPR, cleanAdId } from './metaAds.js';
+import { internalWaPhones } from './metaLeads.js';   // 1105e · 사내 번호 WhatsApp 은 포털에 안 보임   // 1105 · 광고별 열람 범위
 import { isBotText } from './metaLeadsAi.js';   // 1104 · 우리 정해진 안내문 = 자동 응답
 import { oeReady, oeByProduct } from './oeCodes.js';
 import { normOe, oeToken } from './oeParse.js';
-import { chatReady, claimDays, sendMessengerSmart } from './metaPageMsgs.js';   // 0300 · Messenger 대화
+import { chatReady, claimDays, sendMessengerSmart, commentRefOf } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1105c';
+export const LP_BUILD = 'lp-1105e';
 
 // 1105c · 개인정보 보호 · 비밀유지 확약서(포털 로그인 후 전자서명) — 2026-11-05 디렉터
 //   본문을 바꾸면 CONSENT_VERSION 을 올린다 → 모든 고객 코드가 다시 서명한다.
@@ -401,10 +402,12 @@ const META_EVENT_RE = [
   /\b(respondi[oó]|replied)\s+(a\s+|to\s+)?(un|an|your|tu|el|the)\s+(anuncio|ad)\b/i,   // 1104 · 「X respondió un anuncio.」(a 없음)
   /\b(inici[oó]|started)\s+(una\s+|a\s+|this\s+)?(conversaci[oó]n|conversation)\b.{0,40}\b(anuncio|ad)\b/i,
   /^(t[uú]|you)\s+(asignaste|assigned)\b/i,
+  /^facebook\s+(cre[oó]\s+este\s+chat|created\s+this\s+chat)\b/i,   // 1105d · 댓글로 생긴 대화 안내
 ];
 const AD_EVENT_RE = /\b(respondi[oó]|replied|anuncio|ad)\b/i;
 export function isMetaEvent(text) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (/^facebook\s+(cre[oó]\s+este\s+chat|created\s+this\s+chat)\b/i.test(t)) return true;   // 1105d · 링크가 길어도 Meta 안내
   return !!t && t.length <= 220 && META_EVENT_RE.some((re) => re.test(t));
 }
 export function markMetaKinds(list) {
@@ -423,6 +426,19 @@ export function markMetaKinds(list) {
   }
   return ms;
 }
+
+// 1105e · 포털에 안 내보내는 문의 — ① 사내 번호(직원 · 알림 수신 번호)의 WhatsApp ② ERP 에서 「플랫폼에서 숨기기」(0319)
+let hidCache = { at: 0, phones: [], col: false };
+export async function portalHideInfo(force = false) {
+  if (!force && Date.now() - hidCache.at < 60000) return hidCache;
+  let phones = [], col = false;
+  try { phones = [...(await internalWaPhones())].map((p) => String(p).replace(/\D/g, '').slice(-10)).filter((p) => p.length === 10); } catch (_) { phones = []; }
+  try { col = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='meta_threads' AND column_name='portal_hidden'`)).rows.length > 0; } catch (_) { col = false; }
+  hidCache = { at: Date.now(), phones, col };
+  return hidCache;
+}
+export const resetPortalHideCache = () => { hidCache.at = 0; };
+export const isInternalPhone = (v, phones) => { const d = String(v || '').replace(/\D/g, '').slice(-10); return d.length === 10 && phones.includes(d); };
 
 // 1105c · ERP 상세 — 포털에서 refaccionaria 가 넣은 문의 정보 · 결과 · 변경 기록
 export async function portalInfoFor(threadId) {
@@ -521,8 +537,12 @@ export default async function leadPortalRoutes(app) {
   // ════════════════════════════════════════════════════════════════
   // 1105 · 이 코드가 볼 수 있는 문의 — 주(scope_states) · 광고(scope_ads). 디렉터 코드는 전부. 「 AND …」 또는 ''
   function scopeSql(k, args) {
-    if (isDirCode(k)) return '';
     let sql = '';
+    // 1105e · 사내 번호 WhatsApp · 플랫폼에서 숨긴 문의 — 디렉터 코드도 안 보임(직원 대화 보호)
+    const hi = k.__hide || { phones: [], col: false };
+    if (hi.phones.length) { args.push(hi.phones); sql += ` AND NOT (t.platform = 'whatsapp' AND right(regexp_replace(COALESCE(t.user_id, ''), '\\D', '', 'g'), 10) = ANY($${args.length}::text[]))`; }
+    if (hi.col) sql += ` AND NOT t.portal_hidden`;
+    if (isDirCode(k)) return sql;
     if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); sql += ` AND ${STATE_EXPR} = ANY($${args.length}::text[])`; }
     if (Array.isArray(k.scope_ads) && k.scope_ads.length) { args.push(k.scope_ads); sql += ` AND ${AD_EXPR} = ANY($${args.length}::text[])`; }
     return sql;
@@ -584,6 +604,7 @@ export default async function leadPortalRoutes(app) {
     const b = blocked(k);
     if (b) return reply.code(b.code).send(b.body);
     req.lp = k;
+    k.__hide = await portalHideInfo();   // 1105e
     // 1105c · 확약서 서명 전에는 「내 정보 · 확약서」만
     const url = String((req.routeOptions && req.routeOptions.url) || req.url || '');
     if (!/\/api\/lead-portal\/(me|consent)$/.test(url) && (await consentOf(k)).required) return reply.code(403).send({ error: 'consent_required' });
@@ -1054,18 +1075,18 @@ export default async function leadPortalRoutes(app) {
     if (cl.state === 'other') return reply.code(409).send({ error: 'claimed_other', until: cl.until });
     const full = `[${k.customer_name}] ${text}`;
     // 1104d · 보통 답장(RESPONSE) 먼저 → Meta 가 「창 밖」이라 거절하면 Human Agent 태그로 한 번 더
-    const s0 = await sendMessengerSmart(t.psid, full, req.log);
+    const s0 = await sendMessengerSmart(t.psid, full, req.log, { comment: commentRefOf(t.messages) });
     if (!s0.ok) {
       if (cl.created) await query(`DELETE FROM lead_portal_claims WHERE id=$1`, [cl.id]);   // 못 보냈으면 방금 만든 선점은 되돌린다
       const closed = !!s0.window;
       req.log?.warn({ err: s0.error }, 'lead portal messenger send failed');
-      return reply.code(closed ? 409 : 502).send({ error: closed ? 'meta_window' : 'send_failed', detail: s0.error });
+      return reply.code(closed ? 409 : 502).send({ error: s0.comment_used ? 'comment_used' : (closed ? 'meta_window' : 'send_failed'), detail: s0.error });
     }
     const m = (await query(
       `INSERT INTO meta_page_messages (psid, mid, direction, source, text, at, customer_id, code_id) VALUES ($1,$2,'out','portal',$3,now(),$4,$5)
        ON CONFLICT (mid) DO UPDATE SET source='portal', customer_id=EXCLUDED.customer_id, code_id=EXCLUDED.code_id, text=EXCLUDED.text
        RETURNING id, direction, source, text, at, customer_id`, [t.psid, s0.mid, full, k.customer_id, k.id])).rows[0];
-    return { ok: true, message: convOut({ me: true, src: 'portal', customer_id: m.customer_id, text: m.text, at: m.at }, k), claim: { state: 'mine', until: cl.until, created: !!cl.created } };
+    return { ok: true, via: s0.via || 'message', message: convOut({ me: true, src: 'portal', customer_id: m.customer_id, text: m.text, at: m.at }, k), claim: { state: 'mine', until: cl.until, created: !!cl.created } };
   });
 
   // 0299 · 문의 메모 — 쓰기 · 지우기(자기 것만). 지운 메모는 디렉터 화면에 「삭제됨」으로 남는다.

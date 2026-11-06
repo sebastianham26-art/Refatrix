@@ -351,6 +351,29 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.ok((await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(T2.id)));
     await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [TA.id]);
   }
+  { // 1105e · 사내 번호 WhatsApp 은 포털에 안 보임 · ERP 「플랫폼에서 숨기기」
+    const IPH = '5281' + String(Date.now()).slice(-8);
+    await query(`UPDATE users SET wa_phone=$2 WHERE id=$1`, [rep2.id, IPH]);
+    const TI = await mk(`wa:INT${T}`, 'Nuevo León', IPH, []);
+    const LPm = await import('../src/leadPortal.js'); LPm.resetPortalHideCache();
+    let ids = (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.map((l) => l.id);
+    assert.ok(!ids.includes(Number(TI.id)), '사내 번호 WhatsApp 안 보임');
+    assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${TI.id}/contact`)).statusCode, 404);
+    const dI = (await call(D, 'GET', `/api/meta-leads/${TI.id}`)).json(); assert.equal(dI.internal, true, 'ERP 상세에 사내 번호 표시');
+    assert.ok((await call(D, 'GET', '/api/meta-leads/list')).json().items.find((x) => x.id === Number(TI.id)).internal);
+    // 숨기기
+    assert.ok(ids.includes(Number(T2.id)));
+    assert.equal((await call({}, 'POST', `/api/meta-leads/${T2.id}/portal-hidden`, { hidden: true })).statusCode, 401);
+    let rh = await call(R1, 'POST', `/api/meta-leads/${T2.id}/portal-hidden`, { hidden: true }); assert.equal(rh.statusCode, 200, rh.body);
+    ids = (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.map((l) => l.id);
+    assert.ok(!ids.includes(Number(T2.id)), '숨긴 문의 안 보임');
+    assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T2.id}/notes`, { body: 'hola' })).statusCode, 404, '숨긴 문의 메모 불가');
+    const d2 = (await call(D, 'GET', `/api/meta-leads/${T2.id}`)).json(); assert.equal(d2.portal_hidden, true); assert.ok(d2.portal_hidden_by);
+    assert.ok((await call(D, 'GET', '/api/meta-leads/list?hidden=1')).json().items.some((x) => x.id === Number(T2.id)));
+    rh = await call(R1, 'POST', `/api/meta-leads/${T2.id}/portal-hidden`, { hidden: false }); assert.equal(rh.json().portal_hidden, false);
+    assert.ok((await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(T2.id)), '다시 보임');
+    await query(`UPDATE users SET wa_phone=NULL WHERE id=$1`, [rep2.id]); await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [TI.id]); LPm.resetPortalHideCache();
+  }
   { // 1105 · 접속 기록 — 로그인 · 화면 열기 → 고객 · 날짜별, 화면 권한이면 영업도 봄
     await call(C, 'GET', '/api/lead-portal/me');
     let ac = await call(R1, 'GET', `/api/lead-portal-admin/access?code_id=${codeId}`); assert.equal(ac.statusCode, 200, ac.body);
@@ -543,6 +566,23 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     re = await call(R1, 'POST', `/api/meta-leads/${T4.id}/messenger`, { text: 'otra' }); assert.equal(re.statusCode, 409); assert.equal(re.json().error, 'meta_window');
     assert.equal((await call(R1, 'POST', `/api/meta-leads/${T1.id}/messenger`, { text: 'x' })).json().error, 'chat_not_allowed', 'WhatsApp 은 아님');
     assert.equal((await call({}, 'POST', `/api/meta-leads/${T4.id}/messenger`, { text: 'x' })).statusCode, 401);
+  }
+  { // 1105d · 댓글로 생긴 대화 — 보통 답장이 안 되면 그 댓글에 비공개 답장(private reply)
+    const PSC = 'psc' + T, CID = '1633545581748764';
+    const ev = 'Facebook creó este chat porque Jose comentó tu publicación. Jose no verá esto hasta que inicies una conversación. El chat desaparecerá en 7 días. Ver comentario(https://facebook.com/story.php?story_fbid=pfbid02CP&id=61595164762553&post_id=61595164762553_pfbid02CP&comment_id=' + CID + ')';
+    const TC = await one(`INSERT INTO meta_threads (platform, thread_id, user_id, name, first_at, last_at, in_count, msg_count, messages, ai_state, status)
+      VALUES ('messenger',$1,$2,'Jose',now(),now(),1,2,$3::jsonb,'Nuevo León','nuevo') RETURNING id`,
+      ['t_' + PSC, PSC, JSON.stringify([{ at: new Date().toISOString(), me: true, text: ev }, { at: new Date().toISOString(), me: false, text: 'Dónde están ubicados' }])]);
+    assert.ok(L.isMetaEvent(ev), '「Facebook creó este chat…」 = Meta 안내');
+    const nC = sent.length;
+    failNext = { code: 551, message: '(#551) This person isn\'t available right now.', times: 2 };
+    let rc = await call(R1, 'POST', `/api/meta-leads/${TC.id}/messenger`, { text: 'Estamos en Apodaca' }); assert.equal(rc.statusCode, 200, rc.body);
+    assert.equal(rc.json().via, 'private_reply');
+    assert.deepEqual(sent.slice(nC).map((x) => x.body.recipient.comment_id || x.body.messaging_type), ['RESPONSE', 'MESSAGE_TAG', CID], '보통 → 태그 → 댓글 비공개 답장');
+    failNext = { code: 10903, message: '(#10903) This activity has already been replied to', times: 2 };   // 보통 답장(창 오류 아님 → 태그 생략) → 댓글
+    rc = await call(R1, 'POST', `/api/meta-leads/${TC.id}/messenger`, { text: 'otra vez' }); assert.equal(rc.statusCode, 409); assert.equal(rc.json().error, 'comment_used');
+    const dd = (await call(D, 'GET', `/api/meta-leads/${TC.id}`)).json(); assert.equal(dd.messages[0].kind, 'event');
+    await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [TC.id]);
   }
   r = await call(CD2, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.json().messages[0].text, 'Hola, busco amortiguadores para Aveo'); assert.equal(r.json().can_send, false);
   assert.equal(r.json().messages.find((m) => m.who === 'portal').shop, `Refacc El Puente ${T}`);

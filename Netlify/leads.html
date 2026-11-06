@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Oportunidades de venta · REFATRIX</title>
-<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1105c)
+<!-- REFATRIX Platform(Netlify) leads.html — Meta 광고 문의 고객 포털 (0297 · 2026-10-26 · build lp-1105d)
      원본: 레포 Netlify/leads.html. 이 페이지는 같은 사이트의 /lp-api/* 만 부른다 — Netlify _redirects 가 ERP 로 넘긴다
      (브라우저에는 ERP · Railway 주소가 나타나지 않는다). 접속코드 → 7일 토큰(localStorage), 열 때마다 새 토큰. -->
 <style>
@@ -553,13 +553,15 @@
       var l = leadOf(id);
       if(l && d.claim){ l.claim = { state:'mine', until:d.claim.until }; if(S.chat){ S.chat.claimed = true; S.chat.claim_until = d.claim.until; } }
       if(ta) ta.value = '';
+      if(d.via==='private_reply'){ setTimeout(function(){ var mm = $('cmsg'+id); if(mm) mm.textContent = 'Se envió como respuesta privada a su comentario. Podrás seguir escribiendo cuando el cliente conteste.'; }, 50); }
       var ct = $('ct'+id); if(ct && l) ct.innerHTML = contactHTML(l);
       redrawNotes(id);
       redrawChat(id);
     }).catch(function(e){
       btn.disabled = false; if(ended(e)) return;
       var m = $('cmsg'+id);
-      var t = e.message==='meta_window' ? 'Facebook no entregó el mensaje porque pasó mucho tiempo desde el último mensaje del cliente. Se podrá cuando el cliente vuelva a escribir.'
+      var t = e.message==='comment_used' ? 'Este cliente solo comentó una publicación: ya se le envió una respuesta privada. Podrás escribir cuando conteste.'
+        : e.message==='meta_window' ? 'Facebook no entregó el mensaje porque pasó mucho tiempo desde el último mensaje del cliente. Se podrá cuando el cliente vuelva a escribir.'
         : e.message==='claimed_other' ? 'Otra refaccionaria ya reservó a este cliente.'
         : e.message==='need_contact' ? 'Primero toca «Ver contacto».'
         : e.message==='send_failed' ? 'Facebook no aceptó el mensaje. Intenta de nuevo en unos minutos.'

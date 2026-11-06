@@ -91,19 +91,48 @@ export function setMessengerPost(fn) { postOverride = fn || null; }
 // 1105 · 보통 답장 → Meta 가 「창 밖」이라 거절하면 HUMAN_AGENT 태그로 한 번 더(포털 · ERP 직원 답장 공용)
 //   → { ok, mid } | { ok:false, error, window:true(창 밖 거절) | false }
 export const isWindowError = (e) => /outside of allowed window|human.?agent|#10\b|#551\b|2018278|2018065/i.test(String(e || ''));
-export async function sendMessengerSmart(psid, text, log = null) {
+// 1105d · 댓글로 생긴 대화 — 「Facebook creó este chat porque X comentó tu publicación… no verá esto hasta que inicies una conversación」
+//   손님이 메시지를 보낸 적이 없어 보통 답장이 안 된다 → 그 댓글에 「비공개 답장(private reply)」 1번(댓글 뒤 7일 안).
+//   손님이 답하면 그때부터 보통 대화. 대화 안의 「Ver comentario(…comment_id=…)」 링크에서 댓글 번호를 꺼낸다.
+export function commentRefOf(messages) {
+  for (const m of Array.isArray(messages) ? messages : []) {
+    const t = String((m && m.text) || '');
+    const c = t.match(/[?&]comment_id=(\d{5,30})/);
+    if (!c) continue;
+    const p = t.match(/[?&]post_id=([0-9A-Za-z_]{5,200})/);
+    return { comment_id: c[1], post_id: p ? p[1] : null };
+  }
+  return null;
+}
+const commentUsed = (e) => /10903|10900|already (been )?(replied|sent)|ya .{0,20}respond/i.test(String(e || ''));
+export async function sendMessengerSmart(psid, text, log = null, { comment = null } = {}) {
   let s0 = await sendMessenger(psid, text);
   if (!s0.ok && isWindowError(s0.error) && humanAgentOn()) {
     const s1 = await sendMessenger(psid, text, { tag: 'HUMAN_AGENT' });
     if (s1.ok) s0 = s1; else if (log) log.warn({ err: s1.error }, 'messenger human_agent retry failed');
   }
+  if (!s0.ok && comment && comment.comment_id) {
+    // 비공개 답장 — 댓글 번호 그대로 → 「게시물_댓글」 순서로 시도
+    const cands = [comment.comment_id];
+    if (comment.post_id) cands.push(`${comment.post_id}_${comment.comment_id}`);
+    let last = null;
+    for (const cid of cands) {
+      const s2 = await sendMessenger(null, text, { commentId: cid });
+      if (s2.ok) return { ...s2, via: 'private_reply' };
+      last = s2; if (log) log.warn({ err: s2.error, cid }, 'messenger private reply failed');
+      if (commentUsed(s2.error)) return { ...s2, window: true, comment_used: true };
+    }
+    if (last) return { ...last, window: true, comment: true };
+  }
   return s0.ok ? s0 : { ...s0, window: isWindowError(s0.error) };
 }
-export async function sendMessenger(psid, text, { tag = null } = {}) {
+export async function sendMessenger(psid, text, { tag = null, commentId = null } = {}) {
   const page = await resolvePage();
   if (!page || page.error) return { ok: false, error: (page && page.error) || 'no_token' };
   const url = `https://graph.facebook.com/${apiVer()}/${encodeURIComponent(metaPageId())}/messages?access_token=${encodeURIComponent(page.token)}`;
-  const body = tag
+  const body = commentId
+    ? { recipient: { comment_id: String(commentId) }, messaging_type: 'RESPONSE', message: { text: String(text) } }   // 1105d · 댓글 비공개 답장
+    : tag
     ? { recipient: { id: String(psid) }, messaging_type: 'MESSAGE_TAG', tag: String(tag), message: { text: String(text) } }   // 1104c · 24시간 뒤 · 7일 안
     : { recipient: { id: String(psid) }, messaging_type: 'RESPONSE', message: { text: String(text) } };
   let r;

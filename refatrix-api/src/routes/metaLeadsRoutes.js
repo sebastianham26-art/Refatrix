@@ -31,8 +31,8 @@ import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
 import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
 // 0297 · 고객 포털(접속코드 · 연락처 공개 · 매장 재고 · 포털 주문) — 같은 플러그인에서 등록(server.js 변경 없음)
-import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady, portalInfoFor } from '../leadPortal.js';
-import { chatReady, sendMessengerSmart } from '../metaPageMsgs.js';
+import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady, portalInfoFor, portalHideInfo, resetPortalHideCache, isInternalPhone } from '../leadPortal.js';
+import { chatReady, sendMessengerSmart, commentRefOf } from '../metaPageMsgs.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -130,7 +130,9 @@ export default async function metaLeadsRoutes(app) {
     else if (req.query.ad) { const ad = cleanAdId(req.query.ad); if (ad) conds.push(`${AD_EXPR} = ${add(ad)}`); }
     if (ymd(req.query.to)) conds.push(`(t.last_at AT TIME ZONE 'America/Mexico_City')::date <= ${add(req.query.to)}::date`);
     const limit = Math.min(Number(req.query.limit) || 5000, 10000);
-    const rows = (await query(`SELECT ${COLS}, left(t.customer_text, 600) AS customer_text, ${LAST_REPLY} FROM meta_threads t WHERE ${conds.join(' AND ')}
+    const hi = await portalHideInfo();   // 1105e · 플랫폼 숨김 · 사내 번호
+    if (req.query.hidden === '1') conds.push(hi.col ? 't.portal_hidden' : 'false');
+    const rows = (await query(`SELECT ${COLS}, ${hi.col ? 't.portal_hidden' : 'false AS portal_hidden'}, left(t.customer_text, 600) AS customer_text, ${LAST_REPLY} FROM meta_threads t WHERE ${conds.join(' AND ')}
                                ORDER BY t.last_at DESC NULLS LAST LIMIT ${limit}`, args)).rows;
     // 0272 · 나온 부품번호의 현재고(요약 · 엑셀의 「재고」)
     const codes = [...new Set(rows.flatMap((r) => (Array.isArray(r.items) ? r.items : []).map((i) => i && i.code).filter(Boolean)))];
@@ -138,7 +140,8 @@ export default async function metaLeadsRoutes(app) {
     if (codes.length) for (const p of (await query(`SELECT code, stock_qty FROM products WHERE code = ANY($1) AND deleted_at IS NULL`, [codes])).rows) stock[p.code] = Number(p.stock_qty) || 0;
     const rv = await revealedMap(rows.map((r) => Number(r.id)));   // 0297 · 연락처를 본 refaccionaria
     const cm = await claimMap(rows.map((r) => Number(r.id)));   // 0300/0305 · 포털 선점(모든 채널)
-    return { items: rows.map((r) => ({ ...r, id: Number(r.id), revealed_to: rv.get(Number(r.id)) || null, chat_by: cm.get(Number(r.id)) || null })), stock };
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id), revealed_to: rv.get(Number(r.id)) || null, chat_by: cm.get(Number(r.id)) || null,
+      internal: r.platform === 'whatsapp' && isInternalPhone(r.phone, hi.phones) })), stock };
   });
 
   app.get('/api/meta-leads/:id', R, async (req, reply) => {
@@ -148,9 +151,15 @@ export default async function metaLeadsRoutes(app) {
     // 2026-10-26f · Messenger 는 웹훅으로 받은 메시지(포털 · 직원 · 손님)를 바로 합쳐 보여 준다
     if (r.platform === 'messenger') r.messages = mergeConversation(r.messages, await liveMessages(r.psid));
     else r.messages = markMetaKinds((Array.isArray(r.messages) ? r.messages : []).map((m) => ({ ...m })));   // 1028c · Meta 기록 · 자동 응답 구분
+    const psid0 = r.psid;
     delete r.psid;
     const portal = await portalInfoFor(id);   // 1105c · 포털 입력(고객관리)
-    return { ...r, id: Number(r.id), portal };
+    // 1105e · 플랫폼 숨김 · 사내 번호
+    const hi = await portalHideInfo(); let hidden = null;
+    if (hi.col) hidden = (await query(`SELECT t.portal_hidden, to_char(t.portal_hidden_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at, u.name AS by FROM meta_threads t LEFT JOIN users u ON u.id = t.portal_hidden_by WHERE t.id=$1`, [id])).rows[0];
+    const internal = r.platform === 'whatsapp' && (isInternalPhone(psid0, hi.phones) || isInternalPhone(r.phone, hi.phones));
+    return { ...r, id: Number(r.id), portal, portal_hidden: !!(hidden && hidden.portal_hidden), portal_hidden_at: hidden && hidden.portal_hidden ? hidden.at : null,
+      portal_hidden_by: hidden && hidden.portal_hidden ? hidden.by : null, internal, hide_ready: hi.col };
   });
 
   // 1105 · 2026-11-05 디렉터: 이 화면에 접근 권한이 있는 직원은 Facebook(Messenger) 손님에게 바로 답장
@@ -161,13 +170,15 @@ export default async function metaLeadsRoutes(app) {
     const text = String((req.body && req.body.text) || '').replace(/\r/g, '').trim();
     if (!text) return reply.code(400).send({ error: 'empty' });
     if (text.length > 2000) return reply.code(400).send({ error: 'too_long' });
-    const t = (await query(`SELECT id, platform, user_id AS psid FROM meta_threads WHERE id=$1`, [id])).rows[0];
+    const t = (await query(`SELECT id, platform, user_id AS psid, messages FROM meta_threads WHERE id=$1`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
     if (t.platform !== 'messenger' || !t.psid) return reply.code(409).send({ error: 'chat_not_allowed' });
-    const s0 = await sendMessengerSmart(t.psid, text, req.log);
+    // 1105d · 댓글로 생긴 대화면 보통 답장이 안 될 때 그 댓글에 비공개 답장
+    const live = await liveMessages(t.psid);
+    const s0 = await sendMessengerSmart(t.psid, text, req.log, { comment: commentRefOf(t.messages) || commentRefOf(live) });
     if (!s0.ok) {
       req.log?.warn({ err: s0.error }, 'erp messenger send failed');
-      return reply.code(s0.window ? 409 : 502).send({ error: s0.window ? 'meta_window' : 'send_failed', detail: s0.error });
+      return reply.code(s0.window ? 409 : 502).send({ error: s0.comment_used ? 'comment_used' : (s0.window ? 'meta_window' : 'send_failed'), detail: s0.error });
     }
     const uid = req.ctx.perm.userId || null;
     const su = await staffUserReady();
@@ -180,7 +191,21 @@ export default async function metaLeadsRoutes(app) {
     await query(`UPDATE meta_threads SET status='contactado', updated_at=now() WHERE id=$1 AND status='nuevo'`, [id]).catch(() => null);
     await logEvent({ userId: uid, action: 'update', target: `meta_thread:${id}`, detail: { op: 'erp_messenger_send', len: text.length } });
     const by = uid ? ((await query(`SELECT name FROM users WHERE id=$1`, [uid])).rows[0] || {}).name || null : null;
-    return { ok: true, message: { at: new Date().toISOString(), me: true, text, src: 'staff', by, live: true } };
+    return { ok: true, via: s0.via || 'message', message: { at: new Date().toISOString(), me: true, text, src: 'staff', by, live: true } };
+  });
+
+  // 1105e · 플랫폼(고객 포털)에서 숨기기 / 다시 보이기 — 편집 권한
+  app.post('/api/meta-leads/:id/portal-hidden', W, async (req, reply) => {
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const hi = await portalHideInfo(true);
+    if (!hi.col) return reply.code(503).send({ error: 'migration_required', note: '0319 마이그레이션이 필요합니다.' });
+    const on = !!(req.body && req.body.hidden);
+    const r = (await query(`UPDATE meta_threads SET portal_hidden=$2, portal_hidden_by=CASE WHEN $2 THEN $3::bigint END, portal_hidden_at=CASE WHEN $2 THEN now() END, updated_at=now()
+                             WHERE id=$1 RETURNING id`, [id, on, req.ctx.perm.userId || null])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    resetPortalHideCache();
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `meta_thread:${id}`, detail: { op: on ? 'portal_hide' : 'portal_show' } });
+    return { ok: true, portal_hidden: on };
   });
 
   app.patch('/api/meta-leads/:id', W, async (req, reply) => {

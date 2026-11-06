@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105c</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105e</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -94,6 +94,16 @@
   .adname{font-weight:700}.adid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted)}
   .ad-chip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#f3ecdf;color:#7a5a1f;white-space:nowrap;display:inline-block}
   .ad-chip.unreg{background:var(--warn-bg);color:var(--warn)}
+  /* 1105e · 문의 목록 한 화면에 — 칸 좁히기 */
+  #lTable table{font-size:12px}
+  #lTable th,#lTable td{padding:5px 6px}
+  #lTable td.c-name{max-width:120px;word-break:break-word}
+  #lTable td.c-ad{max-width:104px}
+  #lTable td.c-ad .ad-chip{max-width:100px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+  #lTable td.c-ph{white-space:nowrap;width:1%}
+  #lTable td.c-veh{max-width:170px}
+  #lTable td.c-parts{max-width:220px}
+  #lTable td.clip{max-width:210px}
   tr.adrow.sel{background:#eef5f1}tr.adrow.unreg td{background:#fffaf0}
   .adform input{min-width:0}
 </style>
@@ -302,7 +312,7 @@
 
 <!-- 한 건 -->
 <div class="modal" id="mOne"><div class="mbox">
-  <div class="mtop"><b id="oTitle" style="color:var(--brand)"></b><span id="oCh"></span><button type="button" class="btn ghost sm" data-close="mOne" style="margin-left:auto">닫기 ✕</button></div>
+  <div class="mtop"><b id="oTitle" style="color:var(--brand)"></b><span id="oCh"></span><span id="oHideBox" style="margin-left:auto"></span><button type="button" class="btn ghost sm" data-close="mOne">닫기 ✕</button></div>
   <div class="mbody">
     <div><div class="chat" id="oChat"></div><div id="oComp"></div></div>
     <div class="ed">
@@ -329,7 +339,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1105c';
+  const MTL_BUILD='mtl-1105e';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -482,12 +492,12 @@
     $('lCount').textContent=it.length+'건'+(it.length>=5000?' (최대 5,000건 표시 — 필터로 좁히세요)':'');
     if(!it.length){ $('lTable').innerHTML='<div class="hint" style="margin-top:10px">문의가 없습니다'+(S.status&&S.status.counts&&!S.status.counts.total?' — 위에서 「⟳ 새 문의 가져오기」를 누르세요.':'.')+'</div>'; return; }
     $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>광고</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품 · 부품번호</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
-      +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc(x.last_mx||'')+'</td><td><b>'+esc(x.name||x.username||'—')+'</b>'+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</td>'
-        +'<td><span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td><td>'+adCell(x)+'</td><td>'+tipoOf(x)+'</td>'
+      +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc((x.last_mx||'').slice(5))+'</td><td class="c-name"><b>'+esc(x.name||x.username||'—')+'</b>'+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</td>'
+        +'<td><span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td><td class="c-ad">'+adCell(x)+'</td><td>'+tipoOf(x)+'</td>'
         +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
-        +'<td style="white-space:nowrap">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td><td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
-        +'<td class="clip" title="'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
-        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</span>':'')+(x.chat_by?'<br><span class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</span>':'')+'</td></tr>').join('')
+        +'<td class="c-ph">'+esc(x.phone||'')+'</td><td class="c-veh">'+esc(x.vehicles||'')+'</td><td class="c-parts">'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
+        +'<td class="clip" title=""'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</span>':'')+(x.chat_by?'<br><span class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</span>':'')+(x.portal_hidden?'<br><span class="bad-t" title="고객 포털에 안 보임">🚫 플랫폼 숨김</span>':'')+(x.internal?'<br><span class="muted" title="사내 번호 — 고객 포털에 안 보임">🏢 사내</span>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
   ['fCh','fAd','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
@@ -516,6 +526,23 @@
       +(p.log.length?'<details style="margin-top:4px"><summary class="muted">변경 기록 '+p.log.length+'건</summary>'+p.log.map(l=>'<div class="muted">'+esc(l.at)+' · '+esc(l.customer_name||'')+' — '+esc(Object.keys(l.changes||{}).map(k=>(PFLD[k]||k)+': '+((l.changes[k]||[])[0]==null?'—':(k==='result'?(PRES[l.changes[k][0]]||l.changes[k][0]):l.changes[k][0]))+' → '+(k==='result'?(PRES[(l.changes[k]||[])[1]]||'—'):((l.changes[k]||[])[1]||'—'))).join(' · '))+'</div>').join('')+'</details>':'')
       +'<div class="hint">포털에서 넣은 값은 아래 칸(이름 · 업종 · 주 · 도시 · 전화 · 차종 · 부품)에 그대로 들어와 있습니다.</div></div>';
   }
+  // 1105e · 플랫폼(고객 포털)에서 숨기기 — 대화를 보다가 바로
+  function renderHide(d){
+    const el=$('oHideBox'); if(!el) return;
+    if(d.internal){ el.innerHTML='<span class="tag" title="직원 · 알림 수신 번호 — 고객 포털에 나가지 않습니다">🏢 사내 번호 · 플랫폼에 안 보임</span>'; return; }
+    if(!d.hide_ready){ el.innerHTML='<span class="hint">플랫폼 숨기기: 0319 마이그레이션 필요</span>'; return; }
+    el.innerHTML=d.portal_hidden
+      ?'<span class="tag" style="background:var(--bad-bg);color:var(--bad)" title="'+esc((d.portal_hidden_by||'')+' · '+(d.portal_hidden_at||''))+'">🚫 플랫폼에서 숨김</span> <button type="button" class="btn ghost sm" id="oHide" data-h="0">다시 보이기</button>'
+      :'<button type="button" class="btn ghost sm" id="oHide" data-h="1" title="모든 refaccionaria 고객 포털에서 이 문의를 안 보이게 합니다">🚫 플랫폼에서 숨기기</button>';
+  }
+  async function toggleHide(on){
+    const d=S.cur; if(!d) return;
+    if(on&&!confirm('이 문의를 고객 포털(모든 refaccionaria)에서 숨길까요?\n이미 연락처를 본 곳도 더 이상 볼 수 없습니다.')) return;
+    try{ await api('POST','/api/meta-leads/'+d.id+'/portal-hidden',{ hidden:on }); d.portal_hidden=on; d.portal_hidden_at=on?'방금':null; d.portal_hidden_by=on?((window.session&&session.user&&session.user.name)||''):null; renderHide(d);
+      S.items=S.items.map(x=>x.id===d.id?Object.assign({},x,{portal_hidden:on}):x); renderList(); say(true,on?'플랫폼에서 숨겼습니다.':'플랫폼에 다시 보이게 했습니다.'); }
+    catch(e){ say(false,errText(e)); }
+  }
+  document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('#oHide'); if(b) toggleHide(b.dataset.h==='1'); });
   async function sendFb(){
     const d=S.cur; const ta=$('oText'); const text=ta?ta.value.trim():''; if(!d||!text) return;
     const btn=$('oSend'); btn.disabled=true; $('oSendMsg').className='msg'; $('oSendMsg').textContent='';
@@ -523,9 +550,11 @@
       const r=await api('POST','/api/meta-leads/'+d.id+'/messenger',{ text });
       d.messages=(d.messages||[]).concat([r.message]); renderChat(d);
       const c=$('oChat'); c.scrollTop=c.scrollHeight;
+      if(r.via==='private_reply'){ const m=$('oSendMsg'); m.className='msg ok'; m.textContent='댓글로 시작된 대화라 그 댓글에 「비공개 답장」으로 보냈습니다. 손님이 답하면 그때부터 계속 대화할 수 있습니다(그 전에는 더 보낼 수 없음).'; }
     }catch(e){
       btn.disabled=false; const m=$('oSendMsg'); m.className='msg err';
-      m.textContent=e.message==='meta_window'?'Facebook 이 전달하지 않았습니다 — 손님 마지막 메시지 뒤 시간이 너무 지났습니다. 손님이 다시 쓰면 보낼 수 있습니다.'
+      m.textContent=e.message==='comment_used'?'이 댓글에는 이미 비공개 답장을 보냈습니다 — 손님이 답해야 다시 보낼 수 있습니다.'
+        :e.message==='meta_window'?'Facebook 이 전달하지 않았습니다 — 손님 마지막 메시지 뒤 시간이 너무 지났습니다. 손님이 다시 쓰면 보낼 수 있습니다.'
         :e.message==='send_failed'?'Facebook 이 메시지를 받지 않았습니다. 잠시 뒤 다시 시도하세요.'+(e.data&&e.data.detail?' ('+e.data.detail+')':''):errText(e);
     }
   }
@@ -538,6 +567,7 @@
     $('oAi').innerHTML=d.summary?'<div class="aisum">🤖 '+esc(d.summary)+(d.intent?'<br><span class="muted">관심: '+esc(d.intent)+'</span>':'')+'</div>':(d.ai_error?'<div class="aisum bad-t">AI 분석 오류: '+esc(d.ai_error)+'</div>':'');
     renderChat(d);
     renderPortalInfo(d);
+    renderHide(d);
     fillAdSelect(d);
     const ph=(el,auto)=>{ el.placeholder=auto?('자동: '+auto):el.placeholder; };
     $('eName').value=d.name&&d.name!==d.meta_name?d.name:''; ph($('eName'),d.meta_name);
