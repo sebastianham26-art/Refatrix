@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106e</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106f</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -387,7 +387,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1106e';
+  const MTL_BUILD='mtl-1106f';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -591,7 +591,7 @@
     if(d.internal){ el.innerHTML='<span class="tag" title="직원 · 알림 수신 번호 — 고객 포털에 나가지 않습니다">🏢 사내 번호 · 플랫폼에 안 보임</span>'; return; }
     if(!d.hide_ready){ el.innerHTML='<span class="hint">플랫폼 숨기기: 0319 마이그레이션 필요</span>'; return; }
     const who=d.portal_hidden_by||d.portal_hidden_at?' title="'+esc('바꾼 사람 '+(d.portal_hidden_by||'')+' · '+(d.portal_hidden_at||''))+'"':'';
-    const mk=d.mkt?'<span class="tag" style="background:#e3f6ea;color:#117A3F" title="ERP WhatsApp 마케팅(이미지 광고 · 동의 요청)을 받은 번호가 답한 문의 — 기본은 플랫폼에 안 보입니다">📣 WA 마케팅 회신</span> ':'';
+    const mk=d.mkt?'<span class="tag" style="background:#e3f6ea;color:#117A3F" title="ERP WhatsApp 마케팅 이미지 광고(캠페인)를 받은 번호가 답한 문의 — 동의 요청 회신은 해당 없음 — 기본은 플랫폼에 안 보입니다">📣 WA 마케팅 회신</span> ':'';
     el.innerHTML=d.on_portal
       ?mk+'<span class="tag" style="background:var(--ok-bg);color:var(--ok)"'+who+'>👁 플랫폼에 보임</span> <button type="button" class="btn ghost sm" id="oHide" data-h="1" title="모든 refaccionaria 고객 포털에서 이 문의를 안 보이게 합니다">🚫 플랫폼에서 숨기기</button>'
       :mk+'<span class="tag" style="background:var(--bad-bg);color:var(--bad)"'+who+'>🚫 플랫폼에 안 보임'+(d.mkt&&!d.portal_hidden?' (기본)':'')+'</span> <button type="button" class="btn ghost sm" id="oHide" data-h="0">'+(d.mkt?'👁 플랫폼에 보이기':'다시 보이기')+'</button>';

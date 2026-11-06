@@ -454,7 +454,9 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const LPm = await import('../src/leadPortal.js'); LPm.resetPortalHideCache();
     const ids0 = (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.map((l) => l.id);
     assert.ok(ids0.includes(Number(TM.id)), '마케팅을 안 받은 번호는 보임');
-    await query(`INSERT INTO wa_messages (direction, phone, kind, body, source, ok) VALUES ('out',$1,'image','Promo CTR','campaign',true)`, [MPH]);
+    await query(`INSERT INTO wa_messages (direction, phone, kind, body, source, ok) VALUES ('out',$1,'template','¿Aceptas recibir promociones?','consent',true)`, [MPH]);
+    assert.ok((await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(TM.id)), '1106e · 동의 요청 회신은 보임');
+        await query(`INSERT INTO wa_messages (direction, phone, kind, body, source, ok) VALUES ('out',$1,'image','Promo CTR','campaign',true)`, [MPH]);
     let ids = (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.map((l) => l.id);
     assert.ok(!ids.includes(Number(TM.id)), '마케팅 회신은 기본 숨김');
     assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${TM.id}/contact`)).statusCode, 404);
@@ -467,7 +469,12 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     dm = (await call(D, 'GET', `/api/meta-leads/${TM.id}`)).json(); assert.equal(dm.on_portal, true); assert.ok(dm.portal_hidden_by);
     rv = await call(R1, 'POST', `/api/meta-leads/${TM.id}/portal-hidden`, { visible: false }); assert.equal(rv.json().portal_show, false);
     assert.ok(!(await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(TM.id)), '다시 숨김');
-    const st0 = (await call({}, 'GET', '/api/lead-portal/stats')).json(); assert.ok(Number.isInteger(st0.total));
+    { // 1106e · 첫 화면 숫자 = 전체 리드(숨김 · 마케팅 회신 · 제외도 셈) — ERP 목록 전체와 같은 기준(사내 번호만 뺌)
+      const st0 = (await call({}, 'GET', '/api/lead-portal/stats')).json();
+      const all = (await query(`SELECT count(*)::int n FROM meta_threads`)).rows[0].n;
+      assert.ok(st0.total <= all && st0.total >= all - 50, `전체 ${all} ≈ ${st0.total}`);
+      assert.ok(st0.total > (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.length, '포털에 보이는 문의보다 많음(숨긴 것도 셈)');
+    }
     await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [TM.id]); LPm.resetPortalHideCache();
   }
   { // 1105 · 접속 기록 — 로그인 · 화면 열기 → 고객 · 날짜별, 화면 권한이면 영업도 봄

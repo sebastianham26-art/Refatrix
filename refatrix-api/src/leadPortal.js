@@ -49,7 +49,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessengerSmart, commentRefOf } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1106e';
+export const LP_BUILD = 'lp-1106f';
 
 // 1105c · 개인정보 보호 · 비밀유지 확약서(포털 로그인 후 전자서명) — 2026-11-05 디렉터
 //   본문을 바꾸면 CONSENT_VERSION 을 올린다 → 모든 고객 코드가 다시 서명한다.
@@ -475,8 +475,9 @@ export async function portalHideInfo(force = false) {
   hidCache = { at: Date.now(), phones, col, show, wa };
   return hidCache;
 }
-// 1106d · 「ERP WhatsApp 마케팅을 받은 번호」 — 그 번호로 캠페인(이미지 광고) · 동의 요청이 나간 적이 있으면
-export const MKT_SQL = `(t.platform = 'whatsapp' AND EXISTS (SELECT 1 FROM wa_messages wm WHERE wm.phone = t.user_id AND wm.direction = 'out' AND wm.source IN ('campaign','consent')))`;
+// 1106d · 「ERP WhatsApp 마케팅을 받은 번호」 — 그 번호로 캠페인(이미지 광고)이 나간 적이 있으면
+//   1106e · 디렉터: 동의 요청(consent)에 대한 회신은 보이게 → 캠페인만 센다
+export const MKT_SQL = `(t.platform = 'whatsapp' AND EXISTS (SELECT 1 FROM wa_messages wm WHERE wm.phone = t.user_id AND wm.direction = 'out' AND wm.source = 'campaign'))`;
 export const mktExpr = (hi) => (hi && hi.wa ? MKT_SQL : 'false');
 // 포털에서 빼는 조건(사내 번호 · 숨김 · 허락 안 한 마케팅 회신) — 「 AND …」
 export function portalHideSql(hi, args) {
@@ -722,12 +723,15 @@ export default async function leadPortalRoutes(app) {
   app.get('/api/lead-portal/stats', async (req, reply) => {
     if (!(await portalReady())) return reply.code(503).send({ error: 'not_ready' });
     if (!statsCache.v || Date.now() - statsCache.at > 300000) {
-      const hi = await portalHideInfo(); const args = []; const extra = portalHideSql(hi, args);
+      // 1106e · 디렉터: 첫 화면 숫자 = 광고로 들어온 **전체 리드** — 포털 숨김 · 마케팅 회신 · 제외(descartado)와 상관없이
+      //   ERP 「Meta 광고 문의」 목록 전체와 같은 기준. 사내 번호(직원 · 알림 수신) WhatsApp 만 뺀다. 7일 = 그 기간에 처음 들어온 리드.
+      const hi = await portalHideInfo(); const args = []; let extra = '';
+      if (hi.phones.length) { args.push(hi.phones); extra = ` AND NOT (t.platform = 'whatsapp' AND right(regexp_replace(COALESCE(t.user_id, ''), '\\D', '', 'g'), 10) = ANY($1::text[]))`; }
       const r = (await query(
         `SELECT count(*)::int AS total,
-                count(*) FILTER (WHERE t.last_at > now() - interval '7 days')::int AS week,
-                count(*) FILTER (WHERE (t.last_at AT TIME ZONE 'America/Mexico_City')::date = (now() AT TIME ZONE 'America/Mexico_City')::date)::int AS today
-           FROM meta_threads t WHERE t.status <> 'descartado' AND COALESCE(t.in_count,0) > 0${extra}`, args)).rows[0];
+                count(*) FILTER (WHERE t.first_at > now() - interval '7 days')::int AS week,
+                count(*) FILTER (WHERE (t.first_at AT TIME ZONE 'America/Mexico_City')::date = (now() AT TIME ZONE 'America/Mexico_City')::date)::int AS today
+           FROM meta_threads t WHERE true${extra}`, args)).rows[0];
       statsCache = { at: Date.now(), v: { total: r.total, week: r.week, today: r.today } };
     }
     reply.header('cache-control', 'public, max-age=120');
