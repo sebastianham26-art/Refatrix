@@ -6,7 +6,7 @@
 <!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 1030kitv</title>
+<title>Refatrix · 창고 포장 · build 1105avl</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -1491,7 +1491,7 @@
       var mix=(inKit&&it.kit_parts&&it.kit_parts.length>1)?('<span class="kmix">'+it.kit_parts.map(function(p){ return (p.kit_no||LK('단품','suelta'))+' \u00d7'+p.qty; }).join(' · ')+'</span>'):'';
       var cls=[]; if(inKit) cls.push('kitr'); if(done) cls.push('done');
       return '<tr class="'+cls.join(' ')+'">'
-        +'<td>'+esc(it.ctr_code)+mix+'</td><td>'+esc(it.syd_code||'\u2014')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
+        +'<td>'+esc(it.ctr_code)+mix+(it.partial?'<span class="kmix" style="color:#c0392b;font-weight:700">'+LK('부분 출고 · 부족 ','Parcial · faltan ')+it.short+'</span>':'')+'</td><td>'+esc(it.syd_code||'\u2014')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
         +'<td class="num">'+it.required+'</td><td class="num">'+it.scanned+'</td>'
         +'<td class="num"><b class="'+(done?'zero':'pos')+'">'+it.remaining+'</b></td>'
         +'<td class="rk">'+rackCell(it)+'</td><td class="pkc">'+pickCell(it)+'</td><td>'+esc(bx)+'</td></tr>';

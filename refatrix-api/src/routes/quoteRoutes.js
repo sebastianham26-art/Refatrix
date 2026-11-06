@@ -40,6 +40,7 @@ async function isPendingCustomer(customerId) {
 
 import { resolveSeller, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
 import { rackStockReady, quotePicks, snapshotQuotePicks, rackMap } from '../rackStock.js';
+import { ACTIVE_RESERVATION_SQL } from '../reservations.js';   // 2026-11-05 avl · 미리보기 가용 = 저장 예약과 같은 정의
 import { pairHints } from '../lrPair.js';   // 2026-10-20 · L/R 짝맞춤 안내(막지 않음)   // 0245 · 피킹 위치(fast moving 우선)
 import { plQty } from '../quoteQtyCols.js';   // 2026-10-22 · 견적 엑셀 수량열 4종(가용·운송중·생산중)
 
@@ -67,7 +68,9 @@ export default async function quoteRoutes(app) {
     for (const l of rows) {
       const qty = Number(l.qty) || 0;
       const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, Number(l.stock_qty) || 0));
-      if (qty > 0 && fulfill >= qty) out.push({ product_id: Number(l.product_id), qty });
+      // 2026-11-05 avl · 부분 확보 줄도 **확보분만큼** 지시서에 올린다.
+      //   전환은 확보분(5/8)을 인보이스에 넣는데 지시서에는 그 SKU 가 아예 빠져 있었다(Q-2026-0354 GV0803·GV0852·CR0387).
+      if (qty > 0 && fulfill > 0) out.push({ product_id: Number(l.product_id), qty: Math.min(qty, fulfill) });
     }
     return out;
   }
@@ -218,6 +221,27 @@ export default async function quoteRoutes(app) {
     const inRaw = Array.isArray(b.lines) ? b.lines : [];
     const inLines = await expandKitLines(inRaw);
     const kitExpanded = inLines.length !== inRaw.length || inLines.some((l, i) => l !== inRaw[i]);
+    // 2026-11-05 avl · Q-2026-0354 — 미리보기 「가용」이 **물리 재고만** 보여 저장 결과(예약)와 어긋났다.
+    //   (GV0803: 화면 7 → 실제 확보 5. 2분 전 같은 고객 견적 Q-2026-0353 이 2개를 먼저 잡았다.)
+    //   이제 저장(assignReservations)과 같은 규칙으로 보여준다:
+    //     가용 = 현재고 − 타 미결·미만료 견적 예약 − 이 견적 앞줄이 이미 쓴 수량(키트 여러 개가 같은 부품을 쓸 때)
+    //   편집 중인 견적이면 exclude_quote_id 로 자기 예약은 빼지 않는다.
+    const exclQ = Number(b.exclude_quote_id) || 0;
+    const resvCache = new Map();   // pid → { other, holders:[{quote_no, qty}] }
+    const usedHere = new Map();    // pid → 이 미리보기 앞줄이 쓴 수량
+    async function otherResv(pid) {
+      if (resvCache.has(pid)) return resvCache.get(pid);
+      const rows = (await query(
+        `SELECT q.quote_no, SUM(ql.reserved_qty) AS qty
+           FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+          WHERE ql.product_id = $1 AND q.id <> $2 AND ${ACTIVE_RESERVATION_SQL}
+            AND ql.reserved_qty > 0
+          GROUP BY q.id, q.quote_no ORDER BY q.id`, [pid, exclQ])).rows;
+      const holders = rows.map((r) => ({ quote_no: r.quote_no, qty: Number(r.qty) || 0 }));
+      const v = { other: holders.reduce((s, h) => s + h.qty, 0), holders };
+      resvCache.set(pid, v);
+      return v;
+    }
     for (const ln of inLines) {
       const qty = Number(ln.qty) || 0;
       let prod = null;
@@ -254,8 +278,18 @@ export default async function quoteRoutes(app) {
       const sydRows = (await query(`SELECT syd_code FROM product_syd_codes WHERE product_id=$1`, [prod.id])).rows.map((x) => x.syd_code);
       const oeItems = (await oeByProduct([prod.id])).get(Number(prod.id)) || [];   // 0228
       const calc = computeQuoteLine({ listPrice: prod.list_price, discountRate, qty, ivaRate });
-      const avail = prod.stock_qty != null ? Number(prod.stock_qty) : null;
+      const pidN = Number(prod.id);
+      const physical = prod.stock_qty != null ? Number(prod.stock_qty) : null;
+      let avail = physical, resvOther = 0, resvHolders = [], usedBefore = 0;
+      if (physical != null) {
+        const rv = await otherResv(pidN);
+        resvOther = rv.other; resvHolders = rv.holders;
+        usedBefore = usedHere.get(pidN) || 0;
+        avail = Math.max(0, physical - resvOther - usedBefore);
+        usedHere.set(pidN, usedBefore + Math.min(qty, avail));
+      }
       out.push({
+        cur_stock: physical, reserved_other: resvOther, reserved_holders: resvHolders, used_in_quote: usedBefore,   // avl
         input_code: ln.code || prod.code, matched: true, product_id: prod.id, ctr_code: prod.code,
         syd_codes: sydRows, product_name: prod.name, app_text: prod.app, qty,
         oe_codes: oeItems.map(oeToken),                 // 0228 — 전체(FOR·SYD 표기 포함, 화면용)
@@ -450,6 +484,18 @@ export default async function quoteRoutes(app) {
     }
     // 0224 — 판매중단 SKU 가 들어간 줄을 화면에 돌려준다.
     //   저장은 됐지만 **확정은 못 한다**는 것을 사람이 바로 알아야 하므로, 목록으로 준다.
+    // 2026-11-05 avl · 저장 결과 **실제 확보(예약)** 가 요청보다 적은 줄 — 화면이 저장 직후 바로 알린다.
+    let shortLines = [];
+    try {
+      shortLines = (await query(
+        `SELECT ql.ctr_code, ql.kit_no, SUM(ql.qty) AS qty, SUM(ql.reserved_qty) AS reserved
+           FROM quote_lines ql
+          WHERE ql.quote_id = $1 AND ql.product_id IS NOT NULL
+          GROUP BY ql.product_id, ql.ctr_code, ql.kit_no
+         HAVING SUM(ql.reserved_qty) < SUM(ql.qty)
+          ORDER BY ql.ctr_code`, [result.id])).rows
+        .map((r) => ({ code: r.ctr_code, kit_no: r.kit_no || null, qty: Number(r.qty) || 0, reserved: Number(r.reserved) || 0 }));
+    } catch (_) { shortLines = []; }
     const inactiveLines = (result.lines || []).filter((l) => l.issue === 'inactive')
       .map((l) => ({ line_no: l.line_no, code: l.ctr_code || l.input_code, name: l.product_name }));
     return { id: result.id, quote_no: result.quote_no, customer_id: customerId || null, auto_customer: autoCustomer,
@@ -458,6 +504,7 @@ export default async function quoteRoutes(app) {
       po_pending_migration: (!poReady && !!poNo) || undefined,
       inactive_lines: inactiveLines,
       inactive_note: inactiveLines.length ? esInactiveNote(inactiveLines) : null,
+      short_lines: shortLines,   // avl
       dev_lines: result.devLines || [],
       dev_note: (result.devLines || []).length ? esDevNote(result.devLines) : null };
   });
@@ -1073,7 +1120,7 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     const lines = (await query(`SELECT * FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [id])).rows;
-    const inStock = [], shortage = [], newDev = [];
+    const inStock = [], shortage = [], newDev = [], partial = [];
     for (const l of lines) {
       const qty = Number(l.qty) || 0;
       if (!l.product_id) { newDev.push({ input_code: l.input_code, qty }); continue; }
@@ -1087,16 +1134,20 @@ export default async function quoteRoutes(app) {
       const kitNo = l.kit_no || null;   // 0306 · 키트에서 풀린 줄(포장작업지시서가 키트 단위로 묶는다)
       if (short <= 0) inStock.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, rack_location: rack, kit_no: kitNo });
       else {
-        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, fulfill, short, rack_location: rack, kit_no: kitNo });
+        shortage.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, fulfill, short, rack_location: rack, kit_no: kitNo });
+        // 2026-11-05 avl · 확보분이 있으면 그만큼은 매출되므로 **피킹 대상**이다(지시서 = 인보이스 수량)
+        if (fulfill > 0) partial.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code, product_name: l.product_name,
+          qty: fulfill, requested: qty, short, partial: true, avail: fulfill, rack_location: rack, kit_no: kitNo });
       }
     }
+    const pickItems = inStock.concat(partial);
     // 0245 · 피킹 위치(제품 × 랙 × 수량). 지시서로 이미 저장된 위치가 있으면 그것, 없으면 새 계획(저장 안 함).
     let rackReady = false;
     try {
-      if (await rackStockReady() && inStock.length) {
-        const { picks, saved } = await quotePicks(null, id, inStock);
-        const all = await rackMap(null, inStock.map((it) => it.product_id));   // 0269 · SKU 가 놓인 모든 랙 × 수량
-        for (const it of inStock) { it.picks = picks[it.product_id] || []; it.picks_saved = !!saved[it.product_id]; it.racks_all = all.get(Number(it.product_id)) || []; }
+      if (await rackStockReady() && pickItems.length) {
+        const { picks, saved } = await quotePicks(null, id, pickItems);
+        const all = await rackMap(null, pickItems.map((it) => it.product_id));   // 0269 · SKU 가 놓인 모든 랙 × 수량
+        for (const it of pickItems) { it.picks = picks[it.product_id] || []; it.picks_saved = !!saved[it.product_id]; it.racks_all = all.get(Number(it.product_id)) || []; }
         rackReady = true;
       }
     } catch (e) { try { console.error('[convert-preview] rack picks', e.message); } catch (_) {} }
@@ -1104,8 +1155,10 @@ export default async function quoteRoutes(app) {
       rack_stock_ready: rackReady,
       is_guest: q.customer_id == null,
       already: q.status === 'converted',
-      counts: { in_stock: inStock.length, shortage: shortage.length, new_dev: newDev.length },
+      counts: { in_stock: inStock.length, shortage: shortage.length, new_dev: newDev.length, partial: partial.length },
       in_stock: inStock, shortage, new_dev: newDev,
+      // 2026-11-05 avl · 포장작업지시서 = 매출될 수량 전부(전량 + 부분 확보분). 구버전 화면은 in_stock 만 본다.
+      pick_items: pickItems,
       // 0306 · 이 오더의 키트(키트 번호 순) — 세트 수 · 구성
       kits: await kitSummaries(lines).catch(() => []),
       // 2026-09-24 — 정가 없는 품목(있으면 전환 버튼이 잠긴다)

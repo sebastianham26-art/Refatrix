@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1104kit</title>
+<title>Refatrix ERP · 견적 목록 · ql-1105avl</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -293,7 +293,7 @@
     return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
   }
 
-  const QL_BUILD='ql-1008rc';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1105avl';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -1647,7 +1647,7 @@
       const pv=await fetch(session.api+'/api/quotes/'+id+'/convert-preview',{headers:auth()}).then(r=>r.json());
       cvPreviewData=pv;
       renderPreview(pv);
-      const pickable=(pv.in_stock||[]).length>0;
+      const pickable=cvPickList(pv).length>0;
       $('cvPackBox').classList.toggle('hidden', !pickable);
       await refreshPackingDoc();   // 서버에 기존 스캔본 있으면 반영
       updateCvGate();
@@ -1656,7 +1656,7 @@
 
   // 포장 게이트: 피킹 대상이 있으면 스캔본 업로드 전까지 전환 실행 비활성
   function updateCvGate(){
-    const pickable=!!(cvPreviewData && (cvPreviewData.in_stock||[]).length>0);
+    const pickable=!!(cvPreviewData && cvPickList(cvPreviewData).length>0);
     // 2026-09-24 — 정가 없는 품목이 있으면 전환 잠금(서버도 409 no_list_price 로 막는다)
     const np=(cvPreviewData && cvPreviewData.no_price_items)||[];
     const ok = (!pickable || cvHasDoc) && !np.length;
@@ -1719,6 +1719,8 @@
       setTimeout(()=>URL.revokeObjectURL(url), 60000);
     }catch(e){ alert('파일을 불러오지 못했습니다.'); }
   }
+  // 2026-11-05 avl · 포장작업지시서 = 매출될 수량 전부(전량 + 부분 확보분). 구버전 서버 응답이면 in_stock.
+  function cvPickList(pv){ return (pv && Array.isArray(pv.pick_items)) ? pv.pick_items : ((pv && pv.in_stock) || []); }
   function renderPreview(pv){
     const c=pv.counts||{};
     const sumQty=(arr)=>(arr||[]).reduce((s,x)=>s+(Number(x.qty)||0),0);
@@ -1734,18 +1736,22 @@
     // 0245 · 피킹 위치(랙 × 수량, fast moving 먼저)를 같이 보여준다.
     const pkTxt=(x)=>{ const p=(x.picks||[]).filter(k=>k.rack); return p.length?(' · 📍 '+p.map(k=>esc(k.rack)+' ×'+k.qty).join(' · ')):''; };
     if((pv.in_stock||[]).length) h+='<div class="pvseg"><b>① 즉시 매출</b><br>'+pv.in_stock.map(x=>esc(x.ctr_code)+' ×'+x.qty+' (재고 '+x.avail+')'+pkTxt(x)).join('<br>')+'</div>';
-    if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>esc(x.ctr_code)+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>').join('<br>')+'</div>';
+    if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>{
+        const pk=(pv.pick_items||[]).find(p=>p.partial&&Number(p.product_id)===Number(x.product_id));
+        return esc(x.ctr_code)+(x.kit_no?' <span class="hint">('+esc(x.kit_no)+')</span>':'')+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>'
+          +(x.fulfill>0&&Array.isArray(pv.pick_items)?' · 📦 지시서에 '+x.fulfill+'개 포함'+(pk?pkTxt(pk):''):'');
+      }).join('<br>')+'</div>';
     if((pv.new_dev||[]).length) h+='<div class="pvseg"><b>③ 미등록 → 개발요청 생성</b><br>'+pv.new_dev.map(x=>esc(x.input_code||'(코드없음)')+' ×'+x.qty).join('<br>')+'</div>';
     if(!(pv.in_stock||[]).length && !(pv.shortage||[]).length && !(pv.new_dev||[]).length) h+='<div class="hint">전환할 품목이 없습니다.</div>';
     // 랙 미지정 경고 — 지시서를 뽑기 전에 영업지원이 먼저 알 수 있게(제품마스터에서 랙을 넣으면 사라진다).
-    const noRackList=(pv.in_stock||[]).filter(x=>{
+    const noRackList=cvPickList(pv).filter(x=>{
       const p=x.picks||[];
       if(p.length) return p.some(k=>!k.rack) && !String(x.rack_location||'').trim();   // 랙재고로 다 못 채우고 마스터 위치도 없음
       return !String(x.rack_location||'').trim();
     }).map(x=>x.ctr_code||'');
-    if((pv.in_stock||[]).length) h+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">'
+    if(cvPickList(pv).length) h+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">'
       +'<button class="btn" type="button" onclick="printPickList()">📦 포장작업지시서 출력 (PDF)</button> '
-      +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다. (랙 위치 순 정렬 · 랙 × 수량 · fast moving 랙 먼저 · 매출 전환 때 이 위치에서 자동 차감)</span>'
+      +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU'+(Number((pv.counts||{}).partial)>0?(' + ② 부분 출고 '+pv.counts.partial+'개 SKU(확보분만)'):'')+'의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다. (랙 위치 순 정렬 · 랙 × 수량 · fast moving 랙 먼저 · 매출 전환 때 이 위치에서 자동 차감)</span>'
       +(noRackList.length?('<div class="hint" style="color:var(--expense);margin-top:6px">⚠ 랙 위치가 없는 SKU '+noRackList.length+'개 — 지시서에 <b>SIN UBICACIÓN</b> 으로 나갑니다: '
         +esc(noRackList.slice(0,8).join(', '))+(noRackList.length>8?' 외 '+(noRackList.length-8)+'개':'')
         +' · 제품 화면에서 랙을 등록하세요.</div>'):'')
@@ -1757,7 +1763,7 @@
   // ===== 포장 작업 지시서 (피킹/패킹) 출력 — ① 즉시 매출 SKU =====
   async function printPickList(){
     const pv=cvPreviewData;
-    if(!pv || !(pv.in_stock||[]).length){ alert('즉시 매출 가능한 SKU가 없습니다.'); return; }
+    if(!pv || !cvPickList(pv).length){ alert('출고(매출) 가능한 SKU가 없습니다.'); return; }
     // 랙 위치 순 정렬 — 작업자가 창고를 한 방향으로 돌며 피킹하도록.
     //   자연정렬(A-1-9 < A-1-10 · 존 지정 화면 rackSortKey 와 같은 규칙) · 랙 미지정 SKU 는 맨 뒤 · 같은 랙이면 SKU 코드순.
     const rackOf=(x)=>String((x&&(x.rack_location||x.rack||x.location))||'').trim();
@@ -1780,9 +1786,10 @@
     // 0245 · 피킹 정거장 = SKU × 랙 × 수량. 서버가 지시서 출력 시 저장한 위치(= 매출 전환 때 차감될 위치)를 쓴다.
     //   한 SKU 가 여러 랙에 있으면 fast moving 랙을 먼저, 줄을 나눠 찍는다. 랙재고로 다 못 채운 분량은 제품마스터 위치로 안내.
     const merged=[]; const byPid={};
-    (pv.in_stock||[]).forEach(x=>{
+    cvPickList(pv).forEach(x=>{
       const k=x.product_id?('p'+x.product_id):('c'+(x.ctr_code||''));
       if(byPid[k]){ byPid[k].qty=Number(byPid[k].qty||0)+Number(x.qty||0);
+        if(x.partial){ byPid[k].partial=true; byPid[k].short=Number(byPid[k].short||0)+Number(x.short||0); }
         if((x.kit_no||'')!==(byPid[k].kit_no||'')){ byPid[k].kit_mix=true; if(x.kit_no&&(!byPid[k].kit_no||x.kit_no<byPid[k].kit_no)) byPid[k].kit_no=x.kit_no; }   // 0306
         return; }
       byPid[k]=Object.assign({},x); merged.push(byPid[k]);
@@ -1846,7 +1853,10 @@
       '<div class="pk-kits"><div class="kt">Kits en este pedido ('+kits.length+') — empacar juntas las piezas de cada kit: misma bolsa, misma caja, bolsa marcada con el No. de KIT</div>'
       +'<table><thead><tr><th style="width:12%">KIT</th><th style="width:26%">Vehículo</th><th style="width:9%;text-align:center">Juegos</th><th>Componentes por juego</th></tr></thead><tbody>'
       +kits.map(k=>'<tr><td><b>'+esc(k.kit_no)+'</b></td><td>'+esc([k.title,k.years].filter(Boolean).join(' ')||'—')+'</td><td style="text-align:center">'+(k.sets!=null?k.sets:'—')+'</td><td>'
-        +esc((k.items||[]).map(x=>x.ctr_code+(Number(x.qty)>1?' ×'+x.qty:'')).join(', '))+(k.consistent===false?' <b style="color:#c0392b">⚠ cantidades distintas al kit</b>':'')+'</td></tr>').join('')
+        +esc((k.items||[]).map(x=>x.ctr_code+(Number(x.qty)>1?' ×'+x.qty:'')).join(', '))+(k.consistent===false?' <b style="color:#c0392b">⚠ cantidades distintas al kit</b>':'')
+        +(function(){ const sh=(pv.shortage||[]).filter(x=>String(x.kit_no||'').toUpperCase()===String(k.kit_no||'').toUpperCase());   // avl · 부족 구성품
+            return sh.length?'<br><b style="color:#c0392b">⚠ KIT INCOMPLETO — falta: '+esc(sh.map(x=>x.ctr_code+' '+qfmtA(x.short)).join(', '))+'</b>':''; })()
+        +'</td></tr>').join('')
       +'</tbody></table></div>'):'';
     // 줄 높이 어림(1 = 한 줄짜리 행 ≈ 7.4mm). 품명 칸은 한 줄에 약 22자, 「Existencia por rack」 은 약 34자.
     const rowWeight=(x)=>{
@@ -1915,6 +1925,7 @@
           +'<td class="c-sku">'+esc(x.ctr_code||'—')+'</td>'
           +'<td class="c-syd">'+esc(x.syd_codes||sydMap[(x.ctr_code||'').trim()]||'')+'</td>'
           +'<td class="c-name">'+(x.kit_no?'<span class="kit">KIT '+esc(x.kit_no)+(x.kit_mix?' +':'')+'</span>':'')+esc(x.product_name||'(미등록)')
+            +(x.partial?'<span class="split" style="color:#c0392b;font-weight:700">PARCIAL · surtir sólo '+qfmt(x.qty)+' · faltan '+qfmt(x.short)+' (sin existencia)</span>':'')
             +(x.split?'<span class="split">'+x.part+'/'+x.parts+' · Total SKU '+qfmt(x.sku_total)+'</span>':'')
             +((x.all_racks_txt&&x.part===1)?'<span class="allr">Existencia por rack: '+esc(x.all_racks_txt)+'</span>':'')+'</td>'
           +'<td class="c-qty">'+qfmt(x.stop_qty)+'</td>'

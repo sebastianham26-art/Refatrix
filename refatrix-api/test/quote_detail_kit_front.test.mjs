@@ -63,7 +63,7 @@ async function boot({ lines = LINES, kits = KITS } = {}) {
 
 test('① 상세 표 — KIT 열 맨 앞 · 키트 번호 순 → 제품 코드 순 → 일반 줄 · 머리줄', opts, async () => {
   const { w } = await boot();
-  assert.match(w.document.title, /ql-1104kit/);
+  assert.match(w.document.title, /ql-1105avl/);
   const tb = w.document.querySelector('#dtBody table');
   assert.equal(tb.querySelector('thead th').textContent, 'KIT');
   const rows = [...tb.querySelectorAll('tbody tr')];

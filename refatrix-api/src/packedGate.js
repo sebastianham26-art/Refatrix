@@ -2,7 +2,7 @@ import { query } from './db.js';
 import { kickOrderStatus } from './orderStatusSync.js';   // 0227 · 포장완료 → CRM 「Preparando despacho」
 
 // 포장완료(packed) 3조건이 처음 모두 충족되면 quotes.packed_at 을 정확히 한 번 기록.
-//   ① 즉시재고(in_stock) 라인 전부 스캔 완료(packing_box_line 합 >= required)
+//   ① 확보분이 있는 라인 전부 스캔 완료(packing_box_line 합 >= required · 부분 확보 줄은 확보분) — avl
 //   ② 박스 1개 이상 (사진은 선택 — 더 이상 필수 아님)
 //   ③ 종이 포장지시서 업로드(quote_packing_docs)
 // 재호출 안전(WHERE packed_at IS NULL 가드). 재고·매출엔 영향 없음(packed_at 기록만).
@@ -24,8 +24,8 @@ export async function maybeMarkPacked(quoteId, exec = query) {
     const qty = Number(l.qty) || 0;
     const phys = l.stock_qty != null ? Number(l.stock_qty) : 0;
     const ful = Math.max(0, Math.min(Number(l.reserved_qty) || 0, phys));
-    if (ful < qty) continue;
-    req.push({ product_id: Number(l.product_id), required: qty });
+    if (ful <= 0) continue;   // 2026-11-05 avl · 부분 확보 줄은 확보분만큼 스캔하면 된다(포장 화면과 같은 기준)
+    req.push({ product_id: Number(l.product_id), required: Math.min(qty, ful) });
   }
   if (!req.length) return false;
   const scanned = {};

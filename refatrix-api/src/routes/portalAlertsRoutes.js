@@ -65,8 +65,8 @@ async function packableLines(quoteId) {
     const qty = Number(l.qty) || 0;
     const physical = l.stock_qty != null ? Number(l.stock_qty) : 0;
     const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));
-    if (fulfill < qty) continue;
-    out.push({ product_id: Number(l.product_id), required: qty });
+    if (fulfill <= 0) continue;   // 2026-11-05 avl · warehouseRoutes 와 동기화 — 부분 확보 줄은 확보분
+    out.push({ product_id: Number(l.product_id), required: Math.min(qty, fulfill) });
   }
   return out;
 }

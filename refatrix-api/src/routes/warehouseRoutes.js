@@ -20,7 +20,7 @@ import { kitSummaries } from '../vioPromos.js';
 //   · 읽기 전용 — 재고·매출·단계에 아무 영향 없음(격리).
 //   · 포장 대기 = 포장지시서 출력됨(packing_printed_at) + 미전환(invoice 없음).
 //   · 드릴다운 = 즉시재고(in_stock) 라인만 (부족/개발 제외 — 견적 convert-preview와 동일 기준).
-//     라인 = 즉시충당(min(reserved_qty, 현재고) >= qty)인 것만. 컬럼: CTR·SYD·EAN-13·수량·랙.
+//     라인 = 확보분(min(reserved_qty, 현재고) > 0) — 부분 확보 줄은 확보분만(2026-11-05 avl). 컬럼: CTR·SYD·EAN-13·수량·랙.
 // =====================================================================
 export default async function warehouseRoutes(app) {
   const num = (v) => (v == null ? null : Number(v));
@@ -108,17 +108,20 @@ export default async function warehouseRoutes(app) {
       const qty = Number(l.qty) || 0;
       const physical = l.stock_qty != null ? Number(l.stock_qty) : 0;
       const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));
-      if (fulfill < qty) continue;                        // 부족 라인 제외(즉시재고만)
+      // 2026-11-05 avl · 부분 확보 줄도 **확보분만큼** 포장한다 — 매출 전환이 확보분을 인보이스에 넣기 때문(Q-2026-0354).
+      if (fulfill <= 0) continue;                         // 확보 0 은 제외
+      const packQty = Math.min(qty, fulfill);
       const syd = (l.syd_codes && String(l.syd_codes).trim()) || (l.scode && String(l.scode).trim()) || '';
       items.push({
         product_id: Number(l.product_id),
         ctr_code: l.ctr_code || '',
         syd_code: syd,
         ean: l.ean || '',
-        qty,
+        qty: packQty,
+        ...(packQty < qty ? { partial: true, requested: qty, short: qty - packQty } : {}),
         rack_location: l.rack_location || '',
       });
-      totalPieces += qty;
+      totalPieces += packQty;
     }
     await attachPicks(id, items, 'qty');
 
@@ -158,10 +161,12 @@ export default async function warehouseRoutes(app) {
       const qty = Number(l.qty) || 0;
       const physical = l.stock_qty != null ? Number(l.stock_qty) : 0;
       const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));
-      if (fulfill < qty) continue;
+      if (fulfill <= 0) continue;   // 2026-11-05 avl · 부분 확보 줄은 확보분만 포장 대상
+      const need = Math.min(qty, fulfill);
       const syd = (l.syd_codes && String(l.syd_codes).trim()) || (l.scode && String(l.scode).trim()) || '';
       out.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code || '', syd_code: syd,
-                 ean: (l.ean || '').trim(), rack_location: l.rack_location || '', required: qty, kit_no: l.kit_no || null });
+                 ean: (l.ean || '').trim(), rack_location: l.rack_location || '', required: need, kit_no: l.kit_no || null,
+                 ...(need < qty ? { partial: true, requested: qty, short: qty - need } : {}) });
     }
     return out;
   }
@@ -185,8 +190,9 @@ export default async function warehouseRoutes(app) {
     const by = new Map();
     for (const l of lines) {
       const k = l.product_id;
-      if (!by.has(k)) { by.set(k, { ...l, required: 0, _parts: [] }); }
+      if (!by.has(k)) { by.set(k, { ...l, required: 0, short: 0, _parts: [] }); }
       const it = by.get(k); it.required += l.required; it._parts.push({ kit_no: l.kit_no || null, qty: l.required });
+      if (l.partial) { it.partial = true; it.short += Number(l.short) || 0; }   // avl
     }
     return [...by.values()].map((it) => {
       const kinds = new Set(it._parts.map((p) => p.kit_no || ''));
@@ -283,7 +289,8 @@ export default async function warehouseRoutes(app) {
       reqTotal += l.required; scanTotal += Math.min(sc, l.required);
       return { product_id: l.product_id, ctr_code: l.ctr_code, syd_code: l.syd_code, ean: l.ean,
                rack_location: l.rack_location, required: l.required, scanned: sc, remaining: Math.max(0, l.required - sc),
-               kit_no: l.kit_no || null, ...(l.kit_parts ? { kit_parts: l.kit_parts } : {}) };
+               kit_no: l.kit_no || null, ...(l.kit_parts ? { kit_parts: l.kit_parts } : {}),
+               ...(l.partial ? { partial: true, short: l.short } : {}) };   // avl · 확보분만 포장(부족분은 인보이스에도 없음)
     });
     // 0306 · 이 오더의 키트(키트 번호 순). partial = 재고 부족으로 포장 목록에서 빠진 구성품이 있다
     let kits = [];
@@ -292,7 +299,7 @@ export default async function warehouseRoutes(app) {
       kits = await kitSummaries(allLines);
       for (const k of kits) {
         const want = allLines.filter((l) => l.kit_no === k.kit_no).length;
-        const have = packRaw.filter((l) => l.kit_no === k.kit_no).length;
+        const have = packRaw.filter((l) => l.kit_no === k.kit_no && !l.partial).length;   // avl · 부분 확보도 「빠진 구성품」
         k.partial = have < want;
       }
     } catch (e) { try { console.error('[warehouse] kits', e.message); } catch (_) {} }

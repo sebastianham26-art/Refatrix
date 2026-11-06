@@ -61,7 +61,7 @@ test('① 선택 UI · 기본 전체 · 바꾸면 on 표시와 기억(localStora
   assert.ok(w.document.querySelector('input[value=excl]').parentNode.classList.contains('on'));
   assert.ok(!w.document.querySelector('input[value=all]').parentNode.classList.contains('on'));
   assert.equal(w.localStorage.getItem('rfx_quote_kitmode'), 'excl');
-  assert.match(w.document.title, /qt-1104kitc/);
+  assert.match(w.document.title, /qt-1105avl/);
 });
 
 test('② 기억된 선택(only)으로 시작', async () => {
