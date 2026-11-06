@@ -42,10 +42,10 @@ import { META_STATES } from './metaLeadExtract.js';
 import { isBotText } from './metaLeadsAi.js';   // 1104 · 우리 정해진 안내문 = 자동 응답
 import { oeReady, oeByProduct } from './oeCodes.js';
 import { normOe, oeToken } from './oeParse.js';
-import { chatReady, claimDays, sendMessenger, humanAgentOn } from './metaPageMsgs.js';   // 0300 · Messenger 대화
+import { chatReady, claimDays, sendMessengerSmart } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1104d';
+export const LP_BUILD = 'lp-1105a';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -334,11 +334,22 @@ export async function searchProducts(q, { limit = 15 } = {}, exec = query) {
 // 2026-10-26f · ERP 「한 건 열기」 대화에 웹훅 메시지(포털 · 직원 · 손님)를 바로 합친다.
 //   기존 대화(meta_threads.messages)는 Graph 동기화(30분)로만 갱신돼 포털에서 보낸 「hola」가 바로 안 보였다.
 //   같은 메시지(방향 · 글자 같고 2분 안)는 하나로 — 포털에서 보낸 것은 「🔑 가게 이름」 표시를 붙인다.
+// 1105 · 0316(직원 답장 · 보낸 사람) 칸이 있나
+let suReady = false, suProbe = 0;
+export async function staffUserReady() {
+  if (suReady) return true;
+  if (Date.now() - suProbe < 30000) return false;
+  suProbe = Date.now();
+  try { suReady = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='meta_page_messages' AND column_name='user_id'`)).rows.length > 0; } catch (_) { suReady = false; }
+  return suReady;
+}
 export async function liveMessages(psid) {
   if (!psid || !(await chatReady())) return [];
   try {
+    const su = await staffUserReady();
     return (await query(
-      `SELECT m.direction, m.source, m.text, m.at, m.customer_id, c.name AS shop FROM meta_page_messages m LEFT JOIN customers c ON c.id = m.customer_id
+      `SELECT m.direction, m.source, m.text, m.at, m.customer_id, c.name AS shop${su ? ', u.name AS staff' : ''} FROM meta_page_messages m LEFT JOIN customers c ON c.id = m.customer_id
+         ${su ? 'LEFT JOIN users u ON u.id = m.user_id' : ''}
         WHERE m.psid = $1 ORDER BY m.at, m.id LIMIT 500`, [String(psid)])).rows;
   } catch (_) { return []; }
 }
@@ -348,7 +359,7 @@ export function mergeConversation(graph, live) {
   for (const l of live || []) {
     const me = l.direction === 'out'; const at = new Date(l.at).getTime(); const tx = norm(l.text);
     const hit = out.find((g) => !!g.me === me && norm(g.text) === tx && Math.abs(new Date(g.at).getTime() - at) <= 120000);
-    const tag = l.source === 'portal' ? { src: 'portal', shop: l.shop || null, customer_id: l.customer_id == null ? null : Number(l.customer_id) } : (l.source === 'staff' ? { src: 'staff' } : {});
+    const tag = l.source === 'portal' ? { src: 'portal', shop: l.shop || null, customer_id: l.customer_id == null ? null : Number(l.customer_id) } : (l.source === 'staff' ? { src: 'staff', ...(l.staff ? { by: String(l.staff) } : {}) } : {});
     if (hit) Object.assign(hit, tag);
     else out.push({ at: new Date(l.at).toISOString(), me, text: l.text || '', live: true, ...tag });
   }
@@ -860,16 +871,11 @@ export default async function leadPortalRoutes(app) {
     if (!cl || cl.state === 'need_contact') return reply.code(409).send({ error: 'need_contact' });
     if (cl.state === 'other') return reply.code(409).send({ error: 'claimed_other', until: cl.until });
     const full = `[${k.customer_name}] ${text}`;
-    // 1104d · 보통 답장(RESPONSE) 먼저 → Meta 가 「창 밖」이라 거절하면 Human Agent 태그로 한 번 더(권한이 있으면 7일까지)
-    const isWin = (e) => /outside of allowed window|human.?agent|#10\b|#551\b|2018278|2018065/i.test(String(e || ''));
-    let s0 = await sendMessenger(t.psid, full);
-    if (!s0.ok && isWin(s0.error) && humanAgentOn()) {
-      const s1 = await sendMessenger(t.psid, full, { tag: 'HUMAN_AGENT' });
-      if (s1.ok) s0 = s1; else req.log?.warn({ err: s1.error }, 'lead portal messenger human_agent retry failed');
-    }
+    // 1104d · 보통 답장(RESPONSE) 먼저 → Meta 가 「창 밖」이라 거절하면 Human Agent 태그로 한 번 더
+    const s0 = await sendMessengerSmart(t.psid, full, req.log);
     if (!s0.ok) {
       if (cl.created) await query(`DELETE FROM lead_portal_claims WHERE id=$1`, [cl.id]);   // 못 보냈으면 방금 만든 선점은 되돌린다
-      const closed = isWin(s0.error);
+      const closed = !!s0.window;
       req.log?.warn({ err: s0.error }, 'lead portal messenger send failed');
       return reply.code(closed ? 409 : 502).send({ error: closed ? 'meta_window' : 'send_failed', detail: s0.error });
     }

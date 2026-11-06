@@ -31,7 +31,8 @@ import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
 import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
 // 0297 · 고객 포털(접속코드 · 연락처 공개 · 매장 재고 · 포털 주문) — 같은 플러그인에서 등록(server.js 변경 없음)
-import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds } from '../leadPortal.js';
+import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady } from '../leadPortal.js';
+import { chatReady, sendMessengerSmart } from '../metaPageMsgs.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -149,6 +150,36 @@ export default async function metaLeadsRoutes(app) {
     else r.messages = markMetaKinds((Array.isArray(r.messages) ? r.messages : []).map((m) => ({ ...m })));   // 1028c · Meta 기록 · 자동 응답 구분
     delete r.psid;
     return { ...r, id: Number(r.id) };
+  });
+
+  // 1105 · 2026-11-05 디렉터: 이 화면에 접근 권한이 있는 직원은 Facebook(Messenger) 손님에게 바로 답장
+  //   Refatrix 페이지 이름으로 나간다(앞에 가게 이름 없음). 시간으로 막지 않는다 — Meta 가 거절할 때만 안내. 선점과 무관.
+  app.post('/api/meta-leads/:id/messenger', R, async (req, reply) => {
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await chatReady())) return reply.code(503).send({ error: 'not_ready' });
+    const text = String((req.body && req.body.text) || '').replace(/\r/g, '').trim();
+    if (!text) return reply.code(400).send({ error: 'empty' });
+    if (text.length > 2000) return reply.code(400).send({ error: 'too_long' });
+    const t = (await query(`SELECT id, platform, user_id AS psid FROM meta_threads WHERE id=$1`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.platform !== 'messenger' || !t.psid) return reply.code(409).send({ error: 'chat_not_allowed' });
+    const s0 = await sendMessengerSmart(t.psid, text, req.log);
+    if (!s0.ok) {
+      req.log?.warn({ err: s0.error }, 'erp messenger send failed');
+      return reply.code(s0.window ? 409 : 502).send({ error: s0.window ? 'meta_window' : 'send_failed', detail: s0.error });
+    }
+    const uid = req.ctx.perm.userId || null;
+    const su = await staffUserReady();
+    // 웹훅 에코가 먼저 와도(source=staff 로 저장) 보낸 사람을 채운다
+    await query(su
+      ? `INSERT INTO meta_page_messages (psid, mid, direction, source, text, at, user_id) VALUES ($1,$2,'out','staff',$3,now(),$4)
+         ON CONFLICT (mid) DO UPDATE SET user_id = EXCLUDED.user_id, text = EXCLUDED.text`
+      : `INSERT INTO meta_page_messages (psid, mid, direction, source, text, at) VALUES ($1,$2,'out','staff',$3,now()) ON CONFLICT (mid) DO NOTHING`,
+      su ? [t.psid, s0.mid, text, uid] : [t.psid, s0.mid, text]);
+    await query(`UPDATE meta_threads SET status='contactado', updated_at=now() WHERE id=$1 AND status='nuevo'`, [id]).catch(() => null);
+    await logEvent({ userId: uid, action: 'update', target: `meta_thread:${id}`, detail: { op: 'erp_messenger_send', len: text.length } });
+    const by = uid ? ((await query(`SELECT name FROM users WHERE id=$1`, [uid])).rows[0] || {}).name || null : null;
+    return { ok: true, message: { at: new Date().toISOString(), me: true, text, src: 'staff', by, live: true } };
   });
 
   app.patch('/api/meta-leads/:id', W, async (req, reply) => {

@@ -145,6 +145,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
         if (u.includes('/api/meta-leads/ai')) return json({ started: true });
         if (/\/api\/meta-leads\/1$/.test(u) && method === 'GET') return json({ ...ITEMS[0], meta_name: 'Antonio Lopez', a_state: 'Morelos', a_city: 'Jiutepec', a_phone: '7771234567', a_vehicles: 'Nissan Versa 2024', a_parts: 'Horquilla', a_tipo: 'Taxi / app',
           messages: [{ at: '2026-10-12T15:00:00Z', me: true, text: 'Hola' }, { at: '2026-10-12T15:01:00Z', me: false, text: 'tengo un versa' }] });
+        if (/\/api\/meta-leads\/1\/messenger$/.test(u) && method === 'POST') return body.text === 'tarde' ? json({ error: 'meta_window' }, 409) : json({ ok: true, message: { at: '2026-10-12T15:05:00Z', me: true, text: body.text, src: 'staff', by: 'Oscar', live: true } });
         if (/\/api\/meta-leads\/1$/.test(u) && method === 'PATCH') return json({ ...ITEMS[0], status: body.status, derived_to: body.derived_to, edited: true });   // 서버는 빈 칸을 자동값으로 돌려준다
         return json({});
       };
@@ -155,7 +156,7 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
   t.after(() => w.close());
 
   await t.test('C1. 상태 · 목록 · 빌드 토큰', async () => {
-    assert.match(d.title, /mtl-1104b/);
+    assert.match(d.title, /mtl-1105a/);
     assert.match(d.getElementById('sPage').textContent, /CTR.*@ctrmexico_/);
     assert.match(d.getElementById('sKpis').textContent, /전체 문의4/); assert.match(d.getElementById('sKpis').textContent, /WhatsApp1/);
     assert.match(d.getElementById('sAi').textContent, /AI 분석 1건 완료/);
@@ -180,6 +181,15 @@ test('C. 화면 (jsdom)', { skip: (!JSDOM || !existsSync(HTML)) && 'jsdom 또는
     assert.equal(calls.filter((c) => c.method === 'PATCH').pop().body.items, 'CQ9L 4');
     d.getElementById('bMatch').click(); await tick();
     assert.ok(calls.some((c) => c.u.includes('/api/meta-leads/match') && c.body.all === true));
+  });
+  await t.test('C2b. 1105 · Facebook 답장 — 접근 권한 있으면 보내기', async () => {
+    assert.ok(d.getElementById('oText') && d.getElementById('oSend'), 'Messenger 상세에 답장 칸');
+    d.getElementById('oText').value = 'Sí, tenemos la horquilla'; d.getElementById('oSend').click(); await tick(150);
+    assert.deepEqual(calls.filter((c) => c.u.endsWith('/api/meta-leads/1/messenger')).pop().body, { text: 'Sí, tenemos la horquilla' });
+    assert.equal(d.querySelectorAll('#oChat .bub').length, 3); assert.match(d.getElementById('oChat').textContent, /직원 Oscar/);
+    assert.equal(d.getElementById('oText').value, '', '보낸 뒤 칸 비움');
+    d.getElementById('oText').value = 'tarde'; d.getElementById('oSend').click(); await tick(150);
+    assert.match(d.getElementById('oSendMsg').textContent, /손님이 다시 쓰면/);
   });
   await t.test('C3. 가져오기 · AI 버튼 · 엑셀 7개 시트(차종·연식 × 부품) · 요약', async () => {
     d.getElementById('bSync').click(); await tick();

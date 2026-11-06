@@ -87,6 +87,17 @@ export async function savePageMessages(body, q = query) {
 // ── 보내기 ──
 let postOverride = null;               // 시험용 — (url, body) => {ok,status,json}
 export function setMessengerPost(fn) { postOverride = fn || null; }
+// 1105 · 보통 답장 → Meta 가 「창 밖」이라 거절하면 HUMAN_AGENT 태그로 한 번 더(포털 · ERP 직원 답장 공용)
+//   → { ok, mid } | { ok:false, error, window:true(창 밖 거절) | false }
+export const isWindowError = (e) => /outside of allowed window|human.?agent|#10\b|#551\b|2018278|2018065/i.test(String(e || ''));
+export async function sendMessengerSmart(psid, text, log = null) {
+  let s0 = await sendMessenger(psid, text);
+  if (!s0.ok && isWindowError(s0.error) && humanAgentOn()) {
+    const s1 = await sendMessenger(psid, text, { tag: 'HUMAN_AGENT' });
+    if (s1.ok) s0 = s1; else if (log) log.warn({ err: s1.error }, 'messenger human_agent retry failed');
+  }
+  return s0.ok ? s0 : { ...s0, window: isWindowError(s0.error) };
+}
 export async function sendMessenger(psid, text, { tag = null } = {}) {
   const page = await resolvePage();
   if (!page || page.error) return { ok: false, error: (page && page.error) || 'no_token' };

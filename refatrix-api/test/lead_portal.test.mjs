@@ -465,6 +465,19 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const n7 = sent.length;
     r6 = await call(C, 'POST', `/api/lead-portal/leads/${T6.id}/chat`, { text: 'x' }); assert.equal(r6.json().error, 'send_failed'); assert.equal(sent.length - n7, 1, '다른 오류는 재시도 안 함');
   }
+  { // 1105 · ERP 직원 답장(이 화면 접근 권한) — Refatrix 페이지 이름 · 가게 접두어 없음 · 보낸 사람 기록 · 포털에도 Refatrix 로 보임
+    const n0 = sent.length;
+    let re = await call(R1, 'POST', `/api/meta-leads/${T4.id}/messenger`, { text: 'Hola, soy de Refatrix ERP' }); assert.equal(re.statusCode, 200, re.body);
+    assert.equal(sent[n0].body.message.text, 'Hola, soy de Refatrix ERP'); assert.equal(sent[n0].body.messaging_type, 'RESPONSE');
+    const dd = (await call(D, 'GET', `/api/meta-leads/${T4.id}`)).json();
+    const sm = dd.messages.find((m) => m.text === 'Hola, soy de Refatrix ERP'); assert.ok(sm && sm.src === 'staff' && sm.by, 'ERP 상세에 직원 · 이름');
+    const pc = (await call(C, 'GET', `/api/lead-portal/leads/${T4.id}/chat`)).json().messages.find((m) => m.text === 'Hola, soy de Refatrix ERP');
+    assert.ok(pc && pc.who === 'refatrix' && !pc.by, '포털에는 Refatrix(직원 이름 없음)');
+    failNext = { code: 10, message: '(#10) This message is sent outside of allowed window.', times: 2 };
+    re = await call(R1, 'POST', `/api/meta-leads/${T4.id}/messenger`, { text: 'otra' }); assert.equal(re.statusCode, 409); assert.equal(re.json().error, 'meta_window');
+    assert.equal((await call(R1, 'POST', `/api/meta-leads/${T1.id}/messenger`, { text: 'x' })).json().error, 'chat_not_allowed', 'WhatsApp 은 아님');
+    assert.equal((await call({}, 'POST', `/api/meta-leads/${T4.id}/messenger`, { text: 'x' })).statusCode, 401);
+  }
   r = await call(CD2, 'GET', `/api/lead-portal/leads/${T4.id}/chat`); assert.equal(r.json().messages[0].text, 'Hola, busco amortiguadores para Aveo'); assert.equal(r.json().can_send, false);
   assert.equal(r.json().messages.find((m) => m.who === 'portal').shop, `Refacc El Puente ${T}`);
   assert.equal((await call(CD2, 'POST', `/api/lead-portal/leads/${T4.id}/chat`, { text: 'x' })).statusCode, 403);

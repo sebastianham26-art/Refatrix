@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1104b</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -84,6 +84,7 @@
   .chat{background:#efeae2;border-radius:10px;padding:10px;max-height:62vh;overflow:auto;display:flex;flex-direction:column;gap:6px}
   .bub{max-width:80%;padding:7px 10px;border-radius:10px;font-size:12.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
   .bub.in{background:#fff;align-self:flex-start}.bub.me{background:#d9fdd3;align-self:flex-end}
+  .mcomp{display:flex;gap:6px;margin-top:6px;align-items:stretch}.mcomp textarea{flex:1;min-height:46px}.mcomp .btn{white-space:nowrap}
   .mevt{align-self:stretch;display:flex;align-items:center;gap:8px;font-size:11px;color:#7a7f87;font-style:italic;margin:2px 0}
   .mevt:before,.mevt:after{content:"";flex:1;border-top:1px dotted #c9ced6}.mevt span{max-width:80%;text-align:center}
   .bub.mauto{background:#f4f5f7;border:1px dashed #b9c0ca;color:#4a5563;align-self:flex-end}
@@ -283,7 +284,7 @@
 <div class="modal" id="mOne"><div class="mbox">
   <div class="mtop"><b id="oTitle" style="color:var(--brand)"></b><span id="oCh"></span><button type="button" class="btn ghost sm" data-close="mOne" style="margin-left:auto">닫기 ✕</button></div>
   <div class="mbody">
-    <div><div class="chat" id="oChat"></div></div>
+    <div><div class="chat" id="oChat"></div><div id="oComp"></div></div>
     <div class="ed">
       <div id="oAi"></div>
       <div class="hint">비워 두면 대화에서 뽑은 <span class="auto">자동값</span>(AI → 규칙)을 씁니다. 고친 값은 다시 가져와도 지워지지 않습니다.</div>
@@ -307,7 +308,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1104b';
+  const MTL_BUILD='mtl-1105a';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -474,15 +475,36 @@
   $('lTable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id)); });
 
   // ───── 한 건 ─────
+  // 1105 · 대화 그리기 + Facebook 이면 아래에 답장 칸(이 화면 접근 권한이 있으면 누구나)
+  function renderChat(d){
+    $('oChat').innerHTML=(d.messages||[]).map(m=>m.kind==='event'?'<div class="mevt"><span>⚙️ Meta 기록: '+esc(m.text)+' · '+fmtT(m.at)+'</span></div>'
+      :m.kind==='auto'?'<div class="bub mauto"><div class="tag">🤖 '+(d.platform==='whatsapp'?'자동 응답(ERP 봇)':'광고 자동 응답(Meta)')+'</div>'+esc(m.text||'')+'<div class="t">'+fmtT(m.at)+'</div></div>'
+      :'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+(m.src==='portal'?'🔑 '+esc(m.shop||'포털')+' · ':(m.src==='staff'?'직원'+(m.by?' '+esc(m.by):'')+' · ':''))+fmtT(m.at)+(m.live?' · 실시간':'')+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
+    const comp=$('oComp'); if(!comp) return;
+    if(d.platform!=='messenger'){ comp.innerHTML=''; return; }
+    comp.innerHTML='<div class="mcomp"><textarea id="oText" rows="2" maxlength="2000" placeholder="Facebook 으로 손님에게 답장 (Refatrix 페이지 이름으로 나갑니다)"></textarea><button type="button" class="btn" id="oSend">보내기</button></div><div class="msg" id="oSendMsg"></div>';
+  }
+  async function sendFb(){
+    const d=S.cur; const ta=$('oText'); const text=ta?ta.value.trim():''; if(!d||!text) return;
+    const btn=$('oSend'); btn.disabled=true; $('oSendMsg').className='msg'; $('oSendMsg').textContent='';
+    try{
+      const r=await api('POST','/api/meta-leads/'+d.id+'/messenger',{ text });
+      d.messages=(d.messages||[]).concat([r.message]); renderChat(d);
+      const c=$('oChat'); c.scrollTop=c.scrollHeight;
+    }catch(e){
+      btn.disabled=false; const m=$('oSendMsg'); m.className='msg err';
+      m.textContent=e.message==='meta_window'?'Facebook 이 전달하지 않았습니다 — 손님 마지막 메시지 뒤 시간이 너무 지났습니다. 손님이 다시 쓰면 보낼 수 있습니다.'
+        :e.message==='send_failed'?'Facebook 이 메시지를 받지 않았습니다. 잠시 뒤 다시 시도하세요.'+(e.data&&e.data.detail?' ('+e.data.detail+')':''):errText(e);
+    }
+  }
+  document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('#oSend')) sendFb(); });
   async function openOne(id){
     let d; try{ d=await api('GET','/api/meta-leads/'+id); }catch(e){ say(false,errText(e)); return; }
     S.cur=d;
     $('oTitle').textContent=(d.name||d.username||'—')+(d.username?' (@'+d.username+')':'');
     $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(CH[d.platform]||['',d.platform])[1]+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
     $('oAi').innerHTML=d.summary?'<div class="aisum">🤖 '+esc(d.summary)+(d.intent?'<br><span class="muted">관심: '+esc(d.intent)+'</span>':'')+'</div>':(d.ai_error?'<div class="aisum bad-t">AI 분석 오류: '+esc(d.ai_error)+'</div>':'');
-    $('oChat').innerHTML=(d.messages||[]).map(m=>m.kind==='event'?'<div class="mevt"><span>⚙️ Meta 기록: '+esc(m.text)+' · '+fmtT(m.at)+'</span></div>'
-      :m.kind==='auto'?'<div class="bub mauto"><div class="tag">🤖 '+(d.platform==='whatsapp'?'자동 응답(ERP 봇)':'광고 자동 응답(Meta)')+'</div>'+esc(m.text||'')+'<div class="t">'+fmtT(m.at)+'</div></div>'
-      :'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+(m.src==='portal'?'🔑 '+esc(m.shop||'포털')+' · ':(m.src==='staff'?'직원 · ':''))+fmtT(m.at)+(m.live?' · 실시간':'')+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
+    renderChat(d);
     fillAdSelect(d);
     const ph=(el,auto)=>{ el.placeholder=auto?('자동: '+auto):el.placeholder; };
     $('eName').value=d.name&&d.name!==d.meta_name?d.name:''; ph($('eName'),d.meta_name);
