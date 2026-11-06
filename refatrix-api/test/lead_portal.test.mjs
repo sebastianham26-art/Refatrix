@@ -395,6 +395,23 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal((await call(D, 'DELETE', `/api/lead-portal-admin/cards/${CID}`)).statusCode, 200);
     await call(D, 'DELETE', `/api/lead-portal-admin/cards/${FID}`);
   }
+  { // 1106c · 이미지 뱅크 이미지(bank:id) → 포털은 /lp-api/card-image/<카드> (로그인 없이 · 켜진 카드만) · 로그인 화면 숫자
+    const png = crypto.randomBytes(64);
+    const im = await one(`INSERT INTO wa_images (name, mime, bytes, size, hash, folder) VALUES ($1,'image/png',$2,$3,md5($2::bytea),'포털 광고') RETURNING id`, ['card' + T, png, png.length]);
+    assert.equal((await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'producto', title: 'x', image_url: 'bank:abc' })).json().error, 'bad_url');
+    const rb = await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'producto', title: 'Horquillas CTR ' + T, image_url: 'bank:' + im.id }); assert.equal(rb.statusCode, 200, rb.body);
+    const BID = rb.json().id;
+    const pc = (await call(C, 'GET', '/api/lead-portal/leads')).json().cards.find((c) => c.id === BID);
+    assert.equal(pc.image_url, `/lp-api/card-image/${BID}?v=${im.id}`, '포털에는 공개 이미지 주소');
+    const adm = (await call(R1, 'GET', '/api/lead-portal-admin/cards')).json().items.find((c) => c.id === BID); assert.equal(adm.bank_id, Number(im.id)); assert.equal(adm.image_url, 'bank:' + im.id);
+    const ir = await call({}, 'GET', `/api/lead-portal/card-image/${BID}`); assert.equal(ir.statusCode, 200); assert.match(ir.headers['content-type'], /image\/png/); assert.equal(ir.rawPayload.length, 64);
+    await call(D, 'PATCH', `/api/lead-portal-admin/cards/${BID}`, { active: false });
+    assert.equal((await call({}, 'GET', `/api/lead-portal/card-image/${BID}`)).statusCode, 404, '꺼진 카드 이미지는 안 나감');
+    await call(D, 'DELETE', `/api/lead-portal-admin/cards/${BID}`);
+    const st = await call({}, 'GET', '/api/lead-portal/stats'); assert.equal(st.statusCode, 200);
+    assert.ok(Number.isInteger(st.json().total) && st.json().total >= 1 && Number.isInteger(st.json().week), '로그인 화면 숫자(토큰 없이)');
+    assert.ok(!('leads' in st.json()), '숫자만');
+  }
   { // 1105 · 접속 기록 — 로그인 · 화면 열기 → 고객 · 날짜별, 화면 권한이면 영업도 봄
     await call(C, 'GET', '/api/lead-portal/me');
     let ac = await call(R1, 'GET', `/api/lead-portal-admin/access?code_id=${codeId}`); assert.equal(ac.statusCode, 200, ac.body);
@@ -786,7 +803,7 @@ test('C2. 플랫폼 leads.html — 코드 → 목록 → 연락처 → Mi stock 
   // 연락처
   d.querySelector('[data-contact="1842"]').click(); await tick(60);
   assert.ok(d.getElementById('list').textContent.includes('Jorge Treviño'));
-  assert.ok(!d.querySelector('a[href*="wa.me"]'), '0300 · WhatsApp 버튼 없음');
+  assert.ok(!d.getElementById('list').querySelector('a[href*="wa.me"]'), '0300 · 문의 카드에 WhatsApp 버튼 없음(코드 분실 안내의 Refatrix 번호는 로그인 화면)');
   // 0298 · 찾는 부품 기록(2026-10-28: 모든 문의에서 — 연락처 전에도 버튼)
   d.querySelector('[data-find="1842"]').click(); await tick(40);
   const fq = d.getElementById('fq1842'); assert.ok(fq, '찾기 칸');

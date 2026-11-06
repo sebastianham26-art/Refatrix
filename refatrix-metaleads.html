@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106b</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106c</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -252,7 +252,18 @@
           </div>
           <label>내용(스페인어)</label><textarea id="lcBody" maxlength="600" rows="3"></textarea>
           <div class="row">
-            <div style="flex:1;min-width:260px"><label>이미지 주소 (https://… 또는 img/oe-badge.png)</label><input id="lcImg" placeholder="https://…/imagen.jpg"></div>
+            <div style="flex:1;min-width:300px"><label>이미지 — 이미지 뱅크에서 고르기 · 파일 올리기 · 주소(https://… · img/oe-badge.png)</label>
+              <div class="row" style="gap:6px;align-items:center"><input id="lcImg" placeholder="bank:123 · https://…/imagen.jpg" style="flex:1;min-width:180px">
+                <button type="button" class="btn sm ghost" id="lcBank">🖼 이미지 뱅크</button>
+                <label class="btn sm ghost" style="margin:0;cursor:pointer">⬆ 파일 올리기<input type="file" id="lcFile" accept="image/jpeg,image/png,image/webp" style="display:none"></label>
+                <button type="button" class="btn sm ghost" id="lcImgX" title="이미지 빼기">✕</button></div>
+              <div class="hint" style="margin-top:4px">📐 <b>권장 크기 1200 × 520 px</b> (가로 : 세로 ≈ 2.3 : 1, 가로형) · JPG · PNG · WebP · <b>2 MB 이하</b>(최대 5 MB) — 카드 위쪽 높이 200px 칸을 꽉 채우고 넘치는 위아래는 잘립니다. 로고처럼 잘리면 안 되는 그림은 여백을 넉넉히.</div>
+              <div id="lcPrev" style="margin-top:6px"></div>
+              <div id="lcBankBox" class="hidden" style="margin-top:6px;border:1px solid var(--line);border-radius:10px;padding:8px;max-height:340px;overflow:auto">
+                <div class="row" style="gap:6px;align-items:center"><input id="lcBankQ" placeholder="이름 · 폴더 검색" style="width:220px"><span class="hint" id="lcBankSum"></span><button type="button" class="btn sm ghost" id="lcBankX" style="margin-left:auto">닫기</button></div>
+                <div id="lcBankGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px"></div>
+              </div>
+            </div>
             <div><label>버튼 글자</label><input id="lcCta" maxlength="40" placeholder="Ver más / Quiero participar"></div>
             <div style="flex:1;min-width:240px"><label>버튼 링크 (비우면 교육은 「Quiero participar」 신청 기록)</label><input id="lcUrl" placeholder="https://…"></div>
           </div>
@@ -364,7 +375,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1106b';
+  const MTL_BUILD='mtl-1106c';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -1005,7 +1016,7 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
-<script src="refatrix-leadportal-admin.js?v=20261106a"></script>
+<script src="refatrix-leadportal-admin.js?v=20261106c"></script>
 <script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>

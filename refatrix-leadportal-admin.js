@@ -75,18 +75,78 @@
       g('lpCards').innerHTML = LP.cards.length ? '<table><thead><tr><th>순서</th><th>종류</th><th>제목 · 내용</th><th>이미지</th><th>버튼</th><th class="num">N장마다</th><th>기간</th><th>상태</th><th class="num">클릭</th><th>참여 신청</th><th></th></tr></thead><tbody>'
         + LP.cards.map(function (c) {
           return '<tr><td class="num">' + c.sort + '</td><td>' + esc(CK[c.kind] || c.kind) + '</td><td><b>' + esc(c.title) + '</b><div class="muted lp-memo">' + esc(c.body || '') + '</div></td>'
-            + '<td>' + (c.image_url ? '<img src="' + esc(/^img\//.test(c.image_url) ? 'https://refatrix-platform.netlify.app/' + c.image_url : c.image_url) + '" alt="" style="max-width:80px;max-height:50px;object-fit:contain">' : '<span class="muted">—</span>') + '</td>'
+            + '<td>' + (c.image_url ? (c.bank_id ? '<img data-cbt="' + c.bank_id + '" alt="" style="max-width:80px;max-height:50px;object-fit:contain"><div class="muted" style="font-size:10.5px">뱅크 #' + c.bank_id + '</div>' : '<img src="' + esc(/^img\//.test(c.image_url) ? 'https://refatrix-platform.netlify.app/' + c.image_url : c.image_url) + '" alt="" style="max-width:80px;max-height:50px;object-fit:contain">') : '<span class="muted">—</span>') + '</td>'
             + '<td>' + esc(c.cta_text || (c.kind === 'capacitacion' && !c.cta_url ? 'Quiero participar' : '')) + (c.cta_url ? '<div class="muted mono" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + esc(c.cta_url) + '</div>' : '') + '</td>'
             + '<td class="num">' + c.every_n + '</td><td style="white-space:nowrap">' + esc((c.starts_on || '…') + ' ~ ' + (c.ends_on || '…')) + '</td>'
             + '<td>' + (c.active ? '<span class="tag lp-on">사용</span>' : '<span class="tag">꺼짐</span>') + '</td><td class="num">' + c.clicks + '</td><td>' + (c.interests ? c.interests + '곳<div class="muted">' + esc(c.interested || '') + '</div>' : '—') + '</td>'
             + '<td>' + (d.director ? '<div class="row lp-acts"><button type="button" class="btn sm ghost" data-card="edit" data-id="' + c.id + '">수정</button><button type="button" class="btn sm ghost" data-card="toggle" data-id="' + c.id + '">' + (c.active ? '끄기' : '켜기') + '</button><button type="button" class="btn sm lp-red" data-card="del" data-id="' + c.id + '">삭제</button></div>' : '') + '</td></tr>';
         }).join('') + '</tbody></table>' : '<div class="hint">카드가 없습니다.</div>';
+      [].forEach.call(g('lpCards').querySelectorAll('img[data-cbt]'), function (im) { bankThumb(Number(im.dataset.cbt)).then(function (u) { if (u) im.src = u; }); });
     } catch (e) { g('lpCards').innerHTML = '<div class="hint">' + esc(e.message === 'migration_required' ? '광고 카드는 서버에 0320 마이그레이션 뒤부터 씁니다(Railway 콘솔 npm run migrate).' : errT(e)) + '</div>'; if (g('lcNew')) g('lcNew').classList.add('hidden'); }
+  }
+  // 1106c · 카드 이미지 — 이미지 뱅크(bank:id) · 파일 올리기(이미지 뱅크 「포털 광고」 폴더) · 크기 안내
+  var CARD_FOLDER = '포털 광고', REC_W = 1200, REC_H = 520;
+  LP.thumbs = LP.thumbs || {};
+  async function bankThumb(id) {
+    if (LP.thumbs[id]) return LP.thumbs[id];
+    try { var r = await fetch(session.api + '/api/wa-promo/images/' + id + '/thumb', { headers: { Authorization: 'Bearer ' + session.token } }); if (!r.ok) return ''; var u = URL.createObjectURL(await r.blob()); LP.thumbs[id] = u; return u; } catch (e) { return ''; }
+  }
+  function sizeNote(w, h, bytes) {
+    if (!w || !h) return '';
+    var ratio = w / h, ok = ratio >= 1.9 && ratio <= 2.8, big = w >= 900;
+    return '<span class="' + (ok && big ? 'ok-t' : 'warn-t') + '">' + w + ' × ' + h + ' px' + (bytes ? ' · ' + (bytes / 1024 / 1024).toFixed(2) + ' MB' : '') + ' · 비율 ' + ratio.toFixed(2) + ' : 1</span>'
+      + (ok && big ? ' — 좋습니다' : ' — 권장 ' + REC_W + ' × ' + REC_H + '(약 2.3 : 1)와 달라 ' + (!big ? '흐리게 보이거나 ' : '') + '위아래 · 양옆이 잘릴 수 있습니다');
+  }
+  async function showPrev() {
+    var v = g('lcImg').value.trim(), el = g('lcPrev'); if (!el) return;
+    if (!v) { el.innerHTML = '<span class="hint">이미지 없음 — 글자만 있는 카드</span>'; return; }
+    var m = v.match(/^bank:(\d+)$/), src = m ? await bankThumb(Number(m[1])) : (/^img\//.test(v) ? 'https://refatrix-platform.netlify.app/' + v : v);
+    var meta = m ? ((LP.bank || []).filter(function (x) { return x.id === Number(m[1]); })[0] || LP.lastUp || null) : null;
+    el.innerHTML = '<div style="width:420px;max-width:100%;height:180px;background:#f5f5f5;border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center">'
+      + (src ? '<img src="' + esc(src) + '" alt="" style="' + (/^img\//.test(v) ? 'max-width:100%;max-height:100%;object-fit:contain' : 'width:100%;height:100%;object-fit:cover') + '">' : '<span class="hint">미리보기 없음</span>') + '</div>'
+      + '<div class="hint" style="margin-top:3px">카드에서 보이는 모양(미리보기)' + (meta && meta.width ? ' · ' + sizeNote(meta.width, meta.height, meta.size) : '') + '</div>';
+  }
+  async function openBank() {
+    g('lcBankBox').classList.remove('hidden'); g('lcBankGrid').innerHTML = '<span class="hint">불러오는 중…</span>';
+    try {
+      var d = await api('GET', '/api/wa-promo/images'); LP.bank = d.items || []; renderBank();
+    } catch (e) { g('lcBankGrid').innerHTML = '<span class="hint">' + esc(e.message === 'forbidden' || e.message === 'http_403' ? '이미지 뱅크(WhatsApp 마케팅) 화면 권한이 없습니다.' : errT(e)) + '</span>'; }
+  }
+  function renderBank() {
+    var q = g('lcBankQ').value.trim().toLowerCase();
+    var it = (LP.bank || []).filter(function (x) { return !q || ((x.name || '') + ' ' + (x.folder || '')).toLowerCase().indexOf(q) >= 0; }).slice(0, 120);
+    g('lcBankSum').textContent = it.length + '장' + ((LP.bank || []).length > it.length ? ' / 전체 ' + LP.bank.length : '');
+    g('lcBankGrid').innerHTML = it.map(function (x) {
+      return '<button type="button" class="lc-bk" data-bk="' + x.id + '" style="border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px;cursor:pointer;text-align:left">'
+        + '<div style="height:70px;background:#f5f5f5;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center"><img data-bt="' + x.id + '" alt="" style="width:100%;height:100%;object-fit:cover"></div>'
+        + '<div style="font-size:11px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.name || ('#' + x.id)) + '</div>'
+        + '<div class="muted" style="font-size:10.5px">' + (x.width ? x.width + '×' + x.height : '') + (x.folder ? ' · ' + esc(x.folder) : '') + '</div></button>';
+    }).join('') || '<span class="hint">이미지가 없습니다.</span>';
+    [].forEach.call(g('lcBankGrid').querySelectorAll('img[data-bt]'), function (im) { bankThumb(Number(im.dataset.bt)).then(function (u) { if (u) im.src = u; }); });
+  }
+  function readFile(f) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = rej; r.readAsDataURL(f); }); }
+  function imgSize(url) { return new Promise(function (res) { var im = new Image(); im.onload = function () { res({ w: im.naturalWidth, h: im.naturalHeight, im: im }); }; im.onerror = function () { res(null); }; im.src = url; }); }
+  async function uploadCardImage(f) {
+    if (!f) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { say(false, 'JPG · PNG · WebP 만 올릴 수 있습니다.', 'lcMsg'); return; }
+    if (f.size > 5 * 1024 * 1024) { say(false, '5 MB 보다 큽니다 — 줄여서 올려 주세요(권장 2 MB 이하).', 'lcMsg'); return; }
+    var data = await readFile(f), sz = await imgSize(data);
+    var thumb = null;
+    if (sz && sz.im) { try { var cv = document.createElement('canvas'), k = Math.min(1, 480 / sz.w); cv.width = Math.round(sz.w * k); cv.height = Math.round(sz.h * k); cv.getContext('2d').drawImage(sz.im, 0, 0, cv.width, cv.height); thumb = cv.toDataURL('image/jpeg', 0.82); } catch (e) { thumb = null; } }
+    say(true, '올리는 중… ' + (sz ? sz.w + ' × ' + sz.h + ' px' : ''), 'lcMsg');
+    try {
+      var r = await api('POST', '/api/wa-promo/images', { name: f.name, mime: f.type, image_b64: data, thumb_b64: thumb, width: sz && sz.w, height: sz && sz.h, folder: CARD_FOLDER });
+      LP.lastUp = { id: r.id, width: sz && sz.w, height: sz && sz.h, size: f.size };
+      if (LP.bank) LP.bank = null;
+      g('lcImg').value = 'bank:' + r.id; delete LP.thumbs[r.id]; await showPrev();
+      say(true, (r.duplicate ? '이미 이미지 뱅크에 있던 파일입니다 — 그 이미지를 씁니다. ' : '이미지 뱅크 「' + CARD_FOLDER + '」 폴더에 올렸습니다. ') + (sz ? '(' + sz.w + ' × ' + sz.h + ' px)' : ''), 'lcMsg');
+    } catch (e) { say(false, e.message === 'image_too_large' ? '파일이 너무 큽니다(최대 5 MB).' : errT(e), 'lcMsg'); }
   }
   function cardForm(c) {
     LP.cardEdit = c ? c.id : null; g('lpCardForm').classList.remove('hidden');
     g('lcKind').value = c ? c.kind : 'capacitacion'; g('lcTitle').value = c ? c.title : ''; g('lcBody').value = c ? (c.body || '') : '';
     g('lcImg').value = c ? (c.image_url || '') : ''; g('lcCta').value = c ? (c.cta_text || '') : ''; g('lcUrl').value = c ? (c.cta_url || '') : '';
+    g('lcBankBox').classList.add('hidden'); setTimeout(showPrev, 0);
     g('lcEvery').value = c ? c.every_n : 6; g('lcSort').value = c ? c.sort : 0; g('lcFrom').value = c ? (c.starts_on || '') : ''; g('lcTo').value = c ? (c.ends_on || '') : ''; g('lcActive').checked = c ? c.active : true;
     try { g('lcTitle').focus(); } catch (_) {}
   }
@@ -424,6 +484,13 @@
     if (g('lcNew')) g('lcNew').addEventListener('click', function () { cardForm(null); });
     if (g('lcCancel')) g('lcCancel').addEventListener('click', function () { g('lpCardForm').classList.add('hidden'); });
     if (g('lcSave')) g('lcSave').addEventListener('click', saveCard);
+    if (g('lcBank')) g('lcBank').addEventListener('click', openBank);
+    if (g('lcBankX')) g('lcBankX').addEventListener('click', function () { g('lcBankBox').classList.add('hidden'); });
+    if (g('lcBankQ')) g('lcBankQ').addEventListener('input', renderBank);
+    if (g('lcBankGrid')) g('lcBankGrid').addEventListener('click', function (e) { var b = e.target.closest('[data-bk]'); if (!b) return; g('lcImg').value = 'bank:' + b.dataset.bk; g('lcBankBox').classList.add('hidden'); showPrev(); });
+    if (g('lcFile')) g('lcFile').addEventListener('change', function () { var f = this.files && this.files[0]; uploadCardImage(f); this.value = ''; });
+    if (g('lcImgX')) g('lcImgX').addEventListener('click', function () { g('lcImg').value = ''; showPrev(); });
+    if (g('lcImg')) g('lcImg').addEventListener('change', showPrev);
     if (g('lpCards')) g('lpCards').addEventListener('click', onCardAct);
     if (g('lpConsents')) g('lpConsents').addEventListener('click', function (e) { var b = e.target.closest('[data-cons]'); if (b) viewConsent(Number(b.dataset.cons)); });
     if (g('lpAcQ')) g('lpAcQ').addEventListener('input', renderAccess);

@@ -47,7 +47,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessengerSmart, commentRefOf } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1106a';
+export const LP_BUILD = 'lp-1106c';
 
 // 1105c · 개인정보 보호 · 비밀유지 확약서(포털 로그인 후 전자서명) — 2026-11-05 디렉터
 //   본문을 바꾸면 CONSENT_VERSION 을 올린다 → 모든 고객 코드가 다시 서명한다.
@@ -571,7 +571,11 @@ export default async function leadPortalRoutes(app) {
     return cdReady;
   }
   const CARD_KINDS = ['producto', 'anuncio', 'capacitacion'];
-  const cardOut = (r) => ({ id: Number(r.id), kind: r.kind, title: r.title, body: r.body || '', image_url: r.image_url || null, cta_text: r.cta_text || null, cta_url: r.cta_url || null, every_n: Number(r.every_n) || 6 });
+  // 1106c · 이미지 뱅크 이미지(bank:<id>)는 포털에서 /lp-api/card-image/<카드> 로 보여 준다(로그인 없이 · 켜진 카드만)
+  const bankId = (u) => { const m = String(u || '').match(/^bank:(\d{1,12})$/); return m ? Number(m[1]) : null; };
+  const cardOut = (r, forPortal = true) => ({ id: Number(r.id), kind: r.kind, title: r.title, body: r.body || '',
+    image_url: forPortal && bankId(r.image_url) ? `/lp-api/card-image/${Number(r.id)}?v=${bankId(r.image_url)}` : (r.image_url || null),
+    cta_text: r.cta_text || null, cta_url: r.cta_url || null, every_n: Number(r.every_n) || 6 });
   async function activeCards() {
     if (!(await cardsReady())) return [];
     return (await query(
@@ -638,6 +642,36 @@ export default async function leadPortalRoutes(app) {
       discount: Number(k.discount) || 0, scope_states: k.scope_states || null, role: isDirCode(k) ? 'director' : 'customer', build: LP_BUILD };
   };
   const sign = (k) => app.jwt.sign({ sub: 'lp:' + k.id, typ: LP_TYP, tv: Number(k.token_version) }, { expiresIn: TOKEN_TTL });
+
+  // 1106c · 광고 카드 이미지(이미지 뱅크) — 로그인 전 화면에도 쓰이므로 토큰 없이, 켜진 카드의 이미지만
+  app.get('/api/lead-portal/card-image/:id', async (req, reply) => {
+    const id = idOf(req.params.id);
+    if (!id || !(await cardsReady())) return reply.code(404).send({ error: 'not_found' });
+    const c = (await query(`SELECT image_url FROM lead_portal_cards WHERE id=$1 AND deleted_at IS NULL AND active`, [id])).rows[0];
+    const bid = c && bankId(c.image_url);
+    if (!bid) return reply.code(404).send({ error: 'not_found' });
+    const im = (await query(`SELECT bytes, mime FROM wa_images WHERE id=$1 AND deleted_at IS NULL`, [bid]).catch(() => ({ rows: [] }))).rows[0];
+    if (!im) return reply.code(404).send({ error: 'not_found' });
+    return reply.type(im.mime).header('cache-control', 'public, max-age=86400').send(im.bytes);
+  });
+  // 1106c · 로그인 첫 화면 숫자 — 포털에 나가는 문의 수(사내 번호 · 숨김 · 제외 문의 빼고). 5분 캐시
+  let statsCache = { at: 0, v: null };
+  app.get('/api/lead-portal/stats', async (req, reply) => {
+    if (!(await portalReady())) return reply.code(503).send({ error: 'not_ready' });
+    if (!statsCache.v || Date.now() - statsCache.at > 300000) {
+      const hi = await portalHideInfo(); const args = []; let extra = '';
+      if (hi.phones.length) { args.push(hi.phones); extra += ` AND NOT (t.platform = 'whatsapp' AND right(regexp_replace(COALESCE(t.user_id, ''), '\\D', '', 'g'), 10) = ANY($${args.length}::text[]))`; }
+      if (hi.col) extra += ` AND NOT t.portal_hidden`;
+      const r = (await query(
+        `SELECT count(*)::int AS total,
+                count(*) FILTER (WHERE t.last_at > now() - interval '7 days')::int AS week,
+                count(*) FILTER (WHERE (t.last_at AT TIME ZONE 'America/Mexico_City')::date = (now() AT TIME ZONE 'America/Mexico_City')::date)::int AS today
+           FROM meta_threads t WHERE t.status <> 'descartado' AND COALESCE(t.in_count,0) > 0${extra}`, args)).rows[0];
+      statsCache = { at: Date.now(), v: { total: r.total, week: r.week, today: r.today } };
+    }
+    reply.header('cache-control', 'public, max-age=120');
+    return statsCache.v;
+  });
 
   app.post('/api/lead-portal/login', async (req, reply) => {
     if (!(await portalReady())) return reply.code(503).send({ error: 'not_ready' });
@@ -1377,7 +1411,7 @@ export default async function leadPortalRoutes(app) {
     if (b.body !== undefined) o.body = clip(b.body, 600);
     for (const f of ['image_url', 'cta_url']) if (b[f] !== undefined) {
       const v = String(b[f] || '').trim();
-      if (v && !/^(https:\/\/|img\/)[^\s"'<>]{1,600}$/.test(v)) return { error: 'bad_url', field: f };
+      if (v && !/^(https:\/\/|img\/)[^\s"'<>]{1,600}$/.test(v) && !(f === 'image_url' && bankId(v))) return { error: 'bad_url', field: f };
       o[f] = v || null;
     }
     if (b.cta_text !== undefined) o.cta_text = clip(b.cta_text, 40);
@@ -1395,7 +1429,7 @@ export default async function leadPortalRoutes(app) {
               (SELECT count(*)::int FROM lead_portal_card_clicks x WHERE x.card_id=c.id AND x.kind='interest') AS interests,
               (SELECT string_agg(DISTINCT cu.name, ', ') FROM lead_portal_card_clicks x JOIN customers cu ON cu.id=x.customer_id WHERE x.card_id=c.id AND x.kind='interest') AS interested
          FROM lead_portal_cards c WHERE c.deleted_at IS NULL ORDER BY c.sort, c.id`)).rows;
-    return { items: rows.map((r) => ({ ...cardOut(r), sort: Number(r.sort) || 0, active: !!r.active, starts_on: r.starts_ymd, ends_on: r.ends_ymd,
+    return { items: rows.map((r) => ({ ...cardOut(r, false), bank_id: bankId(r.image_url), sort: Number(r.sort) || 0, active: !!r.active, starts_on: r.starts_ymd, ends_on: r.ends_ymd,
       clicks: r.clicks, interests: r.interests, interested: r.interested || null })), kinds: CARD_KINDS, director: req.ctx.perm.role === 'director' };
   });
   app.post('/api/lead-portal-admin/cards', DIR, async (req, reply) => {
