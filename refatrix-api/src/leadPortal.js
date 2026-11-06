@@ -47,7 +47,7 @@ import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessengerSmart, commentRefOf } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1105e';
+export const LP_BUILD = 'lp-1106a';
 
 // 1105c · 개인정보 보호 · 비밀유지 확약서(포털 로그인 후 전자서명) — 2026-11-05 디렉터
 //   본문을 바꾸면 CONSENT_VERSION 을 올린다 → 모든 고객 코드가 다시 서명한다.
@@ -561,6 +561,24 @@ export default async function leadPortalRoutes(app) {
     const ua = String((req && req.headers && req.headers['user-agent']) || '').slice(0, 200) || null;
     await query(`INSERT INTO lead_portal_access (code_id, kind, ip, ua) VALUES ($1,$2,$3,$4)`, [k.id, kind, req ? clientIp(req) : null, ua]).catch(() => {});
   }
+  // 1106 · 광고 카드(0320)
+  let cdReady = false, cdProbe = 0;
+  async function cardsReady() {
+    if (cdReady) return true;
+    if (Date.now() - cdProbe < 30000) return false;
+    cdProbe = Date.now();
+    try { cdReady = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='lead_portal_cards'`)).rows.length > 0; } catch (_) { cdReady = false; }
+    return cdReady;
+  }
+  const CARD_KINDS = ['producto', 'anuncio', 'capacitacion'];
+  const cardOut = (r) => ({ id: Number(r.id), kind: r.kind, title: r.title, body: r.body || '', image_url: r.image_url || null, cta_text: r.cta_text || null, cta_url: r.cta_url || null, every_n: Number(r.every_n) || 6 });
+  async function activeCards() {
+    if (!(await cardsReady())) return [];
+    return (await query(
+      `SELECT * FROM lead_portal_cards WHERE deleted_at IS NULL AND active
+          AND (starts_on IS NULL OR starts_on <= $1::date) AND (ends_on IS NULL OR ends_on >= $1::date)
+        ORDER BY sort, id LIMIT 20`, [todayMx()])).rows.map(cardOut);
+  }
   let ciReady = false, ciProbe = 0;
   async function infoConsentReady() {
     if (ciReady) return true;
@@ -738,7 +756,7 @@ export default async function leadPortalRoutes(app) {
     // 카탈로그에서 사라진 코드는 부품표에서 뺀다(주문할 수 없는 줄을 보여 주지 않게)
     for (const l of leads) l.parts = l.parts.filter((p) => products[p.code]);
     const states = [...new Set(leads.map((l) => l.state).filter(Boolean))].sort((a, b) => META_STATES.indexOf(a) - META_STATES.indexOf(b));
-    return { me: { ...meOut(k), claim_days: await claimDays() }, leads, products, states, basket };
+    return { me: { ...meOut(k), claim_days: await claimDays() }, leads, products, states, basket, cards: await activeCards() };
   });
 
   app.post('/api/lead-portal/leads/:id/contact', P, async (req, reply) => {
@@ -1244,6 +1262,22 @@ export default async function leadPortalRoutes(app) {
          FROM lead_portal_basket b WHERE b.customer_id=$1 ORDER BY b.created_at, b.id`, [k.customer_id])).rows
       .map((r) => ({ code: r.code, qty: Number(r.qty), thread_ids: (r.thread_ids || []).map(Number), added_mx: r.added_mx, updated_mx: r.updated_mx }));
   }
+  // 1106 · 광고 카드 버튼(click) · 「Quiero participar」(interest)
+  app.post('/api/lead-portal/cards/:id/click', P, async (req, reply) => {
+    const k = req.lp; const id = idOf(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (!(await cardsReady())) return reply.code(503).send({ error: 'not_ready' });
+    const kind = req.body && req.body.kind === 'interest' ? 'interest' : 'click';
+    const c = (await query(`SELECT id FROM lead_portal_cards WHERE id=$1 AND deleted_at IS NULL AND active`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (kind === 'interest' && !isDirCode(k)) {
+      const dup = (await query(`SELECT 1 FROM lead_portal_card_clicks WHERE card_id=$1 AND customer_id=$2 AND kind='interest'`, [id, k.customer_id])).rows[0];
+      if (dup) return { ok: true, already: true };
+    }
+    await query(`INSERT INTO lead_portal_card_clicks (card_id, code_id, customer_id, kind) VALUES ($1,$2,$3,$4)`, [id, k.id, isDirCode(k) ? null : k.customer_id, kind]);
+    return { ok: true };
+  });
+
   app.get('/api/lead-portal/basket', P, async (req) => {
     const k = req.lp; const items = await basketRead(k);
     return { items, products: await productInfo(Number(k.customer_id), Number(k.discount) || 0, items.map((i) => i.code)) };
@@ -1333,6 +1367,66 @@ export default async function leadPortalRoutes(app) {
     } catch (_) { ads = []; }
     return { ready: await portalReady(), build: LP_BUILD, url: portalUrl(), states: META_STATES,
       director: req.ctx.perm.role === 'director', today: todayMx(), ads, access: await accessReady() };
+  });
+
+  // 1106 · 포털 광고 카드 관리 — 보기: 화면 권한 · 만들기/고치기/지우기: 디렉터
+  const cleanCard = (b) => {
+    const o = {};
+    if (b.kind !== undefined) { if (!CARD_KINDS.includes(b.kind)) return { error: 'bad_kind' }; o.kind = b.kind; }
+    if (b.title !== undefined) { o.title = clip(b.title, 120); if (!o.title) return { error: 'title_required' }; }
+    if (b.body !== undefined) o.body = clip(b.body, 600);
+    for (const f of ['image_url', 'cta_url']) if (b[f] !== undefined) {
+      const v = String(b[f] || '').trim();
+      if (v && !/^(https:\/\/|img\/)[^\s"'<>]{1,600}$/.test(v)) return { error: 'bad_url', field: f };
+      o[f] = v || null;
+    }
+    if (b.cta_text !== undefined) o.cta_text = clip(b.cta_text, 40);
+    if (b.every_n !== undefined) { const n = Number(b.every_n); if (!Number.isInteger(n) || n < 1 || n > 50) return { error: 'bad_every_n' }; o.every_n = n; }
+    if (b.sort !== undefined) o.sort = Number(b.sort) || 0;
+    if (b.active !== undefined) o.active = !!b.active;
+    for (const f of ['starts_on', 'ends_on']) if (b[f] !== undefined) { if (b[f] && !ymd(b[f])) return { error: 'bad_date' }; o[f] = b[f] || null; }
+    return { o };
+  };
+  app.get('/api/lead-portal-admin/cards', R, async (req, reply) => {
+    if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required', note: '0320 마이그레이션이 필요합니다.' });
+    const rows = (await query(
+      `SELECT c.*, to_char(c.starts_on,'YYYY-MM-DD') AS starts_ymd, to_char(c.ends_on,'YYYY-MM-DD') AS ends_ymd,
+              (SELECT count(*)::int FROM lead_portal_card_clicks x WHERE x.card_id=c.id AND x.kind='click') AS clicks,
+              (SELECT count(*)::int FROM lead_portal_card_clicks x WHERE x.card_id=c.id AND x.kind='interest') AS interests,
+              (SELECT string_agg(DISTINCT cu.name, ', ') FROM lead_portal_card_clicks x JOIN customers cu ON cu.id=x.customer_id WHERE x.card_id=c.id AND x.kind='interest') AS interested
+         FROM lead_portal_cards c WHERE c.deleted_at IS NULL ORDER BY c.sort, c.id`)).rows;
+    return { items: rows.map((r) => ({ ...cardOut(r), sort: Number(r.sort) || 0, active: !!r.active, starts_on: r.starts_ymd, ends_on: r.ends_ymd,
+      clicks: r.clicks, interests: r.interests, interested: r.interested || null })), kinds: CARD_KINDS, director: req.ctx.perm.role === 'director' };
+  });
+  app.post('/api/lead-portal-admin/cards', DIR, async (req, reply) => {
+    if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required' });
+    const b = req.body || {};
+    const c = cleanCard({ kind: b.kind || 'anuncio', title: b.title, body: b.body, image_url: b.image_url, cta_text: b.cta_text, cta_url: b.cta_url, every_n: b.every_n == null ? 6 : b.every_n, sort: b.sort, active: b.active == null ? true : b.active, starts_on: b.starts_on, ends_on: b.ends_on });
+    if (c.error) return reply.code(400).send(c);
+    const o = c.o; const cols = Object.keys(o);
+    const r = (await query(`INSERT INTO lead_portal_cards (${cols.join(',')}, created_by, updated_by) VALUES (${cols.map((_, i) => '$' + (i + 1)).join(',')}, $${cols.length + 1}, $${cols.length + 1}) RETURNING id`,
+      [...cols.map((x) => o[x]), req.ctx.perm.userId])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `lead_portal_card:${r.id}`, detail: { kind: o.kind, title: o.title } });
+    return { ok: true, id: Number(r.id) };
+  });
+  app.patch('/api/lead-portal-admin/cards/:id', DIR, async (req, reply) => {
+    if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required' });
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const c = cleanCard(req.body || {}); if (c.error) return reply.code(400).send(c);
+    const cols = Object.keys(c.o); if (!cols.length) return { ok: true, unchanged: true };
+    const r = (await query(`UPDATE lead_portal_cards SET ${cols.map((x, i) => `${x}=$${i + 2}`).join(', ')}, updated_by=$${cols.length + 2}, updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id`,
+      [id, ...cols.map((x) => c.o[x]), req.ctx.perm.userId])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `lead_portal_card:${id}`, detail: { fields: cols } });
+    return { ok: true };
+  });
+  app.delete('/api/lead-portal-admin/cards/:id', DIR, async (req, reply) => {
+    if (!(await cardsReady())) return reply.code(503).send({ error: 'migration_required' });
+    const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`UPDATE lead_portal_cards SET deleted_at=now(), active=false, updated_by=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [id, req.ctx.perm.userId])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `lead_portal_card:${id}` });
+    return { ok: true };
   });
 
   // 1105c · 확약서 서명 기록(이 화면 접근 권한) · 서명 이미지

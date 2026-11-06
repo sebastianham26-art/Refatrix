@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105e</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -242,6 +242,32 @@
         <div class="tblwrap" id="lpNotes"></div>
       </div>
 
+      <div id="lpCardsBox">
+        <h2 style="margin-top:20px">📣 포털 광고 카드 <span class="hint">· 고객 포털에서 문의 카드 사이에 같은 크기로 보이는 카드 — 우리 제품 · 다른 광고 · mecánico 교육(capacitación) 초대</span></h2>
+        <div id="lpCardForm" class="hidden" style="border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0">
+          <div class="row">
+            <div><label>종류</label><select id="lcKind"><option value="producto">우리 제품(Producto CTR)</option><option value="anuncio">광고(Anuncio)</option><option value="capacitacion">교육(Capacitación)</option></select></div>
+            <div style="flex:1;min-width:260px"><label>제목(스페인어)</label><input id="lcTitle" maxlength="120" placeholder="Ej. Capacitación de suspensión para mecánicos · 20 de noviembre"></div>
+            <div><label>문의 몇 장마다</label><input id="lcEvery" type="number" min="1" max="50" value="6" style="width:90px"></div>
+            <div><label>순서</label><input id="lcSort" type="number" value="0" style="width:80px"></div>
+          </div>
+          <label>내용(스페인어)</label><textarea id="lcBody" maxlength="600" rows="3"></textarea>
+          <div class="row">
+            <div style="flex:1;min-width:260px"><label>이미지 주소 (https://… 또는 img/oe-badge.png)</label><input id="lcImg" placeholder="https://…/imagen.jpg"></div>
+            <div><label>버튼 글자</label><input id="lcCta" maxlength="40" placeholder="Ver más / Quiero participar"></div>
+            <div style="flex:1;min-width:240px"><label>버튼 링크 (비우면 교육은 「Quiero participar」 신청 기록)</label><input id="lcUrl" placeholder="https://…"></div>
+          </div>
+          <div class="row">
+            <div><label>시작일</label><input id="lcFrom" type="date"></div><div><label>종료일</label><input id="lcTo" type="date"></div>
+            <label style="align-self:flex-end"><input type="checkbox" id="lcActive" checked style="width:auto"> 사용</label>
+            <button type="button" class="btn" id="lcSave" style="align-self:flex-end">저장</button><button type="button" class="btn ghost" id="lcCancel" style="align-self:flex-end">취소</button>
+          </div>
+        </div>
+        <div class="row" style="align-items:center"><button type="button" class="btn sm" id="lcNew">＋ 새 카드</button><span class="hint">디렉터만 만들고 고칠 수 있습니다 · 이미지가 없으면 글자만 보입니다</span></div>
+        <div class="msg" id="lcMsg"></div>
+        <div class="tblwrap" id="lpCards"></div>
+      </div>
+
       <div id="lpConsentBox">
         <h2 style="margin-top:20px">✍️ 개인정보 보호 확약서 <span class="hint">· 고객이 포털에 들어올 때 전자서명(이름 · 성 · 휴대폰 · 서명) — 서명해야 문의를 볼 수 있음</span></h2>
         <div class="row" style="align-items:center"><button type="button" class="btn sm ghost" id="lpConsGo">새로고침</button><span class="hint" id="lpConsSum" style="margin-left:auto"></span></div>
@@ -339,7 +365,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1105e';
+  const MTL_BUILD='mtl-1106a';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -970,7 +996,7 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
-<script src="refatrix-leadportal-admin.js?v=20261105c"></script>
+<script src="refatrix-leadportal-admin.js?v=20261106a"></script>
 <script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>

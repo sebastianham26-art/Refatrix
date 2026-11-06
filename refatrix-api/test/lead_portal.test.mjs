@@ -374,6 +374,27 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.ok((await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(T2.id)), '다시 보임');
     await query(`UPDATE users SET wa_phone=NULL WHERE id=$1`, [rep2.id]); await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [TI.id]); LPm.resetPortalHideCache();
   }
+  { // 1106 · 포털 광고 카드 — 기본 CTR 카드 · 디렉터만 만들기 · 기간 · 클릭/참여 신청
+    let cl = await call(R1, 'GET', '/api/lead-portal-admin/cards'); assert.equal(cl.statusCode, 200, cl.body);
+    assert.ok(cl.json().items.some((c) => c.title === 'CTR · Equipo Original'), '첫 카드 = CTR Equipo Original');
+    assert.equal((await call(R1, 'POST', '/api/lead-portal-admin/cards', { title: 'x' })).statusCode, 403, '디렉터만');
+    assert.equal((await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'capacitacion', title: 'Curso', image_url: 'javascript:alert(1)' })).json().error, 'bad_url');
+    let rc = await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'capacitacion', title: 'Capacitación de suspensión ' + T, body: 'Invita a tus mecánicos', every_n: 3 }); assert.equal(rc.statusCode, 200, rc.body);
+    const CID = rc.json().id;
+    const fut = await call(D, 'POST', '/api/lead-portal-admin/cards', { kind: 'anuncio', title: 'Futuro ' + T, starts_on: '2099-01-01' }); const FID = fut.json().id;
+    let lc = (await call(C, 'GET', '/api/lead-portal/leads')).json().cards;
+    assert.ok(lc.some((c) => c.id === CID && c.every_n === 3) && !lc.some((c) => c.id === FID), '사용 중 · 기간 안 카드만');
+    assert.equal((await call(C, 'POST', `/api/lead-portal/cards/${CID}/click`, { kind: 'interest' })).json().ok, true);
+    assert.equal((await call(C, 'POST', `/api/lead-portal/cards/${CID}/click`, { kind: 'interest' })).json().already, true, '참여 신청은 한 번');
+    await call(C, 'POST', `/api/lead-portal/cards/${CID}/click`, { kind: 'click' });
+    const row = (await call(R1, 'GET', '/api/lead-portal-admin/cards')).json().items.find((c) => c.id === CID);
+    assert.deepEqual([row.interests, row.clicks], [1, 1]); assert.ok(row.interested.includes('El Puente'));
+    assert.equal((await call(D, 'PATCH', `/api/lead-portal-admin/cards/${CID}`, { active: false })).statusCode, 200);
+    assert.ok(!(await call(C, 'GET', '/api/lead-portal/leads')).json().cards.some((c) => c.id === CID), '끄면 안 보임');
+    assert.equal((await call(C, 'POST', `/api/lead-portal/cards/${CID}/click`, { kind: 'click' })).statusCode, 404);
+    assert.equal((await call(D, 'DELETE', `/api/lead-portal-admin/cards/${CID}`)).statusCode, 200);
+    await call(D, 'DELETE', `/api/lead-portal-admin/cards/${FID}`);
+  }
   { // 1105 · 접속 기록 — 로그인 · 화면 열기 → 고객 · 날짜별, 화면 권한이면 영업도 봄
     await call(C, 'GET', '/api/lead-portal/me');
     let ac = await call(R1, 'GET', `/api/lead-portal-admin/access?code_id=${codeId}`); assert.equal(ac.statusCode, 200, ac.body);

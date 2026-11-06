@@ -33,7 +33,7 @@
       if (abox) abox.innerHTML = (LP.st.ads || []).length ? (LP.st.ads || []).map(function (a) { return '<label class="lp-ck"><input type="checkbox" value="' + esc(a.ad_id) + '"> ' + esc(adLabel(a.ad_id)) + ' <span class="muted">' + a.n + '건</span></label>'; }).join('') : '<div class="hint">아직 광고가 없습니다(문의에서 광고 ID 가 보이거나 광고를 등록하면 나타납니다).</div>';
       if (LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); }
     }
-    loadConsents();
+    loadConsents(); loadCards();
     if (LP.st.access) { if (!g('lpAcTo').value) { g('lpAcTo').value = today(); var f0 = new Date(Date.UTC(+today().slice(0, 4), +today().slice(5, 7) - 1, +today().slice(8, 10) - 13)); g('lpAcFrom').value = f0.toISOString().slice(0, 10); } loadAccess(); }
     else if (g('lpAccess')) g('lpAccess').innerHTML = '<div class="hint">접속 기록은 서버에 0317 마이그레이션 뒤부터 쌓입니다(Railway 콘솔 npm run migrate).</div>';
     LP.loaded = true;
@@ -63,6 +63,51 @@
           + '<td class="num">' + x.opens + (x.logins ? '<div class="muted">코드 입력 ' + x.logins + '</div>' : '') + '</td>'
           + '<td class="muted" style="max-width:420px">' + esc((x.times || []).join(' · ')) + '</td></tr>';
       }).join('') + '</tbody></table>';
+  }
+
+  // 1106 · 포털 광고 카드
+  var CK = { producto: '우리 제품', anuncio: '광고', capacitacion: '교육' };
+  async function loadCards() {
+    if (!g('lpCards')) return;
+    try {
+      var d = await api('GET', '/api/lead-portal-admin/cards'); LP.cards = d.items || [];
+      g('lcNew').classList.toggle('hidden', !d.director);
+      g('lpCards').innerHTML = LP.cards.length ? '<table><thead><tr><th>순서</th><th>종류</th><th>제목 · 내용</th><th>이미지</th><th>버튼</th><th class="num">N장마다</th><th>기간</th><th>상태</th><th class="num">클릭</th><th>참여 신청</th><th></th></tr></thead><tbody>'
+        + LP.cards.map(function (c) {
+          return '<tr><td class="num">' + c.sort + '</td><td>' + esc(CK[c.kind] || c.kind) + '</td><td><b>' + esc(c.title) + '</b><div class="muted lp-memo">' + esc(c.body || '') + '</div></td>'
+            + '<td>' + (c.image_url ? '<img src="' + esc(/^img\//.test(c.image_url) ? 'https://refatrix-platform.netlify.app/' + c.image_url : c.image_url) + '" alt="" style="max-width:80px;max-height:50px;object-fit:contain">' : '<span class="muted">—</span>') + '</td>'
+            + '<td>' + esc(c.cta_text || (c.kind === 'capacitacion' && !c.cta_url ? 'Quiero participar' : '')) + (c.cta_url ? '<div class="muted mono" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + esc(c.cta_url) + '</div>' : '') + '</td>'
+            + '<td class="num">' + c.every_n + '</td><td style="white-space:nowrap">' + esc((c.starts_on || '…') + ' ~ ' + (c.ends_on || '…')) + '</td>'
+            + '<td>' + (c.active ? '<span class="tag lp-on">사용</span>' : '<span class="tag">꺼짐</span>') + '</td><td class="num">' + c.clicks + '</td><td>' + (c.interests ? c.interests + '곳<div class="muted">' + esc(c.interested || '') + '</div>' : '—') + '</td>'
+            + '<td>' + (d.director ? '<div class="row lp-acts"><button type="button" class="btn sm ghost" data-card="edit" data-id="' + c.id + '">수정</button><button type="button" class="btn sm ghost" data-card="toggle" data-id="' + c.id + '">' + (c.active ? '끄기' : '켜기') + '</button><button type="button" class="btn sm lp-red" data-card="del" data-id="' + c.id + '">삭제</button></div>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="hint">카드가 없습니다.</div>';
+    } catch (e) { g('lpCards').innerHTML = '<div class="hint">' + esc(e.message === 'migration_required' ? '광고 카드는 서버에 0320 마이그레이션 뒤부터 씁니다(Railway 콘솔 npm run migrate).' : errT(e)) + '</div>'; if (g('lcNew')) g('lcNew').classList.add('hidden'); }
+  }
+  function cardForm(c) {
+    LP.cardEdit = c ? c.id : null; g('lpCardForm').classList.remove('hidden');
+    g('lcKind').value = c ? c.kind : 'capacitacion'; g('lcTitle').value = c ? c.title : ''; g('lcBody').value = c ? (c.body || '') : '';
+    g('lcImg').value = c ? (c.image_url || '') : ''; g('lcCta').value = c ? (c.cta_text || '') : ''; g('lcUrl').value = c ? (c.cta_url || '') : '';
+    g('lcEvery').value = c ? c.every_n : 6; g('lcSort').value = c ? c.sort : 0; g('lcFrom').value = c ? (c.starts_on || '') : ''; g('lcTo').value = c ? (c.ends_on || '') : ''; g('lcActive').checked = c ? c.active : true;
+    try { g('lcTitle').focus(); } catch (_) {}
+  }
+  async function saveCard() {
+    var body = { kind: g('lcKind').value, title: g('lcTitle').value.trim(), body: g('lcBody').value.trim(), image_url: g('lcImg').value.trim(), cta_text: g('lcCta').value.trim(), cta_url: g('lcUrl').value.trim(),
+      every_n: Number(g('lcEvery').value) || 6, sort: Number(g('lcSort').value) || 0, starts_on: g('lcFrom').value || null, ends_on: g('lcTo').value || null, active: g('lcActive').checked };
+    if (!body.title) { say(false, '제목을 쓰세요.', 'lcMsg'); return; }
+    try {
+      if (LP.cardEdit) await api('PATCH', '/api/lead-portal-admin/cards/' + LP.cardEdit, body); else await api('POST', '/api/lead-portal-admin/cards', body);
+      g('lpCardForm').classList.add('hidden'); say(true, '저장했습니다 — 고객 포털에 바로 보입니다.', 'lcMsg'); loadCards();
+    } catch (e) { say(false, e.message === 'bad_url' ? '주소는 https:// 로 시작해야 합니다(이미지는 img/… 도 가능).' : errT(e), 'lcMsg'); }
+  }
+  async function onCardAct(e) {
+    var b = e.target.closest('[data-card]'); if (!b) return;
+    var id = Number(b.dataset.id), c = (LP.cards || []).filter(function (x) { return x.id === id; })[0]; if (!c) return;
+    if (b.dataset.card === 'edit') return cardForm(c);
+    try {
+      if (b.dataset.card === 'toggle') await api('PATCH', '/api/lead-portal-admin/cards/' + id, { active: !c.active });
+      if (b.dataset.card === 'del') { if (!confirm('「' + c.title + '」 카드를 삭제할까요?')) return; await api('DELETE', '/api/lead-portal-admin/cards/' + id); }
+      loadCards();
+    } catch (e2) { say(false, errT(e2), 'lcMsg'); }
   }
 
   // 1105c · 개인정보 보호 확약서(전자서명) — 이 화면 접근 권한
@@ -376,6 +421,10 @@
     if (g('lpAdMode')) g('lpAdMode').addEventListener('change', function () { g('lpAdBox').classList.toggle('hidden', g('lpAdMode').value !== 'pick'); });
     if (g('lpAcGo')) g('lpAcGo').addEventListener('click', function () { loadAccess(); });
     if (g('lpConsGo')) g('lpConsGo').addEventListener('click', loadConsents);
+    if (g('lcNew')) g('lcNew').addEventListener('click', function () { cardForm(null); });
+    if (g('lcCancel')) g('lcCancel').addEventListener('click', function () { g('lpCardForm').classList.add('hidden'); });
+    if (g('lcSave')) g('lcSave').addEventListener('click', saveCard);
+    if (g('lpCards')) g('lpCards').addEventListener('click', onCardAct);
     if (g('lpConsents')) g('lpConsents').addEventListener('click', function (e) { var b = e.target.closest('[data-cons]'); if (b) viewConsent(Number(b.dataset.cons)); });
     if (g('lpAcQ')) g('lpAcQ').addEventListener('input', renderAccess);
     if (g('lpAccess')) g('lpAccess').addEventListener('click', function (e) { if (e.target.closest('#lpAcAll')) loadAccess(null); });
