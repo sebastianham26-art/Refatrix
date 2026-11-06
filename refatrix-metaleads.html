@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106a</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -94,16 +94,15 @@
   .adname{font-weight:700}.adid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted)}
   .ad-chip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#f3ecdf;color:#7a5a1f;white-space:nowrap;display:inline-block}
   .ad-chip.unreg{background:var(--warn-bg);color:var(--warn)}
-  /* 1105e · 문의 목록 한 화면에 — 칸 좁히기 */
-  #lTable table{font-size:12px}
-  #lTable th,#lTable td{padding:5px 6px}
-  #lTable td.c-name{max-width:120px;word-break:break-word}
-  #lTable td.c-ad{max-width:104px}
-  #lTable td.c-ad .ad-chip{max-width:100px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
-  #lTable td.c-ph{white-space:nowrap;width:1%}
-  #lTable td.c-veh{max-width:170px}
-  #lTable td.c-parts{max-width:220px}
-  #lTable td.clip{max-width:210px}
+  /* 1106 · 문의 목록 가독성 — 고정 칸 너비 · 단어 단위 줄바꿈 · 요약 3줄 */
+  table.lt{table-layout:fixed;width:100%;min-width:1280px;font-size:12.5px}
+  table.lt th,table.lt td{padding:8px 8px;word-break:normal;overflow-wrap:break-word;line-height:1.45}
+  table.lt td.mono,.lt-id{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;letter-spacing:-.2px}
+  .lt-name{font-weight:700;font-size:13px;margin-bottom:4px}
+  .lt-id{color:#5b4a26;margin-top:3px}.lt-id.lt-unreg{color:var(--warn);font-weight:700}
+  table.lt .ad-chip{white-space:normal;max-width:100%}
+  .lt-sum{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;color:#3c3a36}
+  table.lt td .muted{font-size:11.5px}
   tr.adrow.sel{background:#eef5f1}tr.adrow.unreg td{background:#fffaf0}
   .adform input{min-width:0}
 </style>
@@ -365,7 +364,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1106a';
+  const MTL_BUILD='mtl-1106b';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -517,13 +516,23 @@
     const it=S.items;
     $('lCount').textContent=it.length+'건'+(it.length>=5000?' (최대 5,000건 표시 — 필터로 좁히세요)':'');
     if(!it.length){ $('lTable').innerHTML='<div class="hint" style="margin-top:10px">문의가 없습니다'+(S.status&&S.status.counts&&!S.status.counts.total?' — 위에서 「⟳ 새 문의 가져오기」를 누르세요.':'.')+'</div>'; return; }
-    $('lTable').innerHTML='<table><thead><tr><th>마지막 대화</th><th>이름</th><th>채널</th><th>광고</th><th>업종</th><th>지역</th><th>전화</th><th>차종</th><th>부품 · 부품번호</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
-      +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td style="white-space:nowrap">'+esc((x.last_mx||'').slice(5))+'</td><td class="c-name"><b>'+esc(x.name||x.username||'—')+'</b>'+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</td>'
-        +'<td><span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td><td class="c-ad">'+adCell(x)+'</td><td>'+tipoOf(x)+'</td>'
-        +'<td>'+(x.state?esc(x.state)+(x.city?'<br><span class="muted">'+esc(x.city)+'</span>':''):'<span class="muted">—</span>')+'</td>'
-        +'<td class="c-ph">'+esc(x.phone||'')+'</td><td class="c-veh">'+esc(x.vehicles||'')+'</td><td class="c-parts">'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
-        +'<td class="clip" title=""'+esc(x.customer_text||'')+'">'+(x.summary?'🤖 '+esc(x.summary):esc((x.customer_text||'').replace(/\n/g,' / ')))+'</td>'
-        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<br><span class="muted">'+esc(x.derived_to)+'</span>':'')+(x.revealed_to?'<br><span class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</span>':'')+(x.chat_by?'<br><span class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</span>':'')+(x.portal_hidden?'<br><span class="bad-t" title="고객 포털에 안 보임">🚫 플랫폼 숨김</span>':'')+(x.internal?'<br><span class="muted" title="사내 번호 — 고객 포털에 안 보임">🏢 사내</span>':'')+'</td></tr>').join('')
+    // 1106 · 가독성 — 칸 너비 고정(colgroup) · 이름+채널 · 업종+지역 묶기 · 광고 ID 전체 · 요약 3줄까지
+    const adFull=(x)=>!x.ad_id?'<span class="muted">—</span>'
+      :(x.ad_name?'<span class="ad-chip" title="'+esc(AD_SRC_KO[x.ad_src]||'')+'">'+esc(x.ad_name)+'</span><div class="mono lt-id">'+esc(x.ad_id)+'</div>'
+        :'<div class="mono lt-id lt-unreg" title="'+esc('미등록 광고 · '+(AD_SRC_KO[x.ad_src]||''))+'">'+esc(x.ad_id)+'</div><div class="muted" style="font-size:11px">미등록 광고</div>');
+    const dt=(s)=>{ const v=String(s||''); return v?'<div>'+esc(v.slice(5,10))+'</div><div class="muted">'+esc(v.slice(11,16))+'</div>':''; };
+    const sumTxt=(x)=>x.summary?'🤖 '+x.summary:(x.customer_text||'').replace(/\n/g,' / ');
+    $('lTable').innerHTML='<table class="lt"><colgroup><col style="width:64px"><col style="width:180px"><col style="width:170px"><col style="width:150px"><col style="width:120px"><col style="width:150px"><col style="width:210px"><col><col style="width:150px"></colgroup>'
+      +'<thead><tr><th>마지막 대화</th><th>이름 · 채널</th><th>광고</th><th>업종 · 지역</th><th>전화</th><th>차종</th><th>부품 · 부품번호</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
+      +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td>'+dt(x.last_mx)+'</td>'
+        +'<td><div class="lt-name">'+esc(x.name||x.username||'—')+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</div>'
+        +'<span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td>'
+        +'<td>'+adFull(x)+'</td>'
+        +'<td><div>'+tipoOf(x)+'</div>'+(x.state?'<div class="muted">'+esc(x.state)+(x.city?' · '+esc(x.city):'')+'</div>':'')+'</td>'
+        +'<td class="mono">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td>'
+        +'<td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
+        +'<td title="'+esc(x.customer_text||'')+'"><div class="lt-sum">'+esc(sumTxt(x))+'</div></td>'
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<div class="muted">'+esc(x.derived_to)+'</div>':'')+(x.revealed_to?'<div class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</div>':'')+(x.chat_by?'<div class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</div>':'')+(x.portal_hidden?'<div class="bad-t" title="고객 포털에 안 보임">🚫 플랫폼 숨김</div>':'')+(x.internal?'<div class="muted" title="사내 번호 — 고객 포털에 안 보임">🏢 사내</div>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
   ['fCh','fAd','fState','fTipo','fStatus','fDemand','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
