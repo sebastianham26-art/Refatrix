@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105a</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1105b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -201,6 +201,7 @@
           <div><label>기준 금액 (MXN, IVA 제외 · 기록용)</label><input id="lpAmt" type="text" inputmode="decimal" style="width:160px" placeholder="50,000"></div>
           <div><label>열람 만료일 — 직접 입력</label><input id="lpExp" type="date"><div class="hint" id="lpExpHint"></div></div>
           <div><label>열람 범위</label><select id="lpScopeMode"><option value="">전체 문의</option><option value="pick">주(州) 선택…</option></select><div class="hidden" id="lpScopeBox" style="max-width:420px"></div></div>
+          <div><label>광고 범위</label><select id="lpAdMode"><option value="">모든 광고</option><option value="pick">광고 선택…</option></select><div class="hidden" id="lpAdBox" style="max-width:460px"></div></div>
         </div>
         <div id="lpRef"></div>
         <label style="margin-top:10px">조건 메모 (고객에게는 안 보임)</label><textarea id="lpMemo" placeholder="예) 10월 주문 5만 페소 → 1개월. 11월 재주문 시 연장 검토."></textarea>
@@ -229,6 +230,18 @@
         <h2 style="margin-top:20px">📝 문의 메모 <span class="hint">· refaccionaria 가 포털에서 쓴 메모 — 고객은 자기 것만 보고, 여기서는 전부(지운 것 포함)</span></h2>
         <div class="row"><input id="lpNotesQ" type="text" placeholder="고객 · 내용 검색" style="width:240px"><button type="button" class="btn sm ghost" id="lpNotesGo">조회</button></div>
         <div class="tblwrap" id="lpNotes"></div>
+      </div>
+
+      <div id="lpAccessBox">
+        <h2 style="margin-top:20px">📈 접속 기록 <span class="hint">· 접속코드를 받은 고객이 언제 포털을 열었는지(멕시코 시간) — 이 화면을 볼 수 있는 직원 모두</span></h2>
+        <div class="row" style="align-items:flex-end">
+          <div><label>부터</label><input id="lpAcFrom" type="date"></div>
+          <div><label>까지</label><input id="lpAcTo" type="date"></div>
+          <div><label>고객</label><input id="lpAcQ" type="text" placeholder="고객 이름 · 번호" style="width:200px"></div>
+          <button type="button" class="btn sm" id="lpAcGo">조회</button>
+          <span class="hint" id="lpAcSum" style="margin-left:auto"></span>
+        </div>
+        <div class="tblwrap" id="lpAccess"></div>
       </div>
 
       <div id="lpShelfBox">
@@ -308,7 +321,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1105a';
+  const MTL_BUILD='mtl-1105b';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -765,7 +778,7 @@
 
   // ───── 0295 · 광고별 문의 ─────
   const fmtD=(t)=>t?new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(t)):'';
-  const AD_SRC_KO={manual:'직접 지정',meta:'Meta 광고 기록',texto:'구분 문구'};
+  const AD_SRC_KO={manual:'직접 지정',meta:'Meta 광고 기록',mensaje:'대화 속 광고 ID',texto:'구분 문구'};
   const adLabel=(x)=>x.ad_id?(x.ad_name||('미등록 '+x.ad_id)):'';
   const adCell=(x)=>x.ad_id?('<span class="ad-chip'+(x.ad_name?'':' unreg')+'" title="'+esc('광고 ID '+x.ad_id+' · '+(AD_SRC_KO[x.ad_src]||''))+'">'+esc(x.ad_name||('미등록 …'+String(x.ad_id).slice(-6)))+'</span>'):'<span class="muted">—</span>';
   S.ads=null; S.adSel=null; S.adEdit=null;
@@ -907,7 +920,7 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
-<script src="refatrix-leadportal-admin.js?v=20261028lpa"></script>
+<script src="refatrix-leadportal-admin.js?v=20261105b"></script>
 <script src="refatrix-nav.js?v=20261029es"></script>
 </body>
 </html>

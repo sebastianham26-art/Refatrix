@@ -23,8 +23,15 @@ const cut = (v, n) => { const s = v == null ? '' : String(v).trim(); return s ? 
 export const AD_TOUCH_SQL = `(SELECT x.ad_id FROM meta_ad_touches x WHERE x.platform = t.platform AND x.user_id = t.user_id ORDER BY x.at, x.id LIMIT 1)`;
 export const AD_TEXT_SQL = `(SELECT a.ad_id FROM meta_ads a WHERE COALESCE(a.match_text, '') <> '' AND strpos(lower(COALESCE(t.customer_text, '')), lower(a.match_text)) > 0
                              ORDER BY length(a.match_text) DESC, a.ad_id LIMIT 1)`;
-export const AD_EXPR = `COALESCE(t.m_ad_id, ${AD_TOUCH_SQL}, ${AD_TEXT_SQL})`;
-export const AD_SRC_EXPR = `CASE WHEN t.m_ad_id IS NOT NULL THEN 'manual' WHEN ${AD_TOUCH_SQL} IS NOT NULL THEN 'meta' WHEN ${AD_TEXT_SQL} IS NOT NULL THEN 'texto' END`;
+// 1105 · 대화 첫 메시지들(앞 3개)에 광고 ID(12로 시작하는 15~20자리 숫자 — 예: 120258634372340339)가 보이면 그 광고
+//   전화번호(10~13자리)와 겹치지 않게 15자리 이상만. 등록 안 된 광고여도 그 ID 로 나눈다(목록에 「미등록 …」).
+export const AD_ID_TEXT_RE = '(?:^|[^0-9])(12[0-9]{13,18})(?:[^0-9]|$)';
+export const AD_MSG_SQL = `(SELECT substring(e->>'text' from '${AD_ID_TEXT_RE}')
+                             FROM jsonb_array_elements(CASE WHEN jsonb_typeof(t.messages) = 'array' THEN t.messages ELSE '[]'::jsonb END) WITH ORDINALITY AS mm(e, o)
+                            WHERE mm.o <= 3 AND (e->>'text') ~ '${AD_ID_TEXT_RE}' ORDER BY mm.o LIMIT 1)`;
+export const AD_EXPR = `COALESCE(t.m_ad_id, ${AD_TOUCH_SQL}, ${AD_MSG_SQL}, ${AD_TEXT_SQL})`;
+export const AD_SRC_EXPR = `CASE WHEN t.m_ad_id IS NOT NULL THEN 'manual' WHEN ${AD_TOUCH_SQL} IS NOT NULL THEN 'meta' WHEN ${AD_MSG_SQL} IS NOT NULL THEN 'mensaje' WHEN ${AD_TEXT_SQL} IS NOT NULL THEN 'texto' END`;
+export function adIdInText(text) { const m = String(text || '').match(new RegExp(AD_ID_TEXT_RE)); return m ? m[1] : null; }
 
 // ── 웹훅 → 광고 출처 기록 ──
 async function saveTouch(q, t) {

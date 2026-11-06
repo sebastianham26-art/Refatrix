@@ -29,9 +29,39 @@
       var box = g('lpScopeBox');
       box.innerHTML = (LP.st.states || []).map(function (s) { return '<label class="lp-ck"><input type="checkbox" value="' + esc(s) + '"> ' + esc(s) + '</label>'; }).join('');
       if (!g('lpExp').value) { var d = new Date(Date.UTC(+today().slice(0, 4), +today().slice(5, 7) - 1, +today().slice(8, 10) + 30)); g('lpExp').value = d.toISOString().slice(0, 10); expHint(); }
+      var abox = g('lpAdBox');
+      if (abox) abox.innerHTML = (LP.st.ads || []).length ? (LP.st.ads || []).map(function (a) { return '<label class="lp-ck"><input type="checkbox" value="' + esc(a.ad_id) + '"> ' + esc(adLabel(a.ad_id)) + ' <span class="muted">' + a.n + '건</span></label>'; }).join('') : '<div class="hint">아직 광고가 없습니다(문의에서 광고 ID 가 보이거나 광고를 등록하면 나타납니다).</div>';
       if (LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); }
     }
+    if (LP.st.access) { if (!g('lpAcTo').value) { g('lpAcTo').value = today(); var f0 = new Date(Date.UTC(+today().slice(0, 4), +today().slice(5, 7) - 1, +today().slice(8, 10) - 13)); g('lpAcFrom').value = f0.toISOString().slice(0, 10); } loadAccess(); }
+    else if (g('lpAccess')) g('lpAccess').innerHTML = '<div class="hint">접속 기록은 서버에 0317 마이그레이션 뒤부터 쌓입니다(Railway 콘솔 npm run migrate).</div>';
     LP.loaded = true;
+  }
+
+  // 1105 · 광고 이름(없으면 미등록 …끝 6자리)
+  function adLabel(id) { var a = ((LP.st && LP.st.ads) || []).filter(function (x) { return x.ad_id === String(id); })[0]; return a && a.name ? a.name : '미등록 …' + String(id).slice(-6); }
+  // 1105 · 접속 기록(고객 · 날짜별)
+  async function loadAccess(codeId) {
+    if (codeId !== undefined) LP.acCode = codeId || null;
+    var qs = '?from=' + encodeURIComponent(g('lpAcFrom').value || '') + '&to=' + encodeURIComponent(g('lpAcTo').value || '') + (LP.acCode ? '&code_id=' + LP.acCode : '');
+    try { var d = await api('GET', '/api/lead-portal-admin/access' + qs); LP.access = d.items || []; renderAccess(); }
+    catch (e) { g('lpAccess').innerHTML = '<div class="hint">' + esc(errT(e)) + '</div>'; }
+  }
+  function renderAccess() {
+    var q = g('lpAcQ').value.trim().toLowerCase();
+    var it = (LP.access || []).filter(function (x) { return !q || (x.customer_name + ' ' + x.customer_code).toLowerCase().indexOf(q) >= 0; });
+    var who = {}; it.forEach(function (x) { who[x.code_id] = 1; });
+    g('lpAcSum').textContent = Object.keys(who).length + '개 코드 · ' + it.length + '일-고객' + (LP.acCode ? ' · 코드 한 개만 보는 중' : '');
+    if (!it.length) { g('lpAccess').innerHTML = '<div class="hint" style="margin-top:6px">이 기간에 접속 기록이 없습니다.</div>' + (LP.acCode ? ' <button type="button" class="btn sm ghost" id="lpAcAll">전체 코드 보기</button>' : ''); return; }
+    g('lpAccess').innerHTML = (LP.acCode ? '<div style="margin:6px 0"><button type="button" class="btn sm ghost" id="lpAcAll">전체 코드 보기</button></div>' : '')
+      + '<table><thead><tr><th>날짜</th><th>고객</th><th>코드</th><th>첫 접속</th><th>마지막 활동</th><th class="num">접속(열기)</th><th>접속 시각</th></tr></thead><tbody>'
+      + it.map(function (x) {
+        var isDir = x.kind === 'director';
+        return '<tr><td style="white-space:nowrap">' + esc(x.date) + '</td><td><b>' + (isDir ? '🔐 디렉터 전용' : esc(x.customer_name)) + '</b><div class="muted">' + esc(isDir ? '' : x.customer_code) + '</div></td>'
+          + '<td class="mono">…' + esc(x.last4) + '</td><td>' + esc(x.first) + '</td><td>' + esc(x.last) + '</td>'
+          + '<td class="num">' + x.opens + (x.logins ? '<div class="muted">코드 입력 ' + x.logins + '</div>' : '') + '</td>'
+          + '<td class="muted" style="max-width:420px">' + esc((x.times || []).join(' · ')) + '</td></tr>';
+      }).join('') + '</tbody></table>';
   }
 
   // ── 발급 ──────────────────────────────────────────────
@@ -67,7 +97,9 @@
     if (g('lpScopeMode').value === 'pick' && !scope.length) { say(false, '열람할 주를 하나 이상 고르세요(전체면 「전체 문의」).'); return; }
     g('lpIssue').disabled = true;
     try {
-      var d = await api('POST', '/api/lead-portal-admin/codes', { customer_id: LP.cust.id, expires_on: g('lpExp').value, basis_amount: g('lpAmt').value.trim(), memo: g('lpMemo').value.trim(), scope_states: scope });
+      var ads = g('lpAdMode').value === 'pick' ? [].map.call(g('lpAdBox').querySelectorAll('input:checked'), function (i) { return i.value; }) : [];
+    if (g('lpAdMode').value === 'pick' && !ads.length) { say(false, '볼 수 있는 광고를 하나 이상 고르세요(전부면 「모든 광고」).'); g('lpIssue').disabled = false; return; }
+    var d = await api('POST', '/api/lead-portal-admin/codes', { customer_id: LP.cust.id, expires_on: g('lpExp').value, basis_amount: g('lpAmt').value.trim(), memo: g('lpMemo').value.trim(), scope_states: scope, scope_ads: ads });
       showIssued(d, LP.cust.name, d.item.expires_on);
       say(true, '발급했습니다 — 코드는 지금 한 번만 보입니다.');
       LP.cust = null; g('lpCustQ').value = ''; g('lpCustSel').textContent = ''; g('lpRef').innerHTML = ''; g('lpAmt').value = ''; g('lpMemo').value = '';
@@ -112,13 +144,15 @@
           + (c.active ? '<button type="button" class="btn sm ghost" data-act="pause" data-id="' + c.id + '">정지</button>' : '<button type="button" class="btn sm ghost" data-act="resume" data-id="' + c.id + '">재개</button>')
           + '<button type="button" class="btn sm ghost" data-act="memo" data-id="' + c.id + '">메모</button>'
           + (isDir ? '' : '<button type="button" class="btn sm ghost" data-act="scope" data-id="' + c.id + '">범위</button>')
+          + (isDir ? '' : '<button type="button" class="btn sm ghost" data-act="ads" data-id="' + c.id + '">광고</button>')
+          + '<button type="button" class="btn sm ghost" data-act="access" data-id="' + c.id + '">접속 기록</button>'
           + '<button type="button" class="btn sm ghost" data-act="reissue" data-id="' + c.id + '">재발급</button>'
           + (isDir ? '' : '<button type="button" class="btn sm ghost" data-act="shelf" data-id="' + c.id + '">매장 재고</button>')
           + '<button type="button" class="btn sm ghost" data-act="log" data-id="' + c.id + '">이력</button>'
           + '<button type="button" class="btn sm lp-red" data-act="del" data-id="' + c.id + '">삭제</button>';
         return '<tr' + (isDir ? ' style="background:#fbf7ee"' : '') + '><td><b>' + (isDir ? '🔐 디렉터 전용' : esc(c.customer_name)) + '</b><div class="muted">' + (isDir ? '전체 문의 · 모든 메모' : esc(c.customer_code)) + '</div></td>'
           + '<td class="mono" style="white-space:nowrap">…' + esc(c.last4) + '</td><td class="num">' + money(c.basis_amount) + '</td><td class="muted lp-memo">' + esc(c.memo || '') + '</td>'
-          + '<td>' + (c.scope_states && c.scope_states.length ? esc(c.scope_states.join(', ')) : '전체') + '</td>'
+          + '<td>' + (c.scope_states && c.scope_states.length ? esc(c.scope_states.join(', ')) : '전체 주') + '<div class="muted">' + (c.scope_ads && c.scope_ads.length ? '광고: ' + esc(c.scope_ads.map(adLabel).join(', ')) : '모든 광고') + '</div></td>'
           + '<td style="white-space:nowrap">' + esc(c.created_on) + '</td><td style="white-space:nowrap">' + esc(c.expires_on) + '</td><td><span class="tag ' + s[1] + '">' + esc(lab) + '</span></td>'
           + '<td class="muted">' + (c.last_seen_at ? esc(fmtT(c.last_seen_at)) : '—') + '</td>'
           + '<td class="num">' + c.reveals + '</td><td class="num">' + (c.orders ? c.orders + '건<div class="muted">' + money2(c.orders_total) + '</div>' : '—') + '</td>'
@@ -153,6 +187,17 @@
       if (bad.length) { say(false, '없는 주: ' + bad.join(', ')); return; }
       return patch(id, { scope_states: list }, '열람 범위를 바꿨습니다.');
     }
+    if (a === 'ads') {   // 1105 · 광고 범위
+      var list2 = LP.st.ads || [];
+      var cur2 = c.scope_ads && c.scope_ads.length ? c.scope_ads.map(function (x) { var i = -1; list2.forEach(function (a2, j) { if (a2.ad_id === x) i = j; }); return i >= 0 ? String(i + 1) : x; }).join(', ') : '전체';
+      var v2 = prompt(c.customer_name + ' — 볼 수 있는 광고\n번호(또는 광고 ID)를 쉼표로 · 「전체」면 모든 광고\n\n' + list2.map(function (a2, j) { return (j + 1) + ') ' + adLabel(a2.ad_id) + ' · ' + a2.ad_id + ' · ' + a2.n + '건'; }).join('\n'), cur2);
+      if (v2 == null) return; v2 = v2.trim();
+      var ids = !v2 || v2 === '전체' ? [] : v2.split(',').map(function (x) { x = x.trim(); return /^\d{1,3}$/.test(x) && list2[Number(x) - 1] ? list2[Number(x) - 1].ad_id : x; }).filter(Boolean);
+      var badA = ids.filter(function (x) { return !/^\d{5,25}$/.test(x); });
+      if (badA.length) { say(false, '광고 번호 · ID 를 확인하세요: ' + badA.join(', ')); return; }
+      return patch(id, { scope_ads: ids }, ids.length ? '광고 범위를 ' + ids.length + '개로 바꿨습니다.' : '모든 광고를 보게 했습니다.');
+    }
+    if (a === 'access') { g('lpAcQ').value = ''; loadAccess(id); try { g('lpAccessBox').scrollIntoView({ behavior: 'smooth' }); } catch (_) {} return; }
     if (a === 'pause') { if (!confirm(c.customer_name + ' 접속을 정지할까요? 열어 둔 화면도 다음 요청부터 막힙니다.')) return; return patch(id, { active: false }, '정지했습니다.'); }
     if (a === 'resume') return patch(id, { active: true }, '재개했습니다.');
     if (a === 'reissue') {
@@ -184,6 +229,7 @@
     if ('basis_amount' in d) o.push('기준 금액 ' + (Array.isArray(d.basis_amount) ? money(d.basis_amount[0]) + ' → ' + money(d.basis_amount[1]) : money(d.basis_amount)));
     if (d.memo) o.push('메모 수정');
     if ('scope_states' in d) { var s = Array.isArray(d.scope_states) && d.scope_states.length === 2 && (d.scope_states[0] === null || Array.isArray(d.scope_states[0])) ? d.scope_states[1] : d.scope_states; o.push('범위 ' + (s && s.length ? s.join(', ') : '전체')); }
+    if ('scope_ads' in d) { var sa = Array.isArray(d.scope_ads) && d.scope_ads.length === 2 && (d.scope_ads[0] === null || Array.isArray(d.scope_ads[0])) ? d.scope_ads[1] : d.scope_ads; o.push('광고 ' + (sa && sa.length ? sa.map(adLabel).join(', ') : '전체')); }
     if ('active' in d) o.push(d.active ? '재개' : '정지');
     if (d.last4) o.push('새 코드 …' + d.last4);
     return o.join(' · ');
@@ -304,6 +350,10 @@
     g('lpShelfQ').addEventListener('input', function () { clearTimeout(LP.timer2); LP.timer2 = setTimeout(function () { searchCust('lpShelfQ', 'lpShelfList', function (c) { LP.shelfCust = c; g('lpShelfQ').value = c.code + ' · ' + c.name; loadShelf(); }); }, 300); });
     g('lpExp').addEventListener('input', expHint); g('lpExp').addEventListener('change', expHint);
     g('lpScopeMode').addEventListener('change', function () { g('lpScopeBox').classList.toggle('hidden', g('lpScopeMode').value !== 'pick'); });
+    if (g('lpAdMode')) g('lpAdMode').addEventListener('change', function () { g('lpAdBox').classList.toggle('hidden', g('lpAdMode').value !== 'pick'); });
+    if (g('lpAcGo')) g('lpAcGo').addEventListener('click', function () { loadAccess(); });
+    if (g('lpAcQ')) g('lpAcQ').addEventListener('input', renderAccess);
+    if (g('lpAccess')) g('lpAccess').addEventListener('click', function (e) { if (e.target.closest('#lpAcAll')) loadAccess(null); });
     g('lpIssue').addEventListener('click', issue);
     if (g('lpDirIssue')) g('lpDirIssue').addEventListener('click', issueDirector);
     if (g('lpClaimSave')) g('lpClaimSave').addEventListener('click', saveClaimDays);
@@ -316,7 +366,7 @@
     g('lpShelf').addEventListener('change', function (e) { var i = e.target.closest('input.lp-q'); if (i) saveShelf(i.dataset.code, i.value.trim(), false); });
     g('lpShelf').addEventListener('click', function (e) { var b = e.target.closest('[data-hist]'); if (b) shelfHist(b.dataset.hist); });
     var tabs = g('tabs');
-    if (tabs) tabs.addEventListener('click', function (e) { var b = e.target.closest('.tab'); if (b && b.dataset.p === 'lp') { if (!LP.loaded) load(); else if (LP.st && LP.st.director && LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); } } });
+    if (tabs) tabs.addEventListener('click', function (e) { var b = e.target.closest('.tab'); if (b && b.dataset.p === 'lp') { if (!LP.loaded) load(); else { if (LP.st && LP.st.director && LP.st.ready) { loadCodes(); loadReveals(); loadNotes(); loadClaims(); } if (LP.st && LP.st.access) loadAccess(); } } });
   }
   var fmtT = function (t) { return new Date(t).toLocaleString('ko-KR', { timeZone: 'America/Mexico_City', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); };
   wire();

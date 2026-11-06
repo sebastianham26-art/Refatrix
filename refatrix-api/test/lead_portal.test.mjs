@@ -295,6 +295,34 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T1.id}/contact`)).statusCode, 404, '범위 밖 연락처');
   await call(D, 'PATCH', `/api/lead-portal-admin/codes/${codeId}`, { scope_states: [] });
 
+  { // 1105 · 대화 첫 메시지의 광고 ID → 그 광고로 분류 · 코드별 광고 범위
+    const AD = '1202' + String(Date.now()).slice(-12) + '39';
+    const TA = await one(`INSERT INTO meta_threads (platform, thread_id, user_id, name, first_at, last_at, in_count, msg_count, messages, customer_text, ai_state, status)
+      VALUES ('messenger',$1,$2,'Pancho',now(),now(),1,2,$3::jsonb,'hola','Nuevo León','nuevo') RETURNING id`,
+      ['t_ad' + T, 'psad' + T, JSON.stringify([{ at: new Date().toISOString(), me: true, text: 'Respondió al anuncio ad_id.' + AD }, { at: new Date().toISOString(), me: false, text: 'Hola, 8112345678 es mi número' }])]);
+    const lr = (await call(D, 'GET', `/api/meta-leads/${TA.id}`)).json();
+    assert.equal(lr.ad_id, AD, '대화 속 광고 ID'); assert.equal(lr.ad_src, 'mensaje');
+    const st = (await call(D, 'GET', '/api/lead-portal-admin/status')).json();
+    assert.ok(st.ads.some((a) => a.ad_id === AD && a.n >= 1), '고르기 목록에 광고 · 문의 수'); assert.equal(st.access, true);
+    let ra = await call(D, 'PATCH', `/api/lead-portal-admin/codes/${codeId}`, { scope_ads: [AD, 'xx'] }); assert.equal(ra.statusCode, 200, ra.body);
+    assert.deepEqual(ra.json().item.scope_ads, [AD], '잘못된 ID 는 버림');
+    const ids = (await call(C, 'GET', '/api/lead-portal/leads')).json().leads.map((l) => l.id);
+    assert.ok(ids.includes(Number(TA.id)) && !ids.includes(Number(T2.id)), '그 광고 문의만');
+    assert.equal((await call(C, 'POST', `/api/lead-portal/leads/${T2.id}/contact`)).statusCode, 404, '광고 범위 밖 연락처');
+    assert.equal((await call(C, 'GET', `/api/lead-portal/leads/${TA.id}/chat`)).json().error, 'need_contact', '범위 안 문의는 열림');
+    ra = await call(D, 'PATCH', `/api/lead-portal-admin/codes/${codeId}`, { scope_ads: [] }); assert.equal(ra.json().item.scope_ads, null, '모든 광고');
+    assert.ok((await call(C, 'GET', '/api/lead-portal/leads')).json().leads.some((l) => l.id === Number(T2.id)));
+    await query(`UPDATE meta_threads SET status='descartado' WHERE id=$1`, [TA.id]);
+  }
+  { // 1105 · 접속 기록 — 로그인 · 화면 열기 → 고객 · 날짜별, 화면 권한이면 영업도 봄
+    await call(C, 'GET', '/api/lead-portal/me');
+    let ac = await call(R1, 'GET', `/api/lead-portal-admin/access?code_id=${codeId}`); assert.equal(ac.statusCode, 200, ac.body);
+    const row = ac.json().items[0]; assert.ok(row && row.opens >= 2 && row.logins >= 1, '코드 입력 · 열기 횟수');
+    assert.match(row.date, /^\d{4}-\d{2}-\d{2}$/); assert.match(row.first, /^\d{2}:\d{2}$/); assert.ok(row.times.length >= 2);
+    assert.equal(row.customer_name, cust.name || row.customer_name);
+    assert.equal((await call({}, 'GET', '/api/lead-portal-admin/access')).statusCode, 401);
+  }
+
   // ── 0299 · 문의 메모(작성자만) · 디렉터 전용 코드 ──
   const cust2 = await one(`INSERT INTO customers (name, code, discount, owner_id, created_by, doc_gate) VALUES ($1,$2,30,$3,$4,false) RETURNING id`, [`Refacc Otra ${T}`, `LQ${T}`, rep2.id, dir.id]);
   r = await call(D, 'POST', '/api/lead-portal-admin/codes', { customer_id: cust2.id, expires_on: '2099-12-31' }); const CODE_B = r.json().code;
@@ -514,7 +542,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
   r = await call(C, 'GET', '/api/lead-portal/me'); assert.equal(r.statusCode, 403); assert.equal(r.json().error, 'expired'); assert.equal(r.json().expires_on, '2020-01-01');
   await call(D, 'PATCH', `/api/lead-portal-admin/codes/${codeId}`, { expires_on: '2099-12-31' });
   r = await call(D, 'GET', `/api/lead-portal-admin/codes/${codeId}/log`);
-  assert.deepEqual(r.json().items.map((x) => x.action).reverse(), ['issue', 'update', 'update', 'pause', 'resume', 'update', 'update']);
+  assert.deepEqual(r.json().items.map((x) => x.action).reverse(), ['issue', 'update', 'update', 'update', 'update', 'pause', 'resume', 'update', 'update'], '1105 · 광고 범위 바꿈 2건 포함');
 
   // ── 재발급 · 삭제 ──
   r = await call(D, 'POST', `/api/lead-portal-admin/codes/${codeId}/reissue`); assert.equal(r.statusCode, 200);

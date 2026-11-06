@@ -39,13 +39,14 @@ import { recordQuoteDevDemand } from './quoteDevDemand.js';
 import { kickQuoteNotify } from './quoteWaNotify.js';
 import { resolveSeller, exclusivityReady } from './exclusivity.js';
 import { META_STATES } from './metaLeadExtract.js';
+import { AD_EXPR, cleanAdId } from './metaAds.js';   // 1105 · 광고별 열람 범위
 import { isBotText } from './metaLeadsAi.js';   // 1104 · 우리 정해진 안내문 = 자동 응답
 import { oeReady, oeByProduct } from './oeCodes.js';
 import { normOe, oeToken } from './oeParse.js';
 import { chatReady, claimDays, sendMessengerSmart } from './metaPageMsgs.js';   // 0300 · Messenger 대화
 
 export const LP_TYP = 'lead_portal';
-export const LP_BUILD = 'lp-1105a';
+export const LP_BUILD = 'lp-1105b';
 const TOKEN_TTL = '7d';
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';           // 0 · O · 1 · I · L 없음(전화로 불러도 헷갈리지 않게)
 const MAX_FAIL = 8;
@@ -483,6 +484,28 @@ export default async function leadPortalRoutes(app) {
   // ════════════════════════════════════════════════════════════════
   //  고객 포털 (Netlify /lp-api/* → /api/lead-portal/*) — 스페인어 오류코드
   // ════════════════════════════════════════════════════════════════
+  // 1105 · 이 코드가 볼 수 있는 문의 — 주(scope_states) · 광고(scope_ads). 디렉터 코드는 전부. 「 AND …」 또는 ''
+  function scopeSql(k, args) {
+    if (isDirCode(k)) return '';
+    let sql = '';
+    if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); sql += ` AND ${STATE_EXPR} = ANY($${args.length}::text[])`; }
+    if (Array.isArray(k.scope_ads) && k.scope_ads.length) { args.push(k.scope_ads); sql += ` AND ${AD_EXPR} = ANY($${args.length}::text[])`; }
+    return sql;
+  }
+  // 1105 · 접속 기록(0317) — 로그인 · 화면 열기 · 사용 중(5분마다)
+  let acReady = false, acProbe = 0;
+  async function accessReady() {
+    if (acReady) return true;
+    if (Date.now() - acProbe < 30000) return false;
+    acProbe = Date.now();
+    try { acReady = (await query(`SELECT 1 FROM information_schema.tables WHERE table_name='lead_portal_access'`)).rows.length > 0; } catch (_) { acReady = false; }
+    return acReady;
+  }
+  async function recordAccess(k, kind, req) {
+    if (!k || !(await accessReady())) return;
+    const ua = String((req && req.headers && req.headers['user-agent']) || '').slice(0, 200) || null;
+    await query(`INSERT INTO lead_portal_access (code_id, kind, ip, ua) VALUES ($1,$2,$3,$4)`, [k.id, kind, req ? clientIp(req) : null, ua]).catch(() => {});
+  }
   async function loadCode(id) {
     return (await query(
       `SELECT k.*, to_char(k.expires_on,'YYYY-MM-DD') AS expires_ymd, c.name AS customer_name, c.code AS customer_code,
@@ -510,6 +533,7 @@ export default async function leadPortalRoutes(app) {
     req.lp = k;
     if (!k.last_seen_at || Date.now() - new Date(k.last_seen_at).getTime() > 5 * 60 * 1000) {
       query(`UPDATE lead_portal_codes SET last_seen_at=now() WHERE id=$1`, [k.id]).catch(() => {});
+      recordAccess(k, 'active', req);   // 1105 · 사용 중(5분마다 1번)
     }
   }
   const P = { preHandler: portalGuard };
@@ -536,16 +560,17 @@ export default async function leadPortalRoutes(app) {
     if (b) return reply.code(b.code).send(b.body);
     await query(`UPDATE lead_portal_codes SET last_seen_at=now() WHERE id=$1`, [k.id]);
     await logEvent({ userId: null, action: 'login', target: `lead_portal:${k.id}`, detail: { ip, customer: k.customer_code } });
+    await recordAccess(k, 'login', req);
     return { token: sign(k), me: meOut(k) };
   });
 
   // 열 때마다 토큰을 새로 준다(7일 미접속이면 코드 다시 입력)
-  app.get('/api/lead-portal/me', P, async (req) => ({ token: sign(req.lp), me: meOut(req.lp) }));
+  app.get('/api/lead-portal/me', P, async (req) => { await recordAccess(req.lp, 'open', req); return { token: sign(req.lp), me: meOut(req.lp) }; });
 
   app.get('/api/lead-portal/leads', P, async (req) => {
     const k = req.lp;
     const args = [k.customer_id]; const conds = [`t.status <> 'descartado'`, `COALESCE(t.in_count,0) > 0`];
-    if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); conds.push(`${STATE_EXPR} = ANY($${args.length}::text[])`); }
+    { const sc = scopeSql(k, args); if (sc) conds.push(sc.replace(/^ AND /, '')); }   // 1105 · 주 + 광고 범위
     const rows = (await query(
       `SELECT t.id, t.platform, COALESCE(t.m_name, t.name) AS name, t.username,
               to_char(t.first_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS first_mx,
@@ -606,7 +631,7 @@ export default async function leadPortalRoutes(app) {
     const k = req.lp; const id = idOf(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_id' });
     const args = [id]; let scope = '';
-    if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($2::text[])`; }
+    scope = scopeSql(k, args);   // 1105 · 주 + 광고 범위
     const t = (await query(
       `SELECT t.id, t.platform, COALESCE(t.m_name, t.name) AS name, t.username, ${PHONE_EXPR} AS phone
          FROM meta_threads t WHERE t.id=$1 AND t.status <> 'descartado'${scope}`, args)).rows[0];
@@ -737,7 +762,7 @@ export default async function leadPortalRoutes(app) {
   }
   async function messengerThread(k, id) {
     const args = [id]; let scope = '';
-    if (!isDirCode(k) && Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($2::text[])`; }
+    scope = scopeSql(k, args);   // 1105 · 주 + 광고 범위
     return (await query(
       `SELECT t.id, t.platform, t.user_id AS psid, t.last_in_at, t.status, t.ai_summary AS summary, t.messages,
               COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts
@@ -889,7 +914,7 @@ export default async function leadPortalRoutes(app) {
   // 0299 · 문의 메모 — 쓰기 · 지우기(자기 것만). 지운 메모는 디렉터 화면에 「삭제됨」으로 남는다.
   async function threadVisible(k, id) {
     const args = [id]; let scope = '';
-    if (!isDirCode(k) && Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($2::text[])`; }
+    scope = scopeSql(k, args);   // 1105 · 주 + 광고 범위
     return !!(await query(`SELECT 1 FROM meta_threads t WHERE t.id=$1 AND t.status <> 'descartado'${scope}`, args)).rows[0];
   }
   app.post('/api/lead-portal/leads/:id/notes', P, async (req, reply) => {
@@ -959,7 +984,7 @@ export default async function leadPortalRoutes(app) {
     let threadIds = [...threads];
     if (threadIds.length) {
       const args = [threadIds]; let scope = '';
-      if (Array.isArray(k.scope_states) && k.scope_states.length) { args.push(k.scope_states); scope = ` AND ${STATE_EXPR} = ANY($2::text[])`; }
+      scope = scopeSql(k, args);   // 1105 · 주 + 광고 범위
       threadIds = (await query(`SELECT t.id FROM meta_threads t WHERE t.id = ANY($1::bigint[]) AND t.status <> 'descartado'${scope}`, args)).rows.map((r) => Number(r.id));
     }
     const discount = Number(k.discount) || 0;
@@ -1109,12 +1134,52 @@ export default async function leadPortalRoutes(app) {
     const list = (Array.isArray(v) ? v : [v]).map((s) => String(s).trim()).filter((s) => META_STATES.includes(s));
     return list.length ? [...new Set(list)] : null;
   };
+  // 1105 · 광고 범위 — 광고 ID 목록(빈 값 = 모든 광고)
+  const cleanAds = (v) => {
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) return null;
+    const list = (Array.isArray(v) ? v : String(v).split(',')).map(cleanAdId).filter(Boolean);
+    return list.length ? [...new Set(list)].slice(0, 100) : null;
+  };
   const cleanAmount = (v) => { if (v == null || v === '') return null; const n = Number(String(v).replace(/[,\s$]/g, '')); return Number.isFinite(n) && n >= 0 && n < 1e12 ? Math.round(n * 100) / 100 : undefined; };
 
-  app.get('/api/lead-portal-admin/status', R, async (req) => ({
-    ready: await portalReady(), build: LP_BUILD, url: portalUrl(), states: META_STATES,
-    director: req.ctx.perm.role === 'director', today: todayMx(),
-  }));
+  app.get('/api/lead-portal-admin/status', R, async (req) => {
+    // 1105 · 광고 범위 고르기용 — 등록된 광고 + 문의에서 보인 광고 ID(문의 수)
+    let ads = [];
+    try {
+      ads = (await query(
+        `SELECT x.ad_id, a.name, x.n FROM (SELECT ${AD_EXPR} AS ad_id, count(*)::int AS n FROM meta_threads t WHERE t.status <> 'descartado' GROUP BY 1) x
+           LEFT JOIN meta_ads a ON a.ad_id = x.ad_id WHERE x.ad_id IS NOT NULL
+         UNION
+         SELECT a.ad_id, a.name, 0 FROM meta_ads a WHERE NOT EXISTS (SELECT 1 FROM meta_threads t WHERE ${AD_EXPR} = a.ad_id)
+         ORDER BY 3 DESC, 1`)).rows.map((r) => ({ ad_id: String(r.ad_id), name: r.name || null, n: Number(r.n) || 0 }));
+    } catch (_) { ads = []; }
+    return { ready: await portalReady(), build: LP_BUILD, url: portalUrl(), states: META_STATES,
+      director: req.ctx.perm.role === 'director', today: todayMx(), ads, access: await accessReady() };
+  });
+
+  // 1105 · 접속 기록 — 고객(접속코드)별 · 날짜별(멕시코 시간) 접속 시각. 이 화면에 접근 권한이 있는 직원 모두(R)
+  app.get('/api/lead-portal-admin/access', R, async (req, reply) => {
+    if (!(await accessReady())) return reply.code(503).send({ error: 'migration_required', note: '0317 마이그레이션이 필요합니다.' });
+    const to = ymd(req.query.to) || todayMx();
+    const from = ymd(req.query.from) || new Date(Date.parse(to + 'T12:00:00Z') - 13 * 86400000).toISOString().slice(0, 10);
+    const args = [from, to]; let extra = '';
+    const cid = idOf(req.query.code_id); if (cid) { args.push(cid); extra = ` AND a.code_id = $${args.length}`; }
+    const rows = (await query(
+      `SELECT a.code_id, to_char(a.at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD') AS d,
+              to_char(min(a.at) AT TIME ZONE 'America/Mexico_City','HH24:MI') AS first_t,
+              to_char(max(a.at) AT TIME ZONE 'America/Mexico_City','HH24:MI') AS last_t,
+              count(*) FILTER (WHERE a.kind = 'login')::int AS logins,
+              count(*) FILTER (WHERE a.kind IN ('login','open'))::int AS opens,
+              count(*) FILTER (WHERE a.kind = 'active')::int AS active,
+              (array_agg(to_char(a.at AT TIME ZONE 'America/Mexico_City','HH24:MI') ORDER BY a.at) FILTER (WHERE a.kind IN ('login','open')))[1:40] AS times,
+              COALESCE(c.name, '${DIRECTOR_NAME}') AS customer_name, COALESCE(c.code, 'DIR') AS customer_code, k.code_last4, (to_jsonb(k)->>'kind') AS kind
+         FROM lead_portal_access a JOIN lead_portal_codes k ON k.id = a.code_id LEFT JOIN customers c ON c.id = k.customer_id
+        WHERE (a.at AT TIME ZONE 'America/Mexico_City')::date BETWEEN $1::date AND $2::date${extra}
+        GROUP BY a.code_id, d, k.id, c.id
+        ORDER BY d DESC, max(a.at) DESC LIMIT 2000`, args)).rows;
+    return { from, to, items: rows.map((r) => ({ code_id: Number(r.code_id), date: r.d, first: r.first_t, last: r.last_t,
+      logins: r.logins, opens: r.opens, active: r.active, times: r.times || [], customer_name: r.customer_name, customer_code: r.customer_code, last4: r.code_last4, kind: r.kind || 'customer' })) };
+  });
 
   // 고객 찾기 — 직원이 볼 수 있는 고객만
   app.get('/api/lead-portal-admin/customers', R, async (req) => {
@@ -1151,7 +1216,7 @@ export default async function leadPortalRoutes(app) {
   const CODE_SELECT = `
     SELECT k.id, k.customer_id, COALESCE(c.code, 'DIR') AS customer_code, COALESCE(c.name, '${DIRECTOR_NAME}') AS customer_name, k.code_last4,
            (to_jsonb(k)->>'kind') AS kind,
-           to_char(k.expires_on,'YYYY-MM-DD') AS expires_on, k.basis_amount, k.memo, k.scope_states, k.active,
+           to_char(k.expires_on,'YYYY-MM-DD') AS expires_on, k.basis_amount, k.memo, k.scope_states, (to_jsonb(k)->'scope_ads') AS scope_ads, k.active,
            k.last_seen_at, k.created_at, to_char(k.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD') AS created_on,
            (SELECT count(*)::int FROM lead_portal_reveals r WHERE r.code_id = k.id) AS reveals,
            (SELECT count(*)::int FROM quotes q WHERE q.lead_portal_code_id = k.id AND q.deleted_at IS NULL AND q.status <> 'cancelled') AS orders,
@@ -1160,7 +1225,8 @@ export default async function leadPortalRoutes(app) {
   const codeOut = (r, today) => ({
     id: Number(r.id), customer_id: r.customer_id == null ? null : Number(r.customer_id), kind: r.kind || 'customer', customer_code: r.customer_code, customer_name: r.customer_name,
     last4: r.code_last4, expires_on: r.expires_on, days_left: daysBetween(today, r.expires_on),
-    basis_amount: num(r.basis_amount), memo: r.memo || null, scope_states: r.scope_states || null, active: !!r.active,
+    basis_amount: num(r.basis_amount), memo: r.memo || null, scope_states: r.scope_states || null,
+    scope_ads: Array.isArray(r.scope_ads) && r.scope_ads.length ? r.scope_ads.map(String) : null, active: !!r.active,
     state: codeState(r, today), last_seen_at: r.last_seen_at, created_on: r.created_on,
     reveals: Number(r.reveals) || 0, orders: Number(r.orders) || 0, orders_total: Number(r.orders_total) || 0,
   });
@@ -1207,7 +1273,9 @@ export default async function leadPortalRoutes(app) {
         `INSERT INTO lead_portal_codes (customer_id, code_hash, code_last4, expires_on, basis_amount, memo, scope_states, created_by, updated_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING id`,
         [cid, codeHash(norm), norm.slice(-4), exp, amt, clip(b.memo, 500), cleanStates(b.scope_states), req.ctx.perm.userId])).rows[0];
-      await clog(c, k.id, 'issue', { expires_on: exp, basis_amount: amt, scope_states: cleanStates(b.scope_states) }, req.ctx.perm.userId);
+      const ads = cleanAds(b.scope_ads);
+      if (ads && (await accessReady())) await c.query(`UPDATE lead_portal_codes SET scope_ads=$2 WHERE id=$1`, [k.id, ads]);
+      await clog(c, k.id, 'issue', { expires_on: exp, basis_amount: amt, scope_states: cleanStates(b.scope_states), ...(ads ? { scope_ads: ads } : {}) }, req.ctx.perm.userId);
       return k;
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `lead_portal_code:${row.id}`, detail: { customer_id: cid, expires_on: exp } });
@@ -1237,6 +1305,11 @@ export default async function leadPortalRoutes(app) {
     if ('scope_states' in b) {
       const s = cleanStates(b.scope_states);
       if (JSON.stringify(cur.scope_states || null) !== JSON.stringify(s)) { add('scope_states', s); changes.scope_states = [cur.scope_states || null, s]; }
+    }
+    if ('scope_ads' in b) {   // 1105
+      if (!(await accessReady())) return reply.code(503).send({ error: 'migration_required', note: '0317 마이그레이션이 필요합니다.' });
+      const s2 = cleanAds(b.scope_ads);
+      if (JSON.stringify(cur.scope_ads || null) !== JSON.stringify(s2)) { add('scope_ads', s2); changes.scope_ads = [cur.scope_ads || null, s2]; }
     }
     if ('active' in b) { const a = !!b.active; if (a !== !!cur.active) { add('active', a); changes.active = a; } }
     if (!sets.length) return { ok: true, unchanged: true };
