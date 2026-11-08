@@ -48,13 +48,16 @@ function canvasStub(w) {
   w.HTMLCanvasElement.prototype.toDataURL = function () { return 'data:image/png;base64,AA=='; };
 }
 
-function boot(url = 'https://example.test/refatrix-viofinder.html') {
-  const calls = [];
+function boot(url = 'https://example.test/refatrix-viofinder.html', opts = {}) {
+  const calls = []; const dialogs = [];
   const dom = new JSDOM(readFileSync(HTML, 'utf-8'), {
     runScripts: 'dangerously', url, pretendToBeVisual: true,
     beforeParse(w) {
       w.sessionStorage.setItem('refatrix_session', JSON.stringify({ token: 'T', api: 'https://api.test', user: { name: 'U', role: 'director' } }));
-      w.alert = () => {}; w.confirm = () => true; w.scrollTo = () => {}; w.open = () => null;
+      // 1108 · 화면 언어 — 기존 시험은 한국어 화면 기준(jsdom 브라우저 언어는 en-US)
+      if (opts.langs) Object.defineProperty(w.navigator, 'languages', { value: opts.langs, configurable: true });
+      if (opts.lang !== null) w.localStorage.setItem('refatrix_lang', opts.lang || 'ko');
+      w.alert = (m) => { dialogs.push(String(m)); }; w.confirm = (m) => { dialogs.push(String(m)); return true; }; w.scrollTo = () => {}; w.open = () => null;
       w.URL.createObjectURL = () => 'blob:x';
       canvasStub(w);
       // 이미지는 바로 「불러옴」
@@ -124,7 +127,7 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
       };
     },
   });
-  return { dom, w: dom.window, d: dom.window.document, calls };
+  return { dom, w: dom.window, d: dom.window.document, calls, dialogs };
 }
 
 test('대기열: VIO 순 20차종 훑기 · 재고 품목 수 · 후보 · 발송 표시', { skip: SKIP }, async () => {
@@ -529,4 +532,49 @@ test('다시 열면 저장한 디자인 그대로(템플릿·문구·차량 사�
   const put = calls.filter((c) => /\/api\/vio-promos\/9\/design$/.test(c.u)).at(-1).body;
   assert.equal(put.design.veh.scale, 1.1); assert.equal(put.design.veh.src, 'url'); assert.equal(put.design.veh.url, 'https://upload.wikimedia.org/c/saved-car.jpg'); assert.equal(put.veh_key, null);
   assert.ok(await until(() => /디자인 자동 저장/.test(d.getElementById('vpSaveSt').textContent)));
+});
+
+// ── 1108 · 화면 언어(크롬 언어 설정) ──────────────────────────────────────
+function koLeft(d) {   // 화면에 남은 한글(스크립트 · 언어 선택 제외) — 텍스트 + 툴팁 · 안내 문구
+  const out = []; const H = /[가-힣]/;
+  const tw = d.createTreeWalker(d.body, 5, null); let n;
+  while ((n = tw.nextNode())) {
+    if (n.nodeType === 3) { const p = n.parentNode; if (p && /^(SCRIPT|STYLE|TEXTAREA)$/.test(p.nodeName)) continue; if (p && p.closest && p.closest('#rfxLang')) continue; if (H.test(n.nodeValue)) out.push(n.nodeValue.trim()); }
+    else for (const a of ['title', 'placeholder', 'aria-label']) { const v = n.getAttribute(a); if (v && H.test(v) && !n.closest('#rfxLang')) out.push('@' + a + ':' + v); }
+  }
+  return [...new Set(out)];
+}
+test('언어: 스페인어 크롬 → 화면 · 프로모션 창 · 알림이 스페인어 (1108 i18n)', { skip: SKIP }, async () => {
+  const { w, d, dialogs } = boot(undefined, { lang: null, langs: ['es-MX', 'es', 'en'] });
+  assert.ok(await until(() => d.querySelector('#vpQueue [data-qrank="1"]')));
+  assert.equal(d.documentElement.lang, 'es'); assert.equal(w.RFX_I18N.lang, 'es');
+  assert.match(d.title, /Buscador VIO · Promociones/);
+  assert.match(d.querySelector('#vpQueue [data-qrank="1"]').textContent, /Crear promoción/);
+  d.querySelector('#vpQueue [data-qrank="1"]').click();
+  assert.ok(await until(() => d.querySelectorAll('#vpParts input[data-code]').length > 0));
+  await tick(300);
+  assert.match(d.getElementById('vpOverlay').textContent, /Crear promoción/);
+  const row = d.querySelector('#vpParts input[data-code="CQ0280L"]').closest('.vpCode');
+  assert.equal(row.querySelector('.pos').textContent, 'Del.·Inf.·Izq.', '장착 위치 칩도 스페인어');
+  assert.match(row.textContent, /Stock/);
+  const left = koLeft(d);
+  assert.deepEqual(left, [], '화면에 한글이 남음: ' + left.slice(0, 15).join(' | '));
+  w.alert('저장 실패'); w.confirm('이 금액을 이미지(디자인)에 넣을까요?');
+  assert.deepEqual(dialogs.slice(-2), ['No se pudo guardar', '¿Poner este importe en la imagen (diseño)?']);
+  assert.ok(d.getElementById('rfxLang'), '언어 선택');
+});
+test('언어: 영어 크롬 → 영어 · 한국어 크롬 → 그대로 · 🌐 선택은 기억', { skip: SKIP }, async () => {
+  let c = boot(undefined, { lang: null, langs: ['en-US', 'en'] });
+  assert.ok(await until(() => c.d.querySelector('#vpQueue [data-qrank="1"]')));
+  assert.equal(c.w.RFX_I18N.lang, 'en'); assert.match(c.d.querySelector('#vpQueue [data-qrank="1"]').textContent, /Create promotion/);
+  c = boot(undefined, { lang: null, langs: ['ko-KR', 'ko'] });
+  assert.ok(await until(() => c.d.querySelector('#vpQueue [data-qrank="1"]')));
+  assert.equal(c.w.RFX_I18N.lang, 'ko'); assert.match(c.d.querySelector('#vpQueue [data-qrank="1"]').textContent, /프로모션 만들기/);
+  assert.equal(c.d.documentElement.lang, 'ko');
+  c = boot(undefined, { lang: 'es', langs: ['ko-KR'] });   // 🌐 에서 Español 을 고른 경우 — 크롬이 한국어여도
+  assert.ok(await until(() => c.d.querySelector('#vpQueue [data-qrank="1"]')));
+  assert.equal(c.w.RFX_I18N.lang, 'es');
+  const sel = c.d.querySelector('#rfxLang select'); assert.equal(sel.value, 'es');
+  sel.value = 'en'; try { sel.dispatchEvent(new c.w.Event('change')); } catch (_) {}
+  assert.equal(c.w.localStorage.getItem('refatrix_lang'), 'en');
 });
