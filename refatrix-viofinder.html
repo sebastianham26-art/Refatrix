@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf17s</title>
+<title>Refatrix ERP · VIO 제품찾기·프로모션 · build vf17s-pos</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
@@ -1440,6 +1440,7 @@ window.VP_BRAND={"red": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4QAAAD4C
   }
   function posOf(it){
     const p=ST.pos&&ST.pos[String(it.ctr).toUpperCase()]; if(!p||!p.ko) return null;
+    if(p.src==='erp') return Object.assign({mine:false},p);   // 1108 · CTR 확인값(Platform) 우선 — 제품 찾기와 같은 위치
     const tok=modelTokOf(ST.m), g=curGen();
     const mine=(p.rows||[]).filter(r=>{ const n=normS(r.model); if(!(n&&tok&&(n===tok||n.indexOf(tok+' ')===0||tok.indexOf(n+' ')===0))) return false;
       if(g&&r.y_from&&r.y_to&&((g.ys&&r.y_to<g.ys)||(g.ye&&r.y_from>g.ye))) return false; return true; });

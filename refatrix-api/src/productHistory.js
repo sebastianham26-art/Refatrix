@@ -27,6 +27,7 @@ export const FIELD_LABELS = {
   material: 'Material', rack_location: 'Rack 위치',
   _syd: 'Clave SyD(분해)', _app: '적용차종',
   oe: 'OE', _oe: 'OE(분해)',   // 0228
+  pos: 'Posición (장착 위치)',  // 1108 · 0323 products.mount_pos — 플랫폼 확인완료 이력의 칸 이름
   // 제품 영구 삭제(2026-09-17) — 삭제된 행은 product_id 가 비고 code 스냅샷만 남는다.
   _deleted: '삭제된 제품', _removed: '함께 정리된 항목', _reason: '사유',
 };

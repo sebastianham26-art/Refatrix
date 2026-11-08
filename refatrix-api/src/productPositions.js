@@ -118,7 +118,67 @@ export function summarize(rows) {
   for (const r of rows || []) { if (r.block) b.add(r.block); if (r.level) l.add(r.level); if (r.side) s.add(r.side); }
   const srt = (set) => [...set].sort((x, y) => ORDER[x] - ORDER[y]);
   const blocks = srt(b), levels = srt(l), sides = srt(s);
-  const part = (arr, map) => arr.map((k) => map[k]).join('/');
-  const ko = [part(blocks, KO), part(levels, KO), part(sides, KO)].filter(Boolean).join('·');
-  return { blocks, levels, sides, ko };
+  return { blocks, levels, sides, ko: koText({ blocks, levels, sides }) };
+}
+/** {blocks, levels, sides} → '앞·하·좌/우' (제품 화면 배지 표기) */
+export function koText(sum) {
+  const part = (arr) => [...new Set((arr || []).filter((k) => KO[k]))].sort((x, y) => ORDER[x] - ORDER[y]).map((k) => KO[k]).join('/');
+  return [part(sum && sum.blocks), part(sum && sum.levels), part(sum && sum.sides)].filter(Boolean).join('·');
+}
+
+// ─────────── 1108 · 품목 장착 위치 1칸(pos) — REFATRIX Platform 카탈로그 점검 ───────────
+//   표준 표기(저장 · 비교 · 응답): 스페인어 「앞뒤 상하 좌우」 순, 같은 무리 안은 '/'.
+//     예) 'Delantera Inferior Izquierda' · 'Delantera Izquierda/Derecha' · 'Trasera'
+//   입력은 넓게 받는다: Front Lower LH · DELANTERO INF IZQ · Del. Inf. Izq./Der. · 앞·하·좌 · L/R · AMBOS …
+//   모르는 낱말이 하나라도 있으면 거절(null 이 아니라 { error }) — 이상한 글자가 마스터에 들어가지 않게.
+const POS_WORDS = {
+  front: ['FRONT', 'FR', 'DELANTERO', 'DELANTERA', 'DELANTEROS', 'DELANTERAS', 'DEL', 'DELANT', '앞'],
+  rear: ['REAR', 'RR', 'TRASERO', 'TRASERA', 'TRASEROS', 'TRASERAS', 'TRAS', 'POSTERIOR', '뒤'],
+  upper: ['UPPER', 'UP', 'SUPERIOR', 'SUP', '상'],
+  lower: ['LOWER', 'LO', 'INFERIOR', 'INF', '하'],
+  lh: ['LH', 'LEFT', 'L', 'IZQUIERDO', 'IZQUIERDA', 'IZQ', 'IZQDO', 'IZQDA', '좌'],
+  rh: ['RH', 'RIGHT', 'R', 'DERECHO', 'DERECHA', 'DER', 'DCHO', 'DCHA', '우'],
+};
+const POS_BOTH = { AMBOS: ['lh', 'rh'], AMBAS: ['lh', 'rh'], LR: ['lh', 'rh'], 'L-R': ['lh', 'rh'], 좌우: ['lh', 'rh'], 공용: ['lh', 'rh'], 앞뒤: ['front', 'rear'], 상하: ['upper', 'lower'] };
+const POS_FILLER = new Set(['Y', 'E', 'AND', 'LADO', 'LADOS', 'POSICION', 'POS', 'MONTAJE', '쪽', '측']);
+const POS_GROUP = { front: 'b', rear: 'b', upper: 'l', lower: 'l', lh: 's', rh: 's' };
+const POS_LOOKUP = new Map(Object.entries(POS_WORDS).flatMap(([k, ws]) => ws.map((w) => [w, k])));
+
+/** '...' → { blocks, levels, sides } · 빈 값 → null · 모르는 낱말 → { error:'bad_pos', token } */
+export function parsePosText(text) {
+  const t = norm(text);
+  if (!t) return null;
+  const tokens = t.split(/[\s\/·・,;+&()|]+|\.(?=\S|$)/).map((x) => x.replace(/\.+$/, '')).filter(Boolean);
+  const got = { b: new Set(), l: new Set(), s: new Set() };
+  for (const tk of tokens) {
+    if (POS_FILLER.has(tk)) continue;
+    if (POS_BOTH[tk]) { for (const k of POS_BOTH[tk]) got[POS_GROUP[k]].add(k); continue; }
+    const k = POS_LOOKUP.get(tk);
+    if (k) { got[POS_GROUP[k]].add(k); continue; }
+    // 붙여 쓴 한글(앞하좌) — 글자마다 다시 본다
+    if (/^[가-힣]+$/.test(tk) && [...tk].every((ch) => POS_LOOKUP.has(ch) || POS_FILLER.has(ch))) {
+      for (const ch of tk) { const kk = POS_LOOKUP.get(ch); if (kk) got[POS_GROUP[kk]].add(kk); }
+      continue;
+    }
+    return { error: 'bad_pos', token: tk };
+  }
+  if (!got.b.size && !got.l.size && !got.s.size) return { error: 'bad_pos', token: t };
+  const srt = (set) => [...set].sort((x, y) => ORDER[x] - ORDER[y]);
+  return { blocks: srt(got.b), levels: srt(got.l), sides: srt(got.s) };
+}
+
+/** {blocks, levels, sides} → 표준 표기(없으면 null). 업로드 요약(summarize)도 그대로 넣을 수 있다. */
+export function posText(sum) {
+  if (!sum) return null;
+  const pick = (arr) => [...new Set((arr || []).filter((k) => ES[k]))].sort((x, y) => ORDER[x] - ORDER[y]).map((k) => ES[k]).join('/');
+  const s = [pick(sum.blocks), pick(sum.levels), pick(sum.sides)].filter(Boolean).join(' ');
+  return s || null;
+}
+
+/** 아무 표기 → 표준 표기. 빈 값 null · 읽을 수 없으면 undefined. */
+export function canonPos(text) {
+  const p = parsePosText(text);
+  if (p == null) return null;
+  if (p.error) return undefined;
+  return posText(p);
 }

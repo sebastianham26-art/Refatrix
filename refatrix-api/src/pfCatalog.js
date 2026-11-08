@@ -19,12 +19,17 @@ import { query, withTx } from './db.js';
 import { normalizeMaterial, splitSyd, parseApplications } from './productImport.js';
 import { parseOe, formatOe } from './oeParse.js';
 import { syncOe } from './oeCodes.js';
+import { canonPos, posText } from './productPositions.js';
 
 // CTR 이 고칠 수 있는 칸 — 제품 마스터 이름 그대로. 코드(키)·가격·재고·SAT 등은 없다.
-export const PF_FIELDS = ['name', 'scode', 'app', 'oe', 'material'];
+//   1108 · pos(장착 위치) 추가 — 저장 칸은 products.mount_pos(0323). 비어 있으면 업로드(0292) 요약을 보여 준다.
+export const PF_FIELDS = ['name', 'scode', 'app', 'oe', 'material', 'pos'];
 export const PF_LABELS = {
-  name: '제품명', scode: 'SYD 코드', app: '적용차종', oe: 'OE 번호', material: '소재',
+  name: '제품명', scode: 'SYD 코드', app: '적용차종', oe: 'OE 번호', material: '소재', pos: '장착 위치',
 };
+// 칸 이름 ≠ 제품 마스터 열 이름인 것만
+export const PF_COLUMN = { pos: 'mount_pos' };
+const colOf = (f) => PF_COLUMN[f] || f;
 
 // 0302 이 아직 적용되지 않은 환경에서 서버가 죽지 않게 — 긍정은 영구, 부정은 30초마다 다시 본다.
 let readyFlag = false; let probeAt = 0;
@@ -35,9 +40,11 @@ export async function pfCatalogReady() {
   try {
     const r = await query(`SELECT to_regclass('public.pf_catalog_review') AS a, to_regclass('public.pf_catalog_confirms') AS b,
                                   to_regclass('public.pf_catalog_exports') AS c, to_regclass('public.pf_catalog_bulk_batches') AS d,
-                                  to_regclass('public.pf_catalog_rounds') AS e`);
-    // 0303(잠금 · 일괄 검토완료)까지 있어야 연다 — 반쪽 상태로 쓰기 시작하면 확인완료 저장이 실패한다
-    readyFlag = !!(r.rows[0] && r.rows[0].a && r.rows[0].b && r.rows[0].c && r.rows[0].d && r.rows[0].e);
+                                  to_regclass('public.pf_catalog_rounds') AS e, to_regclass('public.product_positions') AS g,
+                                  EXISTS (SELECT 1 FROM information_schema.columns
+                                           WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'mount_pos') AS f`);
+    // 0303(잠금 · 일괄 검토완료) · 0292(장착 위치) · 0323(mount_pos)까지 있어야 연다 — 반쪽 상태로 쓰기 시작하면 확인완료 저장이 실패한다
+    readyFlag = !!(r.rows[0] && r.rows[0].a && r.rows[0].b && r.rows[0].c && r.rows[0].d && r.rows[0].e && r.rows[0].f && r.rows[0].g);
   } catch (_) { readyFlag = false; }
   return readyFlag;
 }
@@ -52,6 +59,11 @@ export function setPfCatalogReady(v) { readyFlag = !!v; probeAt = Date.now(); }
  */
 export function normValue(field, v) {
   if (field === 'material') return normalizeMaterial(v);
+  if (field === 'pos') {
+    const c = canonPos(v);
+    if (c !== undefined) return c;
+    return String(v).replace(/\s+/g, ' ').trim() || null;   // 읽을 수 없는 표기 — 비교만 하고 저장은 mergeDraft 가 막는다
+  }
   if (field === 'oe') {
     if (v == null || String(v).trim() === '') return null;
     const f = formatOe(parseOe(v));
@@ -108,6 +120,11 @@ export function mergeDraft(cur, prev, incoming, loaded = null) {
     if (!PF_FIELDS.includes(f)) continue;
     const nv = normValue(f, incoming[f]);
     if (f === 'name' && nv == null) { errors.push({ field: f, error: 'name_required' }); continue; }
+    if (f === 'pos') {
+      if (nv != null && canonPos(incoming[f]) === undefined) { errors.push({ field: f, error: 'bad_pos' }); continue; }
+      // 업로드 위치가 있는 품목은 비울 수 없다 — 비우면 업로드 값이 다시 보여 「지운 것」 이 되지 않는다
+      if (nv == null && cur && cur.pos_upload && !eqF(f, cur.pos, null)) { errors.push({ field: f, error: 'pos_upload_exists' }); continue; }
+    }
     const base = draft[f] ? draft[f].base : (has(loaded, f) ? loaded[f] : cur[f]) ?? null;
     if (eqF(f, nv, cur[f]) || eqF(f, nv, base)) { delete draft[f]; continue; }
     draft[f] = { base, value: nv };
@@ -182,9 +199,49 @@ export function previewDerived(vals) {
 // ─────────────────────────── SQL 조각 ───────────────────────────
 
 /** 카탈로그 칸 지문 — 확인 때 저장한 값과 지금 값을 비교한다. 칸 순서 = PF_FIELDS. */
+//   1108 · mount_pos 는 NULLIF — 비어 있으면 concat_ws 가 건너뛰어 0323 이전 지문과 똑같다(기존 확인완료가 재확인으로 뒤집히지 않음).
+//   업로드(0292) 위치는 지문에 넣지 않는다 — 업로드를 다시 할 때마다 전 품목이 재확인이 되지 않게.
 export const FP_SQL = (a = 'p') => `md5(concat_ws(chr(31),
   COALESCE(btrim(${a}.name),''), COALESCE(btrim(${a}.scode),''), COALESCE(btrim(${a}.app),''),
-  COALESCE(btrim(${a}.oe),''), COALESCE(btrim(${a}.material),'')))`;
+  COALESCE(btrim(${a}.oe),''), COALESCE(btrim(${a}.material),''), NULLIF(btrim(${a}.mount_pos),'')))`;
+
+/** 업로드(0292) 위치 요약 — 코드(대문자)로 붙인다. 행마다 한 줄(집계라 없어도 1행). */
+export const POS_JOIN = (a = 'p') => `LEFT JOIN LATERAL (
+    SELECT array_agg(DISTINCT pp.block) AS pos_b,
+           array_agg(DISTINCT pp.level) FILTER (WHERE pp.level IS NOT NULL) AS pos_l,
+           array_agg(DISTINCT pp.side) FILTER (WHERE pp.side IS NOT NULL) AS pos_s
+      FROM product_positions pp WHERE pp.ctr_code = upper(btrim(${a}.code))) ppos ON true`;
+const POS_COLS = `p.mount_pos, ppos.pos_b, ppos.pos_l, ppos.pos_s`;
+
+/**
+ * 목록 · 단건 · 엑셀 — 업로드 위치는 **돌려줄 줄에만** 붙인다(거르기 · 정렬에 안 쓰므로).
+ *   목록 SQL 안에서 15,000품목 전부에 붙이면 정렬 쪽이 150ms 넘게 느려진다.
+ */
+async function attachPos(rows) {
+  const codes = [...new Set(rows.map((r) => r.code).filter(Boolean))];
+  if (!codes.length) return rows;
+  const got = (await query(
+    `SELECT c.code, ppos.pos_b, ppos.pos_l, ppos.pos_s
+       FROM unnest($1::text[]) AS c(code) ${POS_JOIN('c')}`, [codes])).rows;
+  const by = new Map(got.map((g) => [g.code, g]));
+  for (const r of rows) {
+    const g = by.get(r.code);
+    r.pos_b = g ? g.pos_b : null; r.pos_l = g ? g.pos_l : null; r.pos_s = g ? g.pos_s : null;
+  }
+  return rows;
+}
+
+/** 행 → { pos(보이는 값), pos_upload, pos_src } — 우선순위: 마스터 확인값(mount_pos) → 업로드 요약. */
+export function posOf(r) {
+  const up = posText({ blocks: r.pos_b || [], levels: r.pos_l || [], sides: r.pos_s || [] });
+  const own = r.mount_pos == null || String(r.mount_pos).trim() === '' ? null : (canonPos(r.mount_pos) || String(r.mount_pos).trim());
+  return { pos: own || up || null, pos_upload: up || null, pos_src: own ? 'erp' : (up ? 'upload' : null) };
+}
+/** DB 행 → 비교 · 병합에 쓰는 지금 값(cur). */
+function curOf(r) {
+  const p = posOf(r);
+  return { ...r, pos: p.pos, pos_upload: p.pos_upload };
+}
 
 export const STATUS_SQL = `CASE
   WHEN r.draft IS NOT NULL AND r.draft <> '{}'::jsonb THEN 'draft'
@@ -221,12 +278,16 @@ const TAGS = {
 
 /** 화면에 보낼 1행. 가격·재고 칸은 처음부터 SELECT 하지 않는다. */
 export function rowView(r) {
-  const cur = { name: r.name, scode: r.scode, app: r.app, oe: r.oe, material: r.material };
+  const ps = posOf(r);
+  const cur = { name: r.name, scode: r.scode, app: r.app, oe: r.oe, material: r.material, pos: ps.pos };
   const ds = draftState(cur, r.draft);
   return {
     id: Number(r.id),
     code: r.code,
     ...cur,
+    pos: ps.pos || '',                 // 1108 · 없으면 빈 문자열(플랫폼 요청)
+    pos_upload: ps.pos_upload || '',   // 업로드(0292) 요약 — 마스터 확인값과 다를 수 있다
+    pos_src: ps.pos_src,               // 'erp'(마스터 확인값) · 'upload'(업로드 요약) · null(없음)
     activo: r.is_active !== false,
     status: r.status,
     draft: ds,
@@ -259,7 +320,7 @@ const LIST_FROM = `products p
                FROM product_applications pa GROUP BY pa.product_id) mk ON mk.product_id = p.id
   LEFT JOIN ctr_vio_rank vr ON vr.ctr_code = upper(btrim(p.code))`;
 
-const LIST_COLS = `p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, p.is_active,
+const LIST_COLS = `p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, p.is_active, p.mount_pos,
   r.draft, r.draft_note, r.draft_by_name, r.draft_at, r.confirmed_at, r.confirmed_by_name, r.confirm_count,
   r.updated_at::text AS rev, r.confirmed_source,
   (SELECT json_agg(json_build_object('r', rd.round, 'd', rd.reviewed_on) ORDER BY rd.round)
@@ -318,7 +379,7 @@ export async function listItems({ q = '', status = '', active = 'all', round = '
   const [pg, cnt] = await Promise.all([
     query(`SELECT * FROM (${inner}) x ${outerWhere} ORDER BY ${order} LIMIT ${lim} OFFSET ${off}`, params),
     query(`SELECT count(*)::int AS n FROM (${inner}) x ${outerWhere}`, params)]);
-  return { items: pg.rows.map(rowView), total: Number(cnt.rows[0].n) };
+  return { items: (await attachPos(pg.rows)).map(rowView), total: Number(cnt.rows[0].n) };
 }
 
 /** 상태별 건수 — 화면 위 숫자 칸. 판매중/전체 둘 다. */
@@ -358,6 +419,7 @@ export async function getItem(id) {
     `SELECT ${LIST_COLS} FROM ${LIST_FROM}
       WHERE ${TARGET_SQL} AND p.id = $1`, [Number(id)])).rows[0];
   if (!r) return null;
+  await attachPos([r]);
   const hist = (await query(
     `SELECT l.created_at, l.action, l.source, l.changes, u.name AS by_name
        FROM product_change_log l LEFT JOIN users u ON u.id = l.changed_by
@@ -390,10 +452,12 @@ async function revChanged(c, productId, rev) {
 
 export async function saveDraft(id, { fields = {}, note, pf, loaded = null, rev }) {
   return withTx(async (c) => {
-    const cur = (await c.query(
-      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, ${FP_SQL('p')} AS fp FROM products p
-        WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE`, [Number(id)])).rows[0];
-    if (!cur) return { error: 'not_found' };
+    const row = (await c.query(
+      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, ${POS_COLS}, ${FP_SQL('p')} AS fp FROM products p
+        ${POS_JOIN('p')}
+        WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE OF p`, [Number(id)])).rows[0];
+    if (!row) return { error: 'not_found' };
+    const cur = curOf(row);
     const prev = (await c.query(`SELECT draft, draft_note, confirmed_hash FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
     if (await revChanged(c, cur.id, rev)) return { error: 'stale_review' };
     const { draft, errors } = mergeDraft(cur, prev ? prev.draft : {}, fields, loaded);
@@ -432,10 +496,12 @@ export async function discardDraft(id) {
  */
 export async function confirmItem(id, { fields = {}, resolve = {}, note, pf, loaded = null, rev }) {
   return withTx(async (c) => {
-    const cur = (await c.query(
-      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, ${FP_SQL('p')} AS fp FROM products p
-        WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE`, [Number(id)])).rows[0];
-    if (!cur) return { error: 'not_found' };
+    const row = (await c.query(
+      `SELECT p.id, p.code, p.name, p.scode, p.app, p.oe, p.material, ${POS_COLS}, ${FP_SQL('p')} AS fp FROM products p
+        ${POS_JOIN('p')}
+        WHERE ${TARGET_SQL} AND p.id = $1 FOR UPDATE OF p`, [Number(id)])).rows[0];
+    if (!row) return { error: 'not_found' };
+    const cur = curOf(row);
     const prev = (await c.query(`SELECT draft, draft_note, confirmed_hash FROM pf_catalog_review WHERE product_id = $1 FOR UPDATE`, [cur.id])).rows[0];
     if (await revChanged(c, cur.id, rev)) return { error: 'stale_review' };
     const { draft, errors } = mergeDraft(cur, prev ? prev.draft : {}, fields, loaded);
@@ -459,7 +525,7 @@ export async function confirmItem(id, { fields = {}, resolve = {}, note, pf, loa
 
     if (fieldsApplied.length) {
       const sets = []; const vals = [];
-      for (const f of fieldsApplied) { vals.push(plan.apply[f].to); sets.push(`${f} = $${vals.length}`); }
+      for (const f of fieldsApplied) { vals.push(plan.apply[f].to); sets.push(`${colOf(f)} = $${vals.length}`); }
       sets.push('updated_by = NULL');   // ERP 사용자가 아니다 — 확인자는 제품 이력(_pf)에 남는다
       vals.push(cur.id);
       await c.query(`UPDATE products SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
@@ -528,7 +594,7 @@ export async function exportItems(filters = {}) {
       ORDER BY pa.product_id, pa.id`, [ids])).rows : [];
   const codeOf = new Map(list.map((r) => [Number(r.id), r.code]));
   return {
-    items: list.map(rowView),
+    items: (await attachPos(list)).map(rowView),
     apps: apps.map((a) => ({ code: codeOf.get(Number(a.product_id)), texto: a.app_text, marca: a.maker, modelo: a.model,
       desde: a.year_from == null ? null : Number(a.year_from), hasta: a.year_to == null ? null : Number(a.year_to) })),
     truncated,

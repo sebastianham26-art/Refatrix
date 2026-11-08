@@ -4,13 +4,16 @@
 //        → 저장하지 않고 통계 · 예시 · 마스터에 없는 코드
 //   POST /api/products/positions/commit   (디렉터)  같은 본문 → 전체 교체(새 배치 저장 · 예전 줄 삭제) 한 트랜잭션
 //   POST /api/products/positions/lookup   (제품 화면) { codes:[…], detail:true|false } → 코드별 요약(+ 차종별 줄)
+//        1108 · 우선순위 = CTR 확인값(products.mount_pos · 0323 · 플랫폼 확인완료) → 업로드 요약.
+//        응답 항목 {blocks, levels, sides, ko, es, src:'erp'|'upload', upload:{…}|null, rows?}
+//        — 제품 찾기(코드 검색 · 차종 검색) · VIO 화면이 모두 이 한 곳을 읽으므로 어디서나 같은 위치가 보인다.
 //   GET  /api/products/positions/status   (제품 화면) 마지막 업로드 정보
 //   화면: 제품 마스터 업로드(올리기) · 제품 찾기(배지 · 내역) · VIO 제품찾기·프로모션(부품 목록)
 // =====================================================================
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { buildPositionRows, summarize } from '../productPositions.js';
+import { buildPositionRows, summarize, parsePosText, posText, koText } from '../productPositions.js';
 
 const MAX_ROWS = 60000;
 const BIG = { bodyLimit: 20 * 1024 * 1024 };
@@ -69,10 +72,21 @@ export default async function positionRoutes(app) {
          FROM product_positions WHERE ctr_code = ANY($1::text[])
         ORDER BY ctr_code, block, level NULLS FIRST, side NULLS FIRST, brand, model, y_from NULLS LAST`, [codes])).rows;
     const by = {}; for (const r of rows) (by[r.ctr_code] ||= []).push(r);
+    // 1108 · CTR 확인값 — 0323 전(칸 없음)이면 업로드만 쓴다
+    const own = {};
+    try {
+      const o = (await query(
+        `SELECT upper(btrim(code)) AS c, btrim(mount_pos) AS v FROM products
+          WHERE deleted_at IS NULL AND upper(btrim(code)) = ANY($1::text[]) AND COALESCE(btrim(mount_pos),'') <> ''`, [codes])).rows;
+      for (const r of o) { const p = parsePosText(r.v); if (p && !p.error) own[r.c] = p; }
+    } catch (_) { /* 0323 전 */ }
     const items = {};
-    for (const c of Object.keys(by)) {
-      items[c] = summarize(by[c]);
-      if (b.detail) items[c].rows = by[c].map((r) => ({ block: r.block, level: r.level, side: r.side, fixed: r.side_fixed, pos: r.pos_raw, part: r.part,
+    for (const c of new Set([...Object.keys(by), ...Object.keys(own)])) {
+      const up = by[c] ? summarize(by[c]) : null;
+      const upView = up ? { blocks: up.blocks, levels: up.levels, sides: up.sides, ko: up.ko, es: posText(up) } : null;
+      const base = own[c] ? { ...own[c], ko: koText(own[c]), es: posText(own[c]), src: 'erp' } : { ...upView, src: 'upload' };
+      items[c] = { ...base, upload: upView };
+      if (b.detail) items[c].rows = (by[c] || []).map((r) => ({ block: r.block, level: r.level, side: r.side, fixed: r.side_fixed, pos: r.pos_raw, part: r.part,
         brand: r.brand, model: r.model, gen: r.generation, years: r.years, y_from: r.y_from, y_to: r.y_to, status: r.status }));
     }
     return { items };

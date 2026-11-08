@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1015vdrill</title>
+<title>Refatrix ERP · 제품 조회 · ps-1108pos</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1209,12 +1209,13 @@
           // 드릴다운 상단 「적용차종 전체」 — 서버가 p.app(원문 전체)을 주면 그것, 구버전 API면 매칭된 항목만이라도.
           const fullApp=g.app||g.apps.map(a=>a.app_text||'').filter(Boolean).join(' // ');
           return '<tr class="prow vrow" data-pid="'+Number(g.id)+'" data-app="'+escP(fullApp)+'" data-code="'+escP(g.code)+'" data-syd="'+escP(g.scode)+'" data-name="'+escP(g.name||'')+'" style="cursor:pointer">'
-            +'<td class="code"><span class="tri">▸</span>'+escP(g.code)+'</td><td>'+escP(g.name||'')+'</td>'
+            +'<td class="code"><span class="tri">▸</span>'+escP(g.code)+'<div class="cbad"><span class="posb" data-pcode="'+escP(g.code)+'"></span></div></td><td>'+escP(g.name||'')+'</td>'
             +'<td class="hint" style="margin:0">'+g.apps.map(a=>'<span class="tag">'+escP(a.app_text||'')+'</span>').join(' ')+'</td></tr>';
         }).join('')+'</tbody></table>'
         +'<div class="hint">'+groups.length+'개 제품 매칭'+(items.length>=300?' (300건 제한, 더 좁혀주세요)':'')+'. 행을 클릭하면 제품 검색과 같은 상세(판매 고객·수량·재고·랙·사진)가 펼쳐집니다.</div>';
       r.querySelectorAll('tr.vrow').forEach(tr=>{ const pid=Number(tr.getAttribute('data-pid'));
         if(pid) tr.addEventListener('click',()=>toggleDrill(tr, pid, VEH_COLN)); });
+      posDecorate(r);   // 1108 · 코드 검색과 같은 장착 위치 배지
     }catch(e){r.innerHTML='<div class="hint">검색 실패.</div>';}
   }
 
@@ -2117,7 +2118,7 @@
   const POS_FULL={front:'앞(Delantera)',rear:'뒤(Trasera)',upper:'상(Superior)',lower:'하(Inferior)',lh:'좌(LH · Izquierda)',rh:'우(RH · Derecha)'};
   const posCache={};
   function posCls(sum){ const b=sum.blocks||[]; return b.length>1?'fr':(b[0]==='rear'?'r':'f'); }
-  function posTitle(sum){ return '장착 위치: '+[(sum.blocks||[]).map(k=>POS_FULL[k]).join('/'),(sum.levels||[]).map(k=>POS_FULL[k]).join('/'),(sum.sides||[]).map(k=>POS_FULL[k]).join('/')].filter(Boolean).join(' · '); }
+  function posTitle(sum){ return (sum.src==='erp'?'CTR 확인 ':'')+'장착 위치: '+[(sum.blocks||[]).map(k=>POS_FULL[k]).join('/'),(sum.levels||[]).map(k=>POS_FULL[k]).join('/'),(sum.sides||[]).map(k=>POS_FULL[k]).join('/')].filter(Boolean).join(' · '); }
   async function posLookup(codes,detail){
     const need=codes.filter(c=>c&&!(c in posCache&&(!detail||posCache[c]&&posCache[c].rows)));
     if(need.length){
@@ -2141,15 +2142,23 @@
     const box=dr.querySelector('.possec'); if(!box) return;
     const C=String(code||'').toUpperCase(); await posLookup([C],true);
     const s=posCache[C];
-    if(!s||!s.rows||!s.rows.length){ box.innerHTML='<div class="dh">장착 위치</div><div class="hint" style="margin:2px 0">장착 위치 자료가 없습니다(제품 마스터 업로드 › 🧭 장착 위치 원본 업로드).</div>'; return; }
-    const seen={}, order=[];
-    s.rows.forEach(r=>{ const k=[r.block,r.level||'',r.side||''].join('|'); if(!seen[k]){ seen[k]=r; order.push(k); } });
-    let h='<div class="dh">장착 위치 <span class="posb '+posCls(s)+'" title="'+escP(posTitle(s))+'">'+escP(s.ko)+'</span></div><div class="pveh">';
-    order.forEach(k=>{ const x=seen[k];
-      const ko=[POS_KO[x.block],x.level?POS_KO[x.level]:'',x.side?POS_KO[x.side]:''].filter(Boolean).join('·');
-      const raw=[x.block==='front'?'Front':'Rear',x.level==='upper'?'Upper':(x.level==='lower'?'Lower':''),x.side?x.side.toUpperCase():''].filter(Boolean).join(' ');
-      h+='<span>'+escP(ko)+' <small style="color:#6f6a60">'+escP(raw)+'</small></span>'; });
-    box.innerHTML=h+'</div>';
+    if(!s||!s.ko){ box.innerHTML='<div class="dh">장착 위치</div><div class="hint" style="margin:2px 0">장착 위치 자료가 없습니다(제품 마스터 업로드 › 🧭 장착 위치 원본 업로드 · 또는 Platform CTR 확인).</div>'; return; }
+    let h='<div class="dh">장착 위치 <span class="posb '+posCls(s)+'" title="'+escP(posTitle(s))+'">'+escP(s.ko)+'</span>'
+      +(s.es?' <small style="color:#6f6a60;font-weight:400">'+escP(s.es)+'</small>':'')
+      +(s.src==='erp'?' <span class="bchip info" title="REFATRIX Platform 에서 CTR 이 확인완료한 값 — 업로드 원본보다 우선">CTR 확인</span>':'')+'</div>';
+    // 1108 · CTR 확인값이 업로드 원본과 다르면 원본을 참고로 함께 보여 준다
+    if(s.src==='erp'&&s.upload&&s.upload.ko&&s.upload.ko!==s.ko) h+='<div class="hint" style="margin:2px 0">업로드 원본(참고): '+escP(s.upload.ko)+'</div>';
+    if(s.src!=='erp'&&s.rows&&s.rows.length){
+      const seen={}, order=[];
+      s.rows.forEach(r=>{ const k=[r.block,r.level||'',r.side||''].join('|'); if(!seen[k]){ seen[k]=r; order.push(k); } });
+      h+='<div class="pveh">';
+      order.forEach(k=>{ const x=seen[k];
+        const ko=[POS_KO[x.block],x.level?POS_KO[x.level]:'',x.side?POS_KO[x.side]:''].filter(Boolean).join('·');
+        const raw=[x.block==='front'?'Front':'Rear',x.level==='upper'?'Upper':(x.level==='lower'?'Lower':''),x.side?x.side.toUpperCase():''].filter(Boolean).join(' ');
+        h+='<span>'+escP(ko)+' <small style="color:#6f6a60">'+escP(raw)+'</small></span>'; });
+      h+='</div>';
+    }
+    box.innerHTML=h;
   }
   // ── 업로드(디렉터) ──
   const POS_HEAD={ ctr:['CTR','CLAVE CTR','CODIGO CTR'], ctr4:['4TH CTR'], block:['BLOCK','BLOQUE'], position:['POSITION','POSICION','POS'],
