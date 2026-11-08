@@ -88,6 +88,11 @@ function boot(url = 'https://example.test/refatrix-viofinder.html') {
           const items = {}; for (const c of body.codes) if (all[c]) items[c] = all[c];
           return json({ items });
         }
+        if (p.pathname === '/api/products/syd-names') {   // 1108 · SYD 품명(DESCRIPCIÓN)
+          const N = { '1280L': 'HORQUILLA INFERIOR "L"', '10477': 'TORNILLO ESTABILIZADOR TRASERO', '1536L': 'TERMINAL EXTERIOR "L"', '11043': 'BUJE INFERIOR CHICO' };
+          const items = {}; for (const c of body.codes) { const n = String(c).toUpperCase().replace(/[^A-Z0-9]/g, ''); if (N[n]) items[n] = { code: c, desc: N[n], familia: 'X' }; }
+          return json({ list_date: '2026-06-22', items });
+        }
         if (p.pathname === '/api/products/applied-models') return json({ items: [] });
         if (p.pathname === '/api/products/syd-baseline') return json({ found: true, list_price_syd: 500 });
         if (p.pathname === '/api/promo-img/marks') return json({ marks: [{ x: 0.4, y: 0.5, w: 0.1, h: 0.08, kind: 'emblem' }] });
@@ -166,10 +171,19 @@ test('프로모션 만들기: 재고 기준 자동 · 손으로 넣고 빼기 ·
   const lp = (code) => d.querySelector('#vpParts input[data-code="' + code + '"]').closest('.vpCode').querySelector('.lp').textContent;
   assert.equal(lp('CQ0280L'), 'List$1,333.00'); assert.equal(lp('PL0477'), 'List$1,898.88'); assert.equal(lp('GV1043'), 'List—');
   const row = d.querySelector('#vpParts input[data-code="CQ0280L"]').closest('.vpCode');
-  assert.equal(row.querySelector('.cdw').nextElementSibling.className, 'lp', 'List price 는 코드 바로 옆');
-  // vf17s · CTR 코드 아래 SYD 코드(작게)
+  // 1108 · CTR 코드 옆에 SYD 코드 + SYD 품명, 그 옆 List price
   assert.equal(row.querySelector('.cdw .cd').textContent, 'CQ0280L');
-  assert.equal(row.querySelector('.cdw .sy').textContent, 'SYD 1280L');
+  assert.equal(row.querySelector('.cdw').nextElementSibling.className, 'syw', 'SYD 칸은 CTR 코드 바로 옆');
+  assert.equal(row.querySelector('.syw').nextElementSibling.className, 'lp', 'List price 는 SYD 칸 옆');
+  assert.equal(row.querySelector('.syw .sy').textContent, 'SYD 1280L');
+  const rowOf = (c) => d.querySelector('#vpParts input[data-code="' + c + '"]').closest('.vpCode');
+  assert.ok(await until(() => rowOf('CQ0280L').querySelector('.syw .sn').textContent === 'HORQUILLA INFERIOR "L"'), rowOf('CQ0280L').innerHTML);
+  assert.equal(rowOf('CQ0280R').querySelector('.syw .sn').textContent, 'SYD 품명 없음', '품명이 없으면 그렇다고 보여 줌');
+  // 장착 위치 자료가 없는 코드는 SYD 품명으로 안내(점선) — 자료가 있는 코드는 자료 그대로
+  assert.equal(rowOf('CE0536L').querySelector('.pos').textContent, '밖·좌'); assert.ok(rowOf('CE0536L').querySelector('.pos').classList.contains('syn'));
+  assert.equal(rowOf('GV1043').querySelector('.pos').textContent, '하');
+  assert.ok(!rowOf('CQ0280L').querySelector('.pos').classList.contains('syn'), '업로드/CTR 확인 위치가 있으면 그것');
+  assert.ok(rowOf('CE0536R').querySelector('.pos').classList.contains('none'), '자료도 품명도 없으면 —');
   assert.equal(d.querySelectorAll('#vpParts .man').length, 2);
   assert.match(d.getElementById('vpSum').textContent, /손으로 바꾼 것 2/);
   // 최소 재고 7 → CQ0280L/R(6) 자동 제외, 손으로 넣은 PL0477 유지
@@ -400,7 +414,8 @@ test('장착 위치 배지: 이 차종·세대 줄이 있으면 그것 · 없으
   assert.equal(pos('CB0336').textContent, '앞·하', 'Versa 줄만 → 앞(뒤는 Sentra)');
   assert.equal(pos('CL0477').textContent, '뒤·좌/우'); assert.ok(pos('CL0477').classList.contains('gen'), 'Tiida 뿐 → 코드 전체(점선)');
   assert.ok(pos('CL0477').classList.contains('r'));
-  assert.equal(pos('CE0536L').textContent, '—'); assert.ok(pos('CE0536L').classList.contains('none'));
+  // 1108 · 자료가 없으면 SYD 품명으로 안내(점선 syn) — 품명도 없으면 —
+  assert.equal(pos('CE0536L').textContent, '밖·좌'); assert.ok(pos('CE0536L').classList.contains('syn'));
 });
 
 test('수량 · 정가 합계 · 할인 금액 · 이미지에 넣을지 · 저장(K번호) · 목록 · 열기 · 키트 제품 (vf17b)', { skip: SKIP }, async () => {

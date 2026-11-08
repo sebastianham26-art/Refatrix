@@ -476,7 +476,9 @@ export function parseSydRows(rows) {
     if (seen.has(norm)) { dup++; return; }
     seen.add(norm);
     const fam = String(r && r.familia != null ? r.familia : '').trim().toUpperCase().slice(0, 80) || null;
-    items.push({ norm, code: code.slice(0, 80), price: Math.round(price * 100) / 100, familia: fam });
+    // 0324 · SYD 품명(DESCRIPCIÓN) — 보낸 경우만(옛 화면은 안 보냄 → null)
+    const desc = String(r && r.descripcion != null ? r.descripcion : '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 160) || null;
+    items.push({ norm, code: code.slice(0, 80), price: Math.round(price * 100) / 100, familia: fam, descripcion: desc });
   });
   return { items, dup, errors };
 }
@@ -489,6 +491,44 @@ export async function prevSydList(exec, listId) {
       ORDER BY p.list_date DESC, p.id DESC LIMIT 1`, [listId])).rows[0];
   return r ? Number(r.id) : null;
 }
+// 0324 · syd_price_items.descripcion 이 있는가 — 배포 후 migrate 전에도 SYD 리스트 올리기가 깨지지 않게.
+//   긍정은 영구, 부정은 30초마다 다시 본다(pfCatalogReady 와 같은 방식).
+let sydDescFlag = false; let sydDescAt = 0;
+export async function sydDescReady(exec = query) {
+  if (sydDescFlag) return true;
+  if (Date.now() - sydDescAt < 30000) return false;
+  sydDescAt = Date.now();
+  try {
+    sydDescFlag = !!(await exec(`SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='syd_price_items' AND column_name='descripcion'`)).rows.length;
+  } catch (_) { sydDescFlag = false; }
+  return sydDescFlag;
+}
+export function setSydDescReady(v) { sydDescFlag = !!v; sydDescAt = Date.now(); }
+
+/**
+ * 0324 · SYD 코드 → 최신 리스트의 품명 · 품목. 코드 표기는 대문자+영숫자로 맞춘다(sydNorm).
+ *   returns { list_date, items: { NORM: { code, desc, familia } } }
+ *   최신 리스트에 품명이 없으면 그 코드의 가장 최근 품명(예전 리스트)을 쓴다 — 리스트에 품명 열이 빠진 달이 있어도 이름이 사라지지 않게.
+ */
+export async function sydNamesFor(codes, exec = query) {
+  const norms = [...new Set((codes || []).map(sydNorm).filter(Boolean))].slice(0, 5000);
+  if (!norms.length) return { list_date: null, items: {} };
+  const hasDesc = await sydDescReady(exec);
+  const rows = (await exec(
+    `SELECT DISTINCT ON (it.syd_norm) it.syd_norm, it.syd_code, ${hasDesc ? 'it.descripcion' : 'NULL::text AS descripcion'}, it.familia,
+            to_char(l.list_date,'YYYY-MM-DD') AS d
+       FROM syd_price_items it JOIN syd_price_lists l ON l.id = it.list_id
+      WHERE it.syd_norm = ANY($1::text[])
+      ORDER BY it.syd_norm, ${hasDesc ? "(COALESCE(btrim(it.descripcion),'') <> '') DESC," : ''} l.list_date DESC, l.id DESC`, [norms])).rows;
+  const items = {}; let latest = null;
+  for (const r of rows) {
+    items[r.syd_norm] = { code: r.syd_code, desc: r.descripcion || null, familia: r.familia || null, list_date: r.d };
+    if (!latest || r.d > latest) latest = r.d;
+  }
+  return { list_date: latest, items };
+}
+
 export async function latestSydListId(exec = query) {
   const r = (await exec(`SELECT id FROM syd_price_lists ORDER BY list_date DESC, id DESC LIMIT 1`)).rows[0];
   return r ? Number(r.id) : null;

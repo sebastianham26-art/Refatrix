@@ -8,12 +8,15 @@
 //        응답 항목 {blocks, levels, sides, ko, es, src:'erp'|'upload', upload:{…}|null, rows?}
 //        — 제품 찾기(코드 검색 · 차종 검색) · VIO 화면이 모두 이 한 곳을 읽으므로 어디서나 같은 위치가 보인다.
 //   GET  /api/products/positions/status   (제품 화면) 마지막 업로드 정보
+//   POST /api/products/syd-names          (제품 화면) { codes:[SYD 코드…] } → SYD 리스트 품명(DESCRIPCIÓN · 0324) · 품목
+//        가격은 주지 않는다(가격 권한과 무관하게 이름만). 프로모션 만들기 · 제품 찾기에서 CTR 코드 옆에 쓴다.
 //   화면: 제품 마스터 업로드(올리기) · 제품 찾기(배지 · 내역) · VIO 제품찾기·프로모션(부품 목록)
 // =====================================================================
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { buildPositionRows, summarize, parsePosText, posText, koText } from '../productPositions.js';
+import { sydNamesFor } from '../priceMaster.js';
 
 const MAX_ROWS = 60000;
 const BIG = { bodyLimit: 20 * 1024 * 1024 };
@@ -90,6 +93,12 @@ export default async function positionRoutes(app) {
         brand: r.brand, model: r.model, gen: r.generation, years: r.years, y_from: r.y_from, y_to: r.y_to, status: r.status }));
     }
     return { items };
+  });
+
+  app.post('/api/products/syd-names', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const b = req.body || {};
+    const codes = (Array.isArray(b.codes) ? b.codes : []).map((c) => String(c == null ? '' : c)).slice(0, 5000);
+    try { return await sydNamesFor(codes); } catch (_) { return { list_date: null, items: {} }; }   // 0229 전 · 오류여도 화면은 이름 없이
   });
 
   app.get('/api/products/positions/status', { preHandler: [authGuard, requirePage('products')] }, async () => {

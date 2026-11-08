@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-1012cs3</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-1108sd</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -1018,13 +1018,15 @@
     const file=$('fSyd').files[0]; sydParsed=null; $('btnSydUp').disabled=true; const m=$('sydMsg'); m.className='msg';
     if(!file) return;
     let mat; try{ mat=await readSheet(file); }catch(e){ m.className='msg err'; m.textContent='파일을 읽을 수 없습니다'; return; }
-    const h=findHeader(mat,{code:c=>/clave\s*s[yi]d|art[ií]culo|^s[yi]d$|c[oó]digo\s*s[yi]d|^c[oó]digo$|^clave$/i.test(c), price:c=>/precio\s*(de\s*)?lista|list\s*price|^precio$|^lista$/i.test(c), familia:c=>/familia|l[ií]nea|categor|sistema/i.test(c)});
+    const h=findHeader(mat,{code:c=>/clave\s*s[yi]d|art[ií]culo|^s[yi]d$|c[oó]digo\s*s[yi]d|^c[oó]digo$|^clave$/i.test(c), price:c=>/precio\s*(de\s*)?lista|list\s*price|^precio$|^lista$/i.test(c), familia:c=>/familia|l[ií]nea|categor|sistema/i.test(c), desc:c=>/descripci[oó]n|^descrip|^nombre(\s+del?\s+producto)?$|^producto$/i.test(c)});
     if(!h||h.idx.code<0||h.idx.price<0){ m.className='msg err'; m.textContent='열을 찾지 못했습니다 — Clave SyD(또는 ARTÍCULO) · Precio Lista 가 필요합니다.'; return; }
     const hdr=mat[h.row];
+    // 1108 · SYD 양식(Plantilla Articulo)은 LINEA(Azul/Verde) 열이 FAMILIA 앞에 있다 — 「FAMILIA」 라는 열이 있으면 그것을 쓴다
+    { const fi=(hdr||[]).findIndex(c=>/^\s*familia\s*$/i.test(String(c==null?'':c))); if(fi>=0) h.idx.familia=fi; }
     const rowsS=[]; for(let r=h.row+1;r<mat.length;r++){ const x=mat[r]||[]; const code=String(x[h.idx.code]==null?'':x[h.idx.code]).trim(); if(!code) continue;
-      rowsS.push({_row:r+1,code,price:x[h.idx.price],familia:h.idx.familia>=0?x[h.idx.familia]:null}); }
+      rowsS.push({_row:r+1,code,price:x[h.idx.price],familia:h.idx.familia>=0?x[h.idx.familia]:null,descripcion:h.idx.desc>=0?x[h.idx.desc]:null}); }
     sydParsed={file:file.name,rows:rowsS};
-    m.className='msg ok'; m.textContent='읽음: '+rowsS.length.toLocaleString('es-MX')+'줄 · 코드 열 「'+hdr[h.idx.code]+'」 · 가격 열 「'+hdr[h.idx.price]+'」'+(h.idx.familia>=0?' · 품목 열 「'+hdr[h.idx.familia]+'」':' · 품목 열 없음')+' — 기준일을 확인하고 올리세요.';
+    m.className='msg ok'; m.textContent='읽음: '+rowsS.length.toLocaleString('es-MX')+'줄 · 코드 열 「'+hdr[h.idx.code]+'」 · 가격 열 「'+hdr[h.idx.price]+'」'+(h.idx.familia>=0?' · 품목 열 「'+hdr[h.idx.familia]+'」':' · 품목 열 없음')+(h.idx.desc>=0?' · 품명 열 「'+hdr[h.idx.desc]+'」':' · 품명 열 없음(SYD 품명은 저장되지 않음)')+' — 기준일을 확인하고 올리세요.';
     $('btnSydUp').disabled=!ready||!rowsS.length;
   });
   $('btnSydUp').addEventListener('click',async()=>{

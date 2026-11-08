@@ -28,7 +28,7 @@ import {
   applyDue, revertBatch, MAX_SELECTED, sydNorm, SYD_NORM_SQL, parseSydRows, prevSydList, latestSydListId,
   compareSydCounts, syncProductSydPrices, purchaseLinesWithFob, summarizeFob,
   REGIONS, regionOf, profitBase, filterProfitRows, getSga, setSga, settingsReady,
-  costSim, COST_SIM_MAX,
+  costSim, COST_SIM_MAX, sydDescReady,
 } from '../priceMaster.js';
 
 const num = (v) => (v == null ? null : Number(v));
@@ -528,12 +528,20 @@ export default async function priceMasterRoutes(app) {
          VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
         [listDate, String(b.file_name || '').slice(0, 200) || null, items.length, dup, String(b.note || '').slice(0, 300) || null, perm.userId])).rows[0];
       const id = Number(L.id);
+      const withDesc = await sydDescReady(c.query.bind(c));   // 0324 전이면 품명 없이(예전과 같음)
       for (let i = 0; i < items.length; i += 2000) {
         const part = items.slice(i, i + 2000);
-        await c.query(
-          `INSERT INTO syd_price_items (list_id, syd_norm, syd_code, price, familia)
-           SELECT $1, x.n, x.c, x.p, x.f FROM unnest($2::text[], $3::text[], $4::numeric[], $5::text[]) AS x(n, c, p, f)`,
-          [id, part.map((x) => x.norm), part.map((x) => x.code), part.map((x) => x.price), part.map((x) => x.familia)]);
+        if (withDesc) {
+          await c.query(
+            `INSERT INTO syd_price_items (list_id, syd_norm, syd_code, price, familia, descripcion)
+             SELECT $1, x.n, x.c, x.p, x.f, x.d FROM unnest($2::text[], $3::text[], $4::numeric[], $5::text[], $6::text[]) AS x(n, c, p, f, d)`,
+            [id, part.map((x) => x.norm), part.map((x) => x.code), part.map((x) => x.price), part.map((x) => x.familia), part.map((x) => x.descripcion)]);
+        } else {
+          await c.query(
+            `INSERT INTO syd_price_items (list_id, syd_norm, syd_code, price, familia)
+             SELECT $1, x.n, x.c, x.p, x.f FROM unnest($2::text[], $3::text[], $4::numeric[], $5::text[]) AS x(n, c, p, f)`,
+            [id, part.map((x) => x.norm), part.map((x) => x.code), part.map((x) => x.price), part.map((x) => x.familia)]);
+        }
       }
       const prev = await prevSydList(c.query.bind(c), id);
       const cmp = await compareSydCounts(c.query.bind(c), id, prev);
