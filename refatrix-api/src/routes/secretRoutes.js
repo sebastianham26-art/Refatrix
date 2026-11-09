@@ -9,6 +9,7 @@ import {
   SERVICES, secretsReady, masterKeyReady, publicServices, saveSecrets,
   listChanges, testService, hydrateSecrets, lastLoadedAt,
 } from '../secrets.js';
+import { resyncDevReqNow } from '../devReqPush.js';   // 2026-11-09 · 개발요청 전송 키 저장 즉시 전체 전송
 
 const ERR_NOTE = {
   migration_required: '0209_service_secrets 마이그레이션이 필요합니다. Railway 콘솔에서 npm run migrate 를 실행하세요.',
@@ -47,7 +48,10 @@ export default async function secretRoutes(app) {
       action: 'update', target: 'service_secret:' + r.changed.map((c) => c.name).join(','),
       detail: { changed: r.changed },
     });
-    return { ok: true, changed: r.changed, services: publicServices() };
+    // 개발요청 전송 키를 새로 넣었으면 → 재시작을 기다리지 않고 곧바로 플랫폼에 전체 목록을 보낸다
+    const devreqKey = r.changed.find((c) => c.name === 'REFATRIX_DEVREQ_KEY');
+    const devreq_resync = devreqKey ? resyncDevReqNow() : false;
+    return { ok: true, changed: r.changed, services: publicServices(), devreq_resync };
   });
 
   // 연결 테스트 — 실제 제공사에 한 번 물어본다(요금이 붙지 않는 조회 API).

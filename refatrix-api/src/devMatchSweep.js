@@ -27,6 +27,7 @@ import { query } from './db.js';
 import { logEvent } from './audit.js';
 import { normCode } from './devDemand.js';
 import { generateOfferSheets } from './offerSheets.js';
+import { scheduleDevReqPush } from './devReqPush.js';   // 2026-11-09 · 자동 개발완료 → 플랫폼 목록에서 해제
 
 function clip1(s, max) { s = String(s == null ? '' : s); return s.length > max ? s.slice(0, max) + '…' : s; }
 
@@ -195,6 +196,8 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
       customer_name: r.customer_name || null, customer_owner_id: r.customer_owner_id != null ? Number(r.customer_owner_id) : null,
     });
   }
+
+  if (items.length) scheduleDevReqPush();
 
   // 개발완료 후속: 수요 → 부족분 대장 + 재고검증 → 오퍼시트/구매 제안 (제품 단위로 묶어 처리)
   let offerSheets = 0, shortageRecords = 0, noStockProducts = 0;

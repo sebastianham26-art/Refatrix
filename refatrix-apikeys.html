@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 외부 서비스 키 (b20261102sk1)</title>
+<title>Refatrix ERP · 외부 서비스 키 (b20261109dr1)</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -64,6 +64,11 @@
   .banner.info{background:#EDF2F0;color:#33544A;border:1px solid #cfdcd6}
   .empty{padding:20px;text-align:center;color:var(--muted);font-size:13px}
   @media(max-width:900px){ .fld{grid-template-columns:1fr} body{padding:14px} }
+.pfpush{margin-top:12px;padding:12px;border:1px dashed #cfc6b4;border-radius:10px;background:#fbfaf6}
+.pf-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}.pf-h .sp{flex:1}
+.pf-kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:6px}
+.pf-kpi>div{background:#fff;border:1px solid #e6e0d4;border-radius:8px;padding:8px}.pf-kpi b{display:block;font-size:18px;margin-top:2px}
+@media(max-width:700px){.pf-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -143,6 +148,8 @@
               <td>고객 상거래정보 전송 · 제품정보(예정)</td></tr>
           <tr><td>CRM (웹카달록) — 수신</td><td class="mono">/api/integrations/crm/customer-registration</td><td>우리가 발급한 키</td>
               <td>웹카달록 신규고객 → ERP 승인 대기함</td></tr>
+          <tr><td>REFATRIX Platform — 개발요청 전송</td><td class="mono">hvwteeecvukddmurzlfm.supabase.co/rest/v1/rpc/app_devreq_push</td><td class="mono">REFATRIX_DEVREQ_KEY</td>
+              <td>개발요청(미완료) → 플랫폼 SYD 카탈로그 0순위 「고객요청 개발필요」</td></tr>
           <tr><td>환율 (open.er-api.com)</td><td class="mono">open.er-api.com/v6/latest/USD</td><td class="pill p-off">키 없음</td>
               <td>재무 → 환율(USD→MXN) 자동 조회 · 무료 공개 API</td></tr>
           <tr><td>지도·CDN (브라우저)</td><td class="mono">leaflet · cdnjs · fonts.googleapis</td><td class="pill p-off">키 없음</td>
@@ -150,7 +157,7 @@
         </tbody>
       </table></div>
       <div class="hint" style="margin-top:10px">
-        위 표의 <b>키가 있는 4종</b>이 이 화면에서 관리됩니다. 그 밖에
+        위 표의 <b>키가 있는 서비스</b>가 이 화면에서 관리됩니다. 그 밖에
         <span class="mono">DATABASE_URL</span>·<span class="mono">JWT_SECRET</span>·<span class="mono">APP_SECRET_KEY</span> 는
         서버 자체를 여는 값이라 <b>Railway 환경변수에만</b> 둡니다(여기서 바꾸지 않습니다).
       </div>
@@ -254,6 +261,7 @@
           +'</div>';
       }).join('');
       return '<div class="svc'+(s.ready?' ready':'')+'">'+head+uses+flds
+        +(s.key==='refatrixplatform'?'<div id="pfPush" class="pfpush"></div>':'')
         +'<div class="msg" id="msg_'+esc(s.key)+'"></div>'
         +'<pre class="out hidden" id="out_'+esc(s.key)+'"></pre>'
         +(missing.length?'<div class="hint" style="margin-top:8px">필수 항목 미설정: <span class="mono">'+esc(missing.join(', '))+'</span></div>':'')
@@ -261,6 +269,60 @@
     }).join('');
     $('svcList').querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>saveSvc(b.getAttribute('data-save'),b));
     $('svcList').querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testSvc(b.getAttribute('data-test'),b));
+    if($('pfPush')) loadPfPush();
+  }
+
+  // ── REFATRIX Platform 개발요청 전송 상태 (2026-11-09) ──
+  //   GET/POST /api/dev-requests/platform-push — 마지막 전송·최근 기록 · [지금 전체 다시 보내기]
+  const PF_MODE={replace:'전체 동기화',upsert:'추가·변경',delete:'해제'};
+  async function loadPfPush(){
+    const box=$('pfPush'); if(!box) return;
+    let d=null;
+    try{
+      const res=await fetch(session.api+'/api/dev-requests/platform-push',{headers:auth()});
+      d=await res.json();
+      if(!res.ok||d.error){ box.innerHTML='<div class="hint">전송 상태를 불러오지 못했습니다: '+esc(d.note||d.error||res.status)+'</div>'; return; }
+    }catch(e){ box.innerHTML='<div class="hint">전송 상태를 불러오지 못했습니다(서버 연결 실패).</div>'; return; }
+    renderPfPush(d);
+  }
+  function renderPfPush(d){
+    const box=$('pfPush'); if(!box) return;
+    const log=d.log||[];
+    const st=!d.enabled?'<span class="pill p-off">꺼짐 — 키 없음</span>'
+      :(d.synced?'<span class="pill p-on">전송 중</span>':'<span class="pill p-warn">첫 전체 동기화 대기</span>');
+    const last=log[0];
+    const rows=log.slice(0,10).map(x=>'<tr><td>'+fmt(x.at)+'</td><td>'+esc(PF_MODE[x.mode]||x.mode)+'</td><td style="text-align:right">'+esc(x.n)+'</td>'
+      +'<td>'+(x.ok?'<span class="pill p-on">성공</span>':'<span class="pill p-err" title="'+esc(x.error||'')+'">실패</span>')+'</td>'
+      +'<td class="mono">'+(x.total!=null?esc(x.total):'-')+'</td><td class="hint">'+(x.ok?'':esc(String(x.error||'').slice(0,120)))+'</td></tr>').join('');
+    box.innerHTML='<div class="pf-h"><b>플랫폼 0순위 「고객요청 개발필요」 전송</b> '+st
+      +'<span class="sp"></span>'
+      +'<button class="btn ghost sm" id="pfReload">↻</button>'
+      +'<button class="btn sm" id="pfResync"'+(d.enabled?'':' disabled')+'>지금 전체 다시 보내기</button></div>'
+      +'<div class="pf-kpi">'
+        +'<div><span class="hint">ERP 미완료 개발요청(SYD 코드)</span><b>'+(d.current_count!=null?esc(d.current_count):'-')+'</b></div>'
+        +'<div><span class="hint">플랫폼에 보낸 목록</span><b>'+(d.last_count!=null?esc(d.last_count):'-')+'</b></div>'
+        +'<div><span class="hint">마지막 전송</span><b>'+(last?fmt(last.at):'-')+'</b></div>'
+        +'<div><span class="hint">오늘 전체 동기화</span><b>'+esc(d.last_replace_day||'-')+'</b></div>'
+      +'</div>'
+      +'<div class="hint">개발요청이 생기거나 · 바뀌거나 · 해제되면 5초 안에 바뀐 코드만 보냅니다. 서버 기동 때와 매일 멕시코 04시에 전체를 다시 맞춥니다. 실패분은 10분 안에 다시 보냅니다. 키를 저장하면 곧바로 전체를 보냅니다.</div>'
+      +(rows?'<div class="tblwrap" style="margin-top:8px"><table><thead><tr><th style="width:170px">시각</th><th style="width:90px">방식</th><th style="width:60px">코드</th><th style="width:70px">결과</th><th style="width:70px">플랫폼 합계</th><th>오류</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        :'<div class="hint" style="margin-top:6px">아직 전송 기록이 없습니다(서버가 재시작되면 기록은 비워집니다).</div>')
+      +'<div class="msg" id="pfMsg"></div>';
+    $('pfReload').addEventListener('click',loadPfPush);
+    $('pfResync').addEventListener('click',()=>resyncPf($('pfResync')));
+  }
+  async function resyncPf(btn){
+    btn.disabled=true; const old=btn.textContent; btn.textContent='보내는 중…';
+    let d={}, ok=false;
+    try{
+      const res=await fetch(session.api+'/api/dev-requests/platform-push',{method:'POST',headers:jauth(),body:'{}'});
+      d=await res.json(); ok=res.ok&&d.ok;
+    }catch(e){ d={note:'서버 연결 실패'}; }
+    if(d.state) renderPfPush({...d.state,current_count:d.sent?d.sent.replace:null});
+    const m=$('pfMsg'); if(m){ m.className='msg '+(ok?'ok':'err');
+      m.textContent=ok?('✅ 전체 '+((d.sent&&d.sent.replace)||0)+'개 코드를 보냈습니다.'):('❌ '+(d.note||d.error||'전송 실패 — 아래 기록의 오류를 확인하세요'));
+    }
+    if(!d.state){ btn.disabled=false; btn.textContent=old; }
   }
 
   async function saveSvc(key,btn){
@@ -278,6 +340,7 @@
       m.className='msg ok'; m.textContent='저장했습니다 ('+(d.changed||[]).map(c=>c.name+(c.action==='clear'?' 삭제':'')).join(', ')+') — 즉시 반영됩니다.';
       await loadAll();
       const m2=$('msg_'+key); if(m2){ m2.className='msg ok'; m2.textContent='저장했습니다 — 즉시 반영됩니다. 「연결 테스트」로 확인하세요.'; }
+      if(d.devreq_resync){ const m3=$('msg_'+key); if(m3) m3.textContent='저장했습니다 — 플랫폼에 개발요청 전체 목록을 보내는 중입니다(몇 초 뒤 아래 기록에 표시).'; setTimeout(loadPfPush,4000); }
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
     finally{ btn.disabled=false; btn.textContent=old; }
   }

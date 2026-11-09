@@ -22,6 +22,7 @@
 // =====================================================================
 import { resolveCode } from './quoteBuild.js';
 import { normCode } from './devDemand.js';
+import { scheduleDevReqPush } from './devReqPush.js';   // 2026-11-09 · 플랫폼 0순위(고객요청 개발필요) 이벤트
 
 // SQL 쪽 정규화 — normCode 와 같은 결과(대문자, 영숫자만)
 export const NORM_SQL = (col) => `upper(regexp_replace(COALESCE(${col},''), '[^A-Za-z0-9]', '', 'g'))`;
@@ -87,6 +88,7 @@ export async function recordQuoteDevDemand(c, quoteId, opts = {}) {
       [g.code, customerId, qty, q.quote_date || null, q.id, userId])).rows[0];
     out.created.push({ id: Number(r.id), code: g.code, qty });
   }
+  if (out.created.length || out.updated) scheduleDevReqPush();   // 커밋 뒤(5초 디바운스) DB 상태 기준으로 전송
   return out;
 }
 

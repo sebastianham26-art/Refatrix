@@ -15,6 +15,8 @@ import { looksLikeApiKey } from './sttModel.js';
 import crypto from 'node:crypto';
 import { query } from './db.js';
 
+import { pushDevReq } from './devReqPush.js';   // 2026-11-09 · REFATRIX Platform 개발요청 전송 연결 테스트
+
 // ── 등록부 ────────────────────────────────────────────────────────────────
 //   uses 는 화면의 「어디에 쓰이나」 목록이다 — 키를 지웠을 때 무엇이 멎는지 미리 보여 준다.
 export const SERVICES = [
@@ -53,6 +55,19 @@ export const SERVICES = [
     uses: [
       '고객상담 미팅 녹음 전사',
       '방문 상담 녹음 전사',
+    ],
+  },
+  {
+    key: 'refatrixplatform',
+    label: 'REFATRIX Platform (개발요청 전송)',
+    desc: 'ERP 개발요청(미완료) → 플랫폼 SYD 카탈로그 0순위 「고객요청 개발필요」',
+    console: 'https://supabase.com/dashboard',
+    fields: [
+      { name: 'REFATRIX_DEVREQ_KEY', label: '개발요청 전송 키', secret: true, required: true, hint: '플랫폼 운영자가 Supabase 에서 refatrix_devreq_event.sql 실행 → 결과 맨 끝 erp_devreq_key 열의 64자 값' },
+    ],
+    uses: [
+      '개발요청 생성 · 수정 · 해제 시 플랫폼 목록 갱신(이벤트)',
+      '매일 멕시코 04시 · 서버 기동 시 전체 동기화',
     ],
   },
   {
@@ -401,6 +416,18 @@ export async function testService(key) {
         { headers: { authorization: 'Bearer ' + tok } });
       const body = await r.text();
       return { ok: r.ok, status: r.status, note: r.ok ? '토큰·전화번호 ID 가 유효합니다.' : httpNote(r.status), body: clip(body) };
+    }
+    if (key === 'refatrixplatform') {
+      if (!val('REFATRIX_DEVREQ_KEY')) return { ok: false, reason: 'no_key', note: '개발요청 전송 키(REFATRIX_DEVREQ_KEY)가 설정돼 있지 않습니다.' };
+      // 빈 upsert — 키만 확인하고 플랫폼 목록은 바꾸지 않는다
+      const r = await pushDevReq('upsert', []);
+      const body = typeof r.body === 'string' ? r.body : JSON.stringify(r.body || {});
+      const invalid = /DEVREQ_KEY_INVALID/.test(body);
+      return { ok: !!r.ok, status: r.status || r.error || null,
+        note: r.ok ? '키가 유효합니다 — 플랫폼이 전송을 받습니다(목록은 바뀌지 않음).'
+          : invalid ? '키가 거부됐습니다(DEVREQ_KEY_INVALID) — Supabase 결과의 erp_devreq_key 값을 앞뒤 공백 없이 다시 넣으세요.'
+          : r.status ? httpNote(r.status) : '플랫폼에 연결하지 못했습니다.',
+        body: clip(body) };
     }
     return { ok: false, reason: 'unknown_service' };
   } catch (e) {

@@ -4,6 +4,7 @@
 //
 //   POST   /api/pf-catalog/login {token, name, user_key}   플랫폼 세션 → 1시간 토큰(typ pf_cat · ERP API 는 전부 401)
 //   GET    /api/pf-catalog/summary                         상태별 건수(미검토 · 작성중 · 확인완료 · 재확인)
+//   GET    /api/pf-catalog/dev-requests                    0순위 고객요청 개발필요(개발요청 미완료 · SYD 코드별) — 2026-11-09
 //   GET    /api/pf-catalog/items?q=&status=&active=&sort=&limit=&offset=
 //   GET    /api/pf-catalog/items/:id                       1건 + ERP 변경 이력 + 확인 이력 + 나눠 넣기 미리보기
 //   POST   /api/pf-catalog/preview {scode, app, oe}        입력 중 미리보기(저장하지 않음)
@@ -23,6 +24,7 @@ import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { platformApi } from '../surveyViewer.js';
 import { scheduleDevMatchSweep } from '../devMatchSweep.js';
 import { pushProductsSoon } from '../productSync.js';
+import { loadDevReqItems } from '../devReqPush.js';   // 2026-11-09 · 0순위 보조 조회
 import {
   pfCatalogReady, listItems, summary, getItem, saveDraft, discardDraft, confirmItem,
   previewDerived, normValue, PF_FIELDS, exportItems, logExport, listExports, EXPORT_MAX,
@@ -97,6 +99,13 @@ export default async function pfCatalogRoutes(app) {
   });
 
   app.get('/api/pf-catalog/summary', G, async () => summary());
+
+  // 0순위 「고객요청 개발필요」 직접 조회(읽기 전용 · 이벤트 누락 대비 보조) — 푸시와 같은 목록 · 가격·고객명 없음
+  app.get('/api/pf-catalog/dev-requests', G, async () => {
+    const items = [...(await loadDevReqItems()).values()];
+    items.sort((a, b) => (b.qty - a.qty) || (a.syd < b.syd ? -1 : a.syd > b.syd ? 1 : 0));
+    return { items };
+  });
 
   app.get('/api/pf-catalog/items', G, async (req) => {
     const q = req.query || {};

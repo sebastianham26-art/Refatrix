@@ -8,6 +8,7 @@ import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
 import { groupDemand, attachVehicleVio, sortDemand, normCode, DEV_CAT_KEYS } from '../devDemand.js';
 import { sweepDevRequestMatches, pushDevDemandAndOffer, scheduleDevMatchSweep } from '../devMatchSweep.js';
+import { scheduleDevReqPush, syncDevReq, devReqPushState, startDevReqPushWorker, loadDevReqItems } from '../devReqPush.js';   // 2026-11-09 · 플랫폼 0순위 이벤트
 import { devOfferInfo, devOfferState, createDevOfferSheets } from '../devOffer.js';   // 2026-10-12 · 개발완료 오퍼
 // 0225 · 고객 PO(O.C.) — 견적 화면과 **같은 판정·같은 검색 규칙**을 쓴다.
 import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
@@ -50,6 +51,7 @@ function withDurations(r) {
 //   시그니처는 호출부(quoteRoutes·fieldSurveyRoutes) 호환을 위해 유지(no-op).
 //   ※ dev_complete(개발완료 알림·담당영업+디렉터 소수 대상)는 그대로 유지.
 export async function notifyProductMarketing(_c, _info) {
+  scheduleDevReqPush();   // 2026-11-09 · 새 개발요청(수동 접수 · 현장조사) → 플랫폼 0순위 갱신
   return [];
 }
 
@@ -267,6 +269,7 @@ export default async function devRequestRoutes(app) {
        b.reviewed_at || null, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'review' } });
     scheduleDevMatchSweep({ userId: req.ctx.perm.userId });   // 2026-10-12 — 검토 SYD 코드가 카탈로그에 있으면 개발완료
+    scheduleDevReqPush();   // 2026-11-09 — 검토 SYD 코드로 플랫폼 0순위 코드가 바뀐다
     return { ok: true };
   });
 
@@ -323,6 +326,7 @@ export default async function devRequestRoutes(app) {
       }
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'developed', ctr: prod.code, todos: todos.length } });
+    scheduleDevReqPush();   // 개발완료 → 플랫폼 목록에서 해제
     // 개발완료 후속: 수요 → 부족분 대장 + 재고검증 → (재고 있으면) 고객 오퍼시트 / (없으면) 구매 제안
     let followup = null;
     try {
@@ -386,13 +390,31 @@ export default async function devRequestRoutes(app) {
     });
     await logEvent({ userId: uid, action: 'update', target: `dev_request:${id}`, detail: { split: true, total: tokens.length, created: ids.length, skipped: skipped.length } });
     scheduleDevMatchSweep({ userId: uid });   // 나눈 코드 중 이미 카탈로그에 있는 것은 바로 개발완료
+    scheduleDevReqPush();
     return { ok: true, ...summary, created_ids: ids.length ? [ids[0], ids[ids.length - 1]] : [] };
   });
 
   app.put('/api/dev-requests/:id/cancel', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
     const id = Number(req.params.id);
     await query(`UPDATE product_dev_requests SET status='cancelled', updated_by=$1, updated_at=now() WHERE id=$2 AND deleted_at IS NULL`, [req.ctx.perm.userId, id]);
+    scheduleDevReqPush();   // 요청 취소 → 플랫폼 목록에서 해제
     return { ok: true };
+  });
+
+  // ── REFATRIX Platform 0순위(고객요청 개발필요) 전송 상태 · 수동 전체 동기화 (디렉터 · 2026-11-09) ──
+  app.get('/api/dev-requests/platform-push', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    let current_count = null;
+    try { current_count = (await loadDevReqItems()).size; } catch (_) { /* 표시용 */ }
+    return { ...devReqPushState(), current_count };
+  });
+  app.post('/api/dev-requests/platform-push', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const mode = req.body && req.body.mode === 'diff' ? 'auto' : 'replace';
+    const out = await syncDevReq({ mode });
+    if (out.skipped === 'no_key') return reply.code(409).send({ error: 'devreq_key_missing', note: 'REFATRIX_DEVREQ_KEY 가 설정되지 않았습니다.' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'devreq_platform_push', detail: out.sent || {} });
+    return { ...out, state: devReqPushState() };
   });
 
   // KPI: 당월(또는 ym) 신규 개발 완료 건수 + 평균 소요일
@@ -936,4 +958,7 @@ export default async function devRequestRoutes(app) {
     globalThis.__refatrixDevMatchSweeper = setInterval(() => { sweepDevRequestMatches({ notify: true }).catch(() => {}); }, 43200000);
     setTimeout(() => { sweepDevRequestMatches({ notify: true }).catch(() => {}); }, 30000);
   }
+
+  // 플랫폼 0순위 전송 — 기동 45초 뒤 replace 1회 + 10분 점검(멕시코 04시 이후 그날 첫 점검 replace). 키 없으면 무동작.
+  startDevReqPushWorker();
 }
