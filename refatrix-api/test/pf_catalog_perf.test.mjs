@@ -133,7 +133,16 @@ test('B. 실제 서버 + PostgreSQL — perf', { skip: !PG && 'TEST_PG_URL 없�
   assert.ok(M.PFQ001.transit_eta, 'ETA');
   assert.deepEqual([M.PFQ002.sold_qty, M.PFQ002.quote_qty, M.PFQ002.transit_qty, M.PFQ002.backorder_qty], [4, 0, 0, 0]);
   assert.deepEqual([M.PFQ003.transit_qty, M.PFQ003.backorder_qty], [2, 1]);
-  assert.equal(M.PFQ004, undefined, '실적 없는 코드는 빠진다');
+  // 실적 없는 코드도 나온다 — 구분 표시(has_perf · perf_status · perf_label) · 네 수량 0 · 선택 필드 없음
+  assert.deepEqual(M.PFQ004, { code: 'PFQ004', quote_qty: 0, sold_qty: 0, transit_qty: 0, backorder_qty: 0,
+    has_perf: false, perf_status: 'none', perf_label: '실적 없음' });
+  assert.equal(M.PFQ001.has_perf, true); assert.equal(M.PFQ001.perf_status, 'ok'); assert.equal(M.PFQ001.perf_label, undefined);
+  assert.equal(M.PFQ002.has_perf, true, '매출만 있어도 실적 있음');
+  assert.ok(R.count_none >= 1 && R.count_perf >= 3 && R.count === R.count_perf + R.count_none);
+  assert.equal(R.none_label, '실적 없음');
+  // ?only=perf → 예전처럼 실적 있는 코드만
+  const Rp = await get('?only=perf&fresh=1');
+  assert.equal(by(Rp).PFQ004, undefined); assert.ok(by(Rp).PFQ001); assert.equal(Rp.count_none, 0); assert.equal(Rp.only_perf, true);
   assert.equal(M.PROPFQ1, undefined); assert.equal(M.K99001, undefined, 'PRO · 키트 제외');
   const txt = JSON.stringify(R);
   assert.ok(!/Cliente Secreto|list_price|unit_price|amount/i.test(txt), '고객명 · 가격 · 금액 없음');
@@ -144,7 +153,8 @@ test('B. 실제 서버 + PostgreSQL — perf', { skip: !PG && 'TEST_PG_URL 없�
 
   // ── 일부 코드(소문자 · 공백) ──
   R = await get('?codes=pfq001, PFQ004');
-  assert.deepEqual(R.items.map((x) => x.code), ['PFQ001']);
+  assert.deepEqual(R.items.map((x) => [x.code, x.has_perf]), [['PFQ001', true], ['PFQ004', false]]);
+  assert.deepEqual((await get('?codes=PFQ004,NOPE999')).items.map((x) => x.code), ['PFQ004'], 'ERP 에 없는 코드는 나오지 않는다');
 
   // ── 캐시: 새 매출이 들어와도 10분 안에는 같은 값 · fresh=1 이면 새 값 ──
   await inv('posted', B, 6);

@@ -19,6 +19,11 @@
 //   코드 = products.code(CTR 신규 코드). 실적은 모두 product_id 로 묶이므로 코드를 바꾼 제품은
 //   예전 실적까지 새 코드로 합산된다. 대상 = pfCatalog.TARGET_SQL(PRO · 키트 제외).
 //   가격 · 금액 · 고객명은 내보내지 않는다.
+//
+//   2026-11-10b · 실적이 전혀 없는 코드도 내보낸다(디렉터 요청 — 「실적 없음」과 「아직 못 받음」을 구분).
+//     · 실적 있음: has_perf:true  · perf_status:'ok'   + 네 수량 · 선택 필드
+//     · 실적 없음: has_perf:false · perf_status:'none' · perf_label:'실적 없음' + 네 수량 0 (선택 필드 생략 → 응답 작게)
+//     · ?only=perf 를 붙이면 예전처럼 실적 있는 코드만.
 // =====================================================================
 import { query } from './db.js';
 import { TARGET_SQL } from './pfCatalog.js';
@@ -58,16 +63,32 @@ export function perfDefs(months) {
   };
 }
 
+const QTY4 = ['quote_qty', 'sold_qty', 'transit_qty', 'backorder_qty'];
+export const NONE_LABEL = '실적 없음';
+
+/** 네 수량이 모두 0 인지에 따라 표시 상태를 붙인다(합친 뒤에도 다시 부른다). */
+function markPerf(o) {
+  const has = QTY4.some((k) => Number(o[k]) > 0);
+  o.has_perf = has;
+  o.perf_status = has ? 'ok' : 'none';
+  if (has) delete o.perf_label; else o.perf_label = NONE_LABEL;
+  return o;
+}
+
 function rowOut(r) {
   const o = {
     code: r.code,
     quote_qty: r3(r.quote_qty), sold_qty: r3(r.sold_qty), transit_qty: r3(r.transit_qty), backorder_qty: r3(r.backorder_qty),
+  };
+  // 실적 없는 코드는 네 수량(0)과 표시 상태만 — 1만 개가 넘어도 응답이 가볍게
+  if (!QTY4.some((k) => o[k] > 0) && !(Number(r.po_open_qty) > 0)) return markPerf(o);
+  Object.assign(o, {
     quote_n: Number(r.quote_n || 0), sold_n: Number(r.sold_n || 0),
     quote_open_qty: r3(r.quote_open_qty), po_open_qty: r3(r.po_open_qty),
-  };
+  });
   if (r.transit_eta) o.transit_eta = String(r.transit_eta).slice(0, 10);
   if (r.last_sold_on) o.last_sold_on = String(r.last_sold_on).slice(0, 10);
-  return o;
+  return markPerf(o);
 }
 
 // 기간 시작 = 멕시코 오늘 − N개월(그날 포함). $1 = 개월수(0 = 전체 → 시작일 NULL).
@@ -75,11 +96,11 @@ const FROM_SQL = `CASE WHEN $1::int > 0
   THEN ((now() AT TIME ZONE 'America/Mexico_City')::date - make_interval(months => $1::int))::date END`;
 
 /**
- * 제품별 실적 — 네 수량 중 하나라도 0 보다 큰 CTR 코드만.
- * @param {{months?:number, codes?:string[]|null}} opt
+ * 제품별 실적 — 대상 CTR 코드 전부(실적 없음 포함). onlyPerf 면 네 수량 중 하나라도 > 0 인 코드만.
+ * @param {{months?:number, codes?:string[]|null, onlyPerf?:boolean}} opt
  * @returns {Promise<{updated_at:string, period:object, defs:object, items:object[]}>}
  */
-export async function computePerf({ months = PERF_MONTHS_DEFAULT, codes = null } = {}, exec = query) {
+export async function computePerf({ months = PERF_MONTHS_DEFAULT, codes = null, onlyPerf = false } = {}, exec = query) {
   const params = [months];
   let codeCond = '';
   if (codes && codes.length) { params.push(codes); codeCond = ` AND upper(btrim(p.code)) = ANY($2::text[])`; }
@@ -132,8 +153,8 @@ export async function computePerf({ months = PERF_MONTHS_DEFAULT, codes = null }
       LEFT JOIN bo ON bo.product_id = t.id
       LEFT JOIN v_incoming_stock inc ON inc.product_id = t.id
       LEFT JOIN v_backorder po ON po.product_id = t.id
-     WHERE COALESCE(qt.quote_qty, 0) > 0 OR COALESCE(sd.sold_qty, 0) > 0
-        OR COALESCE(inc.incoming_qty, 0) > 0 OR COALESCE(bo.backorder_qty, 0) > 0
+     ${onlyPerf ? `WHERE COALESCE(qt.quote_qty, 0) > 0 OR COALESCE(sd.sold_qty, 0) > 0
+        OR COALESCE(inc.incoming_qty, 0) > 0 OR COALESCE(bo.backorder_qty, 0) > 0` : ''}
      ORDER BY t.code`;
   const [rows, per] = await Promise.all([
     exec(sql, params).then((r) => r.rows),
@@ -146,29 +167,39 @@ export async function computePerf({ months = PERF_MONTHS_DEFAULT, codes = null }
     const o = rowOut(r);
     const prev = by.get(o.code);
     if (!prev) { by.set(o.code, o); continue; }
-    for (const k of ['quote_qty', 'sold_qty', 'transit_qty', 'backorder_qty', 'quote_open_qty', 'po_open_qty']) prev[k] = r3(prev[k] + o[k]);
-    prev.quote_n += o.quote_n; prev.sold_n += o.sold_n;
+    for (const k of ['quote_qty', 'sold_qty', 'transit_qty', 'backorder_qty', 'quote_open_qty', 'po_open_qty']) {
+      if (prev[k] !== undefined || o[k] !== undefined) prev[k] = r3((prev[k] || 0) + (o[k] || 0));
+    }
+    for (const k of ['quote_n', 'sold_n']) if (prev[k] !== undefined || o[k] !== undefined) prev[k] = (prev[k] || 0) + (o[k] || 0);
     if (o.transit_eta && (!prev.transit_eta || o.transit_eta < prev.transit_eta)) prev.transit_eta = o.transit_eta;
     if (o.last_sold_on && (!prev.last_sold_on || o.last_sold_on > prev.last_sold_on)) prev.last_sold_on = o.last_sold_on;
+    markPerf(prev);
   }
+  const items = [...by.values()];
+  const withPerf = items.filter((x) => x.has_perf).length;
   const label = months ? `최근 ${months}개월 (${per.d_from} ~ ${per.d_to})` : `전체 누적 (~ ${per.d_to})`;
   return {
     updated_at: new Date().toISOString(),
     period: { months, from: per.d_from || null, to: per.d_to, label, applies_to: ['quote_qty', 'sold_qty'] },
     defs: perfDefs(months),
-    count: by.size,
-    items: [...by.values()],
+    count: items.length,
+    count_perf: withPerf,            // 실적 있음
+    count_none: items.length - withPerf,   // 실적 없음(onlyPerf 면 0)
+    only_perf: !!onlyPerf,
+    none_label: NONE_LABEL,
+    items,
   };
 }
 
 // 전체 조회(코드 지정 없음)는 몇 분 묵혀 둔다 — 브라우저마다 3시간에 1번이지만 동시에 열면 겹친다.
-const cache = new Map();   // months → {at, data}
+const cache = new Map();   // 'months:all|perf' → {at, data}
 export function clearPerfCache() { cache.clear(); }
-export async function loadPerf({ months = PERF_MONTHS_DEFAULT, codes = null, fresh = false } = {}) {
-  if (codes && codes.length) return computePerf({ months, codes });
-  const hit = cache.get(months);
+export async function loadPerf({ months = PERF_MONTHS_DEFAULT, codes = null, fresh = false, onlyPerf = false } = {}) {
+  if (codes && codes.length) return computePerf({ months, codes, onlyPerf });
+  const key = months + (onlyPerf ? ':perf' : ':all');
+  const hit = cache.get(key);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.data;
-  const data = await computePerf({ months });
-  cache.set(months, { at: Date.now(), data });
+  const data = await computePerf({ months, onlyPerf });
+  cache.set(key, { at: Date.now(), data });
   return data;
 }

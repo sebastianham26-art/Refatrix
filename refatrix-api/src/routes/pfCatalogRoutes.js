@@ -5,7 +5,7 @@
 //   POST   /api/pf-catalog/login {token, name, user_key}   플랫폼 세션 → 1시간 토큰(typ pf_cat · ERP API 는 전부 401)
 //   GET    /api/pf-catalog/summary                         상태별 건수(미검토 · 작성중 · 확인완료 · 재확인)
 //   GET    /api/pf-catalog/dev-requests                    0순위 고객요청 개발필요(개발요청 미완료 · SYD 코드별) — 2026-11-09
-//   GET    /api/pf-catalog/perf?codes=&months=&fresh=      CTR 제품별 실적 수량(견적 · 매출 · 운송 · 백오더) — 2026-11-10
+//   GET    /api/pf-catalog/perf?codes=&months=&fresh=&only=  CTR 제품별 실적 수량(견적 · 매출 · 운송 · 백오더 · 실적 없음 포함) — 2026-11-10
 //   GET    /api/pf-catalog/items?q=&status=&active=&sort=&limit=&offset=
 //   GET    /api/pf-catalog/items/:id                       1건 + ERP 변경 이력 + 확인 이력 + 나눠 넣기 미리보기
 //   POST   /api/pf-catalog/preview {scode, app, oe}        입력 중 미리보기(저장하지 않음)
@@ -111,9 +111,10 @@ export default async function pfCatalogRoutes(app) {
 
   // 제품별 실적 수량(읽기 전용) — 수량 · 건수만, 가격 · 금액 · 고객명 없음. 기준은 src/pfPerf.js 머리말.
   //   ?codes=CQ0500R,CB0001 일부만 · ?months=12(기본) | 1~120 | all · ?fresh=1 10분 캐시 건너뛰기
+  //   기본 = 대상 CTR 코드 전부(실적 없음은 has_perf:false · perf_status:'none') · ?only=perf 실적 있는 코드만
   app.get('/api/pf-catalog/perf', G, async (req) => {
     const q = req.query || {};
-    return loadPerf({ months: parseMonths(q.months), codes: parseCodes(q.codes), fresh: q.fresh === '1' || q.fresh === 'true' });
+    return loadPerf({ months: parseMonths(q.months), codes: parseCodes(q.codes), fresh: q.fresh === '1' || q.fresh === 'true', onlyPerf: q.only === 'perf' });
   });
 
   app.get('/api/pf-catalog/items', G, async (req) => {
