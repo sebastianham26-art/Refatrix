@@ -133,7 +133,7 @@ const INTENTS = [
   ['Asesor', /\b(asesor|agente|hablar con)\b/],
 ];
 
-const OUR_PHONES = new Set(['8118250003', '8116606680']);   // 우리 번호(봇 안내문) — 고객 전화로 잡지 않는다
+const OUR_PHONES = new Set(['8118250003', '8116606680', '8128806680']);   // 우리 번호(봇 안내문 · 1111 ERP 번호 8128806680) — 고객 전화로 잡지 않는다
 
 export function extractPhone(text) {
   const out = [];

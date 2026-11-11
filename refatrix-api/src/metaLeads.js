@@ -168,10 +168,22 @@ export async function syncWhatsAppThreads({ since = null, full = false, q = quer
   return bp;
 }
 
+// 1111 · 번호 하나의 WhatsApp 대화(ERP 번호) — 사진 · 음성 · PDF 는 mid(wa_messages.id) · mk(종류)를 달아 화면에서 파일을 연다
+const WA_MEDIA_K = ['image', 'video', 'document', 'audio', 'sticker'];
+export async function waThreadMessages(phone, q = query) {
+  return (await q(`SELECT id, direction, kind, body, payload, source, at FROM wa_messages WHERE phone = $1 ORDER BY at DESC, id DESC LIMIT ${MSG_KEEP}`, [phone])).rows.reverse()
+    .map((m) => {
+      const media = m.payload && WA_MEDIA_K.includes(m.kind) && m.source !== 'campaign';
+      const raw = String(m.body || '').trim();
+      const text = /^\[(image|video|audio|sticker|document)\]$/.test(raw) ? '' : raw;   // 캡션 없는 파일은 「(imagen)」 같은 표시(포털 · AI 가 그대로 씀)
+      return { at: new Date(m.at).toISOString(), me: m.direction === 'out', text: text || WA_KIND[m.kind] || '',
+        ...(media ? { mid: Number(m.id), mk: m.kind } : {}) };
+    });
+}
+
 // 번호 하나의 대화를 목록 행으로(가져오기 · 실시간 접수가 같이 쓴다). 반환 {ok, inserted}
 export async function upsertWaThread(phone, q = query, lastAt = null) {
-  const msgs = (await q(`SELECT direction, kind, body, at FROM wa_messages WHERE phone = $1 ORDER BY at DESC, id DESC LIMIT ${MSG_KEEP}`, [phone])).rows.reverse()
-    .map((m) => ({ at: new Date(m.at).toISOString(), me: m.direction === 'out', text: String(m.body || '').trim() || WA_KIND[m.kind] || '' }));
+  const msgs = await waThreadMessages(phone, q);
   if (!msgs.length || !msgs.some((m) => !m.me)) return { ok: false };
   const who = (await q(`SELECT (SELECT name FROM wa_contacts WHERE phone = $1 AND deleted_at IS NULL LIMIT 1) AS cname,
                                (SELECT profile_name FROM wa_inbound WHERE wa_from = $1) AS pname`, [phone]).catch(() => ({ rows: [{}] }))).rows[0] || {};

@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1022ca</title>
+<title>Refatrix ERP · WhatsApp 마케팅 · build wap-1111a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -72,6 +72,14 @@
   .b.in{background:#fff;align-self:flex-start}.b.out{background:#d9fdd3;align-self:flex-end}.b.bot{background:#e7f0ff;align-self:flex-end}.b.camp{background:#fff4f3;align-self:flex-end}
   .b .tm{display:block;font-size:10px;color:var(--muted);text-align:right;margin-top:3px;white-space:normal}
   .b.fail{outline:1px solid var(--bad)}
+  /* 1111 · 사진 · 음성 · 동영상 · PDF */
+  .b .wm{display:block;max-width:260px;max-height:280px;border-radius:7px;margin-bottom:4px;cursor:zoom-in;background:#ddd;min-width:120px;min-height:60px;object-fit:contain}
+  .b audio.wm,.b video.wm{cursor:auto;min-height:0;background:none}
+  .b .wdoc{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:7px;background:rgba(0,0,0,.05);color:inherit;text-decoration:none;font-weight:600;margin-bottom:3px}
+  .b .wgone{display:block;font-size:11px;color:var(--muted);font-style:italic}
+  .callbar{margin-top:8px;padding:10px 12px;border-radius:10px;background:#fff7e6;border:1px solid #f1d9a6;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12.5px}
+  .callbar a.btn{text-decoration:none}
+  .attach-pv{font-size:12px;color:var(--muted);margin-top:4px}
   .modal{display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:200;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto}
   .modal.on{display:flex}
   .mbox{background:#fff;border-radius:14px;max-width:880px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
@@ -365,6 +373,7 @@
           <select id="iState"><option value="open">미처리</option><option value="">전체</option><option value="done">처리 완료</option><option value="unregistered">미등록 번호</option></select>
           <select id="iAssignee"><option value="">담당 전체</option></select>
           <label style="margin:0;display:flex;align-items:center;gap:4px;font-size:12.5px;color:var(--ink)"><input type="checkbox" id="iLead">🙋 상담 요청만</label>
+          <label style="margin:0;display:flex;align-items:center;gap:4px;font-size:12.5px;color:var(--ink)" title="이 화면이 열려 있으면 새 WhatsApp 메시지가 올 때 소리 · 탭 제목 숫자로 알립니다"><input type="checkbox" id="iSound" checked>🔔 새 메시지 소리</label>
           <span style="margin-left:auto"></span>
           <input type="date" id="xFrom"><input type="date" id="xTo">
           <button type="button" class="btn ghost" id="xExport">⬇ 엑셀로 받기</button>
@@ -598,7 +607,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const WAP_BUILD='wap-1016ib';
+  const WAP_BUILD='wap-1111a';
   try{ console.log('[wapromo] build '+WAP_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={cCust:'',custSync:null,cVeh:'',cTipo:'',facets:null,vehOpen:false,groups:[],gNone:{n:0,yes:0},cGroup:'',kGroups:[],matched:0,impSum:null,month:null,kBankId:null,bank:[],bankFolders:[],bSel:new Set(),bView:'l',bMode:'imgs',hMonth:null,thCache:{},fileCache:{},calPick:null,tab:'contacts',contacts:[],counts:{},sel:new Set(),users:[],weekStart:null,camps:[],imgCache:{},editId:null,
@@ -607,7 +616,8 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtT=(t)=>{ if(!t) return '—'; const d=new Date(t); return d.toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
   const ERR={auto_group:'영업담당자 자동 그룹은 이름 · 사람을 바꾸거나 지울 수 없습니다(「🏢 영업 고객 가져오기」가 정함 · 색과 설명만 고칠 수 있음).',group_name_required:'그룹 이름을 넣으세요.',group_exists:'같은 이름의 그룹이 이미 있습니다.',group_not_found:'그룹을 찾지 못했습니다(지워졌을 수 있음).',group_required:'그룹을 고르세요.',group_in_use:'이 그룹을 대상으로 한 예약 · 발송 중인 광고가 있어 지울 수 없습니다(먼저 그 발송의 대상을 바꾸거나 취소).',no_consented_in_groups:'고른 그룹에 ✅ 동의한 사람이 없습니다.',no_contacts:'대상이 없습니다.',too_many_contacts:'한 번에 너무 많습니다.',bad_phone:'번호 형식이 맞지 않습니다(10자리 또는 52+10자리).',name_required:'이름을 넣으세요.',duplicate_phone:'이미 등록된 번호입니다.',
-    wa_not_configured:'WhatsApp 키가 없습니다(관리 › 외부 서비스 키).',window_closed:'24시간 창이 닫혀 있어 직접 답장은 못 보냅니다(템플릿만 가능). 고객이 먼저 메시지를 보내면 열립니다.',
+    wa_not_configured:'WhatsApp 키가 없습니다(관리 › 외부 서비스 키).',window_closed:'24시간 창이 닫혀 있어 WhatsApp 으로는 못 보냅니다 — 📞 전화로 연락하세요. 고객이 먼저 메시지를 보내면 다시 열립니다.',
+    bad_media_type:'JPG · PNG 사진 또는 PDF 만 보낼 수 있습니다.',pdf_too_large:'PDF 는 16MB 까지입니다.',media_expired:'파일이 Meta 에서 지워졌습니다(30일 지남).',
     image_required:'이미지를 고르세요.',image_too_large:'이미지가 5MB 를 넘습니다.',bad_image_type:'JPG 또는 PNG 만 됩니다.',caption_required:'문구를 넣으세요.',no_consented:'고른 사람 중 ✅ 동의자가 없습니다 — 먼저 동의 요청을 보내세요.',no_contacts:'고른 사람이 없습니다.',image_source_not_found:'다시 쓸 이미지를 찾지 못했습니다.',
     caption_too_long:'문구는 900자 이하로.',bad_send_at:'날짜와 시각을 넣으세요.',not_editable:'예약 상태인 발송만 고칠 수 있습니다.',not_cancellable:'이미 끝났거나 취소된 발송입니다.',
     reply_required:'자동 답장을 넣으세요.',keywords_required:'받은 말(키워드)을 하나 이상 넣으세요.',director_or_socio_only:'WhatsApp 마케팅 권한이 없습니다(관리자 화면 › 사용자 › WhatsApp 마케팅).',forbidden:'WhatsApp 마케팅 권한이 없습니다(관리자 화면 › 사용자 › WhatsApp 마케팅).',read_only:'읽기 권한만 있습니다.',
@@ -651,7 +661,9 @@
       S.weekStart=monday(mxToday()); S.month=mxToday().slice(0,7); S.hMonth=S.month; $('kDate').value=addDays(mxToday(),1);
       $('xFrom').value=mxToday().slice(0,8)+'01'; $('xTo').value=mxToday();
       api('GET','/api/wa-promo/users').then(d=>{ S.users=d.items||[]; $('iAssignee').innerHTML='<option value="">담당 전체</option>'+S.users.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join(''); }).catch(()=>{});
-      const t0=new URLSearchParams(location.hash.slice(1)).get('tab');
+      const hs=new URLSearchParams(location.hash.slice(1)); const t0=hs.get('tab');
+      if(t0==='inbox'&&hs.get('phone')) S.cur=String(hs.get('phone')).replace(/\D/g,'');   // 1111 · Meta 광고 문의에서 「WhatsApp 답장」으로 바로
+      startPulse();
       setTab(['contacts','camps','bank','inbox','rules','setup'].includes(t0)?t0:'contacts');
     }catch(e){ say(false,'서버에 연결할 수 없습니다.',m); }
     finally{ $('go').disabled=false; }
@@ -666,7 +678,7 @@
     if(t==='contacts') loadContacts();
     if(t==='camps'){ loadGroups().then(loadCamps); loadStrip(); }
     if(t==='bank') loadBank();
-    if(t==='inbox') loadConvs();
+    if(t==='inbox'){ loadConvs(); S.unseen=0; paintTitle(); }
     if(t==='rules') loadRules();
     if(t==='setup') loadSetup();
   }
@@ -677,7 +689,7 @@
   async function loadContacts(){
     if(!S.custSync) loadCustSync().then(()=>renderFacets());
     const qs=new URLSearchParams(curFilter()); if(S.cSort){ qs.set('sort',S.cSort.k); qs.set('dir',S.cSort.d); } await loadGroups();
-    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; S.askable=d.askable!=null?d.askable:null; S.reaskable=d.reaskable||0; S.ask=d.ask||null; S.facets=d.facets||null; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); setInboxBadge(S.counts.inbox_open); }
+    try{ const d=await api('GET','/api/wa-promo/contacts?'+qs); S.contacts=d.items||[]; S.counts=d.counts||{}; S.matched=d.matched!=null?d.matched:S.contacts.length; S.askable=d.askable!=null?d.askable:null; S.reaskable=d.reaskable||0; S.ask=d.ask||null; S.facets=d.facets||null; const ids=new Set(S.contacts.map(c=>c.id)); [...S.sel].forEach(i=>{ if(!ids.has(i)) S.sel.delete(i); }); renderContacts(); if(S.waiting==null) setInboxBadge(S.counts.inbox_open); }
     catch(e){ $('cList').innerHTML='<div class="hint" style="margin-top:10px">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
   }
   // ── 0284 · 동의 요청 현황 ──
@@ -1523,11 +1535,82 @@
     if(!S.convs.length){ $('iList').innerHTML='<div class="hint" style="padding:10px">대화가 없습니다.</div>'; return; }
     $('iList').innerHTML=S.convs.map(c=>'<div class="it'+(c.phone===S.cur?' on':'')+'" data-phone="'+c.phone+'"><div class="nm">'+esc(c.name||c.phone_masked)+(c.contact_id?'':' <span class="tag t-unknown">미등록</span>')
       +(c.lead?' <span class="tag t-asked">🙋</span>':'')+(c.inbox_state==='open'?' <span class="tag t-no" style="margin-left:auto">미처리</span>':'')+'</div>'
-      +'<div class="pv">'+(c.last.direction==='out'?'↪ ':'')+esc(c.last.body||'')+'</div><div class="hint">'+fmtT(c.last.at)+(c.assigned_name?' · '+esc(c.assigned_name):'')+'</div></div>').join('');
+      +'<div class="pv">'+(c.last.direction==='out'?'↪ ':'')+esc(PLACE.test(c.last.body||'')?(KIND_IC[c.last.kind]||c.last.body):(c.last.body||''))+'</div><div class="hint">'+fmtT(c.last.at)+(c.assigned_name?' · '+esc(c.assigned_name):'')+'</div></div>').join('');
   }
   $('iList').addEventListener('click',e=>{ const it=e.target.closest('[data-phone]'); if(it){ S.cur=it.dataset.phone; renderConvs(); openConv(S.cur); } });
   ['iState','iAssignee','iLead'].forEach(id=>$(id).addEventListener('change',()=>{ S.cur=null; $('iView').innerHTML='<div class="hint" style="padding:10px">왼쪽에서 대화를 고르세요.</div>'; loadConvs(); }));
   const SRC={autoreply:'🤖 자동응답',manual:'',consent:'✉ 동의 요청',campaign:'📣 정기 발송',test:'🧪 시험'};
+  const KIND_IC={image:'📷 사진',audio:'🎤 음성',video:'🎬 동영상',document:'📄 PDF',sticker:'스티커',button:'버튼',interactive:'버튼',location:'📍 위치'};
+  // ── 1111 · 사진 · 음성 · 동영상 · PDF ──
+  const localNo=(p)=>String(p||'').replace(/\D/g,'').slice(-10);
+  const copyText=(t)=>{ try{ if(navigator.clipboard) return navigator.clipboard.writeText(t); }catch(e){} try{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }catch(e){} };
+  const fmtSize=(n)=>n>=1048576?(n/1048576).toFixed(1)+'MB':Math.max(1,Math.round(n/1024))+'KB';
+  const PLACE=/^\[(image|video|audio|sticker|document)\]$/;
+  const capOf=(m)=>{ const b=String(m.body||''); return PLACE.test(b)||m.kind==='document'?'':b; };   // PDF 는 이름(또는 설명)을 파일 칸에
+  function mediaHTML(m){
+    const k=m.kind;
+    if(k==='image'||k==='sticker') return '<img class="wm" data-mid="'+m.id+'" data-mk="img" alt="사진" title="크게 보기">';
+    if(k==='audio') return '<audio class="wm" data-mid="'+m.id+'" data-mk="av" controls preload="none"></audio>';
+    if(k==='video') return '<video class="wm" data-mid="'+m.id+'" data-mk="av" controls preload="metadata"></video>';
+    const nm=String(m.body||'').trim(); return '<a class="wdoc" data-mid="'+m.id+'" data-mk="doc" href="#" title="열기 · 내려받기">📄 '+esc(PLACE.test(nm)||!nm?'documento':nm)+'</a>';
+  }
+  S.media={};
+  async function mediaUrl(mid,base){
+    if(S.media[mid]) return S.media[mid];
+    const r=await fetch(session.api+(base||'/api/wa-promo/media/')+mid,{headers:{'Authorization':'Bearer '+session.token}});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||('http_'+r.status)); }
+    const u=URL.createObjectURL(await r.blob()); S.media[mid]=u; return u;
+  }
+  function loadMedia(root){
+    root.querySelectorAll('[data-mid]').forEach(async el=>{
+      if(el.dataset.mk==='doc') return;   // PDF 는 누를 때 받는다
+      const stick=()=>{ if(root.scrollHeight-root.scrollTop-root.clientHeight<400) root.scrollTop=root.scrollHeight; };   // 사진이 늦게 떠도 맨 아래 유지
+      el.addEventListener('load',stick,{once:true}); el.addEventListener('loadedmetadata',stick,{once:true});
+      try{ el.src=await mediaUrl(el.dataset.mid); }
+      catch(e){ const g=document.createElement('span'); g.className='wgone'; g.textContent=e.message==='media_expired'?'(파일이 Meta 에서 지워짐 — 30일 지남)':'(파일을 불러오지 못함)'; el.replaceWith(g); }
+    });
+  }
+  document.addEventListener('click',async e=>{
+    const el=e.target.closest&&e.target.closest('#iView [data-mid]'); if(!el) return;
+    if(el.dataset.mk==='av') return;
+    e.preventDefault();
+    try{ const u=await mediaUrl(el.dataset.mid); window.open(u,'_blank'); }catch(err){ say(false,err.message==='media_expired'?'파일이 Meta 에서 지워졌습니다(30일 지남).':'파일을 불러오지 못했습니다.',$('vMsg')); }
+  });
+  function checkFile(f){
+    const ok={'image/jpeg':5,'image/png':5,'application/pdf':16}[f.type];
+    if(!ok) return 'JPG · PNG 사진 또는 PDF 만 보낼 수 있습니다.';
+    if(f.size>ok*1048576) return (f.type==='application/pdf'?'PDF 는 16MB':'사진은 5MB')+' 까지입니다.';
+    return '';
+  }
+  // ── 1111 · 새 메시지 알림(20초) — 탭 숫자 = 답장 기다리는 대화 · 제목 (N) = 이 화면을 연 뒤 새로 온 메시지 · 소리 ──
+  S.pulseId=null; S.unseen=0; S.waiting=null; const BASE_TITLE=document.title;
+  try{ const v=localStorage.getItem('wap_sound'); if(v==='0') $('iSound').checked=false; }catch(e){}
+  $('iSound').addEventListener('change',()=>{ try{ localStorage.setItem('wap_sound',$('iSound').checked?'1':'0'); }catch(e){} if($('iSound').checked) beep(); });
+  function beep(){
+    try{ const C=window.AudioContext||window.webkitAudioContext; if(!C) return; S.ac=S.ac||new C(); const ac=S.ac;
+      [0,0.18].forEach((t,i)=>{ const o=ac.createOscillator(), g=ac.createGain(); o.type='sine'; o.frequency.value=i?1046:784;
+        g.gain.setValueAtTime(0.0001,ac.currentTime+t); g.gain.exponentialRampToValueAtTime(0.25,ac.currentTime+t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+t+0.16);
+        o.connect(g); g.connect(ac.destination); o.start(ac.currentTime+t); o.stop(ac.currentTime+t+0.18); }); }catch(e){}
+  }
+  function paintTitle(){ document.title=(S.unseen>0?'('+S.unseen+') 💬 ':'')+BASE_TITLE; }
+  async function pulse(){
+    if(!session.token) return;
+    let d; try{ d=await api('GET','/api/wa-promo/inbox/pulse'+(S.pulseId!=null?'?after='+S.pulseId:'')); }catch(e){ return; }
+    S.waiting=d.waiting; setInboxBadge(d.waiting);
+    $('inboxN').title='답장 기다리는 대화(최근 7일 · 손님 말이 마지막)';
+    if(S.pulseId!=null&&d.new>0){
+      S.unseen+=d.new; paintTitle();
+      if($('iSound').checked) beep();
+      const l=d.latest&&d.latest[0];
+      try{ if(document.hidden&&window.Notification&&Notification.permission==='granted'&&l) new Notification('💬 '+l.name,{body:l.body||l.kind,tag:'wap'}); }catch(e){}
+      if(S.tab==='inbox'){ const cur=S.cur; loadConvs(); if(cur&&d.latest.some(x=>x.phone===cur)) openConv(cur); }
+    }
+    S.pulseId=Math.max(Number(d.last_id)||0,S.pulseId||0);
+  }
+  function seen(){ if(S.tab==='inbox'&&!document.hidden&&S.unseen){ S.unseen=0; paintTitle(); } }
+  document.addEventListener('visibilitychange',seen);
+  function startPulse(){ if(S.pulseT) return; pulse(); S.pulseT=setInterval(()=>{ pulse().then(seen); },20000);
+    try{ if(window.Notification&&Notification.permission==='default') document.addEventListener('click',function ask(){ document.removeEventListener('click',ask); try{ Notification.requestPermission(); }catch(e){} },{once:true}); }catch(e){} }
   async function openConv(phone){
     let d; try{ d=await api('GET','/api/wa-promo/conversations/'+encodeURIComponent(phone)); }catch(e){ $('iView').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; }
     const ct=d.contact;
@@ -1536,18 +1619,25 @@
       +(ct.inbox_state==='open'?'<button type="button" class="btn ghost sm" id="vDone">✔ 처리 완료</button>':'<button type="button" class="btn ghost sm" id="vReopen">↺ 미처리로</button>'):'<input id="vNewName" placeholder="이름" style="width:140px"><button type="button" class="btn ghost sm" id="vRegister">＋ 연락처로 등록</button>')+'</div>';
     const bubbles=d.items.map(m=>{
       const cls=m.direction==='in'?'in':(m.source==='autoreply'?'bot':(m.source==='campaign'||m.source==='consent'||m.source==='test')?'camp':'out');
-      const tag=m.direction==='out'?((SRC[m.source]||'')+(m.sent_by_name?' '+m.sent_by_name:'')+' · '+(m.ok===false?'<span class="bad-t">✗ '+esc(m.error||'')+'</span>':dlvText({status:'sent',dlv_status:m.dlv_status,dlv_reason:m.dlv_reason}))):(m.kind!=='text'?esc(m.kind):'');
-      return '<div class="b '+cls+(m.ok===false?' fail':'')+'">'+esc(m.body||'')+'<span class="tm">'+fmtT(m.at)+(tag?' · '+tag:'')+'</span></div>';
+      const tag=m.direction==='out'?((SRC[m.source]||'')+(m.sent_by_name?' '+m.sent_by_name:'')+' · '+(m.ok===false?'<span class="bad-t">✗ '+esc(m.error||'')+'</span>':dlvText({status:'sent',dlv_status:m.dlv_status,dlv_reason:m.dlv_reason}))):(m.kind!=='text'?(KIND_IC[m.kind]||esc(m.kind)):'');
+      return '<div class="b '+cls+(m.ok===false?' fail':'')+'">'+(m.media?mediaHTML(m):'')+esc(m.media?capOf(m):(m.body||''))+'<span class="tm">'+fmtT(m.at)+(tag?' · '+tag:'')+'</span></div>';
     }).join('');
     const left=d.window.open&&d.window.last_in_at?Math.max(0,24*3600000-(Date.now()-new Date(d.window.last_in_at).getTime())):0;
     const lh=Math.floor(left/3600000), lm=Math.floor(left%3600000/60000);
     $('iView').innerHTML=head+'<div class="chat" id="vChat">'+bubbles+'</div>'
-      +'<div class="row" style="margin-top:8px"><input id="vText" style="flex:1;min-width:200px" placeholder="'+(d.window.open?'답장 — 24시간 창 열림('+lh+'시간 '+lm+'분 남음) · 무료':'24시간 창 닫힘 — 직접 답장 불가(고객이 먼저 메시지를 보내야 열림)')+'"'+(d.window.open?'':' disabled')+'>'
-      +'<button type="button" class="btn" id="vSend"'+(d.window.open?'':' disabled')+'>보내기</button>'
-      +'<button type="button" class="btn ghost" id="vQuote" title="견적 화면을 새 탭으로 열고 이름·번호를 복사합니다">🧾 견적 화면</button></div>'
+      +(d.window.open
+        ?'<div class="row" style="margin-top:8px"><input id="vText" style="flex:1;min-width:200px" placeholder="답장 — 24시간 창 열림('+lh+'시간 '+lm+'분 남음) · 무료 · 📎 사진(JPG·PNG)·PDF 는 이 글을 설명으로 붙여 보냄">'
+          +'<input type="file" id="vFile" accept="image/jpeg,image/png,application/pdf" class="hidden"><button type="button" class="btn ghost" id="vAttach" title="사진(JPG · PNG 5MB) · PDF(16MB) 보내기">📎</button>'
+          +'<button type="button" class="btn" id="vSend">보내기</button>'
+          +'<button type="button" class="btn ghost" id="vQuote" title="견적 화면을 새 탭으로 열고 이름·번호를 복사합니다">🧾 견적 화면</button></div><div class="attach-pv" id="vAttachPv"></div>'
+        :'<div class="callbar"><span>⏰ <b>24시간 창 닫힘</b> — WhatsApp 으로는 보낼 수 없습니다. 전화로 연락하세요.'+(d.window.last_in_at?' <span class="hint">(손님 마지막 메시지 '+fmtT(d.window.last_in_at)+')</span>':'')+'</span>'
+          +'<a class="btn" id="vCall" href="tel:+'+esc(d.phone)+'">📞 전화하기</a><button type="button" class="btn ghost" id="vCopy">📋 번호 복사 '+esc(localNo(d.phone))+'</button>'
+          +'<button type="button" class="btn ghost" id="vQuote" title="견적 화면을 새 탭으로 열고 이름·번호를 복사합니다">🧾 견적 화면</button></div>')
       +(ct?'<div class="row" style="margin-top:8px"><input id="vNote" placeholder="메모(담당자끼리)" style="flex:1" value="'+esc(ct.note||'')+'"><button type="button" class="btn ghost sm" id="vNoteSave">메모 저장</button></div>':'')
       +'<div class="msg" id="vMsg"></div>';
     const ch=$('vChat'); ch.scrollTop=ch.scrollHeight;
+    loadMedia(ch);
+    if($('vCopy')) $('vCopy').addEventListener('click',()=>{ copyText(localNo(d.phone)); say(true,'번호를 복사했습니다: '+localNo(d.phone),$('vMsg')); });
     const patch=async(body,okText)=>{ try{ await api('PATCH','/api/wa-promo/contacts/'+ct.id,body); say(true,okText,$('vMsg')); loadConvs(); }catch(err){ say(false,errText(err),$('vMsg')); } };
     if(ct){
       $('vAssign').addEventListener('change',e=>patch({assigned_to:e.target.value?Number(e.target.value):null},'담당을 바꿨습니다.'));
@@ -1560,8 +1650,19 @@
     const send=async()=>{ const t=$('vText').value.trim(); if(!t) return; $('vSend').disabled=true;
       try{ await api('POST','/api/wa-promo/conversations/'+encodeURIComponent(d.phone)+'/reply',{text:t}); $('vText').value=''; openConv(d.phone); }
       catch(err){ say(false,errText(err),$('vMsg')); $('vSend').disabled=false; } };
-    $('vSend').addEventListener('click',send);
-    $('vText').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } });
+    if($('vSend')){
+      $('vSend').addEventListener('click',send);
+      $('vText').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } });
+      $('vAttach').addEventListener('click',()=>$('vFile').click());
+      $('vFile').addEventListener('change',async()=>{
+        const f=$('vFile').files[0]; $('vFile').value=''; if(!f) return;
+        const chk=checkFile(f); if(chk){ say(false,chk,$('vMsg')); return; }
+        const cap=$('vText').value.trim();
+        $('vAttachPv').textContent='📤 보내는 중… '+f.name+' ('+fmtSize(f.size)+')'; $('vAttach').disabled=true; $('vSend').disabled=true;
+        try{ await api('POST','/api/wa-promo/conversations/'+encodeURIComponent(d.phone)+'/media',{mime:f.type,name:f.name,caption:cap,data_b64:await fileB64(f)}); $('vText').value=''; openConv(d.phone); }
+        catch(err){ $('vAttachPv').textContent=''; say(false,errText(err),$('vMsg')); $('vAttach').disabled=false; $('vSend').disabled=false; }
+      });
+    }
     $('vQuote').addEventListener('click',()=>{ const t=(ct?ct.name+' · ':'')+d.phone; try{ navigator.clipboard&&navigator.clipboard.writeText(t); }catch(e){} window.open('refatrix-quote.html','_blank'); say(true,'견적 화면을 열었습니다 — 「'+t+'」 복사됨. 등록된 고객이 아니면 고객 등록부터 하세요.',$('vMsg')); });
   }
   $('xExport').addEventListener('click',async()=>{

@@ -88,7 +88,7 @@ Reglas:
   "anio": texto con el año o rango ("2017", "2013-2019") o null si no se dijo. Si piden "las 2" o "par", cantidad 2; si no, null.
   "piezas": usa estos nombres cuando apliquen: ${JSON.stringify(PARTES)}. Orquilla/horquilla/brazo = "Horquilla (brazo de control)". Si piden otra cosa, escríbela corta en español.
   Si piden piezas sin decir vehículo, usa {"marca":null,"modelo":null,"anio":null,"piezas":[...]}.
-- "telefono": 10 dígitos del cliente si lo dio (NO 8118250003 ni 8116606680, son de Refatrix) o null.
+- "telefono": 10 dígitos del cliente si lo dio (NO 8118250003, 8116606680 ni 8128806680, son de Refatrix) o null.
 - "intencion": lista corta entre "precio","catálogo","envío","dónde comprar","asesor","pedido","garantía","otro".
 - "resumen": una frase en español (máx. 120 caracteres) con lo que busca el cliente y en qué quedó.
 
@@ -119,7 +119,7 @@ export function normalizeAi(o) {
   const parts = [...new Set(veh.flatMap((v) => v.piezas))];
   let phone = String(o.telefono || '').replace(/\D/g, '');
   if (phone.length === 12 && phone.startsWith('52')) phone = phone.slice(2);
-  if (phone.length !== 10 || ['8118250003', '8116606680'].includes(phone)) phone = null;
+  if (phone.length !== 10 || ['8118250003', '8116606680', '8128806680'].includes(phone)) phone = null;
   const intent = (Array.isArray(o.intencion) ? o.intencion : [o.intencion]).map((x) => clean(x, 20)).filter(Boolean);
   return {
     tipo, tipo_src: tipo ? (['dicho', 'boton', 'inferido'].includes(o.tipo_fuente) ? o.tipo_fuente : 'inferido') : null,

@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1106f</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1111a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -90,6 +90,13 @@
   .bub.mauto{background:#f4f5f7;border:1px dashed #b9c0ca;color:#4a5563;align-self:flex-end}
   .bub.mauto .tag{display:table;font-size:10px;font-weight:700;color:#5b6573;background:#e6e9ee;border-radius:999px;padding:1px 7px;margin-bottom:3px}
   .bub .t{font-size:10px;color:var(--muted);margin-top:2px}
+  /* 1111 · ERP 번호 WhatsApp 사진 · 음성 · PDF · 전화 */
+  .bub .wm{display:block;max-width:240px;max-height:260px;border-radius:7px;margin-bottom:4px;cursor:zoom-in;background:#e5e5e5;min-width:110px;min-height:50px;object-fit:contain}
+  .bub audio.wm,.bub video.wm{cursor:auto;min-height:0;background:none}
+  .bub .wdoc{display:inline-flex;gap:6px;padding:6px 9px;border-radius:7px;background:rgba(0,0,0,.05);color:inherit;text-decoration:none;font-weight:600;margin-bottom:3px}
+  .bub .wgone{display:block;font-size:11px;color:var(--muted);font-style:italic}
+  .callbar{margin-top:8px;padding:9px 11px;border-radius:10px;background:#fff7e6;border:1px solid #f1d9a6;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12.5px}
+  .callbar a.btn{text-decoration:none}
   .ed label{margin-top:8px}.ed input,.ed select{width:100%}
   .adname{font-weight:700}.adid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted)}
   .ad-chip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#f3ecdf;color:#7a5a1f;white-space:nowrap;display:inline-block}
@@ -387,7 +394,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1106f';
+  const MTL_BUILD='mtl-1111a';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -568,11 +575,84 @@
   function renderChat(d){
     $('oChat').innerHTML=(d.messages||[]).map(m=>m.kind==='event'?'<div class="mevt"><span>⚙️ Meta 기록: '+esc(m.text)+' · '+fmtT(m.at)+'</span></div>'
       :m.kind==='auto'?'<div class="bub mauto"><div class="tag">🤖 '+(d.platform==='whatsapp'?'자동 응답(ERP 봇)':'광고 자동 응답(Meta)')+'</div>'+esc(m.text||'')+'<div class="t">'+fmtT(m.at)+'</div></div>'
-      :'<div class="bub '+(m.me?'me':'in')+'">'+esc(m.text||'(첨부/스티커)')+'<div class="t">'+(m.src==='portal'?'🔑 '+esc(m.shop||'포털')+' · ':(m.src==='staff'?'직원'+(m.by?' '+esc(m.by):'')+' · ':''))+fmtT(m.at)+(m.live?' · 실시간':'')+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
+      :'<div class="bub '+(m.me?'me':'in')+'">'+(m.mid?waMediaHTML(m):'')+esc(m.mid?(WA_PH.test(m.text||'')||m.mk==='document'?'':m.text):(m.text||'(첨부/스티커)'))+'<div class="t">'+(m.src==='portal'?'🔑 '+esc(m.shop||'포털')+' · ':(m.src==='staff'?'직원'+(m.by?' '+esc(m.by):'')+' · ':''))+fmtT(m.at)+(m.live?' · 실시간':'')+'</div></div>').join('')||'<div class="hint">메시지 없음</div>';
     const comp=$('oComp'); if(!comp) return;
+    loadWaMedia(d);
+    if(d.platform==='whatsapp'&&d.wa){ renderWaComp(d,comp); return; }
     if(d.platform!=='messenger'){ comp.innerHTML=''; return; }
     comp.innerHTML='<div class="mcomp"><textarea id="oText" rows="2" maxlength="2000" placeholder="Facebook 으로 손님에게 답장 (Refatrix 페이지 이름으로 나갑니다)"></textarea><button type="button" class="btn" id="oSend">보내기</button></div><div class="msg" id="oSendMsg"></div>';
   }
+  // ───── 1111 · ERP 번호(8128806680) WhatsApp — 사진 · 음성 · PDF 보기 · 답장(글 · 📎 사진 · PDF) · 24시간 창 닫히면 📞 전화 ─────
+  const WA_PH=/^\((imagen|audio|video|documento|sticker)\)$/;
+  function waMediaHTML(m){
+    if(m.mk==='image'||m.mk==='sticker') return '<img class="wm" data-wmid="'+m.mid+'" data-mk="img" alt="foto" title="크게 보기">';
+    if(m.mk==='audio') return '<audio class="wm" data-wmid="'+m.mid+'" data-mk="av" controls preload="none"></audio>';
+    if(m.mk==='video') return '<video class="wm" data-wmid="'+m.mid+'" data-mk="av" controls preload="metadata"></video>';
+    return '<a class="wdoc" data-wmid="'+m.mid+'" data-mk="doc" href="#">📄 '+esc(WA_PH.test(m.text||'')||!m.text?'documento':m.text)+'</a>';
+  }
+  const WAM={};
+  async function waMediaUrl(id,mid){
+    const k=id+':'+mid; if(WAM[k]) return WAM[k];
+    const r=await fetch(session.api+'/api/meta-leads/'+id+'/wa-media/'+mid,{headers:{'Authorization':'Bearer '+session.token}});
+    if(!r.ok){ const x=await r.json().catch(()=>({})); throw new Error(x.error||('http_'+r.status)); }
+    WAM[k]=URL.createObjectURL(await r.blob()); return WAM[k];
+  }
+  function loadWaMedia(d){
+    document.querySelectorAll('#oChat [data-wmid]').forEach(async el=>{
+      if(el.dataset.mk==='doc') return;
+      const ch=$('oChat'); const stick=()=>{ if(ch.scrollHeight-ch.scrollTop-ch.clientHeight<400) ch.scrollTop=ch.scrollHeight; };
+      el.addEventListener('load',stick,{once:true}); el.addEventListener('loadedmetadata',stick,{once:true});
+      try{ el.src=await waMediaUrl(d.id,el.dataset.wmid); }
+      catch(e){ const g=document.createElement('span'); g.className='wgone'; g.textContent=e.message==='media_expired'?'(파일이 Meta 에서 지워짐 — 30일 지남)':'(파일을 불러오지 못함)'; el.replaceWith(g); }
+    });
+  }
+  document.addEventListener('click',async e=>{
+    const el=e.target.closest&&e.target.closest('#oChat [data-wmid]'); if(!el||el.dataset.mk==='av'||!S.cur) return;
+    e.preventDefault();
+    try{ window.open(await waMediaUrl(S.cur.id,el.dataset.wmid),'_blank'); }catch(err){ say(false,err.message==='media_expired'?'파일이 Meta 에서 지워졌습니다(30일 지남).':'파일을 불러오지 못했습니다.'); }
+  });
+  const localNo=(p)=>String(p||'').replace(/\D/g,'').slice(-10);
+  function renderWaComp(d,comp){
+    const w=d.wa; const ph=w.phone;
+    const wapLink='<a class="btn ghost sm" href="refatrix-wapromo.html#tab=inbox&phone='+encodeURIComponent(ph)+'" target="_blank" title="WhatsApp 마케팅 › 받은 메시지에서 이 대화 열기(담당 · 처리 완료 · 메모)">💬 받은 메시지에서 열기</a>';
+    if(!w.reply_ready){ comp.innerHTML='<div class="hint" style="margin-top:6px">WhatsApp 키가 없어 답장할 수 없습니다(관리 › 외부 서비스 키).</div>'; return; }
+    if(!w.window_open){
+      comp.innerHTML='<div class="callbar"><span>⏰ <b>24시간 창 닫힘</b> — WhatsApp 으로는 보낼 수 없습니다. 전화로 연락하세요.</span>'
+        +'<a class="btn" href="tel:+'+esc(ph)+'">📞 전화하기</a><button type="button" class="btn ghost" id="oWaCopy">📋 번호 복사 '+esc(localNo(ph))+'</button>'+wapLink+'</div><div class="msg" id="oSendMsg"></div>';
+      return;
+    }
+    const left=w.last_in_at?Math.max(0,24*3600000-(Date.now()-new Date(w.last_in_at).getTime())):0;
+    comp.innerHTML='<div class="mcomp"><textarea id="oWaText" rows="2" maxlength="4096" placeholder="WhatsApp 으로 손님에게 답장 (ERP 번호 81 2880 6680)'+(left?' · 창 '+Math.floor(left/3600000)+'시간 '+Math.floor(left%3600000/60000)+'분 남음':'')+' · 📎 사진·PDF 는 이 글을 설명으로 붙여 보냄"></textarea>'
+      +'<input type="file" id="oWaFile" accept="image/jpeg,image/png,application/pdf" style="display:none"><button type="button" class="btn ghost" id="oWaAttach" title="사진(JPG · PNG 5MB) · PDF(16MB)">📎</button><button type="button" class="btn" id="oWaSend">보내기</button></div>'
+      +'<div class="row" style="margin-top:4px;gap:6px"><a class="btn ghost sm" href="tel:+'+esc(ph)+'">📞 전화</a>'+wapLink+'</div><div class="msg" id="oSendMsg"></div>';
+  }
+  const WAERR={window_closed:'24시간 창이 닫혔습니다 — 📞 전화로 연락하세요.',bad_media_type:'JPG · PNG 사진 또는 PDF 만 보낼 수 있습니다.',image_too_large:'사진은 5MB 까지입니다.',pdf_too_large:'PDF 는 16MB 까지입니다.',wa_not_configured:'WhatsApp 키가 없습니다(관리 › 외부 서비스 키).',empty:'내용을 넣으세요.'};
+  async function waSend(kind){
+    const d=S.cur; if(!d) return; const m=$('oSendMsg'); m.className='msg'; m.textContent='';
+    const ta=$('oWaText'); const text=ta?ta.value.trim():'';
+    let path, body;
+    if(kind==='text'){ if(!text) return; path='/whatsapp'; body={text}; }
+    else {
+      const f=kind; const lim={'image/jpeg':5,'image/png':5,'application/pdf':16}[f.type];
+      if(!lim){ m.className='msg err'; m.textContent=WAERR.bad_media_type; return; }
+      if(f.size>lim*1048576){ m.className='msg err'; m.textContent=f.type==='application/pdf'?WAERR.pdf_too_large:WAERR.image_too_large; return; }
+      const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).replace(/^data:[^,]*,/,'')); r.onerror=rej; r.readAsDataURL(f); });
+      path='/whatsapp-media'; body={mime:f.type,name:f.name,caption:text,data_b64:b64}; m.textContent='📤 보내는 중… '+f.name;
+    }
+    ['oWaSend','oWaAttach'].forEach(id=>{ if($(id)) $(id).disabled=true; });
+    try{ const r=await api('POST','/api/meta-leads/'+d.id+path,body); d.messages=r.messages; d.wa=r.wa; if(d.status==='nuevo') d.status='contactado'; renderChat(d); const c=$('oChat'); c.scrollTop=c.scrollHeight; }
+    catch(e){ ['oWaSend','oWaAttach'].forEach(id=>{ if($(id)) $(id).disabled=false; }); m.className='msg err'; m.textContent=WAERR[e.message]||errText(e);
+      if(e.message==='window_closed'&&d.wa){ d.wa.window_open=false; renderChat(d); } }
+  }
+  document.addEventListener('click',e=>{
+    const t=e.target.closest&&e.target.closest('#oWaSend,#oWaAttach,#oWaCopy'); if(!t) return;
+    if(t.id==='oWaSend') waSend('text');
+    else if(t.id==='oWaAttach') $('oWaFile').click();
+    else { const n=localNo(S.cur&&S.cur.wa&&S.cur.wa.phone); try{ navigator.clipboard&&navigator.clipboard.writeText(n); }catch(_){} say(true,'번호를 복사했습니다: '+n); }
+  });
+  document.addEventListener('change',e=>{ if(e.target&&e.target.id==='oWaFile'){ const f=e.target.files[0]; e.target.value=''; if(f) waSend(f); } });
+  document.addEventListener('keydown',e=>{ if(e.target&&e.target.id==='oWaText'&&e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); waSend('text'); } });
+
   // 1105c · 포털에서 refaccionaria 가 넣은 문의 정보 · 결과
   const PRES={contactado:'연락함',cotizado:'견적함',vendido:'판매',no_interesa:'관심 없음'};
   const PFLD={name:'이름',tipo:'업종',state:'주',city:'도시',phone:'전화',vehicles:'차종',parts:'부품',result:'결과'};

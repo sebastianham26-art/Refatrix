@@ -226,6 +226,12 @@ export async function sendWaImage({ to, mediaId, caption = '' }) {
     image: { id: String(mediaId), caption: String(caption || '').slice(0, 1024) } });
 }
 
+// 2026-11-11 · PDF 등 문서 — 24시간 창 안에서만(ERP 받은 메시지에서 직원이 보냄)
+export async function sendWaDocument({ to, mediaId, filename = 'documento.pdf', caption = '' }) {
+  return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'document',
+    document: { id: String(mediaId), filename: String(filename || 'documento.pdf').slice(0, 240), ...(caption ? { caption: String(caption).slice(0, 1024) } : {}) } });
+}
+
 export async function sendWaImageTemplate({ to, mediaId, param, name, lang = null }) {
   if (!name) return { ok: false, code: null, error: 'no_template' };
   return callGraph({ messaging_product: 'whatsapp', to: String(to), type: 'template',

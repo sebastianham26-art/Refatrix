@@ -50,6 +50,10 @@
 //   GET    /api/wa-promo/conversations/:phone            대화 내용
 //   POST   /api/wa-promo/conversations/:phone/reply {text}   직접 답장(24시간 창 안)
 //   POST   /api/wa-promo/conversations/:phone/contact {name} 미등록 번호를 연락처로
+//   ── 1111 · ERP 번호(8128806680)로 광고 WhatsApp 받기 ──
+//   GET    /api/wa-promo/media/:messageId                손님 · 우리가 보낸 사진 · 음성 · 동영상 · PDF(저장본 → 없으면 Meta 에서 받아 저장 · 0325)
+//   POST   /api/wa-promo/conversations/:phone/media {mime, name, data_b64, caption}  사진(JPG · PNG 5MB) · PDF(16MB) 보내기(24시간 창 안)
+//   GET    /api/wa-promo/inbox/pulse?after=<id>          새 메시지 알림용 — {last_id, new, waiting(답장 기다림), latest[]}
 //   GET    /api/wa-promo/messages/export?from&to&state   엑셀용 원자료
 //   자동응답
 //   GET/POST /api/wa-promo/autoreplies · PATCH/DELETE /api/wa-promo/autoreplies/:id
@@ -73,8 +77,10 @@ import { normalizeWaNumber, waApiReady } from '../waSend.js';
 import { explainWaError } from '../waWebhook.js';
 import {
   promoCfg, promoReady, insertContacts, classifyRows, queueConsentAsk, sentToday, audienceCount, retryFailedConsent, consentEvent, resendConsentAsk,
-  sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage, targetIdsOf,
+  sendCampaignTo, manualReply, maskPhone, MAX_IMAGE_BYTES, uploadCampaignImage, targetIdsOf, manualMedia,
 } from '../waPromo.js';
+import { mediaForMessage, contentDisposition, MEDIA_KINDS } from '../waMedia.js';
+import { internalWaPhones } from '../metaLeads.js';
 
 export const WA_PAGE = 'wapromo';
 // 읽기: 디렉터 · 소시오 또는 wapromo 권한(열람/수정) · 쓰기: 디렉터 · 소시오 또는 wapromo 「수정」
@@ -89,6 +95,7 @@ function waGuard(write) {
 const R = { preHandler: [authGuard, waGuard(false)] };
 const W = { preHandler: [authGuard, waGuard(true)] };
 const IMG_LIMIT = { preHandler: [authGuard, waGuard(true)], bodyLimit: 9 * 1024 * 1024 };
+const MEDIA_LIMIT = { preHandler: [authGuard, waGuard(true)], bodyLimit: 23 * 1024 * 1024 };   // 1111 · PDF 16MB(base64)
 const IMG_MIMES = ['image/jpeg', 'image/png'];
 const CONSENTS = ['unknown', 'asked', 'yes', 'no'];
 const ACTIONS = ['none', 'consent_yes', 'consent_no', 'lead'];
@@ -821,7 +828,7 @@ export default async function waPromoRoutes(app) {
   app.get('/api/wa-promo/conversations/:phone', R, async (req, reply) => {
     const p = normalizeWaNumber(req.params.phone); if (!p) return reply.code(400).send({ error: 'bad_phone' });
     const msgs = (await query(
-      `SELECT x.id, x.direction, x.kind, x.body, x.source, x.campaign_id, x.ok, x.error, x.at, u.name AS sent_by_name, ${DLV_COLS}
+      `SELECT x.id, x.direction, x.kind, x.body, x.payload, x.source, x.campaign_id, x.ok, x.error, x.at, u.name AS sent_by_name, ${DLV_COLS}
          FROM wa_messages x LEFT JOIN users u ON u.id = x.sent_by ${DLV_JOIN('x.wamid')}
         WHERE x.phone=$1 ORDER BY x.at, x.id LIMIT 1000`, [p])).rows;
     const ct = (await query(`SELECT w.*, u.name AS assigned_name FROM wa_contacts w LEFT JOIN users u ON u.id=w.assigned_to WHERE w.phone=$1 AND w.deleted_at IS NULL`, [p])).rows[0];
@@ -830,6 +837,7 @@ export default async function waPromoRoutes(app) {
       window: { open: win ? win.open === true : false, last_in_at: win ? win.last_at : null },
       items: msgs.map((x) => ({ id: Number(x.id), direction: x.direction, kind: x.kind, body: x.body, source: x.source,
         campaign_id: x.campaign_id != null ? Number(x.campaign_id) : null, ok: x.ok, error: x.error, at: x.at, sent_by_name: x.sent_by_name || null,
+        media: !!(x.payload && MEDIA_KINDS.includes(x.kind) && x.source !== 'campaign'),   // 1111 · 정기 발송 이미지는 광고 일정에서 본다
         ...(x.direction === 'out' ? dlv(x) : {}) })) };
   });
   app.post('/api/wa-promo/conversations/:phone/reply', W, async (req, reply) => {
@@ -837,6 +845,43 @@ export default async function waPromoRoutes(app) {
     const r = await manualReply({ phone: req.params.phone, text: (req.body || {}).text, userId: req.ctx.perm.userId });
     if (!r.ok) return reply.code(r.error === 'window_closed' ? 409 : 400).send({ error: r.error });
     return r;
+  });
+  // 1111 · 사진 · 음성 · 동영상 · PDF
+  app.get('/api/wa-promo/media/:id', R, async (req, reply) => {
+    const r = await mediaForMessage(idOf(req.params.id));
+    if (!r.ok) return reply.code(r.status || 502).send({ error: r.error });
+    return reply.type(r.mime).header('cache-control', 'private, max-age=86400')
+      .header('content-disposition', contentDisposition(r.filename, true)).send(r.bytes);
+  });
+  app.post('/api/wa-promo/conversations/:phone/media', MEDIA_LIMIT, async (req, reply) => {
+    if (!promoReady()) return reply.code(400).send({ error: 'wa_not_configured' });
+    const b = req.body || {};
+    const buf = Buffer.from(String(b.data_b64 || '').replace(/^data:[^,]*,/, ''), 'base64');
+    const r = await manualMedia({ phone: req.params.phone, mime: b.mime, name: b.name, buf, caption: b.caption, userId: req.ctx.perm.userId });
+    if (!r.ok) return reply.code(r.error === 'window_closed' ? 409 : 400).send({ error: r.error });
+    return r;
+  });
+  // 1111 · 새 메시지 알림 — 화면이 20초마다 묻는다(가벼운 질의)
+  app.get('/api/wa-promo/inbox/pulse', R, async (req) => {
+    const hasAfter = req.query.after !== undefined && req.query.after !== '';   // 처음 부를 때(기준점)는 after 없이
+    const after = Number(req.query.after) || 0;
+    const skip = await internalWaPhones().catch(() => new Set());   // 사내 번호(직원 · 알림 수신)는 알림에서 뺀다
+    const lastId = Number((await query(`SELECT COALESCE(max(id), 0)::bigint AS id FROM wa_messages WHERE direction='in'`)).rows[0].id);
+    let fresh = 0; let latest = [];
+    if (hasAfter && lastId > after) {
+      const rows = (await query(
+        `SELECT x.id, x.phone, x.kind, x.body, x.at, COALESCE(w.name, i.profile_name) AS name FROM wa_messages x
+           LEFT JOIN wa_contacts w ON w.phone = x.phone AND w.deleted_at IS NULL LEFT JOIN wa_inbound i ON i.wa_from = x.phone
+          WHERE x.direction='in' AND x.id > $1 ORDER BY x.id DESC LIMIT 200`, [after])).rows.filter((r) => !skip.has(r.phone));
+      fresh = rows.length;
+      latest = rows.slice(0, 5).map((r) => ({ id: Number(r.id), phone: r.phone, name: r.name || maskPhone(r.phone), kind: r.kind, body: String(r.body || '').slice(0, 120), at: r.at }));
+    }
+    // 답장 기다림 = 최근 7일 안에 손님 말이 마지막인 대화(우리가 아직 답 안 함)
+    const waiting = (await query(
+      `SELECT l.phone FROM (SELECT DISTINCT ON (phone) phone, direction FROM wa_messages
+         WHERE at > now() - interval '7 days' ORDER BY phone, at DESC, id DESC) l
+        WHERE l.direction = 'in'`)).rows.filter((r) => !skip.has(r.phone)).length;
+    return { last_id: lastId, new: fresh, waiting, latest };
   });
   app.post('/api/wa-promo/conversations/:phone/contact', W, async (req, reply) => {
     const r = await insertContacts([{ name: (req.body || {}).name, phone: req.params.phone, memo: (req.body || {}).memo }], { source: 'manual', userId: req.ctx.perm.userId });

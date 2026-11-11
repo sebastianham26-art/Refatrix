@@ -24,8 +24,11 @@ import { query } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll, internalWaPhones, importWaAppThreads, waLive,
+  metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll, internalWaPhones, importWaAppThreads, waLive, waThreadMessages,
 } from '../metaLeads.js';
+// 1111 · ERP 번호(8128806680) WhatsApp — 이 화면에서도 사진 · PDF 보기 · 답장(글 · 사진 · PDF)
+import { manualReply, manualMedia, promoReady, windowOpen } from '../waPromo.js';
+import { mediaForMessage, contentDisposition } from '../waMedia.js';
 import { META_STATES } from '../metaLeadExtract.js';
 import { aiReady, aiModel, aiState, analyzeThreads } from '../metaLeadsAi.js';
 import { matchThreads, matchState, kickMatch, parseManualItems } from '../metaLeadsMatch.js';
@@ -38,6 +41,7 @@ import { chatReady, sendMessengerSmart, commentRefOf } from '../metaPageMsgs.js'
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
 const R = { preHandler: [authGuard, requirePageAny(PM_KEYS)] };
 const W = { preHandler: [authGuard, requirePageEditAny(PM_KEYS)] };
+const RM = { preHandler: [authGuard, requirePageAny(PM_KEYS)], bodyLimit: 23 * 1024 * 1024 };   // 1111 · PDF 16MB(base64)
 const STATUSES = ['nuevo', 'contactado', 'derivado', 'venta', 'descartado'];
 const idOf = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 const ymd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? s : null;
@@ -151,6 +155,11 @@ export default async function metaLeadsRoutes(app) {
     if (!r) return reply.code(404).send({ error: 'not_found' });
     // 2026-10-26f · Messenger 는 웹훅으로 받은 메시지(포털 · 직원 · 손님)를 바로 합쳐 보여 준다
     if (r.platform === 'messenger') r.messages = mergeConversation(r.messages, await liveMessages(r.psid));
+    // 1111 · ERP 번호 WhatsApp 은 받은 메시지에서 바로(사진 · 음성 · PDF = mid) + 24시간 창
+    else if (r.platform === 'whatsapp' && String(r.thread_id || '').startsWith('wa:')) {
+      r.messages = markMetaKinds(await waThreadMessages(r.psid));
+      r.wa = await waState(r.psid);
+    }
     else r.messages = markMetaKinds((Array.isArray(r.messages) ? r.messages : []).map((m) => ({ ...m })));   // 1028c · Meta 기록 · 자동 응답 구분
     const psid0 = r.psid;
     delete r.psid;
@@ -197,6 +206,49 @@ export default async function metaLeadsRoutes(app) {
     await logEvent({ userId: uid, action: 'update', target: `meta_thread:${id}`, detail: { op: 'erp_messenger_send', len: text.length } });
     const by = uid ? ((await query(`SELECT name FROM users WHERE id=$1`, [uid])).rows[0] || {}).name || null : null;
     return { ok: true, via: s0.via || 'message', message: { at: new Date().toISOString(), me: true, text, src: 'staff', by, live: true } };
+  });
+
+  // ───── 1111 · ERP 번호 WhatsApp(wa:) — 사진 · PDF 보기 · 답장 · 이 화면 접근 권한이면 누구나(Facebook 답장과 같음) ─────
+  async function waThread(req, reply) {
+    const id = idOf(req.params.id); if (!id) { reply.code(400).send({ error: 'bad_id' }); return null; }
+    const t = (await query(`SELECT id, platform, thread_id, user_id FROM meta_threads WHERE id=$1`, [id])).rows[0];
+    if (!t) { reply.code(404).send({ error: 'not_found' }); return null; }
+    if (t.platform !== 'whatsapp' || !String(t.thread_id).startsWith('wa:')) { reply.code(409).send({ error: 'not_erp_whatsapp' }); return null; }
+    return { id, phone: String(t.user_id) };
+  }
+  async function waState(phone) {
+    const open = await windowOpen(phone);
+    const w = (await query(`SELECT last_at FROM wa_inbound WHERE wa_from=$1`, [phone]).catch(() => ({ rows: [] }))).rows[0];
+    return { reply_ready: promoReady(), window_open: open !== false, window_known: open !== null, last_in_at: w ? w.last_at : null, phone };
+  }
+  app.get('/api/meta-leads/:id/wa-media/:mid', R, async (req, reply) => {
+    const t = await waThread(req, reply); if (!t) return reply;
+    const r = await mediaForMessage(idOf(req.params.mid), { phone: t.phone });
+    if (!r.ok) return reply.code(r.status || 502).send({ error: r.error });
+    return reply.type(r.mime).header('cache-control', 'private, max-age=86400').header('content-disposition', contentDisposition(r.filename, true)).send(r.bytes);
+  });
+  const waDone = async (t, req, op, extra) => {
+    await query(`UPDATE meta_threads SET status='contactado', updated_at=now() WHERE id=$1 AND status='nuevo'`, [t.id]).catch(() => null);
+    await logEvent({ userId: req.ctx.perm.userId || null, action: 'update', target: `meta_thread:${t.id}`, detail: { op, ...extra } });
+    return { ok: true, messages: markMetaKinds(await waThreadMessages(t.phone)), wa: await waState(t.phone) };
+  };
+  app.post('/api/meta-leads/:id/whatsapp', R, async (req, reply) => {
+    const t = await waThread(req, reply); if (!t) return reply;
+    if (!promoReady()) return reply.code(400).send({ error: 'wa_not_configured' });
+    const text = String((req.body || {}).text || '').trim();
+    if (!text) return reply.code(400).send({ error: 'empty' });
+    const r = await manualReply({ phone: t.phone, text, userId: req.ctx.perm.userId });
+    if (!r.ok) return reply.code(r.error === 'window_closed' ? 409 : 502).send({ error: r.error });
+    return waDone(t, req, 'erp_whatsapp_send', { len: text.length });
+  });
+  app.post('/api/meta-leads/:id/whatsapp-media', RM, async (req, reply) => {
+    const t = await waThread(req, reply); if (!t) return reply;
+    if (!promoReady()) return reply.code(400).send({ error: 'wa_not_configured' });
+    const b = req.body || {};
+    const buf = Buffer.from(String(b.data_b64 || '').replace(/^data:[^,]*,/, ''), 'base64');
+    const r = await manualMedia({ phone: t.phone, mime: b.mime, name: b.name, buf, caption: b.caption, userId: req.ctx.perm.userId });
+    if (!r.ok) return reply.code(r.error === 'window_closed' ? 409 : 400).send({ error: r.error });
+    return waDone(t, req, 'erp_whatsapp_media', { mime: b.mime, size: buf.length });
   });
 
   // 1105e · 플랫폼(고객 포털)에서 숨기기 / 다시 보이기 — 편집 권한

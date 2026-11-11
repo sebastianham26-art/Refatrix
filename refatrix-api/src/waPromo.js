@@ -20,8 +20,9 @@ import { kickWaThread } from './metaLeads.js';   // 1023 · 우리 답장도 바
 import { query } from './db.js';
 import {
   normalizeWaNumber, waApiReady, sendWaText, sendWaButtons, sendWaTemplateBare,
-  uploadWaMedia, sendWaImage, sendWaImageTemplate,
+  uploadWaMedia, sendWaImage, sendWaImageTemplate, sendWaDocument,
 } from './waSend.js';
+import { cacheWaMedia, prefetchWaMedia } from './waMedia.js';   // 1111 · 사진 · PDF 보기
 
 export const MAX_PER_TICK = 60;
 export const CAMPAIGN_MAX_ATTEMPTS = 2;
@@ -57,6 +58,7 @@ const DEFAULT_API = {
   bare: sendWaTemplateBare,
   upload: uploadWaMedia,
   image: sendWaImage,
+  document: sendWaDocument,
   imageTemplate: sendWaImageTemplate,
 };
 let api = DEFAULT_API; let apiOverridden = false;
@@ -384,7 +386,8 @@ export function parseInbound(m) {
   }
   if (['image', 'video', 'document', 'audio', 'sticker'].includes(t)) {
     const md = m[t] || {};
-    return { kind: t, body: md.caption || (t === 'audio' ? '[audio]' : `[${t}]`), payload: md.id || null };
+    // 1111 · PDF 는 파일 이름도 남긴다(대화창 · 내려받기 이름)
+    return { kind: t, body: md.caption || (t === 'document' && md.filename) || (t === 'audio' ? '[audio]' : `[${t}]`), payload: md.id || null };
   }
   if (t === 'location') return { kind: 'location', body: `[ubicación] ${(m.location && (m.location.name || m.location.address)) || ''}`.trim(), payload: null };
   return { kind: t || 'unknown', body: `[${t || 'mensaje'}]`, payload: null };
@@ -432,6 +435,7 @@ export async function handleInbound(m, q = query) {
      ON CONFLICT (wamid) WHERE direction = 'in' AND wamid IS NOT NULL DO NOTHING RETURNING id`,
     [phone, ct ? ct.id : null, m.id || null, p.kind, String(p.body || '').slice(0, 4000), p.payload, at.toISOString()])).rows[0];
   if (!ins) return { stored: false, duplicate: true };
+  if (p.payload && ['image', 'video', 'document', 'audio', 'sticker'].includes(p.kind)) prefetchWaMedia(p.payload, q);   // 1111 · 30일 뒤에도 보이게
   if (!ct) return { stored: true, contact_id: null };          // 등록 안 된 번호(사내 수신자 등) — 저장만, 자동응답 안 함
   const cid = Number(ct.id);
   const rules = await loadRules(q);
@@ -491,4 +495,32 @@ export async function manualReply({ phone, text, userId }, q = query) {
   try { res = await api.text({ to, text: body.slice(0, 4096) }); } catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
   await logOut(q, { phone: to, contactId: ct ? Number(ct.id) : null, kind: 'text', body, source: 'manual', sentBy: userId, res });
   return res.ok ? { ok: true, message_id: res.message_id || null } : { ok: false, error: res.error };
+}
+
+// 2026-11-11 · 사람이 사진(JPG · PNG) · PDF 를 보냄 — 24시간 창 안에서만(창 밖은 전화)
+export const MEDIA_SEND_TYPES = { 'image/jpeg': 'image', 'image/png': 'image', 'application/pdf': 'document' };
+export const MAX_PDF_BYTES = 16 * 1024 * 1024;
+export async function manualMedia({ phone, mime, name, buf, caption, userId }, q = query) {
+  const to = normalizeWaNumber(phone);
+  if (!to) return { ok: false, error: 'bad_phone' };
+  const kind = MEDIA_SEND_TYPES[String(mime || '').toLowerCase()];
+  if (!kind) return { ok: false, error: 'bad_media_type' };
+  if (!buf || !buf.length) return { ok: false, error: 'empty' };
+  if (buf.length > (kind === 'image' ? MAX_IMAGE_BYTES : MAX_PDF_BYTES)) return { ok: false, error: kind === 'image' ? 'image_too_large' : 'pdf_too_large' };
+  const open = await windowOpen(to, q);
+  if (open === false) return { ok: false, error: 'window_closed' };
+  const fname = String(name || (kind === 'image' ? 'foto.jpg' : 'documento.pdf')).replace(/[\\/\r\n]/g, '_').slice(0, 200);
+  const cap = String(caption || '').trim().slice(0, 1024);
+  const ct = (await q(`SELECT id FROM wa_contacts WHERE phone=$1 AND deleted_at IS NULL`, [to])).rows[0];
+  let up;
+  try { up = await api.upload(buf, { mime: String(mime).toLowerCase(), filename: fname }); } catch (e) { up = { ok: false, error: String((e && e.message) || e) }; }
+  if (!up || !up.ok) return { ok: false, error: (up && up.error) || 'upload_failed' };
+  let res;
+  try {
+    res = kind === 'image' ? await api.image({ to, mediaId: up.id, caption: cap })
+      : await api.document({ to, mediaId: up.id, filename: fname, caption: cap });
+  } catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+  await cacheWaMedia(up.id, { mime: String(mime).toLowerCase(), bytes: buf, filename: fname }, q).catch(() => {});
+  await logOut(q, { phone: to, contactId: ct ? Number(ct.id) : null, kind, body: cap || (kind === 'document' ? fname : '[image]'), payload: up.id, source: 'manual', sentBy: userId, res });
+  return res.ok ? { ok: true, message_id: res.message_id || null, media_id: up.id } : { ok: false, error: res.error };
 }
