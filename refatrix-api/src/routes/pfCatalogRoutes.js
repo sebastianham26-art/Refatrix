@@ -6,6 +6,8 @@
 //   GET    /api/pf-catalog/summary                         상태별 건수(미검토 · 작성중 · 확인완료 · 재확인)
 //   GET    /api/pf-catalog/dev-requests                    0순위 고객요청 개발필요(개발요청 미완료 · SYD 코드별) — 2026-11-09
 //   GET    /api/pf-catalog/perf?codes=&months=&fresh=&only=  CTR 제품별 실적 수량(견적 · 매출 · 운송 · 백오더 · 실적 없음 포함) — 2026-11-10
+//   GET    /api/pf-catalog/purchases?codes=&fresh=         CTR 제품별 구매(발주) 이력 — 2026-11-11
+//   GET    /api/pf-catalog/stock?codes=&fresh=             CTR 제품별 재고(가용 · 실물 · 예약) — 2026-11-11
 //   GET    /api/pf-catalog/items?q=&status=&active=&sort=&limit=&offset=
 //   GET    /api/pf-catalog/items/:id                       1건 + ERP 변경 이력 + 확인 이력 + 나눠 넣기 미리보기
 //   POST   /api/pf-catalog/preview {scode, app, oe}        입력 중 미리보기(저장하지 않음)
@@ -27,6 +29,7 @@ import { scheduleDevMatchSweep } from '../devMatchSweep.js';
 import { pushProductsSoon } from '../productSync.js';
 import { loadDevReqItems } from '../devReqPush.js';   // 2026-11-09 · 0순위 보조 조회
 import { loadPerf, parseMonths, parseCodes } from '../pfPerf.js';   // 2026-11-10 · 제품별 실적 수량
+import { loadPurchases, loadStock } from '../pfInventory.js';         // 2026-11-11 · 재고연관성(구매이력 · 재고)
 import {
   pfCatalogReady, listItems, summary, getItem, saveDraft, discardDraft, confirmItem,
   previewDerived, normValue, PF_FIELDS, exportItems, logExport, listExports, EXPORT_MAX,
@@ -115,6 +118,18 @@ export default async function pfCatalogRoutes(app) {
   app.get('/api/pf-catalog/perf', G, async (req) => {
     const q = req.query || {};
     return loadPerf({ months: parseMonths(q.months), codes: parseCodes(q.codes), fresh: q.fresh === '1' || q.fresh === 'true', onlyPerf: q.only === 'perf' });
+  });
+
+  // 재고연관성 — 구매이력 · 재고(읽기 전용 · 수량만, 원가 · 금액 없음). 기준은 src/pfInventory.js 머리말.
+  //   ?codes=CB0002,CQ0500R 일부만 · ?fresh=1 5분 캐시 건너뛰기
+  const freshOf = (q) => q.fresh === '1' || q.fresh === 'true';
+  app.get('/api/pf-catalog/purchases', G, async (req) => {
+    const q = req.query || {};
+    return loadPurchases({ codes: parseCodes(q.codes), fresh: freshOf(q) });
+  });
+  app.get('/api/pf-catalog/stock', G, async (req) => {
+    const q = req.query || {};
+    return loadStock({ codes: parseCodes(q.codes), fresh: freshOf(q) });
   });
 
   app.get('/api/pf-catalog/items', G, async (req) => {
