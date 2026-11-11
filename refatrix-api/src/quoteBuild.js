@@ -13,10 +13,22 @@ import { normOe, oeToken } from './oeParse.js';
 import { oeReady, oeByProduct, matchSourceFor } from './oeCodes.js';
 import { expandKitLines, normKitNo, stampKitNos } from './vioPromos.js';
 import { stampLineMeta as stampOeMeta } from './oeCodes.js';
+import { xrefMasterReady, bridgeOne, normBrand, normCode as xmNorm } from './xrefMaster.js';   // 0325 · 경쟁사 → SYD → CTR
 /** 0228 OE 스냅샷 + 0306 키트 번호 — 저장 경로 네 곳(화면·복제·CRM·리드포털)이 모두 이 함수를 부른다. */
 export async function stampLineMeta(c, quoteId, lines) {
   await stampOeMeta(c, quoteId, lines);
   await stampKitNos(c, quoteId, lines);
+  await stampBrands(c, quoteId, lines);
+}
+
+/** 0325 · 붙여넣기 때 고른 브랜드(input_brand) — CTR 을 못 찾은 줄도 「코드 + 브랜드」가 남는다. */
+export async function stampBrands(c, quoteId, lines) {
+  if (!Array.isArray(lines) || !lines.some((l) => l && l.input_brand)) return;
+  if (!(await xrefMasterReady((t, p) => c.query(t, p)))) return;
+  for (const l of lines) {
+    if (!l || !l.input_brand) continue;
+    await c.query(`UPDATE quote_lines SET input_brand=$1 WHERE quote_id=$2 AND line_no=$3`, [l.input_brand, quoteId, l.line_no]);
+  }
 }
 
 
@@ -136,15 +148,24 @@ export function quoteLineCodeMatch(a, k) {
 // 반환: { matches: [{product_id, ctr_code, list_price, app, name, syd_codes[], matched_by, oe_codes[]}],
 //         source:'ctr'|'syd'|'oe'|'oe_for'|'mixed'|'none', pick_required }
 //   0228 — ② 단계에 OE(정규화 일치)를 합쳤다. FOR 로만 걸리면 pick_required=true.
-export async function resolveCode(code) {
+//   0325 — opts.brand(붙여넣기 때 고른 브랜드):
+//     · 없음/CTR/SYD → ①CTR ②SYD∪OE (종전) → ③크로스레퍼런스 마스터(전 브랜드) → ④제품 교차참조(product_xref_codes)
+//     · 경쟁사(BAW·GROB·VAZLO·KYB·MOOG) → ③마스터(그 브랜드 칸만) → ④교차참조(그 브랜드) → ⑤CTR 정확일치
+//       경쟁사 숫자 코드가 우연히 SYD 코드와 같을 수 있어(GROB 2509007 = SYD 2509007) SYD 단계는 건너뛴다.
+//     ③은 「경쟁사 코드 → 마스터의 같은 행 SYD → ERP 에 등록된 SYD → CTR」. matched_by='xref', 매치마다 xref:{brand, code, syd}.
+export async function resolveCode(code, opts = {}) {
   const c = String(code || '').trim();
   if (!c) return { matches: [], source: 'none' };
+  const brand = normBrand(opts && opts.brand);
+  const competitor = !!brand && brand !== 'CTR' && brand !== 'SYD';
+  const PSEL = `SELECT id, code, name, app, list_price, is_active FROM products`;
   // 1) CTR 정확매칭 — 여기서 걸리면 끝(다른 표는 보지 않는다)
-  const ctr = (await query(
-    `SELECT id, code, name, app, list_price, is_active FROM products WHERE deleted_at IS NULL AND code=$1`, [c])).rows;
+  const ctr = competitor ? [] : (await query(
+    `${PSEL} WHERE deleted_at IS NULL AND code=$1`, [c])).rows;
   let rows = ctr, source = 'ctr';
-  const via = new Map();          // product_id → 'syd' | 'oe' | 'oe_for' (어느 표로 걸렸나)
-  if (!rows.length) {
+  const via = new Map();          // product_id → 'syd' | 'oe' | 'oe_for' | 'xref' (어느 표로 걸렸나)
+  const xinfo = new Map();        // product_id → { brand, code, syd }  (0325 · 크로스레퍼런스로 걸린 경로)
+  if (!rows.length && !competitor) {
     // 2) SYD 역검색 ∪ OE(0228) — **같은 단계로 합친다.**
     //    짧은 숫자형 OE 가 다른 제품의 SYD 코드와 같을 때 SYD 를 무조건 우선하면
     //    조용히 엉뚱한 제품이 견적에 들어간다. 합쳐서 여러 개면 사람이 고른다.
@@ -170,6 +191,48 @@ export async function resolveCode(code) {
     const kinds = new Set(via.values());
     source = !rows.length ? 'none' : (kinds.size === 1 ? [...kinds][0] : 'mixed');
   }
+  if (!rows.length) {
+    // 3) 0325 · 크로스레퍼런스 마스터 — 경쟁사 코드 → 같은 행 SYD → ERP SYD → CTR
+    try {
+      if (await xrefMasterReady()) {
+        const br = await bridgeOne(c, { brand: competitor ? brand : null });
+        if (br.products.size) {
+          const ids = [...br.products.keys()];
+          rows = (await query(`${PSEL} WHERE deleted_at IS NULL AND id = ANY($1::bigint[]) ORDER BY code`, [ids])).rows;
+          for (const r of rows) {
+            const p = br.products.get(Number(r.id));
+            via.set(Number(r.id), 'xref');
+            xinfo.set(Number(r.id), { brand: p.brand, code: p.code, syd: p.syd_code || null, source: 'master' });
+          }
+        }
+      }
+    } catch (_) { /* 마스터 조회 실패는 「못 찾음」과 같게 */ }
+    // 4) 제품에 직접 붙은 교차참조(0130 product_xref_codes)
+    if (!rows.length) {
+      try {
+        const n = xmNorm(c);
+        const xr = n ? (await query(
+          `SELECT p.id, p.code, p.name, p.app, p.list_price, p.is_active, x.brand, x.xref_code
+             FROM product_xref_codes x JOIN products p ON p.id = x.product_id AND p.deleted_at IS NULL
+            WHERE x.norm_code = $1 ORDER BY p.code`, [n])).rows : [];
+        const seen = new Set();
+        for (const r of xr) {
+          const rb = normBrand(r.brand);
+          if (competitor && rb !== brand) continue;
+          if (seen.has(Number(r.id))) continue; seen.add(Number(r.id));
+          rows.push(r);
+          via.set(Number(r.id), 'xref');
+          xinfo.set(Number(r.id), { brand: rb, code: r.xref_code, syd: null, source: 'product_xref' });
+        }
+      } catch (_) { /* 0130 미적용 */ }
+    }
+    if (rows.length) source = 'xref';
+    // 5) 경쟁사를 골랐는데 아무 데도 없으면 — CTR 코드를 그대로 붙여넣은 경우만 받는다
+    if (!rows.length && competitor) {
+      rows = (await query(`${PSEL} WHERE deleted_at IS NULL AND code=$1`, [c])).rows;
+      source = rows.length ? 'ctr' : 'none';
+    }
+  }
   if (!rows.length) return { matches: [], source: 'none' };
   const ids = rows.map((r) => r.id);
   const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
@@ -184,6 +247,7 @@ export async function resolveCode(code) {
     // 0228 — 무엇으로 걸렸나 + 그 제품의 OE 목록(표기 그대로)
     matched_by: source === 'ctr' ? 'ctr' : (via.get(Number(r.id)) || null),
     oe_codes: (oeMap.get(Number(r.id)) || []).map(oeToken),
+    xref: xinfo.get(Number(r.id)) || null,   // 0325 · {brand, code, syd} — 크로스레퍼런스로 걸렸을 때
   }));
   // FOR(조립품 OE)로만 걸린 경우는 한 건이어도 **자동 확정하지 않는다**(디렉터 결정 D6).
   //   조립품 번호로 부품 하나가 조용히 견적되는 것을 막는다 — 후보창에서 사람이 고른다.
@@ -235,7 +299,7 @@ export async function inactiveTargets(inputLines, allowedIds = null) {
   for (const ln of (Array.isArray(inputLines) ? inputLines : [])) {
     let pid = Number(ln.product_id) || null;
     if (!pid) {
-      const res = await resolveCode(ln.code);
+      const res = await resolveCode(ln.code, { brand: ln.brand });
       if (res.matches.length === 1) pid = res.matches[0].product_id;
     }
     if (!pid) continue;
@@ -375,7 +439,7 @@ export async function buildLines(customerDiscount, ivaRate, inputLines) {
       // 0228 — 자동완성·후보창에서 고른 줄도 「친 코드가 무엇이었나」를 서버가 판정한다
       if (prod) matchSource = await matchSourceFor(prod.id, ln.code || prod.code);
     } else {
-      const res = await resolveCode(ln.code);
+      const res = await resolveCode(ln.code, { brand: ln.brand });
       if (res.matches.length === 1 && !res.pick_required) {
         prod = (await query(`SELECT id, code, name, app, list_price, stock_qty, is_active FROM products WHERE id=$1`, [res.matches[0].product_id])).rows[0];
         matchSource = res.matches[0].matched_by || res.source || null;
@@ -385,7 +449,7 @@ export async function buildLines(customerDiscount, ivaRate, inputLines) {
     }
     if (!prod) {
       rows.push({ line_no: lineNo, product_id: null, input_code: ln.code || null, ctr_code: null, syd_codes: null, product_name: null, app_text: null, qty, list_price: 0, discount_rate: customerDiscount, final_price: 0, line_subtotal: 0, line_iva: 0, line_total: 0, avail_stock: null, stock_flag: 'not_found', issue: issue || 'not_found',
-        match_source: 'none', oe_codes: null, kit_no: normKitNo(ln.kit_no) });
+        match_source: 'none', oe_codes: null, kit_no: normKitNo(ln.kit_no), input_brand: normBrand(ln.brand) });
       continue;
     }
     const oeList = ((await oeByProduct([prod.id])).get(Number(prod.id)) || []).map(oeToken);
@@ -402,6 +466,7 @@ export async function buildLines(customerDiscount, ivaRate, inputLines) {
       issue,
       match_source: matchSource, oe_codes: oeList.length ? oeList.join(' // ') : null,   // 0228
       kit_no: normKitNo(ln.kit_no),   // 0306 · 키트에서 풀린 줄(또는 편집 화면이 넘긴 키트 번호)
+      input_brand: normBrand(ln.brand),   // 0325 · 붙여넣기 때 고른 브랜드
     });
   }
   return rows;

@@ -57,7 +57,7 @@ test('저장 응답에 미등록 코드가 있으면 기록 위치를 알린다'
   assert.match(r.text, /Fuera de catálogo: 1 \(CQ0988L\)/, '어느 코드인지');
   assert.match(r.text, /개발 요청/, '어디에 남았는지(메뉴 이름)');
   assert.match(r.cls, /warn/, '눈에 띄게');
-  assert.match(r.title, /qt-1105avl/, '빌드 토큰');   // 0234 토큰 → 2026-11-05 avl
+  assert.match(r.title, /qt-1111xr/, '빌드 토큰');   // 0234 토큰 → 2026-11-05 avl → 2026-11-11 xr(0325)
 });
 
 test('미등록 코드가 없으면 안내도 없다 (구 백엔드 응답 호환)', { skip: SKIP }, async () => {

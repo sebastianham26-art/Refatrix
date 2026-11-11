@@ -16,6 +16,7 @@ import { recordPriceChange } from '../priceMaster.js';   // 0229 — 정가가 �
 import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품찾기 랙 × 수량
 import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구성품
 import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
+import { searchMaster, normBrand as xmBrand, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 경쟁사 코드(크로스레퍼런스 마스터)로 제품찾기
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -130,16 +131,41 @@ export default async function productRoutes(app) {
     const oeOn = await oeReady();
     const qn = normOe(q);
     const oeLike = oeOn && qn.length >= 4;
+    // 0325 · 경쟁사 코드(BAW · GROB · VAZLO · KYB · MOOG …)로도 찾는다.
+    //   ⓐ 크로스레퍼런스 마스터: 경쟁사 코드 → 같은 행 SYD → ERP 에 등록된 SYD → CTR
+    //   ⓑ 제품에 직접 붙은 교차참조(product_xref_codes)
+    //   4자 이상 정확일치, 5자 이상은 앞부분 일치. 걸린 제품에는 xref_hit:{brand, code, syd} 를 붙인다.
+    const xrefHit = new Map();
+    let xrefUnbridged = [];
+    const xn = xmNorm(q);
+    if (q && xn.length >= 4) {
+      try {
+        const sm = await searchMaster(q);
+        for (const [pid, h] of sm.products) xrefHit.set(Number(pid), { brand: h.brand, code: h.code, syd: h.syd_code || null, source: 'master' });
+        xrefUnbridged = sm.unbridged;
+      } catch (e) { try { console.error('[products] xref master', e.message); } catch (_) {} }
+      try {
+        const xr = (await query(
+          `SELECT product_id, brand, xref_code FROM product_xref_codes
+            WHERE norm_code = $1 ${xn.length >= 5 ? 'OR norm_code LIKE $2' : ''} LIMIT 200`,
+          xn.length >= 5 ? [xn, xn + '%'] : [xn])).rows;
+        for (const x of xr) if (!xrefHit.has(Number(x.product_id))) xrefHit.set(Number(x.product_id), { brand: xmBrand(x.brand), code: x.xref_code, syd: null, source: 'product_xref' });
+      } catch (_) { /* 0130 미적용 */ }
+    }
+    const xrefIds = [...xrefHit.keys()];
     if (q) {
       params.push(`%${q}%`);
       const i = params.length;
       let oeCond = '';
       if (oeLike) { params.push(`%${qn}%`); oeCond = `
                    OR EXISTS (SELECT 1 FROM product_oe_codes oc WHERE oc.product_id=p.id AND oc.oe_norm LIKE $${params.length})`; }
+      let xrCond = '';
+      if (xrefIds.length) { params.push(xrefIds); xrCond = `
+                   OR p.id = ANY($${params.length}::bigint[])`; }
       where += ` AND (p.code ILIKE $${i} OR p.ean ILIKE $${i} OR p.name ILIKE $${i}
                    OR p.scode ILIKE $${i} OR p.app ILIKE $${i}
                    OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
-                   OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i})${oeCond})`;
+                   OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i})${oeCond}${xrCond})`;
     }
     if (materialFilter === '__none__') {
       where += ' AND p.material IS NULL';
@@ -189,6 +215,9 @@ export default async function productRoutes(app) {
       let oeRank = '';
       if (oeOn && qn) { params.push(qn); oeRank = `
                    WHEN EXISTS (SELECT 1 FROM product_oe_codes oc2 WHERE oc2.product_id=p.id AND oc2.oe_norm=$${params.length}) THEN 4`; }
+      // 0325 — 경쟁사 코드(크로스레퍼런스)로 걸린 제품도 SyD 와 같은 등급(4)
+      if (xrefIds.length) { params.push(xrefIds); oeRank += `
+                   WHEN p.id = ANY($${params.length}::bigint[]) THEN 4`; }
       orderBy = `CASE
                    WHEN upper(p.code) = upper($${rk}) THEN 0
                    WHEN p.code ILIKE $${rk} || '%' THEN 1
@@ -247,7 +276,9 @@ export default async function productRoutes(app) {
     } catch (e) { try { console.error('[products] rack_stock', e.message); } catch (_) {} }
     // 0293 · VIO 프로모션 키트(K0001 …) — 구성품을 하위 줄로: 부품마다 랙·재고·Backorder·입고 예정(권한대로 최소화)
     try { await attachKits(perm, items); } catch (e) { try { console.error('[products] kits', e.message); } catch (_) {} }
-    return { items, limit, offset, total };
+    // 0325 · 경쟁사 코드로 걸린 제품 표시 + 마스터엔 있으나 CTR 미등록인 행(SYD 미개발) 안내
+    if (xrefHit.size) for (const p of items) { const h = xrefHit.get(Number(p.id)); if (h) p.xref_hit = h; }
+    return { items, limit, offset, total, ...(xrefUnbridged.length && offset === 0 ? { xref_unbridged: xrefUnbridged } : {}) };
   });
 
   // 0293 · 목록의 키트 행에 구성품 붙이기 — kit:{promo_no, buildable, items:[{qty, …제품 칸}]}

@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-1105avl</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-1111xr</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -82,6 +82,12 @@
   tr.kithead .kc{font-weight:500;color:#2d5a4b}
   .kitcomp{color:#1f5f4a;font-size:11.5px;margin-top:2px;line-height:1.35}
   .kitseg-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#6f6a60}
+  /* 0325 · 브랜드 붙여넣기 */
+  .brbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#fdf3e3;color:#9a6512;font-size:10.5px;font-weight:800;white-space:nowrap}
+  .xrnote{display:block;font-size:10.5px;color:#6B4FB0;margin-top:1px}
+  .pastebox{border:1px dashed #cfc8b8;border-radius:10px;padding:10px 12px;margin-top:10px;background:#fbfaf6}
+  .pastebox textarea{width:100%;min-height:88px;font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:8px;border:1px solid #ddd6c6;border-radius:8px;box-sizing:border-box}
+  .pickbtn{padding:2px 8px;border:1px solid #9a6512;border-radius:7px;background:#fff;color:#9a6512;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px}
   .kitbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#E8F3EE;color:#1f5f4a;font-size:10.5px;font-weight:800;white-space:nowrap}
   .inactbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#fbe9e7;color:#b23a2e;
     font-size:10px;font-weight:800;line-height:16px;vertical-align:middle}
@@ -150,9 +156,15 @@
 
     <!-- 품목 입력 -->
     <div class="card">
-      <div class="card-h">품목 입력 <span class="hint" style="font-weight:500">— CTR 코드 또는 경쟁사(SYD) 코드 중 하나 + 수량</span></div>
+      <div class="card-h">품목 입력 <span class="hint" style="font-weight:500">— 브랜드를 고르고 코드 + 수량 (CTR · SYD · 경쟁사 BAW · GROB · VAZLO · KYB · MOOG)</span></div>
       <div class="inrow">
-        <div style="flex:1;min-width:160px;position:relative"><label>코드 (CTR 또는 SYD) — 입력하면 자동완성</label>
+        <!-- 0325 · 브랜드 — 경쟁사 코드면 크로스레퍼런스 마스터에서 SYD → CTR 로 찾는다 -->
+        <div style="min-width:130px"><label>브랜드</label>
+          <select id="inBrand" style="width:130px" title="경쟁사를 고르면 멕시코 크로스레퍼런스 마스터에서 그 브랜드 칸만 보고 SYD → CTR 로 찾습니다. 자동 판별 = CTR → SYD → 크로스레퍼런스(전 브랜드) 순.">
+            <option value="">자동 판별</option><option value="CTR">CTR</option><option value="SYD">SYD</option>
+            <option value="BAW">BAW</option><option value="GROB">GROB</option><option value="VAZLO">VAZLO</option><option value="KYB">KYB</option><option value="MOOG">MOOG</option>
+          </select></div>
+        <div style="flex:1;min-width:160px;position:relative"><label>코드 (CTR · SYD · 경쟁사) — 입력하면 자동완성</label>
           <input id="inCode" type="text" autocomplete="off" placeholder="예: CTR 또는 SYD 일부 입력" oninput="onCodeInput()" onkeydown="codeKey(event)">
           <div id="acBox" class="acbox hidden"></div>
         </div>
@@ -167,6 +179,19 @@
             <button class="btn ghost sm hidden" id="btnVsSyd" onclick="downloadVsSyd()" title="CTR vs SYD 커버리지 비교 — A열 차종 라벨을 「전체 견적」과 동일 규칙으로 통일(그룹사명+모델+연식). 차종·세대 × 6대 품군의 CTR·SYD 코드와 정가(MXN). SYD만 있고 CTR이 없는 칸은 빨강 · 대표·소시오 전용">🆚 CTR vs SYD</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
+        </div>
+      </div>
+      <!-- 0325 · 엑셀 여러 셀 복사 → 붙여넣기 (코드 · 수량 두 열, 수량 없으면 1) -->
+      <div class="pastebox">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <b style="font-size:13px;color:var(--brand)">📋 엑셀에서 붙여넣기</b>
+          <span class="hint" style="margin:0">엑셀에서 <b>코드 · 수량</b> 두 열(또는 코드 한 열)을 여러 행 선택 → 복사(Ctrl+C) → 아래 칸에 붙여넣기(Ctrl+V). 수량이 비어 있으면 <b>1개</b>. 위에서 고른 <b>브랜드</b>로 찾습니다.</span>
+        </div>
+        <textarea id="pasteArea" placeholder="예)&#10;SU042	4&#10;G4368	2&#10;334368&#10;(엑셀에서 복사한 그대로 붙여넣으세요)"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+          <button class="btn" type="button" id="pasteAdd">＋ 붙여넣은 코드 추가</button>
+          <button class="btn ghost sm" type="button" id="pasteClear">칸 비우기</button>
+          <span class="hint" id="pasteInfo" style="margin:0"></span>
         </div>
       </div>
       <label style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:#6f6a60;cursor:pointer;font-weight:500">
@@ -403,7 +428,7 @@
   let acItems=[], acSel=-1, acTimer=null, pickedProduct=null;
   // 0228 — FOR(조립품 OE) 부연설명. 서버 oeParse.OE_FOR_NOTE 와 같은 문장.
   const OE_FOR_NOTE='해당 OE번호 부품의 조립품에 해당하는 OE부품입니다';
-  const MB_LABEL={syd:'SYD',oe:'OE',oe_for:'FOR (조립품 OE)'};
+  const MB_LABEL={syd:'SYD',oe:'OE',oe_for:'FOR (조립품 OE)',xref:'크로스레퍼런스'};
   // ===== 2026-11-02 kitf · Kit 보기(전체 / Kit만 / Kit 제외) =====
   //   키트 = K 로 시작하고 바로 숫자가 오는 코드(K0001 …) — 서버 vioPromos.isKitCode 와 같은 규칙.
   const KIT_MODE_KEY='rfx_quote_kitmode';
@@ -1709,51 +1734,61 @@
     XLSX.writeFile(wb,'plantilla_cotizacion.xlsx');
   }
 
+  // 0325 · 선택한 브랜드('' = 자동 판별)
+  function curBrand(){ const el=$('inBrand'); return el&&el.value?el.value:''; }
+  function withBrand(o,b){ if(b) o.brand=b; return o; }
   async function addLine(){
     const code=$('inCode').value.trim(); const qty=Number($('inQty').value)||0;
+    const brand=curBrand();
     const m=$('lineMsg'); m.className='msg';
     if(!code){m.className='msg err';m.textContent='코드를 입력하세요.';return;}
     if(qty<=0){m.className='msg err';m.textContent='수량을 입력하세요.';return;}
     // 자동완성에서 고른 제품이 있고 코드가 그대로면 그 제품으로 바로 추가
     if(pickedProduct && pickedProduct.ctr_code===code){
-      lines.push({code,product_id:pickedProduct.product_id,qty});
+      lines.push(withBrand({code,product_id:pickedProduct.product_id,qty},brand));
       pickedProduct=null;
       $('inCode').value='';$('inQty').value='1';hideAc();$('inCode').focus();
       recalc(); return;
     }
     // 코드 해석: 다중매칭이면 후보 선택
     try{
-      const r=await fetch(session.api+'/api/quotes/resolve-code?code='+encodeURIComponent(code),{headers:auth()}).then(x=>x.json());
+      const r=await fetch(session.api+'/api/quotes/resolve-code?code='+encodeURIComponent(code)+(brand?'&brand='+encodeURIComponent(brand):''),{headers:auth()}).then(x=>x.json());
       const matches=(r&&r.matches)||[];
       if(!matches.length){
-        lines.push({code,qty}); // 미매칭(not_found) 줄로 추가됨
+        lines.push(withBrand({code,qty},brand)); // 미매칭(not_found) 줄로 추가됨 — 코드 + 브랜드가 기록된다
       } else if(matches.length===1 && !r.pick_required){
         // 0224b — 담고 진행한다. 스페인어 안내만 띄운다.
         if(matches[0].is_active===false) warnInactive(matches[0].ctr_code);
-        lines.push({code,product_id:matches[0].product_id,qty});
+        lines.push(withBrand({code,product_id:matches[0].product_id,qty},brand));
       } else {
-        openCand(code,qty,matches,!!r.pick_required); return; // 후보 선택 후 push (0228: FOR 로만 걸린 1건도 여기로)
+        openCand(code,qty,matches,!!r.pick_required,{brand}); return; // 후보 선택 후 push (0228: FOR 로만 걸린 1건도 여기로)
       }
       $('inCode').value='';$('inQty').value='1';$('inCode').focus();
       recalc();
     }catch(e){m.className='msg err';m.textContent='코드 조회 실패';}
   }
 
-  function openCand(code,qty,candidates,pickRequired){
-    pendingCand={code,qty};
+  function openCand(code,qty,candidates,pickRequired,extra){
+    pendingCand={code,qty,brand:(extra&&extra.brand)||'',idx:(extra&&extra.idx!=null)?extra.idx:null};
     $('candFor').textContent='— "'+code+'" 에 해당하는 CTR 제품을 고르세요'
       +(pickRequired?' · 이 번호는 FOR(조립품 OE)입니다: '+OE_FOR_NOTE+'. 맞는 부품인지 확인 후 고르세요.':'');
     $('candBody').innerHTML=candidates.map(c=>
       '<div class="cand'+(c.is_active===false?' inact':'')+'" onclick="pickCand('+c.product_id+','+(c.is_active===false?'1':'0')+')">'
       +'<div><b>'+esc(c.ctr_code)+'</b>'+(c.is_active===false?' <span class="inactbadge">비활성</span>':'')
       +(c.matched_by&&MB_LABEL[c.matched_by]?' <span class="inactbadge" style="background:'+(c.matched_by==='oe_for'?'#fbf3e3;color:#7a5a17':'#e9f1ec;color:#143D34')+'"'+(c.matched_by==='oe_for'?' title="'+esc(OE_FOR_NOTE)+'"':'')+'>'+MB_LABEL[c.matched_by]+'</span>':'')
-      +'<div class="hint" style="margin:0">'+esc(c.name||'')+(c.app?' · '+esc(c.app):'')+'</div></div>'
+      +'<div class="hint" style="margin:0">'+esc(c.name||'')+(c.app?' · '+esc(c.app):'')+'</div>'
+      +(c.xref?'<div class="hint" style="margin:0;color:#6B4FB0">'+esc(c.xref.brand||'')+' '+esc(c.xref.code||'')+(c.xref.syd?' → SYD '+esc(c.xref.syd):'')+'</div>':'')+'</div>'
       +'<div style="text-align:right;white-space:nowrap"><div>List '+fmt(c.list_price)+'</div></div></div>'
     ).join('');
     $('candModal').style.display='flex';
   }
   function pickCand(pid, inactive){
-    if(pendingCand){ lines.push({code:pendingCand.code,product_id:pid,qty:pendingCand.qty}); pendingCand=null; }
+    if(pendingCand){
+      const ln=withBrand({code:pendingCand.code,product_id:pid,qty:pendingCand.qty},pendingCand.brand);
+      if(pendingCand.idx!=null && lines[pendingCand.idx]) lines[pendingCand.idx]=ln;   // 0325 · 표의 「후보 선택」 — 그 줄을 바꾼다
+      else lines.push(ln);
+      pendingCand=null;
+    }
     closeCand();$('inCode').value='';$('inQty').value='1';$('inCode').focus();recalc();
     if(inactive) warnInactive('');
   }
@@ -1777,7 +1812,7 @@
       // 0293 · 키트(K0001 …)는 서버가 구성 부품 줄로 풀어 준다 — 화면 줄 목록도 그것으로 바꾼다
       if(Array.isArray(d.input_lines)){
         const kits=[...new Set(d.input_lines.filter(l=>l.kit_no&&!lines.some(x=>x.kit_no===l.kit_no&&x.code===l.code)).map(l=>l.kit_no))];
-        lines=d.input_lines.map(l=>{ const o={code:l.code,qty:l.qty}; if(l.product_id) o.product_id=l.product_id; if(l.kit_no) o.kit_no=l.kit_no; return o; });
+        lines=d.input_lines.map(l=>{ const o={code:l.code,qty:l.qty}; if(l.product_id) o.product_id=l.product_id; if(l.kit_no) o.kit_no=l.kit_no; if(l.brand) o.brand=l.brand; return o; });
         if(kits.length){ const m=$('lineMsg'); if(m){ m.className='msg ok'; m.textContent='🧰 키트 '+kits.join(', ')+' → 구성 부품 줄로 풀어 넣었습니다(각 부품 재고로 예약·출고). Kit desglosado en sus piezas.'; } }
       }
       renderLines(d);
@@ -1801,7 +1836,8 @@
           +(k.consistent===false&&k.sets!=null?' <span class="flag low_stock" title="줄 수량이 키트 구성과 맞지 않습니다">구성 불일치</span>':'')+'</td></tr>';
       }
       if(l.ambiguous){
-        html+='<tr><td class="l" colspan="11" style="color:#9a6512;white-space:normal">"'+esc(l.input_code)+'" — 여러 제품과 매칭됩니다. 삭제 후 다시 입력해 후보에서 고르세요.</td><td><button class="delx" onclick="removeLine('+i+')">✕</button></td></tr>';
+        html+='<tr><td class="l" colspan="11" style="color:#9a6512;white-space:normal">'+(l.input_brand?'<span class="brbadge">'+esc(l.input_brand)+'</span> ':'')+'"'+esc(l.input_code)+'" — 여러 제품과 매칭됩니다. 후보에서 고르세요.'
+          +'<button type="button" class="pickbtn" data-amb="'+i+'">후보 선택 ('+((l.candidates||[]).length)+')</button></td><td><button class="delx" onclick="removeLine('+i+')">✕</button></td></tr>';
         return;
       }
       const flag=l.stock_flag||'ok';
@@ -1809,8 +1845,9 @@
       const clickable=l.matched&&l.product_id;
       const sub = l.line_subtotal!=null ? l.line_subtotal : (l.matched? (Number(l.final_price)||0)*(Number(l.qty)||0) : null);
       html+='<tr>'
-        +'<td class="l" title="'+esc(l.ctr_code||'')+'">'+esc(l.ctr_code||'—')+'</td>'
-        +'<td class="l" title="'+esc((l.syd_codes||[]).join(' / '))+'">'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
+        +'<td class="l" title="'+esc(l.ctr_code||'')+'">'+(l.matched?esc(l.ctr_code||'—'):('<span title="CTR 미등록 — 입력 코드와 브랜드가 기록되고 개발요청에 남습니다">'+(l.input_brand?'<span class="brbadge">'+esc(l.input_brand)+'</span><br>':'')+esc(l.input_code||'—')+'</span>'))+'</td>'
+        +'<td class="l" title="'+esc((l.syd_codes||[]).join(' / '))+'">'+esc((l.syd_codes||[]).join(' / ')||'—')
+          +(l.xref?'<span class="xrnote" title="크로스레퍼런스 마스터로 찾음">'+esc(l.xref.brand||'')+' '+esc(l.xref.code||'')+(l.xref.syd?' → '+esc(l.xref.syd):'')+'</span>':'')+'</td>'
         +'<td class="prod'+(clickable?'':'" style="cursor:default;text-decoration:none')+'" '+(clickable?'onclick="showHistory('+l.product_id+',\''+esc(l.ctr_code)+'\')"':'')+' title="'+esc(lineProdText(l))+'">'+(l.kit_no?'<span class="kitbadge" title="VIO 프로모션 키트에서 풀린 줄">🧰 '+esc(l.kit_no)+'</span> ':'')+esc(l.kit_no?lineProdText(l):(l.product_name||''))+(l.app_text?'<span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td>'+fmtq(l.qty)+'</td>'
         +'<td>'+(l.matched?(l.no_price?'<span class="flag not_found" title="정가 없음 · Sin precio de lista">정가 없음</span>':fmt(l.list_price)):'—')+'</td>'
@@ -1847,8 +1884,66 @@
         +'</div>';
     }
     html+='<div class="hint" style="margin-top:6px">품목수(SKU) <b>'+(t.skuCount||0)+'</b> · 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 총계(IVA 미포함) '+fmt(t.subtotal||0)+' · IVA '+fmt(t.iva||0)+' · <b>총계(IVA 포함) '+fmt(t.total||0)+'</b> &nbsp;·&nbsp; <span style="color:var(--muted)">제품명을 클릭하면 이 고객의 구매 실적을 봅니다</span></div>';
+    // 0325 · CTR 을 못 찾은 줄 — 코드 + 브랜드가 기록되고 저장하면 개발요청에 남는다
+    const nf=L.filter(l=>!l.matched&&!l.ambiguous);
+    if(nf.length){
+      html+='<div class="msg warn" style="display:block;margin-top:8px;white-space:normal">📝 <b>CTR 미등록 '+nf.length+'줄</b>: '
+        +nf.slice(0,20).map(l=>(l.input_brand?esc(l.input_brand)+' ':'')+esc(l.input_code||'')).join(', ')+(nf.length>20?' 외 '+(nf.length-20)+'줄':'')
+        +' — 입력 코드와 브랜드가 그대로 기록되고, 견적을 저장하면 <b>제품·마케팅 › 개발 요청</b>에 남습니다. 브랜드를 잘못 골랐으면 줄을 지우고 브랜드를 바꿔 다시 넣으세요.</div>';
+    }
     $('linesWrap').innerHTML=html;
+    $('linesWrap').querySelectorAll('.pickbtn[data-amb]').forEach(b=>b.addEventListener('click',()=>{
+      const i=Number(b.getAttribute('data-amb')); const l=L[i]; if(!l) return;
+      openCand(l.input_code,l.qty,l.candidates||[],!!l.pick_required,{brand:(lines[i]&&lines[i].brand)||l.input_brand||'',idx:i});
+    }));
   }
+
+  // ===== 0325 · 엑셀 여러 셀 붙여넣기 =====
+  //   한 줄 = 한 품목. 칸은 탭(엑셀 복사) → 없으면 ; , 또는 2칸 이상 공백으로 나눈다.
+  //   첫 칸 = 코드, 다음 칸 중 첫 숫자 = 수량(없거나 0 이하면 1). 첫 줄이 「Codigo · Cantidad」 같은 머리줄이면 건너뛴다.
+  function parsePaste(text){
+    const out=[]; let headerSkipped=0, noQty=0;
+    const rows=String(text||'').replace(/\r/g,'').split('\n');
+    const qtyRe=/cant|cantidad|qty|수량|piezas|pzas|unidad/i, codeHdr=/codigo|código|clave|sku|parte|품번|코드|^code$/i;
+    rows.forEach((raw,ri)=>{
+      if(!raw||!raw.trim()) return;
+      let cells=raw.indexOf('\t')>=0?raw.split('\t'):raw.split(/\s*[;,]\s*|\s{2,}/);
+      cells=cells.map(c=>String(c==null?'':c).trim());
+      if(!cells.length||!cells[0]) return;   // 코드 칸이 빈 줄은 건너뛴다(수량만 있는 줄을 코드로 오인하지 않게)
+      if(ri<3 && out.length===0 && (codeHdr.test(cells[0])||cells.slice(1).some(c=>qtyRe.test(c)))){ headerSkipped++; return; }
+      let code=cells[0];
+      // 「CODE 4」처럼 한 칸에 공백 하나로 붙은 경우
+      if(cells.length===1){ const m=code.match(/^(\S+)\s+(\d+(?:[.,]\d+)?)$/); if(m){ code=m[1]; cells=[m[1],m[2]]; } }
+      let qty=0;
+      for(let k=1;k<cells.length;k++){ const c=String(cells[k]); if(!/^[\s$]*-?[\d.,]+\s*(pz|pzs|pza|pzas|pcs)?\.?$/i.test(c)) continue; const n=Number(c.replace(/[^\d.\-]/g,'')); if(Number.isFinite(n)){ qty=n; break; } }
+      if(!(qty>0)){ qty=1; noQty++; }
+      out.push({code,qty});
+    });
+    return {items:out,headerSkipped,noQty};
+  }
+  async function addPasted(){
+    const m=$('lineMsg'); m.className='msg';
+    const p=parsePaste($('pasteArea').value);
+    if(!p.items.length){ m.className='msg err'; m.textContent='붙여넣은 코드가 없습니다. 엑셀에서 코드(·수량) 칸을 복사해 붙여넣으세요.'; return; }
+    const brand=curBrand();
+    p.items.forEach(it=>lines.push(withBrand({code:it.code,qty:it.qty},brand)));
+    if($('saveBtn')) $('saveBtn').disabled=true;
+    await recalc();
+    if($('saveBtn')) $('saveBtn').disabled=false;
+    const L=(lastPreview&&lastPreview.lines)||[];
+    const tail=L.slice(-p.items.length);
+    const ok=tail.filter(l=>l.matched).length, amb=tail.filter(l=>l.ambiguous).length, nf=tail.length-ok-amb;
+    m.className=(nf||amb)?'msg warn':'msg ok';
+    m.textContent=p.items.length+'줄 추가 ('+(brand?brand:'자동 판별')+') — CTR 매칭 '+ok+(amb?(' · 후보 선택 필요 '+amb):'')+(nf?(' · CTR 미등록 '+nf+'(코드·브랜드 기록)'):'')
+      +(p.noQty?(' · 수량 없던 '+p.noQty+'줄은 1개'):'')+(p.headerSkipped?' · 머리줄 제외':'');
+    $('pasteArea').value=''; $('pasteInfo').textContent='';
+  }
+  (function(){
+    const ta=$('pasteArea'); if(!ta) return;
+    ta.addEventListener('input',()=>{ const p=parsePaste(ta.value); $('pasteInfo').textContent=p.items.length?(p.items.length+'줄 인식'+(p.noQty?(' · 수량 없음 '+p.noQty+'(→1)'):'')):''; });
+    $('pasteAdd').addEventListener('click',addPasted);
+    $('pasteClear').addEventListener('click',()=>{ ta.value=''; $('pasteInfo').textContent=''; });
+  })();
 
   async function onXlsx(ev){
     const file=ev.target.files[0]; if(!file)return;
@@ -1877,7 +1972,7 @@
         if(!code){ skipped++; continue; }   // 빈 코드만 제외(헤더 행은 위에서 이미 제거)
         let qty=Number(String(row[qtyCol]==null?'':row[qtyCol]).replace(/[^\d.\-]/g,''));
         if(!qty||qty<=0){ qty=1; noQty++; }   // 수량 누락 → 1로 (행을 버리지 않음)
-        lines.push({code,qty});               // 즉시 추가(코드 해석은 아래 preview에서 일괄 처리)
+        lines.push(withBrand({code,qty},curBrand()));   // 즉시 추가(코드 해석은 아래 preview에서 일괄 처리) · 0325 브랜드
         added++;
       }
       ev.target.value='';
@@ -1972,7 +2067,7 @@
         +(d.po_pending_migration?('  ⚠ 고객 PO번호는 아직 저장되지 않았습니다(서버 마이그레이션 0225 대기). 견적 상세에서 다시 넣어 주세요.'):'')
         +(inact.length?('  ⚠ Descontinuados: '+inact.length+' ('+inact.map(x=>x.code).join(', ')
           +'). La cotización sigue su curso; estas líneas quedan registradas como demanda en '+ES_INACT_WHERE+'.'):'')
-        +(devl.length?('  📝 Fuera de catálogo: '+devl.length+' ('+devl.map(x=>x.code).join(', ')
+        +(devl.length?('  📝 Fuera de catálogo: '+devl.length+' ('+devl.map(x=>(x.brand?x.brand+' ':'')+x.code).join(', ')
           +'). Quedan registrados como solicitud de desarrollo en '+ES_DEV_WHERE+'.'):'')
         +(shl.length?('  ⚠ 재고 확보 부족 '+shl.length+'개 SKU — 매출 시 확보분만 인보이스됩니다: '
           +shl.map(x=>x.code+(x.kit_no?'('+x.kit_no+')':'')+' 확보 '+x.reserved+'/'+x.qty).join(', ')

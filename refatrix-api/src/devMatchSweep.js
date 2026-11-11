@@ -6,7 +6,10 @@
 //   자동으로 「개발완료(developed)」 처리한다.
 //
 //   매칭 기준(개발필요내용 화면과 동일): 정규화 코드(대소문자·기호 무시)로
-//   ① products.code(CTR) ② product_syd_codes ③ product_oe_codes(직접 OE · 0228) ④ product_xref_codes 순.
+//   ① products.code(CTR) ② product_syd_codes ③ product_oe_codes(직접 OE · 0228) ④ product_xref_codes 순,
+//   ⑤ (0325) 크로스레퍼런스 마스터 — 경쟁사 코드 → 마스터 같은 행의 SYD → ERP 에 등록된 SYD → CTR.
+//   요청에 경쟁사 브랜드(input_brand: BAW·GROB·VAZLO·KYB·MOOG)가 적혀 있으면 견적과 같은 규칙:
+//     ⑤마스터(그 브랜드 칸만) → ④교차참조 → ①CTR. (경쟁사 숫자 코드가 SYD 와 우연히 같을 수 있어 ②③은 쓰지 않는다)
 //   대조하는 코드(2026-10-12 확대): 경쟁사 코드(input_code) 전체 + 한 칸에 여러 코드를
 //   「/ , ; |」·줄바꿈으로 적은 경우 각각 + 검토 단계에서 넣은 SYD 코드(review_syd_code).
 //   ⚠ 가장 높은 우선순위에서 서로 다른 제품이 2개 이상 걸리면 「후보 여럿」으로 두고
@@ -28,6 +31,7 @@ import { logEvent } from './audit.js';
 import { normCode } from './devDemand.js';
 import { generateOfferSheets } from './offerSheets.js';
 import { scheduleDevReqPush } from './devReqPush.js';   // 2026-11-09 · 자동 개발완료 → 플랫폼 목록에서 해제
+import { xrefMasterReady, masterIndexFor, normBrand, COMPETITOR_BRANDS } from './xrefMaster.js';   // 0325 · 크로스레퍼런스 마스터(경쟁사 → SYD → CTR)
 
 function clip1(s, max) { s = String(s == null ? '' : s); return s.length > max ? s.slice(0, max) + '…' : s; }
 
@@ -104,11 +108,12 @@ export function devRequestKeys(r) {
 // 요청 1건 판정(순수 함수 — 테스트용 분리).
 //   index: Map(norm → Map(productId → pri))
 //   반환: {product_id, pri} | {ambiguous:[pid...], pri} | null
-export function pickDevMatch(keys, index) {
+export function pickDevMatch(keys, index, allow = null) {
   let best = null; const pids = new Set();
   for (const k of keys) {
     const m = index.get(k); if (!m) continue;
     for (const [pid, pri] of m) {
+      if (allow && !allow.has(pri)) continue;
       if (best == null || pri < best) { best = pri; pids.clear(); pids.add(pid); }
       else if (pri === best) pids.add(pid);
     }
@@ -118,11 +123,44 @@ export function pickDevMatch(keys, index) {
   return { product_id: [...pids][0], pri: best };
 }
 
+// 0325 · 우선순위 → 매칭 경로 이름(개발필요내용 「매칭결과」 열 · 팝업 표시)
+export const VIA_BY_PRI = { 1: 'ctr', 2: 'syd', 3: 'oe', 4: 'xref', 5: 'master' };
+
+// 0325 · 마스터 판정(순수 함수) — master: Map(norm → Map(brand → Set(pid)))
+//   brand 가 있으면 그 브랜드 칸에서만. 1개 → {product_id, pri:5} · 여러 개 → {ambiguous} · 없음 → null
+export function pickMasterMatch(keys, master, brand = null) {
+  const pids = new Set();
+  for (const k of keys) {
+    const byBrand = master && master.get(k); if (!byBrand) continue;
+    for (const [b, set] of byBrand) {
+      if (brand && b !== brand) continue;
+      for (const pid of set) pids.add(pid);
+    }
+  }
+  if (!pids.size) return null;
+  if (pids.size > 1) return { ambiguous: [...pids], pri: 5 };
+  return { product_id: [...pids][0], pri: 5 };
+}
+
+// 0325 · 요청 1건 최종 판정 — 브랜드 규칙 포함(순수 함수)
+export function decideDevMatch(keys, index, master, inputBrand) {
+  const b = normBrand(inputBrand);
+  const comp = b && COMPETITOR_BRANDS.includes(b) ? b : null;
+  if (!comp) {
+    return pickDevMatch(keys, index) || pickMasterMatch(keys, master, null);
+  }
+  return pickMasterMatch(keys, master, comp)
+    || pickDevMatch(keys, index, new Set([4]))
+    || pickDevMatch(keys, index, new Set([1]));
+}
+
 // 미완료 개발요청을 카탈로그와 대조해 매칭분을 developed 로 전환.
 // 반환: { checked, matched, items:[…], ambiguous:[{id, input_code, customer_name, candidates:[CTR…]}] }
 export async function sweepDevRequestMatches({ userId = null, notify = true } = {}) {
+  const xm = await xrefMasterReady();   // 0325 칸(input_brand · result_match_via …)과 마스터가 있나
   const reqs = (await query(
     `SELECT d.id, d.input_code, d.review_syd_code, d.customer_id, d.requested_qty, d.source_quote_id,
+            ${xm ? 'd.input_brand' : 'NULL::text AS input_brand'},
             c.name AS customer_name, c.owner_id AS customer_owner_id
        FROM product_dev_requests d
        LEFT JOIN customers c ON c.id = d.customer_id
@@ -161,34 +199,44 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
   } catch (_) { /* 0130 미적용 시 무시 */ }
   // 삭제된 제품(활성 제품 목록에 없음)은 후보에서 뺀다
   for (const m of index.values()) for (const pid of [...m.keys()]) if (!codeById.has(pid)) m.delete(pid);
+  // 0325 · ⑤ 크로스레퍼런스 마스터(경쟁사 코드 → SYD → CTR)
+  let master = new Map();
+  if (xm) {
+    try { master = await masterIndexFor([...wanted]); } catch (_) { master = new Map(); }
+    for (const byBrand of master.values()) for (const set of byBrand.values()) for (const pid of [...set]) if (!codeById.has(pid)) set.delete(pid);
+  }
 
   const items = [];
   const ambiguous = [];
   for (const r of reqs) {
-    const h = pickDevMatch(keysById.get(Number(r.id)) || [], index);
+    const h = decideDevMatch(keysById.get(Number(r.id)) || [], index, master, r.input_brand);
     if (!h) continue;
     if (h.ambiguous) {
-      ambiguous.push({ id: Number(r.id), input_code: r.input_code, customer_name: r.customer_name || null,
-        candidates: h.ambiguous.map((pid) => codeById.get(pid)).filter(Boolean).sort() });
+      const cands = h.ambiguous.map((pid) => codeById.get(pid)).filter(Boolean).sort();
+      ambiguous.push({ id: Number(r.id), input_code: r.input_code, input_brand: r.input_brand || null, customer_name: r.customer_name || null,
+        candidates: cands, via: VIA_BY_PRI[h.pri] || null });
       continue;
     }
     const ctr = codeById.get(h.product_id);
     if (!ctr) continue;
+    const via = VIA_BY_PRI[h.pri] || null;
     const upd = await query(
       `UPDATE product_dev_requests
           SET status='developed',
               developed_at=COALESCE(developed_at, CURRENT_DATE),
               result_product_id=$1, result_ctr_code=$2,
-              updated_by=$3, updated_at=now()
+              updated_by=$3, updated_at=now()${xm ? `,
+              result_match_via=$5, auto_matched_at=now(), match_candidates=NULL, match_checked_at=now()` : ''}
         WHERE id=$4 AND deleted_at IS NULL AND status IN ('received','reviewed','factory_requested')
         RETURNING id`,
-      [h.product_id, ctr, userId, Number(r.id)]);
+      xm ? [h.product_id, ctr, userId, Number(r.id), via] : [h.product_id, ctr, userId, Number(r.id)]);
     if (!upd.rows.length) continue;   // 동시 실행 등으로 이미 전환된 행 — 후속 처리 제외
     logEvent({
       userId, action: 'update', target: `dev_request:${r.id}`,
-      detail: { auto_match: true, input_code: r.input_code, ctr },
+      detail: { auto_match: true, input_code: r.input_code, ctr, via },
     });
     items.push({
+      via, input_brand: r.input_brand || null,
       id: Number(r.id), input_code: r.input_code, ctr_code: ctr, product_id: h.product_id,
       customer_id: r.customer_id != null ? Number(r.customer_id) : null,
       requested_qty: r.requested_qty != null ? Number(r.requested_qty) : null,
@@ -198,6 +246,22 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
   }
 
   if (items.length) scheduleDevReqPush();
+
+  // 0325 · 후보 여럿(자동 완료 안 함)은 요청에 후보를 적어 둔다 — 「매칭결과」 열에 「후보: A / B」로 보인다.
+  //   이번에 후보가 사라진 요청은 지운다.
+  if (xm) {
+    try {
+      for (const a of ambiguous) {
+        await query(`UPDATE product_dev_requests SET match_candidates=$1, match_checked_at=now() WHERE id=$2 AND status IN ('received','reviewed','factory_requested')`,
+          [a.candidates.join(' / ').slice(0, 500) || null, a.id]);
+      }
+      const ambIds = ambiguous.map((a) => a.id);
+      await query(
+        `UPDATE product_dev_requests SET match_candidates=NULL
+          WHERE match_candidates IS NOT NULL AND status IN ('received','reviewed','factory_requested')
+            AND NOT (id = ANY($1::bigint[]))`, [ambIds]);
+    } catch (_) { /* 표시용 — 실패해도 매칭 결과는 유지 */ }
+  }
 
   // 개발완료 후속: 수요 → 부족분 대장 + 재고검증 → 오퍼시트/구매 제안 (제품 단위로 묶어 처리)
   let offerSheets = 0, shortageRecords = 0, noStockProducts = 0;
@@ -224,7 +288,7 @@ export async function sweepDevRequestMatches({ userId = null, notify = true } = 
       const dirs = (await query(`SELECT id FROM users WHERE role='director' AND deleted_at IS NULL`)).rows;
       for (const u of dirs) recipients.add(Number(u.id));
       const lines = items.slice(0, 15).map((it) =>
-        `${it.input_code} → ${it.ctr_code}${it.customer_name ? ' (' + it.customer_name + ')' : ''}`);
+        `${it.input_brand ? it.input_brand + ' ' : ''}${it.input_code} → ${it.ctr_code}${it.via === 'master' ? ' (크로스레퍼런스·SYD 경유)' : ''}${it.customer_name ? ' (' + it.customer_name + ')' : ''}`);
       const more = items.length > 15 ? ` 외 ${items.length - 15}건` : '';
       const title = `개발완료(카탈로그 자동 매칭): ${items.length}건`;
       const tail = `\n— 오퍼시트 ${offerSheets}건 자동 생성 · 부족분(발주 근거) ${shortageRecords}건 기록`

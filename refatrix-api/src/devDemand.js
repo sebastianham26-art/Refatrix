@@ -57,6 +57,7 @@ export function groupDemand(rows) {
         open_count: 0, developed_count: 0,
         review: { maker: null, model: null, year: null, app: null },
         category_manual: null,
+        brands: [], results: [], candidates: null,   // 0325 · 입력 브랜드 · 자동 검수(매칭결과)
         _customers: new Set(), _latestReviewAt: null,
       };
       map.set(norm, g);
@@ -68,7 +69,17 @@ export function groupDemand(rows) {
       id: Number(r.id), customer: r.customer_name || '불특정',
       date, qty: r.requested_qty != null ? n(r.requested_qty) : null,
       source, status: r.status || 'received', memo: r.order_memo || null,
+      brand: r.input_brand || null,
     });
+    // 0325 · 브랜드(여러 경로로 접수되면 여럿) · 매칭결과(CTR 코드 + 경로) · 후보 여럿
+    if (r.input_brand && !g.brands.includes(r.input_brand)) g.brands.push(r.input_brand);
+    const ctrNow = r.result_code_live || r.result_ctr_code;
+    if (ctrNow && r.status === 'developed' && !g.results.some((x) => x.ctr === ctrNow)) {
+      g.results.push({ ctr: ctrNow, via: r.result_match_via || null, auto: !!r.auto_matched_at });
+    }
+    if (!g.candidates && r.match_candidates && ['received', 'reviewed', 'factory_requested'].includes(r.status)) {
+      g.candidates = String(r.match_candidates).split(' / ').filter(Boolean);
+    }
     g.total_qty += n(r.requested_qty);
     if (r.customer_name) g._customers.add(r.customer_name);
     if (date) {

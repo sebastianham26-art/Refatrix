@@ -42,6 +42,7 @@ import { resolveSeller, exclusivityReady } from '../exclusivity.js';   // 0235 �
 import { rackStockReady, quotePicks, snapshotQuotePicks, rackMap } from '../rackStock.js';
 import { ACTIVE_RESERVATION_SQL } from '../reservations.js';   // 2026-11-05 avl · 미리보기 가용 = 저장 예약과 같은 정의
 import { pairHints } from '../lrPair.js';   // 2026-10-20 · L/R 짝맞춤 안내(막지 않음)   // 0245 · 피킹 위치(fast moving 우선)
+import { normBrand, xrefMasterReady } from '../xrefMaster.js';   // 0325 · 붙여넣기 브랜드 · 크로스레퍼런스
 import { plQty } from '../quoteQtyCols.js';   // 2026-10-22 · 견적 엑셀 수량열 4종(가용·운송중·생산중)
 
 // 0235 · 견적의 판매 영업사원. 독점 중이면 독점권자로 고정, 영업이 남의 독점 고객 견적을 만들면 차단.
@@ -117,7 +118,7 @@ export default async function quoteRoutes(app) {
 
   // 단건 코드 조회 (화면에서 SYD 다중매칭 후보 표시용)
   app.get('/api/quotes/resolve-code', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
-    const r = await resolveCode(req.query.code);
+    const r = await resolveCode(req.query.code, { brand: req.query.brand });   // 0325 · 브랜드 지정 시 크로스레퍼런스 우선
     // 0293 · 키트면 구성품을 같이 — 화면이 담을 때 부품 줄로 푼다
     try {
       const kits = await kitsFor({ ids: (r.matches || []).map((m) => m.product_id) });
@@ -245,6 +246,8 @@ export default async function quoteRoutes(app) {
     for (const ln of inLines) {
       const qty = Number(ln.qty) || 0;
       let prod = null;
+      let xrefHit = null;                       // 0325 · 크로스레퍼런스 경로(경쟁사 → SYD → CTR)
+      const inBrand = normBrand(ln.brand);      // 0325 · 붙여넣기 때 고른 브랜드
       if (ln.product_id) {
         const r = (await query(
           `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty, p.is_active,
@@ -256,9 +259,10 @@ export default async function quoteRoutes(app) {
             WHERE p.id=$1 AND p.deleted_at IS NULL`, [Number(ln.product_id)])).rows[0];
         if (r) prod = r;
       } else {
-        const res = await resolveCode(ln.code);
+        const res = await resolveCode(ln.code, { brand: ln.brand });   // 0325
         if (res.matches.length === 1 && !res.pick_required) {
           const m = res.matches[0];
+          xrefHit = m.xref || null;
           const r = (await query(
             `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty, p.is_active,
                     COALESCE(inc.incoming_qty,0) AS incoming_qty, inc.incoming_eta::text AS incoming_eta,
@@ -270,11 +274,11 @@ export default async function quoteRoutes(app) {
           prod = r;
         } else if (res.matches.length >= 1) {
           // 다중매칭 — 또는 0228: FOR(조립품 OE)로만 걸린 1건(자동 확정 금지)
-          out.push({ input_code: ln.code, qty, ambiguous: true, candidates: res.matches, pick_required: !!res.pick_required });
+          out.push({ input_code: ln.code, qty, ambiguous: true, candidates: res.matches, pick_required: !!res.pick_required, input_brand: inBrand });
           continue;
         }
       }
-      if (!prod) { out.push({ input_code: ln.code, qty, stock_flag: 'not_found', matched: false }); continue; }
+      if (!prod) { out.push({ input_code: ln.code, qty, stock_flag: 'not_found', matched: false, input_brand: inBrand }); continue; }
       const sydRows = (await query(`SELECT syd_code FROM product_syd_codes WHERE product_id=$1`, [prod.id])).rows.map((x) => x.syd_code);
       const oeItems = (await oeByProduct([prod.id])).get(Number(prod.id)) || [];   // 0228
       const calc = computeQuoteLine({ listPrice: prod.list_price, discountRate, qty, ivaRate });
@@ -305,6 +309,7 @@ export default async function quoteRoutes(app) {
         // 2026-09-24 — 정가 없음: 견적은 되지만 매출 전환은 막힌다(화면이 안내한다)
         no_price: lacksListPrice({ code: prod.code, list_price: prod.list_price }),
         kit_no: ln.kit_no || null,   // 0293 · 키트에서 풀린 줄
+        input_brand: inBrand, xref: xrefHit,   // 0325
       });
     }
     const totals = computeQuoteTotals(out.filter((l) => l.matched).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
@@ -315,7 +320,7 @@ export default async function quoteRoutes(app) {
     let kits = [];
     try { kits = await kitSummaries(out.filter((l) => l.matched && l.kit_no)); } catch (_) { kits = []; }
     return { discountRate, ivaRate, lines: out, totals, pair_hints, kits,
-      ...(kitExpanded ? { input_lines: inLines.map((l) => ({ code: l.code, product_id: l.product_id || null, qty: l.qty, ...(l.kit_no ? { kit_no: l.kit_no } : {}) })) } : {}) };
+      ...(kitExpanded ? { input_lines: inLines.map((l) => ({ code: l.code, product_id: l.product_id || null, qty: l.qty, ...(l.kit_no ? { kit_no: l.kit_no } : {}), ...(l.brand ? { brand: l.brand } : {}) })) } : {}) };
   });
 
 
@@ -1589,11 +1594,12 @@ export default async function quoteRoutes(app) {
     const discountRate = Number(cust.discount) || 0;
     const ivaRate = 16;
     const kitCol = await kitColReady();   // 0306 · 키트 번호도 복제본으로
-    const srcLines = (await query(`SELECT product_id, input_code, qty, ${kitCol ? 'kit_no' : 'NULL::text AS kit_no'} FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [srcId])).rows;
+    const brCol = await xrefMasterReady();   // 0325 · 입력 브랜드도 복제본으로
+    const srcLines = (await query(`SELECT product_id, input_code, qty, ${kitCol ? 'kit_no' : 'NULL::text AS kit_no'}, ${brCol ? 'input_brand' : 'NULL::text AS input_brand'} FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [srcId])).rows;
     if (!srcLines.length) return reply.code(400).send({ error: 'no_lines', note: '복제할 품목이 없습니다.' });
     const inputLines = srcLines.map((l) => ({ ...(l.product_id
       ? { product_id: l.product_id, qty: Number(l.qty) }
-      : { code: l.input_code, qty: Number(l.qty) }), ...(l.kit_no ? { kit_no: l.kit_no } : {}) }));
+      : { code: l.input_code, qty: Number(l.qty) }), ...(l.kit_no ? { kit_no: l.kit_no } : {}), ...(l.input_brand ? { brand: l.input_brand } : {}) }));
     // 0224 — 복제는 "새 견적"이다. 비활성 SKU 가 섞여 있어도 막지 않고 접수하되,
     //   그 줄을 표시해 확정을 잠근다(새 견적 저장과 같은 규칙).
     const result = await withTx(async (c) => {

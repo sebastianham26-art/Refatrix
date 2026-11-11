@@ -49,7 +49,7 @@ async function boot() {
 
 test('① 줄 표 — KIT 머리줄 1개(번호 · 차종 · 세트 · 구성품 CTR 코드) · 구성 줄 Producto = CTR + 제품명', async () => {
   const { w, $ } = await boot();
-  assert.match(w.document.title, /qt-1105avl/);
+  assert.match(w.document.title, /qt-1111xr/);
   const heads = [...$('linesWrap').querySelectorAll('tr.kithead')];
   assert.equal(heads.length, 1);
   const t = heads[0].textContent;

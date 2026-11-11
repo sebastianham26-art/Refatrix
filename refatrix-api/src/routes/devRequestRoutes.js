@@ -12,6 +12,7 @@ import { scheduleDevReqPush, syncDevReq, devReqPushState, startDevReqPushWorker,
 import { devOfferInfo, devOfferState, createDevOfferSheets } from '../devOffer.js';   // 2026-10-12 · 개발완료 오퍼
 // 0225 · 고객 PO(O.C.) — 견적 화면과 **같은 판정·같은 검색 규칙**을 쓴다.
 import { poColumnReady, poSelectFrag } from '../quoteBuild.js';
+import { xrefMasterReady, normBrand, COMPETITOR_BRANDS, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 브랜드 · 자동 검수 결과
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function daysBetween(a, b) {
@@ -60,11 +61,16 @@ export default async function devRequestRoutes(app) {
   app.post('/api/dev-requests', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
     const b = req.body || {};
     const cat = (b.category && DEV_CAT_KEYS.includes(String(b.category))) ? String(b.category) : null;
+    const xm = await xrefMasterReady();   // 0325 · 입력 브랜드
+    const brand = normBrand(b.input_brand);
     const result = await withTx(async (c) => {
       const r = (await c.query(
-        `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, category, created_by)
-         VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7,$8) RETURNING id`,
-        [b.input_code || null, b.customer_id || null, b.requested_qty || null, b.order_memo || null, b.requested_at || null, b.source_quote_id || null, cat, req.ctx.perm.userId])).rows[0];
+        xm
+          ? `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, category, created_by, input_brand)
+             VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7,$8,$9) RETURNING id`
+          : `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, category, created_by)
+             VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7,$8) RETURNING id`,
+        [b.input_code || null, b.customer_id || null, b.requested_qty || null, b.order_memo || null, b.requested_at || null, b.source_quote_id || null, cat, req.ctx.perm.userId, ...(xm ? [brand] : [])])).rows[0];
       let custName = '';
       if (b.customer_id) custName = (await c.query(`SELECT name FROM customers WHERE id=$1`, [b.customer_id])).rows[0]?.name || '';
       const todos = await notifyProductMarketing(c, {
@@ -87,14 +93,18 @@ export default async function devRequestRoutes(app) {
     const statusCond = scope === 'all'
       ? `d.status <> 'cancelled'`
       : `d.status IN ('received','reviewed','factory_requested')`;
+    const xm = await xrefMasterReady();   // 0325 · 브랜드 · 매칭결과 칸
     const rows = (await query(
       `SELECT d.id, d.input_code, d.requested_qty, d.requested_at, d.status, d.order_memo,
               d.field_survey_id, d.reviewed_at, d.category,
               d.review_maker, d.review_model, d.review_year, d.review_app,
+              d.result_ctr_code, p.code AS result_code_live,
+              ${xm ? 'd.input_brand, d.result_match_via, d.match_candidates, d.auto_matched_at' : 'NULL::text AS input_brand, NULL::text AS result_match_via, NULL::text AS match_candidates, NULL::timestamptz AS auto_matched_at'},
               c.name AS customer_name, q.quote_no
          FROM product_dev_requests d
          LEFT JOIN customers c ON c.id = d.customer_id
          LEFT JOIN quotes q ON q.id = d.source_quote_id
+         LEFT JOIN products p ON p.id = d.result_product_id
         WHERE d.deleted_at IS NULL AND ${statusCond}
         ORDER BY d.requested_at DESC, d.id DESC`)).rows;
     const groups = groupDemand(rows);
@@ -181,6 +191,49 @@ export default async function devRequestRoutes(app) {
     const out = await sweepDevRequestMatches({ userId: req.ctx.perm.userId, notify: true });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'dev_match_sweep', detail: { checked: out.checked, matched: out.matched } });
     return out;
+  });
+
+  // ── 0325 · 자동 검수 팝업 — 내가 마지막으로 확인한 뒤 자동 매칭(개발완료)된 요청 ──
+  //   제품 추가 · 제품마스터 수정(화면 · 엑셀 · 플랫폼 API) · 크로스레퍼런스 업로드 때 스위퍼가 돈다.
+  //   처음 보는 사람은 최근 14일분. 응답의 ambiguous = 후보가 여럿이라 사람이 골라야 하는 요청.
+  app.get('/api/dev-requests/auto-matches', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    if (!(await xrefMasterReady())) return { ready: false, items: [], ambiguous: [], count: 0 };
+    const uid = req.ctx.perm.userId;
+    const seen = (await query(`SELECT seen_at FROM dev_match_seen WHERE user_id=$1`, [uid])).rows[0];
+    const since = seen ? seen.seen_at : null;
+    const rows = (await query(
+      `SELECT d.id, d.input_code, d.input_brand, d.result_ctr_code, d.result_match_via, d.auto_matched_at,
+              d.requested_qty, c.name AS customer_name, p.name AS product_name, p.stock_qty
+         FROM product_dev_requests d
+         LEFT JOIN customers c ON c.id = d.customer_id
+         LEFT JOIN products p ON p.id = d.result_product_id
+        WHERE d.deleted_at IS NULL AND d.auto_matched_at IS NOT NULL
+          AND d.auto_matched_at > COALESCE($1::timestamptz, now() - interval '14 days')
+        ORDER BY d.auto_matched_at DESC, d.id DESC LIMIT 100`, [since])).rows;
+    const amb = (await query(
+      `SELECT d.id, d.input_code, d.input_brand, d.match_candidates, c.name AS customer_name
+         FROM product_dev_requests d LEFT JOIN customers c ON c.id = d.customer_id
+        WHERE d.deleted_at IS NULL AND d.match_candidates IS NOT NULL
+          AND d.status IN ('received','reviewed','factory_requested')
+          AND d.match_checked_at > COALESCE($1::timestamptz, now() - interval '14 days')
+        ORDER BY d.match_checked_at DESC LIMIT 50`, [since])).rows;
+    return {
+      ready: true, since,
+      count: rows.length,
+      items: rows.map((r) => ({ id: Number(r.id), input_code: r.input_code, input_brand: r.input_brand || null,
+        ctr_code: r.result_ctr_code, via: r.result_match_via || null, at: r.auto_matched_at,
+        qty: r.requested_qty != null ? Number(r.requested_qty) : null, customer_name: r.customer_name || null,
+        product_name: r.product_name || null, stock_qty: r.stock_qty != null ? Number(r.stock_qty) : null })),
+      ambiguous: amb.map((r) => ({ id: Number(r.id), input_code: r.input_code, input_brand: r.input_brand || null,
+        candidates: String(r.match_candidates || '').split(' / ').filter(Boolean), customer_name: r.customer_name || null })),
+    };
+  });
+  app.post('/api/dev-requests/auto-matches/seen', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    if (!(await xrefMasterReady())) return { ok: false };
+    await query(
+      `INSERT INTO dev_match_seen (user_id, seen_at) VALUES ($1, now())
+       ON CONFLICT (user_id) DO UPDATE SET seen_at = now()`, [req.ctx.perm.userId]);
+    return { ok: true };
   });
 
   // 목록 + 소요기간
@@ -305,9 +358,21 @@ export default async function devRequestRoutes(app) {
       await c.query(
         `UPDATE product_dev_requests SET developed_at=COALESCE($1, developed_at, CURRENT_DATE), result_product_id=$2, result_ctr_code=$3, status='developed', updated_by=$4, updated_at=now() WHERE id=$5`,
         [b.developed_at || null, prod.id, prod.code, req.ctx.perm.userId, id]);
+      const xm = await xrefMasterReady((t, p) => c.query(t, p));
+      if (xm) await c.query(`UPDATE product_dev_requests SET result_match_via='manual', match_candidates=NULL WHERE id=$1`, [id]);
       // SYD(경쟁사) 코드 → 신규 CTR 제품 자동 매핑
+      //   0325 · 입력 브랜드가 경쟁사(BAW·GROB·VAZLO·KYB·MOOG)이고 검토 SYD 가 없으면 → SYD 표가 아니라
+      //   제품 교차참조(product_xref_codes)에 그 브랜드로 붙인다(경쟁사 번호가 SYD 번호로 둔갑하지 않게).
+      const inBrand = normBrand(d.input_brand);
+      const compOnly = !!(inBrand && COMPETITOR_BRANDS.includes(inBrand) && !String(d.review_syd_code || '').trim());
       const syd = (d.review_syd_code || d.input_code || '').trim();
-      if (syd) {
+      if (syd && compOnly) {
+        try {
+          await c.query(
+            `INSERT INTO product_xref_codes (product_id, xref_code, norm_code, brand, created_by) VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (product_id, norm_code) DO NOTHING`, [prod.id, syd, xmNorm(syd), inBrand, req.ctx.perm.userId]);
+        } catch (_) { /* 0130 미적용 */ }
+      } else if (syd) {
         await c.query(`INSERT INTO product_syd_codes (product_id, syd_code) VALUES ($1,$2) ON CONFLICT (product_id, syd_code) DO NOTHING`, [prod.id, syd]);
       }
       // 알림 대상: 고객 담당영업(owner_id) + 디렉터들

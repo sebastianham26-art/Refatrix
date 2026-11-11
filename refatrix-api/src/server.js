@@ -39,6 +39,7 @@ import presenceRoutes from './routes/presenceRoutes.js';
 import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
 import fieldSurveyRoutes from './routes/fieldSurveyRoutes.js';
 import xrefRoutes from './routes/xrefRoutes.js';
+import xrefMasterRoutes from './routes/xrefMasterRoutes.js';   // 0325 · 멕시코 경쟁사 크로스레퍼런스 마스터
 import finderRoutes from './routes/finderRoutes.js';
 import processKpiRoutes from './routes/processKpiRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
@@ -160,6 +161,7 @@ export function buildApp() {
   app.register(notaCreditoRoutes);
   app.register(fieldSurveyRoutes);
   app.register(xrefRoutes);
+  app.register(xrefMasterRoutes);   // 0325
   app.register(finderRoutes);
   app.register(processKpiRoutes);
   app.register(warehouseRoutes);

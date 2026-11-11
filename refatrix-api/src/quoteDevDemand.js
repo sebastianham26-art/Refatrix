@@ -22,7 +22,8 @@
 // =====================================================================
 import { resolveCode } from './quoteBuild.js';
 import { normCode } from './devDemand.js';
-import { scheduleDevReqPush } from './devReqPush.js';   // 2026-11-09 · 플랫폼 0순위(고객요청 개발필요) 이벤트
+import { scheduleDevReqPush } from './devReqPush.js';
+import { xrefMasterReady } from './xrefMaster.js';   // 0325 · 입력 브랜드(input_brand) 칸   // 2026-11-09 · 플랫폼 0순위(고객요청 개발필요) 이벤트
 
 // SQL 쪽 정규화 — normCode 와 같은 결과(대문자, 영숫자만)
 export const NORM_SQL = (col) => `upper(regexp_replace(COALESCE(${col},''), '[^A-Za-z0-9]', '', 'g'))`;
@@ -45,8 +46,9 @@ export async function recordQuoteDevDemand(c, quoteId, opts = {}) {
   const customerId = Number(opts.customerId) || (q.customer_id != null ? Number(q.customer_id) : null);
   const userId = Number(opts.userId) || (q.created_by != null ? Number(q.created_by) : null);
 
+  const brCol = await xrefMasterReady((t, p) => c.query(t, p));   // 0325 · 마이그레이션 전이면 브랜드 없이(종전)
   const lines = (await c.query(
-    `SELECT input_code, qty FROM quote_lines
+    `SELECT input_code, qty, ${brCol ? 'input_brand' : 'NULL::text AS input_brand'} FROM quote_lines
       WHERE quote_id=$1 AND product_id IS NULL AND COALESCE(btrim(input_code),'') <> ''
       ORDER BY line_no, id`, [q.id])).rows;
   if (!lines.length) return out;
@@ -57,13 +59,13 @@ export async function recordQuoteDevDemand(c, quoteId, opts = {}) {
     const norm = normCode(l.input_code);
     if (!norm) continue;
     const g = byNorm.get(norm);
-    if (g) g.qty += Number(l.qty) || 0;
-    else byNorm.set(norm, { norm, code: String(l.input_code).trim(), qty: Number(l.qty) || 0 });
+    if (g) { g.qty += Number(l.qty) || 0; if (!g.brand && l.input_brand) g.brand = l.input_brand; }
+    else byNorm.set(norm, { norm, code: String(l.input_code).trim(), qty: Number(l.qty) || 0, brand: l.input_brand || null });
   }
 
   for (const g of byNorm.values()) {
     // 규칙 1 — 지금 카탈로그에서 풀리는 코드면 개발 대상이 아니다(multi_match 등).
-    const res = await resolveCode(g.code);
+    const res = await resolveCode(g.code, { brand: g.brand });   // 0325 · 고른 브랜드 기준(크로스레퍼런스)
     if (res.matches.length) { out.skipped_known.push(g.code); continue; }
 
     // 지운(deleted_at) 요청도 「이미 있음」으로 본다 — 사람이 오타라서 지운 것을 수정 한 번에 되살리면 안 된다.
@@ -80,13 +82,21 @@ export async function recordQuoteDevDemand(c, quoteId, opts = {}) {
           [qty, userId, ex.id]);
         out.updated++;
       }
+      // 0325 · 브랜드가 비어 있던 요청이면 이번에 고른 브랜드를 채운다(사람이 적은 브랜드는 덮지 않음)
+      if (brCol && g.brand && !ex.deleted_at) {
+        await c.query(`UPDATE product_dev_requests SET input_brand=$1 WHERE id=$2 AND input_brand IS NULL`, [g.brand, ex.id]);
+      }
       continue;
     }
     const r = (await c.query(
-      `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
-       VALUES ($1,$2,$3,COALESCE($4::date,CURRENT_DATE),$5,'received',$6) RETURNING id`,
-      [g.code, customerId, qty, q.quote_date || null, q.id, userId])).rows[0];
-    out.created.push({ id: Number(r.id), code: g.code, qty });
+      brCol
+        ? `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by, input_brand)
+           VALUES ($1,$2,$3,COALESCE($4::date,CURRENT_DATE),$5,'received',$6,$7) RETURNING id`
+        : `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
+           VALUES ($1,$2,$3,COALESCE($4::date,CURRENT_DATE),$5,'received',$6) RETURNING id`,
+      brCol ? [g.code, customerId, qty, q.quote_date || null, q.id, userId, g.brand || null]
+            : [g.code, customerId, qty, q.quote_date || null, q.id, userId])).rows[0];
+    out.created.push({ id: Number(r.id), code: g.code, qty, brand: g.brand || null });
   }
   if (out.created.length || out.updated) scheduleDevReqPush();   // 커밋 뒤(5초 디바운스) DB 상태 기준으로 전송
   return out;
@@ -94,12 +104,13 @@ export async function recordQuoteDevDemand(c, quoteId, opts = {}) {
 
 /** 저장 응답용 — 미등록 코드 목록(이번에 새로 적었든 이미 있었든). */
 export async function quoteDevLines(c, quoteId) {
+  const brCol = await xrefMasterReady((t, p) => c.query(t, p));
   const rows = (await c.query(
-    `SELECT d.id, d.input_code, d.requested_qty, d.status
+    `SELECT d.id, d.input_code, d.requested_qty, d.status, ${brCol ? 'd.input_brand' : 'NULL::text AS input_brand'}
        FROM product_dev_requests d
       WHERE d.source_quote_id=$1 AND d.deleted_at IS NULL
       ORDER BY d.id`, [Number(quoteId)])).rows;
-  return rows.map((r) => ({ id: Number(r.id), code: r.input_code,
+  return rows.map((r) => ({ id: Number(r.id), code: r.input_code, brand: r.input_brand || null,
     qty: r.requested_qty != null ? Number(r.requested_qty) : null, status: r.status }));
 }
 

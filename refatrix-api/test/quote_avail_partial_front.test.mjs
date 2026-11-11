@@ -104,5 +104,5 @@ test('③ 견적 작성 — 가용 칸 근거 · 저장 직후 확보 부족 안
   const plain = dom.window.availCell({ qty: 2, avail_stock: 30, stock_flag: 'ok', cur_stock: 30, reserved_other: 0, used_in_quote: 0 });
   assert.doesNotMatch(plain, /타 견적/, '예약 없으면 근거 줄 없음');
   assert.match(html, /재고 확보 부족 '\+shl\.length\+'개 SKU/, '저장 메시지');
-  assert.match(html, /<title>[^<]*qt-1105avl<\/title>/);
+  assert.match(html, /<title>[^<]*qt-1111xr<\/title>/);
 });

@@ -90,7 +90,7 @@ async function readScreen(c, root, rowSel) {
 
 test('B. 제품 찾기 — 차종 검색 결과와 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
   const c = await boot();
-  assert.match(c.d.title, /ps-1108pos/);
+  assert.match(c.d.title, /ps-1111xr/);
   // ① 차종으로 제품 찾기
   const mk = c.d.getElementById('veh-maker'); mk.innerHTML = '<option value="NISSAN">NISSAN</option>'; mk.value = 'NISSAN';
   c.d.getElementById('vehBtn').dispatchEvent(new c.w.Event('click')); await tick(150);
