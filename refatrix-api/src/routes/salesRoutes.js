@@ -14,6 +14,7 @@ import { noPriceItems, NO_PRICE_NOTE } from '../noPrice.js';   // 2026-09-24 · 
 import { kickOrderStatusByInvoice } from '../orderStatusSync.js';   // 0227 · SAT 번호 등록 → CRM 「OC Enviada」
 import { resolveSeller, recomputeCustomer, exclusivityReady } from '../exclusivity.js';   // 0235 · 고객 독점 정책
 import { rackSafe, deductForSale, restoreForSale } from '../rackStock.js';   // 0245 · 랙별 재고(지시서 위치에서 자동 차감)
+import { loadSupply, parseIds } from '../shortageSupply.js';   // 2026-11-11 · 부족분 세부기록 SKU별 구매·운송·백오더
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -726,6 +727,18 @@ export default async function salesRoutes(app) {
         GROUP BY sh.product_id, p.code, p.name, p.stock_qty
         ORDER BY open_shortage DESC`)).rows;
     return { items: rows.map((r) => ({ ...r, open_shortage: Number(r.open_shortage), stock_qty: Number(r.stock_qty), records: Number(r.records) })) };
+  });
+
+  // ---- 2026-11-11 · 부족분 세부기록 — SKU별 구매·운송·백오더 + 백오더 반영 부족 + 다른 고객 부족 ----
+  //   product_ids=1,2,3 (최대 500) · customer_id(선택 — 이 고객 몫과 다른 고객 몫을 가른다)
+  //   「지금 상태」라 매번 다시 계산 — 화면이 열릴 때마다 부른다(캐시 금지).
+  app.get('/api/shortages/supply', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async (req, reply) => {
+    const ids = parseIds(req.query.product_ids);
+    if (!ids.length) return reply.code(400).send({ error: 'product_ids_required' });
+    const cid = /^\d+$/.test(String(req.query.customer_id || '')) ? Number(req.query.customer_id) : null;
+    const items = await loadSupply({ productIds: ids, customerId: cid });
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+    return { as_of: new Date().toISOString(), customer_id: cid, items };
   });
 
   // ---- 부족 기록: 원장(영업용, 누가·언제·얼마) + 해소·잔여. 필터: status, customer_id, month(YYYY-MM), product_id ----

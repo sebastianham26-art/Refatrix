@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 부족분 집계 · build 20261015sr</title>
+<title>Refatrix ERP · 부족분 집계 · build 20261111sp</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--radius:12px;}
@@ -57,6 +57,13 @@
   .modal{background:var(--card);border-radius:14px;max-width:860px;width:100%;padding:20px}
   .btn.wa{background:#25D366}
   .btn.danger{background:var(--expense)}
+  /* 2026-11-11 · 세부기록 SKU별 구매·운송·백오더 */
+  th.sp,td.sp{background:#f3f7f5}
+  th.sp{color:var(--brand)}
+  .spsub{font-size:10.5px;color:#8a857a;font-weight:600}
+  .spok{color:var(--income);font-weight:800}
+  .spline{margin-top:4px;padding:6px 9px;border-radius:8px;background:#eef4f1;color:#3e4a44;font-size:11.5px;line-height:1.7;white-space:normal}
+  .spline b{color:var(--brand)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -246,7 +253,8 @@
         +'</tr>';
       if(openDetail[r.product_id]){
         const dets=openDetail[r.product_id];
-        html+='<tr class="detail"><td colspan="7">'+(dets===LOADING?'세부 내역 불러오는 중…':(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+(Number(x.resolved_qty)>0?(', 해소 '+fmtq(x.resolved_qty)+', 잔여 '+fmtq(x.remaining_qty)):'')+' ('+esc(mxDia(x.occurred_at||''))+') '+quoteTag(x)).join('<br>'):'세부 내역이 없습니다.'))+'</td></tr>';
+        html+='<tr class="detail"><td colspan="7">'+(dets===LOADING?'세부 내역 불러오는 중…':(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+(Number(x.resolved_qty)>0?(', 해소 '+fmtq(x.resolved_qty)+', 잔여 '+fmtq(x.remaining_qty)):'')+' ('+esc(mxDia(x.occurred_at||''))+') '+quoteTag(x)).join('<br>'):'세부 내역이 없습니다.'))
+          +skuSupplyLine(skuSupply[r.product_id])+'</td></tr>';
       }
     });
     html+='</tbody></table>';
@@ -256,14 +264,44 @@
     $('listWrap').innerHTML=html;
   }
   const LOADING=[];
+  let skuSupply={};   // 2026-11-11 · 행 펼칠 때마다 새로 받는다(캐시 안 함)
   async function toggle(i,pid){
-    if(openDetail[pid]){ delete openDetail[pid]; render(); return; }
+    if(openDetail[pid]){ delete openDetail[pid]; delete skuSupply[pid]; render(); return; }
     openDetail[pid]=LOADING; render();
+    fetchSupply([pid],null).then(d=>{ const it=(d.items||[])[0]; if(it&&openDetail[pid]){ skuSupply[pid]=it; render(); } }).catch(()=>{});
     // 2026-10-15 · 제품으로 걸러 받는다(예전: 전체 open 200건만 받아 걸러서 오래된 기록이 빠질 수 있었다)
     try{ const d=await fetch(session.api+'/api/shortages?status=open&product_id='+pid+'&limit=1000',{headers:auth()}).then(r=>r.json());
       openDetail[pid]=(d.items||[]).filter(x=>Number(x.product_id)===Number(pid)&&Number(x.remaining_qty)>0); render();
     }catch(e){ openDetail[pid]=[]; render(); }
   }
+  // ===================== 2026-11-11 · SKU별 구매·운송·백오더 (열 때마다 새로 계산) =====================
+  async function fetchSupply(pids,custId){
+    const ids=[...new Set(pids.map(Number).filter(Boolean))];
+    if(!ids.length) return {items:[]};
+    const qs='?product_ids='+ids.join(',')+(custId!=null?('&customer_id='+custId):'')+'&_='+Date.now();
+    const res=await fetch(session.api+'/api/shortages/supply'+qs,{headers:auth(),cache:'no-store'});
+    if(!res.ok) throw new Error('supply '+res.status);
+    return res.json();
+  }
+  function etaTxt(sp){ return sp&&sp.transit_eta?('ETA '+sp.transit_eta.slice(5).replace('-','/')):''; }
+  function othersTxt(sp){
+    if(!sp||!(sp.others||[]).length) return '';
+    return sp.others.map(g=>{
+      const q=(g.quotes||[]).map(x=>esc(x.quote_no)+(x.missed?'(만료 등)':'')).join(', ');
+      const qty=g.live_qty>0?('<b>'+fmtq(g.live_qty)+'</b>'):'';
+      const ms=g.missed_qty>0?(' <span class="spsub">놓친 수요 '+fmtq(g.missed_qty)+'</span>'):'';
+      return esc(g.customer_name)+' '+qty+ms+(q?(' <span class="spsub">'+q+'</span>'):'');
+    }).join(' · ');
+  }
+  function shortCell(v){ return v>0?'<span class="short">'+fmtq(v)+'</span>':'<span class="spok">0 ✓</span>'; }
+  function skuSupplyLine(sp){
+    if(!sp) return '<div class="spline">구매·운송·백오더 불러오는 중…</div>';
+    return '<div class="spline">📦 현재고 <b>'+fmtq(sp.stock_qty)+'</b> (가용 '+fmtq(sp.avail_qty)+') · 🏭 구매 <b>'+fmtq(sp.purchase_qty)+'</b>'
+      +' · 🚢 운송 <b>'+fmtq(sp.transit_qty)+'</b>'+(etaTxt(sp)?' ('+etaTxt(sp)+')':'')+' · 📋 백오더 <b>'+fmtq(sp.backorder_qty)+'</b>'
+      +' · 전체 고객 부족(살아 있는) <b>'+fmtq(sp.others_live_qty)+'</b>'+(sp.others_missed_qty>0?(' <span class="spsub">+ 놓친 수요 '+fmtq(sp.others_missed_qty)+'</span>'):'')
+      +' → <b>백오더 반영 부족 '+(sp.short_total_qty>0?'<span class="short">'+fmtq(sp.short_total_qty)+'</span>':'<span class="spok">0 ✓</span>')+'</b></div>';
+  }
+
   function exportExcel(){
     if(!rows.length)return;
     const aoa=[['Refatrix — 부족분 집계(발주 근거)'],[],['CTR Code','Producto','Existencia','Faltante','Casos','Ultima fecha']];
@@ -274,7 +312,7 @@
   }
 
   // ===================== 고객별 · 월별 부족분 요약 (발생·해소·잔여) =====================
-  let CM_YEAR=new Date().getFullYear(), cmData=null, cmSel=null, cmRecords=[], cmOpenRes={}, cmResCache={};
+  let CM_YEAR=new Date().getFullYear(), cmData=null, cmSel=null, cmRecords=[], cmOpenRes={}, cmResCache={}, cmSupply=null, cmSupplyAt='', cmSupplyErr=false;
   function cmYear(d){ CM_YEAR+=d; cmSel=null; $('cmDetail').innerHTML=''; cmLoad(); }
   async function cmLoad(){
     $('cmYearLbl').textContent=CM_YEAR;
@@ -331,9 +369,22 @@
     $('cmDetail').innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
     try{
       const d=await fetch(session.api+'/api/shortages?status=all&customer_id='+custId+'&month='+encodeURIComponent(ym)+'&limit=500',{headers:auth()}).then(r=>r.json());
-      cmRecords=d.items||[]; cmRenderDetail();
+      cmRecords=d.items||[]; cmSupply=null; cmSupplyErr=false; cmRenderDetail();
+      cmLoadSupply();
     }catch(e){ $('cmDetail').innerHTML='<div class="hint">세부 내역을 불러오지 못했습니다.</div>'; }
   }
+  // 2026-11-11 · 세부기록을 열 때마다(그리고 [수량 새로고침]·화면 복귀 때) 구매·운송·백오더를 새로 받는다
+  async function cmLoadSupply(){
+    const sel=cmSel; if(!sel||!cmRecords.length) return;
+    try{
+      const d=await fetchSupply(cmRecords.map(r=>r.product_id),sel.customer_id);
+      if(cmSel!==sel) return;
+      cmSupply={}; for(const it of (d.items||[])) cmSupply[it.product_id]=it;
+      cmSupplyAt=mxHora(d.as_of||new Date().toISOString()).slice(11,16); cmSupplyErr=false;
+    }catch(e){ if(cmSel!==sel) return; cmSupplyErr=true; }
+    cmRenderDetail();
+  }
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&cmSel&&!$('tabCust').classList.contains('hidden')) cmLoadSupply(); });
   function cmStatusPill(r){
     if(r.status==='cancelled') return '<span class="pill cancelled">'+(r.source_quote_id?'정리(현재 부족 없음)':'취소')+'</span>';
     if(r.status==='resolved') return '<span class="pill sent">해소완료</span>';
@@ -343,10 +394,29 @@
   function cmRenderDetail(){
     const sel=cmSel; if(!sel) return;
     let h='<div style="margin-top:14px;font-weight:800;color:var(--brand)">'+esc(sel.name)+' — '+esc(sel.ym)+' 부족분 세부 기록 '
-      +'<button class="btn ghost sm" onclick="cmSel=null;$(\'cmDetail\').innerHTML=\'\'">닫기 ✕</button></div>';
+      +'<button class="btn ghost sm" onclick="cmSel=null;$(\'cmDetail\').innerHTML=\'\'">닫기 ✕</button> '
+      +'<button class="btn ghost sm" id="spRefresh" onclick="cmLoadSupply()">🔄 수량 새로고침</button> '
+      +'<span class="hint" id="spAsOf">'+(cmSupplyErr?'<span style="color:var(--expense)">구매·운송·백오더를 불러오지 못했습니다 — [수량 새로고침]을 눌러 주세요.</span>':(cmSupply?('구매·운송·백오더 '+esc(cmSupplyAt)+' 기준 (열 때마다 새로 계산)'):'구매·운송·백오더 불러오는 중…'))+'</span></div>';
     if(!cmRecords.length){ $('cmDetail').innerHTML=h+'<div class="hint">기록이 없습니다.</div>'; return; }
-    h+='<table><thead><tr><th>발생일</th><th>견적</th><th>CTR 코드</th><th>제품명</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족(발생)</th><th class="r">해소</th><th class="r">잔여</th><th>상태</th></tr></thead><tbody>';
+    h+='<div style="overflow:auto"><table><thead><tr><th>발생일</th><th>견적</th><th>CTR 코드</th><th>제품명</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족(발생)</th><th class="r">해소</th><th class="r">잔여</th><th>상태</th>'
+      +'<th class="r sp" title="현재고 − 살아 있는 견적 예약">가용</th>'
+      +'<th class="r sp" title="발주했지만 아직 선적되지 않은 수량 (En producción)">구매</th>'
+      +'<th class="r sp" title="창고›수입입고에 등록된 마감 전 선적 (En tránsito)">운송</th>'
+      +'<th class="r sp" title="발주 미입고 잔량 = 구매 + 운송">백오더</th>'
+      +'<th class="r sp" title="max(0, 이 고객 잔여 − 가용 − 백오더) · 아래 = 다른 고객 부족까지 합친 값">백오더 반영 부족</th>'
+      +'<th class="r sp" title="다른 고객의 미해소 부족(진행 중 견적·견적 없는 부족). 놓친 수요(만료·취소된 견적)는 따로 표시">다른 고객 부족</th>'
+      +'</tr></thead><tbody>';
     for(const r of cmRecords){
+      const sp=cmSupply?cmSupply[r.product_id]:null;
+      const spCells=!sp
+        ? '<td class="r sp" colspan="6" style="color:#9a958a">'+(cmSupplyErr?'—':'…')+'</td>'
+        : '<td class="r sp">'+fmtq(sp.avail_qty)+'<div class="spsub">재고 '+fmtq(sp.stock_qty)+'</div></td>'
+          +'<td class="r sp">'+fmtq(sp.purchase_qty)+'</td>'
+          +'<td class="r sp">'+fmtq(sp.transit_qty)+(etaTxt(sp)?'<div class="spsub">'+etaTxt(sp)+'</div>':'')+'</td>'
+          +'<td class="r sp"><b>'+fmtq(sp.backorder_qty)+'</b></td>'
+          +'<td class="r sp">'+shortCell(sp.short_cust_qty)+'<div class="spsub">전체 '+(sp.short_total_qty>0?fmtq(sp.short_total_qty):'0 ✓')+'</div></td>'
+          +'<td class="r sp">'+(sp.others_live_qty>0?('<b>'+fmtq(sp.others_live_qty)+'</b><div class="spsub">'+sp.others_n+'곳</div>'):'<span style="color:#9a958a">0</span>')
+            +(sp.others_missed_qty>0?'<div class="spsub">놓친 '+fmtq(sp.others_missed_qty)+'</div>':'')+'</td>';
       h+='<tr style="cursor:pointer" onclick="cmToggleRes('+r.id+')">'
         +'<td>'+esc(mxDia(r.occurred_at||''))+'</td>'
         +'<td>'+quoteTag(r)+'</td>'
@@ -356,7 +426,7 @@
         +'<td class="r short">'+fmtq(r.shortage_qty)+'</td>'
         +'<td class="r" style="color:var(--income);font-weight:700">'+fmtq(r.resolved_qty)+'</td>'
         +'<td class="r"><b>'+fmtq(r.remaining_qty)+'</b></td>'
-        +'<td>'+cmStatusPill(r)+'</td></tr>';
+        +'<td>'+cmStatusPill(r)+'</td>'+spCells+'</tr>';
       if(cmOpenRes[r.id]){
         const list=cmResCache[r.id];
         let inner;
@@ -369,10 +439,15 @@
           return '↳ '+mxDia(x.resolved_at||'')+' · <b>'+fmtq(x.qty)+'개 해소</b> · '+src+inv+who;
         }).join('<br>');
         if(r.note) inner='<span style="color:#7a756a">메모: '+esc(r.note)+'</span><br>'+inner;
-        h+='<tr class="detail"><td colspan="10">'+inner+'</td></tr>';
+        const oth=othersTxt(sp);
+        if(oth) inner+='<div class="spline">👥 다른 고객 부족 — '+oth+'</div>';
+        h+='<tr class="detail"><td colspan="16">'+inner+'</td></tr>';
       }
     }
-    h+='</tbody></table>';
+    h+='</tbody></table></div>'
+      +'<div class="hint" style="margin-top:6px"><b>구매</b> = 발주했지만 아직 안 실린 수량 · <b>운송</b> = 선적되어 오는 중(수입입고 마감 전) · <b>백오더</b> = 발주 미입고 합계(구매+운송) · '
+      +'<b>백오더 반영 부족</b> = 이 고객의 이 제품 미해소 잔여(모든 달) − 가용재고 − 백오더, 0 미만은 0 · 작은 「전체」 = 다른 고객 부족까지 합친 값. '
+      +'<b>다른 고객 부족</b>은 진행 중 견적·견적 없는 부족만 더하고, 원 견적이 만료·취소된 「놓친 수요」는 따로 적습니다. 행을 누르면 다른 고객 이름·견적번호가 보입니다.</div>';
     $('cmDetail').innerHTML=h;
   }
   async function cmToggleRes(id){
@@ -760,7 +835,7 @@
     if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용하세요.'); return; }
     w.document.open(); w.document.write(html); w.document.close();
   }
-  console.log('[refatrix-shortage] build sh-0826a');
+  console.log('[refatrix-shortage] build 20261111sp');
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
