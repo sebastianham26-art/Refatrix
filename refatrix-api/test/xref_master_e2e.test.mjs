@@ -241,6 +241,22 @@ test('④ 제품찾기 — 경쟁사 코드 · 미등록 행 안내', { skip: SK
   assert.ok(!d.items.some((p) => p.xref_hit));
 });
 
+test('④-b 견적 엑셀 경쟁사 코드 열 — /api/xref-master/codes-for', { skip: SKIP }, async () => {
+  // A(SYD S1) → 마스터 행: BAW B1 · GROB G1 · VAZLO · KYB / B(S2) · C(S3) → 같은 행 · GROB 둘
+  const r = await post('/api/xref-master/codes-for', { codes: [`${TAG}-A`, `${TAG}-B`, `${TAG}-C`, `${TAG}-NOPE`], brands: ['BAW', 'GROB', 'kyb', 'SYD', 'XXX'] }, 'sales');
+  assert.equal(r.statusCode, 200, r.body);
+  const d = r.json();
+  assert.deepEqual(d.brands, ['BAW', 'GROB', 'KYB'], '경쟁사 브랜드만 · 대소문자 정리');
+  assert.deepEqual(d.items[`${TAG}-A`].BAW, [`${TAG}-B1`]);
+  assert.deepEqual(d.items[`${TAG}-A`].KYB, [`33${RUN}1`]);
+  assert.deepEqual(d.items[`${TAG}-B`].GROB, [`${TAG}G2`, `${TAG}G2X`, `${TAG}G2`].filter((v, i, a) => a.indexOf(v) === i), '한 칸 여러 코드 · 교차참조(수동 개발완료 G2)와 중복 제거');
+  assert.deepEqual(d.items[`${TAG}-B`].KYB, [`33${RUN}2`, `33${RUN}3`]);
+  assert.ok(!d.items[`${TAG}-NOPE`]);
+  assert.ok(!d.items[`${TAG}-A`].VAZLO, '고르지 않은 브랜드는 없음');
+  const e = (await post('/api/xref-master/codes-for', { codes: [`${TAG}-A`], brands: [] }, 'sales')).json();
+  assert.deepEqual(e.items, {});
+});
+
 test('⑤ 재업로드 — 새 버전만 검색 · 이전 원본은 목록에 남음', { skip: SKIP }, async () => {
   const aoa2 = AOA.slice(0, 2);
   const up = await post('/api/xref-master/upload', { filename: `${TAG}_v2.xlsx`, aoa: aoa2, file_b64: Buffer.from('v2').toString('base64') });

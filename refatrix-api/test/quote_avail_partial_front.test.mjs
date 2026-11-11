@@ -66,7 +66,7 @@ const skus = (doc) => [...doc.matchAll(/<td class="c-sku">([\s\S]*?)<\/td>[\s\S]
 
 test('① 포장작업지시서 — 부분 확보 GV0803 이 5개 · PARCIAL · KIT INCOMPLETO', opts, async () => {
   const dom = await bootList(PV_NEW);
-  assert.match(dom.window.document.title, /ql-1105avl/);
+  assert.match(dom.window.document.title, /ql-1111xc/);
   const pvHtml = dom.window.document.getElementById('cvPreview').innerHTML;
   assert.match(pvHtml, /지시서에 5개 포함/, '전환 미리보기에도 포함 표시');
   assert.match(pvHtml, /부분 출고 1개 SKU/);
@@ -104,5 +104,5 @@ test('③ 견적 작성 — 가용 칸 근거 · 저장 직후 확보 부족 안
   const plain = dom.window.availCell({ qty: 2, avail_stock: 30, stock_flag: 'ok', cur_stock: 30, reserved_other: 0, used_in_quote: 0 });
   assert.doesNotMatch(plain, /타 견적/, '예약 없으면 근거 줄 없음');
   assert.match(html, /재고 확보 부족 '\+shl\.length\+'개 SKU/, '저장 메시지');
-  assert.match(html, /<title>[^<]*qt-1111xr<\/title>/);
+  assert.match(html, /<title>[^<]*qt-1111xc<\/title>/);
 });

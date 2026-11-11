@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-1111xr</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-1111xc</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -207,6 +207,8 @@
         </div>
         <span class="hint" id="kitHint">자동완성과 엑셀(전체 가격표 · Top 500 · 전체 견적)에 같이 적용됩니다. Kit는 Producto 칸에 구성품 제품명, 수량(Existencia·Disponible·En tránsito·En producción)은 구성품으로 만들 수 있는 세트 수(가장 적은 구성품 기준)로 표시됩니다.</span>
       </div>
+      <!-- 0325b · 엑셀 다운로드(엑셀 다운로드 · 전체 가격표 · Top 500 · 전체 견적)에 브랜드별 경쟁사 코드 열 -->
+      <div class="kitseg-wrap" id="xrefColPick" style="gap:10px"></div>
       <div class="msg" id="lineMsg"></div>
 
       <div id="linesWrap" style="margin-top:12px"></div>
@@ -264,6 +266,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="refatrix-xrefcols.js?v=20261111xc"></script>   <!-- 0325b · 엑셀 경쟁사 코드 열 -->
 <script>
   // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
   function mxHora(v){
@@ -624,6 +627,38 @@
     m.className='msg ok';m.textContent='인쇄 창을 열었습니다.';
   }
 
+  // ===== 0325b · 엑셀 경쟁사 코드 열 =====
+  //   체크한 브랜드마다 열 하나(「Código BAW」 …). 한 CTR 에 코드가 여럿이면 ' / ' 로 잇는다.
+  //   기존 열 · 수식 위치는 그대로 두고 **맨 뒤에** 붙인다(가격표의 수량·금액 수식이 깨지지 않게).
+  (function(){ try{ if(window.RefXrefCols) RefXrefCols.picker($('xrefColPick'),{label:'<span style="font-weight:700">📑 엑셀에 경쟁사 코드 열</span><span class="hint" style="margin:0">(체크한 브랜드만 · 엑셀 다운로드 · 전체 가격표 · Top 500 · 전체 견적)</span>'}); }catch(e){} })();
+  async function xrefColsFor(codes){
+    if(!window.RefXrefCols||!RefXrefCols.selected().length) return {brands:[],get:function(){return '';}};
+    try{ return await RefXrefCols.load(session.api,session.token,codes); }
+    catch(e){ const m=$('lineMsg'); if(m){ m.className='msg warn'; m.textContent='경쟁사 코드를 불러오지 못해 경쟁사 열 없이 내려받습니다: '+(e&&e.message||e); } return {brands:[],get:function(){return '';}}; }
+  }
+  const XC_HEAD=(b)=>'Código '+b;
+  // aoa 의 머리줄(headerRow, 1부터)과 데이터 줄 뒤에 브랜드 열을 붙인다. ctrOf(i) = 데이터 i 번째 줄의 CTR(없으면 '')
+  function xcAppend(rows, headerRow, firstData, count, ctrOf, xc, startCol){
+    if(!xc.brands.length) return;
+    const pad=(row)=>{ while(row.length<startCol) row.push(''); return row; };
+    pad(rows[headerRow-1]).push(...xc.brands.map(XC_HEAD));
+    for(let i=0;i<count;i++){
+      const row=rows[firstData-1+i]; if(!row) continue;
+      const ctr=ctrOf(i);
+      pad(row).push(...xc.brands.map(b=>ctr?xc.get(ctr,b):''));
+    }
+  }
+  function xcStyle(ws, headerRow, startCol, xc, lastRow){
+    if(!xc.brands.length) return;
+    const sH={font:{bold:true,color:{rgb:'9A6512'}},fill:{patternType:'solid',fgColor:{rgb:'FDF3E3'}},alignment:{wrapText:true,vertical:'center'}};
+    xc.brands.forEach(function(b,i){
+      const col=XLSX.utils.encode_col(startCol+i);
+      const ref=col+headerRow; if(ws[ref]) ws[ref].s=sH;
+      for(let r=headerRow+1;r<=lastRow;r++){ const rr=col+r; if(ws[rr]&&ws[rr].v) ws[rr].s=Object.assign({},ws[rr].s,{font:{color:{rgb:'7A4E0E'},sz:10},alignment:{wrapText:true,vertical:'top'}}); }
+    });
+  }
+  function xcCols(cols, startCol, xc){ while(cols.length<startCol) cols.push({wch:10}); xc.brands.forEach(()=>cols.push({wch:18})); return cols; }
+
   // ===== 전체 SKU 가격표 다운로드 =====
   async function downloadPriceList(){
     const m=$('lineMsg');m.className='msg';
@@ -680,6 +715,8 @@
           unit, null,null,null,null,null, null, null, isAlu?'Aluminio':'', it.oe_ref||'' ]);
       });
       const lastData=rows.length;
+      const xc=await xrefColsFor(items.map(it=>it.ctr_code));   // 0325b · Q(Referencia OE) 뒤 R 열부터
+      xcAppend(rows, headerRow, firstData, items.length, i=>items[i].ctr_code||'', xc, 17);
       rows.push([]);
       rows.push(['','','','','Cantidad por sucursal →','','','',null,null,null,null,null,null,'']); const qtyRow=rows.length;
       rows.push(['','','','','Importe por sucursal (sin IVA) →','','','',null,null,null,null,null,'',null]); const amtRow=rows.length;
@@ -717,7 +754,8 @@
       if(ws['P'+headerRow]) ws['P'+headerRow].s={font:{bold:true}};
       const sTraP={fill:{patternType:'solid',fgColor:{rgb:'DDEBF7'}},font:{bold:true,color:{rgb:'1F4E79'}}};
       for(let r=firstData;r<=lastData;r++){ if(ws['G'+r]&&ws['G'+r].v!==''&&ws['G'+r].v!=null){ ws['G'+r].s=Object.assign({},ws['G'+r].s,sTraP); ws['G'+r].z='#,##0'; } }
-      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:30},{wch:28},{wch:11},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12},{wch:28}];
+      ws['!cols']=xcCols([{wch:5},{wch:14},{wch:18},{wch:30},{wch:28},{wch:11},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12},{wch:28}],17,xc);
+      xcStyle(ws, headerRow, 17, xc, lastData);
       // kitf · 키트 행: Producto(D) 구성품 줄바꿈 + 행 높이(줄 수만큼)
       if(kitRows.length){
         const rowsH=[];
@@ -1170,9 +1208,10 @@
       const totalRows=sheets.reduce((a,s)=>a+s.P.length,0);
       m.className='msg ok';m.textContent=LBL+' 견적 엑셀 생성 중… ('+totalRows.toLocaleString('en-US')+'행 · 시트 '+sheets.length+'개)';
       await new Promise(r=>setTimeout(r,20));
+      const xc=await xrefColsFor(ctx.items.map(it=>it.ctr_code));   // 0325b · 경쟁사 코드 열(O 뒤 P 열부터)
       const wb=XLSX.utils.book_new();
       sheets.forEach(function(s){
-        XLSX.utils.book_append_sheet(wb,vioSheet(s.P,{all:all,custName:custName,rateFrac:rateFrac,fechaStr:fechaStr,scope:s.scope}),s.name);
+        XLSX.utils.book_append_sheet(wb,vioSheet(s.P,{all:all,custName:custName,rateFrac:rateFrac,fechaStr:fechaStr,scope:s.scope,xc:xc}),s.name);
       });
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       const rgTag=(regs&&!allRegs)?(regs.map(r=>RG_INFO[r].tag).join('_')+'_'):'';
@@ -1251,6 +1290,8 @@
           Number(it.list_price)||0, null, null, p.isRep?1:0 ]);
       });
       const lastData=rows.length;
+      const xc=o.xc||{brands:[],get:function(){return '';}};   // 0325b · 숨김 열 O(Principal) 뒤 P 열부터
+      xcAppend(rows, headerRow, firstData, P.length, i=>P[i].it.ctr_code||'', xc, 15);
       rows.push([]);
       const pad12=['','','','','','','','','','','',''];
       rows.push(pad12.concat(['Subtotal (sin IVA)', null])); const subRow=rows.length;
@@ -1297,7 +1338,8 @@
       // 레터헤드 병합만 (필터 유지 위해 차량 셀은 병합하지 않고 그룹 정렬로 표현)
       ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:13}},{s:{r:3,c:0},e:{r:3,c:13}},{s:{r:6,c:0},e:{r:6,c:13}}];
       ws['!autofilter']={ref:'A'+headerRow+':N'+lastData};
-      ws['!cols']=[{wch:34},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:11},{wch:12},{wch:12},{wch:15},{wch:14},{wch:15},{wch:10,hidden:true}];
+      ws['!cols']=xcCols([{wch:34},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:11},{wch:12},{wch:12},{wch:15},{wch:14},{wch:15},{wch:10,hidden:true}],15,xc);
+      xcStyle(ws, headerRow, 15, xc, lastData);
       ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:14},{hpt:30}];
       kitH.forEach(function(h,i){ if(h) ws['!rows'][i]=h; });   // kitf
       return ws;
@@ -1673,9 +1715,11 @@
   }
 
   // ===== 작성 중 견적 → 엑셀 다운로드 =====
-  function exportExcel(){
+  async function exportExcel(){
     const m=$('saveMsg');m.className='msg';
     if(!lastPreview||!(lastPreview.lines||[]).length){ m.className='msg err';m.textContent='먼저 품목을 추가하세요.';return; }
+    const xc=await xrefColsFor((lastPreview.lines||[]).map(l=>l.matched?l.ctr_code:''));   // 0325b
+    const xcRows=[];   // 데이터 줄 번호(1부터) → CTR
     const custName=partyName();
     const date=$('qDate').value||'';
     const rows=[];
@@ -1693,6 +1737,7 @@
         kitHeadRows.push(rows.length);
       }
       if(l.ambiguous){ rows.push([l.input_code,'','(múltiples coincidencias)',l.qty]); return; }
+      xcRows.push({r:rows.length+1, ctr:l.matched?(l.ctr_code||''):'', code:l.input_code||'', brand:l.input_brand||''});
       rows.push([
         l.ctr_code||'', (l.syd_codes||[]).join(' / '),
         (kn?('['+kn+'] '+lineProdText(l)):(l.product_name||''))+(l.app_text?' · '+l.app_text:''),
@@ -1704,12 +1749,21 @@
         l.oe_ref||'',
       ]);
     });
+    // 0325b · 경쟁사 코드 열 — Referencia OE(L) 뒤 M 열부터. 미등록 줄은 입력 브랜드 열에 입력 코드를 그대로.
+    if(xc.brands.length){
+      while(rows[3].length<12) rows[3].push(''); rows[3].push(...xc.brands.map(XC_HEAD));
+      xcRows.forEach(function(x){
+        const row=rows[x.r-1]; while(row.length<12) row.push('');
+        row.push(...xc.brands.map(b=>x.ctr?xc.get(x.ctr,b):(x.brand===b?x.code:'')));
+      });
+    }
     const t=lastPreview.totals||{};
     rows.push([]);
     rows.push(['','','TOTAL', Number(t.totalQty)||0,'','','', Number(t.iva)||0, Number(t.total)||0]);
     rows.push(['','','SKU', t.skuCount||0,'','','','Subtotal', Number(t.subtotal)||0]);
     const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:9},{wch:11},{wch:7},{wch:11},{wch:11},{wch:13},{wch:9},{wch:12},{wch:28}];
+    ws['!cols']=xcCols([{wch:14},{wch:16},{wch:30},{wch:9},{wch:11},{wch:7},{wch:11},{wch:11},{wch:13},{wch:9},{wch:12},{wch:28}],12,xc);
+    xcStyle(ws, 4, 12, xc, rows.length);
     // kitc · KIT 머리줄 강조(연녹색 · 굵게)
     const sKit={fill:{patternType:'solid',fgColor:{rgb:'E8F3EE'}},font:{bold:true,color:{rgb:'1F5F4A'}}};
     kitHeadRows.forEach(function(r){ ['A','B','C'].forEach(function(c){ const ref=c+r; if(!ws[ref]) ws[ref]={t:'s',v:''}; ws[ref].s=sKit; }); });

@@ -49,7 +49,7 @@ async function boot() {
 
 test('① 줄 표 — KIT 머리줄 1개(번호 · 차종 · 세트 · 구성품 CTR 코드) · 구성 줄 Producto = CTR + 제품명', async () => {
   const { w, $ } = await boot();
-  assert.match(w.document.title, /qt-1111xr/);
+  assert.match(w.document.title, /qt-1111xc/);
   const heads = [...$('linesWrap').querySelectorAll('tr.kithead')];
   assert.equal(heads.length, 1);
   const t = heads[0].textContent;
@@ -65,7 +65,7 @@ test('① 줄 표 — KIT 머리줄 1개(번호 · 차종 · 세트 · 구성품
 
 test('② 견적 엑셀 — KIT 머리줄(강조·병합) + 구성 줄 「[K0009] CTR 제품명」 · 일반 줄 종전', async () => {
   const { w, files } = await boot();
-  w.eval('exportExcel()');
+  await w.eval('exportExcel()');   // 0325b · 경쟁사 코드 열 때문에 async
   assert.equal(files.length, 1);
   const ws = files[0].wb.Sheets.Cotizacion;
   assert.equal(ws.A5.v, 'KIT K0009');

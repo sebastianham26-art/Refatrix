@@ -289,3 +289,63 @@ export async function masterIndexFor(norms, exec = query) {
   }
   return out;
 }
+
+/**
+ * 0325b · 견적 엑셀 「경쟁사 코드 열」 — CTR 코드들 → 브랜드별 경쟁사 코드.
+ *   ⓐ 마스터: CTR 의 SYD(product_syd_codes) 와 같은 마스터 행 · 또는 마스터 CTR 칸이 그 CTR 인 행의 브랜드 코드
+ *   ⓑ 제품 교차참조(product_xref_codes)
+ *   반환 Map(CTR 코드 → { BRAND: [code…] })  — 정규화 기준 중복 제거, 마스터 먼저
+ */
+export async function competitorCodesFor(ctrCodes, brands, exec = query) {
+  const out = new Map();
+  const codes = [...new Set((ctrCodes || []).map((c) => String(c == null ? '' : c).trim()).filter(Boolean))];
+  const want = [...new Set((brands || []).map(normBrand).filter(Boolean))];
+  if (!codes.length || !want.length) return out;
+  const seen = new Map();   // ctr → Set(brand|norm)
+  const add = (ctr, brand, code) => {
+    const b = normBrand(brand); if (!b || !want.includes(b)) return;
+    const n = normCode(code); if (!n) return;
+    if (!seen.has(ctr)) seen.set(ctr, new Set());
+    const k = b + '|' + n; if (seen.get(ctr).has(k)) return; seen.get(ctr).add(k);
+    if (!out.has(ctr)) out.set(ctr, {});
+    (out.get(ctr)[b] = out.get(ctr)[b] || []).push(String(code).trim());
+  };
+  const vid = await activeVersionId(exec);
+  if (vid) {
+    // 한 번에 큰 JOIN 을 돌리면 전체 카탈로그(수천 SKU)에서 수 초가 걸린다 → 색인을 타는 세 질의로 나눠 메모리에서 잇는다.
+    const ps = (await exec(
+      `SELECT p.code AS ctr, ${NSQL('sc.syd_code')} AS n
+         FROM products p JOIN product_syd_codes sc ON sc.product_id = p.id
+        WHERE p.deleted_at IS NULL AND p.code = ANY($1::text[])`, [codes])).rows;
+    const sydToCtr = new Map();   // syd norm → [ctr]
+    for (const r of ps) { if (!r.n) continue; if (!sydToCtr.has(r.n)) sydToCtr.set(r.n, []); sydToCtr.get(r.n).push(r.ctr); }
+    const ctrNorm = new Map(codes.map((c) => [normCode(c), c]));
+    const keys = [...new Set([...sydToCtr.keys(), ...ctrNorm.keys()])].filter(Boolean);
+    const hits = keys.length ? (await exec(
+      `SELECT row_no, brand, norm_code FROM xref_master_codes
+        WHERE version_id = $1 AND brand IN ('SYD','CTR') AND norm_code = ANY($2::text[])`, [vid, keys])).rows : [];
+    const rowCtr = new Map();     // row_no → Set(ctr)
+    for (const h of hits) {
+      const list = h.brand === 'SYD' ? (sydToCtr.get(h.norm_code) || []) : (ctrNorm.has(h.norm_code) ? [ctrNorm.get(h.norm_code)] : []);
+      if (!list.length) continue;
+      const rn = Number(h.row_no);
+      if (!rowCtr.has(rn)) rowCtr.set(rn, new Set());
+      for (const c of list) rowCtr.get(rn).add(c);
+    }
+    if (rowCtr.size) {
+      const bc = (await exec(
+        `SELECT row_no, brand, code FROM xref_master_codes
+          WHERE version_id = $1 AND row_no = ANY($2::int[]) AND brand = ANY($3::text[])
+          ORDER BY row_no, brand, code`, [vid, [...rowCtr.keys()], want])).rows;
+      for (const r of bc) for (const c of rowCtr.get(Number(r.row_no)) || []) add(c, r.brand, r.code);
+    }
+  }
+  try {
+    const xr = (await exec(
+      `SELECT p.code AS ctr, x.brand, x.xref_code FROM product_xref_codes x
+         JOIN products p ON p.id = x.product_id AND p.deleted_at IS NULL
+        WHERE p.code = ANY($1::text[]) ORDER BY p.code, x.brand, x.xref_code`, [codes])).rows;
+    for (const r of xr) add(r.ctr, r.brand, r.xref_code);
+  } catch (_) { /* 0130 미적용 */ }
+  return out;
+}

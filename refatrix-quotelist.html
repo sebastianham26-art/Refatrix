@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1105avl</title>
+<title>Refatrix ERP · 견적 목록 · ql-1111xc</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -1229,7 +1229,7 @@
   // ===== 엑셀 다운로드 (스페인어 견적양식 · 현재 재고 있는 항목만 · 수식) — 상세 모달 =====
   // 고객이 Cantidad(수량)를 입력하면 Importe=Precio×Cantidad, Subtotal/IVA/Total이 자동 재계산.
   // 가용재고(Existencia)는 음영으로 강조. (스타일 지원: xlsx-js-style)
-  function downloadStockExcel(){
+  async function downloadStockExcel(){
     if(!dtData||!dtData.quote){ return; }
     if(typeof XLSX==='undefined'){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
     const q=dtData.quote;
@@ -1239,6 +1239,12 @@
     const xAvail=(l)=> xConv ? (Number(l.reserved_qty)||0) : (Number(liveAvail(l))||0);
     const rows=(dtData.lines||[]).filter(l=> xAvail(l)>0);
     if(!rows.length){ alert(xConv?'출고(확보)된 항목이 없습니다.':'현재 재고가 있는 항목이 없습니다.'); return; }
+    // 0325b · 체크한 브랜드별 경쟁사 코드 열(Aplicación 뒤)
+    let xc={brands:[],get:function(){return '';}};
+    if(window.RefXrefCols&&RefXrefCols.selected().length){
+      try{ xc=await RefXrefCols.load(session.api,session.token,rows.map(l=>l.ctr_code)); }
+      catch(e){ alert('경쟁사 코드를 불러오지 못해 경쟁사 열 없이 내려받습니다: '+(e&&e.message||e)); }
+    }
 
     // ----- 스타일 -----
     const bd={style:'thin',color:{rgb:'C9C2B4'}}; const border={top:bd,bottom:bd,left:bd,right:bd};
@@ -1279,6 +1285,8 @@
       {key:'prod', h:'Producto',    w:30, hs:fHead},
       {key:'app',  h:'Aplicación',  w:24, hs:fHead},
     );
+    const fHeadXc={font:{bold:true,color:{rgb:'9A6512'},sz:10},fill:{fgColor:{rgb:'FDF3E3'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
+    xc.brands.forEach(function(b){ colDefs.push({key:'xc_'+b, h:'Código '+b, w:16, hs:fHeadXc}); });   // 0325b
     if(showExist)   colDefs.push({key:'exist',  h:'Existencia',  w:11, hs:fHeadExist});
     if(showTransit) colDefs.push({key:'transit',h:'En tránsito', w:11, hs:fHeadTransit});
     if(showBack)    colDefs.push({key:'back',   h:'Backorder',   w:11, hs:fHeadBack});
@@ -1325,6 +1333,7 @@
       set(L.syd+r,  cp.syd||'', cL);
       set(L.prod+r, l.product_name||'', cL);
       set(L.app+r,  l.app_text||'', cL);
+      xc.brands.forEach(function(b){ set(L['xc_'+b]+r, cp.ctr?xc.get(cp.ctr,b):((l.input_brand===b)?String(l.input_code||''):''), cL); });   // 0325b
       if(showExist)   set(L.exist+r, xAvail(l), cExist);                      // 가용재고 (전환 견적은 확보=출고 수량)
       if(showTransit){ if(tq>0) set(L.transit+r, tq, cTransit); else set(L.transit+r, '', cTransitEmpty); }  // 운송중(입고예정)
       if(showBack){ if(bo>0) set(L.back+r, bo, cBack); else set(L.back+r, '', cBackEmpty); }                 // 순수 발주잔량(운송중 제외)
@@ -1368,6 +1377,8 @@
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColExist?'checked':'')+' onchange="dtToggleCol(\'exist\',this.checked)"> 가용재고</label>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColTransit?'checked':'')+' onchange="dtToggleCol(\'transit\',this.checked)"> 운송중</label>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" title="발주 미입고 잔량에서 운송중을 뺀 순수 발주잔량"><input type="checkbox" '+(dtColBack?'checked':'')+' onchange="dtToggleCol(\'back\',this.checked)"> backorder</label>'
+      +'<span style="color:#ccc">|</span>'
+      +'<span id="dtXcPick" style="display:inline-flex;align-items:center;gap:8px" title="엑셀(재고분)에 체크한 브랜드의 경쟁사 코드 열을 추가합니다"></span>'   // 0325b
       +'<span style="color:#ccc">|</span>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" title="PDF 전용 — 고객 발송 시 체크 해제하면 할인 전 가격(List)을 숨깁니다"><input type="checkbox" '+(dtColList?'checked':'')+' onchange="dtToggleCol(\'list\',this.checked)"> List Price</label>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" title="PDF 전용 — 고객 발송 시 체크 해제하면 할인율(Desc.)을 숨깁니다"><input type="checkbox" '+(dtColDisc?'checked':'')+' onchange="dtToggleCol(\'disc\',this.checked)"> Descuento</label>'
@@ -1448,6 +1459,7 @@
 
     const revalBox = dtReval ? ('<div id="revalBox" style="margin:0 0 10px">'+dtReval.html+'</div>') : '';
     $('dtBody').innerHTML = hint + poBoxHtml(q) + actions + '<div id="delForm" style="margin:0 0 10px"></div>' + revalBox + summary + table;
+    try{ if(window.RefXrefCols&&$('dtXcPick')) RefXrefCols.picker($('dtXcPick'),{label:'<span style="color:#666">엑셀 경쟁사 코드:</span>'}); }catch(e){}   // 0325b
     bindPoBox();
   }
 
@@ -2077,6 +2089,7 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="refatrix-xrefcols.js?v=20261111xc"></script>   <!-- 0325b · 엑셀 경쟁사 코드 열 -->
 <script>
 /* 2026-09-30 ql-0930sc2 · 표 위 가로 스크롤바 동기화.
    - 표가 상자보다 넓을 때만 보인다(한국어 화면에서 표가 다 들어오면 숨김).

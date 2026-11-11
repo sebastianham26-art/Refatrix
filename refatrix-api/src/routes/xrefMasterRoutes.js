@@ -11,7 +11,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requireDirector, requirePageAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { parseMasterAoa, normCode, invalidateXrefMaster, xrefMasterReady, bridgeOne, normBrand } from '../xrefMaster.js';
+import { parseMasterAoa, normCode, invalidateXrefMaster, xrefMasterReady, bridgeOne, normBrand, competitorCodesFor, COMPETITOR_BRANDS } from '../xrefMaster.js';
 import { sweepDevRequestMatches } from '../devMatchSweep.js';
 
 const UPLOAD_BODY_LIMIT = 40 * 1024 * 1024;   // 원본(base64) + 시트 배열 — 9,500행 파일 ≈ 4MB
@@ -156,6 +156,29 @@ export default async function xrefMasterRoutes(app) {
     const row = (await query(`SELECT filename, file_data FROM xref_master_versions WHERE id=$1`, [id])).rows[0];
     await logEvent({ userId: req.ctx.perm.userId, action: 'export', target: `xref_master:${id}:download` });
     return sendFile(reply, row);
+  });
+
+  // 0325b · 견적 엑셀 「경쟁사 코드 열」 — body { codes:[CTR…], brands:['BAW','KYB'…] } → { items: { CTR: { BAW:[…] } } }
+  //   견적 작성(엑셀 다운로드 · 전체 가격표 · Top 500 · 전체 견적) · 견적 목록 상세(엑셀 재고분)가 쓴다.
+  app.post('/api/xref-master/codes-for', { preHandler: [authGuard, requirePageAny(VIEW_PAGES)], bodyLimit: 4 * 1024 * 1024 }, async (req) => {
+    const b = req.body || {};
+    const brands = (Array.isArray(b.brands) ? b.brands : []).map(normBrand).filter((x) => x && COMPETITOR_BRANDS.includes(x));
+    const codes = (Array.isArray(b.codes) ? b.codes : []).slice(0, 40000);
+    const ready = await xrefMasterReady();
+    if (!brands.length || !codes.length) return { ready, brands, items: {} };
+    let map = new Map();
+    if (ready) map = await competitorCodesFor(codes, brands);
+    else {
+      // 0325 전 — 제품 교차참조만
+      try {
+        const xr = (await query(
+          `SELECT p.code AS ctr, x.brand, x.xref_code FROM product_xref_codes x JOIN products p ON p.id = x.product_id AND p.deleted_at IS NULL
+            WHERE p.code = ANY($1::text[])`, [codes.map(String)])).rows;
+        for (const r of xr) { const br = normBrand(r.brand); if (!brands.includes(br)) continue;
+          if (!map.has(r.ctr)) map.set(r.ctr, {}); (map.get(r.ctr)[br] = map.get(r.ctr)[br] || []).push(r.xref_code); }
+      } catch (_) {}
+    }
+    return { ready, brands, items: Object.fromEntries(map) };
   });
 
   app.get('/api/xref-master/lookup', { preHandler: [authGuard, requirePageAny(VIEW_PAGES)] }, async (req, reply) => {
