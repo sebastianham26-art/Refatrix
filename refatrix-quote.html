@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-1111xc</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-1111kb</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -176,6 +176,7 @@
             <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
             <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — A열에 SKU별 적용차종 표시(차종 그룹 → 부품 고정순서). 여러 차종에 쓰이는 코드는 차종마다 중복 기입(빨간 글씨)하고 대표 차종 1행만 파란 음영 + Subtotal 합산 · Existencia(현재고)·Disponible(가용)·En tránsito(운송중)·En producción(생산중) 4개 수량열">⭐ Top 500 견적</button>
             <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — 모든 SKU의 적용차종(Aplicación)을 파싱해 A열에 차종을 표시. 차종 그룹(VIO순) → 부품 고정순서, 여러 차종에 쓰이는 코드는 중복 기입(빨강)·대표 차종 1행 파란 음영만 Subtotal 합산(총액 불변) · 수량열 4종: Existencia(현재고)·Disponible(현재고−타견적 예약)·En tránsito(선적됨)·En producción(발주 미선적) · 적용차종 없는 SKU는 맨 아래 Sin aplicación · 클릭하면 차종 지역(아시아·유럽·미국·중국) 선택 후 다운로드 — 지역별 시트 분리 가능">📚 전체 견적</button>
+            <button class="btn ghost sm" id="btnKitBuild" title="지금 재고로 차종별 구성 가능한 키트 수 — KIT T(Tornillo estabilizador · Terminal exterior · Terminal interior) · KIT H(Horquilla · Rótula). 최소단위: Horquilla L+R / 나머지 L+R 또는 공용 2개. 차종별 키트 수 · 고른 코드 · 키트당 가격 엑셀">🧰 Kit 구성 가능</button>
             <button class="btn ghost sm hidden" id="btnVsSyd" onclick="downloadVsSyd()" title="CTR vs SYD 커버리지 비교 — A열 차종 라벨을 「전체 견적」과 동일 규칙으로 통일(그룹사명+모델+연식). 차종·세대 × 6대 품군의 CTR·SYD 코드와 정가(MXN). SYD만 있고 CTR이 없는 칸은 빨강 · 대표·소시오 전용">🆚 CTR vs SYD</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
@@ -1172,6 +1173,147 @@
     on('rgNone',function(){ document.querySelectorAll('#rgList input[type=checkbox]').forEach(function(x){ x.checked=false; }); rgRefresh(); });
   });
   // opt(전체 견적 지역 선택): {regions:['AS',…], split:true|false, ctx:loadVioPlan 결과}
+
+  // =====================================================================
+  // 2026-11-11 kb · 「🧰 Kit 구성 가능」 — 누르는 순간의 재고로 차종별 키트 수 (디렉터 지시)
+  //   KIT T = Tornillo estabilizador + Terminal exterior + Terminal interior
+  //   KIT H = Horquilla + Rótula
+  //   최소단위: Horquilla 는 L+R 1개씩(공용 불가) · 나머지는 L+R 1개씩 또는 공용 코드 2개.
+  //   차종 = 전체 견적 A열과 같은 차종 라벨(VEH.buildQuotePlan). 같은 품목 코드끼리 섞지 않고
+  //   키트를 가장 많이 만드는 코드(또는 L/R 한 쌍) 하나를 고른다. 키트 수 = 품목별 세트 수의 최소.
+  //   차종마다 따로 계산(같은 코드를 여러 차종이 공유) — 차종 간 합산하지 않는다.
+  // =====================================================================
+  const KITB=(function(){
+    const KITS={T:['TORNILLO ESTABILIZADOR','TERMINAL EXTERIOR','TERMINAL INTERIOR'],H:['HORQUILLA','ROTULA']};
+    const COMMON_OK={ROTULA:true,HORQUILLA:false,'TERMINAL EXTERIOR':true,'TERMINAL INTERIOR':true,'TORNILLO ESTABILIZADOR':true};
+    function catOf(name){ const e=String(name||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+      for(const k of ['ROTULA','HORQUILLA','TERMINAL EXTERIOR','TERMINAL INTERIOR','TORNILLO ESTABILIZADOR']) if(e.indexOf(k)===0) return k; return null; }
+    function side(c){ return /\d[LR]$/.test(c)?c.slice(-1):'-'; }
+    const n=v=>{ const x=Number(v); return isFinite(x)?Math.max(0,x):0; };
+    function qtys(it){ const ex=it.stock_qty!=null?n(it.stock_qty):0; const av=it.avail_qty!=null?n(it.avail_qty):ex; return {ex:ex,av:av,tr:n(it.incoming_qty)}; }
+    function options(codes,cat){
+      const keys=Object.keys(codes), L=keys.filter(c=>side(c)==='L'), R=keys.filter(c=>side(c)==='R'), used={}, out=[];
+      L.forEach(l=>{ const r=l.slice(0,-1)+'R'; if(codes[r]){ out.push([[l,1],[r,1]]); used[l]=used[r]=1; } });
+      const lL=L.filter(c=>!used[c]), rR=R.filter(c=>!used[c]);
+      if(lL.length===1&&rR.length===1) out.push([[lL[0],1],[rR[0],1]]);
+      if(COMMON_OK[cat]) keys.filter(c=>side(c)==='-').forEach(c=>out.push([[c,2]]));
+      return out;
+    }
+    function units(o,codes,key){ return Math.min.apply(null,o.map(([c,q])=>Math.floor((key==='tr'?(codes[c].q.av+codes[c].q.tr):codes[c].q[key])/q))); }
+    function compute(planRows){
+      const V=new Map();
+      (planRows||[]).forEach(p=>{
+        const it=p.it||{}, code=String(it.ctr_code||'').trim().toUpperCase(); if(!code||/^K[0-9]/.test(code)) return;   // 키트 제품 자체는 제외
+        const lab=p.label; if(!lab||p.region==='NA') return;
+        const cat=catOf(it.name); if(!cat) return;
+        if(!V.has(lab)) V.set(lab,{label:lab,vio:p.vio||null,cats:{}});
+        const v=V.get(lab); if(p.vio&&!v.vio) v.vio=p.vio;
+        const cc=(v.cats[cat]=v.cats[cat]||{}); if(!cc[code]) cc[code]={it:it,q:qtys(it)};
+      });
+      const out=[];
+      V.forEach(v=>{
+        const rec={label:v.label,vio:v.vio,kits:{}};
+        Object.keys(KITS).forEach(kn=>{
+          const parts=KITS[kn]; if(!parts.every(k=>v.cats[k])) return;
+          const pick={};
+          for(const k of parts){
+            const codes=v.cats[k], opts=options(codes,k); if(!opts.length) return;
+            let best=null,bs=null;
+            opts.forEach(o=>{ const sc=[units(o,codes,'av'),units(o,codes,'ex'),units(o,codes,'tr')];
+              if(!bs||sc[0]>bs[0]||(sc[0]===bs[0]&&(sc[1]>bs[1]||(sc[1]===bs[1]&&sc[2]>bs[2])))){ best=o; bs=sc; } });
+            pick[k]={opt:best.map(([c,q])=>({code:c,qty:q,it:codes[c].it,q:codes[c].q})),av:bs[0],ex:bs[1],tr:bs[2]};
+          }
+          const kav=Math.min.apply(null,parts.map(k=>pick[k].av));
+          rec.kits[kn]={parts:parts,pick:pick,kav:kav,kex:Math.min.apply(null,parts.map(k=>pick[k].ex)),ktr:Math.min.apply(null,parts.map(k=>pick[k].tr)),
+            lim:parts.filter(k=>pick[k].av===kav),lp:parts.reduce((s,k)=>s+pick[k].opt.reduce((a,x)=>a+(Number(x.it.list_price)||0)*x.qty,0),0)};
+        });
+        if(Object.keys(rec.kits).length) out.push(rec);
+      });
+      const kv=(x,k)=>x.kits[k]?x.kits[k].kav:-1;
+      out.sort((a,b)=>(Math.max(kv(b,'T'),kv(b,'H'))-Math.max(kv(a,'T'),kv(a,'H')))||((kv(b,'T')+kv(b,'H'))-(kv(a,'T')+kv(a,'H')))||((b.vio||0)-(a.vio||0))||String(a.label).localeCompare(String(b.label)));
+      return out;
+    }
+    return {compute:compute,catOf:catOf,KITS:KITS};
+  })();
+  async function downloadKitBuild(){
+    const m=$('lineMsg'); m.className='msg';
+    if(isGuest && !$('guestName').value.trim()){ m.className='msg err'; m.textContent='Escriba primero el nombre del cliente.'; return; }
+    const b=$('btnKitBuild'); if(b){ b.disabled=true; }
+    try{
+      m.className='msg ok'; m.textContent='🧰 지금 재고로 차종별 키트 구성 계산 중… (전체 SKU)';
+      const saveKm=kitMode(); let ctx;
+      try{ setKitMode('all',true); ctx=await loadVioPlan(true); } finally { setKitMode(saveKm,true); }
+      if(!ctx.plan){ m.className='msg err'; m.textContent='SKU 가 없습니다.'; return; }
+      const d=ctx.d;
+      const disc=isGuest?(Number(($('discShow').value||'').replace('%',''))||curDisc||0):(d.discountRate==null?0:d.discountRate);
+      const rate=(Number(disc)||0)/100;
+      const R=KITB.compute(ctx.plan.rows);
+      const okT=R.filter(x=>x.kits.T&&x.kits.T.kav>0).length, okH=R.filter(x=>x.kits.H&&x.kits.H.kav>0).length;
+      const ok=R.filter(x=>Object.keys(x.kits).some(k=>x.kits[k].kav>0)).length;
+      const custName=partyName();
+      const now=new Date(Date.now()-360*60000).toISOString().slice(0,16).replace('T',' ');
+      const bd={style:'thin',color:{rgb:'C9C2B4'}}, B={top:bd,bottom:bd,left:bd,right:bd};
+      const hs=(rgb)=>({font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{patternType:'solid',fgColor:{rgb:rgb}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:B});
+      const cell=(v,s)=>({t:typeof v==='number'?'n':'s',v:v==null?'':v,s:Object.assign({border:B,font:{sz:10},alignment:{vertical:'center'}},s||{})});
+      const PN={ROTULA:'Rótula',HORQUILLA:'Horquilla','TERMINAL EXTERIOR':'Terminal exterior','TERMINAL INTERIOR':'Terminal interior','TORNILLO ESTABILIZADOR':'Tornillo estabilizador'};
+      const pt=(K,k)=>K.pick[k].opt.map(x=>x.code+'×'+x.qty).join(' + ')+'  ('+K.pick[k].av+')';
+      // ── 시트 1 · 차종별 키트 수
+      const ws={}; const put=(a,c)=>{ ws[a]=c; };
+      put('A1',{t:'s',v:'KITS POR VEHÍCULO — KIT T (Tornillo estabilizador · Terminal exterior · Terminal interior) · KIT H (Horquilla · Rótula)',s:{font:{bold:true,sz:14,color:{rgb:'143D34'}}}});
+      put('A2',{t:'s',v:'Cliente: '+(custName||'—')+'   ·   Existencias al '+now+' (hora centro de México)   ·   Descuento '+(Number(disc)||0)+'%   ·   Precios SIN IVA',s:{font:{sz:10,color:{rgb:'444444'}}}});
+      put('A3',{t:'s',v:'Mínimo por kit: Horquilla L+R (1 c/u). Rótula, Terminal exterior, Terminal interior y Tornillo estabilizador: L+R (1 c/u) o 2 piezas del código común. Kits = mínimo entre las piezas del kit (Disponible). Cada vehículo se calcula por separado: un mismo código aparece en varios vehículos, por eso los kits NO se suman entre vehículos.',s:{font:{italic:true,sz:9,color:{rgb:'0F6E56'}},alignment:{wrapText:true,vertical:'top'}}});
+      put('C4',{t:'s',v:'KIT T — Tornillo estabilizador · Terminal exterior · Terminal interior',s:hs('3C3489')});
+      put('K4',{t:'s',v:'KIT H — Horquilla · Rótula',s:hs('7A4E00')});
+      const head=['Vehículo (aplicación)','Registro (VIO)','Kits T (Disponible)','Kits T (Existencia)','Kits T (+ En tránsito)','Limita','Tornillo estabilizador','Terminal exterior','Terminal interior','Precio c/Desc. Kit T',
+        'Kits H (Disponible)','Kits H (Existencia)','Kits H (+ En tránsito)','Limita','Horquilla L/R','Rótula','Precio c/Desc. Kit H'];
+      const col=i=>XLSX.utils.encode_col(i);
+      head.forEach((h,i)=>put(col(i)+'5',{t:'s',v:h,s:hs(i<2?'143D34':(i<10?'534AB7':'B7791F'))}));
+      let r=6;
+      R.forEach(x=>{
+        put('A'+r,cell(x.label,{alignment:{vertical:'center',wrapText:true}})); put('B'+r,cell(x.vio||'',{numFmt:'#,##0'}));
+        [['T',2],['H',10]].forEach(([kn,c0])=>{
+          const K=x.kits[kn], parts=KITB.KITS[kn];
+          if(!K){ for(let j=0;j<parts.length+5;j++) put(col(c0+j)+r,cell(j===0?'—':'',{font:{sz:10,color:{rgb:'BBBBBB'}},alignment:{horizontal:'center',vertical:'center'}})); return; }
+          const good=K.kav>0;
+          put(col(c0)+r,cell(K.kav,{font:{bold:true,sz:11,color:{rgb:good?'0F6E56':'999999'}},fill:good?{patternType:'solid',fgColor:{rgb:'E4F0EB'}}:undefined,alignment:{horizontal:'center',vertical:'center'}}));
+          put(col(c0+1)+r,cell(K.kex,{alignment:{horizontal:'center',vertical:'center'}}));
+          put(col(c0+2)+r,cell(K.ktr,{alignment:{horizontal:'center',vertical:'center'}}));
+          put(col(c0+3)+r,cell(K.lim.map(k=>PN[k]).join(', '),{alignment:{vertical:'center',wrapText:true}}));
+          parts.forEach((k,j)=>put(col(c0+4+j)+r,cell(pt(K,k))));
+          put(col(c0+4+parts.length)+r,cell(Math.round(K.lp*(1-rate)*100)/100,{numFmt:'$#,##0.00'}));
+        });
+        r++;
+      });
+      ws['!ref']='A1:Q'+Math.max(5,r-1);
+      ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:16}},{s:{r:1,c:0},e:{r:1,c:16}},{s:{r:2,c:0},e:{r:2,c:16}},{s:{r:3,c:2},e:{r:3,c:9}},{s:{r:3,c:10},e:{r:3,c:16}}];
+      ws['!cols']=[30,11,9,9,10,18,22,24,22,13,9,9,10,14,24,22,13].map(w=>({wch:w}));
+      ws['!rows']=[{hpt:22},{hpt:15},{hpt:40},{hpt:18},{hpt:34}];
+      ws['!autofilter']={ref:'A5:Q'+Math.max(5,r-1)};
+      // ── 시트 2 · 키트 구성품(1키트 이상 차종만) — 견적 엑셀 J열 표시와 같은 내용
+      const w2={}; const h2=['Vehículo (aplicación)','Registro (VIO)','KIT','Kits posibles','Pieza','Código CTR','Código SYD','Producto','Pzas por kit','Existencia','Disponible','En tránsito','Precio Lista CTR','Precio c/Desc.'];
+      h2.forEach((h,i)=>{ w2[col(i)+'1']={t:'s',v:h,s:hs('143D34')}; });
+      let r2=2;
+      R.forEach(x=>{ ['T','H'].forEach(kn=>{ const K=x.kits[kn]; if(!K||K.kav<1) return;
+        const fill={patternType:'solid',fgColor:{rgb:kn==='T'?'EEEDFE':'FFF1D6'}}, fc=kn==='T'?'3C3489':'7A4E00';
+        K.parts.forEach(k=>K.pick[k].opt.forEach(o=>{
+          const it=o.it, lp=Number(it.list_price)||0;
+          const vals=[x.label,x.vio||'','KIT '+kn,K.kav,PN[k],o.code,String(it.syd_codes||''),it.name||'',o.qty,o.q.ex,o.q.av,o.q.tr||'',lp,Math.round(lp*(1-rate)*100)/100];
+          vals.forEach((v,i)=>{ w2[col(i)+r2]=cell(v,(i===2||i===3)?{fill:fill,font:{bold:true,sz:10,color:{rgb:fc}},alignment:{horizontal:'center',vertical:'center'}}:(i>=12?{numFmt:'$#,##0.00'}:(i===1?{numFmt:'#,##0'}:{}))); });
+          r2++;
+        })); }); });
+      w2['!ref']='A1:N'+Math.max(1,r2-1); w2['!cols']=[30,11,8,9,20,13,14,28,9,10,10,10,13,13].map(w=>({wch:w}));
+      w2['!autofilter']={ref:'A1:N'+Math.max(1,r2-1)};
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'Kits por vehículo');
+      XLSX.utils.book_append_sheet(wb,w2,'Componentes');
+      const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
+      XLSX.writeFile(wb,'kits_posibles_'+safe+'_'+now.slice(0,10)+'.xlsx');
+      m.className='msg ok';
+      m.textContent='🧰 Kit 구성 가능 엑셀 다운로드 완료 — 지금 재고(Disponible) 기준 1키트 이상: 차종 '+ok+'개 (KIT T '+okT+' · KIT H '+okH+') · 5품목 중 키트 품목이 카탈로그에 다 있는 차종 '+R.length+'개 · 차종별로 따로 계산(합산하지 않음).';
+    }catch(e){ m.className='msg err'; m.textContent='Kit 구성 계산 실패: '+(e&&e.message||e); }
+    finally{ if(b) b.disabled=false; }
+  }
+  document.addEventListener('DOMContentLoaded',function(){ const b=$('btnKitBuild'); if(b) b.addEventListener('click',downloadKitBuild); });
   async function downloadVioQuote(all,opt){
     const LBL=all?'전체':'Top 500';
     const m=$('lineMsg');m.className='msg';

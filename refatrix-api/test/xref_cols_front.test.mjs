@@ -60,7 +60,7 @@ test('① ~ ④ 견적 작성 — 엑셀 다운로드 · 전체 가격표 · Top
     return null;
   });
   const w = dom.window, $ = (id) => w.document.getElementById(id);
-  assert.match(w.document.title, /qt-1111xc/);
+  assert.match(w.document.title, /qt-1111kb/);
   w.RefXrefCols.picker($('xrefColPick'));
   assert.equal($('xrefColPick').querySelectorAll('input[data-xb]').length, 5, 'BAW · GROB · VAZLO · KYB · MOOG');
   // ④ 체크 없음 → 종전 그대로
