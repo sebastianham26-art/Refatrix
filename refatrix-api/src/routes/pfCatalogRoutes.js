@@ -9,6 +9,8 @@
 //   GET    /api/pf-catalog/purchases?codes=&fresh=         CTR 제품별 구매(발주) 이력 — 2026-11-11
 //   GET    /api/pf-catalog/stock?codes=&fresh=             CTR 제품별 재고(가용 · 실물 · 예약) — 2026-11-11
 //   GET    /api/pf-catalog/items?q=&status=&active=&sort=&limit=&offset=
+//   POST   /api/pf-catalog/items {code, name, scode, app, oe, material, pos, category, note, source}
+//          → 샘플 검토 신규 CTR 생성(개발 중 · 판매 비활성 · 확인완료) 201 · 같은 코드 409 CODE_EXISTS · 0326 전 501 — 2026-11-11
 //   GET    /api/pf-catalog/items/:id                       1건 + ERP 변경 이력 + 확인 이력 + 나눠 넣기 미리보기
 //   POST   /api/pf-catalog/preview {scode, app, oe}        입력 중 미리보기(저장하지 않음)
 //   PUT    /api/pf-catalog/items/:id/draft {fields, note}  수정안 저장(ERP 는 아직 그대로)
@@ -30,6 +32,7 @@ import { pushProductsSoon } from '../productSync.js';
 import { loadDevReqItems } from '../devReqPush.js';   // 2026-11-09 · 0순위 보조 조회
 import { loadPerf, parseMonths, parseCodes } from '../pfPerf.js';   // 2026-11-10 · 제품별 실적 수량
 import { loadPurchases, loadStock } from '../pfInventory.js';         // 2026-11-11 · 재고연관성(구매이력 · 재고)
+import { createItem, pfCreateReady } from '../pfCatalogCreate.js';    // 2026-11-11 · 샘플 검토 신규 CTR 생성
 import {
   pfCatalogReady, listItems, summary, getItem, saveDraft, discardDraft, confirmItem,
   previewDerived, normValue, PF_FIELDS, exportItems, logExport, listExports, EXPORT_MAX,
@@ -139,6 +142,22 @@ export default async function pfCatalogRoutes(app) {
       sort: String(q.sort || 'code'), limit: q.limit, offset: q.offset,
     });
     return { ...r, limit: Math.max(1, Math.min(200, parseInt(q.limit, 10) || 50)), offset: Math.min(1000000, Math.max(0, parseInt(q.offset, 10) || 0)) };
+  });
+
+  // 샘플 검토 신규 CTR 생성 — 규칙은 src/pfCatalogCreate.js 머리말. 권한 = pf-catalog 로그인 사용자 전부(확인완료와 같음).
+  //   0326 전에는 501 → 플랫폼은 「ERP 전송 대기」 로 남겨 두었다가 [↻ ERP 재전송] 때 다시 보낸다.
+  app.post('/api/pf-catalog/items', G, async (req, reply) => {
+    if (!(await pfCreateReady())) return reply.code(501).send({ error: 'migration_required', detail: 'ERP 마이그레이션 0326 적용 전입니다.' });
+    const r = await createItem(req.body, { pf: req.pf });
+    if (r.status === 409) return reply.code(409).send(r.body);
+    if (r.error) return reply.code(400).send(r);
+    pushProductsSoon([r.code], { app });          // CRM 에는 비활성으로 — 가격 없이 판매 중으로 나가지 않는다
+    if (r.has_syd || r.has_oe) scheduleDevMatchSweep({});   // 개발요청 자동 매칭(개발완료 전환) 점검
+    const note = req.body && req.body.note ? String(req.body.note).slice(0, 300) : null;
+    await logEvent({ userId: null, action: 'create', target: 'pf_catalog_create',
+      detail: { code: r.code, by: req.pf.name, category: r.category, note } }).catch(() => {});
+    pfLog(req, `샘플 검토 신규 CTR 생성 · ${r.code} (ERP 제품 · 개발 중)`);
+    return reply.code(201).send({ ok: true, item: await getItem(r.id), warnings: r.warnings });
   });
 
   app.get('/api/pf-catalog/items/:id', G, async (req, reply) => {
