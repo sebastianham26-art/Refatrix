@@ -21,7 +21,13 @@ const cut = (v, n) => { const s = v == null ? '' : String(v).trim(); return s ? 
 
 // ── SQL 조각(meta_threads 별칭 t) — 목록 · 집계가 같은 규칙을 쓰게 한 곳에 ──
 export const AD_TOUCH_SQL = `(SELECT x.ad_id FROM meta_ad_touches x WHERE x.platform = t.platform AND x.user_id = t.user_id ORDER BY x.at, x.id LIMIT 1)`;
-export const AD_TEXT_SQL = `(SELECT a.ad_id FROM meta_ads a WHERE COALESCE(a.match_text, '') <> '' AND strpos(lower(COALESCE(t.customer_text, '')), lower(a.match_text)) > 0
+// 1112 · 2026-11-12 디렉터: 「구분 문구」는 고객 말뿐 아니라 **우리 쪽 메시지(광고 자동 응답 첫 줄 「Meta_0001」 등)**에서도 찾는다.
+//   Buen Fin 광고의 Messenger 자동 응답 첫 줄이 「Meta_0001」인데 고객 말만 보느라 「광고 외」로 빠지던 것.
+//   대화 전체(Graph 로 가져온 messages) + Messenger 웹훅으로 받은 메시지(meta_page_messages)
+export const AD_TEXT_SQL = `(SELECT a.ad_id FROM meta_ads a WHERE COALESCE(a.match_text, '') <> '' AND (
+                               strpos(lower(COALESCE(t.customer_text, '')), lower(a.match_text)) > 0
+                               OR strpos(lower(CASE WHEN jsonb_typeof(t.messages) = 'array' THEN t.messages::text ELSE '' END), lower(a.match_text)) > 0
+                               OR (t.platform = 'messenger' AND EXISTS (SELECT 1 FROM meta_page_messages pm WHERE pm.psid = t.user_id AND strpos(lower(COALESCE(pm.text, '')), lower(a.match_text)) > 0)))
                              ORDER BY length(a.match_text) DESC, a.ad_id LIMIT 1)`;
 // 1105 · 대화 메시지에 광고 ID(12로 시작하는 15~20자리 숫자 — 예: 120258634372340339)가 보이면 그 광고
 //   전화번호(10~13자리)와 겹치지 않게 15자리 이상만. 등록 안 된 광고여도 그 ID 로 나눈다(목록에 「미등록 …」).

@@ -360,7 +360,10 @@ export default async function metaLeadsRoutes(app) {
     const touches = (await query(`SELECT ad_id, count(DISTINCT platform || ':' || user_id)::int AS people, max(at) AS last_touch_at,
                                          (array_agg(headline ORDER BY at DESC) FILTER (WHERE headline IS NOT NULL))[1] AS headline
                                     FROM meta_ad_touches GROUP BY ad_id`)).rows;
-    const unregistered = touches.filter((x) => !reg.has(x.ad_id)).map((x) => ({ ...zero, ...(byAd.get(x.ad_id) || {}), ad_id: x.ad_id, people: x.people, headline: x.headline, last_touch_at: x.last_touch_at }))
+    // 1112 · 대화 글에서 찾은 광고 ID(웹훅 기록 없음)도 미등록으로 보여 준다 — 예전엔 어느 줄에도 안 나와 문의가 사라져 보였다
+    const tmap = new Map(touches.map((x) => [x.ad_id, x]));
+    const unregIds = [...new Set(touches.map((x) => x.ad_id).concat(per.map((r) => r.ad_id).filter(Boolean)))].filter((id) => !reg.has(id));
+    const unregistered = unregIds.map((id) => { const x = tmap.get(id) || {}; return { ...zero, ...(byAd.get(id) || {}), ad_id: id, people: x.people || 0, headline: x.headline || null, last_touch_at: x.last_touch_at || null }; })
       .sort((a, b) => b.n - a.n || String(b.last_touch_at).localeCompare(String(a.last_touch_at)));
     const lastTouch = (await query(`SELECT max(at) AS at, count(*)::int AS n FROM meta_ad_touches`)).rows[0];
     return { ads: ads.map((a) => ({ ...zero, ...(byAd.get(a.ad_id) || {}), ...a })), unregistered,

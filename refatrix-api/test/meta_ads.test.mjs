@@ -187,6 +187,25 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     await wait(300);
     assert.equal((await query(`SELECT count(*)::int n FROM meta_threads WHERE thread_id = 'wa:528188887777'`)).rows[0].n, 0);
   });
+
+  await t.test('B6. 1112 · 구분 문구를 우리 자동 응답(「Meta_0001」)에서도 찾음 · 대화 글의 광고 ID 는 미등록 줄로', async () => {
+    const BF = '120258746570410339'; const X = '120258634372280339';
+    const auto = (txt, cust) => [{ at: new Date().toISOString(), me: true, kind: 'auto', text: txt }, { at: new Date().toISOString(), me: false, text: cust }];
+    const T5 = (await thread('messenger', 't5', 'psid5', 'Quetzalcoatl', 'Tendrán las orquillas traseras de un altima', 10,
+      auto('Meta_0001\nHola Quetzalcoatl, tenemos piezas con 10% de descuento', 'Soy Particular y quiero comprar CTR'))).rows[0].id;
+    const T6 = (await thread('messenger', 't6', 'psid6', 'Webhook', 'precio', 9, [{ at: new Date().toISOString(), me: false, text: 'precio' }])).rows[0].id;
+    await query(`INSERT INTO meta_page_messages (psid, mid, direction, source, text, at) VALUES ('psid6','m.t6','out','staff','meta_0001\nHola', now())`);
+    const T7 = (await thread('messenger', 't7', 'psid7', 'Lalo', 'suspensión completa', 8, auto(X + '\nHola 👋 Qué gusto saludarte', 'suspensión completa'))).rows[0].id;
+    assert.equal((await call(D, 'POST', '/api/meta-leads/ads', { ad_id: BF, name: 'Buen Fin', match_text: 'Meta_0001' })).statusCode, 200);
+    const l = (await call(D, 'GET', '/api/meta-leads/list?ad=' + BF)).json().items;
+    assert.deepEqual(l.map((x) => x.id).sort(), [T5, T6].map(Number).sort(), '자동 응답 첫 줄 · 웹훅 메시지 모두');
+    assert.ok(l.every((x) => x.ad_src === 'texto'));
+    const a = (await call(D, 'GET', '/api/meta-leads/ads')).json();
+    assert.equal(a.ads.find((x) => x.ad_id === BF).messenger, 2);
+    const u = a.unregistered.find((x) => x.ad_id === X);
+    assert.ok(u, '웹훅 기록 없는 광고 ID 도 미등록 줄에'); assert.equal(u.n, 1); assert.equal(u.messenger, 1); assert.equal(u.people, 0);
+    assert.ok((await call(D, 'GET', '/api/meta-leads/list?ad=' + X)).json().items.some((x) => x.id === Number(T7)));
+  });
 });
 
 // ── C. 화면 ──
