@@ -144,7 +144,7 @@ export default async function pfCatalogRoutes(app) {
     return { ...r, limit: Math.max(1, Math.min(200, parseInt(q.limit, 10) || 50)), offset: Math.min(1000000, Math.max(0, parseInt(q.offset, 10) || 0)) };
   });
 
-  // 샘플 검토 신규 CTR 생성 — 규칙은 src/pfCatalogCreate.js 머리말. 권한 = pf-catalog 로그인 사용자 전부(확인완료와 같음).
+  // 플랫폼 신규 CTR 생성(샘플 검토 · SYD 카탈로그 행 검토) — 규칙은 src/pfCatalogCreate.js 머리말. 권한 = pf-catalog 로그인 사용자 전부(확인완료와 같음).
   //   0326 전에는 501 → 플랫폼은 「ERP 전송 대기」 로 남겨 두었다가 [↻ ERP 재전송] 때 다시 보낸다.
   app.post('/api/pf-catalog/items', G, async (req, reply) => {
     if (!(await pfCreateReady())) return reply.code(501).send({ error: 'migration_required', detail: 'ERP 마이그레이션 0326 적용 전입니다.' });
@@ -155,8 +155,8 @@ export default async function pfCatalogRoutes(app) {
     if (r.has_syd || r.has_oe) scheduleDevMatchSweep({});   // 개발요청 자동 매칭(개발완료 전환) 점검
     const note = req.body && req.body.note ? String(req.body.note).slice(0, 300) : null;
     await logEvent({ userId: null, action: 'create', target: 'pf_catalog_create',
-      detail: { code: r.code, by: req.pf.name, category: r.category, note } }).catch(() => {});
-    pfLog(req, `샘플 검토 신규 CTR 생성 · ${r.code} (ERP 제품 · 개발 중)`);
+      detail: { code: r.code, by: req.pf.name, category: r.category, source: r.source, note } }).catch(() => {});
+    pfLog(req, `${r.source_label} 신규 CTR 생성 · ${r.code} (ERP 제품 · 개발 중)`);
     return reply.code(201).send({ ok: true, item: await getItem(r.id), warnings: r.warnings });
   });
 

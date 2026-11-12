@@ -1,5 +1,8 @@
 // =====================================================================
-// Refatrix ERP · pfCatalogCreate.js — REFATRIX Platform 「샘플 검토」 신규 CTR 생성 (0326 · 2026-11-11)
+// Refatrix ERP · pfCatalogCreate.js — REFATRIX Platform 신규 CTR 생성 (0326 · 2026-11-11 · v2 2026-11-12)
+//   v2: SYD 카탈로그 · 매칭테스트 「ERP에 CTR 없음」 행 검토 자동 등록(source refatrix-rowreview) 대응
+//       · 품목은 코드 · 한글 · 스페인어 · 영어 이름 모두 받고, 모르는 값은 막지 않고 warnings 로 알린다
+//       · 출처(source)별 ERP 기록 문구 · 409 existing 에 source · syd_codes · from_platform
 //   POST /api/pf-catalog/items  (요청서: ERP 개발 요청 — 신규 CTR 제품 생성 API 2026-11-11)
 //
 //   흐름
@@ -27,6 +30,33 @@ export const CATEGORIES = {
   bush: '부싱', shk: '쇼크업소버', mnt: '마운트', idl: '아이들러 · 피트먼 암', other: '기타',
 };
 export const DEFAULT_SOURCE = 'refatrix-sample-review';
+// 출처 → ERP 기록에 남는 이름. 모르는 출처도 받는다(이름은 「플랫폼」).
+export const SOURCES = { 'refatrix-sample-review': '샘플 검토', 'refatrix-rowreview': 'SYD 카탈로그 행 검토' };
+export const sourceLabel = (s) => SOURCES[s] || '플랫폼';
+
+// 품목 별칭 — 행 검토는 품명으로 품목을 추정해 보낸다(코드가 아니라 이름일 수 있음). 공백 · 하이픈 · 밑줄 · 대소문자 무시.
+const CAT_ALIAS = {
+  ball: ['ball', 'balljoint', '볼조인트', '볼', 'rotula', 'rótula', 'rotulas'],
+  tre: ['tre', 'tierod', 'tierodend', 'innertierod', '타이로드', '타이로드엔드', '타이로드엔드이너', '이너', 'terminal', 'terminaldedireccion', 'terminaldedirección', 'barraaxial', 'axial', 'bieleta'],
+  ctl: ['ctl', 'controlarm', 'arm', '컨트롤암', 'horquilla', 'brazo', 'brazodecontrol'],
+  stb: ['stb', 'stabilizerlink', 'stablink', 'sway', 'link', '스태빌라이저링크', '스태빌라이저', '링크', 'tornilloestabilizador', 'estabilizador', 'linkestabilizador'],
+  bush: ['bush', 'bushing', '부싱', 'buje', 'bujes'],
+  shk: ['shk', 'shock', 'shockabsorber', 'strut', '쇼크업소버', '쇼크', 'amortiguador', 'amortiguadores'],
+  mnt: ['mnt', 'mount', 'strutmount', '마운트', 'soporte', 'base', 'basedeamortiguador'],
+  idl: ['idl', 'idler', 'idlerarm', 'pitman', 'pitmanarm', '아이들러', '피트먼', '아이들러피트먼암', 'brazoloco', 'brazopitman'],
+  other: ['other', 'etc', '기타', 'otro', 'otros'],
+};
+const catKey = (x) => String(x).toLowerCase().normalize('NFC').replace(/[\s·.\-_/]+/g, '');
+const CAT_MAP = new Map();
+for (const [k, list] of Object.entries(CAT_ALIAS)) { CAT_MAP.set(k, k); for (const a of list) CAT_MAP.set(catKey(a), k); }
+for (const [k, label] of Object.entries(CATEGORIES)) CAT_MAP.set(catKey(label), k);
+/** 품목 값 → 코드. 빈 값 null · 모르는 값 undefined. */
+export function canonCategory(v) {
+  const t = String(v == null ? '' : v).trim();
+  if (!t) return null;
+  const k = CAT_MAP.get(catKey(t));
+  return k || undefined;
+}
 // 코드: 영문 대문자 · 숫자 · 하이픈, 3~30자. PRO(사내) · K0001…(VIO 키트)는 카탈로그 점검 대상이 아니라 막는다.
 const CODE_RE = /^[A-Z0-9][A-Z0-9-]{2,29}$/;
 
@@ -64,18 +94,23 @@ export function parseCreate(body) {
     if (p === undefined) return { error: 'bad_pos', field: 'pos', detail: `장착위치를 읽을 수 없습니다: ${posIn.trim()}` };
     values.pos = p;
   } else values.pos = null;
-  const cat = String(b.category == null ? '' : b.category).trim().toLowerCase();
-  if (cat && !CATEGORIES[cat]) return { error: 'bad_category', field: 'category', detail: `category 는 ${Object.keys(CATEGORIES).join(' · ')} 중 하나입니다.` };
-  const source = String(b.source == null ? '' : b.source).trim().slice(0, 60) || DEFAULT_SOURCE;
+  // 품목 — 모르는 값이어도 제품은 만든다(자동 재전송이 400 으로 멈추지 않게). 받은 원문은 warnings · 생성 기록에 남긴다.
+  const catIn = String(b.category == null ? '' : b.category).trim().slice(0, 60);
+  const cat = canonCategory(catIn);
+  const warnings = [];
+  if (cat === undefined) warnings.push({ type: 'category_unknown', value: catIn, detail: `품목을 알 수 없어 비워 두었습니다: ${catIn}` });
+  const source = String(b.source == null ? '' : b.source).trim().toLowerCase().slice(0, 60) || DEFAULT_SOURCE;
   const note = String(b.note == null ? '' : b.note).replace(/\r\n?/g, '\n').trim().slice(0, 1000) || null;
-  return { values, category: cat || null, source, note };
+  return { values, category: cat || null, category_in: catIn || null, source, note, warnings };
 }
 
 /** 그 코드를 쓰는 제품(삭제 포함 · 대소문자 무시). */
 async function findCode(exec, code) {
   return (await exec(
     `SELECT p.id, p.code, p.deleted_at,
-            (SELECT max(cr.created_at) FROM pf_catalog_creates cr WHERE cr.product_id = p.id) AS created_via
+            (SELECT max(cr.created_at) FROM pf_catalog_creates cr WHERE cr.product_id = p.id) AS created_via,
+            (SELECT cr.source FROM pf_catalog_creates cr WHERE cr.product_id = p.id ORDER BY cr.created_at DESC LIMIT 1) AS created_source,
+            ARRAY(SELECT s.syd_code FROM product_syd_codes s WHERE s.product_id = p.id ORDER BY s.syd_code) AS syd_codes
        FROM products p WHERE upper(btrim(p.code)) = $1 ORDER BY p.deleted_at NULLS FIRST LIMIT 1`, [code])).rows[0] || null;
 }
 
@@ -85,7 +120,9 @@ function existsBody(row) {
     error: 'CODE_EXISTS',
     detail: row.deleted_at ? '삭제된 ERP 제품이 이 코드를 쓰고 있습니다. 다른 코드를 쓰세요.' : '이미 있는 CTR 코드입니다. 매칭 컨펌으로 연결하세요.',
     existing: { id: Number(row.id), code: row.code, deleted: !!row.deleted_at,
-      from_sample_review: !!row.created_via, created_at: row.created_via || null },
+      // from_sample_review 는 v1 이름(플랫폼 생성이면 출처와 관계없이 true) — v2 부터 from_platform · source 를 같이 준다
+      from_sample_review: !!row.created_via, from_platform: !!row.created_via, source: row.created_source || null,
+      created_at: row.created_via || null, syd_codes: (row.syd_codes || []).map(String) },
   };
 }
 
@@ -109,7 +146,8 @@ export async function createItem(body, { pf }) {
       const dup = await findCode(q, v.code);
       if (dup) return { status: 409, body: existsBody(dup) };
 
-      const reason = '개발 중 — REFATRIX Platform 샘플 검토 신규 생성';
+      const srcLabel = sourceLabel(p.source);
+      const reason = `개발 중 — REFATRIX Platform ${srcLabel} 신규 생성`;
       const ins = (await q(
         `INSERT INTO products (code, name, scode, app, oe, material, mount_pos,
                                is_active, inactive_reason, status_changed_at, factory_status, factory_info_updated_at,
@@ -143,7 +181,8 @@ export async function createItem(body, { pf }) {
       const applied = {};
       for (const f of ['name', 'scode', 'app', 'oe', 'material', 'pos']) if (v[f] != null) applied[f] = { from: null, to: v[f] };
       const catTxt = p.category ? ` · ${CATEGORIES[p.category]}` : '';
-      const noteV = (`[신규 CTR 생성${catTxt}] ` + (p.note || '')).trim().slice(0, 1000);
+      const srcTxt = p.source === DEFAULT_SOURCE ? '' : ` · ${srcLabel}`;   // 샘플 검토는 v1 문구 그대로
+      const noteV = (`[신규 CTR 생성${catTxt}${srcTxt}] ` + (p.note || '')).trim().slice(0, 1000);
       await q(
         `INSERT INTO pf_catalog_confirms (product_id, code, pf_user, pf_user_name, applied, conflicts, note, crm_queued, source)
          VALUES ($1,$2,$3,$4,$5::jsonb,NULL,$6,true,'platform')`,
@@ -151,10 +190,10 @@ export async function createItem(body, { pf }) {
       await q(
         `INSERT INTO pf_catalog_creates (product_id, code, category, source, pf_user, pf_user_name, payload, note)
          VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
-        [id, v.code, p.category, p.source, pf.key, pf.name, JSON.stringify(v), p.note]);
+        [id, v.code, p.category, p.source, pf.key, pf.name, JSON.stringify(p.category_in && !p.category ? { ...v, category_in: p.category_in } : v), p.note]);
 
       // 참고 경고(막지 않음) — 이 SYD 가 이미 다른 CTR 에 연결돼 있으면 알려 준다
-      const warnings = [];
+      const warnings = [...p.warnings];
       if (syd.length) {
         const other = (await q(
           `SELECT s.syd_code, array_agg(DISTINCT p.code ORDER BY p.code) AS codes
@@ -163,7 +202,7 @@ export async function createItem(body, { pf }) {
             GROUP BY s.syd_code ORDER BY s.syd_code`, [syd, id])).rows;
         for (const o of other) warnings.push({ type: 'syd_linked_elsewhere', syd: o.syd_code, codes: o.codes });
       }
-      return { ok: true, id, code: v.code, category: p.category, warnings, has_oe: oeItems.length > 0, has_syd: syd.length > 0 };
+      return { ok: true, id, code: v.code, category: p.category, source: p.source, source_label: srcLabel, warnings, has_oe: oeItems.length > 0, has_syd: syd.length > 0 };
     });
   } catch (e) {
     // 잠금을 피한 경합(예: ERP 화면 직접 추가와 동시) — UNIQUE 위반은 409 로

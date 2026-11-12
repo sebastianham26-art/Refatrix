@@ -1,5 +1,6 @@
 // =====================================================================
-// pf_catalog_create.test.mjs — 2026-11-11 · 샘플 검토 신규 CTR 생성 POST /api/pf-catalog/items (0326)
+// pf_catalog_create.test.mjs — 2026-11-11 · 신규 CTR 생성 POST /api/pf-catalog/items (0326)
+//   v2 2026-11-12: 행 검토(source refatrix-rowreview) · 품목 별칭 · 모르는 품목 = 경고 · 409 existing.source
 //   A. 순수 — 코드 대문자 · 형식 · 예약 코드 · 제품명 필수 · category · pos 표기
 //   B. 실제 서버 + PostgreSQL(TEST_PG_URL):
 //      201 + item(status ok · confirmed_by_name · confirmed_at) · 목록 GET /items 에 바로 · 단건 이력 create ·
@@ -36,7 +37,17 @@ test('A. 본문 검사 · 정규화', () => {
   assert.equal(err({ code: 'K0001', name: 'X' }), 'code_reserved');
   assert.equal(err({ code: 'KB0001', name: 'X' }), undefined, 'K 로 시작해도 키트 모양이 아니면 된다');
   assert.equal(err({ code: 'CB0001', name: '  ' }), 'name_required');
-  assert.equal(err({ code: 'CB0001', name: 'X', category: 'wheel' }), 'bad_category');
+  // v2 — 모르는 품목은 막지 않고 경고
+  const unk = K.parseCreate({ code: 'CB0001', name: 'X', category: 'wheel' });
+  assert.equal(unk.error, undefined); assert.equal(unk.category, null); assert.equal(unk.category_in, 'wheel');
+  assert.equal(unk.warnings[0].type, 'category_unknown');
+  for (const [v, k] of [['Rótula', 'ball'], ['볼조인트', 'ball'], ['Terminal de dirección', 'tre'], ['타이로드 엔드 · 이너', 'tre'], ['Horquilla', 'ctl'],
+    ['Tornillo estabilizador', 'stb'], ['BUJE', 'bush'], ['Amortiguador', 'shk'], ['Soporte', 'mnt'], ['Brazo loco', 'idl'], ['Brazo Pitman', 'idl'], ['기타', 'other'], ['tre', 'tre']]) {
+    assert.equal(K.canonCategory(v), k, v);
+  }
+  assert.deepEqual(K.parseCreate({ code: 'CB0001', name: 'X', category: 'Rotula' }).warnings, []);
+  assert.equal(K.parseCreate({ code: 'CB0001', name: 'X', source: ' Refatrix-RowReview ' }).source, 'refatrix-rowreview');
+  assert.equal(K.sourceLabel('refatrix-rowreview'), 'SYD 카탈로그 행 검토'); assert.equal(K.sourceLabel('x'), '플랫폼');
   assert.equal(err({ code: 'CB0001', name: 'X', pos: 'arriba' }), 'bad_pos');
   assert.equal(K.parseCreate({ code: 'CB0001', name: 'X', category: '', pos: '' }).category, null, '빈 category · pos 허용');
 });
@@ -138,12 +149,39 @@ test('B. 실제 서버 + PostgreSQL — 신규 CTR 생성', { skip: !PG && 'TEST
   assert.equal((await one(`SELECT name FROM products WHERE code='PFN900'`)).name, 'ROTULA', '기존 제품 그대로');
 
   // ── 400 형식 오류 — 메시지(detail) 포함 · 아무것도 안 만든다 ──
-  for (const [b, e] of [[{ ...body, code: 'PFN0813', name: '' }, 'name_required'], [{ ...body, code: 'PFN0813', category: 'wheel' }, 'bad_category'],
+  for (const [b, e] of [[{ ...body, code: 'PFN0813', name: '' }, 'name_required'],
     [{ ...body, code: 'PFN0813', pos: 'arriba' }, 'bad_pos'], [{ ...body, code: 'PFN_13' }, 'bad_code'], [{ ...body, code: 'PRO0813' }, 'code_reserved']]) {
     r = await call(H, 'POST', url, b);
     assert.equal(r.statusCode, 400, `${e}: ${r.body}`); assert.equal(r.json().error, e); assert.ok(r.json().detail);
   }
   assert.equal((await one(`SELECT count(*)::int AS n FROM products WHERE code LIKE 'PFN0813%' OR code LIKE 'PFN_13'`)).n, 0);
+
+  // ── v2 · 행 검토(SYD 카탈로그 · 매칭테스트 「ERP에 CTR 없음」) ──
+  const rb = { code: 'PFN0814', name: 'TERMINAL DIRECCION EXT', scode: '1006200', app: 'NISSAN Versa 2012-2019', oe: '48520-3AN0A',
+    category: 'Terminal de dirección', note: 'SYD 1006200 행 검토 · Kim', source: 'refatrix-rowreview' };
+  r = await call(H, 'POST', url, rb);
+  assert.equal(r.statusCode, 201, r.body);
+  assert.ok(r.json().item.confirms[0].note.startsWith('[신규 CTR 생성 · 타이로드 엔드 · 이너 · SYD 카탈로그 행 검토]'), r.json().item.confirms[0].note);
+  assert.deepEqual(r.json().warnings, []);
+  const rrow = await one(`SELECT p.inactive_reason, p.is_active, p.factory_status, c.category, c.source FROM products p JOIN pf_catalog_creates c ON c.product_id=p.id WHERE p.code='PFN0814'`);
+  assert.equal(rrow.category, 'tre'); assert.equal(rrow.source, 'refatrix-rowreview');
+  assert.equal(rrow.inactive_reason, '개발 중 — REFATRIX Platform SYD 카탈로그 행 검토 신규 생성');
+  assert.equal(rrow.is_active, false); assert.equal(rrow.factory_status, 'development');
+  assert.ok(plog.some((x) => x.includes('SYD 카탈로그 행 검토 신규 CTR 생성 · PFN0814')), '비트코라 출처');
+  // 응답이 끊겨 다시 보낸 경우 → 409 · 출처와 SYD 로 「이미 만든 건」 판단 가능
+  r = await call(H, 'POST', url, rb);
+  assert.equal(r.statusCode, 409);
+  const exi = r.json().existing;
+  assert.equal(exi.source, 'refatrix-rowreview'); assert.equal(exi.from_platform, true); assert.equal(exi.from_sample_review, true);
+  assert.deepEqual(exi.syd_codes, ['1006200']); assert.ok(exi.created_at);
+  r = await call(H, 'POST', url, { ...body, code: 'pfn900' });
+  assert.equal(r.json().existing.source, null); assert.deepEqual(r.json().existing.syd_codes, ['1006035']);
+  // 모르는 품목 → 그래도 만든다 + 경고 · 원문은 생성 기록에
+  r = await call(H, 'POST', url, { ...rb, code: 'PFN0815', scode: '', category: 'rueda' });
+  assert.equal(r.statusCode, 201, r.body);
+  assert.deepEqual(r.json().warnings.map((w) => w.type), ['category_unknown']);
+  const ucr = await one(`SELECT c.category, c.payload FROM pf_catalog_creates c JOIN products p ON p.id=c.product_id WHERE p.code='PFN0815'`);
+  assert.equal(ucr.category, null); assert.equal(ucr.payload.category_in, 'rueda');
 
   // ── 최소 본문(code · name) · 동시 2건 → 1건만 ──
   const [a1, a2] = await Promise.all([call(H, 'POST', url, { code: 'PFN0900', name: 'BUJE' }), call(H, 'POST', url, { code: 'pfn0900', name: 'BUJE' })]);
