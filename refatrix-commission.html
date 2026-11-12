@@ -7,7 +7,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 커미션 · build b1106rcp2</title>
+<title>Refatrix ERP · 커미션 · build b1112pay</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
@@ -163,7 +163,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1106rcp2</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub" data-es="Comisión y bono — avance contra la meta · esperada · confirmada · pagada">커미션 · 성과급 — 목표 대비 진척 · 기대·확정·지급 · <b>build b1112pay</b></div></div><a href="refatrix-portal.html" class="portalBtn" data-es="← Portal">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h" data-es="Entrar">로그인</div>
@@ -295,8 +295,8 @@
     <!-- ② 재무 지급(반제) 패널 — 디렉터·재무담당 -->
     <div class="card payCard hidden" id="payPanel">
       <div class="card-h">커미션 지급(반제) · <span class="hint" style="font-weight:400">재무담당·디렉터 · 송금 후 증빙 첨부 시 지급 확정</span></div>
-      <div class="aprow" id="payMonthRow" style="margin:0 0 8px"><div><label>지급 월(반제 완료월)</label><select id="payMonth" style="width:190px"><option value="">선택</option></select></div></div>
-      <div id="payBody"><div class="hint">위에서 영업사원을 선택하면 그 사원의 확정·미지급 커미션과 지급 입력칸이 나타납니다.</div></div>
+      <div class="aprow" id="payMonthRow" style="margin:0 0 8px"><div><label>지급 월(반제 완료월)</label><select id="payMonth" style="width:190px"><option value="">선택</option></select></div><div><label>수령인(영업사원) — 1명씩 지급·증빙</label><select id="payAgent" style="width:230px"><option value="">선택</option></select></div></div>
+      <div id="payBody"><div class="hint">지급 월과 수령인(영업사원)을 고르면 그 사람의 확정·미지급 커미션과 지급·증빙 입력칸이 나타납니다. 증빙은 <b>사람별로</b> 올리며, 각 영업사원은 본인 증빙만 볼 수 있습니다.</div></div>
       <!-- 0287 커미션 지급승인 전자결재 → 현금 지급 → 서명 수령증 업로드로 마감 -->
       <div class="apbox hidden" id="apBox"></div>
       <div class="hint hidden" id="legacyHint" style="margin-top:12px;font-weight:700;color:var(--brand)">송금으로 지급(결재 없이 · 기존 방식)</div>
@@ -1160,9 +1160,16 @@
   }
   // 사원별 지급승인 결재문서 상태 칩 → 전자결재 문서로 바로 이동 (2026-11-02h)
   const AP_PHASE_KO={draft:['임시저장','wait'],progress:['결재 중','conf2'],approved:['승인 · 수령증 대기','hand'],settled:['지급·마감','paid'],rejected:['반려','late'],deleted:['삭제됨','prov']};
+  // 2026-11-12 이 사원만 지급·증빙 업로드 (지급 패널을 이 사원·이 달로 연다)
+  function payToBtn(a, ym){
+    const ap=a.approval||{};
+    if(!a.agent_id||!(a.unpaid>0.001||ap.phase==='approved')) return '';
+    const pp=$('payPanel'); if(!pp||pp.classList.contains('hidden')) return '';
+    return ' <button class="btn gold sm" data-payto="'+Number(a.agent_id)+'" data-payym="'+esc(ym)+'" title="'+esc(a.agent_name||'')+' · '+esc(ym)+' 지급·증빙 업로드">💵 지급·증빙</button>';
+  }
   function apDocCell(a, ym){
-    const ap=a.approval; if(!ap) return '';
-    if(ap.phase==='none') return a.unpaid>0.001 ? '<span class="badge late" title="이 사원·이 달의 지급승인 전자결재 문서가 없습니다">결재문서 없음</span>' : '';
+    const ap=a.approval; if(!ap) return payToBtn(a, ym);
+    if(ap.phase==='none') return (a.unpaid>0.001 ? '<span class="badge late" title="이 사원·이 달의 지급승인 전자결재 문서가 없습니다">결재문서 없음</span>' : '')+payToBtn(a, ym);
     const [k,c]=AP_PHASE_KO[ap.phase]||[ap.phase,''];
     const lbl='📝 '+(ap.doc_no||'')+' '+k;
     const href=ap.document_id?('refatrix-approval.html#doc='+ap.document_id):'';
@@ -1170,7 +1177,7 @@
     // 2026-11-06g 사원 줄에서 바로 그 사원의 수령증 인쇄 (문서가 생성된 뒤 · 삭제·반려 제외)
     const rcp=['draft','progress','approved','settled'].includes(ap.phase)&&a.agent_id
       ?' <button class="btn ghost sm" data-rcp="'+Number(a.agent_id)+'" data-rcp-ym="'+esc(ym)+'" title="'+esc(a.agent_name)+' · '+esc(ym)+' 수령증 인쇄">🖨 수령증</button>':'';
-    return chip+rcp;
+    return chip+rcp+payToBtn(a, ym);
   }
   // 사원·월을 지정해 수령증 인쇄 — 팝업 차단을 피하려고 클릭 즉시 창을 연 뒤 내용을 채운다
   async function printReceiptFor(aid, ym){
@@ -1212,7 +1219,37 @@
     const payable=items.filter(m=>(m.status==='confirmed'||m.status==='handed')&&m.unpaid>0);
     sel.innerHTML='<option value="">선택</option>'+payable.map(m=>'<option value="'+m.settle_ym+'">'+m.settle_ym+' (미지급 '+fmtm(m.unpaid)+')</option>').join('');
     sel.value=cur;
+    fillPayAgents();
   }
+  // 2026-11-12 지급(반제) 패널 안에서 수령인을 1명씩 고른다 — 선택한 달의 미지급 사원 우선, 없으면 전체 대상자
+  function fillPayAgents(){
+    const pa=$('payAgent'), as=$('agentSel'); if(!pa||!as) return;
+    const ym=$('payMonth')?$('payMonth').value:'';
+    const m=ym&&(window.__batches||[]).find(b=>b.settle_ym===ym);
+    let opts;
+    if(m&&(m.by_agent||[]).length){
+      opts=m.by_agent.filter(a=>a.agent_id).map(a=>({v:String(a.agent_id), t:(a.agent_name||('#'+a.agent_id))+(a.unpaid>0.001?(' · 미지급 '+fmtm(a.unpaid)):' · 지급완료')}));
+    } else {
+      opts=[...as.options].filter(o=>o.value).map(o=>({v:o.value, t:o.textContent.split(' (')[0]}));
+    }
+    const cur=as.value||'';
+    if(cur&&!opts.some(o=>o.v===cur)){ const o=[...as.options].find(x=>x.value===cur); opts.push({v:cur,t:(o?o.textContent.split(' (')[0]:('#'+cur))+(ym?' · 이 달 대상 아님':'')}); }
+    pa.innerHTML='<option value="">선택</option>'+opts.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.t)+'</option>').join('');
+    pa.value=cur;
+  }
+  // 사원·월을 지정해 지급(반제) 패널을 연다 (월별 지급 배치 사원 줄 · 패널 수령인 선택)
+  function openPayFor(aid, ym){
+    const sel=$('agentSel'), ms=$('payMonth'); if(!sel||!ms) return;
+    aid=String(aid||'');
+    if(ym){ if(![...ms.options].some(o=>o.value===ym)) ms.insertAdjacentHTML('beforeend','<option value="'+esc(ym)+'">'+esc(ym)+'</option>'); ms.value=ym; }
+    if(aid&&![...sel.options].some(o=>o.value===aid)){ const m=(window.__batches||[]).find(b=>b.settle_ym===ym); const a=m&&(m.by_agent||[]).find(x=>String(x.agent_id)===aid); sel.insertAdjacentHTML('beforeend','<option value="'+esc(aid)+'">'+esc(a&&a.agent_name||('#'+aid))+'</option>'); }
+    sel.value=aid; fillPayAgents();
+    sel.dispatchEvent(new Event('change',{bubbles:true}));   // 기존 영업사원 변경 흐름(진척·내역·지급 패널·전표) 그대로
+  }
+  document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-payto]'); if(!b) return; e.preventDefault();
+    openPayFor(b.dataset.payto, b.dataset.payym);
+    setTimeout(()=>{ const pp=$('payPanel'); if(pp&&pp.scrollIntoView) pp.scrollIntoView({behavior:'smooth',block:'start'}); }, 300); });
+  document.addEventListener('change',e=>{ if(e.target&&e.target.id==='payAgent') openPayFor(e.target.value, $('payMonth').value); });
   async function confirmBatch(ym){
     if(!confirm(ym+' 월을 지급 대상으로 확정합니다.\n확정 후 제외·조정·취소가 불가하며, 지급예정일은 익월 15일입니다.\n확정하면 사원별 지급승인 전자결재 문서(임시저장)가 자동으로 만들어집니다. 진행할까요?')) return;
     try{
@@ -1326,7 +1363,7 @@
     if(!canPay()) return;
     ym = ym || ($('payMonth')?$('payMonth').value:'');
     apHide();
-    if(!aid){ $('payBody').innerHTML='<div class="hint">위에서 영업사원을 선택하고, 확정된 지급 월을 고르면 그 달의 미지급 커미션과 지급 절차가 나타납니다.</div>'; $('payForm').classList.add('hidden'); return; }
+    fillPayAgents(); if(!aid){ $('payBody').innerHTML='<div class="hint">수령인(영업사원)을 선택하세요. 지급·증빙은 <b>한 사람씩</b> 등록합니다 — 월별 지급 배치의 사원 줄 「💵 지급·증빙」으로 바로 열 수도 있습니다.</div>'; $('payForm').classList.add('hidden'); return; }
     if(!ym){ $('payBody').innerHTML='<div class="hint">지급할 <b>확정 월(반제 완료월)</b>을 선택하세요. 디렉터가 확정한 달만 지급할 수 있습니다.</div>'; $('payForm').classList.add('hidden'); $('payAmt').value=''; return; }
     $('payBody').innerHTML='<div class="hint">불러오는 중…</div>';
     try{
