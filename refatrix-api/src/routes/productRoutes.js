@@ -17,6 +17,7 @@ import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품�
 import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구성품
 import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
 import { searchMaster, normBrand as xmBrand, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 경쟁사 코드(크로스레퍼런스 마스터)로 제품찾기
+import { dimsReady, tableToRows, previewDims, applyDims, exportDims } from '../productDims.js';   // 0327 · 무게 · 박스 사이즈
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -1409,6 +1410,37 @@ export default async function productRoutes(app) {
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_material_bulk',
       detail: { material, matched: updated.length, unmatched: unmatched.length } });
     return { ok: true, material, requested: codes.length, matched: updated.length, unmatched };
+  });
+
+  // ── 0327 · 무게 · 개별 박스 사이즈 (견적 건별 대략 총무게 · 사이즈 계산용) ──────────
+  //   GET  /api/products/dims          현재값 전체(다운로드용) + 등록 현황
+  //   POST /api/products/dims/preview  { table: 2차원 배열 } → 바뀔 칸 · 모르는 코드 · 오류
+  //   POST /api/products/dims/apply    같은 본문 → 한 트랜잭션 반영(디렉터)
+  //   표 해석은 서버 productDims.tableToRows 한 곳(화면은 엑셀 첫 시트를 배열로 보내기만 한다).
+  app.get('/api/products/dims', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
+    if (!(await dimsReady())) return reply.code(501).send({ error: 'migration_0327_required' });
+    return exportDims(query);
+  });
+  const dimsTable = (b) => (Array.isArray(b && b.table) ? b.table.slice(0, 30000).map((r) => (Array.isArray(r) ? r.slice(0, 40) : [])) : null);
+  app.post('/api/products/dims/preview', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    if (!(await dimsReady())) return reply.code(501).send({ error: 'migration_0327_required' });
+    const table = dimsTable(req.body);
+    if (!table) return reply.code(400).send({ error: 'no_table' });
+    const parsed = tableToRows(table);
+    const pv = await previewDims(query, parsed.rows);
+    return { ok: true, headerless: parsed.headerless, columns: parsed.columns, rows: parsed.rows.length, dup: parsed.dup,
+      errors: parsed.errors, items: pv.items, unknown: pv.unknown, same: pv.same };
+  });
+  app.post('/api/products/dims/apply', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    if (!(await dimsReady())) return reply.code(501).send({ error: 'migration_0327_required' });
+    const table = dimsTable(req.body);
+    if (!table) return reply.code(400).send({ error: 'no_table' });
+    const parsed = tableToRows(table);
+    const userId = req.ctx.perm.userId;
+    const res = await withTx((c) => applyDims(c.query.bind(c), parsed.rows, { userId, source: 'excel' }));
+    await logEvent({ userId, action: 'update', target: 'product_dims_upload',
+      detail: { batch_id: res.batch_id, products: res.products, fields: res.fields, unknown: res.unknown.length, errors: parsed.errors.length } });
+    return { ok: true, ...res, errors: parsed.errors };
   });
 
   // SyD(경쟁사) 코드로 CTR 제품 역검색 (적용차종 포함)

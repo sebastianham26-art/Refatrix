@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1111xr</title>
+<title>Refatrix ERP · 제품 조회 · ps-1118dm</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -394,6 +394,20 @@
       </div>
       <div class="msg" id="bmMsg"></div>
     </div>
+    <!-- 0327 · 무게 · 개별 박스 사이즈 (견적 건별 대략 총무게 · 사이즈) -->
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px" id="dmBlock">
+      <div style="font-weight:700">📦 무게 · 개별 박스 사이즈 업로드</div>
+      <div class="hint" style="margin-top:4px">제품 1개(개별 박스 포함)의 <b>무게(kg)</b>와 <b>박스 가로 · 세로 · 높이(cm)</b>를 올리면, 견적 목록 · 견적 상세에 견적 건별 <b>대략 총무게와 총사이즈</b>가 표시됩니다. 열: <b>Clave CTR · Peso (kg) · Largo (cm) · Ancho (cm) · Alto (cm)</b> (가로=Largo · 세로=Ancho · 높이=Alto). <b>빈 칸 = 그대로</b>, <code>-</code> = 지우기, 같은 코드 여러 줄 = 마지막 줄. 그램(g)·mm 로 적었으면 머리글에 <code>(g)</code> · <code>(mm)</code> 를 붙이면 바꿔 읽습니다. <b>다른 제품 정보 · 재고 · 가격은 바뀌지 않습니다.</b></div>
+      <div class="hint" id="dmStat" style="margin-top:6px"></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn ghost sm" id="dmTpl" type="button" title="헤더만 있는 빈 양식 + 작성방법 시트">📄 업로드 양식 받기</button>
+        <button class="btn ghost sm" id="dmExport" type="button" title="전체 제품의 지금 무게 · 사이즈를 엑셀로 받습니다. 고쳐서 그대로 다시 올려도 됩니다.">⬇ 현재 무게 · 사이즈 다운로드</button>
+        <label class="btn ghost sm posfile">📂 엑셀 올리기 (.xlsx · .csv)<input type="file" id="dmFile" accept=".xlsx,.xls,.csv"></label>
+        <span class="hint" id="dmFileName" style="margin:0"></span>
+      </div>
+      <div class="msg" id="dmMsg"></div>
+      <div id="dmPrev" style="margin-top:8px"></div>
+    </div>
     <!-- 0325 · 멕시코 경쟁사 크로스레퍼런스 마스터 (SYD 기준) -->
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px" id="xmBlock">
       <div style="font-weight:700">🌎 멕시코 경쟁사 크로스레퍼런스 마스터 업로드 (SYD · CTR · BAW · GROB · VAZLO · KYB · MOOG)</div>
@@ -581,6 +595,7 @@
     $('searchCard').classList.toggle('hidden',!isFind);
     $('vehCard').classList.toggle('hidden',!isFind);
     $('upCard').classList.toggle('hidden', !isUp);
+    if(isUp) dmLoadStat();   // 0327 · 무게 · 사이즈 등록 현황
     if($('histCard')) $('histCard').classList.toggle('hidden', !isHist);
     if($('pfxCard')) $('pfxCard').classList.toggle('hidden', !(isHist && isDir));
     if($('pfbCard')) $('pfbCard').classList.toggle('hidden', !(isHist && isDir));
@@ -1894,6 +1909,129 @@
     finally{ $('bmApply').disabled=false; $('bmApply').textContent='일괄 적용'; }
   }
 
+  // ===== 0327 · 무게 · 개별 박스 사이즈 =====
+  //   엑셀 첫 시트를 2차원 배열로 서버에 보내면 서버(productDims.tableToRows)가 머리글을 해석한다.
+  const DM_HEAD=['Clave CTR','Peso (kg)','Largo (cm)','Ancho (cm)','Alto (cm)'];
+  const DM_LBL={weight_kg:'무게(kg)',box_l_cm:'가로(cm)',box_w_cm:'세로(cm)',box_h_cm:'높이(cm)'};
+  let dmTable=null, dmName='';
+  function dmMsg(cls,txt){ const m=$('dmMsg'); if(!m) return; m.className='msg'+(cls?(' '+cls):''); m.style.display=txt?'block':'none'; m.textContent=txt||''; }
+  function dmNum(v){ return v==null?'—':String(v); }
+  function dmStyleHead(ws,n){ for(let c=0;c<n;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true}}; } }
+  async function dmLoadStat(){
+    const el=$('dmStat'); if(!el||!session) return;
+    try{
+      const res=await fetch(session.api+'/api/products/dims',{headers:auth()}); const d=await res.json();
+      if(res.status===501){ el.innerHTML='<span style="color:#9a6512">⚠ 서버에 0327 마이그레이션이 아직 없습니다(npm run migrate).</span>'; return null; }
+      if(!res.ok||d.error){ el.textContent=''; return null; }
+      const s=d.stat||{}; el.innerHTML='등록 현황: 전체 <b>'+(s.total||0)+'</b>개 중 무게 <b>'+(s.weight||0)+'</b> · 사이즈 <b>'+(s.dims||0)+'</b> · 둘 다 <b>'+(s.both||0)+'</b>';
+      return d;
+    }catch(e){ return null; }
+  }
+  function dmDownloadTemplate(){
+    const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.aoa_to_sheet([DM_HEAD]); ws['!cols']=[{wch:14},{wch:11},{wch:11},{wch:11},{wch:11}]; dmStyleHead(ws,5);
+    XLSX.utils.book_append_sheet(wb,ws,'Peso y medidas');
+    const g=[
+      ['무게 · 개별 박스 사이즈 업로드 양식 — 작성 방법'],[],
+      ['① 첫 시트 「Peso y medidas」의 첫 줄(머리글)은 그대로 두고 둘째 줄부터 제품을 한 줄씩 적으세요.'],
+      ['② 무게 = 제품 1개를 개별 박스에 넣은 상태의 무게(kg). 사이즈 = 그 개별 박스의 가로(Largo) · 세로(Ancho) · 높이(Alto) cm.'],
+      ['③ 빈 칸 = 지금 값 그대로. 「-」 = 값 지우기. 무게만 · 사이즈만 올려도 됩니다(필요 없는 열은 지워도 됨).'],
+      ['④ 소수점은 1.5 · 1,5 둘 다 됩니다. 그램으로 적었으면 머리글을 「Peso (g)」, mm 면 「Largo (mm)」 처럼 바꾸세요.'],
+      ['⑤ 사이즈를 한 칸에 「30x20x10」 으로 적으려면 머리글을 「Medidas (cm)」 로 하세요.'],
+      ['⑥ 같은 코드가 여러 줄이면 마지막 줄이 반영됩니다. 등록되지 않은 코드는 미리보기에 따로 표시되고 반영되지 않습니다.'],
+      ['⑦ 올리면 바로 저장되지 않습니다 — 미리보기에서 바뀌는 칸을 확인하고 「반영하기」를 눌러야 저장됩니다.'],
+      ['⑧ 지금 값을 고칠 때는 「⬇ 현재 무게 · 사이즈 다운로드」 파일을 고쳐 그대로 올려도 됩니다(Producto 열은 무시).'],
+      ['⑨ 이 시트는 업로드 때 읽지 않습니다(첫 시트만 읽음).'],[],
+      ['견적 목록의 대략 총사이즈 계산'],
+      ['· 순부피 = Σ 수량 × 가로 × 세로 × 높이 → 채움률 85% 로 나눈 부피를 정육면체에 가깝게(가장 큰 박스보다 작지 않게) 가로×세로×높이로 표시'],
+      ['· 무게 · 사이즈 자료가 없는 제품 줄은 계산에서 빠지고 「자료 없음 n줄」로 표시됩니다'],[],
+      ['열 이름','필수/선택','설명','예시'],
+      ['Clave CTR','필수','제품코드(CTR)','CB0458'],
+      ['Peso (kg)','선택','제품 1개 무게 kg(개별 박스 포함)','0.85'],
+      ['Largo (cm)','선택','개별 박스 가로 cm','32'],
+      ['Ancho (cm)','선택','개별 박스 세로 cm','12'],
+      ['Alto (cm)','선택','개별 박스 높이 cm','9'],
+    ];
+    const gs=XLSX.utils.aoa_to_sheet(g); gs['!cols']=[{wch:16},{wch:10},{wch:80},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,gs,'작성방법');
+    XLSX.writeFile(wb,'Refatrix_Peso_Medidas_Plantilla.xlsx');
+    dmMsg('ok','양식을 내려받았습니다.');
+  }
+  async function dmExport(){
+    const btn=$('dmExport'); btn.disabled=true; const old=btn.textContent; btn.textContent='만드는 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/dims',{headers:auth()}); const d=await res.json();
+      if(res.status===501){ dmMsg('err','서버에 0327 마이그레이션이 아직 없습니다(npm run migrate).'); return; }
+      if(!res.ok||d.error){ dmMsg('err','실패: '+(d.error||res.status)); return; }
+      const rows=[DM_HEAD.concat(['Producto','Activo','Actualizado'])];
+      (d.items||[]).forEach(p=>rows.push([p.code,p.weight_kg,p.box_l_cm,p.box_w_cm,p.box_h_cm,p.name||'',p.is_active?'Sí':'No',p.updated_at||'']));
+      const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols']=[{wch:14},{wch:11},{wch:11},{wch:11},{wch:11},{wch:46},{wch:7},{wch:17}]; dmStyleHead(ws,8);
+      XLSX.utils.book_append_sheet(wb,ws,'Peso y medidas');
+      const dt=new Date(); const ymd=dt.getFullYear()+String(dt.getMonth()+1).padStart(2,'0')+String(dt.getDate()).padStart(2,'0');
+      XLSX.writeFile(wb,'Refatrix_Peso_Medidas_'+ymd+'.xlsx');
+      const s=d.stat||{}; dmMsg('ok','내려받았습니다 — 제품 '+(s.total||0)+'개 (무게 '+(s.weight||0)+' · 사이즈 '+(s.dims||0)+').');
+    }catch(e){ dmMsg('err','실패: '+e.message); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+  async function dmReadFile(file){
+    dmTable=null; dmName=file.name; $('dmFileName').textContent=file.name; $('dmPrev').innerHTML=''; dmMsg('','');
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      dmTable=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false,raw:true});
+    }catch(e){ dmMsg('err','파일을 읽지 못했습니다: '+e.message); return; }
+    await dmPreview();
+  }
+  async function dmPreview(){
+    if(!dmTable) return;
+    $('dmPrev').innerHTML='<span class="hint">미리보기 만드는 중…</span>';
+    try{
+      const res=await fetch(session.api+'/api/products/dims/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({table:dmTable})});
+      const d=await res.json();
+      if(res.status===501){ $('dmPrev').innerHTML=''; dmMsg('err','서버에 0327 마이그레이션이 아직 없습니다(npm run migrate).'); return; }
+      if(!res.ok||d.error){ $('dmPrev').innerHTML=''; dmMsg('err','실패: '+(d.error||res.status)); return; }
+      $('dmPrev').innerHTML=dmPreviewHtml(d);
+      const ap=$('dmApply'); if(ap) ap.addEventListener('click',dmApply);
+      const cc=$('dmCancel'); if(cc) cc.addEventListener('click',()=>{ dmTable=null; $('dmPrev').innerHTML=''; $('dmFileName').textContent=''; dmMsg('',''); });
+    }catch(e){ $('dmPrev').innerHTML=''; dmMsg('err','실패: '+e.message); }
+  }
+  function dmPreviewHtml(d){
+    const items=d.items||[], unk=d.unknown||[], errs=d.errors||[];
+    const colLbl=(d.columns||[]).map(c=>c==='dims'?'사이즈(한 칸)':(DM_LBL[c]||c)).join(' · ');
+    let h='<div class="pvcards">'
+      +'<div class="pvcard"><div class="k">읽은 코드</div><div class="v">'+(d.rows||0)+'</div></div>'
+      +'<div class="pvcard upd"><div class="k">변경</div><div class="v">'+items.length+'</div></div>'
+      +'<div class="pvcard"><div class="k">동일</div><div class="v">'+(d.same||0)+'</div></div>'
+      +'<div class="pvcard err"><div class="k">미등록 코드</div><div class="v">'+unk.length+'</div></div>'
+      +'<div class="pvcard err"><div class="k">오류</div><div class="v">'+errs.length+'</div></div>'
+      +'</div>';
+    h+='<div class="hint" style="margin-top:4px">'+(d.headerless?'머리글이 없어 <b>CTR · 무게 · 가로 · 세로 · 높이</b> 순서로 읽었습니다.':('읽은 열: <b>'+escP(colLbl)+'</b>'))+(d.dup?(' · 같은 코드 중복 '+d.dup+'줄(마지막 줄 사용)'):'')+'</div>';
+    if(errs.length) h+='<div style="margin-top:6px;color:var(--expense);font-size:12px"><b>오류(반영 안 됨)</b><br>'+errs.slice(0,40).map(e=>escP(e.row+'행 '+e.code+' — '+e.msg)).join('<br>')+(errs.length>40?('<br>… 외 '+(errs.length-40)+'건'):'')+'</div>';
+    if(unk.length) h+='<div style="margin-top:6px;color:#9a6512;font-size:12px"><b>제품마스터에 없는 코드(반영 안 됨)</b> '+unk.slice(0,60).map(u=>escP(u.code)).join(', ')+(unk.length>60?(' … 외 '+(unk.length-60)+'개'):'')+'</div>';
+    if(items.length){
+      h+='<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">CTR</th><th style="text-align:left">제품명</th><th style="text-align:left">바뀌는 칸 (지금 → 새 값)</th></tr></thead><tbody>'
+        +items.slice(0,500).map(it=>'<tr><td><b>'+escP(it.code)+'</b></td><td>'+escP(it.name||'')+'</td><td>'+it.changes.map(c=>escP(DM_LBL[c.field]||c.field)+' '+dmNum(c.old)+' → <b>'+(c.new==null?'(지움)':c.new)+'</b>').join(' · ')+'</td></tr>').join('')
+        +'</tbody></table></div>'+(items.length>500?('<div class="hint">처음 500건만 표시 — 반영은 '+items.length+'건 모두</div>'):'');
+      h+='<div style="margin-top:10px;display:flex;gap:8px"><button class="btn gold" id="dmApply">반영하기 ('+items.length+'개 제품)</button><button class="btn ghost" id="dmCancel">취소</button></div>';
+    } else {
+      h+='<div class="hint" style="margin-top:8px">바뀌는 칸이 없습니다.</div><div style="margin-top:6px"><button class="btn ghost sm" id="dmCancel">닫기</button></div>';
+    }
+    return h;
+  }
+  async function dmApply(){
+    if(!dmTable) return;
+    const btn=$('dmApply'); if(btn){ btn.disabled=true; btn.textContent='반영 중…'; }
+    try{
+      const res=await fetch(session.api+'/api/products/dims/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({table:dmTable})});
+      const d=await res.json();
+      if(!res.ok||d.error){ dmMsg('err','실패: '+(d.error||res.status)); if(btn){ btn.disabled=false; btn.textContent='반영하기'; } return; }
+      $('dmPrev').innerHTML=''; dmTable=null; $('dmFileName').textContent='';
+      dmMsg('ok','반영 완료 — 제품 '+d.products+'개 · '+d.fields+'칸'+(d.unknown&&d.unknown.length?(' · 미등록 코드 '+d.unknown.length+'개 제외'):'')+(d.errors&&d.errors.length?(' · 오류 '+d.errors.length+'줄 제외'):'')+' ('+escP(dmName)+')');
+      dmLoadStat();
+    }catch(e){ dmMsg('err','실패: '+e.message); if(btn){ btn.disabled=false; btn.textContent='반영하기'; } }
+  }
+
   // ===== 경쟁사 교차참조 업로드 =====
   //  대상 시트: 헤더 행에 'REFERENCIA'가 있는 시트(예: LISTA GENERAL). 헤더 윗줄이 브랜드 라벨(BAW·SYD1…).
   //  행 → { codes:[{brand,code}] }. 셀에 '//', 쉼표, 세미콜론으로 여러 코드가 있으면 분리.
@@ -2687,6 +2825,10 @@
   if($('xrSnapList')) $('xrSnapList').addEventListener('click',xrSnapList);
   if($('xrSnapNow')) $('xrSnapNow').addEventListener('click',xrSnapNow);
   if($('bmApply')) $('bmApply').addEventListener('click',bmApply);
+  // 0327 · 무게 · 박스 사이즈
+  if($('dmTpl')) $('dmTpl').addEventListener('click',dmDownloadTemplate);
+  if($('dmExport')) $('dmExport').addEventListener('click',dmExport);
+  if($('dmFile')) $('dmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) dmReadFile(f); e.target.value=''; });
   if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
   if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);
   if($('peNewBtn')) $('peNewBtn').addEventListener('click',()=>openProductEditor(null));

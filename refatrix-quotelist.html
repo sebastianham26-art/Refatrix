@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1111xc</title>
+<title>Refatrix ERP · 견적 목록 · ql-1118dm</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -293,7 +293,7 @@
     return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
   }
 
-  const QL_BUILD='ql-1105avl';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1118dm';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -982,11 +982,55 @@
     return '<span class="codehit" title="검색한 제품번호가 들어 있는 줄">🔎 '+parts.join(' · ')+(hs.length>3?' <i>외 '+(hs.length-3)+'줄</i>':'')+'</span>';
   }
 
+  // ===== 0327 · 대략 총무게 · 사이즈 (제품마스터 무게 · 개별 박스 사이즈) =====
+  //   서버가 계산한 ship = { weight_kg, dims:{l,w,h}, vol_m3, net_m3, vol_weight_kg, wt_miss, d_miss, unreg … }
+  function shipNum(n,d){ return Number(n).toLocaleString('es-MX',{minimumFractionDigits:d||0,maximumFractionDigits:d||0}); }
+  function shipMissText(sh){
+    const p=[];
+    if(sh.wt_miss) p.push('무게 자료 없음 '+sh.wt_miss+'줄('+fmtq(sh.wt_miss_qty)+'개)');
+    if(sh.d_miss) p.push('사이즈 자료 없음 '+sh.d_miss+'줄('+fmtq(sh.d_miss_qty)+'개)');
+    if(sh.unreg) p.push('미등록 코드 '+sh.unreg+'줄('+fmtq(sh.unreg_qty)+'개)');
+    return p;
+  }
+  function shipTitle(sh){
+    const t=['제품마스터의 무게 · 개별 박스 사이즈로 계산한 대략값'];
+    if(sh.weight_kg!=null) t.push('총무게 ≈ '+shipNum(sh.weight_kg,1)+' kg ('+fmtq(sh.wt_pcs)+'개 기준)');
+    if(sh.dims){ t.push('총사이즈 ≈ 가로 '+sh.dims.l+' × 세로 '+sh.dims.w+' × 높이 '+sh.dims.h+' cm ('+fmtq(sh.d_pcs)+'개 기준)');
+      t.push('박스 순부피 '+shipNum(sh.net_m3,3)+' m³ → 채움률 85% 포장부피 ≈ '+shipNum(sh.vol_m3,3)+' m³');
+      t.push('부피무게(÷5000) ≈ '+shipNum(sh.vol_weight_kg,1)+' kg'); }
+    const m=shipMissText(sh); if(m.length) t.push('계산에서 뺀 줄: '+m.join(' · '));
+    return t.join('\n');
+  }
+  function shipCellHtml(sh){
+    if(!sh) return '<span class="hint">—</span>';
+    const miss=shipMissText(sh);
+    if(sh.nodata) return '<span class="hint" title="'+esc(shipTitle(sh))+'">자료 없음</span>';
+    let h='<span title="'+esc(shipTitle(sh))+'" style="white-space:nowrap">';
+    h+=(sh.weight_kg!=null?('<b>≈ '+shipNum(sh.weight_kg,1)+' kg</b>'):'<span class="hint">무게 —</span>');
+    h+='<br><span style="font-size:11px">'+(sh.dims?(sh.dims.l+'×'+sh.dims.w+'×'+sh.dims.h+' cm'):'<span class="hint">사이즈 —</span>')+'</span>';
+    if(miss.length) h+='<br><span class="hint" style="font-size:10.5px;color:#9a6512">* 자료 없는 줄 '+((sh.wt_miss>sh.d_miss?sh.wt_miss:sh.d_miss)+(sh.unreg||0))+'</span>';
+    return h+'</span>';
+  }
+  function shipSummaryHtml(sh){
+    if(!sh) return '';
+    const miss=shipMissText(sh);
+    let h='<div class="cb" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#f7f4ec;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12.5px" title="'+esc(shipTitle(sh))+'">'
+      +'<span style="font-weight:800;color:var(--brand)">📦 대략 무게 · 사이즈</span>';
+    if(sh.nodata) h+='<span class="hint">이 견적의 제품에 무게 · 사이즈 자료가 없습니다 — 제품마스터 › 업로드 › 📦 무게 · 박스 사이즈</span>';
+    else {
+      h+='<span>총무게 <b>'+(sh.weight_kg!=null?('≈ '+shipNum(sh.weight_kg,1)+' kg'):'—')+'</b></span>';
+      h+='<span>총사이즈 <b>'+(sh.dims?('≈ 가로 '+sh.dims.l+' × 세로 '+sh.dims.w+' × 높이 '+sh.dims.h+' cm'):'—')+'</b>'
+        +(sh.dims?(' <span class="hint">('+shipNum(sh.vol_m3,3)+' m³ · 부피무게 '+shipNum(sh.vol_weight_kg,1)+' kg)</span>'):'')+'</span>';
+    }
+    if(miss.length) h+='<span class="hint" style="color:#9a6512">* 계산에서 뺌: '+esc(miss.join(' · '))+'</span>';
+    return h+'</div>';
+  }
+
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적',expired:'만료'};
     let html='<table data-sort="quotelist:main"><thead><tr>'
-      +'<th>견적번호</th><th data-type="date">견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th data-nosort>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th data-type="date">매출일 / SAT</th><th data-nosort>작업</th>'
+      +'<th>견적번호</th><th data-type="date">견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r" data-nosort title="제품마스터의 무게 · 개별 박스 사이즈로 계산한 대략값">무게 · 사이즈(약)</th><th data-nosort>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th data-type="date">매출일 / SAT</th><th data-nosort>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       qRowsById[q.id]=q;
@@ -1010,6 +1054,7 @@
         +'<td>'+esc(q.creator_name||'—')+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':(q.sku_count||0))+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':fmtq(q.total_qty))+'</td>'
+        +'<td class="r">'+(q.status==='pricelist'?'<span class="hint">—</span>':shipCellHtml(q.ship))+'</td>'
         +'<td>'+(q.status==='pricelist'?'<span class="hint">—</span>':clsCellHtml(q))+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':fmt(q.total_mxn)
           +(q.status==='converted' ? (function(){
@@ -1407,6 +1452,7 @@
       +'<span style="font-size:12px;opacity:.85">IVA <b style="font-size:14px">'+fmt(q.iva_mxn)+'</b></span>'
       +'<span style="margin-left:auto;font-size:13px">총액 <b style="font-size:19px">'+fmt(q.total_mxn)+'</b> <span style="font-size:11px;opacity:.8">MXN</span></span>'
       +'</div>';
+    if(q.ship && q.status!=='pricelist') summary+=shipSummaryHtml(q.ship);   // 0327
     if(editable && q.cls){
       const c=q.cls;
       summary+='<div class="cb" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#f4f7f5;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">'

@@ -24,6 +24,7 @@ import { kickOrderStatus, kickOrderFinal } from '../orderStatusSync.js';   // 02
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { internalHeaders } from '../internalCall.js';
+import { dimsReady, SHIP_SELECT, SHIP_JOIN, shipFromRow, aggregateLines, estimateShipment } from '../productDims.js';   // 0327 · 견적 대략 총무게 · 사이즈
 import { fobCostBasis } from '../priceMaster.js';   // 2026-09-24 · 견적 매출총이익 — 평균원가 없는 제품의 FOB 추정 원가   // 0224c · /api/sales 내부 호출 표식
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
@@ -761,6 +762,8 @@ export default async function quoteRoutes(app) {
              FROM sales_invoice_lines sl LEFT JOIN products p ON p.id = sl.product_id
             WHERE sl.invoice_id = i.id
          ) gps ON TRUE` : '';
+    // 0327 · 대략 총무게 · 사이즈(제품 무게 · 개별 박스) — 마이그레이션 전이면 붙이지 않는다(목록이 깨지지 않게).
+    const shipOn = await dimsReady();
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
               q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at, q.created_at,
@@ -771,7 +774,7 @@ export default async function quoteRoutes(app) {
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
               cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty,
-              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt, cls.inact_cnt${gpSel}${hitSel}
+              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt, cls.inact_cnt${gpSel}${hitSel}${shipOn ? SHIP_SELECT : ''}
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uc ON uc.id=q.created_by
@@ -793,7 +796,7 @@ export default async function quoteRoutes(app) {
              COUNT(*) FILTER (WHERE ql.issue = 'inactive')::int AS inact_cnt
            FROM quote_lines ql
            WHERE ql.quote_id = q.id
-         ) cls ON TRUE${gpJoin}
+         ) cls ON TRUE${gpJoin}${shipOn ? SHIP_JOIN : ''}
         WHERE ${conds.join(' AND ')}
         ORDER BY q.quote_date DESC, q.id DESC`, args)).rows;
     const gpOf = (r) => {
@@ -829,6 +832,7 @@ export default async function quoteRoutes(app) {
         packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
         inactive_cnt: Number(r.inact_cnt || 0),             // 0224 · 판매중단 줄(다음 단계 차단 사유)
         ...(gpDir ? { gp: gpOf(r) } : {}),                   // 2026-09-24 · 디렉터만 — 매출총이익
+        ...(shipOn && r.status !== 'pricelist' ? { ship: shipFromRow(r) } : {}),   // 0327 · 대략 총무게 · 사이즈
         ...(kwOut.codeIdx ? { code_hits: (r.code_hits || []).map((h) => ({ ctr: h.ctr || null, input: h.input || null, qty: Number(h.qty) || 0 })) } : {}),
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {
@@ -911,8 +915,9 @@ export default async function quoteRoutes(app) {
     q.seller_name = q.seller_name || q.customer_owner_name || null;
     q.is_guest = q.customer_id == null;
     q.party_name = q.customer_id == null ? (q.guest_name || '불특정 고객') : q.customer_name;
+    const shipOnD = await dimsReady();   // 0327
     const lines = (await query(
-      `SELECT ql.*, p.stock_qty AS cur_stock_raw,
+      `SELECT ql.*, p.stock_qty AS cur_stock_raw,${shipOnD ? ` p.weight_kg AS dim_weight_kg, p.box_l_cm AS dim_l, p.box_w_cm AS dim_w, p.box_h_cm AS dim_h,` : ''}
               COALESCE(inc.incoming_qty,0) AS incoming_qty_raw, inc.incoming_eta::text AS incoming_eta_raw,
               COALESCE(bo.backorder_qty,0) AS backorder_qty_raw,
               COALESCE((SELECT SUM(ql2.reserved_qty)
@@ -961,8 +966,12 @@ export default async function quoteRoutes(app) {
         incoming_eta: l.incoming_eta_raw || null,
         // 발주 미입고 잔량(v_backorder) — 운송중(incoming)을 포함한 전체. 프런트에서 운송중을 빼 순수 발주잔량을 구분 표시.
         backorder_qty: Number(l.backorder_qty_raw) || 0,
+        // 0327 · 제품 1개 무게 · 개별 박스(없으면 null)
+        ...(shipOnD ? { weight_kg: l.dim_weight_kg != null ? Number(l.dim_weight_kg) : null,
+          box_l_cm: l.dim_l != null ? Number(l.dim_l) : null, box_w_cm: l.dim_w != null ? Number(l.dim_w) : null, box_h_cm: l.dim_h != null ? Number(l.dim_h) : null } : {}),
       };
     });
+    for (const ol of outLines) { delete ol.dim_weight_kg; delete ol.dim_l; delete ol.dim_w; delete ol.dim_h; }
     // 현장재고조사 전환 여부 + (디렉터에게만) 현장 위치 좌표
     const fsRow = (await query(
       `SELECT id, geo_lat, geo_lng, survey_date FROM field_surveys
@@ -980,6 +989,7 @@ export default async function quoteRoutes(app) {
         subtotal_mxn: Number(q.subtotal_mxn), iva_mxn: Number(q.iva_mxn), total_mxn: Number(q.total_mxn), total_qty: Number(q.total_qty),
         field_survey: fieldSurvey,
         cls,
+        ...(shipOnD ? { ship: estimateShipment(aggregateLines(outLines)) } : {}),   // 0327 · 대략 총무게 · 사이즈
       },
       lines: outLines,
       // 2026-11-04 qlkit · 키트(키트 번호 순) — 상세 표 · 견적서 PDF · 엑셀의 KIT 머리줄(번호 · 차종 · 세트 · 구성품 코드)

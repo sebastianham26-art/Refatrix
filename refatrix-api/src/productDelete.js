@@ -39,6 +39,7 @@ export const CLEANUP_TABLES = {
   product_price_history: '정가 이력',          // 0229 — 가격 마스터 장부(제품 전용)
   price_change_items: '가격 변경 대상',         // 0229 — 예약·적용 묶음의 대상 목록
   pf_catalog_review: '플랫폼 카탈로그 점검 상태',   // 0302
+  product_dims_log: '무게·박스 사이즈 이력',        // 0327
 };
 
 // ── 연결만 끊는 표(기록 자체는 남긴다) ────────────────────────────────
