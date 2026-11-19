@@ -66,7 +66,7 @@ const skus = (doc) => [...doc.matchAll(/<td class="c-sku">([\s\S]*?)<\/td>[\s\S]
 
 test('① 포장작업지시서 — 부분 확보 GV0803 이 5개 · PARCIAL · KIT INCOMPLETO', opts, async () => {
   const dom = await bootList(PV_NEW);
-  assert.match(dom.window.document.title, /ql-1119sh/);
+  assert.match(dom.window.document.title, /ql-1119w/);
   const pvHtml = dom.window.document.getElementById('cvPreview').innerHTML;
   assert.match(pvHtml, /지시서에 5개 포함/, '전환 미리보기에도 포함 표시');
   assert.match(pvHtml, /부분 출고 1개 SKU/);

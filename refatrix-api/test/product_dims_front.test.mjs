@@ -48,7 +48,7 @@ async function bootList(quote = QUOTE) {
 
 test('① 견적 목록 — 무게 · 사이즈(약) 칸 · 자료 없는 줄 표시 · 옛 서버/가격표는 —', opts, async () => {
   const w = await bootList();
-  assert.match(w.document.title, /ql-1119sh/);
+  assert.match(w.document.title, /ql-1119w/);
   w.render([
     { ...QUOTE, id: 1, quote_no: 'Q1' },
     { ...QUOTE, id: 2, quote_no: 'Q2', ship: undefined },                      // 0327 전 서버
@@ -58,15 +58,16 @@ test('① 견적 목록 — 무게 · 사이즈(약) 칸 · 자료 없는 줄 �
   ]);
   const tb = w.document.querySelector('#listWrap table');
   const heads = [...tb.querySelectorAll('thead th')].map((t) => t.textContent);
-  const ci = heads.indexOf('무게 · 사이즈(약)');
+  const ci = heads.indexOf('무게사이즈(약)');
   assert.ok(ci > heads.indexOf('총수량') && ci < heads.indexOf('수주현황'));
   const cell = (n) => tb.querySelectorAll('tbody tr')[n].querySelectorAll('td')[ci];
   assert.match(cell(0).textContent, /≈ 24\.6 kg/);
   assert.match(cell(0).textContent, /49×49×49 cm/);
-  assert.match(cell(0).textContent, /자료 없는 줄 2/);
+  assert.match(cell(0).textContent, /자료 없음 2줄/);
+  assert.ok(tb.querySelectorAll('tbody tr')[0].querySelectorAll('td')[ci].classList.contains('shipc'));   // 좁은 칸(줄바꿈 허용)
   assert.match(cell(0).querySelector('span').getAttribute('title'), /무게 자료 없음 1줄\(2개\)[\s\S]*미등록 코드 1줄\(3개\)/);
   assert.equal(cell(1).textContent.trim(), '—');
-  assert.doesNotMatch(cell(2).textContent, /자료 없는/);
+  assert.doesNotMatch(cell(2).textContent, /자료 없음/);
   assert.match(cell(3).textContent, /자료 없음/);
   assert.equal(cell(4).textContent.trim(), '—');
 });
@@ -127,7 +128,7 @@ const sheet = (f) => XLSX.utils.sheet_to_json(f.wb.Sheets[f.wb.SheetNames[0]], {
 test('③ 제품 무게 · 박스 코드 — 양식 · 현재값 · 미리보기(새 박스 안내) · 반영', opts, async () => {
   const { w, files, posts } = await bootProducts();
   const d = w.document;
-  assert.match(d.title, /ps-1119sh/);
+  assert.match(d.title, /ps-1119w/);
   const blk = d.getElementById('dmBlock');
   assert.ok(blk && d.getElementById('upCard').contains(blk));
   assert.equal(blk.querySelectorAll('[onclick]').length, 0);
@@ -279,7 +280,10 @@ test('⑨ 견적 목록 — 묶음(팔레트) 여러 개 · 쌓은 방식 툴팁
   const w = await bootList();
   const sh = { ...SHIP, dims: { l: 108, w: 84, h: 164 }, pack: { method: 'stack', boxes: 300, layers: 38, fill: 0.98, stacks: 2, stack_list: [{ l: 108, w: 84, h: 164 }, { l: 108, w: 84, h: 82 }] } };
   const cell = w.shipCellHtml(sh);
-  assert.match(cell, /2묶음 · 108×84×164 \+ 108×84×82 cm/);
+  assert.match(cell, /팔레트 2개/); assert.match(cell, /최대 108×84×164/);
+  const vis = new w.DOMParser().parseFromString(cell, 'text/html').body.textContent;
+  assert.doesNotMatch(vis, /\+ 108×84×82/);                        // 목록 칸에는 묶음 목록을 늘어놓지 않는다(폭) — 툴팁 · 상세에만
+  assert.match(w.shipTitle(sh), /2묶음 · 108×84×164 \+ 108×84×82 cm/);
   assert.match(w.shipTitle(sh), /박스 300개를 눕혀 38층으로 쌓은 배치 · 적재율 98% · 팔레트/);
   const single = w.shipCellHtml({ ...SHIP, pack: { method: 'stack', boxes: 12, layers: 3, fill: 0.9, stacks: 1 } });
   assert.match(single, /49×49×49 cm/);

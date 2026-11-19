@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1119sh</title>
+<title>Refatrix ERP · 견적 목록 · ql-1119w</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -45,6 +45,15 @@
   th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
   th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
   td.r,th.r{text-align:right}
+  /* 2026-11-19 · 칸 폭 — 무게 · 사이즈 칸은 좁게(줄바꿈 허용), 고객명도 줄바꿈 */
+  td.shipc{white-space:normal;min-width:84px;max-width:120px;line-height:1.35}
+  td.shipc .shs{font-size:11px;white-space:nowrap}
+  td.shipc .shm{font-size:10.5px;color:#9a6512;white-space:nowrap}
+  td.custc{white-space:normal;min-width:120px;max-width:200px}
+  th.wrapth{white-space:normal;line-height:1.25}
+  td.actc{white-space:normal;min-width:72px;max-width:110px}
+  #listWrap>table th,#listWrap>table td{padding:8px 7px}
+  td.actc .btn{margin:2px 0;white-space:nowrap}
   .gpS{display:inline-block;margin-top:3px;font-size:10.5px;font-weight:700;color:var(--income);white-space:nowrap}.gpS.neg{color:var(--expense)}.gpS i{font-style:normal;font-weight:500;color:var(--muted)}
   .st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
   .st.draft{background:#eef0f2;color:#555}.st.confirmed{background:#fdf3e3;color:#9a6512}
@@ -293,7 +302,7 @@
     return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
   }
 
-  const QL_BUILD='ql-1119sh';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1119w';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -1022,10 +1031,14 @@
     if(!sh) return '<span class="hint">—</span>';
     const miss=shipMissText(sh);
     if(sh.nodata) return '<span class="hint" title="'+esc(shipTitle(sh))+'">자료 없음</span>';
-    let h='<span title="'+esc(shipTitle(sh))+'" style="white-space:nowrap">';
-    h+=(sh.weight_kg!=null?('<b>≈ '+shipNum(sh.weight_kg,1)+' kg</b>'):'<span class="hint">무게 —</span>');
-    h+='<br><span style="font-size:11px">'+(sh.dims?shipSizeText(sh,false):'<span class="hint">사이즈 —</span>')+'</span>';
-    if(miss.length) h+='<br><span class="hint" style="font-size:10.5px;color:#9a6512">* 자료 없는 줄 '+((sh.wt_miss>sh.d_miss?sh.wt_miss:sh.d_miss)+(sh.unreg||0))+'</span>';
+    // 목록 칸은 짧게: 무게 / 사이즈(묶음이 여러 개면 「팔레트 n개」 + 가장 큰 묶음) — 전체 묶음 목록은 툴팁 · 상세
+    const pk=sh.pack, multi=!!(pk&&pk.stacks>1);
+    let h='<span title="'+esc(shipTitle(sh))+'">';
+    h+='<b style="white-space:nowrap">'+(sh.weight_kg!=null?('≈ '+shipNum(sh.weight_kg,1)+' kg'):'<span class="hint">무게 —</span>')+'</b>';
+    if(!sh.dims) h+='<br><span class="shs hint">사이즈 —</span>';
+    else if(multi) h+='<br><span class="shs">팔레트 '+pk.stacks+'개</span><br><span class="shs hint">최대 '+sh.dims.l+'×'+sh.dims.w+'×'+sh.dims.h+'</span>';
+    else h+='<br><span class="shs">'+sh.dims.l+'×'+sh.dims.w+'×'+sh.dims.h+' cm</span>';
+    if(miss.length) h+='<br><span class="shm">* 자료 없음 '+((sh.wt_miss>sh.d_miss?sh.wt_miss:sh.d_miss)+(sh.unreg||0))+'줄</span>';
     return h+'</span>';
   }
   function shipSummaryHtml(sh){
@@ -1047,7 +1060,7 @@
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적',expired:'만료'};
     let html='<table data-sort="quotelist:main"><thead><tr>'
-      +'<th>견적번호</th><th data-type="date">견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r" data-nosort title="제품마스터의 무게 · 사이즈(제품 자체 → 없으면 포장 박스 마스터)로 계산한 대략값">무게 · 사이즈(약)</th><th data-nosort>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th data-type="date">매출일 / SAT</th><th data-nosort>작업</th>'
+      +'<th>견적번호</th><th data-type="date">견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r wrapth" data-nosort title="제품마스터의 무게 · 사이즈(제품 자체 → 없으면 포장 박스 마스터)로 계산한 대략값 — 박스를 실제로 쌓은 배치">무게<br>사이즈(약)</th><th data-nosort>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th data-type="date">매출일 / SAT</th><th data-nosort>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       qRowsById[q.id]=q;
@@ -1067,11 +1080,11 @@
         +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b>'
           +poSmall(q.customer_po_no)+codeHitSmall(q)+'</td>'
         +'<td data-sv="'+esc(q.quote_date||'')+'">'+esc(q.quote_date||'')+recvSmall(q)+'</td>'
-        +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+(q.from_field_survey?'<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:800;color:#0F6E56;background:#E4F0EB;border-radius:10px;padding:1px 7px;white-space:nowrap">📍현장</span>':'')+'</td>'
+        +'<td class="custc">'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+(q.from_field_survey?'<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:800;color:#0F6E56;background:#E4F0EB;border-radius:10px;padding:1px 7px;white-space:nowrap">📍현장</span>':'')+'</td>'
         +'<td>'+esc(q.creator_name||'—')+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':(q.sku_count||0))+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':fmtq(q.total_qty))+'</td>'
-        +'<td class="r">'+(q.status==='pricelist'?'<span class="hint">—</span>':shipCellHtml(q.ship))+'</td>'
+        +'<td class="r shipc">'+(q.status==='pricelist'?'<span class="hint">—</span>':shipCellHtml(q.ship))+'</td>'
         +'<td>'+(q.status==='pricelist'?'<span class="hint">—</span>':clsCellHtml(q))+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':fmt(q.total_mxn)
           +(q.status==='converted' ? (function(){
@@ -1084,7 +1097,7 @@
           +'</td>'
         +'<td><span class="st '+(expd?'expired':q.status)+'">'+(expd?'만료':(stLbl[q.status]||q.status))+'</span>'+((q.open&&!expd)?('<br>'+resvBadge(q)):'')+gpSmall(q)+'</td>'
         +'<td>'+(conv?('<span class="arrow">→ '+esc(q.sale_date||'')+'</span>'+(q.sale_sat_no?'<br><span class="hint">'+esc(q.sale_sat_no)+'</span>':'')):'<span class="hint">미전환</span>')+'</td>'
-        +'<td>'+action+'</td>'
+        +'<td class="actc">'+action+'</td>'
         +'</tr>';
     });
     html+='</tbody></table>';
