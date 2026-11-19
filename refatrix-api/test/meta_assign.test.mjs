@@ -24,6 +24,17 @@ test('A. 손님 말이 마지막인가', async () => {
   assert.equal(awaitingReply([]), false);
 });
 
+test('A2. 0330 · 비율(%) — 오늘 받은 수까지 합쳐 비율이 맞게', async () => {
+  const { pickByShare } = await import('../src/metaAssign.js');
+  const mem = [{ user_id: 1, share_pct: 50 }, { user_id: 2, share_pct: 30 }, { user_id: 3, share_pct: 20 }, { user_id: 4, share_pct: 0 }];
+  const cnt = new Map(); let total = 0;
+  for (let i = 0; i < 100; i++) { const m = pickByShare(mem, cnt, total); cnt.set(m.user_id, (cnt.get(m.user_id) || 0) + 1); total++; }
+  assert.deepEqual([1, 2, 3, 4].map((id) => cnt.get(id) || 0), [50, 30, 20, 0]);
+  const c2 = new Map([[1, 10]]);   // 1 번이 오늘 이미 10건 → 나머지가 먼저 받는다
+  assert.notEqual(pickByShare(mem, c2, 10).user_id, 1);
+  assert.equal(pickByShare([{ user_id: 9, share_pct: 0 }], new Map(), 0), null);
+});
+
 test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, async (t) => {
   const { query, pool } = await import('../src/db.js');
   after(async () => { await pool.end().catch(() => {}); setTimeout(() => process.exit(process.exitCode || 0), 300); });
@@ -171,6 +182,29 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     await call(dir, 'PUT', '/api/meta-assign/config', { members: [{ user_id: ana.id, daily_target: 3 }] });
     const p2 = (await call(dir, 'GET', '/api/meta-assign/perf')).json();
     const b2 = p2.people.find((x) => x.user_id === beto.id); assert.equal(b2.assigned, 3); assert.equal(p2.people.find((x) => x.user_id === ana.id).assigned, 3); assert.equal(b2.member, false); assert.equal(b2.target, null);
+  });
+
+  await t.test('B8. 0330 · 비율(%) 방식 — 남김없이 모두 · 비율대로 · 실적 비율 몫', async () => {
+    for (let i = 1; i <= 10; i++) await th('s' + i, { min: 3 + i });
+    const pool0 = (await call(dir, 'GET', '/api/meta-assign/config')).json().pool.n; assert.ok(pool0 >= 10);
+    assert.equal((await call(dir, 'PUT', '/api/meta-assign/config', { mode: 'share', members: [{ user_id: ana.id, daily_target: 3, share_pct: 0 }] })).json().error, 'share_required');
+    let r = await call(dir, 'PUT', '/api/meta-assign/config', { mode: 'share', members: [{ user_id: ana.id, daily_target: 3, share_pct: 50 }, { user_id: beto.id, daily_target: 2, share_pct: 50 }] });
+    assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().settings.mode, 'share');
+    assert.deepEqual(r.json().members.filter((m) => m.active).map((m) => m.share_pct).sort(), [50, 50]);
+    const before = new Map((await call(dir, 'GET', '/api/meta-assign/config')).json().members.map((m) => [m.user_id, m.today_assigned]));
+    const run = (await call(dir, 'POST', '/api/meta-assign/run')).json();
+    assert.equal(run.assigned, pool0, '하루 목표와 관계없이 모두');
+    assert.equal((await call(dir, 'GET', '/api/meta-assign/config')).json().pool.n, 0, '남은 문의 0');
+    const after = new Map((await call(dir, 'GET', '/api/meta-assign/config')).json().members.map((m) => [m.user_id, m.today_assigned]));
+    assert.ok(Math.abs(after.get(ana.id) - after.get(beto.id)) <= 1, '오늘 합계가 50:50');
+    void before;
+    const p = (await call(dir, 'GET', '/api/meta-assign/perf')).json();
+    assert.equal(p.mode, 'share');
+    const pa = p.people.find((x) => x.user_id === ana.id); assert.equal(pa.share_pct, 50);
+    assert.equal(pa.target, Math.round(p.team.assigned / 2), '비율 몫 = 비율 × 팀 할당');
+    // 하루 목표 방식으로 되돌리면 목표 = 하루 목표 × 날 수
+    r = await call(dir, 'PUT', '/api/meta-assign/config', { mode: 'target' }); assert.equal(r.json().settings.mode, 'target');
+    assert.equal((await call(dir, 'GET', '/api/meta-assign/perf')).json().people.find((x) => x.user_id === ana.id).target, 3);
   });
 
   await t.test('B7. 1119b · 전체 할당 목록 — 사람 · 대화 상태 · 검색 · 디렉터만', async () => {

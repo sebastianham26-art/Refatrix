@@ -33,12 +33,13 @@ export async function assignReady(q = query) {
 export function resetAssignReady() { ready = null; probeAt = 0; }
 
 export async function getSettings(q = query) {
-  const r = (await q(`SELECT auto, default_target, pool_days, work_start, work_end, updated_at FROM meta_assign_settings WHERE id=1`)).rows[0];
-  return r || { auto: true, default_target: 20, pool_days: 7, work_start: 8, work_end: 19 };
+  // 0330 · mode(비율 · 목표) — 마이그레이션 전에도 돌게 to_jsonb 로 읽음
+  const r = (await q(`SELECT auto, default_target, pool_days, work_start, work_end, updated_at, COALESCE(to_jsonb(s)->>'mode', 'target') AS mode FROM meta_assign_settings s WHERE id=1`)).rows[0];
+  return r || { auto: true, default_target: 20, pool_days: 7, work_start: 8, work_end: 19, mode: 'target' };
 }
 export async function getMembers(q = query) {
   return (await q(
-    `SELECT m.user_id, u.name, u.role, m.daily_target, m.active,
+    `SELECT m.user_id, u.name, u.role, m.daily_target, m.active, COALESCE((to_jsonb(m)->>'share_pct')::numeric, 0)::float AS share_pct,
             (SELECT count(*)::int FROM meta_assignments a WHERE a.user_id = m.user_id AND a.day = ${MX_TODAY} AND NOT (a.ended_at IS NOT NULL AND a.done_at IS NULL)) AS today_assigned,
             (SELECT count(*)::int FROM meta_assignments a WHERE a.user_id = m.user_id AND a.day = ${MX_TODAY} AND a.done_at IS NOT NULL) AS today_done,
             (SELECT count(*)::int FROM meta_assignments a WHERE a.user_id = m.user_id AND a.done_at IS NULL AND a.ended_at IS NULL) AS open_n
@@ -107,6 +108,7 @@ export async function autoDistribute({ force = false, now = new Date() } = {}) {
     if (!force && !s.auto) return { ok: true, skipped: 'auto_off', assigned: 0 };
     if (!force && !inHours(s, now)) return { ok: true, skipped: 'off_hours', assigned: 0 };
     const mem = (await getMembers(q)).filter((m) => m.active);
+    if (s.mode === 'share') return distributeShare(q, mem);
     const need = new Map(mem.map((m) => [m.user_id, Math.max(0, Number(m.daily_target) - Number(m.today_assigned))]));
     const total = [...need.values()].reduce((a, b) => a + b, 0);
     if (!total) return { ok: true, assigned: 0, by_user: {}, skipped: mem.length ? 'targets_full' : 'no_members' };
@@ -123,6 +125,35 @@ export async function autoDistribute({ force = false, now = new Date() } = {}) {
     }
     return { ok: true, assigned: n, by_user: byUser, pool_left: Math.max(0, pool.length - n) };
   });
+}
+
+// 0330 · 비율(%) — 나눌 문의를 남김없이. 오늘(멕시코시티) 맡은 수까지 합쳐 비율이 맞게:
+//   다음 한 건 = (내 비율 × (오늘 전체 + 1)) − 오늘 내 수 가 가장 큰 사람 · 비율 0 인 사람은 안 받음
+export function pickByShare(mem, cnt, total) {
+  const sum = mem.reduce((a, m) => a + Math.max(0, Number(m.share_pct) || 0), 0);
+  if (sum <= 0) return null;
+  let best = null; let bestGap = -Infinity;
+  for (const m of mem) {
+    const sh = Math.max(0, Number(m.share_pct) || 0) / sum; if (sh <= 0) continue;
+    const gap = sh * (total + 1) - (cnt.get(m.user_id) || 0);
+    if (gap > bestGap + 1e-9 || (Math.abs(gap - bestGap) <= 1e-9 && sh > (Number(best.share_pct) || 0) / sum)) { best = m; bestGap = gap; }
+  }
+  return best;
+}
+async function distributeShare(q, mem) {
+  const live = mem.filter((m) => Number(m.share_pct) > 0);
+  if (!live.length) return { ok: true, assigned: 0, by_user: {}, skipped: mem.length ? 'no_share' : 'no_members' };
+  const cnt = new Map(live.map((m) => [m.user_id, Number(m.today_assigned) || 0]));
+  let total = [...cnt.values()].reduce((a, b) => a + b, 0);
+  const pool = await poolCandidates(q, { limit: 5000 });
+  const byUser = {}; let n = 0;
+  for (const p of pool) {
+    const m = pickByShare(live, cnt, total); if (!m) break;
+    const r = await assignThread(p.id, m.user_id, { how: 'auto' }, q);
+    if (!r.ok || r.unchanged) continue;
+    cnt.set(m.user_id, (cnt.get(m.user_id) || 0) + 1); total++; byUser[m.user_id] = (byUser[m.user_id] || 0) + 1; n++;
+  }
+  return { ok: true, assigned: n, by_user: byUser, pool_left: Math.max(0, pool.length - n), mode: 'share', skipped: n ? undefined : 'pool_empty' };
 }
 
 // 맡은 뒤 대화했는지 — 열린 할당을 훑어 done 표시. threadIds 를 주면 그 문의만
@@ -185,13 +216,19 @@ export async function performance({ from, to, userId = null }, q = query) {
   // 목표 = 하루 목표 × 기간 안의 날 수(오늘까지 · 주말 포함) — 지금 대상자 기준
   const days = Number((await q(`SELECT GREATEST(0, (LEAST($2::date, ${MX_TODAY}) - $1::date) + 1)::int AS n`, [from, to])).rows[0].n);
   const mem = await getMembers(q);
+  const st = await getSettings(q);
   const byId = new Map(rows.map((r) => [r.user_id, r]));
   const zero = { assigned: 0, auto_n: 0, done: 0, by_reply: 0, by_status: 0, by_call: 0, pending: 0, moved: 0, contacted: 0, derivado: 0, venta: 0, days_worked: 0, avg_min: null };
   for (const m of mem) if (m.active && !byId.has(m.user_id) && (!userId || m.user_id === Number(userId))) byId.set(m.user_id, { ...zero, user_id: m.user_id, name: m.name });
+  // 0330 · 비율 방식이면 목표 = 내 비율 × 기간 안의 팀 전체 할당
+  const shareSum = mem.filter((m) => m.active).reduce((a, m) => a + (Number(m.share_pct) || 0), 0);
+  const teamAssigned = [...byId.values()].reduce((a, r) => a + (Number(r.assigned) || 0), 0);
   const people = [...byId.values()].map((r) => {
     const m = mem.find((x) => x.user_id === r.user_id);
-    const target = m && m.active ? Number(m.daily_target) * days : null;
-    return { ...r, member: !!(m && m.active), daily_target: m ? Number(m.daily_target) : null, target,
+    const target = !(m && m.active) ? null
+      : st.mode === 'share' ? (shareSum > 0 ? Math.round((Number(m.share_pct) / shareSum) * teamAssigned) : null)
+        : Number(m.daily_target) * days;
+    return { ...r, member: !!(m && m.active), daily_target: m ? Number(m.daily_target) : null, share_pct: m ? Number(m.share_pct) : null, target,
       rate: r.assigned ? Math.round((r.done / r.assigned) * 1000) / 10 : null,
       target_rate: target ? Math.round((r.done / target) * 1000) / 10 : null };
   }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -204,7 +241,7 @@ export async function performance({ from, to, userId = null }, q = query) {
   const daily = (await q(
     `SELECT to_char(a.day, 'YYYY-MM-DD') AS day, count(*) FILTER (WHERE NOT (a.ended_at IS NOT NULL AND a.done_at IS NULL))::int AS assigned, count(*) FILTER (WHERE a.done_at IS NOT NULL)::int AS done
        FROM meta_assignments a WHERE a.day BETWEEN $1::date AND $2::date${uc} GROUP BY a.day ORDER BY a.day`, args)).rows;
-  return { from, to, days, people, team, daily };
+  return { from, to, days, people, team, daily, mode: st.mode };
 }
 
 // 5분마다 — 대화함 확인 + 자동 분배

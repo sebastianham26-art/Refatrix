@@ -61,7 +61,7 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
   };
   await t.test('대상자 클릭 · 목표 · 저장 · 지금 분배 · 실적 표 · 엑셀 · 사람 행 → 그 사람 할당', async () => {
     const c = boot(route); await c.ready; await tick(700);
-    assert.match(c.d.title, /mtl-1119c/);
+    assert.match(c.d.title, /mtl-1119d/);
     assert.ok(!c.d.getElementById('tAsg').classList.contains('hidden'), '디렉터 = 배분 탭');
     c.d.getElementById('tAsg').click(); await tick();
     const chips = c.d.querySelectorAll('#aPeople [data-uid]'); assert.equal(chips.length, 4);
@@ -75,8 +75,8 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
     c.d.querySelector('#aPeople [data-uid="7"]').click(); c.d.querySelector('#aPeople [data-uid="7"]').click();   // 빼고 다시 넣기
     c.d.getElementById('aSave').click(); await tick();
     const put = c.calls.find((x) => x.method === 'PUT');
-    assert.deepEqual(put.body.members.sort((a, b) => a.user_id - b.user_id), [{ user_id: 7, daily_target: 15, active: true }, { user_id: 8, daily_target: 10, active: true }]);
-    assert.equal(put.body.auto, true); assert.equal(put.body.pool_days, 7);
+    assert.deepEqual(put.body.members.sort((a, b) => a.user_id - b.user_id), [{ user_id: 7, daily_target: 15, share_pct: 0, active: true }, { user_id: 8, daily_target: 10, share_pct: 0, active: true }]);
+    assert.equal(put.body.auto, true); assert.equal(put.body.pool_days, 7); assert.equal(put.body.mode, 'target');
     assert.ok(c.d.getElementById('aDirty').classList.contains('hidden'), '저장하면 표시 사라짐');
     assert.match(c.d.getElementById('aPool').textContent, /40건/);
     c.d.getElementById('aRun').click(); await tick();
@@ -100,6 +100,24 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
     const iPut = c.calls.findIndex((x) => x.method === 'PUT'); const iRun = c.calls.findIndex((x) => x.u.endsWith('/api/meta-assign/run'));
     assert.ok(iPut >= 0 && iRun > iPut, '저장 → 분배 순서');
     assert.ok(c.calls[iPut].body.members.some((m) => m.user_id === 8));
+    c.close();
+  });
+  await t.test('0330 · 비율(%) 방식 — 전환 · 똑같이 · 합계 · 저장 본문', async () => {
+    const c = boot(route); await c.ready; await tick(700);
+    c.d.getElementById('tAsg').click(); await tick();
+    c.d.querySelector('#aPeople [data-uid="8"]').click(); c.d.querySelector('#aPeople [data-uid="1"]').click(); await tick(50);
+    c.d.querySelector('#aMode button[data-m="share"]').click(); await tick(50);
+    const pcts = [...c.d.querySelectorAll('#aTargets [data-pct]')].map((i) => Number(i.value));
+    assert.equal(pcts.length, 3); assert.equal(pcts.reduce((a, b) => a + b, 0), 100, '똑같이 = 34/33/33');
+    assert.match(c.d.getElementById('aTargets').textContent, /합계100%/);
+    assert.match(c.d.getElementById('aPool').textContent, /40건 모두/);
+    const i8 = c.d.querySelector('#aTargets [data-pct="8"]'); i8.value = '50'; i8.dispatchEvent(new c.w.Event('input', { bubbles: true })); i8.dispatchEvent(new c.w.Event('change', { bubbles: true })); await tick(50);
+    assert.match(c.d.getElementById('aTargets').textContent, /100% 가 아니면/);
+    c.d.getElementById('aEqual').click(); await tick(50);
+    c.d.getElementById('aSave').click(); await tick();
+    const put = c.calls.filter((x) => x.method === 'PUT').pop();
+    assert.equal(put.body.mode, 'share');
+    assert.deepEqual(put.body.members.map((m) => m.share_pct).sort(), [33, 33, 34]);
     c.close();
   });
   await t.test('1119c · 0건이면 빨간 안내(사라지지 않음)', async () => {

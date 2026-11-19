@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업 할당 · 실적 · build la-1119c</title>
+<title>Refatrix ERP · 영업 할당 · 실적 · build la-1119d</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -100,7 +100,7 @@
 
     <div class="card">
       <h2>👥 사람별 — 할당 대비 실적</h2>
-      <div class="hint"><b>대화함</b> = 맡은 뒤 답장(ERP · Business Suite · WhatsApp) · 상태 변경 · 📞 전화함. <b>할당</b>은 다른 사람에게 넘긴 것을 빼고 셉니다(「넘김」에 따로). <b>목표</b> = 하루 목표 × 기간 날 수(오늘까지). 행을 누르면 아래 목록이 그 사람으로 좁혀집니다.</div>
+      <div class="hint"><b>대화함</b> = 맡은 뒤 답장(ERP · Business Suite · WhatsApp) · 상태 변경 · 📞 전화함. <b>할당</b>은 다른 사람에게 넘긴 것을 빼고 셉니다(「넘김」에 따로). <b>목표</b> = 하루 목표 × 기간 날 수(오늘까지) · 비율 방식이면 「비율 몫」 = 내 비율 × 팀 전체 할당. 행을 누르면 아래 목록이 그 사람으로 좁혀집니다.</div>
       <div class="tblwrap" id="people"></div>
     </div>
 
@@ -126,7 +126,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const LA_BUILD='la-1119c';
+  const LA_BUILD='la-1119d';
   try{ console.log('[leadassign] build '+LA_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={range:'today',user:'',state:'',perf:null,items:[],cfg:null};
@@ -188,7 +188,7 @@
     if(!S.cfg.ready){ say(false,ERR.migration_required); return; }
     if(!S.cfg.is_admin){ say(false,ERR.director_or_socio_only+' 내 할당은 「Meta 광고 문의 › 🙋 내 할당」에서 봅니다.'); $('toCfg').href='refatrix-metaleads.html#tab=mine'; $('toCfg').textContent='🙋 내 할당 열기'; return; }
     const st=S.cfg.settings||{}; const mem=(S.cfg.members||[]).filter(m=>m.active);
-    $('cfgLine').innerHTML='대상 <b>'+mem.length+'명</b>'+(mem.length?' ('+mem.map(m=>esc(m.name)+' '+m.daily_target+'건').join(' · ')+')':' — 「⚙ 대상자 · 목표 설정」에서 고르세요')
+    $('cfgLine').innerHTML='대상 <b>'+mem.length+'명</b>'+(mem.length?' ('+mem.map(m=>esc(m.name)+' '+(st.mode==='share'?(Number(m.share_pct)||0)+'%':m.daily_target+'건')).join(' · ')+')'+(st.mode==='share'?' · 📊 비율대로 모두 나눔':' · 🎯 하루 목표까지'):' — 「⚙ 대상자 · 목표 설정」에서 고르세요')
       +' · '+(st.auto?'⏱ 자동 분배 '+st.work_start+'~'+st.work_end+'시 · 5분마다':'⏸ 자동 분배 꺼짐')
       +' · 지금 나눌 수 있는 문의 '+((S.cfg.pool&&S.cfg.pool.n)||0)+'건';
     const users=new Map(); for(const m of (S.cfg.members||[])) users.set(m.user_id,m.name);
@@ -235,13 +235,13 @@
   function renderPeople(){
     const d=S.perf;
     const row=(p,team)=>'<tr'+(team?' class="team"':' class="click'+(String(p.user_id)===String(S.user)?' sel':'')+'" data-uid="'+p.user_id+'"')+'><td>'+(team?'팀 전체':'<b>'+esc(p.name)+'</b>'+(p.member?'':' <span class="muted">(대상 아님)</span>'))+'</td>'
-      +'<td class="num">'+(team?'':(p.member&&p.daily_target!=null?p.daily_target:'—'))+'</td><td class="num">'+(p.target!=null?p.target:'—')+'</td>'
+      +'<td class="num">'+(team?'':(!p.member?'—':(d.mode==='share'?(p.share_pct!=null?p.share_pct+'%':'—'):(p.daily_target!=null?p.daily_target:'—'))))+'</td><td class="num">'+(p.target!=null?p.target:'—')+'</td>'
       +'<td class="num"><b>'+p.assigned+'</b></td><td class="num ok-t">'+p.done+'</td><td class="num warn-t">'+p.pending+'</td>'
       +'<td style="min-width:140px">'+bar(p.rate)+'<div class="hint">'+pct(p.rate)+'</div></td>'
       +'<td style="min-width:140px">'+bar(p.target_rate)+'<div class="hint">'+pct(p.target_rate)+'</div></td>'
       +'<td class="num muted">'+p.moved+'</td><td class="num">'+p.by_reply+' / '+p.by_status+' / '+p.by_call+'</td>'
       +'<td class="num">'+p.derivado+' / '+p.venta+'</td><td class="num">'+(team?'':(p.avg_min!=null?p.avg_min+'분':'—'))+'</td></tr>';
-    $('people').innerHTML=d.people.length?'<table><thead><tr><th>영업사원</th><th class="num">하루 목표</th><th class="num">기간 목표</th><th class="num">할당</th><th class="num">대화함</th><th class="num">대화 전</th><th>할당 대비</th><th>목표 대비</th><th class="num">넘김</th><th class="num">💬 / ✎ / 📞</th><th class="num">연결 / 판매</th><th class="num">맡고 대화까지</th></tr></thead><tbody>'
+    $('people').innerHTML=d.people.length?'<table><thead><tr><th>영업사원</th><th class="num">'+(d.mode==='share'?'비율':'하루 목표')+'</th><th class="num">'+(d.mode==='share'?'비율 몫':'기간 목표')+'</th><th class="num">할당</th><th class="num">대화함</th><th class="num">대화 전</th><th>할당 대비</th><th>목표 대비</th><th class="num">넘김</th><th class="num">💬 / ✎ / 📞</th><th class="num">연결 / 판매</th><th class="num">맡고 대화까지</th></tr></thead><tbody>'
       +d.people.map(p=>row(p,false)).join('')+row(d.team,true)+'</tbody></table>'
       :'<div class="hint" style="margin-top:10px">이 기간에 할당이 없습니다.</div>';
   }

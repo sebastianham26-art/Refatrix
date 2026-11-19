@@ -4,7 +4,8 @@
 //
 //   설정 · 배분 (디렉터 · 소시오)
 //   GET  /api/meta-assign/config                    설정 · 대상자(오늘 할당/대화함) · 고를 수 있는 직원 · 나눌 문의 수 · 내 상태
-//   PUT  /api/meta-assign/config {auto, default_target, pool_days, work_start, work_end, members:[{user_id, daily_target, active}]}
+//   PUT  /api/meta-assign/config {auto, mode:'share'|'target', default_target, pool_days, work_start, work_end, members:[{user_id, daily_target, share_pct, active}]}
+//        mode='share'(0330) = 비율(%)대로 남김없이 · 'target' = 하루 목표(건)까지
 //   POST /api/meta-assign/run                       지금 자동 분배(시간 · 자동 꺼짐과 관계없이)
 //   POST /api/meta-leads/:id/assign {user_id|null}  사람이 직접 맡김 · 풀기
 //   실적
@@ -58,6 +59,14 @@ export function assigneeCond(v, userId, add) {
 // 답장 · 상태 변경 뒤 바로 대화함 확인(기다리지 않음)
 export function kickDone(threadId) { refreshDone({ threadIds: [threadId] }).catch(() => {}); }
 
+let shareProbe = null;
+async function shareReady() {
+  if (shareProbe !== null) return shareProbe;
+  try { shareProbe = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='meta_assign_members' AND column_name='share_pct'`)).rows.length > 0; } catch (_) { shareProbe = false; }
+  if (!shareProbe) setTimeout(() => { shareProbe = null; }, 60000);
+  return shareProbe;
+}
+
 export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
   const need = async (reply) => { if (await assignReady()) return true; reply.code(503).send({ error: 'migration_required', note: '0329 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).' }); return false; };
   const admin = (req, reply) => { if (isAdmin(req)) return true; reply.code(403).send({ error: 'director_or_socio_only' }); return false; };
@@ -94,8 +103,14 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
       work_end: clampInt(b.work_end ?? cur.work_end, 1, 24, 19),
     };
     if (st.work_end <= st.work_start) return reply.code(400).send({ error: 'bad_hours' });
+    // 0330 · 비율(%) 방식
+    const shareCols = await shareReady();
+    st.mode = b.mode === undefined ? cur.mode : (b.mode === 'share' ? 'share' : 'target');
+    if (st.mode === 'share' && !shareCols) return reply.code(503).send({ error: 'migration_required', note: '0330 마이그레이션이 필요합니다.' });
+    if (st.mode === 'share' && Array.isArray(b.members) && b.members.length && !b.members.some((m) => Number(m && m.share_pct) > 0)) return reply.code(400).send({ error: 'share_required' });
     await query(`UPDATE meta_assign_settings SET auto=$1, default_target=$2, pool_days=$3, work_start=$4, work_end=$5, updated_by=$6, updated_at=now() WHERE id=1`,
       [st.auto, st.default_target, st.pool_days, st.work_start, st.work_end, uid]);
+    if (shareCols) await query(`UPDATE meta_assign_settings SET mode=$1 WHERE id=1`, [st.mode]);
     if (Array.isArray(b.members)) {
       const seen = new Set();
       for (const m of b.members.slice(0, 200)) {
@@ -104,6 +119,10 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
         await query(`INSERT INTO meta_assign_members (user_id, daily_target, active, updated_by) VALUES ($1,$2,$3,$4)
                      ON CONFLICT (user_id) DO UPDATE SET daily_target=EXCLUDED.daily_target, active=EXCLUDED.active, updated_by=EXCLUDED.updated_by, updated_at=now()`,
           [id, clampInt(m.daily_target, 0, 500, st.default_target), m.active !== false, uid]);
+        if (shareCols && m.share_pct !== undefined) {
+          const pct = Math.max(0, Math.min(100, Math.round(Number(m.share_pct) * 100) / 100 || 0));
+          await query(`UPDATE meta_assign_members SET share_pct=$2 WHERE user_id=$1`, [id, pct]);
+        }
       }
       // 목록에서 빠진 사람 = 대상 아님(기록 · 실적은 남김)
       await query(`UPDATE meta_assign_members SET active=false, updated_by=$2, updated_at=now() WHERE active AND NOT (user_id = ANY($1::bigint[]))`, [[...seen], uid]);

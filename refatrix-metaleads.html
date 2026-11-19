@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1119c</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1119d</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -368,7 +368,10 @@
     <!-- 0329 · 배분 · 실적 (디렉터 · 소시오) -->
     <section class="pane card" id="p-asg">
       <h2>🎯 대화할 영업사원 — 클릭해서 고르기</h2>
-      <div class="hint">고른 사람에게 하루 목표만큼 문의가 자동으로 나뉩니다. 다시 누르면 빠집니다(지난 실적은 남음). 점선 = 이 화면 권한이 없어 문의를 열 수 없는 사람(관리자 화면 › 사용자에서 견적 · 영업 · 마케팅 중 하나를 주세요).</div>
+      <div class="row" style="align-items:center;margin-bottom:8px"><b style="font-size:13px">나누는 방식</b>
+        <div class="seg" id="aMode"><button type="button" data-m="share">📊 비율(%) — 남김없이 모두</button><button type="button" data-m="target">🎯 하루 목표(건)까지</button></div>
+        <span class="hint" id="aModeHint"></span></div>
+      <div class="hint">고른 사람에게 문의가 자동으로 나뉩니다. 다시 누르면 빠집니다(지난 실적은 남음). 점선 = 이 화면 권한이 없어 문의를 열 수 없는 사람(관리자 화면 › 사용자에서 견적 · 영업 · 마케팅 중 하나를 주세요).</div>
       <div class="pchips" id="aPeople"></div>
       <div class="tgt" id="aTargets"></div>
       <div class="row" style="margin-top:12px">
@@ -380,7 +383,7 @@
       </div>
       <div class="msg err hidden" id="aDirty" style="display:block">⚠ 고른 사람 · 목표가 아직 <b>저장되지 않았습니다</b> — 「💾 저장」을 누르거나 바로 「⚡ 지금 자동 분배」를 누르면 저장 후 나눕니다.</div>
       <div class="note" id="aPool"></div>
-      <div class="row" style="margin-top:8px"><button type="button" class="btn ghost" id="aRun">⚡ 지금 자동 분배</button><span class="hint">목표가 남은 사람에게 바로 나눕니다(시간 · 자동 꺼짐과 관계없이). 넘기거나 푼 문의 자리는 다시 채웁니다.</span></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn ghost" id="aRun">⚡ 지금 자동 분배</button><span class="hint">바로 나눕니다(시간 · 자동 꺼짐과 관계없이) — 비율 방식 = 남은 문의 모두를 비율대로 · 하루 목표 방식 = 목표가 남은 만큼.</span></div>
       <div class="msg" id="aMsg"></div>
 
       <h2 style="margin-top:22px">📈 할당 대비 실적</h2>
@@ -389,7 +392,7 @@
         <input type="date" id="pFrom"><input type="date" id="pTo"><button type="button" class="btn ghost sm" id="pGo">조회</button>
         <button type="button" class="btn ghost sm" id="pXls">📥 엑셀</button>
       </div>
-      <div class="hint" style="margin-top:6px"><b>대화함</b> = 맡은 뒤 답장이 나갔거나(ERP · Business Suite · WhatsApp) · 상태를 바꿨거나 · 📞 전화함. <b>할당</b>에서 다른 사람에게 넘긴 것은 빼고 「넘김」에 따로 셉니다. <b>목표</b> = 하루 목표 × 기간 날 수(오늘까지).</div>
+      <div class="hint" style="margin-top:6px"><b>대화함</b> = 맡은 뒤 답장이 나갔거나(ERP · Business Suite · WhatsApp) · 상태를 바꿨거나 · 📞 전화함. <b>할당</b>에서 다른 사람에게 넘긴 것은 빼고 「넘김」에 따로 셉니다. <b>목표</b> = 하루 목표 × 기간 날 수(오늘까지) · 비율 방식이면 「비율 몫」 = 내 비율 × 팀 전체 할당.</div>
       <div class="tblwrap" id="pTable"></div>
       <div class="tblwrap" id="pDaily"></div>
     </section>
@@ -464,7 +467,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1119c';
+  const MTL_BUILD='mtl-1119d';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -472,7 +475,7 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtT=(t)=>{ if(!t) return '—'; return new Date(t).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
   const ST={nuevo:'신규',contactado:'연락함',derivado:'refaccionaria 연결',venta:'판매',descartado:'제외'};
-  const ERR={no_token:'Meta 토큰이 없습니다 — 관리 › 외부 서비스 키 › 「Meta 페이지」에 토큰을 넣으세요.',already_running:'이미 가져오는 중입니다.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',bad_status:'잘못된 상태',director_or_socio_only:'디렉터 · 소시오만 할 수 있습니다.',not_assignee:'내가 맡은 문의만 할 수 있습니다.',not_author:'내가 쓴 메모만 지울 수 있습니다.',bad_hours:'시작 시각이 끝 시각보다 빨라야 합니다.',migration_required:'0329 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).',empty:'내용을 넣으세요.',bad_range:'기간이 잘못됐습니다.'};
+  const ERR={no_token:'Meta 토큰이 없습니다 — 관리 › 외부 서비스 키 › 「Meta 페이지」에 토큰을 넣으세요.',already_running:'이미 가져오는 중입니다.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',bad_status:'잘못된 상태',director_or_socio_only:'디렉터 · 소시오만 할 수 있습니다.',not_assignee:'내가 맡은 문의만 할 수 있습니다.',not_author:'내가 쓴 메모만 지울 수 있습니다.',bad_hours:'시작 시각이 끝 시각보다 빨라야 합니다.',migration_required:'0329 · 0330 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).',empty:'내용을 넣으세요.',bad_range:'기간이 잘못됐습니다.',share_required:'비율(%)을 한 사람 이상 넣으세요.'};
   const errText=(e)=>ERR[e.message]||('오류: '+e.message);
   function say(ok,t,el){ const m=el||$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; if(ok) setTimeout(()=>{ if(m.textContent===t) m.className='msg'; },5000); }
   async function api(method,path,body){
@@ -845,6 +848,8 @@
     if(S.cfg.is_admin){
       $('tAsg').classList.remove('hidden');
       S.asgSel=new Map((S.cfg.members||[]).filter(m=>m.active).map(m=>[m.user_id,Number(m.daily_target)]));
+      S.asgPct=new Map((S.cfg.members||[]).filter(m=>m.active).map(m=>[m.user_id,Number(m.share_pct)||0]));   // 0330 · 비율(%)
+      S.asgMode=(S.cfg.settings&&S.cfg.settings.mode)||'target';
       const mem=(S.cfg.members||[]).filter(m=>m.active);
       $('fAsg').innerHTML='<option value="">전체</option><option value="__me">🙋 내 할당</option><option value="__none">— 담당 없음</option>'+mem.map(m=>'<option value="'+m.user_id+'">🙋 '+esc(m.name)+'</option>').join('');
       $('mUser').classList.remove('hidden');
@@ -940,26 +945,44 @@
     $('aDef').value=st.default_target; $('aDays').value=st.pool_days; $('aStart').value=st.work_start; $('aEnd').value=st.work_end; $('aAuto').checked=!!st.auto;
     $('aPeople').innerHTML=(c.users||[]).map(u=>'<span class="pchip'+(S.asgSel.has(u.id)?' on':'')+(u.page_ok?'':' noacc')+'" data-uid="'+u.id+'" title="'+(u.page_ok?'':'이 화면 권한 없음 — 문의를 열 수 없습니다')+'">'+(S.asgSel.has(u.id)?'✓ ':'')+esc(u.name)+' <span class="role">'+esc(ROLE_KO[u.role]||u.role||'')+'</span>'+(u.page_ok?'':' ⚠')+'</span>').join('');
     const mem=new Map((c.members||[]).map(m=>[m.user_id,m]));
-    $('aTargets').innerHTML=[...S.asgSel.entries()].map(([id,tg])=>{ const u=(c.users||[]).find(x=>x.id===id)||{name:'#'+id}; const m=mem.get(id);
-      return '<div class="it"><b>'+esc(u.name)+'</b><span class="hint">'+(m&&m.active?'오늘 '+(m.today_done||0)+'/'+(m.today_assigned||0):'새로 고름')+'</span><input type="number" min="0" max="500" data-tgt="'+id+'" value="'+tg+'" title="하루 목표(건)"><span class="hint">건/일</span></div>'; }).join('')
-      ||'<div class="hint">아직 고른 사람이 없습니다 — 위에서 이름을 누르세요.</div>';
+    const share=S.asgMode==='share';
+    $('aMode').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===S.asgMode));
+    $('aModeHint').textContent=share?'나눌 문의를 남김없이 비율대로 나눕니다(하루 상한 없음 · 오늘 받은 수까지 합쳐 비율을 맞춤).':'하루 목표가 차면 그 사람에게는 더 나누지 않습니다(남는 문의는 담당 없음).';
+    $('aDef').closest('div').classList.toggle('hidden',share);
+    const pctSum=[...S.asgSel.keys()].reduce((a,id)=>a+(Number(S.asgPct.get(id))||0),0);
+    $('aTargets').innerHTML=([...S.asgSel.entries()].map(([id,tg])=>{ const u=(c.users||[]).find(x=>x.id===id)||{name:'#'+id}; const m=mem.get(id); const pc=Number(S.asgPct.get(id))||0;
+      return '<div class="it"><b>'+esc(u.name)+'</b><span class="hint">'+(m&&m.active?'오늘 '+(m.today_done||0)+'/'+(m.today_assigned||0):'새로 고름')+'</span>'
+        +(share?'<input type="number" min="0" max="100" step="1" data-pct="'+id+'" value="'+pc+'" title="비율(%)"><span class="hint">%'+(pctSum>0?' ≈ '+Math.round(pc/pctSum*100)+'%':'')+'</span>'
+          :'<input type="number" min="0" max="500" data-tgt="'+id+'" value="'+tg+'" title="하루 목표(건)"><span class="hint">건/일</span>')+'</div>'; }).join('')
+      ||'<div class="hint">아직 고른 사람이 없습니다 — 위에서 이름을 누르세요.</div>')
+      +(share&&S.asgSel.size?'<div class="it" style="background:#fff"><b>합계</b><span class="'+(Math.round(pctSum)===100?'ok-t':'warn-t')+'">'+Math.round(pctSum*10)/10+'%</span>'
+        +(Math.round(pctSum)===100?'':'<span class="hint">100% 가 아니면 그 비율대로 맞춰 나눕니다</span>')+'<button type="button" class="btn ghost sm" id="aEqual">⚖ 똑같이</button></div>':'');
     const p=c.pool||{n:0,waiting:0};
     const left=[...S.asgSel.entries()].reduce((a,[id,tg])=>{ const m=mem.get(id); return a+Math.max(0,tg-((m&&m.active)?(m.today_assigned||0):0)); },0);
     $('aPool').innerHTML='📥 지금 나눌 수 있는 문의 <b>'+p.n+'건</b>(그중 손님 말이 마지막 = 답 기다림 <b>'+p.waiting+'</b>) · 최근 '+st.pool_days+'일 · 신규 · 담당 없음'
-      +'<br>🎯 오늘 남은 목표 합계 <b>'+left+'건</b> · 담당 없는 신규 전체 '+(c.unassigned_open||0)+'건'
-      +'<br>'+(st.auto?'⏱ 자동 분배 켜짐 — 매일 '+st.work_start+'시 ~ '+st.work_end+'시, 5분마다 남은 목표만큼':'⏸ 자동 분배 꺼짐 — 「지금 자동 분배」나 상세에서 직접 맡기세요');
+      +'<br>'+(share?'📊 비율 방식 — 「지금 자동 분배」를 누르면 <b>'+p.n+'건 모두</b> 비율대로 나눕니다':'🎯 오늘 남은 목표 합계 <b>'+left+'건</b>')+' · 담당 없는 신규 전체 '+(c.unassigned_open||0)+'건'
+      +'<br>'+(st.auto?'⏱ 자동 분배 켜짐 — 매일 '+st.work_start+'시 ~ '+st.work_end+'시, 5분마다 '+(share?'새로 들어온 문의를 비율대로':'남은 목표만큼'):'⏸ 자동 분배 꺼짐 — 「지금 자동 분배」나 상세에서 직접 맡기세요');
   }
   $('aPeople').addEventListener('click',e=>{ const ch=e.target.closest('[data-uid]'); if(!ch) return; const id=Number(ch.dataset.uid);
-    if(S.asgSel.has(id)) S.asgSel.delete(id); else { const m=(S.cfg.members||[]).find(x=>x.user_id===id); S.asgSel.set(id,m?Number(m.daily_target):Number($('aDef').value)||20); }
+    if(S.asgSel.has(id)){ S.asgSel.delete(id); S.asgPct.delete(id); if(S.asgMode==='share') equalize(); }
+    else { const m=(S.cfg.members||[]).find(x=>x.user_id===id); S.asgSel.set(id,m?Number(m.daily_target):Number($('aDef').value)||20); S.asgPct.set(id,0); if(S.asgMode==='share') equalize(); }
     setDirty(true); renderAsg(); });
-  $('aTargets').addEventListener('input',e=>{ const i=e.target.closest('[data-tgt]'); if(i){ S.asgSel.set(Number(i.dataset.tgt),Math.max(0,Math.min(500,Math.round(Number(i.value)||0)))); setDirty(true); } });
+  // 0330 · 비율 — 똑같이 나누기(정수 %, 남는 % 는 앞사람부터 1씩)
+  function equalize(){ const ids=[...S.asgSel.keys()]; if(!ids.length) return; const b=Math.floor(100/ids.length); let r=100-b*ids.length; ids.forEach(id=>{ S.asgPct.set(id,b+(r>0?1:0)); r--; }); }
+  $('aMode').addEventListener('click',e=>{ const b=e.target.closest('button[data-m]'); if(!b||b.dataset.m===S.asgMode) return; S.asgMode=b.dataset.m;
+    if(S.asgMode==='share'&&![...S.asgPct.values()].some(v=>v>0)) equalize(); setDirty(true); renderAsg(); });
+  $('aTargets').addEventListener('click',e=>{ if(e.target.closest('#aEqual')){ equalize(); setDirty(true); renderAsg(); } });
+  $('aTargets').addEventListener('change',e=>{ if(e.target.closest('[data-pct]')) renderAsg(); });
+  $('aTargets').addEventListener('input',e=>{ const i=e.target.closest('[data-tgt]'); if(i){ S.asgSel.set(Number(i.dataset.tgt),Math.max(0,Math.min(500,Math.round(Number(i.value)||0)))); setDirty(true); }
+    const pc=e.target.closest('[data-pct]'); if(pc){ S.asgPct.set(Number(pc.dataset.pct),Math.max(0,Math.min(100,Number(pc.value)||0))); setDirty(true); } });
   ['aDef','aDays','aStart','aEnd','aAuto'].forEach(id=>$(id).addEventListener('change',()=>setDirty(true)));
   // 1119c · 고른 사람을 저장하지 않고 「지금 자동 분배」를 눌러 0건이 나던 것 — 저장 안 된 변경을 크게 표시 · 분배 전에 자동 저장
   function setDirty(v){ S.asgDirty=!!v; const b=$('aSave'); b.textContent=v?'💾 저장 (변경 있음)':'저장'; b.style.background=v?'var(--ctr,#E2231A)':'';
     const m=$('aDirty'); if(m){ m.classList.toggle('hidden',!v); } }
   async function saveCfg(){
     const body={auto:$('aAuto').checked,default_target:Number($('aDef').value),pool_days:Number($('aDays').value),work_start:Number($('aStart').value),work_end:Number($('aEnd').value),
-      members:[...S.asgSel.entries()].map(([user_id,daily_target])=>({user_id,daily_target,active:true}))};
+      mode:S.asgMode||'target',
+      members:[...S.asgSel.entries()].map(([user_id,daily_target])=>({user_id,daily_target,share_pct:Number(S.asgPct.get(user_id))||0,active:true}))};
     await api('PUT','/api/meta-assign/config',body); setDirty(false); await loadAssignCfg(); renderAsg(); loadPerf();
     return body.members.length;
   }
@@ -975,7 +998,7 @@
       const by=Object.entries(r.by_user||{}).map(([id,n])=>(names.get(Number(id))||id)+' '+n).join(' · ');
       await loadAssignCfg(); renderAsg(); loadPerf(); loadList();
       if(r.assigned){ m.className='msg ok'; m.textContent='⚡ '+r.assigned+'건 나눴습니다 — '+by+' · 「🙋 내 할당」 · 「영업 할당 · 실적」 화면에서 볼 수 있습니다.'; }
-      else { m.className='msg err'; m.textContent=r.skipped==='no_members'?'⚠ 대화할 영업사원이 없습니다 — 위에서 이름을 눌러 고른 뒤 다시 누르세요.'
+      else { m.className='msg err'; m.textContent=r.skipped==='no_share'?'⚠ 비율이 모두 0% 입니다 — 사람마다 % 를 넣거나 「⚖ 똑같이」를 누르세요.':r.skipped==='no_members'?'⚠ 대화할 영업사원이 없습니다 — 위에서 이름을 눌러 고른 뒤 다시 누르세요.'
         :r.skipped==='targets_full'?'모두 오늘 하루 목표만큼 이미 받았습니다 — 더 나누려면 목표를 올리고 다시 누르세요.':'나눌 문의가 없습니다(최근 '+((S.cfg.settings||{}).pool_days||7)+'일 · 신규 · 담당 없음).'; }
     }
     catch(e){ say(false,errText(e),m); } finally{ $('aRun').disabled=false; }
@@ -992,14 +1015,14 @@
     let d; try{ d=await api('GET','/api/meta-assign/perf?from='+$('pFrom').value+'&to='+$('pTo').value); }catch(e){ $('pTable').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; }
     S.perf=d;
     const row=(p,team)=>'<tr'+(team?' class="team"':' class="click" data-puid="'+p.user_id+'"')+'><td>'+(team?'팀 전체':esc(p.name)+(p.member?'':' <span class="muted">(대상 아님)</span>'))+'</td>'
-      +'<td class="num">'+(team?'':(p.daily_target!=null&&p.member?p.daily_target:'—'))+'</td><td class="num">'+(p.target!=null?p.target:'—')+'</td>'
+      +'<td class="num">'+(team?'':(!p.member?'—':(d.mode==='share'?(p.share_pct!=null?p.share_pct+'%':'—'):(p.daily_target!=null?p.daily_target:'—'))))+'</td><td class="num">'+(p.target!=null?p.target:'—')+'</td>'
       +'<td class="num"><b>'+p.assigned+'</b></td><td class="num ok-t">'+p.done+'</td>'
       +'<td style="min-width:130px">'+bar(p.rate)+'<div class="hint">'+pct(p.rate)+'</div></td>'
       +'<td style="min-width:130px">'+bar(p.target_rate)+'<div class="hint">'+pct(p.target_rate)+'</div></td>'
       +'<td class="num warn-t">'+p.pending+'</td><td class="num muted">'+p.moved+'</td>'
       +'<td class="num">'+p.by_reply+' / '+p.by_status+' / '+p.by_call+'</td>'
       +'<td class="num">'+p.derivado+' / '+p.venta+'</td><td class="num">'+(team?'':(p.avg_min!=null?p.avg_min+'분':'—'))+'</td></tr>';
-    $('pTable').innerHTML=d.people.length?'<table><thead><tr><th>영업사원</th><th class="num">하루 목표</th><th class="num">기간 목표</th><th class="num">할당</th><th class="num">대화함</th><th>할당 대비</th><th>목표 대비</th><th class="num">대화 전</th><th class="num">넘김</th><th class="num">답장 / 상태 / 📞</th><th class="num">연결 / 판매</th><th class="num">맡고 대화까지</th></tr></thead><tbody>'
+    $('pTable').innerHTML=d.people.length?'<table><thead><tr><th>영업사원</th><th class="num">'+(d.mode==='share'?'비율':'하루 목표')+'</th><th class="num">'+(d.mode==='share'?'비율 몫':'기간 목표')+'</th><th class="num">할당</th><th class="num">대화함</th><th>할당 대비</th><th>목표 대비</th><th class="num">대화 전</th><th class="num">넘김</th><th class="num">답장 / 상태 / 📞</th><th class="num">연결 / 판매</th><th class="num">맡고 대화까지</th></tr></thead><tbody>'
       +d.people.map(p=>row(p,false)).join('')+row(d.team,true)+'</tbody></table><div class="hint">'+esc(d.from)+' ~ '+esc(d.to)+' · '+d.days+'일 · 행을 누르면 그 사람의 할당 목록</div>'
       :'<div class="hint" style="margin-top:10px">이 기간에 할당이 없습니다.</div>';
     $('pDaily').innerHTML=d.daily.length>1?'<table style="max-width:520px"><thead><tr><th>날짜</th><th class="num">할당</th><th class="num">대화함</th><th>비율</th></tr></thead><tbody>'
