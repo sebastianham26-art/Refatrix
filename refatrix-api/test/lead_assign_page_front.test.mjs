@@ -52,7 +52,7 @@ function boot(cfg) {
 test('영업 할당 · 실적 화면', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('KPI · 사람별 · 날짜×사람 · 목록 필터 · 열기 · 엑셀', async () => {
     const c = boot(CFG); await c.ready; await tick(600);
-    assert.match(c.d.title, /la-1119b/);
+    assert.match(c.d.title, /la-1119c/);
     assert.match(c.d.getElementById('kpis').textContent, /할당5/); assert.match(c.d.getElementById('kpis').textContent, /60%/);
     assert.match(c.d.getElementById('cfgLine').textContent, /대상 2명/);
     const ppl = c.d.getElementById('people'); assert.match(ppl.textContent, /Clarisa/); assert.match(ppl.textContent, /팀 전체/);
@@ -77,6 +77,16 @@ test('영업 할당 · 실적 화면', { skip: SKIP && 'jsdom 또는 HTML 없음
     c.d.querySelector('#rng button[data-r="month"]').click(); await tick();
     assert.ok(c.calls.some((y) => /\/perf\?from=\d{4}-\d{2}-01&/.test(y.u)) && c.calls.some((y) => /\/list\?from=\d{4}-\d{2}-01&/.test(y.u)));
     c.close();
+  });
+  await t.test('1119c · 대상자 없음 = 큰 안내 · 할당 있으면 안내 숨김', async () => {
+    const c = boot({ ...CFG, members: [], pool: { n: 223 } }); await c.ready; await tick(600);
+    const e = c.d.getElementById('empty');
+    assert.ok(!e.classList.contains('hidden')); assert.match(e.textContent, /아직 대화할 영업사원을 고르지 않았습니다/); assert.match(e.textContent, /223건/);
+    assert.equal(e.querySelector('a').getAttribute('href'), 'refatrix-metaleads.html#tab=asg');
+    c.close();
+    const c2 = boot(CFG); await c2.ready; await tick(600);
+    assert.ok(c2.d.getElementById('empty').classList.contains('hidden'));
+    c2.close();
   });
   await t.test('영업 계정 — 디렉터 전용 안내 · 내 할당 링크', async () => {
     const c = boot({ ready: true, is_admin: false, me: { user_id: 7 } }); await c.ready; await tick(500);

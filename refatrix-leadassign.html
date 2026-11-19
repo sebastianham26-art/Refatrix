@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업 할당 · 실적 · build la-1119b</title>
+<title>Refatrix ERP · 영업 할당 · 실적 · build la-1119c</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -67,6 +67,9 @@
   .chips{display:flex;gap:6px;flex-wrap:wrap}
   .chip{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:700;color:var(--muted)}
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .empty{border:2px dashed var(--gold);background:#fbf7ee;border-radius:12px;padding:14px 16px;margin-top:12px;font-size:13.5px;line-height:1.7}
+  .empty b{color:var(--brand)}
+  .loading{opacity:.45;transition:opacity .15s}
 </style>
 </head>
 <body>
@@ -89,6 +92,7 @@
         <a class="btn ghost sm" href="refatrix-metaleads.html#tab=asg" id="toCfg" title="대상자 · 하루 목표 · 자동 분배 시간">⚙ 대상자 · 목표 설정</a>
         <button type="button" class="btn ghost sm" id="reload">⟳ 새로고침</button>
       </div>
+      <div class="empty hidden" id="empty"></div>
       <div class="kpis" id="kpis"></div>
       <div class="hint" style="margin-top:8px" id="cfgLine"></div>
       <div class="msg" id="msg"></div>
@@ -122,7 +126,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const LA_BUILD='la-1119b';
+  const LA_BUILD='la-1119c';
   try{ console.log('[leadassign] build '+LA_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={range:'today',user:'',state:'',perf:null,items:[],cfg:null};
@@ -194,14 +198,29 @@
   async function loadAll(){
     if(!S.cfg||!S.cfg.is_admin) return;
     const f=$('from').value, t=$('to').value;
+    document.querySelectorAll('#kpis,#people,#mx,#list').forEach(el=>el.classList.add('loading'));
     try{
       const [p,l]=await Promise.all([api('GET','/api/meta-assign/perf?from='+f+'&to='+t), api('GET','/api/meta-assign/list?from='+f+'&to='+t)]);
       S.perf=p; S.all=l.items||[]; $('msg').className='msg';
       // 목록에 나온 사람(대상에서 빠진 사람 포함)도 담당 필터에
       const opts=new Map([...$('fUser').options].map(o=>[o.value,o.textContent]));
       for(const x of S.all) if(!opts.has(String(x.user_id))){ const o=document.createElement('option'); o.value=x.user_id; o.textContent=x.user_name; $('fUser').appendChild(o); opts.set(String(x.user_id),x.user_name); }
-      renderKpis(); renderPeople(); renderMatrix(); renderList();
+      renderKpis(); renderPeople(); renderMatrix(); renderList(); renderEmpty();
     }catch(e){ say(false,errText(e)); }
+    finally{ document.querySelectorAll('#kpis,#people,#mx,#list').forEach(el=>el.classList.remove('loading')); }
+  }
+  // 1119c · 할당이 0건이면 왜 비었는지 · 다음에 할 일을 크게
+  function renderEmpty(){
+    const el=$('empty'); const mem=((S.cfg&&S.cfg.members)||[]).filter(m=>m.active); const n=S.perf?S.perf.team.assigned+S.perf.team.moved:0;
+    const per=esc(S.perf.from)+(S.perf.from!==S.perf.to?' ~ '+esc(S.perf.to):'');
+    if(!mem.length){ el.innerHTML='⚠ <b>아직 대화할 영업사원을 고르지 않았습니다</b> — 그래서 할당이 0건이고 기간을 바꿔도 숫자가 그대로입니다.<br>'
+        +'지금 나눌 수 있는 문의 <b>'+((S.cfg.pool&&S.cfg.pool.n)||0)+'건</b>이 기다리고 있습니다. '
+        +'<a class="btn sm" href="refatrix-metaleads.html#tab=asg">⚙ 영업사원 · 하루 목표 고르기</a> → 「저장」 → 「⚡ 지금 자동 분배」를 누르면 바로 여기에 나옵니다.';
+      el.classList.remove('hidden'); return; }
+    if(!n){ el.innerHTML='📭 <b>'+per+'</b> 기간에는 할당이 없습니다. 대상 '+mem.length+'명 · '+((S.cfg.settings||{}).auto?'자동 분배는 근무 시간('+S.cfg.settings.work_start+'~'+S.cfg.settings.work_end+'시)에 5분마다 돕니다.':'자동 분배가 꺼져 있습니다.')
+        +' 바로 나누려면 <a class="btn ghost sm" href="refatrix-metaleads.html#tab=asg">⚡ 지금 자동 분배</a>';
+      el.classList.remove('hidden'); return; }
+    el.classList.add('hidden');
   }
   function renderKpis(){
     const t=S.perf.team; const r=S.perf;
