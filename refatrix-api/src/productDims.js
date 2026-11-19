@@ -460,6 +460,142 @@ export async function exportBoxes(exec = query) {
   return { items, stat };
 }
 
+// ── 현실 적재(박스 쌓기) — 2026-11-19 디렉터 지시: 「총 박스 사이즈는 현실에 맞게 합해서」 ─────────
+//   박스를 실제로 놓아 본다(겹치지 않게, 빈틈은 빈틈대로 사이즈에 들어간다).
+//   · 박스는 눕혀서 쌓는다 — 가장 짧은 변이 높이(실제 포장·적재 방식). 바닥에서는 90° 돌려 놓을 수 있다.
+//   · 높은 박스부터 층(layer)을 만든다. 한 층 안에서는 줄(row)로 채운다(줄 깊이 = 그 줄 가장 깊은 박스).
+//     층 높이 = 그 층에서 가장 높은 박스. 전체 높이 = 층 높이의 합.
+//   · 바닥(가로×세로)을 여러 크기로 시험해 보고 고른다: ① 묶음 수가 적은 것 ② 탑처럼 좁고 높지 않은 것
+//     (높이 ≤ 바닥의 짧은 변) ③ 전체 부피가 작은 것 — 한 줄로 길게 늘어선 모양은 벌점 ④ 가장 긴 변이 짧은 것.
+//   · 바닥은 팔레트 크기(120×100 cm)를 넘지 않게 — 박스 하나가 그보다 크면 그 박스 크기까지.
+//     높이가 170 cm 를 넘으면 층을 나눠 「묶음(팔레트) n개」로 낸다.
+//   · 박스가 아주 많으면(1,500개 초과) 놓아 보는 대신 부피 ÷ 적재율 0.8 로 팔레트 수를 어림한다.
+export const PACK_LIMIT = { l: 120, w: 100, h: 170 };
+export const PACK_MAX_ITEMS = 1500;
+const up1 = (x) => Math.ceil(x - 1e-9);
+
+function shelfPack(items, X, Y, mode = 0) {
+  // mode 0 = 줄마다 덜 깊어지는 쪽으로 돌려 놓기 · 1 = 긴 변을 가로로 고정 · 2 = 긴 변을 세로로 고정(안 들어가면 돌림)
+  // items: [{a,b,h}] (a≥b, 높이 내림차순 정렬)  → { layers:[{h, n}], usedX, usedY, H }
+  const layers = []; let usedX = 0; let usedY = 0;
+  let layer = null; let rowY = 0; let rowDepth = 0; let rowX = 0;
+  const newLayer = () => { layer = { h: 0, n: 0 }; layers.push(layer); rowY = 0; rowDepth = 0; rowX = 0; };
+  newLayer();
+  for (const it of items) {
+    let placed = false;
+    for (let tries = 0; tries < 3 && !placed; tries++) {
+      // 같은 줄에 놓기: (a,b) 또는 (b,a) 중 들어가는 것 — 줄 깊이를 덜 늘리는 쪽 먼저
+      const fit = ([dx, dy]) => rowX + dx <= X + 1e-9 && rowY + dy <= Y + 1e-9;
+      let opts = [[it.a, it.b], [it.b, it.a]].filter(fit);
+      if (mode && opts.length > 1) opts = [mode === 1 ? [it.a, it.b] : [it.b, it.a]];
+      else if (mode && opts.length === 1 && rowX > 0) {
+        // 고정 방향이 안 맞으면 다른 방향으로 이 줄에 끼우지 않고 다음 줄로(줄이 들쭉날쭉해지지 않게) — 박스가 커서 한 방향만 되는 경우는 그대로
+        const want = mode === 1 ? [it.a, it.b] : [it.b, it.a];
+        if (opts[0][0] !== want[0] && want[0] <= X + 1e-9 && want[1] <= Y + 1e-9) opts = [];
+      }
+      if (opts.length) {
+        if (!mode) opts.sort((p, q) => Math.max(rowDepth, p[1]) - Math.max(rowDepth, q[1]) || p[0] - q[0]);
+        const [dx, dy] = opts[0];
+        rowX += dx; rowDepth = Math.max(rowDepth, dy);
+        usedX = Math.max(usedX, rowX); usedY = Math.max(usedY, rowY + rowDepth);
+        layer.h = Math.max(layer.h, it.h); layer.n++;
+        placed = true;
+      } else if (rowX > 0 && rowY + rowDepth < Y) { rowY += rowDepth; rowX = 0; rowDepth = 0; }   // 다음 줄
+      else if (layer.n > 0) newLayer();                                                              // 다음 층
+      else break;
+    }
+    if (!placed) return null;   // 바닥보다 큰 박스(후보 제외)
+  }
+  return { layers: layers.filter((l) => l.n > 0), usedX, usedY, H: layers.reduce((s, l) => s + l.h, 0) };
+}
+
+function splitStacks(layers, maxH) {
+  const stacks = []; let cur = null;
+  for (const l of layers) {
+    if (!cur || (cur.h + l.h > maxH && cur.n > 0)) { cur = { h: 0, n: 0, layers: 0 }; stacks.push(cur); }
+    cur.h += l.h; cur.n += l.n; cur.layers++;
+  }
+  return stacks;
+}
+
+/**
+ * groups: [{l,w,h,n}] (cm · 개수) → { dims:{l,w,h}, stacks:[{l,w,h,boxes,layers}], boxes, layers, fill, method }
+ *   dims = 묶음이 1개면 그 사이즈, 여러 개면 묶음 하나(가장 큰 것) 사이즈 · stacks 에 전부.
+ */
+const packCache = new Map();   // 같은 박스 구성은 다시 계산하지 않는다(견적 목록 · 미리보기 반복 호출)
+export function packBoxes(groups, limit = PACK_LIMIT) {
+  const ck = JSON.stringify([limit, (groups || []).map((g) => [g.l, g.w, g.h, g.n]).sort()]);
+  if (packCache.has(ck)) return packCache.get(ck);
+  const res = packBoxesRaw(groups, limit);
+  if (packCache.size > 5000) packCache.clear();
+  packCache.set(ck, res);
+  return res;
+}
+function packBoxesRaw(groups, limit) {
+  const gs = (groups || []).map((g) => { const s = [Number(g.l), Number(g.w), Number(g.h)].sort((x, y) => y - x); return { a: s[0], b: s[1], h: s[2], n: Math.max(0, Math.round(Number(g.n) || 0)) }; })
+    .filter((g) => g.n > 0 && g.a > 0 && g.b > 0 && g.h > 0);
+  const N = gs.reduce((s, g) => s + g.n, 0);
+  if (!N) return null;
+  const net = gs.reduce((s, g) => s + g.n * g.a * g.b * g.h, 0);
+  const maxA = Math.max(...gs.map((g) => g.a)); const maxB = Math.max(...gs.map((g) => g.b));
+  const capX = Math.max(limit.l, maxA); const capY = Math.max(limit.w, maxB);
+  const maxH = Math.max(limit.h, ...gs.map((g) => g.h));
+  if (N === 1) {
+    const g = gs[0];
+    return { dims: { l: g.a, w: g.b, h: g.h }, stacks: [{ l: g.a, w: g.b, h: g.h, boxes: 1, layers: 1 }], boxes: 1, layers: 1, fill: 1, method: 'single', net_cm3: net };
+  }
+  if (N > PACK_MAX_ITEMS) {
+    const per = capX * capY * limit.h * 0.8;
+    const k = Math.max(1, Math.ceil(net / per));
+    const h = up1(Math.min(limit.h, net / 0.8 / k / (capX * capY)));
+    return { dims: { l: capX, w: capY, h }, stacks: Array.from({ length: k }, () => ({ l: capX, w: capY, h, boxes: Math.ceil(N / k), layers: null })),
+      boxes: N, layers: null, fill: 0.8, method: 'volume', net_cm3: net };
+  }
+  const items = [];
+  for (const g of gs.sort((p, q) => q.h - p.h || q.a * q.b - p.a * p.b)) for (let i = 0; i < g.n; i++) items.push(g);
+  const foot = items.reduce((s, it) => s + it.a * it.b, 0);
+  // 바닥 후보: 층 수 k 마다 (바닥 넓이 ≈ 전체 바닥 ÷ k) + 박스 변의 배수 + 팔레트
+  const cands = new Map();
+  const addC = (x, y) => {
+    let X = Math.min(capX, Math.max(maxA, x)); let Y = Math.min(capY, Math.max(maxB, y));
+    if (Y > X && Y <= capX && X <= capY) [X, Y] = [Y, X];
+    const key = X.toFixed(1) + 'x' + Y.toFixed(1); if (!cands.has(key)) cands.set(key, [X, Y]);
+  };
+  const kMax = Math.min(items.length, 20);
+  for (let k = 1; k <= kMax; k++) {
+    const area = foot / k;
+    const s = Math.sqrt(area);
+    addC(s, area / Math.max(s, 1e-9));
+    addC(s * 1.25, area / (s * 1.25));
+    addC(s / 1.25, area / (s / 1.25));
+  }
+  const big = gs[0];
+  for (let m = 1; m <= 5; m++) for (let r = 1; r <= 5; r++) addC(big.a * m, big.b * r);
+  addC(capX, capY);
+  let best = null;
+  for (const [X, Y] of cands.values()) for (const mode of [0, 1, 2]) {
+    const p = shelfPack(items, X, Y, mode);
+    if (!p) continue;
+    const stacks = splitStacks(p.layers, maxH);
+    const L = up1(p.usedX); const W = up1(p.usedY);
+    const st = stacks.map((s) => ({ l: L, w: W, h: up1(s.h), boxes: s.n, layers: s.layers }));
+    const vol = st.reduce((s, x) => s + x.l * x.w * x.h, 0);
+    const dimMax = Math.max(L, W, st[0].h);
+    // 안정성: 묶음 높이가 바닥의 짧은 변보다 높으면(탑처럼 좁고 높으면) 실제로 그렇게 쌓지 않는다 → 뒤로
+    const tall = st.some((x) => x.h > Math.min(L, W) + 1e-9) ? 1 : 0;
+    // 모양: 한 줄로 길게 늘어선 배치(가장 긴 변 ÷ 가장 짧은 변 > 2)는 부피에 벌점 — 실제로는 덩어리로 쌓는다
+    const asp = Math.max(...st.map((x) => Math.max(x.l, x.w, x.h) / Math.max(1e-9, Math.min(x.l, x.w, x.h))));
+    const shaped = vol * (1 + 0.15 * Math.max(0, asp - 2) ** 2);
+    const score = [st.length, tall, shaped, dimMax];
+    const better = (a, b) => { for (let i = 0; i < a.length; i++) { if (a[i] < b[i] - 1e-6) return true; if (a[i] > b[i] + 1e-6) return false; } return false; };
+    if (!best || better(score, best.score)) best = { score, st, layers: p.layers.length, vol };
+  }
+  if (!best) return null;
+  const main = best.st.reduce((a, b) => (b.h > a.h ? b : a), best.st[0]);
+  return { dims: { l: main.l, w: main.w, h: main.h }, stacks: best.st, boxes: N, layers: best.layers,
+    fill: Math.round(net / best.vol * 1000) / 1000, method: 'stack', net_cm3: net };
+}
+
 // ── 견적 무게 · 사이즈 ──────────────────────────────────────────────
 function round(n, d = 1) { const k = 10 ** d; return Math.round(Number(n) * k) / k; }
 
@@ -469,7 +605,7 @@ function round(n, d = 1) { const k = 10 ** d; return Math.round(Number(n) * k) /
 export function aggregateLines(lines) {
   const a = { pcs: 0, wt: 0, wt_pcs: 0, wt_miss: 0, wt_miss_qty: 0, vol: 0, d_pcs: 0, d_miss: 0, d_miss_qty: 0,
     d_nobox: 0, d_nobox_qty: 0, d_nosize: 0, d_nosize_qty: 0, d_a: 0, d_b: 0, d_c: 0, unreg: 0, unreg_qty: 0 };
-  const nosizeBoxes = new Set();
+  const nosizeBoxes = new Set(); const grp = new Map();
   for (const l of lines || []) {
     const q = Number(l.qty) || 0;
     if (q <= 0) continue;
@@ -482,6 +618,7 @@ export function aggregateLines(lines) {
     const s = own.every((x) => x > 0) ? own : (l.box_code ? bxs : [0, 0, 0]);
     if (s.every((x) => x > 0)) {
       s.sort((x, y) => y - x);
+      const gk = s.join('|'); const g = grp.get(gk) || { l: s[0], w: s[1], h: s[2], n: 0 }; g.n += q; grp.set(gk, g);
       a.vol += q * s[0] * s[1] * s[2]; a.d_pcs += q;
       a.d_a = Math.max(a.d_a, s[0]); a.d_b = Math.max(a.d_b, s[1]); a.d_c = Math.max(a.d_c, s[2]);
     } else {
@@ -490,11 +627,12 @@ export function aggregateLines(lines) {
     }
   }
   a.nosize_boxes = [...nosizeBoxes].sort();
+  a.groups = [...grp.values()];
   return a;
 }
 
 /** 집계 → 화면용 { weight_kg, dims:{l,w,h}, vol_m3, vol_weight_kg, … } (줄이 하나도 없으면 null) */
-export function estimateShipment(agg) {
+export function estimateShipment(agg, groupsArg = null) {
   const n = (k) => Number(agg && agg[k]) || 0;
   const pcs = n('pcs'); const wtPcs = n('wt_pcs'); const dPcs = n('d_pcs');
   const miss = {
@@ -505,7 +643,19 @@ export function estimateShipment(agg) {
   };
   if (!wtPcs && !dPcs) return (pcs || n('unreg')) ? { weight_kg: null, dims: null, pcs, ...miss, nodata: true } : null;
   let dims = null; let volM3 = null; let volW = null; let netM3 = null;
-  if (dPcs > 0) {
+  const groups = groupsArg || (agg && Array.isArray(agg.groups) ? agg.groups : null);
+  let pack = null;
+  if (dPcs > 0 && groups && groups.length) {
+    // 현실 적재 — 박스를 실제로 눕혀 층으로 쌓은 배치
+    pack = packBoxes(groups);
+  }
+  if (pack) {
+    dims = pack.dims;
+    const totV = pack.stacks.reduce((s, x) => s + x.l * x.w * x.h, 0);
+    volM3 = round(totV / 1e6, 3);
+    netM3 = round(pack.net_cm3 / 1e6, 3);
+    volW = round(totV / VOL_DIVISOR, 1);
+  } else if (dPcs > 0) {
     const a = n('d_a'); const b = n('d_b'); const c = n('d_c'); const V = n('vol');
     let L; let W; let H;
     if (dPcs === 1) { L = a; W = b; H = c; }
@@ -523,6 +673,8 @@ export function estimateShipment(agg) {
     volW = round(dims.l * dims.w * dims.h / VOL_DIVISOR, 1);
   }
   return { weight_kg: wtPcs > 0 ? round(n('wt'), 1) : null, dims, vol_m3: volM3, net_m3: netM3, vol_weight_kg: volW,
+    ...(pack ? { pack: { method: pack.method, boxes: pack.boxes, layers: pack.layers, fill: pack.fill,
+      stacks: pack.stacks.length, stack_list: pack.stacks.length > 1 ? pack.stacks : undefined } } : {}),
     pcs, wt_pcs: wtPcs, d_pcs: dPcs, ...miss };
 }
 
@@ -565,8 +717,64 @@ export const SHIP_JOIN = `
          ) shp ON TRUE`;
 
 /** 목록 행(shp_* 칸) → estimateShipment */
-export function shipFromRow(r) {
+export function shipFromRow(r, groups = null) {
   const agg = {};
   for (const k of SHIP_KEYS) agg[k] = Number(r['shp_' + k]) || 0;
-  return estimateShipment(agg);
+  return estimateShipment(agg, groups);
+}
+
+/** 견적 여러 건의 박스 묶음(사이즈별 개수) — 목록이 현실 적재를 계산할 때 한 번에 읽는다. → Map(quote_id → [{l,w,h,n}]) */
+export async function shipGroupsFor(exec, quoteIds) {
+  const out = new Map();
+  if (!quoteIds || !quoteIds.length) return out;
+  const r = await exec(
+    `SELECT ql.quote_id, ${EL} AS l, ${EW} AS w, ${EH} AS h, SUM(ql.qty) AS n
+       FROM quote_lines ql
+       JOIN products p ON p.id = ql.product_id
+       LEFT JOIN packing_boxes pb ON pb.code = p.box_code
+      WHERE ql.quote_id = ANY($1::bigint[]) AND ql.qty > 0 AND ${DOK}
+      GROUP BY 1, 2, 3, 4`, [quoteIds]);
+  for (const x of r.rows) {
+    const k = Number(x.quote_id);
+    const a = out.get(k) || []; a.push({ l: Number(x.l), w: Number(x.w), h: Number(x.h), n: Number(x.n) }); out.set(k, a);
+  }
+  return out;
+}
+
+/** 견적 입력(미리보기) — 제품 id · 수량 목록 → 대략 총무게 · 현실 적재 사이즈 */
+export async function shipForProducts(exec, lines) {
+  const ids = [...new Set((lines || []).filter((l) => l.product_id != null).map((l) => Number(l.product_id)))];
+  const info = new Map();
+  if (ids.length) {
+    const r = await exec(
+      `SELECT p.id, p.weight_kg, p.box_code, p.box_l_cm AS p_l, p.box_w_cm AS p_w, p.box_h_cm AS p_h,
+              pb.box_l_cm, pb.box_w_cm, pb.box_h_cm
+         FROM products p LEFT JOIN packing_boxes pb ON pb.code = p.box_code WHERE p.id = ANY($1::bigint[])`, [ids]);
+    for (const x of r.rows) info.set(Number(x.id), x);
+  }
+  const rows = (lines || []).map((l) => (l.product_id == null ? { product_id: null, qty: l.qty } : { product_id: l.product_id, qty: l.qty, ...(info.get(Number(l.product_id)) || {}) }));
+  return estimateShipment(aggregateLines(rows));
+}
+
+/** 제품찾기 목록용 — id 목록 → Map(id → { weight_kg, box_code, l, w, h, src: 'producto'|'caja'|null }) */
+export async function dimsMap(exec, ids) {
+  const out = new Map();
+  const list = [...new Set((ids || []).map(Number).filter((x) => x > 0))];
+  if (!list.length) return out;
+  const r = await exec(
+    `SELECT p.id, p.weight_kg, p.box_code, p.box_l_cm AS pl, p.box_w_cm AS pw, p.box_h_cm AS ph,
+            pb.box_l_cm AS bl, pb.box_w_cm AS bw, pb.box_h_cm AS bh
+       FROM products p LEFT JOIN packing_boxes pb ON pb.code = p.box_code WHERE p.id = ANY($1::bigint[])`, [list]);
+  const ok3 = (a, b, c) => Number(a) > 0 && Number(b) > 0 && Number(c) > 0;
+  for (const x of r.rows) {
+    const own = ok3(x.pl, x.pw, x.ph); const fromBox = !own && x.box_code && ok3(x.bl, x.bw, x.bh);
+    const d = own ? [x.pl, x.pw, x.ph] : fromBox ? [x.bl, x.bw, x.bh] : null;
+    if (x.weight_kg == null && !x.box_code && !d) continue;
+    out.set(Number(x.id), {
+      weight_kg: numOrNull(x.weight_kg), box_code: x.box_code || null,
+      l: d ? Number(d[0]) : null, w: d ? Number(d[1]) : null, h: d ? Number(d[2]) : null,
+      src: own ? 'producto' : fromBox ? 'caja' : null,
+    });
+  }
+  return out;
 }

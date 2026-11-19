@@ -24,7 +24,7 @@ import { kickOrderStatus, kickOrderFinal } from '../orderStatusSync.js';   // 02
 import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 import { internalHeaders } from '../internalCall.js';
-import { dimsReady, SHIP_SELECT, SHIP_JOIN, shipFromRow, aggregateLines, estimateShipment } from '../productDims.js';   // 0327 · 견적 대략 총무게 · 사이즈
+import { dimsReady, SHIP_SELECT, SHIP_JOIN, shipFromRow, aggregateLines, estimateShipment, shipGroupsFor, shipForProducts } from '../productDims.js';   // 0327 · 견적 대략 총무게 · 사이즈
 import { fobCostBasis } from '../priceMaster.js';   // 2026-09-24 · 견적 매출총이익 — 평균원가 없는 제품의 FOB 추정 원가   // 0224c · /api/sales 내부 호출 표식
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
@@ -320,7 +320,12 @@ export default async function quoteRoutes(app) {
     // 2026-11-04 kitc · 이 견적의 키트(키트 번호 순) — 화면·엑셀·인쇄의 KIT 머리줄(번호 · 차종 · 세트 · 구성품 코드)
     let kits = [];
     try { kits = await kitSummaries(out.filter((l) => l.matched && l.kit_no)); } catch (_) { kits = []; }
-    return { discountRate, ivaRate, lines: out, totals, pair_hints, kits,
+    // 2026-11-19 · 견적 입력 중 대략 총무게 · 총사이즈(현실 적재) — 0327 · 0328 이 있을 때만
+    let ship = null;
+    try {
+      if (await dimsReady()) ship = await shipForProducts(query, out.filter((l) => !l.ambiguous).map((l) => ({ product_id: l.matched ? l.product_id : null, qty: l.qty })));
+    } catch (e) { ship = null; try { console.error('[quotes/preview] ship', e.message); } catch (_) {} }
+    return { discountRate, ivaRate, lines: out, totals, pair_hints, kits, ...(ship ? { ship } : {}),
       ...(kitExpanded ? { input_lines: inLines.map((l) => ({ code: l.code, product_id: l.product_id || null, qty: l.qty, ...(l.kit_no ? { kit_no: l.kit_no } : {}), ...(l.brand ? { brand: l.brand } : {}) })) } : {}) };
   });
 
@@ -799,6 +804,17 @@ export default async function quoteRoutes(app) {
          ) cls ON TRUE${gpJoin}${shipOn ? SHIP_JOIN : ''}
         WHERE ${conds.join(' AND ')}
         ORDER BY q.quote_date DESC, q.id DESC`, args)).rows;
+    // 2026-11-19 · 총사이즈 = 현실 적재(박스를 실제로 쌓은 배치). 견적별 박스 묶음을 한 번에 읽고,
+    //   목록이 아주 길면 1.5초 안에서만 쌓아 보고 나머지는 부피 어림(같은 화면 · 표시만 「어림」).
+    let shipGroups = new Map(); const shipT0 = Date.now();
+    if (shipOn) {
+      try { shipGroups = await shipGroupsFor(query, rows.filter((r) => r.status !== 'pricelist').map((r) => Number(r.id))); }
+      catch (e) { try { console.error('[quotes] ship groups', e.message); } catch (_) {} }
+    }
+    const shipOf = (r) => {
+      const g = shipGroups.get(Number(r.id)) || [];
+      return Date.now() - shipT0 < 1500 ? shipFromRow(r, g) : shipFromRow(r);
+    };
     const gpOf = (r) => {
       if (!gpDir || r.status === 'pricelist') return undefined;
       const sale = r.status === 'converted' && Number(r.s_n || 0) > 0;
@@ -832,7 +848,7 @@ export default async function quoteRoutes(app) {
         packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
         inactive_cnt: Number(r.inact_cnt || 0),             // 0224 · 판매중단 줄(다음 단계 차단 사유)
         ...(gpDir ? { gp: gpOf(r) } : {}),                   // 2026-09-24 · 디렉터만 — 매출총이익
-        ...(shipOn && r.status !== 'pricelist' ? { ship: shipFromRow(r) } : {}),   // 0327 · 대략 총무게 · 사이즈
+        ...(shipOn && r.status !== 'pricelist' ? { ship: shipOf(r) } : {}),   // 0327 · 대략 총무게 · 사이즈(현실 적재)
         ...(kwOut.codeIdx ? { code_hits: (r.code_hits || []).map((h) => ({ ctr: h.ctr || null, input: h.input || null, qty: Number(h.qty) || 0 })) } : {}),
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {

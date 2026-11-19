@@ -60,7 +60,7 @@ test('① ~ ④ 견적 작성 — 엑셀 다운로드 · 전체 가격표 · Top
     return null;
   });
   const w = dom.window, $ = (id) => w.document.getElementById(id);
-  assert.match(w.document.title, /qt-1111kb/);
+  assert.match(w.document.title, /qt-1119sh/);
   w.RefXrefCols.picker($('xrefColPick'));
   assert.equal($('xrefColPick').querySelectorAll('input[data-xb]').length, 5, 'BAW · GROB · VAZLO · KYB · MOOG');
   // ④ 체크 없음 → 종전 그대로
@@ -112,7 +112,7 @@ test('① ~ ④ 견적 작성 — 엑셀 다운로드 · 전체 가격표 · Top
 test('⑤ 견적 목록 › 상세 › 엑셀(재고분)', opts, async () => {
   const dom = await boot('refatrix-quotelist.html');
   const w = dom.window, $ = (id) => w.document.getElementById(id);
-  assert.match(w.document.title, /ql-1119mf/);
+  assert.match(w.document.title, /ql-1119sh/);
   const host = w.document.createElement('span'); host.id = 'dtXcPick'; w.document.body.appendChild(host);
   w.RefXrefCols.picker(host);
   check(w, host, ['GROB', 'BAW']);

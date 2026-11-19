@@ -48,7 +48,7 @@ async function bootList(quote = QUOTE) {
 
 test('① 견적 목록 — 무게 · 사이즈(약) 칸 · 자료 없는 줄 표시 · 옛 서버/가격표는 —', opts, async () => {
   const w = await bootList();
-  assert.match(w.document.title, /ql-1119mf/);
+  assert.match(w.document.title, /ql-1119sh/);
   w.render([
     { ...QUOTE, id: 1, quote_no: 'Q1' },
     { ...QUOTE, id: 2, quote_no: 'Q2', ship: undefined },                      // 0327 전 서버
@@ -127,7 +127,7 @@ const sheet = (f) => XLSX.utils.sheet_to_json(f.wb.Sheets[f.wb.SheetNames[0]], {
 test('③ 제품 무게 · 박스 코드 — 양식 · 현재값 · 미리보기(새 박스 안내) · 반영', opts, async () => {
   const { w, files, posts } = await bootProducts();
   const d = w.document;
-  assert.match(d.title, /ps-1119mf/);
+  assert.match(d.title, /ps-1119sh/);
   const blk = d.getElementById('dmBlock');
   assert.ok(blk && d.getElementById('upCard').contains(blk));
   assert.equal(blk.querySelectorAll('[onclick]').length, 0);
@@ -207,4 +207,80 @@ test('⑥ 공장 마스터 파일(실제 업로드 파일) — 미리보기: 박
   assert.match(pv, /확인 63줄/);
   d.getElementById('dmApply').click(); await new Promise((r) => setTimeout(r, 30));
   assert.match(d.getElementById('dmMsg').textContent, /반영 완료/);
+});
+
+test('⑦ 제품찾기 목록 — 「무게 · 박스」 열 · 박스 마스터 표시 · 키트 1세트 무게', opts, async () => {
+  const { w } = await bootProducts();
+  const d = w.document;
+  const items = [
+    { id: 1, code: 'CA0005', name: 'Rotula', stock_qty: 3, is_active: true, dims: { weight_kg: 1.63, box_code: 'A2', l: 22.7, w: 17, h: 8.2, src: 'producto' } },
+    { id: 2, code: 'CB0692', name: 'X', stock_qty: 1, is_active: true, dims: { weight_kg: null, box_code: 'B2', l: 15, w: 9, h: 7, src: 'caja' } },
+    { id: 3, code: 'CB0700', name: 'Y', stock_qty: 1, is_active: true, dims: { weight_kg: 0.4, box_code: 'NUEVA', l: null, w: null, h: null, src: null } },
+    { id: 4, code: 'CC0001', name: 'Z', stock_qty: 1, is_active: true },
+    { id: 5, code: 'K0009', name: 'Kit', is_active: true, kit: { promo_no: 'K0009', buildable: 2, items: [
+      { id: 1, code: 'CA0005', kit_qty: 2, stock_qty: 3, dims: { weight_kg: 1.63, box_code: 'A2', l: 22.7, w: 17, h: 8.2, src: 'producto' } },
+      { id: 6, code: 'CE0001', kit_qty: 1, stock_qty: 3, dims: { weight_kg: 0.5 } }] } },
+  ];
+  w.fetch = async (url) => ({ ok: true, status: 200, json: async () => (/\/api\/products\?/.test(String(url)) ? { items, total: items.length, limit: 200, offset: 0 } : {}) });
+  w.eval(`session.user={name:'dir',role:'director'};`);
+  await w.loadProducts();
+  const tb = d.querySelector('#prodList table') || [...d.querySelectorAll('table')].find((t) => /무게 · 박스/.test(t.textContent));
+  assert.ok(tb, 'table');
+  const heads = [...tb.querySelectorAll('thead th')].map((t) => t.textContent.replace(/[▲▼]/g, '').trim());
+  const ci = heads.indexOf('무게 · 박스');
+  assert.ok(ci > heads.indexOf('소재') && ci < heads.indexOf('재고'), heads.join('|'));
+  const rows = [...tb.querySelectorAll('tbody tr.prow')];
+  const cell = (i) => rows[i].querySelectorAll('td')[ci].textContent;
+  assert.match(cell(0), /1\.63 kg/); assert.match(cell(0), /A2 · 22\.7×17×8\.2 cm/);
+  assert.match(cell(1), /무게 —/); assert.match(cell(1), /B2 · 15×9×7 cm/);
+  assert.ok(rows[1].querySelectorAll('td')[ci].querySelector('[title="박스 마스터 사이즈"]'));
+  assert.match(cell(2), /NUEVA · 사이즈 미입력/);
+  assert.equal(cell(3).trim(), '—');
+  assert.match(cell(4), /≈ 3\.76 kg/); assert.match(cell(4), /1세트 · 구성품 2종/);   // 1.63×2 + 0.5
+  const sub = [...tb.querySelectorAll('tbody tr.kitsub')];
+  assert.equal(sub.length, 2);
+  assert.equal(sub[0].querySelectorAll('td').length, rows[4].querySelectorAll('td').length - 1);   // 구성품 줄은 제품명이 2칸(colspan) — 칸 수가 본 줄과 맞음
+  assert.match(sub[0].textContent, /1\.63 kg/);
+});
+
+test('⑧ 견적 입력 — 📦 대략 무게 · 사이즈(현실 적재 · 묶음 · 빠진 줄)', opts, async () => {
+  const dom = new JSDOM(read('refatrix-quote.html'), {
+    runScripts: 'dangerously', url: 'https://example.test/refatrix-quote.html',
+    beforeParse(win) {
+      win.sessionStorage.setItem('refatrix_session', JSON.stringify({ token: 't', api: 'https://api.test', user: { name: 'dir', role: 'director' } }));
+      win.alert = () => {}; win.confirm = () => true;
+      win.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    },
+  });
+  await new Promise((r) => dom.window.addEventListener('load', r));
+  const w = dom.window;
+  assert.match(w.document.title, /qt-1119sh/);
+  const one = w.qtShipHtml({ weight_kg: 16.3, dims: { l: 46, w: 34, h: 25 }, vol_m3: 0.039, vol_weight_kg: 7.8,
+    pack: { method: 'stack', boxes: 10, layers: 3, fill: 0.809, stacks: 1 }, wt_miss: 1, wt_miss_qty: 2, d_nobox: 0, d_nosize: 1, d_nosize_qty: 3, nosize_boxes: ['NUEVA'], unreg: 1 });
+  const t1 = new w.DOMParser().parseFromString(one, 'text/html').body.textContent;
+  assert.match(t1, /총무게 ≈ 16\.3 kg/);
+  assert.match(t1, /가로 46 × 세로 34 × 높이 25 cm/);
+  assert.match(t1, /박스 10개를 눕혀 3층으로 쌓은 배치 · 적재율 81%/);
+  assert.match(t1, /박스 사이즈 미입력 1줄\(3개\) — NUEVA/);
+  assert.match(t1, /미등록 코드 1줄/);
+  const multi = w.qtShipHtml({ weight_kg: 900, dims: { l: 108, w: 84, h: 164 }, vol_m3: 7.4, vol_weight_kg: 1488,
+    pack: { method: 'stack', boxes: 300, layers: 38, fill: 0.98, stacks: 2, stack_list: [{ l: 108, w: 84, h: 164 }, { l: 108, w: 84, h: 82 }] } });
+  assert.match(new w.DOMParser().parseFromString(multi, 'text/html').body.textContent, /2묶음\(팔레트\) · 108×84×164 \+ 108×84×82 cm/);
+  assert.equal(w.qtShipHtml(null), '');
+  // 미리보기 응답에 ship 이 있으면 품목 표 아래에 표시
+  w.renderLines({ lines: [{ matched: true, product_id: 1, ctr_code: 'CA0005', qty: 10, list_price: 10, discount_rate: 0, final_price: 10, line_subtotal: 100, line_iva: 16, line_total: 116, stock_flag: 'ok', avail_stock: 20, cur_stock: 20 }],
+    totals: { skuCount: 1, totalQty: 10, subtotal: 100, iva: 16, total: 116 },
+    ship: { weight_kg: 16.3, dims: { l: 46, w: 34, h: 25 }, vol_m3: 0.039, vol_weight_kg: 7.8, pack: { method: 'stack', boxes: 10, layers: 3, fill: 0.81, stacks: 1 } } });
+  assert.ok(w.document.getElementById('qtShip'));
+  assert.match(w.document.getElementById('linesWrap').textContent, /총사이즈 가로 46 × 세로 34 × 높이 25 cm/);
+});
+
+test('⑨ 견적 목록 — 묶음(팔레트) 여러 개 · 쌓은 방식 툴팁', opts, async () => {
+  const w = await bootList();
+  const sh = { ...SHIP, dims: { l: 108, w: 84, h: 164 }, pack: { method: 'stack', boxes: 300, layers: 38, fill: 0.98, stacks: 2, stack_list: [{ l: 108, w: 84, h: 164 }, { l: 108, w: 84, h: 82 }] } };
+  const cell = w.shipCellHtml(sh);
+  assert.match(cell, /2묶음 · 108×84×164 \+ 108×84×82 cm/);
+  assert.match(w.shipTitle(sh), /박스 300개를 눕혀 38층으로 쌓은 배치 · 적재율 98% · 팔레트/);
+  const single = w.shipCellHtml({ ...SHIP, pack: { method: 'stack', boxes: 12, layers: 3, fill: 0.9, stacks: 1 } });
+  assert.match(single, /49×49×49 cm/);
 });

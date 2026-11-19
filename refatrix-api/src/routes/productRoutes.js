@@ -17,7 +17,7 @@ import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품�
 import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구성품
 import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
 import { searchMaster, normBrand as xmBrand, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 경쟁사 코드(크로스레퍼런스 마스터)로 제품찾기
-import { dimsReady, tableToRows, previewDims, applyDims, exportDims, previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes, boxConflicts } from '../productDims.js';   // 0327 · 0328 · 무게 · 포장 박스
+import { dimsReady, tableToRows, previewDims, applyDims, exportDims, previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes, boxConflicts, dimsMap } from '../productDims.js';   // 0327 · 0328 · 무게 · 포장 박스
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -277,6 +277,14 @@ export default async function productRoutes(app) {
     } catch (e) { try { console.error('[products] rack_stock', e.message); } catch (_) {} }
     // 0293 · VIO 프로모션 키트(K0001 …) — 구성품을 하위 줄로: 부품마다 랙·재고·Backorder·입고 예정(권한대로 최소화)
     try { await attachKits(perm, items); } catch (e) { try { console.error('[products] kits', e.message); } catch (_) {} }
+    // 2026-11-19 · 제품찾기 「무게 · 박스」 — 무게 · 박스 코드 · 계산에 쓰는 사이즈(제품 자체 → 박스 마스터)
+    try {
+      if (items.length && await dimsReady()) {
+        const comps = items.flatMap((p) => (p.kit && p.kit.items ? p.kit.items.filter((c) => !c.missing) : []));
+        const dm = await dimsMap(query, [...items, ...comps].map((p) => p.id));
+        for (const p of [...items, ...comps]) { const d = dm.get(Number(p.id)); if (d) p.dims = d; }
+      }
+    } catch (e) { try { console.error('[products] dims', e.message); } catch (_) {} }
     // 0325 · 경쟁사 코드로 걸린 제품 표시 + 마스터엔 있으나 CTR 미등록인 행(SYD 미개발) 안내
     if (xrefHit.size) for (const p of items) { const h = xrefHit.get(Number(p.id)); if (h) p.xref_hit = h; }
     return { items, limit, offset, total, ...(xrefUnbridged.length && offset === 0 ? { xref_unbridged: xrefUnbridged } : {}) };

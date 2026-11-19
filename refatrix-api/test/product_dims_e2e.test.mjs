@@ -11,6 +11,7 @@ import {
   tableToRows, parseNum, parseDimsCell, headerField, previewDims, applyDims, exportDims,
   previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes,
   aggregateLines, estimateShipment, SHIP_SELECT, SHIP_JOIN, shipFromRow, dimsReady, _resetDimsReady,
+  packBoxes, shipGroupsFor, shipForProducts, dimsMap, PACK_LIMIT,
 } from '../src/productDims.js';
 import { classifyTable } from '../src/productDelete.js';
 
@@ -92,7 +93,8 @@ test('대략 사이즈 — 1개 = 그 박스 · 여러 개 = 85% 채움 · 박�
   const one = estimateShipment(aggregateLines([{ product_id: 1, qty: 1, weight_kg: 2, box_code: 'A', box_l_cm: 10, box_w_cm: 40, box_h_cm: 20 }]));
   assert.deepEqual(one.dims, { l: 40, w: 20, h: 10 });
   const many = estimateShipment(aggregateLines([{ product_id: 1, qty: 100, weight_kg: 0.5, box_code: 'A', box_l_cm: 10, box_w_cm: 10, box_h_cm: 10 }]));
-  assert.equal(many.weight_kg, 50); assert.deepEqual(many.dims, { l: 49, w: 49, h: 49 });
+  assert.equal(many.weight_kg, 50); assert.deepEqual(many.dims, { l: 50, w: 50, h: 40 });   // 현실 적재: 5×5 바닥 · 4층 · 빈틈 없음
+  assert.deepEqual([many.pack.method, many.pack.layers, many.pack.fill, many.pack.stacks], ['stack', 4, 1, 1]);
   const mix = estimateShipment(aggregateLines([
     { product_id: 1, qty: 2, weight_kg: 3, box_code: 'LARGA', box_l_cm: 70, box_w_cm: 12, box_h_cm: 12 },
     { product_id: 2, qty: 4, weight_kg: null, box_code: 'NUEVA', box_l_cm: null },
@@ -111,6 +113,44 @@ test('대략 사이즈 — 1개 = 그 박스 · 여러 개 = 85% 채움 · 박�
   const own2 = estimateShipment(aggregateLines([{ product_id: 1, qty: 1, box_code: null, p_l: 10, p_w: 20, p_h: 30 }]));
   assert.deepEqual(own2.dims, { l: 30, w: 20, h: 10 }); assert.equal(own2.d_nobox, 0);
   assert.equal(estimateShipment(aggregateLines([])), null);
+});
+
+test('현실 적재 — 박스를 눕혀 층으로 · 겹침 없음 · 안정(탑 · 한 줄 금지) · 팔레트 넘으면 묶음', () => {
+  const vol = (d) => d.l * d.w * d.h;
+  const P = (g) => packBoxes(g);
+  // 1개 = 그 박스(눕힌 방향)
+  assert.deepEqual(P([{ l: 10, w: 40, h: 20, n: 1 }]).dims, { l: 40, w: 20, h: 10 });
+  // 2개 = 위로 포개기(40×20×20) — 바닥에 나란히(40×40×10)보다 덩어리
+  assert.deepEqual(P([{ l: 40, w: 20, h: 10, n: 2 }]).dims, { l: 40, w: 20, h: 20 });
+  // A2 22.7×17×8.2 × 10 → 2×2 바닥 · 3층 (탑 23×34×41 · 한 줄 114×17×17 이 아님)
+  const a2 = P([{ l: 22.7, w: 17, h: 8.2, n: 10 }]);
+  assert.deepEqual(a2.dims, { l: 46, w: 34, h: 25 }); assert.equal(a2.layers, 3);
+  // 15×9×7 × 6 → 빈틈 없이 15×27×14
+  const s6 = P([{ l: 15, w: 9, h: 7, n: 6 }]);
+  assert.equal(vol(s6.dims), 15 * 27 * 14); assert.equal(s6.fill, 1);
+  // 어떤 결과든: 쌓은 부피 ≥ 박스 부피 합, 가장 큰 박스보다 작지 않음, 높이 ≤ 바닥 짧은 변(안정) 또는 박스 자체가 그렇게 생김
+  for (const g of [[{ l: 22.7, w: 17, h: 8.2, n: 10 }, { l: 50, w: 50, h: 16, n: 2 }, { l: 15, w: 9, h: 7, n: 3 }],
+    [{ l: 34, w: 8.7, h: 4.5, n: 300 }, { l: 14.9, w: 7.7, h: 5.9, n: 500 }], [{ l: 18.3, w: 9, h: 5.2, n: 3 }]]) {
+    const r = P(g);
+    const net = g.reduce((s, x) => s + x.l * x.w * x.h * x.n, 0);
+    assert.ok(r.stacks.reduce((s, x) => s + vol(x), 0) >= net - 1e-6);
+    const maxL = Math.max(...g.map((x) => Math.max(x.l, x.w, x.h)));
+    assert.ok(Math.max(r.dims.l, r.dims.w) >= maxL - 1e-9);
+    assert.ok(r.fill > 0.6 && r.fill <= 1);
+  }
+  // 팔레트(120×100 · 170)를 넘으면 묶음으로
+  const big = P([{ l: 54, w: 21, h: 20.5, n: 300 }]);
+  assert.ok(big.stacks.length >= 2);
+  for (const st of big.stacks) assert.ok(st.l <= PACK_LIMIT.l && st.w <= PACK_LIMIT.w && st.h <= PACK_LIMIT.h);
+  assert.equal(big.stacks.reduce((s, x) => s + x.boxes, 0), 300);
+  // 박스가 아주 많으면 부피 어림(팔레트 수)
+  const huge = P([{ l: 9.3, w: 8.7, h: 8.7, n: 3900 }]);
+  assert.equal(huge.method, 'volume'); assert.ok(huge.stacks.length >= 2);
+  // 같은 구성은 캐시(같은 객체)
+  assert.equal(P([{ l: 15, w: 9, h: 7, n: 6 }]), s6);
+  // estimateShipment 가 적재 결과를 쓴다
+  const est = estimateShipment(aggregateLines([{ product_id: 1, qty: 10, weight_kg: 1.63, box_code: 'A2', p_l: 22.7, p_w: 17, p_h: 8.2 }]));
+  assert.deepEqual(est.dims, { l: 46, w: 34, h: 25 }); assert.equal(est.weight_kg, 16.3); assert.equal(est.pack.layers, 3);
 });
 
 test('product_dims_log 은 제품 삭제 때 함께 정리되는 표', () => {
@@ -182,7 +222,8 @@ test('실 PostgreSQL — 0327 → 0328 · 제품 박스 코드 · 박스 마스�
     assert.deepEqual(bx.stat, { total: 3, sized: 2, nosize: 1, nosize_products: 0 });
 
     const row = (await exec(sel, [qid])).rows[0];
-    const viaSql = shipFromRow(row);
+    const groups = (await shipGroupsFor(exec, [qid])).get(qid);
+    const viaSql = shipFromRow(row, groups);
     const lines = (await exec(`SELECT ql.product_id, ql.qty, p.weight_kg, p.box_code, p.box_l_cm AS p_l, p.box_w_cm AS p_w, p.box_h_cm AS p_h, pb.box_l_cm, pb.box_w_cm, pb.box_h_cm
                                  FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
                                  LEFT JOIN packing_boxes pb ON pb.code = p.box_code WHERE ql.quote_id = $1`, [qid])).rows;
@@ -207,13 +248,22 @@ test('실 PostgreSQL — 0327 → 0328 · 제품 박스 코드 · 박스 마스�
     assert.equal(fa.boxes.boxes, 1); assert.equal(fa.boxes.created, 0);   // BIG 은 같은 반영에서 먼저 생성됨
     const big = (await exec(`SELECT box_l_cm, box_w_cm, box_h_cm FROM packing_boxes WHERE code='BIG'`)).rows[0];
     assert.deepEqual([big.box_l_cm, big.box_w_cm, big.box_h_cm].map(Number), [60, 40, 30]);
-    const s3 = shipFromRow((await exec(sel, [qid])).rows[0]);
+    const s3 = shipFromRow((await exec(sel, [qid])).rows[0], (await shipGroupsFor(exec, [qid])).get(qid));
     assert.equal(s3.d_miss, 0); assert.ok(s3.dims.l >= 60);
     const ex2 = await exportDims(exec);
     assert.equal(ex2.items.find((x) => x.code === 'CR0490').used, 'producto');
     // 바로 다시 올리면 바뀌는 것 없음(제품 · 박스 모두)
     assert.equal((await previewDims(exec, ff.rows)).items.length, 0);
     assert.equal((await previewBoxes(exec, boxRowsFromSizes(ff.box_sizes))).items.length, 0);
+    // 견적 입력(미리보기) = 저장된 견적과 같은 숫자
+    const qlRows = (await exec(`SELECT product_id, qty FROM quote_lines WHERE quote_id = $1`, [qid])).rows;
+    const pv3 = await shipForProducts(exec, qlRows);
+    assert.deepEqual(pv3.nosize_boxes, []); delete pv3.nosize_boxes;
+    assert.deepEqual(pv3, s3);
+    // 제품찾기 dims
+    const dm = await dimsMap(exec, Object.values(pid));
+    assert.deepEqual(dm.get(pid.CR0490), { weight_kg: 0.5, box_code: 'BIG', l: 60, w: 40, h: 30, src: 'producto' });
+    assert.equal(dm.get(pid.CB0458).src, 'caja');
     const q2 = Number((await exec(`INSERT INTO quotes(quote_no) VALUES ('Q-T2') RETURNING id`)).rows[0].id);
     assert.equal(shipFromRow((await exec(sel, [q2])).rows[0]), null);
   } finally {

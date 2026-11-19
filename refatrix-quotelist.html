@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1119mf</title>
+<title>Refatrix ERP · 견적 목록 · ql-1119sh</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -293,7 +293,7 @@
     return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
   }
 
-  const QL_BUILD='ql-1119mf';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1119sh';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -996,11 +996,24 @@
     if(sh.unreg) p.push('미등록 코드 '+sh.unreg+'줄('+fmtq(sh.unreg_qty)+'개)');
     return p;
   }
+  // 2026-11-19 · 현실 적재 — 묶음(팔레트)이 여러 개면 묶음마다 사이즈
+  function shipSizeText(sh,long){
+    const pk=sh.pack, d=sh.dims; if(!d) return '';
+    if(pk&&pk.stacks>1) return pk.stacks+'묶음 · '+(pk.stack_list||[]).map(x=>x.l+'×'+x.w+'×'+x.h).join(' + ')+' cm';
+    return long?('가로 '+d.l+' × 세로 '+d.w+' × 높이 '+d.h+' cm'):(d.l+'×'+d.w+'×'+d.h+' cm');
+  }
+  function shipHowText(pk){
+    if(!pk) return '';
+    if(pk.method==='single') return '박스 1개';
+    if(pk.method==='volume') return '박스 '+fmtq(pk.boxes)+'개 — 부피로 어림(박스가 많음)';
+    return '박스 '+fmtq(pk.boxes)+'개를 눕혀 '+pk.layers+'층으로 쌓은 배치 · 적재율 '+Math.round((pk.fill||0)*100)+'%'+(pk.stacks>1?' · 팔레트(120×100 · 높이 170 cm)를 넘어 묶음을 나눔':'');
+  }
   function shipTitle(sh){
     const t=['제품마스터의 무게 · 사이즈(제품 자체 → 없으면 포장 박스 마스터)로 계산한 대략값'];
     if(sh.weight_kg!=null) t.push('총무게 ≈ '+shipNum(sh.weight_kg,1)+' kg ('+fmtq(sh.wt_pcs)+'개 기준)');
-    if(sh.dims){ t.push('총사이즈 ≈ 가로 '+sh.dims.l+' × 세로 '+sh.dims.w+' × 높이 '+sh.dims.h+' cm ('+fmtq(sh.d_pcs)+'개 기준)');
-      t.push('박스 순부피 '+shipNum(sh.net_m3,3)+' m³ → 채움률 85% 포장부피 ≈ '+shipNum(sh.vol_m3,3)+' m³');
+    if(sh.dims){ t.push('총사이즈 ≈ '+shipSizeText(sh,true)+' ('+fmtq(sh.d_pcs)+'개 기준)');
+      const pk=sh.pack; if(pk) t.push(shipHowText(pk));
+      t.push('박스 순부피 '+shipNum(sh.net_m3,3)+' m³ → 쌓은 부피 ≈ '+shipNum(sh.vol_m3,3)+' m³');
       t.push('부피무게(÷5000) ≈ '+shipNum(sh.vol_weight_kg,1)+' kg'); }
     const m=shipMissText(sh); if(m.length) t.push('계산에서 뺀 줄: '+m.join(' · '));
     return t.join('\n');
@@ -1011,7 +1024,7 @@
     if(sh.nodata) return '<span class="hint" title="'+esc(shipTitle(sh))+'">자료 없음</span>';
     let h='<span title="'+esc(shipTitle(sh))+'" style="white-space:nowrap">';
     h+=(sh.weight_kg!=null?('<b>≈ '+shipNum(sh.weight_kg,1)+' kg</b>'):'<span class="hint">무게 —</span>');
-    h+='<br><span style="font-size:11px">'+(sh.dims?(sh.dims.l+'×'+sh.dims.w+'×'+sh.dims.h+' cm'):'<span class="hint">사이즈 —</span>')+'</span>';
+    h+='<br><span style="font-size:11px">'+(sh.dims?shipSizeText(sh,false):'<span class="hint">사이즈 —</span>')+'</span>';
     if(miss.length) h+='<br><span class="hint" style="font-size:10.5px;color:#9a6512">* 자료 없는 줄 '+((sh.wt_miss>sh.d_miss?sh.wt_miss:sh.d_miss)+(sh.unreg||0))+'</span>';
     return h+'</span>';
   }
@@ -1023,7 +1036,7 @@
     if(sh.nodata) h+='<span class="hint">이 견적의 제품에 무게 · 사이즈 자료가 없습니다 — 제품마스터 › 업로드 › 📦 제품 무게 · 포장 박스 · 사이즈 / 📐 포장 박스 마스터</span>';
     else {
       h+='<span>총무게 <b>'+(sh.weight_kg!=null?('≈ '+shipNum(sh.weight_kg,1)+' kg'):'—')+'</b></span>';
-      h+='<span>총사이즈 <b>'+(sh.dims?('≈ 가로 '+sh.dims.l+' × 세로 '+sh.dims.w+' × 높이 '+sh.dims.h+' cm'):'—')+'</b>'
+      h+='<span>총사이즈 <b>'+(sh.dims?('≈ '+shipSizeText(sh,true)):'—')+'</b>'+(sh.pack?' <span class="hint">('+esc(shipHowText(sh.pack))+')</span>':'')
         +(sh.dims?(' <span class="hint">('+shipNum(sh.vol_m3,3)+' m³ · 부피무게 '+shipNum(sh.vol_weight_kg,1)+' kg)</span>'):'')+'</span>';
     }
     if(miss.length) h+='<span class="hint" style="color:#9a6512">* 계산에서 뺌: '+esc(miss.join(' · '))+'</span>';

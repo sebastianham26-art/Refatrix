@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-1111kb</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-1119sh</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -2080,6 +2080,7 @@
         +'</div>';
     }
     html+='<div class="hint" style="margin-top:6px">품목수(SKU) <b>'+(t.skuCount||0)+'</b> · 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 총계(IVA 미포함) '+fmt(t.subtotal||0)+' · IVA '+fmt(t.iva||0)+' · <b>총계(IVA 포함) '+fmt(t.total||0)+'</b> &nbsp;·&nbsp; <span style="color:var(--muted)">제품명을 클릭하면 이 고객의 구매 실적을 봅니다</span></div>';
+    html+=qtShipHtml(lastPreview&&lastPreview.ship);   // 2026-11-19 · 대략 총무게 · 총사이즈(현실 적재)
     // 0325 · CTR 을 못 찾은 줄 — 코드 + 브랜드가 기록되고 저장하면 개발요청에 남는다
     const nf=L.filter(l=>!l.matched&&!l.ambiguous);
     if(nf.length){
@@ -2092,6 +2093,35 @@
       const i=Number(b.getAttribute('data-amb')); const l=L[i]; if(!l) return;
       openCand(l.input_code,l.qty,l.candidates||[],!!l.pick_required,{brand:(lines[i]&&lines[i].brand)||l.input_brand||'',idx:i});
     }));
+  }
+
+  // ===== 2026-11-19 · 견적 입력 — 대략 총무게 · 총사이즈 =====
+  //   서버 /api/quotes/preview 의 ship. 사이즈 = 박스를 실제로 눕혀 층으로 쌓은 배치(팔레트 120×100 · 높이 170 cm 넘으면 묶음을 나눔).
+  function qtNum(n,d){ return Number(n).toLocaleString('es-MX',{minimumFractionDigits:d||0,maximumFractionDigits:d||0}); }
+  function qtShipHtml(sh){
+    if(!sh) return '';
+    const miss=[];
+    if(sh.wt_miss) miss.push('무게 없음 '+sh.wt_miss+'줄('+fmtq(sh.wt_miss_qty)+'개)');
+    if(sh.d_nobox) miss.push('사이즈 · 박스 코드 없음 '+sh.d_nobox+'줄('+fmtq(sh.d_nobox_qty)+'개)');
+    if(sh.d_nosize) miss.push('박스 사이즈 미입력 '+sh.d_nosize+'줄('+fmtq(sh.d_nosize_qty)+'개)'+((sh.nosize_boxes&&sh.nosize_boxes.length)?' — '+sh.nosize_boxes.slice(0,6).join(', '):''));
+    if(sh.unreg) miss.push('미등록 코드 '+sh.unreg+'줄');
+    const pk=sh.pack||null;
+    let size='—';
+    if(sh.dims){
+      size='가로 '+sh.dims.l+' × 세로 '+sh.dims.w+' × 높이 '+sh.dims.h+' cm';
+      if(pk&&pk.stacks>1) size=pk.stacks+'묶음(팔레트) · '+(pk.stack_list||[]).map(x=>x.l+'×'+x.w+'×'+x.h).join(' + ')+' cm';
+    }
+    const how=pk?(pk.method==='single'?'박스 1개':pk.method==='volume'?('박스 '+fmtq(pk.boxes)+'개 · 부피로 어림(박스가 많음)'):('박스 '+fmtq(pk.boxes)+'개를 눕혀 '+pk.layers+'층으로 쌓은 배치 · 적재율 '+Math.round((pk.fill||0)*100)+'%')):'';
+    let h='<div id="qtShip" style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;background:#f7f4ec;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px">'
+      +'<span style="font-weight:800;color:var(--brand)">📦 대략 무게 · 사이즈</span>';
+    if(sh.nodata) h+='<span class="hint">이 품목들에는 무게 · 사이즈 자료가 없습니다(제품마스터 › 업로드 › 📦).</span>';
+    else {
+      h+='<span>총무게 <b>'+(sh.weight_kg!=null?('≈ '+qtNum(sh.weight_kg,1)+' kg'):'—')+'</b></span>'
+        +'<span>총사이즈 <b>'+size+'</b>'+(how?' <span class="hint">('+how+')</span>':'')+'</span>'
+        +(sh.dims?'<span class="hint">'+qtNum(sh.vol_m3,3)+' m³ · 부피무게 '+qtNum(sh.vol_weight_kg,1)+' kg</span>':'');
+    }
+    if(miss.length) h+='<span class="hint" style="color:#9a6512">* 계산에서 뺌: '+esc(miss.join(' · '))+'</span>';
+    return h+'</div>';
   }
 
   // ===== 0325 · 엑셀 여러 셀 붙여넣기 =====

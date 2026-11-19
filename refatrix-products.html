@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1119mf</title>
+<title>Refatrix ERP · 제품 조회 · ps-1119sh</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -721,7 +721,7 @@
       const isDir=session&&session.user&&session.user.role==='director';
       // 0179: 「상태」 열 +1, 디렉터는 선택 체크박스 열 +1 (드릴다운 colspan 계산에 반영)
       // 2026-10-22 · List price 는 코드 옆 칸으로 옮겨 오른쪽 List Price 열은 뺀다(디렉터 지시)
-      const colN=9+(isDir?1:0)+(prodHasCost?2:0);   // 2026-10-22 · 바코드 열 뺌(경쟁사 칸 아래 작게)
+      const colN=10+(isDir?1:0)+(prodHasCost?2:0);   // 2026-10-22 · 바코드 열 뺌(경쟁사 칸 아래 작게) · 2026-11-19 「무게 · 박스」 열 +1
       if($('stBar')) $('stBar').classList.toggle('hidden',!isDir);
       // 2026-10-07 — 모든 열 제목 클릭 정렬(서버측·전체 데이터 기준). 4번째 인자 = 추가 속성(title 등).
       const sh=(key,label,cls,attr)=>'<th class="'+(cls==null?'num ':cls)+'nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'"'+(attr||'')+'>'+label
@@ -730,6 +730,7 @@
         +(isDir?'<th class="selc" title="일괄 점검할 SKU 선택 (현재 페이지 전체)"><input type="checkbox" id="stAll"></th>':'')
         +sh('code','코드','')+sh('active','상태','',' title="비활성 = 신규 견적·매출·오퍼시트에서 사용 차단. 과거 내역은 그대로 조회됩니다."')
         +sh('syd','경쟁사(SyD) · OE','',' title="아래 초록 글씨 = OE(순정) 번호 · 정렬은 SyD 코드 기준"')+sh('app','적용차종','')+sh('rack','랙','')+sh('material','소재','')
+        +'<th class="nowrap" title="제품 1개(포장 상태) 무게 · 포장 박스 코드 · 계산에 쓰는 박스 사이즈(제품 자체 → 없으면 📐 박스 마스터). 제품마스터 › 업로드 › 📦 에서 올립니다.">무게 · 박스</th>'
         +sh('stock','재고')+sh('backorder','Backorder')+sh('sold','누적판매')
         +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
         +'</tr></thead><tbody>';
@@ -753,6 +754,7 @@
           +'<td class="rack nowrap"'+(p.rack_stock&&p.rack_stock.length?' title="랙별 재고(실사·적치·위치변경·출고로 자동 유지) · FM = fast moving 랙 · 위 → 아래 = 피킹 순서"':'')+'>'+(rack||'—')+'</td>'
           +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
             +(isDir?' title="클릭하면 알루미늄 지정/해제" style="cursor:pointer"':'')+'>'+matBadge(p.material)+'</td>'
+          +'<td class="nowrap dimc">'+(p.kit?kitDimsHtml(p):dimsCellHtml(p.dims))+'</td>'
           +(p.kit?'<td class="num nowrap '+(p.kit.buildable<=0?'lowstock':'')+'" title="키트는 따로 재고가 없습니다 — 지금 구성품 재고로 만들 수 있는 세트 수">세트 '+qty(p.kit.buildable)+'</td>':'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>')
           +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량(구매내역 backorder)">'+(bo>0?qty(bo):'—')+'</td>'
           +'<td class="num">'+qty(sold)+'</td>'
@@ -2367,6 +2369,26 @@
   // 0245 · 제품찾기 「랙」 열 — 랙별 재고(product_rack_stock)를 피킹 순서(fast moving 먼저)로.
   //   랙 기록이 아직 없는 SKU 는 종전처럼 제품마스터 위치(rack_location)를 회색으로 보여준다.
   // 0293 · 키트 구성품 하위 줄 — 열은 위 제품 줄과 같게(랙 · 재고 · Backorder · 입고 예정 · List)
+  // 2026-11-19 · 제품찾기 「무게 · 박스」 — 서버 /api/products 의 dims {weight_kg, box_code, l, w, h, src}
+  function dimsNum(n){ return Number(n).toLocaleString('es-MX',{maximumFractionDigits:3}); }
+  function dimsCellHtml(d){
+    if(!d) return '<span class="hint">—</span>';
+    const w=d.weight_kg!=null?('<b>'+dimsNum(d.weight_kg)+' kg</b>'):'<span class="hint">무게 —</span>';
+    const size=(d.l&&d.w&&d.h)?(dimsNum(d.l)+'×'+dimsNum(d.w)+'×'+dimsNum(d.h)):'';
+    const src=d.src==='caja'?'박스 마스터 사이즈':d.src==='producto'?'제품 자체 사이즈':'사이즈 없음';
+    const tip='무게 '+(d.weight_kg!=null?dimsNum(d.weight_kg)+' kg':'없음')+' · 박스 '+(d.box_code||'없음')+(size?(' · '+size+' cm ('+src+')'):(d.box_code?' · 박스 사이즈 미입력':''));
+    return '<span title="'+escP(tip)+'">'+w+'<div class="dimsub" style="font-size:10.5px;color:#6f6a60">'
+      +(d.box_code?escP(d.box_code)+' · ':'')+(size?size+' cm'+(d.src==='caja'?' <span style="color:#9a6512" title="박스 마스터 사이즈">▣</span>':''):(d.box_code?'<span style="color:#9a6512">사이즈 미입력</span>':'—'))
+      +'</div></span>';
+  }
+  // 키트: 구성품 무게 × 세트당 수량 합 (구성품 중 무게 없는 것이 있으면 「일부」)
+  function kitDimsHtml(k){
+    const it=(k.kit&&k.kit.items)||[]; let w=0, miss=0;
+    it.forEach(c=>{ const q=Number(c.kit_qty||1); if(c.dims&&c.dims.weight_kg!=null) w+=Number(c.dims.weight_kg)*q; else miss++; });
+    if(!it.length) return '<span class="hint">—</span>';
+    if(w<=0) return '<span class="hint">무게 —</span>';
+    return '<span title="1세트 = 구성품 무게 × 세트당 수량의 합'+(miss?(' · 무게 없는 구성품 '+miss+'종 제외'):'')+'"><b>'+(miss?'≥ ':'≈ ')+dimsNum(Math.round(w*1000)/1000)+' kg</b><div style="font-size:10.5px;color:#6f6a60">1세트 · 구성품 '+it.length+'종</div></span>';
+  }
   function kitSubRows(k, isDir){
     const lp=(v)=>v!=null&&v!==''?'$'+Number(v).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}):'List —';
     return k.kit.items.map(function(c,i){
@@ -2382,6 +2404,7 @@
         +'<td style="font-size:11px;color:#6f6a60" colspan="2">'+escP(c.name||'')+(c.ean?'<div class="eanl">▥ '+escP(c.ean)+'</div>':'')+'</td>'
         +'<td class="rack nowrap">'+(rackCellHtml(c)||'—')+'</td>'
         +'<td class="nowrap">'+matBadge(c.material)+'</td>'
+        +'<td class="nowrap dimc">'+dimsCellHtml(c.dims)+'</td>'
         +'<td class="num '+(stock<need?'lowstock':'')+'" title="재고 '+qty(stock)+' ÷ 1세트 '+qty(need)+'개 = '+qty(Math.floor(stock/need))+'세트">'+qty(stock)+'</td>'
         +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량'+(inc>0?(' · 입고 예정 '+qty(inc)+(c.incoming_eta?(' (ETA '+escP(c.incoming_eta)+')'):'')):'')+'">'+(bo>0?qty(bo):'—')+(inc>0?'<div class="kin">입고 '+qty(inc)+(c.incoming_eta?' · '+escP(String(c.incoming_eta).slice(5,10)):'')+'</div>':'')+'</td>'
         +'<td class="num">—</td>'
