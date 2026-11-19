@@ -9,6 +9,7 @@
 //   POST /api/meta-leads/:id/assign {user_id|null}  사람이 직접 맡김 · 풀기
 //   실적
 //   GET  /api/meta-assign/perf?from&to&user          사람별 · 팀(디렉터 · 소시오) — 그 밖은 내 것만
+//   GET  /api/meta-assign/list?from&to&user&state&q   전체 할당 목록(디렉터 · 소시오 · 1119b 「영업 할당 · 실적」 화면)
 //   내 할당 (이 화면 접근 권한이면 누구나 — 자기 것)
 //   GET  /api/meta-assign/mine?scope=today|open|week&user=  (user 는 디렉터 · 소시오만)
 //   POST /api/meta-leads/:id/called {note?}         「📞 전화함」 = 대화함(담당자 · 디렉터)
@@ -165,6 +166,39 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
     const uid = isAdmin(req) ? idOf(req.query.user) : Number(req.ctx.perm.userId) || 0;
     await refreshDone().catch(() => {});
     return { ...(await performance({ from, to, userId: uid })), is_admin: isAdmin(req) };
+  });
+
+  // 1119b · 전체 할당 목록(영업 할당 · 실적 화면) — 디렉터 · 소시오
+  //   GET /api/meta-assign/list?from&to&user&state=open|done|moved&q
+  app.get('/api/meta-assign/list', R, async (req, reply) => {
+    if (!admin(req, reply) || !(await need(reply))) return reply;
+    const today = mxToday();
+    const from = ymd(req.query.from) || today; const to = ymd(req.query.to) || today;
+    if (to < from) return reply.code(400).send({ error: 'bad_range' });
+    const args = [from, to]; const conds = [`a.day BETWEEN $1::date AND $2::date`];
+    const add = (v) => { args.push(v); return '$' + args.length; };
+    const uid = idOf(req.query.user); if (uid) conds.push(`a.user_id = ${add(uid)}`);
+    if (req.query.state === 'open') conds.push(`a.done_at IS NULL AND a.ended_at IS NULL`);
+    else if (req.query.state === 'done') conds.push(`a.done_at IS NOT NULL`);
+    else if (req.query.state === 'moved') conds.push(`a.done_at IS NULL AND a.ended_at IS NOT NULL`);
+    const kw = String(req.query.q || '').trim();
+    if (kw) { const p = add('%' + kw + '%'); conds.push(`(COALESCE(t.m_name, t.name) ILIKE ${p} OR COALESCE(t.m_phone, t.ai_phone, t.a_phone) ILIKE ${p} OR t.ai_summary ILIKE ${p} OR t.customer_text ILIKE ${p})`); }
+    await refreshDone().catch(() => {});
+    const rows = (await query(
+      `SELECT a.id AS assign_id, a.thread_id AS id, a.user_id, u.name AS user_name, to_char(a.day,'YYYY-MM-DD') AS day, a.how, a.assigned_at, a.done_at, a.done_how, a.ended_at,
+              ub.name AS assigned_by_name,
+              t.platform, COALESCE(t.m_name, t.name) AS name, t.username, COALESCE(t.m_phone, t.ai_phone, t.a_phone) AS phone, t.status,
+              t.ai_summary AS summary, COALESCE(t.m_vehicles, t.ai_vehicles, t.a_vehicles) AS vehicles, COALESCE(t.m_parts, t.ai_parts, t.a_parts) AS parts,
+              COALESCE(t.m_state, t.ai_state, t.a_state) AS state, tu.name AS now_name,
+              round(EXTRACT(EPOCH FROM (a.done_at - a.assigned_at)) / 60)::int AS mins,
+              (SELECT n.text FROM meta_lead_notes n WHERE n.thread_id = t.id ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_note,
+              (SELECT count(*)::int FROM meta_lead_notes n WHERE n.thread_id = t.id) AS notes_n
+         FROM meta_assignments a JOIN meta_threads t ON t.id = a.thread_id JOIN users u ON u.id = a.user_id
+         LEFT JOIN users ub ON ub.id = a.assigned_by LEFT JOIN users tu ON tu.id = t.assigned_to
+        WHERE ${conds.join(' AND ')}
+        ORDER BY a.assigned_at DESC LIMIT 3000`, args)).rows
+      .map((r) => ({ ...r, id: Number(r.id), assign_id: Number(r.assign_id), user_id: Number(r.user_id) }));
+    return { from, to, items: rows };
   });
 
   app.post('/api/meta-leads/:id/called', R, async (req, reply) => {

@@ -172,4 +172,20 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const p2 = (await call(dir, 'GET', '/api/meta-assign/perf')).json();
     const b2 = p2.people.find((x) => x.user_id === beto.id); assert.equal(b2.assigned, 3); assert.equal(p2.people.find((x) => x.user_id === ana.id).assigned, 3); assert.equal(b2.member, false); assert.equal(b2.target, null);
   });
+
+  await t.test('B7. 1119b · 전체 할당 목록 — 사람 · 대화 상태 · 검색 · 디렉터만', async () => {
+    const all = (await call(dir, 'GET', '/api/meta-assign/list')).json().items;
+    assert.ok(all.length >= 7);
+    assert.ok(all.every((x) => x.user_name && x.day && x.name));
+    const moved = (await call(dir, 'GET', '/api/meta-assign/list?state=moved')).json().items;
+    assert.ok(moved.length >= 2 && moved.every((x) => x.ended_at && !x.done_at));
+    const mv = moved.find((x) => x.id === T.wa); assert.ok(mv); assert.match(mv.now_name, /Beto/, '지금 담당');
+    const done = (await call(dir, 'GET', '/api/meta-assign/list?state=done')).json().items;
+    assert.ok(done.every((x) => x.done_at && x.mins != null));
+    const ab = (await call(dir, 'GET', `/api/meta-assign/list?user=${beto.id}&state=open`)).json().items;
+    assert.ok(ab.every((x) => x.user_id === beto.id && !x.done_at && !x.ended_at));
+    assert.equal((await call(dir, 'GET', '/api/meta-assign/list?q=Cliente%20wa')).json().items.every((x) => /wa/.test(x.name)), true);
+    assert.equal((await call(ana, 'GET', '/api/meta-assign/list')).statusCode, 403);
+    assert.equal((await call(dir, 'GET', '/api/meta-assign/list?from=2026-11-20&to=2026-11-01')).json().error, 'bad_range');
+  });
 });
