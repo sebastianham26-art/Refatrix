@@ -61,13 +61,15 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
   };
   await t.test('대상자 클릭 · 목표 · 저장 · 지금 분배 · 실적 표 · 엑셀 · 사람 행 → 그 사람 할당', async () => {
     const c = boot(route); await c.ready; await tick(700);
-    assert.match(c.d.title, /mtl-1119b/);
+    assert.match(c.d.title, /mtl-1119c/);
     assert.ok(!c.d.getElementById('tAsg').classList.contains('hidden'), '디렉터 = 배분 탭');
     c.d.getElementById('tAsg').click(); await tick();
     const chips = c.d.querySelectorAll('#aPeople [data-uid]'); assert.equal(chips.length, 4);
     assert.ok(c.d.querySelector('#aPeople [data-uid="7"]').classList.contains('on'));
     assert.ok(c.d.querySelector('#aPeople [data-uid="9"]').classList.contains('noacc'), '권한 없는 사람 표시');
+    assert.ok(c.d.getElementById('aDirty').classList.contains('hidden'));
     c.d.querySelector('#aPeople [data-uid="8"]').click(); await tick(50);
+    assert.ok(!c.d.getElementById('aDirty').classList.contains('hidden'), '저장 안 된 변경 표시'); assert.match(c.d.getElementById('aSave').textContent, /변경 있음/);
     const inp = c.d.querySelector('#aTargets [data-tgt="8"]'); assert.equal(inp.value, '20', '새로 고른 사람 = 기본 목표');
     inp.value = '10'; inp.dispatchEvent(new c.w.Event('input', { bubbles: true }));
     c.d.querySelector('#aPeople [data-uid="7"]').click(); c.d.querySelector('#aPeople [data-uid="7"]').click();   // 빼고 다시 넣기
@@ -75,6 +77,7 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
     const put = c.calls.find((x) => x.method === 'PUT');
     assert.deepEqual(put.body.members.sort((a, b) => a.user_id - b.user_id), [{ user_id: 7, daily_target: 15, active: true }, { user_id: 8, daily_target: 10, active: true }]);
     assert.equal(put.body.auto, true); assert.equal(put.body.pool_days, 7);
+    assert.ok(c.d.getElementById('aDirty').classList.contains('hidden'), '저장하면 표시 사라짐');
     assert.match(c.d.getElementById('aPool').textContent, /40건/);
     c.d.getElementById('aRun').click(); await tick();
     assert.match(c.d.getElementById('aMsg').textContent, /3건 나눴습니다 — Ana 2 · Beto 1/);
@@ -87,6 +90,24 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
     assert.ok(c.d.getElementById('p-mine').classList.contains('on'));
     assert.ok(c.calls.some((x) => x.u.includes('/api/meta-assign/mine?') && x.u.includes('user=7')));
     assert.match(c.d.getElementById('mList').textContent, /Taller Garza/);
+    c.close();
+  });
+  await t.test('1119c · 고르고 저장 안 하고 「지금 자동 분배」 → 먼저 저장 후 분배', async () => {
+    const c = boot(route); await c.ready; await tick(700);
+    c.d.getElementById('tAsg').click(); await tick();
+    c.d.querySelector('#aPeople [data-uid="8"]').click(); await tick(50);
+    c.d.getElementById('aRun').click(); await tick(400);
+    const iPut = c.calls.findIndex((x) => x.method === 'PUT'); const iRun = c.calls.findIndex((x) => x.u.endsWith('/api/meta-assign/run'));
+    assert.ok(iPut >= 0 && iRun > iPut, '저장 → 분배 순서');
+    assert.ok(c.calls[iPut].body.members.some((m) => m.user_id === 8));
+    c.close();
+  });
+  await t.test('1119c · 0건이면 빨간 안내(사라지지 않음)', async () => {
+    const r0 = (u, method, body, json) => u.endsWith('/api/meta-assign/run') ? json({ ok: true, assigned: 0, skipped: 'no_members' }) : route(u, method, body, json);
+    const c = boot(r0); await c.ready; await tick(700);
+    c.d.getElementById('tAsg').click(); await tick();
+    c.d.getElementById('aRun').click(); await tick(300);
+    assert.match(c.d.getElementById('aMsg').className, /err/); assert.match(c.d.getElementById('aMsg').textContent, /대화할 영업사원이 없습니다/);
     c.close();
   });
   await t.test('상세 — 담당 바꾸기 · 메모 추가 · 목록 담당 표시', async () => {
