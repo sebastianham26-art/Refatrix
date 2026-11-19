@@ -842,7 +842,9 @@ export default async function purchaseRoutes(app) {
     const from = (req.query.from || '').trim();
     const to = (req.query.to || '').trim();
     const boOnly = req.query.backorder_only === '1' || req.query.backorder_only === 'true';
-    const limit = Math.min(Number(req.query.limit) || 1000, 3000);
+    // 2026-11-19 — 구매내역 엑셀(금액 제외) 다운로드는 조건에 맞는 라인 전부가 필요 → export=1 이면 상한 50000
+    const isExport = req.query.export === '1' || req.query.export === 'true';
+    const limit = isExport ? Math.min(Number(req.query.limit) || 50000, 50000) : Math.min(Number(req.query.limit) || 1000, 3000);
     const params = [];
     const where = ['p.deleted_at IS NULL', "p.status <> 'cancelled'"];
     if (boOnly) where.push('(l.qty - l.received_qty) > 0');
@@ -854,7 +856,7 @@ export default async function purchaseRoutes(app) {
     }
     params.push(limit);
     const r = await query(
-      `SELECT l.id, p.id AS po_id, p.ref_no, p.order_date,
+      `SELECT l.id, p.id AS po_id, p.ref_no, p.order_date, to_char(p.order_date,'YYYY-MM-DD') AS od,
               l.input_code, l.product_id, pr.code AS matched_code, pr.name AS product_name,
               pr.stock_qty, l.qty, l.received_qty,
               (l.qty - l.received_qty) AS backorder,
@@ -869,7 +871,7 @@ export default async function purchaseRoutes(app) {
       const stock = x.stock_qty == null ? null : Number(x.stock_qty);
       const backorder = Number(x.backorder);
       return {
-        id: Number(x.id), po_id: Number(x.po_id), ref_no: x.ref_no, order_date: x.order_date,
+        id: Number(x.id), po_id: Number(x.po_id), ref_no: x.ref_no, order_date: x.order_date, od: x.od,
         input_code: x.input_code, product_id: x.product_id ? Number(x.product_id) : null,
         matched_code: x.matched_code, product_name: x.product_name, matched: x.product_id != null,
         stock_qty: stock, qty: Number(x.qty), received_qty: Number(x.received_qty),
@@ -885,7 +887,7 @@ export default async function purchaseRoutes(app) {
       sku_count: skuSet.size,
       total_usd: seeCost ? Math.round(items.reduce((s, i) => s + (i.amount_usd || 0), 0) * 100) / 100 : null,
     };
-    return { cost_visible: seeCost, items, summary };
+    return { cost_visible: seeCost, items, summary, limit, truncated: items.length >= limit };
   });
 
   // 소프트 삭제(디렉터 전용) — 오기입 정정용

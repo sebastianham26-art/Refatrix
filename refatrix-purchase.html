@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0924fob</title>
+<title>Refatrix ERP · 구매 내역 · build pur-1119xls</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -133,6 +133,7 @@
       <div><label>시작일</label><input id="from" type="date"></div>
       <div><label>종료일</label><input id="to" type="date"></div>
       <div><button class="btn sm" id="searchBtn" type="button" style="margin-top:22px">조회</button></div>
+      <div><button class="btn ghost sm" id="histXlsxBtn" type="button" style="margin-top:22px" title="오더번호 · 제품번호 · 수량 · 구매일자 (금액 제외) — 검색어·기간 조건 적용">구매내역 엑셀 (금액 제외)</button></div>
     </div>
     <div class="seg">
       <button class="segbtn on" id="modePo" type="button">건별 (참조번호)</button>
@@ -683,6 +684,41 @@
     XLSX.writeFile(wb,'refatrix_purchase_lines_'+ymd+'.xlsx');
   }
 
+  // ---- 구매내역 엑셀(금액 제외) · 2026-11-19 ----
+  // 화면을 볼 수 있는 사람 모두 — 구매일자 · 오더번호(구매참조번호) · 제품번호 · 수량만. 단가·금액은 어떤 권한에서도 넣지 않는다.
+  // 검색어·시작일·종료일 조건을 그대로 쓰고, 「미입고만」 체크와 무관하게 조건에 맞는 구매 라인 전부.
+  function histYmd(r){
+    if(r.od) return String(r.od);
+    return r.order_date?String(r.order_date).slice(0,10):'';
+  }
+  function buildHistRows(items){
+    const rows=(items||[]).map(x=>({
+      d:histYmd(x), ref:x.ref_no||'', code:(x.matched?x.matched_code:x.input_code)||x.input_code||'', qty:Number(x.qty)||0, id:Number(x.id)||0
+    }));
+    rows.sort((a,b)=> a.d<b.d?1:a.d>b.d?-1 : a.ref<b.ref?-1:a.ref>b.ref?1 : a.code<b.code?-1:a.code>b.code?1 : a.id-b.id);
+    return rows.map(r=>({ '구매일자':r.d, '오더번호':r.ref, '제품번호':r.code, '수량':r.qty }));
+  }
+  async function exportPurchaseHistoryExcel(){
+    const btn=$('histXlsxBtn'); const label=btn.textContent;
+    const q=$('q').value.trim(), from=$('from').value, to=$('to').value;
+    const p=new URLSearchParams(); if(q)p.set('q',q); if(from)p.set('from',from); if(to)p.set('to',to); p.set('export','1');
+    btn.disabled=true; btn.textContent='준비 중…';
+    try{
+      const res=await fetch(session.api+'/api/purchases/lines?'+p.toString(),{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ alert('다운로드 실패: '+(d.error||res.status)); return; }
+      const data=buildHistRows(d.items);
+      if(!data.length){ alert('조건에 맞는 구매내역이 없습니다.'); return; }
+      const ws=XLSX.utils.json_to_sheet(data,{header:['구매일자','오더번호','제품번호','수량']});
+      ws['!cols']=[{wch:12},{wch:22},{wch:16},{wch:10}];
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매내역');
+      const tag=(from||to)?('_'+(from||'').replace(/-/g,'')+'-'+(to||'').replace(/-/g,'')):'';
+      XLSX.writeFile(wb,'refatrix_purchase_history'+tag+'_'+mxHoy().replace(/-/g,'')+'.xlsx');
+      if(d.truncated) alert('최대 '+num(d.limit)+'줄까지만 받았습니다. 기간을 나눠서 다시 받아 주세요.');
+    }catch(e){ alert('다운로드 실패: '+e.message); }
+    finally{ btn.disabled=false; btn.textContent=label; }
+  }
+
   // ---- 템플릿 ----
   function downloadTemplate(){
     const ws=XLSX.utils.json_to_sheet([{ '제품코드':'CA0032','수량':100,'구매원가(USD)':4.20,'구매참조번호':'PO-2607-01' }]);
@@ -693,6 +729,7 @@
   // ---- 이벤트 ----
   $('tplBtn').addEventListener('click',downloadTemplate);
   $('linesXlsxBtn').addEventListener('click',exportLinesExcel);
+  $('histXlsxBtn').addEventListener('click',exportPurchaseHistoryExcel);
   $('upBtn').addEventListener('click',()=>$('upFile').click());
   $('upFile').addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; });
   $('commitBtn').addEventListener('click',commit);
