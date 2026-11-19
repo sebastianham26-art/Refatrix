@@ -194,7 +194,7 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     const T5 = (await thread('messenger', 't5', 'psid5', 'Quetzalcoatl', 'Tendrán las orquillas traseras de un altima', 10,
       auto('Meta_0001\nHola Quetzalcoatl, tenemos piezas con 10% de descuento', 'Soy Particular y quiero comprar CTR'))).rows[0].id;
     const T6 = (await thread('messenger', 't6', 'psid6', 'Webhook', 'precio', 9, [{ at: new Date().toISOString(), me: false, text: 'precio' }])).rows[0].id;
-    await query(`INSERT INTO meta_page_messages (psid, mid, direction, source, text, at) VALUES ('psid6','m.t6','out','staff','meta_0001\nHola', now())`);
+    await query(`INSERT INTO meta_page_messages (psid, mid, direction, source, text, at) VALUES ('psid6','m.t6','out','staff','meta_0001\nHola', now()) ON CONFLICT (mid) DO NOTHING`);
     const T7 = (await thread('messenger', 't7', 'psid7', 'Lalo', 'suspensión completa', 8, auto(X + '\nHola 👋 Qué gusto saludarte', 'suspensión completa'))).rows[0].id;
     assert.equal((await call(D, 'POST', '/api/meta-leads/ads', { ad_id: BF, name: 'Buen Fin', match_text: 'Meta_0001' })).statusCode, 200);
     const l = (await call(D, 'GET', '/api/meta-leads/list?ad=' + BF)).json().items;
@@ -246,7 +246,7 @@ test('C. 화면 (jsdom) — 광고 탭', { skip: (!JSDOM || !existsSync(HTML)) &
   t.after(() => w.close());
 
   await t.test('C1. 빌드 · 목록 광고 열 · 광고 필터', async () => {
-    assert.match(d.title, /mtl-1111a/);
+    assert.match(d.title, /mtl-1119a/);
     assert.match(d.querySelector('#lTable tr[data-id="1"]').textContent, /Amortiguadores MTY/);
     assert.match(d.querySelector('#lTable tr[data-id="2"]').textContent, /미등록/);
     const opts = [...d.querySelectorAll('#fAd option')].map((o) => o.value);

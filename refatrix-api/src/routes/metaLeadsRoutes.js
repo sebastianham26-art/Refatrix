@@ -23,6 +23,7 @@
 import { query } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
+import { pageAllowed } from '../permissions.js';
 import {
   metaLeadsConfigured, metaTokenSource, metaPageId, resolvePage, syncMetaLeads, syncState, reextractAll, internalWaPhones, importWaAppThreads, waLive, waThreadMessages,
 } from '../metaLeads.js';
@@ -36,6 +37,9 @@ import { AD_EXPR, AD_SRC_EXPR, cleanAdId, subscribePage } from '../metaAds.js';
 // 0297 · 고객 포털(접속코드 · 연락처 공개 · 매장 재고 · 포털 주문) — 같은 플러그인에서 등록(server.js 변경 없음)
 import leadPortalRoutes, { revealedMap, claimMap, liveMessages, mergeConversation, markMetaKinds, staffUserReady, portalInfoFor, portalHideInfo, resetPortalHideCache, isInternalPhone, mktExpr } from '../leadPortal.js';
 import { chatReady, sendMessengerSmart, commentRefOf } from '../metaPageMsgs.js';
+// 0329 · 영업사원 배분 · 하루 목표 · 고객별 메모 · 실적
+import metaAssignRoutes, { assignInfoFor, assignMap, assigneeCond, kickDone } from './metaAssignRoutes.js';
+import { assignReady } from '../metaAssign.js';
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -68,6 +72,7 @@ const LAST_REPLY = `left((SELECT e->>'text' FROM jsonb_array_elements(t.messages
 const ADS_W = { preHandler: [authGuard, requirePageEditAny(PM_KEYS)] };
 
 export default async function metaLeadsRoutes(app) {
+  await metaAssignRoutes(app, { R, pmKeys: PM_KEYS });   // 0329
   await leadPortalRoutes(app);   // 0297 · /api/lead-portal/* (고객) · /api/lead-portal-admin/* (ERP)
   app.get('/api/meta-leads/status', R, async () => {
     let page = null, pageError = null, pageWarning = null;
@@ -133,6 +138,7 @@ export default async function metaLeadsRoutes(app) {
     if (req.query.ad === '__none') conds.push(`${AD_EXPR} IS NULL`);
     else if (req.query.ad) { const ad = cleanAdId(req.query.ad); if (ad) conds.push(`${AD_EXPR} = ${add(ad)}`); }
     if (ymd(req.query.to)) conds.push(`(t.last_at AT TIME ZONE 'America/Mexico_City')::date <= ${add(req.query.to)}::date`);
+    if (req.query.assignee && (await assignReady())) { const c = assigneeCond(String(req.query.assignee), req.ctx.perm.userId, add); if (c) conds.push(c); }   // 0329
     const limit = Math.min(Number(req.query.limit) || 5000, 10000);
     const hi = await portalHideInfo();   // 1105e · 플랫폼 숨김 · 사내 번호
     if (req.query.hidden === '1') conds.push(hi.col ? 't.portal_hidden' : 'false');
@@ -145,7 +151,9 @@ export default async function metaLeadsRoutes(app) {
     if (codes.length) for (const p of (await query(`SELECT code, stock_qty FROM products WHERE code = ANY($1) AND deleted_at IS NULL`, [codes])).rows) stock[p.code] = Number(p.stock_qty) || 0;
     const rv = await revealedMap(rows.map((r) => Number(r.id)));   // 0297 · 연락처를 본 refaccionaria
     const cm = await claimMap(rows.map((r) => Number(r.id)));   // 0300/0305 · 포털 선점(모든 채널)
+    const am = await assignMap(rows.map((r) => Number(r.id)));   // 0329 · 담당 영업사원
     return { items: rows.map((r) => ({ ...r, id: Number(r.id), revealed_to: rv.get(Number(r.id)) || null, chat_by: cm.get(Number(r.id)) || null,
+      assigned_to: am.has(Number(r.id)) ? am.get(Number(r.id)).to : null, assigned_name: am.has(Number(r.id)) ? am.get(Number(r.id)).name : null,
       internal: r.platform === 'whatsapp' && isInternalPhone(r.phone, hi.phones) })), stock };
   });
 
@@ -164,6 +172,7 @@ export default async function metaLeadsRoutes(app) {
     const psid0 = r.psid;
     delete r.psid;
     const portal = await portalInfoFor(id);   // 1105c · 포털 입력(고객관리)
+    const assign = await assignInfoFor(id).catch(() => null);   // 0329 · 담당 · 고객별 메모
     // 1105e · 플랫폼 숨김 · 사내 번호
     const hi = await portalHideInfo(); let hidden = null;
     if (hi.col) hidden = (await query(`SELECT t.portal_hidden, ${hi.show ? 't.portal_show' : 'false AS portal_show'}, ${mktExpr(hi)} AS mkt,
@@ -172,7 +181,7 @@ export default async function metaLeadsRoutes(app) {
     // 1106d · 📣 WhatsApp 마케팅 회신 — 기본 숨김 · 「플랫폼에 보이기」를 누른 것만 포털에
     const mkt = !!(hidden && hidden.mkt), pshow = !!(hidden && hidden.portal_show), phid = !!(hidden && hidden.portal_hidden);
     const onPortal = !internal && !phid && (!mkt || pshow);
-    return { ...r, id: Number(r.id), portal, portal_hidden: phid, portal_hidden_at: hidden ? hidden.at : null,
+    return { ...r, id: Number(r.id), portal, assign, portal_hidden: phid, portal_hidden_at: hidden ? hidden.at : null,
       portal_hidden_by: hidden ? hidden.by : null, internal, hide_ready: hi.col, mkt, portal_show: pshow, show_ready: hi.show, on_portal: onPortal };
   });
 
@@ -204,6 +213,7 @@ export default async function metaLeadsRoutes(app) {
       su ? [t.psid, s0.mid, text, uid] : [t.psid, s0.mid, text]);
     await query(`UPDATE meta_threads SET status='contactado', updated_at=now() WHERE id=$1 AND status='nuevo'`, [id]).catch(() => null);
     await logEvent({ userId: uid, action: 'update', target: `meta_thread:${id}`, detail: { op: 'erp_messenger_send', len: text.length } });
+    kickDone(id);   // 0329 · 담당자 대화함
     const by = uid ? ((await query(`SELECT name FROM users WHERE id=$1`, [uid])).rows[0] || {}).name || null : null;
     return { ok: true, via: s0.via || 'message', message: { at: new Date().toISOString(), me: true, text, src: 'staff', by, live: true } };
   });
@@ -230,6 +240,7 @@ export default async function metaLeadsRoutes(app) {
   const waDone = async (t, req, op, extra) => {
     await query(`UPDATE meta_threads SET status='contactado', updated_at=now() WHERE id=$1 AND status='nuevo'`, [t.id]).catch(() => null);
     await logEvent({ userId: req.ctx.perm.userId || null, action: 'update', target: `meta_thread:${t.id}`, detail: { op, ...extra } });
+    kickDone(t.id);   // 0329
     return { ok: true, messages: markMetaKinds(await waThreadMessages(t.phone)), wa: await waState(t.phone) };
   };
   app.post('/api/meta-leads/:id/whatsapp', R, async (req, reply) => {
@@ -270,9 +281,16 @@ export default async function metaLeadsRoutes(app) {
     return { ok: true, portal_hidden: !visible, portal_show: visible && !!row.mkt, mkt: !!row.mkt };
   });
 
-  app.patch('/api/meta-leads/:id', W, async (req, reply) => {
+  // 0329 · 읽기 권한만 있는 영업사원도 **자기가 맡은 문의**의 상태 · 메모는 바꾼다
+  const editAny = (req) => { const { perm, isRegistered } = req.ctx; if (perm.role === 'director') return true;
+    return PM_KEYS.some((k) => pageAllowed(perm, k, isRegistered) && ((perm.pageAccess && perm.pageAccess[k]) || 'edit') === 'edit'); };
+  app.patch('/api/meta-leads/:id', R, async (req, reply) => {
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
     const b = req.body || {}; const sets = []; const args = [id];
+    if (!editAny(req)) {
+      const own = (await assignReady()) && Number(((await query(`SELECT assigned_to FROM meta_threads WHERE id=$1`, [id])).rows[0] || {}).assigned_to) === Number(req.ctx.perm.userId);
+      if (!own || Object.keys(b).some((k) => !['status', 'note'].includes(k))) return reply.code(403).send({ error: 'read_only', page: PM_KEYS[0] });
+    }
     const put = (col, v) => { args.push(v); sets.push(`${col} = $${args.length}`); };
     // 빈 문자열 = 자동값으로 되돌리기(NULL)
     const MAP = { name: 'm_name', tipo: 'm_tipo', state: 'm_state', city: 'm_city', phone: 'm_phone', vehicles: 'm_vehicles', parts: 'm_parts', derived_to: 'derived_to', note: 'note' };
@@ -299,6 +317,7 @@ export default async function metaLeadsRoutes(app) {
     const r = (await query(`UPDATE meta_threads SET ${sets.join(', ')}, updated_at = now() WHERE id = $1 RETURNING id`, args)).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
     if (b.vehicles !== undefined || b.parts !== undefined) matchThreads({ ids: [id] }).catch(() => {});   // 차종 · 부품을 고치면 부품번호 다시
+    if (b.status !== undefined) kickDone(id);   // 0329 · 상태를 바꾸면 담당자 대화함
     const out = (await query(`SELECT ${COLS} FROM meta_threads t WHERE t.id = $1`, [id])).rows[0];
     return { ...out, id: Number(out.id), unknown_codes: unknown };
   });

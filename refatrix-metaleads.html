@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1111a</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1119a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -112,6 +112,26 @@
   table.lt td .muted{font-size:11.5px}
   tr.adrow.sel{background:#eef5f1}tr.adrow.unreg td{background:#fffaf0}
   .adform input{min-width:0}
+  /* 0329 · 영업사원 배분 · 하루 목표 · 실적 */
+  .pchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .pchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--muted);user-select:none}
+  .pchip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .pchip .role{font-size:10.5px;font-weight:600;opacity:.75}
+  .pchip.noacc{border-style:dashed}
+  .tgt{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:10px}
+  .tgt .it{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fdfcf9;font-size:12.5px}
+  .tgt .it b{flex:1}.tgt .it input{width:70px;text-align:right}
+  .pbar{background:#f1eee6;border-radius:6px;height:10px;position:relative;min-width:90px;overflow:hidden}
+  .pbar i{position:absolute;left:0;top:0;bottom:0;background:var(--brand);border-radius:6px}
+  .pbar.warn i{background:var(--warn)}.pbar.bad i{background:var(--bad)}
+  tr.team td{font-weight:700;background:#faf8f3;border-top:2px solid var(--line)}
+  .dn{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .dn.ok{background:var(--ok-bg);color:var(--ok)}.dn.wait{background:var(--warn-bg);color:var(--warn)}.dn.moved{background:#eef0f2;color:#666}
+  .asgbox{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#f7fbf9;font-size:12.5px;margin-top:8px}
+  .notes{border:1px solid var(--line);border-radius:8px;background:#fdfcf9;padding:6px 8px;max-height:200px;overflow:auto;font-size:12.5px}
+  .notes .n{padding:5px 0;border-bottom:1px dashed var(--line)}.notes .n:last-child{border-bottom:none}
+  .notes .n .w{font-size:11px;color:var(--muted)}
+  .notes .n button{border:none;background:none;color:var(--bad);cursor:pointer;font-size:11px;float:right}
 </style>
 </head>
 <body>
@@ -152,6 +172,8 @@
       <button type="button" class="tab" data-p="ads">📣 광고별 문의</button>
       <button type="button" class="tab" data-p="sum">📊 수요 요약 (차종 · 지역 · 고객 유형)</button>
       <button type="button" class="tab" data-p="lp">🔑 고객 접속코드</button>
+      <button type="button" class="tab hidden" data-p="mine" id="tMine">🙋 내 할당 <span class="tag st-contactado hidden" id="mineN"></span></button>
+      <button type="button" class="tab hidden" data-p="asg" id="tAsg">🎯 배분 · 실적</button>
     </div>
 
     <!-- 목록 -->
@@ -164,6 +186,7 @@
         <div><label>고객 유형</label><select id="fTipo"><option value="">전체</option><option>Particular</option><option value="Taller">Taller mecánico</option><option>Refaccionaria</option><option>Mayorista</option><option>Flotilla</option><option value="Taxi">Taxi / app</option></select></div>
         <div><label>상태</label><select id="fStatus"><option value="">전체</option><option value="nuevo">신규</option><option value="contactado">연락함</option><option value="derivado">refaccionaria 연결</option><option value="venta">판매</option><option value="descartado">제외</option></select></div>
         <div><label>마지막 대화</label><div class="row" style="gap:4px"><input id="fFrom" type="date"><input id="fTo" type="date"></div></div>
+        <div class="hidden" id="fAsgBox"><label>담당</label><select id="fAsg"><option value="">전체</option><option value="__me">🙋 내 할당</option><option value="__none">— 담당 없음</option></select></div>
         <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:600;color:var(--ink)"><input type="checkbox" id="fDemand"> 차종·부품 있는 것만</label>
         <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:600;color:var(--ink)" title="ERP WhatsApp 마케팅을 받은 번호가 답한 문의 — 고객별로 플랫폼에 보일지 고르세요"><input type="checkbox" id="fMkt"> 📣 WA 마케팅 회신만</label>
         <button type="button" class="btn ghost" id="bSearch">조회</button>
@@ -327,6 +350,49 @@
     <!-- /0297 -->
 
     <!-- 요약 -->
+    <!-- 0329 · 내 할당 -->
+    <section class="pane card" id="p-mine">
+      <div class="row" style="align-items:center">
+        <h2 style="margin:0">🙋 내 할당 — 오늘 대화할 손님</h2><span id="mWho" class="hint"></span>
+        <span style="margin-left:auto"></span>
+        <select id="mUser" class="hidden" title="다른 사람의 할당 보기(디렉터 · 소시오)"></select>
+        <div class="seg" id="mScope"><button type="button" data-s="today" class="on">오늘</button><button type="button" data-s="open">미처리 전체</button><button type="button" data-s="week">최근 7일</button><button type="button" data-s="month">이번 달</button></div>
+        <button type="button" class="btn ghost sm" id="mReload">⟳</button>
+      </div>
+      <div class="kpis" id="mKpis" style="margin-top:10px"></div>
+      <div class="hint" style="margin-top:8px">행을 누르면 대화가 열립니다 — 답장하거나 상태를 바꾸면 <b>대화함</b>으로 셉니다. 전화로 연락했으면 <b>📞 전화함</b>을 누르세요(메모를 함께 남길 수 있음).</div>
+      <div class="tblwrap" id="mList"></div>
+      <div class="msg" id="mMsg"></div>
+    </section>
+
+    <!-- 0329 · 배분 · 실적 (디렉터 · 소시오) -->
+    <section class="pane card" id="p-asg">
+      <h2>🎯 대화할 영업사원 — 클릭해서 고르기</h2>
+      <div class="hint">고른 사람에게 하루 목표만큼 문의가 자동으로 나뉩니다. 다시 누르면 빠집니다(지난 실적은 남음). 점선 = 이 화면 권한이 없어 문의를 열 수 없는 사람(관리자 화면 › 사용자에서 견적 · 영업 · 마케팅 중 하나를 주세요).</div>
+      <div class="pchips" id="aPeople"></div>
+      <div class="tgt" id="aTargets"></div>
+      <div class="row" style="margin-top:12px">
+        <div><label>새로 고른 사람 하루 목표(건)</label><input id="aDef" type="number" min="0" max="500" style="width:110px"></div>
+        <div><label>나눌 문의(최근 며칠)</label><input id="aDays" type="number" min="1" max="90" style="width:110px"></div>
+        <div><label>자동 분배 시간(멕시코시티)</label><div class="row" style="gap:4px"><input id="aStart" type="number" min="0" max="23" style="width:70px"> ~ <input id="aEnd" type="number" min="1" max="24" style="width:70px"> 시</div></div>
+        <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:700;color:var(--ink)"><input type="checkbox" id="aAuto"> 자동 분배 켜기(5분마다)</label>
+        <button type="button" class="btn" id="aSave">저장</button>
+      </div>
+      <div class="note" id="aPool"></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn ghost" id="aRun">⚡ 지금 자동 분배</button><span class="hint">목표가 남은 사람에게 바로 나눕니다(시간 · 자동 꺼짐과 관계없이). 넘기거나 푼 문의 자리는 다시 채웁니다.</span></div>
+      <div class="msg" id="aMsg"></div>
+
+      <h2 style="margin-top:22px">📈 할당 대비 실적</h2>
+      <div class="row" style="align-items:center">
+        <div class="seg" id="pRange"><button type="button" data-r="today" class="on">오늘</button><button type="button" data-r="week">이번 주</button><button type="button" data-r="month">이번 달</button></div>
+        <input type="date" id="pFrom"><input type="date" id="pTo"><button type="button" class="btn ghost sm" id="pGo">조회</button>
+        <button type="button" class="btn ghost sm" id="pXls">📥 엑셀</button>
+      </div>
+      <div class="hint" style="margin-top:6px"><b>대화함</b> = 맡은 뒤 답장이 나갔거나(ERP · Business Suite · WhatsApp) · 상태를 바꿨거나 · 📞 전화함. <b>할당</b>에서 다른 사람에게 넘긴 것은 빼고 「넘김」에 따로 셉니다. <b>목표</b> = 하루 목표 × 기간 날 수(오늘까지).</div>
+      <div class="tblwrap" id="pTable"></div>
+      <div class="tblwrap" id="pDaily"></div>
+    </section>
+
     <section class="pane card" id="p-sum">
       <div class="row" style="align-items:center;gap:10px">
         <b style="color:var(--brand);font-size:13.5px">보기 기준</b>
@@ -373,6 +439,7 @@
     <div class="ed">
       <div id="oAi"></div>
       <div id="oPortal"></div>
+      <div id="oAssign"></div>
       <div class="hint">비워 두면 대화에서 뽑은 <span class="auto">자동값</span>(AI → 규칙)을 씁니다. 고친 값은 다시 가져와도 지워지지 않습니다.</div>
       <label>광고</label><select id="eAd"></select><div class="hint" id="eAdHint"></div>
       <label>이름</label><input id="eName">
@@ -386,6 +453,8 @@
       <div class="row" style="gap:8px"><div style="flex:1"><label>상태</label><select id="eStatus"><option value="nuevo">신규</option><option value="contactado">연락함</option><option value="derivado">refaccionaria 연결</option><option value="venta">판매</option><option value="descartado">제외</option></select></div>
         <div style="flex:1"><label>연결한 refaccionaria</label><input id="eDerived"></div></div>
       <label>메모</label><textarea id="eNote"></textarea>
+      <div id="oNotesBox" class="hidden"><label>고객별 메모(누가 · 언제)</label><div class="notes" id="oNotes"></div>
+        <div class="row" style="gap:6px;margin-top:6px;align-items:stretch"><textarea id="oNoteText" rows="2" style="flex:1;min-height:40px" placeholder="통화 내용 · 다음 할 일 …"></textarea><button type="button" class="btn ghost sm" id="oNoteAdd">메모 추가</button></div></div>
       <div class="row" style="margin-top:10px"><button type="button" class="btn" id="eSave">저장</button><a class="btn ghost sm" id="oOpen" target="_blank" rel="noopener" style="text-decoration:none">Meta 받은편지함에서 열기 ↗</a></div>
       <div class="msg" id="eMsg"></div>
     </div>
@@ -394,7 +463,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1111a';
+  const MTL_BUILD='mtl-1119a';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -402,7 +471,7 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtT=(t)=>{ if(!t) return '—'; return new Date(t).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
   const ST={nuevo:'신규',contactado:'연락함',derivado:'refaccionaria 연결',venta:'판매',descartado:'제외'};
-  const ERR={no_token:'Meta 토큰이 없습니다 — 관리 › 외부 서비스 키 › 「Meta 페이지」에 토큰을 넣으세요.',already_running:'이미 가져오는 중입니다.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',bad_status:'잘못된 상태'};
+  const ERR={no_token:'Meta 토큰이 없습니다 — 관리 › 외부 서비스 키 › 「Meta 페이지」에 토큰을 넣으세요.',already_running:'이미 가져오는 중입니다.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',bad_status:'잘못된 상태',director_or_socio_only:'디렉터 · 소시오만 할 수 있습니다.',not_assignee:'내가 맡은 문의만 할 수 있습니다.',not_author:'내가 쓴 메모만 지울 수 있습니다.',bad_hours:'시작 시각이 끝 시각보다 빨라야 합니다.',migration_required:'0329 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).',empty:'내용을 넣으세요.',bad_range:'기간이 잘못됐습니다.'};
   const errText=(e)=>ERR[e.message]||('오류: '+e.message);
   function say(ok,t,el){ const m=el||$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; if(ok) setTimeout(()=>{ if(m.textContent===t) m.className='msg'; },5000); }
   async function api(method,path,body){
@@ -433,7 +502,7 @@
       try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
       $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
       $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
-      await loadStatus(); loadList(); loadAds();
+      await loadStatus(); loadList(); loadAds(); loadAssignCfg();
     }catch(e){ say(false,'서버에 연결할 수 없습니다.',m); }
     finally{ $('go').disabled=false; }
   }
@@ -441,7 +510,7 @@
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   document.addEventListener('click',e=>{ const c=e.target.closest('[data-close]'); if(c) $(c.dataset.close).classList.remove('on'); });
   $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b) return; S.tab=b.dataset.p;
-    document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.toggle('on',x===b)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='p-'+S.tab)); if(S.tab==='sum') renderSummary(); if(S.tab==='ads') loadAds(); });
+    document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.toggle('on',x===b)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='p-'+S.tab)); if(S.tab==='sum') renderSummary(); if(S.tab==='ads') loadAds(); if(S.tab==='mine') loadMine(); if(S.tab==='asg'){ renderAsg(); loadPerf(); } });
 
   // ───── 연결 상태 ─────
   const GUIDE='<b>🧩 Meta 연결 (한 번만)</b><ol>'
@@ -523,6 +592,7 @@
   function qs(){ const p=new URLSearchParams(); const v=(id)=>$(id).value;
     if(v('fQ').trim()) p.set('q',v('fQ').trim()); if(v('fCh')) p.set('platform',v('fCh')); if(v('fState')) p.set('state',v('fState'));
     if(v('fTipo')) p.set('tipo',v('fTipo')); if(v('fStatus')) p.set('status',v('fStatus')); if(v('fAd')) p.set('ad',v('fAd')); if(v('fFrom')) p.set('from',v('fFrom')); if(v('fTo')) p.set('to',v('fTo'));
+    if($('fAsg')&&$('fAsg').value) p.set('assignee',$('fAsg').value);
     if($('fDemand').checked) p.set('demand','1'); if($('fMkt')&&$('fMkt').checked) p.set('mkt','1'); return p; }
   async function loadList(){
     try{ const d=await api('GET','/api/meta-leads/list?'+qs()); S.items=d.items||[]; S.stock=d.stock||{}; renderList(); if(S.tab==='sum') renderSummary(); }
@@ -562,10 +632,10 @@
         +'<td class="mono">'+esc(x.phone||'')+'</td><td>'+esc(x.vehicles||'')+'</td>'
         +'<td>'+esc(x.parts||'')+(x.items&&x.items.length?'<div style="margin-top:3px">'+codesHTML(x)+'</div>':'')+'</td>'
         +'<td title="'+esc(x.customer_text||'')+'"><div class="lt-sum">'+esc(sumTxt(x))+'</div></td>'
-        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<div class="muted">'+esc(x.derived_to)+'</div>':'')+(x.revealed_to?'<div class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</div>':'')+(x.chat_by?'<div class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</div>':'')+(x.mkt?'<div class="muted" title="ERP WhatsApp 마케팅 회신 — 기본은 플랫폼에 안 보임">📣 WA 마케팅 회신'+(x.portal_show&&!x.portal_hidden?' · <span class="ok-t">플랫폼 보임</span>':'')+'</div>':'')+(x.portal_hidden||(x.mkt&&!x.portal_show)?'<div class="bad-t" title="고객 포털에 안 보임">🚫 플랫폼 숨김</div>':'')+(x.internal?'<div class="muted" title="사내 번호 — 고객 포털에 안 보임">🏢 사내</div>':'')+'</td></tr>').join('')
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<div class="muted">'+esc(x.derived_to)+'</div>':'')+(x.revealed_to?'<div class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</div>':'')+(x.chat_by?'<div class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</div>':'')+(x.mkt?'<div class="muted" title="ERP WhatsApp 마케팅 회신 — 기본은 플랫폼에 안 보임">📣 WA 마케팅 회신'+(x.portal_show&&!x.portal_hidden?' · <span class="ok-t">플랫폼 보임</span>':'')+'</div>':'')+(x.portal_hidden||(x.mkt&&!x.portal_show)?'<div class="bad-t" title="고객 포털에 안 보임">🚫 플랫폼 숨김</div>':'')+(x.internal?'<div class="muted" title="사내 번호 — 고객 포털에 안 보임">🏢 사내</div>':'')+(x.assigned_name?'<div title="담당 영업사원"><span class="ad-chip">🙋 '+esc(x.assigned_name)+'</span></div>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
-  ['fCh','fAd','fState','fTipo','fStatus','fDemand','fMkt','fFrom','fTo'].forEach(id=>$(id).addEventListener('change',loadList));
+  ['fCh','fAd','fState','fTipo','fStatus','fDemand','fMkt','fFrom','fTo','fAsg'].forEach(id=>$(id).addEventListener('change',loadList));
   $('bSearch').addEventListener('click',loadList);
   $('fQ').addEventListener('keydown',e=>{ if(e.key==='Enter') loadList(); });
   $('lTable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id)); });
@@ -722,6 +792,7 @@
     $('eParts').value=d.parts&&d.parts!==d.a_parts?d.parts:''; $('eParts').placeholder='자동: '+(d.a_parts||'—');
     $('eStatus').value=d.status; $('eDerived').value=d.derived_to||''; $('eNote').value=d.note||'';
     renderItemsBox(d);
+    renderAssign(d);
     $('oOpen').href='https://business.facebook.com/latest/inbox/all/?asset_id='+encodeURIComponent((S.status&&S.status.page_id)||'');
     $('eMsg').className='msg'; $('mOne').classList.add('on');
     setTimeout(()=>{ const c=$('oChat'); c.scrollTop=c.scrollHeight; },30);
@@ -745,7 +816,186 @@
     if($('eItems').value!==$('eItems').dataset.orig) body.items=$('eItems').value;
     try{ const r=await api('PATCH','/api/meta-leads/'+d.id,body); S.items=S.items.map(x=>x.id===r.id?Object.assign({},x,r):x); renderList(); renderItemsBox(r); if(r.ad_id!==d.ad_id||r.ad_src!==d.ad_src){ S.cur=Object.assign({},d,r); fillAdSelect(S.cur); loadAds(); }
       say(true,'저장했습니다.'+(r.unknown_codes&&r.unknown_codes.length?' 카탈로그에 없는 코드는 빼고 저장: '+r.unknown_codes.join(', '):''),$('eMsg')); loadStatus(); }
-    catch(e){ say(false,e.message==='unknown_codes'?'카탈로그에 없는 코드입니다.':errText(e),$('eMsg')); }
+    catch(e){
+      // 0329 · 읽기 권한 담당자 = 상태 · 메모만
+      if(e.message==='read_only'&&d.assign&&d.assign.assigned_to===myId()){
+        try{ await api('PATCH','/api/meta-leads/'+d.id,{status:$('eStatus').value,note:$('eNote').value}); d.status=$('eStatus').value; say(true,'상태 · 메모를 저장했습니다(다른 칸은 수정 권한이 필요합니다).',$('eMsg')); loadMine(); return; }
+        catch(e2){ say(false,errText(e2),$('eMsg')); return; }
+      }
+      say(false,e.message==='unknown_codes'?'카탈로그에 없는 코드입니다.':errText(e),$('eMsg')); }
+  });
+
+  // ───── 0329 · 영업사원 배분 · 하루 목표 · 고객별 메모 · 실적 ─────
+  S.cfg=null; S.mScope='today'; S.mUser=''; S.pRange='today'; S.asgSel=new Map();
+  const myId=()=>Number((S.cfg&&S.cfg.me&&S.cfg.me.user_id)||(session.user&&session.user.id)||0);
+  const ROLE_KO={director:'디렉터',socio:'소시오',sales:'영업',sales_support:'영업지원',ops:'운영',treasury:'재무'};
+  const DONE_KO={reply:'💬 답장',status:'✎ 상태',call:'📞 전화'};
+  const pct=(v)=>v==null?'—':(Math.round(v*10)/10)+'%';
+  const bar=(v)=>{ const n=Math.max(0,Math.min(100,Number(v)||0)); return '<div class="pbar'+(v==null?'':(n<50?' bad':(n<80?' warn':'')))+'"><i style="width:'+n+'%"></i></div>'; };
+  const ymdMx=(d)=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City'}).format(d||new Date());
+  async function loadAssignCfg(){
+    try{ S.cfg=await api('GET','/api/meta-assign/config'); }catch(e){ S.cfg=null; return; }
+    if(!S.cfg||!S.cfg.ready){ return; }
+    $('tMine').classList.remove('hidden'); $('fAsgBox').classList.remove('hidden');
+    if(S.cfg.is_admin){
+      $('tAsg').classList.remove('hidden');
+      S.asgSel=new Map((S.cfg.members||[]).filter(m=>m.active).map(m=>[m.user_id,Number(m.daily_target)]));
+      const mem=(S.cfg.members||[]).filter(m=>m.active);
+      $('fAsg').innerHTML='<option value="">전체</option><option value="__me">🙋 내 할당</option><option value="__none">— 담당 없음</option>'+mem.map(m=>'<option value="'+m.user_id+'">🙋 '+esc(m.name)+'</option>').join('');
+      $('mUser').classList.remove('hidden');
+      $('mUser').innerHTML='<option value="">나</option>'+mem.map(m=>'<option value="'+m.user_id+'">'+esc(m.name)+'</option>').join('');
+      if(S.mUser) $('mUser').value=S.mUser;
+    }
+    paintMineBadge();
+    if(S.tab==='asg') renderAsg();
+  }
+  function paintMineBadge(){
+    const me=S.cfg&&S.cfg.me; const b=$('mineN');
+    if(me&&me.member){ const left=Math.max(0,(me.today_assigned||0)-(me.today_done||0)); b.textContent=(me.today_done||0)+'/'+(me.today_assigned||0); b.title='오늘 대화함 / 오늘 할당 · 남은 '+left+'건'; b.classList.remove('hidden'); }
+    else b.classList.add('hidden');
+  }
+  // ── 내 할당 ──
+  async function loadMine(){
+    if(!S.cfg||!S.cfg.ready){ $('mList').innerHTML='<div class="hint" style="margin-top:10px">0329 마이그레이션이 필요합니다.</div>'; return; }
+    const qs=new URLSearchParams({scope:S.mScope}); if(S.mUser) qs.set('user',S.mUser);
+    let d; try{ d=await api('GET','/api/meta-assign/mine?'+qs); }catch(e){ $('mList').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; }
+    S.mine=d; const me=d.me;
+    $('mWho').textContent=S.mUser&&me?('— '+me.name):'';
+    const live=d.items.filter(x=>!x.ended_at); const done=live.filter(x=>x.done_at).length; const open=live.length-done;
+    $('mKpis').innerHTML=(me?'<div class="kpi"><div class="k">하루 목표</div><div class="v">'+(me.active?me.daily_target:'—')+'</div></div>'
+      +'<div class="kpi"><div class="k">오늘 할당</div><div class="v">'+(me.today_assigned||0)+'</div></div>'
+      +'<div class="kpi"><div class="k">오늘 대화함</div><div class="v ok-t">'+(me.today_done||0)+'</div>'+bar(me.today_assigned?me.today_done/me.today_assigned*100:null)+'</div>'
+      +'<div class="kpi"><div class="k">아직 대화 전(전체)</div><div class="v warn-t">'+(me.open_n||0)+'</div></div>'
+      :'<div class="kpi"><div class="k">배분 대상</div><div class="v" style="font-size:14px">아님 — 디렉터가 고르면 매일 문의가 옵니다</div></div>')
+      +'<div class="kpi"><div class="k">이 목록 · 대화함 / 전체</div><div class="v">'+done+' / '+live.length+'</div><div class="hint">대화 전 '+open+' · 넘김 '+(d.items.length-live.length)+'</div></div>';
+    if(!d.items.length){ $('mList').innerHTML='<div class="hint" style="margin-top:10px">이 기간에 맡은 문의가 없습니다.</div>'; return; }
+    $('mList').innerHTML='<table><thead><tr><th>맡은 시각</th><th>손님 · 채널</th><th>전화</th><th>차종 · 부품 · 요약</th><th>마지막 메모</th><th>상태</th><th>대화</th><th></th></tr></thead><tbody>'
+      +d.items.map(x=>'<tr class="click" data-mid="'+x.id+'"><td><div>'+esc(String(fmtT(x.assigned_at)))+'</div><div class="muted">'+(x.how==='auto'?'자동':'직접')+'</div></td>'
+        +'<td><div class="lt-name">'+esc(x.name||x.username||'—')+'</div><span class="tag ch-'+x.platform+'">'+(CH[x.platform]||[x.platform])[0]+'</span>'+(x.state?' <span class="muted">'+esc(x.state)+'</span>':'')+'</td>'
+        +'<td class="mono">'+esc(x.phone||'')+'</td>'
+        +'<td style="max-width:340px">'+(x.vehicles?'<div>🚗 '+esc(x.vehicles)+'</div>':'')+(x.parts?'<div>🔩 '+esc(x.parts)+'</div>':'')+'<div class="muted lt-sum">'+esc(x.summary?'🤖 '+x.summary:(x.customer_text||''))+'</div></td>'
+        +'<td style="max-width:220px">'+(x.last_note?esc(x.last_note)+(x.notes_n>1?' <span class="muted">(+'+(x.notes_n-1)+')</span>':''):'<span class="muted">—</span>')+'</td>'
+        +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span></td>'
+        +'<td>'+(x.ended_at&&!x.done_at?'<span class="dn moved">↪ 넘김</span>':(x.done_at?'<span class="dn ok" title="'+esc(fmtT(x.done_at))+'">✅ '+(DONE_KO[x.done_how]||'')+'</span>':'<span class="dn wait">⏳ 대화 전</span>'))+'</td>'
+        +'<td>'+(!x.done_at&&!x.ended_at?'<button type="button" class="btn ghost sm" data-call="'+x.id+'" title="전화로 연락함 = 대화함">📞 전화함</button>':'')+'</td></tr>').join('')+'</tbody></table>';
+  }
+  $('mScope').addEventListener('click',e=>{ const b=e.target.closest('button[data-s]'); if(!b) return; S.mScope=b.dataset.s; $('mScope').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); loadMine(); });
+  $('mUser').addEventListener('change',()=>{ S.mUser=$('mUser').value; loadMine(); });
+  $('mReload').addEventListener('click',()=>{ loadMine(); loadAssignCfg(); });
+  async function doCall(id,note,el){
+    try{ const r=await api('POST','/api/meta-leads/'+id+'/called',{note}); say(true,'📞 전화함으로 표시했습니다.',el);
+      if(S.cur&&S.cur.id===id){ S.cur.assign=r.assign; if(S.cur.status==='nuevo') { S.cur.status='contactado'; $('eStatus').value='contactado'; } renderAssign(S.cur); }
+      loadMine(); loadAssignCfg(); }
+    catch(e){ say(false,errText(e),el); }
+  }
+  $('mList').addEventListener('click',e=>{
+    const c=e.target.closest('button[data-call]'); if(c){ e.stopPropagation(); const note=prompt('통화 메모(선택) — 비워 두면 표시만 합니다','');
+      if(note===null) return; doCall(Number(c.dataset.call),note,$('mMsg')); return; }
+    const tr=e.target.closest('tr[data-mid]'); if(tr) openOne(Number(tr.dataset.mid)); });
+  // ── 상세: 담당 · 고객별 메모 ──
+  function renderAssign(d){
+    const box=$('oAssign'); const a=d.assign;
+    if(!a){ box.innerHTML=''; $('oNotesBox').classList.add('hidden'); return; }
+    const cur=a.current; const mine=a.assigned_to&&a.assigned_to===myId(); const admin=S.cfg&&S.cfg.is_admin;
+    const state=!a.assigned_to?'<span class="muted">담당 없음</span>':(cur&&cur.done_at?'<span class="dn ok">✅ 대화함 · '+(DONE_KO[cur.done_how]||'')+'</span>':'<span class="dn wait">⏳ 대화 전</span>');
+    let sel='';
+    if(admin){ const ppl=(S.cfg.members||[]).filter(m=>m.active); const others=(S.cfg.users||[]).filter(u=>!ppl.some(m=>m.user_id===u.id));
+      sel='<select id="oAsgSel" style="width:auto;flex:1"><option value="">— 담당 없음</option>'+ppl.map(m=>'<option value="'+m.user_id+'"'+(a.assigned_to===m.user_id?' selected':'')+'>🙋 '+esc(m.name)+'</option>').join('')
+        +(others.length?'<optgroup label="대상자 아님">'+others.map(u=>'<option value="'+u.id+'"'+(a.assigned_to===u.id?' selected':'')+'>'+esc(u.name)+'</option>').join('')+'</optgroup>':'')+'</select>'; }
+    box.innerHTML='<div class="asgbox"><div class="row" style="gap:6px;align-items:center"><b>🙋 담당</b>'+(admin?sel:'<span>'+esc(a.assigned_name||'—')+'</span>')+state+'</div>'
+      +(a.assigned_at?'<div class="hint">맡은 시각 '+esc(fmtT(a.assigned_at))+(cur?' · '+(cur.how==='auto'?'자동 분배':'직접 지정'):'')+'</div>':'')
+      +((mine||admin)&&cur&&!cur.done_at?'<button type="button" class="btn ghost sm" id="oCall" style="margin-top:6px" title="전화로 연락함 = 대화함 · 메모 칸의 글을 같이 남김">📞 전화함(대화함)</button>':'')+'</div>';
+    $('oNotesBox').classList.remove('hidden'); renderNotes(a.notes||[]);
+  }
+  function renderNotes(ns){
+    const admin=S.cfg&&S.cfg.is_admin;
+    $('oNotes').innerHTML=ns.length?ns.map(n=>'<div class="n">'+((admin||n.user_id===myId())?'<button type="button" data-ndel="'+n.id+'" title="지우기">✕</button>':'')+'<div class="w">'+esc(n.user_name||'—')+' · '+esc(fmtT(n.at))+'</div>'+esc(n.text)+'</div>').join(''):'<div class="hint">아직 메모가 없습니다.</div>';
+    const el=$('oNotes'); el.scrollTop=el.scrollHeight;
+  }
+  document.addEventListener('change',async e=>{
+    if(!e.target||e.target.id!=='oAsgSel'||!S.cur) return;
+    const v=e.target.value;
+    try{ const r=await api('POST','/api/meta-leads/'+S.cur.id+'/assign',{user_id:v?Number(v):null}); S.cur.assign=r.assign; renderAssign(S.cur);
+      S.items=S.items.map(x=>x.id===S.cur.id?Object.assign({},x,{assigned_to:r.assign.assigned_to,assigned_name:r.assign.assigned_name}):x); renderList(); say(true,v?'담당을 바꿨습니다.':'담당을 풀었습니다.',$('eMsg')); loadAssignCfg(); }
+    catch(err){ say(false,errText(err),$('eMsg')); }
+  });
+  document.addEventListener('click',async e=>{
+    if(!e.target.closest) return;
+    if(e.target.closest('#oCall')&&S.cur){ const t=$('oNoteText').value.trim(); await doCall(S.cur.id,t,$('eMsg')); if(t) $('oNoteText').value=''; return; }
+    if(e.target.closest('#oNoteAdd')&&S.cur){ const t=$('oNoteText').value.trim(); if(!t) return;
+      try{ const r=await api('POST','/api/meta-leads/'+S.cur.id+'/notes',{text:t}); $('oNoteText').value=''; S.cur.assign.notes=r.items; renderNotes(r.items); if(S.tab==='mine') loadMine(); }
+      catch(err){ say(false,errText(err),$('eMsg')); } return; }
+    const del=e.target.closest('#oNotes [data-ndel]'); if(del&&S.cur){ if(!confirm('이 메모를 지울까요?')) return;
+      try{ const r=await api('DELETE','/api/meta-leads/'+S.cur.id+'/notes/'+del.dataset.ndel); S.cur.assign.notes=r.items; renderNotes(r.items); }catch(err){ say(false,errText(err),$('eMsg')); } }
+  });
+  // ── 배분 설정 ──
+  function renderAsg(){
+    const c=S.cfg; if(!c||!c.is_admin) return;
+    const st=c.settings||{};
+    $('aDef').value=st.default_target; $('aDays').value=st.pool_days; $('aStart').value=st.work_start; $('aEnd').value=st.work_end; $('aAuto').checked=!!st.auto;
+    $('aPeople').innerHTML=(c.users||[]).map(u=>'<span class="pchip'+(S.asgSel.has(u.id)?' on':'')+(u.page_ok?'':' noacc')+'" data-uid="'+u.id+'" title="'+(u.page_ok?'':'이 화면 권한 없음 — 문의를 열 수 없습니다')+'">'+(S.asgSel.has(u.id)?'✓ ':'')+esc(u.name)+' <span class="role">'+esc(ROLE_KO[u.role]||u.role||'')+'</span>'+(u.page_ok?'':' ⚠')+'</span>').join('');
+    const mem=new Map((c.members||[]).map(m=>[m.user_id,m]));
+    $('aTargets').innerHTML=[...S.asgSel.entries()].map(([id,tg])=>{ const u=(c.users||[]).find(x=>x.id===id)||{name:'#'+id}; const m=mem.get(id);
+      return '<div class="it"><b>'+esc(u.name)+'</b><span class="hint">'+(m&&m.active?'오늘 '+(m.today_done||0)+'/'+(m.today_assigned||0):'새로 고름')+'</span><input type="number" min="0" max="500" data-tgt="'+id+'" value="'+tg+'" title="하루 목표(건)"><span class="hint">건/일</span></div>'; }).join('')
+      ||'<div class="hint">아직 고른 사람이 없습니다 — 위에서 이름을 누르세요.</div>';
+    const p=c.pool||{n:0,waiting:0};
+    const left=[...S.asgSel.entries()].reduce((a,[id,tg])=>{ const m=mem.get(id); return a+Math.max(0,tg-((m&&m.active)?(m.today_assigned||0):0)); },0);
+    $('aPool').innerHTML='📥 지금 나눌 수 있는 문의 <b>'+p.n+'건</b>(그중 손님 말이 마지막 = 답 기다림 <b>'+p.waiting+'</b>) · 최근 '+st.pool_days+'일 · 신규 · 담당 없음'
+      +'<br>🎯 오늘 남은 목표 합계 <b>'+left+'건</b> · 담당 없는 신규 전체 '+(c.unassigned_open||0)+'건'
+      +'<br>'+(st.auto?'⏱ 자동 분배 켜짐 — 매일 '+st.work_start+'시 ~ '+st.work_end+'시, 5분마다 남은 목표만큼':'⏸ 자동 분배 꺼짐 — 「지금 자동 분배」나 상세에서 직접 맡기세요');
+  }
+  $('aPeople').addEventListener('click',e=>{ const ch=e.target.closest('[data-uid]'); if(!ch) return; const id=Number(ch.dataset.uid);
+    if(S.asgSel.has(id)) S.asgSel.delete(id); else { const m=(S.cfg.members||[]).find(x=>x.user_id===id); S.asgSel.set(id,m?Number(m.daily_target):Number($('aDef').value)||20); }
+    renderAsg(); $('aMsg').className='msg ok'; $('aMsg').textContent='「저장」을 눌러야 적용됩니다.'; });
+  $('aTargets').addEventListener('input',e=>{ const i=e.target.closest('[data-tgt]'); if(i) S.asgSel.set(Number(i.dataset.tgt),Math.max(0,Math.min(500,Math.round(Number(i.value)||0)))); });
+  $('aSave').addEventListener('click',async()=>{
+    const body={auto:$('aAuto').checked,default_target:Number($('aDef').value),pool_days:Number($('aDays').value),work_start:Number($('aStart').value),work_end:Number($('aEnd').value),
+      members:[...S.asgSel.entries()].map(([user_id,daily_target])=>({user_id,daily_target,active:true}))};
+    try{ await api('PUT','/api/meta-assign/config',body); say(true,'저장했습니다 — 대상 '+body.members.length+'명.',$('aMsg')); await loadAssignCfg(); renderAsg(); loadPerf(); }
+    catch(e){ say(false,errText(e),$('aMsg')); }
+  });
+  $('aRun').addEventListener('click',async()=>{
+    $('aRun').disabled=true;
+    try{ const r=await api('POST','/api/meta-assign/run'); const names=new Map((S.cfg.users||[]).map(u=>[u.id,u.name]));
+      const by=Object.entries(r.by_user||{}).map(([id,n])=>(names.get(Number(id))||id)+' '+n).join(' · ');
+      say(true,r.assigned?('⚡ '+r.assigned+'건 나눴습니다 — '+by):(r.skipped==='no_members'?'대상자가 없습니다 — 사람을 고르고 저장하세요.':r.skipped==='targets_full'?'모두 오늘 목표만큼 받았습니다.':'나눌 문의가 없습니다.'),$('aMsg'));
+      await loadAssignCfg(); renderAsg(); loadPerf(); loadList(); }
+    catch(e){ say(false,errText(e),$('aMsg')); } finally{ $('aRun').disabled=false; }
+  });
+  // ── 실적 ──
+  function rangeOf(r){ const t=ymdMx(); const d=new Date(t+'T12:00:00Z');
+    if(r==='week'){ const w=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-w); return [d.toISOString().slice(0,10),t]; }
+    if(r==='month') return [t.slice(0,8)+'01',t]; return [t,t]; }
+  $('pRange').addEventListener('click',e=>{ const b=e.target.closest('button[data-r]'); if(!b) return; S.pRange=b.dataset.r; $('pRange').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    const [f,t]=rangeOf(S.pRange); $('pFrom').value=f; $('pTo').value=t; loadPerf(); });
+  $('pGo').addEventListener('click',()=>{ $('pRange').querySelectorAll('button').forEach(x=>x.classList.remove('on')); loadPerf(); });
+  async function loadPerf(){
+    if(!$('pFrom').value){ const [f,t]=rangeOf(S.pRange); $('pFrom').value=f; $('pTo').value=t; }
+    let d; try{ d=await api('GET','/api/meta-assign/perf?from='+$('pFrom').value+'&to='+$('pTo').value); }catch(e){ $('pTable').innerHTML='<div class="hint">'+esc(errText(e))+'</div>'; return; }
+    S.perf=d;
+    const row=(p,team)=>'<tr'+(team?' class="team"':' class="click" data-puid="'+p.user_id+'"')+'><td>'+(team?'팀 전체':esc(p.name)+(p.member?'':' <span class="muted">(대상 아님)</span>'))+'</td>'
+      +'<td class="num">'+(team?'':(p.daily_target!=null&&p.member?p.daily_target:'—'))+'</td><td class="num">'+(p.target!=null?p.target:'—')+'</td>'
+      +'<td class="num"><b>'+p.assigned+'</b></td><td class="num ok-t">'+p.done+'</td>'
+      +'<td style="min-width:130px">'+bar(p.rate)+'<div class="hint">'+pct(p.rate)+'</div></td>'
+      +'<td style="min-width:130px">'+bar(p.target_rate)+'<div class="hint">'+pct(p.target_rate)+'</div></td>'
+      +'<td class="num warn-t">'+p.pending+'</td><td class="num muted">'+p.moved+'</td>'
+      +'<td class="num">'+p.by_reply+' / '+p.by_status+' / '+p.by_call+'</td>'
+      +'<td class="num">'+p.derivado+' / '+p.venta+'</td><td class="num">'+(team?'':(p.avg_min!=null?p.avg_min+'분':'—'))+'</td></tr>';
+    $('pTable').innerHTML=d.people.length?'<table><thead><tr><th>영업사원</th><th class="num">하루 목표</th><th class="num">기간 목표</th><th class="num">할당</th><th class="num">대화함</th><th>할당 대비</th><th>목표 대비</th><th class="num">대화 전</th><th class="num">넘김</th><th class="num">답장 / 상태 / 📞</th><th class="num">연결 / 판매</th><th class="num">맡고 대화까지</th></tr></thead><tbody>'
+      +d.people.map(p=>row(p,false)).join('')+row(d.team,true)+'</tbody></table><div class="hint">'+esc(d.from)+' ~ '+esc(d.to)+' · '+d.days+'일 · 행을 누르면 그 사람의 할당 목록</div>'
+      :'<div class="hint" style="margin-top:10px">이 기간에 할당이 없습니다.</div>';
+    $('pDaily').innerHTML=d.daily.length>1?'<table style="max-width:520px"><thead><tr><th>날짜</th><th class="num">할당</th><th class="num">대화함</th><th>비율</th></tr></thead><tbody>'
+      +d.daily.map(x=>'<tr><td>'+esc(x.day)+'</td><td class="num">'+x.assigned+'</td><td class="num">'+x.done+'</td><td style="min-width:120px">'+bar(x.assigned?x.done/x.assigned*100:null)+'</td></tr>').join('')+'</tbody></table>':'';
+  }
+  $('pTable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-puid]'); if(!tr) return; S.mUser=tr.dataset.puid; $('mUser').value=S.mUser;
+    S.mScope=S.pRange==='today'?'today':(S.pRange==='week'?'week':'month'); $('mScope').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.s===S.mScope));
+    document.querySelector('#tabs .tab[data-p="mine"]').click(); });
+  $('pXls').addEventListener('click',()=>{
+    const d=S.perf; if(!d||!window.XLSX) return;
+    const H=['영업사원','하루 목표','기간 목표','할당','대화함','할당 대비 %','목표 대비 %','대화 전','넘김','답장','상태','전화','연결','판매','평균 분'];
+    const R=(p,n)=>[n||p.name,p.daily_target==null?'':p.daily_target,p.target==null?'':p.target,p.assigned,p.done,p.rate==null?'':p.rate,p.target_rate==null?'':p.target_rate,p.pending,p.moved,p.by_reply,p.by_status,p.by_call,p.derivado,p.venta,p.avg_min==null?'':p.avg_min];
+    const ws=XLSX.utils.aoa_to_sheet([H].concat(d.people.map(p=>R(p))).concat([R(d.team,'팀 전체')]));
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'실적'); XLSX.writeFile(wb,'refatrix_meta_asignacion_'+d.from+'_'+d.to+'.xlsx');
   });
 
   // ───── 요약 ─────
