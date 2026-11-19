@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1118dm</title>
+<title>Refatrix ERP · 제품 조회 · ps-1118bx</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -394,19 +394,31 @@
       </div>
       <div class="msg" id="bmMsg"></div>
     </div>
-    <!-- 0327 · 무게 · 개별 박스 사이즈 (견적 건별 대략 총무게 · 사이즈) -->
+    <!-- 0327 · 0328 · 제품 무게 · 포장 박스 코드 / 포장 박스 마스터 (견적 건별 대략 총무게 · 사이즈) -->
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px" id="dmBlock">
-      <div style="font-weight:700">📦 무게 · 개별 박스 사이즈 업로드</div>
-      <div class="hint" style="margin-top:4px">제품 1개(개별 박스 포함)의 <b>무게(kg)</b>와 <b>박스 가로 · 세로 · 높이(cm)</b>를 올리면, 견적 목록 · 견적 상세에 견적 건별 <b>대략 총무게와 총사이즈</b>가 표시됩니다. 열: <b>Clave CTR · Peso (kg) · Largo (cm) · Ancho (cm) · Alto (cm)</b> (가로=Largo · 세로=Ancho · 높이=Alto). <b>빈 칸 = 그대로</b>, <code>-</code> = 지우기, 같은 코드 여러 줄 = 마지막 줄. 그램(g)·mm 로 적었으면 머리글에 <code>(g)</code> · <code>(mm)</code> 를 붙이면 바꿔 읽습니다. <b>다른 제품 정보 · 재고 · 가격은 바뀌지 않습니다.</b></div>
+      <div style="font-weight:700">📦 제품 무게 · 포장 박스 코드 업로드</div>
+      <div class="hint" style="margin-top:4px">제품 1개(포장 상태)의 <b>무게(kg)</b>와 그 제품을 담는 <b>포장 박스 코드(명칭)</b>를 올립니다. 열: <b>Clave CTR · Peso (kg) · Caja</b>. 박스의 가로 · 세로 · 높이는 아래 <b>📐 포장 박스 마스터</b>에 박스 코드별로 한 번만 넣으면, 그 박스를 쓰는 모든 제품의 견적 사이즈가 계산됩니다. <b>빈 칸 = 그대로</b>, <code>-</code> = 지우기, 같은 코드 여러 줄 = 마지막 줄. 처음 보는 박스 코드는 박스 마스터에 <b>사이즈 빈 채로</b> 자동 등록됩니다. <b>다른 제품 정보 · 재고 · 가격은 바뀌지 않습니다.</b></div>
       <div class="hint" id="dmStat" style="margin-top:6px"></div>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn ghost sm" id="dmTpl" type="button" title="헤더만 있는 빈 양식 + 작성방법 시트">📄 업로드 양식 받기</button>
-        <button class="btn ghost sm" id="dmExport" type="button" title="전체 제품의 지금 무게 · 사이즈를 엑셀로 받습니다. 고쳐서 그대로 다시 올려도 됩니다.">⬇ 현재 무게 · 사이즈 다운로드</button>
+        <button class="btn ghost sm" id="dmExport" type="button" title="전체 제품의 지금 무게 · 박스 코드(+박스 사이즈 참고)를 엑셀로 받습니다. 고쳐서 그대로 다시 올려도 됩니다.">⬇ 현재 무게 · 박스 코드 다운로드</button>
         <label class="btn ghost sm posfile">📂 엑셀 올리기 (.xlsx · .csv)<input type="file" id="dmFile" accept=".xlsx,.xls,.csv"></label>
         <span class="hint" id="dmFileName" style="margin:0"></span>
       </div>
       <div class="msg" id="dmMsg"></div>
       <div id="dmPrev" style="margin-top:8px"></div>
+
+      <div style="font-weight:700;margin-top:16px">📐 포장 박스 마스터 (박스 코드 → 가로 · 세로 · 높이)</div>
+      <div class="hint" style="margin-top:4px">열: <b>Código caja · Largo (cm) · Ancho (cm) · Alto (cm) · Descripción</b> (가로=Largo · 세로=Ancho · 높이=Alto). <b>⬇ 박스 목록 다운로드</b>를 받으면 제품에 적힌 박스 코드가 모두 들어 있고, <b>사이즈가 빈 박스</b>는 Estado 칸에 <code>SIN MEDIDAS</code> 로 표시되고 맨 위에 모입니다 — 사이즈를 채워 그대로 올리면 됩니다. <code>30x20x10</code> 한 칸(머리글 <code>Medidas (cm)</code>) · mm(머리글 <code>(mm)</code>)도 됩니다.</div>
+      <div class="hint" id="bxStat" style="margin-top:6px"></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn ghost sm" id="bxTpl" type="button">📄 박스 양식 받기</button>
+        <button class="btn ghost sm" id="bxExport" type="button" title="박스 마스터 + 제품에 적혔지만 아직 사이즈가 없는 박스">⬇ 박스 목록 다운로드</button>
+        <label class="btn ghost sm posfile">📂 박스 엑셀 올리기 (.xlsx · .csv)<input type="file" id="bxFile" accept=".xlsx,.xls,.csv"></label>
+        <span class="hint" id="bxFileName" style="margin:0"></span>
+      </div>
+      <div class="msg" id="bxMsg"></div>
+      <div id="bxPrev" style="margin-top:8px"></div>
     </div>
     <!-- 0325 · 멕시코 경쟁사 크로스레퍼런스 마스터 (SYD 기준) -->
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px" id="xmBlock">
@@ -1909,127 +1921,168 @@
     finally{ $('bmApply').disabled=false; $('bmApply').textContent='일괄 적용'; }
   }
 
-  // ===== 0327 · 무게 · 개별 박스 사이즈 =====
+  // ===== 0327 · 0328 · 제품 무게 · 포장 박스 코드 / 포장 박스 마스터 =====
   //   엑셀 첫 시트를 2차원 배열로 서버에 보내면 서버(productDims.tableToRows)가 머리글을 해석한다.
-  const DM_HEAD=['Clave CTR','Peso (kg)','Largo (cm)','Ancho (cm)','Alto (cm)'];
-  const DM_LBL={weight_kg:'무게(kg)',box_l_cm:'가로(cm)',box_w_cm:'세로(cm)',box_h_cm:'높이(cm)'};
-  let dmTable=null, dmName='';
-  function dmMsg(cls,txt){ const m=$('dmMsg'); if(!m) return; m.className='msg'+(cls?(' '+cls):''); m.style.display=txt?'block':'none'; m.textContent=txt||''; }
-  function dmNum(v){ return v==null?'—':String(v); }
+  //   두 업로드(dm = 제품, bx = 박스)는 같은 함수를 쓰고 KIND 만 다르다.
+  const DM_LBL={weight_kg:'무게(kg)',box_code:'박스 코드',box_l_cm:'가로(cm)',box_w_cm:'세로(cm)',box_h_cm:'높이(cm)',description:'설명',dims:'사이즈(한 칸)'};
+  const DMK={
+    dm:{api:'/api/products/dims', head:['Clave CTR','Peso (kg)','Caja'], sheet:'Peso y caja', unit:'개 제품',
+        tpl:'Refatrix_Peso_Caja_Plantilla.xlsx', exp:'Refatrix_Peso_Caja_', headerless:'CTR · 무게 · 박스 코드',
+        guide:[
+          ['제품 무게 · 포장 박스 코드 업로드 양식 — 작성 방법'],[],
+          ['① 첫 시트 「Peso y caja」의 첫 줄(머리글)은 그대로 두고 둘째 줄부터 제품을 한 줄씩 적으세요.'],
+          ['② 무게 = 제품 1개를 포장한 상태의 무게(kg). Caja = 그 제품을 담는 포장 박스 코드(명칭). 예: CAJA 3, C-12'],
+          ['③ 박스의 가로 · 세로 · 높이는 여기서 넣지 않습니다 — 「📐 포장 박스 마스터」에 박스 코드별로 한 번만 넣습니다.'],
+          ['④ 빈 칸 = 지금 값 그대로. 「-」 = 값 지우기. 무게만 · 박스 코드만 올려도 됩니다(필요 없는 열은 지워도 됨).'],
+          ['⑤ 소수점은 1.5 · 1,5 둘 다 됩니다. 그램으로 적었으면 머리글을 「Peso (g)」 로 바꾸세요.'],
+          ['⑥ 박스 코드는 대소문자 · 앞뒤 공백을 맞춰 저장합니다(caja 3 = CAJA 3). 처음 보는 박스 코드는 박스 마스터에 사이즈 빈 채로 등록됩니다.'],
+          ['⑦ 같은 코드가 여러 줄이면 마지막 줄이 반영됩니다. 등록되지 않은 CTR 코드는 미리보기에 따로 표시되고 반영되지 않습니다.'],
+          ['⑧ 올리면 바로 저장되지 않습니다 — 미리보기에서 확인하고 「반영하기」를 눌러야 저장됩니다.'],
+          ['⑨ 지금 값을 고칠 때는 「⬇ 현재 무게 · 박스 코드 다운로드」 파일을 고쳐 그대로 올려도 됩니다(참고 열은 무시).'],
+          ['⑩ 이 시트는 업로드 때 읽지 않습니다(첫 시트만 읽음).'],[],
+          ['열 이름','필수/선택','설명','예시'],
+          ['Clave CTR','필수','제품코드(CTR)','CB0458'],
+          ['Peso (kg)','선택','제품 1개(포장 상태) 무게 kg','0.85'],
+          ['Caja','선택','포장 박스 코드(명칭)','CAJA 3'],
+        ]},
+    bx:{api:'/api/products/boxes', head:['Código caja','Largo (cm)','Ancho (cm)','Alto (cm)','Descripción'], sheet:'Cajas', unit:'개 박스',
+        tpl:'Refatrix_Cajas_Plantilla.xlsx', exp:'Refatrix_Cajas_', headerless:'박스 코드 · 가로 · 세로 · 높이 · 설명',
+        guide:[
+          ['포장 박스 마스터 업로드 양식 — 작성 방법'],[],
+          ['① 첫 시트 「Cajas」의 첫 줄(머리글)은 그대로 두고 둘째 줄부터 박스를 한 줄씩 적으세요.'],
+          ['② Código caja = 제품 업로드의 Caja 칸과 같은 박스 코드. Largo = 가로 · Ancho = 세로 · Alto = 높이 (cm, 박스 바깥 치수).'],
+          ['③ 빈 칸 = 지금 값 그대로. 「-」 = 값 지우기. 새 박스 코드는 새로 등록됩니다.'],
+          ['④ mm 로 적었으면 머리글에 (mm) 를 붙이세요. 한 칸에 「30x20x10」 으로 적으려면 머리글을 「Medidas (cm)」 로 하세요.'],
+          ['⑤ 「⬇ 박스 목록 다운로드」 파일에는 제품에 적힌 박스 코드가 모두 들어 있습니다 — 사이즈가 빈 박스를 채워 그대로 올리면 됩니다.'],
+          ['⑥ 박스 사이즈를 넣으면 그 박스를 쓰는 모든 제품의 견적 대략 총사이즈가 바로 계산됩니다.'],
+          ['⑦ 이 시트는 업로드 때 읽지 않습니다(첫 시트만 읽음).'],[],
+          ['견적 목록의 대략 총사이즈 계산'],
+          ['· 순부피 = Σ 수량 × 박스 가로 × 세로 × 높이 → 채움률 85% 로 나눈 부피를 정육면체에 가깝게(가장 큰 박스보다 작지 않게) 가로×세로×높이로 표시'],
+          ['· 박스 코드가 없거나 박스 사이즈가 아직 없는 제품 줄은 계산에서 빠지고 「자료 없음 n줄」로 표시됩니다'],
+        ]},
+  };
+  const dmState={dm:{table:null,name:''},bx:{table:null,name:''}};
+  function dmMsg(k,cls,txt){ const m=$(k+'Msg'); if(!m) return; m.className='msg'+(cls?(' '+cls):''); m.style.display=txt?'block':'none'; m.textContent=txt||''; }
+  function dmNum(v){ return v==null||v===''?'—':String(v); }
   function dmStyleHead(ws,n){ for(let c=0;c<n;c++){ const a=XLSX.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s={font:{bold:true}}; } }
+  function dmYmd(){ const dt=new Date(); return dt.getFullYear()+String(dt.getMonth()+1).padStart(2,'0')+String(dt.getDate()).padStart(2,'0'); }
+  const DM_NOMIG='서버에 0327 · 0328 마이그레이션이 아직 없습니다(npm run migrate).';
+  async function dmGet(k){
+    const res=await fetch(session.api+DMK[k].api,{headers:auth()}); const d=await res.json().catch(()=>({}));
+    if(res.status===501) return {nomig:true};
+    if(!res.ok||d.error) return {error:d.error||res.status};
+    return d;
+  }
   async function dmLoadStat(){
-    const el=$('dmStat'); if(!el||!session) return;
+    if(!session||!$('dmStat')) return;
     try{
-      const res=await fetch(session.api+'/api/products/dims',{headers:auth()}); const d=await res.json();
-      if(res.status===501){ el.innerHTML='<span style="color:#9a6512">⚠ 서버에 0327 마이그레이션이 아직 없습니다(npm run migrate).</span>'; return null; }
-      if(!res.ok||d.error){ el.textContent=''; return null; }
-      const s=d.stat||{}; el.innerHTML='등록 현황: 전체 <b>'+(s.total||0)+'</b>개 중 무게 <b>'+(s.weight||0)+'</b> · 사이즈 <b>'+(s.dims||0)+'</b> · 둘 다 <b>'+(s.both||0)+'</b>';
-      return d;
-    }catch(e){ return null; }
+      const d=await dmGet('dm');
+      if(d.nomig){ $('dmStat').innerHTML='<span style="color:#9a6512">⚠ '+DM_NOMIG+'</span>'; $('bxStat').textContent=''; return; }
+      if(!d.error){ const s=d.stat||{}; $('dmStat').innerHTML='등록 현황: 전체 <b>'+(s.total||0)+'</b>개 중 무게 <b>'+(s.weight||0)+'</b> · 박스 코드 <b>'+(s.box||0)+'</b> · 박스 사이즈까지 있음 <b>'+(s.sized||0)+'</b>'; }
+      const b=await dmGet('bx');
+      if(!b.error&&!b.nomig){ const s=b.stat||{}; $('bxStat').innerHTML='박스 <b>'+(s.total||0)+'</b>개 중 사이즈 입력 <b>'+(s.sized||0)+'</b>'+(s.nosize?(' · <span style="color:#9a6512">사이즈 없음 <b>'+s.nosize+'</b>개 (제품 '+(s.nosize_products||0)+'개)</span>'):''); }
+    }catch(e){}
   }
-  function dmDownloadTemplate(){
-    const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.aoa_to_sheet([DM_HEAD]); ws['!cols']=[{wch:14},{wch:11},{wch:11},{wch:11},{wch:11}]; dmStyleHead(ws,5);
-    XLSX.utils.book_append_sheet(wb,ws,'Peso y medidas');
-    const g=[
-      ['무게 · 개별 박스 사이즈 업로드 양식 — 작성 방법'],[],
-      ['① 첫 시트 「Peso y medidas」의 첫 줄(머리글)은 그대로 두고 둘째 줄부터 제품을 한 줄씩 적으세요.'],
-      ['② 무게 = 제품 1개를 개별 박스에 넣은 상태의 무게(kg). 사이즈 = 그 개별 박스의 가로(Largo) · 세로(Ancho) · 높이(Alto) cm.'],
-      ['③ 빈 칸 = 지금 값 그대로. 「-」 = 값 지우기. 무게만 · 사이즈만 올려도 됩니다(필요 없는 열은 지워도 됨).'],
-      ['④ 소수점은 1.5 · 1,5 둘 다 됩니다. 그램으로 적었으면 머리글을 「Peso (g)」, mm 면 「Largo (mm)」 처럼 바꾸세요.'],
-      ['⑤ 사이즈를 한 칸에 「30x20x10」 으로 적으려면 머리글을 「Medidas (cm)」 로 하세요.'],
-      ['⑥ 같은 코드가 여러 줄이면 마지막 줄이 반영됩니다. 등록되지 않은 코드는 미리보기에 따로 표시되고 반영되지 않습니다.'],
-      ['⑦ 올리면 바로 저장되지 않습니다 — 미리보기에서 바뀌는 칸을 확인하고 「반영하기」를 눌러야 저장됩니다.'],
-      ['⑧ 지금 값을 고칠 때는 「⬇ 현재 무게 · 사이즈 다운로드」 파일을 고쳐 그대로 올려도 됩니다(Producto 열은 무시).'],
-      ['⑨ 이 시트는 업로드 때 읽지 않습니다(첫 시트만 읽음).'],[],
-      ['견적 목록의 대략 총사이즈 계산'],
-      ['· 순부피 = Σ 수량 × 가로 × 세로 × 높이 → 채움률 85% 로 나눈 부피를 정육면체에 가깝게(가장 큰 박스보다 작지 않게) 가로×세로×높이로 표시'],
-      ['· 무게 · 사이즈 자료가 없는 제품 줄은 계산에서 빠지고 「자료 없음 n줄」로 표시됩니다'],[],
-      ['열 이름','필수/선택','설명','예시'],
-      ['Clave CTR','필수','제품코드(CTR)','CB0458'],
-      ['Peso (kg)','선택','제품 1개 무게 kg(개별 박스 포함)','0.85'],
-      ['Largo (cm)','선택','개별 박스 가로 cm','32'],
-      ['Ancho (cm)','선택','개별 박스 세로 cm','12'],
-      ['Alto (cm)','선택','개별 박스 높이 cm','9'],
-    ];
-    const gs=XLSX.utils.aoa_to_sheet(g); gs['!cols']=[{wch:16},{wch:10},{wch:80},{wch:12}];
+  function dmDownloadTemplate(k){
+    const K=DMK[k]; const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.aoa_to_sheet([K.head]); ws['!cols']=K.head.map(h=>({wch:Math.max(12,h.length+3)})); dmStyleHead(ws,K.head.length);
+    XLSX.utils.book_append_sheet(wb,ws,K.sheet);
+    const gs=XLSX.utils.aoa_to_sheet(K.guide); gs['!cols']=[{wch:16},{wch:10},{wch:84},{wch:12}];
     XLSX.utils.book_append_sheet(wb,gs,'작성방법');
-    XLSX.writeFile(wb,'Refatrix_Peso_Medidas_Plantilla.xlsx');
-    dmMsg('ok','양식을 내려받았습니다.');
+    XLSX.writeFile(wb,K.tpl);
+    dmMsg(k,'ok','양식을 내려받았습니다.');
   }
-  async function dmExport(){
-    const btn=$('dmExport'); btn.disabled=true; const old=btn.textContent; btn.textContent='만드는 중…';
+  async function dmExport(k){
+    const btn=$(k+'Export'); btn.disabled=true; const old=btn.textContent; btn.textContent='만드는 중…';
     try{
-      const res=await fetch(session.api+'/api/products/dims',{headers:auth()}); const d=await res.json();
-      if(res.status===501){ dmMsg('err','서버에 0327 마이그레이션이 아직 없습니다(npm run migrate).'); return; }
-      if(!res.ok||d.error){ dmMsg('err','실패: '+(d.error||res.status)); return; }
-      const rows=[DM_HEAD.concat(['Producto','Activo','Actualizado'])];
-      (d.items||[]).forEach(p=>rows.push([p.code,p.weight_kg,p.box_l_cm,p.box_w_cm,p.box_h_cm,p.name||'',p.is_active?'Sí':'No',p.updated_at||'']));
+      const d=await dmGet(k);
+      if(d.nomig){ dmMsg(k,'err',DM_NOMIG); return; }
+      if(d.error){ dmMsg(k,'err','실패: '+d.error); return; }
+      const K=DMK[k]; let rows; let cols;
+      if(k==='dm'){
+        rows=[K.head.concat(['Producto','Largo caja (cm)','Ancho caja (cm)','Alto caja (cm)','Activo','Actualizado'])];
+        (d.items||[]).forEach(p=>rows.push([p.code,p.weight_kg,p.box_code||'',p.name||'',p.box_l_cm,p.box_w_cm,p.box_h_cm,p.is_active?'Sí':'No',p.updated_at||'']));
+        cols=[14,11,14,46,13,13,13,7,17];
+      } else {
+        rows=[K.head.concat(['Productos','Estado','Actualizado'])];
+        const ok=b=>b.box_l_cm>0&&b.box_w_cm>0&&b.box_h_cm>0;
+        (d.items||[]).slice().sort((a,b)=>(ok(a)-ok(b))||String(a.code).localeCompare(String(b.code)))
+          .forEach(b=>rows.push([b.code,b.box_l_cm,b.box_w_cm,b.box_h_cm,b.description||'',b.products,ok(b)?'':'SIN MEDIDAS',b.updated_at||'']));
+        cols=[16,11,11,11,30,10,13,17];
+      }
       const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols']=[{wch:14},{wch:11},{wch:11},{wch:11},{wch:11},{wch:46},{wch:7},{wch:17}]; dmStyleHead(ws,8);
-      XLSX.utils.book_append_sheet(wb,ws,'Peso y medidas');
-      const dt=new Date(); const ymd=dt.getFullYear()+String(dt.getMonth()+1).padStart(2,'0')+String(dt.getDate()).padStart(2,'0');
-      XLSX.writeFile(wb,'Refatrix_Peso_Medidas_'+ymd+'.xlsx');
-      const s=d.stat||{}; dmMsg('ok','내려받았습니다 — 제품 '+(s.total||0)+'개 (무게 '+(s.weight||0)+' · 사이즈 '+(s.dims||0)+').');
-    }catch(e){ dmMsg('err','실패: '+e.message); }
+      ws['!cols']=cols.map(w=>({wch:w})); dmStyleHead(ws,rows[0].length);
+      XLSX.utils.book_append_sheet(wb,ws,K.sheet);
+      XLSX.writeFile(wb,K.exp+dmYmd()+'.xlsx');
+      const s=d.stat||{};
+      dmMsg(k,'ok',k==='dm'?('내려받았습니다 — 제품 '+(s.total||0)+'개 (무게 '+(s.weight||0)+' · 박스 코드 '+(s.box||0)+').')
+        :('내려받았습니다 — 박스 '+(s.total||0)+'개 (사이즈 없음 '+(s.nosize||0)+'개).'));
+    }catch(e){ dmMsg(k,'err','실패: '+e.message); }
     finally{ btn.disabled=false; btn.textContent=old; }
   }
-  async function dmReadFile(file){
-    dmTable=null; dmName=file.name; $('dmFileName').textContent=file.name; $('dmPrev').innerHTML=''; dmMsg('','');
+  async function dmReadFile(k,file){
+    const st=dmState[k]; st.table=null; st.name=file.name; $(k+'FileName').textContent=file.name; $(k+'Prev').innerHTML=''; dmMsg(k,'','');
     try{
       const wb=XLSX.read(await file.arrayBuffer());
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      dmTable=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false,raw:true});
-    }catch(e){ dmMsg('err','파일을 읽지 못했습니다: '+e.message); return; }
-    await dmPreview();
+      st.table=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:null,blankrows:false,raw:true});
+    }catch(e){ dmMsg(k,'err','파일을 읽지 못했습니다: '+e.message); return; }
+    await dmPreview(k);
   }
-  async function dmPreview(){
-    if(!dmTable) return;
-    $('dmPrev').innerHTML='<span class="hint">미리보기 만드는 중…</span>';
+  async function dmPreview(k){
+    const st=dmState[k]; if(!st.table) return;
+    const box=$(k+'Prev'); box.innerHTML='<span class="hint">미리보기 만드는 중…</span>';
     try{
-      const res=await fetch(session.api+'/api/products/dims/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({table:dmTable})});
+      const res=await fetch(session.api+DMK[k].api+'/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({table:st.table})});
       const d=await res.json();
-      if(res.status===501){ $('dmPrev').innerHTML=''; dmMsg('err','서버에 0327 마이그레이션이 아직 없습니다(npm run migrate).'); return; }
-      if(!res.ok||d.error){ $('dmPrev').innerHTML=''; dmMsg('err','실패: '+(d.error||res.status)); return; }
-      $('dmPrev').innerHTML=dmPreviewHtml(d);
-      const ap=$('dmApply'); if(ap) ap.addEventListener('click',dmApply);
-      const cc=$('dmCancel'); if(cc) cc.addEventListener('click',()=>{ dmTable=null; $('dmPrev').innerHTML=''; $('dmFileName').textContent=''; dmMsg('',''); });
-    }catch(e){ $('dmPrev').innerHTML=''; dmMsg('err','실패: '+e.message); }
+      if(res.status===501){ box.innerHTML=''; dmMsg(k,'err',DM_NOMIG); return; }
+      if(!res.ok||d.error){ box.innerHTML=''; dmMsg(k,'err','실패: '+(d.error||res.status)); return; }
+      box.innerHTML=dmPreviewHtml(k,d);
+      const ap=$(k+'Apply'); if(ap) ap.addEventListener('click',()=>dmApply(k));
+      const cc=$(k+'Cancel'); if(cc) cc.addEventListener('click',()=>{ st.table=null; box.innerHTML=''; $(k+'FileName').textContent=''; dmMsg(k,'',''); });
+    }catch(e){ box.innerHTML=''; dmMsg(k,'err','실패: '+e.message); }
   }
-  function dmPreviewHtml(d){
-    const items=d.items||[], unk=d.unknown||[], errs=d.errors||[];
-    const colLbl=(d.columns||[]).map(c=>c==='dims'?'사이즈(한 칸)':(DM_LBL[c]||c)).join(' · ');
+  function dmPreviewHtml(k,d){
+    const K=DMK[k]; const items=d.items||[], unk=d.unknown||[], errs=d.errors||[];
+    const nNew=items.filter(x=>x.is_new).length;
+    const colLbl=(d.columns||[]).map(c=>DM_LBL[c]||c).join(' · ');
     let h='<div class="pvcards">'
       +'<div class="pvcard"><div class="k">읽은 코드</div><div class="v">'+(d.rows||0)+'</div></div>'
-      +'<div class="pvcard upd"><div class="k">변경</div><div class="v">'+items.length+'</div></div>'
+      +(k==='bx'?'<div class="pvcard new"><div class="k">신규 박스</div><div class="v">'+nNew+'</div></div>':'')
+      +'<div class="pvcard upd"><div class="k">변경</div><div class="v">'+(items.length-nNew)+'</div></div>'
       +'<div class="pvcard"><div class="k">동일</div><div class="v">'+(d.same||0)+'</div></div>'
-      +'<div class="pvcard err"><div class="k">미등록 코드</div><div class="v">'+unk.length+'</div></div>'
+      +(k==='dm'?'<div class="pvcard err"><div class="k">미등록 CTR</div><div class="v">'+unk.length+'</div></div>':'')
       +'<div class="pvcard err"><div class="k">오류</div><div class="v">'+errs.length+'</div></div>'
       +'</div>';
-    h+='<div class="hint" style="margin-top:4px">'+(d.headerless?'머리글이 없어 <b>CTR · 무게 · 가로 · 세로 · 높이</b> 순서로 읽었습니다.':('읽은 열: <b>'+escP(colLbl)+'</b>'))+(d.dup?(' · 같은 코드 중복 '+d.dup+'줄(마지막 줄 사용)'):'')+'</div>';
+    h+='<div class="hint" style="margin-top:4px">'+(d.headerless?('머리글이 없어 <b>'+K.headerless+'</b> 순서로 읽었습니다.'):('읽은 열: <b>'+escP(colLbl)+'</b>'))+(d.dup?(' · 같은 코드 중복 '+d.dup+'줄(마지막 줄 사용)'):'')+'</div>';
+    if(k==='dm'&&(d.new_boxes||[]).length) h+='<div class="hint" style="margin-top:4px;color:#9a6512">📐 박스 마스터에 아직 없는 박스 코드 <b>'+d.new_boxes.length+'</b>개 — 반영하면 사이즈 빈 채로 등록됩니다: '+escP(d.new_boxes.slice(0,30).join(', '))+(d.new_boxes.length>30?' …':'')+'</div>';
+    if(k==='dm'&&(d.nosize_boxes||[]).length) h+='<div class="hint" style="margin-top:4px;color:#9a6512">📐 사이즈가 아직 없는 박스: '+escP(d.nosize_boxes.slice(0,30).join(', '))+(d.nosize_boxes.length>30?' …':'')+'</div>';
     if(errs.length) h+='<div style="margin-top:6px;color:var(--expense);font-size:12px"><b>오류(반영 안 됨)</b><br>'+errs.slice(0,40).map(e=>escP(e.row+'행 '+e.code+' — '+e.msg)).join('<br>')+(errs.length>40?('<br>… 외 '+(errs.length-40)+'건'):'')+'</div>';
     if(unk.length) h+='<div style="margin-top:6px;color:#9a6512;font-size:12px"><b>제품마스터에 없는 코드(반영 안 됨)</b> '+unk.slice(0,60).map(u=>escP(u.code)).join(', ')+(unk.length>60?(' … 외 '+(unk.length-60)+'개'):'')+'</div>';
     if(items.length){
-      h+='<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">CTR</th><th style="text-align:left">제품명</th><th style="text-align:left">바뀌는 칸 (지금 → 새 값)</th></tr></thead><tbody>'
-        +items.slice(0,500).map(it=>'<tr><td><b>'+escP(it.code)+'</b></td><td>'+escP(it.name||'')+'</td><td>'+it.changes.map(c=>escP(DM_LBL[c.field]||c.field)+' '+dmNum(c.old)+' → <b>'+(c.new==null?'(지움)':c.new)+'</b>').join(' · ')+'</td></tr>').join('')
+      h+='<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">'+(k==='dm'?'CTR':'박스 코드')+'</th><th style="text-align:left">'+(k==='dm'?'제품명':'쓰는 제품')+'</th><th style="text-align:left">바뀌는 칸 (지금 → 새 값)</th></tr></thead><tbody>'
+        +items.slice(0,500).map(it=>'<tr><td><b>'+escP(it.code)+'</b>'+(it.is_new?' <span class="hint" style="color:var(--income)">신규</span>':'')+'</td><td>'+(k==='dm'?escP(it.name||''):(it.products||0)+'개')+'</td><td>'
+          +(it.changes.length?it.changes.map(c=>escP(DM_LBL[c.field]||c.field)+' '+escP(dmNum(c.old))+' → <b>'+(c.new==null?'(지움)':escP(c.new))+'</b>').join(' · '):'<span class="hint">코드만 등록</span>')+'</td></tr>').join('')
         +'</tbody></table></div>'+(items.length>500?('<div class="hint">처음 500건만 표시 — 반영은 '+items.length+'건 모두</div>'):'');
-      h+='<div style="margin-top:10px;display:flex;gap:8px"><button class="btn gold" id="dmApply">반영하기 ('+items.length+'개 제품)</button><button class="btn ghost" id="dmCancel">취소</button></div>';
+      h+='<div style="margin-top:10px;display:flex;gap:8px"><button class="btn gold" id="'+k+'Apply">반영하기 ('+items.length+K.unit+')</button><button class="btn ghost" id="'+k+'Cancel">취소</button></div>';
     } else {
-      h+='<div class="hint" style="margin-top:8px">바뀌는 칸이 없습니다.</div><div style="margin-top:6px"><button class="btn ghost sm" id="dmCancel">닫기</button></div>';
+      h+='<div class="hint" style="margin-top:8px">바뀌는 칸이 없습니다.</div><div style="margin-top:6px"><button class="btn ghost sm" id="'+k+'Cancel">닫기</button></div>';
     }
     return h;
   }
-  async function dmApply(){
-    if(!dmTable) return;
-    const btn=$('dmApply'); if(btn){ btn.disabled=true; btn.textContent='반영 중…'; }
+  async function dmApply(k){
+    const st=dmState[k]; if(!st.table) return;
+    const btn=$(k+'Apply'); if(btn){ btn.disabled=true; btn.textContent='반영 중…'; }
     try{
-      const res=await fetch(session.api+'/api/products/dims/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({table:dmTable})});
+      const res=await fetch(session.api+DMK[k].api+'/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({table:st.table})});
       const d=await res.json();
-      if(!res.ok||d.error){ dmMsg('err','실패: '+(d.error||res.status)); if(btn){ btn.disabled=false; btn.textContent='반영하기'; } return; }
-      $('dmPrev').innerHTML=''; dmTable=null; $('dmFileName').textContent='';
-      dmMsg('ok','반영 완료 — 제품 '+d.products+'개 · '+d.fields+'칸'+(d.unknown&&d.unknown.length?(' · 미등록 코드 '+d.unknown.length+'개 제외'):'')+(d.errors&&d.errors.length?(' · 오류 '+d.errors.length+'줄 제외'):'')+' ('+escP(dmName)+')');
+      if(!res.ok||d.error){ dmMsg(k,'err','실패: '+(d.error||res.status)); if(btn){ btn.disabled=false; btn.textContent='반영하기'; } return; }
+      $(k+'Prev').innerHTML=''; st.table=null; $(k+'FileName').textContent='';
+      const tail=(d.errors&&d.errors.length?(' · 오류 '+d.errors.length+'줄 제외'):'')+' ('+st.name+')';
+      if(k==='dm') dmMsg(k,'ok','반영 완료 — 제품 '+d.products+'개 · '+d.fields+'칸'+(d.unknown&&d.unknown.length?(' · 미등록 코드 '+d.unknown.length+'개 제외'):'')
+        +(d.new_boxes&&d.new_boxes.length?(' · 새 박스 '+d.new_boxes.length+'개 등록(사이즈는 박스 마스터에서)'):'')+tail);
+      else dmMsg(k,'ok','반영 완료 — 박스 '+d.boxes+'개(신규 '+d.created+') · '+d.fields+'칸'+tail);
       dmLoadStat();
-    }catch(e){ dmMsg('err','실패: '+e.message); if(btn){ btn.disabled=false; btn.textContent='반영하기'; } }
+    }catch(e){ dmMsg(k,'err','실패: '+e.message); if(btn){ btn.disabled=false; btn.textContent='반영하기'; } }
   }
 
   // ===== 경쟁사 교차참조 업로드 =====
@@ -2825,10 +2878,12 @@
   if($('xrSnapList')) $('xrSnapList').addEventListener('click',xrSnapList);
   if($('xrSnapNow')) $('xrSnapNow').addEventListener('click',xrSnapNow);
   if($('bmApply')) $('bmApply').addEventListener('click',bmApply);
-  // 0327 · 무게 · 박스 사이즈
-  if($('dmTpl')) $('dmTpl').addEventListener('click',dmDownloadTemplate);
-  if($('dmExport')) $('dmExport').addEventListener('click',dmExport);
-  if($('dmFile')) $('dmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) dmReadFile(f); e.target.value=''; });
+  // 0327 · 0328 · 제품 무게 · 포장 박스 코드 / 박스 마스터
+  ['dm','bx'].forEach(k=>{
+    if($(k+'Tpl')) $(k+'Tpl').addEventListener('click',()=>dmDownloadTemplate(k));
+    if($(k+'Export')) $(k+'Export').addEventListener('click',()=>dmExport(k));
+    if($(k+'File')) $(k+'File').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) dmReadFile(k,f); e.target.value=''; });
+  });
   if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
   if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);
   if($('peNewBtn')) $('peNewBtn').addEventListener('click',()=>openProductEditor(null));

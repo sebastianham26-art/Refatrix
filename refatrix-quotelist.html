@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 목록 · ql-1118dm</title>
+<title>Refatrix ERP · 견적 목록 · ql-1118bx</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
@@ -293,7 +293,7 @@
     return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
   }
 
-  const QL_BUILD='ql-1118dm';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='ql-1118bx';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -983,17 +983,21 @@
   }
 
   // ===== 0327 · 대략 총무게 · 사이즈 (제품마스터 무게 · 개별 박스 사이즈) =====
-  //   서버가 계산한 ship = { weight_kg, dims:{l,w,h}, vol_m3, net_m3, vol_weight_kg, wt_miss, d_miss, unreg … }
+  //   서버가 계산한 ship = { weight_kg, dims:{l,w,h}, vol_m3, net_m3, vol_weight_kg, wt_miss, d_nobox, d_nosize(+nosize_boxes), unreg … }
+  //   0328 · 사이즈 = 제품의 포장 박스 코드 → 포장 박스 마스터 사이즈
   function shipNum(n,d){ return Number(n).toLocaleString('es-MX',{minimumFractionDigits:d||0,maximumFractionDigits:d||0}); }
   function shipMissText(sh){
     const p=[];
     if(sh.wt_miss) p.push('무게 자료 없음 '+sh.wt_miss+'줄('+fmtq(sh.wt_miss_qty)+'개)');
-    if(sh.d_miss) p.push('사이즈 자료 없음 '+sh.d_miss+'줄('+fmtq(sh.d_miss_qty)+'개)');
+    if(sh.d_nobox||sh.d_nosize){
+      if(sh.d_nobox) p.push('박스 코드 없음 '+sh.d_nobox+'줄('+fmtq(sh.d_nobox_qty)+'개)');
+      if(sh.d_nosize) p.push('박스 사이즈 미입력 '+sh.d_nosize+'줄('+fmtq(sh.d_nosize_qty)+'개)'+((sh.nosize_boxes&&sh.nosize_boxes.length)?(' — '+sh.nosize_boxes.slice(0,8).join(', ')+(sh.nosize_boxes.length>8?' …':'')):''));
+    } else if(sh.d_miss) p.push('사이즈 자료 없음 '+sh.d_miss+'줄('+fmtq(sh.d_miss_qty)+'개)');
     if(sh.unreg) p.push('미등록 코드 '+sh.unreg+'줄('+fmtq(sh.unreg_qty)+'개)');
     return p;
   }
   function shipTitle(sh){
-    const t=['제품마스터의 무게 · 개별 박스 사이즈로 계산한 대략값'];
+    const t=['제품마스터의 무게 · 포장 박스(박스 마스터 사이즈)로 계산한 대략값'];
     if(sh.weight_kg!=null) t.push('총무게 ≈ '+shipNum(sh.weight_kg,1)+' kg ('+fmtq(sh.wt_pcs)+'개 기준)');
     if(sh.dims){ t.push('총사이즈 ≈ 가로 '+sh.dims.l+' × 세로 '+sh.dims.w+' × 높이 '+sh.dims.h+' cm ('+fmtq(sh.d_pcs)+'개 기준)');
       t.push('박스 순부피 '+shipNum(sh.net_m3,3)+' m³ → 채움률 85% 포장부피 ≈ '+shipNum(sh.vol_m3,3)+' m³');
@@ -1016,7 +1020,7 @@
     const miss=shipMissText(sh);
     let h='<div class="cb" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#f7f4ec;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12.5px" title="'+esc(shipTitle(sh))+'">'
       +'<span style="font-weight:800;color:var(--brand)">📦 대략 무게 · 사이즈</span>';
-    if(sh.nodata) h+='<span class="hint">이 견적의 제품에 무게 · 사이즈 자료가 없습니다 — 제품마스터 › 업로드 › 📦 무게 · 박스 사이즈</span>';
+    if(sh.nodata) h+='<span class="hint">이 견적의 제품에 무게 · 박스 사이즈 자료가 없습니다 — 제품마스터 › 업로드 › 📦 제품 무게 · 포장 박스 코드 / 📐 포장 박스 마스터</span>';
     else {
       h+='<span>총무게 <b>'+(sh.weight_kg!=null?('≈ '+shipNum(sh.weight_kg,1)+' kg'):'—')+'</b></span>';
       h+='<span>총사이즈 <b>'+(sh.dims?('≈ 가로 '+sh.dims.l+' × 세로 '+sh.dims.w+' × 높이 '+sh.dims.h+' cm'):'—')+'</b>'
@@ -1030,7 +1034,7 @@
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적',expired:'만료'};
     let html='<table data-sort="quotelist:main"><thead><tr>'
-      +'<th>견적번호</th><th data-type="date">견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r" data-nosort title="제품마스터의 무게 · 개별 박스 사이즈로 계산한 대략값">무게 · 사이즈(약)</th><th data-nosort>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th data-type="date">매출일 / SAT</th><th data-nosort>작업</th>'
+      +'<th>견적번호</th><th data-type="date">견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r" data-nosort title="제품마스터의 무게 · 포장 박스(박스 마스터 사이즈)로 계산한 대략값">무게 · 사이즈(약)</th><th data-nosort>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th data-type="date">매출일 / SAT</th><th data-nosort>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       qRowsById[q.id]=q;

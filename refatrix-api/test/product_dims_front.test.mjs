@@ -48,7 +48,7 @@ async function bootList(quote = QUOTE) {
 
 test('① 견적 목록 — 무게 · 사이즈(약) 칸 · 자료 없는 줄 표시 · 옛 서버/가격표는 —', opts, async () => {
   const w = await bootList();
-  assert.match(w.document.title, /ql-1118dm/);
+  assert.match(w.document.title, /ql-1118bx/);
   w.render([
     { ...QUOTE, id: 1, quote_no: 'Q1' },
     { ...QUOTE, id: 2, quote_no: 'Q2', ship: undefined },                      // 0327 전 서버
@@ -92,15 +92,23 @@ async function bootProducts() {
       win.alert = () => {}; win.confirm = () => true;
       win.fetch = async (url, o = {}) => {
         const u = String(url); const json = (b, st = 200) => ({ ok: st < 400, status: st, json: async () => b });
-        if (/\/api\/products\/dims\/preview$/.test(u) || /\/api\/products\/dims\/apply$/.test(u)) {
+        const m = u.match(/\/api\/products\/(dims|boxes)\/(preview|apply)$/);
+        if (m) {
           const body = JSON.parse(o.body); posts.push({ u, body });
-          const p = tableToRows(body.table);
-          if (/apply$/.test(u)) return json({ ok: true, products: p.rows.length, fields: 4, unknown: [], errors: p.errors });
+          const p = tableToRows(body.table, m[1] === 'boxes' ? 'box' : 'product');
+          if (m[2] === 'apply') return json(m[1] === 'boxes' ? { ok: true, boxes: p.rows.length, created: 1, fields: 3, errors: p.errors }
+            : { ok: true, products: p.rows.length, fields: 2, unknown: [], new_boxes: ['CAJA 3'], errors: p.errors });
+          const items = p.rows.filter((r) => r.code !== 'NOPE1').map((r, i) => ({ code: r.code, name: 'X', is_new: m[1] === 'boxes' && i === 0, products: 2,
+            changes: Object.entries(r.set).map(([f, v]) => ({ field: f, old: null, new: v })) }));
           return json({ ok: true, headerless: p.headerless, columns: p.columns, rows: p.rows.length, dup: p.dup, errors: p.errors, same: 0,
-            unknown: [{ row: 3, code: 'NOPE1' }],
-            items: p.rows.filter((r) => r.code !== 'NOPE1').map((r) => ({ code: r.code, name: 'X', changes: Object.entries(r.set).map(([f, v]) => ({ field: f, old: null, new: v })) })) });
+            unknown: m[1] === 'dims' ? [{ row: 3, code: 'NOPE1' }] : undefined, items,
+            new_boxes: m[1] === 'dims' ? ['CAJA 3'] : undefined, nosize_boxes: [] });
         }
-        if (/\/api\/products\/dims$/.test(u)) return json({ items: [{ code: 'CB0458', name: 'Rotula', is_active: true, weight_kg: 0.85, box_l_cm: 32, box_w_cm: 12, box_h_cm: 9, updated_at: '2026-11-18 10:00' }], stat: { total: 1, weight: 1, dims: 1, both: 1 } });
+        if (/\/api\/products\/dims$/.test(u)) return json({ items: [{ code: 'CB0458', name: 'Rotula', is_active: true, weight_kg: 0.85, box_code: 'CAJA 3', box_l_cm: 32, box_w_cm: 12, box_h_cm: 9, updated_at: '2026-11-18 10:00' }], stat: { total: 1, weight: 1, box: 1, sized: 1 } });
+        if (/\/api\/products\/boxes$/.test(u)) return json({ items: [
+          { code: 'CAJA 3', description: 'chica', box_l_cm: 32, box_w_cm: 12, box_h_cm: 9, products: 5, in_master: true, updated_at: null },
+          { code: 'LARGA', description: '', box_l_cm: null, box_w_cm: null, box_h_cm: null, products: 2, in_master: false, updated_at: null }],
+          stat: { total: 2, sized: 1, nosize: 1, nosize_products: 2 } });
         return json({});
       };
     },
@@ -111,38 +119,66 @@ async function bootProducts() {
   w.XLSX = Object.assign({}, XLSX, { writeFile: (wb, name) => files.push({ name, wb }) });
   return { w, files, posts };
 }
+const sheet = (f) => XLSX.utils.sheet_to_json(f.wb.Sheets[f.wb.SheetNames[0]], { header: 1 });
 
-test('③ 제품마스터 업로드 — 📦 블록 · 양식 · 현재값 다운로드 · 미리보기 · 반영', opts, async () => {
+test('③ 제품 무게 · 박스 코드 — 양식 · 현재값 · 미리보기(새 박스 안내) · 반영', opts, async () => {
   const { w, files, posts } = await bootProducts();
   const d = w.document;
-  assert.match(d.title, /ps-1118dm/);
+  assert.match(d.title, /ps-1118bx/);
   const blk = d.getElementById('dmBlock');
   assert.ok(blk && d.getElementById('upCard').contains(blk));
   assert.equal(blk.querySelectorAll('[onclick]').length, 0);
-  // 양식
   d.getElementById('dmTpl').click();
-  assert.equal(files[0].name, 'Refatrix_Peso_Medidas_Plantilla.xlsx');
-  assert.deepEqual(files[0].wb.SheetNames, ['Peso y medidas', '작성방법']);
-  const head = XLSX.utils.sheet_to_json(files[0].wb.Sheets['Peso y medidas'], { header: 1 });
-  assert.deepEqual(head, [['Clave CTR', 'Peso (kg)', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)']]);
-  // 양식 머리글을 서버 파서가 그대로 알아듣는다
-  const tp = tableToRows([head[0], ['CB0458', 1, 2, 3, 4]]);
-  assert.equal(tp.headerless, false); assert.deepEqual(tp.rows[0].set, { weight_kg: 1, box_l_cm: 2, box_w_cm: 3, box_h_cm: 4 });
-  // 현재값 다운로드 → 그대로 다시 올려도 읽힘(Producto · Activo 열 무시)
-  await w.dmExport();
-  assert.match(files[1].name, /^Refatrix_Peso_Medidas_\d{8}\.xlsx$/);
-  const ex = XLSX.utils.sheet_to_json(files[1].wb.Sheets['Peso y medidas'], { header: 1 });
-  assert.deepEqual(ex[1].slice(0, 5), ['CB0458', 0.85, 32, 12, 9]);
-  assert.deepEqual(tableToRows(ex).rows[0].set, { weight_kg: 0.85, box_l_cm: 32, box_w_cm: 12, box_h_cm: 9 });
-  // 미리보기 → 반영
-  w.eval(`dmTable=[['Clave CTR','Peso (kg)','Largo (cm)','Ancho (cm)','Alto (cm)'],['CB0458',0.9,32,12,9],['NOPE1',1,1,1,1],['BAD',-1,1,1,1]]; dmName='t.xlsx';`);
-  await w.dmPreview();
+  assert.equal(files[0].name, 'Refatrix_Peso_Caja_Plantilla.xlsx');
+  assert.deepEqual(files[0].wb.SheetNames, ['Peso y caja', '작성방법']);
+  assert.deepEqual(sheet(files[0]), [['Clave CTR', 'Peso (kg)', 'Caja']]);
+  assert.deepEqual(tableToRows([sheet(files[0])[0], ['CB0458', 1, 'caja 1']]).rows[0].set, { weight_kg: 1, box_code: 'CAJA 1' });
+  d.getElementById('dmExport').click(); await new Promise((r) => setTimeout(r, 20));
+  assert.match(files[1].name, /^Refatrix_Peso_Caja_\d{8}\.xlsx$/);
+  const ex = sheet(files[1]);
+  assert.deepEqual(ex[1].slice(0, 3), ['CB0458', 0.85, 'CAJA 3']);
+  assert.deepEqual(tableToRows(ex).rows[0].set, { weight_kg: 0.85, box_code: 'CAJA 3' });   // 참고 열(Largo caja …)은 무시
+  w.eval(`dmState.dm.table=[['Clave CTR','Peso (kg)','Caja'],['CB0458',0.9,'CAJA 3'],['NOPE1',1,'X'],['BAD',-1,'X']]; dmState.dm.name='t.xlsx';`);
+  await w.dmPreview('dm');
   const pv = d.getElementById('dmPrev').textContent;
   assert.match(pv, /CB0458/); assert.match(pv, /NOPE1/); assert.match(pv, /BAD/);
+  assert.match(pv, /박스 마스터에 아직 없는 박스 코드 1개/);
   assert.match(pv, /반영하기 \(1개 제품\)/);
-  d.getElementById('dmApply').click();
-  await new Promise((r) => setTimeout(r, 20));
-  assert.equal(posts.filter((p) => /apply$/.test(p.u)).length, 1);
-  assert.match(d.getElementById('dmMsg').textContent, /반영 완료/);
-  assert.equal(d.getElementById('dmPrev').innerHTML, '');
+  d.getElementById('dmApply').click(); await new Promise((r) => setTimeout(r, 20));
+  assert.equal(posts.filter((p) => /dims\/apply$/.test(p.u)).length, 1);
+  assert.match(d.getElementById('dmMsg').textContent, /반영 완료 — .*새 박스 1개 등록/);
+});
+
+test('④ 포장 박스 마스터 — 양식 · 목록(사이즈 없는 박스 맨 위 SIN MEDIDAS) · 미리보기 · 반영', opts, async () => {
+  const { w, files, posts } = await bootProducts();
+  const d = w.document;
+  d.getElementById('bxTpl').click();
+  assert.equal(files[0].name, 'Refatrix_Cajas_Plantilla.xlsx');
+  assert.deepEqual(sheet(files[0]), [['Código caja', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)', 'Descripción']]);
+  d.getElementById('bxExport').click(); await new Promise((r) => setTimeout(r, 20));
+  const ex = sheet(files[1]);
+  assert.match(files[1].name, /^Refatrix_Cajas_\d{8}\.xlsx$/);
+  assert.deepEqual(ex[0], ['Código caja', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)', 'Descripción', 'Productos', 'Estado', 'Actualizado']);
+  assert.equal(ex[1][0], 'LARGA'); assert.equal(ex[1][6], 'SIN MEDIDAS');
+  assert.equal(ex[2][0], 'CAJA 3');
+  // 목록 파일에 사이즈를 채워 그대로 올리면 읽힘
+  ex[1][1] = 70; ex[1][2] = 12; ex[1][3] = 12;
+  const back = tableToRows(ex, 'box');
+  assert.deepEqual(back.rows[0], { row: 2, code: 'LARGA', set: { box_l_cm: 70, box_w_cm: 12, box_h_cm: 12 } });
+  w.eval(`dmState.bx.table=${JSON.stringify(ex)}; dmState.bx.name='cajas.xlsx';`);
+  await w.dmPreview('bx');
+  const pv = d.getElementById('bxPrev').textContent;
+  assert.match(pv, /LARGA/); assert.match(pv, /신규 박스/); assert.match(pv, /반영하기 \(2개 박스\)/);
+  d.getElementById('bxApply').click(); await new Promise((r) => setTimeout(r, 20));
+  assert.equal(posts.filter((p) => /boxes\/apply$/.test(p.u)).length, 1);
+  assert.match(d.getElementById('bxMsg').textContent, /반영 완료 — 박스 2개\(신규 1\)/);
+  await w.dmLoadStat();
+  assert.match(d.getElementById('bxStat').textContent, /사이즈 없음 1개 \(제품 2개\)/);
+});
+
+test('⑤ 견적 툴팁 — 박스 코드 없음 · 박스 사이즈 미입력(박스 이름) 구분', opts, async () => {
+  const w = await bootList();
+  const t = w.shipTitle({ ...SHIP, d_miss: 3, d_nobox: 1, d_nobox_qty: 5, d_nosize: 2, d_nosize_qty: 4, nosize_boxes: ['LARGA', 'NUEVA'] });
+  assert.match(t, /박스 코드 없음 1줄\(5개\)/);
+  assert.match(t, /박스 사이즈 미입력 2줄\(4개\) — LARGA, NUEVA/);
 });
