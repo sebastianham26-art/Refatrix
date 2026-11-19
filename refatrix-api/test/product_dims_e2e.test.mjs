@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import {
   tableToRows, parseNum, parseDimsCell, headerField, previewDims, applyDims, exportDims,
-  previewBoxes, applyBoxes, exportBoxes,
+  previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes,
   aggregateLines, estimateShipment, SHIP_SELECT, SHIP_JOIN, shipFromRow, dimsReady, _resetDimsReady,
 } from '../src/productDims.js';
 import { classifyTable } from '../src/productDelete.js';
@@ -19,35 +19,54 @@ const mig = (f) => fs.readFileSync(path.join(__dirname, '..', 'migrations', f), 
 const url = process.env.DATABASE_URL;
 const SCHEMA = 'dims_t_' + process.pid;
 
-test('제품 표 해석 — CTR · 무게 · 박스 코드 · 빈칸 · 지우기 · 중복 · 오류 · 가로세로높이 열은 무시', () => {
+test('제품 표 해석 — CTR · 무게 · 박스 코드 · 제품 사이즈 · 빈칸 · 지우기 · 중복 합치기 · 오류', () => {
   const t = [
-    ['Clave CTR', 'Peso (kg)', 'Caja', 'Producto', 'Largo caja (cm)'],
-    ['cb0458', 0.85, ' caja  3 ', 'x', 99],
-    ['CS1045', '1,5', '', '', ''],
-    ['CR0490', '-', 'C-12', '', ''],
-    ['CB0458', '', 'CAJA 4', '', ''],      // 중복 → 마지막 줄 박스, 무게는 앞줄 유지
-    ['BAD1', 'abc', 'X', '', ''],
-    ['', 1, 'Y', '', ''],
-    ['EMPTY1', '', '', '', ''],
-    ['CLR1', '', '-', '', ''],
+    ['Clave CTR', 'Peso (kg)', 'Caja', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)', 'Producto'],
+    ['cb0458', 0.85, ' caja  3 ', 32, 12, 9, 'x'],
+    ['CS1045', '1,5', '', '', '', '', ''],
+    ['CR0490', '-', 'C-12', 20, 10, '', ''],          // 사이즈 일부만 → 사이즈만 건너뜀(경고)
+    ['CB0458', '', 'CAJA 4', '', '', '', ''],         // 반복 → 합치기(박스만 바뀜)
+    ['BAD1', 'abc', 'X', '', '', '', ''],
+    ['', 1, 'Y', '', '', '', ''],
+    ['EMPTY1', '', '', '', '', '', ''],
+    ['CLR1', '', '-', '-', '', '', ''],               // 박스 지우기 · 사이즈 3칸 지우기
   ];
   const r = tableToRows(t);
   assert.equal(r.headerless, false);
-  assert.deepEqual(r.columns.sort(), ['box_code', 'weight_kg']);
+  assert.deepEqual(r.columns.sort(), ['box_code', 'box_h_cm', 'box_l_cm', 'box_w_cm', 'weight_kg']);
   const by = Object.fromEntries(r.rows.map((x) => [x.code, x.set]));
-  assert.deepEqual(by.CB0458, { weight_kg: 0.85, box_code: 'CAJA 4' });
+  assert.deepEqual(by.CB0458, { weight_kg: 0.85, box_code: 'CAJA 4', box_l_cm: 32, box_w_cm: 12, box_h_cm: 9 });
   assert.deepEqual(by.CS1045, { weight_kg: 1.5 });
   assert.deepEqual(by.CR0490, { weight_kg: null, box_code: 'C-12' });
-  assert.deepEqual(by.CLR1, { box_code: null });
-  assert.equal(r.dup, 1);
+  assert.deepEqual(by.CLR1, { box_code: null, box_l_cm: null, box_w_cm: null, box_h_cm: null });
+  assert.equal(r.dup, 1); assert.equal(r.conflict, 1);
   assert.equal(r.errors.length, 1); assert.equal(r.errors[0].code, 'BAD1');
+  assert.equal(r.warnings.length, 1); assert.equal(r.warnings[0].code, 'CR0490');
   assert.ok(!by.EMPTY1);
+  assert.deepEqual(r.box_sizes.map((b) => [b.code, b.l, b.w, b.h]), [['CAJA 3', 32, 12, 9]]);
   assert.equal(headerField('박스 명칭').field, 'box_code');
-  assert.equal(headerField('포장박스').field, 'box_code');
-  assert.equal(headerField('Largo (cm)'), null);            // 제품 업로드는 사이즈를 읽지 않는다
-  const hl = tableToRows([['AB1234', 2, 'CAJA 1'], ['AB1235', '', 'caja 2']]);
+  for (const h of ['Producto', 'Ref. caja maestro (cm)', 'Origen medidas', 'Activo', 'Actualizado']) assert.equal(headerField(h), null, h);
+  const hl = tableToRows([['AB1234', 2, 'CAJA 1', 10, 10, 10], ['AB1235', '', 'caja 2']]);
   assert.equal(hl.headerless, true);
-  assert.deepEqual(hl.rows.map((x) => x.set), [{ weight_kg: 2, box_code: 'CAJA 1' }, { box_code: 'CAJA 2' }]);
+  assert.deepEqual(hl.rows.map((x) => x.set), [{ weight_kg: 2, box_code: 'CAJA 1', box_l_cm: 10, box_w_cm: 10, box_h_cm: 10 }, { box_code: 'CAJA 2' }]);
+});
+
+test('공장 마스터 파일 형식 — NEW · Weight(g) · Inner Box 1 · L · W · H · 반복 줄 · 박스별 다수 사이즈', () => {
+  const t = [['NEW', 'Weight(g)', 'Inner Box 1', 'L(cm)', 'W(cm)', 'H(cm)'],
+    ['CA0001', null, 'A4', 18.3, 9, 5.2], ['CA0003', null, null, '', '', ''],
+    ['CA0005', 1630, 'A2', 22.7, 17, 8.2], ['CA0005', 1630, 'A2', 22.7, 17, 8.2],
+    ['CA0006', 1740, 'A2', 22.7, 17, 8.2], ['CQ0001', 900, 'A2', 50, 50, 16],
+    ['CR1047', 831, 'ARM', 50, 50, 16], ['CR1047', 831, 'ARM', '', '', ''],
+    ['GA0086C', 2408, 'T KA07', 17, 17, '']];
+  const r = tableToRows(t);
+  const by = Object.fromEntries(r.rows.map((x) => [x.code, x.set]));
+  assert.deepEqual(by.CA0005, { weight_kg: 1.63, box_code: 'A2', box_l_cm: 22.7, box_w_cm: 17, box_h_cm: 8.2 });
+  assert.deepEqual(by.CR1047, { weight_kg: 0.831, box_code: 'ARM', box_l_cm: 50, box_w_cm: 50, box_h_cm: 16 });   // 빈 줄이 덮지 않음
+  assert.deepEqual(by.GA0086C, { weight_kg: 2.408, box_code: 'T KA07' });
+  assert.ok(!by.CA0003);
+  assert.equal(r.conflict, 0);
+  const a2 = r.box_sizes.find((b) => b.code === 'A2');
+  assert.deepEqual([a2.l, a2.w, a2.h, a2.rows, a2.variants.length], [22.7, 17, 8.2, 4, 2]);   // 3 대 1 → 다수
 });
 
 test('박스 표 해석 — 박스 코드 · 가로 · 세로 · 높이 · mm · 한 칸 사이즈 · 설명', () => {
@@ -86,6 +105,11 @@ test('대략 사이즈 — 1개 = 그 박스 · 여러 개 = 85% 채움 · 박�
   assert.deepEqual(mix.nosize_boxes, ['NUEVA']);
   assert.equal(mix.unreg, 1);
   assert.equal(estimateShipment(aggregateLines([{ product_id: 1, qty: 2 }])).nodata, true);
+  // 제품 자체 사이즈가 박스 마스터보다 먼저 · 박스 코드 없어도 자체 사이즈면 계산
+  const own = estimateShipment(aggregateLines([{ product_id: 1, qty: 1, box_code: 'A2', p_l: 50, p_w: 50, p_h: 16, box_l_cm: 22.7, box_w_cm: 17, box_h_cm: 8.2 }]));
+  assert.deepEqual(own.dims, { l: 50, w: 50, h: 16 });
+  const own2 = estimateShipment(aggregateLines([{ product_id: 1, qty: 1, box_code: null, p_l: 10, p_w: 20, p_h: 30 }]));
+  assert.deepEqual(own2.dims, { l: 30, w: 20, h: 10 }); assert.equal(own2.d_nobox, 0);
   assert.equal(estimateShipment(aggregateLines([])), null);
 });
 
@@ -159,7 +183,7 @@ test('실 PostgreSQL — 0327 → 0328 · 제품 박스 코드 · 박스 마스�
 
     const row = (await exec(sel, [qid])).rows[0];
     const viaSql = shipFromRow(row);
-    const lines = (await exec(`SELECT ql.product_id, ql.qty, p.weight_kg, p.box_code, pb.box_l_cm, pb.box_w_cm, pb.box_h_cm
+    const lines = (await exec(`SELECT ql.product_id, ql.qty, p.weight_kg, p.box_code, p.box_l_cm AS p_l, p.box_w_cm AS p_w, p.box_h_cm AS p_h, pb.box_l_cm, pb.box_w_cm, pb.box_h_cm
                                  FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
                                  LEFT JOIN packing_boxes pb ON pb.code = p.box_code WHERE ql.quote_id = $1`, [qid])).rows;
     const viaJs = estimateShipment(aggregateLines(lines));
@@ -174,8 +198,22 @@ test('실 PostgreSQL — 0327 → 0328 · 제품 박스 코드 · 박스 마스�
     // 다운로드(제품) — 박스 사이즈 참고 칸
     const ex = await exportDims(exec);
     const cb = ex.items.find((x) => x.code === 'CB0458');
-    assert.deepEqual([cb.weight_kg, cb.box_code, cb.box_l_cm, cb.box_w_cm, cb.box_h_cm], [0.85, 'CAJA 3', 32, 12, 9]);
-    assert.deepEqual(ex.stat, { total: 3, weight: 3, box: 2, sized: 2 });
+    assert.deepEqual([cb.weight_kg, cb.box_code, cb.box_l_cm, cb.caja_l_cm, cb.caja_w_cm, cb.caja_h_cm], [0.85, 'CAJA 3', null, 32, 12, 9]);
+    assert.deepEqual(ex.stat, { total: 3, weight: 3, box: 2, own: 0, sized: 2 });
+    assert.equal(cb.used, 'caja');
+    // 제품 자체 사이즈 + 박스 마스터 동시 반영(공장 파일 형식)
+    const ff = tableToRows([['NEW', 'Weight(g)', 'Inner Box 1', 'L(cm)', 'W(cm)', 'H(cm)'], ['CR0490', 500, 'BIG', 60, 40, 30], ['CS1045', 3200, 'BIG', 60, 40, 30]]);
+    await exec('BEGIN'); const fa = await applyDims(exec, ff.rows, { userId: 1, boxSizes: ff.box_sizes }); await exec('COMMIT');
+    assert.equal(fa.boxes.boxes, 1); assert.equal(fa.boxes.created, 0);   // BIG 은 같은 반영에서 먼저 생성됨
+    const big = (await exec(`SELECT box_l_cm, box_w_cm, box_h_cm FROM packing_boxes WHERE code='BIG'`)).rows[0];
+    assert.deepEqual([big.box_l_cm, big.box_w_cm, big.box_h_cm].map(Number), [60, 40, 30]);
+    const s3 = shipFromRow((await exec(sel, [qid])).rows[0]);
+    assert.equal(s3.d_miss, 0); assert.ok(s3.dims.l >= 60);
+    const ex2 = await exportDims(exec);
+    assert.equal(ex2.items.find((x) => x.code === 'CR0490').used, 'producto');
+    // 바로 다시 올리면 바뀌는 것 없음(제품 · 박스 모두)
+    assert.equal((await previewDims(exec, ff.rows)).items.length, 0);
+    assert.equal((await previewBoxes(exec, boxRowsFromSizes(ff.box_sizes))).items.length, 0);
     const q2 = Number((await exec(`INSERT INTO quotes(quote_no) VALUES ('Q-T2') RETURNING id`)).rows[0].id);
     assert.equal(shipFromRow((await exec(sel, [q2])).rows[0]), null);
   } finally {

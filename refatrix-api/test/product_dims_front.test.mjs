@@ -48,7 +48,7 @@ async function bootList(quote = QUOTE) {
 
 test('① 견적 목록 — 무게 · 사이즈(약) 칸 · 자료 없는 줄 표시 · 옛 서버/가격표는 —', opts, async () => {
   const w = await bootList();
-  assert.match(w.document.title, /ql-1118bx/);
+  assert.match(w.document.title, /ql-1119mf/);
   w.render([
     { ...QUOTE, id: 1, quote_no: 'Q1' },
     { ...QUOTE, id: 2, quote_no: 'Q2', ship: undefined },                      // 0327 전 서버
@@ -100,11 +100,14 @@ async function bootProducts() {
             : { ok: true, products: p.rows.length, fields: 2, unknown: [], new_boxes: ['CAJA 3'], errors: p.errors });
           const items = p.rows.filter((r) => r.code !== 'NOPE1').map((r, i) => ({ code: r.code, name: 'X', is_new: m[1] === 'boxes' && i === 0, products: 2,
             changes: Object.entries(r.set).map(([f, v]) => ({ field: f, old: null, new: v })) }));
-          return json({ ok: true, headerless: p.headerless, columns: p.columns, rows: p.rows.length, dup: p.dup, errors: p.errors, same: 0,
+          return json({ ok: true, headerless: p.headerless, columns: p.columns, rows: p.rows.length, table_rows: body.table.length, dup: p.dup, errors: p.errors, same: 0,
             unknown: m[1] === 'dims' ? [{ row: 3, code: 'NOPE1' }] : undefined, items,
-            new_boxes: m[1] === 'dims' ? ['CAJA 3'] : undefined, nosize_boxes: [] });
+            new_boxes: m[1] === 'dims' ? ['CAJA 3'] : undefined, nosize_boxes: [],
+            box_sizes: m[1] === 'dims' && p.box_sizes.length ? { boxes: p.box_sizes.length, changed: p.box_sizes.length, created: 0, same: 0, items: [],
+              conflicts: p.box_sizes.filter((b) => b.variants.length > 1).map((b) => ({ code: b.code, used: { l: b.l, w: b.w, h: b.h }, rows: b.rows, variants: b.variants })) } : null,
+            warnings: p.warnings, warning_count: p.warnings.length });
         }
-        if (/\/api\/products\/dims$/.test(u)) return json({ items: [{ code: 'CB0458', name: 'Rotula', is_active: true, weight_kg: 0.85, box_code: 'CAJA 3', box_l_cm: 32, box_w_cm: 12, box_h_cm: 9, updated_at: '2026-11-18 10:00' }], stat: { total: 1, weight: 1, box: 1, sized: 1 } });
+        if (/\/api\/products\/dims$/.test(u)) return json({ items: [{ code: 'CB0458', name: 'Rotula', is_active: true, weight_kg: 0.85, box_code: 'CAJA 3', box_l_cm: 32, box_w_cm: 12, box_h_cm: 9, caja_l_cm: 32, caja_w_cm: 12, caja_h_cm: 9, used: 'caja', updated_at: '2026-11-18 10:00' }], stat: { total: 1, weight: 1, box: 1, own: 0, sized: 1 } });
         if (/\/api\/products\/boxes$/.test(u)) return json({ items: [
           { code: 'CAJA 3', description: 'chica', box_l_cm: 32, box_w_cm: 12, box_h_cm: 9, products: 5, in_master: true, updated_at: null },
           { code: 'LARGA', description: '', box_l_cm: null, box_w_cm: null, box_h_cm: null, products: 2, in_master: false, updated_at: null }],
@@ -124,20 +127,21 @@ const sheet = (f) => XLSX.utils.sheet_to_json(f.wb.Sheets[f.wb.SheetNames[0]], {
 test('③ 제품 무게 · 박스 코드 — 양식 · 현재값 · 미리보기(새 박스 안내) · 반영', opts, async () => {
   const { w, files, posts } = await bootProducts();
   const d = w.document;
-  assert.match(d.title, /ps-1118bx/);
+  assert.match(d.title, /ps-1119mf/);
   const blk = d.getElementById('dmBlock');
   assert.ok(blk && d.getElementById('upCard').contains(blk));
   assert.equal(blk.querySelectorAll('[onclick]').length, 0);
   d.getElementById('dmTpl').click();
   assert.equal(files[0].name, 'Refatrix_Peso_Caja_Plantilla.xlsx');
   assert.deepEqual(files[0].wb.SheetNames, ['Peso y caja', '작성방법']);
-  assert.deepEqual(sheet(files[0]), [['Clave CTR', 'Peso (kg)', 'Caja']]);
-  assert.deepEqual(tableToRows([sheet(files[0])[0], ['CB0458', 1, 'caja 1']]).rows[0].set, { weight_kg: 1, box_code: 'CAJA 1' });
+  assert.deepEqual(sheet(files[0]), [['Clave CTR', 'Peso (kg)', 'Caja', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)']]);
+  assert.deepEqual(tableToRows([sheet(files[0])[0], ['CB0458', 1, 'caja 1', 3, 2, 1]]).rows[0].set, { weight_kg: 1, box_code: 'CAJA 1', box_l_cm: 3, box_w_cm: 2, box_h_cm: 1 });
   d.getElementById('dmExport').click(); await new Promise((r) => setTimeout(r, 20));
   assert.match(files[1].name, /^Refatrix_Peso_Caja_\d{8}\.xlsx$/);
   const ex = sheet(files[1]);
-  assert.deepEqual(ex[1].slice(0, 3), ['CB0458', 0.85, 'CAJA 3']);
-  assert.deepEqual(tableToRows(ex).rows[0].set, { weight_kg: 0.85, box_code: 'CAJA 3' });   // 참고 열(Largo caja …)은 무시
+  assert.deepEqual(ex[0], ['Clave CTR', 'Peso (kg)', 'Caja', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)', 'Producto', 'Ref. caja maestro (cm)', 'Origen medidas', 'Activo', 'Actualizado']);
+  assert.deepEqual(ex[1].slice(0, 9), ['CB0458', 0.85, 'CAJA 3', 32, 12, 9, 'Rotula', '32x12x9', 'caja']);
+  assert.deepEqual(tableToRows(ex).rows[0].set, { weight_kg: 0.85, box_code: 'CAJA 3', box_l_cm: 32, box_w_cm: 12, box_h_cm: 9 });   // 참고 열은 무시
   w.eval(`dmState.dm.table=[['Clave CTR','Peso (kg)','Caja'],['CB0458',0.9,'CAJA 3'],['NOPE1',1,'X'],['BAD',-1,'X']]; dmState.dm.name='t.xlsx';`);
   await w.dmPreview('dm');
   const pv = d.getElementById('dmPrev').textContent;
@@ -181,4 +185,26 @@ test('⑤ 견적 툴팁 — 박스 코드 없음 · 박스 사이즈 미입력(�
   const t = w.shipTitle({ ...SHIP, d_miss: 3, d_nobox: 1, d_nobox_qty: 5, d_nosize: 2, d_nosize_qty: 4, nosize_boxes: ['LARGA', 'NUEVA'] });
   assert.match(t, /박스 코드 없음 1줄\(5개\)/);
   assert.match(t, /박스 사이즈 미입력 2줄\(4개\) — LARGA, NUEVA/);
+});
+
+const REAL = '/mnt/user-data/uploads/c97dcb48-master_peso_y_dimension.xlsx';
+test('⑥ 공장 마스터 파일(실제 업로드 파일) — 미리보기: 박스 사이즈 다른 박스 목록 · 일부 사이즈 경고 · 반영', { ...opts, skip: opts.skip || (!fs.existsSync(REAL) && '실제 파일 없음') }, async () => {
+  const { w, posts } = await bootProducts();
+  const d = w.document;
+  const buf = fs.readFileSync(REAL);
+  const file = { name: 'master_peso_y_dimension.xlsx', arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
+  await w.dmReadFile('dm', file);
+  const sent = posts.find((p) => /dims\/preview$/.test(p.u)).body.table;
+  assert.equal(sent.length, 51439);
+  assert.deepEqual(sent[0], ['NEW', 'Weight(g)', 'Inner Box 1', 'L(cm)', 'W(cm)', 'H(cm)']);
+  assert.ok(JSON.stringify({ table: sent }).length < 12 * 1024 * 1024);   // 서버 bodyLimit 12MB 안
+  const pv = d.getElementById('dmPrev').textContent;
+  assert.match(pv, /읽은 열: 무게\(kg\) · 박스 코드 · 가로\(cm\) · 세로\(cm\) · 높이\(cm\)/);
+  assert.match(pv, /파일 51439줄/);
+  assert.match(pv, /박스 마스터에 함께 반영 — 파일의 박스 128개/);
+  assert.match(pv, /줄마다 사이즈가 다른 박스 47개/);
+  assert.match(pv, /A2 → 22\.7×17×8\.2/);
+  assert.match(pv, /확인 63줄/);
+  d.getElementById('dmApply').click(); await new Promise((r) => setTimeout(r, 30));
+  assert.match(d.getElementById('dmMsg').textContent, /반영 완료/);
 });

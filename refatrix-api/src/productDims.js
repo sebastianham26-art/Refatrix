@@ -4,7 +4,11 @@
 //   0328 (2026-11-18 디렉터 지시) 제품에는 가로·세로·높이 대신 「포장 박스 코드」를 넣고,
 //        박스 코드별 사이즈는 포장 박스 마스터에 나중에 넣는다 → 사이즈는 박스 마스터로 계산.
 //
-//   ① 제품마스터 업로드 탭 「📦 제품 무게 · 포장 박스 코드」  (Clave CTR · Peso (kg) · Caja)
+//   2026-11-19 디렉터 지시 — 공장 마스터 파일(master_peso_y_dimension.xlsx: NEW · Weight(g) · Inner Box 1 · L · W · H)을
+//        그대로 올려 쓴다. 기준: **제품 자체 사이즈(파일의 그 줄) 우선 → 없으면 박스 코드의 박스 마스터 사이즈**.
+//        같은 업로드에서 박스 마스터 사이즈도 채운다(박스별로 가장 많이 나온 사이즈 — 줄마다 다르면 미리보기에 표시).
+//
+//   ① 제품마스터 업로드 탭 「📦 제품 무게 · 포장 박스 · 사이즈」 (Clave CTR · Peso (kg) · Caja · Largo · Ancho · Alto)
 //   ② 같은 탭 「📐 포장 박스 마스터」                         (Código caja · Largo · Ancho · Alto · Descripción)
 //   ③ 견적 건별 대략 총무게 · 총사이즈 — 견적 목록 · 상세가 같은 함수를 쓴다
 //
@@ -20,14 +24,14 @@
 // =====================================================================
 import { query } from './db.js';
 
-export const DIM_FIELDS = ['weight_kg', 'box_code'];              // 제품 업로드가 바꾸는 칸
+export const DIM_FIELDS = ['weight_kg', 'box_code', 'box_l_cm', 'box_w_cm', 'box_h_cm'];   // 제품 업로드가 바꾸는 칸
 export const BOX_FIELDS = ['box_l_cm', 'box_w_cm', 'box_h_cm', 'description'];
 export const FIELD_LABEL = { weight_kg: '무게(kg)', box_code: '박스 코드', box_l_cm: '가로(cm)', box_w_cm: '세로(cm)', box_h_cm: '높이(cm)', description: '설명' };
 export const LIMITS = { weight_kg: 500, box_l_cm: 300, box_w_cm: 300, box_h_cm: 300 };
 export const FILL_RATE = 0.85;
 export const VOL_DIVISOR = 5000;
 
-export const TEMPLATE_HEADERS = ['Clave CTR', 'Peso (kg)', 'Caja'];
+export const TEMPLATE_HEADERS = ['Clave CTR', 'Peso (kg)', 'Caja', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)'];
 export const BOX_TEMPLATE_HEADERS = ['Código caja', 'Largo (cm)', 'Ancho (cm)', 'Alto (cm)', 'Descripción'];
 
 // ── 0327 + 0328 적용 여부(마이그레이션 전 서버에서도 견적 목록이 깨지지 않게) ─────
@@ -55,7 +59,7 @@ const fold = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]
 const keyOf = (v) => fold(v).replace(/\(.*?\)|\[.*?\]/g, '').replace(/[^a-z0-9가-힣]/g, '');
 
 const W_WEIGHT = ['peso', 'pesokg', 'pesounitario', 'pesog', 'pesogr', 'weight', 'weightkg', 'kg', '무게', '중량', '무게kg', '개당무게', '단위무게'];
-const W_BOXCODE = ['caja', 'cajas', 'codigocaja', 'clavecaja', 'cajacodigo', 'tipodecaja', 'tipocaja', 'empaque', 'box', 'boxcode', 'boxname',
+const W_BOXCODE = ['innerbox', 'innerbox1', 'innerbox2', 'cajainterior', 'caja', 'cajas', 'codigocaja', 'clavecaja', 'cajacodigo', 'tipodecaja', 'tipocaja', 'empaque', 'box', 'boxcode', 'boxname',
   '박스', '박스코드', '박스명', '박스명칭', '포장박스', '포장박스코드', '포장박스명칭', '포장박스명'];
 const W_L = ['largo', 'largocm', 'length', 'longitud', 'l', '가로', '가로cm', '길이'];
 const W_W = ['ancho', 'anchocm', 'width', 'w', '세로', '세로cm', '폭'];
@@ -65,10 +69,11 @@ const W_DIMS = ['medidas', 'medida', 'medidascaja', 'medidasdecaja', 'dimensione
 const W_DESC = ['descripcion', 'description', 'nombre', 'nombrecaja', 'notas', 'nota', '설명', '비고', '메모'];
 
 const HEAD_WORDS = {
-  // 제품 업로드: CTR 코드 · 무게 · 박스 코드 (가로·세로·높이 열이 있어도 읽지 않는다 — 사이즈는 박스 마스터)
+  // 제품 업로드: CTR 코드 · 무게 · 박스 코드 · (그 제품 자체) 가로 · 세로 · 높이
+  //   공장 마스터 파일은 CTR 열 머리글이 「NEW」 다.
   product: {
-    code: ['clavectr', 'ctr', 'codigoctr', 'codigo', 'clave', 'code', 'sku', 'clavesku', '제품코드', '코드', 'ctr코드', '품번'],
-    weight_kg: W_WEIGHT, box_code: W_BOXCODE,
+    code: ['clavectr', 'ctr', 'codigoctr', 'codigo', 'clave', 'code', 'sku', 'clavesku', 'new', 'newcode', '제품코드', '코드', 'ctr코드', '품번'],
+    weight_kg: W_WEIGHT, box_code: W_BOXCODE, box_l_cm: W_L, box_w_cm: W_W, box_h_cm: W_H, dims: W_DIMS,
   },
   // 박스 마스터 업로드: 박스 코드 · 가로 · 세로 · 높이 · 설명
   box: {
@@ -76,7 +81,7 @@ const HEAD_WORDS = {
     box_l_cm: W_L, box_w_cm: W_W, box_h_cm: W_H, dims: W_DIMS, description: W_DESC,
   },
 };
-const PREFIX_FIELDS = { product: ['weight_kg', 'box_code'], box: ['box_l_cm', 'box_w_cm', 'box_h_cm', 'dims', 'description'] };
+const PREFIX_FIELDS = { product: ['weight_kg', 'box_code', 'box_l_cm', 'box_w_cm', 'box_h_cm', 'dims'], box: ['box_l_cm', 'box_w_cm', 'box_h_cm', 'dims', 'description'] };
 const MAPS = {};
 for (const [mode, fields] of Object.entries(HEAD_WORDS)) {
   MAPS[mode] = new Map();
@@ -173,7 +178,7 @@ export function parseText(raw, { box = false, max = 200 } = {}) {
  */
 export function tableToRows(table, mode = 'product') {
   const t = Array.isArray(table) ? table.filter((r) => Array.isArray(r)) : [];
-  const valFields = mode === 'box' ? ['box_l_cm', 'box_w_cm', 'box_h_cm', 'dims', 'description'] : ['weight_kg', 'box_code'];
+  const valFields = mode === 'box' ? ['box_l_cm', 'box_w_cm', 'box_h_cm', 'dims', 'description'] : ['weight_kg', 'box_code', 'box_l_cm', 'box_w_cm', 'box_h_cm', 'dims'];
   let hIdx = -1; let cols = null;
   for (let i = 0; i < Math.min(t.length, 15); i++) {
     const m = {};
@@ -184,9 +189,10 @@ export function tableToRows(table, mode = 'product') {
   if (headerless) {
     cols = mode === 'box'
       ? { code: { idx: 0, scale: 1 }, box_l_cm: { idx: 1, scale: 1 }, box_w_cm: { idx: 2, scale: 1 }, box_h_cm: { idx: 3, scale: 1 }, description: { idx: 4, scale: 1 } }
-      : { code: { idx: 0, scale: 1 }, weight_kg: { idx: 1, scale: 1 }, box_code: { idx: 2, scale: 1 } };
+      : { code: { idx: 0, scale: 1 }, weight_kg: { idx: 1, scale: 1 }, box_code: { idx: 2, scale: 1 }, box_l_cm: { idx: 3, scale: 1 }, box_w_cm: { idx: 4, scale: 1 }, box_h_cm: { idx: 5, scale: 1 } };
   }
-  const byCode = new Map(); const errors = []; let dup = 0;
+  const byCode = new Map(); const errors = []; const warnings = []; let dup = 0; let conflict = 0;
+  const boxTally = new Map();     // 제품 업로드: 박스 코드 → { "l|w|h": 줄 수 } (박스 마스터 사이즈 추출)
   for (let i = hIdx + 1; i < t.length; i++) {
     const r = t[i];
     const code = mode === 'box' ? normBox(r[cols.code.idx]) : normCode(r[cols.code.idx]);
@@ -216,12 +222,40 @@ export function tableToRows(table, mode = 'product') {
     }
     const rowNo = i + 1;
     if (errs.length) { errors.push({ row: rowNo, code, msg: errs.join(' · ') }); continue; }
+    if (mode === 'product') {
+      // 제품 사이즈는 3개가 모두 있을 때만(일부만 있으면 사이즈만 건너뛰고 경고). 「-」 지우기는 3개 함께.
+      const dk = ['box_l_cm', 'box_w_cm', 'box_h_cm'];
+      const has = dk.filter((f) => f in set);
+      const vals = has.map((f) => set[f]);
+      if (has.length) {
+        const allNum = has.length === 3 && vals.every((v) => v > 0);
+        const anyClear = vals.some((v) => v === null);
+        if (anyClear) { for (const f of dk) set[f] = null; }
+        else if (!allNum) { for (const f of dk) delete set[f]; warnings.push({ row: rowNo, code, msg: '가로 · 세로 · 높이 중 일부만 있음 — 사이즈는 건너뜀' }); }
+      }
+      if (set.box_code && dk.every((f) => set[f] > 0)) {
+        const k = dk.map((f) => set[f]).join('|');
+        const m = boxTally.get(set.box_code) || new Map(); m.set(k, (m.get(k) || 0) + 1); boxTally.set(set.box_code, m);
+      }
+    }
     if (!Object.keys(set).length && mode !== 'box') continue;    // 제품: 모두 빈 칸 = 바꿀 것 없음 (박스: 코드만 적어도 등록)
-    if (byCode.has(code)) dup++;
-    byCode.set(code, { row: rowNo, code, set: { ...(byCode.get(code)?.set || {}), ...set } });
+    const prev = byCode.get(code);
+    if (prev) {
+      dup++;
+      if (Object.keys(set).some((f) => f in prev.set && !sameVal(prev.set[f], set[f]))) conflict++;
+    }
+    byCode.set(code, { row: rowNo, code, set: { ...(prev?.set || {}), ...set } });
   }
   const columns = Object.keys(cols).filter((k) => k !== 'code');
-  return { rows: [...byCode.values()], errors, headerless, columns, dup };
+  // 박스별 가장 많이 나온 사이즈(같으면 먼저 나온 것) → 박스 마스터 후보
+  const boxSizes = [];
+  for (const [bc, m] of boxTally) {
+    const variants = [...m.entries()].map(([k, n]) => { const [l, w, h] = k.split('|').map(Number); return { l, w, h, n }; });
+    const best = variants.reduce((a, b) => (b.n > a.n ? b : a), variants[0]);
+    boxSizes.push({ code: bc, l: best.l, w: best.w, h: best.h, rows: variants.reduce((x, v) => x + v.n, 0), variants: variants.sort((a, b) => b.n - a.n) });
+  }
+  boxSizes.sort((a, b) => a.code.localeCompare(b.code));
+  return { rows: [...byCode.values()], errors, warnings, headerless, columns, dup, conflict, box_sizes: boxSizes };
 }
 
 // ── 공통 ────────────────────────────────────────────────────────────
@@ -241,7 +275,7 @@ export async function previewDims(exec, rows) {
   const cur = new Map();
   if (codes.length) {
     const res = await exec(
-      `SELECT id, code, name, weight_kg, box_code
+      `SELECT id, code, name, weight_kg, box_code, box_l_cm, box_w_cm, box_h_cm
          FROM products WHERE deleted_at IS NULL AND UPPER(REPLACE(code,' ','')) = ANY($1::text[])`, [codes]);
     for (const p of res.rows) cur.set(normCode(p.code), p);
   }
@@ -253,7 +287,7 @@ export async function previewDims(exec, rows) {
     const changes = [];
     for (const f of DIM_FIELDS) {
       if (!(f in r.set)) continue;
-      const o = f === 'weight_kg' ? numOrNull(p[f]) : (p[f] || null); const n = r.set[f];
+      const o = f === 'box_code' ? (p[f] || null) : numOrNull(p[f]); const n = r.set[f];
       if (!sameVal(o, n)) changes.push({ field: f, old: o, new: n });
     }
     if (!changes.length) { same++; continue; }
@@ -273,51 +307,82 @@ export async function previewDims(exec, rows) {
   return { items, unknown, same, new_boxes: newBoxes, nosize_boxes: nosize };
 }
 
-/** 한 트랜잭션 안에서 실행(exec = client.query.bind(client)). 새 박스 코드는 박스 마스터에 사이즈 빈 채로 만든다. */
-export async function applyDims(exec, rows, { userId = null, source = 'excel' } = {}) {
+/** 파일에서 뽑은 박스별 사이즈(tableToRows().box_sizes) → 박스 마스터 미리보기 줄 */
+export const boxRowsFromSizes = (sizes) => (sizes || []).map((b) => ({ row: 0, code: b.code, set: { box_l_cm: b.l, box_w_cm: b.w, box_h_cm: b.h } }));
+/** 박스별 사이즈가 줄마다 다른 것(가장 많은 값을 쓴다) */
+export const boxConflicts = (sizes) => (sizes || []).filter((b) => b.variants.length > 1)
+  .map((b) => ({ code: b.code, used: { l: b.l, w: b.w, h: b.h }, rows: b.rows, variants: b.variants }));
+
+/**
+ * 한 트랜잭션 안에서 실행(exec = client.query.bind(client)).
+ *   · 새 박스 코드는 박스 마스터에 만든다 · boxSizes 가 있으면 박스 마스터 사이즈도 그 값으로(applyBoxes)
+ *   · 제품 1만여 건도 한 번에 — 칸마다 UPDATE … FROM unnest 1문 + 이력 INSERT 1문
+ */
+export async function applyDims(exec, rows, { userId = null, source = 'excel', boxSizes = [] } = {}) {
   const pv = await previewDims(exec, rows);
   const batch = newBatch('dims');
-  let fieldsChanged = 0;
-  for (const c of pv.new_boxes) {
-    await exec(`INSERT INTO packing_boxes (code, updated_by) VALUES ($1,$2) ON CONFLICT (code) DO NOTHING`, [c, userId]);
-    await exec(`INSERT INTO packing_box_log (batch_id, box_code, field, old_value, new_value, changed_by) VALUES ($1,$2,'(new)',NULL,'product upload',$3)`, [batch, c, userId]);
+  if (pv.new_boxes.length) {
+    await exec(`INSERT INTO packing_boxes (code, updated_by) SELECT c, $2 FROM unnest($1::text[]) AS c ON CONFLICT (code) DO NOTHING`, [pv.new_boxes, userId]);
+    await exec(`INSERT INTO packing_box_log (batch_id, box_code, field, old_value, new_value, changed_by)
+                SELECT $1, c, '(new)', NULL, 'product upload', $3 FROM unnest($2::text[]) AS c`, [batch, pv.new_boxes, userId]);
   }
+  const byField = {}; const log = { pid: [], code: [], field: [], on: [], nn: [], ot: [], nt: [] };
   for (const it of pv.items) {
-    const sets = []; const args = [it.product_id];
-    for (const ch of it.changes) { args.push(ch.new); sets.push(`${ch.field} = $${args.length}`); }
-    args.push(userId);
-    await exec(`UPDATE products SET ${sets.join(', ')}, dims_updated_at = now(), dims_updated_by = $${args.length} WHERE id = $1`, args);
     for (const ch of it.changes) {
-      const num = ch.field === 'weight_kg';
-      await exec(
-        `INSERT INTO product_dims_log (batch_id, product_id, code, field, old_value, new_value, old_text, new_text, source, changed_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [batch, it.product_id, it.code, ch.field, num ? ch.old : null, num ? ch.new : null, num ? null : ch.old, num ? null : ch.new, source, userId]);
-      fieldsChanged++;
+      byField[ch.field] = byField[ch.field] || { id: [], v: [] };
+      byField[ch.field].id.push(it.product_id); byField[ch.field].v.push(ch.new);
+      const num = ch.field !== 'box_code';
+      log.pid.push(it.product_id); log.code.push(it.code); log.field.push(ch.field);
+      log.on.push(num ? ch.old : null); log.nn.push(num ? ch.new : null); log.ot.push(num ? null : ch.old); log.nt.push(num ? null : ch.new);
     }
   }
-  return { batch_id: batch, products: pv.items.length, fields: fieldsChanged, unknown: pv.unknown, same: pv.same,
-    new_boxes: pv.new_boxes, nosize_boxes: pv.nosize_boxes };
+  for (const [f, d] of Object.entries(byField)) {
+    if (!DIM_FIELDS.includes(f)) continue;
+    const typ = f === 'box_code' ? 'text' : 'numeric';
+    await exec(`UPDATE products p SET ${f} = v.val FROM unnest($1::bigint[], $2::${typ}[]) AS v(id, val) WHERE p.id = v.id`, [d.id, d.v]);
+  }
+  const ids = pv.items.map((it) => it.product_id);
+  if (ids.length) {
+    await exec(`UPDATE products SET dims_updated_at = now(), dims_updated_by = $2 WHERE id = ANY($1::bigint[])`, [ids, userId]);
+    await exec(
+      `INSERT INTO product_dims_log (batch_id, product_id, code, field, old_value, new_value, old_text, new_text, source, changed_by)
+       SELECT $1, u.pid, u.code, u.field, u.ov, u.nv, u.ot, u.nt, $9, $10
+         FROM unnest($2::bigint[], $3::text[], $4::text[], $5::numeric[], $6::numeric[], $7::text[], $8::text[]) AS u(pid, code, field, ov, nv, ot, nt)`,
+      [batch, log.pid, log.code, log.field, log.on, log.nn, log.ot, log.nt, source, userId]);
+  }
+  const bx = boxSizes.length ? await applyBoxes(exec, boxRowsFromSizes(boxSizes), { userId }) : null;
+  return { batch_id: batch, products: pv.items.length, fields: log.pid.length, unknown: pv.unknown, same: pv.same,
+    new_boxes: pv.new_boxes, nosize_boxes: pv.nosize_boxes, boxes: bx };
 }
 
-/** 현재값 다운로드 — 전체 제품(삭제 제외) + 그 박스의 사이즈(참고) */
+/** 현재값 다운로드 — 전체 제품(삭제 제외). 제품 자체 사이즈 + 박스 마스터 사이즈(참고) + 계산에 쓰는 사이즈 */
 export async function exportDims(exec = query) {
   const r = await exec(
-    `SELECT p.code, p.name, p.weight_kg, p.box_code, p.is_active, b.box_l_cm, b.box_w_cm, b.box_h_cm,
+    `SELECT p.code, p.name, p.weight_kg, p.box_code, p.is_active, p.box_l_cm AS pl, p.box_w_cm AS pw, p.box_h_cm AS ph,
+            b.box_l_cm AS bl, b.box_w_cm AS bw, b.box_h_cm AS bh,
             to_char(p.dims_updated_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD HH24:MI') AS updated_at
        FROM products p LEFT JOIN packing_boxes b ON b.code = p.box_code
       WHERE p.deleted_at IS NULL ORDER BY p.code`);
-  const items = r.rows.map((p) => ({
-    code: p.code, name: p.name || '', is_active: p.is_active !== false,
-    weight_kg: numOrNull(p.weight_kg), box_code: p.box_code || null,
-    box_l_cm: numOrNull(p.box_l_cm), box_w_cm: numOrNull(p.box_w_cm), box_h_cm: numOrNull(p.box_h_cm),
-    updated_at: p.updated_at || null,
-  }));
-  const stat = { total: items.length, weight: 0, box: 0, sized: 0 };
+  const ok3 = (a, b, c) => a > 0 && b > 0 && c > 0;
+  const items = r.rows.map((p) => {
+    const pl = numOrNull(p.pl); const pw = numOrNull(p.pw); const ph = numOrNull(p.ph);
+    const bl = numOrNull(p.bl); const bw = numOrNull(p.bw); const bh = numOrNull(p.bh);
+    const own = ok3(pl, pw, ph); const fromBox = !own && !!p.box_code && ok3(bl, bw, bh);
+    return {
+      code: p.code, name: p.name || '', is_active: p.is_active !== false,
+      weight_kg: numOrNull(p.weight_kg), box_code: p.box_code || null,
+      box_l_cm: pl, box_w_cm: pw, box_h_cm: ph,                    // 제품 자체 사이즈(업로드 칸)
+      caja_l_cm: bl, caja_w_cm: bw, caja_h_cm: bh,                 // 박스 마스터 사이즈(참고)
+      used: own ? 'producto' : fromBox ? 'caja' : null,
+      updated_at: p.updated_at || null,
+    };
+  });
+  const stat = { total: items.length, weight: 0, box: 0, own: 0, sized: 0 };
   for (const it of items) {
     if (it.weight_kg > 0) stat.weight++;
     if (it.box_code) stat.box++;
-    if (it.box_l_cm > 0 && it.box_w_cm > 0 && it.box_h_cm > 0) stat.sized++;
+    if (it.used === 'producto') stat.own++;
+    if (it.used) stat.sized++;
   }
   return { items, stat };
 }
@@ -398,7 +463,9 @@ export async function exportBoxes(exec = query) {
 // ── 견적 무게 · 사이즈 ──────────────────────────────────────────────
 function round(n, d = 1) { const k = 10 ** d; return Math.round(Number(n) * k) / k; }
 
-/** 견적 줄(제품 무게 · box_code · 박스 마스터 사이즈 box_l/w/h_cm) → 집계(목록 SQL 의 LATERAL 과 같은 모양) */
+/** 견적 줄 → 집계(목록 SQL 의 LATERAL 과 같은 모양)
+ *   줄: { product_id, qty, weight_kg, box_code, p_l, p_w, p_h (제품 자체 사이즈), box_l_cm, box_w_cm, box_h_cm (박스 마스터) }
+ *   사이즈 = 제품 자체 사이즈(3개 모두) → 없으면 박스 마스터 사이즈 */
 export function aggregateLines(lines) {
   const a = { pcs: 0, wt: 0, wt_pcs: 0, wt_miss: 0, wt_miss_qty: 0, vol: 0, d_pcs: 0, d_miss: 0, d_miss_qty: 0,
     d_nobox: 0, d_nobox_qty: 0, d_nosize: 0, d_nosize_qty: 0, d_a: 0, d_b: 0, d_c: 0, unreg: 0, unreg_qty: 0 };
@@ -410,8 +477,10 @@ export function aggregateLines(lines) {
     a.pcs += q;
     const w = Number(l.weight_kg) || 0;
     if (w > 0) { a.wt += q * w; a.wt_pcs += q; } else { a.wt_miss++; a.wt_miss_qty += q; }
-    const s = [Number(l.box_l_cm) || 0, Number(l.box_w_cm) || 0, Number(l.box_h_cm) || 0];
-    if (l.box_code && s.every((x) => x > 0)) {
+    const own = [Number(l.p_l) || 0, Number(l.p_w) || 0, Number(l.p_h) || 0];
+    const bxs = [Number(l.box_l_cm) || 0, Number(l.box_w_cm) || 0, Number(l.box_h_cm) || 0];
+    const s = own.every((x) => x > 0) ? own : (l.box_code ? bxs : [0, 0, 0]);
+    if (s.every((x) => x > 0)) {
       s.sort((x, y) => y - x);
       a.vol += q * s[0] * s[1] * s[2]; a.d_pcs += q;
       a.d_a = Math.max(a.d_a, s[0]); a.d_b = Math.max(a.d_b, s[1]); a.d_c = Math.max(a.d_c, s[2]);
@@ -461,9 +530,13 @@ export function estimateShipment(agg) {
 const SHIP_KEYS = ['pcs', 'wt', 'wt_pcs', 'wt_miss', 'wt_miss_qty', 'vol', 'd_pcs', 'd_miss', 'd_miss_qty',
   'd_nobox', 'd_nobox_qty', 'd_nosize', 'd_nosize_qty', 'd_a', 'd_b', 'd_c', 'unreg', 'unreg_qty'];
 export const SHIP_SELECT = ', ' + SHIP_KEYS.map((k) => `shp.${k} AS shp_${k}`).join(', ');
-const DOK = `(p.box_code IS NOT NULL AND pb.box_l_cm > 0 AND pb.box_w_cm > 0 AND pb.box_h_cm > 0)`;
-const G = `GREATEST(pb.box_l_cm, pb.box_w_cm, pb.box_h_cm)`;
-const LST = `LEAST(pb.box_l_cm, pb.box_w_cm, pb.box_h_cm)`;
+// 사이즈 = 제품 자체(3개 모두) → 없으면 박스 마스터(박스 코드가 있을 때)
+const OWN = `(p.box_l_cm > 0 AND p.box_w_cm > 0 AND p.box_h_cm > 0)`;
+const EF = (c) => `(CASE WHEN ${OWN} THEN p.${c} WHEN p.box_code IS NOT NULL THEN pb.${c} END)`;
+const EL = EF('box_l_cm'); const EW = EF('box_w_cm'); const EH = EF('box_h_cm');
+const DOK = `(${EL} > 0 AND ${EW} > 0 AND ${EH} > 0)`;
+const G = `GREATEST(${EL}, ${EW}, ${EH})`;
+const LST = `LEAST(${EL}, ${EW}, ${EH})`;
 const PR = `ql.product_id IS NOT NULL`;
 export const SHIP_JOIN = `
          LEFT JOIN LATERAL (
@@ -472,16 +545,16 @@ export const SHIP_JOIN = `
                   COALESCE(SUM(ql.qty) FILTER (WHERE p.weight_kg > 0), 0)                                             AS wt_pcs,
                   COUNT(*) FILTER (WHERE ${PR} AND COALESCE(p.weight_kg, 0) <= 0)::int                                AS wt_miss,
                   COALESCE(SUM(ql.qty) FILTER (WHERE ${PR} AND COALESCE(p.weight_kg, 0) <= 0), 0)                     AS wt_miss_qty,
-                  COALESCE(SUM(ql.qty * pb.box_l_cm * pb.box_w_cm * pb.box_h_cm) FILTER (WHERE ${DOK}), 0)            AS vol,
+                  COALESCE(SUM(ql.qty * ${EL} * ${EW} * ${EH}) FILTER (WHERE ${DOK}), 0)                                  AS vol,
                   COALESCE(SUM(ql.qty) FILTER (WHERE ${DOK}), 0)                                                      AS d_pcs,
                   COUNT(*) FILTER (WHERE ${PR} AND NOT COALESCE(${DOK}, FALSE))::int                                  AS d_miss,
                   COALESCE(SUM(ql.qty) FILTER (WHERE ${PR} AND NOT COALESCE(${DOK}, FALSE)), 0)                       AS d_miss_qty,
-                  COUNT(*) FILTER (WHERE ${PR} AND p.box_code IS NULL)::int                                           AS d_nobox,
-                  COALESCE(SUM(ql.qty) FILTER (WHERE ${PR} AND p.box_code IS NULL), 0)                                AS d_nobox_qty,
+                  COUNT(*) FILTER (WHERE ${PR} AND p.box_code IS NULL AND NOT COALESCE(${OWN}, FALSE))::int            AS d_nobox,
+                  COALESCE(SUM(ql.qty) FILTER (WHERE ${PR} AND p.box_code IS NULL AND NOT COALESCE(${OWN}, FALSE)), 0) AS d_nobox_qty,
                   COUNT(*) FILTER (WHERE ${PR} AND p.box_code IS NOT NULL AND NOT COALESCE(${DOK}, FALSE))::int       AS d_nosize,
                   COALESCE(SUM(ql.qty) FILTER (WHERE ${PR} AND p.box_code IS NOT NULL AND NOT COALESCE(${DOK}, FALSE)), 0) AS d_nosize_qty,
                   COALESCE(MAX(${G}) FILTER (WHERE ${DOK}), 0)                                                        AS d_a,
-                  COALESCE(MAX(pb.box_l_cm + pb.box_w_cm + pb.box_h_cm - ${G} - ${LST}) FILTER (WHERE ${DOK}), 0)     AS d_b,
+                  COALESCE(MAX(${EL} + ${EW} + ${EH} - ${G} - ${LST}) FILTER (WHERE ${DOK}), 0)                         AS d_b,
                   COALESCE(MAX(${LST}) FILTER (WHERE ${DOK}), 0)                                                      AS d_c,
                   COUNT(*) FILTER (WHERE ql.product_id IS NULL)::int                                                  AS unreg,
                   COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NULL), 0)                                       AS unreg_qty

@@ -17,7 +17,7 @@ import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품�
 import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구성품
 import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
 import { searchMaster, normBrand as xmBrand, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 경쟁사 코드(크로스레퍼런스 마스터)로 제품찾기
-import { dimsReady, tableToRows, previewDims, applyDims, exportDims, previewBoxes, applyBoxes, exportBoxes } from '../productDims.js';   // 0327 · 0328 · 무게 · 포장 박스
+import { dimsReady, tableToRows, previewDims, applyDims, exportDims, previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes, boxConflicts } from '../productDims.js';   // 0327 · 0328 · 무게 · 포장 박스
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -1423,15 +1423,26 @@ export default async function productRoutes(app) {
     if (!(await dimsReady())) return reply.code(501).send({ error: 'migration_0328_required' });
     return exportDims(query);
   });
-  const dimsTable = (b) => (Array.isArray(b && b.table) ? b.table.slice(0, 30000).map((r) => (Array.isArray(r) ? r.slice(0, 40) : [])) : null);
+  const dimsTable = (b) => (Array.isArray(b && b.table) ? b.table.slice(0, 120000).map((r) => (Array.isArray(r) ? r.slice(0, 40) : [])) : null);
   app.post('/api/products/dims/preview', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     if (!(await dimsReady())) return reply.code(501).send({ error: 'migration_0328_required' });
     const table = dimsTable(req.body);
     if (!table) return reply.code(400).send({ error: 'no_table' });
     const parsed = tableToRows(table);
     const pv = await previewDims(query, parsed.rows);
-    return { ok: true, headerless: parsed.headerless, columns: parsed.columns, rows: parsed.rows.length, dup: parsed.dup,
-      errors: parsed.errors, items: pv.items, unknown: pv.unknown, same: pv.same, new_boxes: pv.new_boxes, nosize_boxes: pv.nosize_boxes };
+    // 2026-11-19 · 공장 마스터 파일(5만 줄)도 받으므로 목록은 앞부분만 내려 주고 건수는 따로 준다.
+    //   박스 사이즈 열이 있으면 박스 마스터에 들어갈 사이즈(박스별 가장 많은 값) · 줄마다 다른 박스도 미리 보여 준다.
+    const bxp = parsed.box_sizes.length ? await previewBoxes(query, boxRowsFromSizes(parsed.box_sizes)) : null;
+    const cut = (a, n) => (a || []).slice(0, n);
+    const fc = {}; for (const it of pv.items) for (const ch of it.changes) fc[ch.field] = (fc[ch.field] || 0) + 1;
+    return { ok: true, headerless: parsed.headerless, columns: parsed.columns, rows: parsed.rows.length, table_rows: table.length,
+      dup: parsed.dup, conflict: parsed.conflict,
+      errors: cut(parsed.errors, 300), error_count: parsed.errors.length, warnings: cut(parsed.warnings, 300), warning_count: parsed.warnings.length,
+      items: cut(pv.items, 1000), item_count: pv.items.length, field_counts: fc,
+      unknown: cut(pv.unknown, 300), unknown_count: pv.unknown.length, same: pv.same,
+      new_boxes: pv.new_boxes, nosize_boxes: pv.nosize_boxes,
+      box_sizes: bxp ? { boxes: parsed.box_sizes.length, changed: bxp.items.length, created: bxp.items.filter((x) => x.is_new).length, same: bxp.same,
+        items: cut(bxp.items, 300), conflicts: boxConflicts(parsed.box_sizes) } : null };
   });
   app.post('/api/products/dims/apply', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     if (!(await dimsReady())) return reply.code(501).send({ error: 'migration_0328_required' });
@@ -1439,10 +1450,13 @@ export default async function productRoutes(app) {
     if (!table) return reply.code(400).send({ error: 'no_table' });
     const parsed = tableToRows(table);
     const userId = req.ctx.perm.userId;
-    const res = await withTx((c) => applyDims(c.query.bind(c), parsed.rows, { userId, source: 'excel' }));
+    const res = await withTx((c) => applyDims(c.query.bind(c), parsed.rows, { userId, source: 'excel', boxSizes: parsed.box_sizes }));
     await logEvent({ userId, action: 'update', target: 'product_dims_upload',
-      detail: { batch_id: res.batch_id, products: res.products, fields: res.fields, unknown: res.unknown.length, errors: parsed.errors.length } });
-    return { ok: true, ...res, errors: parsed.errors };
+      detail: { batch_id: res.batch_id, products: res.products, fields: res.fields, unknown: res.unknown.length, errors: parsed.errors.length,
+        boxes: res.boxes ? { boxes: res.boxes.boxes, created: res.boxes.created, fields: res.boxes.fields } : null } });
+    return { ok: true, batch_id: res.batch_id, products: res.products, fields: res.fields, same: res.same,
+      unknown_count: res.unknown.length, new_boxes: res.new_boxes, nosize_boxes: res.nosize_boxes, boxes: res.boxes,
+      error_count: parsed.errors.length, warning_count: parsed.warnings.length };
   });
   app.get('/api/products/boxes', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
     if (!(await dimsReady())) return reply.code(501).send({ error: 'migration_0328_required' });

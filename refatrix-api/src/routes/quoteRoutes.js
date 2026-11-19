@@ -917,7 +917,7 @@ export default async function quoteRoutes(app) {
     q.party_name = q.customer_id == null ? (q.guest_name || '불특정 고객') : q.customer_name;
     const shipOnD = await dimsReady();   // 0327
     const lines = (await query(
-      `SELECT ql.*, p.stock_qty AS cur_stock_raw,${shipOnD ? ` p.weight_kg AS dim_weight_kg, p.box_code AS dim_box, pb.box_l_cm AS dim_l, pb.box_w_cm AS dim_w, pb.box_h_cm AS dim_h,` : ''}
+      `SELECT ql.*, p.stock_qty AS cur_stock_raw,${shipOnD ? ` p.weight_kg AS dim_weight_kg, p.box_code AS dim_box, p.box_l_cm AS dim_pl, p.box_w_cm AS dim_pw, p.box_h_cm AS dim_ph, pb.box_l_cm AS dim_l, pb.box_w_cm AS dim_w, pb.box_h_cm AS dim_h,` : ''}
               COALESCE(inc.incoming_qty,0) AS incoming_qty_raw, inc.incoming_eta::text AS incoming_eta_raw,
               COALESCE(bo.backorder_qty,0) AS backorder_qty_raw,
               COALESCE((SELECT SUM(ql2.reserved_qty)
@@ -967,12 +967,13 @@ export default async function quoteRoutes(app) {
         incoming_eta: l.incoming_eta_raw || null,
         // 발주 미입고 잔량(v_backorder) — 운송중(incoming)을 포함한 전체. 프런트에서 운송중을 빼 순수 발주잔량을 구분 표시.
         backorder_qty: Number(l.backorder_qty_raw) || 0,
-        // 0327 · 0328 · 제품 1개 무게 · 포장 박스 코드 · 박스 마스터 사이즈(없으면 null)
+        // 0327 · 0328 · 제품 1개 무게 · 포장 박스 코드 · 제품 자체 사이즈(p_*) · 박스 마스터 사이즈(없으면 null)
         ...(shipOnD ? { weight_kg: l.dim_weight_kg != null ? Number(l.dim_weight_kg) : null, box_code: l.dim_box || null,
+          p_l: l.dim_pl != null ? Number(l.dim_pl) : null, p_w: l.dim_pw != null ? Number(l.dim_pw) : null, p_h: l.dim_ph != null ? Number(l.dim_ph) : null,
           box_l_cm: l.dim_l != null ? Number(l.dim_l) : null, box_w_cm: l.dim_w != null ? Number(l.dim_w) : null, box_h_cm: l.dim_h != null ? Number(l.dim_h) : null } : {}),
       };
     });
-    for (const ol of outLines) { delete ol.dim_weight_kg; delete ol.dim_box; delete ol.dim_l; delete ol.dim_w; delete ol.dim_h; }
+    for (const ol of outLines) { delete ol.dim_weight_kg; delete ol.dim_box; delete ol.dim_pl; delete ol.dim_pw; delete ol.dim_ph; delete ol.dim_l; delete ol.dim_w; delete ol.dim_h; }
     // 현장재고조사 전환 여부 + (디렉터에게만) 현장 위치 좌표
     const fsRow = (await query(
       `SELECT id, geo_lat, geo_lng, survey_date FROM field_surveys
