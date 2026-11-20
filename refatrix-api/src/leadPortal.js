@@ -435,6 +435,13 @@ const META_EVENT_RE = [
   /\b(respondi[oó]|replied)\s+(a\s+|to\s+)?(un|an|your|tu|el|the)\s+(anuncio|ad)\b/i,   // 1104 · 「X respondió un anuncio.」(a 없음)
   /\b(inici[oó]|started)\s+(una\s+|a\s+|this\s+)?(conversaci[oó]n|conversation)\b.{0,40}\b(anuncio|ad)\b/i,
   /^(t[uú]|you)\s+(asignaste|assigned)\b/i,
+  // 1119g · 디렉터: 「Luis Oscar Guzmán Palomino asignó esta conversación a …」가 대화처럼 보이던 것 — 받은편지함 작업 기록(담당 · 완료 · 라벨 · 스팸)
+  /\b(asign[oó]|reasign[oó]|desasign[oó]|assigned|reassigned|unassigned)\s+(esta|la|this|the)\s+(conversaci[oó]n|conversation)\b/i,
+  /\bse\s+(asign[oó]|reasign[oó])\s+(esta\s+conversaci[oó]n\s+)?a\b/i,
+  /\b(quit[oó]|elimin[oó]|removed)\s+(la\s+)?(asignaci[oó]n|assignment)\b/i,
+  /\b(marc[oó]|movi[oó]|marked|moved)\s+(esta|la|this|the)\s+(conversaci[oó]n|conversation)\s+(como|a|as|to)\b/i,
+  /\b(agreg[oó]|a[nñ]adi[oó]|quit[oó]|elimin[oó]|added|removed)\s+(la\s+|el\s+|the\s+)?(etiqueta|label)\b/i,
+  /\b(cambi[oó]|changed)\s+(la\s+|el\s+|the\s+)?(etapa|estado|stage|status)\s+(de[l]?\s+cliente\s+potencial|del\s+pedido|of\s+(the\s+)?(lead|order))\b/i,
   /^facebook\s+(cre[oó]\s+este\s+chat|created\s+this\s+chat)\b/i,   // 1105d · 댓글로 생긴 대화 안내
 ];
 const AD_EVENT_RE = /\b(respondi[oó]|replied|anuncio|ad)\b/i;

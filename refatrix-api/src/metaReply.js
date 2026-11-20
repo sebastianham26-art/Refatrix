@@ -19,6 +19,7 @@ export const NEED_SQL = `(t.reply_last_in IS NOT NULL AND t.reply_last_in > COAL
 // 새 메시지(이 사람이 마지막으로 연 뒤 손님이 보냄) — $uid 자리에 사용자 id
 export const unreadSql = (uidParam) => `(${NEED_SQL} AND NOT EXISTS (SELECT 1 FROM meta_lead_seen sn WHERE sn.thread_id = t.id AND sn.user_id = ${uidParam} AND sn.seen_at >= t.reply_last_in))`;
 
+export const RULES_AT = '2026-11-20T04:30:00Z';
 let ready = null; let probeAt = 0;
 export async function replyReady(q = query) {
   if (ready !== null && Date.now() - probeAt < 60000) return ready;
@@ -64,7 +65,8 @@ export async function refreshReplyState({ ids = null, limit = 400, q = query } =
   if (!(await replyReady(q))) return { updated: 0 };
   const args = []; let cond;
   if (ids && ids.length) { args.push(ids.map(Number)); cond = `t.id = ANY($1::bigint[])`; }
-  else cond = `t.last_at > now() - interval '60 days' AND (t.reply_calc_at IS NULL OR t.reply_calc_at < t.last_at
+  // RULES_AT · 사람 답장 · Meta 기록 구분 규칙을 바꾼 시각 — 그 전에 계산한 대화는 다시(1119g · 담당 지정 기록)
+  else cond = `t.last_at > now() - interval '60 days' AND (t.reply_calc_at IS NULL OR t.reply_calc_at < t.last_at OR t.reply_calc_at < '${RULES_AT}'::timestamptz
       OR (t.platform = 'messenger' AND EXISTS (SELECT 1 FROM meta_page_messages pm WHERE pm.psid = t.user_id AND pm.created_at > t.reply_calc_at)))`;
   const rows = (await q(`SELECT t.id, t.platform, t.thread_id, t.user_id, t.messages FROM meta_threads t WHERE ${cond} ORDER BY t.last_at DESC NULLS LAST LIMIT ${Number(limit) || 400}`, args)).rows;
   for (const t of rows) {

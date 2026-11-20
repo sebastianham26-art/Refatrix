@@ -26,6 +26,18 @@ test('A. 답장 필요 계산', async () => {
   assert.equal(s.pending_n, 1, 'ERP 봇 = 답장 아님');
 });
 
+test('A2. 1119g · 받은편지함 작업 기록(담당 지정 · 완료 · 라벨) = Meta 기록 — 대화 · 답장 아님', async () => {
+  const { isMetaEvent, markMetaKinds } = await import('../src/leadPortal.js');
+  const { replyStateOf } = await import('../src/metaReply.js');
+  for (const t of ['Luis Oscar Guzmán Palomino asignó esta conversación a Luis Oscar Guzmán Palomino.', 'Se asignó a María', 'Ana marcó esta conversación como lista.', 'Juan agregó la etiqueta Prioridad', 'Oscar assigned this conversation to Ana'])
+    assert.equal(isMetaEvent(t), true, t);
+  for (const t of ['¿Podrías confirmar el modelo exacto de la camioneta Kia?', 'Te asigno el pedido mañana', 'Ya le asigné un asesor a tu pedido', 'marca la etiqueta del producto'])
+    assert.equal(isMetaEvent(t), false, t);
+  const ms = markMetaKinds([{ at: at(0), me: false, text: 'tendrás válvulas de cabeza' }, { at: at(100), me: true, text: 'Luis Oscar Guzmán Palomino asignó esta conversación a Luis Oscar Guzmán Palomino.' }]);
+  assert.equal(ms[1].kind, 'event');
+  assert.equal(replyStateOf(ms).pending_n, 1, '담당 지정 기록은 답장이 아님 → 답장 필요');
+});
+
 test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, async (t) => {
   const { query, pool } = await import('../src/db.js');
   after(async () => { await pool.end().catch(() => {}); setTimeout(() => process.exit(process.exitCode || 0), 300); });
