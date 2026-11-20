@@ -131,7 +131,7 @@ test('Meta 광고 문의 — ERP 번호 WhatsApp 대화 (jsdom)', { skip: SKIP &
   };
   await t.test('사진 · PDF · 답장 · 받은 메시지 링크 · 창 닫힘 = 전화', async () => {
     const c = boot(MTL, 'https://example.test/refatrix-metaleads.html', route); await c.ready; await tick(600);
-    assert.match(c.d.title, /mtl-1119d/);
+    assert.match(c.d.title, /mtl-1119e/);
     c.d.querySelector('#lTable tr[data-id="77"]').dispatchEvent(new c.w.MouseEvent('click', { bubbles: true })); await tick(400);
     const chat = c.d.getElementById('oChat');
     assert.equal(chat.querySelector('img.wm').getAttribute('src'), 'blob:media');

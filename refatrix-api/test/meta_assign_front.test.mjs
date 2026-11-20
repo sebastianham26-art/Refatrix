@@ -61,7 +61,7 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
   };
   await t.test('대상자 클릭 · 목표 · 저장 · 지금 분배 · 실적 표 · 엑셀 · 사람 행 → 그 사람 할당', async () => {
     const c = boot(route); await c.ready; await tick(700);
-    assert.match(c.d.title, /mtl-1119d/);
+    assert.match(c.d.title, /mtl-1119e/);
     assert.ok(!c.d.getElementById('tAsg').classList.contains('hidden'), '디렉터 = 배분 탭');
     c.d.getElementById('tAsg').click(); await tick();
     const chips = c.d.querySelectorAll('#aPeople [data-uid]'); assert.equal(chips.length, 4);
@@ -69,18 +69,18 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
     assert.ok(c.d.querySelector('#aPeople [data-uid="9"]').classList.contains('noacc'), '권한 없는 사람 표시');
     assert.ok(c.d.getElementById('aDirty').classList.contains('hidden'));
     c.d.querySelector('#aPeople [data-uid="8"]').click(); await tick(50);
-    assert.ok(!c.d.getElementById('aDirty').classList.contains('hidden'), '저장 안 된 변경 표시'); assert.match(c.d.getElementById('aSave').textContent, /변경 있음/);
+    assert.ok(!c.d.getElementById('aDirty').classList.contains('hidden'), '저장 안 된 변경 표시'); assert.match(c.d.getElementById('asgSave').textContent, /변경 있음/);
     const inp = c.d.querySelector('#aTargets [data-tgt="8"]'); assert.equal(inp.value, '20', '새로 고른 사람 = 기본 목표');
     inp.value = '10'; inp.dispatchEvent(new c.w.Event('input', { bubbles: true }));
     c.d.querySelector('#aPeople [data-uid="7"]').click(); c.d.querySelector('#aPeople [data-uid="7"]').click();   // 빼고 다시 넣기
-    c.d.getElementById('aSave').click(); await tick();
+    c.d.getElementById('asgSave').click(); await tick();
     const put = c.calls.find((x) => x.method === 'PUT');
     assert.deepEqual(put.body.members.sort((a, b) => a.user_id - b.user_id), [{ user_id: 7, daily_target: 15, share_pct: 0, active: true }, { user_id: 8, daily_target: 10, share_pct: 0, active: true }]);
     assert.equal(put.body.auto, true); assert.equal(put.body.pool_days, 7); assert.equal(put.body.mode, 'target');
     assert.ok(c.d.getElementById('aDirty').classList.contains('hidden'), '저장하면 표시 사라짐');
     assert.match(c.d.getElementById('aPool').textContent, /40건/);
     c.d.getElementById('aRun').click(); await tick();
-    assert.match(c.d.getElementById('aMsg').textContent, /3건 나눴습니다 — Ana 2 · Beto 1/);
+    assert.match(c.d.getElementById('asgMsg').textContent, /3건 나눴습니다 — Ana 2 · Beto 1/);
     const tb = c.d.getElementById('pTable');
     assert.match(tb.textContent, /Ana/); assert.match(tb.textContent, /팀 전체/); assert.match(tb.textContent, /75%/); assert.match(tb.textContent, /60%/);
     c.d.getElementById('pXls').click(); assert.ok(c.calls.some((x) => /XLSX:refatrix_meta_asignacion_/.test(x.u)));
@@ -114,7 +114,7 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
     const i8 = c.d.querySelector('#aTargets [data-pct="8"]'); i8.value = '50'; i8.dispatchEvent(new c.w.Event('input', { bubbles: true })); i8.dispatchEvent(new c.w.Event('change', { bubbles: true })); await tick(50);
     assert.match(c.d.getElementById('aTargets').textContent, /100% 가 아니면/);
     c.d.getElementById('aEqual').click(); await tick(50);
-    c.d.getElementById('aSave').click(); await tick();
+    c.d.getElementById('asgSave').click(); await tick();
     const put = c.calls.filter((x) => x.method === 'PUT').pop();
     assert.equal(put.body.mode, 'share');
     assert.deepEqual(put.body.members.map((m) => m.share_pct).sort(), [33, 33, 34]);
@@ -125,7 +125,7 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
     const c = boot(r0); await c.ready; await tick(700);
     c.d.getElementById('tAsg').click(); await tick();
     c.d.getElementById('aRun').click(); await tick(300);
-    assert.match(c.d.getElementById('aMsg').className, /err/); assert.match(c.d.getElementById('aMsg').textContent, /대화할 영업사원이 없습니다/);
+    assert.match(c.d.getElementById('asgMsg').className, /err/); assert.match(c.d.getElementById('asgMsg').textContent, /대화할 영업사원이 없습니다/);
     c.close();
   });
   await t.test('상세 — 담당 바꾸기 · 메모 추가 · 목록 담당 표시', async () => {
@@ -173,4 +173,14 @@ test('🙋 내 할당 (영업사원)', { skip: SKIP && 'jsdom 또는 HTML 없음
     assert.match(c.d.getElementById('eMsg').textContent, /상태 · 메모를 저장했습니다/);
     c.close();
   });
+});
+
+// 1119e · 같은 id 가 두 번 있으면 버튼이 다른 화면 것에 붙는다(배분 「저장」이 광고 등록 버튼에 붙어 비율 저장이 안 되던 것)
+test('화면 id 중복 없음(Meta 광고 문의 · 영업 할당 · 실적 · WhatsApp 마케팅)', { skip: SKIP && 'HTML 없음' }, () => {
+  for (const f of ['refatrix-metaleads.html', 'refatrix-leadassign.html', 'refatrix-wapromo.html']) {
+    const h = readFileSync(resolve(here, '..', '..', f), 'utf-8').replace(/<script[\s\S]*?<\/script>/g, '');
+    const ids = [...h.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+    const dup = ids.filter((x, i) => ids.indexOf(x) !== i);
+    assert.deepEqual(dup, [], f + ' 중복 id: ' + dup.join(', '));
+  }
 });
