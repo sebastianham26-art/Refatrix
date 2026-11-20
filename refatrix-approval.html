@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261103fc</title>
+<title>Refatrix ERP · 전자결재 · b20261120st</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -19,7 +19,25 @@ html,body{margin:0}
 body{background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;font-size:14px;line-height:1.45;-webkit-text-size-adjust:100%}
 button,input,select,textarea{font:inherit;color:inherit}
 h1{font-size:20px;margin:4px 0 6px;line-height:1.3}
-.wrap{max-width:1180px;margin:0 auto;padding:16px 16px 110px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px 110px}
+/* 상단 고정 (b20261120st) — 헤더·탭·KPI·필터·열제목을 한 덩어리로 고정. top = 공통 메뉴(rnav) 높이 */
+.sthead{position:sticky;top:var(--navH,0px);z-index:40;background:var(--paper);padding-top:16px;display:flow-root}
+html{scroll-padding-top:calc(var(--navH,0px) + var(--stH,0px) + 8px)}
+.sthead.stuck{box-shadow:0 8px 14px -12px rgba(20,30,26,.35)}
+.sthead.nostick{position:static;box-shadow:none}
+#boardHead:empty{display:none}
+#boardHead .fbar{margin-bottom:8px}
+#boardHead .lh{border:1px solid var(--line);border-bottom-color:var(--line);border-radius:14px 14px 0 0;margin-bottom:-1px}
+.list.lhead{border-top-left-radius:0;border-top-right-radius:0}
+.lh .sk{all:unset;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:3px;border-radius:4px;padding:1px 2px;margin:-1px -2px}
+.lh .sk:hover{color:var(--brand)}
+.lh .sk:focus-visible{outline:2px solid var(--gold)}
+.lh .sk.on{color:var(--brand);font-weight:700}
+.lh .sk i{font-style:normal;font-size:10px;opacity:.35}
+.lh .sk.on i{opacity:1}
+.lh .sk.r{justify-content:flex-end;width:100%}
+.mobsort{display:none}
+.kpis.mobk{display:none}
 .top{background:var(--brand);color:#f4f1ea;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .top .ttl0{font-size:17px;font-weight:700}
 .top .sub0{font-size:11.5px;color:#cfe0d8}
@@ -74,6 +92,12 @@ h1{font-size:20px;margin:4px 0 6px;line-height:1.3}
 .c-cur .cp{display:block;line-height:1.5}
 @media(max-width:860px){
  .lh{display:none}
+ #boardHead .lh{display:none}
+ .list.lhead{border-radius:14px}
+ .fbar .inp.mobsort{display:block;flex:1 1 140px}
+ /* 모바일: KPI까지 고정하면 화면이 가려지므로 KPI는 스크롤, 나머지(헤더·탭·필터)만 고정 */
+ .sthead #boardHead .kpis{display:none}
+ #app .kpis.mobk{display:grid}
  .row{grid-template-columns:1fr auto;grid-template-areas:"no amt" "ttl ttl" "st st" "who dt";gap:4px 10px;padding:12px 14px}
  .c-no{grid-area:no;display:flex;gap:6px;align-items:center}.c-ttl{grid-area:ttl}.c-amt{grid-area:amt}.c-st{grid-area:st}.c-who{grid-area:who;font-size:12.5px}.c-who .sub{display:none}.c-cur{display:none}.c-dt{grid-area:dt;text-align:right}
  .mob{display:inline}
@@ -321,10 +345,14 @@ details.revs summary{cursor:pointer;color:var(--brand);font-weight:600}
 </head>
 <body>
 <div class="wrap">
+ <div class="sthead" id="stHead">
  <div class="top">
   <div><div class="ttl0">전자결재</div><div class="sub0">비용집행 품의 · 사전/사후승인 · 증빙</div></div>
   <div class="who" id="who"></div>
   <button class="bell hidden" id="bellBtn" data-act="bell" aria-label="알림">🔔<i id="bellCnt"></i></button>
+ </div>
+ <nav class="tabs hidden" id="tabs"></nav>
+ <div id="boardHead"></div>
  </div>
  <div class="card login hidden" id="loginCard">
   <h3 style="margin:0 0 10px;color:var(--brand)">로그인</h3>
@@ -334,7 +362,6 @@ details.revs summary{cursor:pointer;color:var(--brand);font-weight:600}
   <button class="btn pri" data-act="login" style="width:100%">로그인</button>
   <p class="sub" id="loginMsg"></p>
  </div>
- <nav class="tabs hidden" id="tabs"></nav>
  <main id="app"><div class="loading">불러오는 중…</div></main>
 </div>
 <div id="notifPanel" class="notif hidden"></div>
@@ -351,7 +378,8 @@ let LIST=[];             // 게시판 목록
 let DET=null;            // 상세
 let REP=null;            // 리포트
 let NOTIFS=[];
-const ui={view:'board',box:'todo',flt:'all',cat:'',q:'',noEvid:false,docId:null,cd:null,cmtFiles:[],mFiles:[],modal:null,pick:null,postSel:new Set(),postCat:'',mon:'',busy:false};
+const ui={view:'board',box:'todo',flt:'all',cat:'',q:'',noEvid:false,docId:null,cd:null,cmtFiles:[],mFiles:[],modal:null,pick:null,postSel:new Set(),postCat:'',mon:'',busy:false,sort:{k:null,dir:1}};
+try{const sv=JSON.parse(localStorage.getItem('rfx_appr_sort')||'null');if(sv&&sv.k&&/^(no|title|who|amt|st|cur|dt)$/.test(sv.k))ui.sort={k:sv.k,dir:sv.dir<0?-1:1};}catch(e){}
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -452,32 +480,85 @@ function renderTabs(){
 
 /* ═════════ 게시판 ═════════ */
 function renderBoard(){
+ const h=boardParts();
+ return `<div class="kpis mobk">${h.kpis}</div>
+ <div class="card list lhead">
+  <div id="listBody">${listHtml()}</div>
+ </div>`;
+}
+// b20261120st 열제목 정렬 — [키, 제목, 오른쪽정렬]
+const SORT_COLS=[['no','문서번호'],['title','제목'],['who','기안자'],['amt','예정 / 실적',1],['st','상태'],['cur','현재 처리자'],['dt','상신일시']];
+function lhHtml(){
+ const del=ui.flt==='deleted',lb={cur:del?'삭제자 · 일시':'현재 처리자',dt:del?'복구':'상신일시'};
+ return SORT_COLS.map(([k,l,r])=>{
+  if(del&&k==='dt')return `<span>${lb.dt}</span>`;
+  const on=ui.sort.k===k,ar=on?(ui.sort.dir>0?'▲':'▼'):'↕';
+  return `<span${r?' style="text-align:right"':''}><button class="sk ${on?'on':''} ${r?'r':''}" data-act="sort" data-k="${k}" title="클릭: 오름차순 → 내림차순 → 기본 순서">${lb[k]||l}<i>${ar}</i></button></span>`;
+ }).join('');
+}
+function renderBoardHead(){
+ const h=boardParts();
+ return `<div class="kpis">${h.kpis}</div>${h.rest}
+ <div class="lh" id="lhRow">${lhHtml()}</div>`;
+}
+function boardParts(){
  const m=B.me,sum=(a,f)=>a.reduce((s,d)=>s+(f(d)||0),0),mon=todayMX().slice(0,7);
  const todo=LIST.filter(d=>d.todo),prog=LIST.filter(d=>d.status==='progress'),unexec=LIST.filter(d=>d.status==='approved'&&d.exec_status==='pending');
  const execM=LIST.filter(d=>d.exec_status==='done'&&(d.exec_date||'').startsWith(mon)),postw=LIST.filter(d=>d.exec_status==='done'&&d.post_status!=='confirmed');
  const boxes=[['todo',m.isFinance?'결재·집행할 문서':'처리할 문서',todo.length],['mine','내가 올린 문서',LIST.filter(d=>same(d.drafter_id,m.id)).length],['ref','참조·공람',LIST.filter(d=>d.is_ref).length],['all','전체',LIST.length]];
  const F=[['all','전체'],['draft','임시저장'],['progress','결재중'],['pre','사전승인 대기'],['execwait','집행대기'],['postwait','사후승인 대기'],['flagged','이의제기'],['closed','완결'],['rejected','반려']];
  if(m.isDirector)F.push(['deleted','🗑 삭제된 문서']);
- return `
- <div class="kpis">
+ const kpis=`
   <button class="card kpi ${todo.length?'hot':''}" data-act="kpi" data-b="todo" data-f="all"><small>내가 처리할 문서</small><b>${todo.length}건</b><em>결재·합의·집행·소명</em></button>
   <button class="card kpi" data-act="kpi" data-b="all" data-f="progress"><small>결재 진행중</small><b>${prog.length}건</b><em>${money(sum(prog,d=>d.planned_total))}</em></button>
   <button class="card kpi" data-act="kpi" data-b="all" data-f="execwait"><small>승인 · 미집행</small><b>${money(sum(unexec,d=>d.planned_total))}</b><em>${unexec.length}건</em></button>
   <button class="card kpi" data-act="kpi" data-b="all" data-f="all"><small>이번 달 집행실적</small><b>${money(sum(execM,d=>d.actual_total))}</b><em>${execM.length}건 · 예정 ${money(sum(execM,d=>d.planned_total))}</em></button>
-  <button class="card kpi" data-act="kpi" data-b="all" data-f="postwait"><small>사후승인 미완료</small><b>${postw.length}건</b><em>이의제기 ${postw.filter(d=>d.post_status==='flagged').length}건</em></button>
- </div>
+  <button class="card kpi" data-act="kpi" data-b="all" data-f="postwait"><small>사후승인 미완료</small><b>${postw.length}건</b><em>이의제기 ${postw.filter(d=>d.post_status==='flagged').length}건</em></button>`;
+ const so=[['','기본 순서'],...SORT_COLS.flatMap(([k,l])=>k==='dt'&&ui.flt==='deleted'?[]:[[k+':1',l+' ▲'],[k+':-1',l+' ▼']])];
+ const sv=ui.sort.k?ui.sort.k+':'+ui.sort.dir:'';
+ const rest=`
  <div class="boxes">${boxes.map(([k,l,n])=>`<button class="box ${ui.box===k?'on':''}" data-act="box" data-v="${k}">${l}<i>${n}</i></button>`).join('')}</div>
  <div class="fbar">
   <div class="chips">${F.map(([k,l])=>`<button class="chip ${ui.flt===k?'on':''}" data-act="flt" data-v="${k}">${l}</button>`).join('')}</div>
   <select class="inp" id="catSel" style="flex:0 1 150px"><option value="">전체 카테고리</option>${B.categories.map(c=>`<option value="${c.id}" ${same(ui.cat,c.id)?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
   <input class="inp" id="q" type="search" placeholder="문서번호 · 제목 · 거래처 · 기안자" value="${esc(ui.q)}">
   <label class="ck"><input type="checkbox" id="noEvid" ${ui.noEvid?'checked':''}> 증빙 없음만</label>
+  <select class="inp mobsort" id="sortSel" aria-label="정렬">${so.map(([v,l])=>`<option value="${v}" ${v===sv?'selected':''}>정렬: ${l}</option>`).join('')}</select>
   <button class="btn sm" data-act="xls">엑셀</button>
- </div>
- <div class="card list">
-  <div class="lh"><span>문서번호</span><span>제목</span><span>기안자</span><span style="text-align:right">예정 / 실적</span><span>상태</span><span>현재 처리자</span><span>상신일시</span></div>
-  <div id="listBody">${listHtml()}</div>
  </div>`;
+ return {kpis,rest};
+}
+// 정렬 — 빈 값은 방향과 관계없이 항상 맨 아래
+const STAGE_ORD=['draft','progress','pre','execwait','postwait','flagged','closed','rejected'];
+function sortVal(d,k){
+ const del=ui.flt==='deleted';
+ switch(k){
+  case 'no':return d.doc_no||'';
+  case 'title':return d.title||'';
+  case 'who':return d.drafter_name||'';
+  case 'amt':return d.planned_total==null||d.planned_total===''?null:Number(d.planned_total);
+  case 'st':{if(del)return d.status||'';const i=STAGE_ORD.indexOf(d.stage);return i<0?99:i;}
+  case 'cur':return del?(d.deleted_by_name||''):curText(d);
+  case 'dt':{const t=del?d.deleted_at:(d.submitted_at||d.created_at);const v=t?Date.parse(t):NaN;return isNaN(v)?null:v;}
+ }
+ return null;
+}
+function applySort(a){
+ const {k,dir}=ui.sort;if(!k)return a;
+ const col=new Intl.Collator('ko',{numeric:true,sensitivity:'base'});
+ return a.map((d,i)=>({d,i,v:sortVal(d,k)})).sort((x,y)=>{
+  const ex=x.v==null||x.v==='',ey=y.v==null||y.v==='';
+  if(ex||ey)return ex&&ey?x.i-y.i:(ex?1:-1);
+  const c=typeof x.v==='number'&&typeof y.v==='number'?x.v-y.v:col.compare(String(x.v),String(y.v));
+  return c?c*dir:x.i-y.i;
+ }).map(o=>o.d);
+}
+function setSort(k,dir){
+ ui.sort=k?{k,dir:dir>0?1:-1}:{k:null,dir:1};
+ try{localStorage.setItem('rfx_appr_sort',JSON.stringify(ui.sort));}catch(e){}
+ const lh=$('#lhRow');if(lh)lh.innerHTML=lhHtml();
+ const lb=$('#listBody');if(lb)lb.innerHTML=listHtml();
+ const ss=$('#sortSel');if(ss)ss.value=ui.sort.k?ui.sort.k+':'+ui.sort.dir:'';
 }
 function filtered(){
  let a=LIST.slice();const m=B.me;
@@ -493,7 +574,7 @@ function filtered(){
 function delListHtml(){
  if(!ui.dels)return '<div class="loading">불러오는 중…</div>';
  const q=ui.q.trim().toLowerCase();
- const a=ui.dels.filter(d=>!q||[d.doc_no,d.title,d.vendor,d.drafter_name,d.delete_reason].join(' ').toLowerCase().includes(q));
+ const a=applySort(ui.dels.filter(d=>!q||[d.doc_no,d.title,d.vendor,d.drafter_name,d.delete_reason].join(' ').toLowerCase().includes(q)));
  if(!a.length)return '<div class="empty">삭제된 문서가 없습니다</div>';
  return a.map(d=>`<div class="row del-row" data-id="${d.id}">
  <div class="c-no"><div class="no">${esc(d.doc_no||'—')}</div><span class="bdg b-gray">${esc(catName(d.category_id))}</span></div>
@@ -507,7 +588,7 @@ function delListHtml(){
 async function loadDels(){ui.dels=(await api('GET','/api/approvals/deleted')).items;}
 function listHtml(){
  if(ui.flt==='deleted')return delListHtml();
- const a=filtered();
+ const a=applySort(filtered());
  if(!a.length)return `<div class="empty">${LIST.length?'해당하는 문서가 없습니다':'아직 문서가 없습니다 — 「작성」 탭에서 첫 품의를 올려 보세요'}</div>`;
  const tol=B.settings.variance_tolerance_pct;
  return a.map(d=>`<div class="row ${d.unread?'unread':''}" data-act="open" data-id="${d.id}">
@@ -1447,6 +1528,7 @@ const H={
  restore(a){const id=Number(a.dataset.id),d=(ui.dels||[]).find(x=>same(x.id,id));confirmBox('문서 복구',`${d?d.doc_no+' · '+d.title:''}\n삭제 전 상태 그대로 게시판에 다시 나타나고, 지금 차례인 사람에게 다시 알림이 갑니다.`,async()=>{await api('POST',`/api/approvals/${id}/restore`);toast('복구했습니다');});},
  docdel(){openModal('docdel');},
  kpi(a){ui.box=a.dataset.b;ui.flt=a.dataset.f;render();},
+ sort(a){const k=a.dataset.k,c=ui.sort;if(c.k!==k)setSort(k,1);else if(c.dir>0)setSort(k,-1);else setSort(null);},
  open(a){openDoc(a.dataset.id);},
  openid(a){openDoc(a.dataset.id);},
  back(){ui.view='board';DET=null;render();},
@@ -1538,7 +1620,7 @@ const H={
  catren(a){const c=B.categories.find(x=>same(x.id,a.dataset.c));openModal('name',{title:'카테고리 이름 변경',value:c.name,fn:async v=>{await api('PUT',`/api/approvals/categories/${c.id}`,{name:v});await loadBoot();}});},
  async cattog(a){const c=B.categories.find(x=>same(x.id,a.dataset.c));const r=await run(()=>api('PUT',`/api/approvals/categories/${c.id}`,{active:!c.active}));if(r){await loadBoot();render();}},
  xls(){exportXls('전자결재_목록',['문서번호','카테고리','제목','거래처','기안자','상태','통화','원통화 합계','환율','결제 방식','회차','예정 합계(MXN)','실적 합계(MXN)','차이%','현재 처리자','상신일시','증빙','댓글'],
-  filtered().map(d=>[d.doc_no||'임시저장',catName(d.category_id),d.title,d.vendor||'',d.drafter_name,(STAGE_BADGE[d.stage]||[''])[0],d.currency,d.orig_total,d.currency==='USD'?d.fx_rate:'',PT_L[d.payment_type]||'',`${d.pay_done}/${d.pay_n}`,d.planned_total,d.actual_total==null?'':d.actual_total,d.variance_pct==null?'':d.variance_pct,curText(d),d.submitted_at?fmtT(d.submitted_at,'America/Mexico_City').slice(0,16):'',d.files_n,d.comments_n]));},
+  applySort(filtered()).map(d=>[d.doc_no||'임시저장',catName(d.category_id),d.title,d.vendor||'',d.drafter_name,(STAGE_BADGE[d.stage]||[''])[0],d.currency,d.orig_total,d.currency==='USD'?d.fx_rate:'',PT_L[d.payment_type]||'',`${d.pay_done}/${d.pay_n}`,d.planned_total,d.actual_total==null?'':d.actual_total,d.variance_pct==null?'':d.variance_pct,curText(d),d.submitted_at?fmtT(d.submitted_at,'America/Mexico_City').slice(0,16):'',d.files_n,d.comments_n]));},
  repxls(){exportXls('전자결재_예정실적_'+REP.month,['카테고리','승인','예정 합계','집행','실적 합계','차이','미집행 잔액','사후 미확인'],REP.rows.map(r=>[r.name,r.n,r.plan,r.execN,r.actual,r.diff,r.unexec,r.postOpen]));}
 };
 let xlsxLoading=null;
@@ -1597,6 +1679,7 @@ document.addEventListener('change',e=>{
  else if(t.dataset.kind){getArr(t.dataset.kind)[Number(t.dataset.i)].kind=t.value;}
  else if(t.id==='catSel'){ui.cat=t.value;render();}
  else if(t.id==='noEvid'){ui.noEvid=t.checked;render();}
+ else if(t.id==='sortSel'){const [k,d]=(t.value||'').split(':');setSort(k||null,Number(d)||1);}
  else if(t.dataset.addto&&t.value&&ui.cd){ui.cd[t.dataset.addto].push(Number(t.value));render();}
  else if(t.id==='postCat'){ui.postCat=t.value;render();}
  else if(t.id==='monSel'){ui.mon=t.value;REP=null;render();run(loadReport).then(render);}
@@ -1615,9 +1698,26 @@ function render(){
  if(!allowed.includes(ui.view))ui.view='board';
  if(ui.view==='compose'&&!ui.cd)ui.cd=newCd();
  renderTabs();
+ $('#boardHead').innerHTML=ui.view==='board'?renderBoardHead():'';
  $('#app').innerHTML=({board:renderBoard,detail:renderDetail,compose:renderCompose,ceo:renderCeo,report:renderReport,settings:renderSettings})[ui.view]();
  if(ui.view==='compose')updateCompose();
+ syncStick();
 }
+// 상단 고정 위치 = 공통 메뉴(rnav, position:fixed) 높이 = body padding-top. 고정 영역이 화면의 65%를 넘으면(낮은 화면) 고정 해제
+function syncStick(){
+ const sh=$('#stHead');if(!sh)return;
+ const nav=parseFloat(getComputedStyle(document.body).paddingTop)||0;
+ document.documentElement.style.setProperty('--navH',nav+'px');
+ sh.classList.remove('nostick');
+ const avail=window.innerHeight-nav,big=sh.offsetHeight>avail*0.65;
+ sh.classList.toggle('nostick',big);
+ document.documentElement.style.setProperty('--stH',(big?0:sh.offsetHeight)+'px');
+ stuckPaint();
+}
+function stuckPaint(){const sh=$('#stHead');if(!sh)return;const nav=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--navH'))||0;sh.classList.toggle('stuck',!sh.classList.contains('nostick')&&sh.getBoundingClientRect().top<=nav+0.5&&window.scrollY>0);}
+window.addEventListener('resize',syncStick);
+window.addEventListener('scroll',stuckPaint,{passive:true});
+try{new ResizeObserver(()=>syncStick()).observe(document.body,{box:'border-box'});}catch(e){}
 async function start(){
  $('#loginCard').classList.add('hidden');
  try{await loadBoot();await loadList();}
