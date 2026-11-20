@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Refatrix ERP · 전자결재 · b20261120st</title>
+<title>Refatrix ERP · 전자결재 · b20261120cl</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -38,6 +38,17 @@ html{scroll-padding-top:calc(var(--navH,0px) + var(--stH,0px) + 8px)}
 .lh .sk.r{justify-content:flex-end;width:100%}
 .mobsort{display:none}
 .kpis.mobk{display:none}
+/* 0332 원가·운반비 연결 */
+.cl-list{border:1px solid var(--line);border-radius:10px;max-height:260px;overflow:auto;background:#fff;margin-top:6px}
+.cl-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid #eee8dc;cursor:pointer;font-size:13px}
+.cl-row:last-child{border-bottom:0}.cl-row:hover{background:#faf7f0}.cl-row.on{background:#eef5f1}
+.cl-row input{margin:0}.cl-row .d{color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
+.cl-ok{background:#e3f1ea;color:#1f6b4a;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;white-space:nowrap}
+.cl-wait{background:#f6efe0;color:#8a6417;border-radius:6px;padding:1px 7px;font-size:11px;white-space:nowrap}
+.cl-sel{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px;min-height:26px;align-items:center}
+.cl-box{border:1.5px solid var(--gold);background:#fffaf0;border-radius:12px;padding:12px 14px;margin:0 0 12px}
+.cl-box h3{margin:0 0 8px}
+.metaed{border:1.5px solid var(--brand);background:#f7faf8}
 .top{background:var(--brand);color:#f4f1ea;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .top .ttl0{font-size:17px;font-weight:700}
 .top .sub0{font-size:11.5px;color:#cfe0d8}
@@ -411,7 +422,11 @@ const ERRMSG={bad_pin:'PIN이 올바르지 않습니다',pin_required:'PIN을 �
  director_only:'디렉터만 할 수 있습니다',forbidden:'권한이 없습니다',not_found:'문서를 찾을 수 없거나 열람 권한이 없습니다',
  category_required:'카테고리를 선택하세요',amount_required:'예정금액을 입력하세요',title_required:'제목을 입력하세요',duplicate:'이미 있는 단계입니다',
  doc_not_found:'문서번호를 확인하세요',bad_user:'사용할 수 없는 사용자입니다',bad_comment:'댓글을 확인하세요',unauthorized:'로그인이 만료되었습니다. 다시 로그인하세요',commission_doc:'커미션 지급승인 문서는 재무 › 커미션에서 서명된 수령증을 올려 집행합니다',
- fixed_cost_choice_required:'이 카테고리는 고정비가 걸린 과목입니다 — 「고정비 선택」에서 어느 고정비(SAT·SUA 등)인지, 또는 「고정비 아님」을 고르세요'};
+ fixed_cost_choice_required:'이 카테고리는 고정비가 걸린 과목입니다 — 「고정비 선택」에서 어느 고정비(SAT·SUA 등)인지, 또는 「고정비 아님」을 고르세요',
+ import_invoice_required:'수입부대비용·수입운송비는 「수입 인보이스」를 1건 이상 골라야 상신할 수 있습니다 — 나중에 원가로 반영됩니다',
+ freight_link_required:'운반비(매출출고)는 매출 인보이스 또는 고객을 고르거나 「공통 운반비」를 체크해야 상신할 수 있습니다',
+ bad_import_invoice:'고른 수입 인보이스 중 삭제된 것이 있습니다 — 다시 고르세요',bad_invoice:'고른 매출 인보이스 중 취소된 것이 있습니다 — 다시 고르세요',
+ bad_customer:'고객을 확인하세요',too_many_import_invoices:'수입 인보이스는 30건까지 고를 수 있습니다',use_editor:'임시저장 문서는 편집 화면에서 고칩니다',category_missing:'카테고리를 찾을 수 없습니다'};
 const errText=d=>ERRMSG[d&&d.detail]||ERRMSG[d&&d.error]||(d&&(d.detail||d.error))||'오류';
 
 async function api(method,path,body){
@@ -748,6 +763,34 @@ function commissionPrintHtml(c){
  const head='<tr><th>고객명</th><th>인보이스</th><th>발행일</th><th class="pr">매출(ex-IVA)</th><th>기준·수금일</th><th class="pr">기준액</th><th class="pr">율</th><th class="pr">커미션</th></tr>';
  return `<div class="psec"><h4>커미션 지급 내역 · ${esc(s.agent_name||'')} · ${esc(cmYm(s.settle_ym))} 반제분${p.inv_from?` <span class="pg">(발행 ${esc(p.inv_from)}~${esc(p.inv_to)})</span>`:''} · ${L.length}건</h4><table class="ptb">${head}${rows.join('')}</table></div>`;
 }
+// 0332 상세 — 원가·운반비 연결 표시
+function costLinkHtml(){
+ const c=DET.cost_link;if(!c||(!c.kind&&!(c.imports||[]).length&&!c.freight))return '';
+ if(c.kind==='import'||(c.imports||[]).length){
+  const xs=c.imports||[];
+  return `<div class="warn info" style="margin:10px 0">📦 <b>수입 인보이스</b> — ${xs.length?xs.map(x=>`<b>${esc(x.invoice_no)}</b> ${x.deleted?'<span class="flag">삭제됨</span>':x.cost_ready?'<span class="cl-ok">원가 승인됨</span>':'<span class="cl-wait">입고 배치 승인 전</span>'}`).join(' · '):'<span class="flag">미지정</span>'}
+   <br><span class="sub">집행되어 거래등록 실적이 되면 재무 › 수입 부대비용 분배의 「재무에서 가져오기」에서 이 인보이스 입고 건이 분배 대상으로 자동 선택되어 원가에 반영됩니다.</span></div>`;
+ }
+ const f=c.freight;
+ return `<div class="warn info" style="margin:10px 0">🚚 <b>운반비 귀속</b> — ${!f?'<span class="flag">미지정</span>':f.common?'공통 운반비 (매출 비중 자동배분)':f.invoices.length?f.invoices.map(i=>`#${i.id}${i.sat_no?' '+esc(i.sat_no):''} · ${esc(i.customer_name)}`).join(', ')+(f.invoices.length>1?` <span class="sub">(건당 균등 배분)</span>`:''):`${esc(f.customer_name||'')} <span class="sub">(고객 공통)</span>`}
+  <br><span class="sub">자금계획 예정과 거래등록 실적에 거래등록 운반비(6160)와 같은 고객·인보이스 태그가 붙어 손익 화면 고객별 P&L에 반영됩니다.</span></div>`;
+}
+// 0332 디렉터 — 진행 중·완료 문서의 카테고리·제목·원가 연결 수정
+function metaEdHtml(){
+ const m=ui.meta;if(!m)return '';
+ const cats=B.categories.filter(c=>c.active||same(c.id,m.category_id)||same(c.id,DET.doc.category_id));
+ const recat=!same(m.category_id,DET.doc.category_id)&&['approved'].includes(DET.doc.status)&&DET.payments.some(p=>p.fin==='actual');
+ return `<div class="card sec metaed"><h3>✎ 카테고리 · 제목 수정 <span class="sub">금액·일정·결재선은 그대로 · 수정 전 값은 「수정 이력」에 남고 기안자에게 알림</span></h3>
+  <div class="form">
+   <div class="fld"><label>카테고리</label><select class="inp" data-mf="category_id">${cats.map(c=>`<option value="${c.id}" ${same(c.id,m.category_id)?'selected':''}>${esc(c.name)}${c.active?'':' (사용 안 함)'}</option>`).join('')}</select></div>
+   <div class="fld full"><label>제목</label><input class="inp" data-mf="title" value="${esc(m.title)}"></div>
+  </div>
+  <div id="mtRecat">${recat?'<div class="warn" style="margin-top:8px">카테고리를 바꾸면 이 결재로 등록된 <b>거래등록 실적의 계정과목</b>도 새 카테고리의 재무 과목으로 바뀝니다(거래등록에서 따로 고친 실적은 그대로).</div>':''}</div>
+  <div class="card sec hidden" id="clCard-mt" style="margin:12px 0 0;box-shadow:none"><h3 id="clTtl-mt"></h3><div id="cl-mt"></div></div>
+  <div class="fld" style="margin-top:10px"><label>수정 사유 <span class="sub">선택</span></label><input class="inp" data-mf="reason" value="${esc(m.reason)}" placeholder="예: 카테고리 오분류 정정"></div>
+  <div class="row3" style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn" data-act="metacancel">취소</button><button class="btn pri" data-act="metasave">저장</button></div>
+ </div>`;
+}
 function renderDetail(){
  if(!DET)return '<div class="loading">불러오는 중…</div>';
  const d=DET.doc,v=d.variance_pct,tol=B.settings.variance_tolerance_pct,warns=[],usd=d.currency==='USD';
@@ -763,13 +806,14 @@ function renderDetail(){
  <div class="dtop">
   <div class="dleft">
    <div class="dh"><button class="back" data-act="back">‹ 목록</button><span class="no">${esc(d.doc_no||'임시저장')}</span><span class="bdg b-gray">${esc(catName(d.category_id))}</span>${badges(d)}</div>
-   <h1>${esc(d.title)}</h1>
+   <h1>${esc(d.title)}${DET.can_edit_meta&&!ui.meta?' <button class="btn sm no-print" data-act="metaedit" style="vertical-align:middle">✎ 카테고리·제목</button>':''}</h1>
    <div class="sub">기안 ${esc(U(d.drafter_id))} (${esc(UT(d.drafter_id))}) · 작성 ${tm(d.created_at)}${d.submitted_at?` · 상신 ${tm(d.submitted_at)}`:''}${d.parent_no?` · 원문서 <span class="lnk" style="margin:0" data-act="openid" data-id="${d.parent_id}">${esc(d.parent_no)}</span> v${d.version}`:''}</div>
    ${refs.length||shares.length?`<div class="sub">${refs.length?'참조: '+esc(refs.join(', ')):''}${refs.length&&shares.length?' · ':''}${shares.length?'공람 (승인 후): '+esc(shares.join(', ')):''}</div>`:''}
    <div style="margin-top:4px">${!DET.files.some(f=>!f.voided_at)&&d.status!=='draft'?'<span class="flag">증빙 없음</span>':''}${noDirFin&&d.status!=='draft'?'<span class="flag g">디렉터 기안·재무합의 없음</span>':''}${DET.revisions.length?`<span class="flag g">수정 ${DET.revisions.length}회</span>`:''}</div>
   </div>
   <div class="dright">${DET.can_edit_lines?`<div class="drow"><button class="btn sm le-btn no-print" data-act="lineedit">✎ 결재선 수정</button><div class="le-click" data-act="lineedit" title="눌러서 결재선 수정">${miniStampsHtml(d,DET.lines)}</div></div>`:miniStampsHtml(d,DET.lines)}</div>
  </div>
+ ${metaEdHtml()}
  ${rej?`<div class="warn red" style="margin:0 0 12px"><b>${SL(rej.step_type)} ${esc(U(rej.user_id))} · ${rej.step_type==='agree'?'반대':'반려'}</b> ${tm(rej.acted_at)}<br>${esc(rej.comment)}</div>`:''}
  <div class="card sec"><h3>금액 · ${PT_L[d.payment_type]||'일시불'}${d.payment_type==='recurring'&&d.payment_plan?` <span class="sub">${FREQ_L[d.payment_plan.freq]||''} ${d.payment_plan.count}회 · ${esc(d.payment_plan.start)}부터</span>`:''}</h3><div class="grid2">
   <div><p class="kv-h">집행 예정</p><dl class="kv">
@@ -792,6 +836,7 @@ function renderDetail(){
  </tbody></table></div>
  ${warns.join('')}<div class="warn info">${B.fin_link?'결재가 끝나면 회차가 <b>재무 › 미래자금계획(예정)</b>에 들어가고, 거래등록 실적이 연결될 때까지 남습니다. 재무가 거래등록에서 실제 지급을 등록하면 이 문서가 영수증 대용 증빙이 되고 회차가 집행완료로 처리됩니다.':'예정·실적 금액은 결재 모듈 안에서만 관리되며 재무상태·cashflow에는 반영되지 않습니다.'}</div></div>
  ${(DET.replaces||[]).length?`<div class="warn info" style="margin:10px 0">🔁 <b>고정비 대체</b> — ${DET.replaces.map(x=>`${esc(x.rule_name||'고정비')} ${esc(x.date)} ${cm(x.amount,x.currency||'MXN')}${x.active?'':' <span class="sub">(승인되면 대체)</span>'}`).join(' · ')}<br><span class="sub">이 결재가 그 고정비 회차를 대신합니다 — 고정비 예정은 자금계획에서 빠지고 이 결재로 한 번만 잡힙니다. 반려·삭제되면 고정비 예정이 되살아납니다.</span></div>`:''}
+ ${costLinkHtml()}
  ${DET.commission?commissionCardHtml(DET.commission):''}
  <div class="card sec"><h3>내용<span class="sp"></span>${DET.can_edit_content?'<button class="btn sm" data-act="revise">✎ 내용 수정</button>':''}${DET.can_addend?'<button class="btn sm" data-act="addend">＋ 추가 작성</button>':''}</h3>
   <p class="sub" style="margin:0 0 6px">거래처: ${esc(d.vendor||'—')} · 원문 ${esc(U(d.drafter_id))}${DET.revisions.length?` · 마지막 수정 ${esc(U(DET.revisions[DET.revisions.length-1].editor_id))} ${tm(DET.revisions[DET.revisions.length-1].created_at)}`:''}</p>
@@ -812,7 +857,7 @@ function renderDetail(){
  <div class="abar">${actionsHtml()}</div>`;
 }
 async function openDoc(id){
- ui.view='detail';ui.docId=Number(id);ui.cmtFiles=[];DET=null;render();window.scrollTo(0,0);
+ ui.view='detail';ui.docId=Number(id);ui.cmtFiles=[];DET=null;ui.meta=null;render();window.scrollTo(0,0);
  try{DET=await api('GET','/api/approvals/'+id);const it=LIST.find(x=>same(x.id,id));if(it)it.unread=false;}
  catch(e){toast(errText(e));ui.view='board';}
  render();refreshBell();
@@ -933,7 +978,7 @@ function edInsertText(text){
 /* ─── 작성 ─── */
 function newCd(){return{id:null,category_id:'',title:'',vendor:'',pay_due:'',pay_method:'계좌이체',orig_sub:'',iva_applied:true,currency:'MXN',payment_type:'once',
  plan:{freq:'weekly',count:4,start:todayMX(),per_sub:''},sched:[{due_date:'',amount:''},{due_date:'',amount:''}],body_nodes:[],
- refs:[],shares:[],include_finance:true,exec:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null,replaces:[],replace_choice:null,replace_rule_id:null};}
+ refs:[],shares:[],include_finance:true,exec:true,steps:null,files:[],newFiles:[],parent_no:null,version:1,fx_locked:null,replaces:[],replace_choice:null,replace_rule_id:null,cl:clNew()};}
 function cdFromDet(){
  const d=DET.doc,plan=d.payment_plan||{};
  return{id:d.id,category_id:d.category_id||'',title:d.title,vendor:d.vendor||'',pay_due:d.pay_due||'',pay_method:d.pay_method||'계좌이체',
@@ -943,7 +988,7 @@ function cdFromDet(){
   body_nodes:DET.body_nodes||[],
   refs:DET.viewers.filter(v=>v.kind==='ref').map(v=>v.user_id),shares:DET.viewers.filter(v=>v.kind==='share').map(v=>v.user_id),
   include_finance:d.include_finance,exec:d.exec_required!==false,steps:Array.isArray(d.custom_steps)?d.custom_steps.map(x=>({...x})):null,files:DET.files.slice(),newFiles:[],parent_no:d.parent_no,version:d.version,
-  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:'',replaces:(DET.replaces||[]).map(x=>x.id),replace_choice:DET.replace_choice||null,replace_rule_id:DET.replace_rule_id||null};
+  fx_locked:d.fx_locked_at?{rate:d.fx_rate,date:d.fx_date}:null,doc_no:d.doc_no,revise:false,reason:'',replaces:(DET.replaces||[]).map(x=>x.id),replace_choice:DET.replace_choice||null,replace_rule_id:DET.replace_rule_id||null,cl:clFromDet(DET.cost_link)};
 }
 // 문서 통화 기준 금액 → { sub, iva, total, per, count, rows:[{due_date,amount}] }
 function cdCalc(cd){
@@ -1066,6 +1111,83 @@ function repPaint(){
  }
  el.innerHTML=h;
 }
+/* ═════════ 0332 원가·운반비 연결 — 수입부대비용·수입운송비(5030·5040) → 수입 인보이스 · 운반비(매출출고)(6160) → 매출 인보이스/고객 ═════════
+   작성(cd) · 내용 수정(cd revise) · 디렉터 분류 수정(mt) 공용. p = 'cd' | 'mt' */
+function clNew(){return{keys:[],lab:{},cust:null,invs:[],common:false,q:'',opt:null,optQ:null,loading:false,err:false};}
+function clFromDet(c){
+ const S=clNew();if(!c)return S;
+ (c.imports||[]).forEach(x=>{const k=(x.type==='ship'?'S':'B')+x.id;S.keys.push(k);S.lab[k]={invoice_no:x.invoice_no,cost_ready:x.cost_ready,state:x.deleted?'삭제됨':(x.cost_ready?'원가 승인됨':'')};});
+ const f=c.freight;if(f){S.common=!!f.common;S.cust=f.customer_id||null;S.invs=(f.invoices||[]).map(i=>({...i}));if(!S.cust&&S.invs.length)S.cust=S.invs[0].customer_id;}
+ return S;
+}
+function clKindOf(catId){
+ const L=B.cost_link;if(!L||!L.ready)return null;
+ const cat=B.categories.find(x=>same(x.id,catId)),fc=cat&&cat.fin_category_code;
+ return !fc?null:(L.import_codes||[]).includes(fc)?'import':fc===L.freight_code?'freight':null;
+}
+const clSt=p=>p==='mt'?(ui.meta&&ui.meta.cl):(ui.cd&&ui.cd.cl);
+const clCat=p=>p==='mt'?(ui.meta&&ui.meta.category_id):(ui.cd&&ui.cd.category_id);
+function clMissing(p){
+ const S=clSt(p),k=clKindOf(clCat(p));if(!S||!k)return null;
+ if(k==='import'&&!S.keys.length)return 'import_invoice_required';
+ if(k==='freight'&&!S.common&&!S.cust&&!S.invs.length)return 'freight_link_required';
+ return null;
+}
+function clPayload(p){
+ const S=clSt(p);if(!S||!B.cost_link||!B.cost_link.ready)return undefined;
+ const ids=c=>S.keys.filter(k=>k[0]===c).map(k=>Number(k.slice(1)));
+ return{import_shipment_ids:ids('S'),import_batch_ids:ids('B'),freight_customer_id:S.common?null:(S.cust?Number(S.cust):null),
+  freight_invoice_ids:S.common?[]:S.invs.map(i=>Number(i.id)),freight_common:!!S.common};
+}
+function clLoadImp(p){
+ const S=clSt(p);if(!S||S.loading)return;
+ S.loading=true;S.err=false;const q=S.q;
+ api('GET','/api/approvals/import-invoices?q='+encodeURIComponent(q)+(S.keys.length?'&include='+S.keys.join(','):''))
+  .then(r=>{S.opt=r.items||[];S.optQ=q;}).catch(()=>{S.err=true;S.opt=[];S.optQ=q;})
+  .finally(()=>{S.loading=false;clPaint(p);if(S.q!==S.optQ)clLoadImp(p);});
+}
+function clLoadCust(p){
+ if(ui.clCust||ui.clCustLoading)return;ui.clCustLoading=true;
+ api('GET','/api/approvals/freight-customers').then(r=>{ui.clCust=r.items||[];}).catch(()=>{ui.clCust=[];}).finally(()=>{ui.clCustLoading=false;clPaint(p);});
+}
+function clLoadInv(p,cid){
+ ui.clInv=ui.clInv||{};if(!cid||ui.clInv[cid])return;ui.clInv[cid]='loading';
+ api('GET','/api/approvals/freight-invoices?customer_id='+cid).then(r=>{ui.clInv[cid]=r.items||[];}).catch(()=>{ui.clInv[cid]=[];}).finally(()=>clPaint(p));
+}
+function clPaint(p){
+ const box=$('#cl-'+p),card=$('#clCard-'+p);if(!box||!card)return;
+ const S=clSt(p),k=clKindOf(clCat(p));
+ card.classList.toggle('hidden',!k||!S);if(!k||!S){box.innerHTML='';box.dataset.k='';return;}
+ const ttl=$('#clTtl-'+p);
+ if(ttl)ttl.innerHTML=k==='import'?'📦 수입 인보이스 <span class="req">*</span> <span class="sub">수입부대비용·수입운송비 — 어느 수입 건의 비용인지 고르면, 집행 후 수입 부대비용 분배에서 그 인보이스 입고 건으로 원가 반영됩니다</span>'
+  :'🚚 운반비 귀속 <span class="req">*</span> <span class="sub">운반비(매출출고) — 어느 매출(인보이스·고객)의 배송비인지 고르면 거래등록 운반비와 같이 고객별 손익에 잡힙니다</span>';
+ if(k==='import'){
+  if(S.opt==null&&!S.loading)clLoadImp(p);
+  const chips=S.keys.map(key=>{const L=S.lab[key]||{};return `<span class="pc">${esc(L.invoice_no||key)}${L.cost_ready?' <span class="cl-ok">원가 승인됨</span>':''}<button data-act="climp" data-p="${p}" data-k="${key}" aria-label="제거">×</button></span>`;}).join('');
+  const rows=S.loading&&!S.opt?'<div class="empty" style="padding:14px">불러오는 중…</div>':S.err?'<div class="empty" style="padding:14px">목록을 불러오지 못했습니다</div>'
+   :!(S.opt||[]).length?`<div class="empty" style="padding:14px">${S.q?'검색 결과가 없습니다':'등록된 입고 선적·수입 배치가 없습니다'}</div>`
+   :S.opt.map(o=>{const on=S.keys.includes(o.key);return `<div class="cl-row ${on?'on':''}" data-act="climp" data-p="${p}" data-k="${o.key}"><input type="checkbox" ${on?'checked':''} tabindex="-1"><b>${esc(o.invoice_no)}</b><span class="d">${esc(o.date||'')}</span>${o.cost_ready?'<span class="cl-ok">원가 승인됨</span>':`<span class="cl-wait">${esc(o.state||'')}</span>`}</div>`;}).join('');
+  // 검색칸은 다시 그리지 않는다(입력 중 포커스 유지) — 선택·목록만 갱신
+  if(box.dataset.k!=='import'){box.dataset.k='import';box.innerHTML=`<div class="cl-sel" data-r="sel"></div>
+   <input class="inp" type="search" data-clq="${p}" value="${esc(S.q)}" placeholder="🔍 인보이스 번호 검색 (예: D26-…)">
+   <div class="cl-list" data-r="list"></div>
+   <p class="sub" style="margin:6px 0 0">도착 전 선적도 고를 수 있습니다. 여러 인보이스에 걸친 비용이면 모두 고르세요 — 분배 화면이 입고 수량 비율로 나눕니다.</p>`;}
+  box.querySelector('[data-r="sel"]').innerHTML=chips||'<span class="sub">아직 선택 없음</span>';
+  box.querySelector('[data-r="list"]').innerHTML=rows;
+  return;
+ }
+ // freight
+ if(!S.common){clLoadCust(p);if(S.cust)clLoadInv(p,S.cust);}
+ const custs=ui.clCust||[],inv=S.cust&&Array.isArray((ui.clInv||{})[S.cust])?ui.clInv[S.cust]:null;
+ const chips=S.invs.map(i=>`<span class="pc">#${i.id}${i.sat_no?' · '+esc(i.sat_no):''}${i.customer_name&&!same(i.customer_id,S.cust)?' · '+esc(i.customer_name):''}<button data-act="clinv" data-p="${p}" data-id="${i.id}" aria-label="제거">×</button></span>`).join('');
+ const custName=(custs.find(c=>same(c.id,S.cust))||{}).name||(S.invs[0]&&S.invs[0].customer_name)||'';
+ box.dataset.k='freight';
+ box.innerHTML=`<label class="ck" style="margin-bottom:8px"><input type="checkbox" data-clcom="${p}" ${S.common?'checked':''}> 공통 운반비 — 특정 고객·인보이스 없음 <span class="sub">(손익 화면에서 매출 비중으로 자동 배분)</span></label>
+  ${S.common?'':`<div class="form"><div class="fld"><label>고객</label><select class="inp" data-clcust="${p}"><option value="">${ui.clCust?'고객 선택':'불러오는 중…'}</option>${S.cust&&!custs.some(c=>same(c.id,S.cust))?`<option value="${S.cust}" selected>${esc(custName||'#'+S.cust)}</option>`:''}${custs.map(c=>`<option value="${c.id}" ${same(c.id,S.cust)?'selected':''}>${esc(c.name)}${c.has_inv?'':' (인보이스 없음)'}</option>`).join('')}</select></div>
+   <div class="fld"><label>선택한 매출 인보이스 <span class="sub">복수면 금액을 건수로 균등 배분 · 없으면 고객 공통</span></label><div class="cl-sel">${chips||'<span class="sub">없음 — 고객만 지정</span>'}</div></div></div>
+   ${S.cust?`<div class="cl-list">${inv==null?'<div class="empty" style="padding:14px">불러오는 중…</div>':!inv.length?'<div class="empty" style="padding:14px">이 고객의 게시 인보이스가 없습니다 — 고객 공통으로 저장됩니다</div>'
+    :inv.map(i=>{const on=S.invs.some(x=>same(x.id,i.id));return `<div class="cl-row ${on?'on':''}" data-act="clinv" data-p="${p}" data-id="${i.id}" data-cid="${S.cust}"><input type="checkbox" ${on?'checked':''} tabindex="-1"><span><b>#${i.id}</b> ${esc(i.sat_no||'')}</span><span class="d">${esc(i.inv_date||'')}</span><span class="d">${money(i.total_mxn)}</span></div>`;}).join('')}</div>`:''}`}`;
+}
 function renderCompose(){
  const cd=ui.cd,isDir=B.me.isDirector,others=B.users.filter(u=>u.active&&!same(u.id,B.me.id));
  const cats=B.categories.filter(c=>c.active||same(c.id,cd.category_id));
@@ -1093,6 +1215,7 @@ function renderCompose(){
   <div class="fld"><label>거래처</label><input class="inp" data-f="vendor" value="${esc(cd.vendor)}" placeholder="예: Empaques Regios"></div>
   <div class="fld full"><label>제목 <span class="req">*</span></label><input class="inp" data-f="title" value="${esc(cd.title)}" placeholder="예: 창고 소모품 10월분"></div>
  </div></div>
+ <div class="card sec hidden" id="clCard-cd"><h3 id="clTtl-cd"></h3><div id="cl-cd"></div></div>
  <div class="card sec"><h3>금액 · 결제 방식</h3>
   <div class="form">
    <div class="fld"><label>통화</label><div class="seg">${cd.revise&&cd.fx_locked?`<span class="chip on">${cur}</span><span class="sub">상신 때 환율이 고정되어 통화는 바꿀 수 없습니다</span>`:['MXN','USD'].map(c=>`<button class="chip ${cur===c?'on':''}" data-act="ccur" data-v="${c}">${c==='MXN'?'MXN (페소)':'USD (달러)'}</button>`).join('')}</div></div>
@@ -1121,6 +1244,7 @@ ${cd.revise?` <div class="card sec"><h3>수정 사유 <span class="sub">선택</
  <div class="abar">${cd.id?'<button class="btn danger" data-act="deldraft">🗑 삭제</button>':''}<button class="btn" data-act="csave">임시저장</button><button class="btn pri" data-act="csubmit">상신</button></div>`}`;
 }
 function updateCompose(){
+ clPaint('cd');   // 0332 카테고리에 따라 수입 인보이스 / 운반비 귀속 카드
  const cd=ui.cd;if(!cd||!$('#lprev'))return;
  repLoad();
  if(cd.currency==='USD'&&!cd.fx_locked&&!ui.fx&&!ui.fxLoading&&!ui.fxErr){ui.fxLoading=true;loadFx().finally(()=>{ui.fxLoading=false;});}
@@ -1154,6 +1278,7 @@ async function saveCd(submit){
  if(B.me.isDirector&&!cd.revise){const st=cdSteps(cd),pi=st.findIndex(x=>x.step_type==='pre_ceo');if(pi>=0&&pi!==st.length-1){toast('대표이사 사전승인은 맨 끝에만 둘 수 있습니다');return;}}
  if(cd.revise&&!(c.total>0)){toast('금액을 입력하세요');return;}
  if(submit&&!(c.total>0)){toast('금액을 입력하세요');return;}
+ {const mc=(submit||cd.revise)&&clMissing('cd');if(mc){toast(ERRMSG[mc]);const el=$('#clCard-cd');if(el&&el.scrollIntoView)el.scrollIntoView({block:'center'});return;}}
  if(submit&&!cd.revise&&repRules(cd).length&&!cd.replace_choice){toast(ERRMSG.fixed_cost_choice_required);const rc=$('#cRepCard');if(rc&&rc.scrollIntoView)rc.scrollIntoView({block:'center'});return;}
  if(cd.payment_type==='recurring'&&c.rows.length<2){toast('정기 지급은 첫 지급일과 횟수(2회 이상)가 필요합니다');return;}
  if(cd.payment_type==='installment'){
@@ -1169,7 +1294,8 @@ async function saveCd(submit){
   custom_steps:B.me.isDirector&&!cd.revise?cdSteps(cd).map(x=>({step_type:x.step_type,user_id:Number(x.user_id)})):undefined,
   exec_required:B.me.isDirector&&!cd.revise?cd.exec!==false:undefined,
   replace_choice:cd.revise?undefined:(cd.replace_choice||null),replace_rule_id:cd.revise||cd.replace_choice!=='rule'?undefined:Number(cd.replace_rule_id),
-  replaces_txn_ids:cd.revise?undefined:(cd.replace_choice==='manual'?(cd.replaces||[]).map(Number):(cd.replace_choice==='rule'?undefined:[]))};
+  replaces_txn_ids:cd.revise?undefined:(cd.replace_choice==='manual'?(cd.replaces||[]).map(Number):(cd.replace_choice==='rule'?undefined:[])),
+  cost_link:clPayload('cd')};
  try{
   if(cd.revise){
    const r=await api('PUT',`/api/approvals/${cd.id}/content`,{...body,reason:cd.reason||''});
@@ -1531,7 +1657,29 @@ const H={
  sort(a){const k=a.dataset.k,c=ui.sort;if(c.k!==k)setSort(k,1);else if(c.dir>0)setSort(k,-1);else setSort(null);},
  open(a){openDoc(a.dataset.id);},
  openid(a){openDoc(a.dataset.id);},
- back(){ui.view='board';DET=null;render();},
+ back(){ui.view='board';DET=null;ui.meta=null;render();},
+ // 0332 원가·운반비 연결 · 디렉터 분류 수정
+ climp(a){const p=a.dataset.p,S=clSt(p),k=a.dataset.k;if(!S)return;const i=S.keys.indexOf(k);
+  if(i>=0)S.keys.splice(i,1);else{if(S.keys.length>=30){toast(ERRMSG.too_many_import_invoices);return;}S.keys.push(k);const o=(S.opt||[]).find(x=>x.key===k);if(o)S.lab[k]={invoice_no:o.invoice_no,cost_ready:o.cost_ready,state:o.state};}
+  clPaint(p);},
+ clinv(a){const p=a.dataset.p,S=clSt(p);if(!S)return;const id=Number(a.dataset.id),i=S.invs.findIndex(x=>same(x.id,id));
+  if(i>=0)S.invs.splice(i,1);else{const cid=Number(a.dataset.cid),src=((ui.clInv||{})[cid]||[]).find(x=>same(x.id,id));if(!src)return;
+   if(S.invs.length>=50){toast('인보이스는 50건까지 고를 수 있습니다');return;}
+   S.invs.push({...src,customer_id:cid,customer_name:((ui.clCust||[]).find(c=>same(c.id,cid))||{}).name||''});}
+  clPaint(p);},
+ metaedit(){const d=DET.doc;ui.meta={category_id:d.category_id,title:d.title,reason:'',cl:clFromDet(DET.cost_link)};render();const el=$('.metaed');if(el&&el.scrollIntoView)el.scrollIntoView({block:'start'});},
+ metacancel(){ui.meta=null;render();},
+ async metasave(){
+  const m=ui.meta;if(!m||ui.busy)return;
+  if(!String(m.title||'').trim()){toast(ERRMSG.title_required);return;}
+  const mc=clMissing('mt');if(mc){toast(ERRMSG[mc]);return;}
+  ui.busy=true;
+  try{
+   const r=await api('PUT',`/api/approvals/${DET.doc.id}/meta`,{category_id:Number(m.category_id),title:m.title,cost_link:clPayload('mt'),reason:m.reason||''});
+   ui.meta=null;DET=await api('GET','/api/approvals/'+DET.doc.id);await loadList();
+   toast(r.changes.length?`수정했습니다 · ${r.changes.map(x=>x.label).join(', ')}${r.recategorized?` · 거래등록 실적 ${r.recategorized}건 계정과목 변경`:''}`:'바뀐 내용이 없습니다');render();
+  }catch(e){toast(errText(e));}finally{ui.busy=false;}
+ },
  async bell(){const p=$('#notifPanel');if(p.classList.contains('hidden')){await refreshBell();drawNotif();p.classList.remove('hidden');}else p.classList.add('hidden');},
  async nopen(a){$('#notifPanel').classList.add('hidden');try{await api('POST','/api/approvals/notifications/read',{ids:[Number(a.dataset.id)]});}catch(e){}if(a.dataset.del){toast('삭제된 문서입니다');refreshBell();return;}openDoc(a.dataset.doc);},
  async nall(){await run(()=>api('POST','/api/approvals/notifications/read',{all:true}));await refreshBell();drawNotif();},
@@ -1668,6 +1816,8 @@ document.addEventListener('input',e=>{
  if(t.dataset.sc&&ui.cd){ui.cd.sched[Number(t.dataset.i)][t.dataset.sc]=t.value;updateCompose();}
  if(t.id==='bodyEd'&&ui.cd){clearTimeout(ui.edT);ui.edT=setTimeout(()=>{if(ui.cd&&$('#bodyEd'))ui.cd.body_nodes=serializeEd($('#bodyEd'));},300);}
  if(t.id==='q'){ui.q=t.value;const lb=$('#listBody');if(lb)lb.innerHTML=listHtml();}
+ if(t.dataset.mf&&ui.meta&&t.dataset.mf!=='category_id')ui.meta[t.dataset.mf]=t.value;
+ if(t.dataset.clq){const p=t.dataset.clq,S=clSt(p);if(S){S.q=t.value.trim();clearTimeout(ui.clT);ui.clT=setTimeout(()=>clLoadImp(p),250);}}
 });
 document.addEventListener('change',e=>{
  const t=e.target;
@@ -1678,6 +1828,9 @@ document.addEventListener('change',e=>{
  else if(t.dataset.le&&ui.le){const k=t.dataset.le;if(k==='type')ui.le.rows[Number(t.dataset.i)].step_type=t.value;else if(k==='user')ui.le.rows[Number(t.dataset.i)].user_id=Number(t.value);else if(k==='post')ui.le.post=Number(t.value);else if(k==='addT')ui.le.addT=t.value;else if(k==='addU')ui.le.addU=Number(t.value);}
  else if(t.dataset.kind){getArr(t.dataset.kind)[Number(t.dataset.i)].kind=t.value;}
  else if(t.id==='catSel'){ui.cat=t.value;render();}
+ else if(t.dataset.mf==='category_id'&&ui.meta){ui.meta.category_id=Number(t.value);render();}
+ else if(t.dataset.clcust){const p=t.dataset.clcust,S=clSt(p);if(S){S.cust=t.value?Number(t.value):null;clPaint(p);}}
+ else if(t.dataset.clcom){const p=t.dataset.clcom,S=clSt(p);if(S){S.common=t.checked;clPaint(p);}}
  else if(t.id==='noEvid'){ui.noEvid=t.checked;render();}
  else if(t.id==='sortSel'){const [k,d]=(t.value||'').split(':');setSort(k||null,Number(d)||1);}
  else if(t.dataset.addto&&t.value&&ui.cd){ui.cd[t.dataset.addto].push(Number(t.value));render();}
@@ -1701,6 +1854,7 @@ function render(){
  $('#boardHead').innerHTML=ui.view==='board'?renderBoardHead():'';
  $('#app').innerHTML=({board:renderBoard,detail:renderDetail,compose:renderCompose,ceo:renderCeo,report:renderReport,settings:renderSettings})[ui.view]();
  if(ui.view==='compose')updateCompose();
+ if(ui.view==='detail'&&ui.meta)clPaint('mt');
  syncStick();
 }
 // 상단 고정 위치 = 공통 메뉴(rnav, position:fixed) 높이 = body padding-top. 고정 영역이 화면의 65%를 넘으면(낮은 화면) 고정 해제

@@ -14,6 +14,7 @@ import { n, round2 } from './approval.js';
 import { expandBetween } from './recurring.js';
 import { getUsdMxnRate } from './fx.js';
 import { commissionApprovalReady, linkForDoc } from './commissionApproval.js';   // 0287c 커미션 문서는 생성 즉시 예정
+import { syncCostLinkTxns, FREIGHT_CODE } from './approvalCostLink.js';   // 0332 운반비(6160) 태그
 
 export const APPROVAL_MEMO_PREFIX = '[전자결재]';
 export const DEFAULT_EXP_CODE = '6130';            // 기타경비 — 카테고리에 과목이 없을 때
@@ -198,8 +199,37 @@ export async function syncApprovalDoc(q, docId, actorId = null) {
       await q(`UPDATE approval_documents SET actual_total=$2, updated_at=now() WHERE id=$1`, [docId, actual]);
     }
   }
+  // ⑤ 0332 운반비(6160) — 결재에서 고른 매출 인보이스·고객 태그를 예정(·빈 실적) 거래에 맞춘다
+  out.cost = await syncCostLinkTxns(q, docId);
+  if (out.cost.tagged || out.cost.cleared) out.changed = true;
   out.changed = out.changed || finTouched || out.plans.created + out.plans.updated + out.plans.removed > 0;
   return out;
+}
+
+// 0332 결재 완료 후 카테고리 변경(디렉터) — 이 결재로 등록된 거래등록 실적의 계정과목도 새 재무 과목으로 바꾼다.
+//   거래등록에서 이미 다른 과목으로 고쳐 둔 실적(옛 과목과 다름)은 건드리지 않는다. 예정 거래는 syncApprovalDoc 이 맞춘다.
+//   반환: 바뀐 실적 거래 id 목록
+export async function recategorizeDocActuals(q, docId, oldCatId, newCatId, actorId = null) {
+  if (!(await approvalFinReady(q))) return [];
+  const codeOf = async (cid) => {
+    if (!cid) return DEFAULT_EXP_CODE;
+    const r = (await q(`SELECT fin_category_code AS c FROM approval_categories WHERE id=$1`, [cid])).rows[0];
+    return (r && r.c) || DEFAULT_EXP_CODE;
+  };
+  const oldCode = await codeOf(oldCatId), newCode = await codeOf(newCatId);
+  if (oldCode === newCode) return [];
+  if (!(await q(`SELECT 1 FROM categories WHERE code=$1`, [newCode])).rows.length) return [];
+  const rows = (await q(
+    `UPDATE transactions t SET category_code=$3, updated_by=$4
+       FROM approval_payments p
+      WHERE p.document_id=$1 AND t.id=p.txn_id AND t.status='actual' AND t.deleted_at IS NULL AND t.category_code IS NOT DISTINCT FROM $2
+      RETURNING t.id, t.amount_mxn`, [docId, oldCode, newCode, actorId])).rows;
+  if (rows.length && oldCode === FREIGHT_CODE) {
+    const fin = await import('./routes/financeRoutes.js');
+    for (const r of rows) await fin.syncFreightTag(q, Number(r.id), { categoryCode: newCode, prevCategoryCode: FREIGHT_CODE, amountMxn: n(r.amount_mxn), tag: null });
+  }
+  if (rows.length) await event(q, docId, actorId, 'fin_recat', `카테고리 변경 → 거래등록 실적 ${rows.length}건 계정과목 ${oldCode} → ${newCode}`);
+  return rows.map((r) => Number(r.id));
 }
 
 // ═══════ 0313 전자결재 ↔ 고정비 회차 대체 (2026-11-03 디렉터) ═══════

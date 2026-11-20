@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수입 부대비용 분배 (ic-0818b)</title>
+<title>Refatrix ERP · 수입 부대비용 분배 (ic-1120a)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -279,7 +279,7 @@
         +'<td>'+(i.used?'⊘':'<input type="checkbox" class="fin-chk" data-id="'+i.id+'" style="width:auto">')+'</td>'
         +'<td>'+escH(i.tx_date||'')+'</td>'
         +'<td>'+escH(i.category_code||'')+' '+escH(i.category_name||'')+'</td>'
-        +'<td>'+escH(i.memo||'')+'<span class="hint" style="margin:0">'+escH(orig)+'</span></td>'
+        +'<td>'+escH(i.memo||'')+'<span class="hint" style="margin:0">'+escH(orig)+'</span>'+apInvHtml(i)+'</td>'
         +'<td class="num">'+fmt(i.amount_mxn)+'</td>'
         +'<td>'+(i.used?('<span class="badge b-closed">사용됨 '+escH(i.used_doc_no||('#'+i.used_doc_id))+'</span>'):'<span class="badge b-open">미사용</span>')+'</td>'
         +'</tr>';
@@ -301,6 +301,12 @@
     paintFinBar(d);
   }
 
+  // 0332 전자결재에서 고른 수입 인보이스 표시 — 「명세에 추가」하면 그 인보이스의 승인 배치가 분배 대상으로 자동 선택된다
+  function apInvHtml(i){
+    const a=i&&i.approval; if(!a||!a.invoices||!a.invoices.length) return '';
+    return '<div style="margin-top:3px;font-size:11.5px"><span class="badge b-open" title="전자결재 '+escH(a.doc_no||'')+'">📄 '+escH(a.doc_no||'전자결재')+'</span> 수입 인보이스 '
+      +a.invoices.map(x=>'<b>'+escH(x.invoice_no)+'</b>'+(x.cost_ready?'':' <span style="color:#9a6b12">(배치 승인 전)</span>')).join(', ')+'</div>';
+  }
   function toggleFin(id,on,tr){
     if(on) finSel.add(id); else finSel.delete(id);
     if(tr) tr.classList.toggle('fin-sel',on);
@@ -335,15 +341,25 @@
         label:(i.memo||i.category_name||'부대비용').slice(0,80),
         amount:Number(i.amount_mxn||0),
         currency:'MXN',
-        invoice_no:guessInvoice(i.memo),
+        invoice_no:((i.approval&&i.approval.invoices)||[]).map(x=>x.invoice_no).join(', ').slice(0,60)||guessInvoice(i.memo),   // 0332 결재 인보이스 우선(결재 메모의 [전자결재] 를 인보이스로 오인 방지)
         transaction_id:i.id,
         note:note,
       });
     });
     const n=sel.length;
     closeFin();
+    // 0332 전자결재에서 고른 수입 인보이스의 승인 배치 → 분배 대상 자동 선택
+    const want=new Set(sel.flatMap(i=>(i.approval&&i.approval.batch_ids)||[]).map(Number));
+    const pend=[...new Set(sel.flatMap(i=>(i.approval&&i.approval.pending)||[]))];
+    let picked=0;
+    document.querySelectorAll('.b-chk').forEach(c=>{if(want.has(Number(c.value))&&!c.checked){c.checked=true;picked++;}});
+    const miss=[...want].filter(id=>!document.querySelector('.b-chk[value="'+id+'"]')).length;
     const m=$('formMsg'); m.className='msg ok';
-    m.textContent='재무 실적 '+n+'건을 명세에 추가했습니다. 금액은 집행 시점 실환율로 환산된 MXN 값입니다.';
+    m.textContent='재무 실적 '+n+'건을 명세에 추가했습니다. 금액은 집행 시점 실환율로 환산된 MXN 값입니다.'
+      +(want.size?(' 전자결재에서 고른 수입 인보이스의 입고 건 '+picked+'개를 분배 대상으로 선택했습니다.'):'')
+      +(miss?(' (목록에 없는 배치 '+miss+'개 — 새로고침 후 확인)'):'')
+      +(pend.length?(' ⚠ 아직 원가 승인 전인 인보이스: '+pend.join(', ')+' — 입고 배치 승인 후 분배하세요.'):'');
+    if(pend.length) m.className='msg err';
   }
 
   // 분배 대상에 아직 안 뜨는 마감 선적 안내(0178, 2026-08-18) —
@@ -496,7 +512,7 @@
   $('finQ').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadFin();}});
   $('finOnly').addEventListener('change',loadFin);
 
-  console.log('refatrix-importcost build ic-0814a');
+  console.log('refatrix-importcost build ic-1120a');
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();

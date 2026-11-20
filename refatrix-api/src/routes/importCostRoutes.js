@@ -7,6 +7,7 @@ import { getRateForDate } from '../fx.js';
 import { logEvent } from '../audit.js';
 import { consumeBackorder, releaseBackorder } from '../poBackorder.js';
 import { resolveBatchReceipt, reverseReceiptResolutions } from '../shortageReceipt.js';   // 0277
+import { importLinksForTxns } from '../approvalCostLink.js';   // 0332 전자결재에서 고른 수입 인보이스
 
 // 한 입고 건의 총수량 (분배 비율 기준)
 async function batchTotalQty(c, batchId) {
@@ -574,9 +575,12 @@ export default async function importCostRoutes(app) {
         ORDER BY t.${dateCol} DESC NULLS LAST, t.id DESC
         LIMIT 300`, params)).rows;
 
+    // 0332 전자결재로 집행된 지출이면 결재에서 고른 수입 인보이스 → 분배 대상(승인 배치) 자동 선택에 쓴다
+    const apLinks = await importLinksForTxns((t, p) => query(t, p), rows.map((r) => r.id));
     const items = rows.map((r) => {
       const amountMxn = round2(Number(r.amount_mxn || 0));
       return {
+        approval: apLinks[Number(r.id)] || null,
         id: Number(r.id),
         tx_date: r.tx_date ? String(r.tx_date).slice(0, 10) : '',
         category_code: r.category_code,

@@ -9,7 +9,9 @@ import { authGuard } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { syncApprovalDoc, paymentFinanceMap, approvalFinReady, DEFAULT_EXP_CODE, detachPlans,
   replaceReady, normReplaceIds, recurringCandidates, saveReplaceIds, replacesForDoc, copyReplaceIds,
-  ruleChoiceReady, normRuleChoice, fixedCostRules, applyRuleChoice, ruleChoiceMissing, ruleChoiceForDoc } from '../approvalFinance.js';   // 0258 자금 연동
+  ruleChoiceReady, normRuleChoice, fixedCostRules, applyRuleChoice, ruleChoiceMissing, ruleChoiceForDoc, recategorizeDocActuals } from '../approvalFinance.js';   // 0258 자금 연동
+import { costLinkReady, normCostLink, saveCostLink, costLinkMissing, costLinkForDoc, costLinkSummary, copyCostLink,
+  importInvoiceOptions, freightCustomers, freightInvoices, IMPORT_COST_CODES, FREIGHT_CODE } from '../approvalCostLink.js';   // 0332 원가·운반비 연결
 import { commissionApprovalReady, linkForDoc } from '../commissionApproval.js';   // 0287 커미션 지급승인 문서
 import {
   APPROVAL_FILE_BODY_LIMIT, APPROVAL_FILE_MAX_BYTES, fileMaxBytes, fileExt, KINDS, EXEC_KINDS, PAY_METHODS, STEP_LABEL, REQUEST_KIND,
@@ -247,6 +249,7 @@ function draftFields(body) {
     shares: Array.isArray(b.shares) ? [...new Set(b.shares.map(Number).filter(Boolean))] : [],
     replaces: normReplaceIds(b.replaces_txn_ids),   // 0313 대체할 고정비 회차(null = 입력 없음 → 유지)
     rc: normRuleChoice(b),                          // 0314 고정비 선택(SAT·SUA… / 고정비 아님 / 직접)
+    cost: normCostLink(b),                          // 0332 수입 인보이스(5030·5040) · 운반비 귀속(6160) — undefined = 유지
   };
 }
 // 임시저장 문서의 회차를 새 일정으로 교체(집행 전이라 안전)
@@ -257,6 +260,12 @@ async function saveSchedule(q, docId, rows) {
     await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn) VALUES ($1,$2,$3,$4,$4)`,
       [docId, r.seq, r.due_date, r.amount]);
   }
+}
+// 0332 원가·운반비 연결 저장 — 잘못된 선택은 400
+async function saveCost(q, id, cost) {
+  const r = await saveCostLink(q, id, cost);
+  if (r && r.error) throw new Stop('bad_input', { detail: r.error });
+  return r;
 }
 const DRAFT_SET = `category_id=$2, title=$3, vendor=$4, body=$5, body_rich=$6, pay_due=$7, pay_method=$8, iva_applied=$9,
   include_finance=$10, currency=$11, payment_type=$12, payment_plan=$13, orig_sub=$14, orig_iva=$15, orig_total=$16`;
@@ -363,6 +372,7 @@ export default async function approvalRoutes(app) {
       kinds: KINDS, exec_kinds: EXEC_KINDS, pay_methods: PAY_METHODS, step_label: STEP_LABEL,
       currencies: CURRENCIES, payment_types: PAYMENT_TYPE_LABEL, freqs: FREQS, schedule_max: SCHEDULE_MAX,
       file_max_bytes: APPROVAL_FILE_MAX_BYTES,
+      cost_link: { ready: await costLinkReady(query), import_codes: IMPORT_COST_CODES, freight_code: FREIGHT_CODE },   // 0332
       unread,
     };
   });
@@ -476,8 +486,10 @@ export default async function approvalRoutes(app) {
     } catch (e) { if (!e || e.code !== '42P01') throw e; }
     const replaces = await replacesForDoc(query, id);   // 0313 이 결재가 대체하는 고정비 회차
     const ruleChoice = await ruleChoiceForDoc(query, id);   // 0314
+    const costLink = await costLinkForDoc(query, id);       // 0332
     return {
-      commission, replaces, ...ruleChoice,
+      commission, replaces, ...ruleChoice, cost_link: costLink,
+      can_edit_meta: ctx.isDirector && b.doc.status !== 'draft',   // 0332 진행·완료 문서의 카테고리·제목·원가 연결 수정
       doc: { ...docOut, stage: stageKey(b.doc, b.lines), variance_pct: variancePct(b.doc), parent_no: parent ? parent.doc_no : null },
       body_nodes: rich.ok ? rich.nodes : [{ t: 'p', v: b.doc.body || '' }],
       payments,
@@ -552,6 +564,7 @@ export default async function approvalRoutes(app) {
     return tx(reply, async (q) => {
       const id = Number((await q(`INSERT INTO approval_documents(title, drafter_id) VALUES ($1,$2) RETURNING id`, [f.title, uid])).rows[0].id);
       await q(`UPDATE approval_documents SET ${DRAFT_SET} WHERE id=$1`, draftArgs(id, f));
+      await saveCost(q, id, f.cost);   // 0332
       await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
@@ -571,6 +584,7 @@ export default async function approvalRoutes(app) {
       if (!b || !sameId(b.doc.drafter_id, uid)) throw new Stop('not_found');
       if (b.doc.status !== 'draft') throw new Stop('bad_state');
       await q(`UPDATE approval_documents SET ${DRAFT_SET}, updated_at=now() WHERE id=$1`, draftArgs(id, f));
+      await saveCost(q, id, f.cost);   // 0332
       await saveSchedule(q, id, f.schedule);
       await saveViewers(q, id, uid, f);
       await saveCustomSteps(q, req, id, uid);
@@ -677,6 +691,10 @@ export default async function approvalRoutes(app) {
       // 0314 고정비 과목(세금과공과 등)은 어느 고정비인지(또는 고정비 아님) 골라야 상신 — 이중 계상 방지
       const missRules = await ruleChoiceMissing(q, id);
       if (missRules) throw new Stop('bad_input', { detail: 'fixed_cost_choice_required', rules: missRules });
+      // 0332 수입부대비용·수입운송비는 수입 인보이스, 운반비(매출출고)는 매출 인보이스·고객(또는 공통)을 골라야 상신
+      await saveCostLink(q, id, undefined);   // 카테고리에 맞지 않는 옛 선택 정리
+      const missCost = await costLinkMissing(q, id);
+      if (missCost) throw new Stop('bad_input', { detail: missCost });
       await applyRuleChoice(q, id, {}, { director: req.ctx.perm.role === 'director', actorId: uid });
       // 환율 고정(USD) → MXN 확정 → 기준액·결재선은 확정된 MXN 으로 판단
       const money = await applyMoney(q, id, { lock: true });
@@ -935,6 +953,7 @@ export default async function approvalRoutes(app) {
            FROM approval_documents WHERE id=$1 RETURNING id`, [id])).rows[0].id);
       await q(`INSERT INTO approval_payments(document_id, seq, due_date, planned_amount, planned_mxn)
                SELECT $2, seq, due_date, planned_amount, planned_mxn FROM approval_payments WHERE document_id=$1`, [id, nid]);
+      await copyCostLink(q, id, nid);     // 0332 원가·운반비 연결도 이어받는다
       await copyReplaceIds(q, id, nid);   // 0313 대체 고정비 선택도 이어받는다(반려로 되살아난 회차를 승인 시 다시 숨김)
       await applyMoney(q, nid);       // USD 면 오늘 환율로 미리보기(상신 때 새로 고정)
       await q(`INSERT INTO approval_files(document_id, kind, stage, file_name, mime_type, file_size, sha256, file_data,
@@ -1069,12 +1088,16 @@ export default async function approvalRoutes(app) {
       if (b.doc.fx_locked_at && f.currency !== b.doc.currency) throw new Stop('bad_input', { detail: 'currency_locked' });
       f.include_finance = b.doc.include_finance;                    // 결재선 성격 값은 결재선 수정으로만
       const before = await docState(q, id);
+      const costBefore = costLinkSummary(await costLinkForDoc(q, id));
       await q(`UPDATE approval_documents SET ${DRAFT_SET}, updated_at=now() WHERE id=$1`, draftArgs(id, f));
+      await saveCost(q, id, f.cost);   // 0332
       await saveSchedule(q, id, f.schedule);                        // 진행 중 = 집행 전이라 회차 교체 안전
       await applyRuleChoice(q, id, {}, { director: req.ctx.perm.role === 'director', actorId: ctx.uid });   // 0314 지급일이 바뀌면 대체 회차도 그 달로
       const money = await applyMoney(q, id, { lock: true });        // USD 는 상신 때 고정한 환율 그대로
       const after = await docState(q, id);
       const changes = diffContent(before, after);
+      const costAfter = costLinkSummary(await costLinkForDoc(q, id));
+      if (costBefore !== costAfter) changes.push({ field: 'cost_link', label: '원가·운반비 연결', old: costBefore, new: costAfter });
       if (!changes.length) return { ok: true, changes: [] };
       const step = editorStep(ctx, b.lines);
       const reason = cleanText(req.body?.reason, 500)?.trim() || null;
@@ -1106,6 +1129,69 @@ export default async function approvalRoutes(app) {
       await syncApprovalDoc(q, id, ctx.uid);   // 0287c 결재 중 금액·일정 수정 → 예정 맞춤
       return { ok: true, changes, pre_added: preAdded, planned_total: money.planned_total };
     });
+  });
+
+  // ═══════ 0332 — 진행 중·완료 문서의 카테고리·제목·원가 연결 수정(디렉터) ═══════
+  //   body: { category_id?, title?, cost_link?, reason } — 보낸 항목만 바꾼다. 금액·일정·결재선은 그대로.
+  //   카테고리가 바뀌면: 자금계획 예정의 계정과목(syncApprovalDoc) + 이 결재로 등록된 거래등록 실적의 계정과목도 새 과목으로.
+  //   결재선은 다시 만들지 않는다(필요하면 「결재선 수정」). 수정 전 값은 「수정 이력」에 남고 기안자에게 알림.
+  app.put('/api/approvals/:id/meta', guard, async (req, reply) => {
+    const id = Number(req.params.id);
+    const body = req.body || {};
+    return tx(reply, async (q) => {
+      const settings = await loadSettings(q);
+      const ctx = ctxOf(req, settings);
+      const b = await loadBundle(q, id, true);
+      if (!b || !canSeeDoc(ctx, b.doc, b.lines, b.viewers)) throw new Stop('not_found');
+      if (!ctx.isDirector) throw new Stop('director_only');
+      if (b.doc.status === 'draft') throw new Stop('bad_state', { detail: 'use_editor' });
+      let title = b.doc.title, catId = b.doc.category_id;
+      if ('title' in body) {
+        const t = cleanText(body.title, 200);
+        if (!t || !t.trim()) throw new Stop('bad_input', { detail: 'title_required' });
+        title = t.trim();
+      }
+      if ('category_id' in body) {
+        catId = Number(body.category_id);
+        if (!Number.isInteger(catId) || catId <= 0) throw new Stop('bad_input', { detail: 'category_required' });
+        if (!(await q(`SELECT 1 FROM approval_categories WHERE id=$1`, [catId])).rows.length) throw new Stop('bad_input', { detail: 'category_missing' });
+      }
+      const before = await docState(q, id);
+      const costBefore = costLinkSummary(await costLinkForDoc(q, id));
+      await q(`UPDATE approval_documents SET title=$2, category_id=$3, updated_at=now() WHERE id=$1`, [id, title, catId]);
+      await saveCost(q, id, normCostLink(body));
+      const after = await docState(q, id);
+      const changes = diffContent(before, after).filter((c) => ['title', 'category'].includes(c.field));
+      const costAfter = costLinkSummary(await costLinkForDoc(q, id));
+      if (costBefore !== costAfter) changes.push({ field: 'cost_link', label: '원가·운반비 연결', old: costBefore, new: costAfter });
+      if (!changes.length) return { ok: true, changes: [] };
+      const reason = cleanText(body.reason, 500)?.trim() || null;
+      await q(`INSERT INTO approval_revisions(document_id, editor_id, step_type, reason, changes, snapshot) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, ctx.uid, 'director_override', reason, JSON.stringify(changes), JSON.stringify(before)]);
+      await event(q, id, ctx.uid, 'edit', 'director',
+        [...changes.map((c) => `${c.label}: ${c.old || '—'} → ${c.new || '—'}`), reason ? `사유: ${reason}` : null].filter(Boolean).join('\n'));
+      await notify(q, b.doc.drafter_id, id, '문서 수정 (디렉터)', changes.map((c) => c.label).join(', '), ctx.uid);
+      let recat = [];
+      if (!sameId(before.category_id, catId)) recat = await recategorizeDocActuals(q, id, before.category_id, catId, ctx.uid);
+      await syncApprovalDoc(q, id, ctx.uid);   // 예정 계정과목 · 운반비 태그 맞춤
+      return { ok: true, changes, recategorized: recat.length };
+    });
+  });
+
+  // 0332 작성 화면 목록 — 수입 인보이스(5030·5040) · 운반비 고객/매출 인보이스(6160). 모든 기안자가 쓴다(원가 금액 없음).
+  app.get('/api/approvals/import-invoices', guard, async (req) => {
+    if (!(await costLinkReady(query))) return { ready: false, items: [] };
+    const include = String(req.query.include || '').split(',').filter((k) => /^[SB]\d+$/.test(k)).slice(0, 30);
+    return { ready: true, items: await importInvoiceOptions(query, { search: req.query.q, include }) };
+  });
+  app.get('/api/approvals/freight-customers', guard, async (req) => {
+    if (!(await costLinkReady(query))) return { ready: false, items: [] };
+    return { ready: true, items: await freightCustomers(query, { search: req.query.q }) };
+  });
+  app.get('/api/approvals/freight-invoices', guard, async (req, reply) => {
+    const cid = Number(req.query.customer_id);
+    if (!Number.isInteger(cid) || cid <= 0) return fail(reply, 'bad_input', { detail: 'bad_customer' });
+    return { items: await freightInvoices(query, cid) };
   });
 
   // 추가 작성 — 원문은 그대로, 결재자·디렉터 의견/내용(그림 포함)을 덧붙인다. 파일은 /files 에 addendum_id 로.
