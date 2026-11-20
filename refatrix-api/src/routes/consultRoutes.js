@@ -30,6 +30,9 @@ import {
   splitTranscript, buildConsultMergePrompt, mergeConsultSummaries, TRANSCRIPT_CHUNK_MAX,
 } from '../consultAi.js';
 import { splitB64Segment, SPLIT_MAX_BYTES, SPLIT_MAX_MS } from '../audioSplit.js';
+import {
+  hasQuickCols, resetQuickColsCache, syncConsultVisitSafe, mirrorConsultPendingDone,
+} from '../consultVisitSync.js';
 import { sttModelName, redactSecrets, isDurationLimitError, STT_DEFAULT_MODEL } from '../sttModel.js';
 import {
   convertToSegments, findFfmpeg, canPassThrough, whisperMimeOf, fileMimeOf, cleanFileName,
@@ -68,6 +71,16 @@ const LIST_MAX = 500;
 const INSIGHT_MAX = 60;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// ── 📱 원클릭 빠른 녹음 (2026-11-20 · 0333) ─────────────────────────────
+//   휴대폰 하단 🎙 버튼 → 위치·녹음이 바로 시작된다. 업체명 등은 비워 둬도 되고 나중에 넣는다.
+//   업체명 컬럼은 NOT NULL 이라 비워 둔 경우 이 자리표시자를 넣고 info_pending=TRUE 로 표시한다.
+//   업체명을 넣거나 기존 고객을 고르면 info_pending 은 자동으로 FALSE 가 된다.
+export const QUICK_PLACEHOLDER = '(업체 미입력)';
+//   0333 적용 여부(hasQuickCols) — 적용 전이면 예전 컬럼만 쓴다. 빠른 녹음은 영업활동 방문 기록에도
+//   남는다(consultVisitSync.js — 실패해도 상담 저장·녹음·요약은 막지 않음).
+export { hasQuickCols, resetQuickColsCache };
+function isQuickFlag(v) { return v === true || v === 1 || v === '1' || v === 'true'; }
 
 export function consultRecEnabled() { return process.env.CONSULT_REC_ENABLED !== '0'; }
 export function sttReady() { return !!process.env.OPENAI_API_KEY; }
@@ -315,7 +328,7 @@ export async function processOne(row) {
   //    긴 상담(2~3시간)은 전사문을 구간으로 나눠 각각 요약한 뒤 하나로 합친다 —
   //    예전처럼 앞부분만 잘라 쓰면 뒤 내용이 통째로 빠지기 때문.
   const ctxFor = {
-    companyName: c.company_name, contactName: c.contact_name,
+    companyName: c.company_name === QUICK_PLACEHOLDER ? null : c.company_name, contactName: c.contact_name,
     placeLabel: c.place_label, consultDate: d10(c.consult_date), mode: row.mode,
   };
   const chunks = splitTranscript(transcript, TRANSCRIPT_CHUNK_MAX);
@@ -362,6 +375,7 @@ export async function processOne(row) {
     userId: Number(row.created_by), action: 'update', target: `consult_recording:${recId}`,
     detail: { consult_id: Number(c.id), action_items: summary.action_items.length },
   });
+  await syncConsultVisitSafe(Number(c.id));     // 📱 빠른 녹음이면 방문 기록에도 요약·펜딩 반영
   return true;
 }
 
@@ -521,8 +535,10 @@ export async function buildConsultList(perm, opts = {}) {
     conds.push(`(c.company_name ILIKE $${params.length} OR c.contact_name ILIKE $${params.length})`);
   }
 
+  const qc = await hasQuickCols();
   const rows = (await query(
     `SELECT c.id, c.consult_date, c.company_name, c.customer_id, c.contact_name, c.wa_phone, c.email,
+            ${qc ? 'c.contact_title, c.info_pending,' : ''}
             c.geo_lat, c.geo_lng, c.geo_accuracy, c.place_label, c.note,
             c.private_by, c.private_at, c.created_by, c.created_at,
             u.name AS by_name, u.login_id AS by_login
@@ -577,6 +593,8 @@ export async function buildConsultList(perm, opts = {}) {
       company_name: r.company_name,
       customer_id: r.customer_id != null ? Number(r.customer_id) : null,
       contact_name: r.contact_name || null,
+      contact_title: r.contact_title || null,
+      info_pending: !!r.info_pending,
       wa_phone: r.wa_phone || null,
       email: r.email || null,
       geo_lat: r.geo_lat != null ? Number(r.geo_lat) : null,
@@ -623,8 +641,14 @@ export default async function consultRoutes(app) {
   app.post('/api/consults', { preHandler: [authGuard, requirePageEdit(PAGE)] }, async (req, reply) => {
     const perm = req.ctx.perm;
     const b = req.body || {};
-    const company = txt(b.company_name, 200);
-    if (!company) return reply.code(400).send({ error: 'company_required' });
+    const quick = isQuickFlag(b.quick);
+    let company = txt(b.company_name, 200);
+    if (company === QUICK_PLACEHOLDER) company = null;
+    // 📱 빠른 녹음은 업체명 없이 먼저 만든다(나중에 입력) — 일반 등록은 예전처럼 필수
+    if (!company && !quick) return reply.code(400).send({ error: 'company_required' });
+    const pending = !company;
+    if (!company) company = QUICK_PLACEHOLDER;
+    const qc = await hasQuickCols();
     const date = DATE_RE.test(String(b.consult_date)) ? String(b.consult_date) : mxTodayStr(new Date());
     const lat = b.geo_lat == null || b.geo_lat === '' ? null : Number(b.geo_lat);
     const lng = b.geo_lng == null || b.geo_lng === '' ? null : Number(b.geo_lng);
@@ -633,15 +657,21 @@ export default async function consultRoutes(app) {
       return reply.code(400).send({ error: 'bad_geo' });
     }
     const custId = b.customer_id ? Number(b.customer_id) : null;
-    const r = (await query(
-      `INSERT INTO sales_consults
-         (consult_date, company_name, customer_id, contact_name, wa_phone, email,
-          geo_lat, geo_lng, geo_accuracy, place_label, note, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      [date, company, Number.isInteger(custId) && custId > 0 ? custId : null,
-        txt(b.contact_name, 200), txt(b.wa_phone, 40), txt(b.email, 200),
-        lat, lng, acc != null && Number.isFinite(acc) ? acc : null,
-        txt(b.place_label, 300), txt(b.note, 4000), perm.userId])).rows[0];
+    const vals = [date, company, Number.isInteger(custId) && custId > 0 ? custId : null,
+      txt(b.contact_name, 200), txt(b.wa_phone, 40), txt(b.email, 200),
+      lat, lng, acc != null && Number.isFinite(acc) ? acc : null,
+      txt(b.place_label, 300), txt(b.note, 4000), perm.userId];
+    // 0333 전이면 자리표시자 업체명만으로 만든다(화면은 자리표시자로 「정보 입력 필요」 판단)
+    const r = (await query(qc
+      ? `INSERT INTO sales_consults
+           (consult_date, company_name, customer_id, contact_name, wa_phone, email,
+            geo_lat, geo_lng, geo_accuracy, place_label, note, created_by, contact_title, info_pending, quick_rec)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`
+      : `INSERT INTO sales_consults
+           (consult_date, company_name, customer_id, contact_name, wa_phone, email,
+            geo_lat, geo_lng, geo_accuracy, place_label, note, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+      qc ? [...vals, txt(b.contact_title, 120), pending, quick] : vals)).rows[0];
     const id = Number(r.id);
     // 수기 펜딩(선택)
     for (const p of (Array.isArray(b.pendings) ? b.pendings : []).slice(0, 20)) {
@@ -651,8 +681,11 @@ export default async function consultRoutes(app) {
         `INSERT INTO sales_consult_pendings (consult_id, content, category, due_date) VALUES ($1,$2,$3,$4)`,
         [id, content, normCat(p && p.category), (p && DATE_RE.test(String(p.due_date))) ? String(p.due_date) : null]);
     }
-    await logEvent({ userId: perm.userId, action: 'create', target: `consult:${id}`, detail: { company, date } });
-    return { id, consult_date: date, company_name: company };
+    await logEvent({ userId: perm.userId, action: 'create', target: `consult:${id}`, detail: { company, date, quick } });
+    // 📱 빠른 녹음 → 영업활동 방문 기록(위치가 있으면 지금, 없으면 위치가 들어올 때)
+    const sv = quick ? await syncConsultVisitSafe(id, req.log) : null;
+    return { id, consult_date: date, company_name: company, info_pending: pending,
+      visit_id: sv && sv.visit_id ? Number(sv.visit_id) : null };
   });
 
   // ── 상담 수정(본인 또는 디렉터) ──
@@ -663,11 +696,14 @@ export default async function consultRoutes(app) {
     const b = req.body || {};
     const sets = []; const params = [Number(c.id)];
     const put = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+    const qc = await hasQuickCols();
+    let resolved = false;               // 업체가 정해졌다 → 「정보 입력 필요」 해제
     if (b.company_name !== undefined) {
       const v = txt(b.company_name, 200);
-      if (!v) return reply.code(400).send({ error: 'company_required' });
-      put('company_name', v);
+      if (!v || v === QUICK_PLACEHOLDER) return reply.code(400).send({ error: 'company_required' });
+      put('company_name', v); resolved = true;
     }
+    if (b.contact_title !== undefined && qc) put('contact_title', txt(b.contact_title, 120));
     if (b.consult_date !== undefined) {
       if (!DATE_RE.test(String(b.consult_date))) return reply.code(400).send({ error: 'bad_date' });
       put('consult_date', String(b.consult_date));
@@ -679,8 +715,11 @@ export default async function consultRoutes(app) {
     if (b.note !== undefined) put('note', txt(b.note, 4000));
     if (b.customer_id !== undefined) {
       const n = b.customer_id ? Number(b.customer_id) : null;
-      put('customer_id', Number.isInteger(n) && n > 0 ? n : null);
+      const ok = Number.isInteger(n) && n > 0;
+      put('customer_id', ok ? n : null);
+      if (ok) resolved = true;
     }
+    if (resolved && qc) put('info_pending', false);
     if (b.geo_lat !== undefined && b.geo_lng !== undefined) {
       const lat = Number(b.geo_lat), lng = Number(b.geo_lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return reply.code(400).send({ error: 'bad_geo' });
@@ -691,7 +730,8 @@ export default async function consultRoutes(app) {
     sets.push('updated_at = now()');
     await query(`UPDATE sales_consults SET ${sets.join(', ')} WHERE id = $1`, params);
     await logEvent({ userId: perm.userId, action: 'update', target: `consult:${c.id}` });
-    return { ok: true, id: Number(c.id) };
+    const sv = await syncConsultVisitSafe(Number(c.id), req.log);   // 빠른 녹음이면 짝 방문도 맞춤
+    return { ok: true, id: Number(c.id), visit_id: sv && sv.visit_id ? Number(sv.visit_id) : null };
   });
 
   // ── 상담 삭제(소프트) ──
@@ -701,6 +741,7 @@ export default async function consultRoutes(app) {
     if (!c) return reply.code(404).send({ error: 'not_found' });
     await query(`UPDATE sales_consults SET deleted_at = now() WHERE id = $1`, [Number(c.id)]);
     await logEvent({ userId: perm.userId, action: 'delete', target: `consult:${c.id}` });
+    await syncConsultVisitSafe(Number(c.id), req.log);              // 빠른 녹음의 짝 방문도 함께 삭제
     return { ok: true, id: Number(c.id) };
   });
 
@@ -736,6 +777,7 @@ export default async function consultRoutes(app) {
     const r = (await query(
       `INSERT INTO sales_consult_pendings (consult_id, content, category, due_date) VALUES ($1,$2,$3,$4) RETURNING id`,
       [Number(c.id), content, normCat(b.category), DATE_RE.test(String(b.due_date)) ? String(b.due_date) : null])).rows[0];
+    await syncConsultVisitSafe(Number(c.id), req.log);
     return { ok: true, id: Number(r.id) };
   });
 
@@ -754,8 +796,9 @@ export default async function consultRoutes(app) {
       const done = !!b.done;
       await query(
         `UPDATE sales_consult_pendings
-            SET done=$2, done_at = CASE WHEN $2 THEN now() ELSE NULL END, done_by = CASE WHEN $2 THEN $3 ELSE NULL END
+            SET done=$2, done_at = CASE WHEN $2 THEN now() ELSE NULL END, done_by = CASE WHEN $2 THEN $3::bigint ELSE NULL END
           WHERE id=$1`, [pid, done, Number(perm.userId)]);
+      await mirrorConsultPendingDone(pid, done, perm.userId);   // 짝 방문 펜딩도 함께
     }
     if (b.category !== undefined) {
       await query(`UPDATE sales_consult_pendings SET category=$2 WHERE id=$1`, [pid, normCat(b.category)]);

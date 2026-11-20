@@ -8,6 +8,7 @@ import { visibleTeamIds } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { mxTodayStr } from '../workingHours.js';
 import { stageLabel } from '../stageLabel.js';
+import { mirrorVisitPendingDone } from '../consultVisitSync.js';
 
 const MEET_PREFIX = '[현장방문]';           // 자동 생성 미팅 가드(수기 미팅 보호)
 const PHOTO_MAX = 10;                        // 방문당 사진 최대
@@ -240,9 +241,10 @@ export default async function visitRoutes(app) {
   // ── 방문 삭제(자동 생성 미팅 가드 삭제) ──
   app.delete('/api/visits/:id', { preHandler: [authGuard, requirePageEdit('pipeline')] }, async (req, reply) => {
     const perm = req.ctx.perm; const id = Number(req.params.id);
-    const params = [id]; let cond = 'id = $1 AND deleted_at IS NULL';
-    const oc = ownerCond(perm, params); if (oc) cond += ' AND ' + oc;
-    const v = (await query(`SELECT id, meeting_id FROM sales_visits WHERE ${cond}`, params)).rows[0];
+    const params = [id]; let cond = 'v.id = $1 AND v.deleted_at IS NULL';
+    // (2026-11-20 수정) 별칭 없이 v.created_by 를 써서 영업사원 본인 삭제가 500 이던 기존 버그
+    const oc = ownerCond(perm, params, 'v'); if (oc) cond += ' AND ' + oc;
+    const v = (await query(`SELECT v.id, v.meeting_id FROM sales_visits v WHERE ${cond}`, params)).rows[0];
     if (!v) return reply.code(404).send({ error: 'not_found' });
     await withTx(async (client) => {
       const q = client.query.bind(client);
@@ -295,7 +297,8 @@ export default async function visitRoutes(app) {
     if (!row) return reply.code(404).send({ error: 'not_found' });
     await query(
       `UPDATE sales_visit_pendings SET done = $2, done_at = CASE WHEN $2 THEN now() ELSE NULL END,
-              done_by = CASE WHEN $2 THEN $3 ELSE NULL END WHERE id = $1`, [id, done, perm.userId]);
+              done_by = CASE WHEN $2 THEN $3::bigint ELSE NULL END WHERE id = $1`, [id, done, perm.userId]);
+    await mirrorVisitPendingDone(id, done, perm.userId);   // 📱 빠른 녹음 방문이면 고객상담 펜딩도 함께
     return { ok: true, done };
   });
 

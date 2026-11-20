@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261029es loaded (+ 모바일 보완 레이어 refatrix-mobile.js)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261120qr loaded (+ 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -346,6 +346,16 @@
     location.href=s.file+hash;
   }
   window.__rnav=nav;
+  // 🎙 원클릭 미팅 녹음 (2026-11-20) — 고객상담 화면을 「빠른 녹음」(quick=1)으로 연다.
+  //   그 화면은 열리자마자 위치를 받고 녹음을 시작한다. 업체명 등은 녹음하면서/나중에 입력.
+  //   이미 고객상담 화면이면 새로 불러오지 않고 바로 시작한다(같은 파일 + 해시만 바뀌면 새로고침이 안 되므로).
+  window.__rnavQuickRec=function(){
+    if(!sess||!sess.token){ if(!gotoLogin()) location.href='refatrix-portal.html'; return; }
+    if(typeof window.__csQuickStart==='function'){ try{ window.__rnavDrawer(0); }catch(e){} window.__csQuickStart(); return; }
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
+    var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g=sales&quick=1';
+    location.href=SCREENS.consult.file+hash;
+  };
 
   // 로그아웃: 세션 정리(브리지가 복원하는 localStorage 포함) 후 로그인 화면으로
   function rnavLogout(){
@@ -407,6 +417,10 @@
     'html.rfxm #rmtab .mt .l{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
     'html.rfxm #rmtab .mt.on{color:#E6C87E}'+
     'html.rfxm #rmtab .mt.on .i{filter:drop-shadow(0 0 6px rgba(201,167,92,.55))}'+
+    /* 🎙 원클릭 미팅 녹음 — 하단 탭바 가운데 빨간 원형 버튼 (2026-11-20) */
+    'html.rfxm #rmtab .mt.mrec{flex:0 0 64px;color:#f4c2bb}'+
+    'html.rfxm #rmtab .mt.mrec .i{width:48px;height:48px;margin-top:-20px;border-radius:50%;background:#B23A2E;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;border:3px solid #0b1613;box-shadow:0 5px 16px -2px rgba(178,58,46,.7)}'+
+    'html.rfxm #rmtab .mt.mrec:active .i{transform:scale(.93)}'+
     /* 전체메뉴 시트 */
     '#rmdrawer{display:none}'+
     'html.rfxm #rmdrawer.show{display:block;position:fixed;inset:0;z-index:10002;background:rgba(8,16,13,.62);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}'+
@@ -581,10 +595,16 @@
     if(!on || !sess || !sess.token || !sum){ if(el&&el.parentNode) el.parentNode.removeChild(el); document.body.style.paddingBottom=window.__rnavBasePB||''; return; }
     if(!el){ el=document.createElement('nav'); el.id='rmtab'; document.body.appendChild(el); }
     var cur=curScreen(), keys=mTabKeys();
-    var h=keys.map(function(k){
+    var btns=keys.map(function(k){
       return '<button type="button" class="mt'+(k===cur?' on':'')+'" onclick="__rnav(\''+k+'\')">'
            + '<span class="i">'+(MTAB_ICON[k]||'•')+'</span><span class="l">'+mShort(k)+'</span></button>';
-    }).join('');
+    });
+    // 🎙 원클릭 미팅 녹음 — 고객상담(영업활동 권한) 화면을 쓸 수 있는 사람에게만, 가운데에
+    if(SCREENS.consult && canSee('consult')){
+      btns.splice(Math.min(2,btns.length),0,'<button type="button" class="mt mrec" onclick="__rnavQuickRec()" aria-label="미팅 녹음 바로 시작">'
+        + '<span class="i">🎙</span><span class="l">녹음</span></button>');
+    }
+    var h=btns.join('');
     h+='<button type="button" class="mt mmore" onclick="__rnavDrawer(1)"><span class="i">☰</span><span class="l">전체</span></button>';
     el.innerHTML=h;
     document.body.style.paddingBottom='calc(58px + env(safe-area-inset-bottom))';
