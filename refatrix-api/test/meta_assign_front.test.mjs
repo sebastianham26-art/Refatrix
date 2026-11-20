@@ -61,7 +61,7 @@ test('🎯 배분 · 실적 (디렉터)', { skip: SKIP && 'jsdom 또는 HTML 없
   };
   await t.test('대상자 클릭 · 목표 · 저장 · 지금 분배 · 실적 표 · 엑셀 · 사람 행 → 그 사람 할당', async () => {
     const c = boot(route); await c.ready; await tick(700);
-    assert.match(c.d.title, /mtl-1119e/);
+    assert.match(c.d.title, /mtl-1119f/);
     assert.ok(!c.d.getElementById('tAsg').classList.contains('hidden'), '디렉터 = 배분 탭');
     c.d.getElementById('tAsg').click(); await tick();
     const chips = c.d.querySelectorAll('#aPeople [data-uid]'); assert.equal(chips.length, 4);

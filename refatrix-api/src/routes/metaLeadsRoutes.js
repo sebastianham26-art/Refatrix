@@ -40,6 +40,7 @@ import { chatReady, sendMessengerSmart, commentRefOf } from '../metaPageMsgs.js'
 // 0329 · 영업사원 배분 · 하루 목표 · 고객별 메모 · 실적
 import metaAssignRoutes, { assignInfoFor, assignMap, assigneeCond, kickDone } from './metaAssignRoutes.js';
 import { assignReady } from '../metaAssign.js';
+import { NEED_SQL, unreadSql, replyReady, markSeen, kickReplyForPsid } from '../metaReply.js';   // 0331
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
 export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
@@ -138,12 +139,14 @@ export default async function metaLeadsRoutes(app) {
     if (req.query.ad === '__none') conds.push(`${AD_EXPR} IS NULL`);
     else if (req.query.ad) { const ad = cleanAdId(req.query.ad); if (ad) conds.push(`${AD_EXPR} = ${add(ad)}`); }
     if (ymd(req.query.to)) conds.push(`(t.last_at AT TIME ZONE 'America/Mexico_City')::date <= ${add(req.query.to)}::date`);
+    const rr = await replyReady();   // 0331 · 답장 필요 · 새 메시지
+    if (req.query.need === '1') conds.push(rr ? NEED_SQL : 'false');
     if (req.query.assignee && (await assignReady())) { const c = assigneeCond(String(req.query.assignee), req.ctx.perm.userId, add); if (c) conds.push(c); }   // 0329
     const limit = Math.min(Number(req.query.limit) || 5000, 10000);
     const hi = await portalHideInfo();   // 1105e · 플랫폼 숨김 · 사내 번호
     if (req.query.hidden === '1') conds.push(hi.col ? 't.portal_hidden' : 'false');
     if (req.query.mkt === '1') conds.push(mktExpr(hi));   // 1106d · WhatsApp 마케팅 회신만
-    const rows = (await query(`SELECT ${COLS}, ${hi.col ? 't.portal_hidden' : 'false AS portal_hidden'}, ${mktExpr(hi)} AS mkt, ${hi.show ? 't.portal_show' : 'false AS portal_show'}, left(t.customer_text, 600) AS customer_text, ${LAST_REPLY} FROM meta_threads t WHERE ${conds.join(' AND ')}
+    const rows = (await query(`SELECT ${COLS}, ${hi.col ? 't.portal_hidden' : 'false AS portal_hidden'}, ${mktExpr(hi)} AS mkt, ${hi.show ? 't.portal_show' : 'false AS portal_show'}, left(t.customer_text, 600) AS customer_text, ${LAST_REPLY}${rr ? `, ${NEED_SQL} AS need_reply, t.reply_last_in, t.reply_pending_n, ${unreadSql(add(Number(req.ctx.perm.userId) || 0))} AS unread` : ''} FROM meta_threads t WHERE ${conds.join(' AND ')}
                                ORDER BY t.last_at DESC NULLS LAST LIMIT ${limit}`, args)).rows;
     // 0272 · 나온 부품번호의 현재고(요약 · 엑셀의 「재고」)
     const codes = [...new Set(rows.flatMap((r) => (Array.isArray(r.items) ? r.items : []).map((i) => i && i.code).filter(Boolean)))];
@@ -173,6 +176,7 @@ export default async function metaLeadsRoutes(app) {
     delete r.psid;
     const portal = await portalInfoFor(id);   // 1105c · 포털 입력(고객관리)
     const assign = await assignInfoFor(id).catch(() => null);   // 0329 · 담당 · 고객별 메모
+    markSeen(id, Number(req.ctx.perm.userId) || 0);   // 0331 · 열었으면 「새 메시지」 지움
     // 1105e · 플랫폼 숨김 · 사내 번호
     const hi = await portalHideInfo(); let hidden = null;
     if (hi.col) hidden = (await query(`SELECT t.portal_hidden, ${hi.show ? 't.portal_show' : 'false AS portal_show'}, ${mktExpr(hi)} AS mkt,
@@ -214,6 +218,7 @@ export default async function metaLeadsRoutes(app) {
     await query(`UPDATE meta_threads SET status='contactado', updated_at=now() WHERE id=$1 AND status='nuevo'`, [id]).catch(() => null);
     await logEvent({ userId: uid, action: 'update', target: `meta_thread:${id}`, detail: { op: 'erp_messenger_send', len: text.length } });
     kickDone(id);   // 0329 · 담당자 대화함
+    kickReplyForPsid(t.psid);   // 0331 · 답장 필요 표시 지움
     const by = uid ? ((await query(`SELECT name FROM users WHERE id=$1`, [uid])).rows[0] || {}).name || null : null;
     return { ok: true, via: s0.via || 'message', message: { at: new Date().toISOString(), me: true, text, src: 'staff', by, live: true } };
   });

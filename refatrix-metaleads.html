@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · Meta 광고 문의 · build mtl-1119e</title>
+<title>Refatrix ERP · Meta 광고 문의 · build mtl-1119f</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -112,6 +112,11 @@
   table.lt td .muted{font-size:11.5px}
   tr.adrow.sel{background:#eef5f1}tr.adrow.unreg td{background:#fffaf0}
   .adform input{min-width:0}
+  /* 0331 · 답장 필요 · 새 메시지 */
+  .needb{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fde8e6;color:#B23A2E;white-space:nowrap;margin-top:3px}
+  .udot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#1877F2;margin-left:5px;vertical-align:middle;box-shadow:0 0 0 2px #e7f0fe}
+  tr.needrow td:first-child{box-shadow:inset 4px 0 0 #E2231A}
+  .tag.needtab{background:#E2231A;color:#fff}
   /* 0329 · 영업사원 배분 · 하루 목표 · 실적 */
   .pchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .pchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--muted);user-select:none}
@@ -189,6 +194,7 @@
         <div class="hidden" id="fAsgBox"><label>담당</label><select id="fAsg"><option value="">전체</option><option value="__me">🙋 내 할당</option><option value="__none">— 담당 없음</option></select></div>
         <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:600;color:var(--ink)"><input type="checkbox" id="fDemand"> 차종·부품 있는 것만</label>
         <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:600;color:var(--ink)" title="ERP WhatsApp 마케팅을 받은 번호가 답한 문의 — 고객별로 플랫폼에 보일지 고르세요"><input type="checkbox" id="fMkt"> 📣 WA 마케팅 회신만</label>
+        <label style="display:flex;align-items:center;gap:5px;margin:0 0 9px;font-weight:700;color:#B23A2E" title="손님이 마지막으로 말해 우리 대답이 필요한 대화(최근 30일 · 판매/제외 아님)"><input type="checkbox" id="fNeed"> 💬 답장 필요만</label>
         <button type="button" class="btn ghost" id="bSearch">조회</button>
         <button type="button" class="btn" id="bXls">📥 엑셀</button>
       </div>
@@ -356,7 +362,7 @@
         <h2 style="margin:0">🙋 내 할당 — 오늘 대화할 손님</h2><span id="mWho" class="hint"></span>
         <span style="margin-left:auto"></span>
         <select id="mUser" class="hidden" title="다른 사람의 할당 보기(디렉터 · 소시오)"></select>
-        <div class="seg" id="mScope"><button type="button" data-s="today" class="on">오늘</button><button type="button" data-s="open">미처리 전체</button><button type="button" data-s="week">최근 7일</button><button type="button" data-s="month">이번 달</button></div>
+        <div class="seg" id="mScope"><button type="button" data-s="need" style="color:#B23A2E">💬 답장 필요</button><button type="button" data-s="today" class="on">오늘</button><button type="button" data-s="open">미처리 전체</button><button type="button" data-s="week">최근 7일</button><button type="button" data-s="month">이번 달</button></div>
         <button type="button" class="btn ghost sm" id="mReload">⟳</button>
       </div>
       <div class="kpis" id="mKpis" style="margin-top:10px"></div>
@@ -467,7 +473,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const MTL_BUILD='mtl-1119e';
+  const MTL_BUILD='mtl-1119f';
   try{ console.log('[metaleads] build '+MTL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={items:[],status:null,cur:null,poll:null,tab:'list'};
@@ -506,7 +512,7 @@
       try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
       $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
       $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
-      await loadStatus(); loadList(); loadAds(); await loadAssignCfg();
+      await loadStatus(); loadList(); loadAds(); await loadAssignCfg(); startPoll();
       // 1119b · 「영업 할당 · 실적」 화면에서 넘어옴 — #open=<문의 id> · #tab=asg|mine
       try{ const h=new URLSearchParams(location.hash.slice(1)); const tb=h.get('tab'); const op=Number(h.get('open'));
         if(tb){ const b=document.querySelector('#tabs .tab[data-p="'+tb+'"]'); if(b&&!b.classList.contains('hidden')) b.click(); }
@@ -601,7 +607,10 @@
     if(v('fQ').trim()) p.set('q',v('fQ').trim()); if(v('fCh')) p.set('platform',v('fCh')); if(v('fState')) p.set('state',v('fState'));
     if(v('fTipo')) p.set('tipo',v('fTipo')); if(v('fStatus')) p.set('status',v('fStatus')); if(v('fAd')) p.set('ad',v('fAd')); if(v('fFrom')) p.set('from',v('fFrom')); if(v('fTo')) p.set('to',v('fTo'));
     if($('fAsg')&&$('fAsg').value) p.set('assignee',$('fAsg').value);
-    if($('fDemand').checked) p.set('demand','1'); if($('fMkt')&&$('fMkt').checked) p.set('mkt','1'); return p; }
+    if($('fDemand').checked) p.set('demand','1'); if($('fMkt')&&$('fMkt').checked) p.set('mkt','1'); if($('fNeed')&&$('fNeed').checked) p.set('need','1'); return p; }
+  // 0331 · 「💬 답장 필요」 — 손님이 마지막으로 말해 우리 대답이 필요 · 「●」 = 내가 아직 안 연 새 메시지
+  const agoT=(t)=>{ if(!t) return ''; const m=Math.max(0,Math.round((Date.now()-new Date(t).getTime())/60000)); return m<60?m+'분':(m<1440?Math.floor(m/60)+'시간':Math.floor(m/1440)+'일'); };
+  const needHTML=(x)=>x&&x.need_reply?'<div><span class="needb" title="손님이 '+esc(fmtT(x.reply_last_in))+'에 보낸 메시지에 아직 우리 답이 없습니다">💬 답장 필요'+(x.reply_pending_n>1?' '+(x.reply_pending_n>9?'9+':x.reply_pending_n):'')+' · '+agoT(x.reply_last_in)+' 전</span>'+(x.unread?'<span class="udot" title="아직 안 본 새 메시지"></span>':'')+'</div>':'';
   async function loadList(){
     try{ const d=await api('GET','/api/meta-leads/list?'+qs()); S.items=d.items||[]; S.stock=d.stock||{}; renderList(); if(S.tab==='sum') renderSummary(); }
     catch(e){ $('lTable').innerHTML='<div class="hint">'+esc(e.message==='http_404'?'서버가 아직 이 기능을 모릅니다(백엔드 배포 · migrate 확인).':errText(e))+'</div>'; }
@@ -632,8 +641,8 @@
     const sumTxt=(x)=>x.summary?'🤖 '+x.summary:(x.customer_text||'').replace(/\n/g,' / ');
     $('lTable').innerHTML='<table class="lt"><colgroup><col style="width:64px"><col style="width:180px"><col style="width:170px"><col style="width:150px"><col style="width:120px"><col style="width:150px"><col style="width:210px"><col><col style="width:150px"></colgroup>'
       +'<thead><tr><th>마지막 대화</th><th>이름 · 채널</th><th>광고</th><th>업종 · 지역</th><th>전화</th><th>차종</th><th>부품 · 부품번호</th><th>요약 · 고객 메시지</th><th>상태</th></tr></thead><tbody>'
-      +it.map(x=>'<tr class="click" data-id="'+x.id+'"><td>'+dt(x.last_mx)+'</td>'
-        +'<td><div class="lt-name">'+esc(x.name||x.username||'—')+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</div>'
+      +it.map(x=>'<tr class="click'+(x.need_reply?' needrow':'')+'" data-id="'+x.id+'"><td>'+dt(x.last_mx)+'</td>'
+        +'<td><div class="lt-name">'+esc(x.name||x.username||'—')+(x.edited?' <span title="사람이 고친 값 있음">✎</span>':'')+'</div>'+needHTML(x)
         +'<span class="tag ch-'+x.platform+'"'+(x.source==='wa_app'?' title="WhatsApp 앱 번호 8118250003(파일로 올림)"':'')+'>'+(x.source==='wa_app'?'WA 앱':(CH[x.platform]||[x.platform])[0])+'</span></td>'
         +'<td>'+adFull(x)+'</td>'
         +'<td><div>'+tipoOf(x)+'</div>'+(x.state?'<div class="muted">'+esc(x.state)+(x.city?' · '+esc(x.city):'')+'</div>':'')+'</td>'
@@ -643,7 +652,7 @@
         +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span>'+(x.derived_to?'<div class="muted">'+esc(x.derived_to)+'</div>':'')+(x.revealed_to?'<div class="muted" title="고객 포털에서 연락처를 본 곳 · 괄호 안은 그 고객이 기록한 찾는 부품">👁 '+esc(x.revealed_to)+'</div>':'')+(x.chat_by?'<div class="muted" title="고객 포털 선점(연락처 본 뒤 연락 기록)">🔒 '+esc(x.chat_by)+'</div>':'')+(x.mkt?'<div class="muted" title="ERP WhatsApp 마케팅 회신 — 기본은 플랫폼에 안 보임">📣 WA 마케팅 회신'+(x.portal_show&&!x.portal_hidden?' · <span class="ok-t">플랫폼 보임</span>':'')+'</div>':'')+(x.portal_hidden||(x.mkt&&!x.portal_show)?'<div class="bad-t" title="고객 포털에 안 보임">🚫 플랫폼 숨김</div>':'')+(x.internal?'<div class="muted" title="사내 번호 — 고객 포털에 안 보임">🏢 사내</div>':'')+(x.assigned_name?'<div title="담당 영업사원"><span class="ad-chip">🙋 '+esc(x.assigned_name)+'</span></div>':'')+'</td></tr>').join('')
       +'</tbody></table>';
   }
-  ['fCh','fAd','fState','fTipo','fStatus','fDemand','fMkt','fFrom','fTo','fAsg'].forEach(id=>$(id).addEventListener('change',loadList));
+  ['fCh','fAd','fState','fTipo','fStatus','fDemand','fMkt','fFrom','fTo','fAsg','fNeed'].forEach(id=>$(id).addEventListener('change',loadList));
   $('bSearch').addEventListener('click',loadList);
   $('fQ').addEventListener('keydown',e=>{ if(e.key==='Enter') loadList(); });
   $('lTable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openOne(Number(tr.dataset.id)); });
@@ -783,6 +792,9 @@
   async function openOne(id){
     let d; try{ d=await api('GET','/api/meta-leads/'+id); }catch(e){ say(false,errText(e)); return; }
     S.cur=d;
+    // 0331 · 열었으면 「●」 지움(서버도 기록)
+    if(S.items.some(x=>x.id===id&&x.unread)){ S.items=S.items.map(x=>x.id===id?Object.assign({},x,{unread:false}):x); renderList(); }
+    if(S.mine&&S.mine.items.some(x=>x.id===id&&x.unread)){ S.mine.items.forEach(x=>{ if(x.id===id) x.unread=false; }); }
     $('oTitle').textContent=(d.name||d.username||'—')+(d.username?' (@'+d.username+')':'');
     $('oCh').innerHTML='<span class="tag ch-'+d.platform+'">'+(CH[d.platform]||['',d.platform])[1]+'</span> <span class="hint">첫 메시지 '+esc(d.first_mx||'—')+' · 메시지 '+(d.msg_count||0)+'</span>';
     $('oAi').innerHTML=d.summary?'<div class="aisum">🤖 '+esc(d.summary)+(d.intent?'<br><span class="muted">관심: '+esc(d.intent)+'</span>':'')+'</div>':(d.ai_error?'<div class="aisum bad-t">AI 분석 오류: '+esc(d.ai_error)+'</div>':'');
@@ -859,9 +871,15 @@
     paintMineBadge();
     if(S.tab==='asg') renderAsg();
   }
+  // 0331 · 1분마다 — 탭 숫자 · 내 할당 · 문의 목록(대화창이 열려 있지 않을 때)
+  function startPoll(){ if(S.replyPoll) return; S.replyPoll=setInterval(async()=>{ if(document.hidden) return;
+    await loadAssignCfg().catch(()=>{}); if($('mOne').classList.contains('on')) return;
+    if(S.tab==='mine') loadMine(); else if(S.tab==='list') loadList(); },60000); }
   function paintMineBadge(){
     const me=S.cfg&&S.cfg.me; const b=$('mineN');
-    if(me&&me.member){ const left=Math.max(0,(me.today_assigned||0)-(me.today_done||0)); b.textContent=(me.today_done||0)+'/'+(me.today_assigned||0); b.title='오늘 대화함 / 오늘 할당 · 남은 '+left+'건'; b.classList.remove('hidden'); }
+    const nd=Number(me&&me.need_n)||0;
+    if(nd>0){ b.textContent='💬 '+nd; b.title='내 문의 중 손님이 답해 우리 대답이 필요한 대화 '+nd+'건'+(me.unread_n?' · 안 본 새 메시지 '+me.unread_n+'건':''); b.classList.add('needtab'); b.classList.remove('hidden'); }
+    else if(me&&me.member){ const left=Math.max(0,(me.today_assigned||0)-(me.today_done||0)); b.textContent=(me.today_done||0)+'/'+(me.today_assigned||0); b.title='오늘 대화함 / 오늘 할당 · 남은 '+left+'건'; b.classList.remove('needtab'); b.classList.remove('hidden'); }
     else b.classList.add('hidden');
   }
   // ── 내 할당 ──
@@ -876,17 +894,18 @@
       +'<div class="kpi"><div class="k">오늘 할당</div><div class="v">'+(me.today_assigned||0)+'</div></div>'
       +'<div class="kpi"><div class="k">오늘 대화함</div><div class="v ok-t">'+(me.today_done||0)+'</div>'+bar(me.today_assigned?me.today_done/me.today_assigned*100:null)+'</div>'
       +'<div class="kpi"><div class="k">아직 대화 전(전체)</div><div class="v warn-t">'+(me.open_n||0)+'</div></div>'
+      +'<div class="kpi" style="border-color:#f3c3bd"><div class="k" style="color:#B23A2E">💬 답장 필요(지금 내 문의)</div><div class="v bad-t">'+(S.mUser?d.items.filter(x=>x.need_reply).length:((S.cfg&&S.cfg.me&&S.cfg.me.need_n)||0))+'</div><div class="hint">손님이 답했는데 우리 대답이 아직</div></div>'
       :'<div class="kpi"><div class="k">배분 대상</div><div class="v" style="font-size:14px">아님 — 디렉터가 고르면 매일 문의가 옵니다</div></div>')
       +'<div class="kpi"><div class="k">이 목록 · 대화함 / 전체</div><div class="v">'+done+' / '+live.length+'</div><div class="hint">대화 전 '+open+' · 넘김 '+(d.items.length-live.length)+'</div></div>';
-    if(!d.items.length){ $('mList').innerHTML='<div class="hint" style="margin-top:10px">이 기간에 맡은 문의가 없습니다.</div>'; return; }
+    if(!d.items.length){ $('mList').innerHTML='<div class="hint" style="margin-top:10px">'+(S.mScope==='need'?'✅ 답장이 필요한 대화가 없습니다.':'이 기간에 맡은 문의가 없습니다.')+'</div>'; return; }
     $('mList').innerHTML='<table><thead><tr><th>맡은 시각</th><th>손님 · 채널</th><th>전화</th><th>차종 · 부품 · 요약</th><th>마지막 메모</th><th>상태</th><th>대화</th><th></th></tr></thead><tbody>'
-      +d.items.map(x=>'<tr class="click" data-mid="'+x.id+'"><td><div>'+esc(String(fmtT(x.assigned_at)))+'</div><div class="muted">'+(x.how==='auto'?'자동':'직접')+'</div></td>'
+      +d.items.map(x=>'<tr class="click'+(x.need_reply?' needrow':'')+'" data-mid="'+x.id+'"><td><div>'+esc(String(fmtT(x.assigned_at)))+'</div><div class="muted">'+(x.how==='auto'?'자동':'직접')+'</div></td>'
         +'<td><div class="lt-name">'+esc(x.name||x.username||'—')+'</div><span class="tag ch-'+x.platform+'">'+(CH[x.platform]||[x.platform])[0]+'</span>'+(x.state?' <span class="muted">'+esc(x.state)+'</span>':'')+'</td>'
         +'<td class="mono">'+esc(x.phone||'')+'</td>'
         +'<td style="max-width:340px">'+(x.vehicles?'<div>🚗 '+esc(x.vehicles)+'</div>':'')+(x.parts?'<div>🔩 '+esc(x.parts)+'</div>':'')+'<div class="muted lt-sum">'+esc(x.summary?'🤖 '+x.summary:(x.customer_text||''))+'</div></td>'
         +'<td style="max-width:220px">'+(x.last_note?esc(x.last_note)+(x.notes_n>1?' <span class="muted">(+'+(x.notes_n-1)+')</span>':''):'<span class="muted">—</span>')+'</td>'
         +'<td><span class="tag st-'+x.status+'">'+esc(ST[x.status]||x.status)+'</span></td>'
-        +'<td>'+(x.ended_at&&!x.done_at?'<span class="dn moved">↪ 넘김</span>':(x.done_at?'<span class="dn ok" title="'+esc(fmtT(x.done_at))+'">✅ '+(DONE_KO[x.done_how]||'')+'</span>':'<span class="dn wait">⏳ 대화 전</span>'))+'</td>'
+        +'<td>'+(x.ended_at&&!x.done_at?'<span class="dn moved">↪ 넘김</span>':(x.done_at?'<span class="dn ok" title="'+esc(fmtT(x.done_at))+'">✅ '+(DONE_KO[x.done_how]||'')+'</span>':'<span class="dn wait">⏳ 대화 전</span>'))+needHTML(x)+'</td>'
         +'<td>'+(!x.done_at&&!x.ended_at?'<button type="button" class="btn ghost sm" data-call="'+x.id+'" title="전화로 연락함 = 대화함">📞 전화함</button>':'')+'</td></tr>').join('')+'</tbody></table>';
   }
   $('mScope').addEventListener('click',e=>{ const b=e.target.closest('button[data-s]'); if(!b) return; S.mScope=b.dataset.s; $('mScope').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); loadMine(); });

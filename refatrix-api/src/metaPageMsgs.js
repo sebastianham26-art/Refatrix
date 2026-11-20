@@ -78,7 +78,8 @@ export async function savePageMessages(body, q = query) {
         `INSERT INTO meta_page_messages (psid, mid, direction, source, text, at) VALUES ($1,$2,$3,$4,$5,$6)
          ON CONFLICT (mid) DO NOTHING RETURNING id`, [m.psid, m.mid, m.direction, m.source, m.text, m.at]);
       // 1105c · 디렉터: Refatrix 직원 답장(에코)은 선점과 무관 — 손님 메시지만 선점을 늘린다
-      if (r.rows.length) { out.stored++; if (m.direction === 'in') touched.add(m.psid); }
+      if (r.rows.length) { out.stored++; if (m.direction === 'in') touched.add(m.psid);
+        import('./metaReply.js').then((x) => x.kickReplyForPsid(m.psid)).catch(() => {}); }   // 0331 · 답장 필요 표시 바로
     } catch (_) { /* 표 없음 등 — 웹훅은 계속 */ }
   }
   for (const psid of touched) { try { await extendClaimsForPsid(psid, q); } catch (_) {} }

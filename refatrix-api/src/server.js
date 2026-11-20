@@ -92,7 +92,8 @@ import positionRoutes from './routes/positionRoutes.js';       // 0292 · 제품
 import vioPromoRoutes from './routes/vioPromoRoutes.js';   // 0293 · VIO 프로모션(키트) K0001…
 import promoImgRoutes from './routes/promoImgRoutes.js';       // 2026-10-19 · VIO 제품찾기·프로모션 — 홍보 이미지용 사진 중계(캔버스 CORS)
 import salesTrendRoutes from './routes/salesTrendRoutes.js';     // 2026-10-16 · 구매 › 판매 이력·주기(디렉터·소시오)
-import { startMetaAssignWorker } from './metaAssign.js';   // 0329 · 광고 문의 영업사원 배분(5분)
+import { startMetaAssignWorker } from './metaAssign.js';
+import { startReplyWorker } from './metaReply.js';   // 0331 · 답장 필요 표시(1분)   // 0329 · 광고 문의 영업사원 배분(5분)
 import { startMetaLeadsWorker } from './metaLeads.js';       // 0270 · 30분마다 새 대화               // 0260 · 예약 발송·동의 요청 대기열(60초)
 import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
 import { startCrmSyncWorker } from './crmSync.js';
@@ -215,6 +216,7 @@ export function buildApp() {
   startOrderStatusWorker(app);      // ERP → CRM 오더상태 — 놓친 단계 줍기(90초)
   startPromoWorker(app);            // 0237 · 종료일 지난 프로모션을 CRM 에서 자동으로 내리기(10분)
   startPriceMasterWorker(app);      // 가격 예약 — 적용일(멕시코 00:00)이 된 묶음 적용(5분)
+  startReplyWorker(app);           // 0331 · 「💬 답장 필요」 · 「● 새 메시지」 — 바뀐 대화 1분마다
   startMetaAssignWorker(app);       // 0329 · 광고 문의 배분 — 대화함 확인 + 하루 목표까지 자동 분배(5분 · 근무 시간)
   startMetaLeadsWorker(app);        // 0270 · Meta 광고 문의 — 30분마다 새로 바뀐 대화만
   startWaPromoWorker(app);          // 0260 · WhatsApp 마케팅 — 예약 발송 · 동의 요청(하루 상한 안에서)

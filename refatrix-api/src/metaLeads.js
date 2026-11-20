@@ -212,7 +212,8 @@ export function kickWaThread(phone, { q = query, delayMs = Number(process.env.ME
       try {
         if ((await internalWaPhones(q)).has(p)) return resolve({ skipped: 'internal' });
         const r = await upsertWaThread(p, q);
-        if (r.ok) { waLive.last_at = new Date().toISOString(); waLive.count++; kickAnalyze(); }
+        if (r.ok) { waLive.last_at = new Date().toISOString(); waLive.count++; kickAnalyze();
+          import('./metaReply.js').then((x) => x.kickReplyForTid('wa:' + p)).catch(() => {}); }   // 0331 · 답장 필요 표시
         resolve(r);
       } catch (e) { waLive.last_error = String((e && e.message) || e).slice(0, 200); resolve({ error: waLive.last_error }); }
     }, delayMs));

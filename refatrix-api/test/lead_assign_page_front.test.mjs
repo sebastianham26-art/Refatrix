@@ -52,7 +52,7 @@ function boot(cfg) {
 test('영업 할당 · 실적 화면', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('KPI · 사람별 · 날짜×사람 · 목록 필터 · 열기 · 엑셀', async () => {
     const c = boot(CFG); await c.ready; await tick(600);
-    assert.match(c.d.title, /la-1119d/);
+    assert.match(c.d.title, /la-1119f/);
     assert.match(c.d.getElementById('kpis').textContent, /할당5/); assert.match(c.d.getElementById('kpis').textContent, /60%/);
     assert.match(c.d.getElementById('cfgLine').textContent, /대상 2명/);
     const ppl = c.d.getElementById('people'); assert.match(ppl.textContent, /Clarisa/); assert.match(ppl.textContent, /팀 전체/);

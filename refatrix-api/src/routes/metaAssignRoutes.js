@@ -12,7 +12,7 @@
 //   GET  /api/meta-assign/perf?from&to&user          사람별 · 팀(디렉터 · 소시오) — 그 밖은 내 것만
 //   GET  /api/meta-assign/list?from&to&user&state&q   전체 할당 목록(디렉터 · 소시오 · 1119b 「영업 할당 · 실적」 화면)
 //   내 할당 (이 화면 접근 권한이면 누구나 — 자기 것)
-//   GET  /api/meta-assign/mine?scope=today|open|week&user=  (user 는 디렉터 · 소시오만)
+//   GET  /api/meta-assign/mine?scope=today|open|week|month|need&user=  (user 는 디렉터 · 소시오만 · need = 0331 답장 필요)
 //   POST /api/meta-leads/:id/called {note?}         「📞 전화함」 = 대화함(담당자 · 디렉터)
 //   고객별 메모
 //   GET  /api/meta-leads/:id/notes · POST {text} · DELETE /api/meta-leads/:id/notes/:nid (쓴 사람 · 디렉터)
@@ -20,6 +20,7 @@
 import { query } from '../db.js';
 import { DIR_SOCIO } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
+import { NEED_SQL, unreadSql, replyReady } from '../metaReply.js';   // 0331 · 답장 필요
 import {
   assignReady, getSettings, getMembers, assignThread, autoDistribute, refreshDone, markCalled, performance, poolCandidates,
 } from '../metaAssign.js';
@@ -78,6 +79,12 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
     const me = members.find((m) => m.user_id === uid) || null;
     const out = { ready: true, is_admin: isAdmin(req), settings: isAdmin(req) ? settings : { auto: settings.auto }, me: me ? { ...me } : { user_id: uid, member: false } };
     if (me) out.me.member = me.active;
+    // 0331 · 내가 지금 맡은 문의 중 「답장 필요」 · 「새 메시지」
+    if (await replyReady()) {
+      const r = (await query(`SELECT count(*) FILTER (WHERE ${NEED_SQL})::int AS need, count(*) FILTER (WHERE ${unreadSql('$1')})::int AS unread
+                                FROM meta_threads t WHERE t.assigned_to = $1`, [uid || 0])).rows[0];
+      out.me.need_n = r.need; out.me.unread_n = r.unread;
+    }
     if (isAdmin(req)) {
       out.members = members;
       // page_ok = 이 화면(Meta 광고 문의)을 열 수 있는가 — 견적 · 영업 · 제품 · 마케팅 등 화면 권한 중 하나(디렉터는 항상)
@@ -155,8 +162,11 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
   app.get('/api/meta-assign/mine', R, async (req, reply) => {
     if (!(await need(reply))) return reply;
     const uid = isAdmin(req) && idOf(req.query.user) ? idOf(req.query.user) : Number(req.ctx.perm.userId) || 0;
-    const scope = ['today', 'open', 'week', 'month'].includes(req.query.scope) ? req.query.scope : 'today';
-    const cond = scope === 'today' ? `a.day = (now() AT TIME ZONE 'America/Mexico_City')::date`
+    const scope = ['today', 'open', 'week', 'month', 'need'].includes(req.query.scope) ? req.query.scope : 'today';
+    const rr = await replyReady();
+    // 0331 · need = 지금 내가 맡은 문의 중 손님이 답해 우리 대답이 필요한 것(맡은 날 · 대화함 여부와 관계없이)
+    const cond = scope === 'need' ? (rr ? `a.ended_at IS NULL AND t.assigned_to = a.user_id AND ${NEED_SQL}` : 'false')
+      : scope === 'today' ? `a.day = (now() AT TIME ZONE 'America/Mexico_City')::date`
       : scope === 'week' ? `a.day > (now() AT TIME ZONE 'America/Mexico_City')::date - 7`
         : scope === 'month' ? `a.day >= date_trunc('month', (now() AT TIME ZONE 'America/Mexico_City'))::date`
           : `a.done_at IS NULL AND a.ended_at IS NULL`;
@@ -169,9 +179,10 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
               to_char(t.last_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS last_mx, t.last_in_at,
               (SELECT n.text FROM meta_lead_notes n WHERE n.thread_id = t.id ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_note,
               (SELECT count(*)::int FROM meta_lead_notes n WHERE n.thread_id = t.id) AS notes_n
+              ${rr ? `, (a.ended_at IS NULL AND t.assigned_to = a.user_id AND ${NEED_SQL}) AS need_reply, t.reply_last_in, t.reply_pending_n, ${unreadSql('$2')} AS unread` : ''}
          FROM meta_assignments a JOIN meta_threads t ON t.id = a.thread_id
         WHERE a.user_id = $1 AND ${cond}
-        ORDER BY (a.done_at IS NULL AND a.ended_at IS NULL) DESC, a.assigned_at DESC LIMIT 1000`, [uid])).rows
+        ORDER BY ${rr ? `(a.ended_at IS NULL AND t.assigned_to = a.user_id AND ${NEED_SQL}) DESC, ` : ''}(a.done_at IS NULL AND a.ended_at IS NULL) DESC, a.assigned_at DESC LIMIT 1000`, rr ? [uid, Number(req.ctx.perm.userId) || 0] : [uid])).rows
       .map((r) => ({ ...r, id: Number(r.id), assign_id: Number(r.assign_id) }));
     const members = await getMembers(); const me = members.find((m) => m.user_id === uid) || null;
     return { user_id: uid, scope, me, items: rows };
@@ -200,6 +211,8 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
     if (req.query.state === 'open') conds.push(`a.done_at IS NULL AND a.ended_at IS NULL`);
     else if (req.query.state === 'done') conds.push(`a.done_at IS NOT NULL`);
     else if (req.query.state === 'moved') conds.push(`a.done_at IS NULL AND a.ended_at IS NOT NULL`);
+    const rr = await replyReady();
+    if (req.query.state === 'need') conds.push(rr ? `a.ended_at IS NULL AND t.assigned_to = a.user_id AND ${NEED_SQL}` : 'false');
     const kw = String(req.query.q || '').trim();
     if (kw) { const p = add('%' + kw + '%'); conds.push(`(COALESCE(t.m_name, t.name) ILIKE ${p} OR COALESCE(t.m_phone, t.ai_phone, t.a_phone) ILIKE ${p} OR t.ai_summary ILIKE ${p} OR t.customer_text ILIKE ${p})`); }
     await refreshDone().catch(() => {});
@@ -212,6 +225,7 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
               round(EXTRACT(EPOCH FROM (a.done_at - a.assigned_at)) / 60)::int AS mins,
               (SELECT n.text FROM meta_lead_notes n WHERE n.thread_id = t.id ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_note,
               (SELECT count(*)::int FROM meta_lead_notes n WHERE n.thread_id = t.id) AS notes_n
+              ${rr ? `, (a.ended_at IS NULL AND t.assigned_to = a.user_id AND ${NEED_SQL}) AS need_reply, t.reply_last_in, t.reply_pending_n` : ''}
          FROM meta_assignments a JOIN meta_threads t ON t.id = a.thread_id JOIN users u ON u.id = a.user_id
          LEFT JOIN users ub ON ub.id = a.assigned_by LEFT JOIN users tu ON tu.id = t.assigned_to
         WHERE ${conds.join(' AND ')}
