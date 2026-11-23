@@ -29,6 +29,7 @@
 //     TREASURY_WA_FORMAT=text 면 예전 텍스트 방식.
 //   · TREASURY_DAILY_ENABLED=0 → 전체 끄기 · TREASURY_WA_TEMPLATE → 24h 창 밖 폴백 템플릿(없으면 WHATSAPP_TEMPLATE)
 // =====================================================================
+import { accAmtSql, signedAccAmtSql } from './accAmount.js';
 import { query } from './db.js';
 import { runningRuleIds, isSupersededRecurringPlan } from './recurring.js';
 import { getFxRange, getRateForDate } from './fx.js';
@@ -440,7 +441,8 @@ const TXN_NAME_JOINS = `
   LEFT JOIN LATERAL (SELECT ad.doc_no, ad.title, ad.vendor FROM approval_payments ap
                        JOIN approval_documents ad ON ad.id=ap.document_id
                       WHERE ap.txn_id=t.id ORDER BY ap.id LIMIT 1) apd ON true`;
-const TXN_NAME_COLS = `t.id, t.direction, t.amount, t.amount_mxn, t.is_private, t.memo, t.recurring_rule_id,
+// t.amount = 계좌 통화 기준 금액(거래 통화가 다르면 환산 — accAmount.js, 2026-11-23). 계좌 미지정은 원금액.
+const TXN_NAME_COLS = `t.id, t.direction, ${accAmtSql('t', 'a')} AS amount, t.amount_mxn, t.is_private, t.memo, t.recurring_rule_id,
   a.name AS account_name, cat.name AS category_name, rr.name AS rule_name, si.sat_no,
   COALESCE(c.name, cadv.name, cbd.name, ctag.name) AS customer_name, bd.payer_memo,
   apd.doc_no AS ap_doc_no, apd.title AS ap_title, apd.vendor AS ap_vendor`;
@@ -451,7 +453,7 @@ export async function loadActualInputs(from, to, q = query, scopeIds = null) {
   const [openRows, preRows, opens, txns, pend] = await Promise.all([
     q(`SELECT a.currency, COALESCE(SUM(a.open_balance),0) AS s FROM accounts a
         WHERE a.deleted_at IS NULL AND a.id = ANY($2) AND (a.open_date IS NULL OR a.open_date < $1) GROUP BY a.currency`, [from, ids]),
-    q(`SELECT a.currency, COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END),0) AS s
+    q(`SELECT a.currency, COALESCE(SUM(${signedAccAmtSql('t', 'a')}),0) AS s
          FROM transactions t JOIN accounts a ON a.id=t.account_id
         WHERE t.status='actual' AND t.approved=true AND t.deleted_at IS NULL AND a.deleted_at IS NULL AND a.id = ANY($2) AND t.txn_date < $1
         GROUP BY a.currency`, [from, ids]),

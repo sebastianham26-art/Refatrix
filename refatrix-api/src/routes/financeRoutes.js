@@ -1,3 +1,4 @@
+import { accAmtSql, signedAccAmtSql } from '../accAmount.js';
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { pageAllowed } from '../permissions.js';
@@ -278,7 +279,7 @@ export default async function financeRoutes(app) {
     const rows = (await query(
       `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date, a.non_deductible, a.disabled, a.ar_default,
               a.open_balance + COALESCE((
-                SELECT SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END)
+                SELECT SUM(${signedAccAmtSql('t', 'a')})
                   FROM transactions t
                  WHERE t.account_id=a.id AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL
               ),0) AS balance,
@@ -354,8 +355,8 @@ export default async function financeRoutes(app) {
     let opening = Number(acc.open_balance);
     if (from) {
       const pr = (await query(
-        `SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END),0) AS s
-           FROM transactions t
+        `SELECT COALESCE(SUM(${signedAccAmtSql('t', 'a')}),0) AS s
+           FROM transactions t JOIN accounts a ON a.id=t.account_id
           WHERE t.account_id=$1 AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL${priv}
             AND t.txn_date < $2`, [id, from])).rows[0];
       opening = r2(opening + Number(pr.s));
@@ -367,9 +368,11 @@ export default async function financeRoutes(app) {
     if (to) { args.push(to); dcond += ` AND t.txn_date <= $${args.length}`; }
     const rows = (await query(
       `SELECT t.id, t.txn_date, t.direction, t.amount, t.currency, t.amount_mxn, t.fx_rate,
+              ${accAmtSql('t', 'a')} AS acc_amount,
               t.category_code, cat.name AS category_name, t.kind, t.memo, t.receipt_no,
               si.sat_no AS sat_no, c.name AS customer_name
          FROM transactions t
+         JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
          LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
          LEFT JOIN customers c ON c.id=si.customer_id
@@ -378,7 +381,8 @@ export default async function financeRoutes(app) {
 
     let bal = opening;
     const items = rows.map((t) => {
-      const amt = Number(t.amount);
+      // 계좌 통화 기준 금액(거래 통화가 다르면 환산 — accAmount.js). 원통화 금액은 orig_* 로 따로 준다.
+      const amt = r2(Number(t.acc_amount));
       const isIn = t.direction === 'in';
       bal = r2(bal + (isIn ? amt : -amt));
       return {
@@ -395,6 +399,10 @@ export default async function financeRoutes(app) {
         in_amt: isIn ? amt : 0,
         out_amt: isIn ? 0 : amt,
         amount_mxn: Number(t.amount_mxn),
+        orig_currency: t.currency || acc.currency,
+        orig_amount: Number(t.amount),
+        fx_rate: t.fx_rate == null ? null : Number(t.fx_rate),
+        converted: (t.currency || acc.currency) !== acc.currency,
         balance: bal,
       };
     });

@@ -6,6 +6,7 @@
 //   open_balance + Σ(in:+amount / out:-amount)
 //   WHERE status='actual' AND approved=true AND deleted_at IS NULL
 //   · 계좌 통화 기준(USD 계좌는 USD) — MXN 환산이 아니다.
+//   · 거래 통화가 계좌 통화와 다르면 계좌 통화로 환산(2026-11-23, accAmount.js — 금고 MXN 계좌의 USD 지출 버그).
 //   · 순서: txn_date ASC, id ASC (같은 날은 등록 순). 소급 등록 거래도 날짜 자리에 끼워 계산된다.
 //
 // 목록 필터(기간·상태·구분·페이지)와 **무관하게** 계좌의 전 이력으로 누적한 뒤, 화면에 나온 행만 골라낸다.
@@ -15,11 +16,13 @@
 //
 // 예정(plan)·미승인·계좌 미지정 거래는 잔고에 반영되지 않으므로 balance_after=null.
 
+import { signedAccAmtSql } from './accAmount.js';
+
 export const TXN_BALANCE_SQL = `
   SELECT x.id, x.bal_after
     FROM (
       SELECT t.id,
-             a.open_balance + SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END)
+             a.open_balance + SUM(${signedAccAmtSql('t', 'a')})
                OVER (PARTITION BY t.account_id ORDER BY t.txn_date ASC, t.id ASC
                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS bal_after
         FROM transactions t
