@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-1123fx</title>
+<title>Refatrix ERP · 재무 · build fin-1123pp</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -316,6 +316,7 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <input id="pp-search" type="text" placeholder="찾기: 고객·계정과목·메모·SAT·금액" style="width:220px">
             <button class="btn ghost sm" id="pp-filter-toggle">연·월 필터 ▾</button>
+            <button class="btn ghost sm" id="pp-excel" title="지금 화면에 보이는 예정 내역(연·월 필터·찾기·정렬 그대로)을 엑셀로 내려받기">⬇ 엑셀</button>
           </div>
         </div>
         <div id="pp-filter-panel" class="hidden" style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;background:#fbfbf7">
@@ -4636,6 +4637,108 @@
       default: return '';
     }
   }
+  function ppApplySort(items){
+    if(!ppSort.key) return items;
+    const k=ppSort.key,dd=ppSort.dir,isNum=!!PP_NUM[k];
+    return items.slice().sort((a,z)=>{
+      const va=ppSortVal(a,k),vz=ppSortVal(z,k);
+      const ea=(va===''||va==null),ez=(vz===''||vz==null);
+      if(ea!==ez)return ea?1:-1;
+      let c=isNum?(va-vz):String(va).localeCompare(String(vz),'ko',{numeric:true});
+      if(c===0)c=(Number(a.id)||0)-(Number(z.id)||0);
+      return c*dd;
+    });
+  }
+  // ---- 예정 내역 엑셀 (fin-1123pp) — 화면에 보이는 그대로(연·월 필터·경과 포함·찾기·정렬) ----
+  //  · 데이터는 이미 받은 ppItems 를 쓴다(별도 API 없음) → 화면 행 수 = 엑셀 행 수.
+  //  · USD 예정의 MXN 환산은 화면·현금흐름과 같이 오늘 환율(fxRate).
+  function ppSrcText(t){
+    const s=(t.source==='manual'&&String(t.memo||'').startsWith('[마케팅]'))?'marketing':t.source;
+    return s==='approval'?'전자결재 / Aprobación':s==='sales'?'매출 / Venta':s==='recurring'?'고정비 / Fijo':s==='marketing'?'마케팅 / Marketing':'수동 / Manual';
+  }
+  function ppFilterText(){
+    if(ppQuery.trim()) return '찾기 / Búsqueda: "'+ppQuery.trim()+'" (연·월 필터 무시, 전체 예정에서)';
+    const ys=[...ppSelYears].sort((a,z)=>a-z).join(', ')||'—';
+    const ms=[...ppSelMonths].sort((a,z)=>a-z).map(m=>m+'월').join(', ')||'—';
+    return '연 / Año: '+ys+'  ·  월 / Mes: '+ms+(ppShowOverdue?'  ·  경과(미처리) 포함 / incluye vencidos':'');
+  }
+  async function ppDownloadExcel(){
+    const btn=$('pp-excel');
+    const rows=ppApplySort(ppFilteredItems());
+    if(!rows.length){alert('내려받을 예정 내역이 없습니다. 연·월 필터를 확인하세요.');return;}
+    const old=btn?btn.textContent:'';
+    if(btn){btn.disabled=true;btn.textContent='만드는 중…';}
+    try{
+      await loadExcelJS();
+      const money='#,##0.00', rate=Number(fxRate)||null;
+      const wb=new ExcelJS.Workbook();
+      const ws=wb.addWorksheet('예정 Pendientes');
+      const cols=[
+        {h:'예정일\nFecha',w:12},{h:'경과\nVencido',w:9},{h:'구분\nTipo',w:14},{h:'출처\nOrigen',w:16},
+        {h:'고객\nCliente',w:24},{h:'계정과목\nCuenta',w:24},{h:'메모 / SAT\nConcepto',w:36},{h:'계좌\nCuenta banc.',w:16},
+        {h:'통화\nMoneda',w:8},{h:'계획액\nMonto',w:14},{h:'환율\nT.C.',w:9},{h:'MXN 환산\nConv. MXN',w:15},{h:'전자결재\nDoc. aprob.',w:18}];
+      const N=cols.length;
+      ws.mergeCells(1,1,1,N);
+      const t1=ws.getCell(1,1);t1.value='예정 내역 (실적 처리) / Movimientos programados';t1.font={bold:true,size:13};
+      ws.mergeCells(2,1,2,N);ws.getCell(2,1).value='조건 / Filtro: '+ppFilterText();
+      ws.mergeCells(3,1,3,N);
+      ws.getCell(3,1).value='내려받은 시각 / Descargado: '+new Date().toLocaleString('sv-SE',{timeZone:'America/Mexico_City'}).slice(0,16)+'  ·  '+rows.length+'건'
+        +(rate?'  ·  USD 환산 환율(오늘) / T.C. hoy: '+rate.toFixed(4):'');
+      ws.getCell(3,1).font={color:{argb:'FF6B6A66'}};
+      const HR=5;
+      cols.forEach((c,i)=>{const cell=ws.getCell(HR,i+1);cell.value=c.h;cell.font={bold:true};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFE7D3'}};
+        cell.border={bottom:{style:'thin'}};cell.alignment={vertical:'middle',horizontal:'center',wrapText:true};
+        ws.getColumn(i+1).width=c.w;});
+      ws.getRow(HR).height=30;
+      ws.views=[{state:'frozen',ySplit:HR}];
+      ws.autoFilter={from:{row:HR,column:1},to:{row:HR,column:N}};
+      let r=HR+1; const first=r; let sIn=0,sOut=0;
+      rows.forEach(t=>{
+        const row=ws.getRow(r), isIn=t.direction==='in';
+        const amt=Number(t.plan_amount!=null?t.plan_amount:t.amount)||0;
+        const usd=t.currency==='USD', fx=usd?rate:1;
+        const mxn=fx?Math.round(amt*fx*100)/100:null;
+        const memo=t.source==='sales'?(t.sat_no||'미발급'):ppMemoText(t);
+        row.getCell(1).value=String(t.plan_date||'');row.getCell(1).numFmt='@';
+        row.getCell(2).value=t.overdue?'경과':'';
+        row.getCell(3).value=isIn?'수입 / Ingreso':'지출 / Egreso';
+        row.getCell(3).font={color:{argb:isIn?'FF0F6E56':'FFB4231F'}};
+        row.getCell(4).value=ppSrcText(t);
+        row.getCell(5).value=t.customer_name||'';
+        row.getCell(6).value=(t.category_code?t.category_code+' · ':'')+(t.category_name||'');
+        row.getCell(7).value=memo;
+        row.getCell(8).value=t.account_name||'(미지정)';
+        row.getCell(9).value=t.currency||'MXN';
+        row.getCell(10).value=amt;row.getCell(10).numFmt=money;
+        if(usd&&fx){row.getCell(11).value=fx;row.getCell(11).numFmt='0.0000';}
+        // MXN 환산 = 수식(계획액 × 환율) — MXN 은 계획액 그대로. 환율을 못 받았으면 빈칸.
+        if(mxn!=null){row.getCell(12).value=usd?{formula:'J'+r+'*K'+r,result:mxn}:{formula:'J'+r,result:mxn};row.getCell(12).numFmt=money;
+          if(isIn)sIn+=mxn; else sOut+=mxn;}
+        if(t.approval)row.getCell(13).value=(t.approval.doc_no||'')+(t.approval.pay_n>1?' ('+t.approval.seq+'/'+t.approval.pay_n+')':'');
+        if(t.overdue)for(let c=1;c<=N;c++)row.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFDECEA'}};
+        r++;
+      });
+      const last=r-1;
+      const R2=n=>Math.round((n+Number.EPSILON)*100)/100;
+      // 요약: 수입·지출·순액 (MXN 환산 기준, SUMIFS 수식)
+      r++;
+      const sum=(label,crit,val)=>{const row=ws.getRow(r);row.getCell(11).value=label;row.getCell(11).font={bold:true};row.getCell(11).alignment={horizontal:'right'};
+        row.getCell(12).value={formula:crit,result:val};row.getCell(12).numFmt=money;row.getCell(12).font={bold:true};r++;};
+      const rng='L'+first+':L'+last, tr='C'+first+':C'+last;
+      sum('수입 / Ingresos','SUMIFS('+rng+','+tr+',"수입*")',R2(sIn));
+      sum('지출 / Egresos','SUMIFS('+rng+','+tr+',"지출*")',R2(sOut));
+      sum('순액 / Neto','L'+(r-2)+'-L'+(r-1),R2(sIn-sOut));
+      if(rows.some(t=>t.currency==='USD')&&!rate){ws.getCell(4,1).value='⚠ 오늘 환율을 불러오지 못해 USD 예정의 MXN 환산이 비어 있습니다.';ws.getCell(4,1).font={color:{argb:'FFB4231F'}};}
+      const buf=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+      a.download='refatrix_pendientes_'+mxHoy().replace(/-/g,'')+'.xlsx';
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+    }catch(e){alert('엑셀 생성 실패: '+(e&&e.message||e));}
+    finally{if(btn){btn.disabled=false;btn.textContent=old;}}
+  }
   function ppHeadClick(k){
     if(ppSort.key!==k){ ppSort={key:k,dir:PP_NUM[k]?-1:1}; }
     else if((PP_NUM[k]?-1:1)===ppSort.dir){ ppSort.dir=-ppSort.dir; }
@@ -4650,17 +4753,7 @@
       if(cnt) cnt.textContent=ppItems.length?('— '+items.length+'건 표시 / 전체 '+ppItems.length+'건'):'';
       if(!ppItems.length){b.innerHTML='<div class="hint">처리할 예정 내역이 없습니다.</div>';ppSyncSelUi();return;}
       if(!items.length){b.innerHTML='<div class="hint">'+(ppQuery.trim()?'검색 결과가 없습니다.':'선택한 연·월에 해당하는 예정이 없습니다. (연·월 필터에서 조정)')+'</div>';ppSyncSelUi();return;}
-      if(ppSort.key){
-        const k=ppSort.key,dd=ppSort.dir,isNum=!!PP_NUM[k];
-        items=items.slice().sort((a,z)=>{
-          const va=ppSortVal(a,k),vz=ppSortVal(z,k);
-          const ea=(va===''||va==null),ez=(vz===''||vz==null);
-          if(ea!==ez)return ea?1:-1;
-          let c=isNum?(va-vz):String(va).localeCompare(String(vz),'ko',{numeric:true});
-          if(c===0)c=(Number(a.id)||0)-(Number(z.id)||0);
-          return c*dd;
-        });
-      }
+      items=ppApplySort(items);
       const parrow=k=>ppSort.key===k?(ppSort.dir===1?' ▲':' ▼'):'';
       const pth=(k,label,cls)=>`<th${cls?' class="'+cls+'"':''} data-ppsort="${k}" style="cursor:pointer;user-select:none" title="클릭해 정렬 (3회째 기본순서)">${label}${parrow(k)}</th>`;
       const srcLabel=(s)=>s==='approval'?'<span class="badge" style="background:#eef0fb;color:#3b4ba0">전자결재</span>':s==='sales'?'<span class="badge" style="background:#e6f1fb;color:#0c447c">매출</span>':s==='recurring'?'<span class="badge" style="background:#efeee9;color:#6b6b6b">고정비</span>':s==='marketing'?'<span class="badge" style="background:#f1ebf7;color:#7a4ea0">마케팅</span>':'<span class="badge" style="background:#f0ece4;color:#8a6d1a">수동</span>';
@@ -5287,6 +5380,7 @@
     const p=$('pp-filter-panel'); p.classList.toggle('hidden');
     $('pp-filter-toggle').textContent='연·월 필터 '+(p.classList.contains('hidden')?'▾':'▴');
   });
+  $('pp-excel').addEventListener('click',ppDownloadExcel);
   $('pp-search').addEventListener('input',()=>{ppQuery=$('pp-search').value;renderPendingPlans();});
   $('pp-overdue').addEventListener('change',()=>{ppShowOverdue=$('pp-overdue').checked;renderPendingPlans();});
   $('pp-this-month').addEventListener('click',()=>{ppSelYears=new Set([ppCurYear]);ppSelMonths=new Set([ppCurMonth]);renderPpFilterPanel();renderPendingPlans();});
