@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-1108sd</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-1123fc</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -161,9 +161,11 @@
     <!-- ① 가격표 -->
     <section id="t-table">
       <div class="card">
-        <p class="ttl">가격 테이블 — 제품마다 FOB 구매가(USD)와 List 정가(MXN)</p>
+        <p class="ttl">가격 테이블 — 제품마다 FOB 구매가(USD · MXN)와 실적 원가 · List 정가(MXN)</p>
         <p class="sub2">판매가 = List × (1 − 고객 할인율, 고객 마스터). 구매 기록은 FOB 로 검증합니다. <b>밑줄 친 값을 누르면 그 제품 하나만 바로 수정</b>합니다(적용일 · 사유 · PIN).
-          배수 = List ÷ (FOB × 환율). CTR÷SYD = 우리 List ÷ SYD List.</p>
+          배수 = List ÷ (FOB × 환율). CTR÷SYD = 우리 List ÷ SYD List.<br>
+          <b>FOB MXN</b> = FOB × 오늘 환율(가장 최근 등록 환율). <b>Total Cost MXN</b> = 그동안 승인된 수입 배치의 1개당 입고원가(FOB×당시 환율 + 운임·통관·관세 등 부대비용)를
+          <b>평균원가원칙</b>으로 섞은 값 — Σ(수입수량 × 입고단가) ÷ Σ수입수량. 원가가 바뀐 배치가 들어오면 평균에 자동 반영됩니다. 수입 기록이 없는 제품은 저장된 평균원가(<span class="mut">*</span>)로 표시합니다.</p>
         <div class="row">
           <div class="f" style="flex:2"><label for="tq">검색</label><input id="tq" placeholder="코드 · 품목 · 적용차종"></div>
           <div class="f"><label for="torigin">원산지</label><select id="torigin"><option value="">전체</option></select></div>
@@ -171,12 +173,12 @@
           <label style="display:flex;gap:6px;align-items:center;font-weight:500;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="tall"> 비활성 포함</label>
         </div>
         <div class="row" style="margin-top:10px">
-          <button class="btn ghost sm" id="btnTExport">엑셀 내보내기</button>
+          <button class="btn sm" id="btnTExport">📥 엑셀 다운로드</button>
           <button class="btn ghost sm wOnly" id="dlTplPrice">📄 FOB List 업로드 엑셀양식 받기</button>
           <button class="btn ghost sm wOnly" id="btnTImport">FOB·List 엑셀 올리기</button>
           <input type="file" id="fImport" accept=".xlsx,.xls,.csv" class="hidden">
           <span class="mut" style="font-size:12px">올리기 열: <b>Clave CTR</b> · <b>FOB USD</b> · <b>List Price MXN</b> — 둘 중 하나만 있어도 됩니다. 바뀐 값만 반영합니다.
-            <b>새로 채울 때는 양식</b>, <b>지금 값을 고칠 때는 「엑셀 내보내기」 파일</b>을 고쳐 그대로 올리면 됩니다.</span>
+            <b>새로 채울 때는 양식</b>, <b>지금 값을 고칠 때는 「엑셀 다운로드」 파일</b>을 고쳐 그대로 올리면 됩니다.</span>
         </div>
         <div class="msg" id="tplPriceMsg"></div>
         <div class="kpis" id="tkpis"></div>
@@ -414,7 +416,7 @@
 
 (function(){
   'use strict';
-  const BUILD='pm-1012cs3';
+  const BUILD='pm-1123fc';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -655,16 +657,21 @@
   // ═══ ① 가격표 ═══
   let tRows=[], tTimer=null;
   // 정렬은 서버에서(제품 전체 기준) — 제목을 누르면 처음부터 다시 불러온다
-  const T_COLS=[['code','코드'],['name','품목'],['origin','원산지'],['fob','FOB (USD)',1],['list','List (MXN)',1],['mult','배수',1,'asc'],['syd','SYD List',1],['ratio','CTR ÷ SYD',1,'asc'],['last','최근 변경',0,'desc']];
+  const T_COLS=[['code','코드'],['name','품목'],['origin','원산지'],['fob','FOB (USD)',1],['fobmxn','FOB MXN (오늘)',1],['cost','Total Cost MXN',1],['list','List (MXN)',1],['mult','배수',1,'asc'],['syd','SYD List',1],['ratio','CTR ÷ SYD',1,'asc'],['last','최근 변경',0,'desc']];
   function renderTHead(){ $('tth').innerHTML=headRow('t',T_COLS); bindSort($('tth'),'t',()=>{ renderTHead(); loadTable(false); }); }
   function tQuery(offset,limit){
     const p=new URLSearchParams(); const q=$('tq').value.trim(); if(q) p.set('q',q);
     if($('torigin').value) p.set('origin',$('torigin').value); if($('tview').value) p.set('view',$('tview').value);
     p.set('sort',SORTS.t.k); p.set('dir',SORTS.t.dir); if($('tall').checked) p.set('all','1'); p.set('offset',offset); p.set('limit',limit); return p.toString();
   }
+  function costTip(r){
+    if(r.cost_basis==='import') return '승인된 수입 '+r.cost_batches+'회 · 누적 '+Number(r.cost_qty).toLocaleString('es-MX')+'개 가중평균';
+    if(r.cost_basis==='stored') return '수입 기록 없음 — 저장된 평균원가';
+    return '원가 없음';
+  }
   async function loadTable(append){
     const d=await api('/api/price-master/table?'+tQuery(append?tRows.length:0,200));
-    if(!d.ok){ $('ttb').innerHTML='<tr><td colspan="9" class="mut" style="padding:14px">'+esc(errKo(d.error))+'</td></tr>'; return; }
+    if(!d.ok){ $('ttb').innerHTML='<tr><td colspan="11" class="mut" style="padding:14px">'+esc(errKo(d.error))+'</td></tr>'; return; }
     tRows=append?tRows.concat(d.rows):d.rows; fx=d.fx||fx;
     const k=d.kpi;
     $('tkpis').innerHTML='<div class="kpi"><span>제품</span><b>'+k.total.toLocaleString('es-MX')+'</b></div>'
@@ -675,10 +682,12 @@
       +'<div class="kpi"><span>환율 USD→MXN'+(fx?' ('+esc(fx.date)+')':'')+'</span><b>'+(fx?fx.rate.toFixed(2):'없음')+'</b></div>';
     $('ttb').innerHTML=tRows.map(r=>'<tr class="'+(r.is_active?'':'off')+'"><td><span class="codeLink" data-code="'+esc(r.code)+'">'+esc(r.code)+'</span></td><td>'+esc(r.name||'')+'</td><td>'+esc(r.origin||'—')+'</td>'
       +'<td class="n"><span class="edit" data-id="'+r.id+'" data-t="fob">'+(r.fob_usd==null?'<span class="badge b-sk">없음</span>':fmtU(r.fob_usd))+'</span></td>'
+      +'<td class="n">'+fmt(r.fob_mxn)+'</td>'
+      +'<td class="n" title="'+esc(costTip(r))+'">'+(r.total_cost_mxn==null?'<span class="mut">—</span>':fmt(r.total_cost_mxn)+(r.cost_basis==='stored'?'<span class="mut">*</span>':''))+'</td>'
       +'<td class="n"><span class="edit" data-id="'+r.id+'" data-t="list">'+(r.list_price==null?'<span class="badge b-sk">없음</span>':fmt(r.list_price))+'</span></td>'
       +'<td class="n '+(r.mult!=null&&r.mult<3?'up':'')+'">'+(r.mult==null?'—':r.mult.toFixed(2))+'</td>'
       +'<td class="n">'+fmt(r.list_price_syd)+'</td><td class="n '+(r.ratio>1?'up':'')+'">'+(r.ratio==null?'—':r.ratio.toFixed(2))+'</td>'
-      +'<td class="mut">'+esc(r.last_change||'')+'</td></tr>').join('')||'<tr><td colspan="9" class="mut" style="padding:14px">없음</td></tr>';
+      +'<td class="mut">'+esc(r.last_change||'')+'</td></tr>').join('')||'<tr><td colspan="11" class="mut" style="padding:14px">없음</td></tr>';
     bindCodeLinks($('ttb'));
     $('ttb').querySelectorAll('.edit').forEach(e=>e.addEventListener('click',()=>{ if(!canEdit) return; singleEdit(tRows.find(r=>r.id===Number(e.dataset.id)),e.dataset.t); }));
     $('tcnt').textContent=tRows.length.toLocaleString('es-MX')+' / '+k.total.toLocaleString('es-MX')+'개';
@@ -690,9 +699,12 @@
   $('btnTExport').addEventListener('click',async()=>{
     const d=await api('/api/price-master/table?'+tQuery(0,20000));
     if(!d.ok){ toast(errKo(d.error),true); return; }
-    const aoa=[['Clave CTR','Producto','Origen','FOB USD','List Price MXN','Multiplo','SYD List','CTR/SYD','Ultimo cambio']]
-      .concat(d.rows.map(r=>[r.code,r.name||'',r.origin||'',r.fob_usd,r.list_price,r.mult,r.list_price_syd,r.ratio,r.last_change||'']));
-    saveXlsx('Refatrix_precios_'+today+'.xlsx','Precios',aoa,[14,26,8,10,12,9,11,9,12]);
+    const fxh=d.fx?' (TC '+d.fx.rate.toFixed(4)+' · '+d.fx.date+')':'';
+    const BASIS={import:'Promedio importaciones',stored:'Costo promedio guardado'};
+    const aoa=[['Clave CTR','Producto','Origen','FOB USD','FOB MXN'+fxh,'Total Cost MXN','Base costo','Importaciones','List Price MXN','Multiplo','SYD List','CTR/SYD','Ultimo cambio']]
+      .concat(d.rows.map(r=>[r.code,r.name||'',r.origin||'',r.fob_usd,r.fob_mxn,r.total_cost_mxn,BASIS[r.cost_basis]||'',r.cost_batches||null,r.list_price,r.mult,r.list_price_syd,r.ratio,r.last_change||'']));
+    saveXlsx('Refatrix_precios_'+today+'.xlsx','Precios',aoa,[14,26,8,10,12,13,20,12,12,9,11,9,12]);
+    toast('엑셀을 받았습니다 — '+d.rows.length.toLocaleString('es-MX')+'개');
   });
   function singleEdit(r,t){
     if(!r) return; const cur=t==='fob'?r.fob_usd:r.list_price;
@@ -720,7 +732,7 @@
   $('fImport').addEventListener('change',async()=>{
     const file=$('fImport').files[0]; $('fImport').value=''; if(!file) return;
     let mat; try{ mat=await readSheet(file); }catch(e){ toast('파일을 읽을 수 없습니다',true); return; }
-    const h=findHeader(mat,{code:c=>/clave\s*ctr|^c[oó]digo|^code$|^ctr$|clave de ctr/i.test(c), fob:c=>/fob/i.test(c), list:c=>/list|lista/i.test(c)&&!/syd/i.test(c)});
+    const h=findHeader(mat,{code:c=>/clave\s*ctr|^c[oó]digo|^code$|^ctr$|clave de ctr/i.test(c), fob:c=>/fob/i.test(c)&&!/mxn/i.test(c), list:c=>/list|lista/i.test(c)&&!/syd/i.test(c)});
     if(!h||h.idx.code<0||(h.idx.fob<0&&h.idx.list<0)){ toast('열을 찾지 못했습니다 — Clave CTR · FOB · List Price',true); return; }
     const data=[]; for(let r=h.row+1;r<mat.length;r++){ const m=mat[r]||[]; const code=String(m[h.idx.code]==null?'':m[h.idx.code]).trim(); if(!code) continue;
       data.push({_row:r+1,code,fob:h.idx.fob>=0?m[h.idx.fob]:null,list:h.idx.list>=0?m[h.idx.list]:null}); }
