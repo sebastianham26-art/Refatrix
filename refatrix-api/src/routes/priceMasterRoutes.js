@@ -22,6 +22,7 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds } from '../teams.js';
+import { APPLIED_BATCH_COND } from '../flatAvgCost.js';   // 2026-11-23 · 가격표 Total Cost MXN(단순가중평균 실적원가)
 import {
   priceMasterReady, mxToday, isYmd, latestFx, normType, PRICE_COL, ROUNDINGS, normalizeFilter, normalizeChange,
   nvSql, eligibleSql, calcNewPrice, roundTo, buildFilterWhere, buildTargetWhere, describeFilter, createBatch,
@@ -113,6 +114,29 @@ export default async function priceMasterRoutes(app) {
   });
 
   // ── ① 가격표 ──
+  // 2026-11-23 · Total Cost MXN — 그동안의 실적(승인된 수입 배치)으로 본 1개당 원가.
+  //   = Σ(수입수량 × 입고단가MXN) ÷ Σ수입수량 (평균원가원칙 · 단순가중평균). 입고단가는 FOB×환율 + 운임·통관·관세 등 부대비용 배분액.
+  //   제품 평균원가(products.avg_cost)를 입고 승인 때 다시 계산하는 식(flatAvgCost)과 같은 조건 → 원가가 바뀌면 새 배치가 평균에 섞여 들어간다.
+  //   승인된 수입 기록이 없는 제품은 저장된 평균원가(avg_cost > 0)로 대신하고, 그것도 없으면 비운다.
+  const COST_JOIN = `LEFT JOIN LATERAL (
+      SELECT SUM(il.qty) AS qty, SUM(il.qty * il.unit_cost_mxn) AS amount, COUNT(DISTINCT b.id) AS batches
+        FROM import_lines il JOIN import_batches b ON b.id = il.batch_id
+       WHERE ${APPLIED_BATCH_COND} AND il.product_id = p.id) ic ON TRUE`;
+  // 2026-11-23b · 판매 누적수량 — 지금까지 게시(posted)된 매출 인보이스의 판매수량 합(삭제 인보이스 제외).
+  //   ⑦ 제품 수익성의 「누적 판매수량」(profitBase)과 같은 기준.
+  const SOLD_JOIN = `LEFT JOIN LATERAL (
+      SELECT SUM(sil.qty) AS qty, COUNT(DISTINCT si.id) AS inv_n, to_char(MAX(si.inv_date),'YYYY-MM-DD') AS last_sale
+        FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id = sil.invoice_id
+       WHERE si.status = 'posted' AND si.deleted_at IS NULL AND sil.product_id = p.id) sq ON TRUE`;
+  const TOTAL_COST_SQL = 'COALESCE(CASE WHEN ic.qty > 0 THEN ic.amount / ic.qty END, NULLIF(p.avg_cost, 0))';
+  function totalCost(r) {
+    const q = Number(r.cost_qty); const a = Number(r.cost_amount);
+    if (q > 0 && Number.isFinite(a)) return { total_cost_mxn: Math.round(a / q * 100) / 100, cost_basis: 'import', cost_batches: Number(r.cost_batches) || 0, cost_qty: Math.round(q * 1000) / 1000 };
+    const st = Number(r.avg_cost);
+    if (st > 0) return { total_cost_mxn: Math.round(st * 100) / 100, cost_basis: 'stored', cost_batches: 0, cost_qty: 0 };
+    return { total_cost_mxn: null, cost_basis: null, cost_batches: 0, cost_qty: 0 };
+  }
+
   app.get('/api/price-master/table', READ, async (req, reply) => {
     if (!(await gate(reply))) return;
     const qv = req.query || {};
@@ -139,8 +163,9 @@ export default async function priceMasterRoutes(app) {
     // 정렬(2026-09-24): 표 제목 클릭 = sort + dir. 전체 데이터 기준(보이는 줄만이 아니라). dir 이 없으면 예전 기본 방향.
     const SORT_COL = { code: 'p.code', name: "upper(COALESCE(p.name,''))", origin: "upper(COALESCE(p.origin,''))", fob: 'p.fob_usd', list: 'p.list_price',
       mult: '(p.list_price / NULLIF(p.fob_usd,0))', syd: 'p.list_price_syd', ratio: '(p.list_price / NULLIF(p.list_price_syd,0))',
-      last: "(SELECT MAX(h2.effective_date) FROM product_price_history h2 WHERE h2.product_id = p.id AND h2.source <> 'initial')" };
-    const DEF_DIR = { code: 'asc', name: 'asc', origin: 'asc', fob: 'desc', list: 'desc', mult: 'asc', syd: 'desc', ratio: 'asc', last: 'desc' };
+      last: "(SELECT MAX(h2.effective_date) FROM product_price_history h2 WHERE h2.product_id = p.id AND h2.source <> 'initial')",
+      fobmxn: 'p.fob_usd', cost: TOTAL_COST_SQL, sold: 'COALESCE(sq.qty, 0)' };
+    const DEF_DIR = { code: 'asc', name: 'asc', origin: 'asc', fob: 'desc', list: 'desc', mult: 'asc', syd: 'desc', ratio: 'asc', last: 'desc', fobmxn: 'desc', cost: 'desc', sold: 'desc' };
     const sk = SORT_COL[qv.sort] ? qv.sort : 'code';
     const sd = (qv.dir === 'asc' || qv.dir === 'desc') ? qv.dir : DEF_DIR[sk];
     const orderSql = `${SORT_COL[sk]} ${sd.toUpperCase()} NULLS LAST, p.code`;
@@ -150,8 +175,10 @@ export default async function priceMasterRoutes(app) {
     const rows = (await query(
       `SELECT p.id, p.code, p.name, p.origin, p.is_active, p.fob_usd, p.list_price, p.list_price_syd,
               (SELECT to_char(MAX(h.effective_date),'YYYY-MM-DD') FROM product_price_history h
-                WHERE h.product_id = p.id AND h.source <> 'initial') AS last_change
-         FROM products p WHERE ${W}
+                WHERE h.product_id = p.id AND h.source <> 'initial') AS last_change,
+              ic.qty AS cost_qty, ic.amount AS cost_amount, ic.batches AS cost_batches, p.avg_cost,
+              sq.qty AS sold_qty, sq.inv_n AS sold_inv_n, sq.last_sale
+         FROM products p ${COST_JOIN} ${SOLD_JOIN} WHERE ${W}
         ORDER BY ${orderSql} LIMIT $${lp.length - 1} OFFSET $${lp.length}`, lp)).rows;
     const fr = fx ? fx.rate : null;
     return {
@@ -164,6 +191,9 @@ export default async function priceMasterRoutes(app) {
         const fob = num(r.fob_usd); const lp2 = num(r.list_price); const syd = num(r.list_price_syd);
         return { id: Number(r.id), code: r.code, name: r.name, origin: r.origin, is_active: r.is_active !== false,
           fob_usd: fob, list_price: lp2, list_price_syd: syd,
+          fob_mxn: fr && fob > 0 ? Math.round(fob * fr * 100) / 100 : null,
+          ...totalCost(r),
+          sold_qty: Math.round(Number(r.sold_qty || 0) * 1000) / 1000, sold_inv_n: Number(r.sold_inv_n) || 0, last_sale: r.last_sale || null,
           mult: fr && fob > 0 && lp2 > 0 ? Math.round(lp2 / (fob * fr) * 100) / 100 : null,
           ratio: syd > 0 && lp2 > 0 ? Math.round(lp2 / syd * 10000) / 10000 : null,
           last_change: r.last_change };
