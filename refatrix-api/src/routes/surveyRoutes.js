@@ -158,15 +158,15 @@ async function uploadDays(sid) {
             SUM(CASE WHEN p.status='error' THEN 1 ELSE 0 END)::int AS error,
             SUM(CASE WHEN p.status IN ('queued','processing') THEN 1 ELSE 0 END)::int AS running,
             MIN(p.created_at) AS first_at, MAX(p.created_at) AS last_at,
-            MIN(p.red_number) FILTER (WHERE p.red_number IS NOT NULL) AS num_min,
-            MAX(p.red_number) FILTER (WHERE p.red_number IS NOT NULL) AS num_max,
+            MIN(lpad(p.red_number, 8, '0')) FILTER (WHERE p.red_number IS NOT NULL) AS num_min,
+            MAX(lpad(p.red_number, 8, '0')) FILTER (WHERE p.red_number IS NOT NULL) AS num_max,
             array_remove(array_agg(DISTINCT u.name), NULL) AS uploaders
        FROM survey_pages p LEFT JOIN users u ON u.id = p.uploaded_by
       WHERE p.survey_id=$1
       GROUP BY 1 ORDER BY 1 DESC`, [sid])).rows;
   return rows.map((r) => ({ day: r.day, total: Number(r.total), done: Number(r.done || 0), error: Number(r.error || 0),
     running: Number(r.running || 0), first_at: iso(r.first_at), last_at: iso(r.last_at),
-    num_min: r.num_min || null, num_max: r.num_max || null, uploaders: r.uploaders || [] }));
+    num_min: r.num_min ? (r.num_min.replace(/^0+(?=\d{4})/, '')) : null, num_max: r.num_max ? (r.num_max.replace(/^0+(?=\d{4})/, '')) : null, uploaders: r.uploaders || [] }));
 }
 
 function pageOut(r, prefix) {
