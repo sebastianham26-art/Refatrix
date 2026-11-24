@@ -35,6 +35,7 @@ const VIEW_MAX = 3 * 1024 * 1024;        // PDF 페이지를 그린 JPEG(판독�
 const THUMB_MAX = 300 * 1024;
 const MAX_ATTEMPTS = 4;                  // 일시 오류(429·5xx·시간초과) 자동 재시도
 const AI_TIMEOUT_MS = 120000;
+const UP_TZ = 'America/Mexico_City';     // 「날짜별 업로드 내역」 날짜 기준(멕시코 시간)
 const LOCK_NS = 216216;                  // pg_advisory_xact_lock(LOCK_NS, survey_id) — 번호·순번 배정 직렬화
 
 export const AI_MODEL = () => process.env.SURVEY_AI_MODEL || 'claude-sonnet-4-5-20250929';
@@ -149,6 +150,25 @@ async function freeDupIdx(q, sid, redNumber, selfId) {
   return i;
 }
 
+async function uploadDays(sid) {
+  const rows = (await query(
+    `SELECT to_char(p.created_at AT TIME ZONE '${UP_TZ}','YYYY-MM-DD') AS day,
+            COUNT(*)::int AS total,
+            SUM(CASE WHEN p.status='done' THEN 1 ELSE 0 END)::int AS done,
+            SUM(CASE WHEN p.status='error' THEN 1 ELSE 0 END)::int AS error,
+            SUM(CASE WHEN p.status IN ('queued','processing') THEN 1 ELSE 0 END)::int AS running,
+            MIN(p.created_at) AS first_at, MAX(p.created_at) AS last_at,
+            MIN(p.red_number) FILTER (WHERE p.red_number IS NOT NULL) AS num_min,
+            MAX(p.red_number) FILTER (WHERE p.red_number IS NOT NULL) AS num_max,
+            array_remove(array_agg(DISTINCT u.name), NULL) AS uploaders
+       FROM survey_pages p LEFT JOIN users u ON u.id = p.uploaded_by
+      WHERE p.survey_id=$1
+      GROUP BY 1 ORDER BY 1 DESC`, [sid])).rows;
+  return rows.map((r) => ({ day: r.day, total: Number(r.total), done: Number(r.done || 0), error: Number(r.error || 0),
+    running: Number(r.running || 0), first_at: iso(r.first_at), last_at: iso(r.last_at),
+    num_min: r.num_min || null, num_max: r.num_max || null, uploaders: r.uploaders || [] }));
+}
+
 function pageOut(r, prefix) {
   return {
     id: Number(r.id), seq: Number(r.seq), orig_name: r.orig_name, mime: r.mime,
@@ -159,6 +179,7 @@ function pageOut(r, prefix) {
     answers: r.answers || null, others: r.others || {}, geo: r.geo || {}, low_conf: r.low_conf || [], edited: r.edited || {},
     notes: r.ai_notes || null, has_view: !!r.has_view, has_thumb: !!r.has_thumb, geo_scan: r.geo_scan || null,
     uploaded_by: r.uploaded_by_name || null, created_at: iso(r.created_at), processed_at: iso(r.processed_at),
+    up_day: r.up_day || null,
   };
 }
 
@@ -539,7 +560,8 @@ export default async function surveyRoutes(app) {
       `SELECT p.id, p.seq, p.orig_name, p.mime, p.file_bytes, p.red_number, p.red_raw, p.dup_idx, p.status, p.error,
               p.attempts, p.answers, p.others, p.geo, p.low_conf, p.edited, p.ai_notes,
               (p.view_data IS NOT NULL) AS has_view, p.geo_scan, (p.thumb_data IS NOT NULL) AS has_thumb,
-              p.created_at, p.processed_at, u.name AS uploaded_by_name
+              p.created_at, p.processed_at, u.name AS uploaded_by_name,
+              to_char(p.created_at AT TIME ZONE '${UP_TZ}','YYYY-MM-DD') AS up_day
          FROM survey_pages p LEFT JOIN users u ON u.id = p.uploaded_by
         WHERE p.survey_id = $1 ORDER BY p.seq`, [Number(s.id)])).rows;
     if (rows.some((r) => r.status === 'queued')) setTimeout(() => { pump().catch(() => {}); }, 10);
@@ -839,6 +861,45 @@ export default async function surveyRoutes(app) {
     await query(`DELETE FROM survey_pages WHERE id=$1`, [Number(p.id)]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `survey_page:${p.id}`, detail: { survey_id: Number(p.survey_id), red_number: p.red_number } });
     return { ok: true };
+  });
+
+  // ── 날짜별 업로드 내역 (2026-11-24) ──
+  //   업로드 날짜(멕시코 시간) 단위로 묶어 보여 주고, 그 날짜에 올린 설문지 스캔을 한꺼번에 지운다(디렉터).
+  //   플랫폼(REFATRIX Platform 「고객 설문」)은 이 DB 를 매번 그대로 읽으므로 삭제가 바로 반영된다 —
+  //   집계·지도·응답 목록·가린 사본 일괄 다운로드 모두. 옛 응답 기준으로 만든 AI 요약(한국어·스페인어)은 지운다.
+  app.get('/api/surveys/:id/upload-days', { preHandler: [authGuard, requirePage(PAGE)] }, async (req, reply) => {
+    const s = await getSurvey(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    return { tz: UP_TZ, items: await uploadDays(Number(s.id)) };
+  });
+
+  app.delete('/api/surveys/:id/upload-days/:day', { preHandler: [authGuard, requirePage(PAGE), requireDirector] }, async (req, reply) => {
+    const s = await getSurvey(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    const day = String(req.params.day || '');
+    if (!DATE_RE.test(day)) return reply.code(400).send({ error: 'bad_date' });
+    const expect = Number((req.query || {}).expect);
+    if (!Number.isInteger(expect) || expect < 1) return reply.code(400).send({ error: 'no_expect' });
+    const sid = Number(s.id);
+    const res = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      await q(`SELECT pg_advisory_xact_lock($1, $2)`, [LOCK_NS, sid]);
+      const rows = (await q(
+        `SELECT id, seq, red_number, dup_idx, status FROM survey_pages
+          WHERE survey_id=$1 AND (created_at AT TIME ZONE '${UP_TZ}')::date = $2::date ORDER BY seq FOR UPDATE`, [sid, day])).rows;
+      if (!rows.length) return { err: 'no_pages', code: 404 };
+      if (rows.length !== expect) return { err: 'count_changed', code: 409, count: rows.length };
+      await q(`DELETE FROM survey_pages WHERE id = ANY($1::bigint[])`, [rows.map((r) => Number(r.id))]);
+      const hadAi = (await q(`UPDATE surveys SET ai_cache=NULL, updated_by=$2, updated_at=now()
+                               WHERE id=$1 AND ai_cache IS NOT NULL RETURNING id`, [sid, Number(req.ctx.perm.userId)])).rowCount > 0;
+      return { rows, hadAi };
+    });
+    if (res.err) return reply.code(res.code).send({ error: res.err, count: res.count });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `survey:${sid}`, detail: {
+      upload_day: day, tz: UP_TZ, deleted: res.rows.length, ai_cache_cleared: res.hadAi,
+      pages: res.rows.map((r) => ({ id: Number(r.id), seq: Number(r.seq), red_number: r.red_number || null, dup_idx: Number(r.dup_idx || 1), status: r.status })),
+    } });
+    return { ok: true, day, deleted: res.rows.length, ai_cache_cleared: res.hadAi, counts: await pageCounts(sid), days: await uploadDays(sid) };
   });
 
   // ── AI 요약: 서술형 주제 묶기 + 세그먼트 한 줄 해석 → ai_cache ──

@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 설문 분석 · build 20260930sv12</title>
+<title>Refatrix ERP · 고객 설문 분석 · build 20261124sv13</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -294,9 +294,20 @@
           </div>
         </div>
 
+        <div class="card no-print" id="dayCard">
+          <div class="row" style="margin-bottom:6px">
+            <p class="ttl" style="margin:0">📅 날짜별 업로드 내역</p>
+            <span class="sub2" style="margin:0">멕시코 시간 기준 · 올린 날짜별로 묶음</span>
+            <div class="sp"></div>
+          </div>
+          <p class="sub2" id="dayNote" style="margin:0 0 8px">날짜를 누르면 아래 응답 목록이 그 날짜만 보입니다. <b>🗑 이 날짜 삭제</b>는 그날 올린 설문지 스캔·판독 결과를 모두 지우며(디렉터), REFATRIX Platform 「고객 설문」에도 바로 반영됩니다.</p>
+          <div class="tbwrap" style="max-height:300px"><table><thead><tr><th>업로드 날짜</th><th>장수</th><th>판독</th><th>붉은 번호 범위</th><th>올린 사람</th><th>시간</th><th></th></tr></thead><tbody id="dayBody"></tbody></table></div>
+        </div>
+
         <div class="card">
           <div class="row" style="margin-bottom:10px">
             <p class="ttl" style="margin:0">응답 목록</p>
+            <select id="ld" title="업로드 날짜"><option value="">모든 업로드 날짜</option></select>
             <input id="lq" placeholder="번호·답 검색" style="width:170px">
             <select id="lf"><option value="">전체</option><option value="flag">⚠ 확인 필요(번호·중복·확신 낮음)</option><option value="err">실패</option><option value="run">대기·처리 중</option></select>
             <select id="ls"><option value="num">번호순</option><option value="seq">업로드순</option></select>
@@ -351,7 +362,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='20260930sv12';
+  const BUILD='20261124sv13';
   try{ console.log('[survey] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -379,6 +390,7 @@
   let pollT=null;
   let drawerId=null, drawerEdit=false, drawerUrl=null;
   const sel=new Set();
+  let dayF='';             // 응답 목록 — 업로드 날짜 필터
 
   // ─────────────── 공통 ───────────────
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -413,7 +425,7 @@
   function optKo(q,o){ const i=(q.options||[]).indexOf(o); return (q.options_ko&&q.options_ko[i])||''; }
   function fmtTime(iso){ if(!iso) return ''; try{ return new Date(iso).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return iso; } }
   function kb(n){ if(n==null) return ''; return n>1048576?(n/1048576).toFixed(1)+'MB':Math.round(n/1024)+'KB'; }
-  const ERR_KO={redact_review_needed:'답은 있는데 가릴 위치를 못 찾은 장입니다 — 다시 찾거나 다운로드에서 빼세요',redact_not_scanned:'가릴 영역을 아직 찾지 않았습니다',not_jpeg:'JPEG 가 아닙니다',no_boxes_used:'가린 영역 없이 올릴 수 없습니다',unavailable:'불러오지 못했습니다(서버 배포·마이그레이션 0243 확인)',director_only:'디렉터만 할 수 있습니다',no_title:'설문명을 입력하세요',no_prefix:'파일명 접두어를 입력하세요(영문·숫자)',bad_questions:'문항 표를 확인하세요',no_questions:'문항이 하나도 없습니다',no_free_geo:'「손으로 적은 지역」 문항이 없습니다',
+  const ERR_KO={count_changed:'그 사이 이 날짜 장수가 바뀌었습니다 — 목록을 새로 불러왔으니 다시 확인하세요',no_pages:'이 날짜에 올린 설문지가 없습니다',bad_date:'날짜 형식이 잘못됐습니다',no_expect:'삭제할 장수 확인값이 없습니다',redact_review_needed:'답은 있는데 가릴 위치를 못 찾은 장입니다 — 다시 찾거나 다운로드에서 빼세요',redact_not_scanned:'가릴 영역을 아직 찾지 않았습니다',not_jpeg:'JPEG 가 아닙니다',no_boxes_used:'가린 영역 없이 올릴 수 없습니다',unavailable:'불러오지 못했습니다(서버 배포·마이그레이션 0243 확인)',director_only:'디렉터만 할 수 있습니다',no_title:'설문명을 입력하세요',no_prefix:'파일명 접두어를 입력하세요(영문·숫자)',bad_questions:'문항 표를 확인하세요',no_questions:'문항이 하나도 없습니다',no_free_geo:'「손으로 적은 지역」 문항이 없습니다',
     no_anthropic_key:'AI 키가 없습니다(관리 → 외부 서비스 키)',ai_parse:'AI 응답을 해석하지 못했습니다 — 다시 시도하세요',bad_mime:'지원하지 않는 파일 형식',bad_file:'파일 내용이 형식과 다릅니다',
     too_large:'파일이 너무 큽니다',same_file:'이미 올린 파일',number_taken:'이미 있는 번호',bad_number:'번호에 숫자가 없습니다',bad_answer:'값이 보기/범위와 맞지 않습니다',
     forbidden:'권한이 없습니다',read_only:'열람 전용 권한입니다',director_only:'디렉터만 할 수 있습니다',no_done_pages:'판독이 끝난 응답이 없습니다',network:'서버에 연결할 수 없습니다'};
@@ -791,6 +803,8 @@
     $('aiWarn').classList.toggle('hidden',!!d.ai_ready || !((counts.queued||0)+(counts.processing||0)+(counts.geo_pending||0)));
     const live=new Set(pages.map(p=>p.id)); Array.from(sel).forEach(id=>{ if(!live.has(id)) sel.delete(id); });
     renderSumChips(); renderProgress();
+    if(dayF&&!pages.some(p=>p.up_day===dayF)) dayF='';
+    renderDays();
     if(curTab==='upload') renderList();
     if(curTab==='report') renderReport();
     if(drawerId&&!drawerEdit){ const p=pages.find(x=>x.id===drawerId); if(p) renderDrawerBody(p,false); else closeDrawer(); }
@@ -822,6 +836,7 @@
     const kw=$('lq').value.trim().toLowerCase(), f=$('lf').value, so=$('ls').value;
     const qs=S.questions||[];
     let rows=pages.filter(p=>{
+      if(dayF&&p.up_day!==dayF) return false;
       if(f==='flag'&&!isFlag(p)) return false;
       if(f==='err'&&p.status!=='error') return false;
       if(f==='run'&&!(p.status==='queued'||p.status==='processing')) return false;
@@ -876,14 +891,67 @@
     toast(d.queued+'장을 다시 판독합니다'); loadPages();
   }
 
+
+  // ─────────────── 날짜별 업로드 내역 (sv13) ───────────────
+  function dayGroups(){
+    const m=new Map();
+    pages.forEach(p=>{
+      const k=p.up_day||(p.created_at||'').slice(0,10)||'?';
+      let g=m.get(k); if(!g){ g={day:k,total:0,done:0,error:0,running:0,first:null,last:null,nums:[],who:new Set()}; m.set(k,g); }
+      g.total++; if(p.status==='done') g.done++; else if(p.status==='error') g.error++; else g.running++;
+      if(p.red_number) g.nums.push(p.red_number);
+      if(p.uploaded_by) g.who.add(p.uploaded_by);
+      if(!g.first||p.created_at<g.first) g.first=p.created_at;
+      if(!g.last||p.created_at>g.last) g.last=p.created_at;
+    });
+    return Array.from(m.values()).sort((a,b)=>a.day<b.day?1:-1);
+  }
+  const hm=(iso)=>{ if(!iso) return ''; try{ return new Date(iso).toLocaleTimeString('ko-KR',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return ''; } };
+  function renderDays(){
+    if(!S) return;
+    const gs=dayGroups(); const dir=!!S.is_director;
+    const ld=$('ld');
+    ld.innerHTML='<option value="">모든 업로드 날짜 ('+pages.length+')</option>'+gs.map(g=>'<option value="'+esc(g.day)+'"'+(g.day===dayF?' selected':'')+'>'+esc(g.day)+' ('+g.total+')</option>').join('');
+    if(!gs.length){ $('dayBody').innerHTML='<tr><td colspan="7" class="empty">아직 올린 설문지가 없습니다</td></tr>'; return; }
+    $('dayBody').innerHTML=gs.map(g=>{
+      const ns=g.nums.slice().sort(); const rng=ns.length?(ns[0]===ns[ns.length-1]?ns[0]:ns[0]+' ~ '+ns[ns.length-1]):'—';
+      const st='<span class="chip ok">완료 '+g.done+'</span>'+(g.running?' <span class="chip run">대기 '+g.running+'</span>':'')+(g.error?' <span class="chip bad">실패 '+g.error+'</span>':'');
+      return '<tr'+(g.day===dayF?' style="background:#eef3fb"':'')+'><td><button class="btn ghost sm" data-dayf="'+esc(g.day)+'" title="응답 목록에서 이 날짜만 보기"><b>'+esc(g.day)+'</b></button></td>'+
+        '<td><b>'+g.total+'</b>장</td><td>'+st+'</td><td class="mono">'+esc(rng)+'</td><td>'+esc(Array.from(g.who).join(', ')||'—')+'</td>'+
+        '<td style="color:var(--muted)">'+esc(hm(g.first))+(g.first!==g.last?' ~ '+esc(hm(g.last)):'')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn ghost sm" data-dayzip="'+esc(g.day)+'" title="이 날짜 원본 zip — 지우기 전에 받아 두세요">⬇ zip</button>'+
+        (dir?' <button class="btn danger sm" data-daydel="'+esc(g.day)+'" data-n="'+g.total+'">🗑 이 날짜 삭제</button>':'')+'</td></tr>';
+    }).join('');
+  }
+  function setDayF(v){ dayF=v||''; renderDays(); renderList(); }
+  $('ld').addEventListener('change',()=>setDayF($('ld').value));
+  $('dayBody').addEventListener('click',e=>{
+    const f=e.target.closest('[data-dayf]'); if(f){ const v=f.getAttribute('data-dayf'); setDayF(dayF===v?'':v); return; }
+    const z=e.target.closest('[data-dayzip]'); if(z){ const v=z.getAttribute('data-dayzip'); const ids=pages.filter(p=>p.up_day===v).map(p=>p.id); if(ids.length) downloadZip(ids,v); return; }
+    const d=e.target.closest('[data-daydel]'); if(d) deleteDay(d.getAttribute('data-daydel'),Number(d.getAttribute('data-n')));
+  });
+  async function deleteDay(day,n){
+    if(!S||!S.is_director){ toast(errKo('director_only'),true); return; }
+    if(!confirm(day+' 에 올린 설문지 '+n+'장을 삭제합니다.\n\n· 스캔 원본·AI 판독 결과·가린 사본이 모두 지워지고 되돌릴 수 없습니다.\n· 리포트·엑셀·지도와 REFATRIX Platform 「고객 설문」(집계·응답 목록·일괄 다운로드)에서도 바로 빠집니다.\n· 지금 AI 요약은 옛 응답 기준이라 지워집니다 — 삭제 후 [🤖 AI 요약 만들기]를 다시 누르세요.\n\n필요하면 먼저 [⬇ zip]으로 원본을 받아 두세요. 계속할까요?')) return;
+    const typed=prompt('확인을 위해 삭제할 날짜를 그대로 입력하세요: '+day);
+    if(typed==null) return;
+    if(typed.trim()!==day){ toast('날짜가 달라 삭제하지 않았습니다',true); return; }
+    const d=await api('/api/surveys/'+S.id+'/upload-days/'+encodeURIComponent(day)+'?expect='+n,{method:'DELETE'});
+    if(!d.ok){ toast(errKo(d.error)+(d.error==='count_changed'?' (지금 '+d.count+'장)':''),true); await loadPages(); return; }
+    if(d.ai_cache_cleared) S.ai_cache=null;
+    if(dayF===day) dayF='';
+    toast(day+' 업로드 '+d.deleted+'장을 삭제했습니다 — 플랫폼에도 반영됨'+(d.ai_cache_cleared?' · AI 요약은 다시 만들어 주세요':''));
+    await loadPages();
+  }
+
   // ─────────────── 다운로드 ───────────────
   async function downloadOne(id){
     const p=pages.find(x=>x.id===id); if(!p) return;
     try{ saveBlob(await apiBlob('/api/surveys/pages/'+id+'/file'),p.file_name); }catch(e){ toast('받지 못했습니다',true); }
   }
-  async function downloadZip(ids){
+  async function downloadZip(ids,tag){
     toast('zip 만드는 중… ('+(ids?ids.length:counts.total)+'장)');
-    try{ const b=await apiBlob('/api/surveys/'+S.id+'/zip'+(ids?'?ids='+ids.join(','):'')); saveBlob(b,(S.code_prefix||'ENC')+'_originales'+(ids?'_'+ids.length:'')+'.zip'); toast('zip 받기 완료 ('+kb(b.size)+')'); }
+    try{ const b=await apiBlob('/api/surveys/'+S.id+'/zip'+(ids?'?ids='+ids.join(','):'')); saveBlob(b,(S.code_prefix||'ENC')+'_originales'+(tag?'_'+String(tag).replace(/[^0-9A-Za-z-]/g,''):'')+(ids?'_'+ids.length:'')+'.zip'); toast('zip 받기 완료 ('+kb(b.size)+')'); }
     catch(e){ toast('zip 을 받지 못했습니다',true); }
   }
   $('btnZipAll').addEventListener('click',()=>{ if(!counts.total){ toast('올린 설문지가 없습니다',true); return; } downloadZip(null); });

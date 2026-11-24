@@ -370,7 +370,7 @@ test('D2. survey.html(설문 화면) 안에는 다운로드 버튼이 없다 · 
 });
 
 test('E. 빌드 토큰 · Netlify 사본과 레포 원본 일치', () => {
-  assert.match(read('refatrix-survey.html'), /build 20260930sv12/);
+  assert.match(read('refatrix-survey.html'), /build 20261124sv13/);
   let h = null; try { h = readFileSync('/home/claude/platform/survey.html', 'utf8'); } catch (_) { return; }
   assert.equal(h, read('refatrix-api/templates/survey_platform.html'), 'Netlify survey.html = 레포 원본');
 });
