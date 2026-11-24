@@ -37,7 +37,7 @@ for (const b of [bDel, bRej, bPen, bEx]) { await line(b, A, 1000, 9999); await l
 // 판매 누적: 게시 인보이스만(삭제 상태·삭제일 제외)
 const cus = Number((await query(`INSERT INTO customers (code,name) VALUES ('TCUS1','Cliente') RETURNING id`)).rows[0].id);
 const inv = async (status, date, del = false) => Number((await query(`INSERT INTO sales_invoices (customer_id, inv_date, status, deleted_at) VALUES ($1,$2,$3,$4) RETURNING id`, [cus, date, status, del ? new Date() : null])).rows[0].id);
-const sl = (i, p, q) => query(`INSERT INTO sales_invoice_lines (invoice_id, product_id, qty, list_price, unit_price, line_amount_mxn) VALUES ($1,$2,$3,1,1,$3)`, [i, p, q]);
+const sl = (i, p, q) => query(`INSERT INTO sales_invoice_lines (invoice_id, product_id, qty, list_price, unit_price, line_amount_mxn) VALUES ($1,$2,$3,1,1,$4)`, [i, p, q, q * 300]);
 const i1 = await inv('posted', '2026-10-01'); const i2 = await inv('posted', '2026-11-15'); const iD = await inv('deleted', '2026-11-20'); const iX = await inv('posted', '2026-11-21', true);
 await sl(i1, A, 30); await sl(i2, A, 12); await sl(i2, B, 4); await sl(iD, A, 500); await sl(iX, A, 700);
 
@@ -77,9 +77,29 @@ await t('판매 누적: 게시 인보이스 합(A 42 · 2건 · 마지막 11-15,
   assert.equal(r.BBB1.sold_qty, 4); assert.equal(r.CCC1.sold_qty, 0); assert.equal(r.CCC1.last_sale, null);
   d = await get('/api/price-master/table?sort=sold&dir=desc'); assert.deepEqual(d.rows.map((x) => x.code).slice(0, 2), ['AAA1', 'BBB1']);
 });
-await t('원가 변동: 새 배치(300×50) 승인 → 평균 (20000+13000+15000)/200 = 240', async () => {
+await t('총 매출액 · 매출이익액 · 매출이익률 (Total Cost × 판매수량) · KPI 누적', async () => {
+  let d = await get('/api/price-master/table?limit=50'); const r = Object.fromEntries(d.rows.map((x) => [x.code, x]));
+  // A: 매출 42×300=12600, 원가 42×220=9240 → 이익 3360 · 26.67%
+  assert.equal(r.AAA1.sales_mxn, 12600); assert.equal(r.AAA1.gross_profit_mxn, 3360); assert.equal(r.AAA1.gross_margin, 0.2667);
+  // B: 매출 1200, 원가 4×150.456=601.824 → 화면 원가 150.46 기준 598.16 · 49.85%
+  assert.equal(r.BBB1.sales_mxn, 1200); assert.equal(r.BBB1.gross_profit_mxn, 598.16); assert.equal(r.BBB1.gross_margin, 0.4985);
+  assert.equal(r.CCC1.sales_mxn, 0); assert.equal(r.CCC1.gross_profit_mxn, null); assert.equal(r.CCC1.gross_margin, null);
+  // KPI: 매출 13800 · 이익 3958.16 · 이익률 3958.16/13800
+  assert.equal(d.kpi.sales_mxn, 13800); assert.equal(d.kpi.gross_profit_mxn, 3958.16); assert.equal(d.kpi.gross_margin, 0.2868); assert.equal(d.kpi.sales_nocost_mxn, 0);
+  d = await get('/api/price-master/table?sort=gp&dir=desc'); assert.deepEqual(d.rows.map((x) => x.code).slice(0, 2), ['AAA1', 'BBB1']);
+  d = await get('/api/price-master/table?sort=gpm&dir=desc'); assert.deepEqual(d.rows.map((x) => x.code).slice(0, 2), ['BBB1', 'AAA1']);
+  d = await get('/api/price-master/table?sort=rev&dir=desc'); assert.equal(d.rows[0].code, 'AAA1');
+  d = await get('/api/price-master/table?q=BBB1'); assert.equal(d.kpi.sales_mxn, 1200); assert.equal(d.kpi.gross_margin, 0.4985);   // 조건 따라 KPI
+});
+await t('원가 없는 제품의 매출은 이익률 분모에서 빠지고 sales_nocost 로 알림', async () => {
+  const iz = await inv('posted', '2026-11-22'); await sl(iz, C, 2);   // C: 원가 없음, 매출 600
+  const d = await get('/api/price-master/table?limit=50');
+  assert.equal(d.kpi.sales_mxn, 14400); assert.equal(d.kpi.gross_profit_mxn, 3958.16); assert.equal(d.kpi.gross_margin, 0.2868); assert.equal(d.kpi.sales_nocost_mxn, 600);
+  const c = d.rows.find((x) => x.code === 'CCC1'); assert.equal(c.sales_mxn, 600); assert.equal(c.gross_profit_mxn, null);
+});
+await t('원가 변동: 새 배치(300×50) 승인 → 평균 240 → 이익도 다시 계산', async () => {
   const b3 = await batch('approved'); await line(b3, A, 50, 300);
-  const d = await get('/api/price-master/table?q=AAA1'); assert.equal(d.rows[0].total_cost_mxn, 240); assert.equal(d.rows[0].cost_batches, 3);
+  const d = await get('/api/price-master/table?q=AAA1'); assert.equal(d.rows[0].total_cost_mxn, 240); assert.equal(d.rows[0].cost_batches, 3); assert.equal(d.rows[0].gross_profit_mxn, 12600 - 42 * 240);
 });
 await t('환율 없음 → fob_mxn null (원가는 그대로)', async () => {
   await query(`DELETE FROM fx_rates`);

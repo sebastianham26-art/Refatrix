@@ -125,10 +125,23 @@ export default async function priceMasterRoutes(app) {
   // 2026-11-23b · 판매 누적수량 — 지금까지 게시(posted)된 매출 인보이스의 판매수량 합(삭제 인보이스 제외).
   //   ⑦ 제품 수익성의 「누적 판매수량」(profitBase)과 같은 기준.
   const SOLD_JOIN = `LEFT JOIN LATERAL (
-      SELECT SUM(sil.qty) AS qty, COUNT(DISTINCT si.id) AS inv_n, to_char(MAX(si.inv_date),'YYYY-MM-DD') AS last_sale
+      SELECT SUM(sil.qty) AS qty, SUM(sil.line_amount_mxn) AS rev, COUNT(DISTINCT si.id) AS inv_n, to_char(MAX(si.inv_date),'YYYY-MM-DD') AS last_sale
         FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id = sil.invoice_id
        WHERE si.status = 'posted' AND si.deleted_at IS NULL AND sil.product_id = p.id) sq ON TRUE`;
+  // 2026-11-23c · 총 매출액 · 매출이익액 · 매출이익률
+  //   총 매출액 = 게시 인보이스 판매금액 합(line_amount_mxn, IVA 제외)
+  //   매출이익액 = 총 매출액 − 판매 누적 × Total Cost MXN(평균원가원칙) / 매출이익률 = 매출이익액 ÷ 총 매출액
+  //   Total Cost 가 없으면 이익은 비움(null).
+  //   화면에 보이는 Total Cost(소수 2자리)로 계산 → 줄 합계와 위 카드(누적)가 센트까지 같다.
+  const GP_SQL = `(COALESCE(sq.rev,0) - COALESCE(sq.qty,0) * ROUND(COALESCE(CASE WHEN ic.qty > 0 THEN ic.amount / ic.qty END, NULLIF(p.avg_cost, 0))::numeric, 2))`;
   const TOTAL_COST_SQL = 'COALESCE(CASE WHEN ic.qty > 0 THEN ic.amount / ic.qty END, NULLIF(p.avg_cost, 0))';
+  function grossProfit(r) {
+    const rev = Math.round(Number(r.sold_rev || 0) * 100) / 100;
+    const tc = totalCost(r).total_cost_mxn; const q = Number(r.sold_qty || 0);
+    if (tc == null || !(q > 0)) return { sales_mxn: rev, gross_profit_mxn: null, gross_margin: null };
+    const gp = Math.round((Number(r.sold_rev || 0) - q * tc) * 100) / 100;
+    return { sales_mxn: rev, gross_profit_mxn: gp, gross_margin: rev > 0 ? Math.round(gp / rev * 10000) / 10000 : null };
+  }
   function totalCost(r) {
     const q = Number(r.cost_qty); const a = Number(r.cost_amount);
     if (q > 0 && Number.isFinite(a)) return { total_cost_mxn: Math.round(a / q * 100) / 100, cost_basis: 'import', cost_batches: Number(r.cost_batches) || 0, cost_qty: Math.round(q * 1000) / 1000 };
@@ -158,14 +171,18 @@ export default async function priceMasterRoutes(app) {
               COALESCE(SUM(CASE WHEN p.fob_usd > 0 THEN 1 ELSE 0 END),0)::int AS fob_n,
               COALESCE(SUM(CASE WHEN p.list_price > 0 THEN 1 ELSE 0 END),0)::int AS list_n,
               AVG(CASE WHEN p.fob_usd > 0 AND p.list_price > 0 THEN p.list_price / p.fob_usd END) AS mxn_per_usd,
-              AVG(CASE WHEN p.list_price > 0 AND p.list_price_syd > 0 THEN p.list_price / p.list_price_syd END) AS ratio_avg
-         FROM products p WHERE ${W}`, params)).rows[0];
+              AVG(CASE WHEN p.list_price > 0 AND p.list_price_syd > 0 THEN p.list_price / p.list_price_syd END) AS ratio_avg,
+              COALESCE(SUM(sq.rev),0) AS rev_sum,
+              COALESCE(SUM(CASE WHEN ${TOTAL_COST_SQL} IS NOT NULL AND sq.qty > 0 THEN ${GP_SQL} END),0) AS gp_sum,
+              COALESCE(SUM(CASE WHEN ${TOTAL_COST_SQL} IS NOT NULL AND sq.qty > 0 THEN sq.rev END),0) AS rev_costed
+         FROM products p ${COST_JOIN} ${SOLD_JOIN} WHERE ${W}`, params)).rows[0];
     // 정렬(2026-09-24): 표 제목 클릭 = sort + dir. 전체 데이터 기준(보이는 줄만이 아니라). dir 이 없으면 예전 기본 방향.
     const SORT_COL = { code: 'p.code', name: "upper(COALESCE(p.name,''))", origin: "upper(COALESCE(p.origin,''))", fob: 'p.fob_usd', list: 'p.list_price',
       mult: '(p.list_price / NULLIF(p.fob_usd,0))', syd: 'p.list_price_syd', ratio: '(p.list_price / NULLIF(p.list_price_syd,0))',
       last: "(SELECT MAX(h2.effective_date) FROM product_price_history h2 WHERE h2.product_id = p.id AND h2.source <> 'initial')",
-      fobmxn: 'p.fob_usd', cost: TOTAL_COST_SQL, sold: 'COALESCE(sq.qty, 0)' };
-    const DEF_DIR = { code: 'asc', name: 'asc', origin: 'asc', fob: 'desc', list: 'desc', mult: 'asc', syd: 'desc', ratio: 'asc', last: 'desc', fobmxn: 'desc', cost: 'desc', sold: 'desc' };
+      fobmxn: 'p.fob_usd', cost: TOTAL_COST_SQL, sold: 'COALESCE(sq.qty, 0)',
+      rev: 'COALESCE(sq.rev, 0)', gp: GP_SQL, gpm: `(${GP_SQL} / NULLIF(sq.rev, 0))` };
+    const DEF_DIR = { code: 'asc', name: 'asc', origin: 'asc', fob: 'desc', list: 'desc', mult: 'asc', syd: 'desc', ratio: 'asc', last: 'desc', fobmxn: 'desc', cost: 'desc', sold: 'desc', rev: 'desc', gp: 'desc', gpm: 'desc' };
     const sk = SORT_COL[qv.sort] ? qv.sort : 'code';
     const sd = (qv.dir === 'asc' || qv.dir === 'desc') ? qv.dir : DEF_DIR[sk];
     const orderSql = `${SORT_COL[sk]} ${sd.toUpperCase()} NULLS LAST, p.code`;
@@ -177,7 +194,7 @@ export default async function priceMasterRoutes(app) {
               (SELECT to_char(MAX(h.effective_date),'YYYY-MM-DD') FROM product_price_history h
                 WHERE h.product_id = p.id AND h.source <> 'initial') AS last_change,
               ic.qty AS cost_qty, ic.amount AS cost_amount, ic.batches AS cost_batches, p.avg_cost,
-              sq.qty AS sold_qty, sq.inv_n AS sold_inv_n, sq.last_sale
+              sq.qty AS sold_qty, sq.rev AS sold_rev, sq.inv_n AS sold_inv_n, sq.last_sale
          FROM products p ${COST_JOIN} ${SOLD_JOIN} WHERE ${W}
         ORDER BY ${orderSql} LIMIT $${lp.length - 1} OFFSET $${lp.length}`, lp)).rows;
     const fr = fx ? fx.rate : null;
@@ -185,7 +202,13 @@ export default async function priceMasterRoutes(app) {
       fx, today: mxToday(),
       kpi: { total: k.n, fob: k.fob_n, list: k.list_n,
         mult_avg: fr && k.mxn_per_usd != null ? Math.round(Number(k.mxn_per_usd) / fr * 100) / 100 : null,
-        ratio_avg: k.ratio_avg != null ? Math.round(Number(k.ratio_avg) * 10000) / 10000 : null },
+        ratio_avg: k.ratio_avg != null ? Math.round(Number(k.ratio_avg) * 10000) / 10000 : null,
+        // 2026-11-23c · 누적 매출액 · 매출총이익 · 매출총이익률 — 지금 조건(검색·원산지·보기·비활성)에 맞는 제품 전체 기준
+        //   이익률 = 이익 ÷ (원가를 아는 제품의 매출). 원가 없는 제품의 매출은 rev_nocost 로 따로 알린다.
+        sales_mxn: Math.round(Number(k.rev_sum) * 100) / 100,
+        gross_profit_mxn: Math.round(Number(k.gp_sum) * 100) / 100,
+        gross_margin: Number(k.rev_costed) > 0 ? Math.round(Number(k.gp_sum) / Number(k.rev_costed) * 10000) / 10000 : null,
+        sales_nocost_mxn: Math.round((Number(k.rev_sum) - Number(k.rev_costed)) * 100) / 100 },
       offset, limit,
       rows: rows.map((r) => {
         const fob = num(r.fob_usd); const lp2 = num(r.list_price); const syd = num(r.list_price_syd);
@@ -193,6 +216,7 @@ export default async function priceMasterRoutes(app) {
           fob_usd: fob, list_price: lp2, list_price_syd: syd,
           fob_mxn: fr && fob > 0 ? Math.round(fob * fr * 100) / 100 : null,
           ...totalCost(r),
+          ...grossProfit(r),
           sold_qty: Math.round(Number(r.sold_qty || 0) * 1000) / 1000, sold_inv_n: Number(r.sold_inv_n) || 0, last_sale: r.last_sale || null,
           mult: fr && fob > 0 && lp2 > 0 ? Math.round(lp2 / (fob * fr) * 100) / 100 : null,
           ratio: syd > 0 && lp2 > 0 ? Math.round(lp2 / syd * 10000) / 10000 : null,
