@@ -198,7 +198,7 @@
     quote:['quote','sales'], quotelist:['quote','sales'], reservations:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
-    pipeline:'pipeline', consult:'pipeline', prospects:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', custReg:'__director__', custClaim:'__director__', custLeads:'customers', targets:'targets',
+    pipeline:'pipeline', consult:'pipeline', prospects:null,   /* 고객개발: 진척 보드는 전 직원(작업 탭은 영업활동 권한) */ customers:'customers', custTeam:'__director__', custApprove:'__director__', custReg:'__director__', custClaim:'__director__', custLeads:'customers', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finDaily:'__director__', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
     boardNotice:null, boardTodo:null, wbr:'wbr', daily:'__director__',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],

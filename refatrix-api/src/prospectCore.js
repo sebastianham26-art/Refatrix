@@ -7,15 +7,26 @@
 import { ALTA_FORM, ALTA_FIELDS, ALTA_FIELD_MAP } from './altaClientesForm.js';
 
 // ── 단계 ─────────────────────────────────────────────────────────────
+// 단계 = 「무엇이 기록돼 있으면 그 단계인가」로 정의한다. how: auto(기록으로 자동) · suggest(AI·기록이 제안, 사람이 확인) · manual
 export const STAGES = [
-  { key: 'sin_asignar', ko: '미배정', es: 'Sin asignar' },
-  { key: 'asignado', ko: '배정', es: 'Asignado' },
-  { key: 'contactado', ko: '컨택', es: 'Contactado' },
-  { key: 'interesado', ko: '관심', es: 'Interesado' },
-  { key: 'cotizado', ko: '견적', es: 'Cotizado' },
-  { key: 'registro', ko: '고객등록 중', es: 'Registro en trámite' },
-  { key: 'cliente_activo', ko: '신규고객', es: 'Cliente activo' },
-  { key: 'descartado', ko: '중단', es: 'Descartado' },
+  { key: 'sin_asignar', ko: '미배정', es: 'Sin asignar', how: 'auto',
+    rule: '담당자가 없음', goal: '지역 배정으로 담당자를 정한다' },
+  { key: 'asignado', ko: '배정', es: 'Asignado', how: 'auto',
+    rule: '담당자 지정(지역 자동 배정 또는 디렉터 배정) · 아직 방문 기록 없음', goal: '루트에 넣어 첫 방문' },
+  { key: 'contactado', ko: '첫 방문', es: 'Primera visita', how: 'auto',
+    rule: '체크인(방문 녹음) 1회 이상', goal: '주요 담당자·규모·잠재성 정보를 확보' },
+  { key: 'perfilado', ko: '정보 확보', es: 'Perfilado', how: 'auto',
+    rule: 'Alta 양식 정보 충족도 50% 이상(저장된 값 기준)', goal: '관심 여부 확인 · 카탈로그/가격 제시' },
+  { key: 'interesado', ko: '관심 확인', es: 'Interesado', how: 'suggest',
+    rule: 'AI가 녹음에서 관심(카탈로그·가격 요청 등)을 찾으면 제안 → 담당 확인 · 또는 담당이 직접', goal: '견적 제출' },
+  { key: 'cotizado', ko: '견적 제출', es: 'Cotizado', how: 'auto',
+    rule: 'ERP에 견적서가 저장됨(연결 고객의 견적, 또는 이 후보에 연결된 게스트 견적)', goal: '고객 등록(Alta) 진행' },
+  { key: 'registro', ko: '고객 등록', es: 'Registro', how: 'auto',
+    rule: 'ERP 고객과 연결(신규 등록 또는 기존 고객 연결 승인)', goal: '첫 주문·인보이스' },
+  { key: 'cliente_activo', ko: '첫 매출', es: 'Cliente activo', how: 'auto',
+    rule: '연결 고객의 첫 게시 인보이스 — 신규개발 완료(100점)', goal: '재구매·매출 확대' },
+  { key: 'descartado', ko: '중단', es: 'Descartado', how: 'manual',
+    rule: '담당이 사유와 함께 중단(AI가 「관심 없음」을 들으면 제안)', goal: '—' },
 ];
 export const STAGE_KEYS = STAGES.map((s) => s.key);
 const RANK = Object.fromEntries(STAGE_KEYS.map((k, i) => [k, i]));
@@ -35,7 +46,7 @@ export function checkStageMove(from, to, { isDirector = false, reason = '' } = {
   }
   if (from === 'descartado' && !isDirector) return { ok: false, error: 'director_only' };
   if (to === 'sin_asignar' && !isDirector) return { ok: false, error: 'director_only' };
-  if (to === 'cliente_activo' && !isDirector) return { ok: false, error: 'auto_only' };   // 고객 승인+첫 인보이스로만
+  if (['perfilado', 'cotizado', 'registro', 'cliente_activo'].includes(to) && !isDirector) return { ok: false, error: 'auto_only' };   // 기록으로만 올라간다
   if (stageRank(to) < stageRank(from) && from !== 'descartado' && !isDirector) return { ok: false, error: 'no_backward' };
   return { ok: true };
 }
@@ -355,7 +366,7 @@ export function missingRequired(allValues) {
 }
 
 // ── KPI ──────────────────────────────────────────────────────────────
-export const METRICS = ['visitas', 'contactados', 'cotizaciones', 'nuevos_clientes', 'venta_nuevos'];
+export const METRICS = ['visitas', 'contactados', 'perfilados', 'cotizaciones', 'nuevos_clientes', 'venta_nuevos', 'puntos'];
 export function pct(actual, target) { const a = Number(actual) || 0, t2 = Number(target) || 0; return t2 > 0 ? Math.round((a / t2) * 1000) / 10 : null; }
 // 월중에는 경과일 비례로 판정: ≥100% 초록, 70~99% 노랑, <70% 빨강
 export function paceStatus(actual, target, day, daysInMonth) {
@@ -389,3 +400,65 @@ export function potentialOf(values = {}) {
     tier,
   };
 }
+
+// ── 정보 충족도 · 개발 점수 · 근거 기반 단계 ───────────────────────────
+//   정보 충족도(0~100) = 섹션 가중치 × 그 섹션에서 채운 비율 (저장된 Alta 값 기준, 청구 섹션 제외)
+export const SECTION_WEIGHTS = { datos_generales: 20, tamano_cliente: 20, potencial: 25, informacion_empresa: 10, tipo_servicios: 10, competencia: 15 };
+//   개발 점수 = 정보(최대 60) + 관심 확인 5 + 견적 제출 15 + 고객 등록 10 = 최대 90 · 첫 매출 = 100
+export const SCORE_RULES = { info_max: 60, interest: 5, quote: 15, registro: 10, sale: 100 };
+const filled = (v) => v != null && v !== '' && !(Array.isArray(v) && !v.length);
+export function infoCompleteness(values = {}) {
+  const by = {};
+  for (const f of ALTA_FIELDS) {
+    if (f.section === 'facturacion' || f.key === 'servicios.servicios_otro') continue;
+    if ((f.fill || []).length === 1 && f.fill[0] === 'manual') continue;
+    const sec = f.section === 'tipo_taller' || f.section === 'servicios' ? 'tipo_servicios' : f.section;
+    if (sec === 'competencia') {
+      by.competencia = by.competencia || {};
+      const g = by.competencia[f.group] = by.competencia[f.group] || { n: 0, f: 0 };
+      g.n++; if (filled(values[f.key])) g.f++;
+      continue;
+    }
+    const b = by[sec] = by[sec] || { n: 0, f: 0 };
+    b.n++; if (filled(values[f.key])) b.f++;
+  }
+  const sections = {}; let pct = 0;
+  for (const [sec, w] of Object.entries(SECTION_WEIGHTS)) {
+    let frac = 0;
+    if (sec === 'competencia') frac = Math.max(0, ...Object.values(by.competencia || {}).map((g) => g.f / g.n));
+    else if (by[sec] && by[sec].n) frac = by[sec].f / by[sec].n;
+    sections[sec] = { weight: w, filled_pct: Math.round(frac * 100) };
+    pct += w * frac;
+  }
+  return { pct: Math.round(pct), sections };
+}
+// ev: { visits, info_pct, interest, quoted, linked, sale }
+export function scoreOf(ev) {
+  if (ev.sale) return { total: SCORE_RULES.sale, parts: { info: SCORE_RULES.info_max, interest: SCORE_RULES.interest, quote: SCORE_RULES.quote, registro: SCORE_RULES.registro, sale: true } };
+  const info = Math.round(Math.min(100, Math.max(0, Number(ev.info_pct) || 0)) * SCORE_RULES.info_max / 100);
+  const parts = { info, interest: ev.interest ? SCORE_RULES.interest : 0, quote: ev.quoted ? SCORE_RULES.quote : 0,
+    registro: ev.linked ? SCORE_RULES.registro : 0, sale: false };
+  return { total: parts.info + parts.interest + parts.quote + parts.registro, parts };
+}
+// 기록에서 나오는 단계(자동) + 사람이 확인할 제안
+export function deriveStage(ev, current) {
+  let auto = ev.owner ? 'asignado' : 'sin_asignar';
+  if (ev.visits > 0) auto = 'contactado';
+  if (ev.visits > 0 && ev.info_pct >= 50) auto = 'perfilado';
+  if (ev.interest_confirmed && stageRank(auto) < stageRank('interesado')) auto = 'interesado';
+  if (ev.quoted) auto = 'cotizado';
+  if (ev.linked) auto = 'registro';
+  if (ev.sale) auto = 'cliente_activo';
+  if (!ev.owner && auto !== 'sin_asignar' && auto !== 'cliente_activo') auto = 'asignado';
+  let suggest = null;
+  const cur = current === 'descartado' ? null : current;
+  if (cur && ev.ai_stage && ev.ai_stage !== cur) {
+    if (ev.ai_stage === 'descartado') suggest = { stage: 'descartado', reason: 'AI: 녹음에서 관심 없음/중단 신호' };
+    else if (stageRank(ev.ai_stage) > Math.max(stageRank(cur), stageRank(auto)) && ev.ai_stage === 'interesado')
+      suggest = { stage: 'interesado', reason: 'AI: 녹음에서 관심(카탈로그·가격 요청 등) 확인' };
+  }
+  return { auto, suggest };
+}
+// SQL 에서 단계 순위(KPI: 「그 단계 이상에 처음 도달」)
+export const STAGE_RANK_SQL = (col) => `(CASE ${col} ${STAGE_KEYS.filter((k) => k !== 'descartado').map((k, i) => `WHEN '${k}' THEN ${i}`).join(' ')} ELSE -1 END)`;
+export const SCORE_BANDS = [[0, 0], [1, 19], [20, 39], [40, 59], [60, 79], [80, 99], [100, 100]];

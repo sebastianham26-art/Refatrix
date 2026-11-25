@@ -31,8 +31,8 @@ const w = dom.window; const $ = (id) => w.document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0; const ok = (n, f) => { f(); pass++; console.log('  ✔', n); };
 for (let i = 0; i < 40 && !$('tth').querySelector('th'); i++) await sleep(50);
-ok('빌드 pm-1125sp · 탭 「⑤-2 SYD 가격표」가 ⑤ 바로 뒤', () => {
-  assert.match(w.document.title, /pm-1125sp/);
+ok('빌드 pm-1125kt · 탭 「⑤-2 SYD 가격표」가 ⑤ 바로 뒤', () => {
+  assert.match(w.document.title, /pm-1125kt/);
   const tabs = [...w.document.querySelectorAll('.tab')].map((t) => t.textContent);
   assert.equal(tabs[tabs.indexOf('⑤ 경쟁사 SYD') + 1], '⑤-2 SYD 가격표');
 });

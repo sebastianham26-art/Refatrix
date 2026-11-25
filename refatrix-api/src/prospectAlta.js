@@ -14,6 +14,7 @@ import { query, withTx } from './db.js';
 import { logEvent } from './audit.js';
 import {
   distanceM, autoAdvance, prefillFromProspect, buildAltaPrompt, parseAltaDraft,
+  infoCompleteness, scoreOf, deriveStage, stageRank, nameSimilarity,
 } from './prospectCore.js';
 
 export const QUICK_PLACEHOLDER = '(업체 미입력)';
@@ -37,6 +38,67 @@ export async function moveStage(q, prospectId, from, to, { userId = null, reason
             WHERE id=$1`, [prospectId, to, reason]);
   await q(`INSERT INTO prospect_stage_history (prospect_id, from_stage, to_stage, user_id, reason, auto)
            VALUES ($1,$2,$3,$4,$5,$6)`, [prospectId, from, to, userId, reason, auto]);
+}
+
+let scoreCols = null;
+async function hasScoreCols(q) {
+  if (scoreCols != null) return scoreCols;
+  try { scoreCols = (await q(`SELECT 1 FROM information_schema.columns WHERE table_name='prospects' AND column_name='score' LIMIT 1`)).rows.length > 0; }
+  catch (_) { scoreCols = false; }
+  return scoreCols;
+}
+
+// ── 기록 → 정보 충족도 · 점수 · 단계(자동) · 제안 ── (0336)
+//   방문 수, 저장된 Alta 값, 관심 확인(사람), 견적 기록/ERP 견적, 고객 연결, 첫 인보이스, 최근 AI 제안을 모아 다시 계산한다.
+//   단계는 앞으로만 자동 이동(중간 단계도 이력에 남김). 점수·단계가 바뀌면 prospect_score_log 한 줄.
+export async function recomputeProspect(q, prospectId, { userId = null, reason = null } = {}) {
+  if (!(await hasScoreCols(q))) return null;
+  const id = Number(prospectId);
+  const p = (await q(`SELECT id, stage, owner_user_id, customer_id, score FROM prospects WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+  if (!p) return null;
+  const ev = (await q(
+    `SELECT (SELECT COUNT(*)::int FROM sales_consults c WHERE c.prospect_id=$1 AND c.deleted_at IS NULL) AS visits,
+            EXISTS (SELECT 1 FROM quotes qq WHERE qq.status <> 'cancelled'
+                      AND (qq.prospect_id=$1 OR ($2::bigint IS NOT NULL AND qq.customer_id=$2))) AS quoted,
+            EXISTS (SELECT 1 FROM prospect_stage_history h WHERE h.prospect_id=$1 AND h.to_stage IN ('interesado','cotizado') AND NOT h.auto) AS interest_confirmed,
+            ($2::bigint IS NOT NULL AND EXISTS (SELECT 1 FROM sales_invoices si WHERE si.customer_id=$2 AND si.status='posted' AND si.deleted_at IS NULL)
+              AND COALESCE((SELECT approval_status FROM customers WHERE id=$2),'approved') = 'approved') AS sale,
+            (SELECT r.alta_draft->>'etapa_sugerida' || ':' || r.id FROM sales_consult_recordings r JOIN sales_consults c ON c.id=r.consult_id
+               WHERE c.prospect_id=$1 AND c.deleted_at IS NULL AND r.alta_status='done' ORDER BY r.id DESC LIMIT 1) AS ai_stage_rec,
+            (SELECT suggestion_dismissed FROM prospects WHERE id=$1) AS dismissed`,
+    [id, p.customer_id == null ? null : Number(p.customer_id)])).rows[0];
+  const vals = Object.fromEntries((await q(`SELECT field_key, value FROM prospect_crm_values WHERE prospect_id=$1`, [id])).rows.map((r) => [r.field_key, r.value]));
+  const info = infoCompleteness(vals);
+  const e = { owner: p.owner_user_id != null, visits: ev.visits, info_pct: info.pct, interest_confirmed: ev.interest_confirmed,
+    interest: ev.interest_confirmed || ev.quoted || p.customer_id != null, quoted: ev.quoted, linked: p.customer_id != null, sale: ev.sale,
+    ai_stage: ev.ai_stage_rec && ev.ai_stage_rec !== ev.dismissed ? String(ev.ai_stage_rec).split(':')[0] : null };
+  const sc = scoreOf(e);
+  // 단계: 앞으로만, 건너뛴 자동 단계도 이력에 남긴다(첫 도달 KPI)
+  const d = deriveStage(e, p.stage);
+  let stage = p.stage;
+  const ladder = ['asignado', 'contactado', 'perfilado', 'interesado', 'cotizado', 'registro', 'cliente_activo'];
+  if (stage !== 'descartado' || e.sale) {
+    for (const st of ladder) {
+      if (stageRank(st) > stageRank(d.auto)) break;
+      if (st === 'interesado' && !e.interest_confirmed) continue;   // 관심은 사람이 확인(제안만)
+      const nx = stage === 'descartado' ? (st === 'cliente_activo' ? st : null) : autoAdvance(stage, st);
+      if (nx) { await moveStage(q, id, stage, nx, { userId, auto: true, reason: reason || 'registro automático' }); stage = nx; }
+    }
+  }
+  const sug = d.suggest && stageRank(d.suggest.stage) !== stageRank(stage) && !(d.suggest.stage !== 'descartado' && stageRank(d.suggest.stage) <= stageRank(stage)) ? d.suggest : null;
+  await q(`UPDATE prospects SET score=$2, info_pct=$3, score_parts=$4, score_at=now(),
+                  suggested_stage=$5, suggestion_reason=$6, suggested_at=CASE WHEN $5::text IS NULL THEN NULL ELSE COALESCE(suggested_at, now()) END
+            WHERE id=$1`, [id, sc.total, info.pct, JSON.stringify({ ...sc.parts, info_pct: info.pct, sections: info.sections }), sug ? sug.stage : null, sug ? sug.reason : null]);
+  if (sc.total !== Number(p.score) || stage !== p.stage) {
+    const owner = (await q(`SELECT owner_user_id FROM prospects WHERE id=$1`, [id])).rows[0].owner_user_id;
+    await q(`INSERT INTO prospect_score_log (prospect_id, owner_user_id, score, prev_score, info_pct, stage, reason, user_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [id, owner, sc.total, Number(p.score) || 0, info.pct, stage, reason, userId]);
+  }
+  return { score: sc.total, prev: Number(p.score) || 0, info_pct: info.pct, stage, suggestion: sug };
+}
+export async function recomputeProspectSafe(prospectId, opts = {}, log) {
+  try { return await withTx((client) => recomputeProspect(client.query.bind(client), prospectId, opts)); }
+  catch (e) { try { log && log.warn && log.warn({ err: String(e && e.message) }, 'prospect recompute failed'); } catch (_) {} return null; }
 }
 
 export async function attachConsultToProspect({ consultId, prospectId, perm, lat = null, lng = null }) {
@@ -74,6 +136,7 @@ export async function attachConsultToProspect({ consultId, prospectId, perm, lat
                FROM prospect_routes r
               WHERE s.route_id=r.id AND r.user_id=$1 AND r.route_date=(now() AT TIME ZONE 'America/Mexico_City')::date
                 AND s.prospect_id=$2 AND s.consult_id IS NULL`, [owner == null ? userId : owner, pid, Number(consultId)]);
+    await recomputeProspect(q, pid, { userId, reason: 'check-in' });
     return { prospect_id: pid, checkin_dist_m: dist };
   });
 }
@@ -107,6 +170,7 @@ export async function prospectAltaDraft({ consultId, recId, transcript, summary,
     [Number(recId), JSON.stringify(draft)]);
   await query(`UPDATE sales_consults SET review_status = CASE WHEN review_status='confirmado' THEN 'por_revisar' ELSE COALESCE(review_status,'por_revisar') END
                 WHERE id=$1`, [Number(consultId)]);
+  await recomputeProspectSafe(Number(p.id), { reason: 'resumen IA' });
   await logEvent({ userId: null, action: 'update', target: `consult_recording:${recId}`,
     detail: { alta_draft: Object.keys(draft.campos).length, prospect_id: Number(p.id) } }).catch(() => {});
   return { ok: true, fields: Object.keys(draft.campos).length };
@@ -116,18 +180,36 @@ export async function prospectAltaDraftSafe(args, log) {
   catch (e) { try { log && log.warn && log.warn({ err: String(e && e.message) }, 'prospect alta draft failed'); } catch (_) {} return null; }
 }
 
-// 연결 고객이 승인됐고 게시 인보이스가 있으면 → 신규고객
+// 고객이 연결된 후보 다시 계산 — ERP 견적·승인·첫 인보이스가 생기면 단계·점수 반영
+// 게스트 ERP 견적 자동 연결: 담당자가 만든 게스트 견적의 상호가 그 담당 후보의 상호와 거의 같으면(첫 방문 이후 견적) 연결
+export async function syncGuestQuotes() {
+  const qs = (await query(
+    `SELECT q.id, q.guest_name, q.created_by, q.created_at FROM quotes q
+      WHERE q.prospect_id IS NULL AND q.customer_id IS NULL AND q.status <> 'cancelled' AND q.guest_name IS NOT NULL
+        AND q.created_at > now() - INTERVAL '120 days'`)).rows;
+  const touched = new Set();
+  for (const qt of qs) {
+    const cands = (await query(
+      `SELECT p.id, p.nom_estab, p.raz_social FROM prospects p
+        WHERE p.deleted_at IS NULL AND p.owner_user_id=$1
+          AND EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL AND c.created_at <= $2)`,
+      [qt.created_by, qt.created_at])).rows;
+    let best = null; let bs = 0;
+    for (const c of cands) { const sc = Math.max(nameSimilarity(qt.guest_name, c.nom_estab), nameSimilarity(qt.guest_name, c.raz_social)); if (sc > bs) { bs = sc; best = c; } }
+    if (best && bs >= 0.6) { await query(`UPDATE quotes SET prospect_id=$2 WHERE id=$1 AND prospect_id IS NULL`, [qt.id, best.id]); touched.add(Number(best.id)); }
+  }
+  for (const id of touched) await recomputeProspectSafe(id, { reason: 'cotización ERP' });
+  return touched.size;
+}
 export async function refreshCustomerStages() {
   if (!(await hasProspectCols())) return 0;
+  if (await hasScoreCols(query)) await syncGuestQuotes().catch(() => {});
   const rows = (await query(
-    `SELECT p.id, p.stage FROM prospects p
-       JOIN customers c ON c.id = p.customer_id
-      WHERE p.deleted_at IS NULL AND p.stage NOT IN ('cliente_activo','descartado')
-        AND COALESCE(c.approval_status,'approved') = 'approved'
-        AND EXISTS (SELECT 1 FROM sales_invoices si WHERE si.customer_id=c.id AND si.status='posted' AND si.deleted_at IS NULL)`)).rows;
+    `SELECT id FROM prospects WHERE deleted_at IS NULL AND customer_id IS NOT NULL AND stage <> 'cliente_activo'`)).rows;
+  let n = 0;
   for (const r of rows) {
-    await withTx(async (client) => moveStage(client.query.bind(client), Number(r.id), r.stage, 'cliente_activo',
-      { auto: true, reason: 'cliente aprobado + primera factura' }));
+    const out = await recomputeProspectSafe(Number(r.id), { reason: 'cliente ERP' });
+    if (out && out.stage === 'cliente_activo') n++;
   }
-  return rows.length;
+  return n;
 }

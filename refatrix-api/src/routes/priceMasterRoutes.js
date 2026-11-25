@@ -22,6 +22,7 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds } from '../teams.js';
+import { promosReady } from '../vioPromos.js';   // 2026-11-25 · 가격표: 키트는 키트 번호로 찾을 때만
 import { APPLIED_BATCH_COND } from '../flatAvgCost.js';   // 2026-11-23 · 가격표 Total Cost MXN(단순가중평균 실적원가)
 import {
   priceMasterReady, mxToday, isYmd, latestFx, normType, PRICE_COL, ROUNDINGS, normalizeFilter, normalizeChange,
@@ -156,6 +157,18 @@ export default async function priceMasterRoutes(app) {
     const fx = await latestFx();
     const params = [];
     const where = [buildFilterWhere({ q: qv.q, origin: qv.origin ? [qv.origin] : [], active_only: qv.all !== '1' }, params)];
+    // 2026-11-25 · 키트(VIO 프로모션 K0001 …)는 「키트 번호」로 찾을 때만 가격표에 나온다.
+    //   키트 제품명에 구성품 코드가 들어 있어(KIT VERSA 2015_CB0011_CQ0728R) 구성품 코드로 찾으면 키트 가격까지 같이 나오던 문제.
+    //   검색어 없음 → 키트 숨김 · 검색어 있음 → 키트 코드에 검색어가 들어 있을 때만. (제품찾기는 그대로 — 구성품으로 키트를 찾을 수 있음)
+    if (await promosReady()) {
+      const kq = String(qv.q || '').trim();
+      if (kq) {
+        params.push(`%${kq.replace(/[%_\\]/g, (m) => '\\' + m)}%`);
+        where.push(`(p.code ILIKE $${params.length} OR NOT EXISTS (SELECT 1 FROM vio_promos vk WHERE vk.product_id = p.id))`);
+      } else {
+        where.push('NOT EXISTS (SELECT 1 FROM vio_promos vk WHERE vk.product_id = p.id)');
+      }
+    }
     const multLt = Number(qv.mult_lt) > 0 ? Number(qv.mult_lt) : 3;
     const view = String(qv.view || '');
     if (view === 'no_fob') where.push('p.fob_usd IS NULL');

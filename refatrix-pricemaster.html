@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-1125sp</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-1125kt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -170,7 +170,7 @@
           <b>판매 누적</b> = 지금까지 게시된 매출 인보이스의 판매수량 합계(삭제 인보이스 제외). <b>총 매출액</b> = 같은 인보이스의 판매금액 합계(IVA 제외).<br>
           <b>매출이익액</b> = 총 매출액 − 판매 누적 × Total Cost MXN. <b>매출이익률</b> = 매출이익액 ÷ 총 매출액. Total Cost 가 없는 제품은 이익을 비웁니다(—).</p>
         <div class="row">
-          <div class="f" style="flex:2"><label for="tq">검색</label><input id="tq" placeholder="코드 · 품목 · 적용차종"></div>
+          <div class="f" style="flex:2"><label for="tq">검색</label><input id="tq" placeholder="코드 · 품목 · 적용차종 (키트는 키트 번호로)" title="키트(K0001 …)는 키트 번호로 검색할 때만 나옵니다 — 구성품 코드로 찾으면 부품만 나옵니다"></div>
           <div class="f"><label for="torigin">원산지</label><select id="torigin"><option value="">전체</option></select></div>
           <div class="f"><label for="tview">보기</label><select id="tview"><option value="">전체</option><option value="no_fob">FOB 없음</option><option value="no_list">List 없음</option><option value="mult_lt">배수 3.0 미만</option><option value="syd_over">SYD보다 비쌈</option></select></div>
           <label style="display:flex;gap:6px;align-items:center;font-weight:500;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="tall"> 비활성 포함</label>
@@ -439,7 +439,7 @@
 
 (function(){
   'use strict';
-  const BUILD='pm-1125sp';
+  const BUILD='pm-1125kt';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');

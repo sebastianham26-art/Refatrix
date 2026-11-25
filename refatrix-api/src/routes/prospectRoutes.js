@@ -19,9 +19,11 @@ import {
   STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
+  STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
 } from '../prospectCore.js';
+import { pageAllowed } from '../permissions.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
-import { moveStage, refreshCustomerStages, hasProspectCols } from '../prospectAlta.js';
+import { moveStage, refreshCustomerStages, hasProspectCols, recomputeProspect, recomputeProspectSafe } from '../prospectAlta.js';
 
 const PAGE = 'pipeline';
 const isDir = (req) => req.ctx.perm.role === 'director';
@@ -36,7 +38,7 @@ function parseJ(v) { if (v == null) return null; if (typeof v === 'object') retu
 let potCols = null;
 async function hasPotCols() {
   if (potCols) return true;
-  try { potCols = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='prospects' AND column_name='pot_tier' LIMIT 1`)).rows.length > 0; }
+  try { potCols = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='prospects' AND column_name IN ('pot_tier','score') HAVING COUNT(*)=2`)).rows.length > 0; }
   catch (_) { potCols = false; }
   return potCols;
 }
@@ -126,11 +128,13 @@ export default async function prospectRoutes(app) {
   app.addHook('preHandler', async (req, reply) => {
     if (!String(req.url).startsWith('/api/prospect')) return;
     if (!(await hasProspectCols())) return reply.code(503).send({ error: 'migration_0334_required' });
-    if (!(await hasPotCols())) return reply.code(503).send({ error: 'migration_0335_required' });
+    if (!(await hasPotCols())) return reply.code(503).send({ error: 'migration_0336_required' });
   });
 
   // ── 메타 ───────────────────────────────────────────────────────────
-  app.get('/api/prospects/meta', view, async (req) => {
+  // 메타·진척 보드는 로그인한 모든 사용자(디렉터 요청: 진척 표는 누구나 본다). 나머지는 영업활동 권한.
+  app.get('/api/prospects/meta', { preHandler: [authGuard] }, async (req) => {
+    const canWork = pageAllowed(req.ctx.perm, PAGE, req.ctx.isRegistered);
     const ex = await excludedSet();
     const users = (await query(`SELECT id, name, role FROM users WHERE deleted_at IS NULL ORDER BY name`)).rows
       .map((u) => ({ id: Number(u.id), name: u.name, role: u.role, excluded: ex.has(Number(u.id)) }));
@@ -140,7 +144,8 @@ export default async function prospectRoutes(app) {
       checkin_warn_m: CHECKIN_WARN_M, form: ALTA_FORM, fields: ALTA_FIELDS,
       users: isDir(req) ? users : users.filter((u) => u.id === me(req)),
       staff: (isDir(req) ? users : users.filter((u) => u.id === me(req))).filter((u) => !u.excluded),   // 담당 선택지(디렉터가 뺀 사람 제외)
-      potential_tiers: POTENTIAL_TIERS, states,
+      potential_tiers: POTENTIAL_TIERS, score_rules: SCORE_RULES, section_weights: SECTION_WEIGHTS, score_bands: SCORE_BANDS,
+      can_work: canWork, states,
       me: me(req), is_director: isDir(req), today: mxToday() };
   });
 
@@ -165,12 +170,13 @@ export default async function prospectRoutes(app) {
     const where = conds.join(' AND ');
     const total = (await query(`SELECT COUNT(*)::int AS n FROM prospects p WHERE ${where}`, params)).rows[0].n;
     const sort = { name: 'p.nom_estab', activity: 'p.last_activity_at DESC NULLS LAST', stage: 'p.stage_since DESC',
-      potential: 'p.pot_compra_susp DESC NULLS LAST, p.priority' }[qs.sort] || "p.priority, p.municipio, p.nom_estab";
+      potential: 'p.pot_compra_susp DESC NULLS LAST, p.priority', score: 'p.score DESC, p.info_pct DESC' }[qs.sort] || "p.priority, p.municipio, p.nom_estab";
     const rows = (await query(
       `SELECT p.id, p.nom_estab, p.raz_social, p.segment, p.priority, p.scian_code, p.per_ocu, p.address, p.colonia, p.cp,
               p.municipio, p.entidad, p.cve_ent, p.phone, p.email, p.lat, p.lng, p.stage, p.stage_since, p.owner_user_id,
               u.name AS owner_name, p.territory_id, t.name AS territory_name, p.last_activity_at, p.customer_id, p.denue_missing, p.source,
-              p.pot_tier, p.pot_compra_susp::float AS pot_compra_susp, p.pot_compra_total::float AS pot_compra_total
+              p.pot_tier, p.pot_compra_susp::float AS pot_compra_susp, p.pot_compra_total::float AS pot_compra_total,
+              p.score, p.info_pct, p.suggested_stage
          FROM prospects p LEFT JOIN users u ON u.id=p.owner_user_id LEFT JOIN prospect_territories t ON t.id=p.territory_id
         WHERE ${where} ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`, params)).rows.map(pub);
     return { total, rows };
@@ -241,6 +247,13 @@ export default async function prospectRoutes(app) {
       history: hist.rows, crm: Object.fromEntries(crm.rows.map((r) => [r.field_key, r.value])),
       crm_missing: missingRequired(Object.fromEntries(crm.rows.map((r) => [r.field_key, r.value]))),
       potential: potentialOf(Object.fromEntries(crm.rows.map((r) => [r.field_key, r.value]))),
+      score_log: (await query(`SELECT created_at, score, prev_score, info_pct, stage, reason FROM prospect_score_log WHERE prospect_id=$1 ORDER BY created_at`, [id])).rows,
+      quotes: (await query(`SELECT q.id, q.quote_no, q.quote_date, q.status, q.guest_name, q.customer_id, u.name AS user_name,
+                                   ${isDir(req) || Number(p.owner_user_id) === me(req) ? 'q.subtotal_mxn::float' : 'NULL::float'} AS subtotal_mxn
+                              FROM quotes q LEFT JOIN users u ON u.id=q.created_by
+                             WHERE q.status <> 'cancelled' AND (q.prospect_id=$1 OR ($2::bigint IS NOT NULL AND q.customer_id=$2))
+                             ORDER BY q.quote_date DESC, q.id DESC`, [id, p.customer_id == null ? null : Number(p.customer_id)])).rows
+        .map((q) => ({ ...q, id: Number(q.id) })),
       links: links.rows.map((l) => ({ ...l, id: Number(l.id), customer_id: Number(l.customer_id) })),
     };
   });
@@ -291,8 +304,9 @@ export default async function prospectRoutes(app) {
       const chk = checkStageMove(p.stage, b.to, { isDirector: isDir(req), reason: b.reason });
       if (!chk.ok) return { code: 400, error: chk.error };
       await moveStage(q, Number(p.id), p.stage, b.to, { userId: me(req), reason: txt(b.reason, 300) });
-      await q(`UPDATE prospects SET last_activity_at=now() WHERE id=$1`, [p.id]);
-      return { ok: true, from: p.stage, to: b.to };
+      await q(`UPDATE prospects SET last_activity_at=now(), suggested_stage=NULL, suggestion_reason=NULL WHERE id=$1`, [p.id]);
+      const sc = await recomputeProspect(q, Number(p.id), { userId: me(req), reason: 'etapa: ' + b.to });
+      return { ok: true, from: p.stage, to: b.to, score: sc && sc.score };
     });
     if (out.error) return reply.code(out.code).send({ error: out.error });
     return out;
@@ -445,7 +459,7 @@ export default async function prospectRoutes(app) {
     const r = (await query(`SELECT id FROM prospect_routes WHERE user_id=$1 AND route_date=$2`, [userId, date])).rows[0];
     if (!r) return { date, user_id: userId, stops: [] };
     const stops = (await query(
-      `SELECT s.seq, s.consult_id, p.id, p.nom_estab, p.address, p.colonia, p.municipio, p.lat, p.lng, p.phone, p.stage, p.priority, p.segment,
+      `SELECT s.seq, s.consult_id, p.id, p.score, p.nom_estab, p.address, p.colonia, p.municipio, p.lat, p.lng, p.phone, p.stage, p.priority, p.segment,
               c.review_status, c.created_at AS checkin_at
          FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
          LEFT JOIN sales_consults c ON c.id=s.consult_id
@@ -548,7 +562,7 @@ export default async function prospectRoutes(app) {
       draft = r ? parseJ(r.alta_draft) : null;
     }
     const sources = b.sources || {};
-    let changed = 0;
+    let changed = 0; let scoreOut = null;
     await withTx(async (client) => {
       const q = client.query.bind(client);
       for (const [k, v] of Object.entries(clean)) {
@@ -581,9 +595,10 @@ export default async function prospectRoutes(app) {
         const chk = checkStageMove(p.stage, b.stage, { isDirector: isDir(req), reason: b.stage_reason });
         if (chk.ok) await moveStage(q, Number(p.id), p.stage, b.stage, { userId: me(req), reason: txt(b.stage_reason, 300) });
       }
+      scoreOut = await recomputeProspect(q, Number(p.id), { userId: me(req), reason: b.confirm ? 'Alta confirmada' : 'Alta borrador' });
     });
     await logEvent({ userId: me(req), action: 'update', target: `prospect:${p.id}`, detail: { crm: changed, confirm: !!b.confirm, consult_id: cid } });
-    return { ok: true, changed, status: b.confirm ? 'confirmado' : 'borrador', missing: missingRequired(all), potential: potentialOf(all) };
+    return { ok: true, changed, status: b.confirm ? 'confirmado' : 'borrador', missing: missingRequired(all), potential: potentialOf(all), score: scoreOut };
   });
 
   // ── 기존 고객 연결 ─────────────────────────────────────────────────
@@ -623,9 +638,7 @@ export default async function prospectRoutes(app) {
     await q(`UPDATE prospects SET customer_id=$2, updated_at=now() WHERE id=$1`, [p.id, customerId]);
     // 이 후보의 방문(상담)도 고객 이력에 보이도록 상담에 고객 연결(비어 있는 것만)
     await q(`UPDATE sales_consults SET customer_id=$2 WHERE prospect_id=$1 AND customer_id IS NULL`, [p.id, customerId]);
-    const cur = (await q(`SELECT stage FROM prospects WHERE id=$1`, [p.id])).rows[0].stage;
-    const nx = autoAdvance(cur, 'registro');
-    if (nx) await moveStage(q, Number(p.id), cur, nx, { userId, auto: true, reason: 'vinculado a cliente' });
+    await recomputeProspect(q, Number(p.id), { userId, reason: 'vinculado a cliente' });
   }
   app.get('/api/prospect-links', view, async (req, reply) => {
     if (!directorOnly(req, reply)) return;
@@ -675,6 +688,146 @@ export default async function prospectRoutes(app) {
     return { prospect_id: Number(p.id), values: out, missing: missingRequired(crm) };
   });
 
+  // ── ERP 견적서 연결 ─────────────────────────────────────────────────
+  //   견적 점수는 ERP 에 견적서가 저장돼 있어야 오른다. 연결 고객 견적은 자동,
+  //   게스트 견적은 (1) 담당·상호가 맞으면 자동 연결(syncGuestQuotes) (2) 여기서 직접 연결.
+  app.get('/api/prospects/:id/erp-quotes', view, async (req, reply) => {
+    const p = await loadProspect(req, req.params.id, { unassigned: false });
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const rows = (await query(
+      `SELECT q.id, q.quote_no, q.quote_date, q.status, q.guest_name, q.subtotal_mxn::float AS subtotal_mxn, u.name AS user_name
+         FROM quotes q LEFT JOIN users u ON u.id=q.created_by
+        WHERE q.prospect_id IS NULL AND q.customer_id IS NULL AND q.status <> 'cancelled'
+          AND q.created_at > now() - INTERVAL '60 days' ${isDir(req) ? '' : 'AND q.created_by=$1'}
+        ORDER BY q.created_at DESC LIMIT 100`, isDir(req) ? [] : [me(req)])).rows;
+    const sim = (g) => Math.max(nameSimilarity(g, p.nom_estab), nameSimilarity(g, p.raz_social));
+    return { rows: rows.map((r) => ({ ...r, id: Number(r.id), match: Math.round(sim(r.guest_name) * 100) })).sort((a, b2) => b2.match - a.match).slice(0, 20) };
+  });
+  app.post('/api/prospects/:id/erp-quotes', edit, async (req, reply) => {
+    const p = await loadProspect(req, req.params.id, { unassigned: false });
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const qid = int(req.body && req.body.quote_id);
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const r = await q(`UPDATE quotes SET prospect_id=$2 WHERE id=$1 AND prospect_id IS NULL AND status <> 'cancelled'
+                           ${isDir(req) ? '' : 'AND created_by=$3'} RETURNING id`, isDir(req) ? [qid, p.id] : [qid, p.id, me(req)]);
+      if (!r.rowCount) return { code: 404 };
+      return recomputeProspect(q, Number(p.id), { userId: me(req), reason: 'cotización ERP vinculada' });
+    });
+    if (out && out.code) return reply.code(404).send({ error: 'quote_not_found' });
+    await logEvent({ userId: me(req), action: 'update', target: `quote:${qid}`, detail: { prospect_id: Number(p.id) } });
+    return { ok: true, ...out };
+  });
+  app.delete('/api/prospects/:id/erp-quotes/:qid', edit, async (req, reply) => {
+    const p = await loadProspect(req, req.params.id, { unassigned: false });
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      await q(`UPDATE quotes SET prospect_id=NULL WHERE id=$1 AND prospect_id=$2`, [int(req.params.qid), p.id]);
+      return recomputeProspect(q, Number(p.id), { userId: me(req), reason: 'cotización desvinculada' });
+    });
+    return { ok: true, ...out };
+  });
+
+  // ── 단계 제안(AI·기록) 적용/무시 ────────────────────────────────────
+  app.post('/api/prospects/:id/suggestion', edit, async (req, reply) => {
+    const p = await loadProspect(req, req.params.id, { unassigned: false });
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    if (!p.suggested_stage) return reply.code(400).send({ error: 'no_suggestion' });
+    const apply = !!(req.body && req.body.apply);
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const rec = (await q(`SELECT r.id FROM sales_consult_recordings r JOIN sales_consults c ON c.id=r.consult_id
+                             WHERE c.prospect_id=$1 AND r.alta_status='done' ORDER BY r.id DESC LIMIT 1`, [p.id])).rows[0];
+      await q(`UPDATE prospects SET suggestion_dismissed=$2, suggested_stage=NULL, suggestion_reason=NULL WHERE id=$1`,
+        [p.id, rec ? `${p.suggested_stage}:${rec.id}` : null]);
+      if (apply) {
+        const to = p.suggested_stage;
+        const chk = checkStageMove(p.stage, to, { isDirector: isDir(req), reason: p.suggestion_reason });
+        if (!chk.ok) return { code: 400, error: chk.error };
+        await moveStage(q, Number(p.id), p.stage, to, { userId: me(req), reason: p.suggestion_reason });
+      }
+      return recomputeProspect(q, Number(p.id), { userId: me(req), reason: apply ? 'sugerencia aplicada' : 'sugerencia descartada' });
+    });
+    if (out && out.code) return reply.code(out.code).send({ error: out.error });
+    return { ok: true, ...out };
+  });
+
+  // ── 진척 보드(누구나) — 전체·영업사원별·업체별 점수와 방문 실적, 일별 누적 ──
+  app.get('/api/prospects/progress', { preHandler: [authGuard] }, async (req) => {
+    await refreshCustomerStages().catch(() => {});   // ERP 견적·인보이스 반영
+    const qs = req.query || {};
+    const period = PERIOD.test(String(qs.period)) ? qs.period : mxToday().slice(0, 7);
+    const pb = periodBounds(period);
+    const ent = qs.cve_ent ? String(qs.cve_ent) : null;
+    const ep = ent ? [ent] : []; const entCond = ent ? `AND p.cve_ent=$1` : '';
+    const n = ep.length;
+    const users = Object.fromEntries((await query(`SELECT id, name FROM users`)).rows.map((u) => [Number(u.id), u.name]));
+    const ex = await excludedSet();
+    // 업체 현황
+    const sum = (await query(
+      `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE p.score > 0)::int AS worked,
+              COALESCE(ROUND(AVG(p.score) FILTER (WHERE p.score > 0)),0)::int AS avg_worked,
+              COUNT(*) FILTER (WHERE p.score >= 50)::int AS ge50, COUNT(*) FILTER (WHERE p.score >= 100)::int AS developed
+         FROM prospects p WHERE p.deleted_at IS NULL ${entCond}`, ep)).rows[0];
+    const bands = (await query(
+      `SELECT ${SCORE_BANDS.map(([a, b2], i) => `COUNT(*) FILTER (WHERE p.score BETWEEN ${a} AND ${b2} AND p.owner_user_id IS NOT NULL)::int AS b${i}`).join(', ')}
+         FROM prospects p WHERE p.deleted_at IS NULL ${entCond}`, ep)).rows[0];
+    const stages = (await query(`SELECT p.stage, COUNT(*)::int AS n FROM prospects p WHERE p.deleted_at IS NULL ${entCond} GROUP BY p.stage`, ep)).rows;
+    // 기간 일별: 방문(체크인) · 획득 점수 — 담당자별
+    const pp = [...ep, pb.from, pb.to];
+    const visits = (await query(
+      `SELECT c.consult_date::text AS d, c.created_by AS uid, COUNT(*)::int AS n, COUNT(DISTINCT c.prospect_id)::int AS u
+         FROM sales_consults c JOIN prospects p ON p.id=c.prospect_id
+        WHERE c.deleted_at IS NULL ${entCond} AND c.consult_date >= $${n + 1}::date AND c.consult_date < $${n + 2}::date
+        GROUP BY 1,2`, pp)).rows;
+    const pts = (await query(
+      `SELECT ((l.created_at AT TIME ZONE 'America/Mexico_City')::date)::text AS d, l.owner_user_id AS uid, SUM(l.score - l.prev_score)::int AS n
+         FROM prospect_score_log l JOIN prospects p ON p.id=l.prospect_id
+        WHERE TRUE ${entCond} AND l.created_at >= $${n + 1}::date AND l.created_at < $${n + 2}::date GROUP BY 1,2`, pp)).rows;
+    const reach = (stage) => `
+      SELECT p.owner_user_id AS uid, COUNT(*)::int AS n FROM prospects p
+        JOIN LATERAL (SELECT MIN(h.created_at) AS t FROM prospect_stage_history h WHERE h.prospect_id=p.id AND ${STAGE_RANK_SQL('h.to_stage')} >= ${stageRank(stage)}) f ON TRUE
+       WHERE p.deleted_at IS NULL ${entCond} AND f.t >= $${n + 1}::date AND f.t < $${n + 2}::date GROUP BY 1`;
+    const [rCont, rPerf, rCot, rReg, rSale] = await Promise.all(['contactado', 'perfilado', 'cotizado', 'registro', 'cliente_activo'].map((st) => query(reach(st), pp)));
+    const own = (await query(
+      `SELECT p.owner_user_id AS uid, COUNT(*)::int AS assigned, COUNT(*) FILTER (WHERE p.score>0)::int AS worked,
+              COALESCE(ROUND(AVG(p.score) FILTER (WHERE p.score>0)),0)::int AS avg_score, COALESCE(SUM(p.score),0)::int AS score_sum,
+              COUNT(*) FILTER (WHERE p.score>=50)::int AS ge50, COUNT(*) FILTER (WHERE p.score>=100)::int AS developed
+         FROM prospects p WHERE p.deleted_at IS NULL AND p.owner_user_id IS NOT NULL ${entCond} GROUP BY 1`, ep)).rows;
+    const tg = (await query(`SELECT user_id, metric, target_value FROM prospect_targets WHERE period=$1 AND metric IN ('visitas','puntos','perfilados','cotizaciones','nuevos_clientes')`, [period])).rows;
+    const reps = {};
+    const R = (uid) => { const k = Number(uid); if (!reps[k]) reps[k] = { user_id: k, name: users[k] || '?', visits: 0, visited: 0, points: 0, contactados: 0, perfilados: 0, cotizaciones: 0, registros: 0, nuevos: 0, target: {} }; return reps[k]; };
+    own.forEach((o) => Object.assign(R(o.uid), { assigned: o.assigned, worked: o.worked, avg_score: o.avg_score, score_sum: o.score_sum, ge50: o.ge50, developed: o.developed }));
+    visits.forEach((v) => { R(v.uid).visits += v.n; R(v.uid).visited += v.u; });
+    pts.forEach((v) => { if (v.uid != null) R(v.uid).points += v.n; });
+    [[rCont, 'contactados'], [rPerf, 'perfilados'], [rCot, 'cotizaciones'], [rReg, 'registros'], [rSale, 'nuevos']].forEach(([rs, k]) => rs.rows.forEach((r) => { if (r.uid != null) R(r.uid)[k] = r.n; }));
+    tg.forEach((t) => { R(t.user_id).target[t.metric] = Number(t.target_value); });
+    const repList = Object.values(reps).filter((r) => !ex.has(r.user_id) || r.assigned)
+      .sort((a, b2) => b2.points - a.points || b2.visits - a.visits);
+    repList.forEach((r, i) => { r.rank = i + 1; });
+    // 일별 시계열(누적) — 전체 + 담당자별
+    const days = []; for (let d = new Date(pb.from + 'T00:00:00Z'); d < new Date(pb.to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) days.push(d.toISOString().slice(0, 10));
+    const series = (rows, key) => {
+      const by = {}; rows.forEach((r) => { const u = r.uid == null ? 0 : Number(r.uid); (by[u] = by[u] || {})[r.d] = (by[u][r.d] || 0) + r[key]; });
+      const cum = (m) => { let c = 0; return days.map((d) => (c += (m[d] || 0))); };
+      const total = {}; Object.values(by).forEach((m) => Object.entries(m).forEach(([d, v]) => { total[d] = (total[d] || 0) + v; }));
+      return { total: cum(total), daily: days.map((d) => total[d] || 0),
+        by_user: Object.fromEntries(Object.entries(by).filter(([u]) => u !== '0').map(([u, m]) => [u, cum(m)])) };
+    };
+    const movers = (await query(
+      `SELECT p.id, p.nom_estab, p.municipio, p.owner_user_id, p.stage, p.score, p.info_pct,
+              p.score - COALESCE((SELECT l.prev_score FROM prospect_score_log l WHERE l.prospect_id=p.id AND l.created_at >= $${n + 1}::date ORDER BY l.created_at LIMIT 1), p.score) AS gain,
+              (SELECT MAX(l.created_at) FROM prospect_score_log l WHERE l.prospect_id=p.id) AS last_change
+         FROM prospects p WHERE p.deleted_at IS NULL ${entCond}
+          AND EXISTS (SELECT 1 FROM prospect_score_log l WHERE l.prospect_id=p.id AND l.created_at >= $${n + 1}::date AND l.created_at < $${n + 2}::date)
+        ORDER BY gain DESC, p.score DESC LIMIT 30`, pp)).rows
+      .map((m) => ({ ...m, id: Number(m.id), owner_user_id: m.owner_user_id == null ? null : Number(m.owner_user_id), owner_name: users[Number(m.owner_user_id)] || null, mine: Number(m.owner_user_id) === me(req) }));
+    return { period, days, summary: sum, bands: SCORE_BANDS.map(([a, b2], i) => ({ from: a, to: b2, n: bands['b' + i] })),
+      stages: Object.fromEntries(stages.map((r) => [r.stage, r.n])), reps: repList,
+      visits: series(visits, 'n'), points: series(pts, 'n'), movers, score_rules: SCORE_RULES };
+  });
+
   // ── 담당자 명단(디렉터) — 고객개발 담당 선택지에서 뺄 사용자 ───────────
   app.get('/api/prospect-staff', view, async (req, reply) => {
     if (!directorOnly(req, reply)) return;
@@ -719,12 +872,17 @@ export default async function prospectRoutes(app) {
          FROM prospects p WHERE ${where}`, params)).rows[0];
     // 기간 실적 — 담당자별
     const pp = [...params, pb.from, pb.to]; const f = `$${pp.length - 1}`, tto = `$${pp.length}`;
+    // 「그 단계 이상에 처음 도달」한 업체 수(단계를 건너뛰어도 센다)
     const firstReach = (stage) => `
-      SELECT p.owner_user_id AS uid, COUNT(DISTINCT h.prospect_id)::int AS n
-        FROM prospect_stage_history h JOIN prospects p ON p.id=h.prospect_id
-       WHERE ${where} AND h.to_stage='${stage}' AND h.created_at >= ${f}::date AND h.created_at < ${tto}::date
-         AND NOT EXISTS (SELECT 1 FROM prospect_stage_history h2 WHERE h2.prospect_id=h.prospect_id AND h2.to_stage='${stage}' AND h2.created_at < h.created_at)
-       GROUP BY p.owner_user_id`;
+      SELECT p.owner_user_id AS uid, COUNT(*)::int AS n FROM prospects p
+        JOIN LATERAL (SELECT MIN(h.created_at) AS t FROM prospect_stage_history h
+                       WHERE h.prospect_id=p.id AND ${STAGE_RANK_SQL('h.to_stage')} >= ${stageRank(stage)}) fr ON TRUE
+       WHERE ${where} AND fr.t >= ${f}::date AND fr.t < ${tto}::date GROUP BY p.owner_user_id`;
+    const [perfRows, ptsRows] = await Promise.all([
+      query(firstReach('perfilado'), pp),
+      query(`SELECT l.owner_user_id AS uid, COALESCE(SUM(l.score - l.prev_score),0)::int AS n FROM prospect_score_log l JOIN prospects p ON p.id=l.prospect_id
+              WHERE ${where} AND l.created_at >= ${f}::date AND l.created_at < ${tto}::date GROUP BY l.owner_user_id`, pp),
+    ]);
     const [visRows, conRows, cotRows, newRows, saleRows, ownerRows, reviewRows, todayRows] = await Promise.all([
       query(`SELECT c.created_by AS uid, COUNT(DISTINCT (c.prospect_id, c.consult_date))::int AS n
                FROM sales_consults c JOIN prospects p ON p.id=c.prospect_id
@@ -758,7 +916,7 @@ export default async function prospectRoutes(app) {
     const byUser = {};
     const U = (uid) => { const k = uid == null ? 'none' : String(Number(uid)); if (!byUser[k]) byUser[k] = { user_id: uid == null ? null : Number(uid), name: uid == null ? null : users[Number(uid)] || '?', actual: {}, target: {} }; return byUser[k]; };
     const fill = (rows, key) => rows.rows.forEach((r) => { U(r.uid).actual[key] = Number(r.n) || 0; });
-    fill(visRows, 'visitas'); fill(conRows, 'contactados'); fill(cotRows, 'cotizaciones'); fill(newRows, 'nuevos_clientes'); fill(saleRows, 'venta_nuevos');
+    fill(visRows, 'visitas'); fill(conRows, 'contactados'); fill(perfRows, 'perfilados'); fill(ptsRows, 'puntos'); fill(cotRows, 'cotizaciones'); fill(newRows, 'nuevos_clientes'); fill(saleRows, 'venta_nuevos');
     ownerRows.rows.forEach((r) => { Object.assign(U(r.uid), { assigned: r.assigned, worked: r.worked, idle: r.idle }); });
     reviewRows.rows.forEach((r) => { U(r.uid).pending_reviews = r.n; });
     todayRows.rows.forEach((r) => { U(r.uid).checkins_today = r.n; });

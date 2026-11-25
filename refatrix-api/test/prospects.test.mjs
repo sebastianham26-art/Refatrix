@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  potentialOf, POTENTIAL_TIERS,
+  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, STAGE_RANK_SQL, SCORE_RULES,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
   parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds,
@@ -30,6 +30,9 @@ test('단계 규칙: 앞으로만 · 중단 사유 · 되돌리기/복구/신규
   assert.equal(checkStageMove('contactado', 'descartado', { reason: 'Sin interés' }).ok, true);
   assert.equal(checkStageMove('descartado', 'contactado').error, 'director_only');
   assert.equal(checkStageMove('registro', 'cliente_activo').error, 'auto_only');
+  assert.equal(checkStageMove('contactado', 'perfilado').error, 'auto_only');
+  assert.equal(checkStageMove('perfilado', 'interesado').ok, true);
+  assert.equal(checkStageMove('interesado', 'cotizado').error, 'auto_only');
   assert.equal(checkStageMove('asignado', 'asignado').error, 'same_stage');
   assert.equal(autoAdvance('asignado', 'contactado'), 'contactado');
   assert.equal(autoAdvance('cotizado', 'contactado'), null);
@@ -190,4 +193,42 @@ test('잠재성: 월 서스펜션 구매액으로 A/B/C · 비중', () => {
     'tamano_cliente.metodo_entrega': { valor: ['paqueteria', 'Reparto en moto'] } } }));
   assert.equal(d.campos['potencial.compra_suspension_mensual'].valor, 45000);
   assert.deepEqual(d.campos['tamano_cliente.metodo_entrega'].valor, ['Paquetería', 'Reparto en moto']);
+});
+
+test('정보 충족도: 섹션 가중치 · 경쟁사는 가장 많이 채운 1세트 · 청구 제외', () => {
+  assert.equal(infoCompleteness({}).pct, 0);
+  const all = Object.fromEntries(ALTA_FIELDS.filter((f) => f.section !== 'facturacion').map((f) => [f.key, f.type === 'multiselect' ? [f.options[0]] : f.type === 'boolean' ? true : 1]));
+  assert.equal(infoCompleteness(all).pct, 100);
+  const one = { 'competencia.2.marca': 'SYD', 'competencia.2.proveedor': 'X', 'competencia.2.producto_ejemplo': 'Y', 'competencia.2.precio_compra': 1, 'competencia.2.precio_venta_publico': 2 };
+  assert.equal(infoCompleteness(one).pct, 15);
+  assert.equal(infoCompleteness({ 'facturacion.rfc': 'XAXX010101000' }).pct, 0);
+  const pot = { 'potencial.venta_total_mensual': 1, 'potencial.venta_suspension_mensual': 1, 'potencial.compra_total_mensual': 1, 'potencial.compra_suspension_mensual': 1 };
+  assert.equal(infoCompleteness(pot).pct, 25);
+});
+
+test('개발 점수: 정보 60 + 관심 5 + 견적 15 + 등록 10 · 첫 매출 100', () => {
+  assert.equal(scoreOf({ info_pct: 20 }).total, 12);
+  assert.equal(scoreOf({ info_pct: 70 }).total, 42);
+  assert.equal(scoreOf({ info_pct: 70, interest: true }).total, 47);
+  assert.equal(scoreOf({ info_pct: 70, interest: true, quoted: true }).total, 62);
+  assert.equal(scoreOf({ info_pct: 70, interest: true, quoted: true, linked: true }).total, 72);
+  assert.equal(scoreOf({ info_pct: 100, interest: true, quoted: true, linked: true }).total, 90);
+  assert.equal(scoreOf({ info_pct: 10, sale: true }).total, 100);
+  assert.equal(SCORE_RULES.info_max + SCORE_RULES.interest + SCORE_RULES.quote + SCORE_RULES.registro, 90);
+});
+
+test('근거 기반 단계 + 제안', () => {
+  assert.equal(deriveStage({ owner: false, visits: 0 }, 'sin_asignar').auto, 'sin_asignar');
+  assert.equal(deriveStage({ owner: true, visits: 0 }, 'sin_asignar').auto, 'asignado');
+  assert.equal(deriveStage({ owner: true, visits: 1, info_pct: 30 }, 'asignado').auto, 'contactado');
+  assert.equal(deriveStage({ owner: true, visits: 2, info_pct: 55 }, 'contactado').auto, 'perfilado');
+  assert.equal(deriveStage({ owner: true, visits: 1, info_pct: 55, interest_confirmed: true }, 'perfilado').auto, 'interesado');
+  assert.equal(deriveStage({ owner: true, visits: 1, quoted: true }, 'perfilado').auto, 'cotizado');
+  assert.equal(deriveStage({ owner: true, visits: 1, linked: true }, 'cotizado').auto, 'registro');
+  assert.equal(deriveStage({ owner: true, linked: true, sale: true }, 'registro').auto, 'cliente_activo');
+  const s1 = deriveStage({ owner: true, visits: 1, info_pct: 55, ai_stage: 'interesado' }, 'perfilado');
+  assert.equal(s1.suggest.stage, 'interesado');
+  assert.equal(deriveStage({ owner: true, visits: 1, ai_stage: 'descartado' }, 'contactado').suggest.stage, 'descartado');
+  assert.equal(deriveStage({ owner: true, visits: 1, ai_stage: 'cotizado' }, 'perfilado').suggest, null);   // 견적은 ERP 견적서로만
+  assert.ok(STAGE_RANK_SQL('x').includes("WHEN 'perfilado' THEN 3"));
 });

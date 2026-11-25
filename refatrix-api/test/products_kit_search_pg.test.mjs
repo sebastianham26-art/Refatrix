@@ -1,4 +1,6 @@
-// 2026-11-25 · 제품찾기(/api/products) — 키트는 키트 번호로 칠 때만 나온다 · 구성품 코드·차종으로는 안 나온다 (실 PostgreSQL)
+// 2026-11-25 · 키트 검색 규칙 (실 PostgreSQL)
+//   제품찾기(/api/products) — 구성품 코드로도 키트가 나온다(예전 그대로)
+//   가격 마스터 ① 가격표(/api/price-master/table) — 키트는 키트 번호로 찾을 때만
 //   실행: PGADMIN_URL=postgres://postgres@localhost:5432/postgres PG_TEMPLATE=<migrations/*.sql 전부 적용한 DB> node test/products_kit_search_pg.test.mjs
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
@@ -12,6 +14,7 @@ const DB = 'pmtest_kit1125';
 const { pool, query } = await import('../src/db.js');
 const { hashPin } = await import('../src/auth.js');
 const productRoutes = (await import('../src/routes/productRoutes.js')).default;
+const priceMasterRoutes = (await import('../src/routes/priceMasterRoutes.js')).default;
 let pass = 0, fail = 0;
 async function t(name, fn) { try { await fn(); pass++; console.log('  ✔', name); } catch (e) { fail++; console.log('  ✘', name, '\n     ', e.message.split('\n').slice(0, 6).join('\n      ')); } }
 
@@ -29,33 +32,42 @@ await query(`INSERT INTO vio_promos (promo_no, title) VALUES ('K0099','T')`);
 
 const app = Fastify();
 app.decorateRequest('jwtVerify', async function () { this.user = { sub: 1 }; });
-app.register(productRoutes); await app.ready();
+app.register(productRoutes); app.register(priceMasterRoutes); await app.ready();
 const codes = async (qs) => { const r = await app.inject({ method: 'GET', url: '/api/products?limit=50&' + qs }); assert.equal(r.statusCode, 200, r.body); const j = r.json(); return { c: j.items.map((x) => x.code).sort(), total: j.total, j }; };
 
-await t('검색어 없음 → 키트 숨김 (total 도 키트 제외)', async () => {
-  const { c, total } = await codes(''); assert.deepEqual(c, ['CB0011', 'CQ0728R']); assert.equal(total, 2);
+const pm = async (qs) => { const r = await app.inject({ method: 'GET', url: '/api/price-master/table?limit=50&' + qs }); assert.equal(r.statusCode, 200, r.body); const j = r.json(); return { c: j.rows.map((x) => x.code).sort(), total: j.kpi.total }; };
+
+console.log('제품찾기 — 예전 그대로');
+await t('구성품 코드로 찾으면 부품 + 그 부품이 든 키트', async () => {
+  assert.deepEqual((await codes('q=CB0011')).c, ['CB0011', 'K0001', 'K0012']);
+  const r = await codes('q=CQ0728R'); assert.deepEqual(r.c, ['CQ0728R', 'K0001']);
+  assert.deepEqual(r.j.items.find((x) => x.code === 'K0001').kit.items.map((x) => x.code), ['CB0011', 'CQ0728R']);
 });
-await t('구성품 코드로 검색 → 부품만, 키트는 안 나옴', async () => {
-  assert.deepEqual((await codes('q=CB0011')).c, ['CB0011']); assert.deepEqual((await codes('q=cq0728')).c, ['CQ0728R']);
+await t('검색어 없음 · 차종 · 키트 번호 → 키트도 나옴', async () => {
+  assert.deepEqual((await codes('')).c, ['CB0011', 'CQ0728R', 'K0001', 'K0012']);
+  assert.deepEqual((await codes('q=VERSA')).c, ['CB0011', 'CQ0728R', 'K0001']);
+  assert.deepEqual((await codes('q=K0001')).c, ['K0001']);
 });
-await t('차종·키트 이름 글자로 검색 → 키트 안 나옴', async () => {
-  assert.deepEqual((await codes('q=VERSA')).c, ['CB0011', 'CQ0728R']); assert.deepEqual((await codes('q=KIT')).c, []); assert.deepEqual((await codes('q=AVEO')).c, []);
+
+console.log('가격 마스터 ① 가격표 — 키트는 키트 번호로만');
+await t('검색어 없음 → 키트 숨김 (KPI 제품 수도 키트 제외)', async () => {
+  const r = await pm(''); assert.deepEqual(r.c, ['CB0011', 'CQ0728R']); assert.equal(r.total, 2);
 });
-await t('키트 번호로 검색 → 키트 + 구성품 하위 줄(kit.items)', async () => {
-  const r = await codes('q=K0001'); assert.deepEqual(r.c, ['K0001']); assert.equal(r.total, 1);
-  assert.deepEqual(r.j.items[0].kit.items.map((x) => x.code), ['CB0011', 'CQ0728R']);
-  assert.deepEqual((await codes('q=k0012')).c, ['K0012']); assert.deepEqual((await codes('q=K00')).c, ['K0001', 'K0012']);
-  assert.deepEqual((await codes('q=0012')).c, ['K0012']);
+await t('구성품 코드 → 부품만 (키트 가격 안 나옴)', async () => {
+  assert.deepEqual((await pm('q=CB0011')).c, ['CB0011']); assert.deepEqual((await pm('q=cq0728r')).c, ['CQ0728R']);
 });
-await t('검색어 % · _ 로 키트가 열리지 않음(키트 조건은 글자 그대로 비교)', async () => {
-  assert.ok(!(await codes('q=' + encodeURIComponent('%'))).c.some((c) => c.startsWith('K0'))); assert.ok(!(await codes('q=K_001')).c.some((c) => c.startsWith('K0')));
+await t('차종 · KIT 글자 → 키트 안 나옴', async () => {
+  assert.deepEqual((await pm('q=VERSA')).c, ['CB0011', 'CQ0728R']); assert.deepEqual((await pm('q=KIT')).c, []);
 });
-await t('kits=1 → 예전처럼 전부', async () => {
-  assert.deepEqual((await codes('kits=1')).c, ['CB0011', 'CQ0728R', 'K0001', 'K0012']); assert.deepEqual((await codes('kits=1&q=CB0011')).c, ['CB0011', 'K0001', 'K0012']);
+await t('키트 번호 → 키트 (대소문자 · 일부)', async () => {
+  const r = await pm('q=K0001'); assert.deepEqual(r.c, ['K0001']); assert.equal(r.total, 1);
+  assert.deepEqual((await pm('q=k00')).c, ['K0001', 'K0012']); assert.deepEqual((await pm('q=0012')).c, ['K0012']);
 });
-await t('정렬·페이지와 같이 (sort=code · offset)', async () => {
-  const r = await app.inject({ method: 'GET', url: '/api/products?q=K0&sort=code&dir=desc&limit=1&offset=1' }); const j = r.json();
-  assert.deepEqual(j.items.map((x) => x.code), ['K0001']); assert.equal(j.total, 2);
+await t('% · _ 로 키트가 열리지 않음 · 보기 필터·정렬과 같이', async () => {
+  assert.ok(!(await pm('q=' + encodeURIComponent('%'))).c.some((c) => c.startsWith('K0')));
+  assert.ok(!(await pm('q=K_001')).c.some((c) => c.startsWith('K0')));
+  assert.deepEqual((await pm('q=K0&view=no_fob&sort=code&dir=desc')).c, ['K0001', 'K0012']);
+  assert.deepEqual((await pm('view=no_fob')).c, ['CB0011', 'CQ0728R']);
 });
 await app.close(); await pool.end();
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

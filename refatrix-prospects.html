@@ -112,6 +112,8 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 .stepper button{border:1px solid var(--line);background:#fff;border-radius:var(--pill);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .stepper button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .stepper button.past{background:var(--surface)}
+.stepper button:disabled{cursor:default;opacity:.55}
+.stepper button.on:disabled{opacity:1}
 /* 검토 양식 */
 .form-sec{border-top:2px solid var(--ink);padding-top:14px;margin-top:22px}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
@@ -131,8 +133,27 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 .empty{padding:40px 16px;text-align:center;color:var(--muted)}
 .banner{padding:12px 16px;border-radius:var(--r);font-size:14px}
 .banner.warn{background:var(--warn-soft);color:#6B4100} .banner.info{background:var(--surface)} .banner.bad{background:var(--bad-soft);color:var(--bad)}
+.chart svg{display:block;width:100%;height:auto}
+.chart .lg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-top:6px}
+.chart .lg span{display:inline-flex;align-items:center;gap:6px}
+.score{display:flex;align-items:center;gap:14px}
+.score .big{font-size:44px;font-weight:800;letter-spacing:-1.5px;line-height:1}
+.score .big small{font-size:16px;color:var(--muted);font-weight:500;letter-spacing:0}
+.meter{height:10px;background:var(--line);border-radius:5px;overflow:hidden;display:flex}
+.meter i{display:block;height:100%}
+.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:12px}
+.parts div{background:#fff;border:1px solid var(--line);border-radius:4px;padding:8px 10px;font-size:12px}
+.parts b{display:block;font-size:18px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.rules .r{border:1px solid var(--line);border-radius:4px;padding:14px}
+.rules .r .h{display:flex;align-items:center;gap:8px;font-weight:800}
+.how{font-size:11px;font-weight:800;padding:1px 7px;border-radius:var(--pill);background:var(--surface)}
+.how.auto{background:var(--ok-soft);color:var(--ok)} .how.suggest{background:var(--warn-soft);color:#6B4100}
+.rankno{display:inline-flex;width:26px;height:26px;border-radius:50%;align-items:center;justify-content:center;font-weight:800;font-size:13px;background:var(--surface)}
+.rankno.r1{background:var(--ctr);color:#fff}
 @media (max-width:760px){
   .wrap{padding:12px 14px 90px} h1{font-size:24px}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))} .card{padding:14px}
   .pg-head{padding-bottom:12px} .head-ctl{width:100%;flex-wrap:nowrap} .head-ctl .fld{flex:1;min-width:0!important}
   .brand .logo{height:32px;min-width:32px} .brand .logo img{max-height:32px} .kpi .val{font-size:26px} #map{height:420px}
   .drawer .db{padding:16px 16px 120px} .drawer .dh{padding:16px}
@@ -162,16 +183,31 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
   <div id="mig" class="banner bad hide" style="margin-top:16px">DB 마이그레이션 0334(고객개발)가 아직 적용되지 않았습니다. <b>npm run migrate</b> 후 다시 열어 주세요.</div>
 
   <nav class="tabs" role="tablist" id="tabs">
-    <button class="tab" role="tab" data-tab="route">오늘 루트</button>
-    <button class="tab" role="tab" data-tab="dash">현황판</button>
-    <button class="tab" role="tab" data-tab="map">지도</button>
-    <button class="tab" role="tab" data-tab="list">후보 목록</button>
-    <button class="tab" role="tab" data-tab="review">검토 대기<span class="cnt hide" id="rv-cnt">0</span></button>
+    <button class="tab" role="tab" data-tab="board">진척 보드</button>
+    <button class="tab work" role="tab" data-tab="route">오늘 루트</button>
+    <button class="tab work" role="tab" data-tab="dash">현황판</button>
+    <button class="tab work" role="tab" data-tab="map">지도</button>
+    <button class="tab work" role="tab" data-tab="list">후보 목록</button>
+    <button class="tab work" role="tab" data-tab="review">검토 대기<span class="cnt hide" id="rv-cnt">0</span></button>
     <button class="tab dir" role="tab" data-tab="links">연결 승인<span class="cnt hide" id="lk-cnt">0</span></button>
     <button class="tab dir" role="tab" data-tab="terr">지역·담당</button>
     <button class="tab dir" role="tab" data-tab="targets">목표</button>
     <button class="tab dir" role="tab" data-tab="import">DENUE 가져오기</button>
   </nav>
+
+  <!-- 진척 보드 (모든 사용자) -->
+  <section id="p-board" class="tabp hide">
+    <p class="note" style="margin-top:12px">개발 점수(0~100)는 방문 기록·저장한 고객정보·견적·고객 연결·첫 매출로 자동 계산됩니다. 첫 매출이 나오면 100점 = 신규개발 완료. 이 보드는 모든 직원이 봅니다(금액 제외).</p>
+    <div class="grid cards" id="b-sum"></div>
+    <div class="split" style="margin-top:16px">
+      <div class="card chart"><h2>누적 방문</h2><p class="note" id="b-visits-note"></p><div id="b-visits"></div></div>
+      <div class="card chart"><h2>점수 구간별 업체</h2><p class="note">담당이 있는 업체 · 막대 = 업체 수</p><div id="b-bands"></div></div>
+    </div>
+    <div class="card chart" style="margin-top:16px"><h2>영업사원별 누적 획득 점수</h2><p class="note">업체 점수가 오를 때마다 그 업체 담당에게 더해집니다(내려가면 빠짐).</p><div id="b-reps-chart"></div></div>
+    <div class="card" style="margin-top:16px"><h2>영업사원 비교</h2><div class="scroll" style="margin-top:12px"><table class="tb resp" id="b-reps"></table></div></div>
+    <div class="card" style="margin-top:16px"><h2>이번 달 점수가 오른 업체</h2><div class="scroll" style="margin-top:12px"><table class="tb resp" id="b-movers"></table></div></div>
+    <div class="card" style="margin-top:16px"><h2>단계와 점수 기준</h2><div id="b-rules" style="margin-top:12px"></div></div>
+  </section>
 
   <!-- 오늘 루트 (모바일 기본) -->
   <section id="p-route" class="tabp hide">
@@ -242,7 +278,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <label class="fld"><span>업종</span><select id="l-seg"></select></label>
       <label class="fld"><span>우선순위</span><select id="l-prio"><option value="">전체</option><option>A</option><option>B</option><option>C</option></select></label>
       <label class="fld"><span>잠재성</span><select id="l-pot"><option value="">전체</option><option value="A">A (월 5만+)</option><option value="B">B (1.5만+)</option><option value="C">C</option><option value="none">미입력</option></select></label>
-      <label class="fld"><span>정렬</span><select id="l-sort"><option value="">우선순위·지역</option><option value="potential">잠재 서스펜션 구매 큰 순</option><option value="activity">최근 활동</option><option value="name">상호</option></select></label>
+      <label class="fld"><span>정렬</span><select id="l-sort"><option value="">우선순위·지역</option><option value="score">개발 점수 높은 순</option><option value="potential">잠재 서스펜션 구매 큰 순</option><option value="activity">최근 활동</option><option value="name">상호</option></select></label>
       <label class="fld dir"><span>담당자</span><select id="l-owner"></select></label>
       <label class="chip" style="padding:10px 14px"><input type="checkbox" id="l-idle"> 30일 방치</label>
     </div>
@@ -349,7 +385,7 @@ async function api(path,opt){
   opt=opt||{};
   const r=await fetch(S.api+path,{...opt,headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token,...(opt.headers||{})}});
   const j=await r.json().catch(()=>({}));
-  if(r.status===503&&j.error==='migration_0334_required'){ $('mig').classList.remove('hide'); }
+  if(r.status===503&&/^migration_/.test(j.error||'')){ $('mig').innerHTML='DB 마이그레이션('+esc(j.error.replace('migration_','').replace('_required',''))+')이 아직 적용되지 않았습니다. <b>npm run migrate</b> 후 다시 열어 주세요.'; $('mig').classList.remove('hide'); }
   if(!r.ok){ const e=new Error(j.error||('http_'+r.status)); e.data=j; e.status=r.status; throw e; }
   return j;
 }
@@ -357,19 +393,46 @@ const post=(p,b,m)=>api(p,{method:m||'POST',body:JSON.stringify(b||{})});
 
 // ── 상태 ──
 let META=null, STAGE={}, USERS={}, isDir=false;
-const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F2A6A2',interesado:'#E8635C',cotizado:'#E2231A',registro:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B'};
+const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9',perfilado:'#EE8A82',interesado:'#E8635C',cotizado:'#E2231A',registro:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B'};
 const SEG_LBL={mayorista:'부품 도매',refaccionaria:'Refaccionaria',refaccionaria_usada:'Refaccionaria(중고)',taller_suspension:'서스펜션·얼라인먼트',taller_general:'일반정비',otro:'기타'};
-const METRIC_LBL={visitas:'방문',contactados:'컨택',cotizaciones:'견적',nuevos_clientes:'신규고객',venta_nuevos:'신규매출(IVA 제외)'};
+const METRIC_LBL={visitas:'방문',contactados:'첫 방문 업체',perfilados:'정보 확보 업체',puntos:'획득 점수',cotizaciones:'견적',nuevos_clientes:'신규고객',venta_nuevos:'신규매출(IVA 제외)'};
 const stageDot=k=>'<span class="chip"><span class="dot" style="background:'+(STAGE_COLOR[k]||'#999')+'"></span>'+esc((STAGE[k]||{}).ko||k)+'</span>';
 const ent=()=>$('f-ent').value||'';
 const period=()=>$('f-period').value;
 const isMobile=()=>window.matchMedia('(max-width:760px)').matches;
+const REP_COLORS=['#E2231A','#111111','#1F6FEB','#F5A300','#1E7A46','#7B3FBF','#0F9AA8','#8C8C8C','#C2185B','#5D4037'];
+const scoreColor=v=>v>=100?'#1E7A46':v>=80?'#8E120C':v>=50?'#E2231A':v>=20?'#EE8A82':v>0?'#F6BDB9':'#C8C8C8';
+// ── 작은 SVG 차트(외부 라이브러리 없음) ──
+function lineChart(series,labels,opt){
+  opt=opt||{}; const W=760,H=opt.h||240,L=48,R=16,T=14,B=28; const n=labels.length; if(!n) return '<div class="empty">데이터 없음</div>';
+  const max=Math.max(1,...series.flatMap(s=>s.values)); const nice=(()=>{ const p=Math.pow(10,Math.floor(Math.log10(max))); const m=max/p; return (m<=1?1:m<=2?2:m<=5?5:10)*p; })();
+  const X=i=>L+(n===1?0:i*(W-L-R)/(n-1)), Y=v=>T+(H-T-B)*(1-v/nice);
+  const nt=nice<4?nice:4; let g=''; for(let k=0;k<=nt;k++){ const v=nice*k/nt, y=Y(v); g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y+'" y2="'+y+'" stroke="#E5E5E5"/><text x="'+(L-8)+'" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="#767676">'+fmt(Math.round(v))+'</text>'; }
+  const step=Math.max(1,Math.ceil(n/8)); labels.forEach((l,i)=>{ if(i%step===0||i===n-1) g+='<text x="'+X(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="11" fill="#767676">'+esc(l)+'</text>'; });
+  const today=opt.cut!=null?opt.cut:n-1;
+  series.forEach(s=>{ const pts=s.values.slice(0,today+1).map((v,i)=>X(i)+','+Y(v)).join(' ');
+    g+='<polyline points="'+pts+'" fill="none" stroke="'+s.color+'" stroke-width="'+(s.w||2.5)+'" stroke-linejoin="round"><title>'+esc(s.name)+'</title></polyline>';
+    const lv=s.values[Math.min(today,s.values.length-1)]; g+='<circle cx="'+X(Math.min(today,n-1))+'" cy="'+Y(lv)+'" r="3.5" fill="'+s.color+'"/>'; });
+  if(opt.target){ const y=Y(Math.min(opt.target,nice)); g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y+'" y2="'+y+'" stroke="#111" stroke-dasharray="5 5"/><text x="'+(W-R)+'" y="'+(y-5)+'" text-anchor="end" font-size="11" fill="#111">목표 '+fmt(opt.target)+'</text>'; }
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(opt.label||'차트')+'">'+g+'</svg>'+
+    (series.length>1?'<div class="lg">'+series.map(s=>'<span><span class="dot" style="background:'+s.color+'"></span>'+esc(s.name)+' · '+fmt(s.values[Math.min(today,s.values.length-1)])+'</span>').join('')+'</div>':'');
+}
+function barChart(items,opt){
+  opt=opt||{}; const W=760,H=opt.h||220,L=12,R=12,T=22,B=30; const n=items.length; const max=Math.max(1,...items.map(i=>i.value));
+  const bw=(W-L-R)/n; let g='';
+  items.forEach((it,i)=>{ const h=(H-T-B)*it.value/max, x=L+i*bw+bw*0.18, w=bw*0.64, y=H-B-h;
+    g+='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+Math.max(it.value?2:0,h)+'" fill="'+it.color+'"><title>'+esc(it.label)+': '+fmt(it.value)+'</title></rect>'+
+       '<text x="'+(x+w/2)+'" y="'+(y-6)+'" text-anchor="middle" font-size="12" font-weight="700" fill="#111">'+fmt(it.value)+'</text>'+
+       '<text x="'+(x+w/2)+'" y="'+(H-10)+'" text-anchor="middle" font-size="11" fill="#484848">'+esc(it.label)+'</text>'; });
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(opt.label||'막대 차트')+'">'+g+'</svg>';
+}
 function opts(sel,list,first){ sel.innerHTML=(first!=null?'<option value="">'+esc(first)+'</option>':'')+list.map(([v,t])=>'<option value="'+esc(v)+'">'+esc(t)+'</option>').join(''); }
 
 async function init(){
   try{ const co=await api('/api/company'); if(co&&co.logo_data) $('logo').innerHTML='<img src="'+co.logo_data+'" alt="CTR">'; }catch(e){}
   try{ META=await api('/api/prospects/meta'); }catch(e){ if(e.status!==503) toast('불러오기 실패: '+e.message); return; }
   isDir=META.is_director;
+  if(!META.can_work) document.querySelectorAll('.tab.work').forEach(el=>el.classList.add('hide'));
   META.stages.forEach(s=>STAGE[s.key]=s); META.users.forEach(u=>USERS[u.id]=u.name);
   document.querySelectorAll('.dir').forEach(el=>el.classList.toggle('hide',!isDir));
   opts($('f-ent'),META.states.map(s=>[s.cve_ent,(s.entidad||s.cve_ent)+' ('+fmt(s.n)+')']),META.states.length>1?'전체':null);
@@ -387,25 +450,68 @@ async function init(){
   const h=new URLSearchParams(location.hash.slice(1));
   if(h.get('review')&&h.get('prospect')) openReview(Number(h.get('prospect')),Number(h.get('review')));
   else if(h.get('prospect')) openProspect(Number(h.get('prospect')));
-  show(h.get('tab')||(isMobile()||!isDir?'route':'dash'));
+  show(h.get('tab')||(!META.can_work?'board':isMobile()||!isDir?'route':'dash'));
 }
 
 // ── 탭 ──
 let cur='';
 function show(tab){
-  if(!document.querySelector('[data-tab="'+tab+'"]')||document.querySelector('[data-tab="'+tab+'"]').classList.contains('hide')) tab='route';
+  if(!document.querySelector('[data-tab="'+tab+'"]')||document.querySelector('[data-tab="'+tab+'"]').classList.contains('hide')) tab=META&&META.can_work?'route':'board';
   cur=tab;
-  $('f-period-wrap').classList.toggle('hide',!(tab==='dash'||tab==='targets'));
+  $('f-period-wrap').classList.toggle('hide',!(tab==='dash'||tab==='targets'||tab==='board'));
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab?'true':'false'));
   document.querySelectorAll('.tabp').forEach(p=>p.classList.toggle('hide',p.id!=='p-'+tab));
-  ({route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:()=>{}})[tab]();
+  ({board:loadBoard,route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:()=>{}})[tab]();
 }
 $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(b) show(b.dataset.tab); });
 $('f-ent').addEventListener('change',()=>show(cur));
-$('f-period').addEventListener('change',()=>{ if(cur==='dash'||cur==='targets') show(cur); });
+$('f-period').addEventListener('change',()=>{ if(cur==='dash'||cur==='targets'||cur==='board') show(cur); });
 async function refreshCounts(){
+  if(!META.can_work) return;
   try{ const r=await api('/api/prospects/reviews'); const n=r.rows.length; $('rv-cnt').textContent=n; $('rv-cnt').classList.toggle('hide',!n); }catch(e){}
   if(isDir){ try{ const r=await api('/api/prospect-links'); const n=r.rows.length; $('lk-cnt').textContent=n; $('lk-cnt').classList.toggle('hide',!n); }catch(e){} }
+}
+
+// ── 진척 보드 ──
+async function loadBoard(){
+  let d; try{ d=await api('/api/prospects/progress?period='+period()+(ent()?'&cve_ent='+ent():'')); }catch(e){ return; }
+  const S=d.summary, today=META.today; const cut=d.days.indexOf(today)>=0?d.days.indexOf(today):(today<d.days[0]?0:d.days.length-1);
+  const totalVisits=d.visits.total[cut]||0, totalPts=d.points.total[cut]||0;
+  $('b-sum').innerHTML=[['개발 중 업체',fmt(S.worked),'점수 0 초과 · 전체 '+fmt(S.total)],['평균 개발 점수',S.avg_worked+'점','개발 중 업체 평균'],
+    ['이번 달 방문',fmt(totalVisits),'체크인 횟수'],['이번 달 획득 점수',fmt(totalPts),'점수 상승 합'],['50점 이상',fmt(S.ge50),'정보 확보·견적 단계'],['신규개발 완료(100점)',fmt(S.developed),'첫 매출']]
+    .map(([l,v,n])=>'<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div><div class="note">'+n+'</div></div>').join('');
+  const lbl=d.days.map(x=>String(Number(x.slice(8))));
+  const vt=d.reps.reduce((a,r)=>a+(r.target.visitas||0),0);
+  $('b-visits-note').textContent='일별 체크인을 쌓은 값'+(vt?' · 점선 = 이번 달 방문 목표 합':'');
+  $('b-visits').innerHTML=lineChart([{name:'전체 방문',color:'#E2231A',values:d.visits.total}],lbl,{cut,target:vt||null,label:'누적 방문'});
+  const zero=d.bands.find(b=>b.to===0);
+  $('b-bands').innerHTML=barChart(d.bands.filter(b=>b.to>0).map(b=>({label:b.from===b.to?String(b.from)+'점':b.from+'–'+b.to,value:b.n,color:scoreColor(b.to)})),{label:'점수 구간별 업체 수'})+
+    '<p class="note">0점(담당은 있지만 아직 정보 없음): <b>'+fmt(zero?zero.n:0)+'</b>곳</p>';
+  const reps=d.reps.filter(r=>d.points.by_user[r.user_id]||d.visits.by_user[r.user_id]);
+  $('b-reps-chart').innerHTML=reps.length?lineChart(reps.map((r,i)=>({name:r.name,color:REP_COLORS[i%REP_COLORS.length],values:d.points.by_user[r.user_id]||d.days.map(()=>0)})),lbl,{cut,label:'영업사원별 누적 획득 점수'}):'<div class="empty">이번 달 점수 변화가 아직 없습니다.</div>';
+  const tgt=(r,m,v)=>r.target[m]?' <span class="note">/ '+fmt(r.target[m])+'</span>':'';
+  $('b-reps').innerHTML='<thead><tr><th>#</th><th>영업사원</th><th class="num">획득 점수</th><th class="num">방문</th><th class="num">방문 업체</th><th class="num">평균 점수</th><th class="num">정보 확보</th><th class="num">견적</th><th class="num">고객 등록</th><th class="num">신규개발</th><th class="num">담당 업체</th><th class="num">50점+</th></tr></thead><tbody>'+
+    (d.reps.length?d.reps.map(r=>'<tr'+(r.user_id===META.me?' style="background:var(--ctr-soft)"':'')+'><td data-l="순위"><span class="rankno '+(r.rank===1?'r1':'')+'">'+r.rank+'</span></td><td data-l="영업사원"><b>'+esc(r.name)+'</b></td>'+
+      '<td class="num" data-l="획득 점수"><b>'+fmt(r.points)+'</b>'+tgt(r,'puntos')+'</td><td class="num" data-l="방문">'+fmt(r.visits)+tgt(r,'visitas')+'</td><td class="num" data-l="방문 업체">'+fmt(r.visited)+'</td>'+
+      '<td class="num" data-l="평균 점수">'+fmt(r.avg_score||0)+'</td><td class="num" data-l="정보 확보">'+fmt(r.perfilados)+tgt(r,'perfilados')+'</td><td class="num" data-l="견적">'+fmt(r.cotizaciones)+tgt(r,'cotizaciones')+'</td>'+
+      '<td class="num" data-l="고객 등록">'+fmt(r.registros)+'</td><td class="num" data-l="신규개발"><b>'+fmt(r.nuevos)+'</b>'+tgt(r,'nuevos_clientes')+'</td><td class="num" data-l="담당 업체">'+fmt(r.assigned||0)+'</td><td class="num" data-l="50점+">'+fmt(r.ge50||0)+'</td></tr>').join('')
+      :'<tr><td colspan="12" class="empty">아직 실적이 없습니다.</td></tr>')+'</tbody>';
+  $('b-movers').innerHTML='<thead><tr><th>업체</th><th>담당</th><th>단계</th><th class="num">이번 달 상승</th><th>점수</th></tr></thead><tbody>'+
+    (d.movers.length?d.movers.map(m=>'<tr'+(m.mine||isDir?' class="click" data-open="'+m.id+'"':'')+'><td data-l="업체"><b>'+esc(m.nom_estab)+'</b><div class="note">'+esc(m.municipio||'')+'</div></td><td data-l="담당">'+esc(m.owner_name||'—')+'</td><td data-l="단계">'+stageDot(m.stage)+'</td>'+
+      '<td class="num" data-l="상승"><b class="st-ok">+'+fmt(m.gain)+'</b></td><td data-l="점수" style="min-width:160px"><div style="display:flex;align-items:center;gap:8px"><div class="meter" style="flex:1"><i style="width:'+m.score+'%;background:'+scoreColor(m.score)+'"></i></div><b>'+m.score+'</b></div></td></tr>').join('')
+      :'<tr><td colspan="5" class="empty">이번 달 점수가 바뀐 업체가 없습니다.</td></tr>')+'</tbody>';
+  renderRules(d.score_rules);
+}
+function renderRules(R){
+  const HOW={auto:'기록으로 자동',suggest:'AI 제안 → 확인',manual:'담당이 직접'};
+  const sw=META.section_weights;
+  $('b-rules').innerHTML='<div class="rules">'+META.stages.map((st,i)=>'<div class="r"><div class="h"><span class="dot" style="background:'+STAGE_COLOR[st.key]+'"></span>'+(st.key==='descartado'?'':i+'. ')+esc(st.ko)+' <span class="note" style="font-weight:400">'+esc(st.es)+'</span> <span class="how '+st.how+'">'+HOW[st.how]+'</span></div>'+
+      '<div style="margin-top:8px;font-size:13px"><b>근거</b> '+esc(st.rule)+'</div><div class="note" style="margin-top:4px"><b>다음 목표</b> '+esc(st.goal)+'</div></div>').join('')+'</div>'+
+    '<h3 style="margin-top:20px">개발 점수 (0~100)</h3><table class="tb" style="margin-top:8px"><thead><tr><th>항목</th><th class="num">점수</th><th>어떻게 얻나</th></tr></thead><tbody>'+
+    '<tr><td>정보 충족도</td><td class="num">최대 '+R.info_max+'</td><td>저장한 고객정보 비율 × '+R.info_max+'. 섹션 가중치: 기본정보 '+sw.datos_generales+' · 고객 규모 '+sw.tamano_cliente+' · 잠재성 '+sw.potencial+' · 영업 정보 '+sw.informacion_empresa+' · 업종·서비스 '+sw.tipo_servicios+' · 경쟁사 '+sw.competencia+' (%)</td></tr>'+
+    '<tr><td>관심 확인</td><td class="num">+'+R.interest+'</td><td>관심 단계 확인(또는 견적·고객 연결)</td></tr><tr><td>견적 제출</td><td class="num">+'+R.quote+'</td><td>ERP에 견적서 저장(연결 고객 견적은 자동, 게스트 견적은 상호로 자동 연결 또는 직접 연결)</td></tr>'+
+    '<tr><td>고객 등록</td><td class="num">+'+R.registro+'</td><td>ERP 고객과 연결</td></tr><tr><td><b>첫 매출</b></td><td class="num"><b>100</b></td><td>연결 고객의 첫 게시 인보이스 = 신규개발 완료</td></tr></tbody></table>'+
+    '<p class="note">예) 첫 방문에서 정보 20% 확보 → 12점 · 다음 방문에서 70%까지 → 42점 · 관심 확인 → 47점 · 견적 제출 → 62점 · 고객 등록 → 72점 · 첫 매출 → 100점</p>';
 }
 
 // ── 현황판 ──
@@ -419,7 +525,7 @@ async function loadDash(){
       return '<div class="card kpi"><div class="lbl">'+esc(METRIC_LBL[k.metric])+'</div><div class="val">'+val+(tg?' <small>/ '+tg+'</small>':'')+'</div>'+(tg?'':'<div class="note">목표 없음</div>')+
         '<div class="bar"><i class="'+st+'" style="width:'+w+'%"></i></div><div class="note '+(st?'st-'+st:'')+'" style="margin-top:6px;font-weight:700">'+(p==null?'—':p+'%')+(st==='bad'?' · 속도 부족':st==='warn'?' · 조금 느림':st==='ok'?' · 순조':'')+'</div></div>';
     }).join('');
-  const order=['asignado','contactado','interesado','cotizado','registro','cliente_activo'];
+  const order=['asignado','contactado','perfilado','interesado','cotizado','registro','cliente_activo'];
   const base=d.funnel.asignado+order.slice(1).reduce((s,k)=>s+d.funnel[k],0)||1;
   let reach=base;
   $('d-funnel').innerHTML=order.map((k,i)=>{
@@ -433,7 +539,7 @@ async function loadDash(){
   const P=d.potential||{};
   $('d-side').innerHTML=[['잠재 서스펜션 구매(월) · 진행 중',money(P.open_susp)],['잠재성 A / B / C',fmt(P.a)+' / '+fmt(P.b)+' / '+fmt(P.c)],['오늘 체크인',fmt(today)],['검토 대기',fmt(pend)],['30일 방치',fmt(idle)],['컨택→신규고객 중앙값',d.median_days_to_client==null?'—':d.median_days_to_client+'일']]
     .map(([l,v])=>'<div class="card flat"><div class="lbl" style="font-size:13px;font-weight:700">'+l+'</div><div style="font-size:26px;font-weight:800">'+v+'</div></div>').join('');
-  const M=['visitas','contactados','cotizaciones','nuevos_clientes'];
+  const M=['visitas','puntos','perfilados','cotizaciones','nuevos_clientes'];
   $('d-people').innerHTML='<thead><tr><th>담당자</th><th class="num">배정</th><th class="num">커버리지</th><th class="num">오늘 체크인</th>'+M.map(m=>'<th class="num">'+METRIC_LBL[m]+'</th>').join('')+'<th class="num">신규매출</th><th class="num">검토 대기</th><th class="num">방치</th></tr></thead><tbody>'+
     d.people.map(p=>'<tr class="click" data-u="'+(p.user_id==null?'none':p.user_id)+'"><td data-l="담당자"><b>'+esc(p.name||'미배정')+'</b></td><td class="num" data-l="배정">'+fmt(p.assigned||0)+'</td><td class="num" data-l="커버리지">'+(p.coverage==null?'—':p.coverage+'%')+'</td><td class="num" data-l="오늘">'+fmt(p.checkins_today||0)+'</td>'+
       M.map(m=>{ const a=p.actual[m]||0,t=p.target[m]; const pc=p.pct[m]; const cl=pc==null?'':pc>=100?'st-ok':pc>=70?'st-warn':'st-bad';
@@ -499,7 +605,7 @@ async function loadRoute(){
     :'<div class="card flat" style="background:var(--ok-soft)"><b>오늘 루트를 모두 방문했습니다.</b></div>';
   $('rt-stops').innerHTML=stops.map(s=>{
     const done=!!s.consult_id, isNext=next&&s.id===next.id;
-    return '<div class="stop"><div class="n '+(done?'done':isNext?'next':'')+'">'+s.seq+'</div><div style="flex:1;min-width:0"><b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||s.municipio||'')+
+    return '<div class="stop"><div class="n '+(done?'done':isNext?'next':'')+'">'+s.seq+'</div><div style="flex:1;min-width:0"><b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||s.municipio||'')+(s.score!=null?' · <b style="color:'+scoreColor(s.score)+'">'+s.score+'점</b>':'')+
       (done?' · '+(s.review_status==='confirmado'?'<span class="st-ok">저장 완료</span>':'<span class="st-warn">AI 초안 검토 필요</span>'):'')+'</div></div>'+
       (done&&s.review_status!=='confirmado'?'<button class="btn sm" data-review="'+s.id+':'+s.consult_id+'">검토</button>':'<button class="btn ghost sm" data-open="'+s.id+'">상세</button>')+'</div>';
   }).join('');
@@ -569,12 +675,13 @@ async function loadList(off){
   [['q','l-q'],['municipio','l-mun'],['stage','l-stage'],['segment','l-seg'],['priority','l-prio'],['owner','l-owner'],['potential','l-pot'],['sort','l-sort']].forEach(([k,id])=>{ const v=$(id).value; if(v) p.set(k,v); });
   if($('l-idle').checked) p.set('idle','1');
   let r; try{ r=await api('/api/prospects?'+p); }catch(e){ return; }
-  $('l-table').innerHTML='<thead><tr>'+(isDir?'<th><input type="checkbox" id="l-all" aria-label="전체 선택"></th>':'')+'<th>상호</th><th>업종</th><th>위치</th><th>단계</th><th class="num">잠재 서스펜션 구매/월</th><th>담당</th><th>마지막 활동</th></tr></thead><tbody>'+
+  $('l-table').innerHTML='<thead><tr>'+(isDir?'<th><input type="checkbox" id="l-all" aria-label="전체 선택"></th>':'')+'<th>상호</th><th>업종</th><th>위치</th><th>단계</th><th>개발 점수</th><th class="num">잠재 서스펜션 구매/월</th><th>담당</th><th>마지막 활동</th></tr></thead><tbody>'+
     (r.rows.length?r.rows.map(x=>'<tr class="click" data-id="'+x.id+'">'+(isDir?'<td data-l="선택"><input type="checkbox" class="l-ck" value="'+x.id+'"'+(LIST_SEL.has(x.id)?' checked':'')+'></td>':'')+
       '<td data-l="상호"><span class="tag '+x.priority+'">'+x.priority+'</span> <b>'+esc(x.nom_estab)+'</b>'+(x.denue_missing?' <span class="chip" title="새 DENUE 판에 없음">폐업 가능</span>':'')+(x.customer_id?' <span class="chip" style="background:var(--ok-soft);color:var(--ok)">고객 연결</span>':'')+'</td>'+
-      '<td data-l="업종">'+esc(SEG_LBL[x.segment]||x.segment)+'</td><td data-l="위치">'+esc([x.colonia,x.municipio].filter(Boolean).join(', '))+'</td><td data-l="단계">'+stageDot(x.stage)+'</td><td class="num" data-l="잠재성">'+(x.pot_tier?'<span class="tag '+x.pot_tier+'">'+x.pot_tier+'</span> '+money(x.pot_compra_susp):'<span class="note">—</span>')+'</td>'+
+      '<td data-l="업종">'+esc(SEG_LBL[x.segment]||x.segment)+'</td><td data-l="위치">'+esc([x.colonia,x.municipio].filter(Boolean).join(', '))+'</td><td data-l="단계">'+stageDot(x.stage)+(x.suggested_stage?' <span class="chip" style="background:var(--warn-soft);color:#6B4100" title="AI·기록 제안">제안: '+esc((STAGE[x.suggested_stage]||{}).ko||'')+'</span>':'')+'</td>'+
+      '<td data-l="개발 점수" style="min-width:120px"><div style="display:flex;align-items:center;gap:8px"><div class="meter" style="flex:1"><i style="width:'+x.score+'%;background:'+scoreColor(x.score)+'"></i></div><b>'+x.score+'</b></div></td><td class="num" data-l="잠재성">'+(x.pot_tier?'<span class="tag '+x.pot_tier+'">'+x.pot_tier+'</span> '+money(x.pot_compra_susp):'<span class="note">—</span>')+'</td>'+
       '<td data-l="담당">'+esc(x.owner_name||'—')+'</td><td data-l="마지막 활동">'+(x.last_activity_at?esc(String(x.last_activity_at).slice(0,10)):'—')+'</td></tr>').join('')
-      :'<tr><td colspan="9" class="empty">조건에 맞는 후보가 없습니다.</td></tr>')+'</tbody>';
+      :'<tr><td colspan="10" class="empty">조건에 맞는 후보가 없습니다.</td></tr>')+'</tbody>';
   $('l-page').textContent=(r.total?(LIST_OFF+1)+'–'+Math.min(LIST_OFF+50,r.total):'0')+' / '+fmt(r.total)+'곳';
   $('l-prev').disabled=LIST_OFF===0; $('l-next').disabled=LIST_OFF+50>=r.total;
   $('l-table').querySelectorAll('tr.click').forEach(tr=>tr.addEventListener('click',e=>{ if(e.target.closest('input')) return; openProspect(Number(tr.dataset.id)); }));
@@ -598,7 +705,8 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
 
 async function openProspect(id){
   let d; try{ d=await api('/api/prospects/'+id); }catch(e){ return toast('열 수 없습니다: '+e.message); }
-  const p=d.prospect; const order=['asignado','contactado','interesado','cotizado'];
+  const p=d.prospect; const order=['asignado','contactado','perfilado','interesado','cotizado','registro','cliente_activo'];
+  const manualOK=k=>isDir||['contactado','interesado'].includes(k);
   const crmN=Object.keys(d.crm).length;
   const html=
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="tag '+p.priority+'">'+p.priority+'</span>'+stageDot(p.stage)+'<span class="chip">'+esc(SEG_LBL[p.segment]||p.segment)+'</span>'+(p.denue_missing?'<span class="chip">새 DENUE 판에 없음</span>':'')+'</div>'+
@@ -611,9 +719,15 @@ async function openProspect(id){
       [['상호법인',p.raz_social],['주소',[p.address,p.colonia,p.cp].filter(Boolean).join(', ')],['municipio',p.municipio+(p.entidad?', '+p.entidad:'')],['전화',p.phone],['이메일',p.email],['직원',p.per_ocu],['담당',p.owner_name],['DENUE',p.denue_id?p.denue_id+' · '+(p.scian_code||''):'수동 등록']]
         .map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v||'—')+'</dd>').join('')+'</dl></div>'+
     sizeBlock(d)+
-    '<div class="sec"><h3>단계</h3><div class="stepper">'+order.map(k=>'<button data-stage="'+k+'" class="'+(p.stage===k?'on':'')+'">'+esc(STAGE[k].ko)+'</button>').join('')+
+    scoreBlock(d)+
+    '<div class="sec"><h3>단계</h3><div class="stepper">'+order.map(k=>'<button data-stage="'+k+'" class="'+(p.stage===k?'on':(META.stages.findIndex(s=>s.key===k)<META.stages.findIndex(s=>s.key===p.stage)&&p.stage!=='descartado'?'past':''))+'"'+(manualOK(k)?'':' disabled title="기록으로 자동"')+'>'+esc(STAGE[k].ko)+'</button>').join('')+
       '<button data-stage="descartado" class="'+(p.stage==='descartado'?'on':'')+'">중단</button></div>'+
-      '<p class="note">고객등록 중·신규고객은 기존 고객 연결·승인·첫 인보이스로 자동으로 바뀝니다.</p></div>'+
+      '<p class="note">'+esc((STAGE[p.stage]||{}).rule||'')+' · 다음 목표: <b>'+esc((STAGE[p.stage]||{}).goal||'')+'</b></p>'+
+      '</div>'+
+    '<div class="sec"><h3>ERP 견적서</h3>'+(d.quotes.length?d.quotes.map(q=>'<div class="stop"><div style="flex:1"><b>'+esc(q.quote_no||('#'+q.id))+'</b> · '+esc(String(q.quote_date).slice(0,10))+(q.subtotal_mxn!=null?' · '+money(q.subtotal_mxn):'')+'<div class="note">'+esc(q.guest_name?'게스트: '+q.guest_name:'고객 견적')+' · '+esc(q.user_name||'')+' · '+esc(q.status)+'</div></div>'+(q.guest_name&&!q.customer_id?'<button class="btn ghost sm" data-unq="'+q.id+'">연결 해제</button>':'')+'</div>').join('')
+      :'<p class="note">아직 이 업체로 저장된 ERP 견적서가 없습니다. 견적 점수(+'+META.score_rules.quote+')는 ERP에 견적서가 저장돼야 오릅니다.</p>')+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a class="btn ghost sm" href="refatrix-quote.html" target="_blank" rel="noopener">ERP 견적서 작성</a><button class="btn ghost sm" id="dp-findq">내 게스트 견적에서 찾기</button></div>'+
+      '<p class="note">고객 등록 전에는 견적 화면에서 「게스트」로 이 업체 상호를 넣어 저장하세요. 담당자·상호가 맞으면 자동으로 연결되고, 아니면 「찾기」로 직접 연결합니다.</p><div id="dp-qcands"></div></div>'+
     '<div class="sec"><h3>Alta de clientes</h3><div class="card flat">'+(crmN?'<b>'+crmN+'개 항목 저장됨</b>'+(d.crm_missing.length?' · 필수 '+d.crm_missing.length+'개 비어 있음':' · 필수 항목 완료'):'아직 저장된 값이 없습니다')+
       '<div style="margin-top:10px"><button class="btn sm" data-review="'+p.id+':0">양식 열기·수정</button></div></div></div>'+
     '<div class="sec"><h3>방문</h3>'+(d.visits.length?d.visits.map(v=>'<div class="stop"><div style="flex:1;min-width:0"><b>'+esc(String(v.consult_date).slice(0,10))+'</b> · '+esc(v.user_name||'')+
@@ -628,13 +742,34 @@ async function openProspect(id){
   $('dp-route').onclick=async()=>{ try{ const ids=[...new Set([...(ROUTE&&ROUTE.date===META.today?ROUTE.stops.map(s=>s.id):[]),...routePick,p.id])]; routePick=ids;
       await post('/api/prospect-routes',{date:META.today,prospect_ids:ids},'PUT'); toast('오늘 루트에 추가 ('+ids.length+'곳)'); ROUTE=null; if(cur==='map'){ $('m-addroute').classList.add('hide'); loadMapPins(); } }catch(e){ toast('실패: '+e.message); } };
   $('dr-body').querySelectorAll('[data-stage]').forEach(b=>b.onclick=async()=>{
-    const to=b.dataset.stage; let reason='';
+    const to=b.dataset.stage; let reason='', amount=null;
     if(to==='descartado'){ reason=prompt('중단 사유를 적어 주세요\n('+META.discard_reasons.join(' / ')+')',''); if(!reason) return; }
-    try{ await post('/api/prospects/'+p.id+'/stage',{to,reason}); toast('단계: '+STAGE[to].ko); openProspect(p.id); }catch(e){ toast({no_backward:'뒤로 되돌리기는 디렉터만 할 수 있습니다',director_only:'디렉터만 할 수 있습니다',reason_required:'사유가 필요합니다',same_stage:'이미 그 단계입니다'}[e.message]||('실패: '+e.message)); }
+    try{ const r=await post('/api/prospects/'+p.id+'/stage',{to,reason,amount}); toast('단계: '+STAGE[to].ko+(r.score!=null?' · '+r.score+'점':'')); openProspect(p.id); }catch(e){ toast({no_backward:'뒤로 되돌리기는 디렉터만 할 수 있습니다',director_only:'디렉터만 할 수 있습니다',reason_required:'사유가 필요합니다',same_stage:'이미 그 단계입니다',auto_only:'이 단계는 기록으로 자동 결정됩니다(견적 제출 = ERP 견적서 저장)'}[e.message]||('실패: '+e.message)); }
   });
+  $('dp-findq').onclick=async()=>{ let r; try{ r=await api('/api/prospects/'+p.id+'/erp-quotes'); }catch(e){ return toast('실패: '+e.message); }
+    $('dp-qcands').innerHTML=r.rows.length?r.rows.map(q=>'<div class="stop"><div style="flex:1"><b>'+esc(q.guest_name||'(이름 없음)')+'</b> · '+esc(q.quote_no||('#'+q.id))+'<div class="note">'+esc(String(q.quote_date).slice(0,10))+' · '+money(q.subtotal_mxn)+' · 상호 일치 '+q.match+'%</div></div><button class="btn sm" data-linkq="'+q.id+'">이 업체 견적으로 연결</button></div>').join('')
+      :'<p class="note">연결할 게스트 견적이 없습니다(최근 60일, 내가 만든 견적).</p>';
+    $('dp-qcands').querySelectorAll('[data-linkq]').forEach(b=>b.onclick=async()=>{ try{ const x=await post('/api/prospects/'+p.id+'/erp-quotes',{quote_id:Number(b.dataset.linkq)}); toast('견적 연결 · '+x.score+'점'); openProspect(p.id); }catch(e){ toast('실패: '+e.message); } }); };
+  $('dr-body').querySelectorAll('[data-unq]').forEach(b=>b.onclick=async()=>{ if(!confirm('이 견적과 업체의 연결을 해제할까요?')) return; await api('/api/prospects/'+p.id+'/erp-quotes/'+b.dataset.unq,{method:'DELETE'}); openProspect(p.id); });
+  document.querySelectorAll('[data-sug]').forEach(b=>b.onclick=async()=>{ try{ const r=await post('/api/prospects/'+p.id+'/suggestion',{apply:b.dataset.sug==='1'}); toast(b.dataset.sug==='1'?'적용 · '+r.score+'점':'제안을 닫았습니다'); openProspect(p.id); }catch(e){ toast('실패: '+e.message); } });
   if($('dp-unlink')) $('dp-unlink').onclick=async(e)=>{ e.preventDefault(); if(!confirm('고객 연결을 해제할까요?')) return; await api('/api/prospects/'+p.id+'/link',{method:'DELETE'}); openProspect(p.id); };
   if($('dp-copy')) $('dp-copy').onclick=async()=>{ try{ const r=await api('/api/prospects/'+p.id+'/customer-prefill'); const t=Object.entries(r.values).map(([k,v])=>k+': '+(Array.isArray(v)?v.join(', '):v)).join('\n'); await navigator.clipboard.writeText(t); toast('복사했습니다'+(r.missing.length?' · 필수 '+r.missing.length+'개 비어 있음':'')); }catch(e){ toast('복사 실패'); } };
   if(!d.customer && !d.links.find(l=>l.status==='solicitado')) loadMatches(p.id);
+}
+// 개발 점수 · 구성 · 추이 · 제안
+function scoreBlock(d){
+  const p=d.prospect, P=p.score_parts||{}, sec=P.sections||{}, R=META.score_rules;
+  const SECL={datos_generales:'기본정보',tamano_cliente:'고객 규모',potencial:'잠재성',informacion_empresa:'영업 정보',tipo_servicios:'업종·서비스',competencia:'경쟁사'};
+  const log=d.score_log||[];
+  const tl=log.length?lineChart([{name:'점수',color:'#E2231A',values:log.map(l=>l.score)}],log.map(l=>String(l.created_at).slice(5,10)),{h:150,label:'점수 추이'}):'';
+  return (p.suggested_stage?'<div class="banner warn" style="margin-top:16px"><b>단계 제안: '+esc((STAGE[p.suggested_stage]||{}).ko)+'</b> — '+esc(p.suggestion_reason||'')+
+      '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm" data-sug="1">적용</button><button class="btn ghost sm" data-sug="0">무시</button></div></div>':'')+
+    '<div class="sec"><h3>개발 점수</h3><div class="card flat"><div class="score"><div class="big" style="color:'+scoreColor(p.score)+'">'+p.score+'<small> / 100</small></div>'+
+      '<div style="flex:1"><div class="meter"><i style="width:'+(P.sale?100:P.info||0)+'%;background:'+(P.sale?'#1E7A46':'#EE8A82')+'"></i><i style="width:'+(P.sale?0:P.interest||0)+'%;background:#E8635C"></i><i style="width:'+(P.sale?0:P.quote||0)+'%;background:#E2231A"></i><i style="width:'+(P.sale?0:P.registro||0)+'%;background:#8E120C"></i></div>'+
+      '<div class="note" style="margin-top:6px">'+(P.sale?'첫 매출 — 신규개발 완료':'정보 '+(P.info||0)+' + 관심 '+(P.interest||0)+' + 견적 '+(P.quote||0)+' + 등록 '+(P.registro||0))+'</div></div></div>'+
+      '<div class="parts">'+Object.entries(SECL).map(([k,l])=>'<div>'+l+'<b>'+((sec[k]||{}).filled_pct||0)+'%</b><span class="note">가중 '+((sec[k]||{}).weight||'')+'</span></div>').join('')+'</div>'+
+      '<div class="note" style="margin-top:8px">정보 충족도 '+(p.info_pct||0)+'% → '+(P.info||0)+'점 (최대 '+R.info_max+')</div>'+
+      (tl?'<div class="chart" style="margin-top:10px">'+tl+'</div>':'')+'</div></div>';
 }
 // 고객 규모·잠재성 요약(확정·임시 저장된 Alta 값)
 function sizeBlock(d){
@@ -693,7 +828,7 @@ async function openReview(pid,cid){
     secs.map(s=>'<div class="form-sec"><h3>'+esc(s.label)+'</h3>'+(s.key==='facturacion'?'<p class="note">청구 정보는 보통 고객 등록 때 입력합니다(선택).</p>':'')+'<div class="form-grid" style="margin-top:12px">'+
       s.items.map(it=>it.groupHead?'<div style="grid-column:1/-1;font-weight:800;margin-top:6px">'+esc(it.groupHead)+'</div>':input(it)).join('')+'</div></div>').join('')+
     '<div class="form-sec"><h3>다음 단계</h3><div class="form-grid" style="margin-top:12px"><label class="fld"><span>단계 '+(rec&&rec.stage_suggested?'<span class="src ia">IA 제안: '+esc((STAGE[rec.stage_suggested]||{}).ko||rec.stage_suggested)+'</span>':'')+'</span><select id="rv-stage"><option value="">그대로 ('+esc((STAGE[d.prospect.stage]||{}).ko)+')</option>'+
-      ['contactado','interesado','cotizado','descartado'].map(k=>'<option value="'+k+'"'+(rec&&rec.stage_suggested===k&&k!==d.prospect.stage?' selected':'')+'>'+esc(STAGE[k].ko)+'</option>').join('')+'</select></label></div></div>'+
+      ['contactado','interesado','descartado'].map(k=>'<option value="'+k+'"'+(rec&&rec.stage_suggested===k&&k!==d.prospect.stage?' selected':'')+'>'+esc(STAGE[k].ko)+'</option>').join('')+'</select></label></div></div>'+
     '<div class="sticky-actions"><span class="note" id="rv-msg" style="margin-right:auto;align-self:center"></span><button class="btn ghost" id="rv-draft">임시저장</button><button class="btn red" id="rv-ok">확정 후 저장</button></div>';
   openDrawer('Alta de clientes'+(d.consult?' · 방문 '+String(d.consult.consult_date).slice(0,10):''),d.prospect.nom_estab,html);
   $('dr-body').querySelectorAll('.ms label').forEach(l=>l.querySelector('input').onchange=()=>l.classList.toggle('on',l.querySelector('input').checked));
@@ -721,7 +856,7 @@ async function openReview(pid,cid){
     const {vals,src}=collect(); const stage=$('rv-stage').value; let stage_reason='';
     if(stage==='descartado'){ stage_reason=prompt('중단 사유',''); if(!stage_reason) return; }
     try{ const r=await post('/api/prospects/'+pid+'/crm',{consult_id:cid||null,values:vals,sources:src,confirm,stage:stage||null,stage_reason});
-      toast(confirm?'확정 저장했습니다':'임시저장했습니다'); closeDrawer(); refreshCounts(); if(cur==='review') loadReviews(); if(cur==='route') loadRoute(); }
+      toast((confirm?'확정 저장':'임시저장')+(r.score?' · 개발 점수 '+r.score.score+'점'+(r.score.score>r.score.prev?' (+'+(r.score.score-r.score.prev)+')':''):'')); closeDrawer(); refreshCounts(); if(cur==='review') loadReviews(); if(cur==='route') loadRoute(); }
     catch(e){ const f=(e.data&&e.data.fields)||[];
       if(e.message==='faltan_obligatorios') $('rv-msg').innerHTML='<b class="st-bad">필수 항목이 비어 있습니다:</b> '+f.map(x=>esc(x.label)).join(', ');
       else if(e.message==='formato') $('rv-msg').innerHTML='<b class="st-bad">형식 확인:</b> '+f.map(x=>esc((d.fields.find(y=>y.key===x.key)||{}).label_es||x.key)).join(', ');
