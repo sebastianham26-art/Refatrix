@@ -236,6 +236,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
           <button class="btn ghost sm" id="rt-edit">지도에서 방문지 고르기</button>
           <button class="btn ghost sm" id="rt-near">내 주변 후보 2km</button>
           <button class="btn ghost sm" id="rt-unplanned">리스트에 없는 가게 방문</button>
+          <button class="btn ghost sm hide" id="rt-clear" style="margin-left:auto;color:var(--ctr)">이 루트 삭제</button>
         </div>
       </div>
       <div><div id="rt-map" style="height:440px;border-radius:4px;border:1px solid var(--line)"></div>
@@ -711,8 +712,10 @@ async function loadRoute(){
     const done=!!s.consult_id, isNext=next&&s.id===next.id;
     return '<div class="stop"><div class="n '+(done?'done':isNext?'next':'')+'">'+s.seq+'</div><div style="flex:1;min-width:0"><b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||s.municipio||'')+(s.score!=null?' · <b style="color:'+scoreColor(s.score)+'">'+s.score+'점</b>':'')+
       (done?' · '+(s.review_status==='confirmado'?'<span class="st-ok">저장 완료</span>':'<span class="st-warn">AI 초안 검토 필요</span>'):'')+'</div></div>'+
-      (done&&s.review_status!=='confirmado'?'<button class="btn sm" data-review="'+s.id+':'+s.consult_id+'">검토</button>':'<button class="btn ghost sm" data-open="'+s.id+'">상세</button>')+'</div>';
+      (done&&s.review_status!=='confirmado'?'<button class="btn sm" data-review="'+s.id+':'+s.consult_id+'">검토</button>':'<button class="btn ghost sm" data-open="'+s.id+'">상세</button>')+
+      (done?'':'<button class="btn ghost sm" data-rtdel="'+s.id+'" title="루트에서 빼기" style="margin-left:4px">✕</button>')+'</div>';
   }).join('');
+  $('rt-clear').classList.toggle('hide',!stops.some(s=>!s.consult_id));
   if(noLeaflet('rt-map')) return;
   if(!RT_MAP){
     RT_MAP=L.map('rt-map',{zoomControl:true}); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(RT_MAP);
@@ -731,8 +734,21 @@ async function loadRoute(){
   } else RT_MAP.setView([25.68,-100.31],11);
 }
 $('rt-date').onchange=loadRoute; $('rt-user').onchange=loadRoute;
+function rtQS(){ return 'date='+$('rt-date').value+(isDir?'&user='+$('rt-user').value:''); }
+$('rt-clear').onclick=async()=>{
+  const n=(ROUTE&&ROUTE.stops||[]).filter(s=>!s.consult_id).length; if(!n) return;
+  if(!confirm($('rt-title').textContent+'에서 방문 전 '+n+'곳을 모두 지울까요?\n이미 체크인한 방문 기록은 그대로 남습니다.')) return;
+  try{ const r=await api('/api/prospect-routes?'+rtQS(),{method:'DELETE'}); routePick=[]; toast('루트 삭제 · '+r.removed+'곳'+(r.kept?' (방문 기록 '+r.kept+'곳은 유지)':'')); loadRoute(); }
+  catch(e){ toast('실패: '+e.message); }
+};
+async function rtRemoveStop(pid){
+  const ids=(ROUTE&&ROUTE.stops||[]).map(s=>s.id).filter(id=>id!==pid);
+  try{ await post('/api/prospect-routes',{date:$('rt-date').value,...(isDir?{user_id:Number($('rt-user').value)}:{}),prospect_ids:ids,optimize:false},'PUT'); routePick=routePick.filter(id=>id!==pid); toast('루트에서 뺐습니다'); loadRoute(); }
+  catch(e){ toast('실패: '+e.message); }
+}
 $('rt-edit').onclick=()=>{ routePick=(ROUTE&&ROUTE.stops||[]).map(s=>s.id); show('map'); toast('핀 상세에서 「루트에 추가」를 누르세요'); };
 document.addEventListener('click',e=>{
+  const x=e.target.closest('[data-rtdel]'); if(x){ rtRemoveStop(Number(x.dataset.rtdel)); return; }
   const c=e.target.closest('[data-checkin]'); if(c){ checkin(Number(c.dataset.checkin)); return; }
   const r=e.target.closest('[data-review]'); if(r){ const [p,cid]=r.dataset.review.split(':'); openReview(Number(p),Number(cid)); return; }
   const o=e.target.closest('[data-open]'); if(o){ openProspect(Number(o.dataset.open)); return; }

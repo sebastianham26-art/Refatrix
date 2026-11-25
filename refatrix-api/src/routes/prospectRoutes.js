@@ -116,9 +116,30 @@ async function assignMany(client, ids, ownerId, byUser) {
     } else if (p.stage === 'asignado') {
       await moveStage(q, Number(p.id), p.stage, 'sin_asignar', { userId: byUser, auto: true, reason: 'desasignado' });
     }
+    // 담당이 바뀌면 이전 담당의 오늘·이후 루트에서 아직 방문 안 한 이 후보를 뺀다
+    if (from != null) await pruneRouteStops(q, [Number(p.id)], from);
     n++;
   }
   return n;
+}
+
+// 루트 정리: 방문 전(consult 없음) stop 삭제 → 순번 다시 매김 → 빈 루트 삭제. userId 없으면 모든 담당.
+async function pruneRouteStops(q, prospectIds, userId = null) {
+  const params = [prospectIds]; let uc = '';
+  if (userId != null) { params.push(userId); uc = ' AND r.user_id=$2'; }
+  const del = await q(`DELETE FROM prospect_route_stops s USING prospect_routes r
+                        WHERE s.route_id=r.id AND s.prospect_id = ANY($1) AND s.consult_id IS NULL
+                          AND r.route_date >= (now() AT TIME ZONE 'America/Mexico_City')::date${uc}
+                        RETURNING s.route_id`, params);
+  const rids = [...new Set(del.rows.map((r) => Number(r.route_id)))];
+  if (rids.length) await tidyRoutes(q, rids);
+  return del.rowCount;
+}
+async function tidyRoutes(q, rids) {
+  await q(`UPDATE prospect_route_stops s SET seq=x.rn
+             FROM (SELECT id, row_number() OVER (PARTITION BY route_id ORDER BY seq, id) AS rn FROM prospect_route_stops WHERE route_id = ANY($1)) x
+            WHERE s.id=x.id`, [rids]);
+  await q(`DELETE FROM prospect_routes r WHERE r.id = ANY($1) AND NOT EXISTS (SELECT 1 FROM prospect_route_stops s WHERE s.route_id=r.id)`, [rids]);
 }
 
 export default async function prospectRoutes(app) {
@@ -486,7 +507,8 @@ export default async function prospectRoutes(app) {
               c.review_status, c.created_at AS checkin_at
          FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
          LEFT JOIN sales_consults c ON c.id=s.consult_id
-        WHERE s.route_id=$1 ORDER BY s.seq`, [r.id])).rows;
+        WHERE s.route_id=$1 AND (s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND p.stage <> 'descartado'))
+        ORDER BY s.seq`, [r.id])).rows;
     return { date, user_id: userId, route_id: Number(r.id),
       stops: stops.map((s) => ({ ...s, id: Number(s.id), consult_id: s.consult_id ? Number(s.consult_id) : null })) };
   }
@@ -518,8 +540,26 @@ export default async function prospectRoutes(app) {
       await q(`DELETE FROM prospect_route_stops WHERE route_id=$1`, [rid]);
       let seq = 1;
       for (const p of ps) await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq, consult_id) VALUES ($1,$2,$3,$4)`, [rid, p.id, seq++, visited.get(p.id) || null]);
+      await tidyRoutes(q, [rid]);
     });
     return routeOut(uid, date);
+  });
+
+  // 루트 삭제 — 방문 전 stop 은 모두 지우고, 이미 체크인한 stop(방문 기록)은 남긴다. 다 지워지면 루트 자체 삭제
+  app.delete('/api/prospect-routes', edit, async (req, reply) => {
+    const date = YMD.test(String(req.query?.date)) ? req.query.date : mxToday();
+    const uid = isDir(req) && int(req.query?.user) ? int(req.query.user) : me(req);
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const r = (await q(`SELECT id FROM prospect_routes WHERE user_id=$1 AND route_date=$2`, [uid, date])).rows[0];
+      if (!r) return { removed: 0, kept: 0 };
+      const del = await q(`DELETE FROM prospect_route_stops WHERE route_id=$1 AND consult_id IS NULL`, [r.id]);
+      await tidyRoutes(q, [Number(r.id)]);
+      const kept = Number((await q(`SELECT count(*)::int AS n FROM prospect_route_stops WHERE route_id=$1`, [r.id])).rows[0].n);
+      return { removed: del.rowCount, kept };
+    });
+    await logEvent({ userId: me(req), action: 'delete', target: `prospect_route:${uid}:${date}`, detail: out });
+    return { ok: true, ...out, route: await routeOut(uid, date) };
   });
 
   // 지도에서 드래그한 구역 → 방문 루트 제안(저장 안 함). 화면에서 확인·빼기 후 PUT /api/prospect-routes(optimize:false)
