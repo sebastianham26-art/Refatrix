@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Refatrix ERP · 고객개발</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;700;800&family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+/* 고객개발 — IKEA 분위기(흰 바탕·굵은 산세리프·알약 버튼·가격표 배지) + CTR 레드(#E2231A) */
+:root{
+  --ctr:#E2231A; --ctr-d:#B01810; --ctr-dd:#8E120C; --ctr-soft:#FDECEB;
+  --ink:#111111; --ink2:#484848; --muted:#767676; --line:#DFDFDF; --bg:#FFFFFF; --surface:#F5F5F5;
+  --ok:#1E7A46; --ok-soft:#E6F2EA; --warn:#B26A00; --warn-soft:#FFF4DF; --bad:#C3170F; --bad-soft:#FDECEB;
+  --r:4px; --pill:64px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans','Noto Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--ink)}
+.wrap{max-width:1320px;margin:0 auto;padding:20px 24px 80px}
+.hide{display:none!important}
+/* 머리 */
+.pg-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;justify-content:space-between;padding:8px 0 20px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:14px}
+.brand .logo{height:44px;min-width:44px;display:flex;align-items:center}
+.brand .logo img{max-height:44px;max-width:150px}
+.brand .logo .txt{font-weight:800;font-size:22px;letter-spacing:-.5px;color:var(--ctr)}
+.eyebrow{font-size:13px;color:var(--muted);font-weight:500}
+h1{margin:2px 0 0;font-size:32px;line-height:1.15;font-weight:800;letter-spacing:-.8px}
+h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.4px}
+h3{margin:0;font-size:16px;font-weight:700}
+.head-ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+/* 탭 = 알약 칩 */
+.tabs{display:flex;gap:8px;overflow-x:auto;padding:16px 0 4px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;border:1px solid var(--line);background:#fff;border-radius:var(--pill);padding:9px 18px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap}
+.tab:hover{border-color:var(--ink)}
+.tab[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.tab .cnt{display:inline-block;min-width:20px;margin-left:6px;padding:0 6px;border-radius:10px;background:var(--ctr);color:#fff;font-size:12px;line-height:20px;text-align:center}
+/* 버튼 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 22px;border-radius:var(--pill);border:0;background:var(--ink);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:#333}
+.btn.red{background:var(--ctr)} .btn.red:hover{background:var(--ctr-d)}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--ink)} .btn.ghost:hover{background:var(--surface)}
+.btn.sm{min-height:36px;padding:0 16px;font-size:13px}
+.btn.big{min-height:60px;font-size:17px;padding:0 28px}
+.btn:disabled{opacity:.4;cursor:default}
+.iconbtn{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+/* 입력 */
+.fld{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700}
+.fld>span small{font-weight:400;color:var(--muted)}
+input[type=text],input[type=number],input[type=email],input[type=tel],input[type=time],input[type=date],input[type=month],input[type=search],select,textarea{
+  min-height:44px;padding:8px 12px;border:1px solid #929292;border-radius:var(--r);background:#fff;font-weight:400;font-size:15px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--ink);outline-offset:1px;border-color:var(--ink)}
+textarea{min-height:88px;resize:vertical}
+/* 카드·표 */
+.grid{display:grid;gap:16px}
+.cards{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.card.flat{background:var(--surface);border-color:var(--surface)}
+.kpi .lbl{font-size:13px;color:var(--ink2);font-weight:700}
+.kpi .val{font-size:34px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-top:6px}
+.kpi .val small{font-size:16px;color:var(--muted);font-weight:500;letter-spacing:0}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:12px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--ink)}
+.st-ok{color:var(--ok)} .st-warn{color:var(--warn)} .st-bad{color:var(--bad)}
+.bar>i.ok{background:var(--ok)} .bar>i.warn{background:#E5A100} .bar>i.bad{background:var(--ctr)}
+.note{font-size:12px;color:var(--muted)}
+table.tb{width:100%;border-collapse:collapse;font-size:14px}
+.tb th{text-align:left;font-size:12px;color:var(--ink2);font-weight:700;padding:10px 10px;border-bottom:2px solid var(--ink)}
+.tb td{padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.tb tr.click{cursor:pointer} .tb tr.click:hover td{background:var(--surface)}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.scroll{overflow-x:auto}
+/* 가격표 배지(IKEA 노란 태그 → CTR 레드) */
+.tag{display:inline-block;padding:2px 8px;font-size:12px;font-weight:800;border-radius:2px;white-space:nowrap}
+.tag.A{background:var(--ctr);color:#fff} .tag.B{background:var(--ink);color:#fff} .tag.C{background:var(--surface);color:var(--ink2)}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--pill);font-size:12px;font-weight:700;background:var(--surface);white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
+.src{font-size:11px;font-weight:800;padding:1px 7px;border-radius:var(--pill);margin-left:6px;vertical-align:1px}
+.src.ia{background:var(--ink);color:#fff} .src.denue{background:var(--surface);color:var(--ink2);border:1px solid var(--line)}
+.src.guardado{background:var(--ok-soft);color:var(--ok)} .src.vacio{background:var(--bad-soft);color:var(--bad)}
+.evid{font-size:12px;color:var(--muted);font-weight:400;font-style:italic}
+.lowconf input,.lowconf select{border-color:#E5A100;background:#FFFBF0}
+.isai input,.isai select,.isai textarea{border-color:var(--ink);border-width:2px}
+/* 레이아웃 */
+.split{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(320px,1fr);gap:16px}
+@media (max-width:980px){.split{grid-template-columns:1fr}}
+#map{height:560px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.funnel .row{margin:10px 0}
+.funnel .row .t{display:flex;justify-content:space-between;font-size:13px}
+.funnel .row .b{height:22px;border-radius:2px;margin-top:4px;min-width:3px}
+/* 서랍(상세) */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:#fff;box-shadow:-12px 0 32px rgba(0,0,0,.16);z-index:10050;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s}
+.drawer.open{transform:none}
+.drawer .dh{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--line)}
+.drawer .db{padding:20px 24px 120px;overflow:auto;flex:1}
+.scrim{position:fixed;inset:0;background:rgba(17,17,17,.4);z-index:10040;display:none}
+.scrim.open{display:block}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.sec{margin-top:24px} .sec>h3{margin-bottom:10px}
+.stepper{display:flex;gap:4px;flex-wrap:wrap}
+.stepper button{border:1px solid var(--line);background:#fff;border-radius:var(--pill);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.stepper button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.stepper button.past{background:var(--surface)}
+/* 검토 양식 */
+.form-sec{border-top:2px solid var(--ink);padding-top:14px;margin-top:22px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.ms{display:flex;flex-wrap:wrap;gap:6px}
+.ms label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:var(--pill);padding:6px 12px;font-weight:500;cursor:pointer;font-size:13px}
+.ms input{width:16px;height:16px;margin:0}
+.ms label.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.summary-box{background:var(--surface);padding:16px;border-radius:var(--r);font-size:14px;white-space:pre-line}
+.sticky-actions{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 0;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:20px}
+/* 모바일 루트 */
+.stop{display:flex;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+.stop .n{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none;border:2px solid var(--ink)}
+.stop .n.done{background:var(--ok);border-color:var(--ok);color:#fff}
+.stop .n.next{background:var(--ctr);border-color:var(--ctr);color:#fff}
+.next-card{border:2px solid var(--ink);border-radius:var(--r);padding:18px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:var(--pill);z-index:10060;font-weight:700;max-width:90vw}
+.empty{padding:40px 16px;text-align:center;color:var(--muted)}
+.banner{padding:12px 16px;border-radius:var(--r);font-size:14px}
+.banner.warn{background:var(--warn-soft);color:#6B4100} .banner.info{background:var(--surface)} .banner.bad{background:var(--bad-soft);color:var(--bad)}
+@media (max-width:760px){
+  .wrap{padding:12px 14px 90px} h1{font-size:24px}
+  .pg-head{padding-bottom:12px} .head-ctl{width:100%;flex-wrap:nowrap} .head-ctl .fld{flex:1;min-width:0!important}
+  .brand .logo{height:32px;min-width:32px} .brand .logo img{max-height:32px} .kpi .val{font-size:26px} #map{height:420px}
+  .drawer .db{padding:16px 16px 120px} .drawer .dh{padding:16px}
+  .tb.resp thead{display:none} .tb.resp tr{display:block;border-bottom:1px solid var(--line);padding:8px 0}
+  .tb.resp td{display:flex;justify-content:space-between;border:0;padding:4px 2px}
+  .tb.resp td::before{content:attr(data-l);color:var(--muted);font-size:12px;margin-right:12px}
+}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <header class="pg-head">
+    <div class="brand">
+      <div class="logo" id="logo"><span class="txt">CTR</span></div>
+      <div>
+        <div class="eyebrow">영업 › 고객개발 · Desarrollo de clientes</div>
+        <h1 id="pg-title">고객개발</h1>
+      </div>
+    </div>
+    <div class="head-ctl">
+      <label class="fld" style="min-width:150px"><span>주(州)</span><select id="f-ent"></select></label>
+      <label class="fld" style="min-width:150px" id="f-period-wrap"><span>기간</span><input type="month" id="f-period"></label>
+    </div>
+  </header>
+
+  <div id="mig" class="banner bad hide" style="margin-top:16px">DB 마이그레이션 0334(고객개발)가 아직 적용되지 않았습니다. <b>npm run migrate</b> 후 다시 열어 주세요.</div>
+
+  <nav class="tabs" role="tablist" id="tabs">
+    <button class="tab" role="tab" data-tab="route">오늘 루트</button>
+    <button class="tab" role="tab" data-tab="dash">현황판</button>
+    <button class="tab" role="tab" data-tab="map">지도</button>
+    <button class="tab" role="tab" data-tab="list">후보 목록</button>
+    <button class="tab" role="tab" data-tab="review">검토 대기<span class="cnt hide" id="rv-cnt">0</span></button>
+    <button class="tab dir" role="tab" data-tab="links">연결 승인<span class="cnt hide" id="lk-cnt">0</span></button>
+    <button class="tab dir" role="tab" data-tab="terr">지역·담당</button>
+    <button class="tab dir" role="tab" data-tab="targets">목표</button>
+    <button class="tab dir" role="tab" data-tab="import">DENUE 가져오기</button>
+  </nav>
+
+  <!-- 오늘 루트 (모바일 기본) -->
+  <section id="p-route" class="tabp hide">
+    <div class="split" style="margin-top:12px">
+      <div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;justify-content:space-between;margin-bottom:12px">
+          <h2 id="rt-title">오늘 루트</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <label class="fld dir"><span>담당자</span><select id="rt-user"></select></label>
+            <label class="fld"><span>날짜</span><input type="date" id="rt-date"></label>
+          </div>
+        </div>
+        <div id="rt-next"></div>
+        <div id="rt-stops" style="margin-top:8px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+          <button class="btn ghost sm" id="rt-edit">지도에서 방문지 고르기</button>
+          <button class="btn ghost sm" id="rt-near">내 주변 후보 2km</button>
+          <button class="btn ghost sm" id="rt-unplanned">리스트에 없는 가게 방문</button>
+        </div>
+      </div>
+      <div><div id="rt-map" style="height:440px;border-radius:4px;border:1px solid var(--line)"></div>
+        <div class="legend"><span><span class="dot" style="background:var(--ok)"></span>방문 완료</span><span><span class="dot" style="background:var(--ctr)"></span>다음</span><span><span class="dot" style="background:#fff;border:2px solid var(--ink)"></span>예정</span><span>── 실제 동선 · ‐ ‐ 계획</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 현황판 -->
+  <section id="p-dash" class="tabp hide">
+    <div class="grid cards" id="d-kpi" style="margin-top:12px"></div>
+    <div class="split" style="margin-top:16px">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2>단계별 현황</h2><span class="note" id="d-total"></span></div>
+        <div class="funnel" id="d-funnel"></div>
+      </div>
+      <div class="card">
+        <h2>한눈에</h2>
+        <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:12px" id="d-side"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>담당자별</h2>
+      <div class="scroll" style="margin-top:12px"><table class="tb resp" id="d-people"></table></div>
+    </div>
+  </section>
+
+  <!-- 지도 -->
+  <section id="p-map" class="tabp hide">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:12px 0">
+      <label class="fld dir"><span>담당자</span><select id="m-owner"></select></label>
+      <label class="fld"><span>단계</span><select id="m-stage"></select></label>
+      <label class="fld"><span>업종</span><select id="m-seg"></select></label>
+      <label class="fld"><span>우선순위</span><select id="m-prio"><option value="">전체</option><option>A</option><option>B</option><option>C</option></select></label>
+      <label class="chip" style="padding:10px 14px"><input type="checkbox" id="m-tracks" checked> 오늘 동선</label>
+      <span id="m-sel" class="note"></span>
+      <button class="btn red sm hide" id="m-addroute">선택한 곳으로 루트 만들기</button>
+    </div>
+    <div id="map"></div>
+    <div class="legend" id="m-legend"></div>
+    <p class="note">핀을 누르면 상세가 열립니다. 루트를 만들려면 핀 상세에서 「루트에 추가」를 누르세요. 보이는 영역만 불러옵니다(최대 6,000곳).</p>
+  </section>
+
+  <!-- 후보 목록 -->
+  <section id="p-list" class="tabp hide">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:12px 0">
+      <label class="fld" style="flex:1 1 220px"><span>검색</span><input type="search" id="l-q" placeholder="상호·colonia·전화"></label>
+      <label class="fld"><span>municipio</span><select id="l-mun"><option value="">전체</option></select></label>
+      <label class="fld"><span>단계</span><select id="l-stage"></select></label>
+      <label class="fld"><span>업종</span><select id="l-seg"></select></label>
+      <label class="fld"><span>우선순위</span><select id="l-prio"><option value="">전체</option><option>A</option><option>B</option><option>C</option></select></label>
+      <label class="fld dir"><span>담당자</span><select id="l-owner"></select></label>
+      <label class="chip" style="padding:10px 14px"><input type="checkbox" id="l-idle"> 30일 방치</label>
+    </div>
+    <div class="dir" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span class="note" id="l-selinfo">0곳 선택</span>
+      <select id="l-assign-to" style="width:auto"></select>
+      <button class="btn sm" id="l-assign">선택 후보 배정</button>
+    </div>
+    <div class="scroll"><table class="tb resp" id="l-table"></table></div>
+    <div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-top:16px">
+      <button class="btn ghost sm" id="l-prev">이전</button><span id="l-page" class="note"></span><button class="btn ghost sm" id="l-next">다음</button>
+    </div>
+  </section>
+
+  <!-- 검토 대기 -->
+  <section id="p-review" class="tabp hide">
+    <p class="note" style="margin-top:12px">방문 녹음이 끝나면 AI가 Alta de clientes 양식 초안을 만듭니다. 내용을 확인·수정한 뒤 「확정 후 저장」해야 CRM에 들어갑니다.</p>
+    <div class="scroll"><table class="tb resp" id="r-table"></table></div>
+  </section>
+
+  <!-- 연결 승인 (디렉터) -->
+  <section id="p-links" class="tabp hide">
+    <p class="note" style="margin-top:12px">담당자가 요청한 「후보 ↔ 기존 고객」 연결입니다. 승인하면 방문·녹음·CRM 값이 그 고객 이력에 붙습니다.</p>
+    <div class="scroll"><table class="tb resp" id="k-table"></table></div>
+  </section>
+
+  <!-- 지역·담당 (디렉터) -->
+  <section id="p-terr" class="tabp hide">
+    <div class="split" style="margin-top:12px">
+      <div class="card"><h2>지역</h2><div class="scroll" style="margin-top:12px"><table class="tb" id="t-table"></table></div></div>
+      <div class="card">
+        <h2 id="t-form-title">새 지역</h2>
+        <div class="grid" style="margin-top:14px">
+          <label class="fld"><span>이름</span><input type="text" id="t-name" placeholder="예: Guadalupe 서부"></label>
+          <label class="fld"><span>담당자</span><select id="t-owner"></select></label>
+          <div class="fld"><span>municipio <small>(후보 수 · 미배정)</small></span><div id="t-muns" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:4px;padding:8px"></div></div>
+          <label class="fld"><span>우편번호(선택) <small>— 넣으면 이 CP만, municipio보다 우선</small></span><input type="text" id="t-cps" placeholder="67100, 67110"></label>
+          <label class="chip hide" id="t-move-wrap" style="padding:10px 14px"><input type="checkbox" id="t-move"> 담당을 바꾸면 「배정」 단계 후보도 새 담당에게</label>
+          <div style="display:flex;gap:8px"><button class="btn red" id="t-save">저장 · 미배정 자동 배정</button><button class="btn ghost" id="t-new">새로</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 목표 (디렉터) -->
+  <section id="p-targets" class="tabp hide">
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:center">
+        <h2 id="g-title">목표</h2>
+        <div style="display:flex;gap:8px"><button class="btn ghost sm" id="g-copy">지난달 복사</button><button class="btn red sm" id="g-save">저장</button></div>
+      </div>
+      <div class="scroll" style="margin-top:12px"><table class="tb" id="g-table"></table></div>
+      <p class="note">신규고객 = 이번 달 첫 인보이스가 나간 연결 고객 · 신규매출 = 첫 인보이스 후 90일 이내 매출(IVA 제외)</p>
+    </div>
+  </section>
+
+  <!-- DENUE 가져오기 (디렉터) -->
+  <section id="p-import" class="tabp hide">
+    <div class="card" style="margin-top:12px">
+      <h2>DENUE CSV 가져오기</h2>
+      <p class="note">INEGI DENUE에서 거른 CSV(prospects_import_*.csv 또는 DENUE 원본 컬럼)를 올리세요. 주(州)는 파일 안의 cve_ent로 자동 인식합니다. 다른 주로 확대할 때도 파일만 올리면 됩니다.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label class="fld"><span>파일</span><input type="file" id="i-file" accept=".csv,text/csv"></label>
+        <label class="fld"><span>DENUE 판(년-월)</span><input type="month" id="i-ed"></label>
+        <button class="btn" id="i-preview" disabled>미리보기</button>
+        <button class="btn red" id="i-commit" disabled>가져오기</button>
+      </div>
+      <div id="i-out" style="margin-top:16px"></div>
+    </div>
+  </section>
+</div>
+
+<!-- 상세 서랍 -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="dh"><div style="min-width:0"><div class="eyebrow" id="dr-eyebrow"></div><h2 id="dr-title" style="word-break:break-word"></h2></div>
+    <button class="iconbtn" id="dr-close" aria-label="닫기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="db" id="dr-body"></div>
+</aside>
+
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>n==null?'—':Number(n).toLocaleString('es-MX');
+const money=n=>n==null?'—':'$'+Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+function toast(t){ const d=document.createElement('div'); d.className='toast'; d.textContent=t; document.body.appendChild(d); setTimeout(()=>d.remove(),2800); }
+
+// ── 세션 ──
+const S=(function(){
+  try{ const o=JSON.parse(sessionStorage.getItem('refatrix_session')||'null'); if(o&&o.token) return o; }catch(e){}
+  try{ const p=new URLSearchParams(location.hash.slice(1)); const t=p.get('token');
+    if(t){ const o={token:t, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')}; sessionStorage.setItem('refatrix_session',JSON.stringify(o)); return o; } }catch(e){}
+  return null;
+})();
+if(!S){ location.replace('refatrix-portal.html'); return; }
+async function api(path,opt){
+  opt=opt||{};
+  const r=await fetch(S.api+path,{...opt,headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token,...(opt.headers||{})}});
+  const j=await r.json().catch(()=>({}));
+  if(r.status===503&&j.error==='migration_0334_required'){ $('mig').classList.remove('hide'); }
+  if(!r.ok){ const e=new Error(j.error||('http_'+r.status)); e.data=j; e.status=r.status; throw e; }
+  return j;
+}
+const post=(p,b,m)=>api(p,{method:m||'POST',body:JSON.stringify(b||{})});
+
+// ── 상태 ──
+let META=null, STAGE={}, USERS={}, isDir=false;
+const STAGE_COLOR={sin_asignar:'#C8C8C8',asignado:'#7A7A7A',contactado:'#F2A6A2',interesado:'#E8635C',cotizado:'#E2231A',registro:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B'};
+const SEG_LBL={mayorista:'부품 도매',refaccionaria:'Refaccionaria',refaccionaria_usada:'Refaccionaria(중고)',taller_suspension:'서스펜션·얼라인먼트',taller_general:'일반정비',otro:'기타'};
+const METRIC_LBL={visitas:'방문',contactados:'컨택',cotizaciones:'견적',nuevos_clientes:'신규고객',venta_nuevos:'신규매출(IVA 제외)'};
+const stageDot=k=>'<span class="chip"><span class="dot" style="background:'+(STAGE_COLOR[k]||'#999')+'"></span>'+esc((STAGE[k]||{}).ko||k)+'</span>';
+const ent=()=>$('f-ent').value||'';
+const period=()=>$('f-period').value;
+const isMobile=()=>window.matchMedia('(max-width:760px)').matches;
+function opts(sel,list,first){ sel.innerHTML=(first!=null?'<option value="">'+esc(first)+'</option>':'')+list.map(([v,t])=>'<option value="'+esc(v)+'">'+esc(t)+'</option>').join(''); }
+
+async function init(){
+  try{ const co=await api('/api/company'); if(co&&co.logo_data) $('logo').innerHTML='<img src="'+co.logo_data+'" alt="CTR">'; }catch(e){}
+  try{ META=await api('/api/prospects/meta'); }catch(e){ if(e.status!==503) toast('불러오기 실패: '+e.message); return; }
+  isDir=META.is_director;
+  META.stages.forEach(s=>STAGE[s.key]=s); META.users.forEach(u=>USERS[u.id]=u.name);
+  document.querySelectorAll('.dir').forEach(el=>el.classList.toggle('hide',!isDir));
+  opts($('f-ent'),META.states.map(s=>[s.cve_ent,(s.entidad||s.cve_ent)+' ('+fmt(s.n)+')']),META.states.length>1?'전체':null);
+  if(META.states.find(s=>s.cve_ent==='19')) $('f-ent').value='19';
+  $('f-period').value=META.today.slice(0,7);
+  const stOpts=META.stages.map(s=>[s.key,s.ko]); const segOpts=META.segments.map(s=>[s,SEG_LBL[s]||s]);
+  [$('m-stage'),$('l-stage')].forEach(el=>opts(el,stOpts,'전체'));
+  [$('m-seg'),$('l-seg')].forEach(el=>opts(el,segOpts,'전체'));
+  const uo=META.users.map(u=>[u.id,u.name]);
+  opts($('m-owner'),uo,'전체'); opts($('l-owner'),[['none','미배정'],...uo],'전체'); opts($('rt-user'),uo,null); $('rt-user').value=META.me;
+  opts($('l-assign-to'),[['','(배정 해제)'],...uo],null); opts($('t-owner'),uo,'(담당 없음)');
+  $('rt-date').value=META.today; $('i-ed').value=META.today.slice(0,7);
+  $('m-legend').innerHTML=META.stages.map(s=>'<span><span class="dot" style="background:'+STAGE_COLOR[s.key]+'"></span>'+esc(s.ko)+'</span>').join('');
+  refreshCounts();
+  const h=new URLSearchParams(location.hash.slice(1));
+  if(h.get('review')&&h.get('prospect')) openReview(Number(h.get('prospect')),Number(h.get('review')));
+  else if(h.get('prospect')) openProspect(Number(h.get('prospect')));
+  show(h.get('tab')||(isMobile()||!isDir?'route':'dash'));
+}
+
+// ── 탭 ──
+let cur='';
+function show(tab){
+  if(!document.querySelector('[data-tab="'+tab+'"]')||document.querySelector('[data-tab="'+tab+'"]').classList.contains('hide')) tab='route';
+  cur=tab;
+  $('f-period-wrap').classList.toggle('hide',!(tab==='dash'||tab==='targets'));
+  document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab?'true':'false'));
+  document.querySelectorAll('.tabp').forEach(p=>p.classList.toggle('hide',p.id!=='p-'+tab));
+  ({route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:()=>{}})[tab]();
+}
+$('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(b) show(b.dataset.tab); });
+$('f-ent').addEventListener('change',()=>show(cur));
+$('f-period').addEventListener('change',()=>{ if(cur==='dash'||cur==='targets') show(cur); });
+async function refreshCounts(){
+  try{ const r=await api('/api/prospects/reviews'); const n=r.rows.length; $('rv-cnt').textContent=n; $('rv-cnt').classList.toggle('hide',!n); }catch(e){}
+  if(isDir){ try{ const r=await api('/api/prospect-links'); const n=r.rows.length; $('lk-cnt').textContent=n; $('lk-cnt').classList.toggle('hide',!n); }catch(e){} }
+}
+
+// ── 현황판 ──
+async function loadDash(){
+  let d; try{ d=await api('/api/prospects/dashboard?period='+period()+(ent()?'&cve_ent='+ent():'')); }catch(e){ return; }
+  $('d-kpi').innerHTML='<div class="card kpi flat"><div class="lbl">후보</div><div class="val">'+fmt(d.total)+'</div><div class="note">우선순위 A · '+fmt(d.priority_a)+'</div></div>'+
+    d.kpi.map(k=>{
+      const p=k.pct; const w=p==null?0:Math.min(100,p);
+      const st=k.status||''; const val=k.metric==='venta_nuevos'?money(k.actual):fmt(k.actual);
+      const tg=k.target?(k.metric==='venta_nuevos'?money(k.target):fmt(k.target)):null;
+      return '<div class="card kpi"><div class="lbl">'+esc(METRIC_LBL[k.metric])+'</div><div class="val">'+val+(tg?' <small>/ '+tg+'</small>':'')+'</div>'+(tg?'':'<div class="note">목표 없음</div>')+
+        '<div class="bar"><i class="'+st+'" style="width:'+w+'%"></i></div><div class="note '+(st?'st-'+st:'')+'" style="margin-top:6px;font-weight:700">'+(p==null?'—':p+'%')+(st==='bad'?' · 속도 부족':st==='warn'?' · 조금 느림':st==='ok'?' · 순조':'')+'</div></div>';
+    }).join('');
+  const order=['asignado','contactado','interesado','cotizado','registro','cliente_activo'];
+  const base=d.funnel.asignado+order.slice(1).reduce((s,k)=>s+d.funnel[k],0)||1;
+  let reach=base;
+  $('d-funnel').innerHTML=order.map((k,i)=>{
+    const atOrBeyond=order.slice(i).reduce((s,x)=>s+d.funnel[x],0);
+    const prev=i?order.slice(i-1).reduce((s,x)=>s+d.funnel[x],0):null;
+    const conv=prev?Math.round(atOrBeyond/prev*100):null;
+    return '<div class="row"><div class="t"><span>'+esc(STAGE[k].ko)+'</span><span><b>'+fmt(d.funnel[k])+'</b>'+(conv!=null?' <span class="note">· 이 단계 이상 '+fmt(atOrBeyond)+' ('+conv+'%)</span>':'')+'</span></div><div class="b" style="width:'+Math.max(0.5,atOrBeyond/base*100)+'%;background:'+STAGE_COLOR[k]+'"></div></div>';
+  }).join('');
+  $('d-total').textContent='미배정 '+fmt(d.funnel.sin_asignar)+' · 중단 '+fmt(d.funnel.descartado);
+  const idle=d.people.reduce((s,p)=>s+(p.idle||0),0), pend=d.people.reduce((s,p)=>s+(p.pending_reviews||0),0), today=d.people.reduce((s,p)=>s+(p.checkins_today||0),0);
+  $('d-side').innerHTML=[['오늘 체크인',fmt(today)],['검토 대기',fmt(pend)],['30일 방치',fmt(idle)],['컨택→신규고객 중앙값',d.median_days_to_client==null?'—':d.median_days_to_client+'일']]
+    .map(([l,v])=>'<div class="card flat"><div class="lbl" style="font-size:13px;font-weight:700">'+l+'</div><div style="font-size:26px;font-weight:800">'+v+'</div></div>').join('');
+  const M=['visitas','contactados','cotizaciones','nuevos_clientes'];
+  $('d-people').innerHTML='<thead><tr><th>담당자</th><th class="num">배정</th><th class="num">커버리지</th><th class="num">오늘 체크인</th>'+M.map(m=>'<th class="num">'+METRIC_LBL[m]+'</th>').join('')+'<th class="num">신규매출</th><th class="num">검토 대기</th><th class="num">방치</th></tr></thead><tbody>'+
+    d.people.map(p=>'<tr class="click" data-u="'+(p.user_id==null?'none':p.user_id)+'"><td data-l="담당자"><b>'+esc(p.name||'미배정')+'</b></td><td class="num" data-l="배정">'+fmt(p.assigned||0)+'</td><td class="num" data-l="커버리지">'+(p.coverage==null?'—':p.coverage+'%')+'</td><td class="num" data-l="오늘">'+fmt(p.checkins_today||0)+'</td>'+
+      M.map(m=>{ const a=p.actual[m]||0,t=p.target[m]; const pc=p.pct[m]; const cl=pc==null?'':pc>=100?'st-ok':pc>=70?'st-warn':'st-bad';
+        return '<td class="num" data-l="'+METRIC_LBL[m]+'">'+fmt(a)+(t?' / '+fmt(t)+' <b class="'+cl+'">'+pc+'%</b>':'')+'</td>'; }).join('')+
+      '<td class="num" data-l="신규매출">'+money(p.actual.venta_nuevos||0)+'</td><td class="num" data-l="검토 대기">'+fmt(p.pending_reviews||0)+'</td><td class="num" data-l="방치">'+(p.idle?'<b class="st-bad">'+fmt(p.idle)+'</b>':'0')+'</td></tr>').join('')+'</tbody>';
+  $('d-people').querySelectorAll('tr.click').forEach(tr=>tr.onclick=()=>{ if(!isDir) return; $('l-owner').value=tr.dataset.u; show('list'); });
+}
+
+// ── 지도 ──
+let MAP=null, layer=null, trackLayer=null, mapTimer=null, routePick=[];
+const noLeaflet=el=>{ if(typeof L!=='undefined') return false; const d=$(el); if(d) d.innerHTML='<div class="empty">지도를 불러오지 못했습니다(인터넷 연결 확인). 목록은 그대로 쓸 수 있습니다.</div>'; return true; };
+function ensureMap(){
+  if(MAP) { setTimeout(()=>MAP.invalidateSize(),50); return; }
+  MAP=L.map('map',{preferCanvas:true}).setView([25.68,-100.31],11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(MAP);
+  layer=L.layerGroup().addTo(MAP); trackLayer=L.layerGroup().addTo(MAP);
+  MAP.on('moveend',()=>{ clearTimeout(mapTimer); mapTimer=setTimeout(loadMapPins,250); });
+  ['m-owner','m-stage','m-seg','m-prio'].forEach(id=>$(id).addEventListener('change',loadMapPins));
+  $('m-tracks').addEventListener('change',loadTracks);
+}
+function loadMap(){ if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); }
+async function loadMapPins(){
+  const b=MAP.getBounds(); const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(v=>v.toFixed(5)).join(',');
+  let r; try{ r=await api('/api/prospects/map?bbox='+bbox+(ent()?'&cve_ent='+ent():'')+($('m-owner').value?'&owner='+$('m-owner').value:'')); }catch(e){ return; }
+  const st=$('m-stage').value, sg=$('m-seg').value, pr=$('m-prio').value;
+  layer.clearLayers();
+  r.rows.filter(p=>(!st||p.s===st)&&(!sg||p.g===sg)&&(!pr||p.pr===pr)).forEach(p=>{
+    const m=L.circleMarker([p.lat,p.lng],{radius:p.pr==='A'?6:4.5,color:'#fff',weight:1,fillColor:STAGE_COLOR[p.s],fillOpacity:.95});
+    m.bindTooltip(esc(p.n)); m.on('click',()=>openProspect(p.id)); m.addTo(layer);
+  });
+  $('m-sel').textContent=fmt(r.rows.length)+'곳'+(r.truncated?' (확대하면 더 보입니다)':'')+(routePick.length?' · 루트 선택 '+routePick.length+'곳':'');
+}
+async function loadTracks(){
+  trackLayer.clearLayers(); if(!$('m-tracks').checked) return;
+  let r; try{ r=await api('/api/prospects/tracks'); }catch(e){ return; }
+  const by={}; r.rows.forEach(x=>(by[x.created_by]=by[x.created_by]||[]).push(x));
+  Object.values(by).forEach(list=>{
+    L.polyline(list.map(x=>[x.geo_lat,x.geo_lng]),{color:'#111',weight:3}).addTo(trackLayer);
+    list.forEach((x,i)=>L.circleMarker([x.geo_lat,x.geo_lng],{radius:7,color:'#fff',weight:2,fillColor:'#1E7A46',fillOpacity:1}).bindTooltip((i+1)+'. '+esc(x.company_name)+' · '+esc(x.user_name||'')).addTo(trackLayer));
+  });
+}
+$('m-addroute').onclick=async()=>{
+  try{ await post('/api/prospect-routes',{date:META.today,prospect_ids:routePick},'PUT'); routePick=[]; $('m-addroute').classList.add('hide'); toast('오늘 루트를 만들었습니다'); show('route'); }
+  catch(e){ toast('실패: '+e.message); }
+};
+
+// ── 오늘 루트 ──
+let RT_MAP=null, rtLayer=null, ROUTE=null;
+async function loadRoute(){
+  const uid=isDir?$('rt-user').value:META.me, date=$('rt-date').value;
+  $('rt-title').textContent=(date===META.today?'오늘':date)+' 루트';
+  try{ ROUTE=await api('/api/prospect-routes?date='+date+(isDir?'&user='+uid:'')); }catch(e){ return; }
+  const stops=ROUTE.stops; const next=stops.find(s=>!s.consult_id);
+  $('rt-next').innerHTML=!stops.length?'<div class="card flat empty">아직 루트가 없습니다.<br>지도에서 방문지를 고르거나 「내 주변 후보」를 눌러 보세요.</div>':
+    next?('<div class="next-card"><div class="eyebrow" style="color:var(--ctr);font-weight:800">다음 방문 · '+next.seq+'번</div><h2 style="margin:4px 0">'+esc(next.nom_estab)+'</h2>'+
+      '<div class="note" style="font-size:14px">'+esc([next.address,next.colonia,next.municipio].filter(Boolean).join(', '))+'</div>'+
+      '<div style="margin:8px 0"><span class="tag '+next.priority+'">'+next.priority+'</span> '+stageDot(next.stage)+'</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'+
+        (next.phone?'<a class="btn ghost" href="tel:'+esc(next.phone)+'">전화</a>':'<button class="btn ghost" disabled>전화 없음</button>')+
+        '<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+next.lat+','+next.lng+'">길찾기</a></div>'+
+      '<button class="btn red big" style="width:100%;margin-top:10px" data-checkin="'+next.id+'">체크인 · 녹음 시작</button>'+
+      '<div class="note" style="margin-top:8px">업체 정보를 입력하지 않아도 바로 시작됩니다. 녹음이 끝나면 AI가 양식을 채우고, 「검토 대기」에서 확인·저장합니다.</div></div>')
+    :'<div class="card flat" style="background:var(--ok-soft)"><b>오늘 루트를 모두 방문했습니다.</b></div>';
+  $('rt-stops').innerHTML=stops.map(s=>{
+    const done=!!s.consult_id, isNext=next&&s.id===next.id;
+    return '<div class="stop"><div class="n '+(done?'done':isNext?'next':'')+'">'+s.seq+'</div><div style="flex:1;min-width:0"><b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||s.municipio||'')+
+      (done?' · '+(s.review_status==='confirmado'?'<span class="st-ok">저장 완료</span>':'<span class="st-warn">AI 초안 검토 필요</span>'):'')+'</div></div>'+
+      (done&&s.review_status!=='confirmado'?'<button class="btn sm" data-review="'+s.id+':'+s.consult_id+'">검토</button>':'<button class="btn ghost sm" data-open="'+s.id+'">상세</button>')+'</div>';
+  }).join('');
+  if(noLeaflet('rt-map')) return;
+  if(!RT_MAP){
+    RT_MAP=L.map('rt-map',{zoomControl:true}); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(RT_MAP);
+    rtLayer=L.layerGroup().addTo(RT_MAP);
+  }
+  setTimeout(()=>RT_MAP.invalidateSize(),50);
+  rtLayer.clearLayers();
+  const pts=stops.filter(s=>s.lat!=null).map(s=>[s.lat,s.lng]);
+  if(pts.length){
+    L.polyline(pts,{color:'#E2231A',weight:2.5,dashArray:'6 6'}).addTo(rtLayer);
+    const doneP=stops.filter(s=>s.consult_id&&s.lat!=null).map(s=>[s.lat,s.lng]); if(doneP.length>1) L.polyline(doneP,{color:'#1E7A46',weight:4}).addTo(rtLayer);
+    stops.forEach(s=>{ if(s.lat==null) return; const done=!!s.consult_id, isNext=next&&s.id===next.id;
+      L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',iconSize:[28,28],html:'<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;'+(done?'background:#1E7A46;color:#fff':isNext?'background:#E2231A;color:#fff':'background:#fff;color:#111;border:2px solid #111')+'">'+s.seq+'</div>'})})
+        .on('click',()=>openProspect(s.id)).addTo(rtLayer); });
+    RT_MAP.fitBounds(pts,{padding:[30,30],maxZoom:15});
+  } else RT_MAP.setView([25.68,-100.31],11);
+}
+$('rt-date').onchange=loadRoute; $('rt-user').onchange=loadRoute;
+$('rt-edit').onclick=()=>{ routePick=(ROUTE&&ROUTE.stops||[]).map(s=>s.id); show('map'); toast('핀 상세에서 「루트에 추가」를 누르세요'); };
+document.addEventListener('click',e=>{
+  const c=e.target.closest('[data-checkin]'); if(c){ checkin(Number(c.dataset.checkin)); return; }
+  const r=e.target.closest('[data-review]'); if(r){ const [p,cid]=r.dataset.review.split(':'); openReview(Number(p),Number(cid)); return; }
+  const o=e.target.closest('[data-open]'); if(o){ openProspect(Number(o.dataset.open)); return; }
+});
+function geo(){ return new Promise(res=>{ if(!navigator.geolocation) return res(null);
+  navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}),()=>res(null),{enableHighAccuracy:true,timeout:8000,maximumAge:60000}); }); }
+// 체크인 = 기존 「고객상담」 원클릭 녹음을 이 후보로 연결해 연다(녹음·업로드·AI 요약은 기존 기능 그대로)
+async function checkin(pid){
+  let name=''; try{ const d=await api('/api/prospects/'+pid); name=d.prospect.nom_estab; }catch(e){}
+  location.href='refatrix-consult.html#quick=1&prospect='+pid+'&pname='+encodeURIComponent(name);
+}
+$('rt-near').onclick=async()=>{
+  const g=await geo(); if(!g) return toast('위치를 가져오지 못했습니다');
+  const d=0.018; let r; try{ r=await api('/api/prospects/map?bbox='+[g.lng-d,g.lat-d,g.lng+d,g.lat+d].join(',')); }catch(e){ return; }
+  const near=r.rows.filter(p=>!['cliente_activo','descartado'].includes(p.s)&&(p.o==null||p.o===META.me)).sort((a,b)=>(a.pr>b.pr)-(a.pr<b.pr)).slice(0,12);
+  if(!near.length) return toast('2km 안에 방문할 후보가 없습니다');
+  openDrawer('내 주변 2km','후보 '+near.length+'곳',near.map(p=>'<div class="stop"><span class="tag '+p.pr+'">'+p.pr+'</span><div style="flex:1"><b>'+esc(p.n)+'</b><div class="note">'+esc((STAGE[p.s]||{}).ko||'')+'</div></div><button class="btn ghost sm" data-open="'+p.id+'">상세</button></div>').join('')+
+    '<button class="btn red" style="width:100%;margin-top:16px" id="near-route">이 후보들로 오늘 루트 만들기</button>');
+  $('near-route').onclick=async()=>{ try{ await post('/api/prospect-routes',{date:META.today,prospect_ids:near.map(p=>p.id),start_lat:g.lat,start_lng:g.lng},'PUT'); closeDrawer(); show('route'); }catch(e){ toast('실패: '+e.message); } };
+};
+$('rt-unplanned').onclick=()=>{
+  openDrawer('리스트에 없는 가게','Visita no planeada',
+    '<p class="note">지금 위치로 새 후보를 만들고 바로 체크인·녹음을 시작합니다. 이름·정보는 나중에 입력해도 됩니다.</p>'+
+    '<label class="fld"><span>상호(선택)</span><input type="text" id="un-name"></label>'+
+    '<label class="fld" style="margin-top:12px"><span>업종</span><select id="un-seg">'+META.segments.map(s=>'<option value="'+s+'">'+esc(SEG_LBL[s]||s)+'</option>').join('')+'</select></label>'+
+    '<button class="btn red big" style="width:100%;margin-top:16px" id="un-go">위치 저장 · 체크인·녹음</button>');
+  $('un-go').onclick=async()=>{
+    const g=await geo(); if(!g) return toast('위치를 가져오지 못했습니다');
+    try{ const r=await post('/api/prospects',{nom_estab:$('un-name').value,segment:$('un-seg').value,lat:g.lat,lng:g.lng,cve_ent:ent()||'19'}); checkin(r.id); }
+    catch(e){ toast('실패: '+e.message); }
+  };
+};
+
+// ── 후보 목록 ──
+let LIST_OFF=0, LIST_SEL=new Set(), qTimer=null;
+async function loadMuns(){
+  if($('l-mun').options.length>1) return;
+  try{ const r=await api('/api/prospects/municipios?cve_ent='+(ent()||'19')); $('l-mun').innerHTML='<option value="">전체</option>'+r.rows.map(m=>'<option>'+esc(m.municipio)+'</option>').join(''); }catch(e){}
+}
+async function loadList(off){
+  LIST_OFF=off||0;
+  const p=new URLSearchParams({limit:'50',offset:String(LIST_OFF)});
+  if(ent()) p.set('cve_ent',ent());
+  [['q','l-q'],['municipio','l-mun'],['stage','l-stage'],['segment','l-seg'],['priority','l-prio'],['owner','l-owner']].forEach(([k,id])=>{ const v=$(id).value; if(v) p.set(k,v); });
+  if($('l-idle').checked) p.set('idle','1');
+  let r; try{ r=await api('/api/prospects?'+p); }catch(e){ return; }
+  $('l-table').innerHTML='<thead><tr>'+(isDir?'<th><input type="checkbox" id="l-all" aria-label="전체 선택"></th>':'')+'<th>상호</th><th>업종</th><th>위치</th><th>단계</th><th>담당</th><th>마지막 활동</th></tr></thead><tbody>'+
+    (r.rows.length?r.rows.map(x=>'<tr class="click" data-id="'+x.id+'">'+(isDir?'<td data-l="선택"><input type="checkbox" class="l-ck" value="'+x.id+'"'+(LIST_SEL.has(x.id)?' checked':'')+'></td>':'')+
+      '<td data-l="상호"><span class="tag '+x.priority+'">'+x.priority+'</span> <b>'+esc(x.nom_estab)+'</b>'+(x.denue_missing?' <span class="chip" title="새 DENUE 판에 없음">폐업 가능</span>':'')+(x.customer_id?' <span class="chip" style="background:var(--ok-soft);color:var(--ok)">고객 연결</span>':'')+'</td>'+
+      '<td data-l="업종">'+esc(SEG_LBL[x.segment]||x.segment)+'</td><td data-l="위치">'+esc([x.colonia,x.municipio].filter(Boolean).join(', '))+'</td><td data-l="단계">'+stageDot(x.stage)+'</td>'+
+      '<td data-l="담당">'+esc(x.owner_name||'—')+'</td><td data-l="마지막 활동">'+(x.last_activity_at?esc(String(x.last_activity_at).slice(0,10)):'—')+'</td></tr>').join('')
+      :'<tr><td colspan="7" class="empty">조건에 맞는 후보가 없습니다.</td></tr>')+'</tbody>';
+  $('l-page').textContent=(r.total?(LIST_OFF+1)+'–'+Math.min(LIST_OFF+50,r.total):'0')+' / '+fmt(r.total)+'곳';
+  $('l-prev').disabled=LIST_OFF===0; $('l-next').disabled=LIST_OFF+50>=r.total;
+  $('l-table').querySelectorAll('tr.click').forEach(tr=>tr.addEventListener('click',e=>{ if(e.target.closest('input')) return; openProspect(Number(tr.dataset.id)); }));
+  $('l-table').querySelectorAll('.l-ck').forEach(c=>c.onchange=()=>{ c.checked?LIST_SEL.add(Number(c.value)):LIST_SEL.delete(Number(c.value)); $('l-selinfo').textContent=LIST_SEL.size+'곳 선택'; });
+  const all=$('l-all'); if(all) all.onchange=()=>{ $('l-table').querySelectorAll('.l-ck').forEach(c=>{ c.checked=all.checked; c.onchange(); }); };
+}
+['l-mun','l-stage','l-seg','l-prio','l-owner','l-idle'].forEach(id=>$(id).addEventListener('change',()=>loadList(0)));
+$('l-q').addEventListener('input',()=>{ clearTimeout(qTimer); qTimer=setTimeout(()=>loadList(0),300); });
+$('l-prev').onclick=()=>loadList(Math.max(0,LIST_OFF-50)); $('l-next').onclick=()=>loadList(LIST_OFF+50);
+$('l-assign').onclick=async()=>{
+  if(!LIST_SEL.size) return toast('먼저 후보를 고르세요');
+  try{ const r=await post('/api/prospects/assign',{ids:[...LIST_SEL],owner_user_id:$('l-assign-to').value||null}); toast(r.updated+'곳 배정'); LIST_SEL.clear(); $('l-selinfo').textContent='0곳 선택'; loadList(LIST_OFF); }
+  catch(e){ toast('실패: '+e.message); }
+};
+
+// ── 서랍 ──
+function openDrawer(eyebrow,title,html){ $('dr-eyebrow').textContent=eyebrow||''; $('dr-title').textContent=title||''; $('dr-body').innerHTML=html; $('drawer').classList.add('open'); $('scrim').classList.add('open'); $('drawer').setAttribute('aria-hidden','false'); $('dr-body').scrollTop=0; }
+function closeDrawer(){ $('drawer').classList.remove('open'); $('scrim').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); }
+$('dr-close').onclick=closeDrawer; $('scrim').onclick=closeDrawer;
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
+
+async function openProspect(id){
+  let d; try{ d=await api('/api/prospects/'+id); }catch(e){ return toast('열 수 없습니다: '+e.message); }
+  const p=d.prospect; const order=['asignado','contactado','interesado','cotizado'];
+  const crmN=Object.keys(d.crm).length;
+  const html=
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="tag '+p.priority+'">'+p.priority+'</span>'+stageDot(p.stage)+'<span class="chip">'+esc(SEG_LBL[p.segment]||p.segment)+'</span>'+(p.denue_missing?'<span class="chip">새 DENUE 판에 없음</span>':'')+'</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">'+
+      '<button class="btn red" data-checkin="'+p.id+'">체크인 · 녹음</button>'+
+      '<button class="btn ghost" id="dp-route">오늘 루트에 추가</button>'+
+      (p.phone?'<a class="btn ghost" href="tel:'+esc(p.phone)+'">전화</a>':'<span></span>')+
+      (p.lat!=null?'<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+p.lat+','+p.lng+'">길찾기</a>':'')+'</div>'+
+    '<div class="sec"><h3>정보</h3><dl class="kv">'+
+      [['상호법인',p.raz_social],['주소',[p.address,p.colonia,p.cp].filter(Boolean).join(', ')],['municipio',p.municipio+(p.entidad?', '+p.entidad:'')],['전화',p.phone],['이메일',p.email],['직원',p.per_ocu],['담당',p.owner_name],['DENUE',p.denue_id?p.denue_id+' · '+(p.scian_code||''):'수동 등록']]
+        .map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v||'—')+'</dd>').join('')+'</dl></div>'+
+    '<div class="sec"><h3>단계</h3><div class="stepper">'+order.map(k=>'<button data-stage="'+k+'" class="'+(p.stage===k?'on':'')+'">'+esc(STAGE[k].ko)+'</button>').join('')+
+      '<button data-stage="descartado" class="'+(p.stage==='descartado'?'on':'')+'">중단</button></div>'+
+      '<p class="note">고객등록 중·신규고객은 기존 고객 연결·승인·첫 인보이스로 자동으로 바뀝니다.</p></div>'+
+    '<div class="sec"><h3>Alta de clientes</h3><div class="card flat">'+(crmN?'<b>'+crmN+'개 항목 저장됨</b>'+(d.crm_missing.length?' · 필수 '+d.crm_missing.length+'개 비어 있음':' · 필수 항목 완료'):'아직 저장된 값이 없습니다')+
+      '<div style="margin-top:10px"><button class="btn sm" data-review="'+p.id+':0">양식 열기·수정</button></div></div></div>'+
+    '<div class="sec"><h3>방문</h3>'+(d.visits.length?d.visits.map(v=>'<div class="stop"><div style="flex:1;min-width:0"><b>'+esc(String(v.consult_date).slice(0,10))+'</b> · '+esc(v.user_name||'')+
+        (v.checkin_dist_m!=null?' · <span class="'+(v.checkin_dist_m>META.checkin_warn_m?'st-warn':'note')+'">'+fmt(v.checkin_dist_m)+'m</span>':'')+
+        '<div class="note">'+esc(v.resumen||({queued:'녹음 대기',transcribing:'받아쓰는 중',summarizing:'요약 중',failed:'녹음 처리 실패'}[v.rec_status]||'녹음 없음'))+'</div></div>'+
+        '<button class="btn '+(v.review_status==='confirmado'?'ghost':'')+' sm" data-review="'+p.id+':'+v.id+'">'+(v.review_status==='confirmado'?'보기':'검토')+'</button></div>').join(''):'<p class="note">아직 방문이 없습니다.</p>')+'</div>'+
+    '<div class="sec"><h3>기존 고객 연결</h3><div id="dp-link">'+(d.customer?'<div class="card flat" style="background:var(--ok-soft)"><b>'+esc(d.customer.code+' · '+d.customer.name)+'</b><div class="note">연결됨'+(isDir?' · <a href="#" id="dp-unlink">연결 해제</a>':'')+'</div></div>':
+        (d.links.find(l=>l.status==='solicitado')?'<div class="banner warn">연결 승인 대기: '+esc(d.links.find(l=>l.status==='solicitado').customer_name)+'</div>':'<p class="note">비슷한 고객을 찾는 중…</p>'))+'</div>'+
+      (!d.customer?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn ghost sm" id="dp-copy">고객 등록용 값 복사</button><a class="btn ghost sm" href="refatrix-customers.html" target="_blank" rel="noopener">고객 등록 화면</a></div><p class="note">고객 등록이 승인되면 여기서 그 고객을 골라 연결하세요. 방문·녹음·양식 값이 고객 이력으로 이어집니다.</p>':'')+'</div>'+
+    '<div class="sec"><h3>이력</h3>'+d.history.slice(0,12).map(h=>'<div class="note">'+esc(String(h.created_at).slice(0,16).replace('T',' '))+' · '+esc((STAGE[h.from_stage]||{}).ko||'—')+' → <b>'+esc((STAGE[h.to_stage]||{}).ko||h.to_stage)+'</b>'+(h.reason?' · '+esc(h.reason):'')+(h.user_name?' · '+esc(h.user_name):'')+'</div>').join('')+'</div>';
+  openDrawer((p.municipio||'')+' · '+(p.colonia||''),p.nom_estab,html);
+  $('dp-route').onclick=async()=>{ try{ const ids=[...new Set([...(ROUTE&&ROUTE.date===META.today?ROUTE.stops.map(s=>s.id):[]),...routePick,p.id])]; routePick=ids;
+      await post('/api/prospect-routes',{date:META.today,prospect_ids:ids},'PUT'); toast('오늘 루트에 추가 ('+ids.length+'곳)'); ROUTE=null; if(cur==='map'){ $('m-addroute').classList.add('hide'); loadMapPins(); } }catch(e){ toast('실패: '+e.message); } };
+  $('dr-body').querySelectorAll('[data-stage]').forEach(b=>b.onclick=async()=>{
+    const to=b.dataset.stage; let reason='';
+    if(to==='descartado'){ reason=prompt('중단 사유를 적어 주세요\n('+META.discard_reasons.join(' / ')+')',''); if(!reason) return; }
+    try{ await post('/api/prospects/'+p.id+'/stage',{to,reason}); toast('단계: '+STAGE[to].ko); openProspect(p.id); }catch(e){ toast({no_backward:'뒤로 되돌리기는 디렉터만 할 수 있습니다',director_only:'디렉터만 할 수 있습니다',reason_required:'사유가 필요합니다',same_stage:'이미 그 단계입니다'}[e.message]||('실패: '+e.message)); }
+  });
+  if($('dp-unlink')) $('dp-unlink').onclick=async(e)=>{ e.preventDefault(); if(!confirm('고객 연결을 해제할까요?')) return; await api('/api/prospects/'+p.id+'/link',{method:'DELETE'}); openProspect(p.id); };
+  if($('dp-copy')) $('dp-copy').onclick=async()=>{ try{ const r=await api('/api/prospects/'+p.id+'/customer-prefill'); const t=Object.entries(r.values).map(([k,v])=>k+': '+(Array.isArray(v)?v.join(', '):v)).join('\n'); await navigator.clipboard.writeText(t); toast('복사했습니다'+(r.missing.length?' · 필수 '+r.missing.length+'개 비어 있음':'')); }catch(e){ toast('복사 실패'); } };
+  if(!d.customer && !d.links.find(l=>l.status==='solicitado')) loadMatches(p.id);
+}
+async function loadMatches(pid){
+  let r; try{ r=await api('/api/prospects/'+pid+'/matches'); }catch(e){ return; }
+  const box=$('dp-link'); if(!box) return;
+  const RS={rfc:'RFC',telefono:'전화',nombre:'상호',ubicacion:'위치'};
+  box.innerHTML=r.rows.length?'<p class="note">같은 곳일 수 있는 기존 고객</p>'+r.rows.map(m=>'<div class="stop"><div style="flex:1"><b>'+esc((m.code?m.code+' · ':'')+m.name)+'</b><div class="note">일치 '+m.score+'점 · '+m.reasons.map(x=>RS[x]||x).join(', ')+'</div></div><button class="btn sm" data-link="'+m.customer_id+'">'+(isDir?'연결':'연결 요청')+'</button></div>').join('')
+    :'<p class="note">비슷한 기존 고객이 없습니다. 신규 고객입니다.</p>';
+  box.querySelectorAll('[data-link]').forEach(b=>b.onclick=async()=>{ try{ const x=await post('/api/prospects/'+pid+'/link',{customer_id:Number(b.dataset.link),method:'sugerencia'}); toast(x.status==='aprobado'?'연결했습니다':'연결을 요청했습니다(디렉터 승인)'); openProspect(pid); refreshCounts(); }catch(e){ toast('실패: '+e.message); } });
+}
+
+// ── 검토(Alta de clientes) ──
+async function openReview(pid,cid){
+  let d; try{ d=await api('/api/prospects/'+pid+'/review'+(cid?'?consult_id='+cid:'')); }catch(e){ return toast('열 수 없습니다: '+e.message); }
+  const rec=d.recording; const V=d.values;
+  const status=!cid?'':!rec?'<div class="banner warn">이 방문에는 녹음이 없습니다. 직접 입력하세요.</div>':
+    rec.status!=='done'?'<div class="banner warn">녹음 처리 중('+esc({queued:'대기',transcribing:'받아쓰기',summarizing:'요약',failed:'실패'}[rec.status]||rec.status)+'). 끝나면 AI 초안이 채워집니다. 지금 입력해도 됩니다.</div>':
+    rec.alta_status==='pending'?'<div class="banner warn">AI가 양식을 채우는 중입니다. 잠시 후 다시 열어 주세요.</div>':
+    rec.alta_status==='failed'?'<div class="banner bad">AI 양식 채우기 실패('+esc(rec.alta_error||'')+'). 요약을 보고 직접 입력하세요.</div>':'';
+  const iaN=Object.values(V).filter(v=>v.source==='ia').length, lowN=Object.values(V).filter(v=>v.source==='ia'&&v.confidence==='baja').length;
+  const secs=[]; let last=null, lastGroup=null;
+  d.fields.forEach(f=>{
+    if(f.section!==last){ secs.push({key:f.section,label:f.section_label,items:[]}); last=f.section; lastGroup=null; }
+    const s=secs[secs.length-1];
+    if(f.group&&f.group!==lastGroup){ s.items.push({groupHead:f.group_label}); lastGroup=f.group; }
+    s.items.push(f);
+  });
+  const input=(f)=>{
+    const v=V[f.key]||{}; const val=v.value; const id='fv-'+f.key.replace(/\./g,'__');
+    const badge=v.source==='ia'?'<span class="src ia">IA'+(v.confidence?' · '+esc(v.confidence):'')+'</span>':v.source==='denue'?'<span class="src denue">DENUE</span>':v.source==='guardado'?'<span class="src guardado">저장됨</span>':(f.fill||[]).includes('manual')&&!(f.fill||[]).includes('ia')?'':'<span class="src vacio">없음</span>';
+    const cls=(v.source==='ia'?'isai ':'')+(v.confidence==='baja'?'lowconf':'');
+    let ctl;
+    if(f.type==='multiselect'){ const arr=Array.isArray(val)?val:[];
+      ctl='<div class="ms" id="'+id+'" data-k="'+f.key+'">'+f.options.map(o=>'<label class="'+(arr.includes(o)?'on':'')+'"><input type="checkbox" value="'+esc(o)+'"'+(arr.includes(o)?' checked':'')+'>'+esc(o)+'</label>').join('')+'</div>'; }
+    else if(f.type==='boolean') ctl='<select id="'+id+'" data-k="'+f.key+'"><option value=""></option><option value="true"'+(val===true?' selected':'')+'>Sí</option><option value="false"'+(val===false?' selected':'')+'>No</option></select>';
+    else { const t={integer:'number',money:'number',email:'email',phone:'tel',time:'time'}[f.type]||'text';
+      ctl='<input type="'+t+'" id="'+id+'" data-k="'+f.key+'" value="'+esc(val==null?'':val)+'"'+(f.type==='money'?' step="0.01" min="0"':'')+(f.type==='integer'?' step="1"':'')+'>'; }
+    return '<div class="fld '+cls+'" style="'+(f.type==='multiselect'?'grid-column:1/-1':'')+'"><span>'+esc(f.label_es)+(f.required&&f.section!=='facturacion'?' *':'')+badge+'</span>'+ctl+(v.evidence?'<span class="evid">“'+esc(v.evidence)+'”</span>':'')+'</div>';
+  };
+  const html=status+
+    (rec&&rec.resumen?'<div class="sec" style="margin-top:12px"><h3>방문 요약 (AI)</h3><div class="summary-box">'+esc(rec.resumen)+(rec.next_step?'\n\n다음: '+esc(rec.next_step)+(rec.next_date?' ('+esc(rec.next_date)+')':''):'')+'</div></div>':'')+
+    (iaN?'<p class="note" style="margin-top:12px"><b>AI가 '+iaN+'개 항목을 채웠습니다</b>'+(lowN?' · 확신 낮음 '+lowN+'개(노란 칸)':'')+'. 굵은 칸이 AI 값입니다. 근거 문장을 보고 확인하세요.</p>':'')+
+    secs.map(s=>'<div class="form-sec"><h3>'+esc(s.label)+'</h3>'+(s.key==='facturacion'?'<p class="note">청구 정보는 보통 고객 등록 때 입력합니다(선택).</p>':'')+'<div class="form-grid" style="margin-top:12px">'+
+      s.items.map(it=>it.groupHead?'<div style="grid-column:1/-1;font-weight:800;margin-top:6px">'+esc(it.groupHead)+'</div>':input(it)).join('')+'</div></div>').join('')+
+    '<div class="form-sec"><h3>다음 단계</h3><div class="form-grid" style="margin-top:12px"><label class="fld"><span>단계 '+(rec&&rec.stage_suggested?'<span class="src ia">IA 제안: '+esc((STAGE[rec.stage_suggested]||{}).ko||rec.stage_suggested)+'</span>':'')+'</span><select id="rv-stage"><option value="">그대로 ('+esc((STAGE[d.prospect.stage]||{}).ko)+')</option>'+
+      ['contactado','interesado','cotizado','descartado'].map(k=>'<option value="'+k+'"'+(rec&&rec.stage_suggested===k&&k!==d.prospect.stage?' selected':'')+'>'+esc(STAGE[k].ko)+'</option>').join('')+'</select></label></div></div>'+
+    '<div class="sticky-actions"><span class="note" id="rv-msg" style="margin-right:auto;align-self:center"></span><button class="btn ghost" id="rv-draft">임시저장</button><button class="btn red" id="rv-ok">확정 후 저장</button></div>';
+  openDrawer('Alta de clientes'+(d.consult?' · 방문 '+String(d.consult.consult_date).slice(0,10):''),d.prospect.nom_estab,html);
+  $('dr-body').querySelectorAll('.ms label').forEach(l=>l.querySelector('input').onchange=()=>l.classList.toggle('on',l.querySelector('input').checked));
+  const collect=()=>{ const vals={}, src={};
+    d.fields.forEach(f=>{ const el=$('fv-'+f.key.replace(/\./g,'__')); if(!el) return; let v;
+      if(f.type==='multiselect') v=[...el.querySelectorAll('input:checked')].map(i=>i.value);
+      else if(f.type==='boolean') v=el.value===''?null:el.value==='true';
+      else v=el.value.trim()===''?null:el.value.trim();
+      const o=V[f.key]||{}; const changed=JSON.stringify(v)!==JSON.stringify(o.value==null?(f.type==='multiselect'?[]:null):o.value);
+      if(v==null&&o.saved==null&&o.value==null) return;
+      vals[f.key]=v; src[f.key]=changed?'manual':(o.source||'manual'); });
+    return {vals,src}; };
+  const save=async(confirm)=>{
+    const {vals,src}=collect(); const stage=$('rv-stage').value; let stage_reason='';
+    if(stage==='descartado'){ stage_reason=prompt('중단 사유',''); if(!stage_reason) return; }
+    try{ const r=await post('/api/prospects/'+pid+'/crm',{consult_id:cid||null,values:vals,sources:src,confirm,stage:stage||null,stage_reason});
+      toast(confirm?'확정 저장했습니다':'임시저장했습니다'); closeDrawer(); refreshCounts(); if(cur==='review') loadReviews(); if(cur==='route') loadRoute(); }
+    catch(e){ const f=(e.data&&e.data.fields)||[];
+      if(e.message==='faltan_obligatorios') $('rv-msg').innerHTML='<b class="st-bad">필수 항목이 비어 있습니다:</b> '+f.map(x=>esc(x.label)).join(', ');
+      else if(e.message==='formato') $('rv-msg').innerHTML='<b class="st-bad">형식 확인:</b> '+f.map(x=>esc((d.fields.find(y=>y.key===x.key)||{}).label_es||x.key)).join(', ');
+      else toast('실패: '+e.message); }
+  };
+  $('rv-draft').onclick=()=>save(false); $('rv-ok').onclick=()=>save(true);
+}
+async function loadReviews(){
+  let r; try{ r=await api('/api/prospects/reviews'); }catch(e){ return; }
+  $('r-table').innerHTML='<thead><tr><th>방문</th><th>업체</th><th>담당</th><th>녹음·AI</th><th>상태</th><th></th></tr></thead><tbody>'+
+    (r.rows.length?r.rows.map(x=>'<tr><td data-l="방문">'+esc(String(x.created_at).slice(0,16).replace('T',' '))+'</td><td data-l="업체"><b>'+esc(x.nom_estab)+'</b><div class="note">'+esc(x.municipio||'')+'</div></td><td data-l="담당">'+esc(x.user_name||'')+'</td>'+
+      '<td data-l="녹음·AI">'+esc(x.rec_status==='done'?(x.alta_status==='done'?'AI 초안 준비됨':x.alta_status==='failed'?'AI 실패 · 직접 입력':'AI 작성 중'):x.rec_status?'녹음 처리 중':'녹음 없음')+'</td>'+
+      '<td data-l="상태">'+(x.review_status==='borrador'?'<span class="chip">임시저장</span>':'<span class="chip" style="background:var(--warn-soft);color:#6B4100">검토 대기</span>')+'</td>'+
+      '<td><button class="btn sm" data-review="'+x.prospect_id+':'+x.consult_id+'">검토</button></td></tr>').join('')
+      :'<tr><td colspan="6" class="empty">검토할 방문이 없습니다.</td></tr>')+'</tbody>';
+}
+
+// ── 연결 승인 ──
+async function loadLinks(){
+  let r; try{ r=await api('/api/prospect-links'); }catch(e){ return; }
+  const M={alta:'고객 등록',vinculo:'직접 연결',sugerencia:'추천 연결'};
+  $('k-table').innerHTML='<thead><tr><th>후보</th><th>기존 고객</th><th>방식</th><th>요청</th><th></th></tr></thead><tbody>'+
+    (r.rows.length?r.rows.map(x=>'<tr><td data-l="후보"><a href="#" data-open="'+x.prospect_id+'"><b>'+esc(x.nom_estab)+'</b></a></td><td data-l="고객">'+esc(x.customer_code+' · '+x.customer_name)+'</td><td data-l="방식">'+esc(M[x.method]||x.method)+'</td><td data-l="요청">'+esc(x.requested_by_name||'')+' · '+esc(String(x.created_at).slice(0,10))+'</td>'+
+      '<td style="white-space:nowrap"><button class="btn red sm" data-dec="'+x.id+':1">승인</button> <button class="btn ghost sm" data-dec="'+x.id+':0">거절</button></td></tr>').join('')
+      :'<tr><td colspan="5" class="empty">승인 대기 중인 연결이 없습니다.</td></tr>')+'</tbody>';
+  $('k-table').querySelectorAll('[data-dec]').forEach(b=>b.onclick=async()=>{ const [id,ok]=b.dataset.dec.split(':'); try{ await post('/api/prospect-links/'+id+'/decide',{approve:ok==='1'}); toast(ok==='1'?'승인했습니다':'거절했습니다'); loadLinks(); refreshCounts(); }catch(e){ toast('실패: '+e.message); } });
+}
+
+// ── 지역 ──
+let TERRS=[], T_EDIT=null, MUNS=[];
+async function loadTerr(){
+  try{ TERRS=(await api('/api/prospect-territories')).rows; MUNS=(await api('/api/prospects/municipios?cve_ent='+(ent()||'19'))).rows; }catch(e){ return; }
+  $('t-table').innerHTML='<thead><tr><th>지역</th><th>담당</th><th class="num">후보</th><th class="num">진행</th><th></th></tr></thead><tbody>'+
+    (TERRS.length?TERRS.map(t=>'<tr><td><b>'+esc(t.name)+'</b><div class="note">'+esc((t.cps&&t.cps.length?'CP '+t.cps.join(', '):t.municipios.join(', ')).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td><button class="btn ghost sm" data-tedit="'+t.id+'">수정</button></td></tr>').join('')
+      :'<tr><td colspan="5" class="empty">아직 지역이 없습니다. 오른쪽에서 만드세요.</td></tr>')+'</tbody>';
+  $('t-table').querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>editTerr(TERRS.find(t=>t.id===Number(b.dataset.tedit))));
+  editTerr(T_EDIT);
+}
+function editTerr(t){
+  T_EDIT=t||null; $('t-form-title').textContent=t?'지역 수정':'새 지역';
+  $('t-name').value=t?t.name:''; $('t-owner').value=t&&t.owner_user_id?t.owner_user_id:''; $('t-cps').value=t?(t.cps||[]).join(', '):'';
+  $('t-move-wrap').classList.toggle('hide',!t); $('t-move').checked=false;
+  const sel=new Set(t?t.municipios:[]);
+  $('t-muns').innerHTML=MUNS.map(m=>'<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-weight:400"><input type="checkbox" value="'+esc(m.municipio)+'"'+(sel.has(m.municipio)?' checked':'')+'> <span style="flex:1">'+esc(m.municipio)+'</span><span class="note">'+fmt(m.total)+' · '+fmt(m.unassigned)+'</span></label>').join('');
+}
+$('t-new').onclick=()=>editTerr(null);
+$('t-save').onclick=async()=>{
+  const body={name:$('t-name').value,owner_user_id:$('t-owner').value||null,cve_ent:ent()||'19',
+    municipios:[...$('t-muns').querySelectorAll('input:checked')].map(i=>i.value),cps:$('t-cps').value,move_owner:$('t-move').checked};
+  try{ const r=T_EDIT?await post('/api/prospect-territories/'+T_EDIT.id,body,'PATCH'):await post('/api/prospect-territories',body); toast('저장 · 후보 '+fmt(r.matched)+'곳 판정'); T_EDIT=null; loadTerr(); }
+  catch(e){ toast(e.message==='name_required'?'이름을 넣어 주세요':'실패: '+e.message); }
+};
+
+// ── 목표 ──
+let TG={};
+async function loadTargets(){
+  const per=period(); $('g-title').textContent=per+' 목표';
+  let r; try{ r=await api('/api/prospect-targets?period='+per); }catch(e){ return; }
+  TG={}; r.rows.forEach(x=>{ (TG[x.user_id]=TG[x.user_id]||{})[x.metric]=x.value; });
+  renderTargets();
+}
+function renderTargets(){
+  $('g-table').innerHTML='<thead><tr><th>담당자</th>'+META.metrics.map(m=>'<th class="num">'+esc(METRIC_LBL[m])+'</th>').join('')+'</tr></thead><tbody>'+
+    META.users.map(u=>'<tr><td><b>'+esc(u.name)+'</b></td>'+META.metrics.map(m=>'<td><input type="number" min="0" step="'+(m==='venta_nuevos'?'1000':'1')+'" data-u="'+u.id+'" data-m="'+m+'" value="'+((TG[u.id]||{})[m]??'')+'" style="text-align:right;min-width:90px"></td>').join('')+'</tr>').join('')+'</tbody>';
+}
+$('g-copy').onclick=async()=>{ const [y,m]=period().split('-').map(Number); const prev=m===1?(y-1)+'-12':y+'-'+String(m-1).padStart(2,'0');
+  const r=await api('/api/prospect-targets?period='+prev); TG={}; r.rows.forEach(x=>{ (TG[x.user_id]=TG[x.user_id]||{})[x.metric]=x.value; }); renderTargets(); toast(prev+' 값을 불러왔습니다 · 저장을 누르세요'); };
+$('g-save').onclick=async()=>{ const rows=[...$('g-table').querySelectorAll('input')].filter(i=>i.value!=='').map(i=>({user_id:Number(i.dataset.u),metric:i.dataset.m,value:Number(i.value)}));
+  try{ const r=await post('/api/prospect-targets',{period:period(),rows},'PUT'); toast(r.saved+'개 저장'); }catch(e){ toast('실패: '+e.message); } };
+
+// ── 가져오기 ──
+let IMP=null;
+function parseCsv(text){
+  const s=String(text||'').replace(/^﻿/,''); const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<s.length;i++){ const c=s[i];
+    if(q){ if(c==='"'){ if(s[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else if(c==='"') q=true; else if(c===','){ row.push(cur); cur=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&s[i+1]==='\n') i++; row.push(cur); cur=''; if(row.some(x=>x!=='')) rows.push(row); row=[]; }
+    else cur+=c; }
+  row.push(cur); if(row.some(x=>x!=='')) rows.push(row);
+  if(!rows.length) return []; const h=rows[0].map(x=>x.trim());
+  return rows.slice(1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]==null?'':r[i]])));
+}
+$('i-file').onchange=async()=>{ const f=$('i-file').files[0]; if(!f) return; IMP=parseCsv(await f.text()); $('i-out').innerHTML='<p><b>'+fmt(IMP.length)+'행</b>을 읽었습니다.</p>'; $('i-preview').disabled=!IMP.length; $('i-commit').disabled=true; };
+async function runImport(commit){
+  const CH=2000; const agg={received:0,valid:0,new:0,update:0,invalid:{},by_state:{},by_segment:{},created:0};
+  $('i-preview').disabled=$('i-commit').disabled=true;
+  for(let i=0;i<IMP.length;i+=CH){
+    $('i-out').innerHTML='<p>'+(commit?'가져오는 중':'확인 중')+'… '+fmt(Math.min(i+CH,IMP.length))+' / '+fmt(IMP.length)+'</p>';
+    let r; try{ r=await post('/api/prospects/import',{rows:IMP.slice(i,i+CH),edition:$('i-ed').value,commit}); }catch(e){ $('i-out').innerHTML='<div class="banner bad">실패: '+esc(e.message)+'</div>'; $('i-preview').disabled=false; return; }
+    ['received','valid','new','update','created'].forEach(k=>agg[k]+=r[k]||0);
+    [['invalid'],['by_state'],['by_segment']].forEach(([k])=>Object.entries(r[k]||{}).forEach(([a,b])=>agg[k][a]=(agg[k][a]||0)+b));
+  }
+  const tbl=o=>Object.entries(o).map(([k,v])=>'<tr><td>'+esc(SEG_LBL[k]||k)+'</td><td class="num">'+fmt(v)+'</td></tr>').join('');
+  $('i-out').innerHTML='<div class="grid cards">'+[['읽은 행',agg.received],['정상',agg.valid],['새 후보',agg.new],['갱신',agg.update]].map(([l,v])=>'<div class="card kpi flat"><div class="lbl">'+l+'</div><div class="val">'+fmt(v)+'</div></div>').join('')+'</div>'+
+    '<div class="split" style="margin-top:12px"><table class="tb"><thead><tr><th>주</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_state)+'</tbody></table><table class="tb"><thead><tr><th>업종</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_segment)+'</tbody></table></div>'+
+    (Object.keys(agg.invalid).length?'<p class="note">건너뜀: '+Object.entries(agg.invalid).map(([k,v])=>k+' '+v).join(', ')+'</p>':'')+
+    (commit?'<div class="banner info" style="margin-top:12px"><b>'+fmt(agg.created)+'곳을 새로 넣었습니다.</b> 지역이 있으면 자동 배정됐습니다. 「지역·담당」에서 확인하세요.'+
+      '<div style="margin-top:8px"><button class="btn ghost sm" id="i-final">이번 판에 없는 곳 「폐업 가능」 표시</button></div></div>':'');
+  $('i-preview').disabled=false; $('i-commit').disabled=commit;
+  if(commit){ $('i-final').onclick=async()=>{ const ents=Object.keys(agg.by_state).map(k=>k.split(' ')[0]).filter(x=>x&&x!=='?');
+    for(const e of ents){ const r=await post('/api/prospects/import/finalize',{edition:$('i-ed').value,cve_ent:e}); toast(e+': '+fmt(r.marked_missing)+'곳 표시'); } };
+    META=await api('/api/prospects/meta'); }
+}
+$('i-preview').onclick=()=>runImport(false);
+$('i-commit').onclick=()=>{ if(confirm(fmt(IMP.length)+'행을 가져올까요? 기존 후보의 담당·단계·활동은 유지됩니다.')) runImport(true); };
+
+window.addEventListener('pageshow',e=>{ if(e.persisted){ refreshCounts(); if(cur==='route') loadRoute(); } });
+init();
+})();
+</script>
+<script src="refatrix-nav.js?v=20261125pr"></script>
+</body>
+</html>

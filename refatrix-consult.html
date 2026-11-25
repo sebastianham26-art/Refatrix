@@ -852,6 +852,12 @@
     try{ if(new URLSearchParams(location.search).get('quick')==='1') return true; }catch(e){}
     return false;
   })();
+  // 🧭 고객개발 체크인에서 들어온 경우(#quick=1&prospect=ID&pname=상호) — 첫 녹음 1건만 그 후보에 연결 (0334)
+  let qkProspect=(function(){
+    try{ const p=new URLSearchParams(location.hash.slice(1)); const id=Number(p.get('prospect'));
+      return id>0?{id:id, name:p.get('pname')||''}:null; }catch(e){ return null; }
+  })();
+  let qkProspectUsed=false;
   let qkSentGeo=null;
   let qkOn=false, qkId=0, qkCreating=null, qkGeoVal=null, qkSyncT=null, qkTickIv=null, qkUploadedAt=0, qkStartedAt=0;
   let qkSaved={company_name:'',customer_id:null,contact_name:'',contact_title:'',wa_phone:''};
@@ -893,10 +899,12 @@
         const body={quick:true, consult_date:csMxToday(),
           company_name:f.company_name||null, customer_id:f.customer_id,
           contact_name:f.contact_name||null, contact_title:f.contact_title||null, wa_phone:f.wa_phone||null};
+        if(qkProspect&&!qkProspectUsed) body.prospect_id=qkProspect.id;
         if(qkGeoVal){ body.geo_lat=qkGeoVal.lat; body.geo_lng=qkGeoVal.lng; body.geo_accuracy=qkGeoVal.acc; }
         const d=await qkCreateConsult(body);
         if(d&&d.id){
           qkId=Number(d.id);
+          if(body.prospect_id) qkProspectUsed=true;
           qkSaved={company_name:f.company_name, customer_id:f.customer_id, contact_name:f.contact_name, contact_title:f.contact_title, wa_phone:f.wa_phone};
           qkSentGeo=qkGeoVal;
           if(csRecConsult&&!Number(csRecConsult.id)){
@@ -995,6 +1003,8 @@
     qkId=0; qkCreating=null; qkUploadedAt=0; qkSentGeo=null; qkStartedAt=Date.now();
     qkSaved={company_name:'',customer_id:null,contact_name:'',contact_title:'',wa_phone:''};
     ['qk-company','qk-contact','qk-title','qk-phone'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+    if(qkProspectUsed) qkProspect=null;                       // 두 번째 녹음부터는 일반 빠른 녹음
+    if(qkProspect&&$('qk-company')) $('qk-company').value=qkProspect.name;
     qkSavedMsg('','');
     $('qk-after').classList.add('hidden');
     qkStatus('','🎙 녹음을 시작하는 중…','마이크·위치 허용을 물으면 「허용」을 눌러주세요');

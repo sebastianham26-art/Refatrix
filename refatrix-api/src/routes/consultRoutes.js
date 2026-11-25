@@ -33,6 +33,7 @@ import { splitB64Segment, SPLIT_MAX_BYTES, SPLIT_MAX_MS } from '../audioSplit.js
 import {
   hasQuickCols, resetQuickColsCache, syncConsultVisitSafe, mirrorConsultPendingDone,
 } from '../consultVisitSync.js';
+import { attachConsultToProspectSafe, prospectAltaDraftSafe } from '../prospectAlta.js';   // 0334 · 영업 › 고객개발 연결
 import { sttModelName, redactSecrets, isDurationLimitError, STT_DEFAULT_MODEL } from '../sttModel.js';
 import {
   convertToSegments, findFfmpeg, canPassThrough, whisperMimeOf, fileMimeOf, cleanFileName,
@@ -376,6 +377,8 @@ export async function processOne(row) {
     detail: { consult_id: Number(c.id), action_items: summary.action_items.length },
   });
   await syncConsultVisitSafe(Number(c.id));     // 📱 빠른 녹음이면 방문 기록에도 요약·펜딩 반영
+  // 🧭 고객개발 후보와 연결된 상담이면 같은 전사문으로 Alta de clientes 초안(AI) — 실패해도 요약은 그대로 done
+  await prospectAltaDraftSafe({ consultId: Number(c.id), recId, transcript, summary, summarize: consultAiApi.summarize });
   return true;
 }
 
@@ -684,8 +687,15 @@ export default async function consultRoutes(app) {
     await logEvent({ userId: perm.userId, action: 'create', target: `consult:${id}`, detail: { company, date, quick } });
     // 📱 빠른 녹음 → 영업활동 방문 기록(위치가 있으면 지금, 없으면 위치가 들어올 때)
     const sv = quick ? await syncConsultVisitSafe(id, req.log) : null;
-    return { id, consult_date: date, company_name: company, info_pending: pending,
-      visit_id: sv && sv.visit_id ? Number(sv.visit_id) : null };
+    // 🧭 고객개발 체크인(#prospect=…)으로 시작한 빠른 녹음 → 후보 연결(단계 컨택·거리·검토 대기)
+    const pl = b.prospect_id ? await attachConsultToProspectSafe({ consultId: id, prospectId: b.prospect_id, perm, lat, lng }, req.log) : null;
+    if (quick && pl && pl.prospect_id) await syncConsultVisitSafe(id, req.log);   // 상호가 채워졌으니 방문 기록도 다시 맞춤
+    const companyOut = pl && pl.prospect_id
+      ? (((await query(`SELECT company_name FROM sales_consults WHERE id=$1`, [id])).rows[0] || {}).company_name || company) : company;
+    return { id, consult_date: date, company_name: companyOut, info_pending: pending && !(pl && pl.prospect_id),
+      visit_id: sv && sv.visit_id ? Number(sv.visit_id) : null,
+      prospect_id: pl && pl.prospect_id ? pl.prospect_id : null, checkin_dist_m: pl ? pl.checkin_dist_m : null,
+      prospect_error: pl && pl.error ? pl.error : null };
   });
 
   // ── 상담 수정(본인 또는 디렉터) ──

@@ -57,6 +57,7 @@ import whMapRoutes from './routes/whMapRoutes.js';   // 0288 · 창고 도면(�
 import visitRoutes from './routes/visitRoutes.js';
 import visitRecRoutes from './routes/visitRecRoutes.js';
 import consultRoutes from './routes/consultRoutes.js';
+import prospectRoutes from './routes/prospectRoutes.js';   // 0334 · 영업 › 고객개발 (DENUE 후보·지역·루트·Alta 검토·현황판)
 import exhibitionRoutes from './routes/exhibitionRoutes.js';
 import offerSheetRoutes from './routes/offerSheetRoutes.js';
 import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
@@ -176,6 +177,7 @@ export function buildApp() {
   app.register(visitRoutes);
   app.register(visitRecRoutes);
   app.register(consultRoutes);
+  app.register(prospectRoutes);
   app.register(exhibitionRoutes);
   app.register(offerSheetRoutes);
   app.register(dailySummaryRoutes);
