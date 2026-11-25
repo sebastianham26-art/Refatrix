@@ -462,3 +462,53 @@ export function deriveStage(ev, current) {
 // SQL 에서 단계 순위(KPI: 「그 단계 이상에 처음 도달」)
 export const STAGE_RANK_SQL = (col) => `(CASE ${col} ${STAGE_KEYS.filter((k) => k !== 'descartado').map((k, i) => `WHEN '${k}' THEN ${i}`).join(' ')} ELSE -1 END)`;
 export const SCORE_BANDS = [[0, 0], [1, 19], [20, 39], [40, 59], [60, 79], [80, 99], [100, 100]];
+
+// ── 구역 → 방문 루트 제안 ───────────────────────────────────────────────
+//   점이 다각형(지도에서 드래그한 구역) 안에 있나 — [lat,lng] 배열, ray casting
+export function inPolygon(lat, lng, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, xi] = poly[i], [yj, xj] = poly[j];
+    if (((yi > lat) !== (yj > lat)) && (lng < ((xj - xi) * (lat - yi)) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+  }
+  return inside;
+}
+// 후보 고르기 순서: 우선순위 A→C, 잠재성 A→C→미입력, 오래 안 간 곳 먼저, 점수 낮은 곳(진행 필요) 먼저는 아님 → 점수 높은 곳(마무리) 먼저
+export function rankForRoute(a, b) {
+  const pr = (x) => ({ A: 0, B: 1, C: 2 }[x] ?? 3);
+  return pr(a.priority) - pr(b.priority) || pr(a.pot_tier) - pr(b.pot_tier)
+    || (Number(b.score) || 0) - (Number(a.score) || 0)
+    || (a.last_activity_at ? Date.parse(a.last_activity_at) : 0) - (b.last_activity_at ? Date.parse(b.last_activity_at) : 0);
+}
+function pathLen(pts, start) {
+  let d = 0; let cur = start;
+  for (const p of pts) { if (cur) d += distanceM(cur.lat, cur.lng, p.lat, p.lng); cur = p; }
+  return d;
+}
+// 최근접 이웃으로 만든 뒤 2-opt 로 꼬인 구간을 펴서 이동 거리를 줄인다(출발점은 고정, 끝은 자유)
+export function optimizeRoute(stops, start = null) {
+  const pts = orderStops(stops.filter((s) => s.lat != null && s.lng != null), start);
+  let best = pts.slice(); let bestLen = pathLen(best, start); let improved = true; let guard = 0;
+  while (improved && guard++ < 50) {
+    improved = false;
+    for (let i = 0; i < best.length - 1; i++) {
+      for (let k = i + 1; k < best.length; k++) {
+        const cand = best.slice(0, i).concat(best.slice(i, k + 1).reverse(), best.slice(k + 1));
+        const len = pathLen(cand, start);
+        if (len + 1 < bestLen) { best = cand; bestLen = len; improved = true; }
+      }
+    }
+  }
+  return { stops: best, distance_m: Math.round(bestLen) };
+}
+// 예상 소요(시내 평균 22 km/h + 방문당 25분) — 화면 안내용
+export const ROUTE_SPEED_KMH = 22, VISIT_MIN = 25;
+export function routeMinutes(distanceM, stops) { return Math.round((distanceM / 1000) / ROUTE_SPEED_KMH * 60 + stops * VISIT_MIN); }
+// 주 단위 기간(월요일 시작)
+export function weekBounds(ymd) {
+  const d = new Date(String(ymd).slice(0, 10) + 'T00:00:00Z');
+  if (Number.isNaN(d.getTime())) return null;
+  const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow);
+  const from = d.toISOString().slice(0, 10); d.setUTCDate(d.getUTCDate() + 7);
+  return { from, to: d.toISOString().slice(0, 10), days: 7 };
+}

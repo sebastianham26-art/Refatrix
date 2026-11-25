@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  inPolygon, optimizeRoute, rankForRoute, weekBounds, routeMinutes,
   potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, STAGE_RANK_SQL, SCORE_RULES,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
@@ -231,4 +232,19 @@ test('근거 기반 단계 + 제안', () => {
   assert.equal(deriveStage({ owner: true, visits: 1, ai_stage: 'descartado' }, 'contactado').suggest.stage, 'descartado');
   assert.equal(deriveStage({ owner: true, visits: 1, ai_stage: 'cotizado' }, 'perfilado').suggest, null);   // 견적은 ERP 견적서로만
   assert.ok(STAGE_RANK_SQL('x').includes("WHEN 'perfilado' THEN 3"));
+});
+
+test('구역 루트: 다각형 판정 · 2-opt 최적화 · 우선 고르기 · 주 단위 기간', () => {
+  const sq = [[25.60, -100.40], [25.60, -100.20], [25.80, -100.20], [25.80, -100.40]];
+  assert.equal(inPolygon(25.70, -100.30, sq), true);
+  assert.equal(inPolygon(25.90, -100.30, sq), false);
+  // 지그재그로 주면 최근접 순서보다 짧거나 같아야 한다
+  const pts = [{ id: 1, lat: 25.70, lng: -100.30 }, { id: 2, lat: 25.70, lng: -100.20 }, { id: 3, lat: 25.70, lng: -100.25 }, { id: 4, lat: 25.70, lng: -100.35 }];
+  const o = optimizeRoute(pts, { lat: 25.70, lng: -100.40 });
+  assert.deepEqual(o.stops.map((x) => x.id), [4, 1, 3, 2]);
+  assert.ok(o.distance_m > 19000 && o.distance_m < 21000, String(o.distance_m));
+  const r = [{ id: 1, priority: 'C' }, { id: 2, priority: 'A', pot_tier: 'B' }, { id: 3, priority: 'A', pot_tier: 'A' }].sort(rankForRoute);
+  assert.deepEqual(r.map((x) => x.id), [3, 2, 1]);
+  assert.deepEqual(weekBounds('2026-11-25'), { from: '2026-11-23', to: '2026-11-30', days: 7 });
+  assert.equal(routeMinutes(22000, 4), 160);
 });

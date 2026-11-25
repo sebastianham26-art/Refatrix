@@ -26,7 +26,6 @@ a{color:var(--ink)}
 .wrap{max-width:1320px;margin:0 auto;padding:20px 24px 80px}
 .hide{display:none!important}
 /* 머리 */
-.pg-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;justify-content:space-between;padding:8px 0 20px;border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:14px}
 .brand .logo{height:44px;min-width:44px;display:flex;align-items:center}
 .brand .logo img{max-height:44px;max-width:150px}
@@ -36,6 +35,15 @@ h1{margin:2px 0 0;font-size:32px;line-height:1.15;font-weight:800;letter-spacing
 h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.4px}
 h3{margin:0;font-size:16px;font-weight:700}
 .head-ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+/* 탭 + 필터 한 줄 */
+.toolbar{display:flex;align-items:center;gap:12px;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0 10px}
+.toolbar .tabs{flex:1;min-width:0;padding:8px 0 0}
+.filters{display:flex;gap:8px;align-items:center;flex:none}
+.mini{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink2);white-space:nowrap}
+.mini select,.mini input{min-height:36px;padding:4px 8px;font-size:13px;width:auto}
+.cards.row1{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
+.cards.row1 .card{padding:14px}
+.cards.row1 .kpi .val{font-size:26px} .cards.row1 .kpi .lbl{font-size:12px}
 /* 탭 = 알약 칩 */
 .tabs{display:flex;gap:8px;overflow-x:auto;padding:16px 0 4px;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
@@ -154,8 +162,8 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 @media (max-width:760px){
   .wrap{padding:12px 14px 90px} h1{font-size:24px}
   .cards{grid-template-columns:repeat(2,minmax(0,1fr))} .card{padding:14px}
-  .pg-head{padding-bottom:12px} .head-ctl{width:100%;flex-wrap:nowrap} .head-ctl .fld{flex:1;min-width:0!important}
-  .brand .logo{height:32px;min-width:32px} .brand .logo img{max-height:32px} .kpi .val{font-size:26px} #map{height:420px}
+  .toolbar{flex-direction:column;align-items:stretch;gap:6px} .filters{justify-content:flex-start}
+  .cards.row1{grid-template-columns:repeat(2,minmax(0,1fr))} .kpi .val{font-size:26px} #map{height:420px}
   .drawer .db{padding:16px 16px 120px} .drawer .dh{padding:16px}
   .tb.resp thead{display:none} .tb.resp tr{display:block;border-bottom:1px solid var(--line);padding:8px 0}
   .tb.resp td{display:flex;justify-content:space-between;border:0;padding:4px 2px}
@@ -166,22 +174,11 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 </head>
 <body>
 <div class="wrap">
-  <header class="pg-head">
-    <div class="brand">
-      <div class="logo" id="logo"><span class="txt">CTR</span></div>
-      <div>
-        <div class="eyebrow">영업 › 고객개발 · Desarrollo de clientes</div>
-        <h1 id="pg-title">고객개발</h1>
-      </div>
-    </div>
-    <div class="head-ctl">
-      <label class="fld" style="min-width:150px"><span>주(州)</span><select id="f-ent"></select></label>
-      <label class="fld" style="min-width:150px" id="f-period-wrap"><span>기간</span><input type="month" id="f-period"></label>
-    </div>
-  </header>
+
 
   <div id="mig" class="banner bad hide" style="margin-top:16px">DB 마이그레이션 0334(고객개발)가 아직 적용되지 않았습니다. <b>npm run migrate</b> 후 다시 열어 주세요.</div>
 
+  <div class="toolbar">
   <nav class="tabs" role="tablist" id="tabs">
     <button class="tab" role="tab" data-tab="board">진척 보드</button>
     <button class="tab work" role="tab" data-tab="route">오늘 루트</button>
@@ -194,18 +191,31 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
     <button class="tab dir" role="tab" data-tab="targets">목표</button>
     <button class="tab dir" role="tab" data-tab="import">DENUE 가져오기</button>
   </nav>
+  <div class="filters">
+    <label class="mini"><span>주</span><select id="f-ent"></select></label>
+    <label class="mini hide" id="f-range-wrap"><span>단위</span><select id="f-range"><option value="month">월</option><option value="week">이번 주</option></select></label>
+    <label class="mini" id="f-period-wrap"><span>기간</span><input type="month" id="f-period"></label>
+  </div>
+  </div>
 
   <!-- 진척 보드 (모든 사용자) -->
   <section id="p-board" class="tabp hide">
     <p class="note" style="margin-top:12px">개발 점수(0~100)는 방문 기록·저장한 고객정보·견적·고객 연결·첫 매출로 자동 계산됩니다. 첫 매출이 나오면 100점 = 신규개발 완료. 이 보드는 모든 직원이 봅니다(금액 제외).</p>
-    <div class="grid cards" id="b-sum"></div>
+    <div class="grid cards row1" id="b-sum"></div>
     <div class="split" style="margin-top:16px">
       <div class="card chart"><h2>누적 방문</h2><p class="note" id="b-visits-note"></p><div id="b-visits"></div></div>
       <div class="card chart"><h2>점수 구간별 업체</h2><p class="note">담당이 있는 업체 · 막대 = 업체 수</p><div id="b-bands"></div></div>
     </div>
+    <div class="card chart" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px">
+        <div><h2>업체별 진척</h2><p class="note" id="b-pp-note">검정 = 기간 시작 전에 확보한 점수 · 빨강 = 이번 기간에 올린 점수 · 점수 높은 순</p></div>
+        <label class="mini"><span>영업사원</span><select id="b-rep"></select></label>
+      </div>
+      <div id="b-pp" style="overflow-x:auto;margin-top:8px"></div>
+    </div>
     <div class="card chart" style="margin-top:16px"><h2>영업사원별 누적 획득 점수</h2><p class="note">업체 점수가 오를 때마다 그 업체 담당에게 더해집니다(내려가면 빠짐).</p><div id="b-reps-chart"></div></div>
     <div class="card" style="margin-top:16px"><h2>영업사원 비교</h2><div class="scroll" style="margin-top:12px"><table class="tb resp" id="b-reps"></table></div></div>
-    <div class="card" style="margin-top:16px"><h2>이번 달 점수가 오른 업체</h2><div class="scroll" style="margin-top:12px"><table class="tb resp" id="b-movers"></table></div></div>
+    <div class="card" style="margin-top:16px"><h2 id="b-movers-title">이번 달 점수가 오른 업체</h2><div class="scroll" style="margin-top:12px"><table class="tb resp" id="b-movers"></table></div></div>
     <div class="card" style="margin-top:16px"><h2>단계와 점수 기준</h2><div id="b-rules" style="margin-top:12px"></div></div>
   </section>
 
@@ -236,7 +246,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 
   <!-- 현황판 -->
   <section id="p-dash" class="tabp hide">
-    <div class="grid cards" id="d-kpi" style="margin-top:12px"></div>
+    <div class="grid cards row1" id="d-kpi" style="margin-top:12px"></div>
     <div class="split" style="margin-top:16px">
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2>단계별 현황</h2><span class="note" id="d-total"></span></div>
@@ -264,9 +274,24 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <span id="m-sel" class="note"></span>
       <button class="btn red sm hide" id="m-addroute">선택한 곳으로 루트 만들기</button>
     </div>
-    <div id="map"></div>
-    <div class="legend" id="m-legend"></div>
-    <p class="note">핀을 누르면 상세가 열립니다. 루트를 만들려면 핀 상세에서 「루트에 추가」를 누르세요. 보이는 영역만 불러옵니다(최대 6,000곳).</p>
+    <div class="split">
+      <div><div id="map"></div><div class="legend" id="m-legend"></div></div>
+      <div class="card" id="ar-panel">
+        <h2>구역으로 루트 만들기</h2>
+        <p class="note">담당자·날짜를 고르고 「구역 그리기」를 누른 뒤 지도에서 마우스(손가락)로 방문할 구역을 둘러 그리세요. ERP가 그 구역에서 방문할 곳을 골라 이동 거리가 가장 짧은 순서로 제안합니다.</p>
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+          <label class="fld"><span>담당자</span><select id="ar-user"></select></label>
+          <label class="fld"><span>방문 날짜</span><input type="date" id="ar-date"></label>
+          <label class="fld"><span>최대 방문 수</span><input type="number" id="ar-max" min="1" max="30" value="12"></label>
+          <label class="fld"><span>출발지</span><select id="ar-start"><option value="">구역 안 첫 업체</option><option value="me">내 현재 위치</option></select></label>
+        </div>
+        <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-unas" checked> 미배정 후보 포함</label>
+        <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-skip" checked> 최근 7일 방문한 곳 제외</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn red" id="ar-draw">구역 그리기</button><button class="btn ghost hide" id="ar-clear">지우기</button></div>
+        <div id="ar-out" style="margin-top:14px"></div>
+      </div>
+    </div>
+    <p class="note">핀을 누르면 상세가 열립니다. 보이는 영역만 불러옵니다(최대 6,000곳).</p>
   </section>
 
   <!-- 후보 목록 -->
@@ -407,7 +432,7 @@ function lineChart(series,labels,opt){
   opt=opt||{}; const W=760,H=opt.h||240,L=48,R=16,T=14,B=28; const n=labels.length; if(!n) return '<div class="empty">데이터 없음</div>';
   const max=Math.max(1,...series.flatMap(s=>s.values)); const nice=(()=>{ const p=Math.pow(10,Math.floor(Math.log10(max))); const m=max/p; return (m<=1?1:m<=2?2:m<=5?5:10)*p; })();
   const X=i=>L+(n===1?0:i*(W-L-R)/(n-1)), Y=v=>T+(H-T-B)*(1-v/nice);
-  const nt=nice<4?nice:4; let g=''; for(let k=0;k<=nt;k++){ const v=nice*k/nt, y=Y(v); g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y+'" y2="'+y+'" stroke="#E5E5E5"/><text x="'+(L-8)+'" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="#767676">'+fmt(Math.round(v))+'</text>'; }
+  const nt=nice<4?nice:(Number.isInteger(nice/4)?4:Number.isInteger(nice/5)?5:2); let g=''; for(let k=0;k<=nt;k++){ const v=nice*k/nt, y=Y(v); g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y+'" y2="'+y+'" stroke="#E5E5E5"/><text x="'+(L-8)+'" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="#767676">'+fmt(Math.round(v))+'</text>'; }
   const step=Math.max(1,Math.ceil(n/8)); labels.forEach((l,i)=>{ if(i%step===0||i===n-1) g+='<text x="'+X(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="11" fill="#767676">'+esc(l)+'</text>'; });
   const today=opt.cut!=null?opt.cut:n-1;
   series.forEach(s=>{ const pts=s.values.slice(0,today+1).map((v,i)=>X(i)+','+Y(v)).join(' ');
@@ -429,7 +454,6 @@ function barChart(items,opt){
 function opts(sel,list,first){ sel.innerHTML=(first!=null?'<option value="">'+esc(first)+'</option>':'')+list.map(([v,t])=>'<option value="'+esc(v)+'">'+esc(t)+'</option>').join(''); }
 
 async function init(){
-  try{ const co=await api('/api/company'); if(co&&co.logo_data) $('logo').innerHTML='<img src="'+co.logo_data+'" alt="CTR">'; }catch(e){}
   try{ META=await api('/api/prospects/meta'); }catch(e){ if(e.status!==503) toast('불러오기 실패: '+e.message); return; }
   isDir=META.is_director;
   if(!META.can_work) document.querySelectorAll('.tab.work').forEach(el=>el.classList.add('hide'));
@@ -458,13 +482,15 @@ let cur='';
 function show(tab){
   if(!document.querySelector('[data-tab="'+tab+'"]')||document.querySelector('[data-tab="'+tab+'"]').classList.contains('hide')) tab=META&&META.can_work?'route':'board';
   cur=tab;
-  $('f-period-wrap').classList.toggle('hide',!(tab==='dash'||tab==='targets'||tab==='board'));
+  $('f-period-wrap').classList.toggle('hide',!(tab==='dash'||tab==='targets'||(tab==='board'&&$('f-range').value==='month')));
+  $('f-range-wrap').classList.toggle('hide',tab!=='board');
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab?'true':'false'));
   document.querySelectorAll('.tabp').forEach(p=>p.classList.toggle('hide',p.id!=='p-'+tab));
   ({board:loadBoard,route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:()=>{}})[tab]();
 }
 $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(b) show(b.dataset.tab); });
 $('f-ent').addEventListener('change',()=>show(cur));
+$('f-range').addEventListener('change',()=>show('board'));
 $('f-period').addEventListener('change',()=>{ if(cur==='dash'||cur==='targets'||cur==='board') show(cur); });
 async function refreshCounts(){
   if(!META.can_work) return;
@@ -474,13 +500,19 @@ async function refreshCounts(){
 
 // ── 진척 보드 ──
 async function loadBoard(){
-  let d; try{ d=await api('/api/prospects/progress?period='+period()+(ent()?'&cve_ent='+ent():'')); }catch(e){ return; }
+  const wk=$('f-range').value==='week';
+  let d; try{ d=await api('/api/prospects/progress?'+(wk?'range=week':'period='+period())+(ent()?'&cve_ent='+ent():'')); }catch(e){ return; }
+  BOARD=d;
+  const reps0=[...new Map(d.per_prospect.filter(x=>x.owner_user_id).map(x=>[x.owner_user_id,x.owner_name])).entries()];
+  const keep=$('b-rep').value; $('b-rep').innerHTML='<option value="">전체</option>'+reps0.map(([id,n])=>'<option value="'+id+'">'+esc(n)+'</option>').join(''); $('b-rep').value=keep;
+  renderPerProspect();
   const S=d.summary, today=META.today; const cut=d.days.indexOf(today)>=0?d.days.indexOf(today):(today<d.days[0]?0:d.days.length-1);
   const totalVisits=d.visits.total[cut]||0, totalPts=d.points.total[cut]||0;
+  const PL=d.range==='week'?'이번 주':'이번 달'; $('b-movers-title').textContent=PL+' 점수가 오른 업체';
   $('b-sum').innerHTML=[['개발 중 업체',fmt(S.worked),'점수 0 초과 · 전체 '+fmt(S.total)],['평균 개발 점수',S.avg_worked+'점','개발 중 업체 평균'],
-    ['이번 달 방문',fmt(totalVisits),'체크인 횟수'],['이번 달 획득 점수',fmt(totalPts),'점수 상승 합'],['50점 이상',fmt(S.ge50),'정보 확보·견적 단계'],['신규개발 완료(100점)',fmt(S.developed),'첫 매출']]
+    [PL+' 방문',fmt(totalVisits),'체크인 횟수'],[PL+' 획득 점수',fmt(totalPts),'점수 상승 합'],['50점 이상',fmt(S.ge50),'정보 확보·견적 단계'],['신규개발 완료(100점)',fmt(S.developed),'첫 매출']]
     .map(([l,v,n])=>'<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div><div class="note">'+n+'</div></div>').join('');
-  const lbl=d.days.map(x=>String(Number(x.slice(8))));
+  const lbl=d.days.map(x=>d.range==='week'?['월','화','수','목','금','토','일'][(new Date(x+'T00:00:00Z').getUTCDay()+6)%7]:String(Number(x.slice(8))));
   const vt=d.reps.reduce((a,r)=>a+(r.target.visitas||0),0);
   $('b-visits-note').textContent='일별 체크인을 쌓은 값'+(vt?' · 점선 = 이번 달 방문 목표 합':'');
   $('b-visits').innerHTML=lineChart([{name:'전체 방문',color:'#E2231A',values:d.visits.total}],lbl,{cut,target:vt||null,label:'누적 방문'});
@@ -496,11 +528,35 @@ async function loadBoard(){
       '<td class="num" data-l="평균 점수">'+fmt(r.avg_score||0)+'</td><td class="num" data-l="정보 확보">'+fmt(r.perfilados)+tgt(r,'perfilados')+'</td><td class="num" data-l="견적">'+fmt(r.cotizaciones)+tgt(r,'cotizaciones')+'</td>'+
       '<td class="num" data-l="고객 등록">'+fmt(r.registros)+'</td><td class="num" data-l="신규개발"><b>'+fmt(r.nuevos)+'</b>'+tgt(r,'nuevos_clientes')+'</td><td class="num" data-l="담당 업체">'+fmt(r.assigned||0)+'</td><td class="num" data-l="50점+">'+fmt(r.ge50||0)+'</td></tr>').join('')
       :'<tr><td colspan="12" class="empty">아직 실적이 없습니다.</td></tr>')+'</tbody>';
-  $('b-movers').innerHTML='<thead><tr><th>업체</th><th>담당</th><th>단계</th><th class="num">이번 달 상승</th><th>점수</th></tr></thead><tbody>'+
+  $('b-movers').innerHTML='<thead><tr><th>업체</th><th>담당</th><th>단계</th><th class="num">기간 상승</th><th>점수</th></tr></thead><tbody>'+
     (d.movers.length?d.movers.map(m=>'<tr'+(m.mine||isDir?' class="click" data-open="'+m.id+'"':'')+'><td data-l="업체"><b>'+esc(m.nom_estab)+'</b><div class="note">'+esc(m.municipio||'')+'</div></td><td data-l="담당">'+esc(m.owner_name||'—')+'</td><td data-l="단계">'+stageDot(m.stage)+'</td>'+
       '<td class="num" data-l="상승"><b class="st-ok">+'+fmt(m.gain)+'</b></td><td data-l="점수" style="min-width:160px"><div style="display:flex;align-items:center;gap:8px"><div class="meter" style="flex:1"><i style="width:'+m.score+'%;background:'+scoreColor(m.score)+'"></i></div><b>'+m.score+'</b></div></td></tr>').join('')
       :'<tr><td colspan="5" class="empty">이번 달 점수가 바뀐 업체가 없습니다.</td></tr>')+'</tbody>';
   renderRules(d.score_rules);
+}
+let BOARD=null;
+$('b-rep').addEventListener('change',renderPerProspect);
+// 업체별 진척 막대: 검정=이전 확보 점수, 빨강=이번 기간 상승 (디렉터 스케치 2026-11-25)
+function renderPerProspect(){
+  const d=BOARD; if(!d) return;
+  const u=$('b-rep').value; let rows=d.per_prospect.filter(x=>!u||String(x.owner_user_id)===u).sort((a,b)=>b.score-a.score||b.gain-a.gain);
+  if(!rows.length){ $('b-pp').innerHTML='<div class="empty">아직 점수가 있는 업체가 없습니다.</div>'; return; }
+  const n=rows.length, bw=n>60?14:n>30?20:28, gap=Math.max(4,Math.round(bw*0.35)), L=40, T=16, H=300, B=n<=40?110:20;
+  const W=Math.max(760,L+n*(bw+gap)+10), Y=v=>T+(H-T-B)*(1-v/100);
+  let g='';
+  [0,25,50,75,100].forEach(v=>{ g+='<line x1="'+L+'" x2="'+W+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="#E5E5E5"/><text x="'+(L-6)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="11" fill="#767676">'+v+'</text>'; });
+  rows.forEach((r,i)=>{ const x=L+6+i*(bw+gap);
+    const tip=esc(r.name)+' · '+esc(r.owner_name||'')+' · 이전 '+r.before+' + 이번 '+r.gain+' = '+r.score+'점';
+    g+='<g'+(r.mine||isDir?' style="cursor:pointer" data-open="'+r.id+'"':'')+'><title>'+tip+'</title>'+
+      '<rect x="'+x+'" y="'+Y(r.before)+'" width="'+bw+'" height="'+(Y(0)-Y(r.before))+'" fill="url(#hatch-k)" stroke="#111" stroke-width="1"/>'+
+      (r.gain?'<rect x="'+x+'" y="'+Y(r.score)+'" width="'+bw+'" height="'+(Y(r.before)-Y(r.score))+'" fill="url(#hatch-r)" stroke="#E2231A" stroke-width="1.5"/>':'')+
+      (n<=40?'<text x="'+(x+bw/2)+'" y="'+(Y(r.score)-5)+'" text-anchor="middle" font-size="11" font-weight="700" fill="#111">'+r.score+'</text>'+
+        '<text transform="translate('+(x+bw/2+4)+','+(Y(0)+8)+') rotate(60)" font-size="11" fill="#484848">'+esc(String(r.name).slice(0,18))+'</text>':'')+'</g>'; });
+  const defs='<defs><pattern id="hatch-k" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#111" stroke-width="3"/></pattern>'+
+    '<pattern id="hatch-r" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#FDECEB"/><line x1="0" y1="0" x2="0" y2="6" stroke="#E2231A" stroke-width="3"/></pattern></defs>';
+  const tot=rows.reduce((a,r)=>a+r.gain,0);
+  $('b-pp').innerHTML='<svg viewBox="0 0 '+W+' '+H+'" style="'+(W>760?'width:'+W+'px;max-width:none':'width:100%')+';height:auto;display:block" role="img" aria-label="업체별 진척">'+defs+g+'</svg>'+
+    '<div class="lg" style="display:flex;gap:14px;font-size:12px;margin-top:6px"><span><span class="dot" style="background:#111"></span>이전 확보 점수</span><span><span class="dot" style="background:#E2231A"></span>'+(d.range==='week'?'이번 주':'이번 달')+' 상승 · 합계 +'+fmt(tot)+'점</span><span class="note">'+fmt(n)+'개 업체'+(n>40?' · 막대에 마우스를 올리면 업체명':'')+'</span></div>';
 }
 function renderRules(R){
   const HOW={auto:'기록으로 자동',suggest:'AI 제안 → 확인',manual:'담당이 직접'};
@@ -522,8 +578,8 @@ async function loadDash(){
       const p=k.pct; const w=p==null?0:Math.min(100,p);
       const st=k.status||''; const val=k.metric==='venta_nuevos'?money(k.actual):fmt(k.actual);
       const tg=k.target?(k.metric==='venta_nuevos'?money(k.target):fmt(k.target)):null;
-      return '<div class="card kpi"><div class="lbl">'+esc(METRIC_LBL[k.metric])+'</div><div class="val">'+val+(tg?' <small>/ '+tg+'</small>':'')+'</div>'+(tg?'':'<div class="note">목표 없음</div>')+
-        '<div class="bar"><i class="'+st+'" style="width:'+w+'%"></i></div><div class="note '+(st?'st-'+st:'')+'" style="margin-top:6px;font-weight:700">'+(p==null?'—':p+'%')+(st==='bad'?' · 속도 부족':st==='warn'?' · 조금 느림':st==='ok'?' · 순조':'')+'</div></div>';
+      return '<div class="card kpi"><div class="lbl">'+esc(METRIC_LBL[k.metric])+'</div><div class="val">'+val+'</div><div class="note">'+(tg?'목표 '+tg:'목표 없음')+'</div>'+
+        (tg?'<div class="bar"><i class="'+st+'" style="width:'+w+'%"></i></div>':'')+'<div class="note '+(st?'st-'+st:'')+'" style="margin-top:6px;font-weight:700">'+(p==null?'':p+'%')+(st==='bad'?' · 속도 부족':st==='warn'?' · 조금 느림':st==='ok'?' · 순조':'')+'</div></div>';
     }).join('');
   const order=['asignado','contactado','perfilado','interesado','cotizado','registro','cliente_activo'];
   const base=d.funnel.asignado+order.slice(1).reduce((s,k)=>s+d.funnel[k],0)||1;
@@ -560,7 +616,55 @@ function ensureMap(){
   ['m-owner','m-stage','m-seg','m-prio'].forEach(id=>$(id).addEventListener('change',loadMapPins));
   $('m-tracks').addEventListener('change',loadTracks);
 }
-function loadMap(){ if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); }
+function loadMap(){
+  if(!$('ar-user').options.length){ opts($('ar-user'),META.staff.map(u=>[u.id,u.name]),null); $('ar-user').value=META.me; $('ar-user').disabled=!isDir; $('ar-date').value=META.today; }
+  if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); }
+// ── 구역(올가미) 그리기 → 루트 제안 ──
+let LASSO=null, lassoLine=null, arLayer=null, AR=null;
+$('ar-draw').onclick=()=>{
+  if(!MAP) return; if(arLayer) arLayer.clearLayers(); else arLayer=L.layerGroup().addTo(MAP);
+  MAP.dragging.disable(); $('map').style.cursor='crosshair'; $('ar-draw').textContent='지도에서 구역을 그리세요…'; $('ar-draw').disabled=true;
+  const el=$('map');
+  const pt=e=>{ const r=el.getBoundingClientRect(); return MAP.containerPointToLatLng([e.clientX-r.left,e.clientY-r.top]); };
+  const down=e=>{ e.preventDefault(); e.stopPropagation(); LASSO=[pt(e)]; lassoLine=L.polyline(LASSO,{color:'#E2231A',weight:2,dashArray:'4 4'}).addTo(arLayer); };
+  const move=e=>{ if(!LASSO) return; e.preventDefault(); LASSO.push(pt(e)); lassoLine.setLatLngs(LASSO); };
+  const up=async e=>{ if(!LASSO) return; e.preventDefault();
+    ['pointerdown','pointermove','pointerup'].forEach((n,i)=>el.removeEventListener(n,[down,move,up][i],true));
+    MAP.dragging.enable(); el.style.cursor=''; el.style.touchAction=''; $('ar-draw').textContent='구역 다시 그리기'; $('ar-draw').disabled=false;
+    const poly=LASSO; LASSO=null; arLayer.clearLayers();
+    if(poly.length<5){ toast('구역을 조금 더 크게 둘러 주세요'); return; }
+    L.polygon(poly,{color:'#E2231A',weight:2,fillColor:'#E2231A',fillOpacity:.06}).addTo(arLayer);
+    AR={polygon:poly.map(p=>[+p.lat.toFixed(6),+p.lng.toFixed(6)])}; suggestRoute(); };
+  el.style.touchAction='none';   // 휴대폰: 손가락으로 그릴 때 화면이 움직이지 않게
+  ['pointerdown','pointermove','pointerup'].forEach((n,i)=>el.addEventListener(n,[down,move,up][i],true));
+};
+$('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); };
+async function suggestRoute(){
+  let start={};
+  if($('ar-start').value==='me'){ const g=await geo(); if(g) start={start_lat:g.lat,start_lng:g.lng}; }
+  AR.start=start;
+  let r; try{ r=await post('/api/prospect-routes/suggest',{polygon:AR.polygon,user_id:Number($('ar-user').value)||META.me,max_stops:Number($('ar-max').value)||12,
+    include_unassigned:$('ar-unas').checked,skip_visited_days:$('ar-skip').checked?7:0,...start}); }catch(e){ return toast('실패: '+e.message); }
+  AR.res=r; drawSuggestion();
+}
+function drawSuggestion(){
+  const r=AR.res; arLayer.eachLayer(l=>{ if(!(l instanceof L.Polygon)) arLayer.removeLayer(l); });
+  $('ar-clear').classList.remove('hide');
+  if(!r.stops.length){ $('ar-out').innerHTML='<div class="banner warn">구역 안에 방문할 후보가 없습니다(구역 안 후보 '+fmt(r.in_area)+'곳).</div>'; return; }
+  const pts=(r.start?[[r.start.lat,r.start.lng]]:[]).concat(r.stops.map(s=>[s.lat,s.lng]));
+  L.polyline(pts,{color:'#111',weight:3}).addTo(arLayer);
+  r.stops.forEach((s,i)=>L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',iconSize:[26,26],html:'<div style="width:26px;height:26px;border-radius:50%;background:#E2231A;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff">'+(i+1)+'</div>'})}).bindTooltip(esc(s.nom_estab)).addTo(arLayer));
+  const nm=$('ar-user').options[$('ar-user').selectedIndex].text;
+  $('ar-out').innerHTML='<div class="banner info"><b>'+esc(nm)+' · '+esc($('ar-date').value)+'</b><br>구역 안 후보 '+fmt(r.in_area)+'곳 중 <b>'+r.stops.length+'곳</b> · 이동 약 '+(r.distance_m/1000).toFixed(1)+'km · 예상 '+Math.floor(r.minutes/60)+'시간 '+(r.minutes%60)+'분(방문당 25분 포함)</div>'+
+    '<ol style="list-style:none;padding:0;margin:10px 0">'+r.stops.map((s,i)=>'<li class="stop" style="padding:8px 0"><div class="n" style="width:26px;height:26px;font-size:12px">'+(i+1)+'</div><div style="flex:1;min-width:0"><span class="tag '+s.priority+'">'+s.priority+'</span> <b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||'')+' · '+esc((STAGE[s.stage]||{}).ko||'')+' · '+s.score+'점'+(s.owner_user_id==null?' · 미배정':'')+'</div></div><button class="iconbtn" data-arx="'+s.id+'" aria-label="빼기" title="빼기">✕</button></li>').join('')+'</ol>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn red" id="ar-save">이 루트로 저장</button><button class="btn ghost" id="ar-again">다시 제안</button></div>';
+  $('ar-out').querySelectorAll('[data-arx]').forEach(b=>b.onclick=()=>{ const id=Number(b.dataset.arx); r.stops=r.stops.filter(s=>s.id!==id); drawSuggestion(); });
+  $('ar-again').onclick=suggestRoute;
+  $('ar-save').onclick=async()=>{
+    try{ await post('/api/prospect-routes',{date:$('ar-date').value,user_id:Number($('ar-user').value)||META.me,prospect_ids:r.stops.map(s=>s.id),optimize:true,...(AR.start||{})},'PUT');
+      toast('루트 저장 · '+r.stops.length+'곳'); if($('ar-date').value===META.today&&Number($('ar-user').value)===META.me){ ROUTE=null; } }
+    catch(e){ toast('실패: '+e.message); } };
+}
 async function loadMapPins(){
   const b=MAP.getBounds(); const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(v=>v.toFixed(5)).join(',');
   let r; try{ r=await api('/api/prospects/map?bbox='+bbox+(ent()?'&cve_ent='+ent():'')+($('m-owner').value?'&owner='+$('m-owner').value:'')); }catch(e){ return; }
@@ -907,13 +1011,19 @@ async function loadTerr(){
   loadStaff();
   try{ TERRS=(await api('/api/prospect-territories')).rows; MUNS=(await api('/api/prospects/municipios?cve_ent='+(ent()||'19'))).rows; }catch(e){ return; }
   $('t-table').innerHTML='<thead><tr><th>지역</th><th>담당</th><th class="num">후보</th><th class="num">진행</th><th></th></tr></thead><tbody>'+
-    (TERRS.length?TERRS.map(t=>'<tr><td><b>'+esc(t.name)+'</b><div class="note">'+esc((t.cps&&t.cps.length?'CP '+t.cps.join(', '):t.municipios.join(', ')).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td><button class="btn ghost sm" data-tedit="'+t.id+'">수정</button></td></tr>').join('')
+    (TERRS.length?TERRS.map(t=>'<tr><td><b>'+esc(t.name)+'</b><div class="note">'+esc((t.cps&&t.cps.length?'CP '+t.cps.join(', '):t.municipios.join(', ')).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td style="white-space:nowrap"><button class="btn ghost sm" data-tedit="'+t.id+'">수정</button> <button class="btn ghost sm" data-tdel="'+t.id+'" style="border-color:var(--ctr);color:var(--ctr)">삭제</button></td></tr>').join('')
       :'<tr><td colspan="5" class="empty">아직 지역이 없습니다. 오른쪽에서 만드세요.</td></tr>')+'</tbody>';
-  $('t-table').querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>editTerr(TERRS.find(t=>t.id===Number(b.dataset.tedit))));
+  $('t-table').querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>{ editTerr(TERRS.find(t=>t.id===Number(b.dataset.tedit))); $('t-name').focus(); $('t-form-title').scrollIntoView({behavior:'smooth',block:'start'}); });
+  $('t-table').querySelectorAll('[data-tdel]').forEach(b=>b.onclick=async()=>{
+    const t=TERRS.find(x=>x.id===Number(b.dataset.tdel)); if(!t) return;
+    if(!confirm('지역 「'+t.name+'」을(를) 삭제할까요?\n후보 '+fmt(t.total)+'곳은 그대로 남고 지역 표시만 풀립니다.')) return;
+    const release=confirm('이 지역에서 아직 방문 전(「배정」 단계)인 후보의 담당도 해제할까요?\n확인 = 담당 해제(미배정으로) · 취소 = 담당 유지');
+    try{ const r=await api('/api/prospect-territories/'+t.id+(release?'?release=1':''),{method:'DELETE'}); toast('삭제 · 지역 해제 '+fmt(r.detached)+'곳'+(r.released?' · 담당 해제 '+fmt(r.released)+'곳':'')); if(T_EDIT&&T_EDIT.id===t.id) T_EDIT=null; loadTerr(); }
+    catch(e){ toast('실패: '+e.message); } });
   editTerr(T_EDIT);
 }
 function editTerr(t){
-  T_EDIT=t||null; $('t-form-title').textContent=t?'지역 수정':'새 지역';
+  T_EDIT=t||null; $('t-form-title').textContent=t?'지역 수정 · '+t.name:'새 지역'; $('t-save').textContent=t?'수정 저장 · 미배정 자동 배정':'저장 · 미배정 자동 배정';
   $('t-name').value=t?t.name:''; $('t-owner').value=t&&t.owner_user_id?t.owner_user_id:''; $('t-cps').value=t?(t.cps||[]).join(', '):'';
   $('t-move-wrap').classList.toggle('hide',!t); $('t-move').checked=false;
   const sel=new Set(t?t.municipios:[]);

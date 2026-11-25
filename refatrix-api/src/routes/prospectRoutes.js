@@ -20,6 +20,7 @@ import {
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
+  inPolygon, rankForRoute, optimizeRoute, routeMinutes, weekBounds,
 } from '../prospectCore.js';
 import { pageAllowed } from '../permissions.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
@@ -107,7 +108,7 @@ async function assignMany(client, ids, ownerId, byUser) {
   for (const p of rows) {
     const from = p.owner_user_id == null ? null : Number(p.owner_user_id);
     if (from === ownerId) continue;
-    await q(`UPDATE prospects SET owner_user_id=$2, assigned_at=CASE WHEN $2 IS NULL THEN NULL ELSE now() END, updated_at=now() WHERE id=$1`, [p.id, ownerId]);
+    await q(`UPDATE prospects SET owner_user_id=$2::bigint, assigned_at=CASE WHEN $2::bigint IS NULL THEN NULL ELSE now() END, updated_at=now() WHERE id=$1`, [p.id, ownerId]);
     await q(`INSERT INTO prospect_assign_history (prospect_id, from_user, to_user, by_user) VALUES ($1,$2,$3,$4)`, [p.id, from, ownerId, byUser]);
     if (ownerId != null) {
       const nx = autoAdvance(p.stage, 'asignado');
@@ -430,6 +431,28 @@ export default async function prospectRoutes(app) {
     return r;
   });
 
+  // 지역 삭제(디렉터) — 후보는 남는다. release=true 면 이 지역에서 아직 「배정」 단계(방문 전)인 후보의 담당도 해제
+  app.delete('/api/prospect-territories/:id', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const tid = int(req.params.id); const release = String(req.query?.release || '') === '1';
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const t = (await q(`SELECT id, name FROM prospect_territories WHERE id=$1`, [tid])).rows[0];
+      if (!t) return null;
+      let released = 0;
+      if (release) {
+        const ids = (await q(`SELECT id FROM prospects WHERE territory_id=$1 AND stage='asignado' AND deleted_at IS NULL`, [tid])).rows.map((r) => Number(r.id));
+        if (ids.length) released = await assignMany(client, ids, null, me(req));
+      }
+      const r = await q(`UPDATE prospects SET territory_id=NULL WHERE territory_id=$1`, [tid]);
+      await q(`DELETE FROM prospect_territories WHERE id=$1`, [tid]);
+      return { name: t.name, detached: r.rowCount, released };
+    });
+    if (!out) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: me(req), action: 'delete', target: `prospect_territory:${tid}`, detail: out });
+    return { ok: true, ...out };
+  });
+
   // ── 목표 ───────────────────────────────────────────────────────────
   app.get('/api/prospect-targets', view, async (req) => {
     const period = PERIOD.test(String(req.query?.period)) ? req.query.period : mxToday().slice(0, 7);
@@ -482,7 +505,7 @@ export default async function prospectRoutes(app) {
       .map((p) => ({ id: Number(p.id), lat: p.lat, lng: p.lng }));
     if (b.optimize !== false) {
       const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
-      ps = orderStops(ps, start);
+      ps = optimizeRoute(ps, start).stops;
     } else {
       const pos = new Map(ids.map((id, i) => [id, i])); ps.sort((a, c) => pos.get(a.id) - pos.get(c.id));
     }
@@ -497,6 +520,32 @@ export default async function prospectRoutes(app) {
       for (const p of ps) await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq, consult_id) VALUES ($1,$2,$3,$4)`, [rid, p.id, seq++, visited.get(p.id) || null]);
     });
     return routeOut(uid, date);
+  });
+
+  // 지도에서 드래그한 구역 → 방문 루트 제안(저장 안 함). 화면에서 확인·빼기 후 PUT /api/prospect-routes(optimize:false)
+  app.post('/api/prospect-routes/suggest', edit, async (req, reply) => {
+    const b = req.body || {};
+    const poly = (Array.isArray(b.polygon) ? b.polygon : []).map((p) => [Number(p[0]), Number(p[1])]).filter((p) => p.every(Number.isFinite)).slice(0, 2000);
+    if (poly.length < 3) return reply.code(400).send({ error: 'polygon_required' });
+    const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
+    const max = Math.min(30, Math.max(1, int(b.max_stops) || 12));
+    const lats = poly.map((p) => p[0]), lngs = poly.map((p) => p[1]);
+    const params = [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs), uid];
+    const rows = (await query(
+      `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage, p.owner_user_id, p.last_activity_at, p.colonia, p.municipio
+         FROM prospects p
+        WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4
+          AND p.stage NOT IN ('cliente_activo','descartado')
+          AND (p.owner_user_id = $5 ${b.include_unassigned !== false ? 'OR p.owner_user_id IS NULL' : ''})
+          ${b.skip_visited_days ? `AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL AND c.created_at > now() - ($6::int * INTERVAL '1 day'))` : ''}`,
+      b.skip_visited_days ? [...params, int(b.skip_visited_days) || 7] : params)).rows
+      .filter((r) => inPolygon(r.lat, r.lng, poly))
+      .map((r) => ({ ...r, id: Number(r.id), owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id) }));
+    const picked = rows.slice().sort(rankForRoute).slice(0, max);
+    const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
+    const opt = optimizeRoute(picked, start);
+    return { in_area: rows.length, user_id: uid, stops: opt.stops, distance_m: opt.distance_m,
+      minutes: routeMinutes(opt.distance_m, opt.stops.length), start };
   });
 
   // ── 검토(Alta de clientes) ─────────────────────────────────────────
@@ -758,7 +807,8 @@ export default async function prospectRoutes(app) {
     await refreshCustomerStages().catch(() => {});   // ERP 견적·인보이스 반영
     const qs = req.query || {};
     const period = PERIOD.test(String(qs.period)) ? qs.period : mxToday().slice(0, 7);
-    const pb = periodBounds(period);
+    const isWeek = qs.range === 'week';
+    const pb = isWeek ? weekBounds(YMD.test(String(qs.week)) ? qs.week : mxToday()) : periodBounds(period);
     const ent = qs.cve_ent ? String(qs.cve_ent) : null;
     const ep = ent ? [ent] : []; const entCond = ent ? `AND p.cve_ent=$1` : '';
     const n = ep.length;
@@ -823,7 +873,17 @@ export default async function prospectRoutes(app) {
           AND EXISTS (SELECT 1 FROM prospect_score_log l WHERE l.prospect_id=p.id AND l.created_at >= $${n + 1}::date AND l.created_at < $${n + 2}::date)
         ORDER BY gain DESC, p.score DESC LIMIT 30`, pp)).rows
       .map((m) => ({ ...m, id: Number(m.id), owner_user_id: m.owner_user_id == null ? null : Number(m.owner_user_id), owner_name: users[Number(m.owner_user_id)] || null, mine: Number(m.owner_user_id) === me(req) }));
-    return { period, days, summary: sum, bands: SCORE_BANDS.map(([a, b2], i) => ({ from: a, to: b2, n: bands['b' + i] })),
+    // 업체별 「이전 점수(기간 시작 시점) + 이번 기간 상승」 — 진척 막대(검정=이전, 빨강=이번 기간)
+    const perP = (await query(
+      `SELECT p.id, p.nom_estab, p.owner_user_id, p.stage, p.score,
+              COALESCE((SELECT l.score FROM prospect_score_log l WHERE l.prospect_id=p.id AND l.created_at < $${n + 1}::date ORDER BY l.created_at DESC LIMIT 1), 0) AS before
+         FROM prospects p
+        WHERE p.deleted_at IS NULL ${entCond} AND (p.score > 0 OR EXISTS (SELECT 1 FROM prospect_score_log l WHERE l.prospect_id=p.id AND l.created_at >= $${n + 1}::date))
+        ORDER BY p.score DESC LIMIT 400`, [...ep, pb.from])).rows
+      .map((r) => ({ id: Number(r.id), name: r.nom_estab, owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+        owner_name: users[Number(r.owner_user_id)] || null, stage: r.stage, score: r.score,
+        before: Math.min(r.before, r.score), gain: Math.max(0, r.score - r.before), mine: Number(r.owner_user_id) === me(req) }));
+    return { period, range: isWeek ? 'week' : 'month', from: pb.from, to: pb.to, days, summary: sum, per_prospect: perP, bands: SCORE_BANDS.map(([a, b2], i) => ({ from: a, to: b2, n: bands['b' + i] })),
       stages: Object.fromEntries(stages.map((r) => [r.stage, r.n])), reps: repList,
       visits: series(visits, 'n'), points: series(pts, 'n'), movers, score_rules: SCORE_RULES };
   });
