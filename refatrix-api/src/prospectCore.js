@@ -136,13 +136,23 @@ export function normTxt(v) {
     .replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 // 후보가 속하는 지역(같은 주 + CP 우선 → municipio). 여러 개면 첫 번째(id 순).
+// 후보가 속할 지역: 지도 구역(다각형) > 우편번호 > municipio.
+// 다른 담당이 이미 맡은 후보는 그 담당의 지역(또는 담당 없는 지역)에만 들어간다 — 남의 지역 구역에 끌려가지 않음.
 export function territoryFor(p, territories) {
-  const list = (territories || []).filter((x) => x.active !== false && String(x.cve_ent) === String(p.cve_ent));
+  const own = p.owner_user_id == null ? null : Number(p.owner_user_id);
+  const ok = (x) => own == null || x.owner_user_id == null || Number(x.owner_user_id) === own;
+  const list = (territories || []).filter((x) => x.active !== false && String(x.cve_ent) === String(p.cve_ent) && ok(x));
+  const pref = (arr) => arr.find((x) => own != null && Number(x.owner_user_id) === own) || arr[0] || null;
+  const poly = (x) => Array.isArray(x.polygon) && x.polygon.length >= 3;
+  if (p.lat != null && p.lng != null) {
+    const byPoly = pref(list.filter((x) => poly(x) && inPolygon(Number(p.lat), Number(p.lng), x.polygon)));
+    if (byPoly) return byPoly;
+  }
   const cp = String(p.cp || '').trim();
-  const byCp = list.find((x) => cp && (x.cps || []).map(String).includes(cp));
+  const byCp = pref(list.filter((x) => !poly(x) && cp && (x.cps || []).map(String).includes(cp)));
   if (byCp) return byCp;
   const m = normTxt(p.municipio);
-  return list.find((x) => (!x.cps || !x.cps.length) && (x.municipios || []).some((y) => normTxt(y) === m)) || null;
+  return pref(list.filter((x) => !poly(x) && (!x.cps || !x.cps.length) && (x.municipios || []).some((y) => normTxt(y) === m)));
 }
 
 export function distanceM(aLat, aLng, bLat, bLng) {
@@ -366,7 +376,27 @@ export function missingRequired(allValues) {
 }
 
 // ── KPI ──────────────────────────────────────────────────────────────
+// 목표 지표 — 이름은 단계 이름과 같게. 중요한 지점만 목표를 둔다(관심 확인·고객 등록은 목표 없음).
 export const METRICS = ['visitas', 'contactados', 'perfilados', 'cotizaciones', 'nuevos_clientes', 'venta_nuevos', 'puntos'];
+export const METRIC_NAMES = {
+  visitas: '방문(체크인)', contactados: '첫 방문', perfilados: '정보 확보', cotizaciones: '견적 제출',
+  nuevos_clientes: '첫 매출', venta_nuevos: '첫 매출 금액(IVA 제외)', puntos: '개발 점수',
+};
+// 총 목표를 할당률(%)로 나누기. 건수 지표는 정수(큰 나머지 방식 — 할당률 합이 100%면 합계가 총 목표와 같다), 금액은 페소 단위.
+// shares: {user_id: pct}. 할당률 없는 담당자는 목표 없음.
+export function allocateTarget(total, shares, { integer = true } = {}) {
+  const T = Number(total) || 0; const out = {};
+  const list = Object.entries(shares || {}).map(([u, p]) => [u, Number(p) || 0]).filter(([, p]) => p > 0);
+  if (T <= 0 || !list.length) return out;
+  const raw = list.map(([u, p]) => [u, (T * p) / 100]);
+  if (!integer) { raw.forEach(([u, v]) => { out[u] = Math.round(v); }); return out; }
+  const base = raw.map(([u, v]) => [u, Math.floor(v + 1e-9), v - Math.floor(v + 1e-9)]);
+  const want = Math.round(raw.reduce((s, [, v]) => s + v, 0));
+  let left = want - base.reduce((s, [, f]) => s + f, 0);
+  base.slice().sort((a, b) => b[2] - a[2]).forEach((x) => { if (left > 0) { x[1] += 1; left--; } });
+  base.forEach(([u, f]) => { out[u] = f; });
+  return out;
+}
 export function pct(actual, target) { const a = Number(actual) || 0, t2 = Number(target) || 0; return t2 > 0 ? Math.round((a / t2) * 1000) / 10 : null; }
 // 월중에는 경과일 비례로 판정: ≥100% 초록, 70~99% 노랑, <70% 빨강
 export function paceStatus(actual, target, day, daysInMonth) {

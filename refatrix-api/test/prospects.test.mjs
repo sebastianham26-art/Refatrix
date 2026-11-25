@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inPolygon, optimizeRoute, rankForRoute, weekBounds, routeMinutes,
-  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES,
+  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES, allocateTarget,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
   parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds,
@@ -250,4 +250,23 @@ test('구역 루트: 다각형 판정 · 2-opt 최적화 · 우선 고르기 · 
   assert.deepEqual(r.map((x) => x.id), [3, 2, 1]);
   assert.deepEqual(weekBounds('2026-11-25'), { from: '2026-11-23', to: '2026-11-30', days: 7 });
   assert.equal(routeMinutes(22000, 4), 160);
+});
+
+test('목표 배분: 총 목표 × 할당률, 할당률 없으면 목표 없음', () => {
+  assert.deepEqual(allocateTarget(10, { 3: 33.3, 4: 33.3, 5: 33.4 }), { 3: 3, 4: 3, 5: 4 });
+  assert.deepEqual(allocateTarget(25, { 3: 50, 4: 30 }), { 3: 13, 4: 7 });          // 80% → 20건만 배분
+  assert.deepEqual(allocateTarget(150000, { 3: 50, 4: 30 }, { integer: false }), { 3: 75000, 4: 45000 });
+  assert.deepEqual(allocateTarget(10, { 3: 0 }), {});
+  assert.deepEqual(allocateTarget(0, { 3: 100 }), {});
+});
+
+test('지도 구역 지역: 다각형 우선, 다른 담당 후보는 끌려가지 않음', () => {
+  const poly = [[25.69, -100.27], [25.69, -100.24], [25.665, -100.24], [25.665, -100.27]];
+  const T = [{ id: 1, cve_ent: '19', owner_user_id: 3, polygon: poly, municipios: [], cps: [] },
+    { id: 2, cve_ent: '19', owner_user_id: 4, municipios: ['Guadalupe'], cps: [] }];
+  const base = { cve_ent: '19', municipio: 'Guadalupe', lat: 25.68, lng: -100.25 };
+  assert.equal(territoryFor({ ...base, owner_user_id: null }, T).id, 1);
+  assert.equal(territoryFor({ ...base, owner_user_id: 4 }, T).id, 2);              // rep 4 후보 → rep 4 지역
+  assert.equal(territoryFor({ ...base, lat: 25.75, owner_user_id: null }, T).id, 2);  // 구역 밖 → municipio
+  assert.equal(territoryFor({ ...base, owner_user_id: 5 }, T), null);
 });

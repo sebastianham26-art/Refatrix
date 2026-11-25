@@ -190,7 +190,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
     <button class="tab work" role="tab" data-tab="list">후보 목록</button>
     <button class="tab work" role="tab" data-tab="review">검토 대기<span class="cnt hide" id="rv-cnt">0</span></button>
     <button class="tab dir" role="tab" data-tab="links">연결 승인<span class="cnt hide" id="lk-cnt">0</span></button>
-    <button class="tab dir" role="tab" data-tab="terr">지역·담당</button>
+    <button class="tab work" role="tab" data-tab="terr">지역·담당</button>
     <button class="tab dir" role="tab" data-tab="targets">목표</button>
     <button class="tab dir" role="tab" data-tab="import">DENUE 가져오기</button>
   </nav>
@@ -340,17 +340,30 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <div class="card"><h2>지역</h2><div class="scroll" style="margin-top:12px"><table class="tb" id="t-table"></table></div></div>
       <div class="card">
         <h2 id="t-form-title">새 지역</h2>
-        <div class="grid" style="margin-top:14px">
+        <p class="note" id="t-help" style="margin-top:4px"></p>
+        <div class="grid" style="margin-top:12px">
           <label class="fld"><span>이름</span><input type="text" id="t-name" placeholder="예: Guadalupe 서부"></label>
-          <label class="fld"><span>담당자</span><select id="t-owner"></select></label>
-          <div class="fld"><span>municipio <small>(후보 수 · 미배정)</small></span><div id="t-muns" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:4px;padding:8px"></div></div>
-          <label class="fld"><span>우편번호(선택) <small>— 넣으면 이 CP만, municipio보다 우선</small></span><input type="text" id="t-cps" placeholder="67100, 67110"></label>
+          <label class="fld dir"><span>담당자</span><select id="t-owner"></select></label>
+          <div class="seg dir" id="t-mode" role="radiogroup" style="display:flex;gap:6px">
+            <label class="chip" style="padding:8px 12px"><input type="radio" name="t-mode" value="map" checked> 지도에서 구역 그리기</label>
+            <label class="chip" style="padding:8px 12px"><input type="radio" name="t-mode" value="mun"> municipio · 우편번호</label>
+          </div>
+          <div id="t-bymap">
+            <div id="t-map" style="height:340px;border-radius:4px;border:1px solid var(--line)"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center"><button class="btn ghost sm" id="t-draw">구역 그리기</button>
+              <span class="legend" style="margin:0"><span><span class="dot" style="background:#E2231A"></span>새로 맡음</span><span><span class="dot" style="background:#1E7A46"></span>이미 내 담당</span><span><span class="dot" style="background:#A8A8A8"></span>다른 담당(선택 안 됨)</span></span></div>
+            <div id="t-prev" style="margin-top:8px"></div>
+          </div>
+          <div id="t-bymun" class="hide">
+            <div class="fld"><span>municipio <small>(후보 수 · 미배정)</small></span><div id="t-muns" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:4px;padding:8px"></div></div>
+            <label class="fld" style="margin-top:12px"><span>우편번호(선택) <small>— 넣으면 이 CP만, municipio보다 우선</small></span><input type="text" id="t-cps" placeholder="67100, 67110"></label>
+          </div>
           <label class="chip hide" id="t-move-wrap" style="padding:10px 14px"><input type="checkbox" id="t-move"> 담당을 바꾸면 「배정」 단계 후보도 새 담당에게</label>
           <div style="display:flex;gap:8px"><button class="btn red" id="t-save">저장 · 미배정 자동 배정</button><button class="btn ghost" id="t-new">새로</button></div>
         </div>
       </div>
     </div>
-    <div class="card" style="margin-top:16px">
+    <div class="card dir" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><h2>담당자 명단</h2><button class="btn red sm" id="s-save">명단 저장</button></div>
       <p class="note">체크한 사람만 고객개발의 담당자 선택지(배정·지역·목표·루트·필터)에 나옵니다. 체크를 빼도 이미 맡은 후보는 그대로이고, 다른 화면 권한도 바뀌지 않습니다.</p>
       <div id="s-list" class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin-top:8px"></div>
@@ -364,8 +377,11 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
         <h2 id="g-title">목표</h2>
         <div style="display:flex;gap:8px"><button class="btn ghost sm" id="g-copy">지난달 복사</button><button class="btn red sm" id="g-save">저장</button></div>
       </div>
+      <div id="g-banner"></div>
       <div class="scroll" style="margin-top:12px"><table class="tb" id="g-table"></table></div>
-      <p class="note">신규고객 = 이번 달 첫 인보이스가 나간 연결 고객 · 신규매출 = 첫 인보이스 후 90일 이내 매출(IVA 제외)</p>
+      <p class="note">① 맨 위 줄에 지표별 <b>총 합의 목표</b>를 넣고 ② 담당자별 <b>할당률(%)</b>을 넣으면 담당자 목표가 자동으로 나뉩니다. 할당률이 없는 담당자는 목표가 없고, 총 목표를 비운 지표도 목표가 없습니다.<br>
+      목표는 중요한 단계에만 둡니다 — 방문(체크인)·첫 방문·정보 확보·견적 제출·첫 매출과 첫 매출 금액·개발 점수. 관심 확인·고객 등록은 목표 없이 진척 보드에서만 봅니다.<br>
+      첫 매출 = 이번 달 첫 인보이스가 나간 연결 고객 · 첫 매출 금액 = 첫 인보이스 후 90일 이내 매출(IVA 제외)</p>
     </div>
   </section>
 
@@ -424,7 +440,7 @@ const post=(p,b,m)=>api(p,{method:m||'POST',body:JSON.stringify(b||{})});
 let META=null, STAGE={}, USERS={}, isDir=false;
 const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9',perfilado:'#EE8A82',interesado:'#E8635C',registro:'#E2231A',cotizado:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B'};
 const SEG_LBL={mayorista:'부품 도매',refaccionaria:'Refaccionaria',refaccionaria_usada:'Refaccionaria(중고)',taller_suspension:'서스펜션·얼라인먼트',taller_general:'일반정비',otro:'기타'};
-const METRIC_LBL={visitas:'방문',contactados:'첫 방문 업체',perfilados:'정보 확보 업체',puntos:'획득 점수',cotizaciones:'견적',nuevos_clientes:'신규고객',venta_nuevos:'신규매출(IVA 제외)'};
+const METRIC_LBL={visitas:'방문(체크인)',contactados:'첫 방문',perfilados:'정보 확보',cotizaciones:'견적 제출',nuevos_clientes:'첫 매출',venta_nuevos:'첫 매출 금액(IVA 제외)',puntos:'개발 점수'};
 const stageDot=k=>'<span class="chip"><span class="dot" style="background:'+(STAGE_COLOR[k]||'#999')+'"></span>'+esc((STAGE[k]||{}).ko||k)+'</span>';
 const ent=()=>$('f-ent').value||'';
 const period=()=>$('f-period').value;
@@ -461,7 +477,7 @@ async function init(){
   try{ META=await api('/api/prospects/meta'); }catch(e){ if(e.status!==503) toast('불러오기 실패: '+e.message); return; }
   isDir=META.is_director;
   if(!META.can_work) document.querySelectorAll('.tab.work').forEach(el=>el.classList.add('hide'));
-  META.stages.forEach(s=>STAGE[s.key]=s); META.users.forEach(u=>USERS[u.id]=u.name);
+  META.stages.forEach(s=>STAGE[s.key]=s); META.users.forEach(u=>USERS[u.id]=u.name); Object.assign(METRIC_LBL,META.metric_names||{});
   document.querySelectorAll('.dir').forEach(el=>el.classList.toggle('hide',!isDir));
   opts($('f-ent'),META.states.map(s=>[s.cve_ent,(s.entidad||s.cve_ent)+' ('+fmt(s.n)+')']),META.states.length>1?'전체':null);
   if(META.states.find(s=>s.cve_ent==='19')) $('f-ent').value='19';
@@ -625,22 +641,26 @@ function loadMap(){
   if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); }
 // ── 구역(올가미) 그리기 → 루트 제안 ──
 let LASSO=null, lassoLine=null, arLayer=null, AR=null;
-$('ar-draw').onclick=()=>{
-  if(!MAP) return; if(arLayer) arLayer.clearLayers(); else arLayer=L.layerGroup().addTo(MAP);
-  MAP.dragging.disable(); $('map').style.cursor='crosshair'; $('ar-draw').textContent='지도에서 구역을 그리세요…'; $('ar-draw').disabled=true;
-  const el=$('map');
-  const pt=e=>{ const r=el.getBoundingClientRect(); return MAP.containerPointToLatLng([e.clientX-r.left,e.clientY-r.top]); };
-  const down=e=>{ e.preventDefault(); e.stopPropagation(); LASSO=[pt(e)]; lassoLine=L.polyline(LASSO,{color:'#E2231A',weight:2,dashArray:'4 4'}).addTo(arLayer); };
-  const move=e=>{ if(!LASSO) return; e.preventDefault(); LASSO.push(pt(e)); lassoLine.setLatLngs(LASSO); };
-  const up=async e=>{ if(!LASSO) return; e.preventDefault();
+// 지도에서 마우스·손가락으로 구역 둘러 그리기(공용) → done([[lat,lng],...])
+function startLasso(map, el, lyr, btn, done){
+  lyr.clearLayers(); map.dragging.disable(); el.style.cursor='crosshair'; const label=btn.textContent; btn.textContent='지도에서 구역을 그리세요…'; btn.disabled=true;
+  let pts=null, line=null;
+  const pt=e=>{ const r=el.getBoundingClientRect(); return map.containerPointToLatLng([e.clientX-r.left,e.clientY-r.top]); };
+  const down=e=>{ e.preventDefault(); e.stopPropagation(); pts=[pt(e)]; line=L.polyline(pts,{color:'#E2231A',weight:2,dashArray:'4 4'}).addTo(lyr); };
+  const move=e=>{ if(!pts) return; e.preventDefault(); pts.push(pt(e)); line.setLatLngs(pts); };
+  const up=e=>{ if(!pts) return; e.preventDefault();
     ['pointerdown','pointermove','pointerup'].forEach((n,i)=>el.removeEventListener(n,[down,move,up][i],true));
-    MAP.dragging.enable(); el.style.cursor=''; el.style.touchAction=''; $('ar-draw').textContent='구역 다시 그리기'; $('ar-draw').disabled=false;
-    const poly=LASSO; LASSO=null; arLayer.clearLayers();
+    map.dragging.enable(); el.style.cursor=''; el.style.touchAction=''; btn.textContent='구역 다시 그리기'; btn.disabled=false;
+    const poly=pts; pts=null; lyr.clearLayers();
     if(poly.length<5){ toast('구역을 조금 더 크게 둘러 주세요'); return; }
-    L.polygon(poly,{color:'#E2231A',weight:2,fillColor:'#E2231A',fillOpacity:.06}).addTo(arLayer);
-    AR={polygon:poly.map(p=>[+p.lat.toFixed(6),+p.lng.toFixed(6)])}; suggestRoute(); };
+    L.polygon(poly,{color:'#E2231A',weight:2,fillColor:'#E2231A',fillOpacity:.06}).addTo(lyr);
+    done(poly.map(p=>[+p.lat.toFixed(6),+p.lng.toFixed(6)])); };
   el.style.touchAction='none';   // 휴대폰: 손가락으로 그릴 때 화면이 움직이지 않게
   ['pointerdown','pointermove','pointerup'].forEach((n,i)=>el.addEventListener(n,[down,move,up][i],true));
+}
+$('ar-draw').onclick=()=>{
+  if(!MAP) return; if(!arLayer) arLayer=L.layerGroup().addTo(MAP);
+  startLasso(MAP,$('map'),arLayer,$('ar-draw'),poly=>{ AR={polygon:poly}; suggestRoute(); });
 };
 $('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); };
 async function suggestRoute(){
@@ -1026,11 +1046,15 @@ function refillStaff(){
   opts($('m-owner'),uo,'전체'); opts($('l-owner'),[['none','미배정'],...uo],'전체'); opts($('rt-user'),uo,null); $('rt-user').value=META.me;
   opts($('l-assign-to'),[['','(배정 해제)'],...uo],null); opts($('t-owner'),uo,'(담당 없음)');
 }
+const canEditTerr=t=>isDir||(t&&t.owner_user_id===META.me);
+let T_MAP=null, tAll=null, tDraw=null, tPts=null, T_POLY=null;
 async function loadTerr(){
-  loadStaff();
-  try{ TERRS=(await api('/api/prospect-territories')).rows; MUNS=(await api('/api/prospects/municipios?cve_ent='+(ent()||'19'))).rows; }catch(e){ return; }
+  if(isDir) loadStaff();
+  try{ TERRS=(await api('/api/prospect-territories')).rows; if(isDir) MUNS=(await api('/api/prospects/municipios?cve_ent='+(ent()||'19'))).rows; }catch(e){ return; }
+  const area=t=>t.polygon&&t.polygon.length?'지도 구역':(t.cps&&t.cps.length?'CP '+t.cps.join(', '):(t.municipios||[]).join(', '));
   $('t-table').innerHTML='<thead><tr><th>지역</th><th>담당</th><th class="num">후보</th><th class="num">진행</th><th></th></tr></thead><tbody>'+
-    (TERRS.length?TERRS.map(t=>'<tr><td><b>'+esc(t.name)+'</b><div class="note">'+esc((t.cps&&t.cps.length?'CP '+t.cps.join(', '):t.municipios.join(', ')).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td style="white-space:nowrap"><button class="btn ghost sm" data-tedit="'+t.id+'">수정</button> <button class="btn ghost sm" data-tdel="'+t.id+'" style="border-color:var(--ctr);color:var(--ctr)">삭제</button></td></tr>').join('')
+    (TERRS.length?TERRS.map(t=>'<tr'+(t.owner_user_id===META.me?' style="background:var(--ctr-soft,#FDECEB)"':'')+'><td><b>'+esc(t.name)+'</b><div class="note">'+esc(area(t).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td style="white-space:nowrap">'+
+      (canEditTerr(t)?'<button class="btn ghost sm" data-tedit="'+t.id+'">수정</button> <button class="btn ghost sm" data-tdel="'+t.id+'" style="border-color:var(--ctr);color:var(--ctr)">삭제</button>':'')+'</td></tr>').join('')
       :'<tr><td colspan="5" class="empty">아직 지역이 없습니다. 오른쪽에서 만드세요.</td></tr>')+'</tbody>';
   $('t-table').querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>{ editTerr(TERRS.find(t=>t.id===Number(b.dataset.tedit))); $('t-name').focus(); $('t-form-title').scrollIntoView({behavior:'smooth',block:'start'}); });
   $('t-table').querySelectorAll('[data-tdel]').forEach(b=>b.onclick=async()=>{
@@ -1039,39 +1063,111 @@ async function loadTerr(){
     const release=confirm('이 지역에서 아직 방문 전(「배정」 단계)인 후보의 담당도 해제할까요?\n확인 = 담당 해제(미배정으로) · 취소 = 담당 유지');
     try{ const r=await api('/api/prospect-territories/'+t.id+(release?'?release=1':''),{method:'DELETE'}); toast('삭제 · 지역 해제 '+fmt(r.detached)+'곳'+(r.released?' · 담당 해제 '+fmt(r.released)+'곳':'')); if(T_EDIT&&T_EDIT.id===t.id) T_EDIT=null; loadTerr(); }
     catch(e){ toast('실패: '+e.message); } });
-  editTerr(T_EDIT);
+  editTerr(T_EDIT&&TERRS.find(t=>t.id===T_EDIT.id)||null);
+}
+function tMode(){ return isDir?(document.querySelector('input[name="t-mode"]:checked')||{}).value||'map':'map'; }
+function setTMode(m){ const r=document.querySelector('input[name="t-mode"][value="'+m+'"]'); if(r) r.checked=true; $('t-bymap').classList.toggle('hide',m!=='map'); $('t-bymun').classList.toggle('hide',m!=='mun'); if(m==='map') ensureTMap(); }
+document.querySelectorAll('input[name="t-mode"]').forEach(r=>r.onchange=()=>setTMode(tMode()));
+function ensureTMap(){
+  if(noLeaflet('t-map')) return false;
+  if(!T_MAP){ T_MAP=L.map('t-map',{preferCanvas:true}).setView([25.68,-100.31],11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(T_MAP);
+    tAll=L.layerGroup().addTo(T_MAP); tPts=L.layerGroup().addTo(T_MAP); tDraw=L.layerGroup().addTo(T_MAP); }
+  setTimeout(()=>T_MAP.invalidateSize(),50); return true;
+}
+function drawTerrs(){
+  if(!T_MAP) return; tAll.clearLayers();
+  TERRS.filter(t=>t.polygon&&t.polygon.length&&(!T_EDIT||t.id!==T_EDIT.id)).forEach(t=>{
+    const mine=t.owner_user_id===META.me;
+    L.polygon(t.polygon,{color:mine?'#E2231A':'#6B6B6B',weight:1.5,dashArray:mine?null:'4 4',fillColor:mine?'#E2231A':'#9A9A9A',fillOpacity:.08}).bindTooltip(esc(t.name+' · '+(t.owner_name||'담당 없음'))).addTo(tAll); });
 }
 function editTerr(t){
-  T_EDIT=t||null; $('t-form-title').textContent=t?'지역 수정 · '+t.name:'새 지역'; $('t-save').textContent=t?'수정 저장 · 미배정 자동 배정':'저장 · 미배정 자동 배정';
+  T_EDIT=t||null; T_POLY=t&&t.polygon&&t.polygon.length?t.polygon:null;
+  $('t-form-title').textContent=t?'지역 수정 · '+t.name:(isDir?'새 지역':'내 지역 만들기');
+  $('t-help').textContent=isDir?'지도에서 구역을 둘러 그리거나 municipio·우편번호로 정합니다. 다른 담당이 이미 맡은 후보는 구역 안에 있어도 가져가지 않습니다.'
+    :'지도에서 내가 맡을 구역을 마우스(휴대폰은 손가락)로 둘러 그리세요. 구역 안 미배정 후보가 내 담당이 됩니다. 다른 담당이 이미 맡은 곳(회색)은 선택되지 않습니다.';
+  $('t-save').textContent=t?'수정 저장 · 미배정 자동 배정':'저장 · 미배정 자동 배정';
   $('t-name').value=t?t.name:''; $('t-owner').value=t&&t.owner_user_id?t.owner_user_id:''; $('t-cps').value=t?(t.cps||[]).join(', '):'';
-  $('t-move-wrap').classList.toggle('hide',!t); $('t-move').checked=false;
+  $('t-move-wrap').classList.toggle('hide',!t||!isDir); $('t-move').checked=false;
   const sel=new Set(t?t.municipios:[]);
   $('t-muns').innerHTML=MUNS.map(m=>'<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-weight:400"><input type="checkbox" value="'+esc(m.municipio)+'"'+(sel.has(m.municipio)?' checked':'')+'> <span style="flex:1">'+esc(m.municipio)+'</span><span class="note">'+fmt(m.total)+' · '+fmt(m.unassigned)+'</span></label>').join('');
+  setTMode(t&&!T_POLY&&((t.municipios||[]).length||(t.cps||[]).length)?'mun':'map');
+  $('t-prev').innerHTML=''; $('t-draw').textContent=T_POLY?'구역 다시 그리기':'구역 그리기';
+  if(T_MAP){ tDraw.clearLayers(); tPts.clearLayers(); drawTerrs();
+    if(T_POLY){ const pg=L.polygon(T_POLY,{color:'#E2231A',weight:2,fillColor:'#E2231A',fillOpacity:.06}).addTo(tDraw); T_MAP.fitBounds(pg.getBounds(),{padding:[20,20]}); previewTerr(); } }
+}
+$('t-owner').onchange=()=>{ if(T_POLY) previewTerr(); };
+$('t-draw').onclick=()=>{ if(!ensureTMap()) return; tPts.clearLayers(); $('t-prev').innerHTML='';
+  startLasso(T_MAP,$('t-map'),tDraw,$('t-draw'),poly=>{ T_POLY=poly; previewTerr(); }); };
+async function previewTerr(){
+  if(!T_POLY) return;
+  let r; try{ r=await post('/api/prospect-territories/preview',{polygon:T_POLY,owner_user_id:isDir?($('t-owner').value||null):META.me,territory_id:T_EDIT?T_EDIT.id:null}); }catch(e){ return toast('실패: '+e.message); }
+  tPts.clearLayers();
+  const C={free:'#E2231A',mine:'#1E7A46',taken:'#A8A8A8'};
+  r.points.forEach(p=>L.circleMarker([p.lat,p.lng],{radius:p.st==='taken'?3:4,weight:0,fillColor:C[p.st],fillOpacity:p.st==='taken'?.7:1}).addTo(tPts));
+  const ownerless=isDir&&!$('t-owner').value;
+  $('t-prev').innerHTML='<div class="banner info">구역 안 후보 <b>'+fmt(r.inside)+'곳</b> · '+(ownerless?'담당 없는 곳 '+fmt(r.free)+'곳':'새로 맡음 <b>'+fmt(r.free)+'곳</b> · 이미 이 담당 '+fmt(r.mine)+'곳')+
+    (r.taken?'<br><span class="note">다른 담당이라 선택 안 됨 '+fmt(r.taken)+'곳 — '+r.taken_by.map(x=>esc(x.name)+' '+fmt(x.n)).join(', ')+'</span>':'')+'</div>';
 }
 $('t-new').onclick=()=>editTerr(null);
 $('t-save').onclick=async()=>{
-  const body={name:$('t-name').value,owner_user_id:$('t-owner').value||null,cve_ent:ent()||'19',
-    municipios:[...$('t-muns').querySelectorAll('input:checked')].map(i=>i.value),cps:$('t-cps').value,move_owner:$('t-move').checked};
+  const mode=tMode();
+  if(mode==='map'&&!T_POLY) return toast('먼저 지도에서 구역을 그려 주세요');
+  const body={name:$('t-name').value,owner_user_id:isDir?($('t-owner').value||null):META.me,cve_ent:ent()||'19',move_owner:$('t-move').checked,
+    ...(mode==='map'?{polygon:T_POLY}:{municipios:[...$('t-muns').querySelectorAll('input:checked')].map(i=>i.value),cps:$('t-cps').value})};
   try{ const r=T_EDIT?await post('/api/prospect-territories/'+T_EDIT.id,body,'PATCH'):await post('/api/prospect-territories',body); toast('저장 · 후보 '+fmt(r.matched)+'곳 판정'); T_EDIT=null; loadTerr(); }
-  catch(e){ toast(e.message==='name_required'?'이름을 넣어 주세요':'실패: '+e.message); }
+  catch(e){ toast({name_required:'이름을 넣어 주세요',area_required:'municipio나 우편번호를 고르세요',polygon_required:'지도에서 구역을 그려 주세요',own_territory_only:'내 지역만 고칠 수 있습니다'}[e.message]||'실패: '+e.message); }
 };
 
-// ── 목표 ──
-let TG={};
+// ── 목표 ── 총 합의 목표 × 할당률(%) = 담당자 목표 (할당률 없으면 목표 없음)
+let TG={totals:{},shares:{},legacy:false};
+function allocate(total,shares,integer){
+  const T=Number(total)||0, out={}; const list=Object.entries(shares).map(([u,p])=>[u,Number(p)||0]).filter(([,p])=>p>0);
+  if(T<=0||!list.length) return out;
+  const raw=list.map(([u,p])=>[u,T*p/100]);
+  if(!integer){ raw.forEach(([u,v])=>out[u]=Math.round(v)); return out; }
+  const base=raw.map(([u,v])=>[u,Math.floor(v+1e-9),v-Math.floor(v+1e-9)]);
+  let left=Math.round(raw.reduce((a,[,v])=>a+v,0))-base.reduce((a,[,f])=>a+f,0);
+  base.slice().sort((a,b)=>b[2]-a[2]).forEach(x=>{ if(left>0){ x[1]++; left--; } });
+  base.forEach(([u,f])=>out[u]=f); return out;
+}
 async function loadTargets(){
   const per=period(); $('g-title').textContent=per+' 목표';
   let r; try{ r=await api('/api/prospect-targets?period='+per); }catch(e){ return; }
-  TG={}; r.rows.forEach(x=>{ (TG[x.user_id]=TG[x.user_id]||{})[x.metric]=x.value; });
+  TG={totals:r.totals||{},shares:r.shares||{},legacy:r.rows.length>0&&!Object.keys(r.totals||{}).length};
   renderTargets();
 }
+function readTargets(){
+  $('g-table').querySelectorAll('[data-tot]').forEach(i=>{ const v=Number(i.value); if(i.value!==''&&v>0) TG.totals[i.dataset.tot]=v; else delete TG.totals[i.dataset.tot]; });
+  $('g-table').querySelectorAll('[data-sh]').forEach(i=>{ const v=Number(i.value); if(i.value!==''&&v>0) TG.shares[i.dataset.sh]=v; else delete TG.shares[i.dataset.sh]; });
+}
 function renderTargets(){
-  $('g-table').innerHTML='<thead><tr><th>담당자</th>'+META.metrics.map(m=>'<th class="num">'+esc(METRIC_LBL[m])+'</th>').join('')+'</tr></thead><tbody>'+
-    META.staff.map(u=>'<tr><td><b>'+esc(u.name)+'</b></td>'+META.metrics.map(m=>'<td><input type="number" min="0" step="'+(m==='venta_nuevos'?'1000':'1')+'" data-u="'+u.id+'" data-m="'+m+'" value="'+((TG[u.id]||{})[m]??'')+'" style="text-align:right;min-width:90px"></td>').join('')+'</tr>').join('')+'</tbody>';
+  const M=META.metrics, money_=m=>m==='venta_nuevos';
+  $('g-banner').innerHTML=TG.legacy?'<div class="banner warn" style="margin-top:10px">이 달 목표는 이전 방식(담당자별 직접 입력)으로 저장돼 있습니다. 총 목표와 할당률을 넣고 저장하면 새 방식으로 바뀝니다.</div>':'';
+  $('g-table').innerHTML='<thead><tr><th>담당자</th><th class="num">할당률(%)</th>'+M.map(m=>'<th class="num">'+esc(METRIC_LBL[m])+'</th>').join('')+'</tr></thead><tbody>'+
+    '<tr style="background:var(--bg-soft,#F5F5F5)"><td><b>총 합의 목표</b></td><td></td>'+M.map(m=>'<td><input type="number" min="0" step="'+(money_(m)?'1000':'1')+'" data-tot="'+m+'" value="'+(TG.totals[m]??'')+'" placeholder="목표 없음" style="text-align:right;min-width:100px;font-weight:700"></td>').join('')+'</tr>'+
+    META.staff.map(u=>'<tr><td><b>'+esc(u.name)+'</b></td><td><input type="number" min="0" max="100" step="0.5" data-sh="'+u.id+'" value="'+(TG.shares[u.id]??'')+'" placeholder="—" style="text-align:right;width:80px"></td>'+
+      M.map(m=>'<td class="num" data-cell="'+u.id+':'+m+'"></td>').join('')+'</tr>').join('')+
+    '</tbody><tfoot><tr><td><b>합계</b></td><td class="num" id="g-shsum"></td>'+M.map(m=>'<td class="num" data-sum="'+m+'"></td>').join('')+'</tr></tfoot>';
+  $('g-table').querySelectorAll('input').forEach(i=>i.oninput=()=>{ readTargets(); calcTargets(); });
+  calcTargets();
+}
+function calcTargets(){
+  const M=META.metrics; const sum=Object.values(TG.shares).reduce((a,c)=>a+Number(c),0);
+  const sh=$('g-shsum'); sh.innerHTML='<b>'+(Math.round(sum*10)/10)+'%</b>'; sh.className='num '+(Math.abs(sum-100)<0.01?'st-ok':sum>100?'st-bad':'st-warn');
+  sh.title=Math.abs(sum-100)<0.01?'':sum>100?'100%를 넘을 수 없습니다':'100%가 안 되면 일부 목표가 배분되지 않습니다';
+  M.forEach(m=>{ const a=allocate(TG.totals[m],TG.shares,m!=='venta_nuevos'); let tot=0;
+    META.staff.forEach(u=>{ const v=a[u.id]; const c=$('g-table').querySelector('[data-cell="'+u.id+':'+m+'"]'); if(v>0) tot+=v;
+      c.innerHTML=v>0?(m==='venta_nuevos'?money(v):fmt(v)):'<span class="note">—</span>'; });
+    $('g-table').querySelector('[data-sum="'+m+'"]').innerHTML=TG.totals[m]?(m==='venta_nuevos'?money(tot):fmt(tot)):'<span class="note">목표 없음</span>'; });
 }
 $('g-copy').onclick=async()=>{ const [y,m]=period().split('-').map(Number); const prev=m===1?(y-1)+'-12':y+'-'+String(m-1).padStart(2,'0');
-  const r=await api('/api/prospect-targets?period='+prev); TG={}; r.rows.forEach(x=>{ (TG[x.user_id]=TG[x.user_id]||{})[x.metric]=x.value; }); renderTargets(); toast(prev+' 값을 불러왔습니다 · 저장을 누르세요'); };
-$('g-save').onclick=async()=>{ const rows=[...$('g-table').querySelectorAll('input')].filter(i=>i.value!=='').map(i=>({user_id:Number(i.dataset.u),metric:i.dataset.m,value:Number(i.value)}));
-  try{ const r=await post('/api/prospect-targets',{period:period(),rows},'PUT'); toast(r.saved+'개 저장'); }catch(e){ toast('실패: '+e.message); } };
+  const r=await api('/api/prospect-targets?period='+prev); TG={totals:r.totals||{},shares:r.shares||{},legacy:false}; renderTargets(); toast(prev+' 값을 불러왔습니다 · 저장을 누르세요'); };
+$('g-save').onclick=async()=>{ readTargets();
+  const sum=Object.values(TG.shares).reduce((a,c)=>a+Number(c),0);
+  if(sum>100.001) return toast('할당률 합계가 100%를 넘습니다 ('+sum+'%)');
+  if(sum<99.99&&Object.keys(TG.totals).length&&!confirm('할당률 합계가 '+sum+'%입니다. 나머지 '+(Math.round((100-sum)*10)/10)+'%는 누구에게도 배분되지 않습니다. 저장할까요?')) return;
+  try{ const r=await post('/api/prospect-targets',{period:period(),totals:TG.totals,shares:TG.shares},'PUT'); TG.legacy=false; renderTargets(); toast('저장 · 담당자 목표 '+r.saved+'개'); }catch(e){ toast('실패: '+e.message); } };
 
 // ── 가져오기 ──
 let IMP=null;

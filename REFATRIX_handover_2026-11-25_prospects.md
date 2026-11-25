@@ -53,9 +53,19 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 - 삭제된 후보·「제외(descartado)」 후보는 방문 전이면 루트에 표시하지 않음.
 - 마이그레이션 추가 없음(코드만). 바뀐 파일: `refatrix-api/src/routes/prospectRoutes.js`, `refatrix-prospects.html`.
 
+## 6차 보완 (2026-11-25) — 목표 배분 · 담당자 스스로 지역 정하기
+- **마이그레이션 0337** (`0337_prospect_target_plan_terr_polygon.sql`) 추가 — `npm run migrate`.
+- **목표**: 디렉터가 지표별 「총 합의 목표」 + 담당자별 「할당률(%)」 입력 → 담당자 목표 = 총 목표 × 할당률(건수는 큰 나머지 방식으로 정수, 금액은 페소). 할당률 없는 담당자 = 목표 없음, 총 목표 비운 지표 = 목표 없음. 할당률 합계 100% 초과는 저장 불가, 100% 미만이면 확인 후 저장.
+  - 저장 위치: `prospect_target_totals`, `prospect_target_shares` → 계산 결과를 기존 `prospect_targets`에 다시 씀(현황판·진척 보드는 그대로).
+  - 지표 이름을 단계 이름과 맞춤: 방문(체크인) · 첫 방문 · 정보 확보 · 견적 제출 · 첫 매출 · 첫 매출 금액(IVA 제외) · 개발 점수. 관심 확인·고객 등록은 목표 없음.
+- **지역**: 「지역·담당」 탭을 영업 담당자도 사용. 담당자는 지도에서 구역을 둘러 그려 **자기 지역**을 만들고 고치고 지움(남의 지역은 보기만). 디렉터는 지도 구역 또는 municipio·CP 둘 다 가능.
+  - 구역 안 후보 중 **다른 담당이 이미 맡은 곳은 선택되지 않음**(회색 표시, 가져가지 않음). 미리보기: `POST /api/prospect-territories/preview`.
+  - 지역 판정 순서: 지도 구역 > 우편번호 > municipio. 담당이 있는 후보는 같은 담당의 지역(또는 담당 없는 지역)에만 들어감.
+  - 지도 탭의 「구역 그리기 → 루트 제안」도 원래대로 본인·미배정 후보만 고름(다른 담당 후보 제외).
+
 ## 배포 순서
 1. 백엔드 파일 올리기(refatrix-api) → Railway 재배포
-2. `npm run migrate` — **0334**, **0335**, **0336** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
+2. `npm run migrate` — **0334**, **0335**, **0336**, **0337** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
 3. 화면 파일 올리기: `refatrix-prospects.html`, `refatrix-nav.js`, `refatrix-consult.html`
 4. 메뉴: 영업 › **고객개발**. 권한은 고객상담과 같은 `pipeline`(영업활동) 키. 가져오기·지역·목표·연결 승인은 디렉터만.
 5. 고객개발 › **DENUE 가져오기**에서 `prospects_import_NL.csv` 업로드(9,492곳, 판 2026-11) → **지역·담당**에서 지역 만들기 → 저장하면 미배정 후보가 자동 배정됩니다.
@@ -77,6 +87,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 | 수정 | `refatrix-nav.js` | 영업 그룹에 고객개발(prospects) · 스페인어 메뉴명 · 모바일 탭 아이콘 |
 | DB | `refatrix-api/migrations/0335_prospect_potential_staff.sql` | 잠재성 열(pot_*) · 담당자 명단 제외 표 |
 | DB | `refatrix-api/migrations/0336_prospect_score_stages.sql` | 단계 세분화 · 개발 점수 · 점수 이력 · 견적 기록 |
+| DB | `refatrix-api/migrations/0337_prospect_target_plan_terr_polygon.sql` | 목표 총량·할당률 · 지도 구역 지역 |
 | 테스트 | `test/prospects.test.mjs` | 순수 함수 17개 |
 
 ## 흐름 요약

@@ -16,7 +16,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, checkStageMove, autoAdvance, normalizeImportRow,
+  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
@@ -42,6 +42,24 @@ async function hasPotCols() {
   try { potCols = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='prospects' AND column_name IN ('pot_tier','score') HAVING COUNT(*)=2`)).rows.length > 0; }
   catch (_) { potCols = false; }
   return potCols;
+}
+let planCols = false;
+async function hasPlanCols() {
+  if (planCols) return true;
+  try { planCols = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='prospect_territories' AND column_name='polygon'`)).rows.length > 0
+    && (await query(`SELECT to_regclass('prospect_target_shares') IS NOT NULL AS ok`)).rows[0].ok; }
+  catch (_) { planCols = false; }
+  return planCols;
+}
+// 지도 구역 다각형 정리: [[lat,lng],...] 3~400점, 좌표 범위 확인
+function cleanPolygon(v) {
+  if (!Array.isArray(v)) return null;
+  const pts = v.map((x) => (Array.isArray(x) ? [Number(x[0]), Number(x[1])] : null))
+    .filter((x) => x && Number.isFinite(x[0]) && Number.isFinite(x[1]) && Math.abs(x[0]) <= 90 && Math.abs(x[1]) <= 180)
+    .map(([a, b]) => [Math.round(a * 1e6) / 1e6, Math.round(b * 1e6) / 1e6]);
+  if (pts.length < 3) return null;
+  const step = Math.ceil(pts.length / 400);
+  return pts.filter((_, i) => i % step === 0);
 }
 async function excludedSet() {
   return new Set((await query(`SELECT user_id FROM prospect_excluded_users`)).rows.map((r) => Number(r.user_id)));
@@ -83,7 +101,7 @@ async function applyTerritories(client, { onlyIds = null, cveEnt = null, byUser 
   const params = []; const conds = ['deleted_at IS NULL', 'territory_id IS NULL'];
   if (onlyIds) { params.push(onlyIds); conds.push(`id = ANY($${params.length})`); }
   if (cveEnt) { params.push(cveEnt); conds.push(`cve_ent = $${params.length}`); }
-  const rows = (await q(`SELECT id, cve_ent, cp, municipio, owner_user_id, stage FROM prospects WHERE ${conds.join(' AND ')}`, params)).rows;
+  const rows = (await q(`SELECT id, cve_ent, cp, municipio, lat, lng, owner_user_id, stage FROM prospects WHERE ${conds.join(' AND ')}`, params)).rows;
   let n = 0;
   for (const p of rows) {
     const t = territoryFor(p, terrs);
@@ -151,6 +169,7 @@ export default async function prospectRoutes(app) {
     if (!String(req.url).startsWith('/api/prospect')) return;
     if (!(await hasProspectCols())) return reply.code(503).send({ error: 'migration_0334_required' });
     if (!(await hasPotCols())) return reply.code(503).send({ error: 'migration_0336_required' });
+    if (/^\/api\/prospect-(territories|targets)/.test(String(req.url)) && !(await hasPlanCols())) return reply.code(503).send({ error: 'migration_0337_required' });
   });
 
   // ── 메타 ───────────────────────────────────────────────────────────
@@ -162,7 +181,7 @@ export default async function prospectRoutes(app) {
       .map((u) => ({ id: Number(u.id), name: u.name, role: u.role, excluded: ex.has(Number(u.id)) }));
     const states = (await query(
       `SELECT cve_ent, MAX(entidad) AS entidad, COUNT(*)::int AS n FROM prospects WHERE deleted_at IS NULL GROUP BY cve_ent ORDER BY cve_ent`)).rows;
-    return { stages: STAGES, segments: SEGMENTS, discard_reasons: DISCARD_REASONS, metrics: METRICS,
+    return { stages: STAGES, segments: SEGMENTS, discard_reasons: DISCARD_REASONS, metrics: METRICS, metric_names: METRIC_NAMES,
       checkin_warn_m: CHECKIN_WARN_M, form: ALTA_FORM, fields: ALTA_FIELDS,
       users: isDir(req) ? users : users.filter((u) => u.id === me(req)),
       staff: (isDir(req) ? users : users.filter((u) => u.id === me(req))).filter((u) => !u.excluded),   // 담당 선택지(디렉터가 뺀 사람 제외)
@@ -413,31 +432,36 @@ export default async function prospectRoutes(app) {
          FROM prospect_territories t LEFT JOIN users u ON u.id=t.owner_user_id ORDER BY t.cve_ent, t.name`)).rows;
     return { rows: rows.map((r) => ({ ...r, id: Number(r.id), owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id) })) };
   });
+  // 지역 저장 — 디렉터: 누구의 지역이든(구역 그리기 또는 municipio/CP) / 담당자: 자기 지역만, 지도 구역으로만
   async function saveTerritory(req, reply, id) {
-    if (!directorOnly(req, reply)) return null;
+    const dir = isDir(req);
     const b = req.body || {};
     const name = txt(b.name, 120); if (!name) { reply.code(400).send({ error: 'name_required' }); return null; }
-    const mun = (Array.isArray(b.municipios) ? b.municipios : []).map((x) => txt(x, 120)).filter(Boolean);
-    const cps = (Array.isArray(b.cps) ? b.cps : String(b.cps || '').split(/[\s,;]+/)).map((x) => txt(x, 10)).filter((x) => x && /^\d{5}$/.test(x));
-    const owner = int(b.owner_user_id);
+    const polygon = cleanPolygon(b.polygon);
+    const mun = polygon || !dir ? [] : (Array.isArray(b.municipios) ? b.municipios : []).map((x) => txt(x, 120)).filter(Boolean);
+    const cps = polygon || !dir ? [] : (Array.isArray(b.cps) ? b.cps : String(b.cps || '').split(/[\s,;]+/)).map((x) => txt(x, 10)).filter((x) => x && /^\d{5}$/.test(x));
+    if (!dir && !polygon) { reply.code(400).send({ error: 'polygon_required' }); return null; }
+    if (!polygon && !mun.length && !cps.length) { reply.code(400).send({ error: 'area_required' }); return null; }
+    const owner = dir ? int(b.owner_user_id) : me(req);
     return withTx(async (client) => {
       const q = client.query.bind(client);
       let tid = id;
       if (tid) {
         const old = (await q(`SELECT owner_user_id FROM prospect_territories WHERE id=$1`, [tid])).rows[0];
         if (!old) return { code: 404 };
-        await q(`UPDATE prospect_territories SET name=$2, cve_ent=$3, municipios=$4, cps=$5, owner_user_id=$6, active=$7, updated_at=now() WHERE id=$1`,
-          [tid, name, txt(b.cve_ent, 4) || '19', mun, cps, owner, b.active !== false]);
+        if (!dir && Number(old.owner_user_id) !== me(req)) return { code: 403 };
+        await q(`UPDATE prospect_territories SET name=$2, cve_ent=$3, municipios=$4, cps=$5, owner_user_id=$6, active=$7, polygon=$8, updated_at=now() WHERE id=$1`,
+          [tid, name, txt(b.cve_ent, 4) || '19', mun, cps, owner, b.active !== false, polygon ? JSON.stringify(polygon) : null]);
         // 지역 경계가 바뀌었을 수 있으니 이 지역 표시를 풀고 다시 판정
         await q(`UPDATE prospects SET territory_id=NULL WHERE territory_id=$1`, [tid]);
         // 담당이 바뀌면 그 지역에서 옛 담당이 들고 있던 「배정」 단계 후보를 새 담당에게(진행 중인 건은 유지)
-        if (b.move_owner && old.owner_user_id && owner && Number(old.owner_user_id) !== owner) {
+        if (dir && b.move_owner && old.owner_user_id && owner && Number(old.owner_user_id) !== owner) {
           const ids = (await q(`SELECT id FROM prospects WHERE owner_user_id=$1 AND stage='asignado' AND deleted_at IS NULL`, [old.owner_user_id])).rows.map((r) => Number(r.id));
           if (ids.length) await assignMany(client, ids, null, me(req));
         }
       } else {
-        tid = Number((await q(`INSERT INTO prospect_territories (name, cve_ent, municipios, cps, owner_user_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-          [name, txt(b.cve_ent, 4) || '19', mun, cps, owner, me(req)])).rows[0].id);
+        tid = Number((await q(`INSERT INTO prospect_territories (name, cve_ent, municipios, cps, owner_user_id, created_by, polygon) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+          [name, txt(b.cve_ent, 4) || '19', mun, cps, owner, me(req), polygon ? JSON.stringify(polygon) : null])).rows[0].id);
       }
       const n = await applyTerritories(client, { cveEnt: txt(b.cve_ent, 4) || '19', byUser: me(req) });
       return { id: tid, matched: n };
@@ -448,14 +472,41 @@ export default async function prospectRoutes(app) {
   });
   app.patch('/api/prospect-territories/:id', edit, async (req, reply) => {
     const r = await saveTerritory(req, reply, int(req.params.id)); if (!r) return;
-    if (r.code) return reply.code(r.code).send({ error: 'not_found' });
+    if (r.code) return reply.code(r.code).send({ error: r.code === 403 ? 'own_territory_only' : 'not_found' });
     return r;
   });
 
-  // 지역 삭제(디렉터) — 후보는 남는다. release=true 면 이 지역에서 아직 「배정」 단계(방문 전)인 후보의 담당도 해제
+  // 구역 미리보기 — 그린 구역 안 후보를 「가져올 수 있음 / 이미 내 것 / 다른 담당(선택 안 됨)」으로 나눠 보여준다
+  app.post('/api/prospect-territories/preview', edit, async (req, reply) => {
+    const b = req.body || {};
+    const poly = cleanPolygon(b.polygon); if (!poly) return reply.code(400).send({ error: 'bad_polygon' });
+    const owner = isDir(req) ? int(b.owner_user_id) : me(req);
+    const exclude = int(b.territory_id);
+    const lats = poly.map((p) => p[0]), lngs = poly.map((p) => p[1]);
+    const rows = (await query(
+      `SELECT p.id, p.lat, p.lng, p.nom_estab, p.owner_user_id, p.stage, t.owner_user_id AS t_owner, u.name AS owner_name
+         FROM prospects p LEFT JOIN prospect_territories t ON t.id=p.territory_id AND t.id IS DISTINCT FROM $5
+         LEFT JOIN users u ON u.id=COALESCE(p.owner_user_id, t.owner_user_id)
+        WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4`,
+      [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs), exclude])).rows
+      .filter((p) => inPolygon(Number(p.lat), Number(p.lng), poly));
+    const out = { inside: rows.length, free: 0, mine: 0, taken: 0, taken_by: {}, points: [] };
+    for (const p of rows) {
+      const holder = p.owner_user_id != null ? Number(p.owner_user_id) : p.t_owner != null ? Number(p.t_owner) : null;
+      const st = holder == null ? 'free' : owner != null && holder === owner ? 'mine' : 'taken';
+      out[st]++;
+      if (st === 'taken') out.taken_by[p.owner_name || '?'] = (out.taken_by[p.owner_name || '?'] || 0) + 1;
+      if (out.points.length < 3000) out.points.push({ id: Number(p.id), lat: Number(p.lat), lng: Number(p.lng), st });
+    }
+    out.taken_by = Object.entries(out.taken_by).map(([name, n]) => ({ name, n })).sort((a, c) => c.n - a.n);
+    return out;
+  });
+
+  // 지역 삭제(디렉터 또는 자기 지역) — 후보는 남는다. release=true 면 이 지역에서 아직 「배정」 단계(방문 전)인 후보의 담당도 해제
   app.delete('/api/prospect-territories/:id', edit, async (req, reply) => {
-    if (!directorOnly(req, reply)) return;
     const tid = int(req.params.id); const release = String(req.query?.release || '') === '1';
+    const own = (await query(`SELECT owner_user_id FROM prospect_territories WHERE id=$1`, [tid])).rows[0];
+    if (own && !isDir(req) && Number(own.owner_user_id) !== me(req)) return reply.code(403).send({ error: 'own_territory_only' });
     const out = await withTx(async (client) => {
       const q = client.query.bind(client);
       const t = (await q(`SELECT id, name FROM prospect_territories WHERE id=$1`, [tid])).rows[0];
@@ -475,27 +526,46 @@ export default async function prospectRoutes(app) {
   });
 
   // ── 목표 ───────────────────────────────────────────────────────────
+  // 목표: 디렉터가 지표별 총 합의 목표 + 담당자별 할당률(%) → 담당자 목표 = 총 목표 × 할당률. 할당률 없으면 목표 없음.
   app.get('/api/prospect-targets', view, async (req) => {
     const period = PERIOD.test(String(req.query?.period)) ? req.query.period : mxToday().slice(0, 7);
     const params = [period]; let cond = '';
     if (!isDir(req)) { params.push(me(req)); cond = ' AND user_id=$2'; }
     const rows = (await query(`SELECT user_id, metric, target_value FROM prospect_targets WHERE period=$1${cond}`, params)).rows;
-    return { period, rows: rows.map((r) => ({ user_id: Number(r.user_id), metric: r.metric, value: Number(r.target_value) })) };
+    const totals = (await query(`SELECT metric, total_value FROM prospect_target_totals WHERE period=$1`, [period])).rows;
+    const shares = (await query(`SELECT user_id, share_pct FROM prospect_target_shares WHERE period=$1${cond}`, params)).rows;
+    return { period,
+      rows: rows.map((r) => ({ user_id: Number(r.user_id), metric: r.metric, value: Number(r.target_value) })),
+      totals: Object.fromEntries(totals.map((r) => [r.metric, Number(r.total_value)])),
+      shares: Object.fromEntries(shares.map((r) => [Number(r.user_id), Number(r.share_pct)])) };
   });
   app.put('/api/prospect-targets', edit, async (req, reply) => {
     if (!directorOnly(req, reply)) return;
     const b = req.body || {};
     if (!PERIOD.test(String(b.period))) return reply.code(400).send({ error: 'bad_period' });
+    const totals = {}; for (const m of METRICS) { const v = Number((b.totals || {})[m]); if (Number.isFinite(v) && v > 0) totals[m] = v; }
+    const shares = {}; for (const [u, p] of Object.entries(b.shares || {})) { const uid = int(u); const v = Math.round(Number(p) * 100) / 100; if (uid && Number.isFinite(v) && v > 0) shares[uid] = Math.min(100, v); }
+    const sum = Object.values(shares).reduce((a, c) => a + c, 0);
+    if (sum > 100.001) return reply.code(400).send({ error: 'share_over_100', sum });
     let n = 0;
-    for (const r of (Array.isArray(b.rows) ? b.rows : []).slice(0, 500)) {
-      const uid = int(r.user_id); const v = Number(r.value);
-      if (!uid || !METRICS.includes(r.metric) || !Number.isFinite(v) || v < 0) continue;
-      await query(`INSERT INTO prospect_targets (user_id, period, metric, target_value, updated_by) VALUES ($1,$2,$3,$4,$5)
-                   ON CONFLICT (user_id, period, metric) DO UPDATE SET target_value=EXCLUDED.target_value, updated_by=EXCLUDED.updated_by, updated_at=now()`,
-      [uid, b.period, r.metric, v, me(req)]);
-      n++;
-    }
-    return { ok: true, saved: n };
+    await withTx(async (client) => {
+      const q = client.query.bind(client);
+      await q(`DELETE FROM prospect_target_totals WHERE period=$1`, [b.period]);
+      await q(`DELETE FROM prospect_target_shares WHERE period=$1`, [b.period]);
+      await q(`DELETE FROM prospect_targets WHERE period=$1`, [b.period]);
+      for (const [m, v] of Object.entries(totals)) await q(`INSERT INTO prospect_target_totals (period, metric, total_value, updated_by) VALUES ($1,$2,$3,$4)`, [b.period, m, v, me(req)]);
+      for (const [u, p] of Object.entries(shares)) await q(`INSERT INTO prospect_target_shares (period, user_id, share_pct, updated_by) VALUES ($1,$2,$3,$4)`, [b.period, u, p, me(req)]);
+      for (const [m, v] of Object.entries(totals)) {
+        const alloc = allocateTarget(v, shares, { integer: m !== 'venta_nuevos' });
+        for (const [u, t] of Object.entries(alloc)) {
+          if (!(t > 0)) continue;
+          await q(`INSERT INTO prospect_targets (user_id, period, metric, target_value, updated_by) VALUES ($1,$2,$3,$4,$5)`, [u, b.period, m, t, me(req)]);
+          n++;
+        }
+      }
+    });
+    await logEvent({ userId: me(req), action: 'update', target: `prospect_targets:${b.period}`, detail: { totals, shares } });
+    return { ok: true, saved: n, share_sum: Math.round(sum * 100) / 100 };
   });
 
   // ── 루트 ───────────────────────────────────────────────────────────
