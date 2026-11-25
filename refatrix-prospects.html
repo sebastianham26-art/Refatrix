@@ -275,6 +275,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <label class="fld"><span>업종</span><select id="m-seg"></select></label>
       <label class="fld"><span>우선순위</span><select id="m-prio"><option value="">전체</option><option>A</option><option>B</option><option>C</option></select></label>
       <label class="chip" style="padding:10px 14px"><input type="checkbox" id="m-tracks" checked> 오늘 동선</label>
+      <label class="chip" style="padding:10px 14px"><input type="checkbox" id="m-terr" checked> 지역 표시</label>
       <span id="m-sel" class="note"></span>
       <button class="btn red sm hide" id="m-addroute">선택한 곳으로 루트 만들기</button>
     </div>
@@ -282,16 +283,20 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <div><div id="map"></div><div class="legend" id="m-legend"></div></div>
       <div class="card" id="ar-panel">
         <h2>구역으로 루트 만들기</h2>
-        <p class="note">담당자·날짜를 고르고 「구역 그리기」를 누른 뒤 지도에서 마우스(손가락)로 방문할 구역을 둘러 그리세요. ERP가 그 구역에서 방문할 곳을 골라 이동 거리가 가장 짧은 순서로 제안합니다.</p>
+        <p class="note">담당자·시작 날짜를 고르고 「구역 그리기」 → 지도에서 네모를 끌어 그리세요. 모서리 ■를 끌면 크기, 가운데 ✥를 끌면 위치가 바뀌고 바로 다시 제안합니다. 하루에 다 못 가는 곳은 다음 근무일로 자동으로 나눕니다.<br>지도에서 <b>검은 테두리</b>는 이미 다녀간 곳, <b>회색</b>은 다른 담당의 후보·지역입니다 — 피해서 그리세요.</p>
         <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
           <label class="fld"><span>담당자</span><select id="ar-user"></select></label>
-          <label class="fld"><span>방문 날짜</span><input type="date" id="ar-date"></label>
-          <label class="fld"><span>최대 방문 수</span><input type="number" id="ar-max" min="1" max="30" value="12"></label>
+          <label class="fld"><span>시작 날짜</span><input type="date" id="ar-date"></label>
+          <label class="fld"><span>하루 최대 방문</span><input type="number" id="ar-max" min="1" max="30" value="12"></label>
+          <label class="fld"><span>최대 일수</span><input type="number" id="ar-days" min="1" max="15" value="5"></label>
           <label class="fld"><span>출발지</span><select id="ar-start"><option value="">구역 안 첫 업체</option><option value="me">내 현재 위치</option></select></label>
         </div>
         <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-unas" checked> 미배정 후보 포함</label>
         <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-skip" checked> 최근 7일 방문한 곳 제외</label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn red" id="ar-draw">구역 그리기</button><button class="btn ghost hide" id="ar-clear">지우기</button></div>
+        <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-multi" checked> 남는 곳은 다음 날로 자동 배정</label>
+        <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-sun" checked> 일요일 제외</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><button class="btn red" id="ar-draw">구역 그리기</button><button class="btn ghost hide" id="ar-clear">지우기</button>
+          <span class="seg" style="display:inline-flex;gap:4px;margin-left:auto"><label class="chip" style="padding:6px 10px"><input type="radio" name="ar-shape" value="rect" checked> ▭ 네모</label><label class="chip" style="padding:6px 10px"><input type="radio" name="ar-shape" value="free"> ✎ 자유형</label></span></div>
         <div id="ar-out" style="margin-top:14px"></div>
       </div>
     </div>
@@ -351,6 +356,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
           <div id="t-bymap">
             <div id="t-map" style="height:340px;border-radius:4px;border:1px solid var(--line)"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center"><button class="btn ghost sm" id="t-draw">구역 그리기</button>
+              <span class="seg" style="display:inline-flex;gap:4px"><label class="chip" style="padding:6px 10px"><input type="radio" name="t-shape" value="rect" checked> ▭ 네모</label><label class="chip" style="padding:6px 10px"><input type="radio" name="t-shape" value="free"> ✎ 자유형</label></span>
               <span class="legend" style="margin:0"><span><span class="dot" style="background:#E2231A"></span>새로 맡음</span><span><span class="dot" style="background:#1E7A46"></span>이미 내 담당</span><span><span class="dot" style="background:#A8A8A8"></span>다른 담당(선택 안 됨)</span></span></div>
             <div id="t-prev" style="margin-top:8px"></div>
           </div>
@@ -490,7 +496,9 @@ async function init(){
   opts($('m-owner'),uo,'전체'); opts($('l-owner'),[['none','미배정'],...uo],'전체'); opts($('rt-user'),uo,null); $('rt-user').value=META.me;
   opts($('l-assign-to'),[['','(배정 해제)'],...uo],null); opts($('t-owner'),uo,'(담당 없음)');
   $('rt-date').value=META.today; $('i-ed').value=META.today.slice(0,7);
-  $('m-legend').innerHTML=META.stages.map(s=>'<span><span class="dot" style="background:'+STAGE_COLOR[s.key]+'"></span>'+esc(s.ko)+'</span>').join('');
+  $('m-legend').innerHTML=META.stages.map(s=>'<span><span class="dot" style="background:'+STAGE_COLOR[s.key]+'"></span>'+esc(s.ko)+'</span>').join('')+
+    '<span><span class="dot" style="background:#fff;border:2.5px solid #111"></span>다녀간 곳</span><span><span class="dot" style="background:#fff;border:2px dashed #111"></span>루트 예정</span>'+
+    (isDir?'':'<span><span class="dot" style="background:#B5B5B5"></span>다른 담당</span>')+'<span><span class="dot" style="background:rgba(120,120,120,.25);border:1px dashed #666;border-radius:2px"></span>다른 담당 지역</span>';
   refreshCounts();
   const h=new URLSearchParams(location.hash.slice(1));
   if(h.get('review')&&h.get('prospect')) openReview(Number(h.get('prospect')),Number(h.get('review')));
@@ -637,9 +645,20 @@ function ensureMap(){
   ['m-owner','m-stage','m-seg','m-prio'].forEach(id=>$(id).addEventListener('change',loadMapPins));
   $('m-tracks').addEventListener('change',loadTracks);
 }
+let terrLayer=null, MAP_TERRS=null;
+async function loadMapTerrs(force){
+  if(!MAP) return; if(!terrLayer) terrLayer=L.layerGroup().addTo(MAP); terrLayer.clearLayers();
+  if(!$('m-terr').checked) return;
+  if(!MAP_TERRS||force){ try{ MAP_TERRS=(await api('/api/prospect-territories')).rows; }catch(e){ return; } }
+  MAP_TERRS.filter(t=>t.outline&&t.outline.length>=3).forEach(t=>{ const mine=t.owner_user_id===META.me;
+    L.polygon(t.outline,{color:mine?'#E2231A':'#666',weight:mine?2:1.2,dashArray:mine?null:'5 4',fillColor:mine?'#E2231A':'#787878',fillOpacity:mine?.05:.16,interactive:true})
+      .bindTooltip(esc(t.name)+' · '+esc(t.owner_name||'담당 없음'),{sticky:true}).addTo(terrLayer); });
+  terrLayer.eachLayer(l=>l.bringToBack&&l.bringToBack());
+}
+$('m-terr').addEventListener('change',()=>loadMapTerrs());
 function loadMap(){
   if(!$('ar-user').options.length){ opts($('ar-user'),META.staff.map(u=>[u.id,u.name]),null); $('ar-user').value=META.me; $('ar-user').disabled=!isDir; $('ar-date').value=META.today; }
-  if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); }
+  if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); loadMapTerrs(true); }
 // ── 구역(올가미) 그리기 → 루트 제안 ──
 let LASSO=null, lassoLine=null, arLayer=null, AR=null;
 // 지도에서 마우스·손가락으로 구역 둘러 그리기(공용) → done([[lat,lng],...])
@@ -659,45 +678,116 @@ function startLasso(map, el, lyr, btn, done){
   el.style.touchAction='none';   // 휴대폰: 손가락으로 그릴 때 화면이 움직이지 않게
   ['pointerdown','pointermove','pointerup'].forEach((n,i)=>el.addEventListener(n,[down,move,up][i],true));
 }
+// 네모 그리기: 끌어서 그리고, 모서리 ■로 크기 · 가운데 ✥로 위치 조절(놓을 때마다 done 다시 호출)
+const rectPoly=b=>[[b.getNorth(),b.getWest()],[b.getNorth(),b.getEast()],[b.getSouth(),b.getEast()],[b.getSouth(),b.getWest()]].map(p=>[+p[0].toFixed(6),+p[1].toFixed(6)]);
+const RECT_STYLE={color:'#E2231A',weight:2,fillColor:'#E2231A',fillOpacity:.06};
+function startRect(map, el, lyr, btn, done){
+  lyr.clearLayers(); map.dragging.disable(); el.style.cursor='crosshair'; btn.textContent='지도에서 네모를 끌어 그리세요…'; btn.disabled=true;
+  let a=null, rect=null;
+  const pt=e=>{ const r=el.getBoundingClientRect(); return map.containerPointToLatLng([e.clientX-r.left,e.clientY-r.top]); };
+  const down=e=>{ e.preventDefault(); e.stopPropagation(); a=pt(e); rect=L.rectangle(L.latLngBounds(a,a),{...RECT_STYLE,dashArray:'4 4'}).addTo(lyr); };
+  const move=e=>{ if(!a) return; e.preventDefault(); rect.setBounds(L.latLngBounds(a,pt(e))); };
+  const up=e=>{ if(!a) return; e.preventDefault();
+    ['pointerdown','pointermove','pointerup'].forEach((n,i)=>el.removeEventListener(n,[down,move,up][i],true));
+    map.dragging.enable(); el.style.cursor=''; el.style.touchAction=''; btn.textContent='구역 다시 그리기'; btn.disabled=false;
+    const b=rect.getBounds(); a=null; const p1=map.latLngToContainerPoint(b.getNorthWest()), p2=map.latLngToContainerPoint(b.getSouthEast());
+    if(Math.abs(p2.x-p1.x)<20||Math.abs(p2.y-p1.y)<20){ lyr.clearLayers(); toast('네모를 조금 더 크게 그려 주세요'); return; }
+    editableRect(map,lyr,b,done); done(rectPoly(b)); };
+  el.style.touchAction='none';
+  ['pointerdown','pointermove','pointerup'].forEach((n,i)=>el.addEventListener(n,[down,move,up][i],true));
+}
+function editableRect(map, lyr, bounds, done){
+  lyr.clearLayers(); const rect=L.rectangle(bounds,RECT_STYLE).addTo(lyr);
+  const hIcon=L.divIcon({className:'',iconSize:[16,16],iconAnchor:[8,8],html:'<div style="width:16px;height:16px;background:#fff;border:2.5px solid #E2231A;box-sizing:border-box;cursor:nwse-resize"></div>'});
+  const mIcon=L.divIcon({className:'',iconSize:[28,28],iconAnchor:[14,14],html:'<div style="width:28px;height:28px;border-radius:50%;background:#E2231A;color:#fff;font-size:16px;line-height:28px;text-align:center;cursor:move;box-shadow:0 1px 4px rgba(0,0,0,.3)">✥</div>'});
+  const K=['NorthWest','NorthEast','SouthEast','SouthWest'], OPP={0:2,1:3,2:0,3:1};
+  const H=K.map((k,i)=>L.marker(bounds['get'+k](),{icon:hIcon,draggable:true,zIndexOffset:1000}).addTo(lyr));
+  const C=L.marker(bounds.getCenter(),{icon:mIcon,draggable:true,zIndexOffset:1100,title:'끌어서 옮기기'}).addTo(lyr);
+  const sync=(skip)=>{ const b=rect.getBounds(); K.forEach((k,i)=>{ if(i!==skip) H[i].setLatLng(b['get'+k]()); }); if(skip!=='c') C.setLatLng(b.getCenter()); };
+  const fire=()=>done(rectPoly(rect.getBounds()));
+  H.forEach((h,i)=>{ let fixed=null;
+    h.on('dragstart',()=>{ fixed=rect.getBounds()['get'+K[OPP[i]]](); });
+    h.on('drag',()=>{ rect.setBounds(L.latLngBounds(fixed,h.getLatLng())); sync(i); });
+    h.on('dragend',()=>{ sync(-1); fire(); }); });
+  let c0=null, b0=null;
+  C.on('dragstart',()=>{ c0=C.getLatLng(); b0=rect.getBounds(); });
+  C.on('drag',()=>{ const d=C.getLatLng(), dy=d.lat-c0.lat, dx=d.lng-c0.lng;
+    rect.setBounds(L.latLngBounds([b0.getSouth()+dy,b0.getWest()+dx],[b0.getNorth()+dy,b0.getEast()+dx])); sync('c'); });
+  C.on('dragend',()=>{ sync(-1); fire(); });
+  return rect;
+}
+// 폴리곤이 축에 나란한 네모면 다시 조절 가능한 네모로
+function polyAsBounds(poly){ if(!poly||poly.length!==4) return null; const la=[...new Set(poly.map(p=>p[0]))], ln=[...new Set(poly.map(p=>p[1]))];
+  return la.length===2&&ln.length===2?L.latLngBounds([Math.min(...la),Math.min(...ln)],[Math.max(...la),Math.max(...ln)]):null; }
+function drawArea(shape, map, el, lyr, btn, done){ return shape==='free'?startLasso(map,el,lyr,btn,done):startRect(map,el,lyr,btn,done); }
+const shapeOf=name=>(document.querySelector('input[name="'+name+'"]:checked')||{}).value||'rect';
+let arRoute=null;
 $('ar-draw').onclick=()=>{
-  if(!MAP) return; if(!arLayer) arLayer=L.layerGroup().addTo(MAP);
-  startLasso(MAP,$('map'),arLayer,$('ar-draw'),poly=>{ AR={polygon:poly}; suggestRoute(); });
+  if(!MAP) return; if(!arLayer) arLayer=L.layerGroup().addTo(MAP); if(!arRoute) arRoute=L.layerGroup().addTo(MAP);
+  arRoute.clearLayers(); $('ar-out').innerHTML='';
+  drawArea(shapeOf('ar-shape'),MAP,$('map'),arLayer,$('ar-draw'),poly=>{ AR={polygon:poly,day:0}; suggestRoute(); });
 };
-$('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); };
+$('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); if(arRoute) arRoute.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); $('ar-draw').textContent='구역 그리기'; };
 async function suggestRoute(){
+  if(!AR) return;
   let start={};
   if($('ar-start').value==='me'){ const g=await geo(); if(g) start={start_lat:g.lat,start_lng:g.lng}; }
   AR.start=start;
-  let r; try{ r=await post('/api/prospect-routes/suggest',{polygon:AR.polygon,user_id:Number($('ar-user').value)||META.me,max_stops:Number($('ar-max').value)||12,
+  let r; try{ r=await post('/api/prospect-routes/suggest',{polygon:AR.polygon,user_id:Number($('ar-user').value)||META.me,date:$('ar-date').value,
+    max_stops:Number($('ar-max').value)||12,max_days:Number($('ar-days').value)||5,multi_day:$('ar-multi').checked,skip_sunday:$('ar-sun').checked,
     include_unassigned:$('ar-unas').checked,skip_visited_days:$('ar-skip').checked?7:0,...start}); }catch(e){ return toast('실패: '+e.message); }
-  AR.res=r; drawSuggestion();
+  AR.res=r; AR.day=Math.min(AR.day||0,Math.max(0,r.days.length-1)); drawSuggestion();
 }
+['ar-max','ar-days','ar-multi','ar-sun','ar-unas','ar-skip','ar-user','ar-date'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR&&AR.polygon) suggestRoute(); }));
+const DAY_COLORS=['#E2231A','#1F6FEB','#1E7A46','#F5A300','#7B3FE4','#0E8C8C','#C2185B','#5D4037'];
+const wd=d=>['일','월','화','수','목','금','토'][new Date(d+'T12:00:00').getDay()];
+const hm=m=>Math.floor(m/60)+'시간 '+(m%60)+'분';
 function drawSuggestion(){
-  const r=AR.res; arLayer.eachLayer(l=>{ if(!(l instanceof L.Polygon)) arLayer.removeLayer(l); });
+  const r=AR.res, C=r.counts||{}; if(!arRoute) arRoute=L.layerGroup().addTo(MAP); arRoute.clearLayers();
   $('ar-clear').classList.remove('hide');
-  if(!r.stops.length){ $('ar-out').innerHTML='<div class="banner warn">구역 안에 방문할 후보가 없습니다(구역 안 후보 '+fmt(r.in_area)+'곳).</div>'; return; }
-  const pts=(r.start?[[r.start.lat,r.start.lng]]:[]).concat(r.stops.map(s=>[s.lat,s.lng]));
-  L.polyline(pts,{color:'#111',weight:3}).addTo(arLayer);
-  r.stops.forEach((s,i)=>L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',iconSize:[26,26],html:'<div style="width:26px;height:26px;border-radius:50%;background:#E2231A;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff">'+(i+1)+'</div>'})}).bindTooltip(esc(s.nom_estab)).addTo(arLayer));
+  const excl=[C.others?'다른 담당 '+fmt(C.others):'',C.visited?'최근 방문 '+fmt(C.visited):'',C.planned?'이미 다른 날 루트 '+fmt(C.planned):'',C.closed?'첫 매출·중단 '+fmt(C.closed):'',C.unassigned_skipped?'미배정 '+fmt(C.unassigned_skipped):''].filter(Boolean);
+  const head='<div class="banner info">구역 안 후보 <b>'+fmt(C.in_area)+'곳</b> · 방문 대상 <b>'+fmt(C.eligible)+'곳</b>'+(excl.length?'<br><span class="note">제외: '+excl.join(' · ')+'</span>':'')+'</div>';
+  if(!r.days.length){ $('ar-out').innerHTML=head+'<div class="banner warn" style="margin-top:8px">구역 안에 방문할 후보가 없습니다. 지도에서 회색(다른 담당)·검은 테두리(다녀간 곳)를 피해 다시 그려 보세요.</div>'; return; }
   const nm=$('ar-user').options[$('ar-user').selectedIndex].text;
-  $('ar-out').innerHTML='<div class="banner info"><b>'+esc(nm)+' · '+esc($('ar-date').value)+'</b><br>구역 안 후보 '+fmt(r.in_area)+'곳 중 <b>'+r.stops.length+'곳</b> · 이동 약 '+(r.distance_m/1000).toFixed(1)+'km · 예상 '+Math.floor(r.minutes/60)+'시간 '+(r.minutes%60)+'분(방문당 25분 포함)</div>'+
-    '<ol style="list-style:none;padding:0;margin:10px 0">'+r.stops.map((s,i)=>'<li class="stop" style="padding:8px 0"><div class="n" style="width:26px;height:26px;font-size:12px">'+(i+1)+'</div><div style="flex:1;min-width:0"><span class="tag '+s.priority+'">'+s.priority+'</span> <b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||'')+' · '+esc((STAGE[s.stage]||{}).ko||'')+' · '+s.score+'점'+(s.owner_user_id==null?' · 미배정':'')+'</div></div><button class="iconbtn" data-arx="'+s.id+'" aria-label="빼기" title="빼기">✕</button></li>').join('')+'</ol>'+
-    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn red" id="ar-save">이 루트로 저장</button><button class="btn ghost" id="ar-again">다시 제안</button></div>';
-  $('ar-out').querySelectorAll('[data-arx]').forEach(b=>b.onclick=()=>{ const id=Number(b.dataset.arx); r.stops=r.stops.filter(s=>s.id!==id); drawSuggestion(); });
+  const tot=r.days.reduce((a,d)=>({km:a.km+d.distance_m,n:a.n+d.stops.length}),{km:0,n:0});
+  let warn='';
+  if(r.first_date_existing_stops) warn+='<div class="banner warn" style="margin-top:8px">'+esc(r.days[0].date)+'에 이미 루트 '+r.first_date_existing_stops+'곳이 있습니다. 저장하면 이 제안으로 바뀝니다.</div>';
+  if(C.left>0) warn+='<div class="banner warn" style="margin-top:8px">'+fmt(C.left)+'곳은 '+r.days.length+'일 안에 못 들어갑니다 — 「최대 일수」를 늘리거나 '+(($('ar-multi').checked)?'구역을 나눠 그리세요.':'「다음 날로 자동 배정」을 켜세요.')+'</div>';
+  if(r.skipped_dates&&r.skipped_dates.length) warn+='<p class="note" style="margin-top:6px">이미 루트가 있는 날은 건너뛰었습니다: '+r.skipped_dates.map(d=>d.slice(5)+'('+wd(d)+')').join(', ')+'</p>';
+  const chips='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">'+r.days.map((d,k)=>'<button class="chip'+(k===AR.day?' on':'')+'" data-day="'+k+'" style="padding:6px 10px;cursor:pointer;border-color:'+DAY_COLORS[k%8]+';'+(k===AR.day?'background:'+DAY_COLORS[k%8]+';color:#fff':'')+'"><b>'+(k+1)+'일차</b> '+d.date.slice(5)+'('+wd(d.date)+') · '+d.stops.length+'곳</button>').join('')+'</div>';
+  const D=r.days[AR.day];
+  // 지도: 모든 날 노선(색 구분), 고른 날만 번호
+  r.days.forEach((d,k)=>{ const col=DAY_COLORS[k%8], on=k===AR.day;
+    const pts=(k===0&&r.start?[[r.start.lat,r.start.lng]]:[]).concat(d.stops.map(s=>[s.lat,s.lng]));
+    L.polyline(pts,{color:col,weight:on?3.5:2,opacity:on?1:.55,dashArray:on?null:'5 5'}).addTo(arRoute);
+    d.stops.forEach((s,i)=>{ if(on) L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',iconSize:[26,26],html:'<div style="width:26px;height:26px;border-radius:50%;background:'+col+';color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff">'+(i+1)+'</div>'}),zIndexOffset:500}).bindTooltip(esc(s.nom_estab)).addTo(arRoute);
+      else L.circleMarker([s.lat,s.lng],{radius:5,weight:2,color:'#fff',fillColor:col,fillOpacity:.9}).bindTooltip((k+1)+'일차 · '+esc(s.nom_estab)).addTo(arRoute); }); });
+  $('ar-out').innerHTML=head+warn+
+    '<div style="margin-top:10px"><b>'+esc(nm)+'</b> · '+r.days.length+'일 · '+fmt(tot.n)+'곳 · 총 이동 약 '+(tot.km/1000).toFixed(1)+'km</div>'+chips+
+    '<div class="note"><b style="color:'+DAY_COLORS[AR.day%8]+'">'+(AR.day+1)+'일차 '+esc(D.date)+'('+wd(D.date)+')</b> · 이동 약 '+(D.distance_m/1000).toFixed(1)+'km · 예상 '+hm(D.minutes)+'(방문당 25분 포함)</div>'+
+    '<ol style="list-style:none;padding:0;margin:8px 0">'+D.stops.map((s,i)=>'<li class="stop" style="padding:8px 0"><div class="n" style="width:26px;height:26px;font-size:12px;background:'+DAY_COLORS[AR.day%8]+';color:#fff;border-color:'+DAY_COLORS[AR.day%8]+'">'+(i+1)+'</div><div style="flex:1;min-width:0"><span class="tag '+s.priority+'">'+s.priority+'</span> <b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||'')+' · '+esc((STAGE[s.stage]||{}).ko||'')+' · '+s.score+'점'+(s.owner_user_id==null?' · 미배정':'')+'</div></div><button class="iconbtn" data-arx="'+s.id+'" aria-label="빼기" title="빼기">✕</button></li>').join('')+'</ol>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn red" id="ar-save">'+(r.days.length>1?r.days.length+'일 루트 모두 저장':'이 루트로 저장')+'</button><button class="btn ghost" id="ar-again">다시 제안</button></div>';
+  $('ar-out').querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{ AR.day=Number(b.dataset.day); drawSuggestion(); });
+  $('ar-out').querySelectorAll('[data-arx]').forEach(b=>b.onclick=()=>{ const id=Number(b.dataset.arx); D.stops=D.stops.filter(s=>s.id!==id); drawSuggestion(); });
   $('ar-again').onclick=suggestRoute;
   $('ar-save').onclick=async()=>{
-    try{ await post('/api/prospect-routes',{date:$('ar-date').value,user_id:Number($('ar-user').value)||META.me,prospect_ids:r.stops.map(s=>s.id),optimize:true,...(AR.start||{})},'PUT');
-      toast('루트 저장 · '+r.stops.length+'곳'); if($('ar-date').value===META.today&&Number($('ar-user').value)===META.me){ ROUTE=null; } }
-    catch(e){ toast('실패: '+e.message); } };
+    const uid=Number($('ar-user').value)||META.me; let n=0;
+    try{ for(const d of r.days){ if(!d.stops.length) continue; await post('/api/prospect-routes',{date:d.date,user_id:uid,prospect_ids:d.stops.map(s=>s.id),optimize:false},'PUT'); n++; }
+      toast('루트 저장 · '+n+'일 · '+fmt(r.days.reduce((a,d)=>a+d.stops.length,0))+'곳'); ROUTE=null; loadMapPins(); }
+    catch(e){ toast('실패: '+e.message+' ('+n+'일까지 저장됨)'); } };
 }
 async function loadMapPins(){
   const b=MAP.getBounds(); const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(v=>v.toFixed(5)).join(',');
   let r; try{ r=await api('/api/prospects/map?bbox='+bbox+(ent()?'&cve_ent='+ent():'')+($('m-owner').value?'&owner='+$('m-owner').value:'')); }catch(e){ return; }
   const st=$('m-stage').value, sg=$('m-seg').value, pr=$('m-prio').value;
   layer.clearLayers();
+  (r.others||[]).forEach(o=>L.circleMarker([o[0],o[1]],{radius:3.5,weight:o[2]?1.5:0,color:'#555',fillColor:'#B5B5B5',fillOpacity:.85,interactive:false}).addTo(layer));
   r.rows.filter(p=>(!st||p.s===st)&&(!sg||p.g===sg)&&(!pr||p.pr===pr)).forEach(p=>{
-    const m=L.circleMarker([p.lat,p.lng],{radius:p.pr==='A'?6.5:5,color:p.s==='sin_asignar'?'#0B3D91':'#fff',weight:p.s==='sin_asignar'?1.5:1,fillColor:STAGE_COLOR[p.s],fillOpacity:1});
-    m.bindTooltip(esc(p.n)); m.on('click',()=>openProspect(p.id)); m.addTo(layer);
+    const visited=!!p.v, planned=!!p.rd;
+    const m=L.circleMarker([p.lat,p.lng],{radius:p.pr==='A'?6.5:5,
+      color:visited?'#111':planned?'#111':p.s==='sin_asignar'?'#0B3D91':'#fff',weight:visited?2.5:planned?2:p.s==='sin_asignar'?1.5:1,dashArray:planned&&!visited?'3 2':null,
+      fillColor:STAGE_COLOR[p.s],fillOpacity:1});
+    m.bindTooltip(esc(p.n)+(visited?' · 마지막 방문 '+esc(p.v):'')+(planned?' · 루트 예정 '+esc(p.rd):'')); m.on('click',()=>openProspect(p.id)); m.addTo(layer);
   });
   $('m-sel').textContent=fmt(r.rows.length)+'곳'+(r.truncated?' (확대하면 더 보입니다)':'')+(routePick.length?' · 루트 선택 '+routePick.length+'곳':'');
 }
@@ -1078,9 +1168,9 @@ function ensureTMap(){
 }
 function drawTerrs(){
   if(!T_MAP) return; tAll.clearLayers();
-  TERRS.filter(t=>t.polygon&&t.polygon.length&&(!T_EDIT||t.id!==T_EDIT.id)).forEach(t=>{
+  TERRS.filter(t=>t.outline&&t.outline.length>=3&&(!T_EDIT||t.id!==T_EDIT.id)).forEach(t=>{
     const mine=t.owner_user_id===META.me;
-    L.polygon(t.polygon,{color:mine?'#E2231A':'#6B6B6B',weight:1.5,dashArray:mine?null:'4 4',fillColor:mine?'#E2231A':'#9A9A9A',fillOpacity:.08}).bindTooltip(esc(t.name+' · '+(t.owner_name||'담당 없음'))).addTo(tAll); });
+    L.polygon(t.outline,{color:mine?'#E2231A':'#6B6B6B',weight:1.5,dashArray:mine?null:'4 4',fillColor:mine?'#E2231A':'#9A9A9A',fillOpacity:.08}).bindTooltip(esc(t.name+' · '+(t.owner_name||'담당 없음'))).addTo(tAll); });
 }
 function editTerr(t){
   T_EDIT=t||null; T_POLY=t&&t.polygon&&t.polygon.length?t.polygon:null;
@@ -1095,11 +1185,13 @@ function editTerr(t){
   setTMode(t&&!T_POLY&&((t.municipios||[]).length||(t.cps||[]).length)?'mun':'map');
   $('t-prev').innerHTML=''; $('t-draw').textContent=T_POLY?'구역 다시 그리기':'구역 그리기';
   if(T_MAP){ tDraw.clearLayers(); tPts.clearLayers(); drawTerrs();
-    if(T_POLY){ const pg=L.polygon(T_POLY,{color:'#E2231A',weight:2,fillColor:'#E2231A',fillOpacity:.06}).addTo(tDraw); T_MAP.fitBounds(pg.getBounds(),{padding:[20,20]}); previewTerr(); } }
+    if(T_POLY){ const rb=polyAsBounds(T_POLY);
+      const pg=rb&&canEditTerr(t)?editableRect(T_MAP,tDraw,rb,poly=>{ T_POLY=poly; previewTerr(); }):L.polygon(T_POLY,{color:'#E2231A',weight:2,fillColor:'#E2231A',fillOpacity:.06}).addTo(tDraw);
+      T_MAP.fitBounds(pg.getBounds(),{padding:[20,20]}); previewTerr(); } }
 }
 $('t-owner').onchange=()=>{ if(T_POLY) previewTerr(); };
 $('t-draw').onclick=()=>{ if(!ensureTMap()) return; tPts.clearLayers(); $('t-prev').innerHTML='';
-  startLasso(T_MAP,$('t-map'),tDraw,$('t-draw'),poly=>{ T_POLY=poly; previewTerr(); }); };
+  drawArea(shapeOf('t-shape'),T_MAP,$('t-map'),tDraw,$('t-draw'),poly=>{ T_POLY=poly; previewTerr(); }); };
 async function previewTerr(){
   if(!T_POLY) return;
   let r; try{ r=await post('/api/prospect-territories/preview',{polygon:T_POLY,owner_user_id:isDir?($('t-owner').value||null):META.me,territory_id:T_EDIT?T_EDIT.id:null}); }catch(e){ return toast('실패: '+e.message); }

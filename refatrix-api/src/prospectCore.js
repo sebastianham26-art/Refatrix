@@ -549,3 +549,43 @@ export function weekBounds(ymd) {
   const from = d.toISOString().slice(0, 10); d.setUTCDate(d.getUTCDate() + 7);
   return { from, to: d.toISOString().slice(0, 10), days: 7 };
 }
+
+// ── 구역 → 여러 날 루트 자동 배분 ─────────────────────────────────────────
+// 하루 최대 방문 수를 넘는 곳은 다음 날(일요일·이미 루트가 있는 날 제외)로 넘긴다.
+//   ① 우선순위 순으로 (일수 × 하루 최대)까지만 고르고 ② 가까운 순서(최근접 이웃)로 한 줄로 이은 뒤
+//   ③ 하루 최대씩 잘라서 ④ 날마다 2-opt 로 다시 최적화 — 하루 동선이 한 동네에 모이게 한다.
+export function planDays(cands, { max = 12, maxDays = 5, start = null } = {}) {
+  const cap = Math.max(1, max) * Math.max(1, maxDays);
+  const picked = (cands || []).filter((s) => s.lat != null && s.lng != null).slice().sort(rankForRoute).slice(0, cap);
+  const chain = orderStops(picked, start);
+  const days = [];
+  for (let i = 0; i < chain.length; i += max) {
+    const opt = optimizeRoute(chain.slice(i, i + max), i === 0 ? start : null);
+    days.push({ stops: opt.stops, distance_m: opt.distance_m, minutes: routeMinutes(opt.distance_m, opt.stops.length) });
+  }
+  return { days, left: Math.max(0, (cands || []).length - picked.length) };
+}
+// 다음 근무일들: from 포함, 일요일 제외(옵션), 이미 루트가 있는 날 제외
+export function nextWorkDates(from, n, { skipSunday = true, taken = new Set() } = {}) {
+  const out = []; const d = new Date(String(from).slice(0, 10) + 'T12:00:00Z');
+  if (Number.isNaN(d.getTime())) return out;
+  for (let guard = 0; out.length < n && guard < n * 3 + 14; guard++, d.setUTCDate(d.getUTCDate() + 1)) {
+    const ymd = d.toISOString().slice(0, 10);
+    if (skipSunday && d.getUTCDay() === 0) continue;
+    if (taken.has(ymd)) continue;
+    out.push(ymd);
+  }
+  return out;
+}
+// 지역 윤곽(municipio·CP 로 정한 지역은 후보 위치의 볼록 껍질로 지도에 표시) — [[lat,lng],...]
+export function convexHull(points) {
+  const P = (points || []).filter((p) => p && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+    .map((p) => [p[1], p[0]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (P.length < 3) return null;
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of P) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of P.slice().reverse()) { while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  const h = lo.slice(0, -1).concat(up.slice(0, -1)).map(([x, y]) => [Math.round(y * 1e5) / 1e5, Math.round(x * 1e5) / 1e5]);
+  return h.length >= 3 ? h : null;
+}

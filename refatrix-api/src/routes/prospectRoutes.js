@@ -20,7 +20,7 @@ import {
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
-  inPolygon, rankForRoute, optimizeRoute, routeMinutes, weekBounds,
+  inPolygon, rankForRoute, optimizeRoute, routeMinutes, weekBounds, planDays, nextWorkDates, convexHull,
 } from '../prospectCore.js';
 import { pageAllowed } from '../permissions.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
@@ -33,6 +33,7 @@ const int = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? 
 const txt = (v, n = 300) => { const s = String(v == null ? '' : v).trim(); return s ? s.slice(0, n) : null; };
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD = /^\d{4}-\d{2}$/;
+function addDays(ymd, n) { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 function mxToday() { return new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10); }
 function parseJ(v) { if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (_) { return null; } }
 
@@ -234,11 +235,24 @@ export default async function prospectRoutes(app) {
       conds.push(`p.lng BETWEEN $${params.length - 3} AND $${params.length - 1} AND p.lat BETWEEN $${params.length - 2} AND $${params.length}`);
     }
     if (int(qs.owner) && isDir(req)) { params.push(int(qs.owner)); conds.push(`p.owner_user_id = $${params.length}`); }
+    params.push(mxToday());
     const rows = (await query(
-      `SELECT p.id, p.nom_estab AS n, p.lat, p.lng, p.stage AS s, p.segment AS g, p.priority AS pr, p.owner_user_id AS o
+      `SELECT p.id, p.nom_estab AS n, p.lat, p.lng, p.stage AS s, p.segment AS g, p.priority AS pr, p.owner_user_id AS o,
+              (SELECT MAX(c.consult_date)::text FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL) AS v,
+              (SELECT MIN(r.route_date)::text FROM prospect_route_stops rs JOIN prospect_routes r ON r.id=rs.route_id
+                WHERE rs.prospect_id=p.id AND rs.consult_id IS NULL AND r.route_date >= $${params.length}::date) AS rd
          FROM prospects p WHERE ${conds.join(' AND ')} ORDER BY p.priority LIMIT 6000`, params)).rows
       .map((r) => ({ ...r, id: Number(r.id), o: r.o == null ? null : Number(r.o) }));
-    return { rows, truncated: rows.length >= 6000 };
+    // 담당자 화면: 다른 담당의 후보는 이름 없이 위치만(회색) — 지도에서 피해서 구역을 잡도록
+    let others = [];
+    if (!isDir(req) && bb.length === 4 && bb.every(Number.isFinite)) {
+      others = (await query(
+        `SELECT p.lat, p.lng, (EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL)) AS v
+           FROM prospects p WHERE p.deleted_at IS NULL AND p.lat IS NOT NULL AND p.owner_user_id IS NOT NULL AND p.owner_user_id <> $1
+            AND p.lng BETWEEN $2 AND $4 AND p.lat BETWEEN $3 AND $5 ${qs.cve_ent ? 'AND p.cve_ent = $6' : ''} LIMIT 4000`,
+        [me(req), bb[0], bb[1], bb[2], bb[3], ...(qs.cve_ent ? [String(qs.cve_ent)] : [])])).rows.map((r) => [Number(r.lat), Number(r.lng), r.v ? 1 : 0]);
+    }
+    return { rows, others, truncated: rows.length >= 6000 };
   });
 
   // 오늘 체크인 동선(지도 실선) — 담당자별 체크인 순서
@@ -430,7 +444,13 @@ export default async function prospectRoutes(app) {
               (SELECT COUNT(*)::int FROM prospects p WHERE p.territory_id=t.id AND p.deleted_at IS NULL) AS total,
               (SELECT COUNT(*)::int FROM prospects p WHERE p.territory_id=t.id AND p.deleted_at IS NULL AND p.stage NOT IN ('sin_asignar','asignado','descartado')) AS worked
          FROM prospect_territories t LEFT JOIN users u ON u.id=t.owner_user_id ORDER BY t.cve_ent, t.name`)).rows;
-    return { rows: rows.map((r) => ({ ...r, id: Number(r.id), owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id) })) };
+    // 지도 윤곽: 지도 구역은 그대로, municipio·CP 지역은 후보 위치의 볼록 껍질
+    const need = rows.filter((r) => !(Array.isArray(r.polygon) && r.polygon.length >= 3)).map((r) => Number(r.id));
+    const pts = {};
+    if (need.length) (await query(`SELECT territory_id, lat, lng FROM prospects WHERE territory_id = ANY($1) AND deleted_at IS NULL AND lat IS NOT NULL`, [need])).rows
+      .forEach((r) => (pts[r.territory_id] = pts[r.territory_id] || []).push([Number(r.lat), Number(r.lng)]));
+    return { rows: rows.map((r) => ({ ...r, id: Number(r.id), owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+      outline: Array.isArray(r.polygon) && r.polygon.length >= 3 ? r.polygon : convexHull(pts[r.id] || []) })) };
   });
   // 지역 저장 — 디렉터: 누구의 지역이든(구역 그리기 또는 municipio/CP) / 담당자: 자기 지역만, 지도 구역으로만
   async function saveTerritory(req, reply, id) {
@@ -640,23 +660,52 @@ export default async function prospectRoutes(app) {
     if (poly.length < 3) return reply.code(400).send({ error: 'polygon_required' });
     const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
     const max = Math.min(30, Math.max(1, int(b.max_stops) || 12));
+    const multi = b.multi_day !== false;
+    const maxDays = multi ? Math.min(15, Math.max(1, int(b.max_days) || 5)) : 1;
+    const skipDays = b.skip_visited_days === 0 || b.skip_visited_days === false ? 0 : (int(b.skip_visited_days) || 7);
+    const date = YMD.test(String(b.date)) ? b.date : mxToday();
     const lats = poly.map((p) => p[0]), lngs = poly.map((p) => p[1]);
-    const params = [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs), uid];
+    // 구역 안 모든 후보를 분류: 갈 수 있음 / 다른 담당 / 최근 방문 / 이미 다른 날 루트에 있음 / 완료·중단
     const rows = (await query(
-      `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage, p.owner_user_id, p.last_activity_at, p.colonia, p.municipio
+      `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage, p.owner_user_id, p.last_activity_at, p.colonia, p.municipio,
+              (SELECT MAX(c.created_at) FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL) AS last_visit,
+              EXISTS (SELECT 1 FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
+                       WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND r.route_date >= $5::date AND NOT (r.user_id = $6 AND r.route_date = $7::date)) AS planned
          FROM prospects p
-        WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4
-          AND p.stage NOT IN ('cliente_activo','descartado')
-          AND (p.owner_user_id = $5 ${b.include_unassigned !== false ? 'OR p.owner_user_id IS NULL' : ''})
-          ${b.skip_visited_days ? `AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL AND c.created_at > now() - ($6::int * INTERVAL '1 day'))` : ''}`,
-      b.skip_visited_days ? [...params, int(b.skip_visited_days) || 7] : params)).rows
-      .filter((r) => inPolygon(r.lat, r.lng, poly))
-      .map((r) => ({ ...r, id: Number(r.id), owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id) }));
-    const picked = rows.slice().sort(rankForRoute).slice(0, max);
+        WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4`,
+      [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs), mxToday(), uid, date])).rows
+      .filter((r) => inPolygon(Number(r.lat), Number(r.lng), poly));
+    const cnt = { in_area: rows.length, others: 0, visited: 0, planned: 0, closed: 0, unassigned_skipped: 0 };
+    const since = Date.now() - skipDays * 86400000;
+    const cands = [];
+    for (const r of rows) {
+      const owner = r.owner_user_id == null ? null : Number(r.owner_user_id);
+      if (['cliente_activo', 'descartado'].includes(r.stage)) { cnt.closed++; continue; }
+      if (owner != null && owner !== uid) { cnt.others++; continue; }
+      if (owner == null && b.include_unassigned === false) { cnt.unassigned_skipped++; continue; }
+      if (skipDays && r.last_visit && new Date(r.last_visit).getTime() > since) { cnt.visited++; continue; }
+      if (r.planned && b.include_planned !== true) { cnt.planned++; continue; }
+      cands.push({ ...r, id: Number(r.id), lat: Number(r.lat), lng: Number(r.lng), owner_user_id: owner });
+    }
+    cnt.eligible = cands.length;
     const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
-    const opt = optimizeRoute(picked, start);
-    return { in_area: rows.length, user_id: uid, stops: opt.stops, distance_m: opt.distance_m,
-      minutes: routeMinutes(opt.distance_m, opt.stops.length), start };
+    const plan = planDays(cands, { max, maxDays, start });
+    // 날짜: 시작일부터, 일요일 제외(옵션), 이 담당에게 이미 루트가 있는 날은 건너뜀(첫날은 고른 날짜 그대로 — 덮어쓰기 확인은 화면에서)
+    const taken = new Set((await query(
+      `SELECT r.route_date::text AS d FROM prospect_routes r WHERE r.user_id=$1 AND r.route_date > $2::date
+          AND EXISTS (SELECT 1 FROM prospect_route_stops s WHERE s.route_id=r.id)`, [uid, date])).rows.map((r) => r.d));
+    const first = [date];
+    const rest = plan.days.length > 1 ? nextWorkDates(addDays(date, 1), plan.days.length - 1, { skipSunday: b.skip_sunday !== false, taken }) : [];
+    const dates = first.concat(rest);
+    const existingFirst = Number((await query(
+      `SELECT COUNT(*)::int AS n FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id WHERE r.user_id=$1 AND r.route_date=$2`, [uid, date])).rows[0].n);
+    const days = plan.days.map((d, k) => ({ date: dates[k], ...d }));
+    const d0 = days[0] || { stops: [], distance_m: 0, minutes: 0 };
+    cnt.scheduled = days.reduce((a, d) => a + d.stops.length, 0); cnt.left = cnt.eligible - cnt.scheduled;
+    return { user_id: uid, start, days, counts: cnt, skipped_dates: [...taken].filter((t) => dates.length && t <= dates[dates.length - 1]).sort(),
+      first_date_existing_stops: existingFirst,
+      // 예전 화면 호환
+      in_area: rows.length, stops: d0.stops, distance_m: d0.distance_m, minutes: d0.minutes };
   });
 
   // ── 검토(Alta de clientes) ─────────────────────────────────────────

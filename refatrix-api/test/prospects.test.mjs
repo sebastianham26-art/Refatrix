@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inPolygon, optimizeRoute, rankForRoute, weekBounds, routeMinutes,
-  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES, allocateTarget,
+  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES, allocateTarget, planDays, nextWorkDates, convexHull,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
   parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds,
@@ -276,4 +276,16 @@ test('개발 점수 목표 자동 계산', async () => {
   assert.equal(Object.values(POINT_WEIGHTS).reduce((a, c) => a + c, 0), 100);
   assert.equal(pointsTarget({ visitas: 200, contactados: 120, perfilados: 40, cotizaciones: 15, nuevos_clientes: 5, venta_nuevos: 150000 }), 120 * 12 + 40 * 18 + 15 * 30 + 5 * 40);
   assert.equal(pointsTarget({ visitas: 100 }), 0);
+});
+
+test('구역 루트: 남는 곳은 다음 근무일로', () => {
+  const c = []; for (let i = 0; i < 30; i++) c.push({ id: i, lat: 25.6 + (i % 6) * 0.004, lng: -100.3 + Math.floor(i / 6) * 0.004, priority: ['A', 'B', 'C'][i % 3] });
+  const r = planDays(c, { max: 12, maxDays: 5 });
+  assert.deepEqual(r.days.map((d) => d.stops.length), [12, 12, 6]); assert.equal(r.left, 0);
+  assert.equal(new Set(r.days.flatMap((d) => d.stops.map((s) => s.id))).size, 30);
+  const r2 = planDays(c, { max: 12, maxDays: 2 });
+  assert.equal(r2.left, 6); assert.ok(r2.days.flatMap((d) => d.stops).filter((s) => s.priority === 'A').length === 10);  // 우선순위 A 먼저
+  assert.deepEqual(nextWorkDates('2026-11-28', 3, { taken: new Set(['2026-12-01']) }), ['2026-11-28', '2026-11-30', '2026-12-02']);  // 일요일·루트 있는 날 제외
+  assert.deepEqual(nextWorkDates('2026-11-29', 1, { skipSunday: false }), ['2026-11-29']);
+  assert.equal(convexHull([[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]]).length, 4);
 });
