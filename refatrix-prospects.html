@@ -152,8 +152,11 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 .parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:12px}
 .parts div{background:#fff;border:1px solid var(--line);border-radius:4px;padding:8px 10px;font-size:12px}
 .parts b{display:block;font-size:18px}
-.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
-.rules .r{border:1px solid var(--line);border-radius:4px;padding:14px}
+.rules{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.rules .r{border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-size:13px}
+.rules .r .h{flex-wrap:wrap;row-gap:2px}
+@media (max-width:1100px){.rules{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){.rules{grid-template-columns:1fr 1fr}}
 .rules .r .h{display:flex;align-items:center;gap:8px;font-weight:800}
 .how{font-size:11px;font-weight:800;padding:1px 7px;border-radius:var(--pill);background:var(--surface)}
 .how.auto{background:var(--ok-soft);color:var(--ok)} .how.suggest{background:var(--warn-soft);color:#6B4100}
@@ -419,7 +422,7 @@ const post=(p,b,m)=>api(p,{method:m||'POST',body:JSON.stringify(b||{})});
 
 // ── 상태 ──
 let META=null, STAGE={}, USERS={}, isDir=false;
-const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9',perfilado:'#EE8A82',interesado:'#E8635C',cotizado:'#E2231A',registro:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B'};
+const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9',perfilado:'#EE8A82',interesado:'#E8635C',registro:'#E2231A',cotizado:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B'};
 const SEG_LBL={mayorista:'부품 도매',refaccionaria:'Refaccionaria',refaccionaria_usada:'Refaccionaria(중고)',taller_suspension:'서스펜션·얼라인먼트',taller_general:'일반정비',otro:'기타'};
 const METRIC_LBL={visitas:'방문',contactados:'첫 방문 업체',perfilados:'정보 확보 업체',puntos:'획득 점수',cotizaciones:'견적',nuevos_clientes:'신규고객',venta_nuevos:'신규매출(IVA 제외)'};
 const stageDot=k=>'<span class="chip"><span class="dot" style="background:'+(STAGE_COLOR[k]||'#999')+'"></span>'+esc((STAGE[k]||{}).ko||k)+'</span>';
@@ -563,12 +566,12 @@ function renderRules(R){
   const HOW={auto:'기록으로 자동',suggest:'AI 제안 → 확인',manual:'담당이 직접'};
   const sw=META.section_weights;
   $('b-rules').innerHTML='<div class="rules">'+META.stages.map((st,i)=>'<div class="r"><div class="h"><span class="dot" style="background:'+STAGE_COLOR[st.key]+'"></span>'+(st.key==='descartado'?'':i+'. ')+esc(st.ko)+' <span class="note" style="font-weight:400">'+esc(st.es)+'</span> <span class="how '+st.how+'">'+HOW[st.how]+'</span></div>'+
-      '<div style="margin-top:8px;font-size:13px"><b>근거</b> '+esc(st.rule)+'</div><div class="note" style="margin-top:4px"><b>다음 목표</b> '+esc(st.goal)+'</div></div>').join('')+'</div>'+
+      '<div style="margin-top:6px"><b>근거</b> '+esc(st.rule)+'</div><div class="note" style="margin-top:4px"><b>다음 목표</b> '+esc(st.goal)+'</div></div>').join('')+'</div>'+
     '<h3 style="margin-top:20px">개발 점수 (0~100)</h3><table class="tb" style="margin-top:8px"><thead><tr><th>항목</th><th class="num">점수</th><th>어떻게 얻나</th></tr></thead><tbody>'+
     '<tr><td>정보 충족도</td><td class="num">최대 '+R.info_max+'</td><td>저장한 고객정보 비율 × '+R.info_max+'. 섹션 가중치: 기본정보 '+sw.datos_generales+' · 고객 규모 '+sw.tamano_cliente+' · 잠재성 '+sw.potencial+' · 영업 정보 '+sw.informacion_empresa+' · 업종·서비스 '+sw.tipo_servicios+' · 경쟁사 '+sw.competencia+' (%)</td></tr>'+
-    '<tr><td>관심 확인</td><td class="num">+'+R.interest+'</td><td>관심 단계 확인(또는 견적·고객 연결)</td></tr><tr><td>견적 제출</td><td class="num">+'+R.quote+'</td><td>ERP에 견적서 저장(연결 고객 견적은 자동, 게스트 견적은 상호로 자동 연결 또는 직접 연결)</td></tr>'+
-    '<tr><td>고객 등록</td><td class="num">+'+R.registro+'</td><td>ERP 고객과 연결</td></tr><tr><td><b>첫 매출</b></td><td class="num"><b>100</b></td><td>연결 고객의 첫 게시 인보이스 = 신규개발 완료</td></tr></tbody></table>'+
-    '<p class="note">예) 첫 방문에서 정보 20% 확보 → 12점 · 다음 방문에서 70%까지 → 42점 · 관심 확인 → 47점 · 견적 제출 → 62점 · 고객 등록 → 72점 · 첫 매출 → 100점</p>';
+    '<tr><td>관심 확인</td><td class="num">+'+R.interest+'</td><td>관심 단계 확인(또는 고객 연결·견적)</td></tr><tr><td>고객 등록</td><td class="num">+'+R.registro+'</td><td>ERP 고객과 연결</td></tr>'+
+    '<tr><td>견적 제출</td><td class="num">+'+R.quote+'</td><td>ERP에 견적서 저장(연결 고객 견적은 자동, 등록 전 게스트 견적은 상호로 자동 연결 또는 직접 연결)</td></tr><tr><td><b>첫 매출</b></td><td class="num"><b>100</b></td><td>연결 고객의 첫 게시 인보이스 = 신규개발 완료</td></tr></tbody></table>'+
+    '<p class="note">예) 첫 방문에서 정보 20% 확보 → 12점 · 다음 방문에서 70%까지 → 42점 · 관심 확인 → 47점 · 고객 등록 → 57점 · 견적 제출 → 72점 · 첫 매출 → 100점</p>';
 }
 
 // ── 현황판 ──
@@ -582,7 +585,7 @@ async function loadDash(){
       return '<div class="card kpi"><div class="lbl">'+esc(METRIC_LBL[k.metric])+'</div><div class="val">'+val+'</div><div class="note">'+(tg?'목표 '+tg:'목표 없음')+'</div>'+
         (tg?'<div class="bar"><i class="'+st+'" style="width:'+w+'%"></i></div>':'')+'<div class="note '+(st?'st-'+st:'')+'" style="margin-top:6px;font-weight:700">'+(p==null?'':p+'%')+(st==='bad'?' · 속도 부족':st==='warn'?' · 조금 느림':st==='ok'?' · 순조':'')+'</div></div>';
     }).join('');
-  const order=['asignado','contactado','perfilado','interesado','cotizado','registro','cliente_activo'];
+  const order=['asignado','contactado','perfilado','interesado','registro','cotizado','cliente_activo'];
   const base=d.funnel.asignado+order.slice(1).reduce((s,k)=>s+d.funnel[k],0)||1;
   let reach=base;
   $('d-funnel').innerHTML=order.map((k,i)=>{
@@ -825,7 +828,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
 
 async function openProspect(id){
   let d; try{ d=await api('/api/prospects/'+id); }catch(e){ return toast('열 수 없습니다: '+e.message); }
-  const p=d.prospect; const order=['asignado','contactado','perfilado','interesado','cotizado','registro','cliente_activo'];
+  const p=d.prospect; const order=['asignado','contactado','perfilado','interesado','registro','cotizado','cliente_activo'];
   const manualOK=k=>isDir||['contactado','interesado'].includes(k);
   const crmN=Object.keys(d.crm).length;
   const html=
@@ -885,8 +888,8 @@ function scoreBlock(d){
   return (p.suggested_stage?'<div class="banner warn" style="margin-top:16px"><b>단계 제안: '+esc((STAGE[p.suggested_stage]||{}).ko)+'</b> — '+esc(p.suggestion_reason||'')+
       '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm" data-sug="1">적용</button><button class="btn ghost sm" data-sug="0">무시</button></div></div>':'')+
     '<div class="sec"><h3>개발 점수</h3><div class="card flat"><div class="score"><div class="big" style="color:'+scoreColor(p.score)+'">'+p.score+'<small> / 100</small></div>'+
-      '<div style="flex:1"><div class="meter"><i style="width:'+(P.sale?100:P.info||0)+'%;background:'+(P.sale?'#1E7A46':'#EE8A82')+'"></i><i style="width:'+(P.sale?0:P.interest||0)+'%;background:#E8635C"></i><i style="width:'+(P.sale?0:P.quote||0)+'%;background:#E2231A"></i><i style="width:'+(P.sale?0:P.registro||0)+'%;background:#8E120C"></i></div>'+
-      '<div class="note" style="margin-top:6px">'+(P.sale?'첫 매출 — 신규개발 완료':'정보 '+(P.info||0)+' + 관심 '+(P.interest||0)+' + 견적 '+(P.quote||0)+' + 등록 '+(P.registro||0))+'</div></div></div>'+
+      '<div style="flex:1"><div class="meter"><i style="width:'+(P.sale?100:P.info||0)+'%;background:'+(P.sale?'#1E7A46':'#EE8A82')+'"></i><i style="width:'+(P.sale?0:P.interest||0)+'%;background:#E8635C"></i><i style="width:'+(P.sale?0:P.registro||0)+'%;background:#E2231A"></i><i style="width:'+(P.sale?0:P.quote||0)+'%;background:#8E120C"></i></div>'+
+      '<div class="note" style="margin-top:6px">'+(P.sale?'첫 매출 — 신규개발 완료':'정보 '+(P.info||0)+' + 관심 '+(P.interest||0)+' + 등록 '+(P.registro||0)+' + 견적 '+(P.quote||0))+'</div></div></div>'+
       '<div class="parts">'+Object.entries(SECL).map(([k,l])=>'<div>'+l+'<b>'+((sec[k]||{}).filled_pct||0)+'%</b><span class="note">가중 '+((sec[k]||{}).weight||'')+'</span></div>').join('')+'</div>'+
       '<div class="note" style="margin-top:8px">정보 충족도 '+(p.info_pct||0)+'% → '+(P.info||0)+'점 (최대 '+R.info_max+')</div>'+
       (tl?'<div class="chart" style="margin-top:10px">'+tl+'</div>':'')+'</div></div>';

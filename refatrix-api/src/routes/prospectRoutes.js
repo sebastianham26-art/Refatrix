@@ -877,7 +877,7 @@ export default async function prospectRoutes(app) {
         WHERE TRUE ${entCond} AND l.created_at >= $${n + 1}::date AND l.created_at < $${n + 2}::date GROUP BY 1,2`, pp)).rows;
     const reach = (stage) => `
       SELECT p.owner_user_id AS uid, COUNT(*)::int AS n FROM prospects p
-        JOIN LATERAL (SELECT MIN(h.created_at) AS t FROM prospect_stage_history h WHERE h.prospect_id=p.id AND ${STAGE_RANK_SQL('h.to_stage')} >= ${stageRank(stage)}) f ON TRUE
+        JOIN LATERAL (SELECT MIN(h.created_at) AS t FROM prospect_stage_history h WHERE h.prospect_id=p.id AND ${stage === 'registro' ? `h.to_stage='registro'` : `${STAGE_RANK_SQL('h.to_stage')} >= ${stageRank(stage)}`}) f ON TRUE
        WHERE p.deleted_at IS NULL ${entCond} AND f.t >= $${n + 1}::date AND f.t < $${n + 2}::date GROUP BY 1`;
     const [rCont, rPerf, rCot, rReg, rSale] = await Promise.all(['contactado', 'perfilado', 'cotizado', 'registro', 'cliente_activo'].map((st) => query(reach(st), pp)));
     const own = (await query(

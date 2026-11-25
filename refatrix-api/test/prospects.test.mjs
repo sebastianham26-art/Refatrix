@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inPolygon, optimizeRoute, rankForRoute, weekBounds, routeMinutes,
-  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, STAGE_RANK_SQL, SCORE_RULES,
+  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
   parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds,
@@ -225,7 +225,10 @@ test('근거 기반 단계 + 제안', () => {
   assert.equal(deriveStage({ owner: true, visits: 2, info_pct: 55 }, 'contactado').auto, 'perfilado');
   assert.equal(deriveStage({ owner: true, visits: 1, info_pct: 55, interest_confirmed: true }, 'perfilado').auto, 'interesado');
   assert.equal(deriveStage({ owner: true, visits: 1, quoted: true }, 'perfilado').auto, 'cotizado');
-  assert.equal(deriveStage({ owner: true, visits: 1, linked: true }, 'cotizado').auto, 'registro');
+  assert.equal(deriveStage({ owner: true, visits: 1, linked: true }, 'interesado').auto, 'registro');
+  assert.equal(deriveStage({ owner: true, visits: 1, linked: true, quoted: true }, 'registro').auto, 'cotizado');
+  assert.equal(deriveStage({ owner: true, visits: 1, quoted: true }, 'interesado').auto, 'cotizado');   // 등록 전 게스트 견적
+  assert.ok(stageRank('registro') === 5 && stageRank('cotizado') === 6);
   assert.equal(deriveStage({ owner: true, linked: true, sale: true }, 'registro').auto, 'cliente_activo');
   const s1 = deriveStage({ owner: true, visits: 1, info_pct: 55, ai_stage: 'interesado' }, 'perfilado');
   assert.equal(s1.suggest.stage, 'interesado');

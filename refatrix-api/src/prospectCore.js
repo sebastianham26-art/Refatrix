@@ -18,11 +18,11 @@ export const STAGES = [
   { key: 'perfilado', ko: '정보 확보', es: 'Perfilado', how: 'auto',
     rule: 'Alta 양식 정보 충족도 50% 이상(저장된 값 기준)', goal: '관심 여부 확인 · 카탈로그/가격 제시' },
   { key: 'interesado', ko: '관심 확인', es: 'Interesado', how: 'suggest',
-    rule: 'AI가 녹음에서 관심(카탈로그·가격 요청 등)을 찾으면 제안 → 담당 확인 · 또는 담당이 직접', goal: '견적 제출' },
-  { key: 'cotizado', ko: '견적 제출', es: 'Cotizado', how: 'auto',
-    rule: 'ERP에 견적서가 저장됨(연결 고객의 견적, 또는 이 후보에 연결된 게스트 견적)', goal: '고객 등록(Alta) 진행' },
+    rule: 'AI가 녹음에서 관심(카탈로그·가격 요청 등)을 찾으면 제안 → 담당 확인 · 또는 담당이 직접', goal: '고객 등록(Alta)' },
   { key: 'registro', ko: '고객 등록', es: 'Registro', how: 'auto',
-    rule: 'ERP 고객과 연결(신규 등록 또는 기존 고객 연결 승인)', goal: '첫 주문·인보이스' },
+    rule: 'ERP 고객과 연결(신규 등록 또는 기존 고객 연결 승인)', goal: '견적 제출' },
+  { key: 'cotizado', ko: '견적 제출', es: 'Cotizado', how: 'auto',
+    rule: 'ERP에 견적서가 저장됨(연결 고객의 견적, 또는 이 후보에 연결된 게스트 견적) · 등록 전 게스트 견적도 인정', goal: '첫 주문·인보이스' },
   { key: 'cliente_activo', ko: '첫 매출', es: 'Cliente activo', how: 'auto',
     rule: '연결 고객의 첫 게시 인보이스 — 신규개발 완료(100점)', goal: '재구매·매출 확대' },
   { key: 'descartado', ko: '중단', es: 'Descartado', how: 'manual',
@@ -446,8 +446,8 @@ export function deriveStage(ev, current) {
   if (ev.visits > 0) auto = 'contactado';
   if (ev.visits > 0 && ev.info_pct >= 50) auto = 'perfilado';
   if (ev.interest_confirmed && stageRank(auto) < stageRank('interesado')) auto = 'interesado';
-  if (ev.quoted) auto = 'cotizado';
-  if (ev.linked) auto = 'registro';
+  if (ev.linked) auto = 'registro';   // 등록은 관심 확인(4단계) 다음
+  if (ev.quoted) auto = 'cotizado';   // 견적은 등록 다음(등록 전 게스트 견적이면 등록을 건너뛴 것으로 본다)
   if (ev.sale) auto = 'cliente_activo';
   if (!ev.owner && auto !== 'sin_asignar' && auto !== 'cliente_activo') auto = 'asignado';
   let suggest = null;

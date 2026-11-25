@@ -76,11 +76,12 @@ export async function recomputeProspect(q, prospectId, { userId = null, reason =
   // 단계: 앞으로만, 건너뛴 자동 단계도 이력에 남긴다(첫 도달 KPI)
   const d = deriveStage(e, p.stage);
   let stage = p.stage;
-  const ladder = ['asignado', 'contactado', 'perfilado', 'interesado', 'cotizado', 'registro', 'cliente_activo'];
+  const ladder = ['asignado', 'contactado', 'perfilado', 'interesado', 'registro', 'cotizado', 'cliente_activo'];
   if (stage !== 'descartado' || e.sale) {
     for (const st of ladder) {
       if (stageRank(st) > stageRank(d.auto)) break;
       if (st === 'interesado' && !e.interest_confirmed) continue;   // 관심은 사람이 확인(제안만)
+      if (st === 'registro' && !e.linked) continue;                 // 등록 없이 게스트 견적이면 등록 이력은 남기지 않는다
       const nx = stage === 'descartado' ? (st === 'cliente_activo' ? st : null) : autoAdvance(stage, st);
       if (nx) { await moveStage(q, id, stage, nx, { userId, auto: true, reason: reason || 'registro automático' }); stage = nx; }
     }
