@@ -16,7 +16,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, checkStageMove, autoAdvance, normalizeImportRow,
+  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
@@ -181,7 +181,7 @@ export default async function prospectRoutes(app) {
       .map((u) => ({ id: Number(u.id), name: u.name, role: u.role, excluded: ex.has(Number(u.id)) }));
     const states = (await query(
       `SELECT cve_ent, MAX(entidad) AS entidad, COUNT(*)::int AS n FROM prospects WHERE deleted_at IS NULL GROUP BY cve_ent ORDER BY cve_ent`)).rows;
-    return { stages: STAGES, segments: SEGMENTS, discard_reasons: DISCARD_REASONS, metrics: METRICS, metric_names: METRIC_NAMES,
+    return { stages: STAGES, segments: SEGMENTS, discard_reasons: DISCARD_REASONS, metrics: METRICS, metric_names: METRIC_NAMES, point_weights: POINT_WEIGHTS,
       checkin_warn_m: CHECKIN_WARN_M, form: ALTA_FORM, fields: ALTA_FIELDS,
       users: isDir(req) ? users : users.filter((u) => u.id === me(req)),
       staff: (isDir(req) ? users : users.filter((u) => u.id === me(req))).filter((u) => !u.excluded),   // 담당 선택지(디렉터가 뺀 사람 제외)
@@ -543,7 +543,8 @@ export default async function prospectRoutes(app) {
     if (!directorOnly(req, reply)) return;
     const b = req.body || {};
     if (!PERIOD.test(String(b.period))) return reply.code(400).send({ error: 'bad_period' });
-    const totals = {}; for (const m of METRICS) { const v = Number((b.totals || {})[m]); if (Number.isFinite(v) && v > 0) totals[m] = v; }
+    const totals = {}; for (const m of METRICS) { if (m === 'puntos') continue; const v = Number((b.totals || {})[m]); if (Number.isFinite(v) && v > 0) totals[m] = v; }
+    const pts = pointsTarget(totals); if (pts > 0) totals.puntos = pts;   // 개발 점수 = 단계 목표에서 자동 계산
     const shares = {}; for (const [u, p] of Object.entries(b.shares || {})) { const uid = int(u); const v = Math.round(Number(p) * 100) / 100; if (uid && Number.isFinite(v) && v > 0) shares[uid] = Math.min(100, v); }
     const sum = Object.values(shares).reduce((a, c) => a + c, 0);
     if (sum > 100.001) return reply.code(400).send({ error: 'share_over_100', sum });

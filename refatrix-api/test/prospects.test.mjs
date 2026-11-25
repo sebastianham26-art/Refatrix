@@ -270,3 +270,10 @@ test('지도 구역 지역: 다각형 우선, 다른 담당 후보는 끌려가�
   assert.equal(territoryFor({ ...base, lat: 25.75, owner_user_id: null }, T).id, 2);  // 구역 밖 → municipio
   assert.equal(territoryFor({ ...base, owner_user_id: 5 }, T), null);
 });
+
+test('개발 점수 목표 자동 계산', async () => {
+  const { pointsTarget, POINT_WEIGHTS } = await import('../src/prospectCore.js');
+  assert.equal(Object.values(POINT_WEIGHTS).reduce((a, c) => a + c, 0), 100);
+  assert.equal(pointsTarget({ visitas: 200, contactados: 120, perfilados: 40, cotizaciones: 15, nuevos_clientes: 5, venta_nuevos: 150000 }), 120 * 12 + 40 * 18 + 15 * 30 + 5 * 40);
+  assert.equal(pointsTarget({ visitas: 100 }), 0);
+});

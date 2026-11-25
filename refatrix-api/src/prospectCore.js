@@ -382,6 +382,13 @@ export const METRIC_NAMES = {
   visitas: '방문(체크인)', contactados: '첫 방문', perfilados: '정보 확보', cotizaciones: '견적 제출',
   nuevos_clientes: '첫 매출', venta_nuevos: '첫 매출 금액(IVA 제외)', puntos: '개발 점수',
 };
+// 개발 점수 목표는 입력하지 않고 단계 목표에서 자동 계산(디렉터 결정 2026-11-25).
+// 한 업체가 끝까지 가면 12 + 18 + 30 + 40 = 100점 — 단계별로 대략 오르는 점수.
+//   첫 방문 12(정보 20% × 60) · 정보 확보 +18(→ 50%, 30점) · 견적 제출 +30(관심 5 + 등록 10 + 견적 15) · 첫 매출 +40(→ 100점)
+export const POINT_WEIGHTS = { contactados: 12, perfilados: 18, cotizaciones: 30, nuevos_clientes: 40 };
+export function pointsTarget(totals = {}) {
+  return Object.entries(POINT_WEIGHTS).reduce((s, [m, w]) => s + (Number(totals[m]) > 0 ? Number(totals[m]) * w : 0), 0);
+}
 // 총 목표를 할당률(%)로 나누기. 건수 지표는 정수(큰 나머지 방식 — 할당률 합이 100%면 합계가 총 목표와 같다), 금액은 페소 단위.
 // shares: {user_id: pct}. 할당률 없는 담당자는 목표 없음.
 export function allocateTarget(total, shares, { integer = true } = {}) {
