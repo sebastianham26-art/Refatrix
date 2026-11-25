@@ -1,14 +1,15 @@
 // =====================================================================
 // Refatrix ERP · altaClientesForm.js — 「영업 > 고객개발」 Alta de clientes 양식 정의 (v1)
 //   원본: FORMATO_ALTA_CLIENTES_FINAL.xlsx · Hoja1 (디렉터 제공 2026-11-24)
+//   v2 (2026-11-25): 「Tamaño del cliente」(매장·창고·직원·영업·배송) · 「Potencial」(월 매출·구매 총액/서스펜션) 섹션 추가
 //   · fill: denue(방문 전 자동 채움) / ia(녹음 분석이 채움) / manual(수기·서류)
 //   · erp_field: 고객 등록(Registrar como cliente) 때 customers 쪽으로 넘길 항목
 //   항목을 바꾸려면 이 파일의 version 을 올리고 sections 를 고친다(저장된 값은 form_version 과 함께 남는다).
 // =====================================================================
 export const ALTA_FORM = {
   "form": "alta_clientes",
-  "version": 1,
-  "source": "FORMATO_ALTA_CLIENTES_FINAL.xlsx · Hoja1 (Alta de clientes)",
+  "version": 2,
+  "source": "FORMATO_ALTA_CLIENTES_FINAL.xlsx · Hoja1 (Alta de clientes) + Tamaño del cliente / Potencial (2026-11-25)",
   "fill_sources": {
     "denue": "precargado desde el prospecto DENUE antes de la visita",
     "ia": "lo llena el análisis existente de la grabación (Desarrollo de clientes)",
@@ -153,51 +154,13 @@ export const ALTA_FORM = {
       ]
     },
     {
-      "key": "informacion_empresa",
-      "label_es": "Información de la empresa",
+      "key": "tamano_cliente",
+      "label_es": "Tamaño del cliente",
       "fields": [
         {
-          "key": "cantidad_personal",
-          "label_es": "Cantidad de personal",
-          "type": "integer",
-          "required": false,
-          "fill": [
-            "ia",
-            "denue"
-          ],
-          "denue_col": "per_ocu (rango, solo referencia)"
-        },
-        {
-          "key": "localidades_cobertura",
-          "label_es": "Localidades de cobertura",
-          "type": "text",
-          "required": false,
-          "fill": [
-            "ia"
-          ]
-        },
-        {
-          "key": "entrega_domicilio",
-          "label_es": "Entrega a domicilio",
-          "type": "boolean",
-          "required": false,
-          "fill": [
-            "ia"
-          ]
-        },
-        {
           "key": "num_sucursales",
-          "label_es": "# Sucursales",
+          "label_es": "# Sucursales / tiendas de venta",
           "type": "integer",
-          "required": false,
-          "fill": [
-            "ia"
-          ]
-        },
-        {
-          "key": "ofrece_credito",
-          "label_es": "Ofrece crédito",
-          "type": "boolean",
           "required": false,
           "fill": [
             "ia"
@@ -213,9 +176,120 @@ export const ALTA_FORM = {
           ]
         },
         {
+          "key": "cantidad_personal",
+          "label_es": "Cantidad de personal",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia",
+            "denue"
+          ],
+          "denue_col": "per_ocu (rango, solo referencia)"
+        },
+        {
           "key": "num_vendedores",
           "label_es": "# Vendedores",
           "type": "integer",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "metodo_entrega",
+          "label_es": "Método de entrega",
+          "type": "multiselect",
+          "required": false,
+          "fill": [
+            "ia"
+          ],
+          "options": [
+            "Reparto propio (camioneta)",
+            "Reparto en moto",
+            "Paquetería",
+            "El cliente recoge",
+            "Otro"
+          ]
+        },
+        {
+          "key": "num_unidades_reparto",
+          "label_es": "# Unidades de reparto",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "entrega_domicilio",
+          "label_es": "Entrega a domicilio",
+          "type": "boolean",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "localidades_cobertura",
+          "label_es": "Localidades de cobertura",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "potencial",
+      "label_es": "Potencial (mensual, MXN sin IVA)",
+      "fields": [
+        {
+          "key": "venta_total_mensual",
+          "label_es": "Venta total mensual",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "venta_suspension_mensual",
+          "label_es": "Venta mensual de suspensión",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "compra_total_mensual",
+          "label_es": "Compra total mensual",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "compra_suspension_mensual",
+          "label_es": "Compra mensual de suspensión",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "informacion_empresa",
+      "label_es": "Información de la empresa",
+      "fields": [
+        {
+          "key": "ofrece_credito",
+          "label_es": "Ofrece crédito",
+          "type": "boolean",
           "required": false,
           "fill": [
             "ia"

@@ -5,14 +5,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  potentialOf, POTENTIAL_TIERS,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
   parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds,
 } from '../src/prospectCore.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP, ALTA_FORM } from '../src/altaClientesForm.js';
 
-test('양식: Hoja1 6개 섹션 · 경쟁사 3세트 펼침', () => {
-  assert.equal(ALTA_FORM.sections.length, 6);
+test('양식 v2: Hoja1 6개 + 고객규모·잠재성 2개 섹션 · 경쟁사 3세트 펼침', () => {
+  assert.equal(ALTA_FORM.version, 2);
+  assert.equal(ALTA_FORM.sections.length, 8);
+  assert.deepEqual(ALTA_FORM.sections.slice(0, 3).map((x) => x.key), ['datos_generales', 'tamano_cliente', 'potencial']);
+  assert.ok(ALTA_FIELD_MAP['tamano_cliente.metodo_entrega'].options.includes('Paquetería'));
   assert.equal(ALTA_FIELDS.filter((f) => f.section === 'competencia').length, 15);
   assert.ok(ALTA_FIELD_MAP['competencia.2.precio_compra']);
   assert.ok(ALTA_FIELD_MAP['datos_generales.contacto_principal'].required);
@@ -92,6 +96,9 @@ test('DENUE 미리 채움', () => {
   assert.equal(v['datos_generales.calle'], 'Avenida BENITO JUÁREZ');
   assert.equal(v['datos_generales.numero'], '511');
   assert.deepEqual(v['servicios.servicios'], ['Chasis y Suspensión']);
+  const w = prefillFromProspect({ address: 'Calle SIERRA DE LAMPAZOS 1321 A' });
+  assert.equal(w['datos_generales.calle'], 'Calle SIERRA DE LAMPAZOS'); assert.equal(w['datos_generales.numero'], '1321 A');
+  assert.equal(prefillFromProspect({ address: 'Calle ALDAMA SN' })['datos_generales.numero'], 'SN');
   assert.deepEqual(v['tipo_taller.tipo_taller'], ['Reparación General']);
 });
 
@@ -149,9 +156,9 @@ test('검토 병합 우선순위: AI > 저장 > DENUE', () => {
 });
 
 test('저장 검증 · 필수 누락(청구 제외)', () => {
-  const { clean, errors } = validateAltaValues({ 'datos_generales.correo': 'malo', 'informacion_empresa.num_vendedores': '3', 'x.y': 1, 'datos_generales.calle': '' });
+  const { clean, errors } = validateAltaValues({ 'datos_generales.correo': 'malo', 'tamano_cliente.num_vendedores': '3', 'x.y': 1, 'datos_generales.calle': '' });
   assert.deepEqual(errors.map((e) => e.key), ['datos_generales.correo']);
-  assert.equal(clean['informacion_empresa.num_vendedores'], 3);
+  assert.equal(clean['tamano_cliente.num_vendedores'], 3);
   assert.equal(clean['datos_generales.calle'], null);
   assert.ok(!('x.y' in clean));
   const miss = missingRequired({ 'datos_generales.nombre_cuenta': 'X' });
@@ -169,4 +176,18 @@ test('KPI: 달성률 · 경과일 비례 판정 · 월 경계', () => {
   assert.equal(paceStatus(5, 30, 10, 30), 'bad');
   assert.deepEqual(periodBounds('2026-12'), { from: '2026-12-01', to: '2027-01-01', days: 31 });
   assert.equal(periodBounds('2026-02').days, 28);
+});
+
+test('잠재성: 월 서스펜션 구매액으로 A/B/C · 비중', () => {
+  const p = potentialOf({ 'potencial.compra_total_mensual': 200000, 'potencial.compra_suspension_mensual': 60000,
+    'potencial.venta_total_mensual': 300000, 'potencial.venta_suspension_mensual': 90000 });
+  assert.equal(p.tier, 'A'); assert.equal(p.share_susp_compra, 30); assert.equal(p.share_susp_venta, 30);
+  assert.equal(potentialOf({ 'potencial.compra_suspension_mensual': 15000 }).tier, 'B');
+  assert.equal(potentialOf({ 'potencial.compra_suspension_mensual': 0 }).tier, 'C');
+  assert.equal(potentialOf({ 'potencial.compra_total_mensual': 1000 }).tier, null);
+  assert.equal(POTENTIAL_TIERS[0].min, 50000);
+  const d = parseAltaDraft(JSON.stringify({ campos: { 'potencial.compra_suspension_mensual': { valor: '$ 45,000' },
+    'tamano_cliente.metodo_entrega': { valor: ['paqueteria', 'Reparto en moto'] } } }));
+  assert.equal(d.campos['potencial.compra_suspension_mensual'].valor, 45000);
+  assert.deepEqual(d.campos['tamano_cliente.metodo_entrega'].valor, ['Paquetería', 'Reparto en moto']);
 });

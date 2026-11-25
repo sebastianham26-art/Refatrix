@@ -699,6 +699,110 @@ export default async function priceMasterRoutes(app) {
     };
   });
 
+  // ── ⑤-2 SYD 가격표 (2026-11-25) — 올린 SYD 리스트를 코드별로 그대로 본다 ──
+  //   GET /api/price-master/syd/items?list_id=&q=&familia=&view=&sort=&dir=&offset=&limit=
+  //     list_id 없으면 가장 최신 리스트. 바로 앞 리스트와 가격 비교, 대응품번(product_syd_codes)으로 CTR 연결.
+  //     view: linked(CTR 연결) · unlinked(연결 없음) · up(인상) · down(인하) · new(신규) · same(변동 없음)
+  //   GET /api/price-master/syd/items/history?code=  — 그 SYD 코드의 리스트별 가격 이력
+  const SYD_LINK_CTE = `lk AS (
+      SELECT ${SYD_NORM_SQL('sc.syd_code')} AS n, string_agg(DISTINCT p.code, ', ' ORDER BY p.code) AS ctr,
+             MAX(p.list_price) AS list, COUNT(DISTINCT p.id)::int AS ctr_n
+        FROM product_syd_codes sc JOIN products p ON p.id = sc.product_id AND p.deleted_at IS NULL
+       GROUP BY 1)`;
+  app.get('/api/price-master/syd/items', READ, async (req, reply) => {
+    if (!(await gate(reply))) return;
+    const qv = req.query || {};
+    const listId = Number(qv.list_id) > 0 ? Number(qv.list_id) : await latestSydListId();
+    if (!listId) return { list: null, familias: [], kpi: null, rows: [], total: 0 };
+    const L = (await query(`SELECT id, to_char(list_date,'YYYY-MM-DD') AS d, file_name FROM syd_price_lists WHERE id=$1`, [listId])).rows[0];
+    if (!L) return reply.code(404).send({ error: 'not_found' });
+    const prev = await prevSydList(query, listId);
+    const prevD = prev ? (await query(`SELECT to_char(list_date,'YYYY-MM-DD') AS d FROM syd_price_lists WHERE id=$1`, [prev])).rows[0].d : null;
+    const withDesc = await sydDescReady();
+    const DESC = withDesc ? 'a.descripcion' : 'NULL::text';
+    const params = [listId, prev || 0];
+    const where = ['a.list_id = $1'];
+    const q = String(qv.q || '').trim().slice(0, 100);
+    if (q) {
+      params.push('%' + q.replace(/[%_\\]/g, (m) => '\\' + m) + '%'); const i = params.length;
+      params.push(sydNorm(q) ? '%' + sydNorm(q) + '%' : '-'); const j = params.length;   // 정규화 키엔 '-' 가 없다 → 기호만 넣으면 이 조건은 안 맞음
+      where.push(`(a.syd_code ILIKE $${i} OR a.syd_norm LIKE $${j} OR COALESCE(${DESC},'') ILIKE $${i} OR COALESCE(a.familia,'') ILIKE $${i} OR COALESCE(lk.ctr,'') ILIKE $${i})`);
+    }
+    if (qv.familia) {
+      if (qv.familia === '__none__') where.push(`COALESCE(a.familia,'') = ''`);
+      else { params.push(String(qv.familia)); where.push(`a.familia = $${params.length}`); }
+    }
+    const view = String(qv.view || '');
+    if (view === 'linked') where.push('lk.n IS NOT NULL');
+    else if (view === 'unlinked') where.push('lk.n IS NULL');
+    else if (view === 'up') where.push('b.price IS NOT NULL AND a.price > b.price');
+    else if (view === 'down') where.push('b.price IS NOT NULL AND a.price < b.price');
+    else if (view === 'same') where.push('b.price IS NOT NULL AND a.price = b.price');
+    else if (view === 'new') where.push(prev ? 'b.syd_norm IS NULL' : 'FALSE');
+    const FROM = `FROM syd_price_items a
+        LEFT JOIN syd_price_items b ON b.list_id = $2 AND b.syd_norm = a.syd_norm
+        LEFT JOIN lk ON lk.n = a.syd_norm
+       WHERE ${where.join(' AND ')}`;
+    const k = (await query(
+      `WITH ${SYD_LINK_CTE}
+       SELECT COUNT(*)::int AS n, COALESCE(SUM(CASE WHEN lk.n IS NOT NULL THEN 1 ELSE 0 END),0)::int AS linked,
+              AVG(a.price) AS avg_price,
+              COALESCE(SUM(CASE WHEN b.price IS NOT NULL AND a.price > b.price THEN 1 ELSE 0 END),0)::int AS up,
+              COALESCE(SUM(CASE WHEN b.price IS NOT NULL AND a.price < b.price THEN 1 ELSE 0 END),0)::int AS down,
+              COALESCE(SUM(CASE WHEN $2::bigint > 0 AND b.syd_norm IS NULL THEN 1 ELSE 0 END),0)::int AS new_n
+         ${FROM}`, params)).rows[0];
+    const SORT = { code: 'a.syd_code', desc: `upper(COALESCE(${DESC},''))`, familia: "upper(COALESCE(a.familia,''))", price: 'a.price',
+      prev: 'b.price', chg: '((a.price - b.price) / NULLIF(b.price,0))', ctr: 'lk.ctr', list: 'lk.list', ratio: '(lk.list / NULLIF(a.price,0))' };
+    const DEF = { code: 'asc', desc: 'asc', familia: 'asc', price: 'desc', prev: 'desc', chg: 'desc', ctr: 'asc', list: 'desc', ratio: 'desc' };
+    const sk = SORT[qv.sort] ? qv.sort : 'code';
+    const sd = qv.dir === 'asc' || qv.dir === 'desc' ? qv.dir : DEF[sk];
+    const limit = Math.min(Math.max(Number(qv.limit) || 200, 1), 50000);
+    const offset = Math.max(Number(qv.offset) || 0, 0);
+    const lp = params.slice(); lp.push(limit, offset);
+    const rows = (await query(
+      `WITH ${SYD_LINK_CTE}
+       SELECT a.syd_code, a.syd_norm, a.price, a.familia, ${DESC} AS descripcion, b.price AS prev_price,
+              (b.syd_norm IS NULL) AS is_new, lk.ctr, lk.ctr_n, lk.list
+         ${FROM}
+        ORDER BY ${SORT[sk]} ${sd.toUpperCase()} NULLS LAST, a.syd_code
+        LIMIT $${lp.length - 1} OFFSET $${lp.length}`, lp)).rows;
+    const fams = (await query(
+      `SELECT COALESCE(NULLIF(familia,''),'__none__') AS v, COUNT(*)::int AS n FROM syd_price_items WHERE list_id=$1 GROUP BY 1 ORDER BY 2 DESC, 1`,
+      [listId])).rows;
+    return {
+      list: { id: Number(L.id), date: L.d, file_name: L.file_name, prev_id: prev, prev_date: prevD },
+      familias: fams.map((r) => ({ v: r.v, n: r.n })),
+      kpi: { codes: k.n, linked: k.linked, avg_price: k.avg_price == null ? null : Math.round(Number(k.avg_price) * 100) / 100,
+        up: k.up, down: k.down, new: prev ? k.new_n : null },
+      total: k.n, offset, limit,
+      rows: rows.map((r) => {
+        const p = num(r.price); const pp = num(r.prev_price); const lst = num(r.list);
+        return { syd_code: r.syd_code, syd_norm: r.syd_norm, price: p, familia: r.familia || null, descripcion: r.descripcion || null,
+          prev_price: pp, change: pp > 0 ? Math.round((p - pp) / pp * 10000) / 10000 : null, is_new: !!prev && r.is_new === true,
+          ctr_codes: r.ctr ? String(r.ctr).split(', ') : [], ctr_list: lst, ratio: lst > 0 && p > 0 ? Math.round(lst / p * 10000) / 10000 : null };
+      }),
+    };
+  });
+
+  app.get('/api/price-master/syd/items/history', READ, async (req, reply) => {
+    if (!(await gate(reply))) return;
+    const n = sydNorm(req.query && req.query.code);
+    if (!n) return reply.code(400).send({ error: 'bad_code' });
+    const withDesc = await sydDescReady();
+    const rows = (await query(
+      `SELECT l.id, to_char(l.list_date,'YYYY-MM-DD') AS d, i.syd_code, i.price, i.familia, ${withDesc ? 'i.descripcion' : 'NULL::text'} AS descripcion
+         FROM syd_price_lists l LEFT JOIN syd_price_items i ON i.list_id = l.id AND i.syd_norm = $1
+        ORDER BY l.list_date DESC, l.id DESC LIMIT 100`, [n])).rows;
+    const ctr = (await query(
+      `SELECT p.code, p.name, p.list_price FROM product_syd_codes sc JOIN products p ON p.id = sc.product_id AND p.deleted_at IS NULL
+        WHERE ${SYD_NORM_SQL('sc.syd_code')} = $1 ORDER BY p.code`, [n])).rows;
+    return {
+      code: (rows.find((r) => r.syd_code) || {}).syd_code || req.query.code, norm: n,
+      history: rows.map((r) => ({ list_id: Number(r.id), list_date: r.d, price: num(r.price), familia: r.familia || null, descripcion: r.descripcion || null })),
+      ctr: ctr.map((r) => ({ code: r.code, name: r.name, list_price: num(r.list_price) })),
+    };
+  });
+
   app.delete('/api/price-master/syd/lists/:id', WRITE, async (req, reply) => {
     if (!(await gate(reply))) return;
     const { perm } = req.ctx;

@@ -194,7 +194,7 @@ export function prefillFromProspect(p) {
   const set = (k, val) => { if (val != null && String(val).trim() !== '') v[k] = val; };
   set('datos_generales.nombre_cuenta', p.nom_estab);
   const addr = String(p.address || '');
-  const m = addr.match(/^(.*?)(?:\s+(\d+[A-Z]?(?:\s+int\.\s*\S+)?|SN))?$/i);
+  const m = addr.match(/^(.*?)(?:\s+(\d+(?:\s?[A-Z])?(?:\s+int\.\s*\S+)?|SN))?$/i);
   set('datos_generales.calle', m ? m[1] : addr);
   set('datos_generales.numero', m && m[2] ? m[2] : null);
   set('datos_generales.colonia', p.colonia);
@@ -236,7 +236,9 @@ export function buildAltaPrompt({ transcript, companyName, prefill = {}, summary
     '3. multiselect = arreglo con valores EXACTOS de las opciones. boolean = true/false. integer/money = número sin símbolos (MXN).',
     '4. time = "HH:MM" 24h. Si el dato dicho contradice el dato precargado, devuelve lo dicho con confianza "media".',
     '5. competencia = hasta 3 marcas/proveedores que el cliente compra hoy, con un producto ejemplo y precios si se dijeron.',
-    '6. Responde SOLO con un objeto JSON, sin texto antes ni después.',
+    '6. potencial.* = montos MENSUALES en MXN que dijo el cliente. Si los dijo por semana multiplica por 4.3; si por año divide entre 12. Si no los dijo, null.',
+    '7. tamano_cliente = tiendas/sucursales, almacenes, personal, vendedores, cómo entrega (opciones) y unidades de reparto, solo si se mencionaron.',
+    '8. Responde SOLO con un objeto JSON, sin texto antes ni después.',
     '',
     `[Prospecto] ${companyName || 'desconocido'}`,
     '[Datos precargados de DENUE]', pre,
@@ -368,4 +370,22 @@ export function periodBounds(period) {
   const from = `${period}-01`;
   const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
   return { from, to: next, days: new Date(Date.UTC(y, m, 0)).getUTCDate() };
+}
+
+// ── 잠재성(월 서스펜션 구매액 기준) ─────────────────────────────────────
+//   기준값은 디렉터가 바꿀 수 있게 상수로 둔다(MXN, IVA 제외, 월).
+export const POTENTIAL_TIERS = [{ tier: 'A', min: 50000 }, { tier: 'B', min: 15000 }, { tier: 'C', min: 0 }];
+const n0 = (v) => { const x = Number(v); return v == null || v === '' || !Number.isFinite(x) ? null : x; };
+export function potentialOf(values = {}) {
+  const ventaTotal = n0(values['potencial.venta_total_mensual']);
+  const ventaSusp = n0(values['potencial.venta_suspension_mensual']);
+  const compraTotal = n0(values['potencial.compra_total_mensual']);
+  const compraSusp = n0(values['potencial.compra_suspension_mensual']);
+  const tier = compraSusp == null ? null : POTENTIAL_TIERS.find((t) => compraSusp >= t.min).tier;
+  return {
+    venta_total: ventaTotal, venta_susp: ventaSusp, compra_total: compraTotal, compra_susp: compraSusp,
+    share_susp_compra: compraTotal && compraSusp != null ? Math.round((compraSusp / compraTotal) * 1000) / 10 : null,
+    share_susp_venta: ventaTotal && ventaSusp != null ? Math.round((ventaSusp / ventaTotal) * 1000) / 10 : null,
+    tier,
+  };
 }

@@ -28,7 +28,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 for (let i = 0; i < 40 && !$('ttb').querySelector('tr td'); i++) await sleep(50);
 let pass = 0;
 const ok = (n, f) => { f(); pass++; console.log('  ✔', n); };
-ok('빌드 토큰 pm-1123ff (탭 제목)', () => assert.match(w.document.title, /pm-1123ff/));
+ok('빌드 토큰 pm-1125sp (탭 제목)', () => assert.match(w.document.title, /pm-1125sp/));
 ok('머리글: FOB (USD) → FOB MXN (오늘) → Total Cost MXN → List', () => {
   const h = [...$('tth').querySelectorAll('th')].map((x) => x.textContent.replace(/[▲▼↕\s]+$/g, '').trim());
   const i = h.findIndex((x) => x.startsWith('FOB (USD)'));

@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 가격 마스터 · build pm-1123ff</title>
+<title>Refatrix ERP · 가격 마스터 · build pm-1125sp</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -71,7 +71,7 @@
   .up{color:var(--up)}.down{color:var(--down)}.mut{color:var(--muted)}
   tr.off td{opacity:.42}
   tr.clk{cursor:pointer}tr.clk:hover td{background:#fbfaf6}
-  .codeLink{font-weight:700;color:var(--brand);cursor:pointer;text-decoration:underline dotted}
+  .codeLink,.spHist{font-weight:700;color:var(--brand);cursor:pointer;text-decoration:underline dotted}
   .edit{cursor:pointer;border-bottom:1px dashed var(--muted)}.edit:hover{color:var(--brand);border-bottom-color:var(--brand)}
   .badge{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;white-space:nowrap}
   .b-ap{background:var(--down-bg);color:var(--brand)}.b-sc{background:var(--warn-bg);color:var(--warn-ink)}
@@ -153,6 +153,7 @@
       <button class="tab" data-t="history">③ 변경 이력</button>
       <button class="tab" data-t="product">④ 제품별 이력</button>
       <button class="tab" data-t="syd">⑤ 경쟁사 SYD</button>
+      <button class="tab" data-t="sydp">⑤-2 SYD 가격표</button>
       <button class="tab" data-t="purchase">⑥ 구매가 검증</button>
       <button class="tab" data-t="profit">⑦ 제품 수익성</button>
       <button class="tab" data-t="cost">⑧ 매출원가 분석</button>
@@ -289,6 +290,26 @@
       <div class="card hidden" id="sydRep"></div>
     </section>
 
+    <!-- ⑤-2 SYD 가격표 (2026-11-25) -->
+    <section id="t-sydp" class="hidden">
+      <div class="card">
+        <p class="ttl">SYD 가격표 — 올린 SYD 리스트의 List Price 를 코드별로 봅니다</p>
+        <p class="sub2">리스트를 고르면(기본 = 가장 최신) SYD 코드마다 <b>List Price</b> · 품명 · Familia 와 <b>바로 앞 리스트 가격 · 변동률</b>을 보여 줍니다.
+          대응품번(제품 마스터 Clave SyD)으로 연결된 <b>CTR 코드 · 우리 List · CTR÷SYD</b> 도 함께 나옵니다. SYD 코드를 누르면 리스트별 가격 이력, CTR 코드를 누르면 ④ 제품별 이력으로 갑니다.
+          리스트 올리기 · 비교 리포트는 ⑤ 경쟁사 SYD 에서 합니다.</p>
+        <div class="row">
+          <div class="f" style="max-width:240px"><label for="spList">SYD 리스트</label><select id="spList"></select></div>
+          <div class="f" style="flex:2"><label for="spQ">검색</label><input id="spQ" placeholder="SYD 코드 · 품명 · Familia · CTR 코드"></div>
+          <div class="f"><label for="spFam">Familia</label><select id="spFam"><option value="">전체</option></select></div>
+          <div class="f"><label for="spView">보기</label><select id="spView"><option value="">전체</option><option value="linked">CTR 연결됨</option><option value="unlinked">CTR 연결 없음</option><option value="up">인상 (앞 리스트 대비)</option><option value="down">인하 (앞 리스트 대비)</option><option value="new">신규 코드</option><option value="same">변동 없음</option></select></div>
+        </div>
+        <div class="row" style="margin-top:6px"><button class="btn sm" id="btnSpXlsx">📥 엑셀 다운로드</button> <span class="mut" id="spInfo" style="font-size:12px"></span></div>
+        <div class="kpis" id="spKpis"></div>
+        <div class="tblWrap" style="margin-top:10px"><table><thead id="spTh"></thead><tbody id="spTb"></tbody></table></div>
+        <div style="margin-top:8px"><button class="btn ghost sm hidden" id="btnSpMore">더 보기</button> <span class="mut" id="spCnt"></span></div>
+      </div>
+    </section>
+
     <!-- ⑥ 구매가 검증 -->
     <section id="t-purchase" class="hidden">
       <div class="card">
@@ -418,7 +439,7 @@
 
 (function(){
   'use strict';
-  const BUILD='pm-1123ff';
+  const BUILD='pm-1125sp';
   try{ console.log('[pricemaster] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -445,7 +466,7 @@
   const typeBadge=(t)=>t==='fob'?'<span class="badge b-fob">FOB</span>':'<span class="badge b-list">List</span>';
   const num=(v)=>v==null||v===''?null:Number(v);
   // ─── 표 제목 눌러 정렬 (09-24) — 처음 누르면 그 열의 기본 방향(숫자 큰 순 · 글자 가나다순), 다시 누르면 반대. 빈 값은 늘 맨 뒤 ───
-  const SORTS={t:{k:'code',dir:'asc'},pv:{k:'code',dir:'asc'},pr:{k:'op',dir:'desc'}};
+  const SORTS={sp:{k:'code',dir:'asc'},t:{k:'code',dir:'asc'},pv:{k:'code',dir:'asc'},pr:{k:'op',dir:'desc'}};
   function headRow(tbl, cols){
     const s=SORTS[tbl];
     return '<tr>'+cols.map(c=>{ if(typeof c==='string') return c;          // 정렬 없는 칸 = 완성된 <th>
@@ -637,7 +658,7 @@
   }
 
   // ─── 탭 ───
-  const TABS=['table','change','history','product','syd','purchase','profit','cost'];
+  const TABS=['table','change','history','product','syd','sydp','purchase','profit','cost'];
   const loaded={};
   function showTab(k){
     document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.t===k));
@@ -648,6 +669,7 @@
     if(k==='history') loadHistory();
     if(k==='product' && $('pcode').value.trim()) lookupProduct();
     if(k==='syd') loadSydLists();
+    if(k==='sydp') openSyd();
     if(k==='purchase'&&!loaded.purchase){ loaded.purchase=1; loadPc(); }
     if(k==='profit'&&!loaded.profit){ loaded.profit=1; loadProfit(); }
     if(k==='cost') setTimeout(()=>$('csCode').focus(),0);
@@ -1155,6 +1177,84 @@
         });
     });
   }
+
+  // ═══ ⑤-2 SYD 가격표 (2026-11-25) ═══
+  let spRows=[], spTimer=null, spListsLoaded=false, spMeta=null;
+  const SP_COLS=[['code','SYD 코드'],['desc','품명'],['familia','Familia'],['price','SYD List Price',1],['prev','앞 리스트',1],['chg','변동',1],['ctr','CTR 코드'],['list','우리 List',1],['ratio','CTR ÷ SYD',1,'asc']];
+  function spHead(){ $('spTh').innerHTML=headRow('sp',SP_COLS); bindSort($('spTh'),'sp',()=>{ spHead(); loadSp(false); }); }
+  function spQuery(offset,limit){
+    const p=new URLSearchParams(); if($('spList').value) p.set('list_id',$('spList').value);
+    const q=$('spQ').value.trim(); if(q) p.set('q',q); if($('spFam').value) p.set('familia',$('spFam').value); if($('spView').value) p.set('view',$('spView').value);
+    p.set('sort',SORTS.sp.k); p.set('dir',SORTS.sp.dir); p.set('offset',offset); p.set('limit',limit); return p.toString();
+  }
+  const spPct=(v)=>v==null?'—':(v>0?'+':'')+(v*100).toFixed(1)+'%';
+  async function openSyd(){
+    if(!spListsLoaded){
+      const L=await api('/api/price-master/syd/lists');
+      if(!L.ok){ $('spTb').innerHTML='<tr><td colspan="9" class="mut" style="padding:14px">'+esc(errKo(L.error))+'</td></tr>'; return; }
+      $('spList').innerHTML=L.items.map((l,i)=>'<option value="'+l.id+'">'+esc(l.list_date)+(i===0?' (최신)':'')+' · '+(l.code_count||0).toLocaleString('es-MX')+'개</option>').join('')||'<option value="">(올린 리스트 없음)</option>';
+      spListsLoaded=true; spHead();
+    }
+    loadSp(false);
+  }
+  async function loadSp(append){
+    const d=await api('/api/price-master/syd/items?'+spQuery(append?spRows.length:0,200));
+    if(!d.ok){ $('spTb').innerHTML='<tr><td colspan="9" class="mut" style="padding:14px">'+esc(errKo(d.error))+'</td></tr>'; return; }
+    if(!d.list){ spRows=[]; $('spKpis').innerHTML=''; $('spInfo').textContent=''; $('spCnt').textContent=''; $('btnSpMore').classList.add('hidden');
+      $('spTb').innerHTML='<tr><td colspan="9" class="mut" style="padding:14px">아직 올린 SYD 리스트가 없습니다 — ⑤ 경쟁사 SYD 에서 올려 주세요.</td></tr>'; return; }
+    spMeta=d; spRows=append?spRows.concat(d.rows):d.rows;
+    if(!append){
+      const cur=$('spFam').value;
+      $('spFam').innerHTML='<option value="">전체</option>'+d.familias.map(f=>'<option value="'+esc(f.v)+'">'+esc(f.v==='__none__'?'(없음)':f.v)+' ('+f.n+')</option>').join('');
+      $('spFam').value=d.familias.some(f=>f.v===cur)?cur:'';
+    }
+    const k=d.kpi;
+    $('spInfo').textContent='기준일 '+d.list.date+(d.list.file_name?' · '+d.list.file_name:'')+' · 비교 대상 '+(d.list.prev_date||'없음(첫 리스트)');
+    $('spKpis').innerHTML='<div class="kpi"><span>SYD 코드</span><b>'+k.codes.toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>CTR 연결</span><b>'+k.linked.toLocaleString('es-MX')+'</b></div>'
+      +'<div class="kpi"><span>평균 SYD List</span><b>'+(k.avg_price==null?'—':'$ '+fmt(k.avg_price))+'</b></div>'
+      +'<div class="kpi"><span>인상</span><b class="up">'+(d.list.prev_id?k.up:'—')+'</b></div>'
+      +'<div class="kpi"><span>인하</span><b class="down">'+(d.list.prev_id?k.down:'—')+'</b></div>'
+      +'<div class="kpi"><span>신규</span><b>'+(k.new==null?'—':k.new)+'</b></div>';
+    $('spTb').innerHTML=spRows.map(r=>'<tr><td><span class="spHist" data-code="'+esc(r.syd_code)+'">'+esc(r.syd_code)+'</span>'+(r.is_new?' <span class="badge b-in">신규</span>':'')+'</td>'
+      +'<td>'+esc(r.descripcion||'')+'</td><td class="mut">'+esc(r.familia||'')+'</td>'
+      +'<td class="n"><b>'+fmt(r.price)+'</b></td><td class="n mut">'+fmt(r.prev_price)+'</td>'
+      +'<td class="n '+(r.change>0?'up':r.change<0?'down':'')+'">'+spPct(r.change)+'</td>'
+      +'<td>'+(r.ctr_codes.length?r.ctr_codes.map(c=>'<span class="codeLink" data-code="'+esc(c)+'">'+esc(c)+'</span>').join(', '):'<span class="mut">—</span>')+'</td>'
+      +'<td class="n">'+fmt(r.ctr_list)+'</td><td class="n '+(r.ratio>1?'up':'')+'">'+(r.ratio==null?'—':r.ratio.toFixed(2))+'</td></tr>').join('')
+      ||'<tr><td colspan="9" class="mut" style="padding:14px">조건에 맞는 SYD 코드가 없습니다.</td></tr>';
+    bindCodeLinks($('spTb'));
+    $('spTb').querySelectorAll('.spHist').forEach(a=>a.addEventListener('click',()=>sydHistory(a.dataset.code)));
+    $('spCnt').textContent=spRows.length.toLocaleString('es-MX')+' / '+d.total.toLocaleString('es-MX')+'개';
+    $('btnSpMore').classList.toggle('hidden',spRows.length>=d.total);
+  }
+  async function sydHistory(code){
+    const d=await api('/api/price-master/syd/items/history?code='+encodeURIComponent(code));
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    const h=d.history; const desc=(h.find(x=>x.descripcion)||{}).descripcion||''; const fam=(h.find(x=>x.familia)||{}).familia||'';
+    const rows=h.map((x,i)=>{ const nx=h.slice(i+1).find(y=>y.price!=null); const ch=x.price!=null&&nx&&nx.price>0?(x.price-nx.price)/nx.price:null;
+      return '<tr><td>'+esc(x.list_date)+'</td><td class="n">'+(x.price==null?'<span class="mut">리스트에 없음</span>':'<b>'+fmt(x.price)+'</b>')+'</td><td class="n '+(ch>0?'up':ch<0?'down':'')+'">'+spPct(ch)+'</td></tr>'; }).join('');
+    const ov=openModal('<h3>SYD '+esc(d.code)+'</h3><p class="sub2">'+esc(desc)+(fam?' · '+esc(fam):'')+'</p>'
+      +'<h4>연결된 CTR</h4>'+(d.ctr.length?'<div class="tw"><table><thead><tr><th>CTR 코드</th><th>품목</th><th class="n">우리 List</th></tr></thead><tbody>'
+        +d.ctr.map(c=>'<tr><td><span class="codeLink" data-code="'+esc(c.code)+'">'+esc(c.code)+'</span></td><td>'+esc(c.name||'')+'</td><td class="n">'+fmt(c.list_price)+'</td></tr>').join('')+'</tbody></table></div>'
+        :'<p class="mut">대응품번에 연결된 CTR 제품이 없습니다.</p>')
+      +'<h4>리스트별 SYD List Price</h4><div class="tw"><table><thead><tr><th>기준일</th><th class="n">SYD List Price</th><th class="n">변동</th></tr></thead><tbody>'+(rows||'<tr><td colspan="3" class="mut">없음</td></tr>')+'</tbody></table></div>'
+      +'<div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" data-close>닫기</button></div>',true);
+    bindCodeLinks(ov);
+  }
+  $('spList').addEventListener('change',()=>loadSp(false));
+  ['spFam','spView'].forEach(id=>$(id).addEventListener('change',()=>loadSp(false)));
+  $('spQ').addEventListener('input',()=>{ clearTimeout(spTimer); spTimer=setTimeout(()=>loadSp(false),300); });
+  $('btnSpMore').addEventListener('click',()=>loadSp(true));
+  $('btnSpXlsx').addEventListener('click',async()=>{
+    const d=await api('/api/price-master/syd/items?'+spQuery(0,50000));
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    if(!d.list){ toast('올린 SYD 리스트가 없습니다',true); return; }
+    const aoa=[['Clave SyD','Descripcion','Familia','Precio Lista SyD ('+d.list.date+')','Precio anterior'+(d.list.prev_date?' ('+d.list.prev_date+')':''),'Cambio %','Nuevo','Clave CTR','List Price CTR','CTR/SYD']]
+      .concat(d.rows.map(r=>[r.syd_code,r.descripcion||'',r.familia||'',r.price,r.prev_price,r.change==null?null:Math.round(r.change*1000)/10,r.is_new?'Si':'',r.ctr_codes.join(', '),r.ctr_list,r.ratio]));
+    saveXlsx('Refatrix_SYD_lista_'+d.list.date+'.xlsx','SYD '+d.list.date,aoa,[18,34,22,14,14,9,7,22,13,9]);
+    toast('엑셀을 받았습니다 — '+d.rows.length.toLocaleString('es-MX')+'개');
+  });
 
   // ═══ ⑥ 구매가 검증 ═══
   let pcItems=[], pcData=null;

@@ -1,0 +1,610 @@
+{
+  "form": "alta_clientes",
+  "version": 2,
+  "source": "FORMATO_ALTA_CLIENTES_FINAL.xlsx · Hoja1 (Alta de clientes) + Tamaño del cliente / Potencial (2026-11-25)",
+  "fill_sources": {
+    "denue": "precargado desde el prospecto DENUE antes de la visita",
+    "ia": "lo llena el análisis existente de la grabación (Desarrollo de clientes)",
+    "manual": "solo captura manual o documentos; la IA no lo llena"
+  },
+  "sections": [
+    {
+      "key": "datos_generales",
+      "label_es": "Datos Generales",
+      "fields": [
+        {
+          "key": "nombre_cuenta",
+          "label_es": "Nombre de la Cuenta",
+          "type": "text",
+          "required": true,
+          "fill": [
+            "denue",
+            "ia"
+          ],
+          "denue_col": "nom_estab",
+          "erp_field": "nombre_comercial"
+        },
+        {
+          "key": "calle",
+          "label_es": "Calle",
+          "type": "text",
+          "required": true,
+          "fill": [
+            "denue"
+          ],
+          "denue_col": "tipo_vial+nom_vial",
+          "erp_field": "direccion_calle"
+        },
+        {
+          "key": "numero",
+          "label_es": "Número",
+          "type": "text",
+          "required": true,
+          "fill": [
+            "denue"
+          ],
+          "denue_col": "numero_ext+numero_int",
+          "erp_field": "direccion_numero"
+        },
+        {
+          "key": "colonia",
+          "label_es": "Colonia",
+          "type": "text",
+          "required": true,
+          "fill": [
+            "denue"
+          ],
+          "denue_col": "nomb_asent",
+          "erp_field": "direccion_colonia"
+        },
+        {
+          "key": "codigo_postal",
+          "label_es": "Código Postal",
+          "type": "text",
+          "pattern": "^[0-9]{5}$",
+          "required": true,
+          "fill": [
+            "denue"
+          ],
+          "denue_col": "cod_postal",
+          "erp_field": "direccion_cp"
+        },
+        {
+          "key": "ciudad",
+          "label_es": "Ciudad",
+          "type": "text",
+          "required": true,
+          "fill": [
+            "denue"
+          ],
+          "denue_col": "municipio",
+          "erp_field": "direccion_ciudad"
+        },
+        {
+          "key": "estado",
+          "label_es": "Estado",
+          "type": "text",
+          "required": true,
+          "fill": [
+            "denue"
+          ],
+          "denue_col": "entidad",
+          "erp_field": "direccion_estado"
+        },
+        {
+          "key": "contacto_principal",
+          "label_es": "Nombre Contacto Principal",
+          "type": "text",
+          "required": true,
+          "fill": [
+            "ia"
+          ],
+          "erp_field": "contacto_nombre"
+        },
+        {
+          "key": "contacto_secundario",
+          "label_es": "Nombre Segundo Contacto",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "telefono",
+          "label_es": "Teléfono",
+          "type": "phone",
+          "required": true,
+          "fill": [
+            "denue",
+            "ia"
+          ],
+          "denue_col": "telefono",
+          "erp_field": "telefono"
+        },
+        {
+          "key": "telefono_2",
+          "label_es": "Segundo Teléfono",
+          "type": "phone",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "correo",
+          "label_es": "Correo electrónico",
+          "type": "email",
+          "required": false,
+          "fill": [
+            "denue",
+            "ia"
+          ],
+          "denue_col": "correoelec",
+          "erp_field": "email"
+        }
+      ]
+    },
+    {
+      "key": "tamano_cliente",
+      "label_es": "Tamaño del cliente",
+      "fields": [
+        {
+          "key": "num_sucursales",
+          "label_es": "# Sucursales / tiendas de venta",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "num_almacenes",
+          "label_es": "# Almacenes",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "cantidad_personal",
+          "label_es": "Cantidad de personal",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia",
+            "denue"
+          ],
+          "denue_col": "per_ocu (rango, solo referencia)"
+        },
+        {
+          "key": "num_vendedores",
+          "label_es": "# Vendedores",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "metodo_entrega",
+          "label_es": "Método de entrega",
+          "type": "multiselect",
+          "required": false,
+          "fill": [
+            "ia"
+          ],
+          "options": [
+            "Reparto propio (camioneta)",
+            "Reparto en moto",
+            "Paquetería",
+            "El cliente recoge",
+            "Otro"
+          ]
+        },
+        {
+          "key": "num_unidades_reparto",
+          "label_es": "# Unidades de reparto",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "entrega_domicilio",
+          "label_es": "Entrega a domicilio",
+          "type": "boolean",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "localidades_cobertura",
+          "label_es": "Localidades de cobertura",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "potencial",
+      "label_es": "Potencial (mensual, MXN sin IVA)",
+      "fields": [
+        {
+          "key": "venta_total_mensual",
+          "label_es": "Venta total mensual",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "venta_suspension_mensual",
+          "label_es": "Venta mensual de suspensión",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "compra_total_mensual",
+          "label_es": "Compra total mensual",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "compra_suspension_mensual",
+          "label_es": "Compra mensual de suspensión",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "informacion_empresa",
+      "label_es": "Información de la empresa",
+      "fields": [
+        {
+          "key": "ofrece_credito",
+          "label_es": "Ofrece crédito",
+          "type": "boolean",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "anio_apertura",
+          "label_es": "Año de Apertura",
+          "type": "integer",
+          "min": 1900,
+          "max": 2100,
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "horario_apertura_lv",
+          "label_es": "Horario Apertura L-V",
+          "type": "time",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "horario_cierre_lv",
+          "label_es": "Horario Cierre L-V",
+          "type": "time",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "horario_sabado",
+          "label_es": "Horario Apertura y Cierre Sábado",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "num_tecnicos",
+          "label_es": "Número de técnicos",
+          "type": "integer",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "facturacion",
+      "label_es": "Información de Facturación",
+      "note": "Normalmente no se menciona en la visita; se completa al dar de alta como cliente.",
+      "fields": [
+        {
+          "key": "fact_nombre",
+          "label_es": "Nombre",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_apellido",
+          "label_es": "Apellido",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_calle",
+          "label_es": "Calle",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_colonia",
+          "label_es": "Colonia",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_ciudad",
+          "label_es": "Ciudad",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_estado",
+          "label_es": "Estado",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_cp",
+          "label_es": "Código Postal",
+          "type": "text",
+          "pattern": "^[0-9]{5}$",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_telefono",
+          "label_es": "Teléfono",
+          "type": "phone",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "fact_correo",
+          "label_es": "Correo Electrónico",
+          "type": "email",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "uso_cfdi",
+          "label_es": "Uso de CFDI",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "manual"
+          ]
+        },
+        {
+          "key": "rfc",
+          "label_es": "RFC",
+          "type": "text",
+          "pattern": "^[A-ZÑ&]{3,4}[0-9]{6}[A-Z0-9]{3}$",
+          "required": false,
+          "fill": [
+            "manual",
+            "ia"
+          ],
+          "erp_field": "rfc"
+        }
+      ]
+    },
+    {
+      "key": "tipo_taller",
+      "label_es": "Tipo de Taller",
+      "fields": [
+        {
+          "key": "tipo_taller",
+          "label_es": "Tipo de Taller",
+          "type": "multiselect",
+          "required": true,
+          "fill": [
+            "ia",
+            "denue"
+          ],
+          "denue_col": "codigo_act (sugerencia)",
+          "options": [
+            "Hojalatería y Pintura",
+            "Refaccionaria",
+            "Mayorista",
+            "Flotilla",
+            "Reparación General",
+            "Aceite y Lubricación",
+            "Transmisiones",
+            "Rines/Llantas",
+            "No Automotriz",
+            "Lotes de Auto Usado",
+            "Inspecciones de emisiones/Grúas"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "servicios",
+      "label_es": "Servicios",
+      "fields": [
+        {
+          "key": "servicios",
+          "label_es": "Servicios",
+          "type": "multiselect",
+          "required": false,
+          "fill": [
+            "ia"
+          ],
+          "options": [
+            "Frenos",
+            "Sistema de Escape",
+            "Motores",
+            "Aceite y Lubricación",
+            "Transmisión",
+            "Chasis y Suspensión",
+            "Flotilla",
+            "Importaciones",
+            "Encendido y Carga",
+            "Herramientas y Equipo",
+            "Colisión y Pintura",
+            "Calefacción y Refrigeración",
+            "Desempeño",
+            "Llantas",
+            "Otro"
+          ]
+        },
+        {
+          "key": "servicios_otro",
+          "label_es": "Otro (especificar)",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "competencia",
+      "label_es": "Información de la Competencia",
+      "repeat": 3,
+      "repeat_labels": [
+        "Primera opción",
+        "Segunda opción",
+        "Tercera opción"
+      ],
+      "fields": [
+        {
+          "key": "marca",
+          "label_es": "Marca",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "proveedor",
+          "label_es": "Proveedor",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "producto_ejemplo",
+          "label_es": "Ejemplo de producto",
+          "type": "text",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "precio_compra",
+          "label_es": "Precio de compra (MXN)",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        },
+        {
+          "key": "precio_venta_publico",
+          "label_es": "Precio de venta al público (MXN)",
+          "type": "money",
+          "required": false,
+          "fill": [
+            "ia"
+          ]
+        }
+      ]
+    }
+  ],
+  "ai_output_contract": {
+    "description": "Formato que debe devolver el análisis existente de la grabación. Solo llena lo que se dijo; lo no mencionado va en null. Nunca inventa.",
+    "shape": {
+      "resumen": "string (3-6 oraciones en español)",
+      "campos": {
+        "<field_key>": {
+          "valor": "valor según type, o null",
+          "evidencia": "frase breve de la conversación o null",
+          "confianza": "alta | media | baja"
+        }
+      },
+      "competencia": [
+        {
+          "marca": null,
+          "proveedor": null,
+          "producto_ejemplo": null,
+          "precio_compra": null,
+          "precio_venta_publico": null,
+          "evidencia": null
+        }
+      ],
+      "siguiente_paso": "string o null",
+      "fecha_siguiente_paso": "YYYY-MM-DD o null",
+      "etapa_sugerida": "2_contactado | 3_interesado | 4_cotizado | descartado | null"
+    },
+    "rules": [
+      "Usar solo los field_key de este archivo con fill que incluya 'ia'.",
+      "Opciones de multiselect: solo valores de 'options'.",
+      "Montos en MXN como número, sin símbolo.",
+      "Si el valor dicho contradice el dato DENUE precargado, devolver el valor dicho y marcar confianza 'media'."
+    ]
+  }
+}
