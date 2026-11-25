@@ -14,7 +14,7 @@ import { parseOe, formatOe, normOe, oeToken, OE_FOR_NOTE } from '../oeParse.js';
 import { oeReady, oeByProduct, syncOe } from '../oeCodes.js';
 import { recordPriceChange } from '../priceMaster.js';   // 0229 — 정가가 바뀌면 가격 마스터 장부에 1행
 import { rackStockReady, rackMap } from '../rackStock.js';   // 0245 · 제품찾기 랙 × 수량
-import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구성품
+import { kitsFor, kitBuildable, promosReady } from '../vioPromos.js';   // 0293 · 키트 구성품
 import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
 import { searchMaster, normBrand as xmBrand, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 경쟁사 코드(크로스레퍼런스 마스터)로 제품찾기
 import { dimsReady, tableToRows, previewDims, applyDims, exportDims, previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes, boxConflicts, dimsMap } from '../productDims.js';   // 0327 · 0328 · 무게 · 포장 박스
@@ -167,6 +167,17 @@ export default async function productRoutes(app) {
                    OR p.scode ILIKE $${i} OR p.app ILIKE $${i}
                    OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
                    OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i})${oeCond}${xrCond})`;
+    }
+    // 2026-11-25 · 키트(VIO 프로모션 K0001 …)는 「키트 번호」로 칠 때만 목록에 나온다.
+    //   키트 제품명에 구성품 코드(KIT VERSA 2015_CB0011_CQ0728R)와 차종이 들어 있어, 부품 코드·차종으로 찾아도 키트가 걸리던 문제.
+    //   검색어 없음 → 키트 숨김 · 검색어 있음 → 키트 코드에 검색어가 들어 있을 때만. kits=1 이면 예전처럼(전부).
+    if (String(req.query.kits || '') !== '1' && await promosReady()) {
+      if (q) {
+        params.push(`%${q.replace(/[%_\\]/g, (m) => '\\' + m)}%`);
+        where += ` AND (p.code ILIKE $${params.length} OR NOT EXISTS (SELECT 1 FROM vio_promos vk WHERE vk.product_id = p.id))`;
+      } else {
+        where += ' AND NOT EXISTS (SELECT 1 FROM vio_promos vk WHERE vk.product_id = p.id)';
+      }
     }
     if (materialFilter === '__none__') {
       where += ' AND p.material IS NULL';
