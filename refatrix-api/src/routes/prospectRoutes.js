@@ -762,6 +762,56 @@ export default async function prospectRoutes(app) {
     });
     return { ok: true, ...out };
   });
+  // 🗑 루트 일괄 정리(디렉터·관리자) — 날짜가 정해진 루트를 한 번에
+  //   대상: user_id(없으면 모든 담당) · from~to(없으면 오늘부터 전부) · include_plans(날짜 미정 방문 목록도)
+  //   mode=delete: 방문 전 정류장을 지움(체크인한 방문 기록은 남김) / mode=unschedule: 날짜만 빼서 방문 목록으로 돌림
+  function bulkWhere(b, params) {
+    const conds = [];
+    if (int(b.user_id)) { params.push(int(b.user_id)); conds.push(`r.user_id=$${params.length}`); }
+    const from = YMD.test(String(b.from)) ? b.from : mxToday();
+    const to = YMD.test(String(b.to)) ? b.to : null;
+    params.push(from); let dc = `r.route_date >= $${params.length}::date`;
+    if (to) { params.push(to); dc += ` AND r.route_date <= $${params.length}::date`; }
+    conds.push(b.include_plans ? `((${dc}) OR r.route_date IS NULL)` : `(${dc})`);
+    return conds.join(' AND ');
+  }
+  app.post('/api/prospect-routes/bulk-preview', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const params = []; const w = bulkWhere(req.body || {}, params);
+    const r = (await query(
+      `SELECT COUNT(DISTINCT r.id)::int AS routes, COUNT(DISTINCT r.id) FILTER (WHERE r.route_date IS NULL)::int AS plans,
+              COUNT(s.id) FILTER (WHERE s.consult_id IS NULL)::int AS stops, COUNT(s.id) FILTER (WHERE s.consult_id IS NOT NULL)::int AS visited,
+              COUNT(DISTINCT r.user_id)::int AS users, MIN(r.route_date)::text AS first, MAX(r.route_date)::text AS last
+         FROM prospect_routes r LEFT JOIN prospect_route_stops s ON s.route_id=r.id WHERE ${w}`, params)).rows[0];
+    return r;
+  });
+  app.post('/api/prospect-routes/bulk-delete', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const b = req.body || {};
+    const mode = b.mode === 'unschedule' ? 'unschedule' : 'delete';
+    if (String(b.confirm || '').trim() !== (mode === 'delete' ? '삭제' : '확인')) return reply.code(400).send({ error: 'confirm_required' });
+    const params = []; const w = bulkWhere(b, params);
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const ids = (await q(`SELECT r.id FROM prospect_routes r WHERE ${w}`, params)).rows.map((x) => Number(x.id));
+      if (!ids.length) return { routes: 0, stops: 0 };
+      if (mode === 'unschedule') {
+        // 날짜만 뺀다 — 이미 체크인한 정류장이 있는 루트는 기록이라 그대로 둔다
+        const u = await q(`UPDATE prospect_routes r SET route_date=NULL, updated_at=now(),
+                             name=COALESCE(r.name, '루트 ' || to_char(r.route_date,'MM/DD'))
+                            WHERE r.id = ANY($1) AND r.route_date IS NOT NULL
+                              AND NOT EXISTS (SELECT 1 FROM prospect_route_stops s WHERE s.route_id=r.id AND s.consult_id IS NOT NULL)`, [ids]);
+        return { routes: u.rowCount, stops: 0, kept_visited: ids.length - u.rowCount };
+      }
+      const del = await q(`DELETE FROM prospect_route_stops WHERE route_id = ANY($1) AND consult_id IS NULL`, [ids]);
+      await tidyRoutes(q, ids);
+      const left = Number((await q(`SELECT COUNT(*)::int AS n FROM prospect_routes WHERE id = ANY($1)`, [ids])).rows[0].n);
+      return { routes: ids.length - left, stops: del.rowCount, kept_visited: left };
+    });
+    await logEvent({ userId: me(req), action: 'delete', target: 'prospect_routes:bulk', detail: { mode, user_id: int(b.user_id), from: b.from, to: b.to, include_plans: !!b.include_plans, ...out } });
+    return { ok: true, mode, ...out };
+  });
+
   // 목록 안 정류장 바꾸기(빼기·순서) {prospect_ids}
   app.put('/api/prospect-routes/by-id/:id/stops', edit, async (req, reply) => {
     const r = await ownRoute(req, req.params.id); if (!r) return reply.code(404).send({ error: 'not_found' });
@@ -964,6 +1014,26 @@ export default async function prospectRoutes(app) {
         next_date: draft && draft.fecha_siguiente_paso, stage_suggested: draft && draft.etapa_sugerida } : null,
       fields: ALTA_FIELDS, values: mergeForReview({ prefill, saved, draft }),
     };
+  });
+
+  // ❓ 질문 항목 + 답 — 고객별로 파악할 항목(Alta 양식)과 지금까지 확보한 답(저장값 > 검토 전 AI 초안 > DENUE)
+  app.get('/api/prospects/:id/questions', view, async (req, reply) => {
+    const p = await loadProspect(req, req.params.id);
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const saved = Object.fromEntries((await query(`SELECT field_key, value FROM prospect_crm_values WHERE prospect_id=$1`, [p.id])).rows.map((r) => [r.field_key, r.value]));
+    // 아직 검토(저장) 안 한 가장 최근 AI 초안
+    const dr = (await query(
+      `SELECT r.alta_draft FROM sales_consult_recordings r JOIN sales_consults c ON c.id=r.consult_id
+        WHERE c.prospect_id=$1 AND c.deleted_at IS NULL AND r.alta_status='done' AND COALESCE(c.review_status,'por_revisar') <> 'confirmado'
+        ORDER BY r.id DESC LIMIT 1`, [p.id])).rows[0];
+    const values = mergeForReview({ prefill: prefillFromProspect(p), saved, draft: dr ? parseJ(dr.alta_draft) : null });
+    const has = (v) => v && v.value != null && v.value !== '' && !(Array.isArray(v.value) && !v.value.length);
+    for (const [k, v] of Object.entries(values)) if (v.source === 'ia' && !has(v) && v.saved != null) values[k] = { value: v.saved, source: 'guardado' };
+    const scored = ALTA_FIELDS.filter((f) => f.section !== 'facturacion');
+    return { prospect: { id: Number(p.id), name: p.nom_estab, stage: p.stage, score: p.score, info_pct: p.info_pct },
+      fields: ALTA_FIELDS, values,
+      counts: { total: scored.length, answered: scored.filter((f) => has(values[f.key])).length,
+        saved: scored.filter((f) => has(values[f.key]) && values[f.key].source === 'guardado').length } };
   });
 
   // 저장: confirm=false → 임시저장(borrador), confirm=true → 필수 확인 후 확정(confirmado)

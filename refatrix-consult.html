@@ -983,7 +983,29 @@ window.__qkLang=L;if(L==='es'){d.lang='es';d.setAttribute('data-ui-lang','es');}
     const box=$('qk-pros'); if(!box) return;
     if(!qkProspect){ box.classList.add('hidden'); box.innerHTML=''; return; }
     box.classList.remove('hidden');
-    box.innerHTML='<div class="h">🧭 고객개발 방문 — <span style="color:#3a2a27">'+csEsc(qkProspect.name||'')+'</span><span class="x">녹음이 끝나면 AI가 고객정보 양식을 채우고 「검토 대기」에 올라갑니다</span></div>';
+    box.innerHTML='<div class="h">🧭 고객개발 방문 — <span style="color:#3a2a27">'+csEsc(qkProspect.name||'')+'</span><span class="x">녹음이 끝나면 AI가 고객정보 양식을 채우고 「검토 대기」에 올라갑니다</span></div><div id="qk-qs"></div>';
+    qkQuestions(qkProspect.id);
+  }
+  // ❓ 이 고객에게 물어볼 것 — 아직 답이 없는 질문만(누르면 전체·답까지). 녹음 중에 보면서 물어보면 AI가 답을 찾아 채운다.
+  async function qkQuestions(pid){
+    const box=$('qk-qs'); if(!box) return;
+    let d; try{ const r=await fetch(session.api+'/api/prospects/'+pid+'/questions',{headers:auth()}); if(!r.ok) return; d=await r.json(); }catch(e){ return; }
+    const es=QK_LANG==='es'; let all=false, open=false;   // 접어 둔다 — 녹음 버튼이 아래로 밀리지 않게
+    const fmt=(f,v)=>{ if(v==null||v===''||(Array.isArray(v)&&!v.length)) return null; if(Array.isArray(v)) return v.join(', ');
+      if(f.type==='boolean') return (v===true||v==='true')?(es?'Sí':'예'):(es?'No':'아니오'); if(f.type==='money') return '$'+Number(v).toLocaleString('es-MX'); return String(v); };
+    const draw=()=>{
+      const groups=[]; const by={};
+      d.fields.filter(f=>f.section!=='facturacion'&&!(f.fill||[]).every(x=>x==='denue')).forEach(f=>{ const k=f.section+(f.group?'.'+f.group:''); if(!by[k]){ by[k]={t:(es?f.section_label:f.section_ko)+(f.group?' '+f.group:''),l:[]}; groups.push(k); } by[k].l.push(f); });
+      const miss=d.fields.filter(f=>f.section!=='facturacion'&&fmt(f,(d.values[f.key]||{}).value)==null).length;
+      let h='<div style="display:flex;align-items:center;gap:6px;margin-top:8px"><button type="button" id="qk-qtog" class="btn sm" style="padding:8px 12px;font-size:13px;background:#B23A2E;border-color:#B23A2E;color:#fff">❓ '+(es?'Preguntar':'물어볼 것')+' · '+(es?'faltan ':'미확보 ')+miss+' '+(open?'▲':'▼')+'</button>'+
+        (open?'<button type="button" class="btn ghost sm" id="qk-qall" style="margin-left:auto;padding:4px 10px;font-size:12px">'+(all?(es?'Solo faltantes':'모르는 것만'):(es?'Ver todo':'전체·답 보기'))+'</button>':'')+'</div>';
+      if(!open){ box.innerHTML=h; $('qk-qtog').onclick=()=>{ open=true; draw(); }; return; }
+      groups.forEach(k=>{ const rows=by[k].l.map(f=>{ const a=fmt(f,(d.values[f.key]||{}).value); if(!all&&a!=null) return '';
+          return '<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #f0dcd8;font-size:13.5px"><span style="width:16px;font-weight:800;color:'+(a!=null?'#1E7A46':'#B23A2E')+'">'+(a!=null?'✓':'?')+'</span><span style="flex:1">'+csEsc(es?f.q_es:f.q_ko)+'</span>'+(a!=null?'<b style="max-width:45%;text-align:right">'+csEsc(a)+'</b>':'')+'</div>'; }).join('');
+        if(rows) h+='<div style="margin-top:6px"><div style="font-size:11.5px;font-weight:800;color:#8a5a52;text-transform:uppercase">'+csEsc(by[k].t)+'</div>'+rows+'</div>'; });
+      box.innerHTML=h; $('qk-qall').onclick=()=>{ all=!all; draw(); }; $('qk-qtog').onclick=()=>{ open=false; draw(); };
+    };
+    draw();
   }
   function qkGeo(){
     qkGeoVal=null;

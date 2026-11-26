@@ -95,6 +95,14 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 .src.ia{background:var(--ink);color:#fff} .src.denue{background:var(--surface);color:var(--ink2);border:1px solid var(--line)}
 .src.guardado{background:var(--ok-soft);color:var(--ok)} .src.vacio{background:var(--bad-soft);color:var(--bad)}
 .evid{font-size:12px;color:var(--muted);font-weight:400;font-style:italic}
+/* ❓ 질문 항목 */
+.qsec{margin-top:10px}.qsec>h4{margin:0 0 4px;font-size:13px;font-weight:800;color:var(--ink2)}
+.qrow{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line)}
+.qrow .qi{flex:none;width:18px;text-align:center;font-weight:800}
+.qrow .qq{flex:1;min-width:0;font-size:13.5px}.qrow .qq small{display:block;color:var(--muted);font-size:11.5px}
+.qrow .qa{flex:0 1 45%;text-align:right;font-size:13.5px;font-weight:700;word-break:break-word}
+.qrow.miss .qi{color:var(--ctr)}.qrow.miss .qa{color:var(--ctr);font-weight:600}
+.qrow.ok .qi{color:var(--ok)}
 .lowconf input,.lowconf select{border-color:#E5A100;background:#FFFBF0}
 .isai input,.isai select,.isai textarea{border-color:var(--ink);border-width:2px}
 /* 레이아웃 */
@@ -243,6 +251,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
           <button class="btn ghost sm" id="rt-near">내 주변 후보 2km</button>
           <button class="btn ghost sm" id="rt-unplanned">리스트에 없는 가게 방문</button>
           <button class="btn ghost sm hide" id="rt-clear" style="margin-left:auto;color:var(--ctr)">이 루트 삭제</button>
+          <button class="btn ghost sm dir" id="rt-bulk" style="color:var(--ctr);border-color:var(--ctr)">🗑 루트 일괄 정리</button>
         </div>
       </div>
       <div><div id="rt-map" style="height:440px;border-radius:4px;border:1px solid var(--line)"></div>
@@ -852,6 +861,7 @@ async function loadRoute(){
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'+
         (next.phone?'<a class="btn ghost" href="tel:'+esc(next.phone)+'">전화</a>':'<button class="btn ghost" disabled>전화 없음</button>')+
         '<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+next.lat+','+next.lng+'">길찾기</a></div>'+
+      '<button class="btn ghost" style="width:100%;margin-top:10px" data-qopen="'+next.id+'|'+esc(next.nom_estab)+'">❓ 물어볼 것 (질문 항목)</button>'+
       '<button class="btn red big" style="width:100%;margin-top:10px" data-checkin="'+next.id+'">체크인 · 녹음 시작</button>'+
       '<div class="note" style="margin-top:8px">업체 정보를 입력하지 않아도 바로 시작됩니다. 녹음이 끝나면 AI가 양식을 채우고, 「검토 대기」에서 확인·저장합니다.</div></div>')
     :'<div class="card flat" style="background:var(--ok-soft)"><b>'+(RT_VIEW?'이 목록을':'이 루트를')+' 모두 방문했습니다.</b></div>';
@@ -939,6 +949,42 @@ async function loadUpcoming(){
           (d.date===META.today?'오늘':d.date.slice(5))+'('+wd(d.date)+') · '+d.stops+'곳'+(d.visited?' · ✓'+d.visited:'')+'</button>'; }).join('')+'</div>').join('')+'</div>';
   $('rt-up').querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{ const [u,d]=b.dataset.up.split('|'); if(isDir) $('rt-user').value=u; $('rt-date').value=d; RT_VIEW=null; loadRoute(); });
 }
+// 🗑 루트 일괄 정리(디렉터·관리자) — 날짜가 정해진 루트를 담당자·기간으로 한 번에 지우거나 날짜만 빼기
+$('rt-bulk').onclick=()=>{
+  const uo=META.staff.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('');
+  openDrawer('루트 일괄 정리','날짜가 정해진 루트를 한 번에',
+    '<div class="grid" style="gap:12px">'+
+    '<label class="fld"><span>담당자</span><select id="bk-user"><option value="">전체 담당자</option>'+uo+'</select></label>'+
+    '<div class="grid" style="grid-template-columns:1fr 1fr;gap:10px"><label class="fld"><span>시작일</span><input type="date" id="bk-from" value="'+META.today+'"></label>'+
+    '<label class="fld"><span>종료일 <small>(비우면 끝까지)</small></span><input type="date" id="bk-to"></label></div>'+
+    '<label class="chip" style="padding:10px 14px"><input type="checkbox" id="bk-plans"> 날짜 미정 방문 목록도 함께</label>'+
+    '<div style="display:flex;flex-direction:column;gap:8px">'+
+      '<label class="chip" style="padding:10px 14px;align-items:flex-start"><input type="radio" name="bk-mode" value="delete" checked> <span><b>지우기</b><br><span class="note">방문 전 업체를 루트에서 모두 뺍니다. 이미 체크인한 방문 기록은 남습니다.</span></span></label>'+
+      '<label class="chip" style="padding:10px 14px;align-items:flex-start"><input type="radio" name="bk-mode" value="unschedule"> <span><b>날짜만 빼기</b><br><span class="note">루트는 그대로 두고 「방문 목록(날짜 미정)」으로 돌립니다 — 담당자가 날짜를 다시 고릅니다. 이미 방문한 곳이 있는 루트는 그대로 둡니다.</span></span></label></div>'+
+    '<div id="bk-info"></div>'+
+    '<label class="fld"><span id="bk-cl">확인을 위해 「삭제」라고 입력</span><input type="text" id="bk-confirm" placeholder="삭제"></label>'+
+    '<button class="btn red" id="bk-run" disabled>실행</button></div>');
+  const body=()=>({user_id:Number($('bk-user').value)||null,from:$('bk-from').value||META.today,to:$('bk-to').value||null,include_plans:$('bk-plans').checked,
+    mode:(document.querySelector('input[name="bk-mode"]:checked')||{}).value||'delete'});
+  const word=()=>body().mode==='delete'?'삭제':'확인';
+  let P=null;
+  const chk=()=>{ $('bk-run').disabled=!(P&&P.routes>0&&$('bk-confirm').value.trim()===word()); };
+  const prev=async()=>{ $('bk-cl').textContent='확인을 위해 「'+word()+'」라고 입력'; $('bk-confirm').placeholder=word();
+    try{ P=await post('/api/prospect-routes/bulk-preview',body()); }catch(e){ $('bk-info').innerHTML='<div class="banner bad">'+esc(e.message)+'</div>'; return; }
+    $('bk-info').innerHTML=P.routes?'<div class="banner warn">대상 루트 <b>'+fmt(P.routes)+'개</b>'+(P.plans?' (방문 목록 '+fmt(P.plans)+')':'')+' · 담당자 '+fmt(P.users)+'명 · 방문 전 업체 <b>'+fmt(P.stops)+'곳</b>'+
+      (P.first?' · '+esc(P.first)+(P.last&&P.last!==P.first?' ~ '+esc(P.last):''):'')+(P.visited?'<br><span class="note">이미 체크인한 '+fmt(P.visited)+'곳은 방문 기록이라 남습니다.</span>':'')+'</div>'
+      :'<div class="banner info">조건에 맞는 루트가 없습니다.</div>';
+    chk(); };
+  ['bk-user','bk-from','bk-to','bk-plans'].forEach(id=>$(id).onchange=prev);
+  document.querySelectorAll('input[name="bk-mode"]').forEach(r=>r.onchange=()=>{ $('bk-confirm').value=''; prev(); });
+  $('bk-confirm').oninput=chk;
+  $('bk-run').onclick=async()=>{ const b=body(); b.confirm=$('bk-confirm').value.trim(); $('bk-run').disabled=true;
+    try{ const r=await post('/api/prospect-routes/bulk-delete',b);
+      toast(r.mode==='delete'?'루트 '+fmt(r.routes)+'개 · 업체 '+fmt(r.stops)+'곳 지움'+(r.kept_visited?' (방문 기록 있는 루트 '+r.kept_visited+'개는 남김)':''):'루트 '+fmt(r.routes)+'개를 방문 목록으로 돌림'+(r.kept_visited?' (방문한 곳이 있는 '+r.kept_visited+'개는 그대로)':''));
+      closeDrawer(); RT_VIEW=null; loadRoute(); }
+    catch(e){ toast('실패: '+e.message); chk(); } };
+  prev();
+};
 function rtQS(){ return 'date='+$('rt-date').value+(isDir?'&user='+$('rt-user').value:''); }
 $('rt-clear').onclick=async()=>{
   const n=(ROUTE&&ROUTE.stops||[]).filter(s=>!s.consult_id).length; if(!n) return;
@@ -1029,6 +1075,44 @@ function closeDrawer(){ $('drawer').classList.remove('open'); $('scrim').classLi
 $('dr-close').onclick=closeDrawer; $('scrim').onclick=closeDrawer;
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
 
+// ── ❓ 질문 항목 — 고객별로 파악할 항목(Alta 양식)과 지금까지 확보한 답 ──
+//   답: 저장됨(검토·저장한 값) > AI 초안(녹음에서, 검토 전) > DENUE(방문 전 자동) · 없으면 「아직 모름」
+const QSRC={guardado:['저장됨','guardado'],ia:['AI 초안 · 검토 전','ia'],denue:['DENUE','denue']};
+function qFmt(f,v){
+  if(v==null||v===''||(Array.isArray(v)&&!v.length)) return null;
+  if(Array.isArray(v)) return v.join(', ');
+  if(f.type==='boolean') return v===true||v==='true'?'예':'아니오';
+  if(f.type==='money') return money(Number(v));
+  return String(v);
+}
+function renderQuestions(d,onlyMiss){
+  const secs=[]; const by={};
+  d.fields.forEach(f=>{ const sk=f.section+(f.group?'.'+f.group:''); if(!by[sk]){ by[sk]={title:f.section_ko+(f.group?' '+f.group:''),list:[],fact:f.section==='facturacion'}; secs.push(sk); } by[sk].list.push(f); });
+  return secs.map(sk=>{ const S=by[sk];
+    const rows=S.list.map(f=>{ const v=d.values[f.key]||{}, a=qFmt(f,v.value);
+      if(onlyMiss&&a!=null) return '';
+      const src=QSRC[v.source]; return '<div class="qrow '+(a!=null?'ok':'miss')+'"><span class="qi">'+(a!=null?'✓':'?')+'</span><div class="qq">'+esc(f.q_ko)+'<small>'+esc(f.label_es)+'</small></div>'+
+        '<div class="qa">'+(a!=null?esc(a)+(src?'<div><span class="src '+src[1]+'">'+src[0]+'</span></div>':''):(S.fact?'등록 때 서류로':'아직 모름'))+'</div></div>'; }).join('');
+    return rows?'<div class="qsec"><h4>'+esc(S.title)+'</h4>'+rows+'</div>':''; }).join('')||'<p class="note">모든 항목에 답이 있습니다.</p>';
+}
+async function loadQuestions(pid,boxId,full){
+  const box=$(boxId); if(!box) return;
+  let d; try{ d=await api('/api/prospects/'+pid+'/questions'); }catch(e){ box.innerHTML='<h3>❓ 질문 항목</h3><p class="note">불러오지 못했습니다: '+esc(e.message)+'</p>'; return; }
+  let only=!full;
+  const draw=()=>{ box.innerHTML='<h3>❓ 질문 항목 <span class="note" style="font-weight:600">· 확보 '+d.counts.answered+' / '+d.counts.total+(d.counts.answered>d.counts.saved?' (저장 '+d.counts.saved+')':'')+'</span></h3>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="btn sm '+(only?'':'ghost')+'" data-qf="miss">아직 모르는 것</button><button class="btn sm '+(only?'ghost':'')+'" data-qf="all">전체 · 답 보기</button>'+
+      '<button class="btn ghost sm" data-qedit="'+pid+'" style="margin-left:auto">✏ 답 입력·수정</button></div>'+
+      '<p class="note">방문 때 물어볼 것 · 녹음하면 AI가 답을 찾아 채우고, 「검토 대기」에서 확인하면 저장됩니다. 세금계산서 정보는 고객 등록 때 서류로 받습니다.</p>'+renderQuestions(d,only);
+    box.querySelectorAll('[data-qf]').forEach(b=>b.onclick=()=>{ only=b.dataset.qf==='miss'; draw(); });
+    box.querySelector('[data-qedit]').onclick=()=>openReview(pid,null); };
+  draw();
+}
+// 오늘 루트 등에서 바로 질문 항목만 보기
+async function openQuestions(pid,name){
+  openDrawer('❓ 질문 항목',name||'','<div class="sec" id="dq-only" style="margin-top:0"><p class="note">불러오는 중…</p></div>');
+  loadQuestions(pid,'dq-only',false);
+}
+document.addEventListener('click',e=>{ const q=e.target.closest('[data-qopen]'); if(q){ const [id,...n]=q.dataset.qopen.split('|'); openQuestions(Number(id),n.join('|')); } });
 async function openProspect(id){
   let d; try{ d=await api('/api/prospects/'+id); }catch(e){ return toast('열 수 없습니다: '+e.message); }
   const p=d.prospect; const order=['asignado','contactado','perfilado','interesado','registro','cotizado','cliente_activo'];
@@ -1044,6 +1128,7 @@ async function openProspect(id){
     '<div class="sec"><h3>정보</h3><dl class="kv">'+
       [['상호법인',p.raz_social],['주소',[p.address,p.colonia,p.cp].filter(Boolean).join(', ')],['municipio',p.municipio+(p.entidad?', '+p.entidad:'')],['전화',p.phone],['이메일',p.email],['직원',p.per_ocu],['담당',p.owner_name],['DENUE',p.denue_id?p.denue_id+' · '+(p.scian_code||''):'수동 등록']]
         .map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v||'—')+'</dd>').join('')+'</dl></div>'+
+    '<div class="sec" id="dq-box"><h3>❓ 질문 항목</h3><p class="note">불러오는 중…</p></div>'+
     sizeBlock(d)+
     scoreBlock(d)+
     '<div class="sec"><h3>단계</h3><div class="stepper">'+order.map(k=>'<button data-stage="'+k+'" class="'+(p.stage===k?'on':(META.stages.findIndex(s=>s.key===k)<META.stages.findIndex(s=>s.key===p.stage)&&p.stage!=='descartado'?'past':''))+'"'+(manualOK(k)?'':' disabled title="기록으로 자동"')+'>'+esc(STAGE[k].ko)+'</button>').join('')+
@@ -1065,6 +1150,7 @@ async function openProspect(id){
       (!d.customer?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn ghost sm" id="dp-copy">고객 등록용 값 복사</button><a class="btn ghost sm" href="refatrix-customers.html" target="_blank" rel="noopener">고객 등록 화면</a></div><p class="note">고객 등록이 승인되면 여기서 그 고객을 골라 연결하세요. 방문·녹음·양식 값이 고객 이력으로 이어집니다.</p>':'')+'</div>'+
     '<div class="sec"><h3>이력</h3>'+d.history.slice(0,12).map(h=>'<div class="note">'+esc(String(h.created_at).slice(0,16).replace('T',' '))+' · '+esc((STAGE[h.from_stage]||{}).ko||'—')+' → <b>'+esc((STAGE[h.to_stage]||{}).ko||h.to_stage)+'</b>'+(h.reason?' · '+esc(h.reason):'')+(h.user_name?' · '+esc(h.user_name):'')+'</div>').join('')+'</div>';
   openDrawer((p.municipio||'')+' · '+(p.colonia||''),p.nom_estab,html);
+  loadQuestions(p.id,'dq-box',false);
   $('dp-route').onclick=async()=>{ try{ const ids=[...new Set([...(ROUTE&&ROUTE.date===META.today?ROUTE.stops.map(s=>s.id):[]),...routePick,p.id])]; routePick=ids;
       await post('/api/prospect-routes',{date:META.today,prospect_ids:ids},'PUT'); toast('오늘 루트에 추가 ('+ids.length+'곳)'); ROUTE=null; if(cur==='map'){ $('m-addroute').classList.add('hide'); loadMapPins(); } }catch(e){ toast('실패: '+e.message); } };
   $('dr-body').querySelectorAll('[data-stage]').forEach(b=>b.onclick=async()=>{

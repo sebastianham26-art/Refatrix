@@ -635,5 +635,49 @@ export function flattenForm(form = ALTA_FORM) {
   }
   return out;
 }
-export const ALTA_FIELDS = flattenForm(ALTA_FORM);
+// ── 방문 때 물어볼 질문(2026-11-26 디렉터 요청: 「고객별로 파악할 질문 항목과 답을 볼 수 있게」) ──
+//   항목 key(base) → [한국어 질문, 스페인어 질문]. 화면은 사용자 언어로 보여 준다.
+export const SECTION_KO = {
+  datos_generales: '기본 정보', tamano_cliente: '고객 규모', potencial: '잠재성(월, IVA 제외)', informacion_empresa: '영업 정보',
+  facturacion: '세금계산서 정보(고객 등록 때)', tipo_taller: '업종', servicios: '서비스', competencia: '경쟁사(현재 쓰는 브랜드)',
+};
+export const QUESTIONS = {
+  nombre_cuenta: ['상호(가게 이름)는?', '¿Cuál es el nombre del negocio?'],
+  calle: ['도로명', 'Calle'], numero: ['번지', 'Número'], colonia: ['Colonia', 'Colonia'], codigo_postal: ['우편번호', 'Código postal'],
+  ciudad: ['도시', 'Ciudad'], estado: ['주', 'Estado'],
+  contacto_principal: ['주 담당자(구매 결정하는 사람) 이름은?', '¿Quién decide las compras? (nombre)'],
+  contacto_secundario: ['두 번째 연락할 사람은?', '¿Otra persona de contacto?'],
+  telefono: ['연락처(WhatsApp)는?', '¿Teléfono / WhatsApp?'], telefono_2: ['다른 전화번호는?', '¿Otro teléfono?'],
+  correo: ['이메일은?', '¿Correo electrónico?'],
+  num_sucursales: ['매장(지점)이 몇 곳인가요?', '¿Cuántas sucursales o tiendas tienen?'],
+  num_almacenes: ['창고가 몇 곳인가요?', '¿Cuántos almacenes tienen?'],
+  cantidad_personal: ['직원은 몇 명인가요?', '¿Cuántas personas trabajan aquí?'],
+  num_vendedores: ['영업사원은 몇 명인가요?', '¿Cuántos vendedores tienen?'],
+  metodo_entrega: ['고객에게 어떻게 배송하나요? (자체 차량·오토바이·택배·고객 방문)', '¿Cómo entregan a sus clientes? (camioneta, moto, paquetería, el cliente recoge)'],
+  num_unidades_reparto: ['배송 차량은 몇 대인가요?', '¿Cuántas unidades de reparto tienen?'],
+  entrega_domicilio: ['배달해 주나요?', '¿Hacen entrega a domicilio?'],
+  localidades_cobertura: ['어느 지역까지 파나요?', '¿A qué zonas o municipios venden?'],
+  venta_total_mensual: ['한 달 매출은 대략 얼마인가요?', '¿Cuánto venden al mes, aproximadamente?'],
+  venta_suspension_mensual: ['그중 서스펜션·조향 매출은?', '¿Cuánto de eso es suspensión y dirección?'],
+  compra_total_mensual: ['한 달 부품 구매는 대략 얼마인가요?', '¿Cuánto compran de refacciones al mes?'],
+  compra_suspension_mensual: ['그중 서스펜션·조향 구매는? (CTR가 가져올 수 있는 시장)', '¿Cuánto compran de suspensión y dirección al mes?'],
+  ofrece_credito: ['고객에게 외상(신용)을 주나요?', '¿Dan crédito a sus clientes?'],
+  anio_apertura: ['언제 문을 열었나요? (연도)', '¿En qué año abrieron?'],
+  horario_apertura_lv: ['평일 여는 시간', 'Hora de apertura (L-V)'], horario_cierre_lv: ['평일 닫는 시간', 'Hora de cierre (L-V)'],
+  horario_sabado: ['토요일 영업시간', 'Horario del sábado'],
+  num_tecnicos: ['정비사(테크니션)는 몇 명인가요?', '¿Cuántos técnicos tienen?'],
+  fact_nombre: ['청구 이름', 'Nombre (facturación)'], fact_apellido: ['청구 성', 'Apellido (facturación)'], fact_calle: ['청구 주소 도로', 'Calle (facturación)'],
+  fact_colonia: ['청구 주소 Colonia', 'Colonia (facturación)'], fact_ciudad: ['청구 도시', 'Ciudad (facturación)'], fact_estado: ['청구 주', 'Estado (facturación)'],
+  fact_cp: ['청구 우편번호', 'C.P. (facturación)'], fact_telefono: ['청구 전화', 'Teléfono (facturación)'], fact_correo: ['청구 이메일', 'Correo (facturación)'],
+  uso_cfdi: ['CFDI 용도', 'Uso de CFDI'], rfc: ['RFC는?', '¿RFC?'],
+  tipo_taller: ['어떤 업종인가요? (정비·부품점·도매 등)', '¿Qué tipo de negocio es? (taller, refaccionaria, mayorista…)'],
+  servicios: ['어떤 서비스를 하나요?', '¿Qué servicios ofrecen?'], servicios_otro: ['기타 서비스', 'Otro servicio'],
+  marca: ['지금 쓰는 서스펜션 브랜드는?', '¿Qué marca de suspensión usan ahora?'],
+  proveedor: ['어디서 사나요? (공급처)', '¿A quién le compran? (proveedor)'],
+  producto_ejemplo: ['대표 상품 예시는?', '¿Un producto de ejemplo?'],
+  precio_compra: ['그 상품 구매가는?', '¿A cuánto lo compran?'],
+  precio_venta_publico: ['그 상품 판매가는?', '¿A cuánto lo venden al público?'],
+};
+export const ALTA_FIELDS = flattenForm(ALTA_FORM).map((f) => ({ ...f, section_ko: SECTION_KO[f.section] || f.section_label,
+  q_ko: (QUESTIONS[f.base] || [])[0] || f.label_es, q_es: (QUESTIONS[f.base] || [])[1] || f.label_es }));
 export const ALTA_FIELD_MAP = Object.fromEntries(ALTA_FIELDS.map((f) => [f.key, f]));
