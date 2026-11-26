@@ -136,7 +136,7 @@ export async function attachConsultToProspect({ consultId, prospectId, perm, lat
     // 오늘 루트 정류장이면 방문 연결
     await q(`UPDATE prospect_route_stops s SET consult_id=$3
                FROM prospect_routes r
-              WHERE s.route_id=r.id AND r.user_id=$1 AND r.route_date=(now() AT TIME ZONE 'America/Mexico_City')::date
+              WHERE s.route_id=r.id AND r.user_id=$1 AND (r.route_date=(now() AT TIME ZONE 'America/Mexico_City')::date OR r.route_date IS NULL)
                 AND s.prospect_id=$2 AND s.consult_id IS NULL`, [owner == null ? userId : owner, pid, Number(consultId)]);
     await recomputeProspect(q, pid, { userId, reason: 'check-in' });
     return { prospect_id: pid, checkin_dist_m: dist };

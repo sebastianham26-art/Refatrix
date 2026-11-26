@@ -161,7 +161,7 @@ async function pruneRouteStops(q, prospectIds, userId = null) {
   if (userId != null) { params.push(userId); uc = ' AND r.user_id=$2'; }
   const del = await q(`DELETE FROM prospect_route_stops s USING prospect_routes r
                         WHERE s.route_id=r.id AND s.prospect_id = ANY($1) AND s.consult_id IS NULL
-                          AND r.route_date >= (now() AT TIME ZONE 'America/Mexico_City')::date${uc}
+                          AND (r.route_date IS NULL OR r.route_date >= (now() AT TIME ZONE 'America/Mexico_City')::date)${uc}
                         RETURNING s.route_id`, params);
   const rids = [...new Set(del.rows.map((r) => Number(r.route_id)))];
   if (rids.length) await tidyRoutes(q, rids);
@@ -252,8 +252,8 @@ export default async function prospectRoutes(app) {
     const rows = (await query(
       `SELECT p.id, p.nom_estab AS n, p.lat, p.lng, p.stage AS s, p.segment AS g, p.priority AS pr, p.owner_user_id AS o,
               (SELECT MAX(c.consult_date)::text FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL) AS v,
-              (SELECT MIN(r.route_date)::text FROM prospect_route_stops rs JOIN prospect_routes r ON r.id=rs.route_id
-                WHERE rs.prospect_id=p.id AND rs.consult_id IS NULL AND r.route_date >= $${params.length}::date) AS rd
+              (SELECT COALESCE(MIN(r.route_date)::text, CASE WHEN COUNT(*)>0 THEN '날짜 미정' END) FROM prospect_route_stops rs JOIN prospect_routes r ON r.id=rs.route_id
+                WHERE rs.prospect_id=p.id AND rs.consult_id IS NULL AND (r.route_date IS NULL OR r.route_date >= $${params.length}::date)) AS rd
          FROM prospects p WHERE ${conds.join(' AND ')} ORDER BY p.priority LIMIT 6000`, params)).rows
       .map((r) => ({ ...r, id: Number(r.id), o: r.o == null ? null : Number(r.o) }));
     // 담당자 화면: 다른 담당의 후보는 이름 없이 위치만(회색) — 지도에서 피해서 구역을 잡도록
@@ -663,19 +663,118 @@ export default async function prospectRoutes(app) {
   });
 
   // ── 루트 ───────────────────────────────────────────────────────────
-  async function routeOut(userId, date) {
-    const r = (await query(`SELECT id FROM prospect_routes WHERE user_id=$1 AND route_date=$2`, [userId, date])).rows[0];
-    if (!r) return { date, user_id: userId, stops: [] };
-    const stops = (await query(
+  async function routeStops(rid) {
+    return (await query(
       `SELECT s.seq, s.consult_id, p.id, p.score, p.nom_estab, p.address, p.colonia, p.municipio, p.lat, p.lng, p.phone, p.stage, p.priority, p.segment,
               c.review_status, c.created_at AS checkin_at
          FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
          LEFT JOIN sales_consults c ON c.id=s.consult_id
         WHERE s.route_id=$1 AND (s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND p.stage <> 'descartado'))
-        ORDER BY s.seq`, [r.id])).rows;
-    return { date, user_id: userId, route_id: Number(r.id),
-      stops: stops.map((s) => ({ ...s, id: Number(s.id), consult_id: s.consult_id ? Number(s.consult_id) : null })) };
+        ORDER BY s.seq`, [rid])).rows.map((s) => ({ ...s, id: Number(s.id), consult_id: s.consult_id ? Number(s.consult_id) : null }));
   }
+  async function routeOut(userId, date) {
+    const r = (await query(`SELECT id, name FROM prospect_routes WHERE user_id=$1 AND route_date=$2`, [userId, date])).rows[0];
+    if (!r) return { date, user_id: userId, stops: [] };
+    return { date, user_id: userId, route_id: Number(r.id), name: r.name, stops: await routeStops(Number(r.id)) };
+  }
+  // ── 방문 목록(날짜 미정 루트) — 루트를 먼저 짜 두고 날짜는 본인이 고른다(디렉터 결정 2026-11-26) ──
+  const WORKDAY = (ymd) => { const g = new Date(ymd + 'T12:00:00Z').getUTCDay(); return g !== 6 && g !== 0; };   // 토·일 근무 없음
+  async function ownRoute(req, id) {
+    const r = (await query(`SELECT r.*, u.name AS user_name FROM prospect_routes r LEFT JOIN users u ON u.id=r.user_id WHERE r.id=$1`, [int(id)])).rows[0];
+    if (!r) return null;
+    if (!isDir(req) && Number(r.user_id) !== me(req)) return null;
+    return r;
+  }
+  app.get('/api/prospect-routes/plans', view, async (req) => {
+    const params = []; let cond = 'TRUE';
+    if (!isDir(req)) { params.push(me(req)); cond = 'r.user_id=$1'; }
+    else if (int(req.query?.user)) { params.push(int(req.query.user)); cond = 'r.user_id=$1'; }
+    const rows = (await query(
+      `SELECT r.id, r.user_id, u.name AS user_name, r.name, r.created_at, COUNT(s.id)::int AS stops, COUNT(s.consult_id)::int AS visited
+         FROM prospect_routes r JOIN prospect_route_stops s ON s.route_id=r.id LEFT JOIN users u ON u.id=r.user_id
+        WHERE r.route_date IS NULL AND ${cond}
+        GROUP BY r.id, u.name ORDER BY r.created_at, r.id LIMIT 200`, params)).rows;
+    return { rows: rows.map((r) => ({ ...r, id: Number(r.id), user_id: Number(r.user_id) })) };
+  });
+  app.get('/api/prospect-routes/by-id/:id', view, async (req, reply) => {
+    const r = await ownRoute(req, req.params.id); if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { route_id: Number(r.id), user_id: Number(r.user_id), user_name: r.user_name, name: r.name,
+      date: r.route_date ? String(r.route_date instanceof Date ? r.route_date.toISOString().slice(0, 10) : r.route_date).slice(0, 10) : null,
+      stops: await routeStops(Number(r.id)) };
+  });
+  // 여러 코스를 한 번에 방문 목록으로 저장 {user_id, name, days:[{prospect_ids}]}
+  app.post('/api/prospect-routes/plans', edit, async (req, reply) => {
+    const b = req.body || {};
+    const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
+    const days = (Array.isArray(b.days) ? b.days : []).slice(0, 15)
+      .map((d) => [...new Set((Array.isArray(d.prospect_ids) ? d.prospect_ids : []).map(int).filter(Boolean))].slice(0, 40)).filter((d) => d.length);
+    if (!days.length) return reply.code(400).send({ error: 'empty' });
+    const base = txt(b.name, 80) || ('목록 ' + mxToday().slice(5).replace('-', '/'));
+    const ids = await withTx(async (client) => {
+      const q = client.query.bind(client); const out = [];
+      for (let k = 0; k < days.length; k++) {
+        const rid = Number((await q(`INSERT INTO prospect_routes (user_id, route_date, created_by, name) VALUES ($1,NULL,$2,$3) RETURNING id`,
+          [uid, me(req), days.length > 1 ? `${base} · ${k + 1}/${days.length}` : base])).rows[0].id);
+        let seq = 1;
+        for (const pid of days[k]) await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq) VALUES ($1,$2,$3) ON CONFLICT (route_id, prospect_id) DO NOTHING`, [rid, pid, seq++]);
+        out.push(rid);
+      }
+      return out;
+    });
+    await logEvent({ userId: me(req), action: 'create', target: `prospect_route_plans:${uid}`, detail: { ids, stops: days.map((d) => d.length) } });
+    return { ok: true, ids, user_id: uid };
+  });
+  // 날짜 정하기/빼기 · 이름 바꾸기 {date: 'YYYY-MM-DD' | null, name}
+  //   그 날짜에 이미 루트가 있으면 합친다(뒤에 붙임). 토·일은 근무일이 아니라 거절.
+  app.patch('/api/prospect-routes/by-id/:id', edit, async (req, reply) => {
+    const r = await ownRoute(req, req.params.id); if (!r) return reply.code(404).send({ error: 'not_found' });
+    const b = req.body || {};
+    if (b.name !== undefined) await query(`UPDATE prospect_routes SET name=$2, updated_at=now() WHERE id=$1`, [r.id, txt(b.name, 80)]);
+    if (b.date === undefined) return { ok: true, route_id: Number(r.id) };
+    if (b.date === null) {
+      await query(`UPDATE prospect_routes SET route_date=NULL, updated_at=now() WHERE id=$1`, [r.id]);
+      return { ok: true, route_id: Number(r.id), date: null };
+    }
+    if (!YMD.test(String(b.date))) return reply.code(400).send({ error: 'bad_date' });
+    if (b.date < mxToday()) return reply.code(400).send({ error: 'past_date' });
+    if (!WORKDAY(b.date)) return reply.code(400).send({ error: 'not_workday' });
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const ex = (await q(`SELECT id FROM prospect_routes WHERE user_id=$1 AND route_date=$2 AND id<>$3 FOR UPDATE`, [r.user_id, b.date, r.id])).rows[0];
+      if (!ex) { await q(`UPDATE prospect_routes SET route_date=$2, updated_at=now() WHERE id=$1`, [r.id, b.date]); return { route_id: Number(r.id), merged: false }; }
+      // 합치기: 기존 루트 뒤에 이 목록의 정류장을 붙이고 목록은 지운다
+      let seq = Number((await q(`SELECT COALESCE(MAX(seq),0)::int AS m FROM prospect_route_stops WHERE route_id=$1`, [ex.id])).rows[0].m) + 1;
+      const st = (await q(`SELECT prospect_id, consult_id FROM prospect_route_stops WHERE route_id=$1 ORDER BY seq`, [r.id])).rows;
+      for (const x of st) await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq, consult_id) VALUES ($1,$2,$3,$4) ON CONFLICT (route_id, prospect_id) DO NOTHING`, [ex.id, x.prospect_id, seq++, x.consult_id]);
+      await q(`DELETE FROM prospect_routes WHERE id=$1`, [r.id]);
+      return { route_id: Number(ex.id), merged: true };
+    });
+    return { ok: true, date: b.date, ...out };
+  });
+  // 목록·루트 지우기 — 방문 전 정류장만 지우고, 체크인한 기록이 남으면 그 루트는 남긴다
+  app.delete('/api/prospect-routes/by-id/:id', edit, async (req, reply) => {
+    const r = await ownRoute(req, req.params.id); if (!r) return reply.code(404).send({ error: 'not_found' });
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const del = await q(`DELETE FROM prospect_route_stops WHERE route_id=$1 AND consult_id IS NULL`, [r.id]);
+      await tidyRoutes(q, [Number(r.id)]);
+      return { removed: del.rowCount };
+    });
+    return { ok: true, ...out };
+  });
+  // 목록 안 정류장 바꾸기(빼기·순서) {prospect_ids}
+  app.put('/api/prospect-routes/by-id/:id/stops', edit, async (req, reply) => {
+    const r = await ownRoute(req, req.params.id); if (!r) return reply.code(404).send({ error: 'not_found' });
+    const ids = [...new Set((Array.isArray(req.body?.prospect_ids) ? req.body.prospect_ids : []).map(int).filter(Boolean))].slice(0, 40);
+    await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const keep = new Map((await q(`SELECT prospect_id, consult_id FROM prospect_route_stops WHERE route_id=$1`, [r.id])).rows.filter((k) => k.consult_id).map((k) => [Number(k.prospect_id), Number(k.consult_id)]));
+      await q(`DELETE FROM prospect_route_stops WHERE route_id=$1`, [r.id]);
+      let seq = 1; for (const pid of ids) await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq, consult_id) VALUES ($1,$2,$3,$4)`, [r.id, pid, seq++, keep.get(pid) || null]);
+      await tidyRoutes(q, [Number(r.id)]);
+    });
+    return { ok: true };
+  });
   // 예정 루트 목록(오늘부터 30일) — 디렉터: 모든 담당 / 그 외: 본인. 「오늘 루트」 화면에서 담당자·날짜 바로 고르기용
   app.get('/api/prospect-routes/upcoming', view, async (req) => {
     const params = [mxToday()]; let cond = '';
@@ -744,6 +843,7 @@ export default async function prospectRoutes(app) {
     const date = YMD.test(String(b.date)) ? b.date : mxToday();
     const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
     const max = Math.min(30, Math.max(1, int(b.max_stops) || 12));
+    if (!WORKDAY(date)) return reply.code(400).send({ error: 'not_workday' });
     const exist = Number((await query(`SELECT COUNT(*)::int AS n FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id WHERE r.user_id=$1 AND r.route_date=$2`, [uid, date])).rows[0].n);
     if (exist && !b.force) return { created: false, reason: 'route_exists', route: await routeOut(uid, date) };
     const rows = (await query(
@@ -752,7 +852,7 @@ export default async function prospectRoutes(app) {
         WHERE p.deleted_at IS NULL AND p.owner_user_id=$1 AND p.lat IS NOT NULL AND p.stage NOT IN ('cliente_activo','descartado')
           AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL AND c.created_at > now() - INTERVAL '7 days')
           AND NOT EXISTS (SELECT 1 FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
-                           WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND r.route_date >= $2::date AND r.route_date <> $3::date)`,
+                           WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND (r.route_date IS NULL OR (r.route_date >= $2::date AND r.route_date <> $3::date)))`,
       [uid, mxToday(), date])).rows.map((r) => ({ ...r, id: Number(r.id), lat: Number(r.lat), lng: Number(r.lng) }));
     const assigned = Number((await query(`SELECT COUNT(*)::int AS n FROM prospects WHERE owner_user_id=$1 AND deleted_at IS NULL`, [uid])).rows[0].n);
     if (!rows.length) return { created: false, reason: assigned ? 'nothing_left' : 'no_assigned', assigned, route: await routeOut(uid, date) };
@@ -771,6 +871,8 @@ export default async function prospectRoutes(app) {
   });
 
   // 지도에서 드래그한 구역 → 방문 루트 제안(저장 안 함). 화면에서 확인·빼기 후 PUT /api/prospect-routes(optimize:false)
+  // 구역(네모·자유형) → 방문 코스 제안(저장 안 함). 날짜는 정하지 않는다 — 저장하면 「방문 목록」이 되고 날짜는 본인이 고른다.
+  //   빼는 곳: 다른 담당이 맡은 후보 · 다른 담당의 지역 안 후보 · 이미 누군가의 루트/방문 목록에 들어간 곳 · 최근 방문 · 첫 매출·중단
   app.post('/api/prospect-routes/suggest', edit, async (req, reply) => {
     const b = req.body || {};
     const poly = (Array.isArray(b.polygon) ? b.polygon : []).map((p) => [Number(p[0]), Number(p[1])]).filter((p) => p.every(Number.isFinite)).slice(0, 2000);
@@ -780,48 +882,45 @@ export default async function prospectRoutes(app) {
     const multi = b.multi_day !== false;
     const maxDays = multi ? Math.min(15, Math.max(1, int(b.max_days) || 5)) : 1;
     const skipDays = b.skip_visited_days === 0 || b.skip_visited_days === false ? 0 : (int(b.skip_visited_days) || 7);
-    const date = YMD.test(String(b.date)) ? b.date : mxToday();
     const lats = poly.map((p) => p[0]), lngs = poly.map((p) => p[1]);
-    // 구역 안 모든 후보를 분류: 갈 수 있음 / 다른 담당 / 최근 방문 / 이미 다른 날 루트에 있음 / 완료·중단
     const rows = (await query(
       `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage, p.owner_user_id, p.last_activity_at, p.colonia, p.municipio,
+              t.owner_user_id AS terr_owner,
               (SELECT MAX(c.created_at) FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL) AS last_visit,
-              EXISTS (SELECT 1 FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
-                       WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND r.route_date >= $5::date AND NOT (r.user_id = $6 AND r.route_date = $7::date)) AS planned
-         FROM prospects p
+              (SELECT MIN(r.user_id) FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
+                WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND (r.route_date IS NULL OR r.route_date >= $5::date)) AS planned_by
+         FROM prospects p LEFT JOIN prospect_territories t ON t.id=p.territory_id
         WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4`,
-      [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs), mxToday(), uid, date])).rows
+      [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs), mxToday()])).rows
       .filter((r) => inPolygon(Number(r.lat), Number(r.lng), poly));
-    const cnt = { in_area: rows.length, others: 0, visited: 0, planned: 0, closed: 0, unassigned_skipped: 0 };
+    const cnt = { in_area: rows.length, others: 0, others_terr: 0, others_planned: 0, visited: 0, planned: 0, closed: 0, unassigned_skipped: 0 };
     const since = Date.now() - skipDays * 86400000;
-    const cands = [];
+    const cands = [], excluded = [];
     for (const r of rows) {
       const owner = r.owner_user_id == null ? null : Number(r.owner_user_id);
-      if (['cliente_activo', 'descartado'].includes(r.stage)) { cnt.closed++; continue; }
-      if (owner != null && owner !== uid) { cnt.others++; continue; }
-      if (owner == null && b.include_unassigned === false) { cnt.unassigned_skipped++; continue; }
-      if (skipDays && r.last_visit && new Date(r.last_visit).getTime() > since) { cnt.visited++; continue; }
-      if (r.planned && b.include_planned !== true) { cnt.planned++; continue; }
+      const tOwner = r.terr_owner == null ? null : Number(r.terr_owner);
+      const pBy = r.planned_by == null ? null : Number(r.planned_by);
+      let why = null;
+      if (['cliente_activo', 'descartado'].includes(r.stage)) why = 'closed';
+      else if (owner != null && owner !== uid) why = 'others';
+      else if (owner == null && tOwner != null && tOwner !== uid) why = 'others_terr';
+      else if (pBy != null && pBy !== uid) why = 'others_planned';
+      else if (owner == null && b.include_unassigned === false) why = 'unassigned_skipped';
+      else if (skipDays && r.last_visit && new Date(r.last_visit).getTime() > since) why = 'visited';
+      else if (pBy != null) why = 'planned';
+      if (why) { cnt[why]++; if (why.startsWith('others') && excluded.length < 1500) excluded.push([Number(r.lat), Number(r.lng)]); continue; }
       cands.push({ ...r, id: Number(r.id), lat: Number(r.lat), lng: Number(r.lng), owner_user_id: owner });
     }
     cnt.eligible = cands.length;
     const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
     const plan = planDays(cands, { max, maxDays, start });
-    // 날짜: 시작일부터, 일요일 제외(옵션), 이 담당에게 이미 루트가 있는 날은 건너뜀(첫날은 고른 날짜 그대로 — 덮어쓰기 확인은 화면에서)
-    const taken = new Set((await query(
-      `SELECT r.route_date::text AS d FROM prospect_routes r WHERE r.user_id=$1 AND r.route_date > $2::date
-          AND EXISTS (SELECT 1 FROM prospect_route_stops s WHERE s.route_id=r.id)`, [uid, date])).rows.map((r) => r.d));
-    const first = [date];
-    const rest = plan.days.length > 1 ? nextWorkDates(addDays(date, 1), plan.days.length - 1, { skipSunday: b.skip_sunday !== false, taken }) : [];
-    const dates = first.concat(rest);
-    const existingFirst = Number((await query(
-      `SELECT COUNT(*)::int AS n FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id WHERE r.user_id=$1 AND r.route_date=$2`, [uid, date])).rows[0].n);
-    const days = plan.days.map((d, k) => ({ date: dates[k], ...d }));
-    const d0 = days[0] || { stops: [], distance_m: 0, minutes: 0 };
+    const days = plan.days;
     cnt.scheduled = days.reduce((a, d) => a + d.stops.length, 0); cnt.left = cnt.eligible - cnt.scheduled;
-    return { user_id: uid, start, days, counts: cnt, skipped_dates: [...taken].filter((t) => dates.length && t <= dates[dates.length - 1]).sort(),
-      first_date_existing_stops: existingFirst,
-      // 예전 화면 호환
+    // 목록 이름 제안: 구역 안에서 가장 많은 colonia(없으면 municipio)
+    const freq = {}; cands.forEach((c) => { const k = c.colonia || c.municipio; if (k) freq[k] = (freq[k] || 0) + 1; });
+    const top = Object.entries(freq).sort((a, c) => c[1] - a[1])[0];
+    const d0 = days[0] || { stops: [], distance_m: 0, minutes: 0 };
+    return { user_id: uid, start, days, counts: cnt, excluded, name_hint: top ? top[0] : null,
       in_area: rows.length, stops: d0.stops, distance_m: d0.distance_m, minutes: d0.minutes };
   });
 
