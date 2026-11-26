@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261126dv loaded (+ 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261126la loaded (1126 영업 할당 · 실적 = 사용자별 leadassign 권한 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -205,7 +205,8 @@
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase', salestrend:'__dirsocio__',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
-    marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'__socio_or__wapromo', metaleads:['products','marketing','pricemaster','devrequest','quote','sales'], leadassign:'__dirsocio__',   // 2026-10-16 — WhatsApp 마케팅 = 디렉터·소시오 항상 + 사용자별 wapromo 권한(관리자 화면) · 2026-10-13 디렉터·소시오 전용이던 것 · Meta 광고 문의 = 제품·마케팅 메뉴에 들어가는 사람 모두(서버 PM_KEYS 와 같은 목록)   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
+    marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'__socio_or__wapromo', metaleads:['products','marketing','pricemaster','devrequest','quote','sales','leadassign'], leadassign:'__socio_or__leadassign',   // 1126 — 할당·실적 = 디렉터·소시오 항상 + 사용자별 leadassign 권한(Emmanuel · marketing)
+      // 2026-10-16 — WhatsApp 마케팅 = 디렉터·소시오 항상 + 사용자별 wapromo 권한(관리자 화면) · 2026-10-13 디렉터·소시오 전용이던 것 · Meta 광고 문의 = 제품·마케팅 메뉴에 들어가는 사람 모두(서버 PM_KEYS 와 같은 목록)   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
     users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__', waSched:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse', whmap:['warehouse','products','whmap']
   };

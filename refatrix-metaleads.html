@@ -481,7 +481,7 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtT=(t)=>{ if(!t) return '—'; return new Date(t).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
   const ST={nuevo:'신규',contactado:'연락함',derivado:'refaccionaria 연결',venta:'판매',descartado:'제외'};
-  const ERR={no_token:'Meta 토큰이 없습니다 — 관리 › 외부 서비스 키 › 「Meta 페이지」에 토큰을 넣으세요.',already_running:'이미 가져오는 중입니다.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',bad_status:'잘못된 상태',director_or_socio_only:'디렉터 · 소시오만 할 수 있습니다.',not_assignee:'내가 맡은 문의만 할 수 있습니다.',not_author:'내가 쓴 메모만 지울 수 있습니다.',bad_hours:'시작 시각이 끝 시각보다 빨라야 합니다.',migration_required:'0329 · 0330 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).',empty:'내용을 넣으세요.',bad_range:'기간이 잘못됐습니다.',share_required:'비율(%)을 한 사람 이상 넣으세요.'};
+  const ERR={no_token:'Meta 토큰이 없습니다 — 관리 › 외부 서비스 키 › 「Meta 페이지」에 토큰을 넣으세요.',already_running:'이미 가져오는 중입니다.',forbidden:'권한이 없습니다(마케팅 화면 권한).',read_only:'읽기 권한만 있습니다.',bad_status:'잘못된 상태',director_or_socio_only:'디렉터 · 소시오 또는 「Meta 문의 할당 · 실적 관리」 권한이 있는 사람만 할 수 있습니다.',not_assignee:'내가 맡은 문의만 할 수 있습니다.',not_author:'내가 쓴 메모만 지울 수 있습니다.',bad_hours:'시작 시각이 끝 시각보다 빨라야 합니다.',migration_required:'0329 · 0330 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).',empty:'내용을 넣으세요.',bad_range:'기간이 잘못됐습니다.',share_required:'비율(%)을 한 사람 이상 넣으세요.'};
   const errText=(e)=>ERR[e.message]||('오류: '+e.message);
   function say(ok,t,el){ const m=el||$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; if(ok) setTimeout(()=>{ if(m.textContent===t) m.className='msg'; },5000); }
   async function api(method,path,body){
@@ -1424,6 +1424,6 @@
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
 <script src="refatrix-leadportal-admin.js?v=20261106e"></script>
-<script src="refatrix-nav.js?v=20261120qr"></script>
+<script src="refatrix-nav.js?v=20261126la"></script>
 </body>
 </html>

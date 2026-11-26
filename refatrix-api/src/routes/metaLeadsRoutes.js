@@ -43,7 +43,7 @@ import { assignReady } from '../metaAssign.js';
 import { NEED_SQL, unreadSql, replyReady, markSeen, kickReplyForPsid } from '../metaReply.js';   // 0331
 
 // 제품·마케팅 그룹 화면들이 쓰는 권한키 — refatrix-nav.js 의 metaleads 와 같은 목록(제품 · 마케팅 · 가격 마스터 · 개발 요청(견적 · 영업 포함))
-export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
+export const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales', 'leadassign'];
 const R = { preHandler: [authGuard, requirePageAny(PM_KEYS)] };
 const W = { preHandler: [authGuard, requirePageEditAny(PM_KEYS)] };
 const RM = { preHandler: [authGuard, requirePageAny(PM_KEYS)], bodyLimit: 23 * 1024 * 1024 };   // 1111 · PDF 16MB(base64)

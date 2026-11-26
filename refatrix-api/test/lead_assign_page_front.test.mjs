@@ -52,7 +52,7 @@ function boot(cfg) {
 test('영업 할당 · 실적 화면', { skip: SKIP && 'jsdom 또는 HTML 없음' }, async (t) => {
   await t.test('KPI · 사람별 · 날짜×사람 · 목록 필터 · 열기 · 엑셀', async () => {
     const c = boot(CFG); await c.ready; await tick(600);
-    assert.match(c.d.title, /la-1119f/);
+    assert.match(c.d.title, /la-1126/);
     assert.match(c.d.getElementById('kpis').textContent, /할당5/); assert.match(c.d.getElementById('kpis').textContent, /60%/);
     assert.match(c.d.getElementById('cfgLine').textContent, /대상 2명/);
     const ppl = c.d.getElementById('people'); assert.match(ppl.textContent, /Clarisa/); assert.match(ppl.textContent, /팀 전체/);
@@ -88,16 +88,40 @@ test('영업 할당 · 실적 화면', { skip: SKIP && 'jsdom 또는 HTML 없음
     assert.ok(c2.d.getElementById('empty').classList.contains('hidden'));
     c2.close();
   });
+  await t.test('1126 · 전날 할당 점검 — 담당자별 당일 · 이후 · 대화 전 · 판정 · 칩 → 열기 · 날짜 이동 · 엑셀', async () => {
+    const c = boot(CFG); await c.ready; await tick(700);
+    const y = (() => { const d = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); })();
+    assert.ok(c.calls.some((x) => x.u.includes(`/list?from=${y}&to=${y}`)) && c.calls.some((x) => x.u.includes(`/perf?from=${y}&to=${y}`)), '기본 = 어제');
+    assert.match(c.d.getElementById('dcDay').textContent, /\(어제\)/);
+    const tb = c.d.getElementById('dcTbl'); const rows = [...tb.querySelectorAll('tbody tr')];
+    const cl = rows.find((r) => /Clarisa/.test(r.textContent)); const ma = rows.find((r) => /María/.test(r.textContent));
+    const nums = (r) => [...r.querySelectorAll('td.num')].map((td) => td.textContent);
+    // 목표 · 할당 · 당일 · 이후 · 대화 전 · 넘김 · 답장 필요 · 메모
+    assert.deepEqual(nums(cl).slice(1, 6), ['2', '0', '1', '1', '1'], 'Clarisa: 할당 2 · 당일 0 · 이후 1 · 대화 전 1 · 넘김 1');
+    assert.deepEqual(nums(ma).slice(1, 5), ['2', '0', '2', '0']);
+    assert.match(cl.textContent, /🔴 부족/); assert.match(cl.querySelector('.pend').textContent, /Taller Altima/);
+    assert.match(c.d.getElementById('dcKpis').textContent, /아직 대화 전1/);
+    cl.querySelector('.pend [data-open="3"]').click();
+    assert.ok(c.calls.some((x) => x.u === 'OPEN:refatrix-metaleads.html#open=3'));
+    c.d.getElementById('dcPrev').click(); await tick();
+    const y2 = (() => { const d = new Date(y + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); })();
+    assert.ok(c.calls.some((x) => x.u.includes(`/list?from=${y2}&to=${y2}`)), '◀ 하루 전');
+    c.d.getElementById('dcXls').click();
+    const x = c.calls.find((z) => /^XLSX:refatrix_revision_diaria_/.test(z.u)); assert.ok(x); assert.deepEqual(x.sheets.map((s) => s[0]), ['전날 점검']); assert.equal(x.sheets[0][1], 4, '머리 + 2명 + 팀');
+    c.close();
+  });
   await t.test('영업 계정 — 디렉터 전용 안내 · 내 할당 링크', async () => {
     const c = boot({ ready: true, is_admin: false, me: { user_id: 7 } }); await c.ready; await tick(500);
-    assert.match(c.d.getElementById('msg').textContent, /디렉터 · 소시오만/);
+    assert.match(c.d.getElementById('msg').textContent, /디렉터 · 소시오 또는/);
+    assert.ok(c.d.getElementById('dcCard').classList.contains('hidden'));
     assert.equal(c.d.getElementById('toCfg').getAttribute('href'), 'refatrix-metaleads.html#tab=mine');
     assert.ok(!c.calls.some((y) => y.u.includes('/perf')));
     c.close();
   });
   await t.test('메뉴 등록(디렉터 · 소시오) · 인라인 onclick 없음', () => {
     const nav = readFileSync(NAV, 'utf-8');
-    assert.match(nav, /leadassign:\{file:'refatrix-leadassign\.html'/); assert.match(nav, /leadassign:'__dirsocio__'/); assert.match(nav, /'metaleads','leadassign'/);
+    assert.match(nav, /leadassign:\{file:'refatrix-leadassign\.html'/); assert.match(nav, /leadassign:'__socio_or__leadassign'/); assert.match(nav, /'metaleads','leadassign'/); assert.match(nav, /metaleads:\[[^\]]*'leadassign'\]/);
+    assert.match(readFileSync(resolve(here, '..', '..', 'refatrix-users.html'), 'utf-8'), /\['leadassign','Meta 문의 할당 · 실적 관리/);
     assert.ok(!/onclick=/.test(readFileSync(HTML, 'utf-8')));
   });
 });

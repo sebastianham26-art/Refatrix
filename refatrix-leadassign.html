@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업 할당 · 실적 · build la-1119f</title>
+<title>Refatrix ERP · 영업 할당 · 실적 · build la-1126</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -72,6 +72,13 @@
   .empty{border:2px dashed var(--gold);background:#fbf7ee;border-radius:12px;padding:14px 16px;margin-top:12px;font-size:13.5px;line-height:1.7}
   .empty b{color:var(--brand)}
   .loading{opacity:.45;transition:opacity .15s}
+  .dc-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .dc-nav .d{font-size:15px;font-weight:700;color:var(--brand);min-width:150px;text-align:center}
+  .verdict{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .verdict.g{background:var(--ok-bg);color:var(--ok)}.verdict.y{background:var(--warn-bg);color:var(--warn)}.verdict.r{background:var(--bad-bg);color:var(--bad)}
+  .pend{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .pend span{font-size:11px;padding:2px 7px;border-radius:999px;background:#fdf3e3;color:var(--warn);cursor:pointer;border:1px solid #f1dfbd}
+  .pend span.need{background:#fde8e6;color:#B23A2E;border-color:#f3c9c4}
 </style>
 </head>
 <body>
@@ -86,6 +93,18 @@
   </div>
 
   <div class="hidden" id="app">
+    <div class="card" id="dcCard">
+      <div class="row" style="align-items:center">
+        <h2 style="margin:0">🗓 전날 할당 점검 — 담당자별로 맡은 대화를 얼마나 했나</h2>
+        <span style="margin-left:auto"></span>
+        <div class="dc-nav"><button type="button" class="btn ghost sm" id="dcPrev" title="하루 전">◀</button><span class="d" id="dcDay"></span><button type="button" class="btn ghost sm" id="dcNext" title="하루 뒤">▶</button>
+          <button type="button" class="btn ghost sm" id="dcY">어제</button><button type="button" class="btn sm" id="dcXls">📥 엑셀</button></div>
+      </div>
+      <div class="hint" style="margin-top:6px">그날 맡은 대화(넘긴 것은 「넘김」에 따로) 중 <b>당일</b>에 대화했는지 · <b>다음 날 이후</b>에 했는지 · <b>아직 안 했는지</b>를 지금 기준으로 봅니다. 대화함 = 답장(ERP · Business Suite · WhatsApp) · 상태 변경 · 📞 전화함. 판정: 당일 처리 90% 이상 ✅ · 60% 이상 🟡 · 그 밖 🔴. 이름 칩을 누르면 그 대화가 열립니다.</div>
+      <div class="kpis" id="dcKpis"></div>
+      <div class="tblwrap" id="dcTbl"></div>
+      <div class="msg" id="dcMsg"></div>
+    </div>
     <div class="card">
       <div class="row" style="align-items:center">
         <div class="seg" id="rng"><button type="button" data-r="today" class="on">오늘</button><button type="button" data-r="yday">어제</button><button type="button" data-r="week">이번 주</button><button type="button" data-r="month">이번 달</button></div>
@@ -128,7 +147,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
-  const LA_BUILD='la-1119f';
+  const LA_BUILD='la-1126';
   try{ console.log('[leadassign] build '+LA_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   const S={range:'today',user:'',state:'',perf:null,items:[],cfg:null};
@@ -138,7 +157,7 @@
   const ST={nuevo:'신규',contactado:'연락함',derivado:'refaccionaria 연결',venta:'판매',descartado:'제외'};
   const CH={messenger:'FB',instagram:'IG',whatsapp:'WA'};
   const DONE_KO={reply:'💬 답장',status:'✎ 상태',call:'📞 전화'};
-  const ERR={director_or_socio_only:'디렉터 · 소시오만 볼 수 있는 화면입니다.',forbidden:'Meta 광고 문의 화면 권한이 없습니다.',migration_required:'0329 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).',bad_range:'기간이 잘못됐습니다.'};
+  const ERR={director_or_socio_only:'디렉터 · 소시오 또는 「Meta 문의 할당 · 실적 관리」 권한이 있는 사람만 볼 수 있는 화면입니다.',read_only:'열람 권한만 있습니다 — 바꾸려면 관리 › 사용자에서 「수정」으로.',forbidden:'Meta 광고 문의 화면 권한이 없습니다.',migration_required:'0329 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).',bad_range:'기간이 잘못됐습니다.'};
   const errText=(e)=>ERR[e.message]||('오류: '+e.message);
   function say(ok,t,el){ const m=el||$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; }
   async function api(method,path,body){
@@ -178,7 +197,7 @@
       $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
       $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
       const [f,t]=rangeOf(S.range); $('from').value=f; $('to').value=t;
-      await loadCfg(); await loadAll();
+      await loadCfg(); await Promise.all([loadAll(), loadDay()]);
     }catch(e){ say(false,'서버에 연결할 수 없습니다.',m); }
     finally{ $('go').disabled=false; }
   }
@@ -285,7 +304,7 @@
   $('rng').addEventListener('click',e=>{ const b=e.target.closest('button[data-r]'); if(!b) return; S.range=b.dataset.r; $('rng').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
     const [f,t]=rangeOf(S.range); $('from').value=f; $('to').value=t; loadAll(); });
   $('go2').addEventListener('click',()=>{ $('rng').querySelectorAll('button').forEach(x=>x.classList.remove('on')); loadAll(); });
-  $('reload').addEventListener('click',async()=>{ await loadCfg(); loadAll(); });
+  $('reload').addEventListener('click',async()=>{ await loadCfg(); loadAll(); loadDay(); });
   $('people').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-uid]'); if(!tr) return; S.user=String(S.user)===tr.dataset.uid?'':tr.dataset.uid; $('fUser').value=S.user; renderPeople(); renderList();
     $('list').scrollIntoView({behavior:'smooth',block:'start'}); });
   $('fUser').addEventListener('change',()=>{ S.user=$('fUser').value; renderPeople(); renderList(); });
@@ -307,8 +326,81 @@
     XLSX.writeFile(wb,'refatrix_asignacion_'+p.from+'_'+p.to+'.xlsx');
   });
 
+  // ── 1126 · 전날 할당 점검 ──
+  const shiftDay=(d,n)=>{ const x=new Date(d+'T12:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); };
+  const WK=['일','월','화','수','목','금','토'];
+  const dayLabel=(d)=>{ const t=ymdMx(); const tag=d===t?' (오늘)':d===shiftDay(t,-1)?' (어제)':''; return d+' '+WK[new Date(d+'T12:00:00Z').getUTCDay()]+tag; };
+  S.dcDay=shiftDay(ymdMx(),-1); S.dc=null;
+  function dcRows(items){
+    const day=S.dcDay; const by=new Map();
+    for(const x of items){ const k=x.user_id; if(!by.has(k)) by.set(k,{user_id:k,name:x.user_name,assigned:0,same:0,later:0,open:0,moved:0,need:0,memo:0,derivado:0,venta:0,pend:[]});
+      const r=by.get(k);
+      if(x.ended_at&&!x.done_at){ r.moved++; continue; }
+      r.assigned++;
+      if(x.done_at){ if(ymdMx(new Date(x.done_at))<=day) r.same++; else r.later++; }
+      else { r.open++; r.pend.push(x); }
+      if(x.need_reply) r.need++;
+      if(Number(x.notes_n)>0||x.last_note) r.memo++;
+      if(x.status==='derivado') r.derivado++; if(x.status==='venta') r.venta++;
+    }
+    // 대상자인데 그날 0건인 사람도 보이게
+    for(const m of ((S.cfg&&S.cfg.members)||[]).filter(m=>m.active)) if(!by.has(m.user_id)) by.set(m.user_id,{user_id:m.user_id,name:m.name,assigned:0,same:0,later:0,open:0,moved:0,need:0,memo:0,derivado:0,venta:0,pend:[]});
+    const target=(uid)=>{ const p=((S.dc&&S.dc.perf&&S.dc.perf.people)||[]).find(p=>p.user_id===uid); return p&&p.target!=null?p.target:null; };
+    return [...by.values()].map(r=>({...r,target:target(r.user_id),
+      sameRate:r.assigned?Math.round(r.same/r.assigned*1000)/10:null, doneRate:r.assigned?Math.round((r.same+r.later)/r.assigned*1000)/10:null}))
+      .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  }
+  const verdict=(r)=>r.assigned?(r.sameRate>=90?'<span class="verdict g">✅ 좋음</span>':r.sameRate>=60?'<span class="verdict y">🟡 보통</span>':'<span class="verdict r">🔴 부족</span>'):'<span class="muted">할당 없음</span>';
+  async function loadDay(){
+    if(!S.cfg||!S.cfg.is_admin){ $('dcCard').classList.add('hidden'); return; }
+    $('dcCard').classList.remove('hidden');
+    const d=S.dcDay; $('dcDay').textContent=dayLabel(d); $('dcNext').disabled=d>=ymdMx();
+    document.querySelectorAll('#dcKpis,#dcTbl').forEach(el=>el.classList.add('loading'));
+    try{
+      const [l,p]=await Promise.all([api('GET','/api/meta-assign/list?from='+d+'&to='+d), api('GET','/api/meta-assign/perf?from='+d+'&to='+d)]);
+      S.dc={day:d,items:l.items||[],perf:p}; $('dcMsg').className='msg'; renderDay();
+    }catch(e){ say(false,errText(e),$('dcMsg')); }
+    finally{ document.querySelectorAll('#dcKpis,#dcTbl').forEach(el=>el.classList.remove('loading')); }
+  }
+  function renderDay(){
+    const rows=dcRows(S.dc.items); S.dc.rows=rows;
+    const T=rows.reduce((a,r)=>{ for(const k of ['assigned','same','later','open','moved','need','memo','derivado','venta']) a[k]+=r[k]; return a; },{assigned:0,same:0,later:0,open:0,moved:0,need:0,memo:0,derivado:0,venta:0});
+    T.target=rows.some(r=>r.target!=null)?rows.reduce((a,r)=>a+(Number(r.target)||0),0):null;
+    T.sameRate=T.assigned?Math.round(T.same/T.assigned*1000)/10:null; T.doneRate=T.assigned?Math.round((T.same+T.later)/T.assigned*1000)/10:null; S.dc.team=T;
+    $('dcKpis').innerHTML=
+      '<div class="kpi"><div class="k">그날 할당</div><div class="v">'+T.assigned+'</div><div class="s">목표 '+(T.target!=null?T.target:'—')+' · 넘김 '+T.moved+'</div></div>'
+      +'<div class="kpi"><div class="k">당일 대화</div><div class="v ok-t">'+T.same+'</div>'+bar(T.sameRate)+'<div class="s">'+pct(T.sameRate)+'</div></div>'
+      +'<div class="kpi"><div class="k">다음 날 이후 대화</div><div class="v">'+T.later+'</div><div class="s">합계 처리 '+pct(T.doneRate)+'</div></div>'
+      +'<div class="kpi"><div class="k">아직 대화 전</div><div class="v '+(T.open?'bad-t':'ok-t')+'">'+T.open+'</div><div class="s">지금까지 손 안 댄 것</div></div>'
+      +'<div class="kpi"><div class="k" style="color:#B23A2E">💬 답장 필요</div><div class="v bad-t">'+T.need+'</div><div class="s">그날 할당 중 손님이 답한 뒤 우리 대답 아직</div></div>'
+      +'<div class="kpi"><div class="k">메모 · 연결 / 판매</div><div class="v">'+T.memo+'</div><div class="s">연결 '+T.derivado+' · 판매 '+T.venta+'</div></div>';
+    if(!rows.length){ $('dcTbl').innerHTML='<div class="hint" style="margin-top:10px">'+esc(S.dc.day)+'에는 할당이 없습니다.</div>'; return; }
+    const tr=(r,team)=>'<tr'+(team?' class="team"':'')+'><td>'+(team?'팀 전체':'<b>'+esc(r.name)+'</b>')+'</td><td class="num">'+(r.target!=null?r.target:'—')+'</td><td class="num"><b>'+r.assigned+'</b></td>'
+      +'<td class="num ok-t">'+r.same+'</td><td class="num">'+r.later+'</td><td class="num '+(r.open?'bad-t':'muted')+'">'+r.open+'</td><td class="num muted">'+r.moved+'</td>'
+      +'<td class="num '+(r.need?'bad-t':'muted')+'">'+r.need+'</td><td class="num">'+r.memo+'</td><td class="num">'+r.derivado+' / '+r.venta+'</td>'
+      +'<td style="min-width:130px">'+bar(r.sameRate)+'<div class="hint">당일 '+pct(r.sameRate)+' · 합계 '+pct(r.doneRate)+'</div></td><td>'+(team?'':verdict(r))+'</td>'
+      +'<td style="max-width:320px">'+(team?'':(r.pend.length?'<div class="pend">'+r.pend.slice(0,12).map(x=>'<span class="'+(x.need_reply?'need':'')+'" data-open="'+x.id+'" title="'+esc((x.phone||'')+' '+(x.summary||''))+'">'+esc(x.name||x.username||('#'+x.id))+'</span>').join('')+(r.pend.length>12?'<span data-more="'+r.user_id+'">+'+(r.pend.length-12)+'</span>':'')+'</div>':'<span class="muted">—</span>'))+'</td></tr>';
+    $('dcTbl').innerHTML='<table><thead><tr><th>영업사원</th><th class="num">목표</th><th class="num">할당</th><th class="num">당일 대화</th><th class="num">이후 대화</th><th class="num">대화 전</th><th class="num">넘김</th><th class="num">답장 필요</th><th class="num">메모</th><th class="num">연결 / 판매</th><th>처리율</th><th>판정</th><th>아직 대화 전 손님</th></tr></thead><tbody>'
+      +rows.map(r=>tr(r,false)).join('')+tr(T,true)+'</tbody></table>';
+  }
+  $('dcPrev').addEventListener('click',()=>{ S.dcDay=shiftDay(S.dcDay,-1); loadDay(); });
+  $('dcNext').addEventListener('click',()=>{ if(S.dcDay<ymdMx()){ S.dcDay=shiftDay(S.dcDay,1); loadDay(); } });
+  $('dcY').addEventListener('click',()=>{ S.dcDay=shiftDay(ymdMx(),-1); loadDay(); });
+  $('dcTbl').addEventListener('click',e=>{ const o=e.target.closest('[data-open]'); if(o){ window.open('refatrix-metaleads.html#open='+o.dataset.open,'_blank'); return; }
+    const m=e.target.closest('[data-more]'); if(m){ // 나머지는 아래 할당 목록에서 — 그날 · 그 사람 · 대화 전
+      S.user=m.dataset.more; S.state='open'; $('from').value=S.dcDay; $('to').value=S.dcDay; $('rng').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      $('fState').querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x.dataset.s==='open')); loadAll().then(()=>{ $('fUser').value=S.user; renderPeople(); renderList(); $('list').scrollIntoView({behavior:'smooth',block:'start'}); }); } });
+  $('dcXls').addEventListener('click',()=>{
+    if(!window.XLSX||!S.dc||!S.dc.rows) return;
+    const H=['영업사원','목표','할당','당일 대화','이후 대화','대화 전','넘김','답장 필요','메모','연결','판매','당일 처리 %','합계 처리 %','대화 전 손님'];
+    const R=(r,n)=>[n||r.name,r.target==null?'':r.target,r.assigned,r.same,r.later,r.open,r.moved,r.need,r.memo,r.derivado,r.venta,r.sameRate==null?'':r.sameRate,r.doneRate==null?'':r.doneRate,n?'':(r.pend||[]).map(x=>(x.name||x.username||'#'+x.id)+(x.phone?' '+x.phone:'')).join(', ')];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([H].concat(S.dc.rows.map(r=>R(r))).concat([R(S.dc.team,'팀 전체')])),'전날 점검');
+    XLSX.writeFile(wb,'refatrix_revision_diaria_'+S.dc.day+'.xlsx');
+  });
+
   if(portalSession()) login();
 </script>
-<script src="refatrix-nav.js?v=20261120qr"></script>
+<script src="refatrix-nav.js?v=20261126la"></script>
 </body>
 </html>

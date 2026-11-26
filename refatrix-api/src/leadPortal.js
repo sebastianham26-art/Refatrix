@@ -80,7 +80,7 @@ const MAX_LEADS = 1000;
 const MAX_ORDER_LINES = 60;
 const MAX_QTY = 9999;
 // 「제품·마케팅」 그룹 화면 권한키 — metaLeadsRoutes.js PM_KEYS 와 같은 목록(순환 import 를 피해 여기 둔다)
-const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales'];
+const PM_KEYS = ['products', 'marketing', 'pricemaster', 'devrequest', 'quote', 'sales', 'leadassign'];
 
 const idOf = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 const num = (v) => (v == null || v === '' ? null : Number(v));

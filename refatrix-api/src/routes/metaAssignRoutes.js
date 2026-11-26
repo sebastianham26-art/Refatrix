@@ -2,7 +2,7 @@
 // Refatrix ERP · metaAssignRoutes.js — Meta 광고 문의 영업사원 배분 · 하루 목표 · 메모 · 실적 (0329 · 2026-11-19)
 //   metaLeadsRoutes 안에서 등록(server.js 라우트 목록 변경 없음). 로직은 src/metaAssign.js
 //
-//   설정 · 배분 (디렉터 · 소시오)
+//   설정 · 배분 (디렉터 · 소시오 · 1126 사용자별 「leadassign」 수정 권한)
 //   GET  /api/meta-assign/config                    설정 · 대상자(오늘 할당/대화함) · 고를 수 있는 직원 · 나눌 문의 수 · 내 상태
 //   PUT  /api/meta-assign/config {auto, mode:'share'|'target', default_target, pool_days, work_start, work_end, members:[{user_id, daily_target, share_pct, active}]}
 //        mode='share'(0330) = 비율(%)대로 남김없이 · 'target' = 하루 목표(건)까지
@@ -19,6 +19,7 @@
 // =====================================================================
 import { query } from '../db.js';
 import { DIR_SOCIO } from '../middleware/authGuard.js';
+import { pageAllowed } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { NEED_SQL, unreadSql, replyReady } from '../metaReply.js';   // 0331 · 답장 필요
 import {
@@ -27,7 +28,13 @@ import {
 
 const idOf = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 const ymd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? s : null;
-const isAdmin = (req) => DIR_SOCIO.includes(req.ctx.perm.role);
+// 1126 · 디렉터 · 소시오 + 사용자별 「leadassign」 화면 권한(관리 › 사용자 — 예: Emmanuel · marketing 계정)
+//   열람 = 할당 · 실적 · 전체 목록을 봄 · 수정 = 대상자 · 목표 · 비율 · 지금 분배 · 담당 바꾸기까지(디렉터와 같음)
+export const LA_PAGE = 'leadassign';
+const laLevel = (req) => { const { perm, isRegistered } = req.ctx; if (DIR_SOCIO.includes(perm.role)) return 'edit';
+  if (!pageAllowed(perm, LA_PAGE, isRegistered)) return null; return (perm.pageAccess && perm.pageAccess[LA_PAGE]) || 'edit'; };
+const isAdmin = (req) => !!laLevel(req);
+const canManage = (req) => laLevel(req) === 'edit';
 const mxToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
 const clampInt = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
 
@@ -70,14 +77,14 @@ async function shareReady() {
 
 export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
   const need = async (reply) => { if (await assignReady()) return true; reply.code(503).send({ error: 'migration_required', note: '0329 마이그레이션이 필요합니다(Railway 콘솔 npm run migrate).' }); return false; };
-  const admin = (req, reply) => { if (isAdmin(req)) return true; reply.code(403).send({ error: 'director_or_socio_only' }); return false; };
+  const admin = (req, reply, write = true) => { if (write ? canManage(req) : isAdmin(req)) return true; reply.code(403).send({ error: isAdmin(req) ? 'read_only' : 'director_or_socio_only' }); return false; };
 
   app.get('/api/meta-assign/config', R, async (req) => {
-    if (!(await assignReady())) return { ready: false, is_admin: isAdmin(req) };
+    if (!(await assignReady())) return { ready: false, is_admin: isAdmin(req), can_manage: canManage(req) };
     const uid = Number(req.ctx.perm.userId) || null;
     const settings = await getSettings(); const members = await getMembers();
     const me = members.find((m) => m.user_id === uid) || null;
-    const out = { ready: true, is_admin: isAdmin(req), settings: isAdmin(req) ? settings : { auto: settings.auto }, me: me ? { ...me } : { user_id: uid, member: false } };
+    const out = { ready: true, is_admin: isAdmin(req), can_manage: canManage(req), settings: isAdmin(req) ? settings : { auto: settings.auto }, me: me ? { ...me } : { user_id: uid, member: false } };
     if (me) out.me.member = me.active;
     // 0331 · 내가 지금 맡은 문의 중 「답장 필요」 · 「새 메시지」
     if (await replyReady()) {
@@ -201,7 +208,7 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
   // 1119b · 전체 할당 목록(영업 할당 · 실적 화면) — 디렉터 · 소시오
   //   GET /api/meta-assign/list?from&to&user&state=open|done|moved&q
   app.get('/api/meta-assign/list', R, async (req, reply) => {
-    if (!admin(req, reply) || !(await need(reply))) return reply;
+    if (!admin(req, reply, false) || !(await need(reply))) return reply;
     const today = mxToday();
     const from = ymd(req.query.from) || today; const to = ymd(req.query.to) || today;
     if (to < from) return reply.code(400).send({ error: 'bad_range' });
@@ -239,7 +246,7 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
     const id = idOf(req.params.id); if (!id) return reply.code(400).send({ error: 'bad_id' });
     const t = (await query(`SELECT assigned_to FROM meta_threads WHERE id=$1`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
-    if (!isAdmin(req) && Number(t.assigned_to) !== Number(req.ctx.perm.userId)) return reply.code(403).send({ error: 'not_assignee' });
+    if (!canManage(req) && Number(t.assigned_to) !== Number(req.ctx.perm.userId)) return reply.code(403).send({ error: 'not_assignee' });
     const r = await markCalled(id);
     const note = String((req.body || {}).note || '').trim().slice(0, 2000);
     if (note) await query(`INSERT INTO meta_lead_notes (thread_id, user_id, text) VALUES ($1,$2,$3)`, [id, req.ctx.perm.userId || null, '📞 ' + note]);
@@ -267,7 +274,7 @@ export default async function metaAssignRoutes(app, { R, pmKeys = [] }) {
     const id = idOf(req.params.id); const nid = idOf(req.params.nid); if (!id || !nid) return reply.code(400).send({ error: 'bad_id' });
     const n = (await query(`SELECT user_id FROM meta_lead_notes WHERE id=$1 AND thread_id=$2`, [nid, id])).rows[0];
     if (!n) return reply.code(404).send({ error: 'not_found' });
-    if (!isAdmin(req) && Number(n.user_id) !== Number(req.ctx.perm.userId)) return reply.code(403).send({ error: 'not_author' });
+    if (!canManage(req) && Number(n.user_id) !== Number(req.ctx.perm.userId)) return reply.code(403).send({ error: 'not_author' });
     await query(`DELETE FROM meta_lead_notes WHERE id=$1`, [nid]);
     return { ok: true, items: (await assignInfoFor(id)).notes };
   });

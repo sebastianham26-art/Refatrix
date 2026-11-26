@@ -222,4 +222,33 @@ test('B. 실제 서버 + PostgreSQL', { skip: !PG && 'TEST_PG_URL 없음' }, asy
     assert.equal((await call(ana, 'GET', '/api/meta-assign/list')).statusCode, 403);
     assert.equal((await call(dir, 'GET', '/api/meta-assign/list?from=2026-11-20&to=2026-11-01')).json().error, 'bad_range');
   });
+
+  await t.test('B9. 1126 · 사용자별 「leadassign」 권한 — 수정 = 디렉터와 같음 · 열람 = 보기만 · 0340 Emmanuel · marketing', async () => {
+    const emm = await mk('Emm', 'marketing', ['leadassign', 'edit']);   // 다른 화면 권한 없음
+    const viw = await mk('Viw', 'sales', ['leadassign', 'view']);
+    let c = (await call(emm, 'GET', '/api/meta-assign/config')).json();
+    assert.equal(c.is_admin, true); assert.equal(c.can_manage, true); assert.ok(Array.isArray(c.users) && c.members);
+    assert.equal((await call(emm, 'GET', '/api/meta-assign/list')).statusCode, 200);
+    assert.ok((await call(emm, 'GET', '/api/meta-assign/perf')).json().people);
+    assert.equal((await call(emm, 'GET', '/api/meta-leads/list')).statusCode, 200, 'Meta 광고 문의 화면도 열림');
+    const mem = c.members.map((m) => ({ user_id: m.user_id, daily_target: m.daily_target, share_pct: m.share_pct, active: m.active }));
+    assert.equal((await call(emm, 'PUT', '/api/meta-assign/config', { ...c.settings, members: mem })).statusCode, 200, '설정 저장');
+    assert.equal((await call(emm, 'POST', '/api/meta-assign/run')).statusCode, 200, '지금 분배');
+    assert.equal((await call(emm, 'POST', `/api/meta-leads/${T[1]}/assign`, { user_id: ana.id })).statusCode, 200, '담당 바꾸기');
+    assert.equal((await call(emm, 'PATCH', `/api/meta-leads/${T[1]}`, { status: 'contactado' })).statusCode, 200, '상태 바꾸기');
+    c = (await call(viw, 'GET', '/api/meta-assign/config')).json();
+    assert.equal(c.is_admin, true); assert.equal(c.can_manage, false);
+    assert.equal((await call(viw, 'GET', '/api/meta-assign/list')).statusCode, 200);
+    const r = await call(viw, 'POST', '/api/meta-assign/run'); assert.equal(r.statusCode, 403); assert.equal(r.json().error, 'read_only');
+    // 0340 마이그레이션 — 아이디 · 이름으로 찾아 수정 권한
+    const e2 = await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ('Emmanuel Ríos','marketing','x','emr${SFX}') RETURNING id`);
+    const m2 = (await one(`SELECT id FROM users WHERE lower(login_id)='marketing' AND deleted_at IS NULL`)) || (await one(`INSERT INTO users (name, role, pin_hash, login_id) VALUES ('Mkt ${SFX}','marketing','x','marketing') RETURNING id`));
+    const { readFileSync } = await import('node:fs');
+    await query(readFileSync(new URL('../migrations/0340_leadassign_grant.sql', import.meta.url), 'utf-8'));
+    await query(readFileSync(new URL('../migrations/0340_leadassign_grant.sql', import.meta.url), 'utf-8'));   // 두 번 돌려도 같음
+    const got = async (id) => (await one(`SELECT access FROM user_page_access WHERE user_id=$1 AND page_key='leadassign'`, [id]));
+    assert.equal((await got(e2.id)).access, 'edit');
+    assert.equal((await got(m2.id)).access, 'edit');
+    assert.equal(await got(ciro.id), undefined, '다른 사람은 그대로');
+  });
 });
