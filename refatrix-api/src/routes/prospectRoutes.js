@@ -16,7 +16,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, checkStageMove, autoAdvance, normalizeImportRow,
+  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
@@ -813,6 +813,53 @@ export default async function prospectRoutes(app) {
     });
     await logEvent({ userId: me(req), action: 'delete', target: 'prospect_routes:bulk', detail: { mode, user_id: int(b.user_id), from: b.from, to: b.to, include_plans: !!b.include_plans, ...out } });
     return { ok: true, mode, ...out };
+  });
+
+  // 🎯 목표 대비 방문 계획 — 담당자별(디렉터·관리자: 전원, 담당자: 본인)
+  //   목표 = 그 달 「첫 방문」 목표 · 완료 = 그 달 첫 방문(그 사람이 처음 체크인)한 곳 중 중단(문 닫음·업종 아님 등)이 아닌 곳
+  //   지워짐 = 그 달 첫 방문했지만 중단된 곳 → 목표 채우기에서 빠지므로 다시 계획해야 함
+  //   계획 = 앞으로 갈 루트(오늘 이후 날짜) + 날짜 미정 방문 목록의 아직 안 간 곳(중단·첫 매출 제외)
+  //   놓친 계획 = 지난 날짜 루트에 있었는데 아직 안 간 곳
+  app.get('/api/prospect-routes/plan-status', view, async (req) => {
+    const period = PERIOD.test(String(req.query?.period)) ? req.query.period : mxToday().slice(0, 7);
+    const pb = periodBounds(period); const today = mxToday();
+    const only = isDir(req) ? (int(req.query?.user) || null) : me(req);
+    const uf = (col, params) => (only ? (params.push(only), ` AND ${col}=$${params.length}`) : '');
+    let p1 = [period]; const tg = (await query(`SELECT user_id, target_value FROM prospect_targets WHERE period=$1 AND metric='contactados'${uf('user_id', p1)}`, p1)).rows;
+    let p2 = [pb.from, pb.to];
+    const first = (await query(
+      `WITH f AS (SELECT DISTINCT ON (c.prospect_id) c.prospect_id, c.created_by, c.consult_date FROM sales_consults c
+                   WHERE c.prospect_id IS NOT NULL AND c.deleted_at IS NULL ORDER BY c.prospect_id, c.created_at)
+       SELECT f.created_by AS uid, COUNT(*) FILTER (WHERE p.stage <> 'descartado')::int AS done, COUNT(*) FILTER (WHERE p.stage = 'descartado')::int AS dropped
+         FROM f JOIN prospects p ON p.id=f.prospect_id
+        WHERE f.consult_date >= $1::date AND f.consult_date < $2::date${uf('f.created_by', p2)} GROUP BY 1`, p2)).rows;
+    let p3 = [today];
+    const plan = (await query(
+      `SELECT r.user_id AS uid,
+              COUNT(DISTINCT s.prospect_id) FILTER (WHERE r.route_date IS NULL OR r.route_date >= $1::date)::int AS planned,
+              COUNT(DISTINCT s.prospect_id) FILTER (WHERE r.route_date IS NOT NULL AND r.route_date >= $1::date)::int AS dated,
+              COUNT(DISTINCT s.prospect_id) FILTER (WHERE r.route_date IS NULL)::int AS undated,
+              COUNT(DISTINCT s.prospect_id) FILTER (WHERE r.route_date < $1::date)::int AS missed,
+              COUNT(DISTINCT s.prospect_id) FILTER (WHERE r.route_date >= $1::date AND r.route_date < $1::date + 7)::int AS week,
+              MAX(r.route_date)::text AS last_date
+         FROM prospect_routes r JOIN prospect_route_stops s ON s.route_id=r.id JOIN prospects p ON p.id=s.prospect_id
+        WHERE s.consult_id IS NULL AND p.deleted_at IS NULL AND p.stage NOT IN ('descartado','cliente_activo')
+          AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL)${uf('r.user_id', p3)}
+        GROUP BY 1`, p3)).rows;
+    const staff = new Set(((await query(`SELECT u.id FROM users u WHERE u.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM prospect_excluded_users x WHERE x.user_id=u.id)`)).rows).map((r) => Number(r.id)));
+    const names = Object.fromEntries((await query(`SELECT id, name FROM users`)).rows.map((u) => [Number(u.id), u.name]));
+    const by = {};
+    const U = (id) => { id = Number(id); return (by[id] = by[id] || { user_id: id, name: names[id] || '?', target: 0, done: 0, dropped: 0, planned: 0, dated: 0, undated: 0, missed: 0, week: 0, last_date: null }); };
+    // 영업 역할 담당자는 목표·계획이 없어도 표에 보이게(「계획 안 함」도 보여야 하므로)
+    if (!only) (await query(`SELECT id FROM users WHERE deleted_at IS NULL AND role='sales'`)).rows.forEach((r) => { if (staff.has(Number(r.id))) U(r.id); });
+    tg.forEach((r) => { U(r.user_id).target = Number(r.target_value); });
+    first.forEach((r) => Object.assign(U(r.uid), { done: r.done, dropped: r.dropped }));
+    plan.forEach((r) => Object.assign(U(r.uid), { planned: r.planned, dated: r.dated, undated: r.undated, missed: r.missed, week: r.week, last_date: r.last_date }));
+    const rows = Object.values(by).filter((u) => (only ? u.user_id === only : (staff.has(u.user_id) || u.target)))
+      .map((u) => ({ ...u, ...planStatus({ ...u, period, today }) }))
+      .sort((a, b) => (b.target - a.target) || a.name.localeCompare(b.name));
+    if (only && !rows.length) rows.push({ user_id: only, name: names[only] || '?', dated: 0, undated: 0, week: 0, last_date: null, ...planStatus({ period, today }) });
+    return { period, today, rows };
   });
 
   // 목록 안 정류장 바꾸기(빼기·순서) {prospect_ids}

@@ -103,6 +103,11 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 .qrow .qa{flex:0 1 45%;text-align:right;font-size:13.5px;font-weight:700;word-break:break-word}
 .qrow.miss .qi{color:var(--ctr)}.qrow.miss .qa{color:var(--ctr);font-weight:600}
 .qrow.ok .qi{color:var(--ok)}
+/* 🎯 목표 대비 방문 계획 */
+.gbar{display:flex;height:12px;border-radius:999px;overflow:hidden;background:var(--surface);margin:8px 0 4px}
+.gbar i{display:block;height:100%} .gbar .d{background:#1E7A46} .gbar .p{background:#E2231A} .gbar .x{background:repeating-linear-gradient(45deg,#E2231A 0 4px,#F6BDB9 4px 8px)}
+.goal-main .big{font-size:30px;font-weight:800;line-height:1.1} .goal-main .big small{font-size:15px;color:var(--muted);font-weight:700}
+.pace{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px} .pace.ok{background:var(--ok-soft);color:var(--ok)} .pace.warn{background:var(--warn-soft);color:#6B4100} .pace.bad{background:var(--bad-soft);color:var(--bad)}
 .qp{display:inline-block;font-size:11px;font-weight:800;padding:1px 6px;border-radius:999px;background:var(--surface);color:var(--ink2);margin-left:4px;vertical-align:1px}
 .qp.got{background:var(--ok-soft);color:var(--ok)} .qp.none{font-weight:600;color:var(--muted);background:transparent}
 .lowconf input,.lowconf select{border-color:#E5A100;background:#FFFBF0}
@@ -265,6 +270,11 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
   <!-- 현황판 -->
   <section id="p-dash" class="tabp hide">
     <div class="grid cards row1" id="d-kpi" style="margin-top:12px"></div>
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2>🎯 목표 대비 방문 계획</h2><span class="note" id="d-plan-note"></span></div>
+      <p class="note">첫 방문 목표에 맞춰 방문을 계획하고(지도에서 구역 → 방문 목록 → 날짜) 진행하고 있는지 봅니다. 줄을 누르면 그 담당자의 지도 화면으로 갑니다.</p>
+      <div class="scroll" style="margin-top:8px"><table class="tb resp" id="d-plan"></table></div>
+    </div>
     <div class="split" style="margin-top:16px">
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2>단계별 현황</h2><span class="note" id="d-total"></span></div>
@@ -283,6 +293,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 
   <!-- 지도 -->
   <section id="p-map" class="tabp hide">
+    <div id="m-goal" style="margin-top:12px"></div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:12px 0">
       <label class="fld dir"><span>담당자</span><select id="m-owner"></select></label>
       <label class="fld"><span>단계</span><select id="m-stage"></select></label>
@@ -633,7 +644,22 @@ function renderRules(R){
 }
 
 // ── 현황판 ──
+async function loadPlanTable(){
+  let r; try{ r=await api('/api/prospect-routes/plan-status?period='+period()); }catch(e){ return; }
+  $('d-plan-note').textContent=r.period+' · 근무일(월~금) 기준';
+  const rows=r.rows;
+  $('d-plan').innerHTML='<thead><tr><th>담당자</th><th class="num">첫 방문 목표</th><th class="num">완료</th><th class="num">계획</th><th style="min-width:180px">계획률 (완료+계획 ÷ 목표)</th><th class="num">더 계획 필요</th><th>진행 속도</th><th class="num">이번 주 일정</th><th class="num">놓친 계획</th><th class="num">지워진 목표</th></tr></thead><tbody>'+
+    (rows.length?rows.map(g=>'<tr class="click" data-goalu="'+g.user_id+'"><td data-l="담당자"><b>'+esc(g.name)+'</b></td><td class="num" data-l="목표">'+(g.target?fmt(g.target):'<span class="note">없음</span>')+'</td>'+
+      '<td class="num" data-l="완료"><b>'+fmt(g.done)+'</b></td><td class="num" data-l="계획">'+fmt(g.planned)+' <span class="note">(날짜 '+fmt(g.dated)+' · 미정 '+fmt(g.undated)+')</span></td>'+
+      '<td data-l="계획률">'+(g.target?goalBar(g,0)+'<span class="note">'+g.coverage_pct+'%</span>':'—')+'</td>'+
+      '<td class="num" data-l="더 계획 필요">'+(g.gap?'<b class="st-bad">'+fmt(g.gap)+'</b>':g.target?'<span class="st-ok">0</span>':'—')+'</td>'+
+      '<td data-l="진행 속도">'+(g.pace?'<span class="pace '+g.pace+'">'+PACE_LBL[g.pace]+'</span> <span class="note">'+fmt(g.done)+' / '+fmt(g.expected)+'</span>':'—')+'</td>'+
+      '<td class="num" data-l="이번 주">'+(g.week?fmt(g.week):'<b class="st-warn">0</b>')+'</td><td class="num" data-l="놓친 계획">'+(g.missed?'<b class="st-warn">'+fmt(g.missed)+'</b>':'0')+'</td>'+
+      '<td class="num" data-l="지워진 목표">'+fmt(g.dropped)+'</td></tr>').join(''):'<tr><td colspan="10" class="empty">담당자가 없습니다.</td></tr>')+'</tbody>';
+  $('d-plan').querySelectorAll('[data-goalu]').forEach(tr=>tr.onclick=()=>{ if(isDir){ if(!$('ar-user').options.length){ opts($('ar-user'),META.staff.map(u=>[u.id,u.name]),null); } $('ar-user').value=tr.dataset.goalu; } show('map'); });
+}
 async function loadDash(){
+  loadPlanTable();
   let d; try{ d=await api('/api/prospects/dashboard?period='+period()+(ent()?'&cve_ent='+ent():'')); }catch(e){ return; }
   $('d-kpi').innerHTML='<div class="card kpi flat"><div class="lbl">후보</div><div class="val">'+fmt(d.total)+'</div><div class="note">우선순위 A · '+fmt(d.priority_a)+'</div></div>'+
     d.kpi.map(k=>{
@@ -678,6 +704,36 @@ function ensureMap(){
   ['m-owner','m-stage','m-seg','m-prio'].forEach(id=>$(id).addEventListener('change',loadMapPins));
   $('m-tracks').addEventListener('change',loadTracks);
 }
+// ── 🎯 지도 상단: 개인 목표 카드 — 첫 방문 목표 대비 방문 계획(+ 지금 그린 구역을 저장하면 몇 개가 되는지) ──
+let GOAL=null, GOAL_TG=null;
+const PACE_LBL={ok:'순조',warn:'조금 느림',bad:'속도 부족'};
+function goalBar(G,extra){
+  const T=Math.max(G.target||0,G.covered+(extra||0),1), w=x=>(Math.min(100,x/T*100)).toFixed(1)+'%';
+  return '<div class="gbar" title="초록=완료 · 빨강=계획 · 빗금=지금 구역"><i class="d" style="width:'+w(G.done)+'"></i><i class="p" style="width:'+w(G.planned)+'"></i>'+(extra?'<i class="x" style="width:'+w(extra)+'"></i>':'')+'</div>';
+}
+async function loadMapGoal(){
+  const uid=Number($('ar-user').value)||META.me;
+  try{ const [ps,db]=await Promise.all([api('/api/prospect-routes/plan-status?period='+period()+'&user='+uid),api('/api/prospects/dashboard?period='+period())]);
+    GOAL=ps.rows[0]||null; GOAL_TG=(db.people||[]).find(p=>p.user_id===uid)||{actual:{},target:{}}; }catch(e){ GOAL=null; }
+  renderMapGoal();
+}
+function renderMapGoal(){
+  const box=$('m-goal'); if(!box) return;
+  if(!GOAL){ box.innerHTML=''; return; }
+  const G=GOAL, nm=($('ar-user').options[$('ar-user').selectedIndex]||{}).text||'';
+  const add=AR&&AR.res&&AR.res.counts?AR.res.days.reduce((a,d)=>a+d.stops.length,0):0;
+  const main='<div class="card kpi goal-main" style="grid-column:span 2"><div class="lbl">'+esc(nm)+' · '+esc(period())+' 첫 방문 목표</div>'+
+    (G.target?'<div class="big">'+fmt(G.covered+add)+'<small> / '+fmt(G.target)+' 계획</small></div>':'<div class="big"><small>목표 없음 — 「목표」에서 할당률을 정하세요</small></div>')+
+    goalBar(G,add)+'<div class="note">완료 <b>'+fmt(G.done)+'</b> · 계획 <b>'+fmt(G.planned)+'</b> (날짜 '+fmt(G.dated)+' · 미정 '+fmt(G.undated)+')'+(add?' · <b style="color:var(--ctr)">지금 구역 +'+add+'</b>':'')+
+    (G.target?' · '+(G.gap-add>0?'<b class="st-bad">'+fmt(G.gap-add)+'곳 더 계획 필요</b>':'<b class="st-ok">목표만큼 계획됨</b>'):'')+'</div></div>';
+  const small=[['오늘까지 했어야 할 첫 방문',G.expected==null?'—':fmt(G.done)+' / '+fmt(G.expected),G.pace?'<span class="pace '+G.pace+'">'+PACE_LBL[G.pace]+'</span>':''],
+    ['이번 주 날짜 정한 방문',fmt(G.week),'오늘부터 7일'],['놓친 계획',fmt(G.missed),G.missed?'지난 날짜 루트 · 다시 날짜를 정하세요':'없음'],
+    ['지워진 목표',fmt(G.dropped),'방문했지만 문 닫음·업종 아님 등(중단) — 그만큼 다시 채워야 함']];
+  const T=GOAL_TG||{actual:{},target:{}}; const others=['perfilados','cotizaciones','nuevos_clientes','puntos'].filter(m=>T.target[m]);
+  box.innerHTML='<div class="grid cards row1">'+main+small.map(([l,v,n])=>'<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div><div class="note">'+n+'</div></div>').join('')+
+    others.map(m=>'<div class="card kpi"><div class="lbl">'+esc(METRIC_LBL[m])+'</div><div class="val">'+fmt(T.actual[m]||0)+'<small style="font-size:14px;color:var(--muted)"> / '+fmt(T.target[m])+'</small></div><div class="note">이번 달 목표</div></div>').join('')+'</div>';
+}
+$('ar-user').addEventListener('change',()=>loadMapGoal());
 let terrLayer=null, MAP_TERRS=null;
 async function loadMapTerrs(force){
   if(!MAP) return; if(!terrLayer) terrLayer=L.layerGroup().addTo(MAP); terrLayer.clearLayers();
@@ -691,6 +747,7 @@ async function loadMapTerrs(force){
 $('m-terr').addEventListener('change',()=>loadMapTerrs());
 function loadMap(){
   if(!$('ar-user').options.length){ opts($('ar-user'),META.staff.map(u=>[u.id,u.name]),null); $('ar-user').value=META.me; $('ar-user').disabled=!isDir; }
+  loadMapGoal();
   if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); loadMapTerrs(true); }
 // ── 구역(올가미) 그리기 → 루트 제안 ──
 let LASSO=null, lassoLine=null, arLayer=null, AR=null;
@@ -760,7 +817,7 @@ $('ar-draw').onclick=()=>{
   arRoute.clearLayers(); $('ar-out').innerHTML='';
   drawArea(shapeOf('ar-shape'),MAP,$('map'),arLayer,$('ar-draw'),poly=>{ AR={polygon:poly,day:0}; suggestRoute(); });
 };
-$('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); if(arRoute) arRoute.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); $('ar-draw').textContent='구역 그리기'; };
+$('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); if(arRoute) arRoute.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); $('ar-draw').textContent='구역 그리기'; renderMapGoal(); };
 async function suggestRoute(){
   if(!AR) return;
   let start={};
@@ -769,7 +826,7 @@ async function suggestRoute(){
   let r; try{ r=await post('/api/prospect-routes/suggest',{polygon:AR.polygon,user_id:Number($('ar-user').value)||META.me,
     max_stops:Number($('ar-max').value)||12,max_days:Number($('ar-days').value)||5,multi_day:$('ar-multi').checked,
     include_unassigned:$('ar-unas').checked,skip_visited_days:$('ar-skip').checked?7:0,...start}); }catch(e){ return toast('실패: '+e.message); }
-  AR.res=r; AR.day=Math.min(AR.day||0,Math.max(0,r.days.length-1)); drawSuggestion();
+  AR.res=r; AR.day=Math.min(AR.day||0,Math.max(0,r.days.length-1)); drawSuggestion(); renderMapGoal();
 }
 ['ar-max','ar-days','ar-multi','ar-unas','ar-skip','ar-user'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR&&AR.polygon) suggestRoute(); }));
 const DAY_COLORS=['#E2231A','#1F6FEB','#1E7A46','#F5A300','#7B3FE4','#0E8C8C','#C2185B','#5D4037'];
@@ -805,13 +862,13 @@ function drawSuggestion(){
     '<p class="note" style="margin-top:6px">날짜는 저장 뒤 「오늘 루트」의 방문 목록에서 본인이 고릅니다(토·일 제외).</p>';
   $('ar-name').oninput=e=>{ AR.name=e.target.value; };
   $('ar-out').querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{ AR.day=Number(b.dataset.day); drawSuggestion(); });
-  $('ar-out').querySelectorAll('[data-arx]').forEach(b=>b.onclick=()=>{ const id=Number(b.dataset.arx); D.stops=D.stops.filter(s=>s.id!==id); drawSuggestion(); });
+  $('ar-out').querySelectorAll('[data-arx]').forEach(b=>b.onclick=()=>{ const id=Number(b.dataset.arx); D.stops=D.stops.filter(s=>s.id!==id); drawSuggestion(); renderMapGoal(); });
   $('ar-again').onclick=suggestRoute;
   $('ar-save').onclick=async()=>{
     const uid=Number($('ar-user').value)||META.me;
     try{ const x=await post('/api/prospect-routes/plans',{user_id:uid,name:AR.name,days:r.days.filter(d=>d.stops.length).map(d=>({prospect_ids:d.stops.map(s=>s.id)}))});
       toast('방문 목록 '+x.ids.length+'개 저장 — 「오늘 루트」에서 날짜를 고르세요');
-      if(isDir) $('rt-user').value=String(uid); RT_VIEW=null; arRoute.clearLayers(); arLayer.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-draw').textContent='구역 그리기'; loadMapPins(); show('route'); }
+      if(isDir) $('rt-user').value=String(uid); RT_VIEW=null; arRoute.clearLayers(); arLayer.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-draw').textContent='구역 그리기'; loadMapPins(); loadMapGoal(); show('route'); }
     catch(e){ toast('실패: '+e.message); } };
 }
 async function loadMapPins(){
@@ -1550,6 +1607,6 @@ window.addEventListener('pageshow',e=>{ if(e.persisted){ refreshCounts(); if(cur
 init();
 })();
 </script>
-<script src="refatrix-nav.js?v=20261126la"></script>
+<script src="refatrix-nav.js?v=20261126dv"></script>
 </body>
 </html>

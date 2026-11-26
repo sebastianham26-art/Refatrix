@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inPolygon, optimizeRoute, rankForRoute, weekBounds, routeMinutes,
-  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES, allocateTarget, planDays, nextWorkDates, convexHull,
+  potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES, allocateTarget, planDays, nextWorkDates, convexHull, planStatus, workdaysBetween,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
   parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds,
@@ -288,4 +288,12 @@ test('구역 루트: 남는 곳은 다음 근무일로', () => {
   assert.deepEqual(nextWorkDates('2026-11-28', 3, { taken: new Set(['2026-12-01']) }), ['2026-11-28', '2026-11-30', '2026-12-02']);  // 일요일·루트 있는 날 제외
   assert.deepEqual(nextWorkDates('2026-11-29', 1, { skipSunday: false }), ['2026-11-29']);
   assert.equal(convexHull([[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]]).length, 4);
+});
+
+test('목표 대비 방문 계획: 계획률·부족·속도(근무일 월~금)', () => {
+  assert.equal(workdaysBetween('2026-11-01', '2026-12-01'), 21);
+  const g = planStatus({ target: 300, done: 20, dropped: 3, planned: 30, period: '2026-11', today: '2026-11-26' });
+  assert.equal(g.covered, 50); assert.equal(g.gap, 250); assert.equal(g.coverage_pct, 16.7);
+  assert.equal(g.expected, Math.round(300 * 18 / 21)); assert.equal(g.pace, 'bad');
+  assert.equal(planStatus({ target: 0, period: '2026-11', today: '2026-11-26' }).gap, null);
 });

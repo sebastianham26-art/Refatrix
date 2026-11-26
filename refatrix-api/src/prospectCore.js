@@ -617,3 +617,29 @@ export function pickDayRoute(cands, { max = 12, start = null } = {}) {
   const opt = optimizeRoute(picked, start);
   return { stops: opt.stops, distance_m: opt.distance_m, minutes: routeMinutes(opt.distance_m, opt.stops.length), seed };
 }
+
+// ── 목표 대비 방문 계획 ─────────────────────────────────────────────────
+// 근무일(월~금) 수 — from 포함 ~ to 미포함
+export function workdaysBetween(from, to) {
+  let n = 0; const d = new Date(from + 'T12:00:00Z'), e = new Date(to + 'T12:00:00Z');
+  for (; d < e; d.setUTCDate(d.getUTCDate() + 1)) { const g = d.getUTCDay(); if (g !== 0 && g !== 6) n++; }
+  return n;
+}
+// 한 사람의 계획 상태: 목표 T, 유효 첫 방문 done(중단 제외), 앞으로 갈 계획 planned, 지난 날짜에 못 간 계획 missed
+//   coverage = (done + planned) / T · gap = T − done − planned (부족하면 더 계획해야 함)
+//   pace: 오늘까지 근무일 비율만큼 했어야 할 수 expected 와 done 비교
+export function planStatus({ target = 0, done = 0, dropped = 0, planned = 0, missed = 0, period, today }) {
+  const T = Number(target) || 0;
+  const pb = periodBounds(period);
+  let expected = null, pace = null;
+  if (pb && T) {
+    const all = workdaysBetween(pb.from, pb.to);
+    const end = today < pb.from ? pb.from : (today >= pb.to ? pb.to : today);
+    const passed = workdaysBetween(pb.from, end);
+    expected = all ? Math.round(T * passed / all) : 0;
+    pace = expected ? (done >= expected ? 'ok' : done >= expected * 0.7 ? 'warn' : 'bad') : null;
+  }
+  const covered = done + planned;
+  return { target: T, done, dropped, planned, missed, covered, gap: T ? Math.max(0, T - covered) : null,
+    coverage_pct: T ? Math.round((covered / T) * 1000) / 10 : null, done_pct: T ? Math.round((done / T) * 1000) / 10 : null, expected, pace };
+}
