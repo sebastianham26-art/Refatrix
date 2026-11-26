@@ -35,10 +35,10 @@ h1{margin:2px 0 0;font-size:32px;line-height:1.15;font-weight:800;letter-spacing
 h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.4px}
 h3{margin:0;font-size:16px;font-weight:700}
 .head-ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-/* 탭 + 필터 한 줄 */
-.toolbar{display:flex;align-items:center;gap:12px;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0 10px}
-.toolbar .tabs{flex:1;min-width:0;padding:8px 0 0}
-.filters{display:flex;gap:8px;align-items:center;flex:none}
+/* 탭(윗줄, 넘치면 다음 줄로) + 필터(아랫줄 오른쪽) — 스페인어 자동 번역으로 탭이 길어져도 선택 단추가 가려지지 않게 */
+.toolbar{display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--line);padding:4px 0 8px}
+.toolbar .tabs{flex-wrap:wrap;overflow:visible;padding:8px 0 0}
+.filters{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:flex-end}
 .mini{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink2);white-space:nowrap}
 .mini select,.mini input{min-height:36px;padding:4px 8px;font-size:13px;width:auto}
 .cards.row1{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
@@ -165,7 +165,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 @media (max-width:760px){
   .wrap{padding:12px 14px 90px} h1{font-size:24px}
   .cards{grid-template-columns:repeat(2,minmax(0,1fr))} .card{padding:14px}
-  .toolbar{flex-direction:column;align-items:stretch;gap:6px} .filters{justify-content:flex-start}
+  .toolbar .tabs{flex-wrap:nowrap;overflow-x:auto} .filters{justify-content:flex-start}
   .cards.row1{grid-template-columns:repeat(2,minmax(0,1fr))} .kpi .val{font-size:26px} #map{height:420px}
   .drawer .db{padding:16px 16px 120px} .drawer .dh{padding:16px}
   .tb.resp thead{display:none} .tb.resp tr{display:block;border-bottom:1px solid var(--line);padding:8px 0}
@@ -196,7 +196,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
   </nav>
   <div class="filters">
     <label class="mini"><span>주</span><select id="f-ent"></select></label>
-    <label class="mini hide" id="f-range-wrap"><span>단위</span><select id="f-range"><option value="month">월</option><option value="week">이번 주</option></select></label>
+    <label class="mini hide" id="f-range-wrap"><span>단위</span><select id="f-range"><option value="month">월별</option><option value="week">이번 주</option></select></label>
     <label class="mini" id="f-period-wrap"><span>기간</span><input type="month" id="f-period"></label>
   </div>
   </div>
