@@ -589,3 +589,17 @@ export function convexHull(points) {
   const h = lo.slice(0, -1).concat(up.slice(0, -1)).map(([x, y]) => [Math.round(y * 1e5) / 1e5, Math.round(x * 1e5) / 1e5]);
   return h.length >= 3 ? h : null;
 }
+
+// ── 지역 → 오늘 루트 자동 만들기 ───────────────────────────────────────
+// 담당 후보 중 한 동네로 모이게 고른다: 시작점(현재 위치 또는 우선순위 가장 높은 후보) 기준
+//   거리 점수 = km − 보너스(우선순위 A 1.5km · B 0.5km · 잠재성 A 1km · B 0.4km) 가 작은 순으로 max 곳 → 2-opt 순서
+export function pickDayRoute(cands, { max = 12, start = null } = {}) {
+  const list = (cands || []).filter((s) => s.lat != null && s.lng != null);
+  if (!list.length) return { stops: [], distance_m: 0, minutes: 0, seed: null };
+  const seed = start || (() => { const b = list.slice().sort(rankForRoute)[0]; return { lat: Number(b.lat), lng: Number(b.lng) }; })();
+  const bonus = (s) => ({ A: 1.5, B: 0.5 }[s.priority] || 0) + ({ A: 1, B: 0.4 }[s.pot_tier] || 0);
+  const picked = list.map((s) => ({ s, k: distanceM(seed.lat, seed.lng, s.lat, s.lng) / 1000 - bonus(s) }))
+    .sort((a, b) => a.k - b.k).slice(0, Math.max(1, max)).map((x) => x.s);
+  const opt = optimizeRoute(picked, start);
+  return { stops: opt.stops, distance_m: opt.distance_m, minutes: routeMinutes(opt.distance_m, opt.stops.length), seed };
+}

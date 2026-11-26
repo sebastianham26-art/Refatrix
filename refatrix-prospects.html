@@ -830,7 +830,15 @@ async function loadRoute(){
   loadUpcoming();
   try{ ROUTE=await api('/api/prospect-routes?date='+date+(isDir?'&user='+uid:'')); }catch(e){ return; }
   const stops=ROUTE.stops; const next=stops.find(s=>!s.consult_id);
-  $('rt-next').innerHTML=!stops.length?'<div class="card flat empty">아직 루트가 없습니다.<br>지도에서 방문지를 고르거나 「내 주변 후보」를 눌러 보세요.</div>':
+  // 루트가 비어 있으면: 영업사원 본인의 오늘 루트는 내 지역(맡은 후보)에서 자동으로 만든다(하루 한 번 · 지운 뒤엔 다시 안 만듦)
+  if(!stops.length){
+    const akey='rfx_autoroute_'+uid+'_'+date;
+    let tried=false; try{ tried=!!localStorage.getItem(akey); }catch(e){}
+    if(!isDir&&date===META.today&&!tried){ try{ localStorage.setItem(akey,'1'); }catch(e){} return autoRoute(false); }
+  }
+  $('rt-next').innerHTML=!stops.length?'<div class="card flat empty">아직 루트가 없습니다.<br>'+(RT_AUTO_MSG?'<b>'+esc(RT_AUTO_MSG)+'</b><br>':'')+
+      '<button class="btn red" id="rt-auto" style="margin:12px 0 6px">📍 '+(isDir&&String(uid)!==String(META.me)?esc(($('rt-user').options[$('rt-user').selectedIndex]||{}).text||'')+' 지역에서':'내 지역에서')+' 루트 자동으로 만들기</button><br>'+
+      '<span class="note">맡은 후보 중 가까운 곳끼리 '+(Number($('rt-max')&&$('rt-max').value)||12)+'곳을 골라 순서를 정합니다 · 또는 지도에서 구역을 그리거나 「내 주변 후보」</span></div>':
     next?('<div class="next-card"><div class="eyebrow" style="color:var(--ctr);font-weight:800">다음 방문 · '+next.seq+'번</div><h2 style="margin:4px 0">'+esc(next.nom_estab)+'</h2>'+
       '<div class="note" style="font-size:14px">'+esc([next.address,next.colonia,next.municipio].filter(Boolean).join(', '))+'</div>'+
       '<div style="margin:8px 0"><span class="tag '+next.priority+'">'+next.priority+'</span> '+stageDot(next.stage)+'</div>'+
@@ -865,7 +873,19 @@ async function loadRoute(){
     RT_MAP.fitBounds(pts,{padding:[30,30],maxZoom:15});
   } else RT_MAP.setView([25.68,-100.31],11);
 }
-$('rt-date').onchange=loadRoute; $('rt-user').onchange=loadRoute;
+$('rt-date').onchange=()=>{ RT_AUTO_MSG=''; loadRoute(); }; $('rt-user').onchange=()=>{ RT_AUTO_MSG=''; loadRoute(); };
+let RT_AUTO_MSG='';
+document.addEventListener('click',e=>{ if(e.target&&e.target.id==='rt-auto') autoRoute(true); });
+async function autoRoute(manual){
+  const uid=isDir?$('rt-user').value:META.me, date=$('rt-date').value;
+  $('rt-next').innerHTML='<div class="card flat empty">📍 맡은 후보로 루트를 만드는 중…</div>';
+  let start={}; if(!isDir||String(uid)===String(META.me)){ const g=await Promise.race([geo(),new Promise(r=>setTimeout(()=>r(null),6000))]); if(g) start={start_lat:g.lat,start_lng:g.lng}; }
+  let r; try{ r=await post('/api/prospect-routes/auto',{date,user_id:Number(uid)||META.me,max_stops:12,...start}); }catch(e){ RT_AUTO_MSG='자동으로 만들지 못했습니다: '+e.message; return loadRoute(); }
+  if(r.created){ RT_AUTO_MSG=''; toast('루트를 자동으로 만들었습니다 · '+r.stops+'곳 · 약 '+(r.distance_m/1000).toFixed(1)+'km'+(start.start_lat?' (지금 위치 기준)':'')); }
+  else RT_AUTO_MSG=r.reason==='no_assigned'?'맡은 후보가 없습니다 — 「지역·담당」에서 지역을 정하면 그 안의 후보가 배정됩니다.'
+    :r.reason==='nothing_left'?'맡은 후보 '+fmt(r.assigned)+'곳 중 지금 갈 곳이 없습니다(최근 7일 방문·다른 날 루트·첫 매출·중단 제외).':'';
+  return loadRoute();
+}
 // 예정 루트(오늘부터 30일): 담당자 × 날짜 칩 — 누르면 그 루트를 연다
 async function loadUpcoming(){
   let r; try{ r=await api('/api/prospect-routes/upcoming'); }catch(e){ return; }

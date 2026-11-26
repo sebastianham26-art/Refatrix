@@ -20,7 +20,7 @@ import {
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
-  inPolygon, distanceM, rankForRoute, optimizeRoute, routeMinutes, weekBounds, planDays, nextWorkDates, convexHull,
+  inPolygon, distanceM, rankForRoute, optimizeRoute, routeMinutes, weekBounds, planDays, nextWorkDates, convexHull, pickDayRoute,
 } from '../prospectCore.js';
 import { pageAllowed } from '../permissions.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
@@ -735,6 +735,39 @@ export default async function prospectRoutes(app) {
     });
     await logEvent({ userId: me(req), action: 'delete', target: `prospect_route:${uid}:${date}`, detail: out });
     return { ok: true, ...out, route: await routeOut(uid, date) };
+  });
+
+  // 지역(담당 후보)으로 하루 루트 자동 만들기 — 「오늘 루트」가 비어 있을 때. 이미 루트가 있으면 건드리지 않는다(force 제외).
+  //   대상: 이 담당의 후보 중 첫 매출·중단 제외, 최근 7일 방문 제외, 다른 날 루트에 이미 들어간 곳 제외
+  app.post('/api/prospect-routes/auto', edit, async (req, reply) => {
+    const b = req.body || {};
+    const date = YMD.test(String(b.date)) ? b.date : mxToday();
+    const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
+    const max = Math.min(30, Math.max(1, int(b.max_stops) || 12));
+    const exist = Number((await query(`SELECT COUNT(*)::int AS n FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id WHERE r.user_id=$1 AND r.route_date=$2`, [uid, date])).rows[0].n);
+    if (exist && !b.force) return { created: false, reason: 'route_exists', route: await routeOut(uid, date) };
+    const rows = (await query(
+      `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage
+         FROM prospects p
+        WHERE p.deleted_at IS NULL AND p.owner_user_id=$1 AND p.lat IS NOT NULL AND p.stage NOT IN ('cliente_activo','descartado')
+          AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL AND c.created_at > now() - INTERVAL '7 days')
+          AND NOT EXISTS (SELECT 1 FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
+                           WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND r.route_date >= $2::date AND r.route_date <> $3::date)`,
+      [uid, mxToday(), date])).rows.map((r) => ({ ...r, id: Number(r.id), lat: Number(r.lat), lng: Number(r.lng) }));
+    const assigned = Number((await query(`SELECT COUNT(*)::int AS n FROM prospects WHERE owner_user_id=$1 AND deleted_at IS NULL`, [uid])).rows[0].n);
+    if (!rows.length) return { created: false, reason: assigned ? 'nothing_left' : 'no_assigned', assigned, route: await routeOut(uid, date) };
+    const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
+    const plan = pickDayRoute(rows, { max, start });
+    await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const rid = Number((await q(`INSERT INTO prospect_routes (user_id, route_date, created_by) VALUES ($1,$2,$3)
+                                   ON CONFLICT (user_id, route_date) DO UPDATE SET updated_at=now() RETURNING id`, [uid, date, me(req)])).rows[0].id);
+      await q(`DELETE FROM prospect_route_stops WHERE route_id=$1 AND consult_id IS NULL`, [rid]);
+      let seq = Number((await q(`SELECT COALESCE(MAX(seq),0)::int AS m FROM prospect_route_stops WHERE route_id=$1`, [rid])).rows[0].m) + 1;
+      for (const p of plan.stops) await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq) VALUES ($1,$2,$3) ON CONFLICT (route_id, prospect_id) DO NOTHING`, [rid, p.id, seq++]);
+    });
+    await logEvent({ userId: me(req), action: 'create', target: `prospect_route:${uid}:${date}`, detail: { auto: true, stops: plan.stops.length } });
+    return { created: true, stops: plan.stops.length, distance_m: plan.distance_m, minutes: plan.minutes, candidates: rows.length, assigned, route: await routeOut(uid, date) };
   });
 
   // 지도에서 드래그한 구역 → 방문 루트 제안(저장 안 함). 화면에서 확인·빼기 후 PUT /api/prospect-routes(optimize:false)
