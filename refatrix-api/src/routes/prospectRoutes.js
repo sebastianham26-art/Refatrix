@@ -27,7 +27,20 @@ import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
 import { moveStage, refreshCustomerStages, hasProspectCols, recomputeProspect, recomputeProspectSafe } from '../prospectAlta.js';
 
 const PAGE = 'pipeline';
-const isDir = (req) => req.ctx.perm.role === 'director';
+// 디렉터 또는 고객개발 관리자(prospect_managers) — 고객개발 화면 전체 열람·수정
+const isDir = (req) => req.ctx.perm.role === 'director' || req.prospectMgr === true;
+const isRealDir = (req) => req.ctx.perm.role === 'director';
+let mgrCache = { at: 0, set: new Set() };
+async function managerSet() {
+  if (Date.now() - mgrCache.at < 30000) return mgrCache.set;
+  try { mgrCache = { at: Date.now(), set: new Set((await query(`SELECT user_id FROM prospect_managers`)).rows.map((r) => Number(r.user_id))) }; }
+  catch (_) { mgrCache = { at: Date.now(), set: new Set() }; }   // 0338 전
+  return mgrCache.set;
+}
+async function loadMgr(req) { req.prospectMgr = (await managerSet()).has(Number(req.ctx.perm.userId)); }
+// 화면 권한: 관리자는 ERP 화면 권한(pipeline)과 상관없이 통과
+const pageGuard = (needEdit) => { const g = needEdit ? requirePageEdit(PAGE) : requirePage(PAGE);
+  return async (req, reply) => { if (req.prospectMgr || req.ctx.perm.role === 'director') return; return g(req, reply); }; };
 const me = (req) => Number(req.ctx.perm.userId);
 const int = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 const txt = (v, n = 300) => { const s = String(v == null ? '' : v).trim(); return s ? s.slice(0, n) : null; };
@@ -162,8 +175,8 @@ async function tidyRoutes(q, rids) {
 }
 
 export default async function prospectRoutes(app) {
-  const view = { preHandler: [authGuard, requirePage(PAGE)] };
-  const edit = { preHandler: [authGuard, requirePageEdit(PAGE)] };
+  const view = { preHandler: [authGuard, loadMgr, pageGuard(false)] };
+  const edit = { preHandler: [authGuard, loadMgr, pageGuard(true)] };
 
   // 0334 전이면 503 — 화면이 「마이그레이션 필요」 안내
   app.addHook('preHandler', async (req, reply) => {
@@ -175,8 +188,8 @@ export default async function prospectRoutes(app) {
 
   // ── 메타 ───────────────────────────────────────────────────────────
   // 메타·진척 보드는 로그인한 모든 사용자(디렉터 요청: 진척 표는 누구나 본다). 나머지는 영업활동 권한.
-  app.get('/api/prospects/meta', { preHandler: [authGuard] }, async (req) => {
-    const canWork = pageAllowed(req.ctx.perm, PAGE, req.ctx.isRegistered);
+  app.get('/api/prospects/meta', { preHandler: [authGuard, loadMgr] }, async (req) => {
+    const canWork = isDir(req) || pageAllowed(req.ctx.perm, PAGE, req.ctx.isRegistered);
     const ex = await excludedSet();
     const users = (await query(`SELECT id, name, role FROM users WHERE deleted_at IS NULL ORDER BY name`)).rows
       .map((u) => ({ id: Number(u.id), name: u.name, role: u.role, excluded: ex.has(Number(u.id)) }));
@@ -188,7 +201,7 @@ export default async function prospectRoutes(app) {
       staff: (isDir(req) ? users : users.filter((u) => u.id === me(req))).filter((u) => !u.excluded),   // 담당 선택지(디렉터가 뺀 사람 제외)
       potential_tiers: POTENTIAL_TIERS, score_rules: SCORE_RULES, section_weights: SECTION_WEIGHTS, score_bands: SCORE_BANDS,
       can_work: canWork, states,
-      me: me(req), is_director: isDir(req), today: mxToday() };
+      me: me(req), is_director: isDir(req), is_real_director: isRealDir(req), is_manager: req.prospectMgr === true, today: mxToday() };
   });
 
   // ── 목록 ───────────────────────────────────────────────────────────
@@ -437,6 +450,41 @@ export default async function prospectRoutes(app) {
     return { ok: true, marked_missing: r.rowCount };
   });
 
+  // ── DENUE 데이터 삭제(디렉터) — 다시 올리기 전에 ───────────────────────
+  //   scope=untouched : 작업 기록이 없는 후보만(미배정·배정 단계, 방문·고객정보·고객 연결·견적 없음) — 기본
+  //   scope=all       : 이 주의 DENUE 후보 전부. 방문(고객상담) 기록과 견적서는 ERP에 그대로 남고 후보 연결만 끊긴다.
+  //   점수 이력·단계 이력·루트·연결 요청 등 후보에 딸린 기록은 함께 지워진다(복구 불가).
+  const UNTOUCHED = `p.stage IN ('sin_asignar','asignado') AND p.customer_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id)
+      AND NOT EXISTS (SELECT 1 FROM prospect_crm_values v WHERE v.prospect_id=p.id)
+      AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.prospect_id=p.id)`;
+  app.get('/api/prospects/purge-preview', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const ent = txt(req.query?.cve_ent, 4); if (!ent) return reply.code(400).send({ error: 'cve_ent_required' });
+    const r = (await query(
+      `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE ${UNTOUCHED})::int AS untouched,
+              COUNT(*) FILTER (WHERE p.owner_user_id IS NOT NULL)::int AS assigned
+         FROM prospects p WHERE p.source='denue' AND p.cve_ent=$1`, [ent])).rows[0];
+    return { cve_ent: ent, ...r, worked: r.total - r.untouched };
+  });
+  app.post('/api/prospects/purge', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const b = req.body || {};
+    const ent = txt(b.cve_ent, 4); if (!ent) return reply.code(400).send({ error: 'cve_ent_required' });
+    const scope = b.scope === 'all' ? 'all' : 'untouched';
+    if (String(b.confirm || '').trim() !== '삭제') return reply.code(400).send({ error: 'confirm_required' });
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      const del = await q(`DELETE FROM prospects p WHERE p.source='denue' AND p.cve_ent=$1 ${scope === 'untouched' ? `AND ${UNTOUCHED}` : ''} RETURNING p.id`, [ent]);
+      // 비게 된 루트 정리
+      await q(`DELETE FROM prospect_routes r WHERE NOT EXISTS (SELECT 1 FROM prospect_route_stops s WHERE s.route_id=r.id)`);
+      const left = Number((await q(`SELECT COUNT(*)::int AS n FROM prospects WHERE source='denue' AND cve_ent=$1`, [ent])).rows[0].n);
+      return { deleted: del.rowCount, kept: left };
+    });
+    await logEvent({ userId: me(req), action: 'delete', target: `prospects:denue:${ent}`, detail: { scope, ...out } });
+    return { ok: true, scope, ...out };
+  });
+
   // ── 지역 ───────────────────────────────────────────────────────────
   app.get('/api/prospect-territories', view, async () => {
     const rows = (await query(
@@ -603,6 +651,17 @@ export default async function prospectRoutes(app) {
     return { date, user_id: userId, route_id: Number(r.id),
       stops: stops.map((s) => ({ ...s, id: Number(s.id), consult_id: s.consult_id ? Number(s.consult_id) : null })) };
   }
+  // 예정 루트 목록(오늘부터 30일) — 디렉터: 모든 담당 / 그 외: 본인. 「오늘 루트」 화면에서 담당자·날짜 바로 고르기용
+  app.get('/api/prospect-routes/upcoming', view, async (req) => {
+    const params = [mxToday()]; let cond = '';
+    if (!isDir(req)) { params.push(me(req)); cond = ' AND r.user_id=$2'; }
+    const rows = (await query(
+      `SELECT r.user_id, u.name AS user_name, r.route_date::text AS date, COUNT(s.id)::int AS stops, COUNT(s.consult_id)::int AS visited
+         FROM prospect_routes r JOIN prospect_route_stops s ON s.route_id=r.id LEFT JOIN users u ON u.id=r.user_id
+        WHERE r.route_date >= $1::date AND r.route_date < $1::date + 30${cond}
+        GROUP BY r.user_id, u.name, r.route_date ORDER BY r.route_date, u.name LIMIT 300`, params)).rows;
+    return { rows: rows.map((r) => ({ ...r, user_id: Number(r.user_id) })) };
+  });
   app.get('/api/prospect-routes', view, async (req) => {
     const date = YMD.test(String(req.query?.date)) ? req.query.date : mxToday();
     const uid = isDir(req) && int(req.query?.user) ? int(req.query.user) : me(req);
@@ -963,7 +1022,7 @@ export default async function prospectRoutes(app) {
   });
 
   // ── 진척 보드(누구나) — 전체·영업사원별·업체별 점수와 방문 실적, 일별 누적 ──
-  app.get('/api/prospects/progress', { preHandler: [authGuard] }, async (req) => {
+  app.get('/api/prospects/progress', { preHandler: [authGuard, loadMgr] }, async (req) => {
     await refreshCustomerStages().catch(() => {});   // ERP 견적·인보이스 반영
     const qs = req.query || {};
     const period = PERIOD.test(String(qs.period)) ? qs.period : mxToday().slice(0, 7);
@@ -1056,7 +1115,21 @@ export default async function prospectRoutes(app) {
       `SELECT u.id, u.name, u.role,
               (SELECT COUNT(*)::int FROM prospects p WHERE p.owner_user_id=u.id AND p.deleted_at IS NULL) AS assigned
          FROM users u WHERE u.deleted_at IS NULL ORDER BY u.name`)).rows;
-    return { rows: rows.map((u) => ({ id: Number(u.id), name: u.name, role: u.role, assigned: u.assigned, excluded: ex.has(Number(u.id)) })) };
+    const mg = await managerSet();
+    return { can_grant: isRealDir(req), rows: rows.map((u) => ({ id: Number(u.id), name: u.name, role: u.role, assigned: u.assigned, excluded: ex.has(Number(u.id)), manager: mg.has(Number(u.id)) })) };
+  });
+  // 고객개발 관리자 지정(디렉터만) — 디렉터와 같은 권한으로 고객개발 전체를 보고 고침
+  app.put('/api/prospect-managers', edit, async (req, reply) => {
+    if (!isRealDir(req)) return reply.code(403).send({ error: 'director_only' });
+    const ids = [...new Set((Array.isArray(req.body?.user_ids) ? req.body.user_ids : []).map(int).filter(Boolean))];
+    await withTx(async (client) => {
+      const q = client.query.bind(client);
+      await q(`DELETE FROM prospect_managers WHERE NOT (user_id = ANY($1))`, [ids]);
+      for (const id of ids) await q(`INSERT INTO prospect_managers (user_id, granted_by) VALUES ($1,$2) ON CONFLICT (user_id) DO NOTHING`, [id, me(req)]);
+    });
+    mgrCache.at = 0;
+    await logEvent({ userId: me(req), action: 'update', target: 'prospect_managers', detail: { user_ids: ids } });
+    return { ok: true, managers: ids.length };
   });
   app.put('/api/prospect-staff', edit, async (req, reply) => {
     if (!directorOnly(req, reply)) return;

@@ -233,6 +233,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
             <label class="fld"><span>날짜</span><input type="date" id="rt-date"></label>
           </div>
         </div>
+        <div id="rt-up" style="margin-bottom:12px"></div>
         <div id="rt-next"></div>
         <div id="rt-stops" style="margin-top:8px"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
@@ -371,7 +372,8 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
     </div>
     <div class="card dir" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><h2>담당자 명단</h2><button class="btn red sm" id="s-save">명단 저장</button></div>
-      <p class="note">체크한 사람만 고객개발의 담당자 선택지(배정·지역·목표·루트·필터)에 나옵니다. 체크를 빼도 이미 맡은 후보는 그대로이고, 다른 화면 권한도 바뀌지 않습니다.</p>
+      <p class="note">체크한 사람만 고객개발의 담당자 선택지(배정·지역·목표·루트·필터)에 나옵니다. 체크를 빼도 이미 맡은 후보는 그대로이고, 다른 화면 권한도 바뀌지 않습니다.<br>
+      <b>관리자</b>로 지정한 사람은 고객개발 화면 전체(모든 담당자의 후보·루트·지역·목표·DENUE 가져오기/삭제)를 디렉터처럼 보고 고칠 수 있습니다. 관리자 지정은 디렉터만 바꿀 수 있습니다.</p>
       <div id="s-list" class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin-top:8px"></div>
     </div>
   </section>
@@ -404,6 +406,19 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
         <button class="btn red" id="i-commit" disabled>가져오기</button>
       </div>
       <div id="i-out" style="margin-top:16px"></div>
+    </div>
+    <div class="card" style="margin-top:16px;border-color:var(--ctr)">
+      <h2>기존 DENUE 데이터 삭제</h2>
+      <p class="note">다시 올리기 전에 지금 들어 있는 후보를 지웁니다. 위의 「주」 선택 기준입니다. <b>지운 후보는 되돌릴 수 없습니다.</b></p>
+      <div id="pg-info" style="margin-top:10px"></div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+        <label class="chip" style="padding:10px 14px;align-items:flex-start"><input type="radio" name="pg-scope" value="untouched" checked> <span><b>작업 기록이 없는 후보만 삭제 (권장)</b><br><span class="note">방문·고객정보·고객 연결·견적이 있는 후보는 남깁니다. 다시 올리면 남은 후보는 같은 DENUE id로 새 정보만 덮어씁니다.</span></span></label>
+        <label class="chip" style="padding:10px 14px;align-items:flex-start"><input type="radio" name="pg-scope" value="all"> <span><b>이 주의 DENUE 후보 전부 삭제</b><br><span class="note">점수·단계 이력·루트도 함께 지워집니다. 방문(고객상담) 기록과 ERP 견적서는 남지만 후보와의 연결은 끊깁니다.</span></span></label>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px">
+        <label class="fld"><span>확인을 위해 「삭제」라고 입력</span><input type="text" id="pg-confirm" placeholder="삭제" style="width:160px"></label>
+        <button class="btn red" id="pg-run" disabled>삭제 실행</button>
+      </div>
     </div>
   </section>
 </div>
@@ -515,7 +530,7 @@ function show(tab){
   $('f-range-wrap').classList.toggle('hide',tab!=='board');
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab?'true':'false'));
   document.querySelectorAll('.tabp').forEach(p=>p.classList.toggle('hide',p.id!=='p-'+tab));
-  ({board:loadBoard,route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:()=>{}})[tab]();
+  ({board:loadBoard,route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:loadPurge})[tab]();
 }
 $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(b) show(b.dataset.tab); });
 $('f-ent').addEventListener('change',()=>show(cur));
@@ -773,7 +788,8 @@ function drawSuggestion(){
   $('ar-save').onclick=async()=>{
     const uid=Number($('ar-user').value)||META.me; let n=0;
     try{ for(const d of r.days){ if(!d.stops.length) continue; await post('/api/prospect-routes',{date:d.date,user_id:uid,prospect_ids:d.stops.map(s=>s.id),optimize:false},'PUT'); n++; }
-      toast('루트 저장 · '+n+'일 · '+fmt(r.days.reduce((a,d)=>a+d.stops.length,0))+'곳'); ROUTE=null; loadMapPins(); }
+      toast('루트 저장 · '+n+'일 · '+fmt(r.days.reduce((a,d)=>a+d.stops.length,0))+'곳 — 「오늘 루트」에서 담당자·날짜별로 볼 수 있습니다'); ROUTE=null; loadMapPins();
+      if(isDir) $('rt-user').value=String(uid); $('rt-date').value=r.days[0].date; }
     catch(e){ toast('실패: '+e.message+' ('+n+'일까지 저장됨)'); } };
 }
 async function loadMapPins(){
@@ -809,7 +825,9 @@ $('m-addroute').onclick=async()=>{
 let RT_MAP=null, rtLayer=null, ROUTE=null;
 async function loadRoute(){
   const uid=isDir?$('rt-user').value:META.me, date=$('rt-date').value;
-  $('rt-title').textContent=(date===META.today?'오늘':date)+' 루트';
+  const uname=isDir?($('rt-user').options[$('rt-user').selectedIndex]||{}).text:'';
+  $('rt-title').textContent=(uname?uname+' · ':'')+(date===META.today?'오늘':date)+' 루트';
+  loadUpcoming();
   try{ ROUTE=await api('/api/prospect-routes?date='+date+(isDir?'&user='+uid:'')); }catch(e){ return; }
   const stops=ROUTE.stops; const next=stops.find(s=>!s.consult_id);
   $('rt-next').innerHTML=!stops.length?'<div class="card flat empty">아직 루트가 없습니다.<br>지도에서 방문지를 고르거나 「내 주변 후보」를 눌러 보세요.</div>':
@@ -848,6 +866,19 @@ async function loadRoute(){
   } else RT_MAP.setView([25.68,-100.31],11);
 }
 $('rt-date').onchange=loadRoute; $('rt-user').onchange=loadRoute;
+// 예정 루트(오늘부터 30일): 담당자 × 날짜 칩 — 누르면 그 루트를 연다
+async function loadUpcoming(){
+  let r; try{ r=await api('/api/prospect-routes/upcoming'); }catch(e){ return; }
+  if(!r.rows.length){ $('rt-up').innerHTML=''; return; }
+  const by={}; r.rows.forEach(x=>(by[x.user_id]=by[x.user_id]||{name:x.user_name,days:[]}).days.push(x));
+  const curU=String(isDir?$('rt-user').value:META.me), curD=$('rt-date').value;
+  $('rt-up').innerHTML='<div class="card flat" style="padding:12px 14px"><div class="note" style="font-weight:700;margin-bottom:6px">예정 루트 (30일)</div>'+
+    Object.entries(by).map(([uid,g])=>'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0">'+(isDir?'<b style="min-width:110px;font-size:13px">'+esc(g.name||'?')+'</b>':'')+
+      g.days.map(d=>{ const on=String(uid)===curU&&d.date===curD;
+        return '<button class="chip" data-up="'+uid+'|'+d.date+'" style="padding:4px 10px;cursor:pointer;font-size:12px;'+(on?'background:var(--ink,#111);color:#fff;border-color:var(--ink,#111)':'')+'">'+
+          (d.date===META.today?'오늘':d.date.slice(5))+'('+wd(d.date)+') · '+d.stops+'곳'+(d.visited?' · ✓'+d.visited:'')+'</button>'; }).join('')+'</div>').join('')+'</div>';
+  $('rt-up').querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{ const [u,d]=b.dataset.up.split('|'); if(isDir) $('rt-user').value=u; $('rt-date').value=d; loadRoute(); });
+}
 function rtQS(){ return 'date='+$('rt-date').value+(isDir?'&user='+$('rt-user').value:''); }
 $('rt-clear').onclick=async()=>{
   const n=(ROUTE&&ROUTE.stops||[]).filter(s=>!s.consult_id).length; if(!n) return;
@@ -1124,12 +1155,17 @@ let TERRS=[], T_EDIT=null, MUNS=[];
 async function loadStaff(){
   let r; try{ r=await api('/api/prospect-staff'); }catch(e){ return; }
   const RL={director:'디렉터',sales:'영업',treasury:'재무',marketing:'마케팅',ops:'운영',viewer:'열람',socio:'소시오'};
-  $('s-list').innerHTML=r.rows.map(u=>'<label class="card flat" style="display:flex;gap:10px;align-items:center;padding:12px;cursor:pointer;font-weight:700"><input type="checkbox" value="'+u.id+'"'+(u.excluded?'':' checked')+' style="width:20px;height:20px">'+
-    '<span style="flex:1">'+esc(u.name)+'<div class="note" style="font-weight:400">'+esc(RL[u.role]||u.role)+(u.assigned?' · 맡은 후보 '+fmt(u.assigned):'')+'</div></span></label>').join('');
+  STAFF_GRANT=!!r.can_grant;
+  $('s-list').innerHTML=r.rows.map(u=>'<div class="card flat" style="display:flex;gap:10px;align-items:center;padding:12px;font-weight:700"><label style="display:flex;gap:10px;align-items:center;flex:1;cursor:pointer"><input type="checkbox" data-staff value="'+u.id+'"'+(u.excluded?'':' checked')+' style="width:20px;height:20px">'+
+    '<span style="flex:1">'+esc(u.name)+'<div class="note" style="font-weight:400">'+esc(RL[u.role]||u.role)+(u.assigned?' · 맡은 후보 '+fmt(u.assigned):'')+'</div></span></label>'+
+    (u.role==='director'?'<span class="chip" style="font-size:11px">디렉터</span>':
+      '<label class="chip" title="고객개발 화면 전체를 디렉터처럼 보고 고칠 수 있음" style="font-size:11px;padding:4px 8px;cursor:'+(STAFF_GRANT?'pointer':'default')+';'+(u.manager?'background:#111;color:#fff;border-color:#111':'')+'"><input type="checkbox" data-mgr value="'+u.id+'"'+(u.manager?' checked':'')+(STAFF_GRANT?'':' disabled')+' style="width:14px;height:14px"> 관리자</label>')+'</div>').join('');
 }
+let STAFF_GRANT=false;
 $('s-save').onclick=async()=>{
-  const ex=[...$('s-list').querySelectorAll('input')].filter(i=>!i.checked).map(i=>Number(i.value));
-  try{ await post('/api/prospect-staff',{excluded_user_ids:ex},'PUT'); META=await api('/api/prospects/meta'); refillStaff(); toast('담당자 명단 저장 · '+META.staff.length+'명'); loadTerr(); }
+  const ex=[...$('s-list').querySelectorAll('input[data-staff]')].filter(i=>!i.checked).map(i=>Number(i.value));
+  try{ await post('/api/prospect-staff',{excluded_user_ids:ex},'PUT');
+    if(STAFF_GRANT) await post('/api/prospect-managers',{user_ids:[...$('s-list').querySelectorAll('input[data-mgr]:checked')].map(i=>Number(i.value))},'PUT'); META=await api('/api/prospects/meta'); refillStaff(); toast('담당자 명단 저장 · '+META.staff.length+'명'); loadTerr(); }
   catch(e){ toast('실패: '+e.message); }
 };
 function refillStaff(){
@@ -1268,6 +1304,26 @@ $('g-save').onclick=async()=>{ readTargets();
   if(sum>100.001) return toast('할당률 합계가 100%를 넘습니다 ('+sum+'%)');
   if(sum<99.99&&Object.keys(TG.totals).length&&!confirm('할당률 합계가 '+sum+'%입니다. 나머지 '+(Math.round((100-sum)*10)/10)+'%는 누구에게도 배분되지 않습니다. 저장할까요?')) return;
   try{ const r=await post('/api/prospect-targets',{period:period(),totals:TG.totals,shares:TG.shares},'PUT'); TG.legacy=false; renderTargets(); toast('저장 · 담당자 목표 '+r.saved+'개'); }catch(e){ toast('실패: '+e.message); } };
+
+// ── DENUE 데이터 삭제 ──
+async function loadPurge(){
+  const e=ent(); if(!e){ $('pg-info').innerHTML='<div class="banner warn">위에서 「주」를 하나 고르세요.</div>'; return; }
+  let r; try{ r=await api('/api/prospects/purge-preview?cve_ent='+e); }catch(x){ return; }
+  const nm=($('f-ent').options[$('f-ent').selectedIndex]||{}).text||e;
+  $('pg-info').innerHTML='<div class="banner info"><b>'+esc(nm)+'</b> · DENUE 후보 <b>'+fmt(r.total)+'곳</b> — 작업 기록 없음 '+fmt(r.untouched)+'곳 · 작업 기록 있음 '+fmt(r.worked)+'곳 (담당 배정 '+fmt(r.assigned)+'곳)</div>';
+  PG=r; pgCheck();
+}
+let PG=null;
+function pgCheck(){ $('pg-run').disabled=!(PG&&PG.total>0&&$('pg-confirm').value.trim()==='삭제'); }
+$('pg-confirm').oninput=pgCheck;
+$('pg-run').onclick=async()=>{
+  const scope=(document.querySelector('input[name="pg-scope"]:checked')||{}).value||'untouched';
+  const n=scope==='all'?PG.total:PG.untouched;
+  if(!confirm((scope==='all'?'이 주의 DENUE 후보 전부':'작업 기록이 없는 후보')+' '+fmt(n)+'곳을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+  $('pg-run').disabled=true;
+  try{ const r=await post('/api/prospects/purge',{cve_ent:ent(),scope,confirm:'삭제'}); toast('삭제 '+fmt(r.deleted)+'곳 · 남은 후보 '+fmt(r.kept)+'곳'); $('pg-confirm').value=''; loadPurge(); }
+  catch(e){ toast('실패: '+e.message); pgCheck(); }
+};
 
 // ── 가져오기 ──
 let IMP=null;

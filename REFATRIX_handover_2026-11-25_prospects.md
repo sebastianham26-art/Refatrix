@@ -74,9 +74,19 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 - **지도 표시**: 다녀간 곳 = 검은 테두리(툴팁에 마지막 방문일), 루트 예정 = 검은 점선 테두리, 담당자 화면에서 다른 담당 후보 = 회색 점(이름 없음), 지역 윤곽 = 「지역 표시」(내 지역 빨강, 다른 담당 회색 빗금). municipio·CP 지역은 후보 위치의 볼록 껍질로 윤곽 표시(`convexHull`).
 - 마이그레이션 없음.
 
+## 8차 보완 (2026-11-26) — DENUE 데이터 삭제 · 고객개발 관리자(Gabriel) · 오늘 루트 담당자별 보기
+- **마이그레이션 0338** (`0338_prospect_managers_purge.sql`) — `prospect_managers` 테이블. Gabriel 계정(이름 또는 login_id 가 gabriel 로 시작하는 활성 사용자가 1명일 때)을 처음 관리자로 넣음.
+- **고객개발 관리자**: 디렉터와 같은 권한으로 고객개발 전체(모든 담당 후보·루트·지역·목표·DENUE 가져오기/삭제)를 보고 고침. ERP 화면 권한(pipeline)이 없어도 고객개발 API는 통과. ERP 역할은 바뀌지 않음.
+  - 지정·해제: 지역·담당 > 담당자 명단의 「관리자」 체크 → 명단 저장. **디렉터만** 바꿀 수 있음(`PUT /api/prospect-managers`).
+  - 참고: 관리자가 직접 방문 녹음(고객상담)까지 하려면 ERP 권한에서 고객상담 화면 권한이 따로 필요.
+- **DENUE 데이터 삭제**(DENUE 가져오기 탭 아래): 「주」 기준. ① 작업 기록 없는 후보만(권장 — 방문·고객정보·고객 연결·견적 있는 후보는 남고, 다시 올리면 같은 DENUE id 로 덮어씀) ② 그 주의 DENUE 후보 전부. 「삭제」 입력 + 확인 후 실행, 되돌릴 수 없음. 비게 된 루트도 정리.
+  - `GET /api/prospects/purge-preview?cve_ent=`, `POST /api/prospects/purge {cve_ent, scope, confirm:'삭제'}`.
+  - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
+- **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
+
 ## 배포 순서
 1. 백엔드 파일 올리기(refatrix-api) → Railway 재배포
-2. `npm run migrate` — **0334**, **0335**, **0336**, **0337** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
+2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
 3. 화면 파일 올리기: `refatrix-prospects.html`, `refatrix-nav.js`, `refatrix-consult.html`
 4. 메뉴: 영업 › **고객개발**. 권한은 고객상담과 같은 `pipeline`(영업활동) 키. 가져오기·지역·목표·연결 승인은 디렉터만.
 5. 고객개발 › **DENUE 가져오기**에서 `prospects_import_NL.csv` 업로드(9,492곳, 판 2026-11) → **지역·담당**에서 지역 만들기 → 저장하면 미배정 후보가 자동 배정됩니다.
@@ -99,6 +109,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 | DB | `refatrix-api/migrations/0335_prospect_potential_staff.sql` | 잠재성 열(pot_*) · 담당자 명단 제외 표 |
 | DB | `refatrix-api/migrations/0336_prospect_score_stages.sql` | 단계 세분화 · 개발 점수 · 점수 이력 · 견적 기록 |
 | DB | `refatrix-api/migrations/0337_prospect_target_plan_terr_polygon.sql` | 목표 총량·할당률 · 지도 구역 지역 |
+| DB | `refatrix-api/migrations/0338_prospect_managers_purge.sql` | 고객개발 관리자(Gabriel) |
 | 테스트 | `test/prospects.test.mjs` | 순수 함수 17개 |
 
 ## 흐름 요약
