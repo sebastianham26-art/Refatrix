@@ -24,7 +24,8 @@ import {
 } from '../prospectCore.js';
 import { pageAllowed } from '../permissions.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
-import { moveStage, refreshCustomerStages, hasProspectCols, recomputeProspect, recomputeProspectSafe } from '../prospectAlta.js';
+import { moveStage, refreshCustomerStages, hasProspectCols, recomputeProspect, recomputeProspectSafe, detachConsultFromProspect } from '../prospectAlta.js';
+import { syncConsultVisitSafe } from '../consultVisitSync.js';
 
 const PAGE = 'pipeline';
 // 디렉터 또는 고객개발 관리자(prospect_managers) — 고객개발 화면 전체 열람·수정
@@ -986,6 +987,30 @@ export default async function prospectRoutes(app) {
         WHERE c.deleted_at IS NULL AND c.review_status IN ('por_revisar','borrador') AND ${cond}
         ORDER BY c.created_at DESC LIMIT 200`, params)).rows;
     return { rows: rows.map((r) => ({ ...r, consult_id: Number(r.consult_id), prospect_id: Number(r.prospect_id), created_by: Number(r.created_by) })) };
+  });
+
+  // 🗑 검토 대기 정리 — 담당자는 자기 것만, 디렉터·관리자는 전부
+  //   mode=dismiss : 검토 대기에서만 뺀다(방문·녹음·AI 요약은 그대로, 고객상담 표에도 남음)
+  //   mode=delete  : 방문 기록 자체를 지운다(고객상담 기록 삭제 + 후보 연결·루트 방문 표시 해제 → 점수 다시 계산)
+  app.post('/api/prospects/reviews/delete', edit, async (req, reply) => {
+    const b = req.body || {};
+    const mode = b.mode === 'delete' ? 'delete' : 'dismiss';
+    const ids = [...new Set((Array.isArray(b.consult_ids) ? b.consult_ids : []).map(int).filter(Boolean))].slice(0, 500);
+    if (!ids.length) return reply.code(400).send({ error: 'empty' });
+    const params = [ids]; let cond = '';
+    if (!isDir(req)) { params.push(me(req)); cond = ' AND c.created_by=$2'; }
+    const rows = (await query(`SELECT c.id, c.prospect_id FROM sales_consults c WHERE c.id = ANY($1) AND c.deleted_at IS NULL
+                                 AND c.review_status IN ('por_revisar','borrador')${cond}`, params)).rows;
+    let n = 0;
+    for (const c of rows) {
+      if (mode === 'dismiss') { await query(`UPDATE sales_consults SET review_status=NULL, reviewed_by=$2, reviewed_at=now() WHERE id=$1`, [c.id, me(req)]); n++; continue; }
+      try { await detachConsultFromProspect({ consultId: Number(c.id), userId: me(req) }); } catch (_) { /* 연결이 없으면 넘어감 */ }
+      await query(`UPDATE sales_consults SET deleted_at=now(), review_status=NULL WHERE id=$1`, [c.id]);
+      await syncConsultVisitSafe(Number(c.id), req.log);     // 빠른 녹음의 짝 방문 기록도 함께 정리
+      n++;
+    }
+    await logEvent({ userId: me(req), action: mode === 'delete' ? 'delete' : 'update', target: 'prospect_reviews', detail: { mode, ids: rows.map((r) => Number(r.id)) } });
+    return { ok: true, mode, done: n, skipped: ids.length - n };
   });
 
   app.get('/api/prospects/:id/review', view, async (req, reply) => {

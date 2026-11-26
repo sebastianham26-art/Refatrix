@@ -341,6 +341,11 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
   <!-- 검토 대기 -->
   <section id="p-review" class="tabp hide">
     <p class="note" style="margin-top:12px">방문 녹음이 끝나면 AI가 Alta de clientes 양식 초안을 만듭니다. 내용을 확인·수정한 뒤 「확정 후 저장」해야 CRM에 들어갑니다.</p>
+    <div id="r-bulk" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0">
+      <span class="note" id="r-sel">선택 0건</span>
+      <button class="btn ghost sm" id="r-dismiss" disabled>검토 대기에서 빼기</button>
+      <button class="btn ghost sm" id="r-del" disabled style="color:var(--ctr);border-color:var(--ctr)">🗑 방문 기록까지 삭제</button>
+    </div>
     <div class="scroll"><table class="tb resp" id="r-table"></table></div>
   </section>
 
@@ -1278,12 +1283,36 @@ async function openReview(pid,cid){
 }
 async function loadReviews(){
   let r; try{ r=await api('/api/prospects/reviews'); }catch(e){ return; }
-  $('r-table').innerHTML='<thead><tr><th>방문</th><th>업체</th><th>담당</th><th>녹음·AI</th><th>상태</th><th></th></tr></thead><tbody>'+
-    (r.rows.length?r.rows.map(x=>'<tr><td data-l="방문">'+esc(String(x.created_at).slice(0,16).replace('T',' '))+'</td><td data-l="업체"><b>'+esc(x.nom_estab)+'</b><div class="note">'+esc(x.municipio||'')+'</div></td><td data-l="담당">'+esc(x.user_name||'')+'</td>'+
+  $('r-table').innerHTML='<thead><tr><th style="width:34px"><input type="checkbox" id="r-all" title="모두 선택"></th><th>방문</th><th>업체</th><th>담당</th><th>녹음·AI</th><th>상태</th><th></th></tr></thead><tbody>'+
+    (r.rows.length?r.rows.map(x=>'<tr><td data-l="선택"><input type="checkbox" class="r-ck" value="'+x.consult_id+'" style="width:18px;height:18px"></td><td data-l="방문">'+esc(String(x.created_at).slice(0,16).replace('T',' '))+'</td><td data-l="업체"><b>'+esc(x.nom_estab)+'</b><div class="note">'+esc(x.municipio||'')+'</div></td><td data-l="담당">'+esc(x.user_name||'')+'</td>'+
       '<td data-l="녹음·AI">'+esc(x.rec_status==='done'?(x.alta_status==='done'?'AI 초안 준비됨':x.alta_status==='failed'?'AI 실패 · 직접 입력':'AI 작성 중'):x.rec_status?'녹음 처리 중':'녹음 없음')+'</td>'+
       '<td data-l="상태">'+(x.review_status==='borrador'?'<span class="chip">임시저장</span>':'<span class="chip" style="background:var(--warn-soft);color:#6B4100">검토 대기</span>')+'</td>'+
-      '<td><button class="btn sm" data-review="'+x.prospect_id+':'+x.consult_id+'">검토</button></td></tr>').join('')
-      :'<tr><td colspan="6" class="empty">검토할 방문이 없습니다.</td></tr>')+'</tbody>';
+      '<td style="white-space:nowrap"><button class="btn sm" data-review="'+x.prospect_id+':'+x.consult_id+'">검토</button> <button class="btn ghost sm" data-rdel="'+x.consult_id+'" title="삭제" style="color:var(--ctr)">✕</button></td></tr>').join('')
+      :'<tr><td colspan="7" class="empty">검토할 방문이 없습니다.</td></tr>')+'</tbody>';
+  const sel=()=>[...document.querySelectorAll('.r-ck:checked')].map(i=>Number(i.value));
+  const upd=()=>{ const n=sel().length; $('r-sel').textContent='선택 '+n+'건'; $('r-dismiss').disabled=$('r-del').disabled=!n; };
+  if($('r-all')) $('r-all').onchange=e=>{ document.querySelectorAll('.r-ck').forEach(i=>i.checked=e.target.checked); upd(); };
+  document.querySelectorAll('.r-ck').forEach(i=>i.onchange=upd); upd();
+  $('r-dismiss').onclick=()=>reviewDelete(sel(),'dismiss');
+  $('r-del').onclick=()=>reviewDelete(sel(),'delete');
+  $('r-table').querySelectorAll('[data-rdel]').forEach(b=>b.onclick=()=>reviewDelete([Number(b.dataset.rdel)],null));
+}
+// 검토 대기 정리 — dismiss: 목록에서만 뺌(방문·녹음 남음) / delete: 방문 기록까지 삭제(되돌릴 수 없음)
+async function reviewDelete(ids,mode){
+  if(!ids.length) return;
+  if(!mode){
+    openDrawer('검토 대기 정리','선택 '+ids.length+'건',
+      '<div style="display:flex;flex-direction:column;gap:10px">'+
+      '<button class="btn ghost" data-rm="dismiss" style="text-align:left;justify-content:flex-start;padding:14px"><b>검토 대기에서만 빼기</b>&nbsp;<span class="note">방문·녹음·AI 요약은 그대로 남습니다(고객상담 표에서 볼 수 있음). 고객정보 양식은 저장되지 않습니다.</span></button>'+
+      '<button class="btn ghost" data-rm="delete" style="text-align:left;justify-content:flex-start;padding:14px;border-color:var(--ctr)"><b style="color:var(--ctr)">🗑 방문 기록까지 삭제</b>&nbsp;<span class="note">이 방문(고객상담 기록·녹음 요약)을 지우고 후보 연결·루트 방문 표시를 풉니다. 점수도 다시 계산됩니다. 되돌릴 수 없습니다.</span></button></div>');
+    document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ closeDrawer(); reviewDelete(ids,b.dataset.rm); });
+    return;
+  }
+  if(mode==='delete'&&!confirm('방문 기록 '+ids.length+'건을 삭제합니다(고객상담 기록 포함). 되돌릴 수 없습니다. 계속할까요?')) return;
+  if(mode==='dismiss'&&!confirm(ids.length+'건을 검토 대기에서 뺄까요? (방문·녹음은 남습니다)')) return;
+  try{ const r=await post('/api/prospects/reviews/delete',{consult_ids:ids,mode});
+    toast((mode==='delete'?'삭제 ':'검토 대기에서 뺌 ')+r.done+'건'+(r.skipped?' · 권한 없음/이미 처리 '+r.skipped+'건':'')); loadReviews(); refreshCounts(); }
+  catch(e){ toast('실패: '+e.message); }
 }
 
 // ── 연결 승인 ──
