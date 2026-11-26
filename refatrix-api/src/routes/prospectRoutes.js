@@ -628,6 +628,18 @@ export default async function prospectRoutes(app) {
     return r;
   });
 
+  // 지역 이름만 바꾸기(디렉터·관리자 또는 자기 지역) — 구역·담당·후보 배정은 그대로
+  app.patch('/api/prospect-territories/:id/name', edit, async (req, reply) => {
+    const tid = int(req.params.id); const name = txt((req.body || {}).name, 120);
+    if (!name) return reply.code(400).send({ error: 'name_required' });
+    const t = (await query(`SELECT owner_user_id FROM prospect_territories WHERE id=$1`, [tid])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (!isDir(req) && Number(t.owner_user_id) !== me(req)) return reply.code(403).send({ error: 'own_territory_only' });
+    await query(`UPDATE prospect_territories SET name=$2, updated_at=now() WHERE id=$1`, [tid, name]);
+    await logEvent({ userId: me(req), action: 'update', target: `prospect_territory:${tid}`, detail: { name } });
+    return { ok: true, id: tid, name };
+  });
+
   // 구역 미리보기 — 그린 구역 안 후보를 「가져올 수 있음 / 이미 내 것 / 다른 담당(선택 안 됨)」으로 나눠 보여준다
   app.post('/api/prospect-territories/preview', edit, async (req, reply) => {
     const b = req.body || {};

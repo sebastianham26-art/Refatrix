@@ -1439,9 +1439,18 @@ async function loadTerr(){
   try{ TERRS=(await api('/api/prospect-territories')).rows; if(isDir) MUNS=(await api('/api/prospects/municipios?cve_ent='+(ent()||'19'))).rows; }catch(e){ return; }
   const area=t=>t.polygon&&t.polygon.length?'지도 구역':(t.cps&&t.cps.length?'CP '+t.cps.join(', '):(t.municipios||[]).join(', '));
   $('t-table').innerHTML='<thead><tr><th>지역</th><th>담당</th><th class="num">후보</th><th class="num">진행</th><th></th></tr></thead><tbody>'+
-    (TERRS.length?TERRS.map(t=>'<tr'+(t.owner_user_id===META.me?' style="background:var(--ctr-soft,#FDECEB)"':'')+'><td><b>'+esc(t.name)+'</b><div class="note">'+esc(area(t).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td style="white-space:nowrap">'+
+    (TERRS.length?TERRS.map(t=>'<tr'+(t.owner_user_id===META.me?' style="background:var(--ctr-soft,#FDECEB)"':'')+'><td data-tname="'+t.id+'"><b>'+esc(t.name)+'</b>'+(canEditTerr(t)?' <button class="btn ghost sm" data-trename="'+t.id+'" title="이름 바꾸기" style="padding:2px 8px;min-height:0">✏</button>':'')+'<div class="note">'+esc(area(t).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td style="white-space:nowrap">'+
       (canEditTerr(t)?'<button class="btn ghost sm" data-tedit="'+t.id+'">수정</button> <button class="btn ghost sm" data-tdel="'+t.id+'" style="border-color:var(--ctr);color:var(--ctr)">삭제</button>':'')+'</td></tr>').join('')
       :'<tr><td colspan="5" class="empty">아직 지역이 없습니다. 오른쪽에서 만드세요.</td></tr>')+'</tbody>';
+  // ✏ 이름만 바로 바꾸기(그 자리에서 입력 → Enter 또는 저장)
+  $('t-table').querySelectorAll('[data-trename]').forEach(b=>b.onclick=e=>{ e.stopPropagation();
+    const t=TERRS.find(x=>x.id===Number(b.dataset.trename)); const td=$('t-table').querySelector('[data-tname="'+t.id+'"]');
+    td.innerHTML='<div style="display:flex;gap:6px;align-items:center"><input type="text" id="tn-in" value="'+esc(t.name)+'" maxlength="120" style="min-height:36px;padding:4px 8px"><button class="btn red sm" id="tn-ok">저장</button><button class="btn ghost sm" id="tn-no">취소</button></div>';
+    const inp=$('tn-in'); inp.focus(); inp.select();
+    const save=async()=>{ const v=inp.value.trim(); if(!v) return toast('이름을 넣어 주세요'); if(v===t.name) return loadTerr();
+      try{ await post('/api/prospect-territories/'+t.id+'/name',{name:v},'PATCH'); toast('이름을 바꿨습니다'); if(T_EDIT&&T_EDIT.id===t.id) T_EDIT.name=v; loadTerr(); }catch(x){ toast('실패: '+x.message); } };
+    $('tn-ok').onclick=save; $('tn-no').onclick=()=>loadTerr();
+    inp.onkeydown=ev=>{ if(ev.key==='Enter') save(); if(ev.key==='Escape') loadTerr(); }; });
   $('t-table').querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>{ editTerr(TERRS.find(t=>t.id===Number(b.dataset.tedit))); $('t-name').focus(); $('t-form-title').scrollIntoView({behavior:'smooth',block:'start'}); });
   $('t-table').querySelectorAll('[data-tdel]').forEach(b=>b.onclick=async()=>{
     const t=TERRS.find(x=>x.id===Number(b.dataset.tdel)); if(!t) return;
