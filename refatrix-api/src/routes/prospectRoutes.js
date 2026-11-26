@@ -341,9 +341,14 @@ export default async function prospectRoutes(app) {
                JOIN customers c ON c.id=l.customer_id WHERE l.prospect_id=$1 ORDER BY l.created_at DESC`, [id]),
     ]);
     const owner = p.owner_user_id ? (await query(`SELECT name FROM users WHERE id=$1`, [p.owner_user_id])).rows[0] : null;
+    // 어느 업로드 파일로 들어왔나(파일 이름 · 올린 시각, 멕시코 시간)
+    let upload = null;
+    try { upload = p.import_batch_id ? (await query(`SELECT b.file_name, to_char(b.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at, b.edition
+                                                       FROM prospect_import_batches b WHERE b.id=$1`, [p.import_batch_id])).rows[0] || null
+      : (p.source === 'denue' ? { file_name: null, at: (await query(`SELECT to_char(created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at FROM prospects WHERE id=$1`, [p.id])).rows[0].at, edition: p.denue_edition } : null); } catch (_) { upload = null; }
     const cust = p.customer_id ? (await query(`SELECT id, code, name, approval_status FROM customers WHERE id=$1`, [p.customer_id])).rows[0] : null;
     return {
-      prospect: { ...pub(p), owner_name: owner ? owner.name : null }, customer: cust || null,
+      prospect: { ...pub(p), owner_name: owner ? owner.name : null, upload }, customer: cust || null,
       visits: visits.rows.map((v) => ({ ...v, id: Number(v.id), created_by: Number(v.created_by), rec_id: v.rec_id ? Number(v.rec_id) : null })),
       history: hist.rows, crm: Object.fromEntries(crm.rows.map((r) => [r.field_key, r.value])),
       crm_missing: missingRequired(Object.fromEntries(crm.rows.map((r) => [r.field_key, r.value]))),
@@ -522,12 +527,16 @@ export default async function prospectRoutes(app) {
     if (!directorOnly(req, reply)) return;
     const rows = (await query(
       `SELECT b.id, b.file_name, b.edition, b.cve_ents, b.rows_total, b.created, b.updated, b.created_at, u.name AS created_by_name,
+              to_char(b.created_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS at,
               COUNT(p.id)::int AS remaining, COUNT(p.id) FILTER (WHERE ${UNTOUCHED})::int AS untouched
          FROM prospect_import_batches b LEFT JOIN users u ON u.id=b.created_by
          LEFT JOIN prospects p ON p.import_batch_id=b.id AND p.source='denue'
         GROUP BY b.id, u.name ORDER BY b.created_at DESC LIMIT 200`)).rows;
     const legacy = (await query(
-      `SELECT p.cve_ent, MAX(p.entidad) AS entidad, MAX(p.denue_edition) AS edition, COUNT(*)::int AS remaining, COUNT(*) FILTER (WHERE ${UNTOUCHED})::int AS untouched
+      `SELECT p.cve_ent, MAX(p.entidad) AS entidad, MAX(p.denue_edition) AS edition, COUNT(*)::int AS remaining, COUNT(*) FILTER (WHERE ${UNTOUCHED})::int AS untouched,
+              to_char(MIN(p.created_at) AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS first_at,
+              to_char(MAX(p.created_at) AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') AS last_at,
+              (SELECT u.name FROM users u WHERE u.id = MIN(p.created_by)) AS created_by_name
          FROM prospects p WHERE p.source='denue' AND p.import_batch_id IS NULL GROUP BY p.cve_ent ORDER BY p.cve_ent`)).rows;
     return { rows: rows.map((r) => ({ ...r, id: Number(r.id) })), legacy };
   });

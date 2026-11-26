@@ -1214,7 +1214,7 @@ async function openProspect(id){
       (p.phone?'<a class="btn ghost" href="tel:'+esc(p.phone)+'">전화</a>':'<span></span>')+
       (p.lat!=null?'<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+p.lat+','+p.lng+'">길찾기</a>':'')+'</div>'+
     '<div class="sec"><h3>정보</h3><dl class="kv">'+
-      [['상호법인',p.raz_social],['주소',[p.address,p.colonia,p.cp].filter(Boolean).join(', ')],['municipio',p.municipio+(p.entidad?', '+p.entidad:'')],['전화',p.phone],['이메일',p.email],['직원',p.per_ocu],['담당',p.owner_name],['DENUE',p.denue_id?p.denue_id+' · '+(p.scian_code||''):'수동 등록']]
+      [['상호법인',p.raz_social],['주소',[p.address,p.colonia,p.cp].filter(Boolean).join(', ')],['municipio',p.municipio+(p.entidad?', '+p.entidad:'')],['전화',p.phone],['이메일',p.email],['직원',p.per_ocu],['담당',p.owner_name],['DENUE',p.denue_id?p.denue_id+' · '+(p.scian_code||''):'수동 등록'],['업로드',p.upload?((p.upload.file_name||'파일 이름 기록 전')+' · '+(p.upload.at||'')+(p.upload.edition?' · 판 '+p.upload.edition:'')):null]].filter(([k,v])=>k!=='업로드'||v)
         .map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v||'—')+'</dd>').join('')+'</dl></div>'+
     '<div class="sec" id="dq-box"><h3>❓ 질문 항목</h3><p class="note">불러오는 중…</p></div>'+
     sizeBlock(d)+
@@ -1569,10 +1569,10 @@ $('g-save').onclick=async()=>{ readTargets();
 let PG=null, PG_SEL=null;
 async function loadPurge(){
   let r; try{ r=await api('/api/prospects/import/batches'); }catch(x){ $('pg-list').innerHTML='<tr><td class="empty">'+esc(x.message==='migration_0340_required'?'DB 마이그레이션 0340을 먼저 적용하세요(npm run migrate).':x.message)+'</td></tr>'; return; }
-  const rows=r.rows.map(b=>({key:String(b.id),name:b.file_name||'(이름 없음)',when:String(b.created_at).slice(0,16).replace('T',' '),by:b.created_by_name||'',ed:b.edition||'',ents:(b.cve_ents||[]).join(', '),
+  const rows=r.rows.map(b=>({key:String(b.id),name:b.file_name||'(이름 없음)',when:b.at||String(b.created_at).slice(0,16).replace('T',' '),by:b.created_by_name||'',ed:b.edition||'',ents:(b.cve_ents||[]).join(', '),
       info:'넣음 '+fmt(b.created)+' · 갱신 '+fmt(b.updated)+' / '+fmt(b.rows_total)+'행',remaining:b.remaining,untouched:b.untouched,q:'batch='+b.id}))
-    .concat((r.legacy||[]).map(l=>({key:'legacy:'+l.cve_ent,name:'이전 업로드 (파일 기록 없음)',when:'—',by:'',ed:l.edition||'',ents:l.cve_ent+(l.entidad?' '+l.entidad:''),info:'파일 기록 기능 전에 올린 후보',remaining:l.remaining,untouched:l.untouched,q:'batch=legacy&cve_ent='+l.cve_ent})));
-  $('pg-list').innerHTML='<thead><tr><th></th><th>업로드 파일</th><th>올린 때</th><th>판</th><th>주</th><th>내용</th><th class="num">남은 후보</th><th class="num">작업 기록 없음</th></tr></thead><tbody>'+
+    .concat((r.legacy||[]).map(l=>({key:'legacy:'+l.cve_ent,name:'이전 업로드 (파일 이름 기록 전)',when:(l.first_at||'—')+(l.last_at&&l.last_at!==l.first_at?' ~ '+l.last_at:''),by:l.created_by_name||'',ed:l.edition||'',ents:l.cve_ent+(l.entidad?' '+l.entidad:''),info:'파일 기록 기능 전에 올린 후보',remaining:l.remaining,untouched:l.untouched,q:'batch=legacy&cve_ent='+l.cve_ent})));
+  $('pg-list').innerHTML='<thead><tr><th></th><th>업로드 파일 이름</th><th>올린 시각 <small class="note">(멕시코 시간)</small></th><th>판</th><th>주</th><th>내용</th><th class="num">남은 후보</th><th class="num">작업 기록 없음</th></tr></thead><tbody>'+
     (rows.length?rows.map(x=>'<tr class="click" data-pgk="'+esc(x.key)+'"'+(PG_SEL&&PG_SEL.key===x.key?' style="background:#FFF4F3"':'')+'><td><input type="radio" name="pg-file" value="'+esc(x.key)+'"'+(PG_SEL&&PG_SEL.key===x.key?' checked':'')+'></td>'+
       '<td><b>'+esc(x.name)+'</b>'+(x.by?'<div class="note">'+esc(x.by)+'</div>':'')+'</td><td>'+esc(x.when)+'</td><td>'+esc(x.ed)+'</td><td>'+esc(x.ents)+'</td><td class="note">'+esc(x.info)+'</td>'+
       '<td class="num"><b>'+fmt(x.remaining)+'</b></td><td class="num">'+fmt(x.untouched)+'</td></tr>').join(''):'<tr><td colspan="8" class="empty">올린 DENUE 파일이 없습니다.</td></tr>')+'</tbody>';
@@ -1634,7 +1634,7 @@ async function runImport(commit){
     '<div class="split" style="margin-top:12px"><table class="tb"><thead><tr><th>주</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_state)+'</tbody></table><table class="tb"><thead><tr><th>업종</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_segment)+'</tbody></table></div>'+
     (agg.broken?'<div class="banner warn" style="margin-top:10px">스페인어 글자가 깨진 행이 '+fmt(agg.broken)+'개 있습니다(예: Garc�a). 파일을 엑셀에서 「CSV UTF-8」로 다시 저장해 올리세요.</div>':'')+
     (Object.keys(agg.invalid).length?'<p class="note">건너뜀: '+Object.entries(agg.invalid).map(([k,v])=>k+' '+v).join(', ')+'</p>':'')+
-    (commit?'<div class="banner info" style="margin-top:12px"><b>'+fmt(agg.created)+'곳을 새로 넣었습니다.</b> 지역이 있으면 자동 배정됐습니다. 「지역·담당」에서 확인하세요.'+
+    (commit?'<div class="banner info" style="margin-top:12px"><div class="note" style="margin-bottom:4px">📄 '+esc(IMP_NAME)+' · '+new Date().toLocaleString('sv-SE',{timeZone:'America/Mexico_City'}).slice(0,16)+' 업로드</div><b>'+fmt(agg.created)+'곳을 새로 넣었습니다.</b> 지역이 있으면 자동 배정됐습니다. 「지역·담당」에서 확인하세요.'+
       '<div style="margin-top:8px"><button class="btn ghost sm" id="i-final">이번 판에 없는 곳 「폐업 가능」 표시</button></div></div>':'');
   $('i-preview').disabled=false; $('i-commit').disabled=commit;
   if(commit){ $('i-final').onclick=async()=>{ const ents=Object.keys(agg.by_state).map(k=>k.split(' ')[0]).filter(x=>x&&x!=='?');
