@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261120qr loaded (+ 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261126dv loaded (+ 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -358,6 +358,72 @@
     location.href=SCREENS.consult.file+hash;
   };
 
+  // 📍 고객개발 방문 (2026-11-26) — 하단 🎙 옆 버튼. 지금 위치 250m 안 고객개발 후보(★ 오늘 루트)를 띄우고,
+  //   고르면 그 업체로 체크인 + 녹음 시작(고객상담 빠른 녹음 #quick=1&prospect=…). 리스트에 없는 가게는 업종 한 번 탭으로 새 후보.
+  //   🎙 는 예전처럼 일반 녹음만 한다(디렉터 결정).
+  function devEs(){ try{ var L=localStorage.getItem('rfx_lang_quick'); if(L) return L==='es'; }catch(e){}
+    var u=(sess&&sess.user)||{}; if(u.lang==='es'||u.lang==='ko') return u.lang==='es';
+    return ['director','treasury','socio'].indexOf(u.role)<0 && !!u.role; }
+  function goQuickRec(extra){
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
+    var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g=sales&quick=1'+(extra||'');
+    if(typeof window.__csQuickStart==='function' && /refatrix-consult\.html$/i.test(location.pathname)){ location.hash=hash.slice(1); location.reload(); return; }
+    location.href=SCREENS.consult.file+hash;
+  }
+  window.__rnavQuickDev=function(){
+    if(!sess||!sess.token){ if(!gotoLogin()) location.href='refatrix-portal.html'; return; }
+    var es=devEs(), T=function(ko,e){ return es?e:ko; };
+    var d=document.getElementById('rqdev');
+    if(!d){ d=document.createElement('div'); d.id='rqdev'; d.setAttribute('translate','no'); d.className='notranslate';
+      d.onclick=function(e){ if(e.target===d) d.classList.remove('show'); }; document.body.appendChild(d); }
+    var STG=es?{sin_asignar:'Sin asignar',asignado:'Asignado',contactado:'1ª visita',perfilado:'Perfilado',interesado:'Interesado',registro:'Registro',cotizado:'Cotizado',cliente_activo:'Cliente'}
+               :{sin_asignar:'미배정',asignado:'배정',contactado:'첫 방문',perfilado:'정보 확보',interesado:'관심',registro:'고객 등록',cotizado:'견적',cliente_activo:'첫 매출'};
+    var SEG=[['taller_suspension',T('서스펜션 정비','Taller suspensión')],['taller_general',T('일반 정비','Taller general')],['refaccionaria',T('부품점','Refaccionaria')],['mayorista',T('도매','Mayorista')],['otro',T('기타','Otro')]];
+    var geo=null, rows=null, err='', newOpen=false, busy=false;
+    function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+    function draw(){
+      var h='<div class="sheet"><div class="grab" onclick="document.getElementById(\'rqdev\').classList.remove(\'show\')"></div>'
+        +'<div class="dh"><span>📍 '+T('고객개발 방문','Visita de desarrollo')+'</span><button type="button" class="dx" onclick="document.getElementById(\'rqdev\').classList.remove(\'show\')">✕</button></div>'
+        +'<div class="dn">'+T('방문한 가게를 누르면 체크인하고 바로 녹음을 시작합니다. ★ = 오늘 루트','Toque el negocio: hace check-in y empieza a grabar. ★ = ruta de hoy')+'</div>';
+      if(err) h+='<div class="de">'+esc(err)+'</div>';
+      else if(!rows) h+='<div class="dl">'+(geo?T('근처 후보를 찾는 중…','Buscando negocios cercanos…'):T('📍 위치 확인 중… (허용을 눌러주세요)','📍 Obteniendo ubicación… (toque «Permitir»)'))+'</div>';
+      else if(!rows.length) h+='<div class="dl">'+T('250m 안에 고객개발 후보가 없습니다','No hay negocios de la lista a menos de 250 m')+'</div>';
+      if(rows&&rows.length) h+=rows.map(function(p){ return '<button type="button" class="pr'+(p.on_route?' rt':'')+'" data-p="'+p.id+'"><b>'+(p.on_route?'★ ':'')+esc(p.name)+'</b><span>'+p.dist+'m · '+(STG[p.stage]||'')+(p.colonia?' · '+esc(p.colonia):'')+'</span></button>'; }).join('');
+      h+='<button type="button" class="pr nw" data-new="1"><b>＋ '+T('리스트에 없는 가게','Negocio que no está en la lista')+'</b><span>'+T('지금 위치로 새 후보를 만들고 녹음','Se crea aquí con su ubicación y se graba')+'</span></button>';
+      if(newOpen) h+='<div class="sg">'+SEG.map(function(s){ return '<button type="button" data-seg="'+s[0]+'">'+esc(s[1])+'</button>'; }).join('')+'</div>';
+      h+='<div class="df"><button type="button" data-route="1">🗺 '+T('오늘 루트 · 지도','Ruta de hoy · mapa')+'</button></div></div>';
+      d.innerHTML=h;
+      Array.prototype.forEach.call(d.querySelectorAll('[data-p]'),function(b){ b.onclick=function(){ var p=rows.filter(function(x){return String(x.id)===b.getAttribute('data-p');})[0]; if(p) start(p.id,p.name); }; });
+      d.querySelector('[data-new]').onclick=function(){ if(!geo){ return; } newOpen=!newOpen; draw(); };
+      Array.prototype.forEach.call(d.querySelectorAll('[data-seg]'),function(b){ b.onclick=function(){ create(b.getAttribute('data-seg')); }; });
+      d.querySelector('[data-route]').onclick=function(){ d.classList.remove('show'); nav('prospects','sales'); };
+    }
+    function start(id,name){ d.classList.remove('show'); goQuickRec('&prospect='+encodeURIComponent(id)+'&pname='+encodeURIComponent(name||'')); }
+    function create(seg){
+      if(busy||!geo) return; busy=true;
+      fetch((sess.api||'')+'/api/prospects',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sess.token},
+        body:JSON.stringify({nom_estab:null,segment:seg,lat:geo.lat,lng:geo.lng})}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+        .then(function(x){ busy=false; if(!x.ok||!x.j.id){ err=T('새 후보를 만들지 못했습니다','No se pudo crear')+' ('+(x.j.error||'')+')'; draw(); return; } start(x.j.id,''); })
+        .catch(function(){ busy=false; err=T('서버에 연결하지 못했습니다','Sin conexión al servidor'); draw(); });
+    }
+    function load(){
+      fetch((sess.api||'')+'/api/prospects/nearby?lat='+geo.lat+'&lng='+geo.lng,{headers:{'Authorization':'Bearer '+sess.token}})
+        .then(function(r){ if(!r.ok) throw r.status; return r.json(); })
+        .then(function(j){ rows=j.rows||[]; draw(); })
+        .catch(function(st){ err=st===403?T('고객개발 권한이 없습니다','No tiene permiso de desarrollo de clientes'):T('근처 후보를 불러오지 못했습니다','No se pudieron cargar los negocios'); draw(); });
+    }
+    try{ window.__rnavDrawer(0); }catch(e){}
+    draw(); d.classList.add('show');
+    var g=window.__rgeo; if(g&&g.t&&(Date.now()-g.t)<120000){ geo={lat:g.lat,lng:g.lng}; draw(); load(); }
+    if(navigator.geolocation) navigator.geolocation.getCurrentPosition(function(p){
+        var first=!geo; geo={lat:p.coords.latitude,lng:p.coords.longitude};
+        try{ window.__rgeo={lat:geo.lat,lng:geo.lng,acc:p.coords.accuracy,t:Date.now()}; }catch(e){}
+        if(first){ draw(); load(); } else if(p.coords.accuracy<60){ load(); } },
+      function(){ if(!geo){ err=T('위치를 가져오지 못했습니다 — 휴대폰 설정에서 위치를 허용하세요','No se obtuvo la ubicación — permítala en el teléfono'); draw(); } },
+      {enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+    else { err=T('이 브라우저는 위치를 지원하지 않습니다','Este navegador no da ubicación'); draw(); }
+  };
+
   // 로그아웃: 세션 정리(브리지가 복원하는 localStorage 포함) 후 로그인 화면으로
   function rnavLogout(){
     try{ sessionStorage.removeItem('refatrix_session'); }catch(e){}
@@ -422,6 +488,28 @@
     'html.rfxm #rmtab .mt.mrec{flex:0 0 64px;color:#f4c2bb}'+
     'html.rfxm #rmtab .mt.mrec .i{width:48px;height:48px;margin-top:-20px;border-radius:50%;background:#B23A2E;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;border:3px solid #0b1613;box-shadow:0 5px 16px -2px rgba(178,58,46,.7)}'+
     'html.rfxm #rmtab .mt.mrec:active .i{transform:scale(.93)}'+
+    /* 📍 고객개발 방문 — 🎙 옆 같은 크기의 원형 버튼 (2026-11-26) */
+    'html.rfxm #rmtab .mt.mdev{flex:0 0 64px;color:#f6d79a}'+
+    'html.rfxm #rmtab .mt.mdev .i{width:48px;height:48px;margin-top:-20px;border-radius:50%;background:#E2231A;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;border:3px solid #0b1613;box-shadow:0 5px 16px -2px rgba(226,35,26,.6)}'+
+    'html.rfxm #rmtab .mt.mdev:active .i{transform:scale(.93)}'+
+    '#rqdev{display:none}'+
+    '#rqdev.show{display:block;position:fixed;inset:0;z-index:10003;background:rgba(8,16,13,.6)}'+
+    '#rqdev .sheet{position:absolute;left:0;right:0;bottom:0;max-height:86vh;max-height:86dvh;overflow:auto;background:#fff;color:#111;border-top-left-radius:16px;border-top-right-radius:16px;padding:10px 14px calc(18px + env(safe-area-inset-bottom));font-family:inherit}'+
+    '#rqdev .grab{width:42px;height:4px;border-radius:99px;background:#ddd;margin:2px auto 10px;cursor:pointer}'+
+    '#rqdev .dh{display:flex;align-items:center;justify-content:space-between;font-size:17px;font-weight:800}'+
+    '#rqdev .dx{width:40px;height:40px;border-radius:50%;border:1px solid #ddd;background:#fff;font-size:15px;cursor:pointer}'+
+    '#rqdev .dn{font-size:12.5px;color:#666;margin:4px 0 10px}'+
+    '#rqdev .dl{padding:18px 4px;color:#555;font-size:14px;text-align:center}'+
+    '#rqdev .de{padding:12px;border-radius:10px;background:#FDECEB;color:#9b1c14;font-size:13.5px;margin-bottom:8px}'+
+    '#rqdev .pr{display:block;width:100%;text-align:left;border:1.5px solid #e5e5e5;background:#fff;border-radius:12px;padding:13px 14px;margin:0 0 8px;cursor:pointer;font-family:inherit;min-height:58px}'+
+    '#rqdev .pr b{display:block;font-size:15.5px;color:#111}'+
+    '#rqdev .pr span{display:block;font-size:12.5px;color:#666;margin-top:2px}'+
+    '#rqdev .pr.rt{border-color:#E2231A;background:#FFF4F3}'+
+    '#rqdev .pr.nw{border-style:dashed}'+
+    '#rqdev .sg{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 10px}'+
+    '#rqdev .sg button{flex:1 1 30%;min-height:46px;border-radius:10px;border:1.5px solid #E2231A;background:#fff;color:#B11810;font-weight:700;font-size:13.5px;cursor:pointer;font-family:inherit}'+
+    '#rqdev .df{margin-top:6px}'+
+    '#rqdev .df button{width:100%;min-height:46px;border-radius:999px;border:1px solid #111;background:#fff;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}'+
     /* 전체메뉴 시트 */
     '#rmdrawer{display:none}'+
     'html.rfxm #rmdrawer.show{display:block;position:fixed;inset:0;z-index:10002;background:rgba(8,16,13,.62);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}'+
@@ -581,12 +669,15 @@
     fieldsurvey:'현장조사',fsanalysis:'소진분석',board:'일정',salesperf:'실적',commission:'커미션',targets:'목표',
     finance:'재무',settlement:'정산',budget:'예산',products:'제품',stock:'재고',dashboard:'현황',
     whHome:'창고',inbound:'입고',stockcount:'실사',relocate:'위치',whmap:'도면'};
-  function mShort(k){ var n=MTAB_LABEL[k]; if(n) return n;
+  var MTAB_LABEL_ES={approval:'Aprobar',portal:'Inicio',customers:'Clientes',pipeline:'Actividad',consult:'Consultas',prospects:'Desarrollo',quotelist:'Cotiz.',quote:'Cotizar',
+    fieldsurvey:'Inventario',board:'Agenda',salesperf:'Ventas',commission:'Comisión',targets:'Metas',finance:'Finanzas',settlement:'Cobranza',budget:'Presup.',products:'Productos',stock:'Inventario',dashboard:'Tablero',
+    whHome:'Almacén',inbound:'Recepción',stockcount:'Conteo',relocate:'Ubicar',whmap:'Plano'};
+  function mShort(k){ if(isEs()&&MTAB_LABEL_ES[k]) return MTAB_LABEL_ES[k]; var n=MTAB_LABEL[k]; if(n) return n;
     var s=String((SCREENS[k]&&SCREENS[k].name)||'').replace(/\s*[··].*$/,''); return s.length>4?(s.slice(0,4)+'…'):s; }
   function mTabKeys(){
     var pref=(sum&&MTAB_PREF[sum.role])||MTAB_DEFAULT;
-    var out=[];
-    var push=function(k){ if(out.length<4 && out.indexOf(k)<0 && SCREENS[k] && canSee(k)) out.push(k); };
+    var out=[], lim=(SCREENS.consult&&canSee('consult')&&SCREENS.prospects)?3:4;   // 🎙·📍 두 개가 들어가면 일반 탭은 3개
+    var push=function(k){ if(out.length<lim && out.indexOf(k)<0 && SCREENS[k] && canSee(k)) out.push(k); };
     pref.forEach(push); MTAB_FALLBACK.forEach(push);
     return out;
   }
@@ -603,10 +694,12 @@
     // 🎙 원클릭 미팅 녹음 — 고객상담(영업활동 권한) 화면을 쓸 수 있는 사람에게만, 가운데에
     if(SCREENS.consult && canSee('consult')){
       btns.splice(Math.min(2,btns.length),0,'<button type="button" class="mt mrec" onclick="__rnavQuickRec()" aria-label="미팅 녹음 바로 시작">'
-        + '<span class="i">🎙</span><span class="l">녹음</span></button>');
+        + '<span class="i">🎙</span><span class="l">'+(devEs()?'Grabar':'녹음')+'</span></button>'
+        + (SCREENS.prospects?'<button type="button" class="mt mdev" onclick="__rnavQuickDev()" aria-label="고객개발 방문">'
+        + '<span class="i">📍</span><span class="l">'+(devEs()?'Desarrollo':'고객개발')+'</span></button>':''));
     }
     var h=btns.join('');
-    h+='<button type="button" class="mt mmore" onclick="__rnavDrawer(1)"><span class="i">☰</span><span class="l">전체</span></button>';
+    h+='<button type="button" class="mt mmore" onclick="__rnavDrawer(1)"><span class="i">☰</span><span class="l">'+(isEs()?'Menú':'전체')+'</span></button>';
     el.innerHTML=h;
     document.body.style.paddingBottom='calc(58px + env(safe-area-inset-bottom))';
   }

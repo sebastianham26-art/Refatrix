@@ -33,7 +33,7 @@ import { splitB64Segment, SPLIT_MAX_BYTES, SPLIT_MAX_MS } from '../audioSplit.js
 import {
   hasQuickCols, resetQuickColsCache, syncConsultVisitSafe, mirrorConsultPendingDone,
 } from '../consultVisitSync.js';
-import { attachConsultToProspectSafe, prospectAltaDraftSafe } from '../prospectAlta.js';   // 0334 · 영업 › 고객개발 연결
+import { attachConsultToProspectSafe, detachConsultFromProspectSafe, prospectAltaDraftSafe } from '../prospectAlta.js';   // 0334 · 영업 › 고객개발 연결
 import { sttModelName, redactSecrets, isDurationLimitError, STT_DEFAULT_MODEL } from '../sttModel.js';
 import {
   convertToSegments, findFfmpeg, canPassThrough, whisperMimeOf, fileMimeOf, cleanFileName,
@@ -735,6 +735,26 @@ export default async function consultRoutes(app) {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return reply.code(400).send({ error: 'bad_geo' });
       put('geo_lat', lat); put('geo_lng', lng);
       put('geo_accuracy', Number.isFinite(Number(b.geo_accuracy)) ? Number(b.geo_accuracy) : null);
+    }
+    // 🧭 빠른 녹음 중 고객개발 후보 연결/변경/해제 (prospect_id: 숫자 = 연결, null = 해제)
+    let pl = null;
+    if (b.prospect_id !== undefined) {
+      const cx = (await query(`SELECT prospect_id, geo_lat, geo_lng FROM sales_consults WHERE id=$1`, [Number(c.id)])).rows[0] || {};
+      c.prospect_id = cx.prospect_id;
+      const rl = b.geo_lat ?? cx.geo_lat, rg = b.geo_lng ?? cx.geo_lng;
+      const lat = rl == null ? NaN : Number(rl), lng = rg == null ? NaN : Number(rg);
+      const geo = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : { lat: null, lng: null };
+      if (c.prospect_id && Number(c.prospect_id) !== Number(b.prospect_id)) await detachConsultFromProspectSafe({ consultId: Number(c.id), userId: perm.userId }, req.log);
+      if (b.prospect_id) {
+        pl = await attachConsultToProspectSafe({ consultId: Number(c.id), prospectId: b.prospect_id, perm, ...geo }, req.log);
+        if (pl && pl.error) return reply.code(403).send({ error: pl.error });
+      }
+      if (!sets.length) {
+        const sv = await syncConsultVisitSafe(Number(c.id), req.log);
+        const cc = (await query(`SELECT company_name FROM sales_consults WHERE id=$1`, [Number(c.id)])).rows[0];
+        return { ok: true, id: Number(c.id), prospect_id: pl && pl.prospect_id ? pl.prospect_id : null, checkin_dist_m: pl ? pl.checkin_dist_m : null,
+          company_name: cc ? cc.company_name : null, visit_id: sv && sv.visit_id ? Number(sv.visit_id) : null };
+      }
     }
     if (!sets.length) return { ok: true, id: Number(c.id), unchanged: true };
     sets.push('updated_at = now()');

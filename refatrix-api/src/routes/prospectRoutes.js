@@ -20,7 +20,7 @@ import {
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
-  inPolygon, rankForRoute, optimizeRoute, routeMinutes, weekBounds, planDays, nextWorkDates, convexHull,
+  inPolygon, distanceM, rankForRoute, optimizeRoute, routeMinutes, weekBounds, planDays, nextWorkDates, convexHull,
 } from '../prospectCore.js';
 import { pageAllowed } from '../permissions.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
@@ -266,6 +266,31 @@ export default async function prospectRoutes(app) {
         [me(req), bb[0], bb[1], bb[2], bb[3], ...(qs.cve_ent ? [String(qs.cve_ent)] : [])])).rows.map((r) => [Number(r.lat), Number(r.lng), r.v ? 1 : 0]);
     }
     return { rows, others, truncated: rows.length >= 6000 };
+  });
+
+  // 🎙 빠른 녹음 → 지금 위치 근처 후보(반경 250m, 최대 5곳) — 오늘 내 루트에 있는 곳 우선.
+  //   auto_id: 확실할 때만(루트 정류장 80m 안, 또는 가장 가까운 곳이 40m 안이고 두 번째와 30m 이상 차이) 화면이 바로 연결
+  app.get('/api/prospects/nearby', view, async (req) => {
+    const lat = Number(req.query?.lat), lng = Number(req.query?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { rows: [], auto_id: null };
+    const R = 250, dLat = R / 111320, dLng = R / (111320 * Math.cos((lat * Math.PI) / 180));
+    const params = [lat - dLat, lat + dLat, lng - dLng, lng + dLng, mxToday(), me(req)];
+    const cond = scopeCond(req, params, { unassigned: true });
+    const rows = (await query(
+      `SELECT p.id, p.nom_estab, p.lat, p.lng, p.stage, p.priority, p.score, p.owner_user_id, p.colonia,
+              EXISTS (SELECT 1 FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
+                       WHERE s.prospect_id=p.id AND r.route_date=$5::date AND r.user_id=$6) AS on_route
+         FROM prospects p
+        WHERE p.deleted_at IS NULL AND p.stage <> 'descartado' AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4 AND ${cond}`, params)).rows
+      .map((p) => ({ id: Number(p.id), name: p.nom_estab, stage: p.stage, priority: p.priority, score: Number(p.score) || 0, colonia: p.colonia,
+        on_route: p.on_route, mine: p.owner_user_id != null && Number(p.owner_user_id) === me(req), dist: distanceM(lat, lng, p.lat, p.lng) }))
+      .filter((p) => p.dist != null && p.dist <= R)
+      .sort((a, b) => (a.on_route && a.dist <= 80 ? 0 : 1) - (b.on_route && b.dist <= 80 ? 0 : 1) || a.dist - b.dist)
+      .slice(0, 5);
+    let auto = null;
+    if (rows[0] && rows[0].on_route && rows[0].dist <= 80) auto = rows[0].id;
+    else if (rows[0] && rows[0].dist <= 40 && (!rows[1] || rows[1].dist - rows[0].dist >= 30)) auto = rows[0].id;
+    return { rows, auto_id: auto };
   });
 
   // 오늘 체크인 동선(지도 실선) — 담당자별 체크인 순서

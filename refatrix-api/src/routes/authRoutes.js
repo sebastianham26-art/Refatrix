@@ -14,10 +14,17 @@ export default async function authRoutes(app) {
   app.post('/api/auth/refresh', { preHandler: [authGuard] }, async (req, reply) => {
     const perm = req.ctx.perm;
     const u = (await query(
-      `SELECT id, name, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [perm.userId])).rows[0];
+      `SELECT id, name, role, lang FROM users WHERE id=$1 AND deleted_at IS NULL`, [perm.userId])).rows[0];
     if (!u) return reply.code(401).send({ error: 'unknown_user' });
     const token = await reply.jwtSign({ sub: u.id, role: u.role });
-    return { token, user: { id: Number(u.id), name: u.name, role: u.role } };
+    return { token, user: { id: Number(u.id), name: u.name, role: u.role, lang: u.lang || 'ko' } };
+  });
+
+  // 내 기본 정보(화면 언어 고정용 — 사용자 관리의 언어 ko|es) · 2026-11-26
+  app.get('/api/auth/me', { preHandler: [authGuard] }, async (req, reply) => {
+    const u = (await query(`SELECT id, name, role, lang FROM users WHERE id=$1 AND deleted_at IS NULL`, [req.ctx.perm.userId])).rows[0];
+    if (!u) return reply.code(401).send({ error: 'unknown_user' });
+    return { id: Number(u.id), name: u.name, role: u.role, lang: u.lang || 'ko' };
   });
 
   app.post('/api/login', async (req, reply) => {
@@ -25,7 +32,7 @@ export default async function authRoutes(app) {
     if (!login_id || !pin) return reply.code(400).send({ error: 'login_id_and_pin_required' });
 
     const u = (await query(
-      `SELECT id, name, role, pin_hash, device_locked FROM users
+      `SELECT id, name, role, pin_hash, device_locked, lang FROM users
          WHERE login_id=$1 AND deleted_at IS NULL`, [login_id])).rows[0];
 
     if (!u || !verifyPin(pin, u.pin_hash)) {
@@ -74,6 +81,6 @@ export default async function authRoutes(app) {
 
     const token = await reply.jwtSign({ sub: u.id, role: u.role });
     await logEvent({ userId: u.id, action: 'login' });
-    return { token, user: { id: u.id, name: u.name, role: u.role } };
+    return { token, user: { id: u.id, name: u.name, role: u.role, lang: u.lang || 'ko' } };
   });
 }

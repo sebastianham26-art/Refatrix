@@ -107,7 +107,8 @@ export async function attachConsultToProspect({ consultId, prospectId, perm, lat
   const pid = Number(prospectId);
   if (!Number.isInteger(pid) || pid <= 0) return null;
   const userId = Number(perm.userId);
-  const isDir = perm.role === 'director';
+  let isDir = perm.role === 'director';
+  if (!isDir) { try { isDir = (await query(`SELECT 1 FROM prospect_managers WHERE user_id=$1`, [userId])).rows.length > 0; } catch (_) { /* 0338 전 */ } }
   return withTx(async (client) => {
     const q = client.query.bind(client);
     const p = (await q(`SELECT id, nom_estab, owner_user_id, stage, lat, lng FROM prospects
@@ -140,6 +141,24 @@ export async function attachConsultToProspect({ consultId, prospectId, perm, lat
     await recomputeProspect(q, pid, { userId, reason: 'check-in' });
     return { prospect_id: pid, checkin_dist_m: dist };
   });
+}
+// 빠른 녹음에서 연결한 후보를 바꾸거나 뺄 때 — 상담·루트 정류장 연결만 푼다(지나간 단계 이력은 그대로)
+export async function detachConsultFromProspect({ consultId, userId }) {
+  if (!(await hasProspectCols())) return null;
+  return withTx(async (client) => {
+    const q = client.query.bind(client);
+    const c = (await q(`SELECT prospect_id FROM sales_consults WHERE id=$1 FOR UPDATE`, [Number(consultId)])).rows[0];
+    if (!c || !c.prospect_id) return { prospect_id: null };
+    const pid = Number(c.prospect_id);
+    await q(`UPDATE sales_consults SET prospect_id=NULL, checkin_dist_m=NULL WHERE id=$1`, [Number(consultId)]);
+    await q(`UPDATE prospect_route_stops SET consult_id=NULL WHERE consult_id=$1`, [Number(consultId)]);
+    await recomputeProspect(q, pid, { userId: Number(userId), reason: 'check-in quitado' });
+    return { prospect_id: pid, detached: true };
+  });
+}
+export async function detachConsultFromProspectSafe(args, log) {
+  try { return await detachConsultFromProspect(args); }
+  catch (e) { try { log && log.warn && log.warn({ err: String(e && e.message) }, 'prospect detach failed'); } catch (_) {} return null; }
 }
 export async function attachConsultToProspectSafe(args, log) {
   try { return await attachConsultToProspect(args); }
