@@ -438,11 +438,12 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
     </div>
     <div class="card" style="margin-top:16px;border-color:var(--ctr)">
       <h2>기존 DENUE 데이터 삭제</h2>
-      <p class="note">다시 올리기 전에 지금 들어 있는 후보를 지웁니다. 위의 「주」 선택 기준입니다. <b>지운 후보는 되돌릴 수 없습니다.</b></p>
+      <p class="note">지울 <b>업로드 파일</b>을 고르세요 — 그 파일로 들어온 후보만 지웁니다. <b>지운 후보는 되돌릴 수 없습니다.</b></p>
+      <div class="scroll" style="margin-top:10px"><table class="tb" id="pg-list"></table></div>
       <div id="pg-info" style="margin-top:10px"></div>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
         <label class="chip" style="padding:10px 14px;align-items:flex-start"><input type="radio" name="pg-scope" value="untouched" checked> <span><b>작업 기록이 없는 후보만 삭제 (권장)</b><br><span class="note">방문·고객정보·고객 연결·견적이 있는 후보는 남깁니다. 다시 올리면 남은 후보는 같은 DENUE id로 새 정보만 덮어씁니다.</span></span></label>
-        <label class="chip" style="padding:10px 14px;align-items:flex-start"><input type="radio" name="pg-scope" value="all"> <span><b>이 주의 DENUE 후보 전부 삭제</b><br><span class="note">점수·단계 이력·루트도 함께 지워집니다. 방문(고객상담) 기록과 ERP 견적서는 남지만 후보와의 연결은 끊깁니다.</span></span></label>
+        <label class="chip" style="padding:10px 14px;align-items:flex-start"><input type="radio" name="pg-scope" value="all"> <span><b>이 파일의 후보 전부 삭제</b><br><span class="note">점수·단계 이력·루트도 함께 지워집니다. 방문(고객상담) 기록과 ERP 견적서는 남지만 후보와의 연결은 끊깁니다.</span></span></label>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px">
         <label class="fld"><span>확인을 위해 「삭제」라고 입력</span><input type="text" id="pg-confirm" placeholder="삭제" style="width:160px"></label>
@@ -1564,23 +1565,35 @@ $('g-save').onclick=async()=>{ readTargets();
   if(sum<99.99&&Object.keys(TG.totals).length&&!confirm('할당률 합계가 '+sum+'%입니다. 나머지 '+(Math.round((100-sum)*10)/10)+'%는 누구에게도 배분되지 않습니다. 저장할까요?')) return;
   try{ const r=await post('/api/prospect-targets',{period:period(),totals:TG.totals,shares:TG.shares},'PUT'); TG.legacy=false; renderTargets(); toast('저장 · 담당자 목표 '+r.saved+'개'); }catch(e){ toast('실패: '+e.message); } };
 
-// ── DENUE 데이터 삭제 ──
+// ── DENUE 데이터 삭제 — 업로드 파일별 ──
+let PG=null, PG_SEL=null;
 async function loadPurge(){
-  const e=ent(); if(!e){ $('pg-info').innerHTML='<div class="banner warn">위에서 「주」를 하나 고르세요.</div>'; return; }
-  let r; try{ r=await api('/api/prospects/purge-preview?cve_ent='+e); }catch(x){ return; }
-  const nm=($('f-ent').options[$('f-ent').selectedIndex]||{}).text||e;
-  $('pg-info').innerHTML='<div class="banner info"><b>'+esc(nm)+'</b> · DENUE 후보 <b>'+fmt(r.total)+'곳</b> — 작업 기록 없음 '+fmt(r.untouched)+'곳 · 작업 기록 있음 '+fmt(r.worked)+'곳 (담당 배정 '+fmt(r.assigned)+'곳)</div>';
-  PG=r; pgCheck();
+  let r; try{ r=await api('/api/prospects/import/batches'); }catch(x){ $('pg-list').innerHTML='<tr><td class="empty">'+esc(x.message==='migration_0340_required'?'DB 마이그레이션 0340을 먼저 적용하세요(npm run migrate).':x.message)+'</td></tr>'; return; }
+  const rows=r.rows.map(b=>({key:String(b.id),name:b.file_name||'(이름 없음)',when:String(b.created_at).slice(0,16).replace('T',' '),by:b.created_by_name||'',ed:b.edition||'',ents:(b.cve_ents||[]).join(', '),
+      info:'넣음 '+fmt(b.created)+' · 갱신 '+fmt(b.updated)+' / '+fmt(b.rows_total)+'행',remaining:b.remaining,untouched:b.untouched,q:'batch='+b.id}))
+    .concat((r.legacy||[]).map(l=>({key:'legacy:'+l.cve_ent,name:'이전 업로드 (파일 기록 없음)',when:'—',by:'',ed:l.edition||'',ents:l.cve_ent+(l.entidad?' '+l.entidad:''),info:'파일 기록 기능 전에 올린 후보',remaining:l.remaining,untouched:l.untouched,q:'batch=legacy&cve_ent='+l.cve_ent})));
+  $('pg-list').innerHTML='<thead><tr><th></th><th>업로드 파일</th><th>올린 때</th><th>판</th><th>주</th><th>내용</th><th class="num">남은 후보</th><th class="num">작업 기록 없음</th></tr></thead><tbody>'+
+    (rows.length?rows.map(x=>'<tr class="click" data-pgk="'+esc(x.key)+'"'+(PG_SEL&&PG_SEL.key===x.key?' style="background:#FFF4F3"':'')+'><td><input type="radio" name="pg-file" value="'+esc(x.key)+'"'+(PG_SEL&&PG_SEL.key===x.key?' checked':'')+'></td>'+
+      '<td><b>'+esc(x.name)+'</b>'+(x.by?'<div class="note">'+esc(x.by)+'</div>':'')+'</td><td>'+esc(x.when)+'</td><td>'+esc(x.ed)+'</td><td>'+esc(x.ents)+'</td><td class="note">'+esc(x.info)+'</td>'+
+      '<td class="num"><b>'+fmt(x.remaining)+'</b></td><td class="num">'+fmt(x.untouched)+'</td></tr>').join(''):'<tr><td colspan="8" class="empty">올린 DENUE 파일이 없습니다.</td></tr>')+'</tbody>';
+  $('pg-list').querySelectorAll('[data-pgk]').forEach(tr=>tr.onclick=()=>{ PG_SEL=rows.find(x=>x.key===tr.dataset.pgk); loadPurge(); });
+  if(PG_SEL&&!rows.find(x=>x.key===PG_SEL.key)) PG_SEL=null;
+  if(!PG_SEL){ PG=null; $('pg-info').innerHTML='<div class="note">위에서 지울 파일을 고르세요.</div>'; pgCheck(); return; }
+  try{ PG=await api('/api/prospects/purge-preview?'+PG_SEL.q); }catch(x){ return; }
+  $('pg-info').innerHTML='<div class="banner info"><b>'+esc(PG_SEL.name)+'</b> · 남은 후보 <b>'+fmt(PG.total)+'곳</b> — 작업 기록 없음 '+fmt(PG.untouched)+'곳 · 작업 기록 있음 '+fmt(PG.worked)+'곳 (담당 배정 '+fmt(PG.assigned)+'곳)</div>';
+  pgCheck();
 }
-let PG=null;
 function pgCheck(){ $('pg-run').disabled=!(PG&&PG.total>0&&$('pg-confirm').value.trim()==='삭제'); }
 $('pg-confirm').oninput=pgCheck;
 $('pg-run').onclick=async()=>{
+  if(!PG_SEL) return;
   const scope=(document.querySelector('input[name="pg-scope"]:checked')||{}).value||'untouched';
   const n=scope==='all'?PG.total:PG.untouched;
-  if(!confirm((scope==='all'?'이 주의 DENUE 후보 전부':'작업 기록이 없는 후보')+' '+fmt(n)+'곳을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+  if(!confirm('「'+PG_SEL.name+'」 '+(scope==='all'?'후보 전부':'작업 기록이 없는 후보')+' '+fmt(n)+'곳을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
   $('pg-run').disabled=true;
-  try{ const r=await post('/api/prospects/purge',{cve_ent:ent(),scope,confirm:'삭제'}); toast('삭제 '+fmt(r.deleted)+'곳 · 남은 후보 '+fmt(r.kept)+'곳'); $('pg-confirm').value=''; loadPurge(); }
+  const [bk,ent]=PG_SEL.key.split(':');
+  const body=bk==='legacy'?{batch:'legacy',cve_ent:ent,scope,confirm:'삭제'}:{batch:Number(bk),scope,confirm:'삭제'};
+  try{ const r=await post('/api/prospects/purge',body); toast('삭제 '+fmt(r.deleted)+'곳 · 이 파일에 남은 후보 '+fmt(r.kept)+'곳'); $('pg-confirm').value=''; if(!r.kept) PG_SEL=null; loadPurge(); }
   catch(e){ toast('실패: '+e.message); pgCheck(); }
 };
 
@@ -1597,26 +1610,36 @@ function parseCsv(text){
   if(!rows.length) return []; const h=rows[0].map(x=>x.trim());
   return rows.slice(1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]==null?'':r[i]])));
 }
-$('i-file').onchange=async()=>{ const f=$('i-file').files[0]; if(!f) return; IMP=parseCsv(await f.text()); $('i-out').innerHTML='<p><b>'+fmt(IMP.length)+'행</b>을 읽었습니다.</p>'; $('i-preview').disabled=!IMP.length; $('i-commit').disabled=true; };
+// INEGI DENUE 원본 CSV 는 Latin-1(Windows-1252)인 경우가 많다 — UTF-8 로 읽으면 García → Garc�a 로 깨진다.
+//   UTF-8 로 먼저 읽어 보고, 틀린 글자가 있으면 Windows-1252 로 다시 읽는다.
+async function readCsvText(f){
+  const buf=await f.arrayBuffer();
+  try{ return {text:new TextDecoder('utf-8',{fatal:true}).decode(buf),enc:'UTF-8'}; }catch(e){}
+  return {text:new TextDecoder('windows-1252').decode(buf),enc:'Latin-1 (Windows-1252)'};
+}
+let IMP_NAME='';
+$('i-file').onchange=async()=>{ const f=$('i-file').files[0]; if(!f) return; const rd=await readCsvText(f); IMP=parseCsv(rd.text); IMP_NAME=f.name;
+  $('i-out').innerHTML='<p><b>'+fmt(IMP.length)+'행</b>을 읽었습니다. <span class="note">('+esc(f.name)+' · 글자 '+rd.enc+')</span></p>'; $('i-preview').disabled=!IMP.length; $('i-commit').disabled=true; };
 async function runImport(commit){
-  const CH=2000; const agg={received:0,valid:0,new:0,update:0,invalid:{},by_state:{},by_segment:{},created:0};
+  const CH=2000; const agg={received:0,valid:0,new:0,update:0,invalid:{},by_state:{},by_segment:{},created:0,broken:0}; let batchId=null;
   $('i-preview').disabled=$('i-commit').disabled=true;
   for(let i=0;i<IMP.length;i+=CH){
     $('i-out').innerHTML='<p>'+(commit?'가져오는 중':'확인 중')+'… '+fmt(Math.min(i+CH,IMP.length))+' / '+fmt(IMP.length)+'</p>';
-    let r; try{ r=await post('/api/prospects/import',{rows:IMP.slice(i,i+CH),edition:$('i-ed').value,commit}); }catch(e){ $('i-out').innerHTML='<div class="banner bad">실패: '+esc(e.message)+'</div>'; $('i-preview').disabled=false; return; }
-    ['received','valid','new','update','created'].forEach(k=>agg[k]+=r[k]||0);
+    let r; try{ r=await post('/api/prospects/import',{rows:IMP.slice(i,i+CH),edition:$('i-ed').value,commit,file_name:IMP_NAME,batch_id:batchId}); if(r.batch_id) batchId=r.batch_id; }catch(e){ $('i-out').innerHTML='<div class="banner bad">실패: '+esc(e.message)+'</div>'; $('i-preview').disabled=false; return; }
+    ['received','valid','new','update','created','broken'].forEach(k=>agg[k]+=r[k]||0);
     [['invalid'],['by_state'],['by_segment']].forEach(([k])=>Object.entries(r[k]||{}).forEach(([a,b])=>agg[k][a]=(agg[k][a]||0)+b));
   }
   const tbl=o=>Object.entries(o).map(([k,v])=>'<tr><td>'+esc(SEG_LBL[k]||k)+'</td><td class="num">'+fmt(v)+'</td></tr>').join('');
   $('i-out').innerHTML='<div class="grid cards">'+[['읽은 행',agg.received],['정상',agg.valid],['새 후보',agg.new],['갱신',agg.update]].map(([l,v])=>'<div class="card kpi flat"><div class="lbl">'+l+'</div><div class="val">'+fmt(v)+'</div></div>').join('')+'</div>'+
     '<div class="split" style="margin-top:12px"><table class="tb"><thead><tr><th>주</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_state)+'</tbody></table><table class="tb"><thead><tr><th>업종</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_segment)+'</tbody></table></div>'+
+    (agg.broken?'<div class="banner warn" style="margin-top:10px">스페인어 글자가 깨진 행이 '+fmt(agg.broken)+'개 있습니다(예: Garc�a). 파일을 엑셀에서 「CSV UTF-8」로 다시 저장해 올리세요.</div>':'')+
     (Object.keys(agg.invalid).length?'<p class="note">건너뜀: '+Object.entries(agg.invalid).map(([k,v])=>k+' '+v).join(', ')+'</p>':'')+
     (commit?'<div class="banner info" style="margin-top:12px"><b>'+fmt(agg.created)+'곳을 새로 넣었습니다.</b> 지역이 있으면 자동 배정됐습니다. 「지역·담당」에서 확인하세요.'+
       '<div style="margin-top:8px"><button class="btn ghost sm" id="i-final">이번 판에 없는 곳 「폐업 가능」 표시</button></div></div>':'');
   $('i-preview').disabled=false; $('i-commit').disabled=commit;
   if(commit){ $('i-final').onclick=async()=>{ const ents=Object.keys(agg.by_state).map(k=>k.split(' ')[0]).filter(x=>x&&x!=='?');
     for(const e of ents){ const r=await post('/api/prospects/import/finalize',{edition:$('i-ed').value,cve_ent:e}); toast(e+': '+fmt(r.marked_missing)+'곳 표시'); } };
-    META=await api('/api/prospects/meta'); }
+    META=await api('/api/prospects/meta'); loadPurge(); }
 }
 $('i-preview').onclick=()=>runImport(false);
 $('i-commit').onclick=()=>{ if(confirm(fmt(IMP.length)+'행을 가져올까요? 기존 후보의 담당·단계·활동은 유지됩니다.')) runImport(true); };

@@ -84,6 +84,16 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
   - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
 - **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
 
+## 18차 보완 (2026-11-26) — DENUE 업로드 파일별 삭제 · 스페인어 글자(municipio) 깨짐 해결
+- **마이그레이션 0340** (`0340_prospect_import_batches.sql`) — `prospect_import_batches`(업로드 파일 기록), `prospects.import_batch_id`. 예전에 「GarcÃ­a」처럼 깨져 들어간 글자는 이 마이그레이션이 되살림.
+- **업로드 파일별 삭제**: DENUE 가져오기 아래 「기존 DENUE 데이터 삭제」에 업로드 파일 목록(파일 이름 · 올린 때 · 판 · 주 · 넣음/갱신 · 남은 후보 · 작업 기록 없음). 파일을 골라 「작업 기록 없는 후보만」 또는 「이 파일의 후보 전부」 삭제. 파일 기록 기능 전에 올린 후보는 「이전 업로드(파일 기록 없음)」 한 줄로(주별). 후보가 다 지워지면 업로드 기록도 지움.
+  - `GET /api/prospects/import/batches`, `GET /api/prospects/purge-preview?batch=<id>|legacy&cve_ent=`, `POST /api/prospects/purge {batch, cve_ent, scope, confirm}`. 가져오기는 첫 묶음에서 batch 를 만들고 나머지 묶음은 같은 `batch_id`.
+  - 후보는 처음 넣은 파일에 속함(다른 파일로 갱신돼도 그대로).
+- **municipio 스페인어 표기 오류**: 원인 = INEGI DENUE 원본 CSV 는 Latin-1(Windows-1252)인데 UTF-8 로 읽어 García → Garc�a 로 깨짐 → 지역·필터 이름이 맞지 않음.
+  - 화면이 파일을 UTF-8 로 읽어 보고 안 되면 Windows-1252 로 다시 읽음(읽은 인코딩 표시).
+  - 서버도 「Ã­」 형태 깨짐을 되살리고(`fixSpanish`), 깨진 행이 남으면 미리보기에 경고. 이미 깨져 들어간 값은 같은 DENUE id 로 다시 올리면 새 값으로 고쳐짐.
+- 바뀐 파일: `prospectCore.js`, `routes/prospectRoutes.js`, `refatrix-prospects.html`, 새 마이그레이션 0340.
+
 ## 17차 보완 (2026-11-26) — 지도 상단 = 전체 합계 목표와 진척(담당자 선택 시 개인)
 - 지도 상단 「🎯 목표와 진척」: 디렉터·관리자는 기본 **전체 직원 합계**, 선택 상자로 담당자 한 명을 고르면 그 사람(영업사원은 본인만).
 - 카드 5개: ① 목표 수량(첫 방문) ② 계획한 수량(완료+예정, 지금 그린 구역 미리 더함, 목표 대비 부족분) ③ 방문한 수량(중단 제외) ④ 견적 발행 / 견적 목표 ⑤ 매출 실적 / 매출 목표(신규 고객, IVA 제외).
@@ -189,7 +199,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 
 ## 배포 순서
 1. 백엔드 파일 올리기(refatrix-api) → Railway 재배포
-2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
+2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339**, **0340** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
 3. 화면 파일 올리기: `refatrix-prospects.html`, `refatrix-nav.js`, `refatrix-consult.html`
 4. 메뉴: 영업 › **고객개발**. 권한은 고객상담과 같은 `pipeline`(영업활동) 키. 가져오기·지역·목표·연결 승인은 디렉터만.
 5. 고객개발 › **DENUE 가져오기**에서 `prospects_import_NL.csv` 업로드(9,492곳, 판 2026-11) → **지역·담당**에서 지역 만들기 → 저장하면 미배정 후보가 자동 배정됩니다.
@@ -214,6 +224,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 | DB | `refatrix-api/migrations/0337_prospect_target_plan_terr_polygon.sql` | 목표 총량·할당률 · 지도 구역 지역 |
 | DB | `refatrix-api/migrations/0338_prospect_managers_purge.sql` | 고객개발 관리자(Gabriel) |
 | DB | `refatrix-api/migrations/0339_prospect_route_plans.sql` | 방문 목록(날짜 미정 루트) |
+| DB | `refatrix-api/migrations/0340_prospect_import_batches.sql` | DENUE 업로드 파일 기록 · 깨진 글자 복구 |
 | 테스트 | `test/prospects.test.mjs` | 순수 함수 17개 |
 
 ## 흐름 요약

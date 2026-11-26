@@ -59,6 +59,12 @@ async function hasPotCols() {
   return potCols;
 }
 let planCols = false;
+let batchCols = false;
+async function hasBatchCols() {
+  if (batchCols) return true;
+  try { batchCols = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='prospects' AND column_name='import_batch_id'`)).rows.length > 0; } catch (_) { batchCols = false; }
+  return batchCols;
+}
 async function hasPlanCols() {
   if (planCols) return true;
   try { planCols = (await query(`SELECT 1 FROM information_schema.columns WHERE table_name='prospect_territories' AND column_name='polygon'`)).rows.length > 0
@@ -185,6 +191,7 @@ export default async function prospectRoutes(app) {
     if (!(await hasProspectCols())) return reply.code(503).send({ error: 'migration_0334_required' });
     if (!(await hasPotCols())) return reply.code(503).send({ error: 'migration_0336_required' });
     if (/^\/api\/prospect-(territories|targets)/.test(String(req.url)) && !(await hasPlanCols())) return reply.code(503).send({ error: 'migration_0337_required' });
+    if (/^\/api\/prospects\/(import|purge)/.test(String(req.url)) && !(await hasBatchCols())) return reply.code(503).send({ error: 'migration_0340_required' });
   });
 
   // ── 메타 ───────────────────────────────────────────────────────────
@@ -433,9 +440,15 @@ export default async function prospectRoutes(app) {
       const k = `${g.cve_ent || '?'} ${g.entidad || ''}`.trim(); byState[k] = (byState[k] || 0) + 1;
       bySeg[g.segment] = (bySeg[g.segment] || 0) + 1;
     }
+    const broken = good.filter((g) => [g.nom_estab, g.municipio, g.colonia, g.address].some((x) => x && /\uFFFD/.test(x))).length;
     const summary = { received: raw.length, valid: good.length, new: good.filter((g) => !exist.has(g.denue_id)).length,
-      update: good.filter((g) => exist.has(g.denue_id)).length, invalid: bad, by_state: byState, by_segment: bySeg, edition };
+      update: good.filter((g) => exist.has(g.denue_id)).length, invalid: bad, by_state: byState, by_segment: bySeg, edition, broken };
     if (!b.commit) return summary;
+    // 업로드 파일 기록 — 첫 묶음에서 만들고, 나머지 묶음은 같은 batch_id 로 들어온다
+    let batchId = int(b.batch_id);
+    if (batchId && !(await query(`SELECT 1 FROM prospect_import_batches WHERE id=$1`, [batchId])).rows.length) batchId = null;
+    if (!batchId) batchId = Number((await query(`INSERT INTO prospect_import_batches (file_name, edition, created_by) VALUES ($1,$2,$3) RETURNING id`,
+      [txt(b.file_name, 200) || 'DENUE ' + edition, edition, me(req)])).rows[0].id);
     const newIds = await withTx(async (client) => {
       const q = client.query.bind(client); const created = [];
       for (const g of good) {
@@ -443,27 +456,39 @@ export default async function prospectRoutes(app) {
           // 기존: DENUE 항목만 갱신(담당·단계·활동·수동 수정값은 유지) — 사람이 고친 연락처는 덮지 않는다
           await q(`UPDATE prospects SET clee=$2, raz_social=COALESCE(raz_social,$3), scian_code=$4, per_ocu=$5,
                           address=COALESCE(address,$6), colonia=COALESCE(colonia,$7), cp=COALESCE(cp,$8), lat=COALESCE(lat,$9), lng=COALESCE(lng,$10),
-                          phone=COALESCE(phone,$11), email=COALESCE(email,$12), denue_edition=$13, denue_missing=FALSE, updated_at=now()
+                          phone=COALESCE(phone,$11), email=COALESCE(email,$12), denue_edition=$13, denue_missing=FALSE, updated_at=now(),
+                          -- 예전 업로드에서 스페인어 글자가 깨져 들어간 값(�, Ã…)은 새 파일 값으로 고친다
+                          nom_estab = CASE WHEN nom_estab ~ '(\uFFFD|Ã|Â)' AND $14::text IS NOT NULL THEN $14 ELSE nom_estab END,
+                          municipio = CASE WHEN (municipio IS NULL OR municipio ~ '(\uFFFD|Ã|Â)') AND $15::text IS NOT NULL THEN $15 ELSE municipio END,
+                          colonia   = CASE WHEN colonia ~ '(\uFFFD|Ã|Â)' AND $7::text IS NOT NULL THEN $7 ELSE colonia END,
+                          address   = CASE WHEN address ~ '(\uFFFD|Ã|Â)' AND $6::text IS NOT NULL THEN $6 ELSE address END,
+                          entidad   = CASE WHEN (entidad IS NULL OR entidad ~ '(\uFFFD|Ã|Â)') AND $16::text IS NOT NULL THEN $16 ELSE entidad END,
+                          localidad = CASE WHEN localidad ~ '(\uFFFD|Ã|Â)' AND $17::text IS NOT NULL THEN $17 ELSE localidad END
                     WHERE denue_id=$1`,
-          [g.denue_id, g.clee, g.raz_social, g.scian_code, g.per_ocu, g.address, g.colonia, g.cp, g.lat, g.lng, g.phone, g.email, edition]);
+          [g.denue_id, g.clee, g.raz_social, g.scian_code, g.per_ocu, g.address, g.colonia, g.cp, g.lat, g.lng, g.phone, g.email, edition,
+            g.nom_estab, g.municipio, g.entidad, g.localidad]);
         } else {
           const r = (await q(
             `INSERT INTO prospects (denue_id, clee, nom_estab, raz_social, scian_code, segment, priority, per_ocu, address, colonia, cp,
                                     cve_ent, entidad, cve_mun, municipio, localidad, lat, lng, phone, email, web, denue_fecha_alta,
-                                    denue_edition, source, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,'denue',$24)
+                                    denue_edition, source, created_by, import_batch_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,'denue',$24,$25)
              ON CONFLICT (denue_id) DO NOTHING RETURNING id`,
             [g.denue_id, g.clee, g.nom_estab, g.raz_social, g.scian_code, g.segment, g.priority, g.per_ocu, g.address, g.colonia, g.cp,
               g.cve_ent, g.entidad, g.cve_mun, g.municipio, g.localidad, g.lat, g.lng, g.phone, g.email, g.web, g.denue_fecha_alta,
-              edition, me(req)])).rows[0];
+              edition, me(req), batchId])).rows[0];
           if (r) created.push(Number(r.id));
         }
       }
       if (created.length) await applyTerritories(client, { onlyIds: created, byUser: me(req) });
+      const ents = [...new Set(good.map((g) => g.cve_ent).filter(Boolean))];
+      await q(`UPDATE prospect_import_batches SET rows_total=rows_total+$2, created=created+$3, updated=updated+$4,
+                 cve_ents=(SELECT ARRAY(SELECT DISTINCT unnest(cve_ents || $5::text[]) ORDER BY 1)) WHERE id=$1`,
+        [batchId, raw.length, created.length, summary.update, ents]);
       return created;
     });
-    await logEvent({ userId: me(req), action: 'create', target: 'prospects:import', detail: { ...summary, created: newIds.length } });
-    return { ...summary, committed: true, created: newIds.length };
+    await logEvent({ userId: me(req), action: 'create', target: 'prospects:import', detail: { ...summary, created: newIds.length, batch_id: batchId } });
+    return { ...summary, committed: true, created: newIds.length, batch_id: batchId };
   });
 
   // 판 마감: 이번 판(edition)에 없는 그 주의 DENUE 후보 → 「폐업 가능」 표시(삭제 안 함)
@@ -484,30 +509,54 @@ export default async function prospectRoutes(app) {
       AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id)
       AND NOT EXISTS (SELECT 1 FROM prospect_crm_values v WHERE v.prospect_id=p.id)
       AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.prospect_id=p.id)`;
+  // 대상: batch=<업로드 id> → 그 파일로 들어온 후보 / batch=legacy → 파일 기록이 없는 예전 업로드(그 주) / 없으면 그 주 전체
+  const purgeTarget = (src) => {
+    const bt = String(src.batch || '');
+    if (/^\d+$/.test(bt)) return { where: `p.source='denue' AND p.import_batch_id=$1`, params: [Number(bt)], batch: Number(bt) };
+    const ent = txt(src.cve_ent, 4); if (!ent) return null;
+    if (bt === 'legacy') return { where: `p.source='denue' AND p.import_batch_id IS NULL AND p.cve_ent=$1`, params: [ent], batch: 'legacy' };
+    return { where: `p.source='denue' AND p.cve_ent=$1`, params: [ent], batch: null };
+  };
+  // 업로드 파일 목록(지금 남아 있는 후보 수 · 작업 기록 없는 수) + 파일 기록 없는 예전 업로드
+  app.get('/api/prospects/import/batches', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const rows = (await query(
+      `SELECT b.id, b.file_name, b.edition, b.cve_ents, b.rows_total, b.created, b.updated, b.created_at, u.name AS created_by_name,
+              COUNT(p.id)::int AS remaining, COUNT(p.id) FILTER (WHERE ${UNTOUCHED})::int AS untouched
+         FROM prospect_import_batches b LEFT JOIN users u ON u.id=b.created_by
+         LEFT JOIN prospects p ON p.import_batch_id=b.id AND p.source='denue'
+        GROUP BY b.id, u.name ORDER BY b.created_at DESC LIMIT 200`)).rows;
+    const legacy = (await query(
+      `SELECT p.cve_ent, MAX(p.entidad) AS entidad, MAX(p.denue_edition) AS edition, COUNT(*)::int AS remaining, COUNT(*) FILTER (WHERE ${UNTOUCHED})::int AS untouched
+         FROM prospects p WHERE p.source='denue' AND p.import_batch_id IS NULL GROUP BY p.cve_ent ORDER BY p.cve_ent`)).rows;
+    return { rows: rows.map((r) => ({ ...r, id: Number(r.id) })), legacy };
+  });
   app.get('/api/prospects/purge-preview', edit, async (req, reply) => {
     if (!directorOnly(req, reply)) return;
-    const ent = txt(req.query?.cve_ent, 4); if (!ent) return reply.code(400).send({ error: 'cve_ent_required' });
+    const tg = purgeTarget(req.query || {}); if (!tg) return reply.code(400).send({ error: 'cve_ent_required' });
     const r = (await query(
       `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE ${UNTOUCHED})::int AS untouched,
               COUNT(*) FILTER (WHERE p.owner_user_id IS NOT NULL)::int AS assigned
-         FROM prospects p WHERE p.source='denue' AND p.cve_ent=$1`, [ent])).rows[0];
-    return { cve_ent: ent, ...r, worked: r.total - r.untouched };
+         FROM prospects p WHERE ${tg.where}`, tg.params)).rows[0];
+    return { cve_ent: req.query?.cve_ent || null, batch: tg.batch, ...r, worked: r.total - r.untouched };
   });
   app.post('/api/prospects/purge', edit, async (req, reply) => {
     if (!directorOnly(req, reply)) return;
     const b = req.body || {};
-    const ent = txt(b.cve_ent, 4); if (!ent) return reply.code(400).send({ error: 'cve_ent_required' });
+    const tg = purgeTarget(b); if (!tg) return reply.code(400).send({ error: 'cve_ent_required' });
     const scope = b.scope === 'all' ? 'all' : 'untouched';
     if (String(b.confirm || '').trim() !== '삭제') return reply.code(400).send({ error: 'confirm_required' });
     const out = await withTx(async (client) => {
       const q = client.query.bind(client);
-      const del = await q(`DELETE FROM prospects p WHERE p.source='denue' AND p.cve_ent=$1 ${scope === 'untouched' ? `AND ${UNTOUCHED}` : ''} RETURNING p.id`, [ent]);
+      const del = await q(`DELETE FROM prospects p WHERE ${tg.where} ${scope === 'untouched' ? `AND ${UNTOUCHED}` : ''} RETURNING p.id`, tg.params);
       // 비게 된 루트 정리
       await q(`DELETE FROM prospect_routes r WHERE NOT EXISTS (SELECT 1 FROM prospect_route_stops s WHERE s.route_id=r.id)`);
-      const left = Number((await q(`SELECT COUNT(*)::int AS n FROM prospects WHERE source='denue' AND cve_ent=$1`, [ent])).rows[0].n);
+      const left = Number((await q(`SELECT COUNT(*)::int AS n FROM prospects p WHERE ${tg.where}`, tg.params)).rows[0].n);
+      // 파일로 들어온 후보가 하나도 안 남으면 업로드 기록도 지운다
+      if (typeof tg.batch === 'number' && !left) await q(`DELETE FROM prospect_import_batches WHERE id=$1`, [tg.batch]);
       return { deleted: del.rowCount, kept: left };
     });
-    await logEvent({ userId: me(req), action: 'delete', target: `prospects:denue:${ent}`, detail: { scope, ...out } });
+    await logEvent({ userId: me(req), action: 'delete', target: `prospects:denue:${tg.batch || b.cve_ent}`, detail: { scope, ...out } });
     return { ok: true, scope, ...out };
   });
 

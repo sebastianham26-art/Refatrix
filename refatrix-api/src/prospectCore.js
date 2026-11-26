@@ -79,8 +79,20 @@ const t = (v, n = 300) => { const s = String(v == null ? '' : v).trim(); return 
 const num = (v) => { if (v == null || String(v).trim() === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 
 // 가져오기 CSV 한 행(prospects_import_NL.csv 형식 또는 DENUE 원본 컬럼) → prospects 행
-export function normalizeImportRow(r) {
-  if (!r || typeof r !== 'object') return { error: 'empty' };
+// 스페인어 글자(á é í ó ú ñ ü) 깨짐 고치기 — UTF-8 파일을 Latin-1 로 읽어 생긴 「GarcÃ­a」 같은 글자를 되살린다.
+//   (Latin-1 파일을 UTF-8 로 읽어 생긴 「Garc�a」는 되살릴 수 없으므로 화면에서 파일을 올바른 인코딩으로 읽는다)
+export function fixSpanish(v) {
+  if (v == null) return v;
+  let s = String(v);
+  if (/[ÃÂ][\u0080-\u00BF]/.test(s)) {
+    try { const bytes = Uint8Array.from([...s].map((c) => c.charCodeAt(0) & 0xff)); const d = new TextDecoder('utf-8', { fatal: true }).decode(bytes); if (d && !/\uFFFD/.test(d)) s = d; } catch (_) { /* 그대로 */ }
+  }
+  return s.normalize('NFC');
+}
+export const hasBrokenText = (v) => /\uFFFD|[ÃÂ][\u0080-\u00BF]/.test(String(v || ''));
+export function normalizeImportRow(r0) {
+  if (!r0 || typeof r0 !== 'object') return { error: 'empty' };
+  const r = {}; for (const [k, v] of Object.entries(r0)) r[fixSpanish(String(k)).trim().toLowerCase()] = typeof v === 'string' ? fixSpanish(v) : v;
   const g = (...keys) => { for (const k of keys) if (r[k] != null && String(r[k]).trim() !== '') return r[k]; return null; };
   const denueId = t(g('denue_id', 'id'), 40);
   const name = t(g('nom_estab', 'nombre'), 200) || t(g('raz_social'), 200);
