@@ -16,7 +16,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, checkStageMove, autoAdvance, normalizeImportRow,
+  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
@@ -650,8 +650,10 @@ export default async function prospectRoutes(app) {
       await q(`DELETE FROM prospect_targets WHERE period=$1`, [b.period]);
       for (const [m, v] of Object.entries(totals)) await q(`INSERT INTO prospect_target_totals (period, metric, total_value, updated_by) VALUES ($1,$2,$3,$4)`, [b.period, m, v, me(req)]);
       for (const [u, p] of Object.entries(shares)) await q(`INSERT INTO prospect_target_shares (period, user_id, share_pct, updated_by) VALUES ($1,$2,$3,$4)`, [b.period, u, p, me(req)]);
+      // 첫 매출 금액은 할당률이 아니라 할당받은 담당자끼리 똑같이(동률) 나눈다(디렉터 2026-11-26)
+      const equal = Object.fromEntries(Object.keys(shares).map((u) => [u, 100 / Object.keys(shares).length]));
       for (const [m, v] of Object.entries(totals)) {
-        const alloc = allocateTarget(v, shares, { integer: m !== 'venta_nuevos' });
+        const alloc = allocateTarget(v, m === 'venta_nuevos' ? equal : shares, { integer: m !== 'venta_nuevos' });
         for (const [u, t] of Object.entries(alloc)) {
           if (!(t > 0)) continue;
           await q(`INSERT INTO prospect_targets (user_id, period, metric, target_value, updated_by) VALUES ($1,$2,$3,$4,$5)`, [u, b.period, m, t, me(req)]);
@@ -1056,7 +1058,7 @@ export default async function prospectRoutes(app) {
     for (const [k, v] of Object.entries(values)) if (v.source === 'ia' && !has(v) && v.saved != null) values[k] = { value: v.saved, source: 'guardado' };
     const scored = ALTA_FIELDS.filter((f) => f.section !== 'facturacion');
     return { prospect: { id: Number(p.id), name: p.nom_estab, stage: p.stage, score: p.score, info_pct: p.info_pct },
-      fields: ALTA_FIELDS, values,
+      fields: ALTA_FIELDS, values, points: fieldPoints(),
       counts: { total: scored.length, answered: scored.filter((f) => has(values[f.key])).length,
         saved: scored.filter((f) => has(values[f.key]) && values[f.key].source === 'guardado').length } };
   });
@@ -1316,7 +1318,7 @@ export default async function prospectRoutes(app) {
               COALESCE(ROUND(AVG(p.score) FILTER (WHERE p.score>0)),0)::int AS avg_score, COALESCE(SUM(p.score),0)::int AS score_sum,
               COUNT(*) FILTER (WHERE p.score>=50)::int AS ge50, COUNT(*) FILTER (WHERE p.score>=100)::int AS developed
          FROM prospects p WHERE p.deleted_at IS NULL AND p.owner_user_id IS NOT NULL ${entCond} GROUP BY 1`, ep)).rows;
-    const tg = (await query(`SELECT user_id, metric, target_value FROM prospect_targets WHERE period=$1 AND metric IN ('visitas','puntos','perfilados','cotizaciones','nuevos_clientes')`, [period])).rows;
+    const tg = (await query(`SELECT user_id, metric, target_value FROM prospect_targets WHERE period=$1 AND metric IN ('contactados','puntos','perfilados','cotizaciones','nuevos_clientes')`, [period])).rows;
     const reps = {};
     const R = (uid) => { const k = Number(uid); if (!reps[k]) reps[k] = { user_id: k, name: users[k] || '?', visits: 0, visited: 0, points: 0, contactados: 0, perfilados: 0, cotizaciones: 0, registros: 0, nuevos: 0, target: {} }; return reps[k]; };
     own.forEach((o) => Object.assign(R(o.uid), { assigned: o.assigned, worked: o.worked, avg_score: o.avg_score, score_sum: o.score_sum, ge50: o.ge50, developed: o.developed }));

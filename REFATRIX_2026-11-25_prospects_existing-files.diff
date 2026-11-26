@@ -126,7 +126,7 @@ index 7d5c535..85b1456 100644
    app.register(offerSheetRoutes);
    app.register(dailySummaryRoutes);
 diff --git a/refatrix-consult.html b/refatrix-consult.html
-index 0e2f82e..1784234 100644
+index 0e2f82e..dddc40f 100644
 --- a/refatrix-consult.html
 +++ b/refatrix-consult.html
 @@ -4,6 +4,14 @@
@@ -246,7 +246,7 @@ index 0e2f82e..1784234 100644
 +        (open?'<button type="button" class="btn ghost sm" id="qk-qall" style="margin-left:auto;padding:4px 10px;font-size:12px">'+(all?(es?'Solo faltantes':'모르는 것만'):(es?'Ver todo':'전체·답 보기'))+'</button>':'')+'</div>';
 +      if(!open){ box.innerHTML=h; $('qk-qtog').onclick=()=>{ open=true; draw(); }; return; }
 +      groups.forEach(k=>{ const rows=by[k].l.map(f=>{ const a=fmt(f,(d.values[f.key]||{}).value); if(!all&&a!=null) return '';
-+          return '<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #f0dcd8;font-size:13.5px"><span style="width:16px;font-weight:800;color:'+(a!=null?'#1E7A46':'#B23A2E')+'">'+(a!=null?'✓':'?')+'</span><span style="flex:1">'+csEsc(es?f.q_es:f.q_ko)+'</span>'+(a!=null?'<b style="max-width:45%;text-align:right">'+csEsc(a)+'</b>':'')+'</div>'; }).join('');
++          return '<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #f0dcd8;font-size:13.5px"><span style="width:16px;font-weight:800;color:'+(a!=null?'#1E7A46':'#B23A2E')+'">'+(a!=null?'✓':'?')+'</span><span style="flex:1">'+csEsc(es?f.q_es:f.q_ko)+((d.points||{})[f.key]?' <span style="font-size:11px;font-weight:800;color:'+(a!=null&&(d.values[f.key]||{}).source==='guardado'?'#1E7A46':'#8a5a52')+';white-space:nowrap">'+(a!=null&&(d.values[f.key]||{}).source==='guardado'?'+':'')+d.points[f.key]+(es?' pts':'점')+'</span>':'')+'</span>'+(a!=null?'<b style="max-width:45%;text-align:right">'+csEsc(a)+'</b>':'')+'</div>'; }).join('');
 +        if(rows) h+='<div style="margin-top:6px"><div style="font-size:11.5px;font-weight:800;color:#8a5a52;text-transform:uppercase">'+csEsc(by[k].t)+'</div>'+rows+'</div>'; });
 +      box.innerHTML=h; $('qk-qall').onclick=()=>{ all=!all; draw(); }; $('qk-qtog').onclick=()=>{ open=false; draw(); };
 +    };

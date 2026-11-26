@@ -377,9 +377,10 @@ export function missingRequired(allValues) {
 
 // ── KPI ──────────────────────────────────────────────────────────────
 // 목표 지표 — 이름은 단계 이름과 같게. 중요한 지점만 목표를 둔다(관심 확인·고객 등록은 목표 없음).
-export const METRICS = ['visitas', 'contactados', 'perfilados', 'cotizaciones', 'nuevos_clientes', 'venta_nuevos', 'puntos'];
+//   방문(체크인)과 첫 방문은 같은 뜻이라 「첫 방문」 하나로 통일(디렉터 2026-11-26)
+export const METRICS = ['contactados', 'perfilados', 'cotizaciones', 'nuevos_clientes', 'venta_nuevos', 'puntos'];
 export const METRIC_NAMES = {
-  visitas: '방문(체크인)', contactados: '첫 방문', perfilados: '정보 확보', cotizaciones: '견적 제출',
+  contactados: '첫 방문', perfilados: '정보 확보', cotizaciones: '견적 제출',
   nuevos_clientes: '첫 매출', venta_nuevos: '첫 매출 금액(IVA 제외)', puntos: '개발 점수',
 };
 // 개발 점수 목표는 입력하지 않고 단계 목표에서 자동 계산(디렉터 결정 2026-11-25).
@@ -444,6 +445,19 @@ export const SECTION_WEIGHTS = { datos_generales: 20, tamano_cliente: 20, potenc
 //   개발 점수 = 정보(최대 60) + 관심 확인 5 + 견적 제출 15 + 고객 등록 10 = 최대 90 · 첫 매출 = 100
 export const SCORE_RULES = { info_max: 60, interest: 5, quote: 15, registro: 10, sale: 100 };
 const filled = (v) => v != null && v !== '' && !(Array.isArray(v) && !v.length);
+// 질문 한 개당 정보 점수(최대 60점을 섹션 가중치 → 섹션 안 항목 수로 나눔).
+//   경쟁사는 가장 많이 채운 브랜드 1개만 세므로 브랜드 1개 기준(항목당 60×15%÷5 = 1.8점). 세금계산서·수기 전용 항목은 0점.
+export function fieldPoints() {
+  const cnt = {}; const secOf = (f) => (f.section === 'tipo_taller' || f.section === 'servicios' ? 'tipo_servicios' : f.section);
+  const counted = (f) => !(f.section === 'facturacion' || f.key === 'servicios.servicios_otro' || ((f.fill || []).length === 1 && f.fill[0] === 'manual'));
+  for (const f of ALTA_FIELDS) { if (!counted(f)) continue; const s = secOf(f); if (s === 'competencia') { if (f.group === 1) cnt[s] = (cnt[s] || 0) + 1; } else cnt[s] = (cnt[s] || 0) + 1; }
+  const out = {};
+  for (const f of ALTA_FIELDS) {
+    const s = secOf(f); const w = SECTION_WEIGHTS[s];
+    out[f.key] = counted(f) && w && cnt[s] ? Math.round((SCORE_RULES.info_max * w / 100 / cnt[s]) * 10) / 10 : 0;
+  }
+  return out;
+}
 export function infoCompleteness(values = {}) {
   const by = {};
   for (const f of ALTA_FIELDS) {
