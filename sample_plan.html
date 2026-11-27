@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>샘플 구매 계획 · REFATRIX</title>
+<style>
+:root{--paper:#f4f5f7;--card:#fff;--ink:#13171d;--ink2:#39424e;--mut:#6c7682;--faint:#9aa3ad;--line:#dde0e4;--line2:#eef0f2;--syd:#0a5cab;--syd-soft:#e1edfa;--ctr:#d81e25;--ctr-soft:#fbe3e4;--kr:#0a5cab;--vio:#8250df;--cn:#d97706}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.55 "Noto Sans KR",-apple-system,system-ui,sans-serif}
+.wrap{max-width:1500px;margin:0 auto;padding:0 18px 40px}
+header.top{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;border-bottom:2px solid var(--ink);padding:12px 0 11px;margin-bottom:14px;background:var(--paper)}
+.brand{font-weight:800;font-size:20px;letter-spacing:-.02em;white-space:nowrap}
+.brand small{display:block;font-weight:700;font-size:9.5px;color:var(--mut);margin-top:2px;letter-spacing:.06em}
+.pfnav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 0 10px}
+.pfnav a{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:800;color:var(--ink);text-decoration:none}
+.pfnav a:hover{border-color:var(--ink)}.pfnav a.cur{background:var(--ink);color:#fff;border-color:var(--ink)}
+.who{margin-left:auto;font-size:12px;font-weight:700;color:var(--ink2);text-align:right}
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin-bottom:12px}
+.card h2{margin:0 0 4px;font-size:17px}.card h2 small{font-size:12px;color:var(--mut);font-weight:600;margin-left:6px}
+.hint{font-size:12px;color:var(--mut);margin:2px 0 10px;line-height:1.6}
+.hidden{display:none!important}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input,select{font:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:6px 9px;background:#fff}
+input.n{width:74px;text-align:right;font-weight:800}
+.btn{font:inherit;font-size:12.5px;font-weight:800;border-radius:9px;padding:8px 13px;cursor:pointer;border:1.5px solid var(--ink);background:#fff;color:var(--ink)}
+.btn.pri{background:var(--ctr);border-color:var(--ctr);color:#fff}.btn:disabled{opacity:.45;cursor:default}
+.btn.sm{padding:5px 10px;font-size:12px}.btn.del{border-color:#cf222e;color:#cf222e}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:14px;text-align:center;color:var(--mut);cursor:pointer;background:#fafbfc}
+.drop.on{border-color:var(--syd);background:var(--syd-soft)}
+.grid{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:12px;align-items:start}
+.grid>*{min-width:0}   /* 넓은 표가 오른쪽을 밀어내지 않고 표 안에서 가로로 스크롤 */
+.cond{border:1.5px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:9px}
+.cond.on{border-color:var(--ink)}
+.cond h3{margin:0;font-size:13.5px;display:flex;align-items:center;gap:8px}
+.cond h3 .tg{font-size:11px;font-weight:900;color:#fff;border-radius:6px;padding:1px 7px}
+.cond .sub{font-size:12px;color:var(--mut);margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sw{position:relative;width:34px;height:19px;flex:none}.sw input{opacity:0;width:0;height:0}.sw i{position:absolute;inset:0;background:#c9ced4;border-radius:11px;cursor:pointer;transition:.15s}
+.sw i:before{content:"";position:absolute;width:15px;height:15px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.15s}.sw input:checked+i{background:var(--ink)}.sw input:checked+i:before{transform:translateX(15px)}
+.cnl{max-height:300px;overflow:auto;border:1px solid var(--line2);border-radius:9px;margin-top:7px}
+.cnl label{display:flex;gap:7px;align-items:center;padding:4px 8px;font-size:12.5px;border-bottom:1px solid var(--line2);cursor:pointer}
+.cnl label:hover{background:#fafbfc}.cnl label b{flex:1;font-weight:700}.cnl label small{color:var(--mut);white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.chip{font:inherit;font-size:11.5px;font-weight:800;border:1.5px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer;background:#fff;color:var(--ink2)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}.chip small{font-weight:600;opacity:.75}
+.ck{display:flex;gap:6px;align-items:center;font-size:12.5px;margin:3px 0;cursor:pointer}
+.kpis{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:8px;margin-bottom:10px}.kp{grid-column:span 3}.kp.mny{grid-column:span 4}.kp.mny b{font-size:22px}
+.kp{background:#f4f5f7;border-radius:10px;padding:9px 11px;min-width:0}.kp b{display:block;font-size:20px;font-weight:900;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kp span{font-size:11.5px;color:var(--mut)}
+.kp.tot{background:var(--ctr);color:#fff}.kp.tot span{color:#ffe1e1}
+.tw{overflow:auto;border:1px solid var(--line);border-radius:11px;max-height:56vh;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{position:sticky;top:0;background:#f4f5f7;text-align:left;padding:7px 9px;font-size:11px;color:var(--mut);border-bottom:1.5px solid var(--line);white-space:nowrap;z-index:2}
+td{padding:5px 9px;border-bottom:1px solid var(--line2);vertical-align:middle}
+td.r,th.r{text-align:right;white-space:nowrap}
+tr.sel td{background:#fff8e6}tr.clk{cursor:pointer}tr.clk:hover td{background:#fafbfc}
+tr.off td{color:var(--faint);text-decoration:line-through}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace}.code{font-weight:800;white-space:nowrap}
+.nm{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)}
+.tag{font-size:10.5px;font-weight:900;color:#fff;border-radius:5px;padding:0 6px;margin-right:3px;white-space:nowrap}
+.tag.kr{background:var(--kr)}.tag.vio{background:var(--vio)}.tag.cn{background:var(--cn)}
+.pill{font-size:11px;font-weight:800;border-radius:9px;padding:1px 8px;white-space:nowrap}
+.pill.no{background:#ffebe9;color:#cf222e}.pill.ok{background:#dafbe1;color:#1a7f37}.pill.dup{background:#fff1c2;color:#7d4e00}.pill.un{background:#eee;color:#666}.pill.ss{background:#ddf4ff;color:#0550ae}
+.msg{font-size:12.5px;font-weight:700;margin-top:8px}.msg.ok{color:#1a7f37}.msg.err{color:#cf222e}
+.empty{color:var(--mut);text-align:center;padding:24px}
+.danger{border-color:#f1b5b5;background:#fff8f8}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#13171d;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;z-index:99;display:none;max-width:90vw}
+tr.codes td{background:#fafbfc;padding:4px 9px 8px 34px;border-bottom:1.5px solid var(--line)}
+.pcs{display:flex;flex-wrap:wrap;gap:4px}
+.pc{font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);background:#fff;border-radius:6px;padding:0 5px;white-space:nowrap;cursor:default}
+.pc{cursor:pointer;user-select:none}.pc:hover{border-color:var(--ink)}.pc .ck{display:inline-block;width:12px;font-weight:900;color:#1a7f37;margin:0 2px 0 0}
+.pc.off .ck{color:var(--faint)}.pc.dup{border-style:dashed;background:#f6f8fa;color:var(--mut)}.pc.dup b,.pc.dup em{color:var(--faint)}.pc.dup u{text-decoration:none;font-family:"Noto Sans KR",system-ui,sans-serif;font-size:10px;color:#7d4e00;background:#fff1c2;border-radius:4px;padding:0 4px;margin-left:4px}
+.pill.dup2{background:#fff1c2;color:#7d4e00}
+.pc b{color:var(--ink)}.pc em{font-style:normal;font-weight:800;color:var(--ctr)}.pc i{font-style:normal;color:var(--faint);margin:0 2px}.pc.np{border-color:#f5b5b5}.pc.off{opacity:.45;text-decoration:line-through}
+.pcl{font-size:11px;color:var(--mut);margin-right:4px}
+.pgs{display:grid;grid-template-columns:minmax(170px,240px) 1fr;gap:3px 10px;align-items:start}
+.pgn{font-size:11.5px;font-weight:800;color:var(--ink2);padding-top:1px;line-height:1.35}.pgn small{display:block;font-weight:600;color:var(--mut);font-size:10.5px}
+.prHead{display:none}.prOnly{display:none}
+.ord td input.q{width:62px;text-align:right;font-weight:800;padding:3px 6px;border-width:1px;border-radius:7px}
+.ord tfoot td{position:sticky;bottom:0;background:#13171d;color:#fff;font-weight:900;border:0;padding:8px 9px}
+.ord th.c{text-align:center}.ord td.veh{font-weight:800;white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis}.ord td.veh small{color:var(--mut);font-weight:600}
+.ord td.ctr{font-weight:800;color:var(--ctr);white-space:nowrap}
+.ord tr.g1 td{border-top:2px solid var(--line)}.ord td.veh.rep{color:var(--faint);font-weight:600}
+.sign{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-top:14px}
+.sign .ln{min-width:300px;text-align:center}.sign .ln div{border-top:1.5px solid var(--ink);padding-top:4px;font-weight:900;letter-spacing:.04em}
+.sign .ln input{border:0;border-bottom:1px dashed var(--line);border-radius:0;text-align:center;width:100%;font-weight:700}
+.sign .nt{flex:1;min-width:240px}.sign .nt input{width:100%}
+@page{size:landscape;margin:12mm}
+@media print{.prHead{display:block;margin-bottom:10px;border-bottom:2px solid #000;padding-bottom:6px}.prT{font-size:20px;font-weight:900;letter-spacing:.02em}.prT span{font-size:12px;font-weight:600;color:#555;margin-left:8px}
+ .prM{font-size:11.5px;color:#333;margin-top:3px}.prN{font-size:12px;margin-top:3px}#ordCard h2{display:none}
+ .ord{font-size:11px}.ord td,.ord th{padding:3px 6px}.ord .pill{background:none;color:#555;padding:0}.ord tr.g1 td{border-top:1.5px solid #999}
+ .sign .nt{display:none}.sign{justify-content:flex-end;margin-top:28px}.sign .ln input::placeholder{color:transparent}
+ html,body{background:#fff!important}.ord tfoot{display:table-row-group}.ord td input.q{padding:0 2px;height:auto;font-size:11px;width:40px}.ord td{padding:2px 6px}
+ .prOnly{display:block!important}.sign{justify-content:space-between!important}.sign .ln{min-width:260px}header.top,#gate,#dirGate,.card:not(#ordCard),.grid>.card,.noprint,#ordCard .row,#ordCard .hint{display:none!important}
+ .grid{display:block}.wrap{max-width:none;padding:0}#ordCard{border:0;padding:0}.tw{max-height:none;overflow:visible;border:0}.ord tfoot td{position:static;background:#eee;color:#000}
+ .ord th{position:static}.ord td input.q,.sign input{border:0}.ord th:first-child,.ord td:first-child{display:none}tr.off{display:none}}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}.kp,.kp.mny{grid-column:span 6}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand" translate="no">REFATRIX <span style="color:#c21515">Platform</span><small>MEXICO VIO · OEM CROSS REFERENCE · CTR VERIFICATION</small></div>
+    <nav class="pfnav" id="pfnav">
+      <a href="/#home" data-content="home">홈</a>
+      <a href="/#veh" data-content="veh">차량 · 부품</a>
+      <a href="/#admin" data-content="admin">관리 · 로그</a>
+      <a href="catalog.html" data-content="catalog">제품 카탈로그</a>
+      <a href="syd_catalog.html" data-content="sydcat">SYD 카탈로그</a>
+      <a href="/#match" data-content="match">매칭 테스트</a>
+    </nav>
+    <div class="who" id="who"></div>
+  </header>
+
+  <div id="gate" class="card empty hidden">플랫폼 로그인 세션이 없습니다. <a href="/">플랫폼 홈에서 로그인</a>한 뒤 이 페이지를 다시 여세요.</div>
+  <div id="dirGate" class="card empty hidden">🔒 <b>디렉터 전용</b> 화면입니다 — 샘플 구매 계획과 SYD 가격표는 디렉터만 보고 만들 수 있습니다.</div>
+
+  <div id="app" class="hidden">
+    <!-- ① 가격표 -->
+    <div class="card">
+      <h2>💲 SYD 리스트 가격표 <small>디렉터만 볼 수 있습니다 · 예산 = 리스트 가격 × 수량 + 부가세</small></h2>
+      <div class="hint">엑셀(.xlsx · .xls · .csv)에 <b>SYD 코드</b> 열과 <b>리스트 가격</b>(List price) 열만 있으면 됩니다. 머리글에서 열을 자동으로 찾습니다 (예: "SYD code" · "List price" · "Clave" · "Precio" · "가격").
+        숫자에 $ · 쉼표가 있어도 읽습니다. 가격은 <b>부가세 별도</b> 금액으로 봅니다.</div>
+      <div id="spState" class="hint" style="font-weight:700;color:var(--ink2)">가격표 불러오는 중…</div>
+      <div class="drop" id="drop">📄 가격 엑셀을 끌어다 놓거나 <b>눌러서 선택</b> <input type="file" id="file" accept=".xlsx,.xls,.csv" class="hidden"></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn sm" id="tpl">⬇ 가격 업로드 양식</button><button type="button" class="btn sm" id="spCsv">⬇ 저장된 가격표 받기</button></div>
+      <div id="prev" class="hidden" style="margin-top:10px">
+        <div id="prevSum" class="hint"></div>
+        <div class="tw" style="max-height:30vh"><table><thead><tr><th>#</th><th>SYD 코드</th><th>SYD 품명</th><th class="r">리스트 가격</th><th>확인</th></tr></thead><tbody id="prevRows"></tbody></table></div>
+        <div class="row" style="margin-top:9px">
+          <label class="ck"><input type="checkbox" id="spReplace" checked> 기존 가격표를 모두 지우고 이 파일로 바꾸기 (끄면 같은 코드만 덮어쓰기)</label>
+          <button type="button" class="btn pri" id="spSave">가격표 저장</button><button type="button" class="btn" id="spCancel">취소</button><span id="spMsg" class="msg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 조건 · ③ 결과 -->
+    <div class="grid">
+      <div class="card" id="condCard">
+        <h2>🧮 샘플 구매 조건 <small>바꾸면 바로 다시 계산</small></h2>
+        <div class="hint" id="dataState">차량 · SYD 데이터 불러오는 중…</div>
+        <div class="cond" id="cSrc" style="background:#f6fbf7"><h3><span class="tg" style="background:#1a7f37">VIO</span>순위 기준 <select id="vsrc" style="margin-left:auto;font-size:12px;padding:3px 6px"><option value="vio">저장 VIO (차량 · 부품)</option><option value="mkt">추정 VIO — 시장 데이터 (판매 반영 · 🆕 신규 차종 포함)</option></select></h3>
+          <div class="sub" id="srcInfo"></div></div>
+        <div class="row" style="margin-bottom:9px">
+          <label class="ck">부가세 <input class="n" id="vat" type="number" min="0" max="100" step="0.5" value="16"> %</label>
+          <label class="ck" title="샘플은 SYD 1개씩 삽니다 — 2 이상이면 같은 SYD를 여러 개 삽니다">SYD 1개당 <input class="n" id="qty" type="number" min="1" max="20" step="1" value="1"> 개</label>
+        </div>
+        <div class="cond" id="cKr"><h3><label class="sw"><input type="checkbox" id="kOn" checked><i></i></label><span class="tg" style="background:var(--kr)">①</span>한국차종 (현대 · 기아) VIO 높은 순</h3>
+          <div class="sub">상위 <input class="n" id="kN" type="number" min="1" max="200" value="10"> 개 모델 <span id="kInfo"></span></div></div>
+        <div class="cond" id="cVio"><h3><label class="sw"><input type="checkbox" id="vOn" checked><i></i></label><span class="tg" style="background:var(--vio)">②</span>VIO 순위 구간</h3>
+          <div class="sub"><input class="n" id="vA" type="number" min="1" value="1"> 위 ~ <input class="n" id="vB" type="number" min="1" value="30"> 위 <span id="vInfo"></span></div></div>
+        <div class="cond" id="cCn"><h3><label class="sw"><input type="checkbox" id="cOn" checked><i></i></label><span class="tg" style="background:var(--cn)">③</span>중국차종 모델 선택</h3>
+          <div class="sub"><button type="button" class="btn sm" id="cAll">전체</button><button type="button" class="btn sm" id="cTop">VIO 상위 10</button><button type="button" class="btn sm" id="cNone">해제</button><span id="cInfo"></span></div>
+          <div class="cnl" id="cnList"></div></div>
+        <div class="cond"><h3>제외 · 범위</h3>
+          <label class="ck"><input type="checkbox" id="xNc" checked> 🚫 비취급 품목군 빼기 (스프링 · 허브 · 등속 · 랙 등)</label>
+          <label class="ck"><input type="checkbox" id="xSmOnly"> 🔬 실물 검토 필요(쇼크업소버 · 마운트)만 보기</label>
+          <label class="ck"><input type="checkbox" id="xBaja" checked> 단종(baja) SYD 빼기</label>
+          <label class="ck"><input type="checkbox" id="xOk"> ERP에서 CTR이 1개로 매칭 확정된 SYD 빼기 <small id="erpState" style="color:var(--mut)"></small></label>
+          <label class="ck"><input type="checkbox" id="xSs" checked> 이미 샘플 구매 목록에 있는 SYD 빼기</label>
+          <label class="ck"><input type="checkbox" id="xNoPrice"> 가격이 없는 SYD 빼기</label>
+          <div style="font-size:12px;font-weight:800;margin-top:8px">품목군 (SYD 분류) <button type="button" class="btn sm" id="fAll" style="padding:1px 7px">전체</button> <button type="button" class="btn sm" id="fNone" style="padding:1px 7px">해제</button></div>
+          <div class="chips" id="famChips"></div>
+        </div>
+        <div class="row"><button type="button" class="btn sm" id="reset">↺ 조건 처음 값으로</button></div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>📊 계산 결과 <small id="resInfo"></small></h2>
+          <div class="kpis" id="kpis"></div>
+          <div class="hint" id="kpiNote"></div>
+          <h3 style="font-size:14px;margin:6px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">모델별 SYD 수 <small style="color:var(--mut);font-weight:600">행을 누르면 아래 주문서가 그 모델만 보입니다 · 제품명칭별로 묶은 코드: <b style="color:var(--ink)">SYD</b> → <b style="color:var(--ctr)">CTR</b> (CTR 없으면 SYD만 · 빨간 테두리 = 가격 없음)</small>
+            <span style="margin-left:auto;display:flex;gap:5px"><button type="button" class="btn sm" id="mAllOn" style="padding:3px 9px">✓ 모두 선택</button><button type="button" class="btn sm" id="mAllOff" style="padding:3px 9px">모두 해제</button><button type="button" class="btn sm" id="mCodes" style="padding:3px 9px">코드 접기</button></span></h3>
+          <div class="hint" style="margin:-2px 0 6px">· 처음에는 <b>모든 코드가 선택</b>되어 있습니다. 칩을 누르면 <b>선택 ✓ / 취소</b>가 바뀝니다 (주문서 체크와 같음).
+            · 같은 SYD가 여러 차종에 걸리면 <b>VIO 순위가 가장 높은 차종에서 1개만</b> 사고, 다른 차종에는 <span class="pc dup" style="cursor:default"><b>SYD</b><u>중복 · ○○에서 구매</u></span>로 표시합니다 — 금액 · 수량은 한 번만 셉니다.</div>
+          <div class="tw" style="max-height:64vh"><table><thead><tr><th>조건</th><th class="r">VIO 순위</th><th>브랜드 · 모델</th><th class="r">VIO</th><th class="r" title="이 차종에서 사는 SYD (선택된 것)">구매 SYD</th><th class="r">가격 없음</th><th class="r">금액 (부가세 별도)</th><th class="r" title="이 차종에도 쓰이지만 VIO 순위가 더 높은 차종에서 사는 SYD">중복 (다른 차종에서 구매)</th></tr></thead><tbody id="mRows"></tbody></table></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="card" id="ordCard">
+      <div class="prHead"><div class="prT">PEDIDO DE MUESTRAS SYD <span>샘플 구매 주문서</span></div><div class="prM" id="prMeta"></div><div class="prN" id="prNote"></div></div>
+      <h2>📋 PEDIDO — 샘플 구매 주문서 <small id="sInfo"></small> <small style="color:var(--mut)">· 주문서에는 단가가 나오지 않습니다</small></h2>
+      <div class="row" style="margin-bottom:8px">
+        <input id="q" placeholder="SYD · CTR 코드 · 품명 · 차종 검색" style="flex:1;min-width:200px">
+        <span id="mFilter"></span>
+        <label class="ck">정렬 <select id="sort"><option value="model">차종 (VIO 순위)</option><option value="name">차종 이름</option><option value="pname">제품명칭</option><option value="syd">SYD 코드</option><option value="ctr">CTR 코드</option></select></label>
+        <button type="button" class="btn sm" id="qAll" title="모든 줄의 수량을 왼쪽 'SYD 1개당 수량'으로 되돌림">수량 초기화</button>
+        <button type="button" class="btn sm" id="xlsx">⬇ 엑셀 (주문서)</button>
+        <button type="button" class="btn sm" id="prt">🖨 인쇄</button>
+        <button type="button" class="btn pri" id="toSs" disabled>🛒 샘플 구매 목록에 추가</button>
+      </div>
+      <div class="tw"><table class="ord"><thead><tr><th><input type="checkbox" id="allOn" checked title="모두 포함 / 모두 빼기 (보이는 행)"></th><th class="r">#</th><th>차종 (Vehículo)</th><th>품명 (Descripción)</th><th>SYD</th><th>CTR</th><th class="r">수량 (Pedido)</th><th class="r">소계 (Sub total)</th><th class="r" id="thIva">부가세 포함 (Total con IVA)</th></tr></thead>
+        <tbody id="sRows"></tbody><tfoot id="sFoot"></tfoot></table></div>
+      <div class="sign">
+        <div class="nt"><input id="oNote" placeholder="메모 — 예: así quedaría el pedido de muestras SYD (이 주문서에 함께 인쇄 · 엑셀에 들어감)"></div>
+        <div class="ln prOnly"><div style="border:0;font-weight:700;padding-bottom:3px" id="oMe"></div><div>ELABORÓ</div><small style="color:var(--mut)">&nbsp;</small></div>
+        <div class="ln"><input id="oAppr" placeholder="승인자 이름 (예: Ing. …)"><div>AUTORIZO PEDIDO</div><small id="oDate" style="color:var(--mut)"></small></div>
+      </div>
+      <div class="hint" style="margin-top:8px">· 차종 = 그 SYD가 쓰이는 선택 차종 중 VIO 순위가 가장 높은 차종 (다른 차종에도 쓰이면 "외 n" — 마우스를 올리면 모두 보임). · CTR = ERP에서 그 SYD에 연결된 CTR 코드 (없으면 빈칸). · 수량은 줄마다 바꿀 수 있습니다 (이 브라우저에 기억). 체크를 끈 줄은 합계 · 엑셀 · 구매 목록에서 빠집니다.
+        · [샘플 구매 목록에 추가]하면 🛒 샘플 구매 페이지에 "구매 예정"으로 수량과 함께 올라갑니다. 가격은 올라가지 않습니다.</div>
+      <div id="ssMsg" class="msg"></div>
+    </div>
+
+    <div class="card danger">
+      <h2>🗑 샘플 구매 목록 비우기 <small id="clrInfo"></small></h2>
+      <div class="hint">아직 구매 전인 샘플 구매 목록을 모두 지웁니다 (🛒 샘플 구매 · 🔍 샘플 검토 화면과 배지에서 사라짐). 지운 내용은 이력에 남습니다. 디렉터만 할 수 있습니다.</div>
+      <button type="button" class="btn del" id="clr">샘플 구매 목록 전체 비우기</button><span id="clrMsg" class="msg"></span>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="syd_sample.js"></script>
+<script src="mkt_core.js"></script>
+<script src="syd_scope.js"></script>
+<script src="content_perm.js"></script>
+<script>
+(function () {
+  "use strict";
+  var X = window.rfxSample, esc = X.esc;
+  function Q(s) { return document.querySelector(s); }
+  function toast(m) { var t = Q("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(toast._t); toast._t = setTimeout(function () { t.style.display = "none"; }, 4200); }
+  function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
+  function money(n) { return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  var s = X.sess();
+  if (!s || !s.t) { Q("#gate").classList.remove("hidden"); return; }
+  Q("#who").innerHTML = esc((s.u && s.u.name) || "") + "<br><small>" + esc((s.u && s.u.role) === "dir" ? "디렉터" : "작업자") + "</small>";
+  if (!s.u || s.u.role !== "dir") { Q("#dirGate").classList.remove("hidden"); return; }
+  Q("#app").classList.remove("hidden");
+
+  /* ── 분류 이름 ── */
+  var FAMN = { ZTER: "타이로드 엔드 (외 · 내)", ZHOR: "컨트롤암", ZROT: "볼조인트", ZTOR: "스태빌라이저 링크", ZBUJ: "부싱", ZVAR: "로드 · 바릴라", ZAUX: "아이들러 암", ZPIT: "피트먼 암",
+    ZTEN: "텐션 로드", ZBAR: "바 (컨트롤암용)", ZAMM: "🔬 쇼크업소버", ZSOP: "🔬 엔진 · 변속기 마운트", ZBAS: "🔬 쇼크 마운트",
+    ZRES: "🚫 코일 스프링", ZMAZ: "🚫 휠 허브", ZBAL: "🚫 베어링", ZCVS: "🚫 등속조인트", ZMAC: "🚫 마체타", ZFLE: "🚫 플렉스", ZAM5: "🚫 가스 리프트", ZCRE: "🚫 스티어링 랙", ZCAJ: "🚫 기어박스", ZBOM: "🚫 펌프", "": "분류 없음" };
+  var CN_BRANDS = ["CHIREY", "CHERY", "JAC", "MG", "BAIC", "GEELY", "BYD", "CHANGAN", "GWM", "GREAT WALL", "HAVAL", "JETOUR", "OMODA", "JAECOO", "DFSK", "DONGFENG", "FOTON", "SEV", "GAC", "MAXUS",
+    "ZOTYE", "LIFAN", "BRILLIANCE", "JMC", "KAIYI", "SOUEAST", "FAW", "HAIMA", "JMEV", "NETA", "ZEEKR", "LYNK", "WULING", "BAOJUN", "DFM", "FORTHING", "KARRY", "SAIC", "ZX AUTO", "ZXAUTO"];
+  function isKr(b) { b = String(b || "").toUpperCase(); return /HYUNDAI|KIA/.test(b); }
+  function isCn(b) { b = String(b || "").toUpperCase(); return CN_BRANDS.some(function (x) { return b === x || b.indexOf(x + " ") === 0 || b.split(/[\/,·]+/).map(function (y) { return y.trim(); }).indexOf(x) >= 0; }); }
+  function split(v) { return String(v || "").split(/\/\/|;|\n|,/).map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean); }
+
+  /* ── 조건 (이 브라우저에 기억) ── */
+  var CK = "rfx_sp_cond_v1", DEF = { vat: 16, qty: 1, kOn: true, kN: 10, vOn: true, vA: 1, vB: 30, cOn: true, cn: {}, xNc: true, xSmOnly: false, xBaja: true, xOk: false, xSs: true, xNoPrice: false, famOff: {}, off: {}, lq: {}, sort: "model", appr: "", note: "" };
+  var C = (function () { try { var o = JSON.parse(localStorage.getItem(CK) || "null"); return Object.assign(JSON.parse(JSON.stringify(DEF)), o || {}); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } })();
+  function save() { try { localStorage.setItem(CK, JSON.stringify(C)); } catch (e) {} }
+
+  /* ── 데이터 ── */
+  var VEH = null, VEH0 = null, RAW = null, MKD = null, MKOE = null, SYD = {}, PRICE = {}, PMETA = null, OWN = null, ERPT = 0;
+  /* 2026-11-27 — 순위 기준: 저장 VIO 또는 시장 데이터 추정 VIO (📈 시장 데이터 화면의 연식 구간 · VIO 기준 월을 그대로 씀)
+     🆕 신규 차종은 시장 데이터 화면에서 OE 입력 때 적은 SYD 코드로 들어옴 */
+  function applySrc() {
+    if (C.vsrc !== "mkt" || !MKD || !window.rfxMkt) { VEH = VEH0; srcInfo(); return; }
+    var M = window.rfxMkt, V = {}; try { V = JSON.parse(localStorage.getItem("rfx_mkt_view_v1") || "{}") || {}; } catch (e) {}
+    var sales = (MKD.sales || []).map(function (a) { return { ym: a[0], kind: a[1], brand: a[2], model: a[3], seg: a[4], origin: a[5], m: a[6], m_prev: a[7], ytd: a[8], ytd_prev: a[9] }; });
+    var B = M.build({ vehicles: RAW, sales: sales, alias: MKD.alias || {}, newVeh: (MKD.veh || []).filter(function (n) { return !n.pushed_rk; }), base: V.base || (MKD.kv && MKD.kv.base_ym) || "2026-06", y1: V.y1 || 1980, y2: V.y2 || 2100 });
+    var est = {}; B.rows.forEach(function (r) { est[r.key] = r; });
+    var oeSyd = {}; (MKOE || []).forEach(function (o) { split(o.syd).forEach(function (c) { (oeSyd[o.v] = oeSyd[o.v] || {})[c] = 1; }); });
+    var L = VEH0.map(function (v) { var r = est[v.brand + "|" + v.model], x = Object.assign({}, v);
+      x.vio = r ? r.est : v.vio; var add = oeSyd[v.brand + "|" + v.model]; if (add) { var st = {}; x.syd.forEach(function (c) { st[c] = 1; }); Object.keys(add).forEach(function (c) { st[c] = 1; }); x.syd = Object.keys(st); } return x; });
+    (MKD.veh || []).filter(function (n) { return !n.pushed_rk; }).forEach(function (n) { var r = est[n.k]; L.push({ rk: 9999, brand: n.brand, model: n.model + " 🆕", vio: r ? r.est : 0, syd: Object.keys(oeSyd[n.k] || {}), kr: isKr(n.brand), cn: isCn(n.brand), isNew: true }); });
+    L.sort(function (a, b) { return b.vio - a.vio || a.rk - b.rk; }); L.forEach(function (v, i) { v.rk = i + 1; });
+    VEH = L; srcInfo(B);
+  }
+  function srcInfo(B) {
+    var el = Q("#srcInfo"); if (!el) return;
+    if (C.vsrc !== "mkt") { el.innerHTML = "차량 · 부품 마스터에 저장된 VIO 순위"; return; }
+    if (!MKD) { el.innerHTML = '<span style="color:#9a6700">시장 데이터를 불러오지 못했습니다 — <a href="market.html">📈 시장 데이터</a>에서 EMA PDF를 올리고 refatrix_market.sql 설치를 확인하세요 (지금은 저장 VIO)</span>'; return; }
+    var nNew = (MKD.veh || []).length, nSyd = VEH.filter(function (v) { return v.isNew && v.syd.length; }).length;
+    el.innerHTML = "판매 자료 " + esc(B && B.latest || "없음") + "까지 반영 · 🆕 신규 차종 " + nNew + "개 (SYD 입력된 " + nSyd + "개) · <a href=\"market.html\">📈 시장 데이터</a>의 연식 구간 · VIO 기준 월 사용";
+  }
+  function vioOf(v) { var vs = (v.gens || []).map(function (g) { return Number(g.vio || 0); }); return new Set(vs).size > 1 ? vs.reduce(function (a, b) { return a + b; }, 0) : (vs[0] || +v.vio || 0); }
+  function loadPrices() {
+    return X.rpc("app_sp_all", { p_token: s.t }).then(function (b) {
+      PRICE = {}; ((b && b.rows) || []).forEach(function (r) { PRICE[String(r[0]).toUpperCase()] = +r[1]; }); PMETA = b && b.meta;
+      var n = Object.keys(PRICE).length;
+      Q("#spState").innerHTML = n ? "✅ 저장된 가격표: <b>" + fmt(n) + "개</b>" + (PMETA ? " · " + esc(PMETA.file || "") + " · " + esc(PMETA.by || "") + " · " + esc(new Date(PMETA.at).toLocaleString()) : "") : "아직 저장된 가격표가 없습니다 — 엑셀을 올려 주세요";
+    }).catch(function (e) {
+      Q("#spState").innerHTML = '<span style="color:#cf222e">⚠ ' + esc(/SOLO_DIRECTOR/.test(e.message) ? "디렉터 권한이 서버에서 확인되지 않습니다" : /app_sp_all|Could not find/.test(e.message) ? "가격 모듈 미설치 — Supabase에서 refatrix_syd_price.sql 을 실행하세요" : e.message) + "</span>";
+    });
+  }
+  function loadOwn() {
+    try { var c = JSON.parse(localStorage.getItem("rfx_dup_cache_v2") || "null"); if (c && c.map) { OWN = X.erp.own(c.map); ERPT = c.t; erpState(); if (Date.now() - c.t < 30 * 60 * 1000) return; } } catch (e) {}
+    Q("#erpState").textContent = "(ERP 매칭 받는 중…)";
+    X.erp.map(false, function (a, b) { Q("#erpState").textContent = "(ERP 매칭 받는 중 " + a + "/" + b + ")"; }).then(function (m) { OWN = X.erp.own(m.map); ERPT = m.t; erpState(); calc(); })
+      .catch(function () { Q("#erpState").textContent = OWN ? "" : "(ERP 매칭을 받지 못함)"; });
+  }
+  function erpState() { Q("#erpState").textContent = OWN ? "(ERP 매칭 " + new Date(ERPT).toLocaleTimeString() + " 기준)" : ""; }
+  Promise.all([
+    X.rpc("app_get_data", { p_token: s.t }),
+    (function () { try { var mc = JSON.parse(localStorage.getItem("rfx_sm_cache") || "null"); if (mc && mc.rows && mc.rows.length && Date.now() - mc.t < 12 * 3600 * 1000) return Promise.resolve(mc.rows); } catch (e) {} return X.rpc("app_sm_all", { p_token: s.t }); })(),
+    loadPrices()
+  ]).then(function (r) {
+    RAW = (r[0] || []).map(function (v) { return { rk: +v.rk || 9999, brand: String(v.brand || ""), model: String(v.model || ""), vio: vioOf(v), gens: (v.gens || []).map(function (g) { return { yr: g.yr, vio: +g.vio || 0 }; }) }; });
+    VEH0 = (r[0] || []).map(function (v) {
+      var set = {};
+      (v.gens || []).forEach(function (g) { (g.parts || []).forEach(function (p) { split(p.syd).forEach(function (c) { if (!/IT$/.test(c)) set[c] = 1; }); }); });
+      return { rk: +v.rk || 9999, brand: String(v.brand || ""), model: String(v.model || ""), vio: vioOf(v), syd: Object.keys(set), kr: isKr(v.brand), cn: isCn(v.brand) };
+    });
+    VEH = VEH0;
+    (r[1] || []).forEach(function (x) { SYD[String(x.c).toUpperCase()] = x; });
+    Q("#vsrc").value = C.vsrc || "vio";
+    Q("#vsrc").onchange = function () { C.vsrc = this.value; save(); applySrc(); bindCond(); calc(); };
+    Promise.all([X.rpc("app_mkt_all", { p_token: s.t }), X.rpc("app_mkt_oe_all", { p_token: s.t })]).then(function (m) { MKD = m[0]; MKOE = m[1] || []; }).catch(function () { MKD = null; })
+      .then(function () { if (C.vsrc === "mkt") { applySrc(); bindCond(); calc(); } else srcInfo(); });
+    Q("#dataState").textContent = "차량 모델 " + fmt(VEH.length) + "개 · SYD 리스트 " + fmt(Object.keys(SYD).length) + "개 기준 (차량 · 부품의 SYD 코드)";
+    bindCond(); calc();
+  }).catch(function (e) { Q("#dataState").innerHTML = '<span style="color:#cf222e">⚠ 데이터를 불러오지 못했습니다: ' + esc(e.message) + "</span>"; });
+  loadOwn();
+
+  /* ── 조건 화면 ── */
+  function famOf(c) { var f = window.rfxScope ? window.rfxScope.fam(c) : ""; return f || ""; }
+  function scopeOf(c) { var r = SYD[c]; return window.rfxScope ? window.rfxScope.of(c, r ? r.n : "") : ""; }
+  function bindCond() {
+    ["vat", "qty", "kN", "vA", "vB"].forEach(function (k) { var el = Q("#" + k); el.value = C[k]; el.oninput = function () { var v = parseFloat(el.value); if (!isNaN(v)) { C[k] = v; save(); calc(); } }; });
+    ["kOn", "vOn", "cOn", "xNc", "xSmOnly", "xBaja", "xOk", "xSs", "xNoPrice"].forEach(function (k) { var el = Q("#" + k); el.checked = !!C[k]; el.onchange = function () { C[k] = el.checked; save(); calc(); }; });
+    var cn = VEH.filter(function (v) { return v.cn; }).sort(function (a, b) { return b.vio - a.vio || a.rk - b.rk; });
+    Q("#cnList").innerHTML = cn.length ? cn.map(function (v) { var k = v.brand + "|" + v.model;
+      return '<label><input type="checkbox" data-cn="' + esc(k) + '"' + (C.cn[k] ? " checked" : "") + "><b>" + esc(v.brand + " " + v.model) + "</b><small>VIO " + fmt(v.vio) + " · #" + v.rk + " · SYD <span data-cnn=\"" + esc(k) + "\">" + v.syd.length + "</span></small></label>"; }).join("")
+      : '<div class="empty">중국 브랜드 차종이 없습니다</div>';
+    Q("#cnList").onchange = function (e) { var k = e.target.getAttribute("data-cn"); if (!k) return; if (e.target.checked) C.cn[k] = 1; else delete C.cn[k]; save(); calc(); };
+    function setCn(list) { C.cn = {}; list.forEach(function (v) { C.cn[v.brand + "|" + v.model] = 1; }); save(); Q("#cnList").querySelectorAll("input").forEach(function (i) { i.checked = !!C.cn[i.getAttribute("data-cn")]; }); calc(); }
+    Q("#cAll").onclick = function () { setCn(cn); }; Q("#cTop").onclick = function () { setCn(cn.slice(0, 10)); }; Q("#cNone").onclick = function () { setCn([]); };
+    Q("#fAll").onclick = function () { C.famOff = {}; save(); calc(); };
+    Q("#fNone").onclick = function () { C.famOff = {}; Object.keys(FAMN).forEach(function (f) { C.famOff[f] = 1; }); save(); calc(); };
+    Q("#famChips").onclick = function (e) { var b = e.target.closest("[data-fam]"); if (!b) return; var f = b.getAttribute("data-fam"); if (C.famOff[f]) delete C.famOff[f]; else C.famOff[f] = 1; save(); calc(); };
+    Q("#reset").onclick = function () { if (!confirm("조건을 처음 값으로 되돌릴까요? (가격표는 그대로)")) return; C = JSON.parse(JSON.stringify(DEF)); save(); bindCond(); calc(); };
+    Q("#q").oninput = renderS;
+    Q("#sort").value = C.sort || "model"; Q("#sort").onchange = function () { C.sort = this.value; save(); renderS(); };
+    Q("#oAppr").value = C.appr || ""; Q("#oAppr").oninput = function () { C.appr = this.value; save(); };
+    Q("#oNote").value = C.note || ""; Q("#oNote").oninput = function () { C.note = this.value; save(); };
+    Q("#qAll").onclick = function () { if (Object.keys(C.lq).length && !confirm("줄마다 바꾼 수량 " + Object.keys(C.lq).length + "개를 모두 'SYD 1개당 수량'으로 되돌릴까요?")) return; C.lq = {}; save(); calc(); };
+    Q("#prt").onclick = function () { window.print(); };
+    Q("#sRows").addEventListener("input", function (e) { var c = e.target.getAttribute("data-q"); if (!c) return; var v = parseInt(e.target.value, 10);
+      if (v > 0 && v !== (Math.max(1, C.qty | 0))) C.lq[c] = v; else delete C.lq[c]; save();
+      var p = PRICE[c], q = Math.max(1, (C.lq[c] | 0) || (C.qty | 0) || 1), td = e.target.closest("tr").children;   /* 그 줄 금액은 바로 (입력 칸 포커스 유지) */
+      if (p != null) { td[7].textContent = money(p * q); td[8].innerHTML = "<b>" + money(p * q * (1 + Math.max(0, +C.vat || 0) / 100)) + "</b>"; }
+      e.target.style.borderColor = C.lq[c] ? "#bf8700" : ""; e.target.style.background = C.lq[c] ? "#fff8e6" : "";
+      clearTimeout(renderS._t); renderS._t = setTimeout(function () { calc(true); }, 350); });
+    Q("#allOn").onchange = function () { var on = this.checked; viewS().forEach(function (x) { if (on) delete C.off[x.c]; else C.off[x.c] = 1; }); save(); calc(); };
+    Q("#sRows").onchange = function (e) { var c = e.target.getAttribute("data-off"); if (!c) return; if (e.target.checked) delete C.off[c]; else C.off[c] = 1; save(); calc(); };
+    Q("#mCodes").textContent = C.mHide ? "코드 펼치기" : "코드 접기";
+    Q("#mCodes").onclick = function () { C.mHide = !C.mHide; save(); this.textContent = C.mHide ? "코드 펼치기" : "코드 접기"; renderM(); };
+    Q("#mAllOn").onclick = function () { C.off = {}; save(); calc(); };
+    Q("#mAllOff").onclick = function () { if (!R || !confirm("모든 SYD 선택을 취소할까요? (칩을 눌러 하나씩 다시 고를 수 있습니다)")) return; C.off = {}; R.codes.forEach(function (c) { C.off[c] = 1; }); save(); calc(); };
+    Q("#mRows").onclick = function (e) { var tg = e.target.closest(".pc[data-tg]"); if (tg) { var c = tg.getAttribute("data-tg"); if (C.off[c]) delete C.off[c]; else C.off[c] = 1; save(); var y = Q("#mRows").closest(".tw").scrollTop; calc(); Q("#mRows").closest(".tw").scrollTop = y; return; } if (e.target.closest(".pc")) return; var tr = e.target.closest("tr[data-m]"); if (!tr) return; var k = tr.getAttribute("data-m"); MSEL = MSEL === k ? "" : k; renderM(); renderS(); };
+  }
+
+  /* ── 계산 ── */
+  var R = null, MSEL = "";
+  function sydOk(c, famCnt) {
+    var sc = scopeOf(c), r = SYD[c];
+    if (C.xNc && sc === "nc") return false;
+    if (C.xSmOnly && sc !== "sm") return false;
+    if (C.xBaja && r && r.s === "baja") return false;
+    if (C.xOk && OWN && (OWN[c] || []).length === 1) return false;
+    if (C.xSs && X.get(c)) return false;
+    if (C.xNoPrice && PRICE[c] == null) return false;
+    var f = famOf(c); if (famCnt) famCnt[f] = (famCnt[f] || 0) + 1;
+    if (C.famOff[f]) return false;
+    return true;
+  }
+  function calc() {
+    if (!VEH) return;
+    var models = [], byKey = {};
+    function add(v, tag) { var k = v.brand + "|" + v.model + "|" + v.rk; if (!byKey[k]) { byKey[k] = { v: v, k: k, tags: [] }; models.push(byKey[k]); } if (byKey[k].tags.indexOf(tag) < 0) byKey[k].tags.push(tag); }
+    var kr = VEH.filter(function (v) { return v.kr; }).sort(function (a, b) { return b.vio - a.vio || a.rk - b.rk; });
+    if (C.kOn) kr.slice(0, Math.max(0, C.kN | 0)).forEach(function (v) { add(v, "kr"); });
+    var a = Math.max(1, C.vA | 0), b = Math.max(a, C.vB | 0), vio = VEH.filter(function (v) { return v.rk >= a && v.rk <= b; });
+    if (C.vOn) vio.forEach(function (v) { add(v, "vio"); });
+    var cnSel = VEH.filter(function (v) { return v.cn && C.cn[v.brand + "|" + v.model]; });
+    if (C.cOn) cnSel.forEach(function (v) { add(v, "cn"); });
+    Q("#kInfo").textContent = "(한국 브랜드 모델 " + kr.length + "개 중)";
+    Q("#vInfo").textContent = "(" + vio.length + "개 모델)";
+    Q("#cInfo").textContent = cnSel.length + "개 선택 / " + VEH.filter(function (v) { return v.cn; }).length;
+    ["cKr", "cVio", "cCn"].forEach(function (id, i) { Q("#" + id).classList.toggle("on", [C.kOn, C.vOn, C.cOn][i]); });
+    models.sort(function (x, y) { return x.v.rk - y.v.rk; });
+    /* SYD 모으기 */
+    var famCnt = {}, sy = {}, okCache = {};
+    models.forEach(function (m) {
+      m.list = m.v.syd.filter(function (c) { if (okCache[c] == null) okCache[c] = sydOk(c, famCnt); return okCache[c]; });
+      m.list.forEach(function (c) { (sy[c] = sy[c] || []).push(m.k); });
+    });
+    var qty = Math.max(1, C.qty | 0), vat = Math.max(0, +C.vat || 0) / 100, codes = Object.keys(sy).sort();
+    function qOf(c) { return Math.max(1, (C.lq[c] | 0) || qty); }
+    var on = codes.filter(function (c) { return !C.off[c]; }), sub = 0, nNo = 0, totQ = 0;
+    on.forEach(function (c) { totQ += qOf(c); if (PRICE[c] == null) nNo++; else sub += PRICE[c] * qOf(c); });
+    /* 같은 SYD는 1개만: VIO 순위가 가장 높은 차종(= 먼저 모은 차종)이 그 SYD의 구매 차종 · 다른 차종에서는 '중복'으로만 표시 */
+    models.forEach(function (m) {
+      var amt = 0, np = 0;
+      m.own = m.list.filter(function (c) { return sy[c][0] === m.k; });
+      m.own.forEach(function (c) { if (C.off[c]) return; if (PRICE[c] == null) np++; else amt += PRICE[c] * qOf(c); });
+      m.n = m.own.filter(function (c) { return !C.off[c]; }).length; m.nAll = m.own.length; m.amt = amt; m.np = np; m.ov = m.list.length - m.own.length;
+    });
+    VEH.forEach(function (v) { if (!v.cn) return; var el = document.querySelector('[data-cnn="' + (v.brand + "|" + v.model).replace(/"/g, '\\"') + '"]'); if (!el) return;
+      el.textContent = v.syd.filter(function (c) { if (okCache[c] == null) okCache[c] = sydOk(c, null); return okCache[c]; }).length; });   /* 중국차 목록의 SYD 수 = 지금 조건 기준 */
+    R = { models: models, sy: sy, codes: codes, on: on, sub: sub, vatAmt: sub * vat, tot: sub * (1 + vat), nNo: nNo, qty: qty, vat: vat, famCnt: famCnt, qOf: qOf, totQ: totQ };
+    if (MSEL && !byKey[MSEL]) MSEL = "";
+    /* 품목군 칩 */
+    Q("#famChips").innerHTML = Object.keys(famCnt).sort(function (x, y) { return famCnt[y] - famCnt[x]; }).map(function (f) {
+      return '<button type="button" class="chip' + (C.famOff[f] ? "" : " on") + '" data-fam="' + esc(f) + '">' + esc(FAMN[f] || f) + " <small>" + fmt(famCnt[f]) + "</small></button>"; }).join("") || '<span class="hint">—</span>';
+    renderK(); renderM(); if (arguments[0] !== true) renderS(); else renderFoot();
+    Q("#toSs").disabled = !on.length; Q("#toSs").textContent = "🛒 샘플 구매 목록에 추가 (" + fmt(on.length) + "개)";
+  }
+  function renderK() {
+    var k = function (b, t, cls) { return '<div class="kp ' + (cls || "") + '"><b>' + b + "</b><span>" + t + "</span></div>"; };
+    var nP = R.on.length - R.nNo;
+    Q("#kpis").innerHTML = k(fmt(R.models.length), "선택된 모델") + k(fmt(R.on.length), "구매 대상 SYD (중복 없이)") + k(fmt(R.totQ), "구매 수량 (개)")
+      + k(fmt(nP) + (R.nNo ? ' <small style="font-size:12px;color:#cf222e">가격 없음 ' + fmt(R.nNo) + "</small>" : ""), "가격 있는 SYD")
+      + k(money(R.sub), "리스트 가격 합계", "mny") + k(money(R.vatAmt), "부가세 " + (R.vat * 100).toFixed(R.vat * 100 % 1 ? 1 : 0) + "%", "mny") + k(money(R.tot), "총 구매 예산 (부가세 포함)", "mny tot");
+    var offN = R.codes.length - R.on.length;
+    Q("#kpiNote").innerHTML = "총 구매 예산 = Σ 리스트 가격 × 수량 × (1 + 부가세 " + (R.vat * 100) + "%) · 기본 수량 " + R.qty + "개" + (Object.keys(C.lq).length ? " (줄마다 바꾼 수량 " + Object.keys(C.lq).length + "개)" : "") + (R.nNo ? " · <b style='color:#cf222e'>가격이 없는 SYD " + fmt(R.nNo) + "개는 예산에 들어가지 않았습니다</b>" : "")
+      + (offN ? " · 선택 취소한 SYD " + fmt(offN) + "개" : "")
+      + (R.totQ > R.on.length ? " · <b style='color:#7d4e00'>⚠ 같은 SYD를 2개 이상 사는 줄이 있습니다 (" + fmt(R.totQ - R.on.length) + "개 더)</b>" : "")
+      + " · 여러 차종에 걸린 SYD도 <b>1개만</b> 셉니다";
+    Q("#resInfo").textContent = Object.keys(PRICE).length ? "가격표 " + fmt(Object.keys(PRICE).length) + "개 기준" : "가격표 없음 — 수량만 계산";
+  }
+  var TAGL = { kr: ["kr", "① 한국"], vio: ["vio", "② VIO"], cn: ["cn", "③ 중국"] };
+  function renderM() {
+    Q("#mRows").innerHTML = R.models.length ? R.models.map(function (m) {
+      return '<tr class="clk' + (MSEL === m.k ? " sel" : "") + '" data-m="' + esc(m.k) + '"><td>' + m.tags.map(function (t) { return '<span class="tag ' + TAGL[t][0] + '">' + TAGL[t][1] + "</span>"; }).join("") + '</td><td class="r">#' + m.v.rk
+        + "</td><td><b>" + esc(m.v.brand) + "</b> " + esc(m.v.model) + '</td><td class="r">' + fmt(m.v.vio) + '</td><td class="r"><b>' + fmt(m.n) + "</b>" + (m.n < m.nAll ? '<small style="color:var(--mut)"> / ' + fmt(m.nAll) + "</small>" : "") + '</td><td class="r">' + (m.np ? '<span class="pill no">' + fmt(m.np) + "</span>" : "·")
+        + '</td><td class="r">' + money(m.amt) + '</td><td class="r">' + (m.ov ? '<span class="pill dup2">' + fmt(m.ov) + "</span>" : "·") + "</td></tr>"
+        + (C.mHide ? "" : '<tr class="codes" data-m="' + esc(m.k) + '"><td colspan="8">' + chipsHtml(m.list, m.k) + "</td></tr>");
+    }).join("") + '<tr><td colspan="4"><b>합계 (중복 없이)</b></td><td class="r"><b>' + fmt(R.on.length) + '</b></td><td class="r">' + fmt(R.nNo) + '</td><td class="r"><b>' + money(R.sub) + '</b></td><td></td></tr>'
+      : '<tr><td colspan="8" class="empty">조건에 맞는 모델이 없습니다 — 왼쪽에서 조건을 켜 주세요</td></tr>';
+  }
+  function ctrOf(c) { return OWN ? (OWN[c] || []).join(" // ") : ""; }
+  /* 제품명칭 (묶음 기준) — SYD 품명에서 좌 · 우 표시와 끝 번호를 뺀 이름: ROTULA INFERIOR "R" → ROTULA INFERIOR */
+  var PNC = {};
+  function pname(c) {
+    if (PNC[c] != null) return PNC[c];
+    var t = String((SYD[c] || {}).n || "").toUpperCase().replace(/["“”']/g, " ").replace(/\((R|L|IZQ|DER|LH|RH|\d+)\)/g, " ")
+      .replace(/\b(R\/L|L\/R|DER\/IZQ|IZQ\/DER)\b/g, " ").replace(/\b(IZQUIERD[OA]S?|DERECH[OA]S?|IZQ|DER|LH|RH|RL|LR|R|L)\b/g, " ").replace(/\s+/g, " ").trim();
+    return (PNC[c] = t || "(품명 없음)");
+  }
+  function byName(a, b) { return pname(a).localeCompare(pname(b)) || a.localeCompare(b, undefined, { numeric: true }); }
+  function chipsHtml(list, mk) {
+    if (!list.length) return '<span class="pcl">조건에 맞는 SYD 없음</span>';
+    var g = {}, order = [];
+    list.slice().sort(byName).forEach(function (c) { var k = pname(c); if (!g[k]) { g[k] = []; order.push(k); } g[k].push(c); });
+    return '<div class="pgs">' + order.map(function (k) {
+      var cs = g[k], f = FAMN[famOf(cs[0])] || "";
+      var nOwn = cs.filter(function (c) { return !mk || R.sy[c][0] === mk; }).length, nOn = cs.filter(function (c) { return (!mk || R.sy[c][0] === mk) && !C.off[c]; }).length;
+      return '<div class="pgn">' + esc(k) + "<small>" + esc(f ? f.replace(/^(🔬|🚫) /, "") + " · " : "") + (nOwn ? "선택 " + nOn + "/" + nOwn + (cs.length > nOwn ? " · 중복 " + (cs.length - nOwn) : "") : "모두 중복 — 다른 차종에서 구매") + "</small></div><div class=\"pcs\">" + cs.map(function (c) {
+        var ctr = ctrOf(c), p = PRICE[c], nm = (SYD[c] || {}).n || "", own = !mk || (R.sy[c] || [])[0] === mk, ow = own ? "" : mLabel(R.sy[c][0]);
+        if (!own) return '<span class="pc dup' + (C.off[c] ? " off" : "") + '" data-tg="' + esc(c) + '" title="' + esc("중복 — 이 SYD는 " + ow + "에서 1개만 삽니다 (두 번 사지 않음)" + " · " + nm) + '" translate="no"><b>' + esc(c) + "</b>" + (ctr ? "<i>→</i><em>" + esc(ctr) + "</em>" : "") + "<u>중복 · " + esc(ow) + "에서 구매</u></span>";
+        return '<span class="pc' + (C.off[c] ? " off" : "") + (p == null ? " np" : "") + '" data-tg="' + esc(c) + '" title="' + esc(nm + (p == null ? " · 가격 없음" : " · " + money(p)) + (C.off[c] ? " · 선택 취소됨 (누르면 다시 선택)" : " · 누르면 선택 취소") + ((R.sy[c] || []).length > 1 ? " · 다른 차종에도 쓰임: " + R.sy[c].slice(1).map(mLabel).join(", ") : "")) + '" translate="no"><span class="ck">' + (C.off[c] ? "○" : "✓") + "</span><b>" + esc(c) + "</b>" + (ctr ? "<i>→</i><em>" + esc(ctr) + "</em>" : "") + "</span>";
+      }).join("") + "</div>";
+    }).join("") + "</div>";
+  }
+  function mOf(k) { return R.models.filter(function (x) { return x.k === k; })[0] || null; }
+  /* 대표 차종 = 그 SYD가 쓰이는 선택 차종 중 VIO 순위가 가장 높은 것 */
+  function vehOf(c) { var best = null; (R.sy[c] || []).forEach(function (k) { var m = mOf(k); if (m && (!best || m.v.rk < best.v.rk)) best = m; }); return best; }
+  function vehName(c) { var m = vehOf(c); return m ? m.v.brand + " " + m.v.model : ""; }
+  function vehOthers(c) { var m0 = vehOf(c); return (R.sy[c] || []).filter(function (k) { return !m0 || k !== m0.k; }).map(mLabel); }
+  function ordered(list) {
+    var mode = C.sort || "model", L = list.slice(), key = {};
+    L.forEach(function (c) { var m = vehOf(c); key[c] = m ? m : { v: { rk: 99999, brand: "~", model: "" } }; });
+    if (mode === "model") L.sort(function (a, b) { return key[a].v.rk - key[b].v.rk || byName(a, b); });
+    else if (mode === "ctr") L.sort(function (a, b) { var x = ctrOf(a), y = ctrOf(b); return (x ? 0 : 1) - (y ? 0 : 1) || x.localeCompare(y) || a.localeCompare(b, undefined, { numeric: true }); });
+    else if (mode === "name") L.sort(function (a, b) { return (key[a].v.brand + " " + key[a].v.model).localeCompare(key[b].v.brand + " " + key[b].v.model) || byName(a, b); });
+    else if (mode === "pname") L.sort(function (a, b) { return byName(a, b) || key[a].v.rk - key[b].v.rk; });
+    else L.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
+    return L;
+  }
+  function viewS() {
+    var q = String(Q("#q").value || "").trim().toUpperCase(), M = MSEL ? R.models.filter(function (m) { return m.k === MSEL; })[0] : null;
+    var list = ordered(M ? M.list : R.codes);
+    return list.map(function (c) { return { c: c, r: SYD[c] || {} }; }).filter(function (x) { return !q || x.c.indexOf(q) >= 0 || String(x.r.n || "").toUpperCase().indexOf(q) >= 0 || (R.sy[x.c] || []).map(mLabel).join(" ").toUpperCase().indexOf(q) >= 0 || ctrOf(x.c).toUpperCase().indexOf(q) >= 0; });
+  }
+  function mLabel(k) { var m = R.models.filter(function (x) { return x.k === k; })[0]; return m ? m.v.brand + " " + m.v.model : k; }
+  function renderFoot() {
+    var ivaP = (R.vat * 100).toFixed(R.vat * 100 % 1 ? 1 : 0);
+    Q("#thIva").textContent = "부가세 " + ivaP + "% 포함 (Total con IVA)";
+    Q("#sFoot").innerHTML = '<tr><td></td><td colspan="5">합계 — 포함된 ' + fmt(R.on.length) + "줄 전체" + (R.nNo ? " · 가격 없음 " + fmt(R.nNo) + "줄 제외 금액" : "") + '</td><td class="r">' + fmt(R.totQ) + '</td><td class="r">' + money(R.sub) + '</td><td class="r">' + money(R.tot) + "</td></tr>";
+    Q("#sInfo").textContent = fmt(renderS.n || 0) + "줄 보기 · 주문 " + fmt(R.on.length) + "줄 · " + fmt(R.totQ) + "개";
+    Q("#oDate").textContent = new Date().toLocaleDateString() + " · 작성 " + ((s.u && s.u.name) || "");
+    Q("#prMeta").textContent = "Fecha " + new Date().toISOString().slice(0, 10) + " · Elaboró " + ((s.u && s.u.name) || "") + " · Partidas " + fmt(R.on.length) + " · Piezas " + fmt(R.totQ) + " · IVA " + (R.vat * 100) + "% · Total con IVA " + money(R.tot);
+    Q("#prNote").textContent = C.note || ""; Q("#oMe").textContent = (s.u && s.u.name) || "";
+  }
+  function renderS() {
+    if (!R) return;
+    var L = viewS(), h = "", n = 0, prevV = null, grp = (C.sort || "model") === "model" || C.sort === "name";
+    Q("#mFilter").innerHTML = MSEL ? '<span class="pill ss">모델: ' + esc(mLabel(MSEL)) + ' <a href="#" id="mClr" style="color:inherit">✕</a></span>' : "";
+    if (MSEL) Q("#mClr").onclick = function (e) { e.preventDefault(); MSEL = ""; renderM(); renderS(); };
+    L.slice(0, 1500).forEach(function (x) {
+      var c = x.c, off = !!C.off[c], p = PRICE[c], q = R.qOf(c), vn = vehName(c), ot = vehOthers(c), rep = grp && vn === prevV;
+      if (!off) n++;
+      h += '<tr class="' + (off ? "off" : "") + (grp && !rep && prevV !== null ? " g1" : "") + '"><td><input type="checkbox" data-off="' + esc(c) + '"' + (off ? "" : " checked") + '></td><td class="r" style="color:var(--mut)">' + (off ? "" : n)
+        + '</td><td class="veh' + (rep ? " rep" : "") + '" title="' + esc([vn].concat(ot).join("\n")) + '">' + esc(vn) + (ot.length ? " <small>외 " + ot.length + "</small>" : "") + '</td><td class="nm" title="' + esc((x.r.n || "") + " · " + (FAMN[famOf(c)] || famOf(c))) + '">' + esc(x.r.n || "—")
+        + '</td><td class="mono code">' + esc(c) + '</td><td class="ctr mono" title="' + esc(OWN && (OWN[c] || []).length > 1 ? "ERP에 CTR이 여러 개 연결됨" : "") + '">' + esc(ctrOf(c))
+        + '</td><td class="r"><input class="q" type="number" min="1" max="999" data-q="' + esc(c) + '" value="' + q + '"' + (off ? " disabled" : "") + (C.lq[c] ? ' style="border-color:#bf8700;background:#fff8e6"' : "") + (q > 1 ? ' title="같은 SYD를 ' + q + '개 삽니다 — 1개만 살 거면 1로 바꾸세요"' : "") + '>' + (q > 1 ? ' <span class="pill dup2" title="같은 SYD를 2개 이상 삽니다">×' + q + "</span>" : "")
+        + '</td><td class="r">' + (p == null ? '<span class="pill no">가격 없음</span>' : money(p * q)) + '</td><td class="r"><b>' + (p == null ? "—" : money(p * q * (1 + R.vat))) + "</b></td></tr>";
+      prevV = vn;
+    });
+    if (L.length > 1500) h += '<tr><td colspan="9" class="empty">… 외 ' + fmt(L.length - 1500) + "줄 (검색으로 좁히거나 엑셀로 받으세요 — 합계에는 모두 들어갑니다)</td></tr>";
+    Q("#sRows").innerHTML = h || '<tr><td colspan="9" class="empty">대상 SYD가 없습니다</td></tr>';
+    renderS.n = L.length; renderFoot();
+  }
+
+  /* ── 가격 업로드 ── */
+  var PREV = null, PNAME = "";
+  function numP(v) { if (typeof v === "number") return v; var t = String(v == null ? "" : v).replace(/[$\s]|MXN|USD/gi, ""); if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, "").replace(",", "."); else t = t.replace(/,/g, ""); var n = parseFloat(t); return isNaN(n) ? null : n; }
+  function readAoa(aoa, name) {
+    var hi = -1, ci = -1, pi = -1;
+    for (var i = 0; i < Math.min(aoa.length, 15) && hi < 0; i++) {
+      var a = -1, b = -1; (aoa[i] || []).forEach(function (h, j) { var t = String(h == null ? "" : h).trim();
+        if (a < 0 && /syd|c[oó]d|clave|code|sku|코드/i.test(t) && !/price|precio|가격/i.test(t)) a = j;
+        if (b < 0 && /price|precio|가격|lista|list/i.test(t)) b = j; });
+      if (a >= 0 && b >= 0) { hi = i; ci = a; pi = b; }
+    }
+    if (hi < 0) { ci = 0; pi = 1; }
+    var out = [], seen = {}, bad = 0, dup = 0;
+    (hi >= 0 ? aoa.slice(hi + 1) : aoa).forEach(function (r) {
+      var c = String(r[ci] == null ? "" : r[ci]).trim().toUpperCase(); if (!c) return;
+      var p = numP(r[pi]);
+      if (p == null || p < 0) { bad++; out.push({ c: c, p: null }); return; }
+      if (seen[c]) { dup++; seen[c].p = p; return; }
+      seen[c] = { c: c, p: p }; out.push(seen[c]);
+    });
+    PREV = { rows: out, bad: bad, dup: dup, head: hi >= 0 }; PNAME = name || "";
+    Q("#prev").classList.remove("hidden"); Q("#spMsg").textContent = "";
+    var ok = out.filter(function (x) { return x.p != null; }), notIn = ok.filter(function (x) { return !SYD[x.c]; }).length, h = "";
+    out.slice(0, 300).forEach(function (x, i) { h += "<tr><td>" + (i + 1) + '</td><td class="mono code">' + esc(x.c) + '</td><td class="nm">' + esc((SYD[x.c] || {}).n || "") + '</td><td class="r">' + (x.p == null ? '<span class="pill no">가격 오류</span>' : money(x.p)) + "</td><td>"
+      + (x.p == null ? "건너뜀" : SYD[x.c] ? "" : '<span class="pill dup">SYD 리스트에 없음</span>') + "</td></tr>"; });
+    if (out.length > 300) h += '<tr><td colspan="5" class="empty">… 외 ' + fmt(out.length - 300) + "개</td></tr>";
+    Q("#prevRows").innerHTML = h || '<tr><td colspan="5" class="empty">읽은 행이 없습니다</td></tr>';
+    Q("#prevSum").innerHTML = (PREV.head ? "" : "⚠ 머리글을 찾지 못해 첫 열 = SYD 코드, 둘째 열 = 가격으로 읽었습니다. ") + "<b>" + fmt(ok.length) + "개</b> 저장 예정"
+      + (bad ? " · <span style='color:#cf222e'>가격을 읽지 못한 행 " + bad + "개 (건너뜀)</span>" : "") + (dup ? " · 같은 코드가 다시 나온 행 " + dup + "개 (마지막 값 사용)" : "") + (notIn ? " · SYD 리스트에 없는 코드 " + fmt(notIn) + "개 (그래도 저장)" : "")
+      + " · 합계 " + money(ok.reduce(function (s2, x) { return s2 + x.p; }, 0));
+    Q("#spSave").disabled = !ok.length;
+  }
+  function readFile(f) {
+    if (!f) return;
+    if (!window.XLSX) { toast("엑셀 읽기 도구를 불러오지 못했습니다 — 인터넷 연결을 확인하세요"); return; }
+    var rd = new FileReader();
+    rd.onload = function () { try { var wb = XLSX.read(new Uint8Array(rd.result), { type: "array" }); readAoa(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" }), f.name); } catch (e) { toast("파일을 읽지 못했습니다: " + e.message); } };
+    rd.readAsArrayBuffer(f);
+  }
+  var dz = Q("#drop"), fi = Q("#file");
+  dz.onclick = function () { fi.click(); }; fi.onchange = function () { readFile(fi.files[0]); fi.value = ""; };
+  dz.ondragover = function (e) { e.preventDefault(); dz.classList.add("on"); }; dz.ondragleave = function () { dz.classList.remove("on"); };
+  dz.ondrop = function (e) { e.preventDefault(); dz.classList.remove("on"); readFile(e.dataTransfer.files[0]); };
+  Q("#spCancel").onclick = function () { PREV = null; Q("#prev").classList.add("hidden"); };
+  Q("#spSave").onclick = function () {
+    var rows = PREV.rows.filter(function (x) { return x.p != null; }).map(function (x) { return [x.c, x.p]; }), rep = Q("#spReplace").checked;
+    if (rep && Object.keys(PRICE).length && !confirm("저장된 가격표 " + fmt(Object.keys(PRICE).length) + "개를 지우고 이 파일 " + fmt(rows.length) + "개로 바꿀까요?")) return;
+    var b = Q("#spSave"); b.disabled = true; Q("#spMsg").className = "msg"; Q("#spMsg").textContent = "저장 중…";
+    var parts = []; for (var i = 0; i < rows.length; i += 2000) parts.push(rows.slice(i, i + 2000));
+    var p = Promise.resolve(), saved = 0;
+    parts.forEach(function (sl, j) { p = p.then(function () { Q("#spMsg").textContent = "저장 중… " + Math.min((j + 1) * 2000, rows.length) + "/" + rows.length;
+      return X.rpc("app_sp_bulk", { p_token: s.t, p_rows: sl, p_replace: rep && j === 0, p_file: PNAME }).then(function (r) { saved += r.saved || 0; }); }); });
+    p.then(function () {
+      X.rpc("app_log", { p_token: s.t, p_type: "user", p_txt: "SYD 가격표 업로드 · " + PNAME + " · " + saved + "개" + (rep ? " (전체 교체)" : "") }).catch(function () {});
+      Q("#spMsg").className = "msg ok"; Q("#spMsg").textContent = "✅ " + fmt(saved) + "개 저장"; PREV = null; setTimeout(function () { Q("#prev").classList.add("hidden"); }, 1500);
+      return loadPrices().then(calc);
+    }).catch(function (e) { Q("#spMsg").className = "msg err"; Q("#spMsg").textContent = "⚠ " + (/SOLO_DIRECTOR/.test(e.message) ? "디렉터만 저장할 수 있습니다" : e.message); b.disabled = false; });
+  };
+  Q("#tpl").onclick = function () {
+    if (!window.XLSX) return;
+    var ws = XLSX.utils.aoa_to_sheet([["SYD code", "List price"], ["1006035", 245.5], ["1102001", 189]]); ws["!cols"] = [{ wch: 16 }, { wch: 14 }];
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "price"); XLSX.writeFile(wb, "SYD_가격_업로드양식.xlsx");
+  };
+  Q("#spCsv").onclick = function () {
+    if (!window.XLSX || !Object.keys(PRICE).length) { toast("저장된 가격표가 없습니다"); return; }
+    var ws = XLSX.utils.aoa_to_sheet([["SYD code", "List price", "SYD 품명"]].concat(Object.keys(PRICE).sort().map(function (c) { return [c, PRICE[c], (SYD[c] || {}).n || ""]; })));
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "price"); XLSX.writeFile(wb, "SYD_가격표_" + new Date().toISOString().slice(0, 10) + ".xlsx");
+  };
+
+  /* ── 내보내기 · 구매 목록 ── */
+  function condText() {
+    var a = [];
+    if (C.kOn) a.push("① 한국차종 VIO 상위 " + C.kN + "개");
+    if (C.vOn) a.push("② VIO " + C.vA + "~" + C.vB + "위");
+    if (C.cOn) a.push("③ 중국차종 " + Object.keys(C.cn).length + "개 모델");
+    return a.join(" · ");
+  }
+  /* ── 엑셀 주문서 — ExcelJS(서식 · 인쇄 설정)로 만들고, 못 불러오면 SheetJS 기본 표로 ── 단가 열은 넣지 않음 (2026-11-12 사용자 지시) */
+  var EXJ = null;
+  function loadExcelJS() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (EXJ) return EXJ;
+    var urls = ["https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js", "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"];
+    EXJ = urls.reduce(function (p, u) { return p.catch(function () { return new Promise(function (res, rej) {
+      var sc = document.createElement("script"); sc.src = u; sc.onload = function () { window.ExcelJS ? res(window.ExcelJS) : rej(new Error("no ExcelJS")); }; sc.onerror = function () { rej(new Error("load " + u)); }; document.head.appendChild(sc); }); }); }, Promise.reject(new Error("start")));
+    EXJ.catch(function () { EXJ = null; });
+    return EXJ;
+  }
+  function orderRows() { return ordered(R.on).map(function (c, i) { var p = PRICE[c], q = R.qOf(c);
+    return { n: i + 1, veh: vehName(c), desc: (SYD[c] || {}).n || "", syd: c, ctr: ctrOf(c), q: q, sub: p == null ? null : Math.round(p * q * 100) / 100, also: vehOthers(c).join(" // ") }; }); }
+  function fileName() { return "Pedido_muestras_SYD_" + new Date().toISOString().slice(0, 10) + ".xlsx"; }
+  function saveBlob(blob, name) { var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 800); }
+  function buildExcelJS(EJ) {
+    var wb = new EJ.Workbook(), iva = 1 + R.vat, rows = orderRows(), d = new Date().toISOString().slice(0, 10), me = (s.u && s.u.name) || "";
+    wb.creator = "REFATRIX"; wb.created = new Date();
+    var ws = wb.addWorksheet("PEDIDO", { views: [{ state: "frozen", ySplit: 5, showGridLines: false }],
+      pageSetup: { orientation: "landscape", paperSize: 1, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+      headerFooter: { oddFooter: "&LPedido de muestras SYD · " + d + "&RPágina &P / &N" } });
+    ws.columns = [{ width: 5 }, { width: 22 }, { width: 50 }, { width: 14 }, { width: 13 }, { width: 9 }, { width: 14 }, { width: 18 }, { width: 30 }];
+    var thin = { style: "thin", color: { argb: "FFC9CED4" } }, box = { top: thin, left: thin, bottom: thin, right: thin }, MON = '"$"#,##0.00';
+    ws.mergeCells("A1:I1"); ws.getCell("A1").value = "PEDIDO DE MUESTRAS SYD"; ws.getCell("A1").font = { name: "Arial", size: 16, bold: true };
+    ws.mergeCells("A2:I2"); ws.getCell("A2").value = "Fecha: " + d + "   ·   Elaboró: " + me + "   ·   Partidas: " + rows.length + "   ·   Piezas: " + R.totQ + "   ·   IVA " + (R.vat * 100) + "%";
+    ws.getCell("A2").font = { name: "Arial", size: 10, color: { argb: "FF444444" } };
+    ws.mergeCells("A3:I3"); ws.getCell("A3").value = C.note || ""; ws.getCell("A3").font = { name: "Arial", size: 10, italic: true };
+    var H = ["#", "VEHÍCULO", "DESCRIPCIÓN", "SYD", "CTR", "PEDIDO", "SUB TOTAL", "TOTAL CON IVA", "TAMBIÉN APLICA"];
+    var hr = ws.getRow(5); hr.values = H; hr.height = 20;
+    hr.eachCell(function (cl) { cl.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } }; cl.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF13171D" } }; cl.alignment = { vertical: "middle", horizontal: cl.col >= 6 && cl.col <= 8 ? "right" : "left" }; cl.border = box; });
+    var r0 = 6, prev = null;
+    rows.forEach(function (x, i) {
+      var r = ws.getRow(r0 + i), newG = x.veh !== prev;
+      r.values = [x.n, newG ? x.veh : "", x.desc, x.syd, x.ctr, x.q, x.sub == null ? "sin precio" : x.sub, x.sub == null ? null : { formula: "G" + (r0 + i) + "*" + iva, result: Math.round(x.sub * iva * 100) / 100 }, x.also];
+      r.eachCell({ includeEmpty: true }, function (cl) { cl.font = { name: "Arial", size: 10 }; cl.border = box; if (newG && prev !== null) cl.border = Object.assign({}, box, { top: { style: "medium", color: { argb: "FF888888" } } }); });
+      r.getCell(2).font = { name: "Arial", size: 10, bold: true };
+      r.getCell(4).font = { name: "Consolas", size: 10, bold: true }; r.getCell(5).font = { name: "Consolas", size: 10, bold: true, color: { argb: "FFD81E25" } };
+      r.getCell(6).alignment = { horizontal: "right" }; r.getCell(7).numFmt = MON; r.getCell(8).numFmt = MON; r.getCell(8).font = { name: "Arial", size: 10, bold: true };
+      if (x.sub == null) r.getCell(7).font = { name: "Arial", size: 9, italic: true, color: { argb: "FFCF222E" } };
+      r.getCell(7).alignment = { horizontal: "right" }; r.getCell(9).font = { name: "Arial", size: 9, color: { argb: "FF6C7682" } };
+      prev = x.veh;
+    });
+    var last = r0 + rows.length - 1, tr = ws.getRow(last + 1);
+    tr.values = ["", "", "", "", "TOTAL", { formula: "SUM(F" + r0 + ":F" + last + ")", result: R.totQ }, { formula: "SUM(G" + r0 + ":G" + last + ")", result: Math.round(R.sub * 100) / 100 }, { formula: "SUM(H" + r0 + ":H" + last + ")", result: Math.round(R.tot * 100) / 100 }, ""];
+    tr.eachCell({ includeEmpty: true }, function (cl) { cl.font = { name: "Arial", size: 11, bold: true }; cl.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEF0F2" } }; cl.border = { top: { style: "double" }, bottom: thin }; });
+    tr.getCell(5).alignment = { horizontal: "right" }; tr.getCell(7).numFmt = MON; tr.getCell(8).numFmt = MON;
+    if (R.nNo) { var nr = ws.getRow(last + 2); nr.getCell(3).value = "* " + R.nNo + " partida(s) sin precio no se incluyen en el total."; nr.getCell(3).font = { name: "Arial", size: 9, italic: true, color: { argb: "FFCF222E" } }; }
+    var sr = last + 5;
+    ws.mergeCells("G" + sr + ":I" + sr); ws.getCell("G" + sr).value = C.appr || ""; ws.getCell("G" + sr).alignment = { horizontal: "center" }; ws.getCell("G" + sr).font = { name: "Arial", size: 11, bold: true };
+    ws.mergeCells("G" + (sr + 1) + ":I" + (sr + 1)); var lc = ws.getCell("G" + (sr + 1)); lc.value = "AUTORIZO PEDIDO"; lc.alignment = { horizontal: "center" }; lc.font = { name: "Arial", size: 11, bold: true }; lc.border = { top: { style: "medium" } };
+    ["H", "I"].forEach(function (col) { ws.getCell(col + (sr + 1)).border = { top: { style: "medium" } }; });
+    ws.mergeCells("B" + sr + ":C" + sr); ws.getCell("B" + sr).value = me; ws.getCell("B" + sr).alignment = { horizontal: "center" }; ws.getCell("B" + sr).font = { name: "Arial", size: 11 };
+    ws.mergeCells("B" + (sr + 1) + ":C" + (sr + 1)); var ec = ws.getCell("B" + (sr + 1)); ec.value = "ELABORÓ"; ec.alignment = { horizontal: "center" }; ec.font = { name: "Arial", size: 11, bold: true }; ec.border = { top: { style: "medium" } }; ws.getCell("C" + (sr + 1)).border = { top: { style: "medium" } };
+    ws.pageSetup.printTitlesRow = "5:5"; ws.pageSetup.printArea = "A1:I" + (sr + 2);
+    /* 모델별 · 예산 요약 (단가 없음) */
+    var fit = { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } };
+    var w2 = wb.addWorksheet("MODELOS", fit); w2.columns = [{ header: "Condición", width: 14 }, { header: "VIO rank", width: 9 }, { header: "Marca", width: 14 }, { header: "Modelo", width: 18 }, { header: "VIO", width: 12 }, { header: "SYD a comprar", width: 14 }, { header: "Sin precio", width: 11 }, { header: "Sub total", width: 14 }, { header: "Duplicados (se compran en otro modelo)", width: 34 }];
+    w2.getRow(1).font = { bold: true };
+    R.models.forEach(function (m) { var rr = w2.addRow([m.tags.map(function (t) { return { kr: "① Corea", vio: "② VIO", cn: "③ China" }[t]; }).join(" "), m.v.rk, m.v.brand, m.v.model, m.v.vio, m.n, m.np, Math.round(m.amt * 100) / 100, m.ov]); rr.getCell(8).numFmt = MON; rr.getCell(5).numFmt = "#,##0"; });
+    var w3 = wb.addWorksheet("RESUMEN", fit); w3.columns = [{ width: 28 }, { width: 60 }];
+    [["Condiciones", condText()], ["Partidas (SYD)", R.on.length], ["Piezas", R.totQ], ["Sin precio", R.nNo], ["Sub total", Math.round(R.sub * 100) / 100], ["IVA " + (R.vat * 100) + "%", Math.round(R.vatAmt * 100) / 100], ["Total con IVA", Math.round(R.tot * 100) / 100], ["Elaboró", me + " · " + new Date().toLocaleString()], ["Autorizó", C.appr || ""]]
+      .forEach(function (x, i) { var rr = w3.addRow(x); rr.getCell(1).font = { bold: true }; if (i >= 4 && i <= 6) rr.getCell(2).numFmt = MON; });
+    return wb.xlsx.writeBuffer().then(function (buf) { saveBlob(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileName()); });
+  }
+  function buildSheetJS() {
+    if (!window.XLSX) throw new Error("엑셀 도구를 불러오지 못했습니다");
+    var wb = XLSX.utils.book_new(), rows = orderRows(), iva = 1 + R.vat;
+    var A = [["#", "VEHÍCULO", "DESCRIPCIÓN", "SYD", "CTR", "PEDIDO", "SUB TOTAL", "TOTAL CON IVA", "TAMBIÉN APLICA"]];
+    rows.forEach(function (x) { A.push([x.n, x.veh, x.desc, x.syd, x.ctr, x.q, x.sub == null ? "sin precio" : x.sub, x.sub == null ? "" : Math.round(x.sub * iva * 100) / 100, x.also]); });
+    A.push(["", "", "", "", "TOTAL", R.totQ, Math.round(R.sub * 100) / 100, Math.round(R.tot * 100) / 100, ""]);
+    A.push([]); A.push([]); A.push(["", "", "", "", "", "", C.appr || ""]); A.push(["", "", "", "", "", "", "AUTORIZO PEDIDO"]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(A), "PEDIDO");
+    XLSX.writeFile(wb, fileName());
+  }
+  Q("#xlsx").onclick = function () {
+    if (!R) return;
+    var b = Q("#xlsx"), lb = b.textContent; b.disabled = true; b.textContent = "엑셀 만드는 중…";
+    loadExcelJS().then(buildExcelJS).catch(function (e) { console.warn("ExcelJS 없음 → 기본 엑셀", e); buildSheetJS(); toast("서식 엑셀 도구를 불러오지 못해 기본 엑셀로 받았습니다"); })
+      .catch(function (e) { toast("⚠ " + e.message); }).then(function () { b.disabled = false; b.textContent = lb; });
+  };
+  Q("#toSs").onclick = function () {
+    if (!R || !R.on.length) return;
+    var d = new Date().toISOString().slice(0, 10), batch = "계획 " + d;
+    if (!confirm(fmt(R.on.length) + "개 SYD (" + fmt(R.totQ) + "개)를 샘플 구매 목록에 '구매 예정'으로 올릴까요?\n조건: " + condText() + "\n총 예산 " + money(R.tot) + " (부가세 포함)")) return;
+    var b = Q("#toSs"); b.disabled = true; Q("#ssMsg").className = "msg"; Q("#ssMsg").textContent = "올리는 중…";
+    var rows = ordered(R.on).map(function (c) { return { c: c, qty: String(R.qOf(c)), note: "샘플 계획 " + d + " · " + (R.sy[c] || []).map(mLabel).slice(0, 2).join(", ") + ((R.sy[c] || []).length > 2 ? " 외" : "") }; });
+    var p = Promise.resolve(), ins = 0, upd = 0;
+    for (var i = 0; i < rows.length; i += 500) (function (sl) { p = p.then(function () { return X.rpc("app_ss_upsert", { p_token: s.t, p_rows: sl, p_batch: batch }).then(function (r) { ins += r.inserted || 0; upd += r.updated || 0; }); }); })(rows.slice(i, i + 500));
+    p.then(function () {
+      X.rpc("app_log", { p_token: s.t, p_type: "user", p_txt: "샘플 구매 계획 → 구매 목록 " + rows.length + "개 (" + condText() + " · 예산 " + money(R.tot) + ")" }).catch(function () {});
+      var kept = C.xSs; if (kept) { C.xSs = false; save(); Q("#xSs").checked = false; }   /* 방금 올린 주문서가 화면에서 사라지지 않게 */
+      Q("#ssMsg").className = "msg ok"; Q("#ssMsg").innerHTML = "✅ 신규 " + fmt(ins) + " · 갱신 " + fmt(upd) + "개 — <a href=\"sample_buy.html\">🛒 샘플 구매 화면에서 보기</a>"
+        + (kept ? "<br><small style='color:var(--mut)'>주문서가 계속 보이도록 '이미 샘플 구매 목록에 있는 SYD 빼기'를 껐습니다 — 다음 주문을 만들 때 다시 켜세요</small>" : "");
+      return X.load();
+    }).catch(function (e) { Q("#ssMsg").className = "msg err"; Q("#ssMsg").textContent = "⚠ " + e.message; }).then(function () { calc(); });
+  };
+  function clrInfo() { var n = (X.list() || []).length; Q("#clrInfo").textContent = "현재 " + fmt(n) + "개"; Q("#clr").disabled = !n; }
+  Q("#clr").onclick = function () {
+    var n = (X.list() || []).length; if (!n) return;
+    if (!confirm("샘플 구매 목록 " + fmt(n) + "개를 모두 지울까요?\n(아직 구매 전인 목록 정리용 · 이력은 남습니다)")) return;
+    if (!confirm("정말 모두 지웁니다 — " + fmt(n) + "개. 계속할까요?")) return;
+    X.rpc("app_ss_clear", { p_token: s.t }).then(function (r) {
+      X.rpc("app_log", { p_token: s.t, p_type: "user", p_txt: "샘플 구매 목록 전체 비우기 · " + (r.deleted || 0) + "개" }).catch(function () {});
+      Q("#clrMsg").className = "msg ok"; Q("#clrMsg").textContent = " ✅ " + fmt(r.deleted || 0) + "개 지움"; return X.load();
+    }).catch(function (e) { Q("#clrMsg").className = "msg err"; Q("#clrMsg").textContent = " ⚠ " + (/SOLO_DIRECTOR/.test(e.message) ? "디렉터만 할 수 있습니다" : /app_ss_clear|Could not find/.test(e.message) ? "refatrix_syd_price.sql 을 먼저 실행하세요" : e.message); });
+  };
+  window.addEventListener("rfx-sample", function () { clrInfo(); if (C.xSs) calc(); });
+  clrInfo();
+})();
+</script>
+</body>
+</html>

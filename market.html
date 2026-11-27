@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>시장 데이터 · REFATRIX</title>
+<style>
+:root{--paper:#f4f5f7;--card:#fff;--ink:#13171d;--ink2:#39424e;--mut:#6c7682;--faint:#9aa3ad;--line:#dde0e4;--line2:#eef0f2;--syd:#0a5cab;--syd-soft:#e1edfa;--ctr:#d81e25;--ctr-soft:#fbe3e4;--kr:#0a5cab;--vio:#8250df;--cn:#d97706;--new:#1a7f37}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.55 "Noto Sans KR",-apple-system,system-ui,sans-serif}
+.wrap{max-width:1500px;margin:0 auto;padding:0 18px 40px}
+header.top{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;border-bottom:2px solid var(--ink);padding:12px 0 11px;margin-bottom:14px;background:var(--paper)}
+.brand{font-weight:800;font-size:20px;letter-spacing:-.02em;white-space:nowrap}
+.brand small{display:block;font-weight:700;font-size:9.5px;color:var(--mut);margin-top:2px;letter-spacing:.06em}
+.pfnav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 0 10px}
+.pfnav a{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:800;color:var(--ink);text-decoration:none}
+.pfnav a:hover{border-color:var(--ink)}.pfnav a.cur{background:var(--ink);color:#fff;border-color:var(--ink)}
+.who{margin-left:auto;font-size:12px;font-weight:700;color:var(--ink2);text-align:right}
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin-bottom:12px}
+.card h2{margin:0 0 4px;font-size:17px}.card h2 small{font-size:12px;color:var(--mut);font-weight:600;margin-left:6px}
+.hint{font-size:12px;color:var(--mut);margin:2px 0 10px;line-height:1.6}
+.hidden{display:none!important}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input,select{font:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:6px 9px;background:#fff}
+.btn{font:inherit;font-size:12.5px;font-weight:800;border-radius:9px;padding:8px 13px;cursor:pointer;border:1.5px solid var(--ink);background:#fff;color:var(--ink)}
+.btn.pri{background:var(--ctr);border-color:var(--ctr);color:#fff}.btn:disabled{opacity:.45;cursor:default}
+.btn.sm{padding:4px 9px;font-size:11.5px}.btn.ok{background:var(--new);border-color:var(--new);color:#fff}.btn.del{border-color:#cf222e;color:#cf222e}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;color:var(--mut);cursor:pointer;background:#fafbfc}
+.drop.on{border-color:var(--syd);background:var(--syd-soft)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font:inherit;font-size:11.5px;font-weight:800;border:1.5px solid var(--line);border-radius:8px;padding:3px 9px;cursor:pointer;background:#fff;color:var(--ink2)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}.chip small{font-weight:600;opacity:.75}
+.mo{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:9px;padding:3px 4px 3px 9px;font-size:12px;font-weight:800;background:#fafbfc}
+.mo small{color:var(--mut);font-weight:600}.mo button{border:0;background:none;color:#cf222e;cursor:pointer;font-weight:900}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:10px 0}
+.kp{background:#f4f5f7;border-radius:10px;padding:9px 11px;min-width:0}.kp b{display:block;font-size:20px;font-weight:900;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kp span{font-size:11.5px;color:var(--mut)}
+.kp.hl{background:var(--new);color:#fff}.kp.hl span{color:#d8f5df}
+.ctl{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 12px;border:1.5px solid var(--line);border-radius:11px;background:#fafbfc}
+.ctl label{font-size:12px;font-weight:800;color:var(--ink2);display:flex;gap:6px;align-items:center}
+.ctl select,.ctl input{padding:4px 7px;font-size:12.5px}
+.tw{overflow:auto;border:1px solid var(--line);border-radius:11px;max-height:66vh;background:#fff;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{position:sticky;top:0;background:#f4f5f7;text-align:left;padding:7px 9px;font-size:11px;color:var(--mut);border-bottom:1.5px solid var(--line);white-space:nowrap;z-index:2}
+td{padding:5px 9px;border-bottom:1px solid var(--line2);vertical-align:middle}
+td.r,th.r{text-align:right;white-space:nowrap}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+.vn{font-weight:800;white-space:nowrap}.vn small{color:var(--mut);font-weight:600;margin-left:4px}
+.tag{font-size:10.5px;font-weight:900;color:#fff;border-radius:5px;padding:0 6px;margin-right:3px;white-space:nowrap}
+.tag.kr{background:var(--kr)}.tag.cn{background:var(--cn)}.tag.new{background:var(--new)}.tag.unreg{background:#9a6700}.tag.com{background:#57606a}
+.up{color:#1a7f37;font-weight:800}.dn{color:#cf222e;font-weight:800}.eq{color:var(--faint)}
+.est{color:var(--mut);font-weight:600;cursor:help}
+.ema{display:flex;flex-wrap:wrap;gap:3px}
+.em{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:0 5px;white-space:nowrap;background:#fff;cursor:default}
+.em.dir{cursor:pointer}.em.dir:hover{border-color:var(--ink)}.em i{font-style:normal;color:var(--faint);margin-left:3px}.em.man{border-color:var(--syd);color:var(--syd)}
+tr.isnew td{background:#f3fbf5}tr.unreg td{background:#fffaf0}
+.oeb{font-size:11px;font-weight:800;border-radius:7px;padding:1px 7px;background:#eef0f2;color:var(--ink2);white-space:nowrap}.oeb.has{background:#dafbe1;color:#1a7f37}
+.prev table td,.prev table th{padding:3px 7px}
+.warn{font-size:12px;color:#9a6700;font-weight:700}
+.msg{font-size:12.5px;font-weight:700;margin-left:6px}.msg.ok{color:#1a7f37}.msg.err{color:#cf222e}
+.empty{color:var(--mut);text-align:center;padding:24px}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#13171d;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;z-index:120;display:none;max-width:90vw}
+.modal{position:fixed;inset:0;background:rgba(15,20,25,.45);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow:auto}
+.mbox{background:#fff;border-radius:14px;max-width:1180px;width:100%;box-shadow:0 18px 50px rgba(0,0,0,.3)}
+.mhd{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}.mhd b{font-size:16px;flex:1}.mhd button{border:0;background:none;font-size:18px;cursor:pointer}
+.mbd{padding:12px 16px}
+.oet td{padding:3px 5px}.oet input{width:100%;padding:4px 6px;font-size:12.5px;border-width:1px;border-radius:7px}
+.oet input.oe{font-family:ui-monospace,Menlo,Consolas,monospace}.oet td.cat{font-weight:800;white-space:nowrap;font-size:12px}
+.sug{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
+.sg{font:10.5px ui-monospace,Menlo,Consolas,monospace;border:1px dashed var(--syd);color:var(--syd);border-radius:5px;padding:0 4px;cursor:pointer;background:#f5f9ff}
+.sg.c{border-color:var(--ctr);color:var(--ctr);background:#fff6f6}
+.ref{font-size:11px;color:var(--mut);max-width:260px}
+.oet input.r{text-align:right;font-variant-numeric:tabular-nums}.oet tr.qhit td{background:#fff8d6}
+.qbox .drop{font-size:12.5px}
+.eb{font-size:10.5px;font-weight:800;border-radius:7px;padding:1px 6px;white-space:nowrap;cursor:default}.eb.ok{background:#dafbe1;color:#1a7f37}.eb.pd{background:#fff1c2;color:#7d4e00}.eb.fl{background:#ffebe9;color:#cf222e}.eb.no{background:#eef0f2;color:var(--mut)}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand" translate="no">REFATRIX <span style="color:#c21515">Platform</span><small>MEXICO VIO · OEM CROSS REFERENCE · CTR VERIFICATION</small></div>
+    <nav class="pfnav" id="pfnav">
+      <a href="/#home">홈</a>
+      <a href="/#veh">차량 · 부품</a>
+      <a href="/#admin">관리 · 로그</a>
+      <a href="catalog.html">제품 카탈로그</a>
+      <a href="syd_catalog.html">SYD 카탈로그</a>
+    </nav>
+    <div class="who" id="who"></div>
+  </header>
+
+  <div id="gate" class="card empty hidden">플랫폼 로그인 세션이 없습니다. <a href="/">플랫폼 홈에서 로그인</a>한 뒤 이 페이지를 다시 여세요.</div>
+
+  <div id="app" class="hidden">
+    <!-- ① 업로드 -->
+    <div class="card">
+      <h2>📥 월별 시장 자료 <small>ANCGVW · EMA 월간 보고서 PDF — 모델별 신차 판매</small></h2>
+      <div class="hint">PDF를 올리면 <b>Ventas Menudeo Segmento</b>(승용 · 상용) 표에서 모델 · 브랜드 · 세그먼트와 <b>당월 · 전년 같은 달 · 올해 누적 · 전년 누적</b> 판매를 자동으로 읽습니다.
+        보고 월은 표지에서 찾습니다 (예: "Octubre 2026" → 2026-10). 같은 월을 다시 올리면 그 월 자료를 바꿉니다. 매달 올리면 월별 판매가 쌓여 기간 계산이 정확해집니다.</div>
+      <div class="row" style="margin-bottom:8px"><span class="hint" style="margin:0;font-weight:800;color:var(--ink2)">저장된 보고 월</span><div class="chips" id="months"><span class="hint" style="margin:0">불러오는 중…</span></div></div>
+      <div id="upBox">
+        <div class="drop" id="drop">📄 EMA PDF를 끌어다 놓거나 <b>눌러서 선택</b> <input type="file" id="file" accept=".pdf" class="hidden"></div>
+        <div id="prev" class="prev hidden" style="margin-top:10px">
+          <div id="prevSum" class="hint" style="font-size:12.5px;color:var(--ink2)"></div>
+          <div id="prevWarn" class="warn"></div>
+          <div class="tw" style="max-height:34vh"><table><thead><tr><th>#</th><th>구분</th><th>세그먼트</th><th>모델</th><th>브랜드</th><th>원산지</th><th class="r">전년 같은 달</th><th class="r">당월</th><th class="r">전년 누적</th><th class="r">올해 누적</th><th>마스터 차종 연결</th></tr></thead><tbody id="prevRows"></tbody></table></div>
+          <div class="row" style="margin-top:9px">
+            <label class="hint" style="margin:0;font-weight:800;color:var(--ink2)">보고 월 <input type="month" id="pYm"></label>
+            <label class="hint" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="pAuto" checked> 마스터에 없는 차종 중 올해 누적 <input type="number" id="pAutoN" value="1000" min="0" step="100" style="width:80px"> 대 이상은 🆕 신규 차종으로 자동 등록</label>
+            <label class="hint" style="margin:0;display:flex;gap:6px;align-items:center" title="차량·부품 본체에 차종(맨 뒤 순위 번호) · 세대 'EMA 신규' · 부품 16줄을 만들어, 본체 화면에서 OE · SYD · CTR을 바로 입력할 수 있게 함"><input type="checkbox" id="pPush" checked> 🆕 신규 차종을 <b>차량·부품 본체에도 추가</b></label>
+            <label class="hint" style="margin:0;display:flex;gap:6px;align-items:center" title="ERP에 차종(제조사 · 모델명 · 연식)을 보내 ERP 제품찾기에서도 고를 수 있게 함 — 세부 연식은 ERP 제품 마스터에서 다듬기"><input type="checkbox" id="pErp" checked> 🚗 <b>ERP에도 차종 보내기</b></label>
+            <button type="button" class="btn pri" id="pSave">저장</button><button type="button" class="btn" id="pCancel">취소</button><span id="pMsg" class="msg"></span>
+          </div>
+        </div>
+      </div>
+      <div id="upNoDir" class="hint hidden">업로드는 디렉터만 할 수 있습니다. 순위 보기와 OE 입력은 누구나 할 수 있습니다.</div>
+    </div>
+
+    <!-- ② 순위 -->
+    <div class="card">
+      <h2>📊 차종 순위 — 저장 VIO + 신차 판매 <small>VIO 기준 월 이후 판매를 더해 최신 VIO를 추정 · 연식 구간으로 최근 차종 중심 보기</small></h2>
+      <div class="ctl">
+        <label>연식 구간 <select id="y1"></select> ~ <select id="y2"></select></label>
+        <span class="chips"><button type="button" class="chip" data-yr="all">전체</button><button type="button" class="chip" data-yr="10">최근 10년</button><button type="button" class="chip" data-yr="5">최근 5년</button><button type="button" class="chip" data-yr="2">최근 2년</button></span>
+        <label title="차량·부품 마스터의 VIO가 언제 기준인지 — 이 달 다음 달부터의 판매를 더합니다">VIO 기준 월 <input type="month" id="base"></label>
+        <button type="button" class="btn sm dirOnly" id="baseSave" title="모든 사용자 · 샘플 계획의 기본값으로 저장">기본값 저장</button>
+        <label>순위 기준 <select id="by"><option value="est">추정 VIO (저장 VIO + 판매)</option><option value="period">연식 구간 판매</option><option value="vio">저장 VIO</option></select></label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="chips" id="flt"><button type="button" class="chip" data-f="all">전체</button><button type="button" class="chip" data-f="new">🆕 신규 · 미등록</button><button type="button" class="chip" data-f="kr">한국</button><button type="button" class="chip" data-f="cn">중국</button><button type="button" class="chip" data-f="com">상용</button><button type="button" class="chip" data-f="up">순위 상승</button></div>
+        <input type="search" id="q" placeholder="브랜드 · 모델 검색" style="flex:1;min-width:180px">
+        <button type="button" class="btn sm ok dirOnly" id="pushAll" title="등록된 🆕 신규 차종을 차량·부품 본체에 차종 · 세대 · 부품 16줄로 추가">🆕 신규 차종 → 차량·부품 본체</button><span id="pushMsg" class="msg"></span>
+        <button type="button" class="btn sm dirOnly" id="erpAll" title="🆕 신규 차종의 제조사 · 모델명 · 연식을 ERP로 보내기 (아직 안 보낸 것 · 대기 · 실패만)">🚗 신규 차종 → ERP</button>
+        <label class="hint" style="margin:0;display:flex;gap:6px;align-items:center">상위 <select id="topN"><option>100</option><option selected>150</option><option>300</option><option value="0">전체</option></select></label>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div id="calcNote" class="hint" style="margin:0"></div>
+      <div class="tw"><table><thead><tr><th class="r">순위</th><th class="r" title="저장 VIO 순위(#) 대비">변동</th><th>차종</th><th>세그먼트</th><th class="r">저장 VIO <small>(연식 구간)</small></th><th class="r">기준 월 이후 판매</th><th class="r">추정 VIO</th><th class="r">연식 구간 판매</th><th>판매 자료 모델 <small>(누르면 연결 변경)</small></th><th>OE</th><th></th></tr></thead><tbody id="rows"><tr><td colspan="11" class="empty">불러오는 중…</td></tr></tbody></table></div>
+      <div class="hint" style="margin-top:8px">· <b>추정 VIO</b> = 저장 VIO(연식 구간 안의 세대) + VIO 기준 월 다음 달부터 최신 보고 월까지의 판매. 🆕 신규 차종은 저장 VIO가 없어 <b>자료에 있는 판매 누적</b>(연식 구간 안)을 추정 VIO로 씁니다.
+        · 판매는 매달 올린 보고서의 당월 · 누적 값으로 계산합니다. 빈 달은 그 해 월평균으로 채우고 <span class="est">~</span> 표시를 붙입니다.
+        · 신차 판매 연도 = 연식으로 봅니다. · 🆕 신규 차종의 OE를 입력하고 SYD 코드를 적으면 <b>🧮 샘플 계획</b>의 차종 목록에 함께 나옵니다.</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal hidden" id="oeM"><div class="mbox">
+  <div class="mhd"><b id="oeT">OE 입력</b><button type="button" id="oeX" title="닫기">✕</button></div>
+  <div class="mbd">
+    <div class="hint" id="oeH">부품 카테고리 · 위치마다 OE 번호를 넣으면, 차량·부품 마스터와 CTR 마스터에서 같은 OE를 찾아 <b>SYD · CTR 후보</b>를 아래에 보여 줍니다 (누르면 입력). 여러 개는 <b class="mono">//</b> 로 구분합니다.</div>
+    <div class="qbox">
+      <div class="drop" id="qDrop" style="padding:10px">📄 <b>대리점 견적서 PDF</b> (Cotización de Servicio Postventa)를 끌어다 놓거나 <b>눌러서 선택</b> — 부품명으로 카테고리 · 위치를 찾아 <b>OE 번호 · 단가</b>를 자동으로 넣습니다
+        <input type="file" id="qFile" accept=".pdf" multiple class="hidden"></div>
+      <div id="qSum" class="hint hidden" style="margin:6px 0 0"></div>
+    </div>
+    <div class="tw" style="max-height:56vh;margin-top:6px"><table class="oet"><thead><tr><th style="width:170px">부품 카테고리</th><th style="width:140px">위치</th><th>OE 번호</th><th style="width:130px">SYD</th><th style="width:130px">CTR</th><th style="width:112px" title="견적서 단가 · 멕시코 페소 · 부가세 별도">단가 <small>MXN · IVA 별도</small></th><th style="width:160px">메모</th><th style="width:200px">마스터 참고 (최신 세대)</th></tr></thead><tbody id="oeRows"></tbody></table></div>
+    <div class="row" style="margin-top:9px"><button type="button" class="btn sm" id="oeAdd">+ 줄 추가</button><span style="flex:1"></span><span id="oeMsg" class="msg"></span><button type="button" class="btn pri" id="oeSave">저장</button><button type="button" class="btn" id="oeC">닫기</button></div>
+  </div>
+</div></div>
+
+<div class="modal hidden" id="alM"><div class="mbox" style="max-width:560px">
+  <div class="mhd"><b id="alT">연결 변경</b><button type="button" id="alX">✕</button></div>
+  <div class="mbd">
+    <div class="hint" id="alH"></div>
+    <input id="alI" list="alL" placeholder="마스터 차종 (브랜드|모델) 검색" style="width:100%"><datalist id="alL"></datalist>
+    <div class="row" style="margin-top:10px"><button type="button" class="btn pri" id="alOk">이 차종에 연결</button><button type="button" class="btn" id="alNew">연결 안 함 (신규 차종)</button><button type="button" class="btn" id="alAuto">자동 연결로 되돌리기</button><span id="alMsg" class="msg"></span></div>
+  </div>
+</div></div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="syd_sample.js"></script>
+<script src="ema_parse.js"></script>
+<script src="mkt_core.js"></script>
+<script>
+(function () {
+  "use strict";
+  var X = window.rfxSample, M = window.rfxMkt, esc = X.esc;
+  var SUPA = X.SUPA, KEY = X.KEY;
+  function Q(s) { return document.querySelector(s); }
+  function QA(s) { return Array.prototype.slice.call(document.querySelectorAll(s)); }
+  function toast(m) { var t = Q("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(toast._t); toast._t = setTimeout(function () { t.style.display = "none"; }, 4500); }
+  function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
+  function rpc(fn, body) {
+    return fetch(SUPA + "/rest/v1/rpc/" + fn, { method: "POST", headers: { apikey: KEY, Authorization: "Bearer " + KEY, "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().catch(function () { return null; }).then(function (j) {
+        if (!r.ok) { var m = (j && (j.message || j.hint || j.error)) || ("http " + r.status);
+          if (/app_mkt_|Could not find the function/i.test(m)) m = "시장 데이터 모듈이 아직 설치되지 않았습니다 — Supabase에서 refatrix_market.sql 을 실행하세요";
+          if (/SOLO_DIRECTOR/.test(m)) m = "디렉터만 할 수 있는 작업입니다";
+          throw new Error(m); }
+        return j; }); });
+  }
+  var s = X.sess();
+  if (!s || !s.t) { Q("#gate").classList.remove("hidden"); return; }
+  var DIR = !!(s.u && s.u.role === "dir");
+  Q("#who").innerHTML = esc((s.u && s.u.name) || "") + "<br><small>" + (DIR ? "디렉터" : "작업자") + "</small>";
+  Q("#app").classList.remove("hidden");
+  if (!DIR) { Q("#upBox").classList.add("hidden"); Q("#upNoDir").classList.remove("hidden"); QA(".dirOnly").forEach(function (e) { e.classList.add("hidden"); }); }
+  if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  var CN = ["CHIREY", "CHERY", "JAC", "MG", "MG MOTOR", "BAIC", "GEELY", "BYD", "CHANGAN", "GWM", "GREAT WALL", "GREAT WALL MOTOR", "GREAT WALL MOTORS", "HAVAL", "JETOUR", "OMODA", "JAECOO", "DFSK", "DONGFENG", "FOTON", "SEV", "GAC", "MAXUS", "ZEEKR", "LYNK&CO.", "LEAPMOTOR", "JAC NFZ", "KAIYI", "SOUEAST", "FAW", "JMC", "DFM", "WULING", "SAIC", "JMEV", "NETA"];
+  function isKr(b) { return /HYUNDAI|KIA/i.test(String(b || "")); }
+  function isCn(b) { b = String(b || "").toUpperCase(); return CN.indexOf(b) >= 0 || CN.some(function (x) { return b.indexOf(x + " ") === 0; }); }
+
+  /* ── 보기 조건 (이 브라우저 기억 · 샘플 계획도 같은 값을 읽음) ── */
+  var VK = "rfx_mkt_view_v1", NOWY = new Date().getFullYear();
+  var V = (function () { try { return Object.assign({ y1: 1980, y2: NOWY + 1, base: "", by: "est", f: "all", topN: "150" }, JSON.parse(localStorage.getItem(VK) || "null") || {}); } catch (e) { return { y1: 1980, y2: NOWY + 1, base: "", by: "est", f: "all", topN: "150" }; } })();
+  function saveV() { try { localStorage.setItem(VK, JSON.stringify(V)); } catch (e) {} }
+
+  /* ── 데이터 ── */
+  var VEH = [], MK = { sales: [], uploads: [], alias: {}, veh: [], oen: {}, kv: {} }, CM = null, B = null, MKERR = "";
+  var OEIX = null;                                   /* OE(정규화) → { syd:{}, ctr:{} } — 차량·부품 마스터 + CTR 마스터 */
+  function salesRows() { return (MK.sales || []).map(function (a) { return { ym: a[0], kind: a[1], brand: a[2], model: a[3], seg: a[4], origin: a[5], m: a[6], m_prev: a[7], ytd: a[8], ytd_prev: a[9] }; }); }
+  function loadMk() {
+    return rpc("app_mkt_all", { p_token: s.t }).then(function (b) { MK = b || MK; MKERR = ""; if (!V.base) V.base = (MK.kv && MK.kv.base_ym) || "2026-06"; })
+      .catch(function (e) { MKERR = e.message; if (!V.base) V.base = "2026-06"; });
+  }
+  Promise.all([X.rpc("app_get_data", { p_token: s.t }).catch(function (e) { toast("차량 데이터: " + e.message); return []; }), loadMk()]).then(function (r) {
+    VEH = mapVeh(r[0]);
+    bind(); months(); calc(); setTimeout(erpRetry, 2000); setTimeout(erpPull, 2500);
+  });
+  /* app_get_data 의 VIO는 세대(versions.vio)에만 있음 — 세대마다 다르면 합, 같은 값 반복이면 그 값 (샘플 계획과 같은 규칙) */
+  function vioOf(v) { var vs = (v.gens || []).map(function (g) { return Number(g.vio || 0); }); var u = {}; vs.forEach(function (x) { u[x] = 1; }); return Object.keys(u).length > 1 ? vs.reduce(function (a, b) { return a + b; }, 0) : (vs[0] || +v.vio || 0); }
+  function mapVeh(list) {
+    return (list || []).map(function (v) { return { rk: +v.rk || 9999, brand: String(v.brand || ""), model: String(v.model || ""), vio: vioOf(v), gens: (v.gens || []).map(function (g) { return { code: g.code, yr: g.yr, vio: +g.vio || 0, parts: g.parts || [] }; }) }; });
+  }
+  function reloadVeh() { return X.rpc("app_get_data", { p_token: s.t }).then(function (d) { VEH = mapVeh(d); OEIX = null; }); }
+
+  /* ── 보고 월 목록 ── */
+  function months() {
+    var u = MK.uploads || [];
+    Q("#months").innerHTML = MKERR ? '<span class="msg err">⚠ ' + esc(MKERR) + "</span>"
+      : u.length ? u.map(function (x) { return '<span class="mo" title="' + esc((x.file || "") + " · " + (x.by || "") + " · " + new Date(x.at).toLocaleString()) + '">' + esc(x.ym) + " <small>" + fmt(x.n) + "개 모델</small>"
+          + (DIR ? '<button type="button" data-del="' + esc(x.ym) + '" title="이 월 자료 지우기">✕</button>' : "") + "</span>"; }).join("")
+      : '<span class="hint" style="margin:0">아직 없습니다 — EMA PDF를 올려 주세요</span>';
+  }
+  Q("#months").onclick = function (e) {
+    var b = e.target.closest("[data-del]"); if (!b) return;
+    var ym = b.getAttribute("data-del");
+    if (!confirm(ym + " 보고 월의 판매 자료를 지울까요? (다시 올리면 복구됩니다)")) return;
+    rpc("app_mkt_del", { p_token: s.t, p_ym: ym }).then(function () { toast(ym + " 지움"); return loadMk(); }).then(function () { months(); calc(); }).catch(function (e2) { toast(e2.message); });
+  };
+
+  /* ── PDF 업로드 ── */
+  var PV = null;
+  var drop = Q("#drop"), file = Q("#file");
+  drop.onclick = function () { file.click(); };
+  drop.ondragover = function (e) { e.preventDefault(); drop.classList.add("on"); };
+  drop.ondragleave = function () { drop.classList.remove("on"); };
+  drop.ondrop = function (e) { e.preventDefault(); drop.classList.remove("on"); if (e.dataTransfer.files[0]) readPdf(e.dataTransfer.files[0]); };
+  file.onchange = function () { if (file.files[0]) readPdf(file.files[0]); file.value = ""; };
+  function readPdf(f) {
+    if (!window.pdfjsLib) { toast("PDF 판독기(pdf.js)를 불러오지 못했습니다 — 인터넷 연결을 확인하세요"); return; }
+    drop.innerHTML = "⏳ " + esc(f.name) + " 읽는 중…";
+    f.arrayBuffer().then(function (buf) { return window.rfxEma.parse(window.pdfjsLib, new Uint8Array(buf)); }).then(function (res) {
+      PV = { file: f.name, res: res };
+      drop.innerHTML = "📄 다른 PDF를 끌어다 놓거나 <b>눌러서 선택</b>";
+      showPrev();
+    }).catch(function (e) { drop.innerHTML = "📄 EMA PDF를 끌어다 놓거나 <b>눌러서 선택</b>"; toast("PDF를 읽지 못했습니다: " + (e.message || e)); });
+  }
+  function showPrev() {
+    var r = PV.res, rows = r.rows, sum = function (k, f) { return rows.filter(function (x) { return x.kind === k; }).reduce(function (a, x) { return a + (x[f] || 0); }, 0); };
+    var keys = rows.map(M.ekey), mt = M.match(keys, VEH, MK.alias || {}), nNew = 0;
+    rows.forEach(function (x) { x._m = mt[M.ekey(x)]; if (!x._m) nNew++; });
+    Q("#pYm").value = r.ym || "";
+    Q("#prevSum").innerHTML = "<b>" + esc(r.label || r.ym || "보고 월 ?") + "</b> · " + esc(PV.file) + " · " + r.numPages + "쪽 중 표 " + r.pages.length + "쪽 · 모델 <b>" + fmt(rows.length) + "</b>개"
+      + "<br>당월 판매 — 승용 <b>" + fmt(sum("pas", "m")) + "</b> · 상용 <b>" + fmt(sum("com", "m")) + "</b> · 올해 누적 승용 " + fmt(sum("pas", "ytd")) + " · 상용 " + fmt(sum("com", "ytd"))
+      + " <small>(보고서의 브랜드별 TOTAL과 같은지 확인하세요)</small> · 마스터 차종에 연결 <b>" + fmt(rows.length - nNew) + "</b> · 마스터에 없음 <b>" + fmt(nNew) + "</b>"
+      + ((MK.uploads || []).some(function (u) { return u.ym === r.ym; }) ? ' · <b style="color:#9a6700">이미 저장된 월 — 저장하면 바꿉니다</b>' : "");
+    Q("#prevWarn").textContent = (r.warn || []).join(" · ") + (rows.some(function (x) { return !x.brand; }) ? " · 브랜드 빈칸 모델: " + rows.filter(function (x) { return !x.brand; }).map(function (x) { return x.model; }).join(", ") : "");
+    var L = rows.slice().sort(function (a, b) { return (b.ytd || 0) - (a.ytd || 0); });
+    Q("#prevRows").innerHTML = L.map(function (x, i) {
+      return "<tr><td>" + (i + 1) + "</td><td>" + (x.kind === "com" ? "상용" : "승용") + "</td><td>" + esc(x.seg) + '</td><td class="vn">' + esc(x.model) + "</td><td>" + esc(x.brand) + "</td><td>" + esc(x.origin) + '</td><td class="r">' + (x.m_prev == null ? "" : fmt(x.m_prev))
+        + '</td><td class="r"><b>' + (x.m == null ? "" : fmt(x.m)) + '</b></td><td class="r">' + (x.ytd_prev == null ? "" : fmt(x.ytd_prev)) + '</td><td class="r"><b>' + (x.ytd == null ? "" : fmt(x.ytd)) + "</b></td><td>"
+        + (x._m ? esc(x._m.key.replace("|", " ")) + (x._m.how === "manual" ? " (지정)" : "") : '<span class="tag new">🆕 마스터에 없음</span>') + "</td></tr>";
+    }).join("");
+    Q("#prev").classList.remove("hidden"); Q("#pMsg").textContent = "";
+  }
+  Q("#pCancel").onclick = function () { PV = null; Q("#prev").classList.add("hidden"); };
+  Q("#pSave").onclick = function () {
+    var ym = Q("#pYm").value; if (!/^\d{4}-\d{2}$/.test(ym)) { toast("보고 월을 선택하세요"); return; }
+    var btn = Q("#pSave"); btn.disabled = true; Q("#pMsg").className = "msg"; Q("#pMsg").textContent = "저장 중…";
+    var rows = PV.res.rows.map(function (x) { return [x.kind, x.brand, x.model, x.seg, x.origin, x.m, x.m_prev, x.ytd, x.ytd_prev]; });
+    rpc("app_mkt_put", { p_token: s.t, p_ym: ym, p_label: PV.res.label || "", p_file: PV.file, p_rows: rows }).then(function (b) {
+      /* 마스터에 없는 판매 상위 모델 → 🆕 신규 차종 자동 등록 */
+      var add = [];
+      if (Q("#pAuto").checked) {
+        var n = +Q("#pAutoN").value || 0, have = {};
+        (MK.veh || []).forEach(function (v) { have[v.src] = 1; have[v.k] = 1; });
+        PV.res.rows.forEach(function (x) { var k = M.ekey(x); if (x._m || have[k] || (x.ytd || 0) < n) return; have[k] = 1;
+          add.push({ k: "NEW|" + (x.brand || "") + "|" + x.model, brand: x.brand, model: x.model, seg: x.seg, origin: x.origin, src: k, auto: true }); });
+      }
+      return (add.length ? rpc("app_mkt_veh_add", { p_token: s.t, p_rows: add }) : Promise.resolve({ added: 0 })).then(function (a) {
+        Q("#pMsg").className = "msg ok"; Q("#pMsg").textContent = "✓ " + ym + " · " + fmt(b.saved) + "개 모델 저장" + (a.added ? " · 🆕 신규 차종 " + a.added + "개 자동 등록" : "");
+        toast(Q("#pMsg").textContent);
+        return loadMk().then(function () { calc(); if (Q("#pPush").checked) return pushAll(Q("#pMsg")); })
+          .then(function () { if (Q("#pErp").checked) return erpAll(Q("#pMsg"), true); });
+      });
+    }).then(function () { months(); calc(); setTimeout(function () { Q("#prev").classList.add("hidden"); }, 2500); })
+      .catch(function (e) { Q("#pMsg").className = "msg err"; Q("#pMsg").textContent = "⚠ " + e.message; })
+      .then(function () { btn.disabled = false; });
+  };
+
+  /* ── 🆕 신규 차종 → 차량·부품 본체 ──
+     본체 세대 VIO = VIO 기준 월까지의 판매 누적 (기준 월 다음부터의 판매는 추정 VIO 계산에서 더해지므로 두 번 세지 않음) */
+  function firstYm(sr) { var ks = Object.keys(sr.M).concat(Object.keys(sr.Y)).filter(function (k) { return (sr.M[k] || sr.Y[k] || 0) > 0; }).sort(); return ks[0] || ""; }
+  function pushArgs(r) {
+    var vio = 0, fy = "";
+    r.ema.forEach(function (e) { var sr = B.S[e.k]; if (!sr) return; var f = firstYm(sr); if (f && (!fy || f < fy)) fy = f;
+      if (B.first <= V.base) vio += M.sumRange(sr, B.first, V.base < B.latest ? V.base : B.latest).v; });
+    return { p_vio: Math.round(vio), p_yr: fy ? fy.slice(0, 4) + "-" : "" };
+  }
+  function pushOne(k) {
+    var r = B.rows.filter(function (x) { return x.key === k; })[0]; if (!r) return Promise.reject(new Error("차종을 찾지 못함: " + k));
+    var a = pushArgs(r);
+    return rpc("app_mkt_push", { p_token: s.t, p_k: k, p_vio: a.p_vio, p_yr: a.p_yr });
+  }
+  function pushAll(msgEl) {
+    var L = B.rows.filter(function (r) { return r.isNew && !r.unreg; }).sort(function (a, b) { return b.ytd - a.ytd; }), i = 0, ok = 0, bad = [];
+    if (!L.length) { toast("본체로 보낼 🆕 신규 차종이 없습니다"); return Promise.resolve(); }
+    function step() {
+      if (i >= L.length) return Promise.resolve();
+      var r = L[i++]; if (msgEl) { msgEl.className = "msg"; msgEl.textContent = "차량·부품 본체에 추가 중… " + i + "/" + L.length + " · " + r.brand + " " + r.model; }
+      return pushOne(r.key).then(function () { ok++; }, function (e) { bad.push(r.model + ": " + e.message); }).then(step);
+    }
+    return step().then(function () { return Promise.all([loadMk(), reloadVeh()]); }).then(function () {
+      calc();
+      var t = "✓ 차량·부품 본체에 🆕 " + ok + "개 차종 추가" + (bad.length ? " · ⚠ 실패 " + bad.length + "개 (" + bad.slice(0, 2).join(" / ") + ")" : "");
+      if (msgEl) { msgEl.className = "msg " + (bad.length ? "err" : "ok"); msgEl.textContent = t; } toast(t);
+    });
+  }
+  Q("#pushAll").onclick = function () {
+    var n = B ? B.rows.filter(function (r) { return r.isNew && !r.unreg; }).length : 0;
+    if (!n) { toast("본체로 보낼 🆕 신규 차종이 없습니다"); return; }
+    if (!confirm("🆕 신규 차종 " + n + "개를 차량·부품 본체에 추가할까요?\n· 차종은 맨 뒤 순위 번호로 들어갑니다\n· 세대 'EMA 신규' · 부품 16줄(입력한 OE 포함)이 만들어집니다")) return;
+    var b = Q("#pushAll"); b.disabled = true; pushAll(Q("#pushMsg")).catch(function (e) { toast(e.message); }).then(function () { b.disabled = false; });
+  };
+
+  /* ── 🚗 ERP로 차종 보내기 — ERP질의프로토콜_차종등록API_20261127.md
+     POST /api/pf-catalog/vehicles { brand, model, year_from, year_to, segment, origin, kind, source, ref, sales_ytd, oe:[…] }
+     ERP API가 아직 없으면(404 · 405 · 501) '대기'로 남기고, 이 화면을 열 때 30분마다 다시 보냄 ── */
+  var ERPS = { sent: ["ERP 등록", "ok"], linked: ["ERP에 있음", "ok"], pending: ["ERP 대기", "pd"], fail: ["ERP 실패", "fl"] };
+  function vehOf(k) { return (MK.veh || []).filter(function (v) { return v.k === k; })[0] || null; }
+  function erpBadge(k) {
+    var v = vehOf(k); if (!v) return "";
+    var e = ERPS[v.erp_st]; if (!e) return '<span class="eb no" title="아직 ERP로 보내지 않음">ERP 미전송</span>';
+    var x = ERPV[k], extra = "", tip = "";
+    if (x) {
+      var y1 = x.app_year_from || x.year_from, y2 = x.app_year_to || x.year_to;
+      extra = (y1 ? " · " + y1 + "–" + (y2 || "") : "") + (x.products != null ? " · 제품 " + x.products : "");
+      tip = "\nERP 현재: " + (x.brand || "") + " " + (x.model || "") + " · 연식 " + (x.year_from || "?") + "–" + (x.year_to || "현재")
+        + (x.app_year_from ? " · 제품 적용 연식 " + x.app_year_from + "–" + (x.app_year_to || "") : "") + " · 연결 제품 " + (x.products || 0) + "개 (ERP 제품 마스터에서 다듬은 값)";
+    }
+    return '<span class="eb ' + e[1] + '" title="' + esc((v.erp_msg || "") + (v.erp_at ? " · " + new Date(v.erp_at).toLocaleString() : "") + (v.erp_id ? " · ERP #" + v.erp_id : "") + tip) + '">🚗 ' + e[0] + esc(extra) + "</span>";
+  }
+  /* ERP에서 다듬은 연식 · 연결 제품 수 읽어 오기 — GET /api/pf-catalog/vehicles (ERP 회신 2026-11-27: items[{id,brand,model,year_from,year_to,ref,products,app_year_from,app_year_to}]) */
+  var ERPV = {};
+  function erpPull() {
+    if (!(MK.veh || []).some(function (v) { return v.erp_st === "sent" || v.erp_st === "linked"; })) return Promise.resolve();
+    return X.erp.req("GET", "/api/pf-catalog/vehicles?q=").then(function (b) {
+      var by = {}; ((b && b.items) || []).forEach(function (x) { if (x.ref) by["R|" + x.ref] = x; by["N|" + M.nm(x.brand) + M.nm(x.model)] = x; });
+      (MK.veh || []).forEach(function (v) { var x = by["R|" + v.k] || by["N|" + M.nm(v.brand) + M.nm(v.model)]; if (x) ERPV[v.k] = x; });
+      render();
+    }).catch(function () {});
+  }
+  function brandCase(b) { b = String(b || "").trim(); var hit = VEH.filter(function (x) { return x.brand.toUpperCase() === b.toUpperCase(); })[0]; if (hit) return hit.brand;
+    return b.length <= 4 ? b.toUpperCase() : b.toLowerCase().replace(/(^|[\s\-&])([a-z])/g, function (m, a, c) { return a + c.toUpperCase(); }); }
+  function erpSend(k, quiet) {
+    var v = vehOf(k); if (!v) return Promise.reject(new Error("신규 차종 목록에 없음: " + k));
+    var r = B.rows.filter(function (x) { return x.key === k || (v.pushed_rk && x.master && +x.rk === +v.pushed_rk); })[0];
+    var a = r ? pushArgs(r) : { p_yr: "" }, yf = v.yr_from || (a.p_yr ? +a.p_yr.slice(0, 4) : null);
+    var vk = v.pushed_rk && r ? r.key : k;
+    return rpc("app_mkt_oe_get", { p_token: s.t, p_vkey: vk }).catch(function () { return []; }).then(function (oe) {
+      var body = { brand: brandCase(v.brand), model: v.model, year_from: yf, year_to: v.yr_to || null, segment: v.seg || (r && r.seg) || "", origin: v.origin || (r && r.origin) || "",
+        kind: r && r.kind === "com" ? "commercial" : "passenger", source: "refatrix-market", ref: k, sales_ytd: r ? r.ytd : null,
+        oe: (oe || []).filter(function (o) { return o.oe; }).map(function (o) { return { cat: o.cat, pos: o.pos, oe: o.oe, price: o.price, src: o.src }; }) };
+      return X.erp.req("POST", "/api/pf-catalog/vehicles", body).then(function (b) {
+        var veh = (b && (b.vehicle || b.item || b)) || {}, ex = !!(b && (b.existed || b.exists)), mc = {};
+        ((b && b.matches) || []).forEach(function (m) { if (m && m.code) mc[String(m.code).toUpperCase()] = 1; });
+        var ml = Object.keys(mc), mtxt = ml.length ? " · OE가 같은 ERP 제품 " + ml.length + "개: " + ml.slice(0, 6).join(", ") + (ml.length > 6 ? " …" : "") : "";
+        return { st: ex ? "linked" : "sent", id: String(veh.id || ""), msg: (ex ? "ERP에 같은 차종이 이미 있어 연결" : "ERP 차종 등록 완료") + mtxt, yf: yf };
+      }, function (e) {
+        if (e.status === 404 || e.status === 405 || e.status === 501) return { st: "pending", id: "", msg: (/migration/i.test(e.message || "") ? "ERP DB 준비 전(migrate 필요)" : "ERP 차종 등록 API 준비 전") + " — 대기 (열리면 자동으로 다시 보냄)", yf: yf };
+        if (e.status === 409) return { st: "linked", id: "", msg: "ERP에 같은 차종이 이미 있음 (409)", yf: yf };
+        return { st: "fail", id: "", msg: e.message || String(e), yf: yf };
+      });
+    }).then(function (res) {
+      return rpc("app_mkt_veh_erp", { p_token: s.t, p_k: k, p_st: res.st, p_id: res.id, p_msg: res.msg, p_yf: res.yf, p_yt: v.yr_to || null }).then(function () {
+        v.erp_st = res.st; v.erp_id = res.id; v.erp_msg = res.msg; v.erp_at = new Date().toISOString(); if (res.yf) v.yr_from = res.yf;
+        if (!quiet) toast((res.st === "fail" ? "⚠ " : "🚗 ") + brandCase(v.brand) + " " + v.model + " — " + res.msg);
+        return res;
+      });
+    });
+  }
+  function erpTargets(onlyPending) { return (MK.veh || []).filter(function (v) { return onlyPending ? v.erp_st === "pending" : (v.erp_st !== "sent" && v.erp_st !== "linked"); }); }
+  function erpAll(msgEl, auto, onlyPending) {
+    var L = erpTargets(onlyPending), i = 0, cnt = { sent: 0, linked: 0, pending: 0, fail: 0 };
+    if (!L.length) { if (!auto) toast("ERP로 보낼 🆕 신규 차종이 없습니다"); return Promise.resolve(); }
+    function step() {
+      if (i >= L.length) return Promise.resolve();
+      var v = L[i++]; if (msgEl) { msgEl.className = "msg"; msgEl.textContent = "ERP로 차종 보내는 중… " + i + "/" + L.length + " · " + v.model; }
+      return erpSend(v.k, true).then(function (r) {
+        cnt[r.st]++;
+        if (r.st !== "pending" || i >= L.length) return;
+        /* API 준비 전 — 나머지는 ERP에 묻지 않고 '대기'로만 기록 (API가 열리면 자동 재전송 대상) */
+        var rest = L.slice(i); i = L.length; cnt.pending += rest.length;
+        return Promise.all(rest.map(function (w) { return rpc("app_mkt_veh_erp", { p_token: s.t, p_k: w.k, p_st: "pending", p_id: "", p_msg: r.msg, p_yf: w.yr_from || null, p_yt: w.yr_to || null })
+          .then(function () { w.erp_st = "pending"; w.erp_msg = r.msg; w.erp_at = new Date().toISOString(); }, function () {}); }));
+      }, function () { cnt.fail++; }).then(step);
+    }
+    return step().then(function () {
+      render();
+      if (cnt.sent || cnt.linked) erpPull();
+      var t = "🚗 ERP 차종 — 등록 " + cnt.sent + " · 이미 있음 " + cnt.linked + (cnt.pending ? " · 대기 " + cnt.pending + " (ERP API 준비 전)" : "") + (cnt.fail ? " · 실패 " + cnt.fail : "");
+      if (msgEl && !(onlyPending && !cnt.sent && !cnt.linked)) { msgEl.className = "msg " + (cnt.fail ? "err" : "ok"); msgEl.textContent = (msgEl.textContent.indexOf("✓") >= 0 && auto ? msgEl.textContent.replace(/ · 🚗.*$/, "") + " · " : "") + t; }
+      if (!onlyPending || cnt.sent || cnt.linked) toast(t);
+    });
+  }
+  Q("#erpAll").onclick = function () {
+    var n = erpTargets().length; if (!n) { toast("ERP로 보낼 🆕 신규 차종이 없습니다"); return; }
+    if (!confirm("🆕 신규 차종 " + n + "개의 제조사 · 모델명 · 연식을 ERP로 보낼까요?\n(입력한 OE 번호 · 단가도 참고로 함께 보냅니다. 세부 연식은 ERP 제품 마스터에서 다듬으세요)")) return;
+    var b = Q("#erpAll"); b.disabled = true; erpAll(Q("#pushMsg")).catch(function (e) { toast(e.message); }).then(function () { b.disabled = false; });
+  };
+  /* ERP API 준비 전 '대기' 차종 — 디렉터가 이 화면을 열면 30분마다 다시 보냄 (API가 열리면 자동 등록) */
+  function erpRetry() {
+    if (!DIR) return; var K = "rfx_mkt_erp_retry", last = 0; try { last = +localStorage.getItem(K) || 0; } catch (e) {}
+    if (Date.now() - last < 30 * 60 * 1000 || !erpTargets(true).length) return;
+    try { localStorage.setItem(K, String(Date.now())); } catch (e) {}
+    erpAll(Q("#pushMsg"), true, true).catch(function () {});
+  }
+
+  /* ── 보기 조건 ── */
+  function bind() {
+    var ys = ""; for (var y = NOWY + 1; y >= 1970; y--) ys += "<option>" + y + "</option>";
+    Q("#y1").innerHTML = ys; Q("#y2").innerHTML = ys;
+    Q("#y1").value = V.y1; Q("#y2").value = V.y2; Q("#base").value = V.base; Q("#by").value = V.by; Q("#topN").value = V.topN;
+    Q("#y1").onchange = Q("#y2").onchange = function () { V.y1 = +Q("#y1").value; V.y2 = +Q("#y2").value; if (V.y1 > V.y2) { var t = V.y1; V.y1 = V.y2; V.y2 = t; Q("#y1").value = V.y1; Q("#y2").value = V.y2; } saveV(); calc(); };
+    QA("[data-yr]").forEach(function (b) { b.onclick = function () { var k = b.getAttribute("data-yr"); V.y2 = NOWY + 1; V.y1 = k === "all" ? 1980 : NOWY + 1 - +k; Q("#y1").value = V.y1; Q("#y2").value = V.y2; saveV(); calc(); }; });
+    Q("#base").onchange = function () { if (/^\d{4}-\d{2}$/.test(this.value)) { V.base = this.value; saveV(); calc(); } };
+    Q("#baseSave").onclick = function () { rpc("app_mkt_kv", { p_token: s.t, p_k: "base_ym", p_v: V.base }).then(function () { MK.kv = MK.kv || {}; MK.kv.base_ym = V.base; toast("VIO 기준 월 " + V.base + " 을 기본값으로 저장"); }).catch(function (e) { toast(e.message); }); };
+    Q("#by").onchange = function () { V.by = this.value; saveV(); render(); };
+    Q("#topN").onchange = function () { V.topN = this.value; saveV(); render(); };
+    Q("#q").oninput = render;
+    Q("#flt").onclick = function (e) { var b = e.target.closest("[data-f]"); if (!b) return; V.f = b.getAttribute("data-f"); saveV(); render(); };
+  }
+
+  /* ── 계산 · 표 ── */
+  function calc() {
+    B = M.build({ vehicles: VEH, sales: salesRows(), alias: MK.alias || {}, newVeh: (MK.veh || []).filter(function (v) { return !v.pushed_rk; }), base: V.base, y1: V.y1, y2: V.y2 });
+    var base = M.rank(B.rows.filter(function (r) { return r.master; }), "vioAll");     /* 저장 VIO 순위 (변동 비교용) */
+    var r0 = {}; base.forEach(function (r) { r0[r.key] = r.rank; });
+    B.rows.forEach(function (r) { r.rank0 = r0[r.key] || null; });
+    render();
+  }
+  function render() {
+    if (!B) return;
+    QA("#flt [data-f]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-f") === V.f); });
+    QA("[data-yr]").forEach(function (b) { var k = b.getAttribute("data-yr"); b.classList.toggle("on", V.y2 === NOWY + 1 && (k === "all" ? V.y1 === 1980 : V.y1 === NOWY + 1 - +k)); });
+    var key = V.by === "vio" ? "vio" : V.by === "period" ? "period" : "est";
+    var L = M.rank(B.rows, key);
+    var q = Q("#q").value.trim().toUpperCase(), n = +V.topN || 0;
+    var nNew = B.rows.filter(function (r) { return r.isNew && !r.unreg; }).length, nUn = B.rows.filter(function (r) { return r.unreg; }).length;
+    var topNew = L.filter(function (r) { return r.rank <= 150 && !r.master; }).length;
+    var hasData = (MK.uploads || []).length;
+    Q("#kpis").innerHTML = [
+      ["<b>" + (B.latest || "—") + "</b><span>최신 판매 자료 월 · 저장 " + fmt(hasData) + "개월</span>", ""],
+      ["<b>" + (hasData ? (B.share * 100).toFixed(1) + "%" : "—") + "</b><span>올해 판매 중 마스터 차종에 연결된 비율</span>", ""],
+      ["<b>" + fmt(nNew) + " · " + fmt(nUn) + "</b><span>🆕 등록된 신규 차종 · 미등록 판매 모델</span>", ""],
+      ["<b>" + fmt(topNew) + "</b><span>상위 150위 안의 신규 · 미등록 차종</span>", "hl"],
+      ["<b>" + (B.hi >= B.aLo ? B.aLo + " ~ " + B.hi : "—") + "</b><span>VIO에 더한 판매 기간 (기준 월 " + esc(V.base) + " 다음 달부터)</span>", ""]
+    ].map(function (x) { return '<div class="kp ' + x[1] + '">' + x[0] + "</div>"; }).join("");
+    Q("#calcNote").innerHTML = hasData ? "연식 구간 " + V.y1 + " ~ " + V.y2 + " · 판매 자료 범위 " + esc(B.lo) + " ~ " + esc(B.hi) + (V.y1 > 1980 ? " · 저장 VIO는 구간과 겹치는 세대만 셉니다 (세대 VIO가 모델 단위로만 있으면 모델 전체)" : "")
+      : '<b style="color:#9a6700">아직 판매 자료가 없습니다 — 저장 VIO 순위만 보입니다. EMA PDF를 올리면 추정 VIO · 신규 차종이 계산됩니다.</b>';
+    var F = L.filter(function (r) {
+      if (q && (r.brand + " " + r.model + " " + r.ema.map(function (e) { return e.model; }).join(" ")).toUpperCase().indexOf(q) < 0) return false;
+      if (V.f === "new") return !r.master;
+      if (V.f === "kr") return isKr(r.brand);
+      if (V.f === "cn") return isCn(r.brand);
+      if (V.f === "com") return r.kind === "com";
+      if (V.f === "up") return r.rank0 && r.rank0 - r.rank > 0;
+      return true;
+    });
+    var show = n && !q && V.f === "all" ? F.filter(function (r) { return r.rank <= n; }) : F;
+    if (show.length > 600) show = show.slice(0, 600);
+    Q("#rows").innerHTML = show.length ? show.map(rowHtml).join("") : '<tr><td colspan="11" class="empty">조건에 맞는 차종이 없습니다</td></tr>';
+  }
+  function pushedOf(r) {                                    /* 시장 데이터에서 본체로 보낸 차종이면 그 신규 차종 키 */
+    if (!r.master) return "";
+    var h = (MK.veh || []).filter(function (v) { return v.pushed_rk && +v.pushed_rk === +r.rk; })[0];
+    return h ? h.k : "";
+  }
+  function rowHtml(r) {
+    var d = r.rank0 ? r.rank0 - r.rank : null;
+    var dv = !r.master ? '<span class="up">NEW</span>' : d > 0 ? '<span class="up">▲' + d + "</span>" : d < 0 ? '<span class="dn">▼' + (-d) + "</span>" : '<span class="eq">–</span>';
+    var tg = (r.unreg ? '<span class="tag unreg" title="마스터에도 신규 차종 목록에도 없는 판매 모델">미등록</span>' : r.isNew ? '<span class="tag new">🆕 신규</span>' : "")
+      + (isKr(r.brand) ? '<span class="tag kr">KR</span>' : "") + (isCn(r.brand) ? '<span class="tag cn">CN</span>' : "") + (r.kind === "com" ? '<span class="tag com">상용</span>' : "");
+    var em = r.ema.map(function (e) { var man = MK.alias && MK.alias[e.k] != null;
+      return '<span class="em' + (DIR ? " dir" : "") + (man ? " man" : "") + '" data-ek="' + esc(e.k) + '" title="' + esc(e.brand + " " + e.model + " · 올해 누적 " + fmt(e.ytd) + (e.how ? " · 연결: " + e.how : " · 마스터에 없음")) + '">' + esc(e.model) + "<i>" + fmt(e.ytd) + "</i></span>"; }).join("");
+    var oen = (MK.oen || {})[r.key] || 0;   /* OE · SYD · CTR 이 있는 줄 수 */
+    return '<tr class="' + (r.unreg ? "unreg" : r.isNew ? "isnew" : "") + '"><td class="r"><b>' + r.rank + '</b></td><td class="r">' + dv + '</td><td class="vn">' + tg + esc(r.brand + " " + r.model) + (r.master ? " <small>#" + r.rk + "</small>" : "") + "</td>"
+      + "<td><small>" + esc(r.seg || "") + "</small></td>"
+      + '<td class="r">' + (r.master ? fmt(r.vio) + (r.vioPart ? ' <span class="est" title="연식 구간과 일부 세대만 겹침">◐</span>' : "") : '<span class="eq">—</span>') + "</td>"
+      + '<td class="r">' + (r.master ? (r.after ? "+" + fmt(r.after) + (r.afterEst ? ' <span class="est" title="빈 달을 그 해 월평균으로 채운 추정">~</span>' : "") : '<span class="eq">0</span>') : '<span class="eq">—</span>') + "</td>"
+      + '<td class="r"><b>' + fmt(r.est) + "</b>" + (!r.master ? ' <span class="est" title="저장 VIO가 없어 자료에 있는 판매 누적으로 추정">≈</span>' : "") + "</td>"
+      + '<td class="r">' + (r.period ? fmt(r.period) + (r.periodEst ? ' <span class="est" title="빈 달 추정 포함">~</span>' : "") : '<span class="eq">0</span>') + "</td>"
+      + '<td><div class="ema">' + (em || '<span class="eq">—</span>') + "</div></td>"
+      + '<td><span class="oeb' + (oen ? " has" : "") + '">' + (oen ? "OE " + oen + "줄" : "OE 없음") + "</span></td>"
+      + '<td style="white-space:nowrap"><button type="button" class="btn sm" data-oe="' + esc(r.key) + '">OE 입력</button>'
+      + (DIR && r.unreg ? ' <button type="button" class="btn sm ok" data-reg="' + esc(r.key) + '" title="🆕 신규 차종으로 등록">🆕 등록</button>' : "")
+      + (DIR && r.isNew && !r.unreg ? ' <button type="button" class="btn sm ok" data-push="' + esc(r.key) + '" title="차량·부품 본체에 차종 · 세대 · 부품 16줄로 추가">본체로</button> <button type="button" class="btn sm del" data-unreg="' + esc(r.key) + '" title="신규 차종 등록 취소 (OE 기록은 남음)">✕</button>' : "")
+      + ((r.isNew && !r.unreg) ? " " + erpBadge(r.key) + (DIR && !/sent|linked/.test((vehOf(r.key) || {}).erp_st || "") ? ' <button type="button" class="btn sm" data-erp="' + esc(r.key) + '" title="제조사 · 모델명 · 연식을 ERP로 보내기">ERP로</button>' : "") : "")
+      + (pushedOf(r) ? " " + erpBadge(pushedOf(r)) + (DIR && !/sent|linked/.test((vehOf(pushedOf(r)) || {}).erp_st || "") ? ' <button type="button" class="btn sm" data-erp="' + esc(pushedOf(r)) + '" title="제조사 · 모델명 · 연식을 ERP로 보내기">ERP로</button>' : "") : "")
+      + (DIR && pushedOf(r) ? ' <button type="button" class="btn sm del" data-unpush="' + esc(pushedOf(r)) + '" title="본체에서 다시 빼기 (본체에서 아무도 고치지 않았을 때만)">본체에서 빼기</button>' : "") + "</td></tr>";
+  }
+  Q("#rows").onclick = function (e) {
+    var b;
+    if ((b = e.target.closest("[data-oe]"))) { openOe(b.getAttribute("data-oe")); return; }
+    if ((b = e.target.closest("[data-reg]"))) {
+      var r = B.rows.filter(function (x) { return x.key === b.getAttribute("data-reg"); })[0]; if (!r) return;
+      var e0 = r.ema[0];
+      rpc("app_mkt_veh_add", { p_token: s.t, p_rows: [{ k: "NEW|" + (r.brand || "") + "|" + r.model, brand: r.brand, model: r.model, seg: r.seg, origin: r.origin || "", src: e0 ? e0.k : "", auto: false }] })
+        .then(function () { toast("🆕 " + r.brand + " " + r.model + " 등록"); return loadMk(); }).then(calc)
+        .then(function () { return erpSend("NEW|" + (r.brand || "") + "|" + r.model).then(render); }).catch(function (e2) { toast(e2.message); });
+      return;
+    }
+    if ((b = e.target.closest("[data-erp]"))) {
+      b.disabled = true; erpSend(b.getAttribute("data-erp")).then(render).catch(function (e2) { toast(e2.message); b.disabled = false; });
+      return;
+    }
+    if ((b = e.target.closest("[data-push]"))) {
+      var pk = b.getAttribute("data-push"); b.disabled = true;
+      pushOne(pk).then(function (res) { toast("✓ 차량·부품 본체에 추가 · #" + res.rk + " · 부품 " + (res.parts || 0) + "줄"); return Promise.all([loadMk(), reloadVeh()]); }).then(calc)
+        .catch(function (e2) { toast(e2.message); b.disabled = false; });
+      return;
+    }
+    if ((b = e.target.closest("[data-unpush]"))) {
+      var uk = b.getAttribute("data-unpush");
+      if (!confirm("이 차종을 차량·부품 본체에서 뺄까요?\n(본체에서 아무도 고치지 않았을 때만 됩니다 · 🆕 신규 차종 목록과 OE 기록은 남습니다)")) return;
+      rpc("app_mkt_unpush", { p_token: s.t, p_k: uk }).then(function () { toast("본체에서 뺐습니다"); return Promise.all([loadMk(), reloadVeh()]); }).then(calc).catch(function (e2) { toast(e2.message); });
+      return;
+    }
+    if ((b = e.target.closest("[data-unreg]"))) {
+      var k = b.getAttribute("data-unreg"); if (!confirm(k.replace(/^NEW\|/, "").replace("|", " ") + " 신규 차종 등록을 취소할까요? (판매 자료 · OE 기록은 남습니다)")) return;
+      rpc("app_mkt_veh_del", { p_token: s.t, p_k: k }).then(function () { return loadMk(); }).then(calc).catch(function (e2) { toast(e2.message); });
+      return;
+    }
+    if ((b = e.target.closest(".em.dir"))) openAlias(b.getAttribute("data-ek"));
+  };
+
+  /* ── 연결 변경 (디렉터) ── */
+  var ALK = null;
+  function openAlias(ek) {
+    ALK = ek; var cur = B.match[ek];
+    Q("#alT").textContent = "연결 변경 — " + ek.replace("|", " ");
+    Q("#alH").innerHTML = "지금: <b>" + esc(cur ? cur.key.replace("|", " ") + (cur.how === "manual" ? " (지정)" : " (자동 · " + cur.how + ")") : "연결 없음 (신규)") + "</b><br>판매 자료의 이 모델을 어느 마스터 차종의 판매로 셀지 고릅니다. 같은 차종의 여러 모델(Sedan · HB 등)을 한 차종에 모을 수 있습니다.";
+    Q("#alL").innerHTML = VEH.map(function (v) { return '<option value="' + esc(M.vkey(v)) + '">#' + v.rk + "</option>"; }).join("")
+      + (MK.veh || []).map(function (v) { return '<option value="' + esc(v.k) + '">🆕 신규</option>'; }).join("");
+    Q("#alI").value = cur ? cur.key : ""; Q("#alMsg").textContent = "";
+    Q("#alM").classList.remove("hidden"); Q("#alI").focus();
+  }
+  function setAlias(v) {
+    rpc("app_mkt_alias", { p_token: s.t, p_ekey: ALK, p_vkey: v }).then(function () { Q("#alM").classList.add("hidden"); toast("연결 저장"); return loadMk(); }).then(calc)
+      .catch(function (e) { Q("#alMsg").className = "msg err"; Q("#alMsg").textContent = "⚠ " + e.message; });
+  }
+  Q("#alOk").onclick = function () { var v = Q("#alI").value.trim(); if (!v || (!VEH.some(function (x) { return M.vkey(x) === v; }) && !(MK.veh || []).some(function (x) { return x.k === v; }))) { Q("#alMsg").className = "msg err"; Q("#alMsg").textContent = "목록에 있는 차종을 고르세요"; return; } setAlias(v); };
+  Q("#alNew").onclick = function () { setAlias("-"); };
+  Q("#alAuto").onclick = function () { setAlias(""); };
+  Q("#alX").onclick = function () { Q("#alM").classList.add("hidden"); };
+
+  /* ── OE 입력 (차종 × 부품 카테고리) ── */
+  var CATS = [["BALL JOINT", "Front Lower"], ["BALL JOINT", "Front Upper"], ["INNER TIE ROD", "Front"], ["OUTER TIE ROD", "Front LH"], ["OUTER TIE ROD", "Front RH"],
+    ["CONTROL ARM", "Front Lower LH"], ["CONTROL ARM", "Front Lower RH"], ["CONTROL ARM BUSHING", "Front Lower"], ["STABILIZER LINK", "Front"], ["STABILIZER LINK", "Rear"],
+    ["STABILIZER BAR BUSHING", "Front"], ["SHOCK ABSORBER", "Front"], ["SHOCK ABSORBER", "Rear"], ["TOP STRUT MOUNT", "Front"], ["ENGINE MOUNT", ""], ["TRANSMISSION MOUNT", ""]];
+  function noe(x) { return String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function splitC(v) { return String(v || "").split(/\/\/|;|\n|,/).map(function (x) { return x.trim(); }).filter(Boolean); }
+  function oeIndex() {
+    if (OEIX) return Promise.resolve(OEIX);
+    OEIX = {};
+    function add(oe, kind, code) { var k = noe(oe); if (k.length < 5 || !code) return; var o = OEIX[k] || (OEIX[k] = { syd: {}, ctr: {} }); o[kind][String(code).toUpperCase()] = 1; }
+    VEH.forEach(function (v) { v.gens.forEach(function (g) { g.parts.forEach(function (p) { splitC(p.oe).forEach(function (oe) { splitC(p.syd).forEach(function (c) { add(oe, "syd", c); }); splitC(p.ctr).forEach(function (c) { add(oe, "ctr", c); }); }); }); }); });
+    return rpc("app_cm_all", { p_token: s.t }).then(function (rows) { CM = rows || []; CM.forEach(function (r) { splitC(r.o).forEach(function (oe) { add(oe, "ctr", r.c); }); }); return OEIX; }).catch(function () { return OEIX; });
+  }
+  var OEK = null;
+  function refOf(key, cat) {
+    var v = VEH.filter(function (x) { return M.vkey(x) === key; })[0]; if (!v || !v.gens.length) return [];
+    var g = v.gens[v.gens.length - 1];
+    return g.parts.filter(function (p) { return String(p.name || "").toUpperCase() === cat; }).map(function (p) { return { pos: p.pos, oe: p.oe, syd: p.syd, ctr: p.ctr, gen: g.code + " " + g.yr }; });
+  }
+  function oeRow(c, i) {
+    var ref = refOf(OEK, c.cat);
+    return '<tr data-i="' + i + '"><td class="cat"><input class="cat" value="' + esc(c.cat) + '"></td><td><input class="pos" value="' + esc(c.pos) + '"></td>'
+      + '<td><input class="oe" value="' + esc(c.oe || "") + '" placeholder="OE 번호"><div class="sug"></div></td>'
+      + '<td><input class="syd mono" value="' + esc(c.syd || "") + '"></td><td><input class="ctr mono" value="' + esc(c.ctr || "") + '"></td><td><input class="price r" inputmode="decimal" value="' + (c.price != null && c.price !== "" ? esc(Number(c.price).toFixed(2)) : "") + '" title="' + esc(c.src || "") + '"><input type="hidden" class="src" value="' + esc(c.src || "") + '"></td><td><input class="note" value="' + esc(c.note || "") + '"></td>'
+      + '<td class="ref">' + ref.map(function (p) { return esc(p.pos) + " · <span class=\"mono\">" + esc(p.oe || "—") + "</span> · SYD " + esc(p.syd || "—") + " · CTR " + esc(p.ctr || "—"); }).join("<br>") + "</td></tr>";
+  }
+  function sugFor(tr) {
+    var box = tr.querySelector(".sug"), oes = splitC(tr.querySelector(".oe").value), syd = {}, ctr = {};
+    oes.forEach(function (oe) { var o = OEIX && OEIX[noe(oe)]; if (!o) return; Object.keys(o.syd).forEach(function (c) { syd[c] = 1; }); Object.keys(o.ctr).forEach(function (c) { ctr[c] = 1; }); });
+    box.innerHTML = Object.keys(syd).map(function (c) { return '<span class="sg" data-s="' + esc(c) + '" title="같은 OE를 쓰는 마스터 부품의 SYD">SYD ' + esc(c) + "</span>"; }).join("")
+      + Object.keys(ctr).map(function (c) { return '<span class="sg c" data-c="' + esc(c) + '" title="같은 OE의 CTR (마스터 · CTR 마스터)">CTR ' + esc(c) + "</span>"; }).join("")
+      + (oes.length && !Object.keys(syd).length && !Object.keys(ctr).length ? '<span class="hint" style="margin:0;font-size:10.5px">일치하는 OE 없음</span>' : "");
+  }
+  function openOe(key) {
+    OEK = key;
+    var r = B.rows.filter(function (x) { return x.key === key; })[0];
+    Q("#oeT").textContent = "OE 입력 — " + (r ? r.brand + " " + r.model : key) + (r && !r.master ? " (🆕 신규)" : "");
+    Q("#oeRows").innerHTML = '<tr><td colspan="8" class="empty">불러오는 중…</td></tr>'; Q("#oeMsg").textContent = ""; Q("#qSum").classList.add("hidden");
+    Q("#oeM").classList.remove("hidden");
+    Promise.all([rpc("app_mkt_oe_get", { p_token: s.t, p_vkey: key }), oeIndex()]).then(function (res) {
+      var have = res[0] || [], L = [], used = {};
+      CATS.forEach(function (c) { var h = have.filter(function (x) { return x.cat === c[0] && x.pos === c[1]; })[0]; if (h) used[h.cat + "|" + h.pos] = 1; L.push(h || { cat: c[0], pos: c[1] }); });
+      have.forEach(function (h) { if (!used[h.cat + "|" + h.pos]) L.push(h); });
+      Q("#oeRows").innerHTML = L.map(oeRow).join("");
+      QA("#oeRows tr").forEach(sugFor); priceSum();
+    }).catch(function (e) { Q("#oeRows").innerHTML = '<tr><td colspan="8" class="empty" style="color:#cf222e">⚠ ' + esc(e.message) + "</td></tr>"; });
+  }
+  Q("#oeRows").addEventListener("input", function (e) { if (e.target.classList.contains("oe")) sugFor(e.target.closest("tr")); });
+  Q("#oeRows").addEventListener("click", function (e) {
+    var g = e.target.closest(".sg"); if (!g) return;
+    var tr = g.closest("tr"), inp = tr.querySelector(g.hasAttribute("data-s") ? ".syd" : ".ctr"), v = g.getAttribute("data-s") || g.getAttribute("data-c");
+    var cur = splitC(inp.value).map(function (x) { return x.toUpperCase(); });
+    if (cur.indexOf(v) < 0) cur.push(v); inp.value = cur.join(" // ");
+  });
+  /* ── 대리점 견적서 PDF → OE 번호 · 단가 자동 입력 (2026-11-27) ── */
+  function priceSum() {
+    var t = 0, n = 0; QA("#oeRows input.price").forEach(function (i) { var v = parseFloat(i.value.replace(/[$,\s]/g, "")); if (isFinite(v)) { t += v; n++; } });
+    var el = Q("#oeMsg"); if (n && !el.textContent) { el.className = "msg"; el.textContent = "단가 " + n + "줄 · 합계 $" + t.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " (IVA 별도)"; }
+  }
+  function rowOf(cat, pos) { return QA("#oeRows tr[data-i]").filter(function (tr) { return tr.querySelector("input.cat").value.trim().toUpperCase() === cat && tr.querySelector("input.pos").value.trim().toLowerCase() === String(pos).toLowerCase(); })[0]; }
+  function newRow(cat, pos) {
+    var tb = Q("#oeRows"), same = QA("#oeRows tr[data-i]").filter(function (tr) { return tr.querySelector("input.cat").value.trim().toUpperCase() === cat; });
+    var html = oeRow({ cat: cat, pos: pos }, tb.querySelectorAll("tr[data-i]").length);
+    if (same.length) same[same.length - 1].insertAdjacentHTML("afterend", html); else tb.insertAdjacentHTML("beforeend", html);
+    return rowOf(cat, pos);
+  }
+  function fillQuote(q, fname) {
+    var src = "견적서 · " + [q.brand, q.vehicle, q.date].filter(Boolean).join(" · ");
+    var r = B.rows.filter(function (x) { return x.key === OEK; })[0], vm = r ? r.model : "";
+    var same = !q.vehicle || !vm || M.nm(q.vehicle).indexOf(M.nm(vm).slice(0, 4)) >= 0 || M.nm(vm).indexOf(M.nm(q.vehicle).slice(0, 4)) >= 0;
+    if (!same && !confirm("견적서 차종 \"" + q.vehicle + "\" 이(가) 지금 연 차종 \"" + vm + "\" 과(와) 다릅니다.\n그래도 이 차종에 넣을까요?")) return;
+    var done = 0, noOe = [], other = [];
+    q.rows.forEach(function (x) {
+      var cats = window.rfxEma.quoteCat(x.desc);
+      if (!cats.length) cats = [[String(x.desc || "").toUpperCase().slice(0, 60), ""]];
+      if (!cats[0][0]) return;
+      if (!(window.rfxEma.quoteCat(x.desc).length)) other.push(x.desc);
+      cats.forEach(function (c) {
+        var tr = rowOf(c[0], c[1]) || newRow(c[0], c[1]);
+        /* 기본 줄 "Front"가 비어 있고 견적이 좌 · 우로 나뉘면 그 빈 기본 줄은 그대로 두고 LH · RH 줄에 넣음 */
+        var oe = tr.querySelector("input.oe"), pr = tr.querySelector("input.price"), nt = tr.querySelector("input.note"), sr = tr.querySelector("input.src");
+        if (x.oe) { var cur = splitC(oe.value).map(function (z) { return noe(z); }); if (cur.indexOf(noe(x.oe)) < 0) oe.value = splitC(oe.value).concat([x.oe]).join(" // "); }
+        else noOe.push(x.desc);
+        if (x.price != null) { pr.value = x.price.toFixed(2); pr.title = src; sr.value = src; }
+        if (!x.oe && !nt.value) nt.value = "견적서에 부품번호 없음";
+        tr.classList.add("qhit"); sugFor(tr); done++;
+      });
+    });
+    var box = Q("#qSum"); box.classList.remove("hidden");
+    box.innerHTML = "✓ <b>" + esc(fname) + "</b> — " + esc(src) + " · 견적 " + q.rows.length + "줄 → 표 " + done + "칸 입력"
+      + (q.subtotal != null ? " · 소계 $" + q.subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 }) + " (IVA 별도) · 합계 $" + (q.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2 }) : "")
+      + (noOe.length ? '<br><span class="warn">부품번호가 없는 줄: ' + esc(noOe.join(", ")) + "</span>" : "")
+      + (other.length ? '<br><span class="warn">카테고리를 몰라 새 줄로 넣은 것: ' + esc(other.join(", ")) + " — 카테고리 · 위치를 고쳐 주세요</span>" : "")
+      + (!same ? '<br><b style="color:#cf222e">⚠ 견적서 차종 "' + esc(q.vehicle) + '" 이(가) 이 차종 "' + esc(vm) + '" 과 다릅니다 — 맞는 차종인지 확인하세요</b>' : "")
+      + (q.warn.length ? '<br><span class="warn">' + esc(q.warn.join(" · ")) + "</span>" : "")
+      + "<br><b>[저장]</b>을 눌러야 저장됩니다. 노란 줄이 견적서에서 들어온 칸입니다.";
+    Q("#oeMsg").textContent = ""; priceSum();
+  }
+  function readQuotes(files) {
+    if (!window.pdfjsLib) { toast("PDF 판독기(pdf.js)를 불러오지 못했습니다"); return; }
+    var chain = Promise.resolve();
+    Array.prototype.forEach.call(files, function (f) {
+      chain = chain.then(function () { return f.arrayBuffer(); }).then(function (buf) { return window.rfxEma.parseQuote(window.pdfjsLib, new Uint8Array(buf)); })
+        .then(function (q) { if (!q.rows.length) { toast(f.name + ": 견적 줄을 찾지 못했습니다"); return; } fillQuote(q, f.name); })
+        .catch(function (e) { toast(f.name + ": PDF를 읽지 못했습니다 (" + (e.message || e) + ")"); });
+    });
+  }
+  (function () {
+    var d = Q("#qDrop"), f = Q("#qFile");
+    d.onclick = function () { f.click(); };
+    d.ondragover = function (e) { e.preventDefault(); d.classList.add("on"); };
+    d.ondragleave = function () { d.classList.remove("on"); };
+    d.ondrop = function (e) { e.preventDefault(); d.classList.remove("on"); if (e.dataTransfer.files.length) readQuotes(e.dataTransfer.files); };
+    f.onchange = function () { if (f.files.length) readQuotes(f.files); f.value = ""; };
+  })();
+  Q("#oeRows").addEventListener("change", function (e) { if (e.target.classList.contains("price")) { Q("#oeMsg").textContent = ""; priceSum(); } });
+  Q("#oeAdd").onclick = function () { var tb = Q("#oeRows"), i = tb.children.length; tb.insertAdjacentHTML("beforeend", oeRow({ cat: "", pos: "" }, i)); };
+  Q("#oeSave").onclick = function () {
+    var rows = QA("#oeRows tr[data-i]").map(function (tr) { function v(c) { return tr.querySelector("input." + c).value.trim(); } var pr = v("price").replace(/[$,\s]/g, ""); return { cat: v("cat").toUpperCase(), pos: v("pos"), oe: v("oe"), syd: v("syd"), ctr: v("ctr"), price: /^\d+(\.\d+)?$/.test(pr) ? pr : "", src: v("src"), note: v("note") }; })
+      .filter(function (x) { return x.cat; });
+    var badP = QA("#oeRows input.price").filter(function (i) { var t = i.value.replace(/[$,\s]/g, ""); return t && !/^\d+(\.\d+)?$/.test(t); });
+    if (badP.length) { Q("#oeMsg").className = "msg err"; Q("#oeMsg").textContent = "단가는 숫자로 넣어 주세요 (예: 3429.49)"; badP[0].focus(); return; }
+    var dup = {}, bad = rows.filter(function (x) { var k = x.cat + "|" + x.pos; if (dup[k] && (x.oe || x.syd || x.ctr)) return true; dup[k] = 1; return false; });
+    if (bad.length) { Q("#oeMsg").className = "msg err"; Q("#oeMsg").textContent = "같은 카테고리 · 위치가 두 줄 있습니다: " + bad[0].cat + " " + bad[0].pos; return; }
+    var btn = Q("#oeSave"); btn.disabled = true;
+    rpc("app_mkt_oe_set", { p_token: s.t, p_vkey: OEK, p_rows: rows }).then(function (b) {
+      Q("#oeMsg").className = "msg ok"; Q("#oeMsg").textContent = "✓ " + b.saved + "줄 저장"; MK.oen = MK.oen || {}; MK.oen[OEK] = b.saved; render();
+    }).catch(function (e) { Q("#oeMsg").className = "msg err"; Q("#oeMsg").textContent = "⚠ " + e.message; }).then(function () { btn.disabled = false; });
+  };
+  Q("#oeX").onclick = Q("#oeC").onclick = function () { Q("#oeM").classList.add("hidden"); };
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") { Q("#oeM").classList.add("hidden"); Q("#alM").classList.add("hidden"); } });
+})();
+</script>
+</body>
+</html>

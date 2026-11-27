@@ -1,0 +1,34 @@
+REFATRIX · 시장 데이터 (VIO + 월별 신차 판매) 패치 — 2026-11-27 (v5 · 본체 추가 · 견적서 PDF OE·단가 · ERP 차종 전송 · ERP 회신 반영)
+
+[1] Supabase → SQL Editor → refatrix_market.sql 전체를 붙여넣고 RUN (고칠 곳 없음)
+    · 결과 "시장 데이터 모듈 준비 완료" 가 나오면 성공 · 다시 실행해도 안전 (저장된 자료 유지)
+    · 이미 설치된 refatrix_syd_master_v2.sql · refatrix_syd_price.sql 을 사용
+
+[2] 아래 5개 파일을 배포 폴더에 넣고 Netlify에 배포
+    market.html        (새 화면 · 📈 시장 데이터)
+    ema_parse.js       (새 · EMA PDF 판독)
+    mkt_core.js        (새 · 차종 연결 · 추정 VIO 계산)
+    sample_plan.html   (변경 · 순위 기준 "추정 VIO — 시장 데이터" 선택)
+    syd_sample.js      (변경 · 위쪽 메뉴에 "📈 시장 데이터" 링크)
+
+[3] 플랫폼 → 📈 시장 데이터 → EMA PDF 올리기 → 미리보기 확인 → [저장]
+    · "🆕 신규 차종을 차량·부품 본체에도 추가" 가 켜져 있으면 신규 차종이 본체(차량·부품)에 바로 만들어집니다
+
+[4] OE 입력 창 → 맨 위 "대리점 견적서 PDF" 칸에 Cotización PDF를 끌어다 놓기
+    · 부품명(HORQUILLA · ROTULA · AMORTIGUADOR · TERMINAL …)으로 카테고리 · 위치를 찾아 OE 번호와 단가(IVA 별도)가 자동으로 들어감
+    · 노란 줄 확인 → [저장]
+    · SQL을 이미 실행했어도 refatrix_market.sql 을 한 번 더 실행해야 단가 칸이 생깁니다 (자료는 그대로)
+
+[5] ERP 차종 전송 — ERP질의프로토콜_차종등록API_20261127.md 를 ERP 개발 쪽에 전달
+    · ERP에 POST /api/pf-catalog/vehicles 가 생기기 전까지 플랫폼은 신규 차종을 "ERP 대기"로 남깁니다
+    · API가 Railway에 배포되면 디렉터가 시장 데이터 화면을 열 때 대기 차종이 자동으로 ERP에 등록됩니다 (30분마다)
+    · 바로 보내려면 [🚗 신규 차종 → ERP] 를 누르세요
+    · SQL을 이미 실행했어도 refatrix_market.sql 을 한 번 더 실행하세요 (ERP 상태 칸 추가 · 자료는 그대로)
+
+[6] ERP 패치 (REFATRIX_2026-11-27h_pf_vehicles · ERP 개발 프로젝트 회신) 배포 순서
+    ① 백엔드 푸시 → Railway Success → npm run migrate (0346_pf_vehicles.sql)
+    ② 프론트 푸시 → ERP 화면 Ctrl+Shift+R
+    ③ ERP 제품 화면에서 「분해 데이터 전체 재동기화」 1회 (디렉터) — 이미 고친 'Geely Emgrand 2025' 같은 적용차종이 제품찾기에 나오게 됨
+    ④ 플랫폼 📈 시장 데이터 → [🚗 신규 차종 → ERP] (또는 화면을 열면 30분마다 자동 재전송)
+    · migrate 전에는 ERP가 501(migration_required)을 돌려줘 플랫폼은 "ERP 대기"로 둡니다
+    · ERP에서 다듬은 연식 · 연결 제품 수는 시장 데이터 화면의 🚗 배지에 표시됩니다
