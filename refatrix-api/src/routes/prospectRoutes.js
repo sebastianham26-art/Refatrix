@@ -16,7 +16,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, checkStageMove, autoAdvance, normalizeImportRow,
+  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, estimateRoute, ROUTE_SETTINGS_DEFAULT, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
@@ -59,6 +59,14 @@ async function hasPotCols() {
   return potCols;
 }
 let planCols = false;
+// 루트 추정 기준(상담 시간·연비·속도·도로 보정) — 0341 전에는 기본값
+let rsCache = { at: 0, v: null };
+async function routeSettings() {
+  if (rsCache.v && Date.now() - rsCache.at < 30000) return rsCache.v;
+  let v = { ...ROUTE_SETTINGS_DEFAULT };
+  try { (await query(`SELECT key, value FROM prospect_settings`)).rows.forEach((r) => { if (r.key in v) v[r.key] = Number(r.value); }); } catch (_) { /* 0341 전 */ }
+  rsCache = { at: Date.now(), v }; return v;
+}
 let batchCols = false;
 async function hasBatchCols() {
   if (batchCols) return true;
@@ -207,7 +215,7 @@ export default async function prospectRoutes(app) {
       checkin_warn_m: CHECKIN_WARN_M, form: ALTA_FORM, fields: ALTA_FIELDS,
       users: isDir(req) ? users : users.filter((u) => u.id === me(req)),
       staff: (isDir(req) ? users : users.filter((u) => u.id === me(req))).filter((u) => !u.excluded),   // 담당 선택지(디렉터가 뺀 사람 제외)
-      potential_tiers: POTENTIAL_TIERS, score_rules: SCORE_RULES, section_weights: SECTION_WEIGHTS, score_bands: SCORE_BANDS,
+      potential_tiers: POTENTIAL_TIERS, score_rules: SCORE_RULES, section_weights: SECTION_WEIGHTS, score_bands: SCORE_BANDS, route_settings: await routeSettings(),
       can_work: canWork, states,
       me: me(req), is_director: isDir(req), is_real_director: isRealDir(req), is_manager: req.prospectMgr === true, today: mxToday() };
   });
@@ -748,7 +756,8 @@ export default async function prospectRoutes(app) {
   async function routeOut(userId, date) {
     const r = (await query(`SELECT id, name FROM prospect_routes WHERE user_id=$1 AND route_date=$2`, [userId, date])).rows[0];
     if (!r) return { date, user_id: userId, stops: [] };
-    return { date, user_id: userId, route_id: Number(r.id), name: r.name, stops: await routeStops(Number(r.id)) };
+    const stops = await routeStops(Number(r.id));
+    return { date, user_id: userId, route_id: Number(r.id), name: r.name, stops, estimate: estimateRoute(stops, await routeSettings()) };
   }
   // ── 방문 목록(날짜 미정 루트) — 루트를 먼저 짜 두고 날짜는 본인이 고른다(디렉터 결정 2026-11-26) ──
   const WORKDAY = (ymd) => { const g = new Date(ymd + 'T12:00:00Z').getUTCDay(); return g !== 6 && g !== 0; };   // 토·일 근무 없음
@@ -767,13 +776,17 @@ export default async function prospectRoutes(app) {
          FROM prospect_routes r JOIN prospect_route_stops s ON s.route_id=r.id LEFT JOIN users u ON u.id=r.user_id
         WHERE r.route_date IS NULL AND ${cond}
         GROUP BY r.id, u.name ORDER BY r.created_at, r.id LIMIT 200`, params)).rows;
-    return { rows: rows.map((r) => ({ ...r, id: Number(r.id), user_id: Number(r.user_id) })) };
+    const pts = {};
+    if (rows.length) (await query(`SELECT s.route_id, p.lat, p.lng FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id WHERE s.route_id = ANY($1) ORDER BY s.route_id, s.seq`,
+      [rows.map((r) => Number(r.id))])).rows.forEach((x) => (pts[x.route_id] = pts[x.route_id] || []).push({ lat: Number(x.lat), lng: Number(x.lng) }));
+    const rs = await routeSettings();
+    return { rows: rows.map((r) => ({ ...r, id: Number(r.id), user_id: Number(r.user_id), estimate: estimateRoute(pts[r.id] || [], rs) })) };
   });
   app.get('/api/prospect-routes/by-id/:id', view, async (req, reply) => {
     const r = await ownRoute(req, req.params.id); if (!r) return reply.code(404).send({ error: 'not_found' });
     return { route_id: Number(r.id), user_id: Number(r.user_id), user_name: r.user_name, name: r.name,
       date: r.route_date ? String(r.route_date instanceof Date ? r.route_date.toISOString().slice(0, 10) : r.route_date).slice(0, 10) : null,
-      stops: await routeStops(Number(r.id)) };
+      ...(await (async () => { const st = await routeStops(Number(r.id)); return { stops: st, estimate: estimateRoute(st, await routeSettings()) }; })()) };
   });
   // 여러 코스를 한 번에 방문 목록으로 저장 {user_id, name, days:[{prospect_ids}]}
   app.post('/api/prospect-routes/plans', edit, async (req, reply) => {
@@ -883,6 +896,22 @@ export default async function prospectRoutes(app) {
     });
     await logEvent({ userId: me(req), action: 'delete', target: 'prospect_routes:bulk', detail: { mode, user_id: int(b.user_id), from: b.from, to: b.to, include_plans: !!b.include_plans, ...out } });
     return { ok: true, mode, ...out };
+  });
+
+  // 루트 추정 기준 — 디렉터·관리자가 목표 화면에서 입력
+  app.get('/api/prospect-settings', view, async () => ({ route: await routeSettings() }));
+  app.put('/api/prospect-settings', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const b = (req.body || {}).route || {};
+    const lim = { visit_min: [1, 240], km_per_liter: [1, 60], speed_kmh: [5, 120], road_factor: [1, 3] };
+    for (const [k, [lo, hi]] of Object.entries(lim)) {
+      if (b[k] == null || b[k] === '') continue;
+      const v = Number(b[k]); if (!Number.isFinite(v) || v < lo || v > hi) return reply.code(400).send({ error: 'bad_value', key: k, min: lo, max: hi });
+      await query(`INSERT INTO prospect_settings (key, value, updated_by) VALUES ($1,$2,$3) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_by=EXCLUDED.updated_by, updated_at=now()`, [k, v, me(req)]);
+    }
+    rsCache.at = 0;
+    await logEvent({ userId: me(req), action: 'update', target: 'prospect_settings', detail: b });
+    return { ok: true, route: await routeSettings() };
   });
 
   // 🎯 목표 대비 방문 계획 — 담당자별(디렉터·관리자: 전원, 담당자: 본인)
@@ -1084,13 +1113,14 @@ export default async function prospectRoutes(app) {
     cnt.eligible = cands.length;
     const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
     const plan = planDays(cands, { max, maxDays, start });
-    const days = plan.days;
+    const rs = await routeSettings();
+    const days = plan.days.map((d, k) => { const e = estimateRoute(d.stops, rs, k === 0 ? start : null); return { ...d, minutes: e.total_min, estimate: e }; });
     cnt.scheduled = days.reduce((a, d) => a + d.stops.length, 0); cnt.left = cnt.eligible - cnt.scheduled;
     // 목록 이름 제안: 구역 안에서 가장 많은 colonia(없으면 municipio)
     const freq = {}; cands.forEach((c) => { const k = c.colonia || c.municipio; if (k) freq[k] = (freq[k] || 0) + 1; });
     const top = Object.entries(freq).sort((a, c) => c[1] - a[1])[0];
     const d0 = days[0] || { stops: [], distance_m: 0, minutes: 0 };
-    return { user_id: uid, start, days, counts: cnt, excluded, name_hint: top ? top[0] : null,
+    return { user_id: uid, start, days, counts: cnt, excluded, name_hint: top ? top[0] : null, route_settings: rs,
       in_area: rows.length, stops: d0.stops, distance_m: d0.distance_m, minutes: d0.minutes };
   });
 

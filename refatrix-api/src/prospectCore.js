@@ -655,3 +655,18 @@ export function planStatus({ target = 0, done = 0, dropped = 0, planned = 0, mis
   return { target: T, done, dropped, planned, missed, covered, gap: T ? Math.max(0, T - covered) : null,
     coverage_pct: T ? Math.round((covered / T) * 1000) / 10 : null, done_pct: T ? Math.round((done / T) * 1000) / 10 : null, expected, pace };
 }
+
+// ── 루트 소요시간·연료 추정 ─────────────────────────────────────────────
+//   거리 = 정류장 사이 직선거리 합 × 도로 보정 · 이동시간 = 거리 ÷ 평균 속도 · 상담 = 곳 수 × 상담 시간 · 연료 = 거리 ÷ 연비
+export const ROUTE_SETTINGS_DEFAULT = { visit_min: 20, km_per_liter: 10, speed_kmh: 22, road_factor: 1.3 };
+export function estimateRoute(stops, settings = {}, start = null) {
+  const S = { ...ROUTE_SETTINGS_DEFAULT, ...settings };
+  const pts = (start ? [start] : []).concat((stops || []).filter((x) => x && x.lat != null && x.lng != null));
+  let m = 0; for (let i = 1; i < pts.length; i++) m += distanceM(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng) || 0;
+  const km = Math.round((m / 1000) * Number(S.road_factor) * 10) / 10;
+  const n = (stops || []).length;
+  const drive = Math.round((km / Math.max(1, Number(S.speed_kmh))) * 60);
+  const visit = Math.round(n * Number(S.visit_min));
+  return { stops: n, km, drive_min: drive, visit_min: visit, total_min: drive + visit,
+    fuel_l: Math.round((km / Math.max(0.1, Number(S.km_per_liter))) * 10) / 10, settings: S };
+}

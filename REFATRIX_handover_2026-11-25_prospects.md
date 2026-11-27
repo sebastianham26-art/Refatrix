@@ -84,6 +84,15 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
   - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
 - **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
 
+## 21차 보완 (2026-11-26) — 루트 소요시간·필요 연료 추정
+- **마이그레이션 0341** (`0341_prospect_settings.sql`) — `prospect_settings`: 업체당 상담 시간(기본 20분) · 연비 km/L(기본 10) · 시내 평균 속도(기본 22km/h) · 도로 보정(직선거리 × 1.3).
+- 목표 화면 「⏱ 루트 소요시간·연료 추정 기준」에서 디렉터·관리자가 입력(`GET|PUT /api/prospect-settings`).
+- 추정(`estimateRoute`): 거리 = 정류장 사이 직선거리 × 도로 보정 · 이동 = 거리 ÷ 속도 · 상담 = 곳 수 × 상담 시간 · **총 소요 = 이동 + 상담** · **연료 = 거리 ÷ 연비**.
+  - 지도 구역 제안: 코스마다 「총 4시간 3분 = 이동 … + 상담 12곳 × 20분 · 연료 약 …L」, 코스 합계.
+  - 오늘 루트·방문 목록 보기: 「⏱ 예상 …」. 방문 목록 줄: 「약 4시간 10분 · 3.8km · 연료 0.3L」.
+  - 응답: 루트·목록 `estimate {km, drive_min, visit_min, total_min, fuel_l, settings}`, 제안 `days[].estimate`.
+- 바뀐 파일: `prospectCore.js`, `routes/prospectRoutes.js`, `refatrix-prospects.html`, 새 마이그레이션 0341.
+
 ## 20차 보완 (2026-11-26) — 지역 이름 바꾸기
 - 지역·담당 표의 지역 이름 옆 ✏ → 그 자리에서 입력 → Enter/저장(Esc/취소). 구역·담당·후보 배정은 그대로, 이름만 바뀜.
 - 디렉터·관리자는 모든 지역, 담당자는 자기 지역만. `PATCH /api/prospect-territories/:id/name {name}`.
@@ -210,7 +219,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 
 ## 배포 순서
 1. 백엔드 파일 올리기(refatrix-api) → Railway 재배포
-2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339**, **0340** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
+2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339**, **0340**, **0341** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
 3. 화면 파일 올리기: `refatrix-prospects.html`, `refatrix-nav.js`, `refatrix-consult.html`
 4. 메뉴: 영업 › **고객개발**. 권한은 고객상담과 같은 `pipeline`(영업활동) 키. 가져오기·지역·목표·연결 승인은 디렉터만.
 5. 고객개발 › **DENUE 가져오기**에서 `prospects_import_NL.csv` 업로드(9,492곳, 판 2026-11) → **지역·담당**에서 지역 만들기 → 저장하면 미배정 후보가 자동 배정됩니다.
@@ -236,6 +245,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 | DB | `refatrix-api/migrations/0338_prospect_managers_purge.sql` | 고객개발 관리자(Gabriel) |
 | DB | `refatrix-api/migrations/0339_prospect_route_plans.sql` | 방문 목록(날짜 미정 루트) |
 | DB | `refatrix-api/migrations/0340_prospect_import_batches.sql` | DENUE 업로드 파일 기록 · 깨진 글자 복구 |
+| DB | `refatrix-api/migrations/0341_prospect_settings.sql` | 루트 추정 기준(상담 시간·연비 등) |
 | 테스트 | `test/prospects.test.mjs` | 순수 함수 17개 |
 
 ## 흐름 요약
