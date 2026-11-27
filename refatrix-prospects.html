@@ -417,14 +417,15 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <div id="g-banner"></div>
       <div class="card flat" id="g-rs" style="margin-top:12px;padding:14px">
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-          <b style="flex-basis:100%">⏱ 루트 소요시간·연료 추정 기준</b>
+          <b style="flex-basis:100%">⏱ 루트 소요시간·연료·유류비 추정 기준</b>
           <label class="fld"><span>업체당 상담 시간(분)</span><input type="number" id="rs-visit" min="1" max="240" style="width:120px"></label>
           <label class="fld"><span>연비 (km / 리터)</span><input type="number" id="rs-kpl" min="1" max="60" step="0.1" style="width:120px"></label>
           <label class="fld"><span>시내 평균 속도 (km/h)</span><input type="number" id="rs-speed" min="5" max="120" style="width:120px"></label>
           <label class="fld"><span>도로 보정 (직선거리 ×)</span><input type="number" id="rs-road" min="1" max="3" step="0.05" style="width:120px"></label>
+          <label class="fld"><span>연료비 (페소 / 리터)</span><input type="number" id="rs-fuel" min="0" max="200" step="0.01" style="width:120px" placeholder="예: 24.50"></label>
           <button class="btn red sm" id="rs-save">기준 저장</button>
         </div>
-        <p class="note" style="margin-top:6px">루트를 만들면 「총 소요 = 이동 시간 + 곳 수 × 상담 시간」, 「필요 연료 = 이동 거리 ÷ 연비」로 추정합니다. 이동 거리는 지도상 직선거리에 도로 보정을 곱한 값입니다.</p>
+        <p class="note" style="margin-top:6px">루트를 만들면 「총 소요 = 이동 시간 + 곳 수 × 상담 시간」, 「필요 연료 = 이동 거리 ÷ 연비」, 「유류비 예산 = 필요 연료 × 연료비」로 추정합니다. 연료비를 0으로 두면 유류비 예산은 표시하지 않습니다. 이동 거리는 지도상 직선거리에 도로 보정을 곱한 값입니다.</p>
       </div>
       <div class="scroll" style="margin-top:12px"><table class="tb" id="g-table"></table></div>
       <p class="note">① 맨 위 줄에 지표별 <b>총 합의 목표</b>를 넣고 ② 담당자별 <b>할당률(%)</b>을 넣으면 담당자 목표가 자동으로 나뉩니다. 할당률이 없는 담당자는 목표가 없고, 총 목표를 비운 지표도 목표가 없습니다.<br>
@@ -864,11 +865,14 @@ const DAY_COLORS=['#E2231A','#1F6FEB','#1E7A46','#F5A300','#7B3FE4','#0E8C8C','#
 const wd=d=>['일','월','화','수','목','금','토'][new Date(d+'T12:00:00').getDay()];
 const hm=m=>Math.floor(m/60)+'시간 '+(m%60)+'분';
 // 루트 추정: 이동 거리·이동 시간 + 상담(곳 수 × 상담 시간) = 총 소요 · 필요 연료(연비 기준) — 기준은 「목표」 화면에서
+// 1126 · 유류비 예산(페소) — 소수 둘째 자리
+const fuelMoney=n=>'$'+Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 function estText(e,short){
   if(!e||!e.stops) return '';
   const S=e.settings||{};
-  if(short) return '약 '+hm(e.total_min)+' · '+e.km+'km · 연료 '+e.fuel_l+'L';
-  return '<b>총 '+hm(e.total_min)+'</b> = 이동 '+hm(e.drive_min)+' ('+e.km+'km) + 상담 '+e.stops+'곳 × '+(S.visit_min||20)+'분 · <b>연료 약 '+e.fuel_l+'L</b> <span class="note">(연비 '+(S.km_per_liter||10)+'km/L)</span>';
+  const fc=e.fuel_cost!=null?fuelMoney(e.fuel_cost):'';
+  if(short) return '약 '+hm(e.total_min)+' · '+e.km+'km · 연료 '+e.fuel_l+'L'+(fc?' · 유류비 '+fc:'');
+  return '<b>총 '+hm(e.total_min)+'</b> = 이동 '+hm(e.drive_min)+' ('+e.km+'km) + 상담 '+e.stops+'곳 × '+(S.visit_min||20)+'분 · <b>연료 약 '+e.fuel_l+'L</b>'+(fc?' · <b>유류비 예산 '+fc+'</b>':'')+' <span class="note">(연비 '+(S.km_per_liter||10)+'km/L'+(fc?' · 연료비 $'+Number(S.fuel_price).toFixed(2)+'/L':'')+')</span>';
 }
 function drawSuggestion(){
   const r=AR.res, C=r.counts||{}; if(!arRoute) arRoute=L.layerGroup().addTo(MAP); arRoute.clearLayers();
@@ -892,7 +896,7 @@ function drawSuggestion(){
       else L.circleMarker([s.lat,s.lng],{radius:5,weight:2,color:'#fff',fillColor:col,fillOpacity:.9}).bindTooltip('코스 '+(k+1)+' · '+esc(s.nom_estab)).addTo(arRoute); }); });
   if(AR.name==null) AR.name=(r.name_hint||'구역')+' '+META.today.slice(5).replace('-','/');
   $('ar-out').innerHTML=head+warn+
-    '<div style="margin-top:10px"><b>'+esc(nm)+'</b> · '+r.days.length+'개 코스 · '+fmt(tot.n)+'곳 · 모두 합쳐 '+hm(r.days.reduce((a,d)=>a+((d.estimate||{}).total_min||0),0))+' · '+(r.days.reduce((a,d)=>a+((d.estimate||{}).km||0),0)).toFixed(1)+'km · 연료 약 '+(r.days.reduce((a,d)=>a+((d.estimate||{}).fuel_l||0),0)).toFixed(1)+'L</div>'+chips+
+    '<div style="margin-top:10px"><b>'+esc(nm)+'</b> · '+r.days.length+'개 코스 · '+fmt(tot.n)+'곳 · 모두 합쳐 '+hm(r.days.reduce((a,d)=>a+((d.estimate||{}).total_min||0),0))+' · '+(r.days.reduce((a,d)=>a+((d.estimate||{}).km||0),0)).toFixed(1)+'km · 연료 약 '+(r.days.reduce((a,d)=>a+((d.estimate||{}).fuel_l||0),0)).toFixed(1)+'L'+(r.days.some(d=>d.estimate&&d.estimate.fuel_cost!=null)?' · <b>유류비 예산 '+fuelMoney(r.days.reduce((a,d)=>a+((d.estimate||{}).fuel_cost||0),0))+'</b>':'')+'</div>'+chips+
     '<div class="note"><b style="color:'+DAY_COLORS[AR.day%8]+'">코스 '+(AR.day+1)+'</b> · '+estText(D.estimate)+'</div>'+
     '<ol style="list-style:none;padding:0;margin:8px 0">'+D.stops.map((s,i)=>'<li class="stop" style="padding:8px 0"><div class="n" style="width:26px;height:26px;font-size:12px;background:'+DAY_COLORS[AR.day%8]+';color:#fff;border-color:'+DAY_COLORS[AR.day%8]+'">'+(i+1)+'</div><div style="flex:1;min-width:0"><span class="tag '+s.priority+'">'+s.priority+'</span> <b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||'')+' · '+esc((STAGE[s.stage]||{}).ko||'')+' · '+s.score+'점'+(s.owner_user_id==null?' · 미배정':'')+'</div></div><button class="iconbtn" data-arx="'+s.id+'" aria-label="빼기" title="빼기">✕</button></li>').join('')+'</ol>'+
     '<label class="fld" style="margin-bottom:10px"><span>목록 이름</span><input type="text" id="ar-name" value="'+esc(AR.name)+'"></label>'+
@@ -1550,11 +1554,11 @@ function allocate(total,shares,integer){
 }
 async function loadRouteSettings(){
   let r; try{ r=(await api('/api/prospect-settings')).route; }catch(e){ return; }
-  $('rs-visit').value=r.visit_min; $('rs-kpl').value=r.km_per_liter; $('rs-speed').value=r.speed_kmh; $('rs-road').value=r.road_factor;
+  $('rs-visit').value=r.visit_min; $('rs-kpl').value=r.km_per_liter; $('rs-speed').value=r.speed_kmh; $('rs-road').value=r.road_factor; $('rs-fuel').value=r.fuel_price!=null?r.fuel_price:'';
 }
 $('rs-save').onclick=async()=>{
-  try{ const r=await post('/api/prospect-settings',{route:{visit_min:$('rs-visit').value,km_per_liter:$('rs-kpl').value,speed_kmh:$('rs-speed').value,road_factor:$('rs-road').value}},'PUT');
-    META.route_settings=r.route; toast('추정 기준 저장 · 상담 '+r.route.visit_min+'분 · 연비 '+r.route.km_per_liter+'km/L'); }
+  try{ const r=await post('/api/prospect-settings',{route:{visit_min:$('rs-visit').value,km_per_liter:$('rs-kpl').value,speed_kmh:$('rs-speed').value,road_factor:$('rs-road').value,fuel_price:$('rs-fuel').value}},'PUT');
+    META.route_settings=r.route; toast('추정 기준 저장 · 상담 '+r.route.visit_min+'분 · 연비 '+r.route.km_per_liter+'km/L · 연료비 $'+Number(r.route.fuel_price||0).toFixed(2)+'/L'); }
   catch(e){ toast(e.message==='bad_value'?'값의 범위를 확인하세요':'실패: '+e.message); }
 };
 async function loadTargets(){
@@ -1687,6 +1691,6 @@ window.addEventListener('pageshow',e=>{ if(e.persisted){ refreshCounts(); if(cur
 init();
 })();
 </script>
-<script src="refatrix-nav.js?v=20261126dv"></script>
+<script src="refatrix-nav.js?v=20261126fu"></script>
 </body>
 </html>

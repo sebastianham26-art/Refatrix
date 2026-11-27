@@ -59,7 +59,7 @@ async function hasPotCols() {
   return potCols;
 }
 let planCols = false;
-// 루트 추정 기준(상담 시간·연비·속도·도로 보정) — 0341 전에는 기본값
+// 루트 추정 기준(상담 시간·연비·속도·도로 보정·연료비) — 0341 전에는 기본값 · 연료비는 저장 전까지 기본 24페소/L
 let rsCache = { at: 0, v: null };
 async function routeSettings() {
   if (rsCache.v && Date.now() - rsCache.at < 30000) return rsCache.v;
@@ -903,7 +903,7 @@ export default async function prospectRoutes(app) {
   app.put('/api/prospect-settings', edit, async (req, reply) => {
     if (!directorOnly(req, reply)) return;
     const b = (req.body || {}).route || {};
-    const lim = { visit_min: [1, 240], km_per_liter: [1, 60], speed_kmh: [5, 120], road_factor: [1, 3] };
+    const lim = { visit_min: [1, 240], km_per_liter: [1, 60], speed_kmh: [5, 120], road_factor: [1, 3], fuel_price: [0, 200] };   // 1126 · fuel_price = 연료비(페소/L)
     for (const [k, [lo, hi]] of Object.entries(lim)) {
       if (b[k] == null || b[k] === '') continue;
       const v = Number(b[k]); if (!Number.isFinite(v) || v < lo || v > hi) return reply.code(400).send({ error: 'bad_value', key: k, min: lo, max: hi });
