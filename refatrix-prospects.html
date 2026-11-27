@@ -210,7 +210,6 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
     <button class="tab dir" role="tab" data-tab="import">DENUE 가져오기</button>
   </nav>
   <div class="filters">
-    <label class="mini"><span>주</span><select id="f-ent"></select></label>
     <label class="mini hide" id="f-range-wrap"><span>단위</span><select id="f-range"><option value="month">월별</option><option value="week">이번 주</option></select></label>
     <label class="mini" id="f-period-wrap"><span>기간</span><input type="month" id="f-period"></label>
   </div>
@@ -512,7 +511,7 @@ const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9'
 const SEG_LBL={mayorista:'부품 도매',refaccionaria:'Refaccionaria',refaccionaria_usada:'Refaccionaria(중고)',taller_suspension:'서스펜션·얼라인먼트',taller_general:'일반정비',otro:'기타'};
 const METRIC_LBL={contactados:'첫 방문',perfilados:'정보 확보',cotizaciones:'견적 제출',nuevos_clientes:'첫 매출',venta_nuevos:'첫 매출 금액(IVA 제외)',puntos:'개발 점수'};
 const stageDot=k=>'<span class="chip"><span class="dot" style="background:'+(STAGE_COLOR[k]||'#999')+'"></span>'+esc((STAGE[k]||{}).ko||k)+'</span>';
-const ent=()=>$('f-ent').value||'';
+const ent=()=>'';   // 주(州) 선택 없음 — 전국을 한 화면에서(지도는 움직이는 대로)
 const period=()=>$('f-period').value;
 const isMobile=()=>window.matchMedia('(max-width:760px)').matches;
 const REP_COLORS=['#E2231A','#111111','#1F6FEB','#F5A300','#1E7A46','#7B3FBF','#0F9AA8','#8C8C8C','#C2185B','#5D4037'];
@@ -549,8 +548,6 @@ async function init(){
   if(!META.can_work) document.querySelectorAll('.tab.work').forEach(el=>el.classList.add('hide'));
   META.stages.forEach(s=>STAGE[s.key]=s); META.users.forEach(u=>USERS[u.id]=u.name); Object.assign(METRIC_LBL,META.metric_names||{});
   document.querySelectorAll('.dir').forEach(el=>el.classList.toggle('hide',!isDir));
-  opts($('f-ent'),META.states.map(s=>[s.cve_ent,(s.entidad||s.cve_ent)+' ('+fmt(s.n)+')']),META.states.length>1?'전체':null);
-  if(META.states.find(s=>s.cve_ent==='19')) $('f-ent').value='19';
   $('f-period').value=META.today.slice(0,7);
   const stOpts=META.stages.map(s=>[s.key,s.ko]); const segOpts=META.segments.map(s=>[s,SEG_LBL[s]||s]);
   [$('m-stage'),$('l-stage')].forEach(el=>opts(el,stOpts,'전체'));
@@ -581,7 +578,6 @@ function show(tab){
   ({board:loadBoard,route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:loadPurge})[tab]();
 }
 $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(b) show(b.dataset.tab); });
-$('f-ent').addEventListener('change',()=>show(cur));
 $('f-range').addEventListener('change',()=>show('board'));
 $('f-period').addEventListener('change',()=>{ if(cur==='dash'||cur==='targets'||cur==='board') show(cur); });
 async function refreshCounts(){
@@ -976,9 +972,23 @@ function drawSuggestion(){
 }
 async function loadMapPins(){
   const b=MAP.getBounds(); const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(v=>v.toFixed(5)).join(',');
-  let r; try{ r=await api('/api/prospects/map?bbox='+bbox+(ent()?'&cve_ent='+ent():'')+($('m-owner').value?'&owner='+$('m-owner').value:'')); }catch(e){ return; }
-  const st=$('m-stage').value, sg=$('m-seg').value, pr=$('m-prio').value;
+  const st=$('m-stage').value, sg=$('m-seg').value, pr=$('m-prio').value, z=MAP.getZoom();
+  const qx=new URLSearchParams({bbox,z:String(z)}); if($('m-owner').value) qx.set('owner',$('m-owner').value); if(st) qx.set('stage',st); if(sg) qx.set('segment',sg); if(pr) qx.set('priority',pr);
+  let r; try{ r=await api('/api/prospects/map?'+qx); }catch(e){ return; }
   layer.clearLayers();
+  // 멀리서 볼 때: 지역별 숫자 묶음 — 누르면 그곳으로 확대
+  if(r.clusters){
+    // 화면에서 60px 안에 겹치는 묶음은 하나로(큰 묶음 기준, 위치는 수량 가중 평균)
+    const merged=[]; r.clusters.slice().sort((a,b)=>b.n-a.n).forEach(c=>{ const pt=MAP.latLngToContainerPoint([c.lat,c.lng]);
+      const m=merged.find(x=>x.pt.distanceTo(pt)<60);
+      if(m){ const n=m.n+c.n; m.lat=(m.lat*m.n+c.lat*c.n)/n; m.lng=(m.lng*m.n+c.lng*c.n)/n; m.n=n; m.free+=c.free; if(c.ent&&m.ent&&c.ent!==m.ent&&!m.ent.includes(c.ent)) m.ent+=' · '+c.ent; }
+      else merged.push({...c,pt}); });
+    merged.forEach(c=>{ const d=Math.round(26+Math.min(34,Math.log10(c.n+1)*14));
+      L.marker([c.lat,c.lng],{icon:L.divIcon({className:'',iconSize:[d,d],iconAnchor:[d/2,d/2],html:'<div style="width:'+d+'px;height:'+d+'px;border-radius:50%;background:rgba(226,35,26,.88);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);color:#fff;font:800 '+(d>44?14:12)+'px/1 sans-serif;display:flex;align-items:center;justify-content:center">'+(c.n>=1000?(c.n/1000).toFixed(c.n>=10000?0:1)+'k':c.n)+'</div>'})})
+        .bindTooltip(fmt(c.n)+'곳'+(c.ent?' · '+esc(c.ent):'')+(c.free?' · 미배정 '+fmt(c.free):'')+' — 눌러서 확대').on('click',()=>MAP.setView([c.lat,c.lng],Math.min(z+3,12))).addTo(layer); });
+    $('m-sel').textContent='전국 '+fmt(r.total)+'곳 · 숫자를 누르거나 확대하면 업체가 보입니다';
+    return;
+  }
   (r.others||[]).forEach(o=>L.circleMarker([o[0],o[1]],{radius:3.5,weight:o[2]?1.5:0,color:'#555',fillColor:'#B5B5B5',fillOpacity:.85,interactive:false}).addTo(layer));
   r.rows.filter(p=>(!st||p.s===st)&&(!sg||p.g===sg)&&(!pr||p.pr===pr)).forEach(p=>{
     const visited=!!p.v, planned=!!p.rd;
@@ -1198,7 +1208,7 @@ $('rt-unplanned').onclick=()=>{
     '<button class="btn red big" style="width:100%;margin-top:16px" id="un-go">위치 저장 · 체크인·녹음</button>');
   $('un-go').onclick=async()=>{
     const g=await geo(); if(!g) return toast('위치를 가져오지 못했습니다');
-    try{ const r=await post('/api/prospects',{nom_estab:$('un-name').value,segment:$('un-seg').value,lat:g.lat,lng:g.lng,cve_ent:ent()||'19'}); checkin(r.id); }
+    try{ const r=await post('/api/prospects',{nom_estab:$('un-name').value,segment:$('un-seg').value,lat:g.lat,lng:g.lng}); checkin(r.id); }
     catch(e){ toast('실패: '+e.message); }
   };
 };
@@ -1207,7 +1217,8 @@ $('rt-unplanned').onclick=()=>{
 let LIST_OFF=0, LIST_SEL=new Set(), qTimer=null;
 async function loadMuns(){
   if($('l-mun').options.length>1) return;
-  try{ const r=await api('/api/prospects/municipios?cve_ent='+(ent()||'19')); $('l-mun').innerHTML='<option value="">전체</option>'+r.rows.map(m=>'<option>'+esc(m.municipio)+'</option>').join(''); }catch(e){}
+  try{ const r=await api('/api/prospects/municipios'); const multi=new Set(r.rows.map(m=>m.cve_ent)).size>1;
+    $('l-mun').innerHTML='<option value="">전체</option>'+r.rows.map(m=>'<option value="'+esc((m.cve_ent||'')+'|'+m.municipio)+'">'+esc(m.municipio)+(multi&&m.entidad?' · '+esc(m.entidad):'')+' ('+fmt(m.total)+')</option>').join(''); }catch(e){}
 }
 async function loadList(off){
   LIST_OFF=off||0;
@@ -1521,7 +1532,7 @@ const canEditTerr=t=>isDir||(t&&t.owner_user_id===META.me);
 let T_MAP=null, tAll=null, tDraw=null, tPts=null, T_POLY=null;
 async function loadTerr(){
   if(isDir) loadStaff();
-  try{ TERRS=(await api('/api/prospect-territories')).rows; if(isDir) MUNS=(await api('/api/prospects/municipios?cve_ent='+(ent()||'19'))).rows; }catch(e){ return; }
+  try{ TERRS=(await api('/api/prospect-territories')).rows; if(isDir) MUNS=(await api('/api/prospects/municipios')).rows; }catch(e){ return; }
   const area=t=>t.polygon&&t.polygon.length?'지도 구역':(t.cps&&t.cps.length?'CP '+t.cps.join(', '):(t.municipios||[]).join(', '));
   $('t-table').innerHTML='<thead><tr><th>지역</th><th>담당</th><th class="num">후보</th><th class="num">진행</th><th></th></tr></thead><tbody>'+
     (TERRS.length?TERRS.map(t=>'<tr'+(t.owner_user_id===META.me?' style="background:var(--ctr-soft,#FDECEB)"':'')+'><td data-tname="'+t.id+'"><b>'+esc(t.name)+'</b>'+(canEditTerr(t)?' <button class="btn ghost sm" data-trename="'+t.id+'" title="이름 바꾸기" style="padding:2px 8px;min-height:0">✏</button>':'')+'<div class="note">'+esc(area(t).slice(0,120))+'</div></td><td>'+esc(t.owner_name||'—')+'</td><td class="num">'+fmt(t.total)+'</td><td class="num">'+fmt(t.worked)+'</td><td style="white-space:nowrap">'+
@@ -1569,8 +1580,11 @@ function editTerr(t){
   $('t-save').textContent=t?'수정 저장 · 미배정 자동 배정':'저장 · 미배정 자동 배정';
   $('t-name').value=t?t.name:''; $('t-owner').value=t&&t.owner_user_id?t.owner_user_id:''; $('t-cps').value=t?(t.cps||[]).join(', '):'';
   $('t-move-wrap').classList.toggle('hide',!t||!isDir); $('t-move').checked=false;
-  const sel=new Set(t?t.municipios:[]);
-  $('t-muns').innerHTML=MUNS.map(m=>'<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-weight:400"><input type="checkbox" value="'+esc(m.municipio)+'"'+(sel.has(m.municipio)?' checked':'')+'> <span style="flex:1">'+esc(m.municipio)+'</span><span class="note">'+fmt(m.total)+' · '+fmt(m.unassigned)+'</span></label>').join('');
+  const sel=new Set((t?t.municipios:[]).map(m=>(t.cve_ent||'')+'|'+m));
+  // 전국 municipio — 주별로 묶어 보여 줌(한 지역은 한 주 안에서)
+  let lastEnt=null;
+  $('t-muns').innerHTML=MUNS.map(m=>{ const k=(m.cve_ent||'')+'|'+m.municipio; const head=m.cve_ent!==lastEnt?'<div class="note" style="margin:8px 0 2px;font-weight:700">'+esc(m.entidad||m.cve_ent||'주 미상')+'</div>':''; lastEnt=m.cve_ent;
+    return head+'<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-weight:400"><input type="checkbox" value="'+esc(k)+'"'+(sel.has(k)?' checked':'')+'> <span style="flex:1">'+esc(m.municipio)+'</span><span class="note">'+fmt(m.total)+' · '+fmt(m.unassigned)+'</span></label>'; }).join('');
   setTMode(t&&!T_POLY&&((t.municipios||[]).length||(t.cps||[]).length)?'mun':'map');
   $('t-prev').innerHTML=''; $('t-draw').textContent=T_POLY?'구역 다시 그리기':'구역 그리기';
   if(T_MAP){ tDraw.clearLayers(); tPts.clearLayers(); drawTerrs();
@@ -1595,8 +1609,12 @@ $('t-new').onclick=()=>editTerr(null);
 $('t-save').onclick=async()=>{
   const mode=tMode();
   if(mode==='map'&&!T_POLY) return toast('먼저 지도에서 구역을 그려 주세요');
-  const body={name:$('t-name').value,owner_user_id:isDir?($('t-owner').value||null):META.me,cve_ent:ent()||'19',move_owner:$('t-move').checked,
-    ...(mode==='map'?{polygon:T_POLY}:{municipios:[...$('t-muns').querySelectorAll('input:checked')].map(i=>i.value),cps:$('t-cps').value})};
+  const picked=[...$('t-muns').querySelectorAll('input:checked')].map(i=>{ const j=i.value.indexOf('|'); return [i.value.slice(0,j),i.value.slice(j+1)]; });
+  const ents=[...new Set(picked.map(x=>x[0]).filter(Boolean))];
+  if(mode!=='map'&&ents.length>1) return toast('한 지역에는 한 주(州)의 municipio만 넣을 수 있습니다 — 주별로 나눠 만드세요');
+  // 주는 고르지 않음: 구역이면 서버가 구역 안 후보로, municipio면 고른 municipio의 주로 정함
+  const body={name:$('t-name').value,owner_user_id:isDir?($('t-owner').value||null):META.me,move_owner:$('t-move').checked,
+    ...(mode==='map'?{polygon:T_POLY}:{municipios:picked.map(x=>x[1]),cps:$('t-cps').value,...(ents[0]?{cve_ent:ents[0]}:{})})};
   try{ const r=T_EDIT?await post('/api/prospect-territories/'+T_EDIT.id,body,'PATCH'):await post('/api/prospect-territories',body); toast('저장 · 후보 '+fmt(r.matched)+'곳 판정'); T_EDIT=null; loadTerr(); }
   catch(e){ toast({name_required:'이름을 넣어 주세요',area_required:'municipio나 우편번호를 고르세요',polygon_required:'지도에서 구역을 그려 주세요',own_territory_only:'내 지역만 고칠 수 있습니다'}[e.message]||'실패: '+e.message); }
 };
@@ -1725,17 +1743,18 @@ let IMP_NAME='';
 $('i-file').onchange=async()=>{ const f=$('i-file').files[0]; if(!f) return; const rd=await readCsvText(f); IMP=parseCsv(rd.text); IMP_NAME=f.name;
   $('i-out').innerHTML='<p><b>'+fmt(IMP.length)+'행</b>을 읽었습니다. <span class="note">('+esc(f.name)+' · 글자 '+rd.enc+')</span></p>'; $('i-preview').disabled=!IMP.length; $('i-commit').disabled=true; };
 async function runImport(commit){
-  const CH=2000; const agg={received:0,valid:0,new:0,update:0,invalid:{},by_state:{},by_segment:{},created:0,broken:0}; let batchId=null;
+  const CH=2000; const agg={received:0,valid:0,new:0,update:0,invalid:{},by_state:{},by_segment:{},created:0,broken:0,no_state:0}; let batchId=null;
   $('i-preview').disabled=$('i-commit').disabled=true;
   for(let i=0;i<IMP.length;i+=CH){
     $('i-out').innerHTML='<p>'+(commit?'가져오는 중':'확인 중')+'… '+fmt(Math.min(i+CH,IMP.length))+' / '+fmt(IMP.length)+'</p>';
     let r; try{ r=await post('/api/prospects/import',{rows:IMP.slice(i,i+CH),edition:$('i-ed').value,commit,file_name:IMP_NAME,batch_id:batchId}); if(r.batch_id) batchId=r.batch_id; }catch(e){ $('i-out').innerHTML='<div class="banner bad">실패: '+esc(e.message)+'</div>'; $('i-preview').disabled=false; return; }
-    ['received','valid','new','update','created','broken'].forEach(k=>agg[k]+=r[k]||0);
+    ['received','valid','new','update','created','broken','no_state'].forEach(k=>agg[k]+=r[k]||0);
     [['invalid'],['by_state'],['by_segment']].forEach(([k])=>Object.entries(r[k]||{}).forEach(([a,b])=>agg[k][a]=(agg[k][a]||0)+b));
   }
   const tbl=o=>Object.entries(o).map(([k,v])=>'<tr><td>'+esc(SEG_LBL[k]||k)+'</td><td class="num">'+fmt(v)+'</td></tr>').join('');
   $('i-out').innerHTML='<div class="grid cards">'+[['읽은 행',agg.received],['정상',agg.valid],['새 후보',agg.new],['갱신',agg.update]].map(([l,v])=>'<div class="card kpi flat"><div class="lbl">'+l+'</div><div class="val">'+fmt(v)+'</div></div>').join('')+'</div>'+
     '<div class="split" style="margin-top:12px"><table class="tb"><thead><tr><th>주</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_state)+'</tbody></table><table class="tb"><thead><tr><th>업종</th><th class="num">행</th></tr></thead><tbody>'+tbl(agg.by_segment)+'</tbody></table></div>'+
+    (agg.no_state?'<div class="banner warn" style="margin-top:10px">주(州)를 알 수 없는 행이 '+fmt(agg.no_state)+'개 있습니다 — 파일에 cve_ent·entidad·우편번호(cp)가 모두 없습니다. 이 행은 「주」 선택에서 보이지 않으니 열을 채워 다시 올리세요.</div>':'')+
     (agg.broken?'<div class="banner warn" style="margin-top:10px">스페인어 글자가 깨진 행이 '+fmt(agg.broken)+'개 있습니다(예: Garc�a). 파일을 엑셀에서 「CSV UTF-8」로 다시 저장해 올리세요.</div>':'')+
     (Object.keys(agg.invalid).length?'<p class="note">건너뜀: '+Object.entries(agg.invalid).map(([k,v])=>k+' '+v).join(', ')+'</p>':'')+
     (commit?'<div class="banner info" style="margin-top:12px"><div class="note" style="margin-bottom:4px">📄 '+esc(IMP_NAME)+' · '+new Date().toLocaleString('sv-SE',{timeZone:'America/Mexico_City'}).slice(0,16)+' 업로드</div><b>'+fmt(agg.created)+'곳을 새로 넣었습니다.</b> 지역이 있으면 자동 배정됐습니다. 「지역·담당」에서 확인하세요.'+

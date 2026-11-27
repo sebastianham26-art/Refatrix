@@ -310,3 +310,16 @@ test('시작 업체를 고르면 첫 코스 1번으로 고정, 나머지는 그 
   const nearest = c.filter((x) => x.id !== 8).sort((a, b) => d(a, c[7]) - d(b, c[7]))[0];
   assert.ok(d(s0[1], c[7]) <= d(nearest, c[7]) + 0.0101);
 });
+
+test('주(州) 판정: cve_ent 없으면 주 이름 → 우편번호 앞 두 자리', async () => {
+  const { normalizeImportRow, stateOf } = await import('../src/prospectCore.js');
+  const n = (x) => normalizeImportRow({ id: '1', latitud: '20.8', longitud: '-89.4', nom_estab: 'A', ...x });
+  assert.deepEqual([n({ cp: '97380' }).cve_ent, n({ cp: '97380' }).entidad], ['31', 'Yucatán']);
+  assert.equal(n({ estado: 'YUCATÁN' }).cve_ent, '31');
+  assert.equal(n({ cve_ent: '19', entidad: 'NUEVO LEON' }).entidad, 'Nuevo León');
+  assert.equal(n({ clee: '31050461' }).cve_ent, '31');
+  assert.equal(stateOf({ cve: '9' }).cve_ent, '09');
+  assert.equal(stateOf({ cp: '6450' }).cve_ent, '09');
+  assert.equal(stateOf({ cp: '64000' }).cve_ent, '19');
+  assert.equal(n({}).cve_ent, null);
+});

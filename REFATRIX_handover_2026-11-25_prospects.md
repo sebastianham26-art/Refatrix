@@ -84,6 +84,26 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
   - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
 - **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
 
+## 25차 보완 (2026-11-27) — 주(州) 선택 없애고 전국 지도
+- 상단 「주」 선택 삭제. 진척 보드·현황판·후보 목록·지도 모두 기본이 전국(`ent()` 는 항상 빈 값).
+- 지도: 줌 9 이하(여러 주가 보일 만큼 멀리)에서는 `GET /api/prospects/map?z=` 가 핀 대신 격자 묶음 `clusters [{lat,lng,n,free,ent}]` 를 돌려줌(셀 = 90/2^z 도, 최대 4°). 화면에서 60px 안에 겹치는 묶음은 합쳐서 숫자 원으로 표시, 누르면 그 자리로 +3 확대. 줌 10 이상은 기존처럼 핀(단계·업종·우선순위 필터는 묶음에도 적용).
+- 후보 목록 municipio 필터: 전국 목록, 「Mérida · Yucatán (80)」처럼 주 이름 함께. 값은 `cve_ent|municipio`(같은 이름 municipio 구분) — 서버가 둘 다 받음.
+- `GET /api/prospects/municipios`: cve_ent 없으면 전국(`cve_ent, entidad` 포함).
+- 주 자동 판정(화면에서 안 고름)
+  - 지역 저장: 구역 → 구역 안 후보가 가장 많은 주, municipio → 고른 municipio의 주(한 지역에 여러 주 섞으면 화면에서 막음), 우편번호 → 앞 두 자리.
+  - 현장 신규 업체 등록: 가장 가까운 기존 후보의 주(±0.5°).
+- 마이그레이션 없음. 바뀐 파일: `routes/prospectRoutes.js`, `refatrix-prospects.html`.
+
+## 24차 보완 (2026-11-27) — DENUE 업로드 주(州) 코드 누락 수정 (Mérida/유카탄 목록 안 보임)
+- 원인(운영 데이터 확인): 2026-11-26 17:07 업로드 `Refaccionarias_DENUE_Yucatan_formato_NL_DEPURADO.csv`(batch 7) 507행이 `cve_ent`·`entidad` 비어 저장됨. 파일을 NL 양식으로 다듬으면서 cve_ent/clee 열이 없었고, 가져오기는 그 두 열로만 주를 판정했음 → 화면 「주」 선택에 유카탄이 없고, 목록·지도·현황판이 주 코드로 걸러져 안 보임.
+  - 같은 날 NL 파일에서 1행(Salinas Victoria, CP 65510)이 주 13(Hidalgo)으로 들어가 있었음(파일 오류).
+- 가져오기(`normalizeImportRow` → `stateOf`): 주 코드 판정 순서 = cve_ent(cve_entidad) → clee 앞 두 자리 → 주 이름(entidad/estado/nom_ent, 악센트·대소문자 무시) → **우편번호 앞 두 자리(SEPOMEX)**. 주 이름은 표준 표기로 통일(예: YUCATAN → Yucatán). 한 자리 코드(9)는 09로.
+  - 이미 있는 행을 다시 올리면 비어 있던 cve_ent 도 채움.
+  - 미리보기·결과에 `no_state`(주를 끝내 못 정한 행 수) 경고.
+- **마이그레이션 0343** (`0343_prospect_state_fill.sql`): cve_ent 빈 행을 주 이름 → 우편번호로 채움 · 주 이름 없이 코드가 우편번호와 안 맞는 행 바로잡음 · 주 이름 표준화 · 업로드 기록(`cve_ents`) 재계산. 재실행 안전.
+  - 운영 예상 결과: 유카탄 507곳 → 31 Yucatán, Salinas Victoria 1곳 → 19 Nuevo León.
+- 바뀐 파일: `prospectCore.js`, `routes/prospectRoutes.js`, `refatrix-prospects.html`, 새 마이그레이션 0343.
+
 ## 23차 보완 (2026-11-27) — 담당자 루트 짜기: 내 지역 목록 → 지도 → 시작 업체 → 최적 순서
 - 지도 화면 오른쪽 패널을 「루트 만들기」로 바꾸고 모드 두 개: **📋 내 지역에서**(기본) · ▭ 구역 그리기(기존).
 - 내 지역에서 절차
@@ -248,7 +268,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 
 ## 배포 순서
 1. 백엔드 파일 올리기(refatrix-api) → Railway 재배포
-2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339**, **0340**, **0341**, **0342** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
+2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339**, **0340**, **0341**, **0342**, **0343** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
 3. 화면 파일 올리기: `refatrix-prospects.html`, `refatrix-nav.js`, `refatrix-consult.html`
 4. 메뉴: 영업 › **고객개발**. 권한은 고객상담과 같은 `pipeline`(영업활동) 키. 가져오기·지역·목표·연결 승인은 디렉터만.
 5. 고객개발 › **DENUE 가져오기**에서 `prospects_import_NL.csv` 업로드(9,492곳, 판 2026-11) → **지역·담당**에서 지역 만들기 → 저장하면 미배정 후보가 자동 배정됩니다.
@@ -276,6 +296,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 | DB | `refatrix-api/migrations/0340_prospect_import_batches.sql` | DENUE 업로드 파일 기록 · 깨진 글자 복구 |
 | DB | `refatrix-api/migrations/0341_prospect_settings.sql` | 루트 추정 기준(상담 시간·연비 등) |
 | DB | `refatrix-api/migrations/0342_prospect_road_cache.sql` | 실제 도로 거리 캐시 |
+| DB | `refatrix-api/migrations/0343_prospect_state_fill.sql` | 주 코드 빠진 후보 채우기(우편번호) |
 | 신규 | `refatrix-api/src/roadRoute.js` | OSRM 도로 주행 거리·경로선 |
 | 테스트 | `test/prospects.test.mjs` · `test/roadRoute.test.mjs` | 순수 함수 · 도로 거리(흉내) |
 

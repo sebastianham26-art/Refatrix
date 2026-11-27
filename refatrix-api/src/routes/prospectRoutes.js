@@ -17,7 +17,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, estimateRoute, ROUTE_SETTINGS_DEFAULT, checkStageMove, autoAdvance, normalizeImportRow,
+  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, estimateRoute, stateFromCp, ROUTE_SETTINGS_DEFAULT, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
@@ -122,6 +122,29 @@ function pub(p) {
   const o = { ...p };
   for (const k of ['id', 'territory_id', 'owner_user_id', 'customer_id', 'created_by']) if (o[k] != null) o[k] = Number(o[k]);
   return o;
+}
+
+// 주(州) 자동 판정 — 화면에서 주를 고르지 않는다(전국 지도)
+//   위치: 가장 가까운 기존 후보의 주(±0.5° 안) · 구역: 구역 안 후보가 가장 많은 주 · 우편번호: 앞 두 자리
+async function stateNear(lat, lng) {
+  try {
+    const r = (await query(`SELECT cve_ent, MAX(entidad) AS entidad FROM (SELECT cve_ent, entidad FROM prospects
+        WHERE cve_ent IS NOT NULL AND deleted_at IS NULL AND lat BETWEEN $1-0.5 AND $1+0.5 AND lng BETWEEN $2-0.5 AND $2+0.5
+        ORDER BY (lat-$1)*(lat-$1)+(lng-$2)*(lng-$2) LIMIT 1) x GROUP BY cve_ent`, [lat, lng])).rows[0];
+    if (r) return { cve_ent: r.cve_ent, entidad: r.entidad };
+  } catch (_) { /* 무시 */ }
+  return { cve_ent: null, entidad: null };
+}
+async function territoryState({ polygon = null, cps = [] } = {}) {
+  if (polygon && polygon.length >= 3) {
+    const la = polygon.map((p) => Number(p[0])), ln = polygon.map((p) => Number(p[1]));
+    const r = (await query(`SELECT cve_ent, COUNT(*) AS n FROM prospects WHERE cve_ent IS NOT NULL AND deleted_at IS NULL
+        AND lat BETWEEN $1 AND $2 AND lng BETWEEN $3 AND $4 GROUP BY cve_ent ORDER BY n DESC LIMIT 1`, [Math.min(...la), Math.max(...la), Math.min(...ln), Math.max(...ln)])).rows[0];
+    if (r) return r.cve_ent;
+    return (await stateNear(la.reduce((a, b) => a + b, 0) / la.length, ln.reduce((a, b) => a + b, 0) / ln.length)).cve_ent;
+  }
+  for (const c of cps || []) { const k = stateFromCp(c); if (k) return k; }
+  return null;
 }
 
 async function applyTerritories(client, { onlyIds = null, cveEnt = null, byUser = null } = {}) {
@@ -232,7 +255,10 @@ export default async function prospectRoutes(app) {
     if (['A', 'B', 'C'].includes(qs.priority)) add('p.priority = ?', qs.priority);
     if (['A', 'B', 'C'].includes(qs.potential)) add('p.pot_tier = ?', qs.potential);
     else if (qs.potential === 'none') conds.push('p.pot_tier IS NULL');
-    if (qs.municipio) add('p.municipio = ?', String(qs.municipio));
+    if (qs.municipio) {   // 'cve_ent|municipio' (전국 목록) 또는 municipio 이름만
+      const m = String(qs.municipio); const i = m.indexOf('|');
+      if (i > 0) { add('p.cve_ent = ?', m.slice(0, i)); add('p.municipio = ?', m.slice(i + 1)); } else add('p.municipio = ?', m);
+    }
     if (qs.owner === 'none' && isDir(req)) conds.push('p.owner_user_id IS NULL');
     else if (int(qs.owner) && isDir(req)) add('p.owner_user_id = ?', int(qs.owner));
     if (int(qs.territory)) add('p.territory_id = ?', int(qs.territory));
@@ -265,6 +291,23 @@ export default async function prospectRoutes(app) {
       conds.push(`p.lng BETWEEN $${params.length - 3} AND $${params.length - 1} AND p.lat BETWEEN $${params.length - 2} AND $${params.length}`);
     }
     if (int(qs.owner) && isDir(req)) { params.push(int(qs.owner)); conds.push(`p.owner_user_id = $${params.length}`); }
+    // 멀리서 볼 때(전국·여러 주): 핀 대신 격자별 숫자 묶음 — 확대하면 핀으로
+    const z = Number(qs.z);
+    if (Number.isFinite(z) && z <= 9) {
+      const cell = Math.min(4, 90 / Math.pow(2, z));               // z5 ≈ 2.8° · z7 ≈ 0.7° · z9 ≈ 0.18°
+      for (const k of ['stage', 'segment', 'priority']) {
+        const v = qs[k]; if (!v) continue;
+        if ((k === 'stage' && STAGE_KEYS.includes(v)) || (k === 'segment' && SEGMENTS.includes(v)) || (k === 'priority' && ['A', 'B', 'C'].includes(v))) { params.push(v); conds.push(`p.${k} = $${params.length}`); }
+      }
+      params.push(cell);
+      const c = `$${params.length}`;
+      const cl = (await query(
+        `SELECT AVG(p.lat)::float AS lat, AVG(p.lng)::float AS lng, COUNT(*)::int AS n,
+                COUNT(*) FILTER (WHERE p.owner_user_id IS NULL)::int AS free, MAX(p.entidad) AS ent
+           FROM prospects p WHERE ${conds.join(' AND ')}
+          GROUP BY floor(p.lat / ${c}), floor(p.lng / ${c})`, params)).rows;
+      return { clusters: cl, rows: [], others: [], total: cl.reduce((a, x) => a + x.n, 0) };
+    }
     params.push(mxToday());
     const rows = (await query(
       `SELECT p.id, p.nom_estab AS n, p.lat, p.lng, p.stage AS s, p.segment AS g, p.priority AS pr, p.owner_user_id AS o,
@@ -323,12 +366,14 @@ export default async function prospectRoutes(app) {
     return { date, rows: rows.map((r) => ({ ...r, id: Number(r.id), created_by: Number(r.created_by), prospect_id: Number(r.prospect_id) })) };
   });
 
+  // municipio 목록 — 주를 고르지 않으면 전국(주 코드·이름 함께, 같은 이름 municipio 구분)
   app.get('/api/prospects/municipios', view, async (req) => {
-    const ent = String(req.query?.cve_ent || '19');
+    const ent = req.query?.cve_ent ? String(req.query.cve_ent) : null;
     const rows = (await query(
-      `SELECT municipio, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE owner_user_id IS NULL)::int AS unassigned,
+      `SELECT cve_ent, MAX(entidad) AS entidad, municipio, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE owner_user_id IS NULL)::int AS unassigned,
               COUNT(*) FILTER (WHERE priority='A')::int AS prio_a
-         FROM prospects WHERE deleted_at IS NULL AND cve_ent=$1 GROUP BY municipio ORDER BY total DESC`, [ent])).rows;
+         FROM prospects WHERE deleted_at IS NULL AND municipio IS NOT NULL ${ent ? 'AND cve_ent=$1' : ''}
+        GROUP BY cve_ent, municipio ORDER BY MAX(entidad), total DESC`, ent ? [ent] : [])).rows;
     return { cve_ent: ent, rows };
   });
 
@@ -396,12 +441,13 @@ export default async function prospectRoutes(app) {
     const lat = Number(b.lat), lng = Number(b.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return reply.code(400).send({ error: 'geo_required' });
     const owner = isDir(req) && int(b.owner_user_id) ? int(b.owner_user_id) : me(req);
+    const st = b.cve_ent ? { cve_ent: txt(b.cve_ent, 4), entidad: txt(b.entidad, 80) } : await stateNear(lat, lng);
     const r = (await query(
       `INSERT INTO prospects (nom_estab, segment, priority, lat, lng, address, municipio, cve_ent, entidad, phone, source,
                               owner_user_id, assigned_at, stage, created_by)
        VALUES ($1,$2,'B',$3,$4,$5,$6,$7,$8,$9,'manual',$10,now(),'asignado',$11) RETURNING id`,
       [name, SEGMENTS.includes(b.segment) ? b.segment : 'otro', lat, lng, txt(b.address), txt(b.municipio, 120),
-        txt(b.cve_ent, 4) || '19', txt(b.entidad, 80) || 'Nuevo León', txt(b.phone, 40), owner, me(req)])).rows[0];
+        st.cve_ent, st.entidad, txt(b.phone, 40), owner, me(req)])).rows[0];
     const id = Number(r.id);
     await query(`INSERT INTO prospect_stage_history (prospect_id, from_stage, to_stage, user_id, reason, auto) VALUES ($1,NULL,'asignado',$2,'alta manual',TRUE)`, [id, me(req)]);
     await logEvent({ userId: me(req), action: 'create', target: `prospect:${id}`, detail: { manual: true } });
@@ -456,7 +502,8 @@ export default async function prospectRoutes(app) {
     }
     const broken = good.filter((g) => [g.nom_estab, g.municipio, g.colonia, g.address].some((x) => x && /\uFFFD/.test(x))).length;
     const summary = { received: raw.length, valid: good.length, new: good.filter((g) => !exist.has(g.denue_id)).length,
-      update: good.filter((g) => exist.has(g.denue_id)).length, invalid: bad, by_state: byState, by_segment: bySeg, edition, broken };
+      update: good.filter((g) => exist.has(g.denue_id)).length, invalid: bad, by_state: byState, by_segment: bySeg, edition, broken,
+      no_state: good.filter((g) => !g.cve_ent).length };
     if (!b.commit) return summary;
     // 업로드 파일 기록 — 첫 묶음에서 만들고, 나머지 묶음은 같은 batch_id 로 들어온다
     let batchId = int(b.batch_id);
@@ -477,10 +524,11 @@ export default async function prospectRoutes(app) {
                           colonia   = CASE WHEN colonia ~ '(\uFFFD|Ã|Â)' AND $7::text IS NOT NULL THEN $7 ELSE colonia END,
                           address   = CASE WHEN address ~ '(\uFFFD|Ã|Â)' AND $6::text IS NOT NULL THEN $6 ELSE address END,
                           entidad   = CASE WHEN (entidad IS NULL OR entidad ~ '(\uFFFD|Ã|Â)') AND $16::text IS NOT NULL THEN $16 ELSE entidad END,
+                          cve_ent   = COALESCE(cve_ent, $18),
                           localidad = CASE WHEN localidad ~ '(\uFFFD|Ã|Â)' AND $17::text IS NOT NULL THEN $17 ELSE localidad END
                     WHERE denue_id=$1`,
           [g.denue_id, g.clee, g.raz_social, g.scian_code, g.per_ocu, g.address, g.colonia, g.cp, g.lat, g.lng, g.phone, g.email, edition,
-            g.nom_estab, g.municipio, g.entidad, g.localidad]);
+            g.nom_estab, g.municipio, g.entidad, g.localidad, g.cve_ent]);
         } else {
           const r = (await q(
             `INSERT INTO prospects (denue_id, clee, nom_estab, raz_social, scian_code, segment, priority, per_ocu, address, colonia, cp,
@@ -604,6 +652,7 @@ export default async function prospectRoutes(app) {
     if (!dir && !polygon) { reply.code(400).send({ error: 'polygon_required' }); return null; }
     if (!polygon && !mun.length && !cps.length) { reply.code(400).send({ error: 'area_required' }); return null; }
     const owner = dir ? int(b.owner_user_id) : me(req);
+    const ent = txt(b.cve_ent, 4) || await territoryState({ polygon, cps }) || '19';
     return withTx(async (client) => {
       const q = client.query.bind(client);
       let tid = id;
@@ -612,7 +661,7 @@ export default async function prospectRoutes(app) {
         if (!old) return { code: 404 };
         if (!dir && Number(old.owner_user_id) !== me(req)) return { code: 403 };
         await q(`UPDATE prospect_territories SET name=$2, cve_ent=$3, municipios=$4, cps=$5, owner_user_id=$6, active=$7, polygon=$8, updated_at=now() WHERE id=$1`,
-          [tid, name, txt(b.cve_ent, 4) || '19', mun, cps, owner, b.active !== false, polygon ? JSON.stringify(polygon) : null]);
+          [tid, name, ent, mun, cps, owner, b.active !== false, polygon ? JSON.stringify(polygon) : null]);
         // 지역 경계가 바뀌었을 수 있으니 이 지역 표시를 풀고 다시 판정
         await q(`UPDATE prospects SET territory_id=NULL WHERE territory_id=$1`, [tid]);
         // 담당이 바뀌면 그 지역에서 옛 담당이 들고 있던 「배정」 단계 후보를 새 담당에게(진행 중인 건은 유지)
@@ -622,9 +671,9 @@ export default async function prospectRoutes(app) {
         }
       } else {
         tid = Number((await q(`INSERT INTO prospect_territories (name, cve_ent, municipios, cps, owner_user_id, created_by, polygon) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-          [name, txt(b.cve_ent, 4) || '19', mun, cps, owner, me(req), polygon ? JSON.stringify(polygon) : null])).rows[0].id);
+          [name, ent, mun, cps, owner, me(req), polygon ? JSON.stringify(polygon) : null])).rows[0].id);
       }
-      const n = await applyTerritories(client, { cveEnt: txt(b.cve_ent, 4) || '19', byUser: me(req) });
+      const n = await applyTerritories(client, { cveEnt: ent, byUser: me(req) });
       return { id: tid, matched: n };
     });
   }

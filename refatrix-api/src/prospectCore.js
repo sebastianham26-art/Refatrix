@@ -90,6 +90,41 @@ export function fixSpanish(v) {
   return s.normalize('NFC');
 }
 export const hasBrokenText = (v) => /\uFFFD|[ÃÂ][\u0080-\u00BF]/.test(String(v || ''));
+// ── 주(州) 판정: INEGI 주 코드 · 이름 · 우편번호 앞 두 자리(SEPOMEX) ─────────────
+//   DENUE 파일에 cve_ent 가 없을 때(다른 양식으로 다듬은 파일) 이름 → CP 순서로 채운다.
+export const MX_STATES = [
+  ['01', 'Aguascalientes', [[20, 20]]], ['02', 'Baja California', [[21, 22]]], ['03', 'Baja California Sur', [[23, 23]]],
+  ['04', 'Campeche', [[24, 24]]], ['05', 'Coahuila de Zaragoza', [[25, 27]]], ['06', 'Colima', [[28, 28]]], ['07', 'Chiapas', [[29, 30]]],
+  ['08', 'Chihuahua', [[31, 33]]], ['09', 'Ciudad de México', [[1, 16]]], ['10', 'Durango', [[34, 35]]], ['11', 'Guanajuato', [[36, 38]]],
+  ['12', 'Guerrero', [[39, 41]]], ['13', 'Hidalgo', [[42, 43]]], ['14', 'Jalisco', [[44, 49]]], ['15', 'México', [[50, 57]]],
+  ['16', 'Michoacán de Ocampo', [[58, 61]]], ['17', 'Morelos', [[62, 62]]], ['18', 'Nayarit', [[63, 63]]], ['19', 'Nuevo León', [[64, 67]]],
+  ['20', 'Oaxaca', [[68, 71]]], ['21', 'Puebla', [[72, 75]]], ['22', 'Querétaro', [[76, 76]]], ['23', 'Quintana Roo', [[77, 77]]],
+  ['24', 'San Luis Potosí', [[78, 79]]], ['25', 'Sinaloa', [[80, 82]]], ['26', 'Sonora', [[83, 85]]], ['27', 'Tabasco', [[86, 86]]],
+  ['28', 'Tamaulipas', [[87, 89]]], ['29', 'Tlaxcala', [[90, 90]]], ['30', 'Veracruz de Ignacio de la Llave', [[91, 96]]],
+  ['31', 'Yucatán', [[97, 97]]], ['32', 'Zacatecas', [[98, 99]]],
+];
+const ST_BY_CVE = Object.fromEntries(MX_STATES.map((x) => [x[0], x[1]]));
+const fold = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+const ST_ALIAS = { 'nuevo leon': '19', 'nl': '19', 'yucatan': '31', 'cdmx': '09', 'distrito federal': '09', 'ciudad de mexico': '09', 'estado de mexico': '15', 'mexico': '15',
+  'coahuila': '05', 'michoacan': '16', 'veracruz': '30', 'queretaro': '22', 'queretaro de arteaga': '22', 'q roo': '23', 'slp': '24' };
+MX_STATES.forEach(([c, n]) => { ST_ALIAS[fold(n)] = c; });
+export function stateFromCp(cp) {
+  const m = String(cp || '').replace(/\D/g, ''); if (m.length < 4) return null;
+  const k = Number(m.padStart(5, '0').slice(0, 2));
+  const s = MX_STATES.find((x) => x[2].some(([a, b]) => k >= a && k <= b)); return s ? s[0] : null;
+}
+export function stateOf({ cve = null, clee = null, name = null, cp = null } = {}) {
+  let c = String(cve ?? '').replace(/\D/g, '');
+  if (c) c = c.padStart(2, '0').slice(-2);
+  if (!ST_BY_CVE[c]) c = null;
+  if (!c && clee) { const k = String(clee).replace(/\D/g, '').slice(0, 2); if (ST_BY_CVE[k]) c = k; }
+  if (!c && name && /^\s*\d{1,2}\s*$/.test(String(name)) && ST_BY_CVE[String(name).trim().padStart(2, '0')]) c = String(name).trim().padStart(2, '0');
+  if (!c && name) c = ST_ALIAS[fold(name)] || null;
+  if (!c) c = stateFromCp(cp);
+  const nm = name ? String(name).trim().slice(0, 80) : null;
+  return { cve_ent: c, entidad: c ? ST_BY_CVE[c] : (nm && !/^\d+$/.test(nm) ? nm : null) };   // 주 이름은 표준 표기로 통일
+}
+
 export function normalizeImportRow(r0) {
   if (!r0 || typeof r0 !== 'object') return { error: 'empty' };
   const r = {}; for (const [k, v] of Object.entries(r0)) r[fixSpanish(String(k)).trim().toLowerCase()] = typeof v === 'string' ? fixSpanish(v) : v;
@@ -113,8 +148,7 @@ export function normalizeImportRow(r0) {
     scian_code: scian, segment: SEGMENTS.includes(g('segment')) ? g('segment') : segmentOf(scian),
     priority: ['A', 'B', 'C'].includes(g('priority')) ? g('priority') : priorityOf(scian, perOcu),
     per_ocu: perOcu, address, colonia: t(g('colonia', 'nomb_asent'), 150), cp: t(g('cp', 'cod_postal'), 10),
-    cve_ent: t(g('cve_ent'), 4) || (String(g('clee') || '').slice(0, 2) || null),
-    entidad: t(g('entidad'), 80), cve_mun: t(g('cve_mun'), 6), municipio: t(g('municipio'), 120),
+    ...stateOf({ cve: g('cve_ent', 'cve_entidad', 'clave_entidad'), clee: g('clee', 'id_clee'), name: g('entidad', 'estado', 'nom_ent', 'nombre_entidad'), cp: g('cp', 'cod_postal', 'codigo_postal') }), cve_mun: t(g('cve_mun'), 6), municipio: t(g('municipio'), 120),
     localidad: t(g('localidad'), 120), lat, lng, phone: t(g('phone', 'telefono'), 40),
     email: t(g('email', 'correoelec'), 150), web: t(g('web', 'www'), 200),
     denue_fecha_alta: t(g('denue_fecha_alta', 'fecha_alta'), 10),
