@@ -529,7 +529,10 @@ const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9'
 const SEG_LBL={mayorista:'부품 도매',refaccionaria:'Refaccionaria',refaccionaria_usada:'Refaccionaria(중고)',taller_suspension:'서스펜션·얼라인먼트',taller_general:'일반정비',otro:'기타'};
 const METRIC_LBL={contactados:'첫 방문',perfilados:'정보 확보',cotizaciones:'견적 제출',nuevos_clientes:'첫 매출',venta_nuevos:'첫 매출 금액(IVA 제외)',puntos:'개발 점수'};
 const stageDot=k=>'<span class="chip"><span class="dot" style="background:'+(STAGE_COLOR[k]||'#999')+'"></span>'+esc((STAGE[k]||{}).ko||k)+'</span>';
-const ent=()=>'';   // 주(州) 선택 없음 — 전국을 한 화면에서(지도는 움직이는 대로)
+const ent=()=>'';
+// 1127 · 서버 시각(UTC) → 몬테레이(멕시코시티) 시각 'YYYY-MM-DD HH:MM' — 문자열을 잘라 쓰면 6시간 미래로 보임
+const mxTime=(ts,len)=>{ if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return String(ts).slice(0,len||16).replace('T',' ');
+  return d.toLocaleString('sv-SE',{timeZone:'America/Mexico_City',hour12:false}).replace('T',' ').slice(0,len||16); };   // 주(州) 선택 없음 — 전국을 한 화면에서(지도는 움직이는 대로)
 const period=()=>$('f-period').value;
 const isMobile=()=>window.matchMedia('(max-width:760px)').matches;
 const REP_COLORS=['#E2231A','#111111','#1F6FEB','#F5A300','#1E7A46','#7B3FBF','#0F9AA8','#8C8C8C','#C2185B','#5D4037'];
@@ -616,7 +619,7 @@ async function loadUnlinked(){
   const own=(p)=>p.owner_user_id==null?'미배정':esc(p.owner_name||'')+' 담당';
   box.innerHTML='<h2>🔗 고객개발에 연결 안 된 방문 '+UNL.length+'건</h2><p class="note">빠른 녹음은 저장됐지만 업체 후보에 연결되지 않아 <b>첫 방문·방문 수에 안 들어간</b> 기록입니다(일반 🎙 녹음으로 방문했거나, 다른 담당 업체라 연결이 안 됨). 방문한 업체를 골라 연결하면 바로 집계됩니다. 기존 고객 방문이면 「고객개발 아님」.</p>'+
     '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">'+UNL.map(v=>'<div data-unl="'+v.id+'" style="padding:10px 12px;border:1px solid #eee;border-radius:12px;background:#fff">'+
-      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>'+esc(v.user_name||'')+'</b><span class="note">'+esc(v.consult_date)+' '+esc(String(v.created_at||'').slice(11,16))+'</span><span>· '+esc(v.company_name||'(상호 없음)')+'</span><span style="margin-left:auto"></span><button class="btn ghost sm" data-unldis="'+v.id+'">고객개발 아님</button></div>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>'+esc(v.user_name||'')+'</b><span class="note">'+esc(v.consult_date)+' '+esc(mxTime(v.created_at).slice(11,16))+'</span><span>· '+esc(v.company_name||'(상호 없음)')+'</span><span style="margin-left:auto"></span><button class="btn ghost sm" data-unldis="'+v.id+'">고객개발 아님</button></div>'+
       (v.near.length?'<div class="note" style="margin-top:6px">녹음 위치 근처 후보 — 누르면 연결:</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+v.near.map(p=>'<button class="chip" style="padding:6px 10px;cursor:pointer" data-unlink="'+v.id+'" data-pid="'+p.id+'" data-own="'+(p.owner_user_id!=null&&p.owner_user_id!==v.created_by?esc(p.owner_name||'다른 담당'):'')+'"><b>'+esc(p.nom_estab)+'</b> <span class="note">'+p.dist_m+'m · '+own(p)+'</span></button>').join('')+'</div>'
         :'<div class="note" style="margin-top:6px">녹음 위치가 없거나 400m 안에 후보가 없습니다 — 아래에서 찾아 연결하세요.</div>')+
       '<div style="display:flex;gap:6px;margin-top:6px"><input type="search" data-unlq="'+v.id+'" placeholder="🔎 업체 이름으로 찾아 연결" value="'+esc(v.company_name&&!/^\(/.test(v.company_name)?v.company_name:'')+'" style="flex:1"><button class="btn ghost sm" data-unlfind="'+v.id+'">찾기</button></div><div data-unlres="'+v.id+'"></div></div>').join('')+'</div>';
@@ -1369,7 +1372,7 @@ async function loadList(off){
       '<td data-l="상호"><span class="tag '+x.priority+'">'+x.priority+'</span> <b>'+esc(x.nom_estab)+'</b>'+(x.denue_missing?' <span class="chip" title="새 DENUE 판에 없음">폐업 가능</span>':'')+(x.customer_id?' <span class="chip" style="background:var(--ok-soft);color:var(--ok)">고객 연결</span>':'')+'</td>'+
       '<td data-l="업종">'+esc(SEG_LBL[x.segment]||x.segment)+'</td><td data-l="위치">'+esc([x.colonia,x.municipio].filter(Boolean).join(', '))+'</td><td data-l="단계">'+stageDot(x.stage)+(x.suggested_stage?' <span class="chip" style="background:var(--warn-soft);color:#6B4100" title="AI·기록 제안">제안: '+esc((STAGE[x.suggested_stage]||{}).ko||'')+'</span>':'')+'</td>'+
       '<td data-l="개발 점수" style="min-width:120px"><div style="display:flex;align-items:center;gap:8px"><div class="meter" style="flex:1"><i style="width:'+x.score+'%;background:'+scoreColor(x.score)+'"></i></div><b>'+x.score+'</b></div></td><td class="num" data-l="잠재성">'+(x.pot_tier?'<span class="tag '+x.pot_tier+'">'+x.pot_tier+'</span> '+money(x.pot_compra_susp):'<span class="note">—</span>')+'</td>'+
-      '<td data-l="담당">'+esc(x.owner_name||'—')+'</td><td data-l="마지막 활동">'+(x.last_activity_at?esc(String(x.last_activity_at).slice(0,10)):'—')+'</td></tr>').join('')
+      '<td data-l="담당">'+esc(x.owner_name||'—')+'</td><td data-l="마지막 활동">'+(x.last_activity_at?esc(mxTime(x.last_activity_at,10)):'—')+'</td></tr>').join('')
       :'<tr><td colspan="10" class="empty">조건에 맞는 후보가 없습니다.</td></tr>')+'</tbody>';
   $('l-page').textContent=(r.total?(LIST_OFF+1)+'–'+Math.min(LIST_OFF+50,r.total):'0')+' / '+fmt(r.total)+'곳';
   $('l-prev').disabled=LIST_OFF===0; $('l-next').disabled=LIST_OFF+50>=r.total;
@@ -1469,7 +1472,7 @@ async function openProspect(id){
     '<div class="sec"><h3>기존 고객 연결</h3><div id="dp-link">'+(d.customer?'<div class="card flat" style="background:var(--ok-soft)"><b>'+esc(d.customer.code+' · '+d.customer.name)+'</b><div class="note">연결됨'+(isDir?' · <a href="#" id="dp-unlink">연결 해제</a>':'')+'</div>'+erpCard(d.erp)+'</div>':
         (d.links.find(l=>l.status==='solicitado')?'<div class="banner warn">연결 승인 대기: '+esc(d.links.find(l=>l.status==='solicitado').customer_name)+'</div>':'<p class="note">비슷한 고객을 찾는 중…</p>'))+'</div>'+
       (!d.customer?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn ghost sm" id="dp-copy">고객 등록용 값 복사</button><a class="btn ghost sm" href="refatrix-customers.html" target="_blank" rel="noopener">고객 등록 화면</a></div><p class="note">고객 등록이 승인되면 여기서 그 고객을 골라 연결하세요. 방문·녹음·양식 값이 고객 이력으로 이어집니다.</p>':'')+'</div>'+
-    '<div class="sec"><h3>이력</h3>'+d.history.slice(0,12).map(h=>'<div class="note">'+esc(String(h.created_at).slice(0,16).replace('T',' '))+' · '+esc((STAGE[h.from_stage]||{}).ko||'—')+' → <b>'+esc((STAGE[h.to_stage]||{}).ko||h.to_stage)+'</b>'+(h.reason?' · '+esc(h.reason):'')+(h.user_name?' · '+esc(h.user_name):'')+'</div>').join('')+'</div>';
+    '<div class="sec"><h3>이력</h3>'+d.history.slice(0,12).map(h=>'<div class="note">'+esc(mxTime(h.created_at))+' · '+esc((STAGE[h.from_stage]||{}).ko||'—')+' → <b>'+esc((STAGE[h.to_stage]||{}).ko||h.to_stage)+'</b>'+(h.reason?' · '+esc(h.reason):'')+(h.user_name?' · '+esc(h.user_name):'')+'</div>').join('')+'</div>';
   openDrawer((p.municipio||'')+' · '+(p.colonia||''),p.nom_estab,html);
   loadQuestions(p.id,'dq-box',false);
   $('dp-route').onclick=async()=>{ try{ const ids=[...new Set([...(ROUTE&&ROUTE.date===META.today?ROUTE.stops.map(s=>s.id):[]),...routePick,p.id])]; routePick=ids;
@@ -1510,7 +1513,7 @@ function scoreBlock(d){
   const p=d.prospect, P=p.score_parts||{}, sec=P.sections||{}, R=META.score_rules;
   const SECL={datos_generales:'기본정보',tamano_cliente:'고객 규모',potencial:'잠재성',informacion_empresa:'영업 정보',tipo_servicios:'업종·서비스',competencia:'경쟁사'};
   const log=d.score_log||[];
-  const tl=log.length?lineChart([{name:'점수',color:'#E2231A',values:log.map(l=>l.score)}],log.map(l=>String(l.created_at).slice(5,10)),{h:150,label:'점수 추이'}):'';
+  const tl=log.length?lineChart([{name:'점수',color:'#E2231A',values:log.map(l=>l.score)}],log.map(l=>mxTime(l.created_at,10).slice(5)),{h:150,label:'점수 추이'}):'';
   return (p.suggested_stage?'<div class="banner warn" style="margin-top:16px"><b>단계 제안: '+esc((STAGE[p.suggested_stage]||{}).ko)+'</b> — '+esc(p.suggestion_reason||'')+
       '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm" data-sug="1">적용</button><button class="btn ghost sm" data-sug="0">무시</button></div></div>':'')+
     '<div class="sec"><h3>개발 점수</h3><div class="card flat"><div class="score"><div class="big" style="color:'+scoreColor(p.score)+'">'+p.score+'<small> / 100</small></div>'+
@@ -1616,7 +1619,7 @@ async function openReview(pid,cid){
 async function loadReviews(){
   let r; try{ r=await api('/api/prospects/reviews'); }catch(e){ return; }
   $('r-table').innerHTML='<thead><tr><th style="width:34px"><input type="checkbox" id="r-all" title="모두 선택"></th><th>방문</th><th>업체</th><th>담당</th><th>녹음·AI</th><th>상태</th><th></th></tr></thead><tbody>'+
-    (r.rows.length?r.rows.map(x=>'<tr><td data-l="선택"><input type="checkbox" class="r-ck" value="'+x.consult_id+'" style="width:18px;height:18px"></td><td data-l="방문">'+esc(String(x.created_at).slice(0,16).replace('T',' '))+'</td><td data-l="업체"><b>'+esc(x.nom_estab)+'</b><div class="note">'+esc(x.municipio||'')+'</div></td><td data-l="담당">'+esc(x.user_name||'')+'</td>'+
+    (r.rows.length?r.rows.map(x=>'<tr><td data-l="선택"><input type="checkbox" class="r-ck" value="'+x.consult_id+'" style="width:18px;height:18px"></td><td data-l="방문">'+esc(mxTime(x.created_at))+'</td><td data-l="업체"><b>'+esc(x.nom_estab)+'</b><div class="note">'+esc(x.municipio||'')+'</div></td><td data-l="담당">'+esc(x.user_name||'')+'</td>'+
       '<td data-l="녹음·AI">'+esc(x.rec_status==='done'?(x.alta_status==='done'?'AI 초안 준비됨':x.alta_status==='failed'?'AI 실패 · 직접 입력':'AI 작성 중'):x.rec_status?'녹음 처리 중':'녹음 없음')+'</td>'+
       '<td data-l="상태">'+(x.review_status==='borrador'?'<span class="chip">임시저장</span>':'<span class="chip" style="background:var(--warn-soft);color:#6B4100">검토 대기</span>')+'</td>'+
       '<td style="white-space:nowrap"><button class="btn sm" data-review="'+x.prospect_id+':'+x.consult_id+'">검토</button> <button class="btn ghost sm" data-rdel="'+x.consult_id+'" title="삭제" style="color:var(--ctr)">✕</button></td></tr>').join('')
@@ -1652,7 +1655,7 @@ async function loadLinks(){
   let r; try{ r=await api('/api/prospect-links'); }catch(e){ return; }
   const M={alta:'고객 등록',vinculo:'직접 연결',sugerencia:'추천 연결'};
   $('k-table').innerHTML='<thead><tr><th>후보</th><th>기존 고객</th><th>방식</th><th>요청</th><th></th></tr></thead><tbody>'+
-    (r.rows.length?r.rows.map(x=>'<tr><td data-l="후보"><a href="#" data-open="'+x.prospect_id+'"><b>'+esc(x.nom_estab)+'</b></a></td><td data-l="고객">'+esc(x.customer_code+' · '+x.customer_name)+'</td><td data-l="방식">'+esc(M[x.method]||x.method)+'</td><td data-l="요청">'+esc(x.requested_by_name||'')+' · '+esc(String(x.created_at).slice(0,10))+'</td>'+
+    (r.rows.length?r.rows.map(x=>'<tr><td data-l="후보"><a href="#" data-open="'+x.prospect_id+'"><b>'+esc(x.nom_estab)+'</b></a></td><td data-l="고객">'+esc(x.customer_code+' · '+x.customer_name)+'</td><td data-l="방식">'+esc(M[x.method]||x.method)+'</td><td data-l="요청">'+esc(x.requested_by_name||'')+' · '+esc(mxTime(x.created_at,10))+'</td>'+
       '<td style="white-space:nowrap"><button class="btn red sm" data-dec="'+x.id+':1">승인</button> <button class="btn ghost sm" data-dec="'+x.id+':0">거절</button></td></tr>').join('')
       :'<tr><td colspan="5" class="empty">승인 대기 중인 연결이 없습니다.</td></tr>')+'</tbody>';
   $('k-table').querySelectorAll('[data-dec]').forEach(b=>b.onclick=async()=>{ const [id,ok]=b.dataset.dec.split(':'); try{ await post('/api/prospect-links/'+id+'/decide',{approve:ok==='1'}); toast(ok==='1'?'승인했습니다':'거절했습니다'); loadLinks(); refreshCounts(); }catch(e){ toast('실패: '+e.message); } });
@@ -1881,7 +1884,7 @@ $('g-save').onclick=async()=>{ readTargets();
 let PG=null, PG_SEL=null;
 async function loadPurge(){
   let r; try{ r=await api('/api/prospects/import/batches'); }catch(x){ $('pg-list').innerHTML='<tr><td class="empty">'+esc(x.message==='migration_0340_required'?'DB 마이그레이션 0340을 먼저 적용하세요(npm run migrate).':x.message)+'</td></tr>'; return; }
-  const rows=r.rows.map(b=>({key:String(b.id),name:b.file_name||'(이름 없음)',when:b.at||String(b.created_at).slice(0,16).replace('T',' '),by:b.created_by_name||'',ed:b.edition||'',ents:(b.cve_ents||[]).join(', '),
+  const rows=r.rows.map(b=>({key:String(b.id),name:b.file_name||'(이름 없음)',when:b.at||mxTime(b.created_at),by:b.created_by_name||'',ed:b.edition||'',ents:(b.cve_ents||[]).join(', '),
       info:'넣음 '+fmt(b.created)+' · 갱신 '+fmt(b.updated)+' / '+fmt(b.rows_total)+'행',remaining:b.remaining,untouched:b.untouched,q:'batch='+b.id}))
     .concat((r.legacy||[]).map(l=>({key:'legacy:'+l.cve_ent,name:'이전 업로드 (파일 이름 기록 전)',when:(l.first_at||'—')+(l.last_at&&l.last_at!==l.first_at?' ~ '+l.last_at:''),by:l.created_by_name||'',ed:l.edition||'',ents:l.cve_ent+(l.entidad?' '+l.entidad:''),info:'파일 기록 기능 전에 올린 후보',remaining:l.remaining,untouched:l.untouched,q:'batch=legacy&cve_ent='+l.cve_ent})));
   $('pg-list').innerHTML='<thead><tr><th></th><th>업로드 파일 이름</th><th>올린 시각 <small class="note">(멕시코 시간)</small></th><th>판</th><th>주</th><th>내용</th><th class="num">남은 후보</th><th class="num">작업 기록 없음</th></tr></thead><tbody>'+
