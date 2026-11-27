@@ -323,3 +323,13 @@ test('주(州) 판정: cve_ent 없으면 주 이름 → 우편번호 앞 두 자
   assert.equal(stateOf({ cp: '64000' }).cve_ent, '19');
   assert.equal(n({}).cve_ent, null);
 });
+
+test('고객 찾기: 같은 이름 > 포함 > 단어 > 오타 순 점수', async () => {
+  const { nameScore } = await import('../src/prospectCore.js');
+  assert.equal(nameScore('refaccionaria garcia', 'REFACCIONARIA GARCÍA'), 100);
+  assert.equal(nameScore('faz', 'FAZ AUDIO'), 92);
+  assert.equal(nameScore('garcia', 'Auto Partes García'), 85);
+  assert.equal(nameScore('refaccionaria garcia', 'Refaccionaria Rogelio García'), 78);
+  assert.ok(nameScore('refacionaria garsia', 'Refaccionaria García') >= 45);
+  assert.ok(nameScore('autozone', 'Taller Mecánico Juárez') < 45);
+});

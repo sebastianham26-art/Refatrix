@@ -181,6 +181,33 @@ export function normTxt(v) {
   return String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
+// ── 고객 이름 찾기: 같거나 비슷한 이름 점수(0~100) ─────────────────────────
+//   악센트·대소문자·기호 무시. 완전 일치 100 · 앞부분 일치 92 · 포함 85 · 단어 모두 포함 78
+//   그 밖에는 글자쌍(bigram) 유사도 + 단어별 비슷함으로(오타 한두 글자도 잡힘)
+const NAME_STOP = new Set(['de', 'la', 'el', 'los', 'las', 'y', 'e', 'del', 'sa', 'cv', 's', 'a', 'c', 'v', 'sin', 'nombre']);
+export function nameTokens(v) { return normTxt(v).split(' ').filter((t) => t.length >= 2 && !NAME_STOP.has(t)); }
+function bigrams(t) { const s = ' ' + t + ' '; const o = []; for (let i = 0; i < s.length - 1; i++) o.push(s.slice(i, i + 2)); return o; }
+function dice(a, b) {
+  if (!a || !b) return 0; if (a === b) return 1;
+  const A = bigrams(a), B = bigrams(b); const m = new Map(); A.forEach((x) => m.set(x, (m.get(x) || 0) + 1));
+  let hit = 0; B.forEach((x) => { const c = m.get(x); if (c) { hit++; m.set(x, c - 1); } });
+  return (2 * hit) / (A.length + B.length);
+}
+export function nameScore(q, name) {
+  const a = normTxt(q), b = normTxt(name);
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  if (b.startsWith(a)) return 92;
+  if (b.includes(a)) return 85;
+  const qt = nameTokens(q), nt = nameTokens(name);
+  if (!qt.length || !nt.length) return Math.round(dice(a, b) * 60);
+  if (qt.every((t) => nt.some((x) => x.includes(t)))) return 78;
+  // 단어마다 가장 비슷한 단어(오타 허용)
+  const per = qt.map((t) => Math.max(...nt.map((x) => (x.startsWith(t) || t.startsWith(x) ? 0.9 : dice(t, x)))));
+  const tok = per.reduce((s2, v) => s2 + v, 0) / qt.length;
+  return Math.round(Math.max(tok * 72, dice(a, b) * 65));
+}
+
 // 후보가 속하는 지역(같은 주 + CP 우선 → municipio). 여러 개면 첫 번째(id 순).
 // 후보가 속할 지역: 지도 구역(다각형) > 우편번호 > municipio.
 // 다른 담당이 이미 맡은 후보는 그 담당의 지역(또는 담당 없는 지역)에만 들어간다 — 남의 지역 구역에 끌려가지 않음.

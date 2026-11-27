@@ -308,6 +308,10 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <div><div id="map"></div><div class="legend" id="m-legend"></div></div>
       <div class="card" id="ar-panel">
         <h2>루트 만들기</h2>
+        <div id="fs-box" style="margin:4px 0 14px;padding:12px;border:1px solid #eee;border-radius:12px;background:#fafafa">
+          <div style="display:flex;gap:6px;align-items:flex-end"><label class="fld" style="flex:1;margin:0"><span>🔎 고객 찾기</span><input type="search" id="fs-q" placeholder="업체 이름 — 예: Refaccionaria García" autocomplete="off"></label><button class="btn ghost sm hide" id="fs-clear">지우기</button></div>
+          <div id="fs-out"></div>
+        </div>
         <div style="display:flex;gap:6px;margin:6px 0 10px"><button class="chip" data-armode="terr" style="padding:8px 14px;cursor:pointer">📋 내 지역에서</button><button class="chip" data-armode="draw" style="padding:8px 14px;cursor:pointer">▭ 구역 그리기</button></div>
         <div id="arm-terr">
           <p class="note">① 담당 지역을 고르면 지도에 지역과 방문할 곳(빨간 점)이 나옵니다. ② 지도에서 <b>처음 방문할 업체</b>를 누르면 그곳부터 이동 거리가 가장 짧은 순서로 방문 계획을 짭니다. 다른 점을 누르면 시작점이 바뀝니다.</p>
@@ -866,6 +870,52 @@ async function suggestRoute(){
 ['ar-max','ar-days','ar-multi'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR) suggestRoute(); }));
 ['ar-unas','ar-skip'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR_MODE==='terr') loadTrCands(true); else if(AR) suggestRoute(); }));
 $('ar-user').addEventListener('change',()=>{ if(AR_MODE==='terr'){ TR.sel.clear(); clearTr(); loadMyTerrs(); } else if(AR) suggestRoute(); });
+
+// ── 🔎 고객 찾기: 이름이 같거나 비슷한 업체 → 목록 + 지도 표시 ──
+let FS={rows:[],lyr:null,marks:{},timer:null,sel:null};
+const FS_COL='#F5A300';
+function fsPin(n,on){ const d=on?34:26; return L.divIcon({className:'',iconSize:[d,d],iconAnchor:[d/2,d],html:'<div style="width:'+d+'px;height:'+d+'px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+(on?'#111':FS_COL)+';border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center"><b style="transform:rotate(45deg);color:#fff;font:800 '+(on?13:11)+'px/1 sans-serif">'+n+'</b></div>'}); }
+async function findCustomer(){
+  const q=$('fs-q').value.trim(); $('fs-clear').classList.toggle('hide',!q);
+  if(q.length<2){ fsClear(true); return; }
+  let r; try{ r=await api('/api/prospects/search?q='+encodeURIComponent(q)); }catch(e){ return toast('실패: '+e.message); }
+  if($('fs-q').value.trim()!==q) return;   // 그사이 더 입력함
+  FS.rows=r.rows; FS.sel=null; drawFs(true);
+}
+function fsClear(keepText){ if(FS.lyr) FS.lyr.clearLayers(); FS.rows=[]; FS.marks={}; FS.sel=null; $('fs-out').innerHTML=''; if(!keepText){ $('fs-q').value=''; $('fs-clear').classList.add('hide'); } }
+function drawFs(fit){
+  if(MAP){ if(!FS.lyr) FS.lyr=L.layerGroup().addTo(MAP); FS.lyr.clearLayers(); FS.marks={};
+    FS.rows.forEach((x,i)=>{ if(x.lat==null) return; const on=FS.sel===x.id;
+      FS.marks[x.id]=L.marker([x.lat,x.lng],{icon:fsPin(i+1,on),zIndexOffset:on?2000:1500})
+        .bindTooltip('<b>'+esc(x.nom_estab)+'</b><br>'+esc([x.colonia,x.municipio,x.entidad].filter(Boolean).join(' · ')),{direction:'top',offset:[0,-24]})
+        .on('click',()=>fsFocus(x.id)).addTo(FS.lyr); });
+    const pts=FS.rows.filter(x=>x.lat!=null).map(x=>[x.lat,x.lng]);
+    if(fit&&pts.length) pts.length===1?MAP.setView(pts[0],16):MAP.fitBounds(L.latLngBounds(pts),{padding:[40,40],maxZoom:15}); }
+  const q=$('fs-q').value.trim();
+  if(!FS.rows.length){ $('fs-out').innerHTML='<div class="note" style="margin-top:8px">「'+esc(q)+'」와 같거나 비슷한 업체가 없습니다. 이름 일부만 넣어 보세요.</div>'; return; }
+  const exact=FS.rows.filter(x=>x.exact).length;
+  $('fs-out').innerHTML='<div class="note" style="margin:8px 0 4px">'+(exact?'같은 이름 '+exact+'곳':'같은 이름은 없고')+(FS.rows.length>exact?' · 비슷한 이름 '+(FS.rows.length-exact)+'곳':'')+' — 누르면 지도에서 위치를 보여 줍니다</div>'+
+    '<div style="display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto">'+FS.rows.map((x,i)=>{ const on=FS.sel===x.id;
+      const inTr=AR_MODE==='terr'&&TR.cands.some(c=>c.id===x.id&&!c.why);
+      return '<div data-fs="'+x.id+'" style="display:flex;gap:8px;align-items:center;padding:7px 8px;border-radius:10px;cursor:pointer;border:1px solid '+(on?'#111':'#eee')+';background:'+(on?'#fff8e6':'#fff')+'">'+
+        '<span style="flex:0 0 22px;height:22px;border-radius:50%;background:'+(on?'#111':FS_COL)+';color:#fff;font:800 11px/22px sans-serif;text-align:center">'+(i+1)+'</span>'+
+        '<span style="flex:1;min-width:0"><b>'+esc(x.nom_estab)+'</b> '+(x.exact?'<span class="tag A" title="이름이 같거나 그대로 포함">같음</span>':'<span class="note">비슷 '+x.match+'%</span>')+
+        '<br><span class="note">'+esc([x.colonia,x.municipio,x.entidad].filter(Boolean).join(' · '))+' · '+esc((STAGE[x.stage]||{}).ko||'')+' · '+(x.owner_name?'담당 '+esc(x.owner_name):'담당 없음')+(x.customer_id?' · ERP 고객':'')+(x.lat==null?' · 위치 없음':'')+'</span></span>'+
+        (inTr?'<button class="btn red sm" data-fsstart="'+x.id+'">여기서 시작</button>':'')+
+        (!x.others?'<button class="iconbtn" data-fsopen="'+x.id+'" title="상세" aria-label="상세">›</button>':'')+'</div>'; }).join('')+'</div>';
+  $('fs-out').querySelectorAll('[data-fs]').forEach(el=>el.onclick=()=>fsFocus(Number(el.dataset.fs)));
+  $('fs-out').querySelectorAll('[data-fsopen]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openProspect(Number(b.dataset.fsopen)); });
+  $('fs-out').querySelectorAll('[data-fsstart]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); const c=TR.cands.find(c=>c.id===Number(b.dataset.fsstart)); if(c) pickStart({prospect_id:c.id,name:c.nom_estab,lat:c.lat,lng:c.lng}); });
+}
+function fsFocus(id){
+  const x=FS.rows.find(r=>r.id===id); if(!x) return; FS.sel=id; drawFs(false);
+  if(x.lat==null) return toast('이 업체는 지도 위치가 없습니다');
+  if(MAP){ MAP.setView([x.lat,x.lng],Math.max(MAP.getZoom(),17)); const m=FS.marks[id]; if(m) setTimeout(()=>m.openTooltip(),300); }
+  const el=$('fs-out').querySelector('[data-fs="'+id+'"]'); if(el) el.scrollIntoView({block:'nearest'});
+}
+$('fs-q').addEventListener('input',()=>{ clearTimeout(FS.timer); FS.timer=setTimeout(findCustomer,350); });
+$('fs-q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); clearTimeout(FS.timer); findCustomer(); } });
+$('fs-clear').onclick=()=>fsClear(false);
 
 // ── 📋 내 지역에서 루트 짜기: 지역 목록 → 지도 표시 → 시작 업체 선택 → 최적 순서 ──
 let AR_MODE='terr', TR={sel:new Set(),terrs:[],cands:[],start:null,lyr:null};

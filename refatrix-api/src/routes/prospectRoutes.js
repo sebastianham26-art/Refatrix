@@ -17,7 +17,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import {
-  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, estimateRoute, stateFromCp, ROUTE_SETTINGS_DEFAULT, checkStageMove, autoAdvance, normalizeImportRow,
+  STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, estimateRoute, stateFromCp, nameScore, nameTokens, normTxt, ROUTE_SETTINGS_DEFAULT, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
@@ -326,6 +326,39 @@ export default async function prospectRoutes(app) {
         [me(req), bb[0], bb[1], bb[2], bb[3], ...(qs.cve_ent ? [String(qs.cve_ent)] : [])])).rows.map((r) => [Number(r.lat), Number(r.lng), r.v ? 1 : 0]);
     }
     return { rows, others, truncated: rows.length >= 6000 };
+  });
+
+  // 🔎 고객 찾기 — 이름이 같거나 비슷한 업체(전국). 담당자는 다른 담당 후보도 위치는 보이지만 상세는 못 엶(others=true)
+  app.get('/api/prospects/search', view, async (req) => {
+    const q = String(req.query?.q || '').trim().slice(0, 80);
+    const limit = Math.min(50, Math.max(1, int(req.query?.limit) || 20));
+    const toks = nameTokens(q);
+    if (normTxt(q).length < 2) return { q, rows: [] };
+    const words = toks.length ? toks : [normTxt(q)];
+    const params = []; const ors = [];
+    for (const t of words.slice(0, 6)) {
+      params.push('%' + t + '%'); ors.push(`f LIKE $${params.length}`);
+      if (t.length >= 4) { params.push('%' + t.slice(0, 3) + '%'); ors.push(`f LIKE $${params.length}`); }   // 오타: 앞 세 글자
+    }
+    const rows = (await query(
+      `SELECT * FROM (
+         SELECT p.id, p.nom_estab, p.raz_social, p.municipio, p.colonia, p.entidad, p.lat, p.lng, p.stage, p.priority, p.score, p.owner_user_id,
+                p.customer_id, u.name AS owner_name,
+                translate(lower(COALESCE(p.nom_estab,'') || ' ' || COALESCE(p.raz_social,'')), 'áéíóúüñàèìòùâêîôûäëïöÁÉÍÓÚÜÑ', 'aeiouunaeiouaeiouaeioaeiouun') AS f
+           FROM prospects p LEFT JOIN users u ON u.id = p.owner_user_id
+          WHERE p.deleted_at IS NULL) x
+        WHERE ${ors.join(' OR ')} LIMIT 3000`, params)).rows;
+    const mine = me(req), dir = isDir(req);
+    const out = rows.map((r) => ({ r, s: Math.max(nameScore(q, r.nom_estab), nameScore(q, r.raz_social) - 3) }))
+      .filter((x) => x.s >= 45).sort((a, b) => b.s - a.s || String(a.r.nom_estab).localeCompare(String(b.r.nom_estab))).slice(0, limit)
+      .map(({ r, s: score }) => {
+        const owner = r.owner_user_id == null ? null : Number(r.owner_user_id);
+        const others = !dir && owner != null && owner !== mine;
+        return { id: Number(r.id), nom_estab: r.nom_estab, raz_social: others ? null : r.raz_social, municipio: r.municipio, colonia: r.colonia, entidad: r.entidad,
+          lat: r.lat == null ? null : Number(r.lat), lng: r.lng == null ? null : Number(r.lng), stage: r.stage, priority: r.priority, score: r.score,
+          owner_user_id: owner, owner_name: r.owner_name, customer_id: r.customer_id ? Number(r.customer_id) : null, match: score, exact: score >= 85, others };
+      });
+    return { q, rows: out };
   });
 
   // 🎙 빠른 녹음 → 지금 위치 근처 후보(반경 250m, 최대 5곳) — 오늘 내 루트에 있는 곳 우선.
