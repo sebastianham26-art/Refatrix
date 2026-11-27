@@ -1,7 +1,7 @@
 # REFATRIX 인수인계 — 2026-11-26b · 고객개발 루트 기준에 연료비 → 유류비 예산
 
 ## 0. 기준
-- origin/main e4313f7(고객개발_23) 위에서 작업.
+- origin/main e4313f7(고객개발_23) 위에서 작업. 1126d 는 3d18dda(고객개발_24) 위.
 
 ## 1. 요청
 - 루트 추정 기준에 연료비를 넣고, 넣으면 유류비 예산이 나오게.
@@ -36,3 +36,24 @@
 
 ## 8. 주의
 - nav.js 는 여러 작업이 함께 고치는 파일 — 덮어쓸 때 leadassign 줄이 `'__socio_or__leadassign'` 인지 확인.
+
+---
+# 추가 (1126d) · 담당별 주/월 유류비 예산 합계 — 디렉터 본인만
+
+## 결과
+- 고객개발 › 목표 화면, 루트 추정 기준 아래 **⛽ 담당별 유류비 예산 합계** 표. 월별(최근 6개월) / 주별(최근 8주, 월~일) 선택 · 엑셀.
+- 칸마다 유류비($) · L · km · 루트 수, 오른쪽 합계 · 기간 평균, 맨 아래 전체. 이번 기간 빨간 제목.
+- 날짜가 정해진 루트(오늘 루트 · 코스 저장)만 계산, 날짜 없는 방문 목록은 제외. 계획된 루트 전체(체크인 여부 무관). 제외(descartado)·삭제 후보 중 방문 안 한 곳은 빼고 셈(루트 화면과 같은 규칙).
+- **보이는 사람: role = director 계정만**. 고객개발 「관리자」로 지정된 사람 · 소시오 · 영업은 표가 안 보이고 API 도 403.
+
+## 파일
+- refatrix-api/src/routes/prospectRoutes.js — `fuelPeriods()`(export), `GET /api/prospect-fuel?unit=week|month&n=`
+- refatrix-prospects.html — `#g-fuel` 카드 · `loadFuel` · 엑셀(xlsx 필요할 때 불러옴)
+- refatrix-api/test/prospects_fuel.test.mjs (신규)
+
+## 검증
+- prospects_fuel 2/2(기간 계산 · 서버 합계 · 날짜 없는 목록 제외 · 영업/관리자 403), prospects 24/24, integration_nav 4/4.
+- 로컬 서버 + Playwright 로 표 화면 확인.
+
+## 배포
+- 덮어쓰기 + push. 마이그레이션 없음.

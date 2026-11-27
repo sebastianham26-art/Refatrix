@@ -427,6 +427,16 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
         </div>
         <p class="note" style="margin-top:6px">루트를 만들면 「총 소요 = 이동 시간 + 곳 수 × 상담 시간」, 「필요 연료 = 이동 거리 ÷ 연비」, 「유류비 예산 = 필요 연료 × 연료비」로 추정합니다. 연료비를 0으로 두면 유류비 예산은 표시하지 않습니다. 이동 거리는 지도상 직선거리에 도로 보정을 곱한 값입니다.</p>
       </div>
+      <div class="card flat hide" id="g-fuel" style="margin-top:12px;padding:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <b>⛽ 담당별 유류비 예산 합계</b><span class="note">🔒 디렉터 본인만 보입니다</span>
+          <span style="margin-left:auto"></span>
+          <select id="gf-unit" style="width:auto;flex:0 0 auto"><option value="week">주별 (최근 8주)</option><option value="month" selected>월별 (최근 6개월)</option></select>
+          <button class="btn ghost sm" id="gf-xls" style="flex:0 0 auto">엑셀</button>
+        </div>
+        <div class="scroll" style="margin-top:10px"><table class="tb" id="gf-table"></table></div>
+        <p class="note" id="gf-note" style="margin-top:6px"></p>
+      </div>
       <div class="scroll" style="margin-top:12px"><table class="tb" id="g-table"></table></div>
       <p class="note">① 맨 위 줄에 지표별 <b>총 합의 목표</b>를 넣고 ② 담당자별 <b>할당률(%)</b>을 넣으면 담당자 목표가 자동으로 나뉩니다. 할당률이 없는 담당자는 목표가 없고, 총 목표를 비운 지표도 목표가 없습니다.<br>
       <b>첫 매출 금액</b>은 할당률과 상관없이 할당률이 있는 담당자끼리 <b>똑같이(동률)</b> 나눕니다.<br>
@@ -1561,8 +1571,33 @@ $('rs-save').onclick=async()=>{
     META.route_settings=r.route; toast('추정 기준 저장 · 상담 '+r.route.visit_min+'분 · 연비 '+r.route.km_per_liter+'km/L · 연료비 $'+Number(r.route.fuel_price||0).toFixed(2)+'/L'); }
   catch(e){ toast(e.message==='bad_value'?'값의 범위를 확인하세요':'실패: '+e.message); }
 };
+// 1126 · 담당별 주/월 유류비 예산 — 디렉터 본인만(서버도 디렉터 아니면 403)
+let FUEL=null;
+async function loadFuel(){
+  const box=$('g-fuel'); if(!META||!META.is_real_director){ box.classList.add('hide'); return; }
+  box.classList.remove('hide');
+  try{ FUEL=await api('/api/prospect-fuel?unit='+$('gf-unit').value); }catch(e){ $('gf-table').innerHTML=''; $('gf-note').textContent='불러오지 못했습니다: '+e.message; return; }
+  const P=FUEL.periods, cur=P[P.length-1].key;
+  const cell=(c,bold,l)=>c&&c.routes?'<td class="num" data-l="'+esc(l||'')+'">'+(bold?'<b>':'')+fuelMoney(c.fuel_cost)+(bold?'</b>':'')+'<div class="note">'+c.fuel_l+'L · '+c.km+'km · 루트 '+c.routes+'</div></td>':'<td class="num note" data-l="'+esc(l||'')+'">—</td>';
+  if(!FUEL.users.length){ $('gf-table').innerHTML=''; $('gf-note').innerHTML='이 기간에 날짜가 정해진 루트가 없습니다. (날짜 없는 방문 목록은 합계에 넣지 않습니다)'; return; }
+  $('gf-table').innerHTML='<thead><tr><th>담당</th>'+P.map(p=>'<th class="num"'+(p.key===cur?' style="color:var(--red,#B23A2E)"':'')+'>'+esc(p.label)+(p.key===cur?' (이번)':'')+'</th>').join('')+'<th class="num">합계</th><th class="num">평균/'+(FUEL.unit==='week'?'주':'월')+'</th></tr></thead><tbody>'
+    +FUEL.users.map(u=>'<tr><td><b>'+esc(u.name)+'</b></td>'+P.map(p=>cell(u.cells[p.key],p.key===cur,p.label)).join('')+cell(u.total,true,'합계')+'<td class="num" data-l="평균">'+fuelMoney(u.total.fuel_cost/P.length)+'</td></tr>').join('')
+    +'<tr style="background:#faf8f3"><td><b>전체</b></td>'+P.map(p=>cell(FUEL.totals[p.key],true,p.label)).join('')+cell(FUEL.total,true,'합계')+'<td class="num" data-l="평균"><b>'+fuelMoney(FUEL.total.fuel_cost/P.length)+'</b></td></tr></tbody>';
+  const S=FUEL.settings;
+  $('gf-note').innerHTML=(FUEL.priced?'':'⚠ 연료비가 0이라 금액이 0입니다 — 위 기준에서 연료비를 넣으세요. ')+'날짜가 정해진 루트(오늘 루트·코스 저장) 기준 추정 · 연비 '+S.km_per_liter+'km/L · 연료비 $'+Number(S.fuel_price||0).toFixed(2)+'/L · 도로 보정 ×'+S.road_factor+'. 날짜 없는 방문 목록은 넣지 않습니다. 체크인 여부와 관계없이 계획된 루트 전체로 계산합니다.';
+}
+$('gf-unit').onchange=loadFuel;
+function needXlsx(){ return window.XLSX?Promise.resolve():new Promise((ok,no)=>{ const t=document.createElement('script'); t.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js'; t.onload=ok; t.onerror=no; document.head.appendChild(t); }); }
+$('gf-xls').onclick=async()=>{
+  if(!FUEL) return; try{ await needXlsx(); }catch(e){ return toast('엑셀을 만들 수 없습니다'); }
+  const P=FUEL.periods; const H=['담당'].concat(P.flatMap(p=>[p.label+' 유류비',p.label+' L',p.label+' km',p.label+' 루트'])).concat(['합계 유류비','합계 L','합계 km','합계 루트']);
+  const R=(n,cells,t)=>[n].concat(P.flatMap(p=>{ const c=cells[p.key]||{}; return [c.fuel_cost||0,c.fuel_l||0,c.km||0,c.routes||0]; })).concat([t.fuel_cost,t.fuel_l,t.km,t.routes]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([H].concat(FUEL.users.map(u=>R(u.name,u.cells,u.total))).concat([R('전체',FUEL.totals,FUEL.total)])),'유류비 예산');
+  XLSX.writeFile(wb,'refatrix_combustible_'+FUEL.unit+'_'+P[0].from+'_'+P[P.length-1].to+'.xlsx');
+};
 async function loadTargets(){
-  loadRouteSettings();
+  loadRouteSettings(); loadFuel();
   const per=period(); $('g-title').textContent=per+' 목표';
   let r; try{ r=await api('/api/prospect-targets?period='+per); }catch(e){ return; }
   TG={totals:r.totals||{},shares:r.shares||{},legacy:r.rows.length>0&&!Object.keys(r.totals||{}).length};
