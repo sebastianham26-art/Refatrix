@@ -25,7 +25,7 @@ import {
 } from '../prospectCore.js';
 import { pageAllowed } from '../permissions.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
-import { moveStage, refreshCustomerStages, hasProspectCols, recomputeProspect, recomputeProspectSafe, detachConsultFromProspect } from '../prospectAlta.js';
+import { moveStage, refreshCustomerStages, hasProspectCols, recomputeProspect, recomputeProspectSafe, detachConsultFromProspect, attachConsultToProspect } from '../prospectAlta.js';
 import { syncConsultVisitSafe } from '../consultVisitSync.js';
 
 const PAGE = 'pipeline';
@@ -1636,6 +1636,72 @@ export default async function prospectRoutes(app) {
   });
 
   // ── 진척 보드(누구나) — 전체·영업사원별·업체별 점수와 방문 실적, 일별 누적 ──
+  // ── 🔗 고객개발에 연결 안 된 방문(빠른 녹음) — 진척 보드 「첫 방문」에서 빠진 것 찾기 ──
+  //   일반 🎙 녹음으로 방문했거나, 다른 담당 후보라 연결이 거절된 녹음(상담은 저장됨)이 여기에 남는다.
+  //   대상: quick_rec · prospect_id 없음 · ERP 고객(customer_id) 아님 · 「고객개발 아님」 표시 안 함(reviewed_at)
+  app.get('/api/prospects/unlinked-visits', { preHandler: [authGuard, loadMgr] }, async (req) => {
+    const qs = req.query || {};
+    const isWeek = qs.range === 'week';
+    const pb = isWeek ? weekBounds(YMD.test(String(qs.week)) ? qs.week : mxToday()) : periodBounds(PERIOD.test(String(qs.period)) ? qs.period : mxToday().slice(0, 7));
+    const params = [pb.from, pb.to]; let cond = '';
+    if (!isDir(req)) { params.push(me(req)); cond = `AND c.created_by=$${params.length}`; }
+    else if (int(qs.user)) { params.push(int(qs.user)); cond = `AND c.created_by=$${params.length}`; }
+    let rows;
+    try {
+      rows = (await query(
+        `SELECT c.id, c.consult_date::text AS consult_date, c.created_at, c.company_name, c.created_by, u.name AS user_name, c.geo_lat, c.geo_lng
+           FROM sales_consults c LEFT JOIN users u ON u.id=c.created_by
+          WHERE c.deleted_at IS NULL AND c.quick_rec = TRUE AND c.prospect_id IS NULL AND c.customer_id IS NULL AND c.reviewed_at IS NULL
+            AND c.consult_date >= $1::date AND c.consult_date < $2::date ${cond}
+          ORDER BY c.created_at DESC LIMIT 200`, params)).rows;
+    } catch (_) { return { rows: [] }; }   // 0333/0334 전
+    // 녹음 위치 근처 후보(400m 안 가까운 순 3곳) — 누르면 바로 연결
+    for (const r of rows) {
+      r.id = Number(r.id); r.created_by = Number(r.created_by);
+      const lat = Number(r.geo_lat), lng = Number(r.geo_lng); r.near = [];
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) continue;
+      const dLat = 400 / 111320, dLng = 400 / (111320 * Math.cos((lat * Math.PI) / 180));
+      r.near = (await query(
+        `SELECT p.id, p.nom_estab, p.colonia, p.stage, p.owner_user_id, u.name AS owner_name, p.lat, p.lng FROM prospects p LEFT JOIN users u ON u.id=p.owner_user_id
+          WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4`,
+        [lat - dLat, lat + dLat, lng - dLng, lng + dLng])).rows
+        .map((p) => ({ id: Number(p.id), nom_estab: p.nom_estab, colonia: p.colonia, stage: p.stage, owner_user_id: p.owner_user_id == null ? null : Number(p.owner_user_id), owner_name: p.owner_name, dist_m: distanceM(lat, lng, Number(p.lat), Number(p.lng)) }))
+        .sort((a, b) => a.dist_m - b.dist_m).slice(0, 3);
+    }
+    return { from: pb.from, to: pb.to, rows };
+  });
+  // 연결 — 방문한 사람(녹음한 사람) 기준으로 붙인다: 미배정 후보면 그 사람에게 배정 → 단계 컨택 → 첫 방문 집계
+  //   다른 담당 후보면: 담당자는 거절(not_owner) · 디렉터/관리자는 force=true 로 담당을 방문한 사람에게 옮기고 연결
+  app.post('/api/prospects/unlinked-visits/:id/link', edit, async (req, reply) => {
+    const c = (await query(`SELECT id, created_by, prospect_id, geo_lat, geo_lng FROM sales_consults WHERE id=$1 AND deleted_at IS NULL`, [int(req.params.id)])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!isDir(req) && Number(c.created_by) !== me(req)) return reply.code(403).send({ error: 'forbidden' });
+    if (c.prospect_id) return reply.code(409).send({ error: 'already_linked' });
+    const pid = int(req.body?.prospect_id); if (!pid) return reply.code(400).send({ error: 'prospect_required' });
+    const visitor = Number(c.created_by);
+    const p = (await query(`SELECT p.id, p.owner_user_id, u.name AS owner_name FROM prospects p LEFT JOIN users u ON u.id=p.owner_user_id WHERE p.id=$1 AND p.deleted_at IS NULL`, [pid])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'prospect_not_found' });
+    if (p.owner_user_id != null && Number(p.owner_user_id) !== visitor) {
+      if (!(isDir(req) && req.body?.force === true)) return reply.code(409).send({ error: 'not_owner', owner_name: p.owner_name });
+      await query(`UPDATE prospects SET owner_user_id=$2, assigned_at=now(), updated_at=now() WHERE id=$1`, [pid, visitor]);
+      await query(`INSERT INTO prospect_assign_history (prospect_id, from_user, to_user, by_user) VALUES ($1,$2,$3,$4)`, [pid, p.owner_user_id, visitor, me(req)]);
+    }
+    const lat = c.geo_lat == null ? null : Number(c.geo_lat), lng = c.geo_lng == null ? null : Number(c.geo_lng);
+    const r = await attachConsultToProspect({ consultId: Number(c.id), prospectId: pid, perm: { userId: visitor, role: 'sales' }, lat, lng });
+    if (!r || r.error) return reply.code(409).send({ error: (r && r.error) || 'link_failed' });
+    await syncConsultVisitSafe(Number(c.id), req.log);
+    await logEvent({ userId: me(req), action: 'update', target: `consult:${c.id}`, detail: { link_prospect: pid, visitor, force: req.body?.force === true } });
+    return { ok: true, ...r };
+  });
+  // 「고객개발 아님」(기존 고객 방문 등) — 목록에서 숨김(상담은 그대로)
+  app.post('/api/prospects/unlinked-visits/:id/dismiss', edit, async (req, reply) => {
+    const c = (await query(`SELECT id, created_by FROM sales_consults WHERE id=$1 AND deleted_at IS NULL AND prospect_id IS NULL`, [int(req.params.id)])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!isDir(req) && Number(c.created_by) !== me(req)) return reply.code(403).send({ error: 'forbidden' });
+    await query(`UPDATE sales_consults SET reviewed_by=$2, reviewed_at=now() WHERE id=$1`, [c.id, me(req)]);
+    return { ok: true };
+  });
+
   app.get('/api/prospects/progress', { preHandler: [authGuard, loadMgr] }, async (req) => {
     await refreshCustomerStages().catch(() => {});   // ERP 견적·인보이스 반영
     const qs = req.query || {};

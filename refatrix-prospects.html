@@ -219,6 +219,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
   <section id="p-board" class="tabp hide">
     <p class="note" style="margin-top:12px">개발 점수(0~100)는 방문 기록·저장한 고객정보·견적·고객 연결·첫 매출로 자동 계산됩니다. 첫 매출이 나오면 100점 = 신규개발 완료. 이 보드는 모든 직원이 봅니다(금액 제외).</p>
     <div class="grid cards row1" id="b-sum"></div>
+    <div class="card hide" id="b-unl" style="margin-top:16px;border:1px solid #F5A300;background:#fffbf0"></div>
     <div class="split" style="margin-top:16px">
       <div class="card chart"><h2>누적 방문</h2><p class="note" id="b-visits-note"></p><div id="b-visits"></div></div>
       <div class="card chart"><h2>점수 구간별 업체</h2><p class="note">담당이 있는 업체 · 막대 = 업체 수</p><div id="b-bands"></div></div>
@@ -603,10 +604,42 @@ async function refreshCounts(){
 }
 
 // ── 진척 보드 ──
+// ── 🔗 고객개발에 연결 안 된 방문 — 일반 🎙 녹음이거나 연결이 거절된 녹음. 업체를 골라 연결하면 「첫 방문」에 들어감 ──
+let UNL=[];
+async function loadUnlinked(){
+  const wk=$('f-range').value==='week';
+  let r; try{ r=await api('/api/prospects/unlinked-visits?'+(wk?'range=week':'period='+period())); }catch(e){ $('b-unl').classList.add('hide'); return; }
+  UNL=r.rows; const box=$('b-unl');
+  if(!UNL.length){ box.classList.add('hide'); box.innerHTML=''; return; }
+  box.classList.remove('hide');
+  const own=(p)=>p.owner_user_id==null?'미배정':esc(p.owner_name||'')+' 담당';
+  box.innerHTML='<h2>🔗 고객개발에 연결 안 된 방문 '+UNL.length+'건</h2><p class="note">빠른 녹음은 저장됐지만 업체 후보에 연결되지 않아 <b>첫 방문·방문 수에 안 들어간</b> 기록입니다(일반 🎙 녹음으로 방문했거나, 다른 담당 업체라 연결이 안 됨). 방문한 업체를 골라 연결하면 바로 집계됩니다. 기존 고객 방문이면 「고객개발 아님」.</p>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">'+UNL.map(v=>'<div data-unl="'+v.id+'" style="padding:10px 12px;border:1px solid #eee;border-radius:12px;background:#fff">'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>'+esc(v.user_name||'')+'</b><span class="note">'+esc(v.consult_date)+' '+esc(String(v.created_at||'').slice(11,16))+'</span><span>· '+esc(v.company_name||'(상호 없음)')+'</span><span style="margin-left:auto"></span><button class="btn ghost sm" data-unldis="'+v.id+'">고객개발 아님</button></div>'+
+      (v.near.length?'<div class="note" style="margin-top:6px">녹음 위치 근처 후보 — 누르면 연결:</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+v.near.map(p=>'<button class="chip" style="padding:6px 10px;cursor:pointer" data-unlink="'+v.id+'" data-pid="'+p.id+'" data-own="'+(p.owner_user_id!=null&&p.owner_user_id!==v.created_by?esc(p.owner_name||'다른 담당'):'')+'"><b>'+esc(p.nom_estab)+'</b> <span class="note">'+p.dist_m+'m · '+own(p)+'</span></button>').join('')+'</div>'
+        :'<div class="note" style="margin-top:6px">녹음 위치가 없거나 400m 안에 후보가 없습니다 — 아래에서 찾아 연결하세요.</div>')+
+      '<div style="display:flex;gap:6px;margin-top:6px"><input type="search" data-unlq="'+v.id+'" placeholder="🔎 업체 이름으로 찾아 연결" value="'+esc(v.company_name&&!/^\(/.test(v.company_name)?v.company_name:'')+'" style="flex:1"><button class="btn ghost sm" data-unlfind="'+v.id+'">찾기</button></div><div data-unlres="'+v.id+'"></div></div>').join('')+'</div>';
+  box.querySelectorAll('[data-unlink]').forEach(b=>b.onclick=()=>linkUnl(Number(b.dataset.unlink),Number(b.dataset.pid),b.dataset.own));
+  box.querySelectorAll('[data-unldis]').forEach(b=>b.onclick=async()=>{ try{ await post('/api/prospects/unlinked-visits/'+b.dataset.unldis+'/dismiss',{}); toast('목록에서 뺐습니다'); loadUnlinked(); }catch(e){ toast('실패: '+e.message); } });
+  const find=async id=>{ const q=box.querySelector('[data-unlq="'+id+'"]').value.trim(); if(q.length<2) return toast('업체 이름을 두 글자 이상 넣으세요');
+    let r; try{ r=await api('/api/prospects/search?limit=8&q='+encodeURIComponent(q)); }catch(e){ return toast('실패: '+e.message); }
+    const v=UNL.find(x=>x.id===id); const out=box.querySelector('[data-unlres="'+id+'"]');
+    out.innerHTML=r.rows.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+r.rows.map(p=>'<button class="chip" style="padding:6px 10px;cursor:pointer" data-unlink2="'+id+'" data-pid="'+p.id+'" data-own="'+(p.owner_user_id!=null&&p.owner_user_id!==v.created_by?esc(p.owner_name||'다른 담당'):'')+'"><b>'+esc(p.nom_estab)+'</b> <span class="note">'+esc([p.colonia,p.municipio].filter(Boolean).join(' · '))+' · '+own(p)+'</span></button>').join('')+'</div>':'<div class="note" style="margin-top:6px">찾는 업체가 없습니다. 「📍 고객개발 › 새 가게」로 등록한 뒤 연결하세요.</div>';
+    out.querySelectorAll('[data-unlink2]').forEach(b=>b.onclick=()=>linkUnl(Number(b.dataset.unlink2),Number(b.dataset.pid),b.dataset.own)); };
+  box.querySelectorAll('[data-unlfind]').forEach(b=>b.onclick=()=>find(Number(b.dataset.unlfind)));
+  box.querySelectorAll('[data-unlq]').forEach(i=>i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); find(Number(i.dataset.unlq)); } });
+}
+async function linkUnl(id,pid,otherOwner){
+  const v=UNL.find(x=>x.id===id); let force=false;
+  if(otherOwner){ if(!isDir) return toast('다른 담당('+otherOwner+')의 업체라 연결할 수 없습니다 — 디렉터에게 요청하세요');
+    if(!confirm('이 업체는 '+otherOwner+' 담당입니다. 담당을 '+(v?v.user_name:'방문한 사람')+'(으)로 옮기고 연결할까요?')) return; force=true; }
+  try{ await post('/api/prospects/unlinked-visits/'+id+'/link',{prospect_id:pid,force}); toast('연결했습니다 — 첫 방문에 들어갑니다'); loadBoard(); }
+  catch(e){ toast(e.message==='not_owner'?'다른 담당의 업체라 연결할 수 없습니다':'실패: '+e.message); }
+}
 async function loadBoard(){
   const wk=$('f-range').value==='week';
   let d; try{ d=await api('/api/prospects/progress?'+(wk?'range=week':'period='+period())+(ent()?'&cve_ent='+ent():'')); }catch(e){ return; }
-  BOARD=d;
+  BOARD=d; loadUnlinked();
   const reps0=[...new Map(d.per_prospect.filter(x=>x.owner_user_id).map(x=>[x.owner_user_id,x.owner_name])).entries()];
   const keep=$('b-rep').value; $('b-rep').innerHTML='<option value="">전체</option>'+reps0.map(([id,n])=>'<option value="'+id+'">'+esc(n)+'</option>').join(''); $('b-rep').value=keep;
   renderPerProspect();
