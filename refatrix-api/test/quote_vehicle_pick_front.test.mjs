@@ -33,7 +33,7 @@ const VM = {
 };
 
 function boot() {
-  const calls = { preview: [], save: [], alerts: [] };
+  const calls = { preview: [], save: [], alerts: [], app: [] };
   const dom = new JSDOM(read('refatrix-quote.html'), {
     runScripts: 'dangerously', url: 'https://example.test/refatrix-quote.html', pretendToBeVisual: true,
     beforeParse(w) {
@@ -46,9 +46,10 @@ function boot() {
         const u = String(url);
         const json = (d) => ({ ok: true, status: 200, json: async () => d });
         if (u.includes('/api/customers')) return json({ items: [{ id: 1, code: 'C001', name: 'REFACCIONARIA NORTE', discount: 30 }] });
+        if (u.includes('/api/products/app-')) calls.app.push(u.replace('https://api.test/api/products/', ''));
         if (u.includes('/api/products/app-makers')) return json({ items: ['NISSAN'], groups: [] });
-        if (u.includes('/api/products/app-models')) return json({ items: ['Versa'], groups: [] });
-        if (u.includes('/api/products/app-years')) return json({ items: [2015] });
+        if (u.includes('/api/products/app-models')) return json({ items: u.includes('year=2021') ? ['Kicks', 'Versa'] : (u.includes('year=2010') ? ['Tiida'] : ['Kicks', 'Tiida', 'Versa']), groups: [] });
+        if (u.includes('/api/products/app-years')) return json({ items: [2021, 2015, 2010] });
         if (u.includes('/api/products/vehicle-map')) return json(VM);
         if (u.includes('/api/quotes/preview')) {
           const b = JSON.parse(o.body); calls.preview.push(b);
@@ -77,7 +78,7 @@ const row = (d, txt) => [...d.querySelectorAll('#qVehResult .vm-row')].find((r) 
 
 test('① 고객을 골라야 「차종으로 찾기」가 켜진다', { skip: SKIP }, async () => {
   const { w, d } = boot(); await tick(250);
-  assert.match(d.title, /qt-1127vm/);
+  assert.match(d.title, /qt-1127vn/);
   assert.equal(d.getElementById('qmVeh').disabled, true, '고객 전 비활성');
   d.getElementById('custSel').value = '1'; w.onCustChange(); await tick(50);
   assert.equal(d.getElementById('qmVeh').disabled, false);
@@ -137,5 +138,29 @@ test('④ CTR 없는 부품 → SYD/BAW 코드로 미매칭 줄(개발요청 흐
   assert.deepEqual(calls.preview.at(-1).lines, [{ code: 'BW9', qty: 2, brand: 'BAW' }, { code: 'SYD9', qty: 1, brand: 'SYD' }], '빠른 담기 = 첫 코드(SYD)');
   w.saveQuote(); await tick(200);
   assert.deepEqual(calls.save.at(-1).lines.map((l) => [l.code, l.brand || '', l.product_id || null]), [['BW9', 'BAW', null], ['SYD9', 'SYD', null]]);
+  w.close();
+});
+
+test('⑥ 11-27g · 메이커 → 연식 → 모델 — 연식을 고르면 그 연식 모델만', { skip: SKIP }, async () => {
+  const c = boot(); const { w, d, calls } = c; await tick(250);
+  d.getElementById('custSel').value = '1'; w.onCustChange(); await tick(50);
+  d.getElementById('qmVeh').click(); await tick(150);
+  const ids = [...d.querySelectorAll('#qVehPanel .vm-sel select')].map((x) => x.id);
+  assert.deepEqual(ids, ['q-veh-maker', 'q-veh-year', 'q-veh-model'], '화면 순서');
+  const mk = d.getElementById('q-veh-maker'); mk.value = 'NISSAN'; calls.app.length = 0;
+  mk.dispatchEvent(new w.Event('change')); await tick(120);
+  assert.deepEqual(calls.app, ['app-years?maker=NISSAN', 'app-models?maker=NISSAN'], '메이커 → 연식 목록 → (연식 없이) 모델 전체');
+  const opts = (id) => [...d.getElementById(id).options].map((o) => o.value).filter(Boolean);
+  assert.deepEqual(opts('q-veh-year'), ['2021', '2015', '2010']);
+  assert.deepEqual(opts('q-veh-model'), ['Kicks', 'Tiida', 'Versa']);
+  d.getElementById('q-veh-model').value = 'Versa';
+  const yr = d.getElementById('q-veh-year'); yr.value = '2021'; calls.app.length = 0;
+  yr.dispatchEvent(new w.Event('change')); await tick(120);
+  assert.deepEqual(calls.app, ['app-models?maker=NISSAN&year=2021']);
+  assert.deepEqual(opts('q-veh-model'), ['Kicks', 'Versa'], '2021 모델만');
+  assert.equal(d.getElementById('q-veh-model').value, 'Versa', '고른 모델이 새 목록에 있으면 유지');
+  yr.value = '2010'; yr.dispatchEvent(new w.Event('change')); await tick(120);
+  assert.deepEqual(opts('q-veh-model'), ['Tiida']);
+  assert.equal(d.getElementById('q-veh-model').value, '', '없으면 비움');
   w.close();
 });

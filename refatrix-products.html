@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1127vq</title>
+<title>Refatrix ERP · 제품 조회 · ps-1127vr</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -248,7 +248,7 @@
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
-<script src="refatrix-vehiclemap.js?v=20261127f"></script>
+<script src="refatrix-vehiclemap.js?v=20261127g"></script>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
 </head>
@@ -276,12 +276,12 @@
   <div class="card hidden vm" id="vehCard">
     <div class="vm-head">
       <h2>차종으로 제품찾기</h2>
-      <div class="vm-sub">메이커 · 모델 · 연식을 고르면 차량 하부 도면 위에 우리 부품의 장착위치가 표시됩니다. CTR 카탈로그에 없는 자리는 경쟁사(SYD · BAW) 코드로 보여 줍니다.</div>
+      <div class="vm-sub">메이커 · 연식 · 모델을 고르면(연식을 먼저 고르면 그 연식의 모델만) 차량 하부 도면 위에 우리 부품의 장착위치가 표시됩니다. CTR 카탈로그에 없는 자리는 경쟁사(SYD · BAW) 코드로 보여 줍니다.</div>
     </div>
     <div class="vm-sel">
       <div><label for="veh-maker">메이커 · Marca</label><select id="veh-maker"><option value="">선택</option></select></div>
+      <div><label for="veh-year">연식 · Año</label><select id="veh-year"><option value="">전체 연식</option></select></div>
       <div style="flex:2"><label for="veh-model">모델 · Modelo</label><select id="veh-model"><option value="">선택</option></select></div>
-      <div><label for="veh-year">연식 · Año</label><select id="veh-year"><option value="">전체</option></select></div>
       <div class="vm-go"><button class="vm-btn" id="vehBtn" type="button">찾기</button></div>
     </div>
     <div id="vehResult"></div>
@@ -2921,7 +2921,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build ps-1127vq (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더 · OE 말풍선 · 공용 모듈)'); }catch(e){}
+  try{ console.log('[refatrix-products] build ps-1127vr (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더 · OE 말풍선 · 공용 모듈)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);

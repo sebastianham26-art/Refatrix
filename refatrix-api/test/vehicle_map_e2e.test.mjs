@@ -316,3 +316,16 @@ test('⑧ 11-27f · 도면에서 담은 줄 그대로 견적 저장 → 재고�
   await query(`DELETE FROM quote_lines WHERE quote_id=$1`, [qid]).catch(() => {});
   await query(`DELETE FROM quotes WHERE id=$1`, [qid]).catch(() => {});
 });
+
+test('⑨ 11-27g · app-models?year= — 그 연식이 적용 범위에 드는 모델만', { skip: SKIP }, async () => {
+  const F = TAG + 'FD';   // ⑦에서 만든 메이커: GrandMq(2003-2011) · Focus(2003-2011)
+  const id = Number((await query(`INSERT INTO products (code, name, stock_qty) VALUES ($1,'BUJE',1) RETURNING id`, [TAG + '-F4'])).rows[0].id);
+  await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,2015,2019)`, [id, `${F} Escape${RUN} 2015-2019`, F, 'Escape' + RUN]);
+  const m = async (y) => (await get(`/api/products/app-models?maker=${encodeURIComponent(F)}${y ? '&year=' + y : ''}`)).json().items.sort();
+  assert.deepEqual(await m(), ['Escape' + RUN, 'Focus' + RUN, 'GrandMq' + RUN].sort(), '연식 없으면 전부');
+  assert.deepEqual(await m(2017), ['Escape' + RUN]);
+  assert.deepEqual(await m(2005), ['Focus' + RUN, 'GrandMq' + RUN].sort());
+  assert.deepEqual(await m(1990), []);
+  const yrs = (await get(`/api/products/app-years?maker=${encodeURIComponent(F)}`)).json().items;
+  assert.ok(yrs.includes(2017) && yrs.includes(2005), '메이커만으로 연식 목록');
+});

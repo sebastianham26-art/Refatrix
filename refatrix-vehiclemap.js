@@ -1,5 +1,5 @@
 /* =====================================================================
- * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f
+ * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f · 27g(메이커 → 연식 → 모델)
  *   쓰는 화면: 제품마케팅 › 제품(refatrix-products.html · 보기) · 견적(refatrix-quote.html · 담기)
  *   API: GET /api/products/app-makers · app-models · app-years · vehicle-map (quote · products · sales 화면 권한)
  *
@@ -62,9 +62,18 @@
         return '<option value="'+escP(v)+'"'+(o?' title="'+escP('같은 이름으로 묶은 표기: '+o.join(' · '))+'"':'')+'>'+escP(v)+(o?'  ('+escP(o.slice(0,3).join(' · '))+(o.length>3?' …':'')+')':'')+'</option>'; }).join('');
     }
     function getJ(path){ return fetch(O.api()+path,{headers:O.headers()}).then(function(x){ return x.json(); }); }
+    // 11-27g · 순서 = 메이커 → 연식 → 모델. 연식을 고르면 그 연식에 해당하는 모델만 나온다(연식 비우면 메이커의 모든 모델).
+    //   연식을 바꿔도 고른 모델이 새 목록에 있으면 그대로 둔다.
+    function keep(sel, prev){ if(prev && [].some.call(sel.options,function(o){ return o.value===prev; })) sel.value=prev; }
     function loadMakers(){ return getJ('/api/products/app-makers').then(function(d){ fillSelect(E.maker,d.items,'선택',d.groups); }).catch(function(){}); }
-    function loadModels(){ return getJ('/api/products/app-models?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.model,d.items,'선택',d.groups); }).catch(function(){}).then(loadYears); }
-    function loadYears(){ return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)+'&model='+encodeURIComponent(E.model.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); }).catch(function(){}); }
+    function loadYears(){
+      var prev=E.year.value;
+      return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); keep(E.year,prev); }).catch(function(){}).then(loadModels);
+    }
+    function loadModels(){
+      var prev=E.model.value, y=E.year.value;
+      return getJ('/api/products/app-models?maker='+encodeURIComponent(E.maker.value)+(y?'&year='+encodeURIComponent(y):'')).then(function(d){ fillSelect(E.model,d.items,'선택',d.groups); keep(E.model,prev); }).catch(function(){});
+    }
 
     // ── 담기(pick) ──
     function pickRefs(it){
@@ -369,12 +378,12 @@
 
 
     if(E.btn) E.btn.addEventListener('click', vehSearch);
-    if(E.maker) E.maker.addEventListener('change', loadModels);
-    if(E.model) E.model.addEventListener('change', loadYears);
+    if(E.maker) E.maker.addEventListener('change', function(){ E.year.value=''; E.model.value=''; loadYears(); });   // 메이커 → 연식 목록 → 모델 목록
+    if(E.year) E.year.addEventListener('change', loadModels);                                                       // 연식 → 그 연식 모델만
     window.addEventListener('scroll', vmOeHide, true);
     return { search: vehSearch, loadMakers: loadMakers, render: function(){ if(vmData) vmRender(); }, data: function(){ return vmData; }, hideTip: vmOeHide };
   }
   // 스타일은 불러오자마자 넣는다 — 토글 · 패널이 도면을 열기 전에도 같은 모양
   if(document.head) injectCss(); else document.addEventListener('DOMContentLoaded', injectCss);
-  window.RefatrixVehicleMap = { create: create, version: '20261127f' };
+  window.RefatrixVehicleMap = { create: create, version: '20261127g' };
 })();

@@ -1567,11 +1567,14 @@ export default async function productRoutes(app) {
     return { items: groups.map((g) => g.label), groups };
   });
 
-  // 차종 드롭다운: (메이커별) 모델 목록
+  // 차종 드롭다운: (메이커 · 연식별) 모델 목록 — 11-27g ?year= 추가
   app.get('/api/products/app-models', { preHandler: [authGuard, requirePageAny(VM_PAGES)] }, async (req) => {
     const maker = String(req.query.maker || '').trim();
+    // 11-27g · 메이커 → 연식 → 모델 순서 — 연식을 주면 그 연식이 적용 범위에 들어가는 모델만
+    const yr = req.query.year ? Number(req.query.year) : null;
     const params = []; const conds = [`model IS NOT NULL AND model <> ''`];
     if (maker) makerCond('maker', maker, conds, params);
+    if (Number.isInteger(yr) && yr >= 1950 && yr <= 2100) { params.push(yr); conds.push(`year_from <= $${params.length} AND year_to >= $${params.length}`); }
     const groups = await nameGroups('model', conds, params);
     return { items: groups.map((g) => g.label), groups };
   });
