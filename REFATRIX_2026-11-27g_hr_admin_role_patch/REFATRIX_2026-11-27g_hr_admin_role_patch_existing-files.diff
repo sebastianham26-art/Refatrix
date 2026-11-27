@@ -1,0 +1,599 @@
+Only in w/refatrix-api/migrations: 0344_hr_admin_role_reviewer.sql
+diff -ru orig/refatrix-api/src/approval.js w/refatrix-api/src/approval.js
+--- orig/refatrix-api/src/approval.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/approval.js	2026-11-27 16:35:39.014082499 +0000
+@@ -1,7 +1,7 @@
+ // 전자결재(0234) — DB·HTTP 에 의존하지 않는 순수 규칙.
+ //   라우트(routes/approvalRoutes.js)와 테스트가 같은 함수를 쓴다.
+ //
+-//   결재 흐름: 기안 → [카테고리 템플릿: 중간결재·합의·경유] → 디렉터 결재
++//   결재 흐름: 기안 → [카테고리 템플릿: 중간결재·합의·경유] → [0344 검토·승인자(인사·총무·재무)] → 디렉터 결재
+ //              → [기준액 이상] 대표이사 사전승인 → 승인완료(집행대기)
+ //              → 재무 집행(실적 입력) → 대표이사 사후승인 → 완결
+ //   디렉터 기안: 템플릿 대신 「재무 합의 포함」 토글(include_finance). 본인 결재 칸은 자동 완료.
+@@ -129,7 +129,7 @@
+     role: perm.role,
+     isDirector: perm.role === 'director',
+     isCeo: sameId(uid, settings.ceo_user_id),
+-    isFinance: perm.role === 'treasury' || sameId(uid, settings.finance_user_id),
++    isFinance: perm.role === 'treasury' || perm.role === 'hr_admin' || sameId(uid, settings.finance_user_id),   // 2026-11-27 hr_admin = 재무 포함
+   };
+ }
+ 
+@@ -140,6 +140,7 @@
+   const dirId = settings.director_user_id != null ? Number(settings.director_user_id) : null;
+   const ceoId = settings.ceo_user_id != null ? Number(settings.ceo_user_id) : null;
+   const finId = settings.finance_user_id != null ? Number(settings.finance_user_id) : null;
++  const revId = settings.reviewer_user_id != null ? Number(settings.reviewer_user_id) : null;   // 0344
+   const me = Number(drafterId);
+   const isDir = !!drafterIsDirector || sameId(me, dirId);
+   if (!isDir && dirId == null) return { error: 'director_unset' };
+@@ -162,6 +163,9 @@
+   } else {
+     [...catSteps].sort((a, b) => n(a.step_order) - n(b.step_order) || n(a.id) - n(b.id))
+       .forEach((s) => add(s.step_type, s.user_id));
++    // 0344 (2026-11-27 디렉터 결정): 직원 기안은 검토·승인자(인사·총무·재무)가 먼저 승인 → 디렉터 결재.
++    //   본인이 검토자면 add() 가 칸을 생략, 카테고리 템플릿에 이미 같은 사람이 '중간결재'로 있으면 중복 제거.
++    if (revId != null && !sameId(revId, dirId)) add('approve', revId);
+     lines.push({ step_order: o++, step_type: 'director', user_id: dirId, status: 'waiting', comment: null });
+   }
+   const ceoDrafter = sameId(me, ceoId);
+diff -ru orig/refatrix-api/src/permLoader.js w/refatrix-api/src/permLoader.js
+--- orig/refatrix-api/src/permLoader.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/permLoader.js	2026-11-27 16:35:03.416083196 +0000
+@@ -1,6 +1,7 @@
+ import { query } from './db.js';
+ import { hashDeviceKey } from './auth.js';
+ import { buildAccountAccess } from './accountScope.js';
++import { ROLE_DENY, isSecretAccount } from './permissions.js';
+ 
+ // ── 타팀 고객 수정요청 권한 ──────────────────────────────────────────
+ // 이 권한은 **새 컬럼을 만들지 않고** 기존 user_page_access 테이블에 한 줄로 저장한다.
+@@ -42,8 +43,15 @@
+     teamAccess.push({ teamId: Number(r.team_id), canEdit: r.can_edit });
+   }
+   // 계좌별 열람/운영 권한.
+-  const accRows = (await query(
++  let accRows = (await query(
+     `SELECT account_id, can_operate, can_detail FROM user_account_access WHERE user_id=$1`, [userId])).rows;
++  // hr_admin(인사·총무·재무): 금고·불공제 계좌는 권한 행이 있어도 통째로 뺀다 → 잔액·거래·현금흐름 어디에도 안 보임.
++  if (ROLE_DENY[u.role]?.secretAccounts && accRows.length) {
++    const secret = new Set((await query(
++      `SELECT id, name, type, non_deductible, treasury_exclude FROM accounts`)).rows
++      .filter(isSecretAccount).map((a) => Number(a.id)));
++    accRows = accRows.filter((r) => !secret.has(Number(r.account_id)));
++  }
+   // 소시오: 디렉터가 계좌별로 '잔액만'(can_detail=false)으로 지정한 계좌는 세부내역(드릴다운·거래목록·현금흐름)·운영 차단.
+   //   디렉터는 항상 무제한(blockIds 비움). 비디렉터는 buildAccountAccess 가 기존대로 처리.
+   let blockIds = [];
+diff -ru orig/refatrix-api/src/permissions.js w/refatrix-api/src/permissions.js
+--- orig/refatrix-api/src/permissions.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/permissions.js	2026-11-27 16:35:03.416083196 +0000
+@@ -9,10 +9,36 @@
+ 
+ export const ALWAYS_PAGES = new Set(['home']);
+ 
++// ── 인사·총무·재무 담당(hr_admin) — 2026-11-27 디렉터 결정 ─────────────────────
++//   화면은 사용자·권한에서 고른 만큼 열리지만(재무담당 treasury 처럼 그룹이 잠기지 않음),
++//   아래 항목은 디렉터가 실수로 켜도 **절대 열리지 않는다**(역할 하드 차단).
++//     · 제품·마케팅 › 가격 마스터(pricemaster)
++//     · 구매단가·원가·마진 필드(unit_cost / unit_margin / margin_rate) — 구매 화면은 canSeeCost 로 이미 차단
++//     · 금고·불공제 계좌 — permLoader 가 계좌권한에서 아예 뺀다(isSecretAccount)
++//   재무 업무(커미션 지급·입금통지 등록·전자결재 집행·정산차액)는 재무담당과 같게 FINANCE_ROLES 로 허용.
++export const FINANCE_ROLES = ['treasury', 'hr_admin'];
++export const isFinanceRole = (role) => FINANCE_ROLES.includes(role);
++export const ROLE_DENY = {
++  hr_admin: {
++    pages: new Set(['pricemaster']),
++    fields: new Set(['unit_cost', 'unit_margin', 'margin_rate']),
++    secretAccounts: true,
++  },
++};
++// 금고(현금)·불공제 계좌 판정 — 이름/유형/플래그 어느 하나라도 해당하면 비밀 계좌.
++//   (불공제 계좌는 non_deductible 플래그 없이 「자금일보 제외」만 켜져 있는 경우가 있어 둘 다 본다)
++export const SECRET_ACCOUNT_RE = /금고|caja|efectivo|현금|cash|불공제|no\s*deduc/i;
++export function isSecretAccount(a) {
++  if (!a) return false;
++  if (a.non_deductible === true || a.treasury_exclude === true) return true;
++  return SECRET_ACCOUNT_RE.test(`${a.name || ''} ${a.type || ''}`);
++}
++
+ // 메뉴 접근 가능 여부 (+ 기기 요구 반영)
+ export function pageAllowed(perm, pageKey, isRegisteredDevice) {
+   if (perm.role === 'director') return true;          // 디렉터 전체 허용
+   if (pageKey === 'settings') return false;           // 기준정의는 디렉터 전용
++  if (ROLE_DENY[perm.role]?.pages.has(pageKey)) return false;   // 역할 하드 차단(hr_admin = 가격 마스터)
+   if (ALWAYS_PAGES.has(pageKey)) return true;         // 요약은 항상
+   const req = perm.pages?.[pageKey];
+   if (!req || req === 'blocked') return false;
+@@ -23,6 +49,7 @@
+ // 민감 필드 노출 여부
+ export function fieldVisible(perm, fieldKey) {
+   if (perm.role === 'director') return true;
++  if (ROLE_DENY[perm.role]?.fields.has(fieldKey)) return false;  // 역할 하드 차단(hr_admin = 원가·마진)
+   // 영업 대시보드 핵심 지표는 전 직원 공개(디렉터 외 모두):
+   //   매출 금액(매출목표 대비 실적·주차별 워터폴·주간 캘린더), 수금/외상 금액(수금계획 대비 실적)
+   if (fieldKey === 'sales_amount' || fieldKey === 'ar_amount') return true;
+diff -ru orig/refatrix-api/src/roleDefaults.js w/refatrix-api/src/roleDefaults.js
+--- orig/refatrix-api/src/roleDefaults.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/roleDefaults.js	2026-11-27 16:35:03.416083196 +0000
+@@ -59,6 +59,12 @@
+     pages: [['products', 'edit'], ['inventory', 'edit'], ['stock', 'edit'], ['devrequest', 'edit'], ['sales', 'view']],
+     fields: [],
+   },
++  hr_admin: {
++    // 인사·총무·재무(2026-11-27): 재무 기본 화면만 추천 — 나머지는 디렉터가 사용자·권한에서 선택.
++    //   가격 마스터·원가·금고/불공제 계좌는 permissions.ROLE_DENY 로 항상 차단.
++    pages: [['transactions', 'edit'], ['settlement', 'edit'], ['budget', 'edit'], ['commission', 'edit']],
++    fields: ['sales_amount', 'ar_amount'],
++  },
+   viewer: {
+     pages: [],            // 공통 화면(대시보드·일정·영업대시보드)만
+     fields: [],
+diff -ru orig/refatrix-api/src/routes/approvalRoutes.js w/refatrix-api/src/routes/approvalRoutes.js
+--- orig/refatrix-api/src/routes/approvalRoutes.js	2026-11-27 16:34:41.692083622 +0000
++++ w/refatrix-api/src/routes/approvalRoutes.js	2026-11-27 16:35:39.012082499 +0000
+@@ -67,6 +67,7 @@
+     threshold_basis: s.threshold_basis === 'sub' ? 'sub' : 'total',
+     variance_tolerance_pct: n(s.variance_tolerance_pct ?? 10),
+     ceo_user_id: id(s.ceo_user_id), director_user_id: id(s.director_user_id), finance_user_id: id(s.finance_user_id),
++    reviewer_user_id: id(s.reviewer_user_id),   // 0344 · 직원 기안 → 검토·승인(인사·총무·재무) → 디렉터 결재
+     updated_at: s.updated_at || null, updated_by: id(s.updated_by),
+   };
+ }
+@@ -194,7 +195,7 @@
+     if (doc.exec_required === false) { await autoExecute(q, doc, lines, actorId); return res; }
+     const fin = settings.finance_user_id
+       ? [settings.finance_user_id]
+-      : (await q(`SELECT id FROM users WHERE role='treasury' AND deleted_at IS NULL`)).rows.map((r) => Number(r.id));
++      : (await q(`SELECT id FROM users WHERE role IN ('treasury','hr_admin') AND deleted_at IS NULL`)).rows.map((r) => Number(r.id));
+     for (const u of fin) await notify(q, u, doc.id, '집행 대기', null, actorId);
+   }
+   return res;
+@@ -1408,11 +1409,13 @@
+     if (!(thr > 0) || tol < 0 || tol > 1000) return fail(reply, 'bad_input');
+     const uidOrNull = (v) => (v == null || v === '' ? null : Number(v));
+     const ceo = uidOrNull(bd.ceo_user_id), fin = uidOrNull(bd.finance_user_id), dir = uidOrNull(bd.director_user_id);
++    const hasRev = Object.prototype.hasOwnProperty.call(bd, 'reviewer_user_id');   // 옛 화면(키 없음)은 검토자를 건드리지 않는다
+     const uid = Number(req.ctx.perm.userId);
+     return tx(reply, async (q) => {
+       const cur = await loadSettings(q);
+       const users = await loadUsers(q);
+-      for (const u of [ceo, fin, dir]) if (u != null && !(users.get(u) || {}).active) throw new Stop('bad_input', { detail: 'bad_user' });
++      const rev = hasRev ? uidOrNull(bd.reviewer_user_id) : cur.reviewer_user_id;
++      for (const u of [ceo, fin, dir, hasRev ? rev : null]) if (u != null && !(users.get(u) || {}).active) throw new Stop('bad_input', { detail: 'bad_user' });
+       const nm = (v) => (v == null ? '(없음)' : (users.get(v) || {}).name || v);
+       const money = (v) => '$' + n(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+       const changes = [];
+@@ -1422,9 +1425,11 @@
+       if (!sameId(ceo, cur.ceo_user_id) && !(ceo == null && cur.ceo_user_id == null)) changes.push(`대표이사 계정 ${nm(cur.ceo_user_id)} → ${nm(ceo)}`);
+       if (!sameId(fin, cur.finance_user_id) && !(fin == null && cur.finance_user_id == null)) changes.push(`재무 담당 ${nm(cur.finance_user_id)} → ${nm(fin)}`);
+       if (!sameId(dir, cur.director_user_id) && !(dir == null && cur.director_user_id == null)) changes.push(`디렉터 결재자 ${nm(cur.director_user_id)} → ${nm(dir)}`);
++      if (!sameId(rev, cur.reviewer_user_id) && !(rev == null && cur.reviewer_user_id == null)) changes.push(`검토·승인자 ${nm(cur.reviewer_user_id)} → ${nm(rev)}`);
+       await q(`INSERT INTO approval_settings(id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
+       await q(`UPDATE approval_settings SET ceo_pre_threshold=$1, threshold_basis=$2, variance_tolerance_pct=$3, ceo_user_id=$4,
+                  finance_user_id=$5, director_user_id=$6, updated_at=now(), updated_by=$7 WHERE id=1`, [thr, basis, tol, ceo, fin, dir, uid]);
++      if (hasRev) await q(`UPDATE approval_settings SET reviewer_user_id=$1 WHERE id=1`, [rev]);
+       for (const c of changes) await logSet(q, uid, c);
+       return { ok: true, changes };
+     });
+diff -ru orig/refatrix-api/src/routes/commissionAgreementRoutes.js w/refatrix-api/src/routes/commissionAgreementRoutes.js
+--- orig/refatrix-api/src/routes/commissionAgreementRoutes.js	2026-11-27 16:34:41.692083622 +0000
++++ w/refatrix-api/src/routes/commissionAgreementRoutes.js	2026-11-27 16:35:14.999082970 +0000
+@@ -13,7 +13,7 @@
+ import { verifyPin } from '../auth.js';
+ import { logEvent } from '../audit.js';
+ 
+-const SEE_ALL_ROLES = ['director', 'treasury', 'socio'];
++const SEE_ALL_ROLES = ['director', 'treasury', 'hr_admin', 'socio'];
+ const canSeeAll = (perm) => SEE_ALL_ROLES.includes(perm.role);
+ 
+ // 규칙 문구 버전 — 문서의 공통 규칙(지급일·조정·독점 등) 문구를 바꾸면 올린다 → 전원 재합의 대상.
+diff -ru orig/refatrix-api/src/routes/commissionBonus.js w/refatrix-api/src/routes/commissionBonus.js
+--- orig/refatrix-api/src/routes/commissionBonus.js	2026-11-27 16:34:41.692083622 +0000
++++ w/refatrix-api/src/routes/commissionBonus.js	2026-11-27 16:35:14.999082970 +0000
+@@ -21,7 +21,7 @@
+ // 완납 판정 공통 허용치(잔액 0.5 페소 미만 = 완납) — 수금/정산·고객 화면과 같은 기준 (2026-10-05)
+ import { AR_PAID_EPS } from '../ar.js';
+ 
+-export const SEE_ALL_ROLES = ['director', 'treasury', 'socio'];
++export const SEE_ALL_ROLES = ['director', 'treasury', 'hr_admin', 'socio'];
+ export const canSeeAll = (perm) => SEE_ALL_ROLES.includes(perm.role);
+ 
+ // ── 날짜 유틸 (순수·벽시계 무관) ──────────────────────────────────────
+diff -ru orig/refatrix-api/src/routes/commissionReferralRoutes.js w/refatrix-api/src/routes/commissionReferralRoutes.js
+--- orig/refatrix-api/src/routes/commissionReferralRoutes.js	2026-11-27 16:34:41.692083622 +0000
++++ w/refatrix-api/src/routes/commissionReferralRoutes.js	2026-11-27 16:35:14.999082970 +0000
+@@ -16,7 +16,7 @@
+   referralsReady, loadReferral, listReferrals, currentDoc, referralState, recomputeDocsComplete, referralLines,
+ } from '../commissionReferralData.js';
+ 
+-const SEE_ALL_ROLES = ['director', 'treasury', 'socio'];
++const SEE_ALL_ROLES = ['director', 'treasury', 'hr_admin', 'socio'];
+ const canSeeAll = (perm) => SEE_ALL_ROLES.includes(perm.role);
+ const isDirector = (perm) => perm.role === 'director';
+ const MIG = { error: 'migration_required', migration: '0307', note: '서버에서 npm run migrate(0307)를 먼저 실행하세요.' };
+diff -ru orig/refatrix-api/src/routes/commissionRoutes.js w/refatrix-api/src/routes/commissionRoutes.js
+--- orig/refatrix-api/src/routes/commissionRoutes.js	2026-11-27 16:34:41.692083622 +0000
++++ w/refatrix-api/src/routes/commissionRoutes.js	2026-11-27 16:35:15.000082970 +0000
+@@ -27,9 +27,9 @@
+ }
+ 
+ // 열람 범위: 디렉터·재무담당·소시오 = 전체 영업사원 / 그 외(영업사원) = 본인만
+-export const SEE_ALL_ROLES = ['director', 'treasury', 'socio'];
++export const SEE_ALL_ROLES = ['director', 'treasury', 'hr_admin', 'socio'];
+ // 지급(반제) 가능: 디렉터·재무담당
+-export const PAY_ROLES = ['director', 'treasury'];
++export const PAY_ROLES = ['director', 'treasury', 'hr_admin'];
+ export const canSeeAll = (perm) => SEE_ALL_ROLES.includes(perm.role);
+ 
+ // 커미션 판정 모드 (순수). per = 발행일이 속한 기간(basis·match_on).
+diff -ru orig/refatrix-api/src/routes/financeRoutes.js w/refatrix-api/src/routes/financeRoutes.js
+--- orig/refatrix-api/src/routes/financeRoutes.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/routes/financeRoutes.js	2026-11-27 16:35:15.004082969 +0000
+@@ -1421,7 +1421,7 @@
+   // ===== 미배분 입금함 (bank_deposits_pending) =====
+   // 재무담당/디렉터가 은행에 들어온 매출 입금을 '통지'로 등록 → 영업지원이 수금/정산에서 반제.
+   // 등록은 transactions 미생성(이중계상 방지). 반제 시점에만 거래 1건 생성됨.
+-  function _bdCanRegister(perm) { return perm.role === 'director' || perm.role === 'treasury'; }
++  function _bdCanRegister(perm) { return perm.role === 'director' || perm.role === 'treasury' || perm.role === 'hr_admin'; }
+   function _bdCanNotify(perm) { return perm.role === 'director' || perm.role === 'sales_support'; }
+ 
+   // 등록 (디렉터·재무) — 은행 입금내역 스크린캡처 첨부 필수(file: data URL, 이미지/PDF 8MB↓)
+@@ -1471,7 +1471,7 @@
+   // 목록 (디렉터·재무·정산권한자) — status=pending(기본) | all
+   app.get('/api/bank-deposits', { preHandler: [authGuard] }, async (req) => {
+     const perm = req.ctx.perm;
+-    const allowed = perm.role === 'director' || perm.role === 'treasury' || pageAllowed(perm, 'settlement', req.ctx.isRegistered);
++    const allowed = perm.role === 'director' || perm.role === 'treasury' || perm.role === 'hr_admin' || pageAllowed(perm, 'settlement', req.ctx.isRegistered);
+     if (!allowed) return { items: [] };
+     const status = String((req.query && req.query.status) || 'pending').toLowerCase();
+     const where = status === 'all' ? '' : `WHERE d.status='pending'`;
+@@ -1569,7 +1569,7 @@
+   // 캡처 파일 보기 (디렉터·재무·정산권한자) — 통지의 은행 입금내역 스크린캡처
+   app.get('/api/bank-deposits/:id/file', { preHandler: [authGuard] }, async (req, reply) => {
+     const perm = req.ctx.perm;
+-    const allowed = perm.role === 'director' || perm.role === 'treasury' || pageAllowed(perm, 'settlement', req.ctx.isRegistered);
++    const allowed = perm.role === 'director' || perm.role === 'treasury' || perm.role === 'hr_admin' || pageAllowed(perm, 'settlement', req.ctx.isRegistered);
+     if (!allowed) return reply.code(403).send({ error: 'forbidden' });
+     const id = Number(req.params.id);
+     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+diff -ru orig/refatrix-api/src/routes/marketingSpendRoutes.js w/refatrix-api/src/routes/marketingSpendRoutes.js
+--- orig/refatrix-api/src/routes/marketingSpendRoutes.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/routes/marketingSpendRoutes.js	2026-11-27 16:35:15.005082969 +0000
+@@ -202,7 +202,7 @@
+ //   마케팅 담당은 상태 열람만 한다(디렉터 결정 2026-09-03).
+ export function canExecute(perm) {
+   const r = perm && perm.role;
+-  return r === 'director' || r === 'treasury';
++  return r === 'director' || r === 'treasury' || r === 'hr_admin';
+ }
+ 
+ // 라인 집행 상태 — 화면 배지와 서버 판단이 항상 같도록 한 곳에서 계산.
+diff -ru orig/refatrix-api/src/routes/settlementVarianceRoutes.js w/refatrix-api/src/routes/settlementVarianceRoutes.js
+--- orig/refatrix-api/src/routes/settlementVarianceRoutes.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/routes/settlementVarianceRoutes.js	2026-11-27 16:35:15.000082970 +0000
+@@ -14,7 +14,7 @@
+ export default async function settlementVarianceRoutes(app) {
+   app.get('/api/settlement/variances', { preHandler: [authGuard] }, async (req, reply) => {
+     // 정산차액(비현금 원가조정)은 재무(treasury)·디렉터 전용
+-    if (!['director', 'treasury'].includes(req.ctx.perm.role)) {
++    if (!['director', 'treasury', 'hr_admin'].includes(req.ctx.perm.role)) {
+       return reply.code(403).send({ error: 'finance_only' });
+     }
+     const year = req.query.year ? String(req.query.year) : null;
+diff -ru orig/refatrix-api/src/routes/userRoutes.js w/refatrix-api/src/routes/userRoutes.js
+--- orig/refatrix-api/src/routes/userRoutes.js	2026-11-27 16:34:41.692083622 +0000
++++ w/refatrix-api/src/routes/userRoutes.js	2026-11-27 16:36:59.550080922 +0000
+@@ -3,6 +3,7 @@
+ import { hashPin } from '../auth.js';
+ import { logEvent } from '../audit.js';
+ import { ROLE_DEFAULTS, SCREEN_PAGE_KEY, applyRoleDefaults } from '../roleDefaults.js';
++import { isSecretAccount } from '../permissions.js';
+ 
+ function genPin() { return String(Math.floor(1000 + Math.random() * 9000)); }
+ 
+@@ -25,8 +26,9 @@
+     const fieldsByUser = {};
+     for (const f of fieldRows) (fieldsByUser[f.user_id] ||= []).push(f.field_key);
+     // 계좌 목록 + 사용자별 계좌권한(인라인 선택용)
+-    const accountsRows = (await query(`SELECT id, name, currency FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
+-    const accounts = accountsRows.map((a) => ({ id: Number(a.id), name: a.name, currency: a.currency }));
++    const accountsRows = (await query(`SELECT id, name, currency, type, non_deductible, treasury_exclude FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
++    const accounts = accountsRows.map((a) => ({ id: Number(a.id), name: a.name, currency: a.currency, type: a.type || null,
++      secret: isSecretAccount(a) }));   // 2026-11-27 · 금고·불공제(hr_admin 차단 대상) 표시용
+     const aaRows = (await query(`SELECT user_id, account_id, can_operate, can_detail FROM user_account_access`)).rows;
+     const aaByUser = {};
+     for (const r of aaRows) {
+@@ -143,6 +145,48 @@
+     return { ok: true, id, freed_login_id: u.login_id };
+   });
+ 
++  // 사용자 기본정보 수정(디렉터) — 2026-11-27: 이름·로그인 아이디·역할·부서를 그 자리에서 바꾼다.
++  //   (복제 계정 「christopher (복제)」→ Mauricio 처럼 이름을 통째로 바꾸고 역할을 hr_admin 으로 전환)
++  //   body 에 온 키만 바꾼다. 역할을 director 로 올리거나 디렉터 계정의 역할을 내리는 것은 막는다(디렉터 1명 원칙).
++  //   역할을 바꿔도 페이지·필드·계좌 권한 행은 그대로 둔다(디렉터가 고른 값 보존) — 기본 권한은 「기본 권한 적용」으로.
++  app.patch('/api/users/:id/profile', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
++    const id = Number(req.params.id);
++    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
++    const b = req.body || {};
++    const u = (await query(`SELECT id, name, login_id, role, dept FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
++    if (!u) return reply.code(404).send({ error: 'not_found' });
++    const set = {};
++    if (b.name !== undefined) {
++      const v = String(b.name || '').trim().slice(0, 80);
++      if (!v) return reply.code(400).send({ error: 'name_required' });
++      set.name = v;
++    }
++    if (b.login_id !== undefined) {
++      const v = String(b.login_id || '').trim().slice(0, 60);
++      if (!v) return reply.code(400).send({ error: 'login_id_required' });
++      if (v !== u.login_id) {
++        const dup = (await query(`SELECT 1 FROM users WHERE login_id=$1 AND id<>$2`, [v, id])).rows[0];
++        if (dup) return reply.code(409).send({ error: 'login_id_taken' });
++      }
++      set.login_id = v;
++    }
++    if (b.role !== undefined) {
++      const v = String(b.role || '');
++      if (!Object.prototype.hasOwnProperty.call(ROLE_DEFAULTS, v)) return reply.code(400).send({ error: 'bad_role' });
++      if (v !== u.role && (v === 'director' || u.role === 'director')) return reply.code(400).send({ error: 'director_role_locked' });
++      set.role = v;
++    }
++    if (b.dept !== undefined) set.dept = String(b.dept || '').trim().slice(0, 60) || null;
++    const keys = Object.keys(set).filter((k) => set[k] !== u[k]);
++    if (!keys.length) return { ok: true, changed: [] };
++    const cols = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
++    await query(`UPDATE users SET ${cols}, updated_by=$${keys.length + 1} WHERE id=$${keys.length + 2}`,
++      [...keys.map((k) => set[k]), req.ctx.perm.userId, id]);
++    const detail = {}; for (const k of keys) detail[k] = { from: u[k], to: set[k] };
++    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `user:${id}`, detail });
++    return { ok: true, changed: keys };
++  });
++
+   // 계정 복제(디렉터): 권한이 동일한 사용자를 새 로그인 아이디로 생성.
+   //   role/dept/team_id/lang/restrict_cash_detail + 페이지·필드·항목깊이·팀교차·계좌 권한 전부 복사.
+   //   PIN 은 새로 발급(미지정 시 자동). body: { name, login_id, pin? }
+diff -ru orig/refatrix-api/src/teams.js w/refatrix-api/src/teams.js
+--- orig/refatrix-api/src/teams.js	2026-11-27 16:34:41.693083622 +0000
++++ w/refatrix-api/src/teams.js	2026-11-27 16:35:03.416083196 +0000
+@@ -6,6 +6,7 @@
+   if (!perm) return [];
+   if (perm.role === 'director') return null;        // 전체
+   if (perm.role === 'sales_support') return null;   // 영업지원: 전 영업팀 지원 → 전체 가시
++  if (perm.role === 'hr_admin') return null;        // 인사·총무·재무(2026-11-27): 전사 → 전체 가시
+   const ids = new Set();
+   if (perm.teamId != null) ids.add(perm.teamId);    // 소속팀
+   for (const t of (perm.teamAccess || [])) ids.add(t.teamId); // 부여받은 상대팀
+--- orig/refatrix-nav.js	2026-11-27 16:34:41.694083622 +0000
++++ w/refatrix-nav.js	2026-11-27 16:38:21.183079323 +0000
+@@ -2,7 +2,7 @@
+    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
+ (function(){
+   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
+-  try{ console.log('[refatrix-nav] v20261126fu loaded (1126 leadassign 권한 메뉴 복구 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
++  try{ console.log('[refatrix-nav] v20261127hr loaded (1127 인사·총무·재무 hr_admin 역할 · 1126 leadassign 권한 메뉴 복구 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
+ 
+   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
+      판별 기준(둘 중 하나라도 걸리면 QA):
+@@ -228,7 +228,7 @@
+   // 역할별 로그인 랜딩(제한역할이 미허용 화면 접근 시 되돌릴 첫 화면).
+   var ROLE_LANDING={ treasury:'finance', warehouse:'whHome' };
+   // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.
+-  var ROLE_HIDE_SCREENS={ treasury:{ finPay:1, budget:1 } };
++  var ROLE_HIDE_SCREENS={ treasury:{ finPay:1, budget:1 }, hr_admin:{ priceMaster:1 } };   // 2026-11-27 인사·총무·재무: 가격 마스터는 항상 숨김(서버도 차단)
+   // 역할별 그룹 숨김(블랙리스트): 그룹 자체를 제거. 영업(sales)=재무 그룹 숨김.
+   //   — 수금/정산은 영업지원, 커미션은 공통/포털에서 접근하므로 재무 그룹은 영업에게 불필요하며 권한 범위 밖.
+   var ROLE_HIDE_GROUPS={ sales:['finance'] };
+@@ -654,7 +654,8 @@
+     sales:['portal','customers','pipeline','quotelist'],
+     sales_support:['portal','customers','quotelist','stock'],
+     warehouse:['whHome','inbound','stockcount','relocate'],
+-    treasury:['portal','finance','settlement','budget']
++    treasury:['portal','finance','settlement','budget'],
++    hr_admin:['portal','approval','finance','settlement']
+   };
+   var MTAB_DEFAULT=['portal','salesperf','customers','board'];
+   var MTAB_FALLBACK=['portal','salesperf','customers','pipeline','quotelist','quote','fieldsurvey','board','finance','products','whHome','dashboard'];
+--- orig/refatrix-users.html	2026-11-27 16:34:41.695083622 +0000
++++ w/refatrix-users.html	2026-11-27 16:37:55.830079819 +0000
+@@ -8,7 +8,7 @@
+ <meta http-equiv="Pragma" content="no-cache">
+ <meta http-equiv="Expires" content="0">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<title>Refatrix ERP · 사용자 · 권한 관리 · build u17wa</title>
++<title>Refatrix ERP · 사용자 · 권한 관리 · build u18hr</title>
+ <style>
+   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+@@ -272,7 +272,7 @@
+       <div class="row">
+         <div><label>이름</label><input id="n-name" type="text"></div>
+         <div><label>로그인 아이디</label><input id="n-login" type="text" placeholder="예: sales1"></div>
+-        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="sales_support">영업지원(sales_support)</option><option value="director">디렉터(director)</option><option value="socio">소시오(socio·파트너)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="warehouse">창고(warehouse)</option><option value="viewer">뷰어</option></select></div>
++        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="sales_support">영업지원(sales_support)</option><option value="director">디렉터(director)</option><option value="socio">소시오(socio·파트너)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="hr_admin">인사·총무·재무(hr_admin)</option><option value="ops">운영</option><option value="warehouse">창고(warehouse)</option><option value="viewer">뷰어</option></select></div>
+         <div><label>PIN(4~8자리, 비우면 자동)</label><input id="n-pin" type="text" inputmode="numeric" placeholder="자동"></div>
+         <div><label>소속 팀</label><select id="n-team"></select></div>
+       </div>
+@@ -329,6 +329,11 @@
+     ['안내 문서', [['guiacom','커미셔너 안내서 (Guía del Comisionista)']]],
+   ];
+   const PAGES=PERM_GROUPS.flatMap(([,arr])=>arr);
++  // 2026-11-27 · 인사·총무·재무(hr_admin) — 서버(permissions.ROLE_DENY)와 같은 규칙: 골라도 열리지 않는 항목은 🔒 로 고정 표시.
++  const ROLE_LABEL={director:'디렉터',socio:'소시오',treasury:'재무',hr_admin:'인사·총무·재무',marketing:'마케팅',ops:'운영',sales:'영업',sales_support:'영업지원',warehouse:'창고',viewer:'뷰어'};
++  const ROLE_DENY_PAGES={hr_admin:{pricemaster:1}};
++  const SECRET_ACC_RE=/금고|caja|efectivo|현금|cash|불공제|no\s*deduc/i;
++  const secretAcc=(role,a)=>role==='hr_admin'&&(a.secret===true||SECRET_ACC_RE.test((a.name||'')+' '+(a.type||'')));
+   const $=(id)=>document.getElementById(id);
+   const auth=()=>({'Authorization':'Bearer '+session.token});
+ 
+@@ -729,7 +734,7 @@
+         users.map(u=>`<tr>
+           <td class="c-id"><b class="uname">${u.name}</b></td>
+           <td class="c-id">${u.login_id||'—'}</td>
+-          <td class="c-id"><span class="rolepill">${u.role}</span></td>
++          <td class="c-id"><span class="rolepill" title="${u.role}">${ROLE_LABEL[u.role]||u.role}</span>${u.dept?`<div class="hint" style="margin:2px 0 0">${u.dept}</div>`:''}</td>
+           <td class="c-id"><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
+             <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${Number(u.team_id)===Number(t.id)?'selected':''}>${t.name}</option>`).join('')}</select></td>
+           <td style="white-space:normal;max-width:200px">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':teams.map(t=>{
+@@ -739,6 +744,7 @@
+           }).join('')}</td>
+           <td class="col-perm">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':'<div class="permgrid">'+PERM_GROUPS.map(([gname,arr])=>
+             `<div class="permgroup"><div class="gh">${gname}</div>`+arr.map(([k,label])=>{
++              if(ROLE_DENY_PAGES[u.role]&&ROLE_DENY_PAGES[u.role][k]) return `<label class="pgline" style="border-left-color:#B23A2E" title="${ROLE_LABEL[u.role]||u.role} 역할은 이 화면을 볼 수 없습니다(서버에서 차단)"><span class="lb">${label}</span><span style="font-size:11px;color:#B23A2E;white-space:nowrap">🔒 차단</span></label>`;
+               const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
+               const col=cur==='edit'?'#0F6E56':cur==='view'?'#B8893B':'#ccc';
+               return `<label class="pgline" style="border-left-color:${col}"><span class="lb">${label}</span><select data-uid="${u.id}" data-page="${k}" onchange="setPageAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="edit" ${cur==='edit'?'selected':''}>수정</option></select></label>`;
+@@ -747,6 +753,7 @@
+             const cur=(u.account_access&&u.account_access[a.id])==='balance'?'balance':'view';
+             const col=cur==='balance'?'#6b8cae':'#B8893B';
+             return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="view" ${cur==='view'?'selected':''}>세부 열람</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>'):(accountsList.length?'<div class="accgrid">'+accountsList.map(a=>{
++            if(secretAcc(u.role,a)) return `<label class="accline" style="border-left-color:#B23A2E" title="인사·총무·재무 역할은 금고·불공제 계좌를 볼 수 없습니다(서버에서 차단)"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><span style="font-size:11px;color:#B23A2E;white-space:nowrap">🔒 차단</span></label>`;
+             const cur=(u.account_access&&u.account_access[a.id])||'none';
+             const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#ccc';
+             return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="operate" ${cur==='operate'?'selected':''}>운영</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
+@@ -754,7 +761,7 @@
+           <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">제한 없음</span>':`<label class="chip" title="체크 = 기기 제한 켜짐(승인된 기기에서만 로그인) · 비움 = 제한 해제" style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${u.device_locked?'#0F6E56':'#ccc'};background:${u.device_locked?'#e6f3ee':'#fff'};color:${u.device_locked?'#0F6E56':'#777'}"><input type="checkbox" ${u.device_locked?'checked':''} onchange="setDeviceLock(${u.id},this.checked)" style="vertical-align:middle">🔒 기기 제한</label>`}</td>
+           <td style="white-space:nowrap"><input type="tel" data-wa-uid="${u.id}" value="${u.wa_phone||''}" placeholder="8112345678" style="width:120px;padding:5px 7px" onchange="setWaPhone(${u.id},this)" title="아침 브리핑 · 웹 가입신청 알림 수신번호 — 비우면 발송 제외 (위 「📲 WhatsApp 수신번호」 카드에서도 같은 값을 고칠 수 있습니다)"></td>
+           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
+-          <td style="white-space:nowrap"><button class="btn ghost sm" onclick="cloneUser(${u.id})">복제</button> <button class="btn danger sm" onclick="deleteUser(${u.id})">삭제</button></td>
++          <td style="white-space:nowrap"><button class="btn ghost sm" data-uact="edit" data-uid="${u.id}">수정</button> <button class="btn ghost sm" onclick="cloneUser(${u.id})">복제</button> <button class="btn danger sm" onclick="deleteUser(${u.id})">삭제</button></td>
+         </tr>`).join('')+'</tbody></table>';
+       // 20261012 · 같은 users 배열로 위 카드도 그린다 — 조회를 한 번만 하고 두 자리가 같은 값을 쓴다.
+       renderWaList();
+@@ -986,6 +993,35 @@
+     }catch(e){alert('실패');}
+   }
+ 
++  // 2026-11-27 · 사용자 기본정보 수정 — 이름·로그인 아이디·역할·부서 (PATCH /api/users/:id/profile)
++  async function editUser(userId){
++    const u=users.find(x=>Number(x.id)===Number(userId)); if(!u){alert('사용자를 찾을 수 없습니다.');return;}
++    const name=prompt('이름:', u.name||''); if(name===null)return;
++    const login_id=prompt('로그인 아이디:', u.login_id||''); if(login_id===null)return;
++    const body={name:name.trim(), login_id:login_id.trim()};
++    if(u.role!=='director'){
++      const opts=Object.keys(ROLE_LABEL).filter(r=>r!=='director');
++      const role=prompt('역할 (영문 코드로 입력):\n'+opts.map(r=>r+' = '+ROLE_LABEL[r]).join('\n'), u.role||''); if(role===null)return;
++      if(opts.indexOf(role.trim())<0){alert('역할 코드가 올바르지 않습니다: '+role);return;}
++      body.role=role.trim();
++    }
++    const dept=prompt('부서 (비우면 없음):', u.dept||''); if(dept===null)return;
++    body.dept=dept.trim();
++    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/profile',
++      {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)},20000);
++    if(!r.ok){
++      const e=r.data&&r.data.error;
++      const msg={login_id_taken:'이미 있는 아이디입니다.',bad_role:'역할 코드가 올바르지 않습니다.',director_role_locked:'디렉터 역할은 바꿀 수 없습니다.',name_required:'이름을 입력하세요.',login_id_required:'로그인 아이디를 입력하세요.'}[e]||(r.err||e||('HTTP '+r.status));
++      alert('수정 실패: '+msg); return;
++    }
++    alert(r.data.changed&&r.data.changed.length?'저장되었습니다. (바뀐 항목: '+r.data.changed.join(', ')+')\n역할이 바뀐 경우 그 사용자는 다시 로그인해야 메뉴가 갱신됩니다.':'바뀐 내용이 없습니다.');
++    loadUsers();
++  }
++  document.addEventListener('click',function(ev){
++    const b=ev.target.closest&&ev.target.closest('[data-uact="edit"]'); if(!b)return;
++    ev.preventDefault(); editUser(b.getAttribute('data-uid'));
++  });
++
+   // 계정 복제 — 권한 동일한 새 계정 생성(새 로그인 아이디·PIN).
+   async function cloneUser(userId){
+     const u=users.find(x=>Number(x.id)===Number(userId)); if(!u){alert('사용자를 찾을 수 없습니다.');return;}
+@@ -1028,6 +1064,6 @@
+   // 포털 자동 로그인
+   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+ </script>
+-<script src="refatrix-nav.js?v=20261126fu"></script>
++<script src="refatrix-nav.js?v=20261127hr"></script>
+ </body>
+ </html>
+--- orig/refatrix-approval.html	2026-11-27 16:34:41.695083622 +0000
++++ w/refatrix-approval.html	2026-11-27 16:37:55.814079819 +0000
+@@ -8,7 +8,7 @@
+ <meta http-equiv="Pragma" content="no-cache">
+ <meta http-equiv="Expires" content="0">
+ <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+-<title>Refatrix ERP · 전자결재 · b20261120cl</title>
++<title>Refatrix ERP · 전자결재 · b20261127rv</title>
+ <link rel="preconnect" href="https://fonts.googleapis.com">
+ <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+@@ -447,7 +447,7 @@
+ /* ═════════ 표시 도우미 ═════════ */
+ const U=id=>{if(id==null)return '—';const u=B&&B.users.find(x=>same(x.id,id));return u?u.name:'#'+id;};
+ const UT=id=>{const u=B&&B.users.find(x=>same(x.id,id));return u?(u.dept||ROLE_KO[u.role]||u.role):'';};
+-const ROLE_KO={director:'디렉터',socio:'소시오',treasury:'재무',marketing:'마케팅',ops:'영업지원',sales:'영업',sales_support:'영업지원',warehouse:'창고',viewer:'뷰어'};
++const ROLE_KO={director:'디렉터',socio:'소시오',treasury:'재무',hr_admin:'인사·총무·재무',marketing:'마케팅',ops:'영업지원',sales:'영업',sales_support:'영업지원',warehouse:'창고',viewer:'뷰어'};
+ const catName=id=>{const c=B&&B.categories.find(x=>same(x.id,id));return c?c.name:'—';};
+ const SL=t=>(B&&B.step_label[t])||t;
+ const STAGE_L={draft:'기안',progress:'결재중',exec:'집행',post:'사후'};
+@@ -1040,7 +1040,7 @@
+  const isDir=B.me.isDirector||same(me,S.director_user_id);
+  const ls=[{t:'draft',u:me}];const add=(t,u)=>{if(u==null||same(u,me))return;if(ls.some(x=>x.t===t&&same(x.u,u)))return;ls.push({t,u});};
+  if(isDir){ls.push({t:'director',u:me});cdSteps(cd).forEach(x=>add(x.step_type,x.user_id));}
+- else{const cat=B.categories.find(x=>same(x.id,cd.category_id));(cat?cat.steps:[]).forEach(s=>add(s.step_type,s.user_id));ls.push({t:'director',u:S.director_user_id});}
++ else{const cat=B.categories.find(x=>same(x.id,cd.category_id));(cat?cat.steps:[]).forEach(s=>add(s.step_type,s.user_id));if(S.reviewer_user_id!=null&&!same(S.reviewer_user_id,S.director_user_id))add('approve',S.reviewer_user_id);ls.push({t:'director',u:S.director_user_id});}   // 0344 검토·승인자 → 디렉터
+  const ceoD=same(me,S.ceo_user_id),b=S.threshold_basis==='sub'?mx.sub:mx.total,hasPre=ls.some(x=>x.t==='pre_ceo'),pre=hasPre||(!ceoD&&b>=S.ceo_pre_threshold);
+  if(pre&&!hasPre)ls.push({t:'pre_ceo',u:S.ceo_user_id});
+  ls.push({t:'post_ceo',u:ceoD?S.director_user_id:S.ceo_user_id});
+@@ -1377,6 +1377,7 @@
+  return `<div class="tpl ${c.active?'':'off'}"><div class="nm">${esc(c.name)}${c.active?'':' <span class="bdg b-gray">사용 중지</span>'}<span style="flex:1"></span>${B.fin_link?finCatSel(c):''}<button class="btn sm ghost" data-act="catren" data-c="${c.id}">이름</button><button class="btn sm ghost" data-act="cattog" data-c="${c.id}">${c.active?'사용 중지':'다시 사용'}</button></div><div class="lineprev">
+   <span class="lp fixed"><small>기안</small>기안자</span><span class="arrow">›</span>
+   ${c.steps.map(s=>`<span class="lp"><small>${SL(s.step_type)}</small>${esc(U(s.user_id))} <button class="x" data-act="tpldel" data-s="${s.id}" aria-label="삭제">×</button></span><span class="arrow">›</span>`).join('')}
++  ${B.settings.reviewer_user_id!=null?`<span class="lp fixed"><small>검토·승인</small>${esc(U(B.settings.reviewer_user_id))}</span><span class="arrow">›</span>`:''}
+   <span class="lp fixed"><small>디렉터 결재</small>${esc(U(B.settings.director_user_id))}</span><span class="arrow">›</span>
+   <span class="lp ceo"><small>기준액 이상</small>대표이사 사전</span><span class="arrow">›</span>
+   <span class="lp fixed"><small>집행</small>재무</span><span class="arrow">›</span>
+@@ -1398,6 +1399,7 @@
+    <div class="fld"><label>대표이사 (사전·사후승인)</label>${sel('sCeo',s.ceo_user_id)}</div>
+    <div class="fld"><label>디렉터 결재자</label>${sel('sDir',s.director_user_id,u=>u.role==='director')}</div>
+    <div class="fld"><label>재무 담당 (합의 · 집행)</label>${sel('sFin',s.finance_user_id)}</div>
++   <div class="fld"><label>검토·승인자 (직원 기안 → 이 사람 승인 → 디렉터 결재)</label>${sel('sRev',s.reviewer_user_id,u=>u.role!=='director')}</div>
+    <p class="sub" style="margin:0">모든 문서는 집행완료 후 대표이사 사후승인으로 완결됩니다. 대표이사 본인 기안은 사전승인을 건너뛰고 디렉터가 사후 확인합니다.</p></div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn pri" data-act="ssave">설정 저장</button></div>
+@@ -1758,7 +1760,7 @@
+  rchoose(a){const cd=ui.cd;if(!cd)return;const v=a.dataset.v;cd.replace_choice=v;cd.replace_rule_id=v==='rule'?Number(a.dataset.rid):null;if(v!=='manual')cd.replaces=[];repPaint();},
+  csubmit(){saveCd(true);},
+  async ssave(){const body={ceo_pre_threshold:r2(val('#sThr')),threshold_basis:$('#sBasis').value,variance_tolerance_pct:r2(val('#sTol')),
+-   ceo_user_id:val('#sCeo')||null,director_user_id:val('#sDir')||null,finance_user_id:val('#sFin')||null};
++   ceo_user_id:val('#sCeo')||null,director_user_id:val('#sDir')||null,finance_user_id:val('#sFin')||null,reviewer_user_id:val('#sRev')||null};
+   if(!(body.ceo_pre_threshold>0)){toast('기준액을 입력하세요');return;}
+   const r=await run(()=>api('PUT','/api/approvals/settings',body));if(!r)return;await loadBoot();render();toast(r.changes.length?'설정이 저장되었습니다':'바뀐 내용이 없습니다');},
+  async tpladd(a){const c=a.dataset.c,t=$(`[data-ns="${c}-t"]`).value,u=$(`[data-ns="${c}-u"]`).value;if(!u){toast('사용자를 선택하세요');return;}
+@@ -1889,6 +1891,6 @@
+  else showLogin();
+ })();
+ </script>
+-<script src="refatrix-nav.js?v=20261126fu"></script>
++<script src="refatrix-nav.js?v=20261127hr"></script>
+ </body>
+ </html>
+--- orig/refatrix-commission.html	2026-11-27 16:34:41.695083622 +0000
++++ w/refatrix-commission.html	2026-11-27 16:37:55.815079819 +0000
+@@ -7,7 +7,7 @@
+ <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+ <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<title>Refatrix ERP · 커미션 · build b1112pay</title>
++<title>Refatrix ERP · 커미션 · build b1127hr</title>
+ <style>
+   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
+@@ -403,8 +403,8 @@
+ 
+   // 역할 기반 권한 (디렉터=전권 / 재무·소시오=전체 열람 / 영업사원=본인)
+   const ROLE=()=> (session.user&&session.user.role)||'';
+-  const canSeeAll=()=> ['director','treasury','socio'].includes(ROLE());
+-  const canPay=()=> ['director','treasury'].includes(ROLE());
++  const canSeeAll=()=> ['director','treasury','hr_admin','socio'].includes(ROLE());
++  const canPay=()=> ['director','treasury','hr_admin'].includes(ROLE());
+   const isDir=()=> ROLE()==='director';
+ 
+   function portalSession(){
+@@ -2304,6 +2304,6 @@
+   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+ </script>
+ <script src="refatrix-guide-referral.js?v=20261030ty"></script>
+-<script src="refatrix-nav.js?v=20261126fu"></script>
++<script src="refatrix-nav.js?v=20261127hr"></script>
+ </body>
+ </html>

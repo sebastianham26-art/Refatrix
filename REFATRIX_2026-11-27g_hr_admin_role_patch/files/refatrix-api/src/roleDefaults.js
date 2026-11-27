@@ -1,0 +1,103 @@
+import { query } from './db.js';
+
+// 화면(메뉴)과 실제 API 권한 키 매핑 — 포털 "내 메뉴"와 라우트 requirePage가 같은 키를 쓰도록.
+// 공통 화면(dashboard/board/salesperf)은 별도 권한 없이 누구나(authGuard) 접근.
+export const SCREEN_PAGE_KEY = {
+  sales: 'sales',
+  pipeline: 'pipeline',
+  customers: 'customers',
+  targets: 'targets',
+  marketing: 'marketing',
+  finance: 'transactions',   // 재무 화면 → transactions 권한
+  settlement: 'settlement',
+  budget: 'budget',
+  importcost: 'inventory',   // 수입원가 화면 → inventory 권한
+  products: 'products',
+  warehouse: 'warehouse',   // 창고 홈/모듈 화면 → warehouse 권한
+  // 공통(권한 불필요): dashboard, board, salesperf
+  // 디렉터 전용: users
+};
+
+// 역할별 기본 권한: pages = [[page_key, access]], fields = [field_key]
+// 'ALL' = 모든 페이지 edit (디렉터)
+export const ROLE_DEFAULTS = {
+  director: { pages: 'ALL', fields: ['sales_amount', 'ar_amount', 'mkt_amount'] },
+  socio: {
+    // 파트너: 디렉터처럼 사업 전반을 보되 관리(사용자·회사)는 제외. 계좌 드릴다운은 디렉터가 계좌별 지정.
+    pages: [['transactions', 'edit'], ['settlement', 'edit'], ['customers', 'view'], ['targets', 'view'],
+            ['products', 'view'], ['pipeline', 'view'], ['sales', 'view'], ['marketing', 'view'], ['inventory', 'view']],
+    fields: ['sales_amount', 'ar_amount', 'mkt_amount'],
+  },
+  sales: {
+    // 재무탭(transactions)은 영업에게 미부여 — 수금 현황은 영업 대시보드의 담당고객 오픈 인보이스로 확인.
+    pages: [['quote', 'edit'], ['sales', 'edit'], ['stock', 'edit'], ['shortage', 'edit'], ['devrequest', 'edit'],
+            ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view'], ['commission', 'view']],
+    fields: ['sales_amount'],
+  },
+  sales_support: {
+    // 영업과 동일하되: 파이프라인은 열람만, AR(settlement)·수입원가(inventory) 추가
+    pages: [['quote', 'edit'], ['sales', 'edit'], ['stock', 'edit'], ['shortage', 'edit'], ['devrequest', 'view'],
+            ['pipeline', 'view'], ['customers', 'edit'], ['targets', 'view'],
+            ['settlement', 'edit'], ['inventory', 'edit'], ['transactions', 'view']],
+    fields: ['sales_amount', 'ar_amount'],
+  },
+  warehouse: {
+    // 창고 작업자: 창고 모듈만. 원가·매출액·계좌 미노출(fields 비움).
+    pages: [['warehouse', 'edit']],
+    fields: [],
+  },
+  treasury: {
+    pages: [['transactions', 'edit'], ['settlement', 'edit'], ['budget', 'edit']],
+    fields: ['sales_amount', 'ar_amount'],
+  },
+  marketing: {
+    pages: [['marketing', 'edit'], ['devrequest', 'view'], ['targets', 'view'], ['customers', 'view'],
+            ['sales', 'view'], ['transactions', 'view']],
+    fields: ['mkt_amount'],
+  },
+  ops: {
+    pages: [['products', 'edit'], ['inventory', 'edit'], ['stock', 'edit'], ['devrequest', 'edit'], ['sales', 'view']],
+    fields: [],
+  },
+  hr_admin: {
+    // 인사·총무·재무(2026-11-27): 재무 기본 화면만 추천 — 나머지는 디렉터가 사용자·권한에서 선택.
+    //   가격 마스터·원가·금고/불공제 계좌는 permissions.ROLE_DENY 로 항상 차단.
+    pages: [['transactions', 'edit'], ['settlement', 'edit'], ['budget', 'edit'], ['commission', 'edit']],
+    fields: ['sales_amount', 'ar_amount'],
+  },
+  viewer: {
+    pages: [],            // 공통 화면(대시보드·일정·영업대시보드)만
+    fields: [],
+  },
+};
+
+const ALL_PAGES = ['quote', 'sales', 'stock', 'shortage', 'devrequest', 'pipeline', 'customers', 'targets', 'marketing', 'transactions', 'settlement', 'budget', 'inventory', 'products', 'warehouse', 'purchase'];
+
+/**
+ * 역할 기본 권한을 사용자에게 부여.
+ *  - 페이지: 이미 있으면 건드리지 않음(수동 설정 보존), 없으면 추천대로 추가
+ *  - 필드: 추천 필드는 visible=true로 켬
+ * 반환: 부여한 페이지/필드 목록
+ */
+export async function applyRoleDefaults(userId, role) {
+  const def = ROLE_DEFAULTS[role];
+  if (!def) return { pages: [], fields: [] };
+  const pages = def.pages === 'ALL' ? ALL_PAGES.map((k) => [k, 'edit']) : def.pages;
+  const grantedPages = [];
+  for (const [pk, acc] of pages) {
+    await query(
+      `INSERT INTO user_page_access (user_id, page_key, device_req, access)
+       VALUES ($1,$2,'anywhere',$3) ON CONFLICT (user_id, page_key) DO NOTHING`,
+      [userId, pk, acc]);
+    grantedPages.push(pk);
+  }
+  const grantedFields = [];
+  for (const fk of def.fields) {
+    await query(
+      `INSERT INTO user_field_access (user_id, field_key, visible)
+       VALUES ($1,$2,true) ON CONFLICT (user_id, field_key) DO UPDATE SET visible=true`,
+      [userId, fk]);
+    grantedFields.push(fk);
+  }
+  return { pages: grantedPages, fields: grantedFields };
+}

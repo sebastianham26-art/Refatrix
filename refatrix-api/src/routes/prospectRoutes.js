@@ -356,8 +356,11 @@ export default async function prospectRoutes(app) {
   app.get('/api/prospects/search', view, async (req) => {
     const q = String(req.query?.q || '').trim().slice(0, 80);
     const limit = Math.min(50, Math.max(1, int(req.query?.limit) || 20));
+    return { q, rows: await prospectSearch(req, q, limit) };
+  });
+  async function prospectSearch(req, q, limit) {
     const toks = nameTokens(q);
-    if (normTxt(q).length < 2) return { q, rows: [] };
+    if (normTxt(q).length < 2) return [];
     const words = toks.length ? toks : [normTxt(q)];
     const params = []; const ors = [];
     for (const t of words.slice(0, 6)) {
@@ -382,7 +385,126 @@ export default async function prospectRoutes(app) {
           lat: r.lat == null ? null : Number(r.lat), lng: r.lng == null ? null : Number(r.lng), stage: r.stage, priority: r.priority, score: r.score,
           owner_user_id: owner, owner_name: r.owner_name, customer_id: r.customer_id ? Number(r.customer_id) : null, match: score, exact: score >= 85, others };
       });
-    return { q, rows: out };
+    return out;
+  }
+
+  // ── 🔎 루트에 없는 고객 찾기(오늘 루트) — ERP 고객 + 전체 후보(DENUE·수동)에서 같거나 비슷한 이름 ──
+  //   ERP 고객이 이미 후보와 이어져 있으면 후보 한 줄로 합쳐 보여 준다(erp 표시). 위치는 후보 좌표, 없으면 그 고객의 지난 방문 위치.
+  async function erpLastGeo(q, customerId) {
+    const g = (await q(`SELECT lat, lng FROM (
+        SELECT geo_lat AS lat, geo_lng AS lng, created_at FROM sales_visits WHERE customer_id=$1 AND geo_lat IS NOT NULL
+        UNION ALL SELECT geo_lat, geo_lng, created_at FROM sales_consults WHERE customer_id=$1 AND geo_lat IS NOT NULL AND deleted_at IS NULL) x
+       ORDER BY created_at DESC LIMIT 1`, [customerId]).catch(() => ({ rows: [] }))).rows[0];
+    return g && Number.isFinite(Number(g.lat)) && Number(g.lat) !== 0 ? { lat: Number(g.lat), lng: Number(g.lng) } : null;
+  }
+  app.get('/api/prospect-routes/find-customer', view, async (req) => {
+    const q = String(req.query?.q || '').trim().slice(0, 80);
+    if (normTxt(q).length < 2) return { q, rows: [] };
+    const pros = await prospectSearch(req, q, 25);
+    const toks = nameTokens(q); const words = (toks.length ? toks : [normTxt(q)]).slice(0, 6);
+    const params = []; const ors = [];
+    for (const t of words) { params.push('%' + t + '%'); ors.push(`f LIKE $${params.length}`); if (t.length >= 4) { params.push('%' + t.slice(0, 3) + '%'); ors.push(`f LIKE $${params.length}`); } }
+    let cust = [];
+    try {
+      cust = (await query(
+        `SELECT * FROM (SELECT c.id, c.code, c.name, c.rfc, c.phone, c.owner_id, u.name AS owner_name,
+                  (SELECT p.id FROM prospects p WHERE p.customer_id=c.id AND p.deleted_at IS NULL ORDER BY p.id LIMIT 1) AS prospect_id,
+                  translate(lower(COALESCE(c.name,'') || ' ' || COALESCE(c.code,'') || ' ' || COALESCE(c.rfc,'')), 'áéíóúüñàèìòùâêîôûäëïöÁÉÍÓÚÜÑ', 'aeiouunaeiouaeiouaeioaeiouun') AS f
+             FROM customers c LEFT JOIN users u ON u.id=c.owner_id WHERE c.deleted_at IS NULL) x
+          WHERE ${ors.join(' OR ')} LIMIT 2000`, params)).rows;
+    } catch (_) { cust = []; }
+    const mine = me(req), dir = isDir(req);
+    const byPid = new Map(pros.map((p) => [p.id, p]));
+    const out = pros.map((p) => ({ kind: 'prospect', ...p }));
+    for (const c of cust) {
+      const score = Math.max(nameScore(q, c.name), String(c.code || '').toLowerCase() === q.toLowerCase() ? 100 : 0, c.rfc && String(c.rfc).toUpperCase() === q.toUpperCase() ? 100 : 0);
+      if (score < 45) continue;
+      const erp = { customer_id: Number(c.id), code: c.code, name: c.name };
+      if (c.prospect_id && byPid.has(Number(c.prospect_id))) { const p = byPid.get(Number(c.prospect_id)); const o = out.find((x) => x.id === p.id); o.erp = erp; o.match = Math.max(o.match, score); continue; }
+      const owner = c.owner_id == null ? null : Number(c.owner_id);
+      out.push({ kind: c.prospect_id ? 'prospect' : 'customer', id: c.prospect_id ? Number(c.prospect_id) : null, nom_estab: c.name, erp, match: score, exact: score >= 85,
+        owner_user_id: owner, owner_name: c.owner_name, others: !dir && owner != null && owner !== mine, phone: c.phone,
+        geo: await erpLastGeo(query, Number(c.id)) });
+    }
+    // 같음 → ERP 고객 → 비슷함 순
+    out.sort((a, b) => (b.exact - a.exact) || ((b.erp ? 1 : 0) - (a.erp ? 1 : 0)) || (b.match - a.match));
+    return { q, rows: out.slice(0, 30) };
+  });
+  // ERP 고객 → 후보(없으면 만든다). 이미 있는 고객이라 고객개발 실적(첫 방문·단계·점수)에는 넣지 않는다:
+  //   ERP 상태에 맞는 단계로 시작하되 그 단계 이력·점수 로그는 남기지 않음(기준선). 이후 방문은 「방문」으로만 셈.
+  async function prospectForCustomer(customerId, visitorId) {
+    return withTx(async (client) => {
+      const q = client.query.bind(client);
+      const ex = (await q(`SELECT id FROM prospects WHERE customer_id=$1 AND deleted_at IS NULL ORDER BY id LIMIT 1`, [customerId])).rows[0];
+      if (ex) return Number(ex.id);
+      const c = (await q(`SELECT id, name, phone, owner_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+      if (!c) return null;
+      const g = await erpLastGeo(q, customerId);
+      const st = g ? await stateNear(g.lat, g.lng) : { cve_ent: null, entidad: null };
+      const owner = c.owner_id == null ? visitorId : Number(c.owner_id);
+      const id = Number((await q(
+        `INSERT INTO prospects (nom_estab, segment, priority, lat, lng, phone, cve_ent, entidad, source, customer_id, owner_user_id, assigned_at, stage, created_by)
+         VALUES ($1,'refaccionaria','B',$2,$3,$4,$5,$6,'manual',$7,$8,now(),'asignado',$9) RETURNING id`,
+        [c.name, g ? g.lat : null, g ? g.lng : null, c.phone, st.cve_ent, st.entidad, customerId, owner, visitorId])).rows[0].id);
+      await recomputeProspect(q, id, { userId: visitorId, reason: 'cliente ERP (ruta)' });
+      await q(`DELETE FROM prospect_stage_history WHERE prospect_id=$1`, [id]);
+      await q(`DELETE FROM prospect_score_log WHERE prospect_id=$1`, [id]);
+      return id;
+    });
+  }
+  // 루트에 업체 넣기 {prospect_id | customer_id, date?, user_id?, route_id?} — 맨 뒤에 붙임(순서는 「첫 방문지」로 다시 짠다)
+  app.post('/api/prospect-routes/add-stop', edit, async (req, reply) => {
+    const b = req.body || {};
+    const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
+    let pid = int(b.prospect_id);
+    if (!pid && int(b.customer_id)) pid = await prospectForCustomer(int(b.customer_id), uid);
+    if (!pid) return reply.code(404).send({ error: 'not_found' });
+    const p = (await query(`SELECT p.id, p.nom_estab, p.owner_user_id, p.stage, u.name AS owner_name FROM prospects p LEFT JOIN users u ON u.id=p.owner_user_id WHERE p.id=$1 AND p.deleted_at IS NULL`, [pid])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    let rid = int(b.route_id);
+    if (rid) { const r = await ownRoute(req, rid); if (!r) return reply.code(404).send({ error: 'route_not_found' }); }
+    const date = YMD.test(String(b.date)) ? b.date : mxToday();
+    const out = await withTx(async (client) => {
+      const q = client.query.bind(client);
+      if (!rid) rid = Number((await q(`INSERT INTO prospect_routes (user_id, route_date, created_by) VALUES ($1,$2,$3)
+                                       ON CONFLICT (user_id, route_date) DO UPDATE SET updated_at=now() RETURNING id`, [uid, date, me(req)])).rows[0].id);
+      const has = (await q(`SELECT 1 FROM prospect_route_stops WHERE route_id=$1 AND prospect_id=$2`, [rid, pid])).rows.length;
+      if (has) return { already: true };
+      const seq = Number((await q(`SELECT COALESCE(MAX(seq),0)+1 AS n FROM prospect_route_stops WHERE route_id=$1`, [rid])).rows[0].n);
+      await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq) VALUES ($1,$2,$3)`, [rid, pid, seq]);
+      return { seq };
+    });
+    warmRoad([rid]);
+    await logEvent({ userId: me(req), action: 'update', target: `prospect_routes:${rid}`, detail: { add_stop: pid, customer_id: int(b.customer_id) || null } });
+    const owner = p.owner_user_id == null ? null : Number(p.owner_user_id);
+    return { ok: true, route_id: rid, prospect_id: pid, nom_estab: p.nom_estab, ...out,
+      others: owner != null && owner !== uid ? (p.owner_name || true) : null, erp_existing: p.stage === 'cliente_activo' };
+  });
+  // 첫 방문지 고르기 → 나머지는 그곳에서 가까운 순으로 다시 짠다(이미 방문한 곳은 맨 앞에 그대로, 위치 없는 곳은 맨 뒤)
+  app.post('/api/prospect-routes/reorder', edit, async (req, reply) => {
+    const b = req.body || {};
+    let rid = int(b.route_id);
+    if (rid) { if (!(await ownRoute(req, rid))) return reply.code(404).send({ error: 'route_not_found' }); }
+    else {
+      const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
+      const r = (await query(`SELECT id FROM prospect_routes WHERE user_id=$1 AND route_date=$2`, [uid, YMD.test(String(b.date)) ? b.date : mxToday()])).rows[0];
+      if (!r) return reply.code(404).send({ error: 'route_not_found' }); rid = Number(r.id);
+    }
+    const first = int(b.first_id);
+    const st = (await query(`SELECT s.prospect_id, s.consult_id, s.seq, p.lat, p.lng FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id WHERE s.route_id=$1 ORDER BY s.seq`, [rid])).rows
+      .map((x) => ({ id: Number(x.prospect_id), done: !!x.consult_id, lat: x.lat == null ? null : Number(x.lat), lng: x.lng == null ? null : Number(x.lng) }));
+    const f = st.find((x) => x.id === first && !x.done); if (!f) return reply.code(400).send({ error: 'bad_first' });
+    const done = st.filter((x) => x.done), rest = st.filter((x) => !x.done && x.id !== first);
+    const geoRest = rest.filter((x) => x.lat != null), noGeo = rest.filter((x) => x.lat == null);
+    const opt = f.lat != null ? optimizeRoute(geoRest, { lat: f.lat, lng: f.lng }).stops : geoRest;
+    const order = done.concat([f], opt, noGeo).map((x) => x.id);
+    await withTx(async (client) => {
+      const q = client.query.bind(client);
+      await q(`UPDATE prospect_route_stops SET seq = seq + 10000 WHERE route_id=$1`, [rid]);
+      let k = 1; for (const id of order) await q(`UPDATE prospect_route_stops SET seq=$3 WHERE route_id=$1 AND prospect_id=$2`, [rid, id, k++]);
+    });
+    warmRoad([rid]);
+    return { ok: true, route_id: rid, order };
   });
 
   // 🎙 빠른 녹음 → 지금 위치 근처 후보(반경 250m, 최대 5곳) — 오늘 내 루트에 있는 곳 우선.
@@ -853,7 +975,7 @@ export default async function prospectRoutes(app) {
   // ── 루트 ───────────────────────────────────────────────────────────
   async function routeStops(rid) {
     return (await query(
-      `SELECT s.seq, s.consult_id, p.id, p.score, p.nom_estab, p.address, p.colonia, p.municipio, p.lat, p.lng, p.phone, p.stage, p.priority, p.segment,
+      `SELECT s.seq, s.consult_id, p.id, p.score, p.nom_estab, p.address, p.colonia, p.municipio, p.lat, p.lng, p.phone, p.stage, p.priority, p.segment, p.customer_id,
               c.review_status, c.created_at AS checkin_at
          FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
          LEFT JOIN sales_consults c ON c.id=s.consult_id

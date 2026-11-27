@@ -346,3 +346,9 @@ test('1126 · 루트 추정 유류비 예산 = 연료(L) × 연료비 · 0 이�
   const r = estimateRoute(stops, { km_per_liter: 10, fuel_price: 25 }, null, { km: 15.2 });   // 도로 거리
   assert.equal(r.source, 'road'); assert.equal(r.fuel_l, 1.5); assert.equal(r.fuel_cost, 37.5);
 });
+
+test('1127 · 고객 찾기: 단어 가운데 포함은 「같음」이 아님', async () => {
+  const { nameScore } = await import('../src/prospectCore.js');
+  assert.ok(nameScore('toro', 'TALLER DE MOTOROS') < 85);
+  assert.equal(nameScore('toro', 'Refaccionaria El Toro'), 85);
+});

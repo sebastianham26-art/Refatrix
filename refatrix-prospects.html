@@ -257,7 +257,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           <button class="btn ghost sm" id="rt-edit">지도에서 방문지 고르기</button>
           <button class="btn ghost sm" id="rt-near">내 주변 후보 2km</button>
-          <button class="btn ghost sm" id="rt-unplanned">리스트에 없는 가게 방문</button>
+          <button class="btn red sm" id="rt-unplanned">🔎 루트에 없는 고객 찾기</button>
           <button class="btn ghost sm hide" id="rt-clear" style="margin-left:auto;color:var(--ctr)">이 루트 삭제</button>
           <button class="btn ghost sm dir" id="rt-bulk" style="color:var(--ctr);border-color:var(--ctr)">🗑 루트 일괄 정리</button>
         </div>
@@ -1137,17 +1137,20 @@ async function loadRoute(){
       '<div style="margin:8px 0"><span class="tag '+next.priority+'">'+next.priority+'</span> '+stageDot(next.stage)+'</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'+
         (next.phone?'<a class="btn ghost" href="tel:'+esc(next.phone)+'">전화</a>':'<button class="btn ghost" disabled>전화 없음</button>')+
-        '<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+next.lat+','+next.lng+'">길찾기</a></div>'+
+        '<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+(next.lat!=null?next.lat+','+next.lng:encodeURIComponent([next.nom_estab,next.municipio].filter(Boolean).join(' ')))+'">길찾기</a></div>'+
       '<button class="btn ghost" style="width:100%;margin-top:10px" data-qopen="'+next.id+'|'+esc(next.nom_estab)+'">❓ 물어볼 것 (질문 항목)</button>'+
       '<button class="btn red big" style="width:100%;margin-top:10px" data-checkin="'+next.id+'">체크인 · 녹음 시작</button>'+
-      '<div class="note" style="margin-top:8px">업체 정보를 입력하지 않아도 바로 시작됩니다. 녹음이 끝나면 AI가 양식을 채우고, 「검토 대기」에서 확인·저장합니다.</div></div>')
+      '<div class="note" style="margin-top:8px">업체 정보를 입력하지 않아도 바로 시작됩니다. 녹음이 끝나면 AI가 양식을 채우고, 「검토 대기」에서 확인·저장합니다.<br>다른 곳부터 가려면 아래 목록에서 <b>「여기부터」</b>, 다른 업체를 먼저 녹음하려면 그 줄의 <b>🎙 녹음</b>.</div></div>')
     :'<div class="card flat" style="background:var(--ok-soft)"><b>'+(RT_VIEW?'이 목록을':'이 루트를')+' 모두 방문했습니다.</b></div>';
   $('rt-stops').innerHTML=stops.map(s=>{
     const done=!!s.consult_id, isNext=next&&s.id===next.id;
-    return '<div class="stop"><div class="n '+(done?'done':isNext?'next':'')+'">'+s.seq+'</div><div style="flex:1;min-width:0"><b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||s.municipio||'')+(s.score!=null?' · <b style="color:'+scoreColor(s.score)+'">'+s.score+'점</b>':'')+
+    // 방문 전 업체마다: 🎙 바로 녹음(어느 업체든 골라서 시작) · 「여기부터」(이 업체를 첫 방문지로, 나머지는 가까운 순)
+    return '<div class="stop" style="flex-wrap:wrap"><div class="n '+(done?'done':isNext?'next':'')+'">'+s.seq+'</div><div style="flex:1;min-width:140px;cursor:pointer" data-open="'+s.id+'"><b>'+esc(s.nom_estab)+'</b>'+(s.customer_id?' <span class="tag B" title="ERP 고객">ERP</span>':'')+'<div class="note">'+esc(s.colonia||s.municipio||'')+(s.lat==null?' · <span class="st-warn">📍 위치 없음</span>':'')+(s.score!=null?' · <b style="color:'+scoreColor(s.score)+'">'+s.score+'점</b>':'')+
       (done?' · '+(s.review_status==='confirmado'?'<span class="st-ok">저장 완료</span>':'<span class="st-warn">AI 초안 검토 필요</span>'):'')+'</div></div>'+
-      (done&&s.review_status!=='confirmado'?'<button class="btn sm" data-review="'+s.id+':'+s.consult_id+'">검토</button>':'<button class="btn ghost sm" data-open="'+s.id+'">상세</button>')+
-      (done?'':'<button class="btn ghost sm" data-rtdel="'+s.id+'" title="루트에서 빼기" style="margin-left:4px">✕</button>')+'</div>';
+      (done?(s.review_status!=='confirmado'?'<button class="btn sm" data-review="'+s.id+':'+s.consult_id+'">검토</button>':'<button class="btn ghost sm" data-open="'+s.id+'">상세</button>')
+        :'<span style="display:inline-flex;gap:4px"><button class="btn '+(isNext?'red':'ghost')+' sm" data-checkin="'+s.id+'" title="이 업체로 체크인·녹음 시작">🎙 녹음</button>'+
+          (isNext?'':'<button class="btn ghost sm" data-first="'+s.id+'" title="이 업체를 첫 방문지로 — 나머지는 가까운 순으로 다시 짭니다">여기부터</button>')+
+          '<button class="btn ghost sm" data-rtdel="'+s.id+'" title="루트에서 빼기">✕</button></span>')+'</div>';
   }).join('');
   $('rt-clear').classList.toggle('hide',!stops.some(s=>!s.consult_id));
   if(noLeaflet('rt-map')) return;
@@ -1279,6 +1282,7 @@ $('rt-edit').onclick=()=>{ routePick=(ROUTE&&ROUTE.stops||[]).map(s=>s.id); show
 document.addEventListener('click',e=>{
   const x=e.target.closest('[data-rtdel]'); if(x){ rtRemoveStop(Number(x.dataset.rtdel)); return; }
   const c=e.target.closest('[data-checkin]'); if(c){ checkin(Number(c.dataset.checkin)); return; }
+  const fs=e.target.closest('[data-first]'); if(fs){ rtFirst(Number(fs.dataset.first)); return; }
   const r=e.target.closest('[data-review]'); if(r){ const [p,cid]=r.dataset.review.split(':'); openReview(Number(p),Number(cid)); return; }
   const o=e.target.closest('[data-open]'); if(o){ openProspect(Number(o.dataset.open)); return; }
 });
@@ -1298,12 +1302,46 @@ $('rt-near').onclick=async()=>{
     '<button class="btn red" style="width:100%;margin-top:16px" id="near-route">이 후보들로 오늘 루트 만들기</button>');
   $('near-route').onclick=async()=>{ try{ await post('/api/prospect-routes',{date:META.today,prospect_ids:near.map(p=>p.id),start_lat:g.lat,start_lng:g.lng},'PUT'); closeDrawer(); show('route'); }catch(e){ toast('실패: '+e.message); } };
 };
+// 첫 방문지 바꾸기 — 이 업체부터, 나머지는 가까운 순(이미 방문한 곳은 그대로 앞에)
+async function rtFirst(pid){
+  if(!ROUTE||!ROUTE.route_id) return;
+  try{ await post('/api/prospect-routes/reorder',{route_id:ROUTE.route_id,first_id:pid}); const s=(ROUTE.stops||[]).find(x=>x.id===pid); toast((s?s.nom_estab:'이 업체')+'부터 가까운 순으로 다시 짰습니다'); loadRoute(); }
+  catch(e){ toast('실패: '+e.message); }
+}
+// ── 🔎 루트에 없는 고객 찾기 — ERP 고객 + 전체 후보(DENUE·수동)에서 이름으로 찾아 이 루트에 넣기 ──
 $('rt-unplanned').onclick=()=>{
-  openDrawer('리스트에 없는 가게','Visita no planeada',
-    '<p class="note">지금 위치로 새 후보를 만들고 바로 체크인·녹음을 시작합니다. 이름·정보는 나중에 입력해도 됩니다.</p>'+
-    '<label class="fld"><span>상호(선택)</span><input type="text" id="un-name"></label>'+
-    '<label class="fld" style="margin-top:12px"><span>업종</span><select id="un-seg">'+META.segments.map(s=>'<option value="'+s+'">'+esc(SEG_LBL[s]||s)+'</option>').join('')+'</select></label>'+
-    '<button class="btn red big" style="width:100%;margin-top:16px" id="un-go">위치 저장 · 체크인·녹음</button>');
+  const where=RT_VIEW?'이 방문 목록':($('rt-date').value===META.today?'오늘 루트':$('rt-date').value+' 루트');
+  openDrawer('루트에 없는 고객 찾기','Buscar cliente fuera de la ruta',
+    '<p class="note">고객 이름(또는 ERP 고객번호·RFC)을 넣으면 <b>ERP에 등록된 고객</b>과 <b>전체 고객개발 목록</b>에서 같거나 비슷한 업체를 찾습니다. 고른 업체는 <b>'+esc(where)+'</b> 맨 뒤에 들어가고, 순서는 「여기부터」로 다시 짤 수 있습니다.</p>'+
+    '<label class="fld"><span>고객 이름</span><input type="search" id="fc-q" placeholder="예: Refaccionaria García · C-0123 · RFC" autocomplete="off"></label>'+
+    '<div id="fc-out" style="margin-top:10px"></div>'+
+    '<div class="card flat" style="margin-top:16px;padding:12px 14px"><b>목록·ERP 어디에도 없는 새 가게</b><p class="note" style="margin:4px 0 8px">지금 위치로 새 후보를 만들고 바로 체크인·녹음을 시작합니다. 이름·정보는 나중에 넣어도 됩니다.</p>'+
+      '<div class="grid" style="grid-template-columns:1fr 1fr;gap:8px"><label class="fld"><span>상호(선택)</span><input type="text" id="un-name"></label>'+
+      '<label class="fld"><span>업종</span><select id="un-seg">'+META.segments.map(s=>'<option value="'+s+'">'+esc(SEG_LBL[s]||s)+'</option>').join('')+'</select></label></div>'+
+      '<button class="btn ghost" style="width:100%;margin-top:10px" id="un-go">📍 지금 위치로 새 가게 등록 · 녹음</button></div>');
+  setTimeout(()=>$('fc-q').focus(),50);
+  let tm=null, rows=[];
+  const draw=()=>{ const q=$('fc-q').value.trim();
+    if(!rows.length){ $('fc-out').innerHTML=q.length<2?'':'<div class="note">「'+esc(q)+'」와 같거나 비슷한 업체가 없습니다 — 아래 「새 가게」로 등록하세요.</div>'; return; }
+    $('fc-out').innerHTML='<div style="display:flex;flex-direction:column;gap:6px">'+rows.map((x,i)=>{ const inR=(ROUTE&&ROUTE.stops||[]).some(s=>x.id&&s.id===x.id);
+      const loc=x.lat!=null||x.geo?'':' · <span class="st-warn">📍 위치 없음</span>';
+      return '<div style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px">'+
+        '<div style="flex:1;min-width:0"><b>'+esc(x.nom_estab)+'</b> '+(x.erp?'<span class="tag B" title="ERP 등록 고객">ERP '+esc(x.erp.code||'')+'</span> ':'')+(x.kind==='prospect'?'<span class="note">'+esc((STAGE[x.stage]||{}).ko||'고객개발 후보')+'</span> ':'<span class="note">ERP 고객(위치는 지난 방문 기준)</span> ')+
+          (x.exact?'<span class="tag A">같음</span>':'<span class="note">비슷 '+x.match+'%</span>')+
+          '<div class="note">'+esc([x.colonia,x.municipio,x.entidad].filter(Boolean).join(' · '))+(x.owner_name?' · 담당 '+esc(x.owner_name):' · 담당 없음')+loc+(x.others?' · <span class="st-warn">다른 담당 — 방문은 되지만 고객개발 실적에는 안 들어감</span>':'')+'</div></div>'+
+        (inR?'<span class="st-ok" style="white-space:nowrap">✓ 루트에 있음</span>':'<button class="btn red sm" data-fcadd="'+i+'" style="white-space:nowrap">＋ 넣기</button>')+'</div>'; }).join('')+'</div>';
+    $('fc-out').querySelectorAll('[data-fcadd]').forEach(b=>b.onclick=async()=>{ const x=rows[Number(b.dataset.fcadd)]; b.disabled=true;
+      const body={...(x.id?{prospect_id:x.id}:{customer_id:x.erp.customer_id}),...(RT_VIEW?{route_id:RT_VIEW}:{date:$('rt-date').value,...(isDir?{user_id:Number($('rt-user').value)}:{})})};
+      try{ const r=await post('/api/prospect-routes/add-stop',body); x.id=r.prospect_id;
+        toast(r.already?'이미 루트에 있습니다':esc(x.nom_estab)+' → '+where+' '+(r.seq||'')+'번째'+(r.others?' (다른 담당 고객)':''));
+        await loadRoute(); draw(); }
+      catch(e){ b.disabled=false; toast('실패: '+e.message); } });
+  };
+  const find=async()=>{ const q=$('fc-q').value.trim(); if(q.length<2){ rows=[]; draw(); return; }
+    let r; try{ r=await api('/api/prospect-routes/find-customer?q='+encodeURIComponent(q)); }catch(e){ return toast('실패: '+e.message); }
+    if($('fc-q').value.trim()!==q) return; rows=r.rows; draw(); };
+  $('fc-q').addEventListener('input',()=>{ clearTimeout(tm); tm=setTimeout(find,350); });
+  $('fc-q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); clearTimeout(tm); find(); } });
   $('un-go').onclick=async()=>{
     const g=await geo(); if(!g) return toast('위치를 가져오지 못했습니다');
     try{ const r=await post('/api/prospects',{nom_estab:$('un-name').value,segment:$('un-seg').value,lat:g.lat,lng:g.lng}); checkin(r.id); }

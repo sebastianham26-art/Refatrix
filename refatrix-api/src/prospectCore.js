@@ -198,7 +198,8 @@ export function nameScore(q, name) {
   if (!a || !b) return 0;
   if (a === b) return 100;
   if (b.startsWith(a)) return 92;
-  if (b.includes(a)) return 85;
+  if ((' ' + b + ' ').includes(' ' + a + ' ') || (' ' + b).includes(' ' + a)) return 85;   // 단어 시작부터 포함
+  if (b.includes(a)) return 70;                                                              // 단어 가운데 포함(motoros ⊃ toro)
   const qt = nameTokens(q), nt = nameTokens(name);
   if (!qt.length || !nt.length) return Math.round(dice(a, b) * 60);
   if (qt.every((t) => nt.some((x) => x.includes(t)))) return 78;
