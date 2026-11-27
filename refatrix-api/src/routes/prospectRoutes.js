@@ -1008,10 +1008,11 @@ export default async function prospectRoutes(app) {
     const n = Math.min(26, Math.max(1, int(req.query?.n) || (unit === 'week' ? 8 : 6)));
     const periods = fuelPeriods(mxToday(), unit, n);
     const from = periods[0].from, to = periods[periods.length - 1].to;
+    // 1127 · 날짜 미정 방문 목록(지도에서 짠 루트)도 따로 셈 — 「날짜 미정」 칸
     const routes = (await query(
       `SELECT r.id, r.user_id, u.name AS user_name, to_char(r.route_date,'YYYY-MM-DD') AS d
          FROM prospect_routes r LEFT JOIN users u ON u.id=r.user_id
-        WHERE r.route_date BETWEEN $1::date AND $2::date ORDER BY r.route_date, r.id`, [from, to])).rows;
+        WHERE r.route_date BETWEEN $1::date AND $2::date OR r.route_date IS NULL ORDER BY r.route_date NULLS LAST, r.id`, [from, to])).rows;
     const pts = {}; const vis = {};
     if (routes.length) (await query(
       `SELECT s.route_id, p.lat, p.lng, s.consult_id FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
@@ -1021,20 +1022,23 @@ export default async function prospectRoutes(app) {
     const rs = await routeSettings();
     const zero = () => ({ routes: 0, stops: 0, visited: 0, km: 0, fuel_l: 0, fuel_cost: 0 });
     const add = (c, e, v) => { c.routes++; c.stops += e.stops; c.visited += v; c.km += e.km; c.fuel_l += e.fuel_l; c.fuel_cost += e.fuel_cost || 0; };
-    const users = new Map(); const tot = Object.fromEntries(periods.map((p) => [p.key, zero()])); const all = zero();
+    const users = new Map(); const tot = Object.fromEntries(periods.map((p) => [p.key, zero()])); const all = zero(); const undT = zero();
     let approx = 0;
     for (const r of routes) {
       const st = pts[r.id] || []; if (!st.length) continue;
-      const p = periods.find((x) => r.d >= x.from && r.d <= x.to); if (!p) continue;
+      const p = r.d ? periods.find((x) => r.d >= x.from && r.d <= x.to) : null; if (r.d && !p) continue;
       const e = await estimateRoad(st, rs, null, { cacheOnly: true }); if (e.source !== 'road') approx++;
       const v = vis[r.id] || 0; const uid = Number(r.user_id);
-      if (!users.has(uid)) users.set(uid, { user_id: uid, name: r.user_name || ('#' + uid), cells: Object.fromEntries(periods.map((x) => [x.key, zero()])), total: zero() });
-      const u = users.get(uid); add(u.cells[p.key], e, v); add(u.total, e, v); add(tot[p.key], e, v); add(all, e, v);
+      if (!users.has(uid)) users.set(uid, { user_id: uid, name: r.user_name || ('#' + uid), cells: Object.fromEntries(periods.map((x) => [x.key, zero()])), undated: zero(), dated: zero(), total: zero() });
+      const u = users.get(uid);
+      if (p) { add(u.cells[p.key], e, v); add(u.dated, e, v); add(tot[p.key], e, v); } else { add(u.undated, e, v); add(undT, e, v); }
+      add(u.total, e, v); add(all, e, v);
     }
     const rnd = (c) => { c.km = Math.round(c.km * 10) / 10; c.fuel_l = Math.round(c.fuel_l * 10) / 10; c.fuel_cost = Math.round(c.fuel_cost * 100) / 100; return c; };
-    const out = [...users.values()].map((u) => { for (const k in u.cells) rnd(u.cells[k]); rnd(u.total); return u; }).sort((a, b) => b.total.fuel_cost - a.total.fuel_cost || String(a.name).localeCompare(String(b.name)));
+    const out = [...users.values()].map((u) => { for (const k in u.cells) rnd(u.cells[k]); rnd(u.undated); rnd(u.dated); rnd(u.total); return u; }).sort((a, b) => b.total.fuel_cost - a.total.fuel_cost || String(a.name).localeCompare(String(b.name)));
     for (const k in tot) rnd(tot[k]);
-    return { unit, periods, users: out, totals: tot, total: rnd(all), settings: rs, priced: Number(rs.fuel_price) > 0, approx_routes: approx };
+    const datedT = zero(); for (const k in tot) { const c = tot[k]; datedT.routes += c.routes; datedT.stops += c.stops; datedT.visited += c.visited; datedT.km += c.km; datedT.fuel_l += c.fuel_l; datedT.fuel_cost += c.fuel_cost; }
+    return { unit, periods, users: out, totals: tot, undated: rnd(undT), dated: rnd(datedT), total: rnd(all), settings: rs, priced: Number(rs.fuel_price) > 0, approx_routes: approx };
   });
   // 루트 추정 기준 — 디렉터·관리자가 목표 화면에서 입력
   app.get('/api/prospect-settings', view, async () => ({ route: await routeSettings() }));

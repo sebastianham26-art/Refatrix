@@ -84,6 +84,13 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
   - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
 - **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
 
+## 28차 (2026-11-27) — 유류비 표에 「📋 날짜 미정 목록」 칸
+- 문제: Oscar 가 지도에서 루트 5개 이상을 만들었는데 ⛽ 담당별 유류비 예산 합계에 안 보임 → 지도에서 짠 루트는 날짜 미정 방문 목록으로 저장되고, 표는 날짜 있는 루트만 셌음.
+- `GET /api/prospect-fuel`: 날짜 미정 목록(route_date NULL, 정류장 있는 것)도 셈 — 담당별 `undated`·`dated`·`total`(= dated + undated), 전체 `undated`·`dated`·`total`.
+- 화면: 월·주 칸 뒤에 「📋 날짜 미정 목록」 칸(연노랑), 합계 = 날짜 있는 루트 + 날짜 미정, 평균/월·주 = 날짜 있는 루트 기준. 날짜를 고르면 그 달·주 칸으로 옮겨 감. 엑셀에도 날짜 미정 열.
+- 바뀐 파일: `routes/prospectRoutes.js`, `refatrix-prospects.html`, `test/prospects_fuel.test.mjs`. 마이그레이션 없음.
+- 검증(origin/main f864f7f 위): prospects_fuel 2/2(PostgreSQL) · integration_nav 4/4 · prospects 30/30 · roadRoute 3/3, 화면 확인.
+
 ## 27차 (2026-11-27) — 덮어쓰기로 사라진 기능 복구: 연료비·유류비 예산·leadassign 메뉴
 - 원인: 다른 작업(HANDOVER_2026-11-26b_prospect_fuel_budget · HANDOVER_2026-11-26_leadassign_grant_daycheck)이 origin 에 올린 변경을, 이 작업의 zip(예전 기준 파일로 만든 전체 파일)이 덮어씀.
   - 사라졌던 것: ① 목표 › 루트 추정 기준의 **연료비(페소/L)** 입력, 루트 예상의 **유류비 예산** 표시(고객개발_24) ② **⛽ 담당별 유류비 예산 합계** 표 · `GET /api/prospect-fuel` · `fuelPeriods`(고객개발_27 21:57) ③ `refatrix-nav.js` 의 `leadassign:'__socio_or__leadassign'`·metaleads 의 `leadassign`(Emmanuel·marketing 「영업 할당·실적」 메뉴), nav 캐시 마커 20261126fu.

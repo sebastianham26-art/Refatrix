@@ -39,6 +39,7 @@ test('서버 — 담당별 · 기간별 합계 · 디렉터만', { skip: !PG && 
   await route(rep.id, today, [a, b, c]);          // 약 22.2km
   await route(rep.id, today.slice(0, 8) + '01', [a, b]);
   await query(`INSERT INTO prospect_routes (user_id, route_date, name) VALUES ($1, NULL, '목록')`, [rep.id]);   // 날짜 없는 목록 = 제외
+  await route(rep.id, null, [a, b]);              // 1127 · 날짜 미정 방문 목록(정류장 있음) = 「날짜 미정」 칸
   const r = await app.inject({ method: 'GET', url: '/api/prospect-fuel?unit=month&n=2', headers: dir.h });
   assert.equal(r.statusCode, 200); const d = r.json();
   assert.equal(d.periods.length, 2); assert.equal(d.priced, true);
@@ -47,7 +48,9 @@ test('서버 — 담당별 · 기간별 합계 · 디렉터만', { skip: !PG && 
   assert.equal(c0.routes, 2, '이번 달 루트 2개(날짜 없는 목록 제외)');
   assert.ok(c0.km > 33 && c0.km < 34, 'km ' + c0.km);
   assert.ok(Math.abs(c0.fuel_cost - c0.fuel_l * 25) < 3, '유류비 = L × 25');
-  assert.equal(u.total.routes, 2);
+  assert.equal(u.undated.routes, 1, '날짜 미정 목록 1개'); assert.ok(u.undated.fuel_cost > 0, '날짜 미정 목록도 유류비');
+  assert.equal(u.dated.routes, 2); assert.equal(u.total.routes, 3, '합계 = 날짜 있는 2 + 날짜 미정 1');
+  assert.ok(d.undated.routes >= 1); assert.ok(d.dated.routes >= 2);
   const w = (await app.inject({ method: 'GET', url: '/api/prospect-fuel?unit=week', headers: dir.h })).json(); assert.equal(w.periods.length, 8);
   assert.equal((await app.inject({ method: 'GET', url: '/api/prospect-fuel', headers: rep.h })).statusCode, 403, '영업');
   assert.equal((await app.inject({ method: 'GET', url: '/api/prospect-fuel', headers: mgr.h })).statusCode, 403, '관리자 지정자도 안 됨');
