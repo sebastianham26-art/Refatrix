@@ -1,0 +1,130 @@
+diff --git a/refatrix-api/test/product_positions_ctr.test.mjs b/refatrix-api/test/product_positions_ctr.test.mjs
+index f10a1b5..8256215 100644
+--- a/refatrix-api/test/product_positions_ctr.test.mjs
++++ b/refatrix-api/test/product_positions_ctr.test.mjs
+@@ -93,7 +93,7 @@ async function readScreen(c, root, rowSel) {
+ 
+ test('B. 제품 찾기 — 차종 도면(차종으로 제품찾기)과 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
+   const c = await boot();
+-  assert.match(c.d.title, /ps-1127v[mno]/);
++  assert.match(c.d.title, /ps-1127v[mnop]/);
+   // ① 차종으로 제품찾기(2026-11-27 · 상단 토글 · 차량 도면)
+   c.d.getElementById('fmVeh').dispatchEvent(new c.w.Event('click'));
+   const mk = c.d.getElementById('veh-maker'); mk.innerHTML = '<option value="NISSAN">NISSAN</option>'; mk.value = 'NISSAN';
+diff --git a/refatrix-api/test/vehicle_map_front.test.mjs b/refatrix-api/test/vehicle_map_front.test.mjs
+index deb3b0d..3849782 100644
+--- a/refatrix-api/test/vehicle_map_front.test.mjs
++++ b/refatrix-api/test/vehicle_map_front.test.mjs
+@@ -69,7 +69,11 @@ await t('조회 → 도면 마커 · 목록 · 상세',async()=>{
+   assert.match(det,/1,860/); assert.match(det,/A-03-2/);
+   assert.match(det,/발주 미입고 잔량 1,500 = 운송 200 \+ 생산 중 1,300/); assert.match(det,/고객 주문 미출고 부족분 338/);
+   assert.match(d.querySelector('.vm-det .vm-qty').innerHTML,/생산 중 백오더 · En producción/);
+-  assert.ok(d.querySelector('.vm-det .vm-code .tip').textContent.includes('40160-3AN0A'),'OE 툴팁');
++  const cb=d.querySelector('.vm-det .vm-code');
++  cb.dispatchEvent(new w.Event('mouseenter')); const pop=d.getElementById('vmOePop');
++  assert.ok(pop && pop.parentElement===d.body,'OE 말풍선은 body 에(목록 스크롤에 안 잘림)'); assert.match(pop.textContent,/40160-3AN0A/);
++  cb.dispatchEvent(new w.Event('mouseleave')); assert.ok(!d.getElementById('vmOePop'),'벗어나면 닫힘');
++  assert.match(d.querySelector('.vm-det .vm-oe').textContent,/OE 40160-3AN0A/,'상세 카드에 OE 줄(휴대폰 · 터치)');
+   assert.equal(d.querySelector('.vm-det .vm-qty').getAttribute('translate'),'no');
+   assert.ok(d.querySelector('.vm-det .vm-qty svg'),'아이콘');
+ });
+diff --git a/refatrix-products.html b/refatrix-products.html
+index a1f72bd..ce5913d 100644
+--- a/refatrix-products.html
++++ b/refatrix-products.html
+@@ -8,7 +8,7 @@
+ <meta http-equiv="Pragma" content="no-cache">
+ <meta http-equiv="Expires" content="0">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<title>Refatrix ERP · 제품 조회 · ps-1127vo</title>
++<title>Refatrix ERP · 제품 조회 · ps-1127vp</title>
+ <style>
+   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+@@ -304,8 +304,13 @@
+   .vm .vm-q{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;font-variant-numeric:tabular-nums}
+   .vm .vm-q svg,.vm .vm-qty svg{flex:none}
+   .vm .vm-code{position:relative;cursor:pointer;color:#0058A3;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;background:none;border:0;padding:0;font:inherit;font-weight:700}
+-  .vm .vm-code .tip{display:none;position:absolute;left:0;bottom:calc(100% + 6px);background:#111;color:#fff;font-size:12px;font-weight:500;padding:6px 10px;border-radius:4px;white-space:nowrap;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.25);text-decoration:none}
+-  .vm .vm-code:hover .tip,.vm .vm-code:focus .tip{display:block}
++  /* 11-27d · OE 말풍선 — 화면(body)에 띄워서 목록 스크롤 · 카드 경계에 잘리지 않게. 여러 개면 줄바꿈 */
++  .vm-oepop{position:fixed;z-index:9500;max-width:min(400px,calc(100vw - 16px));background:#111;color:#fff;border-radius:4px;padding:10px 12px;font-family:'Noto Sans KR','IBM Plex Sans KR',system-ui,sans-serif;font-size:12.5px;line-height:1.45;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none}
++  .vm-oepop .h{font-size:11px;font-weight:700;color:#FFDB00;margin-bottom:4px}
++  .vm-oepop .l{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:2px 14px}
++  .vm-oepop .l span{white-space:nowrap;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
++  .vm .vm-oe{margin-top:8px;font-size:12px;color:#484848;line-height:1.55;overflow-wrap:anywhere}
++  .vm .vm-oe b{color:#111}
+   .vm .vm-lh{padding:12px 16px;border-bottom:1px solid #DFDFDF;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+   .vm .vm-lh b{font-size:14px}
+   .vm .vm-ico{display:flex;gap:10px;font-size:11px;color:#484848;flex-wrap:wrap}
+@@ -1426,6 +1431,7 @@
+   }
+ 
+   function vmRender(){
++    vmOeHide();
+     const r=$('vehResult'); if(!vmData){ r.innerHTML=''; return; }
+     const d=vmData, v=d.vehicle||{}, c=d.counts||{};
+     const all=vmItems();
+@@ -1471,7 +1477,10 @@
+       b.addEventListener('click',function(e){ if(e.target.closest('.vm-code')) return; vmSel=b.getAttribute('data-uid'); vmRender(); });
+       b.addEventListener('keydown',function(e){ if((e.key==='Enter'||e.key===' ')&&!e.target.closest('.vm-code')){ e.preventDefault(); vmSel=b.getAttribute('data-uid'); vmRender(); } }); });
+     r.querySelectorAll('.vm-code').forEach(function(b){ b.addEventListener('click',function(e){ e.stopPropagation();
+-      openPhotoModal(b.getAttribute('data-ctr')||'', b.getAttribute('data-syd')||''); }); });
++      vmOeHide(); openPhotoModal(b.getAttribute('data-ctr')||'', b.getAttribute('data-syd')||''); }); });
++    r.querySelectorAll('.vm-code[data-oe]').forEach(function(b){
++      b.addEventListener('mouseenter',function(){ vmOeShow(b); }); b.addEventListener('focus',function(){ vmOeShow(b); });
++      b.addEventListener('mouseleave',vmOeHide); b.addEventListener('blur',vmOeHide); });
+     const clr=r.querySelector('#vmClear'); if(clr) clr.addEventListener('click',function(){ vmSlot=''; vmRender(); });
+     const dt=r.querySelector('#vmDrill'); if(dt) dt.addEventListener('click',function(){ vmOpenDetail(dt.getAttribute('data-code')); });
+   }
+@@ -1499,10 +1508,29 @@
+       +'</svg>';
+   }
+ 
++  // 11-27d · OE 말풍선 — body 에 붙이고 화면 안으로 자리 잡기(위/아래 · 좌우 끝 맞춤). 목록 스크롤 · 카드 overflow 에 안 잘림
++  function vmOeHide(){ const el=document.getElementById('vmOePop'); if(el) el.remove(); }
++  function vmOeShow(btn){
++    vmOeHide();
++    const list=String(btn.getAttribute('data-oe')||'').split('|').filter(Boolean);
++    const el=document.createElement('div'); el.className='vm-oepop'; el.id='vmOePop'; el.setAttribute('role','tooltip'); el.setAttribute('translate','no');
++    el.innerHTML='<div class="h">OE · '+escP(btn.getAttribute('data-ctr')||'')+(list.length>1?' · '+list.length+'개':'')+'</div>'
++      +(list.length?'<div class="l">'+list.map(function(x){ return '<span>'+escP(x)+'</span>'; }).join('')+'</div>':'<div>등록된 OE 없음</div>');
++    // 여러 개면 2~3열로 펼쳐 세로로 길어지지 않게(화면 폭 안에서)
++    const cols=Math.min(3, Math.max(1, Math.ceil(list.length/4)));
++    el.style.width=Math.min(cols*132+24, (window.innerWidth||1024)-16)+'px';
++    document.body.appendChild(el);
++    const r=btn.getBoundingClientRect(), w=el.offsetWidth, h=el.offsetHeight, vw=window.innerWidth||1024, vh=window.innerHeight||768;
++    let top=r.bottom+6; if(top+h>vh-8 && r.top-6-h>=8) top=r.top-6-h;
++    let left=Math.min(Math.max(8, r.left), Math.max(8, vw-w-8));
++    el.style.top=Math.max(8,top)+'px'; el.style.left=left+'px';
++  }
++  window.addEventListener('scroll', vmOeHide, true);
++
+   function vmCodeBtn(ctr, syd, oe){
+     // 코드 버튼 — CTR: 마우스 올리면 OE · 누르면 사진 / SYD: 누르면 SYD 사진
+-    if(ctr) return '<button type="button" class="vm-code" translate="no" data-ctr="'+escP(ctr)+'" data-syd="'+escP(syd||'')+'">'+escP(ctr)
+-      +'<span class="tip">OE: '+escP(oe&&oe.length?oe.join(' · '):'등록 없음')+'</span></button>';
++    if(ctr) return '<button type="button" class="vm-code" translate="no" data-ctr="'+escP(ctr)+'" data-syd="'+escP(syd||'')+'" data-oe="'+escP((oe||[]).join('|'))+'" aria-label="'+escP(ctr+' · OE '+((oe&&oe.length)?oe.join(', '):'등록 없음'))+'">'+escP(ctr)
++      +'</button>';
+     return syd?'<button type="button" class="vm-code" translate="no" data-ctr="" data-syd="'+escP(syd)+'">'+escP(syd)+'</button>':'—';
+   }
+ 
+@@ -1518,7 +1546,8 @@
+       +'<div class="ctr"><div class="k" translate="no">CTR</div><div class="v">'+(isC?vmCodeBtn(it.code, sydTxt, it.oe):'<span style="color:#767676">없음</span>')+'</div></div>'
+       +'<div><div class="k" translate="no">SYD</div><div class="v">'+((it.syd||[]).length?(it.syd||[]).map(function(s){ return isC?'<span translate="no">'+escP(s)+'</span>':vmCodeBtn('', s); }).join(' · '):'—')+'</div></div>'
+       +'<div><div class="k" translate="no">BAW</div><div class="v" translate="no">'+((it.baw||[]).length?escP(it.baw.join(' · ')):'—')+'</div></div>'
+-      +'</div>';
++      +'</div>'
++      +(isC?'<div class="vm-oe" translate="no"><b>OE</b> '+((it.oe||[]).length?escP(it.oe.join(' · ')):'등록 없음')+'</div>':'');
+     if(isC){
+       const boC=Number(it.backorder_qty)>0?' style="color:#CC0008"':'', stC=Number(it.stock_qty)>0?'':' style="color:#B34700"';
+       h+='<div class="vm-qty" translate="no">'
+@@ -3221,7 +3250,7 @@
+   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
+   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
+ 
+-  try{ console.log('[refatrix-products] build ps-1127vo (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더)'); }catch(e){}
++  try{ console.log('[refatrix-products] build ps-1127vp (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더 · OE 말풍선)'); }catch(e){}
+   $('resyncBtn').addEventListener('click',resyncDerived);
+   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
+   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
