@@ -352,3 +352,20 @@ test('1127 · 고객 찾기: 단어 가운데 포함은 「같음」이 아님',
   assert.ok(nameScore('toro', 'TALLER DE MOTOROS') < 85);
   assert.equal(nameScore('toro', 'Refaccionaria El Toro'), 85);
 });
+
+test('1127 · ERP 고객 ↔ 고객개발 양식: 주소 나누기 · ERP→양식 · 양식→ERP', async () => {
+  const { parseMxAddress, prefillFromCustomer, customerFillFromValues, mergeForReview } = await import('../src/prospectCore.js');
+  assert.deepEqual(parseMxAddress('Av. Insurgentes Sur 1234, Col. Del Valle, C.P. 03100, Benito Juárez, CDMX'),
+    { cp: '03100', colonia: 'Del Valle', estado: 'Ciudad de México', cve_ent: '09', calle: 'Av. Insurgentes Sur', numero: '1234', ciudad: 'Benito Juárez' });
+  const a = parseMxAddress('Av Ruiz Cortines 2500 Col. Moderna, Monterrey NL');
+  assert.equal(a.colonia, 'Moderna'); assert.equal(a.ciudad, 'Monterrey'); assert.equal(a.estado, 'Nuevo León'); assert.equal(a.numero, '2500');
+  assert.equal(parseMxAddress('CALLE 21 SN, CENTRO, 97380 Acanceh, Yucatán').ciudad, 'Acanceh');
+  const v = prefillFromCustomer({ name: 'X', ship_address: 'Calle 60 #500, Col. Centro, C.P. 97000, Mérida, Yucatán', phone: '999 111 2222', buyer_phone: '9993334444', buyer_name: 'Juan', contact: 'j@x.mx', rfc: 'abc', branch_count: 2 });
+  assert.equal(v['datos_generales.codigo_postal'], '97000'); assert.equal(v['datos_generales.contacto_principal'], 'Juan');
+  assert.equal(v['datos_generales.telefono_2'], '9993334444'); assert.equal(v['facturacion.rfc'], 'ABC'); assert.equal(v['tamano_cliente.num_sucursales'], 2);
+  const m = mergeForReview({ prefill: { 'datos_generales.colonia': 'DENUE col' }, erp: { 'datos_generales.colonia': 'ERP col', 'datos_generales.telefono': '1' }, saved: { 'datos_generales.telefono': '2' } });
+  assert.deepEqual([m['datos_generales.colonia'].source, m['datos_generales.colonia'].value], ['erp', 'ERP col']);   // ERP > DENUE
+  assert.equal(m['datos_generales.telefono'].source, 'guardado');                                                   // 저장값 > ERP
+  const c = customerFillFromValues({ 'datos_generales.calle': 'Calle Hidalgo', 'datos_generales.numero': '120', 'datos_generales.colonia': 'Centro', 'datos_generales.codigo_postal': '64000', 'datos_generales.ciudad': 'Monterrey', 'facturacion.rfc': 'NO' });
+  assert.equal(c.ship_address, 'Calle Hidalgo 120, Col. Centro, C.P. 64000, Monterrey'); assert.equal(c.rfc, undefined);
+});

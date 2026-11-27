@@ -92,7 +92,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--pill);font-size:12px;font-weight:700;background:var(--surface);white-space:nowrap}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 .src{font-size:11px;font-weight:800;padding:1px 7px;border-radius:var(--pill);margin-left:6px;vertical-align:1px}
-.src.ia{background:var(--ink);color:#fff} .src.denue{background:var(--surface);color:var(--ink2);border:1px solid var(--line)}
+.src.ia{background:var(--ink);color:#fff} .src.denue{background:var(--surface);color:var(--ink2);border:1px solid var(--line)} .src.erp{background:#E8F0FE;color:#1F4FB8;border:1px solid #BFD3F7}
 .src.guardado{background:var(--ok-soft);color:var(--ok)} .src.vacio{background:var(--bad-soft);color:var(--bad)}
 .evid{font-size:12px;color:var(--muted);font-weight:400;font-style:italic}
 /* ❓ 질문 항목 */
@@ -198,15 +198,16 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 
   <div class="toolbar">
   <nav class="tabs" role="tablist" id="tabs">
+    <!-- 1127 · 사용 순서대로: 진척 보드 → 목표 → 지역·담당 → 지도 → 오늘 루트 → 검토 대기 → 연결 승인 → 현황판 → 후보 목록 → DENUE -->
     <button class="tab" role="tab" data-tab="board">진척 보드</button>
-    <button class="tab work" role="tab" data-tab="route">오늘 루트</button>
-    <button class="tab work" role="tab" data-tab="dash">현황판</button>
+    <button class="tab dir" role="tab" data-tab="targets">목표</button>
+    <button class="tab work" role="tab" data-tab="terr">지역·담당</button>
     <button class="tab work" role="tab" data-tab="map">지도</button>
-    <button class="tab work" role="tab" data-tab="list">후보 목록</button>
+    <button class="tab work" role="tab" data-tab="route">오늘 루트</button>
     <button class="tab work" role="tab" data-tab="review">검토 대기<span class="cnt hide" id="rv-cnt">0</span></button>
     <button class="tab dir" role="tab" data-tab="links">연결 승인<span class="cnt hide" id="lk-cnt">0</span></button>
-    <button class="tab work" role="tab" data-tab="terr">지역·담당</button>
-    <button class="tab dir" role="tab" data-tab="targets">목표</button>
+    <button class="tab work" role="tab" data-tab="dash">현황판</button>
+    <button class="tab work" role="tab" data-tab="list">후보 목록</button>
     <button class="tab dir" role="tab" data-tab="import">DENUE 가져오기</button>
   </nav>
   <div class="filters">
@@ -580,7 +581,7 @@ async function init(){
   const h=new URLSearchParams(location.hash.slice(1));
   if(h.get('review')&&h.get('prospect')) openReview(Number(h.get('prospect')),Number(h.get('review')));
   else if(h.get('prospect')) openProspect(Number(h.get('prospect')));
-  show(h.get('tab')||(!META.can_work?'board':isMobile()||!isDir?'route':'dash'));
+  show(h.get('tab')||(!META.can_work?'board':isMobile()||!isDir?'route':'board'));   // 1127 · 디렉터·관리자는 첫 탭(진척 보드)부터, 담당자·휴대폰은 오늘 루트
 }
 
 // ── 탭 ──
@@ -1393,7 +1394,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
 
 // ── ❓ 질문 항목 — 고객별로 파악할 항목(Alta 양식)과 지금까지 확보한 답 ──
 //   답: 저장됨(검토·저장한 값) > AI 초안(녹음에서, 검토 전) > DENUE(방문 전 자동) · 없으면 「아직 모름」
-const QSRC={guardado:['저장됨','guardado'],ia:['AI 초안 · 검토 전','ia'],denue:['DENUE','denue']};
+const QSRC={guardado:['저장됨','guardado'],ia:['AI 초안 · 검토 전','ia'],denue:['DENUE','denue'],erp:['ERP 고객','erp']};
 function qFmt(f,v){
   if(v==null||v===''||(Array.isArray(v)&&!v.length)) return null;
   if(Array.isArray(v)) return v.join(', ');
@@ -1465,7 +1466,7 @@ async function openProspect(id){
         (v.checkin_dist_m!=null?' · <span class="'+(v.checkin_dist_m>META.checkin_warn_m?'st-warn':'note')+'">'+fmt(v.checkin_dist_m)+'m</span>':'')+
         '<div class="note">'+esc(v.resumen||({queued:'녹음 대기',transcribing:'받아쓰는 중',summarizing:'요약 중',failed:'녹음 처리 실패'}[v.rec_status]||'녹음 없음'))+'</div></div>'+
         '<button class="btn '+(v.review_status==='confirmado'?'ghost':'')+' sm" data-review="'+p.id+':'+v.id+'">'+(v.review_status==='confirmado'?'보기':'검토')+'</button></div>').join(''):'<p class="note">아직 방문이 없습니다.</p>')+'</div>'+
-    '<div class="sec"><h3>기존 고객 연결</h3><div id="dp-link">'+(d.customer?'<div class="card flat" style="background:var(--ok-soft)"><b>'+esc(d.customer.code+' · '+d.customer.name)+'</b><div class="note">연결됨'+(isDir?' · <a href="#" id="dp-unlink">연결 해제</a>':'')+'</div></div>':
+    '<div class="sec"><h3>기존 고객 연결</h3><div id="dp-link">'+(d.customer?'<div class="card flat" style="background:var(--ok-soft)"><b>'+esc(d.customer.code+' · '+d.customer.name)+'</b><div class="note">연결됨'+(isDir?' · <a href="#" id="dp-unlink">연결 해제</a>':'')+'</div>'+erpCard(d.erp)+'</div>':
         (d.links.find(l=>l.status==='solicitado')?'<div class="banner warn">연결 승인 대기: '+esc(d.links.find(l=>l.status==='solicitado').customer_name)+'</div>':'<p class="note">비슷한 고객을 찾는 중…</p>'))+'</div>'+
       (!d.customer?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn ghost sm" id="dp-copy">고객 등록용 값 복사</button><a class="btn ghost sm" href="refatrix-customers.html" target="_blank" rel="noopener">고객 등록 화면</a></div><p class="note">고객 등록이 승인되면 여기서 그 고객을 골라 연결하세요. 방문·녹음·양식 값이 고객 이력으로 이어집니다.</p>':'')+'</div>'+
     '<div class="sec"><h3>이력</h3>'+d.history.slice(0,12).map(h=>'<div class="note">'+esc(String(h.created_at).slice(0,16).replace('T',' '))+' · '+esc((STAGE[h.from_stage]||{}).ko||'—')+' → <b>'+esc((STAGE[h.to_stage]||{}).ko||h.to_stage)+'</b>'+(h.reason?' · '+esc(h.reason):'')+(h.user_name?' · '+esc(h.user_name):'')+'</div>').join('')+'</div>';
@@ -1487,6 +1488,22 @@ async function openProspect(id){
   if($('dp-unlink')) $('dp-unlink').onclick=async(e)=>{ e.preventDefault(); if(!confirm('고객 연결을 해제할까요?')) return; await api('/api/prospects/'+p.id+'/link',{method:'DELETE'}); openProspect(p.id); };
   if($('dp-copy')) $('dp-copy').onclick=async()=>{ try{ const r=await api('/api/prospects/'+p.id+'/customer-prefill'); const t=Object.entries(r.values).map(([k,v])=>k+': '+(Array.isArray(v)?v.join(', '):v)).join('\n'); await navigator.clipboard.writeText(t); toast('복사했습니다'+(r.missing.length?' · 필수 '+r.missing.length+'개 비어 있음':'')); }catch(e){ toast('복사 실패'); } };
   if(!d.customer && !d.links.find(l=>l.status==='solicitado')) loadMatches(p.id);
+  if($('dp-erpfill')) $('dp-erpfill').onclick=()=>erpFill(p.id);
+}
+// 1127 · 연결된 ERP 고객 정보(읽기) — 주소·연락처가 이 업체 정보·양식의 빈 칸에 자동으로 들어감
+function erpCard(e){
+  if(!e) return '';
+  const row=(l,v)=>v!=null&&String(v).trim()!==''?'<div style="display:flex;gap:8px"><span class="note" style="min-width:92px">'+l+'</span><span>'+esc(String(v))+'</span></div>':'';
+  const body=row('배송지 주소',e.ship_address)+row('전화',e.phone)+row('구매결정권자',[e.buyer_name,e.buyer_phone].filter(Boolean).join(' · '))+row('이메일',e.email)+row('RFC',e.rfc)+row('지점 수',e.branch_count)+row('고객 유형',e.customer_type)+row('ERP 담당',e.owner_name)+row('도시·주(웹 문의)',[e.ciudad,e.estado].filter(Boolean).join(', '));
+  return '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:13px;display:flex;flex-direction:column;gap:3px"><b style="font-size:12px">ERP 고객 정보</b>'+(body||'<span class="note">ERP에 주소·연락처가 아직 없습니다.</span>')+
+    '<span class="note" style="margin-top:4px">ERP 정보는 이 업체 기본 정보와 「Alta de clientes」 양식의 빈 칸에 자동으로 들어갑니다(파란 「ERP 고객」 표시 — 검토에서 저장하면 확정).</span>'+
+    (isDir?'<button class="btn ghost sm" id="dp-erpfill" style="margin-top:6px;align-self:flex-start">고객개발 정보로 ERP 빈 칸 채우기</button>':'')+'</div>';
+}
+async function erpFill(pid){
+  let r; try{ r=await post('/api/prospects/'+pid+'/erp-fill',{apply:false}); }catch(e){ return toast('실패: '+e.message); }
+  if(!r.fields.length) return toast('ERP에 채울 빈 칸이 없습니다(이미 있거나 고객개발 쪽에도 정보가 없음)');
+  if(!confirm('ERP 고객 '+r.customer.code+' · '+r.customer.name+'의 빈 칸을 채울까요?\n\n'+r.fields.map(f=>'· '+f.label+': '+f.value).join('\n')+'\n\n이미 값이 있는 칸과 RFC 는 바꾸지 않습니다.')) return;
+  try{ const x=await post('/api/prospects/'+pid+'/erp-fill',{apply:true}); toast('ERP 고객 정보 '+x.fields.length+'칸을 채웠습니다'); openProspect(pid); }catch(e){ toast('실패: '+e.message); }
 }
 // 개발 점수 · 구성 · 추이 · 제안
 function scoreBlock(d){
@@ -1544,7 +1561,7 @@ async function openReview(pid,cid){
   });
   const input=(f)=>{
     const v=V[f.key]||{}; const val=v.value; const id='fv-'+f.key.replace(/\./g,'__');
-    const badge=v.source==='ia'?'<span class="src ia">IA'+(v.confidence?' · '+esc(v.confidence):'')+'</span>':v.source==='denue'?'<span class="src denue">DENUE</span>':v.source==='guardado'?'<span class="src guardado">저장됨</span>':(f.fill||[]).includes('manual')&&!(f.fill||[]).includes('ia')?'':'<span class="src vacio">없음</span>';
+    const badge=v.source==='ia'?'<span class="src ia">IA'+(v.confidence?' · '+esc(v.confidence):'')+'</span>':v.source==='denue'?'<span class="src denue">DENUE</span>':v.source==='erp'?'<span class="src erp" title="연결된 ERP 고객 정보 — 확인 후 저장하면 확정">ERP 고객</span>':v.source==='guardado'?'<span class="src guardado">저장됨</span>':(f.fill||[]).includes('manual')&&!(f.fill||[]).includes('ia')?'':'<span class="src vacio">없음</span>';
     const cls=(v.source==='ia'?'isai ':'')+(v.confidence==='baja'?'lowconf':'');
     let ctl;
     if(f.type==='multiselect'){ const arr=Array.isArray(val)?val:[];

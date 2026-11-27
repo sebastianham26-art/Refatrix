@@ -18,7 +18,7 @@ import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard
 import { logEvent } from '../audit.js';
 import {
   STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, estimateRoute, stateFromCp, nameScore, nameTokens, normTxt, ROUTE_SETTINGS_DEFAULT, checkStageMove, autoAdvance, normalizeImportRow,
-  territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues,
+  territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues, parseMxAddress, prefillFromCustomer, customerFillFromValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
   STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
   inPolygon, distanceM, rankForRoute, optimizeRoute, routeMinutes, weekBounds, planDays, nextWorkDates, convexHull, pickDayRoute,
@@ -430,6 +430,45 @@ export default async function prospectRoutes(app) {
     out.sort((a, b) => (b.exact - a.exact) || ((b.erp ? 1 : 0) - (a.erp ? 1 : 0)) || (b.match - a.match));
     return { q, rows: out.slice(0, 30) };
   });
+  // ── ERP 고객 ↔ 고객개발 정보 교차(1127) ──
+  // ERP 고객 정보(+ 웹 문의의 도시·주)
+  async function customerInfo(q, cid) {
+    if (!cid) return null;
+    const c = (await q(`SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.buyer_name, c.buyer_phone, c.ship_address, c.branch_count,
+                               c.customer_type, c.owner_id, u.name AS owner_name, c.approval_status,
+                               (SELECT l.ciudad FROM crm_web_leads l WHERE l.customer_id=c.id AND COALESCE(l.ciudad,'')<>'' ORDER BY l.received_at DESC LIMIT 1) AS crm_ciudad,
+                               (SELECT l.estado FROM crm_web_leads l WHERE l.customer_id=c.id AND COALESCE(l.estado,'')<>'' ORDER BY l.received_at DESC LIMIT 1) AS crm_estado
+                          FROM customers c LEFT JOIN users u ON u.id=c.owner_id WHERE c.id=$1 AND c.deleted_at IS NULL`, [Number(cid)])
+      .catch(() => q(`SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.buyer_name, c.buyer_phone, c.ship_address, c.branch_count, c.customer_type, c.owner_id,
+                             u.name AS owner_name FROM customers c LEFT JOIN users u ON u.id=c.owner_id WHERE c.id=$1 AND c.deleted_at IS NULL`, [Number(cid)]))).rows[0];
+    return c || null;
+  }
+  // 연결된 ERP 고객 → 후보 기본 정보(주소·콜로니아·CP·시·주·전화·메일) 빈 칸만 채움(사람이 넣은 값은 그대로)
+  async function syncProspectFromCustomer(q, pid) {
+    const p = (await q(`SELECT id, customer_id FROM prospects WHERE id=$1`, [pid])).rows[0];
+    if (!p || !p.customer_id) return 0;
+    const c = await customerInfo(q, p.customer_id); if (!c) return 0;
+    const a = parseMxAddress(c.ship_address);
+    const addr = [a.calle, a.numero].filter(Boolean).join(' ') || null;
+    const email = c.contact && /@/.test(c.contact) ? c.contact : null;
+    const r = await q(`UPDATE prospects SET
+        address   = CASE WHEN COALESCE(address,'')=''   THEN COALESCE($2, address)   ELSE address END,
+        colonia   = CASE WHEN COALESCE(colonia,'')=''   THEN COALESCE($3, colonia)   ELSE colonia END,
+        cp        = CASE WHEN COALESCE(cp,'')=''        THEN COALESCE($4, cp)        ELSE cp END,
+        municipio = CASE WHEN COALESCE(municipio,'')='' THEN COALESCE($5, municipio) ELSE municipio END,
+        entidad   = CASE WHEN COALESCE(entidad,'')=''   THEN COALESCE($6, entidad)   ELSE entidad END,
+        cve_ent   = CASE WHEN COALESCE(cve_ent,'')=''   THEN COALESCE($7, cve_ent)   ELSE cve_ent END,
+        phone     = CASE WHEN COALESCE(phone,'')=''     THEN COALESCE($8, phone)     ELSE phone END,
+        email     = CASE WHEN COALESCE(email,'')=''     THEN COALESCE($9, email)     ELSE email END
+      WHERE id=$1 AND (COALESCE(address,'')='' OR COALESCE(colonia,'')='' OR COALESCE(cp,'')='' OR COALESCE(municipio,'')=''
+                       OR COALESCE(entidad,'')='' OR COALESCE(phone,'')='' OR COALESCE(email,'')='')`,
+      [pid, addr, a.colonia || null, a.cp || null, a.ciudad || c.crm_ciudad || null, a.estado || c.crm_estado || null, a.cve_ent || null,
+        String(c.phone || c.buyer_phone || '').trim() || null, email]);
+    return r.rowCount;
+  }
+  // 양식용 ERP 값(연결된 고객이 있을 때)
+  async function erpPrefill(q, p) { return p && p.customer_id ? prefillFromCustomer(await customerInfo(q, p.customer_id)) : {}; }
+
   // ERP 고객 → 후보(없으면 만든다). 이미 있는 고객이라 고객개발 실적(첫 방문·단계·점수)에는 넣지 않는다:
   //   ERP 상태에 맞는 단계로 시작하되 그 단계 이력·점수 로그는 남기지 않음(기준선). 이후 방문은 「방문」으로만 셈.
   async function prospectForCustomer(customerId, visitorId) {
@@ -446,6 +485,7 @@ export default async function prospectRoutes(app) {
         `INSERT INTO prospects (nom_estab, segment, priority, lat, lng, phone, cve_ent, entidad, source, customer_id, owner_user_id, assigned_at, stage, created_by)
          VALUES ($1,'refaccionaria','B',$2,$3,$4,$5,$6,'manual',$7,$8,now(),'asignado',$9) RETURNING id`,
         [c.name, g ? g.lat : null, g ? g.lng : null, c.phone, st.cve_ent, st.entidad, customerId, owner, visitorId])).rows[0].id);
+      await syncProspectFromCustomer(q, id);   // 주소·콜로니아·CP·전화 등 ERP 정보로 채움
       await recomputeProspect(q, id, { userId: visitorId, reason: 'cliente ERP (ruta)' });
       await q(`DELETE FROM prospect_stage_history WHERE prospect_id=$1`, [id]);
       await q(`DELETE FROM prospect_score_log WHERE prospect_id=$1`, [id]);
@@ -558,8 +598,11 @@ export default async function prospectRoutes(app) {
 
   // ── 상세 ───────────────────────────────────────────────────────────
   app.get('/api/prospects/:id', view, async (req, reply) => {
-    const p = await loadProspect(req, req.params.id);
+    let p = await loadProspect(req, req.params.id);
     if (!p) return reply.code(404).send({ error: 'not_found' });
+    // 1127 · 연결된 ERP 고객 정보로 빈 칸 채우기(볼 때마다 — 비어 있을 때만 씀)
+    if (p.customer_id) { try { if (await syncProspectFromCustomer(query, Number(p.id))) p = await loadProspect(req, req.params.id); } catch (e) { req.log.warn({ err: e }, 'erp sync'); } }
+    const erpInfo = p.customer_id ? await customerInfo(query, p.customer_id).catch(() => null) : null;
     const id = Number(p.id);
     const [visits, hist, crm, links] = await Promise.all([
       query(`SELECT c.id, c.consult_date, c.created_at, c.created_by, u.name AS user_name, c.contact_name, c.review_status,
@@ -582,6 +625,9 @@ export default async function prospectRoutes(app) {
     const cust = p.customer_id ? (await query(`SELECT id, code, name, approval_status FROM customers WHERE id=$1`, [p.customer_id])).rows[0] : null;
     return {
       prospect: { ...pub(p), owner_name: owner ? owner.name : null, upload }, customer: cust || null,
+      erp: erpInfo ? { id: Number(erpInfo.id), code: erpInfo.code, name: erpInfo.name, rfc: erpInfo.rfc, email: erpInfo.contact, phone: erpInfo.phone,
+        buyer_name: erpInfo.buyer_name, buyer_phone: erpInfo.buyer_phone, ship_address: erpInfo.ship_address, branch_count: erpInfo.branch_count,
+        customer_type: erpInfo.customer_type, owner_name: erpInfo.owner_name, ciudad: erpInfo.crm_ciudad || null, estado: erpInfo.crm_estado || null } : null,
       visits: visits.rows.map((v) => ({ ...v, id: Number(v.id), created_by: Number(v.created_by), rec_id: v.rec_id ? Number(v.rec_id) : null })),
       history: hist.rows, crm: Object.fromEntries(crm.rows.map((r) => [r.field_key, r.value])),
       crm_missing: missingRequired(Object.fromEntries(crm.rows.map((r) => [r.field_key, r.value]))),
@@ -973,7 +1019,14 @@ export default async function prospectRoutes(app) {
   });
 
   // ── 루트 ───────────────────────────────────────────────────────────
-  async function routeStops(rid) {
+  async function routeStops(rid, again = true) {
+    const rows = await routeStopsRaw(rid);
+    // 1127 · ERP 고객인데 주소가 비어 있는 정류장 → ERP 정보로 채우고 다시 읽음(한 번만)
+    const need = rows.filter((x) => x.customer_id && !x.address && !x.colonia);
+    if (again && need.length) { let n = 0; for (const x of need) n += await syncProspectFromCustomer(query, x.id).catch(() => 0); if (n) return routeStopsRaw(rid); }
+    return rows;
+  }
+  async function routeStopsRaw(rid) {
     return (await query(
       `SELECT s.seq, s.consult_id, p.id, p.score, p.nom_estab, p.address, p.colonia, p.municipio, p.lat, p.lng, p.phone, p.stage, p.priority, p.segment, p.customer_id,
               c.review_status, c.created_at AS checkin_at
@@ -1521,7 +1574,7 @@ export default async function prospectRoutes(app) {
         duration_sec: rec.duration_sec, resumen: (draft && draft.resumen) || (summary && summary.resumen) || null,
         next_step: (draft && draft.siguiente_paso) || (summary && summary.next_step) || null,
         next_date: draft && draft.fecha_siguiente_paso, stage_suggested: draft && draft.etapa_sugerida } : null,
-      fields: ALTA_FIELDS, values: mergeForReview({ prefill, saved, draft }),
+      fields: ALTA_FIELDS, values: mergeForReview({ prefill, saved, draft, erp: await erpPrefill(query, p) }),
     };
   });
 
@@ -1535,7 +1588,7 @@ export default async function prospectRoutes(app) {
       `SELECT r.alta_draft FROM sales_consult_recordings r JOIN sales_consults c ON c.id=r.consult_id
         WHERE c.prospect_id=$1 AND c.deleted_at IS NULL AND r.alta_status='done' AND COALESCE(c.review_status,'por_revisar') <> 'confirmado'
         ORDER BY r.id DESC LIMIT 1`, [p.id])).rows[0];
-    const values = mergeForReview({ prefill: prefillFromProspect(p), saved, draft: dr ? parseJ(dr.alta_draft) : null });
+    const values = mergeForReview({ prefill: prefillFromProspect(p), saved, draft: dr ? parseJ(dr.alta_draft) : null, erp: await erpPrefill(query, p) });
     const has = (v) => v && v.value != null && v.value !== '' && !(Array.isArray(v.value) && !v.value.length);
     for (const [k, v] of Object.entries(values)) if (v.source === 'ia' && !has(v) && v.saved != null) values[k] = { value: v.saved, source: 'guardado' };
     const scored = ALTA_FIELDS.filter((f) => f.section !== 'facturacion');
@@ -1616,6 +1669,26 @@ export default async function prospectRoutes(app) {
     return { rows: suggestCustomers(probe, cust) };
   });
 
+  // 1127 · 고객개발 → ERP: ERP 고객의 빈 칸(배송지·전화·구매결정권자·이메일·지점 수)을 고객개발 정보로 채움. RFC 는 안 건드림.
+  //   디렉터·관리자만 · apply=false 면 미리보기
+  app.post('/api/prospects/:id/erp-fill', edit, async (req, reply) => {
+    if (!directorOnly(req, reply)) return;
+    const p = await loadProspect(req, req.params.id);
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    if (!p.customer_id) return reply.code(400).send({ error: 'not_linked' });
+    const c = await customerInfo(query, p.customer_id); if (!c) return reply.code(404).send({ error: 'customer_not_found' });
+    const saved = Object.fromEntries((await query(`SELECT field_key, value FROM prospect_crm_values WHERE prospect_id=$1`, [p.id])).rows.map((r) => [r.field_key, r.value]));
+    const want = customerFillFromValues({ ...prefillFromProspect(p), ...saved });   // 저장값 우선, 없으면 DENUE·기본 정보
+    const LBL = { ship_address: '배송지 주소', phone: '전화', buyer_name: '구매결정권자', buyer_phone: '구매결정권자 전화', contact: '이메일', branch_count: '지점 수' };
+    const empty = (v) => v == null || String(v).trim() === '' || (typeof v === 'number' && v <= 0);
+    const fields = Object.entries(want).filter(([k]) => empty(c[k])).map(([k, v]) => ({ key: k, label: LBL[k], value: v }));
+    if (!req.body?.apply || !fields.length) return { customer: { id: Number(c.id), code: c.code, name: c.name }, fields, applied: false };
+    const sets = fields.map((f, i) => `${f.key}=$${i + 2}`);
+    await query(`UPDATE customers SET ${sets.join(', ')}, updated_by=$${fields.length + 2} WHERE id=$1`, [c.id, ...fields.map((f) => f.value), me(req)]);
+    await logEvent({ userId: me(req), action: 'update', target: `customer:${c.id}`, detail: { from_prospect: Number(p.id), fill: Object.fromEntries(fields.map((f) => [f.key, f.value])) } });
+    return { customer: { id: Number(c.id), code: c.code, name: c.name }, fields, applied: true };
+  });
+
   app.post('/api/prospects/:id/link', edit, async (req, reply) => {
     const p = await loadProspect(req, req.params.id, { unassigned: false });
     if (!p) return reply.code(404).send({ error: 'not_found' });
@@ -1642,6 +1715,7 @@ export default async function prospectRoutes(app) {
     await q(`UPDATE prospects SET customer_id=$2, updated_at=now() WHERE id=$1`, [p.id, customerId]);
     // 이 후보의 방문(상담)도 고객 이력에 보이도록 상담에 고객 연결(비어 있는 것만)
     await q(`UPDATE sales_consults SET customer_id=$2 WHERE prospect_id=$1 AND customer_id IS NULL`, [p.id, customerId]);
+    await syncProspectFromCustomer(q, Number(p.id));   // 1127 · ERP 고객 주소·연락처로 빈 칸 채움
     await recomputeProspect(q, Number(p.id), { userId, reason: 'vinculado a cliente' });
   }
   app.get('/api/prospect-links', view, async (req, reply) => {

@@ -305,6 +305,70 @@ export function prefillFromProspect(p) {
   return v;
 }
 
+// ── ERP 고객 ↔ 고객개발 양식 (1127) ─────────────────────────────────────
+// ERP 배송지 한 줄(예: "Av. Insurgentes Sur 1234, Col. Del Valle, C.P. 03100, Benito Juárez, CDMX") → 칸
+const COL_RE = /^(col\.?|colonia|fracc\.?|fraccionamiento|barrio|residencial|unidad|privada|ampliaci[oó]n|ampl\.?)\s+/i;
+export function parseMxAddress(text) {
+  const src = String(text || '').replace(/\s+/g, ' ').trim(); if (!src) return {};
+  const out = {};
+  const cpm = src.match(/(?:c\.?\s?p\.?|c[oó]digo postal)\s*:?\s*(\d{5})/i) || src.match(/\b(\d{5})\b/);
+  if (cpm) out.cp = cpm[1];
+  // 쉼표 없이 쓴 주소: Col./C.P. 앞에서 끊는다
+  let parts = src.replace(/\s+(?=(?:col\.|colonia|c\.\s?p\.)\s*)/gi, ', ').split(/\s*[,;]\s*/).map((x) => x.trim()).filter(Boolean);
+  parts = parts.map((x) => x.replace(/(?:c\.?\s?p\.?|c[oó]digo postal)\s*:?\s*\d{5}/i, '').replace(out.cp ? new RegExp('\\b' + out.cp + '\\b') : /$^/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  // 마지막 칸 끝에 주 이름이 붙어 있으면(… Monterrey NL) 떼어 낸다
+  if (parts.length) {
+    const w = parts[parts.length - 1].split(' ');
+    for (let n = Math.min(4, w.length - 1); n >= 1; n--) { const c = ST_ALIAS[fold(w.slice(-n).join(' '))]; if (c) { parts[parts.length - 1] = w.slice(0, -n).join(' '); parts.push(w.slice(-n).join(' ')); break; } }
+  }
+  const ci = parts.findIndex((x) => COL_RE.test(x));
+  if (ci >= 0) { out.colonia = parts[ci].replace(/^(col\.?|colonia)\s+/i, '').trim(); parts.splice(ci, 1); }
+  // 주(州): 마지막 쪽에서 주 이름
+  for (let i = parts.length - 1; i >= 1; i--) { const c = ST_ALIAS[fold(parts[i])]; if (c) { out.estado = ST_BY_CVE[c]; out.cve_ent = c; parts.splice(i, 1); break; } }
+  if (parts.length) {
+    const st = parts.shift();
+    const m = st.match(/^(.*?)\s*(?:#|no\.?|n[uú]m\.?)?\s*(\d+[A-Za-z]?(?:\s*-\s*\d+)?(?:\s*(?:int\.?|interior|local|loc\.?)\s*\S+)?|s\/?n)$/i);
+    if (m && m[1]) { out.calle = m[1].replace(/[#\s]+$/, '').trim(); out.numero = m[2].toUpperCase() === 'SN' || /^s\/n$/i.test(m[2]) ? 'SN' : m[2]; } else out.calle = st;
+  }
+  if (!out.colonia && parts.length >= 2) out.colonia = parts.shift();
+  if (parts.length) out.ciudad = parts[parts.length - 1];
+  if (!out.estado && out.cp) { const c = stateFromCp(out.cp); if (c) { out.estado = ST_BY_CVE[c]; out.cve_ent = c; } }
+  return out;
+}
+// ERP 고객 → Alta de clientes 칸(값 있는 것만). c = customers 행 + crm_ciudad/crm_estado(웹 문의)
+export function prefillFromCustomer(c) {
+  if (!c) return {};
+  const v = {}; const set = (k, val) => { if (val != null && String(val).trim() !== '') v[k] = typeof val === 'string' ? val.trim() : val; };
+  const a = parseMxAddress(c.ship_address);
+  set('datos_generales.nombre_cuenta', c.name);
+  set('datos_generales.calle', a.calle); set('datos_generales.numero', a.numero); set('datos_generales.colonia', a.colonia);
+  set('datos_generales.codigo_postal', a.cp); set('datos_generales.ciudad', a.ciudad || c.crm_ciudad);
+  set('datos_generales.estado', a.estado || (c.crm_estado ? (ST_BY_CVE[ST_ALIAS[fold(c.crm_estado)]] || c.crm_estado) : null));
+  set('datos_generales.contacto_principal', c.buyer_name);
+  const ph = String(c.phone || '').trim(), bp = String(c.buyer_phone || '').trim();
+  set('datos_generales.telefono', ph || bp); if (ph && bp && ph.replace(/\D/g, '') !== bp.replace(/\D/g, '')) set('datos_generales.telefono_2', bp);
+  if (c.contact && /@/.test(c.contact)) set('datos_generales.correo', c.contact);
+  set('facturacion.rfc', c.rfc ? String(c.rfc).toUpperCase() : null);
+  if (c.branch_count != null && Number(c.branch_count) > 0) set('tamano_cliente.num_sucursales', Number(c.branch_count));
+  return v;
+}
+// 고객개발 양식 값 → ERP 고객 칸(ERP 가 비어 있을 때만 채우는 용도). RFC 는 선점 키라 넣지 않는다.
+export function customerFillFromValues(vals) {
+  const g = (k) => { const x = vals[k]; return x == null || x === '' || (Array.isArray(x) && !x.length) ? null : x; };
+  const line = [[g('datos_generales.calle'), g('datos_generales.numero')].filter(Boolean).join(' '),
+    g('datos_generales.colonia') ? 'Col. ' + g('datos_generales.colonia') : null,
+    g('datos_generales.codigo_postal') ? 'C.P. ' + g('datos_generales.codigo_postal') : null,
+    g('datos_generales.ciudad'), g('datos_generales.estado')].filter(Boolean).join(', ');
+  const out = {};
+  if (line && (g('datos_generales.calle') || g('datos_generales.colonia'))) out.ship_address = line;
+  if (g('datos_generales.telefono')) out.phone = String(g('datos_generales.telefono'));
+  if (g('datos_generales.contacto_principal')) out.buyer_name = String(g('datos_generales.contacto_principal'));
+  if (g('datos_generales.telefono_2')) out.buyer_phone = String(g('datos_generales.telefono_2'));
+  if (g('datos_generales.correo')) out.contact = String(g('datos_generales.correo'));
+  if (g('tamano_cliente.num_sucursales') != null && Number(g('tamano_cliente.num_sucursales')) > 0) out.branch_count = Number(g('tamano_cliente.num_sucursales'));
+  return out;
+}
+
 // ── Alta de clientes: AI 추출 프롬프트 ─────────────────────────────────
 export function iaFields() {
   return ALTA_FIELDS.filter((f) => (f.fill || []).includes('ia'));
@@ -418,13 +482,14 @@ export function parseAltaDraft(text) {
 
 // 검토 화면용 병합: 항목마다 { value, source, evidence, confidence, saved }
 //   우선순위: AI 초안(이번 방문) > 이미 확정·저장된 값 > DENUE 미리 채움
-export function mergeForReview({ prefill = {}, saved = {}, draft = null }) {
+export function mergeForReview({ prefill = {}, saved = {}, draft = null, erp = {} }) {
   const out = {};
   for (const f of ALTA_FIELDS) {
     const d = draft && draft.campos && draft.campos[f.key];
     const sv = saved[f.key];
-    if (d) out[f.key] = { value: d.valor, source: 'ia', evidence: d.evidencia, confidence: d.confianza, saved: sv == null ? null : sv };
+    if (d) out[f.key] = { value: d.valor, source: 'ia', evidence: d.evidencia, confidence: d.confianza, saved: sv == null ? null : sv, erp: erp[f.key] == null ? null : erp[f.key] };
     else if (sv != null) out[f.key] = { value: sv, source: 'guardado', saved: sv };
+    else if (erp[f.key] != null) out[f.key] = { value: erp[f.key], source: 'erp' };          // 1127 · 연결된 ERP 고객 정보
     else if (prefill[f.key] != null) out[f.key] = { value: prefill[f.key], source: 'denue' };
     else out[f.key] = { value: null, source: null };
   }
