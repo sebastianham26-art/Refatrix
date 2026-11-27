@@ -333,3 +333,16 @@ test('고객 찾기: 같은 이름 > 포함 > 단어 > 오타 순 점수', async
   assert.ok(nameScore('refacionaria garsia', 'Refaccionaria García') >= 45);
   assert.ok(nameScore('autozone', 'Taller Mecánico Juárez') < 45);
 });
+
+test('1126 · 루트 추정 유류비 예산 = 연료(L) × 연료비 · 0 이면 없음 (1127 복구 · 도로 거리 기준)', async () => {
+  const { estimateRoute, ROUTE_SETTINGS_DEFAULT } = await import('../src/prospectCore.js');
+  assert.equal(ROUTE_SETTINGS_DEFAULT.fuel_price, 24);
+  const stops = [{ lat: 25.6866, lng: -100.3161 }, { lat: 25.7866, lng: -100.3161 }];
+  const e = estimateRoute(stops, { road_factor: 1, km_per_liter: 10, fuel_price: 25.5 });
+  assert.ok(e.km > 11 && e.km < 11.3); assert.equal(e.fuel_l, Math.round(e.km / 10 * 10) / 10);
+  assert.equal(e.fuel_cost, Math.round(e.fuel_l * 25.5 * 100) / 100);
+  assert.equal(estimateRoute(stops, { fuel_price: 0 }).fuel_cost, null);
+  assert.ok(estimateRoute(stops).fuel_cost > 0, '저장 전 기본 연료비');
+  const r = estimateRoute(stops, { km_per_liter: 10, fuel_price: 25 }, null, { km: 15.2 });   // 도로 거리
+  assert.equal(r.source, 'road'); assert.equal(r.fuel_l, 1.5); assert.equal(r.fuel_cost, 37.5);
+});

@@ -732,7 +732,8 @@ export function planStatus({ target = 0, done = 0, dropped = 0, planned = 0, mis
 // ── 루트 소요시간·연료 추정 ─────────────────────────────────────────────
 //   거리 = 실제 도로 주행 거리(road, OSRM) · 도로 계산이 안 될 때만 직선거리 × 도로 보정(근사)
 //   이동시간 = 거리 ÷ 시내 평균 속도(신호·정체 포함) · 상담 = 곳 수 × 상담 시간 · 연료 = 거리 ÷ 연비
-export const ROUTE_SETTINGS_DEFAULT = { visit_min: 20, km_per_liter: 10, speed_kmh: 22, road_factor: 1.3 };
+//   1126 · 유류비 예산 = 연료(L) × 연료비(페소/L) — 연료비 0 이면 예산 없음(null)
+export const ROUTE_SETTINGS_DEFAULT = { visit_min: 20, km_per_liter: 10, speed_kmh: 22, road_factor: 1.3, fuel_price: 24 };
 export function estimateRoute(stops, settings = {}, start = null, road = null) {
   const S = { ...ROUTE_SETTINGS_DEFAULT, ...settings };
   let km, source = 'road';
@@ -745,6 +746,8 @@ export function estimateRoute(stops, settings = {}, start = null, road = null) {
   const n = (stops || []).length;
   const drive = Math.round((km / Math.max(1, Number(S.speed_kmh))) * 60);
   const visit = Math.round(n * Number(S.visit_min));
-  return { stops: n, km, source, path: road && road.path && road.path.length > 1 ? road.path : null, drive_min: drive, visit_min: visit, total_min: drive + visit,
+  const out = { stops: n, km, source, path: road && road.path && road.path.length > 1 ? road.path : null, drive_min: drive, visit_min: visit, total_min: drive + visit,
     fuel_l: Math.round((km / Math.max(0.1, Number(S.km_per_liter))) * 10) / 10, settings: S };
+  out.fuel_cost = Number(S.fuel_price) > 0 ? Math.round(out.fuel_l * Number(S.fuel_price) * 100) / 100 : null;
+  return out;
 }

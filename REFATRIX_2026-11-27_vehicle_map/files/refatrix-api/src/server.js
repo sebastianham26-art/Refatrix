@@ -1,0 +1,251 @@
+// redeploy 0710
+import Fastify from 'fastify';
+import fastifyJwt from '@fastify/jwt';
+import fastifyCors from '@fastify/cors';
+import { config } from './config.js';
+import { authGuard, requireDirector } from './middleware/authGuard.js';
+import { query } from './db.js';
+import authRoutes from './routes/authRoutes.js';
+import deviceRoutes from './routes/deviceRoutes.js';
+import productRoutes from './routes/productRoutes.js';
+import importRoutes from './routes/importRoutes.js';
+import importCostRoutes from './routes/importCostRoutes.js';
+import salesRoutes from './routes/salesRoutes.js';
+import financeRoutes from './routes/financeRoutes.js';
+import grossProfitRoutes from './routes/grossProfitRoutes.js';
+import budgetRoutes from './routes/budgetRoutes.js';
+import customerRoutes from './routes/customerRoutes.js';
+import targetRoutes from './routes/targetRoutes.js';
+import meetingRoutes from './routes/meetingRoutes.js';
+import marketingRoutes from './routes/marketingRoutes.js';
+import marketingSpendRoutes from './routes/marketingSpendRoutes.js';
+import portalRoutes from './routes/portalRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
+import salesPerfRoutes from './routes/salesPerfRoutes.js';
+import settlementVarianceRoutes from './routes/settlementVarianceRoutes.js';
+import portalBoardRoutes from './routes/portalBoardRoutes.js';
+import portalKpiRoutes from './routes/portalKpiRoutes.js';
+import quoteRoutes from './routes/quoteRoutes.js';
+import reservationRoutes from './routes/reservationRoutes.js';   // 2026-09-30 · 견적 재고예약 현황 (0930 apar2 스테일 푸시로 빠졌던 것 복구)
+import stockRoutes from './routes/stockRoutes.js';
+import devRequestRoutes from './routes/devRequestRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import commissionRoutes from './routes/commissionRoutes.js';
+import commissionAgreementRoutes from './routes/commissionAgreementRoutes.js';   // 0251 · 커미션 조건 합의(본인 PIN)
+import commissionReferralRoutes from './routes/commissionReferralRoutes.js';   // 0307 · 소개(Referencia) 커미션 계약·전자서명·실적
+import wbrRoutes from './routes/wbrRoutes.js';
+import wbrMbrRoutes from './routes/wbrMbrRoutes.js';
+import presenceRoutes from './routes/presenceRoutes.js';
+import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
+import fieldSurveyRoutes from './routes/fieldSurveyRoutes.js';
+import xrefRoutes from './routes/xrefRoutes.js';
+import xrefMasterRoutes from './routes/xrefMasterRoutes.js';   // 0325 · 멕시코 경쟁사 크로스레퍼런스 마스터
+import finderRoutes from './routes/finderRoutes.js';
+import processKpiRoutes from './routes/processKpiRoutes.js';
+import warehouseRoutes from './routes/warehouseRoutes.js';
+import portalAlertsRoutes from './routes/portalAlertsRoutes.js';
+import dailyBriefingRoutes from './routes/dailyBriefingRoutes.js';
+import briefingPendingRoutes from './routes/briefingPendingRoutes.js';
+import briefingAiRoutes from './routes/briefingAiRoutes.js';
+import stockCountRoutes from './routes/stockCountRoutes.js';
+import purchaseRoutes from './routes/purchaseRoutes.js';
+import inboundRoutes from './routes/inboundRoutes.js';
+import zoneRoutes from './routes/zoneRoutes.js';
+import rackMoveRoutes from './routes/rackMoveRoutes.js';
+import rackStockRoutes from './routes/rackStockRoutes.js';   // 0245 · 제품×랙×수량(랙별 재고) 조회·수동조정
+import whMapRoutes from './routes/whMapRoutes.js';   // 0288 · 창고 도면(구역·랙 열 배치 + 랙별 재고 보기)
+import visitRoutes from './routes/visitRoutes.js';
+import visitRecRoutes from './routes/visitRecRoutes.js';
+import consultRoutes from './routes/consultRoutes.js';
+import prospectRoutes from './routes/prospectRoutes.js';   // 0334 · 영업 › 고객개발 (DENUE 후보·지역·루트·Alta 검토·현황판)
+import exhibitionRoutes from './routes/exhibitionRoutes.js';
+import offerSheetRoutes from './routes/offerSheetRoutes.js';
+import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
+import crmSyncRoutes from './routes/crmSyncRoutes.js';
+import integrationRoutes from './routes/integrationRoutes.js';
+import productSyncRoutes from './routes/productSyncRoutes.js';
+import pfCatalogRoutes from './routes/pfCatalogRoutes.js';   // 0302 · REFATRIX Platform 제품 카탈로그 점검
+import crmInboundRoutes from './routes/crmInboundRoutes.js';
+import catalogApiRoutes from './routes/catalogApiRoutes.js';
+import crmLeadRoutes from './routes/crmLeadRoutes.js';
+import crmQuoteRoutes from './routes/crmQuoteRoutes.js';
+import secretRoutes from './routes/secretRoutes.js';    // 외부 서비스 키 화면(0209) — 라이브 server.js 에서 등록이 빠져 있던 것을 복구
+import { startSecretRefresh } from './secrets.js';
+import exclusivityRoutes from './routes/exclusivityRoutes.js';   // 0235 · 고객 독점 정책
+import { registerExclusivityHooks, startExclusivitySweep } from './exclusivity.js';
+import surveyRoutes from './routes/surveyRoutes.js';     // 제품·마케팅 › 고객 설문 분석(사진·PDF → AI 판독)
+import priceMasterRoutes from './routes/priceMasterRoutes.js';   // 제품·마케팅 › 가격 마스터(0229)
+import promoRoutes from './routes/promoRoutes.js';               // 관리 › 연동 관리 › 프로모션 배너(0237)
+import { startPromoWorker } from './promoSync.js';               // 0237 · 종료 프로모션 자동 내리기
+import approvalRoutes from './routes/approvalRoutes.js';         // 공통 › 전자결재(0234) — 비용집행 품의·증빙·사전/사후승인
+import treasuryRoutes from './routes/treasuryRoutes.js';       // 재무 › 일일 자금·월간실적(0240) — 일별 스냅샷 누적 + WhatsApp 지정 수신자
+import waScheduleRoutes from './routes/waScheduleRoutes.js';   // 0262 · 관리 › WhatsApp 발송 시각
+import waWebhookRoutes from './routes/waWebhookRoutes.js'; // 0253 · WhatsApp 웹훅(도착·읽음·실패)
+import { startTreasuryWorker } from './treasuryDaily.js';        // 0240 · 매일 06시 스냅샷·일일 발송 / 매월 1~3일 월간 발송
+import quoteWaRoutes from './routes/quoteWaRoutes.js';          // 0256 · 신규 견적 WhatsApp 알림(수신자·원장)
+import { startQuoteNotifyWorker } from './quoteWaNotify.js';    // 0256 · 놓친 신규 견적 알림 줍기(60초)
+import leadWaRoutes from './routes/leadWaRoutes.js';            // 0268 · 웹 가입 신청 WhatsApp 알림(상태·설정·시험발송)
+import { startLeadNotifyWorker } from './leadWaNotify.js';      // 0268 · 놓친 가입신청 알림 줍기(60초)
+import waPromoRoutes from './routes/waPromoRoutes.js';          // 0260 · WhatsApp 마케팅(잠재고객·발송 일정·받은 메시지·자동응답)
+import { startWaPromoWorker } from './waPromo.js';
+import metaLeadsRoutes from './routes/metaLeadsRoutes.js';   // 0270 · Meta 광고 문의(Messenger · Instagram) 가져오기
+import positionRoutes from './routes/positionRoutes.js';       // 0292 · 제품 장착 위치(앞/뒤·상/하·좌/우) 업로드·조회
+import vehicleMapRoutes from './routes/vehicleMapRoutes.js';   // 2026-11-27 · 차종으로 제품찾기 차량 도면
+import vioPromoRoutes from './routes/vioPromoRoutes.js';   // 0293 · VIO 프로모션(키트) K0001…
+import promoImgRoutes from './routes/promoImgRoutes.js';       // 2026-10-19 · VIO 제품찾기·프로모션 — 홍보 이미지용 사진 중계(캔버스 CORS)
+import salesTrendRoutes from './routes/salesTrendRoutes.js';     // 2026-10-16 · 구매 › 판매 이력·주기(디렉터·소시오)
+import { startMetaAssignWorker } from './metaAssign.js';
+import { startReplyWorker } from './metaReply.js';   // 0331 · 답장 필요 표시(1분)   // 0329 · 광고 문의 영업사원 배분(5분)
+import { startMetaLeadsWorker } from './metaLeads.js';       // 0270 · 30분마다 새 대화               // 0260 · 예약 발송·동의 요청 대기열(60초)
+import { startPriceMasterWorker } from './priceMaster.js';     // 0229 · 가격 예약 적용 감시
+import { startCrmSyncWorker } from './crmSync.js';
+import { startProductSyncWorker } from './productSync.js';
+import { startOrderStatusWorker } from './orderStatusSync.js';   // 0227 · 오더상태 (전송) 감시
+import { installPerfMonitor } from './perfMonitor.js';
+
+export function buildApp() {
+  const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024, trustProxy: true }); // 12MB (증빙서류 5MB base64 대비) · trustProxy: Railway 프록시 뒤 실제 클라이언트 IP(X-Forwarded-For) 인식(접속 위치 추정용)
+  installPerfMonitor(app); // 진단: 이벤트 루프 지연 + 느린 요청 로깅(부작용 없음)
+
+  // 본문 없는 POST(예: 박스 생성)도 Content-Type: application/json 으로 오면
+  // 기본 파서가 빈 본문을 거부해 400(Bad Request)이 난다. 빈/공백 본문은 {} 로 허용.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, function (request, body, done) {
+    request.rawBody = body;   // WhatsApp 웹훅 서명(X-Hub-Signature-256) 검증용 원문
+    if (body === undefined || body === null || String(body).trim() === '') { done(null, {}); return; }
+    try { done(null, JSON.parse(body)); } catch (err) { err.statusCode = 400; done(err, undefined); }
+  });
+  // 외부 화면(프로토타입)에서의 요청 허용. 프로토타입 단계에서는 모든 출처 허용 +
+  // 자격증명/기기키 헤더 허용. (운영 단계에서 실제 도메인으로 좁히는 것을 권장)
+  app.register(fastifyCors, {
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-device-key'],
+  });
+  app.register(fastifyJwt, { secret: config.jwtSecret, sign: { expiresIn: config.tokenTtl } });
+
+  app.get('/health', async () => ({ ok: true }));
+
+  app.register(authRoutes);
+  app.register(deviceRoutes);
+  app.register(productRoutes);
+  app.register(importRoutes);
+  app.register(importCostRoutes);
+  app.register(salesRoutes);
+  app.register(financeRoutes);
+  app.register(grossProfitRoutes);
+  app.register(budgetRoutes);
+  app.register(customerRoutes);
+  app.register(targetRoutes);
+  app.register(meetingRoutes);
+  app.register(marketingRoutes);
+  app.register(marketingSpendRoutes);
+  app.register(portalRoutes);
+  app.register(dashboardRoutes);
+  app.register(salesPerfRoutes);
+  app.register(settlementVarianceRoutes);
+  app.register(portalBoardRoutes);
+  app.register(portalKpiRoutes);
+  app.register(quoteRoutes);
+  app.register(reservationRoutes);   // 2026-09-30 · 견적 재고예약 현황(읽기 전용)
+  app.register(stockRoutes);
+  app.register(inboundRoutes);
+  app.register(zoneRoutes);
+  app.register(rackMoveRoutes);
+  app.register(rackStockRoutes);
+  app.register(whMapRoutes);
+  app.register(devRequestRoutes);
+  app.register(userRoutes);
+  app.register(commissionRoutes);
+  app.register(commissionAgreementRoutes);   // 0251 · 커미션 조건 합의
+  app.register(commissionReferralRoutes);   // 0307 · 소개 커미션
+  app.register(wbrRoutes);
+  app.register(wbrMbrRoutes);
+  app.register(presenceRoutes);
+  app.register(notaCreditoRoutes);
+  app.register(fieldSurveyRoutes);
+  app.register(xrefRoutes);
+  app.register(xrefMasterRoutes);   // 0325
+  app.register(finderRoutes);
+  app.register(processKpiRoutes);
+  app.register(warehouseRoutes);
+  app.register(portalAlertsRoutes);
+  app.register(dailyBriefingRoutes);
+  app.register(briefingPendingRoutes);
+  app.register(briefingAiRoutes);
+  app.register(stockCountRoutes);
+  app.register(purchaseRoutes);
+  app.register(visitRoutes);
+  app.register(visitRecRoutes);
+  app.register(consultRoutes);
+  app.register(prospectRoutes);
+  app.register(exhibitionRoutes);
+  app.register(offerSheetRoutes);
+  app.register(dailySummaryRoutes);
+  app.register(crmSyncRoutes);
+  app.register(integrationRoutes);
+  app.register(productSyncRoutes);
+  app.register(pfCatalogRoutes);    // 0302 · /api/pf-catalog/* — CTR 확인완료 → ERP 즉시 반영
+  app.register(crmInboundRoutes);   // CRM → ERP 수신(웹카달록 신규고객)
+  app.register(catalogApiRoutes);   // 고객 → ERP 조회(카탈로그 풀 API · 0221)
+  app.register(crmLeadRoutes);      // CRM → ERP 수신(웹 가입 신청 알림) + 팝업·이력
+  app.register(crmQuoteRoutes);     // CRM → ERP 수신(견적요청) + 팝업·담당자 지정
+  app.register(secretRoutes);       // 관리 → 외부 서비스 키 (Anthropic·OpenAI·WhatsApp)
+  app.register(exclusivityRoutes);  // 0235 · 고객 독점(RFC 30일 · 판매 1년 · 6개월 연장) + 판매 영업사원
+  registerExclusivityHooks(app);     // 0235 · 매출 삭제·수정·NC 뒤 독점·커미션 귀속 재계산
+  app.register(surveyRoutes);       // 고객 설문 분석 — 양식·응답 판독 큐·AI 주제 요약·원본 zip
+  app.register(priceMasterRoutes);  // 가격 마스터 — 날짜별 정가 이력 · % 일괄/선택 변경 · 예약 · 되돌리기
+  app.register(promoRoutes);        // 프로모션 배너 → CRM 여러 곳(0237) · 공개 배너 이미지 주소 포함
+  app.register(approvalRoutes);     // 전자결재 — 품의 · 결재선 · 증빙(파일당 20MB, 라우트 전용 bodyLimit) · 댓글 · 알림 · 설정
+  app.register(treasuryRoutes);     // 일일 자금·월간실적 — 주간(유첨 양식)·월간·수신자·WhatsApp 발송
+  app.register(waScheduleRoutes);   // 관리 › WhatsApp 발송 시각 — 작업별 시각·대상일(0262)
+  app.register(waWebhookRoutes);    // 0253 · WhatsApp 웹훅 — 실제 도착/읽음/실패 사유 + 24시간 창
+  app.register(quoteWaRoutes);      // 0256 · 견적·매출 추적 › 신규 견적 WhatsApp 알림
+  app.register(leadWaRoutes);       // 0268 · 고객등록 › 웹 가입 신청 WhatsApp 알림(접수·담당자 지정)
+  app.register(metaLeadsRoutes);    // 0270 · 제품·마케팅 › Meta 광고 문의
+  app.register(waPromoRoutes);      // 0260 · 제품·마케팅 › WhatsApp 마케팅
+  app.register(positionRoutes);     // 0292 · /api/products/positions/*
+  app.register(vehicleMapRoutes);   // 2026-11-27 · /api/products/vehicle-map
+  app.register(vioPromoRoutes);   // 0293 · /api/vio-promos/*
+  app.register(promoImgRoutes);     // 2026-10-19 · GET /api/promo-img (R2·위키미디어·SYD 사진만)
+  app.register(salesTrendRoutes);   // 2026-10-16 · 구매 › 판매 이력·주기 — 월별 판매 흐름·수요유형·예측·구매 제안
+
+  // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
+  startSecretRefresh(app);
+  startExclusivitySweep(app);        // 0235 · 기동 15초 후 + 6시간마다 독점 상태 갱신(만료 반영)
+
+  // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
+  startCrmSyncWorker(app);
+  startProductSyncWorker(app);
+  startOrderStatusWorker(app);      // ERP → CRM 오더상태 — 놓친 단계 줍기(90초)
+  startPromoWorker(app);            // 0237 · 종료일 지난 프로모션을 CRM 에서 자동으로 내리기(10분)
+  startPriceMasterWorker(app);      // 가격 예약 — 적용일(멕시코 00:00)이 된 묶음 적용(5분)
+  startReplyWorker(app);           // 0331 · 「💬 답장 필요」 · 「● 새 메시지」 — 바뀐 대화 1분마다
+  startMetaAssignWorker(app);       // 0329 · 광고 문의 배분 — 대화함 확인 + 하루 목표까지 자동 분배(5분 · 근무 시간)
+  startMetaLeadsWorker(app);        // 0270 · Meta 광고 문의 — 30분마다 새로 바뀐 대화만
+  startWaPromoWorker(app);          // 0260 · WhatsApp 마케팅 — 예약 발송 · 동의 요청(하루 상한 안에서)
+  startQuoteNotifyWorker(app);      // 0256 · 신규 견적 WhatsApp 알림 — 놓친 건 줍기(60초)
+  startLeadNotifyWorker(app);       // 0268 · 웹 가입 신청 WhatsApp 알림 — 놓친 건 줍기(60초)
+  startTreasuryWorker(app);         // 0240 · 일일 자금 스냅샷 누적 + WhatsApp 일일/월간 발송(5분 체크)
+
+  // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
+  app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const rows = (await query(
+      `SELECT a.occurred_at, a.action, a.target, a.result, a.detail,
+              u.name, u.dept, u.role
+         FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
+        ORDER BY a.occurred_at DESC LIMIT $1`, [limit])).rows;
+    return { items: rows };
+  });
+
+  return app;
+}
+
+// 직접 실행 시 서버 기동
+if (process.argv[1] && process.argv[1].endsWith('server.js')) {
+  const app = buildApp();
+  app.listen({ port: config.port, host: '0.0.0.0' })
+    .then((addr) => app.log.info(`Refatrix API on ${addr}`))
+    .catch((err) => { app.log.error(err); process.exit(1); });
+}
