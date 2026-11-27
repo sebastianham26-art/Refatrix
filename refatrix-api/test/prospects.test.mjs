@@ -297,14 +297,3 @@ test('목표 대비 방문 계획: 계획률·부족·속도(근무일 월~금)'
   assert.equal(g.expected, Math.round(300 * 18 / 21)); assert.equal(g.pace, 'bad');
   assert.equal(planStatus({ target: 0, period: '2026-11', today: '2026-11-26' }).gap, null);
 });
-
-test('1126 · 루트 추정 유류비 예산 = 연료(L) × 연료비 · 0 이면 없음', async () => {
-  const { estimateRoute, ROUTE_SETTINGS_DEFAULT } = await import('../src/prospectCore.js');
-  assert.equal(ROUTE_SETTINGS_DEFAULT.fuel_price, 24);
-  const stops = [{ lat: 25.6866, lng: -100.3161 }, { lat: 25.7866, lng: -100.3161 }];   // 약 11.1km 직선
-  const e = estimateRoute(stops, { road_factor: 1, km_per_liter: 10, fuel_price: 25.5 });
-  assert.ok(e.km > 11 && e.km < 11.3); assert.equal(e.fuel_l, Math.round(e.km / 10 * 10) / 10);
-  assert.equal(e.fuel_cost, Math.round(e.fuel_l * 25.5 * 100) / 100);
-  assert.equal(estimateRoute(stops, { fuel_price: 0 }).fuel_cost, null);
-  assert.ok(estimateRoute(stops).fuel_cost > 0, '저장 전 기본 연료비');
-});

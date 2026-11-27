@@ -84,6 +84,20 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
   - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
 - **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
 
+## 22차 보완 (2026-11-26) — 실제 도로 주행 거리로 추정
+- 이동 거리를 **실제 도로를 따라 달리는 거리**로 바꿈. OSRM(OpenStreetMap 도로망) `route` API, 키 불필요.
+  - 새 모듈 `src/roadRoute.js`: `roadDistance(points)` → `{km, osrm_min, path}` · `estimateRoad(stops, settings, start, opts)`.
+  - 서버: 환경변수 `OSRM_URL`(기본 `https://router.project-osrm.org` 공개 서버). 자체·유료 OSRM으로 바꾸려면 이 값만 설정. 공개 서버일 때는 호출 간격 `OSRM_MIN_GAP_MS`(기본 300ms).
+  - 좌표 80개씩 나눠 보내 합산. 결과는 메모리 + **마이그레이션 0342** `prospect_road_cache`(좌표열 해시 → km·경로선)에 저장 → 같은 순서는 다시 부르지 않음.
+  - 서버 응답이 없으면(6초 제한) 그 요청만 기존 근사치(직선 × 도로 보정)로 계산하고 `source:'approx'`, 화면에 「≈」 표시. 실패 후 1분간은 바로 근사치(화면이 느려지지 않게).
+- 이동 시간 = 도로 거리 ÷ 시내 평균 속도(신호·정체 포함). 「도로 보정」 값은 이제 계산 실패 때만 쓰임.
+- 지도 구역 제안 코스선과 오늘 루트 지도선이 **실제 도로를 따라** 그려짐(`estimate.path`).
+- 방문 목록 화면은 캐시된 값만 바로 보여 주고(목록이 길어도 느려지지 않게), 없는 것은 뒤에서 계산. 목록 저장·정류장 수정 직후에도 뒤에서 미리 계산.
+- 응답 `estimate`에 `source`('road'|'approx'), `path`(목록 응답에서는 생략) 추가.
+- 테스트 `test/roadRoute.test.mjs`(OSRM 응답 흉내: 합산·분할·캐시·실패 시 근사).
+- 바뀐 파일: 새 `src/roadRoute.js`, `prospectCore.js`, `routes/prospectRoutes.js`, `refatrix-prospects.html`, 새 마이그레이션 0342.
+- 운영 확인: 배포 후 서버에서 `curl "https://router.project-osrm.org/route/v1/driving/-100.31,25.67;-100.30,25.68?overview=false"` 가 `"code":"Ok"` 를 주면 정상.
+
 ## 21차 보완 (2026-11-26) — 루트 소요시간·필요 연료 추정
 - **마이그레이션 0341** (`0341_prospect_settings.sql`) — `prospect_settings`: 업체당 상담 시간(기본 20분) · 연비 km/L(기본 10) · 시내 평균 속도(기본 22km/h) · 도로 보정(직선거리 × 1.3).
 - 목표 화면 「⏱ 루트 소요시간·연료 추정 기준」에서 디렉터·관리자가 입력(`GET|PUT /api/prospect-settings`).
@@ -219,7 +233,7 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 
 ## 배포 순서
 1. 백엔드 파일 올리기(refatrix-api) → Railway 재배포
-2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339**, **0340**, **0341** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
+2. `npm run migrate` — **0334**, **0335**, **0336**, **0337**, **0338**, **0339**, **0340**, **0341**, **0342** 적용(컬럼 추가만, 기존 행·동작 그대로 · 재실행 안전)
 3. 화면 파일 올리기: `refatrix-prospects.html`, `refatrix-nav.js`, `refatrix-consult.html`
 4. 메뉴: 영업 › **고객개발**. 권한은 고객상담과 같은 `pipeline`(영업활동) 키. 가져오기·지역·목표·연결 승인은 디렉터만.
 5. 고객개발 › **DENUE 가져오기**에서 `prospects_import_NL.csv` 업로드(9,492곳, 판 2026-11) → **지역·담당**에서 지역 만들기 → 저장하면 미배정 후보가 자동 배정됩니다.
@@ -246,7 +260,9 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
 | DB | `refatrix-api/migrations/0339_prospect_route_plans.sql` | 방문 목록(날짜 미정 루트) |
 | DB | `refatrix-api/migrations/0340_prospect_import_batches.sql` | DENUE 업로드 파일 기록 · 깨진 글자 복구 |
 | DB | `refatrix-api/migrations/0341_prospect_settings.sql` | 루트 추정 기준(상담 시간·연비 등) |
-| 테스트 | `test/prospects.test.mjs` | 순수 함수 17개 |
+| DB | `refatrix-api/migrations/0342_prospect_road_cache.sql` | 실제 도로 거리 캐시 |
+| 신규 | `refatrix-api/src/roadRoute.js` | OSRM 도로 주행 거리·경로선 |
+| 테스트 | `test/prospects.test.mjs` · `test/roadRoute.test.mjs` | 순수 함수 · 도로 거리(흉내) |
 
 ## 흐름 요약
 - **체크인**: 오늘 루트/후보 상세의 「체크인 · 녹음」 → 고객상담 원클릭 녹음 화면이 열림(업체 정보 없어도 바로 시작). 서버가 상담을 후보에 연결하고, 체크인 위치와 후보 좌표의 거리(150m 넘으면 노란색)를 기록합니다. 단계는 → 컨택, 오늘 루트 정류장에 방문 표시.

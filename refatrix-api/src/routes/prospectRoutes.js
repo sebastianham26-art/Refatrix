@@ -12,6 +12,7 @@
 //   녹음·전사·요약은 기존 「고객상담」(consultRoutes) 그대로 — 여기서는 연결만.
 //   권한키는 고객상담과 같은 'pipeline'(영업활동). 가져오기·지역·목표·연결 승인은 디렉터.
 // =====================================================================
+import { estimateRoad } from '../roadRoute.js';
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
@@ -49,19 +50,6 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD = /^\d{4}-\d{2}$/;
 function addDays(ymd, n) { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 function mxToday() { return new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10); }
-// 1126 · 유류비 표의 기간 — 이번 주(월~일) 또는 이번 달을 마지막으로 n 개
-export function fuelPeriods(today, unit, n) {
-  const d0 = new Date(today + 'T12:00:00Z'); const iso = (d) => d.toISOString().slice(0, 10); const out = [];
-  if (unit === 'week') {
-    const mon = new Date(d0); mon.setUTCDate(mon.getUTCDate() - ((mon.getUTCDay() + 6) % 7));
-    for (let i = n - 1; i >= 0; i--) { const a = new Date(mon); a.setUTCDate(a.getUTCDate() - 7 * i); const b2 = new Date(a); b2.setUTCDate(b2.getUTCDate() + 6);
-      out.push({ key: iso(a), from: iso(a), to: iso(b2), label: iso(a).slice(5).replace('-', '/') + '~' + iso(b2).slice(5).replace('-', '/') }); }
-  } else {
-    for (let i = n - 1; i >= 0; i--) { const a = new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() - i, 1, 12)); const b2 = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + 1, 0, 12));
-      out.push({ key: iso(a).slice(0, 7), from: iso(a), to: iso(b2), label: iso(a).slice(0, 7) }); }
-  }
-  return out;
-}
 function parseJ(v) { if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (_) { return null; } }
 
 let potCols = null;
@@ -72,7 +60,7 @@ async function hasPotCols() {
   return potCols;
 }
 let planCols = false;
-// 루트 추정 기준(상담 시간·연비·속도·도로 보정·연료비) — 0341 전에는 기본값 · 연료비는 저장 전까지 기본 24페소/L
+// 루트 추정 기준(상담 시간·연비·속도·도로 보정) — 0341 전에는 기본값
 let rsCache = { at: 0, v: null };
 async function routeSettings() {
   if (rsCache.v && Date.now() - rsCache.at < 30000) return rsCache.v;
@@ -770,7 +758,11 @@ export default async function prospectRoutes(app) {
     const r = (await query(`SELECT id, name FROM prospect_routes WHERE user_id=$1 AND route_date=$2`, [userId, date])).rows[0];
     if (!r) return { date, user_id: userId, stops: [] };
     const stops = await routeStops(Number(r.id));
-    return { date, user_id: userId, route_id: Number(r.id), name: r.name, stops, estimate: estimateRoute(stops, await routeSettings()) };
+    return { date, user_id: userId, route_id: Number(r.id), name: r.name, stops, estimate: await estimateRoad(stops, await routeSettings()) };
+  }
+  // 저장 직후 도로 거리 계산(응답은 기다리지 않음, 공개 서버 간격 지킴)
+  function warmRoad(ids) {
+    (async () => { const rs = await routeSettings(); for (const id of ids) { try { await estimateRoad(await routeStops(Number(id)), rs); } catch (_) { /* 무시 */ } } })().catch(() => {});
   }
   // ── 방문 목록(날짜 미정 루트) — 루트를 먼저 짜 두고 날짜는 본인이 고른다(디렉터 결정 2026-11-26) ──
   const WORKDAY = (ymd) => { const g = new Date(ymd + 'T12:00:00Z').getUTCDay(); return g !== 6 && g !== 0; };   // 토·일 근무 없음
@@ -793,13 +785,13 @@ export default async function prospectRoutes(app) {
     if (rows.length) (await query(`SELECT s.route_id, p.lat, p.lng FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id WHERE s.route_id = ANY($1) ORDER BY s.route_id, s.seq`,
       [rows.map((r) => Number(r.id))])).rows.forEach((x) => (pts[x.route_id] = pts[x.route_id] || []).push({ lat: Number(x.lat), lng: Number(x.lng) }));
     const rs = await routeSettings();
-    return { rows: rows.map((r) => ({ ...r, id: Number(r.id), user_id: Number(r.user_id), estimate: estimateRoute(pts[r.id] || [], rs) })) };
+    return { rows: await Promise.all(rows.map(async (r) => ({ ...r, id: Number(r.id), user_id: Number(r.user_id), estimate: (({ path, ...e }) => e)(await estimateRoad(pts[r.id] || [], rs, null, { cacheOnly: true })) }))) };
   });
   app.get('/api/prospect-routes/by-id/:id', view, async (req, reply) => {
     const r = await ownRoute(req, req.params.id); if (!r) return reply.code(404).send({ error: 'not_found' });
     return { route_id: Number(r.id), user_id: Number(r.user_id), user_name: r.user_name, name: r.name,
       date: r.route_date ? String(r.route_date instanceof Date ? r.route_date.toISOString().slice(0, 10) : r.route_date).slice(0, 10) : null,
-      ...(await (async () => { const st = await routeStops(Number(r.id)); return { stops: st, estimate: estimateRoute(st, await routeSettings()) }; })()) };
+      ...(await (async () => { const st = await routeStops(Number(r.id)); return { stops: st, estimate: await estimateRoad(st, await routeSettings()) }; })()) };
   });
   // 여러 코스를 한 번에 방문 목록으로 저장 {user_id, name, days:[{prospect_ids}]}
   app.post('/api/prospect-routes/plans', edit, async (req, reply) => {
@@ -821,6 +813,7 @@ export default async function prospectRoutes(app) {
       return out;
     });
     await logEvent({ userId: me(req), action: 'create', target: `prospect_route_plans:${uid}`, detail: { ids, stops: days.map((d) => d.length) } });
+    warmRoad(ids);   // 목록에서 바로 도로 거리가 나오도록 뒤에서 계산
     return { ok: true, ids, user_id: uid };
   });
   // 날짜 정하기/빼기 · 이름 바꾸기 {date: 'YYYY-MM-DD' | null, name}
@@ -911,46 +904,12 @@ export default async function prospectRoutes(app) {
     return { ok: true, mode, ...out };
   });
 
-  // 1126 · 담당별 주/월 유류비 예산 합계 — 디렉터 본인만(관리자 지정자 제외). 날짜가 있는 루트만(날짜 없는 방문 목록은 제외).
-  //   GET /api/prospect-fuel?unit=week|month&n=  (n = 이번 기간 포함 몇 개, 주 8 · 월 6 기본, 최대 26)
-  app.get('/api/prospect-fuel', view, async (req, reply) => {
-    if (!isRealDir(req)) return reply.code(403).send({ error: 'director_only' });
-    const unit = req.query?.unit === 'week' ? 'week' : 'month';
-    const n = Math.min(26, Math.max(1, int(req.query?.n) || (unit === 'week' ? 8 : 6)));
-    const periods = fuelPeriods(mxToday(), unit, n);
-    const from = periods[0].from, to = periods[periods.length - 1].to;
-    const routes = (await query(
-      `SELECT r.id, r.user_id, u.name AS user_name, to_char(r.route_date,'YYYY-MM-DD') AS d
-         FROM prospect_routes r LEFT JOIN users u ON u.id=r.user_id
-        WHERE r.route_date BETWEEN $1::date AND $2::date ORDER BY r.route_date, r.id`, [from, to])).rows;
-    const pts = {}; const vis = {};
-    if (routes.length) (await query(
-      `SELECT s.route_id, p.lat, p.lng, s.consult_id FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
-        WHERE s.route_id = ANY($1) AND (s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND p.stage <> 'descartado'))
-        ORDER BY s.route_id, s.seq`, [routes.map((r) => Number(r.id))])).rows
-      .forEach((x) => { (pts[x.route_id] = pts[x.route_id] || []).push({ lat: x.lat == null ? null : Number(x.lat), lng: x.lng == null ? null : Number(x.lng) }); if (x.consult_id) vis[x.route_id] = (vis[x.route_id] || 0) + 1; });
-    const rs = await routeSettings();
-    const zero = () => ({ routes: 0, stops: 0, visited: 0, km: 0, fuel_l: 0, fuel_cost: 0 });
-    const add = (c, e, v) => { c.routes++; c.stops += e.stops; c.visited += v; c.km += e.km; c.fuel_l += e.fuel_l; c.fuel_cost += e.fuel_cost || 0; };
-    const users = new Map(); const tot = Object.fromEntries(periods.map((p) => [p.key, zero()])); const all = zero();
-    for (const r of routes) {
-      const st = pts[r.id] || []; if (!st.length) continue;
-      const p = periods.find((x) => r.d >= x.from && r.d <= x.to); if (!p) continue;
-      const e = estimateRoute(st, rs); const v = vis[r.id] || 0; const uid = Number(r.user_id);
-      if (!users.has(uid)) users.set(uid, { user_id: uid, name: r.user_name || ('#' + uid), cells: Object.fromEntries(periods.map((x) => [x.key, zero()])), total: zero() });
-      const u = users.get(uid); add(u.cells[p.key], e, v); add(u.total, e, v); add(tot[p.key], e, v); add(all, e, v);
-    }
-    const rnd = (c) => { c.km = Math.round(c.km * 10) / 10; c.fuel_l = Math.round(c.fuel_l * 10) / 10; c.fuel_cost = Math.round(c.fuel_cost * 100) / 100; return c; };
-    const out = [...users.values()].map((u) => { for (const k in u.cells) rnd(u.cells[k]); rnd(u.total); return u; }).sort((a, b) => b.total.fuel_cost - a.total.fuel_cost || String(a.name).localeCompare(String(b.name)));
-    for (const k in tot) rnd(tot[k]);
-    return { unit, periods, users: out, totals: tot, total: rnd(all), settings: rs, priced: Number(rs.fuel_price) > 0 };
-  });
   // 루트 추정 기준 — 디렉터·관리자가 목표 화면에서 입력
   app.get('/api/prospect-settings', view, async () => ({ route: await routeSettings() }));
   app.put('/api/prospect-settings', edit, async (req, reply) => {
     if (!directorOnly(req, reply)) return;
     const b = (req.body || {}).route || {};
-    const lim = { visit_min: [1, 240], km_per_liter: [1, 60], speed_kmh: [5, 120], road_factor: [1, 3], fuel_price: [0, 200] };   // 1126 · fuel_price = 연료비(페소/L)
+    const lim = { visit_min: [1, 240], km_per_liter: [1, 60], speed_kmh: [5, 120], road_factor: [1, 3] };
     for (const [k, [lo, hi]] of Object.entries(lim)) {
       if (b[k] == null || b[k] === '') continue;
       const v = Number(b[k]); if (!Number.isFinite(v) || v < lo || v > hi) return reply.code(400).send({ error: 'bad_value', key: k, min: lo, max: hi });
@@ -1019,6 +978,7 @@ export default async function prospectRoutes(app) {
       let seq = 1; for (const pid of ids) await q(`INSERT INTO prospect_route_stops (route_id, prospect_id, seq, consult_id) VALUES ($1,$2,$3,$4)`, [r.id, pid, seq++, keep.get(pid) || null]);
       await tidyRoutes(q, [Number(r.id)]);
     });
+    warmRoad([r.id]);
     return { ok: true };
   });
   // 예정 루트 목록(오늘부터 30일) — 디렉터: 모든 담당 / 그 외: 본인. 「오늘 루트」 화면에서 담당자·날짜 바로 고르기용
@@ -1161,7 +1121,7 @@ export default async function prospectRoutes(app) {
     const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
     const plan = planDays(cands, { max, maxDays, start });
     const rs = await routeSettings();
-    const days = plan.days.map((d, k) => { const e = estimateRoute(d.stops, rs, k === 0 ? start : null); return { ...d, minutes: e.total_min, estimate: e }; });
+    const days = await Promise.all(plan.days.map(async (d, k) => { const e = await estimateRoad(d.stops, rs, k === 0 ? start : null); return { ...d, minutes: e.total_min, estimate: e }; }));
     cnt.scheduled = days.reduce((a, d) => a + d.stops.length, 0); cnt.left = cnt.eligible - cnt.scheduled;
     // 목록 이름 제안: 구역 안에서 가장 많은 colonia(없으면 municipio)
     const freq = {}; cands.forEach((c) => { const k = c.colonia || c.municipio; if (k) freq[k] = (freq[k] || 0) + 1; });
