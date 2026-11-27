@@ -440,7 +440,8 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <b>⛽ 담당별 유류비 예산 합계</b><span class="note">🔒 디렉터 본인만 보입니다</span>
           <span style="margin-left:auto"></span>
-          <select id="gf-unit" style="width:auto;flex:0 0 auto"><option value="week">주별 (최근 8주)</option><option value="month" selected>월별 (최근 6개월)</option></select>
+          <select id="gf-unit" style="width:auto;flex:0 0 auto"><option value="week">주별 (8주)</option><option value="month" selected>월별 (6개월)</option></select>
+          <span style="display:inline-flex;gap:4px;align-items:center;flex:0 0 auto"><button class="btn ghost sm" id="gf-prev" title="이전 기간" aria-label="이전 기간">◀</button><input type="month" id="gf-from" style="width:185px" title="시작 월"><input type="date" id="gf-fromw" class="hide" style="width:160px" title="시작 주"><button class="btn ghost sm" id="gf-next" title="다음 기간" aria-label="다음 기간">▶</button><button class="btn ghost sm" id="gf-now">이번 달</button></span>
           <button class="btn ghost sm" id="gf-xls" style="flex:0 0 auto">엑셀</button>
         </div>
         <div class="scroll" style="margin-top:10px"><table class="tb" id="gf-table"></table></div>
@@ -1709,19 +1710,29 @@ let FUEL=null;
 async function loadFuel(){
   const box=$('g-fuel'); if(!META||!META.is_real_director){ box.classList.add('hide'); return; }
   box.classList.remove('hide');
-  try{ FUEL=await api('/api/prospect-fuel?unit='+$('gf-unit').value); }catch(e){ $('gf-table').innerHTML=''; $('gf-note').textContent='불러오지 못했습니다: '+e.message; return; }
-  const P=FUEL.periods, cur=P[P.length-1].key;
+  const wk=$('gf-unit').value==='week', fr=wk?$('gf-fromw').value:$('gf-from').value;
+  $('gf-from').classList.toggle('hide',wk); $('gf-fromw').classList.toggle('hide',!wk); $('gf-now').textContent=wk?'이번 주':'이번 달';
+  try{ FUEL=await api('/api/prospect-fuel?unit='+$('gf-unit').value+(fr?'&from='+fr:'')); }catch(e){ $('gf-table').innerHTML=''; $('gf-note').textContent='불러오지 못했습니다: '+e.message; return; }
+  const P=FUEL.periods, cur=FUEL.current||P[P.length-1].key;
+  if(FUEL.unit==='week') $('gf-fromw').value=P[0].from; else $('gf-from').value=P[0].key;
+  const sp=FUEL.span||{}, more=[sp.before?'◀ 앞쪽 기간에 날짜 있는 루트 '+sp.before+'개':'',sp.after?'▶ 뒤쪽(미래) 기간에 날짜 있는 루트 '+sp.after+'개':''].filter(Boolean).join(' · ');
   const cell=(c,bold,l)=>c&&c.routes?'<td class="num" data-l="'+esc(l||'')+'">'+(bold?'<b>':'')+fuelMoney(c.fuel_cost)+(bold?'</b>':'')+'<div class="note">'+c.fuel_l+'L · '+c.km+'km · 루트 '+c.routes+'</div></td>':'<td class="num note" data-l="'+esc(l||'')+'">—</td>';
   if(!FUEL.users.length){ $('gf-table').innerHTML=''; $('gf-note').innerHTML='아직 만든 루트·방문 목록이 없습니다.'; return; }
   // 1127 · 날짜 미정 방문 목록(지도에서 짠 루트)도 「날짜 미정」 칸에 — 합계 = 날짜 있는 루트 + 날짜 미정, 평균은 날짜 있는 루트 기준
   const und=u=>u.undated||{}, dat=u=>u.dated||u.total;
-  $('gf-table').innerHTML='<thead><tr><th>담당</th>'+P.map(p=>'<th class="num"'+(p.key===cur?' style="color:var(--red,#B23A2E)"':'')+'>'+esc(p.label)+(p.key===cur?' (이번)':'')+'</th>').join('')+'<th class="num" style="background:#fff8e6">📋 날짜 미정 목록</th><th class="num">합계</th><th class="num">평균/'+(FUEL.unit==='week'?'주':'월')+'</th></tr></thead><tbody>'
+  $('gf-table').innerHTML='<thead><tr><th>담당</th>'+P.map(p=>'<th class="num"'+(p.key===cur?' style="color:var(--red,#B23A2E)"':p.from>META.today?' style="color:#1F6FEB"':'')+'>'+esc(p.label)+(p.key===cur?' (이번)':p.from>META.today?' (예정)':'')+'</th>').join('')+'<th class="num" style="background:#fff8e6">📋 날짜 미정 목록</th><th class="num">합계</th><th class="num">평균/'+(FUEL.unit==='week'?'주':'월')+'</th></tr></thead><tbody>'
     +FUEL.users.map(u=>'<tr><td><b>'+esc(u.name)+'</b></td>'+P.map(p=>cell(u.cells[p.key],p.key===cur,p.label)).join('')+cell(und(u),false,'날짜 미정').replace('<td ','<td style="background:#fffbf0" ')+cell(u.total,true,'합계')+'<td class="num" data-l="평균">'+fuelMoney(dat(u).fuel_cost/P.length)+'</td></tr>').join('')
     +'<tr style="background:#faf8f3"><td><b>전체</b></td>'+P.map(p=>cell(FUEL.totals[p.key],true,p.label)).join('')+cell(FUEL.undated||{},true,'날짜 미정')+cell(FUEL.total,true,'합계')+'<td class="num" data-l="평균"><b>'+fuelMoney((FUEL.dated||FUEL.total).fuel_cost/P.length)+'</b></td></tr></tbody>';
   const S=FUEL.settings;
-  $('gf-note').innerHTML=(FUEL.priced?'':'⚠ 연료비가 0이라 금액이 0입니다 — 위 기준에서 연료비를 넣으세요. ')+'월·주 칸은 날짜가 정해진 루트, 「📋 날짜 미정 목록」은 지도에서 짜 두고 아직 날짜를 안 고른 방문 목록입니다(날짜를 고르면 그 달·주 칸으로 옮겨 갑니다) · 실제 도로 주행 거리'+(FUEL.approx_routes?' (도로 거리 계산 전인 루트 '+FUEL.approx_routes+'개는 근사치 — 다시 열면 채워집니다)':'')+' · 연비 '+S.km_per_liter+'km/L · 연료비 $'+Number(S.fuel_price||0).toFixed(2)+'/L. 평균은 날짜 있는 루트 기준. 체크인 여부와 관계없이 계획된 루트 전체로 계산합니다.';
+  $('gf-note').innerHTML=(more?'<b>'+more+'</b> — ◀ ▶ 로 옮겨 보세요.<br>':'')+(FUEL.priced?'':'⚠ 연료비가 0이라 금액이 0입니다 — 위 기준에서 연료비를 넣으세요. ')+'월·주 칸은 날짜가 정해진 루트, 「📋 날짜 미정 목록」은 지도에서 짜 두고 아직 날짜를 안 고른 방문 목록입니다(날짜를 고르면 그 달·주 칸으로 옮겨 갑니다) · 실제 도로 주행 거리'+(FUEL.approx_routes?' (도로 거리 계산 전인 루트 '+FUEL.approx_routes+'개는 근사치 — 다시 열면 채워집니다)':'')+' · 연비 '+S.km_per_liter+'km/L · 연료비 $'+Number(S.fuel_price||0).toFixed(2)+'/L. 평균은 날짜 있는 루트 기준. 체크인 여부와 관계없이 계획된 루트 전체로 계산합니다.';
 }
-$('gf-unit').onchange=loadFuel;
+$('gf-unit').onchange=()=>{ $('gf-from').value=''; $('gf-fromw').value=''; loadFuel(); };
+// ◀ ▶ = 한 칸씩(월 1개월 · 주 1주) 이동, 시작 월·주를 직접 골라도 됨, 「이번 달/주」 = 기본(지난 2개월·3주 + 앞으로)
+function gfShift(k){ if(!FUEL) return; if(FUEL.unit==='week'){ const d=new Date(FUEL.periods[0].from+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+7*k); $('gf-fromw').value=d.toISOString().slice(0,10); }
+  else { const [y,m]=FUEL.periods[0].key.split('-').map(Number); const d=new Date(Date.UTC(y,m-1+k,15)); $('gf-from').value=d.toISOString().slice(0,7); } loadFuel(); }
+$('gf-prev').onclick=()=>gfShift(-1); $('gf-next').onclick=()=>gfShift(1);
+$('gf-now').onclick=()=>{ $('gf-from').value=''; $('gf-fromw').value=''; loadFuel(); };
+$('gf-from').onchange=loadFuel; $('gf-fromw').onchange=loadFuel;
 function needXlsx(){ return window.XLSX?Promise.resolve():new Promise((ok,no)=>{ const t=document.createElement('script'); t.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js'; t.onload=ok; t.onerror=no; document.head.appendChild(t); }); }
 $('gf-xls').onclick=async()=>{
   if(!FUEL) return; try{ await needXlsx(); }catch(e){ return toast('엑셀을 만들 수 없습니다'); }

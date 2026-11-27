@@ -63,6 +63,17 @@ export function fuelPeriods(today, unit, n) {
   }
   return out;
 }
+// 1127 · 시작 기간부터 n 개(과거·미래 자유) — month: from='YYYY-MM' · week: from='YYYY-MM-DD'(그 주 월요일로)
+export function fuelPeriodsFrom(from, unit, n) {
+  if (unit === 'week') {
+    const d = new Date(String(from).slice(0, 10) + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return null;
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 7 * (n - 1));
+    return fuelPeriods(d.toISOString().slice(0, 10), 'week', n);
+  }
+  const m = /^(\d{4})-(\d{2})$/.exec(String(from).slice(0, 7)); if (!m) return null;
+  const e = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1 + (n - 1), 15, 12));
+  return fuelPeriods(e.toISOString().slice(0, 10), 'month', n);
+}
 function parseJ(v) { if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (_) { return null; } }
 
 let potCols = null;
@@ -1006,7 +1017,12 @@ export default async function prospectRoutes(app) {
     if (!isRealDir(req)) return reply.code(403).send({ error: 'director_only' });
     const unit = req.query?.unit === 'week' ? 'week' : 'month';
     const n = Math.min(26, Math.max(1, int(req.query?.n) || (unit === 'week' ? 8 : 6)));
-    const periods = fuelPeriods(mxToday(), unit, n);
+    // 기간: from 이 있으면 그 기간부터 n 개(미래 포함), 없으면 이번 기간이 가운데쯤 오도록(지난 2개월/3주 + 앞으로)
+    const today = mxToday();
+    const curKey = fuelPeriods(today, unit, 1)[0].key;
+    const back = Math.min(unit === 'week' ? 3 : 2, n - 1);   // 이번 기간 앞에 둘 과거 칸 수(나머지는 앞으로)
+    const defFrom = fuelPeriods(today, unit, back + 1)[0][unit === 'week' ? 'from' : 'key'];
+    const periods = fuelPeriodsFrom(req.query?.from || defFrom, unit, n) || fuelPeriodsFrom(defFrom, unit, n);
     const from = periods[0].from, to = periods[periods.length - 1].to;
     // 1127 · 날짜 미정 방문 목록(지도에서 짠 루트)도 따로 셈 — 「날짜 미정」 칸
     const routes = (await query(
@@ -1038,7 +1054,11 @@ export default async function prospectRoutes(app) {
     const out = [...users.values()].map((u) => { for (const k in u.cells) rnd(u.cells[k]); rnd(u.undated); rnd(u.dated); rnd(u.total); return u; }).sort((a, b) => b.total.fuel_cost - a.total.fuel_cost || String(a.name).localeCompare(String(b.name)));
     for (const k in tot) rnd(tot[k]);
     const datedT = zero(); for (const k in tot) { const c = tot[k]; datedT.routes += c.routes; datedT.stops += c.stops; datedT.visited += c.visited; datedT.km += c.km; datedT.fuel_l += c.fuel_l; datedT.fuel_cost += c.fuel_cost; }
-    return { unit, periods, users: out, totals: tot, undated: rnd(undT), dated: rnd(datedT), total: rnd(all), settings: rs, priced: Number(rs.fuel_price) > 0, approx_routes: approx };
+    // 보이는 기간 밖에 날짜 있는 루트가 있으면 알려 줌(◀ ▶ 로 이동)
+    const span = (await query(`SELECT to_char(MIN(route_date),'YYYY-MM-DD') AS a, to_char(MAX(route_date),'YYYY-MM-DD') AS b,
+        COUNT(*) FILTER (WHERE route_date < $1::date)::int AS before, COUNT(*) FILTER (WHERE route_date > $2::date)::int AS after
+        FROM prospect_routes WHERE route_date IS NOT NULL`, [from, to])).rows[0] || {};
+    return { unit, current: curKey, from: periods[0].key, span: { first: span.a || null, last: span.b || null, before: span.before || 0, after: span.after || 0 }, periods, users: out, totals: tot, undated: rnd(undT), dated: rnd(datedT), total: rnd(all), settings: rs, priced: Number(rs.fuel_price) > 0, approx_routes: approx };
   });
   // 루트 추정 기준 — 디렉터·관리자가 목표 화면에서 입력
   app.get('/api/prospect-settings', view, async () => ({ route: await routeSettings() }));

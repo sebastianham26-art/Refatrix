@@ -84,6 +84,14 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
   - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
 - **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
 
+## 29차 (2026-11-27) — 유류비 표 기간을 자유롭게(미래 포함)
+- 문제: 표가 「이번 달까지 지난 6개월」만 보여 12월 루트가 안 보임.
+- `GET /api/prospect-fuel?unit=&n=&from=` — `from`(월 YYYY-MM · 주 YYYY-MM-DD → 그 주 월요일)부터 n 개. 없으면 기본 = 지난 2개월(주는 3주) + 이번 + 앞으로(월별 6칸 = 9·10·11·12·1·2월 식). 응답 `current`(이번 기간), `from`, `span{first,last,before,after}`(보이는 기간 밖 날짜 있는 루트 수).
+  - `fuelPeriodsFrom(from, unit, n)` export.
+- 화면: 단위 옆 ◀ ▶(한 칸씩) · 시작 월(주별이면 날짜) 직접 선택 · 「이번 달/주」(기본으로). 이번 기간 빨강 「(이번)」, 미래 기간 파랑 「(예정)」. 보이는 기간 밖에 루트가 있으면 표 아래에 「▶ 뒤쪽(미래) 기간에 날짜 있는 루트 n개」 안내.
+- 바뀐 파일: `routes/prospectRoutes.js`, `refatrix-prospects.html`, `test/prospects_fuel.test.mjs`. 마이그레이션 없음.
+- 검증(origin/main 2350dd3 위): prospects_fuel 3/3(PostgreSQL · 다음 달 루트가 그 달 칸에) · integration_nav 4/4 · prospects 30/30 · roadRoute 3/3, 화면(2026-12 예정 칸).
+
 ## 28차 (2026-11-27) — 유류비 표에 「📋 날짜 미정 목록」 칸
 - 문제: Oscar 가 지도에서 루트 5개 이상을 만들었는데 ⛽ 담당별 유류비 예산 합계에 안 보임 → 지도에서 짠 루트는 날짜 미정 방문 목록으로 저장되고, 표는 날짜 있는 루트만 셌음.
 - `GET /api/prospect-fuel`: 날짜 미정 목록(route_date NULL, 정류장 있는 것)도 셈 — 담당별 `undated`·`dated`·`total`(= dated + undated), 전체 `undated`·`dated`·`total`.

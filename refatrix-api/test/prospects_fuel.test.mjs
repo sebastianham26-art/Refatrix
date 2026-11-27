@@ -52,10 +52,28 @@ test('서버 — 담당별 · 기간별 합계 · 디렉터만', { skip: !PG && 
   assert.equal(u.dated.routes, 2); assert.equal(u.total.routes, 3, '합계 = 날짜 있는 2 + 날짜 미정 1');
   assert.ok(d.undated.routes >= 1); assert.ok(d.dated.routes >= 2);
   const w = (await app.inject({ method: 'GET', url: '/api/prospect-fuel?unit=week', headers: dir.h })).json(); assert.equal(w.periods.length, 8);
+  // 1127 · 미래 포함 · 시작 기간 자유
+  assert.equal(w.current, w.periods[3].key, '주별 기본 = 지난 3주 + 이번 주 + 앞으로 4주');
+  const m6 = (await app.inject({ method: 'GET', url: '/api/prospect-fuel?unit=month', headers: dir.h })).json();
+  assert.equal(m6.periods[2].key, m6.current, '월별 기본 = 지난 2개월 + 이번 달 + 앞으로 3개월');
+  const nx = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 15)).toISOString().slice(0, 7);   // 다음 달
+  await route(rep.id, nx + '-03', [a, c]);
+  const f = (await app.inject({ method: 'GET', url: '/api/prospect-fuel?unit=month&n=3&from=' + nx, headers: dir.h })).json();
+  assert.equal(f.periods[0].key, nx); const uf = f.users.find((x) => x.user_id === rep.id);
+  assert.equal(uf.cells[nx].routes, 1, '다음 달(미래) 루트가 그 달 칸에');
+  const back = (await app.inject({ method: 'GET', url: '/api/prospect-fuel?unit=month&n=2', headers: dir.h })).json();
+  assert.ok(back.span.after >= 1, '보이는 기간 뒤에 루트가 있으면 알려 줌');
   assert.equal((await app.inject({ method: 'GET', url: '/api/prospect-fuel', headers: rep.h })).statusCode, 403, '영업');
   assert.equal((await app.inject({ method: 'GET', url: '/api/prospect-fuel', headers: mgr.h })).statusCode, 403, '관리자 지정자도 안 됨');
   const meta = (await app.inject({ method: 'GET', url: '/api/prospect-meta', headers: dir.h }));
   if (meta.statusCode === 200) assert.equal(meta.json().is_real_director, true);
   await query(`DELETE FROM prospect_settings WHERE key IN ('fuel_price')`); await query(`UPDATE prospect_settings SET value=1.3 WHERE key='road_factor'`);
   await app.close();
+});
+
+test('1127 · 시작 기간부터 n 개(미래 포함)', async () => {
+  const { fuelPeriodsFrom } = await import('../src/routes/prospectRoutes.js');
+  assert.deepEqual(fuelPeriodsFrom('2026-11', 'month', 3).map((p) => p.key), ['2026-11', '2026-12', '2027-01']);
+  assert.deepEqual(fuelPeriodsFrom('2026-11-27', 'week', 2).map((p) => [p.from, p.to]), [['2026-11-23', '2026-11-29'], ['2026-11-30', '2026-12-06']]);
+  assert.equal(fuelPeriodsFrom('bad', 'month', 3), null);
 });
