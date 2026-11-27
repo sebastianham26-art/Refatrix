@@ -1,7 +1,7 @@
 // =====================================================================
 // 1108 · 장착 위치 — CTR 확인값(products.mount_pos · 0323) 우선 · 제품 찾기 두 화면이 같은 위치
 //   A. 라우트(실 PostgreSQL): /api/products/positions/lookup — CTR 확인값 → 업로드 요약 순
-//   B. 화면(jsdom): 「차종으로 제품 찾기」 결과 · 「제품 검색」 결과 — 목록 배지와 드릴다운이 같은 값
+//   B. 화면(jsdom): 「차종으로 제품찾기」 차량 도면 상세 · 「제품 검색」 결과 — 같은 장착 위치 표기 (2026-11-27 도면으로 교체)
 //   실행: DATABASE_URL=... node --import ./test/helpers/stub-auth.mjs --test test/product_positions_ctr.test.mjs
 // =====================================================================
 import { test } from 'node:test';
@@ -52,6 +52,9 @@ const PROD = (id, code) => ({ id, code, name: 'PIEZA ' + code, scode: '1111', ap
 const ROUTES = {
   '/api/products/positions/lookup': (u, o, body) => ({ items: Object.fromEntries((body.codes || []).filter((c) => POS[c]).map((c) => [c, POS[c]])) }),
   '/api/products/\\d+/drilldown': { product: { id: 1, code: 'X', is_active: true }, sales: [], total_sold: 0, customer_count: 0, can_manage_status: false, oe: [] },
+  '/api/products/vehicle-map': { vehicle: { maker: 'NISSAN', model: 'Versa', year: null }, competitors: [], counts: { ctr: 2 },
+    items: ['CQ0001L', 'CB0002'].map((c, i) => ({ id: i + 1, code: c, name: 'PIEZA ' + c, cat: 'arm', syd: ['1111'], baw: [], oe: [],
+      pos: { blocks: POS[c].blocks, levels: POS[c].levels, sides: POS[c].sides, src: POS[c].src }, stock_qty: 3, transit_qty: 0, backorder_qty: 0, sold_qty: 0, racks: [] })) },
   '/api/products/by-vehicle': { items: [{ ...PROD(1, 'CQ0001L'), app_text: 'NISSAN Versa 2012-2019' }, { ...PROD(2, 'CB0002'), app_text: 'NISSAN Versa 2012-2019' }] },
   '/api/products\\?': { items: [PROD(1, 'CQ0001L'), PROD(2, 'CB0002')], total: 2 },
 };
@@ -88,22 +91,29 @@ async function readScreen(c, root, rowSel) {
   return out;
 }
 
-test('B. 제품 찾기 — 차종 검색 결과와 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
+test('B. 제품 찾기 — 차종 도면(차종으로 제품찾기)과 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
   const c = await boot();
-  assert.match(c.d.title, /ps-1111xr/);
-  // ① 차종으로 제품 찾기
+  assert.match(c.d.title, /ps-1127vm/);
+  // ① 차종으로 제품찾기(2026-11-27 · 상단 토글 · 차량 도면)
+  c.d.getElementById('fmVeh').dispatchEvent(new c.w.Event('click'));
   const mk = c.d.getElementById('veh-maker'); mk.innerHTML = '<option value="NISSAN">NISSAN</option>'; mk.value = 'NISSAN';
+  const md = c.d.getElementById('veh-model'); md.innerHTML = '<option value="Versa">Versa</option>'; md.value = 'Versa';
   c.d.getElementById('vehBtn').dispatchEvent(new c.w.Event('click')); await tick(150);
-  const veh = await readScreen(c, c.d.getElementById('vehResult'), 'tr.vrow');
+  const veh = {};
+  for (const code of ['CQ0001L', 'CB0002']) {
+    const row = [...c.d.querySelectorAll('#vehResult .vm-row')].find((r) => r.textContent.includes(code));
+    row.dispatchEvent(new c.w.Event('click')); await tick(30);
+    veh[code] = c.d.querySelector('#vehResult .vm-det .ps b').textContent;
+  }
   // ② 제품 검색
+  c.d.getElementById('fmSearch').dispatchEvent(new c.w.Event('click'));
   c.d.getElementById('q').value = 'C'; c.w.doSearch(); await tick(150);
   const srch = await readScreen(c, c.d, 'tr.prow:not(.vrow)');
 
-  assert.deepEqual(veh.CQ0001L.badge, '앞·하·좌/우', '차종 검색 목록에도 배지');
+  assert.equal(veh.CQ0001L, '앞·하·좌/우', '차종 도면 상세에도 같은 표기');
   for (const code of ['CQ0001L', 'CB0002']) {
-    assert.equal(veh[code].badge, srch[code].badge, code + ' 목록 배지 같음');
-    assert.equal(veh[code].drill, srch[code].drill, code + ' 드릴다운 같음');
-    assert.equal(veh[code].badge, veh[code].drill, code + ' 목록 = 드릴다운');
+    assert.equal(veh[code], srch[code].badge, code + ' 도면 = 목록 배지');
+    assert.equal(srch[code].badge, srch[code].drill, code + ' 목록 = 드릴다운');
   }
   assert.match(srch.CQ0001L.text, /CTR 확인/); assert.match(srch.CQ0001L.text, /업로드 원본\(참고\): 앞·하·좌/);
   assert.match(srch.CQ0001L.text, /Delantera Inferior Izquierda\/Derecha/);
