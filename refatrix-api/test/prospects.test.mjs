@@ -297,3 +297,16 @@ test('목표 대비 방문 계획: 계획률·부족·속도(근무일 월~금)'
   assert.equal(g.expected, Math.round(300 * 18 / 21)); assert.equal(g.pace, 'bad');
   assert.equal(planStatus({ target: 0, period: '2026-11', today: '2026-11-26' }).gap, null);
 });
+
+test('시작 업체를 고르면 첫 코스 1번으로 고정, 나머지는 그 위치에서 최적 순서', async () => {
+  const { planDays } = await import('../src/prospectCore.js');
+  const c = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, lat: 25.6 + (i % 5) * 0.01, lng: -100.3 + Math.floor(i / 5) * 0.01, priority: i === 7 ? 'C' : 'A' }));
+  const p = planDays(c, { max: 8, maxDays: 3, firstId: 8 });
+  assert.equal(p.days[0].stops[0].id, 8);
+  assert.equal(p.days.reduce((a, d) => a + d.stops.length, 0), 20);
+  assert.equal(new Set(p.days.flatMap((d) => d.stops.map((s) => s.id))).size, 20);
+  // 시작점 옆 업체가 2번(가까운 순서)
+  const s0 = p.days[0].stops; const d = (a, b) => Math.hypot(a.lat - b.lat, a.lng - b.lng);
+  const nearest = c.filter((x) => x.id !== 8).sort((a, b) => d(a, c[7]) - d(b, c[7]))[0];
+  assert.ok(d(s0[1], c[7]) <= d(nearest, c[7]) + 0.0101);
+});

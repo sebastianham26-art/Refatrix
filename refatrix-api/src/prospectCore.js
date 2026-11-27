@@ -580,12 +580,24 @@ export function weekBounds(ymd) {
 // 하루 최대 방문 수를 넘는 곳은 다음 날(일요일·이미 루트가 있는 날 제외)로 넘긴다.
 //   ① 우선순위 순으로 (일수 × 하루 최대)까지만 고르고 ② 가까운 순서(최근접 이웃)로 한 줄로 이은 뒤
 //   ③ 하루 최대씩 잘라서 ④ 날마다 2-opt 로 다시 최적화 — 하루 동선이 한 동네에 모이게 한다.
-export function planDays(cands, { max = 12, maxDays = 5, start = null } = {}) {
+//   firstId: 담당자가 지도에서 고른 시작 업체 — 첫 코스의 1번으로 고정, 나머지는 그 위치에서 출발해 최적화
+export function planDays(cands, { max = 12, maxDays = 5, start = null, firstId = null } = {}) {
   const cap = Math.max(1, max) * Math.max(1, maxDays);
-  const picked = (cands || []).filter((s) => s.lat != null && s.lng != null).slice().sort(rankForRoute).slice(0, cap);
-  const chain = orderStops(picked, start);
+  const all = (cands || []).filter((s) => s.lat != null && s.lng != null);
+  const first = firstId ? all.find((s) => Number(s.id) === Number(firstId)) : null;
+  const from = first ? { lat: Number(first.lat), lng: Number(first.lng) } : start;
+  // 시작 업체가 있으면 그곳에서 가까운 순서로 이어서 채운다(코스가 시작점에서 바깥으로 차례로 퍼짐)
+  const picked = first ? [first].concat(orderStops(all.filter((s) => s !== first), from)).slice(0, cap)
+    : all.slice().sort(rankForRoute).slice(0, cap);
+  const chain = first ? picked : orderStops(picked, start);
   const days = [];
   for (let i = 0; i < chain.length; i += max) {
+    if (first && i === 0) {
+      const rest = optimizeRoute(chain.slice(1, max), from);
+      const st = [first].concat(rest.stops);
+      days.push({ stops: st, distance_m: rest.distance_m, minutes: routeMinutes(rest.distance_m, st.length) });
+      continue;
+    }
     const opt = optimizeRoute(chain.slice(i, i + max), i === 0 ? start : null);
     days.push({ stops: opt.stops, distance_m: opt.distance_m, minutes: routeMinutes(opt.distance_m, opt.stops.length) });
   }

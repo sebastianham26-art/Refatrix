@@ -308,19 +308,25 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
     <div class="split">
       <div><div id="map"></div><div class="legend" id="m-legend"></div></div>
       <div class="card" id="ar-panel">
-        <h2>구역으로 루트 만들기</h2>
-        <p class="note">담당자를 고르고 「구역 그리기」 → 지도에서 네모를 끌어 그리세요. 모서리 ■로 크기, 가운데 ✥로 위치를 바꾸면 바로 다시 제안합니다. 하루에 다 못 가는 곳은 다음 코스로 나눕니다.<br>
+        <h2>루트 만들기</h2>
+        <div style="display:flex;gap:6px;margin:6px 0 10px"><button class="chip" data-armode="terr" style="padding:8px 14px;cursor:pointer">📋 내 지역에서</button><button class="chip" data-armode="draw" style="padding:8px 14px;cursor:pointer">▭ 구역 그리기</button></div>
+        <div id="arm-terr">
+          <p class="note">① 담당 지역을 고르면 지도에 지역과 방문할 곳(빨간 점)이 나옵니다. ② 지도에서 <b>처음 방문할 업체</b>를 누르면 그곳부터 이동 거리가 가장 짧은 순서로 방문 계획을 짭니다. 다른 점을 누르면 시작점이 바뀝니다.</p>
+          <div id="tr-list" style="margin-top:8px"></div>
+          <div id="tr-start" style="margin-top:8px"></div>
+        </div>
+        <p class="note arm-draw">담당자를 고르고 「구역 그리기」 → 지도에서 네모를 끌어 그리세요. 모서리 ■로 크기, 가운데 ✥로 위치를 바꾸면 바로 다시 제안합니다. 하루에 다 못 가는 곳은 다음 코스로 나눕니다.<br>
         저장하면 <b>방문 목록(날짜 미정)</b>이 되고, 날짜는 「오늘 루트」에서 본인이 고릅니다. 다른 사람이 이미 맡았거나 목록에 넣은 곳(지도의 회색 ×)은 빼고 그립니다.</p>
         <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
           <label class="fld"><span>담당자</span><select id="ar-user"></select></label>
           <label class="fld"><span>코스당 최대 방문</span><input type="number" id="ar-max" min="1" max="30" value="12"></label>
           <label class="fld"><span>최대 코스 수</span><input type="number" id="ar-days" min="1" max="15" value="5"></label>
-          <label class="fld"><span>출발지</span><select id="ar-start"><option value="">구역 안 첫 업체</option><option value="me">내 현재 위치</option></select></label>
+          <label class="fld arm-draw"><span>출발지</span><select id="ar-start"><option value="">구역 안 첫 업체</option><option value="me">내 현재 위치</option></select></label>
         </div>
         <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-unas" checked> 미배정 후보 포함</label>
         <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-skip" checked> 최근 7일 방문한 곳 제외</label>
         <label class="chip" style="padding:8px 12px;margin-top:10px"><input type="checkbox" id="ar-multi" checked> 남는 곳은 다음 코스로 나누기</label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><button class="btn red" id="ar-draw">구역 그리기</button><button class="btn ghost hide" id="ar-clear">지우기</button>
+        <div class="arm-draw" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><button class="btn red" id="ar-draw">구역 그리기</button><button class="btn ghost hide" id="ar-clear">지우기</button>
           <span class="seg" style="display:inline-flex;gap:4px;margin-left:auto"><label class="chip" style="padding:6px 10px"><input type="radio" name="ar-shape" value="rect" checked> ▭ 네모</label><label class="chip" style="padding:6px 10px"><input type="radio" name="ar-shape" value="free"> ✎ 자유형</label></span></div>
         <div id="ar-out" style="margin-top:14px"></div>
       </div>
@@ -779,7 +785,8 @@ $('m-terr').addEventListener('change',()=>loadMapTerrs());
 function loadMap(){
   if(!$('ar-user').options.length){ opts($('ar-user'),META.staff.map(u=>[u.id,u.name]),null); $('ar-user').value=META.me; $('ar-user').disabled=!isDir; }
   loadMapGoal();
-  if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); loadMapTerrs(true); }
+  if(noLeaflet('map')) return; ensureMap(); loadMapPins(); loadTracks(); loadMapTerrs(true);
+  if(!loadMap.did){ loadMap.did=true; setArMode('terr'); } }
 // ── 구역(올가미) 그리기 → 루트 제안 ──
 let LASSO=null, lassoLine=null, arLayer=null, AR=null;
 // 지도에서 마우스·손가락으로 구역 둘러 그리기(공용) → done([[lat,lng],...])
@@ -848,18 +855,75 @@ $('ar-draw').onclick=()=>{
   arRoute.clearLayers(); $('ar-out').innerHTML='';
   drawArea(shapeOf('ar-shape'),MAP,$('map'),arLayer,$('ar-draw'),poly=>{ AR={polygon:poly,day:0}; suggestRoute(); });
 };
-$('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); if(arRoute) arRoute.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); $('ar-draw').textContent='구역 그리기'; renderMapGoal(); };
+$('ar-clear').onclick=()=>{ if(arLayer) arLayer.clearLayers(); if(arRoute) arRoute.clearLayers(); if(typeof TR!=='undefined'&&TR.lyr){ TR.lyr.clearLayers(); TR.start=null; TR.cands=[]; TR.sel.clear(); $('tr-start').innerHTML=''; if(TR.terrs.length) renderTrList(); basePins(true); } AR=null; $('ar-out').innerHTML=''; $('ar-clear').classList.add('hide'); $('ar-draw').textContent='구역 그리기'; renderMapGoal(); };
 async function suggestRoute(){
   if(!AR) return;
   let start={};
-  if($('ar-start').value==='me'){ const g=await geo(); if(g) start={start_lat:g.lat,start_lng:g.lng}; }
+  if(AR.territory_ids){ if(TR.start&&TR.start.prospect_id) start={start_prospect_id:TR.start.prospect_id}; else if(TR.start) start={start_lat:TR.start.lat,start_lng:TR.start.lng}; }
+  else if($('ar-start').value==='me'){ const g=await geo(); if(g) start={start_lat:g.lat,start_lng:g.lng}; }
   AR.start=start;
-  let r; try{ r=await post('/api/prospect-routes/suggest',{polygon:AR.polygon,user_id:Number($('ar-user').value)||META.me,
+  let r; try{ r=await post('/api/prospect-routes/suggest',{...(AR.territory_ids?{territory_ids:AR.territory_ids}:{polygon:AR.polygon}),user_id:Number($('ar-user').value)||META.me,
     max_stops:Number($('ar-max').value)||12,max_days:Number($('ar-days').value)||5,multi_day:$('ar-multi').checked,
     include_unassigned:$('ar-unas').checked,skip_visited_days:$('ar-skip').checked?7:0,...start}); }catch(e){ return toast('실패: '+e.message); }
   AR.res=r; AR.day=Math.min(AR.day||0,Math.max(0,r.days.length-1)); drawSuggestion(); renderMapGoal();
 }
-['ar-max','ar-days','ar-multi','ar-unas','ar-skip','ar-user'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR&&AR.polygon) suggestRoute(); }));
+['ar-max','ar-days','ar-multi'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR) suggestRoute(); }));
+['ar-unas','ar-skip'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR_MODE==='terr') loadTrCands(true); else if(AR) suggestRoute(); }));
+$('ar-user').addEventListener('change',()=>{ if(AR_MODE==='terr'){ TR.sel.clear(); clearTr(); loadMyTerrs(); } else if(AR) suggestRoute(); });
+
+// ── 📋 내 지역에서 루트 짜기: 지역 목록 → 지도 표시 → 시작 업체 선택 → 최적 순서 ──
+let AR_MODE='terr', TR={sel:new Set(),terrs:[],cands:[],start:null,lyr:null};
+function setArMode(m){
+  AR_MODE=m; document.querySelectorAll('[data-armode]').forEach(b=>{ const on=b.dataset.armode===m; b.style.background=on?'#111':''; b.style.color=on?'#fff':''; });
+  $('arm-terr').classList.toggle('hide',m!=='terr'); document.querySelectorAll('.arm-draw').forEach(e=>e.classList.toggle('hide',m!=='draw'));
+  $('ar-clear').onclick();
+  if(m==='terr') loadMyTerrs();
+}
+document.querySelectorAll('[data-armode]').forEach(b=>b.onclick=()=>setArMode(b.dataset.armode));
+// 지역을 고른 동안은 일반 핀을 숨기고 그 지역 대상만 보여 줌
+function basePins(on){ if(!MAP||!layer) return; if(on&&!MAP.hasLayer(layer)) layer.addTo(MAP); if(!on&&MAP.hasLayer(layer)) MAP.removeLayer(layer); }
+function clearTr(){ if(!TR.sel.size) basePins(true); TR.start=null; TR.cands=[]; if(TR.lyr) TR.lyr.clearLayers(); if(arRoute) arRoute.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('tr-start').innerHTML=''; renderMapGoal(); }
+async function loadMyTerrs(){
+  const uid=Number($('ar-user').value)||META.me;
+  let r; try{ r=await api('/api/prospect-routes/my-territories?user='+uid); }catch(e){ $('tr-list').innerHTML='<div class="banner warn">지역 목록을 못 불러왔습니다: '+esc(e.message)+'</div>'; return; }
+  TR.terrs=r.rows; [...TR.sel].forEach(id=>{ if(!TR.terrs.some(t=>t.id===id)) TR.sel.delete(id); });
+  renderTrList();
+}
+function renderTrList(){
+  const nm=$('ar-user').options[$('ar-user').selectedIndex]; 
+  if(!TR.terrs.length){ $('tr-list').innerHTML='<div class="banner warn">'+esc(nm?nm.text:'')+'에게 정해진 지역이 없습니다. 「지역·담당」 탭에서 지역을 정하거나 「▭ 구역 그리기」를 쓰세요.</div>'; return; }
+  $('tr-list').innerHTML='<div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto">'+TR.terrs.map(t=>{ const on=TR.sel.has(t.id);
+    return '<label class="chip" style="display:flex;gap:10px;align-items:center;padding:8px 12px;border-radius:10px;cursor:pointer;'+(on?'border-color:#E2231A;background:#fff3f2':'')+'"><input type="checkbox" data-tr="'+t.id+'"'+(on?' checked':'')+'>'+
+      '<span style="flex:1;min-width:0"><b>'+esc(t.name)+'</b><br><span class="note">남은 방문 <b style="color:#E2231A">'+fmt(t.todo)+'곳</b> · 내 목록 '+fmt(t.planned)+' · 최근 방문 '+fmt(t.visited)+' · 전체 '+fmt(t.total)+'</span></span>'+
+      '<button class="iconbtn" data-trzoom="'+t.id+'" title="지도에서 보기" aria-label="지도에서 보기">🔍</button></label>'; }).join('')+'</div>';
+  $('tr-list').querySelectorAll('[data-tr]').forEach(c=>c.onchange=()=>{ const id=Number(c.dataset.tr); c.checked?TR.sel.add(id):TR.sel.delete(id); renderTrList(); loadTrCands(); });
+  $('tr-list').querySelectorAll('[data-trzoom]').forEach(b=>b.onclick=e=>{ e.preventDefault(); e.stopPropagation(); const t=TR.terrs.find(x=>x.id===Number(b.dataset.trzoom)); if(t&&t.outline&&MAP) MAP.fitBounds(L.latLngBounds(t.outline),{padding:[30,30]}); });
+}
+async function loadTrCands(keepStart){
+  const keep=keepStart?TR.start:null; clearTr(); TR.start=keep;
+  if(!TR.sel.size) return;
+  const uid=Number($('ar-user').value)||META.me;
+  let r; try{ r=await api('/api/prospect-routes/territory-cands?user='+uid+'&ids='+[...TR.sel].join(',')+'&skip='+($('ar-skip').checked?7:0)+'&unas='+($('ar-unas').checked?1:0)); }catch(e){ return toast('실패: '+e.message); }
+  TR.cands=r.rows; drawTr(true);
+  if(TR.start) pickStart(TR.start);
+}
+function drawTr(fit){
+  if(!MAP) return; if(!TR.lyr) TR.lyr=L.layerGroup().addTo(MAP); TR.lyr.clearLayers(); basePins(!TR.sel.size);
+  const sel=TR.terrs.filter(t=>TR.sel.has(t.id)); const bb=[];
+  sel.forEach(t=>{ if(t.outline){ L.polygon(t.outline,{color:'#E2231A',weight:2,dashArray:'6 4',fillOpacity:.04,interactive:false}).addTo(TR.lyr); bb.push(...t.outline); } });
+  const todo=TR.cands.filter(c=>!c.why);
+  TR.cands.filter(c=>c.why).forEach(c=>L.circleMarker([c.lat,c.lng],{radius:4,weight:1,color:'#fff',fillColor:c.why==='planned'?'#1F6FEB':'#9a9a9a',fillOpacity:.8})
+    .bindTooltip(esc(c.nom_estab)+' · '+({planned:'내 목록·루트에 있음',visited:'최근 방문',closed:'첫 매출·중단',others:'다른 담당',others_terr:'다른 담당 지역',others_planned:'다른 사람 목록',unassigned_skipped:'미배정'}[c.why]||'')).addTo(TR.lyr));
+  todo.forEach(c=>{ const st=TR.start&&TR.start.prospect_id===c.id;
+    L.circleMarker([c.lat,c.lng],{radius:st?10:(TR.start?5:7),weight:st?3:(TR.start?1:2),color:'#fff',fillColor:st?'#111':(TR.start?'#f0a39d':'#E2231A'),fillOpacity:.95})
+      .bindTooltip((st?'★ 시작 · ':'')+esc(c.nom_estab)+' — 눌러서 여기서 시작').on('click',ev=>{ L.DomEvent.stopPropagation(ev); pickStart({prospect_id:c.id,name:c.nom_estab,lat:c.lat,lng:c.lng}); }).addTo(TR.lyr); });
+  if(fit){ todo.forEach(c=>bb.push([c.lat,c.lng])); if(bb.length) MAP.fitBounds(L.latLngBounds(bb),{padding:[30,30],maxZoom:16}); }
+  $('tr-start').innerHTML=!todo.length?'<div class="banner warn">고른 지역에 지금 방문할 곳이 없습니다(이미 목록에 있거나 최근 방문·중단).</div>':
+    TR.start?'<div class="banner info">★ 시작: <b>'+esc(TR.start.name||'내 현재 위치')+'</b> · 방문 대상 '+fmt(todo.length)+'곳 — 다른 빨간 점을 누르면 시작점이 바뀝니다.</div>':
+    '<div class="banner info">지도에서 <b>처음 방문할 업체(빨간 점)</b>를 누르세요 · 방문 대상 <b>'+fmt(todo.length)+'곳</b></div><button class="btn ghost sm" id="tr-me" style="margin-top:6px">📍 내 현재 위치에서 시작</button>';
+  const me=$('tr-me'); if(me) me.onclick=async()=>{ const g=await geo(); if(!g) return toast('현재 위치를 못 가져왔습니다'); pickStart({lat:g.lat,lng:g.lng,name:'내 현재 위치'}); };
+}
+function pickStart(st){ TR.start=st; AR={territory_ids:[...TR.sel],day:0}; drawTr(false); suggestRoute(); }
 const DAY_COLORS=['#E2231A','#1F6FEB','#1E7A46','#F5A300','#7B3FE4','#0E8C8C','#C2185B','#5D4037'];
 const wd=d=>['일','월','화','수','목','금','토'][new Date(d+'T12:00:00').getDay()];
 const hm=m=>Math.floor(m/60)+'시간 '+(m%60)+'분';
@@ -875,15 +939,15 @@ function drawSuggestion(){
   const r=AR.res, C=r.counts||{}; if(!arRoute) arRoute=L.layerGroup().addTo(MAP); arRoute.clearLayers();
   $('ar-clear').classList.remove('hide');
   // 다른 사람이 이미 맡았거나 목록에 넣은 곳 = 회색 × (빼고 그림)
-  (r.excluded||[]).forEach(x=>L.marker(x,{interactive:false,icon:L.divIcon({className:'',iconSize:[12,12],iconAnchor:[6,6],html:'<div style="width:12px;height:12px;color:#8a8a8a;font:800 12px/12px sans-serif;text-align:center">×</div>'})}).addTo(arRoute));
+  if(!AR.territory_ids) (r.excluded||[]).forEach(x=>L.marker(x,{interactive:false,icon:L.divIcon({className:'',iconSize:[12,12],iconAnchor:[6,6],html:'<div style="width:12px;height:12px;color:#8a8a8a;font:800 12px/12px sans-serif;text-align:center">×</div>'})}).addTo(arRoute));
   const oth=(C.others||0)+(C.others_terr||0)+(C.others_planned||0);
   const excl=[oth?'다른 사람이 지정 '+fmt(oth)+(C.others_terr||C.others_planned?' (담당 '+fmt(C.others||0)+' · 지역 '+fmt(C.others_terr||0)+' · 목록 '+fmt(C.others_planned||0)+')':''):'',
     C.planned?'내 목록·루트에 이미 있음 '+fmt(C.planned):'',C.visited?'최근 방문 '+fmt(C.visited):'',C.closed?'첫 매출·중단 '+fmt(C.closed):'',C.unassigned_skipped?'미배정 '+fmt(C.unassigned_skipped):''].filter(Boolean);
-  const head='<div class="banner info">구역 안 후보 <b>'+fmt(C.in_area)+'곳</b> · 방문 대상 <b>'+fmt(C.eligible)+'곳</b>'+(excl.length?'<br><span class="note">뺀 곳: '+excl.join(' · ')+'</span>':'')+'</div>';
+  const head='<div class="banner info">'+(AR.territory_ids?'고른 지역':'구역')+' 안 후보 <b>'+fmt(C.in_area)+'곳</b> · 방문 대상 <b>'+fmt(C.eligible)+'곳</b>'+(excl.length?'<br><span class="note">뺀 곳: '+excl.join(' · ')+'</span>':'')+'</div>';
   if(!r.days.length){ $('ar-out').innerHTML=head+'<div class="banner warn" style="margin-top:8px">구역 안에 방문할 후보가 없습니다. 회색 ×(다른 사람이 지정)와 검은 테두리(다녀간 곳)를 피해 다시 그려 보세요.</div>'; return; }
   const nm=$('ar-user').options[$('ar-user').selectedIndex].text;
   const tot=r.days.reduce((a,d)=>({km:a.km+d.distance_m,n:a.n+d.stops.length}),{km:0,n:0});
-  const warn=C.left>0?'<div class="banner warn" style="margin-top:8px">'+fmt(C.left)+'곳은 '+r.days.length+'개 코스에 못 들어갑니다 — 「최대 코스 수」를 늘리거나 구역을 나눠 그리세요.</div>':'';
+  const warn=C.left>0?'<div class="banner warn" style="margin-top:8px">'+fmt(C.left)+'곳은 '+r.days.length+'개 코스에 못 들어갑니다 — '+(AR.territory_ids?'이 목록을 저장한 뒤 남은 곳(연한 점)에서 시작점을 다시 고르거나 「최대 코스 수」를 늘리세요.':'「최대 코스 수」를 늘리거나 구역을 나눠 그리세요.')+'</div>':'';
   const chips='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">'+r.days.map((d,k)=>'<button class="chip" data-day="'+k+'" style="padding:6px 10px;cursor:pointer;border-color:'+DAY_COLORS[k%8]+';'+(k===AR.day?'background:'+DAY_COLORS[k%8]+';color:#fff':'')+'"><b>코스 '+(k+1)+'</b> · '+d.stops.length+'곳'+(d.estimate?' · '+hm(d.estimate.total_min):'')+'</button>').join('')+'</div>';
   const D=r.days[AR.day];
   r.days.forEach((d,k)=>{ const col=DAY_COLORS[k%8], on=k===AR.day;
@@ -907,7 +971,7 @@ function drawSuggestion(){
     const uid=Number($('ar-user').value)||META.me;
     try{ const x=await post('/api/prospect-routes/plans',{user_id:uid,name:AR.name,days:r.days.filter(d=>d.stops.length).map(d=>({prospect_ids:d.stops.map(s=>s.id)}))});
       toast('방문 목록 '+x.ids.length+'개 저장 — 「오늘 루트」에서 날짜를 고르세요');
-      if(isDir) $('rt-user').value=String(uid); RT_VIEW=null; arRoute.clearLayers(); arLayer.clearLayers(); AR=null; $('ar-out').innerHTML=''; $('ar-draw').textContent='구역 그리기'; loadMapPins(); loadMapGoal(); show('route'); }
+      if(isDir) $('rt-user').value=String(uid); RT_VIEW=null; arRoute.clearLayers(); if(arLayer) arLayer.clearLayers(); if(TR.lyr) TR.lyr.clearLayers(); TR.sel.clear(); TR.start=null; TR.cands=[]; $('tr-start').innerHTML=''; basePins(true); loadMyTerrs(); AR=null; $('ar-out').innerHTML=''; $('ar-draw').textContent='구역 그리기'; loadMapPins(); loadMapGoal(); show('route'); }
     catch(e){ toast('실패: '+e.message); } };
 }
 async function loadMapPins(){

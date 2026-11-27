@@ -1082,53 +1082,103 @@ export default async function prospectRoutes(app) {
   app.post('/api/prospect-routes/suggest', edit, async (req, reply) => {
     const b = req.body || {};
     const poly = (Array.isArray(b.polygon) ? b.polygon : []).map((p) => [Number(p[0]), Number(p[1])]).filter((p) => p.every(Number.isFinite)).slice(0, 2000);
-    if (poly.length < 3) return reply.code(400).send({ error: 'polygon_required' });
+    const terrIds = [...new Set((Array.isArray(b.territory_ids) ? b.territory_ids : []).map(int).filter(Boolean))].slice(0, 50);
+    if (poly.length < 3 && !terrIds.length) return reply.code(400).send({ error: 'polygon_required' });
     const uid = isDir(req) && int(b.user_id) ? int(b.user_id) : me(req);
     const max = Math.min(30, Math.max(1, int(b.max_stops) || 12));
     const multi = b.multi_day !== false;
     const maxDays = multi ? Math.min(15, Math.max(1, int(b.max_days) || 5)) : 1;
     const skipDays = b.skip_visited_days === 0 || b.skip_visited_days === false ? 0 : (int(b.skip_visited_days) || 7);
-    const lats = poly.map((p) => p[0]), lngs = poly.map((p) => p[1]);
-    const rows = (await query(
-      `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage, p.owner_user_id, p.last_activity_at, p.colonia, p.municipio,
-              t.owner_user_id AS terr_owner,
-              (SELECT MAX(c.created_at) FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL) AS last_visit,
-              (SELECT MIN(r.user_id) FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
-                WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND (r.route_date IS NULL OR r.route_date >= $5::date)) AS planned_by
-         FROM prospects p LEFT JOIN prospect_territories t ON t.id=p.territory_id
-        WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4`,
-      [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs), mxToday()])).rows
-      .filter((r) => inPolygon(Number(r.lat), Number(r.lng), poly));
-    const cnt = { in_area: rows.length, others: 0, others_terr: 0, others_planned: 0, visited: 0, planned: 0, closed: 0, unassigned_skipped: 0 };
-    const since = Date.now() - skipDays * 86400000;
-    const cands = [], excluded = [];
-    for (const r of rows) {
-      const owner = r.owner_user_id == null ? null : Number(r.owner_user_id);
-      const tOwner = r.terr_owner == null ? null : Number(r.terr_owner);
-      const pBy = r.planned_by == null ? null : Number(r.planned_by);
-      let why = null;
-      if (['cliente_activo', 'descartado'].includes(r.stage)) why = 'closed';
-      else if (owner != null && owner !== uid) why = 'others';
-      else if (owner == null && tOwner != null && tOwner !== uid) why = 'others_terr';
-      else if (pBy != null && pBy !== uid) why = 'others_planned';
-      else if (owner == null && b.include_unassigned === false) why = 'unassigned_skipped';
-      else if (skipDays && r.last_visit && new Date(r.last_visit).getTime() > since) why = 'visited';
-      else if (pBy != null) why = 'planned';
-      if (why) { cnt[why]++; if (why.startsWith('others') && excluded.length < 1500) excluded.push([Number(r.lat), Number(r.lng)]); continue; }
-      cands.push({ ...r, id: Number(r.id), lat: Number(r.lat), lng: Number(r.lng), owner_user_id: owner });
-    }
-    cnt.eligible = cands.length;
-    const start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
-    const plan = planDays(cands, { max, maxDays, start });
+    const rows = terrIds.length ? await areaRows({ territoryIds: terrIds }) : await areaRows({ polygon: poly });
+    const { cnt, cands, excluded } = classifyCands(rows, uid, { skipDays, includeUnassigned: b.include_unassigned !== false });
+    // 시작 업체(지도에서 고른 핀): 그 위치에서 출발, 첫 방문지로 고정
+    let start = Number.isFinite(Number(b.start_lat)) && Number.isFinite(Number(b.start_lng)) ? { lat: Number(b.start_lat), lng: Number(b.start_lng) } : null;
+    const firstId = int(b.start_prospect_id) || null;
+    if (firstId) { const f = cands.find((c) => c.id === firstId) || rows.find((r) => Number(r.id) === firstId); if (f) start = { lat: Number(f.lat), lng: Number(f.lng), prospect_id: firstId }; }
+    const plan = planDays(cands, { max, maxDays, start, firstId: cands.some((c) => c.id === firstId) ? firstId : null });
     const rs = await routeSettings();
-    const days = await Promise.all(plan.days.map(async (d, k) => { const e = await estimateRoad(d.stops, rs, k === 0 ? start : null); return { ...d, minutes: e.total_min, estimate: e }; }));
+    const days = await Promise.all(plan.days.map(async (d, k) => { const e = await estimateRoad(d.stops, rs, k === 0 && !firstId ? start : null); return { ...d, minutes: e.total_min, estimate: e }; }));
     cnt.scheduled = days.reduce((a, d) => a + d.stops.length, 0); cnt.left = cnt.eligible - cnt.scheduled;
-    // 목록 이름 제안: 구역 안에서 가장 많은 colonia(없으면 municipio)
     const freq = {}; cands.forEach((c) => { const k = c.colonia || c.municipio; if (k) freq[k] = (freq[k] || 0) + 1; });
     const top = Object.entries(freq).sort((a, c) => c[1] - a[1])[0];
+    const tn = terrIds.length ? (await query(`SELECT name FROM prospect_territories WHERE id = ANY($1) ORDER BY name`, [terrIds])).rows.map((r) => r.name) : [];
     const d0 = days[0] || { stops: [], distance_m: 0, minutes: 0 };
-    return { user_id: uid, start, days, counts: cnt, excluded, name_hint: top ? top[0] : null, route_settings: rs,
+    return { user_id: uid, start, start_prospect_id: firstId, territory_ids: terrIds, days, counts: cnt, excluded,
+      name_hint: tn.length ? tn.join(' + ') : (top ? top[0] : null), route_settings: rs,
       in_area: rows.length, stops: d0.stops, distance_m: d0.distance_m, minutes: d0.minutes };
+  });
+  // 후보 행: 그린 구역(polygon) 또는 지역(territory_ids) 안
+  async function areaRows({ polygon = null, territoryIds = null }) {
+    const sel = `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage, p.owner_user_id, p.last_activity_at, p.colonia, p.municipio,
+              p.territory_id, t.owner_user_id AS terr_owner,
+              (SELECT MAX(c.created_at) FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL) AS last_visit,
+              (SELECT MIN(r.user_id) FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
+                WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND (r.route_date IS NULL OR r.route_date >= $1::date)) AS planned_by
+         FROM prospects p LEFT JOIN prospect_territories t ON t.id=p.territory_id
+        WHERE p.deleted_at IS NULL AND p.lat IS NOT NULL AND p.lng IS NOT NULL`;
+    if (territoryIds) return (await query(sel + ` AND p.territory_id = ANY($2) LIMIT 5000`, [mxToday(), territoryIds])).rows;
+    const lats = polygon.map((p) => p[0]), lngs = polygon.map((p) => p[1]);
+    return (await query(sel + ` AND p.lat BETWEEN $2 AND $3 AND p.lng BETWEEN $4 AND $5`,
+      [mxToday(), Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs)])).rows
+      .filter((r) => inPolygon(Number(r.lat), Number(r.lng), polygon));
+  }
+  // 방문 대상 가르기 — 빼는 이유(why): closed 첫 매출·중단 · others 다른 담당 · others_terr 다른 담당 지역 · others_planned 다른 사람 목록
+  //   · unassigned_skipped 미배정 제외 · visited 최근 방문 · planned 내 목록·루트에 이미 있음
+  function whyOut(r, uid, { skipDays = 7, includeUnassigned = true } = {}) {
+    const owner = r.owner_user_id == null ? null : Number(r.owner_user_id);
+    const tOwner = r.terr_owner == null ? null : Number(r.terr_owner);
+    const pBy = r.planned_by == null ? null : Number(r.planned_by);
+    if (['cliente_activo', 'descartado'].includes(r.stage)) return 'closed';
+    if (owner != null && owner !== uid) return 'others';
+    if (owner == null && tOwner != null && tOwner !== uid) return 'others_terr';
+    if (pBy != null && pBy !== uid) return 'others_planned';
+    if (owner == null && !includeUnassigned) return 'unassigned_skipped';
+    if (skipDays && r.last_visit && new Date(r.last_visit).getTime() > Date.now() - skipDays * 86400000) return 'visited';
+    if (pBy != null) return 'planned';
+    return null;
+  }
+  function classifyCands(rows, uid, opts) {
+    const cnt = { in_area: rows.length, others: 0, others_terr: 0, others_planned: 0, visited: 0, planned: 0, closed: 0, unassigned_skipped: 0 };
+    const cands = [], excluded = [];
+    for (const r of rows) {
+      const why = whyOut(r, uid, opts);
+      if (why) { cnt[why]++; if (why.startsWith('others') && excluded.length < 1500) excluded.push([Number(r.lat), Number(r.lng)]); continue; }
+      cands.push({ ...r, id: Number(r.id), lat: Number(r.lat), lng: Number(r.lng), owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id) });
+    }
+    cnt.eligible = cands.length;
+    return { cnt, cands, excluded };
+  }
+
+  // ── 담당자 루트 짜기: ① 내 지역 목록 → ② 지도에서 보기 → ③ 시작 업체 고르기 → 최적 순서 제안 ──
+  // 내(또는 고른 담당자의) 지역 목록 + 지역별 남은 방문 대상 수
+  app.get('/api/prospect-routes/my-territories', view, async (req) => {
+    const uid = isDir(req) && int(req.query?.user) ? int(req.query.user) : me(req);
+    const terrs = (await query(`SELECT id, name, polygon, municipios, cps FROM prospect_territories WHERE owner_user_id=$1 AND active IS NOT FALSE ORDER BY name`, [uid])).rows;
+    if (!terrs.length) return { user_id: uid, rows: [] };
+    const ids = terrs.map((t) => Number(t.id));
+    const rows = await areaRows({ territoryIds: ids });
+    const by = {}; const pts = {};
+    for (const r of rows) {
+      const k = Number(r.territory_id); const o = by[k] = by[k] || { total: 0, todo: 0, planned: 0, visited: 0, closed: 0, others: 0 };
+      o.total++; const w = whyOut(r, uid, { skipDays: 7 });
+      if (!w) o.todo++; else if (w === 'planned') o.planned++; else if (w === 'visited') o.visited++; else if (w === 'closed') o.closed++; else o.others++;
+      (pts[k] = pts[k] || []).push([Number(r.lat), Number(r.lng)]);
+    }
+    return { user_id: uid, rows: terrs.map((t) => ({ id: Number(t.id), name: t.name, kind: Array.isArray(t.polygon) && t.polygon.length >= 3 ? 'polygon' : (t.cps || []).length ? 'cp' : 'municipio',
+      outline: Array.isArray(t.polygon) && t.polygon.length >= 3 ? t.polygon : convexHull(pts[t.id] || []),
+      ...(by[t.id] || { total: 0, todo: 0, planned: 0, visited: 0, closed: 0, others: 0 }) })) };
+  });
+  // 고른 지역들의 후보(지도 핀) — why=null 이 방문 대상
+  app.get('/api/prospect-routes/territory-cands', view, async (req, reply) => {
+    const uid = isDir(req) && int(req.query?.user) ? int(req.query.user) : me(req);
+    const ids = String(req.query?.ids || '').split(',').map(int).filter(Boolean).slice(0, 50);
+    if (!ids.length) return { rows: [] };
+    // 담당자는 자기 지역만
+    if (!isDir(req)) { const own = (await query(`SELECT COUNT(*)::int AS n FROM prospect_territories WHERE id = ANY($1) AND owner_user_id=$2`, [ids, uid])).rows[0].n; if (own !== ids.length) return reply.code(403).send({ error: 'not_your_territory' }); }
+    const skipDays = req.query?.skip === '0' ? 0 : 7;
+    const rows = await areaRows({ territoryIds: ids });
+    return { user_id: uid, rows: rows.map((r) => ({ id: Number(r.id), nom_estab: r.nom_estab, lat: Number(r.lat), lng: Number(r.lng), priority: r.priority, score: r.score,
+      stage: r.stage, colonia: r.colonia, territory_id: Number(r.territory_id), why: whyOut(r, uid, { skipDays, includeUnassigned: req.query?.unas !== '0' }) })) };
   });
 
   // ── 검토(Alta de clientes) ─────────────────────────────────────────

@@ -84,6 +84,21 @@ DENUE 후보를 ERP에 넣고, 지역별 담당 배정 → 오늘 루트 → 체
   - 검증: 9,492곳 중 작업 기록 없는 9,489곳 삭제 → CSV 다시 올림 → 9,489곳 새로, 3곳 갱신, 지역 자동 배정 142곳 복원.
 - **오늘 루트**: 위에 「예정 루트(30일)」 칩 — 디렉터·관리자는 담당자별로, 날짜별 곳 수·방문 완료 수. 누르면 그 담당자·날짜 루트가 열림(`GET /api/prospect-routes/upcoming`). 지도에서 여러 날 루트를 저장하면 오늘 루트의 담당자·날짜가 그 루트로 맞춰짐.
 
+## 23차 보완 (2026-11-27) — 담당자 루트 짜기: 내 지역 목록 → 지도 → 시작 업체 → 최적 순서
+- 지도 화면 오른쪽 패널을 「루트 만들기」로 바꾸고 모드 두 개: **📋 내 지역에서**(기본) · ▭ 구역 그리기(기존).
+- 내 지역에서 절차
+  1. 담당자 본인에게 정해진 지역이 목록으로 나옴(디렉터·관리자는 담당자 선택). 줄마다 남은 방문 · 내 목록 · 최근 방문 · 전체 수, 🔍 로 지도 이동.
+  2. 지역에 체크하면 지도에 지역 윤곽과 방문 대상(빨간 점)만 표시. 일반 핀은 그동안 숨김. 회색 = 다른 담당·최근 방문·중단 등, 파랑 = 이미 내 목록.
+  3. 지도에서 **처음 방문할 업체(빨간 점)** 를 누르면(또는 「📍 내 현재 위치에서 시작」) 그곳이 코스 1의 1번. 그 위치에서 가까운 곳부터 이어 코스를 채우고(코스당 최대 방문 × 최대 코스 수), 코스마다 2-opt 로 최단 순서. 다른 점을 누르면 시작점이 바뀌어 바로 다시 짬.
+  4. 「방문 목록에 저장」 → 기존과 같이 날짜 미정 방문 목록, 날짜는 「오늘 루트」에서 본인이 고름.
+- API
+  - `GET /api/prospect-routes/my-territories?user=` — 지역 목록 + `total, todo, planned, visited, closed, others`, `outline`.
+  - `GET /api/prospect-routes/territory-cands?ids=1,2&user=&skip=7|0&unas=1|0` — 후보 핀(`why=null` 이 방문 대상). 담당자는 자기 지역만(403 `not_your_territory`).
+  - `POST /api/prospect-routes/suggest` 에 `territory_ids`(polygon 대신), `start_prospect_id` 추가. 응답에 `start_prospect_id`, `territory_ids`, `name_hint`(지역 이름).
+  - 빼는 기준은 구역 그리기와 동일(`whyOut` 공통 함수로 정리).
+- `planDays(..., { firstId })`: 시작 업체 고정 + 가까운 순 채우기(시작점 없으면 기존대로 우선순위 순).
+- 마이그레이션 없음. 바뀐 파일: `prospectCore.js`, `routes/prospectRoutes.js`, `refatrix-prospects.html`, 테스트 1개 추가.
+
 ## 22차 보완 (2026-11-26) — 실제 도로 주행 거리로 추정
 - 이동 거리를 **실제 도로를 따라 달리는 거리**로 바꿈. OSRM(OpenStreetMap 도로망) `route` API, 키 불필요.
   - 새 모듈 `src/roadRoute.js`: `roadDistance(points)` → `{km, osrm_min, path}` · `estimateRoad(stops, settings, start, opts)`.
