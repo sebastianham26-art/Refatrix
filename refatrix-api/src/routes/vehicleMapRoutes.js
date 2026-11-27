@@ -1,6 +1,7 @@
 // =====================================================================
 // 2026-11-27 · 차종으로 제품찾기 — 차량 도면용 데이터 (디렉터 요청)
 //   GET /api/products/vehicle-map?maker=&model=&year=   (제품 화면 열람자 · requirePage('products'))
+//   11-27b · 메이커 · 모델은 이름 키(대소문자 · 하이픈 · 공백 · 악센트 무시)로 찾는다 — 카탈로그 원문은 그대로
 //
 //   응답 { vehicle, items:[…], competitors:[…], counts, defs }
 //     items       = 이 차종에 적용되는 CTR 제품(product_applications) — 한 제품 1줄
@@ -13,7 +14,9 @@
 //   수량 정의 — 새 정의를 만들지 않는다
 //     stock_qty     제품 현재고(창고 합계) — 제품 목록 「재고」와 같은 값
 //     transit_qty   운송 중 — 창고›수입입고 마감 전 선적(v_incoming_stock) · 견적 「En tránsito」와 같은 값
-//     backorder_qty 백오더 — 부족분 미해소(stock_shortages open 잔량) · Platform 실적수량 API 와 같은 정의
+//     backorder_qty 백오더 = 생산 중(En producción) = max(0, 발주 미입고 잔량 v_backorder − 운송 중) — 견적 엑셀과 같은 정의(11-27c)
+//     po_open_qty   발주 미입고 잔량(v_backorder) = 운송 중 + 생산 중 — 제품 목록 「Backorder」 칸
+//     short_qty     고객 주문 미출고 부족분(stock_shortages open 잔량) — 참고
 //     sold_qty      누적 판매 — 게시 · 미삭제 인보이스 수량 전체 기간 · 제품 목록과 같은 팀 가시성
 //   가격 · 원가는 보내지 않는다.
 // =====================================================================
@@ -23,7 +26,7 @@ import { visibleTeamIds } from '../teams.js';
 import { oeByProduct } from '../oeCodes.js';
 import { rackStockReady, rackMap } from '../rackStock.js';
 import { activeVersionId, normCode } from '../xrefMaster.js';
-import { partCat, posLoose, appMatch, posForVehicle, CAT_LABEL } from '../vehicleMap.js';
+import { partCat, posLoose, appMatch, posForVehicle, CAT_LABEL, nameKey, NK_SQL } from '../vehicleMap.js';
 
 const MAX_PRODUCTS = 1500;
 const MAX_XREF_ROWS = 4000;
@@ -43,14 +46,16 @@ export default async function vehicleMapRoutes(app) {
     const veh = { maker, model, year };
 
     // 1) 이 차종의 CTR 제품
-    const params = [maker, model];
+    // 11-27b · 메이커 · 모델은 이름 키로(대소문자 · 하이픈 · 공백 · 악센트 무시) — 'CR-V' 와 'CRV' 가 같은 모델
+    const params = [nameKey(maker), nameKey(model)];
+    if (!params[0] || !params[1]) return reply.code(400).send({ error: 'maker_model_required' });
     let yCond = '';
     if (year != null) { params.push(year); yCond = ` AND a.year_from <= $3 AND a.year_to >= $3`; }
     const prods = (await query(
       `SELECT p.id, p.code, p.name, p.scode, COALESCE(p.stock_qty,0) AS stock_qty,
               string_agg(DISTINCT a.app_text, ' // ') AS app_hit
          FROM product_applications a JOIN products p ON p.id = a.product_id AND p.deleted_at IS NULL
-        WHERE a.maker = $1 AND a.model = $2${yCond}
+        WHERE ${NK_SQL('a.maker')} = $1 AND ${NK_SQL('a.model')} = $2${yCond}
         GROUP BY p.id, p.code, p.name, p.scode, p.stock_qty
         ORDER BY p.code
         LIMIT ${MAX_PRODUCTS}`, params)).rows;
@@ -72,16 +77,21 @@ export default async function vehicleMapRoutes(app) {
     }
 
     // 3) 수량 — 운송 · 백오더 · 누적판매(팀 가시성)
-    const transit = new Map(), backorder = new Map(), sold = new Map();
+    const transit = new Map(), backorder = new Map(), poOpen = new Map(), sold = new Map();
     if (pids.length) {
       const inc = await safe(() => query(
         `SELECT product_id, incoming_qty, to_char(incoming_eta,'YYYY-MM-DD') AS eta FROM v_incoming_stock WHERE product_id = ANY($1::bigint[])`, [pids]), { rows: [] });
       for (const r of inc.rows) transit.set(Number(r.product_id), { qty: num(r.incoming_qty), eta: r.eta || null });
-      const bo = await safe(() => query(
+      // 11-27c · 백오더 = 생산 중(En producción) — 회사 공통 정의(quoteQtyCols): 발주 미입고 잔량(v_backorder) − 운송 중
+      const po = await safe(() => query(
+        `SELECT product_id, backorder_qty AS q FROM v_backorder WHERE product_id = ANY($1::bigint[])`, [pids]), { rows: [] });
+      for (const r of po.rows) poOpen.set(Number(r.product_id), num(r.q));
+      // 참고: 고객 주문 미출고 부족분(stock_shortages open 잔량) — 상세 카드에 따로 보인다
+      const sh = await safe(() => query(
         `SELECT product_id, SUM(shortage_qty - COALESCE(resolved_qty,0)) AS q FROM stock_shortages
           WHERE product_id = ANY($1::bigint[]) AND status = 'open' AND (shortage_qty - COALESCE(resolved_qty,0)) > 0
           GROUP BY product_id`, [pids]), { rows: [] });
-      for (const r of bo.rows) backorder.set(Number(r.product_id), num(r.q));
+      for (const r of sh.rows) backorder.set(Number(r.product_id), num(r.q));
       const vis = visibleTeamIds(perm);
       const sp = [pids]; let join = '', cond = '';
       if (vis !== null) { sp.push(vis.length ? vis : [-1]); join = ' JOIN customers cu ON cu.id = si.customer_id'; cond = ' AND cu.team_id = ANY($2)'; }
@@ -133,7 +143,11 @@ export default async function vehicleMapRoutes(app) {
         oe: (oeMap.get(id) || []).map((o) => o.oe_code),
         pos,
         stock_qty: num(r.stock_qty), transit_qty: t ? t.qty : 0, transit_eta: t ? t.eta : null,
-        backorder_qty: backorder.get(id) || 0, sold_qty: sold.get(id) || 0,
+        // backorder_qty = 생산 중 = max(0, 발주 미입고 잔량 − 운송 중) · po_open_qty = 발주 미입고 잔량(제품목록 「Backorder」)
+        po_open_qty: poOpen.get(id) || 0,
+        backorder_qty: Math.max(0, (poOpen.get(id) || 0) - (t ? t.qty : 0)),
+        short_qty: backorder.get(id) || 0,
+        sold_qty: sold.get(id) || 0,
         racks: (racks.get(id) || []).map((x) => ({ rack: x.rack, qty: x.qty })),
       };
     });
@@ -142,10 +156,11 @@ export default async function vehicleMapRoutes(app) {
     const competitors = [];
     let xrefScanned = 0;
     if (vid) {
-      const like = '%' + model.replace(/([%_\\])/g, '\\$1') + '%';
+      // 11-27b · 1차 거름 = 기호 · 공백을 지운 글에 모델 키가 들어 있는가(정밀 판정은 appMatch 의 낱말 경계)
+      const like = '%' + nameKey(model) + '%';
       const rows = await safe(() => query(
         `SELECT row_no, codes, descripcion, aplicacion, ubicacion FROM xref_master_rows
-          WHERE version_id = $1 AND aplicacion ILIKE $2 ORDER BY row_no LIMIT ${MAX_XREF_ROWS}`, [vid, like]), { rows: [] });
+          WHERE version_id = $1 AND ${NK_SQL('aplicacion')} LIKE $2 ORDER BY row_no LIMIT ${MAX_XREF_ROWS}`, [vid, like]), { rows: [] });
       xrefScanned = rows.rows.length;
       const makers = await safe(async () => (await query(`SELECT DISTINCT maker FROM product_applications WHERE maker IS NOT NULL AND maker <> ''`)).rows.map((x) => x.maker), []);
       const cand = [];
@@ -196,7 +211,9 @@ export default async function vehicleMapRoutes(app) {
       defs: {
         stock: '창고 재고(제품 현재고 · 창고 합계)',
         transit: '운송 중(수입입고 마감 전 선적)',
-        backorder: '백오더(주문했지만 재고가 없어 출고 못 한 수량 · 부족분 미해소)',
+        backorder: '백오더 = 생산 중(공장 발주 후 아직 선적 안 됨 · 발주 미입고 잔량 − 운송 중)',
+        po_open: '발주 미입고 잔량(운송 + 생산 중) — 제품 목록 Backorder',
+        short: '고객 주문 미출고 부족분(참고)',
         sold: '누적 판매(게시 인보이스 · 전체 기간)',
       },
     };

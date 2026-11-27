@@ -15,7 +15,7 @@ const b64=(o)=>Buffer.from(JSON.stringify(o)).toString('base64').replace(/=+$/,'
 const tok='x.'+b64({sub:1,exp:Math.floor(Date.now()/1000)+3600})+'.y';
 const VM={vehicle:{maker:'NISSAN',model:'Versa',year:2015},
  items:[
-  {id:1,code:'CB0165',name:'ROTULA INFERIOR',cat:'ball',syd:['SYD1'],baw:['BW1'],oe:['40160-3AN0A'],pos:{blocks:['front'],levels:['lower'],sides:['lh'],src:'erp'},stock_qty:12,transit_qty:200,transit_eta:'2026-12-20',backorder_qty:0,sold_qty:1860,racks:[{rack:'A-03-2',qty:12}]},
+  {id:1,code:'CB0165',name:'ROTULA INFERIOR',cat:'ball',syd:['SYD1'],baw:['BW1'],oe:['40160-3AN0A'],pos:{blocks:['front'],levels:['lower'],sides:['lh'],src:'erp'},stock_qty:12,transit_qty:200,transit_eta:'2026-12-20',backorder_qty:1300,po_open_qty:1500,short_qty:338,sold_qty:1860,racks:[{rack:'A-03-2',qty:12}]},
   {id:2,code:'CR0074',name:'TERMINAL INTERIOR',cat:'rack',syd:['SYD2'],baw:[],oe:[],pos:{blocks:['front'],levels:[],sides:[],src:'vehicle'},stock_qty:0,transit_qty:0,transit_eta:null,backorder_qty:30,sold_qty:5,racks:[]},
   {id:3,code:'CV0012',name:'BUJE',cat:'bush',syd:[],baw:[],oe:[],pos:null,stock_qty:3,transit_qty:0,backorder_qty:0,sold_qty:0,racks:[]}],
  competitors:[{row_no:9,cat:'link',descripcion:'TORNILLO ESTABILIZADOR TRASERO',syd:['SYD9'],baw:['BW9'],pos:{blocks:['rear'],levels:[],sides:[],src:'xref'},aplicacion:'Versa 12-19',year_known:true,ubicacion:null}],
@@ -28,7 +28,7 @@ const dom=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'h
   w.scrollTo=()=>{}; w.HTMLElement.prototype.scrollIntoView=function(){};
   w.fetch=async(u,o)=>{ calls.push(String(u)); const j=(x)=>({ok:true,status:200,json:async()=>x,text:async()=>JSON.stringify(x),blob:async()=>null});
    if(u.includes('/api/products/vehicle-map')) return j(VM);
-   if(u.includes('/app-makers')) return j({items:['NISSAN','TOYOTA']});
+   if(u.includes('/app-makers')) return j({items:['NISSAN','TOYOTA'],groups:[{key:'NISSAN',label:'NISSAN',variants:['NISSAN','Nissan','nissan']},{key:'TOYOTA',label:'TOYOTA',variants:['TOYOTA']}]});
    if(u.includes('/app-models')) return j({items:['Versa','Sentra']});
    if(u.includes('/app-years')) return j({items:[2019,2015]});
    if(u.includes('/api/products?')||u.includes('/api/products/search')) return j({items:[],total:0});
@@ -67,6 +67,8 @@ await t('조회 → 도면 마커 · 목록 · 상세',async()=>{
   const det=d.querySelector('.vm-det').textContent;
   assert.match(det,/ROTULA INFERIOR/); assert.match(det,/앞·하·좌/);
   assert.match(det,/1,860/); assert.match(det,/A-03-2/);
+  assert.match(det,/발주 미입고 잔량 1,500 = 운송 200 \+ 생산 중 1,300/); assert.match(det,/고객 주문 미출고 부족분 338/);
+  assert.match(d.querySelector('.vm-det .vm-qty').innerHTML,/생산 중 백오더 · En producción/);
   assert.ok(d.querySelector('.vm-det .vm-code .tip').textContent.includes('40160-3AN0A'),'OE 툴팁');
   assert.equal(d.querySelector('.vm-det .vm-qty').getAttribute('translate'),'no');
   assert.ok(d.querySelector('.vm-det .vm-qty svg'),'아이콘');
@@ -114,4 +116,8 @@ await t('업로드 탭이면 토글 숨김',async()=>{
   w.location.hash='#tab=history'; await sleep(30);
   assert.ok(d.getElementById('findToggle').classList.contains('hidden'));
   assert.ok(d.getElementById('vehCard').classList.contains('hidden'));});
+await t('11-27b · 드롭다운 — 같은 이름 묶음 표기',async()=>{
+  const o=[...d.getElementById('veh-maker').options].find(x=>x.value==='NISSAN');
+  assert.ok(o,'대표 표기 한 줄'); assert.match(o.textContent,/Nissan · nissan/); assert.match(o.title,/같은 이름으로 묶은 표기/);
+  assert.equal([...d.getElementById('veh-maker').options].filter(x=>/nissan/i.test(x.value)).length,1);});
 process.exit(process.exitCode||0);

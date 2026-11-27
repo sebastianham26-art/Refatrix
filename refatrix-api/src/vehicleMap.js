@@ -65,6 +65,36 @@ export function posLoose(text) {
   return out.blocks.length || out.levels.length || out.sides.length ? out : null;
 }
 
+// ── 2026-11-27b · 메이커 · 모델 이름 키 — 카탈로그 마스터는 그대로 두고 「같은 이름」으로 본다 ──
+//   대소문자 · 하이픈 · 공백 · 점 · 슬래시 · 악센트 차이를 지운다.
+//     'CR-V' = 'CRV' = 'Cr V' · 'Mercedes-Benz' = 'MERCEDES BENZ' · 'Peugeot 206' = 'PEUGEOT-206' · 'Citroën' = 'CITROEN'
+//   숫자 · 글자 자체가 다르면(예: 'Jetta A4' ≠ 'Jetta') 다른 모델이다. 줄임말(VW ↔ VOLKSWAGEN)은 여기서 합치지 않는다.
+export function nameKey(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC').toUpperCase().replace(/[^A-Z0-9가-힣]/g, '');
+}
+/** SQL 쪽 같은 키 — translate 로 악센트, regexp 로 기호 · 공백 제거(확장 모듈 없이). col 은 신뢰된 열 이름만. */
+export const NK_SQL = (col) => `regexp_replace(upper(translate(COALESCE(${col},''), 'áéíóúàèìòùäëïöüâêîôûãõñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÂÊÎÔÛÃÕÑÇ', 'aeiouaeiouaeiouaeiouaonc' || 'AEIOUAEIOUAEIOUAEIOUAONC')), '[^A-Z0-9가-힣]', '', 'g')`;
+/** 원문 → 낱말 키 배열('Honda CR-V 2015' → ['HONDA','CR','V','2015']) */
+const tokens = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC').toUpperCase().split(/[^A-Z0-9가-힣]+/).filter(Boolean);
+/**
+ * 글 안에 이름이 「낱말 경계」로 들어 있는가 — 기호 · 공백 차이 무시.
+ *   hasName('Honda CR V 2015', 'CR-V') → true · hasName('VERSAILLES', 'Versa') → false
+ *   이어진 낱말 몇 개를 붙인 것이 이름 키와 같으면 맞음.
+ */
+export function hasName(text, name) {
+  const k = nameKey(name);
+  if (!k) return false;
+  const t = tokens(text);
+  for (let i = 0; i < t.length; i++) {
+    let acc = '';
+    for (let j = i; j < t.length && acc.length < k.length; j++) {
+      acc += t[j];
+      if (acc === k) return true;
+    }
+  }
+  return false;
+}
+
 // ── 차종 맞춤 ─────────────────────────────────────────────────────────
 const MAKER_ALIAS = {
   VOLKSWAGEN: ['VOLKSWAGEN', 'VW'], CHEVROLET: ['CHEVROLET', 'CHEVY', 'GM'], 'MERCEDES BENZ': ['MERCEDES', 'BENZ'],
@@ -73,7 +103,8 @@ const MAKER_ALIAS = {
 export function makerWords(maker) {
   const m = norm(maker);
   if (!m) return [];
-  return MAKER_ALIAS[m] || [m];
+  const byKey = Object.keys(MAKER_ALIAS).find((k) => nameKey(k) === nameKey(m));
+  return byKey ? MAKER_ALIAS[byKey] : [m];
 }
 // 'Versa 2012-2019' · 'VERSA 12-19' · '2015' → [[2012,2019], …]
 export function yearRanges(text) {
@@ -97,7 +128,6 @@ export function yearRanges(text) {
   }
   return out;
 }
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
  * 경쟁사 마스터 APLICACIÓN 글 → 고른 차종에 맞으면 { ok:true, year_known } · 아니면 { ok:false }
  *   - 모델 글자(대소문자 · 악센트 무시)가 낱말로 들어 있어야 한다. 한 칸에 차종이 여럿이면 '//' · ',' · ';' 로 나눠 각각 본다.
@@ -105,17 +135,16 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  *   - 연식을 고르면: 조각에 연식이 있으면 범위 안이어야 하고, 연식이 없으면 받되 year_known:false.
  */
 export function appMatch(text, { maker = '', model = '', year = null } = {}, knownMakers = []) {
-  const mdl = norm(model);
-  if (!mdl) return { ok: false };
+  if (!nameKey(model)) return { ok: false };
   const mk = makerWords(maker);
-  const others = (knownMakers || []).map(norm).filter((x) => x && !mk.includes(x));
-  const reModel = new RegExp('(^|[^A-Z0-9])' + esc(mdl) + '([^A-Z0-9]|$)');
+  const mkKeys = new Set(mk.map(nameKey));
+  const others = [...new Set((knownMakers || []).map(norm).filter((x) => x && !mkKeys.has(nameKey(x))))];
   let best = null;
   for (const seg of String(text == null ? '' : text).split(/\s*(?:\/\/|;|,|\n)\s*/)) {
     const s = norm(seg);
-    if (!s || !reModel.test(s)) continue;
-    const hasMine = mk.some((w) => new RegExp('(^|[^A-Z0-9])' + esc(w) + '([^A-Z0-9]|$)').test(s));
-    if (!hasMine && others.some((w) => new RegExp('(^|[^A-Z0-9])' + esc(w) + '([^A-Z0-9]|$)').test(s))) continue;
+    if (!s || !hasName(s, model)) continue;   // 11-27b · 대소문자 · 하이픈 · 공백 무시
+    const hasMine = mk.some((w) => hasName(s, w));
+    if (!hasMine && others.some((w) => hasName(s, w))) continue;
     if (year == null) return { ok: true, year_known: false, seg: seg.trim() };
     const rg = yearRanges(seg);
     if (!rg.length) { if (!best) best = { ok: true, year_known: false, seg: seg.trim() }; continue; }
@@ -136,9 +165,9 @@ export function posForVehicle(own, rows, veh = {}) {
   if (p && !p.error) return { ...p, src: 'erp' };
   const list = rows || [];
   if (!list.length) return null;
-  const mk = makerWords(veh.maker), mdl = norm(veh.model);
+  const mk = makerWords(veh.maker).map(nameKey), mdl = nameKey(veh.model);
   const mine = list.filter((r) => {
-    const b = norm(r.brand), m = norm(r.model);
+    const b = nameKey(r.brand), m = nameKey(r.model);   // 11-27b · 이름 키로 비교
     if (mk.length && b && !mk.some((w) => b.includes(w))) return false;
     if (mdl && m && !(m.includes(mdl) || mdl.includes(m))) return false;
     if (veh.year != null && r.y_from != null && r.y_to != null && (veh.year < r.y_from || veh.year > r.y_to)) return false;

@@ -32,6 +32,8 @@ async function cleanup() {
     await query(`DELETE FROM inbound_pallets WHERE order_no LIKE '${TAG}%'`).catch(() => {});
     await query(`DELETE FROM inbound_shipments WHERE id IN (SELECT shipment_id FROM inbound_pallets WHERE order_no LIKE '${TAG}%')`).catch(() => {});
     await query(`DELETE FROM product_positions WHERE ctr_code LIKE '${TAG}%'`).catch(() => {});
+    await query(`DELETE FROM purchase_order_lines WHERE product_id = ANY($1::bigint[])`, [pids]).catch(() => {});
+    await query(`DELETE FROM purchase_orders WHERE ref_no LIKE '${TAG}%'`).catch(() => {});
     await query(`DELETE FROM products WHERE id = ANY($1::bigint[])`, [pids]);
     await query(`DELETE FROM customers WHERE name LIKE '${TAG}%'`).catch(() => {});
     await query(`DELETE FROM xref_master_versions WHERE filename LIKE '${TAG}%'`).catch(() => {});
@@ -82,6 +84,10 @@ test('boot', { skip: SKIP }, async () => {
   // 백오더
   await query(`INSERT INTO stock_shortages (product_id, requested_qty, shortage_qty, resolved_qty, occurred_at, status) VALUES
     ($1,40,35,5,'2026-11-01','open'),($1,10,10,0,'2026-11-02','resolved')`, [ID.B.id]);
+  // 11-27c · 공장 발주 미입고: A 발주 1500(입고 0) → 운송 200 · 생산 중 1300 / B 발주 50(입고 10) → 생산 중 40
+  const po = Number((await query(`INSERT INTO purchase_orders (ref_no, order_date, status) VALUES ($1, '2026-10-01', 'recorded') RETURNING id`, [TAG + 'PO1'])).rows[0].id);
+  ID.po = po;
+  await query(`INSERT INTO purchase_order_lines (po_id, product_id, input_code, qty, received_qty, unit_cost_usd, amount_usd) VALUES ($1,$2,$3,1500,0,1,1500),($1,$4,$5,50,10,1,50)`, [po, ID.A.id, ID.A.code, ID.B.id, ID.B.code]);
   // 매출: 게시 2건 + 작성중 1건 + 삭제 1건
   const cu = Number((await query(`INSERT INTO customers (name, code) VALUES ($1,$2) RETURNING id`, [TAG + '고객', TAG + '-CU'])).rows[0].id);
   const inv = async (status, del, q) => {
@@ -165,7 +171,10 @@ test('③ 수량 — 창고 · 운송 · 백오더 · 누적판매(팀 가시성
   assert.equal(by[ID.A.code].transit_qty, 200);
   assert.equal(by[ID.A.code].transit_eta, '2026-12-20');
   assert.equal(by[ID.A.code].sold_qty, 160, '게시 · 미삭제만(수정대기 999 · 삭제 777 제외)');
-  assert.equal(by[ID.B.code].backorder_qty, 30, 'open 잔량 35−5, resolved 제외');
+  assert.equal(by[ID.A.code].po_open_qty, 1500, '발주 미입고 잔량');
+  assert.equal(by[ID.A.code].backorder_qty, 1300, '백오더 = 생산 중 = 1500 − 운송 200');
+  assert.equal(by[ID.B.code].backorder_qty, 40, '생산 중 50−10');
+  assert.equal(by[ID.B.code].short_qty, 30, '고객 미출고 부족분(참고) open 잔량 35−5, resolved 제외');
   assert.equal(by[ID.B.code].stock_qty, 0);
   assert.deepEqual(by[ID.A.code].racks, [{ rack: 'A-03-2', qty: 12 }]);
   const s = (await get(url(2015), 'sales')).json();
@@ -205,4 +214,39 @@ test('⑤ 경쟁사만(CTR 없음) — SYD · BAW · 위치 · 거름', { skip: 
   const y2002 = (await get(url(2002))).json();
   assert.ok(y2002.competitors.some((c) => c.row_no === 5), '2002 면 5행(2001-2004)');
   assert.equal(d.counts.competitors, 2);
+});
+
+test('⑥ 11-27b · 이름 키 — 대소문자 · 하이픈 · 공백이 달라도 같은 메이커 · 모델', { skip: SKIP }, async () => {
+  // 카탈로그 원문은 그대로: 메이커 소문자 · 모델 하이픈 표기로 한 제품 더
+  const e = Number((await query(`INSERT INTO products (code, name, stock_qty) VALUES ($1,'HORQUILLA SUPERIOR',2) RETURNING id`, [TAG + '-E'])).rows[0].id);
+  const mdH = 'MDL-' + RUN;   // MD = 'Mdl' + RUN 과 같은 키
+  await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,2012,2019)`,
+    [e, `${MK.toLowerCase()} ${mdH} 2012-2019`, MK.toLowerCase(), mdH]);
+  await query(`INSERT INTO xref_master_rows (version_id, row_no, codes, descripcion, aplicacion, ubicacion) VALUES ($1,7,$2,'ROTULA SUPERIOR',$3,'Delantera')`,
+    [ID.ver, JSON.stringify({ SYD: [`${TAG}S6`] }), `${MK} mdl ${RUN} 12-19`]);
+  await query(`INSERT INTO xref_master_codes (version_id, row_no, brand, code, norm_code) VALUES ($1,7,'SYD',$2,$2)`, [ID.ver, `${TAG}S6`]);
+
+  // 드롭다운: 키마다 한 줄 · 묶인 표기
+  const mk = (await get('/api/products/app-makers')).json();
+  const mine = mk.groups.filter((g) => g.key === MK.toUpperCase());
+  assert.equal(mine.length, 1, '메이커 한 줄');
+  assert.deepEqual(mine[0].variants.slice().sort(), [MK, MK.toLowerCase()].sort());
+  assert.equal(mk.items.filter((x) => x.toUpperCase() === MK.toUpperCase()).length, 1);
+  const md = (await get(`/api/products/app-models?maker=${encodeURIComponent(MK.toLowerCase())}`)).json();
+  assert.equal(md.groups.length, 1, '모델 한 줄(Mdl / MDL- 묶음)');
+  assert.equal(md.groups[0].label, MD, '많이 쓰인 표기가 대표');
+  assert.ok(md.groups[0].variants.includes(mdH));
+  const yr = (await get(`/api/products/app-years?maker=${encodeURIComponent(MK)}&model=${encodeURIComponent('mdl ' + RUN)}`)).json();
+  assert.ok(yr.items.includes(2015) && yr.items.includes(2012) && yr.items.includes(2023));
+
+  // 도면 · 예전 차종 검색: 어떤 표기로 골라도 같은 결과
+  const codesOf = async (maker, model) => (await get(`/api/products/vehicle-map?maker=${encodeURIComponent(maker)}&model=${encodeURIComponent(model)}&year=2015`)).json();
+  const a = await codesOf(MK, MD), b = await codesOf(MK.toLowerCase(), mdH), c = await codesOf(' ' + MK + ' ', 'mdl ' + RUN);
+  const ks = (d) => d.items.map((x) => x.code).sort().join(',');
+  assert.ok(ks(a).includes(TAG + '-E'), '하이픈 표기 제품도 나온다');
+  assert.equal(ks(a), ks(b)); assert.equal(ks(a), ks(c));
+  assert.ok(a.competitors.some((x) => x.row_no === 7), "마스터 'mdl 1234' 공백 표기도 같은 모델");
+  const bv = (await get(`/api/products/by-vehicle?maker=${encodeURIComponent(MK.toLowerCase())}&model=${encodeURIComponent(mdH)}`)).json();
+  assert.ok(bv.items.some((x) => x.code === TAG + '-A') && bv.items.some((x) => x.code === TAG + '-E'), 'by-vehicle 도 이름 키');
+  assert.equal((await get(`/api/products/vehicle-map?maker=${encodeURIComponent('--')}&model=x`)).statusCode, 400, '기호만이면 400');
 });

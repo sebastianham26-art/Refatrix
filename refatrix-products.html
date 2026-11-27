@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1127vm</title>
+<title>Refatrix ERP · 제품 조회 · ps-1127vo</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1325,15 +1325,18 @@
   }
 
   // 차종 드롭다운: 메이커→모델→연도 단계 로딩
-  function fillSelect(sel,items,allLabel){
-    sel.innerHTML='<option value="">'+allLabel+'</option>'+items.map(v=>`<option value="${String(v).replace(/"/g,'&quot;')}">${v}</option>`).join('');
+  function fillSelect(sel,items,allLabel,groups){
+    // 2026-11-27b · 같은 이름(대소문자 · 하이픈 · 공백 차이)은 서버가 한 줄로 묶어 준다 — 묶인 다른 표기를 괄호로 보여 줌
+    const extra={}; (groups||[]).forEach(g=>{ const o=(g.variants||[]).filter(x=>x!==g.label); if(o.length) extra[g.label]=o; });
+    sel.innerHTML='<option value="">'+allLabel+'</option>'+items.map(v=>{ const o=extra[v];
+      return '<option value="'+escP(v)+'"'+(o?' title="'+escP('같은 이름으로 묶은 표기: '+o.join(' · '))+'"':'')+'>'+escP(v)+(o?'  ('+escP(o.slice(0,3).join(' · '))+(o.length>3?' …':'')+')':'')+'</option>'; }).join('');
   }
   async function loadMakers(){
-    try{const d=await fetch(session.api+'/api/products/app-makers',{headers:auth()}).then(x=>x.json());fillSelect($('veh-maker'),d.items||[],'전체');}catch(e){}
+    try{const d=await fetch(session.api+'/api/products/app-makers',{headers:auth()}).then(x=>x.json());fillSelect($('veh-maker'),d.items||[],'전체',d.groups);}catch(e){}
   }
   async function loadModels(){
     const maker=$('veh-maker').value;
-    try{const d=await fetch(session.api+'/api/products/app-models?maker='+encodeURIComponent(maker),{headers:auth()}).then(x=>x.json());fillSelect($('veh-model'),d.items||[],'전체 모델');}catch(e){}
+    try{const d=await fetch(session.api+'/api/products/app-models?maker='+encodeURIComponent(maker),{headers:auth()}).then(x=>x.json());fillSelect($('veh-model'),d.items||[],'전체 모델',d.groups);}catch(e){}
     await loadYears();
   }
   async function loadYears(){
@@ -1358,7 +1361,7 @@
     tr:'<svg width="SZ" height="SZ" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 6h13v10H1z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="5.5" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/></svg>',
     bo:'<svg width="SZ" height="SZ" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     sd:'<svg width="SZ" height="SZ" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>'};
-  const VM_TIP={st:'창고재고 · Inventario en almacén',tr:'운송재고 · En tránsito',bo:'백오더 · Backorder',sd:'누적판매 · Ventas acumuladas'};
+  const VM_TIP={st:'창고재고 · Inventario en almacén',tr:'운송재고 · En tránsito',bo:'생산 중 백오더 · En producción',sd:'누적판매 · Ventas acumuladas'};
   const vmIco=(k,sz)=>VM_ICON[k].replace(/SZ/g,String(sz||14));
   let vmData=null, vmCat='', vmSlot='', vmSel='', vmShowComp=true, vmMode='search';
 
@@ -1457,7 +1460,7 @@
       +(unplaced.length?'<div class="vm-note" style="margin-top:10px;text-align:center">위치 미지정 <b translate="no">'+unplaced.length+'</b>개 — 장착위치가 아직 등록되지 않아 도면에 없습니다(오른쪽 목록 맨 아래).</div>':'')
       +'</section><div class="vm-side">'+vmDetailHtml(all)+vmListHtml(vis, slots, unplaced)+'</div></div>'
       +'<div class="vm-note" style="margin-top:14px">장착위치: CTR 확인값(Platform 카탈로그 점검) → 장착위치 업로드(이 차종 줄 우선) 순 · 경쟁사 부품은 크로스레퍼런스 마스터 APLICACIÓN · UBICACIÓN 글 기준(적용차종 글자 매칭이라 확인 필요). '
-      +'창고재고 = 제품 현재고 · 운송 = 수입입고 마감 전 선적 · 백오더 = 주문했지만 재고가 없어 못 나간 수량 · 누적판매 = 게시 인보이스 전체 기간(보이는 팀 기준).</div>';
+      +'창고재고 = 제품 현재고 · 운송 = 수입입고 마감 전 선적 · 백오더 = 생산 중(공장 발주 미입고 잔량 − 운송 중, 견적 엑셀 En producción 과 같음) · 누적판매 = 게시 인보이스 전체 기간(보이는 팀 기준).</div>';
     r.innerHTML=h;
     // 이벤트
     r.querySelectorAll('.vm-chip[data-cat]').forEach(function(b){ b.addEventListener('click',function(){ vmCat=b.getAttribute('data-cat')||''; vmSlot=''; vmRender(); }); });
@@ -1524,7 +1527,9 @@
         +'<div title="'+VM_TIP.bo+'">'+vmIco('bo',20)+'<b'+boC+'>'+qty(it.backorder_qty)+'</b></div>'
         +'<div title="'+VM_TIP.sd+'">'+vmIco('sd',20)+'<b>'+qty(it.sold_qty)+'</b></div></div>'
         +'<div class="vm-note" style="margin-top:8px">랙: <b translate="no">'+((it.racks||[]).length?escP(it.racks.map(function(x){ return x.rack+' ('+qty(x.qty)+')'; }).join(' · ')):'—')+'</b>'
-        +(it.transit_eta?' · 운송 도착 예정 <b translate="no">'+escP(it.transit_eta)+'</b>':'')+'</div>'
+        +(it.transit_eta?' · 운송 도착 예정 <b translate="no">'+escP(it.transit_eta)+'</b>':'')
+        +(it.po_open_qty!=null?'<br>발주 미입고 잔량 <b translate="no">'+qty(it.po_open_qty)+'</b> = 운송 <span translate="no">'+qty(it.transit_qty)+'</span> + 생산 중 <span translate="no">'+qty(it.backorder_qty)+'</span>':'')
+        +(Number(it.short_qty)>0?' · 고객 주문 미출고 부족분 <b translate="no">'+qty(it.short_qty)+'</b>':'')+'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="vm-btn sm" id="vmDrill" data-code="'+escP(it.code)+'">제품 상세 보기</button></div>';
     } else {
       h+='<div class="vm-note" style="margin-top:10px">적용차종(마스터): <span translate="no">'+escP(it.aplicacion||'')+'</span>'+(it.year_known?'':' · 연식 표기 없음')
@@ -3216,7 +3221,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build ps-1127vm (차종으로 제품찾기 · 차량 도면)'); }catch(e){}
+  try{ console.log('[refatrix-products] build ps-1127vo (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
