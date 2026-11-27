@@ -74,6 +74,17 @@ export function nameKey(s) {
 }
 /** SQL 쪽 같은 키 — translate 로 악센트, regexp 로 기호 · 공백 제거(확장 모듈 없이). col 은 신뢰된 열 이름만. */
 export const NK_SQL = (col) => `regexp_replace(upper(translate(COALESCE(${col},''), 'áéíóúàèìòùäëïöüâêîôûãõñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÂÊÎÔÛÃÕÑÇ', 'aeiouaeiouaeiouaeiouaonc' || 'AEIOUAEIOUAEIOUAEIOUAONC')), '[^A-Z0-9가-힣]', '', 'g')`;
+// ── 2026-11-27e · 한 칸에 메이커가 여럿 — 'FORD, MERCURY' · 'Ford/Mercury' · 'FORD & LINCOLN' → 낱개 메이커로 본다 ──
+//   드롭다운엔 FORD · MERCURY 가 따로 한 줄씩, FORD 를 고르면 'FORD, MERCURY' 칸의 차종도 함께 나온다(원문은 그대로).
+export const MAKER_SEP_RE = /\s*(?:,|\/|&|\+|;)\s*/;
+export function makerParts(s) {
+  return String(s == null ? '' : s).split(MAKER_SEP_RE).map((x) => x.trim()).filter((x) => nameKey(x));
+}
+/** SQL: 메이커 칸 → 낱개 배열(같은 구분자) */
+export const MK_PARTS_SQL = (col) => `regexp_split_to_array(COALESCE(${col},''), '\\s*[,/&+;]\\s*')`;
+/** SQL 조건: 메이커 칸의 낱개 중 하나가 이름 키 $n 과 같다 */
+export const MAKER_COND_SQL = (col, n) => `EXISTS (SELECT 1 FROM unnest(${MK_PARTS_SQL(col)}) AS mkp(x) WHERE ${NK_SQL('mkp.x')} = $${n})`;
+
 /** 원문 → 낱말 키 배열('Honda CR-V 2015' → ['HONDA','CR','V','2015']) */
 const tokens = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC').toUpperCase().split(/[^A-Z0-9가-힣]+/).filter(Boolean);
 /**
@@ -138,7 +149,15 @@ export function appMatch(text, { maker = '', model = '', year = null } = {}, kno
   if (!nameKey(model)) return { ok: false };
   const mk = makerWords(maker);
   const mkKeys = new Set(mk.map(nameKey));
-  const others = [...new Set((knownMakers || []).map(norm).filter((x) => x && !mkKeys.has(nameKey(x))))];
+  // 11-27e · 알려진 메이커 칸을 낱개로 — 내 메이커와 한 칸에 같이 적힌 메이커(FORD, MERCURY 의 MERCURY)는 「다른 메이커」로 치지 않는다
+  const sib = new Set();
+  const all = new Set();
+  for (const raw of knownMakers || []) {
+    const ps = makerParts(raw).map(norm);
+    ps.forEach((x) => all.add(x));
+    if (ps.some((x) => mkKeys.has(nameKey(x)))) ps.forEach((x) => sib.add(nameKey(x)));
+  }
+  const others = [...all].filter((x) => x && !mkKeys.has(nameKey(x)) && !sib.has(nameKey(x)));
   let best = null;
   for (const seg of String(text == null ? '' : text).split(/\s*(?:\/\/|;|,|\n)\s*/)) {
     const s = norm(seg);

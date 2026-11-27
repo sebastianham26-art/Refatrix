@@ -250,3 +250,34 @@ test('⑥ 11-27b · 이름 키 — 대소문자 · 하이픈 · 공백이 달라
   assert.ok(bv.items.some((x) => x.code === TAG + '-A') && bv.items.some((x) => x.code === TAG + '-E'), 'by-vehicle 도 이름 키');
   assert.equal((await get(`/api/products/vehicle-map?maker=${encodeURIComponent('--')}&model=x`)).statusCode, 400, '기호만이면 400');
 });
+
+test('⑦ 11-27e · 한 칸에 메이커 여럿(FORD, MERCURY) — 낱개 메이커로 드롭다운 · 찾기', { skip: SKIP }, async () => {
+  const F = TAG + 'FD', M = TAG + 'MC', GM = 'GrandMq' + RUN;
+  const mk = async (sfx, maker, model) => {
+    const id = Number((await query(`INSERT INTO products (code, name, stock_qty) VALUES ($1,'ROTULA INFERIOR',1) RETURNING id`, [TAG + sfx])).rows[0].id);
+    await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,2003,2011)`, [id, `${maker} ${model} 2003-2011`, maker, model]);
+  };
+  await mk('-F1', `${F}, ${M}`, GM);          // 한 칸 두 메이커
+  await mk('-F2', F.toLowerCase(), 'Focus' + RUN);
+  await mk('-F3', M, 'Sable' + RUN);
+  await query(`INSERT INTO xref_master_rows (version_id, row_no, codes, descripcion, aplicacion, ubicacion) VALUES ($1,8,$2,'HORQUILLA',$3,'Delantera')`,
+    [ID.ver, JSON.stringify({ SYD: [`${TAG}S5`] }), `${F}, ${M} ${GM} 2003-2011`]);
+  await query(`INSERT INTO xref_master_codes (version_id, row_no, brand, code, norm_code) VALUES ($1,8,'SYD',$2,$2)`, [ID.ver, `${TAG}S5`]);
+
+  const g = (await get('/api/products/app-makers')).json().groups;
+  assert.equal(g.filter((x) => x.key === F.toUpperCase()).length, 1, 'FORD 한 줄');
+  assert.equal(g.filter((x) => x.key === M.toUpperCase()).length, 1, 'MERCURY 한 줄');
+  assert.equal(g.filter((x) => x.key === (F + M).toUpperCase()).length, 0, "'FORD, MERCURY' 줄은 없음");
+  const models = async (m) => (await get(`/api/products/app-models?maker=${encodeURIComponent(m)}`)).json().items.sort();
+  assert.deepEqual(await models(F), [GM, 'Focus' + RUN].sort(), 'FORD → 같이 적힌 Grand Marquis + Focus');
+  assert.deepEqual(await models(M), [GM, 'Sable' + RUN].sort(), 'MERCURY → Grand Marquis + Sable');
+  const yrs = (await get(`/api/products/app-years?maker=${encodeURIComponent(M)}&model=${encodeURIComponent(GM)}`)).json().items;
+  assert.ok(yrs.includes(2005));
+  for (const m of [F, M.toLowerCase()]) {
+    const d = (await get(`/api/products/vehicle-map?maker=${encodeURIComponent(m)}&model=${encodeURIComponent(GM)}&year=2005`)).json();
+    assert.deepEqual(d.items.map((x) => x.code), [TAG + '-F1'], m + ' 로 골라도 같은 제품');
+    assert.ok(d.competitors.some((x) => x.row_no === 8), m + ' · 마스터의 FORD, MERCURY 표기도 맞음');
+  }
+  const bv = (await get(`/api/products/by-vehicle?maker=${encodeURIComponent(M)}`)).json();
+  assert.deepEqual(bv.items.map((x) => x.code).sort(), [TAG + '-F1', TAG + '-F3'].sort());
+});

@@ -18,7 +18,7 @@ import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구
 import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
 import { searchMaster, normBrand as xmBrand, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 경쟁사 코드(크로스레퍼런스 마스터)로 제품찾기
 import { dimsReady, tableToRows, previewDims, applyDims, exportDims, previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes, boxConflicts, dimsMap } from '../productDims.js';   // 0327 · 0328 · 무게 · 포장 박스
-import { nameKey, NK_SQL } from '../vehicleMap.js';   // 2026-11-27b · 메이커 · 모델 이름 키(대소문자 · 하이픈 무시)
+import { nameKey, NK_SQL, MK_PARTS_SQL, MAKER_COND_SQL } from '../vehicleMap.js';   // 2026-11-27b · 27e(메이커 낱개) · 메이커 · 모델 이름 키(대소문자 · 하이픈 무시)
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -1522,11 +1522,18 @@ export default async function productRoutes(app) {
   // 차종 드롭다운 · 검색 — 2026-11-27b: 메이커 · 모델은 「이름 키」(대소문자 · 하이픈 · 공백 · 점 · 악센트 무시)로 묶고 찾는다.
   //   카탈로그 마스터(적용차종 원문)는 바꾸지 않는다. 드롭다운에는 키마다 한 줄 — 가장 많이 쓰인 표기를 대표로 보이고,
   //   어떤 표기를 넘겨도(대표든 다른 표기든) 같은 키로 걸러진다. groups[].variants 로 묶인 표기를 함께 준다.
-  async function nameGroups(col, conds, params) {
-    const rows = (await query(
-      `SELECT ${NK_SQL(col)} AS k, ${col} AS v, COUNT(*)::int AS n
-         FROM product_applications WHERE ${conds.join(' AND ')}
-        GROUP BY 1, 2`, params)).rows;
+  //   11-27e · 메이커는 한 칸에 여럿('FORD, MERCURY')이면 낱개로 나눠 묶는다(split=true).
+  async function nameGroups(col, conds, params, split = false) {
+    const rows = split
+      ? (await query(
+        `SELECT ${NK_SQL('btrim(mkp.x)')} AS k, btrim(mkp.x) AS v, COUNT(*)::int AS n
+           FROM product_applications, unnest(${MK_PARTS_SQL(col)}) AS mkp(x)
+          WHERE ${conds.join(' AND ')} AND btrim(mkp.x) <> ''
+          GROUP BY 1, 2`, params)).rows
+      : (await query(
+        `SELECT ${NK_SQL(col)} AS k, ${col} AS v, COUNT(*)::int AS n
+           FROM product_applications WHERE ${conds.join(' AND ')}
+          GROUP BY 1, 2`, params)).rows;
     const by = new Map();
     for (const r of rows) {
       if (!r.k) continue;
@@ -1545,10 +1552,16 @@ export default async function productRoutes(app) {
     if (!k) return;
     params.push(k); conds.push(`${NK_SQL(col)} = $${params.length}`);
   }
+  // 11-27e · 메이커 조건 — 칸의 낱개 중 하나라도 같으면('FORD' 로 'FORD, MERCURY' 칸도)
+  function makerCond(col, val, conds, params) {
+    const k = nameKey(val);
+    if (!k) return;
+    params.push(k); conds.push(MAKER_COND_SQL(col, params.length));
+  }
 
   // 차종 드롭다운: 메이커 목록
   app.get('/api/products/app-makers', { preHandler: [authGuard, requirePage('products')] }, async () => {
-    const groups = await nameGroups('maker', [`maker IS NOT NULL AND maker <> ''`], []);
+    const groups = await nameGroups('maker', [`maker IS NOT NULL AND maker <> ''`], [], true);
     return { items: groups.map((g) => g.label), groups };
   });
 
@@ -1556,7 +1569,7 @@ export default async function productRoutes(app) {
   app.get('/api/products/app-models', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
     const maker = String(req.query.maker || '').trim();
     const params = []; const conds = [`model IS NOT NULL AND model <> ''`];
-    if (maker) nameCond('maker', maker, conds, params);
+    if (maker) makerCond('maker', maker, conds, params);
     const groups = await nameGroups('model', conds, params);
     return { items: groups.map((g) => g.label), groups };
   });
@@ -1566,7 +1579,7 @@ export default async function productRoutes(app) {
     const maker = String(req.query.maker || '').trim();
     const model = String(req.query.model || '').trim();
     const params = []; const conds = [`year_from IS NOT NULL AND year_to IS NOT NULL`];
-    if (maker) nameCond('maker', maker, conds, params);
+    if (maker) makerCond('maker', maker, conds, params);
     if (model) nameCond('model', model, conds, params);
     const rows = (await query(
       `SELECT DISTINCT y FROM product_applications, generate_series(year_from, year_to) AS y
@@ -1582,7 +1595,7 @@ export default async function productRoutes(app) {
     const year = req.query.year ? Number(req.query.year) : null;
     if (!maker && !model && !q && !year) return { items: [] };
     const conds = ['p.deleted_at IS NULL']; const params = [];
-    if (maker) nameCond('a.maker', maker, conds, params);
+    if (maker) makerCond('a.maker', maker, conds, params);
     if (model) nameCond('a.model', model, conds, params);
     if (q) { params.push(`%${q}%`); conds.push(`(a.app_text ILIKE $${params.length} OR a.model ILIKE $${params.length})`); }
     if (year != null && Number.isFinite(year)) { params.push(year); conds.push(`a.year_from <= $${params.length} AND a.year_to >= $${params.length}`); }

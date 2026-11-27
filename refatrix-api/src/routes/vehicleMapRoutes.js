@@ -1,6 +1,7 @@
 // =====================================================================
 // 2026-11-27 · 차종으로 제품찾기 — 차량 도면용 데이터 (디렉터 요청)
 //   GET /api/products/vehicle-map?maker=&model=&year=   (제품 화면 열람자 · requirePage('products'))
+//   11-27e · 메이커 칸에 여럿('FORD, MERCURY')이면 낱개 중 하나만 맞아도 된다
 //   11-27b · 메이커 · 모델은 이름 키(대소문자 · 하이픈 · 공백 · 악센트 무시)로 찾는다 — 카탈로그 원문은 그대로
 //
 //   응답 { vehicle, items:[…], competitors:[…], counts, defs }
@@ -26,7 +27,7 @@ import { visibleTeamIds } from '../teams.js';
 import { oeByProduct } from '../oeCodes.js';
 import { rackStockReady, rackMap } from '../rackStock.js';
 import { activeVersionId, normCode } from '../xrefMaster.js';
-import { partCat, posLoose, appMatch, posForVehicle, CAT_LABEL, nameKey, NK_SQL } from '../vehicleMap.js';
+import { partCat, posLoose, appMatch, posForVehicle, CAT_LABEL, nameKey, NK_SQL, MAKER_COND_SQL } from '../vehicleMap.js';
 
 const MAX_PRODUCTS = 1500;
 const MAX_XREF_ROWS = 4000;
@@ -55,7 +56,7 @@ export default async function vehicleMapRoutes(app) {
       `SELECT p.id, p.code, p.name, p.scode, COALESCE(p.stock_qty,0) AS stock_qty,
               string_agg(DISTINCT a.app_text, ' // ') AS app_hit
          FROM product_applications a JOIN products p ON p.id = a.product_id AND p.deleted_at IS NULL
-        WHERE ${NK_SQL('a.maker')} = $1 AND ${NK_SQL('a.model')} = $2${yCond}
+        WHERE ${MAKER_COND_SQL('a.maker', 1)} AND ${NK_SQL('a.model')} = $2${yCond}
         GROUP BY p.id, p.code, p.name, p.scode, p.stock_qty
         ORDER BY p.code
         LIMIT ${MAX_PRODUCTS}`, params)).rows;

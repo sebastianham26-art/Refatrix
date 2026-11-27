@@ -69,7 +69,11 @@ await t('조회 → 도면 마커 · 목록 · 상세',async()=>{
   assert.match(det,/1,860/); assert.match(det,/A-03-2/);
   assert.match(det,/발주 미입고 잔량 1,500 = 운송 200 \+ 생산 중 1,300/); assert.match(det,/고객 주문 미출고 부족분 338/);
   assert.match(d.querySelector('.vm-det .vm-qty').innerHTML,/생산 중 백오더 · En producción/);
-  assert.ok(d.querySelector('.vm-det .vm-code .tip').textContent.includes('40160-3AN0A'),'OE 툴팁');
+  const cb=d.querySelector('.vm-det .vm-code');
+  cb.dispatchEvent(new w.Event('mouseenter')); const pop=d.getElementById('vmOePop');
+  assert.ok(pop && pop.parentElement===d.body,'OE 말풍선은 body 에(목록 스크롤에 안 잘림)'); assert.match(pop.textContent,/40160-3AN0A/);
+  cb.dispatchEvent(new w.Event('mouseleave')); assert.ok(!d.getElementById('vmOePop'),'벗어나면 닫힘');
+  assert.match(d.querySelector('.vm-det .vm-oe').textContent,/OE 40160-3AN0A/,'상세 카드에 OE 줄(휴대폰 · 터치)');
   assert.equal(d.querySelector('.vm-det .vm-qty').getAttribute('translate'),'no');
   assert.ok(d.querySelector('.vm-det .vm-qty svg'),'아이콘');
 });

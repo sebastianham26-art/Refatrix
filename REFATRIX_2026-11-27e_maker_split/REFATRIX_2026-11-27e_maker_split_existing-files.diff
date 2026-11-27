@@ -1,0 +1,220 @@
+diff --git a/refatrix-api/src/routes/productRoutes.js b/refatrix-api/src/routes/productRoutes.js
+index c4c5633..7db9e78 100644
+--- a/refatrix-api/src/routes/productRoutes.js
++++ b/refatrix-api/src/routes/productRoutes.js
+@@ -18,7 +18,7 @@ import { kitsFor, kitBuildable } from '../vioPromos.js';   // 0293 · 키트 구
+ import { pushProductsSoon } from '../productSync.js';   // 0302 · 제품 수정 → CRM 즉시 전송(3초 묶음)
+ import { searchMaster, normBrand as xmBrand, normCode as xmNorm } from '../xrefMaster.js';   // 0325 · 경쟁사 코드(크로스레퍼런스 마스터)로 제품찾기
+ import { dimsReady, tableToRows, previewDims, applyDims, exportDims, previewBoxes, applyBoxes, exportBoxes, boxRowsFromSizes, boxConflicts, dimsMap } from '../productDims.js';   // 0327 · 0328 · 무게 · 포장 박스
+-import { nameKey, NK_SQL } from '../vehicleMap.js';   // 2026-11-27b · 메이커 · 모델 이름 키(대소문자 · 하이픈 무시)
++import { nameKey, NK_SQL, MK_PARTS_SQL, MAKER_COND_SQL } from '../vehicleMap.js';   // 2026-11-27b · 27e(메이커 낱개) · 메이커 · 모델 이름 키(대소문자 · 하이픈 무시)
+ 
+ // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
+ // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
+@@ -1522,11 +1522,18 @@ export default async function productRoutes(app) {
+   // 차종 드롭다운 · 검색 — 2026-11-27b: 메이커 · 모델은 「이름 키」(대소문자 · 하이픈 · 공백 · 점 · 악센트 무시)로 묶고 찾는다.
+   //   카탈로그 마스터(적용차종 원문)는 바꾸지 않는다. 드롭다운에는 키마다 한 줄 — 가장 많이 쓰인 표기를 대표로 보이고,
+   //   어떤 표기를 넘겨도(대표든 다른 표기든) 같은 키로 걸러진다. groups[].variants 로 묶인 표기를 함께 준다.
+-  async function nameGroups(col, conds, params) {
+-    const rows = (await query(
+-      `SELECT ${NK_SQL(col)} AS k, ${col} AS v, COUNT(*)::int AS n
+-         FROM product_applications WHERE ${conds.join(' AND ')}
+-        GROUP BY 1, 2`, params)).rows;
++  //   11-27e · 메이커는 한 칸에 여럿('FORD, MERCURY')이면 낱개로 나눠 묶는다(split=true).
++  async function nameGroups(col, conds, params, split = false) {
++    const rows = split
++      ? (await query(
++        `SELECT ${NK_SQL('btrim(mkp.x)')} AS k, btrim(mkp.x) AS v, COUNT(*)::int AS n
++           FROM product_applications, unnest(${MK_PARTS_SQL(col)}) AS mkp(x)
++          WHERE ${conds.join(' AND ')} AND btrim(mkp.x) <> ''
++          GROUP BY 1, 2`, params)).rows
++      : (await query(
++        `SELECT ${NK_SQL(col)} AS k, ${col} AS v, COUNT(*)::int AS n
++           FROM product_applications WHERE ${conds.join(' AND ')}
++          GROUP BY 1, 2`, params)).rows;
+     const by = new Map();
+     for (const r of rows) {
+       if (!r.k) continue;
+@@ -1545,10 +1552,16 @@ export default async function productRoutes(app) {
+     if (!k) return;
+     params.push(k); conds.push(`${NK_SQL(col)} = $${params.length}`);
+   }
++  // 11-27e · 메이커 조건 — 칸의 낱개 중 하나라도 같으면('FORD' 로 'FORD, MERCURY' 칸도)
++  function makerCond(col, val, conds, params) {
++    const k = nameKey(val);
++    if (!k) return;
++    params.push(k); conds.push(MAKER_COND_SQL(col, params.length));
++  }
+ 
+   // 차종 드롭다운: 메이커 목록
+   app.get('/api/products/app-makers', { preHandler: [authGuard, requirePage('products')] }, async () => {
+-    const groups = await nameGroups('maker', [`maker IS NOT NULL AND maker <> ''`], []);
++    const groups = await nameGroups('maker', [`maker IS NOT NULL AND maker <> ''`], [], true);
+     return { items: groups.map((g) => g.label), groups };
+   });
+ 
+@@ -1556,7 +1569,7 @@ export default async function productRoutes(app) {
+   app.get('/api/products/app-models', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+     const maker = String(req.query.maker || '').trim();
+     const params = []; const conds = [`model IS NOT NULL AND model <> ''`];
+-    if (maker) nameCond('maker', maker, conds, params);
++    if (maker) makerCond('maker', maker, conds, params);
+     const groups = await nameGroups('model', conds, params);
+     return { items: groups.map((g) => g.label), groups };
+   });
+@@ -1566,7 +1579,7 @@ export default async function productRoutes(app) {
+     const maker = String(req.query.maker || '').trim();
+     const model = String(req.query.model || '').trim();
+     const params = []; const conds = [`year_from IS NOT NULL AND year_to IS NOT NULL`];
+-    if (maker) nameCond('maker', maker, conds, params);
++    if (maker) makerCond('maker', maker, conds, params);
+     if (model) nameCond('model', model, conds, params);
+     const rows = (await query(
+       `SELECT DISTINCT y FROM product_applications, generate_series(year_from, year_to) AS y
+@@ -1582,7 +1595,7 @@ export default async function productRoutes(app) {
+     const year = req.query.year ? Number(req.query.year) : null;
+     if (!maker && !model && !q && !year) return { items: [] };
+     const conds = ['p.deleted_at IS NULL']; const params = [];
+-    if (maker) nameCond('a.maker', maker, conds, params);
++    if (maker) makerCond('a.maker', maker, conds, params);
+     if (model) nameCond('a.model', model, conds, params);
+     if (q) { params.push(`%${q}%`); conds.push(`(a.app_text ILIKE $${params.length} OR a.model ILIKE $${params.length})`); }
+     if (year != null && Number.isFinite(year)) { params.push(year); conds.push(`a.year_from <= $${params.length} AND a.year_to >= $${params.length}`); }
+diff --git a/refatrix-api/src/routes/vehicleMapRoutes.js b/refatrix-api/src/routes/vehicleMapRoutes.js
+index 8d40ae5..24daf31 100644
+--- a/refatrix-api/src/routes/vehicleMapRoutes.js
++++ b/refatrix-api/src/routes/vehicleMapRoutes.js
+@@ -1,6 +1,7 @@
+ // =====================================================================
+ // 2026-11-27 · 차종으로 제품찾기 — 차량 도면용 데이터 (디렉터 요청)
+ //   GET /api/products/vehicle-map?maker=&model=&year=   (제품 화면 열람자 · requirePage('products'))
++//   11-27e · 메이커 칸에 여럿('FORD, MERCURY')이면 낱개 중 하나만 맞아도 된다
+ //   11-27b · 메이커 · 모델은 이름 키(대소문자 · 하이픈 · 공백 · 악센트 무시)로 찾는다 — 카탈로그 원문은 그대로
+ //
+ //   응답 { vehicle, items:[…], competitors:[…], counts, defs }
+@@ -26,7 +27,7 @@ import { visibleTeamIds } from '../teams.js';
+ import { oeByProduct } from '../oeCodes.js';
+ import { rackStockReady, rackMap } from '../rackStock.js';
+ import { activeVersionId, normCode } from '../xrefMaster.js';
+-import { partCat, posLoose, appMatch, posForVehicle, CAT_LABEL, nameKey, NK_SQL } from '../vehicleMap.js';
++import { partCat, posLoose, appMatch, posForVehicle, CAT_LABEL, nameKey, NK_SQL, MAKER_COND_SQL } from '../vehicleMap.js';
+ 
+ const MAX_PRODUCTS = 1500;
+ const MAX_XREF_ROWS = 4000;
+@@ -55,7 +56,7 @@ export default async function vehicleMapRoutes(app) {
+       `SELECT p.id, p.code, p.name, p.scode, COALESCE(p.stock_qty,0) AS stock_qty,
+               string_agg(DISTINCT a.app_text, ' // ') AS app_hit
+          FROM product_applications a JOIN products p ON p.id = a.product_id AND p.deleted_at IS NULL
+-        WHERE ${NK_SQL('a.maker')} = $1 AND ${NK_SQL('a.model')} = $2${yCond}
++        WHERE ${MAKER_COND_SQL('a.maker', 1)} AND ${NK_SQL('a.model')} = $2${yCond}
+         GROUP BY p.id, p.code, p.name, p.scode, p.stock_qty
+         ORDER BY p.code
+         LIMIT ${MAX_PRODUCTS}`, params)).rows;
+diff --git a/refatrix-api/src/vehicleMap.js b/refatrix-api/src/vehicleMap.js
+index d64099b..9aecc46 100644
+--- a/refatrix-api/src/vehicleMap.js
++++ b/refatrix-api/src/vehicleMap.js
+@@ -74,6 +74,17 @@ export function nameKey(s) {
+ }
+ /** SQL 쪽 같은 키 — translate 로 악센트, regexp 로 기호 · 공백 제거(확장 모듈 없이). col 은 신뢰된 열 이름만. */
+ export const NK_SQL = (col) => `regexp_replace(upper(translate(COALESCE(${col},''), 'áéíóúàèìòùäëïöüâêîôûãõñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÂÊÎÔÛÃÕÑÇ', 'aeiouaeiouaeiouaeiouaonc' || 'AEIOUAEIOUAEIOUAEIOUAONC')), '[^A-Z0-9가-힣]', '', 'g')`;
++// ── 2026-11-27e · 한 칸에 메이커가 여럿 — 'FORD, MERCURY' · 'Ford/Mercury' · 'FORD & LINCOLN' → 낱개 메이커로 본다 ──
++//   드롭다운엔 FORD · MERCURY 가 따로 한 줄씩, FORD 를 고르면 'FORD, MERCURY' 칸의 차종도 함께 나온다(원문은 그대로).
++export const MAKER_SEP_RE = /\s*(?:,|\/|&|\+|;)\s*/;
++export function makerParts(s) {
++  return String(s == null ? '' : s).split(MAKER_SEP_RE).map((x) => x.trim()).filter((x) => nameKey(x));
++}
++/** SQL: 메이커 칸 → 낱개 배열(같은 구분자) */
++export const MK_PARTS_SQL = (col) => `regexp_split_to_array(COALESCE(${col},''), '\\s*[,/&+;]\\s*')`;
++/** SQL 조건: 메이커 칸의 낱개 중 하나가 이름 키 $n 과 같다 */
++export const MAKER_COND_SQL = (col, n) => `EXISTS (SELECT 1 FROM unnest(${MK_PARTS_SQL(col)}) AS mkp(x) WHERE ${NK_SQL('mkp.x')} = $${n})`;
++
+ /** 원문 → 낱말 키 배열('Honda CR-V 2015' → ['HONDA','CR','V','2015']) */
+ const tokens = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC').toUpperCase().split(/[^A-Z0-9가-힣]+/).filter(Boolean);
+ /**
+@@ -138,7 +149,15 @@ export function appMatch(text, { maker = '', model = '', year = null } = {}, kno
+   if (!nameKey(model)) return { ok: false };
+   const mk = makerWords(maker);
+   const mkKeys = new Set(mk.map(nameKey));
+-  const others = [...new Set((knownMakers || []).map(norm).filter((x) => x && !mkKeys.has(nameKey(x))))];
++  // 11-27e · 알려진 메이커 칸을 낱개로 — 내 메이커와 한 칸에 같이 적힌 메이커(FORD, MERCURY 의 MERCURY)는 「다른 메이커」로 치지 않는다
++  const sib = new Set();
++  const all = new Set();
++  for (const raw of knownMakers || []) {
++    const ps = makerParts(raw).map(norm);
++    ps.forEach((x) => all.add(x));
++    if (ps.some((x) => mkKeys.has(nameKey(x)))) ps.forEach((x) => sib.add(nameKey(x)));
++  }
++  const others = [...all].filter((x) => x && !mkKeys.has(nameKey(x)) && !sib.has(nameKey(x)));
+   let best = null;
+   for (const seg of String(text == null ? '' : text).split(/\s*(?:\/\/|;|,|\n)\s*/)) {
+     const s = norm(seg);
+diff --git a/refatrix-api/test/product_positions_ctr.test.mjs b/refatrix-api/test/product_positions_ctr.test.mjs
+index f10a1b5..8256215 100644
+--- a/refatrix-api/test/product_positions_ctr.test.mjs
++++ b/refatrix-api/test/product_positions_ctr.test.mjs
+@@ -93,7 +93,7 @@ async function readScreen(c, root, rowSel) {
+ 
+ test('B. 제품 찾기 — 차종 도면(차종으로 제품찾기)과 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
+   const c = await boot();
+-  assert.match(c.d.title, /ps-1127v[mno]/);
++  assert.match(c.d.title, /ps-1127v[mnop]/);
+   // ① 차종으로 제품찾기(2026-11-27 · 상단 토글 · 차량 도면)
+   c.d.getElementById('fmVeh').dispatchEvent(new c.w.Event('click'));
+   const mk = c.d.getElementById('veh-maker'); mk.innerHTML = '<option value="NISSAN">NISSAN</option>'; mk.value = 'NISSAN';
+diff --git a/refatrix-api/test/vehicle_map_e2e.test.mjs b/refatrix-api/test/vehicle_map_e2e.test.mjs
+index 3dd438e..17d8d8d 100644
+--- a/refatrix-api/test/vehicle_map_e2e.test.mjs
++++ b/refatrix-api/test/vehicle_map_e2e.test.mjs
+@@ -250,3 +250,34 @@ test('⑥ 11-27b · 이름 키 — 대소문자 · 하이픈 · 공백이 달라
+   assert.ok(bv.items.some((x) => x.code === TAG + '-A') && bv.items.some((x) => x.code === TAG + '-E'), 'by-vehicle 도 이름 키');
+   assert.equal((await get(`/api/products/vehicle-map?maker=${encodeURIComponent('--')}&model=x`)).statusCode, 400, '기호만이면 400');
+ });
++
++test('⑦ 11-27e · 한 칸에 메이커 여럿(FORD, MERCURY) — 낱개 메이커로 드롭다운 · 찾기', { skip: SKIP }, async () => {
++  const F = TAG + 'FD', M = TAG + 'MC', GM = 'GrandMq' + RUN;
++  const mk = async (sfx, maker, model) => {
++    const id = Number((await query(`INSERT INTO products (code, name, stock_qty) VALUES ($1,'ROTULA INFERIOR',1) RETURNING id`, [TAG + sfx])).rows[0].id);
++    await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,2003,2011)`, [id, `${maker} ${model} 2003-2011`, maker, model]);
++  };
++  await mk('-F1', `${F}, ${M}`, GM);          // 한 칸 두 메이커
++  await mk('-F2', F.toLowerCase(), 'Focus' + RUN);
++  await mk('-F3', M, 'Sable' + RUN);
++  await query(`INSERT INTO xref_master_rows (version_id, row_no, codes, descripcion, aplicacion, ubicacion) VALUES ($1,8,$2,'HORQUILLA',$3,'Delantera')`,
++    [ID.ver, JSON.stringify({ SYD: [`${TAG}S5`] }), `${F}, ${M} ${GM} 2003-2011`]);
++  await query(`INSERT INTO xref_master_codes (version_id, row_no, brand, code, norm_code) VALUES ($1,8,'SYD',$2,$2)`, [ID.ver, `${TAG}S5`]);
++
++  const g = (await get('/api/products/app-makers')).json().groups;
++  assert.equal(g.filter((x) => x.key === F.toUpperCase()).length, 1, 'FORD 한 줄');
++  assert.equal(g.filter((x) => x.key === M.toUpperCase()).length, 1, 'MERCURY 한 줄');
++  assert.equal(g.filter((x) => x.key === (F + M).toUpperCase()).length, 0, "'FORD, MERCURY' 줄은 없음");
++  const models = async (m) => (await get(`/api/products/app-models?maker=${encodeURIComponent(m)}`)).json().items.sort();
++  assert.deepEqual(await models(F), [GM, 'Focus' + RUN].sort(), 'FORD → 같이 적힌 Grand Marquis + Focus');
++  assert.deepEqual(await models(M), [GM, 'Sable' + RUN].sort(), 'MERCURY → Grand Marquis + Sable');
++  const yrs = (await get(`/api/products/app-years?maker=${encodeURIComponent(M)}&model=${encodeURIComponent(GM)}`)).json().items;
++  assert.ok(yrs.includes(2005));
++  for (const m of [F, M.toLowerCase()]) {
++    const d = (await get(`/api/products/vehicle-map?maker=${encodeURIComponent(m)}&model=${encodeURIComponent(GM)}&year=2005`)).json();
++    assert.deepEqual(d.items.map((x) => x.code), [TAG + '-F1'], m + ' 로 골라도 같은 제품');
++    assert.ok(d.competitors.some((x) => x.row_no === 8), m + ' · 마스터의 FORD, MERCURY 표기도 맞음');
++  }
++  const bv = (await get(`/api/products/by-vehicle?maker=${encodeURIComponent(M)}`)).json();
++  assert.deepEqual(bv.items.map((x) => x.code).sort(), [TAG + '-F1', TAG + '-F3'].sort());
++});
+diff --git a/refatrix-api/test/vehicle_map_front.test.mjs b/refatrix-api/test/vehicle_map_front.test.mjs
+index deb3b0d..3849782 100644
+--- a/refatrix-api/test/vehicle_map_front.test.mjs
++++ b/refatrix-api/test/vehicle_map_front.test.mjs
+@@ -69,7 +69,11 @@ await t('조회 → 도면 마커 · 목록 · 상세',async()=>{
+   assert.match(det,/1,860/); assert.match(det,/A-03-2/);
+   assert.match(det,/발주 미입고 잔량 1,500 = 운송 200 \+ 생산 중 1,300/); assert.match(det,/고객 주문 미출고 부족분 338/);
+   assert.match(d.querySelector('.vm-det .vm-qty').innerHTML,/생산 중 백오더 · En producción/);
+-  assert.ok(d.querySelector('.vm-det .vm-code .tip').textContent.includes('40160-3AN0A'),'OE 툴팁');
++  const cb=d.querySelector('.vm-det .vm-code');
++  cb.dispatchEvent(new w.Event('mouseenter')); const pop=d.getElementById('vmOePop');
++  assert.ok(pop && pop.parentElement===d.body,'OE 말풍선은 body 에(목록 스크롤에 안 잘림)'); assert.match(pop.textContent,/40160-3AN0A/);
++  cb.dispatchEvent(new w.Event('mouseleave')); assert.ok(!d.getElementById('vmOePop'),'벗어나면 닫힘');
++  assert.match(d.querySelector('.vm-det .vm-oe').textContent,/OE 40160-3AN0A/,'상세 카드에 OE 줄(휴대폰 · 터치)');
+   assert.equal(d.querySelector('.vm-det .vm-qty').getAttribute('translate'),'no');
+   assert.ok(d.querySelector('.vm-det .vm-qty svg'),'아이콘');
+ });
