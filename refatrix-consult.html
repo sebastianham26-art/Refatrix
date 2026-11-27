@@ -719,7 +719,7 @@ window.__qkLang=L;if(L==='es'){d.lang='es';d.setAttribute('data-ui-lang','es');}
     csAddPendRow();
     if(isDirector()){
       $('cs-userWrap').classList.remove('hidden');
-      $('cs-privWrap').classList.remove('hidden');
+      // 1127 · 감추기 중단 — 「숨긴 상담만 보기」 필터도 숨김
       try{
         const u=(await fetch(session.api+'/api/pipeline/salespeople',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[];
         $('cs-user').innerHTML='<option value="">전체</option>'+u.map(x=>'<option value="'+x.id+'">'+csEsc(x.name)+'</option>').join('');
@@ -2260,7 +2260,7 @@ window.__qkLang=L;if(L==='es'){d.lang='es';d.setAttribute('data-ui-lang','es');}
         +'<span class="hint" style="margin:0">'+csEsc(it.consult_date)+' · 담당 '+csEsc(it.by_name||'-')+(it.by_login?(' ('+csEsc(it.by_login)+')'):'')+'</span>'
         +(it.summary&&it.summary.resumen?csKoBtn(it.id,lang,'cs-rowKo'):'')
         +'<button type="button" class="btn ghost sm cs-recBtn" data-id="'+it.id+'" data-c="'+csEsc(it.company_name)+'">🎙 녹음/요약</button>'
-        +(isDirector()?('<button type="button" class="btn '+(it.is_private?'red':'ghost')+' sm cs-privBtn" data-id="'+it.id+'" data-v="'+(it.is_private?'0':'1')+'">'+(it.is_private?'🔓 다시 공개':'🔒 감추기(나만 보기)')+'</button>'):'')
+        +(isDirector()&&it.is_private?('<button type="button" class="btn red sm cs-privBtn" data-id="'+it.id+'" data-v="0">🔓 다시 공개</button>'):'')   // 1127 · 감추기 중단 — 남아 있는 숨김만 풀 수 있음
       +'</div>'
       +'<div style="margin-top:6px;font-size:12.5px">'
         +(it.contact_name?('만난 사람: '+csEsc(it.contact_name)+(it.contact_title?(' · '+csEsc(it.contact_title)):'')+'<br>'):'')

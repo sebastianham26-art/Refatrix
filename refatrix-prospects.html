@@ -92,7 +92,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--pill);font-size:12px;font-weight:700;background:var(--surface);white-space:nowrap}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 .src{font-size:11px;font-weight:800;padding:1px 7px;border-radius:var(--pill);margin-left:6px;vertical-align:1px}
-.src.ia{background:var(--ink);color:#fff} .src.denue{background:var(--surface);color:var(--ink2);border:1px solid var(--line)} .src.erp{background:#E8F0FE;color:#1F4FB8;border:1px solid #BFD3F7}
+.src.ia{background:var(--ink);color:#fff} .src.denue{background:var(--surface);color:var(--ink2);border:1px solid var(--line)} .td-tip{background:rgba(255,255,255,.92);border:1px solid #ddd;font-size:11px;padding:1px 6px;box-shadow:none} .src.erp{background:#E8F0FE;color:#1F4FB8;border:1px solid #BFD3F7}
 .src.guardado{background:var(--ok-soft);color:var(--ok)} .src.vacio{background:var(--bad-soft);color:var(--bad)}
 .evid{font-size:12px;color:var(--muted);font-weight:400;font-style:italic}
 /* ❓ 질문 항목 */
@@ -204,6 +204,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
     <button class="tab work" role="tab" data-tab="terr">지역·담당</button>
     <button class="tab work" role="tab" data-tab="map">지도</button>
     <button class="tab work" role="tab" data-tab="route">오늘 루트</button>
+    <button class="tab work" role="tab" data-tab="today">오늘 방문</button>
     <button class="tab work" role="tab" data-tab="review">검토 대기<span class="cnt hide" id="rv-cnt">0</span></button>
     <button class="tab dir" role="tab" data-tab="links">연결 승인<span class="cnt hide" id="lk-cnt">0</span></button>
     <button class="tab work" role="tab" data-tab="dash">현황판</button>
@@ -270,6 +271,20 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
   </section>
 
   <!-- 현황판 -->
+  <section id="p-today" class="tabp hide">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:12px 0">
+      <h2 style="margin-right:auto">📋 방문·녹음 기록 <span class="note" id="td-upd" style="font-weight:400"></span></h2>
+      <label class="fld"><span>날짜</span><input type="date" id="td-date"></label>
+      <label class="fld dir"><span>담당자</span><select id="td-user"></select></label>
+      <label class="chip" style="padding:10px 14px"><input type="checkbox" id="td-auto" checked> 1분마다 자동 새로고침</label>
+      <button class="btn ghost sm" id="td-reload">새로고침</button>
+    </div>
+    <div class="grid cards row1" id="td-kpi"></div>
+    <div class="card" style="margin-top:14px"><h2>계획 루트 대비 실제 방문</h2><p class="note">카드를 누르면 그 담당자만 지도·목록에 보입니다(다시 누르면 전체). 지도: 점선·번호 = 계획 루트(초록 = 방문함, 흰색 = 아직) · 실선·시각 = 실제 체크인 순서.</p>
+      <div id="td-reps" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:10px"></div>
+      <div id="td-map" style="height:420px;border-radius:4px;border:1px solid var(--line);margin-top:12px"></div></div>
+    <div class="card" style="margin-top:14px"><h2>체크인·녹음 목록</h2><div class="scroll" style="margin-top:10px"><table class="tb resp" id="td-table"></table></div></div>
+  </section>
   <section id="p-dash" class="tabp hide">
     <div class="grid cards row1" id="d-kpi" style="margin-top:12px"></div>
     <div class="card" style="margin-top:16px">
@@ -596,7 +611,7 @@ function show(tab){
   $('f-range-wrap').classList.toggle('hide',tab!=='board');
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab?'true':'false'));
   document.querySelectorAll('.tabp').forEach(p=>p.classList.toggle('hide',p.id!=='p-'+tab));
-  ({board:loadBoard,route:loadRoute,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:loadPurge})[tab]();
+  ({board:loadBoard,route:loadRoute,today:loadToday,dash:loadDash,map:loadMap,list:()=>{loadMuns();loadList(0);},review:loadReviews,links:loadLinks,terr:loadTerr,targets:loadTargets,import:loadPurge})[tab]();
 }
 $('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(b) show(b.dataset.tab); });
 $('f-range').addEventListener('change',()=>show('board'));
@@ -1306,6 +1321,106 @@ $('rt-near').onclick=async()=>{
     '<button class="btn red" style="width:100%;margin-top:16px" id="near-route">이 후보들로 오늘 루트 만들기</button>');
   $('near-route').onclick=async()=>{ try{ await post('/api/prospect-routes',{date:META.today,prospect_ids:near.map(p=>p.id),start_lat:g.lat,start_lng:g.lng},'PUT'); closeDrawer(); show('route'); }catch(e){ toast('실패: '+e.message); } };
 };
+// ── 📋 오늘 방문: 그날 체크인·녹음 + 계획 루트 대비 실제 방문(1분마다 갱신) ──
+let TD={map:null,lyr:null,d:null,sel:null,timer:null};
+const REC_LBL={queued:'녹음 대기',uploading:'올리는 중',transcribing:'받아쓰는 중',summarizing:'요약 중',failed:'처리 실패',error:'처리 실패'};
+const mmss=s=>s==null?'':Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
+function recCell(r){ if(!r.rec||!r.rec.count) return '<span class="st-warn">녹음 없음</span>';
+  const st=r.rec.status; if(REC_LBL[st]) return '<span class="'+(st==='failed'||st==='error'?'st-warn':'note')+'">'+REC_LBL[st]+'</span>';
+  return '<span class="st-ok">녹음 있음</span>'+(r.rec.duration_sec?' <span class="note">'+mmss(r.rec.duration_sec)+'</span>':'')+(r.rec.count>1?' <span class="note">×'+r.rec.count+'</span>':'')+(r.rec.audio?' <span title="음성 있음">🔊</span>':''); }
+async function loadToday(){
+  if(!$('td-date').value) $('td-date').value=META.today;
+  if(isDir&&!$('td-user').options.length){ $('td-user').innerHTML='<option value="">전체</option>'+META.staff.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join(''); }
+  const qs='date='+$('td-date').value+(isDir&&$('td-user').value?'&user='+$('td-user').value:'');
+  let d; try{ d=await api('/api/prospects/activity?'+qs); }catch(e){ return toast('실패: '+e.message); }
+  TD.d=d; if(TD.sel&&!d.reps.some(x=>x.user_id===TD.sel)) TD.sel=null;
+  $('td-upd').textContent='· '+new Date().toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'})+' 기준';
+  const C=d.counts;
+  $('td-kpi').innerHTML=[['체크인',fmt(C.checkins),'방문 기록 수'],['녹음 있음',fmt(C.with_rec),'녹음 없음 '+fmt(C.no_rec)],['계획 대비 방문',fmt(C.visited)+' / '+fmt(C.planned),C.planned?Math.round(C.visited/C.planned*100)+'% 진행':'그날 계획 루트 없음'],
+    ['루트 밖 방문',fmt(C.off_route),'계획에 없던 곳'],['업체 미연결',fmt(C.unlinked),'일반 녹음 등 — 진척 보드에서 연결']]
+    .map(([l,v,n])=>'<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div><div class="note">'+n+'</div></div>').join('');
+  renderTodayReps(); renderTodayMap(); renderTodayTable();
+  clearTimeout(TD.timer);
+  if($('td-auto').checked&&$('td-date').value===META.today) TD.timer=setTimeout(()=>{ if(cur==='today'&&!document.hidden) loadToday(); },60000);
+}
+function tdColor(uid){ const i=(TD.d.reps.findIndex(x=>x.user_id===uid)); return REP_COLORS[(i<0?0:i)%REP_COLORS.length]; }
+function renderTodayReps(){
+  const d=TD.d;
+  $('td-reps').innerHTML=d.reps.length?d.reps.map(x=>{ const c=x.counts, on=TD.sel===x.user_id, pct=c.planned?Math.round(c.visited/c.planned*100):0;
+    return '<div class="card flat" data-tdrep="'+x.user_id+'" style="padding:12px 14px;cursor:pointer;border:2px solid '+(on?tdColor(x.user_id):'transparent')+'">'+
+      '<div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:'+tdColor(x.user_id)+'"></span><b>'+esc(x.name||'?')+'</b><span class="note" style="margin-left:auto">'+(x.last_at?'마지막 '+mxTime(x.last_at).slice(11):'체크인 없음')+'</span></div>'+
+      '<div style="margin-top:8px;font-size:22px;font-weight:800">'+c.visited+' <span class="note" style="font-size:14px">/ 계획 '+c.planned+'</span></div>'+
+      '<div style="height:6px;background:#eee;border-radius:3px;margin:6px 0"><div style="height:6px;width:'+pct+'%;background:'+tdColor(x.user_id)+';border-radius:3px"></div></div>'+
+      '<div class="note">체크인 '+c.checkins+' · 녹음 '+c.with_rec+(c.off_route?' · <b>루트 밖 '+c.off_route+'</b>':'')+(x.first_at?' · 시작 '+mxTime(x.first_at).slice(11):'')+'</div>'+
+      (x.next?'<div class="note" style="margin-top:4px">다음: '+x.next.seq+'번 '+esc(x.next.name||'')+'</div>':c.planned?'<div class="note st-ok" style="margin-top:4px">계획 루트 모두 방문</div>':'')+'</div>'; }).join('')
+    :'<div class="empty">이 날 계획 루트와 체크인이 없습니다.</div>';
+  $('td-reps').querySelectorAll('[data-tdrep]').forEach(el=>el.onclick=()=>{ const id=Number(el.dataset.tdrep); TD.sel=TD.sel===id?null:id; renderTodayReps(); renderTodayMap(); renderTodayTable(); });
+}
+function renderTodayMap(){
+  if(noLeaflet('td-map')) return;
+  if(!TD.map){ TD.map=L.map('td-map'); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(TD.map); TD.lyr=L.layerGroup().addTo(TD.map); }
+  setTimeout(()=>TD.map.invalidateSize(),50); TD.lyr.clearLayers();
+  const d=TD.d, bb=[];
+  d.reps.filter(x=>!TD.sel||x.user_id===TD.sel).forEach(x=>{ const col=tdColor(x.user_id);
+    const pl=x.planned.filter(p=>p.lat!=null);
+    if(pl.length>1) L.polyline(pl.map(p=>[p.lat,p.lng]),{color:col,weight:2,dashArray:'6 6',opacity:.7}).addTo(TD.lyr);
+    pl.forEach(p=>{ bb.push([p.lat,p.lng]); const done=!!p.consult_id;
+      L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',iconSize:[24,24],html:'<div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:800 11px sans-serif;'+(done?'background:#1E7A46;color:#fff;border:2px solid #fff':'background:#fff;color:#111;border:2px solid '+col)+'">'+p.seq+'</div>'})})
+        .bindTooltip(esc(x.name||'')+' · 계획 '+p.seq+'번 '+esc(p.name||'')+(done?' · ✓ '+mxTime(p.visited_at).slice(11):' · 아직')).addTo(TD.lyr); });
+    const acts=d.rows.filter(r=>r.user_id===x.user_id&&r.lat!=null);
+    if(acts.length>1) L.polyline(acts.map(r=>[r.lat,r.lng]),{color:col,weight:4,opacity:.9}).addTo(TD.lyr);
+    acts.forEach((r,i)=>{ bb.push([r.lat,r.lng]);
+      L.circleMarker([r.lat,r.lng],{radius:7,weight:2,color:'#fff',fillColor:r.rec&&r.rec.count?col:'#9a9a9a',fillOpacity:1})
+        .bindTooltip('<b>'+mxTime(r.at).slice(11)+'</b> '+esc(r.name||'(업체 미연결)')+' · '+esc(x.name||'')+(r.rec&&r.rec.count?' · 녹음':' · 녹음 없음'),{permanent:acts.length<=12,direction:'right',offset:[8,0],className:'td-tip'})
+        .on('click',()=>openActivity(r.id)).addTo(TD.lyr); }); });
+  if(bb.length) TD.map.fitBounds(bb,{padding:[30,30],maxZoom:15}); else TD.map.setView([25.68,-100.31],11);
+}
+function renderTodayTable(){
+  const d=TD.d, rows=d.rows.filter(r=>!TD.sel||r.user_id===TD.sel).slice().reverse();   // 최근 것 위
+  const plannedBy={}; d.reps.forEach(x=>plannedBy[x.user_id]=new Set(x.planned.map(p=>p.prospect_id)));
+  $('td-table').innerHTML='<thead><tr><th>체크인</th><th>담당</th><th>업체</th><th>위치</th><th>녹음</th><th>내용</th><th>상태</th><th></th></tr></thead><tbody>'+
+    (rows.length?rows.map(r=>{ const onR=r.prospect_id&&plannedBy[r.user_id]&&plannedBy[r.user_id].has(r.prospect_id);
+      const tag=!r.prospect_id?'<span class="st-warn">업체 미연결</span>':onR?'<span class="note">계획 루트</span>':'<span class="note" style="color:#B26B00">루트 밖</span>';
+      const loc=r.lat!=null?'<a target="_blank" rel="noopener" href="https://www.google.com/maps?q='+r.lat+','+r.lng+'">📍 지도</a>'+(r.dist_m!=null?' <span class="'+(r.dist_m>(META.checkin_warn_m||150)?'st-warn':'note')+'">업체와 '+fmt(r.dist_m)+'m</span>':'')+(r.acc?' <span class="note">±'+Math.round(r.acc)+'m</span>':''):'<span class="st-warn">위치 없음</span>';
+      return '<tr><td data-l="체크인"><b>'+mxTime(r.at).slice(11)+'</b></td><td data-l="담당"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+tdColor(r.user_id)+';margin-right:6px"></span>'+esc(r.user_name||'')+'</td>'+
+        '<td data-l="업체"><b>'+esc(r.name||'(상호 없음)')+'</b>'+(r.customer?' <span class="tag B">ERP</span>':'')+'<div>'+tag+'</div></td>'+
+        '<td data-l="위치">'+loc+'</td><td data-l="녹음">'+recCell(r)+'</td>'+
+        '<td data-l="내용" style="max-width:340px"><span class="note">'+esc((r.resumen||'').slice(0,140))+((r.resumen||'').length>140?'…':'')+'</span></td>'+
+        '<td data-l="상태">'+(r.review_status==='confirmado'?'<span class="st-ok">저장 완료</span>':r.review_status?'<span class="st-warn">검토 대기</span>':'—')+'</td>'+
+        '<td><button class="btn ghost sm" data-tdopen="'+r.id+'">보기</button></td></tr>'; }).join('')
+      :'<tr><td colspan="8" class="empty">이 날 체크인·녹음이 없습니다.</td></tr>')+'</tbody>';
+  $('td-table').querySelectorAll('[data-tdopen]').forEach(b=>b.onclick=()=>openActivity(Number(b.dataset.tdopen)));
+}
+async function openActivity(id){
+  const r=TD.d.rows.find(x=>x.id===id); if(!r) return;
+  openDrawer(mxTime(r.at)+' · '+(r.user_name||''),r.name||'(업체 미연결)','<p class="note">불러오는 중…</p>');
+  let x; try{ x=await api('/api/prospects/activity/'+id); }catch(e){ $('dr-body').innerHTML='<div class="banner warn">'+esc(e.message)+'</div>'; return; }
+  const head='<div class="card flat" style="padding:12px 14px;font-size:14px;display:flex;flex-direction:column;gap:4px">'+
+    '<div><b>체크인</b> '+esc(mxTime(r.at))+'</div><div><b>담당</b> '+esc(r.user_name||'')+'</div>'+
+    '<div><b>업체</b> '+esc(r.name||'(업체 미연결)')+(r.customer?' · ERP '+esc(r.customer.code||''):'')+(r.contact_name?' · 응대: '+esc(r.contact_name):'')+'</div>'+
+    '<div><b>위치</b> '+(r.lat!=null?'<a target="_blank" rel="noopener" href="https://www.google.com/maps?q='+r.lat+','+r.lng+'">'+r.lat.toFixed(5)+', '+r.lng.toFixed(5)+'</a>'+(r.dist_m!=null?' · 업체와 '+fmt(r.dist_m)+'m':''):'없음')+'</div></div>';
+  const recs=x.recordings.length?x.recordings.map((g,i)=>'<div class="sec"><h3>녹음 '+(x.recordings.length>1?(i+1)+' ':'')+'<span class="note" style="font-weight:400">'+(REC_LBL[g.status]||'')+(g.duration_sec?' · '+mmss(g.duration_sec):'')+'</span></h3>'+
+      (g.audio_parts?'<div style="margin:6px 0 10px"><button class="btn ghost sm" data-tdaudio="'+g.id+'|'+g.audio_parts+'">▶ 음성 듣기</button><div id="tdau-'+g.id+'" style="margin-top:6px"></div></div>':'')+
+      (g.resumen?'<p><b>요약</b><br>'+esc(g.resumen)+'</p>':'')+(g.next_step?'<p><b>다음 할 일</b><br>'+esc(g.next_step)+'</p>':'')+
+      (g.transcript?'<details><summary style="cursor:pointer;font-weight:700">받아쓴 전문 보기</summary><div style="white-space:pre-wrap;font-size:13px;line-height:1.5;margin-top:6px;max-height:420px;overflow:auto">'+esc(g.transcript)+'</div></details>':(g.error?'<p class="st-warn">'+esc(g.error)+'</p>':'<p class="note">아직 받아쓰기 전입니다.</p>'))+'</div>').join('')
+    :'<div class="banner warn" style="margin-top:12px">녹음이 없습니다 — 체크인만 되었거나 녹음 업로드가 안 됐습니다.</div>';
+  const acts='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'+(r.prospect_id?'<button class="btn red sm" id="ta-review">검토 · 고객정보 확인</button><button class="btn ghost sm" id="ta-open">업체 상세</button>':'<span class="note">업체에 연결되지 않은 녹음입니다 — 「진척 보드 › 🔗 연결 안 된 방문」에서 연결하세요.</span>')+'</div>';
+  $('dr-body').innerHTML=head+recs+acts;
+  // 음성(디렉터만 받는 칸이 있을 때만 버튼이 생김) — 구간별로 받아 이어서 재생
+  $('dr-body').querySelectorAll('[data-tdaudio]').forEach(b=>b.onclick=async()=>{ const [rid,n]=b.dataset.tdaudio.split('|').map(Number); b.disabled=true; b.textContent='불러오는 중…';
+    const box=$('tdau-'+rid); box.innerHTML=''; const els=[];
+    try{ for(let k=0;k<n;k++){ const res=await fetch(S.api+'/api/prospects/activity/'+id+'/audio/'+rid+'/'+k,{headers:{Authorization:'Bearer '+S.token}}); if(!res.ok) throw new Error('http_'+res.status);
+        const a=document.createElement('audio'); a.controls=true; a.preload='auto'; a.style.width='100%'; a.src=URL.createObjectURL(await res.blob()); els.push(a);
+        if(n>1){ const t=document.createElement('div'); t.className='note'; t.textContent='구간 '+(k+1)+' / '+n; box.appendChild(t); } box.appendChild(a); }
+      els.forEach((a,k)=>{ if(els[k+1]) a.addEventListener('ended',()=>els[k+1].play()); }); b.remove(); els[0].play().catch(()=>{}); }
+    catch(e){ b.disabled=false; b.textContent='▶ 음성 듣기'; toast('음성을 불러오지 못했습니다'); } });
+  if($('ta-review')) $('ta-review').onclick=()=>openReview(r.prospect_id,r.id);
+  if($('ta-open')) $('ta-open').onclick=()=>openProspect(r.prospect_id);
+}
+['td-date','td-user','td-auto'].forEach(id=>$(id).addEventListener('change',()=>{ TD.sel=null; loadToday(); }));
+$('td-reload').onclick=()=>loadToday();
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&cur==='today') loadToday(); });
+
 // 첫 방문지 바꾸기 — 이 업체부터, 나머지는 가까운 순(이미 방문한 곳은 그대로 앞에)
 async function rtFirst(pid){
   if(!ROUTE||!ROUTE.route_id) return;

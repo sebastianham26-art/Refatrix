@@ -447,19 +447,12 @@ test('전체 선택 체크박스가 모든 행을 선택한다', async () => {
 });
 
 // ── 감추기(디렉터 특별권한) ─────────────────────────────────────────
-test('디렉터: 상세에 감추기 버튼이 있고 누르면 POST private', async () => {
+test('1127 · 감추기 중단: 디렉터 화면에도 감추기 버튼·🔒 필터가 없다(숨기지 않은 상담)', async () => {
   await loadTable();
-  route('POST', '/api/consults/10/private', { ok: true, id: 10, is_private: true });
   $('cs-table').querySelector('tr.crow[data-id="10"]').click();
   await tick();
-  const btn = $('cs-table').querySelector('.cs-privBtn');
-  assert.ok(btn, '감추기 버튼 필요');
-  assert.ok(btn.textContent.includes('감추기'));
-  btn.click();
-  await tick(30);
-  const p = fetchLog.find((f) => f.method === 'POST' && f.url.includes('/private'));
-  assert.ok(p);
-  assert.equal(JSON.parse(p.body).value, true);
+  assert.equal($('cs-table').querySelector('.cs-privBtn'), null, '감추기 버튼 없음');
+  assert.ok($('cs-privWrap').classList.contains('hidden'), '「숨긴 상담만 보기」 필터 숨김');
 });
 
 test('디렉터: 이미 감춘 상담은 「다시 공개」 버튼 · 🔒 필터가 숨긴 건만 남긴다', async () => {

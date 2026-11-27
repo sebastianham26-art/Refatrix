@@ -45,6 +45,13 @@ const PAGE = 'pipeline';                    // 화면 권한키 — 영업활동
 const STT_MODEL = () => sttModelName(process.env.VISIT_STT_MODEL);
 const AI_MODEL = () => process.env.VISIT_AI_MODEL || 'claude-sonnet-4-5-20250929';
 const KEEP_AUDIO = () => process.env.CONSULT_KEEP_AUDIO === '1';
+// 1127 · 현장 방문 녹음(빠른 녹음·고객개발 업체 연결)은 음성을 남긴다 — 디렉터만 고객개발 「오늘 방문」에서 재생.
+//   보관 기간은 고객개발 쪽 정리 작업이 지움(PROSPECT_AUDIO_DAYS, 기본 60일). CONSULT_KEEP_VISIT_AUDIO=0 이면 예전처럼 폐기.
+async function keepVisitAudio(consultId) {
+  if (process.env.CONSULT_KEEP_VISIT_AUDIO === '0') return false;
+  try { const r = (await query(`SELECT (quick_rec OR prospect_id IS NOT NULL) AS k FROM sales_consults WHERE id=$1`, [consultId])).rows[0]; return !!(r && r.k); }
+  catch (_) { return false; }
+}
 
 // 구간(segment) 하나 = Whisper 에 파일 하나로 올라간다 → 25MB 한도는 구간별로 본다.
 // 전체 녹음은 구간 여러 개를 이어붙인 것이므로 총량은 따로(더 크게) 본다 — 긴 상담 지원.
@@ -320,7 +327,7 @@ export async function processOne(row) {
       `UPDATE sales_consult_recordings
           SET transcript=$2, status='summarizing', error=NULL,
               audio_b64 = CASE WHEN $3 THEN audio_b64 ELSE NULL END
-        WHERE id=$1`, [recId, transcript, KEEP_AUDIO()]);
+        WHERE id=$1`, [recId, transcript, KEEP_AUDIO() || await keepVisitAudio(row.consult_id)]);
   } else {
     await query(`UPDATE sales_consult_recordings SET status='summarizing', error=NULL WHERE id=$1`, [recId]);
   }
@@ -781,6 +788,8 @@ export default async function consultRoutes(app) {
     if (perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    // 1127 · 감추기 중단(디렉터 결정): 새로 숨기기는 막고, 숨긴 것 다시 공개만 허용
+    if (req.body && req.body.value) return reply.code(403).send({ error: 'hide_disabled' });
     const row = (await query(
       `SELECT id, private_by FROM sales_consults WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!row) return reply.code(404).send({ error: 'not_found' });
@@ -790,7 +799,7 @@ export default async function consultRoutes(app) {
     }
     const value = !!(req.body && req.body.value);
     await query(
-      `UPDATE sales_consults SET private_by = $2, private_at = CASE WHEN $2 IS NULL THEN NULL ELSE now() END WHERE id = $1`,
+      `UPDATE sales_consults SET private_by = $2::bigint, private_at = CASE WHEN $2::bigint IS NULL THEN NULL ELSE now() END WHERE id = $1`,
       [id, value ? Number(perm.userId) : null]);
     await logEvent({ userId: perm.userId, action: 'update', target: `consult:${id}`, detail: { private: value } });
     return { ok: true, id, is_private: value };

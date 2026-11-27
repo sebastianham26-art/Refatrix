@@ -1,0 +1,319 @@
+diff --git a/refatrix-api/src/routes/productRoutes.js b/refatrix-api/src/routes/productRoutes.js
+index 953e79c..5fb3c2b 100644
+--- a/refatrix-api/src/routes/productRoutes.js
++++ b/refatrix-api/src/routes/productRoutes.js
+@@ -1567,11 +1567,14 @@ export default async function productRoutes(app) {
+     return { items: groups.map((g) => g.label), groups };
+   });
+ 
+-  // 차종 드롭다운: (메이커별) 모델 목록
++  // 차종 드롭다운: (메이커 · 연식별) 모델 목록 — 11-27g ?year= 추가
+   app.get('/api/products/app-models', { preHandler: [authGuard, requirePageAny(VM_PAGES)] }, async (req) => {
+     const maker = String(req.query.maker || '').trim();
++    // 11-27g · 메이커 → 연식 → 모델 순서 — 연식을 주면 그 연식이 적용 범위에 들어가는 모델만
++    const yr = req.query.year ? Number(req.query.year) : null;
+     const params = []; const conds = [`model IS NOT NULL AND model <> ''`];
+     if (maker) makerCond('maker', maker, conds, params);
++    if (Number.isInteger(yr) && yr >= 1950 && yr <= 2100) { params.push(yr); conds.push(`year_from <= $${params.length} AND year_to >= $${params.length}`); }
+     const groups = await nameGroups('model', conds, params);
+     return { items: groups.map((g) => g.label), groups };
+   });
+diff --git a/refatrix-api/test/product_dims_front.test.mjs b/refatrix-api/test/product_dims_front.test.mjs
+index 3b48fb0..5bd16a2 100644
+--- a/refatrix-api/test/product_dims_front.test.mjs
++++ b/refatrix-api/test/product_dims_front.test.mjs
+@@ -255,7 +255,7 @@ test('⑧ 견적 입력 — 📦 대략 무게 · 사이즈(현실 적재 · 묶
+   });
+   await new Promise((r) => dom.window.addEventListener('load', r));
+   const w = dom.window;
+-  assert.match(w.document.title, /qt-1127vm/);
++  assert.match(w.document.title, /qt-1127vn/);
+   const one = w.qtShipHtml({ weight_kg: 16.3, dims: { l: 46, w: 34, h: 25 }, vol_m3: 0.039, vol_weight_kg: 7.8,
+     pack: { method: 'stack', boxes: 10, layers: 3, fill: 0.809, stacks: 1 }, wt_miss: 1, wt_miss_qty: 2, d_nobox: 0, d_nosize: 1, d_nosize_qty: 3, nosize_boxes: ['NUEVA'], unreg: 1 });
+   const t1 = new w.DOMParser().parseFromString(one, 'text/html').body.textContent;
+diff --git a/refatrix-api/test/product_positions_ctr.test.mjs b/refatrix-api/test/product_positions_ctr.test.mjs
+index 1a83b3f..a7fa885 100644
+--- a/refatrix-api/test/product_positions_ctr.test.mjs
++++ b/refatrix-api/test/product_positions_ctr.test.mjs
+@@ -95,7 +95,7 @@ async function readScreen(c, root, rowSel) {
+ 
+ test('B. 제품 찾기 — 차종 도면(차종으로 제품찾기)과 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
+   const c = await boot();
+-  assert.match(c.d.title, /ps-1127v[mnopq]/);
++  assert.match(c.d.title, /ps-1127v[mnopqr]/);
+   // ① 차종으로 제품찾기(2026-11-27 · 상단 토글 · 차량 도면)
+   c.d.getElementById('fmVeh').dispatchEvent(new c.w.Event('click'));
+   const mk = c.d.getElementById('veh-maker'); mk.innerHTML = '<option value="NISSAN">NISSAN</option>'; mk.value = 'NISSAN';
+diff --git a/refatrix-api/test/quote_avail_partial_front.test.mjs b/refatrix-api/test/quote_avail_partial_front.test.mjs
+index f8b5b13..bff4d4f 100644
+--- a/refatrix-api/test/quote_avail_partial_front.test.mjs
++++ b/refatrix-api/test/quote_avail_partial_front.test.mjs
+@@ -104,5 +104,5 @@ test('③ 견적 작성 — 가용 칸 근거 · 저장 직후 확보 부족 안
+   const plain = dom.window.availCell({ qty: 2, avail_stock: 30, stock_flag: 'ok', cur_stock: 30, reserved_other: 0, used_in_quote: 0 });
+   assert.doesNotMatch(plain, /타 견적/, '예약 없으면 근거 줄 없음');
+   assert.match(html, /재고 확보 부족 '\+shl\.length\+'개 SKU/, '저장 메시지');
+-  assert.match(html, /<title>[^<]*qt-1127vm<\/title>/);
++  assert.match(html, /<title>[^<]*qt-1127vn<\/title>/);
+ });
+diff --git a/refatrix-api/test/quote_devreq_front.test.mjs b/refatrix-api/test/quote_devreq_front.test.mjs
+index 59a88da..d51f46d 100644
+--- a/refatrix-api/test/quote_devreq_front.test.mjs
++++ b/refatrix-api/test/quote_devreq_front.test.mjs
+@@ -57,7 +57,7 @@ test('저장 응답에 미등록 코드가 있으면 기록 위치를 알린다'
+   assert.match(r.text, /Fuera de catálogo: 1 \(CQ0988L\)/, '어느 코드인지');
+   assert.match(r.text, /개발 요청/, '어디에 남았는지(메뉴 이름)');
+   assert.match(r.cls, /warn/, '눈에 띄게');
+-  assert.match(r.title, /qt-1127vm/, '빌드 토큰');   // 0234 토큰 → 2026-11-05 avl → 2026-11-11 xr(0325)
++  assert.match(r.title, /qt-1127vn/, '빌드 토큰');   // 0234 토큰 → 2026-11-05 avl → 2026-11-11 xr(0325)
+ });
+ 
+ test('미등록 코드가 없으면 안내도 없다 (구 백엔드 응답 호환)', { skip: SKIP }, async () => {
+diff --git a/refatrix-api/test/quote_kit_filter_front.test.mjs b/refatrix-api/test/quote_kit_filter_front.test.mjs
+index 44a8637..b315f65 100644
+--- a/refatrix-api/test/quote_kit_filter_front.test.mjs
++++ b/refatrix-api/test/quote_kit_filter_front.test.mjs
+@@ -61,7 +61,7 @@ test('① 선택 UI · 기본 전체 · 바꾸면 on 표시와 기억(localStora
+   assert.ok(w.document.querySelector('input[value=excl]').parentNode.classList.contains('on'));
+   assert.ok(!w.document.querySelector('input[value=all]').parentNode.classList.contains('on'));
+   assert.equal(w.localStorage.getItem('rfx_quote_kitmode'), 'excl');
+-  assert.match(w.document.title, /qt-1127vm/);
++  assert.match(w.document.title, /qt-1127vn/);
+ });
+ 
+ test('② 기억된 선택(only)으로 시작', async () => {
+diff --git a/refatrix-api/test/quote_kit_lines_front.test.mjs b/refatrix-api/test/quote_kit_lines_front.test.mjs
+index 2476ce8..46856cf 100644
+--- a/refatrix-api/test/quote_kit_lines_front.test.mjs
++++ b/refatrix-api/test/quote_kit_lines_front.test.mjs
+@@ -49,7 +49,7 @@ async function boot() {
+ 
+ test('① 줄 표 — KIT 머리줄 1개(번호 · 차종 · 세트 · 구성품 CTR 코드) · 구성 줄 Producto = CTR + 제품명', async () => {
+   const { w, $ } = await boot();
+-  assert.match(w.document.title, /qt-1127vm/);
++  assert.match(w.document.title, /qt-1127vn/);
+   const heads = [...$('linesWrap').querySelectorAll('tr.kithead')];
+   assert.equal(heads.length, 1);
+   const t = heads[0].textContent;
+diff --git a/refatrix-api/test/quote_vehicle_pick_front.test.mjs b/refatrix-api/test/quote_vehicle_pick_front.test.mjs
+index c51899d..cc8d161 100644
+--- a/refatrix-api/test/quote_vehicle_pick_front.test.mjs
++++ b/refatrix-api/test/quote_vehicle_pick_front.test.mjs
+@@ -33,7 +33,7 @@ const VM = {
+ };
+ 
+ function boot() {
+-  const calls = { preview: [], save: [], alerts: [] };
++  const calls = { preview: [], save: [], alerts: [], app: [] };
+   const dom = new JSDOM(read('refatrix-quote.html'), {
+     runScripts: 'dangerously', url: 'https://example.test/refatrix-quote.html', pretendToBeVisual: true,
+     beforeParse(w) {
+@@ -46,9 +46,10 @@ function boot() {
+         const u = String(url);
+         const json = (d) => ({ ok: true, status: 200, json: async () => d });
+         if (u.includes('/api/customers')) return json({ items: [{ id: 1, code: 'C001', name: 'REFACCIONARIA NORTE', discount: 30 }] });
++        if (u.includes('/api/products/app-')) calls.app.push(u.replace('https://api.test/api/products/', ''));
+         if (u.includes('/api/products/app-makers')) return json({ items: ['NISSAN'], groups: [] });
+-        if (u.includes('/api/products/app-models')) return json({ items: ['Versa'], groups: [] });
+-        if (u.includes('/api/products/app-years')) return json({ items: [2015] });
++        if (u.includes('/api/products/app-models')) return json({ items: u.includes('year=2021') ? ['Kicks', 'Versa'] : (u.includes('year=2010') ? ['Tiida'] : ['Kicks', 'Tiida', 'Versa']), groups: [] });
++        if (u.includes('/api/products/app-years')) return json({ items: [2021, 2015, 2010] });
+         if (u.includes('/api/products/vehicle-map')) return json(VM);
+         if (u.includes('/api/quotes/preview')) {
+           const b = JSON.parse(o.body); calls.preview.push(b);
+@@ -77,7 +78,7 @@ const row = (d, txt) => [...d.querySelectorAll('#qVehResult .vm-row')].find((r)
+ 
+ test('① 고객을 골라야 「차종으로 찾기」가 켜진다', { skip: SKIP }, async () => {
+   const { w, d } = boot(); await tick(250);
+-  assert.match(d.title, /qt-1127vm/);
++  assert.match(d.title, /qt-1127vn/);
+   assert.equal(d.getElementById('qmVeh').disabled, true, '고객 전 비활성');
+   d.getElementById('custSel').value = '1'; w.onCustChange(); await tick(50);
+   assert.equal(d.getElementById('qmVeh').disabled, false);
+@@ -139,3 +140,27 @@ test('④ CTR 없는 부품 → SYD/BAW 코드로 미매칭 줄(개발요청 흐
+   assert.deepEqual(calls.save.at(-1).lines.map((l) => [l.code, l.brand || '', l.product_id || null]), [['BW9', 'BAW', null], ['SYD9', 'SYD', null]]);
+   w.close();
+ });
++
++test('⑥ 11-27g · 메이커 → 연식 → 모델 — 연식을 고르면 그 연식 모델만', { skip: SKIP }, async () => {
++  const c = boot(); const { w, d, calls } = c; await tick(250);
++  d.getElementById('custSel').value = '1'; w.onCustChange(); await tick(50);
++  d.getElementById('qmVeh').click(); await tick(150);
++  const ids = [...d.querySelectorAll('#qVehPanel .vm-sel select')].map((x) => x.id);
++  assert.deepEqual(ids, ['q-veh-maker', 'q-veh-year', 'q-veh-model'], '화면 순서');
++  const mk = d.getElementById('q-veh-maker'); mk.value = 'NISSAN'; calls.app.length = 0;
++  mk.dispatchEvent(new w.Event('change')); await tick(120);
++  assert.deepEqual(calls.app, ['app-years?maker=NISSAN', 'app-models?maker=NISSAN'], '메이커 → 연식 목록 → (연식 없이) 모델 전체');
++  const opts = (id) => [...d.getElementById(id).options].map((o) => o.value).filter(Boolean);
++  assert.deepEqual(opts('q-veh-year'), ['2021', '2015', '2010']);
++  assert.deepEqual(opts('q-veh-model'), ['Kicks', 'Tiida', 'Versa']);
++  d.getElementById('q-veh-model').value = 'Versa';
++  const yr = d.getElementById('q-veh-year'); yr.value = '2021'; calls.app.length = 0;
++  yr.dispatchEvent(new w.Event('change')); await tick(120);
++  assert.deepEqual(calls.app, ['app-models?maker=NISSAN&year=2021']);
++  assert.deepEqual(opts('q-veh-model'), ['Kicks', 'Versa'], '2021 모델만');
++  assert.equal(d.getElementById('q-veh-model').value, 'Versa', '고른 모델이 새 목록에 있으면 유지');
++  yr.value = '2010'; yr.dispatchEvent(new w.Event('change')); await tick(120);
++  assert.deepEqual(opts('q-veh-model'), ['Tiida']);
++  assert.equal(d.getElementById('q-veh-model').value, '', '없으면 비움');
++  w.close();
++});
+diff --git a/refatrix-api/test/vehicle_map_e2e.test.mjs b/refatrix-api/test/vehicle_map_e2e.test.mjs
+index 1678659..f428ca8 100644
+--- a/refatrix-api/test/vehicle_map_e2e.test.mjs
++++ b/refatrix-api/test/vehicle_map_e2e.test.mjs
+@@ -316,3 +316,16 @@ test('⑧ 11-27f · 도면에서 담은 줄 그대로 견적 저장 → 재고
+   await query(`DELETE FROM quote_lines WHERE quote_id=$1`, [qid]).catch(() => {});
+   await query(`DELETE FROM quotes WHERE id=$1`, [qid]).catch(() => {});
+ });
++
++test('⑨ 11-27g · app-models?year= — 그 연식이 적용 범위에 드는 모델만', { skip: SKIP }, async () => {
++  const F = TAG + 'FD';   // ⑦에서 만든 메이커: GrandMq(2003-2011) · Focus(2003-2011)
++  const id = Number((await query(`INSERT INTO products (code, name, stock_qty) VALUES ($1,'BUJE',1) RETURNING id`, [TAG + '-F4'])).rows[0].id);
++  await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,2015,2019)`, [id, `${F} Escape${RUN} 2015-2019`, F, 'Escape' + RUN]);
++  const m = async (y) => (await get(`/api/products/app-models?maker=${encodeURIComponent(F)}${y ? '&year=' + y : ''}`)).json().items.sort();
++  assert.deepEqual(await m(), ['Escape' + RUN, 'Focus' + RUN, 'GrandMq' + RUN].sort(), '연식 없으면 전부');
++  assert.deepEqual(await m(2017), ['Escape' + RUN]);
++  assert.deepEqual(await m(2005), ['Focus' + RUN, 'GrandMq' + RUN].sort());
++  assert.deepEqual(await m(1990), []);
++  const yrs = (await get(`/api/products/app-years?maker=${encodeURIComponent(F)}`)).json().items;
++  assert.ok(yrs.includes(2017) && yrs.includes(2005), '메이커만으로 연식 목록');
++});
+diff --git a/refatrix-api/test/xref_cols_front.test.mjs b/refatrix-api/test/xref_cols_front.test.mjs
+index a820967..0ff6106 100644
+--- a/refatrix-api/test/xref_cols_front.test.mjs
++++ b/refatrix-api/test/xref_cols_front.test.mjs
+@@ -60,7 +60,7 @@ test('① ~ ④ 견적 작성 — 엑셀 다운로드 · 전체 가격표 · Top
+     return null;
+   });
+   const w = dom.window, $ = (id) => w.document.getElementById(id);
+-  assert.match(w.document.title, /qt-1127vm/);
++  assert.match(w.document.title, /qt-1127vn/);
+   w.RefXrefCols.picker($('xrefColPick'));
+   assert.equal($('xrefColPick').querySelectorAll('input[data-xb]').length, 5, 'BAW · GROB · VAZLO · KYB · MOOG');
+   // ④ 체크 없음 → 종전 그대로
+diff --git a/refatrix-products.html b/refatrix-products.html
+index 7cca144..f90a2b5 100644
+--- a/refatrix-products.html
++++ b/refatrix-products.html
+@@ -8,7 +8,7 @@
+ <meta http-equiv="Pragma" content="no-cache">
+ <meta http-equiv="Expires" content="0">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<title>Refatrix ERP · 제품 조회 · ps-1127vq</title>
++<title>Refatrix ERP · 제품 조회 · ps-1127vr</title>
+ <style>
+   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+@@ -248,7 +248,7 @@
+ </style>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+ <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+-<script src="refatrix-vehiclemap.js?v=20261127f"></script>
++<script src="refatrix-vehiclemap.js?v=20261127g"></script>
+ <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
+ </head>
+@@ -276,12 +276,12 @@
+   <div class="card hidden vm" id="vehCard">
+     <div class="vm-head">
+       <h2>차종으로 제품찾기</h2>
+-      <div class="vm-sub">메이커 · 모델 · 연식을 고르면 차량 하부 도면 위에 우리 부품의 장착위치가 표시됩니다. CTR 카탈로그에 없는 자리는 경쟁사(SYD · BAW) 코드로 보여 줍니다.</div>
++      <div class="vm-sub">메이커 · 연식 · 모델을 고르면(연식을 먼저 고르면 그 연식의 모델만) 차량 하부 도면 위에 우리 부품의 장착위치가 표시됩니다. CTR 카탈로그에 없는 자리는 경쟁사(SYD · BAW) 코드로 보여 줍니다.</div>
+     </div>
+     <div class="vm-sel">
+       <div><label for="veh-maker">메이커 · Marca</label><select id="veh-maker"><option value="">선택</option></select></div>
++      <div><label for="veh-year">연식 · Año</label><select id="veh-year"><option value="">전체 연식</option></select></div>
+       <div style="flex:2"><label for="veh-model">모델 · Modelo</label><select id="veh-model"><option value="">선택</option></select></div>
+-      <div><label for="veh-year">연식 · Año</label><select id="veh-year"><option value="">전체</option></select></div>
+       <div class="vm-go"><button class="vm-btn" id="vehBtn" type="button">찾기</button></div>
+     </div>
+     <div id="vehResult"></div>
+@@ -2921,7 +2921,7 @@
+   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
+   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
+ 
+-  try{ console.log('[refatrix-products] build ps-1127vq (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더 · OE 말풍선 · 공용 모듈)'); }catch(e){}
++  try{ console.log('[refatrix-products] build ps-1127vr (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더 · OE 말풍선 · 공용 모듈)'); }catch(e){}
+   $('resyncBtn').addEventListener('click',resyncDerived);
+   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
+   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
+diff --git a/refatrix-quote.html b/refatrix-quote.html
+index 4cee34c..615c769 100644
+--- a/refatrix-quote.html
++++ b/refatrix-quote.html
+@@ -8,7 +8,7 @@
+ <meta http-equiv="Pragma" content="no-cache">
+ <meta http-equiv="Expires" content="0">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<title>Refatrix ERP · 견적 (수주관리) · qt-1127vm</title>
++<title>Refatrix ERP · 견적 (수주관리) · qt-1127vn</title>
+ <style>
+   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+@@ -119,7 +119,7 @@
+ </style>
+ <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+ <!-- 2026-11-27f · 차종으로 찾아 담기 — 제품 화면과 같은 차량 도면 공용 모듈 -->
+-<script src="refatrix-vehiclemap.js?v=20261127f"></script>
++<script src="refatrix-vehiclemap.js?v=20261127g"></script>
+ <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
+ <style>
+@@ -182,8 +182,8 @@
+       <div id="qVehPanel" class="vm hidden">
+         <div class="vm-sel">
+           <div><label for="q-veh-maker">메이커 · Marca</label><select id="q-veh-maker"><option value="">선택</option></select></div>
++          <div><label for="q-veh-year">연식 · Año</label><select id="q-veh-year"><option value="">전체 연식</option></select></div>
+           <div style="flex:2"><label for="q-veh-model">모델 · Modelo</label><select id="q-veh-model"><option value="">선택</option></select></div>
+-          <div><label for="q-veh-year">연식 · Año</label><select id="q-veh-year"><option value="">전체</option></select></div>
+           <div class="vm-go"><button class="vm-btn" id="qVehBtn" type="button">찾기</button></div>
+         </div>
+         <div id="qVehResult"></div>
+diff --git a/refatrix-vehiclemap.js b/refatrix-vehiclemap.js
+index 96c2516..39d0f6c 100644
+--- a/refatrix-vehiclemap.js
++++ b/refatrix-vehiclemap.js
+@@ -1,5 +1,5 @@
+ /* =====================================================================
+- * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f
++ * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f · 27g(메이커 → 연식 → 모델)
+  *   쓰는 화면: 제품마케팅 › 제품(refatrix-products.html · 보기) · 견적(refatrix-quote.html · 담기)
+  *   API: GET /api/products/app-makers · app-models · app-years · vehicle-map (quote · products · sales 화면 권한)
+  *
+@@ -62,9 +62,18 @@
+         return '<option value="'+escP(v)+'"'+(o?' title="'+escP('같은 이름으로 묶은 표기: '+o.join(' · '))+'"':'')+'>'+escP(v)+(o?'  ('+escP(o.slice(0,3).join(' · '))+(o.length>3?' …':'')+')':'')+'</option>'; }).join('');
+     }
+     function getJ(path){ return fetch(O.api()+path,{headers:O.headers()}).then(function(x){ return x.json(); }); }
++    // 11-27g · 순서 = 메이커 → 연식 → 모델. 연식을 고르면 그 연식에 해당하는 모델만 나온다(연식 비우면 메이커의 모든 모델).
++    //   연식을 바꿔도 고른 모델이 새 목록에 있으면 그대로 둔다.
++    function keep(sel, prev){ if(prev && [].some.call(sel.options,function(o){ return o.value===prev; })) sel.value=prev; }
+     function loadMakers(){ return getJ('/api/products/app-makers').then(function(d){ fillSelect(E.maker,d.items,'선택',d.groups); }).catch(function(){}); }
+-    function loadModels(){ return getJ('/api/products/app-models?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.model,d.items,'선택',d.groups); }).catch(function(){}).then(loadYears); }
+-    function loadYears(){ return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)+'&model='+encodeURIComponent(E.model.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); }).catch(function(){}); }
++    function loadYears(){
++      var prev=E.year.value;
++      return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); keep(E.year,prev); }).catch(function(){}).then(loadModels);
++    }
++    function loadModels(){
++      var prev=E.model.value, y=E.year.value;
++      return getJ('/api/products/app-models?maker='+encodeURIComponent(E.maker.value)+(y?'&year='+encodeURIComponent(y):'')).then(function(d){ fillSelect(E.model,d.items,'선택',d.groups); keep(E.model,prev); }).catch(function(){});
++    }
+ 
+     // ── 담기(pick) ──
+     function pickRefs(it){
+@@ -369,12 +378,12 @@
+ 
+ 
+     if(E.btn) E.btn.addEventListener('click', vehSearch);
+-    if(E.maker) E.maker.addEventListener('change', loadModels);
+-    if(E.model) E.model.addEventListener('change', loadYears);
++    if(E.maker) E.maker.addEventListener('change', function(){ E.year.value=''; E.model.value=''; loadYears(); });   // 메이커 → 연식 목록 → 모델 목록
++    if(E.year) E.year.addEventListener('change', loadModels);                                                       // 연식 → 그 연식 모델만
+     window.addEventListener('scroll', vmOeHide, true);
+     return { search: vehSearch, loadMakers: loadMakers, render: function(){ if(vmData) vmRender(); }, data: function(){ return vmData; }, hideTip: vmOeHide };
+   }
+   // 스타일은 불러오자마자 넣는다 — 토글 · 패널이 도면을 열기 전에도 같은 모양
+   if(document.head) injectCss(); else document.addEventListener('DOMContentLoaded', injectCss);
+-  window.RefatrixVehicleMap = { create: create, version: '20261127f' };
++  window.RefatrixVehicleMap = { create: create, version: '20261127g' };
+ })();

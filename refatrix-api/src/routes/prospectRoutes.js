@@ -585,6 +585,107 @@ export default async function prospectRoutes(app) {
     return { date, rows: rows.map((r) => ({ ...r, id: Number(r.id), created_by: Number(r.created_by), prospect_id: Number(r.prospect_id) })) };
   });
 
+  // ── 📋 오늘 방문(1127) — 그날 체크인·녹음 목록 + 담당자별 계획 루트 대비 실제 방문 ──
+  //   상담(빠른 녹음·체크인) 중 그날 것: 업체 연결·ERP 고객·위치·녹음 상태·요약. 숨긴 상담(private_by)은 그 사람에게만.
+  //   담당자는 자기 것만, 디렉터·관리자는 전체(user= 로 한 사람).
+  app.get('/api/prospects/activity', view, async (req) => {
+    const date = YMD.test(String(req.query?.date)) ? req.query.date : mxToday();
+    const dir = isDir(req); const mine = me(req);
+    const uid = dir ? (int(req.query?.user) || null) : mine;
+    const params = [date, mine]; let ucond = '';
+    if (uid) { params.push(uid); ucond = `AND c.created_by=$${params.length}`; }
+    let rows = [];
+    try {
+      rows = (await query(
+        `SELECT c.id, c.created_at, c.created_by, u.name AS user_name, c.company_name, c.prospect_id, c.customer_id, c.geo_lat, c.geo_lng, c.geo_accuracy,
+                c.checkin_dist_m, c.review_status, c.quick_rec, c.contact_name,
+                p.nom_estab, p.lat AS p_lat, p.lng AS p_lng, p.stage, cu.code AS customer_code, cu.name AS customer_name,
+                r.id AS rec_id, r.status AS rec_status, r.duration_sec, r.alta_status, (r.transcript IS NOT NULL AND r.transcript <> '') AS has_transcript, r.has_audio,
+                r.summary_json->>'resumen' AS resumen, COALESCE(r.alta_draft->>'siguiente_paso', r.summary_json->>'next_step') AS next_step,
+                (SELECT COUNT(*)::int FROM sales_consult_recordings rr WHERE rr.consult_id=c.id) AS rec_count
+           FROM sales_consults c LEFT JOIN users u ON u.id=c.created_by
+           LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN customers cu ON cu.id=c.customer_id
+           LEFT JOIN LATERAL (SELECT id, status, duration_sec, alta_status, transcript, summary_json, alta_draft,
+                                     (SELECT bool_or(x.audio_b64 IS NOT NULL) FROM sales_consult_recordings x WHERE x.consult_id=c.id) AS has_audio
+                                FROM sales_consult_recordings WHERE consult_id=c.id ORDER BY id DESC LIMIT 1) r ON TRUE
+          WHERE c.deleted_at IS NULL AND c.consult_date=$1 AND (c.quick_rec OR c.prospect_id IS NOT NULL OR c.geo_lat IS NOT NULL)
+            AND (c.private_by IS NULL OR c.private_by=$2) ${dir ? '' : 'AND c.created_by=$2'} ${ucond}
+          ORDER BY c.created_at`, params)).rows;
+    } catch (e) { req.log.warn({ err: e }, 'activity'); rows = []; }
+    const num = (v) => (v == null ? null : Number(v));
+    rows = rows.map((r) => ({ id: Number(r.id), at: r.created_at, user_id: Number(r.created_by), user_name: r.user_name,
+      name: r.nom_estab || r.company_name, company_name: r.company_name, prospect_id: num(r.prospect_id), customer: r.customer_id ? { id: Number(r.customer_id), code: r.customer_code, name: r.customer_name } : null,
+      lat: num(r.geo_lat), lng: num(r.geo_lng), acc: num(r.geo_accuracy), dist_m: num(r.checkin_dist_m), p_lat: num(r.p_lat), p_lng: num(r.p_lng), stage: r.stage,
+      review_status: r.review_status, contact_name: r.contact_name,
+      rec: r.rec_id ? { id: Number(r.rec_id), status: r.rec_status, duration_sec: num(r.duration_sec), alta_status: r.alta_status, has_transcript: !!r.has_transcript, count: r.rec_count,
+        ...(isRealDir(req) && r.has_audio ? { audio: true } : {}) } : null,   // 음성 재생은 디렉터 본인만 — 다른 사람 응답에는 이 칸 자체가 없음
+      resumen: r.resumen || null, next_step: r.next_step || null }));
+    // 계획 루트(그날) — 정류장 · 방문 여부
+    const rp = [date]; let rcond = '';
+    if (uid) { rp.push(uid); rcond = `AND r.user_id=$2`; } else if (!dir) { rp.push(mine); rcond = `AND r.user_id=$2`; }
+    const stops = (await query(
+      `SELECT r.id AS route_id, r.user_id, u.name AS user_name, s.seq, s.prospect_id, s.consult_id, p.nom_estab, p.lat, p.lng, c.created_at AS visited_at
+         FROM prospect_routes r JOIN prospect_route_stops s ON s.route_id=r.id JOIN prospects p ON p.id=s.prospect_id
+         LEFT JOIN users u ON u.id=r.user_id LEFT JOIN sales_consults c ON c.id=s.consult_id
+        WHERE r.route_date=$1 ${rcond} AND (s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND p.stage <> 'descartado'))
+        ORDER BY r.user_id, s.seq`, rp)).rows;
+    const reps = new Map();
+    const R = (id, name) => { if (!reps.has(id)) reps.set(id, { user_id: id, name, planned: [], actual: [] }); const x = reps.get(id); if (!x.name && name) x.name = name; return x; };
+    for (const s2 of stops) R(Number(s2.user_id), s2.user_name).planned.push({ seq: s2.seq, prospect_id: Number(s2.prospect_id), name: s2.nom_estab, lat: num(s2.lat), lng: num(s2.lng),
+      consult_id: num(s2.consult_id), visited_at: s2.visited_at || null });
+    for (const r of rows) R(r.user_id, r.user_name).actual.push(r.id);
+    const out = [...reps.values()].map((x) => {
+      const plannedIds = new Set(x.planned.map((p) => p.prospect_id));
+      const acts = rows.filter((r) => r.user_id === x.user_id);
+      const visited = x.planned.filter((p) => p.consult_id).length;
+      const next = x.planned.find((p) => !p.consult_id) || null;
+      return { user_id: x.user_id, name: x.name, planned: x.planned, actual: acts.map((r) => r.id),
+        counts: { planned: x.planned.length, visited, pending: x.planned.length - visited, checkins: acts.length,
+          off_route: acts.filter((r) => !r.prospect_id || !plannedIds.has(r.prospect_id)).length,
+          with_rec: acts.filter((r) => r.rec && r.rec.count > 0).length },
+        first_at: acts.length ? acts[0].at : null, last_at: acts.length ? acts[acts.length - 1].at : null, next };
+    }).sort((a, b) => (b.counts.checkins - a.counts.checkins) || (b.counts.planned - a.counts.planned) || String(a.name || '').localeCompare(String(b.name || '')));   // 움직인 사람 먼저
+    return { date, today: mxToday(), user_id: uid, rows, reps: out,
+      counts: { checkins: rows.length, with_rec: rows.filter((r) => r.rec && r.rec.count > 0).length, no_rec: rows.filter((r) => !r.rec || !r.rec.count).length,
+        planned: out.reduce((a, x) => a + x.counts.planned, 0), visited: out.reduce((a, x) => a + x.counts.visited, 0), off_route: out.reduce((a, x) => a + x.counts.off_route, 0),
+        unlinked: rows.filter((r) => !r.prospect_id).length } };
+  });
+  // 녹음 내용(받아쓰기 전문·요약) — 목록에서 누를 때만
+  app.get('/api/prospects/activity/:id', view, async (req, reply) => {
+    const c = (await query(`SELECT id, created_by, private_by FROM sales_consults WHERE id=$1 AND deleted_at IS NULL`, [int(req.params.id)])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if ((c.private_by && Number(c.private_by) !== me(req)) || (!isDir(req) && Number(c.created_by) !== me(req))) return reply.code(403).send({ error: 'forbidden' });
+    const dirOnly = isRealDir(req);
+    const recs = (await query(`SELECT id, status, error, duration_sec, transcript, summary_json, alta_draft, created_at,
+                                      CASE WHEN $2 AND audio_b64 IS NOT NULL THEN array_length(string_to_array(audio_b64,'|'),1) END AS parts
+                                 FROM sales_consult_recordings WHERE consult_id=$1 ORDER BY id`, [c.id, dirOnly])).rows;
+    return { id: Number(c.id), recordings: recs.map((r) => { const sj = parseJ(r.summary_json) || {}, ad = parseJ(r.alta_draft) || {};
+      return { id: Number(r.id), status: r.status, error: r.error, duration_sec: r.duration_sec, at: r.created_at, transcript: r.transcript || null,
+        resumen: ad.resumen || sj.resumen || null, next_step: ad.siguiente_paso || sj.next_step || null, puntos: sj.puntos || sj.key_points || null,
+        ...(dirOnly && r.parts ? { audio_parts: Number(r.parts) } : {}) }; }) };
+  });
+  // 녹음 음성(구간별) — 디렉터 본인만. 다른 사람에게는 없는 주소처럼(404) 보인다.
+  app.get('/api/prospects/activity/:id/audio/:rid/:part', view, async (req, reply) => {
+    if (!isRealDir(req)) return reply.code(404).send({ error: 'not_found' });
+    const r = (await query(`SELECT r.mime, r.audio_b64 FROM sales_consult_recordings r JOIN sales_consults c ON c.id=r.consult_id
+                             WHERE r.id=$1 AND r.consult_id=$2 AND c.deleted_at IS NULL`, [int(req.params.rid), int(req.params.id)])).rows[0];
+    const parts = r && r.audio_b64 ? String(r.audio_b64).split('|').filter(Boolean) : [];
+    const k = Number(req.params.part) || 0;
+    if (!parts[k]) return reply.code(404).send({ error: 'not_found' });
+    const mime = String(r.mime || 'audio/ogg').split(';')[0];
+    reply.header('Content-Type', mime).header('Cache-Control', 'private, no-store');
+    return reply.send(Buffer.from(parts[k], 'base64'));
+  });
+  // 오래된 녹음 음성 지우기(받아쓰기·요약은 남김) — PROSPECT_AUDIO_DAYS(기본 60일), 6시간마다
+  if (!globalThis.__refatrixProspectAudioSweep && process.env.NODE_ENV !== 'test') {
+    const sweep = () => query(`UPDATE sales_consult_recordings SET audio_b64=NULL
+                                WHERE audio_b64 IS NOT NULL AND status='done' AND created_at < now() - ($1 || ' days')::interval`,
+      [String(Math.max(1, int(process.env.PROSPECT_AUDIO_DAYS) || 60))]).catch(() => {});
+    globalThis.__refatrixProspectAudioSweep = setInterval(sweep, 6 * 3600 * 1000);
+    if (globalThis.__refatrixProspectAudioSweep.unref) globalThis.__refatrixProspectAudioSweep.unref();
+    setTimeout(sweep, 60000).unref?.();
+  }
+
   // municipio 목록 — 주를 고르지 않으면 전국(주 코드·이름 함께, 같은 이름 municipio 구분)
   app.get('/api/prospects/municipios', view, async (req) => {
     const ent = req.query?.cve_ent ? String(req.query.cve_ent) : null;
