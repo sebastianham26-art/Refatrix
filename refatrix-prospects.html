@@ -329,6 +329,13 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
           <div style="display:flex;gap:6px;align-items:flex-end"><label class="fld" style="flex:1;margin:0"><span>🔎 고객 찾기</span><input type="search" id="fs-q" placeholder="업체 이름 — 예: Refaccionaria García" autocomplete="off"></label><button class="btn ghost sm hide" id="fs-clear">지우기</button></div>
           <div id="fs-out"></div>
         </div>
+        <div id="nw-box" style="margin:0 0 14px;padding:12px;border:1px solid #eee;border-radius:12px;background:#fafafa">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>📍 새 가게 등록</b><span class="note">ERP·목록 어디에도 없는 가게</span><button class="btn ghost sm" id="nw-pick" style="margin-left:auto">지도에서 위치 찍기</button></div>
+          <div style="display:flex;gap:6px;margin-top:8px"><input type="search" id="nw-addr" placeholder="주소로 찾기 — 예: Av. Ruiz Cortines 2500, Monterrey" style="flex:1" autocomplete="off"><button class="btn ghost sm" id="nw-find">찾기</button></div>
+          <div id="nw-res"></div>
+          <div id="nw-form"></div>
+          <p class="note" style="margin:6px 0 0">지도를 <b>길게 누르거나</b>(휴대폰) <b>오른쪽 클릭</b>(PC)해도 그 자리에 새 가게를 만들 수 있습니다.</p>
+        </div>
         <div style="display:flex;gap:6px;margin:6px 0 10px"><button class="chip" data-armode="terr" style="padding:8px 14px;cursor:pointer">📋 내 지역에서</button><button class="chip" data-armode="draw" style="padding:8px 14px;cursor:pointer">▭ 구역 그리기</button></div>
         <div id="arm-terr">
           <p class="note">① 담당 지역을 고르면 지도에 지역과 방문할 곳(빨간 점)이 나옵니다. ② 지도에서 <b>처음 방문할 업체</b>를 누르면 그곳부터 이동 거리가 가장 짧은 순서로 방문 계획을 짭니다. 다른 점을 누르면 시작점이 바뀝니다.</p>
@@ -784,6 +791,9 @@ function ensureMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(MAP);
   layer=L.layerGroup().addTo(MAP); trackLayer=L.layerGroup().addTo(MAP);
   MAP.on('moveend',()=>{ clearTimeout(mapTimer); mapTimer=setTimeout(loadMapPins,250); });
+  // 📍 새 가게: 길게 누르기(휴대폰)·오른쪽 클릭(PC) 또는 「위치 찍기」 뒤 클릭
+  MAP.on('contextmenu',e=>{ if(cur==='map') nwStart(e.latlng.lat,e.latlng.lng); });
+  MAP.on('click',e=>{ if(NW.pick){ NW.pick=false; $('map').style.cursor=''; $('nw-pick').textContent='지도에서 위치 찍기'; nwStart(e.latlng.lat,e.latlng.lng); } });
   ['m-owner','m-stage','m-seg','m-prio'].forEach(id=>$(id).addEventListener('change',loadMapPins));
   $('m-tracks').addEventListener('change',loadTracks);
 }
@@ -934,6 +944,94 @@ async function suggestRoute(){
 ['ar-max','ar-days','ar-multi'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR) suggestRoute(); }));
 ['ar-unas','ar-skip'].forEach(id=>$(id).addEventListener('change',()=>{ if(AR_MODE==='terr') loadTrCands(true); else if(AR) suggestRoute(); }));
 $('ar-user').addEventListener('change',()=>{ if(AR_MODE==='terr'){ TR.sel.clear(); clearTr(); loadMyTerrs(); } else if(AR) suggestRoute(); });
+
+// ── 📍 지도에서 새 가게 등록(ERP·목록에 없는 곳) — 위치 찍기/주소 찾기 → 찍은 곳 주소 → 근처 중복 확인 → 등록(+루트) ──
+let NW={pick:false,marker:null,pt:null,addr:null,force:false,dups:[],plans:null};
+const NW_ICON=()=>L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,34],html:'<div style="width:34px;height:34px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#E2231A;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center"><b style="transform:rotate(45deg);color:#fff;font:900 18px/1 sans-serif">+</b></div>'});
+$('nw-pick').onclick=()=>{ if(!MAP) return; NW.pick=!NW.pick; $('map').style.cursor=NW.pick?'crosshair':''; $('nw-pick').textContent=NW.pick?'지도를 누르세요… (취소)':'지도에서 위치 찍기'; if(NW.pick) toast('새 가게 위치를 지도에서 누르세요'); };
+async function nwFind(){
+  const q=$('nw-addr').value.trim(); if(q.length<3) return toast('주소를 세 글자 이상 넣으세요');
+  $('nw-res').innerHTML='<div class="note" style="margin-top:6px">찾는 중…</div>';
+  const c=MAP?MAP.getCenter():null;
+  let r; try{ r=await api('/api/prospects/geocode?q='+encodeURIComponent(q)+(c?'&lat='+c.lat.toFixed(4)+'&lng='+c.lng.toFixed(4):'')); }
+  catch(e){ $('nw-res').innerHTML='<div class="banner warn" style="margin-top:6px">주소 찾기 서버가 응답하지 않습니다 — 지도에서 직접 위치를 찍어 주세요.</div>'; return; }
+  if(!r.rows.length){ $('nw-res').innerHTML='<div class="note" style="margin-top:6px">찾는 주소가 없습니다. 번지·콜로니아·도시를 넣어 보거나 지도에서 직접 찍으세요.</div>'; return; }
+  $('nw-res').innerHTML='<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">'+r.rows.map((x,i)=>'<button class="chip" data-nwg="'+i+'" style="justify-content:flex-start;text-align:left;padding:6px 10px;cursor:pointer;border-radius:10px;white-space:normal">📍 '+esc(x.label)+'</button>').join('')+'</div>';
+  $('nw-res').querySelectorAll('[data-nwg]').forEach(b=>b.onclick=()=>{ const x=r.rows[Number(b.dataset.nwg)]; $('nw-res').innerHTML=''; nwStart(x.lat,x.lng,x); });
+}
+$('nw-find').onclick=nwFind; $('nw-addr').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); nwFind(); } });
+function nwStart(lat,lng,addr){
+  if(!MAP) return; NW.pt={lat,lng}; NW.addr=addr||null; NW.force=false; NW.dups=[];
+  if(NW.marker) NW.marker.remove();
+  NW.marker=L.marker([lat,lng],{draggable:true,icon:NW_ICON(),zIndexOffset:3000}).addTo(MAP).bindTooltip('새 가게 — 끌어서 위치를 맞추세요',{direction:'top',offset:[0,-30]});
+  NW.marker.on('dragend',()=>{ const p=NW.marker.getLatLng(); NW.pt={lat:p.lat,lng:p.lng}; NW.addr=null; NW.force=false; nwReverse(); });
+  MAP.setView([lat,lng],Math.max(MAP.getZoom(),17));
+  nwForm(); if(!addr) nwReverse(); else nwDups();
+  $('nw-box').scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+async function nwReverse(){
+  const pt=NW.pt; let r=null; try{ r=await api('/api/prospects/geocode/reverse?lat='+pt.lat+'&lng='+pt.lng); }catch(e){}
+  if(NW.pt!==pt) return; NW.addr=r&&r.address; nwFillAddr(); nwDups();
+}
+function nwFillAddr(){ const a=NW.addr||{}; const set=(id,v)=>{ const el=$(id); if(el&&!el.dataset.touched) el.value=v||''; };
+  set('nw-calle',[a.calle,a.numero].filter(Boolean).join(' ')); set('nw-col',a.colonia); set('nw-cp',a.cp); set('nw-mun',a.municipio); }
+async function nwForm(){
+  const uid=Number($('ar-user').value)||META.me;
+  if(!NW.plans||NW.plans.uid!==uid){ try{ NW.plans={uid,rows:(await api('/api/prospect-routes/plans'+(isDir?'?user='+uid:''))).rows}; }catch(e){ NW.plans={uid,rows:[]}; } }
+  $('nw-form').innerHTML='<div class="card flat" style="margin-top:10px;padding:12px;background:#fff;border:1px solid #F5C7C3">'+
+    '<div class="note" style="margin-bottom:6px">📍 '+NW.pt.lat.toFixed(5)+', '+NW.pt.lng.toFixed(5)+' — 빨간 핀을 끌어서 정확한 입구에 맞추세요</div>'+
+    '<div class="grid" style="grid-template-columns:1fr 1fr;gap:8px">'+
+      '<label class="fld" style="grid-column:1/-1"><span>상호 *</span><input type="text" id="nw-name" placeholder="가게 이름"></label>'+
+      '<label class="fld"><span>업종</span><select id="nw-seg">'+META.segments.map(x=>'<option value="'+x+'"'+(x==='refaccionaria'?' selected':'')+'>'+esc(SEG_LBL[x]||x)+'</option>').join('')+'</select></label>'+
+      '<label class="fld"><span>전화(선택)</span><input type="tel" id="nw-phone"></label>'+
+      '<label class="fld" style="grid-column:1/-1"><span>거리·번호</span><input type="text" id="nw-calle"></label>'+
+      '<label class="fld"><span>콜로니아</span><input type="text" id="nw-col"></label>'+
+      '<label class="fld"><span>우편번호</span><input type="text" id="nw-cp" inputmode="numeric"></label>'+
+      '<label class="fld" style="grid-column:1/-1"><span>시(municipio)</span><input type="text" id="nw-mun"></label>'+
+      '<label class="fld" style="grid-column:1/-1"><span>루트에 넣기</span><select id="nw-route"><option value="">넣지 않음(목록에만 등록)</option><option value="today" selected>오늘 루트 ('+esc(META.today)+')</option>'+
+        (NW.plans.rows||[]).map(p=>'<option value="plan:'+p.id+'">방문 목록 · '+esc(p.name||'목록')+' ('+p.stops+'곳)</option>').join('')+'</select></label>'+
+    '</div><div id="nw-dup" style="margin-top:8px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px"><button class="btn red" id="nw-save">등록</button><button class="btn ghost" id="nw-cancel">취소</button></div></div>';
+  ['nw-calle','nw-col','nw-cp','nw-mun'].forEach(id=>$(id).addEventListener('input',()=>{ $(id).dataset.touched='1'; }));
+  let tm=null; $('nw-name').addEventListener('input',()=>{ clearTimeout(tm); NW.force=false; tm=setTimeout(nwDups,500); });
+  $('nw-cancel').onclick=nwClear; $('nw-save').onclick=nwSave;
+  nwFillAddr(); setTimeout(()=>$('nw-name').focus(),50);
+}
+function nwClear(){ if(NW.marker) NW.marker.remove(); NW.marker=null; NW.pt=null; $('nw-form').innerHTML=''; $('nw-res').innerHTML=''; }
+async function nwDups(){
+  if(!NW.pt||!$('nw-dup')) return;
+  let r; try{ r=await api('/api/prospects/near-check?lat='+NW.pt.lat+'&lng='+NW.pt.lng+'&name='+encodeURIComponent(($('nw-name')||{}).value||'')); }catch(e){ return; }
+  NW.dups=r.rows; nwDrawDups();
+}
+function nwDrawDups(){
+  const box=$('nw-dup'); if(!box) return;
+  if(!NW.dups.length){ box.innerHTML='<div class="note">근처 50m 안에 이미 있는 업체가 없습니다.</div>'; return; }
+  box.innerHTML='<div class="banner warn" style="padding:8px 10px"><b>이미 있는 업체일 수 있습니다</b> — 같은 가게면 「이 업체 쓰기」를 누르세요.'+
+    NW.dups.map(d=>'<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span style="flex:1;min-width:0"><b>'+esc(d.nom_estab)+'</b> <span class="note">'+d.dist_m+'m'+(d.match>=60?' · 이름 비슷':'')+(d.erp?' · ERP':'')+' · '+(d.owner_name?esc(d.owner_name)+' 담당':'담당 없음')+(d.source==='manual'?' · 직접 등록':'')+'</span></span>'+
+      '<button class="btn ghost sm" data-nwuse="'+d.id+'">이 업체 쓰기</button></div>').join('')+
+    (NW.force?'<div class="note" style="margin-top:6px">다른 가게로 확인했습니다 — 「등록」을 누르면 새로 만듭니다.</div>':'<button class="btn ghost sm" id="nw-force" style="margin-top:8px">다른 가게입니다 — 새로 등록</button>')+'</div>';
+  box.querySelectorAll('[data-nwuse]').forEach(b=>b.onclick=()=>nwAfter(Number(b.dataset.nwuse),true));
+  if($('nw-force')) $('nw-force').onclick=()=>{ NW.force=true; nwDrawDups(); };
+}
+async function nwSave(){
+  const name=$('nw-name').value.trim(); if(!name) return toast('상호를 넣어 주세요');
+  if(NW.dups.length&&!NW.force) return toast('근처에 비슷한 업체가 있습니다 — 「이 업체 쓰기」 또는 「다른 가게입니다」를 고르세요');
+  const uid=Number($('ar-user').value)||META.me, a=NW.addr||{};
+  const body={nom_estab:name,segment:$('nw-seg').value,lat:NW.pt.lat,lng:NW.pt.lng,phone:$('nw-phone').value.trim()||null,address:$('nw-calle').value.trim()||null,colonia:$('nw-col').value.trim()||null,
+    cp:$('nw-cp').value.trim()||null,municipio:$('nw-mun').value.trim()||null,entidad:a.estado||null,check_dup:true,force:NW.force,from:'map',...(isDir?{owner_user_id:uid}:{})};
+  $('nw-save').disabled=true;
+  try{ const r=await post('/api/prospects',body); await nwAfter(r.id,false); }
+  catch(e){ $('nw-save').disabled=false; if(e.message==='possible_duplicate'){ NW.dups=(e.data&&e.data.rows)||[]; nwDrawDups(); toast('근처에 비슷한 업체가 있습니다'); } else toast('실패: '+e.message); }
+}
+// 등록(또는 기존 업체 선택) 뒤: 고른 루트에 넣기
+async function nwAfter(pid,existing){
+  const v=$('nw-route')?$('nw-route').value:''; const uid=Number($('ar-user').value)||META.me; let msg=existing?'기존 업체를 골랐습니다':'새 가게를 등록했습니다';
+  if(v){ try{ const r=await post('/api/prospect-routes/add-stop',{prospect_id:pid,...(v==='today'?{date:META.today}:{route_id:Number(v.split(':')[1])}),...(isDir?{user_id:uid}:{})});
+      msg+=r.already?' · 이미 그 루트에 있습니다':' · '+(v==='today'?'오늘 루트':'방문 목록')+' '+r.seq+'번째로 넣음'; NW.plans=null; }
+    catch(e){ msg+=' · 루트에 넣지 못함('+e.message+')'; } }
+  toast(msg); nwClear(); $('nw-addr').value=''; loadMapPins();
+  if(!existing) openProspect(pid);
+}
 
 // ── 🔎 고객 찾기: 이름이 같거나 비슷한 업체 → 목록 + 지도 표시 ──
 let FS={rows:[],lyr:null,marks:{},timer:null,sel:null};

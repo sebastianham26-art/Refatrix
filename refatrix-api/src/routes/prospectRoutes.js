@@ -13,6 +13,7 @@
 //   권한키는 고객상담과 같은 'pipeline'(영업활동). 가져오기·지역·목표·연결 승인은 디렉터.
 // =====================================================================
 import { estimateRoad } from '../roadRoute.js';
+import { geocodeSearch, geocodeReverse } from '../geocode.js';
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
@@ -761,22 +762,55 @@ export default async function prospectRoutes(app) {
   });
 
   // 수동 등록 — 리스트에 없는 가게를 현장에서(Visita no planeada)
+  // ── 📍 지도에서 새 가게(1127) — 주소 찾기 · 찍은 곳 주소 · 근처 중복 확인 ──
+  app.get('/api/prospects/geocode', view, async (req, reply) => {
+    const near = Number.isFinite(Number(req.query?.lat)) && Number.isFinite(Number(req.query?.lng)) ? { lat: Number(req.query.lat), lng: Number(req.query.lng) } : null;
+    const rows = await geocodeSearch(req.query?.q, { near });
+    if (rows == null) return reply.code(502).send({ error: 'geocode_unavailable' });
+    return { rows };
+  });
+  app.get('/api/prospects/geocode/reverse', view, async (req) => ({ address: await geocodeReverse(Number(req.query?.lat), Number(req.query?.lng)) }));
+  // 근처에 이미 있는 업체: 50m 안은 모두, 150m 안은 이름이 비슷한 곳(60점 이상)
+  async function nearDuplicates(lat, lng, name) {
+    const d = 150 / 111320, dl = 150 / (111320 * Math.cos((lat * Math.PI) / 180));
+    const rows = (await query(`SELECT p.id, p.nom_estab, p.colonia, p.lat, p.lng, p.stage, p.source, p.customer_id, p.owner_user_id, u.name AS owner_name
+        FROM prospects p LEFT JOIN users u ON u.id=p.owner_user_id
+       WHERE p.deleted_at IS NULL AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4`, [lat - d, lat + d, lng - dl, lng + dl])).rows;
+    return rows.map((p) => ({ id: Number(p.id), nom_estab: p.nom_estab, colonia: p.colonia, stage: p.stage, source: p.source, erp: !!p.customer_id,
+        owner_user_id: p.owner_user_id == null ? null : Number(p.owner_user_id), owner_name: p.owner_name,
+        dist_m: distanceM(lat, lng, Number(p.lat), Number(p.lng)), match: name ? nameScore(name, p.nom_estab) : 0 }))
+      .filter((p) => p.dist_m <= 50 || (name && p.dist_m <= 150 && p.match >= 60))
+      .sort((a, b) => (b.match >= 60) - (a.match >= 60) || a.dist_m - b.dist_m).slice(0, 8);
+  }
+  app.get('/api/prospects/near-check', view, async (req) => {
+    const lat = Number(req.query?.lat), lng = Number(req.query?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { rows: [] };
+    return { rows: await nearDuplicates(lat, lng, txt(req.query?.name, 200)) };
+  });
+
+  // 새 업체 직접 등록(현장 위치 · 지도에서 찍은 곳). check_dup=true 면 근처 중복이 있을 때 409(force=true 로 그래도 등록)
   app.post('/api/prospects', edit, async (req, reply) => {
     const b = req.body || {};
     const name = txt(b.nom_estab, 200) || '(Sin nombre — completar)';
     const lat = Number(b.lat), lng = Number(b.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return reply.code(400).send({ error: 'geo_required' });
+    if (b.check_dup && !b.force) {
+      const dups = await nearDuplicates(lat, lng, txt(b.nom_estab, 200));
+      if (dups.length) return reply.code(409).send({ error: 'possible_duplicate', rows: dups });
+    }
     const owner = isDir(req) && int(b.owner_user_id) ? int(b.owner_user_id) : me(req);
     const st = b.cve_ent ? { cve_ent: txt(b.cve_ent, 4), entidad: txt(b.entidad, 80) } : await stateNear(lat, lng);
+    const sc = b.cp ? stateFromCp(String(b.cp)) : null;   // 주소에서 받은 우편번호로 주 확인
     const r = (await query(
-      `INSERT INTO prospects (nom_estab, segment, priority, lat, lng, address, municipio, cve_ent, entidad, phone, source,
+      `INSERT INTO prospects (nom_estab, segment, priority, lat, lng, address, colonia, cp, municipio, cve_ent, entidad, phone, source,
                               owner_user_id, assigned_at, stage, created_by)
-       VALUES ($1,$2,'B',$3,$4,$5,$6,$7,$8,$9,'manual',$10,now(),'asignado',$11) RETURNING id`,
-      [name, SEGMENTS.includes(b.segment) ? b.segment : 'otro', lat, lng, txt(b.address), txt(b.municipio, 120),
-        st.cve_ent, st.entidad, txt(b.phone, 40), owner, me(req)])).rows[0];
+       VALUES ($1,$2,'B',$3,$4,$5,$6,$7,$8,$9,$10,$11,'manual',$12,now(),'asignado',$13) RETURNING id`,
+      [name, SEGMENTS.includes(b.segment) ? b.segment : 'otro', lat, lng, txt(b.address), txt(b.colonia, 150), txt(b.cp, 10), txt(b.municipio, 120),
+        st.cve_ent || sc, st.entidad || txt(b.entidad, 80), txt(b.phone, 40), owner, me(req)])).rows[0];
     const id = Number(r.id);
     await query(`INSERT INTO prospect_stage_history (prospect_id, from_stage, to_stage, user_id, reason, auto) VALUES ($1,NULL,'asignado',$2,'alta manual',TRUE)`, [id, me(req)]);
-    await logEvent({ userId: me(req), action: 'create', target: `prospect:${id}`, detail: { manual: true } });
+    try { await applyTerritories(null, { onlyIds: [id], byUser: me(req) }); } catch (_) { /* 지역 표시만 */ }
+    await logEvent({ userId: me(req), action: 'create', target: `prospect:${id}`, detail: { manual: true, from: txt(b.from, 20) || null } });
     return { id };
   });
 
