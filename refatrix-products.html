@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · ps-1127vr</title>
+<title>Refatrix ERP · 제품 조회 · ps-1127vs</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -248,7 +248,7 @@
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
-<script src="refatrix-vehiclemap.js?v=20261127g"></script>
+<script src="refatrix-vehiclemap.js?v=20261127h"></script>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
 </head>
@@ -2921,7 +2921,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build ps-1127vr (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더 · OE 말풍선 · 공용 모듈)'); }catch(e){}
+  try{ console.log('[refatrix-products] build ps-1127vs (차종으로 제품찾기 · 차량 도면 · 이름 키 묶음 · 생산중 백오더 · OE 말풍선 · 공용 모듈)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);

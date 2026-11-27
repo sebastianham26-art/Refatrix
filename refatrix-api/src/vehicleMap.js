@@ -137,7 +137,9 @@ export function yearRanges(text) {
       out.push([Math.min(a, b), Math.max(a, b)]);
     }
   }
-  return out;
+  // 11-27h · 연식으로 그럴듯한 범위만(모델명 숫자 3008 · 5008 등 제외)
+  const ymax = new Date().getFullYear() + 2;
+  return out.filter(([a, b]) => a >= 1950 && b <= ymax);
 }
 /**
  * 경쟁사 마스터 APLICACIÓN 글 → 고른 차종에 맞으면 { ok:true, year_known } · 아니면 { ok:false }

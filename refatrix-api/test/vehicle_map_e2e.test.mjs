@@ -329,3 +329,46 @@ test('⑨ 11-27g · app-models?year= — 그 연식이 적용 범위에 드는 �
   const yrs = (await get(`/api/products/app-years?maker=${encodeURIComponent(F)}`)).json().items;
   assert.ok(yrs.includes(2017) && yrs.includes(2005), '메이커만으로 연식 목록');
 });
+
+test('⑩ 11-27h · 연식 범위 밖(3008 등)은 연식 목록에서 빼고 odd 로 알려 준다', { skip: SKIP }, async () => {
+  const P = TAG + 'PG';
+  const id = Number((await query(`INSERT INTO products (code, name, stock_qty) VALUES ($1,'BUJE',1) RETURNING id`, [TAG + '-P1'])).rows[0].id);
+  // 예전 분해 규칙이 만든 줄 그대로: 모델명 3008 이 연식으로, 오타 2008-3008
+  await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES
+    ($1,$2,$3,NULL,3008,3008),($1,$4,$3,'5008',2017,2020),($1,$5,$3,'Partner',2008,3008)`,
+    [id, `${P} 3008`, P, `${P} 5008 2017-2020`, `${P} Partner 2008-3008`]);
+  const d = (await get(`/api/products/app-years?maker=${encodeURIComponent(P)}`)).json();
+  const ymax = new Date().getFullYear() + 2;
+  assert.ok(d.items.every((y) => y >= 1950 && y <= ymax), '목록은 1950 ~ 올해+2 안');
+  assert.ok(!d.items.includes(3008));
+  assert.ok(d.items.includes(2017) && d.items.includes(2008), '오타 범위도 올해+2 까지만 펼침');
+  assert.deepEqual(d.range, [1950, ymax]);
+  assert.deepEqual(d.odd.map((o) => o.app_text).sort(), [`${P} 3008`, `${P} Partner 2008-3008`].sort(), '범위 밖 줄을 알려 줌');
+  // 새 분해 규칙(재동기화 · 다음 업로드): 3008 은 모델명으로
+  const { parseAppEntry } = await import('../src/productImport.js');
+  assert.deepEqual([parseAppEntry('PEUGEOT 3008').model, parseAppEntry('PEUGEOT 3008').year_from], ['3008', null]);
+});
+
+test('⑪ 11-27h · 메이커 소문자 섞임(Nissan) — ERP 수정 저장 · 재동기화 뒤 차종으로 찾아진다', { skip: SKIP }, async () => {
+  const MD2 = 'Kicks' + RUN;
+  // ① 제품 화면 수정(PATCH) — 원문 'Nissan Kicks… 2017-2024' 그대로 저장
+  const id = Number((await query(`INSERT INTO products (code, name, stock_qty) VALUES ($1,'ROTULA INFERIOR',2) RETURNING id`, [TAG + '-N1'])).rows[0].id);
+  const r = await app.inject({ method: 'PATCH', url: `/api/products/${id}`, headers: { authorization: 'Bearer ' + tok.dir }, payload: { app: `Nissan ${MD2} 2017-2024` } });
+  assert.equal(r.statusCode, 200, r.body);
+  assert.equal((await query(`SELECT app FROM products WHERE id=$1`, [id])).rows[0].app, `Nissan ${MD2} 2017-2024`, '원문은 그대로');
+  const pa = (await query(`SELECT maker, model, year_from, year_to FROM product_applications WHERE product_id=$1`, [id])).rows;
+  assert.deepEqual(pa.map((x) => [x.maker, x.model, x.year_from, x.year_to]), [['Nissan', MD2, 2017, 2024]], '메이커가 비지 않는다');
+  const mods = (await get(`/api/products/app-models?maker=NISSAN&year=2020`)).json().items;
+  assert.ok(mods.includes(MD2), 'NISSAN · 2020 모델 목록에 나온다');
+  const d = (await get(`/api/products/vehicle-map?maker=NISSAN&model=${encodeURIComponent(MD2)}&year=2020`)).json();
+  assert.deepEqual(d.items.map((x) => x.code), [TAG + '-N1'], '차량 도면에 나온다');
+  // ② 예전 규칙으로 분해돼 메이커가 빈 줄 → 「분해 데이터 전체 재동기화」 하면 고쳐진다(원문 기준)
+  const id2 = Number((await query(`INSERT INTO products (code, name, stock_qty, app) VALUES ($1,'BUJE',1,$2) RETURNING id`, [TAG + '-N2', `Great Wall Poer${RUN} 2021-2025`])).rows[0].id);
+  await query(`INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,NULL,$3,2021,2025)`, [id2, `Great Wall Poer${RUN} 2021-2025`, `Great Wall Poer${RUN}`]);
+  const rs = await app.inject({ method: 'POST', url: '/api/products/resync-derived', headers: { authorization: 'Bearer ' + tok.dir } });
+  assert.equal(rs.statusCode, 200, rs.body);
+  const pa2 = (await query(`SELECT maker, model FROM product_applications WHERE product_id=$1`, [id2])).rows;
+  assert.deepEqual(pa2.map((x) => [x.maker, x.model]), [['Great Wall', 'Poer' + RUN]]);
+  const g = (await get('/api/products/app-makers')).json().groups;
+  assert.ok(g.some((x) => x.key === 'GREATWALL'), "드롭다운에 'Great Wall' 한 줄");
+});

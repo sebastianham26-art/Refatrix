@@ -5,7 +5,7 @@ const VM_PAGES = ['products', 'quote', 'sales'];
 import { minimizeProduct, fieldVisible } from '../permissions.js';
 import { verifyPin } from '../auth.js';
 import { logPageView, logEvent } from '../audit.js';
-import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
+import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial, YEAR_MIN, yearMax } from '../productImport.js';
 import { visibleTeamIds } from '../teams.js';
 import { sweepDevRequestMatches, scheduleDevMatchSweep } from '../devMatchSweep.js';
 import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js';
@@ -1586,10 +1586,19 @@ export default async function productRoutes(app) {
     const params = []; const conds = [`year_from IS NOT NULL AND year_to IS NOT NULL`];
     if (maker) makerCond('maker', maker, conds, params);
     if (model) nameCond('model', model, conds, params);
+    // 11-27h · 연식은 1950 ~ 올해+2 안에서만 펼친다(모델명 숫자 3008 · 2500 이 연식으로 잡힌 예전 분해 줄 · 오타 대비).
+    //   범위 밖 줄은 목록에서 빼고 odd 로 알려 준다(「분해 데이터 전체 재동기화」 하면 새 규칙으로 다시 분해됨 · 원문은 그대로).
+    const Y0 = YEAR_MIN, Y1 = yearMax();
     const rows = (await query(
-      `SELECT DISTINCT y FROM product_applications, generate_series(year_from, year_to) AS y
+      `SELECT DISTINCT y FROM product_applications,
+              generate_series(GREATEST(year_from, ${Y0}), LEAST(year_to, ${Y1})) AS y
         WHERE ${conds.join(' AND ')} ORDER BY y DESC`, params)).rows;
-    return { items: rows.map((r) => Number(r.y)) };
+    const odd = (await query(
+      `SELECT DISTINCT app_text, maker, model, year_from, year_to FROM product_applications
+        WHERE ${conds.join(' AND ')} AND (year_from > ${Y1} OR year_to < ${Y0} OR year_to > ${Y1} OR year_from < ${Y0})
+        ORDER BY app_text LIMIT 50`, params)).rows;
+    return { items: rows.map((r) => Number(r.y)), range: [Y0, Y1],
+      odd: odd.map((r) => ({ app_text: r.app_text, maker: r.maker, model: r.model, year_from: Number(r.year_from), year_to: Number(r.year_to) })) };
   });
 
   // 차종(메이커/모델/연식)으로 부품 역검색 — 이름 키 매칭(11-27b), 단계 건너뛰기 허용

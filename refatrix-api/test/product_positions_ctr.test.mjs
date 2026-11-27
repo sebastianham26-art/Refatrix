@@ -95,7 +95,7 @@ async function readScreen(c, root, rowSel) {
 
 test('B. 제품 찾기 — 차종 도면(차종으로 제품찾기)과 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
   const c = await boot();
-  assert.match(c.d.title, /ps-1127v[mnopqr]/);
+  assert.match(c.d.title, /ps-1127v[mnopqrs]/);
   // ① 차종으로 제품찾기(2026-11-27 · 상단 토글 · 차량 도면)
   c.d.getElementById('fmVeh').dispatchEvent(new c.w.Event('click'));
   const mk = c.d.getElementById('veh-maker'); mk.innerHTML = '<option value="NISSAN">NISSAN</option>'; mk.value = 'NISSAN';

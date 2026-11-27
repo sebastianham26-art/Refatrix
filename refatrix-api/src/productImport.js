@@ -77,28 +77,91 @@ export function splitSyd(raw) {
     .filter((s) => s.length > 0);
 }
 
+// 연식으로 볼 수 있는 범위(11-27h) — 1950 ~ 올해+2
+export const YEAR_MIN = 1950;
+export function yearMax() { return new Date().getFullYear() + 2; }
+
 // 적용차종 한 항목 파싱: "메이커 모델 연식" → {app_text, maker, model, year_from, year_to}
 // 메이커 = 앞쪽 연속 대문자 토큰(쉼표 허용), 연식 = 끝쪽 4자리(-4자리), 모델 = 나머지.
+// 2026-11-27h · 메이커 이름표 — 대소문자 · 하이픈 · 여러 단어 메이커를 알아본다(적용차종 원문은 그대로 둔다).
+//   예전 규칙은 「맨 앞의 대문자 단어」만 메이커로 봤다 → 'Nissan Kicks' · 'Chevrolet Aveo' 는 메이커가 비고,
+//   'GREAT WALL Poer' 는 GREAT, 'LAND ROVER' 는 LAND 가 되어 차종으로 제품찾기에 안 잡혔다.
+//   이름표에 없으면 예전 규칙(대문자 단어)으로 읽는다.
+export const KNOWN_MAKERS = [
+  'ACURA', 'ALFA ROMEO', 'ASTON MARTIN', 'AUDI', 'BAIC', 'BENTLEY', 'BMW', 'BUICK', 'BYD', 'CADILLAC', 'CHANGAN', 'CHERY', 'CHEVROLET', 'CHEVY',
+  'CHIREY', 'CHRYSLER', 'CITROEN', 'CUPRA', 'DAEWOO', 'DATSUN', 'DODGE', 'DONGFENG', 'FAW', 'FERRARI', 'FIAT', 'FORD', 'FOTON', 'GAC', 'GEELY',
+  'GENERAL MOTORS', 'GEO', 'GMC', 'GREAT WALL', 'HAVAL', 'HONDA', 'HUMMER', 'HYUNDAI', 'INFINITI', 'INTERNATIONAL', 'ISUZU', 'JAC', 'JAECOO',
+  'JAGUAR', 'JEEP', 'JETOUR', 'JMC', 'KIA', 'LAMBORGHINI', 'LAND ROVER', 'LEXUS', 'LINCOLN', 'LOTUS', 'MASERATI', 'MAZDA', 'MCLAREN',
+  'MERCEDES BENZ', 'MERCEDES', 'MERCURY', 'MG', 'MINI', 'MITSUBISHI', 'MOTORNATION', 'NISSAN', 'OLDSMOBILE', 'OMODA', 'OPEL', 'PEUGEOT',
+  'PLYMOUTH', 'PONTIAC', 'PORSCHE', 'RAM', 'RENAULT', 'ROLLS ROYCE', 'SAAB', 'SATURN', 'SCION', 'SEAT', 'SEV', 'SKODA', 'SMART', 'SUBARU',
+  'SUZUKI', 'TESLA', 'TOYOTA', 'VOLKSWAGEN', 'VW', 'VOLVO', 'ZOTYE',
+];
+const mkKey = (w) => String(w || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+// 낱말 수가 많은 이름부터(LAND ROVER 가 LAND 보다 먼저)
+const MAKER_TABLE = KNOWN_MAKERS.map((m) => ({ key: mkKey(m), words: m.split(' ').length + (m.includes('BENZ') ? 0 : 0) }))
+  .sort((x, y) => y.words - x.words || y.key.length - x.key.length);
+/** 글 맨 앞의 알려진 메이커 → 그 원문 길이(문자 수) · 없으면 0. 'Mercedes-Benz' · 'Great Wall' · 'Ford,' 모두 */
+function knownMakerAt(s) {
+  const toks = [];
+  const re = /[^\s,/&+;]+/g; let m;
+  while ((m = re.exec(s)) !== null && toks.length < 4) toks.push({ t: m[0], end: m.index + m[0].length });
+  for (let n = Math.min(3, toks.length); n >= 1; n--) {
+    const k = mkKey(toks.slice(0, n).map((x) => x.t).join(''));
+    if (k && MAKER_TABLE.some((x) => x.key === k)) return toks[n - 1].end;
+  }
+  return 0;
+}
+
 export function parseAppEntry(entryRaw) {
   const app_text = String(entryRaw).trim();
   if (!app_text) return null;
   // 파싱용 문자열: 대괄호 주석([usa ...] 등) 제거(연식 오인 방지). 원문은 app_text에 보존.
-  let s = app_text.replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
+  //   11-27h · 괄호로 감싼 연식 '(2018-2024)' 은 괄호를 벗긴다
+  let s = app_text.replace(/\[[^\]]*\]/g, ' ').replace(/\(\s*(\d{2,4}(?:\s*[-–]\s*\d{2,4})?)\s*\)/g, ' $1 ').replace(/\s+/g, ' ').trim();
   let year_from = null, year_to = null;
   // 마지막 연식 패턴(4자리, 선택적 -4자리)을 찾음
-  const yearRe = /(\d{4})(?:\s*-\s*(\d{4}))?/g;
+  //   2026-11-27h · 연식으로 그럴듯한 숫자(1950 ~ 올해+2)만 연식으로 본다.
+  //   'PEUGEOT 3008' · 'RAM 2500' 처럼 모델명 숫자가 3008년 · 2500년으로 잡히던 문제 — 그런 숫자는 모델명에 남긴다.
+  const yearRe = /(\d{4})(?:\s*[-–]\s*(\d{4}|\d{2}))?/g;
+  const yOk = (y) => y >= YEAR_MIN && y <= yearMax();
+  const to4 = (a, b) => (b && b.length === 2 ? Number(String(a).slice(0, 2) + b) : Number(b));
   let ym, last = null;
-  while ((ym = yearRe.exec(s)) !== null) last = ym;
+  while ((ym = yearRe.exec(s)) !== null) {
+    if (yOk(Number(ym[1])) && (!ym[2] || (yOk(to4(ym[1], ym[2])) && to4(ym[1], ym[2]) >= Number(ym[1])))) last = ym;
+  }
   let modelPart = s;
   if (last) {
     year_from = Number(last[1]);
-    year_to = last[2] ? Number(last[2]) : year_from;
+    year_to = last[2] ? to4(last[1], last[2]) : year_from;
     modelPart = s.slice(0, last.index).trim();
+  } else {
+    // 11-27h · 끝의 두 자리 연식 'Rio Sedan 17-24' (4자리 연식이 하나도 없을 때만)
+    const m2 = /(?:^|\s)(\d{2})\s*[-–]\s*(\d{2})\s*$/.exec(s);
+    if (m2) {
+      const yy = (n) => (Number(n) > (yearMax() % 100) ? 1900 : 2000) + Number(n);
+      const a = yy(m2[1]), b = yy(m2[2]);
+      if (b >= a && yOk(a) && yOk(b)) { year_from = a; year_to = b; modelPart = s.slice(0, m2.index).trim(); }
+    }
   }
-  // 메이커: 앞쪽 연속 대문자 토큰(쉼표/&/. 허용)
+  // 메이커 — ① 알려진 메이커(대소문자 · 하이픈 · 여러 단어) 를 쉼표/슬래시로 여럿까지 ② 없으면 예전 규칙(앞쪽 대문자 단어)
   let maker = '', model = modelPart;
-  const mk = modelPart.match(/^([A-ZÁÉÍÓÚÑ&./]+(?:,\s*[A-ZÁÉÍÓÚÑ&./]+)*)\s+/);
-  if (mk) { maker = mk[1].trim(); model = modelPart.slice(mk[0].length).trim(); }
+  let pos = 0, end = 0;
+  for (let guard = 0; guard < 4; guard++) {
+    const rest = modelPart.slice(pos);
+    const lead = /^[\s,/&+;]*/.exec(rest)[0].length;
+    const n = knownMakerAt(rest.slice(lead));
+    if (!n) break;
+    end = pos + lead + n; pos = end;
+    if (!/^\s*[,/&+;]/.test(modelPart.slice(pos))) break;   // 다음이 구분자일 때만 메이커가 더 이어진다
+  }
+  if (end) {
+    maker = modelPart.slice(0, end).trim();
+    model = modelPart.slice(end).replace(/^[\s,/&+;]+/, '').trim();
+  } else {
+    const mk = modelPart.match(/^([A-ZÁÉÍÓÚÑ&./]+(?:,\s*[A-ZÁÉÍÓÚÑ&./]+)*)\s+/);
+    if (mk) { maker = mk[1].trim(); model = modelPart.slice(mk[0].length).trim(); }
+  }
+  model = model.replace(/[\s(,;\-–]+$/, '').trim();
   return { app_text, maker: maker || null, model: model || null, year_from, year_to };
 }
 

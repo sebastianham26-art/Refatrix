@@ -108,3 +108,21 @@ test('buildPreview aggregates new/updated/unchanged/errors/duplicates', () => {
   assert.equal(pv.errors[0].code, 'NONAME');
   assert.deepEqual(pv.duplicates, ['NEW1']);
 });
+
+// 2026-11-27h · 메이커 이름표(대소문자 · 하이픈 · 여러 단어) · 연식 범위 · 두 자리 · 괄호 연식
+test('parseAppEntry 11-27h: 메이커 대소문자 · 여러 단어 · 연식 범위', () => {
+  const P = (t) => { const r = parseAppEntry(t); return [r.maker, r.model, r.year_from, r.year_to]; };
+  assert.deepEqual(P('Nissan Kicks 2017-2024'), ['Nissan', 'Kicks', 2017, 2024]);
+  assert.deepEqual(P('Chevrolet Aveo 2018-2024'), ['Chevrolet', 'Aveo', 2018, 2024]);
+  assert.deepEqual(P('Mercedes-Benz Clase C 2015-2020'), ['Mercedes-Benz', 'Clase C', 2015, 2020]);
+  assert.deepEqual(P('GREAT WALL Poer 2021-2025'), ['GREAT WALL', 'Poer', 2021, 2025]);
+  assert.deepEqual(P('LAND ROVER Defender 2020'), ['LAND ROVER', 'Defender', 2020, 2020]);
+  assert.deepEqual(P('Ford, Mercury Grand Marquis 2003-2011'), ['Ford, Mercury', 'Grand Marquis', 2003, 2011]);
+  assert.deepEqual(P('KIA Rio Sedan 17-24'), ['KIA', 'Rio Sedan', 2017, 2024]);
+  assert.deepEqual(P('CHEVROLET Aveo (2018-2024)'), ['CHEVROLET', 'Aveo', 2018, 2024]);
+  assert.deepEqual(P('Toyota Hilux 2016-24'), ['Toyota', 'Hilux', 2016, 2024]);
+  assert.deepEqual(P('PEUGEOT 3008'), ['PEUGEOT', '3008', null, null], '3008 은 연식이 아니라 모델');
+  assert.deepEqual(P('DODGE Ram 2500'), ['DODGE', 'Ram 2500', null, null]);
+  assert.deepEqual(P('Versa 2015'), [null, 'Versa', 2015, 2015], '메이커가 없으면 비운다');
+  assert.deepEqual(P('MG MG5 2021-2025'), ['MG', 'MG5', 2021, 2025]);
+});

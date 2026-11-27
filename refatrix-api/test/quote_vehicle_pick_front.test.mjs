@@ -78,7 +78,7 @@ const row = (d, txt) => [...d.querySelectorAll('#qVehResult .vm-row')].find((r) 
 
 test('① 고객을 골라야 「차종으로 찾기」가 켜진다', { skip: SKIP }, async () => {
   const { w, d } = boot(); await tick(250);
-  assert.match(d.title, /qt-1127vn/);
+  assert.match(d.title, /qt-1127vo/);
   assert.equal(d.getElementById('qmVeh').disabled, true, '고객 전 비활성');
   d.getElementById('custSel').value = '1'; w.onCustChange(); await tick(50);
   assert.equal(d.getElementById('qmVeh').disabled, false);

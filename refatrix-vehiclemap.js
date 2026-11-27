@@ -1,5 +1,5 @@
 /* =====================================================================
- * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f · 27g(메이커 → 연식 → 모델)
+ * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f · 27g(메이커 → 연식 → 모델) · 27h(연식 범위)
  *   쓰는 화면: 제품마케팅 › 제품(refatrix-products.html · 보기) · 견적(refatrix-quote.html · 담기)
  *   API: GET /api/products/app-makers · app-models · app-years · vehicle-map (quote · products · sales 화면 권한)
  *
@@ -68,7 +68,9 @@
     function loadMakers(){ return getJ('/api/products/app-makers').then(function(d){ fillSelect(E.maker,d.items,'선택',d.groups); }).catch(function(){}); }
     function loadYears(){
       var prev=E.year.value;
-      return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); keep(E.year,prev); }).catch(function(){}).then(loadModels);
+      return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); keep(E.year,prev);
+        // 11-27h · 연식 범위 밖이라 뺀 적용차종(예: 모델명 3008 을 연식으로 읽은 예전 분해 줄) — 마우스를 올리면 보임
+        var odd=(d.odd||[]); E.year.title=odd.length?('연식 범위('+((d.range||[]).join('~'))+') 밖이라 목록에서 뺀 적용차종 '+odd.length+'건: '+odd.slice(0,8).map(function(o){ return o.app_text; }).join(' · ')+(odd.length>8?' …':'')):''; }).catch(function(){}).then(loadModels);
     }
     function loadModels(){
       var prev=E.model.value, y=E.year.value;
@@ -385,5 +387,5 @@
   }
   // 스타일은 불러오자마자 넣는다 — 토글 · 패널이 도면을 열기 전에도 같은 모양
   if(document.head) injectCss(); else document.addEventListener('DOMContentLoaded', injectCss);
-  window.RefatrixVehicleMap = { create: create, version: '20261127g' };
+  window.RefatrixVehicleMap = { create: create, version: '20261127h' };
 })();
