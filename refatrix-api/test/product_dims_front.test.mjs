@@ -255,7 +255,7 @@ test('⑧ 견적 입력 — 📦 대략 무게 · 사이즈(현실 적재 · 묶
   });
   await new Promise((r) => dom.window.addEventListener('load', r));
   const w = dom.window;
-  assert.match(w.document.title, /qt-1127vo/);
+  assert.match(w.document.title, /qt-1127vp/);
   const one = w.qtShipHtml({ weight_kg: 16.3, dims: { l: 46, w: 34, h: 25 }, vol_m3: 0.039, vol_weight_kg: 7.8,
     pack: { method: 'stack', boxes: 10, layers: 3, fill: 0.809, stacks: 1 }, wt_miss: 1, wt_miss_qty: 2, d_nobox: 0, d_nosize: 1, d_nosize_qty: 3, nosize_boxes: ['NUEVA'], unreg: 1 });
   const t1 = new w.DOMParser().parseFromString(one, 'text/html').body.textContent;

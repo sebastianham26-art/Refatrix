@@ -1,5 +1,5 @@
 /* =====================================================================
- * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f · 27g(메이커 → 연식 → 모델) · 27h(연식 범위)
+ * refatrix-vehiclemap.js — 차종으로 제품찾기(차량 하부 도면) 공용 모듈 · 2026-11-27f · 27h(연식 범위) · 27i(메이커 → 모델[연식 범위 표시] → 연식)
  *   쓰는 화면: 제품마케팅 › 제품(refatrix-products.html · 보기) · 견적(refatrix-quote.html · 담기)
  *   API: GET /api/products/app-makers · app-models · app-years · vehicle-map (quote · products · sales 화면 권한)
  *
@@ -56,25 +56,27 @@
     var curAll=[];
 
     // ── 차종 드롭다운(같은 이름 묶음 표기 · 11-27b · 메이커 낱개 11-27e 는 서버가) ──
-    function fillSelect(sel,items,allLabel,groups){
-      var extra={}; (groups||[]).forEach(function(g){ var o=(g.variants||[]).filter(function(x){ return x!==g.label; }); if(o.length) extra[g.label]=o; });
+    // withYears=true(모델 칸) → 이름 뒤에 연식 범위 「Versa  2012~2025」 (11-27i)
+    function fillSelect(sel,items,allLabel,groups,withYears){
+      var extra={}, yr={}; (groups||[]).forEach(function(g){ var o=(g.variants||[]).filter(function(x){ return x!==g.label; }); if(o.length) extra[g.label]=o;
+        if(withYears && g.y_from!=null) yr[g.label]=g.y_from+(g.y_to!=null&&g.y_to!==g.y_from?'~'+g.y_to:''); });
       sel.innerHTML='<option value="">'+escP(allLabel)+'</option>'+(items||[]).map(function(v){ var o=extra[v];
-        return '<option value="'+escP(v)+'"'+(o?' title="'+escP('같은 이름으로 묶은 표기: '+o.join(' · '))+'"':'')+'>'+escP(v)+(o?'  ('+escP(o.slice(0,3).join(' · '))+(o.length>3?' …':'')+')':'')+'</option>'; }).join('');
+        return '<option value="'+escP(v)+'"'+(o?' title="'+escP('같은 이름으로 묶은 표기: '+o.join(' · '))+'"':'')+'>'+escP(v)+(yr[v]?'\u2002\u2002'+escP(yr[v]):'')+(o?'  ('+escP(o.slice(0,3).join(' · '))+(o.length>3?' …':'')+')':'')+'</option>'; }).join('');
     }
     function getJ(path){ return fetch(O.api()+path,{headers:O.headers()}).then(function(x){ return x.json(); }); }
-    // 11-27g · 순서 = 메이커 → 연식 → 모델. 연식을 고르면 그 연식에 해당하는 모델만 나온다(연식 비우면 메이커의 모든 모델).
-    //   연식을 바꿔도 고른 모델이 새 목록에 있으면 그대로 둔다.
+    // 11-27i · 순서 = 메이커 → 모델 → 연식. 모델 이름 뒤에 그 모델의 연식 범위(2012~2025)를 붙이고,
+    //   모델을 고르면 그 모델의 연식만 다음 칸에 나온다. 바뀐 목록에 고른 값이 있으면 그대로 둔다.
     function keep(sel, prev){ if(prev && [].some.call(sel.options,function(o){ return o.value===prev; })) sel.value=prev; }
     function loadMakers(){ return getJ('/api/products/app-makers').then(function(d){ fillSelect(E.maker,d.items,'선택',d.groups); }).catch(function(){}); }
+    function loadModels(){
+      var prev=E.model.value;
+      return getJ('/api/products/app-models?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.model,d.items,'선택',d.groups,true); keep(E.model,prev); }).catch(function(){}).then(loadYears);
+    }
     function loadYears(){
       var prev=E.year.value;
-      return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); keep(E.year,prev);
+      return getJ('/api/products/app-years?maker='+encodeURIComponent(E.maker.value)+'&model='+encodeURIComponent(E.model.value)).then(function(d){ fillSelect(E.year,d.items,'전체 연식'); keep(E.year,prev);
         // 11-27h · 연식 범위 밖이라 뺀 적용차종(예: 모델명 3008 을 연식으로 읽은 예전 분해 줄) — 마우스를 올리면 보임
-        var odd=(d.odd||[]); E.year.title=odd.length?('연식 범위('+((d.range||[]).join('~'))+') 밖이라 목록에서 뺀 적용차종 '+odd.length+'건: '+odd.slice(0,8).map(function(o){ return o.app_text; }).join(' · ')+(odd.length>8?' …':'')):''; }).catch(function(){}).then(loadModels);
-    }
-    function loadModels(){
-      var prev=E.model.value, y=E.year.value;
-      return getJ('/api/products/app-models?maker='+encodeURIComponent(E.maker.value)+(y?'&year='+encodeURIComponent(y):'')).then(function(d){ fillSelect(E.model,d.items,'선택',d.groups); keep(E.model,prev); }).catch(function(){});
+        var odd=(d.odd||[]); E.year.title=odd.length?('연식 범위('+((d.range||[]).join('~'))+') 밖이라 목록에서 뺀 적용차종 '+odd.length+'건: '+odd.slice(0,8).map(function(o){ return o.app_text; }).join(' · ')+(odd.length>8?' …':'')):''; }).catch(function(){});
     }
 
     // ── 담기(pick) ──
@@ -380,12 +382,12 @@
 
 
     if(E.btn) E.btn.addEventListener('click', vehSearch);
-    if(E.maker) E.maker.addEventListener('change', function(){ E.year.value=''; E.model.value=''; loadYears(); });   // 메이커 → 연식 목록 → 모델 목록
-    if(E.year) E.year.addEventListener('change', loadModels);                                                       // 연식 → 그 연식 모델만
+    if(E.maker) E.maker.addEventListener('change', function(){ E.model.value=''; E.year.value=''; loadModels(); });   // 메이커 → 모델 목록(연식 범위 표시) → 연식
+    if(E.model) E.model.addEventListener('change', function(){ E.year.value=''; loadYears(); });                     // 모델 → 그 모델의 연식만
     window.addEventListener('scroll', vmOeHide, true);
     return { search: vehSearch, loadMakers: loadMakers, render: function(){ if(vmData) vmRender(); }, data: function(){ return vmData; }, hideTip: vmOeHide };
   }
   // 스타일은 불러오자마자 넣는다 — 토글 · 패널이 도면을 열기 전에도 같은 모양
   if(document.head) injectCss(); else document.addEventListener('DOMContentLoaded', injectCss);
-  window.RefatrixVehicleMap = { create: create, version: '20261127h' };
+  window.RefatrixVehicleMap = { create: create, version: '20261127i' };
 })();

@@ -326,6 +326,10 @@ test('⑨ 11-27g · app-models?year= — 그 연식이 적용 범위에 드는 �
   assert.deepEqual(await m(2017), ['Escape' + RUN]);
   assert.deepEqual(await m(2005), ['Focus' + RUN, 'GrandMq' + RUN].sort());
   assert.deepEqual(await m(1990), []);
+  // 11-27i · 모델 칸에 붙일 연식 범위
+  const g = (await get(`/api/products/app-models?maker=${encodeURIComponent(F)}`)).json().groups;
+  const gr = Object.fromEntries(g.map((x) => [x.label, [x.y_from, x.y_to]]));
+  assert.deepEqual(gr['Escape' + RUN], [2015, 2019]); assert.deepEqual(gr['GrandMq' + RUN], [2003, 2011]);
   const yrs = (await get(`/api/products/app-years?maker=${encodeURIComponent(F)}`)).json().items;
   assert.ok(yrs.includes(2017) && yrs.includes(2005), '메이커만으로 연식 목록');
 });

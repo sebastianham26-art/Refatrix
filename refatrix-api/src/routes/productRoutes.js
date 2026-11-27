@@ -1533,18 +1533,23 @@ export default async function productRoutes(app) {
           WHERE ${conds.join(' AND ')} AND btrim(mkp.x) <> ''
           GROUP BY 1, 2`, params)).rows
       : (await query(
-        `SELECT ${NK_SQL(col)} AS k, ${col} AS v, COUNT(*)::int AS n
+        // 11-27i · 모델 이름 뒤에 연식 범위(2012~2025)를 붙이려고 표기별 최소 · 최대 연식도 같이(연식 인정 범위 안만)
+        `SELECT ${NK_SQL(col)} AS k, ${col} AS v, COUNT(*)::int AS n,
+                MIN(CASE WHEN year_from BETWEEN ${YEAR_MIN} AND ${yearMax()} THEN year_from END) AS y0,
+                MAX(CASE WHEN year_to BETWEEN ${YEAR_MIN} AND ${yearMax()} THEN year_to END) AS y1
            FROM product_applications WHERE ${conds.join(' AND ')}
           GROUP BY 1, 2`, params)).rows;
     const by = new Map();
     for (const r of rows) {
       if (!r.k) continue;
       if (!by.has(r.k)) by.set(r.k, []);
-      by.get(r.k).push({ v: r.v, n: Number(r.n) });
+      by.get(r.k).push({ v: r.v, n: Number(r.n), y0: r.y0 == null ? null : Number(r.y0), y1: r.y1 == null ? null : Number(r.y1) });
     }
     const groups = [...by.entries()].map(([k, vs]) => {
       vs.sort((x, y) => y.n - x.n || (x.v < y.v ? -1 : x.v > y.v ? 1 : 0));
-      return { key: k, label: vs[0].v, variants: vs.map((x) => x.v), n: vs.reduce((t, x) => t + x.n, 0) };
+      const y0s = vs.map((x) => x.y0).filter((x) => x != null), y1s = vs.map((x) => x.y1).filter((x) => x != null);
+      return { key: k, label: vs[0].v, variants: vs.map((x) => x.v), n: vs.reduce((t, x) => t + x.n, 0),
+        y_from: y0s.length ? Math.min(...y0s) : null, y_to: y1s.length ? Math.max(...y1s) : null };
     });
     groups.sort((x, y) => String(x.label).localeCompare(String(y.label), 'es', { sensitivity: 'base' }));
     return groups;
@@ -1567,7 +1572,7 @@ export default async function productRoutes(app) {
     return { items: groups.map((g) => g.label), groups };
   });
 
-  // 차종 드롭다운: (메이커 · 연식별) 모델 목록 — 11-27g ?year= 추가
+  // 차종 드롭다운: (메이커별) 모델 목록 — groups[].y_from · y_to = 그 모델 연식 범위(11-27i) · ?year= 도 받음(11-27g)
   app.get('/api/products/app-models', { preHandler: [authGuard, requirePageAny(VM_PAGES)] }, async (req) => {
     const maker = String(req.query.maker || '').trim();
     // 11-27g · 메이커 → 연식 → 모델 순서 — 연식을 주면 그 연식이 적용 범위에 들어가는 모델만

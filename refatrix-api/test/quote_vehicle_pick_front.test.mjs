@@ -48,8 +48,10 @@ function boot() {
         if (u.includes('/api/customers')) return json({ items: [{ id: 1, code: 'C001', name: 'REFACCIONARIA NORTE', discount: 30 }] });
         if (u.includes('/api/products/app-')) calls.app.push(u.replace('https://api.test/api/products/', ''));
         if (u.includes('/api/products/app-makers')) return json({ items: ['NISSAN'], groups: [] });
-        if (u.includes('/api/products/app-models')) return json({ items: u.includes('year=2021') ? ['Kicks', 'Versa'] : (u.includes('year=2010') ? ['Tiida'] : ['Kicks', 'Tiida', 'Versa']), groups: [] });
-        if (u.includes('/api/products/app-years')) return json({ items: [2021, 2015, 2010] });
+        if (u.includes('/api/products/app-models')) return json({ items: ['Kicks', 'Tiida', 'Versa'], groups: [
+          { key: 'KICKS', label: 'Kicks', variants: ['Kicks'], y_from: 2017, y_to: 2024 }, { key: 'TIIDA', label: 'Tiida', variants: ['Tiida'], y_from: 2007, y_to: 2007 },
+          { key: 'VERSA', label: 'Versa', variants: ['Versa', 'VERSA'], y_from: 2012, y_to: 2025 }] });
+        if (u.includes('/api/products/app-years')) return json({ items: u.includes('model=Versa') ? [2025, 2020, 2015, 2012] : (u.includes('model=Kicks') ? [2024, 2021, 2017] : [2025, 2021, 2015, 2007]) });
         if (u.includes('/api/products/vehicle-map')) return json(VM);
         if (u.includes('/api/quotes/preview')) {
           const b = JSON.parse(o.body); calls.preview.push(b);
@@ -78,7 +80,7 @@ const row = (d, txt) => [...d.querySelectorAll('#qVehResult .vm-row')].find((r) 
 
 test('① 고객을 골라야 「차종으로 찾기」가 켜진다', { skip: SKIP }, async () => {
   const { w, d } = boot(); await tick(250);
-  assert.match(d.title, /qt-1127vo/);
+  assert.match(d.title, /qt-1127vp/);
   assert.equal(d.getElementById('qmVeh').disabled, true, '고객 전 비활성');
   d.getElementById('custSel').value = '1'; w.onCustChange(); await tick(50);
   assert.equal(d.getElementById('qmVeh').disabled, false);
@@ -141,26 +143,24 @@ test('④ CTR 없는 부품 → SYD/BAW 코드로 미매칭 줄(개발요청 흐
   w.close();
 });
 
-test('⑥ 11-27g · 메이커 → 연식 → 모델 — 연식을 고르면 그 연식 모델만', { skip: SKIP }, async () => {
+test('⑥ 11-27i · 메이커 → 모델(연식 범위 표시) → 연식 — 모델을 고르면 그 모델 연식만', { skip: SKIP }, async () => {
   const c = boot(); const { w, d, calls } = c; await tick(250);
   d.getElementById('custSel').value = '1'; w.onCustChange(); await tick(50);
   d.getElementById('qmVeh').click(); await tick(150);
   const ids = [...d.querySelectorAll('#qVehPanel .vm-sel select')].map((x) => x.id);
-  assert.deepEqual(ids, ['q-veh-maker', 'q-veh-year', 'q-veh-model'], '화면 순서');
+  assert.deepEqual(ids, ['q-veh-maker', 'q-veh-model', 'q-veh-year'], '화면 순서');
   const mk = d.getElementById('q-veh-maker'); mk.value = 'NISSAN'; calls.app.length = 0;
   mk.dispatchEvent(new w.Event('change')); await tick(120);
-  assert.deepEqual(calls.app, ['app-years?maker=NISSAN', 'app-models?maker=NISSAN'], '메이커 → 연식 목록 → (연식 없이) 모델 전체');
-  const opts = (id) => [...d.getElementById(id).options].map((o) => o.value).filter(Boolean);
-  assert.deepEqual(opts('q-veh-year'), ['2021', '2015', '2010']);
-  assert.deepEqual(opts('q-veh-model'), ['Kicks', 'Tiida', 'Versa']);
-  d.getElementById('q-veh-model').value = 'Versa';
-  const yr = d.getElementById('q-veh-year'); yr.value = '2021'; calls.app.length = 0;
-  yr.dispatchEvent(new w.Event('change')); await tick(120);
-  assert.deepEqual(calls.app, ['app-models?maker=NISSAN&year=2021']);
-  assert.deepEqual(opts('q-veh-model'), ['Kicks', 'Versa'], '2021 모델만');
-  assert.equal(d.getElementById('q-veh-model').value, 'Versa', '고른 모델이 새 목록에 있으면 유지');
-  yr.value = '2010'; yr.dispatchEvent(new w.Event('change')); await tick(120);
-  assert.deepEqual(opts('q-veh-model'), ['Tiida']);
-  assert.equal(d.getElementById('q-veh-model').value, '', '없으면 비움');
+  assert.deepEqual(calls.app, ['app-models?maker=NISSAN', 'app-years?maker=NISSAN&model='], '메이커 → 모델 목록 → (모델 없이) 연식 전체');
+  const txt = (id) => [...d.getElementById(id).options].filter((o) => o.value).map((o) => o.textContent.replace(/\s+/g, ' ').trim());
+  assert.deepEqual(txt('q-veh-model'), ['Kicks 2017~2024', 'Tiida 2007', 'Versa 2012~2025 (VERSA)'], '모델 이름 뒤 연식 범위');
+  assert.deepEqual([...d.getElementById('q-veh-model').options].map((o) => o.value).filter(Boolean), ['Kicks', 'Tiida', 'Versa'], '값은 모델 이름 그대로');
+  const md = d.getElementById('q-veh-model'); md.value = 'Versa'; calls.app.length = 0;
+  md.dispatchEvent(new w.Event('change')); await tick(120);
+  assert.deepEqual(calls.app, ['app-years?maker=NISSAN&model=Versa']);
+  assert.deepEqual([...d.getElementById('q-veh-year').options].map((o) => o.value).filter(Boolean), ['2025', '2020', '2015', '2012'], '그 모델 연식만');
+  d.getElementById('q-veh-year').value = '2015';
+  md.value = 'Kicks'; md.dispatchEvent(new w.Event('change')); await tick(120);
+  assert.equal(d.getElementById('q-veh-year').value, '', '모델을 바꾸면 연식은 다시 고른다');
   w.close();
 });
