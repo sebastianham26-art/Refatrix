@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 일일 자금 · 월간실적 · build cashd-1103a</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--line2:#EFEBE2;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;
+    --bank:#C6E0B4;--bankInk:#2F4F1E;--date:#DDEBF7;--dateInk:#1F3A5A;--plan:#1F6FD1;--done:#7F7F7F;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px}
+  .wrap{max-width:1320px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius);flex-wrap:wrap}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-top:14px;box-shadow:var(--shadow)}
+  .card-h{font-size:14px;font-weight:700;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .card-h .src{font-size:11.5px;color:var(--muted);font-weight:500}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink)}
+  .btn{padding:8px 14px;border:1px solid var(--brand);border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:#fff;color:var(--brand);border-color:var(--line)}
+  .btn.gold{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;border-color:#C9A75C}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn.danger{background:#fff;color:var(--expense);border-color:#f0c5bf}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d2}
+  .msg.warn{display:block;background:#FFF6E0;color:#7a5200;border:1px solid #f0dca8}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none!important}.hint{font-size:12px;color:var(--muted);line-height:1.55}
+  code{background:#f3f0e8;padding:0 4px;border-radius:4px;font-size:11.5px}
+  /* tabs */
+  .tabs{display:flex;gap:4px;margin-top:14px;border-bottom:2px solid var(--line);flex-wrap:wrap}
+  .tab{padding:9px 16px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border:none;background:none;border-bottom:3px solid transparent;margin-bottom:-2px;font-family:inherit}
+  .tab.on{color:var(--brand);border-bottom-color:var(--gold)}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .bar .rng{font-weight:700;color:var(--brand);font-size:15px;min-width:180px;text-align:center}
+  .bar .spacer{margin-left:auto}
+  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  /* ── 유첨 양식 표 ── */
+  .scopeLine{margin-top:8px}
+  .scroll{overflow-x:auto;border:1.5px solid #333;border-radius:4px;background:#fff}
+  /* 2026-10-07: 내역이 길어도 칸 폭이 늘지 않게 — 고정 폭(일자 칸 균등) + 이름 최대 2줄, 넘치면 … (전체 이름은 마우스 오버) */
+  table.ws{border-collapse:collapse;width:100%;min-width:980px;font-size:12.5px;table-layout:fixed}
+  table.ws th,table.ws td{overflow:hidden}
+  table.ws td,table.ws th{border-right:1px solid #bdbdbd;padding:3px 7px;vertical-align:top}
+  table.ws .g{width:76px;text-align:center;vertical-align:middle;font-weight:500;border-right:1px solid #bdbdbd}
+  table.ws .c{width:52px;text-align:center;vertical-align:middle}
+  table.ws tr.bank td{background:var(--bank);color:var(--ink);font-weight:500;border-bottom:1px solid #a9c98f}
+  table.ws tr.close td{background:var(--bank);font-weight:600}
+  table.ws tr.close.first td{border-top:1.5px solid #333}
+  table.ws tr.eq td.v{background:#E2EFDA;text-align:right;font-weight:500}
+  table.ws tr.eq td{border-right-color:transparent}
+  table.ws tr.date th{background:var(--date);color:var(--ink);font-weight:700;padding:9px 6px;border-top:1px solid #bdbdbd;border-bottom:1px solid #bdbdbd}
+  table.ws tr.tot td{border-top:1px solid #bdbdbd;font-weight:500}
+  table.ws tr.sec td{border-top:1px solid #bdbdbd}
+  table.ws tr.fx td{border-top:1px solid #bdbdbd;border-bottom:1px solid #bdbdbd;color:var(--muted)}
+  table.ws td.today{box-shadow:inset 0 0 0 9999px rgba(255,214,0,.10)}
+  table.ws td.neg{color:#fff!important;background:#e02424!important}
+  .it{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;line-height:1.3;padding:1px 0 2px}
+  .it + .it{border-top:1px dotted #e3e3e3}
+  .it .nm{flex:1;min-width:0;text-align:left;white-space:normal;overflow-wrap:anywhere;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .it .am{flex:0 0 auto;white-space:nowrap;text-align:right}
+  /* 전자결재 연결 항목: 1줄 = 번호(EXP-YYYY- 생략) + 제목 간략 · 2줄 = 받는 사람(지급처) — 각 줄 넘치면 … */
+  .it .nm.ap{display:block;-webkit-line-clamp:unset;line-clamp:unset}
+  .ap .l1,.ap .l2{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ap .no{font-weight:600;margin-right:3px}
+  .ap .l2{opacity:.85}
+  .it.plan{color:var(--plan)}.it.actual{color:var(--done)}
+  .it .late{font-size:10px;color:var(--expense);margin-left:3px}
+  .it .roll{font-size:10px;color:#8a5a00;margin-left:3px}
+  .it.lateent{background:#FFF1D6;border-radius:3px}
+  .it .new{font-size:9.5px;color:#8a5a00;font-weight:700;margin-left:3px}
+  .wkhead{display:flex;align-items:center;gap:8px;margin:12px 0 4px;font-weight:700;font-size:13px}
+  .wkhead .sub{font-weight:400;color:#8a5a00;font-size:12px}
+  table.ws th.lated{box-shadow:inset 0 -3px 0 #E8A33A}
+  .dash{color:#b0b0b0;text-align:right;line-height:1.35}
+  .tag{display:inline-block;font-size:10px;font-weight:700;border-radius:4px;padding:0 5px;margin-left:5px;vertical-align:1px}
+  .tag.a{background:#eee;color:#555}.tag.t{background:#ffd84d;color:#3a2d00}.tag.p{background:#dbeafe;color:#1e40af}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:10px 0 0}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .kpi .l{font-size:11.5px;color:var(--muted);font-weight:600}
+  .kpi .v{font-size:20px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .kpi .s{font-size:11.5px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+  .kpi.in .v{color:var(--income)}.kpi.out .v{color:var(--expense)}
+  /* 월간 표 */
+  table.mt{border-collapse:collapse;width:100%;font-size:12.5px;min-width:1100px}
+  table.mt th{position:sticky;top:0;background:#FAF8F3;color:var(--muted);font-weight:600;font-size:11.5px;padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  table.mt th.l,table.mt td.l{text-align:left}
+  table.mt td{padding:6px 8px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  table.mt tr.row{cursor:pointer}table.mt tr.row:hover td{background:#FBFAF6}
+  table.mt tr.sun td{color:#aaa}
+  table.mt tr.det td{background:#FBFAF6;padding:8px 14px;text-align:left;white-space:normal}
+  table.mt tfoot td{font-weight:700;border-top:2px solid var(--line);background:#FAF8F3}
+  table.mt td.in{color:var(--income)}table.mt td.out{color:var(--expense)}
+  .mscroll{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:10px}
+  .badge{display:inline-block;font-size:10.5px;border-radius:9px;padding:1px 7px;font-weight:600}
+  .badge.warn{background:#FFF1D6;color:#8a5a00}.badge.ok{background:var(--income-bg);color:var(--income)}.badge.bad{background:var(--expense-bg);color:var(--expense)}.badge.mute{background:#eee;color:#666}
+  .badge.dlv-read{background:#E3EEFF;color:#1d4fa8}
+  .hint.why{max-width:320px;white-space:normal;line-height:1.35;margin-top:2px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:820px){.two{grid-template-columns:1fr}}
+  table.sm{border-collapse:collapse;width:100%;font-size:12.5px}
+  table.sm th{color:var(--muted);font-weight:600;font-size:11.5px;text-align:left;padding:6px 6px;border-bottom:1px solid var(--line)}
+  table.sm td{padding:6px 6px;border-bottom:1px solid var(--line2)}
+  .chart{width:100%;height:220px;display:block}
+  .detl{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .detl h4{margin:0 0 4px;font-size:12px}
+  .detl .r{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:2px 0;border-bottom:1px dashed var(--line2)}
+  .detl .r{align-items:flex-start}
+  .detl .r span:first-child{flex:1;min-width:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical}
+  .detl .r span.num{flex:0 0 auto;white-space:nowrap}
+  .detl .r span.ap{display:block;-webkit-line-clamp:unset;line-clamp:unset}
+  /* WA */
+  .addrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+  .addrow > div{display:flex;flex-direction:column}
+  .chk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink);margin:0;font-weight:500}
+  pre.pv{white-space:pre-wrap;background:#E7F6E9;border:1px solid #cfe8d4;border-radius:10px;padding:12px 14px;font-family:inherit;font-size:13px;max-height:480px;overflow:auto;margin:10px 0 0}
+  @media print{.topbar,.tabs,.bar,.noprint,#waPane{display:none!important}body{background:#fff;padding:0}.card{box-shadow:none;border:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>💰 일일 자금 · 월간실적</h1>
+    <span class="sub">디렉터 전용 · 은행잔고 → AR → AP → 마감잔고를 매일 자동 누적 · WhatsApp 지정 수신자 발송</span>
+    <a class="portalBtn" href="refatrix-portal.html">🏠 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="card hidden" id="noDir">
+    <div class="card-h">⛔ 접근 권한 없음</div>
+    <div class="hint">「일일 자금 · 월간실적」은 디렉터 전용 화면입니다. 요약은 WhatsApp 수신자로 등록되면 받아볼 수 있습니다.</div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="tabs">
+      <button class="tab on" data-tab="week">📅 일일 요약 (주간)</button>
+      <button class="tab" data-tab="month">📊 월간실적</button>
+      <button class="tab" data-tab="wa">📲 WhatsApp · 대상 계좌</button>
+    </div>
+
+    <!-- ── 주간(유첨 양식) ── -->
+    <div id="weekPane">
+      <div class="card">
+        <div class="bar">
+          <button class="btn ghost sm" id="wPrev">◀</button>
+          <span class="rng" id="wRng"></span>
+          <button class="btn ghost sm" id="wNext">▶</button>
+          <button class="btn ghost sm" id="wThis">이번 주</button>
+          <label class="chk" style="margin-left:10px"><input type="checkbox" id="wItems" checked> 항목 표시</label>
+          <label class="chk" style="margin-left:10px" title="사후 반영이 있으면 자동으로 펼쳐집니다"><input type="checkbox" id="wTwo"> 지난 주도 보기(2주)</label>
+          <label class="chk" style="margin-left:10px" title="디렉터 설정 · 예정일이 지났는데 안 들어온 수금을 오늘(첫 예정일) 칸으로 하루씩 밀어 보여주고 잔고 예측에 넣습니다. 끄면 지난 날짜 미처리 경고만 하고 예측에서 뺍니다. WhatsApp 일일 보고서에도 같이 적용됩니다."><input type="checkbox" id="wRoll"> 미입금 수금 이월 표시</label>
+          <span class="spacer"></span>
+          <button class="btn ghost sm noprint" id="wPrint">🖨 인쇄</button>
+        </div>
+        <div class="hint scopeLine" id="wScope"></div>
+        <div class="hint scopeLine" id="wRecon"></div>
+        <div id="wOverdue"></div>
+        <div id="wPrevBox"></div>
+        <div class="scroll" style="margin-top:8px"><div id="wTable"><div class="hint" style="padding:14px">불러오는 중…</div></div></div>
+        <div class="legend">
+          <span><i style="background:var(--bank)"></i>은행잔고 · 마감잔고</span>
+          <span><i style="background:var(--done)"></i>회색 = 실적(실제 입출금)</span>
+          <span><i style="background:var(--plan)"></i>파랑 = 예정(미수 인보이스·예정지출·고정비)</span>
+          <span>항목에 마우스 → 거래 번호·출처(거래목록에서 같은 번호로 찾을 수 있음)</span>
+          <span>맨 아래 초록 = MXN + USD × 환율</span>
+        </div>
+        <div class="hint" style="margin-top:8px">어제까지는 <b>승인된 실제 거래</b>, 오늘부터는 <b>예정</b>입니다. 잔고 공식은 재무/계좌 화면 잔액과 같습니다(기초잔액 + 승인된 실적). 승인 대기 실적은 잔고에 넣지 않고 날짜 칸에 건수만 표시합니다.</div>
+      </div>
+    </div>
+
+    <!-- ── 월간실적 ── -->
+    <div id="monthPane" class="hidden">
+      <div class="card">
+        <div class="bar">
+          <button class="btn ghost sm" id="mPrev">◀</button>
+          <span class="rng" id="mRng"></span>
+          <button class="btn ghost sm" id="mNext">▶</button>
+          <span class="hint" id="mNote"></span>
+          <span class="spacer"></span>
+          <button class="btn ghost sm noprint" id="mRefresh" title="이 달 스냅샷을 지금 원장으로 다시 계산(최초 확정본은 보존)">↻ 스냅샷 갱신</button>
+          <button class="btn ghost sm noprint" id="mXlsx">⬇ Excel</button>
+          <button class="btn ghost sm noprint" id="mPrint">🖨 인쇄</button>
+        </div>
+        <div class="hint scopeLine" id="mScope"></div>
+        <div class="kpis" id="mKpis"></div>
+      </div>
+      <div class="card">
+        <div class="card-h">📈 일별 잔고 추이 <span class="src">마감잔고 MXN 환산(선) · 일별 수금/지급(막대, MXN 환산)</span></div>
+        <div id="mChart"></div>
+      </div>
+      <div class="card">
+        <div class="card-h">🗓 일별 실적 <span class="src">행을 누르면 그날 항목 · 「사후 수정」 = 처음 확정된 뒤 원장이 바뀐 날(소급 등록·삭제)</span></div>
+        <div class="mscroll"><div id="mTable"></div></div>
+      </div>
+      <div class="two">
+        <div class="card"><div class="card-h">🏦 주요 수금처</div><div id="mTopIn"></div></div>
+        <div class="card"><div class="card-h">💸 계정과목별 지급</div><div id="mTopOut"></div></div>
+      </div>
+    </div>
+
+    <!-- ── WhatsApp ── -->
+    <div id="waPane" class="hidden">
+      <div class="card">
+        <div class="card-h">⚙ 발송 설정 상태</div>
+        <div id="waStatus"><div class="hint">확인 중…</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h">🏦 집계 대상 계좌 <span class="src">잔고·수금·지급·예정을 어느 계좌 기준으로 볼지 · 불공제 계좌와 금고는 자동 제외</span></div>
+        <div id="accList"><div class="hint">불러오는 중…</div></div>
+        <div class="hint" style="margin-top:8px"><b>자동</b> = 불공제 체크 계좌와 이름·유형에 <code>금고 · caja · efectivo · 현금 · cash</code> 가 들어간 계좌는 제외, 나머지 포함. 자동 판단이 틀리면 <b>포함/제외</b>로 고정하세요.
+          제외 계좌의 기초잔액·실적·예정은 모두 빠집니다(계좌 미지정 예정지출·미수 인보이스는 포함). 바꾸면 이미 저장된 날짜에 「사후 수정」 표시가 붙을 수 있습니다 — 월간 탭 [↻ 스냅샷 갱신]은 최초본을 보존합니다.</div>
+      </div>
+      <div class="card">
+        <div class="card-h">👥 수신자 <span class="src">여기 등록된 사람에게만 발송 · 언어별 문구(한국어/스페인어)</span></div>
+        <div id="rcList"><div class="hint">불러오는 중…</div></div>
+        <div class="addrow" style="margin-top:12px">
+          <div><label>이름</label><input id="rcName" type="text" placeholder="예) Jang" style="width:150px"></div>
+          <div><label>WhatsApp 번호</label><input id="rcPhone" type="text" placeholder="81 1234 5678" style="width:170px"></div>
+          <div><label>언어</label><select id="rcLang"><option value="es">Español</option><option value="ko">한국어</option></select></div>
+          <div><label>&nbsp;</label><label class="chk"><input type="checkbox" id="rcDaily" checked> 일일</label></div>
+          <div><label>&nbsp;</label><label class="chk"><input type="checkbox" id="rcMonthly" checked> 월간</label></div>
+          <div><label>&nbsp;</label><button class="btn" id="rcAdd">＋ 추가</button></div>
+        </div>
+        <div class="msg" id="rcMsg"></div>
+        <div class="hint" style="margin-top:8px">멕시코 휴대폰은 10자리만 넣으면 <code>52</code>+10자리로 자동 변환됩니다(예전 <code>521</code> 형식도 자동으로 52로 바뀝니다). 다른 나라는 국가번호부터 입력하세요(예: 한국 <code>8210…</code>).</div>
+      </div>
+      <div class="card">
+        <div class="card-h">👁 미리보기 · 지금 발송</div>
+        <div class="addrow">
+          <div><label>종류</label><select id="pvKind"><option value="daily">일일 요약</option><option value="monthly">월간실적</option></select></div>
+          <div><label>기간</label><input id="pvPeriod" type="text" placeholder="비우면 어제 / 전월" style="width:150px"></div>
+          <div><label>언어</label><select id="pvLang"><option value="ko">한국어</option><option value="es">Español</option></select></div>
+          <div><label>&nbsp;</label><button class="btn ghost" id="pvBtn">👁 미리보기</button></div>
+          <div><label>&nbsp;</label><button class="btn gold" id="sendBtn">📲 지금 발송 (해당 수신자 전원)</button></div>
+        </div>
+        <div class="msg" id="pvMsg"></div>
+        <div class="hidden" id="pvImgWrap" style="margin-top:12px"><div class="hint" style="margin-bottom:6px">📷 WhatsApp 으로 가는 이미지 (캡션 = 아래 한 줄 요약)</div><img id="pvImg" alt="발송 이미지 미리보기" style="max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></div>
+        <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">이미지를 못 보낼 때 대신 가는 텍스트 보기</summary><pre class="pv hidden" id="pvText"></pre></details>
+      </div>
+      <div class="card">
+        <div class="card-h">🧾 최근 발송 원장</div>
+        <div id="waLog"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  console.log('[cashdaily] build cashd-1103a (일일 자금 누적 · 월간실적 · WhatsApp 지정 수신자)');
+  let session={token:null,user:null,api:''};
+  const S={tab:'week', week:null, month:null, mdata:null, open:new Set(), wa:null, rc:[]};
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const f0=(n)=> n==null?'—':Math.round(Number(n)).toLocaleString('en-US');
+  const fn=(n)=> (n==null||Math.round(Number(n))===0)?'-':(Number(n)<0?'('+f0(-n)+')':f0(n));
+  const DOWK=['일','월','화','수','목','금','토'], DOWE=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const pad=(n)=>String(n).padStart(2,'0');
+  function mxToday(){ const d=new Date(Date.now()-6*3600000); return d.toISOString().slice(0,10); }
+  function addDays(s,n){const p=s.split('-').map(Number);const t=new Date(Date.UTC(p[0],p[1]-1,p[2]));t.setUTCDate(t.getUTCDate()+n);return t.toISOString().slice(0,10);}
+  function md(s){const p=s.split('-').map(Number);return p[1]+'/'+p[2];}
+  function dowOf(s){const p=s.split('-').map(Number);return new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay();}
+  function shiftMonth(m,n){const p=m.split('-').map(Number);const t=new Date(Date.UTC(p[0],p[1]-1+n,1));return t.toISOString().slice(0,7);}
+  function monthK(m){const p=m.split('-').map(Number);return p[0]+'년 '+p[1]+'월';}
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  async function api(path,opt){
+    const o=Object.assign({},opt||{}); o.headers=Object.assign({'Content-Type':'application/json'},auth(),o.headers||{});
+    const res=await fetch(session.api+path,o); let d={}; try{ d=await res.json(); }catch(e){}
+    if(!res.ok){ const e=new Error(d.detail||d.error||('HTTP '+res.status)); e.code=d.error; e.status=res.status; throw e; }
+    return d;
+  }
+  function flash(el,txt,ok){ el.className='msg '+(ok?'ok':'err'); el.textContent=txt; }
+  const ERR={bad_phone:'번호 형식이 올바르지 않습니다',duplicate_phone:'이미 등록된 번호입니다',name_required:'이름을 입력하세요',no_recipients:'해당 종류(일일/월간)를 받는 수신자가 없습니다',
+    wa_not_configured:'WhatsApp 설정(WHATSAPP_TOKEN · WHATSAPP_PHONE_ID)이 없습니다',not_closed:'오늘·미래 날짜는 아직 마감 전입니다',future_month:'아직 시작하지 않은 달입니다'};
+  const errTxt=(e)=>ERR[e.code]||e.message;
+  const REASON={non_deductible:'불공제',cash_box:'금고',manual_out:'수동 제외',manual_in:'수동 포함',auto:'자동 포함'};
+  function scopeText(sc){ if(!sc) return ''; const ex=sc.excluded||[];
+    return '🏦 집계 대상 계좌 '+sc.included_n+'개'+(ex.length?' · 제외: '+ex.map(a=>esc(a.name)+' <span class="badge mute">'+(REASON[a.reason]||a.reason)+'</span>').join(' '):' · 제외 없음'); }
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const apiBase=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg'; const ps=portalSession();
+    if(!ps&&(!login_id||!pin)){ flash(m,'아이디와 PIN을 입력하세요.'); return; }
+    $('go').disabled=true;
+    try{
+      let d,res={ok:true};
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else{ res=await fetch(apiBase+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})}); d=await res.json(); }
+      if(!res.ok||d.error){ flash(m,'로그인 실패: '+(d.error||res.status)); return; }
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||apiBase};
+      try{ sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user&&d.user.name||login_id)+'</b><br>'+esc(d.user&&d.user.role||'-');
+      $('loginCard').classList.add('hidden');
+      if(((d.user&&d.user.role)||'')!=='director'){ $('noDir').classList.remove('hidden'); return; }
+      $('app').classList.remove('hidden');
+      const hp=new URLSearchParams(location.hash.slice(1)); const t0=hp.get('tab');
+      S.week=mxToday(); S.month=mxToday().slice(0,7);
+      if(S.month+'-01'===mxToday()) S.month=shiftMonth(S.month,-1);   // 1일엔 전월부터
+      setTab(['week','month','wa'].includes(t0)?t0:'week');
+    }catch(e){ flash(m,'서버에 연결할 수 없습니다.'); }
+    finally{ $('go').disabled=false; }
+  }
+
+  function setTab(t){
+    S.tab=t;
+    document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+    $('weekPane').classList.toggle('hidden',t!=='week'); $('monthPane').classList.toggle('hidden',t!=='month'); $('waPane').classList.toggle('hidden',t!=='wa');
+    if(t==='week') loadWeek(); else if(t==='month') loadMonth(); else loadWa();
+  }
+
+  // ═════════ 주간(유첨 양식) ═════════
+  async function loadWeek(){
+    $('wTable').innerHTML='<div class="hint" style="padding:14px">불러오는 중…</div>';
+    try{ const d=await api('/api/treasury/week?date='+S.week+(S.two===true?'&weeks=2':(S.two===false?'&weeks=1':''))); S.wdata=d; $('wScope').innerHTML=scopeText(d.scope); renderRecon(d); renderWeek(d); }
+    catch(e){ $('wTable').innerHTML='<div class="msg err" style="margin:12px">'+esc(errTxt(e))+'</div>'; }
+  }
+  // 거래목록 예정과의 대사 · 지난 날짜 미처리 예정(오늘 칸으로 옮기지 않음)
+  function renderRecon(w){
+    const t=(w.days||[]).find(d=>d.reconcile||d.overdue);
+    const r=t&&t.reconcile, o=t&&t.overdue;
+    if(!r){ $('wRecon').innerHTML=''; $('wOverdue').innerHTML=''; return; }
+    const ex=[]; if(r.excluded.inactive_rule.n) ex.push('비활성 고정비 '+r.excluded.inactive_rule.n+'건'); if(r.excluded.account.n) ex.push('집계 제외 계좌 '+r.excluded.account.n+'건'); if(r.excluded.superseded&&r.excluded.superseded.n) ex.push('지난달 미처리 고정비 '+r.excluded.superseded.n+'건(이번 달 회차로 대체)');
+    $('wRecon').innerHTML='🔗 예정 = 거래목록 「예정」 그대로 · 오늘 이후 '+r.list_n+'건 중 '+r.shown_n+'건 표시'+(ex.length?' (제외: '+ex.join(', ')+')':' · 일치');
+    const rl=t&&t.rolled; let oh='';
+    if(rl&&rl.n){
+      oh+='<div class="msg" style="display:block;background:#FFF9EC;color:#7a5200;border:1px solid #F1D79A">⏩ <b>미입금 수금 예정 '+rl.n+'건 · MXN '+f0(rl.in_mxn)+'</b> — 예정일이 지났는데 아직 안 들어와서 <b>'+md(t.date)+'</b> 칸으로 하루씩 밀어 표시합니다(잔고 예측 포함). 들어오면 거래목록에서 실적 전환, 안 받을 돈이면 날짜 변경·삭제하세요.'
+        +'<div style="margin-top:6px;font-size:12px">'+rl.items.slice(0,12).map(i=>'#'+i.id+' '+esc(md(i.due))+'→'+esc(md(t.date))+' '+esc(i.private?'비공개':i.name)+' +'+f0(i.amount)).join(' · ')+(rl.items.length>12?' …':'')+'</div></div>';
+    }
+    if(o&&o.n){
+      oh+='<div class="msg err" style="display:block;background:#FFF6E0;color:#8A5A00;border-color:#F1D79A;margin-top:6px">⚠ <b>지난 날짜 '+(o.in_mxn?'':'지급 ')+'예정 미처리 '+o.n+'건</b>'+(o.in_mxn?' · 수금 MXN '+f0(o.in_mxn)+' (이월 표시 꺼짐)':'')+' · 지급 MXN '+f0(o.out_mxn)
+        +' — 날짜가 지났지만 거래목록에 「예정」으로 남아 있는 건입니다. 실제로 처리됐으면 거래목록에서 실적 전환, 아니면 날짜 변경·삭제하세요. (잔고 예측에는 넣지 않음)'
+        +'<div style="margin-top:6px;font-size:12px">'+o.items.slice(0,12).map(i=>'#'+i.id+' '+esc(i.due)+' '+esc(i.private?'비공개':i.name)+' '+(i.dir==='in'?'+':'−')+f0(i.amount)).join(' · ')+(o.items.length>12?' …':'')+'</div></div>';
+    }
+    $('wOverdue').innerHTML=oh;
+  }
+  // 전자결재 항목 2줄 표시(비공개는 이름 숨김 유지)
+  function apHtml(it){
+    const a=it&&it.appr; if(!a||it.private) return '';
+    return '<span class="l1"><span class="no">'+esc(a.no)+'</span>'+esc(a.title||'전자결재')+(a.seq?' ('+esc(a.seq)+')':'')+'</span>'
+      +(a.vendor?'<span class="l2">'+esc(a.vendor)+'</span>':'');
+  }
+  function renderWeek(w){
+    $('wRng').textContent=md(w.from)+' (월) ~ '+md(addDays(w.from,5))+' (토)';
+    $('wTwo').checked=!!w.prev;
+    $('wRoll').checked=!(w.settings&&w.settings.ar_roll===false);
+    if(w.prev){
+      const ls=w.late_summary||{}, why=w.expand_reason==='late'
+        ? '사후 반영 '+(ls.prev_n||0)+'건 — 마감('+esc(w.late_cutoff||'18:00')+') 뒤에 기록·수정·승인·삭제된 실적이 있어 지난 주를 함께 보여줍니다'
+        : '직접 펼침';
+      $('wPrevBox').innerHTML='<div class="wkhead">지난 주 · '+md(w.prev.from)+' (월) ~ '+md(addDays(w.prev.from,5))+' (토) <span class="sub">'+why+'</span></div>'
+        +'<div class="scroll">'+weekTable(w.prev,w.today)+'</div><div class="wkhead">이번 주 · '+md(w.from)+' (월) ~ '+md(addDays(w.from,5))+' (토)</div>';
+    } else $('wPrevBox').innerHTML='';
+    $('wTable').innerHTML=weekTable(w,w.today);
+  }
+  function weekTable(w,today){
+    const ds=w.days.filter(d=>d.dow!==0||d.moved), show=$('wItems').checked;
+    const isT=(d)=>d.date===today;
+    const tdc=(d,extra)=>' class="num'+(isT(d)?' today':'')+(extra?' '+extra:'')+'"';
+    const listCell=(d,dir,cur)=>{
+      const xs=d.items.filter(i=>i.dir===dir&&i.cur===cur);
+      if(!show) return '<td'+tdc(d)+'></td>';
+      const min=cur==='MXN'?(dir==='out'?7:3):3;
+      let h='';
+      for(const it of xs){
+        const st=it.state||'actual';
+        const nm=(apHtml(it)||esc(it.name))+(it.rolled?'<span class="roll" title="원래 예정일 '+esc(it.due)+' · 미입금 → 하루씩 이월">⏩'+esc(md(it.due))+'</span>':(it.late_days?'<span class="late">⏰'+it.late_days+'d</span>':''))+(it.late_entry?'<span class="new">사후</span>':'');
+        const SRC={inv:'매출 입금예정',fix:'고정비',man:'수동 예정수입',plan:'예정지출'};
+        const tip=[it.private?'비공개':it.name,it.id?('거래 #'+it.id):null,st==='plan'?('거래목록 예정 · '+(SRC[it.src]||'예정')):'거래목록 실제',it.sat_no,it.category,it.account].filter(Boolean).join(' · ');
+        h+='<div class="it '+(st==='plan'?'plan':'actual')+(it.late_entry?' lateent':'')+'" title="'+esc(tip+(it.rolled?' · 원래 예정일 '+it.due+' (미입금 이월)':'')+(it.late_entry?' · 마감 뒤 사후 반영':''))+'"><span class="nm'+(it.appr&&!it.private?' ap':'')+'">'+nm+'</span><span class="am">'+f0(it.amount)+'</span></div>';
+      }
+      for(let i=xs.length;i<min;i++) h+='<div class="dash">-</div>';
+      return '<td'+tdc(d)+'>'+h+'</td>';
+    };
+    const numRow=(fnv,cls)=>ds.map(d=>{const v=fnv(d);return '<td'+tdc(d,(cls||'')+(v<0?' neg':''))+'>'+fn(v)+'</td>';}).join('');
+    const tag=(d)=> d.kind==='actual'?'<span class="tag a">실적</span>':(d.kind==='today'?'<span class="tag t">오늘</span>':'<span class="tag p">예정</span>');
+    const pend=(d)=> (d.pending&&d.pending.n?' <span class="badge warn" title="승인 대기 실적 — 잔고 미반영">대기 '+d.pending.n+'</span>':'')
+      +(d.late&&d.late.n?' <span class="badge warn" title="그날 마감 뒤 기록·수정·승인·삭제된 실적'+(d.late.deleted_n?' (삭제 '+d.late.deleted_n+'건 포함)':'')+'">사후 '+d.late.n+'</span>':'');
+    const adjRow=ds.some(d=>d.adj&&(d.adj.MXN||d.adj.USD));
+    let h='<table class="ws"><colgroup><col style="width:76px"><col style="width:52px">'+ds.map(()=>'<col>').join('')+'</colgroup><tbody>';
+    h+='<tr class="bank"><td class="g" rowspan="2">Bank<br>Account</td><td class="c">MXN</td>'+numRow(d=>d.open.MXN)+'</tr>';
+    h+='<tr class="bank"><td class="c">USD</td>'+numRow(d=>d.open.USD)+'</tr>';
+    if(adjRow) h+='<tr class="sec"><td class="g" colspan="2" style="font-size:11px">계좌 개설</td>'+numRow(d=>(d.adj.MXN||0)+(d.adj.USD||0))+'</tr>';
+    h+='<tr class="sec"><td class="g" rowspan="4">AR</td><td class="c">MXN</td>'+ds.map(d=>listCell(d,'in','MXN')).join('')+'</tr>';
+    h+='<tr class="tot"><td class="c">Total</td>'+numRow(d=>d.in.MXN)+'</tr>';
+    h+='<tr class="sec"><td class="c">USD</td>'+ds.map(d=>listCell(d,'in','USD')).join('')+'</tr>';
+    h+='<tr class="tot"><td class="c">Total</td>'+numRow(d=>d.in.USD)+'</tr>';
+    h+='<tr class="fx"><td class="g" colspan="2">Exchange rate</td>'+ds.map(d=>'<td'+tdc(d)+'>'+(d.fx?Number(d.fx).toFixed(2):'')+'</td>').join('')+'</tr>';
+    h+='<tr class="date"><th colspan="2">Date</th>'+ds.map(d=>'<th'+(d.late&&d.late.n?' class="lated"':'')+'>'+md(d.date)+' ('+DOWE[d.dow]+')'+tag(d)+pend(d)+'</th>').join('')+'</tr>';
+    h+='<tr class="sec"><td class="g" rowspan="4">AP</td><td class="c">MXN</td>'+ds.map(d=>listCell(d,'out','MXN')).join('')+'</tr>';
+    h+='<tr class="tot"><td class="c">Total</td>'+numRow(d=>d.out.MXN)+'</tr>';
+    h+='<tr class="sec"><td class="c">USD</td>'+ds.map(d=>listCell(d,'out','USD')).join('')+'</tr>';
+    h+='<tr class="tot"><td class="c">Total</td>'+numRow(d=>d.out.USD)+'</tr>';
+    h+='<tr class="close first"><td class="g" rowspan="2">Closing<br>Balance</td><td class="c">MXN</td>'+numRow(d=>d.close.MXN)+'</tr>';
+    h+='<tr class="close"><td class="c">USD</td>'+numRow(d=>d.close.USD)+'</tr>';
+    h+='<tr class="eq"><td colspan="2"></td>'+ds.map(d=>'<td class="v num'+(d.close_eq<0?' neg':'')+'">'+fn(d.close_eq)+'</td>').join('')+'</tr>';
+    h+='</tbody></table>';
+    return h;
+  }
+
+  // ═════════ 월간실적 ═════════
+  async function loadMonth(){
+    $('mRng').textContent=monthK(S.month);
+    $('mNext').disabled = shiftMonth(S.month,1)+'-01' >= mxToday();
+    $('mKpis').innerHTML=''; $('mTable').innerHTML='<div class="hint" style="padding:14px">불러오는 중…</div>'; $('mChart').innerHTML='';
+    try{ const d=await api('/api/treasury/month?month='+S.month); S.mdata=d; S.open=new Set(); $('mScope').innerHTML=scopeText(d.scope); renderMonth(d); }
+    catch(e){ $('mTable').innerHTML='<div class="msg err" style="margin:12px">'+esc(errTxt(e))+'</div>'; }
+  }
+  function renderMonth(d){
+    const s=d.summary;
+    $('mNote').textContent = d.partial ? ('진행 중 · '+md(d.from)+'~'+(d.days.length?md(d.days[d.days.length-1].date):'')+' 누계 (어제까지)') : '마감된 달';
+    if(!s){ $('mKpis').innerHTML='<div class="hint">이 달은 아직 마감된 날이 없습니다.</div>'; $('mTable').innerHTML=''; $('mTopIn').innerHTML=''; $('mTopOut').innerHTML=''; return; }
+    const pair=(o)=>'MXN '+f0(o.MXN)+(Math.abs(o.USD)>=0.5?' · USD '+f0(o.USD):'');
+    const chg=(s.close_eq!=null&&s.open_eq!=null)?s.close_eq-s.open_eq:null;
+    const k=[
+      ['월초 잔고 (MXN 환산)', f0(s.open_eq), pair(s.open)],
+      ['수금 합계', f0(s.in_eq), s.in_n+'건 · '+pair(s.in),'in'],
+      ['지급 합계', f0(s.out_eq), s.out_n+'건 · '+pair(s.out),'out'],
+      ['순액', (s.net_eq>=0?'+':'−')+f0(Math.abs(s.net_eq)), '거래일 '+s.moved_days+'일'+(s.adj.MXN||s.adj.USD?' · 계좌개설 '+pair(s.adj):'')],
+      [(d.partial?'어제':'월말')+' 잔고 (MXN 환산)', f0(s.close_eq), pair(s.close)+(chg!=null?' · 증감 '+(chg>=0?'+':'−')+f0(Math.abs(chg)):'')],
+      ['최저 잔고', s.min?f0(s.min.close_eq):'—', s.min?md(s.min.date)+' ('+DOWK[dowOf(s.min.date)]+')':''],
+    ];
+    if(s.pending&&s.pending.n) k.push(['승인 대기(잔고 미반영)', s.pending.n+'건', 'MXN '+f0(s.pending.amount_mxn)]);
+    $('mKpis').innerHTML=k.map(x=>'<div class="kpi '+(x[3]||'')+'"><div class="l">'+x[0]+'</div><div class="v">'+x[1]+'</div><div class="s">'+esc(x[2])+'</div></div>').join('');
+    renderChart(d.days);
+    renderMonthTable(d);
+    const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
+    const topT=(arr,head)=>arr.length?'<table class="sm"><thead><tr><th>'+head+'</th><th class="num">건수</th><th class="num">MXN 환산</th><th class="num">비중</th></tr></thead><tbody>'
+      +arr.map(x=>'<tr><td>'+esc(x.name)+(x.private?' <span class="badge mute">비공개</span>':'')+'</td><td class="num">'+x.n+'</td><td class="num">'+f0(x.amount_mxn)+'</td><td class="num">'+(arr.reduce((a,b)=>a+b.amount_mxn,0)?Math.round(x.amount_mxn/ (head==='수금처'?s.in_eq:s.out_eq)*100):0)+'%</td></tr>').join('')+'</tbody></table>'
+      :'<div class="hint">내역 없음</div>';
+    $('mTopIn').innerHTML=topT(s.top_in,'수금처');
+    $('mTopOut').innerHTML=topT(s.by_category_out,'계정과목');
+  }
+  function renderMonthTable(d){
+    const ds=d.days;
+    let h='<table class="mt"><thead><tr><th class="l">일자</th><th>기초 MXN</th><th>기초 USD</th><th>수금 MXN</th><th>수금 USD</th><th>지급 MXN</th><th>지급 USD</th><th>마감 MXN</th><th>마감 USD</th><th>환율</th><th>MXN 환산</th><th>누계 수금</th><th>누계 지급</th><th class="l">상태</th></tr></thead><tbody>';
+    for(const x of ds){
+      const drift=x.snap&&x.snap.drift;
+      const st=[];
+      if(drift) st.push('<span class="badge warn" title="처음 확정 뒤 원장 변경: '+esc(Object.entries(drift).map(([k,v])=>k+' '+(v>0?'+':'')+f0(v)).join(', '))+'">사후 수정</span>');
+      if(x.pending&&x.pending.n) st.push('<span class="badge mute">대기 '+x.pending.n+'</span>');
+      if(x.adj&&(x.adj.MXN||x.adj.USD)) st.push('<span class="badge ok">계좌 개설</span>');
+      if(!x.snap) st.push('<span class="badge mute" title="아직 저장된 스냅샷이 없는 날(표시는 원장 기준)">미저장</span>');
+      h+='<tr class="row'+(x.dow===0?' sun':'')+'" data-d="'+x.date+'"><td class="l">'+(S.open.has(x.date)?'▾ ':'▸ ')+md(x.date)+' ('+DOWK[x.dow]+')</td>'
+        +'<td>'+fn(x.open.MXN)+'</td><td>'+fn(x.open.USD)+'</td>'
+        +'<td class="in">'+fn(x.in.MXN)+'</td><td class="in">'+fn(x.in.USD)+'</td>'
+        +'<td class="out">'+fn(x.out.MXN)+'</td><td class="out">'+fn(x.out.USD)+'</td>'
+        +'<td><b>'+fn(x.close.MXN)+'</b></td><td><b>'+fn(x.close.USD)+'</b></td>'
+        +'<td>'+(x.fx?Number(x.fx).toFixed(2):'')+'</td><td>'+fn(x.close_eq)+'</td>'
+        +'<td class="in">'+fn(x.cum.in_eq)+'</td><td class="out">'+fn(x.cum.out_eq)+'</td><td class="l">'+st.join(' ')+'</td></tr>';
+      if(S.open.has(x.date)){
+        const col=(dir)=>{ const xs=x.items.filter(i=>i.dir===dir); return xs.length? xs.map(i=>'<div class="r"><span title="'+esc([i.private?'비공개':i.name,i.category,i.account,i.sat_no].filter(Boolean).join(' · '))+'"'+(apHtml(i)?' class="ap"':'')+'>'+(apHtml(i)||esc(i.name))+(i.private?' <span class="badge mute">비공개</span>':'')+'</span><span class="num">'+(i.cur==='USD'?'USD ':'')+f0(i.amount)+'</span></div>').join('') : '<div class="hint">없음</div>'; };
+        h+='<tr class="det"><td colspan="14"><div class="detl"><div><h4 style="color:var(--income)">수금 (AR)</h4>'+col('in')+'</div><div><h4 style="color:var(--expense)">지급 (AP)</h4>'+col('out')+'</div></div></td></tr>';
+      }
+    }
+    const s=d.summary;
+    h+='</tbody><tfoot><tr><td class="l">합계</td><td>'+fn(s.open.MXN)+'</td><td>'+fn(s.open.USD)+'</td><td class="in">'+fn(s.in.MXN)+'</td><td class="in">'+fn(s.in.USD)+'</td><td class="out">'+fn(s.out.MXN)+'</td><td class="out">'+fn(s.out.USD)+'</td><td>'+fn(s.close.MXN)+'</td><td>'+fn(s.close.USD)+'</td><td></td><td>'+fn(s.close_eq)+'</td><td class="in">'+fn(s.in_eq)+'</td><td class="out">'+fn(s.out_eq)+'</td><td></td></tr></tfoot></table>';
+    $('mTable').innerHTML=h;
+  }
+  function renderChart(ds){
+    const W=1000,H=220,P={l:64,r:12,t:12,b:26};
+    const pts=ds.filter(d=>d.close_eq!=null);
+    if(!pts.length){ $('mChart').innerHTML='<div class="hint">데이터 없음</div>'; return; }
+    const vals=pts.map(d=>d.close_eq);
+    const flows=ds.map(d=>Math.max(d.in_eq,d.out_eq));
+    let lo=Math.min(0,...vals), hi=Math.max(...vals,...flows,1);
+    const pad_=(hi-lo)*0.08; hi+=pad_; if(lo<0) lo-=pad_;
+    const n=ds.length, bw=(W-P.l-P.r)/n;
+    const x=(i)=>P.l+bw*i+bw/2, y=(v)=>P.t+(H-P.t-P.b)*(1-(v-lo)/(hi-lo));
+    let g='';
+    for(let k=0;k<=4;k++){ const v=lo+(hi-lo)*k/4; g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#EFEBE2"/><text x="'+(P.l-6)+'" y="'+(y(v)+4)+'" text-anchor="end" font-size="11" fill="#6F6A60">'+f0(v)+'</text>'; }
+    if(lo<0) g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+y(0)+'" y2="'+y(0)+'" stroke="#B23A2E" stroke-dasharray="3 3"/>';
+    let bars='';
+    ds.forEach((d,i)=>{ const w=Math.max(2,bw*0.32);
+      if(d.in_eq>0) bars+='<rect x="'+(x(i)-w-1)+'" y="'+y(d.in_eq)+'" width="'+w+'" height="'+(y(0<lo?lo:0)-y(d.in_eq))+'" fill="#0F6E56" opacity=".35"><title>'+md(d.date)+' 수금 '+f0(d.in_eq)+'</title></rect>';
+      if(d.out_eq>0) bars+='<rect x="'+(x(i)+1)+'" y="'+y(d.out_eq)+'" width="'+w+'" height="'+(y(0<lo?lo:0)-y(d.out_eq))+'" fill="#B23A2E" opacity=".35"><title>'+md(d.date)+' 지급 '+f0(d.out_eq)+'</title></rect>';
+    });
+    const path=ds.map((d,i)=>d.close_eq==null?null:(x(i)+','+y(d.close_eq))).filter(Boolean);
+    const line='<polyline fill="none" stroke="#143D34" stroke-width="2.2" points="'+path.join(' ')+'"/>'
+      +ds.map((d,i)=>d.close_eq==null?'':'<circle cx="'+x(i)+'" cy="'+y(d.close_eq)+'" r="3" fill="'+(d.close_eq<0?'#B23A2E':'#143D34')+'"><title>'+md(d.date)+' 마감 '+f0(d.close_eq)+'</title></circle>').join('');
+    const lab=ds.map((d,i)=>(i%Math.ceil(n/15)===0||i===n-1)?'<text x="'+x(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="11" fill="#6F6A60">'+md(d.date)+'</text>':'').join('');
+    $('mChart').innerHTML='<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="일별 마감잔고 추이">'+g+bars+line+lab+'</svg>';
+  }
+  async function loadXlsx(){
+    if(window.XLSX) return;
+    await new Promise((ok,no)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js'; s.onload=ok; s.onerror=no; document.head.appendChild(s); });
+  }
+  async function exportMonth(){
+    const d=S.mdata; if(!d||!d.summary) return;
+    try{ await loadXlsx(); }catch(e){ alert('Excel 라이브러리를 불러오지 못했습니다.'); return; }
+    const H={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}}};
+    const numFmt='#,##0;(#,##0);-';
+    const sheet=(head,rows,widths)=>{ const ws=XLSX.utils.aoa_to_sheet([head,...rows]); ws['!cols']=widths.map(w=>({wch:w}));
+      head.forEach((h,i)=>{const c=ws[XLSX.utils.encode_cell({r:0,c:i})]; if(c) c.s=H;});
+      for(let r=1;r<=rows.length;r++) for(let c=0;c<head.length;c++){ const cell=ws[XLSX.utils.encode_cell({r,c})]; if(cell&&typeof cell.v==='number') cell.z=numFmt; }
+      return ws; };
+    const wb=XLSX.utils.book_new();
+    const s=d.summary;
+    XLSX.utils.book_append_sheet(wb, sheet(['항목','MXN','USD','MXN 환산'],[
+      ['월초 잔고',s.open.MXN,s.open.USD,s.open_eq],['수금',s.in.MXN,s.in.USD,s.in_eq],['지급',s.out.MXN,s.out.USD,s.out_eq],
+      ['계좌 개설',s.adj.MXN,s.adj.USD,null],[d.partial?'어제 잔고':'월말 잔고',s.close.MXN,s.close.USD,s.close_eq],['순액',null,null,s.net_eq],
+      ['최저 잔고일', s.min?s.min.date:'', '', s.min?s.min.close_eq:null],['승인 대기(미반영)', s.pending.n+'건','',s.pending.amount_mxn]],[18,14,14,14]), '요약');
+    XLSX.utils.book_append_sheet(wb, sheet(['일자','요일','기초 MXN','기초 USD','수금 MXN','수금 USD','지급 MXN','지급 USD','계좌개설','마감 MXN','마감 USD','환율','MXN 환산','누계 수금','누계 지급','사후 수정'],
+      d.days.map(x=>[x.date,DOWK[x.dow],x.open.MXN,x.open.USD,x.in.MXN,x.in.USD,x.out.MXN,x.out.USD,(x.adj.MXN||0)+(x.adj.USD||0),x.close.MXN,x.close.USD,x.fx,x.close_eq,x.cum.in_eq,x.cum.out_eq,x.snap&&x.snap.drift?'Y':'']),
+      [11,5,12,11,12,11,12,11,10,12,11,8,13,13,13,8]), '일별');
+    const it=[]; for(const x of d.days) for(const i of x.items) it.push([x.date,i.dir==='in'?'수금':'지급',i.name,i.category||'',i.account||'',i.sat_no||'',i.cur,i.amount,i.amount_mxn,i.private?'비공개':'']);
+    XLSX.utils.book_append_sheet(wb, sheet(['일자','구분','거래처/항목','계정과목','계좌','Folio','통화','금액','MXN 환산','비고'], it, [11,6,26,18,16,10,6,12,12,8]), '거래내역');
+    XLSX.writeFile(wb, 'Refatrix_월간자금실적_'+d.month+'.xlsx');
+  }
+
+  // ═════════ WhatsApp ═════════
+  async function loadWa(){
+    try{ const [st,rc,ac]=await Promise.all([api('/api/treasury/wa/status'),api('/api/treasury/recipients'),api('/api/treasury/accounts')]); S.wa=st; S.rc=rc.items; S.acc=ac.accounts; renderWa(); renderAcc(); }
+    catch(e){ $('waStatus').innerHTML='<div class="msg err">'+esc(errTxt(e))+'</div>'; }
+  }
+  function renderWa(){
+    const st=S.wa, sc=st.schedule;
+    let h='';
+    if(st.api_ready) h+='<div class="msg ok" style="margin-top:0">✅ WhatsApp 발송 사용 가능'+(st.template?' · 창 밖 폴백 템플릿 <code>'+esc(st.template)+'</code>':' · <b>폴백 템플릿 없음</b>')+'</div>';
+    else h+='<div class="msg err" style="margin-top:0">⚠ WhatsApp 미설정 — Railway 변수 '+(!st.token_set?'<code>WHATSAPP_TOKEN</code> ':'')+(!st.phone_id_set?'<code>WHATSAPP_PHONE_ID</code>':'')+' 필요. (스냅샷 누적은 설정과 무관하게 매일 계속됩니다)</div>';
+    const wh=st.webhook||{};
+    h+=wh.configured
+      ?'<div class="hint" style="margin-top:8px">📡 실제 전달 상태(웹훅): <b>연결됨</b>'+(wh.last_event_at?' · 마지막 알림 '+esc(new Date(wh.last_event_at).toLocaleString()):' · <b>아직 받은 알림 없음</b> — Meta 앱의 웹훅 등록·<code>messages</code> 구독 확인')+'</div>'
+      :'<div class="msg warn">📡 웹훅 미설정 — 「접수」만 알 수 있고 실제 도착·읽음·실패는 알 수 없습니다. 관리 → 외부 서비스 키 → WhatsApp 의 <b>웹훅 확인 토큰 · 앱 시크릿</b>을 넣고 Meta 앱에 웹훅을 등록하세요.</div>';
+    if(!st.enabled) h+='<div class="msg err">⚠ <code>TREASURY_DAILY_ENABLED=0</code> — 자동 누적·발송이 꺼져 있습니다.</div>';
+    h+='<div class="hint" style="margin-top:8px">📷 발송 형식: <b>'+(st.format==='image'?(st.image_ready?'표 이미지 + 한 줄 캡션':'이미지(폰트 파일 없음 → 텍스트로 대체)'):'텍스트')+'</b>'
+      +(st.image_template?' · 창 밖 이미지 템플릿 <code>'+esc(st.image_template)+'</code>':' · 창 밖이면 <code>TREASURY_WA_IMAGE_TEMPLATE</code>(헤더 이미지 + 본문 {{1}}) 승인 시 이미지로, 없으면 한 줄 텍스트 템플릿')+'</div>';
+    const dS=sc.daily||{send_time:sc.send_hour_mx+':00',target_day:'yesterday',enabled:true}, mS=sc.monthly||{send_time:sc.send_hour_mx+':00',target_day:'yesterday',enabled:true};
+    h+='<div class="hint" style="margin-top:8px">⏰ <b>일일</b>: '+(dS.enabled===false?'<b style="color:var(--expense)">꺼짐</b>':'멕시코 매일 <b>'+esc(dS.send_time)+'</b> · '+(dS.target_day==='today'?'그날 마감분':'전날분')+(dS.skip_empty_sunday?' · 일요일 무거래 생략':''))
+      +' · <b>월간</b>: '+(mS.enabled===false?'<b style="color:var(--expense)">꺼짐</b>':(mS.target_day==='today'?'말일 '+esc(mS.send_time)+' 그달 실적':'매월 1일 '+esc(mS.send_time)+' 지난달 실적')+' (놓치면 1~'+sc.monthly_days+'일 따라잡기)')
+      +' · <a href="'+esc(sc.page||'refatrix-wasched.html')+'">⏱ 발송 시각 변경</a> · 실패 시 5분 간격 최대 '+sc.max_attempts+'회 재시도 · 성공은 수신자별 1회.<br>'
+      +'자유 텍스트는 수신자가 최근 24시간 안에 비즈니스 번호로 메시지를 보낸 경우에만 도달합니다(Meta 정책). 매일 확실히 받으려면 본문 <code>{{1}}</code> 유틸리티 템플릿을 승인받아 <code>TREASURY_WA_TEMPLATE</code>(또는 공용 <code>WHATSAPP_TEMPLATE</code>)에 등록하세요 — 그러면 창 밖에서도 한 줄 요약이 도착합니다.</div>';
+    $('waStatus').innerHTML=h;
+    $('sendBtn').disabled=!st.api_ready;
+    // 수신자
+    if(!S.rc.length) $('rcList').innerHTML='<div class="hint">아직 수신자가 없습니다. 아래에서 추가하세요 — <b>등록된 사람에게만</b> 발송됩니다.</div>';
+    else $('rcList').innerHTML='<table class="sm"><thead><tr><th>이름</th><th>번호</th><th title="수신자가 최근 24시간 안에 회사 번호로 메시지를 보냈으면 열림 — 열려 있어야 자유 메시지(이미지)가 도착하고, 닫혀 있으면 승인된 템플릿으로만 도착합니다">24시간 창</th><th>언어</th><th>일일</th><th>월간</th><th>사용</th><th></th></tr></thead><tbody>'
+      +S.rc.map(r=>'<tr data-id="'+r.id+'"><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.phone_masked)+'</td><td>'+winCell(r)+'</td>'
+        +'<td><select data-f="lang"><option value="es"'+(r.lang==='es'?' selected':'')+'>Español</option><option value="ko"'+(r.lang==='ko'?' selected':'')+'>한국어</option></select></td>'
+        +'<td><input type="checkbox" data-f="get_daily"'+(r.get_daily?' checked':'')+'></td>'
+        +'<td><input type="checkbox" data-f="get_monthly"'+(r.get_monthly?' checked':'')+'></td>'
+        +'<td><input type="checkbox" data-f="active"'+(r.active?' checked':'')+'></td>'
+        +'<td style="text-align:right"><button class="btn sm ghost" data-act="send1">📲 테스트</button> <button class="btn sm danger" data-act="del">삭제</button></td></tr>').join('')+'</tbody></table>';
+    // 원장
+    const L={daily:'일일',monthly:'월간'};
+    $('waLog').innerHTML=st.recent.length?'<table class="sm"><thead><tr><th>종류</th><th>기간</th><th>수신자</th><th>발송(접수)</th><th>실제 전달</th><th>시도</th><th>마지막 접수</th></tr></thead><tbody>'
+      +st.recent.map(x=>'<tr><td>'+L[x.kind]+'</td><td>'+esc(x.period)+'</td><td>'+esc(x.name||'')+' <span class="hint">'+esc(x.to_masked||'')+'</span></td>'
+        +'<td>'+(x.status==='failed'?'<span class="badge bad">실패</span><div class="hint why">'+esc(x.error||'')+'</div>':'<span class="badge ok">'+({sent_image:'이미지',sent_image_template:'이미지 템플릿',sent_template:'텍스트 템플릿',sent_text:'텍스트'}[x.status]||x.status)+'</span>')+'</td>'
+        +'<td>'+dlvCell(x,wh)+'</td>'
+        +'<td>'+x.attempts+'</td><td>'+(x.sent_at?esc(new Date(x.sent_at).toLocaleString()):'—')+'</td></tr>').join('')+'</tbody></table>'
+      :'<div class="hint">발송 기록 없음</div>';
+  }
+  // 0253 · 웹훅 — 실제 전달 상태 / 24시간 창
+  function tm(t){ return t?esc(new Date(t).toLocaleString()):''; }
+  function dlvCell(x,wh){
+    if(x.status==='failed') return '<span class="hint">—</span>';
+    if(!wh.configured) return '<span class="hint" title="웹훅 미설정 — 도착 여부를 알 수 없음">알 수 없음</span>';
+    if(x.dlv_status==='read') return '<span class="badge dlv-read" title="읽음 '+tm(x.read_at)+'">👁 읽음</span><div class="hint">'+tm(x.read_at)+'</div>';
+    if(x.dlv_status==='delivered') return '<span class="badge ok" title="도착 '+tm(x.delivered_at)+'">✓✓ 도착</span><div class="hint">'+tm(x.delivered_at)+'</div>';
+    if(x.dlv_status==='failed') return '<span class="badge bad">✗ 전달 실패</span><div class="hint why">'+esc(x.dlv_reason||'')+(x.dlv_code?' <code>'+esc(String(x.dlv_code))+'</code>':'')+'</div>';
+    if(x.dlv_status==='sent') return '<span class="badge mute" title="Meta 서버 출발 — 아직 휴대폰 도착 알림 없음">✓ 출발</span>';
+    return '<span class="badge mute" title="아직 웹훅 알림 없음">대기</span>';
+  }
+  function winCell(r){
+    if(r.window_open===null||r.window_open===undefined) return '<span class="hint" title="웹훅 미설정 — 알 수 없음">—</span>';
+    return r.window_open
+      ?'<span class="badge ok" title="마지막 메시지 '+tm(r.inbound_at)+'">열림</span>'
+      :'<span class="badge mute" title="'+(r.inbound_at?'마지막 메시지 '+tm(r.inbound_at):'이 번호에서 받은 메시지 없음')+' — 템플릿으로만 도착">닫힘</span>';
+  }
+  function renderAcc(){
+    const xs=S.acc||[];
+    if(!xs.length){ $('accList').innerHTML='<div class="hint">계좌 없음</div>'; return; }
+    const mode=(a)=>a.treasury_exclude===true?'exclude':a.treasury_exclude===false?'include':'auto';
+    $('accList').innerHTML='<table class="sm"><thead><tr><th>계좌</th><th>유형</th><th>통화</th><th>집계</th><th>설정</th></tr></thead><tbody>'
+      +xs.map(a=>'<tr data-id="'+a.id+'"><td><b>'+esc(a.name)+'</b>'+(a.non_deductible?' <span class="badge mute">불공제</span>':'')+(a.disabled?' <span class="badge mute">안씀</span>':'')+'</td><td>'+esc(a.type||'—')+'</td><td>'+esc(a.currency)+'</td>'
+        +'<td>'+(a.included?'<span class="badge ok">포함</span>':'<span class="badge bad">제외</span>')+' <span class="hint">'+(REASON[a.reason]||'')+'</span></td>'
+        +'<td><select data-acc="1"><option value="auto"'+(mode(a)==='auto'?' selected':'')+'>자동</option><option value="include"'+(mode(a)==='include'?' selected':'')+'>항상 포함</option><option value="exclude"'+(mode(a)==='exclude'?' selected':'')+'>항상 제외</option></select></td></tr>').join('')+'</tbody></table>';
+  }
+  async function addRc(){
+    const m=$('rcMsg');
+    try{
+      await api('/api/treasury/recipients',{method:'POST',body:JSON.stringify({name:$('rcName').value,phone:$('rcPhone').value,lang:$('rcLang').value,get_daily:$('rcDaily').checked,get_monthly:$('rcMonthly').checked})});
+      $('rcName').value=''; $('rcPhone').value=''; flash(m,'추가했습니다.',true); loadWa();
+    }catch(e){ flash(m,errTxt(e)); }
+  }
+  async function preview(){
+    const m=$('pvMsg'); m.className='msg';
+    const q='kind='+$('pvKind').value+'&lang='+$('pvLang').value+($('pvPeriod').value.trim()?'&period='+encodeURIComponent($('pvPeriod').value.trim()):'');
+    try{
+      const d=await api('/api/treasury/wa/preview?'+q); $('pvText').textContent=d.text; $('pvText').classList.remove('hidden');
+      flash(m,(d.kind==='monthly'?'월간 ':'일일 ')+d.period+' · 캡션: '+d.headline,true);
+      if(S.wa&&S.wa.format==='image'){
+        const res=await fetch(session.api+'/api/treasury/wa/image?'+q,{headers:auth()});
+        if(res.ok){ const u8=new Uint8Array(await res.arrayBuffer()); let bin=''; for(let i=0;i<u8.length;i+=0x8000) bin+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); $('pvImg').src='data:image/png;base64,'+btoa(bin); $('pvImgWrap').classList.remove('hidden'); }
+        else { $('pvImgWrap').classList.add('hidden'); flash(m,'이미지를 만들 수 없어 텍스트로 발송됩니다 (서버 이미지 렌더러 확인 필요)'); }
+      } else $('pvImgWrap').classList.add('hidden');
+    }
+    catch(e){ flash(m,errTxt(e)); $('pvText').classList.add('hidden'); $('pvImgWrap').classList.add('hidden'); }
+  }
+  async function sendNow(recipientId){
+    const kind=recipientId?'daily':$('pvKind').value;
+    const per=recipientId?'':$('pvPeriod').value.trim();
+    const who=recipientId?'이 수신자에게 어제 일일 요약을':('「'+(kind==='monthly'?'월간':'일일')+'」 수신자 전원에게');
+    if(!confirm(who+' 지금 발송할까요? (이미 받은 사람에게도 다시 갑니다)')) return;
+    const m=$('pvMsg');
+    try{
+      const body={kind}; if(per) body.period=per; if(recipientId) body.recipient_id=recipientId;
+      const d=await api('/api/treasury/wa/send',{method:'POST',body:JSON.stringify(body)});
+      const ok=d.results.filter(r=>r.ok).length;
+      flash(m,d.period+' 발송: 접수 '+ok+' / '+d.results.length+(ok<d.results.length?' — 실패 사유는 아래 원장에 표시':'')+((S.wa&&S.wa.webhook&&S.wa.webhook.configured)?' · 실제 도착 여부는 원장 「실제 전달」 칸에 몇 초 뒤 표시됩니다':''), ok===d.results.length);
+      loadWa(); setTimeout(loadWa,8000); setTimeout(loadWa,25000);
+    }catch(e){ flash(m,errTxt(e)); }
+  }
+
+  // ═════════ 이벤트 ═════════
+  document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
+  $('wPrev').addEventListener('click',()=>{ S.week=addDays(S.week,-7); loadWeek(); });
+  $('wNext').addEventListener('click',()=>{ S.week=addDays(S.week,7); loadWeek(); });
+  $('wThis').addEventListener('click',()=>{ S.week=mxToday(); loadWeek(); });
+  $('wTwo').addEventListener('change',()=>{ S.two=$('wTwo').checked; loadWeek(); });
+  $('wRoll').addEventListener('change',async()=>{
+    const on=$('wRoll').checked;
+    try{ await api('/api/treasury/settings',{method:'PUT',body:JSON.stringify({ar_roll:on})}); loadWeek(); }
+    catch(e){ $('wRoll').checked=!on; $('wOverdue').innerHTML='<div class="msg err" style="display:block">'+esc(e.code==='migration_required'?'설정 저장에 마이그레이션이 필요합니다 — npm run migrate (0290)':errTxt(e))+'</div>'; }
+  });
+  $('wItems').addEventListener('change',()=>{ if(S.wdata) renderWeek(S.wdata); });
+  $('wPrint').addEventListener('click',()=>window.print());
+  $('mPrev').addEventListener('click',()=>{ S.month=shiftMonth(S.month,-1); loadMonth(); });
+  $('mNext').addEventListener('click',()=>{ S.month=shiftMonth(S.month,1); loadMonth(); });
+  $('mPrint').addEventListener('click',()=>window.print());
+  $('mXlsx').addEventListener('click',exportMonth);
+  $('mRefresh').addEventListener('click',async()=>{ const b=$('mRefresh'); b.disabled=true; try{ const r=await api('/api/treasury/snapshots/refresh',{method:'POST',body:JSON.stringify({month:S.month})}); b.textContent='↻ '+r.saved+'일 갱신됨'; await loadMonth(); }catch(e){ alert(errTxt(e)); } finally{ b.disabled=false; setTimeout(()=>{b.textContent='↻ 스냅샷 갱신';},2500); } });
+  $('mTable').addEventListener('click',(e)=>{ const tr=e.target.closest('tr.row'); if(!tr) return; const d=tr.dataset.d; if(S.open.has(d)) S.open.delete(d); else S.open.add(d); renderMonthTable(S.mdata); });
+  $('rcAdd').addEventListener('click',addRc);
+  $('accList').addEventListener('change',async(e)=>{ const el=e.target; if(!el.dataset.acc) return; const id=el.closest('tr').dataset.id;
+    try{ const r=await api('/api/treasury/accounts/'+id,{method:'PATCH',body:JSON.stringify({mode:el.value})}); S.acc=r.accounts; renderAcc(); }
+    catch(err){ alert(errTxt(err)); loadWa(); } });
+  $('rcList').addEventListener('change',async(e)=>{ const el=e.target; const f=el.dataset.f; if(!f) return; const id=el.closest('tr').dataset.id;
+    const body={}; body[f]=el.type==='checkbox'?el.checked:el.value;
+    try{ await api('/api/treasury/recipients/'+id,{method:'PATCH',body:JSON.stringify(body)}); const r=S.rc.find(x=>String(x.id)===id); if(r) r[f]=body[f]; }
+    catch(err){ alert(errTxt(err)); loadWa(); } });
+  $('rcList').addEventListener('click',async(e)=>{ const b=e.target.closest('button[data-act]'); if(!b) return; const id=Number(b.closest('tr').dataset.id);
+    if(b.dataset.act==='del'){ if(!confirm('이 수신자를 삭제할까요?')) return; try{ await api('/api/treasury/recipients/'+id,{method:'DELETE'}); loadWa(); }catch(err){ alert(errTxt(err)); } }
+    else if(b.dataset.act==='send1'){ sendNow(id); } });
+  $('pvBtn').addEventListener('click',preview);
+  $('sendBtn').addEventListener('click',()=>sendNow(null));
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  (function boot(){ const ps=portalSession(); if(ps&&ps.token) login(); })();
+</script>
+<script src="refatrix-nav.js?v=20261127hr"></script>
+</body>
+</html>

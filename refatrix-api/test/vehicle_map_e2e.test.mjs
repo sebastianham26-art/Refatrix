@@ -40,6 +40,8 @@ async function cleanup() {
     const uids = (await query(`SELECT id FROM users WHERE name LIKE '${TAG}%'`)).rows.map((r) => Number(r.id));
     await query(`DELETE FROM user_page_access WHERE user_id = ANY($1::bigint[])`, [uids]).catch(() => {});
     await query(`DELETE FROM audit_log WHERE user_id = ANY($1::bigint[])`, [uids]).catch(() => {});
+    await query(`DELETE FROM customer_meetings WHERE created_by = ANY($1::bigint[])`, [uids]).catch(() => {});
+    await query(`DELETE FROM customer_stage_history WHERE created_by = ANY($1::bigint[])`, [uids]).catch(() => {});
     await query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [uids]);
   } catch (e) { console.log('# cleanup(무시)', e.message); }
 }
@@ -53,6 +55,8 @@ test('boot', { skip: SKIP }, async () => {
   ID.dir = await mkU('dir', 'director');
   ID.sales = await mkU('sales', 'sales');
   ID.none = await mkU('none', 'sales');
+  ID.qonly = await mkU('qonly', 'sales');   // 11-27f · 견적 화면 권한만 — 견적에서 차종으로 찾아 담기
+  await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'quote','anywhere','edit')`, [ID.qonly]);
   await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,'products','anywhere','view')`, [ID.sales]);
   const mkP = async (sfx, name, stock, app, syd, extra = {}) => {
     const code = TAG + sfx;
@@ -122,6 +126,7 @@ test('boot', { skip: SKIP }, async () => {
   tok.dir = app.jwt.sign({ sub: ID.dir });
   tok.sales = app.jwt.sign({ sub: ID.sales });
   tok.none = app.jwt.sign({ sub: ID.none });
+  tok.qonly = app.jwt.sign({ sub: ID.qonly });
 });
 after(async () => {
   if (!PG) return;
@@ -136,7 +141,11 @@ const url = (y) => `/api/products/vehicle-map?maker=${encodeURIComponent(MK)}&mo
 
 test('① 차종 → CTR 제품 · 연식 · 필수값 · 권한', { skip: SKIP }, async () => {
   assert.equal((await get(`/api/products/vehicle-map?maker=${MK}`)).statusCode, 400, '모델 필수');
-  assert.equal((await get(url(2015), 'none')).statusCode, 403, '제품 화면 권한 없으면 403');
+  assert.equal((await get(url(2015), 'none')).statusCode, 403, '제품 · 견적 화면 권한 없으면 403');
+  assert.equal((await get(url(2015), 'qonly')).statusCode, 200, '11-27f · 견적 화면 권한만 있어도 차량 도면');
+  for (const ep of ['app-makers', `app-models?maker=${encodeURIComponent(MK)}`, `app-years?maker=${encodeURIComponent(MK)}`])
+    assert.equal((await get('/api/products/' + ep, 'qonly')).statusCode, 200, ep + ' — 견적 사용자');
+  assert.equal((await get(url(2015))).json().items.find((x) => x.code === ID.A.code).is_active, true, 'is_active 포함');
   const r = await get(url(2015));
   assert.equal(r.statusCode, 200, r.body);
   const d = r.json();
@@ -280,4 +289,30 @@ test('⑦ 11-27e · 한 칸에 메이커 여럿(FORD, MERCURY) — 낱개 메이
   }
   const bv = (await get(`/api/products/by-vehicle?maker=${encodeURIComponent(M)}`)).json();
   assert.deepEqual(bv.items.map((x) => x.code).sort(), [TAG + '-F1', TAG + '-F3'].sort());
+});
+
+test('⑧ 11-27f · 도면에서 담은 줄 그대로 견적 저장 → 재고부족 표시 · CTR 없는 코드는 개발요청(입력 브랜드)', { skip: SKIP }, async () => {
+  const cid = Number((await query(`SELECT id FROM customers WHERE name = $1`, [TAG + '고객'])).rows[0].id);
+  // 견적 화면 qvmPick 이 만드는 줄과 같은 모양
+  const lines = [
+    { code: ID.A.code, product_id: ID.A.id, qty: 20 },        // 창고 12 → 부족
+    { code: 'BW-99', brand: 'BAW', qty: 2 },                    // ⑤의 3행 — CTR 없음
+  ];
+  const pv = await app.inject({ method: 'POST', url: '/api/quotes/preview', headers: { authorization: 'Bearer ' + tok.dir }, payload: { customer_id: cid, lines } });
+  assert.equal(pv.statusCode, 200, pv.body);
+  const pl = pv.json().lines;
+  assert.equal(pl[0].matched, true);
+  assert.notEqual(pl[0].stock_flag, 'ok', '재고 12 < 20 → 부족 표시');
+  assert.equal(pl[1].matched, false); assert.equal(pl[1].stock_flag, 'not_found'); assert.equal(pl[1].input_brand, 'BAW');
+  const sv = await app.inject({ method: 'POST', url: '/api/quotes', headers: { authorization: 'Bearer ' + tok.dir }, payload: { customer_id: cid, lines } });
+  assert.equal(sv.statusCode, 200, sv.body);
+  const qid = Number(sv.json().id);
+  const ql = (await query(`SELECT input_code, product_id, qty, stock_flag FROM quote_lines WHERE quote_id=$1 ORDER BY line_no`, [qid])).rows;
+  assert.equal(Number(ql[0].product_id), ID.A.id); assert.notEqual(ql[0].stock_flag, 'ok');
+  assert.equal(ql[1].product_id, null); assert.equal(ql[1].stock_flag, 'not_found');
+  const dr = (await query(`SELECT input_code, input_brand FROM product_dev_requests WHERE source_quote_id=$1`, [qid])).rows;
+  assert.deepEqual(dr.map((r) => [r.input_code, r.input_brand]), [['BW-99', 'BAW']], '개발요청 · 입력 브랜드');
+  await query(`DELETE FROM product_dev_requests WHERE source_quote_id=$1`, [qid]);
+  await query(`DELETE FROM quote_lines WHERE quote_id=$1`, [qid]).catch(() => {});
+  await query(`DELETE FROM quotes WHERE id=$1`, [qid]).catch(() => {});
 });

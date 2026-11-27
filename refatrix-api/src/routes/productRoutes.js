@@ -1,5 +1,7 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requireDirector, requirePageAny } from '../middleware/authGuard.js';
+// 11-27f · 차종 드롭다운은 제품 화면 + 견적 화면(차종으로 찾아 담기)에서 같이 쓴다
+const VM_PAGES = ['products', 'quote', 'sales'];
 import { minimizeProduct, fieldVisible } from '../permissions.js';
 import { verifyPin } from '../auth.js';
 import { logPageView, logEvent } from '../audit.js';
@@ -1560,13 +1562,13 @@ export default async function productRoutes(app) {
   }
 
   // 차종 드롭다운: 메이커 목록
-  app.get('/api/products/app-makers', { preHandler: [authGuard, requirePage('products')] }, async () => {
+  app.get('/api/products/app-makers', { preHandler: [authGuard, requirePageAny(VM_PAGES)] }, async () => {
     const groups = await nameGroups('maker', [`maker IS NOT NULL AND maker <> ''`], [], true);
     return { items: groups.map((g) => g.label), groups };
   });
 
   // 차종 드롭다운: (메이커별) 모델 목록
-  app.get('/api/products/app-models', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+  app.get('/api/products/app-models', { preHandler: [authGuard, requirePageAny(VM_PAGES)] }, async (req) => {
     const maker = String(req.query.maker || '').trim();
     const params = []; const conds = [`model IS NOT NULL AND model <> ''`];
     if (maker) makerCond('maker', maker, conds, params);
@@ -1575,7 +1577,7 @@ export default async function productRoutes(app) {
   });
 
   // 차종 드롭다운: (메이커·모델별) 개별 연도 목록(범위를 펼침)
-  app.get('/api/products/app-years', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+  app.get('/api/products/app-years', { preHandler: [authGuard, requirePageAny(VM_PAGES)] }, async (req) => {
     const maker = String(req.query.maker || '').trim();
     const model = String(req.query.model || '').trim();
     const params = []; const conds = [`year_from IS NOT NULL AND year_to IS NOT NULL`];

@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 const P_HTML = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'refatrix-products.html');
+const P_MOD = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'refatrix-vehiclemap.js');   // 11-27f · 공용 모듈(jsdom 은 외부 script 를 안 읽으므로 직접 넣는다)
 import assert from 'node:assert/strict';
 const html=fs.readFileSync(P_HTML,'utf8');
 const b64=(o)=>Buffer.from(JSON.stringify(o)).toString('base64').replace(/=+$/,'');
@@ -23,6 +24,7 @@ const VM={vehicle:{maker:'NISSAN',model:'Versa',year:2015},
 const calls=[];
 const dom=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'https://erp.refatrix.com/refatrix-products.html',
  beforeParse(w){
+  w.eval(fs.readFileSync(P_MOD,'utf8'));
   w.sessionStorage.setItem('refatrix_session',JSON.stringify({token:tok,api:'https://api.test',user:{name:'Dir',role:'director'}}));
   w.localStorage.removeItem('refatrix_find_mode');
   w.scrollTo=()=>{}; w.HTMLElement.prototype.scrollIntoView=function(){};

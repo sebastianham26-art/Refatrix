@@ -1,0 +1,385 @@
+import { query, withTx } from '../db.js';
+import { authGuard, requireDirector } from '../middleware/authGuard.js';
+import { hashPin } from '../auth.js';
+import { logEvent } from '../audit.js';
+import { ROLE_DEFAULTS, SCREEN_PAGE_KEY, applyRoleDefaults } from '../roleDefaults.js';
+import { isSecretAccount } from '../permissions.js';
+
+function genPin() { return String(Math.floor(1000 + Math.random() * 9000)); }
+
+export default async function userRoutes(app) {
+  // 사용자 목록(디렉터): 역할·팀·페이지 권한
+  app.get('/api/users', { preHandler: [authGuard, requireDirector] }, async () => {
+    const users = (await query(
+      `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, u.restrict_cash_detail, u.device_locked, u.wa_phone, t.name AS team_name
+         FROM users u LEFT JOIN sales_teams t ON t.id=u.team_id
+        WHERE u.deleted_at IS NULL ORDER BY u.role, u.name`)).rows;
+    const pages = (await query(`SELECT user_id, page_key, access FROM user_page_access`)).rows;
+    const pagesByUser = {};
+    const accessByUser = {};
+    for (const p of pages) { (pagesByUser[p.user_id] ||= []).push(p.page_key); (accessByUser[p.user_id] ||= {})[p.page_key] = p.access || 'edit'; }
+    const grants = (await query(`SELECT user_id, team_id FROM user_team_access`)).rows;
+    const teamAccessByUser = {};
+    for (const g of grants) (teamAccessByUser[g.user_id] ||= []).push(Number(g.team_id));
+    // 사용자별 민감 필드 권한(sale_price 등) — 목록에서 인라인 토글용
+    const fieldRows = (await query(`SELECT user_id, field_key FROM user_field_access WHERE visible=true`)).rows;
+    const fieldsByUser = {};
+    for (const f of fieldRows) (fieldsByUser[f.user_id] ||= []).push(f.field_key);
+    // 계좌 목록 + 사용자별 계좌권한(인라인 선택용)
+    const accountsRows = (await query(`SELECT id, name, currency, type, non_deductible, treasury_exclude FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
+    const accounts = accountsRows.map((a) => ({ id: Number(a.id), name: a.name, currency: a.currency, type: a.type || null,
+      secret: isSecretAccount(a) }));   // 2026-11-27 · 금고·불공제(hr_admin 차단 대상) 표시용
+    const aaRows = (await query(`SELECT user_id, account_id, can_operate, can_detail FROM user_account_access`)).rows;
+    const aaByUser = {};
+    for (const r of aaRows) {
+      const lvl = r.can_operate === true ? 'operate' : (r.can_detail === false ? 'balance' : 'view');
+      (aaByUser[r.user_id] ||= {})[Number(r.account_id)] = lvl;
+    }
+    return {
+      accounts,
+      items: users.map((u) => ({
+        ...u, id: Number(u.id), restrict_cash_detail: u.restrict_cash_detail === true, device_locked: u.device_locked === true,
+        pages: pagesByUser[u.id] || [], page_access: accessByUser[u.id] || {},
+        team_access: teamAccessByUser[u.id] || [],
+        account_access: aaByUser[u.id] || {},
+        fields: fieldsByUser[u.id] || [],
+      })),
+    };
+  });
+
+  // 사용자 생성(디렉터). PIN 지정 가능(미지정 시 자동), 팀·페이지 권한 일괄 부여.
+  app.post('/api/users', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { name, dept, role, login_id, lang = 'ko', pin: pinReq, team_id, pages } = req.body || {};
+    if (!name || !role || !login_id) return reply.code(400).send({ error: 'name_role_login_id_required' });
+    const dup = (await query(`SELECT 1 FROM users WHERE login_id=$1`, [login_id])).rows[0];
+    if (dup) return reply.code(409).send({ error: 'login_id_taken' });
+    const pin = (pinReq && /^\d{4,8}$/.test(String(pinReq))) ? String(pinReq) : genPin();
+    const u = (await query(
+      `INSERT INTO users (name, dept, role, login_id, pin_hash, lang, team_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [name, dept || null, role, login_id, hashPin(pin), lang, team_id || null, req.ctx.perm.userId])).rows[0];
+    const explicitPages = Array.isArray(pages) ? pages : [];
+    for (const pk of explicitPages) {
+      await query(`INSERT INTO user_page_access (user_id, page_key, device_req) VALUES ($1,$2,'anywhere') ON CONFLICT (user_id, page_key) DO NOTHING`, [u.id, pk]);
+    }
+    // 명시 페이지가 없으면 역할 기본 권한 자동 부여
+    let applied = null;
+    if (!explicitPages.length) applied = await applyRoleDefaults(u.id, role);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `user:${u.id}`, detail: applied ? { role_defaults: applied } : undefined });
+    return { id: u.id, login_id, pin, applied, note: '이 PIN을 사용자에게 통보하세요. 서버에는 해시만 저장됩니다.' };
+  });
+
+  // PIN 재발급(디렉터). 지정 가능.
+  app.post('/api/users/:id/reset-pin', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const id = Number(req.params.id);
+    const pin = (req.body?.pin && /^\d{4,8}$/.test(String(req.body.pin))) ? String(req.body.pin) : genPin();
+    await query(`UPDATE users SET pin_hash=$1, updated_by=$2 WHERE id=$3`, [hashPin(pin), req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'pin_reset', target: `user:${id}` });
+    return { id, pin };
+  });
+
+  // 현금·불공제 세부 차단 토글(디렉터). value=true 면 이 사용자는 디렉터여도
+  //   현금·불공제 계좌의 거래내역/현금흐름이 막히고 잔액만 보인다. (잔액은 계속 보임)
+  app.patch('/api/users/:id/restrict-cash-detail', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const value = req.body?.value === true;
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    await query(`UPDATE users SET restrict_cash_detail=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { restrict_cash_detail: value } });
+    return { ok: true, id, restrict_cash_detail: value };
+  });
+
+  // WhatsApp 수신번호 설정(디렉터) — 아침 브리핑 수신용. 빈 값이면 해제(발송 대상 제외).
+  //   멕시코 휴대폰: 10자리 로컬/52·521 국가코드 어떤 형식이든 저장 시 52+10자리로 정규화(2026-10-06 521 → 52).
+  app.patch('/api/users/:id/wa-phone', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    const raw = String((req.body || {}).wa_phone || '').trim();
+    let value = null;
+    if (raw) {
+      const { normalizeWaNumber } = await import('../waSend.js');
+      value = normalizeWaNumber(raw);
+      if (!value) return reply.code(400).send({ error: 'bad_phone', hint: '숫자 10자리(로컬) 또는 52+10자리 형식' });
+    }
+    await query(`UPDATE users SET wa_phone=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `user:${id}`, detail: { wa_phone: value ? (value.slice(0, 3) + '****' + value.slice(-4)) : null } });
+    return { ok: true, id, wa_phone: value };
+  });
+
+  // 기기 접속 제한 토글(디렉터) — true 면 이 사용자는 '승인된 기기'에서만 로그인 가능.
+  //   디렉터 역할은 게이트가 적용되지 않음(잠금사고 방지) — 토글은 저장되나 로그인에는 영향 없음.
+  app.patch('/api/users/:id/device-lock', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const value = req.body?.value === true;
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    await query(`UPDATE users SET device_locked=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { device_locked: value } });
+    return { ok: true, id, device_locked: value };
+  });
+
+  // 계정 삭제(디렉터, 소프트 삭제). login_id 를 NULL 로 비워 같은 아이디를 재사용 가능하게 한다.
+  //   - 자기 자신은 삭제 불가(잠금 방지). 마지막 디렉터 삭제 불가.
+  //   - deleted_at 이 채워지면 로그인·목록·권한로딩에서 모두 제외된다(기존 deleted_at IS NULL 필터).
+  app.delete('/api/users/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    if (id === Number(req.ctx.perm.userId)) return reply.code(400).send({ error: 'cannot_delete_self' });
+    const u = (await query(`SELECT id, role, login_id, name FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    if (u.role === 'director') {
+      const dirCount = Number((await query(
+        `SELECT COUNT(*) AS c FROM users WHERE role='director' AND deleted_at IS NULL`)).rows[0].c);
+      if (dirCount <= 1) return reply.code(400).send({ error: 'cannot_delete_last_director' });
+    }
+    await query(
+      `UPDATE users SET deleted_at=now(), login_id=NULL, updated_by=$1 WHERE id=$2`,
+      [req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `user:${id}`,
+      detail: { name: u.name, login_id: u.login_id } });
+    return { ok: true, id, freed_login_id: u.login_id };
+  });
+
+  // 사용자 기본정보 수정(디렉터) — 2026-11-27: 이름·로그인 아이디·역할·부서를 그 자리에서 바꾼다.
+  //   (복제 계정 「christopher (복제)」→ Mauricio 처럼 이름을 통째로 바꾸고 역할을 hr_admin 으로 전환)
+  //   body 에 온 키만 바꾼다. 역할을 director 로 올리거나 디렉터 계정의 역할을 내리는 것은 막는다(디렉터 1명 원칙).
+  //   역할을 바꿔도 페이지·필드·계좌 권한 행은 그대로 둔다(디렉터가 고른 값 보존) — 기본 권한은 「기본 권한 적용」으로.
+  app.patch('/api/users/:id/profile', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const u = (await query(`SELECT id, name, login_id, role, dept FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    const set = {};
+    if (b.name !== undefined) {
+      const v = String(b.name || '').trim().slice(0, 80);
+      if (!v) return reply.code(400).send({ error: 'name_required' });
+      set.name = v;
+    }
+    if (b.login_id !== undefined) {
+      const v = String(b.login_id || '').trim().slice(0, 60);
+      if (!v) return reply.code(400).send({ error: 'login_id_required' });
+      if (v !== u.login_id) {
+        const dup = (await query(`SELECT 1 FROM users WHERE login_id=$1 AND id<>$2`, [v, id])).rows[0];
+        if (dup) return reply.code(409).send({ error: 'login_id_taken' });
+      }
+      set.login_id = v;
+    }
+    if (b.role !== undefined) {
+      const v = String(b.role || '');
+      if (!Object.prototype.hasOwnProperty.call(ROLE_DEFAULTS, v)) return reply.code(400).send({ error: 'bad_role' });
+      if (v !== u.role && (v === 'director' || u.role === 'director')) return reply.code(400).send({ error: 'director_role_locked' });
+      set.role = v;
+    }
+    if (b.dept !== undefined) set.dept = String(b.dept || '').trim().slice(0, 60) || null;
+    const keys = Object.keys(set).filter((k) => set[k] !== u[k]);
+    if (!keys.length) return { ok: true, changed: [] };
+    const cols = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
+    await query(`UPDATE users SET ${cols}, updated_by=$${keys.length + 1} WHERE id=$${keys.length + 2}`,
+      [...keys.map((k) => set[k]), req.ctx.perm.userId, id]);
+    const detail = {}; for (const k of keys) detail[k] = { from: u[k], to: set[k] };
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `user:${id}`, detail });
+    return { ok: true, changed: keys };
+  });
+
+  // 계정 복제(디렉터): 권한이 동일한 사용자를 새 로그인 아이디로 생성.
+  //   role/dept/team_id/lang/restrict_cash_detail + 페이지·필드·항목깊이·팀교차·계좌 권한 전부 복사.
+  //   PIN 은 새로 발급(미지정 시 자동). body: { name, login_id, pin? }
+  app.post('/api/users/:id/clone', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const srcId = Number(req.params.id);
+    if (!Number.isInteger(srcId)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const { name, login_id, pin: pinReq } = req.body || {};
+    if (!name || !login_id) return reply.code(400).send({ error: 'name_login_id_required' });
+    const src = (await query(
+      `SELECT id, role, dept, team_id, lang, restrict_cash_detail
+         FROM users WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];
+    if (!src) return reply.code(404).send({ error: 'source_not_found' });
+    const dup = (await query(`SELECT 1 FROM users WHERE login_id=$1`, [login_id])).rows[0];
+    if (dup) return reply.code(409).send({ error: 'login_id_taken' });
+    const pin = (pinReq && /^\d{4,8}$/.test(String(pinReq))) ? String(pinReq) : genPin();
+    let newId = null;
+    await withTx(async (c) => {
+      const u = (await c.query(
+        `INSERT INTO users (name, dept, role, login_id, pin_hash, lang, team_id, restrict_cash_detail, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        [name, src.dept || null, src.role, login_id, hashPin(pin), src.lang || 'ko',
+         src.team_id || null, src.restrict_cash_detail === true, req.ctx.perm.userId])).rows[0];
+      newId = u.id;
+      // 페이지 권한
+      await c.query(
+        `INSERT INTO user_page_access (user_id, page_key, device_req, access)
+           SELECT $1, page_key, device_req, access FROM user_page_access WHERE user_id=$2`, [newId, srcId]);
+      // 민감 필드
+      await c.query(
+        `INSERT INTO user_field_access (user_id, field_key, visible)
+           SELECT $1, field_key, visible FROM user_field_access WHERE user_id=$2`, [newId, srcId]);
+      // 항목 열람 깊이
+      await c.query(
+        `INSERT INTO user_item_depth (user_id, item_key, depth, resolution)
+           SELECT $1, item_key, depth, resolution FROM user_item_depth WHERE user_id=$2`, [newId, srcId]);
+      // 팀 교차 접근
+      await c.query(
+        `INSERT INTO user_team_access (user_id, team_id, can_edit, created_by)
+           SELECT $1, team_id, can_edit, $3 FROM user_team_access WHERE user_id=$2`, [newId, srcId, req.ctx.perm.userId]);
+      // 계좌별 권한
+      await c.query(
+        `INSERT INTO user_account_access (user_id, account_id, can_operate, can_detail)
+           SELECT $1, account_id, can_operate, can_detail FROM user_account_access WHERE user_id=$2`, [newId, srcId]);
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `user:${newId}`, detail: { cloned_from: srcId } });
+    return { id: newId, login_id, pin, cloned_from: srcId, note: '권한이 원본과 동일하게 복사되었습니다. 이 PIN을 사용자에게 통보하세요(서버에는 해시만 저장).' };
+  });
+
+  // 페이지 권한 회수(디렉터)
+  app.delete('/api/users/:id/page-access', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const id = Number(req.params.id);
+    const pageKey = String(req.query.page_key || '');
+    await query(`DELETE FROM user_page_access WHERE user_id=$1 AND page_key=$2`, [id, pageKey]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { remove_page: pageKey } });
+    return { ok: true };
+  });
+
+  // 메뉴 접근/기기요구 설정(디렉터) — 권한 변경은 감사 로그에 남김
+  app.put('/api/users/:id/page-access', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const id = Number(req.params.id);
+    const { page_key, device_req, access } = req.body || {};
+    const acc = (access === 'view' || access === 'edit') ? access : 'edit';
+    await query(
+      `INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (user_id, page_key) DO UPDATE SET device_req=EXCLUDED.device_req, access=EXCLUDED.access`,
+      [id, page_key, device_req || 'anywhere', acc]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { page_key, access: acc } });
+    return { ok: true };
+  });
+
+  // 민감 필드 노출 설정(디렉터)
+  app.put('/api/users/:id/field-access', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const id = Number(req.params.id);
+    const { field_key, visible } = req.body || {};
+    await query(
+      `INSERT INTO user_field_access (user_id, field_key, visible) VALUES ($1,$2,$3)
+       ON CONFLICT (user_id, field_key) DO UPDATE SET visible=EXCLUDED.visible`,
+      [id, field_key, !!visible]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { field_key, visible } });
+    return { ok: true };
+  });
+
+  // 기존 사용자에게 역할 기본 권한 적용(디렉터). 수동 설정은 보존하고 누락분만 추가.
+  app.post('/api/users/:id/apply-role-defaults', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const u = (await query(`SELECT role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    const applied = await applyRoleDefaults(id, u.role);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { apply_role_defaults: u.role, applied } });
+    return { ok: true, role: u.role, applied };
+  });
+
+  // 역할별 기본 권한 표(디렉터)
+  app.get('/api/role-defaults', { preHandler: [authGuard, requireDirector] }, async () => {
+    return { roleDefaults: ROLE_DEFAULTS, screenPageKey: SCREEN_PAGE_KEY };
+  });
+
+  // 한 계좌의 권한 레벨을 한 건 설정(인라인 드롭다운용). body: { account_id, level: 'none'|'view'|'operate' }
+  app.patch('/api/users/:id/account-access', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const accountId = Number(req.body?.account_id);
+    const level = req.body?.level;
+    if (!Number.isInteger(accountId)) return reply.code(400).send({ error: 'bad_account_id', got: String(req.body?.account_id) });
+    if (!['none', 'balance', 'view', 'operate'].includes(level)) return reply.code(400).send({ error: 'bad_level' });
+    const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    if (u.role === 'director') return reply.code(400).send({ error: 'director_sees_all' });
+    if (u.role === 'socio') {
+      // 소시오: 계좌별 '세부 열람'(view/operate=행 삭제, 전체 접근) 또는 '잔액만'(balance=can_detail false 행).
+      //   잔액은 항상 보이고, '잔액만'이면 거래내역·현금흐름·드릴다운·운영이 막힌다.
+      await withTx(async (c) => {
+        await c.query(`DELETE FROM user_account_access WHERE user_id=$1 AND account_id=$2`, [id, accountId]);
+        if (level === 'balance') {
+          await c.query(`INSERT INTO user_account_access (user_id, account_id, can_operate, can_detail) VALUES ($1,$2,false,false)`,
+            [id, accountId]);
+        }
+      });
+      await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`,
+        detail: { account_id: accountId, level: level === 'balance' ? 'balance' : 'view', socio: true } });
+      return { ok: true, account_id: accountId, level: level === 'balance' ? 'balance' : 'view' };
+    }
+    // ON CONFLICT 미사용(제약 유무와 무관): 항상 DELETE 후 필요한 경우만 INSERT.
+    //   잔액만 = can_detail false / 열람 = detail true / 운영 = detail+operate true
+    await withTx(async (c) => {
+      await c.query(`DELETE FROM user_account_access WHERE user_id=$1 AND account_id=$2`, [id, accountId]);
+      if (level !== 'none') {
+        const op = level === 'operate';
+        const detail = level === 'view' || level === 'operate';
+        await c.query(`INSERT INTO user_account_access (user_id, account_id, can_operate, can_detail) VALUES ($1,$2,$3,$4)`,
+          [id, accountId, op, detail]);
+      }
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`,
+      detail: { account_id: accountId, level } });
+    return { ok: true, account_id: accountId, level };
+  });
+
+  // ===== 사용자×계좌 권한(디렉터) =====
+  // 한 사용자에 대해 전체 계좌 + 그 사용자의 열람/운영 여부를 함께 반환.
+  app.get('/api/users/:id/account-access', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    const accs = (await query(
+      `SELECT id, name, type, currency FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
+    const granted = {};
+    for (const r of (await query(
+      `SELECT account_id, can_operate FROM user_account_access WHERE user_id=$1`, [id])).rows) {
+      granted[Number(r.account_id)] = { view: true, operate: r.can_operate === true };
+    }
+    const isDirector = u.role === 'director';
+    return {
+      user_id: id, is_director: isDirector,
+      items: accs.map((a) => {
+        const aid = Number(a.id);
+        const g = granted[aid];
+        return {
+          account_id: aid, name: a.name, type: a.type, currency: a.currency,
+          // 디렉터는 항상 전체 열람/운영(테이블과 무관) — UI 표시용.
+          view: isDirector ? true : !!g,
+          operate: isDirector ? true : !!(g && g.operate),
+        };
+      }),
+    };
+  });
+
+  // 한 사용자의 계좌 권한 전체 교체. body: { items: [{ account_id, view, operate }] }
+  // view=false 면 해당 계좌 권한 제거. operate=true 는 view=true 를 함의한다.
+  app.put('/api/users/:id/account-access', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    if (u.role === 'director') return reply.code(400).send({ error: 'director_sees_all' });
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    // 유효 계좌만 반영(존재·미삭제).
+    const validIds = new Set((await query(`SELECT id FROM accounts WHERE deleted_at IS NULL`)).rows.map((r) => Number(r.id)));
+    const keep = items
+      .map((it) => ({ account_id: Number(it.account_id), operate: !!it.operate, view: it.view !== false }))
+      .filter((it) => validIds.has(it.account_id) && (it.view || it.operate));
+    await withTx(async (c) => {
+      await c.query(`DELETE FROM user_account_access WHERE user_id=$1`, [id]);
+      for (const it of keep) {
+        // DELETE 후 삽입이라 충돌 없음 → ON CONFLICT 불필요(UNIQUE 제약 유무와 무관하게 동작).
+        await c.query(
+          `INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES ($1,$2,$3)`,
+          [id, it.account_id, it.operate]);
+      }
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`,
+      detail: { account_access: keep.map((k) => ({ a: k.account_id, op: k.operate })) } });
+    return { ok: true, count: keep.length };
+  });
+}

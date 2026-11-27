@@ -12,6 +12,7 @@ import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const P_HTML = resolve(here, '..', '..', 'refatrix-products.html');
+const P_MOD = resolve(here, '..', '..', 'refatrix-vehiclemap.js');   // 11-27f · 차량 도면 공용 모듈
 let JSDOM = null;
 try { ({ JSDOM } = await import('jsdom')); } catch { /* 미설치 → skip */ }
 const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
@@ -62,6 +63,7 @@ async function boot() {
   const dom = new JSDOM(readFileSync(P_HTML, 'utf-8'), {
     runScripts: 'dangerously', url: 'https://example.test/refatrix-products.html#tab=search',
     beforeParse(w) {
+      if (existsSync(P_MOD)) w.eval(readFileSync(P_MOD, 'utf-8'));
       w.sessionStorage.setItem('refatrix_session', JSON.stringify({ token: 'T', api: 'https://api.test', user: { name: 'D', role: 'director' } }));
       w.alert = () => {}; w.confirm = () => true;
       w.fetch = async (url, o = {}) => {
@@ -93,7 +95,7 @@ async function readScreen(c, root, rowSel) {
 
 test('B. 제품 찾기 — 차종 도면(차종으로 제품찾기)과 제품 검색 결과가 같은 장착 위치', { skip: !JSDOM || !existsSync(P_HTML) }, async () => {
   const c = await boot();
-  assert.match(c.d.title, /ps-1127v[mnop]/);
+  assert.match(c.d.title, /ps-1127v[mnopq]/);
   // ① 차종으로 제품찾기(2026-11-27 · 상단 토글 · 차량 도면)
   c.d.getElementById('fmVeh').dispatchEvent(new c.w.Event('click'));
   const mk = c.d.getElementById('veh-maker'); mk.innerHTML = '<option value="NISSAN">NISSAN</option>'; mk.value = 'NISSAN';

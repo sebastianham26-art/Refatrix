@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 구매 검토 · build pr-1020fob</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1240px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 4px;font-size:15px;color:var(--brand)}
+  .card .cdesc{font-size:12px;color:var(--muted);margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3;position:sticky;top:0;z-index:1}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
+  .app{max-width:340px;font-size:12px;color:#4a4a4a;line-height:1.4}
+  /* 2026-10-19 · SYD 는 참고용 — 평소엔 좁게 한 줄(말줄임), 마우스를 올리면 전체 */
+  .syd{font-size:11px;color:#8a8a8a;max-width:64px;width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
+  th.syd-h{width:64px;max-width:64px}
+  .warn-cell{color:var(--expense);font-weight:700}
+  .ok-cell{color:var(--income)}
+  .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .sb{flex:1;min-width:120px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:19px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+  .toolbar>div{flex:0 0 auto}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .pager{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--muted);font-size:12.5px}
+  .chk input{width:auto}
+  tr.clk{cursor:pointer}tr.clk:hover{background:#f7f5ef}
+  .drill{margin-top:14px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .drill h3{margin:0;font-size:14px;color:var(--brand)}
+  .drill .close{float:right;cursor:pointer;color:var(--muted);font-weight:700;border:none;background:none;font-size:13px}
+  .mtag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .mtag.in{background:#e7f3ee;color:var(--income)}
+  /* 2026-10-15 · 부족분 진행(발생 → 발주됨 → 입고 해소) */
+  .stg{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .stg.un{background:#fde0db;color:#b3402e}.stg.ord{background:#fdf3d7;color:#8a6d1a}.stg.rcv{background:#e7f3ee;color:var(--income)}
+  .stg.sale{background:#e3ecf7;color:#2c5a8a}.stg.cl{background:#eee;color:#888}
+  .sh-sub{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .sh-sub a{color:var(--brand)}
+  .unord-cell{color:#b3402e;font-weight:800;background:#fdf1ee}
+  .need-cell{color:#fff;font-weight:800;background:#b3402e}
+  .miss-cell{color:#8a6d1a;font-weight:700}
+  /* 2026-10-20 · 추천발주수량 · MOQ · 별도관리 · 비활성 */
+  .rec-cell{color:#fff;font-weight:800;background:#143D34}
+  .rec-sub{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:2px;white-space:nowrap}
+  .rec-cell .rec-sub{color:#cfe0d8}
+  .badge{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:4px;vertical-align:1px;white-space:nowrap}
+  .badge.inact{background:#eee;color:#777;border:1px solid #ccc}
+  .badge.manual{background:#fdf3d7;color:#8a6d1a;border:1px solid #e9d39a}
+  tr.inactive td{color:#9a9a9a}
+  tr.manual-row{background:#fffbef}
+  .muted-cell{color:#b5b5b5 !important;background:none !important;font-weight:400 !important}
+  /* 2026-10-20 · 공장 상태 · L/R 짝 · 공장 정보 업로드 · 발주서 초안 */
+  .badge.fs-discontinued{background:#fde0db;color:#b3402e;border:1px solid #f0b8ae}
+  .badge.fs-development{background:#e3ecf7;color:#2c5a8a;border:1px solid #bcd0e8}
+  .badge.fs-dev_hold{background:#efe7f6;color:#6a4a8a;border:1px solid #d6c4e6}
+  .badge.fs-production{background:#e7f3ee;color:var(--income);border:1px solid #bfdccf}
+  .pairtag{display:block;font-size:10.5px;color:#7a5a17;margin-top:1px}
+  tr.pair-a td:first-child{box-shadow:inset 3px 0 0 #c9a94a}
+  tr.pair-b td:first-child{box-shadow:inset 3px 0 0 #c9a94a}
+  tr.pair-a td{border-bottom-style:dashed}
+  .rec-cell .pairnote,.pairnote{display:block;font-size:10.5px;font-weight:700;color:#f3dfa0;white-space:nowrap}
+  .tbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+  .fpanel{margin-top:14px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .fpanel h3{margin:0 0 6px;font-size:14px;color:var(--brand)}
+  .fpanel textarea{width:100%;min-height:110px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:8px}
+  .fpanel .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .fpanel .ok{color:var(--income);font-weight:700}
+  .fpanel .bad{color:var(--expense);font-weight:700}
+  .chg{font-size:11.5px}.chg s{color:#a0a0a0}
+  .fprev{max-height:320px;overflow:auto;margin-top:8px;background:#fff;border:1px solid var(--line);border-radius:8px}
+  @media (max-width:640px){.tbtns{margin-top:6px}}
+  .stg.miss{background:#f1ead6;color:#8a6d1a}
+  .defs{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+  .defs h3{margin:0 0 8px;font-size:13px;color:var(--brand)}
+  .defs dl{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;margin:0;font-size:12.5px;line-height:1.55}
+  .defs dt{font-weight:700;color:var(--ink)}
+  .defs dd{margin:0;color:#4a4a4a}
+  .defs code{font-size:12px;background:#f4f1ea;padding:1px 5px;border-radius:4px}
+  @media (max-width:640px){.defs dl{grid-template-columns:1fr}.defs dd{margin-bottom:6px}}
+  .mtag.out{background:#fdeceb;color:var(--expense)}
+  .mtag.adj{background:#eee;color:#555}
+  .bar{position:relative;height:14px;background:#ece7dc;border-radius:4px;min-width:60px}
+  .bar>span{position:absolute;left:0;top:0;bottom:0;background:var(--brand);border-radius:4px;opacity:.7}
+  .bar>em{position:relative;font-style:normal;font-size:10.5px;color:#333;padding-left:5px;line-height:14px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>구매 검토</h1>
+      <div class="sub">보유 SKU 종합 — CTR · SYD · 적용차종 · 현재재고 · backorder · 누적판매 · 견적부족</div>
+    </div>
+    <div class="who" id="who"></div>
+  </div>
+
+  <!-- 로그인 -->
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="toolbar">
+      <div style="min-width:160px"><label>아이디</label><input id="lid" autocomplete="username"></div>
+      <div style="min-width:160px"><label>PIN</label><input id="pin" type="password" autocomplete="current-password"></div>
+    </div>
+    <div class="api"><label>서버 주소</label><input id="api" value="https://refatrix-production.up.railway.app"></div>
+    <div style="margin-top:12px"><button class="btn" id="go" onclick="login()">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <!-- 검토 -->
+  <div class="card hidden" id="reviewCard">
+    <h2>SKU 구매 검토</h2>
+    <div class="cdesc">보유 SKU 전체를 종합해 구매 판단을 돕습니다. 누적판매·견적부족(수요)과 현재재고·backorder(공급)를 함께 봅니다.</div>
+    <div class="toolbar">
+      <div style="min-width:240px"><label>검색 (CTR·SYD·차종·제품명)</label><input id="q" placeholder="예: CA0032 · NISSAN Frontier"></div>
+      <div><label style="visibility:hidden">.</label><label class="chk"><input type="checkbox" id="demandOnly"> 수요만(backorder&gt;0 또는 부족&gt;0)</label></div>
+      <div><label>페이지당</label><select id="pageSize"><option value="200">200</option><option value="500">500</option><option value="2000">2000</option></select></div>
+      <div><button class="btn sm" id="searchBtn" type="button" style="margin-top:22px">조회</button></div>
+      <div><button class="btn ghost sm" id="xlsxBtn" type="button" style="margin-top:22px">⬇ 엑셀 다운로드</button></div>
+      <div class="tbtns">
+        <button class="btn ghost sm" id="factoryBtn" type="button">🏭 공장 SKU 정보 업로드</button>
+        <button class="btn sm" id="poBtn" type="button">📄 이번달 발주검토 · 발주서 출력</button>
+      </div>
+    </div>
+    <!-- 2026-10-20 · 공장 SKU 정보(원산지 · MOQ · 생산 상태) 업로드 -->
+    <div class="fpanel hidden" id="fpanel">
+      <button class="close" style="float:right;border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer" onclick="toggleFactory(false)">✕ 닫기</button>
+      <h3>🏭 공장 SKU 정보 업로드 — 원산지 · MOQ · 생산 상태</h3>
+      <div class="hint" style="margin-top:0">
+        ① 양식을 내려받아 채운 뒤 업로드하거나, 엑셀에서 복사해 아래 칸에 붙여넣으세요. 칸 순서: <b>CTR · 원산지 · MOQ · 생산 상태</b> (머리글이 있으면 머리글로 찾습니다. 제품명 칸은 무시).<br>
+        ② <b>빈 칸 = 바꾸지 않음</b>, <b>「-」 = 값 지우기</b>. 원산지는 CN·TR·KR·VN(China·Turquía·Corea·Vietnam 표기도 인식). 생산 상태는 <b>생산중 · 단산 · 개발 · 개발보류</b>.<br>
+        ③ MOQ를 비워 두면 원산지 기본값(CN 10 · TR 40 · 그 외 없음)을 씁니다. SKU별 MOQ가 있으면 그 값이 우선입니다. 단산·개발·개발보류 SKU는 추천발주수량을 0으로 둡니다.<br>
+        ④ 「미리보기」로 바뀔 내용을 확인한 뒤 「반영」하세요. 반영은 디렉터만 할 수 있고 이력이 남습니다.
+      </div>
+      <div class="row">
+        <button class="btn ghost sm" type="button" onclick="dlFactoryTemplate(false)">⬇ 빈 양식</button>
+        <button class="btn ghost sm" type="button" onclick="dlFactoryTemplate(true)">⬇ 현재값 양식(전체 SKU)</button>
+        <label class="btn ghost sm" style="display:inline-block;margin:0;color:var(--brand)">📂 엑셀 파일 선택<input type="file" id="fFile" accept=".xlsx,.xls,.csv" style="display:none"></label>
+        <span id="fFileName" class="hint" style="margin:0"></span>
+      </div>
+      <div style="margin-top:10px"><textarea id="fPaste" placeholder="엑셀에서 복사해 붙여넣기 (예)&#10;CTR	원산지	MOQ	생산 상태&#10;CQ0280L	CN	20	생산중&#10;CB0089	KR		단산"></textarea></div>
+      <div class="row">
+        <button class="btn sm" type="button" id="fPrevBtn" onclick="factoryPreview()">미리보기</button>
+        <button class="btn sm" type="button" id="fApplyBtn" onclick="factoryApply()" disabled>반영</button>
+        <span id="fMsg" class="hint" style="margin:0"></span>
+      </div>
+      <div id="fResult"></div>
+    </div>
+    <div class="sbrow" id="summary" style="margin-top:12px"></div>
+    <div class="msg" id="msg"></div>
+    <div style="max-height:560px;overflow:auto"><table id="tbl"></table></div>
+    <div class="drill hidden" id="drill"></div>
+    <div class="pager">
+      <button class="btn ghost sm" id="prevBtn" type="button">◀ 이전</button>
+      <span id="pageInfo">—</span>
+      <button class="btn ghost sm" id="nextBtn" type="button">다음 ▶</button>
+    </div>
+    <div class="defs" id="defs">
+      <h3>상단 지표 정의</h3>
+      <dl>
+        <dt>SKU 수</dt><dd>조회된 제품 수입니다.</dd>
+        <dt>총 현재재고</dt><dd>창고에 있는 재고 전체입니다.</dd>
+        <dt>총 가용재고</dt><dd>현재재고 중 다른 견적에 잡혀 있지 않아 <b>지금 바로 팔 수 있는</b> 수량입니다.</dd>
+        <dt>총 backorder</dt><dd>공장에 주문했지만 <b>아직 안 들어온</b> 수량입니다.</dd>
+        <dt>총 누적판매</dt><dd>지금까지 판매(매출 발행)한 수량입니다.</dd>
+        <dt>총 부족 잔여</dt><dd>고객이 원했는데 재고가 없어 못 준 수량 중, 아직 정리되지 않은 것 전부입니다.</dd>
+        <dt>총 미발주 부족</dt><dd>부족 중에서 <b>아직 주문을 걸지 않은</b> 수량입니다. 만료·취소·삭제된 견적의 부족은 빼고 셉니다(→ 「놓친 수요」에 따로 표시).</dd>
+        <dt>총 실구매 필요</dt><dd>미발주 부족 중 가용재고로도 못 채워서 <b>지금 새로 사야 하는</b> 수량입니다. 구매는 이 숫자를 보고 정하세요.</dd>
+        <dt>총 놓친 수요</dt><dd>견적이 만료·취소돼서 이제는 팔 수 없는 부족입니다. 재고가 있으면 그 고객에게 다시 연락할 대상입니다.</dd>
+        <dt>총 추천발주수량</dt><dd><b>실구매 필요 + 최근 6개월 놓친 수요</b>를 합친 발주 추천 수량입니다. 놓친 수요도 남는 재고·주문분으로 먼저 채우고 모자란 만큼만 더합니다.
+          <br>· <b>MOQ</b>: SKU별 MOQ(공장 정보 업로드)가 있으면 그 값, 없으면 원산지 기본값 <b>중국(CN) 10개, 터키(TR) 40개</b>, 한국·베트남은 계산값 그대로. 계산값이 MOQ보다 작으면 MOQ로 올립니다.
+          <br>· <b>L/R 짝</b>: L과 R은 나란히 보여주고, 둘 중 수요가 큰 쪽을 양쪽 수요로 봅니다. 각 쪽은 자기 재고·주문분을 빼고 모자란 만큼만 추천해서, 발주 뒤 L·R 재고가 맞춰집니다.
+          <br>· <b>공장 상태</b>가 단산·개발·개발보류이면 지금 주문할 수 없어 0입니다.</dd>
+      </dl>
+      <div class="hint" style="margin-top:8px"><span class="badge manual" style="margin:0">별도관리</span> CQ0280L/R · CQ1291L/R — 시장 수요가 많아 실구매 필요·추천발주수량을 쓰지 않고 구매·판매 의지로 수량을 직접 정합니다(상단 합계에서도 제외). <span class="badge inact" style="margin:0">inactive</span> 우리 쪽 판매 비활성 SKU입니다. <span class="badge fs-discontinued" style="margin:0">단산</span><span class="badge fs-development">개발</span><span class="badge fs-dev_hold">개발보류</span> 공장이 정한 생산 상태입니다(생산중은 표시 안 함). 노란 세로줄로 묶인 두 줄은 L/R 짝입니다. PRO 코드(마케팅 판촉물)는 구매 대상이 아니라 이 화면에서 뺍니다.</div>
+      <div class="hint" style="margin-top:4px"><b>예)</b> 부족 10개 → 이미 주문한 2개를 빼면 <b>미발주 부족 8개</b> → 바로 팔 수 있는 재고 5개를 빼면 <b>실구매 필요 3개</b>.</div>
+    </div>
+    <div class="hint">※ 열 제목(숫자·CTR) 클릭으로 정렬합니다. 행을 누르면 그 SKU의 부족분 진행과 입출고 이력이 열립니다.<br>※ [⬇ 엑셀 다운로드]는 <b>현재 조회 조건(검색어·수요만·정렬)의 전체 SKU</b>를 페이지 구분 없이 모두 받습니다. 적용차종은 화면과 달리 <b>전체 문구</b>가 들어갑니다.</div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let sortKey='code', sortDir='asc', offset=0, total=0;
+  // 마지막으로 실제 조회한 조건(엑셀 다운로드는 화면에 보이는 이 조건을 그대로 사용)
+  let lastCriteria={q:'',demand:false,sort:'code',dir:'asc'};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const num=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  const COLS=[
+    {k:'ctr',t:'CTR',sort:'code'},
+    {k:'syd',t:'SYD'},
+    {k:'app',t:'적용차종'},
+    {k:'stock_qty',t:'현재재고',num:true,sort:'stock'},
+    {k:'avail_qty',t:'가용재고',num:true,sort:'avail'},
+    {k:'backorder_qty',t:'backorder',num:true,sort:'backorder'},
+    {k:'sold_qty',t:'누적판매',num:true,sort:'sold'},
+    {k:'shortage_qty',t:'부족 잔여',num:true,sort:'shortage'},
+    {k:'shortage_covered_qty',t:'발주됨',num:true},
+    {k:'shortage_unordered_qty',t:'미발주 부족',num:true,sort:'unordered'},
+    {k:'need_qty',t:'실구매 필요',num:true,sort:'need'},
+    {k:'shortage_missed_qty',t:'놓친 수요',num:true,sort:'missed'},
+    {k:'rec_qty',t:'추천발주수량',num:true,sort:'rec'},
+  ];
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      onLoggedIn(d.user);
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+  function onLoggedIn(user){
+    $('who').innerHTML='<b>'+esc(user?.name||'')+'</b><br>역할: '+esc(user?.role||'-');
+    $('loginCard').classList.add('hidden'); $('reviewCard').classList.remove('hidden');
+    offset=0; load();
+  }
+
+  function pageSize(){ return Number($('pageSize').value)||200; }
+
+  async function load(){
+    const q=$('q').value.trim(), demand=$('demandOnly').checked;
+    lastCriteria={q,demand,sort:sortKey,dir:sortDir};
+    const p=new URLSearchParams();
+    if(q)p.set('q',q); if(demand)p.set('demand','1');
+    p.set('sort',sortKey); p.set('dir',sortDir);
+    p.set('limit',pageSize()); p.set('offset',offset);
+    const m=$('msg'); m.className='msg';
+    let d;
+    try{
+      const res=await fetch(session.api+'/api/purchases/review?'+p.toString(),{headers:auth()});
+      d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='조회 실패: '+(d.error||res.status); return; }
+    }catch(e){ m.className='msg err'; m.textContent='서버 오류: '+e.message; return; }
+    total=d.total||0;
+    const s=d.summary||{};
+    $('summary').innerHTML=
+      sb(num(s.sku_count),'SKU 수')+sb(num(s.total_stock),'총 현재재고')+sb(num(s.total_avail),'총 가용재고')+sb(num(s.total_backorder),'총 backorder')+
+      sb(num(s.total_sold),'총 누적판매')+sb(num(s.total_shortage),'총 부족 잔여')+sb(num(s.total_unordered),'총 미발주 부족')+
+      '<div class="sb" style="border-color:#e6b8af"><div class="v" style="color:#b3402e">'+num(s.total_need)+'</div><div class="l">총 실구매 필요</div></div>'+
+      sb(num(s.total_missed),'총 놓친 수요')+
+      '<div class="sb" style="border-color:#143D34;background:#eef4f1"><div class="v">'+num(s.total_rec)+'</div><div class="l">총 추천발주수량 · '+num(s.rec_skus||0)+' SKU</div></div>';
+    render(d.items||[]);
+    updatePager(d.items?d.items.length:0);
+  }
+  function sb(v,l){ return '<div class="sb"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+
+  function render(items){
+    let h='<tr>';
+    for(const c of COLS){
+      if(c.sort){ const ar=(SORTS_ACTIVE(c))?(sortDir==='asc'?' ▲':' ▼'):''; h+='<th class="'+(c.num?'num ':'')+'sortable" data-s="'+c.sort+'">'+c.t+ar+'</th>'; }
+      else h+='<th class="'+(c.num?'num ':'')+(c.k==='syd'?'syd-h':'')+'">'+c.t+'</th>';
+    }
+    h+='</tr>';
+    if(!items.length){ h+='<tr><td colspan="'+COLS.length+'" style="color:var(--muted)">데이터 없음</td></tr>'; }
+    for(const it of items){
+      const sydTxt=(it.syd&&it.syd.length)?it.syd.join(', '):'—';
+      const tip='CTR: '+(it.ctr||'')+(it.name?(' · '+it.name):'')+'\nSYD: '+((it.syd&&it.syd.length)?it.syd.join(', '):'없음')
+        +'\n적용차종: '+((it.applications&&it.applications.length)?it.applications.join(' / '):'—');
+      const appAll=(it.applications&&it.applications.length)?it.applications.join('  /  '):'';
+      const appShort=appAll.length>70?appAll.slice(0,70)+'…':(appAll||'—');
+      const boCls=Number(it.backorder_qty)>0?'ok-cell':'';
+      const shCls=Number(it.shortage_qty)>0?'warn-cell':'';
+      const pcls=it.pair_code?(String(it.ctr).toUpperCase().endsWith('L')?' pair-a':' pair-b'):'';
+      h+='<tr class="clk'+(it.is_active===false?' inactive':'')+(it.manual?' manual-row':'')+pcls+'" data-pid="'+it.product_id+'">'+
+        '<td title="'+esc(tip)+'"><b>'+esc(it.ctr)+'</b>'+
+          (it.is_active===false?'<span class="badge inact" title="비활성 SKU'+(it.inactive_reason?(' — '+esc(it.inactive_reason)):'')+'">inactive</span>':'')+
+          (it.manual?'<span class="badge manual" title="시장 수요가 많아 실구매 필요를 쓰지 않고 구매·판매 의지로 수량을 직접 정하는 품목">별도관리</span>':'')+
+          fsBadge(it.factory_status)+
+          (it.pair_code?'<span class="pairtag">↔ 짝 '+esc(it.pair_code)+'</span>':'')+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
+        '<td class="syd" title="'+esc(tip)+'">'+esc(sydTxt)+'</td>'+
+        '<td class="app" title="'+esc(appAll)+'">'+esc(appShort)+'</td>'+
+        '<td class="num">'+num(it.stock_qty)+'</td>'+
+        '<td class="num" title="'+(Number(it.reserved_qty)>0?('진행 중 견적 예약 '+num(it.reserved_qty)+'개 제외'):'예약 없음')+'">'+num(it.avail_qty)+'</td>'+
+        '<td class="num '+boCls+'">'+num(it.backorder_qty)+'</td>'+
+        '<td class="num">'+num(it.sold_qty)+'</td>'+
+        '<td class="num '+shCls+'">'+num(it.shortage_qty)+'</td>'+
+        '<td class="num'+(Number(it.shortage_covered_qty)>0?' ok-cell':'')+'" title="'+(Number(it.prestock_qty)>0?('창고 입고·원가 승인 대기 '+num(it.prestock_qty)+' 포함'):'열린 발주로 덮인 부족')+'">'+num(it.shortage_covered_qty)+'</td>'+
+        '<td class="num'+(Number(it.shortage_unordered_qty)>0?' unord-cell':'')+'">'+num(it.shortage_unordered_qty)+'</td>'+
+        (it.manual
+          ? '<td class="num muted-cell" title="별도관리 품목 — 참고값(합계 제외)">'+num(it.need_qty)+'</td>'
+          : '<td class="num'+(Number(it.need_qty)>0?' need-cell':'')+'">'+num(it.need_qty)+'</td>')+
+        '<td class="num'+(Number(it.shortage_missed_qty)>0?' miss-cell':'')+'" title="원 견적이 만료·취소·삭제된 부족 — 최근 6개월분 '+num(it.missed6_qty)+'개는 추천발주수량에 반영">'+num(it.shortage_missed_qty)+'</td>'+
+        recCell(it)+
+      '</tr>';
+    }
+    $('tbl').innerHTML=h;
+    $('tbl').querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>{
+      const s=th.dataset.s;
+      if(sortKey===s){ sortDir=(sortDir==='asc'?'desc':'asc'); }
+      else { sortKey=s; sortDir=(s==='code')?'asc':'desc'; }
+      offset=0; load();
+    }));
+    $('tbl').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>openDrill(tr.dataset.pid)));
+  }
+  // 추천발주수량 칸: 값 + (원산지 · MOQ · MOQ 적용 전 계산값)
+  const FS={production:'생산중',discontinued:'단산',development:'개발',dev_hold:'개발보류'};
+  function fsBadge(fs){ return (fs&&fs!=='production'&&FS[fs])?'<span class="badge fs-'+fs+'" title="공장 생산 상태">'+FS[fs]+'</span>':''; }
+  // 추천발주수량 칸: 값 + (원산지 · MOQ · 계산값 · 짝 맞춤)
+  function recCell(it){
+    if(it.manual) return '<td class="num"><span class="badge manual" style="margin:0">직접 결정</span></td>';
+    const rec=Number(it.rec_qty)||0, raw=Number(it.rec_raw_qty)||0, own=Number(it.rec_own_qty)||0, moq=Number(it.moq)||0;
+    if(it.blocked) return '<td class="num muted-cell" title="공장 상태가 '+esc(FS[it.factory_status]||'')+' — 지금 주문할 수 없어 추천하지 않습니다. 계산값 '+num(raw)+'">0<span class="rec-sub">'+esc(FS[it.factory_status]||'')+' · 주문 불가</span></td>';
+    const org=it.origin_code||'원산지 미등록';
+    let sub=esc(org)+(moq?(' · MOQ '+moq+(it.moq_source==='sku'?'(SKU)':'')):' · MOQ 없음');
+    if(rec>0 && moq && raw<moq) sub+=' (계산 '+num(raw)+')';
+    let tip='실구매 필요 + 놓친 수요(최근 6개월 '+num(it.missed6_qty)+') − 남는 가용재고·발주 = '+num(own);
+    if(it.pair_code) tip+='\nL/R 짝 '+it.pair_code+' 기준 수요 '+num(it.pair_demand)+' → 이 쪽 필요 '+num(raw);
+    if(moq) tip+='\nMOQ '+moq+(it.moq_source==='sku'?' (SKU별)':' (원산지 기본)')+' 적용';
+    const pn=it.pair_adjusted?'<span class="pairnote">짝 맞춤 +'+num(raw-own)+'</span>':'';
+    return '<td class="num'+(rec>0?' rec-cell':'')+'" title="'+esc(tip)+'">'+num(rec)+pn+(rec>0||moq?'<span class="rec-sub">'+sub+'</span>':'')+'</td>';
+  }
+  function SORTS_ACTIVE(c){ return c.sort===sortKey; }
+
+  // ---- 드릴다운: SKU 이동이력(movement) ----
+  let drillItems=[], drillProd=null, drillTotals=null, drillSortKey='moved_at', drillSortDir='desc', drillSh=null;
+  const Q_ST={draft:'작성중',confirmed:'확정',converted:'매출전환',expired:'만료',cancelled:'취소',delete_pending:'삭제대기'};
+  // 한 부족 기록의 단계: 미발주 / 발주됨 / 입고 해소 / 판매 해소 / 정리
+  function shStage(x){
+    if(x.status==='cancelled') return '<span class="stg cl">정리</span>';
+    const rcv=(x.resolutions||[]).some(r=>r.source==='receipt');
+    if(x.status==='resolved'){
+      if(rcv) return '<span class="stg rcv">입고 해소</span>';
+      if((x.resolutions||[]).some(r=>r.source==='sale'||r.source==='scan')) return '<span class="stg sale">판매 해소</span>';
+      return '<span class="stg cl">수동 해소</span>';
+    }
+    if(x.missed) return '<span class="stg miss">놓친 수요</span>';
+    if(Number(x.unordered_qty)>0 && Number(x.ordered_qty)>0) return '<span class="stg ord">일부 발주</span>';
+    if(Number(x.unordered_qty)>0) return '<span class="stg un">미발주</span>';
+    return '<span class="stg ord">발주됨</span>';
+  }
+  function shQuote(x){
+    if(!x.quote_no) return x.sales_invoice_id?('직접 매출 '+esc(x.invoice_sat_no||('#'+x.sales_invoice_id))):'—';
+    const st=x.quote_deleted?' <b style="color:#b3402e">(삭제됨)</b>':(x.quote_status?' ('+esc(Q_ST[x.quote_status]||x.quote_status)+')':'');
+    const no=x.quote_deleted?esc(x.quote_no):'<a href="refatrix-quotelist.html?q='+encodeURIComponent(x.quote_no)+'" target="_blank" rel="noopener">'+esc(x.quote_no)+'</a>';
+    return no+st;
+  }
+  function shTrail(x){
+    const out=[];
+    for(const c of (x.covers||[])){
+      out.push(c.kind==='prestock'
+        ? '📦 창고 입고(원가 승인 대기) '+num(c.qty)+'개'
+        : '🛒 발주 <b>'+esc(c.ref_no||('#'+c.po_id))+'</b>'+(c.order_date?(' ('+esc(c.order_date)+')'):'')+' '+num(c.qty)+'개');
+    }
+    for(const r of (x.resolutions||[])){
+      const when=fmtDate(r.resolved_at);
+      if(r.source==='receipt') out.push('✅ 입고 해소 '+num(r.qty)+'개 · 수입배치 <b>'+esc(r.batch_no||('#'+r.import_batch_id))+'</b> · '+when);
+      else if(r.source==='sale'||r.source==='scan') out.push('🧾 판매 해소 '+num(r.qty)+'개 · 인보이스 '+esc(r.sat_no||('#'+r.sales_invoice_id))+' · '+when);
+      else out.push('✋ 수동 해소 '+num(r.qty)+'개'+(r.resolved_by_name?(' · '+esc(r.resolved_by_name)):'')+' · '+when);
+    }
+    if(x.live_quote&&x.status==='open') out.push('⏳ 진행 중 견적 — 입고되면 견적 예약으로 채워짐');
+    return out.length?('<div class="sh-sub">'+out.join('<br>')+'</div>'):'';
+  }
+  function renderShortageBlock(){
+    if(drillSh==null) return '<div class="hint" style="margin-top:12px">부족분 진행 불러오는 중…</div>';
+    if(drillSh.error) return '<div class="hint" style="margin-top:12px">부족분 진행을 불러오지 못했습니다: '+esc(drillSh.error)+'</div>';
+    const s=drillSh.summary||{}; const items=drillSh.items||[];
+    let h='<h3 style="margin-top:16px">부족분 진행 — 발생 → 발주됨 → 입고 해소</h3>'
+      +'<div class="sbrow" style="margin-top:8px">'+sb(num(s.remaining),'부족 잔여')+sb(num(s.covered),'발주됨(입고 대기)')
+      +'<div class="sb"><div class="v" style="color:#b3402e">'+num(s.unordered)+'</div><div class="l">미발주 부족 — 새로 주문할 몫</div></div>'
+      +'<div class="sb"><div class="v" style="color:#b3402e">'+num(s.need)+'</div><div class="l">실구매 필요 (− 가용재고 '+num(s.avail)+')</div></div>'
+      +sb(num(s.missed),'놓친 수요 (만료·취소 견적)')
+      +sb(num(s.backorder),'열린 발주 잔량')+'</div>';
+    if(!items.length) return h+'<div class="hint">이 SKU 의 부족 기록이 없습니다.</div>';
+    h+='<table style="margin-top:8px"><tr><th>발생일</th><th>고객</th><th>견적</th><th class="num">부족</th><th class="num">해소</th><th class="num">잔여</th><th class="num">발주됨</th><th class="num">미발주</th><th>단계 · 이력</th></tr>';
+    for(const x of items){
+      h+='<tr>'
+        +'<td>'+esc(x.occurred_at||'')+'</td>'
+        +'<td>'+esc(x.customer_name||'—')+'</td>'
+        +'<td>'+shQuote(x)+'</td>'
+        +'<td class="num">'+num(x.shortage_qty)+'</td>'
+        +'<td class="num ok-cell">'+num(x.resolved_qty)+'</td>'
+        +'<td class="num">'+num(x.status==='open'?x.remaining_qty:0)+'</td>'
+        +'<td class="num">'+num(x.status==='open'&&!x.missed?x.ordered_qty:0)+'</td>'
+        +'<td class="num'+(Number(x.unordered_qty)>0?' unord-cell':'')+'">'+num(x.unordered_qty)+'</td>'
+        +'<td>'+shStage(x)+shTrail(x)+(x.note?('<div class="sh-sub">'+esc(x.note)+'</div>'):'')+'</td>'
+      +'</tr>';
+    }
+    h+='</table><div class="hint" style="margin-top:6px">발주 연결은 자동 FIFO — 오래된 발주 잔량이 오래된 부족분부터 덮습니다. 입고(수입배치 승인) 때 같은 순서로 해소됩니다. 고객이 먼저 사 가면 판매로 해소됩니다.</div>';
+    return h;
+  }
+  const DRILL_COLS=[
+    {k:'moved_at',t:'일자'},{k:'origin',t:'구분'},{k:'qty',t:'수량',num:true},
+    {k:'pct',t:'전체대비 %',num:true},{k:'destination',t:'목적지 / 근거'},{k:'ref',t:'참조 / 비고'},
+  ];
+  const fmtDate=(s)=> s? String(s).slice(0,10) : '—';
+  async function openDrill(pid){
+    const box=$('drill'); box.classList.remove('hidden'); box.innerHTML='<div class="hint">이동 이력 불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/purchases/review/'+pid+'/movements',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ box.innerHTML='이력 실패: '+esc(d.error||res.status); return; }
+      drillItems=d.items||[]; drillProd=d.product||{}; drillTotals=d.totals||{};
+      drillSortKey='moved_at'; drillSortDir='desc';
+      drillSh=null; renderDrill();
+      // 2026-10-15 · 부족분 진행(발생 → 발주됨 → 입고 해소) — 이동 이력과 따로 받아 위에 붙인다
+      try{
+        const r2=await fetch(session.api+'/api/purchases/review/'+pid+'/shortages',{headers:auth()});
+        const d2=await r2.json(); drillSh=(r2.ok&&!d2.error)?d2:{error:d2.error||r2.status};
+      }catch(e){ drillSh={error:e.message}; }
+      renderDrill();
+      if(typeof box.scrollIntoView==='function') box.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }catch(e){ box.innerHTML='서버 오류: '+esc(e.message); }
+  }
+  function sortDrill(items){
+    const col=DRILL_COLS.find(c=>c.k===drillSortKey)||DRILL_COLS[0];
+    const a=items.slice();
+    a.sort((x,y)=> col.num ? ((Number(x[drillSortKey])||0)-(Number(y[drillSortKey])||0))
+                           : String(x[drillSortKey]==null?'':x[drillSortKey]).localeCompare(String(y[drillSortKey]==null?'':y[drillSortKey]),'es'));
+    if(drillSortDir==='desc') a.reverse();
+    return a;
+  }
+  function renderDrill(){
+    const box=$('drill'); const t=drillTotals||{};
+    let h='<button class="close" onclick="document.getElementById(\'drill\').classList.add(\'hidden\')">✕ 닫기</button>';
+    h+='<h3>'+esc(drillProd.code||'')+(drillProd.name?(' · '+esc(drillProd.name)):'')+' — 이동 이력</h3>';
+    h+='<div class="sbrow" style="margin-top:10px">'+
+        sb(num(t.in_qty),'총 입고')+sb(num(t.out_qty),'총 출고')+sb(num(t.adjust_qty),'조정')+
+        sb(num(t.net),'순증감')+sb(num(drillProd.stock_qty),'현재고')+sb(num(t.count),'이동 건수')+'</div>';
+    if(t.capped) h+='<div class="hint">※ 최근 5,000건까지 표시(초과분 있음).</div>';
+    h+=renderShortageBlock();
+    h+='<h3 style="margin-top:16px">입출고 이동 이력</h3>';
+    const items=sortDrill(drillItems);
+    let tbl='<table><tr>';
+    for(const c of DRILL_COLS){ const ar=drillSortKey===c.k?(drillSortDir==='asc'?' ▲':' ▼'):''; tbl+='<th class="'+(c.num?'num ':'')+'sortable" data-k="'+c.k+'">'+c.t+ar+'</th>'; }
+    tbl+='</tr>';
+    if(!items.length){ tbl+='<tr><td colspan="'+DRILL_COLS.length+'" style="color:var(--muted)">이동 내역 없음</td></tr>'; }
+    for(const m of items){
+      const cls=m.move_type==='in'?'in':(m.move_type==='out'?'out':'adj');
+      tbl+='<tr>'+
+        '<td>'+fmtDate(m.moved_at)+'</td>'+
+        '<td><span class="mtag '+cls+'">'+esc(m.origin)+'</span></td>'+
+        '<td class="num">'+num(m.qty)+'</td>'+
+        '<td class="num"><div class="bar"><span style="width:'+Math.min(100,Number(m.pct)||0)+'%"></span><em>'+(Number(m.pct)||0).toFixed(2)+'%</em></div></td>'+
+        '<td>'+esc(m.destination||'—')+(m.sat_no?(' <span style="color:var(--muted);font-size:11px">('+esc(m.sat_no)+')</span>'):'')+'</td>'+
+        '<td style="color:var(--muted);font-size:12px">'+esc(m.ref||m.note||'')+'</td>'+
+      '</tr>';
+    }
+    tbl+='</table>';
+    box.innerHTML=h+tbl;
+    box.querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>{
+      const k=th.dataset.k;
+      if(drillSortKey===k){ drillSortDir=(drillSortDir==='asc'?'desc':'asc'); }
+      else { drillSortKey=k; const col=DRILL_COLS.find(c=>c.k===k); drillSortDir=(col&&col.num)?'desc':'asc'; }
+      renderDrill();
+    }));
+  }
+
+  // ---- 엑셀 다운로드: 현재 조회 조건의 전체 SKU(모든 페이지) ----
+  const XLS_CHUNK=5000;      // 서버 limit 상한과 동일
+  const XLS_MAX_PAGES=40;    // 안전장치(최대 20만 행)
+  let exporting=false;
+
+  function xlsRow(it){
+    return {
+      'CTR': it.ctr||'',
+      '제품명': it.name||'',
+      'SYD': (it.syd&&it.syd.length)?it.syd.join(', '):'',
+      '적용차종': (it.applications&&it.applications.length)?it.applications.join(' / '):'',
+      '현재재고': Number(it.stock_qty)||0,
+      '가용재고': Number(it.avail_qty)||0,
+      'backorder': Number(it.backorder_qty)||0,
+      '누적판매': Number(it.sold_qty)||0,
+      '부족 잔여': Number(it.shortage_qty)||0,
+      '발주됨': Number(it.shortage_covered_qty)||0,
+      '미발주 부족': Number(it.shortage_unordered_qty)||0,
+      '실구매 필요': Number(it.need_qty)||0,
+      '놓친 수요': Number(it.shortage_missed_qty)||0,
+      '놓친 수요(6개월)': Number(it.missed6_qty)||0,
+      '원산지': it.origin_code||it.origin||'',
+      'MOQ': Number(it.moq)||0,
+      '추천발주수량': it.manual?'직접 결정':(Number(it.rec_qty)||0),
+      '상태': it.is_active===false?'inactive':'active',
+      '공장 상태': FS[it.factory_status]||'',
+      'L/R 짝': it.pair_code||'',
+      '짝 맞춤 추가': it.pair_adjusted?Math.max(0,(Number(it.rec_raw_qty)||0)-(Number(it.rec_own_qty)||0)):'',
+      '별도관리': it.manual?'Y':'',
+    };
+  }
+  function xlsFileName(){
+    const d=new Date();
+    const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    return 'refatrix_purchase_review_'+ymd+'.xlsx';
+  }
+  async function fetchReviewChunk(limit,off){
+    const p=new URLSearchParams();
+    if(lastCriteria.q)p.set('q',lastCriteria.q);
+    if(lastCriteria.demand)p.set('demand','1');
+    p.set('sort',lastCriteria.sort); p.set('dir',lastCriteria.dir);
+    p.set('limit',limit); p.set('offset',off);
+    const res=await fetch(session.api+'/api/purchases/review?'+p.toString(),{headers:auth()});
+    const d=await res.json();
+    if(!res.ok||d.error) throw new Error(d.error||('HTTP '+res.status));
+    return d;
+  }
+  async function exportExcel(){
+    if(exporting) return;
+    const btn=$('xlsxBtn'), m=$('msg'); m.className='msg';
+    if(typeof XLSX==='undefined'){ m.className='msg err'; m.textContent='엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'; return; }
+    const label=btn.textContent; exporting=true; btn.disabled=true;
+    try{
+      const rows=[]; let off=0, tot=0, page=0;
+      while(page<XLS_MAX_PAGES){
+        const d=await fetchReviewChunk(XLS_CHUNK,off);
+        tot=Number(d.total)||0;
+        const items=d.items||[];
+        for(const it of items) rows.push(it);
+        off+=items.length; page++;
+        btn.textContent='내려받는 중… '+rows.length.toLocaleString()+(tot?(' / '+tot.toLocaleString()):'');
+        if(!items.length||rows.length>=tot) break;
+      }
+      if(!rows.length){ m.className='msg err'; m.textContent='내보낼 데이터가 없습니다.'; return; }
+      const ws=XLSX.utils.json_to_sheet(rows.map(xlsRow));
+      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:11},{wch:12},{wch:11},{wch:11},{wch:10},{wch:12},{wch:12},{wch:11},{wch:12},{wch:8},{wch:6},{wch:12},{wch:9},{wch:8},{wch:10},{wch:10},{wch:10}];
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매검토');
+      XLSX.writeFile(wb,xlsFileName());
+      if(tot&&rows.length<tot){ m.className='msg err'; m.textContent='※ 안전 상한에 걸려 '+rows.length.toLocaleString()+'행만 받았습니다(전체 '+tot.toLocaleString()+'). 검색어로 범위를 좁혀 다시 받으세요.'; }
+    }catch(e){ m.className='msg err'; m.textContent='엑셀 다운로드 실패: '+e.message; }
+    finally{ exporting=false; btn.disabled=false; btn.textContent=label; }
+  }
+
+  // ===== 2026-10-20 · 공장 SKU 정보(원산지 · MOQ · 생산 상태) 업로드 =====
+  let fTable=null, fSource='excel', fReady=null;
+  function toggleFactory(show){
+    const el=$('fpanel'); const on=(show==null)?el.classList.contains('hidden'):show;
+    el.classList.toggle('hidden',!on);
+    if(on && typeof el.scrollIntoView==='function') el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  function xlsxReady(){
+    if(typeof XLSX==='undefined'){ const m=$('fMsg'); m.innerHTML='<span class="bad">엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.</span>'; return false; }
+    return true;
+  }
+  const FS_KO={production:'생산중',discontinued:'단산',development:'개발',dev_hold:'개발보류'};
+  async function dlFactoryTemplate(withCurrent){
+    if(!xlsxReady()) return;
+    const head=['CTR','제품명','원산지','MOQ','생산 상태'];
+    let rows=[head];
+    if(withCurrent){
+      $('fMsg').textContent='현재값 불러오는 중…';
+      try{
+        const r=await fetch(session.api+'/api/purchases/factory-info',{headers:auth()}); const d=await r.json();
+        if(!r.ok||d.error) throw new Error(d.error||r.status);
+        for(const it of d.items||[]) rows.push([it.code,it.name||'',it.origin||'',it.moq==null?'':it.moq,FS_KO[it.factory_status]||'']);
+        $('fMsg').textContent=(rows.length-1).toLocaleString()+'개 SKU 현재값을 담았습니다.';
+      }catch(e){ $('fMsg').innerHTML='<span class="bad">현재값을 불러오지 못했습니다: '+esc(e.message)+'</span>'; return; }
+    } else {
+      rows.push(['CQ0280L','(참고용 · 무시됨)','CN',20,'생산중'],['CB0089','','KR','','단산']);
+    }
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:14},{wch:34},{wch:10},{wch:8},{wch:12}];
+    const guide=XLSX.utils.aoa_to_sheet([
+      ['공장 SKU 정보 업로드 양식 — 안내'],[''],
+      ['칸','쓰는 법'],
+      ['CTR','CTR 코드(필수). 제품마스터에 없는 코드는 「미등록 CTR」로 따로 보여주고 반영하지 않습니다.'],
+      ['제품명','참고용 — 업로드할 때 무시합니다.'],
+      ['원산지','CN · TR · KR · VN 등. China·Chino·Turquía·Corea·Vietnam 표기도 코드로 바꿔 저장합니다.'],
+      ['MOQ','최소주문수량(0 이상 숫자). 비워 두면 원산지 기본값: CN 10 · TR 40 · 그 외 없음.'],
+      ['생산 상태','생산중 · 단산 · 개발 · 개발보류 (Producción · Descontinuado · Desarrollo · En pausa 도 인식). 단산·개발·개발보류는 추천발주수량 0.'],
+      [''],['빈 칸','바꾸지 않음(지금 값 유지)'],['-','값 지우기'],
+      ['같은 CTR 여러 줄','마지막 줄이 반영됩니다.'],
+    ]);
+    guide['!cols']=[{wch:16},{wch:90}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'공장SKU정보'); XLSX.utils.book_append_sheet(wb,guide,'안내');
+    const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    XLSX.writeFile(wb,'refatrix_factory_sku_'+(withCurrent?'current_':'template_')+ymd+'.xlsx');
+  }
+  async function onFactoryFile(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    if(!xlsxReady()) return;
+    try{
+      const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      fTable=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:'',blankrows:false});
+      fSource='excel'; $('fPaste').value='';
+      $('fFileName').textContent=f.name+' · '+Math.max(0,fTable.length-1).toLocaleString()+'줄';
+      resetFactoryPreview(); factoryPreview();
+    }catch(e){ $('fMsg').innerHTML='<span class="bad">엑셀을 읽지 못했습니다: '+esc(e.message)+'</span>'; }
+    ev.target.value='';
+  }
+  function resetFactoryPreview(){ fReady=null; $('fApplyBtn').disabled=true; $('fResult').innerHTML=''; }
+  function factoryPayload(){
+    const txt=$('fPaste').value;
+    if(txt.trim()) return {table:txt.replace(/\r/g,'').split('\n').map(l=>l.split('\t')), source:'paste'};
+    if(fTable&&fTable.length) return {table:fTable, source:fSource};
+    return null;
+  }
+  const fmtV=(f,v)=> v==null||v===''?'(없음)':(f==='factory_status'?(FS_KO[v]||v):String(v));
+  function chgCell(c,f){ if(!c) return '<td style="color:var(--muted)">—</td>'; return '<td class="chg"><s>'+esc(fmtV(f,c.from))+'</s> → <b>'+esc(fmtV(f,c.to))+'</b></td>'; }
+  async function factoryPreview(){
+    const body=factoryPayload(); const m=$('fMsg');
+    if(!body){ m.innerHTML='<span class="bad">엑셀 파일을 고르거나 붙여넣기 칸에 내용을 넣으세요.</span>'; return; }
+    resetFactoryPreview(); m.textContent='확인 중…';
+    try{
+      const r=await fetch(session.api+'/api/purchases/factory-info/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||r.status);
+      m.innerHTML='전체 <b>'+num(d.total)+'</b>줄 · <span class="ok">바뀜 '+num(d.changed)+'</span> · 그대로 '+num(d.unchanged)
+        +(d.error_count?' · <span class="bad">오류 '+num(d.error_count)+'</span>':'')
+        +(d.not_found_count?' · <span class="bad">미등록 CTR '+num(d.not_found_count)+'</span>':'')
+        +(d.dup?' · 중복 '+num(d.dup)+'(마지막 줄 반영)':'');
+      let h='';
+      if(d.items&&d.items.length){
+        h+='<div class="fprev"><table style="margin-top:0"><tr><th>줄</th><th>CTR</th><th>제품명</th><th>원산지</th><th>MOQ</th><th>생산 상태</th></tr>';
+        for(const it of d.items.slice(0,500)) h+='<tr><td>'+it.row+'</td><td><b>'+esc(it.code)+'</b></td><td style="font-size:12px">'+esc(it.name||'')+'</td>'
+          +chgCell(it.changes.origin,'origin')+chgCell(it.changes.moq,'moq')+chgCell(it.changes.factory_status,'factory_status')+'</tr>';
+        h+='</table></div>'+(d.items.length>500?'<div class="hint">앞 500줄만 표시 — 반영은 '+num(d.changed)+'줄 전부.</div>':'');
+      }
+      if(d.errors&&d.errors.length) h+='<div class="hint"><span class="bad">오류(반영 안 함)</span><br>'+d.errors.slice(0,50).map(e=>e.row+'줄 '+esc(e.code||'')+' — '+esc(e.msg)).join('<br>')+(d.error_count>50?'<br>… 외 '+(d.error_count-50)+'건':'')+'</div>';
+      if(d.not_found&&d.not_found.length) h+='<div class="hint"><span class="bad">제품마스터에 없는 CTR(반영 안 함)</span>: '+d.not_found.slice(0,80).map(esc).join(', ')+(d.not_found_count>80?' … 외 '+(d.not_found_count-80)+'개':'')+'</div>';
+      $('fResult').innerHTML=h;
+      if(d.changed>0){ fReady=body; $('fApplyBtn').disabled=false; }
+    }catch(e){ m.innerHTML='<span class="bad">미리보기 실패: '+esc(e.message)+'</span>'; }
+  }
+  async function factoryApply(){
+    if(!fReady) return; const m=$('fMsg'); const btn=$('fApplyBtn'); btn.disabled=true; m.textContent='반영 중…';
+    try{
+      const r=await fetch(session.api+'/api/purchases/factory-info/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(fReady)});
+      const d=await r.json();
+      if(r.status===403){ m.innerHTML='<span class="bad">반영은 디렉터만 할 수 있습니다. 미리보기 결과를 디렉터에게 전달하세요.</span>'; return; }
+      if(!r.ok||d.error) throw new Error(d.error||r.status);
+      m.innerHTML='<span class="ok">✔ '+num(d.updated)+'개 SKU 반영 완료</span> (이력 번호 '+esc(d.batch_id)+')'
+        +(d.error_count?' · 오류 '+num(d.error_count)+'줄 제외':'')+(d.not_found_count?' · 미등록 CTR '+num(d.not_found_count)+'개 제외':'');
+      fReady=null; $('fResult').innerHTML=''; fTable=null; $('fFileName').textContent=''; $('fPaste').value='';
+      load();
+    }catch(e){ m.innerHTML='<span class="bad">반영 실패: '+esc(e.message)+'</span>'; btn.disabled=false; }
+  }
+
+  // ===== 2026-10-20 · 이번달 발주검토 · 발주서 초안(출력) =====
+  //   추천발주수량 > 0 인 SKU(짝 포함)를 원산지별로 묶는다. 별도관리 품목은 수량 기입 칸만 둔다.
+  let poDraft=null;
+  async function openPoDraft(){
+    const w=window.open('','_blank');
+    if(w){ w.document.write('<p style="font-family:sans-serif;padding:20px">Generando orden de compra…</p>'); }
+    try{
+      const r=await fetch(session.api+'/api/purchases/review/po-draft',{headers:auth()}); const d=await r.json();
+      if(!r.ok||d.error) throw new Error(d.error||r.status);
+      poDraft=d;
+      // 서버가 이전 버전이면(FOB·통화 항목이 없음) 발주서를 만들지 않고 알린다 — 화면(GitHub Pages)만 새 버전으로 뜬 경우
+      if(d.currency!=='USD' || !('total_amount_usd' in d)){
+        if(w) w.close();
+        $('msg').className='msg err';
+        $('msg').textContent='서버(백엔드)가 이전 버전이라 FOB 단가를 받지 못했습니다. Railway 배포가 끝났는지(Success) 확인한 뒤 다시 누르세요.';
+        return;
+      }
+      if(!w){ $('msg').className='msg err'; $('msg').textContent='팝업이 막혔습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 누르세요.'; return; }
+      w.document.open(); w.document.write(poDraftHtml(d)); w.document.close();
+    }catch(e){ if(w) w.close(); $('msg').className='msg err'; $('msg').textContent='발주서 초안을 만들지 못했습니다: '+e.message; }
+  }
+  // 발주서 — 스페인어 일반 양식(Orden de Compra). 원산지별 표 · 소계 · 총계(USD, FOB).
+  const FS_ES={production:'En producción',discontinued:'Descontinuado',development:'En desarrollo',dev_hold:'Desarrollo en pausa'};
+  const usd=(v)=> v==null?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const qn=(v)=> Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:3});
+  function sydShort(it){ const a=it.syd||[]; return a.length?(a[0]+(a.length>1?' +'+(a.length-1):'')):''; }
+  function poNotes(it){
+    const n=[];
+    if(it.pair_adjusted) n.push('Par L/R +'+qn((it.rec_raw_qty||0)-(it.rec_own_qty||0)));
+    if(it.rec_qty>0 && it.moq && it.rec_raw_qty<it.moq) n.push('MOQ aplicado (calc. '+qn(it.rec_raw_qty)+')');
+    if(it.is_active===false) n.push('Inactivo');
+    if(it.no_fob) n.push('Sin precio FOB');
+    return n.join(' · ');
+  }
+  function poDraftHtml(d){
+    const e=esc, cv=d.cost_visible!==false;
+    const ocNo='OC-'+String(d.month).replace('-','')+'-BORRADOR';
+    let body='';
+    (d.groups||[]).forEach((g,gi)=>{
+      body+='<div class="sec"><h2>'+(gi+1)+'. Origen: '+e(g.origin_es)+(g.origin_es!==g.origin?' ('+e(g.origin)+')':'')+'</h2>'
+        +'<table><colgroup><col style="width:28px"><col style="width:84px"><col style="width:150px"><col style="width:74px"><col style="width:64px"><col style="width:42px"><col style="width:58px"><col style="width:80px"><col style="width:92px"><col></colgroup>'
+        +'<thead><tr><th>#</th><th>Código CTR</th><th>Descripción</th><th>SYD</th><th>Par L/R</th><th class="r">MOQ</th><th class="r">Cantidad</th><th class="r">Precio FOB<br>unit. (USD)</th><th class="r">Importe<br>(USD)</th><th>Notas</th></tr></thead><tbody>';
+      g.items.forEach((it,i)=>{
+        body+='<tr><td class="c">'+(i+1)+'</td><td><b>'+e(it.ctr)+'</b></td><td class="ds" title="'+e(it.name||'')+'">'+e(it.name||'')+'</td>'
+          +'<td class="syd" title="'+e((it.syd||[]).join(', '))+'">'+e(sydShort(it))+'</td><td>'+e(it.pair_code||'')+'</td>'
+          +'<td class="r">'+(it.moq?qn(it.moq):'—')+'</td><td class="r"><b>'+qn(it.rec_qty)+'</b></td>'
+          +'<td class="r">'+(cv?(it.fob_usd==null?'<span class="warn">Sin FOB</span>':usd(it.fob_usd)):'—')+'</td>'
+          +'<td class="r">'+(cv&&it.amount_usd!=null?usd(it.amount_usd):'—')+'</td><td class="nt">'+e(poNotes(it))+'</td></tr>';
+      });
+      body+='</tbody><tfoot><tr><td colspan="6" class="r">Subtotal '+e(g.origin_es)+' — '+qn(g.skus)+' artículos</td><td class="r">'+qn(g.qty)+'</td><td></td><td class="r">'+(cv?usd(g.amount_usd):'—')+'</td><td class="nt">'+(g.no_fob?g.no_fob+' sin FOB (no incluidos)':'')+'</td></tr></tfoot></table></div>';
+    });
+    if(!(d.groups||[]).length) body+='<p>No hay artículos sugeridos para este mes.</p>';
+    // 원산지별 요약 + 총계
+    let sum='<div class="sec sum"><h2>Resumen por origen</h2><table class="small"><thead><tr><th>Origen</th><th class="r">Artículos</th><th class="r">Piezas</th><th class="r">Importe (USD)</th></tr></thead><tbody>'
+      +(d.groups||[]).map(g=>'<tr><td>'+e(g.origin_es)+(g.origin_es!==g.origin?' ('+e(g.origin)+')':'')+'</td><td class="r">'+qn(g.skus)+'</td><td class="r">'+qn(g.qty)+'</td><td class="r">'+(cv?usd(g.amount_usd):'—')+'</td></tr>').join('')
+      +'</tbody><tfoot><tr class="tot"><td>TOTAL GENERAL</td><td class="r">'+qn(d.total_skus)+'</td><td class="r">'+qn(d.total_qty)+'</td><td class="r">'+(cv?'USD '+usd(d.total_amount_usd):'—')+'</td></tr></tfoot></table>'
+      +(d.no_fob?'<div class="warn" style="margin-top:4px">'+qn(d.no_fob)+' artículo(s) sin precio FOB no están incluidos en el total.</div>':'')
+      +(cv?'':'<div class="warn" style="margin-top:4px">Sin permiso para ver costos: precios e importes ocultos.</div>')+'</div>';
+    let man='';
+    if((d.manual||[]).length){
+      man='<div class="sec"><h2>Artículos de gestión manual — cantidad por definir</h2><table class="small"><thead><tr><th>Código CTR</th><th>Descripción</th><th class="r">Existencia</th><th class="r">Disponible</th><th class="r">Pedido pendiente</th><th class="r">Precio FOB<br>unit. (USD)</th><th class="r">Cantidad</th><th class="r">Importe (USD)</th></tr></thead><tbody>'
+        +d.manual.map(it=>'<tr><td><b>'+e(it.ctr)+'</b></td><td class="ds" title="'+e(it.name||'')+'">'+e(it.name||'')+'</td><td class="r">'+qn(it.stock_qty)+'</td><td class="r">'+qn(it.avail_qty)+'</td><td class="r">'+qn(it.backorder_qty)+'</td><td class="r">'+(cv?(it.fob_usd==null?'Sin FOB':usd(it.fob_usd)):'—')+'</td><td class="blank"></td><td class="blank"></td></tr>').join('')
+        +'</tbody></table><div class="nt" style="margin-top:3px">No incluidos en el total: la cantidad se define según la estrategia de compra y venta.</div></div>';
+    }
+    return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Orden de Compra '+e(ocNo)+'</title><style>'
+      +'body{font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;color:#1a1a1a;margin:22px;font-size:11.5px}'
+      +'.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #143D34;padding-bottom:10px}'
+      +'.brand{font-size:22px;font-weight:800;color:#143D34;letter-spacing:.5px}.brand small{display:block;font-size:11px;font-weight:400;color:#555;letter-spacing:0}'
+      +'.doc{text-align:right}.doc h1{margin:0;font-size:18px;color:#143D34}.doc .st{display:inline-block;margin-top:3px;padding:1px 8px;border:1px solid #c9a94a;color:#7a5a17;border-radius:4px;font-size:10.5px;font-weight:700}'
+      +'.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.box{border:1px solid #d9d4c8;border-radius:6px;padding:8px 10px}.box b{display:inline-block;min-width:118px;color:#555;font-weight:600}'
+      +'h2{font-size:13px;margin:16px 0 5px;color:#143D34}.bar{margin:10px 0}.bar button{padding:7px 14px;margin-right:6px;border:1px solid #143D34;background:#fff;color:#143D34;border-radius:6px;font-weight:700;cursor:pointer}'
+      +'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #d9d4c8;padding:4px 6px;text-align:left;vertical-align:top;overflow:hidden;text-overflow:ellipsis}'
+      +'th{background:#143D34;color:#fff;font-size:10.5px;font-weight:600}td.syd{white-space:nowrap;font-size:10.5px;color:#666}td.ds{white-space:nowrap;max-width:150px}'
+      +'table.small{table-layout:auto}.r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.nt{font-size:10px;color:#666}'
+      +'tfoot td{background:#f4f1ea;font-weight:700}tr.tot td{background:#143D34;color:#fff;font-size:12.5px}.warn{color:#b3402e;font-weight:700}.blank{background:#fffdf5;min-width:60px}'
+      +'.sum{max-width:520px;margin-left:auto}.sign{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;margin-top:40px}.sign div{border-top:1px solid #555;padding-top:4px;text-align:center;color:#555}'
+      +'.terms{margin-top:14px;font-size:10.5px;color:#444;line-height:1.6}'
+      +'@media print{.bar{display:none}body{margin:10mm}.sec{page-break-inside:auto}tr{page-break-inside:avoid}thead{display:table-header-group}h2{page-break-after:avoid}}'
+      +'</style></head><body>'
+      +'<div class="hd"><div class="brand">REFATRIX<small>Refatrix · Monterrey, N.L., México · Distribuidor CTR</small></div>'
+      +'<div class="doc"><h1>ORDEN DE COMPRA</h1><div>No. <b>'+e(ocNo)+'</b></div><span class="st">BORRADOR — SUGERENCIA DEL SISTEMA</span></div></div>'
+      +'<div class="meta"><div class="box"><div><b>Fecha:</b> '+e(d.date)+'</div><div><b>Periodo:</b> '+e(d.month)+'</div><div><b>Moneda:</b> USD</div><div><b>Incoterm:</b> FOB</div></div>'
+      +'<div class="box"><div><b>Comprador:</b> Refatrix</div><div><b>Proveedor:</b> según origen (ver secciones)</div><div><b>Artículos:</b> '+qn(d.total_skus)+' · <b style="min-width:0">Piezas:</b> '+qn(d.total_qty)+'</div>'
+      +'<div><b>Importe total:</b> '+(cv?'<span style="font-weight:800">USD '+usd(d.total_amount_usd)+'</span>':'—')+'</div></div></div>'
+      +'<div class="bar"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button><button onclick="window.opener&&window.opener.poDraftExcel&&window.opener.poDraftExcel()">⬇ Descargar Excel</button></div>'
+      +body+sum+man
+      +'<div class="terms"><b>Notas:</b><br>1. Precios FOB según la lista de precios vigente al '+e(d.date)+' (USD por pieza).<br>'
+      +'2. Cantidades sugeridas por el sistema (faltantes + demanda no atendida de los últimos 6 meses, pares L/R y MOQ por origen). Revise y ajuste antes de enviar al proveedor.<br>'
+      +'3. Artículos ordenados por código CTR dentro de cada origen.</div>'
+      +'<div class="sign"><div>Elaboró</div><div>Revisó</div><div>Autorizó (Dirección General)</div></div>'
+      +'</body></html>';
+  }
+  function poDraftExcel(){
+    if(!poDraft||typeof XLSX==='undefined') return;
+    const cv=poDraft.cost_visible!==false;
+    const head=['Origen','#','Código CTR','Descripción','SYD','Par L/R','MOQ','Cantidad','Precio FOB unit. (USD)','Importe (USD)','Notas'];
+    const aoa=[['ORDEN DE COMPRA (BORRADOR) OC-'+String(poDraft.month).replace('-','')+'-BORRADOR'],['Fecha',poDraft.date,'Moneda','USD','Incoterm','FOB'],[],head];
+    for(const g of poDraft.groups||[]){
+      g.items.forEach((it,i)=>aoa.push([g.origin_es,i+1,it.ctr,it.name||'',(it.syd||[]).join(', '),it.pair_code||'',it.moq||'',it.rec_qty,
+        cv&&it.fob_usd!=null?it.fob_usd:'',cv&&it.amount_usd!=null?it.amount_usd:'',poNotes(it)]));
+      aoa.push(['Subtotal '+g.origin_es,'','','','','','',g.qty,'',cv?g.amount_usd:'',g.no_fob?g.no_fob+' sin FOB':'']);
+      aoa.push([]);
+    }
+    aoa.push(['TOTAL GENERAL','','','','','','',poDraft.total_qty,'',cv?poDraft.total_amount_usd:'','']);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:12},{wch:4},{wch:12},{wch:30},{wch:14},{wch:10},{wch:6},{wch:9},{wch:12},{wch:13},{wch:28}];
+    const sum=[['Origen','Artículos','Piezas','Importe (USD)']];
+    for(const g of poDraft.groups||[]) sum.push([g.origin_es,g.skus,g.qty,cv?g.amount_usd:'']);
+    sum.push(['TOTAL GENERAL',poDraft.total_skus,poDraft.total_qty,cv?poDraft.total_amount_usd:'']);
+    const ws2=XLSX.utils.aoa_to_sheet(sum); ws2['!cols']=[{wch:22},{wch:10},{wch:10},{wch:14}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Orden de compra'); XLSX.utils.book_append_sheet(wb,ws2,'Resumen');
+    if((poDraft.manual||[]).length){
+      const m=[['Código CTR','Descripción','Existencia','Disponible','Pedido pendiente','Precio FOB unit. (USD)','Cantidad','Importe (USD)']];
+      for(const it of poDraft.manual) m.push([it.ctr,it.name||'',it.stock_qty,it.avail_qty,it.backorder_qty,cv&&it.fob_usd!=null?it.fob_usd:'','','']);
+      const ws3=XLSX.utils.aoa_to_sheet(m); ws3['!cols']=[{wch:12},{wch:30},{wch:10},{wch:10},{wch:14},{wch:16},{wch:10},{wch:13}];
+      XLSX.utils.book_append_sheet(wb,ws3,'Gestión manual');
+    }
+    XLSX.writeFile(wb,'Refatrix_Orden_de_Compra_'+String(poDraft.month).replace('-','')+'.xlsx');
+  }
+  window.poDraftExcel=poDraftExcel;
+
+  function updatePager(shown){
+    const from=total===0?0:offset+1, to=offset+shown;
+    $('pageInfo').textContent=total? (from.toLocaleString()+'–'+to.toLocaleString()+' / '+total.toLocaleString()+' SKU') : '0 SKU';
+    $('prevBtn').disabled=offset<=0;
+    $('nextBtn').disabled=(offset+shown)>=total;
+  }
+
+  // 이벤트
+  $('searchBtn').addEventListener('click',()=>{ offset=0; load(); });
+  $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ offset=0; load(); } });
+  $('demandOnly').addEventListener('change',()=>{ offset=0; load(); });
+  $('pageSize').addEventListener('change',()=>{ offset=0; load(); });
+  $('prevBtn').addEventListener('click',()=>{ offset=Math.max(0,offset-pageSize()); load(); });
+  $('nextBtn').addEventListener('click',()=>{ offset=offset+pageSize(); load(); });
+  $('xlsxBtn').addEventListener('click',exportExcel);
+  $('factoryBtn').addEventListener('click',()=>toggleFactory());
+  $('poBtn').addEventListener('click',openPoDraft);
+  $('fFile').addEventListener('change',onFactoryFile);
+  $('fPaste').addEventListener('input',()=>{ if(fReady) resetFactoryPreview(); });
+
+  // 포털 세션 자동 로그인
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  (function(){ try{ const ps=portalSession(); if(ps&&ps.token){
+    const apiEl=$('api');
+    session={token:ps.token,user:ps.user||{},api:(ps.api||(apiEl?apiEl.value:'')||'https://refatrix-production.up.railway.app').replace(/\/+$/,'')};
+    onLoggedIn(ps.user||{});
+  } }catch(e){ console.error('auto-login',e); } })();
+</script>
+<script src="refatrix-nav.js?v=20261127hr"></script>
+</body>
+</html>

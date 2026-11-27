@@ -1,6 +1,6 @@
 // =====================================================================
 // 2026-11-27 · 차종으로 제품찾기 — 차량 도면용 데이터 (디렉터 요청)
-//   GET /api/products/vehicle-map?maker=&model=&year=   (제품 화면 열람자 · requirePage('products'))
+//   GET /api/products/vehicle-map?maker=&model=&year=   (제품 · 견적 화면 열람자 — 11-27f 견적에서 차종으로 찾아 담기)
 //   11-27e · 메이커 칸에 여럿('FORD, MERCURY')이면 낱개 중 하나만 맞아도 된다
 //   11-27b · 메이커 · 모델은 이름 키(대소문자 · 하이픈 · 공백 · 악센트 무시)로 찾는다 — 카탈로그 원문은 그대로
 //
@@ -22,7 +22,7 @@
 //   가격 · 원가는 보내지 않는다.
 // =====================================================================
 import { query } from '../db.js';
-import { authGuard, requirePage } from '../middleware/authGuard.js';
+import { authGuard, requirePageAny } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
 import { oeByProduct } from '../oeCodes.js';
 import { rackStockReady, rackMap } from '../rackStock.js';
@@ -37,7 +37,7 @@ const NSQL = (col) => `regexp_replace(upper(COALESCE(${col},'')), '[^A-Z0-9]', '
 async function safe(fn, dflt) { try { return await fn(); } catch (_) { return dflt; } }
 
 export default async function vehicleMapRoutes(app) {
-  app.get('/api/products/vehicle-map', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
+  app.get('/api/products/vehicle-map', { preHandler: [authGuard, requirePageAny(['products', 'quote', 'sales'])] }, async (req, reply) => {
     const { perm } = req.ctx;
     const maker = String(req.query.maker || '').trim().slice(0, 80);
     const model = String(req.query.model || '').trim().slice(0, 120);
@@ -53,11 +53,11 @@ export default async function vehicleMapRoutes(app) {
     let yCond = '';
     if (year != null) { params.push(year); yCond = ` AND a.year_from <= $3 AND a.year_to >= $3`; }
     const prods = (await query(
-      `SELECT p.id, p.code, p.name, p.scode, COALESCE(p.stock_qty,0) AS stock_qty,
+      `SELECT p.id, p.code, p.name, p.scode, COALESCE(p.stock_qty,0) AS stock_qty, p.is_active,
               string_agg(DISTINCT a.app_text, ' // ') AS app_hit
          FROM product_applications a JOIN products p ON p.id = a.product_id AND p.deleted_at IS NULL
         WHERE ${MAKER_COND_SQL('a.maker', 1)} AND ${NK_SQL('a.model')} = $2${yCond}
-        GROUP BY p.id, p.code, p.name, p.scode, p.stock_qty
+        GROUP BY p.id, p.code, p.name, p.scode, p.stock_qty, p.is_active
         ORDER BY p.code
         LIMIT ${MAX_PRODUCTS}`, params)).rows;
     const pids = prods.map((r) => Number(r.id));
@@ -139,6 +139,7 @@ export default async function vehicleMapRoutes(app) {
       const t = transit.get(id);
       return {
         id, code, name: r.name || '', cat: partCat(r.name), app_hit: r.app_hit || null,
+        is_active: r.is_active !== false,   // 11-27f · 견적 담기 때 비활성 안내
         syd: sydBy.get(id) || (r.scode ? String(r.scode).split(/\s*\/\/\s*/).filter(Boolean) : []),
         baw: bawBy.get(id) || [],
         oe: (oeMap.get(id) || []).map((o) => o.oe_code),

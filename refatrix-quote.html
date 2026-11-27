@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt-1119sh</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt-1127vm</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -118,6 +118,20 @@
   .pairhint .pairadd{margin-left:6px;padding:2px 9px;border:1px solid #c9a94a;background:#fff;color:#7a5a17;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<!-- 2026-11-27f · 차종으로 찾아 담기 — 제품 화면과 같은 차량 도면 공용 모듈 -->
+<script src="refatrix-vehiclemap.js?v=20261127f"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+  /* 11-27f · 품목 입력 방식 토글 + 차종 패널(견적 카드 안) */
+  .qvm-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+  .qvm-bar .vm-toggle{margin-top:0}
+  .qvm-bar .vm-tg:disabled{color:#929292;cursor:not-allowed;background:transparent}
+  .qvm-bar .qvm-hint{font-size:12px;color:var(--muted)}
+  #qVehPanel.vm{padding:4px 0 8px;border-radius:0;background:transparent}
+  #qVehPanel .vm-sel{margin-top:4px}
+  #qVehPanel label{margin:0 0 6px}
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -157,6 +171,24 @@
     <!-- 품목 입력 -->
     <div class="card">
       <div class="card-h">품목 입력 <span class="hint" style="font-weight:500">— 브랜드를 고르고 코드 + 수량 (CTR · SYD · 경쟁사 BAW · GROB · VAZLO · KYB · MOOG)</span></div>
+      <!-- 2026-11-27f · 품목 입력 방식: 코드로 입력 | 차종으로 찾기(차량 도면에서 골라 담기) — 고객을 고른 뒤 사용 -->
+      <div class="qvm-bar">
+        <div class="vm-toggle" role="tablist" aria-label="품목 입력 방식">
+          <button type="button" role="tab" class="vm-tg" id="qmCode" aria-selected="true">⌨ 코드로 입력</button>
+          <button type="button" role="tab" class="vm-tg" id="qmVeh" aria-selected="false" disabled title="먼저 고객을 선택하세요">🚗 차종으로 찾기</button>
+        </div>
+        <span class="qvm-hint" id="qvmHint">고객을 선택하면 차량 도면에서 부품을 골라 담을 수 있습니다.</span>
+      </div>
+      <div id="qVehPanel" class="vm hidden">
+        <div class="vm-sel">
+          <div><label for="q-veh-maker">메이커 · Marca</label><select id="q-veh-maker"><option value="">선택</option></select></div>
+          <div style="flex:2"><label for="q-veh-model">모델 · Modelo</label><select id="q-veh-model"><option value="">선택</option></select></div>
+          <div><label for="q-veh-year">연식 · Año</label><select id="q-veh-year"><option value="">전체</option></select></div>
+          <div class="vm-go"><button class="vm-btn" id="qVehBtn" type="button">찾기</button></div>
+        </div>
+        <div id="qVehResult"></div>
+      </div>
+      <div id="qCodeWrap">
       <div class="inrow">
         <!-- 0325 · 브랜드 — 경쟁사 코드면 크로스레퍼런스 마스터에서 SYD → CTR 로 찾는다 -->
         <div style="min-width:130px"><label>브랜드</label>
@@ -208,6 +240,7 @@
         </div>
         <span class="hint" id="kitHint">자동완성과 엑셀(전체 가격표 · Top 500 · 전체 견적)에 같이 적용됩니다. Kit는 Producto 칸에 구성품 제품명, 수량(Existencia·Disponible·En tránsito·En producción)은 구성품으로 만들 수 있는 세트 수(가장 적은 구성품 기준)로 표시됩니다.</span>
       </div>
+      </div><!-- /qCodeWrap -->
       <!-- 0325b · 엑셀 다운로드(엑셀 다운로드 · 전체 가격표 · Top 500 · 전체 견적)에 브랜드별 경쟁사 코드 열 -->
       <div class="kitseg-wrap" id="xrefColPick" style="gap:10px"></div>
       <div class="msg" id="lineMsg"></div>
@@ -421,6 +454,7 @@
     }
     checkExcl();
     if(lines.length) recalc();
+    if(typeof qvmSync==='function') qvmSync();   // 11-27f · 고객이 정해져야 「차종으로 찾기」가 켜진다
   }
   function onDiscInput(){
     if(!isGuest)return;
@@ -1933,6 +1967,62 @@
   // 0325 · 선택한 브랜드('' = 자동 판별)
   function curBrand(){ const el=$('inBrand'); return el&&el.value?el.value:''; }
   function withBrand(o,b){ if(b) o.brand=b; return o; }
+  // ═════════ 2026-11-27f · 차종으로 찾기 — 차량 도면(제품 화면과 같은 공용 모듈)에서 골라 견적에 담기 ═════════
+  //   · 고객을 고른 뒤에만 켜진다(할인율 · 재고 예약 기준이 고객이라서).
+  //   · CTR 부품 → {code, product_id, qty} — 재고가 모자라면 미리보기 · 저장이 지금과 똑같이 재고부족분으로 기록
+  //   · CTR 없는(경쟁사만) 부품 → {code: SYD/BAW, brand, qty} — 미매칭 줄 → 저장 시 개발요청(입력 브랜드)으로 기록
+  //   · 같은 제품(또는 같은 코드 + 브랜드)을 다시 담으면 그 줄 수량에 더한다.
+  let qvmInst=null, qvmMode='code';
+  function qvmReady(){ return $('custSel').value ? true : '먼저 고객을 선택하세요 — 할인율과 재고 예약이 고객 기준입니다.'; }
+  function qvmSame(l, p){
+    if(l.kit_no) return false;
+    if(p.product_id) return Number(l.product_id)===Number(p.product_id);
+    return !l.product_id && String(l.code||'').toUpperCase()===String(p.code||'').toUpperCase() && (l.brand||'')===(p.brand||'');
+  }
+  function qvmInQuote(ref){ return lines.reduce(function(t,l){ return t+(qvmSame(l,ref)?(Number(l.qty)||0):0); },0); }
+  function qvmPick(p){
+    const ex=lines.find(function(l){ return qvmSame(l,p); });
+    if(ex) ex.qty=(Number(ex.qty)||0)+p.qty;
+    else lines.push(p.product_id ? {code:p.code, product_id:p.product_id, qty:p.qty} : withBrand({code:p.code, qty:p.qty}, p.brand));
+    if(p.item && p.item.is_active===false) warnInactive(p.code);
+    const m=$('lineMsg');
+    if(m){ m.className='msg ok';
+      m.textContent='🚗 '+(p.brand?p.brand+' ':'CTR ')+p.code+' × '+p.qty+' 담음'
+        +(p.product_id?(Number(p.item&&p.item.stock_qty)>0?'':' — 창고 0: 재고부족분으로 기록됩니다.'):' — CTR 미개발: 저장 시 개발요청으로 기록됩니다.'); }
+    recalc();
+  }
+  function qvmEnsure(){
+    if(qvmInst) return qvmInst;
+    if(!window.RefatrixVehicleMap){ $('qVehResult').innerHTML='<div class="hint">차량 도면 모듈(refatrix-vehiclemap.js)을 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 해 주세요.</div>'; return null; }
+    qvmInst=window.RefatrixVehicleMap.create({
+      els:{maker:$('q-veh-maker'), model:$('q-veh-model'), year:$('q-veh-year'), btn:$('qVehBtn'), result:$('qVehResult')},
+      api:function(){ return session.api; }, headers:auth, mode:'pick',
+      ready:qvmReady, inQuote:qvmInQuote, onPick:qvmPick });
+    qvmInst.loadMakers();
+    return qvmInst;
+  }
+  function qvmSetMode(mode){
+    if(mode==='veh' && qvmReady()!==true){ mode='code'; const m=$('lineMsg'); if(m){ m.className='msg err'; m.textContent='먼저 고객을 선택하세요.'; } }
+    qvmMode=mode==='veh'?'veh':'code';
+    $('qmCode').setAttribute('aria-selected', String(qvmMode==='code'));
+    $('qmVeh').setAttribute('aria-selected', String(qvmMode==='veh'));
+    $('qCodeWrap').classList.toggle('hidden', qvmMode!=='code');
+    $('qVehPanel').classList.toggle('hidden', qvmMode!=='veh');
+    if(qvmMode==='veh'){ const v=qvmEnsure(); if(v) v.render(); }
+    else if(qvmInst) qvmInst.hideTip();
+  }
+  function qvmSync(){
+    const has=qvmReady()===true;
+    $('qmVeh').disabled=!has;
+    $('qmVeh').title=has?'차량 도면에서 부품을 골라 견적에 담습니다':'먼저 고객을 선택하세요';
+    $('qvmHint').textContent=has?'차량 도면에서 부품을 골라 수량과 함께 담으면 아래 견적 줄에 들어갑니다(재고부족 · 미개발도 지금처럼 기록).':'고객을 선택하면 차량 도면에서 부품을 골라 담을 수 있습니다.';
+    if(!has && qvmMode==='veh') qvmSetMode('code');
+    if(qvmInst && qvmMode==='veh') qvmInst.render();
+  }
+  $('qmCode').addEventListener('click', function(){ qvmSetMode('code'); });
+  $('qmVeh').addEventListener('click', function(){ qvmSetMode('veh'); });
+  $('custSel').addEventListener('change', qvmSync);
+
   async function addLine(){
     const code=$('inCode').value.trim(); const qty=Number($('inQty').value)||0;
     const brand=curBrand();
@@ -2012,6 +2102,7 @@
         if(kits.length){ const m=$('lineMsg'); if(m){ m.className='msg ok'; m.textContent='🧰 키트 '+kits.join(', ')+' → 구성 부품 줄로 풀어 넣었습니다(각 부품 재고로 예약·출고). Kit desglosado en sus piezas.'; } }
       }
       renderLines(d);
+      if(qvmInst && qvmMode==='veh') qvmInst.render();   // 11-27f · 도면의 「견적 N」 배지 갱신
     }catch(e){ $('linesWrap').innerHTML='<div class="hint">계산 실패</div>'; }
   }
   function renderLines(d){
