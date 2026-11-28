@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261126fu loaded (1126 leadassign 권한 메뉴 복구 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261127mh loaded (1127 고객상담 메뉴 Sebastian 전용 · 1126 leadassign 권한 메뉴 복구 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -229,6 +229,18 @@
   var ROLE_LANDING={ treasury:'finance', warehouse:'whHome' };
   // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.
   var ROLE_HIDE_SCREENS={ treasury:{ finPay:1, budget:1 } };
+  // 🙈 메뉴 단추만 감춤 (2026-11-27, Sebastian 요청) — 화면·기능·권한·API 는 그대로 둔다.
+  //   목록에 있는 사람(이름/아이디가 그 글자로 시작)에게만 메뉴(상단·하단 탭·전체메뉴)에 보인다.
+  //   canSee() 는 건드리지 않으므로 🎙 빠른 녹음 · 📍 고객개발 방문(이 화면을 열어 씀)은 예전처럼 동작.
+  //   다시 모두에게 보이게 하려면 이 줄에서 consult 를 지우면 된다.
+  var MENU_ONLY_FOR={ consult:['sebastian'] };
+  function menuSee(key){
+    if(!canSee(key)) return false;
+    var who=MENU_ONLY_FOR[key]; if(!who) return true;
+    var u=(sess&&sess.user)||{};
+    var ids=[sum&&sum.name, u.name, u.login_id].map(function(x){ return String(x||'').trim().toLowerCase(); });
+    return who.some(function(w){ return ids.some(function(n){ return !!n && n.indexOf(w)===0; }); });
+  }
   // 역할별 그룹 숨김(블랙리스트): 그룹 자체를 제거. 영업(sales)=재무 그룹 숨김.
   //   — 수금/정산은 영업지원, 커미션은 공통/포털에서 접근하므로 재무 그룹은 영업에게 불필요하며 권한 범위 밖.
   var ROLE_HIDE_GROUPS={ sales:['finance'] };
@@ -611,7 +623,7 @@
     // 하위 화면
     var g=vis.find(function(x){return x.key===openGroup;});
     var sub='';
-    if(g){ var scr=g.screens.filter(function(k){return SCREENS[k]&&canSee(k);});
+    if(g){ var scr=g.screens.filter(function(k){return SCREENS[k]&&menuSee(k);});
       // 중복 제거
       var seen={}; scr=scr.filter(function(k){ if(seen[k])return false; seen[k]=1; return true; });
       sub='<div class="rsub show">'+scr.map(function(k){ return '<span class="rs'+(k===cur?' cur':'')+'" onclick="__rnav(\''+k+'\',\''+openGroup+'\')" title="'+(es?sName(k):(SCREENS[k].desc||''))+'">'+sName(k)+'</span>'; }).join('')+'</div>';
@@ -637,7 +649,7 @@
   window.__rnavGroup=function(k){
     var g=null; for(var i=0;i<GROUPS.length;i++){ if(GROUPS[i].key===k){ g=GROUPS[i]; break; } }
     if(!g){ openGroup=k; render(); return; }
-    var first=null; for(var j=0;j<g.screens.length;j++){ var sk=g.screens[j]; if(SCREENS[sk]&&canSee(sk)){ first=sk; break; } }
+    var first=null; for(var j=0;j<g.screens.length;j++){ var sk=g.screens[j]; if(SCREENS[sk]&&menuSee(sk)){ first=sk; break; } }
     if(first && first!==curScreen()){ nav(first, k); return; }   // 첫 화면으로 이동(그 그룹 컨텍스트 유지)
     // 이미 그 화면(여러 그룹이 공유하는 화면 등)이면 이동 없이 그룹만 전환.
     // render()가 g 힌트로 이전 그룹을 되돌리지 않도록 URL의 g도 새 그룹으로 갱신.
@@ -678,7 +690,7 @@
   function mTabKeys(){
     var pref=(sum&&MTAB_PREF[sum.role])||MTAB_DEFAULT;
     var out=[], lim=(SCREENS.consult&&canSee('consult')&&SCREENS.prospects)?3:4;   // 🎙·📍 두 개가 들어가면 일반 탭은 3개
-    var push=function(k){ if(out.length<lim && out.indexOf(k)<0 && SCREENS[k] && canSee(k)) out.push(k); };
+    var push=function(k){ if(out.length<lim && out.indexOf(k)<0 && SCREENS[k] && menuSee(k)) out.push(k); };
     pref.forEach(push); MTAB_FALLBACK.forEach(push);
     return out;
   }
@@ -711,7 +723,7 @@
     var h='<div class="sheet"><div class="grab" onclick="__rnavDrawer(0)"></div>'
       + '<div class="dhead"><span>전체 메뉴 · Menú</span><button type="button" class="dx" onclick="__rnavDrawer(0)">✕</button></div>';
     vis.forEach(function(g){
-      var seen={}, scr=g.screens.filter(function(k){ if(seen[k]||!SCREENS[k]||!canSee(k)) return false; seen[k]=1; return true; });
+      var seen={}, scr=g.screens.filter(function(k){ if(seen[k]||!SCREENS[k]||!menuSee(k)) return false; seen[k]=1; return true; });
       if(!scr.length) return;
       h+='<div class="gt" style="color:'+g.color+'">'+g.title+'</div><div class="gitems">';
       scr.forEach(function(k){ h+='<button type="button" class="di'+(k===cur?' cur':'')+'" onclick="__rnavDrawer(0);__rnav(\''+k+'\',\''+g.key+'\')">'+SCREENS[k].name+'</button>'; });
