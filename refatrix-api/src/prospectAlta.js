@@ -14,7 +14,7 @@ import { query, withTx } from './db.js';
 import { logEvent } from './audit.js';
 import {
   distanceM, autoAdvance, prefillFromProspect, buildAltaPrompt, parseAltaDraft,
-  infoCompleteness, scoreOf, deriveStage, stageRank, nameSimilarity,
+  infoCompleteness, scoreOf, deriveStage, stageRank, nameSimilarity, isClosedStage,
 } from './prospectCore.js';
 
 export const QUICK_PLACEHOLDER = '(업체 미입력)';
@@ -32,12 +32,17 @@ export async function hasProspectCols() {
 export function resetProspectColsCache() { colsCache = null; }
 
 // 단계 이동 + 이력(같은 트랜잭션 q 사용 가능)
-export async function moveStage(q, prospectId, from, to, { userId = null, reason = null, auto = false } = {}) {
+export async function moveStage(q, prospectId, from, to, { userId = null, reason = null, auto = false, geo = null } = {}) {
   await q(`UPDATE prospects SET stage=$2, stage_since=now(), updated_at=now(),
-                  discard_reason = CASE WHEN $2='descartado' THEN $3 ELSE NULL END
+                  discard_reason = CASE WHEN $2 IN ('descartado','no_relacionado','no_existe') THEN $3 ELSE NULL END
             WHERE id=$1`, [prospectId, to, reason]);
-  await q(`INSERT INTO prospect_stage_history (prospect_id, from_stage, to_stage, user_id, reason, auto)
-           VALUES ($1,$2,$3,$4,$5,$6)`, [prospectId, from, to, userId, reason, auto]);
+  if (geo && geo.lat != null && geo.lng != null) {   // 11-27 · 방문 결과 표시(관련 없음·업체 없음) — 표시한 위치
+    await q(`INSERT INTO prospect_stage_history (prospect_id, from_stage, to_stage, user_id, reason, auto, lat, lng, dist_m)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [prospectId, from, to, userId, reason, auto, geo.lat, geo.lng, geo.dist_m == null ? null : Math.round(geo.dist_m)]);
+  } else {
+    await q(`INSERT INTO prospect_stage_history (prospect_id, from_stage, to_stage, user_id, reason, auto)
+             VALUES ($1,$2,$3,$4,$5,$6)`, [prospectId, from, to, userId, reason, auto]);
+  }
 }
 
 let scoreCols = null;
@@ -77,16 +82,16 @@ export async function recomputeProspect(q, prospectId, { userId = null, reason =
   const d = deriveStage(e, p.stage);
   let stage = p.stage;
   const ladder = ['asignado', 'contactado', 'perfilado', 'interesado', 'registro', 'cotizado', 'cliente_activo'];
-  if (stage !== 'descartado' || e.sale) {
+  if (!isClosedStage(stage) || e.sale) {
     for (const st of ladder) {
       if (stageRank(st) > stageRank(d.auto)) break;
       if (st === 'interesado' && !e.interest_confirmed) continue;   // 관심은 사람이 확인(제안만)
       if (st === 'registro' && !e.linked) continue;                 // 등록 없이 게스트 견적이면 등록 이력은 남기지 않는다
-      const nx = stage === 'descartado' ? (st === 'cliente_activo' ? st : null) : autoAdvance(stage, st);
+      const nx = isClosedStage(stage) ? (st === 'cliente_activo' ? st : null) : autoAdvance(stage, st);
       if (nx) { await moveStage(q, id, stage, nx, { userId, auto: true, reason: reason || 'registro automático' }); stage = nx; }
     }
   }
-  const sug = d.suggest && stageRank(d.suggest.stage) !== stageRank(stage) && !(d.suggest.stage !== 'descartado' && stageRank(d.suggest.stage) <= stageRank(stage)) ? d.suggest : null;
+  const sug = d.suggest && stageRank(d.suggest.stage) !== stageRank(stage) && !(!isClosedStage(d.suggest.stage) && stageRank(d.suggest.stage) <= stageRank(stage)) ? d.suggest : null;
   await q(`UPDATE prospects SET score=$2, info_pct=$3, score_parts=$4, score_at=now(),
                   suggested_stage=$5, suggestion_reason=$6, suggested_at=CASE WHEN $5::text IS NULL THEN NULL ELSE COALESCE(suggested_at, now()) END
             WHERE id=$1`, [id, sc.total, info.pct, JSON.stringify({ ...sc.parts, info_pct: info.pct, sections: info.sections }), sug ? sug.stage : null, sug ? sug.reason : null]);

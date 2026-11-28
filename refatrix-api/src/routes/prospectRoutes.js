@@ -21,10 +21,13 @@ import {
   STAGES, STAGE_KEYS, DISCARD_REASONS, SEGMENTS, METRICS, METRIC_NAMES, allocateTarget, POINT_WEIGHTS, pointsTarget, fieldPoints, planStatus, estimateRoute, stateFromCp, nameScore, nameTokens, normTxt, ROUTE_SETTINGS_DEFAULT, checkStageMove, autoAdvance, normalizeImportRow,
   territoryFor, orderStops, suggestCustomers, prefillFromProspect, mergeForReview, validateAltaValues, parseMxAddress, prefillFromCustomer, customerFillFromValues,
   missingRequired, pct, paceStatus, periodBounds, CHECKIN_WARN_M, ALTA_FORM, potentialOf, POTENTIAL_TIERS,
-  STAGE_RANK_SQL, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
+  STAGE_RANK_SQL, CLOSED_SQL, MARK_SQL, MARK_STAGES, isClosedStage, SCORE_RULES, SECTION_WEIGHTS, SCORE_BANDS, stageRank, nameSimilarity,
   inPolygon, distanceM, rankForRoute, optimizeRoute, routeMinutes, weekBounds, planDays, nextWorkDates, convexHull, pickDayRoute,
 } from '../prospectCore.js';
 import { pageAllowed } from '../permissions.js';
+// 루트 정류장으로 남길지 — 방문(체크인)했거나 진행 중인 업체. 관련 없음·업체 없음은 그 루트 날짜 이후에 표시했으면 남긴다(방문 결과로 보이게).
+const STOP_KEEP = (dateCol) => `(s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND (p.stage NOT IN ('descartado','no_relacionado','no_existe')
+  OR (p.stage IN ('no_relacionado','no_existe') AND ${dateCol} IS NOT NULL AND (p.stage_since AT TIME ZONE 'America/Mexico_City')::date >= ${dateCol}))))`;
 import { ALTA_FIELDS, ALTA_FIELD_MAP } from '../altaClientesForm.js';
 import { moveStage, refreshCustomerStages, hasProspectCols, recomputeProspect, recomputeProspectSafe, detachConsultFromProspect, attachConsultToProspect } from '../prospectAlta.js';
 import { syncConsultVisitSafe } from '../consultVisitSync.js';
@@ -561,7 +564,7 @@ export default async function prospectRoutes(app) {
               EXISTS (SELECT 1 FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
                        WHERE s.prospect_id=p.id AND r.route_date=$5::date AND r.user_id=$6) AS on_route
          FROM prospects p
-        WHERE p.deleted_at IS NULL AND p.stage <> 'descartado' AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4 AND ${cond}`, params)).rows
+        WHERE p.deleted_at IS NULL AND p.stage NOT IN ${CLOSED_SQL} AND p.lat BETWEEN $1 AND $2 AND p.lng BETWEEN $3 AND $4 AND ${cond}`, params)).rows
       .map((p) => ({ id: Number(p.id), name: p.nom_estab, stage: p.stage, priority: p.priority, score: Number(p.score) || 0, colonia: p.colonia,
         on_route: p.on_route, mine: p.owner_user_id != null && Number(p.owner_user_id) === me(req), dist: distanceM(lat, lng, p.lat, p.lng) }))
       .filter((p) => p.dist != null && p.dist <= R)
@@ -625,31 +628,43 @@ export default async function prospectRoutes(app) {
     const rp = [date]; let rcond = '';
     if (uid) { rp.push(uid); rcond = `AND r.user_id=$2`; } else if (!dir) { rp.push(mine); rcond = `AND r.user_id=$2`; }
     const stops = (await query(
-      `SELECT r.id AS route_id, r.user_id, u.name AS user_name, s.seq, s.prospect_id, s.consult_id, p.nom_estab, p.lat, p.lng, c.created_at AS visited_at
+      `SELECT r.id AS route_id, r.user_id, u.name AS user_name, s.seq, s.prospect_id, s.consult_id, p.nom_estab, p.lat, p.lng, c.created_at AS visited_at,
+              CASE WHEN p.stage IN ${MARK_SQL} THEN p.stage END AS mark, CASE WHEN p.stage IN ${MARK_SQL} THEN p.stage_since END AS marked_at
          FROM prospect_routes r JOIN prospect_route_stops s ON s.route_id=r.id JOIN prospects p ON p.id=s.prospect_id
          LEFT JOIN users u ON u.id=r.user_id LEFT JOIN sales_consults c ON c.id=s.consult_id
-        WHERE r.route_date=$1 ${rcond} AND (s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND p.stage <> 'descartado'))
+        WHERE r.route_date=$1 ${rcond} AND ${STOP_KEEP('r.route_date')}
         ORDER BY r.user_id, s.seq`, rp)).rows;
+    // 11-27 · 그날 「관련 없음 · 업체 없음」 표시 — 누가 · 언제 · 어디서(표시 위치 · 업체와 거리) · 메모
+    const mp = [date]; let mcond = '';
+    if (uid) { mp.push(uid); mcond = `AND h.user_id=$2`; } else if (!dir) { mp.push(mine); mcond = `AND h.user_id=$2`; }
+    const marks = (await query(
+      `SELECT h.id, h.prospect_id, h.to_stage, h.reason, h.created_at, h.user_id, u.name AS user_name, h.lat, h.lng, h.dist_m, p.nom_estab
+         FROM prospect_stage_history h JOIN prospects p ON p.id=h.prospect_id LEFT JOIN users u ON u.id=h.user_id
+        WHERE h.to_stage IN ${MARK_SQL} AND NOT h.auto AND (h.created_at AT TIME ZONE 'America/Mexico_City')::date = $1::date ${mcond}
+        ORDER BY h.created_at`, mp)).rows.map((m) => ({ id: Number(m.id), prospect_id: Number(m.prospect_id), stage: m.to_stage, reason: m.reason || null,
+        at: m.created_at, user_id: m.user_id == null ? null : Number(m.user_id), user_name: m.user_name, name: m.nom_estab,
+        lat: num(m.lat), lng: num(m.lng), dist_m: m.dist_m == null ? null : Number(m.dist_m) }));
     const reps = new Map();
     const R = (id, name) => { if (!reps.has(id)) reps.set(id, { user_id: id, name, planned: [], actual: [] }); const x = reps.get(id); if (!x.name && name) x.name = name; return x; };
     for (const s2 of stops) R(Number(s2.user_id), s2.user_name).planned.push({ seq: s2.seq, prospect_id: Number(s2.prospect_id), name: s2.nom_estab, lat: num(s2.lat), lng: num(s2.lng),
-      consult_id: num(s2.consult_id), visited_at: s2.visited_at || null });
+      consult_id: num(s2.consult_id), visited_at: s2.visited_at || null, mark: s2.mark || null, marked_at: s2.marked_at || null });
     for (const r of rows) R(r.user_id, r.user_name).actual.push(r.id);
     const out = [...reps.values()].map((x) => {
       const plannedIds = new Set(x.planned.map((p) => p.prospect_id));
       const acts = rows.filter((r) => r.user_id === x.user_id);
-      const visited = x.planned.filter((p) => p.consult_id).length;
-      const next = x.planned.find((p) => !p.consult_id) || null;
+      const visited = x.planned.filter((p) => p.consult_id || p.mark).length;   // 관련 없음·업체 없음 표시도 방문 결과
+      const next = x.planned.find((p) => !p.consult_id && !p.mark) || null;
       return { user_id: x.user_id, name: x.name, planned: x.planned, actual: acts.map((r) => r.id),
         counts: { planned: x.planned.length, visited, pending: x.planned.length - visited, checkins: acts.length,
           off_route: acts.filter((r) => !r.prospect_id || !plannedIds.has(r.prospect_id)).length,
-          with_rec: acts.filter((r) => r.rec && r.rec.count > 0).length },
+          with_rec: acts.filter((r) => r.rec && r.rec.count > 0).length,
+          marked: marks.filter((m) => m.user_id === x.user_id).length },
         first_at: acts.length ? acts[0].at : null, last_at: acts.length ? acts[acts.length - 1].at : null, next };
     }).sort((a, b) => (b.counts.checkins - a.counts.checkins) || (b.counts.planned - a.counts.planned) || String(a.name || '').localeCompare(String(b.name || '')));   // 움직인 사람 먼저
-    return { date, today: mxToday(), user_id: uid, rows, reps: out,
+    return { date, today: mxToday(), user_id: uid, rows, reps: out, marks,
       counts: { checkins: rows.length, with_rec: rows.filter((r) => r.rec && r.rec.count > 0).length, no_rec: rows.filter((r) => !r.rec || !r.rec.count).length,
         planned: out.reduce((a, x) => a + x.counts.planned, 0), visited: out.reduce((a, x) => a + x.counts.visited, 0), off_route: out.reduce((a, x) => a + x.counts.off_route, 0),
-        unlinked: rows.filter((r) => !r.prospect_id).length } };
+        unlinked: rows.filter((r) => !r.prospect_id).length, marked: marks.length } };
   });
   // 녹음 내용(받아쓰기 전문·요약) — 목록에서 누를 때만
   app.get('/api/prospects/activity/:id', view, async (req, reply) => {
@@ -712,7 +727,7 @@ export default async function prospectRoutes(app) {
                FROM sales_consults c LEFT JOIN users u ON u.id=c.created_by
                LEFT JOIN LATERAL (SELECT * FROM sales_consult_recordings WHERE consult_id=c.id ORDER BY id DESC LIMIT 1) r ON TRUE
               WHERE c.prospect_id=$1 AND c.deleted_at IS NULL ORDER BY c.created_at DESC`, [id]),
-      query(`SELECT h.from_stage, h.to_stage, h.reason, h.auto, h.created_at, u.name AS user_name
+      query(`SELECT h.from_stage, h.to_stage, h.reason, h.auto, h.created_at, u.name AS user_name, h.dist_m, (h.lat IS NOT NULL) AS has_geo
                FROM prospect_stage_history h LEFT JOIN users u ON u.id=h.user_id WHERE h.prospect_id=$1 ORDER BY h.created_at DESC`, [id]),
       query(`SELECT field_key, value, source, updated_at FROM prospect_crm_values WHERE prospect_id=$1`, [id]),
       query(`SELECT l.*, c.name AS customer_name, c.code AS customer_code FROM prospect_customer_links l
@@ -820,14 +835,20 @@ export default async function prospectRoutes(app) {
     const out = await withTx(async (client) => {
       const q = client.query.bind(client);
       const params = [int(req.params.id)]; const cond = scopeCond(req, params);
-      const p = (await q(`SELECT p.id, p.stage FROM prospects p WHERE p.id=$1 AND p.deleted_at IS NULL AND ${cond} FOR UPDATE`, params)).rows[0];
+      const p = (await q(`SELECT p.id, p.stage, p.lat, p.lng FROM prospects p WHERE p.id=$1 AND p.deleted_at IS NULL AND ${cond} FOR UPDATE`, params)).rows[0];
       if (!p) return { code: 404, error: 'not_found' };
       const chk = checkStageMove(p.stage, b.to, { isDirector: isDir(req), reason: b.reason });
       if (!chk.ok) return { code: 400, error: chk.error };
-      await moveStage(q, Number(p.id), p.stage, b.to, { userId: me(req), reason: txt(b.reason, 300) });
+      // 11-27 · 관련 없음 · 업체 없음 — 표시한 위치(휴대폰 GPS)와 업체 위치 거리도 이력에 남긴다
+      let geo = null;
+      const gl = Number(b.lat), gg = Number(b.lng);
+      if (MARK_STAGES.includes(b.to) && Number.isFinite(gl) && Number.isFinite(gg) && Math.abs(gl) <= 90 && Math.abs(gg) <= 180) {
+        geo = { lat: gl, lng: gg, dist_m: p.lat != null && p.lng != null ? distanceM(gl, gg, Number(p.lat), Number(p.lng)) : null };
+      }
+      await moveStage(q, Number(p.id), p.stage, b.to, { userId: me(req), reason: txt(b.reason, 300), geo });
       await q(`UPDATE prospects SET last_activity_at=now(), suggested_stage=NULL, suggestion_reason=NULL WHERE id=$1`, [p.id]);
       const sc = await recomputeProspect(q, Number(p.id), { userId: me(req), reason: 'etapa: ' + b.to });
-      return { ok: true, from: p.stage, to: b.to, score: sc && sc.score };
+      return { ok: true, from: p.stage, to: b.to, score: sc && sc.score, dist_m: geo && geo.dist_m != null ? Math.round(geo.dist_m) : null };
     });
     if (out.error) return reply.code(out.code).send({ error: out.error });
     return out;
@@ -1165,9 +1186,9 @@ export default async function prospectRoutes(app) {
     return (await query(
       `SELECT s.seq, s.consult_id, p.id, p.score, p.nom_estab, p.address, p.colonia, p.municipio, p.lat, p.lng, p.phone, p.stage, p.priority, p.segment, p.customer_id,
               c.review_status, c.created_at AS checkin_at
-         FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
+         FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id JOIN prospect_routes rr ON rr.id=s.route_id
          LEFT JOIN sales_consults c ON c.id=s.consult_id
-        WHERE s.route_id=$1 AND (s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND p.stage <> 'descartado'))
+        WHERE s.route_id=$1 AND ${STOP_KEEP('rr.route_date')}
         ORDER BY s.seq`, [rid])).rows.map((s) => ({ ...s, id: Number(s.id), consult_id: s.consult_id ? Number(s.consult_id) : null }));
   }
   async function routeOut(userId, date) {
@@ -1341,8 +1362,8 @@ export default async function prospectRoutes(app) {
         WHERE r.route_date BETWEEN $1::date AND $2::date OR r.route_date IS NULL ORDER BY r.route_date NULLS LAST, r.id`, [from, to])).rows;
     const pts = {}; const vis = {};
     if (routes.length) (await query(
-      `SELECT s.route_id, p.lat, p.lng, s.consult_id FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id
-        WHERE s.route_id = ANY($1) AND (s.consult_id IS NOT NULL OR (p.deleted_at IS NULL AND p.stage <> 'descartado'))
+      `SELECT s.route_id, p.lat, p.lng, s.consult_id FROM prospect_route_stops s JOIN prospects p ON p.id=s.prospect_id JOIN prospect_routes rr ON rr.id=s.route_id
+        WHERE s.route_id = ANY($1) AND ${STOP_KEEP('rr.route_date')}
         ORDER BY s.route_id, s.seq`, [routes.map((r) => Number(r.id))])).rows
       .forEach((x) => { (pts[x.route_id] = pts[x.route_id] || []).push({ lat: x.lat == null ? null : Number(x.lat), lng: x.lng == null ? null : Number(x.lng) }); if (x.consult_id) vis[x.route_id] = (vis[x.route_id] || 0) + 1; });
     const rs = await routeSettings();
@@ -1401,7 +1422,7 @@ export default async function prospectRoutes(app) {
     const first = (await query(
       `WITH f AS (SELECT DISTINCT ON (c.prospect_id) c.prospect_id, c.created_by, c.consult_date FROM sales_consults c
                    WHERE c.prospect_id IS NOT NULL AND c.deleted_at IS NULL ORDER BY c.prospect_id, c.created_at)
-       SELECT f.created_by AS uid, COUNT(*) FILTER (WHERE p.stage <> 'descartado')::int AS done, COUNT(*) FILTER (WHERE p.stage = 'descartado')::int AS dropped
+       SELECT f.created_by AS uid, COUNT(*) FILTER (WHERE p.stage NOT IN ${CLOSED_SQL})::int AS done, COUNT(*) FILTER (WHERE p.stage IN ${CLOSED_SQL})::int AS dropped
          FROM f JOIN prospects p ON p.id=f.prospect_id
         WHERE f.consult_date >= $1::date AND f.consult_date < $2::date${uf('f.created_by', p2)} GROUP BY 1`, p2)).rows;
     let p3 = [today];
@@ -1414,7 +1435,7 @@ export default async function prospectRoutes(app) {
               COUNT(DISTINCT s.prospect_id) FILTER (WHERE r.route_date >= $1::date AND r.route_date < $1::date + 7)::int AS week,
               MAX(r.route_date)::text AS last_date
          FROM prospect_routes r JOIN prospect_route_stops s ON s.route_id=r.id JOIN prospects p ON p.id=s.prospect_id
-        WHERE s.consult_id IS NULL AND p.deleted_at IS NULL AND p.stage NOT IN ('descartado','cliente_activo')
+        WHERE s.consult_id IS NULL AND p.deleted_at IS NULL AND p.stage NOT IN ('descartado','no_relacionado','no_existe','cliente_activo')
           AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL)${uf('r.user_id', p3)}
         GROUP BY 1`, p3)).rows;
     const staff = new Set(((await query(`SELECT u.id FROM users u WHERE u.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM prospect_excluded_users x WHERE x.user_id=u.id)`)).rows).map((r) => Number(r.id)));
@@ -1521,7 +1542,7 @@ export default async function prospectRoutes(app) {
     const rows = (await query(
       `SELECT p.id, p.nom_estab, p.lat, p.lng, p.priority, p.pot_tier, p.score, p.stage
          FROM prospects p
-        WHERE p.deleted_at IS NULL AND p.owner_user_id=$1 AND p.lat IS NOT NULL AND p.stage NOT IN ('cliente_activo','descartado')
+        WHERE p.deleted_at IS NULL AND p.owner_user_id=$1 AND p.lat IS NOT NULL AND p.stage NOT IN ('cliente_activo','descartado','no_relacionado','no_existe')
           AND NOT EXISTS (SELECT 1 FROM sales_consults c WHERE c.prospect_id=p.id AND c.deleted_at IS NULL AND c.created_at > now() - INTERVAL '7 days')
           AND NOT EXISTS (SELECT 1 FROM prospect_route_stops s JOIN prospect_routes r ON r.id=s.route_id
                            WHERE s.prospect_id=p.id AND s.consult_id IS NULL AND (r.route_date IS NULL OR (r.route_date >= $2::date AND r.route_date <> $3::date)))`,
@@ -1594,7 +1615,7 @@ export default async function prospectRoutes(app) {
     const owner = r.owner_user_id == null ? null : Number(r.owner_user_id);
     const tOwner = r.terr_owner == null ? null : Number(r.terr_owner);
     const pBy = r.planned_by == null ? null : Number(r.planned_by);
-    if (['cliente_activo', 'descartado'].includes(r.stage)) return 'closed';
+    if (r.stage === 'cliente_activo' || isClosedStage(r.stage)) return 'closed';
     if (owner != null && owner !== uid) return 'others';
     if (owner == null && tOwner != null && tOwner !== uid) return 'others_terr';
     if (pBy != null && pBy !== uid) return 'others_planned';
@@ -1743,7 +1764,7 @@ export default async function prospectRoutes(app) {
     if (errors.length) return reply.code(400).send({ error: 'formato', fields: errors });
     const saved = Object.fromEntries((await query(`SELECT field_key, value FROM prospect_crm_values WHERE prospect_id=$1`, [p.id])).rows.map((r) => [r.field_key, r.value]));
     const all = { ...saved, ...clean };
-    if (b.confirm) {
+    if (b.confirm && !MARK_STAGES.includes(b.stage)) {   // 관련 없음 · 업체 없음으로 닫으면 필수 항목 없이 확정
       const miss = missingRequired(all);
       if (miss.length) return reply.code(400).send({ error: 'faltan_obligatorios', fields: miss.map((k) => ({ key: k, label: ALTA_FIELD_MAP[k].label_es })) });
     }
@@ -2070,6 +2091,13 @@ export default async function prospectRoutes(app) {
         JOIN LATERAL (SELECT MIN(h.created_at) AS t FROM prospect_stage_history h WHERE h.prospect_id=p.id AND ${stage === 'registro' ? `h.to_stage='registro'` : `${STAGE_RANK_SQL('h.to_stage')} >= ${stageRank(stage)}`}) f ON TRUE
        WHERE p.deleted_at IS NULL ${entCond} AND f.t >= $${n + 1}::date AND f.t < $${n + 2}::date GROUP BY 1`;
     const [rCont, rPerf, rCot, rReg, rSale] = await Promise.all(['contactado', 'perfilado', 'cotizado', 'registro', 'cliente_activo'].map((st) => query(reach(st), pp)));
+    // 11-27 · 방문 결과 표시(관련 없음 · 업체 없음) — 표시한 사람 기준, 기간 안 · 지금도 그 단계인 업체만
+    const rMark = await query(
+      `SELECT h.user_id AS uid, COUNT(DISTINCT p.id) FILTER (WHERE h.to_stage='no_relacionado')::int AS norel,
+              COUNT(DISTINCT p.id) FILTER (WHERE h.to_stage='no_existe')::int AS noex
+         FROM prospect_stage_history h JOIN prospects p ON p.id=h.prospect_id
+        WHERE p.deleted_at IS NULL ${entCond} AND h.to_stage IN ${MARK_SQL} AND p.stage=h.to_stage
+          AND h.created_at >= $${n + 1}::date AND h.created_at < $${n + 2}::date GROUP BY 1`, pp);
     const own = (await query(
       `SELECT p.owner_user_id AS uid, COUNT(*)::int AS assigned, COUNT(*) FILTER (WHERE p.score>0)::int AS worked,
               COALESCE(ROUND(AVG(p.score) FILTER (WHERE p.score>0)),0)::int AS avg_score, COALESCE(SUM(p.score),0)::int AS score_sum,
@@ -2077,11 +2105,12 @@ export default async function prospectRoutes(app) {
          FROM prospects p WHERE p.deleted_at IS NULL AND p.owner_user_id IS NOT NULL ${entCond} GROUP BY 1`, ep)).rows;
     const tg = (await query(`SELECT user_id, metric, target_value FROM prospect_targets WHERE period=$1 AND metric IN ('contactados','puntos','perfilados','cotizaciones','nuevos_clientes')`, [period])).rows;
     const reps = {};
-    const R = (uid) => { const k = Number(uid); if (!reps[k]) reps[k] = { user_id: k, name: users[k] || '?', visits: 0, visited: 0, points: 0, contactados: 0, perfilados: 0, cotizaciones: 0, registros: 0, nuevos: 0, target: {} }; return reps[k]; };
+    const R = (uid) => { const k = Number(uid); if (!reps[k]) reps[k] = { user_id: k, name: users[k] || '?', visits: 0, visited: 0, points: 0, contactados: 0, perfilados: 0, cotizaciones: 0, registros: 0, nuevos: 0, no_relacionado: 0, no_existe: 0, target: {} }; return reps[k]; };
     own.forEach((o) => Object.assign(R(o.uid), { assigned: o.assigned, worked: o.worked, avg_score: o.avg_score, score_sum: o.score_sum, ge50: o.ge50, developed: o.developed }));
     visits.forEach((v) => { R(v.uid).visits += v.n; R(v.uid).visited += v.u; });
     pts.forEach((v) => { if (v.uid != null) R(v.uid).points += v.n; });
     [[rCont, 'contactados'], [rPerf, 'perfilados'], [rCot, 'cotizaciones'], [rReg, 'registros'], [rSale, 'nuevos']].forEach(([rs, k]) => rs.rows.forEach((r) => { if (r.uid != null) R(r.uid)[k] = r.n; }));
+    rMark.rows.forEach((r) => { if (r.uid != null) { R(r.uid).no_relacionado = r.norel; R(r.uid).no_existe = r.noex; } });
     tg.forEach((t) => { R(t.user_id).target[t.metric] = Number(t.target_value); });
     const repList = Object.values(reps).filter((r) => !ex.has(r.user_id) || r.assigned)
       .sort((a, b2) => b2.points - a.points || b2.visits - a.visits);
@@ -2171,7 +2200,7 @@ export default async function prospectRoutes(app) {
     const potRow = (await query(
       `SELECT COUNT(*) FILTER (WHERE p.pot_tier='A')::int AS a, COUNT(*) FILTER (WHERE p.pot_tier='B')::int AS b,
               COUNT(*) FILTER (WHERE p.pot_tier='C')::int AS c, COUNT(p.pot_compra_susp)::int AS measured,
-              COALESCE(SUM(p.pot_compra_susp) FILTER (WHERE p.stage NOT IN ('cliente_activo','descartado')),0)::float AS open_susp,
+              COALESCE(SUM(p.pot_compra_susp) FILTER (WHERE p.stage NOT IN ('cliente_activo','descartado','no_relacionado','no_existe')),0)::float AS open_susp,
               COALESCE(SUM(p.pot_compra_susp),0)::float AS total_susp
          FROM prospects p WHERE ${where}`, params)).rows[0];
     // 기간 실적 — 담당자별

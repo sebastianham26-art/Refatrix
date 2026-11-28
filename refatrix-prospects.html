@@ -284,6 +284,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px}
       <div id="td-reps" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:10px"></div>
       <div id="td-map" style="height:420px;border-radius:4px;border:1px solid var(--line);margin-top:12px"></div></div>
     <div class="card" style="margin-top:14px"><h2>체크인·녹음 목록</h2><div class="scroll" style="margin-top:10px"><table class="tb resp" id="td-table"></table></div></div>
+    <div class="card hide" style="margin-top:14px" id="td-marks"></div>
   </section>
   <section id="p-dash" class="tabp hide">
     <div class="grid cards row1" id="d-kpi" style="margin-top:12px"></div>
@@ -547,7 +548,7 @@ const post=(p,b,m)=>api(p,{method:m||'POST',body:JSON.stringify(b||{})});
 
 // ── 상태 ──
 let META=null, STAGE={}, USERS={}, isDir=false;
-const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9',perfilado:'#EE8A82',interesado:'#E8635C',registro:'#E2231A',cotizado:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B'};
+const STAGE_COLOR={sin_asignar:'#1F6FEB',asignado:'#F5A300',contactado:'#F6BDB9',perfilado:'#EE8A82',interesado:'#E8635C',registro:'#E2231A',cotizado:'#8E120C',cliente_activo:'#1E7A46',descartado:'#2B2B2B',no_relacionado:'#8A8A8A',no_existe:'#C4C4C4'};
 const SEG_LBL={mayorista:'부품 도매',refaccionaria:'Refaccionaria',refaccionaria_usada:'Refaccionaria(중고)',taller_suspension:'서스펜션·얼라인먼트',taller_general:'일반정비',otro:'기타'};
 const METRIC_LBL={contactados:'첫 방문',perfilados:'정보 확보',cotizaciones:'견적 제출',nuevos_clientes:'첫 매출',venta_nuevos:'첫 매출 금액(IVA 제외)',puntos:'개발 점수'};
 const stageDot=k=>'<span class="chip"><span class="dot" style="background:'+(STAGE_COLOR[k]||'#999')+'"></span>'+esc((STAGE[k]||{}).ko||k)+'</span>';
@@ -685,11 +686,11 @@ async function loadBoard(){
   const reps=d.reps.filter(r=>d.points.by_user[r.user_id]||d.visits.by_user[r.user_id]);
   $('b-reps-chart').innerHTML=reps.length?lineChart(reps.map((r,i)=>({name:r.name,color:REP_COLORS[i%REP_COLORS.length],values:d.points.by_user[r.user_id]||d.days.map(()=>0)})),lbl,{cut,label:'영업사원별 누적 획득 점수'}):'<div class="empty">이번 달 점수 변화가 아직 없습니다.</div>';
   const tgt=(r,m,v)=>r.target[m]?' <span class="note">/ '+fmt(r.target[m])+'</span>':'';
-  $('b-reps').innerHTML='<thead><tr><th>#</th><th>영업사원</th><th class="num">획득 점수</th><th class="num">첫 방문</th><th class="num">방문(체크인)</th><th class="num">평균 점수</th><th class="num">정보 확보</th><th class="num">견적</th><th class="num">고객 등록</th><th class="num">신규개발</th><th class="num">담당 업체</th><th class="num">50점+</th></tr></thead><tbody>'+
+  $('b-reps').innerHTML='<thead><tr><th>#</th><th>영업사원</th><th class="num">획득 점수</th><th class="num">첫 방문</th><th class="num">방문(체크인)</th><th class="num">평균 점수</th><th class="num">정보 확보</th><th class="num">견적</th><th class="num">고객 등록</th><th class="num">신규개발</th><th class="num">담당 업체</th><th class="num">50점+</th><th class="num" title="방문 결과 표시 — 관련 없음 / 업체 없음">관련 없음·업체 없음</th></tr></thead><tbody>'+
     (d.reps.length?d.reps.map(r=>'<tr'+(r.user_id===META.me?' style="background:var(--ctr-soft)"':'')+'><td data-l="순위"><span class="rankno '+(r.rank===1?'r1':'')+'">'+r.rank+'</span></td><td data-l="영업사원"><b>'+esc(r.name)+'</b></td>'+
       '<td class="num" data-l="획득 점수"><b>'+fmt(r.points)+'</b>'+tgt(r,'puntos')+'</td><td class="num" data-l="첫 방문"><b>'+fmt(r.contactados||0)+'</b>'+tgt(r,'contactados')+'</td><td class="num" data-l="방문(체크인)">'+fmt(r.visits)+'</td>'+
       '<td class="num" data-l="평균 점수">'+fmt(r.avg_score||0)+'</td><td class="num" data-l="정보 확보">'+fmt(r.perfilados)+tgt(r,'perfilados')+'</td><td class="num" data-l="견적">'+fmt(r.cotizaciones)+tgt(r,'cotizaciones')+'</td>'+
-      '<td class="num" data-l="고객 등록">'+fmt(r.registros)+'</td><td class="num" data-l="신규개발"><b>'+fmt(r.nuevos)+'</b>'+tgt(r,'nuevos_clientes')+'</td><td class="num" data-l="담당 업체">'+fmt(r.assigned||0)+'</td><td class="num" data-l="50점+">'+fmt(r.ge50||0)+'</td></tr>').join('')
+      '<td class="num" data-l="고객 등록">'+fmt(r.registros)+'</td><td class="num" data-l="신규개발"><b>'+fmt(r.nuevos)+'</b>'+tgt(r,'nuevos_clientes')+'</td><td class="num" data-l="담당 업체">'+fmt(r.assigned||0)+'</td><td class="num" data-l="50점+">'+fmt(r.ge50||0)+'</td><td class="num" data-l="관련 없음·업체 없음">'+fmt(r.no_relacionado||0)+' / '+fmt(r.no_existe||0)+'</td></tr>').join('')
       :'<tr><td colspan="12" class="empty">아직 실적이 없습니다.</td></tr>')+'</tbody>';
   $('b-movers').innerHTML='<thead><tr><th>업체</th><th>담당</th><th>단계</th><th class="num">기간 상승</th><th>점수</th></tr></thead><tbody>'+
     (d.movers.length?d.movers.map(m=>'<tr'+(m.mine||isDir?' class="click" data-open="'+m.id+'"':'')+'><td data-l="업체"><b>'+esc(m.nom_estab)+'</b><div class="note">'+esc(m.municipio||'')+'</div></td><td data-l="담당">'+esc(m.owner_name||'—')+'</td><td data-l="단계">'+stageDot(m.stage)+'</td>'+
@@ -724,7 +725,7 @@ function renderPerProspect(){
 function renderRules(R){
   const HOW={auto:'기록으로 자동',suggest:'AI 제안 → 확인',manual:'담당이 직접'};
   const sw=META.section_weights;
-  $('b-rules').innerHTML='<div class="rules">'+META.stages.map((st,i)=>'<div class="r"><div class="h"><span class="dot" style="background:'+STAGE_COLOR[st.key]+'"></span>'+(st.key==='descartado'?'':i+'. ')+esc(st.ko)+' <span class="note" style="font-weight:400">'+esc(st.es)+'</span> <span class="how '+st.how+'">'+HOW[st.how]+'</span></div>'+
+  $('b-rules').innerHTML='<div class="rules">'+META.stages.map((st,i)=>'<div class="r"><div class="h"><span class="dot" style="background:'+STAGE_COLOR[st.key]+'"></span>'+(['descartado','no_relacionado','no_existe'].includes(st.key)?'':i+'. ')+esc(st.ko)+' <span class="note" style="font-weight:400">'+esc(st.es)+'</span> <span class="how '+st.how+'">'+HOW[st.how]+'</span></div>'+
       '<div style="margin-top:6px"><b>근거</b> '+esc(st.rule)+'</div><div class="note" style="margin-top:4px"><b>다음 목표</b> '+esc(st.goal)+'</div></div>').join('')+'</div>'+
     '<h3 style="margin-top:20px">개발 점수 (0~100)</h3><table class="tb" style="margin-top:8px"><thead><tr><th>항목</th><th class="num">점수</th><th>어떻게 얻나</th></tr></thead><tbody>'+
     '<tr><td>정보 충족도</td><td class="num">최대 '+R.info_max+'</td><td>저장한 고객정보 비율 × '+R.info_max+'. 섹션 가중치: 기본정보 '+sw.datos_generales+' · 고객 규모 '+sw.tamano_cliente+' · 잠재성 '+sw.potencial+' · 영업 정보 '+sw.informacion_empresa+' · 업종·서비스 '+sw.tipo_servicios+' · 경쟁사 '+sw.competencia+' (%)</td></tr>'+
@@ -768,7 +769,7 @@ async function loadDash(){
     const conv=prev?Math.round(atOrBeyond/prev*100):null;
     return '<div class="row"><div class="t"><span>'+esc(STAGE[k].ko)+'</span><span><b>'+fmt(d.funnel[k])+'</b>'+(conv!=null?' <span class="note">· 이 단계 이상 '+fmt(atOrBeyond)+' ('+conv+'%)</span>':'')+'</span></div><div class="b" style="width:'+Math.max(0.5,atOrBeyond/base*100)+'%;background:'+STAGE_COLOR[k]+'"></div></div>';
   }).join('');
-  $('d-total').textContent='미배정 '+fmt(d.funnel.sin_asignar)+' · 중단 '+fmt(d.funnel.descartado);
+  $('d-total').textContent='미배정 '+fmt(d.funnel.sin_asignar)+' · 중단 '+fmt(d.funnel.descartado)+' · 관련 없음 '+fmt(d.funnel.no_relacionado||0)+' · 업체 없음 '+fmt(d.funnel.no_existe||0);
   const idle=d.people.reduce((s,p)=>s+(p.idle||0),0), pend=d.people.reduce((s,p)=>s+(p.pending_reviews||0),0), today=d.people.reduce((s,p)=>s+(p.checkins_today||0),0);
   const P=d.potential||{};
   $('d-side').innerHTML=[['잠재 서스펜션 구매(월) · 진행 중',money(P.open_susp)],['잠재성 A / B / C',fmt(P.a)+' / '+fmt(P.b)+' / '+fmt(P.c)],['오늘 체크인',fmt(today)],['검토 대기',fmt(pend)],['30일 방치',fmt(idle)],['컨택→신규고객 중앙값',d.median_days_to_client==null?'—':d.median_days_to_client+'일']]
@@ -1240,7 +1241,7 @@ async function loadRoute(){
   if(RT_VIEW){ try{ ROUTE=await api('/api/prospect-routes/by-id/'+RT_VIEW); }catch(e){ RT_VIEW=null; } }
   if(!RT_VIEW){ try{ ROUTE=await api('/api/prospect-routes?date='+date+(isDir?'&user='+uid:'')); }catch(e){ return; } }
   $('rt-title').textContent=RT_VIEW?('📋 '+(ROUTE.name||'방문 목록')+' · 날짜 미정'):((uname?uname+' · ':'')+(date===META.today?'오늘':date)+' 루트');
-  const stops=ROUTE.stops; const next=stops.find(s=>!s.consult_id);
+  const stops=ROUTE.stops; const isMk=s=>!s.consult_id&&MARKS.includes(s.stage); const next=stops.find(s=>!s.consult_id&&!isMk(s));
   $('rt-est').innerHTML=stops.length&&ROUTE.estimate?'⏱ 예상 '+estText(ROUTE.estimate):'';
   $('rt-acts').innerHTML=RT_VIEW?('<div class="card flat" style="padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
       '<b style="font-size:14px">이 목록을 언제 갈까요?</b><button class="btn red sm" data-asg="'+RT_VIEW+'|today">오늘</button>'+
@@ -1257,10 +1258,12 @@ async function loadRoute(){
         '<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+(next.lat!=null?next.lat+','+next.lng:encodeURIComponent([next.nom_estab,next.municipio].filter(Boolean).join(' ')))+'">길찾기</a></div>'+
       '<button class="btn ghost" style="width:100%;margin-top:10px" data-qopen="'+next.id+'|'+esc(next.nom_estab)+'">❓ 물어볼 것 (질문 항목)</button>'+
       '<button class="btn red big" style="width:100%;margin-top:10px" data-checkin="'+next.id+'">체크인 · 녹음 시작</button>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><button class="btn ghost sm" data-mark="'+next.id+'|no_existe">🚫 업체 없음</button><button class="btn ghost sm" data-mark="'+next.id+'|no_relacionado">↪ 관련 없음</button></div>'+
       '<div class="note" style="margin-top:8px">업체 정보를 입력하지 않아도 바로 시작됩니다. 녹음이 끝나면 AI가 양식을 채우고, 「검토 대기」에서 확인·저장합니다.<br>다른 곳부터 가려면 아래 목록에서 <b>「여기부터」</b>, 다른 업체를 먼저 녹음하려면 그 줄의 <b>🎙 녹음</b>.</div></div>')
     :'<div class="card flat" style="background:var(--ok-soft)"><b>'+(RT_VIEW?'이 목록을':'이 루트를')+' 모두 방문했습니다.</b></div>';
   $('rt-stops').innerHTML=stops.map(s=>{
-    const done=!!s.consult_id, isNext=next&&s.id===next.id;
+    const done=!!s.consult_id, mk=isMk(s), isNext=next&&s.id===next.id;
+    if(mk) return '<div class="stop" style="flex-wrap:wrap;opacity:.75"><div class="n done" style="background:#8A8A8A">'+s.seq+'</div><div style="flex:1;min-width:140px;cursor:pointer" data-open="'+s.id+'"><b>'+esc(s.nom_estab)+'</b><div class="note">'+esc(s.colonia||s.municipio||'')+' · <b>'+(s.stage==='no_existe'?'🚫 업체 없음':'↪ 관련 없음')+'</b> 표시함</div></div><button class="btn ghost sm" data-open="'+s.id+'">상세</button></div>';
     // 방문 전 업체마다: 🎙 바로 녹음(어느 업체든 골라서 시작) · 「여기부터」(이 업체를 첫 방문지로, 나머지는 가까운 순)
     return '<div class="stop" style="flex-wrap:wrap"><div class="n '+(done?'done':isNext?'next':'')+'">'+s.seq+'</div><div style="flex:1;min-width:140px;cursor:pointer" data-open="'+s.id+'"><b>'+esc(s.nom_estab)+'</b>'+(s.customer_id?' <span class="tag B" title="ERP 고객">ERP</span>':'')+'<div class="note">'+esc(s.colonia||s.municipio||'')+(s.lat==null?' · <span class="st-warn">📍 위치 없음</span>':'')+(s.score!=null?' · <b style="color:'+scoreColor(s.score)+'">'+s.score+'점</b>':'')+
       (done?' · '+(s.review_status==='confirmado'?'<span class="st-ok">저장 완료</span>':'<span class="st-warn">AI 초안 검토 필요</span>'):'')+'</div></div>'+
@@ -1282,7 +1285,7 @@ async function loadRoute(){
     L.polyline((ROUTE.estimate&&ROUTE.estimate.path)||pts,{color:'#E2231A',weight:2.5,dashArray:'6 6'}).addTo(rtLayer);
     const doneP=stops.filter(s=>s.consult_id&&s.lat!=null).map(s=>[s.lat,s.lng]); if(doneP.length>1) L.polyline(doneP,{color:'#1E7A46',weight:4}).addTo(rtLayer);
     stops.forEach(s=>{ if(s.lat==null) return; const done=!!s.consult_id, isNext=next&&s.id===next.id;
-      L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',iconSize:[28,28],html:'<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;'+(done?'background:#1E7A46;color:#fff':isNext?'background:#E2231A;color:#fff':'background:#fff;color:#111;border:2px solid #111')+'">'+s.seq+'</div>'})})
+      L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',iconSize:[28,28],html:'<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;'+(isMk(s)?'background:#8A8A8A;color:#fff':done?'background:#1E7A46;color:#fff':isNext?'background:#E2231A;color:#fff':'background:#fff;color:#111;border:2px solid #111')+'">'+s.seq+'</div>'})})
         .on('click',()=>openProspect(s.id)).addTo(rtLayer); });
     RT_MAP.fitBounds(pts,{padding:[30,30],maxZoom:15});
   } else RT_MAP.setView([25.68,-100.31],11);
@@ -1400,9 +1403,22 @@ document.addEventListener('click',e=>{
   const x=e.target.closest('[data-rtdel]'); if(x){ rtRemoveStop(Number(x.dataset.rtdel)); return; }
   const c=e.target.closest('[data-checkin]'); if(c){ checkin(Number(c.dataset.checkin)); return; }
   const fs=e.target.closest('[data-first]'); if(fs){ rtFirst(Number(fs.dataset.first)); return; }
+  const mk=e.target.closest('[data-mark]'); if(mk){ const [id,to]=mk.dataset.mark.split('|'); const st=(ROUTE&&ROUTE.stops||[]).find(s=>s.id===Number(id));
+    markStage(Number(id),to,st&&st.nom_estab).then(ok=>{ if(ok) loadRoute(); }); return; }
   const r=e.target.closest('[data-review]'); if(r){ const [p,cid]=r.dataset.review.split(':'); openReview(Number(p),Number(cid)); return; }
   const o=e.target.closest('[data-open]'); if(o){ openProspect(Number(o.dataset.open)); return; }
 });
+// 11-27 · 방문 결과 표시 — 관련 없음(다른 업종) · 업체 없음(폐업·주소 없음). 메모(선택) + 지금 위치를 같이 남긴다.
+const CLOSED=['descartado','no_relacionado','no_existe'], MARKS=['no_relacionado','no_existe'];
+async function markStage(pid,to,name){
+  const ask=to==='no_existe'?'🚫 업체 없음으로 표시합니다'+(name?' — '+name:'')+'\n메모(선택) — 예: 폐업, 그 주소에 다른 가게, 주소를 못 찾음'
+    :'↪ 관련 없음으로 표시합니다'+(name?' — '+name:'')+'\n메모(선택) — 무엇을 취급하나요? 예: 타이어만, 전기 정비, 오토바이';
+  const memo=prompt(ask,''); if(memo===null) return false;
+  toast('위치 확인 중…'); const g=await geo();
+  try{ const r=await post('/api/prospects/'+pid+'/stage',{to,reason:memo,lat:g?g.lat:null,lng:g?g.lng:null});
+    toast(STAGE[to].ko+' 표시 완료'+(r.dist_m!=null?' · 업체와 '+fmt(r.dist_m)+'m':g?'':' · 위치 없음')); return true; }
+  catch(e){ toast({director_only:'이미 종료된 업체입니다 — 바꾸기는 디렉터만 할 수 있습니다',same_stage:'이미 그 단계입니다'}[e.message]||('실패: '+e.message)); return false; }
+}
 function geo(){ return new Promise(res=>{ if(!navigator.geolocation) return res(null);
   navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}),()=>res(null),{enableHighAccuracy:true,timeout:8000,maximumAge:60000}); }); }
 // 체크인 = 기존 「고객상담」 원클릭 녹음을 이 후보로 연결해 연다(녹음·업로드·AI 요약은 기존 기능 그대로)
@@ -1413,7 +1429,7 @@ async function checkin(pid){
 $('rt-near').onclick=async()=>{
   const g=await geo(); if(!g) return toast('위치를 가져오지 못했습니다');
   const d=0.018; let r; try{ r=await api('/api/prospects/map?bbox='+[g.lng-d,g.lat-d,g.lng+d,g.lat+d].join(',')); }catch(e){ return; }
-  const near=r.rows.filter(p=>!['cliente_activo','descartado'].includes(p.s)&&(p.o==null||p.o===META.me)).sort((a,b)=>(a.pr>b.pr)-(a.pr<b.pr)).slice(0,12);
+  const near=r.rows.filter(p=>!['cliente_activo','descartado','no_relacionado','no_existe'].includes(p.s)&&(p.o==null||p.o===META.me)).sort((a,b)=>(a.pr>b.pr)-(a.pr<b.pr)).slice(0,12);
   if(!near.length) return toast('2km 안에 방문할 후보가 없습니다');
   openDrawer('내 주변 2km','후보 '+near.length+'곳',near.map(p=>'<div class="stop"><span class="tag '+p.pr+'">'+p.pr+'</span><div style="flex:1"><b>'+esc(p.n)+'</b><div class="note">'+esc((STAGE[p.s]||{}).ko||'')+'</div></div><button class="btn ghost sm" data-open="'+p.id+'">상세</button></div>').join('')+
     '<button class="btn red" style="width:100%;margin-top:16px" id="near-route">이 후보들로 오늘 루트 만들기</button>');
@@ -1434,7 +1450,7 @@ async function loadToday(){
   TD.d=d; if(TD.sel&&!d.reps.some(x=>x.user_id===TD.sel)) TD.sel=null;
   $('td-upd').textContent='· '+new Date().toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'})+' 기준';
   const C=d.counts;
-  $('td-kpi').innerHTML=[['체크인',fmt(C.checkins),'방문 기록 수'],['녹음 있음',fmt(C.with_rec),'녹음 없음 '+fmt(C.no_rec)],['계획 대비 방문',fmt(C.visited)+' / '+fmt(C.planned),C.planned?Math.round(C.visited/C.planned*100)+'% 진행':'그날 계획 루트 없음'],
+  $('td-kpi').innerHTML=[['체크인',fmt(C.checkins),'방문 기록 수'],['녹음 있음',fmt(C.with_rec),'녹음 없음 '+fmt(C.no_rec)],['계획 대비 방문',fmt(C.visited)+' / '+fmt(C.planned),(C.planned?Math.round(C.visited/C.planned*100)+'% 진행':'그날 계획 루트 없음')+(C.marked?' · 관련 없음·업체 없음 '+fmt(C.marked):'')],
     ['루트 밖 방문',fmt(C.off_route),'계획에 없던 곳'],['업체 미연결',fmt(C.unlinked),'일반 녹음 등 — 진척 보드에서 연결']]
     .map(([l,v,n])=>'<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div><div class="note">'+n+'</div></div>').join('');
   renderTodayReps(); renderTodayMap(); renderTodayTable();
@@ -1463,8 +1479,8 @@ function renderTodayMap(){
     const pl=x.planned.filter(p=>p.lat!=null);
     if(pl.length>1) L.polyline(pl.map(p=>[p.lat,p.lng]),{color:col,weight:2,dashArray:'6 6',opacity:.7}).addTo(TD.lyr);
     pl.forEach(p=>{ bb.push([p.lat,p.lng]); const done=!!p.consult_id;
-      L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',iconSize:[24,24],html:'<div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:800 11px sans-serif;'+(done?'background:#1E7A46;color:#fff;border:2px solid #fff':'background:#fff;color:#111;border:2px solid '+col)+'">'+p.seq+'</div>'})})
-        .bindTooltip(esc(x.name||'')+' · 계획 '+p.seq+'번 '+esc(p.name||'')+(done?' · ✓ '+mxTime(p.visited_at).slice(11):' · 아직')).addTo(TD.lyr); });
+      L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',iconSize:[24,24],html:'<div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:800 11px sans-serif;'+(!done&&p.mark?'background:#8A8A8A;color:#fff;border:2px solid #fff':done?'background:#1E7A46;color:#fff;border:2px solid #fff':'background:#fff;color:#111;border:2px solid '+col)+'">'+p.seq+'</div>'})})
+        .bindTooltip(esc(x.name||'')+' · 계획 '+p.seq+'번 '+esc(p.name||'')+(done?' · ✓ '+mxTime(p.visited_at).slice(11):p.mark?' · '+(p.mark==='no_existe'?'업체 없음':'관련 없음')+' 표시 '+mxTime(p.marked_at).slice(11):' · 아직')).addTo(TD.lyr); });
     const acts=d.rows.filter(r=>r.user_id===x.user_id&&r.lat!=null);
     if(acts.length>1) L.polyline(acts.map(r=>[r.lat,r.lng]),{color:col,weight:4,opacity:.9}).addTo(TD.lyr);
     acts.forEach((r,i)=>{ bb.push([r.lat,r.lng]);
@@ -1488,6 +1504,14 @@ function renderTodayTable(){
         '<td><button class="btn ghost sm" data-tdopen="'+r.id+'">보기</button></td></tr>'; }).join('')
       :'<tr><td colspan="8" class="empty">이 날 체크인·녹음이 없습니다.</td></tr>')+'</tbody>';
   $('td-table').querySelectorAll('[data-tdopen]').forEach(b=>b.onclick=()=>openActivity(Number(b.dataset.tdopen)));
+  // 11-27 · 관련 없음 · 업체 없음 표시(체크인 없이 표시한 것도)
+  const mks=(d.marks||[]).filter(m=>!TD.sel||m.user_id===TD.sel).slice().reverse();
+  $('td-marks').innerHTML=mks.length?'<h2>관련 없음 · 업체 없음 표시 '+mks.length+'건</h2><div class="scroll" style="margin-top:10px"><table class="tb resp"><thead><tr><th>표시 시각</th><th>담당</th><th>업체</th><th>결과</th><th>표시 위치</th><th>메모</th></tr></thead><tbody>'+
+    mks.map(m=>'<tr><td data-l="표시 시각"><b>'+mxTime(m.at).slice(11)+'</b></td><td data-l="담당">'+esc(m.user_name||'')+'</td><td data-l="업체"><b data-open="'+m.prospect_id+'" style="cursor:pointer;text-decoration:underline">'+esc(m.name||'')+'</b></td>'+
+      '<td data-l="결과"><b>'+(m.stage==='no_existe'?'🚫 업체 없음':'↪ 관련 없음')+'</b></td>'+
+      '<td data-l="표시 위치">'+(m.lat!=null?'<a target="_blank" rel="noopener" href="https://www.google.com/maps?q='+m.lat+','+m.lng+'">📍 지도</a>'+(m.dist_m!=null?' <span class="'+(m.dist_m>(META.checkin_warn_m||150)?'st-warn':'note')+'">업체와 '+fmt(m.dist_m)+'m</span>':''):'<span class="st-warn">위치 없음</span>')+'</td>'+
+      '<td data-l="메모"><span class="note">'+esc(m.reason||'—')+'</span></td></tr>').join('')+'</tbody></table></div>':'';
+  $('td-marks').classList.toggle('hide',!mks.length);
 }
 async function openActivity(id){
   const r=TD.d.rows.find(x=>x.id===id); if(!r) return;
@@ -1668,8 +1692,9 @@ async function openProspect(id){
     '<div class="sec" id="dq-box"><h3>❓ 질문 항목</h3><p class="note">불러오는 중…</p></div>'+
     sizeBlock(d)+
     scoreBlock(d)+
-    '<div class="sec"><h3>단계</h3><div class="stepper">'+order.map(k=>'<button data-stage="'+k+'" class="'+(p.stage===k?'on':(META.stages.findIndex(s=>s.key===k)<META.stages.findIndex(s=>s.key===p.stage)&&p.stage!=='descartado'?'past':''))+'"'+(manualOK(k)?'':' disabled title="기록으로 자동"')+'>'+esc(STAGE[k].ko)+'</button>').join('')+
+    '<div class="sec"><h3>단계</h3><div class="stepper">'+order.map(k=>'<button data-stage="'+k+'" class="'+(p.stage===k?'on':(META.stages.findIndex(s=>s.key===k)<META.stages.findIndex(s=>s.key===p.stage)&&!CLOSED.includes(p.stage)?'past':''))+'"'+(manualOK(k)?'':' disabled title="기록으로 자동"')+'>'+esc(STAGE[k].ko)+'</button>').join('')+
       '<button data-stage="descartado" class="'+(p.stage==='descartado'?'on':'')+'">중단</button></div>'+
+      '<div class="stepper" style="margin-top:6px"><button data-stage="no_relacionado" class="'+(p.stage==='no_relacionado'?'on':'')+'" title="방문해 보니 관계없는 제품을 취급">↪ 관련 없음</button><button data-stage="no_existe" class="'+(p.stage==='no_existe'?'on':'')+'" title="방문해 보니 업체가 없음(폐업·주소 없음)">🚫 업체 없음</button></div>'+
       '<p class="note">'+esc((STAGE[p.stage]||{}).rule||'')+' · 다음 목표: <b>'+esc((STAGE[p.stage]||{}).goal||'')+'</b></p>'+
       '</div>'+
     '<div class="sec"><h3>ERP 견적서</h3>'+(d.quotes.length?d.quotes.map(q=>'<div class="stop"><div style="flex:1"><b>'+esc(q.quote_no||('#'+q.id))+'</b> · '+esc(String(q.quote_date).slice(0,10))+(q.subtotal_mxn!=null?' · '+money(q.subtotal_mxn):'')+'<div class="note">'+esc(q.guest_name?'게스트: '+q.guest_name:'고객 견적')+' · '+esc(q.user_name||'')+' · '+esc(q.status)+'</div></div>'+(q.guest_name&&!q.customer_id?'<button class="btn ghost sm" data-unq="'+q.id+'">연결 해제</button>':'')+'</div>').join('')
@@ -1685,13 +1710,14 @@ async function openProspect(id){
     '<div class="sec"><h3>기존 고객 연결</h3><div id="dp-link">'+(d.customer?'<div class="card flat" style="background:var(--ok-soft)"><b>'+esc(d.customer.code+' · '+d.customer.name)+'</b><div class="note">연결됨'+(isDir?' · <a href="#" id="dp-unlink">연결 해제</a>':'')+'</div>'+erpCard(d.erp)+'</div>':
         (d.links.find(l=>l.status==='solicitado')?'<div class="banner warn">연결 승인 대기: '+esc(d.links.find(l=>l.status==='solicitado').customer_name)+'</div>':'<p class="note">비슷한 고객을 찾는 중…</p>'))+'</div>'+
       (!d.customer?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn ghost sm" id="dp-copy">고객 등록용 값 복사</button><a class="btn ghost sm" href="refatrix-customers.html" target="_blank" rel="noopener">고객 등록 화면</a></div><p class="note">고객 등록이 승인되면 여기서 그 고객을 골라 연결하세요. 방문·녹음·양식 값이 고객 이력으로 이어집니다.</p>':'')+'</div>'+
-    '<div class="sec"><h3>이력</h3>'+d.history.slice(0,12).map(h=>'<div class="note">'+esc(mxTime(h.created_at))+' · '+esc((STAGE[h.from_stage]||{}).ko||'—')+' → <b>'+esc((STAGE[h.to_stage]||{}).ko||h.to_stage)+'</b>'+(h.reason?' · '+esc(h.reason):'')+(h.user_name?' · '+esc(h.user_name):'')+'</div>').join('')+'</div>';
+    '<div class="sec"><h3>이력</h3>'+d.history.slice(0,12).map(h=>'<div class="note">'+esc(mxTime(h.created_at))+' · '+esc((STAGE[h.from_stage]||{}).ko||'—')+' → <b>'+esc((STAGE[h.to_stage]||{}).ko||h.to_stage)+'</b>'+(h.reason?' · '+esc(h.reason):'')+(h.user_name?' · '+esc(h.user_name):'')+(h.has_geo?' · 📍 표시 위치'+(h.dist_m!=null?' (업체와 '+fmt(h.dist_m)+'m)':''):'')+'</div>').join('')+'</div>';
   openDrawer((p.municipio||'')+' · '+(p.colonia||''),p.nom_estab,html);
   loadQuestions(p.id,'dq-box',false);
   $('dp-route').onclick=async()=>{ try{ const ids=[...new Set([...(ROUTE&&ROUTE.date===META.today?ROUTE.stops.map(s=>s.id):[]),...routePick,p.id])]; routePick=ids;
       await post('/api/prospect-routes',{date:META.today,prospect_ids:ids},'PUT'); toast('오늘 루트에 추가 ('+ids.length+'곳)'); ROUTE=null; if(cur==='map'){ $('m-addroute').classList.add('hide'); loadMapPins(); } }catch(e){ toast('실패: '+e.message); } };
   $('dr-body').querySelectorAll('[data-stage]').forEach(b=>b.onclick=async()=>{
     const to=b.dataset.stage; let reason='', amount=null;
+    if(MARKS.includes(to)){ if(await markStage(p.id,to)) openProspect(p.id); return; }
     if(to==='descartado'){ reason=prompt('중단 사유를 적어 주세요\n('+META.discard_reasons.join(' / ')+')',''); if(!reason) return; }
     try{ const r=await post('/api/prospects/'+p.id+'/stage',{to,reason,amount}); toast('단계: '+STAGE[to].ko+(r.score!=null?' · '+r.score+'점':'')); openProspect(p.id); }catch(e){ toast({no_backward:'뒤로 되돌리기는 디렉터만 할 수 있습니다',director_only:'디렉터만 할 수 있습니다',reason_required:'사유가 필요합니다',same_stage:'이미 그 단계입니다',auto_only:'이 단계는 기록으로 자동 결정됩니다(견적 제출 = ERP 견적서 저장)'}[e.message]||('실패: '+e.message)); }
   });
@@ -1793,7 +1819,7 @@ async function openReview(pid,cid){
     secs.map(s=>'<div class="form-sec"><h3>'+esc(s.label)+'</h3>'+(s.key==='facturacion'?'<p class="note">청구 정보는 보통 고객 등록 때 입력합니다(선택).</p>':'')+'<div class="form-grid" style="margin-top:12px">'+
       s.items.map(it=>it.groupHead?'<div style="grid-column:1/-1;font-weight:800;margin-top:6px">'+esc(it.groupHead)+'</div>':input(it)).join('')+'</div></div>').join('')+
     '<div class="form-sec"><h3>다음 단계</h3><div class="form-grid" style="margin-top:12px"><label class="fld"><span>단계 '+(rec&&rec.stage_suggested?'<span class="src ia">IA 제안: '+esc((STAGE[rec.stage_suggested]||{}).ko||rec.stage_suggested)+'</span>':'')+'</span><select id="rv-stage"><option value="">그대로 ('+esc((STAGE[d.prospect.stage]||{}).ko)+')</option>'+
-      ['contactado','interesado','descartado'].map(k=>'<option value="'+k+'"'+(rec&&rec.stage_suggested===k&&k!==d.prospect.stage?' selected':'')+'>'+esc(STAGE[k].ko)+'</option>').join('')+'</select></label></div></div>'+
+      ['contactado','interesado','descartado','no_relacionado','no_existe'].map(k=>'<option value="'+k+'"'+(rec&&rec.stage_suggested===k&&k!==d.prospect.stage?' selected':'')+'>'+esc(STAGE[k].ko)+'</option>').join('')+'</select></label></div></div>'+
     '<div class="sticky-actions"><span class="note" id="rv-msg" style="margin-right:auto;align-self:center"></span><button class="btn ghost" id="rv-draft">임시저장</button><button class="btn red" id="rv-ok">확정 후 저장</button></div>';
   openDrawer('Alta de clientes'+(d.consult?' · 방문 '+String(d.consult.consult_date).slice(0,10):''),d.prospect.nom_estab,html);
   $('dr-body').querySelectorAll('.ms label').forEach(l=>l.querySelector('input').onchange=()=>l.classList.toggle('on',l.querySelector('input').checked));
@@ -1820,6 +1846,7 @@ async function openReview(pid,cid){
   const save=async(confirm)=>{
     const {vals,src}=collect(); const stage=$('rv-stage').value; let stage_reason='';
     if(stage==='descartado'){ stage_reason=prompt('중단 사유',''); if(!stage_reason) return; }
+    if(MARKS.includes(stage)){ const m=prompt(STAGE[stage].ko+' — 메모(선택)',''); if(m===null) return; stage_reason=m; }
     try{ const r=await post('/api/prospects/'+pid+'/crm',{consult_id:cid||null,values:vals,sources:src,confirm,stage:stage||null,stage_reason});
       toast((confirm?'확정 저장':'임시저장')+(r.score?' · 개발 점수 '+r.score.score+'점'+(r.score.score>r.score.prev?' (+'+(r.score.score-r.score.prev)+')':''):'')); closeDrawer(); refreshCounts(); if(cur==='review') loadReviews(); if(cur==='route') loadRoute(); }
     catch(e){ const f=(e.data&&e.data.fields)||[];

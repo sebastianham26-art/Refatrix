@@ -27,7 +27,18 @@ export const STAGES = [
     rule: '연결 고객의 첫 게시 인보이스 — 신규개발 완료(100점)', goal: '재구매·매출 확대' },
   { key: 'descartado', ko: '중단', es: 'Descartado', how: 'manual',
     rule: '담당이 사유와 함께 중단(AI가 「관심 없음」을 들으면 제안)', goal: '—' },
+  // 11-27 · 방문해 보니 우리와 관계없는 업종 · 업체가 없음 — 방문 결과 표시(담당이 직접, 위치·시각 기록). 루트·지도에서 빠진다.
+  { key: 'no_relacionado', ko: '관련 없음', es: 'No relacionado', how: 'manual',
+    rule: '방문해 보니 서스펜션·조향 부품과 관계없는 제품을 취급(담당이 표시 · 위치·시각 기록)', goal: '—' },
+  { key: 'no_existe', ko: '업체 없음', es: 'No existe', how: 'manual',
+    rule: '방문해 보니 업체가 없음(폐업·주소 없음 · 담당이 표시 · 위치·시각 기록)', goal: '—' },
 ];
+// 종료 단계 — 진행 단계 순위·자동 전환에서 빠지고, 루트·지도·계획에서 빠진다.
+export const CLOSED_STAGES = ['descartado', 'no_relacionado', 'no_existe'];
+export const MARK_STAGES = ['no_relacionado', 'no_existe'];   // 방문 결과 표시(사유 선택)
+export const CLOSED_SQL = `('descartado','no_relacionado','no_existe')`;
+export const MARK_SQL = `('no_relacionado','no_existe')`;
+export function isClosedStage(k) { return CLOSED_STAGES.includes(k); }
 export const STAGE_KEYS = STAGES.map((s) => s.key);
 const RANK = Object.fromEntries(STAGE_KEYS.map((k, i) => [k, i]));
 export function stageRank(k) { return RANK[k] == null ? -1 : RANK[k]; }
@@ -42,18 +53,23 @@ export function checkStageMove(from, to, { isDirector = false, reason = '' } = {
   if (from === to) return { ok: false, error: 'same_stage' };
   if (to === 'descartado') {
     if (!String(reason || '').trim()) return { ok: false, error: 'reason_required' };
+    if (MARK_STAGES.includes(from) && !isDirector) return { ok: false, error: 'director_only' };
     return { ok: true };
   }
-  if (from === 'descartado' && !isDirector) return { ok: false, error: 'director_only' };
+  if (MARK_STAGES.includes(to)) {   // 관련 없음 · 업체 없음 — 메모는 선택 · 다른 종료 단계에서 바꾸는 건 디렉터만
+    if (isClosedStage(from) && !isDirector) return { ok: false, error: 'director_only' };
+    return { ok: true };
+  }
+  if (isClosedStage(from) && !isDirector) return { ok: false, error: 'director_only' };
   if (to === 'sin_asignar' && !isDirector) return { ok: false, error: 'director_only' };
   if (['perfilado', 'cotizado', 'registro', 'cliente_activo'].includes(to) && !isDirector) return { ok: false, error: 'auto_only' };   // 기록으로만 올라간다
-  if (stageRank(to) < stageRank(from) && from !== 'descartado' && !isDirector) return { ok: false, error: 'no_backward' };
+  if (stageRank(to) < stageRank(from) && !isClosedStage(from) && !isDirector) return { ok: false, error: 'no_backward' };
   return { ok: true };
 }
 
 // 자동 전환: 지금보다 앞 단계일 때만 올린다(중단·신규고객은 건드리지 않음)
 export function autoAdvance(current, target) {
-  if (current === 'descartado' || current === 'cliente_activo') return null;
+  if (isClosedStage(current) || current === 'cliente_activo') return null;
   return stageRank(target) > stageRank(current) ? target : null;
 }
 
@@ -397,7 +413,8 @@ export function buildAltaPrompt({ transcript, companyName, prefill = {}, summary
     '5. competencia = hasta 3 marcas/proveedores que el cliente compra hoy, con un producto ejemplo y precios si se dijeron.',
     '6. potencial.* = montos MENSUALES en MXN que dijo el cliente. Si los dijo por semana multiplica por 4.3; si por año divide entre 12. Si no los dijo, null.',
     '7. tamano_cliente = tiendas/sucursales, almacenes, personal, vendedores, cómo entrega (opciones) y unidades de reparto, solo si se mencionaron.',
-    '8. Responde SOLO con un objeto JSON, sin texto antes ni después.',
+    '8. etapa_sugerida = "no_relacionado" solo si quedó claro que el negocio NO vende ni instala partes de suspensión/dirección (otro giro).',
+    '9. Responde SOLO con un objeto JSON, sin texto antes ni después.',
     '',
     `[Prospecto] ${companyName || 'desconocido'}`,
     '[Datos precargados de DENUE]', pre,
@@ -408,7 +425,7 @@ export function buildAltaPrompt({ transcript, companyName, prefill = {}, summary
     'FORMATO DE RESPUESTA',
     '{"resumen":"3-6 oraciones en español","campos":{"datos_generales.contacto_principal":{"valor":null,"evidencia":null,"confianza":"baja"}},',
     ' "competencia":[{"marca":null,"proveedor":null,"producto_ejemplo":null,"precio_compra":null,"precio_venta_publico":null,"evidencia":null}],',
-    ' "siguiente_paso":null,"fecha_siguiente_paso":null,"etapa_sugerida":"contactado|interesado|cotizado|descartado|null"}',
+    ' "siguiente_paso":null,"fecha_siguiente_paso":null,"etapa_sugerida":"contactado|interesado|cotizado|descartado|no_relacionado|null"}',
     '',
     '[Transcripción]',
     String(transcript || '').slice(0, 60000),
@@ -469,7 +486,7 @@ export function parseAltaDraft(text) {
       if (c[base] != null) put(`competencia.${i + 1}.${base}`, { valor: c[base], evidencia: c.evidencia, confianza: c.confianza || 'media' });
     }
   });
-  const okStage = ['contactado', 'interesado', 'cotizado', 'descartado'];
+  const okStage = ['contactado', 'interesado', 'cotizado', 'descartado', 'no_relacionado'];
   const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(j.fecha_siguiente_paso || '')) ? j.fecha_siguiente_paso : null;
   return {
     resumen: j.resumen ? String(j.resumen).slice(0, 2000) : null,
@@ -641,16 +658,17 @@ export function deriveStage(ev, current) {
   if (ev.sale) auto = 'cliente_activo';
   if (!ev.owner && auto !== 'sin_asignar' && auto !== 'cliente_activo') auto = 'asignado';
   let suggest = null;
-  const cur = current === 'descartado' ? null : current;
+  const cur = isClosedStage(current) ? null : current;
   if (cur && ev.ai_stage && ev.ai_stage !== cur) {
     if (ev.ai_stage === 'descartado') suggest = { stage: 'descartado', reason: 'AI: 녹음에서 관심 없음/중단 신호' };
+    else if (ev.ai_stage === 'no_relacionado') suggest = { stage: 'no_relacionado', reason: 'AI: 녹음에서 서스펜션·조향과 관계없는 업종으로 들림' };
     else if (stageRank(ev.ai_stage) > Math.max(stageRank(cur), stageRank(auto)) && ev.ai_stage === 'interesado')
       suggest = { stage: 'interesado', reason: 'AI: 녹음에서 관심(카탈로그·가격 요청 등) 확인' };
   }
   return { auto, suggest };
 }
 // SQL 에서 단계 순위(KPI: 「그 단계 이상에 처음 도달」)
-export const STAGE_RANK_SQL = (col) => `(CASE ${col} ${STAGE_KEYS.filter((k) => k !== 'descartado').map((k, i) => `WHEN '${k}' THEN ${i}`).join(' ')} ELSE -1 END)`;
+export const STAGE_RANK_SQL = (col) => `(CASE ${col} ${STAGE_KEYS.filter((k) => !isClosedStage(k)).map((k, i) => `WHEN '${k}' THEN ${i}`).join(' ')} ELSE -1 END)`;
 export const SCORE_BANDS = [[0, 0], [1, 19], [20, 39], [40, 59], [60, 79], [80, 99], [100, 100]];
 
 // ── 구역 → 방문 루트 제안 ───────────────────────────────────────────────

@@ -9,7 +9,7 @@ import {
   potentialOf, POTENTIAL_TIERS, infoCompleteness, scoreOf, deriveStage, stageRank, STAGE_RANK_SQL, SCORE_RULES, allocateTarget, planDays, nextWorkDates, convexHull, planStatus, workdaysBetween,
   checkStageMove, autoAdvance, segmentOf, priorityOf, normalizeImportRow, parseCsv, territoryFor,
   distanceM, orderStops, nameSimilarity, matchScore, suggestCustomers, prefillFromProspect, buildAltaPrompt,
-  parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds,
+  parseAltaDraft, coerceValue, mergeForReview, validateAltaValues, missingRequired, pct, paceStatus, periodBounds, STAGE_KEYS, isClosedStage,
 } from '../src/prospectCore.js';
 import { ALTA_FIELDS, ALTA_FIELD_MAP, ALTA_FORM } from '../src/altaClientesForm.js';
 
@@ -38,6 +38,23 @@ test('단계 규칙: 앞으로만 · 중단 사유 · 되돌리기/복구/신규
   assert.equal(autoAdvance('asignado', 'contactado'), 'contactado');
   assert.equal(autoAdvance('cotizado', 'contactado'), null);
   assert.equal(autoAdvance('descartado', 'contactado'), null);
+});
+
+test('방문 결과 표시: 관련 없음 · 업체 없음 (11-27)', () => {
+  assert.ok(STAGE_KEYS.includes('no_relacionado') && STAGE_KEYS.includes('no_existe'));
+  assert.equal(checkStageMove('asignado', 'no_existe').ok, true);            // 메모 없이도 됨
+  assert.equal(checkStageMove('contactado', 'no_relacionado', { reason: 'solo llantas' }).ok, true);
+  assert.equal(checkStageMove('no_existe', 'contactado').error, 'director_only');
+  assert.equal(checkStageMove('no_existe', 'no_relacionado').error, 'director_only');
+  assert.equal(checkStageMove('no_existe', 'descartado', { reason: 'x' }).error, 'director_only');
+  assert.equal(checkStageMove('no_existe', 'asignado', { isDirector: true }).ok, true);
+  assert.equal(autoAdvance('no_existe', 'contactado'), null);
+  assert.equal(autoAdvance('no_relacionado', 'perfilado'), null);
+  assert.ok(isClosedStage('no_existe') && isClosedStage('descartado') && !isClosedStage('cotizado'));
+  assert.ok(!STAGE_RANK_SQL('x').includes('no_existe'));
+  assert.equal(deriveStage({ owner: true, visits: 1, ai_stage: 'no_relacionado' }, 'contactado').suggest.stage, 'no_relacionado');
+  assert.equal(deriveStage({ owner: true, visits: 1, ai_stage: 'interesado' }, 'no_existe').suggest, null);
+  assert.equal(parseAltaDraft('{"etapa_sugerida":"no_relacionado","campos":{}}').etapa_sugerida, 'no_relacionado');
 });
 
 test('세그먼트·우선순위', () => {
