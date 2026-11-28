@@ -1,0 +1,25 @@
+--- /mnt/user-data/outputs/REFATRIX_2026-11-27k_ikea_theme/files/refatrix-quotelist.html	2026-11-27 21:59:50.845246000 -0600
++++ /mnt/user-data/outputs/REFATRIX_2026-11-27L_quotelist_wide/files/refatrix-quotelist.html	2026-11-27 22:12:11.923035307 -0600
+@@ -8,7 +8,7 @@
+ <meta http-equiv="Pragma" content="no-cache">
+ <meta http-equiv="Expires" content="0">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<title>Refatrix ERP · 견적 목록 · ql-1119w</title>
++<title>Refatrix ERP · 견적 목록 · ql-1127L</title>
+ <style>
+   :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#0058A3;--gold:#B8893B;--radius:12px;}
+@@ -161,6 +161,13 @@
+   @media (max-width:520px){#grModal{padding:0}#grModal .grbox{border-radius:0;min-height:100vh}#grBody,#grModal .grctl{padding-left:12px;padding-right:12px}}
+   .codehit{display:block;margin-top:3px;font-size:10.5px;font-weight:700;color:#2b5a78;white-space:nowrap}
+   .codehit i{font-style:normal;font-weight:500;color:var(--muted)}
++
++  /* 2026-11-27L · 화면 가로 폭 넓게 — 1100px 상자 → 화면 폭 전체(최대 2000px).
++     13개 열이 한 화면에 들어가 가로 스크롤바 없이 보이게(스페인어 번역으로 열이 넓어져도 여유).
++     번호·날짜는 하이픈(-)에서 줄이 꺾이지 않게 한 줄 유지. */
++  .wrap{max-width:min(100%,2000px)}
++  #listWrap .qlink,#listWrap .arrow{white-space:nowrap}
++  #listWrap>table td:nth-child(2){white-space:nowrap}
+ </style>
+ <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+ 
