@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 고객 등록 (build tx-1027cn)</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -46,7 +46,7 @@
   .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
   table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
   th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
-  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#FAFAFA}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .code{font-weight:700;color:var(--brand)}
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
@@ -61,7 +61,7 @@
   /* 고객 목록: 타이틀 고정 + 항목만 스크롤 */
   #custList{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:8px;background:#fff;position:relative}
   #custList table{margin-top:0}
-  #custList thead th{position:sticky;top:0;z-index:3;background:#faf8f3;box-shadow:0 1px 0 var(--line)}
+  #custList thead th{position:sticky;top:0;z-index:3;background:#FAFAFA;box-shadow:0 1px 0 var(--line)}
   #custList .hint{padding:0 9px 8px}
   .doc-badge{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:#e7f3ee;color:var(--income)}
   /* 할인률 그래프 모달 */
@@ -72,6 +72,10 @@
   .modal-head h2{margin:0;font-size:16px;color:var(--brand)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -559,7 +563,7 @@
       if(lvl==='view'){
         document.body.classList.add('ro');
         const st=document.createElement('style');
-        st.textContent="body.ro input[type=text]:not(#api):not(#lid),body.ro input[type=number],body.ro input[type=month],body.ro input[type=date],body.ro textarea{pointer-events:none;background:#f2f0ea;color:#999}body.ro .btn.gold,body.ro .btn.danger{display:none!important}body.ro button.btn:not(.ghost):not(#go):not(#reloadBtn):not(#portalBtn){display:none!important}";
+        st.textContent="body.ro input[type=text]:not(#api):not(#lid),body.ro input[type=number],body.ro input[type=month],body.ro input[type=date],body.ro textarea{pointer-events:none;background:#F0F0F0;color:#999}body.ro .btn.gold,body.ro .btn.danger{display:none!important}body.ro button.btn:not(.ghost):not(#go):not(#reloadBtn):not(#portalBtn){display:none!important}";
         document.head.appendChild(st);
         const ban=document.createElement('div');ban.textContent='읽기 전용 — 이 화면은 보기 권한만 있습니다(수정 불가).';
         ban.style.cssText='background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;margin-top:12px;font-size:13px;font-weight:700';
@@ -706,7 +710,7 @@
     const step=maxD<=20?5:(maxD<=50?10:20);
     for(let v=0; v<=maxD; v+=step){
       const y=yOf(v);
-      svg+='<line x1="'+mL+'" y1="'+y+'" x2="'+(mL+plotW)+'" y2="'+y+'" stroke="#E2DDD2" stroke-width="1"/>';
+      svg+='<line x1="'+mL+'" y1="'+y+'" x2="'+(mL+plotW)+'" y2="'+y+'" stroke="#DFDFDF" stroke-width="1"/>';
       svg+='<text x="'+(mL-6)+'" y="'+(y+3.5)+'" text-anchor="end" font-size="10" fill="#6B6B6B">'+v+'%</text>';
     }
     // 우측 Y축 눈금 라벨(재주문 속도)
@@ -2154,7 +2158,7 @@
   const LEAD_STATUS={new:'미배정',assigned:'담당 지정됨',registered:'등록됨 · 승인 대기',
     done:'완결 (승인됨)',dismissed:'보류 · 대상 아님'};
   const LEAD_PILL={new:['#F6E7E4','#B23A2E'],assigned:['#F6EEDD','#8A5A00'],
-    registered:['#F6EEDD','#8A5A00'],done:['#E4F0EB','#0F6E56'],dismissed:['#EFEDE7','#6F6A60']};
+    registered:['#F6EEDD','#8A5A00'],done:['#E4F0EB','#0F6E56'],dismissed:['#F0F0F0','#6F6A60']};
   const LEAD_LBL={empresa:'회사명',nombre:'이름',apellido:'성',telefono:'전화',correo:'이메일',rfc:'RFC',
     ciudad:'도시',estado:'주',direccion:'주소',mensaje:'남긴 말',crmLeadCode:'CRM 코드',customerCode:'CRM 코드',
     solicitadoEn:'신청 시각',tipo:'유형',nombreComercial:'상호'};
@@ -2231,7 +2235,7 @@
       <td><button class="btn ghost sm" onclick="leadDetail(${r.id})">${LEAD_OPEN===r.id?'접기':'자세히'}</button> ${acts.join(' ')}</td>
     </tr>`;
     const det=LEAD_OPEN===r.id
-      ? `<tr><td colspan="6" style="background:#faf8f3">
+      ? `<tr><td colspan="6" style="background:#FAFAFA">
           <div class="hint" style="margin:0 0 6px">고객이 홈페이지에서 입력한 내용 전부</div>
           <table style="font-size:12.5px;border-collapse:collapse">${leadFields(r)}</table>
           ${r.close_reason?`<div class="hint" style="margin-top:6px">보류 사유: ${esc(r.close_reason)}${r.closed_by_name?(' · '+esc(r.closed_by_name)):''}</div>`:''}
@@ -2453,6 +2457,6 @@
 <script src="refatrix-custform.js?v=20261019dpin"></script>
 <!-- 0268 · 웹 가입 신슭 WhatsApp 알림 패널(디렉터) -->
 <script src="refatrix-leadwa.js?v=20261012leadwa"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

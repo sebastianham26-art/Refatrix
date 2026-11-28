@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 사용자 · 권한 관리 · build u17wa</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -34,7 +34,7 @@
   .hidden{display:none}
   table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
   th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#FAFAFA}
   .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .pg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;margin:2px 8px 2px 0}
@@ -42,7 +42,7 @@
   /* ── 사용자 목록·권한: 넓은 화면 활용 + 격자 정돈 ── */
   #userList{overflow-x:auto;margin-top:6px}
   #userList table{font-size:12.5px}
-  #userList thead th{position:sticky;top:0;z-index:2;background:#faf8f3;white-space:nowrap}
+  #userList thead th{position:sticky;top:0;z-index:2;background:#FAFAFA;white-space:nowrap}
   #userList tbody tr:nth-child(even){background:#fbfaf6}
   #userList tbody tr:hover{background:#f4f1e8}
   #userList td{vertical-align:top}
@@ -61,6 +61,10 @@
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -107,7 +111,7 @@
           padding:2px 8px;border-radius:999px;letter-spacing:.03em}
         #clockDash .cd-clock.cd-day .cd-tag{background:#f3eccf;color:#7a5f0f}
         #clockDash .cd-clock.cd-night .cd-tag{background:rgba(255,255,255,.14);color:#dfe6df}
-        #clockDash .cd-diff{margin-top:14px;background:#f6f3ec;border:1px solid var(--line);border-left:4px solid var(--brand);
+        #clockDash .cd-diff{margin-top:14px;background:#F5F5F5;border:1px solid var(--line);border-left:4px solid var(--brand);
           border-radius:8px;padding:11px 14px;font-size:13px;line-height:1.6}
         #clockDash .cd-diff b{color:var(--brand)}
         #clockDash .cd-conv-h{margin:18px 0 10px;font-size:13px;font-weight:800;color:var(--brand)}
@@ -119,7 +123,7 @@
         #clockDash .cd-fld label{margin:0 0 4px}
         #clockDash .cd-fld input[type=time]{font-size:15px;padding:9px 10px}
         #clockDash .cd-arrow{font-size:22px;color:#c9c2b2;padding-bottom:6px}
-        #clockDash .cd-res{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:#faf8f3;min-width:170px}
+        #clockDash .cd-res{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:#FAFAFA;min-width:170px}
         #clockDash .cd-res .cd-rl{font-size:11px;color:var(--muted);font-weight:700}
         #clockDash .cd-res .cd-rt{font-size:30px;font-weight:800;color:var(--income);line-height:1.1;font-variant-numeric:tabular-nums}
         #clockDash .cd-res .cd-rd{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px}
@@ -1028,6 +1032,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

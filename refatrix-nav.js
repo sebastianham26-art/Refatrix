@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20261127mh loaded (1127 고객상담 메뉴 Sebastian 전용 · 1126 leadassign 권한 메뉴 복구 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20261127th loaded (1127k 공통 디자인 refatrix-theme.css · 1127 고객상담 메뉴 Sebastian 전용 · 1126 leadassign 권한 메뉴 복구 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -768,7 +768,20 @@
       (document.head||document.body).appendChild(s);
     }catch(e){}
   }
+  /* 2026-11-27k · 공통 디자인(refatrix-theme.css · 차종으로 제품찾기 기준) — 화면 HTML 에 링크가 없을 때만 보충
+     (새로 만드는 화면도 자동으로 같은 디자인). 커미셔너 안내서(guia)는 자체 문서 디자인이라 제외. */
+  function loadTheme(){
+    try{
+      if(document.getElementById('rfx-theme') || /guia-comisionista/.test(location.pathname)) return;
+      var cur=document.querySelector('script[src*="refatrix-nav.js"]');
+      var src=(cur&&cur.getAttribute('src'))||'refatrix-nav.js';
+      var base=src.split('?')[0].replace(/refatrix-nav\.js$/,'');
+      var l=document.createElement('link'); l.id='rfx-theme'; l.rel='stylesheet'; l.href=base+'refatrix-theme.css?v=20261127k';
+      (document.head||document.body).appendChild(l);
+    }catch(e){}
+  }
   function mount(){
+    loadTheme();
     styles();
     loadMobileLayer();
     // 헤더 삽입 전, 화면 고유의 본문 상단 여백을 저장(가림 방지 + 원래 여백 유지)

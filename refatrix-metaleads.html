@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+  :root{--paper:#F5F5F5;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--brand:#0058A3;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--bad:#B23A2E;--bad-bg:#F6E7E4;--warn:#9a6512;--warn-bg:#fdf3e3;--ctr:#E2231A;--fb:#1877F2;--ig:#C13584;--radius:12px}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px 16px}
@@ -43,19 +43,19 @@
   .tblwrap{overflow-x:auto}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
   th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;white-space:nowrap;position:sticky;top:0}
-  tbody tr.click{cursor:pointer}tbody tr.click:hover{background:#faf8f3}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;white-space:nowrap;position:sticky;top:0}
+  tbody tr.click{cursor:pointer}tbody tr.click:hover{background:#FAFAFA}
   td.num,th.num{text-align:right}
   .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
   .ch-messenger{background:#e7f0fe;color:var(--fb)}.ch-instagram{background:#fbe7f2;color:var(--ig)}.ch-whatsapp{background:#e3f6ea;color:#128C4A}
-  .sumrow{display:flex;gap:6px;flex-wrap:wrap}.chip{font-size:11px;padding:1px 7px;border-radius:999px;background:#f1eee6;white-space:nowrap}
+  .sumrow{display:flex;gap:6px;flex-wrap:wrap}.chip{font-size:11px;padding:1px 7px;border-radius:999px;background:#F0F0F0;white-space:nowrap}
   .aisum{background:#f4f8f6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.5;margin-bottom:6px}
   .st-nuevo{background:#eef0f2;color:#555}.st-contactado{background:var(--warn-bg);color:var(--warn)}.st-derivado{background:#e7f0fe;color:var(--fb)}
   .st-venta{background:var(--ok-bg);color:var(--ok)}.st-descartado{background:var(--bad-bg);color:var(--bad)}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
   .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fdfcf9}
   .kpi .k{font-size:11px;color:var(--muted);font-weight:700}.kpi .v{font-size:22px;font-weight:700;margin-top:2px}
-  .note{border-left:4px solid var(--gold);background:#fbf7ee;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.65;margin-top:10px}
+  .note{border-left:4px solid var(--gold);background:#FAFAFA;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.65;margin-top:10px}
   .note ol{margin:6px 0 0;padding-left:20px}
   .bad-t{color:var(--bad);font-weight:700}.ok-t{color:var(--ok);font-weight:700}.warn-t{color:var(--warn);font-weight:700}
   .muted{color:var(--muted)}
@@ -63,7 +63,7 @@
   .clip{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .bars .b{display:flex;align-items:center;gap:8px;font-size:12.5px;margin:4px 0}
   .bars .b .l{width:190px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .bars .b .t{flex:1;background:#f1eee6;border-radius:6px;height:16px;position:relative}
+  .bars .b .t{flex:1;background:#F0F0F0;border-radius:6px;height:16px;position:relative}
   .bars .b .f{background:var(--brand);height:100%;border-radius:6px}
   .bars .b .n{width:48px;text-align:right;font-weight:700}
   .seg{display:inline-flex;border:1px solid var(--brand);border-radius:999px;overflow:hidden}
@@ -126,10 +126,10 @@
   .tgt{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:10px}
   .tgt .it{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fdfcf9;font-size:12.5px}
   .tgt .it b{flex:1}.tgt .it input{width:70px;text-align:right}
-  .pbar{background:#f1eee6;border-radius:6px;height:10px;position:relative;min-width:90px;overflow:hidden}
+  .pbar{background:#F0F0F0;border-radius:6px;height:10px;position:relative;min-width:90px;overflow:hidden}
   .pbar i{position:absolute;left:0;top:0;bottom:0;background:var(--brand);border-radius:6px}
   .pbar.warn i{background:var(--warn)}.pbar.bad i{background:var(--bad)}
-  tr.team td{font-weight:700;background:#faf8f3;border-top:2px solid var(--line)}
+  tr.team td{font-weight:700;background:#FAFAFA;border-top:2px solid var(--line)}
   .dn{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
   .dn.ok{background:var(--ok-bg);color:var(--ok)}.dn.wait{background:var(--warn-bg);color:var(--warn)}.dn.moved{background:#eef0f2;color:#666}
   .asgbox{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#f7fbf9;font-size:12.5px;margin-top:8px}
@@ -138,6 +138,10 @@
   .notes .n .w{font-size:11px;color:var(--muted)}
   .notes .n button{border:none;background:none;color:var(--bad);cursor:pointer;font-size:11px;float:right}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -227,10 +231,10 @@
     <!-- 0297 · 고객 접속코드 -->
     <style>
       .lp-dd{position:absolute;z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;min-width:320px;max-height:260px;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.08)}
-      .lp-dd:empty{display:none}.lp-opt{padding:7px 10px;font-size:12.5px;cursor:pointer}.lp-opt:hover{background:#faf8f3}
+      .lp-dd:empty{display:none}.lp-opt{padding:7px 10px;font-size:12.5px;cursor:pointer}.lp-opt:hover{background:#FAFAFA}
       .lp-ref3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.lp-ref3 b{display:block;font-size:17px}
       #lpRef:not(:empty){border:1px dashed var(--line);border-radius:10px;padding:10px 12px;background:#fdfcf9;font-size:12.5px;margin-top:10px}
-      .lp-issued{border:2px solid var(--gold);background:#fbf7ee;border-radius:12px;padding:14px;margin-top:12px}
+      .lp-issued{border:2px solid var(--gold);background:#FAFAFA;border-radius:12px;padding:14px;margin-top:12px}
       .lp-big{font-size:26px;font-weight:700;letter-spacing:2px;color:var(--brand);font-family:ui-monospace,Menlo,Consolas,monospace}
       .lp-pre{white-space:pre-wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12.5px;line-height:1.55;margin:8px 0}
       .lp-ck{display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--ink);margin:4px 10px 0 0;font-size:12px}
@@ -746,7 +750,7 @@
   function renderPortalInfo(d){
     const el=$('oPortal'); if(!el) return;
     const p=d.portal; if(!p||(!p.items.length&&!p.log.length)){ el.innerHTML=''; return; }
-    el.innerHTML='<div class="aisum" style="background:#fbf7ee">🔑 <b>포털 입력(refaccionaria)</b>'
+    el.innerHTML='<div class="aisum" style="background:#FAFAFA">🔑 <b>포털 입력(refaccionaria)</b>'
       +p.items.map(x=>'<div>'+esc(x.customer_name)+' · 결과 <b>'+esc(PRES[x.result]||'—')+'</b> · '+esc(x.at)+'</div>').join('')
       +(p.log.length?'<details style="margin-top:4px"><summary class="muted">변경 기록 '+p.log.length+'건</summary>'+p.log.map(l=>'<div class="muted">'+esc(l.at)+' · '+esc(l.customer_name||'')+' — '+esc(Object.keys(l.changes||{}).map(k=>(PFLD[k]||k)+': '+((l.changes[k]||[])[0]==null?'—':(k==='result'?(PRES[l.changes[k][0]]||l.changes[k][0]):l.changes[k][0]))+' → '+(k==='result'?(PRES[(l.changes[k]||[])[1]]||'—'):((l.changes[k]||[])[1]||'—'))).join(' · '))+'</div>').join('')+'</details>':'')
       +'<div class="hint">포털에서 넣은 값은 아래 칸(이름 · 업종 · 주 · 도시 · 전화 · 차종 · 부품)에 그대로 들어와 있습니다.</div></div>';
@@ -1424,6 +1428,6 @@
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
 <script src="refatrix-leadportal-admin.js?v=20261106e"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

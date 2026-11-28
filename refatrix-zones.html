@@ -10,8 +10,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix · 존 지정 Zonas · build zone-0827a</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#0058A3;--radius:12px;
     --z1:#2E6F9E;--z2:#0F6E56;--z3:#9A6512;--z4:#6B4FB0;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -60,10 +60,10 @@
 
   /* 랙 표 */
   table{width:100%;border-collapse:collapse;font-size:13px}
-  thead th{position:sticky;top:0;background:#F0EDE4;text-align:left;padding:8px 10px;font-size:11.5px;
+  thead th{position:sticky;top:0;background:#F0F0F0;text-align:left;padding:8px 10px;font-size:11.5px;
     color:var(--muted);border-bottom:1px solid var(--line);z-index:1}
   tbody td{padding:6px 10px;border-bottom:1px solid #F1EDE3}
-  tbody tr.gsep td{background:#F7F5EF;font-weight:800;color:var(--brand);font-size:12px}
+  tbody tr.gsep td{background:#F5F5F5;font-weight:800;color:var(--brand);font-size:12px}
   tbody tr.dirty td{background:#FFFCEF}
   tbody tr.unmapped td:first-child{box-shadow:inset 3px 0 0 var(--red)}
   td.rack{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;font-weight:700}
@@ -81,6 +81,10 @@
   .pill.on{background:#FFF3CD;color:#8A6300}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -92,7 +96,7 @@
   <div id="app"><div class="card"><div class="idle" id="boot">불러오는 중…</div></div></div>
 </div>
 
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 <script>
 (function(){
   function sess(){

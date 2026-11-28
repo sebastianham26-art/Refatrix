@@ -9,14 +9,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 커미션 · build b1112pay</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#0058A3;--gold:#C9A75C;--radius:12px;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
   .wrap{max-width:1280px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px}
@@ -33,18 +33,18 @@
   .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
   th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;font-weight:700}
   td.r,th.r{text-align:right}
   .exp{font-weight:700;color:var(--brand)}.conf{font-weight:800;color:var(--income)}.short{color:var(--expense);font-weight:700}
-  .gsum{background:#faf8f3;font-weight:700}
+  .gsum{background:#FAFAFA;font-weight:700}
   .badge{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;background:#eee;color:#555}
   .badge.paid{background:var(--income-bg);color:var(--income)}.badge.wait{background:#FBEFD6;color:#8a6d1f}.badge.exp{background:#eef;color:#5560a0}
   .badge.conf2{background:#e7eef7;color:#2f5d8a}.badge.hand{background:#efe7f7;color:#6b46a0}
-  .toggle{display:inline-flex;gap:4px;background:#f0ece2;border-radius:9px;padding:3px}
+  .toggle{display:inline-flex;gap:4px;background:#F0F0F0;border-radius:9px;padding:3px}
   .toggle button{border:none;background:transparent;padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:700;color:#8a8676;cursor:pointer}
   .toggle button.on{background:#fff;color:var(--brand);box-shadow:0 1px 2px rgba(0,0,0,.08)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
-  .sb{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb{flex:1;min-width:150px;background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
   .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
   .sb.paid .v{color:var(--income)}.sb.unpaid .v{color:var(--expense)}
   .agentbar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
@@ -54,7 +54,7 @@
   .apbox{margin-top:12px;background:#fff;border:1px solid #e3cf9f;border-radius:10px;padding:12px 14px}
   .apbox .aph{font-size:13px;font-weight:800;color:var(--brand);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .apflow{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 10px}
-  .apflow span{font-size:11px;padding:3px 9px;border-radius:20px;background:#f0ece2;color:#8a8676;font-weight:700;white-space:nowrap}
+  .apflow span{font-size:11px;padding:3px 9px;border-radius:20px;background:#F0F0F0;color:#8a8676;font-weight:700;white-space:nowrap}
   .apflow span.done{background:var(--income-bg);color:var(--income)}
   .apflow span.now{background:var(--brand);color:#fff}
   .apflow i{font-style:normal;color:#c9c2ae;font-size:11px;align-self:center}
@@ -86,9 +86,9 @@
   .bar>i{display:block;height:100%;background:#2f6ecb}.bar>i.ok{background:var(--income)}.bar>i.lo{background:#c07d16}
   .barw{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;min-width:110px}
   .barw span{font-size:11.5px;width:44px;text-align:right;font-variant-numeric:tabular-nums}
-  th.grp{text-align:center;background:#f3efe6}
+  th.grp{text-align:center;background:#F0F0F0}
   td.hl,th.hl{background:#faf7ff}
-  .badge.auto{background:#e7eef7;color:#2f5d8a}.badge.prov{background:#f0ece2;color:#7a7462}
+  .badge.auto{background:#e7eef7;color:#2f5d8a}.badge.prov{background:#F0F0F0;color:#7a7462}
   .badge.late{background:var(--expense-bg);color:var(--expense)}
   .filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   /* ── 클릭 → 상세 팝업 (f/up 독려) ── */
@@ -104,7 +104,7 @@
   .push{background:#FFF7E6;border:1px solid #F0D9A8;border-radius:10px;padding:10px 13px;margin-top:10px;font-size:13px;line-height:1.55}
   .push b{color:#7a4f00}
   .push.good{background:var(--income-bg);border-color:#bfe0d3}.push.good b{color:var(--income)}
-  .grph td{background:#f3efe6;font-weight:700}
+  .grph td{background:#F0F0F0;font-weight:700}
   .wa{display:inline-block;font-size:11px;font-weight:700;color:#0d7a3e;border:1px solid #9fd6b6;background:#eefaf3;border-radius:7px;padding:2px 8px;text-decoration:none;white-space:nowrap}
   .wa:hover{background:#dff3e7}
   .tbl-wrap{overflow:auto;max-width:100%}
@@ -117,7 +117,7 @@
   .refwarn{background:#FBEFD6;border:1px solid #F0D9A8;border-radius:9px;padding:9px 12px;font-size:12.5px;line-height:1.5;margin-bottom:10px}
   .refwarn a{color:var(--brand);font-weight:800}
   .dtl-tools{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
-  #batchBody tr.bmonth td{background:#f3efe6;border-top:2px solid var(--line)}
+  #batchBody tr.bmonth td{background:#F0F0F0;border-top:2px solid var(--line)}
   #batchBody tr.bagent td{font-size:12px;padding-top:5px;padding-bottom:5px}
   #batchBody tr.bagent td:first-child{padding-left:22px}
   /* ── 2026-11-02 월별 인보이스·커미션 (대상→월 / 월→대상) ── */
@@ -139,8 +139,8 @@
   #miTbl th{font-size:10.5px}
   #miTbl td.cust{max-width:165px;overflow:hidden;text-overflow:ellipsis}
   #miTbl .inv{font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin-left:5px}
-  #miTbl tr.agh td{background:#f3efe6;font-weight:800;color:var(--brand)}
-  #miTbl tr.ags td{background:#faf8f3;font-weight:700}
+  #miTbl tr.agh td{background:#F0F0F0;font-weight:800;color:var(--brand)}
+  #miTbl tr.ags td{background:#FAFAFA;font-weight:700}
   #miTbl tr.tot td{background:#eef3f0;font-weight:800;border-top:2px solid var(--brand)}
   #miTbl .pd{font-size:11.5px}
   #miTbl .pd.plan{color:#8a6d1f}
@@ -148,7 +148,7 @@
   #miCard .bchip.rev{background:#E3ECFA;color:#1F4E9A;border:1px solid #B9CDEE}
   #miCard .bchip.col{background:#E4F0EB;color:#0F6E56;border:1px solid #B7DCCB}
   #miCard .bchip.pre{background:#E4F0EB;color:#0F6E56;border:1px dashed #C07D16}
-  #miCard .bchip.part{background:#f0ece2;color:#7a7462}
+  #miCard .bchip.part{background:#F0F0F0;color:#7a7462}
   #miTbl .dly{font-size:11.5px;color:var(--muted)}#miTbl .dly.ok{color:var(--income)}#miTbl .dly.late{color:#c07d16;font-weight:700}#miTbl .dly.bad{color:var(--expense);font-weight:800}
   #miCard .bchip{display:inline-block;font-size:10px;font-weight:700;border-radius:4px;padding:0 4px}
   #miTbl .nc{display:inline-block;font-size:9.5px;font-weight:800;color:var(--expense);background:var(--expense-bg);border-radius:4px;padding:0 4px;cursor:help;vertical-align:1px}
@@ -160,6 +160,10 @@
   /* 좁은 머리글에서 단어가 중간에 끊기지 않게 (Met a · Cumplimien to) */
   #perfBody th,#dtlBody th,#body th{overflow-wrap:normal;word-break:keep-all}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -1297,7 +1301,7 @@
 
     // 전체 열람자: 영업사원별 요약
     if(data.by_agent && data.by_agent.length){
-      $('agentSummary').innerHTML=L('<div class="card" style="margin-top:12px;background:#faf8f3"><div class="card-h">영업사원별 요약</div>','<div class="card" style="margin-top:12px;background:#faf8f3"><div class="card-h">Resumen por vendedor</div>')
+      $('agentSummary').innerHTML=L('<div class="card" style="margin-top:12px;background:#FAFAFA"><div class="card-h">영업사원별 요약</div>','<div class="card" style="margin-top:12px;background:#FAFAFA"><div class="card-h">Resumen por vendedor</div>')
         +L('<table><thead><tr><th>영업사원</th><th class="r">건수</th><th class="r">기대 커미션</th><th class="r">확정 커미션</th><th class="r">지급완료</th><th class="r">미지급</th></tr></thead><tbody>','<table><thead><tr><th>Vendedor</th><th class="r">Facturas</th><th class="r">Comisión esperada</th><th class="r">Comisión confirmada</th><th class="r">Pagado</th><th class="r">Por pagar</th></tr></thead><tbody>')
         +data.by_agent.map(a=>'<tr><td><b>'+esc(a.agent_name)+'</b></td><td class="r">'+a.invoice_count+'</td><td class="r exp">'+fmtm(a.expected)+'</td><td class="r conf">'+fmtm(a.confirmed)+'</td><td class="r">'+fmtm(a.paid)+'</td><td class="r short">'+fmtm(a.unpaid)+'</td></tr>').join('')
         +'</tbody></table></div>';
@@ -1863,7 +1867,7 @@
   function agentBlock(a){
     const on=a.is_agent&&a.active;
     const rows=(a.periods&&a.periods.length)?a.periods:[{start_date:'',end_date:null,basis:'collection',rate:(a.default_rate!=null?a.default_rate:0),match_on:'payment'}];
-    return '<div class="card" style="margin-top:10px;background:#faf8f3" id="ag-'+a.user_id+'">'
+    return '<div class="card" style="margin-top:10px;background:#FAFAFA" id="ag-'+a.user_id+'">'
       +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
       +'<label style="margin:0"><input type="checkbox" class="ag-on" '+(on?'checked':'')+' onchange="toggleActive('+a.user_id+')"> <b>'+esc(a.name)+'</b></label>'
       +'<span class="hint">'+esc(a.team_name||'')+'</span>'
@@ -1933,7 +1937,7 @@
     const on=a.enabled;
     const start=a.start_month||defaultMonth(0), end=a.end_month||'';
     const tiers=(a.tiers&&a.tiers.length)?a.tiers:[{min_rate:80,amount:2000},{min_rate:100,amount:5000},{min_rate:120,amount:10000}];
-    return '<div class="card" style="margin-top:10px;background:#faf8f3" id="bn-'+a.user_id+'">'
+    return '<div class="card" style="margin-top:10px;background:#FAFAFA" id="bn-'+a.user_id+'">'
       +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
       +'<label style="margin:0"><input type="checkbox" class="bn-on" '+(on?'checked':'')+' onchange="toggleBonus('+a.user_id+')"> <b>'+esc(a.name)+'</b></label>'
       +'<span class="hint">'+esc(a.team_name||'')+'</span>'
@@ -2304,6 +2308,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-guide-referral.js?v=20261030ty"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

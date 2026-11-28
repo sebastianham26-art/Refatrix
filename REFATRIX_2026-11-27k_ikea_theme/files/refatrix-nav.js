@@ -1,0 +1,1628 @@
+/* Refatrix 글로벌 고정 네비게이션 트리 — 모든 화면 상단에 주입
+   사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
+(function(){
+  if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
+  try{ console.log('[refatrix-nav] v20261127th loaded (1127k 공통 디자인 refatrix-theme.css · 1127 고객상담 메뉴 Sebastian 전용 · 1126 leadassign 권한 메뉴 복구 · + 모바일 보완 레이어 refatrix-mobile.js · 🎙 원클릭 녹음)'); }catch(e){}
+
+  /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
+     판별 기준(둘 중 하나라도 걸리면 QA):
+       ⓐ 서버 주소(API)에 'refatrix-qa' 가 들어감 — 세션 / 주소 해시 / 로그인·포털 화면의 입력칸
+       ⓑ 화면(프런트) 호스트명이 QA 전용 — 예: refatrix-qa.*, qa.refatrix.*, refatrix-qa.up.railway.app
+     결과는 <html data-refatrix-env="qa"> 속성으로 표시하고, CSS 는 그 속성에만 반응한다. */
+  var QA_API_RE=/refatrix-qa/i;
+  var QA_HOST_RE=/refatrix-qa|(^|[.\-])qa([.\-]|$)/i;
+  function qaText(t){ return !!(t && QA_API_RE.test(String(t))); }
+  function isQaEnv(){
+    try{ if(QA_HOST_RE.test(location.hostname||'')) return true; }catch(e){}
+    try{ var raw=sessionStorage.getItem('refatrix_session')||localStorage.getItem('refatrix_session');
+         if(raw){ var o=JSON.parse(raw); if(o&&qaText(o.api)) return true; } }catch(e){}
+    try{ var p=new URLSearchParams(location.hash.slice(1)); if(qaText(p.get('api'))) return true; }catch(e){}
+    try{ var ids=['api','apiInput'];
+         for(var i=0;i<ids.length;i++){ var el=document.getElementById(ids[i]); if(el&&qaText(el.value)) return true; } }catch(e){}
+    return false;
+  }
+  function applyEnvFlag(){
+    var qa=false; try{ qa=isQaEnv(); }catch(e){}
+    try{
+      var r=document.documentElement;
+      if(qa){ if(r.getAttribute('data-refatrix-env')!=='qa') r.setAttribute('data-refatrix-env','qa'); }
+      else if(r.getAttribute('data-refatrix-env')) r.removeAttribute('data-refatrix-env');
+    }catch(e){}
+    return qa;
+  }
+  window.__rnavIsQA=isQaEnv;
+  // 로그인 전 「서버 주소(API)」 를 QA 로 바꿔 입력하는 순간 바로 반영
+  try{
+    document.addEventListener('input', function(e){
+      var t=e&&e.target; if(t&&(t.id==='api'||t.id==='apiInput')) applyEnvFlag();
+    }, true);
+    document.addEventListener('change', function(e){
+      var t=e&&e.target; if(t&&(t.id==='api'||t.id==='apiInput')) applyEnvFlag();
+    }, true);
+    window.addEventListener('storage', function(){ applyEnvFlag(); });
+    window.addEventListener('hashchange', function(){ applyEnvFlag(); });
+  }catch(e){}
+  applyEnvFlag();
+
+  /* CTR 브랜드 레드 — ctr.co.kr 로고 이미지 실측값 #E2231A (사이트 포인트 #E1251B) */
+  var CTR_RED='#E2231A', CTR_RED_D='#B01810', CTR_RED_DD='#8E120C';
+  var QA_BADGE='<span class="rqa" id="rQaBadge" title="테스트 서버(QA)입니다 — 실제 운영 데이터가 아닙니다">🧪 QA 테스트 서버</span>';
+  var Q='html[data-refatrix-env="qa"] ';
+  /* ===== 전 화면 공통 헤더 = CTR 레드 (2026-09-29 · nav 20260929hd) =====
+     기존 진녹색·골드 헤더를 모든 화면에서 CTR 레드로. QA 는 아래 QA_CSS 가 배지·제목줄 강조를 추가로 얹는다. */
+  var CTR_NAV_CSS=''+
+    '#rnav{background:linear-gradient(180deg,'+CTR_RED+' 0%,'+CTR_RED_D+' 100%)!important;border-bottom:2px solid #7C0F08!important;box-shadow:0 6px 22px -10px rgba(120,10,5,.75)!important}'+
+    '#rnav .rlogo{color:#fff!important}'+
+    '#rnav .rlogo .dot{background:#fff!important;box-shadow:0 0 8px rgba(255,255,255,.85)!important}'+
+    '#rnav .rhome{color:#fff!important;background:rgba(255,255,255,.16)!important;border-color:rgba(255,255,255,.45)!important}'+
+    '#rnav .rhome:hover{background:rgba(255,255,255,.3)!important;color:#fff!important}'+
+    '#rnav .rg{color:#FFD5D0!important}'+
+    '#rnav .rg:hover,#rnav .rg.on{color:#fff!important}'+
+    '#rnav .rg.on:after{background:#fff!important;box-shadow:0 0 10px rgba(255,255,255,.9)!important}'+
+    '#rnav .rsub{background:linear-gradient(180deg,'+CTR_RED_D+','+CTR_RED_DD+')!important;border-top-color:rgba(255,255,255,.18)!important}'+
+    '#rnav .rs{color:#FFE3E0!important;background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.18)!important}'+
+    '#rnav .rs:hover{background:rgba(255,255,255,.24)!important;border-color:rgba(255,255,255,.5)!important;color:#fff!important}'+
+    '#rnav .rs.cur{background:linear-gradient(180deg,#fff,#FFE7E4)!important;color:#A5140B!important;border-color:transparent!important;box-shadow:0 2px 8px -2px rgba(0,0,0,.45)!important}'+
+    '#rnav .rwho{color:#FFC9C3!important}'+
+    '#rnav .rwho b{color:#fff!important}'+
+    '#rnav .rlogout{border-color:rgba(255,255,255,.55)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    '#rnav .rlogout:hover{background:rgba(255,255,255,.32)!important;color:#fff!important}'+
+    '#rnav .rpres{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    '#rnav .rpres:hover{background:rgba(255,255,255,.28)!important;color:#fff!important}'+
+    'html.rfxnarrow #rnav .rmtgl{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}';
+
+  var QA_CSS=''+
+    Q+'#rnav{background:linear-gradient(180deg,'+CTR_RED+' 0%,'+CTR_RED_D+' 100%)!important;border-bottom:2px solid #7C0F08!important;box-shadow:0 6px 22px -10px rgba(120,10,5,.75)!important}'+
+    Q+'#rnav .rlogo{color:#fff!important}'+
+    Q+'#rnav .rlogo .dot{background:#fff!important;box-shadow:0 0 8px rgba(255,255,255,.85)!important}'+
+    Q+'#rnav .rhome{color:#fff!important;background:rgba(255,255,255,.16)!important;border-color:rgba(255,255,255,.45)!important}'+
+    Q+'#rnav .rhome:hover{background:rgba(255,255,255,.3)!important;color:#fff!important}'+
+    Q+'#rnav .rg{color:#FFD5D0!important}'+
+    Q+'#rnav .rg:hover,'+Q+'#rnav .rg.on{color:#fff!important}'+
+    Q+'#rnav .rg.on:after{background:#fff!important;box-shadow:0 0 10px rgba(255,255,255,.9)!important}'+
+    Q+'#rnav .rsub{background:linear-gradient(180deg,'+CTR_RED_D+','+CTR_RED_DD+')!important;border-top-color:rgba(255,255,255,.18)!important}'+
+    Q+'#rnav .rs{color:#FFE3E0!important;background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.18)!important}'+
+    Q+'#rnav .rs:hover{background:rgba(255,255,255,.24)!important;border-color:rgba(255,255,255,.5)!important;color:#fff!important}'+
+    Q+'#rnav .rs.cur{background:linear-gradient(180deg,#fff,#FFE7E4)!important;color:#A5140B!important;border-color:transparent!important;box-shadow:0 2px 8px -2px rgba(0,0,0,.45)!important}'+
+    Q+'#rnav .rwho{color:#FFC9C3!important}'+
+    Q+'#rnav .rwho b{color:#fff!important}'+
+    Q+'#rnav .rlogout{border-color:rgba(255,255,255,.55)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    Q+'#rnav .rlogout:hover{background:rgba(255,255,255,.32)!important;color:#fff!important}'+
+    Q+'#rnav .rpres{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    Q+'#rnav .rpres:hover{background:rgba(255,255,255,.28)!important;color:#fff!important}'+
+    /* QA 배지 */
+    Q+'#rnav .rqa{display:inline-flex!important;align-items:center;gap:5px;flex:0 0 auto;margin-right:12px;padding:4px 10px;border-radius:999px;background:#fff;color:'+CTR_RED_D+';font-size:11px;font-weight:800;letter-spacing:.02em;white-space:nowrap;box-shadow:0 2px 8px -2px rgba(0,0,0,.45)}'+
+    /* 화면별 상단 제목줄이 보이는 화면(창고·입고·KPI 등)도 붉은 강조 */
+    Q+'.wrap>.topbar,'+Q+'.wrap>.ptop,'+Q+'.wrap>.top,'+Q+'.wrap>header{border-bottom:3px solid '+CTR_RED+'!important}'+
+    Q+'.wrap>.ptop h1,'+Q+'.wrap>.top h1,'+Q+'.wrap>header h1{color:#C21A10!important}'+
+    /* .topbar 를 되살려 쓰는 화면이면 배경까지 CTR 레드 */
+    Q+'.wrap>.topbar{background:linear-gradient(180deg,'+CTR_RED+','+CTR_RED_D+')!important;color:#fff!important}'+
+    Q+'.wrap>.topbar h1{color:#fff!important}'+
+    Q+'.wrap>.topbar .sub,'+Q+'.wrap>.topbar .who{color:#FFD9D5!important}';
+
+  // 화면 정의 (파일/이름/설명)
+  var SCREENS={
+    salesperf:{file:'refatrix-salesperf.html',name:'영업 대시보드',desc:'매출·수금·파이프라인'},
+    commission:{file:'refatrix-commission.html',name:'커미션',desc:'기대·확정·지급'},
+    dashboard:{file:'refatrix-dashboard.html',name:'대시보드',desc:'위젯'},
+    board:{file:'refatrix-board.html',name:'일정',desc:'달력',tab:'cal'},
+    boardNotice:{file:'refatrix-board.html',name:'공지',desc:'공지사항',tab:'notice'},
+    boardTodo:{file:'refatrix-board.html',name:'할 일',desc:'todo',tab:'todo'},
+    wbr:{file:'refatrix-wbr.html',name:'WBR',desc:'주간 비즈니스 리뷰'},
+    daily:{file:'refatrix-daily.html',name:'오늘 요약',desc:'일자별 ERP 기록 AI 요약(디렉터)'},
+    quote:{file:'refatrix-quote.html',name:'견적 작성',desc:'견적·매출전환'},
+    quotelist:{file:'refatrix-quotelist.html',name:'견적·매출 추적',desc:'목록·전환'},
+    reservations:{file:'refatrix-reservations.html',name:'재고 예약 현황',desc:'견적 24h 예약·해제 시각'},   // 2026-09-30
+    fieldsurvey:{file:'refatrix-fieldsurvey.html',name:'현장재고조사',desc:'고객창고 경쟁사 재고→오퍼'},
+    fsanalysis:{file:'refatrix-fsanalysis.html',name:'현장조사 소진분석',desc:'누적구매−현장잔량=팔린 수량→재구매 오퍼'},
+    orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이',desc:'즉시매출 KPI'},
+    funnel:{file:'refatrix-funnel.html',name:'견적 요청',desc:'요청 SKU',tab:'quotes'},
+    funnelImm:{file:'refatrix-funnel.html',name:'매출 확정 목록',desc:'발행 가능·확정',tab:'immediate'},
+    funnelShort:{file:'refatrix-funnel.html',name:'부족·발주',desc:'SKU 부족',tab:'shortage'},
+    funnelDev:{file:'refatrix-funnel.html',name:'개발 필요',desc:'개발요청',tab:'dev'},
+    sales:{file:'refatrix-sales.html',name:'매출 등록',desc:'인보이스',tab:'sale'},
+    saleslist:{file:'refatrix-sales.html',name:'매출 목록',desc:'발행 내역',tab:'list'},
+    salesshort:{file:'refatrix-sales.html',name:'부족 / 주문',desc:'부족·발주 근거',tab:'short'},
+    salesapprove:{file:'refatrix-sales.html',name:'매출 승인 대기',desc:'수정·삭제 승인',tab:'approve'},
+    stock:{file:'refatrix-stock.html',name:'재고 이동',desc:'입출고·조정'},
+    shortage:{file:'refatrix-shortage.html',name:'부족분',desc:'발주 근거'},
+    devrequest:{file:'refatrix-devrequest.html',name:'개발 요청',desc:'경쟁사코드 대응'},
+    pipeline:{file:'refatrix-pipeline.html',name:'영업활동',desc:'칸반·미팅'},
+    prospects:{file:'refatrix-prospects.html',name:'고객개발',desc:'DENUE 후보·지역 배정·방문 루트·녹음 AI 검토·현황판'},   // 0334 · 2026-11-25
+    consult:{file:'refatrix-consult.html',name:'고객상담',desc:'상담 등록·미팅 녹음 AI 요약·종합표·인사이트'},
+    customers:{file:'refatrix-customers.html',name:'고객 등록 및 목록',desc:'고객·외상·서류',tab:'list'},
+    custTeam:{file:'refatrix-customers.html',name:'고객 팀권한',desc:'팀 가시성',tab:'team'},
+    custApprove:{file:'refatrix-customers.html',name:'고객 수정 승인',desc:'수정 승인',tab:'approve'},
+    custReg:{file:'refatrix-customers.html',name:'고객 등록 승인',desc:'신규 등록 승인·반려',tab:'reg'},
+    custClaim:{file:'refatrix-customers.html',name:'RFC 선점 이관',desc:'선점 요청 승인·반려',tab:'claim'},
+    custLeads:{file:'refatrix-customers.html',name:'웹 가입 신청',desc:'홈페이지 회원가입 신청 접수·처리',tab:'leads'},
+    targets:{file:'refatrix-targets.html',name:'매출목표',desc:'목표·달성'},
+    finance:{file:'refatrix-finance.html',name:'재무 · 계좌',desc:'계좌·잔액',tab:'acc'},
+    finNew:{file:'refatrix-finance.html',name:'거래 등록',desc:'수입·지출',tab:'new'},
+    finTxn:{file:'refatrix-finance.html',name:'거래 목록',desc:'내역·수정',tab:'txn'},
+    finPay:{file:'refatrix-finance.html',name:'반제(입금)',desc:'AR 수금',tab:'pay'},
+    finFixed:{file:'refatrix-finance.html',name:'고정비',desc:'정기거래',tab:'fixed'},
+    finCash:{file:'refatrix-finance.html',name:'현금흐름',desc:'계획vs실적',tab:'cash'},
+    finDaily:{file:'refatrix-cashdaily.html',name:'일일 자금 · 월간실적',desc:'AP/AR 일일요약·WhatsApp'},
+    finFx:{file:'refatrix-finance.html',name:'환율',desc:'USD→MXN',tab:'fx'},
+    finReport:{file:'refatrix-finance.html',name:'월 자금 리포트',desc:'계획vs실적·월간비교',tab:'report'},
+    finApprove:{file:'refatrix-finance.html',name:'재무 승인 대기',desc:'거래 승인',tab:'approve'},
+    settlement:{file:'refatrix-settlement.html',name:'수금/정산',desc:'AR·정산차액'},
+    grossprofit:{file:'refatrix-grossprofit.html',name:'매출총이익',desc:'SKU별 매출총이익'},
+    recost:{file:'refatrix-recost.html',name:'수입 원가 정정',desc:'단가·부대비용 소급'},
+    budget:{file:'refatrix-budget.html',name:'예산',desc:'예산 계획'},
+    importcost:{file:'refatrix-importcost.html',name:'수입원가',desc:'부대비용·원가'},
+    import:{file:'refatrix-import.html',name:'수입 입고',desc:'배치 등록'},
+    purchase:{file:'refatrix-purchase.html',name:'구매 내역',desc:'발주·구매원가(USD) 엑셀 기록·조회'},
+    purchasereview:{file:'refatrix-purchasereview.html',name:'구매 검토',desc:'SKU 종합: CTR·SYD·차종·재고·backorder·누적판매·견적부족'},
+    salestrend:{file:'refatrix-salestrend.html',name:'판매 이력·주기',desc:'전체 카탈로그 월별 판매 흐름·수요유형·예측·구매 제안'},   // 2026-10-16 · 디렉터·소시오 전용
+    products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고',tab:'find'},
+    vehicleparts:{file:'refatrix-vehicleparts.html',name:'차종별 부품',desc:'차종 검색·카테고리별 CTR/SYD·VIO'},
+    viofinder:{file:'refatrix-viofinder.html',name:'VIO 제품찾기·프로모션',desc:'VIO 순위 · 차종별 부품 · 재고 기준 프로모션 이미지 → WhatsApp'},   // 2026-10-19 차종별 부품·프로모션 통합
+    prodFind:{file:'refatrix-products.html',name:'제품 찾기',desc:'검색·경쟁사코드·차종',tab:'find'},
+    prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
+    prodHistory:{file:'refatrix-products.html',name:'제품 변경이력',desc:'마스터 변경·판매상태 + 이후 movement',tab:'history'},
+    priceMaster:{file:'refatrix-pricemaster.html',name:'가격 마스터',desc:'FOB·List 가격표 · 일괄/단일 변경 · 경쟁사 SYD · 구매가 검증'},
+    marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
+    mktspend:{file:'refatrix-mktspend.html',name:'마케팅 지출계획',desc:'행사·활동 지출 기안·승인'},
+    survey:{file:'refatrix-survey.html',name:'고객 설문 분석',desc:'설문지 사진·PDF → AI 판독 → 엑셀·세그먼트 리포트'},
+    wapromo:{file:'refatrix-wapromo.html',name:'WhatsApp 마케팅',desc:'잠재고객 동의·정기 이미지 발송·받은 메시지·자동응답'},
+    metaleads:{file:'refatrix-metaleads.html',name:'Meta 광고 문의',desc:'Messenger·Instagram 문의 → 지역·연락처·차종·부품 목록·엑셀'},
+    leadassign:{file:'refatrix-leadassign.html',name:'영업 할당 · 실적',desc:'광고 문의를 누구에게 몇 건 맡겼고 몇 건 대화했나 — 사람별 · 팀 · 날짜별'},   // 2026-11-19 · 디렉터·소시오
+    rnr:{file:'refatrix-rnr.html',name:'업무 프로세스',desc:'R&R 안내'},
+    coverage:{file:'mx_parts_coverage_dashboard.html',name:'Coverage',desc:'부품 커버리지 대시보드'},
+    devmap:{file:'mx_parts_development_decision_4.html',name:'Development Map',desc:'개발 의사결정 맵'},
+    users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
+    integrations:{file:'refatrix-integrations.html',name:'연동 관리',desc:'CRM 전송 주소·계약서·전송이력'},
+    catalogApi:{file:'refatrix-catalog-api.html',name:'카탈로그 조회 API',desc:'고객사가 우리 카탈로그를 가져가는 창구 — 키 발급·접속창·가격 확인'},
+    apikeys:{file:'refatrix-apikeys.html',name:'외부 서비스 키',desc:'Anthropic·OpenAI·WhatsApp 키·모델 설정'},
+    waSched:{file:'refatrix-wasched.html',name:'WhatsApp 발송 시각',desc:'자동 발송 시각·대상일(멕시코 시각)'},   // 2026-10-08 · 0262
+    company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
+    processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
+    portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
+    approval:{file:'refatrix-approval.html',name:'전자결재',desc:'비용집행 품의 · 사전/사후승인 · 증빙'},   // 2026-09-29 · nav 20260929ea — 공통·재무·창고 그룹(역할 제한 그룹에서도 보이게)
+    guiaCom:{file:'refatrix-guia-comisionista.html',name:'Guía del Comisionista',desc:'커미셔너 안내서(스페인어) — 고객등록·독점·커미션'},
+    whHome:{file:'refatrix-warehouse.html',name:'창고 홈',desc:'입고·피킹·패킹'},
+    stockcount:{file:'refatrix-stockcount.html',name:'재고실사',desc:'실물 재고조사·대조·실물맞추기'},
+    inbound:{file:'refatrix-inbound.html',name:'수입 입고',desc:'패킹리스트·검수·적치·마감'},
+    zones:{file:'refatrix-zones.html',name:'존 지정',desc:'랙 → 존 이동용 임시 팔렛 배정'},
+    relocate:{file:'refatrix-relocate.html',name:'위치변경',desc:'카톤 라벨·랙 스캔으로 보관 위치 이동'},
+    whmap:{file:'refatrix-whmap.html',name:'창고 도면',desc:'도면에서 랙 위치 · SKU · 수량 보기'}   // 2026-10-19 · 0288
+  };
+  // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터, __dirsocio__=디렉터·소시오)
+  var PAGEKEY={
+    salesperf:null, dashboard:null, board:null, portal:null, approval:null,   // 2026-09-29 전자결재 — 전 직원(문서 열람은 API 가 결재선·참조 기준으로 판단)
+    rnr:null, coverage:null, devmap:null, fieldsurvey:null, fsanalysis:null,
+    commission:'commission',
+    guiaCom:'guiacom',   // 권한 부여한 사용자에게만 노출(사용자·권한 화면에서 켬/끔). 디렉터는 항상 보임.
+    quote:['quote','sales'], quotelist:['quote','sales'], reservations:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
+    sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
+    stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
+    pipeline:'pipeline', consult:'pipeline', prospects:null,   /* 고객개발: 진척 보드는 전 직원(작업 탭은 영업활동 권한) */ customers:'customers', custTeam:'__director__', custApprove:'__director__', custReg:'__director__', custClaim:'__director__', custLeads:'customers', targets:'targets',
+    finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finDaily:'__director__', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
+    boardNotice:null, boardTodo:null, wbr:'wbr', daily:'__director__',
+    funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
+    settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase', salestrend:'__dirsocio__',
+    recost:'__director__',
+    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', priceMaster:'pricemaster',   // 2026-09-24 — 관리 › 사용자·권한에서 부여(디렉터는 항상)
+    marketing:'marketing', mktspend:'marketing', survey:'marketing', wapromo:'__socio_or__wapromo', metaleads:['products','marketing','pricemaster','devrequest','quote','sales','leadassign'], leadassign:'__socio_or__leadassign',   // 1126 — 할당·실적 = 디렉터·소시오 항상 + 사용자별 leadassign 권한(Emmanuel · marketing)
+      // 2026-10-16 — WhatsApp 마케팅 = 디렉터·소시오 항상 + 사용자별 wapromo 권한(관리자 화면) · 2026-10-13 디렉터·소시오 전용이던 것 · Meta 광고 문의 = 제품·마케팅 메뉴에 들어가는 사람 모두(서버 PM_KEYS 와 같은 목록)   // 2026-09-29 복구 — 09-24 편집 때 위 주석 안으로 들어가 권한 없이 모두에게 보이던 것
+    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__', waSched:'__director__',
+    whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse', whmap:['warehouse','products','whmap']
+  };
+  // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
+  var GROUPS=[
+    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','approval','salesperf','commission','guiaCom','dashboard','rnr','coverage','devmap']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','consult','prospects','fieldsurvey','fsanalysis','quote','quotelist','reservations','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
+    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','reservations','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
+    {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview','salestrend']},
+    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','approval','finNew','finTxn','finPay','finFixed','finCash','finDaily','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','viofinder','devrequest','marketing','mktspend','survey','wapromo','metaleads','leadassign','prodFind','prodUpload','prodHistory','priceMaster']},
+    {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
+    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','approval','stockcount','inbound','relocate','whmap','zones']},
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','waSched','processKpi']}
+  ];
+
+  // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
+  var ROLE_ONLY_GROUPS={ treasury:['finance','purchase'], warehouse:['warehouse','pm','cal'] };  // 창고: 제품·마케팅 + 일정 그룹 허용(개별 화면은 권한(canSee)으로 필터; wbr은 페이지권한 없어 자동 숨김)
+  // 역할별 로그인 랜딩(제한역할이 미허용 화면 접근 시 되돌릴 첫 화면).
+  var ROLE_LANDING={ treasury:'finance', warehouse:'whHome' };
+  // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.
+  var ROLE_HIDE_SCREENS={ treasury:{ finPay:1, budget:1 } };
+  // 🙈 메뉴 단추만 감춤 (2026-11-27, Sebastian 요청) — 화면·기능·권한·API 는 그대로 둔다.
+  //   목록에 있는 사람(이름/아이디가 그 글자로 시작)에게만 메뉴(상단·하단 탭·전체메뉴)에 보인다.
+  //   canSee() 는 건드리지 않으므로 🎙 빠른 녹음 · 📍 고객개발 방문(이 화면을 열어 씀)은 예전처럼 동작.
+  //   다시 모두에게 보이게 하려면 이 줄에서 consult 를 지우면 된다.
+  var MENU_ONLY_FOR={ consult:['sebastian'] };
+  function menuSee(key){
+    if(!canSee(key)) return false;
+    var who=MENU_ONLY_FOR[key]; if(!who) return true;
+    var u=(sess&&sess.user)||{};
+    var ids=[sum&&sum.name, u.name, u.login_id].map(function(x){ return String(x||'').trim().toLowerCase(); });
+    return who.some(function(w){ return ids.some(function(n){ return !!n && n.indexOf(w)===0; }); });
+  }
+  // 역할별 그룹 숨김(블랙리스트): 그룹 자체를 제거. 영업(sales)=재무 그룹 숨김.
+  //   — 수금/정산은 영업지원, 커미션은 공통/포털에서 접근하므로 재무 그룹은 영업에게 불필요하며 권한 범위 밖.
+  var ROLE_HIDE_GROUPS={ sales:['finance'] };
+
+  // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
+  var SHARED={approval:1, devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, reservations:1, shortage:1, stock:1};
+
+  // 그룹 노출용 명시 앵커(SHARED 자동필터 대신 사용). 영업지원은 자체 비공유 화면이
+  // recost(디렉터 전용)뿐이라 비디렉터에게 영영 안 떴음 → 권한 받은 핵심 화면을 앵커로 지정.
+  // settlement(수금/정산)·inventory(import/importcost)는 영업담당 기본권한이 아니라
+  // 영업지원·재무 담당에게만 부여되므로, 영업 직원 메뉴를 어지럽히지 않음.
+  var GROUP_ANCHOR_KEYS={ support:['settlement','import','importcost'] };
+
+  var sess=null, sum=null, openGroup=null;
+  // 접속 현황 하트비트 — 모든 페이지에서 주기적으로 last_seen 갱신(관리화면 디렉터 전용 표시용).
+  // 위치(GPS) 수집 — 브라우저 동의 팝업. 허용 시 좌표를 ping 에 실어 보냄(미동의/미지원 시 서버가 IP 추정 폴백).
+  function startGeo(){
+    if(window.__rgeoInit) return; window.__rgeoInit=true;
+    if(!('geolocation' in navigator)) return;
+    function grab(){
+      try{
+        navigator.geolocation.getCurrentPosition(function(p){
+          window.__rgeo={lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy, t:Date.now()};
+        }, function(){ /* 거부/실패 -> IP 폴백, 재촉 안 함 */ },
+        {enableHighAccuracy:true, timeout:15000, maximumAge:120000});
+      }catch(e){}
+    }
+    grab();                              // 로그인 직후 1회(동의 팝업 트리거)
+    setInterval(grab, 300000);           // 5분마다 갱신(허용된 경우 조용히)
+  }
+  function startHeartbeat(api){
+    if(window.__rnavHeartbeat) return;                 // 중복 가동 방지
+    function ping(){
+      try{
+        var s=getSession(); if(!s||!s.token) return;
+        var a=(s.api||api||'').replace(/\/+$/,'');
+        var path=(location.pathname.split('/').pop()||'').toLowerCase();
+        var body={path:path};
+        if(window.__rgeo && (Date.now()-window.__rgeo.t < 600000)){   // 10분 이내 GPS 좌표면 동봉
+          body.lat=window.__rgeo.lat; body.lng=window.__rgeo.lng; body.acc=window.__rgeo.acc;
+        }
+        fetch(a+'/api/presence/ping',{method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
+          body:JSON.stringify(body), keepalive:true}).catch(function(){});
+      }catch(e){}
+    }
+    startGeo();                                        // GPS 동의/수집 시작
+    ping();                                            // 진입 즉시 1회
+    window.__rnavHeartbeat=setInterval(ping, 45000);   // 45초마다(탭이 열려있는 동안 = 접속 중)
+    document.addEventListener('visibilitychange',function(){
+      if(document.visibilityState==='visible') ping(); // 다시 보일 때 즉시 갱신
+    });
+  }
+  // 2026-10-21 로그인 게이트 — 만료(6시간)·손상 토큰은 세션으로 보지 않는다.
+  var BAD_TOK={};   // 서버가 거절(401/403)한 토큰 — 같은 토큰으로 다시 시도하지 않음(무한 재시도 방지)
+  function tokenAlive(tk){
+    if(BAD_TOK[tk]) return false;
+    try{
+      var p=JSON.parse(atob(String(tk).split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      if(!p) return false;
+      return !p.exp || (p.exp*1000)>Date.now();
+    }catch(e){ return false; }
+  }
+  function isPortalPage(){
+    var f=(location.pathname.split('/').pop()||'').toLowerCase();
+    return f===''||f==='index.html'||f==='refatrix-portal.html';
+  }
+  function getSession(){
+    try{ var raw=sessionStorage.getItem('refatrix_session'); if(raw){ var o=JSON.parse(raw); if(o&&o.token){ if(tokenAlive(o.token)) return o;
+      try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(_){} } } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var tk=p.get('token'); if(tk&&tk!=='undefined'&&tokenAlive(tk)) return {token:tk,api:p.get('api')||'',user:{}}; } }catch(e){}
+    return null;
+  }
+  // 로그인 안 된 상태: 포털이 아니면 포털 로그인으로 보낸다(화면 내용을 보이지 않게).
+  function gotoLogin(){
+    if(isPortalPage()) return false;
+    try{ document.documentElement.style.visibility='hidden'; }catch(e){}
+    location.replace('refatrix-portal.html');
+    return true;
+  }
+  function canSee(key){
+    if(sum && !sum.isDirector){
+      var hide=ROLE_HIDE_SCREENS[sum.role];
+      if(hide && hide[key]) return false;          // 역할별 숨김 탭
+    }
+    var pk=PAGEKEY[key];
+    if(pk===null||pk===undefined) return true;
+    if(!sum) return false;
+    if(sum.isDirector) return true;
+    if(pk==='__director__') return false;
+    if(pk==='__dirsocio__') return sum.role==='socio';
+    if(typeof pk==='string' && pk.indexOf('__socio_or__')===0){ if(sum.role==='socio') return true; pk=pk.slice(12); }   // 소시오는 항상 + 그 밖은 화면 권한
+    var have=sum.pages||[];
+    if(Array.isArray(pk)) return pk.some(function(k){return have.indexOf(k)>=0;});
+    return have.indexOf(pk)>=0;
+  }
+  // 같은 파일을 공유하는 탭-화면들의 기본 탭(해시 tab 없을 때)
+  var FILE_DEFAULT_TAB={'refatrix-sales.html':'sale','refatrix-finance.html':'acc','refatrix-board.html':'cal','refatrix-funnel.html':'quotes','refatrix-customers.html':'list','refatrix-products.html':'find'};
+  function curScreen(){
+    var f=(location.pathname.split('/').pop()||'').toLowerCase();
+    if(FILE_DEFAULT_TAB[f]){
+      var tab=FILE_DEFAULT_TAB[f]; try{ var hp=new URLSearchParams(location.hash.slice(1)); tab=hp.get('tab')||FILE_DEFAULT_TAB[f]; }catch(e){}
+      for(var sk in SCREENS){ if(SCREENS[sk].file.toLowerCase()===f && (SCREENS[sk].tab||FILE_DEFAULT_TAB[f])===tab) return sk; }
+      // 폴백: 그 파일의 첫 화면 키
+      for(var sk2 in SCREENS){ if(SCREENS[sk2].file.toLowerCase()===f) return sk2; }
+    }
+    for(var k in SCREENS){ if(SCREENS[k].file.toLowerCase()===f) return k; }
+    return null;
+  }
+  function nav(key, fromGroup){
+    var s=SCREENS[key]; if(!s) return;
+    if(!sess||!sess.token){ if(!gotoLogin()) location.href='refatrix-portal.html'; return; }
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
+    var g=fromGroup||openGroup||'';
+    var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g='+encodeURIComponent(g);
+    if(s.tab) hash+='&tab='+encodeURIComponent(s.tab);
+    location.href=s.file+hash;
+  }
+  window.__rnav=nav;
+  // 🎙 원클릭 미팅 녹음 (2026-11-20) — 고객상담 화면을 「빠른 녹음」(quick=1)으로 연다.
+  //   그 화면은 열리자마자 위치를 받고 녹음을 시작한다. 업체명 등은 녹음하면서/나중에 입력.
+  //   이미 고객상담 화면이면 새로 불러오지 않고 바로 시작한다(같은 파일 + 해시만 바뀌면 새로고침이 안 되므로).
+  window.__rnavQuickRec=function(){
+    if(!sess||!sess.token){ if(!gotoLogin()) location.href='refatrix-portal.html'; return; }
+    if(typeof window.__csQuickStart==='function'){ try{ window.__rnavDrawer(0); }catch(e){} window.__csQuickStart(); return; }
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
+    var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g=sales&quick=1';
+    location.href=SCREENS.consult.file+hash;
+  };
+
+  // 📍 고객개발 방문 (2026-11-26) — 하단 🎙 옆 버튼. 지금 위치 250m 안 고객개발 후보(★ 오늘 루트)를 띄우고,
+  //   고르면 그 업체로 체크인 + 녹음 시작(고객상담 빠른 녹음 #quick=1&prospect=…). 리스트에 없는 가게는 업종 한 번 탭으로 새 후보.
+  //   🎙 는 예전처럼 일반 녹음만 한다(디렉터 결정).
+  function devEs(){ try{ var L=localStorage.getItem('rfx_lang_quick'); if(L) return L==='es'; }catch(e){}
+    var u=(sess&&sess.user)||{}; if(u.lang==='es'||u.lang==='ko') return u.lang==='es';
+    return ['director','treasury','socio'].indexOf(u.role)<0 && !!u.role; }
+  function goQuickRec(extra){
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
+    var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g=sales&quick=1'+(extra||'');
+    if(typeof window.__csQuickStart==='function' && /refatrix-consult\.html$/i.test(location.pathname)){ location.hash=hash.slice(1); location.reload(); return; }
+    location.href=SCREENS.consult.file+hash;
+  }
+  window.__rnavQuickDev=function(){
+    if(!sess||!sess.token){ if(!gotoLogin()) location.href='refatrix-portal.html'; return; }
+    var es=devEs(), T=function(ko,e){ return es?e:ko; };
+    var d=document.getElementById('rqdev');
+    if(!d){ d=document.createElement('div'); d.id='rqdev'; d.setAttribute('translate','no'); d.className='notranslate';
+      d.onclick=function(e){ if(e.target===d) d.classList.remove('show'); }; document.body.appendChild(d); }
+    var STG=es?{sin_asignar:'Sin asignar',asignado:'Asignado',contactado:'1ª visita',perfilado:'Perfilado',interesado:'Interesado',registro:'Registro',cotizado:'Cotizado',cliente_activo:'Cliente'}
+               :{sin_asignar:'미배정',asignado:'배정',contactado:'첫 방문',perfilado:'정보 확보',interesado:'관심',registro:'고객 등록',cotizado:'견적',cliente_activo:'첫 매출'};
+    var SEG=[['taller_suspension',T('서스펜션 정비','Taller suspensión')],['taller_general',T('일반 정비','Taller general')],['refaccionaria',T('부품점','Refaccionaria')],['mayorista',T('도매','Mayorista')],['otro',T('기타','Otro')]];
+    var geo=null, rows=null, err='', newOpen=false, busy=false;
+    function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+    function draw(){
+      var h='<div class="sheet"><div class="grab" onclick="document.getElementById(\'rqdev\').classList.remove(\'show\')"></div>'
+        +'<div class="dh"><span>📍 '+T('고객개발 방문','Visita de desarrollo')+'</span><button type="button" class="dx" onclick="document.getElementById(\'rqdev\').classList.remove(\'show\')">✕</button></div>'
+        +'<div class="dn">'+T('방문한 가게를 누르면 체크인하고 바로 녹음을 시작합니다. ★ = 오늘 루트','Toque el negocio: hace check-in y empieza a grabar. ★ = ruta de hoy')+'</div>';
+      if(err) h+='<div class="de">'+esc(err)+'</div>';
+      else if(!rows) h+='<div class="dl">'+(geo?T('근처 후보를 찾는 중…','Buscando negocios cercanos…'):T('📍 위치 확인 중… (허용을 눌러주세요)','📍 Obteniendo ubicación… (toque «Permitir»)'))+'</div>';
+      else if(!rows.length) h+='<div class="dl">'+T('250m 안에 고객개발 후보가 없습니다','No hay negocios de la lista a menos de 250 m')+'</div>';
+      if(rows&&rows.length) h+=rows.map(function(p){ return '<button type="button" class="pr'+(p.on_route?' rt':'')+'" data-p="'+p.id+'"><b>'+(p.on_route?'★ ':'')+esc(p.name)+'</b><span>'+p.dist+'m · '+(STG[p.stage]||'')+(p.colonia?' · '+esc(p.colonia):'')+'</span></button>'; }).join('');
+      h+='<button type="button" class="pr nw" data-new="1"><b>＋ '+T('리스트에 없는 가게','Negocio que no está en la lista')+'</b><span>'+T('지금 위치로 새 후보를 만들고 녹음','Se crea aquí con su ubicación y se graba')+'</span></button>';
+      if(newOpen) h+='<div class="sg">'+SEG.map(function(s){ return '<button type="button" data-seg="'+s[0]+'">'+esc(s[1])+'</button>'; }).join('')+'</div>';
+      h+='<div class="df"><button type="button" data-route="1">🗺 '+T('오늘 루트 · 지도','Ruta de hoy · mapa')+'</button></div></div>';
+      d.innerHTML=h;
+      Array.prototype.forEach.call(d.querySelectorAll('[data-p]'),function(b){ b.onclick=function(){ var p=rows.filter(function(x){return String(x.id)===b.getAttribute('data-p');})[0]; if(p) start(p.id,p.name); }; });
+      d.querySelector('[data-new]').onclick=function(){ if(!geo){ return; } newOpen=!newOpen; draw(); };
+      Array.prototype.forEach.call(d.querySelectorAll('[data-seg]'),function(b){ b.onclick=function(){ create(b.getAttribute('data-seg')); }; });
+      d.querySelector('[data-route]').onclick=function(){ d.classList.remove('show'); nav('prospects','sales'); };
+    }
+    function start(id,name){ d.classList.remove('show'); goQuickRec('&prospect='+encodeURIComponent(id)+'&pname='+encodeURIComponent(name||'')); }
+    function create(seg){
+      if(busy||!geo) return; busy=true;
+      fetch((sess.api||'')+'/api/prospects',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sess.token},
+        body:JSON.stringify({nom_estab:null,segment:seg,lat:geo.lat,lng:geo.lng})}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+        .then(function(x){ busy=false; if(!x.ok||!x.j.id){ err=T('새 후보를 만들지 못했습니다','No se pudo crear')+' ('+(x.j.error||'')+')'; draw(); return; } start(x.j.id,''); })
+        .catch(function(){ busy=false; err=T('서버에 연결하지 못했습니다','Sin conexión al servidor'); draw(); });
+    }
+    function load(){
+      fetch((sess.api||'')+'/api/prospects/nearby?lat='+geo.lat+'&lng='+geo.lng,{headers:{'Authorization':'Bearer '+sess.token}})
+        .then(function(r){ if(!r.ok) throw r.status; return r.json(); })
+        .then(function(j){ rows=j.rows||[]; draw(); })
+        .catch(function(st){ err=st===403?T('고객개발 권한이 없습니다','No tiene permiso de desarrollo de clientes'):T('근처 후보를 불러오지 못했습니다','No se pudieron cargar los negocios'); draw(); });
+    }
+    try{ window.__rnavDrawer(0); }catch(e){}
+    draw(); d.classList.add('show');
+    var g=window.__rgeo; if(g&&g.t&&(Date.now()-g.t)<120000){ geo={lat:g.lat,lng:g.lng}; draw(); load(); }
+    if(navigator.geolocation) navigator.geolocation.getCurrentPosition(function(p){
+        var first=!geo; geo={lat:p.coords.latitude,lng:p.coords.longitude};
+        try{ window.__rgeo={lat:geo.lat,lng:geo.lng,acc:p.coords.accuracy,t:Date.now()}; }catch(e){}
+        if(first){ draw(); load(); } else if(p.coords.accuracy<60){ load(); } },
+      function(){ if(!geo){ err=T('위치를 가져오지 못했습니다 — 휴대폰 설정에서 위치를 허용하세요','No se obtuvo la ubicación — permítala en el teléfono'); draw(); } },
+      {enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+    else { err=T('이 브라우저는 위치를 지원하지 않습니다','Este navegador no da ubicación'); draw(); }
+  };
+
+  // 로그아웃: 세션 정리(브리지가 복원하는 localStorage 포함) 후 로그인 화면으로
+  function rnavLogout(){
+    try{ sessionStorage.removeItem('refatrix_session'); }catch(e){}
+    try{ localStorage.removeItem('refatrix_session'); }catch(e){}
+    try{ if(window.location.hash) history.replaceState(null,'',location.pathname); }catch(e){}
+    location.href='refatrix-portal.html';
+  }
+  window.__rnavLogout=rnavLogout;
+
+  function styles(){
+    var css=''+
+    '.topbar{display:none!important}'+ /* 화면별 두 번째 헤더 제거 — 상단 트리로 통일 */
+    /* 모달/오버레이는 고정 헤더(z-index:9000)보다 위로 — 닫기 버튼 가림 방지 */
+    '.daymodal,.modal,.overlay,[id$="Modal"],[id$="modal"]{z-index:10001!important}'+
+    '#rnav{position:fixed;top:0;left:0;right:0;z-index:9000;font-family:inherit;background:linear-gradient(180deg,#12221d 0%,#0d1a16 100%);border-bottom:1px solid rgba(201,167,92,.28);box-shadow:0 6px 22px -10px rgba(0,0,0,.55)}'+
+    '#rnav .rbar{display:flex;align-items:center;padding:0 16px;height:46px}'+
+    '#rnav .rbarscroll{display:flex;align-items:center;gap:2px;flex:1 1 auto;min-width:0;overflow-x:auto;white-space:nowrap;scrollbar-width:none}'+
+    '#rnav .rbarscroll::-webkit-scrollbar{display:none}'+
+    '#rnav .rbarright{flex:0 0 auto;display:flex;align-items:center;white-space:nowrap;padding-left:10px}'+
+    '#rnav .rhome{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:6px;border-radius:8px;color:#C9A75C;background:rgba(201,167,92,.1);border:1px solid rgba(201,167,92,.3);cursor:pointer;font-size:15px;transition:all .14s}'+
+    '#rnav .rhome:hover{background:rgba(201,167,92,.22);color:#F3ECDD}'+
+    '#rnav .rlogo{display:flex;align-items:center;gap:7px;color:#F3ECDD;font-weight:800;font-size:14px;letter-spacing:.04em;margin-right:14px;flex:0 0 auto}'+
+    '#rnav .rlogo .dot{width:7px;height:7px;border-radius:50%;background:#C9A75C;box-shadow:0 0 8px rgba(201,167,92,.7)}'+
+    '#rnav .rg{position:relative;flex:0 0 auto;padding:14px 14px;font-size:13px;font-weight:600;color:#9fb0a8;background:transparent;border:none;cursor:pointer;letter-spacing:.02em;transition:color .15s}'+
+    '#rnav .rg:hover{color:#F3ECDD}'+
+    '#rnav .rg.on{color:#F3ECDD;font-weight:700}'+
+    '#rnav .rg.on:after{content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;border-radius:2px 2px 0 0;background:var(--ac,#C9A75C);box-shadow:0 0 10px var(--ac,#C9A75C)}'+
+    '#rnav .rsub{display:none;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 16px;background:linear-gradient(180deg,#0e1c18,#0c1714);border-top:1px solid rgba(255,255,255,.05)}'+
+    '#rnav .rsub.show{display:flex}'+
+    '#rnav .rs{flex:0 0 auto;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;color:#c7d2cc;background:rgba(255,255,255,.05);cursor:pointer;border:1px solid rgba(255,255,255,.07);transition:all .14s}'+
+    '#rnav .rs:hover{background:rgba(201,167,92,.16);border-color:rgba(201,167,92,.4);color:#F3ECDD}'+
+    '#rnav .rs.cur{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;font-weight:800;border-color:transparent;box-shadow:0 2px 8px -2px rgba(201,167,92,.6)}'+
+    '#rnav .rwho{flex:0 0 auto;color:#7f928a;font-size:11px;font-weight:500;padding-left:14px;letter-spacing:.02em}'+
+    '#rnav .rwho b{color:#bcae8e;font-weight:700}'+
+    '#rnav .rlogout{flex:0 0 auto;margin-left:12px;padding:5px 12px;border-radius:8px;border:1px solid rgba(208,140,110,.45);background:rgba(208,140,110,.12);color:#e3b6a3;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit}'+
+    '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}'+
+    '#rnav .rpres{flex:0 0 auto;margin-left:12px;padding:5px 11px;border-radius:999px;border:1px solid rgba(25,169,116,.45);background:rgba(25,169,116,.14);color:#7fe0bd;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit;display:none;align-items:center;gap:5px}'+
+    '#rnav .rpres:hover{background:rgba(25,169,116,.26);color:#d6fff0}'+
+    /* ===== 모바일 모드 (html.rfxm) — 데스크톱은 이 블록에 걸리지 않는다 ===== */
+    'html.rfxm #rnav .rbar{height:44px;padding:0 6px}'+
+    'html.rfxm #rnav .rlogo,html.rfxm #rnav .rwho,html.rfxm #rnav .rpres{display:none!important}'+
+    'html.rfxm #rnav .rhome{width:34px;height:34px;margin-right:4px}'+
+    'html.rfxm #rnav .rg{padding:13px 11px;font-size:12.5px}'+
+    'html.rfxm #rnav .rg.on:after{left:11px;right:11px}'+
+    'html.rfxm #rnav .rlogout{margin-left:6px;padding:7px 10px}'+
+    /* 하위메뉴 칩: 줄바꿈(6줄=202px) → 가로 스크롤 한 줄(38px) */
+    'html.rfxm #rnav .rsub{flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;padding:5px 8px;gap:6px;-webkit-overflow-scrolling:touch;scrollbar-width:none}'+
+    'html.rfxm #rnav .rsub::-webkit-scrollbar{display:none}'+
+    'html.rfxm #rnav .rs{flex:0 0 auto;padding:8px 13px;font-size:12.5px;min-height:34px;display:inline-flex;align-items:center}'+
+    /* 모바일 토글 버튼 (상단 우측) */
+    'html.rfxnarrow #rnav .rmtgl{display:inline-block;flex:0 0 auto;margin-left:6px;padding:7px 9px;border-radius:8px;border:1px solid rgba(201,167,92,.4);background:rgba(201,167,92,.12);color:#e6d9b8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}'+
+    '#rnav .rmtgl{display:none}'+
+    /* 하단 탭바 */
+    '#rmtab{display:none}'+
+    'html.rfxm #rmtab{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:9001;background:linear-gradient(180deg,#12221d,#0b1613);border-top:1px solid rgba(201,167,92,.26);box-shadow:0 -6px 22px -12px rgba(0,0,0,.7);padding-bottom:env(safe-area-inset-bottom)}'+
+    'html.rfxm #rmtab .mt{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:56px;border:none;background:transparent;color:#8fa39b;font-family:inherit;font-size:10.5px;font-weight:600;cursor:pointer;padding:0 2px;-webkit-tap-highlight-color:transparent}'+
+    'html.rfxm #rmtab .mt .i{font-size:17px;line-height:1}'+
+    'html.rfxm #rmtab .mt .l{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+    'html.rfxm #rmtab .mt.on{color:#E6C87E}'+
+    'html.rfxm #rmtab .mt.on .i{filter:drop-shadow(0 0 6px rgba(201,167,92,.55))}'+
+    /* 🎙 원클릭 미팅 녹음 — 하단 탭바 가운데 빨간 원형 버튼 (2026-11-20) */
+    'html.rfxm #rmtab .mt.mrec{flex:0 0 64px;color:#f4c2bb}'+
+    'html.rfxm #rmtab .mt.mrec .i{width:48px;height:48px;margin-top:-20px;border-radius:50%;background:#B23A2E;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;border:3px solid #0b1613;box-shadow:0 5px 16px -2px rgba(178,58,46,.7)}'+
+    'html.rfxm #rmtab .mt.mrec:active .i{transform:scale(.93)}'+
+    /* 📍 고객개발 방문 — 🎙 옆 같은 크기의 원형 버튼 (2026-11-26) */
+    'html.rfxm #rmtab .mt.mdev{flex:0 0 64px;color:#f6d79a}'+
+    'html.rfxm #rmtab .mt.mdev .i{width:48px;height:48px;margin-top:-20px;border-radius:50%;background:#E2231A;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;border:3px solid #0b1613;box-shadow:0 5px 16px -2px rgba(226,35,26,.6)}'+
+    'html.rfxm #rmtab .mt.mdev:active .i{transform:scale(.93)}'+
+    '#rqdev{display:none}'+
+    '#rqdev.show{display:block;position:fixed;inset:0;z-index:10003;background:rgba(8,16,13,.6)}'+
+    '#rqdev .sheet{position:absolute;left:0;right:0;bottom:0;max-height:86vh;max-height:86dvh;overflow:auto;background:#fff;color:#111;border-top-left-radius:16px;border-top-right-radius:16px;padding:10px 14px calc(18px + env(safe-area-inset-bottom));font-family:inherit}'+
+    '#rqdev .grab{width:42px;height:4px;border-radius:99px;background:#ddd;margin:2px auto 10px;cursor:pointer}'+
+    '#rqdev .dh{display:flex;align-items:center;justify-content:space-between;font-size:17px;font-weight:800}'+
+    '#rqdev .dx{width:40px;height:40px;border-radius:50%;border:1px solid #ddd;background:#fff;font-size:15px;cursor:pointer}'+
+    '#rqdev .dn{font-size:12.5px;color:#666;margin:4px 0 10px}'+
+    '#rqdev .dl{padding:18px 4px;color:#555;font-size:14px;text-align:center}'+
+    '#rqdev .de{padding:12px;border-radius:10px;background:#FDECEB;color:#9b1c14;font-size:13.5px;margin-bottom:8px}'+
+    '#rqdev .pr{display:block;width:100%;text-align:left;border:1.5px solid #e5e5e5;background:#fff;border-radius:12px;padding:13px 14px;margin:0 0 8px;cursor:pointer;font-family:inherit;min-height:58px}'+
+    '#rqdev .pr b{display:block;font-size:15.5px;color:#111}'+
+    '#rqdev .pr span{display:block;font-size:12.5px;color:#666;margin-top:2px}'+
+    '#rqdev .pr.rt{border-color:#E2231A;background:#FFF4F3}'+
+    '#rqdev .pr.nw{border-style:dashed}'+
+    '#rqdev .sg{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 10px}'+
+    '#rqdev .sg button{flex:1 1 30%;min-height:46px;border-radius:10px;border:1.5px solid #E2231A;background:#fff;color:#B11810;font-weight:700;font-size:13.5px;cursor:pointer;font-family:inherit}'+
+    '#rqdev .df{margin-top:6px}'+
+    '#rqdev .df button{width:100%;min-height:46px;border-radius:999px;border:1px solid #111;background:#fff;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}'+
+    /* 전체메뉴 시트 */
+    '#rmdrawer{display:none}'+
+    'html.rfxm #rmdrawer.show{display:block;position:fixed;inset:0;z-index:10002;background:rgba(8,16,13,.62);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}'+
+    'html.rfxm #rmdrawer .sheet{position:absolute;left:0;right:0;bottom:0;max-height:86vh;max-height:86dvh;overflow:auto;background:#101d19;border-top-left-radius:16px;border-top-right-radius:16px;border-top:1px solid rgba(201,167,92,.3);padding:10px 14px calc(18px + env(safe-area-inset-bottom))}'+
+    'html.rfxm #rmdrawer .grab{width:42px;height:4px;border-radius:99px;background:rgba(255,255,255,.22);margin:2px auto 12px}'+
+    'html.rfxm #rmdrawer .dhead{display:flex;align-items:center;justify-content:space-between;color:#dfe8e3;font-size:14px;font-weight:800;padding:0 2px 4px}'+
+    'html.rfxm #rmdrawer .dx{width:40px;height:40px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#dfe8e3;font-size:15px;cursor:pointer;font-family:inherit}'+
+    'html.rfxm #rmdrawer .grab{cursor:pointer}'+
+    'html.rfxm #rmdrawer .gt{color:#C9A75C;font-size:11.5px;font-weight:800;letter-spacing:.06em;margin:14px 0 8px;text-transform:uppercase}'+
+    'html.rfxm #rmdrawer .gitems{display:grid;grid-template-columns:1fr 1fr;gap:8px}'+
+    'html.rfxm #rmdrawer .di{display:flex;align-items:center;min-height:46px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#dfe8e3;font-size:13px;font-weight:600;font-family:inherit;text-align:left;cursor:pointer}'+
+    'html.rfxm #rmdrawer .di.cur{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;font-weight:800;border-color:transparent}'+
+    'html.rfxm #rmdrawer .dfoot{display:flex;gap:8px;margin:18px 0 4px}'+
+    'html.rfxm #rmdrawer .dfoot button{flex:1 1 0;min-height:46px;border-radius:10px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#dfe8e3}'+
+    'html.rfxm #rmdrawer .dfoot .out{border-color:rgba(208,140,110,.45);background:rgba(208,140,110,.14);color:#e8b6a2}'+
+    /* 손가락 조작 기본기 */
+    'html.rfxm input,html.rfxm select,html.rfxm textarea{font-size:16px!important;max-width:100%}'+   /* iOS 포커스 자동확대 차단 */
+    'html.rfxm button,html.rfxm .btn,html.rfxm a[role="button"]{touch-action:manipulation;min-height:36px}'+
+    'html.rfxm body{overflow-x:hidden}'+
+    'html.rfxm table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}'+
+    /* QA 배지 — 기본은 숨김, QA 환경에서만 노출 */
+    '#rnav .rqa{display:none}'+
+    CTR_NAV_CSS+
+    QA_CSS;
+    var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
+  }
+  // 제한 역할(예: treasury)이 허용되지 않은 화면에 있으면 재무/계좌로 되돌림(직접 URL 접근 차단).
+  function enforceRoleAccess(){
+    if(!sum || sum.isDirector) return false;
+    var only=ROLE_ONLY_GROUPS[sum.role];
+    if(only){
+      var hide=ROLE_HIDE_SCREENS[sum.role]||{};
+      var allowed={};
+      GROUPS.forEach(function(g){ if(only.indexOf(g.key)>=0) g.screens.forEach(function(k){ if(!hide[k] && canSee(k)) allowed[k]=1; }); });
+      var cur=curScreen();
+      if(cur && allowed[cur]) return false;     // 허용된 화면이면 통과(재무 탭들)
+      if(sess && sess.token){ nav(ROLE_LANDING[sum.role]||'portal'); return true; }  // 그 외(미허용·미인식) → 역할 랜딩
+      return false;
+    }
+    // 그룹 숨김(블랙리스트) 역할: 숨긴 그룹 '전용' 화면에 직접 접근하면 포털로 되돌림.
+    //   다른 보이는 그룹에서도 접근 가능한 공유 화면(예: settlement=영업지원, commission=공통)은 통과.
+    var hideG=ROLE_HIDE_GROUPS[sum.role];
+    if(hideG){
+      var cur2=curScreen();
+      if(!cur2) return false;                   // 미인식 화면 — 간섭 안 함
+      var reach={};
+      GROUPS.forEach(function(g){ if(groupVisible(g)) g.screens.forEach(function(k){ if(canSee(k)) reach[k]=1; }); });
+      if(reach[cur2]) return false;             // 보이는 그룹에서 접근 가능 → 통과
+      if(sess && sess.token){ nav('portal'); return true; }
+    }
+    return false;
+  }
+  function groupVisible(g){
+    // 역할 제한: 비디렉터 + 제한 역할이면, 허용 목록에 없는 그룹은 숨김(공통·일정 등).
+    if(sum && !sum.isDirector){
+      var only=ROLE_ONLY_GROUPS[sum.role];
+      if(only && only.indexOf(g.key)<0) return false;
+      var hideG=ROLE_HIDE_GROUPS[sum.role];        // 블랙리스트: 지정 그룹 숨김(영업=재무)
+      if(hideG && hideG.indexOf(g.key)>=0) return false;
+    }
+    // 그룹별 명시 앵커가 있으면 그것을, 없으면 공유 화면 제외 '앵커' 중 하나라도 볼 수 있으면 그룹 노출
+    var anchors=GROUP_ANCHOR_KEYS[g.key];
+    if(!anchors){ anchors=g.screens.filter(function(k){return !SHARED[k];}); if(!anchors.length) anchors=g.screens; }
+    return anchors.some(function(k){return SCREENS[k]&&canSee(k);});
+  }
+  // ── 화면이 스페인어로 표시 중이면(html data-ui-lang="es") 메뉴도 스페인어 (2026-10-29) ──
+  //   html lang 속성은 보지 않는다 — 한국어 화면 중에도 lang="es" 로 선언된 파일이 있어서.
+  //   data-ui-lang 은 커미션·합의 화면이 사용자 언어를 정한 뒤 붙이고 __rnavRefresh() 로 다시 그린다.
+  var ES_SCREENS={"salesperf": "Tablero de ventas", "commission": "Comisión", "dashboard": "Tablero", "board": "Agenda", "boardNotice": "Avisos", "boardTodo": "Pendientes", "wbr": "WBR", "daily": "Resumen del día", "quote": "Nueva cotización", "quotelist": "Cotizaciones y ventas", "reservations": "Reservas de inventario", "fieldsurvey": "Inventario en cliente", "fsanalysis": "Análisis de desplazamiento", "orderfunnel": "Flujo de pedidos", "funnel": "Solicitudes de cotización", "funnelImm": "Ventas por confirmar", "funnelShort": "Faltantes y pedidos", "funnelDev": "Por desarrollar", "sales": "Registrar venta", "saleslist": "Ventas", "salesshort": "Faltantes / pedidos", "salesapprove": "Aprobación de ventas", "stock": "Movimientos de inventario", "shortage": "Faltantes", "devrequest": "Solicitud de desarrollo", "pipeline": "Actividad comercial", "consult": "Atención a clientes", "prospects": "Desarrollo de clientes", "customers": "Clientes", "custTeam": "Equipos de clientes", "custApprove": "Aprobar cambios de cliente", "custReg": "Aprobar altas de cliente", "custClaim": "Transferencia de RFC", "custLeads": "Registros web", "targets": "Metas de venta", "finance": "Finanzas · cuentas", "finNew": "Nuevo movimiento", "finTxn": "Movimientos", "finPay": "Aplicación de pagos", "finFixed": "Gastos fijos", "finCash": "Flujo de efectivo", "finDaily": "Resumen diario", "finFx": "Tipo de cambio", "finReport": "Reporte mensual", "finApprove": "Aprobaciones de finanzas", "settlement": "Cobranza", "grossprofit": "Utilidad bruta", "recost": "Corrección de costo", "budget": "Presupuesto", "importcost": "Costo de importación", "import": "Importaciones", "purchase": "Compras", "purchasereview": "Revisión de compras", "salestrend": "Historial de ventas", "products": "Productos", "vehicleparts": "Piezas por vehículo", "viofinder": "Buscador VIO", "prodFind": "Buscar producto", "prodUpload": "Carga de productos", "prodHistory": "Historial de productos", "priceMaster": "Lista de precios", "marketing": "Marketing", "mktspend": "Gasto de marketing", "survey": "Encuestas", "wapromo": "Marketing por WhatsApp", "metaleads": "Mensajes de Meta", "leadassign": "Asignación y resultados", "rnr": "Procesos", "coverage": "Coverage", "devmap": "Development Map", "users": "Usuarios", "integrations": "Integraciones", "catalogApi": "API de catálogo", "apikeys": "Claves externas", "waSched": "Horario de WhatsApp", "company": "Empresa", "processKpi": "KPI de procesos", "portal": "Inicio", "approval": "Aprobaciones", "guiaCom": "Guía del Comisionista", "whHome": "Almacén", "stockcount": "Conteo de inventario", "inbound": "Recepción", "zones": "Zonas", "relocate": "Reubicación", "whmap": "Plano del almacén"};
+  var ES_GROUPS={"common": "General", "sales": "Ventas", "support": "Soporte", "purchase": "Compras", "finance": "Finanzas", "pm": "Producto y marketing", "cal": "Agenda", "warehouse": "Almacén", "admin": "Administración"};
+  function isEs(){ try{ return document.documentElement.getAttribute('data-ui-lang')==='es'; }catch(e){ return false; } }
+  function sName(k){ return (isEs()&&ES_SCREENS[k])||SCREENS[k].name; }
+  function gTitle(g){ return (isEs()&&ES_GROUPS[g.key])||g.title; }
+  function render(){
+    var es=isEs();
+    var vis=GROUPS.filter(groupVisible);
+    var cur=curScreen();
+    // 현재 화면이 속한 그룹을 항상 연다(트리 g 힌트 우선). 현재 openGroup이 cur를 포함 안 하면 교정.
+    var hintG=null; try{ var hp=new URLSearchParams(location.hash.slice(1)); hintG=hp.get('g')||null; }catch(e){}
+    var resolved=null;
+    if(cur){
+      if(hintG && vis.some(function(v){return v.key===hintG && v.screens.indexOf(cur)>=0;})) resolved=hintG;
+      if(!resolved){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ resolved=vis[i].key; break; } } }
+    }
+    if(resolved) openGroup=resolved;                       // 현재 화면의 그룹으로 강제(공통 오작동 방지)
+    else if(openGroup===null){                              // 현재 화면을 못 찾을 때만 폴백
+      if(hintG && vis.some(function(v){return v.key===hintG;})) openGroup=hintG;
+      else if(vis[0]) openGroup=vis[0].key;
+    }
+    applyEnvFlag();
+    var bar='<div class="rbar"><div class="rbarscroll"><button type="button" class="rhome" title="'+(es?'Inicio':'포털 홈')+'" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE;
+    vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+gTitle(g)+'</button>'; });
+    var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
+    bar+='</div><div class="rbarright"><span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
+    bar+='<span class="rpres" id="rPresBadge" title="'+(es?'Usuarios conectados':'접속 현황 보기')+'" onclick="__rnavPresence()">\uD83D\uDFE2 <span id="rPresN">0</span>'+(es?' en línea':'명 접속')+'</span>';
+    bar+='<button type="button" class="rmtgl" id="rmTgl" title="'+(es?'Vista móvil / completa':'모바일/전체보기 전환')+'" onclick="__rnavMobile(!__rnavMobileOn())">\uD83D\uDCF1</button>';
+    bar+='<button type="button" class="rlogout" title="'+(es?'Salir':'로그아웃')+'" onclick="__rnavLogout()">'+(es?'Salir':'로그아웃')+'</button></div></div>';
+    // 하위 화면
+    var g=vis.find(function(x){return x.key===openGroup;});
+    var sub='';
+    if(g){ var scr=g.screens.filter(function(k){return SCREENS[k]&&menuSee(k);});
+      // 중복 제거
+      var seen={}; scr=scr.filter(function(k){ if(seen[k])return false; seen[k]=1; return true; });
+      sub='<div class="rsub show">'+scr.map(function(k){ return '<span class="rs'+(k===cur?' cur':'')+'" onclick="__rnav(\''+k+'\',\''+openGroup+'\')" title="'+(es?sName(k):(SCREENS[k].desc||''))+'">'+sName(k)+'</span>'; }).join('')+'</div>';
+    }
+    var el=document.getElementById('rnav');
+    el.innerHTML=bar+sub;
+    mApply();
+    applyPresBadge();
+  }
+  // 고정 헤더(바+하위메뉴)의 실제 높이만큼 본문을 내려 가림 방지
+  function syncOffset(){
+    var el=document.getElementById('rnav'); if(!el) return;
+    var h=el.offsetHeight||46;
+    var base=(window.__rnavBaseTop!==undefined)?window.__rnavBaseTop:0;
+    document.body.style.paddingTop=(base+h)+'px';
+  }
+  window.addEventListener('resize', function(){ syncOffset(); });
+  // 같은 파일 내 탭 전환은 해시만 바뀌므로(페이지 미reload), 헤더를 다시 그려 현재 화면 강조(노란색)를 갱신
+  window.addEventListener('hashchange', function(){ if(document.getElementById('rnav')) render(); });
+  // 탭 화면이 내부 탭 전환 후 직접 호출 → 현재 화면 강조 즉시 갱신(hashchange 미발생/캐시 대비 안전장치)
+  window.__rnavRefresh=function(){ if(document.getElementById('rnav')) render(); };
+  // 그룹 클릭 → 해당 그룹의 첫 번째(접근 가능) 화면으로 이동. 현재 그룹이면 토글만.
+  window.__rnavGroup=function(k){
+    var g=null; for(var i=0;i<GROUPS.length;i++){ if(GROUPS[i].key===k){ g=GROUPS[i]; break; } }
+    if(!g){ openGroup=k; render(); return; }
+    var first=null; for(var j=0;j<g.screens.length;j++){ var sk=g.screens[j]; if(SCREENS[sk]&&menuSee(sk)){ first=sk; break; } }
+    if(first && first!==curScreen()){ nav(first, k); return; }   // 첫 화면으로 이동(그 그룹 컨텍스트 유지)
+    // 이미 그 화면(여러 그룹이 공유하는 화면 등)이면 이동 없이 그룹만 전환.
+    // render()가 g 힌트로 이전 그룹을 되돌리지 않도록 URL의 g도 새 그룹으로 갱신.
+    openGroup=k;
+    try{ var hp=new URLSearchParams(location.hash.slice(1)); hp.set('g',k); history.replaceState(null,'',location.pathname+'#'+hp.toString()); }catch(e){}
+    render();
+  };
+
+  /* ===== 모바일 모드 — 1단계 공통 셸 (2026-09-03) =====
+     자동감지(폭 ≤768 또는 coarse pointer) + 수동 토글(localStorage 'rfx_m' 이 자동감지보다 우선).
+     데스크톱은 html.rfxm 이 안 붙으므로 규칙이 하나도 적용되지 않는다(회귀 0). */
+  var MKEY='rfx_m', MBP=768;
+  var MTAB_PREF={
+    sales:['portal','customers','pipeline','quotelist'],
+    sales_support:['portal','customers','quotelist','stock'],
+    warehouse:['whHome','inbound','stockcount','relocate'],
+    treasury:['portal','finance','settlement','budget']
+  };
+  var MTAB_DEFAULT=['portal','salesperf','customers','board'];
+  var MTAB_FALLBACK=['portal','salesperf','customers','pipeline','quotelist','quote','fieldsurvey','board','finance','products','whHome','dashboard'];
+  var MTAB_ICON={approval:'✍',portal:'⌂',salesperf:'📈',customers:'🏢',pipeline:'🧭',consult:'💬',prospects:'📍',quotelist:'🧾',quote:'✎',fieldsurvey:'📋',fsanalysis:'🧮',board:'🗓',finance:'💳',settlement:'⚖',budget:'💰',products:'📦',stock:'📦',whHome:'🏬',inbound:'🚚',stockcount:'🔢',relocate:'↔',whmap:'🗺',dashboard:'📊',targets:'🎯',commission:'💵'};
+
+  function mNarrow(){
+    try{ if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches) return true; }catch(e){}
+    return (window.innerWidth||9999)<=MBP;
+  }
+  function mPref(){ try{ return localStorage.getItem(MKEY); }catch(e){ return null; } }
+  function mOn(){ var p=mPref(); if(p==='on') return true; if(p==='off') return false; return mNarrow(); }
+  var MTAB_LABEL={approval:'결재',portal:'홈',customers:'고객',pipeline:'영업활동',consult:'상담',prospects:'고객개발',quotelist:'견적',quote:'견적작성',
+    fieldsurvey:'현장조사',fsanalysis:'소진분석',board:'일정',salesperf:'실적',commission:'커미션',targets:'목표',
+    finance:'재무',settlement:'정산',budget:'예산',products:'제품',stock:'재고',dashboard:'현황',
+    whHome:'창고',inbound:'입고',stockcount:'실사',relocate:'위치',whmap:'도면'};
+  var MTAB_LABEL_ES={approval:'Aprobar',portal:'Inicio',customers:'Clientes',pipeline:'Actividad',consult:'Consultas',prospects:'Desarrollo',quotelist:'Cotiz.',quote:'Cotizar',
+    fieldsurvey:'Inventario',board:'Agenda',salesperf:'Ventas',commission:'Comisión',targets:'Metas',finance:'Finanzas',settlement:'Cobranza',budget:'Presup.',products:'Productos',stock:'Inventario',dashboard:'Tablero',
+    whHome:'Almacén',inbound:'Recepción',stockcount:'Conteo',relocate:'Ubicar',whmap:'Plano'};
+  function mShort(k){ if(isEs()&&MTAB_LABEL_ES[k]) return MTAB_LABEL_ES[k]; var n=MTAB_LABEL[k]; if(n) return n;
+    var s=String((SCREENS[k]&&SCREENS[k].name)||'').replace(/\s*[··].*$/,''); return s.length>4?(s.slice(0,4)+'…'):s; }
+  function mTabKeys(){
+    var pref=(sum&&MTAB_PREF[sum.role])||MTAB_DEFAULT;
+    var out=[], lim=(SCREENS.consult&&canSee('consult')&&SCREENS.prospects)?3:4;   // 🎙·📍 두 개가 들어가면 일반 탭은 3개
+    var push=function(k){ if(out.length<lim && out.indexOf(k)<0 && SCREENS[k] && menuSee(k)) out.push(k); };
+    pref.forEach(push); MTAB_FALLBACK.forEach(push);
+    return out;
+  }
+  function renderMTab(){
+    var on=document.documentElement.classList.contains('rfxm');
+    var el=document.getElementById('rmtab');
+    if(!on || !sess || !sess.token || !sum){ if(el&&el.parentNode) el.parentNode.removeChild(el); document.body.style.paddingBottom=window.__rnavBasePB||''; return; }
+    if(!el){ el=document.createElement('nav'); el.id='rmtab'; document.body.appendChild(el); }
+    var cur=curScreen(), keys=mTabKeys();
+    var btns=keys.map(function(k){
+      return '<button type="button" class="mt'+(k===cur?' on':'')+'" onclick="__rnav(\''+k+'\')">'
+           + '<span class="i">'+(MTAB_ICON[k]||'•')+'</span><span class="l">'+mShort(k)+'</span></button>';
+    });
+    // 🎙 원클릭 미팅 녹음 — 고객상담(영업활동 권한) 화면을 쓸 수 있는 사람에게만, 가운데에
+    if(SCREENS.consult && canSee('consult')){
+      btns.splice(Math.min(2,btns.length),0,'<button type="button" class="mt mrec" onclick="__rnavQuickRec()" aria-label="미팅 녹음 바로 시작">'
+        + '<span class="i">🎙</span><span class="l">'+(devEs()?'Grabar':'녹음')+'</span></button>'
+        + (SCREENS.prospects?'<button type="button" class="mt mdev" onclick="__rnavQuickDev()" aria-label="고객개발 방문">'
+        + '<span class="i">📍</span><span class="l">'+(devEs()?'Desarrollo':'고객개발')+'</span></button>':''));
+    }
+    var h=btns.join('');
+    h+='<button type="button" class="mt mmore" onclick="__rnavDrawer(1)"><span class="i">☰</span><span class="l">'+(isEs()?'Menú':'전체')+'</span></button>';
+    el.innerHTML=h;
+    document.body.style.paddingBottom='calc(58px + env(safe-area-inset-bottom))';
+  }
+  function renderDrawer(){
+    var d=document.getElementById('rmdrawer');
+    if(!d){ d=document.createElement('div'); d.id='rmdrawer'; d.onclick=function(e){ if(e.target===d) __rnavDrawer(0); }; document.body.appendChild(d); }
+    var cur=curScreen(), vis=GROUPS.filter(groupVisible);
+    var h='<div class="sheet"><div class="grab" onclick="__rnavDrawer(0)"></div>'
+      + '<div class="dhead"><span>전체 메뉴 · Menú</span><button type="button" class="dx" onclick="__rnavDrawer(0)">✕</button></div>';
+    vis.forEach(function(g){
+      var seen={}, scr=g.screens.filter(function(k){ if(seen[k]||!SCREENS[k]||!menuSee(k)) return false; seen[k]=1; return true; });
+      if(!scr.length) return;
+      h+='<div class="gt" style="color:'+g.color+'">'+g.title+'</div><div class="gitems">';
+      scr.forEach(function(k){ h+='<button type="button" class="di'+(k===cur?' cur':'')+'" onclick="__rnavDrawer(0);__rnav(\''+k+'\',\''+g.key+'\')">'+SCREENS[k].name+'</button>'; });
+      h+='</div>';
+    });
+    h+='<div class="dfoot"><button type="button" onclick="__rnavMobile(0)">⤢ 전체보기(PC 화면)</button>'
+     + '<button type="button" class="out" onclick="__rnavLogout()">로그아웃</button></div></div>';
+    d.innerHTML=h;
+  }
+  window.__rnavDrawer=function(open){
+    var d=document.getElementById('rmdrawer');
+    if(open && (!sess || !sum)) return;
+    if(open){ renderDrawer(); d=document.getElementById('rmdrawer'); d.classList.add('show'); }
+    else if(d){ d.classList.remove('show'); }
+  };
+  window.__rnavMobile=function(on){
+    try{ localStorage.setItem(MKEY, on?'on':'off'); }catch(e){}
+    window.__rnavDrawer(0); mApply();
+  };
+  function mApply(){
+    var de=document.documentElement;
+    de.classList.toggle('rfxnarrow', mNarrow());
+    de.classList.toggle('rfxm', mOn());
+    renderMTab();
+    var t=document.getElementById('rmTgl');
+    if(t) t.textContent = de.classList.contains('rfxm') ? '⤢' : '📱';
+    syncOffset();
+  }
+  window.__rnavMobileOn=mOn;
+  var mRT=null;
+  window.addEventListener('resize', function(){ clearTimeout(mRT); mRT=setTimeout(mApply,120); });
+  window.addEventListener('orientationchange', function(){ setTimeout(mApply,240); });
+
+  /* 모바일 보완 레이어(터치 영역·표 첫 열 고정·팝업 하단시트) — 별도 파일로 분리해 nav.js 수정 없이 조정 가능 (2026-10-15) */
+  function loadMobileLayer(){
+    if(window.__rfxMobileLoaded || document.getElementById('rfx-mobile-js')) return;
+    try{
+      var cur=document.currentScript||document.querySelector('script[src*="refatrix-nav.js"]');
+      var src=(cur&&cur.getAttribute('src'))||'refatrix-nav.js';
+      var base=src.split('?')[0].replace(/refatrix-nav\.js$/,'');
+      var s=document.createElement('script'); s.id='rfx-mobile-js'; s.src=base+'refatrix-mobile.js?v=20261015m';
+      (document.head||document.body).appendChild(s);
+    }catch(e){}
+  }
+  /* 2026-11-27k · 공통 디자인(refatrix-theme.css · 차종으로 제품찾기 기준) — 화면 HTML 에 링크가 없을 때만 보충
+     (새로 만드는 화면도 자동으로 같은 디자인). 커미셔너 안내서(guia)는 자체 문서 디자인이라 제외. */
+  function loadTheme(){
+    try{
+      if(document.getElementById('rfx-theme') || /guia-comisionista/.test(location.pathname)) return;
+      var cur=document.querySelector('script[src*="refatrix-nav.js"]');
+      var src=(cur&&cur.getAttribute('src'))||'refatrix-nav.js';
+      var base=src.split('?')[0].replace(/refatrix-nav\.js$/,'');
+      var l=document.createElement('link'); l.id='rfx-theme'; l.rel='stylesheet'; l.href=base+'refatrix-theme.css?v=20261127k';
+      (document.head||document.body).appendChild(l);
+    }catch(e){}
+  }
+  function mount(){
+    loadTheme();
+    styles();
+    loadMobileLayer();
+    // 헤더 삽입 전, 화면 고유의 본문 상단 여백을 저장(가림 방지 + 원래 여백 유지)
+    try{ window.__rnavBaseTop=parseInt(getComputedStyle(document.body).paddingTop,10)||0; }catch(e){ window.__rnavBaseTop=0; }
+    try{ window.__rnavBasePB=getComputedStyle(document.body).paddingBottom||''; }catch(e){ window.__rnavBasePB=''; }
+    var nv=document.createElement('div'); nv.id='rnav';
+    document.body.insertBefore(nv, document.body.firstChild);
+    mApply();
+    boot();
+  }
+  // 세션을 읽어 헤더를 그린다. 세션이 없으면 잠시 후 로그인되는지 감시(포털 첫 로그인 대응).
+  // 상단 헤더 접속 요약 배지 (디렉터 전용) — 클릭 시 접속현황(users) 이동
+  var navPresOnline=0, navPresDir=false;
+  function applyPresBadge(){
+    var b=document.getElementById('rPresBadge'); if(!b) return;
+    if(navPresDir){ b.style.display='inline-flex'; var n=document.getElementById('rPresN'); if(n) n.textContent=navPresOnline; }
+    else b.style.display='none';
+  }
+  function updatePresenceBadge(){
+    try{
+      if(!sum || !sum.isDirector){ navPresDir=false; applyPresBadge(); return; }
+      var s=getSession(); if(!s||!s.token) return;
+      var a=(s.api||'').replace(/\/+$/,'');
+      fetch(a+'/api/presence',{headers:{'Authorization':'Bearer '+s.token}}).then(function(r){
+        if(!r.ok) return null; return r.json();
+      }).then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[];
+        navPresDir=true; navPresOnline=items.filter(function(x){return x.online;}).length;
+        applyPresBadge();
+      }).catch(function(){});
+    }catch(e){}
+  }
+  window.__rnavPresence=function(){ try{ location.href='refatrix-users.html'; }catch(e){} };
+
+  // =====================================================================
+  // 🔒 신규 고객 등록 승인 대기 — 전역 팝업 알림 (디렉터 전용 · 모든 화면 · 60초)
+  //
+  //   왜 nav.js 인가: 09-03 모바일 셸에서 고객화면의 탭바가 숨겨지면서
+  //   「등록 승인 대기」가 눈에 띄지 않게 됐다. 포털에만 팝업을 두면 다른 화면에서
+  //   작업 중인 디렉터는 승인 요청을 못 본다. nav.js 는 모든 화면에 주입되므로
+  //   여기 한 곳에 두면 화면과 무관하게 알림이 뜬다(팝업 소유자는 여기 하나뿐 —
+  //   포털 통합 폴러에는 일부러 넣지 않았다. 넣으면 포털에서 두 번 뜬다).
+  //
+  //   동작 규칙
+  //     · 새 건(처음 보는 customer id)이 생기면 → 강제 팝업 + 알림음 (임시닫기 무시)
+  //     · 이미 본 건만 남아 있으면 → 임시닫기 상태를 존중(다시 안 띄움)
+  //     · 대기 0건이 되면 → 팝업 닫고 임시닫기·본 목록 초기화(다음 건에 다시 울림)
+  //     · 탭이 백그라운드면 요청 자체를 건너뜀 / 승인 화면(custReg)에 있는 동안은 안 띄움
+  // =====================================================================
+  var CREG_SEEN_KEY='refatrix_custreg_seen', CREG_DIS_KEY='refatrix_custreg_dismissed';
+  var __cregTimer=null, __cregAudioCtx=null, __cregItems=[];
+  function cregEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function cregSeen(){ try{ return JSON.parse(sessionStorage.getItem(CREG_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
+  function cregSaveSeen(a){ try{ sessionStorage.setItem(CREG_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
+  function cregDismissed(){ try{ return sessionStorage.getItem(CREG_DIS_KEY)==='1'; }catch(e){ return false; } }
+  function cregChime(){
+    try{
+      if(!__cregAudioCtx){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; __cregAudioCtx=new AC(); }
+      if(__cregAudioCtx.state==='suspended') __cregAudioCtx.resume();
+      var ctx=__cregAudioCtx, t0=ctx.currentTime;
+      [[880,0],[1175,0.18]].forEach(function(p){
+        var o=ctx.createOscillator(), g=ctx.createGain();
+        o.type='sine'; o.frequency.value=p[0];
+        g.gain.setValueAtTime(0.0001,t0+p[1]);
+        g.gain.exponentialRampToValueAtTime(0.18,t0+p[1]+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,t0+p[1]+0.17);
+        o.connect(g); g.connect(ctx.destination); o.start(t0+p[1]); o.stop(t0+p[1]+0.2);
+      });
+    }catch(e){}
+  }
+  function cregEnsureModal(){
+    var m=document.getElementById('rnavCregModal');
+    if(m) return m;
+    m=document.createElement('div');
+    m.id='rnavCregModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:10050;align-items:flex-start;justify-content:center;padding:64px 16px;overflow:auto';
+    m.innerHTML=''
+      +'<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34);font-family:inherit">'
+      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#B23A2E">🔒 신규 고객 등록 — 승인 요청</div></div>'
+      +'<div style="padding:14px 20px">'
+      +'<div id="rnavCregMsg" style="font-size:13.5px;color:#20302a;line-height:1.6;margin-bottom:10px"></div>'
+      +'<div id="rnavCregList" style="max-height:46vh;overflow:auto;border:1px solid #e6e1d6;border-radius:10px"></div></div>'
+      +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">'
+      +'<button type="button" onclick="__rnavCregDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>'
+      +'<button type="button" onclick="__rnavCregGo()" style="border:none;background:#B23A2E;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">등록 승인 화면으로 →</button>'
+      +'</div></div>';
+    (document.body||document.documentElement).appendChild(m);
+    return m;
+  }
+  window.__rnavCregDismiss=function(){
+    try{ sessionStorage.setItem(CREG_DIS_KEY,'1'); }catch(e){}
+    var m=document.getElementById('rnavCregModal'); if(m) m.style.display='none';
+  };
+  window.__rnavCregGo=function(){
+    var m=document.getElementById('rnavCregModal'); if(m) m.style.display='none';
+    try{ nav('custReg'); }catch(e){}
+  };
+  function cregRender(items){
+    var msg=document.getElementById('rnavCregMsg'), list=document.getElementById('rnavCregList');
+    if(!msg||!list) return;
+    msg.innerHTML='승인 대기 중인 <b>신규 고객 등록</b>이 <b>'+items.length+'건</b> 있습니다. 승인 전에는 견적·매출에 쓸 수 없습니다.';
+    list.innerHTML=items.map(function(r){
+      var who=[r.owner_name,r.team_name].filter(Boolean).join(' · ');
+      return '<div style="padding:11px 13px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        +'<div><b>'+cregEsc(r.name)+'</b> <span style="color:#8a8577;font-size:11.5px">'+cregEsc(r.code||'')+'</span></div>'
+        +'<div style="color:#8a8577;font-size:11.5px;margin-top:2px">'
+        +(r.rfc?('RFC '+cregEsc(r.rfc)):'<span style="color:#B23A2E">RFC 없음 — 선점 안 됨</span>')
+        +(r.discount==null?'':' · 신청 할인율 '+cregEsc(r.discount)+'%')
+        +'</div>'
+        +(who||r.registered_at
+          ? '<div style="color:#8a8577;font-size:11.5px;margin-top:1px">'+cregEsc(who)+(r.registered_at?(who?' · ':'')+cregEsc(r.registered_at):'')+'</div>'
+          : '')
+        +'</div>';
+    }).join('');
+  }
+  function checkCustReg(opts){
+    var silent=!!(opts&&opts.silent);
+    if(!(sum&&sum.isDirector)) return;
+    var s=getSession(); if(!s||!s.token) return;
+    var a=(s.api||'').replace(/\/+$/,'');
+    fetch(a+'/api/portal/customer-reg-alert',{headers:{'Authorization':'Bearer '+s.token}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[]; __cregItems=items;
+        var m=cregEnsureModal();
+        if(!items.length){
+          m.style.display='none';
+          try{ sessionStorage.removeItem(CREG_DIS_KEY); }catch(e){}
+          cregSaveSeen([]);
+          return;
+        }
+        cregRender(items);
+        var seen=cregSeen();
+        var fresh=items.filter(function(x){ return seen.indexOf(Number(x.id))<0; });
+        // 승인 화면을 보고 있는 동안은 방해하지 않는다(목록은 그 화면에 이미 떠 있다).
+        if(curScreen()==='custReg'){
+          cregSaveSeen(items.map(function(x){ return Number(x.id); }));
+          m.style.display='none';
+          return;
+        }
+        if(fresh.length){
+          cregSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
+          try{ sessionStorage.removeItem(CREG_DIS_KEY); }catch(e){}
+          m.style.display='flex';
+          if(!silent) cregChime();
+        }else{
+          m.style.display = cregDismissed() ? 'none' : 'flex';
+        }
+      }).catch(function(){});
+  }
+  function startCustRegAlert(){
+    if(!(sum&&sum.isDirector)) return;
+    if(__cregTimer) return;
+    checkCustReg({silent:true});                 // 첫 진입은 조용히(화면 진입 때마다 소리나면 피로)
+    __cregTimer=setInterval(function(){
+      if(document.hidden) return;                // 백그라운드 탭은 건너뜀
+      checkCustReg({silent:false});
+    }, 60000);                                   // 60초
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if(document.visibilityState==='visible') checkCustReg({silent:false});
+      });
+    }catch(e){}
+  }
+  window.__rnavCregCheck=function(){ checkCustReg({silent:true}); };
+
+  // =====================================================================
+  //  0210 · 웹 가입 신청(리드) 전역 팝업
+  //
+  //   고객이 홈페이지에서 회원가입을 누르면 CRM 이 ERP 로 즉시 알린다.
+  //   그 알림을 **어느 화면에 있든** 띄운다 — 아무도 안 보고 며칠 지나는 것이
+  //   이 기능이 막으려는 손실이다.
+  //
+  //   creg 팝업과 다른 점
+  //     · 디렉터 전용이 아니다. **누구에게 띄울지는 서버가 판단한다**
+  //       (대상이 아니면 빈 배열이 온다 — 화면은 그걸 그대로 믿으면 된다).
+  //     · 고객이 입력한 **모든 값**을 카드에 편다. 우리가 모르는 필드도 그대로 보여 준다.
+  //     · 카드마다 「내가 맡겠습니다」 · 「보류·대상 아님」 버튼이 붙는다.
+  // =====================================================================
+  var LEAD_SEEN_KEY='refatrix_weblead_seen', LEAD_DIS_KEY='refatrix_weblead_dismissed';
+  var __leadTimer=null, __leadItems=[], __leadCanAssign=false, __leadAssignees=[];
+  function leadSeen(){ try{ return JSON.parse(sessionStorage.getItem(LEAD_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
+  function leadSaveSeen(a){ try{ sessionStorage.setItem(LEAD_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
+  var LEAD_SNOOZE_MS=30*60*1000;   // 임시로 닫아도 30분 뒤엔 다시 뜬다
+  function leadDismissed(){
+    try{
+      var t=Number(sessionStorage.getItem(LEAD_DIS_KEY)||0);
+      return !!t && (Date.now()-t) < LEAD_SNOOZE_MS;
+    }catch(e){ return false; }
+  }
+
+  // 고객이 입력한 값 전부를 보기 좋은 이름으로 편다. 우리가 모르는 키는 키 이름 그대로 보여 준다.
+  var LEAD_LABEL={empresa:'회사명',nombre:'이름',apellido:'성',telefono:'전화',correo:'이메일',rfc:'RFC',
+    ciudad:'도시',estado:'주',direccion:'주소',mensaje:'남긴 말',crmLeadCode:'CRM 코드',customerCode:'CRM 코드',
+    solicitadoEn:'신청 시각',tipo:'유형',nombreComercial:'상호'};
+  function leadFieldRows(r){
+    var p=r.payload||{}, out=[], seen={};
+    function add(k,v){
+      if(v==null) return;
+      if(typeof v==='object'){ try{ v=JSON.stringify(v); }catch(e){ return; } }
+      v=String(v).trim(); if(!v) return;
+      var key=String(k).toLowerCase(); if(seen[key]) return; seen[key]=1;
+      out.push('<tr><td style="padding:4px 8px;color:#8a8577;white-space:nowrap;vertical-align:top">'
+        +cregEsc(LEAD_LABEL[k]||k)+'</td><td style="padding:4px 8px;word-break:break-word">'+cregEsc(v)+'</td></tr>');
+    }
+    // 우리가 아는 순서를 먼저, 그다음 상대가 더 보낸 것들.
+    ['empresa','nombre','apellido','rfc','telefono','correo','ciudad','estado','direccion','mensaje'].forEach(function(k){ add(k,p[k]); });
+    Object.keys(p).forEach(function(k){ add(k,p[k]); });
+    return out.join('');
+  }
+
+  function leadEnsureModal(){
+    var m=document.getElementById('rnavLeadModal');
+    if(m) return m;
+    m=document.createElement('div');
+    m.id='rnavLeadModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:10050;align-items:flex-start;justify-content:center;padding:56px 16px;overflow:auto';
+    m.innerHTML=''
+      +'<div style="background:#fff;border-radius:14px;max-width:640px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34);font-family:inherit">'
+      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#0F6E56">🌐 웹카달록 — 가입 신청</div>'
+      +'<div id="rnavLeadMsg" style="font-size:12.5px;color:#6F6A60;margin-top:4px"></div></div>'
+      +'<div style="padding:12px 16px"><div id="rnavLeadList" style="max-height:52vh;overflow:auto"></div></div>'
+      +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      +'<button type="button" onclick="__rnavLeadDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>'
+      +'<button type="button" onclick="__rnavLeadGo()" style="border:none;background:#0F6E56;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">가입 신청 목록으로 →</button>'
+      +'</div></div>';
+    (document.body||document.documentElement).appendChild(m);
+    return m;
+  }
+  window.__rnavLeadDismiss=function(){
+    // ⚠ 영구히 끄지 않는다. 지정받은 건은 **디렉터 승인까지** 계속 상기시켜야 한다.
+    //   같은 세션 안에서도 30분 뒤 다시 뜬다(그 사이엔 조용하다).
+    try{ sessionStorage.setItem(LEAD_DIS_KEY, String(Date.now())); }catch(e){}
+    var m=document.getElementById('rnavLeadModal'); if(m) m.style.display='none';
+  };
+  window.__rnavLeadGo=function(){
+    var m=document.getElementById('rnavLeadModal'); if(m) m.style.display='none';
+    try{ nav('custLeads'); }catch(e){}
+  };
+  function leadPost(id, path, body){
+    var s=getSession(); if(!s||!s.token) return Promise.reject();
+    var a=(s.api||'').replace(/\/+$/,'');
+    return fetch(a+'/api/crm-leads/'+id+'/'+path,{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
+      body:JSON.stringify(body||{})}).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); });
+  }
+  window.__rnavLeadAssign=function(id){
+    var sel=document.getElementById('rnavLeadSel'+id);
+    var uid=sel?sel.value:'';
+    if(!uid){ alert('담당할 직원을 고르세요.'); return; }
+    leadPost(id,'assign',{user_id:Number(uid)}).then(function(r){
+      if(!r.ok){ alert((r.d&&r.d.note)||'지정 실패'); return; }
+      alert(((r.d&&r.d.assigned_to_name)||'담당자')+' 님에게 지정했습니다.\n\n'
+        +'그분 화면에 이 건이 뜨기 시작하고, 디렉터 승인이 날 때까지 계속 상기됩니다.');
+      checkWebLead({silent:true});
+    }).catch(function(){});
+  };
+  window.__rnavLeadDrop=function(id){
+    var why=prompt('왜 대상이 아닌지 한 줄 적어 주세요 (같은 고객이 다시 왔을 때 판단 근거가 됩니다).');
+    if(!why||!why.trim()) return;
+    leadPost(id,'dismiss',{reason:why.trim()}).then(function(r){
+      if(!r.ok){ alert((r.d&&r.d.note)||'처리 실패'); }
+      checkWebLead({silent:true});
+    }).catch(function(){});
+  };
+  var LEAD_STEP={new:['미배정','#F6E7E4','#B23A2E'],assigned:['담당 지정됨','#F6EEDD','#8A5A00'],
+    registered:['등록됨 · 디렉터 승인 대기','#F6EEDD','#8A5A00']};
+  function leadRender(items){
+    var msg=document.getElementById('rnavLeadMsg'), list=document.getElementById('rnavLeadList');
+    if(!msg||!list) return;
+    msg.innerHTML = __leadCanAssign
+      ? '처리 중인 가입 신청 <b>'+items.length+'건</b>. <b>담당 직원을 지정</b>하면 그 직원 화면에 이 건이 뜹니다 — '
+        +'담당자가 할인율·외상일을 정해 등록하고 <b>디렉터가 승인해야</b> 고객이 가격·재고를 봅니다.'
+      : '나에게 지정된 가입 신청 <b>'+items.length+'건</b>. 고객에게 연락해 상업정보를 파악하고 '
+        +'<b>할인율·외상일을 정해 고객으로 등록</b>하세요. <b>디렉터 승인이 날 때까지</b> 이 알림은 계속 뜹니다.';
+    var opts=__leadAssignees.map(function(u){
+      return '<option value="'+u.id+'">'+cregEsc(u.name)+' · '+cregEsc(u.role)+'</option>'; }).join('');
+    list.innerHTML=items.map(function(r){
+      var st=LEAD_STEP[r.status]||LEAD_STEP.new;
+      var who=r.assigned_to_name
+        ? '<span style="color:#0F6E56;font-weight:700">담당 '+cregEsc(r.assigned_to_name)+'</span>'
+        : '<span style="color:#B23A2E;font-weight:700">담당 미지정</span>';
+      var dup=r.existing_code
+        ? '<div style="margin-top:6px;background:#F6EEDD;color:#8A5A00;border-radius:8px;padding:6px 9px;font-size:11.5px">'
+          +'⚠ 같은 RFC 의 고객이 이미 ERP 에 있습니다 — <b>'+cregEsc(r.existing_code)+' '+cregEsc(r.existing_name||'')+'</b>.</div>' : '';
+      var reg=r.status==='registered'
+        ? '<div style="margin-top:6px;background:#F6EEDD;color:#8A5A00;border-radius:8px;padding:6px 9px;font-size:11.5px">'
+          +'고객 <b>'+cregEsc(r.customer_code||'')+'</b> 로 등록됐습니다 — <b>아직 디렉터 승인 전</b>입니다. '
+          +'승인이 나야 고객이 홈페이지에서 가격을 봅니다.</div>' : '';
+      var act='';
+      if(__leadCanAssign){
+        act='<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+          +'<select id="rnavLeadSel'+r.id+'" style="padding:6px 8px;border:1px solid #e6e1d6;border-radius:7px;font-size:12px;font-family:inherit">'
+          +'<option value="">담당 직원 선택…</option>'+opts+'</select>'
+          +'<button type="button" onclick="__rnavLeadAssign('+r.id+')" style="border:none;background:#0F6E56;color:#fff;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px;font-weight:700">'
+          +(r.assigned_to_name?'담당 변경':'담당 지정')+'</button>'
+          +'<button type="button" onclick="__rnavLeadDrop('+r.id+')" style="border:1px solid #e7b6af;background:#fff;color:#B23A2E;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px">보류 · 대상 아님</button>'
+          +'</div>';
+      }
+      return '<div style="border:1px solid #e6e1d6;border-radius:11px;padding:12px 13px;margin-bottom:9px">'
+        +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
+          +'<b style="font-size:14px">'+cregEsc(r.empresa||r.nombre||'(회사명 없음)')+'</b>'
+          +'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:'+st[1]+';color:'+st[2]+'">'+st[0]+'</span>'
+          +'<span style="margin-left:auto;font-size:11.5px">'+who+'</span>'
+        +'</div>'
+        +dup+reg
+        +'<table style="width:100%;font-size:12.5px;margin-top:7px;border-collapse:collapse">'+leadFieldRows(r)+'</table>'
+        +act+'</div>';
+    }).join('');
+  }
+  function checkWebLead(opts){
+    var silent=!!(opts&&opts.silent);
+    var s=getSession(); if(!s||!s.token) return;
+    var a=(s.api||'').replace(/\/+$/,'');
+    fetch(a+'/api/portal/web-lead-alert',{headers:{'Authorization':'Bearer '+s.token}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[]; __leadItems=items;
+        __leadCanAssign=!!(d&&d.can_assign); __leadAssignees=(d&&d.assignees)||[];
+        var m=leadEnsureModal();
+        if(!items.length){
+          m.style.display='none';
+          try{ sessionStorage.removeItem(LEAD_DIS_KEY); }catch(e){}
+          leadSaveSeen([]);
+          return;
+        }
+        leadRender(items);
+        var seen=leadSeen();
+        var fresh=items.filter(function(x){ return seen.indexOf(Number(x.id))<0; });
+        // 웹 가입 신청 화면을 보고 있는 동안은 방해하지 않는다(그 목록이 이미 떠 있다).
+        if(curScreen()==='custLeads'){
+          leadSaveSeen(items.map(function(x){ return Number(x.id); }));
+          m.style.display='none';
+          return;
+        }
+        if(fresh.length){
+          leadSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
+          try{ sessionStorage.removeItem(LEAD_DIS_KEY); }catch(e){}  // 새 건은 스누즈를 무시하고 뜬다
+          m.style.display='flex';
+          if(!silent) cregChime();
+        }else{
+          // 본 건만 남았어도 **닫아 둔 30분이 지나면 다시 뜬다** — 승인까지 상기시키는 게 목적이다.
+          m.style.display = leadDismissed() ? 'none' : 'flex';
+        }
+      }).catch(function(){});
+  }
+  function startWebLeadAlert(){
+    if(__leadTimer) return;
+    checkWebLead({silent:true});                 // 첫 진입은 조용히
+    __leadTimer=setInterval(function(){
+      if(document.hidden) return;                // 백그라운드 탭은 건너뜀
+      checkWebLead({silent:false});
+    }, 60000);
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if(document.visibilityState==='visible') checkWebLead({silent:false});
+      });
+    }catch(e){}
+  }
+  window.__rnavLeadCheck=function(){ checkWebLead({silent:true}); };
+
+  // =====================================================================
+  //  🧾 웹카달록 견적요청 전역 팝업 (0220 · 2026-09-17 개편)
+  //
+  //     ⚠ 이건 **알림일 뿐이다.** 가입 신청 팝업과 달리 여기서 시킬 일이 없다:
+  //       · 견적은 수신되는 즉시 **자동 저장**된다. 사람이 승인할 것이 없다.
+  //       · 담당 지정 절차를 없앴다 — 그 절차 때문에 일이 끊기고 CRM 과의 교신이 틀어졌다.
+  //       · 디렉터와 **알림 대상으로 지정된 사람**이 같은 목록을 본다.
+  //       · **새로 들어온 건이 있을 때만** 뜬다. 한 번 보면 다시 들이밀지 않는다.
+  //       · 그 견적이 **포장작업으로 넘어가면**(포장지시서 인쇄) 목록에서 빠진다.
+  //     ⚠ 알림 대상 표는 가입 신청과 따로 쓴다 — 새 고객을 맞는 사람과 견적을 처리하는
+  //       사람은 같지 않다. 같은 표를 쓰면 언젠가 한쪽이 틀린 사람에게 간다.
+  // =====================================================================
+  var CQ_SEEN_KEY='refatrix_crmquote_seen';
+  var __cqTimer=null;
+  function cqSeen(){ try{ return JSON.parse(sessionStorage.getItem(CQ_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
+  function cqSaveSeen(a){ try{ sessionStorage.setItem(CQ_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
+  function cqMoney(n){ try{ return '$'+Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:2}); }catch(e){ return '$'+(n||0); } }
+
+  function cqEnsureModal(){
+    var m=document.getElementById('rnavQuoteModal');
+    if(m) return m;
+    m=document.createElement('div');
+    m.id='rnavQuoteModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:10050;align-items:flex-start;justify-content:center;padding:56px 16px;overflow:auto';
+    m.innerHTML=''
+      +'<div style="background:#fff;border-radius:14px;max-width:660px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34);font-family:inherit">'
+      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#0F6E56">🧾 웹카달록 — 견적 요청</div>'
+      +'<div id="rnavQuoteMsg" style="font-size:12.5px;color:#6F6A60;margin-top:4px"></div></div>'
+      +'<div style="padding:12px 16px"><div id="rnavQuoteList" style="max-height:52vh;overflow:auto"></div></div>'
+      +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      +'<button type="button" onclick="__rnavQuoteDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">확인</button>'
+      +'<button type="button" onclick="__rnavQuoteGo()" style="border:none;background:#0F6E56;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">견적 목록으로 →</button>'
+      +'</div></div>';
+    (document.body||document.documentElement).appendChild(m);
+    return m;
+  }
+  // 알림은 **한 번 보면 끝난다.** 처리 독촉이 아니라 도착 알림이므로 다시 들이밀지 않는다
+  //   (새 견적이 들어오면 그때 다시 뜬다). 예전에는 30분 뒤 재출현이라 일이 계속 끊겼다.
+  window.__rnavQuoteDismiss=function(){
+    var m=document.getElementById('rnavQuoteModal'); if(m) m.style.display='none';
+  };
+  window.__rnavQuoteGo=function(){
+    var m=document.getElementById('rnavQuoteModal'); if(m) m.style.display='none';
+    try{ nav('quotelist'); }catch(e){}
+  };
+  function cqRender(items){
+    var msg=document.getElementById('rnavQuoteMsg'), list=document.getElementById('rnavQuoteList');
+    if(!msg||!list) return;
+    // 이건 **알림**이다. 여기서 시킬 일은 없다 — 견적은 이미 저장돼 있다.
+    msg.innerHTML = '웹카달록에서 들어온 견적 <b>'+items.length+'건</b>이 ERP 에 저장돼 있습니다. '
+      +'견적 화면에서 열어 처리하세요 — <b>포장작업으로 넘어가면</b> 이 알림에서 빠집니다.';
+    list.innerHTML=items.map(function(r){
+      var st=r.status==='confirmed'
+        ? '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#E7F0EC;color:#0F6E56">확정됨 · 포장 전</span>'
+        : '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#F6EEDD;color:#8A5A00">새 견적</span>';
+      // ⚠ 문제 줄은 **가장 먼저** 보여야 한다 — 그게 이 견적을 확정 못 하는 이유다.
+      var warn=r.issue_count
+        ? '<div style="margin-top:6px;background:#F6E7E4;color:#B23A2E;border-radius:8px;padding:6px 9px;font-size:11.5px">'
+          +'⚠ 확인이 필요한 줄 <b>'+r.issue_count+'개</b> — 못 찾은 코드이거나 판매중단 제품입니다. '
+          +'고치거나 지우기 전에는 <b>확정되지 않습니다</b>.</div>' : '';
+      return '<div style="border:1px solid #e6e1d6;border-radius:11px;padding:12px 13px;margin-bottom:9px">'
+        +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
+          +'<b style="font-size:14px">'+cregEsc(r.quote_no||'')+'</b>'
+          +'<span style="font-size:12.5px">'+cregEsc(r.customer_code||'')+' '+cregEsc(r.customer_name||'')+'</span>'
+          +'<span style="margin-left:auto">'+st+'</span>'
+        +'</div>'
+        +warn
+        +'<div style="margin-top:6px;font-size:12.5px;color:#4a4740">'
+          +'SKU <b>'+(r.sku_count||0)+'</b> · 수량 <b>'+(r.total_qty||0)+'</b> · 합계 <b>'+cqMoney(r.total_mxn)+'</b>'
+        +'</div>'
+        +(r.memo?('<div style="margin-top:5px;font-size:12px;color:#6F6A60;word-break:break-word">'+cregEsc(r.memo)+'</div>'):'')
+        +'</div>';
+    }).join('');
+  }
+  function checkCrmQuote(opts){
+    var silent=!!(opts&&opts.silent);
+    var s=getSession(); if(!s||!s.token) return;
+    var a=(s.api||'').replace(/\/+$/,'');
+    fetch(a+'/api/portal/quote-alert',{headers:{'Authorization':'Bearer '+s.token}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[];
+        var m=cqEnsureModal();
+        if(!items.length){
+          m.style.display='none';
+          cqSaveSeen([]);
+          return;
+        }
+        cqRender(items);
+        var seen=cqSeen();
+        var fresh=items.filter(function(x){ return seen.indexOf(Number(x.id))<0; });
+        // 견적 화면을 보고 있는 동안은 방해하지 않는다(그 목록이 이미 떠 있다).
+        if(curScreen()==='quotelist'||curScreen()==='quote'){
+          cqSaveSeen(items.map(function(x){ return Number(x.id); }));
+          m.style.display='none';
+          return;
+        }
+        // ⚠ **새로 들어온 건이 있을 때만** 뜬다. 이미 본 건으로는 다시 들이밀지 않는다 —
+        //   처리 독촉이 아니라 도착 알림이기 때문이다. 예전에는 30분마다 다시 떠서
+        //   일이 끊기고 CRM 과의 교신이 틀어졌다.
+        if(fresh.length){
+          cqSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
+          m.style.display='flex';
+          if(!silent) cregChime();
+        }
+      }).catch(function(){});
+  }
+  function startCrmQuoteAlert(){
+    if(__cqTimer) return;
+    checkCrmQuote({silent:true});
+    __cqTimer=setInterval(function(){
+      if(document.hidden) return;
+      checkCrmQuote({silent:false});
+    }, 60000);
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if(document.visibilityState==='visible') checkCrmQuote({silent:false});
+      });
+    }catch(e){}
+  }
+  window.__rnavQuoteCheck=function(){ checkCrmQuote({silent:true}); };
+
+  function boot(){
+    var nv=document.getElementById('rnav'); if(!nv) return;
+    applyEnvFlag();
+    sess=getSession();
+    if(!sess||!sess.token){
+      sum=null;
+      if(gotoLogin()) return;
+      nv.innerHTML=''; nv.style.display='none'; document.body.style.paddingTop=(window.__rnavBaseTop||0)+'px';
+      __rnavDrawer(0); renderMTab();
+      if(!window.__rnavWatch){
+        window.__rnavWatch=setInterval(function(){
+          applyEnvFlag();                       // 로그인 전 서버주소 변경/세션 생성 즉시 반영
+          var s=getSession();
+          if(s&&s.token){ clearInterval(window.__rnavWatch); window.__rnavWatch=null; boot(); }
+        }, 400);
+      }
+      return;
+    }
+    if(window.__rnavWatch){ clearInterval(window.__rnavWatch); window.__rnavWatch=null; }
+    nv.style.display='';
+    var api=(sess.api||'').replace(/\/+$/,'');
+    startHeartbeat(api);   // 접속 현황 하트비트 시작(세션 확인 후 1회만)
+    var authFailed=false;
+    fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){
+      if(r.status===401||r.status===403){
+        authFailed=true;
+        var bad=sess&&sess.token; if(bad) BAD_TOK[bad]=1;
+        try{
+          var cur=JSON.parse(sessionStorage.getItem('refatrix_session')||'null');
+          if(!cur || cur.token===bad){ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }
+        }catch(e){}
+        // 그 사이 새로 로그인했으면(토큰이 바뀜) 새 세션으로 다시 그림, 아니면 로그인 화면/감시 상태
+        setTimeout(boot,0);
+        throw new Error('unauthorized');
+      }
+      return r.json();
+    }).then(function(d){
+      var now=getSession(); if(!now || now.token!==sess.token){ boot(); return; }   // 응답 사이 세션이 바뀜 → 다시
+      sum=d||{pages:[],isDirector:false};
+      if(enforceRoleAccess()) return;   // 차단·리다이렉트 시 렌더 생략
+      render();
+      updatePresenceBadge();
+      if(!window.__rnavPresTimer) window.__rnavPresTimer=setInterval(updatePresenceBadge, 30000);
+      startCustRegAlert();   // 🔒 신규 고객 등록 승인 대기 전역 팝업(디렉터·60초)
+      startWebLeadAlert();   // 🌐 웹카달록 회원가입 신청 전역 팝업(대상자·60초)
+      startCrmQuoteAlert();  // 🧾 웹카달록 견적요청 전역 팝업(대상자·60초)
+    }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
+  }
+  window.__rnavReload=boot;
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount); else mount();
+})();
+
+
+/* ===== Refatrix 드롭다운 한→스페인어 병기 (자동 주입) ===== */
+// Refatrix 드롭다운 한→스페인어 병기 (decorator). nav.js에 주입됨.
+// 규칙: <option>의 보이는 텍스트만 "한국어 (Español)"로 바꾼다. value/속성은 절대 안 건드린다.
+(function(global){
+  'use strict';
+
+  // 전체일치 사전 (옵션 텍스트 전체가 키와 똑같을 때만; 단일글자·문장형은 여기) ----------
+  var EXACT = {
+    // 요일(단일 글자)
+    '일':'Dom','월':'Lun','화':'Mar','수':'Mié','목':'Jue','금':'Vie','토':'Sáb',
+    // 짧지만 전체일치로만 처리할 일반어
+    '전체':'Todos','선택':'Seleccionar','없음':'Ninguno','기타':'Otros','조정':'Ajuste',
+    '입고':'Entrada','출고':'Salida','수정':'Editar','취소':'Cancelar','팀':'Equipo',
+    '역할':'Rol','열람':'Ver','운영':'Operar','재무':'Finanzas','영업':'Ventas','마케팅':'Marketing',
+    '뷰어':'Visor','접수':'Recibido','실제':'Real','예정':'Programado','수입':'Ingreso','지출':'Egreso',
+    // 문장형(전체일치 — 깔끔한 스페인어로 큐레이션)
+    '★ 미등록 고객 (직접 입력)':'Cliente no registrado, entrada directa',
+    '— 고객 —':'— Cliente —',
+    '— 고객 선택 —':'— Seleccionar cliente —',
+    '— 현재(라이브) —':'— Actual (en vivo) —',
+    '— 등록된 고객이 없습니다. ‘고객 등록’ 탭에서 추가하세요 —':'No hay clientes; agréguelos en la pestaña Registrar cliente',
+    '실제(완료)':'Real (completado)',
+    '종료 없음(무기한)':'Sin fin (indefinido)',
+    '종료월 지정':'Mes de término',
+    '고객 없음(전사)':'Sin cliente (toda la empresa)',
+    '(계좌 없음)':'Sin cuenta','(미지정)':'Sin asignar','(없음)':'Ninguno',
+    '전체 (영업사원별 요약)':'Todos (resumen por vendedor)',
+    '디렉터(director)':'Director','소시오(socio·파트너)':'Socio',
+    '영업(sales)':'Ventas','영업지원(sales_support)':'Soporte de ventas','창고(warehouse)':'Almacén',
+    'CTR단독(빨강) 많은 순':'Más CTR únicos (rojo)',
+    '미대응(파랑) 많은 순':'Más sin cubrir (azul)',
+    '정렬 · VIO 순위(고정)':'Orden · Ranking VIO (fijo)',
+    '정렬 · 미대응 품번 수 ↓ (기회 규모)':'Orden · SKU sin cubrir ↓ (oportunidad)',
+    '정렬 · 시장 등록대수 ↓':'Orden · Unidades en mercado ↓',
+    '정렬 · 자사 준비율 ↑ (공백 우선)':'Orden · Cobertura propia ↑ (huecos primero)',
+    '소재 해제(빈값)':'Quitar material (vacío)',
+    '(배치 불러오기 실패)':'Error al cargar lotes',
+    '배치 선택…':'Seleccionar lote…',
+    '조정 (±)':'Ajuste (±)','입고 (+)':'Entrada (+)','출고 (−)':'Salida (−)',
+    '할인률(%)':'Descuento (%)','금액(MXN)':'Monto (MXN)'
+  };
+
+  // 부분(경계인식) 사전 — 멀티글자 한국어 구. 앞뒤가 비한글일 때만 치환. 긴 것 먼저.
+  var PHRASE = {
+    // 계정과목(category) 이름
+    '수입원가 정산차액':'Ajuste de costo de importación',
+    '매출원가(COGS)':'Costo de ventas (COGS)',
+    '대여금(차입금)':'Préstamo (financiamiento)',
+    '제품 매출':'Ventas de productos','기타 수익':'Otros ingresos',
+    '지급수수료':'Honorarios pagados','세금과공과':'Impuestos y contribuciones',
+    '여비교통비':'Viáticos y transporte','전문가보수':'Honorarios profesionales',
+    '복리후생비':'Prestaciones','소프트웨어·IT':'Software · TI',
+    '기타경비':'Otros gastos','이자비용':'Gastos por intereses','외환차손':'Pérdida cambiaria',
+    '소모품비':'Consumibles','수선비':'Reparaciones','마케팅비':'Marketing',
+    '선수금':'Anticipo de clientes','자본금':'Capital social','임차료':'Renta',
+    '급여':'Sueldos','비품':'Mobiliario y equipo',
+    // 그룹(group_name)
+    '영업외비용':'Gastos no operativos','매출원가':'Costo de ventas',
+    '판관비':'Gastos de operación','수익':'Ingresos','비손익':'No P&L',
+    // 필터/권한/공통(멀티글자)
+    '전체 카테고리':'Todas las categorías','전체 계좌':'Todas las cuentas',
+    '전체 담당자':'Todos los responsables','담당자 전체':'Todos los responsables',
+    '전체 제조사':'Todos los fabricantes','전체 maker':'Todos los makers',
+    '전체 팀':'Todos los equipos','회사 전체':'Toda la empresa','영업 전체':'Todas las ventas',
+    '세부 열람':'Ver detalle','잔액만':'Solo saldo','수동만':'Solo manual',
+    '미지정':'Sin asignar','전체공지':'Aviso general','대상 지정':'Destinatarios específicos',
+    '개인별 공유':'Compartir individual','내 개인 일정':'Mi agenda personal',
+    '본인 작성분':'Mis registros','활동 선택':'Seleccionar actividad','카테고리 선택':'Seleccionar categoría',
+    '검토완료':'Revisado','개발완료':'Desarrollo completo','공장요청':'Solicitud a fábrica',
+    '알루미늄 지정':'Asignar aluminio',
+    '종료월':'Mes de término','월별':'Por mes','주별':'Por semana','매월':'Mensual','매주':'Semanal',
+    '이번 달':'este mes','이번 주':'esta semana','까지':'hasta',
+    'MXN만':'Solo MXN','USD만':'Solo USD',
+    '계좌 없음':'Sin cuenta','없음':'Ninguno'
+  };
+
+  function isHangul(ch){ if(!ch) return false; var c=ch.charCodeAt(0);
+    return (c>=0xAC00&&c<=0xD7A3)||(c>=0x1100&&c<=0x11FF)||(c>=0x3130&&c<=0x318F); }
+
+  // 경계인식 치환: text 안에서 PHRASE 키를 앞뒤 비한글일 때만 "키 (es)"로
+  var PHRASE_KEYS = Object.keys(PHRASE).sort(function(a,b){return b.length-a.length;});
+  function annotatePhrases(text){
+    var out='', i=0, n=text.length, changed=false;
+    while(i<n){
+      var ch=text.charAt(i);
+      var boundaryStart = (i===0) || !isHangul(text.charAt(i-1));
+      if(isHangul(ch) && boundaryStart){
+        var matched=null;
+        for(var k=0;k<PHRASE_KEYS.length;k++){
+          var key=PHRASE_KEYS[k];
+          if(text.substr(i,key.length)===key){
+            var after=text.charAt(i+key.length);
+            if(!isHangul(after)){ matched=key; break; }   // 최장일치 + 뒤 경계
+          }
+        }
+        if(matched){ out += matched+' ('+PHRASE[matched]+')'; i+=matched.length; changed=true; continue; }
+      }
+      out += ch; i++;
+    }
+    return changed?out:null;
+  }
+
+  function decorateOption(opt){
+    if(!opt || opt.getAttribute('data-i18n')==='1') return;
+    var raw = opt.textContent;
+    var t = raw.replace(/\s+/g,' ').trim();
+    if(!t){ opt.setAttribute('data-i18n','1'); return; }
+    var res=null;
+    if(EXACT.hasOwnProperty(t)){ res = raw + ' ('+EXACT[t]+')'; }
+    else { var ann=annotatePhrases(raw); if(ann!==null) res=ann; }
+    if(res!==null && res!==raw){ opt.textContent = res; }
+    opt.setAttribute('data-i18n','1');
+  }
+
+  function scan(root){
+    if(!root) return;
+    var opts = (root.querySelectorAll ? root.querySelectorAll('option') : []);
+    for(var i=0;i<opts.length;i++) decorateOption(opts[i]);
+  }
+
+  var _raf=null, _pending=[];
+  function schedule(node){ _pending.push(node);
+    if(_raf) return;
+    _raf=(global.requestAnimationFrame||function(f){return setTimeout(f,16);})(function(){
+      _raf=null; var nodes=_pending; _pending=[];
+      for(var i=0;i<nodes.length;i++){
+        var n=nodes[i]; if(!n) continue;
+        if(n.tagName==='OPTION') decorateOption(n);
+        else if(n.querySelectorAll) scan(n);
+      }
+    });
+  }
+
+  function start(doc){
+    doc = doc || global.document; if(!doc) return;
+    scan(doc);
+    try{
+      var MO = global.MutationObserver;
+      if(MO){
+        var obs=new MO(function(muts){
+          for(var i=0;i<muts.length;i++){
+            var added=muts[i].addedNodes;
+            for(var j=0;j<added.length;j++){
+              var nd=added[j]; if(nd.nodeType===1) schedule(nd);
+            }
+          }
+        });
+        obs.observe(doc.body||doc.documentElement, {childList:true, subtree:true});
+      }
+    }catch(e){}
+  }
+
+  global.RefxI18n = { start:start, scan:scan, decorateOption:decorateOption,
+                      annotatePhrases:annotatePhrases, EXACT:EXACT, PHRASE:PHRASE };
+})(typeof window!=='undefined'?window:globalThis);
+
+// 자동 시작: 페이지 로드 시 드롭다운 병기 + 동적 옵션 감시
+(function(g){
+  try{ if(g.console) g.console.log('[refatrix-i18n] dropdown KO→ES 병기 활성'); }catch(e){}
+  function go(){ try{ g.RefxI18n && g.RefxI18n.start(g.document); }catch(e){} }
+  if(g.document && g.document.readyState==='loading') g.document.addEventListener('DOMContentLoaded',go);
+  else go();
+})(typeof window!=='undefined'?window:globalThis);
+
+/* ═══════════════════════════════════════════════════════════════════
+   Refatrix DraftKeeper — 모바일 앱 전환(WhatsApp 등)으로 페이지가
+   재로딩되어도 작성 중이던 입력값을 자동 저장·복원한다.
+   - 대상: text류 input + textarea (id 또는 name 있는 필드만)
+   - 제외: password/hidden/file/checkbox/radio/select, 로그인 필드(lid/pin/api)
+   - 저장: localStorage, 키 rfxdraft::<페이지>::<사용자>
+   - 복원: 페이지 로드 + 동적 모달 생성 감시(MutationObserver),
+           "비어 있는" 필드에만 채움(앱이 미리 채운 값은 건드리지 않음)
+   - 삭제: 서버 저장 성공(POST/PUT/PATCH/DELETE 응답 ok) 시 페이지 초안 전체 삭제,
+           필드를 비우면 해당 필드 삭제, 12시간 지나면 자동 만료
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+  if(window.__refxDraft) return; window.__refxDraft=true;
+  try{
+  var PAGE=(location.pathname.split('/').pop()||'index').replace(/\.html?$/,'');
+  if(!PAGE || PAGE==='refatrix-login') return;
+  var TTL=12*60*60*1000;        // 필드 초안 유지 12시간
+  var PURGE=3*24*60*60*1000;    // 오래된 페이지 키 정리 3일
+  var SKIP_IDS={lid:1,pin:1,api:1};
+  var mem=null, saveTimer=null, moTimer=null, restored={}, toastShown=false;
+
+  function uid(){
+    try{ var s=JSON.parse(sessionStorage.getItem('refatrix_session')||'null');
+         return (s&&s.user&&(s.user.login_id||s.user.id||s.user.name))||'anon'; }catch(e){ return 'anon'; }
+  }
+  function key(){ return 'rfxdraft::'+PAGE+'::'+uid(); }
+  function load(){
+    if(mem) return mem;
+    try{ mem=JSON.parse(localStorage.getItem(key())||'null'); }catch(e){ mem=null; }
+    if(!mem||typeof mem!=='object'||!mem.f) mem={t:0,f:{}};
+    var now=Date.now();
+    for(var k in mem.f){ if(now-(mem.f[k].t||0)>TTL) delete mem.f[k]; }
+    return mem;
+  }
+  function persist(){
+    try{
+      if(!mem) return;
+      if(Object.keys(mem.f).length===0){ localStorage.removeItem(key()); }
+      else { mem.t=Date.now(); localStorage.setItem(key(),JSON.stringify(mem)); }
+    }catch(e){}
+  }
+  function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(persist,250); }
+  function flush(){ clearTimeout(saveTimer); persist(); }
+
+  function eligible(el){
+    if(!el||!el.tagName) return false;
+    if(el.tagName==='TEXTAREA') return true;
+    if(el.tagName!=='INPUT') return false;
+    var t=(el.type||'text').toLowerCase();
+    return !(t==='password'||t==='hidden'||t==='file'||t==='checkbox'||t==='radio'
+           ||t==='button'||t==='submit'||t==='reset'||t==='range'||t==='color'||t==='image');
+  }
+  function fieldKey(el){ var k=el.id||el.getAttribute('name'); return (k&&!SKIP_IDS[k])?k:null; }
+
+  function onEdit(e){
+    var el=e.target; if(!eligible(el)) return;
+    var k=fieldKey(el); if(!k) return;
+    var m=load();
+    if(el.value===''){ delete m.f[k]; }
+    else { m.f[k]={v:el.value,t:Date.now()}; }
+    scheduleSave();
+  }
+  document.addEventListener('input',onEdit,true);
+  document.addEventListener('change',onEdit,true);
+
+  // 앱 전환 직전 마지막 입력까지 즉시 저장
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden') flush(); });
+  window.addEventListener('pagehide',flush);
+
+  function toast(){
+    if(toastShown) return; toastShown=true;
+    try{
+      var d=document.createElement('div');
+      d.textContent='✎ 작성 중이던 내용을 복원했습니다 · Se restauró lo que estabas escribiendo';
+      d.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);max-width:92vw;'
+        +'background:#1f2937;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;'
+        +'z-index:2147483000;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:0;transition:opacity .3s';
+      (document.body||document.documentElement).appendChild(d);
+      setTimeout(function(){ d.style.opacity='1'; },30);
+      setTimeout(function(){ d.style.opacity='0'; setTimeout(function(){ try{d.remove();}catch(e){} },400); },4000);
+    }catch(e){}
+  }
+
+  function findEl(k){
+    var el=document.getElementById(k);
+    if(el) return el;
+    try{ return document.querySelector('[name="'+(window.CSS&&CSS.escape?CSS.escape(k):k)+'"]'); }catch(e){ return null; }
+  }
+  function tryRestore(){
+    var m=load(), did=false;
+    for(var k in m.f){
+      if(restored[k]) continue;
+      var el=findEl(k);
+      if(!el||!eligible(el)) continue;
+      if(el.value!==''){ if(el.value===m.f[k].v) restored[k]=1; continue; } // 이미 값 있으면 보존
+      el.value=m.f[k].v;
+      try{ el.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){}
+      restored[k]=1; did=true;
+    }
+    if(did) toast();
+  }
+
+  // 서버 저장이 성공하면(쓰기 요청) 이 페이지의 초안은 더 이상 필요 없음
+  if(window.fetch){
+    var _fetch=window.fetch;
+    window.fetch=function(input,init){
+      var method='GET';
+      try{ method=((init&&init.method)||(input&&input.method)||'GET').toUpperCase(); }catch(e){}
+      var p=_fetch.apply(this,arguments);
+      if(method!=='GET'&&method!=='HEAD'){
+        p.then(function(res){
+          if(res&&res.ok){ try{ mem={t:0,f:{}}; restored={}; flush(); }catch(e){} }
+        }).catch(function(){});
+      }
+      return p;
+    };
+  }
+
+  // 오래된 초안 키 정리(3일)
+  try{
+    var now=Date.now();
+    for(var i=localStorage.length-1;i>=0;i--){
+      var lk=localStorage.key(i);
+      if(lk&&lk.indexOf('rfxdraft::')===0){
+        var o=null; try{ o=JSON.parse(localStorage.getItem(lk)||'null'); }catch(e){}
+        if(!o||now-(o.t||0)>PURGE) localStorage.removeItem(lk);
+      }
+    }
+  }catch(e){}
+
+  function startObserver(){
+    if(!document.body||!window.MutationObserver) return;
+    var mo=new MutationObserver(function(){ clearTimeout(moTimer); moTimer=setTimeout(tryRestore,180); });
+    mo.observe(document.body,{childList:true,subtree:true});
+  }
+  function init(){ tryRestore(); startObserver(); try{ console.log('[refatrix-draft] keeper active ('+PAGE+')'); }catch(e){} }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
+  else init();
+  }catch(e){ try{ console.warn('[refatrix-draft] init fail',e); }catch(_){}}
+})();

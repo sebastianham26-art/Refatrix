@@ -10,9 +10,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 일정 · 공지 · 할 일 · build board-1015tf</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
-    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --brand:#0058A3;--brand-soft:#004F93;--gold:#B8893B;--radius:12px;--radius-sm:8px;
     --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -20,7 +20,7 @@
   .wrap{max-width:1240px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
   /* 일정 카드: 넓어진 폭에 맞춘 여백 */
@@ -37,7 +37,7 @@
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
   .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
   .tabs{display:flex;gap:6px;margin-top:16px}
-  .tab{padding:9px 16px;border:1px solid var(--line);border-bottom:none;border-radius:10px 10px 0 0;background:#faf8f3;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+  .tab{padding:9px 16px;border:1px solid var(--line);border-bottom:none;border-radius:10px 10px 0 0;background:#FAFAFA;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
   .tab.on{background:#fff;color:var(--brand);border-color:var(--line)}
   .tab .b{display:inline-block;min-width:16px;padding:0 5px;margin-left:5px;background:var(--expense);color:#fff;border-radius:999px;font-size:10px;text-align:center}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
@@ -72,10 +72,10 @@
   .cgdow.sun{color:var(--expense)}.cgdow.sat{color:#2f6db2}
   .cgcell{min-height:104px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 5px;cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden}
   .cgcell:hover{border-color:var(--brand)}
-  .cgcell.out{background:#faf8f3;opacity:.5}
+  .cgcell.out{background:#FAFAFA;opacity:.5}
   .cgcell.today{border-color:var(--income);box-shadow:0 0 0 1px var(--income) inset}
   .cgcell.week{min-height:360px;max-height:380px;padding:0;gap:0}
-  .cgcell.week .cghead{display:flex;align-items:center;gap:5px;padding:5px 7px 4px;border-bottom:1px solid #f0ece2;flex:0 0 auto}
+  .cgcell.week .cghead{display:flex;align-items:center;gap:5px;padding:5px 7px 4px;border-bottom:1px solid #F0F0F0;flex:0 0 auto}
   .cgcell.week .cghead .dn{font-size:13.5px;font-weight:800;color:var(--muted)}
   .cgcell.week.today .cghead .dn{color:var(--income)}
   .cgcell.week .cghead .cnt{margin-left:auto;font-size:11px;color:#b7b2a6;font-weight:700}
@@ -107,8 +107,8 @@
   .daymodal .bd{padding:16px 18px}
   /* ===== 할 일(Tarea) 고도화 ===== */
   .tdgroup{margin-bottom:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
-  .tdghead{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:#faf8f3;user-select:none}
-  .tdghead:hover{background:#f3efe6}
+  .tdghead{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:#FAFAFA;user-select:none}
+  .tdghead:hover{background:#F0F0F0}
   .tdghead .nm{font-weight:800;color:var(--brand);font-size:13.5px}
   .tdghead .cnt{font-size:11px;color:var(--muted)}
   .tdghead .arr{margin-left:auto;transition:transform .15s;color:var(--muted)}
@@ -140,7 +140,7 @@
   .tdmemos{margin-top:9px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
   .memo{display:flex;flex-direction:column;max-width:88%;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.4}
   .memo.dir{align-self:flex-end;background:#eef2f7;border:1px solid #d7e2ee}
-  .memo.other{align-self:flex-start;background:#f4f1ea;border:1px solid #e6e0d3}
+  .memo.other{align-self:flex-start;background:#F5F5F5;border:1px solid #e6e0d3}
   .memo .ma{font-size:10px;font-weight:700;color:var(--brand);margin-bottom:1px}
   .memo .mt{font-size:9.5px;color:#999;margin-top:2px}
   .memoadd{display:flex;gap:6px;margin-top:7px}
@@ -173,6 +173,10 @@
   .seg-recv button.on{background:var(--brand);color:#fff}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -253,7 +257,7 @@
 <!-- 새 일정 메모 팝업 -->
 <div id="calMemoPopModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:220;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
   <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 12px 40px rgba(20,30,26,.3);overflow:hidden">
-    <div style="padding:14px 18px;border-bottom:1px solid var(--line);background:#faf8f3">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--line);background:#FAFAFA">
       <div style="font-size:16px;font-weight:800;color:var(--brand)">💬 <span id="calMemoPopCount">새 메모</span></div>
       <div style="font-size:11.5px;color:var(--muted);margin-top:2px">내가 대상인 일정에 새 메모가 달렸습니다.</div>
     </div>
@@ -743,7 +747,7 @@
       html+='<div class="jrbox" style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
           +'<span style="font-size:13px;font-weight:800;color:var(--brand)">📝 나의 기록</span>'
-          +'<span style="font-size:11px;color:var(--muted);background:#faf8f3;border:1px solid var(--line);border-radius:999px;padding:2px 8px">나만 보임 · 나만 수정</span>'
+          +'<span style="font-size:11px;color:var(--muted);background:#FAFAFA;border:1px solid var(--line);border-radius:999px;padding:2px 8px">나만 보임 · 나만 수정</span>'
           +'<span id="jr-stamp" style="margin-left:auto;font-size:11.5px;color:var(--muted)"></span>'
         +'</div>'
         +'<textarea id="jr-content" placeholder="이 날의 기록을 자유롭게 적으세요. (제목 없이 내용만 · 언제든 다시 열어 수정할 수 있습니다)"></textarea>'
@@ -917,7 +921,7 @@
       if(!items.length) return;
       __calMemoPopIds=items.map(x=>x.id);
       $('calMemoPopList').innerHTML=items.map(x=>
-        '<div style="padding:11px 14px;border-bottom:1px solid #f0ece2">'
+        '<div style="padding:11px 14px;border-bottom:1px solid #F0F0F0">'
         +'<div style="font-size:11.5px;color:var(--brand);font-weight:700">'+esc(x.event_title||'(제목 없음)')+' · '+(x.event_date||'')+'</div>'
         +'<div style="font-size:13.5px;color:var(--ink);line-height:1.55;margin-top:3px;white-space:pre-wrap"><b>'+esc(x.author_name||'')+'</b> — '+esc(x.body)+'</div>'
         +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+memoTime(x.created_at)+'</div></div>'
@@ -1189,6 +1193,6 @@
 </script>
 <script src="refatrix-workplan.js?v=20261015tf"></script>
 <script src="refatrix-wpnotice.js?v=20261013wn"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

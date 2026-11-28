@@ -10,9 +10,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 오늘 요약 · build daily-1014wa</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
-    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;
+    --brand:#0058A3;--brand-soft:#004F93;--gold:#B8893B;--radius:12px;
     --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -20,7 +20,7 @@
   .wrap{max-width:1000px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
@@ -59,8 +59,8 @@
   .genrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
   /* ── 보관함 ── */
   table.arch{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
-  table.arch th{font-size:11px;font-weight:700;color:var(--muted);background:#faf8f3;text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
-  table.arch td{padding:7px 9px;border-bottom:1px solid #f1ede4;vertical-align:top}
+  table.arch th{font-size:11px;font-weight:700;color:var(--muted);background:#FAFAFA;text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.arch td{padding:7px 9px;border-bottom:1px solid #F0F0F0;vertical-align:top}
   table.arch td.t{font-weight:700;color:var(--brand-soft);white-space:nowrap}
   table.arch td .st{font-size:11px;color:var(--muted)}
   .mchip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:#fdf3d8;color:#8a6512;margin-left:5px}
@@ -73,16 +73,16 @@
   .mdbody h3{font-size:14px;color:var(--brand);border-bottom:1px solid var(--line);padding-bottom:3px;margin:16px 0 6px}
   .mdbody h4{font-size:13px;color:var(--brand-soft);margin:12px 0 4px}
   .mdbody ul{margin:4px 0 10px;padding-left:20px}.mdbody li{margin:2px 0}
-  .mdbody>p:first-child{background:#eef4f1;border-left:4px solid var(--brand);border-radius:8px;padding:10px 14px}
+  .mdbody>p:first-child{background:#E6F0F8;border-left:4px solid var(--brand);border-radius:8px;padding:10px 14px}
   /* ── 원본 기록 ── */
   .rawwrap{margin-top:14px;border-top:2px dashed var(--line);padding-top:10px}
   .rawsec{margin-top:12px}
   .rawsec .rh{font-size:12.5px;font-weight:800;color:var(--brand-soft);margin-bottom:5px}
   table.raw{width:100%;border-collapse:collapse;font-size:12px}
-  table.raw th{font-size:10.5px;font-weight:700;color:var(--muted);background:#faf8f3;text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-  table.raw td{padding:5px 8px;border-bottom:1px solid #f1ede4;vertical-align:top}
+  table.raw th{font-size:10.5px;font-weight:700;color:var(--muted);background:#FAFAFA;text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.raw td{padding:5px 8px;border-bottom:1px solid #F0F0F0;vertical-align:top}
   .rawlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
-  .rawlist li{font-size:12px;line-height:1.5;background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+  .rawlist li{font-size:12px;line-height:1.5;background:#FAFAFA;border:1px solid var(--line);border-radius:8px;padding:5px 9px}
   .rawlist li b{color:var(--brand-soft)}
   .scopepill{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;margin-right:4px;background:#eef2ef;color:#4a5a52}
   .scopepill.personal{background:#f3ecf9;color:#6b4f8f}
@@ -99,6 +99,10 @@
   .no-print{}
   @media print{ .no-print{display:none!important} }
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -695,21 +699,21 @@
     w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'+esc(name)+'</title>'
       +'<style>body{font-family:"IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif;color:#1C1B19;max-width:860px;margin:24px auto;padding:0 18px;line-height:1.7;font-size:13px}'
       +'h1{font-size:19px;color:#143D34;border-bottom:2px solid #143D34;padding-bottom:8px}'
-      +'h3{font-size:14.5px;color:#143D34;border-bottom:1px solid #E6E1D6;padding-bottom:3px;margin:18px 0 6px}'
+      +'h3{font-size:14.5px;color:#143D34;border-bottom:1px solid #DFDFDF;padding-bottom:3px;margin:18px 0 6px}'
       +'h4{font-size:13.5px;color:#1E5247;margin:12px 0 4px}'
       +'ul{margin:4px 0 10px;padding-left:20px}li{margin:2px 0}'
       +'.meta{font-size:11.5px;color:#6F6A60;margin-bottom:14px}'
       +'.md>p:first-child{background:#eef4f1;border-left:4px solid #143D34;border-radius:8px;padding:10px 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'table{width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0}'
-      +'th{font-size:10.5px;color:#6F6A60;background:#faf8f3;text-align:left;padding:4px 7px;border-bottom:1px solid #E6E1D6;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-      +'td{padding:4px 7px;border-bottom:1px solid #f1ede4;vertical-align:top}'
+      +'th{font-size:10.5px;color:#6F6A60;background:#FAFAFA;text-align:left;padding:4px 7px;border-bottom:1px solid #DFDFDF;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'td{padding:4px 7px;border-bottom:1px solid #F0F0F0;vertical-align:top}'
       +'.rawsec{margin-top:10px}.rh{font-size:12.5px;font-weight:800;color:#1E5247;margin:10px 0 4px}'
-      +'.rawlist{list-style:none;margin:0;padding:0}.rawlist li{border:1px solid #E6E1D6;border-radius:7px;padding:4px 8px;margin:3px 0;font-size:11.5px}'
+      +'.rawlist{list-style:none;margin:0;padding:0}.rawlist li{border:1px solid #DFDFDF;border-radius:7px;padding:4px 8px;margin:3px 0;font-size:11.5px}'
       +'.scopepill{font-size:9.5px;font-weight:700;padding:0 6px;border-radius:999px;background:#eef2ef;color:#4a5a52;margin-right:3px}'
       +'.hint{font-size:10.5px;color:#6F6A60}'
-      +'.memo{margin-top:18px;border-top:1px dashed #E6E1D6;padding-top:10px}'
+      +'.memo{margin-top:18px;border-top:1px dashed #DFDFDF;padding-top:10px}'
       +'.memo .mh{font-size:12.5px;font-weight:800;color:#1E5247;margin-bottom:4px}'
-      +'.memo .mb{background:#fffef4;border:1px solid #E6E1D6;border-radius:8px;padding:10px 12px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'.memo .mb{background:#fffef4;border:1px solid #DFDFDF;border-radius:8px;padding:10px 12px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'@page{margin:14mm}</style></head><body>'
       +'<h1>'+esc(o.h1||'')+'</h1>'
       +'<div class="meta">'+esc(o.meta||'')+'</div>'
@@ -799,6 +803,6 @@
     if(ps&&ps.token){ login(); }
   })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

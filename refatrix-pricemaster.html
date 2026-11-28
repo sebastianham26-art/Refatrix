@@ -12,8 +12,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--soft:#FAF8F3;
-    --brand:#143D34;--gold:#B8893B;--up:#8A3B32;--up-bg:#F6E7E4;--down:#1E6B4E;--down-bg:#E4F0EB;--blue:#2458a6;--blue-bg:#e8f0fb;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--soft:#FAFAFA;
+    --brand:#0058A3;--gold:#B8893B;--up:#8A3B32;--up-bg:#F6E7E4;--down:#1E6B4E;--down-bg:#E4F0EB;--blue:#2458a6;--blue-bg:#e8f0fb;
     --warn-bg:#FFF4D6;--warn-ink:#8A6100;--radius:12px}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;font-size:13px}
@@ -122,7 +122,7 @@
   .b-via{background:#eef3fb;color:var(--blue)}
   .csCustBox{position:relative}
   .csCustList{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.08);z-index:5;max-height:300px;overflow:auto}
-  .csCustList div{padding:7px 10px;cursor:pointer;border-bottom:1px solid #f1eee6;font-size:12.5px}.csCustList div:hover,.csCustList div.on{background:#eef5f2}
+  .csCustList div{padding:7px 10px;cursor:pointer;border-bottom:1px solid #F0F0F0;font-size:12.5px}.csCustList div:hover,.csCustList div.on{background:#eef5f2}
   .csChip{display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap;background:#eef5f2;border:1px solid #cfe0da;border-radius:10px;padding:8px 12px;font-size:12.5px}
   .csChip b{color:var(--brand)}
   #csTbl th.cx,#csTbl td.cx{background:#fffaf0}
@@ -131,6 +131,10 @@
   .ro .wOnly{display:none!important}
   .ro .edit{cursor:default;border-bottom:none}.ro .edit:hover{color:inherit}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -1799,6 +1803,6 @@
   window.__pmDebug={get csRows(){return csRows;},get csCust(){return csCust;},csParse,csCalc,get rows(){return rows;},get picked(){return picked;},get summary(){return lastSummary;},get tRows(){return tRows;},get rep(){return rep;},sel,get profit(){return prRes;},get prData(){return prData;},SORTS};
 })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

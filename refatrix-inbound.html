@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;font-size:15px;line-height:1.5}
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -253,6 +253,10 @@
   body.pda .palpick .pchip{padding:6px 10px;font-size:12px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -265,7 +269,7 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 <script>
 (function(){
   function sess(){
@@ -1029,7 +1033,7 @@
 
   /* ---- 패킹리스트 새 창 보기(다운로드 아님) ---- */
   var VIEW_CSS='<style>'
-    +'body{margin:0;background:#F4F1EA;color:#1C1B19;font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;font-size:13px}'
+    +'body{margin:0;background:#F5F5F5;color:#1C1B19;font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;font-size:13px}'
     +'.vw{max-width:1240px;margin:0 auto;padding:14px}'
     +'h1{font-size:17px;margin:0 0 2px;word-break:break-all}'
     +'.sub{color:#6F6A60;font-size:12px;margin-bottom:10px}'
@@ -1039,7 +1043,7 @@
     +'.bar button.alt{background:#6F6A60}'
     +'.bar button:active{filter:brightness(1.15)}'
     +'table{width:100%;border-collapse:collapse;background:#fff;font-size:12px;margin-bottom:6px}'
-    +'th,td{border:1px solid #E2DCCF;padding:4px 7px;text-align:left;white-space:nowrap}'
+    +'th,td{border:1px solid #DFDFDF;padding:4px 7px;text-align:left;white-space:nowrap}'
     +'thead th{background:#EFF3F7;font-weight:700;position:sticky;top:0}'
     +'.sheet table tr:first-child td{background:#EFF3F7;font-weight:700}'
     +'td.num,th.num{text-align:right}'
@@ -1047,7 +1051,7 @@
     +'.grp .pfx{color:#6F6A60;font-size:12px;font-weight:700;margin-right:6px}'
     +'.grp .po{font-size:24px;letter-spacing:.14em;margin-right:.14em}'
     +'.idle{color:#6F6A60;padding:40px;text-align:center}'
-    +'iframe{width:100%;height:78vh;border:1px solid #E2DCCF;background:#fff}'
+    +'iframe{width:100%;height:78vh;border:1px solid #DFDFDF;background:#fff}'
     +'@media print{.bar{display:none}}'
     +'</style>';
   function winOpen(title){
@@ -1805,7 +1809,7 @@
       +'<div class="c">'+L('스캔','Leído')+' '+fmt(rep.total_scanned)+' / '+fmt(rep.total_expected)+L('박스','cajas')+' · '+fmt(tt.q)+' EA'
       +(okAll?' · ✓ '+L('전부 일치','todo coincide'):' · ⚠ '+L('차이','dif.')+' '+diffN+L('라인',' líneas'))+'</div></div>'
       +'<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid var(--line);border-radius:9px;overflow:hidden">'
-      +'<thead><tr style="background:#F0EDE4;font-size:11px;color:var(--muted)"><th style="text-align:left;padding:6px 8px">'+L('라인','Línea')+'</th><th style="text-align:right;padding:6px 8px">'+L('예상','Esp.')+'</th><th style="text-align:right;padding:6px 8px">'+L('스캔','Leído')+'</th><th style="text-align:right;padding:6px 8px">'+L('차이','Dif.')+'</th></tr></thead>'
+      +'<thead><tr style="background:#F0F0F0;font-size:11px;color:var(--muted)"><th style="text-align:left;padding:6px 8px">'+L('라인','Línea')+'</th><th style="text-align:right;padding:6px 8px">'+L('예상','Esp.')+'</th><th style="text-align:right;padding:6px 8px">'+L('스캔','Leído')+'</th><th style="text-align:right;padding:6px 8px">'+L('차이','Dif.')+'</th></tr></thead>'
       +'<tbody>'+rows+unRows+'</tbody></table>'
       +'<div class="row" style="margin-top:12px">'
       +'<button class="btn" id="btnConfirm">✔ '+L('입고 확정 (실측 스캔 기준)','Confirmar recepción')+'</button>'

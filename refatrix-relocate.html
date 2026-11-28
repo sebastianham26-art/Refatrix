@@ -10,8 +10,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix · 위치변경 Cambio de ubicación · build rel-1016a</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#0058A3;--radius:12px;
     --gold:#9A6512;--gold-bg:#FDF8EE;--blue:#2E6F9E;--blue-bg:#E8F1F7;--navh:40px}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -79,10 +79,10 @@
   .opts label{display:flex;gap:5px;align-items:center;cursor:pointer}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  thead th{position:sticky;top:0;background:#F0EDE4;text-align:left;padding:7px 9px;font-size:11px;
+  thead th{position:sticky;top:0;background:#F0F0F0;text-align:left;padding:7px 9px;font-size:11px;
     color:var(--muted);border-bottom:1px solid var(--line);z-index:1;white-space:nowrap}
   tbody td{padding:6px 9px;border-bottom:1px solid #F1EDE3;vertical-align:top}
-  tbody tr.gsep td{background:#F7F5EF;font-weight:800;color:var(--brand);font-size:12px}
+  tbody tr.gsep td{background:#F5F5F5;font-weight:800;color:var(--brand);font-size:12px}
   tbody tr.dirty td{background:#FFFCEF}
   td.num{text-align:right}
   .tblbox{max-height:58vh;overflow:auto;border:1px solid var(--line);border-radius:9px}
@@ -135,6 +135,10 @@
   body.pda .kpi .v{font-size:16px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -150,7 +154,7 @@
 </div>
 <div id="toast"></div>
 
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 <script>
   // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
   function mxHora(v){

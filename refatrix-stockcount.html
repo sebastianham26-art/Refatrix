@@ -8,8 +8,8 @@
 <!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
 <style>
   :root{
-    --green:#143D34; --green2:#1d5145; --brass:#B8893B; --brass2:#a4792f;
-    --ink:#1c1b19; --mut:#7c7a74; --line:#e6e4df; --appbg:#f5f4f2;
+    --green:#0058A3; --green2:#004F93; --brass:#B8893B; --brass2:#a4792f;
+    --ink:#1c1b19; --mut:#7c7a74; --line:#DFDFDF; --appbg:#FFFFFF;
     --match:#2f8a5b; --matchbg:#e8f4ed; --short:#C0564F; --shortbg:#fbe9e7;
     --over:#C58A2E; --overbg:#fbf2e0; --unc:#8a8a8a; --uncbg:#eeeeec; --unk:#3a6ea5; --unkbg:#e7eff8;
   }
@@ -19,7 +19,7 @@
   .topbar{position:sticky;top:0;z-index:20;background:var(--green);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px}
   .topbar h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.3px}
   .topbar .sub{font-size:11px;color:#bcd2c9;margin-top:1px}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .wrap{max-width:820px;margin:0 auto;padding:12px}
   .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
   .card h2{margin:0 0 10px;font-size:15px;color:var(--green)}
@@ -82,7 +82,7 @@
   .badge{font-size:11px;font-weight:800;padding:2px 8px;border-radius:8px}
   .b-draft{background:#eef6f0;color:var(--green)} .b-sub{background:var(--overbg);color:var(--over)} .b-rec{background:var(--matchbg);color:var(--match)}
   .grpttl{font-size:12px;font-weight:800;color:var(--brass2);margin:14px 4px 4px}
-  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#143D34;color:#fff;padding:10px 16px;border-radius:12px;font-size:13px;z-index:50;opacity:0;transition:opacity .2s;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#0058A3;color:#fff;padding:10px 16px;border-radius:12px;font-size:13px;z-index:50;opacity:0;transition:opacity .2s;box-shadow:0 8px 24px rgba(0,0,0,.25)}
   .toast.show{opacity:1}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:60;padding:14px}
   .modal.on{display:flex}
@@ -124,7 +124,7 @@
   .rpill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:800}
   .r-ok{background:var(--matchbg);color:var(--match)} .r-bad{background:var(--shortbg);color:var(--short)}
   .topbtns{display:flex;gap:6px;margin-left:auto;align-items:center}
-  .minibtn{background:transparent;color:#cfe0d8;font-size:12px;border:1px solid #2f5d50;padding:5px 10px;
+  .minibtn{background:transparent;color:#cfe0d8;font-size:12px;border:1px solid #004F93;padding:5px 10px;
     border-radius:7px;cursor:pointer;font-weight:700;white-space:nowrap}
 
   /* PDA 컴팩트 모드 — 수입입고·포장·위치변경과 같은 처방(폭 ≤640px 자동 · localStorage 'wh_pda' 공유) */
@@ -154,6 +154,11 @@
   body.pda .tbl-wrap{max-height:none}
   body.pda input,body.pda select{padding:9px;font-size:15px}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
+<style id="rfx-theme-page">html:root{--green:#0058A3;--green2:#004F93}</style>
 </head>
 <body>
 
@@ -2181,6 +2186,6 @@ function spotHistXlsx(){
   try{ console.log('[refatrix-stockcount] build sc1012re1 — 랙별 재고 · 실사 업로드 · 위치수정'); }catch(e){}
 })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

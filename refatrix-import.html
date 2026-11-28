@@ -11,7 +11,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 수입 입고 · build imp-0819b</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -36,11 +36,11 @@
   .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
   table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
   th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
-  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#FAFAFA}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap}
-  .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:11px 14px}
-  .sb .v{font-size:20px;font-weight:800;color:var(--brand,#143D34)}.sb .l{font-size:11px;color:var(--muted,#6F6A60);margin-top:2px}
+  .sb{flex:1;min-width:130px;background:#FAFAFA;border:1px solid var(--line,#DFDFDF);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:20px;font-weight:800;color:var(--brand,#0058A3)}.sb .l{font-size:11px;color:var(--muted,#6F6A60);margin-top:2px}
   .linehead{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
   /* 라인이 수백 개일 때 화면이 끝없이 길어지지 않게 — 목록 자체 스크롤(2026-08-18) */
   #lines{max-height:55vh;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px 10px;background:#fff}
@@ -62,6 +62,10 @@
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -103,7 +107,7 @@
       <div class="msg" id="fromShipMsg"></div>
     </div>
 
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <span style="font-size:12.5px;color:var(--muted);font-weight:600">엑셀로 대량 입력:</span>
       <button class="btn ghost sm" id="dlTpl">① 빈 양식 내려받기</button>
       <button class="btn ghost sm" id="upBtn">② 채운 엑셀 올리기</button>
@@ -835,6 +839,6 @@
     loadPending();
   } }catch(e){ console.error('auto-login',e); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

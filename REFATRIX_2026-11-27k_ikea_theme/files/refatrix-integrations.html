@@ -1,0 +1,2702 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 연동 관리 · build 20261026os</title>
+<style>
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --warn:#8A5A00;--warn-bg:#F6EEDD;--brand:#0058A3;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:22px}
+  .wrap{max-width:1280px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .cols{display:grid;grid-template-columns:290px 1fr;gap:16px;margin-top:16px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .card-h .sp{margin-left:auto;font-weight:600;font-size:12px;color:var(--muted)}
+  label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px;font-weight:700}
+  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink)}
+  textarea{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6}
+  input[type=checkbox]{width:auto}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .pager{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12.5px}
+  .pager .pinfo{min-width:92px;text-align:center;font-weight:700}
+  .pager .ptotal{color:var(--muted)}
+  .pager input{width:60px;padding:4px 6px;font-size:12px}
+  .pager select{width:auto;padding:4px 6px;font-size:12px}
+  .pager .btn[disabled]{opacity:.4;cursor:default}
+  .btn.danger{background:#fff;color:var(--expense);border:1px solid #e7b6af}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .msg.warn{display:block;background:var(--warn-bg);color:var(--warn)}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.55}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;white-space:nowrap}
+  .p-on{background:var(--income-bg);color:var(--income)}
+  .p-off{background:#F0F0F0;color:var(--muted)}
+  .p-test{background:var(--warn-bg);color:var(--warn)}
+  .p-prod{background:var(--expense-bg);color:var(--expense)}
+  .p-pending{background:var(--warn-bg);color:var(--warn)}
+  .p-sent{background:var(--income-bg);color:var(--income)}
+  .p-failed{background:var(--expense-bg);color:var(--expense)}
+  .p-skipped{background:#F0F0F0;color:var(--muted)}
+  .eplist{display:flex;flex-direction:column;gap:8px}
+  .ep{border:1px solid var(--line);border-radius:10px;padding:11px 12px;cursor:pointer;background:#fff}
+  .ep:hover{background:#FAFAFA}
+  .ep.sel{border-color:var(--brand);box-shadow:inset 3px 0 0 var(--brand)}
+  .ep .t{font-size:13.5px;font-weight:800}
+  .ep .m{font-size:11px;color:var(--muted);margin-top:3px;word-break:break-all}
+  .ep .b{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:4px}
+  .tab{padding:9px 14px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.on{color:var(--brand);border-bottom-color:var(--brand)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;font-size:11px;color:var(--muted);font-weight:700;padding:7px 9px;border-bottom:1px solid var(--line);background:#FAFAFA;white-space:nowrap}
+  td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tblwrap{overflow-x:auto}
+  .fieldtbl input{padding:5px 7px;font-size:12.5px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+  .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .kpi .n{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:11.5px;color:var(--muted)}
+  .scopebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .scopebar label{margin:0;font-weight:600}
+  .runperf{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:-2px 0 12px}
+  .runperf .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px 14px}
+  .runperf .v{font-weight:700;font-variant-numeric:tabular-nums}
+  .runperf .k{font-size:11.5px;color:var(--muted)}
+  .runperf table{width:100%;margin-top:8px}
+  .rstate{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid currentColor}
+  .rstate.running{color:var(--warn)}.rstate.done{color:var(--income)}.rstate.done_errors{color:var(--expense)}.rstate.stopped{color:var(--muted)}
+  .runlink{cursor:pointer;text-decoration:underline dotted}
+  .kpi.pending .n{color:var(--warn)}.kpi.failed .n{color:var(--expense)}.kpi.sent .n{color:var(--income)}
+  pre.out{background:#FAFAFA;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;max-height:260px;margin:6px 0 0;white-space:pre-wrap;word-break:break-all}
+  .detail td{background:#FAFAFA}
+  .empty{padding:24px;text-align:center;color:var(--muted);font-size:13px}
+  .banner{border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.6;margin-bottom:12px}
+  .banner.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #e6d5ae}
+  .banner.err{background:var(--expense-bg);color:var(--expense);border:1px solid #e7b6af}
+  .banner.info{background:var(--income-bg);color:var(--income);border:1px solid #bcd9cf}
+  /* 발급된 키를 보여 주는 창 — 「닫기」 를 누르기 전까지 절대 사라지지 않는다.
+     (키는 이때 딱 한 번만 볼 수 있으므로 화면이 저절로 다시 그려지면 그대로 잃어버린다) */
+  .modalBack{position:fixed;inset:0;background:rgba(20,18,15,.55);display:flex;align-items:center;
+    justify-content:center;padding:20px;z-index:9999}
+  /* ⚠ .hidden{display:none} 은 이 파일 위쪽(41행)에 있다. 특이도가 같으면 **나중 규칙이 이긴다** —
+     이 줄이 없으면 .modalBack 의 display:flex 가 .hidden 을 눌러서 창이 페이지 로드부터
+     계속 떠 있고(내용은 비어 있고) 「닫기」 를 눌러도 사라지지 않는다. 실제로 그렇게 났다. */
+  .modalBack.hidden{display:none}
+  .modalBox{background:var(--card);border-radius:var(--radius);padding:20px;max-width:620px;width:100%;
+    box-shadow:0 18px 50px rgba(0,0,0,.28)}
+  .modalBox h3{margin:0 0 4px;font-size:16px;color:var(--brand)}
+  .keyOut{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+    padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#FAFAFA;word-break:break-all}
+  /* 0237 · 상단 전환(연동 설정 / 프로모션 배너) — .tab 과 다른 클래스를 쓴다(기존 탭 핸들러가 .tab 전부를 잡는다) */
+  .mtabs{display:flex;gap:6px;margin-top:14px}
+  .mtab{padding:9px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:13.5px;font-weight:800;color:var(--muted);cursor:pointer}
+  .mtab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .pmlist{display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow:auto}
+  .pm{border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;background:#fff;display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:start}
+  .pm:hover{background:#FAFAFA}
+  .pm.sel{border-color:var(--brand);box-shadow:inset 3px 0 0 var(--brand)}
+  .pm .th{width:64px;height:40px;border-radius:6px;background:#F0F0F0;object-fit:cover;display:block}
+  .pm .t{font-size:13px;font-weight:800;line-height:1.35}
+  .pm .m{font-size:11px;color:var(--muted);margin-top:2px}
+  .pm .b{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+  .pfilter{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+  .pfilter button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 10px;font-size:11.5px;cursor:pointer;color:var(--muted);font-weight:700}
+  .pfilter button.on{border-color:var(--brand);color:var(--brand);background:#EEF3F1}
+  .ph-active{background:var(--income-bg);color:var(--income)} .ph-scheduled{background:#E8EEF7;color:#2C4E86}
+  .ph-ended{background:#F0F0F0;color:var(--muted)} .ph-draft{background:var(--warn-bg);color:var(--warn)} .ph-cancelled{background:var(--expense-bg);color:var(--expense)}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:14px;text-align:center;cursor:pointer;background:#FAFAFA}
+  .drop.over{border-color:var(--brand);background:#EEF3F1}
+  .drop img{max-width:100%;max-height:260px;border-radius:8px;display:block;margin:0 auto}
+  .drop .ph{color:var(--muted);font-size:12.5px;padding:18px 0}
+  .tgt{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff}
+  .tgt+.tgt{margin-top:6px}
+  .tgt .l{font-weight:700;font-size:13px}
+  .tgt .u{font-size:11px;color:var(--muted);word-break:break-all}
+  /* 그리드 칸이 안쪽 표 폭만큼 늘어나 휴대폰에서 가로 스크롤이 생기지 않게 */
+  #viewPromo > *, .pm > div, .tgt > div{min-width:0}
+  #pmDelivRows button{white-space:nowrap}
+  #pmDelivBox table{min-width:720px}
+  .chk{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;color:var(--ink);margin:0;font-weight:600}
+  @media(max-width:900px){ .cols{grid-template-columns:1fr} .row2,.row3{grid-template-columns:1fr} body{padding:14px}
+    .tgt{grid-template-columns:22px 1fr} .tgt > div:last-child{grid-column:2;justify-content:flex-start!important} }
+</style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div>
+      <h1>연동 관리</h1>
+      <div class="sub">ERP ⇄ 외부 시스템(CRM · 웹 카달록) — 전송·수신 주소 · 계약서 · 이력</div>
+    </div>
+    <a class="portalBtn" href="refatrix-portal.html">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card hidden" id="loginCard">
+    <div class="card-h">로그인</div>
+    <label>API 주소</label>
+    <input id="api" value="https://refatrix-production.up.railway.app">
+    <label>아이디</label><input id="lid">
+    <label>PIN</label><input id="pin" type="password">
+    <div style="margin-top:12px"><button class="btn" id="go">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <!-- 발급된 수신 키 — 「닫기」 를 누를 때까지 유지된다(바깥 클릭·ESC 로 닫히지 않는다) -->
+  <div id="keyModal" class="modalBack hidden">
+    <div class="modalBox">
+      <h3>수신 API 키가 발급되었습니다</h3>
+      <div class="hint" id="keyModalEnv"></div>
+      <div style="margin-top:12px"><textarea id="keyModalVal" class="keyOut" rows="2" readonly></textarea></div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn" id="keyModalCopy">키 복사</button>
+        <button class="btn ghost" id="keyModalCopyAll">주소 + 키 함께 복사</button>
+        <span class="hint" id="keyModalNote"></span>
+      </div>
+      <div class="banner warn" style="margin-top:14px">
+        이 키는 <b>지금만 볼 수 있습니다.</b> 닫고 나면 어디에서도 다시 확인할 수 없습니다 —
+        CRM 개발자에게 전달할 곳(메일·메신저)에 <b>먼저 붙여 넣은 뒤</b> 닫으세요.
+        잃어버려도 새로 발급하면 되지만, 그 순간 지금 쓰던 키는 막힙니다.
+      </div>
+      <div style="margin-top:14px;text-align:right">
+        <button class="btn" id="keyModalClose">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <div id="globalBanner"></div>
+    <div class="mtabs">
+      <div class="mtab on" data-mode="eps">연동 설정</div>
+      <div class="mtab" data-mode="promo">📣 프로모션 배너</div>
+    </div>
+    <div class="cols" id="viewEps">
+
+      <!-- 좌: 연동 목록 -->
+      <div class="card">
+        <div class="card-h">연동 목록<span class="sp" id="epCount"></span></div>
+        <div class="eplist" id="epList"></div>
+        <div style="margin-top:12px;display:flex;gap:6px">
+          <button class="btn ghost sm" id="btnNew">+ 새 연동</button>
+          <button class="btn ghost sm" id="btnReloadAll">새로고침</button>
+        </div>
+        <div class="hint" style="margin-top:10px">
+          연동 1건 = 계약서 1개. 「수신 ←」 배지가 붙은 건 <b>상대가 우리에게 보내는</b> 창구입니다(웹카달록 신규고객 등).
+        </div>
+      </div>
+
+      <!-- 우: 상세 -->
+      <div class="card">
+        <div class="card-h" id="epTitle">연동을 선택하세요</div>
+        <div class="tabs">
+          <div class="tab on" data-tab="cfg">연결 설정</div>
+          <div class="tab" data-tab="contract">계약서</div>
+          <div class="tab" data-tab="log">전송 이력</div>
+        </div>
+
+        <!-- ① 연결 설정 -->
+        <div id="paneCfg">
+          <div class="row2">
+            <div>
+              <label>이름</label><input id="fLabel">
+            </div>
+            <div>
+              <label>분류</label>
+              <select id="fCategory">
+                <option value="customer">고객</option>
+                <option value="product">제품</option>
+                <option value="quote">견적</option>
+                <option value="order">오더</option>
+                <option value="promotion">프로모션</option>
+                <option value="other">기타</option>
+              </select>
+            </div>
+          </div>
+          <label>설명</label><input id="fDesc">
+
+          <div class="row2">
+            <div>
+              <label>사용 여부</label>
+              <div style="display:flex;align-items:center;gap:8px;padding-top:5px">
+                <input type="checkbox" id="fEnabled"><span class="hint" id="enabledHint">끄면 전송 건이 대기함에 쌓이기만 합니다.</span>
+              </div>
+            </div>
+            <div>
+              <label>사용 중인 서버</label>
+              <select id="fEnv">
+                <option value="test">테스트 서버</option>
+                <option value="prod">운영 서버</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 수신 연동(direction=in) 전용 — 우리가 받는 주소와 우리가 발급한 키 -->
+          <div id="boxInbound" class="hidden">
+            <div class="banner warn" style="margin-top:12px">
+              <b>수신 연동</b> — 이 주소로 <b>상대(CRM)가 우리에게</b> 보냅니다. 우리가 보내는 게 아니므로 상대 URL·메서드 설정이 없습니다.
+              아래 주소와 API 키를 상대 개발자에게 주면 됩니다.
+            </div>
+            <label>우리 수신 주소 (상대에게 알려줄 URL)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="fInboundUrl" readonly class="mono" style="font-size:12.5px">
+              <button class="btn ghost sm" id="btnCopyInUrl" style="white-space:nowrap">복사</button>
+            </div>
+            <div class="hint" style="margin-top:6px">
+              키는 <span class="mono">x-api-key</span> 헤더 · <span class="mono">?apiKey=</span> 쿼리 · 본문 <span class="mono">apiKey</span> 필드
+              <b>어디에 실어도 받습니다</b> — 상대 구현을 기다리느라 수신이 막히지 않게 셋 다 열어 뒀습니다.
+            </div>
+            <div class="row2" style="margin-top:12px">
+              <div>
+                <label>테스트용 수신 키</label>
+                <div style="display:flex;gap:8px"><input id="fInKeyTest" readonly placeholder="미발급">
+                  <button class="btn ghost sm" data-env="test" style="white-space:nowrap">새 키 발급</button></div>
+              </div>
+              <div>
+                <label>운영용 수신 키</label>
+                <div style="display:flex;gap:8px"><input id="fInKeyProd" readonly placeholder="미발급">
+                  <button class="btn ghost sm" data-env="prod" style="white-space:nowrap">새 키 발급</button></div>
+              </div>
+            </div>
+            <div class="hint" style="margin-top:6px">
+              키는 <b>서버가 만들고, 발급 직후 창이 하나 뜹니다.</b> 그 창은 <b>「닫기」를 누르기 전까지 사라지지 않으니</b>
+              천천히 복사해 상대에게 전달하세요 — 닫고 나면 다시 볼 수 없고,
+              잃어버리면 새로 발급하면 됩니다(그 순간 이전 키는 즉시 막힙니다).
+              두 키 <b>모두</b> 유효하게 받아 줍니다(어느 쪽으로 들어왔는지는 수신 이력에 남습니다).
+            </div>
+            <!-- 전용 키가 공용 키를 막고 있을 때의 안내 + 되돌리기 -->
+            <div id="boxKeyOwn" class="hidden" style="margin-top:10px">
+              <div class="msg warn" style="display:block" id="keyOwnMsg"></div>
+              <button class="btn ghost sm" id="btnClearInKey" style="margin-top:8px">공용 키로 되돌리기(전용 키 지우기)</button>
+            </div>
+            <div class="msg" id="inKeyMsg"></div>
+
+            <!-- 0210 · 웹 가입 신청 팝업을 받을 사람 (이 연동에서만 보인다) -->
+            <div id="boxNotify" class="hidden" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+              <div class="card-h" style="font-size:13px">팝업 알림을 받을 사람</div>
+              <div class="hint" style="margin-top:-4px">
+                가입 신청이 들어오면 여기서 고른 사람들의 <b>모든 ERP 화면</b>에 팝업이 뜹니다(60초 이내).
+                <b>디렉터는 설정과 무관하게 항상 받습니다.</b> 아무도 고르지 않으면 디렉터에게만 뜹니다 —
+                현장에서 먼저 전화할 사람을 골라 두세요.
+              </div>
+              <div id="notifyList" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px"></div>
+              <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn sm" id="btnSaveNotify">알림 대상 저장</button>
+                <button class="btn ghost sm" id="btnNotifyNone">모두 해제</button>
+                <span class="hint" id="notifyMeta" style="margin-left:auto"></span>
+              </div>
+              <div class="msg" id="notifyMsg"></div>
+            </div>
+          </div>
+
+          <div id="boxUrls">
+          <label>테스트 서버 URL</label><input id="fUrlTest" placeholder="http://…">
+          <label>운영 서버 URL</label><input id="fUrlProd" placeholder="https://… (운영 전환 전 반드시 입력)">
+          </div>
+
+          <div class="row3" id="boxMethods">
+            <div><label>등록·수정 메서드</label>
+              <select id="fMethodUpsert" translate="no" class="notranslate"><option value="POST">POST</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option><option value="GET">GET</option></select></div>
+            <div><label>삭제 메서드</label>
+              <select id="fMethodDelete" translate="no" class="notranslate"><option value="DELETE">DELETE</option><option value="POST">POST</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option><option value="GET">GET</option></select></div>
+            <div><label>성공 codigoError</label><input id="fOkCode" placeholder="0"></div>
+            <div><label>재시도 안 할 코드 <span class="hint">(쉼표 구분)</span></label><input id="fNoRetry" placeholder="ERR_CUSTOMER_NOT_FOUND"></div>
+          </div>
+
+          <div class="row3" id="boxAuth">
+            <div><label>키를 싣는 위치</label>
+              <select id="fAuthIn">
+                <option value="header">HTTP 헤더</option>
+                <option value="query">주소 뒤 쿼리스트링 (?이름=키)</option>
+                <option value="body">본문 JSON 필드</option>
+              </select></div>
+            <div><label>이름 (헤더명 · 파라미터명)</label><input id="fAuthName" placeholder="x-api-key · apiKey 등"></div>
+            <div><label>타임아웃 (ms)</label><input id="fTimeout" placeholder="10000"></div>
+          </div>
+          <!-- 0213 · 대체 창구(자동 폴백) — 전송 연동에서만 뜻이 있다 -->
+          <div id="boxFallback" class="row2" style="align-items:end">
+            <div><label>이 오류코드로 답하면 → 대신 보낼 창구</label>
+              <select id="fFallbackKey"><option value="">사용 안 함</option></select></div>
+            <div><label>폴백을 일으키는 오류코드 <span class="hint">(쉼표 구분)</span></label>
+              <input id="fFallbackCodes" placeholder="ERR_CUSTOMER_NOT_FOUND"></div>
+          </div>
+          <div class="hint" id="boxFallbackHint" style="margin-top:-2px">
+            상거래정보 창구는 <b>RFC 로 찾아서 고치는</b> 창구입니다. CRM 에 <b>없는</b> 고객을 보내면
+            <span class="mono">ERR_CUSTOMER_NOT_FOUND</span> 가 돌아오고 그 건은 그대로 닫힙니다 —
+            그래서 전체 동기화를 돌려도 <b>CRM 에 없는 고객은 빠져나갑니다.</b><br>
+            여기에 <b>「고객 신규 등록」</b> 창구를 지정해 두면, 그 응답을 받은 건을 <b>자동으로 등록 창구로 다시 보냅니다</b>
+            (있으면 갱신, 없으면 등록 — 버튼 하나로). 대상 창구가 <b>꺼져 있거나 주소가 비어 있으면 폴백은 일어나지 않습니다.</b>
+          </div>
+
+          <!-- 0218 · 제품 카탈로그 전송 — 제품 창구에서만 보인다 -->
+          <div id="boxProduct" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+            <div style="font-weight:600;margin-bottom:8px">제품 카탈로그 전송 <span class="hint">(바뀐 것만 자동 · 전체는 주 1회 + 수동)</span></div>
+            <div class="row3">
+              <div><label>사진 기본주소 <span class="hint">({code} 를 쓰면 그 자리에 제품코드)</span></label>
+                <input id="fImgBase" placeholder="https://.../fotos  →  https://.../fotos/CA0032.jpg"></div>
+              <div><label>묶음 크기 <span class="hint">(한 번에 보낼 제품 수)</span></label><input id="fBatch" placeholder="500"></div>
+              <div><label>자동 전송 시각 <span class="hint">(멕시코 시간, 0~23)</span></label><input id="fSendHour" placeholder="6"></div>
+            </div>
+            <!-- 0236 · 변경분 자동 · 전체 요일 -->
+            <div class="row3" style="margin-top:8px;align-items:end">
+              <div><label>전체 자동 전송 요일</label>
+                <select id="fFullWeekday"><option value="0">매주 일요일</option><option value="1">매주 월요일</option><option value="2">매주 화요일</option>
+                  <option value="3">매주 수요일</option><option value="4">매주 목요일</option><option value="5">매주 금요일</option><option value="6">매주 토요일</option>
+                  <option value="">매일</option></select></div>
+              <div><label>변경분 확인 주기 <span class="hint">(분, 5~1440)</span></label><input id="fDeltaEvery" placeholder="5"></div>
+              <div></div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
+              <input type="checkbox" id="fAutoSend"><span class="hint"><b>전체 카탈로그 자동 전송</b> — 위 요일·시각에 전체를 보냅니다(마감 신호 포함). 꺼 두면 전체는 버튼으로만.</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:4px">
+              <input type="checkbox" id="fDeltaAuto"><span class="hint"><b>바뀐 제품만 자동 전송</b> — 주기마다 마지막으로 보낸 값과 비교해 달라진 제품·새 제품·지워진 제품(비활성으로)·실패했던 제품만 보냅니다. 마감 신호는 보내지 않습니다.</span>
+            </label>
+            <div class="hint" id="deltaMigHint" style="margin-top:4px;color:var(--expense)"></div>
+            <div class="hint" style="margin-top:8px">
+              전체 전송의 <b>마지막 묶음</b>에는 마감 신호(<span class="mono">esUltimoLote</span>)가 붙습니다 —
+              이번 전송에 없는 제품을 CRM 이 감추는 신호입니다.
+              <b>시험 전송은 마감하지 않습니다</b>(몇 건만 보낸 뒤 마감하면 카탈로그가 통째로 비어 버립니다).
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+              <button class="btn" id="btnCatalogDelta">바뀐 것만 지금 보내기</button>
+              <button class="btn ghost sm" id="btnCatalogDeltaPreview">바뀐 것 미리 세기</button>
+              <button class="btn ghost" id="btnCatalogSend">지금 전체 보내기</button>
+              <button class="btn ghost sm" id="btnCatalogBaseline" title="보내지 않고, 지금 ERP 값을 「CRM 에 이미 있는 값」으로 기록합니다">기준만 저장</button>
+              <button class="btn ghost" id="btnCatalogTest">시험 전송 3건</button>
+              <button class="btn ghost sm" id="btnCatalogPreview">보낼 본문 미리보기</button>
+              <button class="btn ghost sm" id="btnCatalogReload">새로고침</button>
+              <button class="btn ghost sm" id="btnCatalogStop" style="color:var(--expense);border-color:var(--expense)">전송 중지</button>
+            </div>
+            <div id="catalogProgress" class="hint" style="margin-top:6px"></div>
+            <div id="catalogStale" class="msg warn" style="display:none;margin-top:6px"></div>
+            <!-- 2026-10-07 · 고른 제품만 보내기 -->
+            <div id="boxPick" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">
+              <div style="font-weight:600;margin-bottom:6px">고른 제품만 보내기 <span class="hint">(코드를 골라 담은 뒤 한 번에 · 마감 신호 없음 · 한 번에 최대 500개)</span></div>
+              <div class="row2" style="align-items:start">
+                <div style="position:relative">
+                  <label>제품 찾기 <span class="hint">(코드 앞부분 또는 이름 — Enter 로 담기)</span></label>
+                  <input id="fPickQ" placeholder="예: CE04, TERMINAL" autocomplete="off">
+                  <div id="pickSuggest" class="hidden" style="position:absolute;left:0;right:0;z-index:20;background:var(--card,#fff);border:1px solid var(--line);border-radius:6px;max-height:260px;overflow:auto;box-shadow:0 4px 14px rgba(0,0,0,.08)"></div>
+                </div>
+                <div>
+                  <label>여러 코드 붙여넣기 <span class="hint">(줄바꿈·쉼표·공백 구분)</span></label>
+                  <textarea id="fPickPaste" rows="2" placeholder="CE0427&#10;CB0011&#10;GV1187"></textarea>
+                  <button class="btn ghost sm" id="btnPickPaste" type="button" style="margin-top:4px">목록에 담기</button>
+                </div>
+              </div>
+              <div class="tblwrap" style="margin-top:8px"><table>
+                <thead><tr><th style="width:130px">코드</th><th>제품명</th><th style="width:70px">판매</th><th style="width:70px" class="num">재고</th><th style="width:90px" class="num">정가</th><th style="width:44px"></th></tr></thead>
+                <tbody id="pickRows"><tr><td colspan="6" class="empty">담은 제품이 없습니다.</td></tr></tbody>
+              </table></div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+                <button class="btn" id="btnPickSend" disabled>담은 0개 보내기</button>
+                <button class="btn ghost sm" id="btnPickClear" type="button">비우기</button>
+                <span class="hint">값이 바뀌었는지와 상관없이 지금 ERP 값을 보냅니다. 보낸 값은 「바뀐 것만」 전송의 기준으로도 기록됩니다.</span>
+              </div>
+              <div class="msg" id="pickMsg"></div>
+            </div>
+            <div style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">
+              <div style="font-weight:600;margin-bottom:6px">상대 규격 맞추기 <span class="hint">(개발자 답을 받으면 여기서 고칩니다 — 배포 불필요)</span></div>
+              <div class="row2" style="align-items:end">
+                <div><label>본문 형식</label>
+                  <select id="fBodyShape">
+                    <option value="lote">묶음 — 봉투 + productos[] (계약서 v1.0)</option>
+                    <option value="array">제품 배열 — 루트가 [ {...}, {...} ]</option>
+                    <option value="item">1건씩 — 요청 1건 = 제품 1건</option>
+                  </select></div>
+                <div style="display:flex;gap:8px;align-items:end">
+                  <button class="btn ghost sm" id="btnMapPreset" type="button">개발자 규격으로 채우기</button>
+                  <button class="btn ghost sm" id="btnMapClear" type="button">이름 초기화</button>
+                </div>
+              </div>
+              <div class="hint" id="shapeHint" style="margin-top:6px"></div>
+              <div class="tblwrap" style="margin-top:10px"><table>
+                <thead><tr><th style="width:190px">우리 필드</th><th style="width:230px">보낼 이름</th><th>설명 · CRM 열</th></tr></thead>
+                <tbody id="fieldMapRows"></tbody>
+              </table></div>
+              <div class="hint" style="margin-top:6px">
+                보낼 이름을 <b>비우면 그 필드는 보내지 않습니다.</b> 이름을 바꾸지 않으면 우리 이름 그대로 나갑니다.
+              </div>
+            </div>
+
+            <div class="msg" id="catalogMsg"></div>
+            <div id="catalogRuns" style="margin-top:10px"></div>
+          </div>
+
+          <!-- 0227 · 오더상태 (전송) — 오더 창구에서만 보인다 -->
+          <div id="boxOrder" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+            <div style="font-weight:600;margin-bottom:8px">오더상태 전송 <span class="hint">(계약서 Contrato_API_Estatus_Pedido v1.1)</span></div>
+            <div class="tblwrap"><table>
+              <thead><tr><th style="width:44px">#</th><th style="width:190px">CRM 단계</th><th>ERP 에서 언제 보내나 (수주 SLA 단계)</th><th style="width:110px" class="num">이 단계까지</th></tr></thead>
+              <tbody id="orderStepRows"></tbody>
+            </table></div>
+            <div class="hint" style="margin-top:6px">
+              <b>웹카달록에서 들어온 견적(COT-…)만</b> 보냅니다 — ERP 화면에서 만든 견적은 CRM 이 모르는 오더라 보내지 않습니다.
+              단계는 <b>앞으로만</b> 갑니다. 포장지시서 없이 바로 전환하는 등 <b>건너뛴 단계는 지어내지 않고</b> 실제로 거친 단계만 순서대로 보냅니다.
+              <b>끝 상태</b>: 24시간 룰로 만료되면 <b>8 Expirado</b>, 디렉터가 삭제를 승인하면 <b>9 Eliminado</b> 를 보냅니다 — 그 뒤로는 그 오더에 아무것도 보내지 않습니다. 취소는 보내지 않습니다.<br>
+              단계가 바뀌는 순간(출력·포장완료·전환·SAT 입력·접수·만료·삭제 승인) 바로 보내고, 놓친 것은 <b>90초마다</b> 감시가 줍습니다.
+              <b>꺼져 있는 동안에는 아무것도 쌓지 않습니다</b> — 켜면 지금 단계까지 한 번에 따라잡습니다.
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:end">
+              <button class="btn" id="btnOrderSweep" type="button">지금 따라잡기</button>
+              <button class="btn ghost sm" id="btnOrderReload" type="button">새로고침</button>
+              <div style="display:flex;gap:6px;align-items:end">
+                <div><label>견적 1건 확인 <span class="hint">(보내지 않고 보기만)</span></label><input id="fOrderQ" placeholder="COT-… 또는 견적번호" style="min-width:220px"></div>
+                <button class="btn ghost sm" id="btnOrderCheck" type="button">확인</button>
+              </div>
+            </div>
+            <div class="msg" id="orderMsg"></div>
+            <div id="orderRecent" style="margin-top:10px"></div>
+          </div>
+
+          <!-- 0237 · 프로모션 배너 창구 설정 -->
+          <div id="boxPromo" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+            <div style="font-weight:600;margin-bottom:4px">프로모션 배너 <span class="hint">(계약서 Contrato_API_Promociones v1.0)</span></div>
+            <div class="hint">이 창구 = 배너를 받을 CRM 한 곳입니다. 등록·전송은 위쪽 <b>📣 프로모션 배너</b> 탭에서 합니다.
+              <b>여러 고객사에 보내려면 창구를 여러 개</b> 만드세요(「+ 새 연동」 또는 프로모션 탭의 「+ 전송할 곳 추가」).</div>
+            <div class="row3" style="margin-top:4px">
+              <div><label>배너 가로 (px)</label><input id="fBannerW" inputmode="numeric" placeholder="비우면 검사 안 함"></div>
+              <div><label>배너 세로 (px)</label><input id="fBannerH" inputmode="numeric" placeholder="비우면 검사 안 함"></div>
+              <div><label>취소·종료를 보내는 방식</label><div class="hint" style="margin-top:8px" id="promoDelHint"></div></div>
+            </div>
+            <div class="hint" id="promoMigHint" style="margin-top:4px;color:var(--expense)"></div>
+            <details style="margin-top:10px">
+              <summary class="hint" style="cursor:pointer"><b>보낼 필드 이름 바꾸기</b> — 상대가 다른 이름을 원할 때만 (빈칸 = 그대로 · <span class="mono">-</span> = 보내지 않음)</summary>
+              <div class="tblwrap" style="margin-top:6px"><table class="fieldtbl">
+                <thead><tr><th style="width:170px">우리 필드</th><th style="width:220px">보낼 이름</th><th>뜻</th></tr></thead>
+                <tbody id="promoMapRows"></tbody>
+              </table></div>
+            </details>
+          </div>
+
+          <div id="boxTokens">
+          <div class="row2">
+            <div><label>테스트 서버 API 키</label><input id="fTokenTest" placeholder="변경할 때만 입력"></div>
+            <div><label>운영 서버 API 키</label><input id="fTokenProd" placeholder="변경할 때만 입력"></div>
+          </div>
+          <div><label>키를 물려받을 창구 <span class="hint">(위 칸을 비워 두면 이 창구의 키를 씁니다)</span></label>
+            <select id="fAuthFrom"><option value="">물려받지 않음</option></select></div>
+          <div class="hint" style="margin-top:-2px">
+            키는 서버마다 다릅니다. 여기 넣어 두면 <b>「사용 중인 서버」를 바꿀 때 키도 같이 바뀝니다</b> — 전환할 때마다 다시 넣지 않아도 됩니다.
+            헤더 이름이 <span class="mono">Authorization</span> 이고 개발자가 <span class="mono">Bearer</span> 방식이라고 하면 값에 <span class="mono">Bearer 키값</span> 처럼 접두어까지 넣으세요.
+            저장된 키는 화면에 다시 표시되지 않습니다(칸을 비워 두면 그대로 유지, 지우려면 <span class="mono">-</span> 한 글자를 넣고 저장).
+          </div>
+          </div>
+          <div><label>정렬 순서</label><input id="fSort" placeholder="100"></div>
+
+          <div id="boxUserField">
+            <label>transactionUser 로 보낼 값</label>
+            <select id="fUserField">
+              <option value="login_id">ERP 로그인 아이디 (login_id)</option>
+              <option value="name">이름 (name)</option>
+              <option value="role">역할 (role · admin·marketing 등)</option>
+            </select>
+          </div>
+
+          <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn" id="btnSaveCfg">설정 저장</button>
+            <button class="btn ghost" id="btnTest">연결 테스트</button>
+            <input id="tCustomer" placeholder="테스트할 고객 (코드·상호·RFC · 비우면 자동)" style="width:auto;min-width:260px">
+            <span class="hint" id="cfgMeta" style="margin-left:auto;align-self:center"></span>
+          </div>
+          <div class="hint" id="testHint" style="margin-top:6px">
+            고객 연동은 비워 두면 <b>RFC 가 있는 최근 승인 고객</b>으로 시험합니다. 제품처럼 고객이 없는 연동은 계약서 탭의 「요청 예시」를 씁니다.
+          </div>
+          <div class="msg" id="cfgMsg"></div>
+          <div id="testOut"></div>
+
+          <div style="margin-top:18px">
+            <div class="card-h" style="font-size:13px">설정 변경 이력</div>
+            <div class="tblwrap"><table><tbody id="chgRows"><tr><td class="empty">–</td></tr></tbody></table></div>
+          </div>
+        </div>
+
+        <!-- ② 계약서 -->
+        <div id="paneContract" class="hidden">
+          <div class="hint" style="margin-bottom:8px">
+            개발자와 합의한 규격을 여기에 보관합니다. 저장하면 이 화면이 곧 계약서 원본이 됩니다.
+          </div>
+          <div class="card-h" style="font-size:13px">전송 필드</div>
+          <div class="tblwrap"><table class="fieldtbl">
+            <thead><tr><th style="width:170px">필드</th><th style="width:110px">타입</th><th style="width:60px">필수</th><th>Descripción (ES)</th><th>설명 (KO)</th><th style="width:34px"></th></tr></thead>
+            <tbody id="fieldRows"></tbody>
+          </table></div>
+          <div style="margin-top:8px"><button class="btn ghost sm" id="btnAddField">+ 필드 추가</button></div>
+
+          <div class="row2" style="margin-top:14px">
+            <div><label>요청 예시 (JSON)</label><textarea id="cSampleReq" rows="8"></textarea></div>
+            <div><label>응답 예시 (JSON)</label><textarea id="cSampleRes" rows="8"></textarea></div>
+          </div>
+          <label>개발자가 보낸 계약서 원문</label>
+          <textarea id="cRaw" rows="8" placeholder="받은 문서를 그대로 붙여넣으세요."></textarea>
+          <label>비고 · 확정할 항목</label>
+          <textarea id="cNotes" rows="4"></textarea>
+
+          <div style="margin-top:14px;display:flex;gap:8px">
+            <button class="btn" id="btnSaveContract">계약서 저장</button>
+            <button class="btn ghost" id="btnGenSample">필드표로 예시 만들기</button>
+            <button class="btn ghost" id="btnCopyMd">Markdown 복사</button>
+          </div>
+          <div class="msg" id="contractMsg"></div>
+        </div>
+
+        <!-- ③ 전송 이력 / 수신 이력 -->
+        <div id="paneLog" class="hidden">
+
+          <!-- ③-b 수신 이력 (direction=in) -->
+          <div id="logIn" class="hidden">
+            <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+              <div class="kpi sent"><div class="n" id="iCreated">–</div><div class="l" id="iCreatedL">신규 접수</div></div>
+              <div class="kpi"><div class="n" id="iUpdated">–</div><div class="l" id="iUpdatedL">기존 갱신</div></div>
+              <div class="kpi failed"><div class="n" id="iRejected">–</div><div class="l">거절</div></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="iFilter" style="width:auto">
+                <option value="">전체</option>
+                <option value="created">신규 접수</option>
+                <option value="updated">기존 갱신</option>
+                <option value="rejected">거절</option>
+              </select>
+              <button class="btn ghost sm" id="btnInReload">조회</button>
+              <span class="hint" id="inMeta" style="margin-left:auto"></span>
+            </div>
+            <div class="tblwrap" style="margin-top:10px"><table>
+              <thead><tr>
+                <th style="width:120px">시각</th><th style="width:150px">RFC</th><th style="width:150px" id="inWhoTh">고객</th>
+                <th style="width:96px">결과</th><th style="width:104px">응답</th>
+                <th>메시지</th><th style="width:70px"></th>
+              </tr></thead>
+              <tbody id="inRows"><tr><td colspan="7" class="empty">조회하세요.</td></tr></tbody>
+            </table></div>
+            <div class="pager" id="inPgPager"><button class="btn ghost sm" id="inPgFirst" title="첫 페이지">«</button><button class="btn ghost sm" id="inPgPrev" title="이전 페이지">‹ 이전</button><span class="pinfo" id="inPgInfo">– / –</span><button class="btn ghost sm" id="inPgNext" title="다음 페이지">다음 ›</button><button class="btn ghost sm" id="inPgLast" title="마지막 페이지">»</button><span class="hint">이동</span><input id="inPgGo" type="number" min="1" inputmode="numeric"><select id="inPgSize"><option value="50">50건씩</option><option value="100">100건씩</option><option value="200">200건씩</option></select><span class="ptotal" id="inPgTotal" style="margin-left:auto"></span></div>
+            <div class="hint" id="inHintReg" style="margin-top:10px">
+              접수된 고객은 <b>고객 &gt; 승인 대기</b> 탭에 <span class="mono">P-####</span> 코드와 🌐 CRM 등록 배지로 나타납니다.
+              같은 RFC 를 다시 보내와도 고객이 중복 생성되지 않고 <b>기존 갱신</b>으로 처리됩니다.
+              「원문」을 누르면 상대가 실제로 보낸 JSON 을 그대로 볼 수 있습니다 — 필드 이름이 계약과 다를 때 여기서 확인하세요.
+            </div>
+            <div class="hint hidden" id="inHintQuote" style="margin-top:10px">
+              접수된 견적요청은 <b>견적 · 매출 추적</b> 목록에 <span class="mono">Q-2026-####</span> 로 나타나고,
+              담당자에게 <b>팝업</b>으로 뜹니다. 고객은 <b>RFC</b> 로만 찾습니다 — 숫자 고객번호는 받지 않습니다
+              (CRM 의 5번과 ERP 의 5번은 다른 회사입니다).
+              같은 <span class="mono">COT-…</span> 번호를 다시 보내와도 견적은 하나입니다(<b>기존 갱신</b>으로 처리).
+              못 찾은 코드·판매중단 제품이 섞이면 접수는 하되 그 줄이 표시되고 <b>견적 확정이 잠깁니다</b>.
+            </div>
+            <div class="hint hidden" id="inHintLead" style="margin-top:10px">
+              접수된 가입 신청은 <b>고객 &gt; 🌐 웹 가입 신청</b> 탭에서 처리합니다(담당 지정 · 고객 등록 · 보류).
+              여기 목록은 <b>수신 그 자체</b>의 기록입니다 — 거절된 호출(키 오류·필수값 누락)까지 남으므로,
+              상대가 「보냈다」 고 하는데 우리에게 없을 때 여기를 보면 됩니다.
+              「원문」을 누르면 상대가 실제로 보낸 JSON 을 그대로 볼 수 있습니다.
+            </div>
+          </div>
+
+          <div id="logOut">
+          <div class="scopebar">
+            <label for="fScope" id="fScopeL">기준</label>
+            <select id="fScope" style="width:auto;min-width:260px"></select>
+            <span class="hint" id="scopeInfo"></span>
+          </div>
+          <div class="kpis">
+            <div class="kpi pending"><div class="n" id="kPending">–</div><div class="l">대기</div></div>
+            <div class="kpi failed"><div class="n" id="kFailed">–</div><div class="l">실패</div></div>
+            <div class="kpi sent"><div class="n" id="kSent">–</div><div class="l">전송 완료</div></div>
+            <div class="kpi"><div class="n" id="kSkipped">–</div><div class="l" id="kSkippedL">건너뜀</div></div>
+          </div>
+          <div class="runperf hidden" id="runPerf"></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="fStatus" style="width:auto">
+              <option value="open">대기 + 실패</option>
+              <option value="pending">대기</option>
+              <option value="failed">실패</option>
+              <option value="sent">전송 완료</option>
+              <option value="skipped">건너뜀</option>
+              <option value="all">전체</option>
+            </select>
+            <input id="fQ" placeholder="고객코드 · 상호 · RFC" style="width:auto;min-width:200px">
+            <button class="btn ghost sm" id="btnLogReload">조회</button>
+            <button class="btn sm" id="btnDrain">대기분 지금 전송</button>
+            <button class="btn ghost sm" id="btnExportOpen" title="지금 보고 있는 범위의 실패·대기 건을 엑셀로 내려받습니다 — 보낸 본문·받은 응답 원문 포함(CRM 개발자 전달용, 키는 들어가지 않음)">⬇ 실패·대기 엑셀</button>
+            <button class="btn danger sm" id="btnRetryFailed" title="지금 보고 있는 범위(전송 회차·기간·검색어)의 실패 건만 다시 보냅니다">실패 건 재전송</button>
+            <button class="btn ghost sm" id="btnBulk" title="새 변경이 없어도 현재 ERP 값을 CRM 에 다시 밀어 넣습니다">전체 동기화</button>
+            <span class="hint" id="logMeta" style="margin-left:auto"></span>
+          </div>
+          <div class="msg" id="logMsg"></div>
+          <div class="tblwrap" style="margin-top:10px"><table>
+            <thead><tr>
+              <th style="width:120px">시각</th><th style="width:180px">대상</th><th style="width:104px">작업</th>
+              <th style="width:86px">상태</th><th style="width:52px">시도</th><th style="width:104px">응답</th>
+              <th>오류 / 메시지</th><th style="width:130px"></th>
+            </tr></thead>
+            <tbody id="logRows"><tr><td colspan="8" class="empty">연동을 선택하고 조회하세요.</td></tr></tbody>
+          </table></div>
+          <div class="pager" id="logPgPager"><button class="btn ghost sm" id="logPgFirst" title="첫 페이지">«</button><button class="btn ghost sm" id="logPgPrev" title="이전 페이지">‹ 이전</button><span class="pinfo" id="logPgInfo">– / –</span><button class="btn ghost sm" id="logPgNext" title="다음 페이지">다음 ›</button><button class="btn ghost sm" id="logPgLast" title="마지막 페이지">»</button><span class="hint">이동</span><input id="logPgGo" type="number" min="1" inputmode="numeric"><select id="logPgSize"><option value="50">50건씩</option><option value="100">100건씩</option><option value="200">200건씩</option></select><span class="ptotal" id="logPgTotal" style="margin-left:auto"></span></div>
+          <div class="hint" id="logHintOut" style="margin-top:10px">
+            승인 즉시 1회 전송하고, 실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도합니다.
+            6회 실패하면 <b>실패</b>로 남고 멈춥니다 — 원인을 고친 뒤 <b>재전송</b>을 누르세요.
+            연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기 상태로 남습니다.
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 0237 · 프로모션 배너 ===== -->
+    <div class="cols hidden" id="viewPromo">
+      <div class="card">
+        <div class="card-h">프로모션<span class="sp" id="pmCount"></span></div>
+        <div class="pfilter" id="pmFilter">
+          <button data-f="live" class="on">진행·예정</button><button data-f="draft">초안</button>
+          <button data-f="ended">종료</button><button data-f="cancelled">취소</button><button data-f="all">전체</button>
+        </div>
+        <div class="pmlist" id="pmList"><div class="empty">불러오는 중…</div></div>
+        <div style="margin-top:12px;display:flex;gap:6px">
+          <button class="btn sm" id="pmNew">+ 새 프로모션</button>
+          <button class="btn ghost sm" id="pmReload">새로고침</button>
+        </div>
+        <div class="hint" style="margin-top:10px">
+          등록하고 <b>「저장하고 전송」</b>을 누르면 고른 CRM 전부에 바로 나갑니다. CRM 은 시작일~종료일(멕시코 날짜) 동안 배너로 보여 줍니다.
+          전송된 프로모션을 고쳐 저장하면 <b>고친 내용이 자동으로 다시</b> 나갑니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h" id="pmTitle">새 프로모션</div>
+        <div id="pmMigBanner"></div>
+        <div class="row2">
+          <div><label>제목 <span class="hint">(배너 대체 텍스트로도 쓰입니다 · 120자)</span></label><input id="pmFTitle" maxlength="120" placeholder="예: Octubre CTR -15%"></div>
+          <div class="row2" style="gap:8px">
+            <div><label>할인 종류</label>
+              <select id="pmFType"><option value="porcentaje">할인율 (%)</option><option value="monto">할인 금액 (MXN)</option><option value="otro">기타(금액 없음)</option></select></div>
+            <div><label id="pmFValueL">할인율 (%)</label><input id="pmFValue" inputmode="decimal" placeholder="15"></div>
+          </div>
+        </div>
+        <label>설명 <span class="hint">(CRM 에 그대로 보입니다 · 스페인어 권장)</span></label>
+        <textarea id="pmFDesc" rows="3" style="font-family:inherit;font-size:13px" placeholder="15% de descuento en terminales y rótulas CTR"></textarea>
+        <label>적용 조건</label><input id="pmFCond" placeholder="예: Pedido mínimo 5,000 MXN · sólo línea CTR">
+        <div class="row3">
+          <div><label>시작일 <span class="hint">(포함)</span></label><input id="pmFStart" type="date"></div>
+          <div><label>종료일 <span class="hint">(포함)</span></label><input id="pmFEnd" type="date"></div>
+          <div><label>노출 순서 <span class="hint">(작을수록 먼저)</span></label><input id="pmFPrio" inputmode="numeric" placeholder="100"></div>
+        </div>
+        <div class="row2">
+          <div><label>배너 클릭 시 이동 주소 <span class="hint">(선택)</span></label><input id="pmFLink" placeholder="https://…"></div>
+          <div style="align-self:end;padding-bottom:6px"><label class="chk"><input type="checkbox" id="pmFAuto" checked> 종료일 다음 날 CRM 에서 자동으로 내리기</label></div>
+        </div>
+
+        <label>배너 이미지 <span class="hint">(PNG · JPG · WEBP · GIF · 5MB 이하)</span></label>
+        <div class="drop" id="pmDrop" tabindex="0">
+          <div class="ph" id="pmDropPh">여기를 눌러 파일을 고르거나, 이미지를 끌어다 놓으세요</div>
+          <img id="pmImg" class="hidden" alt="배너 미리보기">
+        </div>
+        <input type="file" id="pmFile" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">
+        <div class="hint" id="pmImgInfo" style="margin-top:6px"></div>
+        <div id="pmSizeWarn"></div>
+
+        <label>전송할 곳 <span class="hint">(CRM · 고객사 — 여러 곳 선택 가능)</span></label>
+        <div id="pmTargets"><div class="hint">불러오는 중…</div></div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn ghost sm" id="pmAddTarget" type="button">+ 전송할 곳 추가</button>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+          <button class="btn" id="pmPublish">저장하고 전송</button>
+          <button class="btn ghost" id="pmSaveDraft">임시저장</button>
+          <button class="btn ghost sm" id="pmResend">다시 전송</button>
+          <button class="btn ghost sm" id="pmPreview">보낼 본문 보기</button>
+          <button class="btn danger sm" id="pmCancel">CRM 에서 내리기</button>
+          <button class="btn danger sm" id="pmDelete" style="margin-left:auto">삭제</button>
+        </div>
+        <div class="msg" id="pmMsg"></div>
+        <div id="pmPreviewOut"></div>
+
+        <div id="pmDelivBox" class="hidden" style="margin-top:16px">
+          <div class="card-h" style="margin-bottom:6px">CRM 별 전송 현황 <span class="sp" id="pmVer"></span></div>
+          <div class="tblwrap"><table>
+            <thead><tr><th>전송할 곳</th><th style="width:70px">환경</th><th style="width:56px">버전</th><th style="width:80px">작업</th>
+              <th style="width:80px">상태</th><th style="width:70px">응답</th><th>오류 / 메시지</th><th style="width:118px">시각</th><th style="width:70px"></th></tr></thead>
+            <tbody id="pmDelivRows"></tbody>
+          </table></div>
+          <div class="hint" style="margin-top:6px">실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 자동 재시도합니다. 창구가 꺼져 있으면 <b>대기</b>로 남았다가 켜는 즉시 나갑니다.
+            전체 이력은 연동 설정 › 해당 창구 › 전송 이력에서도 볼 수 있습니다.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── 시각·날짜는 멕시코 중부(UTC−6 고정) 기준. 서버는 UTC 로 저장한다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+  function mxDia(v){ var s=mxHora(v); return s?s.slice(0,10):''; }
+  function mxHoy(){ return new Date(Date.now()-360*60000).toISOString().slice(0,10); }
+
+  // ── 시각 표시 — 서버는 UTC 로 저장한다. 화면은 멕시코 중부(UTC−6 고정)로 보여 준다. (2026-10-07)
+  function mxHora(v){
+    if(v==null||v==='') return '';
+    var d=new Date(v);
+    if(String(v).length<=10||isNaN(d.getTime())) return String(v).slice(0,16).replace('T',' ');
+    return new Date(d.getTime()-360*60000).toISOString().slice(0,16).replace('T',' ');
+  }
+
+  let session={token:null,user:null,api:''};
+  let EPS=[], CUR=null, TAB='cfg', DETAIL=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const jauth=()=>({'Content-Type':'application/json',...auth()});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  const ORIGIN_LABEL={registration_approve:'등록 승인',change_approve:'수정 승인',director_edit:'디렉터 수정',
+    customer_delete:'고객 삭제',registration_reject:'등록 반려',bulk_push:'전체 동기화',manual_resend:'수동 재전송',
+    crm_not_found:'CRM 에 없어 등록으로 전환',manual:'수동',
+    auto_daily:'자동 전체',auto_delta:'자동 변경분',product_pick:'고른 제품',product_full:'수동 전체',product_test:'시험',product_delta:'수동 변경분'};
+  // 0236 · 제품 전송 회차 구분
+  const MODE_LABEL={full:'전체',test:'시험',delta:'변경분',baseline:'기준 저장'};
+  const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
+  const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
+  const CAT_LABEL={customer:'고객',product:'제품',quote:'견적',order:'오더',promotion:'프로모션',other:'기타'};
+  // 0237 · 프로모션 전송 원인
+  Object.assign(ORIGIN_LABEL,{promo_publish:'프로모션 · 전송',promo_update:'프로모션 · 수정 반영',promo_resend:'프로모션 · 다시 전송',
+    promo_cancel:'프로모션 · 취소(내리기)',promo_auto_end:'프로모션 · 종료 자동 내리기',promo_target_removed:'프로모션 · 대상에서 빠짐'});
+  // 0227 · 오더상태 전송 — 어떤 일이 전송을 일으켰나
+  Object.assign(ORIGIN_LABEL,{order_crm_quote_created:'오더상태 · 웹 견적 접수',order_packing_printed:'오더상태 · 포장지시서 출력',
+    order_packed:'오더상태 · 포장완료',order_converted:'오더상태 · 전환',order_sat_entered:'오더상태 · SAT 입력',
+    order_sweep:'오더상태 · 감시(놓친 단계)',order_hook:'오더상태',
+    order_expired:'오더상태 · 24시간 만료',order_delete_approved:'오더상태 · 삭제 승인'});   // 0296
+  const ORDER_STEP_RULE={1:'웹 견적이 ERP 에 접수돼 견적이 만들어졌을 때 (견적작성)',
+    2:'포장작업지시서를 처음 출력했을 때 (포장작업 중)',
+    3:'포장이 끝났거나, 전환돼 SAT 입력을 기다릴 때 (포장완료 · SAT 입력대기)',
+    4:'실제 SAT 번호가 등록돼 수금 단계로 넘어갔을 때 (수금대기 · 수금완료)',
+    8:'끝 상태 · 24시간 룰로 견적이 만료됐을 때 (포장지시서 출력 전)',
+    9:'끝 상태 · 디렉터가 견적 삭제를 승인했을 때'};   // 0296
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''),login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';$('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{
+        if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+        res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();
+      }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      await loadEndpoints();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ===== 연동 목록 =====
+  async function loadEndpoints(keepKey){
+    try{
+      const res=await fetch(session.api+'/api/integrations',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        $('globalBanner').innerHTML='<div class="banner err">'+esc(d.note||d.error||res.status)+'</div>';
+        return;
+      }
+      EPS=d.items||[];
+      $('epCount').textContent=EPS.length+'건';
+      const eng=d.engine||{};
+      $('globalBanner').innerHTML = d.migrated===false
+        ? '<div class="banner warn"><b>마이그레이션 대기</b> — Railway 콘솔에서 <span class="mono">npm run migrate</span> 로 0201 을 적용해야 이 화면에서 설정을 저장할 수 있습니다.</div>'
+        : (eng.kill_switch
+            ? '<div class="banner err"><b>전체 정지</b> — 환경변수 CRM_SYNC_DISABLE_ALL=1 이 켜져 있어 어떤 연동도 전송되지 않습니다.</div>'
+            // 20260922 · 신원 동봉이 꺼져 있으면 **반드시 보여야 한다.** 이건 Railway 변수 하나로
+            //   조용히 꺼지고, 꺼진 줄 모르면 「ERP 에서 이메일을 고쳤는데 CRM 이 그대로다」가
+            //   원인 불명으로 남는다. 실제로 그 상태를 며칠 겪었다.
+            : (eng.upsert_identity === false
+                ? '<div class="banner warn"><b>이메일·전화·상호를 CRM 으로 보내지 않는 중</b> — '
+                  + '환경변수 <span class="mono">CRM_UPSERT_IDENTITY</span> 가 꺼져 있습니다. '
+                  + '상거래정보 전송에는 할인율·외상일·상태만 실립니다. '
+                  + 'ERP 에서 고친 연락처는 CRM 에 반영되지 않습니다 — Railway 에서 그 변수를 지우거나 '
+                  + '<span class="mono">1</span> 로 바꾸면 다시 실립니다.</div>'
+                // 20260923 · 회사 종류(TIER)가 없는 고객이 어느 칸으로 나가는지 **말해 준다.**
+                //   보내는 쪽이 조용히 메우면, CRM 에서 「왜 이 고객이 D 지?」에 아무도 답할 수 없다.
+                : (eng.business_type_fallback === null
+                    ? '<div class="banner warn"><b>회사 종류(TIER)가 없는 고객은 CRM 에 등록되지 않습니다</b> — '
+                      + '환경변수 <span class="mono">CRM_BUSINESS_TYPE_FALLBACK</span> 가 '
+                      + '<span class="mono">off</span> 입니다. CRM 은 처음 보는 RFC 에 '
+                      + '<span class="mono">businessTypeId</span> 를 요구하므로 그 고객들은 거절됩니다 — '
+                      + '변수를 지우면 <span class="mono">D</span> 로 나갑니다.</div>'
+                    : (eng.business_type_fallback && eng.business_type_fallback !== 'D'
+                        ? '<div class="banner info">회사 종류(TIER)가 없는 고객은 CRM 으로 '
+                          + '<b>' + esc(eng.business_type_fallback) + '</b> 로 나갑니다 '
+                          + '(<span class="mono">CRM_BUSINESS_TYPE_FALLBACK</span>).</div>'
+                        : ''))));
+      renderEpList();
+      const key=keepKey||(CUR&&CUR.key)||(EPS[0]&&EPS[0].key);
+      if(key) selectEp(key);
+    }catch(e){ $('globalBanner').innerHTML='<div class="banner err">서버 연결 실패</div>'; }
+  }
+
+  function renderEpList(){
+    $('epList').innerHTML=EPS.map(function(e){
+      const c=e.counts||{};
+      const inb=e.direction==='in';
+      const badges=(inb?'<span class="pill p-skipped">수신 ←</span>':'')
+        +'<span class="pill '+(e.enabled?'p-on':'p-off')+'">'+(e.enabled?(inb?'수신 켜짐':'전송 켜짐'):'꺼짐')+'</span>'
+        +(inb?'':'<span class="pill '+(e.env==='prod'?'p-prod':'p-test')+'">'+(e.env==='prod'?'운영':'테스트')+'</span>')
+        +(c.pending?'<span class="pill p-pending">대기 '+c.pending+'</span>':'')
+        +(c.failed?'<span class="pill p-failed">'+(inb?'거절 ':'실패 ')+c.failed+'</span>':'');
+      return '<div class="ep'+(CUR&&CUR.key===e.key?' sel':'')+'" onclick="selectEp(\''+e.key+'\')">'
+        +'<div class="t">'+esc(e.label)+' <span class="hint">· '+esc(CAT_LABEL[e.category]||e.category)+'</span></div>'
+        +'<div class="m mono">'+esc(inb?(e.inbound_path||''):(e.active_url||'(주소 미설정)'))+'</div>'
+        +'<div class="b">'+badges+'</div></div>';
+    }).join('');
+  }
+
+  async function selectEp(key){
+    try{
+      const d=await fetch(session.api+'/api/integrations/'+encodeURIComponent(key),{headers:auth()}).then(r=>r.json());
+      if(d.error){ return; }
+      if(!CUR || CUR.key!==d.endpoint.key) pgResetAll();
+      CUR=d.endpoint; CUR.changes=d.changes||[];
+      $('epTitle').textContent=CUR.label+' ('+CUR.key+')';
+      renderEpList(); fillCfg(); fillContract(); renderChanges();
+      if(TAB==='log') loadLog();
+    }catch(e){}
+  }
+
+  // ===== ① 연결 설정 =====
+  // 0208 · 수신 연동은 화면의 절반이 무의미하다(상대 주소·메서드·전송 키).
+  //   숨기지 않으면 "여기 URL 을 넣어야 하나?" 로 반드시 헷갈린다.
+  function applyDirection(){
+    const inb = CUR && CUR.direction==='in';
+    ['boxUrls','boxMethods','boxAuth','boxTokens','boxUserField','boxFallback','boxFallbackHint']
+      .forEach(id=>$(id).classList.toggle('hidden',!!inb));
+    $('boxInbound').classList.toggle('hidden',!inb);
+    $('btnTest').classList.toggle('hidden',!!inb);
+    // 0218 · 제품 창구에서는 **고객 전용 요소를 숨긴다.**
+    //   「시험 전송할 고객」 칸과 「전체 동기화」(= 고객 전체를 CRM 에 밀어 넣는 버튼)가
+    //   제품 화면에 그대로 보이면, 제품을 보내려고 누른 버튼이 고객을 보낸다.
+    const prod = !inb && CUR && CUR.category==='product';
+    // 0227 · 오더 창구도 고객 전용 요소(시험 고객 칸 · 전체 동기화)를 숨긴다 — 누르면 고객이 나간다.
+    const ord = !inb && CUR && CUR.category==='order';
+    // 0237 · 프로모션 창구도 고객 전용 요소를 숨긴다 — 「전체 동기화」를 누르면 고객이 나간다.
+    const promo = !inb && CUR && CUR.category==='promotion';
+    $('tCustomer').classList.toggle('hidden',!!inb||!!prod);
+    if(ord||promo) $('tCustomer').classList.add('hidden');
+    $('testHint').classList.toggle('hidden',!!inb);   // 시험 전송이 없는데 그 설명만 남으면 헷갈린다
+    $('btnBulk').classList.toggle('hidden',!!prod);
+    if(ord||promo) $('btnBulk').classList.add('hidden');
+    if(promo){
+      $('testHint').innerHTML='프로모션 창구의 <b>연결 테스트</b>는 <b>가장 최근 프로모션</b>(전송된 것 우선) 1건을 지금 버전 그대로 보냅니다 — '
+        +'실제 값이므로 CRM 에 그대로 반영됩니다. 프로모션이 하나도 없으면 계약서의 요청 예시로 보냅니다.';
+      $('fQ').placeholder='PR-… · 제목';
+      $('logHintOut').innerHTML='프로모션 1건 × 이 창구 1곳 = 이력 1건입니다(등록·수정·다시 전송·내리기마다 1건). '
+        +'실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도하고, 6회 실패하면 <b>실패</b>로 남습니다. '
+        +'같은 프로모션의 새 버전이 쌓이면 대기 중인 옛 버전은 <b>건너뜀</b>으로 닫힙니다.';
+    }else if(ord){
+      $('testHint').innerHTML='오더상태 연동의 <b>연결 테스트</b>는 <b>가장 최근 웹 견적(COT)</b>의 <b>지금 단계</b>를 1건 보냅니다 — '
+        +'실제 값이므로 CRM 에 그대로 반영됩니다. 웹 견적이 하나도 없으면 계약서의 요청 예시로 보냅니다. '
+        +'이 시험은 발송 장부에 남지 않으므로, 나중에 같은 단계가 정식으로 한 번 더 나갈 수 있습니다(<span class="mono">eventoId</span> 가 같아 CRM 은 무시하면 됩니다).';
+      $('fQ').placeholder='COT 번호 · 단계';
+      $('logHintOut').innerHTML='오더 단계 <b>1개 = 이력 1건</b>입니다. '
+        +'실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도하고, 6회 실패하면 <b>실패</b>로 남습니다 — '
+        +'원인을 고친 뒤 <b>재전송</b>을 누르면 같은 본문(같은 <span class="mono">eventoId</span>)으로 다시 나갑니다.';
+    }else if(prod){
+      $('testHint').innerHTML='제품 연동의 <b>연결 테스트</b>는 실제 제품 <b>1건</b>을 보냅니다 — '
+        +'시험이므로 마감 신호(<span class="mono">esUltimoLote</span>)는 실리지 않습니다. '
+        +'전체 카탈로그는 「연결 설정」 아래의 <b>「지금 전체 보내기」</b>로 보냅니다.';
+      $('fQ').placeholder='envioId · 묶음';
+      $('logHintOut').innerHTML='제품 전송은 <b>묶음(lote) 1개 = 이력 1건</b>입니다. '
+        +'실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도하고, 6회 실패하면 <b>실패</b>로 남습니다 — '
+        +'원인을 고친 뒤 <b>재전송</b>을 누르면 같은 envioId 로 다시 나갑니다. '
+        +'연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기합니다.';
+    }else if(!inb){
+      $('testHint').innerHTML='고객 연동은 비워 두면 <b>RFC 가 있는 최근 승인 고객</b>으로 시험합니다. 제품 연동은 실제 제품 1건으로 시험합니다.';
+      $('fQ').placeholder='고객코드 · 상호 · RFC';
+      $('logHintOut').innerHTML='승인 즉시 1회 전송하고, 실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도합니다. '
+        +'6회 실패하면 <b>실패</b>로 남고 멈춥니다 — 원인을 고친 뒤 <b>재전송</b>을 누르세요. '
+        +'연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기 상태로 남습니다.';
+    }
+    $('enabledHint').textContent = inb ? '끄면 CRM 이 보내와도 받지 않고 거절합니다.' : '끄면 전송 건이 대기함에 쌓이기만 합니다.';
+    document.querySelector('.tab[data-tab="log"]').textContent = inb ? '수신 이력' : '전송 이력';
+    $('logIn').classList.toggle('hidden',!inb);
+    $('logOut').classList.toggle('hidden',!!inb);
+    if(inb){
+      // 두 수신 창구는 받는 것이 다르다 — 목록의 말도 그에 맞춰야 한다.
+      const lead = CUR.key==='crm_web_lead';
+      const cotiz = CUR.key==='crm_quote_request';
+      $('iCreatedL').textContent = cotiz?'신규 견적요청':(lead?'신규 가입 신청':'신규 접수');
+      $('iUpdatedL').textContent = cotiz?'같은 번호 재전송':(lead?'재전송(갱신)':'기존 갱신');
+      $('inWhoTh').textContent   = lead?'회사':'고객';
+      $('inHintReg').classList.toggle('hidden',lead||cotiz);
+      $('inHintLead').classList.toggle('hidden',!lead);
+      $('inHintQuote').classList.toggle('hidden',!cotiz);
+    }
+    if(inb){
+      const base=(session.api||'').replace(/\/+$/,'');
+      $('fInboundUrl').value = base + (CUR.inbound_path||'/api/integrations/crm/customer-registration');
+      $('fInKeyTest').value=''; $('fInKeyTest').placeholder = CUR.has_token_test?'●●●● 발급됨 (값은 다시 볼 수 없음)':'미발급';
+      $('fInKeyProd').value=''; $('fInKeyProd').placeholder = CUR.has_token_prod?'●●●● 발급됨 (값은 다시 볼 수 없음)':'미발급';
+      $('inKeyMsg').className='msg';
+      // ⚠ 전용 키가 **공용 키를 막고 있는** 상태를 말해 준다.
+      //   이 창구는 원래 「신규고객 등록」의 키로 들어오게 돼 있는데, 전용 키를 한 번
+      //   발급하는 순간 그 설계가 꺼진다. 상대는 「키는 같은 걸 쓴다」는데 우리는 401 을
+      //   주는 상황이 되고, 화면이 말해 주지 않으면 원인을 찾을 수 없다.
+      const ownKey = CUR.has_token_test||CUR.has_token_prod;
+      const fbEp = CUR.key_fallback_from ? EPS.find(x=>x.key===CUR.key_fallback_from) : null;
+      const blocking = ownKey && !!fbEp;
+      $('boxKeyOwn').classList.toggle('hidden',!blocking);
+      if(blocking){
+        $('keyOwnMsg').textContent = '이 창구는 지금 '+'전용 키'+'를 쓰고 있습니다 — 「'+fbEp.label
+          +'」의 키로 보내면 401 로 거절됩니다. 같은 키를 쓰기로 했다면 아래에서 전용 키를 지우세요.';
+      }
+      // 알림 대상 고르기는 **팝업이 뜨는 창구**에서만 뜻이 있다(가입 신청 · 견적요청).
+      //   ⚠ 두 창구는 대상 명단을 따로 쓴다 — 새 고객을 맞는 사람과 견적을 처리하는 사람은
+      //     같지 않다. 그래서 화면도 지금 보고 있는 창구의 명단만 불러온다.
+      $('boxNotify').classList.toggle('hidden',!NOTIFY_BASE[CUR.key]);
+      if(NOTIFY_BASE[CUR.key]) loadNotifyTargets();
+    }
+  }
+
+  // ===== 0210 · 팝업 알림 대상 (사람 단위 체크) — 0220 에서 견적요청 창구도 같은 화면을 쓴다 =====
+  //   창구별 주소는 여기 한 곳에만 적는다. 화면 코드는 하나다(두 벌로 두면 반드시 갈라진다).
+  const NOTIFY_BASE={ crm_web_lead:'/api/crm-leads', crm_quote_request:'/api/crm-quotes' };
+  function notifyBase(){ return NOTIFY_BASE[CUR&&CUR.key]||'/api/crm-leads'; }
+  let NOTIFY=[];
+  async function loadNotifyTargets(){
+    const box=$('notifyList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+notifyBase()+'/notify-targets',{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">'+esc(d.note||d.error)+'</div>'; return; }
+      if(d.migrated===false){ box.innerHTML='<div class="hint">이 창구의 마이그레이션이 아직 적용되지 않았습니다.</div>'; return; }
+      NOTIFY=d.items||[];
+      box.innerHTML=NOTIFY.map(function(u,i){
+        return '<label style="display:flex;gap:7px;align-items:center;border:1px solid var(--line);border-radius:9px;'
+          +'padding:7px 10px;font-size:13px;font-weight:600;cursor:'+(u.always?'default':'pointer')+';'
+          +(u.always?'background:#FAFAFA':'')+'">'
+          +'<input type="checkbox" '+(u.selected||u.always?'checked':'')+(u.always?' disabled':'')
+            +' onchange="setNotify('+i+',this.checked)">'
+          +'<span>'+esc(u.name)+'<span class="hint" style="margin:0"> · '+esc(u.role)+(u.always?' (항상 받음)':'')+'</span></span>'
+          +'</label>';
+      }).join('')||'<div class="hint">사용자가 없습니다.</div>';
+      const n=NOTIFY.filter(u=>u.selected&&!u.always).length;
+      $('notifyMeta').textContent='선택 '+n+'명 (디렉터 제외)';
+    }catch(e){ box.innerHTML='<div class="hint">서버 연결 실패</div>'; }
+  }
+  function setNotify(i,on){ if(NOTIFY[i]) NOTIFY[i].selected=!!on;
+    $('notifyMeta').textContent='선택 '+NOTIFY.filter(u=>u.selected&&!u.always).length+'명 (디렉터 제외)'; }
+  async function saveNotifyTargets(){
+    const m=$('notifyMsg'); m.className='msg'; $('btnSaveNotify').disabled=true;
+    try{
+      // 디렉터는 항상 받으므로 목록에 넣지 않는다(넣어도 무해하지만 설정이 헷갈린다).
+      const ids=NOTIFY.filter(u=>u.selected&&!u.always).map(u=>u.id);
+      const res=await fetch(session.api+notifyBase()+'/notify-targets',
+        {method:'PUT',headers:jauth(),body:JSON.stringify({user_ids:ids})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      m.className=d.count?'msg ok':'msg warn';
+      m.textContent=d.count?(d.count+'명에게 팝업이 뜹니다(디렉터 포함).'):(d.note||'아무도 선택하지 않았습니다.');
+      loadNotifyTargets();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnSaveNotify').disabled=false; }
+  }
+
+  // 2026-09-24 · 저장된 메서드가 목록에 없으면 추가해서 고른다(빈칸으로 저장되어 거절되던 문제).
+  function setMethodSel(id,v){
+    const sel=$(id); v=String(v||'').trim().toUpperCase(); if(!v) return;
+    if(![...sel.options].some(o=>o.value===v)){ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); }
+    sel.value=v;
+  }
+
+  function fillCfg(){
+    const e=CUR;
+    $('fLabel').value=e.label||''; $('fCategory').value=e.category||'other'; $('fDesc').value=e.description||'';
+    $('fEnabled').checked=!!e.enabled; $('fEnv').value=e.env||'test';
+    $('fUrlTest').value=e.url_test||''; $('fUrlProd').value=e.url_prod||'';
+    setMethodSel('fMethodUpsert',e.method_upsert||'POST'); setMethodSel('fMethodDelete',e.method_delete||'DELETE');
+    $('fOkCode').value=e.ok_code||'0';
+    $('fNoRetry').value=e.no_retry_codes||'';
+    // 폴백 대상 후보 = 나 자신을 뺀 **전송** 연동들(수신 창구로는 보낼 수 없다).
+    $('fFallbackKey').innerHTML='<option value="">사용 안 함</option>'
+      +EPS.filter(x=>x.direction!=='in'&&x.key!==e.key)
+          .map(x=>'<option value="'+esc(x.key)+'">'+esc(x.label)+'</option>').join('');
+    $('fFallbackKey').value=e.fallback_key||'';
+    $('fAuthFrom').innerHTML='<option value="">물려받지 않음</option>'
+      +EPS.filter(x=>x.direction!=='in'&&x.key!==e.key)
+          .map(x=>'<option value="'+esc(x.key)+'">'+esc(x.label)+'</option>').join('');
+    $('fAuthFrom').value=e.auth_from||'';
+    $('fFallbackCodes').value=e.fallback_codes||'';
+    $('fAuthIn').value=e.auth_in||'header';
+    $('fAuthName').value=(e.auth_in==='header'||!e.auth_in)?(e.auth_header||'Authorization'):(e.auth_param||'apiKey');
+    $('fTokenTest').value=''; $('fTokenTest').placeholder=e.has_token_test?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
+    $('fTokenProd').value=''; $('fTokenProd').placeholder=e.has_token_prod?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
+    $('fTimeout').value=e.timeout_ms||10000; $('fUserField').value=e.user_field||'login_id';
+    $('fSort').value=e.sort_order==null?100:e.sort_order;
+    // 0218 · 제품 카탈로그 전송 설정(제품 창구에서만)
+    const isProd = e.category==='product' && e.direction!=='in';
+    $('boxProduct').classList.toggle('hidden',!isProd);
+    if(isProd){
+      $('fImgBase').value=e.img_base_url||'';
+      $('fBatch').value=e.batch_size==null?500:e.batch_size;
+      $('fSendHour').value=e.send_hour_mx==null?6:e.send_hour_mx;
+      $('fAutoSend').checked=!!e.auto_send;
+      // 0236 — 칸이 없으면(마이그레이션 전) 잠그고 안내
+      const dr=!!e.delta_ready;
+      ['fFullWeekday','fDeltaEvery','fDeltaAuto'].forEach(id=>{ $(id).disabled=!dr; });
+      $('fFullWeekday').value=e.full_weekday==null?'':String(e.full_weekday);
+      $('fDeltaEvery').value=e.delta_every_min==null?5:e.delta_every_min;
+      $('fDeltaAuto').checked=!!e.delta_auto;
+      $('deltaMigHint').textContent=dr?'':'변경분 전송·요일 설정은 마이그레이션 0236 후에 쓸 수 있습니다(npm run migrate). 그 전까지 자동 전체 전송은 예전처럼 매일입니다.';
+      $('fBodyShape').value=e.body_shape||'lote';
+      renderFieldMap(e.field_map||{});
+      applyShapeHint();
+      loadCatalogStatus();
+    }
+    // 0227 · 오더상태 전송(오더 창구에서만)
+    const isOrder = e.category==='order' && e.direction!=='in';
+    $('boxOrder').classList.toggle('hidden',!isOrder);
+    // 0237 · 프로모션 배너 창구
+    const isPromo = e.category==='promotion' && e.direction!=='in';
+    $('boxPromo').classList.toggle('hidden',!isPromo);
+    if(isPromo){
+      const pr=!!e.promo_ready;
+      ['fBannerW','fBannerH'].forEach(id=>{ $(id).disabled=!pr; });
+      $('fBannerW').value=e.banner_w==null?'':e.banner_w;
+      $('fBannerH').value=e.banner_h==null?'':e.banner_h;
+      $('promoMigHint').textContent=pr?'':'배너 규격은 마이그레이션 0237 후에 저장할 수 있습니다(npm run migrate).';
+      const md=String(e.method_delete||'DELETE').toUpperCase();
+      $('promoDelHint').innerHTML = md==='DELETE'
+        ? '<span class="mono">DELETE</span> 주소<span class="mono">?promocionId=PR-…</span> + 본문 <span class="mono">estatus</span>'
+        : '<span class="mono">'+esc(md)+'</span> 로 본문 <span class="mono">estatus: cancelada|finalizada</span>';
+      renderPromoMap(e.field_map||{});
+    }
+    if(isOrder){ $('orderMsg').className='msg'; $('orderMsg').textContent=''; loadOrderStatus(); }
+    applyDirection();
+    const warn=[]; const info=[];
+    if(e.direction==='in'){
+      if(!e.has_token_test&&!e.has_token_prod){
+        // ⚠ 전용 키가 없다고 곧바로 「401 로 거절된다」 고 하면 안 된다 —
+        //   서버는 폴백 연동(key_fallback_from)의 키를 그대로 받아 준다. 실제로 그렇게 동작한다.
+        const fb=e.key_fallback_from ? EPS.find(x=>x.key===e.key_fallback_from) : null;
+        if(fb&&(fb.has_token_test||fb.has_token_prod)){
+          info.push('이 창구는 전용 키가 없어 「'+fb.label+'」의 키를 그대로 받습니다 — '
+            +'CRM 개발자에게 새 키를 줄 필요가 없습니다. 여기서 따로 발급하면 그때부터 이 창구만 새 키를 요구합니다.');
+        }else{
+          warn.push('수신 키가 아직 없습니다 — 키를 발급해 CRM 개발자에게 주기 전까지 모든 수신이 401 로 거절됩니다.');
+        }
+      }
+      if(!e.enabled) warn.push('수신이 꺼져 있습니다 — CRM 이 보내와도 받지 않습니다.');
+    } else {
+    if(e.active_url&&!e.secure) warn.push('지금 주소는 HTTP(평문)입니다 — 고객 RFC·할인율이 암호화 없이 전송됩니다.');
+    if(e.env==='prod'&&!e.url_prod) warn.push('운영으로 지정됐지만 운영 URL 이 비어 있습니다.');
+    if(!e.has_token){
+      const from=e.auth_from?(EPS.find(x=>x.key===e.auth_from)||{}):null;
+      warn.push(e.auth_from
+        ? ('키를 「'+((from&&from.label)||e.auth_from)+'」 에서 물려받도록 돼 있는데 그 창구에도 키가 없습니다 — 인증 없이 호출합니다.')
+        : ((e.env==='prod'?'운영':'테스트')+' 서버 API 키가 비어 있어 인증 없이 호출합니다.'));
+    }
+    // 0214 · 남의 키를 쓰고 있으면 그 사실을 말해 준다. 안 그러면 「키 없음」인데 왜 되는지 모른다.
+    if(e.token_borrowed_from){
+      info.push('API 키는 「'+(e.token_borrowed_label||e.token_borrowed_from)+'」 의 것을 함께 씁니다 — '
+        +'키를 바꿀 때 그 창구 한 곳만 고치면 됩니다. 따로 쓰려면 여기에 키를 넣으세요.');
+    }
+    if(e.fallback_key){
+      const t=EPS.find(x=>x.key===e.fallback_key);
+      if(!t) warn.push('대체 창구 「'+e.fallback_key+'」 를 찾을 수 없습니다 — 폴백이 일어나지 않습니다.');
+      else if(!t.enabled) warn.push('대체 창구 「'+t.label+'」 가 꺼져 있습니다 — 폴백이 일어나지 않습니다(그 건은 그대로 닫힙니다).');
+      else if(!t.active_url) warn.push('대체 창구 「'+t.label+'」 의 '+(t.env==='prod'?'운영':'테스트')+' URL 이 비어 있습니다 — 폴백이 일어나지 않습니다.');
+      else info.push('CRM 에 없는 고객은 자동으로 「'+t.label+'」 로 다시 보냅니다.');
+    }
+    // 「키를 어디에 싣는가」는 고칠 거리가 아니라 **사실 안내**다 — 경고 상자에 넣으면
+    //   정상인 창구가 늘 주황색으로 보여서, 진짜 경고가 묻힌다.
+    if(e.has_token) info.push('키 전달 방식: '+(e.auth_in==='query'?('주소 뒤 ?'+(e.auth_param||'apiKey')+'='):(e.auth_in==='body'?('본문 필드 '+(e.auth_param||'apiKey')):('헤더 '+(e.auth_header||'Authorization')))));
+    }
+    $('cfgMeta').innerHTML=e.updated_at?('마지막 수정 '+new Date(e.updated_at).toLocaleString('ko-KR')):'';
+    // ⚠ 경고와 안내는 **함께** 보여야 한다. 예전에는 경고가 하나라도 있으면 안내를 통째로
+    //   숨겼다 — 그래서 「키를 어디서 물려받는지」 같은 꼭 필요한 설명이 사라졌다.
+    const m=$('cfgMsg');
+    if(warn.length||info.length){
+      m.className='';
+      m.innerHTML=(warn.length?'<div class="msg warn">'+warn.map(esc).join('<br>')+'</div>':'')
+                 +(info.length?'<div class="msg ok">'+info.map(esc).join('<br>')+'</div>':'');
+    } else { m.className='msg'; m.textContent=''; }
+    $('testOut').innerHTML='';
+  }
+
+  // ===== 0219 · 상대 규격 맞추기(필드 이름 · 본문 형식) =====
+  // 우리 필드 목록은 서버(productSync.PRODUCT_FIELDS)와 같은 순서·같은 이름이어야 한다.
+  // [우리 필드, 설명, 개발자 규격(2026-09-15)에서 쓰는 이름 · '-' 는 그 규격에 없어서 뺀다]
+  const PFIELDS=[
+    ['codigo','제품코드 (products.code)','ctrCode'],
+    ['internalSku','제품코드 — 두 번째 이름으로도 요구함','internalSku'],
+    ['descripcion','제품명 (products.name)','descriptionEs'],
+    ['sydCode1','SYD 코드 — 여러 개면 <b>첫 번째만</b>','sydCode1'],
+    ['referenciaSyd','SYD 코드 전체 (// 구분)','-'],
+    ['referenciaOE','OE 순정번호 — 제품 마스터 OE 열 원문 (// 구분 · FOR 표기 포함)','referenciaOE'],
+    ['aplicaciones','적용차종 — <b>상대 규격에 없음</b>','-'],
+    ['precioLista','정가 (list_price)','listPriceMxn'],
+    ['moneda','통화','-'],
+    ['existencia','가용재고 수량 — <b>숫자</b>(0 이상 정수)','-'],
+    ['imagenUrl','사진 URL — <b>상대 규격에 없음</b>','-'],
+    ['activo','판매상태 (true/false)','-'],
+    ['statusCode','판매상태 — <b>active / inactive 문자열</b>','statusCode'],
+    ['sat','SAT 코드','satClass'],
+    ['origen','원산지','originCode'],
+    ['iva','IVA %','-'],
+    ['ean13','바코드','ean13'],
+    ['ubicacion','위치','-'],
+    ['precioListaComp','경쟁사 정가','-'],
+    ['customerPrice','고객단가','-'],
+    ['transactionUser','작업자 — 봉투 없는 형식에서는 제품 안에 들어간다','transactionUser'],
+  ];
+
+  function renderFieldMap(map){
+    const m=map||{};
+    $('fieldMapRows').innerHTML=PFIELDS.map(function(f){
+      const cur=Object.prototype.hasOwnProperty.call(m,f[0])?String(m[f[0]]==null?'':m[f[0]]):'';
+      return '<tr><td class="mono">'+esc(f[0])+'</td>'
+        +'<td><input data-mapf="'+esc(f[0])+'" value="'+esc(cur)+'" placeholder="'+esc(f[0])+' (그대로)"></td>'
+        +'<td class="hint">'+esc(f[1])+'</td></tr>';
+    }).join('');
+  }
+  function collectFieldMap(){
+    const out={};
+    document.querySelectorAll('#fieldMapRows input[data-mapf]').forEach(function(i){
+      const v=i.value.trim();
+      // 빈 칸이면 「그대로 보낸다」 — 지정하지 않는다. 빼고 싶으면 '-' 한 글자를 넣는다.
+      if(v==='-') out[i.dataset.mapf]='';
+      else if(v) out[i.dataset.mapf]=v;
+    });
+    return out;
+  }
+  function applyShapeHint(){
+    const v=$('fBodyShape').value;
+    $('shapeHint').innerHTML = v==='lote'
+      ? '묶음 봉투(envioId · lote · esUltimoLote)와 함께 제품 배열을 보냅니다. <b>마감 신호를 쓸 수 있는 유일한 형식</b>입니다.'
+      : (v==='array'
+        ? '봉투 없이 제품 배열만 보냅니다. <b>마감 신호(esUltimoLote)가 없으므로</b> 이번 전송에 없는 제품을 감추는 일은 CRM 이 다른 방법으로 해야 합니다.'
+        : '제품 1건마다 요청 1건입니다. 전체 전송 시 <b>전송 이력이 제품 수만큼</b> 생깁니다(약 1,700건) — 시험용으로만 권합니다.');
+  }
+
+  // ===== 0227 · 오더상태 전송 =====
+  const ORDER_REASON={endpoint_disabled:'연동이 꺼져 있습니다 — 꺼져 있는 동안은 아무것도 쌓지 않습니다. 켜면 지금 단계까지 따라잡습니다.',
+    url_missing:'지금 환경의 URL 이 비어 있습니다 — 보내지 않습니다.',endpoint_missing:'오더상태 창구를 찾을 수 없습니다(0227 미적용).'};
+  async function loadOrderStatus(){
+    const rowsEl=$('orderStepRows'), box=$('orderRecent'); if(!rowsEl) return;
+    try{
+      const res=await fetch(session.api+'/api/order-status/overview',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ box.innerHTML='<div class="hint">'+esc(d.note||d.error||res.status)+'</div>'; return; }
+      const c=d.counts||{};
+      rowsEl.innerHTML=(d.steps||[]).map(st=>'<tr><td class="num">'+st.seq+'</td>'
+        +'<td><b>'+esc(st.text)+'</b><div class="hint mono">'+esc(st.code)+'</div></td>'
+        +'<td>'+esc(ORDER_STEP_RULE[st.seq]||'')+'</td>'
+        +'<td class="num">'+(c[st.seq]||0)+'건</td></tr>').join('')
+        +'<tr><td></td><td class="hint">아직 안 보냄</td><td class="hint">최근 120일 웹 견적 중 한 단계도 보내지 않은 것</td><td class="num">'+(c[0]||0)+'건</td></tr>';
+      if(!d.ready){ $('orderMsg').className='msg warn'; $('orderMsg').textContent=ORDER_REASON[d.reason]||d.reason; }
+      const rec=d.recent||[];
+      const SEND={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
+      box.innerHTML='<div style="font-weight:600;margin:6px 0">최근 보낸 단계</div>'
+        +'<div class="tblwrap"><table><thead><tr><th>적재 시각</th><th>견적</th><th>단계</th><th>계기</th><th>전송</th></tr></thead><tbody>'
+        +(rec.length?rec.map(r=>'<tr><td class="num">'+esc(new Date(r.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</td>'
+          +'<td><b class="mono">'+esc(r.external_quote_no||r.quote_no)+'</b><div class="hint">'+esc(r.customer_name||'')+'</div></td>'
+          +'<td>'+r.seq+' · '+esc(((d.steps||[]).find(x=>x.seq===r.seq)||{}).text||r.status)+'</td>'
+          +'<td class="hint">'+esc(ORIGIN_LABEL['order_'+r.origin]||r.origin||'')+'</td>'
+          +'<td>'+(r.send_status?'<span class="pill p-'+esc(r.send_status)+'">'+esc(SEND[r.send_status]||r.send_status)+'</span>':'<span class="hint">–</span>')
+          +(r.last_error?'<div class="hint" style="color:var(--expense)">'+esc(r.last_error)+'</div>':'')+'</td></tr>').join('')
+          :'<tr><td colspan="5" class="empty">아직 보낸 단계가 없습니다.</td></tr>')
+        +'</tbody></table></div>';
+    }catch(e){ box.innerHTML='<div class="hint">현황을 불러오지 못했습니다.</div>'; }
+  }
+  async function orderSweep(){
+    const m=$('orderMsg'); m.className='msg'; m.textContent='확인 중…'; $('btnOrderSweep').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/order-status/sweep',{method:'POST',headers:jauth(),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg warn'; m.textContent=d.note||ORDER_REASON[d.error]||d.error||res.status; }
+      else if(d.skipped){ m.className='msg warn'; m.textContent=ORDER_REASON[d.skipped]||d.skipped; }
+      else{ m.className='msg ok'; m.textContent='웹 견적 '+(d.scanned||0)+'건 확인 · 새로 보낼 단계 '+(d.queued||0)+'건 — 결과는 아래 표와 전송 이력 탭에서 봅니다.'; }
+      setTimeout(loadOrderStatus,1500);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnOrderSweep').disabled=false; }
+  }
+  async function orderCheck(){
+    const q=$('fOrderQ').value.trim(); const m=$('orderMsg');
+    if(!q){ m.className='msg warn'; m.textContent='견적번호(COT-…)를 입력하세요.'; return; }
+    m.className='msg'; m.textContent='확인 중…';
+    try{
+      const res=await fetch(session.api+'/api/order-status/quote?q='+encodeURIComponent(q),{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg warn'; m.textContent=d.note||d.error||res.status; return; }
+      const sent=(d.sent||[]).map(x=>x.seq).join(', ')||'없음';
+      m.className=d.external_quote_no?'msg ok':'msg warn';
+      m.textContent=(d.external_quote_no?'':'⚠ 웹(COT) 견적이 아니라 보내지 않습니다. ')
+        +(d.quote_no||q)+' · ERP 단계 '+d.stage+' → CRM '+(d.crm_seq?(d.crm_seq+' '+d.crm_status):'해당 단계 없음(보내지 않음)')
+        +' · 이미 보낸 단계: '+sent;
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  // ===== 0218 · 제품 카탈로그 전송 =====
+  let catalogPollTimer=null;
+  async function loadCatalogStatus(){
+    const box=$('catalogRuns'); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/product-sync/status',{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">'+esc(d.note||d.error)+'</div>'; return; }
+      const c=d.products||{}, s=d.settings||{};
+      const head='<div class="hint">제품 '+(c.total||0)+'건 (비활성 '+(c.inactivos||0)+'건'
+        +(c.excluidos?(' · PRO* 제외 '+c.excluidos+'건'):'')+') · '
+        +'묶음 '+(d.estimated_lotes||1)+'개 예상 · 멕시코 날짜 '+esc(d.mx_today||'')
+        +(s.auto_send?(' · 전체 자동 '+(s.full_weekday_label||'매일')+' '+s.send_hour_mx+'시'+(d.auto_ran_today?' (오늘 완료)':'')):' · 전체 자동 꺼짐')+'</div>'
+        +deltaLine(d);
+      const runs=(d.last_runs||[]);
+      const RS={running:'진행 중',done:'완료',done_errors:'완료(실패 있음)',stopped:'중지됨'};
+      const dur=function(sec){ sec=Math.max(0,Math.round(Number(sec)||0)); const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),x=sec%60; return h?(h+'시간 '+m+'분'):(m?(m+'분 '+x+'초'):(x+'초')); };
+      // 20260924 · 실행(전송 1회)별 성과 — 누적이 아니라 이 전송의 결과. envioId 를 누르면 그 전송의 이력으로 간다.
+      const rows=runs.length? runs.map(r=>'<tr><td class="mono"><a class="runlink" data-run="'+r.id+'">'+esc(r.envio_id)+'</a>'
+        +'<div><span class="rstate '+esc(r.state||'')+'">'+esc(RS[r.state]||r.state||'')+'</span></div></td>'
+        +'<td>'+(r.origin==='pick'?'고른 제품':(MODE_LABEL[r.mode]||r.mode))+' · '+(r.origin==='auto'?'자동':'수동')+'</td>'
+        +'<td class="num">'+r.total_lotes+'건</td>'
+        +'<td>완료 '+r.sent+' · 실패 '+r.failed+' · 대기 '+r.pending+(r.stopped?(' · 중지 '+r.stopped):'')+(r.retrying?('<div class="hint">재시도 대기 '+r.retrying+'</div>'):'')+'</td>'
+        +'<td class="num">'+(r.success_pct==null?'–':(r.success_pct+'%'))+'</td>'
+        +'<td class="num">'+dur(r.elapsed_sec)+(r.per_min!=null?('<div class="hint">분당 '+r.per_min+'건</div>'):'')+'</td>'
+        +'<td class="hint">'+new Date(r.created_at).toLocaleString('ko-KR')+'</td></tr>').join('')
+        : '<tr><td colspan="7" class="hint">아직 전송한 적이 없습니다.</td></tr>';
+      box.innerHTML=head+'<table style="width:100%;margin-top:8px"><thead><tr>'
+        +'<th>envioId</th><th>구분</th><th>규모</th><th>결과</th><th>성공률</th><th>소요</th><th>시작</th></tr></thead><tbody>'+rows+'</tbody></table>'
+        +'<div class="hint" style="margin-top:4px">전송 1회씩 따로 셉니다 — envioId 를 누르면 그 전송의 이력만 봅니다.</div>';
+      box.querySelectorAll('a.runlink').forEach(a=>a.addEventListener('click',()=>openRunLog(Number(a.dataset.run))));
+      // 20260924 · 진행 표시 — 대기 중인 제품이 있으면 5초마다 스스로 새로고침한다.
+      const pend=Number(d.pending_products)||0, pump=d.pump||{};
+      // 10-23 · 오래 묶인 대기 건 — 변경분을 막지는 않지만 그대로 두면 CRM 에 영영 안 간다.
+      const st=d.pending_stale||null;
+      const sb=$('catalogStale');
+      if(sb){
+        if(st&&st.stale>0){
+          sb.style.display='block'; sb.className='msg warn';
+          sb.innerHTML='⚠ 대기함에 <b>'+st.stale+'건</b>이 '+(st.oldest_min!=null?('약 '+st.oldest_min+'분째 '):'')+'묶여 있습니다'
+            +(st.example?(' (예: '+esc(String(st.example))+')'):'')
+            +'.<br>변경분 자동 전송은 그대로 돌지만, 이 건들은 CRM 에 가지 않았습니다 — 연동 주소·켜짐을 확인한 뒤 '
+            +'「전체 보내기」나 「고른 제품만 보내기」로 다시 보내세요.';
+        } else sb.style.display='none';
+      }
+      const pg=$('catalogProgress');
+      if(pg){
+        pg.textContent = pend>0
+          ? ('⏳ 전송 중 — 남은 제품 '+pend+'건'+(pump.running?(' · 이번 연속 전송 완료 '+(pump.sent||0)+' / 실패 '+(pump.failed||0)):' · 다음 워커 주기에 이어서 보냅니다')
+             +(pump.stopped==='network'?' · ⚠ CRM 연결 불가로 잠시 멈춤(자동 재시도)':''))
+          : (pump.finished_at?('✓ 대기 중인 제품 없음 · 마지막 연속 전송 완료 '+(pump.sent||0)+'건'+(pump.failed?(' / 실패 '+pump.failed):'')):'');
+      }
+      if($('btnCatalogStop')) $('btnCatalogStop').disabled = pend===0;
+      clearTimeout(catalogPollTimer);
+      if(pend>0) catalogPollTimer=setTimeout(()=>{ if($('catalogRuns')&&$('catalogRuns').offsetParent!==null) loadCatalogStatus(); },5000);
+      if(!d.can_send){
+        const why=d.blocked_reason==='url_missing'?'전송 주소가 비어 있습니다 — 개발자에게 받은 URL 을 위에 넣으세요.'
+          :(d.blocked_reason==='endpoint_disabled'?'연동이 꺼져 있습니다 — 적재는 되지만 전송되지 않고 대기함에 쌓입니다.'
+          :'제품 창구를 찾을 수 없습니다.');
+        $('catalogMsg').className='msg warn'; $('catalogMsg').textContent=why;
+      }
+    }catch(e){ box.innerHTML='<div class="hint">상태를 불러오지 못했습니다.</div>'; }
+  }
+
+  async function catalogSend(mode){
+    const full = mode!=='test';
+    if(full && !confirm('전체 카탈로그를 CRM 으로 보냅니다.\n\n마지막 묶음에 마감 신호가 붙어, 이번 전송에 없는 제품은 CRM 에서 감춰집니다.\n계속할까요?')) return;
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='적재 중…';
+    $('btnCatalogSend').disabled=true; $('btnCatalogTest').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),
+        body:JSON.stringify(full?{mode:'full'}:{mode:'test',limit:3})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent=(d.note||d.error)+(d.detail?(' — '+d.detail):''); }
+      else{
+        m.className=d.queued_only?'msg warn':'msg ok';
+        m.textContent=(full?'전체':'시험')+' 전송 적재 완료 — '+d.envio_id+' · '
+          +d.total_productos+'제품 / '+d.total_lotes+'묶음'
+          +(d.queued_only?' (연동이 꺼져 있거나 주소가 비어 대기함에 쌓였습니다)':' — 지금부터 연속으로 전송합니다. 아래에 진행이 표시됩니다.');
+      }
+      loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnCatalogSend').disabled=false; $('btnCatalogTest').disabled=false; }
+  }
+
+  // ===== 2026-10-07 · 고른 제품만 보내기 =====
+  const PICK=new Map();   // CODE(대문자) → {code,name,activo,existencia,precio}
+  let pickTimer=null, pickItems=[];
+  function pickRender(){
+    const rows=[...PICK.values()];
+    $('pickRows').innerHTML=rows.length?rows.map(r=>'<tr><td class="mono">'+esc(r.code)+'</td><td>'+esc(r.name||'')+'</td>'
+      +'<td>'+(r.activo?'판매':'<span style="color:var(--expense)">비활성</span>')+'</td>'
+      +'<td class="num">'+esc(r.existencia)+'</td><td class="num">'+(r.precio==null?'–':esc(r.precio))+'</td>'
+      +'<td><button class="btn ghost sm" type="button" data-pickdel="'+esc(r.code)+'" title="빼기">×</button></td></tr>').join('')
+      :'<tr><td colspan="6" class="empty">담은 제품이 없습니다.</td></tr>';
+    $('btnPickSend').textContent='담은 '+rows.length+'개 보내기';
+    $('btnPickSend').disabled=!rows.length;
+  }
+  function pickAdd(list){
+    let n=0;
+    for(const r of list){ const k=String(r.code).trim().toUpperCase(); if(!PICK.has(k)){ if(PICK.size>=500) break; PICK.set(k,r); n++; } }
+    pickRender(); return n;
+  }
+  function pickHide(){ $('pickSuggest').classList.add('hidden'); }
+  async function pickSearch(){
+    const q=$('fPickQ').value.trim();
+    if(q.length<2){ pickItems=[]; pickHide(); return; }
+    try{
+      const d=await fetch(session.api+'/api/product-sync/search?q='+encodeURIComponent(q),{headers:auth()}).then(r=>r.json());
+      pickItems=d.items||[];
+      const box=$('pickSuggest');
+      box.innerHTML=pickItems.length?pickItems.map((r,i)=>'<div data-pickidx="'+i+'" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">'
+        +'<b class="mono">'+esc(r.code)+'</b> '+esc(r.name||'')+(r.activo?'':' <span class="hint" style="color:var(--expense)">비활성</span>')
+        +(PICK.has(String(r.code).toUpperCase())?' <span class="hint">· 담김</span>':'')+'</div>').join('')
+        :'<div class="hint" style="padding:6px 10px">보낼 수 있는 제품이 없습니다(PRO·삭제 제외).</div>';
+      box.classList.remove('hidden');
+    }catch(e){ pickHide(); }
+  }
+  $('fPickQ').addEventListener('input',function(){ clearTimeout(pickTimer); pickTimer=setTimeout(pickSearch,250); });
+  $('fPickQ').addEventListener('keydown',function(e){
+    if(e.key==='Escape'){ pickHide(); return; }
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    const q=$('fPickQ').value.trim().toUpperCase(); if(!q) return;
+    const exact=pickItems.find(r=>String(r.code).toUpperCase()===q)||pickItems[0];
+    if(exact){ pickAdd([exact]); $('fPickQ').value=''; pickItems=[]; pickHide(); }
+  });
+  $('pickSuggest').addEventListener('mousedown',function(e){
+    const el=e.target.closest('[data-pickidx]'); if(!el) return;
+    e.preventDefault(); pickAdd([pickItems[Number(el.dataset.pickidx)]]); $('fPickQ').value=''; pickItems=[]; pickHide(); $('fPickQ').focus();
+  });
+  $('fPickQ').addEventListener('blur',function(){ setTimeout(pickHide,150); });
+  $('pickRows').addEventListener('click',function(e){
+    const b=e.target.closest('[data-pickdel]'); if(!b) return;
+    PICK.delete(String(b.dataset.pickdel).toUpperCase()); pickRender();
+  });
+  $('btnPickClear').addEventListener('click',function(){ PICK.clear(); pickRender(); $('pickMsg').className='msg'; $('pickMsg').textContent=''; });
+  $('btnPickPaste').addEventListener('click',async function(){
+    const m=$('pickMsg'); const txt=$('fPickPaste').value.trim(); if(!txt) return;
+    m.className='msg'; m.textContent='확인 중…';
+    try{
+      const res=await fetch(session.api+'/api/product-sync/pick-check',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({codes:txt})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; return; }
+      const n=pickAdd(d.found||[]);
+      $('fPickPaste').value=(d.missing||[]).join('\n');
+      m.className=(d.missing&&d.missing.length)?'msg warn':'msg ok';
+      m.textContent='담음 '+n+'개'+((d.missing&&d.missing.length)?(' · 못 찾은 코드 '+d.missing.length+'개(붙여넣기 칸에 남김): '+d.missing.slice(0,10).join(', ')+(d.missing.length>10?' …':'')+' — 없는 코드·삭제된 제품·PRO 판촉물'):'');
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  });
+  $('btnPickSend').addEventListener('click',async function(){
+    const codes=[...PICK.values()].map(r=>r.code); if(!codes.length) return;
+    if(!confirm('고른 제품 '+codes.length+'개의 지금 값을 CRM 으로 보냅니다.\n\n예: '+codes.slice(0,5).join(', ')+(codes.length>5?' …':'')+'\n\n계속할까요?')) return;
+    const m=$('pickMsg'), b=$('btnPickSend'); m.className='msg'; m.textContent='보내는 중…'; b.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({mode:'pick',codes})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=(d.note||d.error||res.status)+((d.missing&&d.missing.length)?(' — '+d.missing.slice(0,10).join(', ')):''); return; }
+      m.className=d.queued_only?'msg warn':'msg ok';
+      m.textContent='적재 완료 — '+d.envio_id+' · '+d.total_productos+'개'
+        +((d.missing&&d.missing.length)?(' · 제외 '+d.missing.length+'개: '+d.missing.slice(0,10).join(', ')):'')
+        +(d.queued_only?' (연동이 꺼져 있거나 주소가 비어 대기함에 쌓였습니다)':' — 지금 보냅니다. 결과는 전송 이력에서 envioId 로 봅니다.');
+      PICK.clear(); pickRender(); loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ b.disabled=!PICK.size; }
+  });
+
+  // ===== 0236 · 바뀐 것만 보내기 =====
+  function deltaLine(d){
+    const x=d.delta||{}, s=d.settings||{};
+    if(!x.ready) return '<div class="hint" style="color:var(--expense)">변경분 전송: 마이그레이션 0236 필요</div>';
+    if(!x.baseline) return '<div class="hint" style="color:var(--expense)">변경분 전송: <b>비교 기준 없음</b> — 「지금 전체 보내기」를 한 번 하거나, CRM 이 이미 최신이면 「기준만 저장」을 누르세요.</div>';
+    const last=x.last_delta;
+    return '<div class="hint">변경분: '+(s.delta_auto?('<b>자동 '+(s.delta_every_min||5)+'분마다</b>'):'자동 꺼짐')
+      +' · 기준 '+x.baseline+'개'
+      +(last?(' · 마지막 변경분 전송 '+new Date(last.created_at).toLocaleString('ko-KR')+' ('+last.total_productos+'개)'):' · 아직 변경분 전송 없음')+'</div>';
+  }
+  async function catalogDeltaPreview(){
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='세는 중…';
+    try{
+      const res=await fetch(session.api+'/api/product-sync/delta-preview',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; return; }
+      if(!d.baseline){ m.className='msg warn'; m.textContent=d.note; return; }
+      const c=d.counts||{};
+      m.className='msg ok';
+      m.innerHTML='지금 보내면 <b>'+d.total+'개</b> — 새 제품 '+(c.nuevo||0)+' · 값 변경 '+(c.cambiado||0)+' · 실패 재전송 '+(c.reintento||0)+' · 삭제(비활성) '+(c.baja||0)
+        +(d.sample&&d.sample.length?('<div class="hint mono" style="margin-top:4px">'+d.sample.map(x=>esc(x.codigo)+(x.activo===false?'(비활성)':'')).join(' · ')+(d.total>d.sample.length?' …':'')+'</div>'):'');
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function catalogDelta(){
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='바뀐 제품을 찾는 중…';
+    $('btnCatalogDelta').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({mode:'delta'})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; }
+      else if(d.nothing){ m.className='msg ok'; m.textContent='바뀐 제품이 없습니다 — 보낼 것이 없습니다.'; }
+      else{
+        const c=d.counts||{};
+        m.className=d.queued_only?'msg warn':'msg ok';
+        m.textContent='변경분 '+d.total_productos+'개 적재 — '+d.envio_id+' (새 '+(c.nuevo||0)+' · 변경 '+(c.cambiado||0)+' · 재전송 '+(c.reintento||0)+' · 비활성 '+(c.baja||0)+')'
+          +(d.queued_only?' — 연동이 꺼져 있거나 주소가 비어 대기함에 쌓였습니다':' — 지금 보냅니다.');
+      }
+      loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnCatalogDelta').disabled=false; }
+  }
+  async function catalogBaseline(){
+    if(!confirm('지금 ERP 의 제품 값을 「CRM 에 이미 들어가 있는 값」으로 기록합니다. 아무것도 보내지 않습니다.\n\nCRM 이 최신이라고 확신할 때만 누르세요 — 그렇지 않으면 그 차이는 제품이 다시 바뀔 때까지 CRM 에 반영되지 않습니다.\n계속할까요?')) return;
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='기록 중…';
+    try{
+      const res=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({mode:'baseline'})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; }
+      else{ m.className='msg ok'; m.textContent='기준 저장 — 제품 '+d.total_productos+'개. 이제부터 바뀐 것만 보냅니다.'; }
+      loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  // 20260924 · 전송 중지 — 아직 안 나간 제품 건을 전부 닫는다(고객·오더 전송은 그대로).
+  async function catalogStop(){
+    if(!confirm('아직 보내지 않은 제품 전송을 모두 중지합니다.\n\n이미 CRM 에 들어간 제품은 그대로이고, 고객·오더 전송은 영향이 없습니다.\n계속할까요?')) return;
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='중지 중…'; $('btnCatalogStop').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/product-sync/cancel',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent=d.note||d.error||res.status; }
+      else{ m.className='msg ok'; m.textContent='전송 중지 — 대기 중이던 제품 '+(d.cancelled||0)+'건을 닫았습니다. 다시 보내려면 「지금 전체 보내기」.'; }
+      loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  async function catalogPreview(){
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='불러오는 중…';
+    try{
+      const d=await fetch(session.api+'/api/product-sync/preview',{headers:auth()}).then(r=>r.json());
+      if(!d.found){ m.className='msg warn'; m.textContent='제품이 없습니다.'; return; }
+      m.className='msg ok';
+      m.innerHTML='실제로 보낼 본문입니다 — 개발자에게 준 계약서와 대조하세요.'
+        +'<pre class="mono" style="white-space:pre-wrap;max-height:320px;overflow:auto;margin-top:6px">'
+        +esc(JSON.stringify(d.sample_lote,null,2))+'</pre>';
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  function cfgPatch(){
+    const p={label:$('fLabel').value.trim(),category:$('fCategory').value,description:$('fDesc').value.trim(),
+      enabled:$('fEnabled').checked,env:$('fEnv').value,
+      url_test:$('fUrlTest').value.trim(),url_prod:$('fUrlProd').value.trim(),
+      method_upsert:$('fMethodUpsert').value,method_delete:$('fMethodDelete').value,
+      ok_code:$('fOkCode').value.trim()||'0',auth_in:$('fAuthIn').value,
+      no_retry_codes:$('fNoRetry').value.trim(),
+      fallback_key:$('fFallbackKey').value,
+      auth_from:$('fAuthFrom')?$('fAuthFrom').value:undefined,
+      fallback_codes:$('fFallbackCodes').value.trim()||'ERR_CUSTOMER_NOT_FOUND',
+      timeout_ms:Number($('fTimeout').value||10000),user_field:$('fUserField').value,
+      sort_order:Number($('fSort').value||100)};
+    // 0218 · 제품 카탈로그 전송 설정 — 그 카드가 보일 때만 보낸다(다른 창구 값을 건드리지 않게).
+    if(!$('boxProduct').classList.contains('hidden')){
+      p.img_base_url=$('fImgBase').value.trim();
+      p.batch_size=Number($('fBatch').value||500);
+      p.send_hour_mx=Number($('fSendHour').value||6);
+      p.auto_send=$('fAutoSend').checked;
+      if(!$('fDeltaAuto').disabled){
+        p.delta_auto=$('fDeltaAuto').checked;
+        p.delta_every_min=Number($('fDeltaEvery').value||5);
+        p.full_weekday=$('fFullWeekday').value;
+      }
+      p.body_shape=$('fBodyShape').value;
+      p.field_map=collectFieldMap();
+    }
+    // 0237 · 프로모션 창구 — 그 카드가 보일 때만(다른 창구의 매핑을 건드리지 않게)
+    if(!$('boxPromo').classList.contains('hidden')){
+      if(!$('fBannerW').disabled){ p.banner_w=$('fBannerW').value.trim(); p.banner_h=$('fBannerH').value.trim(); }
+      p.field_map=collectPromoMap();
+    }
+    // 이름 칸 하나로 헤더명/파라미터명을 겸한다 — 위치에 따라 알맞은 필드로 보낸다.
+    const nm=$('fAuthName').value.trim();
+    if ($('fAuthIn').value==='header') p.auth_header = nm || 'Authorization';
+    else p.auth_param = nm || 'apiKey';
+    const tt=$('fTokenTest').value, tp=$('fTokenProd').value;   // 빈칸이면 기존 키 유지
+    if(tt!=='') p.auth_token_test = (tt==='-'?'':tt);
+    if(tp!=='') p.auth_token_prod = (tp==='-'?'':tp);
+    return p;
+  }
+
+  async function saveCfg(){
+    const m=$('cfgMsg'); m.className='msg'; $('btnSaveCfg').disabled=true;
+    const p=cfgPatch();
+    const inb = CUR && CUR.direction==='in';   // 수신 연동은 상대 URL 자체가 없다
+    if(!inb&&p.enabled&&p.env==='prod'&&!p.url_prod){ m.className='msg err'; m.textContent='운영 URL 을 먼저 입력하세요.'; $('btnSaveCfg').disabled=false; return; }
+    if(!inb&&p.enabled&&p.env==='prod'&&!confirm('운영 서버로 실제 전송을 시작합니다. 계속할까요?')){ $('btnSaveCfg').disabled=false; return; }
+    try{
+      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key),{method:'PUT',headers:jauth(),body:JSON.stringify(p)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      m.className='msg ok';
+      // 붙여넣기 사고를 서버가 걸러 냈으면 **말해 준다** — 조용히 고치면 다음에 또 그런다.
+      const sn=(d.secret_notes||[]).map(function(n){
+        return n==='name_prefix'?'앞의 이름(예: x-api-key:)':n==='quoted'?'따옴표':'남은 공백';
+      });
+      m.textContent = d.unchanged ? '변경된 내용이 없습니다.'
+        : (d.token_fallback
+            ? '저장되었습니다. (서버가 아직 환경별 키 컬럼을 인식하지 못해, 지금 환경의 키만 저장했습니다 — 0202 마이그레이션 후 서버를 재시작하면 두 키가 각각 보관됩니다)'
+            : (sn.length ? ('저장되었습니다. 키에서 '+sn.join('·')+'을(를) 떼어냈습니다 — 붙여넣을 때 딸려온 것입니다.')
+                         : '저장되었습니다.'));
+      await loadEndpoints(CUR.key);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnSaveCfg').disabled=false; }
+  }
+
+  // 무엇을 실어 보냈는지 **눈으로 대조할 수 있게** 적는다.
+  //   「(인증 헤더 포함)」 만으로는 상대가 「API key es requerida」 라고 답할 때
+  //   이름이 틀린 건지, 자리가 틀린 건지, 값이 틀린 건지 알 수가 없었다.
+  //   값은 앞뒤 4글자만 — 개발자가 준 값과 맞춰 보기엔 충분하고, 새어도 쓸 수 없다.
+  function authLine(a){
+    if(!a) return '(인증 없음)';
+    if(typeof a!=='object') return a?'(인증 포함)':'(인증 없음)';
+    if(!a.sent) return '(인증 없음 — 키가 비어 있습니다)';
+    const place=a.where==='query'?('주소 뒤 ?'+a.name+'='):(a.where==='body'?('본문 필드 '+a.name):('헤더 '+a.name));
+    let s='인증: '+place+' = '+(a.hint||'');
+    if(a.borrowed_from) s+='  ← 「'+a.borrowed_from+'」 의 키';
+    const bad=(a.suspect||[]);
+    if(bad.length) s+='\n⚠ 키에 '+bad.map(function(n){
+      return n==='name_prefix'?'이름(예: x-api-key:)':n==='quoted'?'따옴표':'공백';
+    }).join('·')+'이 섞여 있습니다 — 키만 남기고 다시 저장하세요.';
+    return s;
+  }
+
+  async function testConn(){
+    const out=$('testOut'); out.innerHTML='<div class="hint" style="margin-top:10px">전송 중…</div>';
+    $('btnTest').disabled=true;
+    try{
+      const cq=$('tCustomer').value.trim();
+      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/test',{method:'POST',headers:jauth(),body:JSON.stringify(cq?{op:'upsert',customer_query:cq}:{op:'upsert'})});
+      const d=await res.json();
+      if(!res.ok||d.error){ out.innerHTML='<div class="msg err" style="display:block">테스트 불가: '+esc(d.note||d.error||res.status)+'</div>'; return; }
+      const rq=d.request||{}, rs=d.response||{};
+      const who=rq.customer?('<div class="hint" style="margin-top:6px">시험 대상 고객: <b>'+esc(rq.customer.code||'')+' '+esc(rq.customer.name||'')+'</b></div>'):'';
+      out.innerHTML='<div class="msg '+(d.ok?'ok':'err')+'" style="display:block">'+esc(d.verdict)+'</div>'+who
+        +'<div class="row2" style="margin-top:8px">'
+        +'<div><label>보낸 요청</label><pre class="out">'+esc(rq.method+' '+rq.url+'\n'+authLine(rq.auth)+'\n'+JSON.stringify(rq.payload,null,2))+'</pre></div>'
+        +'<div><label>받은 응답'+(rs.ms!=null?(' · '+rs.ms+'ms'):'')+'</label><pre class="out">'
+          +esc(rs.error?('오류: '+rs.error):('HTTP '+rs.http_status+'\n'+JSON.stringify(rs.body,null,2)))+'</pre></div></div>';
+    }catch(e){ out.innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }
+    finally{ $('btnTest').disabled=false; }
+  }
+
+  function renderChanges(){
+    const rows=(CUR&&CUR.changes)||[];
+    if(!rows.length){ $('chgRows').innerHTML='<tr><td class="empty">변경 이력이 없습니다.</td></tr>'; return; }
+    $('chgRows').innerHTML=rows.map(function(c){
+      const ch=c.changes||{};
+      const list=Object.keys(ch).map(k=>'<span class="mono">'+esc(k)+'</span>: '+esc(ch[k].old==null?'(없음)':ch[k].old)+' → <b>'+esc(ch[k].new==null?'(없음)':ch[k].new)+'</b>').join('<br>');
+      return '<tr><td class="num" style="width:150px">'+esc(new Date(c.changed_at).toLocaleString('ko-KR'))
+        +'<div class="hint">'+esc(c.changed_by_name||'')+'</div></td><td>'+list+'</td></tr>';
+    }).join('');
+  }
+
+  // ===== ② 계약서 =====
+  function fillContract(){
+    const c=(CUR&&CUR.contract)||{};
+    $('cSampleReq').value=c.sample_request||''; $('cSampleRes').value=c.sample_response||'';
+    $('cRaw').value=c.raw||''; $('cNotes').value=c.notes||'';
+    renderFields(Array.isArray(c.fields)?c.fields:[]);
+    $('contractMsg').className='msg';
+  }
+  let FIELDS=[];
+  function renderFields(list){
+    if(list) FIELDS=list.map(f=>({name:f.name||'',type:f.type||'',required:!!f.required,es:f.es||'',ko:f.ko||''}));
+    $('fieldRows').innerHTML=FIELDS.map(function(f,i){
+      return '<tr>'
+        +'<td><input value="'+esc(f.name)+'" oninput="setF('+i+',\'name\',this.value)" placeholder="rfc"></td>'
+        +'<td><input value="'+esc(f.type)+'" oninput="setF('+i+',\'type\',this.value)" placeholder="string"></td>'
+        +'<td style="text-align:center"><input type="checkbox" '+(f.required?'checked':'')+' onchange="setF('+i+',\'required\',this.checked)"></td>'
+        +'<td><input value="'+esc(f.es)+'" oninput="setF('+i+',\'es\',this.value)"></td>'
+        +'<td><input value="'+esc(f.ko)+'" oninput="setF('+i+',\'ko\',this.value)"></td>'
+        +'<td><button class="btn ghost sm" onclick="rmF('+i+')">✕</button></td></tr>';
+    }).join('') || '<tr><td colspan="6" class="empty">필드가 없습니다. 아래에서 추가하세요.</td></tr>';
+  }
+  function setF(i,k,v){ FIELDS[i][k]=v; }
+  function rmF(i){ FIELDS.splice(i,1); renderFields(); }
+
+  async function saveContract(){
+    const m=$('contractMsg'); m.className='msg'; $('btnSaveContract').disabled=true;
+    for(const k of [['cSampleReq','요청 예시'],['cSampleRes','응답 예시']]){
+      const v=$(k[0]).value.trim();
+      if(v){ try{ JSON.parse(v); }catch(e){ m.className='msg err'; m.textContent=k[1]+'가 올바른 JSON 이 아닙니다: '+e.message; $('btnSaveContract').disabled=false; return; } }
+    }
+    const contract={fields:FIELDS.filter(f=>f.name.trim()),sample_request:$('cSampleReq').value,
+      sample_response:$('cSampleRes').value,raw:$('cRaw').value,notes:$('cNotes').value};
+    try{
+      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key),{method:'PUT',headers:jauth(),body:JSON.stringify({contract})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      m.className='msg ok'; m.textContent='계약서를 저장했습니다.';
+      await loadEndpoints(CUR.key);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnSaveContract').disabled=false; }
+  }
+
+  function contractMd(){
+    const e=CUR,c=e.contract||{};
+    const L=['# '+e.label+' ('+e.key+')','',
+      '- 분류: '+(CAT_LABEL[e.category]||e.category),
+      '- 사용 중인 서버: '+(e.env==='prod'?'운영':'테스트'),
+      '- 테스트 URL: '+(e.url_test||'-'),
+      '- 운영 URL: '+(e.url_prod||'-'),
+      '- 메서드: 등록·수정 '+e.method_upsert+' / 삭제 '+e.method_delete,
+      '- 인증: '+(e.has_token?((e.auth_in==='query'?('쿼리 ?'+(e.auth_param||'apiKey')+'='):(e.auth_in==='body'?('본문 '+(e.auth_param||'apiKey')):(e.auth_header+' 헤더')))+' (테스트키 '+(e.has_token_test?'있음':'없음')+' · 운영키 '+(e.has_token_prod?'있음':'없음')+')'):'없음'),
+      '- 성공 codigoError: '+e.ok_code,'','## 전송 필드','',
+      '| 필드 | 타입 | 필수 | Descripción | 설명 |','|---|---|---|---|---|'];
+    (c.fields||[]).forEach(f=>L.push('| `'+f.name+'` | '+(f.type||'')+' | '+(f.required?'Sí':'No')+' | '+(f.es||'')+' | '+(f.ko||'')+' |'));
+    L.push('','## 요청 예시','','```json',c.sample_request||'','```','','## 응답 예시','','```json',c.sample_response||'','```');
+    if((c.raw||'').trim()) L.push('','## 개발자 원문','','```',c.raw,'```');
+    if((c.notes||'').trim()) L.push('','## 비고','',c.notes);
+    return L.join('\n');
+  }
+
+  // ===== 페이지 넘기기 (09-24) =====
+  //   예전에는 최신 50건(수신)·100건(전송)만 보여 주고 그 이전은 볼 길이 없었다.
+  //   서버가 total 을 돌려주면 페이지 수를 계산하고, 옛 서버(total 없음)면 한 페이지로만 본다.
+  const PG={ out:{page:1,size:50,total:0,key:null}, in:{page:1,size:50,total:0,key:null} };
+  function pgQs(p){ return '&limit='+p.size+'&offset='+((p.page-1)*p.size); }
+  function pgPages(p){ return Math.max(1, Math.ceil((p.total||0)/p.size)); }
+  function pgTake(p,d,n){
+    // 서버가 total 을 모르면(백엔드가 아직 옛 버전) offset 도 무시하므로 받은 만큼을 한 페이지로 본다.
+    if(!d || d.total==null){ p.page=1; p.total=n; return false; }
+    p.total = Number(d.total);
+    // 필터를 바꾸거나 건이 줄어서 현재 페이지가 범위를 벗어나면 마지막 페이지로 당긴다.
+    return p.page > pgPages(p) && p.total>0;
+  }
+  function pgRender(pre,p){
+    const pages=pgPages(p);
+    $(pre+'Info').textContent=p.page+' / '+pages+' 페이지';
+    const from=p.total?((p.page-1)*p.size+1):0, to=Math.min(p.page*p.size,p.total);
+    $(pre+'Total').textContent='총 '+Number(p.total||0).toLocaleString('ko-KR')+'건'+(p.total?(' · '+from.toLocaleString('ko-KR')+'–'+to.toLocaleString('ko-KR')):'');
+    $(pre+'First').disabled=$(pre+'Prev').disabled=p.page<=1;
+    $(pre+'Next').disabled=$(pre+'Last').disabled=p.page>=pages;
+    $(pre+'Go').max=pages; $(pre+'Go').value='';
+    $(pre+'Size').value=String(p.size);
+  }
+  function pgWire(pre,p,load){
+    const go=(n)=>{ const pages=pgPages(p); n=Math.min(Math.max(1,Math.floor(Number(n)||1)),pages); if(n===p.page) return; p.page=n; load(); };
+    $(pre+'First').addEventListener('click',()=>go(1));
+    $(pre+'Prev').addEventListener('click',()=>go(p.page-1));
+    $(pre+'Next').addEventListener('click',()=>go(p.page+1));
+    $(pre+'Last').addEventListener('click',()=>go(pgPages(p)));
+    $(pre+'Go').addEventListener('keydown',e=>{ if(e.key==='Enter') go(e.target.value); });
+    $(pre+'Size').addEventListener('change',e=>{ p.size=Number(e.target.value)||50; p.page=1; load(); });
+  }
+  // 연동을 바꾸면 1페이지부터(다른 연동으로 갔다가 돌아와도 1페이지)
+  function pgSync(p){ if(CUR && p.key!==CUR.key){ p.key=CUR.key; p.page=1; p.total=0; } }
+  function pgResetAll(){ PG.out.key=PG.in.key=null; }
+
+  // ===== ③-b 수신 이력 (direction=in) =====
+  let INLOG=[], INDETAIL=null;
+  const IN_RESULT={created:'신규 접수',updated:'기존 갱신',rejected:'거절'};
+  async function loadInbound(){
+    const f=$('iFilter').value;
+    try{
+      // ⚠ 창구(endpoint)를 반드시 실어 보낸다. 없으면 두 수신 연동이 **같은 목록**을 본다.
+      pgSync(PG.in);
+      const qs='?endpoint='+encodeURIComponent(CUR.key)+(f?('&result='+f):'')+pgQs(PG.in);
+      const d=await fetch(session.api+'/api/crm-inbound/history'+qs,{headers:auth()}).then(r=>r.json());
+      if(d.migrated===false){ $('inRows').innerHTML='<tr><td colspan="7" class="empty">0208 마이그레이션이 아직 적용되지 않았습니다.</td></tr>'; return; }
+      const s=d.summary||{};
+      $('iCreated').textContent=s.created||0; $('iUpdated').textContent=s.updated||0; $('iRejected').textContent=s.rejected||0;
+      INLOG=d.items||[];
+      if(pgTake(PG.in,d,INLOG.length)){ PG.in.page=pgPages(PG.in); return loadInbound(); }
+      pgRender('inPg',PG.in); INDETAIL=null;
+      $('inRows').innerHTML=INLOG.length?INLOG.map(inRow).join(''):'<tr><td colspan="7" class="empty">아직 수신 건이 없습니다.</td></tr>';
+      $('inMeta').textContent='조회 '+new Date().toLocaleTimeString('ko-KR');
+    }catch(e){ $('inRows').innerHTML='<tr><td colspan="7" class="empty">서버 연결 실패</td></tr>'; }
+  }
+  function inRow(r){
+    const when=new Date(r.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const pill=r.result==='rejected'?'p-failed':(r.result==='created'?'p-sent':'p-skipped');
+    const main='<tr>'
+      +'<td class="num">'+esc(when)+'<div class="hint">'+esc(r.remote_ip||'')+'</div></td>'
+      +'<td class="mono">'+esc(r.rfc||'–')+'<div class="hint">'+esc(r.crm_code?('CRM '+r.crm_code):'')+'</div></td>'
+      +'<td>'+esc(r.customer_name||(r.payload&&(r.payload.empresa||r.payload.nombre))||'–')
+        +'<div class="hint mono">'+esc(r.erp_code||'')+'</div></td>'
+      +'<td><span class="pill '+pill+'">'+esc(IN_RESULT[r.result]||r.result||'–')+'</span></td>'
+      +'<td class="num mono">HTTP '+esc(r.http_status||'')+'<div class="hint">'+esc(r.codigo_error||'')+'</div></td>'
+      +'<td style="word-break:break-word'+(r.result==='rejected'?';color:var(--expense)':'')+'">'+esc(r.mensaje||'')
+        +'<div class="hint">키 위치: '+esc(r.auth_in||'없음')+(r.auth_ok?'':' · 인증 실패')+'</div></td>'
+      +'<td><button class="btn ghost sm" onclick="toggleIn('+r.id+')">원문</button></td></tr>';
+    const det=INDETAIL===r.id
+      ? '<tr class="detail"><td colspan="7"><label>CRM 이 보낸 원문</label><pre class="out">'
+        +esc(JSON.stringify(r.payload,null,2))+'</pre></td></tr>' : '';
+    return main+det;
+  }
+  function toggleIn(id){ INDETAIL=(INDETAIL===id?null:id); $('inRows').innerHTML=INLOG.map(inRow).join(''); }
+
+  // ── 발급된 키 창 ───────────────────────────────────────────────────
+  //   ⚠ 예전에는 발급 직후 목록을 새로고침했는데, 그 새로고침이 화면을 다시 그리면서
+  //     방금 넣은 키를 지워 버렸다(loadEndpoints 안의 selectEp 가 await 되지 않아
+  //     내가 값을 넣은 **뒤에** 늦게 도착해 덮어썼다). 키는 그 순간이 지나면
+  //     어디에서도 다시 볼 수 없으므로, 저절로 사라지는 화면은 그 자체가 사고다.
+  //     이제 키는 **모달**에 담고, 새로고침은 사람이 「닫기」 를 누른 뒤에만 한다.
+  let KEY_MODAL = null;    // { env, token, copied }
+
+  function openKeyModal(env, token){
+    KEY_MODAL = { env, token, copied: false };
+    $('keyModalEnv').textContent = (env==='prod'?'운영':'테스트') + '용 수신 키 · 연동 ' + (CUR?CUR.label:'');
+    $('keyModalVal').value = token;
+    $('keyModalNote').textContent = '';
+    $('keyModal').classList.remove('hidden');
+    setTimeout(function(){ try{ $('keyModalVal').focus(); $('keyModalVal').select(); }catch(e){} }, 40);
+  }
+
+  async function copyKeyModal(withUrl){
+    if(!KEY_MODAL) return;
+    const text = withUrl ? ($('fInboundUrl').value + '\n' + KEY_MODAL.token) : KEY_MODAL.token;
+    try{
+      await navigator.clipboard.writeText(text);
+      KEY_MODAL.copied = true;
+      $('keyModalNote').textContent = withUrl ? '주소와 키를 복사했습니다.' : '키를 복사했습니다.';
+    }catch(e){
+      // 클립보드 권한이 없는 환경(구형 브라우저·비 HTTPS) — 직접 선택해서 복사하게 한다.
+      $('keyModalVal').focus(); $('keyModalVal').select();
+      KEY_MODAL.copied = true;   // 손으로 복사할 수 있게 골라 줬으니 닫기를 막지 않는다
+      $('keyModalNote').textContent = '자동 복사가 막혀 있습니다 — 선택해 뒀으니 Ctrl+C 로 복사하세요.';
+    }
+  }
+
+  function closeKeyModal(){
+    if(KEY_MODAL && !KEY_MODAL.copied
+       && !confirm('아직 복사하지 않았습니다.\n\n닫으면 이 키는 다시 볼 수 없습니다. 정말 닫을까요?')) return;
+    $('keyModal').classList.add('hidden');
+    $('keyModalVal').value='';
+    const env = KEY_MODAL && KEY_MODAL.env;
+    KEY_MODAL = null;
+    const m=$('inKeyMsg'); m.className='msg ok';
+    m.textContent = (env==='prod'?'운영':'테스트')+'용 수신 키를 새로 발급했습니다. 이제 CRM 개발자가 이 키로 호출하면 수신됩니다.';
+    if(CUR) loadEndpoints(CUR.key);   // 화면 갱신은 창을 닫은 뒤에만
+  }
+
+  /** 전용 키를 지워 **공용 키로 되돌린다.** 만들 수 있는 것은 되돌릴 수도 있어야 한다. */
+  async function clearInboundKey(){
+    const m=$('inKeyMsg'); m.className='msg';
+    if(!confirm('이 창구의 전용 수신 키를 지웁니다.\n\n지운 뒤에는 「'
+      +((EPS.find(x=>x.key===CUR.key_fallback_from)||{}).label||'다른 수신 창구')
+      +'」의 키로 들어오는 요청을 받습니다.\n\n계속할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/inbound-key',
+        {method:'DELETE',headers:jauth()}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='실패: '+(d.note||d.error); return; }
+      m.className='msg ok'; m.textContent=d.note||'전용 키를 지웠습니다.';
+      loadEndpoints(CUR.key);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  async function issueKey(env){
+    const m=$('inKeyMsg'); m.className='msg';
+    if(!confirm((env==='prod'?'운영':'테스트')+'용 수신 키를 새로 발급합니다.\n\n지금 쓰고 있는 키가 있다면 그 즉시 막힙니다 — 새 키를 CRM 개발자에게 전달해야 수신이 다시 됩니다.\n\n계속할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/inbound-key',
+        {method:'POST',headers:jauth(),body:JSON.stringify({env})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='발급 실패: '+(d.note||d.error); return; }
+      if(!d.token){ m.className='msg err'; m.textContent='발급은 됐지만 키를 받지 못했습니다. 다시 시도하세요.'; return; }
+      openKeyModal(env, d.token);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  // ===== ③ 전송 이력 =====
+  // 20260924 · **범위(기준)** — 숫자를 누적으로 보지 않는다.
+  //   제품 창구: 전송 1회(envioId) 단위 · 그 외(고객·오더): 멕시코 날짜 기준 기간.
+  //   어제 전송과 오늘 전송을 섞으면 「이번 전송이 잘 됐나」에 답할 수 없다.
+  const SCOPE={key:null,auto:true,value:null,runs:{}};
+  const RUN_STATE={running:'진행 중',done:'완료',done_errors:'완료(실패 있음)',stopped:'중지됨'};
+  function isProductEp(){ return !!(CUR && (CUR.category==='product' || CUR.key==='product')); }
+  function mxYmd(d){
+    try{ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(d); }
+    catch(e){ return new Date(d.getTime()-6*3600000).toISOString().slice(0,10); }
+  }
+  function fmtDur(sec){
+    sec=Math.max(0,Math.round(Number(sec)||0));
+    const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), x=sec%60;
+    return h?(h+'시간 '+m+'분'):(m?(m+'분 '+x+'초'):(x+'초'));
+  }
+  function fmtWhen(t){ return t?new Date(t).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'–'; }
+  async function buildScope(){
+    const sel=$('fScope'); if(!sel||!CUR) return;
+    const keyChanged = SCOPE.key!==CUR.key;
+    if(keyChanged){ SCOPE.key=CUR.key; SCOPE.auto=true; SCOPE.value=null; }
+    let opts=[];
+    if(isProductEp()){
+      $('fScopeL').textContent='전송 단위';
+      let runs=[];
+      try{ runs=(await fetch(session.api+'/api/product-sync/runs?limit=30',{headers:auth()}).then(r=>r.json())).runs||[]; }catch(e){}
+      SCOPE.runs={}; runs.forEach(r=>{ SCOPE.runs[r.id]=r; });
+      opts=runs.map(r=>['run:'+r.id, r.envio_id+' · '+fmtWhen(r.created_at)+' · '+r.total_lotes+'건'
+        +(r.mode!=='full'?(' · '+(MODE_LABEL[r.mode]||r.mode)):'')+(r.origin==='auto'?' · 자동':'')+' · '+(RUN_STATE[r.state]||r.state)]);
+      opts.push(['all','전체 누적 (모든 전송 합계)']);
+    }else{
+      $('fScopeL').textContent='기간';
+      opts=[['today','오늘'],['yesterday','어제'],['7d','최근 7일'],['30d','최근 30일'],['all','전체 누적']];
+    }
+    const want = (!SCOPE.auto && SCOPE.value && opts.some(o=>o[0]===SCOPE.value)) ? SCOPE.value : opts[0][0];
+    sel.innerHTML=opts.map(o=>'<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>').join('');
+    sel.value=want; SCOPE.value=want;
+  }
+  function scopeQs(){
+    const v=SCOPE.value||'all';
+    if(v.indexOf('run:')===0) return '&run_id='+encodeURIComponent(v.slice(4));
+    const now=new Date(), day=86400000;
+    if(v==='today'){ const d=mxYmd(now); return '&from='+d+'&to='+d; }
+    if(v==='yesterday'){ const d=mxYmd(new Date(now.getTime()-day)); return '&from='+d+'&to='+d; }
+    if(v==='7d') return '&from='+mxYmd(new Date(now.getTime()-6*day))+'&to='+mxYmd(now);
+    if(v==='30d') return '&from='+mxYmd(new Date(now.getTime()-29*day))+'&to='+mxYmd(now);
+    return '';
+  }
+  function scopeRun(){ const v=SCOPE.value||''; return v.indexOf('run:')===0 ? SCOPE.runs[Number(v.slice(4))] : null; }
+  async function renderRunPerf(){
+    const box=$('runPerf'); const r=scopeRun();
+    if(!r){ box.classList.add('hidden'); box.innerHTML=''; return; }
+    const cell=(k,v)=>'<div><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
+    box.classList.remove('hidden');
+    box.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'
+      +'<b class="mono">'+esc(r.envio_id)+'</b><span class="rstate '+esc(r.state)+'">'+esc(RUN_STATE[r.state]||r.state)+'</span>'
+      +'<span class="hint">'+(MODE_LABEL[r.mode]||r.mode)+' · '+(r.origin==='auto'?'자동':'수동')+(r.by_login?(' · '+esc(r.by_login)):'')+'</span></div>'
+      +'<div class="grid">'
+      +cell('시작',fmtWhen(r.created_at))
+      +cell('마지막 전송',fmtWhen(r.last_sent_at))
+      +cell(r.state==='running'?'경과':'소요',fmtDur(r.elapsed_sec))
+      +cell('분당 전송',r.per_min==null?'–':(r.per_min+'건'))
+      +cell('진행률',r.progress_pct==null?'–':(r.progress_pct+'%'))
+      +cell('성공률',r.success_pct==null?'–':(r.success_pct+'%'+(r.stopped?' <span class="hint">(중지 '+r.stopped+'건 제외)</span>':'')))
+      +cell('재시도 대기',r.retrying+'건')
+      +'</div><div id="runErr" class="hint" style="margin-top:6px">실패 사유 불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/product-sync/runs/'+r.id+'/errors',{headers:auth()}).then(x=>x.json());
+      const es=d.errors||[];
+      $('runErr').innerHTML = es.length
+        ? '<div style="font-weight:600;color:var(--ink)">이 전송의 실패·재시도 사유</div><table><thead><tr><th>건수</th><th>응답</th><th>사유</th><th>예시</th></tr></thead><tbody>'
+          + es.map(e=>'<tr><td class="num">'+e.count+'</td><td class="mono">'+(e.http_status?('HTTP '+e.http_status):'–')+(e.codigo_error?('<div class="hint">'+esc(e.codigo_error)+'</div>'):'')
+            +'</td><td style="color:var(--expense);word-break:break-word">'+esc(e.reason||'')+'<div class="hint">'+(e.status==='failed'?'실패 확정':'재시도 대기 · 최대 '+e.max_attempts+'회 시도')+'</div></td>'
+            +'<td class="hint mono">'+esc(e.example||'')+'</td></tr>').join('')
+          + '</tbody></table>'
+        : '이 전송에서 실패·재시도 건은 없습니다.';
+    }catch(e){ $('runErr').textContent='실패 사유를 불러오지 못했습니다.'; }
+  }
+  /** 제품 카드의 실행표에서 envioId 를 누르면 그 전송 단위로 이력을 연다. */
+  function openRunLog(runId){
+    SCOPE.key=CUR&&CUR.key; SCOPE.auto=false; SCOPE.value='run:'+runId;
+    PG.out.page=1; $('fStatus').value='all';
+    const t=document.querySelector('.tab[data-tab="log"]'); if(t) t.click();
+  }
+  async function loadLog(){
+    if(!CUR) return;
+    if(CUR.direction==='in') return loadInbound();
+    await buildScope();
+    const sq=scopeQs();
+    try{
+      const s=await fetch(session.api+'/api/crm-sync/summary?endpoint='+encodeURIComponent(CUR.key)+sq,{headers:auth()}).then(r=>r.json());
+      const c=s.scope||(s.by_endpoint&&s.by_endpoint[CUR.key])||{};
+      $('kPending').textContent=c.pending||0; $('kFailed').textContent=c.failed||0;
+      $('kSent').textContent=c.sent||0; $('kSkipped').textContent=c.skipped||0;
+      const r=scopeRun();
+      $('kSkippedL').textContent = r&&r.stopped ? ('건너뜀 (중지 '+r.stopped+')') : '건너뜀';
+      $('scopeInfo').textContent = SCOPE.value==='all' ? '모든 전송을 합친 숫자입니다.'
+        : (r ? ('이 전송 1회의 숫자입니다 · 전체 '+r.total_lotes+'건') : '이 기간에 적재된 건의 숫자입니다(멕시코 날짜).');
+    }catch(e){}
+    renderRunPerf();
+    const st=$('fStatus').value,q=$('fQ').value.trim();
+    pgSync(PG.out);
+    const url=session.api+'/api/crm-sync?status='+encodeURIComponent(st)+'&endpoint='+encodeURIComponent(CUR.key)+sq+(q?'&q='+encodeURIComponent(q):'')+pgQs(PG.out);
+    try{
+      const res=await fetch(url,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('logRows').innerHTML='<tr><td colspan="8" class="empty">'+esc(d.note||d.error||res.status)+'</td></tr>'; return; }
+      const items=d.items||[];
+      if(pgTake(PG.out,d,items.length)){ PG.out.page=pgPages(PG.out); return loadLog(); }
+      pgRender('logPg',PG.out);
+      LOG=items;
+      $('logRows').innerHTML=items.length?items.map(logRow).join(''):'<tr><td colspan="8" class="empty">해당 조건의 전송 건이 없습니다.</td></tr>';
+      $('logMeta').textContent='조회 '+new Date().toLocaleTimeString('ko-KR');
+    }catch(e){ $('logRows').innerHTML='<tr><td colspan="8" class="empty">서버 연결 실패</td></tr>'; }
+  }
+  let LOG=[];
+
+  function logRow(r){
+    const when=new Date(r.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const resp=[r.http_status?('HTTP '+r.http_status):'',r.codigo_error!=null?('code '+esc(r.codigo_error)):''].filter(Boolean).join('<br>')||'<span class="hint">–</span>';
+    let note=r.last_error||''; if(NOTE_LABEL[note]) note=NOTE_LABEL[note];
+    const next=(r.status==='pending'&&r.attempts>0&&r.next_attempt_at)?'<div class="hint">다음 '+new Date(r.next_attempt_at).toLocaleTimeString('ko-KR')+'</div>':'';
+    const canRetry=r.status!=='sent';
+    const main='<tr>'
+      +'<td class="num">'+esc(when)+'</td>'
+      +'<td><b>'+esc(r.customer_name||('#'+(r.entity_id||'')))+'</b><div class="hint mono">'+esc(r.customer_code||r.rfc||'')+'</div></td>'
+      +'<td>'+esc(ORIGIN_LABEL[r.origin]||r.origin)
+        +(r.fallback_of?'<div class="hint" style="color:var(--income)">↳ 전송 #'+esc(r.fallback_of)+' 에서 이어짐</div>':'')
+        +'<div class="hint">'+(r.entity==='order'?'오더상태':(r.op==='delete'?'삭제':(r.op==='reject'?'반려 통보':'등록/수정')))+(r.env?(' · '+(r.env==='prod'?'운영':'테스트')):'')+'</div></td>'
+      +'<td><span class="pill p-'+esc(r.status)+'">'+esc(STATUS_LABEL[r.status]||r.status)+'</span>'+next+'</td>'
+      +'<td class="num">'+esc(r.attempts)+'</td>'
+      +'<td class="num mono">'+resp+'</td>'
+      +'<td style="color:var(--expense);word-break:break-word">'+esc(note)+'</td>'
+      +'<td><button class="btn ghost sm" onclick="toggleDetail('+r.id+')">원문</button> '
+        +(canRetry?'<button class="btn ghost sm" onclick="retry('+r.id+')">재전송</button>':'')+'</td></tr>';
+    const det=DETAIL===r.id
+      ? '<tr class="detail"><td colspan="8"><div class="row2">'
+        +'<div><label>보낸 본문'+(r.request_method?(' · '+esc(r.request_method)):'')+'</label><pre class="out">'
+          +esc(JSON.stringify(r.payload,null,2))+(r.url?('\n\n→ '+r.url):'')
+          +(r.auth_sent==null?'':('\n'+(r.auth_sent?('인증 헤더 '+(r.auth_header||'')+' 포함'):'⚠ 인증 없음 — API 키가 저장돼 있지 않습니다')))+'</pre></div>'
+        +'<div><label>받은 응답</label><pre class="out">'+esc(r.response?JSON.stringify(r.response,null,2):'(없음)')+'</pre></div>'
+        +'</div></td></tr>' : '';
+    return main+det;
+  }
+  function toggleDetail(id){ DETAIL=(DETAIL===id?null:id); $('logRows').innerHTML=LOG.map(logRow).join(''); }
+
+  async function retry(id){
+    const m=$('logMsg'); m.className='msg';
+    try{
+      const res=await fetch(session.api+'/api/crm-sync/'+id+'/retry',{method:'POST',headers:jauth(),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='재전송 실패: '+(d.note||d.error||res.status); }
+      else if(d.result&&d.result.status==='sent'){ m.className='msg ok'; m.textContent='전송되었습니다.'; }
+      else{ m.className='msg err'; m.textContent='아직 전송되지 않았습니다: '+esc((d.result&&d.result.last_error)||(d.drain&&d.drain.held?'연동이 꺼져 있습니다':'')); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    loadLog();
+  }
+
+  async function drain(){
+    const m=$('logMsg'); m.className='msg'; $('btnDrain').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/crm-sync/drain',{method:'POST',headers:jauth(),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='실행 실패: '+(d.note||d.error||res.status); }
+      else if(d.disabled){ m.className='msg err'; m.textContent='전체 정지 상태입니다 (CRM_SYNC_DISABLE_ALL=1).'; }
+      else{ m.className='msg ok'; m.textContent='처리 '+(d.drained||0)+'건 · 성공 '+(d.sent||0)+' · 실패 '+(d.failed||0)+(d.held?' · 대기(연동 꺼짐) '+d.held:''); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnDrain').disabled=false; loadLog(); }
+  }
+
+  // 2026-09-29 · 실패 건만 골라 다시 보내기 — 목록과 같은 범위(연동 · 전송 회차/기간 · 검색어).
+  function scopeBody(){
+    const o={endpoint:CUR.key}; const q=$('fQ').value.trim(); if(q) o.q=q;
+    scopeQs().split('&').filter(Boolean).forEach(function(kv){ const i=kv.indexOf('='); o[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1)); });
+    return o;
+  }
+  async function retryFailed(){
+    if(!CUR) return;
+    const m=$('logMsg'), b=$('btnRetryFailed'); m.className='msg';
+    try{
+      const body=scopeBody();
+      const dry=await fetch(session.api+'/api/crm-sync/retry-failed',{method:'POST',headers:jauth(),body:JSON.stringify(Object.assign({dry_run:true},body))}).then(r=>r.json());
+      if(dry.error){ m.className='msg err'; m.textContent='실행 불가: '+(dry.note||dry.error); return; }
+      const sup=dry.superseded?('\n(더 새 값이 이미 나갔거나 대기 중인 '+dry.superseded+'건은 옛 값이라 제외합니다)'):'';
+      if(!dry.count){ m.className='msg ok'; m.textContent='다시 보낼 실패 건이 없습니다.'+(dry.superseded?(' 옛 값이라 제외한 건 '+dry.superseded+'건.'):''); return; }
+      const ok=confirm('「'+(CUR.label||CUR.key)+'」의 실패 '+dry.count+'건을 다시 보냅니다.\n\n예: '+(dry.sample||[]).slice(0,3).join(' / ')+sup+'\n\n계속할까요?');
+      if(!ok) return;
+      b.disabled=true; b.textContent='전송 중…';
+      const d=await fetch(session.api+'/api/crm-sync/retry-failed',{method:'POST',headers:jauth(),body:JSON.stringify(body)}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='실패: '+(d.note||d.error); }
+      else{
+        const dr=d.drain||{};
+        m.className=(dr.failed?'msg warn':'msg ok');
+        m.textContent='재전송 '+d.queued+'건 · 즉시 전송 성공 '+(dr.sent||0)+' / 실패 '+(dr.failed||0)
+          +(dr.held?(' · 대기(연동 꺼짐) '+dr.held):'')+(d.superseded?(' · 옛 값 제외 '+d.superseded):'')+(d.note?(' — '+d.note):'');
+      }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ b.disabled=false; b.textContent='실패 건 재전송'; loadLog(); }
+  }
+  $('btnRetryFailed').addEventListener('click',retryFailed);
+
+  // 2026-10-06 · 실패·대기 내역 엑셀 — CRM 개발자에게 보낼 파일(머리글 스페인어).
+  let xlsxLoading=null;
+  function loadXlsx(){
+    if(window.XLSX) return Promise.resolve(window.XLSX);
+    if(xlsxLoading) return xlsxLoading;
+    xlsxLoading=new Promise(function(ok,ko){
+      const sc=document.createElement('script');
+      sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ xlsxLoading=null; ko(new Error('xlsx_load')); };
+      document.head.appendChild(sc);
+    });
+    return xlsxLoading;
+  }
+  const CELL_MAX=32000;   // 엑셀 한 칸 한도(32,767자) 안쪽
+  function cellJson(v){
+    if(v==null) return '';
+    const t=typeof v==='string'?v:JSON.stringify(v);
+    return t.length>CELL_MAX ? t.slice(0,CELL_MAX)+' …[recortado: '+t.length+' caracteres]' : t;
+  }
+  function mxStamp(d){ try{ return new Date(d).toLocaleString('es-MX',{timeZone:'America/Mexico_City',hour12:false}); }catch(e){ return String(d||''); } }
+  async function exportOpen(){
+    if(!CUR) return;
+    const m=$('logMsg'), b=$('btnExportOpen'); m.className='msg'; m.textContent='내려받는 중…'; b.disabled=true;
+    try{
+      const body=scopeBody(); const p=new URLSearchParams({status:'open'});
+      Object.keys(body).forEach(k=>{ if(body[k]!=null&&body[k]!=='') p.set(k,body[k]); });
+      const [X,res]=await Promise.all([loadXlsx(), fetch(session.api+'/api/crm-sync/export?'+p.toString(),{headers:auth()})]);
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='내려받기 실패: '+(d.note||d.error||res.status); return; }
+      if(!d.total){ m.className='msg ok'; m.textContent='지금 범위에 실패·대기 건이 없습니다.'; return; }
+      const ST={pending:'Pendiente (reintento automático)',failed:'Fallido (reintentos agotados)'};
+      const sc=d.scope||{};
+      const resumen=[
+        ['Refatrix ERP → CRM · Envíos fallidos y pendientes'],[],
+        ['Interfaz', (CUR.label||CUR.key)+' ('+CUR.key+')'],
+        ['Servidor', CUR.env==='prod'?'Producción':'Pruebas'],
+        ['URL', (CUR.env==='prod'?CUR.url_prod:CUR.url_test)||''],
+        ['Generado', mxStamp(d.generated_at)+' (hora de México)'],
+        ['Alcance', sc.run_id?('Envío #'+sc.run_id):((sc.from||sc.to)?('Del '+(sc.from||'…')+' al '+(sc.to||'…')):'Todo el historial')+(sc.q?(' · búsqueda: '+sc.q):'')],
+        ['Fallidos', d.counts.failed],['Pendientes', d.counts.pending],['Total', d.total+(d.truncated?' (limitado a 20,000)':'')],
+        ['Reintentos máximos por envío', d.max_attempts],[],
+        ['Errores agrupados'],
+        ['Cantidad','Estado','HTTP','codigoError','Motivo / mensaje','Ejemplo (ID · referencia)']
+      ].concat((d.groups||[]).map(g=>[g.count, ST[g.status]||g.status, g.http_status==null?'':g.http_status, g.codigo_error||'', g.reason||'', g.example_id+(g.example?(' · '+g.example):'')]));
+      const head=['ID','Estado','Intentos','Creado','Próximo intento','Referencia','RFC','Operación','Método','URL','HTTP','codigoError','Motivo / mensaje','Cuerpo enviado (JSON)','Respuesta recibida (JSON)'];
+      const det=[head].concat(d.items.map(r=>[r.id, ST[r.status]||r.status, r.attempts, mxStamp(r.created_at),
+        r.status==='pending'&&r.next_attempt_at?mxStamp(r.next_attempt_at):'', r.reference||'', r.rfc||'', r.op||'',
+        r.request_method||'', r.url||'', r.http_status==null?'':r.http_status, r.codigo_error||'', r.last_error||'',
+        cellJson(r.payload), cellJson(r.response)]));
+      const wb=X.utils.book_new();
+      const ws1=X.utils.aoa_to_sheet(resumen); ws1['!cols']=[{wch:30},{wch:28},{wch:8},{wch:22},{wch:60},{wch:40}];
+      const ws2=X.utils.aoa_to_sheet(det);
+      ws2['!cols']=[{wch:8},{wch:26},{wch:8},{wch:18},{wch:18},{wch:34},{wch:15},{wch:9},{wch:8},{wch:40},{wch:6},{wch:22},{wch:50},{wch:70},{wch:50}];
+      ws2['!autofilter']={ref:'A1:O'+(det.length)};
+      X.utils.book_append_sheet(wb,ws1,'Resumen'); X.utils.book_append_sheet(wb,ws2,'Detalle');
+      const day=mxHoy();
+      X.writeFile(wb,'Refatrix_CRM_fallidos_pendientes_'+CUR.key+'_'+day+'.xlsx');
+      m.className='msg ok'; m.textContent='내려받기 완료 — 실패 '+d.counts.failed+' · 대기 '+d.counts.pending+'건'+(d.truncated?' (2만 건까지)':'')+'. 머리글은 스페인어입니다(개발자 전달용).';
+    }catch(e){ m.className='msg err'; m.textContent=(e&&e.message==='xlsx_load')?'엑셀 도구를 불러오지 못했습니다(인터넷 확인).':'서버 연결 실패'; }
+    finally{ b.disabled=false; }
+  }
+  $('btnExportOpen').addEventListener('click',exportOpen);
+
+  // ===== 새 연동 =====
+  async function newEndpoint(){
+    const key=prompt('연동 키(영문 소문자·숫자·밑줄). 예: product_price');
+    if(!key) return;
+    const label=prompt('이름. 예: 제품 가격정보')||key;
+    try{
+      const res=await fetch(session.api+'/api/integrations',{method:'POST',headers:jauth(),
+        body:JSON.stringify({key:key.trim(),label:label.trim(),category:'other',
+          contract:{fields:[],sample_request:'',sample_response:'{\n  "codigoError": "0",\n  "mensaje": ""\n}',raw:'',notes:''}})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('등록 실패: '+(d.note||d.error||res.status)); return; }
+      await loadEndpoints(d.endpoint.key);
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+
+  // ===== 탭 =====
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.addEventListener('click',function(){
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+      t.classList.add('on'); TAB=t.dataset.tab;
+      $('paneCfg').classList.toggle('hidden',TAB!=='cfg');
+      $('paneContract').classList.toggle('hidden',TAB!=='contract');
+      $('paneLog').classList.toggle('hidden',TAB!=='log');
+      if(TAB==='log') loadLog();
+    });
+  });
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('btnSaveCfg').addEventListener('click',saveCfg);
+  $('btnTest').addEventListener('click',testConn);
+  $('btnClearInKey').addEventListener('click',clearInboundKey);
+  $('btnSaveContract').addEventListener('click',saveContract);
+  $('btnAddField').addEventListener('click',function(){ FIELDS.push({name:'',type:'',required:false,es:'',ko:''}); renderFields(); });
+  // 필드표 → 요청 예시 JSON. 타입·이름으로 그럴듯한 기본값을 넣어 준다(그대로 보내도 되는 값).
+  function sampleValue(f){
+    const t=String(f.type||'').toLowerCase(), n=String(f.name||'').toLowerCase();
+    if(n==='rfc') return 'FEL990715AB1';
+    if(n.indexOf('user')>=0) return 'admin';
+    if(t.indexOf('bool')>=0) return true;
+    if(t.indexOf('int')>=0) return 0;
+    if(t.indexOf('number')>=0||t.indexOf('decimal')>=0||t.indexOf('float')>=0) return 0;
+    if(t.indexOf('array')>=0||t.indexOf('[]')>=0) return [];
+    if(t.indexOf('object')>=0||t.indexOf('json')>=0) return {};
+    return '';
+  }
+  $('btnGenSample').addEventListener('click',function(){
+    const rows=FIELDS.filter(f=>String(f.name||'').trim());
+    const m=$('contractMsg');
+    if(!rows.length){ m.className='msg err'; m.textContent='먼저 전송 필드를 입력하세요.'; return; }
+    const o={}; rows.forEach(f=>{ o[f.name.trim()]=sampleValue(f); });
+    $('cSampleReq').value=JSON.stringify(o,null,2);
+    m.className='msg ok'; m.textContent='필드표로 예시를 만들었습니다. 값을 다듬은 뒤 「계약서 저장」을 누르세요.';
+  });
+
+  $('btnCopyMd').addEventListener('click',async function(){
+    try{ await navigator.clipboard.writeText(contractMd()); $('contractMsg').className='msg ok'; $('contractMsg').textContent='Markdown 을 복사했습니다.'; }
+    catch(e){ $('contractMsg').className='msg err'; $('contractMsg').textContent='복사할 수 없습니다.'; }
+  });
+  async function bulkPush(){
+    const m=$('logMsg'); m.className='msg';
+    try{
+      // 먼저 몇 건인지 세어 보고 확인을 받는다 — 눌러 놓고 놀라는 일이 없게.
+      const dry=await fetch(session.api+'/api/crm-sync/bulk-push',{method:'POST',headers:jauth(),body:JSON.stringify({dry_run:true})}).then(r=>r.json());
+      if(dry.error){ m.className='msg err'; m.textContent='실행 불가: '+(dry.note||dry.error); return; }
+      if(!dry.count){ m.className='msg ok'; m.textContent='보낼 대상이 없습니다(대기 중이거나 RFC 없는 고객 제외).'; return; }
+      const ok=confirm('RFC 가 있는 승인 고객 '+dry.count+'건의 현재 값을 CRM 으로 다시 보냅니다.\n\n예: '+(dry.sample||[]).slice(0,3).join(' / ')+'\n\n계속할까요?');
+      if(!ok) return;
+      $('btnBulk').disabled=true; $('btnBulk').textContent='전송 중…';
+      const d=await fetch(session.api+'/api/crm-sync/bulk-push',{method:'POST',headers:jauth(),body:JSON.stringify({})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='실패: '+(d.note||d.error); }
+      else{ m.className='msg ok';
+        m.textContent='적재 '+d.queued+'건'+(d.skipped?(' · 건너뜀 '+d.skipped):'')
+          +' · 즉시 전송 성공 '+((d.drain&&d.drain.sent)||0)+' / 실패 '+((d.drain&&d.drain.failed)||0)
+          +(d.note?(' — '+d.note):''); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnBulk').disabled=false; $('btnBulk').textContent='전체 동기화'; loadLog(); }
+  }
+  $('btnBulk').addEventListener('click',bulkPush);
+  const logFromFirst=()=>{ PG.out.page=1; loadLog(); };
+  const inFromFirst=()=>{ PG.in.page=1; loadInbound(); };
+  pgWire('logPg',PG.out,loadLog);
+  pgWire('inPg',PG.in,loadInbound);
+  $('btnLogReload').addEventListener('click',logFromFirst);
+  $('btnDrain').addEventListener('click',drain);
+  $('fStatus').addEventListener('change',logFromFirst);
+  $('fScope').addEventListener('change',function(){ SCOPE.auto=false; SCOPE.value=$('fScope').value; logFromFirst(); });
+  $('fQ').addEventListener('keydown',e=>{if(e.key==='Enter')logFromFirst();});
+  $('btnNew').addEventListener('click',newEndpoint);
+  $('btnReloadAll').addEventListener('click',()=>loadEndpoints(CUR&&CUR.key));
+
+  $('btnInReload').addEventListener('click',inFromFirst);
+  $('iFilter').addEventListener('change',inFromFirst);
+  document.querySelectorAll('#boxInbound button[data-env]').forEach(function(b){
+    b.addEventListener('click',()=>issueKey(b.dataset.env));
+  });
+  $('fBodyShape').addEventListener('change',applyShapeHint);
+  $('btnMapPreset').addEventListener('click',function(){
+    // 개발자가 보내온 규격(2026-09-15) 그대로. '-' 인 필드는 그 규격에 없으므로 빼고 보낸다.
+    const m={}; PFIELDS.forEach(function(f){ m[f[0]] = (f[2]==='-') ? '' : f[2]; });
+    renderFieldMap(m);
+    $('fBodyShape').value='item';          // 그 규격은 제품 1건 = 요청 1건이다
+    applyShapeHint();
+    $('catalogMsg').className='msg warn';
+    $('catalogMsg').innerHTML='개발자 규격(2026-09-15)으로 채웠습니다. 함께 확인하세요 — '
+      +'① 「키를 싣는 위치」를 <b>본문 JSON 필드</b>, 이름 <b>apiKey</b> 로 바꿔야 합니다(그 규격은 키를 본문에 받습니다). '
+      +'② <b>적용차종·재고·사진</b>은 그 규격에 없어 빠집니다. '
+      +'③ 1건씩이라 전체 전송이 <b>제품 수만큼</b>의 요청이 됩니다.';
+  });
+  $('btnMapClear').addEventListener('click',function(){ renderFieldMap({}); });
+  $('btnCatalogSend').addEventListener('click',()=>catalogSend('full'));
+  $('btnCatalogDelta').addEventListener('click',catalogDelta);
+  $('btnCatalogDeltaPreview').addEventListener('click',catalogDeltaPreview);
+  $('btnCatalogBaseline').addEventListener('click',catalogBaseline);
+  $('btnCatalogTest').addEventListener('click',()=>catalogSend('test'));
+  $('btnCatalogPreview').addEventListener('click',catalogPreview);
+  $('btnCatalogReload').addEventListener('click',loadCatalogStatus);
+  $('btnCatalogStop').addEventListener('click',catalogStop);
+  $('btnOrderSweep').addEventListener('click',orderSweep);
+  $('btnOrderReload').addEventListener('click',loadOrderStatus);
+  $('btnOrderCheck').addEventListener('click',orderCheck);
+  $('fOrderQ').addEventListener('keydown',e=>{if(e.key==='Enter')orderCheck();});
+  $('btnSaveNotify').addEventListener('click',saveNotifyTargets);
+  $('btnNotifyNone').addEventListener('click',function(){
+    NOTIFY.forEach(u=>{ if(!u.always) u.selected=false; });
+    loadNotifyTargets.__skip=1; // 화면만 다시 그린다
+    document.querySelectorAll('#notifyList input[type=checkbox]').forEach(function(c,i){
+      if(NOTIFY[i]&&!NOTIFY[i].always) c.checked=false;
+    });
+    $('notifyMeta').textContent='선택 0명 (디렉터 제외)';
+  });
+  $('keyModalCopy').addEventListener('click',()=>copyKeyModal(false));
+  $('keyModalCopyAll').addEventListener('click',()=>copyKeyModal(true));
+  $('keyModalClose').addEventListener('click',closeKeyModal);
+  // 바깥을 눌러도, ESC 를 눌러도 닫히지 않는다 — 실수로 키를 잃는 경로를 만들지 않는다.
+  $('keyModal').addEventListener('click',function(e){ e.stopPropagation(); });
+
+  $('btnCopyInUrl').addEventListener('click',async function(){
+    try{ await navigator.clipboard.writeText($('fInboundUrl').value);
+      $('inKeyMsg').className='msg ok'; $('inKeyMsg').textContent='수신 주소를 복사했습니다.'; }
+    catch(e){ $('fInboundUrl').select(); }
+  });
+
+
+  // =====================================================================
+  // 0237 · 프로모션 배너 — ERP 에서 등록 → 고른 CRM 전부에 자동 전송 → CRM 이 배너로 반영
+  // =====================================================================
+  const PROMO_FIELDS=[
+    ['promocionId','프로모션 고유키 (PR-000001)'],['version','전송마다 +1'],['estatus','activa · cancelada · finalizada'],
+    ['titulo','제목'],['descripcion','설명'],['tipoPromocion','porcentaje · monto · otro'],['valorDescuento','할인값'],
+    ['condiciones','적용 조건'],['fechaInicio','시작일 YYYY-MM-DD'],['fechaFin','종료일 YYYY-MM-DD'],['zonaHoraria','America/Mexico_City'],
+    ['bannerUrl','배너 이미지 주소'],['bannerAncho','가로 px'],['bannerAlto','세로 px'],['bannerTipo','이미지 형식'],
+    ['enlace','클릭 이동 주소'],['prioridad','노출 순서'],['transactionUser','ERP 사용자']];
+  function renderPromoMap(map){
+    const m=map||{};
+    $('promoMapRows').innerHTML=PROMO_FIELDS.map(function(f){
+      const cur=Object.prototype.hasOwnProperty.call(m,f[0])?String(m[f[0]]==null?'':m[f[0]]):'';
+      const shown=Object.prototype.hasOwnProperty.call(m,f[0])&&cur===''?'-':cur;
+      return '<tr><td class="mono">'+esc(f[0])+'</td>'
+        +'<td><input data-pmapf="'+esc(f[0])+'" value="'+esc(shown)+'" placeholder="'+esc(f[0])+' (그대로)"></td>'
+        +'<td class="hint">'+esc(f[1])+'</td></tr>';
+    }).join('');
+  }
+  function collectPromoMap(){
+    const out={};
+    document.querySelectorAll('#promoMapRows input[data-pmapf]').forEach(function(i){
+      const v=i.value.trim();
+      if(v==='-') out[i.dataset.pmapf]='';
+      else if(v) out[i.dataset.pmapf]=v;
+    });
+    return out;
+  }
+
+  const PHASE_LABEL={active:'진행 중',scheduled:'예정',ended:'종료',draft:'초안',cancelled:'취소'};
+  const PM_ERR={image_too_large:'이미지는 5MB 이하여야 합니다.'};
+  let MODE='eps', PM={items:[],today:'',filter:'live'}, PMCUR=null, PMTARGETS=[], PMIMG=null, PMBLOB=null, PMSEL=new Set();
+
+  function setMode(m,epKey){
+    MODE=m;
+    document.querySelectorAll('.mtab').forEach(x=>x.classList.toggle('on',x.dataset.mode===m));
+    $('viewEps').classList.toggle('hidden',m!=='eps');
+    $('viewPromo').classList.toggle('hidden',m!=='promo');
+    if(m==='promo'){ loadPromoTargets().then(()=>loadPromos()); }
+    else loadEndpoints(epKey||(CUR&&CUR.key));
+  }
+  document.querySelectorAll('.mtab').forEach(function(t){ t.addEventListener('click',()=>setMode(t.dataset.mode)); });
+
+  function pmMsg(kind,html){ const m=$('pmMsg'); m.className='msg'+(kind?' '+kind:''); m.innerHTML=html||''; }
+  async function jget(path){
+    const res=await fetch(session.api+path,{headers:auth()});
+    let d={}; try{ d=await res.json(); }catch(e){}
+    if(!res.ok||d.error){ const err=new Error(d.note||d.error||('HTTP '+res.status)); err.code=d.error; throw err; }
+    return d;
+  }
+  async function jsend(method,path,body){
+    const res=await fetch(session.api+path,{method,headers:jauth(),body:JSON.stringify(body||{})});
+    let d={}; try{ d=await res.json(); }catch(e){}
+    if(!res.ok||d.error){ const err=new Error(d.note||PM_ERR[d.error]||d.error||('HTTP '+res.status)); err.code=d.error; throw err; }
+    return d;
+  }
+
+  // ── 전송할 곳(=프로모션 창구) ─────────────────────────────
+  async function loadPromoTargets(){
+    try{
+      const d=await jget('/api/promotions/targets');
+      PMTARGETS=d.items||[];
+      $('pmMigBanner').innerHTML='';
+    }catch(e){
+      PMTARGETS=[];
+      $('pmMigBanner').innerHTML='<div class="banner '+(e.code==='migration_required'?'warn':'err')+'">'
+        +(e.code==='migration_required'?'<b>마이그레이션 대기</b> — Railway 콘솔에서 <span class="mono">npm run migrate</span> 로 0237 을 적용하세요.':esc(e.message))+'</div>';
+    }
+    renderTargets();
+  }
+  function renderTargets(){
+    if(!PMTARGETS.length){
+      $('pmTargets').innerHTML='<div class="hint">프로모션 창구가 없습니다 — 「+ 전송할 곳 추가」로 만드세요.</div>';
+      return;
+    }
+    $('pmTargets').innerHTML=PMTARGETS.map(function(t){
+      const warns=[];
+      if(!t.active_url) warns.push('<span class="pill p-failed">주소 미설정</span>');
+      if(!t.has_token) warns.push('<span class="pill p-pending">키 없음</span>');
+      const size=(t.banner_w&&t.banner_h)?(t.banner_w+'×'+t.banner_h+' px'):'규격 미지정';
+      return '<div class="tgt">'
+        +'<input type="checkbox" data-tgt="'+esc(t.key)+'"'+(PMSEL.has(t.key)?' checked':'')+'>'
+        +'<div><div class="l">'+esc(t.label)+' <span class="hint mono">'+esc(t.key)+'</span></div>'
+        +'<div class="u">'+esc(t.active_url||'(주소 미설정)')+' · 배너 '+esc(size)
+        +(t.token_borrowed_label?(' · 키: 「'+esc(t.token_borrowed_label)+'」 것 사용'):'')+'</div></div>'
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'
+        +'<span class="pill '+(t.enabled?'p-on':'p-off')+'">'+(t.enabled?'켜짐':'꺼짐 — 대기')+'</span>'
+        +'<span class="pill '+(t.env==='prod'?'p-prod':'p-test')+'">'+(t.env==='prod'?'운영':'테스트')+'</span>'
+        +warns.join('')
+        +'<button class="btn ghost sm" type="button" data-tgtcfg="'+esc(t.key)+'">설정</button></div></div>';
+    }).join('');
+    document.querySelectorAll('#pmTargets input[data-tgt]').forEach(function(c){
+      c.addEventListener('change',function(){ if(c.checked) PMSEL.add(c.dataset.tgt); else PMSEL.delete(c.dataset.tgt); renderSizeWarn(); });
+    });
+    document.querySelectorAll('#pmTargets button[data-tgtcfg]').forEach(function(b){
+      b.addEventListener('click',function(){ setMode('eps',b.dataset.tgtcfg); });
+    });
+    renderSizeWarn();
+  }
+
+  async function addPromoTarget(){
+    const label=prompt('전송할 곳 이름 (예: 웹 카달록 · 고객사 A 포털)');
+    if(!label) return;
+    let key=prompt('창구 키 (영문 소문자·숫자·밑줄 3~40자, promo_ 로 시작 권장)', 'promo_'+label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,30));
+    if(!key) return;
+    key=key.trim();
+    try{
+      // 계약서는 기본 창구(promo_crm)의 것을 그대로 복사한다 — 모든 CRM 에 같은 규격을 준다.
+      let contract={fields:[],sample_request:'',sample_response:'{\n  "codigoError": "0",\n  "mensaje": ""\n}',raw:'',notes:''};
+      try{ const base=await jget('/api/integrations/promo_crm'); if(base.endpoint&&base.endpoint.contract) contract=base.endpoint.contract; }catch(e){}
+      await jsend('POST','/api/integrations',{key,label:label.trim(),category:'promotion',
+        description:'ERP 프로모션 → 이 CRM 의 배너 자동 반영',contract,sort_order:60});
+      PMSEL.add(key);
+      await loadPromoTargets();
+      pmMsg('ok','「'+esc(label)+'」 창구를 만들었습니다. <b>설정</b>을 눌러 주소·키·배너 규격을 넣고 「사용」을 켜세요 — 그 전까지는 대기로 쌓입니다.');
+    }catch(e){ pmMsg('err','창구를 만들지 못했습니다: '+esc(e.message)); }
+  }
+
+  // ── 목록 ─────────────────────────────────────────────
+  async function loadPromos(keepId){
+    try{
+      const d=await jget('/api/promotions');
+      PM.items=d.items||[]; PM.today=d.today||'';
+    }catch(e){
+      PM.items=[];
+      $('pmList').innerHTML='<div class="empty">'+esc(e.code==='migration_required'?'마이그레이션 0237 이 필요합니다.':e.message)+'</div>';
+      $('pmCount').textContent='';
+      if(!PMCUR) newPromo();
+      return;
+    }
+    renderPromoList();
+    const id=keepId||(PMCUR&&PMCUR.id);
+    if(id&&PM.items.some(x=>x.id===id)) openPromo(id);
+    else if(!PMCUR) newPromo();
+  }
+  function pmFiltered(){
+    const f=PM.filter;
+    return PM.items.filter(function(x){
+      if(f==='all') return true;
+      if(f==='live') return x.phase==='active'||x.phase==='scheduled';
+      return x.phase===f;
+    });
+  }
+  function renderPromoList(){
+    const list=pmFiltered();
+    $('pmCount').textContent=list.length+' / '+PM.items.length+'건';
+    if(!list.length){ $('pmList').innerHTML='<div class="empty">'+(PM.items.length?'이 분류에는 없습니다.':'아직 프로모션이 없습니다.')+'</div>'; return; }
+    $('pmList').innerHTML=list.map(function(x){
+      const s=x.send||{};
+      const thumb=(x.image&&x.status!=='draft')?'<img class="th" src="'+esc(x.image.url)+'" alt="">':'<div class="th"></div>';
+      return '<div class="pm'+(PMCUR&&PMCUR.id===x.id?' sel':'')+'" data-pm="'+x.id+'">'+thumb
+        +'<div><div class="t">'+esc(x.title)+'</div>'
+        +'<div class="m">'+esc(x.code)+' · '+esc(x.start_date)+' ~ '+esc(x.end_date)+'</div>'
+        +'<div class="b"><span class="pill ph-'+esc(x.phase)+'">'+esc(PHASE_LABEL[x.phase]||x.phase)+'</span>'
+        +(s.sent?'<span class="pill p-sent">보냄 '+s.sent+'</span>':'')
+        +(s.pending?'<span class="pill p-pending">대기 '+s.pending+'</span>':'')
+        +(s.failed?'<span class="pill p-failed">실패 '+s.failed+'</span>':'')
+        +(x.size_warnings&&x.size_warnings.length?'<span class="pill p-pending">규격 다름</span>':'')
+        +'</div></div></div>';
+    }).join('');
+    document.querySelectorAll('#pmList .pm[data-pm]').forEach(function(el){
+      el.addEventListener('click',()=>openPromo(Number(el.dataset.pm)));
+    });
+  }
+  document.querySelectorAll('#pmFilter button').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('#pmFilter button').forEach(x=>x.classList.toggle('on',x===b));
+      PM.filter=b.dataset.f; renderPromoList();
+    });
+  });
+
+  // ── 편집기 ───────────────────────────────────────────
+  function addDays(ymd,n){ const d=new Date(ymd+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+  function todayMx(){
+    if(PM.today) return PM.today;
+    try{ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City'}).format(new Date()); }catch(e){ return mxHoy(); }
+  }
+  function setBlob(url){ if(PMBLOB){ try{URL.revokeObjectURL(PMBLOB);}catch(e){} } PMBLOB=url||null; }
+  function showImg(src,info){
+    if(src){ $('pmImg').src=src; $('pmImg').classList.remove('hidden'); $('pmDropPh').classList.add('hidden'); }
+    else{ $('pmImg').removeAttribute('src'); $('pmImg').classList.add('hidden'); $('pmDropPh').classList.remove('hidden'); }
+    $('pmImgInfo').innerHTML=info||'';
+  }
+  function applyTypeLabel(){
+    const t=$('pmFType').value;
+    $('pmFValueL').textContent=t==='monto'?'할인 금액 (MXN)':(t==='otro'?'값 (없음)':'할인율 (%)');
+    $('pmFValue').disabled=t==='otro';
+    if(t==='otro') $('pmFValue').value='';
+  }
+  $('pmFType').addEventListener('change',applyTypeLabel);
+
+  function newPromo(){
+    PMCUR=null; PMIMG=null; setBlob(null);
+    const t=todayMx();
+    $('pmTitle').textContent='새 프로모션';
+    $('pmFTitle').value=''; $('pmFDesc').value=''; $('pmFCond').value=''; $('pmFType').value='porcentaje'; $('pmFValue').value='';
+    $('pmFStart').value=t; $('pmFEnd').value=addDays(t,30); $('pmFPrio').value='100'; $('pmFLink').value=''; $('pmFAuto').checked=true;
+    applyTypeLabel();
+    // 새 프로모션은 **켜져 있는 창구 전부**를 기본으로 고른다(대부분 전부에 보낸다)
+    PMSEL=new Set(PMTARGETS.filter(x=>x.enabled).map(x=>x.key));
+    if(!PMSEL.size&&PMTARGETS.length===1) PMSEL.add(PMTARGETS[0].key);
+    showImg(null,''); renderTargets();
+    $('pmDelivBox').classList.add('hidden'); $('pmPreviewOut').innerHTML='';
+    pmMsg('',''); applyButtons(); renderPromoList();
+  }
+
+  async function openPromo(id){
+    try{
+      const d=await jget('/api/promotions/'+id);
+      const p=d.promo; PMCUR=p; PMIMG=null;
+      $('pmTitle').innerHTML=esc(p.code)+' · '+esc(p.title)+' <span class="pill ph-'+esc(p.phase)+'" style="margin-left:6px">'+esc(PHASE_LABEL[p.phase]||p.phase)+'</span>';
+      $('pmFTitle').value=p.title; $('pmFDesc').value=p.description||''; $('pmFCond').value=p.conditions||'';
+      $('pmFType').value=p.promo_type; $('pmFValue').value=p.discount_value==null?'':p.discount_value;
+      $('pmFStart').value=p.start_date; $('pmFEnd').value=p.end_date; $('pmFPrio').value=p.priority;
+      $('pmFLink').value=p.link_url||''; $('pmFAuto').checked=!!p.auto_withdraw;
+      applyTypeLabel();
+      PMSEL=new Set(p.targets||[]);
+      renderTargets();
+      setBlob(null);
+      if(p.image){
+        const info=imgInfo(p.image.w,p.image.h,p.image.bytes,p.image.mime,p.image.name);
+        // 초안의 그림은 공개 주소로 열리지 않는다 → 인증을 실어 받아 온다
+        try{
+          const r=await fetch(session.api+'/api/promotions/'+p.id+'/image',{headers:auth()});
+          if(r.ok){ const u=URL.createObjectURL(await r.blob()); setBlob(u); showImg(u,info); } else showImg(null,info);
+        }catch(e){ showImg(null,info); }
+      }else showImg(null,'');
+      renderDeliveries(d.deliveries||[], p);
+      $('pmPreviewOut').innerHTML='';
+      pmMsg('',''); applyButtons(); renderPromoList();
+    }catch(e){ pmMsg('err','불러오지 못했습니다: '+esc(e.message)); }
+  }
+
+  function imgInfo(w,h,bytes,mime,name){
+    return '<b>'+w+' × '+h+' px</b> · '+(bytes?(Math.round(bytes/1024)+' KB · '):'')+esc(mime||'')+(name?(' · '+esc(name)):'');
+  }
+  function curImgSize(){
+    if(PMIMG) return {w:PMIMG.w,h:PMIMG.h};
+    if(PMCUR&&PMCUR.image) return {w:PMCUR.image.w,h:PMCUR.image.h};
+    return null;
+  }
+  // 고른 창구의 규격과 다르면 경고(막지는 않는다 — 전송할 때 한 번 더 묻는다)
+  function sizeMismatches(){
+    const sz=curImgSize(); if(!sz) return [];
+    return PMTARGETS.filter(t=>PMSEL.has(t.key)&&t.banner_w&&t.banner_h&&(t.banner_w!==sz.w||t.banner_h!==sz.h))
+      .map(t=>({label:t.label,need:t.banner_w+'×'+t.banner_h}));
+  }
+  function renderSizeWarn(){
+    const mm=sizeMismatches(); const sz=curImgSize();
+    $('pmSizeWarn').innerHTML=mm.length&&sz
+      ? '<div class="msg warn" style="display:block">배너가 <b>'+sz.w+'×'+sz.h+'</b> px 입니다 — '
+        +mm.map(x=>'「'+esc(x.label)+'」 규격 <b>'+esc(x.need)+'</b>').join(', ')+' 와 다릅니다. CRM 에서 늘어나거나 잘릴 수 있습니다.</div>'
+      : '';
+  }
+
+  function pickFile(f){
+    if(!f) return;
+    if(!/^image\/(png|jpeg|webp|gif)$/.test(f.type)){ pmMsg('err','PNG · JPG · WEBP · GIF 만 올릴 수 있습니다.'); return; }
+    if(f.size>5*1024*1024){ pmMsg('err','이미지는 5MB 이하여야 합니다 ('+Math.round(f.size/1024/1024*10)/10+'MB).'); return; }
+    const rd=new FileReader();
+    rd.onload=function(){
+      const url=String(rd.result||'');
+      const im=new Image();
+      im.onload=function(){
+        PMIMG={dataUrl:url,name:f.name,w:im.naturalWidth,h:im.naturalHeight,bytes:f.size,mime:f.type};
+        setBlob(null);
+        showImg(url,imgInfo(PMIMG.w,PMIMG.h,PMIMG.bytes,PMIMG.mime,PMIMG.name)+' · <span style="color:var(--warn)">저장 전</span>');
+        renderSizeWarn(); pmMsg('','');
+      };
+      im.onerror=function(){ pmMsg('err','이미지를 읽지 못했습니다.'); };
+      im.src=url;
+    };
+    rd.readAsDataURL(f);
+  }
+  $('pmDrop').addEventListener('click',()=>$('pmFile').click());
+  $('pmDrop').addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); $('pmFile').click(); } });
+  $('pmFile').addEventListener('change',function(){ pickFile(this.files&&this.files[0]); this.value=''; });
+  $('pmDrop').addEventListener('dragover',e=>{ e.preventDefault(); $('pmDrop').classList.add('over'); });
+  $('pmDrop').addEventListener('dragleave',()=>$('pmDrop').classList.remove('over'));
+  $('pmDrop').addEventListener('drop',function(e){
+    e.preventDefault(); $('pmDrop').classList.remove('over');
+    pickFile(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]);
+  });
+
+  function applyButtons(){
+    const p=PMCUR; const pub=p&&p.status==='published';
+    $('pmResend').classList.toggle('hidden',!pub);
+    $('pmCancel').classList.toggle('hidden',!pub);
+    $('pmDelete').classList.toggle('hidden',!p);
+    $('pmPreview').classList.toggle('hidden',!p);
+    $('pmSaveDraft').textContent = pub ? '저장 (고친 내용 자동 재전송)' : '임시저장';
+    $('pmSaveDraft').classList.toggle('hidden', !!pub);   // 발행 중이면 저장 = 전송이므로 버튼 하나로 충분
+    $('pmPublish').textContent = pub ? '고친 내용 저장·전송' : (p&&p.status==='cancelled' ? '다시 전송(재개)' : '저장하고 전송');
+  }
+
+  function collectPromo(){
+    return {
+      title:$('pmFTitle').value.trim(), description:$('pmFDesc').value, conditions:$('pmFCond').value,
+      promo_type:$('pmFType').value, discount_value:$('pmFValue').value.trim(),
+      start_date:$('pmFStart').value, end_date:$('pmFEnd').value, priority:$('pmFPrio').value.trim(),
+      link_url:$('pmFLink').value.trim(), auto_withdraw:$('pmFAuto').checked,
+      targets:[...PMSEL],
+    };
+  }
+  // 서버와 같은 기준으로 먼저 걸러 준다(서버도 다시 검사한다)
+  function localCheck(b,publish){
+    if(!b.title) return '제목을 입력하세요.';
+    if(b.promo_type!=='otro'){ const v=Number(b.discount_value); if(!b.discount_value||!(v>0)) return '할인값을 입력하세요.'; if(b.promo_type==='porcentaje'&&v>100) return '할인율은 100% 를 넘을 수 없습니다.'; }
+    if(!b.start_date||!b.end_date) return '시작일·종료일을 입력하세요.';
+    if(b.end_date<b.start_date) return '종료일이 시작일보다 빠릅니다.';
+    if(b.link_url&&!/^https?:\/\//i.test(b.link_url)) return '클릭 이동 주소는 http:// 또는 https:// 로 시작해야 합니다.';
+    if(publish){
+      if(!PMIMG&&!(PMCUR&&PMCUR.image)) return '배너 이미지를 올려야 전송할 수 있습니다.';
+      if(!b.targets.length) return '전송할 곳을 하나 이상 고르세요.';
+      if(b.end_date<todayMx()) return '종료일이 이미 지났습니다.';
+    }
+    return null;
+  }
+
+  async function savePromo(publish){
+    const b=collectPromo();
+    const pub=PMCUR&&PMCUR.status==='published';
+    const sending=publish||pub;
+    const err=localCheck(b,sending);
+    if(err){ pmMsg('err',esc(err)); return; }
+    if(sending){
+      const mm=sizeMismatches();
+      if(mm.length&&!confirm('배너 크기가 다음 창구 규격과 다릅니다:\n'+mm.map(x=>'· '+x.label+' '+x.need).join('\n')+'\n\n그래도 보낼까요?')) return;
+      const off=PMTARGETS.filter(t=>PMSEL.has(t.key)&&(!t.enabled||!t.active_url)).map(t=>t.label);
+      const prod=PMTARGETS.filter(t=>PMSEL.has(t.key)&&t.enabled&&t.env==='prod').map(t=>t.label);
+      if(prod.length&&!confirm('운영 CRM 에 실제로 게시됩니다:\n'+prod.map(x=>'· '+x).join('\n')+(off.length?('\n\n(꺼져 있거나 주소가 없어 대기로 남는 곳: '+off.join(', ')+')'):'')+'\n\n계속할까요?')) return;
+    }
+    if(PMIMG){ b.image_data_url=PMIMG.dataUrl; b.image_name=PMIMG.name; }
+    b.publish=!!publish;
+    const btn=publish?$('pmPublish'):$('pmSaveDraft'); const txt=btn.textContent;
+    btn.disabled=true; btn.textContent='저장 중…';
+    try{
+      const d=PMCUR ? await jsend('PUT','/api/promotions/'+PMCUR.id,b) : await jsend('POST','/api/promotions',b);
+      PMIMG=null;
+      const s=d.sent;
+      let html = s ? ('저장하고 <b>'+s.sent_to.length+'곳</b>에 전송했습니다 (버전 '+s.version+').'
+          +(s.removed_from&&s.removed_from.length?(' 대상에서 뺀 '+s.removed_from.length+'곳에는 내리기를 보냈습니다.'):'')
+          +(s.replaced?(' 대기 중이던 옛 버전 '+s.replaced+'건은 건너뜀으로 닫았습니다.'):''))
+        : '임시저장했습니다 — 아직 CRM 에 보내지 않았습니다.';
+      await loadPromos(d.promo.id);   // 목록을 다시 그리면서 방금 저장한 건을 연다(열 때 메시지를 지우므로 그 뒤에 쓴다)
+      pmMsg('ok',html);
+      if(s) setTimeout(()=>{ if(PMCUR&&PMCUR.id===d.promo.id) refreshDeliveries(); },2500);
+    }catch(e){ pmMsg('err','저장 실패: '+esc(e.message)); }
+    finally{ btn.disabled=false; btn.textContent=txt; }
+  }
+
+  async function refreshDeliveries(){
+    if(!PMCUR) return;
+    try{ const d=await jget('/api/promotions/'+PMCUR.id); renderDeliveries(d.deliveries||[],d.promo); }catch(e){}
+  }
+  function renderDeliveries(rows,p){
+    const show=p&&(p.status!=='draft'||rows.length);
+    $('pmDelivBox').classList.toggle('hidden',!show);
+    if(!show) return;
+    $('pmVer').textContent='현재 버전 '+p.version;
+    const byKey=new Map(PMTARGETS.map(t=>[t.key,t]));
+    const keys=[...new Set([...(p.targets||[]),...rows.map(r=>r.endpoint_key)])];
+    $('pmDelivRows').innerHTML=keys.map(function(k){
+      const r=rows.find(x=>x.endpoint_key===k); const t=byKey.get(k);
+      const nm=(t?esc(t.label):esc(k))+((p.targets||[]).includes(k)?'':' <span class="hint">(대상에서 빠짐)</span>');
+      if(!r) return '<tr><td>'+nm+'</td><td colspan="8" class="hint">아직 보낸 적 없음</td></tr>';
+      const held=r.status==='pending'&&t&&(!t.enabled||!t.active_url);
+      return '<tr><td>'+nm+'</td><td>'+esc(r.env==='prod'?'운영':(r.env==='test'?'테스트':'–'))+'</td>'
+        +'<td class="num">'+(r.version==null?'–':r.version)+'</td>'
+        +'<td>'+(r.op==='delete'?'내리기':'등록·갱신')+'</td>'
+        +'<td><span class="pill p-'+esc(r.status)+'">'+esc(STATUS_LABEL[r.status]||r.status)+'</span></td>'
+        +'<td class="num">'+(r.http_status==null?'–':r.http_status)+(r.codigo_error!=null?(' · '+esc(r.codigo_error)):'')+'</td>'
+        +'<td class="hint">'+esc(held?'창구가 꺼져 있거나 주소가 없어 대기 중 — 켜면 나갑니다':(r.last_error||''))+'</td>'
+        +'<td class="hint">'+esc(fmtTs(r.sent_at||r.created_at))+'</td>'
+        +'<td>'+(r.status==='failed'?'<button class="btn ghost sm" data-pmretry="'+r.outbox_id+'">재전송</button>':'')+'</td></tr>';
+    }).join('') || '<tr><td colspan="9" class="empty">전송할 곳이 없습니다.</td></tr>';
+    document.querySelectorAll('#pmDelivRows button[data-pmretry]').forEach(function(b){
+      b.addEventListener('click',async function(){
+        b.disabled=true;
+        try{ await jsend('POST','/api/crm-sync/'+b.dataset.pmretry+'/retry',{}); }catch(e){ pmMsg('err','재전송 실패: '+esc(e.message)); }
+        refreshDeliveries();
+      });
+    });
+  }
+  function fmtTs(v){
+    if(!v) return '';
+    try{ return new Intl.DateTimeFormat('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v)); }
+    catch(e){ return mxHora(v); }
+  }
+
+  async function resendPromo(){
+    if(!PMCUR) return;
+    if(!confirm('같은 내용을 고른 곳 전부에 다시 보냅니다(버전 +1). 계속할까요?')) return;
+    try{
+      const s=await jsend('POST','/api/promotions/'+PMCUR.id+'/publish',{});
+      await loadPromos(PMCUR.id);
+      pmMsg('ok','<b>'+s.sent_to.length+'곳</b>에 다시 보냈습니다 (버전 '+s.version+').');
+      setTimeout(refreshDeliveries,2500);
+    }catch(e){ pmMsg('err','다시 전송 실패: '+esc(e.message)); }
+  }
+  async function cancelPromoUi(){
+    if(!PMCUR) return;
+    if(!confirm('「'+PMCUR.title+'」 을(를) 받은 CRM 전부에서 내립니다(estatus: cancelada). 계속할까요?')) return;
+    try{
+      const r=await jsend('POST','/api/promotions/'+PMCUR.id+'/cancel',{});
+      await loadPromos(PMCUR.id);
+      pmMsg('ok','취소했습니다 — <b>'+r.withdrawn_from.length+'곳</b>에 내리기를 보냈습니다.');
+      setTimeout(refreshDeliveries,2500);
+    }catch(e){ pmMsg('err','취소 실패: '+esc(e.message)); }
+  }
+  async function deletePromoUi(){
+    if(!PMCUR) return;
+    const live=PMCUR.status==='published';
+    if(!confirm((live?'전송 중인 프로모션입니다 — CRM 전부에서 먼저 내린 뒤 삭제합니다.\n\n':'')+'「'+PMCUR.title+'」 을(를) 삭제할까요?')) return;
+    try{
+      await fetch(session.api+'/api/promotions/'+PMCUR.id,{method:'DELETE',headers:auth()}).then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.note||d.error||r.status); } });
+      PMCUR=null; await loadPromos(); newPromo(); pmMsg('ok','삭제했습니다.');
+    }catch(e){ pmMsg('err','삭제 실패: '+esc(e.message)); }
+  }
+  async function previewPromo(){
+    if(!PMCUR) return;
+    try{
+      const key=[...PMSEL][0]||'';
+      const d=await jget('/api/promotions/'+PMCUR.id+'/preview'+(key?('?endpoint='+encodeURIComponent(key)):''));
+      $('pmPreviewOut').innerHTML='<div class="hint" style="margin-top:10px">다음 전송 본문 — 창구 <span class="mono">'+esc(d.endpoint||'-')+'</span> 의 필드 이름 기준 (저장된 내용 기준 · 보내지 않음)</div>'
+        +'<div class="row2"><div><div class="hint">등록·갱신</div><pre class="out">'+esc(JSON.stringify(d.upsert,null,2))+'</pre></div>'
+        +'<div><div class="hint">내리기(취소·종료)</div><pre class="out">'+esc(JSON.stringify(d.delete,null,2))+'</pre></div></div>';
+    }catch(e){ pmMsg('err','미리보기 실패: '+esc(e.message)); }
+  }
+
+  $('pmNew').addEventListener('click',newPromo);
+  $('pmReload').addEventListener('click',()=>loadPromoTargets().then(()=>loadPromos()));
+  $('pmAddTarget').addEventListener('click',addPromoTarget);
+  $('pmPublish').addEventListener('click',()=>savePromo(true));
+  $('pmSaveDraft').addEventListener('click',()=>savePromo(false));
+  $('pmResend').addEventListener('click',resendPromo);
+  $('pmCancel').addEventListener('click',cancelPromoUi);
+  $('pmDelete').addEventListener('click',deletePromoUi);
+  $('pmPreview').addEventListener('click',previewPromo);
+  // 주소로 바로 열기: refatrix-integrations.html#promo
+  if(/(^|[#&])promo\b/.test(location.hash)) setTimeout(function(){ if(session.token) setMode('promo'); else setTimeout(()=>{ if(session.token) setMode('promo'); },1200); },400);
+
+  window.selectEp=selectEp; window.setF=setF; window.rmF=rmF; window.retry=retry;
+  window.toggleDetail=toggleDetail; window.toggleIn=toggleIn; window.setNotify=setNotify;
+
+  (function(){
+    const ps=portalSession();
+    if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(()=>login(),30); }
+    else{ $('loginCard').classList.remove('hidden'); }
+  })();
+</script>
+<script src="refatrix-nav.js?v=20261127th"></script>
+</body>
+</html>

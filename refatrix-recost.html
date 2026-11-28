@@ -9,14 +9,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 수입 원가 정정</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--gold:#B8893B;--purple:#6B4FB0;--brand:#143D34;--radius:12px;}
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--gold:#B8893B;--purple:#6B4FB0;--brand:#0058A3;--radius:12px;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
   .wrap{max-width:1080px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:4px}
@@ -34,17 +34,21 @@
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
   th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
   th:first-child,td:first-child{text-align:left}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;font-weight:700}
   td.n,th.n{font-variant-numeric:tabular-nums}
   .ovlist{margin-top:8px}
   .ovrow{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
-  .pill{font-size:11px;font-weight:700;background:#faf8f3;border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .pill{font-size:11px;font-weight:700;background:#FAFAFA;border:1px solid var(--line);border-radius:999px;padding:3px 10px}
   .warn{background:#fdf4e3;border:1px solid #e7c98b;color:#8a6512;border-radius:8px;padding:10px 12px;font-size:12.5px;margin-top:10px}
   .tot{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
-  .totbox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:170px}
+  .totbox{background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:170px}
   .totbox .v{font-size:22px;font-weight:800}.totbox .l{font-size:11px;color:var(--muted);margin-top:2px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260622a">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -216,7 +220,7 @@
           ? '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#fff3d6;color:#8a6d00">같은 송장·입고일 → 진짜 중복 의심</span>'
           : '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#e3effb;color:#1c5a99">다른 송장·입고일 → 정상 재입고 의심(삭제 주의)</span>';
         const bmeta=(b)=> esc(b.batch_no||('#'+b.batch_id))+' · '+(b.import_date||'-')+' · 송장 '+(b.invoice_nos&&b.invoice_nos.length?esc(b.invoice_nos.join('/')):'(없음)');
-        h+='<div style="border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+        h+='<div style="border:1px solid var(--line,#DFDFDF);border-radius:10px;padding:10px 12px;margin-bottom:10px">'
           +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
           +'<div><b>그룹 '+(gi+1)+'</b> · 동일 구성 배치 '+g.dup_count+'개</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+docSignal+verdict+'</div></div>'
           +'<div class="hint" style="margin-bottom:6px">보존 제안: <b>'+bmeta(g.keep_batch)+'</b></div>'
@@ -293,7 +297,7 @@
         +'<td><button type="button" class="bexc btn sm" data-bid="'+b.id+'" data-exc="'+(b.exclude_from_cost?1:0)+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:'+(b.exclude_from_cost?'var(--income)':'#8a8a8a')+';padding:4px 10px;font-size:11.5px;margin-right:4px">'+(b.exclude_from_cost?'↺ 원가포함':'⊘ 원가제외')+'</button>'
         +'<button type="button" class="bsafe btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--brand);padding:4px 10px;font-size:11.5px;margin-right:4px">🧹 안전삭제</button>'
         +'<button type="button" class="bdel btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--expense);padding:4px 10px;font-size:11.5px">🗑 전체삭제</button></td></tr>';
-      if(open){ h+='<tr><td colspan="5" style="padding:0;background:#faf8f3">'+batchDetailHtml(b.id)+'</td></tr>'; }
+      if(open){ h+='<tr><td colspan="5" style="padding:0;background:#FAFAFA">'+batchDetailHtml(b.id)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
     $('batchList').innerHTML=h;
@@ -680,6 +684,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

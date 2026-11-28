@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 재무 · build fin-1123pp</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -41,13 +41,13 @@
   .lrow>div{flex:1}.lrow .x{flex:0 0 auto}
   .linehead{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
   .suggest{position:absolute;z-index:20;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:2px;max-height:230px;overflow:auto;box-shadow:0 8px 20px rgba(0,0,0,.08)}
-  .suggest div{padding:8px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3efe6}
-  .suggest div:hover{background:#faf8f3}.suggest .code{font-weight:700;color:var(--brand)}
+  .suggest div{padding:8px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #F0F0F0}
+  .suggest div:hover{background:#FAFAFA}.suggest .code{font-weight:700;color:var(--brand)}
   .suggest .meta{font-size:11px;color:var(--muted)}
-  .picked{background:#f0f6f3 !important;border-color:var(--income) !important}
+  .picked{background:#E6F0F8 !important;border-color:var(--income) !important}
   table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
   th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
-  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#FAFAFA}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .totals{margin-top:12px;display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end;font-size:14px}
   .totals b{font-size:18px}
@@ -72,7 +72,7 @@
   .wfp{color:#7a4fb0;font-weight:700;border-bottom:1px dashed #b9a1d8}   /* 예정분 — 달력 '예상'과 동일 보라 */
   .wfamt{cursor:help;border-bottom:1px dotted transparent}
   .wfamt:hover{border-bottom-color:currentColor}
-  #wfTip{position:fixed;z-index:80;max-width:420px;background:#2a251d;color:#f6f3ec;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;box-shadow:0 10px 28px rgba(0,0,0,.32);display:none;pointer-events:none}
+  #wfTip{position:fixed;z-index:80;max-width:420px;background:#2a251d;color:#F5F5F5;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;box-shadow:0 10px 28px rgba(0,0,0,.32);display:none;pointer-events:none}
   #wfTip .tt-h{font-weight:700;margin-bottom:4px;color:#ffd98a}
   #wfTip .tt-r{display:flex;gap:6px;align-items:baseline;white-space:nowrap}
   #wfTip .tt-b{flex:0 0 auto;font-size:10px;font-weight:700;padding:0 5px;border-radius:999px;line-height:15px}
@@ -94,8 +94,8 @@
   .mom-up{background:#fbe9e7;color:var(--expense)} .mom-dn{background:#e7f3ee;color:var(--income)} .mom-flat{background:#eee;color:#888}
   table.matrix .code{font-size:10.5px;color:var(--muted);font-weight:600}
   table.matrix .cat{font-weight:700;color:var(--ink)}
-  table.matrix tr.sum{background:#f4f1ea} table.matrix tr.sum td{font-weight:800;border-top:2px solid var(--brand)}
-  th.fxsort{cursor:pointer;user-select:none;white-space:nowrap} th.fxsort:hover{color:var(--brand);background:#f0ede4}
+  table.matrix tr.sum{background:#F5F5F5} table.matrix tr.sum td{font-weight:800;border-top:2px solid var(--brand)}
+  th.fxsort{cursor:pointer;user-select:none;white-space:nowrap} th.fxsort:hover{color:var(--brand);background:#F0F0F0}
   .arw{font-size:9px;color:var(--brand);margin-left:2px} .arw.inact{color:#c9c3b6}
   .rx-scroll{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:8px}
   .rx-scroll table{margin:0}
@@ -127,11 +127,15 @@
   .rp-arr{font-size:10.5px;font-weight:700;margin-left:3px}
   .rp-cell{cursor:pointer}
   .rp-cell:hover{outline:2px solid var(--brand);outline-offset:-2px}
-  .rp-drill{background:#faf8f3;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:8px}
+  .rp-drill{background:#FAFAFA;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:8px}
   .rp-exrow{opacity:.55}
   .rp-mom-wrap{overflow-x:auto}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -226,16 +230,16 @@
           .fi-pick .fi-chip .no{font-weight:800;color:var(--brand)}
           .fi-pick .fi-chip .cu{color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
           .fi-pick .fi-chip .amt{font-variant-numeric:tabular-nums}
-          .fi-pick .fi-chip .x{border:none;background:#f1ede4;color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0}
+          .fi-pick .fi-chip .x{border:none;background:#F0F0F0;color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0}
           .fi-pick .fi-chip .x:hover{background:#F6E7E4;color:var(--expense)}
           .fi-pick .fi-invtbl{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
           .fi-pick .fi-thead,.fi-pick .fi-invrow{display:grid;grid-template-columns:36px 80px 1fr 88px 112px;align-items:center}
-          .fi-pick .fi-thead{background:#faf8f3;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);font-weight:700;padding:6px 0}
+          .fi-pick .fi-thead{background:#FAFAFA;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);font-weight:700;padding:6px 0}
           .fi-pick .fi-thead span{padding:0 9px}
           .fi-pick .fi-r{text-align:right}
           .fi-pick .fi-invscroll{max-height:210px;overflow:auto}
           .fi-pick .fi-invrow{padding:7px 0;border-bottom:1px solid #f0ece3;cursor:pointer;font-size:13px}
-          .fi-pick .fi-invrow:hover{background:#f7f5ef}
+          .fi-pick .fi-invrow:hover{background:#F5F5F5}
           .fi-pick .fi-invrow.on{background:#E4F0EB}
           .fi-pick .fi-invrow>*{padding:0 9px;min-width:0}
           .fi-pick .fi-invrow input{width:15px;height:15px;margin:0 0 0 9px;accent-color:var(--brand);cursor:pointer}
@@ -245,10 +249,10 @@
           .fi-pick .fi-invrow .amt{font-variant-numeric:tabular-nums;font-weight:600}
           .fi-pick .fi-badge{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px}
           .fi-pick .fi-badge.tmp{background:#fbf1dc;color:#9A6A12;border:1px solid #ecd9a0}
-          .fi-pick .fi-badge.none{background:#f1ede4;color:var(--muted);border:1px solid var(--line)}
-          .fi-pick .fi-grouph{background:#f1ede4;font-size:11px;font-weight:800;color:var(--muted);padding:4px 11px;border-bottom:1px solid var(--line)}
+          .fi-pick .fi-badge.none{background:#F0F0F0;color:var(--muted);border:1px solid var(--line)}
+          .fi-pick .fi-grouph{background:#F0F0F0;font-size:11px;font-weight:800;color:var(--muted);padding:4px 11px;border-bottom:1px solid var(--line)}
           .fi-pick .fi-nores{font-size:12.5px;color:var(--muted);padding:12px 11px}
-          .fi-pick .fi-splitbar{display:flex;align-items:center;gap:14px;margin-top:9px;background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;flex-wrap:wrap}
+          .fi-pick .fi-splitbar{display:flex;align-items:center;gap:14px;margin-top:9px;background:#FAFAFA;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;flex-wrap:wrap}
           .fi-pick .fi-splitbar b{color:var(--brand)}
           .fi-pick .fi-warn{color:#B8893B;font-weight:700}
           .fi-pick.fi-panel{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}
@@ -1462,7 +1466,7 @@
       #rcptViewer .rv-doc table{width:100%;border-collapse:collapse;font-size:13px}
       #rcptViewer .rv-doc td{padding:6px 8px;border-bottom:1px solid #eee;vertical-align:top;word-break:break-all}
       #rcptViewer .rv-doc td:first-child{color:#6b6b6b;white-space:nowrap;width:1%}
-      #rcptViewer .rv-doc pre{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#f7f5ef;padding:10px;border-radius:6px;max-height:40vh;overflow:auto}
+      #rcptViewer .rv-doc pre{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#F5F5F5;padding:10px;border-radius:6px;max-height:40vh;overflow:auto}
       #rcptViewer .rv-nav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:none;background:rgba(255,255,255,.2);color:#fff;font-size:18px;cursor:pointer}
       #rcptViewer .rv-nav.p{left:10px} #rcptViewer .rv-nav.n{right:10px}
       #rcptViewer .rv-msg{color:#fff;text-align:center;font-size:14px;line-height:1.6}
@@ -1552,9 +1556,9 @@
   function rvThumbHtml(name,mime,idx,extra){
     const k=rvKind(mime,name);
     const ic=k==='pdf'?'📄':(k==='xml'?'🧾':(k==='image'?'🖼':'📎'));
-    return `<button type="button" class="rv-thumb" data-idx="${idx}" title="${escH(name||'')} — 눌러서 보기" style="position:relative;width:88px;height:96px;border:1px solid var(--line);border-radius:8px;background:#faf8f3;padding:0;cursor:pointer;overflow:hidden;display:inline-flex;flex-direction:column;align-items:stretch;flex:none;font-family:inherit">
+    return `<button type="button" class="rv-thumb" data-idx="${idx}" title="${escH(name||'')} — 눌러서 보기" style="position:relative;width:88px;height:96px;border:1px solid var(--line);border-radius:8px;background:#FAFAFA;padding:0;cursor:pointer;overflow:hidden;display:inline-flex;flex-direction:column;align-items:stretch;flex:none;font-family:inherit">
       <span class="rv-tim" data-kind="${k}" style="flex:1;display:flex;align-items:center;justify-content:center;font-size:26px;background:#fff;min-height:0">${ic}</span>
-      <span style="font-size:10.5px;line-height:1.25;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);background:#faf8f3;border-top:1px solid var(--line)">${escH(name||'파일')}</span>${extra||''}</button>`;
+      <span style="font-size:10.5px;line-height:1.25;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);background:#FAFAFA;border-top:1px solid var(--line)">${escH(name||'파일')}</span>${extra||''}</button>`;
   }
   function rvFillThumbImg(btn,url){
     const box=btn.querySelector('.rv-tim');if(!box||!url)return;
@@ -2223,7 +2227,7 @@
           // 고정비 회차인데 계좌를 이 회차만 따로 지정한 경우 — 규칙 저장에도 보존됨
           const accExBadge=(t.plan_account_manual&&t.recurring_rule_id)
             ?'<span class="badge" style="background:#e8f0e8;color:#3d6b45" title="이 회차만 다른 계좌로 지정 — 고정비 규칙을 저장해도 계좌는 유지됩니다">🏦 계좌 예외</span>':'';
-          const bg=t.status==='actual'?'background:#f4f2ec':'background:#fff';
+          const bg=t.status==='actual'?'background:#F5F5F5':'background:#fff';
           const selOk=canSel&&txnPlanDeletable(t);
           return `<tr class="txn-row" data-id="${t.id}" style="cursor:pointer;${bg}">
             ${canSel?`<td onclick="event.stopPropagation()">${selOk
@@ -2247,7 +2251,7 @@
                 : (t.memo||'')}</td>
             <td style="font-family:monospace;font-size:12px" class="txn-rcpt-cell" data-id="${t.id}">${txnRcptCell(t)}</td>
           </tr>
-          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="${nCols}" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
+          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="${nCols}" style="background:#FAFAFA;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
       [...b.querySelectorAll('.txn-row')].forEach(row=>row.onclick=()=>{
         const id=row.dataset.id;const det=b.querySelector(`.txn-det[data-id="${id}"]`);
         if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));appendFreightAlloc(Number(id),det.querySelector('.txn-det-body'));appendTxnFiles(Number(id),det.querySelector('.txn-det-body'));}
@@ -3053,7 +3057,7 @@
     const val=(ym)=>fxMonVal(d.total?d.total[ym]:null);
     const vp=val(prev),vc=val(sel),vn=val(next);
     const mc=fxMomChip(vc,vp,true),mn=fxMomChip(vn,vc,true);
-    const side=(lab,ym,v,subLab,mm)=>`<div style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:12px;padding:15px 16px;background:#faf8f3;display:flex;flex-direction:column;justify-content:center">
+    const side=(lab,ym,v,subLab,mm)=>`<div style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:12px;padding:15px 16px;background:#FAFAFA;display:flex;flex-direction:column;justify-content:center">
         <div style="font-size:12px;color:var(--muted);font-weight:600">${lab} · ${fxYmFull(ym)}</div>
         <div style="font-size:21px;font-weight:800;color:var(--brand);margin-top:3px;font-variant-numeric:tabular-nums">$${fmt(v)}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">${subLab}${mm?' <span class="mom-chip '+mm.cls+'">'+mm.t+'</span>':''}</div>
@@ -4293,7 +4297,7 @@
 
   function dirItemRow(t){
     const amt=Number(t.amount_mxn)||0;
-    return `<tr style="${t.status==='actual'?'background:#f4f2ec':''}"><td>${(t.status==='actual'?t.txn_date:(t.plan_date||t.txn_date)||'').slice(0,10)}</td>
+    return `<tr style="${t.status==='actual'?'background:#F5F5F5':''}"><td>${(t.status==='actual'?t.txn_date:(t.plan_date||t.txn_date)||'').slice(0,10)}</td>
       <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
       <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(amt)}</td></tr>`;
   }
@@ -4347,7 +4351,7 @@
         const apLine=(x)=>{const p=pgPaid(x);const bd=p?' <span class="badge" style="background:#f0e6e6;color:#c0392b">지급완료</span>':'';return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${p?'background:#fdebd7':''}">
           <span${p?' style="color:#a06a28"':''}>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}${bd}</span>
           <span style="color:${p?'#a06a28':'var(--expense)'}">-${fmt(x.amount_mxn)}</span></div>`;};
-        const cashLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${t.status==='actual'?'background:#f4f2ec':''}">
+        const cashLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${t.status==='actual'?'background:#F5F5F5':''}">
           <span>${t.category_name||t.category_code||''}${t.memo?' · '+String(t.memo).slice(0,22):''}</span>
           <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
         const detail=weekSummaryOnly?'':`
@@ -4385,7 +4389,7 @@
         <td style="${p?'color:#a06a28':''}">${x.account_name||''}</td><td style="${p?'color:#a06a28':''}">${x.category_name||''}${bd}</td><td style="${p?'color:#a06a28':''}">${(x.memo||'').slice(0,26)}</td>
         <td class="num" style="color:${p?'#a06a28':'var(--expense)'}">-${fmt(x.amount_mxn)}</td></tr>`;}).join('')}</tbody></table>`:'';
     const cashTbl=cash.length?`<div style="font-weight:700;margin:10px 0 2px">실적 (현금)</div>
-      <table><tbody>${cash.map(t=>`<tr style="background:#f4f2ec">
+      <table><tbody>${cash.map(t=>`<tr style="background:#F5F5F5">
         <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
         <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
     const cyTbl=cy?`<div style="font-weight:700;margin:10px 0 2px;color:#c77714">이월 (지난 미실현 예정) · ${cy.ar_sum?'AR +'+fmt(cy.ar_sum):''}${cy.ar_sum&&cy.ap_sum?' · ':''}${cy.ap_sum?'AP -'+fmt(cy.ap_sum):''}</div>
@@ -5558,6 +5562,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

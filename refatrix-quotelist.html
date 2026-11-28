@@ -10,14 +10,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 견적 목록 · ql-1119w</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#0058A3;--gold:#B8893B;--radius:12px;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
   .wrap{max-width:1100px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
   label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
@@ -43,7 +43,7 @@
   .chip.on .n{background:#fff;color:var(--expense)}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}
   th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;font-weight:700}
   td.r,th.r{text-align:right}
   /* 2026-11-19 · 칸 폭 — 무게 · 사이즈 칸은 좁게(줄바꿈 허용), 고객명도 줄바꿈 */
   td.shipc{white-space:normal;min-width:84px;max-width:120px;line-height:1.35}
@@ -71,7 +71,7 @@
   .pvrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
   .pvtag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
   .pvtag.ok{background:var(--income-bg);color:var(--income)}.pvtag.warn{background:#fdf3e3;color:#9a6512}.pvtag.dev{background:#f1ebf7;color:#7a4ea0}
-  .pvseg{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.6;max-height:150px;overflow:auto}
+  .pvseg{background:#FAFAFA;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.6;max-height:150px;overflow:auto}
   /* 수주현황(3분류) 표시 */
   .clsbar{display:flex;height:7px;width:96px;border-radius:999px;overflow:hidden;background:#eceae4;margin-bottom:3px}
   .clsbar .s-ok{background:var(--income)}.clsbar .s-sh{background:#e0a23a}.clsbar .s-dv{background:#9a78c9}
@@ -105,7 +105,7 @@
   #sumBox .sh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}
   #sumBox .sh b{font-size:14px;color:var(--brand)}
   .sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:8px}
-  .sumc{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
+  .sumc{background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
   .sumc .k{font-size:11px;font-weight:700;color:var(--muted)}
   .sumc .v{font-size:16px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.2px}
   @media (max-width:520px){.sumgrid{grid-template-columns:1fr 1fr}.sumc{padding:9px 10px}.sumc .v{font-size:15px}}
@@ -141,18 +141,18 @@
   .grleg2{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--ink)}
   .grleg2 i{width:12px;height:10px;border-radius:2px;display:inline-block}
   .grkpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
-  .grk{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  .grk{background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
   .grk .kl{font-size:11px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:5px}
   .grk .kl i{width:9px;height:9px;border-radius:2px;display:inline-block}
   .grk .kv{font-size:16px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
   .grk .ks{font-size:11px;color:var(--muted)}
-  .grsplit{display:flex;gap:2px;height:12px;border-radius:999px;overflow:hidden;background:#f4f1ea;margin:0 0 12px}
+  .grsplit{display:flex;gap:2px;height:12px;border-radius:999px;overflow:hidden;background:#F5F5F5;margin:0 0 12px}
   .grsplit span{display:block;height:100%}
   .grtblwrap{margin-top:4px}.grtblwrap summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--brand);padding:6px 0}
   .grtbl{overflow:auto;border:1px solid var(--line);border-radius:8px}
   .grtbl table{margin-top:0;font-size:12px}
   .grtbl td,.grtbl th{padding:6px 8px;font-variant-numeric:tabular-nums}
-  .grtbl tr.tot td{font-weight:800;background:#faf8f3}
+  .grtbl tr.tot td{font-weight:800;background:#FAFAFA}
   #grTip{display:none;position:fixed;z-index:130;pointer-events:none;background:#1C1B19;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.25);min-width:170px}
   #grTip .tt{font-weight:800;margin-bottom:4px}
   #grTip div{display:flex;align-items:center;gap:6px;line-height:1.6}
@@ -163,6 +163,10 @@
   .codehit i{font-style:normal;font-weight:500;color:var(--muted)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -252,7 +256,7 @@
     <div style="padding:16px 18px;overflow:auto;flex:1">
       <div id="cvInfo" class="hint" style="margin-bottom:10px"></div>
       <div id="cvPreview" style="margin-bottom:12px"></div>
-      <div id="cvPackBox" class="hidden" style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#faf8f3">
+      <div id="cvPackBox" class="hidden" style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#FAFAFA">
         <input type="file" id="cvScanFile" accept="image/*,application/pdf" style="display:none">
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost" id="cvUploadBtn" type="button" onclick="triggerScanUpload()">📤 포장작업지시서 작업완료 스캔문서 업로드</button>
@@ -554,7 +558,7 @@
       rows+='<div style="margin-top:3px;font-size:12px"><b>'+esc(c.ctr_code||'')+'</b> '+esc(c.product_name||'')
         +' <span class="hint">확보 '+fmtq(c.before)+' → '+fmtq(c.after)+' / 요청 '+fmtq(c.qty)+'</span> '+arrow+'</div>';
     });
-    const bg=(up>0&&down===0)?'#e9f5ef':((down>0)?'#fdf3e6':'#f4f2ec');
+    const bg=(up>0&&down===0)?'#e9f5ef':((down>0)?'#fdf3e6':'#F5F5F5');
     const bd=(up>0&&down===0)?'#bfe3cd':((down>0)?'#e7cfa6':'var(--line)');
     return '<div style="background:'+bg+';border:1px solid '+bd+';border-radius:10px;padding:9px 12px;font-size:12.5px">'
       +head+rows
@@ -841,7 +845,7 @@
       // 한 달 = 추이가 없으니 100% 구성 막대 하나
       const v=V[0], tot=Math.max(v.q,1), bw=Math.min(pw*0.7,520), bx=L+(pw-bw)/2, by=T+ph*0.35, bh=ph*0.3;
       const seg=[['s',v.s],['l',v.l],['o',Math.max(0,v.q-v.s-v.l)]]; let acc=bx;
-      g='<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="#f4f1ea"/>';
+      g='<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="#F5F5F5"/>';
       seg.forEach(([k,val])=>{ const w=bw*Math.min(1,val/tot); if(w<=0) return;
         g+='<rect x="'+acc+'" y="'+by+'" width="'+w+'" height="'+bh+'" fill="'+(k==='o'?'url(#grHatch'+kind+')':GR_COL[k])+'" opacity="'+(k==='o'?1:0.85)+'"/>'; acc+=w+2; });
       g='<defs><pattern id="grHatch'+kind+'" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#b9b3a6" stroke-width="1.2"/></pattern></defs>'+g
@@ -926,7 +930,7 @@
     const w=(v)=>qa>0?Math.max(0,Math.min(100,v/qa*100)):0;
     h+='</div><div class="grsplit" title="견적액 = 실매출 + 재고부족 실기 + 기타 미전환">'
       +'<span style="width:'+w(sa)+'%;background:'+GR_COL.s+'"></span><span style="width:'+w(la)+'%;background:'+GR_COL.l+'"></span>'
-      +'<span style="width:'+w(oa)+'%;background:repeating-linear-gradient(45deg,#b9b3a6 0 1.5px,#f4f1ea 1.5px 5px)"></span></div>';
+      +'<span style="width:'+w(oa)+'%;background:repeating-linear-gradient(45deg,#b9b3a6 0 1.5px,#F5F5F5 1.5px 5px)"></span></div>';
     return h;
   }
   function grTable(){
@@ -1238,13 +1242,13 @@
       +'th{background:#143D34;color:#fff;font-weight:600}'
       +'td.l{text-align:left}td.r{text-align:right}th{text-align:center}'
       +'tr.kh td{background:#EEEDFE;color:#3C3489;border-top:2px solid #7F77DD;font-size:11.5px}tr.kh .kno{font-size:13px}tr.kh .kc{font-weight:400;font-size:10.5px;color:#3C3489}'
-      +'tr.kh2 td{background:#f4f2ec;color:#555;font-weight:700;font-size:10.5px}td.kcell{text-align:center;color:#3C3489;background:#F6F5FF;white-space:nowrap}'
+      +'tr.kh2 td{background:#F5F5F5;color:#555;font-weight:700;font-size:10.5px}td.kcell{text-align:center;color:#3C3489;background:#F6F5FF;white-space:nowrap}'
       +'.ap{color:#777;font-size:10px}.warn{color:#B23A2E;font-weight:700}.transit{color:#0F6E56;font-weight:700;font-size:10px}'
       +'.qrbox{text-align:center;margin:0 14px;flex:0 0 auto}.qrbox img{width:74px;height:74px;object-fit:contain;border:1px solid #ccc;border-radius:4px;background:#fff}.qrcap{font-size:9px;color:#0F6E56;font-weight:700;margin-top:2px}'
       +'.wanote{margin:0 0 6px;padding:7px 10px;background:#E4F0EB;border-radius:6px;font-size:11px;color:#0F6E56;font-weight:600}'
       +'.totbox{margin-top:14px;display:flex;justify-content:flex-end}'
       +'.totbox table{width:auto}.totbox td{border:none;padding:3px 10px}'
-      +'.bank{margin-top:18px;border:1px solid #ccc;border-radius:6px;padding:10px 12px;font-size:11px;background:#faf8f3}'
+      +'.bank{margin-top:18px;border:1px solid #ccc;border-radius:6px;padding:10px 12px;font-size:11px;background:#FAFAFA}'
       +'.bank b{color:#143D34}'
       +'.foot{margin-top:18px;font-size:10px;color:#888;text-align:center}'
       +'@media print{.noprint{display:none}}'
@@ -1447,7 +1451,7 @@
     if(q.field_survey){ actions+='<span style="display:inline-flex;align-items:center;gap:6px;background:#E4F0EB;color:#0F6E56;font-weight:800;font-size:12px;border-radius:8px;padding:6px 10px">📍 현장재고조사 전환'+(q.field_survey.survey_date?(' · '+esc(q.field_survey.survey_date)):'')+'</span>'; }
     if(isDirector && q.field_survey && q.field_survey.geo_lat!=null && q.field_survey.geo_lng!=null){ actions+='<button class="btn" onclick="openFieldLocation()" title="현장재고조사 당시 위치를 지도에서 봅니다">📍 현장 위치 보기</button>'; }
     // 출력 열 선택(중복선택) — PDF·엑셀 공통. 체크된 열만 파일에 표시.
-    actions+='<span style="display:inline-flex;align-items:center;gap:10px;background:#f4f2ec;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px" title="견적서 PDF·엑셀에 표시할 열을 선택합니다 (둘 다/하나만/모두 해제 가능)">'
+    actions+='<span style="display:inline-flex;align-items:center;gap:10px;background:#F5F5F5;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px" title="견적서 PDF·엑셀에 표시할 열을 선택합니다 (둘 다/하나만/모두 해제 가능)">'
       +'<span style="color:#666">출력 열:</span>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColExist?'checked':'')+' onchange="dtToggleCol(\'exist\',this.checked)"> 가용재고</label>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColTransit?'checked':'')+' onchange="dtToggleCol(\'transit\',this.checked)"> 운송중</label>'
@@ -2042,7 +2046,7 @@
       +'.pk-sub{font-size:11px;color:#666;margin-top:3px}'
       +'.pk-sum{display:flex;flex-wrap:wrap;gap:8px}'
       +'.pk-head + .pk-sum{margin-top:12px}.pk-sum + .pk-sum{margin-top:8px}'
-      +'.pk-cell{flex:1 1 120px;border:1px solid #d8d3c7;border-radius:8px;padding:7px 10px;background:#faf8f3}'
+      +'.pk-cell{flex:1 1 120px;border:1px solid #d8d3c7;border-radius:8px;padding:7px 10px;background:#FAFAFA}'
       +'.pk-cell .k{display:block;font-size:10px;color:#777;letter-spacing:.5px}'
       +'.pk-cell .v{display:block;font-size:14px;font-weight:700;color:#1c1b19;margin-top:2px;word-break:break-word}'
       +'.pk-cell.big{flex:1 1 150px}.pk-cell.big .v{font-size:18px}'
@@ -2439,6 +2443,6 @@
   },100);
 })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 포털 · build 20261127mh</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -46,12 +46,12 @@
   .fcell .fpct{font-size:12px;color:var(--c)}
   .fcell .fft{margin-top:10px;font-size:10.5px;color:var(--muted);border-top:1px dashed var(--line);padding-top:7px;line-height:1.4}
   .fbadge{font-size:9px;font-weight:800;color:#fff;background:var(--c);border-radius:999px;padding:1px 6px}
-  .finsight{margin-top:13px;background:#f6f3ec;border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:8px;padding:10px 13px;font-size:12.5px;line-height:1.6}
+  .finsight{margin-top:13px;background:#F5F5F5;border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:8px;padding:10px 13px;font-size:12.5px;line-height:1.6}
   .hidden{display:none}
   /* 프로세스 지도 */
   .flowlabel{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px}
   .flow{display:flex;gap:8px;align-items:stretch;overflow-x:auto;padding-bottom:6px}
-  .step{position:relative;flex:1;min-width:128px;border:1px solid var(--line);border-radius:12px;background:#faf8f3;padding:12px 10px 10px;cursor:pointer;transition:border-color .15s}
+  .step{position:relative;flex:1;min-width:128px;border:1px solid var(--line);border-radius:12px;background:#FAFAFA;padding:12px 10px 10px;cursor:pointer;transition:border-color .15s}
   .step:hover{border-color:var(--brand)}
   .step.locked{opacity:.45;cursor:default}
   .step .num{font-size:10px;color:var(--muted);font-weight:700}
@@ -77,7 +77,7 @@
   body.has-navbar{padding-top:0}
   body.has-navbar{padding-top:62px}
   @media(max-width:600px){ body.has-navbar{padding-top:0} }
-  .tabbtn{position:relative;border:1px solid var(--line);background:#faf8f3;border-radius:999px;padding:7px 15px;font-size:13px;font-weight:700;color:var(--brand);cursor:pointer;font-family:inherit}
+  .tabbtn{position:relative;border:1px solid var(--line);background:#FAFAFA;border-radius:999px;padding:7px 15px;font-size:13px;font-weight:700;color:var(--brand);cursor:pointer;font-family:inherit}
   .tabbtn.on{color:#fff}
   .tabbtn .tbadge{position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;padding:0 4px;background:var(--expense);color:#fff;border-radius:999px;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff}
   /* 트리 패널 카드 그리드 (mgrid/mcard 재사용) */
@@ -89,22 +89,22 @@
   .pcdow.sun{color:var(--expense)}.pcdow.sat{color:#2f6db2}
   .pccell{min-height:62px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:3px 4px;cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden}
   .pccell:hover{border-color:var(--brand)}
-  .pccell.out{background:#faf8f3;opacity:.5}
+  .pccell.out{background:#FAFAFA;opacity:.5}
   .pccell.today{border-color:var(--income);box-shadow:0 0 0 1px var(--income) inset}
   .pccell .pcn{font-size:10.5px;font-weight:700;color:var(--muted)}
   .pccell.today .pcn{color:var(--income)}
   .cgchip{font-size:9.5px;line-height:1.3;border-radius:4px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block}
-  .cgchip.ev{background:#E4F0EB;color:#143D34}
+  .cgchip.ev{background:#E4F0EB;color:#0058A3}
   .cgchip.td{background:#e6f1fb;color:#0c447c}
   .pcmore{font-size:9px;color:var(--muted)}
   .kpi{font-size:26px;font-weight:800;color:var(--brand)}
   .kpi small{font-size:13px;color:var(--muted);font-weight:600}
-  .bar{background:#f0ece2;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}
+  .bar{background:#F0F0F0;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}
   .bar>div{height:100%;background:var(--income);color:#fff;font-size:11px;display:flex;align-items:center;padding-left:8px;white-space:nowrap}
   .pipe{display:flex;flex-direction:column;gap:5px;margin-top:6px}
   .prow{display:flex;align-items:center;gap:8px;font-size:12px}
   .pname{width:84px;font-weight:600;flex:0 0 auto}
-  .pbar{flex:1;background:#f0ece2;border-radius:5px;height:14px;overflow:hidden}
+  .pbar{flex:1;background:#F0F0F0;border-radius:5px;height:14px;overflow:hidden}
   .pbar>div{height:100%;background:var(--brand)}
   .pn{width:26px;text-align:right;font-weight:700;flex:0 0 auto}
   .pendlist{margin-top:6px}
@@ -130,21 +130,21 @@
   .ln-cap{font-size:11px;color:#3A352B;font-weight:600;padding:5px 13px 0;line-height:1.45}
   .capk{color:var(--expense);font-weight:800}
   .ln-grade{margin-left:auto;flex:none;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
-  .ln-stats{display:grid;margin:9px 0 0;border-top:1px solid #f0ece2}
+  .ln-stats{display:grid;margin:9px 0 0;border-top:1px solid #F0F0F0}
   .ln-stats.c4{grid-template-columns:1.1fr 1fr 1fr 1.5fr}
   .ln-stats.c6{grid-template-columns:1fr 1fr 1fr 1fr 1fr 1.4fr}
-  .ln-stat{padding:7px 12px;border-right:1px solid #f3efe6;min-width:0}
+  .ln-stat{padding:7px 12px;border-right:1px solid #F0F0F0;min-width:0}
   .ln-stat:last-child{border-right:0;text-align:right}
   .ln-stat .v{font-size:17px;font-weight:800;line-height:1.1;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ln-stat.kpi .v{font-size:21px;color:var(--brand)}
   .ln-stat.amt .v{font-size:15px}
   .ln-stat .l{font-size:9.5px;font-weight:700;color:var(--muted);margin-top:1px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ln-list{border-top:1px solid var(--line);flex:1;overflow:auto;min-height:0}
-  .ln-empty{flex:1;min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;background:repeating-linear-gradient(45deg,#fcfbf8,#fcfbf8 9px,#f7f5ef 9px,#f7f5ef 18px)}
+  .ln-empty{flex:1;min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;background:repeating-linear-gradient(45deg,#fcfbf8,#fcfbf8 9px,#F5F5F5 9px,#F5F5F5 18px)}
   .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
   .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:6px 10px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
   .sltab th.l{text-align:left}
-  .sltab td{text-align:right;padding:6px 10px;border-top:1px solid #f1ede4;white-space:nowrap}
+  .sltab td{text-align:right;padding:6px 10px;border-top:1px solid #F0F0F0;white-space:nowrap}
   .sltab td.cust{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;font-weight:600;color:var(--ink);text-align:left}
   .sltab tr.od td{background:#fdf4f2}
   .sltab .slok{color:var(--income);font-weight:800}.sltab .slno{color:var(--expense);font-weight:800}.sltab .slwarn{color:var(--gold);font-weight:800}
@@ -181,6 +181,10 @@
   html body #rnav .rpres:hover{background:rgba(255,255,255,.28)!important;color:#fff!important}
   html body #rnav .rmtgl{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="navfixed hidden" id="navFixed" style="display:none"><div class="navfixed-inner" id="tabBar"></div></div>
@@ -426,7 +430,7 @@
       const d=await fetch(session.api+'/api/customers/missing-constancia',{headers:auth()}).then(r=>r.json());
       if(!d||!d.nag||!(d.items&&d.items.length)){ $('constModal').style.display='none'; return; }
       $('constList').innerHTML=d.items.map(c=>
-        '<div style="padding:9px 12px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        '<div style="padding:9px 12px;border-bottom:1px solid #F0F0F0;font-size:13px">'
         +'<b>'+escp(c.name)+'</b> <span style="color:var(--muted);font-size:11.5px">('+escp(c.code)+')</span>'
         +'<div style="color:var(--muted);font-size:11.5px;margin-top:1px">'+escp(c.name)+' 고객의 Constancia를 입력해주세요.</div></div>'
       ).join('');
@@ -445,7 +449,7 @@
       if(!items.length){ $('apprModal').style.display='none'; return; }
       $('apprMsg').innerHTML='승인해야 할 고객 수정 요청이 <b>'+items.length+'건</b> 있습니다. 고객관리 화면에서 검토 후 승인/반려해 주세요.';
       $('apprList').innerHTML=items.map(r=>
-        '<div style="padding:9px 12px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        '<div style="padding:9px 12px;border-bottom:1px solid #F0F0F0;font-size:13px">'
         +'<b>'+escp(r.customer_name||'')+'</b> <span style="color:var(--muted);font-size:11.5px">('+escp(r.customer_code||'')+')</span>'
         +(r.requested_by_name?'<span style="color:var(--muted);font-size:11.5px"> · 요청자 '+escp(r.requested_by_name)+'</span>':'')+'</div>'
       ).join('');
@@ -497,7 +501,7 @@
   function renderDelApprList(items){
     $('delApprMsg').innerHTML='승인 대기 중인 <b>견적 삭제 요청</b>이 <b>'+items.length+'건</b> 있습니다. 아래에서 바로 승인·반려하거나, 견적관리 화면에서 상세를 확인하세요.';
     $('delApprList').innerHTML=items.map(function(r){
-      return '<div style="padding:11px 13px;border-bottom:1px solid #f0ece2;font-size:13px">'
+      return '<div style="padding:11px 13px;border-bottom:1px solid #F0F0F0;font-size:13px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">'
         +'<div><b>'+escp(r.party_name||'')+'</b> <span style="color:var(--muted);font-size:11.5px">'+escp(r.quote_no||'')+'</span></div>'
         +'<div style="font-weight:700;color:var(--ink)">'+fmt(r.total_mxn)+' <span style="color:var(--muted);font-weight:500;font-size:11px">MXN</span></div></div>'
@@ -604,7 +608,7 @@
       var tot=(r.revision_total!=null && Math.abs(Number(r.revision_total)-Number(r.current_total))>0.001)
         ? '<span style="color:var(--muted);text-decoration:line-through;font-weight:500">'+fmt(r.current_total)+'</span> → <b>'+fmt(r.revision_total)+'</b>'
         : '<b>'+fmt(r.revision_total!=null?r.revision_total:r.current_total)+'</b>';
-      return '<div style="padding:11px 13px;border-bottom:1px solid #f0ece2;font-size:13px">'
+      return '<div style="padding:11px 13px;border-bottom:1px solid #F0F0F0;font-size:13px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">'
         +'<div><b>'+escp(r.title||'')+'</b> <span style="color:var(--muted);font-size:11.5px">MK-'+String(r.id).padStart(3,'0')+'</span></div>'
         +'<div style="font-weight:700;color:var(--ink)">'+tot+' <span style="color:var(--muted);font-weight:500;font-size:11px">MXN</span></div></div>'
@@ -669,7 +673,7 @@
   function renderPackReadyList(items){
     $('packReadyMsg').innerHTML='<b>포장완료.</b> SAT 발행하고 <b>매출확정</b> 항목에서 SAT 번호를 등록해 주세요. 그리고 <b>창고에 알려주세요</b>. (대상 <b>'+items.length+'건</b>)';
     $('packReadyList').innerHTML=items.map(function(r){
-      return '<div style="padding:12px 14px;border-bottom:1px solid #f0ece2;font-size:13px">'
+      return '<div style="padding:12px 14px;border-bottom:1px solid #F0F0F0;font-size:13px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">'
         +'<div><b>'+escp(r.customer_name||'')+'</b> <span style="color:var(--muted);font-size:11.5px">'+escp(r.quote_no||'')+'</span></div>'
         +'<div style="font-weight:800;color:var(--ink)">'+fmt(r.total_mxn)+' <span style="color:var(--muted);font-weight:500;font-size:11px">MXN</span></div></div>'
@@ -784,7 +788,7 @@
       if(!items.length){ $('noticePopModal').style.display='none'; return; }
       __popupNoticeIds=items.map(n=>n.id);
       $('noticePopList').innerHTML=items.map(n=>
-        '<div style="padding:12px 14px;border-bottom:1px solid #f0ece2">'
+        '<div style="padding:12px 14px;border-bottom:1px solid #F0F0F0">'
         +'<div style="font-size:14px;font-weight:800;color:var(--ink)">'+(n.pinned?'📌 ':'📢 ')+escp(n.title)+'</div>'
         +(n.body?'<div style="font-size:13px;color:var(--ink);line-height:1.6;margin-top:5px;white-space:pre-wrap">'+escp(n.body)+'</div>':'')
         +'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">'+escp(n.author||'')+(n.created_at?' · '+new Date(n.created_at).toLocaleString('ko-KR'):'')+'</div></div>'
@@ -819,7 +823,7 @@
       if(!items.length) return;
       __calMemoPopIds=items.map(x=>x.id);
       $('calMemoPopList').innerHTML=items.map(x=>
-        '<div style="padding:11px 14px;border-bottom:1px solid #f0ece2">'
+        '<div style="padding:11px 14px;border-bottom:1px solid #F0F0F0">'
         +'<div style="font-size:11.5px;color:var(--brand);font-weight:700">'+escp(x.event_title||'(제목 없음)')+' · '+(x.event_date||'')+'</div>'
         +'<div style="font-size:13.5px;color:var(--ink);line-height:1.55;margin-top:3px;white-space:pre-wrap"><b>'+escp(x.author_name||'')+'</b> — '+escp(x.body)+'</div>'
         +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+memoTime(x.created_at)+'</div></div>'
@@ -856,7 +860,7 @@
       const pillCss=(e)=>e.scope==='company'?'background:#fbe9e7;color:#b23a2e':(e.scope==='shared'||e.scope==='team')?'background:#e6f1fb;color:#0c447c':'background:#e7f3ee;color:#0f6e56';
       $('calPopList').innerHTML=items.map(e=>{
         const hm=calEvHM(e);
-        return '<div style="padding:11px 14px;border-bottom:1px solid #f0ece2;display:flex;gap:10px;align-items:flex-start">'
+        return '<div style="padding:11px 14px;border-bottom:1px solid #F0F0F0;display:flex;gap:10px;align-items:flex-start">'
           +'<div style="flex:0 0 50px;font-weight:800;font-size:13px;padding-top:1px;color:'+(hm?'var(--brand)':'var(--muted)')+'">'+(hm||'종일')+'</div>'
           +'<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;color:var(--ink);white-space:pre-wrap">'+escp(e.content)+'</div>'
           +'<div style="margin-top:3px"><span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;'+pillCss(e)+'">'+scopeLbl(e)+'</span></div></div></div>';
@@ -1199,7 +1203,7 @@
     const pct=(prog==null)?0:Math.max(0,Math.min(prog,100));
     const progColor = prog==null?'#888780':(prog>=100?'#0F6E56':(prog>=70?'#B8893B':'#B23A2E'));
     // 당월 진행률 박스
-    let box='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:14px 16px">'
+    let box='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:14px 16px">'
       +'<div style="min-width:120px"><div class="hint" style="margin:0">당월 달성률</div>'
       +'<div style="font-size:30px;font-weight:800;color:'+progColor+'">'+(prog==null?'—':prog+'%')+'</div></div>'
       +'<div style="flex:1;min-width:200px">'
@@ -1227,7 +1231,7 @@
     const barW=Math.min(gw*0.34,22);
     let svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;font-family:inherit">';
     // 가로 기준선 (0,50%,100% of max)
-    for(let i=0;i<=2;i++){ const v=maxV*i/2; const yy=y(v); svg+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#e6e1d6"/>'; svg+='<text x="'+(padL-6)+'" y="'+(yy+3)+'" text-anchor="end" font-size="9" fill="#6F6A60">'+(seeAmount?kfmt(v):Math.round(v)+'%')+'</text>'; }
+    for(let i=0;i<=2;i++){ const v=maxV*i/2; const yy=y(v); svg+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#DFDFDF"/>'; svg+='<text x="'+(padL-6)+'" y="'+(yy+3)+'" text-anchor="end" font-size="9" fill="#6F6A60">'+(seeAmount?kfmt(v):Math.round(v)+'%')+'</text>'; }
     series.forEach((s,i)=>{
       const cx=padL+gw*i+gw/2;
       if(seeAmount){
@@ -1551,6 +1555,6 @@
 
 
 <script src="refatrix-wpnotice.js?v=20261013wn"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

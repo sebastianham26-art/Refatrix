@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 업무 프로세스 KPI</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--brand:#143D34;--brand-soft:#1E5247;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--brand:#0058A3;--brand-soft:#004F93;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#B8893B;--radius:12px;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
@@ -36,7 +36,7 @@
   .legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:6px;font-size:12px;color:var(--muted)}
   .chartbox{position:relative;width:100%;height:320px}
   .kpibar{display:grid;grid-template-columns:46px repeat(4,1fr);align-items:stretch;margin-top:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-  .kpibar .khead{grid-column:1 / span 5;display:flex;align-items:center;gap:6px;padding:7px 12px;background:#FAF8F3;font-size:12px;color:var(--muted)}
+  .kpibar .khead{grid-column:1 / span 5;display:flex;align-items:center;gap:6px;padding:7px 12px;background:#FAFAFA;font-size:12px;color:var(--muted)}
   .kpibar .kspace{}
   .kcell{display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 6px;border-left:1px solid var(--line)}
   .kcell input{width:66px;text-align:center}
@@ -63,6 +63,10 @@
   .scrollx{overflow-x:auto}
   .secttl{font-size:14px;font-weight:600;margin:0 0 6px}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
   <div class="card" id="loginCard">
@@ -340,6 +344,6 @@
   });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30);} })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

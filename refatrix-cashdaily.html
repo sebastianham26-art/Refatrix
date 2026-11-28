@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--line2:#EFEBE2;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--line2:#F0F0F0;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
-    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;
+    --brand:#0058A3;--brand-soft:#004F93;--gold:#B8893B;--radius:12px;
     --bank:#C6E0B4;--bankInk:#2F4F1E;--date:#DDEBF7;--dateInk:#1F3A5A;--plan:#1F6FD1;--done:#7F7F7F;
     --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
   *{box-sizing:border-box}
@@ -24,7 +24,7 @@
   .wrap{max-width:1320px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius);flex-wrap:wrap}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-top:14px;box-shadow:var(--shadow)}
   .card-h{font-size:14px;font-weight:700;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
@@ -103,13 +103,13 @@
   .kpi.in .v{color:var(--income)}.kpi.out .v{color:var(--expense)}
   /* 월간 표 */
   table.mt{border-collapse:collapse;width:100%;font-size:12.5px;min-width:1100px}
-  table.mt th{position:sticky;top:0;background:#FAF8F3;color:var(--muted);font-weight:600;font-size:11.5px;padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  table.mt th{position:sticky;top:0;background:#FAFAFA;color:var(--muted);font-weight:600;font-size:11.5px;padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
   table.mt th.l,table.mt td.l{text-align:left}
   table.mt td{padding:6px 8px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
   table.mt tr.row{cursor:pointer}table.mt tr.row:hover td{background:#FBFAF6}
   table.mt tr.sun td{color:#aaa}
   table.mt tr.det td{background:#FBFAF6;padding:8px 14px;text-align:left;white-space:normal}
-  table.mt tfoot td{font-weight:700;border-top:2px solid var(--line);background:#FAF8F3}
+  table.mt tfoot td{font-weight:700;border-top:2px solid var(--line);background:#FAFAFA}
   table.mt td.in{color:var(--income)}table.mt td.out{color:var(--expense)}
   .mscroll{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:10px}
   .badge{display:inline-block;font-size:10.5px;border-radius:9px;padding:1px 7px;font-weight:600}
@@ -136,6 +136,10 @@
   pre.pv{white-space:pre-wrap;background:#E7F6E9;border:1px solid #cfe8d4;border-radius:10px;padding:12px 14px;font-family:inherit;font-size:13px;max-height:480px;overflow:auto;margin:10px 0 0}
   @media print{.topbar,.tabs,.bar,.noprint,#waPane{display:none!important}body{background:#fff;padding:0}.card{box-shadow:none;border:0}}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -679,6 +683,6 @@
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   (function boot(){ const ps=portalSession(); if(ps&&ps.token) login(); })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 제품 조회 · ps-1127vt</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -32,7 +32,7 @@
   table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
   th,td{text-align:left;padding:8px 7px;border-bottom:1px solid var(--line)}
   th:first-child,td:first-child{padding-left:2px}
-  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#FAFAFA}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   th.nowrap,td.nowrap{white-space:nowrap}
   th.sortable{cursor:pointer;user-select:none}
@@ -45,7 +45,7 @@
   tr.prow.open .code .tri{transform:rotate(90deg)}
   .rack{font-size:11px;color:#6f6a60}
   .rack .rk{display:block;line-height:1.35;white-space:nowrap}
-  .rack .rk b{color:#143D34;font-weight:700}
+  .rack .rk b{color:#0058A3;font-weight:700}
   .rack .rk .q{color:#1c1b19;font-weight:700;margin-left:4px}
   .rack .rk .fm{display:inline-block;background:#B8893B;color:#fff;border-radius:3px;font-size:9px;padding:0 3px;margin-left:3px}
   .rack .rk.un{color:#b4452f}
@@ -110,7 +110,7 @@
   #histCard tr.ph-row:hover td{background:#f7f4ec}
   #histCard tr.ph-det td{border-bottom:2px solid var(--line)}
   .chg b{color:var(--ink)}
-  .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#faf8f3}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#FAFAFA}
   .drop:hover{border-color:var(--brand);color:var(--brand)}
   .tag{display:inline-block;background:#eef1f5;color:#5a6b7b;border-radius:6px;padding:1px 6px;font-size:11px;margin:1px}
   /* 드릴다운 적용차종 전체 섹션 */
@@ -120,13 +120,13 @@
   /* 0228 — OE 순정번호 */
   .oesec{margin:0 0 12px;border-bottom:1px dashed var(--line);padding-bottom:10px}
   .oechips{display:flex;flex-wrap:wrap;gap:4px}
-  .oechips .oe{font-size:12px;padding:3px 9px;border-radius:6px;background:#e9f1ec;color:#143D34;border:1px solid #cfe0d6;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .oechips .oe{font-size:12px;padding:3px 9px;border-radius:6px;background:#E6F0F8;color:#0058A3;border:1px solid #C5DAEC;font-family:ui-monospace,Menlo,Consolas,monospace}
   .oechips .oe.for{background:#fbf3e3;color:#7a5a17;border-color:#ecd9ae}
   .oechips .oe .src{font-family:inherit;font-size:10px;margin-left:4px;padding:0 4px;border-radius:4px;background:#fff;color:#6f6a60;border:1px solid #ddd}
   .oenote{font-size:11px;color:#7a5a17;margin:4px 0 0}
-  .oeline{font-size:11px;color:#143D34;margin-top:2px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .oeline{font-size:11px;color:#0058A3;margin-top:2px;font-family:ui-monospace,Menlo,Consolas,monospace}
   .pvwarn{border:1px solid #e3b5ad;background:#fbeeeb;color:#8A3B32;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px}
-  .pvnote{border:1px solid #d9e4dc;background:#f2f7f3;color:#143D34;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:12px}
+  .pvnote{border:1px solid #C5DAEC;background:#E6F0F8;color:#0058A3;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:12px}
   /* 중국차 브랜드 칩(복수선택 토글) */
   .cnchip{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:14px;
     font-size:12px;font-weight:600;cursor:pointer;user-select:none;
@@ -142,13 +142,13 @@
   .photoicon{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:1px 9px;
     border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--brand);
     font-size:11px;font-weight:600;cursor:pointer;vertical-align:middle;line-height:16px}
-  .photoicon:hover{background:#eef4f1;border-color:var(--brand)}
+  .photoicon:hover{background:#E6F0F8;border-color:var(--brand)}
   .pm-ov{position:fixed;inset:0;background:rgba(20,30,28,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:18px}
   .pm-box{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
   .pm-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .pm-head .t{font-weight:800;color:var(--brand);font-size:15px}
   .pm-x{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px}
-  .pm-x:hover{background:#f4f1ea}
+  .pm-x:hover{background:#F5F5F5}
   /* 참조 코드로 신규 등록(2026-08-31) */
   .pe-ref{border:1px dashed var(--gold);border-radius:10px;padding:9px 11px;margin:0 0 10px;background:#FCF9F0}
   .pe-ref .rt{font-weight:800;font-size:13px;color:#9A7B16}
@@ -158,7 +158,7 @@
   .pe-refinfo b{color:#9A7B16}
   input.reffill,textarea.reffill,select.reffill{background:#FCF9F0;border-color:var(--gold)}
   .pm-cols{display:flex;gap:14px;flex-wrap:wrap}
-  .pm-col{flex:1 1 300px;min-width:280px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#faf8f3}
+  .pm-col{flex:1 1 300px;min-width:280px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#FAFAFA}
   .pm-col .bh{font-weight:800;font-size:13px;margin-bottom:6px;color:var(--brand)}
   .pm-col.syd .bh{color:#9A7B16}
   .pm-stage{position:relative;background:#fff;border:1px solid var(--line);border-radius:10px;height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden}
@@ -179,7 +179,7 @@
   td.selc,th.selc{width:26px;padding-left:2px;padding-right:2px;text-align:center}
   td.selc input,th.selc input{width:auto;margin:0;cursor:pointer}
   .stbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px;
-    border:1px solid var(--line);border-radius:10px;padding:7px 11px;background:#faf8f3}
+    border:1px solid var(--line);border-radius:10px;padding:7px 11px;background:#FAFAFA}
   .stbar .cnt{font-size:12px;color:var(--muted)}
   .stbar .cnt b{color:var(--brand)}
   /* 점검 결과 — SKU 카드 / 업체 그룹 */
@@ -189,7 +189,7 @@
   .skucard .sh .n{font-size:12px;color:#6f6a60}
   .skucard.clean{background:#f7fbf9}
   .party{border:1px solid var(--line);border-radius:10px;margin-top:8px;overflow:hidden}
-  .party .ph{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#f4f1ea;padding:6px 10px;font-size:12.5px;font-weight:800;color:var(--brand)}
+  .party .ph{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#F5F5F5;padding:6px 10px;font-size:12.5px;font-weight:800;color:var(--brand)}
   .party .ph .np{font-weight:600;color:#6f6a60;font-size:11.5px}
   .party table{margin:0}
   .party td,.party th{font-size:11.5px;padding:5px 7px}
@@ -200,7 +200,7 @@
   .bchip.info{background:#f4efe4;color:#8a7a52}
   .stlist td{font-size:12px}
   .stlist tr{cursor:pointer}
-  .stlist tr:hover td{background:#faf8f3}
+  .stlist tr:hover td{background:#FAFAFA}
   /* 0292 · 장착 위치 */
   .posb{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;vertical-align:1px;white-space:nowrap}
   .posb:empty{display:none}
@@ -229,12 +229,12 @@
   tr.kitsub .kin{font-size:10px;color:#6f6a60;font-weight:600}
   tr.kitsub.last td{border-bottom:2px solid #E6DFCF}
   .lpc{display:inline-block;margin-left:6px;font-size:11px;font-weight:800;color:#1f5f4a;background:#E8F3EE;border-radius:5px;padding:1px 6px;font-variant-numeric:tabular-nums;vertical-align:1px}
-  .possec .pgrp{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #E6E1D6;flex-wrap:wrap}
+  .possec .pgrp{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #DFDFDF;flex-wrap:wrap}
   .possec .pgrp:last-child{border-bottom:none}
   .possec .plab{min-width:150px;font-weight:800;font-size:12.5px}
   .possec .plab small{display:block;font-weight:600;color:var(--muted);font-size:10.5px}
   .possec .pveh{flex:1;display:flex;gap:5px;flex-wrap:wrap}
-  .possec .pveh span{font-size:11px;background:#fff;border:1px solid #E6E1D6;border-radius:6px;padding:2px 7px}
+  .possec .pveh span{font-size:11px;background:#fff;border:1px solid #DFDFDF;border-radius:6px;padding:2px 7px}
   .possec .pveh span.cand{color:#8a8578;border-style:dashed}
   .possec .pveh span.fix{border-color:#d9b26a}
   .posup{margin-top:16px;border:1px solid #cfd8e6;background:#F5F8FC;border-radius:12px;padding:12px 14px}
@@ -251,6 +251,9 @@
 <script src="refatrix-vehiclemap.js?v=20261127i"></script>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -339,7 +342,7 @@
 
 <div class="card hidden" id="upCard">
     <h2>제품 마스터 업로드</h2>
-    <div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 14px;background:#faf8f3">
+    <div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 14px;background:#FAFAFA">
       <div style="font-weight:700">화면에서 직접 추가 · 수정</div>
       <div class="hint" style="margin-top:4px">엑셀 없이 제품 1건을 바로 추가하거나, 기존 제품을 검색해 선택하면 화면에서 수정할 수 있습니다. 신규 추가 시 <b>📄 참조 코드</b>로 비슷한 기존 제품을 지정하면 그 내용이 그대로 채워지고, 새 코드와 달라지는 항목만 고치면 됩니다(제품코드·Barcode·Rack 위치는 복사하지 않습니다). <b>재고수량·평균원가는 여기서도 절대 바뀌지 않으며</b>, 모든 변경(추가·수정·업로드·소재)은 아래 「제품 변경 이력」에 자동 기록됩니다. <b>🗑 삭제</b>는 <b>판매·구매 기록이 전혀 없는 제품</b>만 가능하며 디렉터 PIN이 필요합니다(한 번이라도 팔린 제품은 지울 수 없습니다 — 판매만 막으려면 <b>판매중단(비활성)</b>을 쓰세요).</div>
       <div class="row" style="margin-top:8px;align-items:flex-end">
@@ -837,7 +840,7 @@
     if(next&&next.classList.contains('pdrill')){ next.remove(); tr.classList.remove('open'); return; }
     tr.classList.add('open');
     const dr=document.createElement('tr'); dr.className='pdrill';
-    dr.innerHTML='<td colspan="'+colN+'" style="background:#faf8f3;padding:10px 14px"><div class="hint">불러오는 중…</div></td>';
+    dr.innerHTML='<td colspan="'+colN+'" style="background:#FAFAFA;padding:10px 14px"><div class="hint">불러오는 중…</div></td>';
     tr.parentNode.insertBefore(dr, tr.nextSibling);
     try{
       const appText=tr.getAttribute('data-app')||'';
@@ -2080,7 +2083,7 @@
       +(d.table_rows?(' · 파일 '+d.table_rows+'줄'):'')+(d.dup?(' · 같은 코드 반복 '+d.dup+'줄(합쳐 읽음'+(d.conflict?(', 값이 다른 줄 '+d.conflict+'개는 뒤 줄 사용'):'')+')'):'')+'</div>';
     if(d.field_counts&&nItems){ const fc=d.field_counts; h+='<div class="hint" style="margin-top:2px">바뀌는 칸: '+Object.keys(fc).map(f=>escP(DM_LBL[f]||f)+' '+fc[f]).join(' · ')+'</div>'; }
     if(k==='dm'&&d.box_sizes){ const b=d.box_sizes; const cf=b.conflicts||[];
-      h+='<div style="margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#faf8f3;font-size:12px">'
+      h+='<div style="margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#FAFAFA;font-size:12px">'
         +'<b>📐 박스 마스터에 함께 반영</b> — 파일의 박스 '+b.boxes+'개 (신규 '+(b.created||0)+' · 사이즈 변경 '+((b.changed||0)-(b.created||0))+' · 동일 '+(b.same||0)+')'
         +(cf.length?('<div style="margin-top:4px;color:#9a6512">같은 박스인데 줄마다 사이즈가 다른 박스 <b>'+cf.length+'</b>개 — 가장 많이 나온 사이즈를 박스 마스터에 씁니다(각 제품은 자기 줄 사이즈를 그대로 씁니다).</div>'
           +'<details style="margin-top:4px"><summary style="cursor:pointer">목록 보기</summary><div style="max-height:220px;overflow:auto;margin-top:4px">'
@@ -2996,7 +2999,7 @@
           +'<td class="nowrap" style="font-size:11.5px;color:#6f6a60">'+escP(syd.slice(0,44)||'—')+'</td>'
           +'<td class="nowrap">'+phEstadoChip(it.estado_active)+'</td>'
           +'<td class="nowrap" style="font-size:12px">'+escP(it.changed_by_name||'—')+'</td></tr>'
-          +'<tr class="ph-det hidden" data-for="'+escP(it.key)+'"><td colspan="6" style="background:#faf8f3"><span class="hint">불러오는 중…</span></td></tr>';
+          +'<tr class="ph-det hidden" data-for="'+escP(it.key)+'"><td colspan="6" style="background:#FAFAFA"><span class="hint">불러오는 중…</span></td></tr>';
       }).join('')+'</tbody></table>';
     box.querySelectorAll('.ph-row').forEach(tr=>tr.addEventListener('click',()=>phToggle(tr.getAttribute('data-key'))));
     $('phSum').innerHTML='총 <b>'+phTotal+'</b>건 중 '+phItems.length+'건 표시 · 행을 클릭하면 그 변경 이후의 movement 가 열립니다.';
@@ -3267,6 +3270,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-devmatch.js?v=20261111xr"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

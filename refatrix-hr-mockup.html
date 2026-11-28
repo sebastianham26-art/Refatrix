@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>인사 (목업) · Refatrix ERP · build hrmock2</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+/* refatrix-theme.css (th20261127k, 「차종으로 제품찾기」 IKEA 톤) 토큰 그대로 */
+:root{--blue:#0058A3;--blue-d:#004F93;--blue-bg:#E6F0F8;--yel:#FFDB00;--yel-bg:#FFF8CC;--ink:#111;--ink2:#484848;--mute:#767676;--line:#DFDFDF;--line2:#F0F0F0;--surf:#F5F5F5;--field:#929292;
+ --ok:#0A8A00;--warn:#C77700;--bad:#CC0008;--na:#929292}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Noto Sans KR',system-ui,sans-serif;background:#fff;color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
+.topnav{background:#C8102E;color:#fff;font-size:12px;padding:8px 22px;opacity:.95}
+header{padding:22px 22px 8px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+header h1{font-size:28px;margin:0;font-weight:800;letter-spacing:-.5px}
+header .sub{color:var(--ink2);font-size:13px}
+header .who{margin-left:auto;font-size:13px;color:var(--ink2);display:flex;align-items:center;gap:8px}
+select,input{font:inherit;border:1px solid var(--field);border-radius:4px;padding:7px 10px;background:#fff}
+select:focus,input:focus{outline:2px solid var(--blue);border-color:var(--blue)}
+.mock{background:var(--yel);color:var(--ink);font-size:12px;font-weight:700;padding:3px 12px;border-radius:64px}
+nav.tabs{display:flex;gap:8px;padding:12px 22px 16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+nav.tabs button{font:inherit;font-weight:700;border:1px solid var(--line);background:#fff;padding:9px 18px;cursor:pointer;color:var(--ink);border-radius:64px}
+nav.tabs button:hover{background:var(--surf)}
+nav.tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+main{padding:22px;max-width:1280px}
+.sec{display:none}.sec.on{display:block}
+.card{background:#fff;border:1px solid var(--line);border-radius:4px;padding:20px;margin-bottom:18px}
+.card h3{margin:0 0 12px;font-size:17px;font-weight:700;color:var(--ink);letter-spacing:-.3px}
+.row{display:flex;gap:18px;flex-wrap:wrap}.row>.card{flex:1;min-width:280px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line2);text-align:left;white-space:nowrap}
+th{background:var(--surf);color:var(--ink2);font-weight:700;font-size:12px;border-bottom:2px solid var(--ink)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr:hover>td{background:var(--yel-bg)}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:64px;color:#fff}
+.b-ok{background:var(--ok)}.b-warn{background:var(--warn)}.b-bad{background:var(--bad)}.b-na{background:var(--na)}.b-brand{background:var(--blue)}.b-gold{background:var(--yel);color:var(--ink)}
+.btn{font:inherit;font-size:14px;font-weight:700;border:1px solid var(--blue);background:var(--blue);color:#fff;padding:10px 20px;min-height:40px;border-radius:64px;cursor:pointer}
+.btn:hover{background:var(--blue-d)}
+.btn.ghost{background:#fff;color:var(--ink);border-color:var(--ink)}.btn.ghost:hover{background:var(--surf)}
+.btn.gold{background:var(--yel);color:var(--ink);border-color:var(--yel)}
+.btn:focus-visible{outline:3px solid var(--yel);outline-offset:2px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.toolbar .sp{flex:1}
+.note{font-size:12px;color:var(--ink2);margin-top:8px;line-height:1.7}
+.kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.kpi{background:var(--surf);border-radius:4px;padding:14px 18px;min-width:160px}
+.kpi b{display:block;font-size:26px;font-weight:800;color:var(--ink);margin-top:2px;letter-spacing:-.5px}
+.kpi span{font-size:12px;color:var(--ink2);font-weight:500}
+.cell-late{color:var(--warn);font-weight:700}.cell-abs{color:var(--bad);font-weight:700}.cell-vac{color:var(--blue);font-weight:700}
+.bar{height:8px;background:var(--line2);border-radius:64px;overflow:hidden;min-width:120px}
+.bar i{display:block;height:100%;background:var(--blue);border-radius:64px}
+.flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;font-weight:500}
+.flow span{padding:5px 12px;border-radius:64px;background:var(--surf)}
+.flow span.on{background:var(--yel);color:var(--ink);font-weight:700}
+.modal{position:fixed;inset:0;background:rgba(17,17,17,.5);display:none;align-items:center;justify-content:center;z-index:9}
+.modal.on{display:flex}
+.modal .box{background:#fff;border-radius:4px;padding:26px;width:380px;max-width:92vw}
+.modal input{width:100%;margin:10px 0;text-transform:uppercase}
+.err{color:var(--bad);font-size:12px;min-height:16px}
+.self{display:none}
+.files li{margin:6px 0}
+.src{display:inline-block;font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-bg);padding:2px 10px;border-radius:64px}
+.plan{display:inline-block;font-size:11px;font-weight:700;background:var(--yel);color:var(--ink);padding:2px 10px;border-radius:64px}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:18px}
+.role{border:1px solid var(--line);border-radius:4px;padding:18px}
+.role h4{margin:0 0 4px;font-size:16px;font-weight:800}
+.role .big{font-size:34px;font-weight:800;letter-spacing:-1px;margin:6px 0 2px}
+.role ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--ink2);line-height:1.8}
+.formula{background:var(--surf);border-radius:4px;padding:10px 12px;font-size:12px;margin-top:10px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="topnav">REFATRIX ERP 상단 메뉴 (CTR 레드 — 그대로)</div>
+<header>
+  <div><h1>인사</h1><div class="sub">Recursos Humanos · 근로계약 · 근태 · 급여 · 역량 · 상벌</div></div><span class="mock">목업 — 실제 데이터 아님</span>
+  <div class="who">보는 사람:
+    <select id="viewer">
+      <option value="hr">Mauricio (인사·총무·재무)</option>
+      <option value="self">일반 직원 (본인만)</option>
+    </select>
+  </div>
+</header>
+<nav class="tabs" id="tabs">
+  <button data-t="contract" class="on">① 근로계약</button>
+  <button data-t="attend">② 출퇴근·휴가</button>
+  <button data-t="payroll">③ 급여 (Nómina semanal)</button>
+  <button data-t="skill">④ 개인역량</button>
+  <button data-t="rnr">⑤ 상벌</button>
+</nav>
+<main>
+
+<!-- ① 근로계약 -->
+<section class="sec on" id="s-contract">
+  <div class="kpis">
+    <div class="kpi"><span>재직 인원</span><b>6명</b></div>
+    <div class="kpi"><span>30일 내 계약 만료</span><b style="color:var(--warn)">1건</b></div>
+    <div class="kpi"><span>계약서 미첨부</span><b style="color:var(--bad)">1명</b></div>
+  </div>
+  <div class="card">
+    <div class="toolbar"><h3 style="margin:0">직원 마스터</h3><div class="sp"></div><button class="btn ghost">엑셀</button><button class="btn">+ 직원 등록</button></div>
+    <table id="empTbl"><thead><tr><th>이름</th><th>부서·직책</th><th>RFC</th><th>NSS</th><th>입사일</th><th>계약 형태</th><th>계약 만료</th><th class="n">일급(MXN)</th><th>ERP 계정</th><th>계약서</th></tr></thead><tbody></tbody></table>
+    <div class="note">• 일급(salario diario)이 급여 계산의 기준. 변경 시 이력 남김(적용 시작일 지정).<br>• ERP 계정과 연결된 직원만 「본인 급여 조회」 가능 (ERP 로그인 + RFC 재입력).</div>
+  </div>
+  <div class="card">
+    <h3>계약서 보관 — María Hernández (예시)</h3>
+    <ul class="files">
+      <li>📄 Contrato individual de trabajo — 2025-03-01 (정규, indeterminado) · PDF · 업로드 Mauricio</li>
+      <li>📄 Contrato a prueba 90 días — 2024-12-01 · 스캔 JPG</li>
+      <li>📄 Aviso de privacidad firmado — 2024-12-01</li>
+    </ul>
+    <button class="btn ghost">+ 파일 첨부 (PDF·Word·JPG, 20MB)</button>
+    <div class="note">기존 전자결재 증빙 업로드와 같은 저장소(R2) 사용. 삭제는 디렉터 PIN.</div>
+  </div>
+</section>
+
+<!-- ② 출퇴근·휴가 -->
+<section class="sec" id="s-attend">
+  <div class="toolbar">
+    <b>주간: 2026-11-23 (월) ~ 11-29 (일)</b><div class="sp"></div>
+    <button class="btn ghost">◀ 이전 주</button><button class="btn ghost">다음 주 ▶</button>
+    <button class="btn">⬆ 지문기 기록 업로드 (CSV/엑셀)</button>
+  </div>
+  <div class="card">
+    <h3>주간 근태 — 근무시간표 08:30~17:30, 지각 허용 10분</h3>
+    <table id="attTbl"><thead><tr><th>이름</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th><th>일</th><th class="n">지각</th><th class="n">결근</th><th class="n">연장(h)</th></tr></thead><tbody></tbody></table>
+    <div class="note">• 지문기 미정 → 우선 <b>파일 업로드</b>(직원번호·일시)로 시작. 기기 구매 후 ZKTeco ADMS 등 자동 수신으로 같은 테이블에 연결.<br>
+    • 누락 타각은 Mauricio가 사유와 함께 수정 (수정 이력 보존, 원본 기록은 지우지 않음).<br>
+    • 범례: <span class="cell-late">지각</span> · <span class="cell-abs">결근</span> · <span class="cell-vac">휴가(전자결재 승인)</span> · 휴무</div>
+  </div>
+  <div class="row">
+    <div class="card">
+      <h3>휴가 잔여 (LFT 2023 기준)</h3>
+      <table id="vacTbl"><thead><tr><th>이름</th><th>근속</th><th class="n">부여</th><th class="n">사용</th><th class="n">잔여</th><th>다음 부여일</th></tr></thead><tbody></tbody></table>
+      <div class="note">1년 12일 → 매년 +2일(5년 20일) → 이후 5년마다 +2일. 입사 기념일마다 자동 부여.</div>
+    </div>
+    <div class="card">
+      <h3>휴가 신청 — 전자결재 연동</h3>
+      <div class="flow"><span>직원 기안 「휴가신청」</span>›<span>Mauricio 검토</span>›<span>디렉터 결재</span>›<span class="on">승인 → 근태·잔여·급여 반영</span></div>
+      <table style="margin-top:12px"><thead><tr><th>문서</th><th>신청자</th><th>기간</th><th class="n">일수</th><th>상태</th></tr></thead><tbody>
+        <tr><td>AP-1127-03</td><td>Oscar Pech</td><td>11-27 ~ 11-28</td><td class="n">2</td><td><span class="badge b-ok">승인</span></td></tr>
+        <tr><td>AP-1126-11</td><td>Luis Garza</td><td>12-22 ~ 12-26</td><td class="n">5</td><td><span class="badge b-warn">검토 중 · Mauricio</span></td></tr>
+      </tbody></table>
+      <div class="note">휴가 기안은 금액 없음 → 자금계획에 반영되지 않음. 잔여일수를 넘으면 기안 단계에서 경고.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ③ 급여 -->
+<section class="sec" id="s-payroll">
+  <div class="hrOnly">
+    <div class="toolbar">
+      <b>급여 주차: 2026-W48 (11-23 월 ~ 11-29 일) · 지급일 11-30</b><div class="sp"></div>
+      <div class="flow"><span class="on">① 계산</span>›<span>② Mauricio 확정</span>›<span>③ 지급승인 전자결재</span>›<span>④ 지급 완료</span></div>
+    </div>
+    <div class="kpis" id="payKpi"></div>
+    <div class="card">
+      <h3>주급 계산표</h3>
+      <div style="overflow-x:auto">
+      <table id="payTbl"><thead><tr>
+        <th>이름</th><th class="n">일급</th><th class="n">기본(7일)</th><th class="n">결근 공제</th><th class="n">연장근무</th><th class="n">Prima vacacional</th><th class="n">상여(상벌)</th><th class="n">총지급</th><th class="n">ISR</th><th class="n">IMSS</th><th class="n">기타공제</th><th class="n">실수령</th>
+      </tr></thead><tbody></tbody></table>
+      </div>
+      <div class="toolbar" style="margin-top:12px"><button class="btn ghost">⬆ 공제(ISR·IMSS) 엑셀 업로드</button><button class="btn ghost">엑셀 다운로드</button><div class="sp"></div><button class="btn">확정 → 지급승인 문서 생성</button></div>
+      <div class="note">
+        • <b>자동</b>: 기본 = 일급 × 7 (séptimo día 포함) · 결근 1일 = 일급 + séptimo 비례분(일급÷6) · 연장 = 시급(일급÷8) × 2배 (주 9시간 초과분은 3배) · Prima vacacional = 휴가일 × 일급 × 25% · 상여는 상벌 탭에서 「급여 반영」 체크한 건.<br>
+        • <b>입력</b>: ISR·IMSS는 회계사무소 수치를 직접 입력하거나 엑셀 업로드 (노란 칸). 미입력 시 확정 불가.<br>
+        • 확정 후 숫자 잠금. 지급승인 문서는 커미션 지급승인처럼 자동 생성 → 결재 → 재무 집행 → 자금계획 반영.
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="toolbar"><h3 style="margin:0">급여 이력 — <span id="histWho">전 직원</span></h3><div class="sp"></div><button class="btn ghost" id="lockBtn">🔒 잠금</button></div>
+    <table id="histTbl"><thead><tr><th>주차</th><th>기간</th><th>이름</th><th class="n">총지급</th><th class="n">공제</th><th class="n">실수령</th><th>상태</th><th>명세서</th></tr></thead><tbody></tbody></table>
+    <div class="note self" id="selfNote">본인 급여는 ERP 로그인 상태에서 <b>RFC를 다시 입력</b>해야 열립니다. 10분 동안 조작이 없으면 다시 잠깁니다. 조회 기록은 남습니다.</div>
+  </div>
+</section>
+
+<!-- ④ 역량 -->
+<section class="sec" id="s-skill">
+  <div class="toolbar"><b>평가 기간</b><select><option>2026-12 (월)</option><option>2026 Q4</option><option>2026 H2</option></select><div class="sp"></div><button class="btn ghost">직무별 목표 설정</button></div>
+  <div class="note" style="margin:-4px 0 16px">진척률 = <b>기간 실적 점수 ÷ 합의 목표 점수</b>. 점수는 직무별 지표 페이지에서 자동으로 가져오고, 인사 화면에서는 고치지 않습니다(근거는 항상 원본 페이지).</div>
+  <div class="roles">
+    <div class="role">
+      <span class="src">출처 · 영업 › 고객개발 점수</span>
+      <h4 style="margin-top:10px">영업</h4>
+      <div class="big">75%</div><div class="note" style="margin:0">팀 평균 · 2명</div>
+      <div class="formula">업체 점수 = 첫 방문 12 + 정보 확보 18 + 견적 제출 30 + 첫 매출 40 (완주 100)<br>실적 = 기간 중 담당 업체 <b>점수 상승 합</b> (내려가면 차감)</div>
+    </div>
+    <div class="role">
+      <span class="plan">지표 페이지 제작 예정</span>
+      <h4 style="margin-top:10px">마케팅</h4>
+      <div class="big">64%</div><div class="note" style="margin:0">예시 · 1명</div>
+      <div class="formula">실적 = <b>일일 마케팅 리포트</b> 항목별 점수 합<br>(예: 리포트 제출 · 게시물/광고 집행 · 유입 문의 수 — 항목·배점은 리포트 페이지에서 정의)</div>
+    </div>
+    <div class="role">
+      <span class="plan">지표 페이지 제작 예정</span>
+      <h4 style="margin-top:10px">영업지원</h4>
+      <div class="big">71%</div><div class="note" style="margin:0">예시 · 1명</div>
+      <div class="formula">실적 = <b>Meta 문의 대응</b> 점수 합<br>(예: 첫 응답 시간 · 미응답 0건 · 견적/고객 등록 전환 — 기준은 대응 지표 페이지에서 정의)</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>직원별 진척률</h3>
+    <table id="skillTbl"><thead><tr><th>이름</th><th>직무</th><th>지표 출처</th><th class="n">목표 점수</th><th class="n">실적 점수</th><th>진척률</th><th class="n">%</th><th>상태</th></tr></thead><tbody></tbody></table>
+    <div class="note">• 목표 점수는 직원·Mauricio·디렉터가 기간마다 합의 후 「합의 확정」 (변경 시 이력).<br>• 행을 누르면 아래에 점수 근거(어느 업체·리포트·문의에서 몇 점)를 보여주고, 원본 페이지로 이동 링크.<br>• 70% 이상 순조 · 50~70% 주의 · 50% 미만 지연. 기준선은 설정에서 변경.</div>
+  </div>
+  <div class="card">
+    <h3>점수 근거 — <span id="critWho">Oscar Pech</span> <span class="src" id="critSrc">영업 › 고객개발</span></h3>
+    <table><thead><tr><th>항목</th><th>일자</th><th>대상</th><th class="n">점수</th></tr></thead><tbody id="critTbl"></tbody></table>
+  </div>
+</section>
+
+<!-- ⑤ 상벌 -->
+<section class="sec" id="s-rnr">
+  <div class="toolbar"><div class="sp"></div><button class="btn">+ 기록 추가</button></div>
+  <div class="card">
+    <h3>상벌 기록</h3>
+    <table><thead><tr><th>일자</th><th>이름</th><th>구분</th><th>내용</th><th>근거 규정</th><th class="n">금액</th><th>급여 반영</th><th>증빙</th></tr></thead><tbody>
+      <tr><td>2026-11-20</td><td>Oscar Pech</td><td><span class="badge b-ok">포상</span></td><td>11월 신규 고객 8곳 개발</td><td>성과 포상</td><td class="n">1,000.00</td><td>✔ W48</td><td>📎</td></tr>
+      <tr><td>2026-11-12</td><td>Luis Garza</td><td><span class="badge b-warn">구두경고</span></td><td>월 지각 4회</td><td>Reglamento interior art. 12</td><td class="n">—</td><td>—</td><td>📎 서명본</td></tr>
+      <tr><td>2026-10-28</td><td>José Ramírez</td><td><span class="badge b-bad">서면경고 (Acta administrativa)</span></td><td>재고실사 기록 누락</td><td>Reglamento interior art. 21</td><td class="n">—</td><td>—</td><td>📎 acta</td></tr>
+    </tbody></table>
+    <div class="note">• 금전 벌금은 LFT상 급여 공제 대상이 아니므로 「벌」은 기록·경고·acta 중심, 금액 칸은 포상만 활성.<br>• 근태 탭의 지각·결근 누적이 기준을 넘으면 「상벌 기록 제안」 알림(Mauricio).</div>
+  </div>
+</section>
+</main>
+
+<div class="modal" id="rfcModal"><div class="box">
+  <h3 style="margin:0;color:var(--blue)">본인 확인</h3>
+  <div class="note">급여 정보를 보려면 RFC를 다시 입력하세요. (목업 예시: HEMA900101AB1)</div>
+  <input id="rfcIn" maxlength="13" placeholder="RFC 13자리" autocomplete="off">
+  <div class="err" id="rfcErr"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="rfcCancel">취소</button><button class="btn" id="rfcOk">확인</button></div>
+</div></div>
+
+<script>
+const fmt=n=>n.toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+const EMP=[
+ {n:'María Hernández',d:'영업지원',rfc:'HEMA900101AB1',nss:'4312••••871',in:'2024-12-01',t:'정규',exp:'—',day:520,acc:'maria',doc:3,y:1},
+ {n:'Oscar Pech',d:'영업 · Mérida',rfc:'PECO880512KM3',nss:'8410••••203',in:'2023-04-17',t:'정규',exp:'—',day:600,acc:'oscar',doc:2,y:3},
+ {n:'Armando Canul',d:'영업 · Mérida',rfc:'CAAA910830QW7',nss:'8411••••552',in:'2024-02-01',t:'정규',exp:'—',day:580,acc:'armando',doc:2,y:2},
+ {n:'Luis Garza',d:'창고',rfc:'GALU950214TT2',nss:'4315••••019',in:'2025-06-02',t:'정규',exp:'—',day:420,acc:'luis',doc:1,y:1},
+ {n:'José Ramírez',d:'창고',rfc:'RAJO970709PL4',nss:'4316••••774',in:'2026-09-15',t:'시용 90일',exp:'2026-12-14',day:400,acc:'jose',doc:1,y:0},
+ {n:'Mauricio',d:'인사·총무·재무',rfc:'••••',nss:'••••',in:'2026-11-17',t:'시용 90일',exp:'2027-02-15',day:750,acc:'mauricio',doc:0,y:0},
+];
+// 근태 (월~일): 시각 or 코드
+const ATT={
+ 'María Hernández':['08:22–17:35','08:25–17:31','08:41–17:40','08:20–17:33','08:27–18:30','휴무','휴무'],
+ 'Oscar Pech':['08:15–17:45','08:30–17:32','08:28–17:30','휴가','휴가','휴무','휴무'],
+ 'Armando Canul':['08:29–17:31','08:26–20:30','08:24–17:38','08:30–17:30','08:22–17:35','휴무','휴무'],
+ 'Luis Garza':['08:52–17:30','08:33–17:31','결근','08:47–17:30','08:29–17:40','휴무','휴무'],
+ 'José Ramírez':['08:20–17:31','08:25–17:30','08:22–17:35','08:28–17:30','08:26–17:31','휴무','휴무'],
+};
+function cls(v){if(v==='결근')return'cell-abs';if(v==='휴가')return'cell-vac';if(v==='휴무')return'';const s=v.split('–')[0];const[h,m]=s.split(':').map(Number);return(h*60+m)>8*60+40?'cell-late':''}
+function otH(v){if(!v.includes('–'))return 0;const e=v.split('–')[1];const[h,m]=e.split(':').map(Number);const over=(h*60+m)-(17*60+30);return over>=60?Math.floor(over/60):0}
+function vacDays(y){if(y<1)return 0;if(y<=5)return 12+(y-1)*2;return 20+Math.ceil((y-5)/5)*2}
+
+// ① 직원
+document.querySelector('#empTbl tbody').innerHTML=EMP.map(e=>`<tr><td><b>${e.n}</b></td><td>${e.d}</td><td>${e.rfc}</td><td>${e.nss}</td><td>${e.in}</td><td>${e.t}</td>
+<td>${e.exp==='—'?'—':`<span class="badge b-warn">${e.exp}</span>`}</td><td class="n">${fmt(e.day)}</td><td>${e.acc}</td>
+<td>${e.doc?`📎 ${e.doc}`:'<span class="badge b-bad">미첨부</span>'}</td></tr>`).join('');
+
+// ② 근태
+const attRows=Object.entries(ATT).map(([n,days])=>{const late=days.filter(d=>cls(d)==='cell-late').length,abs=days.filter(d=>d==='결근').length,ot=days.reduce((s,d)=>s+otH(d),0);
+ return{n,days,late,abs,ot,vac:days.filter(d=>d==='휴가').length}});
+document.querySelector('#attTbl tbody').innerHTML=attRows.map(r=>`<tr><td><b>${r.n}</b></td>${r.days.map(d=>`<td class="${cls(d)}">${d}</td>`).join('')}
+<td class="n">${r.late||''}</td><td class="n">${r.abs||''}</td><td class="n">${r.ot||''}</td></tr>`).join('');
+const USED={'María Hernández':3,'Oscar Pech':9,'Armando Canul':4,'Luis Garza':0,'José Ramírez':0};
+document.querySelector('#vacTbl tbody').innerHTML=EMP.filter(e=>ATT[e.n]).map(e=>{const g=vacDays(e.y),u=USED[e.n];const nx=e.in.replace(/^\d{4}/,m=>{const yy=Number(m)+e.y+1;return yy});
+ return`<tr><td>${e.n}</td><td>${e.y}년</td><td class="n">${g}</td><td class="n">${u}</td><td class="n"><b>${g-u}</b></td><td>${nx}</td></tr>`}).join('');
+
+// ③ 급여
+const BONUS={'Oscar Pech':1000};
+const DED={'María Hernández':[312.4,98.1,0],'Oscar Pech':[402.7,113.3,0],'Armando Canul':[371.9,109.5,500],'Luis Garza':[160.2,79.3,0],'José Ramírez':[140.6,75.5,0]};
+const pay=attRows.map(r=>{const e=EMP.find(x=>x.n===r.n);const base=e.day*7,absD=r.abs*(e.day+e.day/6),hr=e.day/8;
+ const ot=Math.min(r.ot,9)*hr*2+Math.max(r.ot-9,0)*hr*3,prima=r.vac*e.day*0.25,bon=BONUS[r.n]||0;
+ const gross=base-absD+ot+prima+bon,[isr,imss,oth]=DED[r.n],net=gross-isr-imss-oth;return{...r,day:e.day,base,absD,ot,prima,bon,gross,isr,imss,oth,net}});
+document.querySelector('#payTbl tbody').innerHTML=pay.map(p=>`<tr><td><b>${p.n}</b></td><td class="n">${fmt(p.day)}</td><td class="n">${fmt(p.base)}</td>
+<td class="n" style="color:var(--bad)">${p.absD?'−'+fmt(p.absD):''}</td><td class="n">${p.ot?fmt(p.ot):''}</td><td class="n">${p.prima?fmt(p.prima):''}</td><td class="n">${p.bon?fmt(p.bon):''}</td>
+<td class="n"><b>${fmt(p.gross)}</b></td><td class="n" style="background:var(--yel-bg)">${fmt(p.isr)}</td><td class="n" style="background:var(--yel-bg)">${fmt(p.imss)}</td><td class="n" style="background:var(--yel-bg)">${p.oth?fmt(p.oth):''}</td><td class="n"><b>${fmt(p.net)}</b></td></tr>`).join('');
+const tg=pay.reduce((s,p)=>s+p.gross,0),tn=pay.reduce((s,p)=>s+p.net,0);
+document.getElementById('payKpi').innerHTML=`<div class="kpi"><span>대상</span><b>${pay.length}명</b></div><div class="kpi"><span>총지급 합계</span><b>${fmt(tg)}</b></div><div class="kpi"><span>실수령 합계</span><b>${fmt(tn)}</b></div><div class="kpi"><span>근태 이슈</span><b style="color:var(--warn)">지각 ${pay.reduce((s,p)=>s+p.late,0)} · 결근 ${pay.reduce((s,p)=>s+p.abs,0)}</b></div>`;
+const HIST=[];['W48','W47','W46','W45'].forEach((w,i)=>pay.forEach(p=>{const g=i?p.base+(i===2?p.day*0.5:0):p.gross,d=p.isr+p.imss+p.oth;
+ HIST.push({w,per:['11-23~11-29','11-16~11-22','11-09~11-15','11-02~11-08'][i],n:p.n,g,d,net:g-d,st:i?'지급완료':'계산 중'})}));
+function renderHist(who){const rows=HIST.filter(h=>!who||h.n===who);document.getElementById('histWho').textContent=who||'전 직원';
+ document.querySelector('#histTbl tbody').innerHTML=rows.map(h=>`<tr><td>${h.w}</td><td>${h.per}</td><td>${h.n}</td><td class="n">${fmt(h.g)}</td><td class="n">${fmt(h.d)}</td><td class="n"><b>${fmt(h.net)}</b></td>
+ <td><span class="badge ${h.st==='지급완료'?'b-ok':'b-warn'}">${h.st}</span></td><td>${h.st==='지급완료'?'📄 PDF':''}</td></tr>`).join('')}
+function lockHist(){document.querySelector('#histTbl tbody').innerHTML='<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--mute)">🔒 RFC 확인 후 표시됩니다 <button class="btn" id="openRfc" style="margin-left:8px">RFC 입력</button></td></tr>';
+ document.getElementById('openRfc').addEventListener('click',()=>{document.getElementById('rfcModal').classList.add('on');document.getElementById('rfcIn').focus()})}
+renderHist();
+
+// ④ 역량
+const SK=[
+ {n:'Oscar Pech',r:'영업',src:'고객개발 점수',goal:300,got:246,ev:[['첫 매출','11-26','Refacciones Caucel',40],['견적 제출','11-24','Autopartes Itzimná',30],['정보 확보','11-21','Suspensiones del Sur',18],['첫 방문','11-20','Refaccionaria Polígono',12]]},
+ {n:'Armando Canul',r:'영업',src:'고객개발 점수',goal:300,got:204,ev:[['견적 제출','11-25','Taller Hnos. Pool',30],['첫 방문','11-23','Refacc. Francisco de Montejo',12]]},
+ {n:'(마케팅 담당)',r:'마케팅',src:'일일 마케팅 리포트',goal:250,got:160,ev:[['리포트 제출','11-27','일일 리포트',5],['광고 집행','11-26','Meta 캠페인 #12',10]],plan:1},
+ {n:'María Hernández',r:'영업지원',src:'Meta 문의 대응',goal:200,got:142,ev:[['1시간 내 첫 응답','11-27','문의 #482',5],['견적 전환','11-26','문의 #471',15]],plan:1},
+];
+function stateOf(p){return p>=70?['b-ok','순조']:p>=50?['b-warn','주의']:['b-bad','지연']}
+document.querySelector('#skillTbl tbody').innerHTML=SK.map((s,i)=>{const p=Math.round(s.got/s.goal*100),[c,t]=stateOf(p);
+ return`<tr data-i="${i}" style="cursor:pointer"><td><b>${s.n}</b></td><td>${s.r}</td><td>${s.plan?'<span class="plan">'+s.src+' (예정)</span>':'<span class="src">'+s.src+'</span>'}</td>
+ <td class="n">${s.goal}</td><td class="n">${s.got}</td><td><div class="bar"><i style="width:${Math.min(p,100)}%;background:${p>=70?'var(--ok)':p>=50?'var(--warn)':'var(--bad)'}"></i></div></td><td class="n"><b>${p}%</b></td><td><span class="badge ${c}">${t}</span></td></tr>`}).join('');
+function showCrit(i){const s=SK[i];document.getElementById('critWho').textContent=s.n;document.getElementById('critSrc').textContent=s.r+' › '+s.src;
+ document.getElementById('critTbl').innerHTML=s.ev.map(e=>`<tr><td>${e[0]}</td><td>${e[1]}</td><td>${e[2]}</td><td class="n">+${e[3]}</td></tr>`).join('')+`<tr><td colspan="3"><b>기간 합계</b> (일부만 표시)</td><td class="n"><b>${s.got}</b></td></tr>`}
+document.querySelector('#skillTbl tbody').addEventListener('click',ev=>{const tr=ev.target.closest('tr');if(tr)showCrit(Number(tr.dataset.i))});
+showCrit(0);
+
+// 탭
+document.getElementById('tabs').addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;
+ document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
+ document.querySelectorAll('.sec').forEach(s=>s.classList.toggle('on',s.id==='s-'+b.dataset.t))});
+
+// 보는 사람 전환
+const SELF='María Hernández',SELF_RFC='HEMA900101AB1';let unlocked=false;
+document.getElementById('viewer').addEventListener('change',ev=>{const self=ev.target.value==='self';
+ document.querySelectorAll('.hrOnly').forEach(x=>x.style.display=self?'none':'');
+ document.getElementById('selfNote').style.display=self?'block':'none';
+ document.getElementById('lockBtn').style.display=self?'':'none';
+ document.querySelectorAll('#tabs button').forEach(b=>{if(['contract','rnr'].includes(b.dataset.t))b.style.display=self?'none':''});
+ if(self){document.querySelector('#tabs button[data-t="payroll"]').click();unlocked=false;lockHist()}else renderHist()});
+document.getElementById('lockBtn').style.display='none';
+document.getElementById('lockBtn').addEventListener('click',()=>{unlocked=false;lockHist()});
+document.getElementById('rfcCancel').addEventListener('click',()=>document.getElementById('rfcModal').classList.remove('on'));
+document.getElementById('rfcOk').addEventListener('click',()=>{const v=document.getElementById('rfcIn').value.trim().toUpperCase();
+ if(v===SELF_RFC){unlocked=true;document.getElementById('rfcModal').classList.remove('on');document.getElementById('rfcErr').textContent='';renderHist(SELF)}
+ else document.getElementById('rfcErr').textContent='RFC가 일치하지 않습니다. (5회 실패 시 30분 잠금)'});
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@
 <title>Refatrix ERP · 판매 이력·주기 · build st-1016c</title>
 <!-- 2026-10-16 · 구매 › 판매 이력·주기 (디렉터·소시오 전용) — API /api/salestrend · 계산 refatrix-api/src/salesTrend.js -->
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--warn:#B7791F;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -42,12 +42,12 @@
   .seg button{border:none;border-right:1px solid var(--line);background:#fff;color:#555;font-family:inherit;font-size:12px;font-weight:700;
     padding:0 10px;height:34px;cursor:pointer;white-space:nowrap}
   .seg button:last-child{border-right:none}
-  .seg button:hover{background:#f7f5ef}
+  .seg button:hover{background:#F5F5F5}
   .seg button.on{background:var(--brand);color:#fff}
   .seg button.sep{border-left:2px solid var(--line)}
   .seg button.pro.on{background:var(--gold)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap}
-  .sb{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb{flex:1;min-width:150px;background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
   .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
   .sb.red .v{color:var(--expense)}.sb.amb .v{color:var(--warn)}
   .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
@@ -58,11 +58,11 @@
   .tblwrap{overflow:auto;max-height:640px;margin-top:12px;border:1px solid var(--line);border-radius:10px}
   table{width:100%;border-collapse:collapse;font-size:12.5px}
   th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
-  th{color:var(--muted);font-size:11px;font-weight:600;background:#faf8f3;position:sticky;top:0;z-index:1}
+  th{color:var(--muted);font-size:11px;font-weight:600;background:#FAFAFA;position:sticky;top:0;z-index:1}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--brand)}
   th .arr{color:var(--brand)}
-  tr.clk{cursor:pointer}tr.clk:hover td{background:#f7f5ef}tr.sel td{background:#eef4f1}
+  tr.clk{cursor:pointer}tr.clk:hover td{background:#F5F5F5}tr.sel td{background:#E6F0F8}
   .code{font-weight:800;color:var(--brand)}
   .nm{font-size:11.5px;color:#444;max-width:240px;overflow:hidden;text-overflow:ellipsis}
   .small{font-size:11px;color:var(--muted)}
@@ -79,7 +79,7 @@
   .lost{color:#b3402e;font-weight:700}
   .more{margin-top:10px;text-align:center}
   .note{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:10px}
-  .drill{margin-top:16px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:18px}
+  .drill{margin-top:16px;background:#FAFAFA;border:1px solid var(--line);border-radius:12px;padding:18px}
   .drill h3{margin:0;font-size:15px;color:var(--brand)}
   .drill .x{float:right;border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer;font-size:13px;font-family:inherit}
   .dgrid{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:12px}
@@ -96,6 +96,10 @@
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -336,7 +340,7 @@
     const tops=m.map((q,i)=>q+(lost?lost[i]:0));
     const mx=Math.max(1,...tops,fc||0)*1.15; const y=v=>pt+(H-pt-pb)*(1-v/mx);
     let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="월별 판매">`;
-    for(let g=0;g<=4;g++){const v=mx*g/4;s+=`<line x1="${pl}" x2="${W-4}" y1="${y(v)}" y2="${y(v)}" stroke="#E2DDD2"/><text x="${pl-5}" y="${y(v)+4}" font-size="10" fill="#6B6B6B" text-anchor="end">${Math.round(v)}</text>`;}
+    for(let g=0;g<=4;g++){const v=mx*g/4;s+=`<line x1="${pl}" x2="${W-4}" y1="${y(v)}" y2="${y(v)}" stroke="#DFDFDF"/><text x="${pl-5}" y="${y(v)+4}" font-size="10" fill="#6B6B6B" text-anchor="end">${Math.round(v)}</text>`;}
     const step=m.length>24?3:(m.length>12?2:1);
     m.forEach((q,i)=>{const x=pl+i*bw+2,w=Math.max(1,bw-4),cur=i===m.length-1;
       s+=`<rect x="${x}" y="${y(q)}" width="${w}" height="${Math.max(0,H-pb-y(q))}" rx="2" fill="#143D34" opacity="${cur?0.45:1}"><title>${ms[i]}${cur?' (진행 중)':''}: ${fmt(q)}개</title></rect>`;
@@ -455,6 +459,6 @@
   window.__salestrend={plan,params};   // 테스트용
 })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 고객 설문 분석 · build 20261124sv14</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#0058A3;--gold:#B8893B;
+    --warn-bg:#FFF4D6;--warn-ink:#8A6100;--radius:12px;
+    --axis:#c3c2b7;--ink2:#52514e;
+    --d1:#e34948;--d2:#f2a3a2;--d3:#d6d4cf;--d4:#86b6ef;--d5:#256abf;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;font-size:13px}
+  .wrap{max-width:1320px;margin:0 auto}
+  .hidden{display:none!important}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius);margin-bottom:12px}
+  .topbar h1{font-size:18px;margin:0}.topbar .sub{font-size:12px;opacity:.75}
+  .portalBtn{margin-left:auto;color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:6px 10px;font-size:12px}
+  .who{font-size:12px;text-align:right}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px}
+  .ttl{font-weight:800;color:var(--brand);font-size:14px;margin:0 0 4px}
+  .sub2{color:var(--muted);font-size:12px;margin:0 0 12px;line-height:1.55}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.danger{background:#fff;color:var(--expense);border:1px solid #e3b7b0}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .sp{flex:1}
+  label{font-size:12px;color:var(--muted);font-weight:700;display:block;margin-bottom:4px}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink);max-width:100%}
+  textarea{resize:vertical}
+  .f{display:flex;flex-direction:column}
+  .msg{font-size:12px;margin-top:8px;min-height:14px}.msg.ok{color:var(--income)}.msg.err{color:var(--expense)}
+  .api{margin-top:14px;font-size:11px;color:var(--muted)}.api input{width:100%;margin-top:4px;font-size:12px}
+  .grid2{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:12px}
+  .grid3{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  @media (max-width:900px){ .grid2,.grid3{grid-template-columns:minmax(0,1fr)} body{padding:14px} }
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:#fdfcf9;font-size:12px;margin:2px 3px 2px 0;white-space:nowrap}
+  .chip.warn{background:var(--warn-bg);border-color:#f0d58a;color:var(--warn-ink);font-weight:700}
+  .chip.bad{background:var(--expense-bg);border-color:#e7bdb6;color:var(--expense);font-weight:700}
+  .chip.ok{background:var(--income-bg);border-color:#bcd9cd;color:var(--income);font-weight:700}
+  .chip.run{background:#e8eef9;border-color:#c3d3ee;color:#274b8f;font-weight:700}
+  .chip.click{cursor:pointer}
+  .chip.click.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .warnbar{background:var(--warn-bg);border:1px solid #f0d58a;color:var(--warn-ink);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-weight:700;font-size:12.5px}
+  .tabs{display:flex;gap:6px;margin:2px 0 12px;flex-wrap:wrap}
+  .tab{padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;cursor:pointer;font-size:13px;font-family:inherit}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .tab .n{font-weight:500;opacity:.7;margin-left:4px}
+  .tbwrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+  th{background:#FAFAFA;color:var(--muted);font-weight:700;font-size:12px;position:sticky;top:0;z-index:1}
+  tbody tr:hover{background:#FAFAFA}
+  tr.clk{cursor:pointer}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .rednum{color:#C0282D;font-weight:800;font-variant-numeric:tabular-nums}
+  .q{display:inline-block;min-width:18px;padding:0 5px;border-radius:5px;background:var(--warn-bg);color:var(--warn-ink);font-weight:800;font-size:11px;text-align:center;margin-left:3px}
+  .ed{display:inline-block;padding:0 5px;border-radius:5px;background:var(--income-bg);color:var(--income);font-weight:800;font-size:11px;margin-left:3px}
+  .unc{background:var(--warn-bg)}
+  .cellclip{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  .drop{border:2px dashed #cfc7b5;border-radius:12px;padding:24px;text-align:center;background:#fdfcf9;color:var(--muted);transition:background .15s}
+  .drop.over{background:#eef5f1;border-color:var(--brand)}
+  .drop b{color:var(--brand);font-size:15px}
+  .prog{height:10px;border-radius:999px;background:#ece8de;overflow:hidden;display:flex;gap:2px}
+  .prog i{display:block;height:100%}
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
+  @media (max-width:900px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .kpi .l{font-size:12px;color:var(--muted);font-weight:700}
+  .kpi .v{font-size:28px;font-weight:700;color:var(--ink);margin-top:2px}
+  .kpi .d{font-size:12px;color:var(--ink2);margin-top:2px}
+  .qcard h4{margin:0;font-size:13.5px;color:var(--ink);font-weight:700}
+  .qcard .orig{color:var(--muted);font-size:12px;margin:2px 0 10px}
+  .qhead{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+  .qno{flex:0 0 auto;background:var(--brand);color:#fff;border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px;margin-top:1px}
+  .hbar{display:grid;grid-template-columns:minmax(90px,170px) minmax(0,1fr) 92px;align-items:center;gap:8px;margin:5px 0}
+  .hbar .lb{font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
+  .hbar .lb small{display:block;color:var(--muted);font-size:11px}
+  .hbar .tr{position:relative;height:18px;border-left:1px solid var(--axis)}
+  .hbar .br{height:18px;background:var(--brand);border-radius:0 4px 4px 0;min-width:2px}
+  .hbar .br:hover{background:#2a6154}
+  .hbar .vl{font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums;text-align:right}
+  .hbar .vl b{color:var(--ink)}
+  .stack{display:flex;height:22px;gap:2px}
+  .stack i{display:block;height:100%}
+  .stack i:first-child{border-radius:4px 0 0 4px}
+  .stack i:last-child{border-radius:0 4px 4px 0}
+  .stack i:only-child{border-radius:4px}
+  .srow{display:grid;grid-template-columns:minmax(90px,170px) minmax(0,1fr) 54px;align-items:center;gap:8px;margin:6px 0}
+  .srow .lb{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow .avg{font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-top:8px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .grid2geo{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:start}
+  @media (max-width:900px){ .grid2geo{grid-template-columns:minmax(0,1fr)} }
+  .heat td,.heat th{text-align:center;padding:7px 8px}
+  .heat td.h{font-variant-numeric:tabular-nums;font-weight:700;border:2px solid #fff}
+  .heat th.rl,.heat td.rl{text-align:left}
+  .theme{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .theme:last-child{border-bottom:none}
+  .theme .nm{font-weight:700}
+  .theme .qt{color:var(--ink2);font-size:12px;margin-top:4px;line-height:1.5}
+  .theme .qt i{color:var(--muted)}
+  .theme .ct{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+  .minibar{height:6px;background:#ece8de;border-radius:999px;margin-top:6px;overflow:hidden}
+  .minibar i{display:block;height:100%;background:var(--gold);border-radius:999px}
+  .stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-bottom:10px}
+  .stats div{background:#FAFAFA;border-radius:8px;padding:6px 8px;font-size:11px;color:var(--muted)}
+  .stats b{display:block;font-size:15px;color:var(--ink)}
+  .note{background:#fbf5ea;border:1px solid #ecdcbc;border-radius:10px;padding:10px 12px;color:#6b5220;font-size:12px;line-height:1.6}
+  .note ul{margin:4px 0 0;padding-left:18px}
+  .note li{margin:3px 0}
+  .tip{position:fixed;pointer-events:none;background:#1C1B19;color:#fff;border-radius:8px;padding:7px 10px;font-size:12px;z-index:10030;box-shadow:0 4px 14px rgba(0,0,0,.2);display:none;max-width:280px}
+  .tip b{font-size:14px;display:block}
+  .tip span{color:#cfcac0}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--brand);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;z-index:10020;display:none;max-width:calc(100% - 32px);box-shadow:0 6px 20px rgba(0,0,0,.2)}
+  .toast.err{background:var(--expense)}
+  .dbg{position:fixed;inset:0;background:rgba(20,20,18,.45);z-index:10000;display:none}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(1040px,100%);background:var(--paper);z-index:10001;overflow:auto;padding:18px;display:none;box-shadow:-8px 0 30px rgba(0,0,0,.2)}
+  .drawer.on,.dbg.on{display:block}
+  .dgrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px}
+  @media (max-width:820px){ .dgrid{grid-template-columns:minmax(0,1fr)} }
+  .paper{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px;max-width:100%;min-height:200px;display:flex;align-items:flex-start;justify-content:center}
+  .paper img{max-width:100%;height:auto;display:block;border-radius:6px}
+  .paper iframe{width:100%;height:78vh;border:0}
+  .ans{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .ans:last-child{border-bottom:none}
+  .ans .k{font-weight:800;color:var(--brand)}
+  .ans .t{color:var(--muted);font-size:12px}
+  .ans .a{font-weight:700;margin-top:2px;white-space:pre-wrap;word-break:break-word}
+  .ans .a.noans{color:var(--muted);font-weight:500}
+  .ans .oth{color:var(--ink2);font-size:12px;margin-top:2px}
+  .ans .edit{margin-top:6px}
+  .ans .edit label{display:inline-flex;align-items:center;gap:5px;margin:2px 10px 2px 0;font-weight:500;color:var(--ink);font-size:12.5px}
+  .ans .edit label input{margin:0}
+  .qtable td{white-space:normal;vertical-align:top}
+  .qtable textarea{width:100%;min-height:62px;font-size:12.5px;line-height:1.45}
+  .qtable input.w100{width:100%}
+  .qtable .mv{display:flex;flex-direction:column;gap:3px}
+  .qtable .mv button{padding:2px 7px;font-size:11px}
+  .tplimg{max-width:100%;border:1px solid var(--line);border-radius:8px;display:block}
+  .tplph{border:1px dashed #cfc7b5;border-radius:10px;padding:30px 12px;text-align:center;color:var(--muted);background:#fdfcf9}
+  .filters{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .empty{color:var(--muted);padding:16px;text-align:center}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media print{
+    @page{margin:12mm}
+    body{padding:0!important;background:#fff!important}
+    #rnav,.no-print,.tabs,.drawer,.dbg,.toast{display:none!important}
+    .card,.kpi{break-inside:avoid;box-shadow:none}
+    .topbar{display:none!important}
+    .prtonly{display:block!important}
+  }
+  .prtonly{display:none}
+</style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">고객 설문 분석 · 설문지 사진/PDF → AI 판독 → 엑셀·리포트</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="goLogin" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="apiInput" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 설문 선택 바 -->
+    <div class="card no-print" style="padding:12px 16px">
+      <div class="row">
+        <div style="font-weight:800;color:var(--brand);font-size:15px">📝 고객 설문 분석</div>
+        <select id="surveySel" aria-label="설문 선택" style="min-width:260px;flex:1;max-width:520px"></select>
+        <button class="btn ghost sm" id="btnNewSurvey">＋ 새 설문</button>
+        <div class="sp"></div>
+        <span id="sumChips"></span>
+      </div>
+      <div class="hidden" id="newBox" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row" style="align-items:flex-end">
+          <div class="f" style="flex:1;min-width:220px"><label>설문명</label><input id="nTitle" placeholder="예: Expo Refacciones 2026 고객 설문"></div>
+          <div class="f" style="width:140px"><label>파일명 접두어</label><input id="nPrefix" class="mono" placeholder="EXPO26" maxlength="16"></div>
+          <div class="f" style="width:160px"><label>실시일</label><input id="nDate" type="date"></div>
+          <button class="btn" id="btnCreate">만들기</button>
+          <button class="btn ghost" id="btnCreateCancel">취소</button>
+        </div>
+        <div class="sub2" style="margin:8px 0 0">파일명은 <b class="mono">접두어_붉은번호</b> 로 만들어집니다 — 예: <span class="mono">EXPO26_0137.jpg</span>. 영문·숫자·하이픈만(나중에 바꿔도 파일명이 따라 바뀝니다).</div>
+      </div>
+    </div>
+
+    <div class="warnbar hidden no-print" id="aiWarn">⚠ Anthropic(Claude) 키가 설정되지 않아 AI 판독이 멈춰 있습니다. 올린 설문지는 대기열에 남아 있다가 키를 넣으면 이어서 처리됩니다 — 디렉터: 관리 → 외부 서비스 키.</div>
+
+    <div class="card hidden" id="emptyState">
+      <p class="ttl">아직 설문이 없습니다</p>
+      <p class="sub2">[＋ 새 설문] 으로 설문명과 파일명 접두어를 정한 뒤, ① 빈 설문지 사진으로 문항을 등록하고 ② 작성된 설문지를 올리세요.</p>
+    </div>
+
+    <div class="hidden" id="surveyArea">
+      <div class="prtonly" id="printHead" style="margin-bottom:10px"></div>
+      <div class="tabs no-print" role="tablist">
+        <button class="tab" data-tab="form">① 설문 양식 <span class="n" id="tabQ"></span></button>
+        <button class="tab" data-tab="upload">② 응답 업로드·목록 <span class="n" id="tabP"></span></button>
+        <button class="tab" data-tab="report">③ 분석 리포트</button>
+      </div>
+
+      <!-- ① 설문 양식 -->
+      <section id="v-form" class="hidden">
+        <div class="grid2">
+          <div class="card">
+            <p class="ttl">빈 설문지</p>
+            <p class="sub2">빈 양식(또는 작성된 1장) 사진을 올리고 <b>[🤖 AI로 문항 읽기]</b> 를 누르면 오른쪽 표를 채웁니다. 표를 확인·수정한 뒤 <b>저장</b>하세요.</p>
+            <div id="tplBox"><div class="tplph">양식 사진이 없습니다</div></div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn ghost sm" id="btnTplPick">📷 양식 사진 올리기</button>
+              <button class="btn sm" id="btnTplRead">🤖 AI로 문항 읽기</button>
+            </div>
+            <div class="msg" id="tplMsg"></div>
+          </div>
+          <div class="card">
+            <div class="row" style="margin-bottom:10px;align-items:flex-end">
+              <div class="f" style="flex:1;min-width:200px"><label>설문명</label><input id="fTitle"></div>
+              <div class="f" style="width:130px"><label>파일명 접두어</label><input id="fPrefix" class="mono" maxlength="16"></div>
+              <div class="f" style="width:150px"><label>실시일</label><input id="fDate" type="date"></div>
+            </div>
+            <div class="f" style="margin-bottom:12px"><label>붉은 번호 위치 (AI 판독에 참고)</label><input id="fHint" placeholder="예: esquina superior derecha — 오른쪽 위 붉은 숫자"></div>
+            <div class="row" style="margin-bottom:6px">
+              <p class="ttl" style="margin:0">문항 목록</p>
+              <span class="chip" id="qCountChip"></span>
+              <div class="sp"></div>
+              <button class="btn ghost sm" id="btnAddQ">＋ 문항 추가</button>
+            </div>
+            <p class="sub2">보기는 한 줄에 하나. 한국어를 같이 적으려면 <span class="mono">Refaccionaria | 부품점</span> 처럼 <b>|</b> 뒤에. <b>세그먼트</b>로 켠 단일선택 문항은 리포트에서 교차 분석 기준이 됩니다.</p>
+            <div class="tbwrap">
+              <table class="qtable">
+                <thead><tr><th style="width:36px">#</th><th>문항 (원문 / 한국어)</th><th style="width:120px">유형</th><th style="min-width:220px">보기 / 범위</th><th style="width:70px">세그먼트</th><th style="width:44px"></th></tr></thead>
+                <tbody id="qBody"></tbody>
+              </table>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <span class="sub2" style="margin:0" id="formHint"></span>
+              <div class="sp"></div>
+              <button class="btn" id="btnSaveForm">저장</button>
+            </div>
+            <div class="msg" id="formMsg"></div>
+            <div class="row hidden" id="dangerRow" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+              <span class="sub2" style="margin:0">이 설문을 목록에서 지웁니다(디렉터).</span><div class="sp"></div>
+              <button class="btn danger sm" id="btnDelSurvey">🗑 설문 삭제</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ② 업로드·목록 -->
+      <section id="v-upload" class="hidden">
+        <div class="card no-print" id="upCard">
+          <div class="drop" id="drop">
+            <b>⬆ 설문지 사진 또는 스캔 PDF를 여기에 끌어다 놓기</b>
+            <div style="margin-top:6px">JPG·PNG 여러 장 / PDF 여러 페이지 한꺼번에 — <b style="font-size:13px">PDF는 페이지 1장 = 응답 1건</b>으로 나뉩니다. 같은 파일을 다시 올리면 건너뜁니다.</div>
+            <div style="margin-top:10px"><button class="btn" id="btnPick">파일 선택</button></div>
+          </div>
+          <div class="hidden" id="upLocal" style="margin-top:12px">
+            <div class="row" style="margin-bottom:6px"><b>업로드</b><span id="upText"></span><div class="sp"></div><span class="sub2" style="margin:0" id="upNow"></span></div>
+            <div class="prog"><i id="upBar" style="width:0;background:var(--brand)"></i></div>
+          </div>
+          <div style="margin-top:14px">
+            <div class="row" style="margin-bottom:6px">
+              <b>AI 판독</b>
+              <span class="chip ok">완료 <span id="cDone">0</span></span>
+              <span class="chip run" id="cRunChip">대기·처리 중 <span id="cRun">0</span></span>
+              <span class="chip bad">실패 <span id="cErr">0</span></span>
+              <div class="sp"></div>
+              <button class="btn ghost sm" id="btnRetryErr">↻ 실패 다시 판독</button>
+            </div>
+            <div class="prog" id="prog"></div>
+            <div class="row" style="margin-top:10px">
+              <span class="chip warn">⚠ 번호 인식 실패 <span id="cNoNum">0</span></span>
+              <span class="chip warn">⚠ 번호 중복 <span id="cDup">0</span></span>
+              <span class="chip">AI 확신 낮은 칸 포함 <b id="cLow">0</b>건 <span style="color:var(--muted)">(엑셀에 노란색)</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card no-print" id="dayCard">
+          <div class="row" style="margin-bottom:6px">
+            <p class="ttl" style="margin:0">📅 날짜별 업로드 내역</p>
+            <span class="sub2" style="margin:0">멕시코 시간 기준 · 올린 날짜별로 묶음</span>
+            <div class="sp"></div>
+          </div>
+          <p class="sub2" id="dayNote" style="margin:0 0 8px">날짜를 누르면 아래 응답 목록이 그 날짜만 보입니다. <b>🗑 이 날짜 삭제</b>는 그날 올린 설문지 스캔·판독 결과를 모두 지우며(디렉터), REFATRIX Platform 「고객 설문」에도 바로 반영됩니다.</p>
+          <div class="tbwrap" style="max-height:300px"><table><thead><tr><th>업로드 날짜</th><th>장수</th><th>판독</th><th>붉은 번호 범위</th><th>올린 사람</th><th>시간</th><th></th></tr></thead><tbody id="dayBody"></tbody></table></div>
+        </div>
+
+        <div class="card">
+          <div class="row" style="margin-bottom:10px">
+            <p class="ttl" style="margin:0">응답 목록</p>
+            <select id="ld" title="업로드 날짜"><option value="">모든 업로드 날짜</option></select>
+            <input id="lq" placeholder="번호·답 검색" style="width:170px">
+            <select id="lf"><option value="">전체</option><option value="flag">⚠ 확인 필요(번호·중복·확신 낮음)</option><option value="err">실패</option><option value="run">대기·처리 중</option></select>
+            <select id="ls"><option value="num">번호순</option><option value="seq">업로드순</option></select>
+            <div class="sp"></div>
+            <button class="btn ghost sm" id="btnZipSel" disabled>⬇ 선택 원본 zip</button>
+            <button class="btn ghost sm" id="btnZipAll">🗂 전체 원본 zip</button>
+            <button class="btn sm" id="btnXlsx">📥 엑셀</button>
+          </div>
+          <div class="tbwrap" style="max-height:560px">
+            <table><thead><tr id="lHead"></tr></thead><tbody id="lBody"></tbody></table>
+          </div>
+          <p class="sub2" style="margin:8px 0 0">행을 누르면 원본과 AI가 읽은 답을 나란히 봅니다. <span class="q">?</span> AI 확신 낮음 · <span class="ed">✎</span> 사람이 고친 칸(다시 판독해도 유지).</p>
+        </div>
+      </section>
+
+      <!-- ③ 리포트 -->
+      <section id="v-report" class="hidden">
+        <div class="card no-print">
+          <div class="filters">
+            <div class="f"><label>세그먼트 기준</label><select id="segQ"></select></div>
+            <div><label>대상 좁히기</label><div id="segChips"></div></div>
+            <div class="sp"></div>
+            <button class="btn ghost" id="btnPrint">🧾 PDF 인쇄</button>
+            <button class="btn ghost hidden" id="btnViewers" title="이 설문을 REFATRIX Platform 메뉴 「고객 설문」에 보일지 정합니다 — 디렉터 전용">🌐 플랫폼 공개</button>
+            <button class="btn" id="btnXlsx2">📥 엑셀</button>
+          </div>
+        </div>
+        <div id="rEmpty" class="card hidden"><p class="empty">판독이 끝난 응답이 아직 없습니다. ② 응답 업로드에서 설문지를 올려 주세요.</p></div>
+        <div id="rBody">
+          <div class="kpis" id="kpis"></div>
+          <div class="card" id="aiCard"></div>
+          <div class="card" id="crossCard"></div>
+          <div id="geoCards"></div>
+          <div class="grid3" id="qCards"></div>
+          <div id="textCards"></div>
+          <div class="card hidden" id="infoCard"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="dbg" id="dbg"></div>
+<div class="dbg" id="vwBg"></div>
+<div class="drawer" id="vwDrawer"><div class="row" style="margin-bottom:12px"><p class="ttl" style="margin:0;font-size:17px">🌐 REFATRIX Platform 공개 <span class="sub2" style="font-weight:500">설문 결과는 플랫폼 로그인으로만</span></p><div class="sp"></div><button class="btn ghost sm" id="vwClose">닫기</button></div><div id="vwBody"></div></div>
+<div class="drawer" id="drawer"></div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<input type="file" id="tplInput" accept="image/*,application/pdf" class="hidden">
+<input type="file" id="fileInput" accept="image/*,application/pdf" multiple class="hidden">
+
+<script>
+(function(){
+  'use strict';
+  const BUILD='20261124sv14';
+  try{ console.log('[survey] build '+BUILD); }catch(e){}
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const LIB={
+    xlsx:'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
+    pdflib:'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js',
+    pdfjs:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    pdfjsWorker:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  };
+  const IMG_MAX=2000, IMG_Q=0.85, THUMB_MAX=320, FILE_LIMIT=5.5*1024*1024;
+  // 멕시코 32개 주 경계 — Natural Earth(퍼블릭 도메인) 10m admin-1 을 단순화해 넣어 둔 것(약 38KB).
+  //   외부 CDN 을 쓰지 않는다 — 인터넷이 막힌 창고·전시장에서도 지도가 뜬다.
+  const MX_MAP={"viewBox":"0 0 1000 626.3","paths":{"Sonora":"M112.1,7.4 230.8,47.6 297.2,47.8 294.9,65.5 302.5,71.6 307.4,73.8 309.3,76.1 310.8,92.2 308.4,114.0 305.4,114.2 308.5,136.9 307.4,141.6 310.7,151.5 307.5,154.3 299.9,152.5 294.5,152.7 291.3,155.6 295.7,166.2 299.1,168.2 300.2,170.9 303.7,173.7 303.2,175.5 306.9,178.9 307.6,186.2 306.0,189.9 309.6,195.5 312.1,196.0 313.0,197.7 311.7,203.8 291.7,220.0 291.2,218.9 290.3,218.4 290.8,219.1 288.3,219.9 288.1,214.3 283.9,209.5 280.9,207.9 282.6,208.3 282.2,206.8 279.4,205.6 278.7,206.7 280.5,208.4 277.0,207.4 275.2,208.2 271.9,207.1 269.9,205.1 266.2,197.1 268.2,199.0 266.0,193.6 264.0,192.9 262.6,194.2 255.4,191.9 250.4,187.5 248.0,187.0 251.1,186.6 248.7,183.4 247.1,184.0 244.7,174.9 246.6,173.5 245.4,173.5 245.7,172.4 247.2,171.4 245.6,171.0 245.3,168.5 248.1,167.9 248.3,166.9 237.7,165.7 239.0,165.0 238.0,162.9 236.4,166.0 237.2,166.3 236.5,168.1 232.9,163.7 229.6,164.7 222.4,157.0 218.6,151.3 219.1,149.2 210.5,146.6 208.9,142.4 202.9,136.4 204.6,135.6 205.5,136.7 205.5,134.8 203.7,134.9 200.3,132.8 197.9,129.5 195.9,129.0 196.0,123.9 194.1,121.5 194.6,119.3 193.7,117.2 191.4,116.6 190.8,117.8 188.3,116.1 189.3,111.3 182.9,103.3 180.1,97.1 177.7,96.6 178.2,93.1 177.3,91.5 177.1,86.2 174.1,84.3 173.8,78.8 167.1,70.4 165.6,65.5 166.6,60.9 165.5,56.8 167.0,59.4 168.1,53.7 166.0,51.6 165.1,51.5 165.8,52.5 163.4,51.3 162.3,49.1 160.9,49.5 162.0,50.7 150.0,47.8 148.8,41.9 141.7,37.9 140.0,38.4 138.7,36.2 138.6,38.8 139.6,39.5 138.6,40.7 137.1,42.1 133.0,42.0 122.4,35.7 119.6,32.8 116.3,32.7 108.5,27.7 108.4,23.5 107.1,22.0 107.8,19.7 105.2,14.5 107.0,12.8 108.7,7.9 112.1,7.4ZM193.3,136.0 189.9,136.4 182.8,132.3 185.9,129.0 185.5,125.4 186.6,121.8 192.9,119.5 192.7,123.3 195.1,127.3 192.5,134.7 193.3,136.0ZM113.2,31.4 115.6,32.7 117.4,35.3 113.9,34.4 112.8,33.0 113.2,31.4Z","Baja California":"M115.1,0.0 112.7,4.1 112.4,6.9 108.7,7.9 107.0,12.8 105.2,14.5 107.8,19.7 107.1,22.0 108.4,23.5 108.5,27.7 105.3,25.8 106.0,27.5 111.6,31.4 113.4,36.4 111.1,40.9 109.9,53.4 112.3,57.3 112.1,59.4 115.6,61.9 116.0,71.6 118.1,76.5 117.2,87.2 121.2,94.6 125.1,97.6 125.6,101.0 127.8,102.5 129.2,101.4 131.4,102.3 149.5,118.3 150.0,119.3 148.9,120.9 152.7,126.3 151.8,127.5 153.1,131.8 154.6,131.5 154.5,129.9 157.4,130.1 158.5,134.9 161.4,133.5 163.5,135.2 166.4,145.1 169.6,146.8 172.8,146.1 173.5,147.5 174.5,147.3 173.7,152.7 176.4,155.7 175.8,161.4 177.1,162.5 136.1,162.5 136.8,161.2 134.9,160.6 134.5,158.4 136.2,155.4 135.6,154.0 134.1,153.7 136.7,146.7 135.0,143.5 133.0,143.0 132.5,139.8 129.4,139.8 129.3,138.5 127.1,137.3 124.8,132.2 123.0,130.5 120.9,130.3 120.3,128.7 119.3,129.2 118.1,124.8 115.7,124.7 114.5,121.6 113.2,121.3 107.3,115.0 100.5,113.2 97.4,109.8 92.1,106.6 90.7,106.9 84.4,102.0 84.3,97.1 80.8,94.6 81.7,90.3 79.9,81.6 75.6,79.7 76.9,78.0 75.1,76.4 76.0,78.3 74.3,78.6 75.4,81.2 74.7,81.2 73.2,77.0 73.8,71.9 73.0,65.9 69.2,63.9 66.9,60.6 64.2,60.6 65.0,53.9 64.0,51.5 58.7,44.6 53.4,40.0 53.3,39.2 54.4,39.1 54.3,36.3 51.1,33.1 54.4,33.7 55.5,30.0 50.9,27.7 50.5,25.3 47.4,24.1 45.6,17.0 42.4,15.0 39.3,7.7 39.2,6.2 115.1,0.0ZM99.6,149.5 101.5,157.7 100.5,158.8 100.7,161.6 99.2,161.5 97.6,159.5 95.1,159.7 98.8,154.5 98.6,150.1 99.6,149.5ZM164.2,123.6 166.4,126.2 166.0,128.6 156.8,120.7 155.4,118.4 154.0,118.2 151.0,113.9 151.6,109.4 153.5,109.1 157.2,112.2 158.6,114.8 158.0,117.3 164.3,118.5 164.2,123.6ZM3.6,124.9 4.4,131.0 2.4,132.6 1.9,128.1 0.0,123.5 2.9,121.5 2.5,123.3 3.6,124.9Z","Chihuahua":"M321.0,32.2 374.7,32.4 378.6,33.3 384.4,42.6 392.2,46.3 411.1,64.2 416.2,65.9 424.7,72.5 427.1,76.4 427.3,79.3 432.7,86.9 432.1,91.6 432.7,95.5 436.2,100.9 437.5,105.0 440.2,107.7 443.6,110.0 445.8,109.9 452.4,116.3 461.1,118.5 461.3,119.9 463.7,121.5 468.5,122.7 473.7,127.0 476.1,126.9 455.4,165.3 466.0,209.3 454.6,204.8 449.4,205.0 446.8,206.5 436.6,219.7 427.9,214.7 423.0,214.1 421.8,215.6 418.9,212.4 412.3,215.6 404.4,211.2 401.1,207.4 397.1,207.6 390.1,202.6 388.1,206.1 386.9,205.0 386.0,205.9 385.8,210.1 383.9,212.2 384.8,216.1 377.3,219.0 379.1,226.9 378.0,229.7 374.8,230.7 374.1,238.6 367.0,244.6 361.4,243.8 351.3,236.2 347.2,227.3 334.8,224.5 333.0,210.8 327.8,203.4 327.1,199.7 321.5,198.0 319.3,195.2 315.9,194.3 313.0,197.7 312.1,196.0 309.6,195.5 306.0,189.9 307.6,186.2 306.9,178.9 303.2,175.5 303.7,173.7 300.2,170.9 299.1,168.2 295.7,166.2 291.3,155.6 294.5,152.7 299.9,152.5 307.5,154.3 310.7,151.5 307.4,141.6 308.5,136.9 305.4,114.2 308.4,114.0 310.8,92.2 309.3,76.1 294.8,65.0 297.2,47.8 321.0,47.8 321.0,32.2Z","Coahuila":"M507.4,97.2 514.0,100.4 523.6,100.0 529.1,101.3 531.3,100.9 531.8,99.7 532.0,101.4 536.3,101.2 537.8,105.0 539.6,105.6 539.3,107.4 541.7,106.6 542.4,109.7 547.9,112.2 548.9,114.9 555.6,119.1 556.6,122.0 559.6,124.0 561.0,130.6 563.8,133.9 568.6,144.0 570.5,144.9 569.5,146.0 572.0,152.9 579.0,157.8 581.0,162.2 584.5,165.7 585.1,169.2 586.8,170.4 581.5,175.0 575.0,169.6 569.4,173.7 566.4,184.8 564.6,184.4 560.9,185.7 555.0,190.1 555.5,194.9 556.9,196.5 558.5,196.1 558.2,194.8 559.7,193.6 563.1,195.2 563.3,200.9 561.5,206.8 558.2,210.2 556.9,206.2 542.3,218.6 545.7,221.7 547.6,225.8 550.8,227.8 551.5,231.5 553.9,233.0 554.0,238.9 556.0,242.6 562.7,247.9 562.7,248.8 559.7,247.7 558.7,248.5 562.6,251.7 565.0,252.2 565.9,254.1 571.1,254.1 574.4,256.4 572.6,257.1 572.1,258.9 568.0,259.3 561.9,258.0 555.6,261.8 554.3,264.5 557.6,267.2 555.6,269.6 556.5,273.7 554.5,281.0 546.1,278.3 541.8,272.2 538.3,272.4 538.2,271.5 535.2,274.5 529.6,274.3 528.4,272.0 531.0,272.6 530.4,270.0 524.8,268.1 521.9,263.3 511.2,260.2 497.5,261.9 491.0,269.4 490.8,275.3 486.8,272.6 478.7,269.8 477.2,263.5 473.6,261.1 469.9,256.3 470.7,252.9 472.5,251.6 470.6,249.2 470.5,247.3 475.8,241.9 474.8,228.9 477.4,220.7 475.6,217.4 466.0,209.3 455.4,165.3 476.0,127.2 476.3,127.9 482.0,128.1 482.6,126.0 486.2,121.9 490.3,120.1 489.1,118.9 489.6,116.2 491.0,115.4 491.0,112.4 495.6,102.6 501.2,101.0 504.7,101.2 507.4,97.2Z","Tamaulipas":"M589.9,173.9 592.0,175.2 593.7,174.8 596.3,177.2 597.4,182.3 595.9,186.3 598.7,189.8 597.8,195.0 604.5,202.9 607.2,212.8 609.1,213.8 609.7,217.4 618.6,218.6 623.3,223.0 625.6,222.4 629.1,224.3 630.4,224.0 634.5,227.6 638.1,229.2 640.7,228.9 641.9,230.0 650.2,229.3 654.7,230.4 662.2,236.5 664.7,236.6 664.5,234.3 667.2,232.8 671.2,232.6 670.4,241.0 665.5,252.5 661.1,259.8 655.0,282.6 652.7,307.1 649.6,307.7 651.6,308.4 651.6,312.4 652.4,308.2 652.8,309.4 651.3,325.9 652.1,335.9 651.8,340.1 651.8,337.6 649.1,343.9 647.9,343.9 648.6,345.3 647.4,348.4 648.5,348.9 649.2,346.3 648.7,351.0 650.9,360.0 648.7,361.8 646.7,360.2 646.9,358.4 641.1,356.5 637.7,352.8 634.8,353.3 634.2,355.6 623.2,354.1 617.7,357.0 605.8,354.3 604.0,352.9 600.4,345.8 598.7,347.5 595.0,344.3 595.7,347.8 594.8,348.0 580.7,342.4 579.5,339.5 583.7,335.5 580.5,329.2 577.9,330.7 579.3,324.7 576.8,322.6 579.4,320.6 583.7,322.0 582.3,316.7 585.4,309.9 593.4,308.5 596.5,304.2 598.1,303.9 597.3,301.4 593.1,297.3 594.2,288.0 593.2,282.8 589.9,284.1 589.1,280.8 591.8,278.4 595.1,278.2 596.6,277.2 597.2,274.9 603.1,271.9 607.2,273.7 606.3,270.2 607.9,267.8 606.4,265.7 607.9,265.5 607.8,264.2 609.0,264.3 611.3,261.8 613.0,263.5 615.9,263.0 629.9,251.3 629.8,249.8 626.5,249.5 626.2,248.6 626.0,231.6 617.7,229.4 615.9,232.5 611.2,228.0 608.2,229.5 606.7,221.5 604.3,221.3 601.8,217.8 600.0,218.9 599.1,217.7 600.0,210.9 594.7,207.9 591.7,207.9 594.6,202.7 589.2,199.3 591.0,191.7 589.9,190.1 588.4,181.5 587.8,180.4 583.8,179.8 583.4,178.6 583.6,177.3 589.9,173.9Z","Nuevo León":"M586.8,170.4 589.9,173.9 583.6,177.3 583.4,178.6 583.8,179.8 587.8,180.4 588.4,181.5 589.9,190.1 591.0,191.7 589.2,199.3 594.6,202.7 591.7,207.9 594.7,207.9 600.0,210.9 599.1,217.7 600.0,218.9 601.8,217.8 604.3,221.3 606.7,221.5 608.2,229.5 611.2,228.0 615.9,232.5 617.7,229.4 626.0,231.6 626.2,248.6 626.5,249.5 629.8,249.8 629.9,251.3 615.9,263.0 613.0,263.5 611.3,261.8 609.0,264.3 607.8,264.2 607.9,265.5 606.4,265.7 607.9,267.8 606.3,270.2 607.2,273.7 603.1,271.9 597.2,274.9 596.6,277.2 595.1,278.2 591.8,278.4 589.1,280.8 589.9,284.1 593.2,282.8 594.2,288.0 593.1,297.3 597.7,301.9 598.1,304.2 596.5,304.2 593.4,308.5 585.8,309.4 582.3,316.3 583.7,322.0 579.4,320.6 576.8,322.6 579.0,324.1 578.9,326.6 570.4,326.2 570.0,328.4 567.4,327.6 566.5,326.0 565.8,320.0 566.4,317.7 565.1,312.1 565.6,307.7 561.9,301.3 561.2,289.7 554.5,281.0 556.5,273.7 555.6,269.6 557.6,267.2 554.3,264.5 556.4,260.9 560.0,258.6 564.0,258.0 568.0,259.3 572.1,258.9 572.6,257.1 574.4,256.4 571.1,254.1 565.9,254.1 565.0,252.2 562.6,251.7 558.7,248.5 559.7,247.7 562.7,248.8 562.7,247.9 556.0,242.6 554.0,238.9 553.9,233.0 551.5,231.5 550.8,227.8 547.6,225.8 545.7,221.7 542.3,218.6 556.9,206.2 558.2,210.2 561.5,206.8 563.3,200.9 563.1,195.2 559.7,193.6 558.2,194.8 558.5,196.1 556.9,196.5 555.5,194.9 555.0,190.1 560.9,185.7 564.6,184.4 566.4,184.8 569.4,173.7 575.0,169.6 581.5,175.0 586.8,170.4Z","Quintana Roo":"M951.2,490.4 944.7,490.6 943.5,491.7 940.7,499.2 938.2,501.2 937.2,505.0 932.7,511.1 927.0,507.3 924.0,509.0 923.7,506.2 927.5,500.3 927.2,490.4 926.2,489.9 926.5,487.0 925.1,483.5 926.0,474.2 927.9,471.7 928.2,465.3 924.3,458.9 915.4,450.4 916.9,444.6 922.2,443.8 926.8,440.7 930.9,440.4 933.7,437.9 935.2,439.0 935.2,437.7 937.8,435.6 946.1,432.0 949.3,427.4 952.0,429.3 951.6,426.5 954.1,422.7 956.8,423.6 960.6,423.1 970.5,416.0 974.9,405.4 973.3,400.0 975.2,393.6 974.8,386.7 976.8,387.3 976.2,387.7 984.3,388.6 986.9,387.3 987.5,384.5 983.7,385.7 981.2,384.8 979.1,386.3 978.8,385.5 980.3,384.1 983.2,384.5 987.6,382.5 990.5,383.1 994.4,388.7 997.3,388.9 997.7,396.8 998.4,398.4 1000.0,398.2 995.8,408.9 989.7,417.0 984.4,421.4 978.2,430.7 976.9,436.0 978.1,442.2 976.7,445.8 977.8,441.3 976.7,439.6 976.8,442.6 977.4,442.2 975.2,445.2 973.5,445.3 970.7,451.0 971.0,449.3 968.4,449.7 968.7,452.1 971.0,453.3 970.5,455.4 974.0,453.3 977.9,453.8 978.4,452.4 977.8,453.1 975.1,452.6 977.7,452.8 977.9,450.9 978.8,452.9 977.3,457.2 974.9,459.0 973.8,459.2 974.9,457.8 972.3,458.9 970.5,462.1 970.1,464.5 971.6,465.2 973.9,461.9 976.2,461.5 975.5,463.0 977.3,461.8 975.0,465.0 970.9,480.9 968.5,485.1 967.7,492.5 965.2,497.7 965.1,500.5 964.7,498.9 963.8,499.4 964.5,496.0 963.8,497.2 964.0,495.6 962.3,493.5 962.3,492.0 957.7,490.1 960.1,483.5 959.1,477.2 956.2,482.1 955.9,480.8 953.9,481.8 952.4,483.3 952.1,484.0 954.3,481.9 954.1,484.0 955.4,483.2 951.2,490.4ZM999.8,417.9 998.2,421.9 992.0,429.4 991.2,424.7 992.8,420.9 994.8,418.8 997.0,419.5 999.8,417.9Z","Campeche":"M923.7,506.2 923.5,513.7 865.6,514.2 865.6,508.4 861.4,508.2 854.8,505.0 848.2,503.7 846.7,503.9 845.3,509.0 838.2,508.9 828.8,501.5 829.0,491.4 822.1,491.4 818.3,485.0 835.4,483.5 838.1,485.9 837.9,486.7 835.9,486.8 835.3,485.6 833.5,486.2 834.0,486.8 832.5,486.6 832.0,488.5 835.1,488.4 837.3,489.9 834.7,486.8 836.8,487.3 836.4,488.0 837.7,489.2 837.1,489.2 839.2,490.4 838.1,492.4 840.0,494.0 839.6,491.8 840.9,492.3 840.1,490.4 843.8,491.8 849.4,491.3 850.0,492.3 850.0,490.1 848.3,491.1 849.4,489.7 859.6,484.7 855.9,485.6 856.9,482.0 855.8,480.4 853.7,480.7 852.2,479.3 857.8,474.3 853.0,477.3 852.2,478.8 849.4,479.2 867.4,467.2 873.5,461.0 874.7,448.3 875.9,445.9 881.9,441.0 882.3,439.1 881.1,435.6 881.5,419.9 882.4,413.7 884.9,409.9 885.1,420.5 889.5,420.8 891.6,423.7 892.9,423.2 894.0,424.3 896.4,422.2 902.9,433.6 908.7,437.7 914.2,446.0 916.8,452.4 924.3,458.9 927.4,462.9 927.9,471.7 926.0,474.2 925.1,483.5 926.5,487.0 926.2,489.9 927.2,490.4 927.5,500.3 923.7,506.2ZM838.7,484.9 848.3,480.0 848.8,481.4 845.7,481.6 843.6,484.2 842.5,484.5 843.1,483.3 838.7,484.9Z","Tabasco":"M865.6,508.4 865.6,533.1 851.6,533.0 851.6,531.4 853.1,530.3 851.9,528.5 849.8,528.0 849.5,525.8 845.0,523.7 843.3,517.2 840.2,516.7 840.8,515.1 840.1,511.8 836.4,511.2 835.5,512.4 834.8,510.5 831.3,513.1 831.2,514.7 829.0,514.6 822.1,517.8 821.6,520.3 809.8,529.2 807.5,527.9 804.9,523.7 802.6,523.1 801.8,517.4 802.2,509.6 799.3,510.8 796.2,508.2 793.5,507.5 792.2,508.6 789.0,519.8 785.9,523.0 783.5,528.9 781.8,527.3 782.4,522.4 778.9,518.7 772.5,515.6 771.4,513.1 768.1,511.4 768.9,507.5 766.1,500.2 774.9,496.8 774.3,498.5 777.4,497.9 778.7,495.6 783.4,495.4 783.9,493.1 775.3,497.0 775.5,496.3 784.6,492.5 797.2,492.0 796.5,494.3 798.3,493.9 798.0,495.6 799.3,493.8 797.7,492.5 806.7,491.3 811.0,486.9 812.6,492.5 812.8,488.8 811.7,486.1 818.3,485.0 822.1,491.4 829.0,491.4 828.8,501.5 837.2,508.5 845.3,509.0 846.7,503.9 850.3,503.8 861.4,508.2 865.6,508.4Z","Chiapas":"M851.6,533.0 853.8,535.3 856.5,535.6 863.6,545.0 865.6,546.1 866.8,545.3 866.3,546.1 867.9,547.4 871.3,548.3 873.7,550.5 875.8,553.8 875.9,556.0 876.9,555.9 876.5,558.0 877.6,558.8 876.9,559.6 879.8,559.4 881.9,561.4 884.5,561.8 885.0,563.6 883.7,563.6 884.2,564.9 882.9,565.7 883.9,566.4 882.4,567.4 883.2,568.1 882.4,569.8 883.5,570.7 882.4,572.3 883.2,572.6 881.6,573.8 841.9,574.2 827.0,601.4 831.4,608.2 828.8,610.9 828.8,614.2 827.7,616.4 828.6,621.7 826.6,626.3 807.1,605.2 807.1,604.5 809.0,605.3 810.4,607.6 809.4,604.9 806.4,604.2 802.6,601.6 795.8,593.8 781.4,581.8 772.3,575.9 775.1,575.4 773.7,573.2 767.8,571.2 769.2,565.9 766.5,558.7 769.2,554.1 769.2,548.7 773.3,545.9 773.5,541.8 774.6,541.4 774.5,536.6 782.5,530.9 785.9,523.0 789.0,519.8 792.2,508.6 793.5,507.5 796.2,508.2 799.3,510.8 802.2,509.6 801.8,517.4 802.6,523.1 804.9,523.7 807.5,527.9 809.8,529.2 821.6,520.3 822.9,517.2 831.2,514.7 831.3,513.1 833.9,510.6 835.2,510.7 835.5,512.4 836.4,511.2 839.5,511.3 840.5,512.8 840.2,516.7 843.3,517.2 845.0,523.7 849.5,525.8 849.8,528.0 851.9,528.5 853.1,530.3 851.6,531.4 851.6,533.0Z","Colima":"M232.9,477.4 235.7,481.0 235.3,482.2 233.6,482.6 230.8,480.8 232.9,477.4ZM462.4,483.5 454.9,477.2 443.8,472.1 444.8,470.6 443.9,469.4 442.0,468.9 440.4,470.0 435.5,466.9 437.6,464.1 439.2,464.9 441.0,462.9 442.1,463.5 447.5,461.8 452.5,454.3 452.7,455.5 459.5,459.1 465.4,455.6 466.9,458.8 470.3,462.1 469.3,469.7 470.8,474.0 467.6,476.8 466.5,476.7 466.1,479.7 462.4,483.5Z","Nayarit":"M376.5,386.8 379.5,387.9 378.8,389.4 375.4,387.7 376.5,386.8ZM374.8,383.3 374.2,385.2 371.1,383.2 370.1,380.0 373.7,380.8 374.8,383.3ZM413.4,414.7 411.2,412.1 409.6,413.0 405.4,411.9 407.3,410.9 412.8,402.8 415.2,401.8 415.8,396.8 414.9,392.1 416.7,388.2 415.8,386.0 414.3,386.2 408.5,382.1 402.6,370.9 401.9,360.6 399.5,352.0 401.2,353.9 401.2,350.9 403.9,350.6 406.8,352.5 408.6,351.6 407.3,345.8 404.4,342.8 408.3,338.3 407.7,335.4 409.6,333.7 417.0,333.8 424.0,337.4 426.2,342.1 423.0,345.5 422.7,350.7 429.8,346.1 433.4,348.1 434.8,352.8 437.4,354.7 439.2,355.0 443.7,353.0 444.4,358.4 441.7,366.5 451.1,376.8 447.6,386.0 456.0,390.9 455.3,394.0 453.0,396.3 447.9,397.0 447.2,398.0 447.7,404.1 445.7,408.7 445.2,413.9 437.7,407.1 434.6,406.5 429.7,403.2 425.0,406.3 419.6,406.7 413.4,414.7Z","Baja California Sur":"M266.6,287.5 270.8,295.7 268.5,295.2 267.7,293.6 266.6,287.5ZM215.1,287.4 218.3,289.1 211.6,288.1 212.1,287.5 215.1,287.4ZM205.6,282.5 211.0,287.5 210.5,290.1 201.1,282.7 205.6,282.5ZM252.3,280.2 255.4,284.2 253.5,286.6 252.0,282.8 252.6,282.1 251.4,280.8 252.3,280.2ZM242.1,262.7 246.3,265.4 247.9,270.1 246.2,270.7 246.4,269.8 244.2,268.9 243.2,265.6 242.0,264.9 242.1,262.7ZM197.0,278.6 199.4,281.8 195.7,277.9 196.9,277.0 196.4,274.8 193.8,273.2 193.1,274.6 191.7,273.1 197.3,256.8 195.6,264.4 195.7,270.4 194.5,271.2 197.6,276.7 197.0,278.6ZM231.1,229.0 230.8,232.6 229.4,231.6 227.2,234.8 226.4,238.2 225.5,236.9 227.6,231.9 227.3,230.0 231.1,229.0ZM134.9,162.5 177.2,162.6 176.8,167.2 178.5,168.5 179.4,171.4 182.4,174.4 190.1,178.1 191.9,183.8 195.1,188.4 194.6,189.7 196.1,191.2 202.9,193.8 200.7,197.7 205.4,202.9 205.7,204.4 204.4,206.8 208.1,211.8 209.6,212.9 211.5,211.4 207.1,206.8 206.0,201.3 207.0,200.6 215.2,207.5 215.0,212.2 218.9,213.6 218.1,217.0 220.5,220.1 220.3,222.8 222.7,228.1 221.5,232.7 222.4,237.1 223.7,237.9 222.9,237.7 223.2,239.1 225.8,241.0 226.8,244.8 229.0,247.7 232.3,248.2 232.1,250.5 235.0,255.9 235.9,261.0 238.8,264.8 240.6,265.5 242.9,270.0 243.8,272.6 241.6,276.9 241.2,281.3 242.8,284.4 243.0,288.0 245.2,291.7 248.4,293.7 254.2,294.4 252.8,295.3 250.9,294.4 251.3,296.7 253.1,296.6 255.0,292.9 253.9,291.6 254.0,289.1 257.2,288.6 259.1,291.7 264.3,295.0 264.9,298.8 266.7,299.4 270.0,298.3 270.7,299.7 269.7,302.6 274.1,307.4 274.1,312.0 281.4,315.8 283.0,320.9 282.7,324.7 281.8,327.9 279.3,331.2 273.6,333.8 273.0,335.3 267.8,339.3 264.5,338.6 261.4,334.3 259.2,323.8 254.8,316.3 244.1,309.6 231.7,296.8 218.9,289.2 221.5,290.4 214.1,285.2 211.4,280.2 210.8,282.0 207.5,281.6 208.8,282.7 207.2,283.0 206.1,277.9 203.1,274.8 204.1,275.0 201.0,270.3 202.3,274.8 200.5,274.4 200.2,271.5 199.9,274.5 198.8,274.2 197.4,270.3 198.4,269.4 198.2,266.0 196.7,270.3 196.0,267.5 197.4,264.6 197.2,260.0 198.8,257.0 198.7,250.6 200.3,249.6 198.6,249.4 199.3,248.9 198.7,241.1 198.0,248.6 197.8,238.9 195.6,233.0 193.7,230.1 191.5,229.1 190.4,225.3 188.6,223.2 187.0,222.4 185.5,223.4 183.6,221.1 179.5,220.3 167.7,210.8 167.9,209.0 165.1,205.3 165.9,204.1 162.8,205.8 162.1,204.3 165.7,200.9 165.1,198.0 163.6,198.9 163.2,202.0 161.5,203.0 161.1,205.5 154.8,203.7 152.5,206.7 149.5,206.5 146.7,203.9 143.8,198.7 140.9,197.3 137.9,197.8 134.4,193.4 132.3,192.2 129.4,191.9 128.7,192.7 124.3,190.9 124.5,189.8 122.6,188.8 122.0,183.0 119.2,180.5 114.8,179.0 113.3,176.2 110.3,174.8 111.2,174.9 110.8,173.2 109.6,174.1 108.0,172.3 106.4,172.3 103.8,167.6 122.3,170.3 128.4,166.9 128.4,170.6 133.3,173.9 134.8,176.2 136.5,174.5 135.7,173.2 139.5,174.4 140.6,172.2 137.2,171.1 135.9,169.3 136.7,171.7 134.3,172.5 132.6,169.8 133.9,166.3 133.2,164.4 129.3,165.9 131.5,162.5 133.4,162.5 134.7,165.0 134.9,162.5Z","Sinaloa":"M401.2,353.9 397.3,347.4 391.0,341.0 391.5,339.9 390.0,340.8 384.0,333.1 379.3,328.6 377.4,328.5 374.5,320.9 365.9,313.1 362.5,305.7 358.3,301.1 342.2,288.5 334.9,284.0 334.1,282.8 343.6,288.6 341.9,287.4 343.6,288.1 344.3,286.6 342.6,282.4 340.7,282.5 341.9,282.9 339.7,284.6 338.0,283.1 336.7,283.5 333.4,279.9 329.8,278.4 333.9,282.2 330.7,280.5 327.9,278.1 325.9,273.3 328.4,274.3 327.4,271.6 328.2,267.6 326.2,265.9 326.5,271.5 325.0,272.0 317.4,262.1 319.4,262.6 322.0,266.6 323.6,266.8 323.6,265.3 322.6,265.2 323.4,263.9 327.4,265.9 327.7,264.9 324.0,261.7 322.3,262.0 320.9,260.0 316.6,260.1 316.5,258.8 317.8,259.5 317.7,258.1 316.3,256.7 315.1,260.9 315.2,258.6 314.0,257.0 308.4,254.1 304.6,253.6 309.0,253.8 306.0,252.2 303.6,252.8 303.1,252.2 304.7,252.0 304.2,250.6 303.1,251.0 303.5,247.3 299.4,246.6 299.8,248.8 298.4,249.9 297.7,248.6 295.1,249.9 292.5,247.5 294.3,245.8 296.8,247.2 299.4,243.4 301.3,238.2 299.3,241.8 294.2,245.6 292.0,245.8 290.7,243.6 288.2,242.3 291.2,246.8 289.0,244.3 283.2,243.7 286.6,243.2 287.1,241.4 284.2,239.7 283.5,242.6 283.3,239.8 282.2,238.6 282.4,230.7 286.9,223.3 287.3,225.9 288.8,222.4 291.2,220.8 290.6,222.4 293.1,224.1 292.7,222.4 293.5,221.9 292.5,221.5 292.0,219.5 311.7,203.8 313.0,197.7 315.9,194.3 319.3,195.2 321.5,198.0 327.1,199.7 327.8,203.4 333.0,210.8 334.8,224.5 348.0,227.8 351.3,236.2 361.4,243.8 356.8,249.9 355.7,261.0 358.2,268.7 360.6,270.1 361.5,272.9 364.0,273.2 367.1,276.2 371.4,283.8 372.2,287.7 376.0,290.6 378.7,290.2 382.4,287.0 385.2,287.2 389.9,291.4 392.6,297.9 395.4,298.2 393.5,303.8 394.3,310.3 396.0,314.9 398.4,315.9 400.0,318.9 400.9,324.7 403.0,327.1 406.3,329.9 410.2,329.8 410.3,333.8 408.3,334.1 407.7,335.4 408.6,337.9 404.4,342.8 407.3,345.8 408.6,351.6 406.8,352.5 403.9,350.6 401.2,350.9 401.2,353.9Z","Yucatán":"M884.9,409.9 886.2,404.8 884.4,410.1 883.0,411.2 886.5,402.8 893.8,398.2 903.7,394.1 925.0,391.4 938.0,388.1 941.1,385.5 946.0,384.0 950.7,384.8 957.5,383.6 952.8,384.1 956.1,382.6 969.5,385.5 964.5,384.8 967.2,386.3 972.5,386.4 970.1,385.6 974.8,386.7 975.2,393.6 973.3,400.0 974.9,405.4 970.5,416.0 960.6,423.1 956.8,423.6 954.1,422.7 951.6,426.5 952.0,429.3 949.3,427.4 946.1,432.0 937.8,435.6 935.2,437.7 935.2,439.0 933.7,437.9 930.9,440.4 926.8,440.7 922.2,443.8 916.9,444.6 915.4,450.4 914.2,446.0 908.7,437.7 902.9,433.6 896.4,422.2 894.0,424.3 892.9,423.2 891.6,423.7 889.5,420.8 885.1,420.5 884.9,409.9Z","Veracruz":"M650.9,360.0 651.6,366.1 656.3,375.1 665.6,384.5 662.4,394.5 660.7,388.8 663.3,387.6 663.9,385.3 655.8,376.5 654.8,372.6 650.9,366.1 652.9,371.1 654.8,381.9 657.8,387.1 660.1,387.3 659.9,390.1 669.4,410.4 670.0,412.2 669.3,412.9 670.9,416.0 685.9,432.9 692.8,442.9 695.8,454.3 697.3,456.2 698.1,461.4 702.3,465.1 703.1,464.7 705.3,470.1 708.0,470.8 710.3,476.9 715.1,479.7 715.1,480.9 709.9,477.6 708.5,477.8 713.3,481.4 711.5,481.2 711.6,482.4 714.4,481.7 720.9,483.8 715.8,481.2 715.7,479.7 720.4,482.4 732.8,483.0 738.1,487.9 745.6,489.7 747.8,494.4 753.3,501.6 755.7,502.3 766.1,500.2 768.9,507.5 768.1,511.4 771.4,513.1 772.5,515.6 778.9,518.7 782.4,522.4 781.8,527.3 783.5,528.9 782.0,531.5 774.5,536.6 740.8,534.3 739.7,533.6 738.9,529.4 736.5,528.3 730.8,521.7 732.4,519.4 732.3,516.6 727.3,519.7 725.2,519.9 719.9,524.0 714.5,524.0 710.1,515.7 710.6,513.4 714.3,507.5 712.4,503.2 708.3,501.6 702.2,502.2 701.8,500.9 700.0,500.4 699.0,497.0 695.9,494.0 694.2,488.7 689.5,486.9 686.2,484.3 687.2,488.8 684.2,493.2 682.4,490.8 681.9,488.3 672.9,490.7 671.3,484.9 666.0,484.0 664.8,480.3 666.7,477.4 668.5,476.5 667.3,467.3 670.3,466.2 672.2,466.7 676.2,463.2 674.0,461.9 669.0,461.5 667.1,459.1 665.6,459.5 662.7,457.5 665.5,456.3 663.2,453.0 663.5,450.5 665.9,447.0 665.8,441.9 671.3,434.2 662.9,429.4 660.7,430.2 657.3,434.3 656.5,431.9 654.2,432.2 651.1,428.9 651.0,423.5 653.7,422.3 655.9,423.8 657.9,421.0 657.0,418.3 652.8,417.3 653.4,416.1 651.0,410.3 647.6,410.1 647.3,412.2 645.1,414.8 645.7,418.7 644.0,421.7 643.3,415.6 641.5,414.3 633.4,423.4 632.1,422.3 629.2,426.2 626.0,422.1 627.9,416.8 630.7,413.9 630.8,412.7 629.3,413.2 628.3,412.3 630.7,411.2 630.6,408.4 636.7,409.7 636.6,406.0 639.9,401.4 637.3,398.7 635.2,399.6 634.9,395.4 634.1,397.4 632.2,398.5 628.6,395.4 628.5,393.8 630.0,391.7 627.7,390.1 627.2,385.8 623.7,382.9 624.3,380.3 626.0,380.0 629.6,376.4 628.5,374.5 626.2,373.5 627.3,370.8 625.4,371.1 625.3,370.1 629.7,370.1 633.0,362.8 632.2,360.3 624.5,355.0 630.1,354.5 634.2,355.6 634.8,353.3 637.7,352.8 641.1,356.5 646.9,358.4 646.7,360.2 648.3,361.8 650.9,360.0Z","Jalisco":"M435.5,467.7 431.1,465.0 428.7,464.9 428.9,462.7 426.4,463.2 422.1,460.1 420.4,457.4 419.9,453.5 414.7,449.9 406.0,437.3 405.0,430.8 401.9,427.6 400.5,424.3 404.4,421.5 413.1,420.0 414.9,418.2 415.2,416.4 413.4,414.7 418.6,407.6 420.8,406.1 425.0,406.3 429.3,403.2 431.2,403.5 434.6,406.5 437.7,407.1 445.2,413.9 445.7,408.7 447.7,404.1 447.2,398.0 447.9,397.0 453.0,396.3 455.3,394.0 456.0,390.9 447.6,386.0 451.1,376.8 441.7,366.5 443.8,360.3 450.1,357.6 455.8,356.7 456.6,351.9 454.5,349.6 454.8,342.8 461.3,344.1 460.7,347.9 459.0,349.8 459.1,352.0 457.8,353.3 458.5,355.3 457.7,359.5 458.9,363.2 462.9,348.5 465.5,349.1 465.5,350.7 466.7,351.3 464.3,358.3 465.1,365.4 467.9,364.2 470.4,364.7 471.7,361.1 473.0,360.5 474.5,357.4 472.4,355.3 474.1,351.6 480.0,356.3 479.9,358.3 482.2,357.7 483.0,359.1 484.7,359.5 483.4,362.7 481.9,363.4 483.3,366.0 480.9,369.5 476.7,369.9 469.2,375.7 469.5,383.2 465.5,387.1 462.7,385.8 463.6,390.6 462.3,396.0 465.2,394.8 466.5,397.1 469.8,397.1 478.6,401.2 484.0,402.3 484.5,393.9 488.6,394.1 491.7,392.1 492.6,393.7 497.0,387.1 497.2,384.3 493.0,382.9 493.5,378.1 496.6,377.1 502.7,379.9 510.2,380.5 515.0,377.4 515.9,374.0 520.9,370.9 522.4,368.8 532.4,373.7 532.7,374.9 530.6,377.8 532.1,381.9 528.9,384.8 531.2,389.9 531.0,391.9 527.8,395.5 524.3,396.2 516.1,408.3 514.5,412.2 518.5,418.1 514.3,425.0 509.8,426.6 508.1,425.9 504.2,426.5 497.0,430.7 483.4,434.7 483.5,438.5 484.7,439.4 488.0,438.7 493.2,439.9 493.6,442.1 495.2,443.1 491.9,444.5 491.7,445.6 494.1,452.2 493.9,456.4 498.3,456.0 500.3,459.0 496.7,464.9 493.8,463.9 489.5,465.9 486.9,470.3 482.0,472.6 481.2,474.4 477.0,471.0 474.9,473.6 470.8,474.0 469.3,469.7 470.3,462.1 466.9,458.8 465.4,455.6 459.5,459.1 452.7,455.5 452.5,454.3 447.5,461.8 442.1,463.5 441.0,462.9 439.2,464.9 437.3,464.3 435.5,467.7Z","Michoacán":"M512.2,510.0 474.4,498.1 470.1,495.8 467.7,490.3 463.5,486.9 464.2,485.6 462.4,483.5 466.1,479.7 466.5,476.7 469.3,475.8 470.4,473.9 474.9,473.6 477.0,471.0 481.2,474.4 482.0,472.6 486.9,470.3 489.5,465.9 493.8,463.9 496.7,464.9 500.2,459.5 498.3,456.0 493.9,456.4 494.1,452.2 491.7,445.6 491.9,444.5 495.2,443.1 493.6,442.1 493.4,440.0 488.0,438.7 484.7,439.4 483.5,438.5 483.4,434.7 497.0,430.7 504.2,426.5 508.1,425.9 509.8,426.6 517.6,424.5 517.0,426.5 519.1,425.7 519.6,429.7 520.9,431.5 527.8,431.8 529.7,427.4 534.5,426.8 537.2,429.1 535.4,430.6 535.9,436.5 536.7,437.0 542.4,437.3 544.0,434.9 548.5,435.0 549.7,436.9 547.7,438.6 548.6,440.0 551.8,440.9 554.5,439.2 556.2,441.4 563.0,440.2 563.9,441.6 565.2,440.0 568.7,439.2 568.4,434.5 569.7,434.1 571.7,431.0 573.3,431.8 575.2,435.4 575.2,439.1 576.9,440.5 574.0,453.4 576.1,457.8 570.3,461.7 571.3,463.9 559.8,479.3 559.1,479.9 557.5,477.8 555.8,479.7 557.2,482.0 556.3,483.7 557.3,489.2 561.8,493.5 560.7,495.7 560.1,495.0 559.0,496.1 558.0,494.3 558.6,492.1 557.3,492.3 554.9,490.2 551.5,490.1 550.6,491.3 548.4,488.7 541.0,488.8 532.8,490.8 528.7,487.3 523.8,487.0 521.3,489.3 521.4,497.1 519.7,500.1 513.3,500.9 512.3,502.0 512.2,510.0Z","Guerrero":"M626.5,565.3 619.4,557.1 615.3,557.8 600.5,553.3 591.4,552.2 585.2,548.8 585.9,548.6 584.6,548.2 585.2,546.9 583.5,547.8 581.0,544.9 547.3,532.7 547.4,531.4 543.4,527.6 534.7,523.7 535.2,522.6 533.4,520.6 531.6,520.7 528.7,518.8 527.9,516.3 523.5,511.1 516.3,507.6 514.3,507.9 512.2,510.0 512.3,502.0 513.3,500.9 519.7,500.1 521.4,497.1 521.3,489.3 523.8,487.0 528.7,487.3 532.8,490.8 541.0,488.8 548.4,488.7 550.6,491.3 551.5,490.1 554.9,490.2 557.3,492.3 558.6,492.1 558.0,494.3 559.0,496.1 560.1,495.0 560.7,495.7 561.5,492.9 557.3,489.2 556.3,483.7 557.2,482.0 555.8,479.7 557.5,477.8 559.1,479.9 561.0,477.3 566.6,478.4 567.2,485.4 569.5,488.2 569.2,491.6 571.2,493.9 576.1,490.4 578.5,486.3 585.5,484.5 587.6,485.9 591.5,481.0 594.7,484.0 596.7,484.1 596.3,485.8 597.6,486.1 600.0,489.9 601.5,490.1 601.9,491.7 604.6,491.7 605.5,488.5 607.3,488.3 610.5,494.1 611.4,499.1 612.3,498.9 613.3,500.9 614.6,500.6 614.9,502.5 617.8,503.3 620.3,507.0 626.4,509.0 630.5,508.6 633.5,511.7 631.7,519.7 632.2,523.6 633.8,525.8 633.7,530.9 635.4,531.6 636.8,534.1 639.3,534.4 643.9,540.9 641.5,549.9 638.9,552.0 636.4,552.1 636.6,556.3 633.1,557.4 634.0,560.2 633.2,562.2 626.5,565.3Z","Oaxaca":"M766.8,574.3 758.1,570.2 747.6,569.4 748.0,568.3 751.9,566.5 752.1,565.0 749.3,563.7 745.4,567.4 744.9,566.0 746.0,565.0 744.7,562.4 742.7,561.6 739.6,565.0 737.8,565.0 736.8,567.0 742.0,567.6 744.1,566.4 743.3,567.4 741.1,567.9 745.0,568.1 746.2,569.4 734.1,569.8 727.7,573.5 725.1,577.1 708.5,582.2 699.7,587.2 693.6,586.8 689.6,588.0 680.5,585.5 667.2,578.5 651.2,577.0 638.5,569.1 641.4,569.8 641.8,569.3 626.5,565.4 633.2,562.2 634.0,560.2 633.1,557.4 636.6,556.3 636.4,552.1 638.9,552.0 641.5,549.9 642.1,545.2 643.9,541.3 639.3,534.4 636.8,534.1 635.4,531.6 633.7,530.9 633.8,525.8 632.2,523.6 631.7,519.7 633.6,512.2 633.0,511.0 634.2,510.0 636.3,510.3 639.3,506.4 646.4,506.1 648.0,510.2 650.4,509.3 652.4,506.8 649.9,502.0 652.7,496.9 656.4,494.9 655.4,501.4 658.4,503.7 660.4,507.8 662.1,507.7 664.4,503.5 667.6,501.5 675.8,503.1 679.0,499.2 682.3,497.5 686.9,489.9 686.2,484.3 689.5,486.9 694.2,488.7 695.9,494.0 699.0,497.0 700.0,500.4 701.8,500.9 702.2,502.2 708.3,501.6 712.4,503.2 714.3,507.5 710.6,513.4 710.1,515.7 714.0,523.8 719.9,524.0 725.2,519.9 727.3,519.7 732.3,516.6 732.4,519.4 730.8,521.7 736.5,528.3 738.9,529.4 739.7,533.6 740.8,534.3 774.5,536.6 774.6,541.4 773.5,541.8 773.3,545.9 769.2,548.7 769.2,554.1 766.5,558.7 769.2,565.9 768.6,569.9 767.8,571.2 766.4,568.7 762.0,568.9 758.5,566.1 757.3,566.2 756.7,567.8 759.6,570.7 761.2,571.4 762.1,571.2 759.7,570.0 763.5,570.7 764.7,572.1 767.5,572.9 766.8,574.3Z","Puebla":"M622.6,474.9 624.0,466.3 622.7,459.4 623.7,456.9 629.3,457.7 633.1,464.9 637.9,469.2 640.6,468.2 642.4,465.6 647.6,467.1 648.8,465.5 647.7,463.6 649.4,462.1 654.5,463.1 656.0,461.8 656.0,460.3 653.7,459.7 651.6,457.4 648.9,457.8 647.7,455.6 649.0,454.1 642.9,450.9 642.6,448.1 641.7,448.1 641.7,449.5 639.5,449.6 636.0,443.6 640.8,435.4 639.7,431.1 635.5,430.7 636.0,427.9 638.9,427.0 645.1,420.6 645.7,417.3 645.1,414.8 647.3,412.2 647.6,410.1 651.0,410.3 653.4,416.1 652.8,417.3 657.0,418.3 657.9,421.0 655.9,423.8 653.7,422.3 651.0,423.5 651.1,428.9 654.2,432.2 656.5,431.9 657.3,434.3 660.7,430.2 662.9,429.4 671.3,434.2 665.8,441.9 665.9,447.0 663.5,450.5 663.2,453.0 665.5,456.3 662.7,457.5 665.6,459.5 667.1,459.1 669.0,461.5 674.0,461.9 676.2,463.2 672.2,466.7 670.3,466.2 667.3,467.3 668.5,476.5 665.1,479.4 665.2,482.4 666.5,484.5 671.3,484.9 672.7,488.3 672.4,490.6 681.9,488.3 684.1,493.9 682.3,497.5 679.0,499.2 675.8,503.1 667.5,501.5 664.4,503.5 661.3,508.1 659.7,507.1 658.4,503.7 655.4,501.4 656.4,494.9 652.7,496.9 649.9,502.0 652.4,507.2 648.5,510.2 646.4,506.1 638.9,506.5 636.3,510.3 634.2,510.0 633.0,511.0 630.5,508.6 626.4,509.0 621.7,507.6 619.1,506.1 617.8,503.3 614.9,502.5 614.6,500.6 613.3,500.9 612.3,498.9 611.4,499.1 610.8,495.3 617.9,490.3 622.6,492.6 620.3,483.5 622.9,483.4 620.8,479.3 623.2,476.6 622.6,474.9Z","Morelos":"M623.5,472.0 622.6,474.9 623.2,476.6 620.8,479.3 622.9,483.4 620.3,483.5 622.6,492.6 617.9,490.3 610.8,495.3 607.5,488.4 605.5,488.5 604.6,491.7 601.9,491.7 601.5,490.1 600.0,489.9 597.6,486.1 596.3,485.8 597.4,479.7 600.0,476.4 602.6,475.1 601.9,469.8 603.4,467.9 611.0,470.8 612.2,469.8 615.6,470.2 617.4,471.3 618.6,474.0 621.2,474.1 623.5,472.0Z","Querétaro":"M611.0,394.6 611.0,397.8 605.2,399.8 602.8,398.8 600.3,400.6 601.2,402.9 599.8,406.8 596.8,409.6 595.9,413.0 596.9,415.6 592.0,419.0 586.5,420.7 585.7,427.7 582.7,429.7 584.3,431.8 582.3,432.5 576.9,440.5 575.5,439.7 574.5,433.4 568.9,429.0 565.9,424.5 565.2,419.6 563.1,415.7 562.9,412.9 566.2,405.0 568.6,407.2 573.3,406.2 575.6,408.1 578.0,405.8 579.6,397.7 582.0,396.9 586.2,398.4 589.8,395.8 589.6,394.6 587.3,393.8 587.4,389.4 588.7,386.5 590.9,386.9 594.0,390.3 597.3,389.8 600.5,388.8 602.1,385.5 604.0,385.3 606.1,381.6 609.2,390.7 608.8,393.9 611.0,394.6Z","Hidalgo":"M611.0,397.8 611.0,394.6 612.5,393.7 614.3,393.8 615.4,396.4 617.9,397.8 625.3,396.6 625.3,391.1 627.7,390.1 630.0,391.7 628.4,395.0 631.0,397.8 632.6,398.5 634.9,395.4 635.2,399.6 637.3,398.7 639.9,401.4 636.6,406.0 636.7,409.7 630.6,408.4 630.7,411.2 628.3,412.3 629.3,413.2 630.8,412.7 630.7,413.9 627.9,416.8 625.9,421.3 628.2,425.9 629.2,426.2 632.1,422.3 633.4,423.4 640.5,414.6 643.3,415.6 644.0,421.7 638.9,427.0 636.0,427.9 635.3,430.0 636.2,431.4 639.7,431.1 640.8,434.8 636.0,443.6 639.5,449.6 636.0,448.0 633.0,452.3 628.6,450.6 623.1,452.7 625.1,448.0 623.7,445.4 621.9,443.5 619.8,443.8 617.6,442.3 615.0,445.1 613.7,445.0 614.2,438.7 611.8,436.9 606.0,439.1 605.3,441.9 600.1,446.8 598.7,441.9 596.2,440.6 597.0,436.3 595.0,432.9 591.6,433.7 585.7,427.7 586.5,420.7 592.0,419.0 596.9,415.6 595.9,413.0 596.8,409.6 599.8,406.8 601.2,402.9 600.3,400.6 602.8,398.8 605.2,399.8 611.0,397.8Z","Guanajuato":"M587.4,389.4 587.3,393.8 589.6,394.6 589.8,395.8 586.2,398.4 582.0,396.9 579.6,397.7 577.4,406.8 575.6,408.1 573.3,406.2 569.9,407.4 567.7,406.9 566.9,404.9 564.6,407.5 562.9,412.9 563.1,415.7 565.2,419.6 565.9,424.5 568.9,429.0 571.7,431.0 569.7,434.1 568.4,434.5 568.7,439.2 565.2,440.0 564.4,441.5 563.0,440.2 556.2,441.4 554.5,439.2 551.8,440.9 549.5,440.4 547.7,438.6 549.6,437.6 548.5,435.0 544.0,434.9 542.4,437.3 536.7,437.0 535.9,436.5 535.4,430.6 537.2,429.1 534.5,426.8 529.7,427.4 527.8,431.8 520.9,431.5 519.6,429.7 519.1,425.7 517.3,426.8 517.6,424.5 514.3,425.0 518.5,418.1 518.0,416.3 514.8,413.2 514.7,411.1 522.1,398.8 524.7,395.9 528.2,395.2 531.0,391.9 531.2,389.9 528.9,384.8 532.1,381.9 530.6,377.8 532.7,374.9 534.9,375.5 538.8,373.8 541.6,377.7 550.3,378.0 560.9,386.9 565.0,386.2 566.1,381.9 568.0,380.5 578.3,384.8 582.1,388.0 587.4,389.4Z","San Luis Potosí":"M554.5,281.0 561.2,289.7 561.9,301.3 565.6,307.7 565.1,312.1 566.4,317.7 565.8,320.0 566.9,327.0 570.0,328.4 570.4,326.2 578.9,326.6 577.9,330.7 580.5,329.2 583.7,335.5 582.9,337.1 579.6,339.1 580.7,342.4 595.4,348.1 595.0,344.3 598.7,347.5 600.4,345.8 605.1,354.0 617.7,357.0 623.2,354.1 632.7,360.9 632.6,364.1 629.7,370.1 625.3,370.1 625.4,371.1 627.3,370.8 626.2,373.5 628.5,374.5 629.6,376.4 626.0,380.0 624.3,380.3 623.7,382.9 627.5,386.5 627.7,390.1 625.3,391.1 625.3,396.6 618.5,397.9 615.4,396.4 614.3,393.8 611.0,394.6 608.8,393.9 609.2,390.7 606.1,381.6 604.0,385.3 602.1,385.5 600.3,389.0 594.3,390.3 589.6,386.1 587.4,389.4 582.1,388.0 578.3,384.8 568.0,380.5 566.1,381.9 565.0,386.2 560.9,386.9 550.3,378.0 541.6,377.7 538.8,373.8 534.9,375.5 532.7,374.9 538.8,366.4 537.2,356.2 539.7,353.5 538.0,349.1 531.6,348.6 529.2,352.2 525.0,353.9 523.4,353.4 519.0,347.1 512.6,342.0 509.6,335.5 510.3,331.4 508.0,326.3 510.2,325.3 511.5,321.0 513.1,320.9 513.9,323.0 516.4,322.0 522.9,314.9 526.1,313.6 528.1,310.5 534.9,306.2 539.1,301.5 541.9,300.3 550.1,286.6 553.8,283.5 554.5,281.0Z","Zacatecas":"M554.5,281.0 553.8,283.5 550.1,286.6 541.9,300.3 539.1,301.5 534.9,306.2 528.1,310.5 526.1,313.6 522.9,314.9 516.4,322.0 513.9,323.0 513.1,320.9 511.5,321.0 510.2,325.3 508.0,326.3 510.3,331.4 509.6,335.5 512.6,342.0 519.0,347.1 523.4,353.4 525.0,353.9 529.2,352.2 531.6,348.6 538.0,349.1 539.7,353.5 537.2,356.2 538.8,366.4 532.7,374.9 532.4,373.7 530.9,373.5 527.7,370.7 525.0,370.7 518.1,365.2 517.5,359.9 513.3,358.3 512.2,356.5 510.8,357.2 508.3,353.4 506.6,355.7 503.1,357.0 502.4,358.5 497.9,358.8 496.1,360.4 496.9,362.9 490.9,371.7 490.4,374.6 491.4,376.7 493.5,378.1 493.0,382.9 497.2,384.3 497.0,387.1 492.6,393.7 491.7,392.1 488.6,394.1 484.5,393.9 484.0,402.3 478.6,401.2 469.8,397.1 466.5,397.1 465.2,394.8 462.3,396.0 463.6,390.6 462.7,385.8 465.5,387.1 469.5,383.2 469.2,375.7 476.7,369.9 480.9,369.5 483.3,366.0 481.9,363.4 483.4,362.7 484.7,359.5 483.0,359.1 482.2,357.7 479.9,358.3 480.0,356.3 474.1,351.6 472.4,355.3 474.5,357.4 473.0,360.5 471.7,361.1 470.4,364.7 467.9,364.2 465.1,365.4 464.3,358.3 466.7,351.3 465.5,350.7 465.5,349.1 462.9,348.5 458.9,363.2 457.7,359.5 458.5,355.3 457.8,353.3 459.1,352.0 459.0,349.8 460.7,347.9 461.3,344.1 454.8,342.8 454.5,349.6 456.6,351.9 455.8,356.7 450.1,357.6 443.8,360.3 447.7,347.2 448.3,330.9 450.0,328.5 451.0,319.4 455.8,315.9 456.9,312.4 459.5,313.2 460.3,311.8 458.1,308.3 459.0,305.6 457.3,303.0 459.3,302.3 459.4,297.5 464.7,294.9 469.6,288.7 472.8,288.0 473.3,285.8 477.0,283.8 492.2,286.3 501.9,284.6 502.0,272.0 496.4,263.2 498.1,261.8 511.2,260.2 521.9,263.3 524.8,268.1 530.4,270.0 531.0,272.6 528.4,272.0 529.6,274.3 535.2,274.5 538.2,271.5 538.3,272.4 541.8,272.2 546.1,278.3 554.5,281.0Z","Aguascalientes":"M522.4,368.8 520.9,370.9 515.9,374.0 515.0,377.4 509.3,380.8 501.2,379.5 497.6,377.2 493.5,378.1 491.4,376.7 490.4,374.6 490.9,371.7 496.9,362.9 496.1,360.4 496.8,359.3 501.9,358.8 503.1,357.0 506.6,355.7 508.3,353.4 510.8,357.2 512.2,356.5 513.3,358.3 517.5,359.9 518.1,365.2 522.4,368.8Z","Durango":"M364.0,273.2 361.2,272.5 360.6,270.1 358.2,268.7 355.7,261.0 356.8,249.9 361.4,243.8 367.6,244.5 373.8,239.1 374.8,230.7 378.0,229.7 379.1,226.9 377.3,219.0 384.8,216.1 383.9,212.2 385.8,210.1 386.4,205.2 388.1,206.1 390.1,202.6 397.1,207.6 401.1,207.4 404.4,211.2 412.3,215.6 418.9,212.4 421.8,215.6 423.0,214.1 427.9,214.7 436.6,219.7 446.8,206.5 449.4,205.0 453.9,204.7 466.0,209.3 476.9,218.9 477.4,220.7 474.8,228.9 475.8,241.9 470.5,247.3 470.6,249.2 472.5,251.6 470.7,252.9 469.9,256.3 473.6,261.1 477.2,263.5 478.7,269.8 486.8,272.6 490.8,275.3 491.0,269.4 496.4,263.2 502.0,272.0 502.0,284.1 493.6,286.3 477.0,283.8 473.3,285.8 472.8,288.0 469.6,288.7 464.7,294.9 459.4,297.5 459.3,302.3 457.3,303.0 459.0,305.6 458.1,308.3 460.3,311.8 459.5,313.2 456.9,312.4 455.8,315.9 451.0,319.4 450.0,328.5 448.3,330.9 447.7,347.2 444.4,358.4 443.7,353.0 439.2,355.0 437.4,354.7 434.8,352.8 433.4,348.1 430.4,346.2 422.7,350.7 423.0,345.5 426.2,342.1 424.4,337.8 417.0,333.8 410.3,333.8 410.2,329.8 406.3,329.9 401.2,325.2 399.7,318.1 398.4,315.9 396.0,314.9 394.3,310.3 393.5,303.8 395.4,298.2 392.6,297.9 389.9,291.4 384.8,287.0 381.2,287.5 378.2,290.4 374.4,289.9 371.8,287.3 371.4,283.8 367.1,276.2 364.0,273.2Z","Tlaxcala":"M636.0,448.0 637.9,449.4 640.8,449.7 641.7,449.5 642.0,447.6 643.1,449.0 642.9,450.9 649.0,454.1 647.7,455.6 648.9,457.8 651.6,457.4 653.7,459.7 656.0,460.3 656.0,461.8 654.5,463.1 649.4,462.1 647.7,463.7 648.7,466.1 646.9,467.5 642.4,465.6 640.6,468.2 637.2,469.0 630.3,461.0 629.3,457.7 623.7,456.9 621.6,452.7 628.6,450.6 633.0,452.3 636.0,448.0Z","Ciudad de México":"M608.5,453.2 611.1,458.1 610.5,459.8 612.7,461.2 613.6,463.4 614.2,468.7 611.0,470.8 604.1,468.7 601.8,464.3 602.6,460.3 604.2,460.4 608.5,453.2Z","Estado de México":"M623.7,456.9 622.7,459.4 624.0,466.3 623.8,471.2 621.5,473.9 618.4,473.9 617.4,471.3 613.5,469.8 614.3,468.1 613.4,462.4 610.5,459.8 611.1,458.1 608.5,453.2 604.2,460.4 602.6,460.3 601.8,464.3 603.4,467.9 601.9,469.8 602.7,471.2 601.7,472.2 602.8,474.5 597.4,479.7 596.7,484.1 594.7,484.0 591.5,481.0 587.6,485.9 585.5,484.5 578.5,486.3 576.8,489.6 572.1,493.8 570.7,493.7 569.2,491.6 569.7,489.0 567.2,485.4 566.6,478.4 561.0,477.3 564.1,474.6 564.4,472.7 571.3,463.9 570.3,461.7 576.1,457.8 574.0,453.4 576.9,440.5 582.3,432.5 584.3,431.8 582.7,429.7 585.7,427.7 591.6,433.7 595.0,432.9 597.0,436.3 596.2,440.6 598.7,441.9 600.1,446.8 605.3,441.9 606.0,439.1 611.3,436.9 614.2,438.7 613.7,445.0 615.0,445.1 617.6,442.3 619.8,443.8 622.2,443.7 625.1,448.0 623.1,452.7 621.6,452.7 623.7,456.9Z"},"centers":{"Sonora":[209.1,113.7],"Baja California":[88.5,81.2],"Chihuahua":[383.7,138.4],"Coahuila":[521.1,189.1],"Tamaulipas":[624.0,267.9],"Nuevo León":[586.1,249.0],"Quintana Roo":[957.7,446.8],"Campeche":[873.1,462.1],"Tabasco":[815.9,509.1],"Chiapas":[825.8,566.9],"Colima":[350.8,468.9],"Nayarit":[413.1,374.2],"Baja California Sur":[193.4,250.9],"Sinaloa":[346.2,274.1],"Yucatán":[929.1,416.5],"Veracruz":[703.6,444.7],"Jalisco":[466.6,408.6],"Michoacán":[519.6,467.2],"Guerrero":[578.0,521.3],"Oaxaca":[700.5,536.1],"Puebla":[647.5,460.6],"Morelos":[609.9,481.6],"Querétaro":[587.0,411.1],"Hidalgo":[614.9,421.4],"Guanajuato":[552.0,407.6],"San Luis Potosí":[570.4,339.4],"Zacatecas":[499.1,331.2],"Aguascalientes":[506.4,367.1],"Durango":[428.9,280.5],"Tlaxcala":[638.8,458.3],"Ciudad de México":[608.0,462.0],"Estado de México":[593.0,460.8]}};
+  const TYPE_LB={single:'단일선택',multi:'복수선택',scale:'척도',number:'숫자',text:'서술형',info:'기재정보',geo:'지역(주)'};
+
+  let session={token:null,user:null,api:''};
+  let surveys=[];          // 목록
+  let S=null;              // 현재 설문 상세
+  let pages=[];            // 응답 목록
+  let counts={};
+  let draftQs=[];          // 양식 편집 중 문항
+  let dirty=false;
+  let curTab='report';
+  let segKey='', segFilter='', crossKey='';
+  let pollT=null;
+  let drawerId=null, drawerEdit=false, drawerUrl=null;
+  const sel=new Set();
+  let dayF='';             // 응답 목록 — 업로드 날짜 필터
+
+  // ─────────────── 공통 ───────────────
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  async function api(path,opt){
+    opt=opt||{}; opt.headers=Object.assign({'Content-Type':'application/json'},auth(),opt.headers||{});
+    let res;
+    try{ res=await fetch(session.api+path,opt); }catch(e){ return {ok:false,status:0,error:'network'}; }
+    if(res.status===401){ toast('세션이 만료됐습니다. 다시 로그인하세요.',true); }
+    let body={}; try{ body=await res.json(); }catch(e){}
+    return Object.assign({ok:res.ok,status:res.status},body);
+  }
+  async function apiBlob(path){
+    const res=await fetch(session.api+path,{headers:auth()});
+    if(!res.ok) throw new Error('http_'+res.status);
+    return res.blob();
+  }
+  function toast(m,err){ const t=$('toast'); t.textContent=m; t.className='toast'+(err?' err':''); t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>{t.style.display='none';},err?4200:2600); }
+  function say(id,ok,text){ const m=$(id); if(!m) return; m.className='msg '+(ok?'ok':'err'); m.textContent=text||''; }
+  const scripts={};
+  function loadScript(url){
+    if(scripts[url]) return scripts[url];
+    scripts[url]=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=url; s.onload=()=>res(); s.onerror=()=>{ delete scripts[url]; rej(new Error('load_fail')); }; document.head.appendChild(s); });
+    return scripts[url];
+  }
+  function blobToB64(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).replace(/^data:[^,]*,/,'')); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); }); }
+  function saveBlob(blob,name){ const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(u); a.remove(); },1500); }
+  const pct=(a,b)=>b?Math.round(a/b*1000)/10:0;
+  const pctS=(a,b)=>pct(a,b).toFixed(1);
+  const canEdit=()=>!!(S&&S.can_edit);
+  const qName=(q)=>q.ko||q.text;
+  const qById=(k)=>(S&&S.questions||[]).find(q=>q.k===k);
+  function optKo(q,o){ const i=(q.options||[]).indexOf(o); return (q.options_ko&&q.options_ko[i])||''; }
+  function fmtTime(iso){ if(!iso) return ''; try{ return new Date(iso).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return iso; } }
+  function kb(n){ if(n==null) return ''; return n>1048576?(n/1048576).toFixed(1)+'MB':Math.round(n/1024)+'KB'; }
+  const ERR_KO={count_changed:'그 사이 이 날짜 장수가 바뀌었습니다 — 목록을 새로 불러왔으니 다시 확인하세요',no_pages:'이 날짜에 올린 설문지가 없습니다',bad_date:'날짜 형식이 잘못됐습니다',no_expect:'삭제할 장수 확인값이 없습니다',redact_review_needed:'답은 있는데 가릴 위치를 못 찾은 장입니다 — 다시 찾거나 다운로드에서 빼세요',redact_not_scanned:'가릴 영역을 아직 찾지 않았습니다',not_jpeg:'JPEG 가 아닙니다',no_boxes_used:'가린 영역 없이 올릴 수 없습니다',unavailable:'불러오지 못했습니다(서버 배포·마이그레이션 0243 확인)',director_only:'디렉터만 할 수 있습니다',no_title:'설문명을 입력하세요',no_prefix:'파일명 접두어를 입력하세요(영문·숫자)',bad_questions:'문항 표를 확인하세요',no_questions:'문항이 하나도 없습니다',no_free_geo:'「손으로 적은 지역」 문항이 없습니다',
+    no_anthropic_key:'AI 키가 없습니다(관리 → 외부 서비스 키)',ai_parse:'AI 응답을 해석하지 못했습니다 — 다시 시도하세요',bad_mime:'지원하지 않는 파일 형식',bad_file:'파일 내용이 형식과 다릅니다',
+    too_large:'파일이 너무 큽니다',same_file:'이미 올린 파일',number_taken:'이미 있는 번호',bad_number:'번호에 숫자가 없습니다',bad_answer:'값이 보기/범위와 맞지 않습니다',
+    forbidden:'권한이 없습니다',read_only:'열람 전용 권한입니다',director_only:'디렉터만 할 수 있습니다',no_done_pages:'판독이 끝난 응답이 없습니다',network:'서버에 연결할 수 없습니다'};
+  const errKo=(e)=>ERR_KO[e]||e||'오류';
+
+  // 툴팁(값이 먼저, 이름은 뒤)
+  const tip=$('tip');
+  function bindTips(root){
+    root.querySelectorAll('[data-tv]').forEach(el=>{
+      el.addEventListener('pointermove',e=>{
+        tip.textContent=''; const b=document.createElement('b'); b.textContent=el.dataset.tv; const s=document.createElement('span'); s.textContent=el.dataset.tl||'';
+        tip.appendChild(b); tip.appendChild(s); tip.style.display='block';
+        const x=Math.min(e.clientX+14, window.innerWidth-tip.offsetWidth-8); tip.style.left=Math.max(8,x)+'px'; tip.style.top=(e.clientY+14)+'px';
+      });
+      el.addEventListener('pointerleave',()=>{ tip.style.display='none'; });
+    });
+  }
+
+  // ─────────────── 로그인 ───────────────
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token,api:o.api||'',user:o.user||{}}; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const apiBase=$('apiInput').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    if(!login_id||!pin){ say('loginMsg',false,'아이디와 PIN을 입력하세요.'); return; }
+    $('goLogin').disabled=true;
+    try{
+      const res=await fetch(apiBase+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){ say('loginMsg',false,'로그인 실패: '+(d.error||res.status)); return; }
+      session={token:d.token,user:d.user,api:apiBase};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      afterLogin();
+    }catch(e){ say('loginMsg',false,'서버에 연결할 수 없습니다.'); }
+    finally{ $('goLogin').disabled=false; }
+  }
+  async function afterLogin(){
+    $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>역할: '+esc(session.user&&session.user.role||'');
+    $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+    let want=null;
+    try{ const hp=new URLSearchParams(location.hash.slice(1)); want=Number(hp.get('survey'))||null; }catch(e){}
+    if(!want){ try{ want=Number(sessionStorage.getItem('rfx_survey_last'))||null; }catch(e){} }
+    await loadSurveys(want);
+  }
+
+  // ─────────────── 설문 목록·선택·생성 ───────────────
+  async function loadSurveys(wantId){
+    const d=await api('/api/surveys');
+    if(!d.ok){ $('emptyState').classList.remove('hidden'); $('emptyState').innerHTML='<p class="ttl">열 수 없습니다</p><p class="sub2">'+esc(errKo(d.error))+' — 마케팅 화면 권한이 필요합니다.</p>'; return; }
+    surveys=d.items||[];
+    $('aiWarn').classList.toggle('hidden',!!d.ai_ready);
+    const s=$('surveySel');
+    s.innerHTML=surveys.map(x=>'<option value="'+x.id+'">'+esc(x.code_prefix)+' · '+esc(x.title)+' · 응답 '+x.total+'</option>').join('')||'<option value="">(설문 없음)</option>';
+    if(!surveys.length){ S=null; $('surveyArea').classList.add('hidden'); $('emptyState').classList.remove('hidden'); $('sumChips').innerHTML=''; return; }
+    $('emptyState').classList.add('hidden');
+    const id=(wantId&&surveys.some(x=>x.id===wantId))?wantId:surveys[0].id;
+    s.value=String(id);
+    await openSurvey(id,true);
+  }
+  async function openSurvey(id,pickTab){
+    if(dirty && S && S.id!==id && !confirm('양식에 저장하지 않은 변경이 있습니다. 버리고 이동할까요?')){ $('surveySel').value=String(S.id); return; }
+    const d=await api('/api/surveys/'+id);
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    S=d; dirty=false; sel.clear(); segFilter=''; segKey=''; crossKey='';
+    try{ sessionStorage.setItem('rfx_survey_last',String(id)); }catch(e){}
+    $('aiWarn').classList.toggle('hidden',!!d.ai_ready);
+    $('surveyArea').classList.remove('hidden');
+    draftQs=JSON.parse(JSON.stringify(S.questions||[]));
+    fillForm(); renderQs();
+    await loadPages();
+    if(pickTab){ curTab=!S.questions.length?'form':(counts.done?'report':'upload'); }
+    showTab(curTab);
+  }
+  $('surveySel').addEventListener('change',e=>{ const id=Number(e.target.value); if(id) openSurvey(id,true); });
+  $('btnNewSurvey').addEventListener('click',()=>{ $('newBox').classList.toggle('hidden'); if(!$('newBox').classList.contains('hidden')){ $('nTitle').focus(); if(!$('nDate').value){ const t=new Date(); $('nDate').value=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); } } });
+  $('btnCreateCancel').addEventListener('click',()=>$('newBox').classList.add('hidden'));
+  $('nPrefix').addEventListener('input',e=>{ const v=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,''); if(v!==e.target.value) e.target.value=v; });
+  $('fPrefix').addEventListener('input',e=>{ const v=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,''); if(v!==e.target.value) e.target.value=v; markDirty(); });
+  $('btnCreate').addEventListener('click',async()=>{
+    const d=await api('/api/surveys',{method:'POST',body:JSON.stringify({title:$('nTitle').value,code_prefix:$('nPrefix').value,survey_date:$('nDate').value})});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    $('newBox').classList.add('hidden'); $('nTitle').value=''; $('nPrefix').value='';
+    await loadSurveys(d.id); showTab('form');
+    toast('설문을 만들었습니다 — 빈 설문지 사진으로 문항을 등록하세요');
+  });
+
+  function renderSumChips(){
+    const c=counts||{};
+    const run=(c.queued||0)+(c.processing||0);
+    $('sumChips').innerHTML=(S?'<span class="chip">문항 '+(S.questions||[]).length+'</span>':'')+
+      '<span class="chip ok">판독 '+(c.done||0)+'</span>'+
+      (run?'<span class="chip run"><span class="spin"></span> 대기·처리 '+run+'</span>':'')+
+      (c.error?'<span class="chip bad">실패 '+c.error+'</span>':'');
+    $('tabQ').textContent=S?String((S.questions||[]).length):'';
+    if(S){ const it=surveys.find(x=>x.id===S.id); if(it) it.total=c.total||0; const op=$('surveySel').querySelector('option[value="'+S.id+'"]'); if(op) op.textContent=S.code_prefix+' · '+S.title+' · 응답 '+(c.total||0); }
+    $('tabP').textContent=String(c.total||0);
+  }
+
+  // ─────────────── 탭 ───────────────
+  function showTab(t){
+    curTab=t;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
+    ['form','upload','report'].forEach(k=>$('v-'+k).classList.toggle('hidden',k!==t));
+    if(t==='report') renderReport();
+    if(t==='upload') renderList();
+  }
+  document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+
+  // ─────────────── ① 양식 ───────────────
+  function fillForm(){
+    $('fTitle').value=S.title||''; $('fPrefix').value=S.code_prefix||''; $('fDate').value=S.survey_date||''; $('fHint').value=S.number_hint||'';
+    const ro=!canEdit();
+    ['fTitle','fPrefix','fDate','fHint','btnAddQ','btnSaveForm','btnTplPick','btnTplRead'].forEach(id=>{ $(id).disabled=ro; });
+    $('dangerRow').classList.toggle('hidden',!S.is_director);
+    $('btnViewers').classList.toggle('hidden',!S.is_director);
+    renderTpl();
+  }
+  let tplUrl=null;
+  async function renderTpl(){
+    const box=$('tplBox');
+    if(!S.has_template){ box.innerHTML='<div class="tplph">양식 사진이 없습니다<br><span style="font-size:12px">빈 설문지 1장을 찍어 올리세요</span></div>'; return; }
+    try{ const b=await apiBlob('/api/surveys/'+S.id+'/template'); if(tplUrl) URL.revokeObjectURL(tplUrl); tplUrl=URL.createObjectURL(b); box.innerHTML='<img class="tplimg" alt="설문 양식" src="'+tplUrl+'">'; }
+    catch(e){ box.innerHTML='<div class="tplph">양식 사진을 불러오지 못했습니다</div>'; }
+  }
+  function markDirty(){ dirty=true; $('btnSaveForm').textContent='💾 변경 저장'; $('btnSaveForm').classList.add('gold'); $('formHint').textContent='저장하지 않은 변경이 있습니다'; }
+  function clearDirty(){ dirty=false; $('btnSaveForm').textContent='저장'; $('btnSaveForm').classList.remove('gold'); $('formHint').textContent=''; }
+  ['fTitle','fDate','fHint'].forEach(id=>$(id).addEventListener('input',markDirty));
+
+  function optsText(q){ return (q.options||[]).map((o,i)=>o+((q.options_ko&&q.options_ko[i])?' | '+q.options_ko[i]:'')).join('\n'); }
+  function parseOpts(txt){ const o=[],k=[]; String(txt||'').split('\n').forEach(l=>{ const p=l.split('|'); const v=(p[0]||'').trim(); if(!v) return; o.push(v); k.push((p.slice(1).join('|')||'').trim()); }); return {options:o,options_ko:k.some(Boolean)?k:[]}; }
+  function renderQs(){
+    const ro=!canEdit()?' disabled':'';
+    $('qCountChip').textContent=draftQs.length+'문항';
+    if(!draftQs.length){ $('qBody').innerHTML='<tr><td colspan="6" class="empty">문항이 없습니다 — 왼쪽에서 양식 사진을 올려 AI로 읽거나 [＋ 문항 추가]</td></tr>'; return; }
+    $('qBody').innerHTML=draftQs.map((q,i)=>{
+      const typeSel='<select data-i="'+i+'" data-f="type"'+ro+'>'+Object.keys(TYPE_LB).map(t=>'<option value="'+t+'"'+(t===q.type?' selected':'')+'>'+TYPE_LB[t]+'</option>').join('')+'</select>';
+      let opt='';
+      if(q.type==='single'||q.type==='multi') opt='<textarea data-i="'+i+'" data-f="options" rows="'+Math.min(10,Math.max(3,(q.options||[]).length+1))+'" placeholder="보기 한 줄에 하나"'+ro+'>'+esc(optsText(q))+'</textarea>';
+      else if(q.type==='scale') opt='<div class="row" style="gap:6px"><input type="number" data-i="'+i+'" data-f="min" value="'+esc(q.min!=null?q.min:1)+'" style="width:64px"'+ro+'> ~ <input type="number" data-i="'+i+'" data-f="max" value="'+esc(q.max!=null?q.max:5)+'" style="width:64px"'+ro+'></div>'+
+        '<div class="row" style="gap:6px;margin-top:6px"><input data-i="'+i+'" data-f="min_label" placeholder="낮은 쪽 말(선택)" value="'+esc(q.min_label||'')+'" style="width:48%"'+ro+'><input data-i="'+i+'" data-f="max_label" placeholder="높은 쪽 말(선택)" value="'+esc(q.max_label||'')+'" style="width:48%"'+ro+'></div>';
+      else if(q.type==='text') opt='<span style="color:var(--muted)">자유 기재 → 리포트에서 AI 주제 요약</span>';
+      else if(q.type==='info') opt='<span style="color:var(--muted)">상호·이름·전화 등 — 엑셀에만 (분석 안 함)</span>';
+      else if(q.type==='geo'&&q.free) opt='<span style="color:var(--muted)"><b>✍ 양식에 없는 문항</b> — 설문지 어디든(여백·이름 칸 옆 등) <b>손으로 적은 지역</b>을 찾아 멕시코 32개 주로 분류합니다. 인쇄된 글자는 읽지 않습니다.</span>';
+      else if(q.type==='geo') opt='<span style="color:var(--muted)">손으로 적은 도시·주를 <b>멕시코 32개 주</b>로 자동 분류합니다(도시도 함께 저장). 보기는 고칠 수 없습니다.</span>';
+      else opt='<span style="color:var(--muted)">숫자 기재 → 평균·중앙값·분포</span>';
+      const seg=(q.type==='single'||q.type==='geo')?'<label style="display:inline-flex;gap:5px;align-items:center;margin:0;white-space:nowrap"><input type="checkbox" data-i="'+i+'" data-f="seg"'+(q.seg?' checked':'')+ro+'> 사용</label>':'<span style="color:var(--muted)">—</span>';
+      const mv=canEdit()?'<div class="mv"><button class="btn ghost sm" data-mv="up" data-i="'+i+'" title="위로">▲</button><button class="btn ghost sm" data-mv="down" data-i="'+i+'" title="아래로">▼</button><button class="btn danger sm" data-mv="del" data-i="'+i+'" title="삭제">✕</button></div>':'';
+      return '<tr><td><b>'+(i+1)+'</b><div class="mono" style="color:var(--muted);font-size:10.5px">'+esc(q.k||'새')+'</div></td>'+
+        '<td><input class="w100" data-i="'+i+'" data-f="text" value="'+esc(q.text||'')+'" placeholder="원문(스페인어)"'+ro+'><input class="w100" style="margin-top:5px" data-i="'+i+'" data-f="ko" value="'+esc(q.ko||'')+'" placeholder="한국어(선택)"'+ro+'></td>'+
+        '<td>'+typeSel+'</td><td>'+opt+'</td><td>'+seg+'</td><td>'+mv+'</td></tr>';
+    }).join('');
+  }
+  $('qBody').addEventListener('input',e=>{
+    const el=e.target; const i=Number(el.dataset.i); const f=el.dataset.f; if(!f||!draftQs[i]) return;
+    const q=draftQs[i];
+    if(f==='options'){ const p=parseOpts(el.value); q.options=p.options; q.options_ko=p.options_ko; }
+    else if(f==='seg') q.seg=el.checked;
+    else if(f==='min'||f==='max') q[f]=Number(el.value);
+    else if(f!=='type') q[f]=el.value;
+    markDirty();
+  });
+  $('qBody').addEventListener('change',e=>{
+    const el=e.target; const i=Number(el.dataset.i); if(el.dataset.f!=='type'||!draftQs[i]) return;
+    const q=draftQs[i]; q.type=el.value;
+    if((q.type==='single'||q.type==='multi')&&!q.options) q.options=[];
+    if(q.type==='scale'&&q.min==null){ q.min=1; q.max=5; }
+    if(q.type==='geo'&&q.seg==null) q.seg=true;
+    if(q.type!=='single'&&q.type!=='geo') q.seg=false;
+    renderQs(); markDirty();
+  });
+  $('qBody').addEventListener('click',e=>{
+    const b=e.target.closest('[data-mv]'); if(!b) return;
+    const i=Number(b.dataset.i);
+    if(b.dataset.mv==='up'&&i>0){ const t=draftQs[i-1]; draftQs[i-1]=draftQs[i]; draftQs[i]=t; }
+    else if(b.dataset.mv==='down'&&i<draftQs.length-1){ const t=draftQs[i+1]; draftQs[i+1]=draftQs[i]; draftQs[i]=t; }
+    else if(b.dataset.mv==='del'){
+      const q=draftQs[i];
+      if(q.k&&counts.done&&!confirm('「'+(q.ko||q.text)+'」 문항을 지웁니다. 이미 읽은 답도 리포트·엑셀에서 빠집니다. 계속할까요?')) return;
+      draftQs.splice(i,1);
+    } else return;
+    renderQs(); markDirty();
+  });
+  $('btnAddQ').addEventListener('click',()=>{ draftQs.push({k:'',text:'',ko:'',type:'single',options:[],options_ko:[],seg:false}); renderQs(); markDirty(); const ins=$('qBody').querySelectorAll('input[data-f="text"]'); if(ins.length) ins[ins.length-1].focus(); });
+  $('btnSaveForm').addEventListener('click',saveForm);
+  async function saveForm(){
+    const body={title:$('fTitle').value,code_prefix:$('fPrefix').value,survey_date:$('fDate').value||null,number_hint:$('fHint').value,questions:draftQs};
+    $('btnSaveForm').disabled=true;
+    const d=await api('/api/surveys/'+S.id,{method:'PUT',body:JSON.stringify(body)});
+    $('btnSaveForm').disabled=false;
+    if(!d.ok){
+      let m=errKo(d.error);
+      if(d.details&&d.details.length) m+=' — '+d.details.map(x=>x.at+'번 '+(x.error==='few_options'?'보기 2개 이상':'문항 내용 없음')).join(', ');
+      say('formMsg',false,m); return;
+    }
+    clearDirty(); say('formMsg',true,'저장했습니다');
+    S.questions=d.questions; S.title=body.title; S.code_prefix=$('fPrefix').value; S.survey_date=body.survey_date; S.number_hint=body.number_hint;
+    draftQs=JSON.parse(JSON.stringify(d.questions)); renderQs();
+    const it=surveys.find(x=>x.id===S.id); if(it){ it.title=S.title; it.code_prefix=S.code_prefix; }
+    const opt=$('surveySel').querySelector('option[value="'+S.id+'"]'); if(opt) opt.textContent=S.code_prefix+' · '+S.title+' · 응답 '+(counts.total||0);
+    renderSumChips();
+    if(d.needs_reprocess){
+      if(confirm('문항 구조(유형·보기)가 바뀌었습니다.\n이미 판독한 '+d.counts.done+'장을 새 문항으로 다시 판독할까요?\n(사람이 고친 칸은 유지 · 1장당 AI 비용 약 2센트)')) reprocess('all');
+    }
+    await loadPages();
+  }
+  $('btnDelSurvey').addEventListener('click',async()=>{
+    if(!confirm('「'+S.title+'」 설문을 삭제합니다. 목록·리포트에서 사라집니다. 계속할까요?')) return;
+    const d=await api('/api/surveys/'+S.id,{method:'DELETE'});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast('삭제했습니다'); S=null; await loadSurveys(null);
+  });
+
+  // 양식 사진 → (PDF 면 첫 페이지를 그림으로) → 저장 + AI 읽기
+  let tplPending=null;
+  $('btnTplPick').addEventListener('click',()=>$('tplInput').click());
+  $('tplInput').addEventListener('change',async e=>{
+    const f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f) return;
+    say('tplMsg',true,'사진 준비 중…');
+    try{
+      let blob;
+      if(/pdf/i.test(f.type)||/\.pdf$/i.test(f.name)){ await ensurePdfLibs(); const doc=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise; blob=(await renderPdfPage(doc,1)).view; }
+      else blob=await compressImage(f,IMG_MAX,IMG_Q);
+      tplPending=blob;
+      const d=await api('/api/surveys/'+S.id+'/template',{method:'POST',body:JSON.stringify({mime:'image/jpeg',data_b64:await blobToB64(blob),extract:false})});
+      if(!d.ok){ say('tplMsg',false,errKo(d.error)); return; }
+      S.has_template=true; renderTpl();
+      say('tplMsg',true,'양식 사진을 저장했습니다 — [🤖 AI로 문항 읽기] 를 누르세요');
+    }catch(err){ say('tplMsg',false,'이 파일을 읽지 못했습니다(HEIC 는 JPG 로 바꿔 주세요)'); }
+  });
+  $('btnTplRead').addEventListener('click',async()=>{
+    if(!S.has_template){ $('tplInput').click(); return; }
+    if(draftQs.length && !confirm('AI가 읽은 문항으로 표를 바꿉니다(저장 전까지는 되돌릴 수 있습니다). 계속할까요?')) return;
+    $('btnTplRead').disabled=true; say('tplMsg',true,'AI가 양식을 읽는 중… (10~40초)');
+    try{
+      let b64;
+      if(tplPending) b64=await blobToB64(tplPending);
+      else b64=await blobToB64(await apiBlob('/api/surveys/'+S.id+'/template'));
+      const d=await api('/api/surveys/'+S.id+'/template',{method:'POST',body:JSON.stringify({mime:'image/jpeg',data_b64:b64})});
+      if(!d.ok){ say('tplMsg',false,errKo(d.error)); return; }
+      const p=d.proposal;
+      // 이미 쓰던 key 는 같은 문항(원문 동일)이면 이어받는다 — 답이 key 로 저장되므로
+      const old=(S.questions||[]);
+      draftQs=p.questions.map(q=>{ const m=old.find(o=>o.text.trim().toLowerCase()===String(q.text).trim().toLowerCase()); return Object.assign({},q,{k:m?m.k:''}); });
+      if(p.number_hint && !$('fHint').value) $('fHint').value=p.number_hint;
+      if(p.title && !$('fTitle').value) $('fTitle').value=p.title;
+      renderQs(); markDirty();
+      say('tplMsg',true,'문항 '+p.questions.length+'개를 읽었습니다 — 표를 확인하고 [저장]');
+    } finally { $('btnTplRead').disabled=!canEdit(); }
+  });
+
+  // ─────────────── 이미지·PDF 준비 ───────────────
+  function dims(w,h,max){ if(w<=max&&h<=max) return [w,h]; const s=max/Math.max(w,h); return [Math.round(w*s),Math.round(h*s)]; }
+  function canvasBlob(c,type,q){ return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('encode')),type,q)); }
+  async function decodeImage(file){
+    if(window.createImageBitmap){ try{ return await createImageBitmap(file,{imageOrientation:'from-image'}); }catch(e){} }
+    return await new Promise((res,rej)=>{ const u=URL.createObjectURL(file); const im=new Image(); im.onload=()=>{ URL.revokeObjectURL(u); res(im); }; im.onerror=()=>{ URL.revokeObjectURL(u); rej(new Error('decode')); }; im.src=u; });
+  }
+  async function drawJpeg(src,max,q){
+    const w0=src.width||src.naturalWidth, h0=src.height||src.naturalHeight;
+    const [w,h]=dims(w0,h0,max);
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(src,0,0,w,h);
+    return canvasBlob(c,'image/jpeg',q);
+  }
+  async function compressImage(file,max,q){ const im=await decodeImage(file); return drawJpeg(im,max,q); }
+  async function ensurePdfLibs(){
+    await loadScript(LIB.pdfjs);
+    if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc=LIB.pdfjsWorker;
+    try{ await loadScript(LIB.pdflib); }catch(e){}   // 없어도 된다(그림 JPEG 를 원본으로)
+  }
+  async function renderPdfPage(doc,no){
+    const page=await doc.getPage(no);
+    const v1=page.getViewport({scale:1});
+    const scale=Math.min(IMG_MAX/Math.max(v1.width,v1.height),4);
+    const vp=page.getViewport({scale});
+    const c=document.createElement('canvas'); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+    await page.render({canvasContext:ctx,viewport:vp}).promise;
+    const view=await canvasBlob(c,'image/jpeg',IMG_Q);
+    const thumb=await drawJpeg(c,THUMB_MAX,0.7);
+    return {view,thumb};
+  }
+
+  // ─────────────── ② 업로드 ───────────────
+  const upQ=[]; let upBusy=false;
+  const up={files:0,fileNo:0,sent:0,skipped:0,failed:0,pageNo:0,pageTotal:0,now:''};
+  function renderUp(){
+    const box=$('upLocal');
+    if(!upBusy&&!up.sent&&!up.skipped&&!up.failed){ box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    $('upText').innerHTML='<span class="chip ok">올림 '+up.sent+'</span>'+(up.skipped?'<span class="chip">건너뜀(같은 파일) '+up.skipped+'</span>':'')+(up.failed?'<span class="chip bad">실패 '+up.failed+'</span>':'')+
+      (upBusy?'<span class="chip run"><span class="spin"></span> 파일 '+up.fileNo+'/'+up.files+(up.pageTotal>1?' · 페이지 '+up.pageNo+'/'+up.pageTotal:'')+'</span>':'<span class="chip">끝</span>');
+    $('upNow').textContent=up.now||'';
+    const done=up.fileNo-(upBusy?1:0)+(up.pageTotal?up.pageNo/up.pageTotal:0)*(upBusy?1:0);
+    $('upBar').style.width=(up.files?Math.min(100,done/up.files*100):0)+'%';
+  }
+  function addFiles(list){
+    if(!S) return;
+    if(!canEdit()){ toast('열람 전용 권한입니다',true); return; }
+    if(!(S.questions||[]).length){ toast('먼저 ① 설문 양식에서 문항을 저장하세요',true); showTab('form'); return; }
+    const arr=Array.from(list||[]).filter(f=>/^image\//.test(f.type)||/pdf/i.test(f.type)||/\.(jpe?g|png|webp|pdf|heic)$/i.test(f.name));
+    if(!arr.length){ toast('사진(JPG·PNG) 또는 PDF 만 올릴 수 있습니다',true); return; }
+    arr.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+    if(!upBusy){ up.files=0; up.fileNo=0; up.sent=0; up.skipped=0; up.failed=0; }
+    arr.forEach(f=>upQ.push(f)); up.files+=arr.length;
+    pumpUploads();
+  }
+  async function sendPage(payload){
+    for(let attempt=0;attempt<3;attempt++){
+      const d=await api('/api/surveys/'+S.id+'/pages',{method:'POST',body:JSON.stringify(payload)});
+      if(d.ok){ up.sent++; return true; }
+      if(d.status===409&&d.error==='same_file'){ up.skipped++; return true; }
+      if(d.status===0||d.status>=500){ await new Promise(r=>setTimeout(r,1500*(attempt+1))); continue; }
+      up.failed++; up.now=payload.orig_name+' — '+errKo(d.error); return false;
+    }
+    up.failed++; up.now=payload.orig_name+' — 서버 연결 실패'; return false;
+  }
+  async function pumpUploads(){
+    if(upBusy) return; upBusy=true; renderUp();
+    const sid=S.id;
+    try{
+      while(upQ.length){
+        if(!S||S.id!==sid) break;
+        const f=upQ.shift(); up.fileNo++; up.pageNo=0; up.pageTotal=0; up.now=f.name; renderUp();
+        try{
+          if(/pdf/i.test(f.type)||/\.pdf$/i.test(f.name)){
+            await ensurePdfLibs();
+            const bytes=new Uint8Array(await f.arrayBuffer());
+            let src=null; try{ if(window.PDFLib) src=await PDFLib.PDFDocument.load(bytes.slice(),{ignoreEncryption:true}); }catch(e){ src=null; }
+            const doc=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
+            up.pageTotal=doc.numPages;
+            for(let i=1;i<=doc.numPages;i++){
+              up.pageNo=i; up.now=f.name+' · '+i+'쪽'; renderUp();
+              const r=await renderPdfPage(doc,i);
+              let single=null;
+              if(src){ try{ const out=await PDFLib.PDFDocument.create(); const cp=await out.copyPages(src,[i-1]); out.addPage(cp[0]); single=new Blob([await out.save()],{type:'application/pdf'}); }catch(e){ single=null; } }
+              const usePdf=single&&single.size<=FILE_LIMIT;
+              await sendPage({ orig_name:f.name+' p'+i, mime:usePdf?'application/pdf':'image/jpeg',
+                file_b64:await blobToB64(usePdf?single:r.view), view_b64:usePdf?await blobToB64(r.view):undefined, thumb_b64:await blobToB64(r.thumb) });
+              renderUp();
+            }
+            try{ doc.destroy(); }catch(e){}
+          } else {
+            const im=await decodeImage(f);
+            const main=await drawJpeg(im,IMG_MAX,IMG_Q);
+            const thumb=await drawJpeg(im,THUMB_MAX,0.7);
+            try{ if(im.close) im.close(); }catch(e){}
+            await sendPage({orig_name:f.name,mime:'image/jpeg',file_b64:await blobToB64(main),thumb_b64:await blobToB64(thumb)});
+          }
+        }catch(err){ up.failed++; up.now=f.name+' — 파일을 읽지 못했습니다'+(/heic/i.test(f.name)?'(HEIC 는 JPG 로 바꿔 주세요)':''); }
+        renderUp();
+        if(up.sent%5===0) loadPages();
+      }
+    } finally { upBusy=false; renderUp(); loadPages(); }
+    if(up.failed) toast('올리지 못한 파일이 '+up.failed+'개 있습니다',true); else toast('업로드 끝 — AI 판독이 이어서 진행됩니다');
+  }
+  window.addEventListener('beforeunload',e=>{ if(upBusy||dirty){ e.preventDefault(); e.returnValue=''; } });
+  $('btnPick').addEventListener('click',()=>$('fileInput').click());
+  $('fileInput').addEventListener('change',e=>{ addFiles(e.target.files); e.target.value=''; });
+  const drop=$('drop');
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop',e=>addFiles(e.dataTransfer&&e.dataTransfer.files));
+
+  // ─────────────── 응답 목록 ───────────────
+  async function loadPages(){
+    if(!S) return;
+    const sid=S.id;
+    const d=await api('/api/surveys/'+sid+'/pages');
+    if(!S||S.id!==sid) return;
+    if(!d.ok){ if(d.status!==401) toast(errKo(d.error),true); return; }
+    pages=d.items||[]; counts=d.counts||{};
+    $('aiWarn').classList.toggle('hidden',!!d.ai_ready || !((counts.queued||0)+(counts.processing||0)+(counts.geo_pending||0)));
+    const live=new Set(pages.map(p=>p.id)); Array.from(sel).forEach(id=>{ if(!live.has(id)) sel.delete(id); });
+    renderSumChips(); renderProgress();
+    if(dayF&&!pages.some(p=>p.up_day===dayF)) dayF='';
+    renderDays();
+    if(curTab==='upload') renderList();
+    if(curTab==='report') renderReport();
+    if(drawerId&&!drawerEdit){ const p=pages.find(x=>x.id===drawerId); if(p) renderDrawerBody(p,false); else closeDrawer(); }
+    clearTimeout(pollT);
+    if((counts.queued||0)+(counts.processing||0)+(counts.geo_pending||0)>0 || upBusy) pollT=setTimeout(loadPages,4000);
+  }
+  function renderProgress(){
+    const c=counts; const tot=c.total||0; const run=(c.queued||0)+(c.processing||0);
+    $('cDone').textContent=c.done||0; $('cErr').textContent=c.error||0;
+    $('cRunChip').innerHTML=(run||c.geo_pending?'<span class="spin"></span> ':'')+'대기·처리 중 <span id="cRun">'+run+'</span>'+(c.geo_pending?' · ✍ 지역 찾는 중 '+c.geo_pending:'');
+    $('cNoNum').textContent=c.nonum||0; $('cDup').textContent=c.dup||0; $('cLow').textContent=c.lowconf||0;
+    $('prog').innerHTML=tot?'<i style="width:'+((c.done||0)/tot*100)+'%;background:var(--income)"></i><i style="width:'+(run/tot*100)+'%;background:#9db6e4"></i><i style="width:'+((c.error||0)/tot*100)+'%;background:var(--expense)"></i>':'';
+    $('btnRetryErr').disabled=!c.error||!canEdit();
+  }
+  function shortVal(p,q){
+    const a=p.answers||{}; const v=a[q.k];
+    if(q.type==='geo'){ const g=(p.geo||{})[q.k]||{}; const c=g.ciudad?' · '+g.ciudad:''; return v?(v+c):(g.raw?'? '+g.raw:''); }
+    let s;
+    if(q.type==='multi') s=(v||[]).join(', ');
+    else if(v==null) s='';
+    else s=String(v);
+    const o=(p.others||{})[q.k]; if(o) s+=' ('+o+')';
+    return s;
+  }
+  const numKey=(p)=>p.red_number?String(p.red_number).padStart(8,'0'):'~';
+  function byNumber(a,b){ const an=numKey(a), bn=numKey(b); return an<bn?-1:an>bn?1:(a.dup_idx-b.dup_idx)||(a.seq-b.seq); }
+  function isFlag(p){ return p.status==='done'&&(!p.red_number||p.dup_idx>1||(p.low_conf||[]).length>0); }
+  function listRows(){
+    const kw=$('lq').value.trim().toLowerCase(), f=$('lf').value, so=$('ls').value;
+    const qs=S.questions||[];
+    let rows=pages.filter(p=>{
+      if(dayF&&p.up_day!==dayF) return false;
+      if(f==='flag'&&!isFlag(p)) return false;
+      if(f==='err'&&p.status!=='error') return false;
+      if(f==='run'&&!(p.status==='queued'||p.status==='processing')) return false;
+      if(kw){ const hay=(p.file_name+' '+(p.red_number||'')+' '+qs.map(q=>shortVal(p,q)).join(' ')).toLowerCase(); if(hay.indexOf(kw)<0) return false; }
+      return true;
+    });
+    if(so==='num') rows=rows.slice().sort(byNumber);
+    return rows;
+  }
+  function stChip(p){
+    if(p.status==='error') return '<span class="chip bad" title="'+esc(p.error||'')+'">✕ 실패</span>';
+    if(p.status==='queued') return '<span class="chip run">대기</span>';
+    if(p.status==='processing') return '<span class="chip run"><span class="spin"></span> 판독 중</span>';
+    if(!p.red_number) return '<span class="chip warn">⚠ 번호 못 읽음</span>';
+    if(p.dup_idx>1) return '<span class="chip warn">⚠ 번호 중복</span>';
+    return '<span class="chip ok">✓ 완료</span>';
+  }
+  function renderList(){
+    if(!S) return;
+    const qs=S.questions||[];
+    $('lHead').innerHTML='<th><input type="checkbox" id="ckAll" aria-label="전체 선택"></th><th>붉은 번호</th><th>파일명</th><th>상태</th>'+
+      qs.map(q=>'<th title="'+esc(q.text)+'">Q'+q.no+' '+esc(qName(q).length>10?qName(q).slice(0,9)+'…':qName(q))+'</th>').join('')+'<th>올린 시각</th><th></th>';
+    const rows=listRows();
+    if(!pages.length){ $('lBody').innerHTML='<tr><td colspan="'+(qs.length+6)+'" class="empty">아직 올린 설문지가 없습니다</td></tr>'; updateSelBtn(); return; }
+    $('lBody').innerHTML=rows.map(p=>{
+      const low=new Set(p.low_conf||[]); const ed=p.edited||{};
+      const cells=qs.map(q=>{
+        if(p.status!=='done') return '<td style="color:var(--muted)">—</td>';
+        const u=low.has(q.k);
+        return '<td class="cellclip'+(u?' unc':'')+'" title="'+esc(shortVal(p,q))+'">'+esc(shortVal(p,q))+(u?'<span class="q">?</span>':'')+(ed[q.k]?'<span class="ed">✎</span>':'')+'</td>';
+      }).join('');
+      const no=p.red_number?esc(p.red_number)+(p.dup_idx>1?'<span style="color:var(--muted);font-weight:500">-'+p.dup_idx+'</span>':''):'<span style="color:var(--muted)">?</span>';
+      return '<tr class="clk" data-id="'+p.id+'"><td><input type="checkbox" class="rowck" data-id="'+p.id+'"'+(sel.has(p.id)?' checked':'')+' aria-label="선택"></td>'+
+        '<td class="rednum">'+no+(low.has('_no')?'<span class="q">?</span>':'')+(ed._no?'<span class="ed">✎</span>':'')+'</td><td class="mono">'+esc(p.file_name)+'</td><td>'+stChip(p)+'</td>'+cells+
+        '<td style="color:var(--muted)">'+esc(fmtTime(p.created_at))+'</td><td><button class="btn ghost sm dl" data-id="'+p.id+'" title="원본 받기">⬇</button></td></tr>';
+    }).join('')||'<tr><td colspan="'+(qs.length+6)+'" class="empty">해당하는 응답이 없습니다</td></tr>';
+    const all=$('ckAll'); if(all){ all.checked=rows.length>0&&rows.every(p=>sel.has(p.id)); all.addEventListener('change',()=>{ rows.forEach(p=>{ if(all.checked) sel.add(p.id); else sel.delete(p.id); }); renderList(); }); }
+    updateSelBtn();
+  }
+  function updateSelBtn(){ const b=$('btnZipSel'); b.disabled=!sel.size; b.textContent='⬇ 선택 원본 zip'+(sel.size?' ('+sel.size+')':''); }
+  $('lq').addEventListener('input',renderList); $('lf').addEventListener('change',renderList); $('ls').addEventListener('change',renderList);
+  $('lBody').addEventListener('click',e=>{
+    const ck=e.target.closest('.rowck');
+    if(ck){ const id=Number(ck.dataset.id); if(ck.checked) sel.add(id); else sel.delete(id); updateSelBtn(); return; }
+    const dl=e.target.closest('.dl'); if(dl){ downloadOne(Number(dl.dataset.id)); return; }
+    const tr=e.target.closest('tr.clk'); if(tr) openDrawer(Number(tr.dataset.id));
+  });
+  $('btnRetryErr').addEventListener('click',()=>reprocess('error'));
+  async function reprocess(scope){
+    const d=await api('/api/surveys/'+S.id+'/reprocess',{method:'POST',body:JSON.stringify({scope})});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast(d.queued+'장을 다시 판독합니다'); loadPages();
+  }
+
+
+  // ─────────────── 날짜별 업로드 내역 (sv13) ───────────────
+  function dayGroups(){
+    const m=new Map();
+    pages.forEach(p=>{
+      const k=p.up_day||(p.created_at||'').slice(0,10)||'?';
+      let g=m.get(k); if(!g){ g={day:k,total:0,done:0,error:0,running:0,first:null,last:null,nums:[],who:new Set()}; m.set(k,g); }
+      g.total++; if(p.status==='done') g.done++; else if(p.status==='error') g.error++; else g.running++;
+      if(p.red_number) g.nums.push(p.red_number);
+      if(p.uploaded_by) g.who.add(p.uploaded_by);
+      if(!g.first||p.created_at<g.first) g.first=p.created_at;
+      if(!g.last||p.created_at>g.last) g.last=p.created_at;
+    });
+    return Array.from(m.values()).sort((a,b)=>a.day<b.day?1:-1);
+  }
+  const hm=(iso)=>{ if(!iso) return ''; try{ return new Date(iso).toLocaleTimeString('ko-KR',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return ''; } };
+  function renderDays(){
+    if(!S) return;
+    const gs=dayGroups(); const dir=!!S.is_director;
+    const ld=$('ld');
+    ld.innerHTML='<option value="">모든 업로드 날짜 ('+pages.length+')</option>'+gs.map(g=>'<option value="'+esc(g.day)+'"'+(g.day===dayF?' selected':'')+'>'+esc(g.day)+' ('+g.total+')</option>').join('');
+    if(!gs.length){ $('dayBody').innerHTML='<tr><td colspan="7" class="empty">아직 올린 설문지가 없습니다</td></tr>'; return; }
+    $('dayBody').innerHTML=gs.map(g=>{
+      const ns=g.nums.slice().sort((a,b)=>a.length-b.length||(a<b?-1:a>b?1:0)); const rng=ns.length?(ns[0]===ns[ns.length-1]?ns[0]:ns[0]+' ~ '+ns[ns.length-1]):'—';
+      const st='<span class="chip ok">완료 '+g.done+'</span>'+(g.running?' <span class="chip run">대기 '+g.running+'</span>':'')+(g.error?' <span class="chip bad">실패 '+g.error+'</span>':'');
+      return '<tr'+(g.day===dayF?' style="background:#eef3fb"':'')+'><td><button class="btn ghost sm" data-dayf="'+esc(g.day)+'" title="응답 목록에서 이 날짜만 보기"><b>'+esc(g.day)+'</b></button></td>'+
+        '<td><b>'+g.total+'</b>장</td><td>'+st+'</td><td class="mono">'+esc(rng)+'</td><td>'+esc(Array.from(g.who).join(', ')||'—')+'</td>'+
+        '<td style="color:var(--muted)">'+esc(hm(g.first))+(g.first!==g.last?' ~ '+esc(hm(g.last)):'')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn ghost sm" data-dayzip="'+esc(g.day)+'" title="이 날짜 원본 zip — 지우기 전에 받아 두세요">⬇ zip</button>'+
+        (dir?' <button class="btn danger sm" data-daydel="'+esc(g.day)+'" data-n="'+g.total+'">🗑 이 날짜 삭제</button>':'')+'</td></tr>';
+    }).join('');
+  }
+  function setDayF(v){ dayF=v||''; renderDays(); renderList(); }
+  $('ld').addEventListener('change',()=>setDayF($('ld').value));
+  $('dayBody').addEventListener('click',e=>{
+    const f=e.target.closest('[data-dayf]'); if(f){ const v=f.getAttribute('data-dayf'); setDayF(dayF===v?'':v); return; }
+    const z=e.target.closest('[data-dayzip]'); if(z){ const v=z.getAttribute('data-dayzip'); const ids=pages.filter(p=>p.up_day===v).map(p=>p.id); if(ids.length) downloadZip(ids,v); return; }
+    const d=e.target.closest('[data-daydel]'); if(d) deleteDay(d.getAttribute('data-daydel'),Number(d.getAttribute('data-n')));
+  });
+  async function deleteDay(day,n){
+    if(!S||!S.is_director){ toast(errKo('director_only'),true); return; }
+    if(!confirm(day+' 에 올린 설문지 '+n+'장을 삭제합니다.\n\n· 스캔 원본·AI 판독 결과·가린 사본이 모두 지워지고 되돌릴 수 없습니다.\n· 리포트·엑셀·지도와 REFATRIX Platform 「고객 설문」(집계·응답 목록·일괄 다운로드)에서도 바로 빠집니다.\n· 지금 AI 요약은 옛 응답 기준이라 지워집니다 — 삭제 후 [🤖 AI 요약 만들기]를 다시 누르세요.\n\n필요하면 먼저 [⬇ zip]으로 원본을 받아 두세요. 계속할까요?')) return;
+    const typed=prompt('확인을 위해 삭제할 날짜를 그대로 입력하세요: '+day);
+    if(typed==null) return;
+    if(typed.trim()!==day){ toast('날짜가 달라 삭제하지 않았습니다',true); return; }
+    const d=await api('/api/surveys/'+S.id+'/upload-days/'+encodeURIComponent(day)+'?expect='+n,{method:'DELETE'});
+    if(!d.ok){ toast(errKo(d.error)+(d.error==='count_changed'?' (지금 '+d.count+'장)':''),true); await loadPages(); return; }
+    if(d.ai_cache_cleared) S.ai_cache=null;
+    if(dayF===day) dayF='';
+    toast(day+' 업로드 '+d.deleted+'장을 삭제했습니다 — 플랫폼에도 반영됨'+(d.ai_cache_cleared?' · AI 요약은 다시 만들어 주세요':''));
+    await loadPages();
+  }
+
+  // ─────────────── 다운로드 ───────────────
+  async function downloadOne(id){
+    const p=pages.find(x=>x.id===id); if(!p) return;
+    try{ saveBlob(await apiBlob('/api/surveys/pages/'+id+'/file'),p.file_name); }catch(e){ toast('받지 못했습니다',true); }
+  }
+  async function downloadZip(ids,tag){
+    toast('zip 만드는 중… ('+(ids?ids.length:counts.total)+'장)');
+    try{ const b=await apiBlob('/api/surveys/'+S.id+'/zip'+(ids?'?ids='+ids.join(','):'')); saveBlob(b,(S.code_prefix||'ENC')+'_originales'+(tag?'_'+String(tag).replace(/[^0-9A-Za-z-]/g,''):'')+(ids?'_'+ids.length:'')+'.zip'); toast('zip 받기 완료 ('+kb(b.size)+')'); }
+    catch(e){ toast('zip 을 받지 못했습니다',true); }
+  }
+  $('btnZipAll').addEventListener('click',()=>{ if(!counts.total){ toast('올린 설문지가 없습니다',true); return; } downloadZip(null); });
+  $('btnZipSel').addEventListener('click',()=>{ if(sel.size) downloadZip(Array.from(sel)); });
+
+  // ─────────────── 원본·판독 드로어 ───────────────
+  function closeDrawer(){ $('drawer').classList.remove('on'); $('dbg').classList.remove('on'); drawerId=null; drawerEdit=false; if(drawerUrl){ URL.revokeObjectURL(drawerUrl); drawerUrl=null; } }
+  $('dbg').addEventListener('click',()=>{ if(drawerEdit&&!confirm('고친 내용을 저장하지 않고 닫을까요?')) return; closeDrawer(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&drawerId){ if(drawerEdit&&!confirm('고친 내용을 저장하지 않고 닫을까요?')) return; closeDrawer(); } });
+  async function openDrawer(id){
+    const p=pages.find(x=>x.id===id); if(!p) return;
+    drawerId=id; drawerEdit=false;
+    $('drawer').classList.add('on'); $('dbg').classList.add('on');
+    const d=$('drawer');
+    d.innerHTML='<div class="row" style="margin-bottom:12px"><p class="ttl" style="margin:0;font-size:16px" id="dTitle"></p><span class="mono" style="color:var(--muted)" id="dFile"></span><div class="sp"></div>'+
+      '<button class="btn ghost sm" id="dPrev" title="이전">◀</button><button class="btn ghost sm" id="dNext" title="다음">▶</button><button class="btn ghost sm" id="dDl">⬇ 원본</button><button class="btn sm" id="dClose">닫기</button></div>'+
+      '<div id="dFlag"></div><div class="dgrid"><div class="paper" id="dPaper"><span class="empty"><span class="spin"></span> 원본 불러오는 중…</span></div><div class="card" style="margin:0" id="dAns"></div></div>';
+    $('dClose').addEventListener('click',()=>{ if(drawerEdit&&!confirm('고친 내용을 저장하지 않고 닫을까요?')) return; closeDrawer(); });
+    const order=listRows().map(x=>x.id); const i=order.indexOf(id);
+    $('dPrev').disabled=i<=0; $('dNext').disabled=i<0||i>=order.length-1;
+    $('dPrev').addEventListener('click',()=>{ if(i>0) openDrawer(order[i-1]); });
+    $('dNext').addEventListener('click',()=>{ if(i<order.length-1) openDrawer(order[i+1]); });
+    $('dDl').addEventListener('click',()=>downloadOne(id));
+    renderDrawerBody(p,true);
+    try{
+      const b=await apiBlob('/api/surveys/pages/'+id+'/view');
+      if(drawerId!==id) return;
+      if(drawerUrl) URL.revokeObjectURL(drawerUrl);
+      drawerUrl=URL.createObjectURL(b);
+      $('dPaper').innerHTML=/pdf/.test(b.type)?'<iframe title="원본 PDF" src="'+drawerUrl+'"></iframe>':'<img alt="설문지 원본" src="'+drawerUrl+'">';
+    }catch(e){ if(drawerId===id) $('dPaper').innerHTML='<span class="empty">원본을 불러오지 못했습니다</span>'; }
+  }
+  function renderDrawerBody(p,first){
+    if(drawerId!==p.id) return;
+    $('dTitle').innerHTML='응답 <span class="rednum">'+(p.red_number?'Nº '+esc(p.red_number)+(p.dup_idx>1?' (-'+p.dup_idx+')':''):'번호 없음')+'</span>';
+    $('dFile').textContent=p.file_name+(p.file_bytes?' · '+kb(p.file_bytes):'');
+    const ce=canEdit();
+    let flag='';
+    const noBox=ce?'<span class="row" style="margin-top:6px"><input id="dNo" class="mono" placeholder="예: 0089" style="width:110px" value="'+esc(p.red_number||'')+'"><button class="btn sm" id="dNoSave">번호 저장</button>'+(p.dup_idx>1?'<button class="btn danger sm" id="dDel">🗑 이 건 삭제</button>':'')+'</span>':'';
+    if(p.status==='done'&&!p.red_number) flag='<div class="note" style="margin-bottom:10px">⚠ 붉은 번호를 읽지 못해 임시 이름 <b>'+esc(p.file_name)+'</b> 로 저장했습니다. 원본을 보고 번호를 넣으면 파일명이 바뀝니다.'+noBox+'</div>';
+    else if(p.dup_idx>1) flag='<div class="note" style="margin-bottom:10px">⚠ 번호 <b>'+esc(p.red_number)+'</b> 이 이미 있어 <b>'+esc(p.file_name)+'</b> 로 저장했습니다. 같은 설문지를 두 번 올린 거라면 이 건을 삭제하고, 번호를 잘못 읽었다면 고치세요.'+noBox+'</div>';
+    else if(p.status==='error') flag='<div class="note" style="margin-bottom:10px">✕ 판독 실패 — '+esc(p.error||'')+(ce?'<div class="row" style="margin-top:8px"><button class="btn sm" id="dRetry">↻ 다시 판독</button><button class="btn danger sm" id="dDel">🗑 삭제</button></div>':'')+'</div>';
+    else if(p.status!=='done') flag='<div class="note" style="margin-bottom:10px"><span class="spin"></span> AI 판독 '+(p.status==='queued'?'대기 중':'진행 중')+'입니다.</div>';
+    $('dFlag').innerHTML=flag;
+    const qs=S.questions||[]; const low=new Set(p.low_conf||[]); const ed=p.edited||{};
+    let body='<p class="ttl">AI가 읽은 답'+(p.notes?' <span class="chip" title="'+esc(p.notes)+'">AI 메모</span>':'')+'</p>';
+    if(p.status!=='done'){ body+='<p class="empty">판독이 끝나면 여기에 답이 나옵니다.</p>'; }
+    else {
+      body+=qs.map(q=>{
+        const v=(p.answers||{})[q.k]; const o=(p.others||{})[q.k];
+        let shown; if(q.type==='multi') shown=(v||[]).join(', '); else shown=v==null?'':String(v);
+        if(q.type==='multi') shown=(v||[]).map(x=>x+(optKo(q,x)?' ('+optKo(q,x)+')':'')).join(', ');
+        else if(q.type==='single'&&v) shown=v+(optKo(q,v)?' ('+optKo(q,v)+')':'');
+        else if(q.type==='geo'){ const g=(p.geo||{})[q.k]||{}; shown=[v||(g.raw?'(주 미확인)':''), g.ciudad].filter(Boolean).join(' · '); }
+        const empty=!shown;
+        return '<div class="ans"><div class="k">Q'+q.no+'</div><div><div class="t">'+esc(qName(q))+(q.ko?' · '+esc(q.text):'')+' · '+TYPE_LB[q.type]+'</div>'+
+          '<div class="a'+(empty?' noans':'')+'" data-k="'+q.k+'">'+esc(empty?'(무응답)':shown)+(low.has(q.k)?' <span class="q">? 확신 낮음</span>':'')+(ed[q.k]?' <span class="ed">✎ 수정됨</span>':'')+'</div>'+
+          (o?'<div class="oth">기타 기재: '+esc(o)+'</div>':'')+
+          (q.type==='geo'&&((p.geo||{})[q.k]||{}).raw?'<div class="oth">적힌 그대로: '+esc(p.geo[q.k].raw)+(p.geo[q.k].at?' <span style="color:var(--muted)">('+esc(p.geo[q.k].at)+')</span>':'')+'</div>':'')+
+          (q.type==='geo'&&q.free&&(p.geo_scan==='queued'||p.geo_scan==='processing')?'<div class="oth">✍ 손글씨 지역 찾는 중…</div>':'')+
+          (drawerEdit?'<div class="edit">'+editor(q,v,p)+'</div>':'')+'</div></div>';
+      }).join('');
+      if(ce) body+='<div class="row" style="margin-top:10px">'+(drawerEdit?'<button class="btn sm" id="dSave">💾 고친 칸 저장</button><button class="btn ghost sm" id="dCancel">취소</button>':'<span class="sub2" style="margin:0">AI 결과를 그대로 씁니다. 틀린 칸이 눈에 띄면 고칠 수 있습니다(필수 아님).</span><div class="sp"></div><button class="btn ghost sm" id="dEdit">✎ 수정</button><button class="btn ghost sm" id="dRetry2">↻ 다시 판독</button><button class="btn danger sm" id="dDel2">🗑</button>')+'</div>';
+    }
+    $('dAns').innerHTML=body;
+    const on=(id,fn)=>{ const el=$(id); if(el) el.addEventListener('click',fn); };
+    on('dNoSave',()=>saveNumber(p,false));
+    on('dDel',()=>deletePage(p)); on('dDel2',()=>deletePage(p));
+    on('dRetry',()=>retryPage(p)); on('dRetry2',()=>retryPage(p));
+    on('dEdit',()=>{ drawerEdit=true; renderDrawerBody(p,false); });
+    on('dCancel',()=>{ drawerEdit=false; renderDrawerBody(p,false); });
+    on('dSave',()=>saveEdits(p));
+  }
+  function editor(q,v,p){
+    const nm='e_'+q.k;
+    if(q.type==='geo'){
+      const g=((p&&p.geo)||{})[q.k]||{};
+      return '<select data-geo-st="'+q.k+'"><option value="">(주 미확인)</option>'+q.options.map(o=>'<option'+(o===v?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select> '+
+        '<input data-geo-city="'+q.k+'" placeholder="도시(선택)" value="'+esc(g.ciudad||'')+'" style="width:160px">';
+    }
+    if(q.type==='single') return '<select data-ek="'+q.k+'"><option value="">(무응답)</option>'+q.options.map(o=>'<option'+(o===v?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
+    if(q.type==='multi') return q.options.map(o=>'<label><input type="checkbox" data-ek="'+q.k+'" value="'+esc(o)+'"'+((v||[]).indexOf(o)>=0?' checked':'')+'> '+esc(o)+'</label>').join('');
+    if(q.type==='scale'){ let h='<select data-ek="'+q.k+'"><option value="">(무응답)</option>'; for(let x=q.min;x<=q.max;x++) h+='<option'+(x===v?' selected':'')+'>'+x+'</option>'; return h+'</select>'; }
+    if(q.type==='number') return '<input type="number" step="any" data-ek="'+q.k+'" value="'+esc(v==null?'':v)+'" style="width:140px">';
+    return '<textarea data-ek="'+q.k+'" name="'+nm+'" style="width:100%;min-height:54px">'+esc(v||'')+'</textarea>';
+  }
+  async function saveEdits(p){
+    const qs=S.questions||[]; const ans={}; const geo={};
+    qs.filter(q=>q.type==='geo').forEach(q=>{
+      const st=$('dAns').querySelector('[data-geo-st="'+q.k+'"]'); if(!st) return;
+      const city=$('dAns').querySelector('[data-geo-city="'+q.k+'"]');
+      const nv={estado:st.value||null,ciudad:(city&&city.value.trim())||null};
+      const old=(p.geo||{})[q.k]||{};
+      if(nv.estado!==(p.answers||{})[q.k]||(nv.ciudad||'')!==(old.ciudad||'')) geo[q.k]=nv;
+    });
+    qs.forEach(q=>{
+      const els=$('dAns').querySelectorAll('[data-ek="'+q.k+'"]'); if(!els.length) return;
+      let nv;
+      if(q.type==='multi') nv=Array.from(els).filter(x=>x.checked).map(x=>x.value);
+      else { const raw=els[0].value; nv=raw===''?(q.type==='text'||q.type==='info'?'':null):(q.type==='scale'||q.type==='number'?Number(raw):raw); }
+      const ov=(p.answers||{})[q.k];
+      if(JSON.stringify(nv)!==JSON.stringify(ov==null&&q.type==='multi'?[]:(ov===undefined?null:ov))) ans[q.k]=nv;
+    });
+    if(!Object.keys(ans).length&&!Object.keys(geo).length){ drawerEdit=false; renderDrawerBody(p,false); return; }
+    const d=await api('/api/surveys/pages/'+p.id,{method:'PATCH',body:JSON.stringify({answers:ans,geo})});
+    if(!d.ok){ toast(errKo(d.error)+(d.k?' ('+d.k+')':''),true); return; }
+    drawerEdit=false; toast((Object.keys(ans).length+Object.keys(geo).length)+'칸을 고쳤습니다'); await loadPages();
+  }
+  async function saveNumber(p,allowDup){
+    const v=$('dNo').value.trim();
+    const d=await api('/api/surveys/pages/'+p.id,{method:'PATCH',body:JSON.stringify({red_number:v,allow_dup:!!allowDup})});
+    if(!d.ok){
+      if(d.error==='number_taken'){ if(confirm('번호 '+v+' 은(는) 이미 있습니다. 그래도 이 번호의 중복(-2)으로 저장할까요?')) return saveNumber(p,true); return; }
+      toast(errKo(d.error),true); return;
+    }
+    toast('파일명: '+d.file_name); await loadPages();
+  }
+  async function deletePage(p){
+    if(!confirm(p.file_name+' 을(를) 삭제합니다. 리포트·엑셀에서도 빠집니다. 계속할까요?')) return;
+    const d=await api('/api/surveys/pages/'+p.id,{method:'DELETE'});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast('삭제했습니다'); closeDrawer(); await loadPages();
+  }
+  async function retryPage(p){
+    const d=await api('/api/surveys/pages/'+p.id+'/retry',{method:'POST',body:'{}'});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast('다시 판독합니다 — 사람이 고친 칸은 유지됩니다'); await loadPages();
+  }
+
+  // ─────────────── ③ 리포트 ───────────────
+  const SEQ=['#cde2fb','#b7d3f6','#9ec5f4','#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281'];
+  const heatColor=p=>SEQ[Math.min(SEQ.length-1,Math.floor(p/100*SEQ.length*1.35))];
+  const heatInk=c=>SEQ.indexOf(c)>=6?'#fff':'#0b0b0b';
+  const doneRows=()=>pages.filter(p=>p.status==='done'&&p.answers);
+  function answered(r,q){ const v=r.answers[q.k]; if(q.type==='multi') return Array.isArray(v)&&v.length>0; if(q.type==='text'||q.type==='info') return !!String(v||'').trim(); return v!=null; }
+  function cnt(rows,q){
+    const m=new Map(); const opts=q.type==='scale'?range(q):q.options; opts.forEach(o=>m.set(o,0));
+    let n=0;
+    rows.forEach(r=>{ if(!answered(r,q)) return; n++; const v=r.answers[q.k]; if(q.type==='multi') v.forEach(x=>{ if(m.has(x)) m.set(x,m.get(x)+1); }); else if(m.has(v)) m.set(v,m.get(v)+1); });
+    return {m,n,opts};
+  }
+  function range(q){ const a=[]; for(let v=q.min;v<=q.max;v++) a.push(v); return a; }
+  function barsHTML(rows,q){
+    const {m,n,opts}=cnt(rows,q);
+    if(!n) return '<p class="empty">응답 없음</p>';
+    const ent=opts.map(o=>[o,m.get(o)]).sort((a,b)=>b[1]-a[1]);
+    const max=Math.max(1,...ent.map(e=>e[1]));
+    return ent.map(([o,c])=>{ const ko=optKo(q,o); const p=pctS(c,n);
+      return '<div class="hbar"><div class="lb" title="'+esc(o+(ko?' · '+ko:''))+'">'+esc(o)+(ko?'<small>'+esc(ko)+'</small>':'')+'</div><div class="tr"><div class="br" style="width:'+(c/max*100)+'%" data-tv="'+p+'% · '+c+'명 / '+n+'명" data-tl="'+esc(qName(q)+' — '+o)+'"></div></div><div class="vl"><b>'+p+'%</b> · '+c+'</div></div>';
+    }).join('')+(rows.length>n?'<div class="sub2" style="margin:6px 0 0">무응답 '+(rows.length-n)+'명 제외</div>':'');
+  }
+  function scaleColors(k){ // 5단 기준(빨강↔회색↔파랑). 단계 수가 다르면 양 끝을 맞춰 보간
+    const base=['var(--d1)','var(--d2)','var(--d3)','var(--d4)','var(--d5)'];
+    if(k===5) return base;
+    return Array.from({length:k},(_,i)=>base[Math.round(i*(4/(k-1||1)))]);
+  }
+  function scaleHTML(rows,q,segQ){
+    const vals=range(q); const DC=scaleColors(vals.length);
+    const line=(lb,rs)=>{
+      const {m,n}=cnt(rs,q); if(!n) return '';
+      const avg=(rs.filter(r=>answered(r,q)).reduce((a,r)=>a+Number(r.answers[q.k]),0)/n).toFixed(2);
+      return '<div class="srow"><div class="lb" title="'+esc(lb)+'">'+esc(lb)+' <span style="color:var(--muted)">('+n+')</span></div><div class="stack">'+
+        vals.map((v,i)=>{ const c=m.get(v); return c?'<i style="width:'+pct(c,n)+'%;background:'+DC[i]+'" data-tv="'+pctS(c,n)+'% · '+c+'명" data-tl="'+esc(lb)+' — '+v+'점"></i>':''; }).join('')+'</div><div class="avg">'+avg+'</div></div>';
+    };
+    let h=line('전체',rows);
+    if(segQ) segQ.options.forEach(o=>{ h+=line(o,rows.filter(r=>r.answers[segQ.k]===o)); });
+    h+='<div class="legend">'+vals.map((v,i)=>'<span><i style="background:'+DC[i]+'"></i>'+v+(i===0&&q.min_label?' '+esc(q.min_label):'')+(i===vals.length-1&&q.max_label?' '+esc(q.max_label):'')+'</span>').join('')+'<span style="margin-left:auto">오른쪽 숫자 = 평균</span></div>';
+    return h;
+  }
+  function numberHTML(rows,q){
+    const xs=rows.map(r=>r.answers[q.k]).filter(v=>v!=null&&isFinite(v)).map(Number).sort((a,b)=>a-b);
+    if(!xs.length) return '<p class="empty">응답 없음</p>';
+    const n=xs.length, avg=xs.reduce((a,b)=>a+b,0)/n, med=n%2?xs[(n-1)/2]:(xs[n/2-1]+xs[n/2])/2;
+    const f=(v)=>Number(v).toLocaleString('es-MX',{maximumFractionDigits:1});
+    let h='<div class="stats"><div>응답<b>'+n+'</b></div><div>최소<b>'+f(xs[0])+'</b></div><div>중앙값<b>'+f(med)+'</b></div><div>평균<b>'+f(avg)+'</b></div><div>최대<b>'+f(xs[n-1])+'</b></div></div>';
+    const lo=xs[0], hi=xs[n-1];
+    if(hi>lo){
+      const B=Math.min(6,new Set(xs).size); const w=(hi-lo)/B; const bins=Array.from({length:B},()=>0);
+      xs.forEach(v=>{ let i=Math.floor((v-lo)/w); if(i>=B) i=B-1; bins[i]++; });
+      const max=Math.max(...bins);
+      h+=bins.map((c,i)=>{ const a=lo+i*w, b=i===B-1?hi:lo+(i+1)*w; const lb=f(a)+' – '+f(b);
+        return '<div class="hbar"><div class="lb">'+esc(lb)+'</div><div class="tr"><div class="br" style="width:'+(c/max*100)+'%" data-tv="'+pctS(c,n)+'% · '+c+'명" data-tl="'+esc(qName(q)+' '+lb)+'"></div></div><div class="vl"><b>'+pctS(c,n)+'%</b> · '+c+'</div></div>'; }).join('');
+    }
+    return h;
+  }
+  const SMALL_STATES={'Ciudad de México':1,'Morelos':1,'Tlaxcala':1,'Aguascalientes':1,'Colima':1,'Querétaro':1};
+  function geoStats(rows,q){
+    const m=new Map(); let n=0; const cities=new Map(); let unres=0;
+    rows.forEach(r=>{
+      const st=r.answers[q.k]; const g=(r.geo||{})[q.k]||{};
+      if(st){ n++; m.set(st,(m.get(st)||0)+1); if(g.ciudad){ const key=g.ciudad+'|'+st; cities.set(key,(cities.get(key)||0)+1); } }
+      else if(g.raw) unres++;
+    });
+    return {m,n,unres,cities};
+  }
+  // 「손으로 적은 지역」(양식에 없는 문항) 진행·버튼 — 지도 카드 머리에 붙는다
+  function freeGeoBar(q){
+    if(!q.free) return '';
+    const pend=counts.geo_pending||0, err=counts.geo_error||0;
+    return (pend?'<span class="chip"><span class="spin"></span> ✍ 찾는 중 '+pend+'장</span>':'')+
+      (err?'<span class="chip warn">찾기 실패 '+err+'장</span>':'')+
+      (canEdit()?'<button class="btn ghost sm no-print" data-geoscan="'+(err?'new':'all')+'" title="'+(err?'실패한 장과 아직 안 찾은 장만 다시 찾습니다':'읽어 둔 모든 장에서 손글씨 지역을 다시 찾습니다(사람이 고른 칸은 유지)')+'"'+(pend?' disabled':'')+'>✍ '+(err?'실패한 장 다시 찾기':'손글씨 지역 다시 찾기')+'</button>':'');
+  }
+  function geoCardHTML(q,rows){
+    const {m,n,unres,cities}=geoStats(rows,q);
+    if(!n&&!unres) return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div style="flex:1 1 220px"><h4>'+esc(qName(q))+'</h4>'+(q.free?'<div class="orig">양식에 없는 문항 · 설문지 어디든 손으로 적은 지역</div>':'')+'</div>'+freeGeoBar(q)+'</div><p class="empty">'+(q.free&&counts.geo_pending?'손글씨 지역을 찾고 있습니다…':'지역이 적힌 응답이 없습니다')+'</p></div>';
+    const ent=[...m.entries()].sort((a,b)=>b[1]-a[1]);
+    const max=Math.max(1,...ent.map(e=>e[1]));
+    const fill=(c)=>c?SEQ[Math.min(SEQ.length-1,Math.round(c/max*(SEQ.length-1)))]:'#eceae3';
+    const labels=ent.slice(0,3).filter(e=>!SMALL_STATES[e[0]]&&MX_MAP.centers[e[0]]).map(([st,c])=>{
+      const pc=MX_MAP.centers[st]; const col=fill(c);
+      return '<text x="'+pc[0]+'" y="'+pc[1]+'" text-anchor="middle" font-size="26" font-weight="700" fill="'+heatInk(col)+'" paint-order="stroke" stroke="'+col+'" stroke-width="5">'+c+'</text>';
+    }).join('');
+    const map='<svg viewBox="'+MX_MAP.viewBox+'" style="width:100%;height:auto;display:block" role="img" aria-label="주별 응답 수 지도">'+
+      Object.keys(MX_MAP.paths).map(st=>{ const c=m.get(st)||0; const col=fill(c);
+        return '<path d="'+MX_MAP.paths[st]+'" fill="'+col+'" stroke="#fff" stroke-width="1.6" data-tv="'+(c?c+'명 · '+pctS(c,n)+'%':'응답 없음')+'" data-tl="'+esc(st)+'"></path>'; }).join('')+
+      // 작은 주(CDMX·모렐로스 등)는 칠해도 안 보인다 — 응답이 있으면 동그라미로 끌어올린다
+      Object.keys(SMALL_STATES).filter(st=>m.get(st)&&MX_MAP.centers[st]).map(st=>{ const c=m.get(st); const pc=MX_MAP.centers[st];
+        return '<circle cx="'+pc[0]+'" cy="'+pc[1]+'" r="'+(11+Math.round(c/max*9))+'" fill="'+fill(c)+'" stroke="#fff" stroke-width="2.5" data-tv="'+c+'명 · '+pctS(c,n)+'%" data-tl="'+esc(st)+'"></circle>'+
+          '<text x="'+pc[0]+'" y="'+(pc[1]+7)+'" text-anchor="middle" font-size="18" font-weight="700" fill="'+heatInk(fill(c))+'">'+c+'</text>'; }).join('')+
+      labels+'</svg>';
+    const bars=ent.slice(0,12).map(([st,c])=>'<div class="hbar"><div class="lb" title="'+esc(st)+'">'+esc(st)+'</div><div class="tr"><div class="br" style="width:'+(c/max*100)+'%" data-tv="'+pctS(c,n)+'% · '+c+'명" data-tl="'+esc(st)+'"></div></div><div class="vl"><b>'+pctS(c,n)+'%</b> · '+c+'</div></div>').join('')+
+      (ent.length>12?'<div class="sub2" style="margin:6px 0 0">그 밖에 '+(ent.length-12)+'개 주</div>':'');
+    const cityEnt=[...cities.entries()].map(([k,c])=>{ const i=k.lastIndexOf('|'); return [k.slice(0,i),k.slice(i+1),c]; }).sort((a,b)=>b[2]-a[2]);
+    const cityTbl=cityEnt.length?'<div class="tbwrap" style="margin-top:10px;max-height:260px"><table><thead><tr><th>도시</th><th>주</th><th class="num">응답</th><th class="num">비율</th></tr></thead><tbody>'+
+      cityEnt.slice(0,15).map(([c,st,v])=>'<tr><td>'+esc(c)+'</td><td style="color:var(--muted)">'+esc(st)+'</td><td class="num">'+v+'</td><td class="num">'+pctS(v,n)+'%</td></tr>').join('')+
+      '</tbody></table></div>'+(cityEnt.length>15?'<div class="sub2" style="margin:6px 0 0">그 밖에 '+(cityEnt.length-15)+'개 도시</div>':''):'<p class="sub2" style="margin:10px 0 0">도시까지 적힌 응답이 없습니다.</p>';
+    const warn=unres?'<span class="chip warn click" id="geoUnres" title="목록에서 이 응답들을 열어 주를 고를 수 있습니다" style="white-space:normal">⚠ 주 미확인 '+unres+'건</span>':'';
+    const btn=canEdit()?'<button class="btn ghost sm no-print" id="btnGeoNorm" title="AI 호출 없이 표기 규칙으로 다시 맞춥니다">🗺 지역 다시 정리</button>':'';
+    return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div style="flex:1 1 220px;min-width:180px"><h4>'+esc(qName(q))+' — 지역 분석</h4>'+
+      '<div class="orig">'+(q.free?'양식에 없는 문항 · 손으로 지역을 적은 응답 '+(n+unres)+'건 / 읽은 '+rows.length+'장 · ':(q.ko?esc(q.text)+' · ':''))+'멕시코 32개 주 기준 · 응답 '+n+'건'+(unres?' · 주 미확인 '+unres+'건':'')+'</div></div>'+warn+freeGeoBar(q)+btn+'</div>'+
+      '<div class="grid2geo"><div>'+map+'<div class="legend" style="margin-top:6px"><span><i style="background:#eceae3"></i>0</span><span><i style="background:'+SEQ[3]+'"></i>적음</span><span><i style="background:'+SEQ[8]+'"></i>많음</span><span><i style="background:'+SEQ[11]+'"></i>최다 '+max+'명</span></div></div>'+
+      '<div>'+bars+cityTbl+'</div></div></div>';
+  }
+
+  // 지역 문항이 아직 「지역(주)」 유형이 아닐 때 — 후보를 찾아 한 번에 바꿔 준다.
+  //   (9/11 판으로 만든 설문은 지역이 단일선택·기재정보로 잡혀 있어 지도가 안 붙는다)
+  const GEO_WORDS=/estado|ciudad|municipio|ubicaci|localidad|plaza|regi[oó]n|d[oó]nde|지역|도시|소재|주소/i;
+  const ST_SET=new Set(Object.keys(MX_MAP.paths).map(x=>x.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()));
+  const stLike=(v)=>!!v&&ST_SET.has(String(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim());
+  function geoCandidate(qs,all){
+    const cand=qs.filter(q=>['single','text','info','multi'].includes(q.type));
+    let best=null;
+    cand.forEach(q=>{
+      let score=0;
+      if(GEO_WORDS.test(q.text+' '+(q.ko||''))) score+=2;
+      const opts=(q.options||[]).filter(stLike).length;
+      if(opts>=2) score+=2;
+      const vals=all.map(r=>r.answers[q.k]).filter(v=>typeof v==='string'&&v.trim());
+      if(vals.length){ const hit=vals.filter(stLike).length/vals.length; if(hit>=0.4) score+=2; else if(hit>=0.15) score+=1; }
+      if(score>=2&&(!best||score>best.score)) best={q,score};
+    });
+    return best&&best.q;
+  }
+  async function convertToGeo(q){
+    if(!confirm('「'+qName(q)+'」 문항을 「지역(주)」 유형으로 바꿉니다.\n\n· 이미 읽어 둔 답을 멕시코 32개 주로 정리합니다(AI 재판독 없음 · 비용 0).\n· 주를 못 정한 건은 「주 미확인」으로 표시되고, 목록에서 고를 수 있습니다.\n\n계속할까요?')) return;
+    const qs=(S.questions||[]).map(x=>x.k===q.k?Object.assign({},x,{type:'geo',seg:true}):x);
+    const d=await api('/api/surveys/'+S.id,{method:'PUT',body:JSON.stringify({questions:qs})});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    S.questions=d.questions; draftQs=JSON.parse(JSON.stringify(d.questions)); renderQs();
+    const g=await api('/api/surveys/'+S.id+'/geo-normalize',{method:'POST',body:'{}'});
+    if(!g.ok){ toast(errKo(g.error),true); await loadPages(); return; }
+    toast('지역 문항으로 바꿨습니다 — '+g.changed+'건 정리'+(g.unresolved?' · 주 미확인 '+g.unresolved+'건':''));
+    segKey=q.k; segFilter='';
+    await loadPages();
+  }
+
+  // 양식에 지역 문항이 없을 때: 「손으로 적은 지역」(geo · free) 문항을 붙이고 읽어 둔 장에서 지역만 찾는다
+  async function addFreeGeo(){
+    if(!confirm('「손으로 적은 지역」 문항을 추가합니다.\n\n· 이미 읽은 '+(counts.done||0)+'장에서 손으로 적은 도시·주만 AI로 다시 찾습니다(1장당 AI 1회).\n· 다른 답·번호·사람이 고친 칸은 바뀌지 않습니다.\n· 앞으로 올리는 설문지는 판독할 때 함께 찾습니다.\n\n계속할까요?')) return;
+    const bf=$('btnFreeGeo'); if(bf){ bf.disabled=true; bf.innerHTML='<span class="spin"></span> 추가 중…'; }
+    const qs=(S.questions||[]).concat([{text:'Ubicación escrita a mano',ko:'손으로 적은 지역',type:'geo',free:true,seg:true}]);
+    const d=await api('/api/surveys/'+S.id,{method:'PUT',body:JSON.stringify({questions:qs})});
+    if(!d.ok){ toast(errKo(d.error),true); if(bf){ bf.disabled=false; bf.textContent='손글씨 지역 찾기'; } return; }
+    S.questions=d.questions; draftQs=JSON.parse(JSON.stringify(d.questions)); renderQs();
+    await geoScan('new',true);
+  }
+  async function geoScan(scope,quiet){
+    if(scope==='all'&&!quiet&&!confirm('읽어 둔 '+(counts.done||0)+'장에서 손글씨 지역을 모두 다시 찾습니다(1장당 AI 1회).\n사람이 고른 주·도시는 그대로 둡니다. 계속할까요?')) return;
+    const g=await api('/api/surveys/'+S.id+'/geo-scan',{method:'POST',body:JSON.stringify({scope})});
+    if(!g.ok){ toast(errKo(g.error),true); await loadPages(); return; }
+    toast(g.queued?'✍ '+g.queued+'장에서 손글씨 지역을 찾습니다'+(g.ai_ready?'':' (AI 키 없음 — 대기)'):'새로 찾을 장이 없습니다');
+    const ft=(S.questions||[]).find(q=>q.type==='geo'&&q.free); if(ft){ segKey=ft.k; segFilter=''; }
+    await loadPages();
+  }
+
+  function renderReport(){
+    if(!S) return;
+    const all=doneRows(); const qs=S.questions||[];
+    $('printHead').innerHTML='<div style="font-size:18px;font-weight:800;color:var(--brand)">'+esc(S.title)+'</div><div style="color:var(--muted);font-size:12px">'+esc(S.code_prefix)+(S.survey_date?' · 실시 '+esc(S.survey_date):'')+' · 응답 '+all.length+'건'+(segFilter&&qById(segKey)?' · 대상: '+esc(qName(qById(segKey)))+' = '+esc(segFilter):'')+' · 출력 '+esc(fmtTime(new Date().toISOString()))+'</div>';
+    $('rEmpty').classList.toggle('hidden',all.length>0); $('rBody').classList.toggle('hidden',!all.length);
+    const segQs=qs.filter(q=>q.seg&&(q.type==='single'||q.type==='geo'));
+    if(!segQs.some(q=>q.k===segKey)) { segKey=segQs.length?segQs[0].k:''; segFilter=''; }
+    $('segQ').innerHTML=segQs.length?segQs.map(q=>'<option value="'+q.k+'"'+(q.k===segKey?' selected':'')+'>Q'+q.no+' '+esc(qName(q))+'</option>').join(''):'<option value="">(세그먼트 문항 없음)</option>';
+    $('segQ').disabled=!segQs.length;
+    const segQ=qById(segKey);
+    let segOpts=segQ?segQ.options:[];
+    if(segQ&&segQ.type==='geo'){ const gs=geoStats(all,segQ); segOpts=segQ.options.filter(o=>gs.m.get(o)).sort((a,b)=>gs.m.get(b)-gs.m.get(a)); }
+    $('segChips').innerHTML=segQ?['',...segOpts].map(o=>'<span class="chip click'+(o===segFilter?' on':'')+'" data-v="'+esc(o)+'">'+(o?esc(o):'전체')+'</span>').join(''):'<span class="sub2">① 양식에서 업종·지역 같은 문항의 「세그먼트」를 켜면 여기서 나눠 볼 수 있습니다.</span>';
+    $('segChips').querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{ segFilter=c.dataset.v; renderReport(); }));
+    if(!all.length) return;
+    const rows=segQ&&segFilter?all.filter(r=>r.answers[segKey]===segFilter):all;
+    const n=rows.length;
+
+    // KPI
+    const lowCells=all.reduce((a,r)=>a+(r.low_conf||[]).filter(k=>k!=='_no').length,0);
+    const textQs=qs.filter(q=>q.type==='text');
+    const textN=rows.filter(r=>textQs.some(q=>answered(r,q))).length;
+    const geoQs=qs.filter(q=>q.type==='geo');
+    const firstGeo=geoQs[0];
+    const topGeo=firstGeo?(()=>{ const g=geoStats(rows,firstGeo); const e=[...g.m.entries()].sort((a,b)=>b[1]-a[1])[0]; return e?{st:e[0],c:e[1],n:g.n,unres:g.unres}:null; })():null;
+    const firstScale=qs.find(q=>q.type==='scale');
+    const scaleAvg=firstScale?(()=>{ const xs=rows.map(r=>r.answers[firstScale.k]).filter(v=>v!=null); return xs.length?(xs.reduce((a,b)=>a+Number(b),0)/xs.length).toFixed(2):'—'; })():null;
+    const kpi=[];
+    kpi.push('<div class="kpi"><div class="l">분석 대상 응답</div><div class="v">'+n+'</div><div class="d">'+(segFilter?esc(qName(segQ))+' = '+esc(segFilter):'올림 '+(counts.total||0)+' · 실패·대기 '+((counts.total||0)-all.length)+' 제외')+'</div></div>');
+    if(topGeo) kpi.push('<div class="kpi"><div class="l">최다 지역</div><div class="v" style="font-size:22px">'+esc(topGeo.st)+'</div><div class="d">'+pctS(topGeo.c,topGeo.n)+'% · '+topGeo.c+'명 / 주 확인 '+topGeo.n+'명'+(topGeo.unres?' · 미확인 '+topGeo.unres:'')+'</div></div>');
+    if(firstScale) kpi.push('<div class="kpi"><div class="l">'+esc(qName(firstScale))+'</div><div class="v">'+scaleAvg+'</div><div class="d">Q'+firstScale.no+' 평균 · '+firstScale.min+'~'+firstScale.max+'점</div></div>');
+    if(!topGeo&&!firstScale) kpi.push('<div class="kpi"><div class="l">문항</div><div class="v">'+qs.length+'</div><div class="d">세그먼트 '+segQs.length+'개</div></div>');
+    kpi.push('<div class="kpi"><div class="l">서술형 응답</div><div class="v">'+textN+'</div><div class="d">'+(textQs.length?'서술형 문항 '+textQs.length+'개':'서술형 문항 없음')+'</div></div>');
+    kpi.push('<div class="kpi"><div class="l">AI 확신 낮은 칸</div><div class="v">'+pctS(lowCells,all.length*qs.length)+'%</div><div class="d">'+lowCells+'칸 / '+(all.length*qs.length)+'칸 (전체 기준)</div></div>');
+    $('kpis').innerHTML=kpi.slice(0,4).join('');
+
+    renderAiCard(all);
+
+    // 교차표
+    const targets=qs.filter(q=>q.k!==segKey&&(q.type==='single'||q.type==='multi'||q.type==='scale'));
+    if(segQ&&targets.length){
+      if(!targets.some(q=>q.k===crossKey)) crossKey=(targets.find(q=>!q.seg&&q.type==='single')||targets.find(q=>!q.seg)||targets[0]).k;
+      const tq=qById(crossKey);
+      let cols=tq.type==='scale'?range(tq):tq.options;
+      if(tq.type==='geo'){ const g=geoStats(all,tq); cols=tq.options.filter(o=>g.m.get(o)).sort((a,b)=>g.m.get(b)-g.m.get(a)).slice(0,8); }
+      let segRows=segQ.options;
+      if(segQ.type==='geo'){ const g=geoStats(all,segQ); segRows=segQ.options.filter(o=>g.m.get(o)).sort((a,b)=>g.m.get(b)-g.m.get(a)).slice(0,12); }
+      let h='<div class="row" style="margin-bottom:8px"><div><p class="ttl" style="margin:0">세그먼트 교차 분석 — '+esc(qName(segQ))+' × <select id="ctSel" class="no-print" style="padding:4px 6px">'+targets.map(q=>'<option value="'+q.k+'"'+(q.k===tq.k?' selected':'')+'>Q'+q.no+' '+esc(qName(q))+'</option>').join('')+'</select><span class="prtonly">'+esc(qName(tq))+'</span></p>'+
+        '<p class="sub2" style="margin:2px 0 0">행 = '+esc(qName(segQ))+', 칸 = 그 세그먼트 안에서의 비율'+(tq.type==='multi'?' (복수선택: 응답자 대비라 합계가 100%를 넘음)':'')+'. 진할수록 높음. 표본 10명 미만은 흐리게.</p></div></div>';
+      h+='<div class="tbwrap"><table class="heat"><thead><tr><th class="rl">'+esc(qName(segQ))+'</th><th>n</th>'+cols.map(o=>'<th title="'+esc(optKo(tq,o))+'">'+esc(o)+'</th>').join('')+(tq.type==='scale'?'<th>평균</th>':'')+'</tr></thead><tbody>';
+      segRows.forEach(so=>{
+        const rs=all.filter(r=>r.answers[segKey]===so); const {m,n:nn}=cnt(rs,tq);
+        const faint=nn<10?' style="opacity:.55"':'';
+        h+='<tr'+faint+'><td class="rl"><b>'+esc(so)+'</b></td><td class="num" style="color:var(--muted)">'+nn+'</td>'+cols.map(o=>{ const c=m.get(o)||0; const p=pct(c,nn); const col=heatColor(p); return nn?'<td class="h" style="background:'+col+';color:'+heatInk(col)+'" data-tv="'+pctS(c,nn)+'% · '+c+'명 / '+nn+'명" data-tl="'+esc(so+' — '+o)+'">'+Math.round(p)+'%</td>':'<td>—</td>'; }).join('')+
+          (tq.type==='scale'?'<td class="num"><b>'+(nn?(rs.filter(r=>answered(r,tq)).reduce((a,r)=>a+Number(r.answers[tq.k]),0)/nn).toFixed(2):'—')+'</b></td>':'')+'</tr>';
+      });
+      const t=cnt(all,tq);
+      h+='<tr><td class="rl" style="color:var(--muted)">전체</td><td class="num" style="color:var(--muted)">'+t.n+'</td>'+cols.map(o=>'<td class="num" style="text-align:center;color:var(--ink2)">'+Math.round(pct(t.m.get(o)||0,t.n))+'%</td>').join('')+(tq.type==='scale'?'<td class="num">'+(t.n?(all.filter(r=>answered(r,tq)).reduce((a,r)=>a+Number(r.answers[tq.k]),0)/t.n).toFixed(2):'—')+'</td>':'')+'</tr></tbody></table></div>';
+      $('crossCard').innerHTML=h; $('crossCard').classList.remove('hidden');
+      $('ctSel').addEventListener('change',e=>{ crossKey=e.target.value; renderReport(); });
+    } else {
+      $('crossCard').innerHTML='<p class="ttl">세그먼트 교차 분석</p><p class="sub2" style="margin:0">'+(segQ?'비교할 선택형 문항이 없습니다.':'① 설문 양식에서 업종·지역 같은 단일선택 문항에 「세그먼트」를 켜면 세그먼트끼리 비교하는 표가 나옵니다.')+'</p>';
+    }
+
+    // 지역 카드(지도) — 문항 카드보다 먼저. 지역 문항이 아직 없으면 바꿔 주는 안내를 띄운다.
+    if(!geoQs.length){
+      const cq=geoCandidate(qs,all);
+      $('geoCards').innerHTML=cq?('<div class="card"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">🗺 지역 분석을 켤 수 있습니다</p>'+
+        '<p class="sub2" style="margin:4px 0 0">「<b>'+esc(qName(cq))+'</b>」 문항을 <b>지역(주)</b> 유형으로 바꾸면 지도·주별 순위·도시 표가 나옵니다. 적힌 표기(Mty · N.L. · CDMX…)는 멕시코 32개 주로 자동 정리되고, <b>AI 재판독은 필요 없습니다(비용 0).</b></p></div>'+
+        (canEdit()?'<button class="btn no-print" id="btnToGeo">지역 문항으로 바꾸기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 바꿀 수 있습니다.</span>')+'</div></div>'):'';
+      const bg=$('btnToGeo'); if(bg) bg.addEventListener('click',()=>convertToGeo(cq));
+    } else $('geoCards').innerHTML=geoQs.filter(q=>!(segFilter&&q.k===segKey)).map(q=>geoCardHTML(q,rows)).join('');
+    // 「손으로 적은 지역」 문항이 아직 없으면 — 지역 문항이 이미 있어도(9/14 판 전환 등) — 항상 켤 수 있게 맨 위에 띄운다
+    if(!geoQs.some(q=>q.free)&&!segFilter){
+      $('geoCards').insertAdjacentHTML('afterbegin','<div class="card" id="freeGeoCard" style="border-left:4px solid var(--gold,#B8893B)"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">✍ 손으로 적은 지역 찾기</p>'+
+        '<p class="sub2" style="margin:4px 0 0">'+(geoQs.length?'지역 문항과 별도로, ':'양식에 지역 문항이 없어도 ')+'고객이 여백·이름 칸 옆 등에 <b>도시·주를 직접 적은</b> 것을 찾습니다. 이미 읽은 <b>'+(counts.done||0)+'장</b>에서 <b>지역만</b> AI로 다시 찾고(다른 답은 그대로 · 1장당 AI 1회), 결과는 지도·엑셀·세그먼트에 들어갑니다.</p></div>'+
+        (canEdit()?'<button class="btn no-print" id="btnFreeGeo">✍ 손글씨 지역 찾기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 켤 수 있습니다.</span>')+'</div></div>');
+      const bf=$('btnFreeGeo'); if(bf) bf.addEventListener('click',addFreeGeo);
+    }
+    $('geoCards').querySelectorAll('[data-geoscan]').forEach(b=>b.addEventListener('click',()=>geoScan(b.getAttribute('data-geoscan'))));
+    const gu=$('geoUnres'); if(gu) gu.addEventListener('click',()=>{ showTab('upload'); $('lf').value='flag'; renderList(); });
+    const gb=$('btnGeoNorm'); if(gb) gb.addEventListener('click',geoNormalize);
+    bindTips($('geoCards'));
+
+    // 문항 카드
+    $('qCards').innerHTML=qs.filter(q=>(q.type==='single'||q.type==='multi'||q.type==='scale'||q.type==='number')&&!(segFilter&&q.k===segKey)).map(q=>{
+      const kind=q.type==='multi'?'복수선택 · 응답자 대비 %':q.type==='scale'?'척도 '+q.min+'~'+q.max+(segQ&&!segFilter?' · 세그먼트별':''):q.type==='number'?'숫자':'단일선택';
+      const body=q.type==='scale'?scaleHTML(rows,q,segFilter?null:segQ):q.type==='number'?numberHTML(rows,q):barsHTML(rows,q);
+      return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div><h4>'+esc(qName(q))+'</h4><div class="orig">'+(q.ko?esc(q.text)+' · ':'')+kind+' · n='+n+'</div></div></div>'+body+'</div>';
+    }).join('');
+
+    // 서술형
+    const cache=S.ai_cache||{}; const themesBy=cache.themes||{};
+    const rowIds=new Set(rows.map(r=>r.id)); const byId=new Map(all.map(r=>[r.id,r]));
+    $('textCards').innerHTML=textQs.map(q=>{
+      const items=rows.filter(r=>answered(r,q));
+      let body;
+      const th=themesBy[q.k];
+      if(th&&th.length){
+        const list=th.map(t=>{ const ids=t.ids.filter(id=>rowIds.has(id)); return Object.assign({},t,{cur:ids}); }).filter(t=>t.cur.length).sort((a,b)=>b.cur.length-a.cur.length);
+        const tot=items.length; const max=Math.max(1,...list.map(t=>t.cur.length));
+        body=list.map(t=>{
+          const quotes=t.cur.map(id=>byId.get(id)).filter(Boolean).map(r=>({no:r.red_number,t:String(r.answers[q.k]||'').trim()})).filter(x=>x.t).sort((a,b)=>Math.abs(a.t.length-70)-Math.abs(b.t.length-70)).filter((x,i,arr)=>arr.findIndex(y=>y.t.toLowerCase()===x.t.toLowerCase())===i).slice(0,2);
+          return '<div class="theme"><div><div class="nm">'+esc(t.ko||t.name)+' <span style="color:var(--muted);font-weight:500">· '+esc(t.name)+'</span></div>'+(t.summary_ko?'<div class="qt">'+esc(t.summary_ko)+'</div>':'')+
+            '<div class="qt">'+quotes.map(x=>'<i>“'+esc(x.t.length>160?x.t.slice(0,158)+'…':x.t)+'”</i>'+(x.no?' <span class="mono" style="color:var(--muted)">#'+esc(x.no)+'</span>':'')).join(' &nbsp; ')+'</div><div class="minibar"><i style="width:'+(t.cur.length/max*100)+'%"></i></div></div>'+
+            '<div class="ct">'+t.cur.length+'건<div style="font-weight:500;color:var(--muted);font-size:12px">'+pctS(t.cur.length,tot)+'%</div></div></div>';
+        }).join('')||'<p class="empty">이 조건의 서술형 응답이 없습니다</p>';
+      } else {
+        body='<p class="sub2">아직 AI 주제 요약 전입니다 — 위 「AI 요약」 카드에서 만들 수 있습니다. 최근 응답:</p>'+items.slice(-12).reverse().map(r=>'<div class="theme"><div class="qt"><i>“'+esc(String(r.answers[q.k]).slice(0,200))+'”</i></div><div class="ct mono" style="font-weight:500;color:var(--muted)">#'+esc(r.red_number||'?')+'</div></div>').join('')||'<p class="empty">응답 없음</p>';
+      }
+      return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div style="flex:1"><h4>'+esc(qName(q))+' — 주제별 묶음</h4><div class="orig">'+(q.ko?esc(q.text)+' · ':'')+'서술형 '+items.length+'건 · 인용은 원문 그대로</div></div></div>'+body+'</div>';
+    }).join('');
+
+    const infoQs=qs.filter(q=>q.type==='info');
+    $('infoCard').classList.toggle('hidden',!infoQs.length);
+    if(infoQs.length) $('infoCard').innerHTML='<p class="ttl">기재 정보 (분석 제외 · 엑셀에 포함)</p><p class="sub2" style="margin:0">'+infoQs.map(q=>'Q'+q.no+' '+esc(qName(q))+' — 기재 '+rows.filter(r=>answered(r,q)).length+'/'+n).join(' · ')+'</p>';
+
+    bindTips($('v-report'));
+  }
+  function renderAiCard(all){
+    const c=S.ai_cache;
+    const stale=c&&c.basis&&(c.basis.done!==counts.done||c.basis.last_processed!==counts.last_processed);
+    let h='<div class="row" style="margin-bottom:6px"><p class="ttl" style="margin:0">🤖 AI 요약</p>'+(c?'<span class="chip">'+esc(fmtTime(c.generated_at))+' · 응답 '+(c.basis&&c.basis.done)+'건 기준</span>':'')+(stale?'<span class="chip warn">응답이 바뀜 — 다시 만들기 권장</span>':'')+'<div class="sp"></div>'+
+      (canEdit()?'<button class="btn '+(c?'ghost ':'')+'sm no-print" id="btnInsight">'+(c?'↻ 다시 만들기':'🤖 AI 요약 만들기')+'</button>':'')+'</div>';
+    if(c&&c.bullets&&c.bullets.length) h+='<div class="note"><ul>'+c.bullets.map(b=>'<li>'+esc(b)+'</li>').join('')+'</ul></div>';
+    else if(c) h+='<p class="sub2" style="margin:0">세그먼트 해석을 만들지 못했습니다'+(c.errors&&c.errors.length?' ('+esc(c.errors.map(e=>e.error).join(', '))+')':'')+'.</p>';
+    else h+='<p class="sub2" style="margin:0">세그먼트 간 차이를 한국어 몇 줄로 요약하고, 서술형 답변을 주제별로 묶습니다. 비율 집계만 AI로 보내며 상호·연락처는 보내지 않습니다. 약 20~60초.</p>';
+    $('aiCard').innerHTML=h;
+    const b=$('btnInsight'); if(b) b.addEventListener('click',makeInsights);
+  }
+  async function makeInsights(){
+    const b=$('btnInsight'); b.disabled=true; b.innerHTML='<span class="spin"></span> 만드는 중… (20~60초)';
+    const d=await api('/api/surveys/'+S.id+'/insights',{method:'POST',body:'{}'});
+    if(!d.ok){ toast(errKo(d.error),true); b.disabled=false; b.textContent='🤖 AI 요약 만들기'; return; }
+    S.ai_cache=d.ai_cache; toast('AI 요약을 만들었습니다'); renderReport();
+  }
+  async function geoNormalize(){
+    const b=$('btnGeoNorm'); if(b){ b.disabled=true; b.innerHTML='<span class="spin"></span> 정리 중…'; }
+    const d=await api('/api/surveys/'+S.id+'/geo-normalize',{method:'POST',body:'{}'});
+    if(!d.ok){ toast(errKo(d.error),true); if(b){ b.disabled=false; b.textContent='🗺 지역 다시 정리'; } return; }
+    toast('지역 '+d.changed+'건을 다시 맞췄습니다'+(d.unresolved?' · 주 미확인 '+d.unresolved+'건':''));
+    await loadPages();
+  }
+  $('segQ').addEventListener('change',e=>{ segKey=e.target.value; segFilter=''; renderReport(); });
+  $('btnPrint').addEventListener('click',()=>{ showTab('report'); setTimeout(()=>window.print(),120); });
+
+  // ─────────────── REFATRIX Platform 공개 (디렉터) ───────────────
+  //   설문 결과는 REFATRIX Platform(refatrix-platform.netlify.app) 메뉴 「고객 설문」에서만 본다 — 플랫폼 로그인 그대로.
+  //   2026-09-30 디렉터 결정: erp.refatrix.com 열람 페이지·아이디/비밀번호 열람 계정은 닫음(ERP 주소가 회사 밖에 알려지지 않게).
+  //   여기서는 어떤 설문을 플랫폼에 보일지만 고른다.
+  let pfSurveys=[];
+  const PF_URL='https://refatrix-platform.netlify.app';
+  const VW_ERR={director_only:'디렉터만 관리할 수 있습니다'};
+  function openViewers(){ $('vwDrawer').classList.add('on'); $('vwBg').classList.add('on'); loadViewers(); }
+  function closeViewers(){ $('vwDrawer').classList.remove('on'); $('vwBg').classList.remove('on'); }
+  async function loadViewers(){
+    const d=await api('/api/surveys/viewers');
+    if(!d.ok){ $('vwBody').innerHTML='<p class="msg err">'+esc(VW_ERR[d.error]||errKo(d.error))+'</p>'; return; }
+    pfSurveys=d.platform||[]; renderViewers(); loadRedact(); loadAcks();
+  }
+  function renderViewers(){
+    $('vwBody').innerHTML='<div class="card" style="margin:0 0 12px;border-left:4px solid var(--brand)"><p class="ttl" style="margin:0 0 4px">🌐 REFATRIX Platform 공개</p>'+
+      '<p class="sub2" style="margin:0 0 8px"><a href="'+PF_URL+'" target="_blank" rel="noopener">refatrix-platform.netlify.app</a> 에 로그인한 사람(CTR 개발자·디렉터)이 메뉴 <b>「고객 설문」</b>에서 봅니다 — <b>플랫폼 로그인 그대로</b>. 누가 들어올 수 있는지는 플랫폼 사용자 관리(가입 승인·PIN)에서 정하고, 여기서는 <b>어떤 설문을 보일지</b>만 고릅니다. 열람은 플랫폼 활동 로그에 이름과 함께 남습니다. <b>⚠ 응답 목록의 고객 이름·상호·전화도 보입니다.</b></p>'+
+      (pfSurveys.length?pfSurveys.map(x=>'<label style="display:flex;gap:8px;align-items:center;margin:4px 0;font-weight:600;color:var(--ink)"><input type="checkbox" data-pf="'+x.id+'"'+(x.visible?' checked':'')+'> '+esc(x.code_prefix+' · '+x.title)+(x.visible?' <span class="chip ok">플랫폼 공개 중</span>':'')+'</label>').join(''):'<span class="sub2">설문이 없습니다</span>')+'</div>';
+    $('vwBody').querySelectorAll('[data-pf]').forEach(cb=>cb.addEventListener('change',async()=>{
+      const id=Number(cb.getAttribute('data-pf')); const on=cb.checked;
+      if(on&&!confirm('이 설문을 REFATRIX Platform 사용자 전원(CTR 개발자 등)에게 공개합니다.\n응답 목록의 고객 이름·상호·전화·설문지 원본도 보입니다. 계속할까요?')){ cb.checked=false; return; }
+      const d=await api('/api/surveys/'+id+'/platform',{method:'PATCH',body:JSON.stringify({visible:on})});
+      if(!d.ok){ cb.checked=!on; toast(VW_ERR[d.error]||errKo(d.error),true); return; }
+      pfSurveys=pfSurveys.map(x=>x.id===id?Object.assign({},x,{visible:d.visible}):x); renderViewers(); renderRedact(); renderAcks(); toast(d.visible?'플랫폼에 공개했습니다':'플랫폼 공개를 껐습니다');
+    }));
+    $('vwBody').insertAdjacentHTML('beforeend','<div id="rdCard"></div><div id="ackCard"></div>');
+    renderRedact(); renderAcks();
+  }
+
+  // ── 📦 플랫폼 일괄 다운로드용 「개인정보 가린 사본」 (2026-09-30) ──
+  //   ① AI 가 장마다 가릴 영역(이름·상호·전화·메일·주소·RFC·서명)을 찾고(서버 큐)
+  //   ② 이 화면이 원본 위에 검은 사각형을 칠한 JPEG 를 만들어 올린다 — 플랫폼 다운로드 zip 에는 이것만 들어간다.
+  //   답은 있는데 위치를 못 찾은 장(확인 필요)은 칠하지 않는다 → 다시 찾기 또는 「다운로드에서 빼기」.
+  let RD=null, rdBusy=false, rdPoll=null, rdShow=24; const rdUrls=[];
+  let ACKS=[];
+  async function loadRedact(){
+    if(!S) return;
+    const d=await api('/api/surveys/'+S.id+'/redact');
+    if(!d.ok||!d.counts||!Array.isArray(d.items)){ RD={error:d.error||'unavailable'}; renderRedact(); return; }
+    RD=d; renderRedact();
+    clearTimeout(rdPoll);
+    if(d.counts.scanning>0&&$('vwDrawer').classList.contains('on')) rdPoll=setTimeout(async()=>{ await loadRedact(); if(RD&&RD.counts&&!RD.counts.scanning&&RD._autoPaint){ RD._autoPaint=false; paintAll(); } },3000);
+  }
+  function renderRedact(){
+    const el=$('rdCard'); if(!el||!S) return;
+    if(!RD){ el.innerHTML='<div class="card" style="margin:0 0 12px"><p class="sub2" style="margin:0">불러오는 중…</p></div>'; return; }
+    if(RD.error){ el.innerHTML='<div class="card" style="margin:0 0 12px"><p class="msg err">'+esc(errKo(RD.error))+'</p></div>'; return; }
+    const c=RD.counts; const pub=(pfSurveys.find(x=>x.id===Number(S.id))||{}).visible;
+    const chip=(t,cls)=>'<span class="chip'+(cls?' '+cls:'')+'">'+t+'</span>';
+    el.innerHTML='<div class="card" style="margin:0 0 12px;border-left:4px solid var(--gold)"><p class="ttl" style="margin:0 0 4px">📦 일괄 다운로드용 「개인정보 가린 사본」 — '+esc(S.code_prefix+' · '+S.title)+'</p>'+
+      '<p class="sub2" style="margin:0 0 8px">플랫폼 「고객 설문」 화면 위쪽 <b>[⬇ 설문지 전체 다운로드]</b>에는 이름·상호·전화·메일·주소·RFC·서명을 <b>검은 사각형으로 가린 사본만</b> 들어갑니다(원본은 절대 안 나감). 받기 전 사용자는 <b>「개인정보 유출 책임은 CTR」</b> 문구에 동의해야 하고, 그 기록이 아래에 남습니다. AI 가 장마다 가릴 곳을 찾고(1장당 AI 1회), 이 화면이 사본을 만듭니다 — <b>창을 닫지 마세요.</b>'+(pub?'':' <b style="color:var(--expense)">⚠ 이 설문은 아직 플랫폼 공개가 꺼져 있습니다.</b>')+'</p>'+
+      '<div class="row" style="gap:6px;margin-bottom:8px">'+chip('판독 완료 '+c.done)+chip('가린 사본 '+c.ready,'ok')+(c.to_paint?chip('칠할 차례 '+c.to_paint,'run'):'')+(c.scanning?chip('<span class="spin"></span> 영역 찾는 중 '+c.scanning,'run'):'')+
+        (c.review?chip('⚠ 확인 필요 '+c.review,'warn'):'')+(c.errors?chip('실패 '+c.errors,'bad'):'')+(c.excluded?chip('다운로드에서 뺌 '+c.excluded):'')+'</div>'+
+      '<div class="row" style="gap:8px"><button class="btn sm" id="rdGo"'+(rdBusy?' disabled':'')+'>🛡 가린 사본 만들기</button>'+
+        '<button class="btn ghost sm" id="rdAll"'+(rdBusy?' disabled':'')+' title="모든 장의 영역을 다시 찾고 사본도 다시 만듭니다">전체 다시</button>'+
+        '<button class="btn ghost sm" id="rdPrev">👁 가린 사본 확인</button><span class="msg" id="rdMsg" style="margin:0"></span></div>'+
+      '<div id="rdGrid" style="margin-top:10px"></div></div>';
+    const on=(id,fn)=>{ const x=$(id); if(x) x.addEventListener('click',fn); };
+    on('rdGo',()=>startRedact('new')); on('rdAll',()=>{ if(confirm('모든 장의 가릴 영역을 다시 찾고 사본도 새로 만듭니다(1장당 AI 1회). 계속할까요?')) startRedact('all'); });
+    on('rdPrev',()=>{ rdShow=24; renderRedactGrid(true); });
+  }
+  async function startRedact(scope){
+    if(!S||rdBusy) return;
+    const g=await api('/api/surveys/'+S.id+'/redact-scan',{method:'POST',body:JSON.stringify({scope})});
+    if(!g.ok){ toast(errKo(g.error),true); return; }
+    if(!g.ai_ready) toast('AI 키가 없어 영역 찾기가 대기합니다',true);
+    await loadRedact();
+    if(RD&&RD.counts&&RD.counts.scanning){ RD._autoPaint=true; say('rdMsg',true,'AI 가 가릴 영역을 찾는 중… 끝나면 자동으로 사본을 만듭니다'); }
+    else paintAll();
+  }
+  async function paintAll(){
+    if(!S||!RD||rdBusy) return;
+    const todo=RD.items.filter(it=>it.scan==='done'&&!it.has_redacted&&!it.excluded&&!it.missing.length);
+    if(!todo.length){ say('rdMsg',true,RD.counts.review?'칠할 장이 없습니다 — ⚠ 확인 필요 장은 「가린 사본 확인」에서 빼거나 다시 찾으세요':'모든 장의 가린 사본이 준비됐습니다'); return; }
+    rdBusy=true; renderRedact();
+    let ok=0, bad=0;
+    for(let i=0;i<todo.length;i++){
+      say('rdMsg',true,'가린 사본 만드는 중 '+(i+1)+'/'+todo.length);
+      try{ await paintOne(todo[i]); ok++; }catch(e){ bad++; }
+    }
+    rdBusy=false;
+    await loadRedact();
+    say('rdMsg',!bad,'가린 사본 '+ok+'장 완료'+(bad?' · 실패 '+bad+'장(다시 누르면 이어서)':''));
+    toast('가린 사본 '+ok+'장을 만들었습니다');
+  }
+  async function maskedJpeg(blob,boxes){
+    const im=await decodeImage(blob);
+    const w0=im.width||im.naturalWidth, h0=im.height||im.naturalHeight;
+    const [w,h]=dims(w0,h0,IMG_MAX);
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(im,0,0,w,h);
+    ctx.fillStyle='#000';
+    boxes.forEach(b=>{ const x=Math.floor(b.x0*w), y=Math.floor(b.y0*h); ctx.fillRect(x,y,Math.ceil(b.x1*w)-x,Math.ceil(b.y1*h)-y); });
+    return canvasBlob(c,'image/jpeg',0.82);
+  }
+  async function paintOne(it){
+    const src=await apiBlob('/api/surveys/pages/'+it.id+'/view');
+    if(src.type==='application/pdf') throw new Error('pdf_no_view');
+    const out=await maskedJpeg(src,it.boxes);
+    const d=await api('/api/surveys/pages/'+it.id+'/redacted',{method:'PUT',body:JSON.stringify({data_b64:await blobToB64(out),boxes:it.boxes})});
+    if(!d.ok) throw new Error(d.error||'upload');
+  }
+  async function renderRedactGrid(open){
+    const g=$('rdGrid'); if(!g||!RD||!RD.items) return;
+    if(!open&&!g.innerHTML) return;
+    while(rdUrls.length) URL.revokeObjectURL(rdUrls.pop());
+    const list=RD.items.filter(it=>it.has_redacted||it.missing.length||it.excluded||it.scan==='error');
+    if(!list.length){ g.innerHTML='<p class="sub2" style="margin:0">아직 만든 사본이 없습니다.</p>'; return; }
+    const show=list.slice(0,rdShow);
+    g.innerHTML='<p class="sub2" style="margin:0 0 6px">검은 사각형이 이름·상호·전화 등을 다 덮었는지 훑어보세요. 미덥지 않은 장은 <b>다운로드에서 빼기</b>.</p>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px">'+show.map(it=>{
+        const st=it.excluded?'<span class="chip">뺌</span>':it.missing.length?'<span class="chip warn">⚠ 위치 모름: '+esc(it.missing.join(', '))+'</span>':it.scan==='error'?'<span class="chip bad">실패</span>':it.filled.length?'<span class="chip warn" title="AI 가 놓친 칸을 다른 장 위치로 가렸습니다">보충 '+esc(it.filled.join(', '))+'</span>':'';
+        return '<div style="border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff"><div class="mono" style="font-size:11px;margin-bottom:4px">#'+esc(it.folio||it.seq)+' '+st+'</div>'+
+          (it.has_redacted?'<img data-rdimg="'+it.id+'" alt="" style="width:100%;height:auto;display:block;border-radius:4px;background:#f3f1ec;min-height:120px">':'<div class="sub2" style="margin:0;padding:30px 4px;text-align:center">사본 없음</div>')+
+          '<button class="btn ghost sm" data-rdex="'+it.id+'" data-v="'+(it.excluded?0:1)+'" style="margin-top:6px;width:100%">'+(it.excluded?'다운로드에 다시 넣기':'다운로드에서 빼기')+'</button></div>';
+      }).join('')+'</div>'+(list.length>rdShow?'<button class="btn ghost sm" id="rdMore" style="margin-top:8px">더 보기 ('+(list.length-rdShow)+'장 남음)</button>':'');
+    g.querySelectorAll('[data-rdex]').forEach(b=>b.addEventListener('click',async()=>{
+      const d=await api('/api/surveys/pages/'+b.getAttribute('data-rdex')+'/redact',{method:'PATCH',body:JSON.stringify({excluded:b.getAttribute('data-v')==='1'})});
+      if(!d.ok){ toast(errKo(d.error),true); return; }
+      await loadRedact(); renderRedactGrid(true);
+    }));
+    const more=$('rdMore'); if(more) more.addEventListener('click',()=>{ rdShow+=24; renderRedactGrid(true); });
+    for(const img of Array.from(g.querySelectorAll('img[data-rdimg]'))){
+      try{ const b=await apiBlob('/api/surveys/pages/'+img.getAttribute('data-rdimg')+'/redacted'); const u=URL.createObjectURL(b); rdUrls.push(u); img.src=u; }catch(e){}
+    }
+  }
+
+  // ── 📝 다운로드 확인 기록 ──
+  async function loadAcks(){
+    const d=await api('/api/surveys/download-acks');
+    ACKS=d.ok&&Array.isArray(d.items)?d.items:[]; renderAcks();
+  }
+  function renderAcks(){
+    const el=$('ackCard'); if(!el) return;
+    el.innerHTML='<div class="card" style="margin:0"><p class="ttl" style="margin:0 0 4px">📝 일괄 다운로드 확인 기록 <span class="sub2">'+ACKS.length+'건</span></p>'+
+      '<p class="sub2" style="margin:0 0 8px">플랫폼 사용자가 <b>「개인정보 유출 책임은 CTR」</b> 문구에 동의한 기록입니다. 동의 문구 전문·IP·장수가 그대로 남고, 플랫폼 활동 로그에도 실명으로 「확인번호 #」와 함께 남습니다.</p>'+
+      (ACKS.length?'<div class="tbwrap"><table><thead><tr><th>#</th><th>동의 일시</th><th>이름(플랫폼)</th><th>설문</th><th class="num">장수</th><th>다운로드</th><th>IP</th><th></th></tr></thead><tbody>'+
+        ACKS.map(a=>'<tr><td class="mono">'+a.id+'</td><td class="mono" style="white-space:nowrap">'+esc(a.created_at)+'</td><td>'+esc(a.viewer_name||'')+'</td><td>'+esc(a.code_prefix+' · '+a.title)+'</td><td class="num">'+a.files_ready+'/'+a.files_done+'</td>'+
+          '<td class="mono" style="white-space:nowrap">'+(a.download_count?esc(a.downloaded_at||'')+' · '+a.download_count+'회':'<span class="sub2" style="margin:0">아직</span>')+'</td><td class="mono">'+esc(a.ip||'')+'</td>'+
+          '<td><button class="btn ghost sm" data-ack="'+a.id+'">문구</button></td></tr>').join('')+'</tbody></table></div>':'<p class="sub2" style="margin:0">아직 기록이 없습니다.</p>')+'</div>';
+    el.querySelectorAll('[data-ack]').forEach(b=>b.addEventListener('click',()=>{
+      const a=ACKS.find(x=>x.id===Number(b.getAttribute('data-ack'))); if(!a) return;
+      alert('확인번호 #'+a.id+' · '+a.created_at+' · '+(a.viewer_name||'')+' · 문구 버전 '+a.ack_version+'\n\n'+a.ack_text);
+    }));
+  }
+  $('btnViewers').addEventListener('click',openViewers);
+  $('vwBg').addEventListener('click',closeViewers);
+  $('vwClose').addEventListener('click',closeViewers);
+
+  // ─────────────── 엑셀 ───────────────
+  async function exportXlsx(){
+    if(!S) return;
+    toast('엑셀 만드는 중…');
+    try{ await loadScript(LIB.xlsx); }catch(e){ toast('엑셀 라이브러리를 불러오지 못했습니다',true); return; }
+    const X=window.XLSX; const wb=X.utils.book_new(); const qs=S.questions||[];
+    const HS={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}},alignment:{vertical:'center',wrapText:true}};
+    const LOW={fill:{fgColor:{rgb:'FFF4D6'}}}; const EDT={fill:{fgColor:{rgb:'E4F0EB'}}};
+    const styleHead=(ws,cols)=>{ for(let c=0;c<cols;c++){ const a=X.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s=HS; } };
+    const sorted=pages.slice().sort(byNumber);
+    // ① 응답
+    const colOf={}; const head=['번호(붉은)','파일명','상태'];
+    qs.forEach(q=>{ colOf[q.k]=head.length;
+      const lb='Q'+q.no+' '+q.text+(q.ko?' ('+q.ko+')':'');
+      if(q.type==='geo') head.push(lb+' — 주', lb+' — 도시'); else head.push(lb); });
+    head.push('AI 확신 낮은 칸','사람이 고친 칸','올린 시각');
+    const aoa=[head];
+    sorted.forEach(p=>{
+      const st=p.status==='done'?(p.red_number?(p.dup_idx>1?'번호 중복':'완료'):'번호 없음'):(p.status==='error'?'실패: '+(p.error||''):'대기');
+      const row=[p.red_number?p.red_number+(p.dup_idx>1?'-'+p.dup_idx:''):'',p.file_name,st];
+      qs.forEach(q=>{
+        if(p.status!=='done'){ row.push(''); if(q.type==='geo') row.push(''); return; }
+        const v=(p.answers||{})[q.k]; const o=(p.others||{})[q.k];
+        if(q.type==='geo'){ const g=(p.geo||{})[q.k]||{}; row.push(v||(g.raw?'? '+g.raw:''), g.ciudad||''); return; }
+        let cell=q.type==='multi'?(v||[]).join('; '):(v==null?'':v); if(o) cell=String(cell)+' ('+o+')'; row.push(cell); });
+      row.push((p.low_conf||[]).map(k=>k==='_no'?'번호':('Q'+((qById(k)||{}).no||k))).join(', '));
+      row.push(Object.keys(p.edited||{}).map(k=>k==='_no'?'번호':('Q'+((qById(k)||{}).no||k))).join(', '));
+      row.push(fmtTime(p.created_at));
+      aoa.push(row);
+    });
+    const ws=X.utils.aoa_to_sheet(aoa); styleHead(ws,head.length);
+    sorted.forEach((p,ri)=>{ const low=new Set(p.low_conf||[]); const ed=p.edited||{};
+      qs.forEach((q)=>{ const a=X.utils.encode_cell({r:ri+1,c:colOf[q.k]}); if(!ws[a]) return; if(low.has(q.k)) ws[a].s=LOW; else if(ed[q.k]) ws[a].s=EDT; });
+      if(low.has('_no')){ const a=X.utils.encode_cell({r:ri+1,c:0}); if(ws[a]) ws[a].s=LOW; } });
+    const qcols=[]; qs.forEach(q=>{ if(q.type==='geo') qcols.push({wch:18},{wch:16}); else qcols.push({wch:q.type==='text'?40:q.type==='multi'?26:18}); });
+    ws['!cols']=[{wch:10},{wch:22},{wch:12}].concat(qcols,[{wch:14},{wch:14},{wch:14}]);
+    X.utils.book_append_sheet(wb,ws,'응답');
+    // ② 문항
+    const qa=[['#','키','문항(원문)','한국어','유형','보기','세그먼트']].concat(qs.map(q=>[q.no,q.k,q.text,q.ko||'',TYPE_LB[q.type],q.type==='scale'?q.min+'~'+q.max:q.type==='geo'?'멕시코 32개 주(자동 분류)':(q.options||[]).map((o,i)=>o+((q.options_ko||[])[i]?' ('+q.options_ko[i]+')':'')).join('; '),q.seg?'○':'']));
+    const ws2=X.utils.aoa_to_sheet(qa); styleHead(ws2,7); ws2['!cols']=[{wch:4},{wch:6},{wch:44},{wch:24},{wch:10},{wch:60},{wch:8}];
+    X.utils.book_append_sheet(wb,ws2,'문항');
+    // ③ 집계
+    const all=doneRows(); const sa=[['문항','보기','응답 수','비율(%)','기준 n']];
+    qs.forEach(q=>{
+      if(q.type==='geo'){ const g=geoStats(all,q); [...g.m.entries()].sort((a,b)=>b[1]-a[1]).forEach(([st,c])=>sa.push(['Q'+q.no+' '+qName(q),st,c,pct(c,g.n),g.n]));
+        if(g.unres) sa.push(['Q'+q.no+' '+qName(q),'(주 미확인)',g.unres,'',g.n]); }
+      else if(q.type==='single'||q.type==='multi'||q.type==='scale'){ const {m,n,opts}=cnt(all,q); opts.forEach(o=>sa.push(['Q'+q.no+' '+qName(q),String(o)+(optKo(q,o)?' ('+optKo(q,o)+')':''),m.get(o),pct(m.get(o),n),n]));
+        if(q.type==='scale'&&n) sa.push(['Q'+q.no+' '+qName(q),'평균',Number((all.filter(r=>answered(r,q)).reduce((a,r)=>a+Number(r.answers[q.k]),0)/n).toFixed(2)),'',n]); }
+      else if(q.type==='number'){ const xs=all.map(r=>r.answers[q.k]).filter(v=>v!=null).map(Number).sort((a,b)=>a-b); if(xs.length){ const avg=xs.reduce((a,b)=>a+b,0)/xs.length; sa.push(['Q'+q.no+' '+qName(q),'평균',Number(avg.toFixed(2)),'',xs.length],['Q'+q.no+' '+qName(q),'최소 / 최대',xs[0]+' / '+xs[xs.length-1],'',xs.length]); } }
+    });
+    const ws3=X.utils.aoa_to_sheet(sa); styleHead(ws3,5); ws3['!cols']=[{wch:36},{wch:34},{wch:10},{wch:10},{wch:8}];
+    X.utils.book_append_sheet(wb,ws3,'집계');
+    // ④ 세그먼트 교차
+    const segQs=qs.filter(q=>q.seg&&(q.type==='single'||q.type==='geo'));
+    if(segQs.length){
+      const ca=[];
+      segQs.forEach(sq=>{ qs.filter(q=>q.k!==sq.k&&(q.type==='single'||q.type==='multi'||q.type==='scale')).forEach(tq=>{
+        const cols=tq.type==='scale'?range(tq):tq.options;
+        ca.push(['['+qName(sq)+' × Q'+tq.no+' '+qName(tq)+']'+(tq.type==='multi'?' 응답자 대비 %':' %')]);
+        ca.push([qName(sq),'n'].concat(cols.map(String)));
+        sq.options.forEach(so=>{ const rs=all.filter(r=>r.answers[sq.k]===so); const {m,n}=cnt(rs,tq); ca.push([so,n].concat(cols.map(o=>n?pct(m.get(o)||0,n):''))); });
+        ca.push([]);
+      }); });
+      const ws4=X.utils.aoa_to_sheet(ca); ws4['!cols']=[{wch:26},{wch:6}].concat(Array.from({length:12},()=>({wch:14})));
+      X.utils.book_append_sheet(wb,ws4,'세그먼트 교차');
+    }
+    // ⑤ 지역 (주 · 도시)
+    const geoQsX=qs.filter(q=>q.type==='geo');
+    if(geoQsX.length){
+      const ga=[];
+      geoQsX.forEach(q=>{
+        const g=geoStats(all,q);
+        ga.push(['Q'+q.no+' '+qName(q)+' — 주별']); ga.push(['주','응답','비율(%)']);
+        [...g.m.entries()].sort((a,b)=>b[1]-a[1]).forEach(([st,c])=>ga.push([st,c,pct(c,g.n)]));
+        if(g.unres) ga.push(['(주 미확인)',g.unres,'']);
+        ga.push([]); ga.push(['Q'+q.no+' '+qName(q)+' — 도시별']); ga.push(['도시','주','응답','비율(%)']);
+        [...g.cities.entries()].map(([k,c])=>{ const i=k.lastIndexOf('|'); return [k.slice(0,i),k.slice(i+1),c]; })
+          .sort((a,b)=>b[2]-a[2]).forEach(([c,st,v])=>ga.push([c,st,v,pct(v,g.n)]));
+        ga.push([]);
+      });
+      const wsg=X.utils.aoa_to_sheet(ga); wsg['!cols']=[{wch:26},{wch:20},{wch:10},{wch:10}];
+      X.utils.book_append_sheet(wb,wsg,'지역');
+    }
+    // ⑥ 서술형 주제
+    const th=(S.ai_cache&&S.ai_cache.themes)||{};
+    const ta=[['문항','주제(한국어)','주제(원문)','건수','해당 번호']];
+    const byId=new Map(all.map(r=>[r.id,r]));
+    Object.keys(th).forEach(k=>{ const q=qById(k); if(!q) return; th[k].forEach(t=>ta.push(['Q'+q.no+' '+qName(q),t.ko||'',t.name,t.ids.length,t.ids.map(id=>{ const r=byId.get(id); return r?(r.red_number||'#'+r.seq):''; }).filter(Boolean).join(', ')])); });
+    if(ta.length>1){ const ws5=X.utils.aoa_to_sheet(ta); styleHead(ws5,5); ws5['!cols']=[{wch:30},{wch:24},{wch:28},{wch:8},{wch:60}]; X.utils.book_append_sheet(wb,ws5,'서술형 주제'); }
+    const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    X.writeFile(wb,(S.code_prefix||'ENC')+'_encuesta_'+ymd+'.xlsx');
+    toast('엑셀을 받았습니다');
+  }
+  $('btnXlsx').addEventListener('click',exportXlsx); $('btnXlsx2').addEventListener('click',exportXlsx);
+
+  // ─────────────── 시작 ───────────────
+  $('goLogin').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S&&((counts.queued||0)+(counts.processing||0)+(counts.geo_pending||0))>0) loadPages(); });
+  const ps=portalSession();
+  if(ps&&ps.token){ session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')}; afterLogin(); }
+  window.__surveyDebug={get S(){return S;},get pages(){return pages;},get counts(){return counts;}};
+})();
+
+</script>
+<script src="refatrix-nav.js?v=20261127th"></script>
+</body>
+</html>

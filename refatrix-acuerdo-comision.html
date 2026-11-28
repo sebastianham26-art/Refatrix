@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Acuerdo de Comisión · build b1102ro</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+  :root{--paper:#F5F5F5;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--brand:#0058A3;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--warn:#8a6d1f;--warn-bg:#FBEFD6;--bad:#B23A2E;--bad-bg:#F6E7E4;--r:12px}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:16px}
@@ -21,13 +21,13 @@
   .stamp{margin-left:auto;font-size:12px;font-weight:700;border-radius:20px;padding:5px 12px;white-space:nowrap}
   .stamp.ok{background:var(--ok-bg);color:var(--ok)}.stamp.no{background:var(--warn-bg);color:var(--warn)}.stamp.re{background:var(--bad-bg);color:var(--bad)}
   .who{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
-  .who div{background:#faf8f3;border:1px solid var(--line);border-radius:9px;padding:8px 11px}
+  .who div{background:#FAFAFA;border:1px solid var(--line);border-radius:9px;padding:8px 11px}
   .who small{display:block;font-size:10.5px;color:var(--muted)}.who b{font-size:13.5px}
   h2{font-size:14.5px;color:var(--brand);margin:20px 0 8px;display:flex;gap:8px;align-items:center}
   h2 .n{background:var(--brand);color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none}
   table{width:100%;border-collapse:collapse;font-size:13px}
   th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;font-weight:700}
   td.r,th.r{text-align:right;white-space:nowrap}
   .tw{overflow-x:auto}
   ul{margin:8px 0 0;padding-left:20px;font-size:13.5px;line-height:1.6}
@@ -47,11 +47,11 @@
   .done{background:var(--ok-bg);border:1px solid #bfe0d3;border-radius:var(--r);padding:14px 16px;margin-top:20px;font-size:13.5px;line-height:1.65}
   .done b{color:var(--ok)}
   .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:#eee;color:#555;white-space:nowrap}
-  .badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.no{background:var(--warn-bg);color:var(--warn)}.badge.re{background:var(--bad-bg);color:var(--bad)}.badge.old{background:#f0ece2;color:#7a7462}
+  .badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.no{background:var(--warn-bg);color:var(--warn)}.badge.re{background:var(--bad-bg);color:var(--bad)}.badge.old{background:#F0F0F0;color:#7a7462}
   .hint{font-size:11.5px;color:var(--muted);line-height:1.5}
   .hidden{display:none!important}
   .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
-  .kpi{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px 13px}
+  .kpi{flex:1;min-width:130px;background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:10px 13px}
   .kpi .v{font-size:22px;font-weight:800;color:var(--ok)}.kpi .l{font-size:11.5px;color:var(--muted)}
   .kpi.re .v{color:var(--bad)}.kpi.no .v{color:var(--warn)}
   .lnk{color:var(--brand);font-weight:700;cursor:pointer;text-decoration:underline;background:none;border:none;padding:0;font-size:12.5px;font-family:inherit}
@@ -70,7 +70,7 @@
   .rdoc ul.cl{list-style:none;padding-left:6px}
   .rdoc ul.cl li{margin:5px 0}
   .rdoc h2{font-size:14px}
-  .sigpad{border:1.5px dashed #b9b2a3;border-radius:10px;background:#fffdf8;height:170px;width:100%;touch-action:none;display:block;cursor:crosshair}
+  .sigpad{border:1.5px dashed #b9b2a3;border-radius:10px;background:#FFFFFF;height:170px;width:100%;touch-action:none;display:block;cursor:crosshair}
   .sigimg{max-width:320px;max-height:120px;display:block;border-bottom:1px solid #111;margin-top:6px}
   .sigblock{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
   .sigblock div{font-size:12.5px;line-height:1.5}
@@ -84,6 +84,10 @@
   @media print{body{background:#fff;padding:0}.sign,.noprint,#dirView{display:none!important}.card{border:none}}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -226,7 +230,7 @@
       if(s.table2) h+='<div style="margin-top:8px">'+tableHtml(s.table2)+'</div>';
       if(s.items&&s.items.length) h+='<ul>'+s.items.map(x=>'<li>'+md(x)+'</li>').join('')+'</ul>';
     });
-    if(opt.showDecl) h+='<div class="key" style="background:#faf8f3;border:1px solid var(--line)"><b>Declaración aceptada:</b> '+md(doc.declaration)+'</div>';
+    if(opt.showDecl) h+='<div class="key" style="background:#FAFAFA;border:1px solid var(--line)"><b>Declaración aceptada:</b> '+md(doc.declaration)+'</div>';
     return h;
   }
 
@@ -438,7 +442,7 @@
       if(sct.items&&sct.items.length) h+='<ul class="cl">'+sct.items.map(x=>'<li>'+md(x)+'</li>').join('')+'</ul>';
       for(const x of (sct.paras2||[])) h+='<p>'+md(x)+'</p>';
     }
-    if(opt.showDecl) h+='<div class="key" style="background:#faf8f3;border:1px solid var(--line)"><b>Declaración aceptada:</b> '+md(doc.declaration)+'</div>';
+    if(opt.showDecl) h+='<div class="key" style="background:#FAFAFA;border:1px solid var(--line)"><b>Declaración aceptada:</b> '+md(doc.declaration)+'</div>';
     return h+'</div>';
   }
   async function loadRefMe(){
@@ -1054,6 +1058,6 @@
 })();
 </script>
 <script src="refatrix-guide-referral.js?v=20261030ty"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

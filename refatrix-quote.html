@@ -10,9 +10,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 견적 (수주관리) · qt-1127vp</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
-    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --brand:#0058A3;--brand-soft:#004F93;--gold:#B8893B;--radius:12px;--radius-sm:8px;
     --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -20,7 +20,7 @@
   .wrap{max-width:1100px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px}
@@ -39,11 +39,11 @@
   table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;table-layout:fixed}
   th,td{padding:5px 5px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   th:first-child,td:first-child,th.l,td.l{text-align:left}
-  th{font-size:10px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:10px;color:var(--muted);background:#FAFAFA;font-weight:700}
   td.prod{max-width:150px;white-space:normal;line-height:1.25;cursor:pointer}
   td.prod:hover{color:var(--brand);text-decoration:underline}
   td.prod .ap{font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-  tfoot td{font-weight:800;background:#faf8f3;border-top:2px solid var(--line)}
+  tfoot td{font-weight:800;background:#FAFAFA;border-top:2px solid var(--line)}
   .flag{font-size:9.5px;font-weight:700;padding:1px 5px;border-radius:999px}
   .flag.ok{background:var(--income-bg);color:var(--income)}
   .flag.low_stock{background:#fdf3e3;color:#9a6512}
@@ -60,7 +60,7 @@
   .modal .hd{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
   .modal .bd{padding:16px 18px}
   .cand{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
-  .cand:hover{border-color:var(--brand);background:#faf8f3}
+  .cand:hover{border-color:var(--brand);background:#FAFAFA}
   .delx{color:var(--expense);cursor:pointer;font-weight:800;border:none;background:none;font-size:15px}
   .acbox{position:absolute;top:100%;left:0;right:0;z-index:50;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);margin-top:3px;max-height:280px;overflow:auto}
   .acitem{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
@@ -109,7 +109,7 @@
   #linesWrap:has(table){border:1px solid var(--line);border-radius:8px}
   #linesWrap>table{margin-top:0}
   #linesWrap thead th{position:sticky;top:0;z-index:3;box-shadow:inset 0 -1px 0 var(--line)}
-  #linesWrap tfoot td{position:sticky;bottom:0;z-index:3;background:#faf8f3;box-shadow:inset 0 1px 0 var(--line)}
+  #linesWrap tfoot td{position:sticky;bottom:0;z-index:3;background:#FAFAFA;box-shadow:inset 0 1px 0 var(--line)}
   html.rfxm #linesWrap{max-height:max(300px,calc(100vh - 210px))}
   /* 2026-10-20 · L/R 짝맞춤 안내 */
   .pairhint{margin-top:8px;background:#fdf7e6;border:1px solid #ecd9a0;border-radius:8px;padding:8px 12px;font-size:12.5px;line-height:1.7;color:#5a4710;white-space:normal}
@@ -132,6 +132,9 @@
   #qVehPanel .vm-sel{margin-top:4px}
   #qVehPanel label{margin:0 0 6px}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -158,7 +161,7 @@
           <div id="exclBadge" class="hint" style="margin-top:3px"></div></div>
         <div id="guestNameWrap" class="hidden"><label>Nombre del cliente (mostrar en cotización)</label><input id="guestName" type="text" placeholder="Ej: Taller López" style="width:180px"></div>
         <div><label>견적일</label><input id="qDate" type="date"></div>
-        <div style="min-width:90px"><label>할인율</label><input id="discShow" type="text" readonly style="width:90px;background:#faf8f3" oninput="onDiscInput()"></div>
+        <div style="min-width:90px"><label>할인율</label><input id="discShow" type="text" readonly style="width:90px;background:#FAFAFA" oninput="onDiscInput()"></div>
         <!-- 0225 · 고객 PO(O.C.) — 고객이 자기 시스템에서 관리하는 오더번호.
              패킹리스트의 Pedido 칸에 「우리번호 / 고객PO」로 같이 인쇄되고, 목록에서 이 번호로 찾을 수 있다. -->
         <div style="min-width:190px"><label>고객 PO번호 <span class="hint" style="font-weight:500">(O.C. del cliente · 선택)</span></label>
@@ -446,7 +449,7 @@
       curDisc=Number(($('discShow').value||'').replace('%',''))||0;
       $('custHint').textContent='Escriba el nombre exacto de un cliente YA registrado. Los clientes nuevos deben darse de alta en «고객 등록» con su RFC y aprobación del director.';
     } else {
-      $('discShow').setAttribute('readonly','readonly'); $('discShow').style.background='#faf8f3';
+      $('discShow').setAttribute('readonly','readonly'); $('discShow').style.background='#FAFAFA';
       const opt=sel.selectedOptions[0];
       curDisc=opt?Number(opt.getAttribute('data-disc'))||0:0;
       $('discShow').value=sel.value?(curDisc+'%'):'';
@@ -635,7 +638,7 @@
       +'tfoot td{font-weight:800;background:#f3f1ea}'
       +'.totbox{margin-top:14px;display:flex;justify-content:flex-end}'
       +'.totbox table{width:auto}.totbox td{border:none;padding:3px 10px}'
-      +'.bank{margin-top:18px;border:1px solid #ccc;border-radius:6px;padding:10px 12px;font-size:11px;background:#faf8f3}'
+      +'.bank{margin-top:18px;border:1px solid #ccc;border-radius:6px;padding:10px 12px;font-size:11px;background:#FAFAFA}'
       +'.bank b{color:#143D34}'
       +'.foot{margin-top:18px;font-size:10px;color:#888;text-align:center}'
       +'@media print{.noprint{display:none}}'
@@ -2398,6 +2401,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

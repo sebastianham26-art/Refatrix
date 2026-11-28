@@ -11,9 +11,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
-    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--gold-bg:#FFF6DA;
+    --brand:#0058A3;--brand-soft:#004F93;--gold:#B8893B;--gold-bg:#FFF6DA;
     --ctr:#d81e25;--ctr-bg:#FCE9EA;--syd:#0a5cab;--syd-bg:#E7F0F8;--radius:12px;
     --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
   *{box-sizing:border-box}
@@ -22,7 +22,7 @@
   .wrap{max-width:1180px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-top:16px;box-shadow:var(--shadow)}
   label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
@@ -55,7 +55,7 @@
 
   /* 차량 블록 */
   .veh{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin-top:14px;box-shadow:var(--shadow);overflow:hidden}
-  .veh-h{display:flex;align-items:center;gap:16px;padding:12px 18px;background:#FAF8F3;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+  .veh-h{display:flex;align-items:center;gap:16px;padding:12px 18px;background:#FAFAFA;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
   .rankbox{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:76px;background:var(--brand);color:#fff;border-radius:10px;padding:7px 10px}
   .rankbox .r{font-size:21px;font-weight:800;line-height:1.05}
   .rankbox .r small{font-size:11px;font-weight:700;color:#cfe0d8;margin-left:1px}
@@ -86,7 +86,7 @@
 
   /* 행렬: X축=품목(RH/LH 분리), Y축=속성 */
   table.mx{border-collapse:collapse;width:100%;min-width:760px}
-  table.mx th,table.mx td{border-bottom:1px solid #F0EDE4;padding:7px 9px;font-size:12px;text-align:center;vertical-align:top;white-space:nowrap}
+  table.mx th,table.mx td{border-bottom:1px solid #F0F0F0;padding:7px 9px;font-size:12px;text-align:center;vertical-align:top;white-space:nowrap}
   table.mx thead th{background:#FCFBF7;font-size:11px;color:var(--muted);font-weight:700;border-bottom:1px solid var(--line);vertical-align:middle}
   table.mx thead .grp{font-size:11.5px;color:var(--brand);border-left:1px solid var(--line)}
   table.mx thead .grp .es2{font-weight:600;color:var(--muted);font-size:10px}
@@ -171,12 +171,12 @@
   .vpPi .u{font-size:11.5px;color:var(--muted);white-space:nowrap}
   .vpPi .stk{font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;white-space:nowrap}
   .vpPi .stk.ok{background:var(--income-bg);color:var(--income)}
-  .vpPi .stk.no{background:#F1EFE8;color:#8a8578}
+  .vpPi .stk.no{background:#F0F0F0;color:#8a8578}
   .vpPiNote{padding:7px 12px;font-size:11.5px;color:var(--muted);background:#FCFBF7}
   .vpQbar select,.vpQbar input{padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
   table.vpQ{width:100%;border-collapse:collapse;margin-top:12px}
   table.vpQ th{font-size:11px;color:var(--muted);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);background:#FCFBF7;white-space:nowrap}
-  table.vpQ td{font-size:12.5px;padding:8px;border-bottom:1px solid #F0EDE4;vertical-align:middle}
+  table.vpQ td{font-size:12.5px;padding:8px;border-bottom:1px solid #F0F0F0;vertical-align:middle}
   table.vpQ tr.dim td{opacity:.55}
   table.vpQ tr.wait td{opacity:.75}
   table.vpQ td.rk{font-weight:800;color:var(--brand);font-size:17px;white-space:nowrap}
@@ -216,7 +216,7 @@
   .vpMsg{font-size:12.5px;margin-top:8px;line-height:1.6}
   /* 10-27 · 차량 사진 후보 갤러리 */
   .vpGal{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;margin:6px 0;max-height:236px;overflow:auto}
-  .vpGal .gi{position:relative;border:2px solid transparent;border-radius:8px;background:#F4F1EA;cursor:pointer;aspect-ratio:4/3;overflow:hidden;padding:0}
+  .vpGal .gi{position:relative;border:2px solid transparent;border-radius:8px;background:#F5F5F5;cursor:pointer;aspect-ratio:4/3;overflow:hidden;padding:0}
   .vpGal .gi img{width:100%;height:100%;object-fit:cover;display:block}
   .vpGal .gi.on{border-color:var(--brand);box-shadow:0 0 0 2px rgba(20,61,52,.15)}
   .vpGal .gi .sc{position:absolute;left:4px;top:4px;font-size:10.5px;font-weight:900;color:#fff;background:rgba(20,61,52,.88);border-radius:999px;padding:1px 6px}
@@ -245,7 +245,7 @@
   .vpChip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .vpVar{display:block;font-size:12.5px;margin:3px 0}
   .vpSum{font-size:12px;margin:6px 0}
-  .vpParts{max-height:340px;overflow:auto;border-top:1px solid #F0EDE4;padding-top:4px}
+  .vpParts{max-height:340px;overflow:auto;border-top:1px solid #F0F0F0;padding-top:4px}
   /* 0293 · 수량 · 합계 · 프로모션 번호 */
   .vpCode .qty{width:46px;padding:2px 4px;border:1px solid #d9d3c6;border-radius:6px;font:inherit;font-size:12px;font-weight:800;text-align:right}
   .vpCode .qty:disabled{opacity:.35}
@@ -262,7 +262,7 @@
   .vpTot .dirty{color:#9a5a12;font-weight:700}
   .vpPl{width:100%;border-collapse:collapse;font-size:12.5px}
   .vpPl th{text-align:left;font-size:11.5px;color:var(--muted);border-bottom:1px solid var(--line);padding:6px 6px;white-space:nowrap}
-  .vpPl td{border-bottom:1px solid #F0EDE4;padding:7px 6px;vertical-align:top}
+  .vpPl td{border-bottom:1px solid #F0F0F0;padding:7px 6px;vertical-align:top}
   .vpPl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   .vpPl .no{font-family:ui-monospace,Consolas,monospace;font-weight:900;color:var(--brand)}
   .vpPl .codes{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:#B30A12}
@@ -303,7 +303,7 @@
   .vpCode .lp small{font-size:9.5px;font-weight:700;opacity:.7;margin-right:4px}
   .vpCode .lp.no{color:#b5afa3;background:#f3f1ec}
   .vpCode:not(.on) .lp{opacity:.55}
-  .vpMarkBox{border-top:1px dashed #E6E1D6;margin-top:8px;padding-top:2px}
+  .vpMarkBox{border-top:1px dashed #DFDFDF;margin-top:8px;padding-top:2px}
   #vpMarkMode.on{background:#1d7cf2;border-color:#1d7cf2;color:#fff}
   #vpMarkInfo.err{color:var(--expense);font-weight:700}
   #vpMarkInfo.warn{color:#8a6414;font-weight:700}
@@ -319,6 +319,10 @@
     table.vpQ th:nth-child(3),table.vpQ td:nth-child(3){display:none}
   }
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -2832,7 +2836,7 @@ window.VP_BRAND={"red": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4QAAAD4C
   window.VP={ open:openStudio, boot:boot, _st:ST, _q:Q, _render:render, _cardsOf:cardsOf, _itemsOf:itemsOf, _pairText:pairText, _labelOf:labelOf, _isInc:isInc, _run:runQueue, _kitCanvas:kitCanvas };
 })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 <!-- 1108 · 화면 언어(한국어 · Español · English) — 크롬 언어 설정을 따른다 · 🌐 로 바꿀 수 있다 -->
 <script id="rfxI18n">
 (function(){

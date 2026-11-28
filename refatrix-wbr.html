@@ -10,9 +10,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · WBR · build wbr-1015j</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
-    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --brand:#0058A3;--brand-soft:#004F93;--gold:#B8893B;--radius:12px;--radius-sm:8px;
     --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -20,7 +20,7 @@
   .wrap{max-width:1140px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -51,7 +51,7 @@
   .mom.up{color:var(--income)}.mom.down{color:var(--expense)}.mom.flat{color:var(--muted)}
   .goal{font-size:12px;color:var(--muted);margin-top:6px}
   .cardfoot{margin-top:auto;padding-top:8px}
-  .pbar{background:#f0ece2;border-radius:7px;height:9px;overflow:hidden;margin-top:6px}
+  .pbar{background:#F0F0F0;border-radius:7px;height:9px;overflow:hidden;margin-top:6px}
   .pbar>div{height:100%;background:var(--income)}
   .devboxes{display:flex;gap:8px;margin-top:8px}
   .devbox{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;text-align:center}
@@ -87,7 +87,7 @@
   .wkcol .wkh{font-size:11.5px;font-weight:800;letter-spacing:.02em;color:var(--brand-soft);margin-bottom:7px;display:flex;align-items:center;gap:6px}
   .wkcol .wkh .pill{font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:#eef2ef;color:#4a5a52}
   .bullets{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
-  .bullets li{display:flex;align-items:flex-start;gap:7px;font-size:12.5px;line-height:1.45;color:var(--ink);background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+  .bullets li{display:flex;align-items:flex-start;gap:7px;font-size:12.5px;line-height:1.45;color:var(--ink);background:#FAFAFA;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
   .bullets li .bx{flex:0 0 auto;color:var(--brand-soft);font-weight:800;margin-top:1px}
   .bullets li .btxt{flex:1;overflow-wrap:anywhere}
   .bullets li .del{flex:0 0 auto;border:none;background:transparent;color:#c08a7e;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;font-weight:700}
@@ -146,7 +146,7 @@
   .qsumwrap{overflow-x:auto;margin-top:8px}
   table.qsum{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px}
   table.qsum th,table.qsum td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
-  table.qsum th{font-size:11px;font-weight:700;color:var(--muted);background:#faf8f3;position:sticky;top:0}
+  table.qsum th{font-size:11px;font-weight:700;color:var(--muted);background:#FAFAFA;position:sticky;top:0}
   table.qsum th.l,table.qsum td.l{text-align:left}
   table.qsum td.qno{font-weight:700;color:var(--brand-soft)}
   table.qsum td.cust{max-width:220px;overflow:hidden;text-overflow:ellipsis}
@@ -154,7 +154,7 @@
   table.qsum td.ok{color:var(--income);font-weight:700}
   table.qsum td.sh{color:#9a6512;font-weight:700}
   table.qsum td.dash{color:#c4bfb4}
-  table.qsum tfoot td{border-top:2px solid var(--line);border-bottom:none;font-weight:800;color:var(--brand);background:#f4f1ea}
+  table.qsum tfoot td{border-top:2px solid var(--line);border-bottom:none;font-weight:800;color:var(--brand);background:#F5F5F5}
   .qstag{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:6px;vertical-align:1px}
   .qstag.open{background:#eef2ef;color:#4a5a52}
   .qstag.conv{background:#e4f0eb;color:var(--income)}
@@ -171,8 +171,8 @@
   .mbrsnaps label input{width:auto;margin:0;padding:0}
   .mbrsnaps label .meta{color:var(--muted);font-weight:500;font-size:11.5px}
   table.mbrtab{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
-  table.mbrtab th{font-size:11px;font-weight:700;color:var(--muted);background:#faf8f3;text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
-  table.mbrtab td{padding:7px 9px;border-bottom:1px solid #f1ede4;text-align:left;vertical-align:top}
+  table.mbrtab th{font-size:11px;font-weight:700;color:var(--muted);background:#FAFAFA;text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.mbrtab td{padding:7px 9px;border-bottom:1px solid #F0F0F0;text-align:left;vertical-align:top}
   table.mbrtab td.t{font-weight:700;color:var(--brand-soft)}
   table.mbrtab td .snlbls{font-size:11px;color:var(--muted);font-weight:500}
   .mbrview{margin-top:14px;border:1px solid var(--gold);border-radius:12px;padding:16px 18px;background:#fffdf6}
@@ -190,7 +190,7 @@
   #mbrHlBtn.on{background:#c9a227!important;box-shadow:0 0 0 2px #f2dd8b}
   #mbrTtsBtn.on{background:#b4561f!important;box-shadow:0 0 0 2px #ecc9b0}
   /* 한 문장 총평(맨 앞 문단) 히어로 스타일 */
-  .mdbody>p:first-child{background:#eef4f1;border-left:4px solid var(--brand);border-radius:8px;padding:10px 14px;font-size:14.5px;line-height:1.65}
+  .mdbody>p:first-child{background:#E6F0F8;border-left:4px solid var(--brand);border-radius:8px;padding:10px 14px;font-size:14.5px;line-height:1.65}
   .mdbody>p:first-child b{color:var(--brand)}
   /* ✏️ 본문 수정 모드 */
   .mdbody.editmode{outline:2px dashed #7fa8c9;outline-offset:6px;border-radius:6px;background:#fcfeff}
@@ -236,21 +236,21 @@
   .ln-cap{font-size:11px;color:#3A352B;font-weight:600;padding:5px 13px 0;line-height:1.45}
   .capk{color:var(--expense);font-weight:800}
   .ln-grade{margin-left:auto;flex:none;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
-  .ln-stats{display:grid;margin:9px 0 0;border-top:1px solid #f0ece2}
+  .ln-stats{display:grid;margin:9px 0 0;border-top:1px solid #F0F0F0}
   .ln-stats.c4{grid-template-columns:1.1fr 1fr 1fr 1.5fr}
   .ln-stats.c6{grid-template-columns:1fr 1fr 1fr 1fr 1fr 1.4fr}
-  .ln-stat{padding:7px 12px;border-right:1px solid #f3efe6;min-width:0}
+  .ln-stat{padding:7px 12px;border-right:1px solid #F0F0F0;min-width:0}
   .ln-stat:last-child{border-right:0;text-align:right}
   .ln-stat .v{font-size:17px;font-weight:800;line-height:1.1;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ln-stat.kpi .v{font-size:21px;color:var(--brand)}
   .ln-stat.amt .v{font-size:15px}
   .ln-stat .l{font-size:9.5px;font-weight:700;color:var(--muted);margin-top:1px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ln-list{border-top:1px solid var(--line);flex:1;overflow:auto;min-height:0}
-  .ln-empty{flex:1;min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;background:repeating-linear-gradient(45deg,#fcfbf8,#fcfbf8 9px,#f7f5ef 9px,#f7f5ef 18px)}
+  .ln-empty{flex:1;min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;background:repeating-linear-gradient(45deg,#fcfbf8,#fcfbf8 9px,#F5F5F5 9px,#F5F5F5 18px)}
   .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
   .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:6px 10px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
   .sltab th.l{text-align:left}
-  .sltab td{text-align:right;padding:6px 10px;border-top:1px solid #f1ede4;white-space:nowrap}
+  .sltab td{text-align:right;padding:6px 10px;border-top:1px solid #F0F0F0;white-space:nowrap}
   .sltab td.cust{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;font-weight:600;color:var(--ink);text-align:left}
   .sltab tr.od td{background:#fdf4f2}
   .sltab .slok{color:var(--income);font-weight:800}.sltab .slno{color:var(--expense);font-weight:800}.sltab .slwarn{color:var(--gold);font-weight:800}
@@ -263,6 +263,10 @@
   @media (max-width:760px){ .slaquad{grid-template-columns:1fr} }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -2032,16 +2036,16 @@
     w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'+esc(name)+'</title>'
       +'<style>body{font-family:"IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif;color:#1C1B19;max-width:860px;margin:24px auto;padding:0 18px;line-height:1.7;font-size:13px}'
       +'h1{font-size:19px;color:#143D34;border-bottom:2px solid #143D34;padding-bottom:8px}'
-      +'h3{font-size:14.5px;color:#143D34;border-bottom:1px solid #E6E1D6;padding-bottom:3px;margin:18px 0 6px}'
+      +'h3{font-size:14.5px;color:#143D34;border-bottom:1px solid #DFDFDF;padding-bottom:3px;margin:18px 0 6px}'
       +'h4{font-size:13.5px;color:#1E5247;margin:12px 0 4px}'
       +'ul{margin:4px 0 10px;padding-left:20px}li{margin:2px 0}'
       +'.meta{font-size:11.5px;color:#6F6A60;margin-bottom:14px}'
       +'mark{background:#ffe86b;padding:0 1px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'.md>p:first-child{background:#eef4f1;border-left:4px solid #143D34;border-radius:8px;padding:10px 14px;font-size:14.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'.md>p:first-child b{color:#143D34}'
-      +'.memo{margin-top:18px;border-top:1px dashed #E6E1D6;padding-top:10px}'
+      +'.memo{margin-top:18px;border-top:1px dashed #DFDFDF;padding-top:10px}'
       +'.memo .mh{font-size:12.5px;font-weight:800;color:#1E5247;margin-bottom:4px}'
-      +'.memo .mb{background:#fffef4;border:1px solid #E6E1D6;border-radius:8px;padding:10px 12px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'.memo .mb{background:#fffef4;border:1px solid #DFDFDF;border-radius:8px;padding:10px 12px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'@page{margin:14mm}</style></head><body>'
       +'<h1>'+esc(mbrCurrent.title)+'</h1>'
       +'<div class="meta">Refatrix ERP · MBR AI 요약 · 생성 '+fmtDateTime(mbrCurrent.created_at)
@@ -2181,6 +2185,6 @@
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

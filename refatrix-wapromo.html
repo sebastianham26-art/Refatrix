@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+  :root{--paper:#F5F5F5;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--brand:#0058A3;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--bad:#B23A2E;--bad-bg:#F6E7E4;--warn:#9a6512;--warn-bg:#fdf3e3;--ctr:#E2231A;--radius:12px}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px 16px}
@@ -46,17 +46,17 @@
   .tblwrap{overflow-x:auto}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
   th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;white-space:nowrap}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;white-space:nowrap}
   .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
   .t-yes{background:var(--ok-bg);color:var(--ok)}.t-no{background:var(--bad-bg);color:var(--bad)}
   .t-asked{background:var(--warn-bg);color:var(--warn)}.t-unknown{background:#eef0f2;color:#555}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
   .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fdfcf9}
   .kpi .k{font-size:11px;color:var(--muted);font-weight:700}.kpi .v{font-size:22px;font-weight:700;margin-top:2px}
-  .note{border-left:4px solid var(--gold);background:#fbf7ee;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;margin-top:10px}
+  .note{border-left:4px solid var(--gold);background:#FAFAFA;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;margin-top:10px}
   .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:10px}
   .day{border:1px solid var(--line);border-radius:10px;min-height:126px;padding:6px;background:#fff;font-size:11px;cursor:pointer;display:flex;flex-direction:column;gap:4px}
-  .day.past{background:#faf8f3}.day.today{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
+  .day.past{background:#FAFAFA}.day.today{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
   .day .d{font-weight:700;color:var(--muted)}
   .camp{border-radius:7px;overflow:hidden;border:1px solid var(--line);background:#fafafa}
   .camp img{display:block;width:100%;height:56px;object-fit:cover;background:#ddd}
@@ -96,7 +96,7 @@
   .afun b.t{font-size:12.5px;margin-right:4px}
   .afun .st{font:inherit;font-size:12px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 9px;cursor:pointer;color:inherit}
   .afun .st b{font-size:14px;margin-left:3px}
-  .afun .st.on{background:#143D34;color:#fff;border-color:#143D34}
+  .afun .st.on{background:#0058A3;color:#fff;border-color:#0058A3}
   .afun .ar{color:var(--muted);font-size:12px}
   .dlv{font-size:11px;font-weight:700;white-space:nowrap}
   .dlv.r{color:#0a5cab}.dlv.d{color:var(--ok)}.dlv.f{color:var(--bad)}.dlv.s{color:var(--muted)}
@@ -122,7 +122,7 @@
   .ctbl .ttag{display:inline-block;max-width:100%;font-size:11px;font-weight:700;background:#f3eee2;color:#6b4e12;border-radius:6px;padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ctbl .acts{white-space:nowrap;text-align:right}
   .ib{font:inherit;font-size:13px;line-height:1;border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 5px;cursor:pointer;margin:1px 0 1px 1px}
-  .ib:hover{background:#f4f1ea}
+  .ib:hover{background:#F5F5F5}
   .ib.red{background:#fbe3e4;border-color:#e9a5a8}
   .ib.del{color:var(--bad)}
   .fbar{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;align-items:center}
@@ -140,7 +140,7 @@
   .gchip{font:inherit;font-size:12px;font-weight:700;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;cursor:pointer;display:inline-flex;gap:5px;align-items:center;color:inherit}
   .gchip .dot,.gpick .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
   .gchip .n{font-weight:600;opacity:.7}
-  .gchip.on{background:#143D34;color:#fff;border-color:#143D34}
+  .gchip.on{background:#0058A3;color:#fff;border-color:#0058A3}
   .gchip.add{border-style:dashed;color:var(--brand)}
   .gtag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;white-space:nowrap;display:inline-block;margin:1px 2px 1px 0;color:#fff}
   .gpick{display:flex;flex-wrap:wrap;gap:6px;max-width:520px}
@@ -148,7 +148,7 @@
   .gpick input{width:auto;margin:0}
   .gmode label{display:flex;gap:8px;align-items:flex-start;font-weight:600;margin:6px 0;cursor:pointer}
   .gmode input[type=radio]{width:auto;margin-top:3px}
-  .selbar{position:sticky;top:0;z-index:5;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:10px 12px;border-radius:10px;background:#143D34;color:#fff}
+  .selbar{position:sticky;top:0;z-index:5;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:10px 12px;border-radius:10px;background:#0058A3;color:#fff}
   .selbar .btn.ghost{background:#fff}
   .selbar .cnt{font-size:12.5px}
   tr.sel td{background:#eef5f1}
@@ -199,7 +199,7 @@
   .bcard{position:relative;border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;cursor:pointer;min-width:0}
   .bcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.08)}
   .bcard.sel{outline:2px solid var(--ctr);outline-offset:-1px}
-  .bcard .th{aspect-ratio:1/1;background:#f1eee6;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .bcard .th{aspect-ratio:1/1;background:#F0F0F0;display:flex;align-items:center;justify-content:center;overflow:hidden}
   .bcard .th img{max-width:100%;max-height:100%;object-fit:contain;display:block}
   .bcard .nm{font-size:12px;font-weight:600;padding:5px 7px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bcard .mt{font-size:10.5px;color:var(--muted);padding:1px 7px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -214,15 +214,19 @@
   .hday{margin-top:14px}
   .hday h3{font-size:13px;margin:0 0 6px;color:var(--brand);border-bottom:1px solid var(--line);padding-bottom:4px}
   .hrow{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px 4px;border-bottom:1px dashed var(--line);cursor:pointer}
-  .hrow:hover{background:#faf8f3}
+  .hrow:hover{background:#FAFAFA}
   .hrow img{width:72px;height:72px;object-fit:cover;border-radius:8px;background:#eee;display:block}
   .hrow .cap{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .mi-wrap{flex:1 1 520px;min-width:260px;background:#f1eee6;border-radius:10px;display:flex;align-items:center;justify-content:center;min-height:300px;max-height:72vh;overflow:hidden}
+  .mi-wrap{flex:1 1 520px;min-width:260px;background:#F0F0F0;border-radius:10px;display:flex;align-items:center;justify-content:center;min-height:300px;max-height:72vh;overflow:hidden}
   .mi-wrap img{max-width:100%;max-height:72vh;object-fit:contain;display:block}
   .kbank{display:flex;align-items:center;gap:6px;font-size:12px}
   .kbank img{width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
   @media (max-width:820px){ .split{grid-template-columns:1fr} .chat{height:360px} .bgrid.v-xl{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))} }
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -1735,6 +1739,6 @@
 
   (function boot(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(login,30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

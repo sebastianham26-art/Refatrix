@@ -10,8 +10,8 @@
 <title>Refatrix ERP · 로그인</title>
 <style>
   :root{
-    --paper:#F4F1EA; --brand:#143D34; --ink:#1A1A1A; --muted:#6B6B6B;
-    --line:#E2DDD2; --income:#0F6E56; --expense:#B23A2E; --gold:#9A7B16;
+    --paper:#F5F5F5; --brand:#0058A3; --ink:#1A1A1A; --muted:#6B6B6B;
+    --line:#DFDFDF; --income:#0F6E56; --expense:#B23A2E; --gold:#9A7B16;
   }
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -47,6 +47,10 @@
   html[data-refatrix-env="qa"] .card{box-shadow:0 8px 30px rgba(176,24,16,.18)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
   <div class="card">

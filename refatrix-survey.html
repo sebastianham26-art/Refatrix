@@ -12,8 +12,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#0058A3;--gold:#B8893B;
     --warn-bg:#FFF4D6;--warn-ink:#8A6100;--radius:12px;
     --axis:#c3c2b7;--ink2:#52514e;
     --d1:#e34948;--d2:#f2a3a2;--d3:#d6d4cf;--d4:#86b6ef;--d5:#256abf;}
@@ -60,8 +60,8 @@
   .tbwrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
   table{border-collapse:collapse;width:100%;font-size:12.5px}
   th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
-  th{background:#faf8f3;color:var(--muted);font-weight:700;font-size:12px;position:sticky;top:0;z-index:1}
-  tbody tr:hover{background:#faf8f3}
+  th{background:#FAFAFA;color:var(--muted);font-weight:700;font-size:12px;position:sticky;top:0;z-index:1}
+  tbody tr:hover{background:#FAFAFA}
   tr.clk{cursor:pointer}
   td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
@@ -118,7 +118,7 @@
   .minibar{height:6px;background:#ece8de;border-radius:999px;margin-top:6px;overflow:hidden}
   .minibar i{display:block;height:100%;background:var(--gold);border-radius:999px}
   .stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-bottom:10px}
-  .stats div{background:#faf8f3;border-radius:8px;padding:6px 8px;font-size:11px;color:var(--muted)}
+  .stats div{background:#FAFAFA;border-radius:8px;padding:6px 8px;font-size:11px;color:var(--muted)}
   .stats b{display:block;font-size:15px;color:var(--ink)}
   .note{background:#fbf5ea;border:1px solid #ecdcbc;border-radius:10px;padding:10px 12px;color:#6b5220;font-size:12px;line-height:1.6}
   .note ul{margin:4px 0 0;padding-left:18px}
@@ -167,6 +167,10 @@
   }
   .prtonly{display:none}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -1638,6 +1642,6 @@
 })();
 
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

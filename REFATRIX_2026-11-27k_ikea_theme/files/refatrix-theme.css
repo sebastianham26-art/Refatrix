@@ -1,0 +1,106 @@
+/* refatrix-theme.css — Refatrix ERP 공통 디자인 (build th20261127k)
+   기준: 「차종으로 제품찾기」(refatrix-vehiclemap.js · 2026-11-27) — 밝은 북유럽 매장(IKEA) 톤
+     · 흰 바탕 · 회색 면(#F5F5F5) · 얇은 회색 선(#DFDFDF) · 검정 글자(#111) · 보조 글자(#484848)
+     · 주 색 = 파랑 #0058A3 (버튼·선택) · 강조 = 노랑 #FFDB00 (포커스·선택 행·노란 버튼)
+     · 둥근 알약 버튼(64px) · 카드/입력은 각진 4px · 그림자 없음 · 굵은 산세리프(Noto Sans KR)
+   로드 순서: 각 화면 자체 <style> → refatrix-i18n.css → 이 파일(맨 마지막, </head> 바로 앞).
+   원칙
+     1) 색·모서리·글꼴·선만 바꾼다. 화면 배치(display·width·grid)는 건드리지 않는다
+        → 숨김(.hidden) · 모달 · 표 열 폭 등 기존 동작이 그대로 유지된다.
+     2) 크롬 자동번역(스페인어)으로 글자가 1.3~2배 길어져도 넘치지 않게:
+        버튼·탭·제목·라벨·안내문은 줄바꿈 허용, 표 머리글은 세로로 줄바꿈, 탭 줄은 다음 줄로.
+        숫자·코드·날짜는 공백이 없어서 끊기지 않는다.
+     3) 화면별로 더 구체적으로 지정한 규칙(예: .qcard .btn)은 그 화면 것이 이긴다. */
+
+/* ── 0. 색·모양 토큰 (화면들이 쓰는 같은 이름을 덮어씀) ── */
+html:root{
+  --rx-blue:#0058A3; --rx-blue-d:#004F93; --rx-blue-dd:#003E72; --rx-blue-bg:#E6F0F8;
+  --rx-yel:#FFDB00; --rx-yel-d:#F2CD00; --rx-yel-bg:#FFF8CC;
+  --rx-ink:#111111; --rx-ink2:#484848; --rx-mute:#767676;
+  --rx-line:#DFDFDF; --rx-line2:#F0F0F0; --rx-surf:#F5F5F5; --rx-surf2:#FAFAFA; --rx-field:#929292;
+  --rx-r:4px; --rx-pill:64px;
+  --rx-font:'Noto Sans KR','IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;
+
+  --paper:#FFFFFF; --card:#FFFFFF; --surface:#F5F5F5; --soft:#FAFAFA; --appbg:#FFFFFF;
+  --ink:#111111; --muted:#484848; --mute:#484848; --mut:#484848; --ink2:#484848;
+  --line:#DFDFDF; --line2:#F0F0F0;
+  --brand:#0058A3; --brand-soft:#004F93;
+  --gold:#8A6D00; --gold-bg:#FFF8CC;
+  --steel:#0058A3; --steel-d:#003E72;
+  --radius:4px; --radius-sm:4px; --r:4px;
+  --shadow:none;
+}
+
+/* ── 1. 바탕·글꼴 ── */
+html body{background:#FFFFFF;color:var(--rx-ink);font-family:var(--rx-font);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font-family:inherit}
+h1,h2,h3{letter-spacing:-.3px;overflow-wrap:anywhere}
+h1{font-weight:800}
+h2,h3{font-weight:700}
+.card h2,.card h3,.card-h,.sec-t,.ttl{color:var(--rx-ink)}
+
+/* ── 2. 카드·면 ── */
+.card,.qcard,.empty,.panel-card,.box,.kcard,.scard,.bcard,.sumcard,.fcell{border-radius:var(--rx-r);box-shadow:none}
+.card{background:#fff;border-color:var(--rx-line);min-width:0}
+.kpi,.kpis>*{min-width:0}
+.sub,.hint,.note,.api,.bznote{color:var(--rx-ink2)}
+
+/* ── 3. 버튼 — 알약 · 파랑(토큰 --brand) · 굵게. 배치(display)는 화면 것 유지.
+      빨강·삭제 등 화면이 따로 정한 버튼(.btn.danger 등)은 화면 색 그대로 ── */
+.btn,a.btn,button.btn{
+  border-radius:var(--rx-pill);font-weight:700;letter-spacing:0;
+  padding:10px 20px;min-height:40px;line-height:1.25;
+  white-space:normal;max-width:100%;text-align:center;vertical-align:middle;
+  box-shadow:none;transition:background-color .12s,border-color .12s,color .12s}
+.btn.sm{padding:6px 14px;min-height:32px}
+.btn.ghost,.btn.outline,.btn.secondary,.btn.sec,.btn.white,.btn.light{background:#fff;color:var(--rx-ink);border:1px solid var(--rx-ink)}
+.btn.ghost:hover:not(:disabled),.btn.outline:hover:not(:disabled),.btn.secondary:hover:not(:disabled),.btn.sec:hover:not(:disabled),.btn.white:hover:not(:disabled),.btn.light:hover:not(:disabled){background:var(--rx-surf)}
+.btn.gold{background:var(--rx-yel);color:var(--rx-ink);border-color:var(--rx-yel)}
+.btn.gold:hover:not(:disabled){background:var(--rx-yel-d)}
+.btn:disabled{opacity:.45}
+.btn:focus-visible,button:focus-visible,.tab:focus-visible,a:focus-visible{outline:3px solid var(--rx-yel);outline-offset:2px}
+
+/* ── 4. 탭·칩 — 알약. 넘치면 다음 줄로 ── */
+.tabs,.seg,.chips,.mrow,.sltabs,.subtabs{flex-wrap:wrap}
+.tab,.mbtn,.sltab,.mtab{border-radius:var(--rx-pill);font-weight:700;white-space:normal;max-width:100%}
+.tab{border-color:var(--rx-line)}
+.tab.on,.tab.active,.tab.cur,.tab[aria-selected="true"],.mbtn.on,.sltab.on,.mtab.on{background:var(--rx-blue);color:#fff;border-color:var(--rx-blue)}
+.chip,.pill,.badge,.flag,.tag{border-radius:var(--rx-pill)}
+.seg{border-radius:var(--rx-pill)}
+.seg>button,.seg>.s,.seg>a{border-radius:var(--rx-pill)}
+
+/* ── 5. 입력 — 회색 테두리 · 4px · 파랑 포커스 ── */
+input,select,textarea{border-radius:var(--rx-r);max-width:100%}
+input:where(:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])),select,textarea{border-color:var(--rx-field)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--rx-blue);outline-offset:0;border-color:var(--rx-blue)}
+input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--rx-blue)}
+label{color:var(--rx-ink2);overflow-wrap:anywhere}
+
+/* ── 6. 표 — 회색 머리글 · 검정 굵은 밑줄 ── */
+th{color:var(--rx-ink2);background-color:var(--rx-surf)}
+thead tr:last-child>th{border-bottom:2px solid var(--rx-ink)}
+td{border-bottom-color:var(--rx-line2)}
+tfoot td{background-color:var(--rx-surf)}
+tr.on>td,tr.sel>td,tr.selected>td{background-color:var(--rx-yel-bg)}
+
+/* ── 7. 알림·모달 ── */
+.msg,.banner,.toast,.finsight{border-radius:var(--rx-r)}
+.msg{overflow-wrap:anywhere}
+.modal>div,.modal .box,.modal .mdbody,.mdbody{border-radius:var(--rx-r)}
+
+/* ── 8. 스페인어 자동번역 안전장치 (refatrix-i18n.css 와 같은 규칙 — 그 파일이 없는 화면도 적용) ── */
+th{white-space:normal!important;word-break:keep-all;overflow-wrap:anywhere;line-height:1.2;vertical-align:bottom}
+td{white-space:normal;word-break:keep-all}
+.hint,.note,.sub,.msg,.empty,.card-h,.sec-t,.kpi .lbl,.kpi .l,.lbl,legend,summary{overflow-wrap:anywhere}
+.kpi .lbl,.kpi .l,.lbl{white-space:normal}
+/* 번역으로 긴 선택지(option)가 생기면 select 가 칸 밖으로 밀지 않게 — 입력칸 묶음은 부모 폭 안에서 */
+.fld,.field,.f,.row>div,.lrow>div{max-width:100%}
+select{text-overflow:ellipsis}
+/* 번역기가 넣는 <font> 태그가 줄 높이를 바꾸지 않게 */
+font{vertical-align:baseline}
+
+/* ── 9. 인쇄 — 화면 테마가 인쇄물 배경을 덧칠하지 않게 ── */
+@media print{
+  html body{background:#fff}
+  th{background-color:transparent}
+}

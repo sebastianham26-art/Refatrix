@@ -8,10 +8,10 @@
 <!-- __loginGate --><script>(function(){try{function ok(t){try{var p=JSON.parse(atob(String(t).split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));return !!p&&(!p.exp||p.exp*1000>Date.now());}catch(e){return false;}}var a=false;try{var o=JSON.parse(sessionStorage.getItem("refatrix_session")||"null");a=!!(o&&o.token&&ok(o.token));}catch(e){}if(!a){try{var h=location.hash.slice(1);var t=h&&new URLSearchParams(h).get("token");a=!!(t&&ok(t));}catch(e){}}if(!a){document.documentElement.style.visibility="hidden";location.replace("refatrix-portal.html");}}catch(e){}})();</script>
 <style>
   :root{
-    --green:#143D34; --green2:#1d5145; --brass:#B8893B;
+    --green:#0058A3; --green2:#004F93; --brass:#B8893B;
     --gone:#C0564F; --gonebg:#fbe9e7; --part:#C58A2E; --partbg:#fbf2e0;
     --kept:#2f8a5b; --keptbg:#e8f4ed; --info:#4d7ea8; --infobg:#e9f1f7;
-    --ink:#1c1b19; --mut:#7c7a74; --line:#e6e4df; --appbg:#f5f4f2;
+    --ink:#1c1b19; --mut:#7c7a74; --line:#DFDFDF; --appbg:#FFFFFF;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--appbg);font-family:-apple-system,system-ui,"Malgun Gothic",Arial,sans-serif;color:var(--ink);font-size:14px}
@@ -19,7 +19,7 @@
   .topbar{position:sticky;top:0;z-index:30;background:var(--green);color:#fff;padding:11px 16px;display:flex;align-items:center;gap:12px}
   .topbar h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.3px}
   .topbar .sub{font-size:11px;color:#bcd2c9;margin-top:2px}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:11px;color:#cfe0d8;text-align:right;line-height:1.3}
   .wrap{max-width:1280px;margin:0 auto;padding:14px}
 
@@ -99,6 +99,11 @@
   .toast.show{opacity:1;transform:translateX(-50%)}
   @media(max-width:760px){ .wrap{padding:10px} .fld select.big{min-width:200px} th,td{padding:7px 6px;font-size:12px} }
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
+<style id="rfx-theme-page">html:root{--green:#0058A3;--green2:#004F93}</style>
 </head>
 <body>
 
@@ -529,6 +534,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||$('api').value}; afterLogin(); } })();
 })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

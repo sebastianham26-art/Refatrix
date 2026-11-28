@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#F4F1EA;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--gold:#B8893B;
+  :root{--paper:#F5F5F5;--card:#fff;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--brand:#0058A3;--gold:#B8893B;
     --ok:#0F6E56;--ok-bg:#E4F0EB;--bad:#B23A2E;--bad-bg:#F6E7E4;--warn:#9a6512;--warn-bg:#fdf3e3;--fb:#1877F2;--ig:#C13584;--radius:12px}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px 16px}
@@ -44,18 +44,18 @@
   .tblwrap{overflow-x:auto}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
   th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;white-space:nowrap;position:sticky;top:0}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;white-space:nowrap;position:sticky;top:0}
   td.num,th.num{text-align:right}
-  tbody tr.click{cursor:pointer}tbody tr.click:hover{background:#faf8f3}
+  tbody tr.click{cursor:pointer}tbody tr.click:hover{background:#FAFAFA}
   tr.sel td{background:#eef5f1}
-  tr.team td{font-weight:700;background:#faf8f3;border-top:2px solid var(--line)}
+  tr.team td{font-weight:700;background:#FAFAFA;border-top:2px solid var(--line)}
   .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
   .ch-messenger{background:#e7f0fe;color:var(--fb)}.ch-instagram{background:#fbe7f2;color:var(--ig)}.ch-whatsapp{background:#e3f6ea;color:#128C4A}
   .st-nuevo{background:#eef0f2;color:#555}.st-contactado{background:var(--warn-bg);color:var(--warn)}.st-derivado{background:#e7f0fe;color:var(--fb)}
   .st-venta{background:var(--ok-bg);color:var(--ok)}.st-descartado{background:var(--bad-bg);color:var(--bad)}
   .dn{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
   .dn.ok{background:var(--ok-bg);color:var(--ok)}.dn.wait{background:var(--warn-bg);color:var(--warn)}.dn.moved{background:#eef0f2;color:#666}
-  .pbar{background:#f1eee6;border-radius:6px;height:10px;position:relative;min-width:90px;overflow:hidden}
+  .pbar{background:#F0F0F0;border-radius:6px;height:10px;position:relative;min-width:90px;overflow:hidden}
   .pbar i{position:absolute;left:0;top:0;bottom:0;background:var(--brand);border-radius:6px}
   .pbar.warn i{background:var(--warn)}.pbar.bad i{background:var(--bad)}
   .ok-t{color:var(--ok);font-weight:700}.warn-t{color:var(--warn);font-weight:700}.bad-t{color:var(--bad);font-weight:700}.muted{color:var(--muted)}
@@ -69,7 +69,7 @@
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .needb{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fde8e6;color:#B23A2E;white-space:nowrap;margin-top:3px}
   tr.needrow td:first-child{box-shadow:inset 4px 0 0 #E2231A}
-  .empty{border:2px dashed var(--gold);background:#fbf7ee;border-radius:12px;padding:14px 16px;margin-top:12px;font-size:13.5px;line-height:1.7}
+  .empty{border:2px dashed var(--gold);background:#FAFAFA;border-radius:12px;padding:14px 16px;margin-top:12px;font-size:13.5px;line-height:1.7}
   .empty b{color:var(--brand)}
   .loading{opacity:.45;transition:opacity .15s}
   .dc-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -80,6 +80,10 @@
   .pend span{font-size:11px;padding:2px 7px;border-radius:999px;background:#fdf3e3;color:var(--warn);cursor:pointer;border:1px solid #f1dfbd}
   .pend span.need{background:#fde8e6;color:#B23A2E;border-color:#f3c9c4}
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -401,6 +405,6 @@
 
   if(portalSession()) login();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

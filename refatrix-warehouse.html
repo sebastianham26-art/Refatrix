@@ -8,7 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix · 창고 포장 · build 1105avl</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:16px;line-height:1.45;-webkit-text-size-adjust:100%}
   .wrap{max-width:980px;margin:0 auto}
@@ -22,7 +22,7 @@
   .bznote{font-size:13px;color:var(--muted);font-weight:600;margin:0 4px 12px}
   .bznote b{color:var(--steel-d)}
   .qcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px;display:grid;grid-template-columns:1fr auto;gap:6px 16px;cursor:pointer;-webkit-tap-highlight-color:transparent;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-  .qcard:active{background:#fbf9f4}
+  .qcard:active{background:#FAFAFA}
   .qcard .no{font-size:28px;font-weight:800;line-height:1.1;grid-column:1}
   .qcard .cu{font-size:20px;font-weight:700;color:#2c2a26;grid-column:1}
   .qcard .meta{grid-column:1;display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:2px;align-items:baseline}
@@ -84,7 +84,7 @@
   .fb.ok{background:#e7f3ec;color:#2e6b49}
   .fb.err{background:#fbe9e5;color:#a33b27}
   .fb.warn{background:#fbf4e7;color:#8a6516}
-  .fb.idle{background:#f3efe6;color:#8a857a}
+  .fb.idle{background:#F0F0F0;color:#8a857a}
 
   /* 출고 */
   .scard{background:#fff;border:1px solid var(--line);border-left:5px solid var(--green);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:default}
@@ -130,7 +130,7 @@
   th{background:var(--steel);color:#fff;font-weight:800;font-size:16px}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px}
-  tr.done td{color:#9a958b;background:#f7f5ef}
+  tr.done td{color:#9a958b;background:#F5F5F5}
   tr:last-child td{border-bottom:none}
   .rem{font-weight:800;font-size:20px}
   .rem.zero{color:var(--green)}
@@ -139,7 +139,7 @@
   .boxc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
   .boxc h4{margin:0 0 6px;font-size:17px;font-weight:800;display:flex;align-items:center;justify-content:space-between}
   .boxc .bl{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px dashed var(--line);font-size:16px}
-  .boxc .bl .mm{background:#f3efe6;border:none;border-radius:8px;width:34px;height:34px;font-size:20px;font-weight:800;cursor:pointer;color:var(--red)}
+  .boxc .bl .mm{background:#F0F0F0;border:none;border-radius:8px;width:34px;height:34px;font-size:20px;font-weight:800;cursor:pointer;color:var(--red)}
   .seal{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:800;cursor:pointer}
   .seal.on{background:var(--green);color:#fff}
   .subt{font-size:14px;font-weight:800;color:var(--steel-d);margin:14px 4px 8px}
@@ -156,7 +156,7 @@
   .curbox-card .cline:first-of-type{border-top:none}
   .curbox-card .cline .cc{font-weight:800}
   .curbox-card .cline .qq{font-size:24px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums}
-  .curbox-card .cline .mm{background:#f3efe6;border:none;border-radius:8px;width:38px;height:38px;font-size:22px;font-weight:800;cursor:pointer;color:var(--red);margin-left:10px}
+  .curbox-card .cline .mm{background:#F0F0F0;border:none;border-radius:8px;width:38px;height:38px;font-size:22px;font-weight:800;cursor:pointer;color:var(--red);margin-left:10px}
   .curbox-card .em{color:#9a958b;font-size:16px;padding:8px 0}
   .boxpick{font-size:15px;font-weight:800;color:var(--steel-d);white-space:nowrap}
   .boxpick select{font-size:16px;font-weight:800;padding:9px 10px;border:2px solid var(--steel);border-radius:10px;background:#fff;margin-left:4px}
@@ -169,7 +169,7 @@
   table.ptbl th.num,table.ptbl td.num{text-align:right;font-variant-numeric:tabular-nums}
   table.ptbl th .ar{font-size:11px;margin-left:3px;opacity:.9}
   table.ptbl td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
-  table.ptbl tr.done td{background:#f7f5ef;color:#9a958b}
+  table.ptbl tr.done td{background:#F5F5F5;color:#9a958b}
   table.ptbl td b.zero{color:var(--green)} table.ptbl td b.pos{color:var(--red);font-size:17px}
   table.ptbl tr:last-child td{border-bottom:none}
   /* 0306 · 키트 묶음 — 키트 번호 기준. 구성품은 한 봉투 · 같은 박스 */
@@ -185,7 +185,7 @@
   table.ptbl tr.kitr td{background:#FAF9FF}
   table.ptbl tr.kitr.done td{background:#f4f3f8}
   table.ptbl tr.kitr td .kmix{display:block;font-size:11px;color:#534AB7;font-weight:700}
-  table.ptbl tr.singh td{background:#f3efe6;color:#5f5e5a;font-weight:800;font-size:13.5px;padding:8px 10px}
+  table.ptbl tr.singh td{background:#F0F0F0;color:#5f5e5a;font-weight:800;font-size:13.5px;padding:8px 10px}
   .kitbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .kitchip{font-size:12.5px;font-weight:800;color:#3C3489;background:#EEEDFE;border:1px solid #AFA9EC;border-radius:999px;padding:2px 9px;font-variant-numeric:tabular-nums}
   .kitchip.done{color:#085041;background:#E1F5EE;border-color:#5DCAA5}
@@ -233,7 +233,7 @@
   table.bt th{background:#eef1f4;color:var(--steel-d);font-weight:800;font-size:12px}
   table.bt td.q{text-align:right;font-weight:800;font-size:16px}
   table.bt td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
-  table.bt .mm{background:#f3efe6;border:none;border-radius:6px;width:28px;height:28px;font-size:18px;font-weight:800;cursor:pointer;color:var(--red)}
+  table.bt .mm{background:#F0F0F0;border:none;border-radius:6px;width:28px;height:28px;font-size:18px;font-weight:800;cursor:pointer;color:var(--red)}
   table.bt tr:last-child td{border-bottom:none}
   .addrow{display:flex;gap:6px;margin-bottom:8px}
   .addrow input{flex:1;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;text-transform:uppercase}
@@ -409,6 +409,10 @@
   }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -1871,6 +1875,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

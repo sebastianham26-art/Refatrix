@@ -9,14 +9,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 부족분 집계 · build 20261111sp</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--radius:12px;}
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#0058A3;--radius:12px;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
   .wrap{max-width:1000px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px}
@@ -30,16 +30,16 @@
   .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
   th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;font-weight:700}
   td.r,th.r{text-align:right}
   .short{font-weight:800;color:var(--expense)}
-  tr.detail td{background:#faf8f3;font-size:11.5px;color:var(--muted)}
-  .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  tr.detail td{background:#FAFAFA;font-size:11.5px;color:var(--muted)}
+  .sb{flex:1;min-width:130px;background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
   .sb .v{font-size:22px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
   .mrow{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
   .mrow .ml{font-size:12px;color:#6f6a60;font-weight:600;margin-right:4px}
   .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line,#e0dccb);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:#8a8676;cursor:pointer}
-  .mbtn.on{background:var(--brand,#143D34);color:#fff;border-color:var(--brand,#143D34)}
+  .mbtn.on{background:var(--brand,#0058A3);color:#fff;border-color:var(--brand,#0058A3)}
   .tabs{display:flex;gap:6px;margin-top:16px}
   .tabbtn{padding:9px 16px;border:1px solid var(--line);border-bottom:none;background:#efece3;border-radius:10px 10px 0 0;font-size:13px;font-weight:800;color:var(--muted);cursor:pointer}
   .tabbtn.on{background:var(--card);color:var(--brand)}
@@ -62,10 +62,14 @@
   th.sp{color:var(--brand)}
   .spsub{font-size:10.5px;color:#8a857a;font-weight:600}
   .spok{color:var(--income);font-weight:800}
-  .spline{margin-top:4px;padding:6px 9px;border-radius:8px;background:#eef4f1;color:#3e4a44;font-size:11.5px;line-height:1.7;white-space:normal}
+  .spline{margin-top:4px;padding:6px 9px;border-radius:8px;background:#E6F0F8;color:#3e4a44;font-size:11.5px;line-height:1.7;white-space:normal}
   .spline b{color:var(--brand)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -512,7 +516,7 @@
   }
   // 고객 회신 유형: 라벨·색 (note=단순 메모 — "답"으로 안 침)
   const REPLY_LABELS={ordered:'주문함 ✔',partial:'일부 주문',considering:'검토중',declined:'거절',no_answer:'무응답',note:'메모'};
-  const REPLY_STYLE={ordered:'background:#e4f0eb;color:#0F6E56',partial:'background:#fdf3d7;color:#8a6d1a',considering:'background:#e1e9f0;color:#33495C',declined:'background:#f6e7e4;color:#B23A2E',no_answer:'background:#eee;color:#888',note:'background:#f1efe8;color:#6f6a60'};
+  const REPLY_STYLE={ordered:'background:#e4f0eb;color:#0F6E56',partial:'background:#fdf3d7;color:#8a6d1a',considering:'background:#e1e9f0;color:#33495C',declined:'background:#f6e7e4;color:#B23A2E',no_answer:'background:#eee;color:#888',note:'background:#F0F0F0;color:#6f6a60'};
   function osReplyPill(t){ if(!t) return '<span class="hint">—</span>'; return '<span class="pill" style="'+(REPLY_STYLE[t]||'')+'">'+(REPLY_LABELS[t]||t)+'</span>'; }
   const d10=(s)=> s?String(s).slice(0,10):'—';
   function osRender(){
@@ -612,7 +616,7 @@
         :' · <span style="color:var(--expense)">전화 미등록 — 고객관리에서 구매결정권자 전화(WhatsApp)를 등록하세요</span>')+'</div>';
     // ---- 비활성(중단) 시트: 발송 관련 동작을 전부 감추고, 활성화 버튼만 남긴다 ----
     if(s.disabled){
-      h+='<div style="margin:12px 0 4px;padding:10px 12px;border-radius:10px;background:#f1efe8;border:1px solid var(--line);font-size:12.5px">'
+      h+='<div style="margin:12px 0 4px;padding:10px 12px;border-radius:10px;background:#F0F0F0;border:1px solid var(--line);font-size:12.5px">'
         +'<b>🚫 비활성(중단)된 오퍼입니다.</b> 발송·PDF 출력·회신 기록이 잠겨 있고, '
         +'이 시트에 담긴 부족분·견적 부족라인은 <b>다시 오퍼시트로 만들어지지 않습니다</b>. '
         +'부족 기록 자체는 그대로 남아 있습니다(발주 근거).'
@@ -841,6 +845,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

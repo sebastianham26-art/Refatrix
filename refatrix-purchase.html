@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 구매 내역 · build pur-1119xls</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -38,16 +38,16 @@
   .msg.warn{display:block;background:#fdf4e3;color:#8a6d2e;border:1px solid #ecdcae}
   table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
   th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
-  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#FAFAFA}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-  tr.clk{cursor:pointer}tr.clk:hover{background:#f7f5ef}
+  tr.clk{cursor:pointer}tr.clk:hover{background:#F5F5F5}
   th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
   .segbtn{padding:7px 15px;font-size:12.5px;font-weight:700;background:#fff;color:var(--muted);border:none;cursor:pointer;font-family:inherit}
   .segbtn.on{background:var(--brand);color:#fff}
   .delta{font-weight:700}.delta.pos{color:var(--income)}.delta.neg{color:var(--expense)}.delta.zero{color:var(--muted)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
-  .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb{flex:1;min-width:130px;background:#FAFAFA;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
   .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
   .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
   .pill.ok{background:#e7f3ee;color:var(--income)}
@@ -59,18 +59,22 @@
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
   .toolbar>div{flex:0 0 auto}
-  .detailbox{background:#faf8f3;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:10px}
+  .detailbox{background:#FAFAFA;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:10px}
   /* 입고예정 요약 */
   .etaTag{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:8px;background:#e4f0eb;color:var(--income)}
-  .etaTag.none{background:#f1efe8;color:var(--muted)}
+  .etaTag.none{background:#F0F0F0;color:var(--muted)}
   .etaTag.recv{background:#fdf3d7;color:#8a6d1a}
-  tr.incRow{cursor:pointer}tr.incRow:hover{background:#f7f5ef}
-  tr.incDet td{background:#faf8f3;padding:0}
+  tr.incRow{cursor:pointer}tr.incRow:hover{background:#F5F5F5}
+  tr.incDet td{background:#FAFAFA;padding:0}
   .incDetIn{padding:10px 12px}
   .incDetIn table{margin-top:4px;font-size:12px}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -752,6 +756,6 @@
     onLoggedIn(ps.user||{});
   } }catch(e){ console.error('auto-login',e); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

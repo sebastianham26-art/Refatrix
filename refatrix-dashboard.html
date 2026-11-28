@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 대시보드</title>
 <style>
-  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+  :root{--paper:#F5F5F5;--brand:#0058A3;--ink:#1A1A1A;--muted:#6B6B6B;--line:#DFDFDF;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -19,7 +19,7 @@
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
   .who{font-size:13px;text-align:right}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .tabs{display:flex;gap:8px;margin-top:14px}
   .tab{padding:8px 14px;border:1px solid var(--line);border-radius:8px 8px 0 0;background:#efeae0;cursor:pointer;font-size:13px;font-weight:700;color:var(--muted)}
   .tab.on{background:#fff;color:var(--brand);border-bottom-color:#fff}
@@ -57,10 +57,10 @@
   .catnav button .nd{width:9px;height:9px;border-radius:3px;background:var(--catc,#888)}
   .catnav button .nc{font-size:10px;color:var(--muted);font-weight:700}
   .kpi{font-size:26px;font-weight:800;color:var(--brand)}.kpi small{font-size:13px;color:var(--muted);font-weight:600}
-  .bar{background:#f0ece2;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}.bar>div{height:100%;background:var(--income);color:#fff;font-size:11px;display:flex;align-items:center;padding-left:8px;white-space:nowrap}
-  .pipe{display:flex;flex-direction:column;gap:5px;margin-top:4px}.prow{display:flex;align-items:center;gap:8px;font-size:12px}.pname{width:74px;font-weight:600;flex:0 0 auto}.pbar{flex:1;background:#f0ece2;border-radius:5px;height:13px;overflow:hidden}.pbar>div{height:100%;background:var(--brand)}.pn{width:24px;text-align:right;font-weight:700}
+  .bar{background:#F0F0F0;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}.bar>div{height:100%;background:var(--income);color:#fff;font-size:11px;display:flex;align-items:center;padding-left:8px;white-space:nowrap}
+  .pipe{display:flex;flex-direction:column;gap:5px;margin-top:4px}.prow{display:flex;align-items:center;gap:8px;font-size:12px}.pname{width:74px;font-weight:600;flex:0 0 auto}.pbar{flex:1;background:#F0F0F0;border-radius:5px;height:13px;overflow:hidden}.pbar>div{height:100%;background:var(--brand)}.pn{width:24px;text-align:right;font-weight:700}
   .pend{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-top:6px;font-size:13px}.pend b{color:var(--expense)}
-  table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:11.5px;background:#faf8f3}
+  table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:11.5px;background:#FAFAFA}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .st-open{background:#fff4d6;color:#8a6512}.st-approved{background:#e7f3ee;color:var(--income)}.st-rejected{background:#fbe9e7;color:var(--expense)}
   /* 구성 편집기 */
@@ -70,6 +70,10 @@
   .order{display:flex;gap:4px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -478,6 +482,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

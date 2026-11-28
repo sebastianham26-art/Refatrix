@@ -10,14 +10,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 재고이동</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#0058A3;--gold:#B8893B;--radius:12px;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
   .wrap{max-width:1100px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px}
@@ -40,34 +40,34 @@
   .acitem .c{font-weight:700;color:var(--brand)}.acitem .s{font-size:11px;color:var(--muted)}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}
   th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:11px;color:var(--muted);background:#FAFAFA;font-weight:700}
   td.r,th.r{text-align:right}
   .mv{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
   .mv.in{background:var(--income-bg);color:var(--income)}.mv.out{background:var(--expense-bg);color:var(--expense)}.mv.adjust{background:#eef0f2;color:#555}
   .org{font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:#f1ebf7;color:#7a4ea0}
   .org.매출{background:var(--expense-bg);color:var(--expense)}.org.수입{background:var(--income-bg);color:var(--income)}.org.수동{background:#fdf3e3;color:#9a6512}
   .stock-sum{position:sticky;top:0;z-index:5;display:flex;gap:10px;flex-wrap:wrap;background:#fff;border-bottom:2px solid var(--brand);padding:10px 2px;margin-bottom:8px}
-  .stock-sum .sb{flex:1;min-width:120px;background:#faf8f3;border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:9px 13px}
+  .stock-sum .sb{flex:1;min-width:120px;background:#FAFAFA;border:1px solid var(--line,#DFDFDF);border-radius:10px;padding:9px 13px}
   .stock-sum .sb .v{font-size:19px;font-weight:800;color:var(--brand)}.stock-sum .sb .l{font-size:11px;color:var(--muted)}
   .stock-sum .sb .prev{font-size:12px;color:var(--muted);font-weight:600}
   .stock-sum .sb .delta{font-size:11px;font-weight:700;margin-top:2px}
   .stock-sum .sb .delta.up{color:var(--income,#0F6E56)}.stock-sum .sb .delta.down{color:var(--expense,#B23A2E)}.stock-sum .sb .delta.flat{color:var(--muted)}
   .stock-sum .psnbreak{flex-basis:100%;height:0;margin:0}
   .stock-sum .psncap{flex-basis:100%;font-size:11px;color:var(--muted);font-weight:700;margin:2px 0 -2px}
-  .daygrp{border:1px solid var(--line,#E6E1D6);border-radius:10px;margin-top:8px;overflow:hidden}
-  .dayhd{background:#f4f1ea;padding:8px 12px;font-weight:800;color:var(--brand);display:flex;justify-content:space-between;align-items:center}
+  .daygrp{border:1px solid var(--line,#DFDFDF);border-radius:10px;margin-top:8px;overflow:hidden}
+  .dayhd{background:#F5F5F5;padding:8px 12px;font-weight:800;color:var(--brand);display:flex;justify-content:space-between;align-items:center}
   .evrow{display:grid;grid-template-columns:18px 50px 58px 84px 168px minmax(120px,1fr) 44px auto;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line,#eee);cursor:pointer}
-  .evrow:hover{background:#faf8f3}.evrow .caret{transition:transform .15s}.evrow.open .caret{transform:rotate(90deg)}
+  .evrow:hover{background:#FAFAFA}.evrow .caret{transition:transform .15s}.evrow.open .caret{transform:rotate(90deg)}
   .evrow .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .evrow .rt{text-align:right;white-space:nowrap}
   .evtbl{table-layout:fixed}
   .evtbl td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .evdetail{display:none;background:#fcfbf8;padding:0 12px 8px}.evdetail.open{display:block}
-  .mongrp{border:1px solid var(--line,#E6E1D6);border-radius:10px;margin-top:10px;overflow:hidden}
+  .mongrp{border:1px solid var(--line,#DFDFDF);border-radius:10px;margin-top:10px;overflow:hidden}
   .monhd{background:#eef2ee;padding:11px 14px;font-weight:800;color:var(--brand);display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:8px;font-size:14px}
   .monhd:hover{background:#e6ede7}.monhd .caret{transition:transform .15s}.monhd.open .caret{transform:rotate(90deg)}
   .monbody{display:none}.monbody.open{display:block}
-  .evdate{display:inline-block;font-size:10.5px;color:var(--muted);background:#f0ece2;border-radius:5px;padding:1px 6px;margin-right:3px;font-weight:600}
+  .evdate{display:inline-block;font-size:10.5px;color:var(--muted);background:#F0F0F0;border-radius:5px;padding:1px 6px;margin-right:3px;font-weight:600}
   .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
   .mchip{display:inline-block;padding:3px 10px;margin:2px;border-radius:999px;border:1px solid #ccc;background:#fff;color:#555;font-size:12px;cursor:pointer}
   .mchip.on{border-color:var(--brand);background:#e6f3ee;color:var(--brand);font-weight:700}
@@ -75,6 +75,10 @@
   @keyframes evflash{0%{background:#fff6d6;box-shadow:0 0 0 3px #f0c419}40%{background:#fff6d6}100%{background:transparent;box-shadow:none}}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -154,7 +158,7 @@
 <!-- 재고금액 검토 모달 -->
 <div id="vaModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:200;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
   <div style="background:#fff;border-radius:14px;max-width:760px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);max-height:calc(100vh - 80px);display:flex;flex-direction:column">
-    <div style="padding:14px 18px;border-bottom:1px solid var(--line,#e6e1d6);display:flex;justify-content:space-between;align-items:center">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--line,#DFDFDF);display:flex;justify-content:space-between;align-items:center">
       <div style="font-weight:800;color:var(--brand);font-size:15px">재고금액 검토</div>
       <button class="btn ghost sm" onclick="closeValueAudit()">닫기 ✕</button>
     </div>
@@ -162,7 +166,7 @@
       <div id="vaSummary" class="hint">불러오는 중…</div>
       <div id="vaList" style="margin-top:10px"></div>
     </div>
-    <div style="padding:12px 18px;border-top:1px solid var(--line,#e6e1d6);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div style="padding:12px 18px;border-top:1px solid var(--line,#DFDFDF);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span id="vaMsg" style="font-size:12px;margin-right:auto"></span>
       <button class="btn ghost sm" id="vaZeroUnsup" onclick="resetValue('unsupported')">근거 없는 원가 0으로</button>
       <button class="btn ghost sm" id="vaZeroAll" onclick="resetValue('all')" style="border-color:var(--expense);color:var(--expense)">전체 0으로</button>
@@ -281,7 +285,7 @@
     const box=$('cartBox'); if(!box)return;
     if(!cart.length){ box.innerHTML=''; return; }
     const tlm={in:'입고 (+)',out:'출고 (−)',adjust:'조정 (±)'};
-    let h='<div style="border:1px solid var(--line,#e6e1d6);border-radius:8px;overflow:hidden">';
+    let h='<div style="border:1px solid var(--line,#DFDFDF);border-radius:8px;overflow:hidden">';
     h+='<div style="padding:6px 10px;background:var(--bg2,#f7f4ee);font-size:12px;font-weight:600">담은 SKU '+cart.length+'개 — [등록] 시 공통 참조·사유·날짜로 한 번에 처리됩니다</div>';
     h+='<table style="margin:0;font-size:12.5px;width:100%"><thead><tr><th>제품</th><th>유형</th><th class="r">수량</th><th></th></tr></thead><tbody>';
     cart.forEach((c,i)=>{ h+='<tr><td><b>'+esc(c.code)+'</b> <span class="hint">'+esc(c.name)+'</span></td><td>'+(tlm[c.move_type]||c.move_type)+'</td><td class="r">'+fmtq(c.qty)+'</td><td class="r"><button class="btn ghost sm" style="padding:2px 8px;color:var(--expense);border-color:var(--expense)" onclick="removeFromCart('+i+')">삭제</button></td></tr>'; });
@@ -591,7 +595,7 @@
       const tl={in:'입고',out:'출고',adjust:'조정'};
       let h='<div style="margin-top:10px;border:1px solid var(--gold,#d4a017);border-radius:10px;background:#fffaf0;padding:10px 12px">'
         +'<div style="font-weight:800;color:#9a6512;font-size:13px;margin-bottom:6px">업로드 미리보기 — '+payload.length+'건 · 내용을 확인하고 [입고 저장]을 누르세요</div>'
-        +'<div style="max-height:260px;overflow:auto;border:1px solid var(--line,#e6e1d6);border-radius:8px;background:#fff">'
+        +'<div style="max-height:260px;overflow:auto;border:1px solid var(--line,#DFDFDF);border-radius:8px;background:#fff">'
         +'<table style="margin:0;font-size:12px"><thead><tr><th>#</th><th>코드</th><th>유형</th><th class="r">수량</th><th>참조</th><th>사유</th><th>입고날짜</th></tr></thead><tbody>';
       payload.forEach((p,i)=>{ const noDate=!p.moved_at; const badType=!['in','out','adjust'].includes(p.move_type); const badQty=!p.qty;
         h+='<tr><td>'+(i+1)+'</td><td><b>'+esc(p.code)+'</b></td>'
@@ -631,7 +635,7 @@
         +'근거 있음(수입 입고) <b style="color:var(--income)">$'+fmt(d.supported)+'</b> · '
         +'근거 없음 <b style="color:var(--expense)">$'+fmt(d.unsupported)+'</b>';
       if(!d.items.length){ $('vaList').innerHTML='<div class="hint" style="margin-top:8px">재고금액이 있는 제품이 없습니다.</div>'; return; }
-      let h='<div style="max-height:340px;overflow:auto;border:1px solid var(--line,#e6e1d6);border-radius:8px"><table style="margin:0;font-size:12px"><thead><tr><th>제품</th><th class="r">재고수량</th><th class="r">평균원가</th><th class="r">재고금액</th><th>근거</th></tr></thead><tbody>';
+      let h='<div style="max-height:340px;overflow:auto;border:1px solid var(--line,#DFDFDF);border-radius:8px"><table style="margin:0;font-size:12px"><thead><tr><th>제품</th><th class="r">재고수량</th><th class="r">평균원가</th><th class="r">재고금액</th><th>근거</th></tr></thead><tbody>';
       d.items.forEach(p=>{ h+='<tr><td><b>'+esc(p.code)+'</b> <span class="hint">'+esc(p.name||'')+'</span></td>'
         +'<td class="r">'+fmtq(p.stock_qty)+'</td><td class="r">'+fmt(p.avg_cost)+'</td><td class="r"><b>'+fmt(p.value)+'</b></td>'
         +'<td>'+(p.has_import?'<span style="color:var(--income)">수입 입고</span>':'<span style="color:var(--expense)">근거 없음</span>')+'</td></tr>'; });
@@ -710,6 +714,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>

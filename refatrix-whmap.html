@@ -10,8 +10,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix · 창고 도면 Mapa del almacén · build wm-1028kit</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
-    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
+    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#0058A3;--radius:12px;
     --gold:#9A6512;--gold-bg:#FDF8EE;--blue:#2E6F9E;--blue-bg:#E8F1F7;--area:#E9E5DC}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -73,7 +73,7 @@
   .pk .bh small{font-weight:600;opacity:.9}
   .pk.sel .bh{background:var(--ink)}
   .pk .pr{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;padding:7px 10px;border-top:1px solid #F8D9BD;background:#FDF3EA;font-size:12.5px}
-  .pk .pr.done{background:#F4F1EA;color:#9A948A;text-decoration:line-through}
+  .pk .pr.done{background:#F5F5F5;color:#9A948A;text-decoration:line-through}
   .pk .pr .q{font-weight:800;font-size:14px;color:#B4540A;text-decoration:none}
   .pk .pr.done .q{color:#9A948A}
   .pk.off .bh{background:#9A948A}
@@ -121,6 +121,10 @@
   #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;z-index:50;max-width:90vw}
   @media (max-width:760px){ body{padding:10px} .side{flex:1 1 100%} .search{width:100%} }
 </style>
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -138,7 +142,7 @@
 </div>
 <div id="toast"></div>
 
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 <script>
 (function(){
   /* =====================================================================

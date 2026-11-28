@@ -10,9 +10,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 수금/정산 · build 20261002adv</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+  :root{--paper:#F5F5F5;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#DFDFDF;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
-    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --brand:#0058A3;--brand-soft:#004F93;--gold:#B8893B;--radius:12px;--radius-sm:8px;
     --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
@@ -20,7 +20,7 @@
   .wrap{max-width:1000px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
-  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #004F93;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
   .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -42,8 +42,8 @@
   table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
   th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line)}
   th:first-child,td:first-child{text-align:left}
-  th{font-size:11.5px;color:var(--muted);background:#faf8f3;font-weight:700}
-  tfoot td{font-weight:800;background:#faf8f3;border-top:2px solid var(--line)}
+  th{font-size:11.5px;color:var(--muted);background:#FAFAFA;font-weight:700}
+  tfoot td{font-weight:800;background:#FAFAFA;border-top:2px solid var(--line)}
   .badge{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px}
   .b-edit{background:#e6f1fb;color:#0c447c}.b-del{background:var(--expense-bg);color:var(--expense)}.b-imp{background:#fdf8ec;color:#8a6512}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -54,7 +54,7 @@
   .chip{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:999px;white-space:nowrap}
   .chip-paid{background:var(--income-bg);color:var(--income)}
   .chip-part{background:#fdf8ec;color:#8a6512}
-  .histbox{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:2px 0}
+  .histbox{background:#FAFAFA;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:2px 0}
   .histbox table{margin-top:6px}
   .histbox th,.histbox td{padding:6px 8px}
   .lnk{color:#0c447c;cursor:pointer;text-decoration:underline;font-size:12px;background:none;border:none;padding:0;font-family:inherit}
@@ -76,6 +76,10 @@
   .notranslate{}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+
+<!-- __rfxTheme 20261127k · 공통 디자인(차종으로 제품찾기 기준) — 화면 자체 스타일 뒤에 로드 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="refatrix-theme.css?v=20261127k" id="rfx-theme">
 </head>
 <body>
 <div class="wrap">
@@ -596,8 +600,8 @@
         +(it.paid_full?'':'<button class="btn notranslate" translate="no" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--gold);border:1px solid var(--line)" onclick="toggleNc('+it.id+')" title="할인 승인 증빙(Nota de crédito) 발기">N/C</button> ')
         +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleHist('+it.id+')">'+(arHistOpen===it.id?'▴ 닫기':'수금내역')+'</button></td>'
         +'</tr>';
-      if(arOpenRepay===it.id){ h+='<tr><td colspan="11" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
-      if(arOpenNc===it.id){ h+='<tr><td colspan="11" style="background:#fbf7ee">'+ncForm(it)+'</td></tr>'; }
+      if(arOpenRepay===it.id){ h+='<tr><td colspan="11" style="background:#FAFAFA">'+repayForm(it)+'</td></tr>'; }
+      if(arOpenNc===it.id){ h+='<tr><td colspan="11" style="background:#FAFAFA">'+ncForm(it)+'</td></tr>'; }
       if(arHistOpen===it.id){ h+='<tr><td colspan="11">'+histInnerHtml(it)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
@@ -1564,6 +1568,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20261127mh"></script>
+<script src="refatrix-nav.js?v=20261127th"></script>
 </body>
 </html>
